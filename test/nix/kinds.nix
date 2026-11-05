@@ -896,8 +896,8 @@ lib.runTests {
       maximum = 65535;
     };
   };
-  # A port or a range of ports, as the router kinds take them: a number, or "<first>-<last>", from
-  # port 1.
+  # A port or a range of ports, as the router kinds take them: a number from port 1, or
+  # "<first>-<last>", which the format port-range checks.
   testPortRange = {
     expr = propOf kindTypes.portRange;
     expected.anyOf = [
@@ -908,8 +908,29 @@ lib.runTests {
       }
       {
         type = "string";
-        pattern = "^(?:[1-9][0-9]{0,4}-[1-9][0-9]{0,4})$";
+        format = "port-range";
       }
+    ];
+  };
+  # An address and an address range, which the formats ip and cidr check.
+  testAddress = {
+    expr = propOf (types.listOf kindTypes.address);
+    expected = {
+      type = "array";
+      items = {
+        type = "string";
+        format = "ip";
+      };
+    };
+  };
+  testPrefix = {
+    expr = propOf (types.nullOr kindTypes.prefix);
+    expected.anyOf = [
+      {
+        type = "string";
+        format = "cidr";
+      }
+      { type = "null"; }
     ];
   };
   # A BGP neighbour's AS, as BGPPeer takes it: external, internal or a 32-bit AS number.

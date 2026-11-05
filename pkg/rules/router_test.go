@@ -32,6 +32,46 @@ func routerRules(t *testing.T) (*Set, func(kind, name, spec string) config.Docum
 	}
 }
 
+// The router kinds' schemas take addresses and address ranges as ip() and cidr() read them, and
+// ranges of ports from 1 to 65535 that run forwards, wherever a kind holds them: in a list, in a
+// list's items and in a field of its own.
+func TestRouterSchemaFormats(t *testing.T) {
+	s, err := schema.LoadSchemas("../../test/fixtures/kinds/router")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		kind, spec, want string
+	}{
+		{"NATRule", `{"type": "snat", "out": {"interface": "eth0"}, "to": {"address": "192.0.2.10"}}`, ""},
+		{"NATRule", `{"type": "snat", "out": {"interface": "eth0"}, "to": {"address": "2001:DB8::a"}}`, ""},
+		{"NATRule", `{"type": "snat", "out": {"interface": "eth0"}, "to": {"address": "192.0.2.256"}}`,
+			`NATRule "x": - at '/spec/to/address': '192.0.2.256' is not valid ip: an address is an IPv4 address of four numbers from 0 to 255 without leading zeros, or an IPv6 address without a zone`},
+		{"NATRule", `{"type": "snat", "out": {"interface": "eth0"}, "to": {"address": "192.0.2.010"}}`, "is not valid ip"},
+		{"NATRule", `{"type": "snat", "out": {"interface": "eth0"}, "to": {"address": "fe80::1%eth0"}}`, "is not valid ip"},
+		{"NATRule", `{"type": "snat", "out": {"interface": "eth0"}, "to": {"address": "1:2"}}`, "is not valid ip"},
+		{"NATRule", `{"type": "masquerade", "out": {"interface": "eth0"}, "match": {"source": ["10.0.0.0/33"]}}`,
+			`NATRule "x": - at '/spec/match/source/0': '10.0.0.0/33' is not valid cidr: an address range is an address, a slash and a prefix length of at most 32 for IPv4 or 128 for IPv6`},
+		{"NATRule", `{"type": "masquerade", "out": {"interface": "eth0"}, "match": {"source": ["10.0.0.1"]}}`, "is not valid cidr"},
+		{"AddressSet", `{"family": "ipv6", "prefixes": ["2001:db8::/129"]}`, "is not valid cidr"},
+		{"FirewallPolicy", `{"from": "wan", "to": "local", "rules": [{"protocol": "tcp", "destinationPorts": [22, "8000-8100", "1-65535", "443-443"], "action": "accept"}]}`, ""},
+		{"FirewallPolicy", `{"from": "wan", "to": "local", "rules": [{"protocol": "tcp", "destinationPorts": ["9-1"], "action": "accept"}]}`,
+			`FirewallPolicy "x": - at '/spec/rules/0/destinationPorts/0': '9-1' is not valid port-range: a range of ports is "<first>-<last>", each from 1 to 65535, and the first no higher than the last`},
+		{"FirewallPolicy", `{"from": "wan", "to": "local", "rules": [{"protocol": "tcp", "sourcePorts": ["70000-80000"], "action": "accept"}]}`, "is not valid port-range"},
+		{"FirewallPolicy", `{"from": "wan", "to": "local", "rules": [{"protocol": "tcp", "sourcePorts": ["22"], "action": "accept"}]}`, "is not valid port-range"},
+		{"NAT64", `{"pool4": [{"prefix": "192.0.2.10/32", "ports": "65535-61001"}]}`, "is not valid port-range"},
+	} {
+		d := builtinDoc(t, config.RouterAPI, tc.kind, "x", tc.spec)
+		err := s.Validate(d.Object)
+		switch {
+		case tc.want == "" && err != nil:
+			t.Errorf("%s %s: %v", tc.kind, tc.spec, err)
+		case tc.want != "" && (err == nil || !strings.Contains(err.Error(), tc.want)):
+			t.Errorf("%s %s: err = %v, want one with %q", tc.kind, tc.spec, err, tc.want)
+		}
+	}
+}
+
 // network is a networkd Network document with the [Match] section given, in JSON.
 func network(t *testing.T, name, match string) config.Document {
 	t.Helper()

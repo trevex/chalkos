@@ -46,7 +46,7 @@
                     "type": "integer"
                   },
                   {
-                    "pattern": "^(?:[1-9][0-9]{0,4}-[1-9][0-9]{0,4})$",
+                    "format": "port-range",
                     "type": "string"
                   }
                 ],
@@ -58,7 +58,7 @@
                 "examples": [
                   "192.0.2.10/32"
                 ],
-                "pattern": "^(?:[0-9A-Fa-f:.]+/[0-9]{1,3})$",
+                "format": "cidr",
                 "type": "string"
               },
               "protocols": {
@@ -127,7 +127,7 @@
         "prefix": {
           "default": "64:ff9b::/96",
           "description": "IPv6 range whose addresses the NAT64 translates, each embedding an IPv4 address as RFC 6052 says: 32, 40, 48, 56, 64 or 96 bits, by default the well-known prefix. The router routes it to the NAT64's link in the NAT64's VRF, a route that BGP announces when `BGP.spec.networks` of that VRF names the prefix.",
-          "pattern": "^(?:[0-9A-Fa-f:.]+/[0-9]{1,3})$",
+          "format": "cidr",
           "type": "string",
           "x-chalkos-rules": [
             {

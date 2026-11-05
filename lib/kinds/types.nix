@@ -66,7 +66,22 @@ rec {
     description = "Kubernetes object";
   };
 
-  # A port from 1, or a range of ports written "<first>-<last>", which the router kinds take.
+  # An IPv4 or IPv6 address, which the rules read with ip(), and an address range, which they read
+  # with cidr(). The schema converter gives them the formats ip and cidr, which chalkctl and chalkd
+  # check with the parsers of ip() and cidr(), so a value the schema accepts parses in every rule
+  # and output. The patterns check only what Nix itself checks, such as defaults and examples.
+  address = lib.types.strMatching "[0-9A-Fa-f:.]+" // {
+    name = "chalkosAddress";
+    description = "IPv4 or IPv6 address";
+  };
+  prefix = lib.types.strMatching "[0-9A-Fa-f:.]+/[0-9]{1,3}" // {
+    name = "chalkosPrefix";
+    description = "address range";
+  };
+
+  # A port from 1, or a range of ports written "<first>-<last>", which the router kinds take. The
+  # schema converter gives the range the format port-range, which chalkctl and chalkd check: both
+  # ports from 1 to 65535 and the first no higher than the last.
   portRange =
     lib.types.either (lib.types.ints.between 1 65535) (
       lib.types.strMatching "[1-9][0-9]{0,4}-[1-9][0-9]{0,4}"

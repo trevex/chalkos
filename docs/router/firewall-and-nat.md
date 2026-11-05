@@ -118,9 +118,10 @@ spec: {family: ipv6, prefixes: ["2001:db8:2::/64"]}
 
 An `AddressSet` holds ranges of one family. A rule's `source` or `destination` names one in
 `set`, or lists address ranges in `cidrs`, one of the two; a rule without it matches every
-address. A port is a number or a range `"<first>-<last>"`. A policy cannot drop what the
-firewall accepts before it: chalkd's port on the management interfaces, pings, ICMP errors,
-neighbour discovery and established connections.
+address. A port is a number from 1 to 65535, or a range `"<first>-<last>"` of two such numbers
+whose first is no higher than its last. A policy cannot drop what the firewall accepts before
+it: chalkd's port on the management interfaces, pings, ICMP errors, neighbour discovery and
+established connections.
 Nor does it filter DHCPv4 on the links a `DHCPSubnet` serves: the DHCP server reads it ahead of
 the firewall. DHCPv6 on an IPv6 subnet's link and DHCP on a relay's links pass openings that the
 firewall adds before the policies, as [Lease addresses with DHCP](dhcp.md) describes.
@@ -190,12 +191,14 @@ The next delivery that changes the firewall documents loads the rendered ruleset
 
 ## A refusal names the document
 
-chalkctl refuses documents that do not fit together before it sends anything: a field that names
-a document the config lacks, a value that two documents share where the kind takes it once, and
-what the rules of the router kinds refuse. Each message names the document:
+chalkctl refuses documents before it sends anything: a value the kind's schema does not take,
+such as a range of ports that runs backwards, a field that names a document the config lacks, a
+value that two documents share where the kind takes it once, and what the rules of the router
+kinds refuse. Each message names the document:
 
 | Message | Fix |
 | --- | --- |
+| `FirewallPolicy "wan-local": - at '/spec/rules/1/destinationPorts/0': '8444-8443' is not valid port-range: a range of ports is "<first>-<last>", each from 1 to 65535, and the first no higher than the last` | Write the lower port first. |
 | `FirewallPolicy/lan-dmz: spec.to: FirewallZone "dmz" does not exist` | Add the zone, or name one that exists. |
 | `FirewallZone/lan: spec.interfaces[0], FirewallZone/wan: spec.interfaces[1]: "eth1" is not unique; give each interface one zone` | Keep the interface in one zone. |
 | `FirewallZone/guest: spec.vrfs[0]: VRF "guest" does not exist` | Add the `VRF` document, or fix the name in `vrfs`. |

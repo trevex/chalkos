@@ -54,7 +54,7 @@
             ]
           ],
           "items": {
-            "pattern": "^(?:[0-9A-Fa-f:.]+)$",
+            "format": "ip",
             "type": "string"
           },
           "minItems": 1,

@@ -324,7 +324,7 @@ A node's config may hold several, each with a name of its own. It has a [change 
 | Field | Type | Default | Description |
 | --- | --- | --- | --- |
 | `spec.family` | one of `ipv4`, `ipv6` | required | Address family of the set. |
-| `spec.prefixes` | list of string | required | Address ranges of the set. |
+| `spec.prefixes` | list of address range | required | Address ranges of the set. |
 
 ### BGP { #bgp }
 
@@ -353,7 +353,7 @@ A node's config may hold several, each with a name of its own. It has 6 [change 
 | `spec.multipath.ibgp` | integer from 1 to 64 | `1` | Equal paths from internal peers the router installs for one prefix at most. |
 | `spec.networks` | list of object | `[]` | Networks the router announces to its peers. Each item is unique within the list by `prefix` as masked ranges. |
 | `spec.networks[].policy` | name of a RoutingPolicy or null | `null` | RoutingPolicy whose terms set the announcement's attributes; null announces it as it is. |
-| `spec.networks[].prefix` | string | required | Address range the router announces while its table holds a route to it. |
+| `spec.networks[].prefix` | address range | required | Address range the router announces while its table holds a route to it. |
 | `spec.routerID` | string | required | Router ID, in IPv4 notation, which the router's peers know it by; give an IPv6-only router one too. |
 | `spec.vrf` | name of a VRF, or `default` | `"default"` | VRF document whose instance this is; `default` for the default VRF, which holds every link no VRF holds. Unique among the BGP documents. |
 
@@ -367,7 +367,7 @@ A node's config may hold several, each with a name of its own. It has 12 [change
 
 | Field | Type | Default | Description |
 | --- | --- | --- | --- |
-| `spec.address` | string or null | `null` | Unicast address of the neighbour; excludes `interface` and `interfaces`. |
+| `spec.address` | IP address or null | `null` | Unicast address of the neighbour; excludes `interface` and `interfaces`. |
 | `spec.bfd` | boolean | `false` | Whether the router checks the session's link with BFD, at the timers of the BGP document, and ends the session when BFD finds it down. |
 | `spec.description` | string or null | `null` | What the neighbour is, in up to 80 printable ASCII characters other than `@`, with a single space between two words. |
 | `spec.extendedNextHop` | boolean | `false` | Whether the router sends and accepts IPv4 routes with IPv6 next hops (RFC 8950). FRR negotiates it on sessions of `interface` and `interfaces` whatever this says. |
@@ -414,7 +414,7 @@ A node's config may hold several, each with a name of its own. It has a [change 
 | Field | Type | Default | Description |
 | --- | --- | --- | --- |
 | `spec.interfaces` | list of string | required | Links the clients ask on, each by its full name, without a glob: links of one VRF, each of which a Network document matching it by Name= alone gives a static address of each family the servers have, a global one for IPv6. A link takes one relay. Each item is unique among the DHCPRelay documents. |
-| `spec.servers` | list of string | required | Unicast addresses of the DHCP servers, which the router reaches through the links' VRF: IPv4 servers get the links' DHCPv4 requests and IPv6 servers their DHCPv6 requests. A DHCPv6 server answers relayed requests on such an address, as Kea's does on an interface given as &lt;name>/&lt;address>. Each item is unique within the list, compared as addresses. |
+| `spec.servers` | list of IP address | required | Unicast addresses of the DHCP servers, which the router reaches through the links' VRF: IPv4 servers get the links' DHCPv4 requests and IPv6 servers their DHCPv6 requests. A DHCPv6 server answers relayed requests on such an address, as Kea's does on an interface given as &lt;name>/&lt;address>. Each item is unique within the list, compared as addresses. |
 
 ### DHCPSubnet { #dhcpsubnet }
 
@@ -429,24 +429,24 @@ A node's config may hold several, each with a name of its own. It has 13 [change
 | `spec.boot` | object or null | `null` | Files PXE clients of an IPv4 subnet boot, by firmware; boot files are served elsewhere. null serves none. |
 | `spec.boot.bios` | string or null | `null` | File of clients with BIOS firmware, of architecture 0 in option 93, loaded over TFTP from server. |
 | `spec.boot.ipxe` | string or null | `null` | Script or file of clients that run iPXE already, whose user class (option 77) is iPXE; they get it instead of bios and uefi, so that iPXE does not load itself again. |
-| `spec.boot.server` | string or null | `null` | IPv4 address of the TFTP server the files are on, the DHCP header's next server; needed with bios or uefi, whose firmware loads them over TFTP. null for none, as for an ipxe script of an HTTP URL alone. |
+| `spec.boot.server` | IP address or null | `null` | IPv4 address of the TFTP server the files are on, the DHCP header's next server; needed with bios or uefi, whose firmware loads them over TFTP. null for none, as for an ipxe script of an HTTP URL alone. |
 | `spec.boot.uefi` | string or null | `null` | File of clients with x86-64 UEFI firmware, of architecture 7 or 9 in option 93, loaded over TFTP from server. |
-| `spec.dns` | list of string | `[]` | DNS servers the clients ask, addresses of the subnet's family. |
+| `spec.dns` | list of IP address | `[]` | DNS servers the clients ask, addresses of the subnet's family. |
 | `spec.domain` | string or null | `null` | Domain of the clients' names, which they also search; null gives none. |
-| `spec.gateway` | string or null | `null` | Router the clients route through, inside an IPv4 subnet and neither its network nor its broadcast address; null gives them none. IPv6 clients learn their routers from router advertisements. |
+| `spec.gateway` | IP address or null | `null` | Router the clients route through, inside an IPv4 subnet and neither its network nor its broadcast address; null gives them none. IPv6 clients learn their routers from router advertisements. |
 | `spec.interfaces` | list of string | required | Links the server answers on, each by its full name, without a glob: links of one VRF, each of which a Network document matching it by Name= alone gives a static address in the subnet; one link for an IPv6 subnet. A link takes one subnet of each family. |
 | `spec.leaseTime` | string | `"12h"` | How long a lease lasts, and a delegated prefix: a number and s, m, h or d, 136 years at most. IPv6 clients prefer their addresses for as long. |
 | `spec.pools` | list of object | `[]` | Ranges the server leases addresses from to any client, inside the subnet, apart from each other, from the reservations and from the router's, the gateway's and the DNS and boot servers' addresses; empty leases the reservations alone. |
-| `spec.pools[].first` | string | required | First address of the pool. |
-| `spec.pools[].last` | string | required | Last address of the pool, no lower than the first. |
+| `spec.pools[].first` | IP address | required | First address of the pool. |
+| `spec.pools[].last` | IP address | required | Last address of the pool, no lower than the first. |
 | `spec.prefixDelegation` | object or null | `null` | Prefixes the IPv6 server delegates to routers on the link that ask for one, such as a home router's LAN; the router routes each to the link-local address that asked for it, for as long as the lease lasts. null delegates none. |
 | `spec.prefixDelegation.length` | integer from 1 to 128 | required | Length of each delegated prefix, longer than the range's. |
-| `spec.prefixDelegation.prefix` | string | required | IPv6 range the delegated prefixes are taken from, apart from the subnets of the VRF. |
+| `spec.prefixDelegation.prefix` | address range | required | IPv6 range the delegated prefixes are taken from, apart from the subnets of the VRF. |
 | `spec.reservations` | list of object | `[]` | Clients that always get the same address, by their MAC address. Each item is unique within the list by `mac` in lower case. Each item is unique within the list by `address` as addresses. |
-| `spec.reservations[].address` | string | required | Address the client always gets, inside the subnet and outside its pools, neither the router's nor the gateway's nor a DNS or boot server's. |
+| `spec.reservations[].address` | IP address | required | Address the client always gets, inside the subnet and outside its pools, neither the router's nor the gateway's nor a DNS or boot server's. |
 | `spec.reservations[].hostname` | string or null | `null` | Name the client gets; null gives none. |
 | `spec.reservations[].mac` | string | required | MAC address of the client, in lower case. A DHCPv6 server learns it from the client's DUID or link-local address, which not every client derives from it. |
-| `spec.subnet` | string | required | Range the subnet's addresses are in, whose family the server's is: an IPv4 range of 30 bits at most or an IPv6 range of 120 bits at most. |
+| `spec.subnet` | address range | required | Range the subnet's addresses are in, whose family the server's is: an IPv4 range of 30 bits at most or an IPv6 range of 120 bits at most. |
 
 ### FirewallPolicy { #firewallpolicy }
 
@@ -463,17 +463,17 @@ A node's config may hold several, each with a name of its own. It has 5 [change 
 | `spec.rules` | list of object | `[]` | Rules in order: the first that matches a connection decides. |
 | `spec.rules[].action` | one of `accept`, `drop`, `reject` | required | What happens to a connection the rule matches; `reject` answers with an administratively prohibited error. |
 | `spec.rules[].destination` | object or null | `null` | Destination addresses: the ranges of an AddressSet in `set`, or address ranges in `cidrs`; null matches every destination. |
-| `spec.rules[].destination.cidrs` | list of string or null | `null` | Address ranges that match; excludes `set`. In each family the rule matches the ranges of that family. |
+| `spec.rules[].destination.cidrs` | list of address range or null | `null` | Address ranges that match; excludes `set`. In each family the rule matches the ranges of that family. |
 | `spec.rules[].destination.set` | name of an AddressSet or null | `null` | AddressSet whose ranges match; excludes `cidrs`. |
-| `spec.rules[].destinationPorts` | list of integer from 1 to 65535 or string | `[]` | Destination ports, each a port or a range `<first>-<last>`, with the protocol `tcp`, `udp` or `sctp`; empty matches every port. |
+| `spec.rules[].destinationPorts` | list of integer from 1 to 65535 or range of ports | `[]` | Destination ports, each a port or a range `<first>-<last>`, with the protocol `tcp`, `udp` or `sctp`; empty matches every port. |
 | `spec.rules[].family` | one of `ipv4`, `ipv6` or null | `null` | Address family the rule matches; null matches each family its protocol and addresses leave. |
 | `spec.rules[].icmpTypes` | list of one of `echo-request`, `echo-reply`, `destination-unreachable`, `time-exceeded`, `parameter-problem`, `packet-too-big` | `[]` | ICMP or ICMPv6 types, with the protocol `icmp` or `icmpv6`; empty matches every type. `packet-too-big` is ICMPv6's. |
 | `spec.rules[].log` | boolean | `false` | Whether the kernel logs each packet the rule matches, prefixed with the policy's name and the rule's number. |
 | `spec.rules[].protocol` | one of `tcp`, `udp`, `sctp`, `icmp`, `icmpv6`, `gre`, `esp`, `ah` or null | `null` | Protocol the rule matches; null matches every protocol. `icmp` is IPv4's and `icmpv6` IPv6's. |
 | `spec.rules[].source` | object or null | `null` | Source addresses: the ranges of an AddressSet in `set`, or address ranges in `cidrs`; null matches every source. |
-| `spec.rules[].source.cidrs` | list of string or null | `null` | Address ranges that match; excludes `set`. In each family the rule matches the ranges of that family. |
+| `spec.rules[].source.cidrs` | list of address range or null | `null` | Address ranges that match; excludes `set`. In each family the rule matches the ranges of that family. |
 | `spec.rules[].source.set` | name of an AddressSet or null | `null` | AddressSet whose ranges match; excludes `cidrs`. |
-| `spec.rules[].sourcePorts` | list of integer from 1 to 65535 or string | `[]` | Source ports, each a port or a range `<first>-<last>`, with the protocol `tcp`, `udp` or `sctp`; empty matches every port. |
+| `spec.rules[].sourcePorts` | list of integer from 1 to 65535 or range of ports | `[]` | Source ports, each a port or a range `<first>-<last>`, with the protocol `tcp`, `udp` or `sctp`; empty matches every port. |
 | `spec.to` | name of a FirewallZone, or `local` | required | FirewallZone the connections go to, or `local` for connections to the router itself. |
 
 ### FirewallZone { #firewallzone }
@@ -500,10 +500,10 @@ A node's config may hold several, each with a name of its own. It has 11 [change
 | Field | Type | Default | Description |
 | --- | --- | --- | --- |
 | `spec.pool4` | list of object | `[]` | IPv4 addresses, with their ports, that the translated connections leave from: addresses routed to the router, not addresses of its links, which the router answers itself. The rules refuse an address that a `Network` document gives a link. An address a link takes from DHCP passes them, and `chalkos-nat64.service` then fails without changing an instance; leave pool4 empty instead. Empty takes the address of the link a connection leaves through, with the ports 61001 to 65535, which the router masquerades. The firewall's NAT rules leave the translated connections alone. |
-| `spec.pool4[].ports` | integer from 1 to 65535 or string | `"61001-65535"` | Ports, or ICMP identifiers, of the addresses the translated connections take: a port or a range `<first>-<last>` that leaves out the kernel's ephemeral ports, 32768 to 60999, which the router's own connections take. |
-| `spec.pool4[].prefix` | string | required | IPv4 addresses the translated connections leave from, a range of 65536 addresses at most. |
+| `spec.pool4[].ports` | integer from 1 to 65535 or range of ports | `"61001-65535"` | Ports, or ICMP identifiers, of the addresses the translated connections take: a port or a range `<first>-<last>` that leaves out the kernel's ephemeral ports, 32768 to 60999, which the router's own connections take. |
+| `spec.pool4[].prefix` | address range | required | IPv4 addresses the translated connections leave from, a range of 65536 addresses at most. |
 | `spec.pool4[].protocols` | list of one of `tcp`, `udp`, `icmp` | `["tcp","udp","icmp"]` | Protocols whose connections take the addresses and ports. Each item is unique within the list. |
-| `spec.prefix` | string | `"64:ff9b::/96"` | IPv6 range whose addresses the NAT64 translates, each embedding an IPv4 address as RFC 6052 says: 32, 40, 48, 56, 64 or 96 bits, by default the well-known prefix. The router routes it to the NAT64's link in the NAT64's VRF, a route that BGP announces when `BGP.spec.networks` of that VRF names the prefix. |
+| `spec.prefix` | address range | `"64:ff9b::/96"` | IPv6 range whose addresses the NAT64 translates, each embedding an IPv4 address as RFC 6052 says: 32, 40, 48, 56, 64 or 96 bits, by default the well-known prefix. The router routes it to the NAT64's link in the NAT64's VRF, a route that BGP announces when `BGP.spec.networks` of that VRF names the prefix. |
 | `spec.vrf` | name of a VRF, or `default` | `"default"` | VRF document whose links route the prefix to the NAT64 and carry its translated connections; `default` for the default VRF. The NAT64 runs in the network namespace nat64-&lt;name>, which the link n64-&lt;name> joins to the VRF. |
 
 ### NATRule { #natrule }
@@ -520,15 +520,15 @@ A node's config may hold several, each with a name of its own. It has 6 [change 
 | `spec.in` | object or null | `null` | Where the connections arrive, for `dnat`. |
 | `spec.in.interface` | string or null | `null` | Interface the connections use, by name or glob, a glob being a prefix followed by `*`; excludes `zone`. |
 | `spec.in.zone` | name of a FirewallZone or null | `null` | FirewallZone whose interfaces the connections use; excludes `interface`. |
-| `spec.match.destination` | list of string | `[]` | Destination address ranges of the connections; empty matches every destination. |
-| `spec.match.destinationPorts` | list of integer from 1 to 65535 or string | `[]` | Destination ports, each a port or a range `<first>-<last>`, with `protocol`; empty matches every port. |
+| `spec.match.destination` | list of address range | `[]` | Destination address ranges of the connections; empty matches every destination. |
+| `spec.match.destinationPorts` | list of integer from 1 to 65535 or range of ports | `[]` | Destination ports, each a port or a range `<first>-<last>`, with `protocol`; empty matches every port. |
 | `spec.match.protocol` | one of `tcp`, `udp`, `sctp` or null | `null` | Protocol of the connections; null matches every protocol. |
-| `spec.match.source` | list of string | `[]` | Source address ranges of the connections; empty matches every source. |
+| `spec.match.source` | list of address range | `[]` | Source address ranges of the connections; empty matches every source. |
 | `spec.out` | object or null | `null` | Where the connections leave, for `masquerade` and `snat`. |
 | `spec.out.interface` | string or null | `null` | Interface the connections use, by name or glob, a glob being a prefix followed by `*`; excludes `zone`. |
 | `spec.out.zone` | name of a FirewallZone or null | `null` | FirewallZone whose interfaces the connections use; excludes `interface`. |
 | `spec.to` | object or null | `null` | What `snat` and `dnat` translate to. |
-| `spec.to.address` | string | required | Address the rule translates to. |
+| `spec.to.address` | IP address | required | Address the rule translates to. |
 | `spec.to.port` | integer from 1 to 65535 or null | `null` | Port the rule translates to, with `match.protocol`; null keeps the port. |
 | `spec.type` | one of `masquerade`, `snat`, `dnat` | required | `masquerade` translates the source of a leaving connection to the address of the interface it leaves through, `snat` to `to.address`, and `dnat` the destination of an arriving connection to `to.address`. |
 
@@ -548,19 +548,19 @@ A node's config may hold several, each with a name of its own. It has 12 [change
 | `spec.rules` | list of object | required | Rules in order: the first that matches a packet decides where it goes. |
 | `spec.rules[].match` | object | required | What the rule matches, at least one term: a rule for every packet says so, such as with `source: {cidrs: [0.0.0.0/0]}`. |
 | `spec.rules[].match.destination` | object or null | `null` | Destination addresses: the ranges of an AddressSet in `set`, or address ranges in `cidrs`; null matches every destination. |
-| `spec.rules[].match.destination.cidrs` | list of string or null | `null` | Address ranges that match; excludes `set`. In each family the rule matches the ranges of that family. |
+| `spec.rules[].match.destination.cidrs` | list of address range or null | `null` | Address ranges that match; excludes `set`. In each family the rule matches the ranges of that family. |
 | `spec.rules[].match.destination.set` | name of an AddressSet or null | `null` | AddressSet whose ranges match; excludes `cidrs`. |
-| `spec.rules[].match.destinationPorts` | list of integer from 1 to 65535 or string | `[]` | Destination ports, each a port or a range `<first>-<last>`, with the protocol `tcp`, `udp` or `sctp`; empty matches every port. |
+| `spec.rules[].match.destinationPorts` | list of integer from 1 to 65535 or range of ports | `[]` | Destination ports, each a port or a range `<first>-<last>`, with the protocol `tcp`, `udp` or `sctp`; empty matches every port. |
 | `spec.rules[].match.dscp` | list of integer from 0 to 63 | `[]` | DSCP values of the packets, each from 0 to 63; empty matches every value. |
 | `spec.rules[].match.family` | one of `ipv4`, `ipv6` or null | `null` | Address family the rule matches; null matches each family its protocol and addresses leave. |
 | `spec.rules[].match.protocol` | one of `tcp`, `udp`, `sctp`, `icmp`, `icmpv6`, `gre`, `esp`, `ah` or null | `null` | Protocol the rule matches; null matches every protocol. `icmp` is IPv4's and `icmpv6` IPv6's. |
 | `spec.rules[].match.source` | object or null | `null` | Source addresses: the ranges of an AddressSet in `set`, or address ranges in `cidrs`; null matches every source. |
-| `spec.rules[].match.source.cidrs` | list of string or null | `null` | Address ranges that match; excludes `set`. In each family the rule matches the ranges of that family. |
+| `spec.rules[].match.source.cidrs` | list of address range or null | `null` | Address ranges that match; excludes `set`. In each family the rule matches the ranges of that family. |
 | `spec.rules[].match.source.set` | name of an AddressSet or null | `null` | AddressSet whose ranges match; excludes `cidrs`. |
-| `spec.rules[].match.sourcePorts` | list of integer from 1 to 65535 or string | `[]` | Source ports, each a port or a range `<first>-<last>`, with the protocol `tcp`, `udp` or `sctp`; empty matches every port. |
+| `spec.rules[].match.sourcePorts` | list of integer from 1 to 65535 or range of ports | `[]` | Source ports, each a port or a range `<first>-<last>`, with the protocol `tcp`, `udp` or `sctp`; empty matches every port. |
 | `spec.rules[].to` | object | required | Where the traffic the rule matches goes: `vrf`, `table` or `nextHop`. |
 | `spec.rules[].to.nextHop` | object or null | `null` | Router the traffic leaves through, by the default route of a table of its own; excludes `vrf` and `table`. |
-| `spec.rules[].to.nextHop.address` | string | required | Address of the router the traffic leaves through, of the family the rule matches. |
+| `spec.rules[].to.nextHop.address` | IP address | required | Address of the router the traffic leaves through, of the family the rule matches. |
 | `spec.rules[].to.nextHop.interface` | string | required | Link the next hop is on, which a Network document names alone in its `[Match]` section; the route goes into that Network. |
 | `spec.rules[].to.nextHop.table` | integer from 1 to 4294967295 | required | Routing table of the next hop: a default route through it and an unreachable default route after it, so that the traffic is dropped while the link is down. It is none of 253, 254 and 255 and no VRF's table. No other next hop and no rule's `table` may name it either, which the outputs check when they render the config, at an apply or a `--dry-run`, and `chalkctl validate` does not. |
 | `spec.rules[].to.table` | integer from 1 to 4294967295 or null | `null` | Routing table that routes the traffic, by number: 254 is the main table. Not 255, the kernel's local table, and no VRF's table, which `vrf` names. A destination the table has no route to takes the route it would take without the policy; excludes `vrf` and `nextHop`. |
@@ -580,7 +580,7 @@ A node's config may hold several, each with a name of its own. It has a [change 
 | `spec.entries[].action` | one of `permit`, `deny` | `"permit"` | Whether a route the entry matches matches the list. |
 | `spec.entries[].ge` | integer from 0 to 128 or null | `null` | Shortest prefix length of a route within `prefix` that the entry matches, from the prefix's length; null matches `prefix` alone, unless `le` is given. |
 | `spec.entries[].le` | integer from 0 to 128 or null | `null` | Longest prefix length of a route within `prefix` that the entry matches; null matches `prefix` alone, unless `ge` is given. |
-| `spec.entries[].prefix` | string | required | Address range the entry matches. |
+| `spec.entries[].prefix` | address range | required | Address range the entry matches. |
 | `spec.family` | one of `ipv4`, `ipv6` | required | Address family of the list. |
 
 ### Resolver { #resolver }
@@ -593,12 +593,12 @@ A node's config may hold several, each with a name of its own. It has 13 [change
 
 | Field | Type | Default | Description |
 | --- | --- | --- | --- |
-| `spec.allow` | list of string | required | Address ranges of the clients the resolver answers; it refuses others, and the firewall accepts DNS from these alone. A family's whole range, `0.0.0.0/0` or `::/0`, answers whoever reaches the addresses of `listen`: an open resolver, if one of them faces the internet. Each item is unique within the list, compared as masked ranges. |
+| `spec.allow` | list of address range | required | Address ranges of the clients the resolver answers; it refuses others, and the firewall accepts DNS from these alone. A family's whole range, `0.0.0.0/0` or `::/0`, answers whoever reaches the addresses of `listen`: an open resolver, if one of them faces the internet. Each item is unique within the list, compared as masked ranges. |
 | `spec.dns64` | object or null | `null` | DNS64: AAAA records the resolver synthesises for IPv4-only names, and its answer for `ipv4only.arpa`; null synthesises none. |
-| `spec.dns64.prefix` | string | `"64:ff9b::/96"` | NAT64 prefix the resolver synthesises AAAA records in, from the A records of names that have no AAAA record. |
+| `spec.dns64.prefix` | address range | `"64:ff9b::/96"` | NAT64 prefix the resolver synthesises AAAA records in, from the A records of names that have no AAAA record. |
 | `spec.dnssec` | boolean | `true` | Whether the resolver validates DNSSEC with the root's trust anchor of the image. The forwarders then pass DNSSEC records on. |
-| `spec.forwarders` | list of string | `[]` | Resolvers the router sends its queries to; empty resolves names itself, from the root servers. Each item is unique within the list, compared as addresses. |
-| `spec.listen` | list of string | required | Addresses of the router in the resolver's VRF on which it answers on port 53, over UDP and TCP; the firewall accepts DNS on them from `allow`. Each item is unique within the list, compared as addresses. |
+| `spec.forwarders` | list of IP address | `[]` | Resolvers the router sends its queries to; empty resolves names itself, from the root servers. Each item is unique within the list, compared as addresses. |
+| `spec.listen` | list of IP address | required | Addresses of the router in the resolver's VRF on which it answers on port 53, over UDP and TCP; the firewall accepts DNS on them from `allow`. Each item is unique within the list, compared as addresses. |
 | `spec.localZones` | list of object | `[]` | Zones the resolver answers from its own records, 150 records in all at most. With `dns64`, no zone holds `ipv4only.arpa`, which DNS64 answers. Each item is unique within the list by `name`. |
 | `spec.localZones[].name` | string | required | Name of the zone, in lower case and without the root's dot. |
 | `spec.localZones[].records` | list of object | `[]` | Records the router answers for names of the zone. |

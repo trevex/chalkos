@@ -141,9 +141,19 @@ let
           }
           {
             type = "string";
-            pattern = "^(?:[1-9][0-9]{0,4}-[1-9][0-9]{0,4})$";
+            format = "port-range";
           }
         ];
+      }
+    else if n == types.address.name then
+      {
+        type = "string";
+        format = "ip";
+      }
+    else if n == types.prefix.name then
+      {
+        type = "string";
+        format = "cidr";
       }
     else if n == types.peerAS.name then
       {

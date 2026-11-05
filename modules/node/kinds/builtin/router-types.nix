@@ -17,8 +17,7 @@ in
   # An interface's name alone.
   interfaceName = types.strMatching "[A-Za-z0-9_.:@-]{1,15}";
   # An address range, which the rules read with cidr(), and an address, which they read with ip().
-  prefix = types.strMatching "[0-9A-Fa-f:.]+/[0-9]{1,3}";
-  address = types.strMatching "[0-9A-Fa-f:.]+";
+  inherit (kindTypes) prefix address;
   family = types.enum [
     "ipv4"
     "ipv6"
