@@ -6,9 +6,10 @@ description: "Send a router's forwarded traffic by source, port or DSCP into a V
 # Route traffic by policy
 
 A `PolicyRoute` document sends the traffic its rules match to a VRF's table, another table or a
-next hop. The router then routes that traffic by the target's table, whatever route its
-destination has in the table of the link it came in on. This page sends a LAN's traffic into a
-VRF, through a second uplink and back to the main table, and checks the result.
+next hop, which a `NextHop` document declares. The router then routes that traffic by the
+target's table, whatever route its destination has in the table of the link it came in on. This
+page sends a LAN's traffic into a VRF, through a second uplink and back to the main table, and
+checks the result.
 [Policy routing on a router](../how-it-works/router/policy-routing.md) explains how chalkos renders
 it.
 
@@ -23,9 +24,9 @@ examples configure a LAN router `r1` with these links:
 - `vt0`, in the VRF `transit` of table 100.
 
 Each link has a `Network` document. A VRF target needs its `VRF` document, as
-[Separate routing with VRFs](vrfs.md) describes. A next hop needs a `Network` that names the next
-hop's link alone in `[Match] Name=`. Keep the default reverse-path filter, `rpFilter: loose`, when
-traffic leaves through a next hop; [Limits](#limits) explains why.
+[Separate routing with VRFs](vrfs.md) describes. A next hop needs its `NextHop` document and a
+`Network` that names the next hop's link alone in `[Match] Name=`. Keep the default reverse-path
+filter, `rpFilter: loose`, when traffic leaves through a next hop; [Limits](#limits) explains why.
 
 ## Send a LAN's traffic into a VRF
 
@@ -115,20 +116,43 @@ spec:
   network: {address: [198.51.100.129/25, "2001:db8:b::1/64"], ipv6AcceptRA: false}
 ```
 
-A next hop has an address, its link and a table of its own, which no other next hop and no other
-rule names. The renderers check that table when the router renders its config, at a delivery or at
-`chalkctl apply-config --dry-run`; `chalkctl validate` does not. The address is a unicast address
-of the router at the far end, link-local ones included. The rules refuse an unspecified, loopback,
+A `NextHop` has an address, its link and a table of its own. The address is a unicast address of
+the router at the far end, link-local ones included. The rules refuse an unspecified, loopback,
 multicast or broadcast address, and an IPv4-mapped IPv6 address such as `::ffff:198.51.100.130`,
-which stands for an IPv4 router and is no IPv6 neighbour on a link. `21-wanb` has no gateway: the
-main table routes through `wana0` alone. The router fills each next hop's table with a default
-route through the next hop, followed by an unreachable default route. While `wanb0` is down, the
-servers' traffic hits the unreachable default and is dropped instead of falling back to the main
-table. networkd adds the route through the next hop again once the link comes up.
+which stands for an IPv4 router and is no IPv6 neighbour on a link. The link is not `lo`. The
+table is none of the kernel's tables 253, 254 and 255 and no VRF's table, and no other `NextHop`
+and no rule's `table` target takes it. `chalkctl validate` checks all of this.
+
+`21-wanb` has no gateway: the main table routes through `wana0` alone. The router fills each
+`NextHop`'s table with a default route through the next hop, followed by an unreachable default
+route. While `wanb0` is down, the servers' traffic hits the unreachable default and is dropped
+instead of falling back to the main table. networkd adds the route through the next hop again
+once the link comes up. A `NextHop` that no rule names gets its table and routes as well, but no
+packet is sent to that table.
 
 A rule with a next hop matches packets of the next hop's family alone. The first rule above
 matches IPv4 and the second IPv6, so each family of the servers goes through its own next hop.
 The rules refuse a rule whose `family` or addresses leave out the next hop's family.
+
+### Share a next hop
+
+Rules in one document or in several can name the same `NextHop`. They share its table, its route
+and its mark. The `PolicyRoute` `video` sends IPv4 of DSCP 34 from `lan1` through `wanb4` too:
+
+```yaml
+apiVersion: router.chalkos.dev/v1alpha1
+kind: PolicyRoute
+metadata: {name: video}
+spec:
+  in: {interfaces: [lan1]}
+  rules:
+    - match: {family: ipv4, dscp: [34]}
+      to: {nextHop: wanb4}
+```
+
+The router still keeps one table 200 with one route through `198.51.100.130`, and one rule of the
+kernel that sends the mark of table 200 there. To move both policies to another router, change
+the address of `wanb4` alone.
 
 ## Send traffic to another table
 
@@ -222,9 +246,10 @@ same as the rendered `0xff00ffff`. A rule that counts no packets has matched not
 ## Fix a refused delivery
 
 chalkctl refuses documents that do not fit together before it sends anything: a field that names
-a document the config lacks, and what the rules of the router kinds refuse.
-[The built-ins' reference](../reference/builtins.md#rules-policyroute) lists each
-`PolicyRoute` rule with its expression:
+a document the config lacks, a value that two documents must not share, and what the rules of the
+router kinds refuse. [The built-ins' reference](../reference/builtins.md#rules-policyroute) lists
+each `PolicyRoute` and [`NextHop`](../reference/builtins.md#rules-nexthop) rule with its
+expression:
 
 | Message | Fix |
 | --- | --- |
@@ -237,15 +262,19 @@ a document the config lacks, and what the rules of the router kinds refuse.
 | `PolicyRoute "lan" spec.rules: a rule matches no packet: its family, protocol, addresses and sets leave neither IPv4 nor IPv6` | Make the rule's family, protocol, addresses and sets agree on one family. |
 | `PolicyRoute "lan" spec.rules: a rule has ports without the protocol tcp, udp or sctp` | Set `protocol` to `tcp`, `udp` or `sctp`. |
 | `PolicyRoute "lan" spec.rules: a rule's to names a VRF, a table or a next hop, one of them` | Keep one target in `to`. |
-| `PolicyRoute "servers" spec.rules: a rule's next hop is of another family than the packets the rule matches` | Match the next hop's family, or take a next hop of the rule's family. |
+| `PolicyRoute "servers" spec.rules: a rule's next hop is of another family than the packets the rule matches` | Match the `NextHop`'s family, or name a `NextHop` of the rule's family. |
 | `PolicyRoute/lan: spec.rules[1].to.vrf: VRF "transit" does not exist` | Add the `VRF` document, or fix the name. |
+| `PolicyRoute/servers: spec.rules[0].to.nextHop: NextHop "wanb4" does not exist` | Add the `NextHop` document, or fix the name. |
 | `PolicyRoute "lan" spec.rules: a rule's table is 255, the kernel's local table, or a VRF's table; name the VRF in vrf, or take another table` | Name the VRF in `vrf`, or take another table. |
-| `PolicyRoute "servers" spec.rules: a next hop's table is 253, 254 or 255, the kernel's own, or a VRF's table; give the next hop a table of its own` | Take a table that is neither the kernel's nor a VRF's. |
-| `PolicyRoute "servers" spec.rules: a next hop's interface is lo, which no next hop is on; name the link the next hop is on` | Name the link the next hop is on in `interface`. |
-| `PolicyRoute "servers" spec.rules: the next hop ::ffff:198.51.100.130 is no unicast address of a router, or is an IPv4-mapped IPv6 address; give the router's address, an IPv4 one as IPv4` | Give the next hop's unicast address, an IPv4 address as IPv4. |
+| `PolicyRoute "lan" spec.rules: a rule's table 200 is the table of NextHop wanb4; name the NextHop in nextHop, or take another table` | Name the `NextHop` in `nextHop`, or take another table. |
+| `NextHop/wanb4, NextHop/wanb6: spec.table 200 is not unique; give each NextHop a table of its own` | Give each `NextHop` its own table. |
+| `NextHop "wanb4" spec.table: the table is 253, 254 or 255, the kernel's own; give the NextHop a table of its own` | Take a table that is not the kernel's. |
+| `NextHop "wanb4" spec.table: the table is that of VRF transit; give the NextHop a table of its own` | Take a table that no VRF uses. |
+| `NextHop "wanb4" spec.interface: the interface is lo, which no next hop is on; name the link the next hop is on` | Name the link the next hop is on in `interface`. |
+| `NextHop "wanb6" spec.address: the next hop ::ffff:198.51.100.130 is no unicast address of a router, or is an IPv4-mapped IPv6 address; give the router's address, an IPv4 one as IPv4` | Give the next hop's unicast address, an IPv4 address as IPv4. |
 
-The renderers of the outputs `router-nftables` and `networkd` check the rest, the next hops'
-tables, the interfaces of `in` against the VRFs' devices and what depends on the `Network`
+The renderers of the outputs `router-nftables` and `networkd` check the rest, the number of
+target tables, the interfaces of `in` against the VRFs' devices and what depends on the `Network`
 documents, before the delivery changes anything.
 `chalkctl validate` does not run them.
 A renderer's refusal fails the delivery, and `chalkctl logs r1` shows the reason on a line that
@@ -257,12 +286,11 @@ starts with `chalkos-render:`:
 | `PolicyRoute lan: n64-* matches n64-edge, the link of NAT64 edge, whose traffic Jool translates; name other links` | Narrow the glob, so it leaves out the NAT64's link. |
 | `PolicyRoute lan: the zone guest holds n*, which matches n64-guest, the link of NAT64 guest, whose traffic Jool translates; name the zone's other links in interfaces` | Name the zone's other links in `interfaces`, or narrow the `Network` that puts `n*` in the zone's VRF. |
 | `PolicyRoute lan: the zone core holds no link` | Give the zone a link, or name another zone. |
-| `PolicyRoute servers rule 2: table 201 is another next hop's, or a next hop's and a rule's; give each next hop a table of its own` | Give the next hop a table that no other target uses. |
-| `PolicyRoute servers rule 1: the next hop 198.51.100.130 is on wanb0, which no Network document names; give it one, which gets the next hop's route` | Add a `Network` that names the link in `Name=`. |
-| `PolicyRoute servers rule 1: Network 21-wan matches wanb0 and other links, which would take its policy routing too; give wanb0 a Network of its own` | Give the next hop's link a `Network` that names it alone. |
-| `PolicyRoute servers rule 1: Network 21-wanb may match wanb0 by other [Match] keys; name wanb0 in a Network that its Name= alone matches` | Drop the other `[Match]` keys, or add a `Network` of `Name=wanb0` alone that sorts first. |
-| `PolicyRoute lan, servers: Network 00-nic may match lo by other [Match] keys; name lo in a Network that its Name= alone matches` | Add a `Network` of `Name=lo` that sorts before `00-nic`. A `00-nic` without `Name=` may instead sort after `00-policy-routing`. |
-| `PolicyRoute lan, servers: Network 99-all matches lo and other links, which would take its policy routing too; give lo a Network of its own` | Add a `Network` of `Name=lo` that sorts before `99-all`. |
+| `NextHop wanb4 is on wanb0, which no Network document names; give the link one, which gets the next hop's route` | Add a `Network` that names the link in `Name=`. The renderer checks every `NextHop`, also one that no rule names. |
+| `NextHop wanb4: Network 21-wan matches wanb0 and other links, which would take its policy routing too; give wanb0 a Network of its own` | Give the next hop's link a `Network` that names it alone. |
+| `NextHop wanb4: Network 21-wanb may match wanb0 by other [Match] keys; name wanb0 in a Network that its Name= alone matches` | Drop the other `[Match]` keys, or add a `Network` of `Name=wanb0` alone that sorts first. |
+| `PolicyRoute lan, servers and NextHop wanb4, wanb6: Network 00-nic may match lo by other [Match] keys; name lo in a Network that its Name= alone matches` | Add a `Network` of `Name=lo` that sorts before `00-nic`. A `00-nic` without `Name=` may instead sort after `00-policy-routing`. |
+| `PolicyRoute lan, servers and NextHop wanb4, wanb6: Network 99-all matches lo and other links, which would take its policy routing too; give lo a Network of its own` | Add a `Network` of `Name=lo` that sorts before `99-all`. |
 | `Network 00-policy-routing takes the name of the policy routing's unit; rename the document` | Rename the `Network`. |
 | `the PolicyRoute documents send traffic to 256 tables, more than the 255 their marks tell apart` | Send the traffic to fewer tables. |
 
@@ -299,6 +327,7 @@ alone, sorted before it, takes the rules instead.
 - [Filter and translate traffic](firewall-and-nat.md) writes the zones and address sets the rules
   name.
 - [Separate routing with VRFs](vrfs.md) declares the VRFs a policy sends traffic into.
-- [Config kinds](../reference/kinds.md#policyroute) describes each field.
+- [Config kinds](../reference/kinds.md#policyroute) describes each field of `PolicyRoute` and
+  [of `NextHop`](../reference/kinds.md#nexthop).
 - [Built-ins](../reference/builtins.md#diagnostic-ip-rules) describes the diagnostics `ip-rules`
   and `routes`.

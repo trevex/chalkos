@@ -34,12 +34,14 @@ writes a line per family it matches, with the DSCP values in front, as nftables 
 ## A mark per target table
 
 A rule's target is a table: a VRF target is its VRF's table, a `table` target its table and a
-next hop its own table. The renderer refuses a next hop's table that another next hop or a
-`table` target takes; no rule checks it, so `chalkctl validate` does not either. The renderer
-sorts the distinct tables by number and gives the table at index `i` the mark `(i+1) << 16`. The
+`nextHop` target its `NextHop`'s table. The tables never collide. Each VRF and each `NextHop`
+declares a table that no other document of its kind takes, a `NextHop`'s table is no VRF's, and a
+`table` target is neither, which the schemas and the kinds' rules check before anything renders.
+Rules that name the same VRF, table or `NextHop` therefore share one target. The renderer sorts
+the distinct tables by number and gives the table at index `i` the mark `(i+1) << 16`. The
 example's tables 100, 200, 201 and 254 take the marks `0x10000`, `0x20000`, `0x30000` and
-`0x40000`. The marks use the bits `0x00ff0000`, so the documents can send traffic to 255 tables
-at most, and the renderer refuses more.
+`0x40000`. A `NextHop` that no rule names takes no mark. The marks use the bits `0x00ff0000`, so
+the documents can send traffic to 255 tables at most, and the renderer refuses more.
 
 The statement `meta mark set meta mark & 0xff00ffff | 0x00010000` sets these bits and keeps every
 other bit of the mark. `nft list ruleset` prints it as `meta mark & 0xff01ffff | 0x00010000`,
@@ -119,11 +121,12 @@ to such an address past that rule, so the chain leaves these packets unmarked, a
 
 ## networkd keeps the rules and the next hops' tables
 
-On a router image the output `networkd` reads the `PolicyRoute` documents, and
+On a router image the output `networkd` reads the `PolicyRoute` and `NextHop` documents, and
 `chalkos-render router-networkd` writes the kernel's rules and the next hops' tables into
-networkd's units. The rules and the unreachable defaults of each next hop's table go into the
-`Network` of `lo`. Without a `Network` of the config that matches `lo` by `Name=lo` alone, the
-renderer writes `00-policy-routing.network`:
+networkd's units. The rules and the unreachable defaults of each `NextHop`'s table go into the
+`Network` of `lo`. Every `NextHop` gets its table, also one that no rule names, so the units do
+not change when a rule starts or stops naming a `NextHop`. Without a `Network` of the config that
+matches `lo` by `Name=lo` alone, the renderer writes `00-policy-routing.network`:
 
 ```ini
 [Match]
@@ -196,11 +199,11 @@ route to takes the route it would take without the policy.
 
 ## A delivery reloads the firewall and networkd
 
-The outputs `router-nftables` and `networkd` both read the `PolicyRoute` documents. A delivery
-that changes them reloads `chalkos-firewall.service` and `systemd-networkd.service`, in no set
-order. A new target's traffic takes the route it had before until both have reloaded. A delivery
-that adds or removes a target table can renumber the marks. Until both reloads are done, a
-packet may take another target's table or the main table.
+The outputs `router-nftables` and `networkd` both read the `PolicyRoute` and `NextHop`
+documents. A delivery that changes them reloads `chalkos-firewall.service` and
+`systemd-networkd.service`, in no set order. A new target's traffic takes the route it had before
+until both have reloaded. A delivery that adds or removes a target table can renumber the marks.
+Until both reloads are done, a packet may take another target's table or the main table.
 
 ## Limits
 

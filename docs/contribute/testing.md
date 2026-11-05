@@ -225,7 +225,7 @@ Every check builds with `nix build`, and a change runs the checks of the parts i
 | The router's BGP: its kinds, `frr` output, FRR's unit, `pkg/router` | `rules`, `frr-credentials`, `eval`, `eval-kinds`, `go-unit`, `e2e-router` |
 | The router's NAT64 and resolvers: their kinds, the `jool` and `unbound` outputs, their units, `pkg/router` | `router-nat64`, `router-resolvers`, `router-firewall`, `rules`, `eval`, `eval-kinds`, `go-unit`, `image-size`, `e2e-router` |
 | The router's VRFs: the `VRF` kind, `router-networkd`, `chalkos-vrf` | `rules`, `eval`, `eval-kinds`, `go-unit`, `router-vrf`, `router-firewall`, `e2e-router` |
-| The router's policy routing: the `PolicyRoute` kind, its chain and units | `router-policy-routing`, `router-firewall`, `rules`, `eval`, `eval-kinds`, `go-unit`, `e2e-router` |
+| The router's policy routing: the `PolicyRoute` and `NextHop` kinds, their chain and units | `router-policy-routing`, `router-firewall`, `rules`, `eval`, `eval-kinds`, `go-unit`, `e2e-router` |
 | The router's DHCP and relays: the `DHCPSubnet` and `DHCPRelay` kinds, the `kea` and `dhcp-relay` outputs, their units, `pkg/router` | `router-dhcp`, `router-dhcp6`, `router-dhcp-instances`, `router-dhcp-relay`, `router-dhcp-relay-instances`, `router-firewall`, `rules`, `eval`, `eval-kinds`, `go-unit`, `e2e-router` |
 | An image's checker: `pkg/imagecheck`, `chalkd check` | `image-checker`, `go-unit`, `go-lint`, `e2e-upgrade` |
 | `templates/lab` | `template-lab` |
