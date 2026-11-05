@@ -9,7 +9,7 @@ import (
 // Parse takes nothing, or one report, and returns each refusal once, in the order printed; Encode
 // prints what Parse reads.
 func TestParse(t *testing.T) {
-	for _, empty := range []string{"", "\n", `{"refusals": []}`, `{"refusals": null}`} {
+	for _, empty := range []string{"", "\n", `{"refusals": []}`} {
 		if rs, err := Parse([]byte(empty)); err != nil || rs != nil {
 			t.Errorf("%q = %v, %v", empty, rs, err)
 		}
@@ -37,7 +37,17 @@ func TestParseRefuses(t *testing.T) {
 	ok := `{"kind": "Demo", "name": "one", "path": "spec.name", "message": "taken"}`
 	for name, c := range map[string]struct{ data, want string }{
 		"no JSON":          {"refuse Demo/one: spec.name: taken", "it is no report of refusals"},
-		"two reports":      {`{"refusals": []} {"refusals": []}`, "it holds more than one report of refusals"},
+		"two reports":      {`{"refusals": []} {"refusals": []}`, "it holds more after its report of refusals"},
+		"a closing brace":  {`{"refusals": []}}`, "it holds more after its report of refusals"},
+		"null":             {`null`, "it is no report of refusals"},
+		"no refusals":      {`{}`, "it is no report of refusals"},
+		"null refusals":    {`{"refusals": null}`, "it is no report of refusals"},
+		"a key's case":     {`{"Refusals": []}`, "it is no report of refusals"},
+		"a key twice":      {`{"refusals": [], "refusals": []}`, "it is no report of refusals"},
+		"a field's case":   {`{"refusals": [{"Kind": "Demo", "name": "one", "path": "spec.name", "message": "taken"}]}`, "refusal 1: it is no refusal"},
+		"a missing field":  {`{"refusals": [{"kind": "Demo", "name": "one", "path": "spec.name"}]}`, "refusal 1: it is no refusal"},
+		"a number":         {`{"refusals": [{"kind": "Demo", "name": "one", "path": "spec.name", "message": 1}]}`, "refusal 1: it is no refusal"},
+		"a null refusal":   {`{"refusals": [null]}`, "refusal 1: it is no refusal"},
 		"an unknown field": {`{"refusals": [], "warnings": []}`, "it is no report of refusals"},
 		"a lower kind":     {`{"refusals": [{"kind": "demo", "name": "one", "path": "spec.name", "message": "taken"}]}`, `refusal 1: kind "demo" is no kind`},
 		"a bad name":       {`{"refusals": [` + ok + `, {"kind": "Demo", "name": "One", "path": "spec.name", "message": "taken"}]}`, `refusal 2: name "One" is no document name`},
@@ -48,7 +58,7 @@ func TestParseRefuses(t *testing.T) {
 		"an escape":        {`{"refusals": [{"kind": "Demo", "name": "one", "path": "spec.name", "message": "\u001b[2J"}]}`, "refusal 1: the message holds a control character"},
 		"a C1 CSI":         {`{"refusals": [{"kind": "Demo", "name": "one", "path": "spec.name", "message": "\u009b2J"}]}`, "refusal 1: the message holds a control character"},
 		"a bidi override":  {`{"refusals": [{"kind": "Demo", "name": "one", "path": "spec.name", "message": "a\u202eb"}]}`, "refusal 1: the message holds a control character"},
-		"too long":        {`{"refusals": [` + strings.Repeat(ok+",", MaxReport/len(ok)) + ok + `]}`, "it holds more than 65536 bytes"},
+		"too long":         {`{"refusals": [` + strings.Repeat(ok+",", MaxReport/len(ok)) + ok + `]}`, "it holds more than 65536 bytes"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			if _, err := Parse([]byte(c.data)); err == nil || err.Error() != c.want {

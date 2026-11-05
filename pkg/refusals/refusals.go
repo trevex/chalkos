@@ -93,9 +93,10 @@ type Report struct {
 const MaxReport = 64 << 10
 
 // Parse reads what a program printed: nothing, or one Report and nothing after it. It returns
-// the refusals each once, in the order printed. A report outside the format, with a field it does
-// not know, a refusal Check refuses or more than MaxReport bytes, is an error of the program, which
-// says what is wrong and quotes no more than the kind, name or path Check refuses.
+// the refusals each once, in the order printed. A report outside the format, null, a report
+// without its list of refusals or with null, a field it does not know or spells in other case, a
+// refusal Check refuses or more than MaxReport bytes, is an error of the program, which says what
+// is wrong and quotes no more than the kind, name or path Check refuses.
 func Parse(data []byte) ([]Refusal, error) {
 	if len(data) > MaxReport {
 		return nil, fmt.Errorf("it holds more than %d bytes", MaxReport)
@@ -104,17 +105,25 @@ func Parse(data []byte) ([]Refusal, error) {
 		return nil, nil
 	}
 	dec := json.NewDecoder(bytes.NewReader(data))
-	dec.DisallowUnknownFields()
-	var rep Report
-	if err := dec.Decode(&rep); err != nil {
+	var raw json.RawMessage
+	if err := dec.Decode(&raw); err != nil {
 		return nil, errors.New("it is no report of refusals")
 	}
-	if dec.More() {
-		return nil, errors.New("it holds more than one report of refusals")
+	if len(bytes.TrimSpace(data[dec.InputOffset():])) != 0 {
+		return nil, errors.New("it holds more after its report of refusals")
+	}
+	rep, ok := fields(raw, "refusals")
+	var items []json.RawMessage
+	if !ok || json.Unmarshal(rep["refusals"], &items) != nil || items == nil {
+		return nil, errors.New("it is no report of refusals")
 	}
 	var out []Refusal
-	for i, r := range rep.Refusals {
-		if err := r.Check(); err != nil {
+	for i, item := range items {
+		r, err := parseRefusal(item)
+		if err == nil {
+			err = r.Check()
+		}
+		if err != nil {
 			return nil, fmt.Errorf("refusal %d: %w", i+1, err)
 		}
 		if !slices.Contains(out, r) {
@@ -122,6 +131,51 @@ func Parse(data []byte) ([]Refusal, error) {
 		}
 	}
 	return out, nil
+}
+
+// parseRefusal reads a refusal of a report: an object of the four string fields, each spelled as
+// Refusal's tags spell it.
+func parseRefusal(raw json.RawMessage) (Refusal, error) {
+	var r Refusal
+	f, ok := fields(raw, "kind", "name", "path", "message")
+	for _, x := range []struct {
+		key string
+		to  *string
+	}{{"kind", &r.Kind}, {"name", &r.Name}, {"path", &r.Path}, {"message", &r.Message}} {
+		if ok && json.Unmarshal(f[x.key], x.to) != nil {
+			ok = false
+		}
+	}
+	if !ok {
+		return Refusal{}, errors.New("it is no refusal")
+	}
+	return r, nil
+}
+
+// fields is the JSON object raw by its keys, when it holds exactly the keys given, compared by
+// case, unlike encoding/json's decoding into a struct; a key given twice is refused as well.
+func fields(raw json.RawMessage, keys ...string) (map[string]json.RawMessage, bool) {
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	if t, err := dec.Token(); err != nil || t != json.Delim('{') {
+		return nil, false
+	}
+	out := map[string]json.RawMessage{}
+	for dec.More() {
+		t, err := dec.Token()
+		key, isString := t.(string)
+		if err != nil || !isString || !slices.Contains(keys, key) {
+			return nil, false
+		}
+		if _, dup := out[key]; dup {
+			return nil, false
+		}
+		var v json.RawMessage
+		if err := dec.Decode(&v); err != nil {
+			return nil, false
+		}
+		out[key] = v
+	}
+	return out, len(out) == len(keys)
 }
 
 // Encode is the report of rs as a program prints it, on one line.
