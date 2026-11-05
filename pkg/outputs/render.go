@@ -68,9 +68,9 @@ func (d Definition) documents(in Input) []config.Document {
 }
 
 // A Failure is an output that could not be rendered, or whose check refused it. Its problem names
-// what failed and its exit status alone: what the program wrote to standard error goes to the
-// journal, since it can echo the documents it read. Refusals are what its renderer refused the
-// config for, which the problem lists too.
+// what failed and its exit status, or, for a renderer that refused the config, the refusals it
+// reported, which Refusals holds too. What a program wrote to standard error goes to the journal
+// alone, since it can echo the documents it read.
 type Failure struct {
 	Output, Problem string
 	Refusals        []refusals.Refusal
