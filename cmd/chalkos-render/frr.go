@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/trevex/chalkos/pkg/refusals"
+	"github.com/trevex/chalkos/pkg/router/derive"
 )
 
 // frrFile is the file renderFRR writes.
@@ -50,7 +51,7 @@ const (
 // password is a placeholder, @secret_<secret>.<key>@, that frr.service fills in from its
 // credentials. A node without a BGP document runs no BGP.
 func renderFRR(in map[string]any, out string) error {
-	d, err := readRouterDocuments(in)
+	d, err := derive.Build(documents(in))
 	if err != nil {
 		return err
 	}
@@ -66,7 +67,7 @@ func renderFRR(in map[string]any, out string) error {
 // hostName is a node name FRR's hostname takes.
 var hostName = regexp.MustCompile(`^[A-Za-z0-9]([A-Za-z0-9.-]{0,62})$`)
 
-func frrConfig(d routerDocuments, node string) (string, error) {
+func frrConfig(d derive.Model, node string) (string, error) {
 	var b strings.Builder
 	b.WriteString("! FRR's config, rendered by chalkos-render frr. frr.service fills in the passwords, and\n" +
 		"! frr-reload.py applies the changes.\n" +
@@ -78,7 +79,7 @@ func frrConfig(d routerDocuments, node string) (string, error) {
 	// The BGPPeer's rules refuse a peer whose VRF has no BGP document.
 	switch {
 	case len(d.BGP) == 0 && len(d.Peers) > 0:
-		return "", internalErrorf("the config holds BGPPeer documents but no BGP document")
+		return "", derive.InternalErrorf("the config holds BGPPeer documents but no BGP document")
 	case len(d.BGP) == 0:
 		b.WriteString("end\n")
 		return b.String(), nil
@@ -102,25 +103,25 @@ func frrConfig(d routerDocuments, node string) (string, error) {
 type frr struct {
 	// instances are the BGP documents, the default VRF's first and the others by VRF.
 	instances   []*instance
-	peers       []named[peerSpec]
-	prefixes    []named[prefixListSpec]
-	communities []named[communityListSpec]
-	policies    []named[routingPolicySpec]
+	peers       []derive.Named[derive.PeerSpec]
+	prefixes    []derive.Named[derive.PrefixListSpec]
+	communities []derive.Named[derive.CommunityListSpec]
+	policies    []derive.Named[derive.RoutingPolicySpec]
 	// families are the PrefixList documents' families, and large whether a CommunityList holds
 	// large communities, by name.
 	families map[string]string
 	large    map[string]bool
 	// entries are each PrefixList's entries as frr.conf writes them, by name.
 	entries map[string][]string
-	// policyNames holds the RoutingPolicy documents by name, which mustGet finds a reference in.
-	policyNames map[string]routingPolicySpec
+	// policyNames holds the RoutingPolicy documents by name, which MustGet finds a reference in.
+	policyNames map[string]derive.RoutingPolicySpec
 	// neighbours are the interfaces or the address of each peer, by peer name.
 	neighbours map[string][]neighbour
 	// links are the links the Network documents name, and membership tells the VRF networkd puts
 	// a link in.
 	links      []string
-	membership vrfMembership
-	// devices are the VRF devices, as vrfDevices finds them.
+	membership derive.Membership
+	// devices are the VRF devices, as Model.Devices finds them.
 	devices []string
 	// prependAS is the AS number the prepends of each RoutingPolicy with one repeat, by name.
 	prependAS map[string]uint32
@@ -131,8 +132,8 @@ type frr struct {
 // An instance is a BGP document: the BGP instance of one VRF, and the peers in that VRF.
 type instance struct {
 	name, vrf string
-	spec      bgpSpec
-	peers     []named[peerSpec]
+	spec      derive.BGPSpec
+	peers     []derive.Named[derive.PeerSpec]
 }
 
 // served is the instance of the VRF, nil when no BGP document serves it.
@@ -146,7 +147,7 @@ func (c *frr) served(vrf string) *instance {
 }
 
 // leak is what the instance imports of the family, nil for nothing.
-func (in *instance) leak(family string) *leakSpec {
+func (in *instance) leak(family string) *derive.LeakSpec {
 	if family == "ipv4" {
 		return in.spec.Import.IPv4
 	}
@@ -156,7 +157,7 @@ func (in *instance) leak(family string) *leakSpec {
 // profile is the BFD profile of the instance's timers: bfdProfile for the default VRF's, and
 // bfdProfile-<vrf> for another's.
 func (in *instance) profile() string {
-	if in.vrf == defaultVRF {
+	if in.vrf == derive.DefaultVRF {
 		return bfdProfile
 	}
 	return bfdProfile + "-" + in.vrf
@@ -178,12 +179,12 @@ func community(c string) (string, bool, error) {
 		bits = 32
 	}
 	if len(parts) < 2 || len(parts) > 3 {
-		return "", false, internalErrorf("%q is no community <AS>:<value> or large community <AS>:<value>:<value>", c)
+		return "", false, derive.InternalErrorf("%q is no community <AS>:<value> or large community <AS>:<value>:<value>", c)
 	}
 	for i, p := range parts {
 		n, err := strconv.ParseUint(p, 10, bits)
 		if err != nil {
-			return "", false, internalErrorf("%q is no community: its parts are numbers of %d bits", c, bits)
+			return "", false, derive.InternalErrorf("%q is no community: its parts are numbers of %d bits", c, bits)
 		}
 		parts[i] = strconv.FormatUint(n, 10)
 	}
@@ -255,14 +256,11 @@ var credential = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
 // would end.
 var description = regexp.MustCompile(`^[!-?A-~]+( [!-?A-~]+)*$`)
 
-// plainInterface is an interface's name without a glob.
-var plainInterface = regexp.MustCompile(`^[A-Za-z0-9_.:@-]{1,15}$`)
-
 // newFRR checks what the schemas and rules cannot see, expands each peer's interfaces against the
 // links the Network documents name, which are in its VRF, and notes the PrefixLists each VRF's
 // peers track. It trusts what chalkd checked before it renders, and guards with an internal error
 // what frr.conf writes unquoted, which a value could add a command to, and what would panic.
-func newFRR(d routerDocuments) (*frr, error) {
+func newFRR(d derive.Model) (*frr, error) {
 	c := &frr{
 		peers:       d.Peers,
 		prefixes:    d.Prefixes,
@@ -271,11 +269,11 @@ func newFRR(d routerDocuments) (*frr, error) {
 		families:    map[string]string{},
 		large:       map[string]bool{},
 		entries:     map[string][]string{},
-		policyNames: byName(d.RoutingPolicies),
+		policyNames: derive.ByName(d.RoutingPolicies),
 		neighbours:  map[string][]neighbour{},
 		links:       d.Links,
 		membership:  d.Membership,
-		devices:     vrfDevices(d),
+		devices:     d.Devices(),
 		prependAS:   map[string]uint32{},
 		tracked:     map[string]map[string][]string{},
 	}
@@ -291,7 +289,7 @@ func newFRR(d routerDocuments) (*frr, error) {
 	for _, l := range d.Prefixes {
 		entries, err := prefixEntries(l.Spec)
 		if err != nil {
-			return nil, within("PrefixList "+l.Name, err)
+			return nil, derive.Within("PrefixList "+l.Name, err)
 		}
 		c.families[l.Name] = l.Spec.Family
 		c.entries[l.Name] = entries
@@ -303,7 +301,7 @@ func newFRR(d routerDocuments) (*frr, error) {
 		for i, v := range l.Spec.Communities {
 			_, large, err := community(v)
 			if err != nil {
-				return nil, within("CommunityList "+l.Name, err)
+				return nil, derive.Within("CommunityList "+l.Name, err)
 			}
 			if i == 0 {
 				c.large[l.Name] = large
@@ -312,7 +310,7 @@ func newFRR(d routerDocuments) (*frr, error) {
 	}
 	for _, p := range d.RoutingPolicies {
 		if err := c.checkPolicy(p); err != nil {
-			return nil, within("RoutingPolicy "+p.Name, err)
+			return nil, derive.Within("RoutingPolicy "+p.Name, err)
 		}
 	}
 	for _, in := range c.instances {
@@ -327,16 +325,16 @@ func newFRR(d routerDocuments) (*frr, error) {
 	// in any VRF, so none takes a peer group's name.
 	owner, sessions := map[string]string{}, map[string]string{}
 	for _, p := range d.Peers {
-		vrf := vrfOf(p.Spec.VRF)
+		vrf := derive.VRFOf(p.Spec.VRF)
 		// The BGPPeer's rules refuse a peer of a VRF without a BGP document; without its
 		// instance the peer would have no block to sit in.
 		in := c.served(vrf)
 		if in == nil {
-			return nil, internalErrorf("BGPPeer %s runs in the VRF %s, which no BGP document serves", p.Name, vrf)
+			return nil, derive.InternalErrorf("BGPPeer %s runs in the VRF %s, which no BGP document serves", p.Name, vrf)
 		}
 		ns, err := c.peerNeighbours(p, vrf)
 		if err != nil {
-			return nil, within("BGPPeer "+p.Name, err)
+			return nil, derive.Within("BGPPeer "+p.Name, err)
 		}
 		for _, n := range ns {
 			key := vrf + " " + n.name
@@ -348,7 +346,7 @@ func newFRR(d routerDocuments) (*frr, error) {
 		}
 		c.neighbours[p.Name] = ns
 		in.peers = append(in.peers, p)
-		for fam, f := range map[string]*peerFamily{"ipv4": p.Spec.Families.IPv4, "ipv6": p.Spec.Families.IPv6} {
+		for fam, f := range map[string]*derive.PeerFamily{"ipv4": p.Spec.Families.IPv4, "ipv6": p.Spec.Families.IPv6} {
 			if f != nil && f.DefaultOriginateWhen != nil {
 				c.track(vrf, fam, *f.DefaultOriginateWhen)
 			}
@@ -367,19 +365,19 @@ func newFRR(d routerDocuments) (*frr, error) {
 
 // newInstance takes a BGP document. The schemas and the BGP kind's rules check its AS number, its
 // router ID, counts and timers; frr.conf writes the VRF's name and the router ID unquoted, so it
-// guards both: the VRF is a VRF document's, whose name decodeKind checked, unless it is the
+// guards both: the VRF is a VRF document's, whose name Build checked, unless it is the
 // default one, and the router ID is an IPv4 address, which a zone cannot follow.
-func newInstance(g named[bgpSpec], vrfs []named[vrfSpec]) (*instance, error) {
+func newInstance(g derive.Named[derive.BGPSpec], vrfs []derive.Named[derive.VRFSpec]) (*instance, error) {
 	b := g.Spec
-	in := &instance{name: g.Name, vrf: vrfOf(b.VRF), spec: b}
+	in := &instance{name: g.Name, vrf: derive.VRFOf(b.VRF), spec: b}
 	what := "BGP " + g.Name
-	if in.vrf != defaultVRF {
-		if _, err := mustGet(byName(vrfs), "VRF", in.vrf); err != nil {
-			return nil, within(what, err)
+	if in.vrf != derive.DefaultVRF {
+		if _, err := derive.MustGet(derive.ByName(vrfs), "VRF", in.vrf); err != nil {
+			return nil, derive.Within(what, err)
 		}
 	}
 	if a, err := netip.ParseAddr(b.RouterID); err != nil || !a.Is4() {
-		return nil, internalErrorf("%s: routerID %q is no IPv4 address", what, b.RouterID)
+		return nil, derive.InternalErrorf("%s: routerID %q is no IPv4 address", what, b.RouterID)
 	}
 	return in, nil
 }
@@ -391,11 +389,11 @@ func newInstance(g named[bgpSpec], vrfs []named[vrfSpec]) (*instance, error) {
 func (c *frr) checkNetworks(in *instance) error {
 	for _, n := range in.spec.Networks {
 		if _, err := netip.ParsePrefix(n.Prefix); err != nil {
-			return internalErrorf("BGP %s: network %q is no address range", in.name, n.Prefix)
+			return derive.InternalErrorf("BGP %s: network %q is no address range", in.name, n.Prefix)
 		}
 		if n.Policy != nil {
 			if err := c.policy(*n.Policy); err != nil {
-				return within(fmt.Sprintf("BGP %s: network %s", in.name, n.Prefix), err)
+				return derive.Within(fmt.Sprintf("BGP %s: network %s", in.name, n.Prefix), err)
 			}
 		}
 	}
@@ -410,7 +408,7 @@ func (c *frr) checkNetworks(in *instance) error {
 func (c *frr) checkImports(in *instance) error {
 	for _, f := range []struct {
 		family string
-		leak   *leakSpec
+		leak   *derive.LeakSpec
 	}{{"ipv4", in.spec.Import.IPv4}, {"ipv6", in.spec.Import.IPv6}} {
 		if f.leak == nil {
 			continue
@@ -418,12 +416,12 @@ func (c *frr) checkImports(in *instance) error {
 		what := fmt.Sprintf("BGP %s: import.%s", in.name, f.family)
 		for _, v := range f.leak.VRFs {
 			if c.served(v) == nil {
-				return internalErrorf("%s names the VRF %q, which no BGP document serves", what, v)
+				return derive.InternalErrorf("%s names the VRF %q, which no BGP document serves", what, v)
 			}
 		}
 		if f.leak.Policy != nil {
 			if err := c.policy(*f.leak.Policy); err != nil {
-				return within(what, err)
+				return derive.Within(what, err)
 			}
 		}
 	}
@@ -479,7 +477,7 @@ func (c *frr) prepends() error {
 			}
 		}
 		for _, p := range in.peers {
-			for _, f := range []*peerFamily{p.Spec.Families.IPv4, p.Spec.Families.IPv6} {
+			for _, f := range []*derive.PeerFamily{p.Spec.Families.IPv4, p.Spec.Families.IPv6} {
 				if f != nil {
 					use(f.Import, asn)
 					use(f.Export, asn)
@@ -522,22 +520,22 @@ func familyOf(a netip.Addr) string {
 // It guards the prepend's count too, which sizes a list. The RoutingPolicy's rules check the
 // number of terms, the PrefixLists' family, a rejecting term that sets nothing and an AS path's
 // length; the schema checks the actions and the communities.
-func (c *frr) checkPolicy(p named[routingPolicySpec]) error {
+func (c *frr) checkPolicy(p derive.Named[derive.RoutingPolicySpec]) error {
 	for i, t := range p.Spec.Terms {
 		term := fmt.Sprintf("term %d", i+1)
 		if l := t.Match.PrefixList; l != nil {
-			if _, err := mustGet(c.families, "PrefixList", *l); err != nil {
-				return within(term, err)
+			if _, err := derive.MustGet(c.families, "PrefixList", *l); err != nil {
+				return derive.Within(term, err)
 			}
 		}
 		if l := t.Match.CommunityList; l != nil {
-			if _, err := mustGet(c.large, "CommunityList", *l); err != nil {
-				return within(term, err)
+			if _, err := derive.MustGet(c.large, "CommunityList", *l); err != nil {
+				return derive.Within(term, err)
 			}
 		}
 		if r := t.Match.ASPath; r != nil {
 			if !asPathRegex.MatchString(*r) {
-				return internalErrorf("%s: asPath %q holds more than digits, single spaces and _^$.*+?()|{},-", term, *r)
+				return derive.InternalErrorf("%s: asPath %q holds more than digits, single spaces and _^$.*+?()|{},-", term, *r)
 			}
 			if err := checkASPath(*r); err != nil {
 				return refusals.Errorf("RoutingPolicy", p.Name, fmt.Sprintf("spec.terms[%d].match.asPath", i), "asPath %q is no regular expression bgpd compiles: %v", *r, err)
@@ -546,22 +544,22 @@ func (c *frr) checkPolicy(p named[routingPolicySpec]) error {
 		th := t.Then
 		for _, v := range append(slices.Clone(th.AddCommunities), th.RemoveCommunities...) {
 			if _, _, err := community(v); err != nil {
-				return within(term, err)
+				return derive.Within(term, err)
 			}
 		}
 		// The count sizes the list of AS numbers routeMaps writes: one below 0 would panic, and a
 		// large one would take the memory.
 		if th.Prepend != nil && (*th.Prepend < 1 || *th.Prepend > 10) {
-			return internalErrorf("%s: prepend %d lies outside 1 to 10", term, *th.Prepend)
+			return derive.InternalErrorf("%s: prepend %d lies outside 1 to 10", term, *th.Prepend)
 		}
 	}
 	return nil
 }
 
 // policy guards a reference to a RoutingPolicy, whose name frr.conf writes unquoted in the
-// route-map's: it names a RoutingPolicy document, whose name decodeKind checked.
+// route-map's: it names a RoutingPolicy document, whose name Build checked.
 func (c *frr) policy(name string) error {
-	_, err := mustGet(c.policyNames, "RoutingPolicy", name)
+	_, err := derive.MustGet(c.policyNames, "RoutingPolicy", name)
 	return err
 }
 
@@ -572,17 +570,17 @@ func (c *frr) policy(name string) error {
 // of a VRF's device is refused, and a link a glob expands to that is named like an address. The
 // BGPPeer's schema and rules check the rest of the peer, one of address, interface and
 // interfaces among it; peerNeighbours guards what frr.conf writes unquoted.
-func (c *frr) peerNeighbours(p named[peerSpec], vrf string) ([]neighbour, error) {
+func (c *frr) peerNeighbours(p derive.Named[derive.PeerSpec], vrf string) ([]neighbour, error) {
 	s := p.Spec
 	if s.Password != nil && (!credential.MatchString(s.Password.SecretRef.Name) || !credential.MatchString(s.Password.SecretRef.Key)) {
-		return nil, internalErrorf("the password's Secret %q and key %q are letters, digits, '.', '_' and '-' alone", s.Password.SecretRef.Name, s.Password.SecretRef.Key)
+		return nil, derive.InternalErrorf("the password's Secret %q and key %q are letters, digits, '.', '_' and '-' alone", s.Password.SecretRef.Name, s.Password.SecretRef.Key)
 	}
 	if s.Description != nil && !description.MatchString(*s.Description) {
-		return nil, internalErrorf("the description is printable ASCII characters but @, with single spaces between words")
+		return nil, derive.InternalErrorf("the description is printable ASCII characters but @, with single spaces between words")
 	}
 	for _, f := range []struct {
 		name string
-		fam  *peerFamily
+		fam  *derive.PeerFamily
 	}{{"ipv4", s.Families.IPv4}, {"ipv6", s.Families.IPv6}} {
 		if f.fam == nil {
 			continue
@@ -590,13 +588,13 @@ func (c *frr) peerNeighbours(p named[peerSpec], vrf string) ([]neighbour, error)
 		for _, policy := range []*string{f.fam.Import, f.fam.Export} {
 			if policy != nil {
 				if err := c.policy(*policy); err != nil {
-					return nil, within("families."+f.name, err)
+					return nil, derive.Within("families."+f.name, err)
 				}
 			}
 		}
 		if l := f.fam.DefaultOriginateWhen; l != nil {
-			if _, err := mustGet(c.families, "PrefixList", *l); err != nil {
-				return nil, within(fmt.Sprintf("families.%s: defaultOriginateWhen", f.name), err)
+			if _, err := derive.MustGet(c.families, "PrefixList", *l); err != nil {
+				return nil, derive.Within(fmt.Sprintf("families.%s: defaultOriginateWhen", f.name), err)
 			}
 		}
 	}
@@ -611,12 +609,12 @@ func (c *frr) peerNeighbours(p named[peerSpec], vrf string) ([]neighbour, error)
 		}
 		return []neighbour{{name: a.String()}}, nil
 	case s.Interface != nil:
-		if !plainInterface.MatchString(*s.Interface) {
-			return nil, internalErrorf("interface %q is no interface name", *s.Interface)
+		if !derive.PlainInterface.MatchString(*s.Interface) {
+			return nil, derive.InternalErrorf("interface %q is no interface name", *s.Interface)
 		}
 		// The BGPPeer's rules refuse an interface named like an address; the VRF of its link is
 		// the renderer's to find, as networkd puts it.
-		linkIn, err := c.membership.linkVRF(*s.Interface)
+		linkIn, err := c.membership.LinkVRF(*s.Interface)
 		if err != nil {
 			return nil, err
 		}
@@ -641,7 +639,7 @@ func (c *frr) peerNeighbours(p named[peerSpec], vrf string) ([]neighbour, error)
 		if len(globs) == 0 {
 			continue
 		}
-		linkIn, err := c.membership.linkVRF(link)
+		linkIn, err := c.membership.LinkVRF(link)
 		if err != nil {
 			return nil, err
 		}
@@ -673,7 +671,7 @@ func (c *frr) peerNeighbours(p named[peerSpec], vrf string) ([]neighbour, error)
 
 // peerField is the field of a BGPPeer that names its sessions, which a refusal of a session
 // names: one of address, interface and interfaces, as the BGPPeer's rules require.
-func peerField(s peerSpec) string {
+func peerField(s derive.PeerSpec) string {
 	switch {
 	case s.Address != nil:
 		return "spec.address"
@@ -690,7 +688,7 @@ func peerField(s peerSpec) string {
 func neighbourAddress(s string) (netip.Addr, error) {
 	a, err := netip.ParseAddr(s)
 	if err != nil || a.Zone() != "" {
-		return netip.Addr{}, internalErrorf("address %q is no address without a zone", s)
+		return netip.Addr{}, derive.InternalErrorf("address %q is no address without a zone", s)
 	}
 	return a, nil
 }
@@ -718,15 +716,15 @@ func ipWord(family string) string {
 // prefix's length and the family's longest prefix, which mgmtd would refuse with every list and
 // route-map of the config. It guards the action, which frr.conf writes unquoted, and a prefix
 // that is no address range, which it would write as invalid.
-func prefixEntries(l prefixListSpec) ([]string, error) {
+func prefixEntries(l derive.PrefixListSpec) ([]string, error) {
 	var entries []string
 	for _, e := range l.Entries {
 		p, err := netip.ParsePrefix(e.Prefix)
 		if err != nil {
-			return nil, internalErrorf("%q is no address range", e.Prefix)
+			return nil, derive.InternalErrorf("%q is no address range", e.Prefix)
 		}
 		if e.Action != "permit" && e.Action != "deny" {
-			return nil, internalErrorf("action %q is neither permit nor deny", e.Action)
+			return nil, derive.InternalErrorf("action %q is neither permit nor deny", e.Action)
 		}
 		match := p.Masked().String()
 		if e.GE != nil {
@@ -930,7 +928,7 @@ func (c *frr) trackingMaps(b *strings.Builder) bool {
 // needsAcceptAll reports whether a peer's family names no import or export policy.
 func (c *frr) needsAcceptAll() bool {
 	for _, p := range c.peers {
-		for _, f := range []*peerFamily{p.Spec.Families.IPv4, p.Spec.Families.IPv6} {
+		for _, f := range []*derive.PeerFamily{p.Spec.Families.IPv4, p.Spec.Families.IPv6} {
 			if f != nil && (f.Import == nil || f.Export == nil) {
 				return true
 			}
@@ -944,7 +942,7 @@ func (c *frr) needsAcceptAll() bool {
 // defaults track, each peer's policies and the routes the instance imports from other VRFs.
 func (c *frr) router(b *strings.Builder, in *instance) {
 	g := in.spec
-	if in.vrf == defaultVRF {
+	if in.vrf == derive.DefaultVRF {
 		fmt.Fprintf(b, "router bgp %d\n", g.ASN)
 	} else {
 		fmt.Fprintf(b, "router bgp %d vrf %s\n", g.ASN, in.vrf)
@@ -1051,7 +1049,7 @@ func (c *frr) router(b *strings.Builder, in *instance) {
 func (c *frr) bfd(b *strings.Builder) {
 	written := false
 	for _, in := range c.instances {
-		if !slices.ContainsFunc(in.peers, func(p named[peerSpec]) bool { return p.Spec.BFD }) {
+		if !slices.ContainsFunc(in.peers, func(p derive.Named[derive.PeerSpec]) bool { return p.Spec.BFD }) {
 			continue
 		}
 		if !written {

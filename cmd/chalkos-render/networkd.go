@@ -6,8 +6,9 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
-	"strconv"
 	"strings"
+
+	"github.com/trevex/chalkos/pkg/router/derive"
 )
 
 // unitSuffix is the file suffix of each networkd kind's units, in the order they are rendered.
@@ -32,7 +33,7 @@ func renderNetworkd(schemas string, in map[string]any, out string) error {
 		}
 		for _, d := range docs {
 			doc, _ := d.(map[string]any)
-			name, err := documentName(k.kind, doc)
+			name, err := derive.DocumentName(k.kind, doc)
 			if err != nil {
 				return err
 			}
@@ -76,10 +77,10 @@ func renderUnit(what string, doc, raw map[string]any) (string, error) {
 		// The schema refuses a spec property that lacks this annotation; a document that bypassed
 		// it must not render as an empty systemd section name.
 		if name == "" {
-			return "", internalErrorf("%s: spec.%s has no x-chalkos-networkd-section annotation", what, yamlName)
+			return "", derive.InternalErrorf("%s: spec.%s has no x-chalkos-networkd-section annotation", what, yamlName)
 		}
 		def := sectionDef(defs, prop)
-		for _, body := range oneOrMany(v) {
+		for _, body := range derive.OneOrMany(v) {
 			m, _ := body.(map[string]any)
 			sections = append(sections, section{name: name, body: m, def: def})
 		}
@@ -101,12 +102,12 @@ func renderUnit(what string, doc, raw map[string]any) (string, error) {
 			// As for the section name: a key with no annotation fails rather than render as an
 			// empty systemd key.
 			if key == "" {
-				return "", internalErrorf("%s: %s.%s has no x-chalkos-networkd-key annotation", what, sec.name, yamlKey)
+				return "", derive.InternalErrorf("%s: %s.%s has no x-chalkos-networkd-key annotation", what, sec.name, yamlKey)
 			}
-			for _, v := range oneOrMany(v) {
-				value, err := unitValue(v)
+			for _, v := range derive.OneOrMany(v) {
+				value, err := derive.UnitValue(v)
 				if err != nil {
-					return "", within(fmt.Sprintf("%s: %s.%s", what, sec.name, key), err)
+					return "", derive.Within(fmt.Sprintf("%s: %s.%s", what, sec.name, key), err)
 				}
 				lines = append(lines, [2]string{key, value})
 			}
@@ -119,26 +120,6 @@ func renderUnit(what string, doc, raw map[string]any) (string, error) {
 		b.WriteString("\n")
 	}
 	return b.String(), nil
-}
-
-// unitValue is v as a unit file writes it. The networkd schemas take a string without line
-// breaks, an integer or a boolean alone; a line break would end the key and let the rest set keys
-// or sections of its own, so it stays a guard.
-func unitValue(v any) (string, error) {
-	switch v := v.(type) {
-	case string:
-		if strings.ContainsAny(v, "\n\r") {
-			return "", internalErrorf("a value cannot span lines")
-		}
-		return v, nil
-	case bool:
-		// As NixOS's systemd-lib toOption renders a bool.
-		return strconv.FormatBool(v), nil
-	case json.Number:
-		return v.String(), nil
-	default:
-		return "", internalErrorf("%v is not a string, number or boolean", v)
-	}
 }
 
 // sectionDef is the definition a spec property refers to, by its own $ref or by that of a branch
@@ -158,13 +139,6 @@ func sectionDef(defs, prop map[string]any) map[string]any {
 		}
 	}
 	return nil
-}
-
-func oneOrMany(v any) []any {
-	if list, ok := v.([]any); ok {
-		return list
-	}
-	return []any{v}
 }
 
 func dig(m map[string]any, path ...string) map[string]any {

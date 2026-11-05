@@ -3,6 +3,8 @@ package main
 import (
 	"fmt"
 	"strings"
+
+	"github.com/trevex/chalkos/pkg/router/derive"
 )
 
 // sysctlFile is the file renderRouterSysctl writes. systemd-sysctl reads /run/sysctl.d with
@@ -15,15 +17,15 @@ const sysctlFile = "90-chalkos-router.conf"
 // covers both families, so the kernel's own IPv4 filter is off on every interface, also on those
 // that appear after systemd-sysctl ran.
 func renderRouterSysctl(in map[string]any, out string) error {
-	d, err := readRouterDocuments(in)
+	d, err := derive.Build(documents(in))
 	if err != nil {
 		return err
 	}
-	r := d.router()
+	r := d.Router()
 	// The schema takes l3 and l4 alone; another value would set the hash policy of neither.
 	hash, ok := map[string]int{"l3": 0, "l4": 1}[r.ECMPHash]
 	if !ok {
-		return internalErrorf("Router: ecmpHash %q is neither l3 nor l4", r.ECMPHash)
+		return derive.InternalErrorf("Router: ecmpHash %q is neither l3 nor l4", r.ECMPHash)
 	}
 	var b strings.Builder
 	b.WriteString("# The kernel settings of the node's Router, rendered by chalkos-render router-sysctl.\n")

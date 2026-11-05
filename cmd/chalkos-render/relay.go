@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/trevex/chalkos/pkg/refusals"
+	"github.com/trevex/chalkos/pkg/router/derive"
 )
 
 // The output dhcp-relay: the config of dnsmasq's DHCP relay of each VRF whose links DHCPRelay
@@ -23,7 +24,7 @@ const relayFile = "dnsmasq-relay.conf"
 
 // relayFileOf is the config file of the relay of vrf.
 func relayFileOf(vrf string) string {
-	if vrf == defaultVRF {
+	if vrf == derive.DefaultVRF {
 		return relayFile
 	}
 	return "dnsmasq-relay-" + vrf + ".conf"
@@ -43,27 +44,26 @@ type relayVRF struct {
 // relay, out/dnsmasq-relay.conf for the default VRF and out/dnsmasq-relay-<vrf>.conf for a VRF. A
 // node without a DHCPRelay gets no file and runs no relay.
 func renderDHCPRelay(in map[string]any, out string) error {
-	d, err := readRouterDocuments(in)
+	d, err := derive.Build(documents(in))
 	if err != nil {
 		return err
 	}
-	byKind, _ := in["documents"].(map[string]any)
-	units, err := networkUnits(d.VRFs, byKind)
+	units, err := d.Units()
 	if err != nil {
 		return err
 	}
-	devices := vrfDevices(d)
+	devices := d.Devices()
 	// families are the relays that relay each family in each VRF, by Kea's server of the same.
 	families := map[keaServer]string{}
 	byVRF := map[string]*relayVRF{}
 	for _, r := range d.DHCPRelays {
 		links, vrf, err := subnetLinks(d, devices, "DHCPRelay", r.Name, r.Spec.Interfaces, relayWords)
 		if err != nil {
-			return within("DHCPRelay "+r.Name, err)
+			return derive.Within("DHCPRelay "+r.Name, err)
 		}
 		servers, err := relayServers(r.Spec.Servers)
 		if err != nil {
-			return within("DHCPRelay "+r.Name, err)
+			return derive.Within("DHCPRelay "+r.Name, err)
 		}
 		v := byVRF[vrf]
 		if v == nil {
@@ -74,7 +74,7 @@ func renderDHCPRelay(in map[string]any, out string) error {
 			v.links = append(v.links, l)
 			network, err := linkNetwork(units, "DHCPRelay", r.Name, interfacePath(r.Spec.Interfaces, l), l, "its addresses")
 			if err != nil {
-				return within("DHCPRelay "+r.Name, err)
+				return derive.Within("DHCPRelay "+r.Name, err)
 			}
 			for _, v6 := range []bool{false, true} {
 				fam := servers[v6]
@@ -84,7 +84,7 @@ func renderDHCPRelay(in map[string]any, out string) error {
 				families[keaServer{vrf: vrf, v6: v6}] = r.Name
 				local, err := relayAddress(d, r.Name, interfacePath(r.Spec.Interfaces, l), network, l, v6)
 				if err != nil {
-					return within("DHCPRelay "+r.Name, err)
+					return derive.Within("DHCPRelay "+r.Name, err)
 				}
 				for _, s := range fam {
 					v.lines = append(v.lines, "dhcp-relay="+local.String()+","+s.String())
@@ -151,7 +151,7 @@ func relayServers(servers []string) (map[bool][]netip.Addr, error) {
 	for _, s := range servers {
 		a, err := netip.ParseAddr(s)
 		if err != nil || a.Zone() != "" {
-			return nil, internalErrorf("the server %q is no address without a zone", s)
+			return nil, derive.InternalErrorf("the server %q is no address without a zone", s)
 		}
 		out[a.Is6()] = append(out[a.Is6()], a)
 	}
@@ -162,10 +162,10 @@ func relayServers(servers []string) (map[bool][]netip.Addr, error) {
 // network gives it: the relay forwards a request from it, and the server picks the subnet of the
 // request's link by it, so a DHCPv6 relay takes a global one. A link without one refuses the
 // DHCPRelay called relay at path, the field that names the link.
-func relayAddress(d routerDocuments, relay, path, network, link string, v6 bool) (netip.Addr, error) {
+func relayAddress(d derive.Model, relay, path, network, link string, v6 bool) (netip.Addr, error) {
 	for _, a := range d.Addresses {
-		addr := a.prefix.Addr()
-		if a.network == network && addr.Is6() == v6 && relayUnicast(addr) {
+		addr := a.Prefix.Addr()
+		if a.Network == network && addr.Is6() == v6 && relayUnicast(addr) {
 			return addr, nil
 		}
 	}
@@ -180,7 +180,7 @@ func relayAddress(d routerDocuments, relay, path, network, link string, v6 bool)
 // serve in one VRF, or in two VRFs one of which is the default: dnsmasq's and Kea's sockets of a
 // family bind beside each other only when each is bound to its own VRF's device. families are the
 // relays of each family in each VRF.
-func relaysBesideServers(d routerDocuments, devices []string, families map[keaServer]string) error {
+func relaysBesideServers(d derive.Model, devices []string, families map[keaServer]string) error {
 	for _, s := range d.DHCPSubnets {
 		p, err := netip.ParsePrefix(s.Spec.Subnet)
 		if err != nil {
@@ -197,7 +197,7 @@ func relaysBesideServers(d routerDocuments, devices []string, families map[keaSe
 		})
 		for _, k := range keys {
 			relay := families[k]
-			if k.v6 != v6 || (k.vrf != vrf && k.vrf != defaultVRF && vrf != defaultVRF) {
+			if k.v6 != v6 || (k.vrf != vrf && k.vrf != derive.DefaultVRF && vrf != derive.DefaultVRF) {
 				continue
 			}
 			version := 4

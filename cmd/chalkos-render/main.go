@@ -21,6 +21,7 @@ import (
 	"text/template/parse"
 
 	"github.com/trevex/chalkos/pkg/refusals"
+	"github.com/trevex/chalkos/pkg/router/derive"
 )
 
 const usage = `usage: chalkos-render template TEMPLATE FILE
@@ -130,6 +131,12 @@ func readInput(r io.Reader) (map[string]any, error) {
 		return nil, fmt.Errorf("read the input: %w", err)
 	}
 	return in, nil
+}
+
+// documents are the documents of the input in, by kind.
+func documents(in map[string]any) map[string]any {
+	byKind, _ := in["documents"].(map[string]any)
+	return byKind
 }
 
 // funcs are the template's functions beside text/template's own.
@@ -250,7 +257,7 @@ func writeDocuments(kinds []string, in map[string]any, out string) error {
 		}
 		for _, d := range docs {
 			obj, _ := d.(map[string]any)
-			name, err := documentName(kind, obj)
+			name, err := derive.DocumentName(kind, obj)
 			if err != nil {
 				return err
 			}
@@ -264,18 +271,6 @@ func writeDocuments(kinds []string, in map[string]any, out string) error {
 		}
 	}
 	return nil
-}
-
-// documentName is the name of doc, a document of kind, which names a file of its own. Every
-// kind's schema holds metadata.name to a pattern without / or a leading dot, so a name that would
-// leave the output's directory is an internal error.
-func documentName(kind string, doc map[string]any) (string, error) {
-	meta, _ := doc["metadata"].(map[string]any)
-	name, _ := meta["name"].(string)
-	if name == "" || strings.ContainsAny(name, "/\x00") || name == "." || name == ".." {
-		return "", internalErrorf("a %s document has no name to name its file by", kind)
-	}
-	return name, nil
 }
 
 // writeFile writes data to out/rel, which must stay below out.

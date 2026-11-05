@@ -10,6 +10,7 @@ import (
 
 	"github.com/trevex/chalkos/pkg/dns"
 	"github.com/trevex/chalkos/pkg/refusals"
+	"github.com/trevex/chalkos/pkg/router/derive"
 )
 
 // unboundFile is the file renderUnbound writes for the default VRF's resolver; a VRF's resolver
@@ -22,7 +23,7 @@ const unboundControl = "/run/unbound/unbound.ctl"
 
 // unboundFileOf is the config file of the resolver of vrf.
 func unboundFileOf(vrf string) string {
-	if vrf == defaultVRF {
+	if vrf == derive.DefaultVRF {
 		return unboundFile
 	}
 	return "unbound-" + vrf + ".conf"
@@ -30,7 +31,7 @@ func unboundFileOf(vrf string) string {
 
 // unboundControlOf is the control socket of the resolver of vrf.
 func unboundControlOf(vrf string) string {
-	if vrf == defaultVRF {
+	if vrf == derive.DefaultVRF {
 		return unboundControl
 	}
 	return "/run/unbound-" + vrf + "/unbound.ctl"
@@ -60,30 +61,30 @@ func renderUnbound(trustAnchor, zoneFile string, in map[string]any, out string) 
 			return fmt.Errorf("%q is no absolute path of a file Unbound reads", f)
 		}
 	}
-	d, err := readRouterDocuments(in)
+	d, err := derive.Build(documents(in))
 	if err != nil {
 		return err
 	}
-	declared := map[string]bool{defaultVRF: true}
+	declared := map[string]bool{derive.DefaultVRF: true}
 	for _, v := range d.VRFs {
 		declared[v.Name] = true
 	}
 	for _, r := range d.Resolvers {
 		// The VRF names a file and a control socket. A VRF document's name holds the characters
-		// decodeKind takes alone.
-		vrf := vrfOf(r.Spec.VRF)
-		if _, err := mustGet(declared, "VRF", vrf); err != nil {
-			return within("Resolver "+r.Name, err)
+		// Build takes alone.
+		vrf := derive.VRFOf(r.Spec.VRF)
+		if _, err := derive.MustGet(declared, "VRF", vrf); err != nil {
+			return derive.Within("Resolver "+r.Name, err)
 		}
-		if !plainInterface.MatchString(vrf) {
-			return internalErrorf("Resolver %s: the VRF %q is no VRF's name", r.Name, vrf)
+		if !derive.PlainInterface.MatchString(vrf) {
+			return derive.InternalErrorf("Resolver %s: the VRF %q is no VRF's name", r.Name, vrf)
 		}
 		if err := checkListenVRF(d, r, vrf); err != nil {
 			return err
 		}
 		text, err := unboundConfig(r.Name, r.Spec, vrf, trustAnchor, zoneFile)
 		if err != nil {
-			return within("Resolver "+r.Name, err)
+			return derive.Within("Resolver "+r.Name, err)
 		}
 		if err := writeFile(out, unboundFileOf(vrf), []byte(text)); err != nil {
 			return err
@@ -95,7 +96,7 @@ func renderUnbound(trustAnchor, zoneFile string, in map[string]any, out string) 
 // checkListenVRF refuses an address of r's listen that Network documents give only to links of
 // other VRFs than vrf: the resolver's sockets are bound to vrf and never see its queries. An
 // address the documents do not give, such as one from DHCP, passes.
-func checkListenVRF(d routerDocuments, r named[resolverSpec], vrf string) error {
+func checkListenVRF(d derive.Model, r derive.Named[derive.ResolverSpec], vrf string) error {
 	for i, l := range r.Spec.Listen {
 		a, err := netip.ParseAddr(l)
 		if err != nil {
@@ -104,13 +105,13 @@ func checkListenVRF(d routerDocuments, r named[resolverSpec], vrf string) error 
 		var others []string
 		mine := false
 		for _, n := range d.Addresses {
-			if n.prefix.Addr() != a {
+			if n.Prefix.Addr() != a {
 				continue
 			}
-			if v := d.networkVRFOf(n.network); v == vrf {
+			if v := d.VRFOfNetwork(n.Network); v == vrf {
 				mine = true
 			} else {
-				others = appendNew(others, "Network "+n.network+" in VRF "+v)
+				others = appendNew(others, "Network "+n.Network+" in VRF "+v)
 			}
 		}
 		if !mine && len(others) > 0 {
@@ -121,10 +122,10 @@ func checkListenVRF(d routerDocuments, r named[resolverSpec], vrf string) error 
 }
 
 // unboundConfig is Unbound's config of r, the spec of the Resolver called name, which serves vrf.
-func unboundConfig(name string, r resolverSpec, vrf, trustAnchor, zoneFile string) (string, error) {
+func unboundConfig(name string, r derive.ResolverSpec, vrf, trustAnchor, zoneFile string) (string, error) {
 	var b strings.Builder
 	from := "the node's Resolver"
-	if vrf != defaultVRF {
+	if vrf != derive.DefaultVRF {
 		from = "the Resolver of VRF " + vrf
 	}
 	b.WriteString("# Unbound's config, rendered by chalkos-render unbound from " + from + ".\n" +
@@ -163,9 +164,9 @@ func unboundConfig(name string, r resolverSpec, vrf, trustAnchor, zoneFile strin
 		fmt.Fprintf(&b, "  trust-anchor-file: %q\n", trustAnchor)
 	}
 	if r.DNS64 != nil {
-		p, err := nat64Prefix(r.DNS64.Prefix)
+		p, err := derive.NAT64Prefix(r.DNS64.Prefix)
 		if err != nil {
-			return "", within("dns64", err)
+			return "", derive.Within("dns64", err)
 		}
 		fmt.Fprintf(&b, "  dns64-prefix: %s\n", p)
 		// The zone of ipv4only.arpa below holds no signatures.
@@ -177,7 +178,7 @@ func unboundConfig(name string, r resolverSpec, vrf, trustAnchor, zoneFile strin
 	for i, z := range r.LocalZones {
 		lines, err := localZoneLines(name, i, z, records)
 		if err != nil {
-			return "", within(fmt.Sprintf("local zone %d", i+1), err)
+			return "", derive.Within(fmt.Sprintf("local zone %d", i+1), err)
 		}
 		for _, l := range lines {
 			b.WriteString("  " + l + "\n")
@@ -193,7 +194,7 @@ func unboundConfig(name string, r resolverSpec, vrf, trustAnchor, zoneFile strin
 		for _, a := range r.Forwarders {
 			addr, err := resolverAddress(a)
 			if err != nil {
-				return "", within("forwarders", err)
+				return "", derive.Within("forwarders", err)
 			}
 			fmt.Fprintf(&b, "  forward-addr: %s\n", addr)
 		}
@@ -207,18 +208,18 @@ func unboundConfig(name string, r resolverSpec, vrf, trustAnchor, zoneFile strin
 // firewall's ruleset write them as netip prints them. It guards, with an internal error, an empty
 // listen or allow, for which the firewall would open port 53 on every address of the router or to
 // every client.
-func resolverAddresses(r resolverSpec) ([]netip.Addr, []netip.Prefix, error) {
+func resolverAddresses(r derive.ResolverSpec) ([]netip.Addr, []netip.Prefix, error) {
 	if len(r.Listen) == 0 {
-		return nil, nil, internalErrorf("listen names no address, so the firewall would accept DNS on every address of the router")
+		return nil, nil, derive.InternalErrorf("listen names no address, so the firewall would accept DNS on every address of the router")
 	}
 	if len(r.Allow) == 0 {
-		return nil, nil, internalErrorf("allow names no range, so the firewall would accept DNS from every client")
+		return nil, nil, derive.InternalErrorf("allow names no range, so the firewall would accept DNS from every client")
 	}
 	var listen []netip.Addr
 	for _, a := range r.Listen {
 		addr, err := resolverAddress(a)
 		if err != nil {
-			return nil, nil, within("listen", err)
+			return nil, nil, derive.Within("listen", err)
 		}
 		listen = append(listen, addr)
 	}
@@ -226,7 +227,7 @@ func resolverAddresses(r resolverSpec) ([]netip.Addr, []netip.Prefix, error) {
 	for _, a := range r.Allow {
 		p, err := netip.ParsePrefix(a)
 		if err != nil {
-			return nil, nil, internalErrorf("allow: %q is no address range", a)
+			return nil, nil, derive.InternalErrorf("allow: %q is no address range", a)
 		}
 		allow = append(allow, p.Masked())
 	}
@@ -239,7 +240,7 @@ func resolverAddresses(r resolverSpec) ([]netip.Addr, []netip.Prefix, error) {
 func resolverAddress(a string) (netip.Addr, error) {
 	addr, err := netip.ParseAddr(a)
 	if err != nil || addr.Zone() != "" {
-		return netip.Addr{}, internalErrorf("%q is no address without a zone", a)
+		return netip.Addr{}, derive.InternalErrorf("%q is no address without a zone", a)
 	}
 	return addr, nil
 }
@@ -258,22 +259,22 @@ type renderedRecords struct {
 // stands between double quotes, and a record between single quotes with a TXT record's text
 // between double quotes; it guards, with an internal error, names and data that would end those
 // quotes, start a comment or add a line, and a type the config would hold unquoted.
-func localZoneLines(resolver string, zone int, z localZone, seen renderedRecords) ([]string, error) {
+func localZoneLines(resolver string, zone int, z derive.LocalZone, seen renderedRecords) ([]string, error) {
 	if !dns.IsName(z.Name) {
-		return nil, internalErrorf("%q is no DNS name in lower case without the root's dot", z.Name)
+		return nil, derive.InternalErrorf("%q is no DNS name in lower case without the root's dot", z.Name)
 	}
 	if !slices.Contains(localZoneTypes, z.Type) {
-		return nil, internalErrorf("%s: type %q is none of %s", z.Name, z.Type, strings.Join(localZoneTypes, ", "))
+		return nil, derive.InternalErrorf("%s: type %q is none of %s", z.Name, z.Type, strings.Join(localZoneTypes, ", "))
 	}
 	lines := []string{fmt.Sprintf("local-zone: \"%s.\" %s", z.Name, z.Type)}
 	for i, r := range z.Records {
 		at := fmt.Sprintf("%s: record %d", z.Name, i+1)
 		if !dns.IsName(r.Name) {
-			return nil, internalErrorf("%s: %q is no DNS name in lower case without the root's dot", at, r.Name)
+			return nil, derive.InternalErrorf("%s: %q is no DNS name in lower case without the root's dot", at, r.Name)
 		}
 		value, err := recordValue(r.Type, r.Value)
 		if err != nil {
-			return nil, within(at, err)
+			return nil, derive.Within(at, err)
 		}
 		key := fmt.Sprintf("%s. %s %s", r.Name, r.Type, value)
 		if seen.keys[key] {
@@ -294,7 +295,7 @@ func localZoneLines(resolver string, zone int, z localZone, seen renderedRecords
 // guards, with an internal error, data that dns.IsRecordData refuses, as the rules do.
 func recordValue(t, v string) (string, error) {
 	if !dns.IsRecordData(t, v) {
-		return "", internalErrorf("%q is no %s record's data", v, t)
+		return "", derive.InternalErrorf("%q is no %s record's data", v, t)
 	}
 	switch t {
 	case "A", "AAAA":

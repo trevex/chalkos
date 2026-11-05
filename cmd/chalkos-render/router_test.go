@@ -16,6 +16,7 @@ import (
 	"testing"
 
 	"github.com/trevex/chalkos/pkg/config"
+	"github.com/trevex/chalkos/pkg/router/derive"
 	"github.com/trevex/chalkos/pkg/schema"
 )
 
@@ -191,34 +192,11 @@ func TestRouterStrictVRFGolden(t *testing.T) {
 	golden(t, "vrf-strict.nft", renderedFile(t, []string{"router-nftables", "50000"}, input, rulesetFile))
 }
 
-// A node without a Router document renders the kind's defaults, as the schema gives them.
-func TestDefaultRouterMatchesTheSchema(t *testing.T) {
-	s, err := schema.LoadSchemas(routerSchemas)
-	if err != nil {
-		t.Fatal(err)
-	}
-	filled, err := s.Default(map[string]any{"apiVersion": config.RouterAPI, "kind": "Router", "metadata": map[string]any{"name": "router"}, "spec": map[string]any{}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	data, err := json.Marshal(filled["spec"])
-	if err != nil {
-		t.Fatal(err)
-	}
-	var fromSchema routerSpec
-	if err := json.Unmarshal(data, &fromSchema); err != nil {
-		t.Fatal(err)
-	}
-	if !reflect.DeepEqual(fromSchema, defaultRouter()) {
-		t.Errorf("the schema's defaults %+v, defaultRouter %+v", fromSchema, defaultRouter())
-	}
-}
-
 // An opening of a service renders after chalkd's port: a line per family of its sources and
 // destinations, or one without either, scoped to its interfaces; a family its sources or its
 // destinations lack has no line.
 func TestRouterOpenings(t *testing.T) {
-	d, err := readRouterDocuments(map[string]any{})
+	d, err := derive.Build(nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -227,9 +205,9 @@ func TestRouterOpenings(t *testing.T) {
 		t.Fatal(err)
 	}
 	fw.openings = []opening{
-		{comment: "BGPPeer fabric", protocol: "tcp", ports: []portRange{"179"}, interfaces: []string{"eth1", "eth2"}},
-		{comment: "BGPPeer far", protocol: "tcp", ports: []portRange{"179"}, sources: []string{"192.0.2.9/32", "2001:db8::9/128"}},
-		{comment: "Resolver resolver", protocol: "udp", ports: []portRange{"53"}, sources: []string{"192.0.2.0/24", "2001:db8::/32"}, destinations: []string{"2001:db8:ffff::1/128"}},
+		{comment: "BGPPeer fabric", protocol: "tcp", ports: []derive.PortRange{"179"}, interfaces: []string{"eth1", "eth2"}},
+		{comment: "BGPPeer far", protocol: "tcp", ports: []derive.PortRange{"179"}, sources: []string{"192.0.2.9/32", "2001:db8::9/128"}},
+		{comment: "Resolver resolver", protocol: "udp", ports: []derive.PortRange{"53"}, sources: []string{"192.0.2.0/24", "2001:db8::/32"}, destinations: []string{"2001:db8:ffff::1/128"}},
 	}
 	text, err := fw.ruleset()
 	if err != nil {
@@ -250,20 +228,20 @@ func TestRouterOpenings(t *testing.T) {
 // address, and BFD's multi-hop port from its address alone.
 func TestBGPOpenings(t *testing.T) {
 	addr, link := "192.0.2.9", "eth1"
-	got, err := bgpOpenings([]named[peerSpec]{
-		{Name: "far", Spec: peerSpec{Address: &addr, BFD: true}},
-		{Name: "near", Spec: peerSpec{Interface: &link, BFD: true}},
-		{Name: "plain", Spec: peerSpec{Interfaces: []string{"swp*"}}},
+	got, err := bgpOpenings([]derive.Named[derive.PeerSpec]{
+		{Name: "far", Spec: derive.PeerSpec{Address: &addr, BFD: true}},
+		{Name: "near", Spec: derive.PeerSpec{Interface: &link, BFD: true}},
+		{Name: "plain", Spec: derive.PeerSpec{Interfaces: []string{"swp*"}}},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	want := []opening{
-		{comment: "BGPPeer far", protocol: "tcp", ports: []portRange{"179"}, sources: []string{"192.0.2.9/32"}},
-		{comment: "BGPPeer far", protocol: "udp", ports: []portRange{"3784", "3785", "4784"}, sources: []string{"192.0.2.9/32"}},
-		{comment: "BGPPeer near", protocol: "tcp", ports: []portRange{"179"}, interfaces: []string{"eth1"}},
-		{comment: "BGPPeer near", protocol: "udp", ports: []portRange{"3784", "3785"}, interfaces: []string{"eth1"}},
-		{comment: "BGPPeer plain", protocol: "tcp", ports: []portRange{"179"}, interfaces: []string{"swp*"}},
+		{comment: "BGPPeer far", protocol: "tcp", ports: []derive.PortRange{"179"}, sources: []string{"192.0.2.9/32"}},
+		{comment: "BGPPeer far", protocol: "udp", ports: []derive.PortRange{"3784", "3785", "4784"}, sources: []string{"192.0.2.9/32"}},
+		{comment: "BGPPeer near", protocol: "tcp", ports: []derive.PortRange{"179"}, interfaces: []string{"eth1"}},
+		{comment: "BGPPeer near", protocol: "udp", ports: []derive.PortRange{"3784", "3785"}, interfaces: []string{"eth1"}},
+		{comment: "BGPPeer plain", protocol: "tcp", ports: []derive.PortRange{"179"}, interfaces: []string{"swp*"}},
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("bgpOpenings =\n%+v\nwant\n%+v", got, want)
@@ -274,13 +252,13 @@ func TestBGPOpenings(t *testing.T) {
 // It guards, with an internal error, values that would add to the ruleset and an empty listen or
 // allow, which would open the port wider.
 func TestResolverOpenings(t *testing.T) {
-	got, err := resolverOpenings([]named[resolverSpec]{
-		{Name: "resolver", Spec: resolverSpec{Listen: []string{"2001:db8:ffff::1", "192.0.2.1"}, Allow: []string{"2001:db8::1/32", "192.0.2.0/24"}}},
+	got, err := resolverOpenings([]derive.Named[derive.ResolverSpec]{
+		{Name: "resolver", Spec: derive.ResolverSpec{Listen: []string{"2001:db8:ffff::1", "192.0.2.1"}, Allow: []string{"2001:db8::1/32", "192.0.2.0/24"}}},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	dns := opening{comment: "Resolver resolver", ports: []portRange{"53"}, sources: []string{"2001:db8::/32", "192.0.2.0/24"}, destinations: []string{"2001:db8:ffff::1/128", "192.0.2.1/32"}}
+	dns := opening{comment: "Resolver resolver", ports: []derive.PortRange{"53"}, sources: []string{"2001:db8::/32", "192.0.2.0/24"}, destinations: []string{"2001:db8:ffff::1/128", "192.0.2.1/32"}}
 	udp, tcp := dns, dns
 	udp.protocol, tcp.protocol = "udp", "tcp"
 	if want := []opening{udp, tcp}; !reflect.DeepEqual(got, want) {
@@ -288,11 +266,11 @@ func TestResolverOpenings(t *testing.T) {
 	}
 	// A VRF's resolver opens its port on the VRF's device; resolverOpenings checks the VRF's name,
 	// and the output unbound that a VRF document declares it.
-	got, err = resolverOpenings([]named[resolverSpec]{{Name: "guest", Spec: resolverSpec{VRF: ptr("guest"), Listen: []string{"2001:db8:3::1"}, Allow: []string{"2001:db8:3::/64"}}}})
+	got, err = resolverOpenings([]derive.Named[derive.ResolverSpec]{{Name: "guest", Spec: derive.ResolverSpec{VRF: ptr("guest"), Listen: []string{"2001:db8:3::1"}, Allow: []string{"2001:db8:3::/64"}}}})
 	if err != nil || len(got) != 2 || got[0].vrf != "guest" || got[1].vrf != "guest" {
 		t.Errorf("resolverOpenings of a VRF's resolver = %+v, %v", got, err)
 	}
-	if _, err := resolverOpenings([]named[resolverSpec]{{Name: "bad", Spec: resolverSpec{VRF: ptr("a b"), Listen: []string{"2001:db8:3::1"}, Allow: []string{"2001:db8:3::/64"}}}}); err == nil || !strings.Contains(err.Error(), `internal error: Resolver bad: the VRF "a b" is no VRF's name`) {
+	if _, err := resolverOpenings([]derive.Named[derive.ResolverSpec]{{Name: "bad", Spec: derive.ResolverSpec{VRF: ptr("a b"), Listen: []string{"2001:db8:3::1"}, Allow: []string{"2001:db8:3::/64"}}}}); err == nil || !strings.Contains(err.Error(), `internal error: Resolver bad: the VRF "a b" is no VRF's name`) {
 		t.Errorf("err = %v", err)
 	}
 	for spec, want := range map[string]string{
@@ -442,11 +420,11 @@ func TestUnboundAccessControl(t *testing.T) {
 		`["2001:db8::/32"]`: "  access-control: 0.0.0.0/0 refuse\n  access-control: ::/0 refuse\n  access-control: 2001:db8::/32 allow\n",
 		`["::/0"]`:          "  access-control: 0.0.0.0/0 refuse\n  access-control: ::/0 refuse\n  access-control: ::/0 allow\n",
 	} {
-		var r resolverSpec
+		var r derive.ResolverSpec
 		if err := json.Unmarshal([]byte(`{"listen": ["2001:db8:ffff::1"], "allow": `+allow+`}`), &r); err != nil {
 			t.Fatal(err)
 		}
-		text, err := unboundConfig("main", r, defaultVRF, testTrustAnchor, testZoneFile)
+		text, err := unboundConfig("main", r, derive.DefaultVRF, testTrustAnchor, testZoneFile)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -699,35 +677,6 @@ func TestCheckASPath(t *testing.T) {
 	}
 }
 
-// mustGet gives the target of a reference the input holds, and names one it lacks as an internal
-// error: chalkd refuses a config whose references do not resolve before it renders.
-func TestMustGet(t *testing.T) {
-	tables := map[string]uint32{"tenant": 100}
-	if got, err := mustGet(tables, "VRF", "tenant"); err != nil || got != 100 {
-		t.Errorf("mustGet(tenant) = %d, %v, want 100", got, err)
-	}
-	want := `internal error: the input holds no VRF "lab", which a reference names; chalkd checks references before it renders`
-	if _, err := mustGet(tables, "VRF", "lab"); err == nil || err.Error() != want {
-		t.Errorf("mustGet(lab) = %v, want %s", err, want)
-	}
-}
-
-// The links the Network documents name are the plain names of their [Match] sections' Name=; a
-// value whose first name starts with ! inverts all of its names, as systemd reads it, and names
-// none.
-func TestNetworkLinks(t *testing.T) {
-	network := func(match any) any { return map[string]any{"spec": map[string]any{"match": match}} }
-	got := networkLinks(map[string]any{"Network": []any{
-		network(map[string]any{"name": "swp1 swp2"}),
-		network([]any{map[string]any{"name": []any{"eth0", "!eth1 eth2"}}, map[string]any{"name": "swp* eth3 !eth4"}}),
-		network(map[string]any{"name": "!eth5 eth6"}),
-		network(map[string]any{"name": []any{"eth7", ""}}),
-	}})
-	if want := []string{"eth0", "eth3", "swp1", "swp2"}; !slices.Equal(got, want) {
-		t.Errorf("networkLinks = %v, want %v", got, want)
-	}
-}
-
 // routerDoc is a document of a router kind with the spec given in JSON, its numbers exact.
 func routerDoc(t *testing.T, kind, name, spec string) any {
 	t.Helper()
@@ -749,18 +698,6 @@ func refused(t *testing.T, args []string, docs map[string][]any, want string) {
 	}
 	if _, err := render(t, args, string(input)); err == nil || !strings.Contains(err.Error(), want) {
 		t.Errorf("err = %v, want %q", err, want)
-	}
-}
-
-// Jool's instance takes a prefix and a pool entry with their host bits cleared, as the rules
-// compare them.
-func TestJoolMasks(t *testing.T) {
-	got, err := joolInstances([]named[nat64Spec]{{Name: "edge", Spec: nat64Spec{Prefix: "64:ff9b::1/96", Pool4: []poolEntry{{Prefix: "192.0.2.9/30", Ports: "61001-65535", Protocols: []string{"tcp"}}}}}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if p, e := got[0].Global.Pool6, got[0].Pool4[0].Prefix; p != "64:ff9b::/96" || e != "192.0.2.8/30" {
-		t.Errorf("pool6 %s, pool4 %s, want 64:ff9b::/96 and 192.0.2.8/30", p, e)
 	}
 }
 
@@ -820,21 +757,30 @@ func TestJoolRefusals(t *testing.T) {
 // protocol of Jool's own words, whatever else the document names, and an entry of none of them is
 // an internal error, not an entry the pool drops.
 func TestJoolProtocols(t *testing.T) {
-	instances := func(protocols ...string) ([]joolInstance, error) {
-		return joolInstances([]named[nat64Spec]{{Name: "edge", Spec: nat64Spec{Prefix: "64:ff9b::/96", Pool4: []poolEntry{{Prefix: "192.0.2.8/30", Ports: "61001-65535", Protocols: protocols}}}}})
+	nat64 := func(protocols string) map[string][]any {
+		return map[string][]any{"NAT64": {routerDoc(t, "NAT64", "edge", `{"prefix": "64:ff9b::/96", "pool4": [{"prefix": "192.0.2.8/30", "ports": "61001-65535", "protocols": [`+protocols+`]}]}`)}}
 	}
-	got, err := instances("icmp", "tcp\", \"mark\": \"1", "tcp")
+	input, err := json.Marshal(map[string]any{"node": map[string]any{"name": "r1"}, "documents": nat64(`"icmp", "tcp\", \"mark\": \"1", "tcp"`)})
 	if err != nil {
 		t.Fatal(err)
 	}
+	out, err := render(t, []string{"jool"}, string(input))
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(filepath.Join(out, "edge.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got joolInstance
+	if err := json.Unmarshal(data, &got); err != nil {
+		t.Fatal(err)
+	}
 	want := []joolPool4{{"TCP", "192.0.2.8/30", "61001-65535"}, {"ICMP", "192.0.2.8/30", "61001-65535"}}
-	if !slices.Equal(got[0].Pool4, want) {
-		t.Errorf("pool4 = %v, want %v", got[0].Pool4, want)
+	if !slices.Equal(got.Pool4, want) {
+		t.Errorf("pool4 = %v, want %v", got.Pool4, want)
 	}
-	const refusal = "internal error: NAT64 edge: pool entry 1 names no protocol Jool takes"
-	if _, err := instances("tcp\", \"mark\": \"1"); err == nil || !strings.HasPrefix(err.Error(), refusal) {
-		t.Errorf("err = %v, want %q", err, refusal)
-	}
+	refused(t, []string{"jool"}, nat64(`"tcp\", \"mark\": \"1"`), "internal error: NAT64 edge: pool entry 1 names no protocol Jool takes")
 }
 
 // Each NAT64 renders Jool's file and its link's: an explicit pool's prefixes are routed to the
@@ -1040,11 +986,11 @@ func TestUnboundPerVRF(t *testing.T) {
 // in a VRF is opened by the VRF's device and its address, and a peer of the VRF named default by
 // iifname as one of no VRF.
 func TestVRFPeerOpenings(t *testing.T) {
-	tenant, def, addr := "tenant", defaultVRF, "192.0.2.9"
-	openings, err := bgpOpenings([]named[peerSpec]{
-		{Name: "leaves", Spec: peerSpec{Interfaces: []string{"swp*"}, VRF: &tenant}},
-		{Name: "spines", Spec: peerSpec{Interfaces: []string{"eth*"}, VRF: &def}},
-		{Name: "far", Spec: peerSpec{Address: &addr, VRF: &tenant, BFD: true}},
+	tenant, def, addr := "tenant", derive.DefaultVRF, "192.0.2.9"
+	openings, err := bgpOpenings([]derive.Named[derive.PeerSpec]{
+		{Name: "leaves", Spec: derive.PeerSpec{Interfaces: []string{"swp*"}, VRF: &tenant}},
+		{Name: "spines", Spec: derive.PeerSpec{Interfaces: []string{"eth*"}, VRF: &def}},
+		{Name: "far", Spec: derive.PeerSpec{Address: &addr, VRF: &tenant, BFD: true}},
 	})
 	if err != nil {
 		t.Fatal(err)

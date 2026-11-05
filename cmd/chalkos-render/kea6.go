@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/trevex/chalkos/pkg/refusals"
+	"github.com/trevex/chalkos/pkg/router/derive"
 )
 
 // The DHCPv6 part of the output kea: Kea's DHCPv6 server of each VRF whose links IPv6 DHCPSubnet
@@ -21,7 +22,7 @@ import (
 // against the router's addresses and routes in the VRF and the link's router advertisements. The
 // rules have checked the rest of the subnet, one link and the delegated range apart from the
 // subnet among it.
-func serveSubnet6(d routerDocuments, units []networkUnit, devices []string, s named[dhcpSubnetSpec], p netip.Prefix) (servedSubnet, error) {
+func serveSubnet6(d derive.Model, units []derive.Unit, devices []string, s derive.Named[derive.DHCPSubnetSpec], p netip.Prefix) (servedSubnet, error) {
 	sub := servedSubnet{name: s.Name, spec: s.Spec, prefix: p.Masked()}
 	sub.id = subnetID6(sub.prefix)
 	var err error
@@ -40,18 +41,18 @@ func serveSubnet6(d routerDocuments, units []networkUnit, devices []string, s na
 		// length no longer than the range's makes negative, a shift Go panics on.
 		r, err := netip.ParsePrefix(pd.Prefix)
 		if err != nil || pd.Length <= r.Bits() {
-			return sub, internalErrorf("prefixDelegation's prefix %q is no range shorter than its length %d", pd.Prefix, pd.Length)
+			return sub, derive.InternalErrorf("prefixDelegation's prefix %q is no range shorter than its length %d", pd.Prefix, pd.Length)
 		}
 		sub.delegated, sub.length = r.Masked(), pd.Length
 		// A route of a delegated prefix would take the router's own address on a link of the VRF
 		// away from the link.
 		for _, a := range d.Addresses {
-			vrf, ok := d.Membership.Networks[a.network]
+			vrf, ok := d.Membership.Networks[a.Network]
 			if !ok {
-				vrf = defaultVRF
+				vrf = derive.DefaultVRF
 			}
-			if vrf == sub.vrf && sub.delegated.Contains(a.prefix.Addr()) {
-				return sub, refusals.Errorf("DHCPSubnet", sub.name, "spec.prefixDelegation.prefix", "prefixDelegation's prefix %s holds %s, the address Network %s gives a link of VRF %s", sub.delegated, a.prefix.Addr(), a.network, vrf)
+			if vrf == sub.vrf && sub.delegated.Contains(a.Prefix.Addr()) {
+				return sub, refusals.Errorf("DHCPSubnet", sub.name, "spec.prefixDelegation.prefix", "prefixDelegation's prefix %s holds %s, the address Network %s gives a link of VRF %s", sub.delegated, a.Prefix.Addr(), a.Network, vrf)
 			}
 		}
 		if err := delegatesNoRoute(d, sub); err != nil {
@@ -68,20 +69,20 @@ func serveSubnet6(d routerDocuments, units []networkUnit, devices []string, s na
 // subnet's VRF: a static route of a Network of the VRF's links, or a NAT64's prefix. A route of a
 // delegated prefix would replace such a route of the same prefix and shadow a longer one; a
 // route of a wider range is shadowed by it instead, as it should be.
-func delegatesNoRoute(d routerDocuments, sub servedSubnet) error {
+func delegatesNoRoute(d derive.Model, sub servedSubnet) error {
 	for _, network := range slices.Sorted(maps.Keys(d.Networks)) {
 		vrf, ok := d.Membership.Networks[network]
 		if !ok {
-			vrf = defaultVRF
+			vrf = derive.DefaultVRF
 		}
 		if vrf != sub.vrf {
 			continue
 		}
-		for _, s := range oneOrMany(d.Networks[network]["route"]) {
+		for _, s := range derive.OneOrMany(d.Networks[network]["route"]) {
 			sec, _ := s.(map[string]any)
-			for _, v := range oneOrMany(sec["destination"]) {
+			for _, v := range derive.OneOrMany(sec["destination"]) {
 				text, _ := v.(string)
-				text = strings.Trim(text, unitWhitespace)
+				text = strings.Trim(text, derive.UnitWhitespace)
 				p, err := netip.ParsePrefix(text)
 				if err != nil {
 					a, err := netip.ParseAddr(text)
@@ -97,7 +98,7 @@ func delegatesNoRoute(d routerDocuments, sub servedSubnet) error {
 		}
 	}
 	for _, n := range d.NAT64 {
-		vrf := defaultVRF
+		vrf := derive.DefaultVRF
 		if n.Spec.VRF != nil {
 			vrf = *n.Spec.VRF
 		}
@@ -118,7 +119,7 @@ func delegatesNoRoute(d routerDocuments, sub servedSubnet) error {
 // networkd sends advertisements on a link whose [Network] has IPv6SendRA=yes, with the flags of
 // its [IPv6SendRA] section, and reads the former names IPv6PrefixDelegation= and
 // [IPv6PrefixDelegation] as well.
-func advertised(d routerDocuments, units []networkUnit, sub servedSubnet) error {
+func advertised(d derive.Model, units []derive.Unit, sub servedSubnet) error {
 	link := sub.links[0]
 	at := interfacePath(sub.spec.Interfaces, link)
 	network, err := linkNetwork(units, "DHCPSubnet", sub.name, at, link, "its router advertisements")
@@ -147,9 +148,9 @@ func advertised(d routerDocuments, units []networkUnit, sub servedSubnet) error 
 func unitBool(spec map[string]any, keys ...[2]string) bool {
 	b := false
 	for _, k := range keys {
-		for _, s := range oneOrMany(spec[k[0]]) {
+		for _, s := range derive.OneOrMany(spec[k[0]]) {
 			sec, _ := s.(map[string]any)
-			for _, v := range oneOrMany(sec[k[1]]) {
+			for _, v := range derive.OneOrMany(sec[k[1]]) {
 				if parsed, ok := systemdBool(v); ok {
 					b = parsed
 				}
@@ -170,7 +171,7 @@ func systemdBool(v any) (bool, bool) {
 	case json.Number:
 		text = v.String()
 	case string:
-		text = strings.ToLower(strings.Trim(v, unitWhitespace))
+		text = strings.ToLower(strings.Trim(v, derive.UnitWhitespace))
 	default:
 		return false, false
 	}
@@ -181,22 +182,6 @@ func systemdBool(v any) (bool, bool) {
 		return false, true
 	}
 	return false, false
-}
-
-// networkSpecs are the specs of the Network documents of byKind, by name.
-func networkSpecs(byKind map[string]any) map[string]map[string]any {
-	out := map[string]map[string]any{}
-	docs, _ := byKind["Network"].([]any)
-	for _, d := range docs {
-		doc, _ := d.(map[string]any)
-		name, err := documentName("Network", doc)
-		if err != nil {
-			continue
-		}
-		spec, _ := doc["spec"].(map[string]any)
-		out[name] = spec
-	}
-	return out
 }
 
 // subnetID6 is Kea's number for the IPv6 subnet p: FNV-1a of its address and length, which

@@ -7,6 +7,8 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/trevex/chalkos/pkg/router/derive"
 )
 
 // kea6Docs are a LAN router's documents with the DHCPSubnet documents given: lan0 holds
@@ -212,8 +214,8 @@ func TestKea6DelegatesAddressesOfOtherVRFs(t *testing.T) {
 // Two subnets of one server whose ranges lie apart but whose numbers in Kea are the same, as two
 // hashes may be, are refused.
 func TestKeaSameNumber(t *testing.T) {
-	a := servedSubnet{name: "office6", vrf: defaultVRF, prefix: mustPrefix("2001:db8:1::/64"), id: 7}
-	b := servedSubnet{name: "lab6", vrf: defaultVRF, prefix: mustPrefix("2001:db8:2::/64"), id: 7}
+	a := servedSubnet{name: "office6", vrf: derive.DefaultVRF, prefix: mustPrefix("2001:db8:1::/64"), id: 7}
+	b := servedSubnet{name: "lab6", vrf: derive.DefaultVRF, prefix: mustPrefix("2001:db8:2::/64"), id: 7}
 	want := "DHCPSubnet/lab6: spec.subnet: DHCPSubnet office6 and DHCPSubnet lab6 get the same number 7 in Kea; change one subnet's range"
 	if err := apart(a, b); err == nil || err.Error() != want {
 		t.Errorf("apart = %v; want %s", err, want)

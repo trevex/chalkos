@@ -2,13 +2,13 @@ package main
 
 import (
 	"fmt"
-	"maps"
 	"net/netip"
 	"slices"
 	"strconv"
 	"strings"
 
 	"github.com/trevex/chalkos/pkg/refusals"
+	"github.com/trevex/chalkos/pkg/router/derive"
 )
 
 // rulesetFile is the file renderRouterNftables writes.
@@ -23,7 +23,7 @@ func renderRouterNftables(port string, closed bool, in map[string]any, out strin
 	if err != nil || p == 0 {
 		return fmt.Errorf("%q is no TCP port of chalkd", port)
 	}
-	d, err := readRouterDocuments(in)
+	d, err := derive.Build(documents(in))
 	if err != nil {
 		return err
 	}
@@ -57,7 +57,7 @@ func renderRouterNftables(port string, closed bool, in map[string]any, out strin
 type opening struct {
 	comment    string
 	protocol   string
-	ports      []portRange
+	ports      []derive.PortRange
 	interfaces []string
 	// vrf is the VRF of the service, "" for the default VRF. The input hook sees a packet from a
 	// VRF's link with the VRF's device as iifname and the link as sdifname.
@@ -71,7 +71,7 @@ type opening struct {
 // and 4784 of multi-hop ones from an address peer; a peer on a link is one hop away. A peer of a
 // VRF is opened in its VRF alone. The BGPPeer's rules make a peer name one of address, interface
 // and interfaces, and the output frr refuses a peer on a VRF's device.
-func bgpOpenings(peers []named[peerSpec]) ([]opening, error) {
+func bgpOpenings(peers []derive.Named[derive.PeerSpec]) ([]opening, error) {
 	var out []opening
 	for _, p := range peers {
 		what := "BGPPeer " + p.Name
@@ -81,7 +81,7 @@ func bgpOpenings(peers []named[peerSpec]) ([]opening, error) {
 		case s.Address != nil:
 			a, err := neighbourAddress(*s.Address)
 			if err != nil {
-				return nil, within(what, err)
+				return nil, derive.Within(what, err)
 			}
 			o.sources = []string{netip.PrefixFrom(a, a.BitLen()).String()}
 		case s.Interface != nil:
@@ -89,9 +89,9 @@ func bgpOpenings(peers []named[peerSpec]) ([]opening, error) {
 		default:
 			o.interfaces = s.Interfaces
 		}
-		if vrf := vrfOf(s.VRF); vrf != defaultVRF {
-			if !plainInterface.MatchString(vrf) {
-				return nil, internalErrorf("%s: the VRF %q is no VRF's name", what, vrf)
+		if vrf := derive.VRFOf(s.VRF); vrf != derive.DefaultVRF {
+			if !derive.PlainInterface.MatchString(vrf) {
+				return nil, derive.InternalErrorf("%s: the VRF %q is no VRF's name", what, vrf)
 			}
 			o.vrf = vrf
 		}
@@ -102,11 +102,11 @@ func bgpOpenings(peers []named[peerSpec]) ([]opening, error) {
 			}
 		}
 		bgp := o
-		bgp.protocol, bgp.ports = "tcp", []portRange{"179"}
+		bgp.protocol, bgp.ports = "tcp", []derive.PortRange{"179"}
 		out = append(out, bgp)
 		if s.BFD {
 			bfd := o
-			bfd.protocol, bfd.ports = "udp", []portRange{"3784", "3785"}
+			bfd.protocol, bfd.ports = "udp", []derive.PortRange{"3784", "3785"}
 			if s.Address != nil {
 				bfd.ports = append(bfd.ports, "4784")
 			}
@@ -118,19 +118,19 @@ func bgpOpenings(peers []named[peerSpec]) ([]opening, error) {
 
 // resolverOpenings are DNS's UDP and TCP port 53 of each Resolver, from its clients' ranges to the
 // addresses it listens on, in its VRF alone; the default VRF's sockets take nothing from VRFs.
-func resolverOpenings(resolvers []named[resolverSpec]) ([]opening, error) {
+func resolverOpenings(resolvers []derive.Named[derive.ResolverSpec]) ([]opening, error) {
 	var out []opening
 	for _, r := range resolvers {
 		what := "Resolver " + r.Name
 		listen, allow, err := resolverAddresses(r.Spec)
 		if err != nil {
-			return nil, within(what, err)
+			return nil, derive.Within(what, err)
 		}
-		o := opening{comment: what, ports: []portRange{"53"}}
+		o := opening{comment: what, ports: []derive.PortRange{"53"}}
 		// The input hook sees a packet from a VRF's link with the VRF's device as iifname.
-		if vrf := vrfOf(r.Spec.VRF); vrf != defaultVRF {
-			if !plainInterface.MatchString(vrf) {
-				return nil, internalErrorf("%s: the VRF %q is no VRF's name", what, vrf)
+		if vrf := derive.VRFOf(r.Spec.VRF); vrf != derive.DefaultVRF {
+			if !derive.PlainInterface.MatchString(vrf) {
+				return nil, derive.InternalErrorf("%s: the VRF %q is no VRF's name", what, vrf)
 			}
 			o.vrf = vrf
 		}
@@ -151,24 +151,24 @@ func resolverOpenings(resolvers []named[resolverSpec]) ([]opening, error) {
 
 // firewall is what the ruleset is rendered from.
 type firewall struct {
-	router   routerSpec
+	router   derive.RouterSpec
 	zones    map[string]zoneLinks
-	sets     map[string]addressSetSpec
+	sets     map[string]derive.AddressSetSpec
 	setNames []string
-	policies []named[policySpec]
-	nat      []named[natSpec]
+	policies []derive.Named[derive.PolicySpec]
+	nat      []derive.Named[derive.NATSpec]
 	openings []opening
 	// ctZones are the VRFs with a conntrack zone and links, by name.
 	ctZones []ctZone
 	// nat64 are the NAT64 instances, whose links the forward chain and source NAT treat apart.
-	nat64 []nat64Instance
+	nat64 []derive.NAT64Instance
 	// vrfDevices are the VRFs' devices, on which the strict reverse-path filter accepts
 	// neighbour discovery from link-local sources, and the filter a marked packet's second pass.
 	vrfDevices []string
 	// tables are the VRF and NextHop documents' tables, which the PolicyRoute documents' targets
 	// resolve to, targets the tables of the PolicyRoute documents, with their marks, and policy
 	// the lines of the chain policy-routing.
-	tables  policyTables
+	tables  derive.PolicyTables
 	targets []routeTarget
 	policy  []string
 	port    int
@@ -182,16 +182,16 @@ type ctZone struct {
 	links []string
 }
 
-func newFirewall(d routerDocuments, port int, closed bool) (*firewall, error) {
+func newFirewall(d derive.Model, port int, closed bool) (*firewall, error) {
 	f := &firewall{
-		router:   d.router(),
-		sets:     map[string]addressSetSpec{},
+		router:   d.Router(),
+		sets:     map[string]derive.AddressSetSpec{},
 		policies: d.Policies,
 		nat:      d.NAT,
 		port:     port,
 		closed:   closed,
 	}
-	devices := vrfDevices(d)
+	devices := d.Devices()
 	f.vrfDevices = devices
 	if m := f.router.Management.Interfaces; m != nil {
 		if err := checkInterfaces("Router: management.interfaces", m); err != nil {
@@ -213,7 +213,7 @@ func newFirewall(d routerDocuments, port int, closed bool) (*firewall, error) {
 		return nil, err
 	}
 	f.zones = zones
-	if f.nat64, err = nat64Instances(d); err != nil {
+	if f.nat64, err = d.NAT64Instances(); err != nil {
 		return nil, err
 	}
 	if err := f.nat64LinksUnnamed(d); err != nil {
@@ -224,14 +224,14 @@ func newFirewall(d routerDocuments, port int, closed bool) (*firewall, error) {
 			continue
 		}
 		z := *v.Spec.ConntrackZone
-		links, err := d.Membership.links(v.Name)
+		links, err := d.Membership.Links(v.Name)
 		if err != nil {
 			return nil, err
 		}
 		// A NAT64's link carries the VRF's connections into and out of its namespace.
 		for _, n := range f.nat64 {
-			if n.vrf == v.Name {
-				links = appendNew(links, nat64LinkPrefix+n.name)
+			if n.VRF == v.Name {
+				links = appendNew(links, derive.NAT64LinkPrefix+n.Name)
 			}
 		}
 		if len(links) > 0 {
@@ -256,12 +256,12 @@ func newFirewall(d routerDocuments, port int, closed bool) (*firewall, error) {
 	for _, s := range d.Sets {
 		// The family is the set's type, which the ruleset writes unquoted.
 		if _, ok := familyWords[s.Spec.Family]; !ok {
-			return nil, internalErrorf("AddressSet %s: family %q is neither ipv4 nor ipv6", s.Name, s.Spec.Family)
+			return nil, derive.InternalErrorf("AddressSet %s: family %q is neither ipv4 nor ipv6", s.Name, s.Spec.Family)
 		}
 		f.sets[s.Name] = s.Spec
 		f.setNames = append(f.setNames, s.Name)
 	}
-	if f.tables, err = newPolicyTables(d); err != nil {
+	if f.tables, err = d.PolicyTables(); err != nil {
 		return nil, err
 	}
 	if f.targets, err = policyTargets(d, f.tables); err != nil {
@@ -272,15 +272,15 @@ func newFirewall(d routerDocuments, port int, closed bool) (*firewall, error) {
 			return nil, err
 		}
 	}
-	// The rules refuse a policy from local, which no zone is: mustGet finds none.
+	// The rules refuse a policy from local, which no zone is: MustGet finds none.
 	for _, p := range d.Policies {
 		if p.Spec.To != "local" {
-			if _, err := mustGet(f.zones, "FirewallZone", p.Spec.To); err != nil {
-				return nil, within("FirewallPolicy "+p.Name, err)
+			if _, err := derive.MustGet(f.zones, "FirewallZone", p.Spec.To); err != nil {
+				return nil, derive.Within("FirewallPolicy "+p.Name, err)
 			}
 		}
-		if _, err := mustGet(f.zones, "FirewallZone", p.Spec.From); err != nil {
-			return nil, within("FirewallPolicy "+p.Name, err)
+		if _, err := derive.MustGet(f.zones, "FirewallZone", p.Spec.From); err != nil {
+			return nil, derive.Within("FirewallPolicy "+p.Name, err)
 		}
 	}
 	return f, nil
@@ -289,12 +289,12 @@ func newFirewall(d routerDocuments, port int, closed bool) (*firewall, error) {
 // placeAt is a NATRule's place with its field's path in the document, which a refusal of the
 // place names.
 type placeAt struct {
-	*natPlace
+	*derive.NATPlace
 	path string
 }
 
 // natPlaces are the places a NATRule sets, in and out, with their paths.
-func natPlaces(n natSpec) []placeAt {
+func natPlaces(n derive.NATSpec) []placeAt {
 	var out []placeAt
 	if n.In != nil {
 		out = append(out, placeAt{n.In, "spec.in"})
@@ -336,7 +336,7 @@ func (z zoneLinks) entries() []string {
 // an interface that may be a link of a VRF another zone holds. The devices include those of the
 // Networks' own VRF=, and globs match them as globs, which the FirewallZone's rules cannot see.
 // The uniqueness check refuses a VRF that two zones hold, so each VRF has one zone in held.
-func zoneLinksOf(d routerDocuments, devices []string) (map[string]zoneLinks, error) {
+func zoneLinksOf(d derive.Model, devices []string) (map[string]zoneLinks, error) {
 	declared := map[string]bool{}
 	for _, v := range d.VRFs {
 		declared[v.Name] = true
@@ -344,8 +344,8 @@ func zoneLinksOf(d routerDocuments, devices []string) (map[string]zoneLinks, err
 	held := map[string]string{}
 	for _, z := range d.Zones {
 		for _, v := range z.Spec.VRFs {
-			if _, err := mustGet(declared, "VRF", v); err != nil {
-				return nil, within("FirewallZone "+z.Name, err)
+			if _, err := derive.MustGet(declared, "VRF", v); err != nil {
+				return nil, derive.Within("FirewallZone "+z.Name, err)
 			}
 			held[v] = z.Name
 		}
@@ -364,12 +364,12 @@ func zoneLinksOf(d routerDocuments, devices []string) (map[string]zoneLinks, err
 			if dev, ok := vrfDeviceMatch(i, devices); ok {
 				return nil, refusals.Errorf("FirewallZone", z.Name, at, "%s matches %s, the device of VRF %s; name the VRF in vrfs", i, dev, dev)
 			}
-			vrfs, err := d.Membership.interfaceVRFs(i)
+			vrfs, err := d.Membership.InterfaceVRFs(i)
 			if err != nil {
-				return nil, within(what, err)
+				return nil, derive.Within(what, err)
 			}
 			for _, v := range vrfs {
-				if v == defaultVRF {
+				if v == derive.DefaultVRF {
 					zl.in = appendNew(zl.in, i)
 					continue
 				}
@@ -385,9 +385,9 @@ func zoneLinksOf(d routerDocuments, devices []string) (map[string]zoneLinks, err
 			zl.links = appendNew(zl.links, i)
 		}
 		for _, v := range z.Spec.VRFs {
-			links, err := d.Membership.links(v)
+			links, err := d.Membership.Links(v)
 			if err != nil {
-				return nil, within(what, err)
+				return nil, derive.Within(what, err)
 			}
 			zl.in = appendNew(zl.in, v)
 			for _, l := range links {
@@ -399,24 +399,11 @@ func zoneLinksOf(d routerDocuments, devices []string) (map[string]zoneLinks, err
 	return out, nil
 }
 
-// vrfDevices are the VRFs' devices, sorted: those of the VRF documents and of the Networks' own
-// VRF=.
-func vrfDevices(d routerDocuments) []string {
-	devices := map[string]bool{}
-	for _, v := range d.VRFs {
-		devices[v.Name] = true
-	}
-	for _, m := range d.Membership.Members {
-		devices[m.vrf] = true
-	}
-	return slices.Sorted(maps.Keys(devices))
-}
-
 // onlyDevice returns the first VRF device of devices that the interface or glob i matches, when
 // i matches no link: none the Network documents name and no glob of a VRF's links. A glob such
 // as *, which matches links too, is not one. An interface that is a device's name matches that
 // device alone, whatever glob of a VRF's links covers the name too.
-func onlyDevice(d routerDocuments, devices []string, i string) (string, bool) {
+func onlyDevice(d derive.Model, devices []string, i string) (string, bool) {
 	dev, ok := vrfDeviceMatch(i, devices)
 	if !ok || !strings.HasSuffix(i, "*") {
 		return dev, ok
@@ -427,7 +414,7 @@ func onlyDevice(d routerDocuments, devices []string, i string) (string, bool) {
 		}
 	}
 	for _, m := range d.Membership.Members {
-		if globsOverlap(i, m.glob) {
+		if derive.GlobsOverlap(i, m.Glob) {
 			return "", false
 		}
 	}
@@ -439,11 +426,11 @@ func onlyDevice(d routerDocuments, devices []string, i string) (string, bool) {
 // traffic ahead of the zones and drops the rest of its link's, which a zone of the link would
 // accept; destination and source NAT leave a NAT64's link alone ahead of the NAT rules, so a NAT
 // rule of NAT64s' links alone translates nothing.
-func (f *firewall) nat64LinksUnnamed(d routerDocuments) error {
+func (f *firewall) nat64LinksUnnamed(d derive.Model) error {
 	match := func(i string) (string, string, bool) {
 		for _, n := range f.nat64 {
-			if link := nat64LinkPrefix + n.name; matchesGlob(i, link) {
-				return link, n.name, true
+			if link := derive.NAT64LinkPrefix + n.Name; matchesGlob(i, link) {
+				return link, n.Name, true
 			}
 		}
 		return "", "", false
@@ -462,7 +449,7 @@ func (f *firewall) nat64LinksUnnamed(d routerDocuments) error {
 				return true
 			}
 		}
-		return slices.ContainsFunc(d.Membership.Members, func(m vrfMember) bool { return globsOverlap(i, m.glob) })
+		return slices.ContainsFunc(d.Membership.Members, func(m derive.Member) bool { return derive.GlobsOverlap(i, m.Glob) })
 	}
 	for _, r := range d.NAT {
 		for _, place := range natPlaces(r.Spec) {
@@ -477,7 +464,7 @@ func (f *firewall) nat64LinksUnnamed(d routerDocuments) error {
 	return nil
 }
 
-// vrfDeviceMatch returns the first VRF device of devices, as vrfDevices finds them, that the
+// vrfDeviceMatch returns the first VRF device of devices, as Model.Devices finds them, that the
 // interface or glob matches.
 func vrfDeviceMatch(glob string, devices []string) (string, bool) {
 	for _, dev := range devices {
@@ -517,7 +504,7 @@ func (f *firewall) ruleset() (string, error) {
 		s := f.sets[name]
 		elements, err := prefixes(s.Prefixes)
 		if err != nil {
-			return "", within("AddressSet "+name, err)
+			return "", derive.Within("AddressSet "+name, err)
 		}
 		fmt.Fprintf(&b, "\tset addresses-%s {\n\t\ttype %s_addr\n\t\tflags interval\n\t\tauto-merge\n\t\telements = { %s }\n\t}\n",
 			name, s.Family, strings.Join(elements, ", "))
@@ -527,7 +514,7 @@ func (f *firewall) ruleset() (string, error) {
 		for i, r := range p.Spec.Rules {
 			lines, err := f.ruleLines(p.Name, i+1, r)
 			if err != nil {
-				return "", within(fmt.Sprintf("FirewallPolicy %s rule %d", p.Name, i+1), err)
+				return "", derive.Within(fmt.Sprintf("FirewallPolicy %s rule %d", p.Name, i+1), err)
 			}
 			for _, l := range lines {
 				b.WriteString("\t\t" + l + "\n")
@@ -535,7 +522,7 @@ func (f *firewall) ruleset() (string, error) {
 		}
 		v, err := verdictOf(p.Spec.Default)
 		if err != nil {
-			return "", within("FirewallPolicy "+p.Name+": default", err)
+			return "", derive.Within("FirewallPolicy "+p.Name+": default", err)
 		}
 		b.WriteString("\t\t" + v + "\n\t}\n")
 	}
@@ -590,7 +577,7 @@ func (f *firewall) prerouting(b *strings.Builder) error {
 	case "strict":
 		fib = "fib saddr . mark . iif oif exists accept"
 	default:
-		return internalErrorf("Router: rpFilter %q is none of off, loose and strict", f.router.RPFilter)
+		return derive.InternalErrorf("Router: rpFilter %q is none of off, loose and strict", f.router.RPFilter)
 	}
 	b.WriteString("\tchain prerouting {\n" +
 		"\t\ttype filter hook prerouting priority mangle + 10; policy drop;\n")
@@ -643,7 +630,7 @@ func (f *firewall) input(b *strings.Builder) error {
 	for _, o := range f.openings {
 		lines, err := o.lines()
 		if err != nil {
-			return within("the opening of "+o.comment, err)
+			return derive.Within("the opening of "+o.comment, err)
 		}
 		for _, l := range lines {
 			b.WriteString("\t\t" + l + "\n")
@@ -666,7 +653,7 @@ func (f *firewall) input(b *strings.Builder) error {
 // connection to the policy of its pair of zones, and drops the rest, also from or to an interface
 // in no zone. A policy to a zone of no link has no line.
 func (f *firewall) forward(b *strings.Builder) {
-	var between []named[policySpec]
+	var between []derive.Named[derive.PolicySpec]
 	for _, p := range f.policies {
 		if p.Spec.To != "local" {
 			between = append(between, p)
@@ -687,25 +674,25 @@ func (f *firewall) forward(b *strings.Builder) {
 	// explicit pool. An own pool's IPv4 comes back to the masqueraded connections alone. Anything
 	// else on the link goes on to the zones, which hold no NAT64's link, and is dropped.
 	for _, n := range f.nat64 {
-		link, c := strconv.Quote(nat64LinkPrefix+n.name), strconv.Quote("NAT64 "+n.name)
+		link, c := strconv.Quote(derive.NAT64LinkPrefix+n.Name), strconv.Quote("NAT64 "+n.Name)
 		// The forward hook sees a packet from a VRF's link with the VRF's device as iifname.
 		from := "iifname " + link
-		if n.vrf != defaultVRF {
+		if n.VRF != derive.DefaultVRF {
 			from = "meta sdifname " + link
 		}
-		prefix := n.jool.Global.Pool6
-		source := n.inner.String()
-		if len(n.pools) > 0 {
-			source = n.poolSet()
+		prefix := n.Prefix
+		source := n.Inner.Addr().String()
+		if len(n.Pools) > 0 {
+			source = poolSet(n.Pools)
 		}
 		fmt.Fprintf(b, "\t\t%s ip6 saddr %s accept comment %s\n", from, prefix, c)
 		fmt.Fprintf(b, "\t\t%s ip saddr %s accept comment %s\n", from, source, c)
 		fmt.Fprintf(b, "\t\toifname %s ip6 daddr %s accept comment %s\n", link, prefix, c)
-		if len(n.pools) > 0 {
-			fmt.Fprintf(b, "\t\toifname %s ip daddr %s accept comment %s\n", link, n.poolSet(), c)
+		if len(n.Pools) > 0 {
+			fmt.Fprintf(b, "\t\toifname %s ip daddr %s accept comment %s\n", link, poolSet(n.Pools), c)
 		}
 	}
-	if slices.ContainsFunc(f.nat, func(n named[natSpec]) bool { return n.Spec.Type == "dnat" }) {
+	if slices.ContainsFunc(f.nat, func(n derive.Named[derive.NATSpec]) bool { return n.Spec.Type == "dnat" }) {
 		b.WriteString("\t\tct status dnat accept\n")
 	}
 	for _, p := range between {
@@ -728,7 +715,7 @@ func (f *firewall) translation(b *strings.Builder) error {
 	for _, n := range f.nat {
 		line, err := f.natLine(n)
 		if err != nil {
-			return within("NATRule "+n.Name, err)
+			return derive.Within("NATRule "+n.Name, err)
 		}
 		if n.Spec.Type == "dnat" {
 			dst = append(dst, line)
@@ -742,17 +729,17 @@ func (f *firewall) translation(b *strings.Builder) error {
 	if len(dst) > 0 {
 		var exempt []string
 		for _, n := range f.nat64 {
-			c := strconv.Quote("NAT64 " + n.name)
+			c := strconv.Quote("NAT64 " + n.Name)
 			exempt = append(exempt,
-				fmt.Sprintf("iifname %s accept comment %s", strconv.Quote(nat64LinkPrefix+n.name), c),
-				fmt.Sprintf("ip6 daddr %s accept comment %s", n.jool.Global.Pool6, c))
-			if len(n.pools) > 0 {
-				exempt = append(exempt, fmt.Sprintf("ip daddr %s accept comment %s", n.poolSet(), c))
+				fmt.Sprintf("iifname %s accept comment %s", strconv.Quote(derive.NAT64LinkPrefix+n.Name), c),
+				fmt.Sprintf("ip6 daddr %s accept comment %s", n.Prefix, c))
+			if len(n.Pools) > 0 {
+				exempt = append(exempt, fmt.Sprintf("ip daddr %s accept comment %s", poolSet(n.Pools), c))
 			}
 		}
 		dst = append(exempt, dst...)
 	}
-	if len(src) > 0 || slices.ContainsFunc(f.nat64, func(n nat64Instance) bool { return len(n.pools) == 0 }) {
+	if len(src) > 0 || slices.ContainsFunc(f.nat64, func(n derive.NAT64Instance) bool { return len(n.Pools) == 0 }) {
 		src = append(f.nat64Lines(), src...)
 	}
 	for _, c := range []struct {
@@ -778,17 +765,17 @@ func (f *firewall) translation(b *strings.Builder) error {
 func (f *firewall) nat64Lines() []string {
 	var lines []string
 	for _, n := range f.nat64 {
-		c := strconv.Quote("NAT64 " + n.name)
+		c := strconv.Quote("NAT64 " + n.Name)
 		lines = append(lines,
-			fmt.Sprintf("oifname %s accept comment %s", strconv.Quote(nat64LinkPrefix+n.name), c),
-			fmt.Sprintf("ip6 saddr %s accept comment %s", n.jool.Global.Pool6, c))
-		if len(n.pools) == 0 {
+			fmt.Sprintf("oifname %s accept comment %s", strconv.Quote(derive.NAT64LinkPrefix+n.Name), c),
+			fmt.Sprintf("ip6 saddr %s accept comment %s", n.Prefix, c))
+		if len(n.Pools) == 0 {
 			lines = append(lines,
-				fmt.Sprintf("ip saddr %s meta l4proto { tcp, udp } masquerade to :%s comment %s", n.inner, ownPorts, c),
-				fmt.Sprintf("ip saddr %s masquerade comment %s", n.inner, c))
+				fmt.Sprintf("ip saddr %s meta l4proto { tcp, udp } masquerade to :%s comment %s", n.Inner.Addr(), ownPorts, c),
+				fmt.Sprintf("ip saddr %s masquerade comment %s", n.Inner.Addr(), c))
 			continue
 		}
-		lines = append(lines, fmt.Sprintf("ip saddr %s accept comment %s", n.poolSet(), c))
+		lines = append(lines, fmt.Sprintf("ip saddr %s accept comment %s", poolSet(n.Pools), c))
 	}
 	return lines
 }
@@ -796,11 +783,11 @@ func (f *firewall) nat64Lines() []string {
 // natLine renders a NATRule. The NATRule's rules check its place, to, family and ports; natLine
 // guards what would panic or add syntax to the ruleset. It refuses a zone without links, which
 // would translate nothing, and a to.address in a NAT64's pool.
-func (f *firewall) natLine(doc named[natSpec]) (string, error) {
+func (f *firewall) natLine(doc derive.Named[derive.NATSpec]) (string, error) {
 	n := doc.Spec
 	family, ok := familyWords[n.Family]
 	if !ok {
-		return "", internalErrorf("family %q is neither ipv4 nor ipv6", n.Family)
+		return "", derive.InternalErrorf("family %q is neither ipv4 nor ipv6", n.Family)
 	}
 	parts := []string{"meta nfproto " + n.Family}
 	place, dir, at := n.Out, "oifname", "spec.out"
@@ -809,9 +796,9 @@ func (f *firewall) natLine(doc named[natSpec]) (string, error) {
 	}
 	switch {
 	case place == nil:
-		return "", internalErrorf("a %s rule names no place", n.Type)
+		return "", derive.InternalErrorf("a %s rule names no place", n.Type)
 	case place.Zone != nil:
-		z, err := mustGet(f.zones, "FirewallZone", *place.Zone)
+		z, err := derive.MustGet(f.zones, "FirewallZone", *place.Zone)
 		if err != nil {
 			return "", err
 		}
@@ -822,7 +809,7 @@ func (f *firewall) natLine(doc named[natSpec]) (string, error) {
 	case place.Interface != nil:
 		parts = append(parts, dir+" "+interfaceSet([]string{*place.Interface}))
 	default:
-		return "", internalErrorf("a place names neither a zone nor an interface")
+		return "", derive.InternalErrorf("a place names neither a zone nor an interface")
 	}
 	for _, side := range []struct {
 		dir    string
@@ -854,16 +841,16 @@ func (f *firewall) natLine(doc named[natSpec]) (string, error) {
 		parts = append(parts, "masquerade")
 	case "snat", "dnat":
 		if n.To == nil {
-			return "", internalErrorf("%s has no to", n.Type)
+			return "", derive.InternalErrorf("%s has no to", n.Type)
 		}
 		a, err := netip.ParseAddr(n.To.Address)
 		if err != nil {
-			return "", internalErrorf("to.address %q is no address", n.To.Address)
+			return "", derive.InternalErrorf("to.address %q is no address", n.To.Address)
 		}
 		for _, x := range f.nat64 {
-			for _, p := range x.pools {
+			for _, p := range x.Pools {
 				if p.Contains(a) {
-					return "", refusals.Errorf("NATRule", doc.Name, "spec.to.address", "to.address %s lies in %s, the pool of NAT64 %s, whose addresses belong to the NAT64 whole; translate to an address outside the pool", a, p, x.name)
+					return "", refusals.Errorf("NATRule", doc.Name, "spec.to.address", "to.address %s lies in %s, the pool of NAT64 %s, whose addresses belong to the NAT64 whole; translate to an address outside the pool", a, p, x.Name)
 				}
 			}
 		}
@@ -876,7 +863,7 @@ func (f *firewall) natLine(doc named[natSpec]) (string, error) {
 		}
 		parts = append(parts, fmt.Sprintf("%s %s to %s", n.Type, family, to))
 	default:
-		return "", internalErrorf("type %q is none of masquerade, snat and dnat", n.Type)
+		return "", derive.InternalErrorf("type %q is none of masquerade, snat and dnat", n.Type)
 	}
 	return strings.Join(parts, " "), nil
 }
@@ -888,13 +875,9 @@ func (f *firewall) nat64Destinations(rule string, ranges []string) error {
 	for i, r := range ranges {
 		d := netip.MustParsePrefix(r)
 		for _, x := range f.nat64 {
-			held := slices.Clone(x.pools)
-			if p, err := netip.ParsePrefix(x.jool.Global.Pool6); err == nil {
-				held = append(held, p)
-			}
-			for _, p := range held {
+			for _, p := range append(slices.Clone(x.Pools), x.Prefix) {
 				if p.Bits() <= d.Bits() && p.Contains(d.Addr()) {
-					return refusals.Errorf("NATRule", rule, fmt.Sprintf("spec.match.destination[%d]", i), "match.destination %s lies in %s of NAT64 %s, whose connections the firewall accepts before any NATRule; match a range outside it", d, p, x.name)
+					return refusals.Errorf("NATRule", rule, fmt.Sprintf("spec.match.destination[%d]", i), "match.destination %s lies in %s of NAT64 %s, whose connections the firewall accepts before any NATRule; match a range outside it", d, p, x.Name)
 				}
 			}
 		}
@@ -908,10 +891,10 @@ var familyWords = map[string]string{"ipv4": "ip", "ipv6": "ip6"}
 // ruleLines renders rule n of the policy: a line per family it matches, or one for both when it
 // names neither addresses nor a family. A family its addresses or sets leave no address of has no
 // line.
-func (f *firewall) ruleLines(policy string, n int, r firewallRule) ([]string, error) {
+func (f *firewall) ruleLines(policy string, n int, r derive.FirewallRule) ([]string, error) {
 	verdict, err := verdictOf(r.Action)
 	if err != nil {
-		return nil, within("action", err)
+		return nil, derive.Within("action", err)
 	}
 	if r.Log {
 		// A log prefix holds 127 bytes at most.
@@ -937,7 +920,7 @@ type familyMatch struct {
 // it names neither addresses nor a family. A family its addresses or sets leave no address of
 // has none. The rules of FirewallPolicy and PolicyRoute check that ports and ICMP types go with
 // their protocols and that a rule matches a family.
-func (f *firewall) matchLines(r firewallRule) ([]familyMatch, error) {
+func (f *firewall) matchLines(r derive.FirewallRule) ([]familyMatch, error) {
 	protocol := ""
 	if r.Protocol != nil {
 		var err error
@@ -948,7 +931,7 @@ func (f *firewall) matchLines(r firewallRule) ([]familyMatch, error) {
 	families := []string{"ipv4", "ipv6"}
 	if r.Family != nil {
 		if _, ok := familyWords[*r.Family]; !ok {
-			return nil, internalErrorf("family %q is neither ipv4 nor ipv6", *r.Family)
+			return nil, derive.InternalErrorf("family %q is neither ipv4 nor ipv6", *r.Family)
 		}
 		families = []string{*r.Family}
 	}
@@ -966,14 +949,14 @@ func (f *firewall) matchLines(r firewallRule) ([]familyMatch, error) {
 		src, ok, err := f.addressMatch(fam, "saddr", r.Source)
 		if err != nil || !ok {
 			if err != nil {
-				return nil, within("source", err)
+				return nil, derive.Within("source", err)
 			}
 			continue
 		}
 		dst, ok, err := f.addressMatch(fam, "daddr", r.Destination)
 		if err != nil || !ok {
 			if err != nil {
-				return nil, within("destination", err)
+				return nil, derive.Within("destination", err)
 			}
 			continue
 		}
@@ -1002,12 +985,12 @@ func joinWords(parts ...string) string {
 // the family fam: of its AddressSet, or of its ranges of that family. ok is false when a has
 // addresses but none of fam; a nil a matches every address. The rules check that a names a set or
 // ranges, one of them.
-func (f *firewall) addressMatch(fam, dir string, a *addresses) (match string, ok bool, err error) {
+func (f *firewall) addressMatch(fam, dir string, a *derive.Addresses) (match string, ok bool, err error) {
 	switch {
 	case a == nil:
 		return "", true, nil
 	case a.Set != nil:
-		s, err := mustGet(f.sets, "AddressSet", *a.Set)
+		s, err := derive.MustGet(f.sets, "AddressSet", *a.Set)
 		if err != nil {
 			return "", false, err
 		}
@@ -1020,7 +1003,7 @@ func (f *firewall) addressMatch(fam, dir string, a *addresses) (match string, ok
 	for _, a := range a.CIDRs {
 		p, err := netip.ParsePrefix(a)
 		if err != nil {
-			return "", false, internalErrorf("%q is no address range", a)
+			return "", false, derive.InternalErrorf("%q is no address range", a)
 		}
 		if p.Addr().Is4() == (fam == "ipv4") {
 			mine = append(mine, p.Masked().String())
@@ -1039,7 +1022,7 @@ func prefixes(l []string) ([]string, error) {
 	for _, a := range l {
 		p, err := netip.ParsePrefix(a)
 		if err != nil {
-			return nil, internalErrorf("%q is no address range", a)
+			return nil, derive.InternalErrorf("%q is no address range", a)
 		}
 		out = append(out, p.Masked().String())
 	}
@@ -1058,13 +1041,13 @@ var icmpTypeNames = []string{"echo-request", "echo-reply", "destination-unreacha
 // PolicyRoute and NATRule check that ports go with tcp, udp or sctp, ICMP types with icmp or
 // icmpv6 and packet-too-big with icmpv6, so each protocol reads what it takes alone. It guards
 // the protocol and the ICMP types, which the ruleset writes unquoted.
-func protocolMatch(protocol string, sourcePorts, destinationPorts []portRange, icmpTypes []string) (string, error) {
+func protocolMatch(protocol string, sourcePorts, destinationPorts []derive.PortRange, icmpTypes []string) (string, error) {
 	switch protocol {
 	case "tcp", "udp", "sctp":
 		var parts []string
 		for _, side := range []struct {
 			dir   string
-			ports []portRange
+			ports []derive.PortRange
 		}{{"sport", sourcePorts}, {"dport", destinationPorts}} {
 			if len(side.ports) > 0 {
 				parts = append(parts, fmt.Sprintf("%s %s { %s }", protocol, side.dir, joinPorts(side.ports)))
@@ -1077,7 +1060,7 @@ func protocolMatch(protocol string, sourcePorts, destinationPorts []portRange, i
 	case "icmp", "icmpv6":
 		for _, t := range icmpTypes {
 			if !slices.Contains(icmpTypeNames, t) {
-				return "", internalErrorf("%q is no ICMP type the firewall matches", t)
+				return "", derive.InternalErrorf("%q is no ICMP type the firewall matches", t)
 			}
 		}
 		if len(icmpTypes) == 0 {
@@ -1087,12 +1070,12 @@ func protocolMatch(protocol string, sourcePorts, destinationPorts []portRange, i
 	}
 	number, ok := protocolNumbers[protocol]
 	if !ok {
-		return "", internalErrorf("protocol %q is not one the firewall matches", protocol)
+		return "", derive.InternalErrorf("protocol %q is not one the firewall matches", protocol)
 	}
 	return "meta l4proto " + number, nil
 }
 
-func joinPorts(ports []portRange) string {
+func joinPorts(ports []derive.PortRange) string {
 	s := make([]string, len(ports))
 	for i, p := range ports {
 		s[i] = string(p)
@@ -1109,7 +1092,7 @@ func verdictOf(action string) (string, error) {
 	case "reject":
 		return "reject with icmpx admin-prohibited", nil
 	}
-	return "", internalErrorf("%q is none of accept, drop and reject", action)
+	return "", derive.InternalErrorf("%q is none of accept, drop and reject", action)
 }
 
 // interfaceSet is a set of interface names and globs as nftables writes it.
@@ -1155,7 +1138,7 @@ func (o opening) lines() ([]string, error) {
 			for _, a := range side.ranges {
 				p, err := netip.ParsePrefix(a)
 				if err != nil {
-					return nil, internalErrorf("%q is no address range", a)
+					return nil, derive.InternalErrorf("%q is no address range", a)
 				}
 				if p.Addr().Is4() == (fam == "ipv4") {
 					mine = append(mine, p.Masked().String())
@@ -1179,8 +1162,8 @@ func (o opening) lines() ([]string, error) {
 // a DHCPRelay's links with an IPv6 server, and DHCPv4's UDP port 67 on a DHCPRelay's links with
 // an IPv4 server. Kea's DHCPv4 server reads and answers on raw sockets ahead of the firewall and
 // needs none, and the servers' answers to the relay pass as replies to its requests.
-func dhcpOpenings(d routerDocuments) ([]opening, error) {
-	devices := vrfDevices(d)
+func dhcpOpenings(d derive.Model) ([]opening, error) {
+	devices := d.Devices()
 	var out []opening
 	for _, s := range d.DHCPSubnets {
 		p, err := netip.ParsePrefix(s.Spec.Subnet)
@@ -1189,29 +1172,29 @@ func dhcpOpenings(d routerDocuments) ([]opening, error) {
 		}
 		links, vrf, err := subnetLinks(d, devices, "DHCPSubnet", s.Name, s.Spec.Interfaces, subnetWords)
 		if err != nil {
-			return nil, within("DHCPSubnet "+s.Name, err)
+			return nil, derive.Within("DHCPSubnet "+s.Name, err)
 		}
-		out = append(out, opening{comment: "DHCPSubnet " + s.Name, protocol: "udp", ports: []portRange{"547"},
+		out = append(out, opening{comment: "DHCPSubnet " + s.Name, protocol: "udp", ports: []derive.PortRange{"547"},
 			interfaces: links, vrf: vrfOpening(vrf), sources: []string{"fe80::/10"}})
 	}
 	for _, r := range d.DHCPRelays {
 		links, vrf, err := subnetLinks(d, devices, "DHCPRelay", r.Name, r.Spec.Interfaces, relayWords)
 		if err != nil {
-			return nil, within("DHCPRelay "+r.Name, err)
+			return nil, derive.Within("DHCPRelay "+r.Name, err)
 		}
 		servers, err := relayServers(r.Spec.Servers)
 		if err != nil {
-			return nil, within("DHCPRelay "+r.Name, err)
+			return nil, derive.Within("DHCPRelay "+r.Name, err)
 		}
 		o := opening{comment: "DHCPRelay " + r.Name, protocol: "udp", interfaces: links, vrf: vrfOpening(vrf)}
 		if len(servers[false]) > 0 {
 			v4 := o
-			v4.ports, v4.sources = []portRange{"67"}, []string{"0.0.0.0/0"}
+			v4.ports, v4.sources = []derive.PortRange{"67"}, []string{"0.0.0.0/0"}
 			out = append(out, v4)
 		}
 		if len(servers[true]) > 0 {
 			v6 := o
-			v6.ports, v6.sources = []portRange{"547"}, []string{"fe80::/10"}
+			v6.ports, v6.sources = []derive.PortRange{"547"}, []string{"fe80::/10"}
 			out = append(out, v6)
 		}
 	}
@@ -1220,8 +1203,17 @@ func dhcpOpenings(d routerDocuments) ([]opening, error) {
 
 // vrfOpening is the VRF of an opening: "" for the default VRF.
 func vrfOpening(vrf string) string {
-	if vrf == defaultVRF {
+	if vrf == derive.DefaultVRF {
 		return ""
 	}
 	return vrf
+}
+
+// poolSet is the anonymous nftables set of the prefixes of a NAT64's explicit pool.
+func poolSet(pools []netip.Prefix) string {
+	l := make([]string, len(pools))
+	for i, p := range pools {
+		l[i] = p.String()
+	}
+	return "{ " + strings.Join(l, ", ") + " }"
 }
