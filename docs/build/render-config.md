@@ -245,7 +245,7 @@ refusals on standard output, one JSON object:
 - `kind` and `name` name the document. `name` takes the form of a document name.
 - `path` names the field, as written in the document, such as `spec.asn` or
   `spec.neighbors[0].address`, without spaces or colons.
-- `message` says what is wrong and how to fix it, on one line.
+- `message` says what is wrong and how to fix it, on one line of at most 1 KiB.
 
 Any refusal refuses the delivery, whether the renderer then exits with 0 or not. An empty
 report, `{"refusals": []}`, or no output refuses nothing. chalkd reports each refusal after

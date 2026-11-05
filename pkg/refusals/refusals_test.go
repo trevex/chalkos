@@ -58,6 +58,7 @@ func TestParseRefuses(t *testing.T) {
 		"an escape":        {`{"refusals": [{"kind": "Demo", "name": "one", "path": "spec.name", "message": "\u001b[2J"}]}`, "refusal 1: the message holds a control character"},
 		"a C1 CSI":         {`{"refusals": [{"kind": "Demo", "name": "one", "path": "spec.name", "message": "\u009b2J"}]}`, "refusal 1: the message holds a control character"},
 		"a bidi override":  {`{"refusals": [{"kind": "Demo", "name": "one", "path": "spec.name", "message": "a\u202eb"}]}`, "refusal 1: the message holds a control character"},
+		"a long message":   {`{"refusals": [{"kind": "Demo", "name": "one", "path": "spec.name", "message": "` + strings.Repeat("x", MaxMessage+1) + `"}]}`, "refusal 1: the message holds more than 1024 bytes"},
 		"too long":         {`{"refusals": [` + strings.Repeat(ok+",", MaxReport/len(ok)) + ok + `]}`, "it holds more than 65536 bytes"},
 	} {
 		t.Run(name, func(t *testing.T) {

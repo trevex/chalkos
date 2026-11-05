@@ -67,7 +67,7 @@ func Printable(s string) string {
 }
 
 // Check refuses a refusal outside the format: a kind, a document name or a path that is none,
-// and an empty message or one with a rune Unprintable reports.
+// and a message that is empty, longer than MaxMessage bytes or holds a rune Unprintable reports.
 func (r Refusal) Check() error {
 	switch {
 	case !kind.MatchString(r.Kind):
@@ -78,6 +78,8 @@ func (r Refusal) Check() error {
 		return fmt.Errorf("path %q is no field's path", r.Path)
 	case strings.TrimSpace(r.Message) == "":
 		return errors.New("the message is empty")
+	case len(r.Message) > MaxMessage:
+		return fmt.Errorf("the message holds more than %d bytes", MaxMessage)
 	case strings.ContainsFunc(r.Message, Unprintable):
 		return errors.New("the message holds a control character")
 	}
@@ -89,8 +91,13 @@ type Report struct {
 	Refusals []Refusal `json:"refusals"`
 }
 
-// MaxReport bounds what a program may print, so that it cannot make a delivery's refusal large.
-const MaxReport = 64 << 10
+// MaxReport bounds what one program may print, and MaxMessage what one refusal says. A delivery's
+// refusal holds the refusals of every output, so these bound each output's share of it, not its
+// whole length.
+const (
+	MaxReport  = 64 << 10
+	MaxMessage = 1 << 10
+)
 
 // Parse reads what a program printed: nothing, or one Report and nothing after it. It returns
 // the refusals each once, in the order printed. A report outside the format, null, a report
