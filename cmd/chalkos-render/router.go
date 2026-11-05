@@ -543,10 +543,21 @@ type nameMatch struct {
 	words []nameWord
 }
 
-// nameWord is a word of Name=: glob is the word as path.Match takes it, text as Name= gives it.
+// nameWord is a word of Name=: glob is the word as path.Match takes it, text as Name= gives it,
+// and path the field of the Network document's value that holds it, such as spec.match.name or
+// spec.match[1].name[0], which a refusal of the word names.
 type nameWord struct {
-	glob, text string
-	negated    bool
+	glob, text, path string
+	negated          bool
+}
+
+// itemPath is the path of the i-th value oneOrMany reads from v, the field at base: base itself
+// for a single value, base[i] for an item of a list.
+func itemPath(base string, v any, i int) string {
+	if _, ok := v.([]any); ok {
+		return fmt.Sprintf("%s[%d]", base, i)
+	}
+	return base
 }
 
 // parseNameMatch reads the Name= of the [Match] sections of the Network document network's spec
@@ -559,9 +570,11 @@ type nameWord struct {
 // link's alternative names, which the documents do not give.
 func parseNameMatch(network string, spec map[string]any) (nameMatch, error) {
 	var m nameMatch
-	for _, s := range oneOrMany(spec["match"]) {
+	for si, s := range oneOrMany(spec["match"]) {
 		section, _ := s.(map[string]any)
-		for _, v := range oneOrMany(section["name"]) {
+		names := itemPath("spec.match", spec["match"], si) + ".name"
+		for vi, v := range oneOrMany(section["name"]) {
+			at := itemPath(names, section["name"], vi)
 			value, err := unitValue(v)
 			if err != nil {
 				continue
@@ -577,18 +590,18 @@ func parseNameMatch(network string, spec map[string]any) (nameMatch, error) {
 			}
 			for _, w := range words {
 				if strings.Contains(w, `\`) {
-					return m, fmt.Errorf("Network %s: Name= holds %q, whose backslash networkd reads as an escape; name the links without one", network, w)
+					return m, refuse("Network", network, at, "Name= holds %q, whose backslash networkd reads as an escape; name the links without one", w)
 				}
 				if !systemdIfname(w) {
 					continue
 				}
-				word := nameWord{text: w, negated: inverted}
+				word := nameWord{text: w, path: at, negated: inverted}
 				if !inverted {
 					w, word.negated = strings.CutPrefix(w, "!")
 				}
 				word.glob = goGlob(w)
 				if _, err := path.Match(word.glob, ""); err != nil || bracketHolds(w, '[') {
-					return m, fmt.Errorf("Network %s: Name= holds %q, which is no glob the renderer can match as networkd does", network, word.text)
+					return m, refuse("Network", network, at, "Name= holds %q, which is no glob the renderer can match as networkd does", word.text)
 				}
 				m.words = append(m.words, word)
 			}

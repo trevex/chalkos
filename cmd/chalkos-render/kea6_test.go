@@ -48,12 +48,12 @@ func TestKea6Refusals(t *testing.T) {
 		subnets []any
 		want    string
 	}{
-		"the router's address":        {[]any{office(`, "pools": [{"first": "2001:db8:1::1", "last": "2001:db8:1::ff"}]`)}, "DHCPSubnet office6: the pool 2001:db8:1::1-2001:db8:1::ff holds 2001:db8:1::1, the router's own address on the subnet's link"},
-		"the router reserved":         {[]any{office(`, "reservations": [{"mac": "52:54:00:12:34:56", "address": "2001:db8:1::1", "hostname": null}]`)}, "DHCPSubnet office6: the reservation of 52:54:00:12:34:56, 2001:db8:1::1, is the router's own address on the subnet's link"},
+		"the router's address":        {[]any{office(`, "pools": [{"first": "2001:db8:1::1", "last": "2001:db8:1::ff"}]`)}, "DHCPSubnet/office6: spec.pools[0]: the pool 2001:db8:1::1-2001:db8:1::ff holds 2001:db8:1::1, the router's own address on the subnet's link"},
+		"the router reserved":         {[]any{office(`, "reservations": [{"mac": "52:54:00:12:34:56", "address": "2001:db8:1::1", "hostname": null}]`)}, "DHCPSubnet/office6: spec.reservations[0].address: the reservation of 52:54:00:12:34:56, 2001:db8:1::1, is the router's own address on the subnet's link"},
 		"two subnets of a link":       {[]any{office(""), subnetDoc(t, "other", `{"interfaces": ["lan0"], "subnet": "2001:db8:5::/64"}`)}, "DHCPSubnet office6 and DHCPSubnet other both serve lan0; a link takes one subnet of each family"},
 		"overlapping subnets":         {[]any{office(""), subnetDoc(t, "cpe", `{"interfaces": ["lan1"], "subnet": "2001:db8::/32", "prefixDelegation": {"prefix": "2001:db9::/48", "length": 56}}`)}, "DHCPSubnet office6 and DHCPSubnet cpe overlap in VRF default: 2001:db8:1::/64 and 2001:db8::/32"},
 		"delegating another's":        {[]any{office(""), subnetDoc(t, "cpe", `{"interfaces": ["lan1"], "subnet": "2001:db8:2::/64", "prefixDelegation": {"prefix": "2001:db8:1:0:8000::/65", "length": 72}}`)}, "DHCPSubnet office6 and DHCPSubnet cpe overlap in VRF default: 2001:db8:1::/64 and 2001:db8:1:0:8000::/65"},
-		"delegating a link's address": {[]any{subnetDoc(t, "cpe", `{"interfaces": ["lan1"], "subnet": "2001:db8:2::/64", "prefixDelegation": {"prefix": "2001:db8:4::/48", "length": 56}}`)}, "DHCPSubnet cpe: prefixDelegation's prefix 2001:db8:4::/48 holds 2001:db8:4::1, the address Network 13-lan3 gives a link of VRF default"},
+		"delegating a link's address": {[]any{subnetDoc(t, "cpe", `{"interfaces": ["lan1"], "subnet": "2001:db8:2::/64", "prefixDelegation": {"prefix": "2001:db8:4::/48", "length": 56}}`)}, "DHCPSubnet/cpe: spec.prefixDelegation.prefix: prefixDelegation's prefix 2001:db8:4::/48 holds 2001:db8:4::1, the address Network 13-lan3 gives a link of VRF default"},
 		"no advertisements":           {[]any{subnetDoc(t, "lab", `{"interfaces": ["lan2"], "subnet": "2001:db8:3::/64"`+strings.ReplaceAll(pool, ":1::", ":3::")+`}`)}, "Network 12-lan2 sends no router advertisements on lan2 with Managed=yes, which tell its clients to ask the DHCPv6 server for addresses; give it ipv6SendRA: true in network and managed: true in ipv6SendRA"},
 		"addresses without Managed":   {[]any{subnetDoc(t, "cpe", `{"interfaces": ["lan1"], "subnet": "2001:db8:2::/64"`+strings.ReplaceAll(pool, ":1::", ":2::")+`}`)}, "Network 11-lan1 sends no router advertisements on lan1 with Managed=yes"},
 		"options without a flag":      {[]any{subnetDoc(t, "lab", `{"interfaces": ["lan3"], "subnet": "2001:db8:4::/64", "dns": ["2001:db8:4::1"]}`)}, "Network 13-lan3 sends no router advertisements on lan3 with Managed=yes or OtherInformation=yes, which tell its clients to ask the DHCPv6 server; give it ipv6SendRA: true in network and otherInformation: true in ipv6SendRA"},
@@ -214,7 +214,7 @@ func TestKea6DelegatesAddressesOfOtherVRFs(t *testing.T) {
 func TestKeaSameNumber(t *testing.T) {
 	a := servedSubnet{name: "office6", vrf: defaultVRF, prefix: mustPrefix("2001:db8:1::/64"), id: 7}
 	b := servedSubnet{name: "lab6", vrf: defaultVRF, prefix: mustPrefix("2001:db8:2::/64"), id: 7}
-	want := "DHCPSubnet office6 and DHCPSubnet lab6 get the same number 7 in Kea; change one subnet's range"
+	want := "DHCPSubnet/lab6: spec.subnet: DHCPSubnet office6 and DHCPSubnet lab6 get the same number 7 in Kea; change one subnet's range"
 	if err := apart(a, b); err == nil || err.Error() != want {
 		t.Errorf("apart = %v; want %s", err, want)
 	}
@@ -239,9 +239,9 @@ func TestKea6DelegatesNoConfiguredRoute(t *testing.T) {
 		extra map[string][]any
 		want  string
 	}{
-		"a static route":           {map[string][]any{"Network": {route("40-lan9", "lan9", "2001:db8:100:100::/56")}}, "DHCPSubnet cpe: prefixDelegation's prefix 2001:db8:100::/40 holds the route of 2001:db8:100:100::/56 that Network 40-lan9 gives a link of VRF default"},
+		"a static route":           {map[string][]any{"Network": {route("40-lan9", "lan9", "2001:db8:100:100::/56")}}, "DHCPSubnet/cpe: spec.prefixDelegation.prefix: prefixDelegation's prefix 2001:db8:100::/40 holds the route of 2001:db8:100:100::/56 that Network 40-lan9 gives a link of VRF default"},
 		"a static route's address": {map[string][]any{"Network": {route("40-lan9", "lan9", "2001:db8:100::5")}}, "holds the route of 2001:db8:100::5/128 that Network 40-lan9 gives"},
-		"a NAT64's prefix":         {map[string][]any{"NAT64": {nat64("null")}}, "DHCPSubnet cpe: prefixDelegation's prefix 2001:db8:100::/40 holds NAT64 nat64's prefix 2001:db8:100:ff::/96 of VRF default"},
+		"a NAT64's prefix":         {map[string][]any{"NAT64": {nat64("null")}}, "DHCPSubnet/cpe: spec.prefixDelegation.prefix: prefixDelegation's prefix 2001:db8:100::/40 holds NAT64 nat64's prefix 2001:db8:100:ff::/96 of VRF default"},
 		"a wider route":            {map[string][]any{"Network": {route("40-lan9", "lan9", "2001:db8::/32")}}, ""},
 		"another VRF's route":      {map[string][]any{"Network": {route("40-lan9", "lan9", "2001:db8:100:100::/56")}, "VRF": {routerDoc(t, "VRF", "lab", `{"table": 400, "interfaces": ["lan9"]}`)}}, ""},
 		"another VRF's NAT64":      {map[string][]any{"NAT64": {nat64(`"guest"`)}}, ""},

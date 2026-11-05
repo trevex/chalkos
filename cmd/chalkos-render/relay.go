@@ -55,7 +55,7 @@ func renderDHCPRelay(in map[string]any, out string) error {
 	families := map[keaServer]string{}
 	byVRF := map[string]*relayVRF{}
 	for _, r := range d.DHCPRelays {
-		links, vrf, err := subnetLinks(d, devices, r.Spec.Interfaces, relayWords)
+		links, vrf, err := subnetLinks(d, devices, "DHCPRelay", r.Name, r.Spec.Interfaces, relayWords)
 		if err != nil {
 			return within("DHCPRelay "+r.Name, err)
 		}
@@ -70,7 +70,7 @@ func renderDHCPRelay(in map[string]any, out string) error {
 		}
 		for _, l := range links {
 			v.links = append(v.links, l)
-			network, err := linkNetwork(units, l, "its addresses")
+			network, err := linkNetwork(units, "DHCPRelay", r.Name, interfacePath(r.Spec.Interfaces, l), l, "its addresses")
 			if err != nil {
 				return within("DHCPRelay "+r.Name, err)
 			}
@@ -184,7 +184,7 @@ func relaysBesideServers(d routerDocuments, devices []string, families map[keaSe
 			continue
 		}
 		// The output kea refuses a subnet of links it cannot place.
-		_, vrf, err := subnetLinks(d, devices, s.Spec.Interfaces, subnetWords)
+		_, vrf, err := subnetLinks(d, devices, "DHCPSubnet", s.Name, s.Spec.Interfaces, subnetWords)
 		if err != nil {
 			continue
 		}

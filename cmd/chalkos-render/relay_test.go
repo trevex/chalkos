@@ -44,7 +44,7 @@ func TestRelayRefusals(t *testing.T) {
 		subnets []any
 		want    string
 	}{
-		"a VRF's device":         {[]any{relay("office", `["guest"]`, `["198.51.100.53"]`)}, nil, "DHCPRelay office: guest is the device of VRF guest; name the VRF's links"},
+		"a VRF's device":         {[]any{relay("office", `["guest"]`, `["198.51.100.53"]`)}, nil, "DHCPRelay/office: spec.interfaces[0]: guest is the device of VRF guest; name the VRF's links"},
 		"links of two VRFs":      {[]any{relay("office", `["lan0", "lan2"]`, `["198.51.100.53"]`)}, nil, "its links are in VRF default and VRF guest; a relay relays in one VRF"},
 		"a link of no Network":   {[]any{relay("office", `["lan9"]`, `["198.51.100.53"]`)}, nil, "no Network document matches lan9 by Name= alone, so the renderer cannot find its addresses; give the link one"},
 		"no IPv6 address":        {[]any{relay("office", `["lan1"]`, `["2001:db8:ff::53"]`)}, nil, "DHCPRelay office: Network 11-lan1 gives lan1 no static global IPv6 address, which the relay forwards its clients' requests from"},

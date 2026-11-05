@@ -1159,7 +1159,7 @@ func dhcpOpenings(d routerDocuments) ([]opening, error) {
 		if err != nil || !subnetIs6(p) {
 			continue
 		}
-		links, vrf, err := subnetLinks(d, devices, s.Spec.Interfaces, subnetWords)
+		links, vrf, err := subnetLinks(d, devices, "DHCPSubnet", s.Name, s.Spec.Interfaces, subnetWords)
 		if err != nil {
 			return nil, within("DHCPSubnet "+s.Name, err)
 		}
@@ -1167,7 +1167,7 @@ func dhcpOpenings(d routerDocuments) ([]opening, error) {
 			interfaces: links, vrf: vrfOpening(vrf), sources: []string{"fe80::/10"}})
 	}
 	for _, r := range d.DHCPRelays {
-		links, vrf, err := subnetLinks(d, devices, r.Spec.Interfaces, relayWords)
+		links, vrf, err := subnetLinks(d, devices, "DHCPRelay", r.Name, r.Spec.Interfaces, relayWords)
 		if err != nil {
 			return nil, within("DHCPRelay "+r.Name, err)
 		}

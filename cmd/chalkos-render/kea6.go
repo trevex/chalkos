@@ -2,7 +2,6 @@ package main
 
 import (
 	"encoding/json"
-	"fmt"
 	"hash/fnv"
 	"maps"
 	"net/netip"
@@ -24,14 +23,14 @@ func serveSubnet6(d routerDocuments, units []networkUnit, devices []string, s na
 	sub := servedSubnet{name: s.Name, spec: s.Spec, prefix: p.Masked()}
 	sub.id = subnetID6(sub.prefix)
 	var err error
-	if sub.links, sub.vrf, err = subnetLinks(d, devices, s.Spec.Interfaces, subnetWords); err != nil {
+	if sub.links, sub.vrf, err = subnetLinks(d, devices, "DHCPSubnet", s.Name, s.Spec.Interfaces, subnetWords); err != nil {
 		return sub, err
 	}
 	own, err := ownAddresses(d, units, sub, "which routes the subnet's addresses to the link")
 	if err != nil {
 		return sub, err
 	}
-	if sub.pools, err = ownApart(s.Spec, own, "the router's own address on the subnet's link"); err != nil {
+	if sub.pools, err = ownApart(s, own, "the router's own address on the subnet's link"); err != nil {
 		return sub, err
 	}
 	if pd := s.Spec.PrefixDelegation; pd != nil {
@@ -50,7 +49,7 @@ func serveSubnet6(d routerDocuments, units []networkUnit, devices []string, s na
 				vrf = defaultVRF
 			}
 			if vrf == sub.vrf && sub.delegated.Contains(a.prefix.Addr()) {
-				return sub, fmt.Errorf("prefixDelegation's prefix %s holds %s, the address Network %s gives a link of VRF %s", sub.delegated, a.prefix.Addr(), a.network, vrf)
+				return sub, refuse("DHCPSubnet", sub.name, "spec.prefixDelegation.prefix", "prefixDelegation's prefix %s holds %s, the address Network %s gives a link of VRF %s", sub.delegated, a.prefix.Addr(), a.network, vrf)
 			}
 		}
 		if err := delegatesNoRoute(d, sub); err != nil {
@@ -90,7 +89,7 @@ func delegatesNoRoute(d routerDocuments, sub servedSubnet) error {
 					p = netip.PrefixFrom(a, a.BitLen())
 				}
 				if p.Addr().Is6() && p.Bits() >= sub.delegated.Bits() && p.Overlaps(sub.delegated) {
-					return fmt.Errorf("prefixDelegation's prefix %s holds the route of %s that Network %s gives a link of VRF %s", sub.delegated, p.Masked(), network, vrf)
+					return refuse("DHCPSubnet", sub.name, "spec.prefixDelegation.prefix", "prefixDelegation's prefix %s holds the route of %s that Network %s gives a link of VRF %s", sub.delegated, p.Masked(), network, vrf)
 				}
 			}
 		}
@@ -105,7 +104,7 @@ func delegatesNoRoute(d routerDocuments, sub servedSubnet) error {
 			continue
 		}
 		if p.Bits() >= sub.delegated.Bits() && p.Overlaps(sub.delegated) {
-			return fmt.Errorf("prefixDelegation's prefix %s holds NAT64 %s's prefix %s of VRF %s", sub.delegated, n.Name, p.Masked(), vrf)
+			return refuse("DHCPSubnet", sub.name, "spec.prefixDelegation.prefix", "prefixDelegation's prefix %s holds NAT64 %s's prefix %s of VRF %s", sub.delegated, n.Name, p.Masked(), vrf)
 		}
 	}
 	return nil
@@ -119,7 +118,8 @@ func delegatesNoRoute(d routerDocuments, sub servedSubnet) error {
 // [IPv6PrefixDelegation] as well.
 func advertised(d routerDocuments, units []networkUnit, sub servedSubnet) error {
 	link := sub.links[0]
-	network, err := linkNetwork(units, link, "its router advertisements")
+	at := interfacePath(sub.spec.Interfaces, link)
+	network, err := linkNetwork(units, "DHCPSubnet", sub.name, at, link, "its router advertisements")
 	if err != nil {
 		return err
 	}
@@ -131,9 +131,9 @@ func advertised(d routerDocuments, units []networkUnit, sub servedSubnet) error 
 	addresses := len(sub.pools) > 0 || len(sub.spec.Reservations) > 0
 	switch {
 	case addresses && (!send || !managed):
-		return fmt.Errorf("Network %s sends no router advertisements on %s with Managed=yes, which tell its clients to ask the DHCPv6 server for addresses; give it ipv6SendRA: true in network and managed: true in ipv6SendRA", network, link)
+		return refuse("DHCPSubnet", sub.name, at, "Network %s sends no router advertisements on %s with Managed=yes, which tell its clients to ask the DHCPv6 server for addresses; give it ipv6SendRA: true in network and managed: true in ipv6SendRA", network, link)
 	case !send || (!managed && !other):
-		return fmt.Errorf("Network %s sends no router advertisements on %s with Managed=yes or OtherInformation=yes, which tell its clients to ask the DHCPv6 server; give it ipv6SendRA: true in network and otherInformation: true in ipv6SendRA", network, link)
+		return refuse("DHCPSubnet", sub.name, at, "Network %s sends no router advertisements on %s with Managed=yes or OtherInformation=yes, which tell its clients to ask the DHCPv6 server; give it ipv6SendRA: true in network and otherInformation: true in ipv6SendRA", network, link)
 	}
 	return nil
 }
@@ -306,24 +306,29 @@ func kea6Subnet(s servedSubnet) map[string]any {
 // MaxPDRecords: one record each, of all servers.
 const maxDelegated = 65536
 
-// delegableWithin refuses subnets that delegate more prefixes altogether than chalkd routes.
+// delegableWithin refuses subnets that delegate more prefixes altogether than chalkd routes. It
+// counts the subnets of all servers in the order of their names and refuses the first whose
+// prefixes take the count beyond the most, so that the refusal names the same subnet each time.
 func delegableWithin(byServer map[keaServer][]servedSubnet) error {
-	total := 0
+	var all []servedSubnet
 	for _, subnets := range byServer {
-		for _, s := range subnets {
-			if !s.delegated.IsValid() {
-				continue
-			}
-			bits := s.length - s.delegated.Bits()
-			if bits > 16 {
-				total = maxDelegated + 1
-				break
-			}
+		all = append(all, subnets...)
+	}
+	slices.SortFunc(all, func(a, b servedSubnet) int { return strings.Compare(a.name, b.name) })
+	total := 0
+	for _, s := range all {
+		if !s.delegated.IsValid() {
+			continue
+		}
+		bits := s.length - s.delegated.Bits()
+		if bits > 16 {
+			total = maxDelegated + 1
+		} else {
 			total += 1 << bits
 		}
-	}
-	if total > maxDelegated {
-		return fmt.Errorf("the DHCPSubnet documents delegate more than %d prefixes, the most the router routes; delegate fewer", maxDelegated)
+		if total > maxDelegated {
+			return refuse("DHCPSubnet", s.name, "spec.prefixDelegation.length", "the DHCPSubnet documents delegate more than %d prefixes, the most the router routes; delegate fewer", maxDelegated)
+		}
 	}
 	return nil
 }

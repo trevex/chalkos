@@ -595,7 +595,7 @@ func (c *frr) peerNeighbours(p named[peerSpec], vrf string) ([]neighbour, error)
 			}
 		}
 	}
-	if err := checkPeerDevices(s, c.devices); err != nil {
+	if err := checkPeerDevices(p, c.devices); err != nil {
 		return nil, err
 	}
 	switch {
