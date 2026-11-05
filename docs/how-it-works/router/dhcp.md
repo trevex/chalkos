@@ -68,8 +68,8 @@ file for each family it serves there. For the office of
 }
 ```
 
-Each subnet's `interfaces` are the links it is served on, by their full names. The schema and the
-renderer refuse a glob. Kea reads and answers DHCPv4 through raw packet sockets on exactly these
+Each subnet's `interfaces` are the links it is served on, by their full names, each once. The
+schema refuses a glob. Kea reads and answers DHCPv4 through raw packet sockets on exactly these
 links, which nftables does not see, so the firewall cannot narrow what a glob would catch. A link
 that a later `Network` adds would be served without anyone naming it. The renderer finds each
 link's VRF as the other router outputs do, from the `VRF` documents and the `Network` documents'
@@ -86,19 +86,28 @@ An IPv6 subnet's number is a hash of its range, FNV-1a of its address and length
 address has 128 bits. The renderer refuses two subnets of one server with the same number, which
 a change of either range resolves.
 
-The renderer refuses what spans documents or takes an order of addresses, which the kind's rules
-cannot check within their cost: subnets that overlap in a VRF, a link of two subnets, links of two
-VRFs, an interface of a VRF's device or a NAT64's link, and a pool that ends before it starts or
-overlaps another. It also refuses a link without a static address in the subnet, from its
-`Network`, as Kea answers a link's clients from that address and serves no link without one. A
-pool or reservation that holds the subnet's network or broadcast address is refused, and so is
-one that holds the router's own address, the gateway, a DNS server or the boot server, as Kea
-would lease a client an address that a server of its clients uses. A gateway at the subnet's
-network or broadcast address and a reservation in a pool are refused too.
+The kind's rules are rules of a subnet's spec, which see one document at a time, so they compare
+a subnet's lists with each other within their cost. They refuse a pool that ends before it
+starts or shares addresses with another, and a reservation in a pool. A pool or reservation that
+holds the subnet's network or broadcast address, or an IPv6 subnet's first address, the
+subnet-router anycast address, is refused, and so is one that holds the gateway, a DNS server or
+the boot server, as Kea would lease a client an address that a server of its clients uses. A
+gateway at the subnet's network or broadcast address is refused too.
+
+The renderer refuses what spans documents, which no rule of one document sees: subnets that
+overlap in a VRF, a link of two subnets, links of two VRFs, and an interface of a VRF's device or
+a NAT64's link. It also refuses a link without a static address in the subnet, from its
+`Network`, as Kea answers a link's clients from that address and serves no link without one, and
+a pool or reservation that holds that address. `chalkctl validate` does not run these checks; a
+delivery and `chalkctl apply-config --dry-run` do.
 
 The output's check runs `kea-dhcp4 -t` or `kea-dhcp6 -t` on each config. Kea refuses a config
 that names a link the system lacks, and the check runs in a network namespace of its own, so it
-checks a copy without the links.
+checks a copy without the links. Kea's check refuses a pool that runs backwards, overlaps another
+or leaves the subnet, and a reservation outside the subnet. The renderer guards, with an internal
+error, what Kea's check passes and the renderer cannot write: an address that does not parse or
+has a zone, and a domain with a comma, which Kea's option data reads as more values. The schema
+and the rules refuse each of these first.
 
 ## PXE files are client classes of the subnet
 

@@ -29,11 +29,11 @@ func relayDocs(t *testing.T, relays []any, subnets ...any) map[string][]any {
 	}
 }
 
-// The relay renderer refuses what the schema and the rules refuse, should a document bypass them,
-// and what spans documents: a glob, a VRF's device, links of two VRFs, a link of no Network or
-// without the router's address of a server's family, a global one for IPv6, a server that is no
-// unicast address, and a family relayed and served in one VRF, or in two of which one is the
-// default.
+// The relay renderer refuses what spans documents: a VRF's device, links of two VRFs, a link of
+// no Network or without the router's address of a server's family, a global one for IPv6, and a
+// family relayed and served in one VRF, or in two of which one is the default. It guards, with an
+// internal error, a link or server that dnsmasq's config would read as syntax. The rules refuse
+// a server that is no unicast address.
 func TestRelayRefusals(t *testing.T) {
 	relay := func(name, links, servers string) any {
 		return routerDoc(t, "DHCPRelay", name, `{"interfaces": `+links+`, "servers": `+servers+`}`)
@@ -44,19 +44,21 @@ func TestRelayRefusals(t *testing.T) {
 		subnets []any
 		want    string
 	}{
-		"a glob":                  {[]any{relay("office", `["lan*"]`, `["198.51.100.53"]`)}, nil, `DHCPRelay office: interfaces: "lan*" is a glob; a relay names each link it relays on`},
-		"a VRF's device":          {[]any{relay("office", `["guest"]`, `["198.51.100.53"]`)}, nil, "DHCPRelay office: guest is the device of VRF guest; name the VRF's links"},
-		"links of two VRFs":       {[]any{relay("office", `["lan0", "lan2"]`, `["198.51.100.53"]`)}, nil, "its links are in VRF default and VRF guest; a relay relays in one VRF"},
-		"a link of no Network":    {[]any{relay("office", `["lan9"]`, `["198.51.100.53"]`)}, nil, "no Network document matches lan9 by Name= alone, so the renderer cannot find its addresses; give the link one"},
-		"no IPv6 address":         {[]any{relay("office", `["lan1"]`, `["2001:db8:ff::53"]`)}, nil, "DHCPRelay office: Network 11-lan1 gives lan1 no static global IPv6 address, which the relay forwards its clients' requests from"},
-		"no IPv4 address":         {[]any{relay("office", `["lan4"]`, `["198.51.100.53"]`)}, nil, "Network 14-lan4 gives lan4 no static IPv4 address"},
-		"a multicast server":      {[]any{relay("office", `["lan0"]`, `["ff05::1:3"]`)}, nil, `DHCPRelay office: the server "ff05::1:3" is no unicast address a relay forwards to`},
-		"a server in 0.0.0.0/8":   {[]any{relay("office", `["lan0"]`, `["0.1.2.3"]`)}, nil, `DHCPRelay office: the server "0.1.2.3" is no unicast address a relay forwards to`},
-		"a server in 240.0.0.0/4": {[]any{relay("office", `["lan0"]`, `["240.0.0.1"]`)}, nil, `the server "240.0.0.1" is no unicast address a relay forwards to`},
-		"a server in ::/8":        {[]any{relay("office", `["lan0"]`, `["::102:304"]`)}, nil, `the server "::102:304" is no unicast address a relay forwards to`},
-		"served in the same VRF":  {[]any{office}, []any{subnetDoc(t, "lan", `{"interfaces": ["lan1"], "subnet": "198.51.100.0/24"}`)}, "DHCPRelay office relays DHCPv4 in VRF default and DHCPSubnet lan serves DHCPv4 in VRF default; dnsmasq's and Kea's sockets of one family bind beside each other only in two VRFs other than the default one"},
-		"served in a VRF":         {[]any{office}, []any{subnetDoc(t, "dmz", `{"interfaces": ["lan3"], "subnet": "203.0.113.64/26"}`)}, "DHCPRelay office relays DHCPv4 in VRF default and DHCPSubnet dmz serves DHCPv4 in VRF dmz"},
-		"relayed in a VRF":        {[]any{relay("guests", `["lan2"]`, `["2001:db8:ff::53"]`)}, []any{subnetDoc(t, "office6", `{"interfaces": ["lan0"], "subnet": "2001:db8:1::/64"}`)}, "DHCPRelay guests relays DHCPv6 in VRF guest and DHCPSubnet office6 serves DHCPv6 in VRF default"},
+		"a VRF's device":         {[]any{relay("office", `["guest"]`, `["198.51.100.53"]`)}, nil, "DHCPRelay office: guest is the device of VRF guest; name the VRF's links"},
+		"links of two VRFs":      {[]any{relay("office", `["lan0", "lan2"]`, `["198.51.100.53"]`)}, nil, "its links are in VRF default and VRF guest; a relay relays in one VRF"},
+		"a link of no Network":   {[]any{relay("office", `["lan9"]`, `["198.51.100.53"]`)}, nil, "no Network document matches lan9 by Name= alone, so the renderer cannot find its addresses; give the link one"},
+		"no IPv6 address":        {[]any{relay("office", `["lan1"]`, `["2001:db8:ff::53"]`)}, nil, "DHCPRelay office: Network 11-lan1 gives lan1 no static global IPv6 address, which the relay forwards its clients' requests from"},
+		"no IPv4 address":        {[]any{relay("office", `["lan4"]`, `["198.51.100.53"]`)}, nil, "Network 14-lan4 gives lan4 no static IPv4 address"},
+		"served in the same VRF": {[]any{office}, []any{subnetDoc(t, "lan", `{"interfaces": ["lan1"], "subnet": "198.51.100.0/24"}`)}, "DHCPRelay office relays DHCPv4 in VRF default and DHCPSubnet lan serves DHCPv4 in VRF default; dnsmasq's and Kea's sockets of one family bind beside each other only in two VRFs other than the default one"},
+		"served in a VRF":        {[]any{office}, []any{subnetDoc(t, "dmz", `{"interfaces": ["lan3"], "subnet": "203.0.113.64/26"}`)}, "DHCPRelay office relays DHCPv4 in VRF default and DHCPSubnet dmz serves DHCPv4 in VRF dmz"},
+		"relayed in a VRF":       {[]any{relay("guests", `["lan2"]`, `["2001:db8:ff::53"]`)}, []any{subnetDoc(t, "office6", `{"interfaces": ["lan0"], "subnet": "2001:db8:1::/64"}`)}, "DHCPRelay guests relays DHCPv6 in VRF guest and DHCPSubnet office6 serves DHCPv6 in VRF default"},
+		// Values dnsmasq's config would read as syntax.
+		"a glob": {[]any{relay("office", `["lan*"]`, `["198.51.100.53"]`)}, nil,
+			`internal error: DHCPRelay office: interfaces: "lan*" is no interface name; chalkd checks the config against the schemas and rules before it renders`},
+		"a link that adds an option": {[]any{relay("office", `["lan0\ndhcp-range=lan0"]`, `["198.51.100.53"]`)}, nil, `internal error: DHCPRelay office: interfaces: "lan0\ndhcp-range=lan0" is no interface name`},
+		"a server that adds an option": {[]any{relay("office", `["lan0"]`, `["fe80::53%x\ndhcp-range=lan0"]`)}, nil,
+			`internal error: DHCPRelay office: the server "fe80::53%x\ndhcp-range=lan0" is no address without a zone; chalkd checks the config against the schemas and rules before it renders`},
+		"a server of no address": {[]any{relay("office", `["lan0"]`, `["dhcp.example.org"]`)}, nil, `internal error: DHCPRelay office: the server "dhcp.example.org" is no address without a zone`},
 	} {
 		t.Run(name, func(t *testing.T) { refused(t, []string{"dhcp-relay"}, relayDocs(t, c.relays, c.subnets...), c.want) })
 	}
@@ -133,8 +135,9 @@ func TestDHCPOpenings(t *testing.T) {
 	if !slices.Equal(got, want) {
 		t.Errorf("openings:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
 	}
+	// The schema takes no glob, which the opening would write into the ruleset.
 	refused(t, []string{"router-nftables", "50000"}, relayDocs(t, []any{relay("office", `["lan*"]`, `["198.51.100.53"]`)}),
-		`DHCPRelay office: interfaces: "lan*" is a glob; a relay names each link it relays on`)
+		`internal error: DHCPRelay office: interfaces: "lan*" is no interface name; chalkd checks the config against the schemas and rules before it renders`)
 }
 
 // A relay forwards from none of the router's addresses on a link that the servers' rule refuses,

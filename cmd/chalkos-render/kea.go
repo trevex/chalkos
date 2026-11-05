@@ -14,12 +14,16 @@ import (
 )
 
 // The output kea: the config of Kea's DHCPv4 and DHCPv6 servers of each VRF whose links
-// DHCPSubnet documents serve, on the links the subnets name. The renderer checks across documents
-// what the kind's rules cannot: one VRF per subnet, one subnet of each family per link, no overlap
-// within a VRF, a static address of the router in the subnet on each link, router advertisements
-// that send IPv6 clients to the DHCPv6 server, the order of the pools' and reservations'
-// addresses, and pools and reservations apart from the router's, the gateway's and the DNS and
-// boot servers' addresses.
+// DHCPSubnet documents serve, on the links the subnets name. The kind's rules check each subnet
+// on its own: its range, its pools and reservations against the range, each other and the
+// gateway, DNS and boot servers, and its options. The renderer checks what spans documents: one
+// VRF per subnet, one subnet of each family per link, no overlap and no number twice within a
+// server, a static address of the router in the subnet on each link, kept out of the pools and
+// reservations, what a subnet delegates against the router's addresses and routes, and router
+// advertisements that send IPv6 clients to the DHCPv6 server. The output's check runs Kea's own,
+// kea-dhcp4 -t and kea-dhcp6 -t, on each config, which refuses pools that run backwards, overlap
+// or leave the subnet, a reservation outside the subnet and a lease past 4294967295 seconds; the
+// renderer guards what Kea's check passes and would panic, or what Kea would read as more values.
 
 // keaServer is one of Kea's servers: that of a VRF and a family.
 type keaServer struct {
@@ -59,13 +63,8 @@ const (
 	keaRetries   = math.MaxUint32
 )
 
-// macAddress is a MAC address as the schema takes it.
-var macAddress = regexp.MustCompile(`^[0-9a-f]{2}(:[0-9a-f]{2}){5}$`)
-
-// bootFile is a file a PXE client loads as the schema takes it.
-var bootFile = regexp.MustCompile(`^[!-~]{1,127}$`)
-
-// dhcpName is a DNS name as the schema takes a domain and a reservation's hostname.
+// dhcpName is a DNS name as the schema takes a domain: no comma, which Kea's option data would
+// read as the start of another value.
 var dhcpName = regexp.MustCompile(`^([a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?\.)*[a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?$`)
 
 // leaseTime is a lease's duration as the schema takes it.
@@ -188,176 +187,112 @@ func apart(a, b servedSubnet) error {
 	return nil
 }
 
-// serveSubnet checks the subnet s and finds its links, their VRF and the router's addresses in it.
+// serveSubnet finds the links of the subnet s, their VRF and the router's addresses in it, which
+// no pool or reservation holds. The rules have checked the rest of the subnet's addresses.
 func serveSubnet(d routerDocuments, units []networkUnit, devices []string, s named[dhcpSubnetSpec]) (servedSubnet, error) {
 	sub := servedSubnet{name: s.Name, spec: s.Spec}
 	p, err := netip.ParsePrefix(s.Spec.Subnet)
-	if err == nil && p.Addr().Is6() && !p.Addr().Is4In6() {
-		return serveSubnet6(d, units, devices, s, p)
+	if err != nil {
+		return sub, internalErrorf("the subnet %q is no address range", s.Spec.Subnet)
 	}
-	if err != nil || !p.Addr().Is4() || p.Bits() > 30 {
-		return sub, fmt.Errorf("the subnet %q is no IPv4 range of 30 bits at most", s.Spec.Subnet)
-	}
-	sub.prefix = p.Masked()
-	sub.id = binary.BigEndian.Uint32(sub.prefix.Addr().AsSlice())
-	if sub.id == 0 {
-		return sub, fmt.Errorf("the subnet %s starts at 0.0.0.0, which Kea numbers no subnet by", sub.prefix)
-	}
-	if sub.links, sub.vrf, err = subnetLinks(d, devices, s.Spec.Interfaces, subnetWords); err != nil {
+	if err := keaValues(s.Spec); err != nil {
 		return sub, err
 	}
-	if s.Spec.PrefixDelegation != nil {
-		return sub, fmt.Errorf("prefixDelegation delegates IPv6 prefixes, which an IPv4 subnet has none of")
+	// An IPv4-mapped range, which the rules refuse, is IPv6 to Kea.
+	if !p.Addr().Is4() {
+		return serveSubnet6(d, units, devices, s, p)
+	}
+	sub.prefix = p.Masked()
+	// Kea's check refuses the number 0, of a subnet at 0.0.0.0, which the rules refuse first.
+	sub.id = binary.BigEndian.Uint32(sub.prefix.Addr().AsSlice())
+	if sub.links, sub.vrf, err = subnetLinks(d, devices, s.Spec.Interfaces, subnetWords); err != nil {
+		return sub, err
 	}
 	own, err := ownAddresses(d, units, sub, "which Kea answers its clients from")
 	if err != nil {
 		return sub, err
 	}
-	// taken are the addresses no pool or reservation holds, each with what it is: the router's own
-	// on the subnet's links, the gateway and the DNS and boot servers.
-	var taken []takenAddress
-	for _, o := range own {
-		taken = append(taken, takenAddress{o, "the router's own address on the subnet's links"})
-	}
-	if g := s.Spec.Gateway; g != nil {
-		a, err := netip.ParseAddr(*g)
-		if err != nil || !a.Is4() || !sub.prefix.Contains(a) {
-			return sub, fmt.Errorf("the gateway %q is no address of the subnet %s", *g, sub.prefix)
-		}
-		if a == sub.prefix.Addr() || a == broadcast(sub.prefix) {
-			return sub, fmt.Errorf("the gateway, %s, is the network or broadcast address of the subnet %s", a, sub.prefix)
-		}
-		taken = append(taken, takenAddress{a, "the gateway"})
-	}
-	for _, a := range s.Spec.DNS {
-		addr, err := netip.ParseAddr(a)
-		if err != nil || !addr.Is4() {
-			return sub, fmt.Errorf("the DNS server %q is no IPv4 address", a)
-		}
-		taken = append(taken, takenAddress{addr, "a DNS server"})
-	}
-	if b := s.Spec.Boot; b != nil {
-		if b.Server != nil {
-			a, err := netip.ParseAddr(*b.Server)
-			if err != nil || !a.Is4() {
-				return sub, fmt.Errorf("boot's server %q is no IPv4 address", *b.Server)
-			}
-			taken = append(taken, takenAddress{a, "boot's server"})
-		}
-		files := 0
-		for _, f := range []*string{b.BIOS, b.UEFI, b.IPXE} {
-			if f == nil {
-				continue
-			}
-			if !bootFile.MatchString(*f) {
-				return sub, fmt.Errorf("boot's file %q is no file of 1 to 127 printable characters without spaces", *f)
-			}
-			files++
-		}
-		if files == 0 {
-			return sub, fmt.Errorf("boot names no file")
-		}
-		// Firmware loads its file over TFTP from the next server, which only the boot server
-		// gives; iPXE also loads URLs.
-		if b.Server == nil && (b.BIOS != nil || b.UEFI != nil) {
-			return sub, fmt.Errorf("boot's bios and uefi files load over TFTP from boot's server; give server")
-		}
-	}
-	// inSubnet parses an address of a pool or reservation, which lies in the subnet and is neither
-	// its network's nor its broadcast address nor taken.
-	inSubnet := func(what, a string) (netip.Addr, error) {
-		addr, err := netip.ParseAddr(a)
-		if err != nil || !addr.Is4() || !sub.prefix.Contains(addr) {
-			return addr, fmt.Errorf("%s, %q, is no address of the subnet %s", what, a, sub.prefix)
-		}
-		if addr == sub.prefix.Addr() || addr == broadcast(sub.prefix) {
-			return addr, fmt.Errorf("%s, %s, is the network or broadcast address of the subnet %s", what, addr, sub.prefix)
-		}
-		for _, t := range taken {
-			if t.addr == addr {
-				return addr, fmt.Errorf("%s, %s, is %s", what, addr, t.what)
-			}
-		}
-		return addr, nil
-	}
-	for _, pool := range s.Spec.Pools {
-		first, err := inSubnet("the pool's first address", pool.First)
-		if err != nil {
-			return sub, err
-		}
-		last, err := inSubnet("the pool's last address", pool.Last)
-		if err != nil {
-			return sub, err
-		}
-		if last.Less(first) {
-			return sub, fmt.Errorf("the pool %s-%s ends before it starts", first, last)
-		}
-		for _, t := range taken {
-			if !t.addr.Less(first) && !last.Less(t.addr) {
-				return sub, fmt.Errorf("the pool %s-%s holds %s, %s", first, last, t.addr, t.what)
-			}
-		}
-		for _, other := range sub.pools {
-			if !last.Less(other[0]) && !other[1].Less(first) {
-				return sub, fmt.Errorf("the pools %s-%s and %s-%s overlap", other[0], other[1], first, last)
-			}
-		}
-		sub.pools = append(sub.pools, [2]netip.Addr{first, last})
-	}
-	for _, r := range s.Spec.Reservations {
-		if !macAddress.MatchString(r.MAC) {
-			return sub, fmt.Errorf("%q is no MAC address in lower case", r.MAC)
-		}
-		a, err := inSubnet("the reservation of "+r.MAC, r.Address)
-		if err != nil {
-			return sub, err
-		}
-		for _, pool := range sub.pools {
-			if !a.Less(pool[0]) && !pool[1].Less(a) {
-				return sub, fmt.Errorf("the reservation of %s, %s, lies in the pool %s-%s; reserve addresses outside the pools", r.MAC, a, pool[0], pool[1])
-			}
-		}
-		if r.Hostname != nil && !dhcpName.MatchString(*r.Hostname) {
-			return sub, fmt.Errorf("the reservation of %s: %q is no host name", r.MAC, *r.Hostname)
-		}
-	}
-	if dom := s.Spec.Domain; dom != nil && !dhcpName.MatchString(*dom) {
-		return sub, fmt.Errorf("%q is no domain", *dom)
-	}
-	if sub.seconds, err = leaseSeconds(s.Spec.LeaseTime); err != nil {
+	if sub.pools, err = ownApart(s.Spec, own, "the router's own address on the subnet's links"); err != nil {
 		return sub, err
 	}
-	return sub, nil
+	sub.seconds, err = leaseSeconds(s.Spec.LeaseTime)
+	return sub, err
 }
 
-// takenAddress is an address of a subnet that no pool or reservation holds, and what it is.
-type takenAddress struct {
-	addr netip.Addr
-	what string
+// keaValues guards, with an internal error, the values of the subnet s that Kea's config takes as
+// they are and Kea's check passes: an address that does not parse, which netip.MustParseAddr
+// panics on, or that has a zone, which netip takes of any characters and Kea's option data splits
+// at a comma into more values, and a domain that is no DNS name, which Kea's option data splits
+// as well. The schema refuses each of them.
+func keaValues(s dhcpSubnetSpec) error {
+	var addresses []string
+	if s.Gateway != nil {
+		addresses = append(addresses, *s.Gateway)
+	}
+	addresses = append(addresses, s.DNS...)
+	for _, p := range s.Pools {
+		addresses = append(addresses, p.First, p.Last)
+	}
+	for _, r := range s.Reservations {
+		addresses = append(addresses, r.Address)
+	}
+	if s.Boot != nil && s.Boot.Server != nil {
+		addresses = append(addresses, *s.Boot.Server)
+	}
+	for _, a := range addresses {
+		if addr, err := netip.ParseAddr(a); err != nil || addr.Zone() != "" {
+			return internalErrorf("%q is no address without a zone", a)
+		}
+	}
+	if dom := s.Domain; dom != nil && !dhcpName.MatchString(*dom) {
+		return internalErrorf("%q is no domain", *dom)
+	}
+	return nil
 }
 
-// linkWords end the refusals of subnetLinks for a kind: of a glob, and of links of two VRFs.
-type linkWords struct{ glob, oneVRF string }
+// ownApart are the pools of the subnet s, each its first and last address. It refuses a pool or
+// reservation that holds one of the router's own addresses own on the subnet's links, which Kea
+// would lease to a client; what says what they are. The rules have kept the pools and
+// reservations inside the subnet and apart from each other and from the gateway and the DNS and
+// boot servers, and keaValues has parsed their addresses.
+func ownApart(s dhcpSubnetSpec, own []netip.Addr, what string) ([][2]netip.Addr, error) {
+	var pools [][2]netip.Addr
+	for _, p := range s.Pools {
+		first, last := netip.MustParseAddr(p.First), netip.MustParseAddr(p.Last)
+		for _, o := range own {
+			if !o.Less(first) && !last.Less(o) {
+				return nil, fmt.Errorf("the pool %s-%s holds %s, %s", first, last, o, what)
+			}
+		}
+		pools = append(pools, [2]netip.Addr{first, last})
+	}
+	for _, r := range s.Reservations {
+		if a := netip.MustParseAddr(r.Address); slices.Contains(own, a) {
+			return nil, fmt.Errorf("the reservation of %s, %s, is %s", r.MAC, a, what)
+		}
+	}
+	return pools, nil
+}
 
-// subnetWords end the link refusals of a subnet.
-var subnetWords = linkWords{"a subnet names each link it is served on", "a subnet is served in one VRF"}
+// subnetWords ends the refusal of a subnet's links in two VRFs.
+var subnetWords = "a subnet is served in one VRF"
 
 // subnetLinks are the links the interfaces of a subnet or relay serve it on, sorted, and their
-// VRF. Kea reads and answers DHCPv4 on raw sockets ahead of the firewall, so a document names each
-// of its links: it refuses a glob, as the schema does, an interface that is a VRF's device or a
-// NAT64's link, links of two VRFs and links in a VRF of a Network's VRF= that no VRF document
-// declares.
-func subnetLinks(d routerDocuments, devices []string, interfaces []string, words linkWords) ([]string, string, error) {
+// VRF; oneVRF ends the refusal of links of two VRFs. Kea reads and answers DHCPv4 on raw sockets
+// ahead of the firewall, so a document names each of its links, as the schema's pattern, which
+// takes no glob, holds it to. It refuses an interface that is a VRF's device or a NAT64's link,
+// links of two VRFs and links in a VRF of a Network's VRF= that no VRF document declares. It
+// guards, with an internal error, no interface, as an IPv6 subnet's config names its first, and
+// a name that is no interface's, which dnsmasq's config and the firewall's ruleset would read as
+// syntax.
+func subnetLinks(d routerDocuments, devices []string, interfaces []string, oneVRF string) ([]string, string, error) {
 	if len(interfaces) == 0 {
-		return nil, "", fmt.Errorf("interfaces names no interface")
+		return nil, "", internalErrorf("interfaces names no interface")
 	}
 	var links []string
 	for _, i := range interfaces {
 		if !plainInterface.MatchString(i) {
-			if interfaceName.MatchString(i) {
-				return nil, "", fmt.Errorf("interfaces: %q is a glob; %s", i, words.glob)
-			}
-			return nil, "", fmt.Errorf("interfaces: %q is no interface name", i)
+			return nil, "", internalErrorf("interfaces: %q is no interface name", i)
 		}
 		if slices.Contains(devices, i) {
 			return nil, "", fmt.Errorf("%s is the device of VRF %s; name the VRF's links", i, i)
@@ -377,7 +312,7 @@ func subnetLinks(d routerDocuments, devices []string, interfaces []string, words
 			return nil, "", err
 		}
 		if vrf != "" && v != vrf {
-			return nil, "", fmt.Errorf("its links are in VRF %s and VRF %s; %s", vrf, v, words.oneVRF)
+			return nil, "", fmt.Errorf("its links are in VRF %s and VRF %s; %s", vrf, v, oneVRF)
 		}
 		vrf = v
 	}
@@ -422,14 +357,6 @@ func ownAddresses(d routerDocuments, units []networkUnit, sub servedSubnet, why 
 	return own, nil
 }
 
-// broadcast is the last address of the IPv4 range p.
-func broadcast(p netip.Prefix) netip.Addr {
-	a := p.Masked().Addr().As4()
-	n := binary.BigEndian.Uint32(a[:]) | (1<<(32-p.Bits()) - 1)
-	binary.BigEndian.PutUint32(a[:], n)
-	return netip.AddrFrom4(a)
-}
-
 // appendNewAddr appends a to l unless l holds it.
 func appendNewAddr(l []netip.Addr, a netip.Addr) []netip.Addr {
 	if slices.Contains(l, a) {
@@ -438,18 +365,16 @@ func appendNewAddr(l []netip.Addr, a netip.Addr) []netip.Addr {
 	return append(l, a)
 }
 
-// leaseSeconds is a lease time of the schema in seconds, which Kea takes as a 32-bit number.
+// leaseSeconds is a lease time of the schema in seconds. It guards, with an internal error, a
+// time the schema refuses, which it reads no seconds of. Kea's check refuses more than 4294967295
+// seconds, which the rules refuse first.
 func leaseSeconds(t string) (uint64, error) {
 	m := leaseTime.FindStringSubmatch(t)
 	if m == nil {
-		return 0, fmt.Errorf("leaseTime %q is no number and s, m, h or d", t)
+		return 0, internalErrorf("leaseTime %q is no number and s, m, h or d", t)
 	}
 	n, _ := strconv.ParseUint(m[1], 10, 64)
-	n *= map[string]uint64{"s": 1, "m": 60, "h": 3600, "d": 86400}[m[2]]
-	if n > math.MaxUint32 {
-		return 0, fmt.Errorf("leaseTime %s is longer than %d seconds, the longest Kea takes", t, uint64(math.MaxUint32))
-	}
-	return n, nil
+	return n * map[string]uint64{"s": 1, "m": 60, "h": 3600, "d": 86400}[m[2]], nil
 }
 
 // keaConfig is the config of the DHCPv4 server srv: raw sockets on the subnets' links, its

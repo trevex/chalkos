@@ -15,123 +15,31 @@ import (
 // client on a link by the link the subnet names, so an IPv6 subnet takes one link. Clients ask
 // the server when the link's router advertisements tell them to, which the link's Network sends.
 
-// specialIPv6 are the ranges no IPv6 subnet or delegated prefix is taken from.
-var specialIPv6 = []netip.Prefix{netip.MustParsePrefix("::/8"), netip.MustParsePrefix("fe80::/10"), netip.MustParsePrefix("ff00::/8")}
-
-// special reports whether p overlaps a range of specialIPv6.
-func special(p netip.Prefix) bool {
-	for _, s := range specialIPv6 {
-		if s.Overlaps(p) {
-			return true
-		}
-	}
-	return false
-}
-
-// serveSubnet6 checks the IPv6 subnet s of the range p and finds its link, its VRF and the
-// router's addresses in it.
+// serveSubnet6 finds the link of the IPv6 subnet s of the range p, its VRF and the router's
+// addresses in it, which no pool or reservation holds, and checks the prefixes it delegates
+// against the router's addresses and routes in the VRF and the link's router advertisements. The
+// rules have checked the rest of the subnet, one link and the delegated range apart from the
+// subnet among it.
 func serveSubnet6(d routerDocuments, units []networkUnit, devices []string, s named[dhcpSubnetSpec], p netip.Prefix) (servedSubnet, error) {
 	sub := servedSubnet{name: s.Name, spec: s.Spec, prefix: p.Masked()}
-	if p.Bits() > 120 || special(sub.prefix) {
-		return sub, fmt.Errorf("the subnet %s is no IPv6 range of 120 bits at most outside ::/8, fe80::/10 and ff00::/8", sub.prefix)
-	}
 	sub.id = subnetID6(sub.prefix)
 	var err error
 	if sub.links, sub.vrf, err = subnetLinks(d, devices, s.Spec.Interfaces, subnetWords); err != nil {
 		return sub, err
 	}
-	if len(sub.links) != 1 {
-		return sub, fmt.Errorf("an IPv6 subnet is served on one link, the one Kea's subnet names; give each of %s a DHCPSubnet of its own", strings.Join(sub.links, ", "))
-	}
-	if s.Spec.Gateway != nil {
-		return sub, fmt.Errorf("gateway is for IPv4 subnets; IPv6 clients learn their routers from router advertisements")
-	}
-	if s.Spec.Boot != nil {
-		return sub, fmt.Errorf("boot is for IPv4 subnets")
-	}
 	own, err := ownAddresses(d, units, sub, "which routes the subnet's addresses to the link")
 	if err != nil {
 		return sub, err
 	}
-	var taken []takenAddress
-	for _, o := range own {
-		taken = append(taken, takenAddress{o, "the router's own address on the subnet's link"})
-	}
-	for _, a := range s.Spec.DNS {
-		addr, err := netip.ParseAddr(a)
-		if err != nil || !addr.Is6() || addr.Is4In6() || addr.Zone() != "" {
-			return sub, fmt.Errorf("the DNS server %q is no IPv6 address", a)
-		}
-		taken = append(taken, takenAddress{addr, "a DNS server"})
-	}
-	// inSubnet parses an address of a pool or reservation, which lies in the subnet and is neither
-	// its first address, the subnet routers' anycast address, nor taken.
-	inSubnet := func(what, a string) (netip.Addr, error) {
-		addr, err := netip.ParseAddr(a)
-		if err != nil || !addr.Is6() || addr.Zone() != "" || !sub.prefix.Contains(addr) {
-			return addr, fmt.Errorf("%s, %q, is no address of the subnet %s", what, a, sub.prefix)
-		}
-		if addr == sub.prefix.Addr() {
-			return addr, fmt.Errorf("%s, %s, is the subnet routers' anycast address of the subnet %s", what, addr, sub.prefix)
-		}
-		for _, t := range taken {
-			if t.addr == addr {
-				return addr, fmt.Errorf("%s, %s, is %s", what, addr, t.what)
-			}
-		}
-		return addr, nil
-	}
-	for _, pool := range s.Spec.Pools {
-		first, err := inSubnet("the pool's first address", pool.First)
-		if err != nil {
-			return sub, err
-		}
-		last, err := inSubnet("the pool's last address", pool.Last)
-		if err != nil {
-			return sub, err
-		}
-		if last.Less(first) {
-			return sub, fmt.Errorf("the pool %s-%s ends before it starts", first, last)
-		}
-		for _, t := range taken {
-			if !t.addr.Less(first) && !last.Less(t.addr) {
-				return sub, fmt.Errorf("the pool %s-%s holds %s, %s", first, last, t.addr, t.what)
-			}
-		}
-		for _, other := range sub.pools {
-			if !last.Less(other[0]) && !other[1].Less(first) {
-				return sub, fmt.Errorf("the pools %s-%s and %s-%s overlap", other[0], other[1], first, last)
-			}
-		}
-		sub.pools = append(sub.pools, [2]netip.Addr{first, last})
-	}
-	for _, r := range s.Spec.Reservations {
-		if !macAddress.MatchString(r.MAC) {
-			return sub, fmt.Errorf("%q is no MAC address in lower case", r.MAC)
-		}
-		a, err := inSubnet("the reservation of "+r.MAC, r.Address)
-		if err != nil {
-			return sub, err
-		}
-		for _, pool := range sub.pools {
-			if !a.Less(pool[0]) && !pool[1].Less(a) {
-				return sub, fmt.Errorf("the reservation of %s, %s, lies in the pool %s-%s; reserve addresses outside the pools", r.MAC, a, pool[0], pool[1])
-			}
-		}
-		if r.Hostname != nil && !dhcpName.MatchString(*r.Hostname) {
-			return sub, fmt.Errorf("the reservation of %s: %q is no host name", r.MAC, *r.Hostname)
-		}
+	if sub.pools, err = ownApart(s.Spec, own, "the router's own address on the subnet's link"); err != nil {
+		return sub, err
 	}
 	if pd := s.Spec.PrefixDelegation; pd != nil {
+		// delegableWithin shifts by the bits a delegated prefix has beyond the range's, which a
+		// length no longer than the range's makes negative, a shift Go panics on.
 		r, err := netip.ParsePrefix(pd.Prefix)
-		if err != nil || !r.Addr().Is6() || r.Addr().Is4In6() || special(r.Masked()) {
-			return sub, fmt.Errorf("prefixDelegation's prefix %q is no IPv6 range outside ::/8, fe80::/10 and ff00::/8", pd.Prefix)
-		}
-		if pd.Length <= r.Bits() || pd.Length > 128 {
-			return sub, fmt.Errorf("prefixDelegation's length %d is not longer than its prefix %s, nor 128 at most", pd.Length, r.Masked())
-		}
-		if r.Overlaps(sub.prefix) {
-			return sub, fmt.Errorf("prefixDelegation's prefix %s overlaps the subnet %s", r.Masked(), sub.prefix)
+		if err != nil || pd.Length <= r.Bits() {
+			return sub, internalErrorf("prefixDelegation's prefix %q is no range shorter than its length %d", pd.Prefix, pd.Length)
 		}
 		sub.delegated, sub.length = r.Masked(), pd.Length
 		// A route of a delegated prefix would take the router's own address on a link of the VRF
@@ -148,9 +56,6 @@ func serveSubnet6(d routerDocuments, units []networkUnit, devices []string, s na
 		if err := delegatesNoRoute(d, sub); err != nil {
 			return sub, err
 		}
-	}
-	if dom := s.Spec.Domain; dom != nil && !dhcpName.MatchString(*dom) {
-		return sub, fmt.Errorf("%q is no domain", *dom)
 	}
 	if sub.seconds, err = leaseSeconds(s.Spec.LeaseTime); err != nil {
 		return sub, err

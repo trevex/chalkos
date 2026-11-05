@@ -27,8 +27,8 @@ func relayFileOf(vrf string) string {
 	return "dnsmasq-relay-" + vrf + ".conf"
 }
 
-// relayWords end the link refusals of a relay.
-var relayWords = linkWords{"a relay names each link it relays on", "a relay relays in one VRF"}
+// relayWords ends the refusal of a relay's links in two VRFs.
+var relayWords = "a relay relays in one VRF"
 
 // relayVRF is the part of a relay's config of one VRF: the links it relays on and its dhcp-relay
 // lines, each the router's address on a link and a server.
@@ -119,8 +119,8 @@ func renderDHCPRelay(in map[string]any, out string) error {
 	return nil
 }
 
-// notUnicast are the ranges DHCPRelay's rule refuses servers of, which a relay neither forwards
-// to nor from.
+// notUnicast are the ranges a relay neither forwards to nor from, which DHCPRelay's rule refuses
+// servers of.
 var notUnicast = []netip.Prefix{
 	netip.MustParsePrefix("0.0.0.0/8"), netip.MustParsePrefix("127.0.0.0/8"), netip.MustParsePrefix("169.254.0.0/16"), netip.MustParsePrefix("224.0.0.0/3"),
 	netip.MustParsePrefix("::/8"), netip.MustParsePrefix("fe80::/10"), netip.MustParsePrefix("ff00::/8"),
@@ -140,14 +140,16 @@ func relayUnicast(a netip.Addr) bool {
 	return true
 }
 
-// relayServers are a relay's servers by family, IPv6 under true: unicast addresses, once each, as
-// the set check has refused a repeat.
+// relayServers are a relay's servers by family, IPv6 under true: unicast addresses, as the rules
+// have checked, once each, as the set check has refused a repeat. It guards, with an internal
+// error, a server that is no address without a zone: netip takes a zone of any characters, a line
+// break among them, which dnsmasq's config would read as another option.
 func relayServers(servers []string) (map[bool][]netip.Addr, error) {
 	out := map[bool][]netip.Addr{}
 	for _, s := range servers {
 		a, err := netip.ParseAddr(s)
-		if err != nil || !relayUnicast(a) {
-			return nil, fmt.Errorf("the server %q is no unicast address a relay forwards to", s)
+		if err != nil || a.Zone() != "" {
+			return nil, internalErrorf("the server %q is no address without a zone", s)
 		}
 		out[a.Is6()] = append(out[a.Is6()], a)
 	}
