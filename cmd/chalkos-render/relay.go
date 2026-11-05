@@ -57,11 +57,11 @@ func renderDHCPRelay(in map[string]any, out string) error {
 	for _, r := range d.DHCPRelays {
 		links, vrf, err := subnetLinks(d, devices, r.Spec.Interfaces, relayWords)
 		if err != nil {
-			return fmt.Errorf("DHCPRelay %s: %w", r.Name, err)
+			return within("DHCPRelay "+r.Name, err)
 		}
 		servers, err := relayServers(r.Spec.Servers)
 		if err != nil {
-			return fmt.Errorf("DHCPRelay %s: %w", r.Name, err)
+			return within("DHCPRelay "+r.Name, err)
 		}
 		v := byVRF[vrf]
 		if v == nil {
@@ -72,7 +72,7 @@ func renderDHCPRelay(in map[string]any, out string) error {
 			v.links = append(v.links, l)
 			network, err := linkNetwork(units, l, "its addresses")
 			if err != nil {
-				return fmt.Errorf("DHCPRelay %s: %w", r.Name, err)
+				return within("DHCPRelay "+r.Name, err)
 			}
 			for _, v6 := range []bool{false, true} {
 				fam := servers[v6]
@@ -82,7 +82,7 @@ func renderDHCPRelay(in map[string]any, out string) error {
 				families[keaServer{vrf: vrf, v6: v6}] = r.Name
 				local, err := relayAddress(d, network, l, v6)
 				if err != nil {
-					return fmt.Errorf("DHCPRelay %s: %w", r.Name, err)
+					return within("DHCPRelay "+r.Name, err)
 				}
 				for _, s := range fam {
 					v.lines = append(v.lines, "dhcp-relay="+local.String()+","+s.String())

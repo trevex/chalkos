@@ -63,7 +63,7 @@ func policyTargets(d routerDocuments) ([]routeTarget, error) {
 			case to.VRF != nil:
 				table, err := mustGet(vrfTables, "VRF", *to.VRF)
 				if err != nil {
-					return nil, fmt.Errorf("%s: %w", what, err)
+					return nil, within(what, err)
 				}
 				t.table = table
 			case to.Table != nil:
@@ -155,7 +155,7 @@ func (f *firewall) policyLines(d routerDocuments) ([]string, error) {
 		for i, r := range p.Spec.Rules {
 			matches, err := f.policyMatches(r)
 			if err != nil {
-				return nil, fmt.Errorf("PolicyRoute %s rule %d: %w", p.Name, i+1, err)
+				return nil, within(fmt.Sprintf("PolicyRoute %s rule %d", p.Name, i+1), err)
 			}
 			mark := markOf(f.targets, ruleTable(d, r))
 			set := fmt.Sprintf("counter meta mark set meta mark & 0x%08x | 0x%08x return comment %q", ^uint32(policyMarkMask), mark, fmt.Sprintf("%s %d", p.Name, i+1))
@@ -182,7 +182,7 @@ func (f *firewall) policyHead(p named[policyRouteSpec]) (string, error) {
 	case in.Zone != nil:
 		z, err := mustGet(f.zones, "FirewallZone", *in.Zone)
 		if err != nil {
-			return "", fmt.Errorf("%s: %w", what, err)
+			return "", within(what, err)
 		}
 		if len(z.links) == 0 {
 			return "", fmt.Errorf("%s: the zone %s holds no link", what, *in.Zone)
@@ -317,7 +317,7 @@ func withPolicyRoutes(d routerDocuments, byKind, docs map[string]any) (map[strin
 				names = append(names, p.Name)
 			}
 		}
-		return nil, fmt.Errorf("PolicyRoute %s: %w", strings.Join(names, ", "), err)
+		return nil, within("PolicyRoute "+strings.Join(names, ", "), err)
 	}
 	if lo == "" {
 		spec := map[string]any{"match": map[string]any{"name": "lo"}, "routingPolicyRule": rules}
@@ -337,7 +337,7 @@ func withPolicyRoutes(d routerDocuments, byKind, docs map[string]any) (map[strin
 		}
 		link, err := soleNetwork(units, t.hop.Interface)
 		if err != nil {
-			return nil, fmt.Errorf("%s: %w", t.what, err)
+			return nil, within(t.what, err)
 		}
 		if link == "" {
 			return nil, fmt.Errorf("%s: the next hop %s is on %s, which no Network document names; give it one, which gets the next hop's route", t.what, t.hop.Address, t.hop.Interface)

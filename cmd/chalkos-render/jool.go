@@ -157,7 +157,7 @@ func nat64Instances(d routerDocuments) ([]nat64Instance, error) {
 		vrf := vrfOf(doc.Spec.VRF)
 		table, err := mustGet(tables, "VRF", vrf)
 		if err != nil {
-			return nil, fmt.Errorf("NAT64 %s: %w", doc.Name, err)
+			return nil, within("NAT64 "+doc.Name, err)
 		}
 		// The link's file names the default VRF by null, as chalkos-nat64 reads it.
 		var linkVRF *string
@@ -245,7 +245,7 @@ func joolInstances(docs []named[nat64Spec]) ([]joolInstance, error) {
 		}
 		p, err := nat64Prefix(n.Spec.Prefix)
 		if err != nil {
-			return nil, fmt.Errorf("%s: %w", what, err)
+			return nil, within(what, err)
 		}
 		vrf := vrfOf(n.Spec.VRF)
 		for _, o := range prefixes {
@@ -259,7 +259,7 @@ func joolInstances(docs []named[nat64Spec]) ([]joolInstance, error) {
 			at := fmt.Sprintf("%s: pool entry %d", what, i+1)
 			r, err := poolEntryRanges(i+1, e)
 			if err != nil {
-				return nil, fmt.Errorf("%s: %w", at, err)
+				return nil, within(at, err)
 			}
 			for _, o := range pools {
 				if o.Spec.Overlaps(r[0].prefix) {

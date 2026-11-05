@@ -288,7 +288,7 @@ func newFRR(d routerDocuments) (*frr, error) {
 	for _, l := range d.Prefixes {
 		entries, err := prefixEntries(l.Spec)
 		if err != nil {
-			return nil, fmt.Errorf("PrefixList %s: %w", l.Name, err)
+			return nil, within("PrefixList "+l.Name, err)
 		}
 		c.families[l.Name] = l.Spec.Family
 		c.entries[l.Name] = entries
@@ -300,7 +300,7 @@ func newFRR(d routerDocuments) (*frr, error) {
 		for i, v := range l.Spec.Communities {
 			_, large, err := community(v)
 			if err != nil {
-				return nil, fmt.Errorf("CommunityList %s: %w", l.Name, err)
+				return nil, within("CommunityList "+l.Name, err)
 			}
 			if i > 0 && large != c.large[l.Name] {
 				return nil, fmt.Errorf("CommunityList %s holds standard and large communities", l.Name)
@@ -310,7 +310,7 @@ func newFRR(d routerDocuments) (*frr, error) {
 	}
 	for _, p := range d.RoutingPolicies {
 		if err := c.checkPolicy(p); err != nil {
-			return nil, fmt.Errorf("RoutingPolicy %s: %w", p.Name, err)
+			return nil, within("RoutingPolicy "+p.Name, err)
 		}
 	}
 	for _, in := range c.instances {
@@ -332,7 +332,7 @@ func newFRR(d routerDocuments) (*frr, error) {
 		}
 		ns, err := c.peerNeighbours(p, vrf)
 		if err != nil {
-			return nil, fmt.Errorf("BGPPeer %s: %w", p.Name, err)
+			return nil, within("BGPPeer "+p.Name, err)
 		}
 		for _, n := range ns {
 			key := vrf + " " + n.name
@@ -369,7 +369,7 @@ func newInstance(g named[bgpSpec], vrfs []named[vrfSpec]) (*instance, error) {
 	what := "BGP " + g.Name
 	if in.vrf != defaultVRF {
 		if _, err := mustGet(byName(vrfs), "VRF", in.vrf); err != nil {
-			return nil, fmt.Errorf("%s: %w", what, err)
+			return nil, within(what, err)
 		}
 	}
 	if b.ASN == 0 {
@@ -406,7 +406,7 @@ func (c *frr) checkNetworks(in *instance) error {
 		}
 		if n.Policy != nil {
 			if err := c.policyOfFamily(*n.Policy, familyOf(p.Addr())); err != nil {
-				return fmt.Errorf("BGP %s: network %s: %w", in.name, n.Prefix, err)
+				return within(fmt.Sprintf("BGP %s: network %s", in.name, n.Prefix), err)
 			}
 		}
 	}
@@ -444,7 +444,7 @@ func (c *frr) checkImports(in *instance) error {
 		}
 		if f.leak.Policy != nil {
 			if err := c.policyOfFamily(*f.leak.Policy, f.family); err != nil {
-				return fmt.Errorf("%s: %w", what, err)
+				return within(what, err)
 			}
 		}
 	}
@@ -640,7 +640,7 @@ func (c *frr) peerNeighbours(p named[peerSpec], vrf string) ([]neighbour, error)
 		for _, policy := range []*string{f.fam.Import, f.fam.Export} {
 			if policy != nil {
 				if err := c.policyOfFamily(*policy, f.name); err != nil {
-					return nil, fmt.Errorf("families.%s: %w", f.name, err)
+					return nil, within("families."+f.name, err)
 				}
 			}
 		}
@@ -652,7 +652,7 @@ func (c *frr) peerNeighbours(p named[peerSpec], vrf string) ([]neighbour, error)
 			case !f.fam.DefaultOriginate:
 				return nil, fmt.Errorf("families.%s: defaultOriginateWhen needs defaultOriginate, whose default route it sends while a route of the list exists", f.name)
 			case err != nil:
-				return nil, fmt.Errorf("families.%s: defaultOriginateWhen: %w", f.name, err)
+				return nil, within(fmt.Sprintf("families.%s: defaultOriginateWhen", f.name), err)
 			case fam != f.name:
 				return nil, fmt.Errorf("families.%s: defaultOriginateWhen: the PrefixList %s is of %s", f.name, *l, fam)
 			}

@@ -81,7 +81,7 @@ func bgpOpenings(peers []named[peerSpec]) ([]opening, error) {
 		case s.Address != nil:
 			a, err := neighbourAddress(*s.Address)
 			if err != nil {
-				return nil, fmt.Errorf("%s: %w", what, err)
+				return nil, within(what, err)
 			}
 			o.sources = []string{netip.PrefixFrom(a, a.BitLen()).String()}
 		case s.Interface != nil:
@@ -124,7 +124,7 @@ func resolverOpenings(resolvers []named[resolverSpec]) ([]opening, error) {
 		what := "Resolver " + r.Name
 		listen, allow, err := resolverAddresses(r.Spec)
 		if err != nil {
-			return nil, fmt.Errorf("%s: %w", what, err)
+			return nil, within(what, err)
 		}
 		o := opening{comment: what, ports: []portRange{"53"}}
 		// The input hook sees a packet from a VRF's link with the VRF's device as iifname.
@@ -268,11 +268,11 @@ func newFirewall(d routerDocuments, port int, closed bool) (*firewall, error) {
 	for _, p := range d.Policies {
 		if p.Spec.To != "local" {
 			if _, err := mustGet(f.zones, "FirewallZone", p.Spec.To); err != nil {
-				return nil, fmt.Errorf("FirewallPolicy %s: %w", p.Name, err)
+				return nil, within("FirewallPolicy "+p.Name, err)
 			}
 		}
 		if _, err := mustGet(f.zones, "FirewallZone", p.Spec.From); err != nil {
-			return nil, fmt.Errorf("FirewallPolicy %s: %w", p.Name, err)
+			return nil, within("FirewallPolicy "+p.Name, err)
 		}
 	}
 	return f, nil
@@ -318,7 +318,7 @@ func zoneLinksOf(d routerDocuments, devices []string) (map[string]zoneLinks, err
 	for _, z := range d.Zones {
 		for _, v := range z.Spec.VRFs {
 			if _, err := mustGet(declared, "VRF", v); err != nil {
-				return nil, fmt.Errorf("FirewallZone %s: %w", z.Name, err)
+				return nil, within("FirewallZone "+z.Name, err)
 			}
 			held[v] = z.Name
 		}
@@ -338,7 +338,7 @@ func zoneLinksOf(d routerDocuments, devices []string) (map[string]zoneLinks, err
 			}
 			vrfs, err := d.Membership.interfaceVRFs(i)
 			if err != nil {
-				return nil, fmt.Errorf("%s: %w", what, err)
+				return nil, within(what, err)
 			}
 			for _, v := range vrfs {
 				if v == defaultVRF {
@@ -359,7 +359,7 @@ func zoneLinksOf(d routerDocuments, devices []string) (map[string]zoneLinks, err
 		for _, v := range z.Spec.VRFs {
 			links, err := d.Membership.links(v)
 			if err != nil {
-				return nil, fmt.Errorf("%s: %w", what, err)
+				return nil, within(what, err)
 			}
 			zl.in = appendNew(zl.in, v)
 			for _, l := range links {
@@ -489,7 +489,7 @@ func (f *firewall) ruleset() (string, error) {
 		s := f.sets[name]
 		elements, err := prefixes(s.Prefixes)
 		if err != nil {
-			return "", fmt.Errorf("AddressSet %s: %w", name, err)
+			return "", within("AddressSet "+name, err)
 		}
 		fmt.Fprintf(&b, "\tset addresses-%s {\n\t\ttype %s_addr\n\t\tflags interval\n\t\tauto-merge\n\t\telements = { %s }\n\t}\n",
 			name, s.Family, strings.Join(elements, ", "))
@@ -499,7 +499,7 @@ func (f *firewall) ruleset() (string, error) {
 		for i, r := range p.Spec.Rules {
 			lines, err := f.ruleLines(p.Name, i+1, r)
 			if err != nil {
-				return "", fmt.Errorf("FirewallPolicy %s rule %d: %w", p.Name, i+1, err)
+				return "", within(fmt.Sprintf("FirewallPolicy %s rule %d", p.Name, i+1), err)
 			}
 			for _, l := range lines {
 				b.WriteString("\t\t" + l + "\n")
@@ -507,7 +507,7 @@ func (f *firewall) ruleset() (string, error) {
 		}
 		v, err := verdictOf(p.Spec.Default)
 		if err != nil {
-			return "", fmt.Errorf("FirewallPolicy %s: default: %w", p.Name, err)
+			return "", within("FirewallPolicy "+p.Name+": default", err)
 		}
 		b.WriteString("\t\t" + v + "\n\t}\n")
 	}
@@ -615,7 +615,7 @@ func (f *firewall) input(b *strings.Builder) error {
 	for _, o := range f.openings {
 		lines, err := o.lines()
 		if err != nil {
-			return fmt.Errorf("the opening of %s: %w", o.comment, err)
+			return within("the opening of "+o.comment, err)
 		}
 		for _, l := range lines {
 			b.WriteString("\t\t" + l + "\n")
@@ -700,7 +700,7 @@ func (f *firewall) translation(b *strings.Builder) error {
 	for _, n := range f.nat {
 		line, err := f.natLine(n.Spec)
 		if err != nil {
-			return fmt.Errorf("NATRule %s: %w", n.Name, err)
+			return within("NATRule "+n.Name, err)
 		}
 		if n.Spec.Type == "dnat" {
 			dst = append(dst, line)
@@ -880,7 +880,7 @@ var familyWords = map[string]string{"ipv4": "ip", "ipv6": "ip6"}
 func (f *firewall) ruleLines(policy string, n int, r firewallRule) ([]string, error) {
 	verdict, err := verdictOf(r.Action)
 	if err != nil {
-		return nil, fmt.Errorf("action: %w", err)
+		return nil, within("action", err)
 	}
 	if r.Log {
 		// A log prefix holds 127 bytes at most.
@@ -935,14 +935,14 @@ func (f *firewall) matchLines(r firewallRule) ([]familyMatch, error) {
 		src, ok, err := f.addressMatch(fam, "saddr", r.Source)
 		if err != nil || !ok {
 			if err != nil {
-				return nil, fmt.Errorf("source: %w", err)
+				return nil, within("source", err)
 			}
 			continue
 		}
 		dst, ok, err := f.addressMatch(fam, "daddr", r.Destination)
 		if err != nil || !ok {
 			if err != nil {
-				return nil, fmt.Errorf("destination: %w", err)
+				return nil, within("destination", err)
 			}
 			continue
 		}
@@ -1158,7 +1158,7 @@ func dhcpOpenings(d routerDocuments) ([]opening, error) {
 		}
 		links, vrf, err := subnetLinks(d, devices, s.Spec.Interfaces, subnetWords)
 		if err != nil {
-			return nil, fmt.Errorf("DHCPSubnet %s: %w", s.Name, err)
+			return nil, within("DHCPSubnet "+s.Name, err)
 		}
 		out = append(out, opening{comment: "DHCPSubnet " + s.Name, protocol: "udp", ports: []portRange{"547"},
 			interfaces: links, vrf: vrfOpening(vrf), sources: []string{"fe80::/10"}})
@@ -1166,11 +1166,11 @@ func dhcpOpenings(d routerDocuments) ([]opening, error) {
 	for _, r := range d.DHCPRelays {
 		links, vrf, err := subnetLinks(d, devices, r.Spec.Interfaces, relayWords)
 		if err != nil {
-			return nil, fmt.Errorf("DHCPRelay %s: %w", r.Name, err)
+			return nil, within("DHCPRelay "+r.Name, err)
 		}
 		servers, err := relayServers(r.Spec.Servers)
 		if err != nil {
-			return nil, fmt.Errorf("DHCPRelay %s: %w", r.Name, err)
+			return nil, within("DHCPRelay "+r.Name, err)
 		}
 		o := opening{comment: "DHCPRelay " + r.Name, protocol: "udp", interfaces: links, vrf: vrfOpening(vrf)}
 		if len(servers[false]) > 0 {

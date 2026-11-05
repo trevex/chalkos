@@ -844,17 +844,32 @@ func vrfOf(v *string) string {
 func mustGet[V any](byName map[string]V, kind, name string) (V, error) {
 	v, ok := byName[name]
 	if !ok {
-		return v, fmt.Errorf("internal error: the input holds no %s %q, which a reference names; chalkd checks references before it renders", kind, name)
+		return v, &internalError{fmt.Sprintf("the input holds no %s %q, which a reference names; chalkd checks references before it renders", kind, name)}
 	}
 	return v, nil
 }
 
-// internalErrorf is the error of a guard: a check of what the schemas and rules refuse before
+// internalError is the error of a guard: a check of what the schemas and rules refuse before
 // chalkd renders, which a renderer keeps because its output would otherwise panic, carry syntax a
 // value adds, or fail to load. A checked config never fails one, so the error says that chalkd or
-// the output's input has a bug, not the config.
+// the output's input has a bug, not the config. text follows "internal error: ".
+type internalError struct{ text string }
+
+func (e *internalError) Error() string { return "internal error: " + e.text }
+
+// internalErrorf is the internalError of the message format gives, which may wrap with %w.
 func internalErrorf(format string, args ...any) error {
-	return fmt.Errorf("internal error: "+format+"; chalkd checks the config against the schemas and rules before it renders", args...)
+	return &internalError{fmt.Errorf(format, args...).Error() + "; chalkd checks the config against the schemas and rules before it renders"}
+}
+
+// within is err of what, such as a document or a rule of it: an internal error keeps its
+// "internal error:" in front, as "internal error: <what>: ...", and any other error reads
+// "<what>: ...".
+func within(what string, err error) error {
+	if e, ok := err.(*internalError); ok {
+		return &internalError{what + ": " + e.text}
+	}
+	return fmt.Errorf("%s: %w", what, err)
 }
 
 // byName are the specs of docs by their documents' names.

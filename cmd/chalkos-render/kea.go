@@ -122,7 +122,7 @@ func renderKea(pdHook string, in map[string]any, out string) error {
 	for _, s := range d.DHCPSubnets {
 		sub, err := serveSubnet(d, units, devices, s)
 		if err != nil {
-			return fmt.Errorf("DHCPSubnet %s: %w", s.Name, err)
+			return within("DHCPSubnet "+s.Name, err)
 		}
 		family := keaServer{v6: sub.prefix.Addr().Is6()}
 		if served[family] == nil {

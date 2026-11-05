@@ -72,7 +72,7 @@ func renderUnbound(trustAnchor, zoneFile string, in map[string]any, out string) 
 	for _, r := range d.Resolvers {
 		vrf := vrfOf(r.Spec.VRF)
 		if _, err := mustGet(declared, "VRF", vrf); err != nil {
-			return fmt.Errorf("Resolver %s: %w", r.Name, err)
+			return within("Resolver "+r.Name, err)
 		}
 		if !plainInterface.MatchString(vrf) {
 			return fmt.Errorf("Resolver %s names the VRF %q, which is no interface's name", r.Name, vrf)
@@ -82,7 +82,7 @@ func renderUnbound(trustAnchor, zoneFile string, in map[string]any, out string) 
 		}
 		text, err := unboundConfig(r.Spec, vrf, trustAnchor, zoneFile)
 		if err != nil {
-			return fmt.Errorf("Resolver %s: %w", r.Name, err)
+			return within("Resolver "+r.Name, err)
 		}
 		if err := writeFile(out, unboundFileOf(vrf), []byte(text)); err != nil {
 			return err
@@ -163,7 +163,7 @@ func unboundConfig(r resolverSpec, vrf, trustAnchor, zoneFile string) (string, e
 	if r.DNS64 != nil {
 		p, err := nat64Prefix(r.DNS64.Prefix)
 		if err != nil {
-			return "", fmt.Errorf("dns64: %w", err)
+			return "", within("dns64", err)
 		}
 		fmt.Fprintf(&b, "  dns64-prefix: %s\n", p)
 		// The zone of ipv4only.arpa below holds no signatures.
@@ -175,7 +175,7 @@ func unboundConfig(r resolverSpec, vrf, trustAnchor, zoneFile string) (string, e
 	for i, z := range r.LocalZones {
 		lines, err := localZoneLines(z, records)
 		if err != nil {
-			return "", fmt.Errorf("local zone %d: %w", i+1, err)
+			return "", within(fmt.Sprintf("local zone %d", i+1), err)
 		}
 		// Unbound answers a local zone before DNS64 sees the query.
 		if v4 := strings.TrimSuffix(ipv4OnlyZone, "."); r.DNS64 != nil && (z.Name == v4 || strings.HasSuffix(z.Name, "."+v4) || strings.HasSuffix(v4, "."+z.Name)) {
@@ -195,7 +195,7 @@ func unboundConfig(r resolverSpec, vrf, trustAnchor, zoneFile string) (string, e
 		for _, a := range r.Forwarders {
 			addr, err := unicastAddress(a)
 			if err != nil {
-				return "", fmt.Errorf("forwarders: %w", err)
+				return "", within("forwarders", err)
 			}
 			fmt.Fprintf(&b, "  forward-addr: %s\n", addr)
 		}
@@ -214,7 +214,7 @@ func resolverAddresses(r resolverSpec) ([]netip.Addr, []netip.Prefix, error) {
 	for _, a := range r.Listen {
 		addr, err := unicastAddress(a)
 		if err != nil {
-			return nil, nil, fmt.Errorf("listen: %w", err)
+			return nil, nil, within("listen", err)
 		}
 		listen = append(listen, addr)
 	}
@@ -279,7 +279,7 @@ func localZoneLines(z localZone, seen renderedRecords) ([]string, error) {
 		}
 		value, err := recordValue(r.Type, r.Value)
 		if err != nil {
-			return nil, fmt.Errorf("%s: %w", at, err)
+			return nil, within(at, err)
 		}
 		key := fmt.Sprintf("%s. %s %s", r.Name, r.Type, value)
 		if seen.keys[key] {
