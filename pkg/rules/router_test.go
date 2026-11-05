@@ -58,7 +58,7 @@ func TestRouterSchemaFormats(t *testing.T) {
 		{"FirewallPolicy", `{"from": "wan", "to": "local", "rules": [{"protocol": "tcp", "destinationPorts": ["9-1"], "action": "accept"}]}`,
 			`FirewallPolicy "x": - at '/spec/rules/0/destinationPorts/0': '9-1' is not valid port-range: a range of ports is "<first>-<last>", each from 1 to 65535, and the first no higher than the last`},
 		{"FirewallPolicy", `{"from": "wan", "to": "local", "rules": [{"protocol": "tcp", "sourcePorts": ["70000-80000"], "action": "accept"}]}`, "is not valid port-range"},
-		{"FirewallPolicy", `{"from": "wan", "to": "local", "rules": [{"protocol": "tcp", "sourcePorts": ["22"], "action": "accept"}]}`, "is not valid port-range"},
+		{"FirewallPolicy", `{"from": "wan", "to": "local", "rules": [{"protocol": "tcp", "sourcePorts": ["22"], "action": "accept"}]}`, "a single port is a number, unquoted"},
 		{"NAT64", `{"pool4": [{"prefix": "192.0.2.10/32", "ports": "65535-61001"}]}`, "is not valid port-range"},
 	} {
 		d := builtinDoc(t, config.RouterAPI, tc.kind, "x", tc.spec)

@@ -24,6 +24,7 @@ var (
 	errNotIP        = errors.New("an address is an IPv4 address of four numbers from 0 to 255 without leading zeros, or an IPv6 address without a zone")
 	errNotCIDR      = errors.New("an address range is an address, a slash and a prefix length of at most 32 for IPv4 or 128 for IPv6")
 	errNotPortRange = errors.New(`a range of ports is "<first>-<last>", each from 1 to 65535, and the first no higher than the last`)
+	errQuotedPort   = errors.New(errNotPortRange.Error() + "; a single port is a number, unquoted")
 )
 
 // validateIP accepts the addresses netip.ParseAddr reads, without a zone. It accepts any value
@@ -57,8 +58,11 @@ func validatePortRange(v any) error {
 	if !ok {
 		return nil
 	}
-	if _, _, ok := PortRange(s); !ok || !strings.Contains(s, "-") {
+	if _, _, ok := PortRange(s); !ok {
 		return errNotPortRange
+	}
+	if !strings.Contains(s, "-") {
+		return errQuotedPort
 	}
 	return nil
 }

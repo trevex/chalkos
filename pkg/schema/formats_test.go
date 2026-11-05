@@ -62,7 +62,7 @@ func TestFormats(t *testing.T) {
 		`{"ports": "8000-8100"}`:                           "",
 		`{"ports": "9-1"}`:                                 `at '/spec/ports': '9-1' is not valid port-range: a range of ports is "<first>-<last>", each from 1 to 65535, and the first no higher than the last`,
 		`{"ports": "70000-80000"}`:                         "is not valid port-range",
-		`{"ports": "22"}`:                                  "is not valid port-range",
+		`{"ports": "22"}`:                                  `'22' is not valid port-range: a range of ports is "<first>-<last>", each from 1 to 65535, and the first no higher than the last; a single port is a number, unquoted`,
 		`{"address": 7}`:                                   "got number, want string",
 	} {
 		err := s.Validate(decode(t, `{"apiVersion": "r.example.org/v1", "kind": "Hop", "metadata": {"name": "a"}, "spec": `+spec+`}`))
