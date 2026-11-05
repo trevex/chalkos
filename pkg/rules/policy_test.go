@@ -8,11 +8,11 @@ import (
 	"github.com/trevex/chalkos/pkg/config"
 )
 
-// The PolicyRoute rules accept a LAN router's policies into a VRF, a table and next hops, and
-// refuse an in of a zone and interfaces, an in of a VRF's device, an empty match, a set beside
-// ranges, addresses of another family, ports without a protocol, a to of no target or of two, a
-// next hop of another family, the local table or a VRF's as a table, a next hop's table of the
-// kernel's or of a VRF, and a next hop on lo.
+// The PolicyRoute rules accept a LAN router's policies into a VRF, a table and next hops, link-local
+// ones included, and refuse an in of a zone and interfaces, an empty match, a set beside ranges,
+// addresses of another family, ports without a protocol, a to of no target or of two, a next hop
+// of another family, the local table or a VRF's as a table, a next hop's table of the kernel's or
+// of a VRF, a next hop on lo, and a next hop that is no unicast address.
 func TestPolicyRouteRules(t *testing.T) {
 	set, doc := routerRules(t)
 	lan := []config.Document{
@@ -53,8 +53,8 @@ func TestPolicyRouteRules(t *testing.T) {
 			[]string{"PolicyRoute lan: in names a zone or interfaces, one of them; leave in out for traffic from every link"}},
 		{"an empty in", replace(lan, route("lan", `{"in": {}, "rules": [{"match": {"dscp": [46]}, "to": {"vrf": "transit"}}]}`)),
 			[]string{"PolicyRoute lan: in names a zone or interfaces, one of them; leave in out for traffic from every link"}},
-		{"a VRF's device", replace(lan, route("lan", `{"in": {"interfaces": ["lan0", "transit"]}, "rules": [{"match": {"dscp": [46]}, "to": {"vrf": "transit"}}]}`)),
-			[]string{"PolicyRoute lan: transit is the device of VRF transit; name the VRF's links, or a zone of the VRF"}},
+		// The output router-nftables refuses an interface of a VRF's device, by name and by glob.
+		{"a VRF's device", replace(lan, route("lan", `{"in": {"interfaces": ["lan0", "transit"]}, "rules": [{"match": {"dscp": [46]}, "to": {"vrf": "transit"}}]}`)), nil},
 		{"an empty match", replace(lan, route("lan", `{"rules": [{"match": {}, "to": {"vrf": "transit"}}]}`)),
 			[]string{`PolicyRoute "lan" spec.rules: a rule has an empty match, which would take every packet; to send every packet, say so, such as with source: {cidrs: [0.0.0.0/0]}`}},
 		{"a set beside ranges", replace(lan, route("lan", `{"rules": [{"match": {"source": {"set": "guests", "cidrs": ["192.0.2.0/24"]}}, "to": {"vrf": "transit"}}]}`)),
@@ -80,6 +80,7 @@ func TestPolicyRouteRules(t *testing.T) {
 			[]string{`PolicyRoute "lan" spec.rules: a next hop's table is 253, 254 or 255, the kernel's own, or a VRF's table; give the next hop a table of its own`}},
 		{"a next hop on lo", replace(lan, route("lan", `{"rules": [{"match": {"dscp": [46]}, "to": {"nextHop": {"address": "198.51.100.130", "interface": "lo", "table": 202}}}]}`)),
 			[]string{`PolicyRoute "lan" spec.rules: a next hop's interface is lo, which no next hop is on; name the link the next hop is on`}},
+		{"link-local next hops", replace(lan, route("lan", `{"rules": [{"match": {"dscp": [46]}, "to": {"nextHop": {"address": "fe80::1", "interface": "wanb0", "table": 202}}}, {"match": {"dscp": [10]}, "to": {"nextHop": {"address": "169.254.0.1", "interface": "wanb0", "table": 203}}}]}`)), nil},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			failures, err := set.Evaluate(Input{Documents: tc.docs, Node: "r1"})
@@ -88,6 +89,22 @@ func TestPolicyRouteRules(t *testing.T) {
 			}
 			if got := messages(failures); !slices.Equal(got, tc.want) {
 				t.Errorf("failures:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(tc.want, "\n"))
+			}
+		})
+	}
+	// A next hop is a unicast address: of neither family unspecified, loopback or multicast, not
+	// IPv4's broadcast and no IPv4-mapped IPv6 address, which is no IPv6 neighbour on a link. The
+	// match takes both families, so the rule of the next hop's family passes.
+	for _, address := range []string{"0.0.0.0", "::", "127.0.0.1", "127.1.2.3", "::1", "224.0.0.1", "239.255.255.250", "ff02::1", "255.255.255.255", "::ffff:198.51.100.130", "::ffff:127.0.0.1"} {
+		t.Run("a next hop of "+address, func(t *testing.T) {
+			docs := replace(lan, route("lan", `{"rules": [{"match": {"dscp": [46]}, "to": {"vrf": "transit"}}, {"match": {"dscp": [10]}, "to": {"nextHop": {"address": "`+address+`", "interface": "wanb0", "table": 202}}}]}`))
+			failures, err := set.Evaluate(Input{Documents: docs, Node: "r1"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			want := []string{`PolicyRoute "lan" spec.rules: the next hop ` + address + ` is no unicast address of a router; give the address of the router the traffic leaves through`}
+			if got := messages(failures); !slices.Equal(got, want) {
+				t.Errorf("failures:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
 			}
 		})
 	}

@@ -224,12 +224,15 @@ let
   # Binds, for body, tables to the VRF documents' tables.
   vrfTables =
     body: "cel.bind(v, ${delivered "VRF"}, cel.bind(tables, v.map(n, v[n].spec.table), ${body}))";
-  # Binds, for body, all to the interfaces of every PolicyRoute's in as one list, which a rule loops
-  # over rather than over each policy's interfaces: nested loops, or a loop over a list flattened in
-  # place, would cost more than chalkd allows.
-  policyInterfaces =
-    body:
-    ''cel.bind(all, documents.map(n, documents[n].spec["in"] == null ? [] : documents[n].spec["in"].interfaces).flatten(), ${body})'';
+  # Whether the address a is one a next hop may have: none of the unspecified, loopback, multicast
+  # and broadcast addresses, which netip's IsGlobalUnicast and IsLinkLocalUnicast leave out, and no
+  # IPv4-mapped IPv6 address. A mapped address stands for an IPv4 router, which answers no IPv6
+  # neighbour discovery on the link; netip reads it as the IPv4 address it maps, which the ranges
+  # below would not match, so refusing it whole keeps every mapped loopback or multicast out too.
+  # Link-local addresses are next hops of their link.
+  nextHopAddress =
+    a:
+    ''cel.bind(x, ip(${a}), x != ip("0.0.0.0") && x != ip("::") && !cidr("127.0.0.0/8").contains(x) && x != ip("::1") && !cidr("224.0.0.0/4").contains(x) && !cidr("ff00::/8").contains(x) && x != ip("255.255.255.255") && !cidr("::ffff:0:0/96").contains(x))'';
 
   # Where a PolicyRoute's rule sends the traffic it matches: a VRF, a table or a next hop.
   policyTarget = types.submodule {
@@ -253,7 +256,7 @@ let
               address = mkOption {
                 type = address;
                 example = "198.51.100.1";
-                description = "Address of the router the traffic leaves through, of the family the rule matches.";
+                description = "Address of the router the traffic leaves through, of the family the rule matches: a unicast address, link-local ones included, and no IPv4-mapped IPv6 address.";
               };
               interface = mkOption {
                 type = interfaceName;
@@ -595,11 +598,6 @@ in
             rule = ''documents.all(n, [dyn(documents[n].spec["in"])].all(i, i == null || (i.zone == null) != (size(i.interfaces) == 0)))'';
             messageExpression = ''documents.filter(n, [dyn(documents[n].spec["in"])].exists(i, i != null && (i.zone == null) == (size(i.interfaces) == 0))).map(n, "PolicyRoute " + n).join(", ") + ": in names a zone or interfaces, one of them; leave in out for traffic from every link"'';
           }
-          {
-            description = "No interface of a PolicyRoute's in is a VRF's device, which takes the VRF document's name; the outputs also refuse globs that match one.";
-            rule = "cel.bind(vrfs, ${delivered "VRF"}, ${policyInterfaces "all.all(i, !(i in vrfs))"})";
-            messageExpression = "cel.bind(vrfs, ${delivered "VRF"}, ${policyInterfaces ''cel.bind(i, all.filter(i, i in vrfs)[0], "PolicyRoute " + documents.filter(n, documents[n].spec["in"] != null && i in documents[n].spec["in"].interfaces)[0] + ": " + i + " is the device of VRF " + i + "; name the VRF's links, or a zone of the VRF")''})";
-          }
         ];
         spec = {
           "in" = mkOption {
@@ -672,9 +670,14 @@ in
                 message = "a next hop's table is 253, 254 or 255, the kernel's own, or a VRF's table; give the next hop a table of its own";
               }
               {
-                description = "A next hop's interface is not lo; the output router-nftables also refuses it.";
+                description = "A next hop's interface is not lo.";
                 rule = ''self.all(p, p.to.nextHop == null || p.to.nextHop.interface != "lo")'';
                 message = "a next hop's interface is lo, which no next hop is on; name the link the next hop is on";
+              }
+              {
+                description = "A next hop's address is a unicast address: not unspecified, loopback, multicast, broadcast or IPv4-mapped IPv6.";
+                rule = "self.all(p, p.to.nextHop == null || ${nextHopAddress "p.to.nextHop.address"})";
+                messageExpression = ''"the next hop " + self.filter(p, p.to.nextHop != null && !${nextHopAddress "p.to.nextHop.address"})[0].to.nextHop.address + " is no unicast address of a router; give the address of the router the traffic leaves through"'';
               }
             ];
           };

@@ -329,7 +329,7 @@
                         "additionalProperties": false,
                         "properties": {
                           "address": {
-                            "description": "Address of the router the traffic leaves through, of the family the rule matches.",
+                            "description": "Address of the router the traffic leaves through, of the family the rule matches: a unicast address, link-local ones included, and no IPv4-mapped IPv6 address.",
                             "examples": [
                               "198.51.100.1"
                             ],
@@ -473,9 +473,15 @@
               "takes": "refuse"
             },
             {
-              "description": "A next hop's interface is not lo; the output router-nftables also refuses it.",
+              "description": "A next hop's interface is not lo.",
               "message": "a next hop's interface is lo, which no next hop is on; name the link the next hop is on",
               "rule": "self.all(p, p.to.nextHop == null || p.to.nextHop.interface != \"lo\")",
+              "takes": "refuse"
+            },
+            {
+              "description": "A next hop's address is a unicast address: not unspecified, loopback, multicast, broadcast or IPv4-mapped IPv6.",
+              "messageExpression": "\"the next hop \" + self.filter(p, p.to.nextHop != null && !cel.bind(x, ip(p.to.nextHop.address), x != ip(\"0.0.0.0\") && x != ip(\"::\") && !cidr(\"127.0.0.0/8\").contains(x) && x != ip(\"::1\") && !cidr(\"224.0.0.0/4\").contains(x) && !cidr(\"ff00::/8\").contains(x) && x != ip(\"255.255.255.255\") && !cidr(\"::ffff:0:0/96\").contains(x)))[0].to.nextHop.address + \" is no unicast address of a router; give the address of the router the traffic leaves through\"",
+              "rule": "self.all(p, p.to.nextHop == null || cel.bind(x, ip(p.to.nextHop.address), x != ip(\"0.0.0.0\") && x != ip(\"::\") && !cidr(\"127.0.0.0/8\").contains(x) && x != ip(\"::1\") && !cidr(\"224.0.0.0/4\").contains(x) && !cidr(\"ff00::/8\").contains(x) && x != ip(\"255.255.255.255\") && !cidr(\"::ffff:0:0/96\").contains(x)))",
               "takes": "refuse"
             }
           ]
@@ -504,12 +510,6 @@
         "description": "A PolicyRoute's in names a zone or interfaces, one of them.",
         "messageExpression": "documents.filter(n, [dyn(documents[n].spec[\"in\"])].exists(i, i != null && (i.zone == null) == (size(i.interfaces) == 0))).map(n, \"PolicyRoute \" + n).join(\", \") + \": in names a zone or interfaces, one of them; leave in out for traffic from every link\"",
         "rule": "documents.all(n, [dyn(documents[n].spec[\"in\"])].all(i, i == null || (i.zone == null) != (size(i.interfaces) == 0)))",
-        "takes": "refuse"
-      },
-      {
-        "description": "No interface of a PolicyRoute's in is a VRF's device, which takes the VRF document's name; the outputs also refuse globs that match one.",
-        "messageExpression": "cel.bind(vrfs, ((\"router.chalkos.dev/v1alpha1\" in config && \"VRF\" in config[\"router.chalkos.dev/v1alpha1\"]) ? config[\"router.chalkos.dev/v1alpha1\"].VRF : {}), cel.bind(all, documents.map(n, documents[n].spec[\"in\"] == null ? [] : documents[n].spec[\"in\"].interfaces).flatten(), cel.bind(i, all.filter(i, i in vrfs)[0], \"PolicyRoute \" + documents.filter(n, documents[n].spec[\"in\"] != null && i in documents[n].spec[\"in\"].interfaces)[0] + \": \" + i + \" is the device of VRF \" + i + \"; name the VRF's links, or a zone of the VRF\")))",
-        "rule": "cel.bind(vrfs, ((\"router.chalkos.dev/v1alpha1\" in config && \"VRF\" in config[\"router.chalkos.dev/v1alpha1\"]) ? config[\"router.chalkos.dev/v1alpha1\"].VRF : {}), cel.bind(all, documents.map(n, documents[n].spec[\"in\"] == null ? [] : documents[n].spec[\"in\"].interfaces).flatten(), all.all(i, !(i in vrfs))))",
         "takes": "refuse"
       }
     ],

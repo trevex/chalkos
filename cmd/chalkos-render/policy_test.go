@@ -46,10 +46,11 @@ func nextHopRoute(address, link string, table int) string {
 	return string(b)
 }
 
-// The firewall's renderer refuses what the PolicyRoute rules refuse, should a document bypass
-// them, and what it alone can see: a glob of in that matches a VRF's device or a NAT64's link, a
-// zone that holds a NAT64's link or no link, more than 255 tables, and values that would add
-// syntax to the ruleset.
+// The firewall's renderer refuses what it alone can see: an interface or glob of in that matches
+// a VRF's device or a NAT64's link, a zone that holds a NAT64's link or no link, a next hop's
+// table that another target takes, and more than 255 tables. It guards, with an internal error,
+// values that would add syntax to the ruleset, a rule of no target and a next hop's address of a
+// zone, should a document bypass the schemas and rules.
 func TestPolicyRouteRefusals(t *testing.T) {
 	nft := []string{"router-nftables", "50000"}
 	dscp := `"rules": [{"match": {"dscp": [46]}, "to": {"vrf": "transit"}}]`
@@ -57,9 +58,9 @@ func TestPolicyRouteRefusals(t *testing.T) {
 		docs map[string][]any
 		want string
 	}{
-		"in of a zone and interfaces":  {policyDocs(t, "a", `{"in": {"zone": "lan", "interfaces": ["lan0"]}, `+dscp+`}`), "PolicyRoute a: in names a zone or interfaces, one of them"},
+		"a VRF's device":               {policyDocs(t, "a", `{"in": {"zone": null, "interfaces": ["lan0", "transit"]}, `+dscp+`}`), "PolicyRoute a: transit matches transit, the device of VRF transit; name the VRF's links or a zone of the VRF"},
 		"a glob of a VRF's device":     {policyDocs(t, "a", `{"in": {"zone": null, "interfaces": ["tran*"]}, `+dscp+`}`), "PolicyRoute a: tran* matches transit, the device of VRF transit"},
-		"an interface that ends a set": {policyDocs(t, "a", `{"in": {"zone": null, "interfaces": ["lan0\" } accept; iifname { \"x"]}, `+dscp+`}`), "is no interface name or glob"},
+		"an interface that ends a set": {policyDocs(t, "a", `{"in": {"zone": null, "interfaces": ["lan0\" } accept; iifname { \"x"]}, `+dscp+`}`), `internal error: PolicyRoute a: "lan0\" } accept; iifname { \"x" is no interface name or glob`},
 		"a glob of a NAT64's link": {func() map[string][]any {
 			d := policyDocs(t, "a", `{"in": {"zone": null, "interfaces": ["n64-*"]}, `+dscp+`}`)
 			d["NAT64"] = []any{routerDoc(t, "NAT64", "edge", `{"prefix": "64:ff9b::/96", "pool4": []}`)}
@@ -79,20 +80,12 @@ func TestPolicyRouteRefusals(t *testing.T) {
 			d["FirewallZone"] = append(d["FirewallZone"], routerDoc(t, "FirewallZone", "core", `{"interfaces": [], "vrfs": ["core"]}`))
 			return d
 		}(), "PolicyRoute a: the zone core holds no link"},
-		"an empty match":                    {policyDocs(t, "a", `{"rules": [{"match": {}, "to": {"vrf": "transit"}}]}`), "PolicyRoute a rule 1: the match is empty"},
-		"two targets":                       {policyDocs(t, "a", `{"rules": [{"match": {"dscp": [46]}, "to": {"vrf": "transit", "table": 300}}]}`), "PolicyRoute a rule 1: to names a VRF, a table or a next hop, one of them"},
-		"the local table":                   {policyDocs(t, "a", `{"rules": [{"match": {"dscp": [46]}, "to": {"table": 255}}]}`), "PolicyRoute a rule 1: table 255 is none a policy sends traffic to"},
-		"a VRF's table":                     {policyDocs(t, "a", `{"rules": [{"match": {"dscp": [46]}, "to": {"table": 100}}]}`), "PolicyRoute a rule 1: table 100 is VRF transit's; name the VRF"},
-		"a next hop in main":                {policyDocs(t, "a", nextHopRoute("198.51.100.130", "wanb0", 254)), "PolicyRoute a rule 1: table 254 of the next hop is one of the kernel's"},
-		"a next hop in a VRF's table":       {policyDocs(t, "a", nextHopRoute("198.51.100.130", "wanb0", 100)), "PolicyRoute a rule 1: table 100 of the next hop is VRF transit's"},
-		"a next hop with a zone":            {policyDocs(t, "a", nextHopRoute("fe80::1%wanb0", "wanb0", 200)), `PolicyRoute a rule 1: "fe80::1%wanb0" is no next hop's address`},
-		"a next hop on lo":                  {policyDocs(t, "a", nextHopRoute("198.51.100.130", "lo", 200)), `PolicyRoute a rule 1: "lo" is no link of a next hop`},
-		"a next hop's link that adds a key": {policyDocs(t, "a", nextHopRoute("198.51.100.130", "wanb0\nTable=1", 200)), `"wanb0\nTable=1" is no link of a next hop`},
-		"two next hops in a table":          {policyDocs(t, "a", nextHopRoute("198.51.100.130", "wanb0", 200), "b", nextHopRoute("198.51.100.131", "wanb0", 200)), "PolicyRoute b rule 1: table 200 is another next hop's"},
-		"a next hop's table as a rule's":    {policyDocs(t, "a", nextHopRoute("198.51.100.130", "wanb0", 200), "b", `{"rules": [{"match": {"dscp": [10]}, "to": {"table": 200}}]}`), "PolicyRoute b rule 1: table 200 is another next hop's"},
-		"a next hop of the other family":    {policyDocs(t, "a", `{"rules": [{"match": {"source": {"cidrs": ["2001:db8:1::/64"]}}, "to": {"nextHop": {"address": "198.51.100.130", "interface": "wanb0", "table": 200}}}]}`), "PolicyRoute a rule 1: the match leaves no family, or none of its next hop"},
-		"a family against the next hop":     {policyDocs(t, "a", `{"rules": [{"match": {"family": "ipv6"}, "to": {"nextHop": {"address": "198.51.100.130", "interface": "wanb0", "table": 200}}}]}`), "PolicyRoute a rule 1: the next hop 198.51.100.130 is of another family than ipv6"},
-		"a DSCP value above 63":             {policyDocs(t, "a", `{"rules": [{"match": {"dscp": [64]}, "to": {"vrf": "transit"}}]}`), "PolicyRoute a rule 1: dscp 64 is no value from 0 to 63"},
+		"two next hops in a table":       {policyDocs(t, "a", nextHopRoute("198.51.100.130", "wanb0", 200), "b", nextHopRoute("198.51.100.131", "wanb0", 200)), "PolicyRoute b rule 1: table 200 is another next hop's"},
+		"a next hop's table as a rule's": {policyDocs(t, "a", nextHopRoute("198.51.100.130", "wanb0", 200), "b", `{"rules": [{"match": {"dscp": [10]}, "to": {"table": 200}}]}`), "PolicyRoute b rule 1: table 200 is another next hop's"},
+		"no target":                      {policyDocs(t, "a", `{"rules": [{"match": {"dscp": [46]}, "to": {}}]}`), "internal error: PolicyRoute a rule 1: to names no target"},
+		"a next hop with a zone":         {policyDocs(t, "a", nextHopRoute("fe80::1%wanb0", "wanb0", 200)), `internal error: PolicyRoute a rule 1: "fe80::1%wanb0" is no address without a zone`},
+		"a next hop's table 0":           {policyDocs(t, "a", nextHopRoute("198.51.100.130", "wanb0", 0)), "internal error: PolicyRoute a rule 1: table 0 of the next hop is no table"},
+		"table 0":                        {policyDocs(t, "a", `{"rules": [{"match": {"dscp": [46]}, "to": {"table": 0}}]}`), "internal error: PolicyRoute a rule 1: table 0 is no table"},
 		"more than 255 tables": {func() map[string][]any {
 			var rules []string
 			for i := range 256 {
@@ -174,7 +167,6 @@ func TestPolicyRouteUnitRefusals(t *testing.T) {
 			d["Network"] = append(d["Network"], document(t, "Network", "00-policy-routing", `{"match": {"name": "dummy0"}}`))
 			return d
 		}(), "Network 00-policy-routing takes the name of the policy routing's unit"},
-		"a next hop's link that adds a key": {policyDocs(t, "a", nextHopRoute("198.51.100.130", "wanb0\nTable=1", 200)), `"wanb0\nTable=1" is no link of a next hop`},
 	} {
 		t.Run(name, func(t *testing.T) { refused(t, networkd, c.docs, c.want) })
 	}

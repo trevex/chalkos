@@ -42,35 +42,24 @@ type routeTarget struct {
 }
 
 // policyTargets are the tables of the PolicyRoute documents' targets, sorted by number, each with
-// its mark, (index+1)<<16: a VRF's table, a rule's table and a next hop's table. It checks the
-// targets as the kind's rules do: one per rule, a table that is not the local table and no VRF's,
-// a next hop of an address and an interface's name whose table is none of the kernel's tables and
-// no VRF's. A next hop's table of its own, which no other next hop and no rule's table takes, is
+// its mark, (index+1)<<16: a VRF's table, a rule's table and a next hop's table. The kind's rules
+// check each target: one per rule, a table that is not the local table and no VRF's, a next hop
+// of a unicast address on a link other than lo, in a table that is none of the kernel's and no
+// VRF's. A next hop's table of its own, which no other next hop and no rule's table takes, is
 // checked here alone, as its key spans the targets of every document. It refuses more than 255
 // tables, which the mark's bits cannot tell apart.
 func policyTargets(d routerDocuments) ([]routeTarget, error) {
 	vrfTables := map[string]uint32{}
-	tableVRF := map[uint32]string{}
 	for _, v := range d.VRFs {
 		vrfTables[v.Name] = v.Spec.Table
-		tableVRF[v.Spec.Table] = v.Name
 	}
 	byTable := map[uint32]*routeTarget{}
 	for _, p := range d.PolicyRoutes {
 		for i, r := range p.Spec.Rules {
 			what := fmt.Sprintf("PolicyRoute %s rule %d", p.Name, i+1)
-			to := r.To
-			n := 0
-			for _, set := range []bool{to.VRF != nil, to.Table != nil, to.NextHop != nil} {
-				if set {
-					n++
-				}
-			}
-			if n != 1 {
-				return nil, fmt.Errorf("%s: to names a VRF, a table or a next hop, one of them", what)
-			}
 			var t routeTarget
-			switch {
+			// networkd refuses a rule or route of table 0, and a gateway that is no address.
+			switch to := r.To; {
 			case to.VRF != nil:
 				table, err := mustGet(vrfTables, "VRF", *to.VRF)
 				if err != nil {
@@ -78,30 +67,22 @@ func policyTargets(d routerDocuments) ([]routeTarget, error) {
 				}
 				t.table = table
 			case to.Table != nil:
-				t.table = *to.Table
-				if t.table == 0 || t.table == 255 {
-					return nil, fmt.Errorf("%s: table %d is none a policy sends traffic to", what, t.table)
+				if t.table = *to.Table; t.table == 0 {
+					return nil, internalErrorf("%s: table 0 is no table", what)
 				}
-				if v, ok := tableVRF[t.table]; ok {
-					return nil, fmt.Errorf("%s: table %d is VRF %s's; name the VRF", what, t.table, v)
-				}
-			default:
+			case to.NextHop != nil:
 				h := *to.NextHop
 				a, err := netip.ParseAddr(h.Address)
-				if err != nil || a.Zone() != "" || !a.IsGlobalUnicast() && !a.IsLinkLocalUnicast() {
-					return nil, fmt.Errorf("%s: %q is no next hop's address", what, h.Address)
+				if err != nil || a.Zone() != "" {
+					return nil, internalErrorf("%s: %q is no address without a zone", what, h.Address)
 				}
-				if !plainInterface.MatchString(h.Interface) || h.Interface == "lo" {
-					return nil, fmt.Errorf("%s: %q is no link of a next hop", what, h.Interface)
-				}
-				if h.Table == 0 || h.Table >= 253 && h.Table <= 255 {
-					return nil, fmt.Errorf("%s: table %d of the next hop is one of the kernel's", what, h.Table)
-				}
-				if v, ok := tableVRF[h.Table]; ok {
-					return nil, fmt.Errorf("%s: table %d of the next hop is VRF %s's", what, h.Table, v)
+				if h.Table == 0 {
+					return nil, internalErrorf("%s: table 0 of the next hop is no table", what)
 				}
 				h.Address = a.String()
 				t.table, t.hop = h.Table, &h
+			default:
+				return nil, internalErrorf("%s: to names no target", what)
 			}
 			t.what = what
 			if old, ok := byTable[t.table]; ok {
@@ -187,17 +168,18 @@ func (f *firewall) policyLines(d routerDocuments) ([]string, error) {
 }
 
 // policyHead matches where a PolicyRoute's traffic comes in, as prerouting sees it: the links of
-// its zone, its interfaces or, without in, every link. It refuses a zone that holds no link, an
-// interface that matches a VRF's device, which prerouting sees for a VRF's link only after the
-// pass that decides the mark, and a zone's link or an interface that matches a NAT64's link, whose
-// traffic Jool translates.
+// its zone, its interfaces or, without in, every link. The kind's rules check that in names a zone
+// or interfaces, one of them. It refuses a zone that holds no link, an interface or glob that
+// matches a VRF's device, which prerouting sees for a VRF's link only after the pass that decides
+// the mark, and a zone's link or an interface that matches a NAT64's link, whose traffic Jool
+// translates. The devices include those of the Networks' own VRF=, which the rules cannot see.
 func (f *firewall) policyHead(p named[policyRouteSpec]) (string, error) {
 	what := "PolicyRoute " + p.Name
 	in := p.Spec.In
 	switch {
 	case in == nil:
 		return "", nil
-	case in.Zone != nil && len(in.Interfaces) == 0:
+	case in.Zone != nil:
 		z, err := mustGet(f.zones, "FirewallZone", *in.Zone)
 		if err != nil {
 			return "", fmt.Errorf("%s: %w", what, err)
@@ -211,7 +193,7 @@ func (f *firewall) policyHead(p named[policyRouteSpec]) (string, error) {
 			}
 		}
 		return "iifname " + interfaceSet(z.links), nil
-	case in.Zone == nil && len(in.Interfaces) > 0:
+	default:
 		if err := checkInterfaces(what, in.Interfaces); err != nil {
 			return "", err
 		}
@@ -225,7 +207,6 @@ func (f *firewall) policyHead(p named[policyRouteSpec]) (string, error) {
 		}
 		return "iifname " + interfaceSet(in.Interfaces), nil
 	}
-	return "", fmt.Errorf("%s: in names a zone or interfaces, one of them", what)
 }
 
 // nat64Link is the link of the first NAT64 whose link the interface or glob i matches, and the
@@ -241,41 +222,29 @@ func (f *firewall) nat64Link(i string) (string, string, bool) {
 
 // policyMatches are a rule's matches, one per family as a firewall rule's, with its DSCP values
 // in front, which nftables matches in each family by its own word. A rule with a next hop matches
-// the next hop's family alone.
+// the next hop's family alone. The kind's rules check that the match has a term, that it leaves a
+// family, and that a next hop's family is one the match leaves.
 func (f *firewall) policyMatches(r policyRule) ([]string, error) {
 	m := r.Match
-	if m.Family == nil && m.Protocol == nil && m.Source == nil && m.Destination == nil &&
-		len(m.SourcePorts) == 0 && len(m.DestinationPorts) == 0 && len(m.DSCP) == 0 {
-		return nil, fmt.Errorf("the match is empty; to match every packet, say so, such as with source: {cidrs: [0.0.0.0/0]}")
-	}
 	fr := firewallRule{Family: m.Family, Protocol: m.Protocol, SourcePorts: m.SourcePorts, DestinationPorts: m.DestinationPorts, Source: m.Source, Destination: m.Destination}
 	if h := r.To.NextHop; h != nil {
 		a, err := netip.ParseAddr(h.Address)
 		if err != nil {
-			return nil, fmt.Errorf("%q is no next hop's address", h.Address)
+			return nil, internalErrorf("%q is no address", h.Address)
 		}
 		fam := "ipv6"
 		if a.Is4() {
 			fam = "ipv4"
 		}
-		if fr.Family != nil && *fr.Family != fam {
-			return nil, fmt.Errorf("the next hop %s is of another family than %s", h.Address, *fr.Family)
-		}
 		fr.Family = &fam
 	}
 	dscp := make([]string, len(m.DSCP))
 	for i, v := range m.DSCP {
-		if v < 0 || v > 63 {
-			return nil, fmt.Errorf("dscp %d is no value from 0 to 63", v)
-		}
 		dscp[i] = strconv.Itoa(v)
 	}
 	matches, err := f.matchLines(fr)
 	if err != nil {
 		return nil, err
-	}
-	if len(matches) == 0 {
-		return nil, fmt.Errorf("the match leaves no family, or none of its next hop")
 	}
 	var out []string
 	for _, fm := range matches {

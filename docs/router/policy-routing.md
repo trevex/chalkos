@@ -105,8 +105,11 @@ spec:
 ```
 
 A next hop has an address, its link and a table of its own, which no other next hop and no other
-rule names. The renderers check that table when the router renders its config, at a delivery or
-at `chalkctl apply-config --dry-run`; `chalkctl validate` does not. `21-wanb` has no gateway: the
+rule names. The renderers check that table when the router renders its config, at a delivery or at
+`chalkctl apply-config --dry-run`; `chalkctl validate` does not. The address is a unicast address
+of the router at the far end, link-local ones included. The rules refuse an unspecified, loopback,
+multicast or broadcast address, and an IPv4-mapped IPv6 address such as `::ffff:198.51.100.130`,
+which stands for an IPv4 router and is no IPv6 neighbour on a link. `21-wanb` has no gateway: the
 main table routes through `wana0` alone. The router fills each next hop's table with a default
 route through the next hop, followed by an unreachable default route. While `wanb0` is down, the
 servers' traffic hits the unreachable default and is dropped instead of falling back to the main
@@ -216,7 +219,6 @@ a document the config lacks, and what the rules of the router kinds refuse.
 | --- | --- |
 | `PolicyRoute lan: in names a zone or interfaces, one of them; leave in out for traffic from every link` | Keep `zone` or `interfaces`, or drop `in`. |
 | `PolicyRoute/lan: spec.in.zone: FirewallZone "dmz" does not exist` | Add the zone, or name one that exists. |
-| `PolicyRoute lan: transit is the device of VRF transit; name the VRF's links, or a zone of the VRF` | Name the VRF's links in `interfaces`, or a zone that holds them. |
 | `PolicyRoute "lan" spec.rules: a rule has an empty match, which would take every packet; to send every packet, say so, such as with source: {cidrs: [0.0.0.0/0]}` | Add a term to the match. |
 | `PolicyRoute "lan" spec.rules: a rule's source or destination names both set and cidrs, or neither; give one, or leave the field out to match every address` | Keep one of `set` and `cidrs`, or leave out an empty `source` or `destination`. |
 | `PolicyRoute/lan: spec.rules[1].match.source.set: AddressSet "guests" does not exist` | Add the `AddressSet` document, or fix the name. |
@@ -229,16 +231,18 @@ a document the config lacks, and what the rules of the router kinds refuse.
 | `PolicyRoute "lan" spec.rules: a rule's table is 255, the kernel's local table, or a VRF's table; name the VRF in vrf, or take another table` | Name the VRF in `vrf`, or take another table. |
 | `PolicyRoute "servers" spec.rules: a next hop's table is 253, 254 or 255, the kernel's own, or a VRF's table; give the next hop a table of its own` | Take a table that is neither the kernel's nor a VRF's. |
 | `PolicyRoute "servers" spec.rules: a next hop's interface is lo, which no next hop is on; name the link the next hop is on` | Name the link the next hop is on in `interface`. |
+| `PolicyRoute "servers" spec.rules: the next hop ::ffff:198.51.100.130 is no unicast address of a router; give the address of the router the traffic leaves through` | Give the next hop's unicast address, an IPv4 address as IPv4. |
 
 The renderers of the outputs `router-nftables` and `networkd` check the rest, the next hops'
-tables and what depends on the `Network` documents, before the delivery changes anything.
+tables, the interfaces of `in` against the VRFs' devices and what depends on the `Network`
+documents, before the delivery changes anything.
 `chalkctl validate` does not run them.
 A renderer's refusal fails the delivery, and `chalkctl logs r1` shows the reason on a line that
 starts with `chalkos-render:`:
 
 | Message | Fix |
 | --- | --- |
-| `PolicyRoute lan: tran* matches transit, the device of VRF transit; name the VRF's links or a zone of the VRF` | Name the VRF's links, or a zone that holds them. |
+| `PolicyRoute lan: tran* matches transit, the device of VRF transit; name the VRF's links or a zone of the VRF` | Name the VRF's links in `interfaces`, or a zone that holds them. The output refuses the VRF's own name, `transit`, the same way. |
 | `PolicyRoute lan: n64-* matches n64-edge, the link of NAT64 edge, whose traffic Jool translates; name other links` | Narrow the glob, so it leaves out the NAT64's link. |
 | `PolicyRoute lan: the zone guest holds n*, which matches n64-guest, the link of NAT64 guest, whose traffic Jool translates; name the zone's other links in interfaces` | Name the zone's other links in `interfaces`, or narrow the `Network` that puts `n*` in the zone's VRF. |
 | `PolicyRoute lan: the zone core holds no link` | Give the zone a link, or name another zone. |
