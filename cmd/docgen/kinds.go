@@ -269,6 +269,9 @@ func fields(root map[string]any, path string, s map[string]any) []row {
 			continue
 		}
 		desc := text(child["description"])
+		if n, ok := child["maxItems"]; ok {
+			desc = strings.TrimSpace(desc + " Holds " + display(n) + " items at most.")
+		}
 		if note := uniqueNote(root, child); note != "" {
 			desc = strings.TrimSpace(desc + " " + note)
 		}

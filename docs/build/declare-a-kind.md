@@ -239,11 +239,13 @@ submodule, lib.chalkos.types.ref and lib.chalkos.types.secretRef.
 
 ## Field rules need lib.chalkos.mkOption
 
-`lib.chalkos.mkOption` is `lib.mkOption` with two more arguments: `rules`, a list of change
-rules, and `unique`, which [A field's values can be unique](#a-fields-values-can-be-unique)
-describes. `lib.mkOption` takes neither. Use `lib.mkOption` for a field without rules, as
-`address` and `password` do, and `lib.chalkos.mkOption` for a field with them, as `asn` does.
-Both produce the same schema apart from `x-chalkos-rules` and `x-chalkos-unique`.
+`lib.chalkos.mkOption` is `lib.mkOption` with three more arguments: `rules`, a list of change
+rules; `unique`, which [A field's values can be unique](#a-fields-values-can-be-unique)
+describes; and `maxItems`, the most items a list field holds, which the schema checks.
+`lib.mkOption` takes none of them. Use `lib.mkOption` for a field without rules, as `address`
+and `password` do, and `lib.chalkos.mkOption` for a field with them, as `asn` does. Both produce
+the same schema apart from `x-chalkos-rules`, `x-chalkos-unique` and `maxItems`. The build fails
+on a `maxItems` on a field that is no list, or one that is no positive integer.
 
 A change rule is a CEL expression that every config the node accepts makes true. In the rule,
 `self` is the field's new value and `oldSelf` its value in the config the node runs. `asn`'s rule
@@ -253,8 +255,9 @@ instead, and a rule that compares fields of one document into `chalkos.kinds.<Ki
 [Guard changes with rules and facts](guard-changes.md) covers all three, and the facts a rule
 reads about the node.
 
-The `rules` and `unique` arguments exist only on `lib.chalkos`, which every image module gets as
-part of `lib`. `lib.chalkos.types.ref` and `lib.chalkos.types.secretRef` come from the same place.
+The `rules`, `unique` and `maxItems` arguments exist only on `lib.chalkos`, which every image
+module gets as part of `lib`. `lib.chalkos.types.ref` and `lib.chalkos.types.secretRef` come from
+the same place.
 
 ## A field can name a document of another kind
 

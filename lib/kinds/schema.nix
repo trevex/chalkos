@@ -423,6 +423,19 @@ let
     // lib.optionalAttrs (opt ? "x-chalkos-unique") {
       "x-chalkos-unique" = uniqueSchema "${at}.unique" at s opt."x-chalkos-unique";
     }
+    # The most items of a list, which lib.chalkos.mkOption puts under x-chalkos-maxItems.
+    // lib.optionalAttrs (opt ? "x-chalkos-maxItems") {
+      maxItems =
+        let
+          n = opt."x-chalkos-maxItems";
+        in
+        if (s.type or null) != "array" then
+          throw "${at}.maxItems: maxItems bounds a list, and ${opt.type.description} is none"
+        else if !lib.isInt n || n < 1 then
+          throw "${at}.maxItems: ${builtins.toJSON n} is no positive integer"
+        else
+          n;
+    }
     // lib.optionalAttrs (lib.isString (opt.description or null)) { inherit (opt) description; }
     // lib.optionalAttrs (opt ? default && isPlain opt.default && !leaksNamePlaceholder opt.default) {
       inherit (opt) default;

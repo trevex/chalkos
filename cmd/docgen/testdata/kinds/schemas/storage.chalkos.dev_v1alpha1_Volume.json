@@ -51,6 +51,7 @@
         },
         "taints": {
           "type": "array",
+          "maxItems": 8,
           "items": {
             "type": "object",
             "additionalProperties": false,

@@ -159,7 +159,8 @@ let
             `lib.chalkos.mkOption { …; rules = [ { rule = "self == oldSelf"; message = "…"; } ]; }`,
             in the shape of `rules`, where `self` is the field's new value and `oldSelf` its value in
             the running config. `lib.chalkos.mkOption`'s `unique` declares values that must not
-            repeat, among the node's documents of the kind or within one list.
+            repeat, among the node's documents of the kind or within one list, and its `maxItems`
+            the most items a list holds.
           '';
         };
         rules = lib.mkOption {

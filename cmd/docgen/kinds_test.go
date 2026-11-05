@@ -55,9 +55,9 @@ func TestWriteKinds(t *testing.T) {
 		"| `spec.password` | secret reference or null | `null` |  |\n",
 		"| `spec.extra` | object, any fields | — | Any fields, as `a|b`. |\n| `spec.labels` |",
 		"| `spec.mode` | `l2` | `\"l2\"` |  |\n| `spec.objects` | list of Kubernetes object | — |  |\n| `spec.password` |",
-		// A field's uniqueness declarations end its description, a sentence each.
+		// A list's bound and a field's uniqueness declarations end its description, a sentence each.
 		"| `spec.size` | integer from 1 to 100 | — | Unique among the Volume documents. |\n| `spec.source` | name of a Volume, or `none` | — |  |\n",
-		"| `spec.taints` | list of object | — | Each item is unique within the list by `key`. |\n| `spec.taints[].effect` | one of `NoSchedule`, `NoExecute` | — |  |\n| `spec.taints[].key` | string | required |  |\n",
+		"| `spec.taints` | list of object | — | Holds 8 items at most. Each item is unique within the list by `key`. |\n| `spec.taints[].effect` | one of `NoSchedule`, `NoExecute` | — |  |\n| `spec.taints[].key` | string | required |  |\n",
 		"| `spec.zones` | list of string or null | — | Each item is unique within the list, compared as addresses. Each item is unique among the Volume documents. |\n",
 		"### Link { #link }\n\nA systemd .link file.\n\n`apiVersion: networkd.chalkos.dev/v1alpha1`\n\n",
 		"| Field | networkd section | Keys |\n| --- | --- | --- |\n| `spec.match` | Match | `macAddress` (MACAddress), `name` (Name) |\n| `spec.sriov` | SR-IOV | `vlanId` (VLANId) |\n",

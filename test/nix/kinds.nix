@@ -239,6 +239,9 @@ let
   uniqueOf =
     type: unique:
     (specOf { x = libChalkos.mkOption { inherit type unique; }; }).properties.x."x-chalkos-unique";
+  # The schema of a field of the type given, declared with maxItems.
+  maxItemsOf =
+    type: maxItems: (specOf { x = libChalkos.mkOption { inherit type maxItems; }; }).properties.x;
   # A list item with fields of each shape a key may and may not hold.
   reservation = types.submodule {
     options = {
@@ -1005,6 +1008,38 @@ lib.runTests {
       items.type = "string";
       minItems = 1;
     };
+  };
+  # lib.chalkos.mkOption's maxItems bounds a list, and fails the evaluation on any other type or
+  # on a bound that is no positive integer.
+  testMaxItems = {
+    expr = maxItemsOf (types.nonEmptyListOf types.str) 8;
+    expected = {
+      type = "array";
+      items.type = "string";
+      minItems = 1;
+      maxItems = 8;
+    };
+  };
+  testMaxItemsRefusesNonLists = {
+    expr = map (x: fails (maxItemsOf x.type x.maxItems)) [
+      {
+        type = types.str;
+        maxItems = 8;
+      }
+      {
+        type = types.nullOr (types.listOf types.str);
+        maxItems = 8;
+      }
+      {
+        type = types.listOf types.str;
+        maxItems = 0;
+      }
+    ];
+    expected = [
+      true
+      true
+      true
+    ];
   };
   testSubmodule = {
     expr = propOf (

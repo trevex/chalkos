@@ -23,22 +23,26 @@ in
   # lib.mkOption, for a field of a kind, with the field's change rules: each { rule; message or
   # messageExpression; takes ? "refuse"; description ? null; }, as a kind's rules are; and the
   # values that must not repeat: true, or one or a list of { across ? "kind" or "list"; by ? [
-  # field or { field; as ? null; } ]; as ? null; hint ? null; }. The schema converter checks
-  # unique against the field's type.
+  # field or { field; as ? null; } ]; as ? null; hint ? null; }; and maxItems, the most items a
+  # list holds, which bounds what a rule that loops over the list costs. The schema converter
+  # checks unique and maxItems against the field's type.
   mkOption =
     {
       rules ? [ ],
       unique ? false,
+      maxItems ? null,
       ...
     }@args:
     lib.mkOption (
       removeAttrs args [
         "rules"
         "unique"
+        "maxItems"
       ]
     )
     // lib.optionalAttrs (rules != [ ]) { "x-chalkos-rules" = rules; }
-    // lib.optionalAttrs (unique != false) { "x-chalkos-unique" = unique; };
+    // lib.optionalAttrs (unique != false) { "x-chalkos-unique" = unique; }
+    // lib.optionalAttrs (maxItems != null) { "x-chalkos-maxItems" = maxItems; };
 
   render = {
     # A Go text/template, which writes the file named as the template less .tmpl; a missing or
