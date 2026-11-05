@@ -9,8 +9,11 @@ import (
 	"strconv"
 
 	"cel.dev/cel-go/cel"
+	"cel.dev/cel-go/checker"
+	"cel.dev/cel-go/common"
 	"cel.dev/cel-go/common/types"
 	"cel.dev/cel-go/common/types/ref"
+	"cel.dev/cel-go/interpreter"
 
 	"github.com/trevex/chalkos/pkg/schema"
 	"github.com/trevex/chalkos/pkg/storage"
@@ -25,8 +28,8 @@ var (
 
 // library holds the functions rules use besides CEL's own and its lists, sets, strings and
 // bindings extensions: address ranges and addresses, which compare by what they denote rather
-// than how they are spelt, sizes as the storage kinds write them, and ranges of ports as the
-// router kinds write them.
+// than how they are spelt, sizes as the storage kinds write them, ranges of ports as the router
+// kinds write them, and DNS names and record data as the Resolver's local zones hold them.
 func library() cel.EnvOption {
 	return cel.Lib(celLib{})
 }
@@ -45,6 +48,14 @@ const (
 
 // portRangeType is what portRange() yields: a map of first and last, both ints.
 var portRangeType = cel.MapType(cel.StringType, cel.IntType)
+
+// The overloads whose cost grows with the length of a string they read, by the index of that
+// argument: they scan it once, at the cost per character CEL's own string functions take. Every
+// other function of the library costs one step.
+var stringScans = map[string]int{
+	"chalkos_string_is_dns_name":           0,
+	"chalkos_string_string_is_record_data": 1,
+}
 
 func (celLib) CompileOptions() []cel.EnvOption {
 	return []cel.EnvOption{
@@ -99,6 +110,16 @@ func (celLib) CompileOptions() []cel.EnvOption {
 				cel.UnaryBinding(func(v ref.Val) ref.Val {
 					return portRangeOf(string(v.(types.String)))
 				}))),
+		cel.Function("isDNSName",
+			cel.Overload("chalkos_string_is_dns_name", []*cel.Type{cel.StringType}, cel.BoolType,
+				cel.UnaryBinding(func(v ref.Val) ref.Val {
+					return types.Bool(isDNSName(string(v.(types.String))))
+				}))),
+		cel.Function("isRecordData",
+			cel.Overload("chalkos_string_string_is_record_data", []*cel.Type{cel.StringType, cel.StringType}, cel.BoolType,
+				cel.BinaryBinding(func(t, v ref.Val) ref.Val {
+					return types.Bool(isRecordData(string(t.(types.String)), string(v.(types.String))))
+				}))),
 		cel.Function("family",
 			cel.MemberOverload("chalkos_ip_family", []*cel.Type{ipType}, cel.StringType,
 				cel.UnaryBinding(func(a ref.Val) ref.Val {
@@ -129,7 +150,29 @@ func (celLib) CompileOptions() []cel.EnvOption {
 					_, ok := size(string(v.(types.String)))
 					return types.Bool(ok)
 				}))),
+		stringScanCosts(),
 	}
+}
+
+// stringScanCosts estimates the overloads of stringScans at one step and a tenth of a step per
+// character of the string they scan, as CEL estimates contains() and the other string functions
+// that read a string whole.
+func stringScanCosts() cel.EnvOption {
+	var opts []checker.CostOption
+	for id, arg := range stringScans {
+		opts = append(opts, checker.OverloadCostEstimate(id, func(e checker.CostEstimator, _ *checker.AstNode, args []checker.AstNode) *checker.CallEstimate {
+			sz := args[arg].ComputedSize()
+			if sz == nil {
+				sz = e.EstimateSize(args[arg])
+			}
+			if sz == nil {
+				sz = &checker.SizeEstimate{Min: 0, Max: math.MaxUint64}
+			}
+			scan := sz.MultiplyByCostFactor(common.StringTraversalCostFactor)
+			return &checker.CallEstimate{CostEstimate: scan.Add(checker.FixedCostEstimate(1))}
+		}))
+	}
+	return cel.CostEstimatorOptions(opts...)
 }
 
 // portRangeOf is the first and last port of s, as PortRange reads it, as portRange() yields
@@ -151,7 +194,21 @@ func size(s string) (int64, bool) {
 	return int64(n), true
 }
 
-func (celLib) ProgramOptions() []cel.ProgramOption { return nil }
+// ProgramOptions count the overloads of stringScans at runtime as their estimate does, on the
+// string they meet.
+func (celLib) ProgramOptions() []cel.ProgramOption {
+	var opts []interpreter.CostTrackerOption
+	for id, arg := range stringScans {
+		opts = append(opts, interpreter.OverloadCostTracker(id, func(args []ref.Val, _ ref.Val) *uint64 {
+			n := uint64(1)
+			if s, ok := args[arg].(types.String); ok {
+				n += uint64(math.Ceil(float64(len(s)) * common.StringTraversalCostFactor))
+			}
+			return &n
+		}))
+	}
+	return []cel.ProgramOption{cel.CostTrackerOptions(opts...)}
+}
 
 // cidr is an address range, its address masked, so that spellings of one range, such as
 // fd00:0::/108 and fd00::/108, or 10.244.1.0/16 and 10.244.0.0/16, are equal.

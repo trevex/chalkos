@@ -230,7 +230,8 @@ without the volume it resets, which it recreates like a new one.
 ## Rules call CEL's functions and chalkos's
 
 Rules have CEL's standard functions, the lists, sets, strings and bindings (`cel.bind`)
-extensions of cel-go, and chalkos's document lookup and its address, size and port functions:
+extensions of cel-go, and chalkos's document lookup and its address, size, port and DNS
+functions:
 
 | Function | Result |
 | --- | --- |
@@ -247,11 +248,17 @@ extensions of cel-go, and chalkos's document lookup and its address, size and po
 | `bytes(s)` | A size such as `1G` or `512M` in bytes, an int, with suffixes in powers of 1024. It replaces CEL's conversion of a string to bytes. |
 | `isSize(s)` | Whether `bytes(s)` reads `s`: digits with an optional K, M, G, T or P suffix, below 8 EiB. |
 | `portRange(p)` | The ports of `p`, a port as an int or a range `"<first>-<last>"`, as a map of `first` and `last`: `portRange("8000-8100").last` is `8100`, `portRange(22).first` is `22`. Both lie from 1 to 65535, and `first` is no higher than `last`. |
+| `isDNSName(s)` | Whether `s` is a DNS name in lower case without the root's dot, of 253 characters at most: labels of letters, digits, `-` and `_`, each of 63 characters at most, that start with a letter, a digit or `_` and end with a letter or a digit, or are `_` alone. |
+| `isRecordData(type, s)` | Whether `s` is data a DNS record of the type holds, as the router's resolver takes it: an IPv4 address for `A`, an IPv6 address for `AAAA`, a name `isDNSName` takes for `CNAME` and `PTR`, a preference and a name for `MX`, a priority, a weight, a port and a name for `SRV`, and 1 to 255 printable characters without quotes or backslashes for `TXT`. |
 
 `document()` reads one document at the cost of one step, so a rule that loops over a list of
-names and reads each named document costs as one loop. chalkctl and chalkd check every
-`lib.chalkos.types.ref` field before any rule runs, so `document()` of such a field yields `null`
-only for a `null` field or a reserved name. Rules of effects have no `document()`.
+names and reads each named document costs as one loop. `isDNSName` and `isRecordData` cost a step
+and a tenth of a step for each character of the string they check, as CEL's own string
+functions do. chalkos's other functions cost one step each.
+
+chalkctl and chalkd check every `lib.chalkos.types.ref` field before any rule runs, so
+`document()` of such a field yields `null` only for a `null` field or a reserved name. Rules of
+effects have no `document()`.
 
 ## The build compiles every rule
 

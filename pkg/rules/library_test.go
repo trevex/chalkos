@@ -3,6 +3,8 @@ package rules
 import (
 	"strings"
 	"testing"
+
+	"cel.dev/cel-go/cel"
 )
 
 // eval evaluates expr with x bound to the value given.
@@ -154,6 +156,109 @@ func TestLibraryAddressesAndPorts(t *testing.T) {
 		_, err := eval(t, `portRange(x)`, n)
 		if err == nil || err.Error() != errNotPortRange {
 			t.Errorf("portRange(%d): err = %v, want %q", n, err, errNotPortRange)
+		}
+	}
+}
+
+// isDNSName and isRecordData accept what Unbound's local zones take, as chalkos-render's unbound
+// output checks it.
+func TestLibraryDNS(t *testing.T) {
+	long := strings.Repeat("a", 63)
+	for _, tc := range []struct {
+		expr string
+		want bool
+	}{
+		{`isDNSName("lan.example.org")`, true},
+		{`isDNSName("_sip._tcp.lan")`, true},
+		{`isDNSName("a")`, true},
+		{`isDNSName("` + long + `.org")`, true},
+		{`isDNSName("` + long + `a.org")`, false},
+		{`isDNSName("` + strings.Repeat(long+".", 3) + strings.Repeat("a", 61) + `")`, true},
+		{`isDNSName("` + strings.Repeat(long+".", 3) + strings.Repeat("a", 62) + `")`, false},
+		{`isDNSName("Lan.example.org")`, false},
+		{`isDNSName("lan.example.org.")`, false},
+		{`isDNSName("-lan.org")`, false},
+		{`isDNSName("lan-.org")`, false},
+		{`isDNSName("lan..org")`, false},
+		{`isDNSName("")`, false},
+		{`isRecordData("A", "192.0.2.1")`, true},
+		{`isRecordData("A", "2001:db8::1")`, false},
+		{`isRecordData("A", "192.0.2.01")`, false},
+		{`isRecordData("AAAA", "2001:DB8::1")`, true},
+		{`isRecordData("AAAA", "::ffff:192.0.2.1")`, false},
+		{`isRecordData("AAAA", "fe80::1%eth0")`, false},
+		{`isRecordData("CNAME", "www.example.org")`, true},
+		{`isRecordData("PTR", "host.lan")`, true},
+		{`isRecordData("CNAME", "www.example.org.")`, false},
+		{`isRecordData("PTR", "Host.lan")`, false},
+		{`isRecordData("MX", "10 mail.lan")`, true},
+		{`isRecordData("MX", "0 mail.lan")`, true},
+		{`isRecordData("MX", "65535 mail.lan")`, true},
+		{`isRecordData("MX", "65536 mail.lan")`, false},
+		{`isRecordData("MX", "010 mail.lan")`, false},
+		{`isRecordData("MX", "10  mail.lan")`, false},
+		{`isRecordData("MX", "mail.lan")`, false},
+		{`isRecordData("SRV", "0 5 5060 sip.lan")`, true},
+		{`isRecordData("SRV", "0 5 sip.lan")`, false},
+		{`isRecordData("SRV", "0 5 5060 sip.lan.")`, false},
+		{`isRecordData("SRV", "+0 5 5060 sip.lan")`, false},
+		{`isRecordData("TXT", "v=spf1 -all")`, true},
+		{`isRecordData("TXT", "")`, false},
+		{`isRecordData("TXT", "say \"hi\"")`, false},
+		{`isRecordData("TXT", "` + strings.Repeat("x", 256) + `")`, false},
+		{`isRecordData("NS", "ns.lan")`, false},
+	} {
+		got, err := eval(t, tc.expr, nil)
+		if err != nil || got != tc.want {
+			t.Errorf("%s = %v, %v; want %v", tc.expr, got, err, tc.want)
+		}
+	}
+}
+
+// The library's functions cost one step, and isDNSName and isRecordData a tenth of a step more
+// per character of the string they check, as CEL's own contains() does: the build estimates them
+// with sizeHint characters, 26 steps more, and a node counts the characters it meets.
+func TestLibraryCosts(t *testing.T) {
+	e, err := newEnv("x")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Each estimate holds a step for each literal and variable the call reads.
+	for expr, want := range map[string]uint64{
+		`ip("10.0.0.1").compare(ip("10.0.0.2"))`: 3,
+		`cidr("10.0.0.0/8").last()`:              2,
+		`portRange(x)`:                           2,
+		`isDNSName(x)`:                           2 + 26,
+		`isRecordData("MX", x)`:                  2 + 26,
+		`x.contains("a")`:                        1 + 26,
+	} {
+		ast, iss := e.Compile(expr)
+		if iss.Err() != nil {
+			t.Fatalf("%s: %v", expr, iss.Err())
+		}
+		est, err := e.EstimateCost(ast, estimator{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if est.Max != want {
+			t.Errorf("%s: estimated at most %d, want %d", expr, est.Max, want)
+		}
+	}
+	ast, iss := e.Compile(`isDNSName(x)`)
+	if iss.Err() != nil {
+		t.Fatal(iss.Err())
+	}
+	prg, err := e.Program(ast, cel.CostLimit(runtimeCostLimit))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for n, want := range map[int]uint64{10: 3, 1000: 102} {
+		_, det, err := prg.Eval(map[string]any{"x": strings.Repeat("a", n)})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := *det.ActualCost(); got != want {
+			t.Errorf("isDNSName of %d characters costs %d, want %d", n, got, want)
 		}
 	}
 }
