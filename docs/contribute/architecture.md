@@ -67,7 +67,7 @@ Each directory of `cmd/` is a main that wires a package up; the logic lives in `
 | `cmd/chalkcfg` | Runs `chalkcfg.NewCommand()` on a node. |
 | `cmd/chalkd` | Dispatches the commands the node's units run: `serve` (chalkd.service), `load-config` (chalkos-config.service), `health` (chalkos-health.service), `check` (an image's checker, which another image's chalkd runs) and each layer's commands as `chalkd <layer> <command>`, such as `chalkd kubernetes prepare` (chalkos-kubernetes.service). Lists the layer plugins compiled into chalkd in `plugins.go`, and loads the credentials `serve` starts with. |
 | `cmd/chalkos-networkd-schema` | Writes the spec schemas of the networkd kinds from systemd's gperf tables, for the image build. |
-| `cmd/chalkos-render` | Renders the outputs of the `lib.chalkos.render.template` and `.documents` renderers and the built-in outputs `networkd` (with `router-networkd` on router images), `router-sysctl`, `router-nftables`, `frr`, `jool` and `unbound` on a node, in an output's sandbox, and a router image's fallback ruleset and FRR config when the image is built. |
+| `cmd/chalkos-render` | Renders the outputs of the `lib.chalkos.render.template` and `.documents` renderers and the built-in outputs `networkd` (with `router-networkd` on router images), `router-sysctl`, `router-nftables`, `frr`, `jool` and `unbound` on a node, in an output's sandbox, and a router image's fallback ruleset and FRR config when the image is built. Runs the validator router as `chalkos-render validate router`. |
 | `cmd/chalkos-rules` | Checks an image when it is built: every rule compiles within the cost limit and reads facts the image declares, the effects act on units and outputs the image has, and every output renders its examples and passes its check. |
 | `cmd/chalkos-storage` | Opens STATE and sets up the volumes in the initrd, runs as a systemd generator for the other volumes, and prints the storage facts the storage kinds' rules read. |
 | `cmd/docgen` | Writes the command reference and checks the commands the documentation shows. |
@@ -83,7 +83,7 @@ Each directory of `cmd/` is a main that wires a package up; the logic lives in `
 | `chalkctl` | The chalkctl command tree, and the list of its layer plugins in `layers.go`. |
 | `chalkctl/layer` | The interfaces of chalkctl's layer plugins: the plugin, its optional hooks and the `Host` through which a plugin reaches the cluster and its nodes. |
 | `chalkctl/layers/kubernetes` | chalkctl's Kubernetes layer: the commands that run Kubernetes and etcd and revoke nodes, the Kubernetes section of a node's status, the facts of its images, the share it delivers, an upgrade's quorum checks, drains and uncordons, and the rotations of the Kubernetes secrets. |
-| `chalkctl/layers/router` | chalkctl's router layer: `chalkctl node routes` and the router's section of a node's status. |
+| `chalkctl/layers/router` | chalkctl's router layer: `chalkctl node routes`, the router's section of a node's status and the validator router, which it links. |
 | `chalkd` | The node API server, with the permissions of each NodeService method; the registry of layer plugins it mounts, starts and asks for hooks; and chalkd's work at boot: the node certificate's renewal and the health check. |
 | `chalkd/layer` | The interfaces of chalkd's layer plugins, their optional hooks and the registry of the compiled and active plugins. |
 | `chalkd/layers/kubernetes` | chalkd's Kubernetes layer: KubernetesService, the node's Kubernetes loops, the control plane's, the join and the VIP election, the issuer of node certificates, and the `chalkd kubernetes` commands and actions. |
@@ -131,6 +131,7 @@ Each directory of `cmd/` is a main that wires a package up; the logic lives in `
 | `outputs` | Renders and checks the image's outputs in a sandbox of their own, as an unprivileged user, swaps them in by a symlink rename, and records their hashes and failures. |
 | `pki` | The OS CA and node CA, client and node certificates and their checks, client roles, PEM keys and certificate bundles. |
 | `router` | Reads a router's state: its BGP sessions and paths of each VRF from vtysh's JSON, its NAT64 instances, counters and pools from jool's CSV, the kernel's routes from netlink, and the filter of a `Routes` call. |
+| `router/derive` | The router's model of a node's config: the router kinds' documents and what the Network and VRF documents say together, such as each link's VRF, the .network units in networkd's order, the NAT64 instances and the tables of policy routing. The router's outputs render from it, and it holds the validator router, which `chalkos-render validate router` runs and chalkctl links. It takes the standard library alone, as chalkos-render does. |
 | `rules` | Compiles the change rules of an image's schemas, with chalkos's CEL functions, and evaluates them against a config, the config it replaces and the node's facts. |
 | `schema` | Reads an image's config contract: `metadata.json` and the JSON Schemas of its kinds, and validates documents against them. |
 | `secureboot` | Checks an EFI binary's Authenticode signature as Secure Boot firmware does, against db and dbx read from the firmware or against given certificates. |
@@ -214,17 +215,18 @@ live in `pkg/chalkd/layers/kubernetes` and `pkg/chalkd/layers/router`.
 
 `pkg/chalkctl/layer` declares chalkctl's side in the same way: a `Plugin` with hooks for commands,
 a node's status section, image facts, the payloads of a delivery and their admission, the
-coordinators that upgrade and rotate take first, an upgrade's checks and the rotation kinds a layer
-runs. `UpgradeFlags` adds a layer's flags to `chalkctl upgrade`, such as the Kubernetes plugin's
-`--allow-downtime`, and the layer's upgrade hooks read them back. A plugin also names the nodes
-every rotation leaves out and those that hold the node CA. chalkctl runs the rotations of the OS
-CA and the node CA itself, in `pkg/chalkctl/rotate_ca.go`, since every node takes part in them,
-and asks the plugins for their kinds. For what the inventory and the secrets file drive, such as
-commands, payloads and rotations, it asks every compiled plugin. For what it reads from a node's
-layer services, such as the node's status section and its part in an upgrade, it asks only the
-plugins of the layers the node's Info names. A plugin reaches the cluster and its nodes through
-the `Host` chalkctl gives it. `pkg/chalkctl/layers.go` lists the plugins, which live in
-`pkg/chalkctl/layers/kubernetes` and `pkg/chalkctl/layers/router`.
+coordinators that upgrade and rotate take first, an upgrade's checks, the rotation kinds a layer
+runs and the validators it links. `UpgradeFlags` adds a layer's flags to `chalkctl upgrade`, such
+as the Kubernetes plugin's `--allow-downtime`, and the layer's upgrade hooks read them back. A
+plugin also names the nodes every rotation leaves out and those that hold the node CA. chalkctl
+runs the rotations of the OS CA and the node CA itself, in `pkg/chalkctl/rotate_ca.go`, since
+every node takes part in them, and asks the plugins for their kinds. For what the inventory and
+the secrets file drive, such as commands, payloads and rotations, it asks every compiled plugin,
+and it asks each for the validators that an image of the node's schemas runs. For what it reads
+from a node's layer services, such as the node's status section and its part in an upgrade, it
+asks only the plugins of the layers the node's Info names. A plugin reaches the cluster and its
+nodes through the `Host` chalkctl gives it. `pkg/chalkctl/layers.go` lists the plugins, which live
+in `pkg/chalkctl/layers/kubernetes` and `pkg/chalkctl/layers/router`.
 
 ## chalkd runs with a narrow sandbox
 

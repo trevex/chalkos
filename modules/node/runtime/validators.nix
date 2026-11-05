@@ -104,7 +104,8 @@ in
       runs every validator before a delivery changes anything, after the change rules and before
       the outputs render, and refuses the delivery when one refuses it or fails. The image checks
       its own config with them too, as an upgrade does before it stages the image.
-      `chalkctl validate` does not run them: they are programs of the image.
+      `chalkctl validate` runs only the validators chalkctl links, the router layer's `router`;
+      the others are programs of the image, which the node runs.
     '';
   };
 

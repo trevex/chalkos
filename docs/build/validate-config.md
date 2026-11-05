@@ -143,8 +143,9 @@ chalkctl: cp1: the config is refused: Peer/router-c: spec.address: 10.0.1.1 lies
 ```
 
 The node changed nothing. `chalkctl apply-config --dry-run cp1` prints the same refusal without
-a delivery. chalkctl cannot run the image's validators, so `chalkctl validate` accepts the
-config.
+a delivery. `chalkctl validate` accepts the config: chalkctl runs only the validators it links,
+the router layer's `router` on router images, and an image's own validator runs on the node
+alone.
 
 A validator that fails names itself and its exit status. Each run is a transient unit,
 `chalkos-render-<n>.service`, whose journal holds what the program wrote to standard error, and

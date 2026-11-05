@@ -300,15 +300,18 @@ STATE holds the complete set while the files stay as short as their authors wrot
 Both also check the image's [change rules](../../build/guard-changes.md). chalkd runs every rule.
 chalkctl runs those that read no facts about the node, `validate` without the node's config and
 `apply-config` with the config the node serves, so a change a rule refuses fails before it is sent.
+Both run the router layer's [validator](../../build/validate-config.md) `router` on a router image:
+chalkd runs the image's program, and chalkctl the same code, which it links, on the same
+documents.
 
-Only chalkd runs the image's renderers and their checks, and the rules that read facts, so a set
-chalkctl accepts can still be refused on delivery. A renderer repeats a check of the schemas or
-rules only where a bad value would break its output, such as a line break in a networkd unit's
-value. Such a check fails with `internal error: ...`, which a checked config never causes.
-[`chalkctl apply-config --dry-run`](../../reference/cli/chalkctl_apply-config.md) has chalkd run
-every check of a delivery and changes nothing. chalkd answers with what the delivery would do:
-the config versions, the outputs that change, the effects with what fires each, and the storage
-changes.
+Only chalkd runs the image's renderers and their checks, its other validators, and the rules that
+read facts, so a set chalkctl accepts can still be refused on delivery. A renderer repeats a check
+of the schemas or rules only where a bad value would break its output, such as a line break in a
+networkd unit's value. Such a check fails with `internal error: ...`, which a checked config never
+causes. [`chalkctl apply-config --dry-run`](../../reference/cli/chalkctl_apply-config.md) has
+chalkd run every check of a delivery and changes nothing. chalkd answers with what the delivery
+would do: the config versions, the outputs that change, the effects with what fires each, and the
+storage changes.
 
 ## chalkctl delivers a whole set at a time
 

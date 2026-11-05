@@ -129,8 +129,9 @@ outputs at its first boot alone, and runs its validators first at the next deliv
 - A renderer reads documents and the node's name alone. A service that needs node state reads that
   part itself.
 - chalkctl cannot run an image's renderers, so `chalkctl apply-config --diff` shows the documents
-  a delivery changes, not the rendered files. It cannot run the validators an image declares
-  either, so `chalkctl validate` accepts a config that a validator refuses on the node.
+  a delivery changes, not the rendered files. It runs only the validators it links, the router
+  layer's `router` on router images, so `chalkctl validate` accepts a config that another
+  validator of the image refuses on the node.
 - chalkctl runs only the rules that read no facts. The others run on the node.
 - An effect's `when` compares documents as written, so a change that makes no difference to the
   unit still fires the effect, such as a value spelt another way that means the same.
