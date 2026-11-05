@@ -89,7 +89,8 @@ func (s *Server) checkInput(ctx context.Context, system, dir string, in *checkv1
 
 // systemImage is what the image whose NixOS system is system checks config with, read from its
 // etc: its schemas and their rules, its validators and outputs, run and rendered below dir, and
-// the target its layers' facts give, on platform. It plans no effects: an image that does not run has none to take.
+// the target its layers' facts give, on platform. It plans no effects: an image that does not
+// run has none to take.
 func (s *Server) systemImage(system, platform, dir string) (check.Image, error) {
 	etc := filepath.Join(system, "etc")
 	schemas, err := schema.LoadSchemas(filepath.Join(etc, "chalkos", "schemas"))

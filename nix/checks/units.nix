@@ -2789,8 +2789,9 @@ in
   # the checker, its renderer and the fact's program come from the bound store. The image's Demo
   # kind reads the fact in a rule; its validator refuses a Demo called veto, and its output's check
   # one called refuse; both check the sandbox: no root, /run/chalkos out of reach, and the check
-  # no capabilities and nft --check in a user and network namespace of its own. While the checker waits for its fact, another user of the VM
-  # reaches neither the facts socket nor the input or the result.
+  # no capabilities and nft --check in a user and network namespace of its own. While the checker
+  # waits for its fact, another user of the VM reaches neither the facts socket nor the input or
+  # the result.
   image-checker =
     let
       inherit (checkLib.chalkPkgs) chalkd;
