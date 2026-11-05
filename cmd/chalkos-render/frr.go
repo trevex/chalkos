@@ -74,7 +74,10 @@ func frrConfig(d routerDocuments, node string) (string, error) {
 	}
 	b.WriteString("log syslog informational\nservice integrated-vtysh-config\n!\n")
 	// The BGPPeer's rules refuse a peer whose VRF has no BGP document.
-	if len(d.BGP) == 0 {
+	switch {
+	case len(d.BGP) == 0 && len(d.Peers) > 0:
+		return "", internalErrorf("the config holds BGPPeer documents but no BGP document")
+	case len(d.BGP) == 0:
 		b.WriteString("end\n")
 		return b.String(), nil
 	}
