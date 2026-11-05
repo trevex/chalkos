@@ -23,8 +23,10 @@ import (
 	"github.com/trevex/chalkos/pkg/effects"
 	"github.com/trevex/chalkos/pkg/outputs"
 	"github.com/trevex/chalkos/pkg/pki"
+	"github.com/trevex/chalkos/pkg/refusals"
 	"github.com/trevex/chalkos/pkg/schema"
 	"github.com/trevex/chalkos/pkg/uki"
+	"github.com/trevex/chalkos/pkg/validators"
 )
 
 // Layer writes what an image layer derives from the running slot's documents, such as the
@@ -52,9 +54,11 @@ type Loader struct {
 	// Layers are the image's layers, each of which writes what it derives from the documents
 	// after them.
 	Layers []Layer
-	// Outputs is the image's outputs, which Render renders below its root. NodeCertificate is the
-	// node certificate on STATE, whose subject is the node's name, which renderers read.
+	// Outputs is the image's outputs, which Render renders below its root, and Validators the
+	// image's validators, whose programs Render runs too. NodeCertificate is the node certificate
+	// on STATE, whose subject is the node's name, which renderers read.
 	Outputs         string
+	Validators      string
 	Render          outputs.Renderer
 	NodeCertificate string
 }
@@ -70,6 +74,7 @@ func Default() Loader {
 		Schemas:         "/etc/chalkos/schemas",
 		SetHostname:     func(name string) error { return syscall.Sethostname([]byte(name)) },
 		Outputs:         outputs.DefaultPath,
+		Validators:      validators.DefaultPath,
 		Render:          outputs.Default(),
 		NodeCertificate: "/state/chalkd/node.pem",
 	}
@@ -211,6 +216,18 @@ func (l Loader) RenderOutputs(ctx context.Context, name string, docs []config.Do
 	}
 	staged, failures := l.Render.Render(ctx, defs, outputs.Input{Node: name, Documents: docs, Schemas: schemas, Hashed: hashed})
 	return staged, failures, nil
+}
+
+// Validate runs every validator of the image on docs, a config set with its defaults and its
+// secret values hashed, and returns the refusals they reported and the failures of those that did
+// not run to their end. It changes nothing a service reads.
+func (l Loader) Validate(ctx context.Context, docs []config.Document) ([]refusals.Refusal, []validators.Failure, error) {
+	defs, err := validators.Read(l.Validators)
+	if err != nil {
+		return nil, nil, err
+	}
+	rs, failures := validators.Run(ctx, l.Render, defs, outputs.Input{Documents: docs, Hashed: true})
+	return rs, failures, nil
 }
 
 // OutputStates are the states of the outputs the node serves now, which docs, the config they

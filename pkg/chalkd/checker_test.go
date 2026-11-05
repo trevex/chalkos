@@ -91,8 +91,9 @@ func TestCheckRefuses(t *testing.T) {
 	}
 }
 
-// refusingImage is the store of an image whose Demo kind refuses the name refuse by a rule, and
-// whose output demo of the Demo documents has a renderer that fails for the name fail.
+// refusingImage is the store of an image whose Demo kind refuses the name refuse by a rule, whose
+// validator veto refuses the name veto, and whose output demo of the Demo documents has a
+// renderer that fails for the name fail.
 func refusingImage(t *testing.T, s *Server) dirStore {
 	t.Helper()
 	files := fixtureSchemas(t)
@@ -116,12 +117,18 @@ func refusingImage(t *testing.T, s *Server) dirStore {
 		t.Fatal(err)
 	}
 	write(t, filepath.Join(string(st), "nix/store/x/etc/chalkos/outputs.json"), string(outputs))
+	validate := filepath.Join(t.TempDir(), "validate")
+	write(t, validate, "#!/bin/sh\nif grep -q '\"veto\"'; then echo '{\"refusals\": [{\"kind\": \"Demo\", \"name\": \"one\", \"path\": \"spec.name\", \"message\": \"the name is vetoed\"}]}'; fi\n")
+	if err := os.Chmod(validate, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	write(t, filepath.Join(string(st), "nix/store/x/etc/chalkos/validators.json"), `{"veto": {"inputs": ["Demo"], "program": "`+validate+`"}}`)
 	return st
 }
 
-// chalkd check refuses config by the image's rules and by its renderers, with the stage and the
-// identity of the translation; with Storage, it runs the storage kinds' rules alone and renders
-// nothing.
+// chalkd check refuses config by the image's rules, its validators and its renderers, with the
+// stage and the identity of the translation; with Storage, it runs the storage kinds' rules alone
+// and validates and renders nothing.
 func TestCheckRefusesByRulesAndOutputs(t *testing.T) {
 	s, _ := configServer(t)
 	st := refusingImage(t, s)
@@ -130,6 +137,7 @@ func TestCheckRefusesByRulesAndOutputs(t *testing.T) {
 	}
 	for name, want := range map[string]struct{ stage, message string }{
 		"refuse": {"rules", "the name refuses"},
+		"veto":   {"validators", "the config is refused: Demo/one: spec.name: the name is vetoed"},
 		"fail":   {"outputs", "output demo: its renderer failed (exit 1)"},
 	} {
 		res := checkWith(t, s, st, strings.Replace(baseConfig, "name: first", "name: "+name, 1))

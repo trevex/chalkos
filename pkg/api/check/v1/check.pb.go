@@ -198,7 +198,7 @@ func (x *Result) GetError() string {
 // Refusal is why the image refused the config.
 type Refusal struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// The check that refused it: config, rules or outputs.
+	// The check that refused it: config, rules, validators or outputs.
 	Stage string `protobuf:"bytes,1,opt,name=stage,proto3" json:"stage,omitempty"`
 	// The refusal as a delivery to the image would give it.
 	Message string `protobuf:"bytes,2,opt,name=message,proto3" json:"message,omitempty"`

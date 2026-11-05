@@ -216,6 +216,11 @@ func (s *Server) planDelivery(ctx context.Context, r applyRequest) (*delivery, e
 		if err := s.checkRules(set, name, r.next.Documents, prev.Documents, loaded); err != nil {
 			return nil, s.elsewhere(err, d.identity.section, nil)
 		}
+		// The image's validators check what its rules do not; a delivery without config changes no
+		// document, so it runs none.
+		if err := s.checkValidators(ctx, r.next.Documents); err != nil {
+			return nil, err
+		}
 	}
 	if err := s.checkNodeCertificate(m.NodeCertificate, m.NodeKey); err != nil {
 		return nil, err

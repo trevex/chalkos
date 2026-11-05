@@ -17,6 +17,7 @@ import (
 	"github.com/trevex/chalkos/pkg/effects"
 	"github.com/trevex/chalkos/pkg/outputs"
 	"github.com/trevex/chalkos/pkg/rules"
+	"github.com/trevex/chalkos/pkg/validators"
 )
 
 // script writes an executable shell script of the commands and returns its path.
@@ -207,6 +208,33 @@ func TestRunRefuses(t *testing.T) {
 	}
 }
 
+// The validators run after the rules and before the renderers: a validator that refuses or fails
+// refuses the config at their stage, with its refusals and failures as a delivery reports them,
+// before a renderer that fails; one that passes leaves the config to the renderers.
+func TestRunValidators(t *testing.T) {
+	refuse := `echo '{"refusals": [{"kind": "Demo", "name": "one", "path": "spec.name", "message": "is taken"}]}'`
+	for name, tc := range map[string]struct {
+		validate string
+		stage    Stage
+		want     string
+	}{
+		"refuses": {refuse, StageValidators, "the config is refused: Demo/one: spec.name: is taken"},
+		"fails":   {`exit 4`, StageValidators, "validator demo failed (exit 4); see the node's journal"},
+		"passes":  {`cat >/dev/null`, StageOutputs, "output demo: its renderer failed (exit 3); see the node's journal"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			img := testImage(t, `exit 3`)
+			img.Validators = map[string]validators.Definition{"demo": {Inputs: []string{"Demo"}, Program: script(t, tc.validate)}}
+			in := running(t, testImage(t, `cat > "$OUT/demo.json"`), &facts{})
+			in.Delivered = config.Redact(parse(t, base))
+			_, err := Run(context.Background(), img, in)
+			if r := new(Refusal); !errors.As(err, &r) || r.Stage != tc.stage || r.Message != tc.want {
+				t.Errorf("err = %#v, want %s: %s", err, tc.stage, tc.want)
+			}
+		})
+	}
+}
+
 // The facts source loads a fact when a rule reads it: the rule of a Demo's name, which runs where
 // the running config has the Demo, reads frozen, which a config without a Demo never asks for.
 func TestRunAsksForTheFactsRulesRead(t *testing.T) {
@@ -230,11 +258,12 @@ func TestRunAsksForTheFactsRulesRead(t *testing.T) {
 	}
 }
 
-// With Storage, Run checks the config against the storage kinds' rules alone and renders
-// nothing: a Demo's frozen name and a renderer that fails do not refuse it, and it gives the
-// translation without staged outputs.
+// With Storage, Run checks the config against the storage kinds' rules alone and validates and
+// renders nothing: a Demo's frozen name, a validator and a renderer that fail do not refuse it,
+// and it gives the translation without staged outputs.
 func TestRunChecksStorageAlone(t *testing.T) {
 	img := testImage(t, `exit 3`)
+	img.Validators = map[string]validators.Definition{"demo": {Inputs: []string{"Demo"}, Program: script(t, `exit 4`)}}
 	in := running(t, testImage(t, `cat > "$OUT/demo.json"`), &facts{values: map[string]any{"frozen": true}})
 	in.Delivered = config.Redact(parse(t, strings.Replace(base, "name: first", "name: second", 1)))
 	in.Storage = true

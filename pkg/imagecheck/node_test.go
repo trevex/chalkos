@@ -113,8 +113,8 @@ spec: {data: {token: s3cret}}
 
 // TestSandboxOnANode runs the checker of an image whose store is CHALKOS_IMAGECHECK_STORE, not the
 // node's, through the sandbox on a node with systemd, as the image-checker check does: its
-// chalkd, its renderer and its fact's program exist in that store alone. The tag vmtest keeps it out
-// of go test elsewhere.
+// chalkd, its validator, its renderer and its fact's program exist in that store alone. The tag
+// vmtest keeps it out of go test elsewhere.
 func TestSandboxOnANode(t *testing.T) {
 	store, system := os.Getenv("CHALKOS_IMAGECHECK_STORE"), os.Getenv("CHALKOS_IMAGECHECK_SYSTEM")
 	if store == "" || system == "" {
@@ -139,6 +139,7 @@ func TestSandboxOnANode(t *testing.T) {
 		message, refusal string
 	}{
 		{"hello", ""},
+		{"veto", "the config is refused: Demo/one: spec.name: the name is vetoed"},
 		{"refuse", "output demo: its check refused the rendered files (exit 1); see the node's journal"},
 	} {
 		var reached error = errors.New("the checker did not ask for the fact probe")

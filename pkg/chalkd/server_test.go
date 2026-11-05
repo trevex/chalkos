@@ -130,6 +130,7 @@ func newTestServer(t *testing.T, mode nodev1.Mode, disks ...storagetest.Disk) (*
 			Services:        filepath.Join(root, "services.json"),
 			Effects:         filepath.Join(root, "effects.json"),
 			Outputs:         filepath.Join(root, "outputs.json"),
+			Validators:      filepath.Join(root, "validators.json"),
 			Render:          outputs.Renderer{Root: filepath.Join(root, "run", "chalkos", "outputs"), Run: outputs.Direct{}},
 			NodeCertificate: filepath.Join(root, "state", "chalkd", NodeCertificateFile),
 			Slots:           filepath.Join(root, "state", "config"),

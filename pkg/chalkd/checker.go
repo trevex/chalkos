@@ -19,15 +19,16 @@ import (
 	"github.com/trevex/chalkos/pkg/outputs"
 	"github.com/trevex/chalkos/pkg/rules"
 	"github.com/trevex/chalkos/pkg/schema"
+	"github.com/trevex/chalkos/pkg/validators"
 )
 
 // Check is chalkd check: the image checks config for itself, as the chalkd of a running image
 // asks it to before the image boots. It reads a chalkos.check.v1 Input on stdin and writes the
 // Result to stdout, both as protobuf JSON, and asks for facts on the Unix socket at socket.
 // system is the image's NixOS system, whose etc holds what it checks config with: its schemas,
-// outputs and layer facts, never the /etc of the system it runs on, which is the running image's.
-// Renderers and checks run as children of the checker, in the sandbox it runs in, and stage
-// their files below dir, which the checker removes after.
+// validators, outputs and layer facts, never the /etc of the system it runs on, which is the
+// running image's. Validators, renderers and checks run as children of the checker, in the
+// sandbox it runs in, and keep their files below dir, which the checker removes after.
 //
 // A refusal is part of the result; so is a fault of the image, such as schemas it cannot load,
 // as its error. An error of Check itself is one of its input or output.
@@ -87,8 +88,8 @@ func (s *Server) checkInput(ctx context.Context, system, dir string, in *checkv1
 }
 
 // systemImage is what the image whose NixOS system is system checks config with, read from its
-// etc: its schemas and their rules, its outputs, rendered below dir, and the target its layers'
-// facts give, on platform. It plans no effects: an image that does not run has none to take.
+// etc: its schemas and their rules, its validators and outputs, run and rendered below dir, and
+// the target its layers' facts give, on platform. It plans no effects: an image that does not run has none to take.
 func (s *Server) systemImage(system, platform, dir string) (check.Image, error) {
 	etc := filepath.Join(system, "etc")
 	schemas, err := schema.LoadSchemas(filepath.Join(etc, "chalkos", "schemas"))
@@ -103,6 +104,10 @@ func (s *Server) systemImage(system, platform, dir string) (check.Image, error) 
 	if err != nil {
 		return check.Image{}, fmt.Errorf("the image's outputs: %w", err)
 	}
+	vals, err := validators.Read(filepath.Join(etc, "chalkos", "validators.json"))
+	if err != nil {
+		return check.Image{}, fmt.Errorf("the image's validators: %w", err)
+	}
 	facts, err := imageFacts(layer.Compiled[layer.ImageFacts](s.Plugins), func(h layer.ImageFacts) (*anypb.Any, error) {
 		return h.SystemFacts(func(path string) ([]byte, error) { return os.ReadFile(filepath.Join(system, path)) })
 	})
@@ -114,7 +119,7 @@ func (s *Server) systemImage(system, platform, dir string) (check.Image, error) 
 		return check.Image{}, plain(err)
 	}
 	return check.Image{
-		Schemas: schemas, Target: t, Rules: set, Outputs: defs,
+		Schemas: schemas, Target: t, Rules: set, Validators: vals, Outputs: defs,
 		Render: outputs.Renderer{Root: dir, Run: outputs.Direct{}, KeepOwner: true},
 	}, nil
 }

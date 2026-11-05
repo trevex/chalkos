@@ -51,7 +51,7 @@ message Result {
 
 // Refusal is why the image refused the config.
 message Refusal {
-  // The check that refused it: config, rules or outputs.
+  // The check that refused it: config, rules, validators or outputs.
   string stage = 1;
   // The refusal as a delivery to the image would give it.
   string message = 2;

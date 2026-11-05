@@ -2787,9 +2787,9 @@ in
   # out as nix/store and bound over the VM's own: chalkd's closure as it is, and the image's system,
   # renderer and command fact at store paths the VM's store lacks, so the check passes only when
   # the checker, its renderer and the fact's program come from the bound store. The image's Demo
-  # kind reads the fact in a rule; its output's check refuses a Demo called refuse, and checks the
-  # sandbox: no root, no capabilities, /run/chalkos out of reach, and nft --check in a user and
-  # network namespace of its own. While the checker waits for its fact, another user of the VM
+  # kind reads the fact in a rule; its validator refuses a Demo called veto, and its output's check
+  # one called refuse; both check the sandbox: no root, /run/chalkos out of reach, and the check
+  # no capabilities and nft --check in a user and network namespace of its own. While the checker waits for its fact, another user of the VM
   # reaches neither the facts socket nor the input or the result.
   image-checker =
     let
@@ -2835,6 +2835,12 @@ in
           mode = "0644";
         };
       };
+      validators = builtins.toJSON {
+        demo = {
+          inputs = [ "Demo" ];
+          program = "${render}/bin/validate";
+        };
+      };
       secondStore =
         pkgs.runCommand "chalkos-second-store"
           {
@@ -2850,6 +2856,7 @@ in
             jq '.properties.spec.properties.name["x-chalkos-rules"] = [{"rule": "facts.probe == \"image\"", "message": "the probe fact is not the image'"'"'s"}]' \
               ${../../test/fixtures/kinds/image/schemas/demo.example.org_v1alpha1_Demo.json} >$out${system}/etc/chalkos/schemas/demo.example.org_v1alpha1_Demo.json
             echo '${outputs}' >$out${system}/etc/chalkos/outputs.json
+            echo '${validators}' >$out${system}/etc/chalkos/validators.json
             echo '{"probe": {"command": "${fact}/bin/probe"}}' >$out${system}/etc/chalkos/facts.json
             cat >$out${render}/bin/render <<'EOF'
             #!${pkgs.bash}/bin/bash
@@ -2866,6 +2873,17 @@ in
             if cat /run/chalkos/secret 2>/dev/null; then exit 2; fi
             echo "table inet t { }" | unshare --map-root-user --net ${pkgs.nftables}/bin/nft --check --file -
             ! grep -q '"refuse"' "$OUT/demo.json"
+            EOF
+            cat >$out${render}/bin/validate <<'EOF'
+            #!${pkgs.bash}/bin/bash
+            set -e
+            PATH=${tools}
+            [ "$*" = "validate demo" ]
+            [ "$(id -u)" -ne 0 ]
+            if cat /run/chalkos/secret 2>/dev/null; then exit 2; fi
+            if grep -q '"veto"'; then
+              echo '{"refusals": [{"kind": "Demo", "name": "one", "path": "spec.name", "message": "the name is vetoed"}]}'
+            fi
             EOF
             cat >$out${fact}/bin/probe <<'EOF'
             #!${pkgs.bash}/bin/bash

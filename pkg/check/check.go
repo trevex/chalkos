@@ -1,9 +1,9 @@
 // Package check checks a node's config as the image the config is for checks it, from what that
 // image holds and what the node gives it, and changes nothing: it translates the documents, runs
-// the image's change rules and renderers, and plans the effects a delivery of the config takes.
-// It never sees a Secret's value. The documents arrive with their secret values hashed, as
-// config.Redact hashes them, which is all rules and renderers read of them, and the checks of
-// secret references need the Secrets' keys alone.
+// the image's change rules, validators and renderers, and plans the effects a delivery of the
+// config takes. It never sees a Secret's value. The documents arrive with their secret values
+// hashed, as config.Redact hashes them, which is all rules, validators and renderers read of
+// them, and the checks of secret references need the Secrets' keys alone.
 //
 // chalkd runs these steps for a delivery to the running image, with its own checks of the machine
 // between them; Run runs them in a row for an image that checks its own config.
@@ -17,18 +17,20 @@ import (
 	"github.com/trevex/chalkos/pkg/outputs"
 	"github.com/trevex/chalkos/pkg/rules"
 	"github.com/trevex/chalkos/pkg/schema"
+	"github.com/trevex/chalkos/pkg/validators"
 )
 
 // Image is what an image checks config with, all of it its own: its schemas and the target its
-// config translates for, its change rules, its effects, and its outputs with the renderer that
-// runs their programs.
+// config translates for, its change rules, its effects, its validators, and its outputs with the
+// renderer that runs their programs and the validators'.
 type Image struct {
-	Schemas *schema.Schemas
-	Target  config.Target
-	Rules   *rules.Set
-	Effects Effects
-	Outputs map[string]outputs.Definition
-	Render  outputs.Renderer
+	Schemas    *schema.Schemas
+	Target     config.Target
+	Rules      *rules.Set
+	Effects    Effects
+	Validators map[string]validators.Definition
+	Outputs    map[string]outputs.Definition
+	Render     outputs.Renderer
 }
 
 // Input is a config to check for the node called Node:
@@ -69,6 +71,8 @@ const (
 	StageConfig Stage = "config"
 	// StageRules is the image's change rules; a rule that cannot be evaluated refuses too.
 	StageRules Stage = "rules"
+	// StageValidators is the image's validators; one that fails refuses too.
+	StageValidators Stage = "validators"
 	// StageOutputs is the image's renderers and their checks.
 	StageOutputs Stage = "outputs"
 )
@@ -84,12 +88,12 @@ type Refusal struct {
 func (r *Refusal) Error() string { return r.Message }
 
 // Run checks in as img checks it: it translates in.Delivered, runs the image's change rules
-// against in.Old and every output's renderer and check, and plans the effects. A refused config
-// is a *Refusal; any other error is the image's own failure. A config refused after its
-// translation still gives the translation, whose storage a caller names in the refusal.
+// against in.Old, its validators, and every output's renderer and check, and plans the effects. A
+// refused config is a *Refusal; any other error is the image's own failure. A config refused after
+// its translation still gives the translation, whose storage a caller names in the refusal.
 //
-// With in.Storage, only the rules of the storage kinds run, and nothing renders or plans: Staged
-// is nil.
+// With in.Storage, only the rules of the storage kinds run, and nothing validates, renders or
+// plans: Staged is nil.
 func Run(ctx context.Context, img Image, in Input) (Result, error) {
 	if in.Facts == nil {
 		return Result{}, errors.New("the check has no facts to give the rules")
@@ -112,7 +116,11 @@ func Run(ctx context.Context, img Image, in Input) (Result, error) {
 	if in.Storage {
 		return Result{Translated: tr}, nil
 	}
-	staged, refused := img.Render.Render(ctx, img.Outputs, outputs.Input{Node: in.Node, Documents: tr.Documents, Schemas: img.Schemas, Hashed: true})
+	input := outputs.Input{Node: in.Node, Documents: tr.Documents, Schemas: img.Schemas, Hashed: true}
+	if rs, failed := validators.Run(ctx, img.Render, img.Validators, input); len(rs) > 0 || len(failed) > 0 {
+		return Result{Translated: tr}, &Refusal{Stage: StageValidators, Message: validators.Refusal(rs, failed)}
+	}
+	staged, refused := img.Render.Render(ctx, img.Outputs, input)
 	if len(refused) > 0 {
 		staged.Discard()
 		return Result{Translated: tr}, &Refusal{Stage: StageOutputs, Message: outputs.Refusal(refused)}
