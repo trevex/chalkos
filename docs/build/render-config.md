@@ -257,8 +257,9 @@ the config is refused: Peer/router-c: spec.asn: the AS number is the router's ow
 ```
 
 A report that does not take this form fails the render as the renderer's own error, as does more
-than 64 KiB of output. A refusal can quote any value of the documents. It cannot carry a secret's
-value, because the renderer never reads one.
+than 64 KiB of output. When the renderer also exits with a status other than 0, chalkd reports
+that status, as it does for any renderer that fails. A refusal can quote any value of the
+documents. It cannot carry a secret's value, because the renderer never reads one.
 
 A template refuses with `refuse`. This line of `bird.conf.tmpl` would refuse a peer of the
 router's own AS number:

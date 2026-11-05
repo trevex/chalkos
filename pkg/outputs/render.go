@@ -203,7 +203,8 @@ func (r Renderer) render(ctx context.Context, name string, d Definition, in Inpu
 // run runs a renderer or a check of the output name, the renderer with out writable, logging what
 // a failed program wrote to standard error, or the unit whose journal holds it. A renderer that
 // reports refusals on standard output refuses the config with them, as a *refused, whether it
-// failed or not; one that prints anything else there fails. A check's standard output is
+// failed or not; one that exits 0 and prints anything else there fails for what it printed, and
+// one that fails and prints anything else fails for its exit status. A check's standard output is
 // discarded: a service's own check can echo the files, so its failure says no more than that.
 func (r Renderer) run(ctx context.Context, name string, what role, command string, stdin []byte, out string) error {
 	timeout := cmp.Or(r.Timeout, defaultTimeout)
@@ -220,6 +221,9 @@ func (r Renderer) run(ctx context.Context, name string, what role, command strin
 	if what == roleRenderer && (err == nil || failed != nil) {
 		rs, perr := refusals.Parse(printed)
 		switch {
+		case perr != nil && failed != nil:
+			// A failed renderer's failure says more than what it printed instead of a report.
+			log.Printf("output %s: its renderer %s printed no report of refusals: %v", name, argv[0], perr)
 		case perr != nil:
 			return fmt.Errorf("its renderer's standard output: %w", perr)
 		case len(rs) > 0:

@@ -79,6 +79,9 @@ func TestRenderPrintsNoReport(t *testing.T) {
 		"a line":      {`echo rendered`, "its renderer's standard output: it is no report of refusals"},
 		"a bad field": {report("One spec.name taken"), `its renderer's standard output: refusal 1: name "One" is no document name`},
 		"too much":    {`head -c 65537 /dev/zero`, "its renderer: it printed more than 65536 bytes"},
+		// A failed renderer that prints no report fails for its exit status, as it would print
+		// nothing.
+		"a line and a failure": {`echo rendered; exit 3`, "its renderer failed (exit 3); see the node's journal"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			r := renderer(t)
