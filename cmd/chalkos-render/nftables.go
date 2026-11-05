@@ -163,9 +163,9 @@ type firewall struct {
 	// vrfDevices are the VRFs' devices, on which the strict reverse-path filter accepts
 	// neighbour discovery from link-local sources, and the filter a marked packet's second pass.
 	vrfDevices []string
-	// tables are the VRFs' and NextHops' tables that the PolicyRoute documents' targets name,
-	// targets the tables of the PolicyRoute documents, with their marks, and policy the lines of
-	// the chain policy-routing.
+	// tables are the VRF and NextHop documents' tables, which the PolicyRoute documents' targets
+	// resolve to, targets the tables of the PolicyRoute documents, with their marks, and policy
+	// the lines of the chain policy-routing.
 	tables  policyTables
 	targets []routeTarget
 	policy  []string

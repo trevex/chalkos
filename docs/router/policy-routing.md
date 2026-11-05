@@ -318,7 +318,8 @@ alone, sorted before it, takes the rules instead.
   packet from a VRF's link that no rule marked meets the chain again with the VRF's device, after
   DNAT, where a document without `in` matches its translated address.
 - networkd adds a next hop's route only once the addresses of its link reach the gateway. Until
-  then the link stays `configuring`, and the next hop's traffic is dropped.
+  then the link stays `configuring`, and the next hop's traffic is dropped. This holds for a
+  `NextHop` that no rule names too: remove one you no longer use, so its link can come up.
 
 ## What next
 
