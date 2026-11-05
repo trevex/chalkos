@@ -139,6 +139,13 @@ its pools, therefore costs three nested loops, which exceeds the limit that
 [The build compiles every rule](#the-build-compiles-every-rule) describes. As a spec rule it costs
 two.
 
+The build estimates that cost with 256 items in each list, but a node meets the lists of the
+config it gets. A spec rule over two long lists can pass the build and still exceed the node's
+limit. Bound such lists with `maxItems` on `lib.chalkos.mkOption`, so that the schema refuses a
+list longer than the rule can loop over, and test the rule at the bounds. A `DHCPSubnet` takes 32
+pools and 512 reservations at most: its rule that compares each reservation with each pool then
+costs about 330,000.
+
 ## Rules read these variables
 
 Every rule compares the delivered config with the config of the slot the node boots now. That

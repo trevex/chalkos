@@ -8,7 +8,10 @@
 # every string as one of 256 characters. A subnet's rules are rules of its spec, which see one
 # document at a time, so a rule may compare two of its lists, as its reservations with its pools,
 # within that limit; a pool is two addresses rather than a string to split, and ip().compare()
-# orders them. The reservations' MAC addresses and addresses are declared unique. The output kea
+# orders them. chalkd stops a rule at a cost of 1,000,000 on the config it meets, so the lists
+# those rules pair are bounded: 32 pools, 512 reservations and 16 DNS servers, at which the
+# costliest rule, reservations against pools, costs about 330,000, and its message as much. The
+# reservations' MAC addresses and addresses are declared unique. The output kea
 # refuses what spans documents: a link of two subnets of a family, subnets that overlap in a VRF,
 # the router's own addresses on the links in a pool or reservation, and the links' router
 # advertisements.
@@ -212,7 +215,7 @@ in
             }
           ];
         };
-        pools = mkOption {
+        pools = lib.chalkos.mkOption {
           type = types.listOf (
             types.submodule {
               options = {
@@ -235,6 +238,7 @@ in
             }
           ];
           description = "Ranges the server leases addresses from to any client: inside the subnet, apart from each other and from the reservations, and holding none of the subnet's network and broadcast addresses, an IPv6 subnet's first address and the router's, the gateway's and the DNS and boot servers' addresses; empty leases the reservations alone.";
+          maxItems = 32;
         };
         gateway = mkOption {
           type = types.nullOr address;
@@ -242,9 +246,10 @@ in
           example = "192.0.2.1";
           description = "Router the clients route through, inside an IPv4 subnet and neither its network nor its broadcast address; null gives them none. IPv6 clients learn their routers from router advertisements.";
         };
-        dns = mkOption {
+        dns = lib.chalkos.mkOption {
           type = types.listOf address;
           default = [ ];
+          maxItems = 16;
           example = [ "192.0.2.1" ];
           description = "DNS servers the clients ask, addresses of the subnet's family.";
         };
@@ -294,6 +299,7 @@ in
           );
           default = [ ];
           description = "Clients that always get the same address, by their MAC address.";
+          maxItems = 512;
           # A MAC address has one reservation, and an address is reserved once, in whatever
           # spelling.
           unique = [

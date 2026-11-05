@@ -461,6 +461,10 @@ the delivery, and `chalkctl logs r1` shows the reason on a line that starts with
   subnet's `leaseTime` at most.
 - The router routes 65 536 delegated prefixes at most, of all its subnets together. The renderer
   refuses subnets that delegate more, such as two ranges of /40 that delegate /56s.
+- A `DHCPSubnet` holds 32 pools, 512 reservations and 16 DNS servers at most, and the schema
+  refuses longer lists. The subnet's rules compare each reservation with each pool, and each pool
+  and reservation with the servers. The bounds keep these checks within the cost a node allows a
+  rule.
 - The servers update no DNS records for their clients.
 
 ## What next

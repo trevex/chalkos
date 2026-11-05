@@ -136,6 +136,7 @@
             "format": "ip",
             "type": "string"
           },
+          "maxItems": 16,
           "type": "array"
         },
         "domain": {
@@ -238,6 +239,7 @@
             ],
             "type": "object"
           },
+          "maxItems": 32,
           "type": "array"
         },
         "prefixDelegation": {
@@ -329,6 +331,7 @@
             ],
             "type": "object"
           },
+          "maxItems": 512,
           "type": "array",
           "x-chalkos-unique": [
             {

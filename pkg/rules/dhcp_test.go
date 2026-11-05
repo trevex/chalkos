@@ -124,24 +124,63 @@ func TestDHCPSubnetRules(t *testing.T) {
 }
 
 // The rules of a subnet's spec compare its pools with each other, its reservations with its pools
-// and both with its servers within chalkd's runtime cost limit, for more of them than a subnet
-// holds.
+// and both with its servers within chalkd's runtime cost limit, and so do their messages, at the
+// most pools, reservations and DNS servers the schema takes; it takes no more.
 func TestDHCPSubnetManyRanges(t *testing.T) {
 	set, doc := routerRules(t)
-	var pools, reservations, dns []string
-	for i := range 100 {
-		pools = append(pools, fmt.Sprintf(`{"first": "10.%d.0.1", "last": "10.%d.0.254"}`, i, i))
-		reservations = append(reservations, fmt.Sprintf(`{"mac": "52:54:00:00:%02x:%02x", "address": "10.%d.1.1"}`, i/256, i%256, i))
-		dns = append(dns, fmt.Sprintf(`"10.200.%d.53"`, i))
-	}
-	d := doc("DHCPSubnet", "office", `{"interfaces": ["lan0"], "subnet": "10.0.0.0/8", "gateway": "10.255.255.254", "pools": [`+strings.Join(pools, ", ")+
-		`], "reservations": [`+strings.Join(reservations, ", ")+`], "dns": [`+strings.Join(dns, ", ")+`]}`)
-	failures, err := set.Evaluate(Input{Documents: []config.Document{d}, Node: "r1"})
+	s, err := schema.LoadSchemas("../../test/fixtures/kinds/router")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(failures) > 0 {
-		t.Errorf("failures: %v", messages(failures))
+	const maxPools, maxReservations, maxDNS = 32, 512, 16
+	// A subnet of n pools, m reservations and d DNS servers, each list's last item at last.
+	subnet := func(n, m, d int, last ...string) config.Document {
+		var pools, reservations, dns []string
+		for i := range n {
+			pools = append(pools, fmt.Sprintf(`{"first": "10.%d.0.1", "last": "10.%d.0.254"}`, i, i))
+		}
+		for i := range m {
+			reservations = append(reservations, fmt.Sprintf(`{"mac": "52:54:00:00:%02x:%02x", "address": "10.%d.%d.1", "hostname": "host-%d"}`, i/256, i%256, 100+i/256, i%256, i))
+		}
+		for i := range d {
+			dns = append(dns, fmt.Sprintf(`"10.200.%d.53"`, i))
+		}
+		if len(last) == 3 {
+			pools[n-1], reservations[m-1], dns[d-1] = last[0], last[1], last[2]
+		}
+		return doc("DHCPSubnet", "office", `{"interfaces": ["lan0"], "subnet": "10.0.0.0/8", "gateway": "10.255.255.254", "boot": {"server": "10.255.255.253", "bios": "undionly.kpxe"}, "pools": [`+
+			strings.Join(pools, ", ")+`], "reservations": [`+strings.Join(reservations, ", ")+`], "dns": [`+strings.Join(dns, ", ")+`]}`)
+	}
+	const pool = `{"first": "10.31.0.1", "last": "10.31.0.254"}`
+	const at = `DHCPSubnet "office" spec: `
+	for _, tc := range []struct {
+		name string
+		doc  config.Document
+		want []string
+	}{
+		{"the most of each", subnet(maxPools, maxReservations, maxDNS), nil},
+		{"the last reservation in the last pool", subnet(maxPools, maxReservations, maxDNS, pool, `{"mac": "52:54:00:00:01:ff", "address": "10.31.0.10"}`, `"10.200.15.53"`),
+			[]string{at + "the reservation of 52:54:00:00:01:ff, 10.31.0.10, lies in the pool 10.31.0.1-10.31.0.254; reserve addresses outside the pools"}},
+		{"the last DNS server in the last pool", subnet(maxPools, maxReservations, maxDNS, pool, `{"mac": "52:54:00:00:01:ff", "address": "10.101.255.1"}`, `"10.31.0.53"`),
+			[]string{at + "the pool 10.31.0.1-10.31.0.254 holds 10.31.0.53, a DNS server"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if err := s.Validate(tc.doc.Object); err != nil {
+				t.Fatal(err)
+			}
+			failures, err := set.Evaluate(Input{Documents: []config.Document{tc.doc}, Node: "r1"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := messages(failures); !slices.Equal(got, tc.want) {
+				t.Errorf("failures:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(tc.want, "\n"))
+			}
+		})
+	}
+	for _, more := range []config.Document{subnet(maxPools+1, 1, 1), subnet(1, maxReservations+1, 1), subnet(1, 1, maxDNS+1)} {
+		if err := s.Validate(more.Object); err == nil {
+			t.Errorf("the schema takes %v", more.Object["spec"])
+		}
 	}
 }
 
