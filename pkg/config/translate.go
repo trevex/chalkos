@@ -193,12 +193,12 @@ func nodeIPs(spec nodeSpec, c kubernetes.Cluster, static []string) ([]string, []
 	}
 	var seen []nodeip.Family
 	var addrs []netip.Addr
+	// The schema's format ip has checked the Node's addresses, and defaultNodeIPs takes the static
+	// addresses that parse alone.
 	for _, a := range ips {
 		if ip, err := netip.ParseAddr(a); err == nil {
 			seen = append(seen, nodeip.FamilyOf(ip))
 			addrs = append(addrs, ip)
-		} else {
-			add("Node: nodeIP.addresses: %q is not an address", a)
 		}
 	}
 	var unique []nodeip.Family

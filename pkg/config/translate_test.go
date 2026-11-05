@@ -158,7 +158,6 @@ func TestKubeletChecks(t *testing.T) {
 		families   []string
 	}{
 		"refused label":            {`labels: {kubernetes.io/role: x}`, "kubernetes.io/role", nil},
-		"bad address":              {`nodeIP: {addresses: [nope]}`, "not an address", nil},
 		"two of a family":          {`nodeIP: {addresses: [10.0.0.1, 10.0.0.2]}`, "more than one ipv4", nil},
 		"bad subnet":               {`nodeIP: {validSubnets: [nope]}`, `Node: nodeIP: validSubnets: "nope"`, nil},
 		"family the cluster lacks": {`nodeIP: {addresses: [10.0.0.1]}`, "an ipv4 address", []string{"ipv6"}},
@@ -179,10 +178,9 @@ func TestKubeletChecks(t *testing.T) {
 }
 
 func TestNodeErrorsReadLikeNix(t *testing.T) {
-	s := kubernetesNodeSet(t, "{ipFamilies: [ipv6]}", "nodeIP: {addresses: [10.0.0.1, 10.0.0.2, 10.0.0.3, nope]}", "")
+	s := kubernetesNodeSet(t, "{ipFamilies: [ipv6]}", "nodeIP: {addresses: [10.0.0.1, 10.0.0.2, 10.0.0.3]}", "")
 	_, err := s.Identity("n1", Target{Image: &testImage})
 	want := "invalid Kubernetes settings:\n" +
-		"- Node: nodeIP.addresses: \"nope\" is not an address\n" +
 		"- Node: nodeIP.addresses: more than one ipv4 address; give at most one per family\n" +
 		"- Node: nodeIP.addresses: an ipv4 address, but the cluster's ipFamilies are [ ipv6 ]"
 	if err == nil || err.Error() != want {

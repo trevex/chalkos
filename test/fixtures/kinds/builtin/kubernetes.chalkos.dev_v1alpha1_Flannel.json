@@ -42,7 +42,7 @@
           "default": [],
           "description": "Ranges flannel's VXLAN must come from, one of each family at least; empty takes VXLAN from any source.",
           "items": {
-            "minLength": 1,
+            "format": "cidr",
             "type": "string"
           },
           "type": "array"

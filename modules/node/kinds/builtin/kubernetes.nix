@@ -11,7 +11,7 @@ let
   inherit (import ./lib.nix) builtin groups;
   kubernetes = config.chalkos.kubernetes.enable;
   flannel = config.chalkos.cni.provider == "flannel";
-  inherit (import ../../../../lib/kinds/types.nix { inherit lib; }) kubernetesObject;
+  inherit (import ../../../../lib/kinds/types.nix { inherit lib; }) kubernetesObject address prefix;
   # An option per address family, as the cluster's ranges are given.
   perFamily =
     {
@@ -173,7 +173,7 @@ in
           kubeletExtraArgs = flags "the kubelet";
           nodeIP = {
             addresses = mkOption {
-              type = types.nullOr (types.listOf types.nonEmptyStr);
+              type = types.nullOr (types.listOf address);
               default = null;
               description = "Fixed addresses of the node, at most one per family; null takes the first static address of each family unless validSubnets apply.";
             };
@@ -256,19 +256,19 @@ in
             ];
           };
           podCIDRs = perFamily {
-            type = types.nonEmptyStr;
+            type = prefix;
             description = "Address range of the family's pods; each node gets a part of it.";
             ipv4 = "10.244.0.0/16";
             ipv6 = "fd00:10:244::/56";
           };
           serviceCIDRs = perFamily {
-            type = types.nonEmptyStr;
+            type = prefix;
             description = "Address range of the family's services, at most 2^20 addresses.";
             ipv4 = "10.96.0.0/12";
             ipv6 = "fd00:10:96::/112";
           };
           dnsIPs = perFamily {
-            type = types.nullOr types.nonEmptyStr;
+            type = types.nullOr address;
             description = "Service address of the cluster DNS in the family's service range; null is its 10th address. Pods use the primary family's.";
             ipv4 = null;
             ipv6 = null;
@@ -293,7 +293,7 @@ in
           };
           vip = {
             addresses = mkOption {
-              type = types.listOf types.nonEmptyStr;
+              type = types.listOf address;
               default = [ ];
               description = "Virtual addresses of the API server, at most one per family; empty means no virtual IP.";
             };
@@ -330,7 +330,7 @@ in
               description = "MTU flannel's VXLAN assumes for the network between the nodes; its VXLAN devices and the pods get 50 less. null takes the MTU of the interface holding the node's address.";
             };
             vxlanSourceSubnets = mkOption {
-              type = types.listOf types.nonEmptyStr;
+              type = types.listOf prefix;
               default = [ ];
               description = "Ranges flannel's VXLAN must come from, one of each family at least; empty takes VXLAN from any source.";
             };

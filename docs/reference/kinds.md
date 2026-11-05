@@ -75,8 +75,8 @@ A node's config holds at most one. It has 5 [change rules](builtins.md#rules-clu
 | Field | Type | Default | Description |
 | --- | --- | --- | --- |
 | `spec.allowSchedulingOnControlPlanes` | boolean | `false` | Whether workloads run on control-plane nodes, which otherwise register with the taint `node-role.kubernetes.io/control-plane:NoSchedule`; it is fixed once the node holds a Kubernetes share. |
-| `spec.dnsIPs.ipv4` | string or null | `null` | Service address of the cluster DNS in the family's service range; null is its 10th address. Pods use the primary family's. |
-| `spec.dnsIPs.ipv6` | string or null | `null` | Service address of the cluster DNS in the family's service range; null is its 10th address. Pods use the primary family's. |
+| `spec.dnsIPs.ipv4` | IP address or null | `null` | Service address of the cluster DNS in the family's service range; null is its 10th address. Pods use the primary family's. |
+| `spec.dnsIPs.ipv6` | IP address or null | `null` | Service address of the cluster DNS in the family's service range; null is its 10th address. Pods use the primary family's. |
 | `spec.domain` | string | `"cluster.local"` | DNS domain of the cluster. |
 | `spec.endpoint` | string | required | URL of the cluster's Kubernetes API server, which every node of the cluster names alike. |
 | `spec.extraArgs.etcd` | map of string | `{}` | Extra flags of etcd, named without the leading dashes with letters, digits, `_`, `.` and `-`, starting with a letter or digit; they override chalkos's own, except the flags chalkos protects, which are refused. |
@@ -88,11 +88,11 @@ A node's config holds at most one. It has 5 [change rules](builtins.md#rules-clu
 | `spec.nodeCIDRMaskSizes.ipv6` | integer from 1 to 128 | `64` | Prefix length of each node's part of the family's pod range. |
 | `spec.nodeIP.timeout` | integer of at least 1 | `300` | Seconds a node waits at boot for its address. |
 | `spec.nodeIP.validSubnets` | list of string | `[]` | Subnets in CIDR notation that nodes without a fixed address pick theirs from at boot, unless a Node gives its own; a leading `!` excludes one. Empty takes any global unicast address. |
-| `spec.podCIDRs.ipv4` | string | `"10.244.0.0/16"` | Address range of the family's pods; each node gets a part of it. |
-| `spec.podCIDRs.ipv6` | string | `"fd00:10:244::/56"` | Address range of the family's pods; each node gets a part of it. |
-| `spec.serviceCIDRs.ipv4` | string | `"10.96.0.0/12"` | Address range of the family's services, at most 2^20 addresses. |
-| `spec.serviceCIDRs.ipv6` | string | `"fd00:10:96::/112"` | Address range of the family's services, at most 2^20 addresses. |
-| `spec.vip.addresses` | list of string | `[]` | Virtual addresses of the API server, at most one per family; empty means no virtual IP. |
+| `spec.podCIDRs.ipv4` | address range | `"10.244.0.0/16"` | Address range of the family's pods; each node gets a part of it. |
+| `spec.podCIDRs.ipv6` | address range | `"fd00:10:244::/56"` | Address range of the family's pods; each node gets a part of it. |
+| `spec.serviceCIDRs.ipv4` | address range | `"10.96.0.0/12"` | Address range of the family's services, at most 2^20 addresses. |
+| `spec.serviceCIDRs.ipv6` | address range | `"fd00:10:96::/112"` | Address range of the family's services, at most 2^20 addresses. |
+| `spec.vip.addresses` | list of IP address | `[]` | Virtual addresses of the API server, at most one per family; empty means no virtual IP. |
 | `spec.vip.mode` | `l2` | `"l2"` | Way the node holding the VIP announces its addresses: `l2` adds them to an interface and announces them to the neighbours with gratuitous ARP and unsolicited neighbour advertisements. |
 
 ### Flannel { #flannel }
@@ -106,7 +106,7 @@ A node's config holds at most one.
 | Field | Type | Default | Description |
 | --- | --- | --- | --- |
 | `spec.mtu` | integer of at least 1 or null | `null` | MTU flannel's VXLAN assumes for the network between the nodes; its VXLAN devices and the pods get 50 less. null takes the MTU of the interface holding the node's address. |
-| `spec.vxlanSourceSubnets` | list of string | `[]` | Ranges flannel's VXLAN must come from, one of each family at least; empty takes VXLAN from any source. |
+| `spec.vxlanSourceSubnets` | list of address range | `[]` | Ranges flannel's VXLAN must come from, one of each family at least; empty takes VXLAN from any source. |
 
 ### Node { #node }
 
@@ -120,7 +120,7 @@ A node's config holds at most one. It has 3 [change rules](builtins.md#rules-nod
 | --- | --- | --- | --- |
 | `spec.kubeletExtraArgs` | map of string | `{}` | Extra flags of the kubelet, named without the leading dashes with letters, digits, `_`, `.` and `-`, starting with a letter or digit; they override chalkos's own, except the flags chalkos protects, which are refused. |
 | `spec.labels` | map of string | `{}` | Kubernetes labels the node registers with; they are fixed once the node holds a Kubernetes share. |
-| `spec.nodeIP.addresses` | list of string or null | `null` | Fixed addresses of the node, at most one per family; null takes the first static address of each family unless validSubnets apply. |
+| `spec.nodeIP.addresses` | list of IP address or null | `null` | Fixed addresses of the node, at most one per family; null takes the first static address of each family unless validSubnets apply. |
 | `spec.nodeIP.validSubnets` | list of string or null | `null` | Subnets the node picks its address from, which replace the Cluster's nodeIP.validSubnets as a whole; null takes the Cluster's. |
 | `spec.taints` | list of object | `[]` | Kubernetes taints the node registers with; they are fixed once the node holds a Kubernetes share. |
 | `spec.taints[].effect` | one of `NoSchedule`, `PreferNoSchedule`, `NoExecute` | required | Effect of the taint on pods that do not tolerate it. |

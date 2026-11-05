@@ -56,7 +56,7 @@
               "anyOf": [
                 {
                   "items": {
-                    "minLength": 1,
+                    "format": "ip",
                     "type": "string"
                   },
                   "type": "array"

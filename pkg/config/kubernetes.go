@@ -58,9 +58,7 @@ func (docs Documents) Cluster(img kubernetes.Image) (kubernetes.Cluster, error) 
 	if node.Type == kubernetes.KindWorker && node.VIP.Interface != nil {
 		return kubernetes.Cluster{}, fmt.Errorf("%s: vip.interface: only control planes hold the VIP; leave it null on a worker", nodeDoc)
 	}
-	if err := k.parseInto(&c); err != nil {
-		return kubernetes.Cluster{}, fmt.Errorf("%s: %w", kdoc, err)
-	}
+	k.setFamilies(&c)
 	if err := c.Validate(); err != nil {
 		return kubernetes.Cluster{}, fmt.Errorf("%s: %w", kdoc, err)
 	}
@@ -74,11 +72,7 @@ func (docs Documents) Cluster(img kubernetes.Image) (kubernetes.Cluster, error) 
 			if f.MTU != nil {
 				c.Flannel.MTU = *f.MTU
 			}
-			sources, err := parseVXLANSources(f.VXLANSourceSubnets)
-			if err != nil {
-				return kubernetes.Cluster{}, fmt.Errorf("%s: %w", d, err)
-			}
-			c.Flannel.VXLANSourceSubnets = sources
+			c.Flannel.VXLANSourceSubnets = f.VXLANSourceSubnets
 			// The cluster without flannel is valid by now, so what fails is the Flannel
 			// document's MTU or VXLAN sources, checked against the Cluster document's families
 			// and ranges.
@@ -90,94 +84,36 @@ func (docs Documents) Cluster(img kubernetes.Image) (kubernetes.Cluster, error) 
 	return c, nil
 }
 
-// parseInto sets the cluster's families, the ranges and DNS addresses of these families and the
+// setFamilies sets the cluster's families, the ranges and DNS addresses of these families and the
 // VIPs from the spec. A cluster file holds the per-family values of the families in use alone, so
-// the values of the other families stay unset and unchecked.
-func (k clusterSpec) parseInto(c *kubernetes.Cluster) error {
-	for _, s := range k.IPFamilies {
-		f, err := nodeip.ParseFamily(s)
-		if err != nil {
-			return fmt.Errorf("ipFamilies: %w", err)
-		}
-		c.IPFamilies = append(c.IPFamilies, f)
-	}
-	if k.IPFamilies != nil && c.IPFamilies == nil {
-		c.IPFamilies = []nodeip.Family{}
-	}
+// the values of the other families stay unset; Cluster.Validate checks those in use.
+func (k clusterSpec) setFamilies(c *kubernetes.Cluster) {
+	c.IPFamilies = k.IPFamilies
 	for _, f := range c.Families() {
-		pod, err := parseRange("podCIDRs", f, k.PodCIDRs.Of(f))
-		if err != nil {
-			return err
-		}
-		service, err := parseRange("serviceCIDRs", f, k.ServiceCIDRs.Of(f))
-		if err != nil {
-			return err
-		}
-		dns, err := dnsIP(k.DNSIPs.Of(f), service)
-		if err != nil {
-			return fmt.Errorf("dnsIPs.%s %w in serviceCIDRs.%s %s", f, err, f, service)
-		}
+		service := k.ServiceCIDRs.Of(f)
+		dns := dnsIP(k.DNSIPs.Of(f), service)
 		if f == nodeip.IPv4 {
-			c.PodCIDRs.IPv4, c.ServiceCIDRs.IPv4, c.DNSIPs.IPv4 = pod, service, dns
+			c.PodCIDRs.IPv4, c.ServiceCIDRs.IPv4, c.DNSIPs.IPv4 = k.PodCIDRs.IPv4, service, dns
 			c.NodeCIDRMaskSizes.IPv4 = k.NodeCIDRMaskSizes.IPv4
 		} else {
-			c.PodCIDRs.IPv6, c.ServiceCIDRs.IPv6, c.DNSIPs.IPv6 = pod, service, dns
+			c.PodCIDRs.IPv6, c.ServiceCIDRs.IPv6, c.DNSIPs.IPv6 = k.PodCIDRs.IPv6, service, dns
 			c.NodeCIDRMaskSizes.IPv6 = k.NodeCIDRMaskSizes.IPv6
 		}
 	}
-	if k.VIP.Addresses != nil {
-		c.VIP.Addresses = []netip.Addr{}
-	}
-	for _, s := range k.VIP.Addresses {
-		ip, err := netip.ParseAddr(s)
-		if err != nil {
-			return fmt.Errorf("vip: %q is not an address", s)
-		}
-		c.VIP.Addresses = append(c.VIP.Addresses, ip)
-	}
-	return nil
-}
-
-// parseRange reads the range of family f that option holds, in CIDR notation.
-func parseRange(option string, f nodeip.Family, s string) (netip.Prefix, error) {
-	p, err := netip.ParsePrefix(s)
-	if err != nil {
-		return netip.Prefix{}, fmt.Errorf("%s.%s %q is not an address range in CIDR notation", option, f, s)
-	}
-	return p, nil
-}
-
-// parseVXLANSources reads the ranges flannel's VXLAN must come from, in CIDR notation.
-func parseVXLANSources(subnets []string) ([]netip.Prefix, error) {
-	if subnets == nil {
-		return nil, nil
-	}
-	sources := make([]netip.Prefix, 0, len(subnets))
-	for _, s := range subnets {
-		p, err := netip.ParsePrefix(s)
-		if err != nil {
-			return nil, fmt.Errorf("vxlanSourceSubnets: %q is not an address range in CIDR notation", s)
-		}
-		sources = append(sources, p)
-	}
-	return sources, nil
+	c.VIP.Addresses = k.VIP.Addresses
 }
 
 // dnsIP is the DNS address given, or the 10th address of the service range, which kubeadm gives
 // the cluster DNS.
-func dnsIP(given *string, service netip.Prefix) (netip.Addr, error) {
+func dnsIP(given *netip.Addr, service netip.Prefix) netip.Addr {
 	if given != nil {
-		ip, err := netip.ParseAddr(*given)
-		if err != nil {
-			return netip.Addr{}, fmt.Errorf("%q is not an address", *given)
-		}
-		return ip, nil
+		return *given
 	}
 	a := service.Masked().Addr()
 	for range 10 {
 		a = a.Next()
 	}
-	return a, nil
+	return a
 }
 
 // AddonObjects returns the objects of the Addon documents, in the order of the documents' names

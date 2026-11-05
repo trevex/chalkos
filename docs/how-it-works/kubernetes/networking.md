@@ -138,6 +138,11 @@ Each family has its own ranges, fields of the `Cluster` document keyed by `ipv4`
 | `dnsIPs` | the service range's 10th address, `10.96.0.10` | the service range's 10th address, `fd00:10:96::a` |
 | `nodeCIDRMaskSizes` | `24` | `64` |
 
+The schemas check that every range is an address range in CIDR notation and every DNS address is
+an address, in both families, including a family the cluster does not use. The other checks apply
+to the families of `ipFamilies` alone: the family of a range, host bits, overlapping ranges and
+the DNS address inside the service range.
+
 A cluster with IPv6 as its primary family and IPv4 beside it, on the default ranges:
 
 ```yaml

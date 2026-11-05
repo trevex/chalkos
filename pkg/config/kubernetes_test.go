@@ -125,18 +125,6 @@ func TestClusterRejects(t *testing.T) {
 		"overlapping ranges": {minimal + worker +
 			clusterDoc("k", "{podCIDRs: {ipv4: 10.96.0.0/16}}"),
 			`Cluster "k": podCIDRs.ipv4 10.96.0.0/16 and serviceCIDRs.ipv4 10.96.0.0/12 overlap`},
-		"range not in CIDR notation": {minimal + worker +
-			clusterDoc("k", "{podCIDRs: {ipv4: 10.244.0.0}}"),
-			`Cluster "k": podCIDRs.ipv4 "10.244.0.0" is not an address range in CIDR notation`},
-		"DNS address not an address": {minimal + worker +
-			clusterDoc("k", "{dnsIPs: {ipv4: dns}}"),
-			`Cluster "k": dnsIPs.ipv4 "dns" is not an address in serviceCIDRs.ipv4 10.96.0.0/12`},
-		"VIP not an address": {minimal + worker +
-			clusterDoc("k", "{vip: {addresses: [10.0.0.10/32]}}"),
-			`Cluster "k": vip: "10.0.0.10/32" is not an address`},
-		"VXLAN source not in CIDR notation": {minimal + worker + clusterDoc("k", "{}") +
-			flannelDoc("f", "{vxlanSourceSubnets: [10.0.0.0]}"),
-			`Flannel "f": vxlanSourceSubnets: "10.0.0.0" is not an address range in CIDR notation`},
 		"protected kubelet flag": {minimal + clusterDoc("k", "{}") +
 			nodeDoc("w", `{type: worker, kubeletExtraArgs: {anonymous-auth: "true"}}`),
 			`Node "w": kubeletExtraArgs: --anonymous-auth is set by chalkos and cannot be overridden`},
@@ -191,8 +179,9 @@ func TestClusterKeepsTheFamiliesInUse(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// The values of the other families are neither kept nor checked.
-	if _, err := kubernetesSet(t, `{podCIDRs: {ipv6: "pods"}, serviceCIDRs: {ipv6: "fd00:2::1"}, dnsIPs: {ipv6: "dns"}}`, "").Documents().Cluster(testImage); err != nil {
+	// The values of the other families are neither kept nor checked beyond their formats: an IPv4
+	// range, a range with host bits and an IPv4 DNS address pass as an IPv4 cluster's IPv6 values.
+	if _, err := kubernetesSet(t, `{podCIDRs: {ipv6: "10.0.0.0/8"}, serviceCIDRs: {ipv6: "fd00:2::1/112"}, dnsIPs: {ipv6: "10.0.0.1"}}`, "").Documents().Cluster(testImage); err != nil {
 		t.Errorf("an ipv4 cluster checked its ipv6 values: %v", err)
 	}
 	want := kubernetes.ByFamily[netip.Prefix]{IPv4: netip.MustParsePrefix("10.244.0.0/16")}
@@ -289,5 +278,46 @@ func TestClusterWithVXLANSourcesIsInvalid(t *testing.T) {
 	docs := mustParse(t, minimal+nodeDoc("default", "{type: worker}")+clusterDoc("default", "{vxlanSourceSubnets: [10.0.0.0/24]}"))
 	if _, err := NewSet(docs, allSchemas(t)); err == nil || !strings.Contains(err.Error(), "vxlanSourceSubnets") {
 		t.Fatalf("err = %v, want one naming vxlanSourceSubnets", err)
+	}
+}
+
+// The schemas refuse an address or a range that does not parse, in any family, before the cluster
+// is built; the formats ip and cidr name the field.
+func TestKubernetesAddressFormats(t *testing.T) {
+	const notCIDR = "is not valid cidr: an address range is an address, a slash and a prefix length of at most 32 for IPv4 or 128 for IPv6"
+	const notIP = "is not valid ip: an address is an IPv4 address of four numbers from 0 to 255 without leading zeros, or an IPv6 address without a zone"
+	worker := nodeDoc("w", "{type: worker}")
+	for name, tc := range map[string]struct {
+		yaml, want string
+	}{
+		"pod range": {minimal + worker + clusterDoc("k", "{podCIDRs: {ipv4: 10.244.0.0}}"),
+			`Cluster "k": - at '/spec/podCIDRs/ipv4': '10.244.0.0' ` + notCIDR},
+		"service range of an unused family": {minimal + worker + clusterDoc("k", `{serviceCIDRs: {ipv6: "fd00:2::1"}}`),
+			`Cluster "k": - at '/spec/serviceCIDRs/ipv6': 'fd00:2::1' ` + notCIDR},
+		"DNS address": {minimal + worker + clusterDoc("k", "{dnsIPs: {ipv4: dns}}"),
+			`Cluster "k": - at '/spec/dnsIPs/ipv4': 'dns' ` + notIP},
+		"VIP": {minimal + worker + clusterDoc("k", "{vip: {addresses: [10.0.0.10/32]}}"),
+			`Cluster "k": - at '/spec/vip/addresses/0': '10.0.0.10/32' ` + notIP},
+		"VXLAN source": {minimal + worker + clusterDoc("k", "{}") + flannelDoc("f", "{vxlanSourceSubnets: [10.0.0.0]}"),
+			`Flannel "f": - at '/spec/vxlanSourceSubnets/0': '10.0.0.0' ` + notCIDR},
+		"node address": {minimal + clusterDoc("k", "{}") + nodeDoc("w", "{type: worker, nodeIP: {addresses: [nope]}}"),
+			`Node "w": - at '/spec/nodeIP/addresses/0': 'nope' ` + notIP},
+		"node address with a zone": {minimal + clusterDoc("k", "{}") + nodeDoc("w", `{type: worker, nodeIP: {addresses: ["fe80::1%eth0"]}}`),
+			`Node "w": - at '/spec/nodeIP/addresses/0': 'fe80::1%eth0' ` + notIP},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := NewSet(mustParse(t, tc.yaml), allSchemas(t)); err == nil || err.Error() != tc.want {
+				t.Fatalf("err = %v, want %q", err, tc.want)
+			}
+		})
+	}
+}
+
+// Documents no schema checked, such as a test's, fail to decode a range that does not parse, so
+// the cluster is never built from it.
+func TestClusterOfUncheckedDocuments(t *testing.T) {
+	docs := Documents(mustParse(t, minimal+nodeDoc("w", "{type: worker}")+clusterDoc("k", "{podCIDRs: {ipv4: 10.244.0.0}}")))
+	if _, err := docs.Cluster(testImage); err == nil || err.Error() != `Cluster "k": netip.ParsePrefix("10.244.0.0"): no '/'` {
+		t.Fatalf("err = %v", err)
 	}
 }

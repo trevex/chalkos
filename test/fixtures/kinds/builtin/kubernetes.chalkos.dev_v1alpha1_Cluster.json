@@ -44,7 +44,7 @@
             "ipv4": {
               "anyOf": [
                 {
-                  "minLength": 1,
+                  "format": "ip",
                   "type": "string"
                 },
                 {
@@ -57,7 +57,7 @@
             "ipv6": {
               "anyOf": [
                 {
-                  "minLength": 1,
+                  "format": "ip",
                   "type": "string"
                 },
                 {
@@ -194,13 +194,13 @@
             "ipv4": {
               "default": "10.244.0.0/16",
               "description": "Address range of the family's pods; each node gets a part of it.",
-              "minLength": 1,
+              "format": "cidr",
               "type": "string"
             },
             "ipv6": {
               "default": "fd00:10:244::/56",
               "description": "Address range of the family's pods; each node gets a part of it.",
-              "minLength": 1,
+              "format": "cidr",
               "type": "string"
             }
           },
@@ -212,13 +212,13 @@
             "ipv4": {
               "default": "10.96.0.0/12",
               "description": "Address range of the family's services, at most 2^20 addresses.",
-              "minLength": 1,
+              "format": "cidr",
               "type": "string"
             },
             "ipv6": {
               "default": "fd00:10:96::/112",
               "description": "Address range of the family's services, at most 2^20 addresses.",
-              "minLength": 1,
+              "format": "cidr",
               "type": "string"
             }
           },
@@ -231,7 +231,7 @@
               "default": [],
               "description": "Virtual addresses of the API server, at most one per family; empty means no virtual IP.",
               "items": {
-                "minLength": 1,
+                "format": "ip",
                 "type": "string"
               },
               "type": "array"

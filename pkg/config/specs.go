@@ -1,7 +1,10 @@
 package config
 
 import (
+	"net/netip"
+
 	"github.com/trevex/chalkos/pkg/kubernetes"
+	"github.com/trevex/chalkos/pkg/kubernetes/nodeip"
 	"github.com/trevex/chalkos/pkg/storage"
 )
 
@@ -74,26 +77,30 @@ type nodeSpec struct {
 	} `json:"vip"`
 }
 
+// clusterSpec is the Kubernetes Cluster's. The schema's enum and its formats ip and cidr have
+// checked the families, addresses and ranges, so they decode into their types; a value no schema
+// checked fails the decode.
 type clusterSpec struct {
-	Endpoint                       string                       `json:"endpoint"`
-	Domain                         string                       `json:"domain"`
-	AllowSchedulingOnControlPlanes bool                         `json:"allowSchedulingOnControlPlanes"`
-	IPFamilies                     []string                     `json:"ipFamilies"`
-	PodCIDRs                       kubernetes.ByFamily[string]  `json:"podCIDRs"`
-	ServiceCIDRs                   kubernetes.ByFamily[string]  `json:"serviceCIDRs"`
-	DNSIPs                         kubernetes.ByFamily[*string] `json:"dnsIPs"`
-	NodeCIDRMaskSizes              kubernetes.ByFamily[int]     `json:"nodeCIDRMaskSizes"`
-	NodeIP                         kubernetes.NodeIP            `json:"nodeIP"`
+	Endpoint                       string                            `json:"endpoint"`
+	Domain                         string                            `json:"domain"`
+	AllowSchedulingOnControlPlanes bool                              `json:"allowSchedulingOnControlPlanes"`
+	IPFamilies                     []nodeip.Family                   `json:"ipFamilies"`
+	PodCIDRs                       kubernetes.ByFamily[netip.Prefix] `json:"podCIDRs"`
+	ServiceCIDRs                   kubernetes.ByFamily[netip.Prefix] `json:"serviceCIDRs"`
+	DNSIPs                         kubernetes.ByFamily[*netip.Addr]  `json:"dnsIPs"`
+	NodeCIDRMaskSizes              kubernetes.ByFamily[int]          `json:"nodeCIDRMaskSizes"`
+	NodeIP                         kubernetes.NodeIP                 `json:"nodeIP"`
 	VIP                            struct {
-		Addresses []string `json:"addresses"`
-		Mode      string   `json:"mode"`
+		Addresses []netip.Addr `json:"addresses"`
+		Mode      string       `json:"mode"`
 	} `json:"vip"`
 	ExtraArgs map[string]map[string]string `json:"extraArgs"`
 }
 
+// flannelSpec is the Flannel document's, its ranges decoded as clusterSpec's are.
 type flannelSpec struct {
-	MTU                *int     `json:"mtu"`
-	VXLANSourceSubnets []string `json:"vxlanSourceSubnets"`
+	MTU                *int           `json:"mtu"`
+	VXLANSourceSubnets []netip.Prefix `json:"vxlanSourceSubnets"`
 }
 
 type addonSpec struct {
