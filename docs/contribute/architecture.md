@@ -97,6 +97,7 @@ Each directory of `cmd/` is a main that wires a package up; the logic lives in `
 | `config/slot` | Keeps a node's config on STATE, a slot per image with its identity, and writes it for the node's units: the documents below `/run/chalkos/config` and the secrets the granted units load as credentials. |
 | `config/withheld` | Names the kinds the node withholds from its services, Secret and Addon, without importing anything, so chalkcfg shares the list with chalkos-rules and `config`. |
 | `diagnostics` | Reads the image's `diagnostics.json`, checks a call's arguments against their parameters' types, builds the command line, and runs it as a transient systemd unit with a sandbox of its own. |
+| `dns` | The syntax of the DNS names and record data of a `Resolver`'s local zones, which the rules' `isDNSName()` and `isRecordData()` check and the output `unbound` guards with, so the two cannot drift apart. |
 | `effects` | Reads the image's `services.json`, the units granted config kinds, and `effects.json`, what a delivery does to those units and to chalkd, and refuses an effect chalkd could not carry out. |
 | `esp` | Lists the UKIs on an ESP with the image and generation each boots, and stages, removes and names a UKI, for an install and an upgrade. |
 | `facts` | Loads the facts change rules read: files, and commands of the image's store run in a sandbox. |

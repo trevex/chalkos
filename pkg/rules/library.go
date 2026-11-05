@@ -15,6 +15,7 @@ import (
 	"cel.dev/cel-go/common/types/ref"
 	"cel.dev/cel-go/interpreter"
 
+	"github.com/trevex/chalkos/pkg/dns"
 	"github.com/trevex/chalkos/pkg/schema"
 	"github.com/trevex/chalkos/pkg/storage"
 )
@@ -113,12 +114,12 @@ func (celLib) CompileOptions() []cel.EnvOption {
 		cel.Function("isDNSName",
 			cel.Overload("chalkos_string_is_dns_name", []*cel.Type{cel.StringType}, cel.BoolType,
 				cel.UnaryBinding(func(v ref.Val) ref.Val {
-					return types.Bool(isDNSName(string(v.(types.String))))
+					return types.Bool(dns.IsName(string(v.(types.String))))
 				}))),
 		cel.Function("isRecordData",
 			cel.Overload("chalkos_string_string_is_record_data", []*cel.Type{cel.StringType, cel.StringType}, cel.BoolType,
 				cel.BinaryBinding(func(t, v ref.Val) ref.Val {
-					return types.Bool(isRecordData(string(t.(types.String)), string(v.(types.String))))
+					return types.Bool(dns.IsRecordData(string(t.(types.String)), string(v.(types.String))))
 				}))),
 		cel.Function("family",
 			cel.MemberOverload("chalkos_ip_family", []*cel.Type{ipType}, cel.StringType,

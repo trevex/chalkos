@@ -14,6 +14,7 @@ callPackage ./go-module.nix { } {
     ../pkg/command
     ../pkg/config
     ../pkg/diagnostics
+    ../pkg/dns
     ../pkg/effects
     ../pkg/esp
     ../pkg/facts
