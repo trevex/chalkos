@@ -341,13 +341,15 @@ type policyRule struct {
 		DSCP             []int       `json:"dscp"`
 	} `json:"match"`
 	To struct {
-		VRF     *string  `json:"vrf"`
-		Table   *uint32  `json:"table"`
-		NextHop *nextHop `json:"nextHop"`
+		VRF   *string `json:"vrf"`
+		Table *uint32 `json:"table"`
+		// NextHop names a NextHop document.
+		NextHop *string `json:"nextHop"`
 	} `json:"to"`
 }
 
-type nextHop struct {
+// nextHopSpec is a NextHop document's spec.
+type nextHopSpec struct {
 	Address   string `json:"address"`
 	Interface string `json:"interface"`
 	Table     uint32 `json:"table"`
@@ -376,6 +378,7 @@ type routerDocuments struct {
 	Resolvers       []named[resolverSpec]
 	VRFs            []named[vrfSpec]
 	PolicyRoutes    []named[policyRouteSpec]
+	NextHops        []named[nextHopSpec]
 	DHCPSubnets     []named[dhcpSubnetSpec]
 	DHCPRelays      []named[dhcpRelaySpec]
 	// Links are the interface names the Network documents' [Match] sections name, sorted.
@@ -434,6 +437,9 @@ func readRouterDocuments(in map[string]any) (routerDocuments, error) {
 		return d, err
 	}
 	if d.PolicyRoutes, err = decodeKind[policyRouteSpec](byKind, "PolicyRoute"); err != nil {
+		return d, err
+	}
+	if d.NextHops, err = decodeKind[nextHopSpec](byKind, "NextHop"); err != nil {
 		return d, err
 	}
 	if d.DHCPSubnets, err = decodeKind[dhcpSubnetSpec](byKind, "DHCPSubnet"); err != nil {

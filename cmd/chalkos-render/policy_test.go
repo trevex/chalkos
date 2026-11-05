@@ -8,7 +8,8 @@ import (
 )
 
 // policyDocs are a router's documents with the PolicyRoute documents given as name and spec: a
-// LAN zone on lan0, a VRF transit of table 100 on vt0, and Networks of lan0, wanb0 and vt0.
+// LAN zone on lan0, a VRF transit of table 100 on vt0, Networks of lan0, wanb0 and vt0, and the
+// NextHop b4 of table 200 on wanb0.
 func policyDocs(t *testing.T, routes ...string) map[string][]any {
 	t.Helper()
 	var docs []any
@@ -23,8 +24,16 @@ func policyDocs(t *testing.T, routes ...string) map[string][]any {
 			document(t, "Network", "21-wanb", `{"match": {"name": "wanb0"}}`),
 			document(t, "Network", "30-transit", `{"match": {"name": "vt0"}}`),
 		},
+		"NextHop":     {hopDoc(t, "b4", "198.51.100.130", "wanb0", 200)},
 		"PolicyRoute": docs,
 	}
+}
+
+// hopDoc is a NextHop document.
+func hopDoc(t *testing.T, name, address, link string, table int) any {
+	t.Helper()
+	b, _ := json.Marshal(map[string]any{"address": address, "interface": link, "table": table})
+	return routerDoc(t, "NextHop", name, string(b))
 }
 
 // policyInput is the input of the router outputs for the documents.
@@ -37,20 +46,16 @@ func policyInput(t *testing.T, docs map[string][]any) string {
 	return string(input)
 }
 
-// nextHopRoute is a PolicyRoute's spec of one rule, for DSCP 46, to the next hop.
-func nextHopRoute(address, link string, table int) string {
-	b, _ := json.Marshal(map[string]any{"rules": []any{map[string]any{
-		"match": map[string]any{"dscp": []int{46}},
-		"to":    map[string]any{"nextHop": map[string]any{"address": address, "interface": link, "table": table}},
-	}}})
-	return string(b)
+// nextHopRoute is a PolicyRoute's spec of one rule, for DSCP 46, to the NextHop.
+func nextHopRoute(hop string) string {
+	return `{"rules": [{"match": {"dscp": [46]}, "to": {"nextHop": "` + hop + `"}}]}`
 }
 
 // The firewall's renderer refuses what it alone can see: an interface or glob of in that matches
-// a VRF's device or a NAT64's link, a zone that holds a NAT64's link or no link, a next hop's
-// table that another target takes, and more than 255 tables. It guards, with an internal error,
-// values that would add syntax to the ruleset, a rule of no target and a next hop's address of a
-// zone, should a document bypass the schemas and rules.
+// a VRF's device or a NAT64's link, a zone that holds a NAT64's link or no link, and more than
+// 255 tables. It guards, with an internal error, values that would add syntax to the ruleset, a
+// rule of no target, a NextHop the input lacks, a NextHop's address of a zone and table 0, should
+// a document bypass the schemas, rules and reference check.
 func TestPolicyRouteRefusals(t *testing.T) {
 	nft := []string{"router-nftables", "50000"}
 	dscp := `"rules": [{"match": {"dscp": [46]}, "to": {"vrf": "transit"}}]`
@@ -80,12 +85,19 @@ func TestPolicyRouteRefusals(t *testing.T) {
 			d["FirewallZone"] = append(d["FirewallZone"], routerDoc(t, "FirewallZone", "core", `{"interfaces": [], "vrfs": ["core"]}`))
 			return d
 		}(), "PolicyRoute a: the zone core holds no link"},
-		"two next hops in a table":       {policyDocs(t, "a", nextHopRoute("198.51.100.130", "wanb0", 200), "b", nextHopRoute("198.51.100.131", "wanb0", 200)), "PolicyRoute b rule 1: table 200 is another next hop's"},
-		"a next hop's table as a rule's": {policyDocs(t, "a", nextHopRoute("198.51.100.130", "wanb0", 200), "b", `{"rules": [{"match": {"dscp": [10]}, "to": {"table": 200}}]}`), "PolicyRoute b rule 1: table 200 is another next hop's"},
-		"no target":                      {policyDocs(t, "a", `{"rules": [{"match": {"dscp": [46]}, "to": {}}]}`), "internal error: PolicyRoute a rule 1: to names no target"},
-		"a next hop with a zone":         {policyDocs(t, "a", nextHopRoute("fe80::1%wanb0", "wanb0", 200)), `internal error: PolicyRoute a rule 1: "fe80::1%wanb0" is no address without a zone`},
-		"a next hop's table 0":           {policyDocs(t, "a", nextHopRoute("198.51.100.130", "wanb0", 0)), "internal error: PolicyRoute a rule 1: table 0 of the next hop is no table"},
-		"table 0":                        {policyDocs(t, "a", `{"rules": [{"match": {"dscp": [46]}, "to": {"table": 0}}]}`), "internal error: PolicyRoute a rule 1: table 0 is no table"},
+		"no target":         {policyDocs(t, "a", `{"rules": [{"match": {"dscp": [46]}, "to": {}}]}`), "internal error: PolicyRoute a rule 1: to names no target"},
+		"table 0":           {policyDocs(t, "a", `{"rules": [{"match": {"dscp": [46]}, "to": {"table": 0}}]}`), "internal error: PolicyRoute a rule 1: table 0 is no table"},
+		"a missing NextHop": {policyDocs(t, "a", nextHopRoute("b6")), `internal error: PolicyRoute a rule 1: the input holds no NextHop "b6", which a reference names`},
+		"a NextHop with a zone": {func() map[string][]any {
+			d := policyDocs(t, "a", nextHopRoute("b4"))
+			d["NextHop"] = []any{hopDoc(t, "b4", "fe80::1%wanb0", "wanb0", 200)}
+			return d
+		}(), `internal error: NextHop b4: "fe80::1%wanb0" is no address without a zone`},
+		"a NextHop's table 0": {func() map[string][]any {
+			d := policyDocs(t, "a", nextHopRoute("b4"))
+			d["NextHop"] = []any{hopDoc(t, "b4", "198.51.100.130", "wanb0", 0)}
+			return d
+		}(), "internal error: NextHop b4: table 0 is no table"},
 		"more than 255 tables": {func() map[string][]any {
 			var rules []string
 			for i := range 256 {
@@ -100,12 +112,15 @@ func TestPolicyRouteRefusals(t *testing.T) {
 
 // The chain policy-routing keeps a mark another pass set and leaves a packet to an address of the
 // router unmarked, and each rule marks with its target table's mark, (index+1)<<16 in the order
-// of the tables, rules of one table alike. A next hop of IPv4 marks IPv4 alone. The VRFs' devices accept a marked packet in the reverse-path filter, and
-// a ruleset without PolicyRoute documents marks nothing.
+// of the tables, rules of one table alike: two documents' rules that name one NextHop share its
+// mark, and a NextHop no rule names takes none. A NextHop of IPv4 marks IPv4 alone. The VRFs'
+// devices accept a marked packet in the reverse-path filter, and a ruleset without PolicyRoute
+// documents marks nothing.
 func TestPolicyRouteChain(t *testing.T) {
 	docs := policyDocs(t,
-		"a", `{"rules": [{"match": {"dscp": [46]}, "to": {"nextHop": {"address": "198.51.100.130", "interface": "wanb0", "table": 200}}}, {"match": {"source": {"cidrs": ["192.0.2.0/24"]}}, "to": {"vrf": "transit"}}]}`,
-		"b", `{"in": {"zone": "lan", "interfaces": []}, "rules": [{"match": {"dscp": [10]}, "to": {"nextHop": {"address": "198.51.100.130", "interface": "wanb0", "table": 200}}}]}`)
+		"a", `{"rules": [{"match": {"dscp": [46]}, "to": {"nextHop": "b4"}}, {"match": {"source": {"cidrs": ["192.0.2.0/24"]}}, "to": {"vrf": "transit"}}]}`,
+		"b", `{"in": {"zone": "lan", "interfaces": []}, "rules": [{"match": {"dscp": [10]}, "to": {"nextHop": "b4"}}]}`)
+	docs["NextHop"] = append(docs["NextHop"], hopDoc(t, "spare", "198.51.100.131", "wanb0", 150))
 	ruleset := renderedFile(t, []string{"router-nftables", "50000"}, policyInput(t, docs), rulesetFile)
 	for _, want := range []string{
 		"\t\ttype filter hook prerouting priority mangle + 10; policy drop;\n" +
@@ -122,7 +137,7 @@ func TestPolicyRouteChain(t *testing.T) {
 		}
 	}
 	if strings.Contains(ruleset, "ip6 dscp") {
-		t.Errorf("a next hop of IPv4 marks IPv6:\n%s", ruleset)
+		t.Errorf("a NextHop of IPv4 marks IPv6:\n%s", ruleset)
 	}
 	delete(docs, "PolicyRoute")
 	if ruleset := renderedFile(t, []string{"router-nftables", "50000"}, policyInput(t, docs), rulesetFile); strings.Contains(ruleset, "meta mark") || strings.Contains(ruleset, "policy-routing") {
@@ -130,34 +145,54 @@ func TestPolicyRouteChain(t *testing.T) {
 	}
 }
 
-// The units' renderer refuses a next hop's link that no Network names, or whose Network matches
-// other links too, a Network that may match lo by other [Match] keys and that sorts before the
-// policy routing's unit or names lo, and a Network of the name of the policy routing's unit.
+// The units' renderer refuses a NextHop's link that no Network names, or whose Network matches
+// other links too, whether or not a rule names the NextHop, a Network that may match lo by other
+// [Match] keys and that sorts before the policy routing's unit or names lo, and a Network of the
+// name of the policy routing's unit.
 func TestPolicyRouteUnitRefusals(t *testing.T) {
 	networkd := []string{"router-networkd", networkFixture}
 	dscp := `{"rules": [{"match": {"dscp": [46]}, "to": {"vrf": "transit"}}]}`
+	// withoutHops is docs without NextHop documents.
+	withoutHops := func(d map[string][]any) map[string][]any {
+		delete(d, "NextHop")
+		return d
+	}
 	for name, c := range map[string]struct {
 		docs map[string][]any
 		want string
 	}{
-		"a next hop's link without a Network": {policyDocs(t, "a", nextHopRoute("198.51.100.130", "wanc0", 200)), "PolicyRoute a rule 1: the next hop 198.51.100.130 is on wanc0, which no Network document names"},
-		"a Network of the next hop's link and others": {func() map[string][]any {
-			d := policyDocs(t, "a", nextHopRoute("198.51.100.130", "wanb0", 200))
+		"a NextHop's link without a Network": {func() map[string][]any {
+			d := policyDocs(t, "a", nextHopRoute("b4"))
+			d["NextHop"] = []any{hopDoc(t, "b4", "198.51.100.130", "wanc0", 200)}
+			return d
+		}(), "NextHop b4 is on wanc0, which no Network document names"},
+		"a link without a Network of a NextHop no rule names": {func() map[string][]any {
+			d := policyDocs(t, "a", dscp)
+			d["NextHop"] = []any{hopDoc(t, "b4", "198.51.100.130", "wanc0", 200)}
+			return d
+		}(), "NextHop b4 is on wanc0, which no Network document names"},
+		"a Network of the NextHop's link and others": {func() map[string][]any {
+			d := policyDocs(t, "a", nextHopRoute("b4"))
 			d["Network"][1] = document(t, "Network", "21-wanb", `{"match": {"name": "wan*"}}`)
 			return d
-		}(), "PolicyRoute a rule 1: Network 21-wanb matches wanb0 and other links, which would take its policy routing too"},
+		}(), "NextHop b4: Network 21-wanb matches wanb0 and other links, which would take its policy routing too"},
 		"a Network of lo by other keys": {func() map[string][]any {
-			d := policyDocs(t, "a", dscp)
+			d := withoutHops(policyDocs(t, "a", dscp))
 			d["Network"] = append(d["Network"], document(t, "Network", "05-loopback", `{"match": {"name": "lo", "type": "loopback"}}`))
 			return d
 		}(), "PolicyRoute a: Network 05-loopback may match lo by other [Match] keys"},
-		"a Network of lo by other keys and two PolicyRoutes": {func() map[string][]any {
+		"a Network of lo by other keys, PolicyRoutes and a NextHop": {func() map[string][]any {
 			d := policyDocs(t, "a", dscp, "b", `{"rules": []}`, "c", dscp)
 			d["Network"] = append(d["Network"], document(t, "Network", "05-loopback", `{"match": {"name": "lo", "type": "loopback"}}`))
 			return d
-		}(), "PolicyRoute a, c: Network 05-loopback may match lo by other [Match] keys"},
+		}(), "PolicyRoute a, c and NextHop b4: Network 05-loopback may match lo by other [Match] keys"},
+		"a Network of lo by other keys and a NextHop alone": {func() map[string][]any {
+			d := policyDocs(t)
+			d["Network"] = append(d["Network"], document(t, "Network", "05-loopback", `{"match": {"name": "lo", "type": "loopback"}}`))
+			return d
+		}(), "NextHop b4: Network 05-loopback may match lo by other [Match] keys"},
 		"a Network of other keys alone before the unit": {func() map[string][]any {
-			d := policyDocs(t, "a", `{"rules": [{"match": {"dscp": [46]}, "to": {"table": 300}}]}`)
+			d := withoutHops(policyDocs(t, "a", `{"rules": [{"match": {"dscp": [46]}, "to": {"table": 300}}]}`))
 			delete(d, "VRF")
 			d["Network"] = append(d["Network"], document(t, "Network", "00-nic", `{"match": {"macAddress": "02:00:00:00:00:01"}}`))
 			return d
@@ -172,14 +207,16 @@ func TestPolicyRouteUnitRefusals(t *testing.T) {
 	}
 }
 
-// A Network of the config that matches lo alone takes the kernel's rules and the next hops'
-// unreachable defaults after its own sections, and a next hop's route goes into the Network of
-// its link. Without a Network of lo, 00-policy-routing holds them, also beside a Network that
-// sorts after it and matches by other [Match] keys alone; without PolicyRoute documents the units
-// are those of the VRFs alone.
+// A Network of the config that matches lo alone takes the kernel's rules and the NextHops'
+// unreachable defaults after its own sections, and a NextHop's route goes into the Network of its
+// link. Two rules that name one NextHop render one rule, one table and one route. Without a
+// Network of lo, 00-policy-routing holds them, also beside a Network that sorts after it and
+// matches by other [Match] keys alone. A NextHop that no rule names keeps its table and route
+// without a rule; without PolicyRoute and NextHop documents the units are those of the VRFs alone.
 func TestPolicyRouteUnits(t *testing.T) {
 	docs := policyDocs(t,
-		"a", `{"rules": [{"match": {"dscp": [46]}, "to": {"nextHop": {"address": "198.51.100.130", "interface": "wanb0", "table": 200}}}, {"match": {"source": {"cidrs": ["192.0.2.0/24"]}}, "to": {"vrf": "transit"}}]}`)
+		"a", `{"rules": [{"match": {"dscp": [46]}, "to": {"nextHop": "b4"}}, {"match": {"source": {"cidrs": ["192.0.2.0/24"]}}, "to": {"vrf": "transit"}}]}`,
+		"b", `{"rules": [{"match": {"dscp": [10]}, "to": {"nextHop": "b4"}}]}`)
 	units := func() string {
 		t.Helper()
 		return renderedFiles(t, []string{"router-networkd", networkFixture}, policyInput(t, docs))
@@ -189,7 +226,8 @@ func TestPolicyRouteUnits(t *testing.T) {
 	unreachable := "[Route]\nDestination=0.0.0.0/0\nMetric=4278198272\nTable=200\nType=unreachable\n\n" +
 		"[Route]\nDestination=::/0\nMetric=4278198272\nTable=200\nType=unreachable\n\n"
 	hop := "# 21-wanb.network\n[Match]\nName=wanb0\n\n[Route]\nGateway=198.51.100.130\nTable=200\n\n"
-	if got := units(); !strings.Contains(got, "# 00-policy-routing.network\n[Match]\nName=lo\n\n"+unreachable+rules) || !strings.Contains(got, hop) {
+	got := units()
+	if !strings.Contains(got, "# 00-policy-routing.network\n[Match]\nName=lo\n\n"+unreachable+rules+"#") || !strings.Contains(got, hop+"#") {
 		t.Errorf("the units without a Network of lo:\n%s", got)
 	}
 	docs["Network"] = append(docs["Network"], document(t, "Network", "50-nic", `{"match": {"macAddress": "02:00:00:00:00:01"}}`))
@@ -202,7 +240,12 @@ func TestPolicyRouteUnits(t *testing.T) {
 		t.Errorf("the units with a Network of lo:\n%s", got)
 	}
 	delete(docs, "PolicyRoute")
+	if got := units(); !strings.Contains(got, "# 05-lo.network\n[Match]\nName=lo\n\n[Address]\nAddress=192.0.2.255/32\n\n"+unreachable+"#") ||
+		!strings.Contains(got, hop) || strings.Contains(got, "RoutingPolicyRule") {
+		t.Errorf("the units of a NextHop no rule names:\n%s", got)
+	}
+	delete(docs, "NextHop")
 	if got := units(); strings.Contains(got, "RoutingPolicyRule") || strings.Contains(got, "Gateway=") || strings.Contains(got, "Table=200") {
-		t.Errorf("the units without PolicyRoute documents:\n%s", got)
+		t.Errorf("the units without PolicyRoute and NextHop documents:\n%s", got)
 	}
 }

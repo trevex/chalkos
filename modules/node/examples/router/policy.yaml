@@ -92,6 +92,16 @@ spec:
   in: {interfaces: [lan0]}
   rules:
     - match: {source: {cidrs: [192.0.2.32/27]}}
-      to: {nextHop: {address: 198.51.100.130, interface: wanb0, table: 200}}
+      to: {nextHop: wanb4}
     - match: {source: {cidrs: ["2001:db8:1::20/123"]}}
-      to: {nextHop: {address: "2001:db8:b::2", interface: wanb0, table: 201}}
+      to: {nextHop: wanb6}
+---
+apiVersion: router.chalkos.dev/v1alpha1
+kind: NextHop
+metadata: {name: wanb4}
+spec: {address: 198.51.100.130, interface: wanb0, table: 200}
+---
+apiVersion: router.chalkos.dev/v1alpha1
+kind: NextHop
+metadata: {name: wanb6}
+spec: {address: "2001:db8:b::2", interface: wanb0, table: 201}

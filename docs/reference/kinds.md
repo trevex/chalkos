@@ -552,7 +552,7 @@ Policy routing of the router: rules that send the forwarded traffic they match, 
 
 `apiVersion: router.chalkos.dev/v1alpha1`
 
-A node's config may hold several, each with a name of its own. It has 12 [change rules](builtins.md#rules-policyroute).
+A node's config may hold several, each with a name of its own. It has 10 [change rules](builtins.md#rules-policyroute).
 
 | Field | Type | Default | Description |
 | --- | --- | --- | --- |
@@ -573,11 +573,8 @@ A node's config may hold several, each with a name of its own. It has 12 [change
 | `spec.rules[].match.source.set` | name of an AddressSet or null | `null` | AddressSet whose ranges match; excludes `cidrs`. |
 | `spec.rules[].match.sourcePorts` | list of integer from 1 to 65535 or range of ports | `[]` | Source ports, each a port or a range `<first>-<last>`, with the protocol `tcp`, `udp` or `sctp`; empty matches every port. |
 | `spec.rules[].to` | object | required | Where the traffic the rule matches goes: `vrf`, `table` or `nextHop`. |
-| `spec.rules[].to.nextHop` | object or null | `null` | Router the traffic leaves through, by the default route of a table of its own; excludes `vrf` and `table`. |
-| `spec.rules[].to.nextHop.address` | IP address | required | Address of the router the traffic leaves through, of the family the rule matches: a unicast address, link-local ones included, and no IPv4-mapped IPv6 address. |
-| `spec.rules[].to.nextHop.interface` | string | required | Link the next hop is on, which a Network document names alone in its `[Match]` section; the route goes into that Network. |
-| `spec.rules[].to.nextHop.table` | integer from 1 to 4294967295 | required | Routing table of the next hop: a default route through it and an unreachable default route after it, so that the traffic is dropped while the link is down. It is none of 253, 254 and 255 and no VRF's table. No other next hop and no rule's `table` may name it either, which the outputs check when they render the config, at an apply or a `--dry-run`, and `chalkctl validate` does not. |
-| `spec.rules[].to.table` | integer from 1 to 4294967295 or null | `null` | Routing table that routes the traffic, by number: 254 is the main table. Not 255, the kernel's local table, and no VRF's table, which `vrf` names. A destination the table has no route to takes the route it would take without the policy; excludes `vrf` and `nextHop`. |
+| `spec.rules[].to.nextHop` | name of a NextHop or null | `null` | NextHop document whose router the traffic leaves through, by the default route of the NextHop's table; excludes `vrf` and `table`. Rules that name one NextHop share its table, its route and its mark. |
+| `spec.rules[].to.table` | integer from 1 to 4294967295 or null | `null` | Routing table that routes the traffic, by number: 254 is the main table. Not 255, the kernel's local table, no VRF's table, which `vrf` names, and no NextHop's table, which `nextHop` names. A destination the table has no route to takes the route it would take without the policy; excludes `vrf` and `nextHop`. |
 | `spec.rules[].to.vrf` | name of a VRF or null | `null` | VRF document whose routing table routes the traffic; excludes `table` and `nextHop`. |
 
 ### PrefixList { #prefixlist }

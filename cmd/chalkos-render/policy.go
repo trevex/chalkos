@@ -1,6 +1,7 @@
 package main
 
 import (
+	"cmp"
 	"encoding/json"
 	"fmt"
 	"maps"
@@ -12,8 +13,8 @@ import (
 
 // Policy routing: the PolicyRoute documents' rules mark the packets they match in the chain
 // policy-routing of the firewall, a mark per target table, and a rule of the kernel per mark sends
-// the marked packets to the table. networkd keeps the kernel's rules and the next hops' tables:
-// router-networkd renders the rules and each next-hop table's unreachable default routes into the
+// the marked packets to the table. networkd keeps the kernel's rules and the NextHops' tables:
+// router-networkd renders the rules and each NextHop table's unreachable default routes into the
 // Network of lo, which never goes down, and the default route through a next hop into the Network
 // of the next hop's link, which networkd adds again each time the link comes up.
 
@@ -35,73 +36,101 @@ const (
 type routeTarget struct {
 	table uint32
 	mark  uint32
-	// hop is the next hop whose table this is; nil for a VRF's table or a rule's table.
-	hop *nextHop
-	// what names the first rule that sends traffic to the table, as PolicyRoute a rule 1.
-	what string
 }
 
-// policyTargets are the tables of the PolicyRoute documents' targets, sorted by number, each with
-// its mark, (index+1)<<16: a VRF's table, a rule's table and a next hop's table. The kind's rules
-// check each target: one per rule, a table that is not the local table and no VRF's, a next hop
-// of a unicast address on a link other than lo, in a table that is none of the kernel's and no
-// VRF's. A next hop's table of its own, which no other next hop and no rule's table takes, is
-// checked here alone, as its key spans the targets of every document. It refuses more than 255
-// tables, which the mark's bits cannot tell apart.
-func policyTargets(d routerDocuments) ([]routeTarget, error) {
-	vrfTables := map[string]uint32{}
+// nextHop is a NextHop document, its address parsed.
+type nextHop struct {
+	name    string
+	address netip.Addr
+	link    string
+	table   uint32
+}
+
+// policyTables are the tables a PolicyRoute rule's target names: the VRF documents' by name and
+// the NextHop documents', by name and sorted by table.
+type policyTables struct {
+	vrfs   map[string]uint32
+	byName map[string]nextHop
+	hops   []nextHop
+}
+
+// newPolicyTables reads the tables of the VRF and NextHop documents. Its guards refuse a NextHop's
+// address that does not parse or carries a zone, which networkd's Gateway= would take, and table 0,
+// which networkd refuses; the format ip and the schema's minimum refuse both before chalkd
+// renders.
+func newPolicyTables(d routerDocuments) (policyTables, error) {
+	t := policyTables{vrfs: map[string]uint32{}, byName: map[string]nextHop{}}
 	for _, v := range d.VRFs {
-		vrfTables[v.Name] = v.Spec.Table
+		t.vrfs[v.Name] = v.Spec.Table
 	}
-	byTable := map[uint32]*routeTarget{}
+	for _, h := range d.NextHops {
+		a, err := netip.ParseAddr(h.Spec.Address)
+		if err != nil || a.Zone() != "" {
+			return t, internalErrorf("NextHop %s: %q is no address without a zone", h.Name, h.Spec.Address)
+		}
+		if h.Spec.Table == 0 {
+			return t, internalErrorf("NextHop %s: table 0 is no table", h.Name)
+		}
+		hop := nextHop{name: h.Name, address: a, link: h.Spec.Interface, table: h.Spec.Table}
+		t.byName[h.Name] = hop
+		t.hops = append(t.hops, hop)
+	}
+	slices.SortStableFunc(t.hops, func(a, b nextHop) int { return cmp.Compare(a.table, b.table) })
+	return t, nil
+}
+
+// of is the table of a rule's target: its VRF's table, its own table or its NextHop's table. Its
+// guards refuse a to of no target, which the kind's rules refuse, a VRF or NextHop the input
+// lacks, which the reference check refuses, and table 0, which the schema refuses.
+func (t policyTables) of(r policyRule) (uint32, error) {
+	var table uint32
+	switch to := r.To; {
+	case to.VRF != nil:
+		v, err := mustGet(t.vrfs, "VRF", *to.VRF)
+		if err != nil {
+			return 0, err
+		}
+		table = v
+	case to.Table != nil:
+		table = *to.Table
+	case to.NextHop != nil:
+		h, err := mustGet(t.byName, "NextHop", *to.NextHop)
+		if err != nil {
+			return 0, err
+		}
+		table = h.table
+	default:
+		return 0, internalErrorf("to names no target")
+	}
+	if table == 0 {
+		return 0, internalErrorf("table 0 is no table")
+	}
+	return table, nil
+}
+
+// policyTargets are the distinct tables of the PolicyRoute documents' targets, sorted by number,
+// each with its mark, (index+1)<<16. Rules that name one table share its mark: rules of one VRF,
+// of one table or of one NextHop. The schemas and rules keep the targets' tables apart: a VRF's
+// and a NextHop's table are their own, and a rule's table is neither. NextHop documents that no
+// rule names take no mark. It refuses more than 255 tables, which the mark's bits cannot tell
+// apart, a count that spans every document.
+func policyTargets(d routerDocuments, t policyTables) ([]routeTarget, error) {
+	tables := map[uint32]bool{}
 	for _, p := range d.PolicyRoutes {
 		for i, r := range p.Spec.Rules {
-			what := fmt.Sprintf("PolicyRoute %s rule %d", p.Name, i+1)
-			var t routeTarget
-			// networkd refuses a rule or route of table 0, and a gateway that is no address.
-			switch to := r.To; {
-			case to.VRF != nil:
-				table, err := mustGet(vrfTables, "VRF", *to.VRF)
-				if err != nil {
-					return nil, within(what, err)
-				}
-				t.table = table
-			case to.Table != nil:
-				if t.table = *to.Table; t.table == 0 {
-					return nil, internalErrorf("%s: table 0 is no table", what)
-				}
-			case to.NextHop != nil:
-				h := *to.NextHop
-				a, err := netip.ParseAddr(h.Address)
-				if err != nil || a.Zone() != "" {
-					return nil, internalErrorf("%s: %q is no address without a zone", what, h.Address)
-				}
-				if h.Table == 0 {
-					return nil, internalErrorf("%s: table 0 of the next hop is no table", what)
-				}
-				h.Address = a.String()
-				t.table, t.hop = h.Table, &h
-			default:
-				return nil, internalErrorf("%s: to names no target", what)
+			table, err := t.of(r)
+			if err != nil {
+				return nil, within(fmt.Sprintf("PolicyRoute %s rule %d", p.Name, i+1), err)
 			}
-			t.what = what
-			if old, ok := byTable[t.table]; ok {
-				if (old.hop == nil) != (t.hop == nil) || old.hop != nil && *old.hop != *t.hop {
-					return nil, fmt.Errorf("%s: table %d is another next hop's, or a next hop's and a rule's; give each next hop a table of its own", what, t.table)
-				}
-				continue
-			}
-			byTable[t.table] = &t
+			tables[table] = true
 		}
 	}
-	if len(byTable) > 255 {
-		return nil, fmt.Errorf("the PolicyRoute documents send traffic to %d tables, more than the 255 their marks tell apart", len(byTable))
+	if len(tables) > 255 {
+		return nil, fmt.Errorf("the PolicyRoute documents send traffic to %d tables, more than the 255 their marks tell apart", len(tables))
 	}
-	targets := make([]routeTarget, 0, len(byTable))
-	for i, table := range slices.Sorted(maps.Keys(byTable)) {
-		t := *byTable[table]
-		t.mark = uint32(i+1) << policyMarkShift
-		targets = append(targets, t)
+	targets := make([]routeTarget, 0, len(tables))
+	for i, table := range slices.Sorted(maps.Keys(tables)) {
+		targets = append(targets, routeTarget{table: table, mark: uint32(i+1) << policyMarkShift})
 	}
 	return targets, nil
 }
@@ -112,23 +141,6 @@ func markOf(targets []routeTarget, table uint32) uint32 {
 		if t.table == table {
 			return t.mark
 		}
-	}
-	return 0
-}
-
-// ruleTable is the table of a rule's target, which policyTargets checked.
-func ruleTable(d routerDocuments, r policyRule) uint32 {
-	switch {
-	case r.To.VRF != nil:
-		for _, v := range d.VRFs {
-			if v.Name == *r.To.VRF {
-				return v.Spec.Table
-			}
-		}
-	case r.To.Table != nil:
-		return *r.To.Table
-	case r.To.NextHop != nil:
-		return r.To.NextHop.Table
 	}
 	return 0
 }
@@ -153,11 +165,16 @@ func (f *firewall) policyLines(d routerDocuments) ([]string, error) {
 			return nil, err
 		}
 		for i, r := range p.Spec.Rules {
+			what := fmt.Sprintf("PolicyRoute %s rule %d", p.Name, i+1)
 			matches, err := f.policyMatches(r)
 			if err != nil {
-				return nil, within(fmt.Sprintf("PolicyRoute %s rule %d", p.Name, i+1), err)
+				return nil, within(what, err)
 			}
-			mark := markOf(f.targets, ruleTable(d, r))
+			table, err := f.tables.of(r)
+			if err != nil {
+				return nil, within(what, err)
+			}
+			mark := markOf(f.targets, table)
 			set := fmt.Sprintf("counter meta mark set meta mark & 0x%08x | 0x%08x return comment %q", ^uint32(policyMarkMask), mark, fmt.Sprintf("%s %d", p.Name, i+1))
 			for _, m := range matches {
 				lines = append(lines, joinWords(head, m, set))
@@ -222,18 +239,18 @@ func (f *firewall) nat64Link(i string) (string, string, bool) {
 
 // policyMatches are a rule's matches, one per family as a firewall rule's, with its DSCP values
 // in front, which nftables matches in each family by its own word. A rule with a next hop matches
-// the next hop's family alone. The kind's rules check that the match has a term, that it leaves a
-// family, and that a next hop's family is one the match leaves.
+// the NextHop's family alone. The kind's rules check that the match has a term, that it leaves a
+// family, and that the NextHop's family is one the match leaves.
 func (f *firewall) policyMatches(r policyRule) ([]string, error) {
 	m := r.Match
 	fr := firewallRule{Family: m.Family, Protocol: m.Protocol, SourcePorts: m.SourcePorts, DestinationPorts: m.DestinationPorts, Source: m.Source, Destination: m.Destination}
-	if h := r.To.NextHop; h != nil {
-		a, err := netip.ParseAddr(h.Address)
+	if name := r.To.NextHop; name != nil {
+		h, err := mustGet(f.tables.byName, "NextHop", *name)
 		if err != nil {
-			return nil, internalErrorf("%q is no address", h.Address)
+			return nil, err
 		}
 		fam := "ipv6"
-		if a.Is4() {
+		if h.address.Is4() {
 			fam = "ipv4"
 		}
 		fr.Family = &fam
@@ -265,17 +282,22 @@ func (f *firewall) policyMatches(r policyRule) ([]string, error) {
 }
 
 // withPolicyRoutes is docs, the networkd documents with the VRFs' and NAT64s' units, with the
-// kernel's rules of the PolicyRoute documents' targets and the unreachable default routes of the
-// next hops' tables in the Network of lo, and the default route through each next hop in the
-// Network of its link. A Network of byKind that networkd picks for lo or for the link takes them
-// when it matches that link alone by its Name=; without one for lo, a Network 00-policy-routing
-// of lo holds them. It refuses a next hop's link no Network matches, a Network that may match a
-// next hop's link by other [Match] keys, or lo as loNetwork finds, or that matches other links
-// too, which would get the routes, and a Network of byKind named 00-policy-routing. Without
-// PolicyRoute documents it changes nothing.
+// kernel's rules of the PolicyRoute documents' targets and the unreachable default routes of every
+// NextHop's table in the Network of lo, and the default route through each NextHop in the Network
+// of its link. A NextHop that no rule names gets its table too, so that the units do not depend on
+// which NextHops the rules name. A Network of byKind that networkd picks for lo or for the link
+// takes them when it matches that link alone by its Name=; without one for lo, a Network
+// 00-policy-routing of lo holds them. It refuses a NextHop's link no Network matches, a Network
+// that may match a NextHop's link by other [Match] keys, or lo as loNetwork finds, or that matches
+// other links too, which would get the routes, and a Network of byKind named 00-policy-routing.
+// Without PolicyRoute and NextHop documents it changes nothing.
 func withPolicyRoutes(d routerDocuments, byKind, docs map[string]any) (map[string]any, error) {
-	targets, err := policyTargets(d)
-	if err != nil || len(targets) == 0 {
+	tables, err := newPolicyTables(d)
+	if err != nil {
+		return nil, err
+	}
+	targets, err := policyTargets(d, tables)
+	if err != nil || len(targets) == 0 && len(tables.hops) == 0 {
 		return docs, err
 	}
 	units, err := networkUnits(d.VRFs, byKind)
@@ -287,8 +309,11 @@ func withPolicyRoutes(d routerDocuments, byKind, docs map[string]any) (map[strin
 	}
 	networks, _ := docs["Network"].([]any)
 	networks = slices.Clone(networks)
-	// add appends the sections to the key of the Network document of that name.
+	// add appends the sections, if any, to the key of the Network document of that name.
 	add := func(name, key string, sections []any) {
+		if len(sections) == 0 {
+			return
+		}
 		for i, n := range networks {
 			doc, _ := n.(map[string]any)
 			if got, _ := documentName("Network", doc); got == name {
@@ -305,51 +330,66 @@ func withPolicyRoutes(d routerDocuments, byKind, docs map[string]any) (map[strin
 			"priority":     json.Number(strconv.Itoa(policyRulePriority)),
 			"family":       "both",
 		})
-		if t.hop != nil {
-			unreachable = append(unreachable, unreachableDefaults(t.table)...)
-		}
+	}
+	for _, h := range tables.hops {
+		unreachable = append(unreachable, unreachableDefaults(h.table)...)
 	}
 	lo, err := loNetwork(units)
 	if err != nil {
-		var names []string
-		for _, p := range d.PolicyRoutes {
-			if len(p.Spec.Rules) > 0 {
-				names = append(names, p.Name)
-			}
-		}
-		return nil, within("PolicyRoute "+strings.Join(names, ", "), err)
+		return nil, within(policyDocuments(d), err)
 	}
 	if lo == "" {
-		spec := map[string]any{"match": map[string]any{"name": "lo"}, "routingPolicyRule": rules}
+		spec := map[string]any{"match": map[string]any{"name": "lo"}}
+		if len(rules) > 0 {
+			spec["routingPolicyRule"] = rules
+		}
 		if len(unreachable) > 0 {
 			spec["route"] = unreachable
 		}
 		networks = append(networks, map[string]any{"metadata": map[string]any{"name": policyUnit}, "spec": spec})
 	} else {
 		add(lo, "routingPolicyRule", rules)
-		if len(unreachable) > 0 {
-			add(lo, "route", unreachable)
-		}
+		add(lo, "route", unreachable)
 	}
-	for _, t := range targets {
-		if t.hop == nil {
-			continue
-		}
-		link, err := soleNetwork(units, t.hop.Interface)
+	for _, h := range tables.hops {
+		link, err := soleNetwork(units, h.link)
 		if err != nil {
-			return nil, within(t.what, err)
+			return nil, within("NextHop "+h.name, err)
 		}
 		if link == "" {
-			return nil, fmt.Errorf("%s: the next hop %s is on %s, which no Network document names; give it one, which gets the next hop's route", t.what, t.hop.Address, t.hop.Interface)
+			return nil, fmt.Errorf("NextHop %s is on %s, which no Network document names; give the link one, which gets the next hop's route", h.name, h.link)
 		}
 		add(link, "route", []any{map[string]any{
-			"gateway": t.hop.Address,
-			"table":   json.Number(strconv.FormatUint(uint64(t.table), 10)),
+			"gateway": h.address.String(),
+			"table":   json.Number(strconv.FormatUint(uint64(h.table), 10)),
 		}})
 	}
 	out := maps.Clone(docs)
 	out["Network"] = networks
 	return out, nil
+}
+
+// policyDocuments names the documents whose sections go into the Network of lo: the PolicyRoute
+// documents with rules, whose targets' rules go there, and the NextHop documents, whose tables'
+// unreachable defaults do, as "PolicyRoute a, b and NextHop c".
+func policyDocuments(d routerDocuments) string {
+	var routes, hops []string
+	for _, p := range d.PolicyRoutes {
+		if len(p.Spec.Rules) > 0 {
+			routes = append(routes, p.Name)
+		}
+	}
+	for _, h := range d.NextHops {
+		hops = append(hops, h.Name)
+	}
+	var parts []string
+	if len(routes) > 0 {
+		parts = append(parts, "PolicyRoute "+strings.Join(routes, ", "))
+	}
+	if len(hops) > 0 {
+		parts = append(parts, "NextHop "+strings.Join(hops, ", "))
+	}
+	return strings.Join(parts, " and ")
 }
 
 // loNetwork is the Network document of byKind that networkd picks for lo, "" when the unit of the

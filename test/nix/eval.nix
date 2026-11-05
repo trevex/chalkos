@@ -1265,6 +1265,7 @@ lib.runTests {
         "NAT64"
         "VRF"
         "PolicyRoute"
+        "NextHop"
       ];
       render = true;
       plainRender = true;
@@ -1296,25 +1297,41 @@ lib.runTests {
       };
     };
   };
-  # Router images accept PolicyRoute documents, which both the firewall, which marks the packets
-  # they match, and networkd, which keeps the kernel's rules and the next hops' tables, read;
-  # other images have no such kind.
+  # Router images accept PolicyRoute and NextHop documents, which both the firewall, which marks
+  # the packets they match, and networkd, which keeps the kernel's rules and the next hops' tables,
+  # read; other images have no such kinds.
   testRouterPolicyRouting = {
     expr =
       let
         edge = layered.edge-metal.config;
+        kinds = [
+          "PolicyRoute"
+          "NextHop"
+        ];
       in
       {
-        kind = edge.chalkos.kinds ? PolicyRoute;
-        plainKind = layered.plain-metal.config.chalkos.kinds ? PolicyRoute;
-        firewall = lib.elem "PolicyRoute" edge.chalkos.outputs.router-nftables.inputs;
-        networkd = lib.elem "PolicyRoute" edge.chalkos.outputs.networkd.inputs;
+        kinds = map (k: edge.chalkos.kinds ? ${k}) kinds;
+        plainKinds = map (k: layered.plain-metal.config.chalkos.kinds ? ${k}) kinds;
+        firewall = map (k: lib.elem k edge.chalkos.outputs.router-nftables.inputs) kinds;
+        networkd = map (k: lib.elem k edge.chalkos.outputs.networkd.inputs) kinds;
       };
     expected = {
-      kind = true;
-      plainKind = false;
-      firewall = true;
-      networkd = true;
+      kinds = [
+        true
+        true
+      ];
+      plainKinds = [
+        false
+        false
+      ];
+      firewall = [
+        true
+        true
+      ];
+      networkd = [
+        true
+        true
+      ];
     };
   };
   # Router images accept DHCPSubnet documents, which the output kea renders into a config per VRF

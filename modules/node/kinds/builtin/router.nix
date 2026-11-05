@@ -224,6 +224,9 @@ let
   # Binds, for body, tables to the VRF documents' tables.
   vrfTables =
     body: "cel.bind(v, ${delivered "VRF"}, cel.bind(tables, v.map(n, v[n].spec.table), ${body}))";
+  # Binds, for body, h to the NextHop documents and tables to their tables.
+  nextHopTables =
+    body: "cel.bind(h, ${delivered "NextHop"}, cel.bind(tables, h.map(n, h[n].spec.table), ${body}))";
   # Whether the address a is one a next hop may have: none of the unspecified, loopback, multicast
   # and broadcast addresses, which netip's IsGlobalUnicast and IsLinkLocalUnicast leave out, and no
   # IPv4-mapped IPv6 address. A mapped address stands for an IPv4 router, which answers no IPv6
@@ -247,32 +250,13 @@ let
         type = types.nullOr (types.ints.between 1 4294967295);
         default = null;
         example = 254;
-        description = "Routing table that routes the traffic, by number: 254 is the main table. Not 255, the kernel's local table, and no VRF's table, which `vrf` names. A destination the table has no route to takes the route it would take without the policy; excludes `vrf` and `nextHop`.";
+        description = "Routing table that routes the traffic, by number: 254 is the main table. Not 255, the kernel's local table, no VRF's table, which `vrf` names, and no NextHop's table, which `nextHop` names. A destination the table has no route to takes the route it would take without the policy; excludes `vrf` and `nextHop`.";
       };
       nextHop = mkOption {
-        type = types.nullOr (
-          types.submodule {
-            options = {
-              address = mkOption {
-                type = address;
-                example = "198.51.100.1";
-                description = "Address of the router the traffic leaves through, of the family the rule matches: a unicast address, link-local ones included, and no IPv4-mapped IPv6 address.";
-              };
-              interface = mkOption {
-                type = interfaceName;
-                example = "wan1";
-                description = "Link the next hop is on, which a Network document names alone in its `[Match]` section; the route goes into that Network.";
-              };
-              table = mkOption {
-                type = types.ints.between 1 4294967295;
-                example = 200;
-                description = "Routing table of the next hop: a default route through it and an unreachable default route after it, so that the traffic is dropped while the link is down. It is none of 253, 254 and 255 and no VRF's table. No other next hop and no rule's `table` may name it either, which the outputs check when they render the config, at an apply or a `--dry-run`, and `chalkctl validate` does not.";
-              };
-            };
-          }
-        );
+        type = types.nullOr (ref "NextHop");
         default = null;
-        description = "Router the traffic leaves through, by the default route of a table of its own; excludes `vrf` and `table`.";
+        example = "isp-b";
+        description = "NextHop document whose router the traffic leaves through, by the default route of the NextHop's table; excludes `vrf` and `table`. Rules that name one NextHop share its table, its route and its mark.";
       };
     };
   };
@@ -654,9 +638,10 @@ in
                 ok = "(p.to.vrf == null ? 0 : 1) + (p.to.table == null ? 0 : 1) + (p.to.nextHop == null ? 0 : 1) == 1";
                 message = "a rule's to names a VRF, a table or a next hop, one of them";
               })
+              # The reference check has found the NextHop, so document() returns it.
               (policyRulesRule {
-                description = "A rule with a next hop matches packets of the next hop's family.";
-                ok = ''p.to.nextHop == null || (ip(p.to.nextHop.address).family() == "ipv4" ? ${matchesFamily "ipv4"} : ${matchesFamily "ipv6"})'';
+                description = "A rule with a next hop matches packets of the NextHop's family.";
+                ok = ''p.to.nextHop == null || (ip(document("NextHop", p.to.nextHop).spec.address).family() == "ipv4" ? ${matchesFamily "ipv4"} : ${matchesFamily "ipv6"})'';
                 message = "a rule's next hop is of another family than the packets the rule matches";
               })
               {
@@ -665,19 +650,9 @@ in
                 message = "a rule's table is 255, the kernel's local table, or a VRF's table; name the VRF in vrf, or take another table";
               }
               {
-                description = "A next hop's table is none of 253, 254 and 255 and no VRF's table.";
-                rule = vrfTables "self.all(p, p.to.nextHop == null || !(p.to.nextHop.table in [253, 254, 255]) && !(p.to.nextHop.table in tables))";
-                message = "a next hop's table is 253, 254 or 255, the kernel's own, or a VRF's table; give the next hop a table of its own";
-              }
-              {
-                description = "A next hop's interface is not lo.";
-                rule = ''self.all(p, p.to.nextHop == null || p.to.nextHop.interface != "lo")'';
-                message = "a next hop's interface is lo, which no next hop is on; name the link the next hop is on";
-              }
-              {
-                description = "A next hop's address is a unicast address: not unspecified, loopback, multicast, broadcast or IPv4-mapped IPv6.";
-                rule = "self.all(p, p.to.nextHop == null || ${nextHopAddress "p.to.nextHop.address"})";
-                messageExpression = ''"the next hop " + self.filter(p, p.to.nextHop != null && !${nextHopAddress "p.to.nextHop.address"})[0].to.nextHop.address + " is no unicast address of a router, or is an IPv4-mapped IPv6 address; give the router's address, an IPv4 one as IPv4"'';
+                description = "A rule's table is no NextHop's table, which holds the NextHop's routes alone.";
+                rule = nextHopTables "self.all(p, p.to.table == null || !(p.to.table in tables))";
+                messageExpression = nextHopTables ''cel.bind(t, self.filter(p, p.to.table != null && p.to.table in tables)[0].to.table, "a rule's table " + string(t) + " is the table of NextHop " + h.filter(n, h[n].spec.table == t)[0] + "; name the NextHop in nextHop, or take another table")'';
               }
             ];
           };

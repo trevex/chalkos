@@ -82,7 +82,8 @@ A BGP instance of `transit` that imports the default VRF's routes does the same;
 ## Send traffic through another router
 
 The `PolicyRoute` `servers` sends the servers' traffic through the router at the far end of
-`wanb0`, a next hop per family:
+`wanb0`. The `NextHop` documents `wanb4` and `wanb6` declare that router, one per family, and
+the rules name them in `to.nextHop`:
 
 ```yaml
 apiVersion: router.chalkos.dev/v1alpha1
@@ -92,9 +93,19 @@ spec:
   in: {interfaces: [lan0]}
   rules:
     - match: {source: {cidrs: [192.0.2.32/27]}}
-      to: {nextHop: {address: 198.51.100.130, interface: wanb0, table: 200}}
+      to: {nextHop: wanb4}
     - match: {source: {cidrs: ["2001:db8:1::20/123"]}}
-      to: {nextHop: {address: "2001:db8:b::2", interface: wanb0, table: 201}}
+      to: {nextHop: wanb6}
+---
+apiVersion: router.chalkos.dev/v1alpha1
+kind: NextHop
+metadata: {name: wanb4}
+spec: {address: 198.51.100.130, interface: wanb0, table: 200}
+---
+apiVersion: router.chalkos.dev/v1alpha1
+kind: NextHop
+metadata: {name: wanb6}
+spec: {address: "2001:db8:b::2", interface: wanb0, table: 201}
 ---
 apiVersion: networkd.chalkos.dev/v1alpha1
 kind: Network

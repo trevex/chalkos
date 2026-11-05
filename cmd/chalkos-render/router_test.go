@@ -37,7 +37,7 @@ const (
 )
 
 // routerKinds are the kinds of router.chalkos.dev.
-var routerKinds = []string{"Router", "FirewallZone", "FirewallPolicy", "AddressSet", "NATRule", "BGP", "BGPPeer", "PrefixList", "CommunityList", "RoutingPolicy", "NAT64", "Resolver", "VRF", "PolicyRoute", "DHCPSubnet", "DHCPRelay"}
+var routerKinds = []string{"Router", "FirewallZone", "FirewallPolicy", "AddressSet", "NATRule", "BGP", "BGPPeer", "PrefixList", "CommunityList", "RoutingPolicy", "NAT64", "Resolver", "VRF", "PolicyRoute", "NextHop", "DHCPSubnet", "DHCPRelay"}
 
 // routerInput is the input of the router outputs for the config file path, as chalkd builds it:
 // the documents of each router kind with their schema defaults, sorted by name.

@@ -986,11 +986,9 @@ cel.bind(v, (("router.chalkos.dev/v1alpha1" in config && "VRF" in config["router
 | 5 | `spec.rules` | Ports go with tcp, udp or sctp. | `refuse` | after the table | a rule has ports without the protocol tcp, udp or sctp |
 | 6 | `spec.rules` | A rule matches by one term at least. | `refuse` | after the table | a rule has an empty match, which would take every packet; to send every packet, say so, such as with source: {cidrs: [0.0.0.0/0]} |
 | 7 | `spec.rules` | A rule's to names a VRF, a table or a next hop, one of them. | `refuse` | after the table | a rule's to names a VRF, a table or a next hop, one of them |
-| 8 | `spec.rules` | A rule with a next hop matches packets of the next hop's family. | `refuse` | after the table | a rule's next hop is of another family than the packets the rule matches |
+| 8 | `spec.rules` | A rule with a next hop matches packets of the NextHop's family. | `refuse` | after the table | a rule's next hop is of another family than the packets the rule matches |
 | 9 | `spec.rules` | A rule's table is not 255, the kernel's local table, and no VRF's table. | `refuse` | after the table | a rule's table is 255, the kernel's local table, or a VRF's table; name the VRF in vrf, or take another table |
-| 10 | `spec.rules` | A next hop's table is none of 253, 254 and 255 and no VRF's table. | `refuse` | after the table | a next hop's table is 253, 254 or 255, the kernel's own, or a VRF's table; give the next hop a table of its own |
-| 11 | `spec.rules` | A next hop's interface is not lo. | `refuse` | `self.all(p, p.to.nextHop == null || p.to.nextHop.interface != "lo")` | a next hop's interface is lo, which no next hop is on; name the link the next hop is on |
-| 12 | `spec.rules` | A next hop's address is a unicast address: not unspecified, loopback, multicast, broadcast or IPv4-mapped IPv6. | `refuse` | after the table | after the table |
+| 10 | `spec.rules` | A rule's table is no NextHop's table, which holds the NextHop's routes alone. | `refuse` | after the table | after the table |
 
 Expression of rule 1:
 
@@ -1043,7 +1041,7 @@ self.all(p, cel.bind(r, p.match, (p.to.vrf == null ? 0 : 1) + (p.to.table == nul
 Expression of rule 8:
 
 ```text
-self.all(p, cel.bind(r, p.match, p.to.nextHop == null || (ip(p.to.nextHop.address).family() == "ipv4" ? ((r.family == null || r.family == "ipv4") && r.protocol != "icmpv6" && (r.source == null || (r.source.set != null ? document("AddressSet", r.source.set).spec.family == "ipv4" : r.source.cidrs == null || r.source.cidrs.exists(a, cidr(a).ip(0).family() == "ipv4"))) && (r.destination == null || (r.destination.set != null ? document("AddressSet", r.destination.set).spec.family == "ipv4" : r.destination.cidrs == null || r.destination.cidrs.exists(a, cidr(a).ip(0).family() == "ipv4")))) : ((r.family == null || r.family == "ipv6") && r.protocol != "icmp" && (r.source == null || (r.source.set != null ? document("AddressSet", r.source.set).spec.family == "ipv6" : r.source.cidrs == null || r.source.cidrs.exists(a, cidr(a).ip(0).family() == "ipv6"))) && (r.destination == null || (r.destination.set != null ? document("AddressSet", r.destination.set).spec.family == "ipv6" : r.destination.cidrs == null || r.destination.cidrs.exists(a, cidr(a).ip(0).family() == "ipv6")))))))
+self.all(p, cel.bind(r, p.match, p.to.nextHop == null || (ip(document("NextHop", p.to.nextHop).spec.address).family() == "ipv4" ? ((r.family == null || r.family == "ipv4") && r.protocol != "icmpv6" && (r.source == null || (r.source.set != null ? document("AddressSet", r.source.set).spec.family == "ipv4" : r.source.cidrs == null || r.source.cidrs.exists(a, cidr(a).ip(0).family() == "ipv4"))) && (r.destination == null || (r.destination.set != null ? document("AddressSet", r.destination.set).spec.family == "ipv4" : r.destination.cidrs == null || r.destination.cidrs.exists(a, cidr(a).ip(0).family() == "ipv4")))) : ((r.family == null || r.family == "ipv6") && r.protocol != "icmp" && (r.source == null || (r.source.set != null ? document("AddressSet", r.source.set).spec.family == "ipv6" : r.source.cidrs == null || r.source.cidrs.exists(a, cidr(a).ip(0).family() == "ipv6"))) && (r.destination == null || (r.destination.set != null ? document("AddressSet", r.destination.set).spec.family == "ipv6" : r.destination.cidrs == null || r.destination.cidrs.exists(a, cidr(a).ip(0).family() == "ipv6")))))))
 ```
 
 Expression of rule 9:
@@ -1055,19 +1053,13 @@ cel.bind(v, (("router.chalkos.dev/v1alpha1" in config && "VRF" in config["router
 Expression of rule 10:
 
 ```text
-cel.bind(v, (("router.chalkos.dev/v1alpha1" in config && "VRF" in config["router.chalkos.dev/v1alpha1"]) ? config["router.chalkos.dev/v1alpha1"].VRF : {}), cel.bind(tables, v.map(n, v[n].spec.table), self.all(p, p.to.nextHop == null || !(p.to.nextHop.table in [253, 254, 255]) && !(p.to.nextHop.table in tables))))
+cel.bind(h, (("router.chalkos.dev/v1alpha1" in config && "NextHop" in config["router.chalkos.dev/v1alpha1"]) ? config["router.chalkos.dev/v1alpha1"].NextHop : {}), cel.bind(tables, h.map(n, h[n].spec.table), self.all(p, p.to.table == null || !(p.to.table in tables))))
 ```
 
-Expression of rule 12:
+Message of rule 10:
 
 ```text
-self.all(p, p.to.nextHop == null || cel.bind(x, ip(p.to.nextHop.address), x != ip("0.0.0.0") && x != ip("::") && !cidr("127.0.0.0/8").contains(x) && x != ip("::1") && !cidr("224.0.0.0/4").contains(x) && !cidr("ff00::/8").contains(x) && x != ip("255.255.255.255") && !cidr("::ffff:0:0/96").contains(x)))
-```
-
-Message of rule 12:
-
-```text
-"the next hop " + self.filter(p, p.to.nextHop != null && !cel.bind(x, ip(p.to.nextHop.address), x != ip("0.0.0.0") && x != ip("::") && !cidr("127.0.0.0/8").contains(x) && x != ip("::1") && !cidr("224.0.0.0/4").contains(x) && !cidr("ff00::/8").contains(x) && x != ip("255.255.255.255") && !cidr("::ffff:0:0/96").contains(x)))[0].to.nextHop.address + " is no unicast address of a router, or is an IPv4-mapped IPv6 address; give the router's address, an IPv4 one as IPv4"
+cel.bind(h, (("router.chalkos.dev/v1alpha1" in config && "NextHop" in config["router.chalkos.dev/v1alpha1"]) ? config["router.chalkos.dev/v1alpha1"].NextHop : {}), cel.bind(tables, h.map(n, h[n].spec.table), cel.bind(t, self.filter(p, p.to.table != null && p.to.table in tables)[0].to.table, "a rule's table " + string(t) + " is the table of NextHop " + h.filter(n, h[n].spec.table == t)[0] + "; name the NextHop in nextHop, or take another table")))
 ```
 
 #### PrefixList { #rules-prefixlist }
@@ -1349,8 +1341,8 @@ The outputs router images add, and the output `networkd` of every image as route
 | `frr`{ #output-frr } | `BGP`, `BGPPeer`, `PrefixList`, `CommunityList`, `RoutingPolicy`, `Network`, `VRF` | `/run/chalkos/outputs/frr` | Command `chalkos-render frr` | yes |
 | `jool`{ #output-jool } | `NAT64`, `VRF`, `Network` | `/run/chalkos/outputs/jool` | Command `chalkos-render jool` | yes |
 | `kea`{ #output-kea } | `DHCPSubnet`, `VRF`, `Network`, `NAT64` | `/run/chalkos/outputs/kea` | Command `chalkos-render kea chalkos-dhcp6-pd` | yes |
-| `networkd`{ #outputs-router-images-networkd } | `Link`, `NetDev`, `Network`, `NAT64`, `VRF`, `PolicyRoute` | `/run/systemd/network` | Command `chalkos-render router-networkd chalkos-networkd-schemas` | no |
-| `router-nftables`{ #output-router-nftables } | `Router`, `FirewallZone`, `FirewallPolicy`, `AddressSet`, `NATRule`, `BGPPeer`, `Resolver`, `DHCPSubnet`, `DHCPRelay`, `VRF`, `Network`, `NAT64`, `PolicyRoute` | `/run/chalkos/outputs/router-nftables` | Command `chalkos-render router-nftables 50000` | yes |
+| `networkd`{ #outputs-router-images-networkd } | `Link`, `NetDev`, `Network`, `NAT64`, `VRF`, `PolicyRoute`, `NextHop` | `/run/systemd/network` | Command `chalkos-render router-networkd chalkos-networkd-schemas` | no |
+| `router-nftables`{ #output-router-nftables } | `Router`, `FirewallZone`, `FirewallPolicy`, `AddressSet`, `NATRule`, `BGPPeer`, `Resolver`, `DHCPSubnet`, `DHCPRelay`, `VRF`, `Network`, `NAT64`, `PolicyRoute`, `NextHop` | `/run/chalkos/outputs/router-nftables` | Command `chalkos-render router-nftables 50000` | yes |
 | `router-sysctl`{ #output-router-sysctl } | `Router` | `/run/sysctl.d` | Command `chalkos-render router-sysctl` | no |
 | `unbound`{ #output-unbound } | `Resolver`, `VRF`, `Network` | `/run/chalkos/outputs/unbound` | Command `chalkos-render unbound root.key ipv4only.arpa.zone` | yes |
 

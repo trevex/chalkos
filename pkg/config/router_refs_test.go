@@ -152,3 +152,11 @@ func TestRouterSetRefs(t *testing.T) {
 		`PolicyRoute/lan: spec.rules[0].match.destination.set: AddressSet "servers" does not exist`,
 		`PolicyRoute/lan: spec.rules[1].match.source.set: AddressSet "guests" does not exist`)
 }
+
+// A policy route rule's next hop names a NextHop document.
+func TestRouterNextHopRefs(t *testing.T) {
+	_, err := checkRouterRefs(t,
+		routerDoc("NextHop", "isp-a", `{address: 198.51.100.1, interface: wana0, table: 200}`)+
+			routerDoc("PolicyRoute", "lan", `{rules: [{match: {dscp: [46]}, to: {nextHop: isp-a}}, {match: {dscp: [10]}, to: {nextHop: isp-b}}]}`))
+	wantRefused(t, err, `PolicyRoute/lan: spec.rules[1].to.nextHop: NextHop "isp-b" does not exist`)
+}

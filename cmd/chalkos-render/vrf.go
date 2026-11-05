@@ -518,8 +518,8 @@ func networkVRF(name string, spec map[string]any) (string, error) {
 // 00-vrf-<name>.network, which brings the device up, leaves it out of the node's online state
 // and ends the table in unreachable default routes, and VRF=<name> in the [Network] section of
 // each Network document that is the first to match links the VRF holds, a .network per NAT64
-// that leaves its link n64-<name> to chalkos-nat64, and the kernel's rules and the next hops'
-// tables of the PolicyRoute documents in the Networks of lo and of the next hops' links.
+// that leaves its link n64-<name> to chalkos-nat64, and the kernel's rules of the PolicyRoute
+// documents and the NextHop documents' tables in the Networks of lo and of the next hops' links.
 func renderRouterNetworkd(schemas string, in map[string]any, out string) error {
 	d, err := readRouterDocuments(in)
 	if err != nil {

@@ -163,8 +163,10 @@ type firewall struct {
 	// vrfDevices are the VRFs' devices, on which the strict reverse-path filter accepts
 	// neighbour discovery from link-local sources, and the filter a marked packet's second pass.
 	vrfDevices []string
-	// targets are the tables of the PolicyRoute documents, with their marks, and policy the lines
-	// of the chain policy-routing.
+	// tables are the VRFs' and NextHops' tables that the PolicyRoute documents' targets name,
+	// targets the tables of the PolicyRoute documents, with their marks, and policy the lines of
+	// the chain policy-routing.
+	tables  policyTables
 	targets []routeTarget
 	policy  []string
 	port    int
@@ -254,7 +256,10 @@ func newFirewall(d routerDocuments, port int, closed bool) (*firewall, error) {
 		f.sets[s.Name] = s.Spec
 		f.setNames = append(f.setNames, s.Name)
 	}
-	if f.targets, err = policyTargets(d); err != nil {
+	if f.tables, err = newPolicyTables(d); err != nil {
+		return nil, err
+	}
+	if f.targets, err = policyTargets(d, f.tables); err != nil {
 		return nil, err
 	}
 	if len(d.PolicyRoutes) > 0 {
