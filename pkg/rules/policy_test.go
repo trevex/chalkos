@@ -102,7 +102,7 @@ func TestPolicyRouteRules(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			want := []string{`PolicyRoute "lan" spec.rules: the next hop ` + address + ` is no unicast address of a router; give the address of the router the traffic leaves through`}
+			want := []string{`PolicyRoute "lan" spec.rules: the next hop ` + address + ` is no unicast address of a router, or is an IPv4-mapped IPv6 address; give the router's address, an IPv4 one as IPv4`}
 			if got := messages(failures); !slices.Equal(got, want) {
 				t.Errorf("failures:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
 			}

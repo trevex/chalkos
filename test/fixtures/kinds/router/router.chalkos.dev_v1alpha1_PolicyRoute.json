@@ -480,7 +480,7 @@
             },
             {
               "description": "A next hop's address is a unicast address: not unspecified, loopback, multicast, broadcast or IPv4-mapped IPv6.",
-              "messageExpression": "\"the next hop \" + self.filter(p, p.to.nextHop != null && !cel.bind(x, ip(p.to.nextHop.address), x != ip(\"0.0.0.0\") && x != ip(\"::\") && !cidr(\"127.0.0.0/8\").contains(x) && x != ip(\"::1\") && !cidr(\"224.0.0.0/4\").contains(x) && !cidr(\"ff00::/8\").contains(x) && x != ip(\"255.255.255.255\") && !cidr(\"::ffff:0:0/96\").contains(x)))[0].to.nextHop.address + \" is no unicast address of a router; give the address of the router the traffic leaves through\"",
+              "messageExpression": "\"the next hop \" + self.filter(p, p.to.nextHop != null && !cel.bind(x, ip(p.to.nextHop.address), x != ip(\"0.0.0.0\") && x != ip(\"::\") && !cidr(\"127.0.0.0/8\").contains(x) && x != ip(\"::1\") && !cidr(\"224.0.0.0/4\").contains(x) && !cidr(\"ff00::/8\").contains(x) && x != ip(\"255.255.255.255\") && !cidr(\"::ffff:0:0/96\").contains(x)))[0].to.nextHop.address + \" is no unicast address of a router, or is an IPv4-mapped IPv6 address; give the router's address, an IPv4 one as IPv4\"",
               "rule": "self.all(p, p.to.nextHop == null || cel.bind(x, ip(p.to.nextHop.address), x != ip(\"0.0.0.0\") && x != ip(\"::\") && !cidr(\"127.0.0.0/8\").contains(x) && x != ip(\"::1\") && !cidr(\"224.0.0.0/4\").contains(x) && !cidr(\"ff00::/8\").contains(x) && x != ip(\"255.255.255.255\") && !cidr(\"::ffff:0:0/96\").contains(x)))",
               "takes": "refuse"
             }

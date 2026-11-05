@@ -677,7 +677,7 @@ in
               {
                 description = "A next hop's address is a unicast address: not unspecified, loopback, multicast, broadcast or IPv4-mapped IPv6.";
                 rule = "self.all(p, p.to.nextHop == null || ${nextHopAddress "p.to.nextHop.address"})";
-                messageExpression = ''"the next hop " + self.filter(p, p.to.nextHop != null && !${nextHopAddress "p.to.nextHop.address"})[0].to.nextHop.address + " is no unicast address of a router; give the address of the router the traffic leaves through"'';
+                messageExpression = ''"the next hop " + self.filter(p, p.to.nextHop != null && !${nextHopAddress "p.to.nextHop.address"})[0].to.nextHop.address + " is no unicast address of a router, or is an IPv4-mapped IPv6 address; give the router's address, an IPv4 one as IPv4"'';
               }
             ];
           };

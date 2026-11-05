@@ -231,7 +231,7 @@ a document the config lacks, and what the rules of the router kinds refuse.
 | `PolicyRoute "lan" spec.rules: a rule's table is 255, the kernel's local table, or a VRF's table; name the VRF in vrf, or take another table` | Name the VRF in `vrf`, or take another table. |
 | `PolicyRoute "servers" spec.rules: a next hop's table is 253, 254 or 255, the kernel's own, or a VRF's table; give the next hop a table of its own` | Take a table that is neither the kernel's nor a VRF's. |
 | `PolicyRoute "servers" spec.rules: a next hop's interface is lo, which no next hop is on; name the link the next hop is on` | Name the link the next hop is on in `interface`. |
-| `PolicyRoute "servers" spec.rules: the next hop ::ffff:198.51.100.130 is no unicast address of a router; give the address of the router the traffic leaves through` | Give the next hop's unicast address, an IPv4 address as IPv4. |
+| `PolicyRoute "servers" spec.rules: the next hop ::ffff:198.51.100.130 is no unicast address of a router, or is an IPv4-mapped IPv6 address; give the router's address, an IPv4 one as IPv4` | Give the next hop's unicast address, an IPv4 address as IPv4. |
 
 The renderers of the outputs `router-nftables` and `networkd` check the rest, the next hops'
 tables, the interfaces of `in` against the VRFs' devices and what depends on the `Network`
