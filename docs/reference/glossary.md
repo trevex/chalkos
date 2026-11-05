@@ -599,6 +599,14 @@ That boot uses [boot counting](#boot-counting).
 [`chalkctl upgrade`](cli/chalkctl_upgrade.md) rolls it through a cluster. A Kubernetes upgrade is
 an image upgrade. See [Upgrades](../how-it-works/node/upgrades.md).
 
+## Validator { #validator }
+<!-- abbr: none -->
+
+A program of the image's store that checks a node's config documents for what the kinds' schemas
+and change rules do not see, and reports the refusals it finds. chalkd runs every validator before
+a delivery changes the node, as [`chalkos.validators`](extension-api.md#chalkosvalidators)
+declares it. See [Validate config with a program](../build/validate-config.md).
+
 ## VAR { #var }
 
 The partition mounted at `/var` that holds what a node writes. That includes etcd, containerd,

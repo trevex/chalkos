@@ -455,5 +455,6 @@ tracks the new file.
 
 - [Read config in a service](read-config.md) gives a unit the `Peer` documents.
 - [Render config files](render-config.md) renders bird's config from the `Peer` documents.
+- [Validate config with a program](validate-config.md) refuses a `Peer` that bird cannot reach.
 - [Config and the inventory](../how-it-works/node/config.md) explains how the documents reach the
   nodes.

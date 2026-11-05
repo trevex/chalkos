@@ -64,6 +64,8 @@ nav = [
     "build/add-a-diagnostic.md",
     "build/pass-secrets.md",
     "build/guard-changes.md",
+    "build/validate-config.md",
+    "build/validate-config.md",
     "build/customise-installer.md",
     "build/sign-images.md",
     "build/publish-images.md",

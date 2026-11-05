@@ -24,8 +24,9 @@ YAML that Go reads. They meet in these places:
   them from there, or from a running node through the Contract method.
 - Files the image carries in `/etc/chalkos`, written by the node modules: the same
   `kubernetes/image.json` and `schemas`, the units granted each kind in `services.json`, the
-  outputs a node renders in `outputs.json`, what a delivery restarts or reloads in
-  `effects.json`, the system region's repart definitions in `repart.d`
+  outputs a node renders in `outputs.json`, the validators it runs in `validators.json`, what a
+  delivery restarts or reloads in `effects.json`, the system region's repart definitions in
+  `repart.d`
   and the OS CA certificate in `os-ca.crt` when `mkImages` has
   an `osCA`; and the image's own description in `/etc/os-release`. chalkd reads them on the node.
 - A node's config: the YAML
@@ -140,6 +141,7 @@ Each directory of `cmd/` is a main that wires a package up; the logic lives in `
 | `tool` | Runs the command-line tools chalkd, the installer and the storage code drive, such as cryptsetup, sfdisk and systemctl. |
 | `uki` | Reads a UKI's os-release and command line and an EFI binary's architecture, and refuses an image version systemd-boot would order its entry by. |
 | `upgrade` | Writes an image into the inactive slot and makes it the next boot; the image header and the checks of its UKI and boot loader an install shares; the booted entry and the provenance record. |
+| `validators` | Runs the image's validators in the outputs' sandbox, and the validators chalkctl links in-process on the same JSON, and reads their reports of refusals. |
 | `verity` | Reads and checks dm-verity hash trees. |
 
 Test helpers live in packages of their own:

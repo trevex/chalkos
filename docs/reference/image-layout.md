@@ -321,6 +321,7 @@ another disk carrying the same image or the same labels for its own.
 | `/etc/chalkos/layers/<layer>` | An empty marker of each layer the image carries: `kubernetes` or `router`. chalkd reads the directory when it starts and serves no method of a layer whose marker is missing. |
 | `/etc/chalkos/services.json` | The units granted config kinds, from `systemd.services.<unit>.chalkos.kinds`. |
 | `/etc/chalkos/outputs.json` | The image's outputs, from `chalkos.outputs`: each one's input kinds, renderer, check, directory, owner and mode. |
+| `/etc/chalkos/validators.json` | The image's validators, from `chalkos.validators`: each one's input kinds and program. |
 | `/etc/chalkos/effects.json` | What a delivery does to the node's services, from `chalkos.effects`, with the outputs, the kinds and the rules that fire each effect. |
 | `/run/chalkos/node.json` | The node's identity, which the node's Kubernetes preparation reads. |
 | `/run/chalkos/kubernetes/cluster.json` | The node's Kubernetes cluster, which chalkd builds from the node's `Node`, `Cluster` and `Flannel` documents and `image.json` at boot and on every apply. |

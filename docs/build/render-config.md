@@ -276,6 +276,10 @@ node's journal alone.
 A check refuses the rendered files by failing, as [The check refuses a bad
 file](#the-check-refuses-a-bad-file) shows. Its standard output goes nowhere.
 
+A check of the documents that needs no rendered file fits a validator better, which
+[Validate config with a program](validate-config.md) declares: it runs before every renderer and
+reports its refusals in the same form.
+
 ## The renderer must be pure
 
 The same documents must always give the same files. `/run` is a tmpfs, so a node keeps no
@@ -312,7 +316,9 @@ An output without `check` has its files served as the renderer wrote them.
 against the image's schemas. The image build renders and checks the output from each file, as the
 node `example`, and fails when one fails. A template that does not render, or renders a file the
 check refuses, then fails the build before any node gets it. `bgp.nix` has one example,
-`bgp-examples/two-peers.yaml`, with both peers and the `Secret` that `router-a` names.
+`bgp-examples/two-peers.yaml`, with both peers, the `Secret` that `router-a` names and the node's
+uplink `Network`, which the validator of
+[Validate config with a program](validate-config.md) reads.
 
 Cover the documents that change what the renderer writes: no documents, one, several, and each
 optional field set and unset. At build time the renderer and the check run outside the sandbox,
@@ -410,5 +416,6 @@ renderer that writes without end fills that tmpfs and not `/run`.
 - [React to changes](react-to-changes.md) reloads bird when `bird.conf` changes.
 - [Guard changes with rules and facts](guard-changes.md) refuses a `Peer` change before any
   render.
+- [Validate config with a program](validate-config.md) refuses a `Peer` that bird cannot reach.
 - [The config pipeline](../how-it-works/node/config-pipeline.md) shows where rendering sits in a
   delivery, at boot and after an upgrade.

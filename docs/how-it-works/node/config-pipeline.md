@@ -15,16 +15,16 @@ output bird-conf: its check refused the rendered files (exit 1); see the node's 
 
 The node then still runs its old documents, its old `bird.conf` and an unreloaded bird. This page
 explains the stages that make that so. The build pages show how an image declares each stage:
-[rules](../../build/guard-changes.md), [outputs](../../build/render-config.md) and
-[effects](../../build/react-to-changes.md).
+[rules](../../build/guard-changes.md), [validators](../../build/validate-config.md),
+[outputs](../../build/render-config.md) and [effects](../../build/react-to-changes.md).
 
 ## A delivery passes four stages
 
-The node's documents pass through rules, outputs and effects, in that order:
+The node's documents pass through rules, validators, outputs and effects, in that order:
 
 ```mermaid
 flowchart LR
-    docs["Documents"] --> rules{"Change rules"}
+    docs["Documents"] --> rules{"Change rules and validators"}
     rules -->|refuse| refused["Delivery refused, nothing changed"]
     rules -->|pass| render["Render and check outputs"]
     render -->|fail| refused
@@ -37,8 +37,9 @@ The diagram shows the two stages that can refuse a delivery before it changes an
 three that follow once it passes both. In detail, a delivery to the running image, a
 [`chalkctl apply-config`](../../reference/cli/chalkctl_apply-config.md), runs these steps:
 
-1. chalkd checks the documents against the image's schemas and its change rules. A rule that
-   fails refuses the delivery.
+1. chalkd checks the documents against the image's schemas and its change rules, then runs the
+   image's validators in the renderers' sandbox. A rule that fails, or a validator that reports
+   refusals or fails, refuses the delivery.
 2. chalkd records the effects' baseline, unless one exists: the running slot's config, the facts
    the effects' `when` rules read and the hash of each output's files.
 3. chalkd renders every output from the new documents into a staging directory below
@@ -81,8 +82,9 @@ the same facts as an earlier run replaces that run's attempt. The file keeps the
 attempts.
 
 A delivery without config, such as a Kubernetes share, the OS CAs or a node certificate, renders
-from the running slot's documents and does not change them. An output that fails then goes to the
-status and the journal, the delivery goes ahead, and the output keeps the files it served.
+from the running slot's documents and does not change them. It runs no validator. An output that
+fails then goes to the status and the journal, the delivery goes ahead, and the output keeps the
+files it served.
 
 ## Every boot renders the outputs again
 
@@ -100,32 +102,34 @@ output.
 
 ## An image that does not run checks its own config
 
-A staged image's renderers live in its own store. Before an upgrade writes the image's config
-slot, and for `chalkctl apply-config --staged`, the node mounts that store read-only and runs the
-image's own `chalkd check` in a transient unit, `chalkos-check.service`, with the image's store
-in place of its own. The checker runs every check of a delivery against the image's schemas,
-rules and renderers. A refusal refuses the upgrade or the delivery before the image's config slot
-is written. The image renders its outputs again at its first boot, from the same documents.
+A staged image's validators and renderers live in its own store. Before an upgrade writes the
+image's config slot, and for `chalkctl apply-config --staged`, the node mounts that store
+read-only and runs the image's own `chalkd check` in a transient unit, `chalkos-check.service`,
+with the image's store in place of its own. The checker runs every check of a delivery against
+the image's schemas, rules, validators and renderers. A refusal refuses the upgrade or the
+delivery before the image's config slot is written. The image renders its outputs again at its
+first boot, from the same documents.
 
 The checker gets the documents with their Secret values hashed, as renderers always do, and
 asks the running chalkd for the facts its rules read. chalkd loads the facts the image
 declares, and runs their commands from the image's store. The unit runs as a user of its own,
 without capabilities, network or access to STATE, `/var` and `/run/chalkos`, within 512 MiB
-and two minutes. What its renderers and checks write to standard error is in the unit's
-journal: `chalkctl logs <node> --unit=chalkos-check.service`.
+and two minutes. What its validators, renderers and checks write to standard error is in the
+unit's journal: `chalkctl logs <node> --unit=chalkos-check.service`.
 
-An install in place renders and checks the outputs with the running image's renderers before it
-installs anything, and the boot that follows renders them again. An install from the installer
-checks the config with the installed image's schemas and rules, evaluated by the installer's
-chalkd, but cannot run that image's renderers, so that image renders its outputs at its first
-boot alone.
+An install in place runs the running image's validators, and renders and checks the outputs with
+its renderers, before it installs anything, and the boot that follows renders them again. An
+install from the installer checks the config with the installed image's schemas and rules,
+evaluated by the installer's chalkd, but cannot run that image's programs. That image renders its
+outputs at its first boot alone, and runs its validators first at the next delivery.
 
 ## Limits
 
 - A renderer reads documents and the node's name alone. A service that needs node state reads that
   part itself.
 - chalkctl cannot run an image's renderers, so `chalkctl apply-config --diff` shows the documents
-  a delivery changes, not the rendered files.
+  a delivery changes, not the rendered files. It cannot run the validators an image declares
+  either, so `chalkctl validate` accepts a config that a validator refuses on the node.
 - chalkctl runs only the rules that read no facts. The others run on the node.
 - An effect's `when` compares documents as written, so a change that makes no difference to the
   unit still fires the effect, such as a value spelt another way that means the same.
@@ -134,6 +138,7 @@ boot alone.
 
 - [Guard changes with rules and facts](../../build/guard-changes.md) for the rules and facts an
   image declares.
+- [Validate config with a program](../../build/validate-config.md) for validators.
 - [Render config files](../../build/render-config.md) for outputs, their checks and their
   sandbox.
 - [React to changes](../../build/react-to-changes.md) for effects and the order chalkd takes them

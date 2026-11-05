@@ -116,6 +116,15 @@ changes them.
 
     [:octicons-arrow-right-24: Read](guard-changes.md)
 
+-   :material-check-decagram: __Validate config with a program__
+
+    ---
+
+    Refuse a node's config with a program of your image, for what the kind's schema and rules
+    cannot check.
+
+    [:octicons-arrow-right-24: Read](validate-config.md)
+
 </div>
 
 ## Ship
