@@ -226,8 +226,7 @@ func (l Loader) Validate(ctx context.Context, docs []config.Document) ([]refusal
 	if err != nil {
 		return nil, nil, err
 	}
-	rs, failures := validators.Run(ctx, l.Render, defs, outputs.Input{Documents: docs, Hashed: true})
-	return rs, failures, nil
+	return validators.Run(ctx, l.Render, defs, outputs.Input{Documents: docs, Hashed: true})
 }
 
 // OutputStates are the states of the outputs the node serves now, which docs, the config they

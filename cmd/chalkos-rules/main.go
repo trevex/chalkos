@@ -358,7 +358,10 @@ func validateExample(s *schema.Schemas, name string, d validators.Definition, fi
 	}
 	defer os.RemoveAll(root)
 	r := outputs.Renderer{Root: root, Run: outputs.Direct{}}
-	rs, failures := validators.Run(context.Background(), r, map[string]validators.Definition{name: d}, outputs.Input{Node: "example", Documents: docs, Schemas: s})
+	rs, failures, err := validators.Run(context.Background(), r, map[string]validators.Definition{name: d}, outputs.Input{Node: "example", Documents: docs, Schemas: s})
+	if err != nil {
+		return err
+	}
 	if len(rs) > 0 || len(failures) > 0 {
 		// What the program wrote to standard error is in the build's log, above.
 		return errors.New(strings.TrimSuffix(validators.Refusal(rs, failures), "; see the node's journal"))

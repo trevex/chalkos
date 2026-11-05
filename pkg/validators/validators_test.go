@@ -78,7 +78,10 @@ func TestRun(t *testing.T) {
 		"one":    {Inputs: []string{"Demo"}, Program: script(t, refuse("one", "is taken"))},
 		"again":  {Inputs: []string{"Demo"}, Program: script(t, refuse("one", "is taken")+`; echo detail >&2`)},
 	}
-	rs, failures := Run(context.Background(), r, defs, input(t))
+	rs, failures, err := Run(context.Background(), r, defs, input(t))
+	if err != nil {
+		t.Fatal(err)
+	}
 	if len(failures) > 0 {
 		t.Fatal(failures)
 	}
@@ -123,7 +126,10 @@ func TestRunFailures(t *testing.T) {
 		"sleeps":    {Inputs: []string{"Demo"}, Program: script(t, `exec sleep 10`)},
 		"passes":    {Inputs: []string{"Demo"}, Program: script(t, `true`)},
 	}
-	rs, failures := Run(context.Background(), r, defs, input(t))
+	rs, failures, err := Run(context.Background(), r, defs, input(t))
+	if err != nil {
+		t.Fatal(err)
+	}
 	if rs != nil {
 		t.Errorf("refusals = %v", rs)
 	}
@@ -155,8 +161,8 @@ func TestRunProgram(t *testing.T) {
 	rec := &recorder{}
 	r := outputs.Renderer{Root: t.TempDir(), Run: rec}
 	defs := map[string]Definition{"peers": {Inputs: []string{"Demo"}, Program: "/nix/store/x/bin/v --strict"}}
-	if _, failures := Run(context.Background(), r, defs, input(t)); failures != nil {
-		t.Fatal(failures)
+	if _, failures, err := Run(context.Background(), r, defs, input(t)); err != nil || failures != nil {
+		t.Fatal(err, failures)
 	}
 	if len(rec.programs) != 1 {
 		t.Fatalf("programs = %v", rec.programs)
@@ -227,5 +233,21 @@ func TestRunLinked(t *testing.T) {
 	stdin, err := Stdin(in, []string{"Demo"})
 	if err != nil || string(read) != string(stdin) {
 		t.Errorf("the linked validator read %s, a program %s: %v", read, stdin, err)
+	}
+}
+
+// A directory chalkd cannot prepare for its validators is an error of chalkd's own, which fails
+// no validator and refuses nothing.
+func TestRunDirectoryError(t *testing.T) {
+	rec := &recorder{}
+	root := filepath.Join(t.TempDir(), "file")
+	if err := os.WriteFile(root, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	r := outputs.Renderer{Root: root, Run: rec}
+	defs := map[string]Definition{"peers": {Inputs: []string{"Demo"}, Program: "/nix/store/x/bin/v"}}
+	rs, failures, err := Run(context.Background(), r, defs, input(t))
+	if err == nil || rs != nil || failures != nil || len(rec.programs) != 0 {
+		t.Errorf("Run = %v, %v, %v; programs %v", rs, failures, err, rec.programs)
 	}
 }

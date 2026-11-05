@@ -125,23 +125,18 @@ func Refusal(rs []refusals.Refusal, failures []Failure) string {
 // Run runs every validator of defs, in the order of their names, on the documents of in, with the
 // runner and the timeout of r, below r.Root/.validating, and returns the refusals they reported
 // and the failures of those that did not run to their end. Each program gets an empty directory
-// of its own as $OUT, which it cannot write, and opens no netlink socket.
-func Run(ctx context.Context, r outputs.Renderer, defs map[string]Definition, in outputs.Input) ([]refusals.Refusal, []Failure) {
+// of its own as $OUT, which it cannot write, and opens no netlink socket. An error is chalkd's
+// own, such as one preparing that directory, and no validator's.
+func Run(ctx context.Context, r outputs.Renderer, defs map[string]Definition, in outputs.Input) ([]refusals.Refusal, []Failure, error) {
 	if len(defs) == 0 {
-		return nil, nil
+		return nil, nil, nil
 	}
 	var rs []refusals.Refusal
 	var failures []Failure
-	fail := func(n, format string, args ...any) {
-		failures = append(failures, Failure{Validator: n, Problem: fmt.Sprintf(format, args...)})
-	}
 	dir := filepath.Join(r.Root, ".validating")
 	// What a run that chalkd did not finish left there goes first.
 	if err := os.RemoveAll(dir); err != nil {
-		for _, n := range slices.Sorted(maps.Keys(defs)) {
-			fail(n, "failed: %v", err)
-		}
-		return nil, failures
+		return nil, nil, err
 	}
 	defer os.RemoveAll(dir)
 	for _, n := range slices.Sorted(maps.Keys(defs)) {
@@ -152,12 +147,11 @@ func Run(ctx context.Context, r outputs.Renderer, defs map[string]Definition, in
 			continue
 		}
 		if err != nil {
-			fail(n, "failed: %v", err)
-			continue
+			return nil, nil, fmt.Errorf("validator %s: %w", n, err)
 		}
 		rs = append(rs, got...)
 	}
-	return rs, failures
+	return rs, failures, nil
 }
 
 // run runs the validator n of d below dir, logging what a failed program wrote to standard error,

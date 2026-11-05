@@ -117,7 +117,11 @@ func Run(ctx context.Context, img Image, in Input) (Result, error) {
 		return Result{Translated: tr}, nil
 	}
 	input := outputs.Input{Node: in.Node, Documents: tr.Documents, Schemas: img.Schemas, Hashed: true}
-	if rs, failed := validators.Run(ctx, img.Render, img.Validators, input); len(rs) > 0 || len(failed) > 0 {
+	rs, failed, err := validators.Run(ctx, img.Render, img.Validators, input)
+	if err != nil {
+		return Result{}, err
+	}
+	if len(rs) > 0 || len(failed) > 0 {
 		return Result{Translated: tr}, &Refusal{Stage: StageValidators, Message: validators.Refusal(rs, failed)}
 	}
 	staged, refused := img.Render.Render(ctx, img.Outputs, input)
