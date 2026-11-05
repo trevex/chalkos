@@ -227,8 +227,8 @@ let
   # Whether the address a is one a next hop may have: none of the unspecified, loopback, multicast
   # and broadcast addresses, which netip's IsGlobalUnicast and IsLinkLocalUnicast leave out, and no
   # IPv4-mapped IPv6 address. A mapped address stands for an IPv4 router, which answers no IPv6
-  # neighbour discovery on the link; netip reads it as the IPv4 address it maps, which the ranges
-  # below would not match, so refusing it whole keeps every mapped loopback or multicast out too.
+  # neighbour discovery on the link. ip() keeps a mapped address as IPv6, so the IPv4 ranges below
+  # would not match it; refusing ::ffff:0:0/96 whole keeps every mapped loopback or multicast out.
   # Link-local addresses are next hops of their link.
   nextHopAddress =
     a:
