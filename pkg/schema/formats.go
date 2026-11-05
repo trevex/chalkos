@@ -92,3 +92,12 @@ func port(s string) (int, bool) {
 	}
 	return n, true
 }
+
+// FormatNames are the values of "format" the kinds' schemas assert besides JSON Schema's own.
+func FormatNames() []string {
+	names := make([]string, len(formats))
+	for i, f := range formats {
+		names[i] = f.Name
+	}
+	return names
+}

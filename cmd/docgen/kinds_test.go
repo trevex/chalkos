@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/trevex/chalkos/pkg/schema"
 )
 
 func TestWriteKinds(t *testing.T) {
@@ -150,5 +152,14 @@ func TestWriteKindsRefusesASharedAnchor(t *testing.T) {
 	err := writeKinds(filepath.Join(t.TempDir(), "kinds.md"), dir, nil)
 	if err == nil || !strings.Contains(err.Error(), "#rack") {
 		t.Errorf("error %v, want one naming the anchor #rack", err)
+	}
+}
+
+// Every format pkg/schema asserts has a name for the strings it checks.
+func TestFormatNames(t *testing.T) {
+	for _, f := range schema.FormatNames() {
+		if formatNames[f] == "" {
+			t.Errorf("format %q has no name in formatNames", f)
+		}
 	}
 }
