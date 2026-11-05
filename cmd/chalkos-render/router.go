@@ -869,9 +869,12 @@ func internalErrorf(format string, args ...any) error {
 }
 
 // within is err of what, such as a document or a rule of it: an internal error keeps its
-// "internal error:" in front, as "internal error: <what>: ...", and any other error reads
-// "<what>: ...".
+// "internal error:" in front, as "internal error: <what>: ...", a refusal, which names its
+// document and field already, stays as it is, and any other error reads "<what>: ...".
 func within(what string, err error) error {
+	if r, ok := err.(*refusal); ok {
+		return r
+	}
 	if e, ok := err.(*internalError); ok {
 		return &internalError{what + ": " + e.text}
 	}

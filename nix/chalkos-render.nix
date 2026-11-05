@@ -1,13 +1,14 @@
 # chalkos-render, the renderer of the outputs lib.chalkos.render.template and .documents build, and
 # of the built-in outputs networkd, router-sysctl and router-nftables. Every image carries it, so it
 # is stripped and takes the standard library alone, besides pkg/dns, which shares the resolver's
-# DNS syntax with the rules.
+# DNS syntax with the rules, and pkg/refusals, the format of the refusals chalkd reads.
 { callPackage }:
 callPackage ./go-module.nix { } {
   pname = "chalkos-render";
   paths = [
     ../cmd/chalkos-render
     ../pkg/dns
+    ../pkg/refusals
   ];
   subPackages = [ "cmd/chalkos-render" ];
   ldflags = [

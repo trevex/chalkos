@@ -47,6 +47,34 @@ protocol bgp b { neighbor 10.0.0.2 as 4200000000; description "the \"other\" one
 	}
 }
 
+// A template's refuse stops it with a refusal of the document and field it names, which main
+// prints on standard output.
+func TestTemplateRefuse(t *testing.T) {
+	tmpl := filepath.Join(t.TempDir(), "bird.conf.tmpl")
+	os.WriteFile(tmpl, []byte(`{{ range .documents.Peer }}{{ if .spec.description }}{{ refuse "Peer" .metadata.name "spec.description" "bird takes no description" }}{{ end }}{{ end }}`), 0o644)
+	_, err := render(t, []string{"template", tmpl, "bird.conf"}, peers)
+	var r *refusal
+	if !errors.As(err, &r) || r.Error() != "Peer/b: spec.description: bird takes no description" {
+		t.Fatalf("refused with %v", err)
+	}
+}
+
+// A refusal prints as a report of refusals on one line, with its message's control characters as
+// spaces; one outside the format prints nowhere, so main reports it on standard error alone.
+func TestPrintRefusal(t *testing.T) {
+	var w strings.Builder
+	if !printRefusal(&w, refuse("BGPPeer", "fabric", "spec.interfaces", "two\nlines").(*refusal)) {
+		t.Fatal("a refusal was not printed")
+	}
+	if printRefusal(&w, refuse("BGPPeer", "Not A Name", "spec", "x").(*refusal)) {
+		t.Error("a refusal outside the format was printed")
+	}
+	want := `{"refusals":[{"kind":"BGPPeer","name":"fabric","path":"spec.interfaces","message":"two lines"}]}` + "\n"
+	if got := w.String(); got != want {
+		t.Errorf("printed %q, want %q", got, want)
+	}
+}
+
 // documents writes each document of the kinds named as a file, and refuses a kind the input
 // lacks.
 func TestDocuments(t *testing.T) {

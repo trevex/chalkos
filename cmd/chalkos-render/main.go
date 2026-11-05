@@ -35,27 +35,39 @@ const usage = `usage: chalkos-render template TEMPLATE FILE
        chalkos-render dhcp-relay
 
 template executes the Go text/template TEMPLATE on the input and writes the result to $OUT/FILE;
-the template has the functions join, quote, json and default. documents writes each document of
-the kinds KIND as $OUT/<Kind>/<name>.json. networkd writes each Network, NetDev and Link document
-as the networkd unit $OUT/<name>.network, .netdev or .link, with the section and key names of the
-kinds' schemas in the directory SCHEMAS. router-networkd writes them as networkd does, with each
-VRF document's device as $OUT/00-vrf-<name>.netdev and .network and VRF= in the Network units of
-the links it holds. router-sysctl writes the kernel settings of the Router document as
-$OUT/90-chalkos-router.conf. router-nftables writes the firewall of the documents of the router
-kinds as the nftables table inet chalkos in $OUT/ruleset.nft, which accepts chalkd's TCP port
-PORT; router-nftables-fallback writes the table of a node without a rendered ruleset, which
-forwards nothing. frr writes FRR's config of the BGP documents as $OUT/frr.conf. jool writes Jool's
-config of each NAT64 document as $OUT/<name>.json. unbound writes Unbound's config of the Resolver
-document as $OUT/unbound.conf, with the root's trust anchor in the file TRUST-ANCHOR and the zone
-ipv4only.arpa in the file ZONE-FILE. kea writes the config of Kea's DHCPv4 and DHCPv6 servers of
-each VRF whose links DHCPSubnet documents serve as $OUT/kea-dhcp4.json and $OUT/kea-dhcp6.json for
-the default VRF and $OUT/kea-dhcp4-<vrf>.json and $OUT/kea-dhcp6-<vrf>.json for a VRF; a DHCPv6
-server whose subnets delegate prefixes runs the program PD-HOOK on their leases. dhcp-relay writes
-the config of dnsmasq's DHCP relay of each VRF whose links DHCPRelay documents relay as
-$OUT/dnsmasq-relay.conf for the default VRF and $OUT/dnsmasq-relay-<vrf>.conf for a VRF.`
+the template has the functions join, quote, json, default and refuse. documents writes each
+document of the kinds KIND as $OUT/<Kind>/<name>.json. networkd writes each Network, NetDev
+and Link document as the networkd unit $OUT/<name>.network, .netdev or .link, with the section
+and key names of the kinds' schemas in the directory SCHEMAS. router-networkd writes them as
+networkd does, with each VRF document's device as $OUT/00-vrf-<name>.netdev and .network and
+VRF= in the Network units of the links it holds. router-sysctl writes the kernel settings of
+the Router document as $OUT/90-chalkos-router.conf. router-nftables writes the firewall of the
+documents of the router kinds as the nftables table inet chalkos in $OUT/ruleset.nft, which
+accepts chalkd's TCP port PORT; router-nftables-fallback writes the table of a node without
+a rendered ruleset, which forwards nothing. frr writes FRR's config of the BGP documents as
+$OUT/frr.conf. jool writes Jool's config of each NAT64 document as $OUT/<name>.json. unbound
+writes Unbound's config of the Resolver document as $OUT/unbound.conf, with the root's trust
+anchor in the file TRUST-ANCHOR and the zone ipv4only.arpa in the file ZONE-FILE. kea writes the
+config of Kea's DHCPv4 and DHCPv6 servers of each VRF whose links DHCPSubnet documents serve as
+$OUT/kea-dhcp4.json and $OUT/kea-dhcp6.json for the default VRF and $OUT/kea-dhcp4-<vrf>.json
+and $OUT/kea-dhcp6-<vrf>.json for a VRF; a DHCPv6 server whose subnets delegate prefixes runs
+the program PD-HOOK on their leases. dhcp-relay writes the config of dnsmasq's DHCP relay of
+each VRF whose links DHCPRelay documents relay as $OUT/dnsmasq-relay.conf for the default VRF and
+$OUT/dnsmasq-relay-<vrf>.conf for a VRF. Every command prints a config it refuses as
+{"refusals": [{"kind": …, "name": …, "path": …, "message": …}]} on standard output, and fails.`
 
+// main runs the renderer. A config it refuses, a *refusal, it prints as a report of refusals on
+// standard output for chalkd to report, and on standard error too, for the journal and for a run
+// by hand; any other error, an internal one or one of its command line, goes to standard error
+// alone, where chalkd shows it to no one but the node's journal, since it can echo the documents.
+// Either fails the renderer, so that a build that runs it, as the router's fallback ruleset's
+// does, fails too.
 func main() {
 	if err := run(os.Args[1:], os.Stdin, os.Getenv("OUT")); err != nil {
+		var r *refusal
+		if errors.As(err, &r) {
+			printRefusal(os.Stdout, r)
+		}
 		fmt.Fprintln(os.Stderr, "chalkos-render: "+err.Error())
 		if errors.Is(err, errUsage) {
 			fmt.Fprintln(os.Stderr, usage)
@@ -148,6 +160,11 @@ var funcs = template.FuncMap{
 			return d
 		}
 		return v
+	},
+	// refuse refuses the config: it stops the template with the refusal of the field at path of
+	// the document kind/name, which chalkd reports as it reports a rule's.
+	"refuse": func(kind, name, path, message string) (string, error) {
+		return "", refuse(kind, name, path, "%s", message)
 	},
 }
 
