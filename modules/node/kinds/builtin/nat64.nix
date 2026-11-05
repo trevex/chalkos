@@ -391,7 +391,7 @@ in
                   messageExpression = ''"the name " + (self.map(z, z.name) + ${records}.map(r, r.name)).filter(n, !isDNSName(n))[0] + " holds more than 253 characters"'';
                 }
                 {
-                  description = "A record holds data of its type: an address of its family for A and AAAA, a DNS name for CNAME and PTR, numbers and a DNS name for MX and SRV.";
+                  description = "A record holds data of its type: an address of its family for A and AAAA, a DNS name for CNAME and PTR, numbers and a DNS name for MX and SRV, and text for TXT.";
                   rule = "${records}.all(r, isRecordData(r.type, r.value))";
                   messageExpression = ''cel.bind(r, ${records}.filter(r, !isRecordData(r.type, r.value))[0], "the " + r.type + " record of " + r.name + " holds " + r.value + ", which is no " + ${recordData}[r.type])'';
                 }

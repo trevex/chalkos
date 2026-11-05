@@ -242,7 +242,7 @@
               "takes": "refuse"
             },
             {
-              "description": "A record holds data of its type: an address of its family for A and AAAA, a DNS name for CNAME and PTR, numbers and a DNS name for MX and SRV.",
+              "description": "A record holds data of its type: an address of its family for A and AAAA, a DNS name for CNAME and PTR, numbers and a DNS name for MX and SRV, and text for TXT.",
               "messageExpression": "cel.bind(r, self.map(z, z.records).flatten().filter(r, !isRecordData(r.type, r.value))[0], \"the \" + r.type + \" record of \" + r.name + \" holds \" + r.value + \", which is no \" + {\"A\": \"IPv4 address\", \"AAAA\": \"IPv6 address\", \"CNAME\": \"DNS name in lower case without the root's dot\", \"PTR\": \"DNS name in lower case without the root's dot\", \"MX\": \"preference from 0 to 65535 and DNS name, a single space apart\", \"SRV\": \"priority, weight and port from 0 to 65535 and DNS name, a single space apart\", \"TXT\": \"text of 1 to 255 printable characters without quotes or backslashes\"}[r.type])",
               "rule": "self.map(z, z.records).flatten().all(r, isRecordData(r.type, r.value))",
               "takes": "refuse"

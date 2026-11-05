@@ -1015,7 +1015,7 @@ documents.filter(n, cel.bind(s, documents[n].spec, !s.entries.all(e, cel.bind(c,
 | 5 | `spec.listen` | The resolver listens on unicast addresses. | `refuse` | after the table | after the table |
 | 6 | `spec.localZones` | A local zone's records are of the zone's name or names below it. | `refuse` | `self.all(z, z.records.all(r, r.name == z.name || r.name.endsWith("." + z.name)))` | after the table |
 | 7 | `spec.localZones` | The names of local zones and their records are DNS names of 253 characters at most. | `refuse` | `self.all(z, isDNSName(z.name)) && self.map(z, z.records).flatten().all(r, isDNSName(r.name))` | after the table |
-| 8 | `spec.localZones` | A record holds data of its type: an address of its family for A and AAAA, a DNS name for CNAME and PTR, numbers and a DNS name for MX and SRV. | `refuse` | `self.map(z, z.records).flatten().all(r, isRecordData(r.type, r.value))` | after the table |
+| 8 | `spec.localZones` | A record holds data of its type: an address of its family for A and AAAA, a DNS name for CNAME and PTR, numbers and a DNS name for MX and SRV, and text for TXT. | `refuse` | `self.map(z, z.records).flatten().all(r, isRecordData(r.type, r.value))` | after the table |
 | 9 | `spec.localZones` | A redirect zone's records are of the zone's name, which Unbound answers for every name below it. | `refuse` | `self.all(z, z.type != "redirect" || z.records.all(r, r.name == z.name))` | after the table |
 
 Expression of rule 1:
