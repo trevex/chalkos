@@ -188,7 +188,7 @@ func relaysBesideServers(d routerDocuments, devices []string, families map[keaSe
 		if err != nil {
 			continue
 		}
-		v6 := p.Addr().Is6() && !p.Addr().Is4In6()
+		v6 := subnetIs6(p)
 		keys := slices.SortedFunc(maps.Keys(families), func(a, b keaServer) int {
 			return strings.Compare(vrfOrder(a.vrf)+" "+a.family(), vrfOrder(b.vrf)+" "+b.family())
 		})

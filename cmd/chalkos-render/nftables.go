@@ -1151,7 +1151,7 @@ func dhcpOpenings(d routerDocuments) ([]opening, error) {
 	var out []opening
 	for _, s := range d.DHCPSubnets {
 		p, err := netip.ParsePrefix(s.Spec.Subnet)
-		if err != nil || !p.Addr().Is6() || p.Addr().Is4In6() {
+		if err != nil || !subnetIs6(p) {
 			continue
 		}
 		links, vrf, err := subnetLinks(d, devices, s.Spec.Interfaces, subnetWords)

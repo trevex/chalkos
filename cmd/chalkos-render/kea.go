@@ -93,7 +93,7 @@ type servedSubnet struct {
 
 // server is the Kea server that serves the subnet.
 func (s servedSubnet) server() keaServer {
-	return keaServer{vrf: s.vrf, v6: s.prefix.Addr().Is6()}
+	return keaServer{vrf: s.vrf, v6: subnetIs6(s.prefix)}
 }
 
 // renderKea writes the config of Kea's DHCPv4 and DHCPv6 servers of each VRF whose links
@@ -123,7 +123,7 @@ func renderKea(pdHook string, in map[string]any, out string) error {
 		if err != nil {
 			return within("DHCPSubnet "+s.Name, err)
 		}
-		family := keaServer{v6: sub.prefix.Addr().Is6()}
+		family := keaServer{v6: subnetIs6(sub.prefix)}
 		if served[family] == nil {
 			served[family] = map[string]string{}
 		}
@@ -187,6 +187,11 @@ func apart(a, b servedSubnet) error {
 	return nil
 }
 
+// subnetIs6 tells whether a DHCPSubnet of the range p is served by Kea's DHCPv6 server. An
+// IPv4-mapped range, which the rules refuse, is IPv6 to Kea, so the relays and the firewall take
+// it as IPv6 too.
+func subnetIs6(p netip.Prefix) bool { return p.Addr().Is6() }
+
 // serveSubnet finds the links of the subnet s, their VRF and the router's addresses in it, which
 // no pool or reservation holds. The rules have checked the rest of the subnet's addresses.
 func serveSubnet(d routerDocuments, units []networkUnit, devices []string, s named[dhcpSubnetSpec]) (servedSubnet, error) {
@@ -198,8 +203,7 @@ func serveSubnet(d routerDocuments, units []networkUnit, devices []string, s nam
 	if err := keaValues(s.Spec); err != nil {
 		return sub, err
 	}
-	// An IPv4-mapped range, which the rules refuse, is IPv6 to Kea.
-	if !p.Addr().Is4() {
+	if subnetIs6(p) {
 		return serveSubnet6(d, units, devices, s, p)
 	}
 	sub.prefix = p.Masked()
