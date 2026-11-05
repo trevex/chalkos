@@ -145,16 +145,18 @@ func copyTree(src, dst string) error {
 }
 
 // inventories are the fixtures' inventories by the names the tests give them: the main cluster,
-// the same with an additive and with a destructive change of chalklab's storage, the same with
-// chalklab on the upgrade image with config only that image accepts and with config only that
-// image's renderer refuses, its router r1 announcing a network and with chalkd's port on its
-// fabric link alone, its routers with their fabric link in a VRF and r2's VRF in another table,
-// r1 sending its default route while a route exists, with and without that route, r1 leasing r2
-// an address on a macvlan, r1 with two peers of one session, and the HA cluster.
+// the same with an additive and with a destructive change of chalklab's storage and with a
+// Greeting the test image's validator refuses, the same with chalklab on the upgrade image with
+// config only that image accepts and with config only that image's renderer refuses, its router
+// r1 announcing a network and with chalkd's port on its fabric link alone, its routers with their
+// fabric link in a VRF and r2's VRF in another table, r1 sending its default route while a route
+// exists, with and without that route, r1 leasing r2 an address on a macvlan, r1 with two peers
+// of one session, and the HA cluster.
 var inventories = map[string]string{
 	"base":         "chalklab/chalkos.yaml",
 	"added":        "chalklab/added.yaml",
 	"destructive":  "chalklab/destructive.yaml",
+	"shout":        "chalklab/shout.yaml",
 	"upgrade":      "chalklab/upgrade.yaml",
 	"upgrade-stay": "chalklab/upgrade-stay.yaml",
 	"announce":     "chalklab/router-announce.yaml",

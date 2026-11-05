@@ -7,6 +7,7 @@
 # a new message while the fact greetingLock, a file no test writes, holds one; the output's check
 # refuses a message of more than one line, fails outside an unprivileged sandbox and checks an
 # nftables table in a user and network namespace of its own, and the build renders its examples.
+# The validator greeting refuses a message in capitals, which the schema and chalkctl accept.
 {
   config,
   lib,
@@ -56,6 +57,18 @@
       # A check may talk netlink in a user and network namespace of its own, as the router's
       # nft --check does.
       echo 'table inet greeting { }' | ${pkgs.util-linux}/bin/unshare --map-root-user --net ${pkgs.nftables}/bin/nft --check --file -
+    '';
+    examples = ./greeting-examples;
+  };
+  # The validator greeting refuses a message in capitals, a shout, and fails outside an
+  # unprivileged sandbox without STATE; the build runs it on the output's examples.
+  chalkos.validators.greeting = {
+    inputs = [ "Greeting" ];
+    program = pkgs.writeShellScript "chalktest-greeting-validate" ''
+      set -e
+      [ "$(${pkgs.coreutils}/bin/id -u)" -ne 0 ]
+      [ ! -e /state/chalkd ]
+      exec ${lib.getExe pkgs.jq} -c '{refusals: [.[] | select(.spec.message | test("^[A-Z !]+$")) | {kind, name: .metadata.name, path: "spec.message", message: "the message shouts; write it in lower case"}]}'
     '';
     examples = ./greeting-examples;
   };

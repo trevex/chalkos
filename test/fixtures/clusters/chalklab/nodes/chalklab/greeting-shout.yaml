@@ -1,0 +1,10 @@
+# A Greeting in capitals, which the test image's validator greeting refuses.
+apiVersion: greeting.example.org/v1alpha1
+kind: Greeting
+metadata: {name: hello}
+spec:
+  message: HELLO
+  token:
+    secretRef:
+      key: token
+      name: greeting

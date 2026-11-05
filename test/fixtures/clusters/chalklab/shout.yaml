@@ -1,0 +1,15 @@
+# The main cluster with a Greeting that shouts, which chalklab's schema and chalkctl validate
+# accept and the test image's validator greeting refuses.
+apiVersion: chalkctl.chalkos.dev/v1alpha1
+kind: Inventory
+metadata: {name: chalklab}
+spec:
+  images:
+    test-metal: {source: {directory: images/test-metal}}
+  all: {files: [cluster/*.yaml]}
+  groups:
+    test: {imageName: test-metal}
+  nodes:
+    chalklab:
+      groups: [test]
+      files: [nodes/chalklab/greeting-token.yaml, nodes/chalklab/system.yaml, nodes/chalklab/greeting-shout.yaml]
