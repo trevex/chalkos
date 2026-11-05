@@ -422,7 +422,7 @@ A subnet the router's DHCP server leases IPv4 or IPv6 addresses of on its interf
 
 `apiVersion: router.chalkos.dev/v1alpha1`
 
-A node's config may hold several, each with a name of its own. It has 14 [change rules](builtins.md#rules-dhcpsubnet).
+A node's config may hold several, each with a name of its own. It has 23 [change rules](builtins.md#rules-dhcpsubnet).
 
 | Field | Type | Default | Description |
 | --- | --- | --- | --- |
@@ -434,16 +434,16 @@ A node's config may hold several, each with a name of its own. It has 14 [change
 | `spec.dns` | list of IP address | `[]` | DNS servers the clients ask, addresses of the subnet's family. |
 | `spec.domain` | string or null | `null` | Domain of the clients' names, which they also search; null gives none. |
 | `spec.gateway` | IP address or null | `null` | Router the clients route through, inside an IPv4 subnet and neither its network nor its broadcast address; null gives them none. IPv6 clients learn their routers from router advertisements. |
-| `spec.interfaces` | list of string | required | Links the server answers on, each by its full name, without a glob: links of one VRF, each of which a Network document matching it by Name= alone gives a static address in the subnet; one link for an IPv6 subnet. A link takes one subnet of each family. |
+| `spec.interfaces` | list of string | required | Links the server answers on, each by its full name, without a glob, and once: links of one VRF, each of which a Network document matching it by Name= alone gives a static address in the subnet; one link for an IPv6 subnet. A link takes one subnet of each family. Each item is unique within the list. |
 | `spec.leaseTime` | string | `"12h"` | How long a lease lasts, and a delegated prefix: a number and s, m, h or d, 136 years at most. IPv6 clients prefer their addresses for as long. |
-| `spec.pools` | list of object | `[]` | Ranges the server leases addresses from to any client, inside the subnet, apart from each other, from the reservations and from the router's, the gateway's and the DNS and boot servers' addresses; empty leases the reservations alone. |
+| `spec.pools` | list of object | `[]` | Ranges the server leases addresses from to any client: inside the subnet, apart from each other and from the reservations, and holding none of the subnet's network and broadcast addresses, an IPv6 subnet's first address and the router's, the gateway's and the DNS and boot servers' addresses; empty leases the reservations alone. |
 | `spec.pools[].first` | IP address | required | First address of the pool. |
 | `spec.pools[].last` | IP address | required | Last address of the pool, no lower than the first. |
 | `spec.prefixDelegation` | object or null | `null` | Prefixes the IPv6 server delegates to routers on the link that ask for one, such as a home router's LAN; the router routes each to the link-local address that asked for it, for as long as the lease lasts. null delegates none. |
 | `spec.prefixDelegation.length` | integer from 1 to 128 | required | Length of each delegated prefix, longer than the range's. |
-| `spec.prefixDelegation.prefix` | address range | required | IPv6 range the delegated prefixes are taken from, apart from the subnets of the VRF. |
+| `spec.prefixDelegation.prefix` | address range | required | IPv6 range the delegated prefixes are taken from, apart from ::/8, fe80::/10, ff00::/8 and the subnets of the VRF. |
 | `spec.reservations` | list of object | `[]` | Clients that always get the same address, by their MAC address. Each item is unique within the list by `mac` in lower case. Each item is unique within the list by `address` as addresses. |
-| `spec.reservations[].address` | IP address | required | Address the client always gets, inside the subnet and outside its pools, neither the router's nor the gateway's nor a DNS or boot server's. |
+| `spec.reservations[].address` | IP address | required | Address the client always gets, inside the subnet and outside its pools, and none of the subnet's network and broadcast addresses, an IPv6 subnet's first address and the router's, the gateway's and the DNS and boot servers' addresses. |
 | `spec.reservations[].hostname` | string or null | `null` | Name the client gets; null gives none. |
 | `spec.reservations[].mac` | string | required | MAC address of the client, in lower case. A DHCPv6 server learns it from the client's DUID or link-local address, which not every client derives from it. |
 | `spec.subnet` | address range | required | Range the subnet's addresses are in, whose family the server's is: an IPv4 range of 30 bits at most or an IPv6 range of 120 bits at most. |

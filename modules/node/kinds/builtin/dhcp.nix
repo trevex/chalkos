@@ -5,12 +5,13 @@
 # glob serves a link by chance.
 #
 # chalkd refuses a rule that may cost more than two nested loops over a config's lists, and costs
-# every string as one of 256 characters. So the rules over a subnet's pools and reservations
-# against the subnet loop over the documents and one list, and a pool is two addresses rather
-# than a string to split; the reservations' MAC addresses and addresses are declared unique.
-# Whether a pool's first address comes before its last, and whether a reservation lies outside
-# the pools, takes an order of addresses that CEL lacks; the output kea refuses both, as it
-# refuses what spans documents.
+# every string as one of 256 characters. A subnet's rules are rules of its spec, which see one
+# document at a time, so a rule may compare two of its lists, as its reservations with its pools,
+# within that limit; a pool is two addresses rather than a string to split, and ip().compare()
+# orders them. The reservations' MAC addresses and addresses are declared unique. The output kea
+# refuses what spans documents: a link of two subnets of a family, subnets that overlap in a VRF,
+# the router's own addresses on the links in a pool or reservation, and the links' router
+# advertisements.
 {
   config,
   lib,
@@ -30,54 +31,174 @@ let
   # A file a PXE client loads: up to 127 printable ASCII characters without spaces, which the
   # 128 bytes of the DHCP header's file field hold.
   bootFile = types.strMatching "[!-~]{1,127}";
-  # The rule that each document passes ok, with s as its spec and c as its subnet; the message
-  # names the documents that fail, then says what.
-  each = description: what: ok: {
+  # The expression e of a subnet's spec, self, with c bound to the subnet's range.
+  ofSubnet = e: "cel.bind(c, cidr(self.subnet), ${e})";
+  # The rule of a subnet's spec that holds when ok does, whose message says what fails; both read
+  # c as ofSubnet binds it.
+  subnetRule = description: ok: message: {
     inherit description;
-    rule = "documents.all(n, cel.bind(s, documents[n].spec, cel.bind(c, cidr(s.subnet), ${ok})))";
-    messageExpression = ''documents.filter(n, cel.bind(s, documents[n].spec, cel.bind(c, cidr(s.subnet), !(${ok})))).map(n, "DHCPSubnet " + n).join(", ") + " ${what}"'';
+    rule = ofSubnet ok;
+    messageExpression = ofSubnet message;
   };
-  # The rule that the addresses of each document that ok tests lie inside the subnet; one names
-  # one of them.
-  inside =
-    what: one: ok:
-    each "A DHCPSubnet's ${what} inside its subnet." "has ${one} outside its subnet" ok;
+  # The expression e with x bound to the first item of the list l that ok does not hold for.
+  firstFailing =
+    x: l: ok: e:
+    "cel.bind(${x}, ${l}.filter(${x}, !(${ok}))[0], ${e})";
   ipv4 = ''c.ip(0).family() == "ipv4"'';
+  # Whether the address a is the subnet's first address, an IPv4 subnet's network address and an
+  # IPv6 subnet's subnet-router anycast address, or an IPv4 subnet's last, its broadcast address:
+  # no client takes them.
+  edge = a: "(ip(${a}) == c.ip(0) || ${ipv4} && ip(${a}) == c.last())";
+  # What the address a, which edge holds for, is.
+  edgeName =
+    a:
+    ''(ip(${a}) != c.ip(0) ? "broadcast address" : ${ipv4} ? "network address" : "subnet-router anycast address")'';
+  # Whether the pool p holds the address a, and whether the pools p and q share an address.
+  holds = p: a: "(ip(${p}.first).compare(ip(${a})) <= 0 && ip(${a}).compare(ip(${p}.last)) <= 0)";
+  overlap =
+    p: q: "(ip(${p}.first).compare(ip(${q}.last)) <= 0 && ip(${q}.first).compare(ip(${p}.last)) <= 0)";
+  # The servers of the subnet's clients, each an address and what it is, which no pool or
+  # reservation holds: the gateway, the DNS servers and boot's server.
+  servers = ''(self.gateway == null ? [] : [{"address": self.gateway, "is": "the gateway"}]) + self.dns.map(a, {"address": a, "is": "a DNS server"}) + (self.boot == null || self.boot.server == null ? [] : [{"address": self.boot.server, "is": "boot's server"}])'';
+  # Whether the range c overlaps one of the ranges rs, as either holds the other's first address.
+  overlapsAny =
+    c: rs: "${rs}.exists(r, cidr(r).contains(${c}.ip(0)) || ${c}.contains(cidr(r).ip(0)))";
+  # The ranges of each family that no server leases or delegates addresses of: unspecified,
+  # loopback, link-local and multicast addresses, and IPv4's reserved ones above them.
+  special4 = ''["0.0.0.0/8", "127.0.0.0/8", "169.254.0.0/16", "224.0.0.0/3"]'';
+  special6 = ''["::/8", "fe80::/10", "ff00::/8"]'';
+  # How a message names the pool p and the reservation r.
+  pool = p: ''"the pool " + ${p}.first + "-" + ${p}.last'';
+  reservation = r: ''"the reservation of " + ${r}.mac + ", " + ${r}.address + ","'';
 in
 {
   config = lib.mkIf (config.chalkos.router.enable && config.chalkos.router.dhcp.enable) {
     chalkos.kinds.DHCPSubnet = builtin groups.router // {
       multiple = true;
       description = "A subnet the router's DHCP server leases IPv4 or IPv6 addresses of on its interfaces: pools and reservations, the options its clients get, the files PXE clients boot and, for IPv6, the prefixes it delegates to other routers.";
-      rules = [
-        (inside "pools lie" "a pool" "s.pools.all(p, c.contains(ip(p.first)) && c.contains(ip(p.last)))")
-        (inside "reservations lie" "a reservation" "s.reservations.all(r, c.contains(ip(r.address)))")
-        (inside "gateway lies" "a gateway" "s.gateway == null || c.contains(ip(s.gateway))")
-        (each "A DHCPSubnet's DNS servers are of its subnet's family."
-          "has a DNS server of another family than its subnet"
-          "s.dns.all(a, ip(a).family() == c.ip(0).family())"
+      specRules = [
+        (subnetRule "A pool lies inside the subnet."
+          "self.pools.all(p, c.contains(ip(p.first)) && c.contains(ip(p.last)))"
+          (
+            firstFailing "p" "self.pools" "c.contains(ip(p.first)) && c.contains(ip(p.last))"
+              ''${pool "p"} + " lies outside the subnet " + string(c)''
+          )
         )
-        (each
-          "A gateway is given for IPv4 subnets alone; IPv6 clients learn their routers from router advertisements."
-          "gives a gateway to an IPv6 subnet, whose clients learn their routers from router advertisements"
-          "s.gateway == null || ${ipv4}"
+        {
+          description = "A pool's first address comes before its last or is its last.";
+          rule = "self.pools.all(p, ip(p.first).compare(ip(p.last)) <= 0)";
+          messageExpression =
+            firstFailing "p" "self.pools" "ip(p.first).compare(ip(p.last)) <= 0"
+              ''${pool "p"} + " ends before it starts"'';
+        }
+        {
+          description = "No two pools share an address.";
+          rule = "self.pools.all(p, size(self.pools.filter(q, ${overlap "p" "q"})) <= 1)";
+          messageExpression =
+            firstFailing "p" "self.pools" "size(self.pools.filter(q, ${overlap "p" "q"})) <= 1"
+              ''${pool "p"} + " shares addresses with another pool"'';
+        }
+        (subnetRule
+          "A pool leaves out the subnet's network and broadcast addresses, or an IPv6 subnet's subnet-router anycast address."
+          "self.pools.all(p, !${edge "p.first"} && !${edge "p.last"})"
+          (
+            firstFailing "p" "self.pools" "!${edge "p.first"} && !${edge "p.last"}"
+              ''cel.bind(a, ${edge "p.first"} ? p.first : p.last, ${pool "p"} + " holds " + a + ", the " + ${edgeName "a"} + " of the subnet " + string(c))''
+          )
         )
-        (each "PXE boot files are given for IPv4 subnets alone." "gives PXE boot files to an IPv6 subnet"
-          "s.boot == null || ${ipv4}"
+        {
+          description = "A pool holds neither the gateway nor a DNS server nor boot's server.";
+          rule = "cel.bind(t, ${servers}, self.pools.all(p, t.all(x, !${holds "p" "x.address"})))";
+          messageExpression = "cel.bind(t, ${servers}, ${
+            firstFailing "p" "self.pools" "t.all(x, !${holds "p" "x.address"})" (
+              firstFailing "x" "t" "!${holds "p" "x.address"}"
+                ''${pool "p"} + " holds " + x.address + ", " + x.is''
+            )
+          })";
+        }
+        (subnetRule "A reservation lies inside the subnet."
+          "self.reservations.all(r, c.contains(ip(r.address)))"
+          (
+            firstFailing "r" "self.reservations" "c.contains(ip(r.address))"
+              ''${reservation "r"} + " lies outside the subnet " + string(c)''
+          )
         )
-        (each "A DHCPSubnet delegates prefixes for IPv6 alone." "delegates prefixes in an IPv4 subnet"
-          "s.prefixDelegation == null || !(${ipv4})"
+        {
+          description = "A reservation lies outside the pools.";
+          rule = "self.reservations.all(r, self.pools.all(p, !${holds "p" "r.address"}))";
+          messageExpression =
+            firstFailing "r" "self.reservations" "self.pools.all(p, !${holds "p" "r.address"})"
+              (
+                firstFailing "p" "self.pools" "!${holds "p" "r.address"}"
+                  ''${reservation "r"} + " lies in " + ${pool "p"} + "; reserve addresses outside the pools"''
+              );
+        }
+        (subnetRule
+          "A reservation is neither the subnet's network nor its broadcast address, nor an IPv6 subnet's subnet-router anycast address."
+          "self.reservations.all(r, !${edge "r.address"})"
+          (
+            firstFailing "r" "self.reservations" "!${edge "r.address"}"
+              ''${reservation "r"} + " is the " + ${edgeName "r.address"} + " of the subnet " + string(c)''
+          )
         )
-        (each "An IPv6 subnet is served on one link, the one Kea's DHCPv6 subnet names."
-          "serves an IPv6 subnet on more than one link; give each link a DHCPSubnet of its own"
-          "${ipv4} || size(s.interfaces) == 1"
+        {
+          description = "A reservation is neither the gateway nor a DNS server nor boot's server.";
+          rule = "cel.bind(t, ${servers}, self.reservations.all(r, t.all(x, ip(x.address) != ip(r.address))))";
+          messageExpression = "cel.bind(t, ${servers}, ${
+            firstFailing "r" "self.reservations" "t.all(x, ip(x.address) != ip(r.address))" (
+              firstFailing "x" "t" "ip(x.address) != ip(r.address)" ''${reservation "r"} + " is " + x.is''
+            )
+          })";
+        }
+        {
+          description = "A gateway is given for IPv4 subnets alone; IPv6 clients learn their routers from router advertisements.";
+          rule = ofSubnet "self.gateway == null || ${ipv4}";
+          message = "gateway is for IPv4 subnets; IPv6 clients learn their routers from router advertisements";
+        }
+        (subnetRule "A gateway lies inside the subnet."
+          "self.gateway == null || c.contains(ip(self.gateway))"
+          ''"the gateway " + self.gateway + " lies outside the subnet " + string(c)''
+        )
+        (subnetRule "A gateway is neither the subnet's network nor its broadcast address."
+          "self.gateway == null || !(${ipv4}) || !${edge "self.gateway"}"
+          ''"the gateway, " + self.gateway + ", is the " + ${edgeName "self.gateway"} + " of the subnet " + string(c)''
+        )
+        (subnetRule "A DNS server is an address of the subnet's family, and no IPv4-mapped IPv6 address."
+          ''self.dns.all(a, ip(a).family() == c.ip(0).family() && !cidr("::ffff:0:0/96").contains(ip(a)))''
+          (
+            firstFailing "a" "self.dns"
+              ''ip(a).family() == c.ip(0).family() && !cidr("::ffff:0:0/96").contains(ip(a))''
+              ''"the DNS server " + a + " is no " + (${ipv4} ? "IPv4" : "IPv6") + " address"''
+          )
+        )
+        {
+          description = "PXE boot files are given for IPv4 subnets alone.";
+          rule = ofSubnet "self.boot == null || ${ipv4}";
+          message = "boot is for IPv4 subnets";
+        }
+        {
+          description = "A subnet delegates prefixes for IPv6 alone.";
+          rule = ofSubnet "self.prefixDelegation == null || !(${ipv4})";
+          message = "prefixDelegation delegates IPv6 prefixes, which an IPv4 subnet has none of";
+        }
+        (subnetRule "The prefixes a subnet delegates lie apart from the subnet."
+          "self.prefixDelegation == null || cel.bind(d, cidr(self.prefixDelegation.prefix), !c.contains(d.ip(0)) && !d.contains(c.ip(0)))"
+          ''"prefixDelegation's prefix " + self.prefixDelegation.prefix + " overlaps the subnet " + string(c)''
+        )
+        (subnetRule "An IPv6 subnet is served on one link, the one Kea's DHCPv6 subnet names."
+          "${ipv4} || size(self.interfaces) == 1"
+          ''"an IPv6 subnet is served on one link, the one Kea's subnet names; give each of " + self.interfaces.join(", ") + " a DHCPSubnet of its own"''
         )
       ];
       spec = {
-        interfaces = mkOption {
+        interfaces = lib.chalkos.mkOption {
           type = types.nonEmptyListOf interfaceName;
+          unique = {
+            across = "list";
+            hint = "name each link once";
+          };
           example = [ "lan0" ];
-          description = "Links the server answers on, each by its full name, without a glob: links of one VRF, each of which a Network document matching it by Name= alone gives a static address in the subnet; one link for an IPv6 subnet. A link takes one subnet of each family.";
+          description = "Links the server answers on, each by its full name, without a glob, and once: links of one VRF, each of which a Network document matching it by Name= alone gives a static address in the subnet; one link for an IPv6 subnet. A link takes one subnet of each family.";
         };
         subnet = lib.chalkos.mkOption {
           type = prefix;
@@ -85,8 +206,8 @@ in
           description = "Range the subnet's addresses are in, whose family the server's is: an IPv4 range of 30 bits at most or an IPv6 range of 120 bits at most.";
           rules = [
             {
-              description = "A subnet is an IPv4 range of 30 bits at most, outside 0.0.0.0/8, 127.0.0.0/8, 169.254.0.0/16 and 224.0.0.0/3, or an IPv6 range of 120 bits at most, outside ::/8, fe80::/10 and ff00::/8.";
-              rule = ''cel.bind(c, cidr(self), c.ip(0).family() == "ipv4" ? c.prefix() <= 30 && !["0.0.0.0/8", "127.0.0.0/8", "169.254.0.0/16", "224.0.0.0/3"].exists(r, cidr(r).contains(c.ip(0))) : c.prefix() <= 120 && !["::/8", "fe80::/10", "ff00::/8"].exists(r, cidr(r).contains(c.ip(0))))'';
+              description = "A subnet is an IPv4 range of 30 bits at most apart from 0.0.0.0/8, 127.0.0.0/8, 169.254.0.0/16 and 224.0.0.0/3, or an IPv6 range of 120 bits at most apart from ::/8, fe80::/10 and ff00::/8.";
+              rule = ''cel.bind(c, cidr(self), c.ip(0).family() == "ipv4" ? c.prefix() <= 30 && !${overlapsAny "c" special4} : c.prefix() <= 120 && !${overlapsAny "c" special6})'';
               messageExpression = ''"the subnet " + self + " is no IPv4 range of 30 bits at most or IPv6 range of 120 bits at most of addresses a DHCP server leases"'';
             }
           ];
@@ -113,7 +234,7 @@ in
               last = "192.0.2.199";
             }
           ];
-          description = "Ranges the server leases addresses from to any client, inside the subnet, apart from each other, from the reservations and from the router's, the gateway's and the DNS and boot servers' addresses; empty leases the reservations alone.";
+          description = "Ranges the server leases addresses from to any client: inside the subnet, apart from each other and from the reservations, and holding none of the subnet's network and broadcast addresses, an IPv6 subnet's first address and the router's, the gateway's and the DNS and boot servers' addresses; empty leases the reservations alone.";
         };
         gateway = mkOption {
           type = types.nullOr address;
@@ -160,7 +281,7 @@ in
                 address = mkOption {
                   type = address;
                   example = "192.0.2.10";
-                  description = "Address the client always gets, inside the subnet and outside its pools, neither the router's nor the gateway's nor a DNS or boot server's.";
+                  description = "Address the client always gets, inside the subnet and outside its pools, and none of the subnet's network and broadcast addresses, an IPv6 subnet's first address and the router's, the gateway's and the DNS and boot servers' addresses.";
                 };
                 hostname = mkOption {
                   type = types.nullOr dnsName;
@@ -203,7 +324,7 @@ in
                 prefix = mkOption {
                   type = prefix;
                   example = "2001:db8:100::/56";
-                  description = "IPv6 range the delegated prefixes are taken from, apart from the subnets of the VRF.";
+                  description = "IPv6 range the delegated prefixes are taken from, apart from ::/8, fe80::/10, ff00::/8 and the subnets of the VRF.";
                 };
                 length = mkOption {
                   type = types.ints.between 1 128;
@@ -217,9 +338,9 @@ in
           description = "Prefixes the IPv6 server delegates to routers on the link that ask for one, such as a home router's LAN; the router routes each to the link-local address that asked for it, for as long as the lease lasts. null delegates none.";
           rules = [
             {
-              description = "Prefixes are delegated from an IPv6 range, each longer than the range.";
-              rule = ''self == null || (cidr(self.prefix).ip(0).family() == "ipv6" && !(self.length <= cidr(self.prefix).prefix()))'';
-              messageExpression = ''"prefixDelegation's prefix " + self.prefix + " is no IPv6 range shorter than " + string(self.length) + " bits"'';
+              description = "Prefixes are delegated from an IPv6 range apart from ::/8, fe80::/10 and ff00::/8, each longer than the range.";
+              rule = ''self == null || cel.bind(d, cidr(self.prefix), d.ip(0).family() == "ipv6" && !${overlapsAny "d" special6} && self.length > d.prefix())'';
+              messageExpression = ''"prefixDelegation's prefix " + self.prefix + " is no IPv6 range shorter than " + string(self.length) + " bits apart from ::/8, fe80::/10 and ff00::/8"'';
             }
           ];
         };

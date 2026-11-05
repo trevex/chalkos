@@ -171,7 +171,7 @@
           ]
         },
         "interfaces": {
-          "description": "Links the server answers on, each by its full name, without a glob: links of one VRF, each of which a Network document matching it by Name= alone gives a static address in the subnet; one link for an IPv6 subnet. A link takes one subnet of each family.",
+          "description": "Links the server answers on, each by its full name, without a glob, and once: links of one VRF, each of which a Network document matching it by Name= alone gives a static address in the subnet; one link for an IPv6 subnet. A link takes one subnet of each family.",
           "examples": [
             [
               "lan0"
@@ -182,7 +182,13 @@
             "type": "string"
           },
           "minItems": 1,
-          "type": "array"
+          "type": "array",
+          "x-chalkos-unique": [
+            {
+              "across": "list",
+              "hint": "name each link once"
+            }
+          ]
         },
         "leaseTime": {
           "default": "12h",
@@ -203,7 +209,7 @@
         },
         "pools": {
           "default": [],
-          "description": "Ranges the server leases addresses from to any client, inside the subnet, apart from each other, from the reservations and from the router's, the gateway's and the DNS and boot servers' addresses; empty leases the reservations alone.",
+          "description": "Ranges the server leases addresses from to any client: inside the subnet, apart from each other and from the reservations, and holding none of the subnet's network and broadcast addresses, an IPv6 subnet's first address and the router's, the gateway's and the DNS and boot servers' addresses; empty leases the reservations alone.",
           "examples": [
             [
               {
@@ -249,7 +255,7 @@
                   "type": "integer"
                 },
                 "prefix": {
-                  "description": "IPv6 range the delegated prefixes are taken from, apart from the subnets of the VRF.",
+                  "description": "IPv6 range the delegated prefixes are taken from, apart from ::/8, fe80::/10, ff00::/8 and the subnets of the VRF.",
                   "examples": [
                     "2001:db8:100::/56"
                   ],
@@ -271,9 +277,9 @@
           "description": "Prefixes the IPv6 server delegates to routers on the link that ask for one, such as a home router's LAN; the router routes each to the link-local address that asked for it, for as long as the lease lasts. null delegates none.",
           "x-chalkos-rules": [
             {
-              "description": "Prefixes are delegated from an IPv6 range, each longer than the range.",
-              "messageExpression": "\"prefixDelegation's prefix \" + self.prefix + \" is no IPv6 range shorter than \" + string(self.length) + \" bits\"",
-              "rule": "self == null || (cidr(self.prefix).ip(0).family() == \"ipv6\" && !(self.length <= cidr(self.prefix).prefix()))",
+              "description": "Prefixes are delegated from an IPv6 range apart from ::/8, fe80::/10 and ff00::/8, each longer than the range.",
+              "messageExpression": "\"prefixDelegation's prefix \" + self.prefix + \" is no IPv6 range shorter than \" + string(self.length) + \" bits apart from ::/8, fe80::/10 and ff00::/8\"",
+              "rule": "self == null || cel.bind(d, cidr(self.prefix), d.ip(0).family() == \"ipv6\" && ![\"::/8\", \"fe80::/10\", \"ff00::/8\"].exists(r, cidr(r).contains(d.ip(0)) || d.contains(cidr(r).ip(0))) && self.length > d.prefix())",
               "takes": "refuse"
             }
           ]
@@ -285,7 +291,7 @@
             "additionalProperties": false,
             "properties": {
               "address": {
-                "description": "Address the client always gets, inside the subnet and outside its pools, neither the router's nor the gateway's nor a DNS or boot server's.",
+                "description": "Address the client always gets, inside the subnet and outside its pools, and none of the subnet's network and broadcast addresses, an IPv6 subnet's first address and the router's, the gateway's and the DNS and boot servers' addresses.",
                 "examples": [
                   "192.0.2.10"
                 ],
@@ -356,9 +362,9 @@
           "type": "string",
           "x-chalkos-rules": [
             {
-              "description": "A subnet is an IPv4 range of 30 bits at most, outside 0.0.0.0/8, 127.0.0.0/8, 169.254.0.0/16 and 224.0.0.0/3, or an IPv6 range of 120 bits at most, outside ::/8, fe80::/10 and ff00::/8.",
+              "description": "A subnet is an IPv4 range of 30 bits at most apart from 0.0.0.0/8, 127.0.0.0/8, 169.254.0.0/16 and 224.0.0.0/3, or an IPv6 range of 120 bits at most apart from ::/8, fe80::/10 and ff00::/8.",
               "messageExpression": "\"the subnet \" + self + \" is no IPv4 range of 30 bits at most or IPv6 range of 120 bits at most of addresses a DHCP server leases\"",
-              "rule": "cel.bind(c, cidr(self), c.ip(0).family() == \"ipv4\" ? c.prefix() <= 30 && ![\"0.0.0.0/8\", \"127.0.0.0/8\", \"169.254.0.0/16\", \"224.0.0.0/3\"].exists(r, cidr(r).contains(c.ip(0))) : c.prefix() <= 120 && ![\"::/8\", \"fe80::/10\", \"ff00::/8\"].exists(r, cidr(r).contains(c.ip(0))))",
+              "rule": "cel.bind(c, cidr(self), c.ip(0).family() == \"ipv4\" ? c.prefix() <= 30 && ![\"0.0.0.0/8\", \"127.0.0.0/8\", \"169.254.0.0/16\", \"224.0.0.0/3\"].exists(r, cidr(r).contains(c.ip(0)) || c.contains(cidr(r).ip(0))) : c.prefix() <= 120 && ![\"::/8\", \"fe80::/10\", \"ff00::/8\"].exists(r, cidr(r).contains(c.ip(0)) || c.contains(cidr(r).ip(0))))",
               "takes": "refuse"
             }
           ]
@@ -368,7 +374,111 @@
         "interfaces",
         "subnet"
       ],
-      "type": "object"
+      "type": "object",
+      "x-chalkos-rules": [
+        {
+          "description": "A pool lies inside the subnet.",
+          "messageExpression": "cel.bind(c, cidr(self.subnet), cel.bind(p, self.pools.filter(p, !(c.contains(ip(p.first)) && c.contains(ip(p.last))))[0], \"the pool \" + p.first + \"-\" + p.last + \" lies outside the subnet \" + string(c)))",
+          "rule": "cel.bind(c, cidr(self.subnet), self.pools.all(p, c.contains(ip(p.first)) && c.contains(ip(p.last))))",
+          "takes": "refuse"
+        },
+        {
+          "description": "A pool's first address comes before its last or is its last.",
+          "messageExpression": "cel.bind(p, self.pools.filter(p, !(ip(p.first).compare(ip(p.last)) <= 0))[0], \"the pool \" + p.first + \"-\" + p.last + \" ends before it starts\")",
+          "rule": "self.pools.all(p, ip(p.first).compare(ip(p.last)) <= 0)",
+          "takes": "refuse"
+        },
+        {
+          "description": "No two pools share an address.",
+          "messageExpression": "cel.bind(p, self.pools.filter(p, !(size(self.pools.filter(q, (ip(p.first).compare(ip(q.last)) <= 0 && ip(q.first).compare(ip(p.last)) <= 0))) <= 1))[0], \"the pool \" + p.first + \"-\" + p.last + \" shares addresses with another pool\")",
+          "rule": "self.pools.all(p, size(self.pools.filter(q, (ip(p.first).compare(ip(q.last)) <= 0 && ip(q.first).compare(ip(p.last)) <= 0))) <= 1)",
+          "takes": "refuse"
+        },
+        {
+          "description": "A pool leaves out the subnet's network and broadcast addresses, or an IPv6 subnet's subnet-router anycast address.",
+          "messageExpression": "cel.bind(c, cidr(self.subnet), cel.bind(p, self.pools.filter(p, !(!(ip(p.first) == c.ip(0) || c.ip(0).family() == \"ipv4\" && ip(p.first) == c.last()) && !(ip(p.last) == c.ip(0) || c.ip(0).family() == \"ipv4\" && ip(p.last) == c.last())))[0], cel.bind(a, (ip(p.first) == c.ip(0) || c.ip(0).family() == \"ipv4\" && ip(p.first) == c.last()) ? p.first : p.last, \"the pool \" + p.first + \"-\" + p.last + \" holds \" + a + \", the \" + (ip(a) != c.ip(0) ? \"broadcast address\" : c.ip(0).family() == \"ipv4\" ? \"network address\" : \"subnet-router anycast address\") + \" of the subnet \" + string(c))))",
+          "rule": "cel.bind(c, cidr(self.subnet), self.pools.all(p, !(ip(p.first) == c.ip(0) || c.ip(0).family() == \"ipv4\" && ip(p.first) == c.last()) && !(ip(p.last) == c.ip(0) || c.ip(0).family() == \"ipv4\" && ip(p.last) == c.last())))",
+          "takes": "refuse"
+        },
+        {
+          "description": "A pool holds neither the gateway nor a DNS server nor boot's server.",
+          "messageExpression": "cel.bind(t, (self.gateway == null ? [] : [{\"address\": self.gateway, \"is\": \"the gateway\"}]) + self.dns.map(a, {\"address\": a, \"is\": \"a DNS server\"}) + (self.boot == null || self.boot.server == null ? [] : [{\"address\": self.boot.server, \"is\": \"boot's server\"}]), cel.bind(p, self.pools.filter(p, !(t.all(x, !(ip(p.first).compare(ip(x.address)) <= 0 && ip(x.address).compare(ip(p.last)) <= 0))))[0], cel.bind(x, t.filter(x, !(!(ip(p.first).compare(ip(x.address)) <= 0 && ip(x.address).compare(ip(p.last)) <= 0)))[0], \"the pool \" + p.first + \"-\" + p.last + \" holds \" + x.address + \", \" + x.is)))",
+          "rule": "cel.bind(t, (self.gateway == null ? [] : [{\"address\": self.gateway, \"is\": \"the gateway\"}]) + self.dns.map(a, {\"address\": a, \"is\": \"a DNS server\"}) + (self.boot == null || self.boot.server == null ? [] : [{\"address\": self.boot.server, \"is\": \"boot's server\"}]), self.pools.all(p, t.all(x, !(ip(p.first).compare(ip(x.address)) <= 0 && ip(x.address).compare(ip(p.last)) <= 0))))",
+          "takes": "refuse"
+        },
+        {
+          "description": "A reservation lies inside the subnet.",
+          "messageExpression": "cel.bind(c, cidr(self.subnet), cel.bind(r, self.reservations.filter(r, !(c.contains(ip(r.address))))[0], \"the reservation of \" + r.mac + \", \" + r.address + \",\" + \" lies outside the subnet \" + string(c)))",
+          "rule": "cel.bind(c, cidr(self.subnet), self.reservations.all(r, c.contains(ip(r.address))))",
+          "takes": "refuse"
+        },
+        {
+          "description": "A reservation lies outside the pools.",
+          "messageExpression": "cel.bind(r, self.reservations.filter(r, !(self.pools.all(p, !(ip(p.first).compare(ip(r.address)) <= 0 && ip(r.address).compare(ip(p.last)) <= 0))))[0], cel.bind(p, self.pools.filter(p, !(!(ip(p.first).compare(ip(r.address)) <= 0 && ip(r.address).compare(ip(p.last)) <= 0)))[0], \"the reservation of \" + r.mac + \", \" + r.address + \",\" + \" lies in \" + \"the pool \" + p.first + \"-\" + p.last + \"; reserve addresses outside the pools\"))",
+          "rule": "self.reservations.all(r, self.pools.all(p, !(ip(p.first).compare(ip(r.address)) <= 0 && ip(r.address).compare(ip(p.last)) <= 0)))",
+          "takes": "refuse"
+        },
+        {
+          "description": "A reservation is neither the subnet's network nor its broadcast address, nor an IPv6 subnet's subnet-router anycast address.",
+          "messageExpression": "cel.bind(c, cidr(self.subnet), cel.bind(r, self.reservations.filter(r, !(!(ip(r.address) == c.ip(0) || c.ip(0).family() == \"ipv4\" && ip(r.address) == c.last())))[0], \"the reservation of \" + r.mac + \", \" + r.address + \",\" + \" is the \" + (ip(r.address) != c.ip(0) ? \"broadcast address\" : c.ip(0).family() == \"ipv4\" ? \"network address\" : \"subnet-router anycast address\") + \" of the subnet \" + string(c)))",
+          "rule": "cel.bind(c, cidr(self.subnet), self.reservations.all(r, !(ip(r.address) == c.ip(0) || c.ip(0).family() == \"ipv4\" && ip(r.address) == c.last())))",
+          "takes": "refuse"
+        },
+        {
+          "description": "A reservation is neither the gateway nor a DNS server nor boot's server.",
+          "messageExpression": "cel.bind(t, (self.gateway == null ? [] : [{\"address\": self.gateway, \"is\": \"the gateway\"}]) + self.dns.map(a, {\"address\": a, \"is\": \"a DNS server\"}) + (self.boot == null || self.boot.server == null ? [] : [{\"address\": self.boot.server, \"is\": \"boot's server\"}]), cel.bind(r, self.reservations.filter(r, !(t.all(x, ip(x.address) != ip(r.address))))[0], cel.bind(x, t.filter(x, !(ip(x.address) != ip(r.address)))[0], \"the reservation of \" + r.mac + \", \" + r.address + \",\" + \" is \" + x.is)))",
+          "rule": "cel.bind(t, (self.gateway == null ? [] : [{\"address\": self.gateway, \"is\": \"the gateway\"}]) + self.dns.map(a, {\"address\": a, \"is\": \"a DNS server\"}) + (self.boot == null || self.boot.server == null ? [] : [{\"address\": self.boot.server, \"is\": \"boot's server\"}]), self.reservations.all(r, t.all(x, ip(x.address) != ip(r.address))))",
+          "takes": "refuse"
+        },
+        {
+          "description": "A gateway is given for IPv4 subnets alone; IPv6 clients learn their routers from router advertisements.",
+          "message": "gateway is for IPv4 subnets; IPv6 clients learn their routers from router advertisements",
+          "rule": "cel.bind(c, cidr(self.subnet), self.gateway == null || c.ip(0).family() == \"ipv4\")",
+          "takes": "refuse"
+        },
+        {
+          "description": "A gateway lies inside the subnet.",
+          "messageExpression": "cel.bind(c, cidr(self.subnet), \"the gateway \" + self.gateway + \" lies outside the subnet \" + string(c))",
+          "rule": "cel.bind(c, cidr(self.subnet), self.gateway == null || c.contains(ip(self.gateway)))",
+          "takes": "refuse"
+        },
+        {
+          "description": "A gateway is neither the subnet's network nor its broadcast address.",
+          "messageExpression": "cel.bind(c, cidr(self.subnet), \"the gateway, \" + self.gateway + \", is the \" + (ip(self.gateway) != c.ip(0) ? \"broadcast address\" : c.ip(0).family() == \"ipv4\" ? \"network address\" : \"subnet-router anycast address\") + \" of the subnet \" + string(c))",
+          "rule": "cel.bind(c, cidr(self.subnet), self.gateway == null || !(c.ip(0).family() == \"ipv4\") || !(ip(self.gateway) == c.ip(0) || c.ip(0).family() == \"ipv4\" && ip(self.gateway) == c.last()))",
+          "takes": "refuse"
+        },
+        {
+          "description": "A DNS server is an address of the subnet's family, and no IPv4-mapped IPv6 address.",
+          "messageExpression": "cel.bind(c, cidr(self.subnet), cel.bind(a, self.dns.filter(a, !(ip(a).family() == c.ip(0).family() && !cidr(\"::ffff:0:0/96\").contains(ip(a))))[0], \"the DNS server \" + a + \" is no \" + (c.ip(0).family() == \"ipv4\" ? \"IPv4\" : \"IPv6\") + \" address\"))",
+          "rule": "cel.bind(c, cidr(self.subnet), self.dns.all(a, ip(a).family() == c.ip(0).family() && !cidr(\"::ffff:0:0/96\").contains(ip(a))))",
+          "takes": "refuse"
+        },
+        {
+          "description": "PXE boot files are given for IPv4 subnets alone.",
+          "message": "boot is for IPv4 subnets",
+          "rule": "cel.bind(c, cidr(self.subnet), self.boot == null || c.ip(0).family() == \"ipv4\")",
+          "takes": "refuse"
+        },
+        {
+          "description": "A subnet delegates prefixes for IPv6 alone.",
+          "message": "prefixDelegation delegates IPv6 prefixes, which an IPv4 subnet has none of",
+          "rule": "cel.bind(c, cidr(self.subnet), self.prefixDelegation == null || !(c.ip(0).family() == \"ipv4\"))",
+          "takes": "refuse"
+        },
+        {
+          "description": "The prefixes a subnet delegates lie apart from the subnet.",
+          "messageExpression": "cel.bind(c, cidr(self.subnet), \"prefixDelegation's prefix \" + self.prefixDelegation.prefix + \" overlaps the subnet \" + string(c))",
+          "rule": "cel.bind(c, cidr(self.subnet), self.prefixDelegation == null || cel.bind(d, cidr(self.prefixDelegation.prefix), !c.contains(d.ip(0)) && !d.contains(c.ip(0))))",
+          "takes": "refuse"
+        },
+        {
+          "description": "An IPv6 subnet is served on one link, the one Kea's DHCPv6 subnet names.",
+          "messageExpression": "cel.bind(c, cidr(self.subnet), \"an IPv6 subnet is served on one link, the one Kea's subnet names; give each of \" + self.interfaces.join(\", \") + \" a DHCPSubnet of its own\")",
+          "rule": "cel.bind(c, cidr(self.subnet), c.ip(0).family() == \"ipv4\" || size(self.interfaces) == 1)",
+          "takes": "refuse"
+        }
+      ]
     }
   },
   "required": [
@@ -383,56 +493,6 @@
     "group": "router.chalkos.dev",
     "kind": "DHCPSubnet",
     "multiple": true,
-    "rules": [
-      {
-        "description": "A DHCPSubnet's pools lie inside its subnet.",
-        "messageExpression": "documents.filter(n, cel.bind(s, documents[n].spec, cel.bind(c, cidr(s.subnet), !(s.pools.all(p, c.contains(ip(p.first)) && c.contains(ip(p.last))))))).map(n, \"DHCPSubnet \" + n).join(\", \") + \" has a pool outside its subnet\"",
-        "rule": "documents.all(n, cel.bind(s, documents[n].spec, cel.bind(c, cidr(s.subnet), s.pools.all(p, c.contains(ip(p.first)) && c.contains(ip(p.last))))))",
-        "takes": "refuse"
-      },
-      {
-        "description": "A DHCPSubnet's reservations lie inside its subnet.",
-        "messageExpression": "documents.filter(n, cel.bind(s, documents[n].spec, cel.bind(c, cidr(s.subnet), !(s.reservations.all(r, c.contains(ip(r.address))))))).map(n, \"DHCPSubnet \" + n).join(\", \") + \" has a reservation outside its subnet\"",
-        "rule": "documents.all(n, cel.bind(s, documents[n].spec, cel.bind(c, cidr(s.subnet), s.reservations.all(r, c.contains(ip(r.address))))))",
-        "takes": "refuse"
-      },
-      {
-        "description": "A DHCPSubnet's gateway lies inside its subnet.",
-        "messageExpression": "documents.filter(n, cel.bind(s, documents[n].spec, cel.bind(c, cidr(s.subnet), !(s.gateway == null || c.contains(ip(s.gateway)))))).map(n, \"DHCPSubnet \" + n).join(\", \") + \" has a gateway outside its subnet\"",
-        "rule": "documents.all(n, cel.bind(s, documents[n].spec, cel.bind(c, cidr(s.subnet), s.gateway == null || c.contains(ip(s.gateway)))))",
-        "takes": "refuse"
-      },
-      {
-        "description": "A DHCPSubnet's DNS servers are of its subnet's family.",
-        "messageExpression": "documents.filter(n, cel.bind(s, documents[n].spec, cel.bind(c, cidr(s.subnet), !(s.dns.all(a, ip(a).family() == c.ip(0).family()))))).map(n, \"DHCPSubnet \" + n).join(\", \") + \" has a DNS server of another family than its subnet\"",
-        "rule": "documents.all(n, cel.bind(s, documents[n].spec, cel.bind(c, cidr(s.subnet), s.dns.all(a, ip(a).family() == c.ip(0).family()))))",
-        "takes": "refuse"
-      },
-      {
-        "description": "A gateway is given for IPv4 subnets alone; IPv6 clients learn their routers from router advertisements.",
-        "messageExpression": "documents.filter(n, cel.bind(s, documents[n].spec, cel.bind(c, cidr(s.subnet), !(s.gateway == null || c.ip(0).family() == \"ipv4\")))).map(n, \"DHCPSubnet \" + n).join(\", \") + \" gives a gateway to an IPv6 subnet, whose clients learn their routers from router advertisements\"",
-        "rule": "documents.all(n, cel.bind(s, documents[n].spec, cel.bind(c, cidr(s.subnet), s.gateway == null || c.ip(0).family() == \"ipv4\")))",
-        "takes": "refuse"
-      },
-      {
-        "description": "PXE boot files are given for IPv4 subnets alone.",
-        "messageExpression": "documents.filter(n, cel.bind(s, documents[n].spec, cel.bind(c, cidr(s.subnet), !(s.boot == null || c.ip(0).family() == \"ipv4\")))).map(n, \"DHCPSubnet \" + n).join(\", \") + \" gives PXE boot files to an IPv6 subnet\"",
-        "rule": "documents.all(n, cel.bind(s, documents[n].spec, cel.bind(c, cidr(s.subnet), s.boot == null || c.ip(0).family() == \"ipv4\")))",
-        "takes": "refuse"
-      },
-      {
-        "description": "A DHCPSubnet delegates prefixes for IPv6 alone.",
-        "messageExpression": "documents.filter(n, cel.bind(s, documents[n].spec, cel.bind(c, cidr(s.subnet), !(s.prefixDelegation == null || !(c.ip(0).family() == \"ipv4\"))))).map(n, \"DHCPSubnet \" + n).join(\", \") + \" delegates prefixes in an IPv4 subnet\"",
-        "rule": "documents.all(n, cel.bind(s, documents[n].spec, cel.bind(c, cidr(s.subnet), s.prefixDelegation == null || !(c.ip(0).family() == \"ipv4\"))))",
-        "takes": "refuse"
-      },
-      {
-        "description": "An IPv6 subnet is served on one link, the one Kea's DHCPv6 subnet names.",
-        "messageExpression": "documents.filter(n, cel.bind(s, documents[n].spec, cel.bind(c, cidr(s.subnet), !(c.ip(0).family() == \"ipv4\" || size(s.interfaces) == 1)))).map(n, \"DHCPSubnet \" + n).join(\", \") + \" serves an IPv6 subnet on more than one link; give each link a DHCPSubnet of its own\"",
-        "rule": "documents.all(n, cel.bind(s, documents[n].spec, cel.bind(c, cidr(s.subnet), c.ip(0).family() == \"ipv4\" || size(s.interfaces) == 1)))",
-        "takes": "refuse"
-      }
-    ],
     "version": "v1alpha1"
   }
 }

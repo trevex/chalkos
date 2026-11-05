@@ -88,9 +88,10 @@ spec:
 ```
 
 Write the MAC address in lower case. A reserved address lies inside the subnet and outside its
-pools. Neither a pool nor a reservation may hold the router's own address on the link, the
-gateway, a DNS server or the boot server. `hostname` is the name the client gets; leave it out for
-none. A subnet without `pools` leases its reservations alone.
+pools. Neither a pool nor a reservation may hold the subnet's network or broadcast address, the
+router's own address on the link, the gateway, a DNS server or the boot server. `hostname` is the
+name the client gets; leave it out for none. A subnet without `pools` leases its reservations
+alone.
 
 ## Boot PXE clients
 
@@ -198,7 +199,7 @@ An IPv6 subnet differs from an IPv4 one in these ways:
 - It is served on one link: `interfaces` names one link, as Kea's DHCPv6 server picks a subnet
   by its link.
 - It has no `gateway` and no `boot`. `dns` lists IPv6 addresses.
-- A pool or reservation does not hold the subnet's first address, the subnet routers' anycast
+- A pool or reservation does not hold the subnet's first address, the subnet-router anycast
   address.
 - Kea learns a client's MAC address from its DUID, when it is a DUID-LL or DUID-LLT, or from an
   EUI-64 link-local address. A client with another DUID and a random link-local address does not
@@ -375,46 +376,54 @@ before chalkctl sends anything:
 Name each link instead.
 
 The rules of `DHCPSubnet` and `DHCPRelay` refuse documents at the same point, and so does the
-check of the values the kinds take once, such as a reservation's MAC address.
-[The built-ins' reference](../reference/builtins.md#rules-dhcpsubnet) lists each rule with its
-expression:
+check of the values the kinds take once, such as a reservation's MAC address. A subnet's rules
+see one document at a time, so `chalkctl validate` checks its pools and reservations against each
+other as well. [The built-ins' reference](../reference/builtins.md#rules-dhcpsubnet) lists each
+rule with its expression:
 
 | Message | Fix |
 | --- | --- |
-| `DHCPSubnet office has a pool outside its subnet` | Move the pool into the subnet, or widen the subnet. |
-| `DHCPSubnet office has a reservation outside its subnet` | Reserve an address of the subnet. |
-| `DHCPSubnet office has a gateway outside its subnet` | Give a gateway of the subnet. |
-| `DHCPSubnet "office" spec.subnet: the subnet 192.0.2.0/31 is no IPv4 range of 30 bits at most or IPv6 range of 120 bits at most of addresses a DHCP server leases` | Give an IPv4 range of 30 bits at most, outside `0.0.0.0/8`, `127.0.0.0/8`, `169.254.0.0/16` and `224.0.0.0/3`, or an IPv6 range of 120 bits at most, outside `::/8`, `fe80::/10` and `ff00::/8`. |
-| `DHCPSubnet office has a DNS server of another family than its subnet` | Give DNS servers of the subnet's family. |
-| `DHCPSubnet office6 gives a gateway to an IPv6 subnet, whose clients learn their routers from router advertisements` | Drop `gateway`; send router advertisements from the link's `Network`. |
-| `DHCPSubnet office6 gives PXE boot files to an IPv6 subnet` | Drop `boot`. |
-| `DHCPSubnet office delegates prefixes in an IPv4 subnet` | Drop `prefixDelegation`, or delegate in an IPv6 subnet. |
-| `DHCPSubnet office6 serves an IPv6 subnet on more than one link; give each link a DHCPSubnet of its own` | Name one link. |
-| `DHCPSubnet "customers" spec.prefixDelegation: prefixDelegation's prefix 2001:db8:100::/56 is no IPv6 range shorter than 56 bits` | Give an IPv6 range and a longer `length`. |
+| `DHCPSubnet "office" spec.subnet: the subnet 192.0.2.0/31 is no IPv4 range of 30 bits at most or IPv6 range of 120 bits at most of addresses a DHCP server leases` | Give an IPv4 range of 30 bits at most, apart from `0.0.0.0/8`, `127.0.0.0/8`, `169.254.0.0/16` and `224.0.0.0/3`, or an IPv6 range of 120 bits at most, apart from `::/8`, `fe80::/10` and `ff00::/8`. |
+| `DHCPSubnet "office" spec: the pool 192.0.2.100-192.0.2.199 lies outside the subnet 192.0.2.0/25` | Move the pool into the subnet, or widen the subnet. |
+| `DHCPSubnet "office" spec: the pool 192.0.2.199-192.0.2.100 ends before it starts` | Swap `first` and `last`. |
+| `DHCPSubnet "office" spec: the pool 192.0.2.100-192.0.2.150 shares addresses with another pool` | Give each pool addresses of its own. |
+| `DHCPSubnet "office" spec: the pool 192.0.2.0-192.0.2.10 holds 192.0.2.0, the network address of the subnet 192.0.2.0/24` | Start the pool after the subnet's first address and end it before its last. |
+| `DHCPSubnet "office6" spec: the pool 2001:db8:1::-2001:db8:1::ff holds 2001:db8:1::, the subnet-router anycast address of the subnet 2001:db8:1::/64` | Start the pool after the subnet's first address. |
+| `DHCPSubnet "office" spec: the pool 192.0.2.100-192.0.2.199 holds 192.0.2.150, the gateway` | Keep the gateway, the DNS servers and boot's server out of the pools and reservations. |
+| `DHCPSubnet "office" spec: the reservation of 52:54:00:12:34:56, 198.51.100.10, lies outside the subnet 192.0.2.0/24` | Reserve an address of the subnet. |
+| `DHCPSubnet "office" spec: the reservation of 52:54:00:12:34:56, 192.0.2.120, lies in the pool 192.0.2.100-192.0.2.199; reserve addresses outside the pools` | Reserve an address outside the pools, or shrink the pool. |
+| `DHCPSubnet "office" spec: the reservation of 52:54:00:12:34:56, 192.0.2.255, is the broadcast address of the subnet 192.0.2.0/24` | Reserve an address between the subnet's first and last address. |
+| `DHCPSubnet "office" spec: the reservation of 52:54:00:12:34:56, 192.0.2.53, is a DNS server` | Keep the gateway, the DNS servers and boot's server out of the pools and reservations. |
+| `DHCPSubnet "office" spec: the gateway 198.51.100.1 lies outside the subnet 192.0.2.0/24` | Give a gateway of the subnet. |
+| `DHCPSubnet "office" spec: the gateway, 192.0.2.0, is the network address of the subnet 192.0.2.0/24` | Give a gateway between the subnet's first and last address. |
+| `DHCPSubnet "office" spec: the DNS server 2001:db8::53 is no IPv4 address` | Give DNS servers of the subnet's family. |
+| `DHCPSubnet "office6" spec: gateway is for IPv4 subnets; IPv6 clients learn their routers from router advertisements` | Drop `gateway`; send router advertisements from the link's `Network`. |
+| `DHCPSubnet "office6" spec: boot is for IPv4 subnets` | Drop `boot`. |
+| `DHCPSubnet "office" spec: prefixDelegation delegates IPv6 prefixes, which an IPv4 subnet has none of` | Drop `prefixDelegation`, or delegate in an IPv6 subnet. |
+| `DHCPSubnet "office6" spec: an IPv6 subnet is served on one link, the one Kea's subnet names; give each of lan0, lan1 a DHCPSubnet of its own` | Name one link. |
+| `DHCPSubnet "customers" spec.prefixDelegation: prefixDelegation's prefix 2001:db8:100::/56 is no IPv6 range shorter than 56 bits apart from ::/8, fe80::/10 and ff00::/8` | Give an IPv6 range apart from those ranges and a longer `length`. |
+| `DHCPSubnet "customers" spec: prefixDelegation's prefix 2001:db8::/32 overlaps the subnet 2001:db8:2::/64` | Delegate from a range apart from the subnet. |
 | `DHCPSubnet "office" spec.leaseTime: a lease of 999999d is longer than 4294967295 seconds, the longest Kea takes` | Shorten the lease to 49710 days or less. |
-| `DHCPRelay "office" spec.servers: the server ff05::1:3 is no unicast address a relay forwards to` | Name the servers by their unicast addresses. |
-| `DHCPRelay/office: spec.servers[0], spec.servers[1]: "2001:db8:ff::53" is not unique; name each server once` | Name each server once. |
-| `DHCPRelay/guests: spec.interfaces[0], DHCPRelay/office: spec.interfaces[1]: "lan0" is not unique; a link takes one relay` | Relay the link in one document, and name it once there. |
-| `DHCPSubnet/office: spec.reservations[0].mac, spec.reservations[2].mac: "52:54:00:12:34:56" is not unique; keep one reservation of the MAC address` | Keep one reservation of the MAC address. |
-| `DHCPSubnet/office: spec.reservations[1].address, spec.reservations[3].address: "192.0.2.10" is not unique; reserve each address once` | Reserve each address once. |
 | `DHCPSubnet "office" spec.boot: boot names no file; give bios, uefi or ipxe, or leave boot out` | Give a file, or drop `boot`. |
 | `DHCPSubnet "office" spec.boot: boot's server is no IPv4 address` | Give the TFTP server's IPv4 address. |
 | `DHCPSubnet "office" spec.boot: boot's bios and uefi files load over TFTP from boot's server; give server` | Give the TFTP server's address in `server`. |
+| `DHCPSubnet/office: spec.interfaces[0], spec.interfaces[2]: "lan0" is not unique; name each link once` | Name each link once. |
+| `DHCPSubnet/office: spec.reservations[0].mac, spec.reservations[2].mac: "52:54:00:12:34:56" is not unique; keep one reservation of the MAC address` | Keep one reservation of the MAC address. |
+| `DHCPSubnet/office: spec.reservations[1].address, spec.reservations[3].address: "192.0.2.10" is not unique; reserve each address once` | Reserve each address once. |
+| `DHCPRelay "office" spec.servers: the server ff05::1:3 is no unicast address a relay forwards to` | Name the servers by their unicast addresses. |
+| `DHCPRelay/office: spec.servers[0], spec.servers[1]: "2001:db8:ff::53" is not unique; name each server once` | Name each server once. |
+| `DHCPRelay/guests: spec.interfaces[0], DHCPRelay/office: spec.interfaces[1]: "lan0" is not unique; a link takes one relay` | Relay the link in one document, and name it once there. |
 
-The renderers of the outputs `kea` and `dhcp-relay` check what spans documents and the order of
-addresses, before the delivery changes anything. `chalkctl validate` does not run them. A refusal
-fails the delivery, and `chalkctl logs r1` shows the reason on a line that starts with `chalkos-render:`:
+The renderers of the outputs `kea` and `dhcp-relay` check what spans documents, before the
+delivery changes anything: the links' VRFs and addresses, which `Network` documents give, the
+router advertisements of an IPv6 subnet's link, and the subnets and relays of a VRF together.
+`chalkctl validate` does not run them; `chalkctl apply-config --dry-run` does. A refusal fails
+the delivery, and `chalkctl logs r1` shows the reason on a line that starts with
+`chalkos-render:`:
 
 | Message | Fix |
 | --- | --- |
-| `DHCPSubnet office: the pool 192.0.2.199-192.0.2.100 ends before it starts` | Swap `first` and `last`. |
-| `DHCPSubnet office: the pools 192.0.2.100-192.0.2.150 and 192.0.2.150-192.0.2.199 overlap` | Give each pool addresses of its own. |
-| `DHCPSubnet office: the reservation of 52:54:00:12:34:56, 192.0.2.120, lies in the pool 192.0.2.100-192.0.2.199; reserve addresses outside the pools` | Reserve an address outside the pools, or shrink the pool. |
-| `DHCPSubnet office: the pool's first address, 192.0.2.0, is the network or broadcast address of the subnet 192.0.2.0/24` | Start the pool after the subnet's first address and end it before its last. |
-| `DHCPSubnet office: the pool 192.0.2.10-192.0.2.50 holds 192.0.2.30, the router's own address on the subnet's links` | Keep the router's addresses out of the pools and reservations. |
-| `DHCPSubnet office: the pool 192.0.2.100-192.0.2.199 holds 192.0.2.150, the gateway` | Keep the gateway out of the pools and reservations. |
-| `DHCPSubnet office: the reservation of 52:54:00:12:34:56, 192.0.2.53, is a DNS server` | Keep the DNS servers and the boot server out of the pools and reservations. |
-| `DHCPSubnet office: the gateway, 192.0.2.0, is the network or broadcast address of the subnet 192.0.2.0/24` | Give a gateway between the subnet's first and last address. |
+| `DHCPSubnet office: the pool 192.0.2.10-192.0.2.50 holds 192.0.2.30, the router's own address on the subnet's links` | Keep the router's addresses on the links out of the pools and reservations. |
 | `DHCPSubnet office: Network 10-lan0 gives lan0 no static address in the subnet 203.0.113.0/24, which Kea answers its clients from` | Give the link's `Network` an address in the subnet. |
 | `DHCPSubnet office: no Network document matches lan9 by Name= alone, so the renderer cannot find its address in the subnet 192.0.2.0/24; give the link one` | Add a `Network` that names the link. |
 | `DHCPSubnet office: its links are in VRF default and VRF guest; a subnet is served in one VRF` | Give each VRF's links a subnet of their own. |
@@ -426,8 +435,6 @@ fails the delivery, and `chalkctl logs r1` shows the reason on a line that start
 | `DHCPSubnet office6 and DHCPSubnet lab6 get the same number 2387838497 in Kea; change one subnet's range` | Change the range of one IPv6 subnet, whose number is a hash of its range. |
 | `DHCPSubnet office6: Network 10-lan0 sends no router advertisements on lan0 with Managed=yes, which tell its clients to ask the DHCPv6 server for addresses; give it ipv6SendRA: true in network and managed: true in ipv6SendRA` | Send router advertisements with the Managed flag from the link's `Network`. |
 | `DHCPSubnet customers: Network 20-cust0 sends no router advertisements on cust0 with Managed=yes or OtherInformation=yes, which tell its clients to ask the DHCPv6 server; give it ipv6SendRA: true in network and otherInformation: true in ipv6SendRA` | Send router advertisements with the OtherInformation flag. |
-| `DHCPSubnet office6: the pool's first address, 2001:db8:1::, is the subnet routers' anycast address of the subnet 2001:db8:1::/64` | Start the pool after the subnet's first address. |
-| `DHCPSubnet customers: prefixDelegation's prefix 2001:db8::/32 overlaps the subnet 2001:db8:2::/64` | Delegate from a range apart from the subnet. |
 | `DHCPSubnet customers: prefixDelegation's prefix 2001:db8:100::/40 holds 2001:db8:100::1, the address Network 30-lan3 gives a link of VRF access` | Delegate from a range that holds none of the router's addresses in the VRF. |
 | `DHCPSubnet customers: prefixDelegation's prefix 2001:db8:100::/40 holds the route of 2001:db8:100:100::/56 that Network 30-lan3 gives a link of VRF access` | Delegate from a range apart from the VRF's static routes. |
 | `DHCPSubnet customers: prefixDelegation's prefix 2001:db8:100::/40 holds NAT64 edge's prefix 2001:db8:100:ff::/96 of VRF access` | Delegate from a range apart from the NAT64's prefix. |

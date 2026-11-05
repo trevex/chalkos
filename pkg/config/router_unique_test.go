@@ -186,7 +186,8 @@ func TestNAT64AndResolverUnique(t *testing.T) {
 }
 
 // A subnet reserves a MAC address once and an address once, in whatever spelling, a relay names
-// each server once in whatever spelling, and a link takes one relay, named once.
+// each server once in whatever spelling, and a link takes one relay, named once, and a subnet
+// names a link once.
 func TestDHCPUnique(t *testing.T) {
 	subnet := func(reservations string) string {
 		return routerDoc("DHCPSubnet", "office", `{interfaces: [lan0], subnet: 192.0.2.0/24, reservations: [`+reservations+`]}`)
@@ -207,5 +208,8 @@ func TestDHCPUnique(t *testing.T) {
 		{"a link twice in one relay",
 			routerDoc("DHCPRelay", "guests", `{interfaces: [lan0, lan0], servers: [198.51.100.53]}`),
 			`DHCPRelay/guests: spec.interfaces[0], spec.interfaces[1]: "lan0" is not unique; a link takes one relay`},
+		{"a link twice in one subnet",
+			routerDoc("DHCPSubnet", "office", `{interfaces: [lan0, lan1, lan0], subnet: 192.0.2.0/24}`),
+			`DHCPSubnet/office: spec.interfaces[0], spec.interfaces[2]: "lan0" is not unique; name each link once`},
 	})
 }
