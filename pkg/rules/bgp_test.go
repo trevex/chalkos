@@ -73,6 +73,11 @@ func TestBGPRules(t *testing.T) {
 		{"IPv4 routes at an IPv6 address with extended next hops", replace(edge, doc("BGPPeer", "upstream", `{"address": "2001:db8::9", "remoteAS": 64496, "extendedNextHop": true, "families": {"ipv4": {}}}`)), nil},
 		{"a network's policy of the other family", replace(edge, doc("BGP", "bgp", `{"asn": 64512, "routerID": "192.0.2.1", "networks": [{"prefix": "192.0.2.0/24", "policy": "to-fabric"}]}`)),
 			[]string{`BGP "bgp" spec.networks: the RoutingPolicy to-fabric of the network 192.0.2.0/24 matches PrefixLists of another family`}},
+		{"a network's policy that matches no PrefixList", replace(edge, doc("BGP", "bgp", `{"asn": 64512, "routerID": "192.0.2.1", "networks": [{"prefix": "192.0.2.0/24", "policy": "tag"}]}`),
+			doc("RoutingPolicy", "tag", `{"terms": [{"then": {"action": "accept", "addCommunities": ["64512:2"]}}]}`)), nil},
+		{"a network's policy of its family", replace(edge, doc("BGP", "bgp", `{"asn": 64512, "routerID": "192.0.2.1", "networks": [{"prefix": "192.0.2.0/24", "policy": "to-upstream"}]}`),
+			doc("PrefixList", "v4", `{"family": "ipv4", "entries": [{"prefix": "192.0.2.0/24"}]}`),
+			doc("RoutingPolicy", "to-upstream", `{"terms": [{"match": {"prefixList": "v4"}, "then": {"action": "accept"}}]}`)), nil},
 		{"6000 terms", replace(edge, doc("RoutingPolicy", "from-fabric", `{"terms": [`+strings.Repeat(`{"then": {"action": "accept"}}, `, 5999)+`{"then": {"action": "accept"}}]}`)), nil},
 		{"6001 terms", replace(edge, doc("RoutingPolicy", "from-fabric", `{"terms": [`+strings.Repeat(`{"then": {"action": "accept"}}, `, 6000)+`{"then": {"action": "accept"}}]}`)),
 			[]string{`RoutingPolicy "from-fabric" spec.terms: the policy holds 6001 terms; a route-map holds 6000 terms at most, numbered 10, 20 and on below its default's 65535`}},
@@ -144,6 +149,22 @@ func TestBGPRules(t *testing.T) {
 			want := []string{`BGPPeer "upstream" spec.address: the address ` + address + ` is no neighbour's: give a unicast address beyond the router, neither loopback, link-local nor IPv4-mapped; a neighbour on a link takes interface or interfaces`}
 			if got := messages(failures); !slices.Equal(got, want) {
 				t.Errorf("failures:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
+			}
+		})
+	}
+	// The ranges end where they should: router IDs and neighbours just outside them pass, as do
+	// NAT64's well-known prefix and an IPv6 address next to the IPv4-mapped range.
+	for _, id := range []string{"0.0.0.1", "223.255.255.255", "240.0.0.1", "255.255.255.254"} {
+		t.Run("a router ID of "+id, func(t *testing.T) {
+			if failures, err := set.Evaluate(Input{Documents: replace(edge, doc("BGP", "bgp", `{"asn": 64512, "routerID": "`+id+`"}`)), Node: "r1"}); err != nil || len(failures) != 0 {
+				t.Errorf("%v, %v", messages(failures), err)
+			}
+		})
+	}
+	for _, address := range []string{"0.0.0.1", "126.255.255.255", "128.0.0.1", "169.255.0.1", "223.255.255.255", "255.255.255.254", "::2", "fec0::1", "64:ff9b::1", "::fffe:c633:6401", "::1:0:c633:6401"} {
+		t.Run("a neighbour at "+address, func(t *testing.T) {
+			if failures, err := set.Evaluate(Input{Documents: replace(edge, doc("BGPPeer", "upstream", `{"address": "`+address+`", "remoteAS": 64496, "families": {"ipv6": {}}}`)), Node: "r1"}); err != nil || len(failures) != 0 {
+				t.Errorf("%v, %v", messages(failures), err)
 			}
 		})
 	}
