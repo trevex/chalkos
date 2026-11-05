@@ -258,7 +258,8 @@ in
     };
     # The outputs' files, those the node serves and those a render stages, on a tmpfs of their
     # own, so a renderer that writes without end fills it and not /run. An output's files may
-    # take 16 MiB, chalkd's MaxSize, and each output may have both, with room for one more.
+    # take 16 MiB, chalkd's MaxSize, and each output may have both, with room for one more: the
+    # standard output of the renderer that runs, which LimitFSIZE bounds to MaxSize as well.
     fileSystems = lib.mkIf (outputs != { }) {
       ${outputsRoot} = {
         device = "tmpfs";

@@ -98,6 +98,9 @@ var sandbox = []string{
 	"--property=ProtectProc=invisible",
 	// A private /tmp, small enough that a renderer cannot fill memory through it.
 	"--property=TemporaryFileSystem=/tmp:size=16M,mode=1777",
+	// No file the program writes, its standard output among them, grows past MaxSize: a renderer
+	// that prints without end stops there, so its report and files fit the outputs' tmpfs.
+	fmt.Sprintf("--property=LimitFSIZE=%d", MaxSize),
 	"--property=PrivateDevices=yes",
 	"--property=PrivateNetwork=yes",
 	"--property=ProtectKernelTunables=yes",

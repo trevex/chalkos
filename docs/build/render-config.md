@@ -397,7 +397,8 @@ chalkd runs every renderer and check as a transient unit with these limits:
   writes below `/run/chalkos` are hidden, so a renderer cannot read a secret even by its path.
 - The renderer may write `$OUT` and a private `/tmp` of 16 MiB alone.
 - It must finish within 30 seconds.
-- Its files may take 16 MiB and hold no links, because chalkd sets their owner afterwards and must
+- No file it writes, standard output among them, may grow past 16 MiB, and its files together
+  may take 16 MiB and hold no links, because chalkd sets their owner afterwards and must
   not follow a link to a file the output does not own.
 
 The outputs' files, those the node serves and those a render stages, sit on a tmpfs of their own
