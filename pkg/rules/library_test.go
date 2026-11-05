@@ -84,7 +84,7 @@ func TestLibraryErrors(t *testing.T) {
 		{`bytes("17X")`, "17X", "bytes: the argument is not a size"},
 		{`bytes("99999999P")`, "99999999", "bytes: the argument is not a size below 8 EiB"},
 		{`bytes("18446744073709551615")`, "18446744073709551615", "bytes: the argument is not a size below 8 EiB"},
-		{`portRange("70000-80000")`, "70000", "portRange: the argument is not a port or a range of ports from 1 to 65535"},
+		{`portRange("70000-80000")`, "70000", "portRange: the argument is not a port or a range of ports from 1 to 65535, the first no higher than the last"},
 	} {
 		_, err := eval(t, tc.expr, nil)
 		if err == nil || !strings.Contains(err.Error(), tc.want) || strings.Contains(err.Error(), tc.input) {

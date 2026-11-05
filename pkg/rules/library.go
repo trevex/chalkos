@@ -43,7 +43,7 @@ const (
 	errNotSize       = "bytes: the argument is not a size below 8 EiB, digits with an optional K, M, G, T or P suffix"
 	errNegativeIndex = "<cidr>.ip: the index is negative"
 	errPastRange     = "<cidr>.ip: the index is past the range"
-	errNotPortRange  = "portRange: the argument is not a port or a range of ports from 1 to 65535"
+	errNotPortRange  = "portRange: the argument is not a port or a range of ports from 1 to 65535, the first no higher than the last"
 )
 
 // portRangeType is what portRange() yields: a map of first and last, both ints.
