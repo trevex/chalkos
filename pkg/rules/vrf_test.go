@@ -12,10 +12,11 @@ import (
 
 // The VRF kind's rules accept an edge with two VRFs and refuse the name default, a name past 15
 // characters, a name a NAT64's link starts with, a table of the kernel's, a management interface
-// in a VRF or of a VRF's device, a node whose node API answers on every interface but whose
-// Network documents all name links of VRFs, a NetDev of a VRF's name, and a VRF with a zone that
-// imports routes or whose routes another VRF imports. Against management interfaces and the
-// Network documents' names, globs match as globs.
+// in a VRF, a node whose node API answers on every interface but whose Network documents all name
+// links of VRFs, and a VRF with a zone that imports routes or whose routes another VRF imports.
+// Against management interfaces and the Network documents' names, globs match as globs. A
+// management interface of a VRF's device and a NetDev of a VRF's name are the renderers' to
+// refuse.
 func TestVRFRules(t *testing.T) {
 	set, doc := routerRules(t)
 	networks := []config.Document{
@@ -68,7 +69,6 @@ func TestVRFRules(t *testing.T) {
 		return with(without(edge, "Router", "router"), doc("Router", "router", `{"management": {"interfaces": `+interfaces+`}}`))
 	}
 	const managementHeld = " is in a VRF, and chalkd answers in the default VRF alone; keep the node API's interfaces out of every VRF"
-	const managementDevice = ", and chalkd answers in the default VRF alone; name the default VRF's links"
 	for _, tc := range []struct {
 		name string
 		docs []config.Document
@@ -98,21 +98,12 @@ func TestVRFRules(t *testing.T) {
 		{"a management glob over a VRF's interface", management(`["eth*"]`), []string{"the management interface eth*" + managementHeld}},
 		{"a management glob over a VRF's glob", management(`["sw*"]`), []string{"the management interface sw*" + managementHeld}},
 		{"a management glob over no VRF's interface", management(`["eth0*"]`), nil},
-		{"a management interface of a VRF's device", management(`["eth0", "tenant"]`),
-			[]string{"the management interface tenant matches the device of VRF tenant" + managementDevice}},
-		{"a management glob over a VRF's device", management(`["eth0", "inter*"]`),
-			[]string{"the management interface inter* matches the device of VRF internet" + managementDevice}},
-		{"a management glob's dot is no wildcard", management(`["eth0", "t.nant"]`), nil},
+		{"a management interface of a VRF's device", management(`["eth0", "tenant"]`), nil},
 		{"every link in a VRF without a Router", allInVRFs,
 			[]string{"every link the Network documents name is in a VRF, and chalkd answers in the default VRF alone, on every interface while Router.spec.management.interfaces is null; keep the link you reach the router through out of every VRF"}},
 		{"every link in a VRF with the node API on every interface", with(allInVRFs, doc("Router", "router", `{}`)),
 			[]string{"every link the Network documents name is in a VRF, and chalkd answers in the default VRF alone, on every interface while Router.spec.management.interfaces is null; keep the link you reach the router through out of every VRF"}},
-		{"a NetDev of a VRF's name", with(edge, builtinDoc(t, config.NetworkdAPI, "NetDev", "20-tenant", `{"netDev": {"kind": "dummy", "name": "tenant"}}`)),
-			[]string{"the VRF tenant takes the name of a device a NetDev document creates; rename the VRF or the NetDev"}},
-		{"a NetDev of another name", with(edge, builtinDoc(t, config.NetworkdAPI, "NetDev", "20-edge0", `{"netDev": {"kind": "dummy", "name": "edge0"}}`)), nil},
-		{"a NetDev without a [NetDev] section", with(edge, builtinDoc(t, config.NetworkdAPI, "NetDev", "20-empty", `{}`)), nil},
-		{"NetDev sections, one of a VRF's name", with(edge, builtinDoc(t, config.NetworkdAPI, "NetDev", "20-two", `{"netDev": [{"kind": "dummy", "name": "edge0"}, {"kind": "dummy", "name": "tenant"}]}`)),
-			[]string{"the VRF tenant takes the name of a device a NetDev document creates; rename the VRF or the NetDev"}},
+		{"a NetDev of a VRF's name", with(edge, builtinDoc(t, config.NetworkdAPI, "NetDev", "20-tenant", `{"netDev": {"kind": "dummy", "name": "tenant"}}`)), nil},
 		{"VRFs with conntrack zones", zoned(`, "conntrackZone": 1`, `, "conntrackZone": 2`), nil},
 		{"a zoned VRF without imports", with(zoned(`, "conntrackZone": 1`, ""), bgp("internet", `"internet"`, ""), bgp("tenant", `"tenant"`, "")), nil},
 		{"a zoned VRF that imports", with(zoned(`, "conntrackZone": 1`, ""), importer...), zoneMessage("tenant")},

@@ -204,8 +204,9 @@ func TestRouterWithoutVRFsTakesAnyName(t *testing.T) {
 	}
 }
 
-// The VRFs' units refuse what networkd would render differently from the documents, and values
-// that would add to a unit.
+// The VRFs' units refuse what networkd would render differently from the documents, a NetDev of a
+// VRF's device in any [NetDev] section, and with an internal error names and tables networkd
+// would not load and values that would add to a unit.
 func TestVRFRefusals(t *testing.T) {
 	vrf := func(name, spec string) any { return routerDoc(t, "VRF", name, spec) }
 	net := func(name, spec string) any { return document(t, "Network", name, spec) }
@@ -272,27 +273,30 @@ func TestVRFRefusals(t *testing.T) {
 		"a VRF glob of a VRF device": {map[string][]any{"VRF": {vrf("a", `{"table": 100, "interfaces": ["t*"]}`), vrf("tenant", `{"table": 200}`)}, "Network": {link("eth0")}},
 			"VRF a's t* covers the device of VRF tenant"},
 		"a NetDev of a VRF's device in a list of names": {map[string][]any{"VRF": {vrf("a", `{"table": 100}`)}, "Network": {link("eth0")}, "NetDev": {document(t, "NetDev", "20-a", `{"netDev": {"kind": "dummy", "name": ["x", "a"]}}`)}},
-			"NetDev 20-a creates the device a, which VRF a creates"},
+			"NetDev 20-a creates the device a, which VRF a creates; rename the VRF or the NetDev"},
 		"a Name= glob the renderer cannot read": {map[string][]any{"VRF": {vrf("a", `{"table": 100}`)}, "Network": {net("20-x", `{"match": {"name": "eth[0"}}`)}},
 			`Network 20-x: Name= holds "eth[0"`},
 		"a VRF= that adds a word": {map[string][]any{"Network": {net("20-eth1", `{"match": {"name": "eth1"}, "network": {"vrf": "b c"}}`)}},
 			"Network 20-eth1: VRF= names one VRF by its name"},
 		"a NetDev of a VRF's device": {map[string][]any{"VRF": {vrf("a", `{"table": 100}`)}, "Network": {link("eth0")}, "NetDev": {document(t, "NetDev", "20-a", `{"netDev": {"kind": "dummy", "name": "a"}}`)}},
-			"NetDev 20-a creates the device a, which VRF a creates"},
+			"NetDev 20-a creates the device a, which VRF a creates; rename the VRF or the NetDev"},
+		"a NetDev of a VRF's device in a second section": {map[string][]any{"VRF": {vrf("a", `{"table": 100}`)}, "Network": {link("eth0")}, "NetDev": {document(t, "NetDev", "20-a", `{"netDev": [{"kind": "dummy", "name": "x"}, {"kind": "dummy", "name": "a"}]}`)}},
+			"NetDev 20-a creates the device a, which VRF a creates; rename the VRF or the NetDev"},
 		"a document of a VRF unit's name": {map[string][]any{"VRF": {vrf("a", `{"table": 100}`)}, "Network": {net("00-vrf-a", `{"match": {"name": "eth0"}}`)}},
 			"Network 00-vrf-a takes the name of VRF a's units"},
 		"a VRF of a link's name": {map[string][]any{"VRF": {vrf("eth1", `{"table": 100}`)}, "Network": {link("eth1")}},
 			"VRF eth1: a Network document names the link eth1, the VRF's device"},
-		"the main table": {map[string][]any{"VRF": {vrf("a", `{"table": 254}`)}, "Network": {link("eth0")}},
-			"VRF a: table 254 is no table of a VRF"},
+		// Guards of what networkd and nftables could not load, or would read as syntax.
 		"a VRF named default": {map[string][]any{"VRF": {vrf("default", `{"table": 100}`)}, "Network": {link("eth0")}},
-			"VRF default: a VRF is named as its device"},
-		"a VRF of a NAT64 link's name": {map[string][]any{"VRF": {vrf("n64-a", `{"table": 100}`)}, "Network": {link("eth0")}},
-			"VRF n64-a: n64- starts the names of the NAT64s' links; give the VRF another name"},
+			"internal error: VRF default: a VRF is named as its device, in 15 characters at most, and not default"},
+		"a VRF name of 16 characters": {map[string][]any{"VRF": {vrf("tenant-12345678x", `{"table": 100}`)}, "Network": {link("eth0")}},
+			"internal error: VRF tenant-12345678x: a VRF is named as its device, in 15 characters at most, and not default"},
+		"table 0": {map[string][]any{"VRF": {vrf("a", `{"table": 0}`)}, "Network": {link("eth0")}},
+			"internal error: VRF a: table 0 is no table of a VRF"},
 		"a VRF name that adds a section": {map[string][]any{"VRF": {vrf("a\n[Network]", `{"table": 100}`)}},
-			"is no document name"},
+			`internal error: a VRF document: "a\n[Network]" is no document name`},
 		"an interface that adds a key": {map[string][]any{"VRF": {vrf("a", `{"table": 100, "interfaces": ["eth1\nVRF=b"]}`)}, "Network": {link("eth1")}},
-			`"eth1\nVRF=b" is no interface name or glob`},
+			`internal error: VRF a: "eth1\nVRF=b" is no interface name or glob`},
 	} {
 		t.Run(name, func(t *testing.T) { refused(t, args, c.docs, c.want) })
 	}

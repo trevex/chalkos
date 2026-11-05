@@ -4,9 +4,11 @@
 # VRF, of every link no VRF holds, has no document.
 #
 # chalkd refuses a rule that may cost more than two nested loops over a config's lists, so the
-# rules bind the members of every VRF, the management interfaces and the NetDev devices as flat
-# lists before they loop over them, and match the Network documents' names and the management
-# interfaces against one regular expression of the VRFs' members.
+# rules bind the members of every VRF and the management interfaces as flat lists before they loop
+# over them, and match the Network documents' names and the management interfaces against one
+# regular expression of the VRFs' members. What depends on the devices the VRFs and the NetDev
+# documents create, the outputs networkd and router-nftables check: a management interface or glob
+# that matches a VRF's device, and a NetDev of a VRF's name.
 {
   config,
   lib,
@@ -24,25 +26,11 @@ let
   members = "documents.map(n, documents[n].spec.interfaces).flatten()";
   # The interfaces of Router.spec.management.interfaces, as written.
   managed = "cel.bind(routers, ${delivered "Router"}, routers.map(k, routers[k].spec.management.interfaces == null ? [] : routers[k].spec.management.interfaces).flatten())";
-  # The devices the config's NetDev documents create, by the Name= of their [NetDev] sections.
-  # has() tests a key, where `in` would cost a loop more.
-  devices = ''cel.bind(netdevs, ${
-    cel.documents "config" apiVersions.networkd "NetDev"
-  }, netdevs.map(n, !has(netdevs[n].spec.netDev) ? [] : ${cel.oneOrMany "netdevs[n].spec.netDev"}.map(s, has(s.name) ? s.name : "")).flatten())'';
   # The alternatives of a regular expression that matches a name each of held's names and globs
   # covers. Globs match as globs: `*` stands for any characters but a space, and `.` for itself.
   # The interface type admits no other character that RE2 reads as more than itself, so escaping
   # `.` and `*` is enough.
   heldPattern = ''held.map(i, i.replace(".", "[.]").replace("*", "[^ ]*")).join("|")'';
-  # Binds, for body, deviceText to the VRFs' names, which their devices take, each between
-  # spaces. A test per pair of a management interface and a VRF would cost more than chalkd
-  # allows.
-  devicesBy = body: ''cel.bind(deviceText, documents.map(n, " " + n + " ").join(""), ${body})'';
-  # Whether the interface or glob i, inside devicesBy, matches the device of a VRF: a glob when a
-  # device's name starts with the glob's prefix, an interface when it is a device's whole name.
-  # contains takes `.` for itself.
-  namesDevice =
-    i: ''deviceText.contains(" " + (${i}.endsWith("*") ? ${i}.replace("*", "") : ${i} + " "))'';
   # Whether the names of matchNames are each held or a negation: a regular expression of
   # heldPattern's alternatives and negations matches the whole string.
   allHeld = ''${matchNames "config"}.matches("^( +(" + ${heldPattern} + "|![^ ]*))* *$")'';
@@ -93,19 +81,9 @@ in
           messageExpression = "cel.bind(held, ${members}, cel.bind(api, ${managed}, ${heldBy ''"the management interface " + api.filter(i, ${overlapsHeld "i"})[0] + " is in a VRF, and chalkd answers in the default VRF alone; keep the node API's interfaces out of every VRF"''}))";
         }
         {
-          description = "No interface of Router.spec.management.interfaces matches a VRF's device; globs match as globs.";
-          rule = "cel.bind(api, ${managed}, ${devicesBy "api.all(i, !${namesDevice "i"})"})";
-          messageExpression = "cel.bind(api, ${managed}, ${devicesBy ''cel.bind(m, api.filter(i, ${namesDevice "i"})[0], "the management interface " + m + " matches the device of VRF " + documents.filter(n, m.endsWith("*") ? n.startsWith(m.replace("*", "")) : n == m)[0] + ", and chalkd answers in the default VRF alone; name the default VRF's links")''})";
-        }
-        {
           description = "While the node API answers on every interface, a Network document names a link that no VRF holds; globs match as globs.";
           rule = "size(documents) == 0 || cel.bind(routers, ${delivered "Router"}, routers.exists(k, routers[k].spec.management.interfaces != null)) || cel.bind(held, ${members}, !${allHeld})";
           message = "every link the Network documents name is in a VRF, and chalkd answers in the default VRF alone, on every interface while Router.spec.management.interfaces is null; keep the link you reach the router through out of every VRF";
-        }
-        {
-          description = "No NetDev document creates a device of a VRF's name.";
-          rule = "cel.bind(made, ${devices}, documents.all(n, !(n in made)))";
-          messageExpression = ''cel.bind(made, ${devices}, "the VRF " + documents.filter(n, n in made)[0] + " takes the name of a device a NetDev document creates; rename the VRF or the NetDev")'';
         }
         {
           description = "A VRF with a conntrack zone neither imports routes from another VRF nor gives its routes to one, through BGP.";

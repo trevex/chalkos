@@ -134,15 +134,15 @@ type networkUnit struct {
 }
 
 // vrfLinks checks the VRF documents against the Network documents of byKind, which name the
-// links, as their rules do and where the rules cannot, and returns the VRF of each Network. A VRF
-// holds the links its document's interfaces match and those a Network document's Name= matches
-// whose own VRF= names it, whether a document of the VRF exists or not. A Network document is in
-// the VRF of the links it may be the first to match, and vrfLinks refuses unless all links it may
-// match are in that VRF, so that VRF= on the Network puts in the VRF the links that the VRF
-// holds, and only those. It refuses a link two VRFs may hold, a literal interface of a VRF no
-// Network matches by Name= alone, and a VRF device whose first Network is not its own. Without
-// VRF documents and VRF= it checks nothing and puts every link in the default VRF, so that a
-// router image without VRFs takes the Network documents it took before them.
+// links, where the VRF's rules cannot, and returns the VRF of each Network. A VRF holds the links
+// its document's interfaces match and those a Network document's Name= matches whose own VRF=
+// names it, whether a document of the VRF exists or not. A Network document is in the VRF of the
+// links it may be the first to match, and vrfLinks refuses unless all links it may match are in
+// that VRF, so that VRF= on the Network puts in the VRF the links that the VRF holds, and only
+// those. It refuses a link two VRFs may hold, a literal interface of a VRF no Network matches by
+// Name= alone, and a VRF device whose first Network is not its own. Without VRF documents and
+// VRF= it checks nothing and puts every link in the default VRF, so that a router image without
+// VRFs takes the Network documents it took before them.
 func vrfLinks(vrfs []named[vrfSpec], links []string, byKind map[string]any) (vrfMembership, error) {
 	var none vrfMembership
 	if len(vrfs) == 0 && !anyNetworkVRF(byKind) {
@@ -151,21 +151,21 @@ func vrfLinks(vrfs []named[vrfSpec], links []string, byKind map[string]any) (vrf
 	var members []vrfMember
 	for _, v := range vrfs {
 		what := "VRF " + v.Name
+		// The VRF's rules refuse these names and tables. networkd would refuse a .netdev of either
+		// name, which is no interface name, and of table 0, so the guards keep units it cannot
+		// load out of the output.
 		if v.Name == defaultVRF || len(v.Name) > 15 {
-			return none, fmt.Errorf("%s: a VRF is named as its device, in 15 characters at most, and not %s", what, defaultVRF)
+			return none, internalErrorf("%s: a VRF is named as its device, in 15 characters at most, and not %s", what, defaultVRF)
 		}
-		if strings.HasPrefix(v.Name, nat64LinkPrefix) {
-			return none, fmt.Errorf("%s: %s starts the names of the NAT64s' links; give the VRF another name", what, nat64LinkPrefix)
+		if v.Spec.Table == 0 {
+			return none, internalErrorf("%s: table 0 is no table of a VRF", what)
 		}
 		if slices.Contains(links, v.Name) {
 			return none, fmt.Errorf("%s: a Network document names the link %s, the VRF's device", what, v.Name)
 		}
-		if t := v.Spec.Table; t == 0 || t >= 253 && t <= 255 {
-			return none, fmt.Errorf("%s: table %d is no table of a VRF; 0, 253, 254 and 255 are the kernel's", what, t)
-		}
 		for _, i := range v.Spec.Interfaces {
 			if !interfaceName.MatchString(i) {
-				return none, fmt.Errorf("%s: %q is no interface name or glob", what, i)
+				return none, internalErrorf("%s: %q is no interface name or glob", what, i)
 			}
 			members = append(members, vrfMember{vrf: v.Name, glob: i, text: i})
 		}
@@ -542,7 +542,8 @@ func renderRouterNetworkd(schemas string, in map[string]any, out string) error {
 // withVRFUnits is byKind with each VRF's NetDev and Network documents added and VRF= set in each
 // Network document that networks puts in a VRF without its own VRF= of it, which only a VRF
 // document's interfaces do. It refuses a networkd document of a VRF unit's name and a NetDev
-// that creates a device of a VRF's name.
+// that creates a device of a VRF's name, by any [NetDev] section and any value of its Name=, a
+// check the VRF's rules leave to it.
 func withVRFUnits(vrfs []named[vrfSpec], networks map[string]string, byKind map[string]any) (map[string]any, error) {
 	isVRF := func(name string) bool {
 		return slices.ContainsFunc(vrfs, func(v named[vrfSpec]) bool { return v.Name == name })
@@ -566,7 +567,7 @@ func withVRFUnits(vrfs []named[vrfSpec], networks map[string]string, byKind map[
 				section, _ := s.(map[string]any)
 				for _, n := range oneOrMany(section["name"]) {
 					if device, _ := n.(string); isVRF(device) {
-						return nil, fmt.Errorf("NetDev %s creates the device %s, which VRF %s creates", name, device, device)
+						return nil, fmt.Errorf("NetDev %s creates the device %s, which VRF %s creates; rename the VRF or the NetDev", name, device, device)
 					}
 				}
 			}

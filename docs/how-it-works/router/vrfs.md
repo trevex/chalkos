@@ -120,7 +120,9 @@ The renderer also refuses a link that globs of two VRFs may hold and a `Network`
 names another VRF. A `Network` whose own `VRF=` an earlier `Network` hides from a link is
 refused, with the remedies: give the earlier one the same `VRF=`, rename it to sort after, or drop
 the `VRF=`. A networkd document named as a VRF's units and a `NetDev` that creates a device of a
-VRF's name are refused too.
+VRF's name, in any `[NetDev]` section and any value of its `Name=`, are refused too. These checks
+run when the router renders its config, at a delivery or at `chalkctl apply-config --dry-run`;
+`chalkctl validate` does not run them.
 
 The renderer refuses a backslash in `Name=`, which systemd reads as an escape, and a bracket
 expression it cannot match as `fnmatch` does, such as `eth[0` or a class like `[[:digit:]]`.

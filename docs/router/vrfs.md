@@ -69,11 +69,13 @@ globs as globs on both sides, so a VRF's `eth*` holds the management interface `
 chalkctl: r1: the config is refused: the management interface eth0 is in a VRF, and chalkd answers in the default VRF alone; keep the node API's interfaces out of every VRF
 ```
 
-They also refuse a management interface or glob that matches a VRF's device, which takes the
-VRF's name, such as `ten*` beside the VRF `tenant`:
+The output `router-nftables` refuses a management interface or glob that matches a VRF's device,
+which takes the VRF's name, such as `ten*` beside the VRF `tenant`. It checks when the router
+renders its config, at a delivery or at `chalkctl apply-config --dry-run`, and `chalkctl validate`
+does not. [Fix a refused delivery](#fix-a-refused-delivery) shows where its message appears:
 
 ```text
-chalkctl: r1: the config is refused: the management interface ten* matches the device of VRF tenant, and chalkd answers in the default VRF alone; name the default VRF's links
+Router: the management interface ten* matches tenant, the device of VRF tenant, and chalkd answers in the default VRF alone; name the default VRF's links
 ```
 
 A router without management interfaces answers the node API on every interface. The rules then
@@ -429,6 +431,7 @@ refuse what networkd, FRR or nftables would apply otherwise than the documents s
 | `Network 00-all matches the link n64-guest of NAT64 guest before 00-n64-guest; rename it to sort after 00-n64-guest` | Rename the `Network`, or narrow its `Name=`. |
 | `Network 10-a is the first to match eth5, so networkd never applies Network 20-b's VRF=mgmt to it; give 10-a VRF=mgmt, rename it to sort after 20-b, or drop 20-b's VRF=` | Take one of the remedies the message lists. |
 | `Network 20-x: Name= holds "eth[0", which is no glob the renderer can match as networkd does` | Write `Name=` without backslashes and bracket expressions. |
+| `NetDev 20-dummy creates the device tenant, which VRF tenant creates; rename the VRF or the NetDev` | Rename the VRF, or the device in the `NetDev`'s `Name=`. |
 | `BGPPeer leaves: interfaces: swp* matches no link of VRF default, only links of other VRFs` | Give the peer the VRF of its links. |
 | `BGPPeer x: interface tenant is the device of VRF tenant` | Name the VRF's links, not its device. |
 | `FirewallZone x: ten* matches tenant, the device of VRF tenant; name the VRF in vrfs` | Put the VRF into the zone's `vrfs`, or name its links. |
