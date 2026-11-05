@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"maps"
 	"math"
+	"math/big"
 	"net/netip"
 	"path"
 	"regexp"
@@ -97,7 +98,10 @@ type natPlace struct {
 	Interface *string `json:"interface"`
 }
 
-// portRange is a port from 1, or a range of ports "<first>-<last>", as nftables writes both.
+// portRange is a port from 1, or a range of ports "<first>-<last>", as nftables writes both. The
+// schemas' format port-range checks the ports; UnmarshalJSON reads them again because the ruleset
+// writes them unquoted, so that a value the schemas would refuse fails to decode rather than add
+// syntax to the ruleset.
 type portRange string
 
 func (p *portRange) UnmarshalJSON(data []byte) error {
@@ -801,19 +805,50 @@ func decodeKind[T any](byKind map[string]any, kind string) ([]named[T], error) {
 			return nil, err
 		}
 		if !routerName.MatchString(name) {
-			return nil, fmt.Errorf("a %s document: %q is no document name, which nftables takes in the names of sets and chains", kind, name)
+			return nil, internalErrorf("a %s document: %q is no document name, which nftables takes in the names of sets and chains", kind, name)
 		}
-		data, err := json.Marshal(obj["spec"])
+		data, err := json.Marshal(integral(obj["spec"]))
 		if err != nil {
 			return nil, err
 		}
+		// The schemas give each field the type of its Go field, so a spec that does not decode is
+		// one chalkd did not check.
 		var spec T
 		if err := json.Unmarshal(data, &spec); err != nil {
-			return nil, fmt.Errorf("%s %s: %w", kind, name, err)
+			return nil, internalErrorf("%s %s: %w", kind, name, err)
 		}
 		out = append(out, named[T]{name, spec})
 	}
 	return out, nil
+}
+
+// integral is v with each number of an integer value in its integer spelling. JSON Schema's type
+// integer takes 100.0 and 1e2, which a config's YAML keeps as written, while encoding/json
+// refuses to decode them into an integer field. A number in plain digits, and one of a fraction,
+// stays as it is; the schemas bound every integer field, so an exponent stays small.
+func integral(v any) any {
+	switch v := v.(type) {
+	case map[string]any:
+		out := make(map[string]any, len(v))
+		for k, x := range v {
+			out[k] = integral(x)
+		}
+		return out
+	case []any:
+		out := make([]any, len(v))
+		for i, x := range v {
+			out[i] = integral(x)
+		}
+		return out
+	case json.Number:
+		if !strings.ContainsAny(string(v), ".eE") {
+			return v
+		}
+		if r, ok := new(big.Rat).SetString(string(v)); ok && r.IsInt() {
+			return json.Number(r.Num().String())
+		}
+	}
+	return v
 }
 
 // router is the node's Router, or the kind's defaults when its config holds none.
@@ -844,6 +879,14 @@ func mustGet[V any](byName map[string]V, kind, name string) (V, error) {
 	return v, nil
 }
 
+// internalErrorf is the error of a guard: a check of what the schemas and rules refuse before
+// chalkd renders, which a renderer keeps because its output would otherwise panic, carry syntax a
+// value adds, or fail to load. A checked config never fails one, so the error says that chalkd or
+// the output's input has a bug, not the config.
+func internalErrorf(format string, args ...any) error {
+	return fmt.Errorf("internal error: "+format+"; chalkd checks the config against the schemas and rules before it renders", args...)
+}
+
 // byName are the specs of docs by their documents' names.
 func byName[T any](docs []named[T]) map[string]T {
 	m := make(map[string]T, len(docs))
@@ -869,14 +912,16 @@ var routerName = regexp.MustCompile(`^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$`)
 // trailing * that nftables matches.
 var interfaceName = regexp.MustCompile(`^(?:[A-Za-z0-9_.:@-]{1,15}|[A-Za-z0-9_.:@-]{0,14}[*])$`)
 
-// checkInterfaces refuses an empty list of interfaces and a name or glob the schemas refuse.
+// checkInterfaces guards the interfaces a ruleset matches: an empty list, which would match no
+// interface or, in an opening, leave the port open on every one, and a name or glob the schemas
+// refuse, which strconv.Quote alone does not keep out of nftables's syntax.
 func checkInterfaces(what string, l []string) error {
 	if len(l) == 0 {
-		return fmt.Errorf("%s names no interface", what)
+		return internalErrorf("%s names no interface", what)
 	}
 	for _, n := range l {
 		if !interfaceName.MatchString(n) {
-			return fmt.Errorf("%s: %q is no interface name or glob", what, n)
+			return internalErrorf("%s: %q is no interface name or glob", what, n)
 		}
 	}
 	return nil
