@@ -63,13 +63,13 @@ func TestTemplateRefuse(t *testing.T) {
 // spaces; one outside the format prints nowhere, so main reports it on standard error alone.
 func TestPrintRefusal(t *testing.T) {
 	var w strings.Builder
-	if !printRefusal(&w, refuse("BGPPeer", "fabric", "spec.interfaces", "two\nlines").(*refusal)) {
+	if !printRefusal(&w, refuse("BGPPeer", "fabric", "spec.interfaces", "two\nlines\u009b\u202e").(*refusal)) {
 		t.Fatal("a refusal was not printed")
 	}
 	if printRefusal(&w, refuse("BGPPeer", "Not A Name", "spec", "x").(*refusal)) {
 		t.Error("a refusal outside the format was printed")
 	}
-	want := `{"refusals":[{"kind":"BGPPeer","name":"fabric","path":"spec.interfaces","message":"two lines"}]}` + "\n"
+	want := `{"refusals":[{"kind":"BGPPeer","name":"fabric","path":"spec.interfaces","message":"two lines  "}]}` + "\n"
 	if got := w.String(); got != want {
 		t.Errorf("printed %q, want %q", got, want)
 	}

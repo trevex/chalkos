@@ -256,6 +256,21 @@ func TestNodeName(t *testing.T) {
 	}
 }
 
+// A messageExpression's message has its control characters, C1 and bidirectional controls among
+// them, as spaces, so that a value it quotes cannot act on the operator's terminal.
+func TestMessageExpressionPrintable(t *testing.T) {
+	set := compiled(t, kindSchema("Demo", true, object(nil),
+		[]any{rule(`size(documents) == 0`, "", "messageExpression", `"a\nb\x1b[2J" + documents.a.spec.label`)}))
+	docs := []config.Document{doc(t, "Demo", "a", `{"label": "\u009b\u202ec"}`)}
+	failures, err := set.Evaluate(Input{Documents: docs})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := messages(failures); !slices.Equal(got, []string{"a b [2J  c"}) {
+		t.Errorf("failures = %q", got)
+	}
+}
+
 // A rule loads the facts it reads when it reads them, each once per evaluation; without facts,
 // as in chalkctl, the rules that read facts are left out. A fact that cannot be loaded refuses.
 func TestFacts(t *testing.T) {

@@ -23,6 +23,7 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"unicode"
 )
 
 // A Refusal is a document's field that a program refuses, and why.
@@ -48,9 +49,25 @@ var (
 	path = regexp.MustCompile(`^[A-Za-z0-9_-]+(\.[A-Za-z0-9_-]+|\[[0-9]+\])*$`)
 )
 
+// Unprintable reports whether c would break the reported line, act on the operator's terminal or
+// reorder the text around it: a C0 or C1 control character, a line break and CSI among them, DEL,
+// and a bidirectional control such as U+202E.
+func Unprintable(c rune) bool {
+	return unicode.IsControl(c) || unicode.Is(unicode.Bidi_Control, c)
+}
+
+// Printable is s with each rune Unprintable reports replaced by a space.
+func Printable(s string) string {
+	return strings.Map(func(c rune) rune {
+		if Unprintable(c) {
+			return ' '
+		}
+		return c
+	}, s)
+}
+
 // Check refuses a refusal outside the format: a kind, a document name or a path that is none,
-// and an empty message or one with a control character, a line break among them, which would
-// break the reported line or act on the operator's terminal.
+// and an empty message or one with a rune Unprintable reports.
 func (r Refusal) Check() error {
 	switch {
 	case !kind.MatchString(r.Kind):
@@ -61,7 +78,7 @@ func (r Refusal) Check() error {
 		return fmt.Errorf("path %q is no field's path", r.Path)
 	case strings.TrimSpace(r.Message) == "":
 		return errors.New("the message is empty")
-	case strings.ContainsFunc(r.Message, func(c rune) bool { return c < ' ' || c == 0x7f }):
+	case strings.ContainsFunc(r.Message, Unprintable):
 		return errors.New("the message holds a control character")
 	}
 	return nil

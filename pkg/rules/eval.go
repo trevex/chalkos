@@ -12,6 +12,7 @@ import (
 	"cel.dev/cel-go/common/types/ref"
 
 	"github.com/trevex/chalkos/pkg/config"
+	"github.com/trevex/chalkos/pkg/refusals"
 )
 
 // Facts gives the node's facts by name; nil when it has none, as on a node that does not declare
@@ -177,7 +178,7 @@ func (p *Program) evaluate(vars map[string]any, cfg, oldCfg, node map[string]any
 			return nil, factErr
 		}
 		if s, isString := msg.(types.String); err == nil && isString {
-			f.Message = string(s)
+			f.Message = refusals.Printable(string(s))
 		} else if f.Message == "" {
 			f.Message = "the config does not meet a rule of " + p.Where() + ", whose messageExpression fails"
 			if why := messageError(msg, err); why != "" {

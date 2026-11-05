@@ -46,7 +46,9 @@ func TestParseRefuses(t *testing.T) {
 		"no message":       {`{"refusals": [{"kind": "Demo", "name": "one", "path": "spec.name", "message": " "}]}`, "refusal 1: the message is empty"},
 		"a line break":     {`{"refusals": [{"kind": "Demo", "name": "one", "path": "spec.name", "message": "a\nb"}]}`, "refusal 1: the message holds a control character"},
 		"an escape":        {`{"refusals": [{"kind": "Demo", "name": "one", "path": "spec.name", "message": "\u001b[2J"}]}`, "refusal 1: the message holds a control character"},
-		"too long":         {`{"refusals": [` + strings.Repeat(ok+",", MaxReport/len(ok)) + ok + `]}`, "it holds more than 65536 bytes"},
+		"a C1 CSI":         {`{"refusals": [{"kind": "Demo", "name": "one", "path": "spec.name", "message": "\u009b2J"}]}`, "refusal 1: the message holds a control character"},
+		"a bidi override":  {`{"refusals": [{"kind": "Demo", "name": "one", "path": "spec.name", "message": "a\u202eb"}]}`, "refusal 1: the message holds a control character"},
+		"too long":        {`{"refusals": [` + strings.Repeat(ok+",", MaxReport/len(ok)) + ok + `]}`, "it holds more than 65536 bytes"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			if _, err := Parse([]byte(c.data)); err == nil || err.Error() != c.want {
@@ -62,5 +64,13 @@ func TestMessage(t *testing.T) {
 	b := Refusal{Kind: "BGPPeer", Name: "fabric", Path: "spec.interfaces", Message: "two"}
 	if got := Message([]Refusal{a, b, a}); got != "the config is refused: Network/50-lab: spec.match.name: one; BGPPeer/fabric: spec.interfaces: two" {
 		t.Errorf("Message = %q", got)
+	}
+}
+
+// Printable replaces C0 and C1 control characters, DEL and bidirectional controls with spaces and
+// keeps other runes, letters outside ASCII among them.
+func TestPrintable(t *testing.T) {
+	if got := Printable("a\nb\x1b[2J\u009b\x7f\u202e\u2066\u00e9"); got != "a b [2J    \u00e9" {
+		t.Errorf("Printable = %q", got)
 	}
 }

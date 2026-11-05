@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"io"
-	"strings"
 
 	"github.com/trevex/chalkos/pkg/refusals"
 )
@@ -25,18 +24,14 @@ func refuse(kind, name, path, format string, args ...any) error {
 	return &refusal{refusals.Refusal{Kind: kind, Name: name, Path: path, Message: fmt.Sprintf(format, args...)}}
 }
 
-// printRefusal prints r to w, standard output, as a report of refusals, with the control
-// characters of its message, line breaks among them, as spaces, and reports whether it did. A
+// printRefusal prints r to w, standard output, as a report of refusals, with the runes of its
+// message refusals.Unprintable reports, line breaks among them, as spaces, and reports whether it
+// did. A
 // refusal outside the format, which a template's refuse can make, is printed nowhere: main
 // prints it on standard error, as any error, and the output fails.
 func printRefusal(w io.Writer, r *refusal) bool {
 	x := r.Refusal
-	x.Message = strings.Map(func(c rune) rune {
-		if c < ' ' || c == 0x7f {
-			return ' '
-		}
-		return c
-	}, x.Message)
+	x.Message = refusals.Printable(x.Message)
 	if x.Check() != nil {
 		return false
 	}
