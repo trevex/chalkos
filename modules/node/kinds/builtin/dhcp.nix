@@ -133,11 +133,20 @@ in
           example = "lan.example.org";
           description = "Domain of the clients' names, which they also search; null gives none.";
         };
-        leaseTime = mkOption {
+        leaseTime = lib.chalkos.mkOption {
           type = types.strMatching "[1-9][0-9]{0,5}[smhd]";
           default = "12h";
           example = "1d";
           description = "How long a lease lasts, and a delegated prefix: a number and s, m, h or d, 136 years at most. IPv6 clients prefer their addresses for as long.";
+          # Kea takes a lease's seconds as a 32-bit number. Of the units the schema takes, only
+          # days reach past it: 999999h is 3599996400 seconds.
+          rules = [
+            {
+              description = "A lease lasts 4294967295 seconds at most, the longest Kea takes.";
+              rule = ''int(self.substring(0, size(self) - 1)) * {"s": 1, "m": 60, "h": 3600, "d": 86400}[self.substring(size(self) - 1)] <= 4294967295'';
+              messageExpression = ''"a lease of " + self + " is longer than 4294967295 seconds, the longest Kea takes"'';
+            }
+          ];
         };
         reservations = lib.chalkos.mkOption {
           type = types.listOf (

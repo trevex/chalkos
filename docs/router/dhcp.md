@@ -391,6 +391,7 @@ expression:
 | `DHCPSubnet office delegates prefixes in an IPv4 subnet` | Drop `prefixDelegation`, or delegate in an IPv6 subnet. |
 | `DHCPSubnet office6 serves an IPv6 subnet on more than one link; give each link a DHCPSubnet of its own` | Name one link. |
 | `DHCPSubnet "customers" spec.prefixDelegation: prefixDelegation's prefix 2001:db8:100::/56 is no IPv6 range shorter than 56 bits` | Give an IPv6 range and a longer `length`. |
+| `DHCPSubnet "office" spec.leaseTime: a lease of 999999d is longer than 4294967295 seconds, the longest Kea takes` | Shorten the lease to 49710 days or less. |
 | `DHCPRelay "office" spec.servers: the server ff05::1:3 is no unicast address a relay forwards to` | Name the servers by their unicast addresses. |
 | `DHCPRelay/office: spec.servers[0], spec.servers[1]: "2001:db8:ff::53" is not unique; name each server once` | Name each server once. |
 | `DHCPRelay/guests: spec.interfaces[0], DHCPRelay/office: spec.interfaces[1]: "lan0" is not unique; a link takes one relay` | Relay the link in one document, and name it once there. |
@@ -423,7 +424,6 @@ fails the delivery, and `chalkctl logs r1` shows the reason on a line that start
 | `DHCPSubnet office and DHCPSubnet lab both serve lan0; a link takes one subnet of each family` | Serve the link in one subnet of each family. |
 | `DHCPSubnet office and DHCPSubnet servers overlap in VRF default: 192.0.2.0/24 and 192.0.2.64/26` | Give the subnets ranges apart. |
 | `DHCPSubnet office6 and DHCPSubnet lab6 get the same number 2387838497 in Kea; change one subnet's range` | Change the range of one IPv6 subnet, whose number is a hash of its range. |
-| `DHCPSubnet office: leaseTime 999999d is longer than 4294967295 seconds, the longest Kea takes` | Shorten the lease. |
 | `DHCPSubnet office6: Network 10-lan0 sends no router advertisements on lan0 with Managed=yes, which tell its clients to ask the DHCPv6 server for addresses; give it ipv6SendRA: true in network and managed: true in ipv6SendRA` | Send router advertisements with the Managed flag from the link's `Network`. |
 | `DHCPSubnet customers: Network 20-cust0 sends no router advertisements on cust0 with Managed=yes or OtherInformation=yes, which tell its clients to ask the DHCPv6 server; give it ipv6SendRA: true in network and otherInformation: true in ipv6SendRA` | Send router advertisements with the OtherInformation flag. |
 | `DHCPSubnet office6: the pool's first address, 2001:db8:1::, is the subnet routers' anycast address of the subnet 2001:db8:1::/64` | Start the pool after the subnet's first address. |

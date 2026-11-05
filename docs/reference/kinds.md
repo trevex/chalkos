@@ -422,7 +422,7 @@ A subnet the router's DHCP server leases IPv4 or IPv6 addresses of on its interf
 
 `apiVersion: router.chalkos.dev/v1alpha1`
 
-A node's config may hold several, each with a name of its own. It has 13 [change rules](builtins.md#rules-dhcpsubnet).
+A node's config may hold several, each with a name of its own. It has 14 [change rules](builtins.md#rules-dhcpsubnet).
 
 | Field | Type | Default | Description |
 | --- | --- | --- | --- |

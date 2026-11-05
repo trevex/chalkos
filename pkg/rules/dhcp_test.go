@@ -69,6 +69,29 @@ func TestDHCPSubnetRules(t *testing.T) {
 	}
 }
 
+// A lease lasts 4294967295 seconds at most, the longest Kea takes: 49710 days, while 999999
+// hours, the most the schema takes of hours, lie below it.
+func TestDHCPSubnetLeaseTime(t *testing.T) {
+	set, doc := routerRules(t)
+	for leaseTime, want := range map[string][]string{
+		"12h":     nil,
+		"999999s": nil,
+		"999999h": nil,
+		"49710d":  nil,
+		"49711d":  {`DHCPSubnet "office" spec.leaseTime: a lease of 49711d is longer than 4294967295 seconds, the longest Kea takes`},
+		"999999d": {`DHCPSubnet "office" spec.leaseTime: a lease of 999999d is longer than 4294967295 seconds, the longest Kea takes`},
+	} {
+		d := doc("DHCPSubnet", "office", `{"interfaces": ["lan0"], "subnet": "192.0.2.0/24", "leaseTime": "`+leaseTime+`"}`)
+		failures, err := set.Evaluate(Input{Documents: []config.Document{d}, Node: "r1"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := messages(failures); !slices.Equal(got, want) {
+			t.Errorf("leaseTime %s: failures = %q, want %q", leaseTime, got, want)
+		}
+	}
+}
+
 // The DHCPSubnet schema takes links by name alone, at least one, so the server answers only on
 // links a document names; it refuses a glob.
 func TestDHCPSubnetSchema(t *testing.T) {

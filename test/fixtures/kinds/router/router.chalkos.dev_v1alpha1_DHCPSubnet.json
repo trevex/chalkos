@@ -191,7 +191,15 @@
             "1d"
           ],
           "pattern": "^(?:[1-9][0-9]{0,5}[smhd])$",
-          "type": "string"
+          "type": "string",
+          "x-chalkos-rules": [
+            {
+              "description": "A lease lasts 4294967295 seconds at most, the longest Kea takes.",
+              "messageExpression": "\"a lease of \" + self + \" is longer than 4294967295 seconds, the longest Kea takes\"",
+              "rule": "int(self.substring(0, size(self) - 1)) * {\"s\": 1, \"m\": 60, \"h\": 3600, \"d\": 86400}[self.substring(size(self) - 1)] <= 4294967295",
+              "takes": "refuse"
+            }
+          ]
         },
         "pools": {
           "default": [],

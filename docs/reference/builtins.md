@@ -508,8 +508,9 @@ Message of rule 1:
 | 9 | `spec.boot` | A boot names a file. | `refuse` | `self == null || self.bios != null || self.uefi != null || self.ipxe != null` | boot names no file; give bios, uefi or ipxe, or leave boot out |
 | 10 | `spec.boot` | A boot's server is an IPv4 address. | `refuse` | `self == null || self.server == null || ip(self.server).family() == "ipv4"` | boot's server is no IPv4 address |
 | 11 | `spec.boot` | A boot of BIOS or UEFI files names their server. | `refuse` | `self == null || self.server != null || (self.bios == null && self.uefi == null)` | boot's bios and uefi files load over TFTP from boot's server; give server |
-| 12 | `spec.prefixDelegation` | Prefixes are delegated from an IPv6 range, each longer than the range. | `refuse` | after the table | after the table |
-| 13 | `spec.subnet` | A subnet is an IPv4 range of 30 bits at most, outside 0.0.0.0/8, 127.0.0.0/8, 169.254.0.0/16 and 224.0.0.0/3, or an IPv6 range of 120 bits at most, outside ::/8, fe80::/10 and ff00::/8. | `refuse` | after the table | after the table |
+| 12 | `spec.leaseTime` | A lease lasts 4294967295 seconds at most, the longest Kea takes. | `refuse` | after the table | `"a lease of " + self + " is longer than 4294967295 seconds, the longest Kea takes"` |
+| 13 | `spec.prefixDelegation` | Prefixes are delegated from an IPv6 range, each longer than the range. | `refuse` | after the table | after the table |
+| 14 | `spec.subnet` | A subnet is an IPv4 range of 30 bits at most, outside 0.0.0.0/8, 127.0.0.0/8, 169.254.0.0/16 and 224.0.0.0/3, or an IPv6 range of 120 bits at most, outside ::/8, fe80::/10 and ff00::/8. | `refuse` | after the table | after the table |
 
 Expression of rule 1:
 
@@ -610,22 +611,28 @@ documents.filter(n, cel.bind(s, documents[n].spec, cel.bind(c, cidr(s.subnet), !
 Expression of rule 12:
 
 ```text
-self == null || (cidr(self.prefix).ip(0).family() == "ipv6" && !(self.length <= cidr(self.prefix).prefix()))
-```
-
-Message of rule 12:
-
-```text
-"prefixDelegation's prefix " + self.prefix + " is no IPv6 range shorter than " + string(self.length) + " bits"
+int(self.substring(0, size(self) - 1)) * {"s": 1, "m": 60, "h": 3600, "d": 86400}[self.substring(size(self) - 1)] <= 4294967295
 ```
 
 Expression of rule 13:
 
 ```text
-cel.bind(c, cidr(self), c.ip(0).family() == "ipv4" ? c.prefix() <= 30 && !["0.0.0.0/8", "127.0.0.0/8", "169.254.0.0/16", "224.0.0.0/3"].exists(r, cidr(r).contains(c.ip(0))) : c.prefix() <= 120 && !["::/8", "fe80::/10", "ff00::/8"].exists(r, cidr(r).contains(c.ip(0))))
+self == null || (cidr(self.prefix).ip(0).family() == "ipv6" && !(self.length <= cidr(self.prefix).prefix()))
 ```
 
 Message of rule 13:
+
+```text
+"prefixDelegation's prefix " + self.prefix + " is no IPv6 range shorter than " + string(self.length) + " bits"
+```
+
+Expression of rule 14:
+
+```text
+cel.bind(c, cidr(self), c.ip(0).family() == "ipv4" ? c.prefix() <= 30 && !["0.0.0.0/8", "127.0.0.0/8", "169.254.0.0/16", "224.0.0.0/3"].exists(r, cidr(r).contains(c.ip(0))) : c.prefix() <= 120 && !["::/8", "fe80::/10", "ff00::/8"].exists(r, cidr(r).contains(c.ip(0))))
+```
+
+Message of rule 14:
 
 ```text
 "the subnet " + self + " is no IPv4 range of 30 bits at most or IPv6 range of 120 bits at most of addresses a DHCP server leases"
