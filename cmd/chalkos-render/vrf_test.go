@@ -36,23 +36,6 @@ func TestRouterNetworkd(t *testing.T) {
 	}
 }
 
-// A number of an integer value decodes into an integer field however the config writes it, as the
-// schemas' type integer takes 100.0 and 1e2.
-func TestRouterIntegerSpellings(t *testing.T) {
-	for _, table := range []string{"100.0", "1e2", "1.00e+2"} {
-		got, err := unitFiles(t, []string{"router-networkd", networkFixture}, map[string][]any{
-			"VRF":     {routerDoc(t, "VRF", "tenant", `{"table": `+table+`, "interfaces": []}`)},
-			"Network": {document(t, "Network", "10-eth0", `{"match": {"name": "eth0"}}`)},
-		})
-		if err != nil {
-			t.Fatalf("table %s: %v", table, err)
-		}
-		if want := "[NetDev]\nKind=vrf\nName=tenant\n\n[VRF]\nTable=100\n\n"; got["00-vrf-tenant.netdev"] != want {
-			t.Errorf("table %s: 00-vrf-tenant.netdev = %q, want %q", table, got["00-vrf-tenant.netdev"], want)
-		}
-	}
-}
-
 // A Network whose Name= globs a VRF's members, or whose own VRF= names the VRF, gets VRF= once;
 // a Network that a member's earlier Network shadows gets none, and an empty VRF= resets the
 // values before it.

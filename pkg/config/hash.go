@@ -13,7 +13,7 @@ import (
 // Hash names a set of documents by the SHA-256, in lower-case hex, of their canonical form: the
 // documents ordered by apiVersion, kind and name, as one JSON array in which every object's keys
 // are sorted and every value of a Secret's spec.data is replaced by the hex SHA-256 of the value.
-// Numbers are hashed as written, so 1 and 1.0 differ. It shows whether two sets are the same
+// Numbers are hashed as FromObject keeps them, so 1 and 1.0 hash alike while 1.5 and 1.50 differ. It shows whether two sets are the same
 // without revealing a secret. Clients hash the documents they deliver, before chalkd fills in
 // defaults, so the hash depends on the operator's files alone and not on the schemas of the image
 // they meet.

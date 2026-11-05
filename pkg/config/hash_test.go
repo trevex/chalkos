@@ -91,9 +91,15 @@ func TestHashChangesWithAValue(t *testing.T) {
 			t.Errorf("%s -> %s left the hash unchanged", edit.from, edit.to)
 		}
 	}
-	// Numbers are hashed as written.
-	if hashOf(t, strings.Replace(hashed, "name: two", "name: two, replicas: 1", 1)) == hashOf(t, strings.Replace(hashed, "name: two", "name: two, replicas: 1.0", 1)) {
-		t.Error("1 and 1.0 hash alike")
+	// Numbers are hashed as FromObject keeps them: an integer in plain digits, a fraction as written.
+	replicas := func(n string) string {
+		return hashOf(t, strings.Replace(hashed, "name: two", "name: two, replicas: "+n, 1))
+	}
+	if replicas("1") != replicas("1.0") {
+		t.Error("1 and 1.0 hash apart")
+	}
+	if replicas("1.5") == replicas("1.50") {
+		t.Error("1.5 and 1.50 hash alike")
 	}
 }
 

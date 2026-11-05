@@ -58,11 +58,13 @@ func TestParseCanonicalisesIntegers(t *testing.T) {
 	}
 }
 
+// A float of an integer value is in plain digits, as FromObject keeps it; any other as JSON writes
+// it.
 func TestParseCanonicalisesFloats(t *testing.T) {
 	docs := parseDocs(t, "apiVersion: x.example.org/v1\nkind: X\nmetadata: {name: a}\n"+
-		"spec: {plain: 1.25, exact: 0.1000000000000000000001, exp: 1e3, plus: +1.5, dot: .5}\n")
+		"spec: {plain: 1.25, exact: 0.1000000000000000000001, exp: 1e3, frac: 15e-2, whole: 2.0, plus: +1.5, dot: .5}\n")
 	spec := docs[0].Object["spec"].(map[string]any)
-	for key, want := range map[string]json.Number{"plain": "1.25", "exact": "0.1000000000000000000001", "exp": "1e3", "plus": "1.5", "dot": "0.5"} {
+	for key, want := range map[string]json.Number{"plain": "1.25", "exact": "0.1000000000000000000001", "exp": "1000", "frac": "15e-2", "whole": "2", "plus": "1.5", "dot": "0.5"} {
 		if spec[key] != want {
 			t.Errorf("%s = %#v, want %s", key, spec[key], want)
 		}

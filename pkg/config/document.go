@@ -26,7 +26,8 @@ type Document struct {
 	Name       string
 	// Object is the whole document as YAML read it, with no scalar reinterpreted: strings,
 	// timestamps and binary values stay exactly the text written, and every integer and float is
-	// a json.Number in JSON's spelling of the same value, which no decoder has rounded.
+	// a json.Number in JSON's spelling of the same value, which no decoder has rounded, one of an
+	// integer value in plain digits however the config wrote it.
 	Object map[string]any
 }
 
@@ -218,8 +219,11 @@ func (d Document) decodeSpec(v any) error {
 func (d Document) String() string { return fmt.Sprintf("%s %q", d.Kind, d.Name) }
 
 // FromObject is the document an object decoded from YAML or JSON holds, with its apiVersion,
-// kind and name read from the object.
+// kind and name read from the object. It rewrites each number in m of an integer value into plain
+// digits, as integral does. Every document passes through here, from Parse, FromJSON and a
+// baseline, so a check, a config slot and a renderer's input hold 100 where the config wrote 100.0.
 func FromObject(m map[string]any) Document {
+	integral(m)
 	d := Document{Object: m}
 	d.APIVersion, _ = m["apiVersion"].(string)
 	d.Kind, _ = m["kind"].(string)

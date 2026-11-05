@@ -1,6 +1,7 @@
 package rules
 
 import (
+	"encoding/json"
 	"fmt"
 	"slices"
 	"strconv"
@@ -181,6 +182,21 @@ func TestNAT64Rules(t *testing.T) {
 				t.Errorf("failures:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(tc.want, "\n"))
 			}
 		})
+	}
+}
+
+// A pool entry's port written 61001.0 or 6.1001e4 is the int 61001 the rules take, as the
+// documents hold an integer in plain digits however the config writes it.
+func TestPoolPortOfAnIntegerSpelling(t *testing.T) {
+	set, doc := routerRules(t)
+	for _, port := range []string{"61001.0", "6.1001e4"} {
+		n := doc("NAT64", "lab", `{"prefix": "2001:db8:64::/96", "pool4": [{"prefix": "203.0.113.1/32", "ports": 61001}]}`)
+		n.Object["spec"].(map[string]any)["pool4"].([]any)[0].(map[string]any)["ports"] = json.Number(port)
+		n = config.FromObject(n.Object)
+		failures, err := set.Evaluate(Input{Documents: []config.Document{n}, Node: "r1"})
+		if err != nil || len(failures) > 0 {
+			t.Errorf("ports %s: failures %v, err %v", port, messages(failures), err)
+		}
 	}
 }
 

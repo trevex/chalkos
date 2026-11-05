@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"maps"
 	"math"
-	"math/big"
 	"net/netip"
 	"path"
 	"regexp"
@@ -807,7 +806,7 @@ func decodeKind[T any](byKind map[string]any, kind string) ([]named[T], error) {
 		if !routerName.MatchString(name) {
 			return nil, internalErrorf("a %s document: %q is no document name, which nftables takes in the names of sets and chains", kind, name)
 		}
-		data, err := json.Marshal(integral(obj["spec"]))
+		data, err := json.Marshal(obj["spec"])
 		if err != nil {
 			return nil, err
 		}
@@ -820,35 +819,6 @@ func decodeKind[T any](byKind map[string]any, kind string) ([]named[T], error) {
 		out = append(out, named[T]{name, spec})
 	}
 	return out, nil
-}
-
-// integral is v with each number of an integer value in its integer spelling. JSON Schema's type
-// integer takes 100.0 and 1e2, which a config's YAML keeps as written, while encoding/json
-// refuses to decode them into an integer field. A number in plain digits, and one of a fraction,
-// stays as it is; the schemas bound every integer field, so an exponent stays small.
-func integral(v any) any {
-	switch v := v.(type) {
-	case map[string]any:
-		out := make(map[string]any, len(v))
-		for k, x := range v {
-			out[k] = integral(x)
-		}
-		return out
-	case []any:
-		out := make([]any, len(v))
-		for i, x := range v {
-			out[i] = integral(x)
-		}
-		return out
-	case json.Number:
-		if !strings.ContainsAny(string(v), ".eE") {
-			return v
-		}
-		if r, ok := new(big.Rat).SetString(string(v)); ok && r.IsInt() {
-			return json.Number(r.Num().String())
-		}
-	}
-	return v
 }
 
 // router is the node's Router, or the kind's defaults when its config holds none.
