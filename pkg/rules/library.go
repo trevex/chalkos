@@ -6,11 +6,13 @@ import (
 	"math/big"
 	"net/netip"
 	"reflect"
+	"strconv"
 
 	"cel.dev/cel-go/cel"
 	"cel.dev/cel-go/common/types"
 	"cel.dev/cel-go/common/types/ref"
 
+	"github.com/trevex/chalkos/pkg/schema"
 	"github.com/trevex/chalkos/pkg/storage"
 )
 
@@ -23,7 +25,8 @@ var (
 
 // library holds the functions rules use besides CEL's own and its lists, sets, strings and
 // bindings extensions: address ranges and addresses, which compare by what they denote rather
-// than how they are spelt, and sizes as the storage kinds write them.
+// than how they are spelt, sizes as the storage kinds write them, and ranges of ports as the
+// router kinds write them.
 func library() cel.EnvOption {
 	return cel.Lib(celLib{})
 }
@@ -37,7 +40,11 @@ const (
 	errNotSize       = "bytes: the argument is not a size below 8 EiB, digits with an optional K, M, G, T or P suffix"
 	errNegativeIndex = "<cidr>.ip: the index is negative"
 	errPastRange     = "<cidr>.ip: the index is past the range"
+	errNotPortRange  = "portRange: the argument is not a port or a range of ports from 1 to 65535"
 )
+
+// portRangeType is what portRange() yields: a map of first and last, both ints.
+var portRangeType = cel.MapType(cel.StringType, cel.IntType)
 
 func (celLib) CompileOptions() []cel.EnvOption {
 	return []cel.EnvOption{
@@ -73,6 +80,25 @@ func (celLib) CompileOptions() []cel.EnvOption {
 				cel.BinaryBinding(func(c, a ref.Val) ref.Val {
 					return types.Bool(c.(cidr).Contains(a.(ip).Addr))
 				}))),
+		cel.Function("last",
+			cel.MemberOverload("chalkos_cidr_last", []*cel.Type{cidrType}, ipType,
+				cel.UnaryBinding(func(c ref.Val) ref.Val {
+					return c.(cidr).last()
+				}))),
+		cel.Function("compare",
+			cel.MemberOverload("chalkos_ip_compare_ip", []*cel.Type{ipType, ipType}, cel.IntType,
+				cel.BinaryBinding(func(a, b ref.Val) ref.Val {
+					return types.Int(a.(ip).Compare(b.(ip).Addr))
+				}))),
+		cel.Function("portRange",
+			cel.Overload("chalkos_int_to_port_range", []*cel.Type{cel.IntType}, portRangeType,
+				cel.UnaryBinding(func(v ref.Val) ref.Val {
+					return portRangeOf(strconv.FormatInt(int64(v.(types.Int)), 10))
+				})),
+			cel.Overload("chalkos_string_to_port_range", []*cel.Type{cel.StringType}, portRangeType,
+				cel.UnaryBinding(func(v ref.Val) ref.Val {
+					return portRangeOf(string(v.(types.String)))
+				}))),
 		cel.Function("family",
 			cel.MemberOverload("chalkos_ip_family", []*cel.Type{ipType}, cel.StringType,
 				cel.UnaryBinding(func(a ref.Val) ref.Val {
@@ -106,6 +132,16 @@ func (celLib) CompileOptions() []cel.EnvOption {
 	}
 }
 
+// portRangeOf is the first and last port of s, as PortRange reads it, as portRange() yields
+// them.
+func portRangeOf(s string) ref.Val {
+	first, last, ok := schema.PortRange(s)
+	if !ok {
+		return types.NewErr("%s", errNotPortRange)
+	}
+	return types.NewStringInterfaceMap(types.DefaultTypeAdapter, map[string]any{"first": first, "last": last})
+}
+
 // size is s in bytes, if it is a size bytes() reads: one of ParseSize below 2^63.
 func size(s string) (int64, bool) {
 	n, err := storage.ParseSize(s)
@@ -135,6 +171,16 @@ func (c cidr) nth(n int64) ref.Val {
 	if !c.Contains(a) {
 		return types.NewErr("%s", errPastRange)
 	}
+	return ip{a}
+}
+
+// last is the range's last address: all of its host bits set, IPv4's broadcast address.
+func (c cidr) last() ref.Val {
+	b := c.Addr().AsSlice()
+	for i := c.Bits(); i < len(b)*8; i++ {
+		b[i/8] |= 0x80 >> (i % 8)
+	}
+	a, _ := netip.AddrFromSlice(b)
 	return ip{a}
 }
 

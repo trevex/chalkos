@@ -82,6 +82,7 @@ func TestLibraryErrors(t *testing.T) {
 		{`bytes("17X")`, "17X", "bytes: the argument is not a size"},
 		{`bytes("99999999P")`, "99999999", "bytes: the argument is not a size below 8 EiB"},
 		{`bytes("18446744073709551615")`, "18446744073709551615", "bytes: the argument is not a size below 8 EiB"},
+		{`portRange("70000-80000")`, "70000", "portRange: the argument is not a port or a range of ports from 1 to 65535"},
 	} {
 		_, err := eval(t, tc.expr, nil)
 		if err == nil || !strings.Contains(err.Error(), tc.want) || strings.Contains(err.Error(), tc.input) {
@@ -106,6 +107,53 @@ func TestMapsIterateInKeyOrder(t *testing.T) {
 		got, err := eval(t, expr, outer)
 		if err != nil || got != want {
 			t.Errorf("%s = %v, %v; want %q", expr, got, err, want)
+		}
+	}
+}
+
+// An address range's last address, addresses in order, and ranges of ports as the router kinds
+// write them.
+func TestLibraryAddressesAndPorts(t *testing.T) {
+	for _, tc := range []struct {
+		expr string
+		x    any
+		want any
+	}{
+		{`string(cidr("192.0.2.0/24").last())`, nil, "192.0.2.255"},
+		{`string(cidr("192.0.2.77/24").last())`, nil, "192.0.2.255"},
+		{`string(cidr("10.0.0.1/32").last())`, nil, "10.0.0.1"},
+		{`string(cidr("0.0.0.0/0").last())`, nil, "255.255.255.255"},
+		{`string(cidr("2001:db8::/64").last())`, nil, "2001:db8::ffff:ffff:ffff:ffff"},
+		{`string(cidr("2001:db8::/63").last())`, nil, "2001:db8:0:1:ffff:ffff:ffff:ffff"},
+		{`cidr("192.0.2.0/24").last() == ip("192.0.2.255")`, nil, true},
+		{`ip("10.0.0.2").compare(ip("10.0.0.10"))`, nil, int64(-1)},
+		{`ip("10.0.0.10").compare(ip("10.0.0.2"))`, nil, int64(1)},
+		{`ip("fd00:0::a").compare(ip("fd00::A"))`, nil, int64(0)},
+		{`ip("255.255.255.255").compare(ip("::"))`, nil, int64(-1)},
+		{`portRange(22).first == 22 && portRange(22).last == 22`, nil, true},
+		{`portRange("8000-8100").first`, nil, int64(8000)},
+		{`portRange(x).last`, "1-65535", int64(65535)},
+		{`portRange("443-443").last`, nil, int64(443)},
+	} {
+		got, err := eval(t, tc.expr, tc.x)
+		if err != nil {
+			t.Errorf("%s: %v", tc.expr, err)
+			continue
+		}
+		if got != tc.want {
+			t.Errorf("%s = %v (%T), want %v", tc.expr, got, got, tc.want)
+		}
+	}
+	for _, s := range []string{"9-1", "0-10", "1-65536", "70000-80000", "01-10", "+1-2", "1-", "-1", "1--2", "a-b", ""} {
+		_, err := eval(t, `portRange(x)`, s)
+		if err == nil || err.Error() != errNotPortRange {
+			t.Errorf("portRange(%q): err = %v, want %q", s, err, errNotPortRange)
+		}
+	}
+	for _, n := range []int64{0, -1, 65536} {
+		_, err := eval(t, `portRange(x)`, n)
+		if err == nil || err.Error() != errNotPortRange {
+			t.Errorf("portRange(%d): err = %v, want %q", n, err, errNotPortRange)
 		}
 	}
 }

@@ -230,20 +230,23 @@ without the volume it resets, which it recreates like a new one.
 ## Rules call CEL's functions and chalkos's
 
 Rules have CEL's standard functions, the lists, sets, strings and bindings (`cel.bind`)
-extensions of cel-go, and chalkos's document lookup and its address and size functions:
+extensions of cel-go, and chalkos's document lookup and its address, size and port functions:
 
 | Function | Result |
 | --- | --- |
 | `document(kind, name)` | The document of the kind by that name, as `config` holds it, or `null` when the config holds none or `name` is `null`. `kind` is a string literal naming a kind the image declares, without its group, as in `document("Peer", self)`; another kind fails the build. |
 | `cidr(s)` | The address range `s`, with its address masked, so `cidr("10.244.1.0/16") == cidr("10.244.0.0/16")`. |
 | `<cidr>.ip(n)` | The address `n` places after the range's first, which must lie in the range: `cidr("10.96.0.0/12").ip(10)` is `10.96.0.10`. |
+| `<cidr>.last()` | The range's last address, its IPv4 broadcast address: `cidr("192.0.2.0/24").last()` is `192.0.2.255`. `<cidr>.ip(0)` is its first. |
 | `<cidr>.prefix()` | The prefix length, an int. |
 | `<cidr>.contains(<ip>)` | Whether the range holds the address. |
 | `ip(s)` | The address `s`, equal to every spelling of it. |
 | `<ip>.family()` | `ipv4` or `ipv6`. |
+| `<ip>.compare(<ip>)` | `-1`, `0` or `1` as the address comes before, equals or comes after the other, in numeric order: `ip("10.0.0.2").compare(ip("10.0.0.10"))` is `-1`. IPv4 addresses come before IPv6 ones. |
 | `string(<cidr>)`, `string(<ip>)` | The canonical spelling: `fd00::/108`, `fd00::a`. |
 | `bytes(s)` | A size such as `1G` or `512M` in bytes, an int, with suffixes in powers of 1024. It replaces CEL's conversion of a string to bytes. |
 | `isSize(s)` | Whether `bytes(s)` reads `s`: digits with an optional K, M, G, T or P suffix, below 8 EiB. |
+| `portRange(p)` | The ports of `p`, a port as an int or a range `"<first>-<last>"`, as a map of `first` and `last`: `portRange("8000-8100").last` is `8100`, `portRange(22).first` is `22`. Both lie from 1 to 65535, and `first` is no higher than `last`. |
 
 `document()` reads one document at the cost of one step, so a rule that loops over a list of
 names and reads each named document costs as one loop. chalkctl and chalkd check every

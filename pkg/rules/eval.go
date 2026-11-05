@@ -389,7 +389,7 @@ var evalErrors = []struct{ prefix, says string }{
 var invalidInput = regexp.MustCompile(`^[A-Za-z.]+: invalid input: `)
 
 // libraryErrors are the errors of chalkos's functions, which hold no value.
-var libraryErrors = []string{errNotCIDR, errNotIP, errNotSize, errNegativeIndex, errPastRange}
+var libraryErrors = []string{errNotCIDR, errNotIP, errNotSize, errNegativeIndex, errPastRange, errNotPortRange}
 
 // evalError is what a refusal says of err, the error of a rule or a messageExpression that cannot
 // be evaluated: the kind of error, or nothing for one evalErrors does not know.
