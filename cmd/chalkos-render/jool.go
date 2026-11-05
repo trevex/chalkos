@@ -154,7 +154,7 @@ func nat64Instances(d routerDocuments) ([]nat64Instance, error) {
 		slot := nat64Slot(doc.Name)
 		outer, inner := nat64LinkAddresses(slot)
 		if o, ok := taken[slot]; ok {
-			return nil, fmt.Errorf("NAT64 %s and NAT64 %s both take the link addresses %s, which the hashes of their names pick; rename NAT64 %s", doc.Name, o, outer.Masked(), doc.Name)
+			return nil, refuse("NAT64", doc.Name, "metadata.name", "NAT64 %s and NAT64 %s both take the link addresses %s, which the hashes of their names pick; rename NAT64 %s", doc.Name, o, outer.Masked(), doc.Name)
 		}
 		taken[slot] = doc.Name
 		n := nat64Instance{name: doc.Name, vrf: vrf, jool: jools[i], inner: inner.Addr(), link: nat64Link{
@@ -227,7 +227,7 @@ func joolInstances(docs []named[nat64Spec]) ([]joolInstance, error) {
 		vrf := vrfOf(n.Spec.VRF)
 		for _, o := range prefixes {
 			if o.vrf == vrf && o.prefix.Overlaps(p) {
-				return nil, fmt.Errorf("%s and NAT64 %s both translate addresses of %s in VRF %s; give each NAT64 of a VRF a prefix of its own", what, o.name, p, vrf)
+				return nil, refuse("NAT64", n.Name, "spec.prefix", "NAT64 %s and NAT64 %s both translate addresses of %s in VRF %s; give each NAT64 of a VRF a prefix of its own", n.Name, o.name, p, vrf)
 			}
 		}
 		inst := joolInstance{Instance: n.Name, Framework: "netfilter", Global: joolGlobal{Pool6: p.String()}, Pool4: []joolPool4{}}
@@ -240,7 +240,7 @@ func joolInstances(docs []named[nat64Spec]) ([]joolInstance, error) {
 			}
 			for _, o := range pools {
 				if o.Spec.Overlaps(prefix) {
-					return nil, fmt.Errorf("%s shares addresses with the pool of NAT64 %s; give each NAT64 a pool of its own", at, o.Name)
+					return nil, refuse("NAT64", n.Name, fmt.Sprintf("spec.pool4[%d]", i), "the entry shares addresses with the pool of NAT64 %s; give each NAT64 a pool of its own", o.Name)
 				}
 			}
 			// An entry per protocol, in Jool's order. The schema takes no other protocol; an entry

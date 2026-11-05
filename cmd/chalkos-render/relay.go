@@ -80,7 +80,7 @@ func renderDHCPRelay(in map[string]any, out string) error {
 					continue
 				}
 				families[keaServer{vrf: vrf, v6: v6}] = r.Name
-				local, err := relayAddress(d, network, l, v6)
+				local, err := relayAddress(d, r.Name, fmt.Sprintf("spec.interfaces[%d]", slices.Index(r.Spec.Interfaces, l)), network, l, v6)
 				if err != nil {
 					return within("DHCPRelay "+r.Name, err)
 				}
@@ -158,8 +158,9 @@ func relayServers(servers []string) (map[bool][]netip.Addr, error) {
 
 // relayAddress is the router's first static address of a family on the link, which the Network
 // network gives it: the relay forwards a request from it, and the server picks the subnet of the
-// request's link by it, so a DHCPv6 relay takes a global one.
-func relayAddress(d routerDocuments, network, link string, v6 bool) (netip.Addr, error) {
+// request's link by it, so a DHCPv6 relay takes a global one. A link without one refuses the
+// DHCPRelay called relay at path, the field that names the link.
+func relayAddress(d routerDocuments, relay, path, network, link string, v6 bool) (netip.Addr, error) {
 	for _, a := range d.Addresses {
 		addr := a.prefix.Addr()
 		if a.network == network && addr.Is6() == v6 && relayUnicast(addr) {
@@ -170,7 +171,7 @@ func relayAddress(d routerDocuments, network, link string, v6 bool) (netip.Addr,
 	if v6 {
 		family = "global IPv6"
 	}
-	return netip.Addr{}, fmt.Errorf("Network %s gives %s no static %s address, which the relay forwards its clients' requests from", network, link, family)
+	return netip.Addr{}, refuse("DHCPRelay", relay, path, "Network %s gives %s no static %s address, which the relay forwards its clients' requests from", network, link, family)
 }
 
 // relaysBesideServers refuses a family that DHCPRelay documents relay and DHCPSubnet documents
@@ -201,7 +202,7 @@ func relaysBesideServers(d routerDocuments, devices []string, families map[keaSe
 			if v6 {
 				version = 6
 			}
-			return fmt.Errorf("DHCPRelay %s relays DHCPv%d in VRF %s and DHCPSubnet %s serves DHCPv%d in VRF %s; dnsmasq's and Kea's sockets of one family bind beside each other only in two VRFs other than the default one", relay, version, k.vrf, s.Name, version, vrf)
+			return refuse("DHCPSubnet", s.Name, "spec.interfaces", "DHCPRelay %s relays DHCPv%d in VRF %s and DHCPSubnet %s serves DHCPv%d in VRF %s; dnsmasq's and Kea's sockets of one family bind beside each other only in two VRFs other than the default one", relay, version, k.vrf, s.Name, version, vrf)
 		}
 	}
 	return nil

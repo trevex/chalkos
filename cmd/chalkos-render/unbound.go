@@ -80,7 +80,7 @@ func renderUnbound(trustAnchor, zoneFile string, in map[string]any, out string) 
 		if err := checkListenVRF(d, r, vrf); err != nil {
 			return err
 		}
-		text, err := unboundConfig(r.Spec, vrf, trustAnchor, zoneFile)
+		text, err := unboundConfig(r.Name, r.Spec, vrf, trustAnchor, zoneFile)
 		if err != nil {
 			return within("Resolver "+r.Name, err)
 		}
@@ -95,7 +95,7 @@ func renderUnbound(trustAnchor, zoneFile string, in map[string]any, out string) 
 // other VRFs than vrf: the resolver's sockets are bound to vrf and never see its queries. An
 // address the documents do not give, such as one from DHCP, passes.
 func checkListenVRF(d routerDocuments, r named[resolverSpec], vrf string) error {
-	for _, l := range r.Spec.Listen {
+	for i, l := range r.Spec.Listen {
 		a, err := netip.ParseAddr(l)
 		if err != nil {
 			continue
@@ -113,13 +113,14 @@ func checkListenVRF(d routerDocuments, r named[resolverSpec], vrf string) error 
 			}
 		}
 		if !mine && len(others) > 0 {
-			return fmt.Errorf("Resolver %s: the address %s of listen belongs to links of %s alone, so the resolver of VRF %s never receives its queries; listen on an address of the VRF's links", r.Name, a, strings.Join(others, " and "), vrf)
+			return refuse("Resolver", r.Name, fmt.Sprintf("spec.listen[%d]", i), "the address %s of listen belongs to links of %s alone, so the resolver of VRF %s never receives its queries; listen on an address of the VRF's links", a, strings.Join(others, " and "), vrf)
 		}
 	}
 	return nil
 }
 
-func unboundConfig(r resolverSpec, vrf, trustAnchor, zoneFile string) (string, error) {
+// unboundConfig is Unbound's config of r, the spec of the Resolver called name, which serves vrf.
+func unboundConfig(name string, r resolverSpec, vrf, trustAnchor, zoneFile string) (string, error) {
 	var b strings.Builder
 	from := "the node's Resolver"
 	if vrf != defaultVRF {
@@ -173,7 +174,7 @@ func unboundConfig(r resolverSpec, vrf, trustAnchor, zoneFile string) (string, e
 	}
 	records := renderedRecords{keys: map[string]bool{}, types: map[string]string{}}
 	for i, z := range r.LocalZones {
-		lines, err := localZoneLines(z, records)
+		lines, err := localZoneLines(name, i, z, records)
 		if err != nil {
 			return "", within(fmt.Sprintf("local zone %d", i+1), err)
 		}
@@ -249,14 +250,14 @@ type renderedRecords struct {
 	types map[string]string
 }
 
-// localZoneLines are Unbound's local-zone line of z and a local-data line per record, and adds
-// z's records to seen. It refuses a record that seen holds and a CNAME record of a name that
-// holds another record, in any zone, which the rules leave to the renderer, as they would compare
-// the records in pairs. A zone's name stands between double quotes, and a record between single
-// quotes with a TXT record's text between double quotes; it guards, with an internal error, names
-// and data that would end those quotes, start a comment or add a line, and a type the config
-// would hold unquoted.
-func localZoneLines(z localZone, seen renderedRecords) ([]string, error) {
+// localZoneLines are Unbound's local-zone line of z, the local zone at index zone of the Resolver
+// called resolver, and a local-data line per record, and adds z's records to seen. It refuses a
+// record that seen holds and a CNAME record of a name that holds another record, in any zone,
+// which the rules leave to the renderer, as they would compare the records in pairs. A zone's name
+// stands between double quotes, and a record between single quotes with a TXT record's text
+// between double quotes; it guards, with an internal error, names and data that would end those
+// quotes, start a comment or add a line, and a type the config would hold unquoted.
+func localZoneLines(resolver string, zone int, z localZone, seen renderedRecords) ([]string, error) {
 	if !dns.IsName(z.Name) {
 		return nil, internalErrorf("%q is no DNS name in lower case without the root's dot", z.Name)
 	}
@@ -275,11 +276,11 @@ func localZoneLines(z localZone, seen renderedRecords) ([]string, error) {
 		}
 		key := fmt.Sprintf("%s. %s %s", r.Name, r.Type, value)
 		if seen.keys[key] {
-			return nil, fmt.Errorf("%s: %s appears twice; Unbound keeps one, so drop the other", at, key)
+			return nil, refuse("Resolver", resolver, fmt.Sprintf("spec.localZones[%d].records[%d]", zone, i), "%s appears twice; Unbound keeps one, so drop the other", key)
 		}
 		seen.keys[key] = true
 		if t, ok := seen.types[r.Name]; ok && (t == "CNAME" || r.Type == "CNAME") {
-			return nil, fmt.Errorf("%s: %s holds a CNAME record and another record; a CNAME's name holds it alone", at, r.Name)
+			return nil, refuse("Resolver", resolver, fmt.Sprintf("spec.localZones[%d].records[%d]", zone, i), "%s holds a CNAME record and another record; a CNAME's name holds it alone", r.Name)
 		}
 		seen.types[r.Name] = r.Type
 		lines = append(lines, fmt.Sprintf("local-data: '%s. %d IN %s %s'", r.Name, r.TTL, r.Type, value))

@@ -47,12 +47,12 @@ const bgpPassword = "lab-s3cret"
 //     root's with mode 0600, no unit failed, and r1, an image without the Kubernetes layer,
 //     answers Bootstrap with Unimplemented.
 //   - reload: a dry run of a delivery that has r1 announce the address of its edge0 plans FRR's
-//     reload on the frr output, and a dry run of a BGP that announces one prefix twice, which
-//     chalkctl validate accepts, is refused by the frr output's renderer. A delivery whose
-//     FirewallPolicy names a zone and an AddressSet that no document declares is refused with a
-//     line for each reference. The delivery then reaches r2 while the session stays up: FRR
-//     reloads, its password filled in again into a frr.conf that is still root's with mode 0600,
-//     and restarts nothing.
+//     reload on the frr output, and a dry run of two peers of one session, which chalkctl
+//     validate accepts, is refused by the frr output's renderer, with its refusal of the second
+//     peer's interfaces. A delivery whose FirewallPolicy names a zone and an AddressSet that no
+//     document declares is refused with a line for each reference. The delivery then reaches r2
+//     while the session stays up: FRR reloads, its password filled in again into a frr.conf that
+//     is still root's with mode 0600, and restarts nothing.
 //   - nat64: from the address of its edge0, r2 asks r1's resolver for the AAAA records of
 //     ipv4only.arpa and gets those DNS64 synthesizes in the NAT64 prefix, and connects through
 //     r1's NAT64, whose empty pool4 r1 masquerades, and QEMU's user-mode network to a listener of
@@ -330,7 +330,7 @@ func TestRouterLab(t *testing.T) {
 			t.Fatalf("chalkctl validate of two peers of one session: %v\n%s", err, out)
 		}
 		if out, err := chalkctl(t, nodes["r1"], "twice", "apply-config", "--dry-run", "r1"); err == nil ||
-			!strings.Contains(out, "output frr: its renderer failed") {
+			!strings.Contains(out, "the config is refused: BGPPeer/fabric: spec.interfaces: BGPPeer again and BGPPeer fabric both name enp0s3 in the VRF default; give each session one peer") {
 			t.Fatalf("apply-config --dry-run of two peers of one session: %v\n%s", err, out)
 		}
 		// A FirewallPolicy that names a zone and an AddressSet the config lacks is refused with a

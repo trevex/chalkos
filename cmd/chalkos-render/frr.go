@@ -339,7 +339,7 @@ func newFRR(d routerDocuments) (*frr, error) {
 		for _, n := range ns {
 			key := vrf + " " + n.name
 			if other, ok := owner[key]; ok {
-				return nil, fmt.Errorf("BGPPeer %s and BGPPeer %s both name %s in the VRF %s; give each session one peer", other, p.Name, n.name, vrf)
+				return nil, refuse("BGPPeer", p.Name, peerField(p.Spec), "BGPPeer %s and BGPPeer %s both name %s in the VRF %s; give each session one peer", other, p.Name, n.name, vrf)
 			}
 			owner[key] = p.Name
 			sessions[n.name] = p.Name
@@ -354,7 +354,7 @@ func newFRR(d routerDocuments) (*frr, error) {
 	}
 	for _, p := range d.Peers {
 		if peer, ok := sessions[peerGroupPrefix+p.Name]; ok {
-			return nil, fmt.Errorf("BGPPeer %s names %s%s, the peer group of BGPPeer %s; rename the document or the interface", peer, peerGroupPrefix, p.Name, p.Name)
+			return nil, refuse("BGPPeer", p.Name, "metadata.name", "BGPPeer %s names %s%s, the peer group of BGPPeer %s; rename the document or the interface", peer, peerGroupPrefix, p.Name, p.Name)
 		}
 	}
 	if err := c.prepends(); err != nil {
@@ -486,11 +486,14 @@ func (c *frr) prepends() error {
 		}
 	}
 	for _, p := range c.policies {
-		prepends := false
-		for _, t := range p.Spec.Terms {
-			prepends = prepends || t.Then.Prepend != nil
+		// first is the first term that prepends, which a refusal names.
+		first := -1
+		for i, t := range p.Spec.Terms {
+			if first < 0 && t.Then.Prepend != nil {
+				first = i
+			}
 		}
-		if !prepends {
+		if first < 0 {
 			continue
 		}
 		switch asns := slices.Sorted(maps.Keys(uses[p.Name])); len(asns) {
@@ -499,7 +502,7 @@ func (c *frr) prepends() error {
 		case 1:
 			c.prependAS[p.Name] = asns[0]
 		default:
-			return fmt.Errorf("RoutingPolicy %s prepends the AS number, and BGP instances of AS %d and %d use it; give each AS a policy of its own", p.Name, asns[0], asns[1])
+			return refuse("RoutingPolicy", p.Name, fmt.Sprintf("spec.terms[%d].then.prepend", first), "RoutingPolicy %s prepends the AS number, and BGP instances of AS %d and %d use it; give each AS a policy of its own", p.Name, asns[0], asns[1])
 		}
 	}
 	return nil
@@ -535,7 +538,7 @@ func (c *frr) checkPolicy(p named[routingPolicySpec]) error {
 				return internalErrorf("%s: asPath %q holds more than digits, single spaces and _^$.*+?()|{},-", term, *r)
 			}
 			if err := checkASPath(*r); err != nil {
-				return fmt.Errorf("%s: asPath %q is no regular expression bgpd compiles: %v", term, *r, err)
+				return refuse("RoutingPolicy", p.Name, fmt.Sprintf("spec.terms[%d].match.asPath", i), "asPath %q is no regular expression bgpd compiles: %v", *r, err)
 			}
 		}
 		th := t.Then
@@ -616,7 +619,7 @@ func (c *frr) peerNeighbours(p named[peerSpec], vrf string) ([]neighbour, error)
 			return nil, err
 		}
 		if linkIn != vrf {
-			return nil, fmt.Errorf("interface %s is in the VRF %s, not in the peer's VRF %s", *s.Interface, linkIn, vrf)
+			return nil, refuse("BGPPeer", p.Name, "spec.interface", "interface %s is in the VRF %s, not in the peer's VRF %s", *s.Interface, linkIn, vrf)
 		}
 		return []neighbour{{name: *s.Interface, onLink: true}}, nil
 	}
@@ -650,17 +653,32 @@ func (c *frr) peerNeighbours(p named[peerSpec], vrf string) ([]neighbour, error)
 		if linkIn != vrf {
 			continue
 		}
-		if err := linkNeighbour(link); err != nil {
-			return nil, err
+		// bgpd names a session on a link after its interface, and a line naming a link named like
+		// an address would name either. The BGPPeer's rules refuse an interface named like an
+		// address that the peer writes out; a glob's links are the renderer's to see.
+		if _, err := netip.ParseAddr(link); err == nil {
+			return nil, refuse("BGPPeer", p.Name, fmt.Sprintf("spec.interfaces[%d]", slices.Index(s.Interfaces, globs[0])), "interface %q is an address, which FRR cannot tell from a neighbour's", link)
 		}
 		ns = append(ns, neighbour{name: link, onLink: true})
 	}
-	for _, glob := range s.Interfaces {
+	for i, glob := range s.Interfaces {
 		if own[glob] == 0 && other[glob] > 0 {
-			return nil, fmt.Errorf("interfaces: %s matches no link of VRF %s, only links of other VRFs", glob, vrf)
+			return nil, refuse("BGPPeer", p.Name, fmt.Sprintf("spec.interfaces[%d]", i), "%s matches no link of VRF %s, only links of other VRFs", glob, vrf)
 		}
 	}
 	return ns, nil
+}
+
+// peerField is the field of a BGPPeer that names its sessions, which a refusal of a session
+// names: one of address, interface and interfaces, as the BGPPeer's rules require.
+func peerField(s peerSpec) string {
+	switch {
+	case s.Address != nil:
+		return "spec.address"
+	case s.Interface != nil:
+		return "spec.interface"
+	}
+	return "spec.interfaces"
 }
 
 // neighbourAddress parses a peer's address, which the BGPPeer's rule makes a unicast address
@@ -673,16 +691,6 @@ func neighbourAddress(s string) (netip.Addr, error) {
 		return netip.Addr{}, internalErrorf("address %q is no address without a zone", s)
 	}
 	return a, nil
-}
-
-// linkNeighbour refuses a link, which a peer's glob expands to, whose name is an address: bgpd
-// names a session on a link after its interface, and a line naming the address would name
-// either. The BGPPeer's rules refuse an interface named like an address that the peer writes out.
-func linkNeighbour(name string) error {
-	if _, err := netip.ParseAddr(name); err == nil {
-		return fmt.Errorf("interface %q is an address, which FRR cannot tell from a neighbour's", name)
-	}
-	return nil
 }
 
 // matchesGlob reports whether an interface name or glob, a prefix and *, matches the link.

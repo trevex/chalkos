@@ -446,7 +446,7 @@ func TestUnboundAccessControl(t *testing.T) {
 		if err := json.Unmarshal([]byte(`{"listen": ["2001:db8:ffff::1"], "allow": `+allow+`}`), &r); err != nil {
 			t.Fatal(err)
 		}
-		text, err := unboundConfig(r, defaultVRF, testTrustAnchor, testZoneFile)
+		text, err := unboundConfig("main", r, defaultVRF, testTrustAnchor, testZoneFile)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -577,14 +577,14 @@ func TestFRRRefusals(t *testing.T) {
 	}{
 		"two peers of one session": {map[string][]any{"BGP": {bgp("")}, "BGPPeer": {
 			peer("a", `{"interface": "eth1", "remoteAS": "external", "families": {"ipv6": {}}}`),
-			peer("b", `{"interface": "eth1", "remoteAS": "external", "families": {"ipv6": {}}}`)}}, "BGPPeer a and BGPPeer b both name eth1 in the VRF default"},
+			peer("b", `{"interface": "eth1", "remoteAS": "external", "families": {"ipv6": {}}}`)}}, "BGPPeer/b: spec.interface: BGPPeer a and BGPPeer b both name eth1 in the VRF default"},
 		"an interface of a peer group's name": {map[string][]any{"BGP": {bgp("")}, "BGPPeer": {
 			peer("fabric", `{"interface": "eth1", "remoteAS": "external", "families": {"ipv6": {}}}`),
-			peer("x", `{"interface": "peer-fabric", "remoteAS": "external", "families": {"ipv6": {}}}`)}}, "BGPPeer x names peer-fabric, the peer group of BGPPeer fabric"},
+			peer("x", `{"interface": "peer-fabric", "remoteAS": "external", "families": {"ipv6": {}}}`)}}, "BGPPeer/fabric: metadata.name: BGPPeer x names peer-fabric, the peer group of BGPPeer fabric"},
 		"a link that reads as an address": {map[string][]any{"BGP": {bgp("")}, "BGPPeer": {peer("a", `{"interfaces": ["*"], "remoteAS": "external", "families": {"ipv6": {}}}`)},
-			"Network": {map[string]any{"apiVersion": config.NetworkdAPI, "kind": "Network", "metadata": map[string]any{"name": "n"}, "spec": map[string]any{"match": map[string]any{"name": "192.0.2.10"}}}}}, `BGPPeer a: interface "192.0.2.10" is an address`},
+			"Network": {map[string]any{"apiVersion": config.NetworkdAPI, "kind": "Network", "metadata": map[string]any{"name": "n"}, "spec": map[string]any{"match": map[string]any{"name": "192.0.2.10"}}}}}, `BGPPeer/a: spec.interfaces[0]: interface "192.0.2.10" is an address`},
 		// AS paths bgpd's regcomp refuses, which would leave the term matching no route.
-		"an AS path that does not compile":       {map[string][]any{"BGP": {bgp("")}, "RoutingPolicy": {policy("p", `{"match": {"asPath": "(1"}, "then": {"action": "accept"}}`)}}, `RoutingPolicy p: term 1: asPath "(1" is no regular expression bgpd compiles`},
+		"an AS path that does not compile":       {map[string][]any{"BGP": {bgp("")}, "RoutingPolicy": {policy("p", `{"match": {"asPath": "(1"}, "then": {"action": "accept"}}`)}}, `RoutingPolicy/p: spec.terms[0].match.asPath: asPath "(1" is no regular expression bgpd compiles`},
 		"an AS path with a parenthesis too many": {map[string][]any{"BGP": {bgp("")}, "RoutingPolicy": {policy("p", `{"match": {"asPath": "1)"}, "then": {"action": "accept"}}`)}}, `asPath "1)" is no regular expression`},
 		"an AS path that starts with a star":     {map[string][]any{"BGP": {bgp("")}, "RoutingPolicy": {policy("p", `{"match": {"asPath": "*1"}, "then": {"action": "accept"}}`)}}, `asPath "*1" is no regular expression`},
 		"an AS path that repeats an anchor":      {map[string][]any{"BGP": {bgp("")}, "RoutingPolicy": {policy("p", `{"match": {"asPath": "^*1"}, "then": {"action": "accept"}}`)}}, `asPath "^*1" is no regular expression`},
@@ -781,16 +781,16 @@ func TestJoolRefusals(t *testing.T) {
 		want string
 	}{
 		"two names of one link": {[]any{nat64("nat282", `{"prefix": "2001:db8:282::/96", "pool4": []}`), nat64("nat8", `{"prefix": "2001:db8:8::/96", "pool4": []}`)},
-			"NAT64 nat8 and NAT64 nat282 both take the link addresses 169.254.120.112/30, which the hashes of their names pick; rename NAT64 nat8"},
+			"NAT64/nat8: metadata.name: NAT64 nat8 and NAT64 nat282 both take the link addresses 169.254.120.112/30, which the hashes of their names pick; rename NAT64 nat8"},
 		"two NAT64s of one prefix": {[]any{nat64("a", `{"prefix": "64:ff9b::/96", "pool4": []}`), nat64("b", `{"prefix": "64:ff9b::/96", "pool4": []}`)},
-			"NAT64 b and NAT64 a both translate addresses of 64:ff9b::/96 in VRF default; give each NAT64 of a VRF a prefix of its own"},
+			"NAT64/b: spec.prefix: NAT64 b and NAT64 a both translate addresses of 64:ff9b::/96 in VRF default; give each NAT64 of a VRF a prefix of its own"},
 		"a prefix within another's": {[]any{nat64("a", `{"prefix": "64:ff9b::/96", "pool4": []}`), nat64("b", `{"prefix": "64:ff9b::/64", "pool4": []}`)},
-			"NAT64 b and NAT64 a both translate addresses of 64:ff9b::/64 in VRF default; give each NAT64 of a VRF a prefix of its own"},
+			"NAT64/b: spec.prefix: NAT64 b and NAT64 a both translate addresses of 64:ff9b::/64 in VRF default; give each NAT64 of a VRF a prefix of its own"},
 		"two NAT64s of one prefix in a VRF": {[]any{tenant("a", "64:ff9b::/96"), tenant("b", "64:ff9b::/64")},
-			"NAT64 b and NAT64 a both translate addresses of 64:ff9b::/64 in VRF tenant; give each NAT64 of a VRF a prefix of its own"},
+			"NAT64/b: spec.prefix: NAT64 b and NAT64 a both translate addresses of 64:ff9b::/64 in VRF tenant; give each NAT64 of a VRF a prefix of its own"},
 		"two NAT64s of one pool's address": {[]any{pool(`{"prefix": "192.0.2.8/30", "ports": "61001-65535", "protocols": ["tcp"]}`),
 			nat64("lab", `{"prefix": "2001:db8:64::/96", "pool4": [{"prefix": "192.0.2.10/32", "ports": "1-1000", "protocols": ["udp"]}]}`)},
-			"NAT64 lab: pool entry 1 shares addresses with the pool of NAT64 edge; give each NAT64 a pool of its own"},
+			"NAT64/lab: spec.pool4[0]: the entry shares addresses with the pool of NAT64 edge; give each NAT64 a pool of its own"},
 		// What jool file check passes and the kernel refuses once chalkos-nat64 loads the instance.
 		"a name of 12 characters": {[]any{nat64("abcdefghijkl", `{"prefix": "64:ff9b::/96", "pool4": []}`)},
 			"internal error: NAT64 abcdefghijkl: its link n64-abcdefghijkl is longer than an interface name's 15 characters; chalkd checks the config against the schemas and rules before it renders"},
@@ -923,15 +923,15 @@ func TestUnboundRefusals(t *testing.T) {
 		want string
 	}{
 		"a record twice": {args, []any{zone(`{"name": "lan.example.org", "type": "static", "records": [{"name": "a.lan.example.org", "type": "AAAA", "value": "2001:db8::1", "ttl": 3600},
-			{"name": "a.lan.example.org", "type": "AAAA", "value": "2001:DB8::1", "ttl": 300}]}`)}, "Resolver resolver: local zone 1: lan.example.org: record 2: a.lan.example.org. AAAA 2001:db8::1 appears twice; Unbound keeps one, so drop the other"},
+			{"name": "a.lan.example.org", "type": "AAAA", "value": "2001:DB8::1", "ttl": 300}]}`)}, "Resolver/resolver: spec.localZones[0].records[1]: a.lan.example.org. AAAA 2001:db8::1 appears twice; Unbound keeps one, so drop the other"},
 		"a record in two zones": {args, []any{zone(`{"name": "example.org", "type": "transparent", "records": [{"name": "a.lan.example.org", "type": "A", "value": "192.0.2.1", "ttl": 3600}]},
-			{"name": "lan.example.org", "type": "static", "records": [{"name": "a.lan.example.org", "type": "A", "value": "192.0.2.1", "ttl": 3600}]}`)}, "Resolver resolver: local zone 2: lan.example.org: record 1: a.lan.example.org. A 192.0.2.1 appears twice; Unbound keeps one, so drop the other"},
+			{"name": "lan.example.org", "type": "static", "records": [{"name": "a.lan.example.org", "type": "A", "value": "192.0.2.1", "ttl": 3600}]}`)}, "Resolver/resolver: spec.localZones[1].records[0]: a.lan.example.org. A 192.0.2.1 appears twice; Unbound keeps one, so drop the other"},
 		"a CNAME beside another record": {args, []any{zone(`{"name": "lan.example.org", "type": "static", "records": [{"name": "a.lan.example.org", "type": "A", "value": "192.0.2.1", "ttl": 3600},
-			{"name": "a.lan.example.org", "type": "CNAME", "value": "r1.lan.example.org", "ttl": 3600}]}`)}, "Resolver resolver: local zone 1: lan.example.org: record 2: a.lan.example.org holds a CNAME record and another record; a CNAME's name holds it alone"},
+			{"name": "a.lan.example.org", "type": "CNAME", "value": "r1.lan.example.org", "ttl": 3600}]}`)}, "Resolver/resolver: spec.localZones[0].records[1]: a.lan.example.org holds a CNAME record and another record; a CNAME's name holds it alone"},
 		"two CNAMEs of one name": {args, []any{zone(`{"name": "lan.example.org", "type": "static", "records": [{"name": "a.lan.example.org", "type": "CNAME", "value": "r1.lan.example.org", "ttl": 3600},
-			{"name": "a.lan.example.org", "type": "CNAME", "value": "r2.lan.example.org", "ttl": 3600}]}`)}, "lan.example.org: record 2: a.lan.example.org holds a CNAME record and another record"},
+			{"name": "a.lan.example.org", "type": "CNAME", "value": "r2.lan.example.org", "ttl": 3600}]}`)}, "Resolver/resolver: spec.localZones[0].records[1]: a.lan.example.org holds a CNAME record and another record"},
 		"a CNAME in two zones": {args, []any{zone(`{"name": "example.org", "type": "transparent", "records": [{"name": "a.lan.example.org", "type": "CNAME", "value": "r1.lan.example.org", "ttl": 3600}]},
-			{"name": "lan.example.org", "type": "static", "records": [{"name": "a.lan.example.org", "type": "TXT", "value": "x", "ttl": 3600}]}`)}, "local zone 2: lan.example.org: record 1: a.lan.example.org holds a CNAME record and another record"},
+			{"name": "lan.example.org", "type": "static", "records": [{"name": "a.lan.example.org", "type": "TXT", "value": "x", "ttl": 3600}]}`)}, "Resolver/resolver: spec.localZones[1].records[0]: a.lan.example.org holds a CNAME record and another record"},
 		// The files of the image that the config names between quotes.
 		"a relative trust anchor":            {[]string{"unbound", "root.key", testZoneFile}, []any{resolver("")}, `"root.key" is no absolute path`},
 		"a trust anchor with a dot dot":      {[]string{"unbound", "/etc/../root.key", testZoneFile}, []any{resolver("")}, `"/etc/../root.key" is no absolute path`},
@@ -1026,12 +1026,12 @@ func TestUnboundPerVRF(t *testing.T) {
 		}
 	}
 	refused(t, args, docs("2001:db8:ffff::1"),
-		"Resolver guest: the address 2001:db8:ffff::1 of listen belongs to links of Network 10-eth0 in VRF default alone, so the resolver of VRF guest never receives its queries; listen on an address of the VRF's links")
+		"Resolver/guest: spec.listen[0]: the address 2001:db8:ffff::1 of listen belongs to links of Network 10-eth0 in VRF default alone, so the resolver of VRF guest never receives its queries; listen on an address of the VRF's links")
 	// The default VRF's resolver is refused an address of a VRF's links alike.
 	vrfOnly := docs("2001:db8:3::1")
 	vrfOnly["Resolver"] = []any{routerDoc(t, "Resolver", "resolver", `{"listen": ["2001:db8:3::1"], "allow": ["2001:db8::/32"], "forwarders": [], "dnssec": false, "dns64": null, "localZones": []}`)}
 	refused(t, args, vrfOnly,
-		"Resolver resolver: the address 2001:db8:3::1 of listen belongs to links of Network 40-guest in VRF guest alone, so the resolver of VRF default never receives its queries")
+		"Resolver/resolver: spec.listen[0]: the address 2001:db8:3::1 of listen belongs to links of Network 40-guest in VRF guest alone, so the resolver of VRF default never receives its queries")
 }
 
 // A peer in a VRF has its ports opened on its VRF's links by the VRF's device and sdifname: the
@@ -1099,7 +1099,7 @@ func TestFRRVRFRefusals(t *testing.T) {
 			"BGP": {bgp("bgp", 64512, "")}, "BGPPeer": {peer("x", `"interface": "lab"`)}},
 			"interface lab is the device of VRF lab"},
 		"an interface of another VRF": {withTenant(map[string][]any{"BGP": {bgp("bgp", 64512, "")}, "BGPPeer": {peer("x", `"interface": "eth2"`)}}),
-			"interface eth2 is in the VRF tenant, not in the peer's VRF default"},
+			"BGPPeer/x: spec.interface: interface eth2 is in the VRF tenant, not in the peer's VRF default"},
 		// A VRF's interface reaches its link through a Network, so one that no Network names is
 		// refused before a peer's interface of that name could be read as the default VRF's.
 		"an interface of another VRF that no Network names": {map[string][]any{"VRF": {tenant}, "Network": {document(t, "Network", "10-eth0", `{"match": {"name": "eth0"}}`)},
@@ -1108,10 +1108,10 @@ func TestFRRVRFRefusals(t *testing.T) {
 		"interfaces of every link": {withTenant(map[string][]any{"BGP": {bgp("bgp", 64512, "")}, "BGPPeer": {peer("x", `"interfaces": ["*"]`)}}),
 			"BGPPeer/x: spec.interfaces[0]: * matches tenant, the device of VRF tenant"},
 		"interfaces of another VRF's links alone": {withTenant(map[string][]any{"BGP": {bgp("bgp", 64512, "")}, "BGPPeer": {peer("x", `"interfaces": ["eth1", "eth2*"]`)}}),
-			"BGPPeer x: interfaces: eth2* matches no link of VRF default, only links of other VRFs"},
+			"BGPPeer/x: spec.interfaces[1]: eth2* matches no link of VRF default, only links of other VRFs"},
 		"a prepend for two AS numbers": {withTenant(map[string][]any{"BGP": {bgp("bgp", 64512, `, "networks": [{"prefix": "2001:db8:1::/48", "policy": "p"}]`),
 			bgp("tenant", 64513, `, "vrf": "tenant", "networks": [{"prefix": "2001:db8:2::/48", "policy": "p"}]`)}, "RoutingPolicy": {prepend}}),
-			"RoutingPolicy p prepends the AS number, and BGP instances of AS 64512 and 64513 use it; give each AS a policy of its own"},
+			"RoutingPolicy/p: spec.terms[0].then.prepend: RoutingPolicy p prepends the AS number, and BGP instances of AS 64512 and 64513 use it; give each AS a policy of its own"},
 		// Guards of what frr.conf writes unquoted, and of a peer without its instance's block.
 		"a VRF that adds a command": {withTenant(map[string][]any{"BGP": {bgp("x", 64512, `, "vrf": "tenant\nrouter bgp 64999"`)}}),
 			`internal error: BGP x: the input holds no VRF "tenant\nrouter bgp 64999"`},
@@ -1286,7 +1286,7 @@ func TestFRRVRFInterfaceByGlob(t *testing.T) {
 		t.Errorf("frr.conf runs no session on swp1 in tenant:\n%s", conf)
 	}
 	docs["BGPPeer"] = peer("")
-	refused(t, []string{"frr"}, docs, "interface swp1 is in the VRF tenant, not in the peer's VRF default")
+	refused(t, []string{"frr"}, docs, "BGPPeer/leaf: spec.interface: interface swp1 is in the VRF tenant, not in the peer's VRF default")
 	// A glob of a default-VRF peer expands to the links of no VRF alone.
 	docs["Network"] = append(docs["Network"],
 		document(t, "Network", "20-swp1", `{"match": {"name": "swp1"}}`),
