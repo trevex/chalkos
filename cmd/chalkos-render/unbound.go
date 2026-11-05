@@ -74,6 +74,9 @@ func renderUnbound(trustAnchor, zoneFile string, in map[string]any, out string) 
 		if _, err := mustGet(declared, "VRF", vrf); err != nil {
 			return within("Resolver "+r.Name, err)
 		}
+		if !plainInterface.MatchString(vrf) {
+			return internalErrorf("Resolver %s: the VRF %q is no VRF's name", r.Name, vrf)
+		}
 		if err := checkListenVRF(d, r, vrf); err != nil {
 			return err
 		}
