@@ -20,12 +20,10 @@ func renderRouterSysctl(in map[string]any, out string) error {
 		return err
 	}
 	r := d.router()
+	// The schema takes l3 and l4 alone; another value would set the hash policy of neither.
 	hash, ok := map[string]int{"l3": 0, "l4": 1}[r.ECMPHash]
 	if !ok {
-		return fmt.Errorf("Router: ecmpHash %q is neither l3 nor l4", r.ECMPHash)
-	}
-	if r.ConntrackMax != nil && *r.ConntrackMax < 1 {
-		return fmt.Errorf("Router: conntrackMax %d is below 1", *r.ConntrackMax)
+		return internalErrorf("Router: ecmpHash %q is neither l3 nor l4", r.ECMPHash)
 	}
 	var b strings.Builder
 	b.WriteString("# The kernel settings of the node's Router, rendered by chalkos-render router-sysctl.\n")

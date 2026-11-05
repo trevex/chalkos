@@ -157,12 +157,9 @@ func TestRouterRules(t *testing.T) {
 		{"a zone of nothing", replace(edge, doc("FirewallZone", "dmz", `{}`)),
 			[]string{"FirewallZone dmz: a FirewallZone names an interface or a VRF; give it interfaces, vrfs or both"}},
 		{"a zone of interfaces and a VRF", replace(edge, doc("VRF", "tenant", `{"table": 100}`), doc("FirewallZone", "tenant", `{"interfaces": ["eth3"], "vrfs": ["tenant"]}`)), nil},
-		{"a zone of a VRF's device", replace(edge, doc("VRF", "tenant", `{"table": 100}`), doc("FirewallZone", "tenant", `{"interfaces": ["eth3", "tenant"]}`)),
-			[]string{"FirewallZone tenant: tenant is the device of VRF tenant; name the VRF in vrfs"}},
-		{"a zone of an interface beside a VRF's name", replace(edge, doc("VRF", "tenant", `{"table": 100}`), doc("FirewallZone", "tenant", `{"interfaces": ["tenant0", "ten*"]}`)), nil},
-		{"a NAT interface of a VRF's device", replace(edge, doc("VRF", "tenant", `{"table": 100}`), doc("NATRule", "out", `{"type": "masquerade", "out": {"interface": "tenant"}}`)),
-			[]string{"NATRule out: tenant is the device of VRF tenant; name the VRF's links or a zone of the VRF"}},
-		{"a NAT glob beside a VRF's name", replace(edge, doc("VRF", "tenant", `{"table": 100}`), doc("NATRule", "out", `{"type": "masquerade", "out": {"interface": "*"}}`)), nil},
+		// The output router-nftables refuses interfaces of VRFs' devices, by name and by glob.
+		{"a zone of a VRF's device", replace(edge, doc("VRF", "tenant", `{"table": 100}`), doc("FirewallZone", "tenant", `{"interfaces": ["eth3", "tenant"]}`)), nil},
+		{"a NAT interface of a VRF's device", replace(edge, doc("VRF", "tenant", `{"table": 100}`), doc("NATRule", "out", `{"type": "masquerade", "out": {"interface": "tenant"}}`)), nil},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			failures, err := set.Evaluate(Input{Documents: tc.docs, Node: "r1"})

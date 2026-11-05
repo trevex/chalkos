@@ -173,8 +173,11 @@ A `NATRule` translates in prerouting and postrouting, which see links alone, so 
 refuses a NAT rule's interface that matches a VRF's device and no link: a VRF's name, or a glob
 that matches no link the `Network` documents name. A glob such as `*` translates on the links it
 matches. The renderer refuses every interface that matches a VRF's device in a zone's
-`interfaces` and in `Router.spec.management.interfaces`, as chalkd answers in the default VRF
-alone. A config without VRFs renders as it did before VRFs.
+`interfaces`, in a `PolicyRoute`'s `in` and in `Router.spec.management.interfaces`. A zone names
+the VRF in `vrfs` instead, a policy route the VRF's links, and chalkd answers in the default VRF
+alone. A VRF's device is that of a `VRF` document or of a `Network`'s own `VRF=`, and a glob
+matches it as a glob. The renderer alone checks the devices, when the router renders its config;
+`chalkctl validate` does not. A config without VRFs renders as it did before VRFs.
 
 ## Conntrack zones
 

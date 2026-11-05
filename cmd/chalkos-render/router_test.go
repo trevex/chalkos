@@ -494,19 +494,18 @@ func TestRouterRefusals(t *testing.T) {
 		docs map[string][]any
 		want string
 	}{
-		"a port that is no number": {[]string{"router-nftables", "chalkd"}, nil, `"chalkd" is no TCP port of chalkd`},
-		"an unknown hash":          {[]string{"router-sysctl"}, map[string][]any{"Router": {doc("Router", "r", `{"forwarding": {"ipv4": true, "ipv6": true}, "rpFilter": "loose", "ecmpHash": "l5", "conntrackMax": null, "management": {"interfaces": null}}`)}}, `ecmpHash "l5" is neither l3 nor l4`},
-		"an inverted range":        {[]string{"router-nftables", "50000"}, map[string][]any{"FirewallZone": {zone}, "FirewallPolicy": {rule(`{"protocol": "tcp", "destinationPorts": ["90-80"], "action": "accept"}`)}}, `internal error: FirewallPolicy wan-local: "90-80" is no range of ports`},
-		"port zero":                {[]string{"router-nftables", "50000"}, map[string][]any{"FirewallZone": {zone}, "FirewallPolicy": {rule(`{"protocol": "tcp", "destinationPorts": [0], "action": "accept"}`)}}, "internal error: FirewallPolicy wan-local: a port is a number from 1 to 65535"},
-		"a range from port zero":   {[]string{"router-nftables", "50000"}, map[string][]any{"FirewallZone": {zone}, "FirewallPolicy": {rule(`{"protocol": "tcp", "destinationPorts": ["0-80"], "action": "accept"}`)}}, `internal error: FirewallPolicy wan-local: "0-80" is no range of ports`},
-		"a port that adds a rule":  {[]string{"router-nftables", "50000"}, map[string][]any{"FirewallZone": {zone}, "FirewallPolicy": {rule(`{"protocol": "tcp", "destinationPorts": ["22 } accept; tcp dport { 23"], "action": "accept"}`)}}, `internal error: FirewallPolicy wan-local: "22 } accept; tcp dport { 23" is no range of ports`},
-		"a target port zero":       {[]string{"router-nftables", "50000"}, map[string][]any{"FirewallZone": {zone}, "NATRule": {doc("NATRule", "n", `{"type": "dnat", "family": "ipv4", "in": {"zone": "wan", "interface": null}, "out": null, "match": {"source": [], "destination": [], "protocol": "tcp", "destinationPorts": []}, "to": {"address": "192.0.2.1", "port": 0}}`)}}, "to.port 0 is no port"},
-		"a set beside ranges":      {[]string{"router-nftables", "50000"}, map[string][]any{"FirewallZone": {zone}, "FirewallPolicy": {rule(`{"source": {"set": "a", "cidrs": ["192.0.2.0/24"]}, "action": "accept"}`)}}, "source: it names both set and cidrs, or neither"},
-		"ports without a protocol": {[]string{"router-nftables", "50000"}, map[string][]any{"FirewallZone": {zone}, "FirewallPolicy": {rule(`{"destinationPorts": [22], "action": "accept"}`)}}, "ports and ICMP types need a protocol"},
-		"masquerade with to":       {[]string{"router-nftables", "50000"}, map[string][]any{"FirewallZone": {zone}, "NATRule": {doc("NATRule", "n", `{"type": "masquerade", "family": "ipv4", "out": {"zone": "wan", "interface": null}, "in": null, "match": {"source": [], "destination": [], "protocol": null, "destinationPorts": []}, "to": {"address": "192.0.2.1", "port": null}}`)}}, "masquerade translates to the interface's address and has no to"},
+		"a port that is no number":       {[]string{"router-nftables", "chalkd"}, nil, `"chalkd" is no TCP port of chalkd`},
+		"an unknown hash":                {[]string{"router-sysctl"}, map[string][]any{"Router": {doc("Router", "r", `{"forwarding": {"ipv4": true, "ipv6": true}, "rpFilter": "loose", "ecmpHash": "l5", "conntrackMax": null, "management": {"interfaces": null}}`)}}, `internal error: Router: ecmpHash "l5" is neither l3 nor l4`},
+		"an unknown reverse-path filter": {[]string{"router-nftables", "50000"}, map[string][]any{"Router": {doc("Router", "r", `{"forwarding": {"ipv4": true, "ipv6": true}, "rpFilter": "any", "ecmpHash": "l4", "conntrackMax": null, "management": {"interfaces": null}}`)}}, `internal error: Router: rpFilter "any" is none of off, loose and strict`},
+		// Ports, which the ruleset writes unquoted.
+		"an inverted range":       {[]string{"router-nftables", "50000"}, map[string][]any{"FirewallZone": {zone}, "FirewallPolicy": {rule(`{"protocol": "tcp", "destinationPorts": ["90-80"], "action": "accept"}`)}}, `internal error: FirewallPolicy wan-local: "90-80" is no range of ports`},
+		"port zero":               {[]string{"router-nftables", "50000"}, map[string][]any{"FirewallZone": {zone}, "FirewallPolicy": {rule(`{"protocol": "tcp", "destinationPorts": [0], "action": "accept"}`)}}, "internal error: FirewallPolicy wan-local: a port is a number from 1 to 65535"},
+		"a range from port zero":  {[]string{"router-nftables", "50000"}, map[string][]any{"FirewallZone": {zone}, "FirewallPolicy": {rule(`{"protocol": "tcp", "destinationPorts": ["0-80"], "action": "accept"}`)}}, `internal error: FirewallPolicy wan-local: "0-80" is no range of ports`},
+		"a port that adds a rule": {[]string{"router-nftables", "50000"}, map[string][]any{"FirewallZone": {zone}, "FirewallPolicy": {rule(`{"protocol": "tcp", "destinationPorts": ["22 } accept; tcp dport { 23"], "action": "accept"}`)}}, `internal error: FirewallPolicy wan-local: "22 } accept; tcp dport { 23" is no range of ports`},
 		// Values nftables would read as syntax of the ruleset.
-		"an ICMP type that adds a rule": {[]string{"router-nftables", "50000"}, map[string][]any{"FirewallZone": {zone}, "FirewallPolicy": {rule(`{"protocol": "icmp", "icmpTypes": ["echo-request } ip saddr 0.0.0.0/0 accept; icmp type { echo-reply"], "action": "drop"}`)}}, `is no ICMP type the firewall matches`},
-		"a family that adds a match":    {[]string{"router-nftables", "50000"}, map[string][]any{"FirewallZone": {zone}, "FirewallPolicy": {rule(`{"family": "ipv4 ip saddr 0.0.0.0/0", "action": "accept"}`)}}, `family "ipv4 ip saddr 0.0.0.0/0" is neither ipv4 nor ipv6`},
+		"an ICMP type that adds a rule": {[]string{"router-nftables", "50000"}, map[string][]any{"FirewallZone": {zone}, "FirewallPolicy": {rule(`{"protocol": "icmp", "icmpTypes": ["echo-request } ip saddr 0.0.0.0/0 accept; icmp type { echo-reply"], "action": "drop"}`)}}, `internal error: "echo-request } ip saddr 0.0.0.0/0 accept; icmp type { echo-reply" is no ICMP type the firewall matches`},
+		"a family that adds a match":    {[]string{"router-nftables", "50000"}, map[string][]any{"FirewallZone": {zone}, "FirewallPolicy": {rule(`{"family": "ipv4 ip saddr 0.0.0.0/0", "action": "accept"}`)}}, `internal error: family "ipv4 ip saddr 0.0.0.0/0" is neither ipv4 nor ipv6`},
+		"a set's family":                {[]string{"router-nftables", "50000"}, map[string][]any{"AddressSet": {doc("AddressSet", "office", `{"family": "ipv4_addr; flags interval", "prefixes": ["192.0.2.0/24"]}`)}}, `internal error: AddressSet office: family "ipv4_addr; flags interval" is neither ipv4 nor ipv6`},
 		"a policy name that adds rules": {[]string{"router-nftables", "50000"}, map[string][]any{"FirewallZone": {zone}, "FirewallPolicy": {doc("FirewallPolicy", "x { accept; }; chain y", `{"from": "wan", "to": "local", "default": "drop", "rules": []}`)}}, `internal error: a FirewallPolicy document: "x { accept; }; chain y" is no document name`},
 		"a set name in capitals":        {[]string{"router-nftables", "50000"}, map[string][]any{"AddressSet": {doc("AddressSet", "Office", `{"family": "ipv4", "prefixes": ["192.0.2.0/24"]}`)}}, `internal error: a AddressSet document: "Office" is no document name`},
 		"an interface that ends a set":  {[]string{"router-nftables", "50000"}, map[string][]any{"FirewallZone": {doc("FirewallZone", "wan", `{"interfaces": ["eth0\" } accept; iifname { \"eth1"]}`)}}, `internal error: FirewallZone wan: "eth0\" } accept; iifname { \"eth1" is no interface name or glob`},
@@ -514,7 +513,9 @@ func TestRouterRefusals(t *testing.T) {
 		"a management interface":        {[]string{"router-nftables", "50000"}, map[string][]any{"Router": {doc("Router", "router", `{"forwarding": {"ipv4": true, "ipv6": true}, "rpFilter": "loose", "ecmpHash": "l4", "conntrackMax": null, "management": {"interfaces": ["eth0 accept"]}}`)}}, `internal error: Router: management.interfaces: "eth0 accept" is no interface name or glob`},
 		"a NAT rule's interface":        {[]string{"router-nftables", "50000"}, map[string][]any{"NATRule": {doc("NATRule", "n", `{"type": "masquerade", "family": "ipv4", "out": {"zone": null, "interface": "eth0\"; accept"}, "in": null, "match": {"source": [], "destination": [], "protocol": null, "destinationPorts": []}, "to": null}`)}}, `internal error: NATRule n: "eth0\"; accept" is no interface name or glob`},
 		"no management interface":       {[]string{"router-nftables", "50000"}, map[string][]any{"Router": {doc("Router", "router", `{"forwarding": {"ipv4": true, "ipv6": true}, "rpFilter": "loose", "ecmpHash": "l4", "conntrackMax": null, "management": {"interfaces": []}}`)}}, "internal error: Router: management.interfaces names no interface"},
-		"a zone without interfaces":     {[]string{"router-nftables", "50000"}, map[string][]any{"FirewallZone": {doc("FirewallZone", "wan", `{"interfaces": []}`)}}, "FirewallZone wan: a FirewallZone names an interface or a VRF; give it interfaces, vrfs or both"},
+		// What would panic: a NAT rule of no place and a translation of no address.
+		"a NAT rule of no place": {[]string{"router-nftables", "50000"}, map[string][]any{"NATRule": {doc("NATRule", "n", `{"type": "masquerade", "family": "ipv4", "out": null, "in": null, "match": {"source": [], "destination": [], "protocol": null, "destinationPorts": []}, "to": null}`)}}, "NATRule n: internal error: a masquerade rule names no place"},
+		"snat without to":        {[]string{"router-nftables", "50000"}, map[string][]any{"FirewallZone": {zone}, "NATRule": {doc("NATRule", "n", `{"type": "snat", "family": "ipv4", "out": {"zone": "wan", "interface": null}, "in": null, "match": {"source": [], "destination": [], "protocol": null, "destinationPorts": []}, "to": null}`)}}, "NATRule n: internal error: snat has no to"},
 		// A BGPPeer's ports open on its interfaces or from its address alone.
 		"a peer's interface that ends a set": {[]string{"router-nftables", "50000"}, map[string][]any{"BGPPeer": {doc("BGPPeer", "a", `{"interface": "eth1\" } accept; iifname { \"eth2"}`)}}, `internal error: BGPPeer a: "eth1\" } accept; iifname { \"eth2" is no interface name or glob`},
 		"a peer's address with a zone":       {[]string{"router-nftables", "50000"}, map[string][]any{"BGPPeer": {doc("BGPPeer", "a", `{"address": "fe80::1%eth1"}`)}}, `BGPPeer a: address "fe80::1%eth1" is no neighbour address`},
@@ -1482,10 +1483,12 @@ func TestVRFNATOfEveryInterface(t *testing.T) {
 	}
 }
 
-// The firewall refuses zones the rules refuse, should they bypass them, and zones whose links it
-// cannot tell apart from a VRF's: an interface that matches a VRF's device, one that may be a
-// link of a VRF another zone holds, and a VRF whose links nftables cannot match. A NAT rule's
-// interface that matches nothing but VRF devices translates nothing.
+// The firewall refuses zones whose links it cannot tell apart from a VRF's: an interface, by name
+// or glob, that matches a VRF's device, one that may be a link of a VRF another zone holds, and a
+// VRF whose links nftables cannot match. A NAT rule's interface that matches nothing but VRF
+// devices translates nothing, and a VRF's name matches its device alone, also where a glob of
+// another VRF's links covers the name. A management interface of a VRF's device takes no
+// connection to chalkd.
 func TestVRFZoneRefusals(t *testing.T) {
 	zone := func(name, spec string) any { return routerDoc(t, "FirewallZone", name, spec) }
 	tenant := zone("tenant", `{"interfaces": [], "vrfs": ["tenant"]}`)
@@ -1504,6 +1507,10 @@ func TestVRFZoneRefusals(t *testing.T) {
 		docs["NATRule"] = []any{routerDoc(t, "NATRule", "n", `{"type": "masquerade", "family": "ipv4", "out": {"zone": null, "interface": "`+i+`"}, "in": null, "match": {"source": [], "destination": [], "protocol": null, "destinationPorts": []}, "to": null}`)}
 		return docs
 	}
+	// The Network 50-in puts the links of in* into the VRF lab; in* covers the name of the device
+	// internet as well.
+	covered := natOut("internet")
+	covered["Network"] = append(covered["Network"], document(t, "Network", "50-in", `{"match": {"name": "in*"}, "network": {"vrf": "lab"}}`))
 	narrowed := with(zone("x", `{"interfaces": ["swp3"], "vrfs": []}`))
 	narrowed["Network"] = append(narrowed["Network"], document(t, "Network", "25-swp", `{"match": {"name": "swp3", "macAddress": "02:00:00:00:00:01"}}`))
 	management := func(i string) map[string][]any {
@@ -1515,17 +1522,18 @@ func TestVRFZoneRefusals(t *testing.T) {
 		docs map[string][]any
 		want string
 	}{
-		"a zone of nothing":                  {with(zone("x", `{"interfaces": [], "vrfs": []}`)), "FirewallZone x: a FirewallZone names an interface or a VRF; give it interfaces, vrfs or both"},
-		"a VRF's device":                     {with(zone("x", `{"interfaces": ["ten*"], "vrfs": []}`)), "FirewallZone x: ten* matches tenant, the device of VRF tenant; name the VRF in vrfs"},
-		"a link of another zone's VRF":       {with(tenant, zone("x", `{"interfaces": ["eth2"], "vrfs": []}`)), "FirewallZone x names eth2, which may be a link of VRF tenant, which FirewallZone tenant holds; give each link one zone"},
-		"a glob of another zone's VRF":       {with(tenant, zone("x", `{"interfaces": ["swp1*"], "vrfs": []}`)), "FirewallZone x names swp1*, which may be a link of VRF tenant, which FirewallZone tenant holds; give each link one zone"},
-		"links nftables cannot match":        {unmatchable, "FirewallZone tenant: VRF tenant holds the links of Network 50-lab's Name=lab[12], which nftables cannot match; name them by a name or a prefix and *"},
-		"a NAT zone of no link":              {empty, "NATRule n: the zone x holds no link"},
-		"a NAT interface of a VRF's device":  {natOut("internet"), "NATRule n: internet matches no link, only internet, the device of VRF internet; name the VRF's links or a zone of the VRF"},
-		"a NAT glob of a VRF's device alone": {natOut("inter*"), "NATRule n: inter* matches no link, only internet, the device of VRF internet; name the VRF's links or a zone of the VRF"},
-		"a link of a narrowed Network":       {narrowed, "FirewallZone x: networkd puts swp3 in VRF tenant only if the other [Match] keys of Network 25-swp match it"},
-		"a management VRF device":            {management("tenant"), "Router: the management interface tenant matches tenant, the device of VRF tenant, and chalkd answers in the default VRF alone; name the default VRF's links"},
-		"a management glob of a VRF device":  {management("gu*"), "Router: the management interface gu* matches guest, the device of VRF guest, and chalkd answers in the default VRF alone; name the default VRF's links"},
+		"a VRF's device":                                  {with(zone("x", `{"interfaces": ["eth9", "tenant"], "vrfs": []}`)), "FirewallZone x: tenant matches tenant, the device of VRF tenant; name the VRF in vrfs"},
+		"a glob of a VRF's device":                        {with(zone("x", `{"interfaces": ["ten*"], "vrfs": []}`)), "FirewallZone x: ten* matches tenant, the device of VRF tenant; name the VRF in vrfs"},
+		"a link of another zone's VRF":                    {with(tenant, zone("x", `{"interfaces": ["eth2"], "vrfs": []}`)), "FirewallZone x names eth2, which may be a link of VRF tenant, which FirewallZone tenant holds; give each link one zone"},
+		"a glob of another zone's VRF":                    {with(tenant, zone("x", `{"interfaces": ["swp1*"], "vrfs": []}`)), "FirewallZone x names swp1*, which may be a link of VRF tenant, which FirewallZone tenant holds; give each link one zone"},
+		"links nftables cannot match":                     {unmatchable, "FirewallZone tenant: VRF tenant holds the links of Network 50-lab's Name=lab[12], which nftables cannot match; name them by a name or a prefix and *"},
+		"a NAT zone of no link":                           {empty, "NATRule n: the zone x holds no link"},
+		"a NAT interface of a VRF's device":               {natOut("internet"), "NATRule n: internet matches no link, only internet, the device of VRF internet; name the VRF's links or a zone of the VRF"},
+		"a NAT glob of a VRF's device alone":              {natOut("inter*"), "NATRule n: inter* matches no link, only internet, the device of VRF internet; name the VRF's links or a zone of the VRF"},
+		"a NAT interface of a VRF's device a glob covers": {covered, "NATRule n: internet matches no link, only internet, the device of VRF internet; name the VRF's links or a zone of the VRF"},
+		"a link of a narrowed Network":                    {narrowed, "FirewallZone x: networkd puts swp3 in VRF tenant only if the other [Match] keys of Network 25-swp match it"},
+		"a management VRF device":                         {management("tenant"), "Router: the management interface tenant matches tenant, the device of VRF tenant, and chalkd answers in the default VRF alone; name the default VRF's links"},
+		"a management glob of a VRF device":               {management("gu*"), "Router: the management interface gu* matches guest, the device of VRF guest, and chalkd answers in the default VRF alone; name the default VRF's links"},
 	} {
 		t.Run(name, func(t *testing.T) { refused(t, []string{"router-nftables", "50000"}, c.docs, c.want) })
 	}
@@ -1582,7 +1590,7 @@ func TestConntrackZonesOfSeveralVRFs(t *testing.T) {
 	}
 }
 
-// The firewall refuses conntrack zones the schema and rules refuse, should they bypass them.
+// The firewall refuses a conntrack zone of links nftables cannot match.
 func TestConntrackZoneRefusals(t *testing.T) {
 	with := func(guest, internet string) map[string][]any {
 		docs := vrfZoneDocs(t)
@@ -1596,8 +1604,6 @@ func TestConntrackZoneRefusals(t *testing.T) {
 		docs map[string][]any
 		want string
 	}{
-		"zone 0":                      {with(`, "conntrackZone": 0`, ""), "VRF guest: conntrackZone 0 is no zone from 1 to 65535"},
-		"zone 65536":                  {with(`, "conntrackZone": 65536`, ""), "VRF guest: conntrackZone 65536 is no zone from 1 to 65535"},
 		"links nftables cannot match": {unmatchable, "VRF guest holds the links of Network 50-lab's Name=lab[12], which nftables cannot match"},
 	} {
 		t.Run(name, func(t *testing.T) { refused(t, []string{"router-nftables", "50000"}, c.docs, c.want) })

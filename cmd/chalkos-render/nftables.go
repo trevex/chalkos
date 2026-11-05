@@ -196,7 +196,8 @@ func newFirewall(d routerDocuments, port int, closed bool) (*firewall, error) {
 			return nil, err
 		}
 		// The input hook sees the VRF's device for each of its links, while chalkd listens in
-		// the default VRF alone.
+		// the default VRF alone. The devices are those of the VRF documents and of the Networks'
+		// own VRF=, which the VRF's rules cannot see, so the check is the renderer's alone.
 		for _, i := range m {
 			if dev, ok := vrfDeviceMatch(i, devices); ok {
 				return nil, fmt.Errorf("Router: the management interface %s matches %s, the device of VRF %s, and chalkd answers in the default VRF alone; name the default VRF's links", i, dev, dev)
@@ -219,9 +220,6 @@ func newFirewall(d routerDocuments, port int, closed bool) (*firewall, error) {
 			continue
 		}
 		z := *v.Spec.ConntrackZone
-		if z < 1 || z > 65535 {
-			return nil, fmt.Errorf("VRF %s: conntrackZone %d is no zone from 1 to 65535", v.Name, z)
-		}
 		links, err := d.Membership.links(v.Name)
 		if err != nil {
 			return nil, err
@@ -251,8 +249,9 @@ func newFirewall(d routerDocuments, port int, closed bool) (*firewall, error) {
 		}
 	}
 	for _, s := range d.Sets {
-		if s.Spec.Family != "ipv4" && s.Spec.Family != "ipv6" {
-			return nil, fmt.Errorf("AddressSet %s: family %q is neither ipv4 nor ipv6", s.Name, s.Spec.Family)
+		// The family is the set's type, which the ruleset writes unquoted.
+		if _, ok := familyWords[s.Spec.Family]; !ok {
+			return nil, internalErrorf("AddressSet %s: family %q is neither ipv4 nor ipv6", s.Name, s.Spec.Family)
 		}
 		f.sets[s.Name] = s.Spec
 		f.setNames = append(f.setNames, s.Name)
@@ -265,10 +264,8 @@ func newFirewall(d routerDocuments, port int, closed bool) (*firewall, error) {
 			return nil, err
 		}
 	}
+	// The rules refuse a policy from local, which no zone is: mustGet finds none.
 	for _, p := range d.Policies {
-		if p.Spec.From == "local" {
-			return nil, fmt.Errorf("FirewallPolicy %s comes from local", p.Name)
-		}
 		if p.Spec.To != "local" {
 			if _, err := mustGet(f.zones, "FirewallZone", p.Spec.To); err != nil {
 				return nil, fmt.Errorf("FirewallPolicy %s: %w", p.Name, err)
@@ -307,10 +304,11 @@ func (z zoneLinks) entries() []string {
 }
 
 // zoneLinksOf finds where the hooks see each zone's connections. Without VRFs a zone's
-// interfaces are its in and its links, as before VRFs. It refuses a zone of no interface and no
-// VRF, an interface that matches a VRF's device, which the input and forward hooks see for each
-// of the VRF's links, and an interface that may be a link of a VRF another zone holds. The set
-// check refuses a VRF that two zones hold, so each VRF has one zone in held.
+// interfaces are its in and its links, as before VRFs. It refuses an interface or glob that
+// matches a VRF's device, which the input and forward hooks see for each of the VRF's links, and
+// an interface that may be a link of a VRF another zone holds. The devices include those of the
+// Networks' own VRF=, and globs match them as globs, which the FirewallZone's rules cannot see.
+// The uniqueness check refuses a VRF that two zones hold, so each VRF has one zone in held.
 func zoneLinksOf(d routerDocuments, devices []string) (map[string]zoneLinks, error) {
 	declared := map[string]bool{}
 	for _, v := range d.VRFs {
@@ -328,9 +326,6 @@ func zoneLinksOf(d routerDocuments, devices []string) (map[string]zoneLinks, err
 	out := map[string]zoneLinks{}
 	for _, z := range d.Zones {
 		what := "FirewallZone " + z.Name
-		if len(z.Spec.Interfaces) == 0 && len(z.Spec.VRFs) == 0 {
-			return nil, fmt.Errorf("%s: a FirewallZone names an interface or a VRF; give it interfaces, vrfs or both", what)
-		}
 		if len(z.Spec.Interfaces) > 0 {
 			if err := checkInterfaces(what, z.Spec.Interfaces); err != nil {
 				return nil, err
@@ -391,11 +386,12 @@ func vrfDevices(d routerDocuments) []string {
 
 // onlyDevice returns the first VRF device of devices that the interface or glob i matches, when
 // i matches no link: none the Network documents name and no glob of a VRF's links. A glob such
-// as *, which matches links too, is not one.
+// as *, which matches links too, is not one. An interface that is a device's name matches that
+// device alone, whatever glob of a VRF's links covers the name too.
 func onlyDevice(d routerDocuments, devices []string, i string) (string, bool) {
 	dev, ok := vrfDeviceMatch(i, devices)
-	if !ok {
-		return "", false
+	if !ok || !strings.HasSuffix(i, "*") {
+		return dev, ok
 	}
 	for _, l := range d.Links {
 		if !slices.Contains(devices, l) && matchesGlob(i, l) {
@@ -491,7 +487,7 @@ func (f *firewall) ruleset() (string, error) {
 		"table inet chalkos {\n")
 	for _, name := range f.setNames {
 		s := f.sets[name]
-		elements, err := prefixes(s.Prefixes, s.Family)
+		elements, err := prefixes(s.Prefixes)
 		if err != nil {
 			return "", fmt.Errorf("AddressSet %s: %w", name, err)
 		}
@@ -566,7 +562,7 @@ func (f *firewall) prerouting(b *strings.Builder) error {
 	case "strict":
 		fib = "fib saddr . mark . iif oif exists accept"
 	default:
-		return fmt.Errorf("Router: rpFilter %q is none of off, loose and strict", f.router.RPFilter)
+		return internalErrorf("Router: rpFilter %q is none of off, loose and strict", f.router.RPFilter)
 	}
 	b.WriteString("\tchain prerouting {\n" +
 		"\t\ttype filter hook prerouting priority mangle + 10; policy drop;\n")
@@ -769,21 +765,22 @@ func (f *firewall) nat64Lines() []string {
 	return lines
 }
 
+// natLine renders a NATRule. The NATRule's rules check its place, to, family and ports; natLine
+// guards what would panic or add syntax to the ruleset.
 func (f *firewall) natLine(n natSpec) (string, error) {
 	family, ok := familyWords[n.Family]
 	if !ok {
-		return "", fmt.Errorf("family %q is neither ipv4 nor ipv6", n.Family)
+		return "", internalErrorf("family %q is neither ipv4 nor ipv6", n.Family)
 	}
 	parts := []string{"meta nfproto " + n.Family}
 	place, dir := n.Out, "oifname"
 	if n.Type == "dnat" {
 		place, dir = n.In, "iifname"
 	}
-	if place == nil {
-		return "", fmt.Errorf("a %s rule names no place", n.Type)
-	}
 	switch {
-	case place.Zone != nil && place.Interface == nil:
+	case place == nil:
+		return "", internalErrorf("a %s rule names no place", n.Type)
+	case place.Zone != nil:
 		z, err := mustGet(f.zones, "FirewallZone", *place.Zone)
 		if err != nil {
 			return "", err
@@ -792,10 +789,10 @@ func (f *firewall) natLine(n natSpec) (string, error) {
 			return "", fmt.Errorf("the zone %s holds no link", *place.Zone)
 		}
 		parts = append(parts, dir+" "+interfaceSet(z.links))
-	case place.Interface != nil && place.Zone == nil:
+	case place.Interface != nil:
 		parts = append(parts, dir+" "+interfaceSet([]string{*place.Interface}))
 	default:
-		return "", fmt.Errorf("a place names a zone or an interface, one of them")
+		return "", internalErrorf("a place names neither a zone nor an interface")
 	}
 	for _, side := range []struct {
 		dir    string
@@ -804,7 +801,7 @@ func (f *firewall) natLine(n natSpec) (string, error) {
 		if len(side.ranges) == 0 {
 			continue
 		}
-		elements, err := prefixes(side.ranges, n.Family)
+		elements, err := prefixes(side.ranges)
 		if err != nil {
 			return "", err
 		}
@@ -821,22 +818,17 @@ func (f *firewall) natLine(n natSpec) (string, error) {
 			return "", err
 		}
 		parts = append(parts, proto)
-	} else if len(n.Match.DestinationPorts) > 0 {
-		return "", fmt.Errorf("ports need match.protocol")
 	}
 	switch n.Type {
 	case "masquerade":
-		if n.To != nil {
-			return "", fmt.Errorf("masquerade translates to the interface's address and has no to")
-		}
 		parts = append(parts, "masquerade")
 	case "snat", "dnat":
 		if n.To == nil {
-			return "", fmt.Errorf("%s needs to", n.Type)
+			return "", internalErrorf("%s has no to", n.Type)
 		}
 		a, err := netip.ParseAddr(n.To.Address)
-		if err != nil || (a.Is4() != (n.Family == "ipv4")) {
-			return "", fmt.Errorf("to.address %q is no %s address", n.To.Address, n.Family)
+		if err != nil {
+			return "", internalErrorf("to.address %q is no address", n.To.Address)
 		}
 		for _, x := range f.nat64 {
 			for _, p := range x.pools {
@@ -847,12 +839,6 @@ func (f *firewall) natLine(n natSpec) (string, error) {
 		}
 		to := a.String()
 		if n.To.Port != nil {
-			if n.Match.Protocol == nil {
-				return "", fmt.Errorf("to.port needs match.protocol")
-			}
-			if *n.To.Port < 1 || *n.To.Port > 65535 {
-				return "", fmt.Errorf("to.port %d is no port from 1 to 65535", *n.To.Port)
-			}
 			if a.Is6() {
 				to = "[" + to + "]"
 			}
@@ -860,7 +846,7 @@ func (f *firewall) natLine(n natSpec) (string, error) {
 		}
 		parts = append(parts, fmt.Sprintf("%s %s to %s", n.Type, family, to))
 	default:
-		return "", fmt.Errorf("type %q is none of masquerade, snat and dnat", n.Type)
+		return "", internalErrorf("type %q is none of masquerade, snat and dnat", n.Type)
 	}
 	return strings.Join(parts, " "), nil
 }
@@ -918,7 +904,8 @@ type familyMatch struct {
 
 // matchLines are the matches of a rule's terms: one per family it matches, or one for both when
 // it names neither addresses nor a family. A family its addresses or sets leave no address of
-// has none.
+// has none. The rules of FirewallPolicy and PolicyRoute check that ports and ICMP types go with
+// their protocols and that a rule matches a family.
 func (f *firewall) matchLines(r firewallRule) ([]familyMatch, error) {
 	protocol := ""
 	if r.Protocol != nil {
@@ -926,13 +913,11 @@ func (f *firewall) matchLines(r firewallRule) ([]familyMatch, error) {
 		if protocol, err = protocolMatch(*r.Protocol, r.SourcePorts, r.DestinationPorts, r.ICMPTypes); err != nil {
 			return nil, err
 		}
-	} else if len(r.SourcePorts) > 0 || len(r.DestinationPorts) > 0 || len(r.ICMPTypes) > 0 {
-		return nil, fmt.Errorf("ports and ICMP types need a protocol")
 	}
 	families := []string{"ipv4", "ipv6"}
 	if r.Family != nil {
 		if _, ok := familyWords[*r.Family]; !ok {
-			return nil, fmt.Errorf("family %q is neither ipv4 nor ipv6", *r.Family)
+			return nil, internalErrorf("family %q is neither ipv4 nor ipv6", *r.Family)
 		}
 		families = []string{*r.Family}
 	}
@@ -984,13 +969,12 @@ func joinWords(parts ...string) string {
 
 // addressMatch is the match of the source or destination a on the side dir, saddr or daddr, in
 // the family fam: of its AddressSet, or of its ranges of that family. ok is false when a has
-// addresses but none of fam; a nil a matches every address.
+// addresses but none of fam; a nil a matches every address. The rules check that a names a set or
+// ranges, one of them.
 func (f *firewall) addressMatch(fam, dir string, a *addresses) (match string, ok bool, err error) {
 	switch {
 	case a == nil:
 		return "", true, nil
-	case (a.Set != nil) == (len(a.CIDRs) > 0):
-		return "", false, fmt.Errorf("it names both set and cidrs, or neither")
 	case a.Set != nil:
 		s, err := mustGet(f.sets, "AddressSet", *a.Set)
 		if err != nil {
@@ -1005,7 +989,7 @@ func (f *firewall) addressMatch(fam, dir string, a *addresses) (match string, ok
 	for _, a := range a.CIDRs {
 		p, err := netip.ParsePrefix(a)
 		if err != nil {
-			return "", false, fmt.Errorf("%q is no address range", a)
+			return "", false, internalErrorf("%q is no address range", a)
 		}
 		if p.Addr().Is4() == (fam == "ipv4") {
 			mine = append(mine, p.Masked().String())
@@ -1017,13 +1001,14 @@ func (f *firewall) addressMatch(fam, dir string, a *addresses) (match string, ok
 	return fmt.Sprintf("%s %s { %s }", familyWords[fam], dir, strings.Join(mine, ", ")), true, nil
 }
 
-// prefixes are the address ranges l, all of the family fam, masked as nftables takes them.
-func prefixes(l []string, fam string) ([]string, error) {
+// prefixes are the address ranges l masked as nftables takes them. The rules of AddressSet and
+// NATRule check that they are of the set's or rule's family.
+func prefixes(l []string) ([]string, error) {
 	out := make([]string, 0, len(l))
 	for _, a := range l {
 		p, err := netip.ParsePrefix(a)
-		if err != nil || p.Addr().Is4() != (fam == "ipv4") {
-			return nil, fmt.Errorf("%q is no %s address range", a, fam)
+		if err != nil {
+			return nil, internalErrorf("%q is no address range", a)
 		}
 		out = append(out, p.Masked().String())
 	}
@@ -1038,13 +1023,13 @@ var protocolNumbers = map[string]string{"gre": "47", "esp": "50", "ah": "51"}
 // both protocols; packet-too-big is ICMPv6's alone.
 var icmpTypeNames = []string{"echo-request", "echo-reply", "destination-unreachable", "time-exceeded", "parameter-problem", "packet-too-big"}
 
-// protocolMatch matches the protocol with its ports or ICMP types.
+// protocolMatch matches the protocol with its ports or ICMP types. The rules of FirewallPolicy,
+// PolicyRoute and NATRule check that ports go with tcp, udp or sctp, ICMP types with icmp or
+// icmpv6 and packet-too-big with icmpv6, so each protocol reads what it takes alone. It guards
+// the protocol and the ICMP types, which the ruleset writes unquoted.
 func protocolMatch(protocol string, sourcePorts, destinationPorts []portRange, icmpTypes []string) (string, error) {
 	switch protocol {
 	case "tcp", "udp", "sctp":
-		if len(icmpTypes) > 0 {
-			return "", fmt.Errorf("ICMP types need the protocol icmp or icmpv6")
-		}
 		var parts []string
 		for _, side := range []struct {
 			dir   string
@@ -1059,16 +1044,10 @@ func protocolMatch(protocol string, sourcePorts, destinationPorts []portRange, i
 		}
 		return strings.Join(parts, " "), nil
 	case "icmp", "icmpv6":
-		if len(sourcePorts) > 0 || len(destinationPorts) > 0 {
-			return "", fmt.Errorf("ports need the protocol tcp, udp or sctp")
-		}
 		for _, t := range icmpTypes {
 			if !slices.Contains(icmpTypeNames, t) {
-				return "", fmt.Errorf("%q is no ICMP type the firewall matches", t)
+				return "", internalErrorf("%q is no ICMP type the firewall matches", t)
 			}
-		}
-		if protocol == "icmp" && slices.Contains(icmpTypes, "packet-too-big") {
-			return "", fmt.Errorf("packet-too-big is an ICMPv6 type")
 		}
 		if len(icmpTypes) == 0 {
 			return "meta l4proto " + protocol, nil
@@ -1077,10 +1056,7 @@ func protocolMatch(protocol string, sourcePorts, destinationPorts []portRange, i
 	}
 	number, ok := protocolNumbers[protocol]
 	if !ok {
-		return "", fmt.Errorf("protocol %q is not one the firewall matches", protocol)
-	}
-	if len(sourcePorts) > 0 || len(destinationPorts) > 0 || len(icmpTypes) > 0 {
-		return "", fmt.Errorf("the protocol %s has no ports or ICMP types", protocol)
+		return "", internalErrorf("protocol %q is not one the firewall matches", protocol)
 	}
 	return "meta l4proto " + number, nil
 }
@@ -1102,7 +1078,7 @@ func verdictOf(action string) (string, error) {
 	case "reject":
 		return "reject with icmpx admin-prohibited", nil
 	}
-	return "", fmt.Errorf("%q is none of accept, drop and reject", action)
+	return "", internalErrorf("%q is none of accept, drop and reject", action)
 }
 
 // interfaceSet is a set of interface names and globs as nftables writes it.

@@ -58,8 +58,9 @@ interface or glob that matches a VRF's device, such as `ten*` beside the VRF `te
 FirewallZone x: ten* matches tenant, the device of VRF tenant; name the VRF in vrfs
 ```
 
-The rules refuse an interface of a VRF's own name, such as `tenant`, before delivery, so
-`chalkctl validate` catches it too.
+It refuses an interface of a VRF's own name, such as `tenant`, the same way. The output checks
+when the router renders its config, at a delivery or at `chalkctl apply-config --dry-run`, and
+`chalkctl validate` does not.
 
 Policies and NAT rules name these zones as any other. A policy between the zones of two VRFs
 forwards only what the VRFs' tables route, and
