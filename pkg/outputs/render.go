@@ -40,12 +40,8 @@ func (d Definition) stdin(in Input) ([]byte, error) {
 	for _, kind := range d.Inputs {
 		docs[kind] = []any{}
 	}
-	for _, doc := range d.documents(in) {
-		obj := doc.Object
-		if !in.Hashed {
-			obj = doc.Hashed()
-		}
-		docs[doc.Kind] = append(docs[doc.Kind], obj)
+	for _, doc := range in.of(d.Inputs) {
+		docs[doc.Kind] = append(docs[doc.Kind], in.object(doc))
 	}
 	return json.Marshal(map[string]any{
 		"node":      map[string]any{"name": in.Node},
@@ -53,17 +49,37 @@ func (d Definition) stdin(in Input) ([]byte, error) {
 	})
 }
 
-// documents are the documents of the input kinds, sorted by name.
-func (d Definition) documents(in Input) []config.Document {
+// of are the documents of the kinds, sorted by kind and name, without the Secrets.
+func (in Input) of(kinds []string) []config.Document {
 	var out []config.Document
 	for _, doc := range in.Documents {
-		if !doc.IsSecret() && slices.Contains(d.Inputs, doc.Kind) {
+		if !doc.IsSecret() && slices.Contains(kinds, doc.Kind) {
 			out = append(out, doc)
 		}
 	}
 	slices.SortStableFunc(out, func(a, b config.Document) int {
 		return cmp.Or(cmp.Compare(a.Kind, b.Kind), cmp.Compare(a.Name, b.Name))
 	})
+	return out
+}
+
+// object is a document of in as a program reads it: with its secret values hashed.
+func (in Input) object(doc config.Document) map[string]any {
+	if in.Hashed {
+		return doc.Object
+	}
+	return doc.Hashed()
+}
+
+// Objects are the documents of the kinds as the programs that read them get them, renderers and
+// validators: sorted by kind and name, with their schema defaults and their secret values hashed,
+// and without the Secrets, whose values no program sees.
+func (in Input) Objects(kinds []string) []map[string]any {
+	docs := in.of(kinds)
+	out := make([]map[string]any, len(docs))
+	for i, doc := range docs {
+		out[i] = in.object(doc)
+	}
 	return out
 }
 
@@ -113,7 +129,7 @@ func (r *refused) Error() string {
 type Renderer struct {
 	Root string
 	Run  Runner
-	// Timeout bounds each program; zero is defaultTimeout.
+	// Timeout bounds each program; zero is DefaultTimeout.
 	Timeout time.Duration
 	// KeepOwner leaves the files the renderer's, as the image's build does, which has none of the
 	// image's users.
@@ -207,9 +223,9 @@ func (r Renderer) render(ctx context.Context, name string, d Definition, in Inpu
 // one that fails and prints anything else fails for its exit status. A check's standard output is
 // discarded: a service's own check can echo the files, so its failure says no more than that.
 func (r Renderer) run(ctx context.Context, name string, what role, command string, stdin []byte, out string) error {
-	timeout := cmp.Or(r.Timeout, defaultTimeout)
+	timeout := cmp.Or(r.Timeout, DefaultTimeout)
 	argv := strings.Fields(command)
-	printed, err := r.Run.Run(ctx, Program{Argv: argv, Stdin: stdin, Out: out, Write: what == roleRenderer, Report: what == roleRenderer, Timeout: timeout})
+	printed, err := r.Run.Run(ctx, Program{Argv: argv, Stdin: stdin, Out: out, Write: what == roleRenderer, Report: what == roleRenderer, Netlink: what == roleCheck, Timeout: timeout})
 	var failed *ProgramError
 	if errors.As(err, &failed) {
 		if failed.Unit != "" {

@@ -371,7 +371,7 @@ func TestSandboxArgs(t *testing.T) {
 			t.Errorf("the arguments lack %q:\n%s", want, args)
 		}
 	}
-	p.Write, p.Report = false, false
+	p.Write, p.Report, p.Netlink = false, false, true
 	args = strings.Join(sandboxArgs("chalkos-render-1.service", p, "/in", "/out"), "\n")
 	if strings.Contains(args, "ReadWritePaths") {
 		t.Errorf("a check may write:\n%s", args)

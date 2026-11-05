@@ -28,7 +28,7 @@ type State struct {
 func (d Definition) secrets(in Input) string {
 	secrets := config.Documents(in.Documents).Secrets()
 	var lines []string
-	for _, doc := range d.documents(in) {
+	for _, doc := range in.of(d.Inputs) {
 		for _, r := range config.Refs(doc, in.Schemas) {
 			ref, isKey := r.Secret()
 			if !isKey {

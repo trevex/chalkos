@@ -30,38 +30,43 @@ func (r role) String() string {
 	return "renderer"
 }
 
-// A Program is a renderer or a check to run: its argv, the input it reads on standard input, and
-// $OUT, the directory of the output's files, which a renderer may write and a check may only read.
-// Report tells that the program prints a report of refusals on standard output, as a renderer
-// does, which the runner returns, up to refusals.MaxReport bytes; any other program's standard
-// output is discarded, since a service's own check can echo the files. Timeout bounds it.
+// A Program is a renderer, a check or a validator to run: its argv, the input it reads on
+// standard input, and $OUT, the directory of the output's files, which a renderer may write and a
+// check may only read; a validator gets an empty directory of its own. The sandbox keeps the
+// program's input and output in files beside Out, and names the program's unit after Out's
+// extension, which makes it unique. Report tells that the program prints a report of refusals on
+// standard output, as a renderer and a validator do, which the runner returns, up to
+// refusals.MaxReport bytes; any other program's standard output is discarded, since a service's
+// own check can echo the files. Netlink lets the program open netlink sockets besides Unix ones,
+// as a check's nft --check needs. Timeout bounds it.
 type Program struct {
 	Argv    []string
 	Stdin   []byte
 	Out     string
 	Write   bool
 	Report  bool
+	Netlink bool
 	Timeout time.Duration
 }
 
-// Runner runs renderers and checks, and returns what a program that reports refusals printed,
-// whether it failed or not. A program that fails is a ProgramError, and one that does not finish
-// within its timeout an error that wraps context.DeadlineExceeded.
+// Runner runs renderers, checks and validators, and returns what a program that reports refusals
+// printed, whether it failed or not. A program that fails is a ProgramError, and one that does not
+// finish within its timeout an error that wraps context.DeadlineExceeded.
 type Runner interface {
 	Run(ctx context.Context, p Program) ([]byte, error)
 }
 
-// A ProgramError is a renderer or a check that failed. Status is "exit N", or why systemd
-// stopped it; Stderr is the start of what it wrote to standard error, or, in the sandbox, empty,
-// and Unit names the transient unit whose journal holds it.
+// A ProgramError is a renderer, a check or a validator that failed. Status is "exit N", or why
+// systemd stopped it; Stderr is the start of what it wrote to standard error, or, in the sandbox,
+// empty, and Unit names the transient unit whose journal holds it.
 type ProgramError struct {
 	Status, Stderr, Unit string
 }
 
 func (e *ProgramError) Error() string { return "the program failed (" + e.Status + ")" }
 
-// RenderUser is the unprivileged system user renderers and checks run as on a node, which owns
-// $OUT while the renderer writes it.
+// RenderUser is the unprivileged system user renderers, checks and validators run as on a node,
+// which owns $OUT while the renderer writes it.
 const RenderUser = "chalkos-render"
 
 // Sandbox runs programs as oneshot transient units that write standard error to the journal, and
@@ -69,9 +74,9 @@ const RenderUser = "chalkos-render"
 // sandbox of their own: as RenderUser without capabilities, devices or network, on a read-only
 // system without STATE, /var, or the config, credentials and Kubernetes keys chalkd writes below
 // /run/chalkos, so a program reads no Secret's value; a renderer may write $OUT alone, and a check
-// may open netlink sockets besides Unix ones. Through netlink a check reaches only its own
-// network namespace, but nf_tables there makes the kernel load the modules of the expressions a
-// ruleset uses, ProtectKernelModules notwithstanding.
+// may open netlink sockets besides Unix ones, which renderers and validators may not. Through
+// netlink a check reaches only its own network namespace, but nf_tables there makes the kernel
+// load the modules of the expressions a ruleset uses, ProtectKernelModules notwithstanding.
 // chalkos-config renders before sysinit.target, where the system bus does not run yet, so
 // systemd-run reaches the manager on its private socket, on which it cannot follow a unit as
 // --wait and --pipe do: the start job of a oneshot unit finishes when the program exits, the
@@ -83,9 +88,9 @@ type Sandbox struct{}
 // unit's own timeout stops the program first and its result says so.
 const stopMargin = 10 * time.Second
 
-// defaultTimeout bounds a program when the Renderer sets no timeout. A delivery renders its
-// outputs under the config lock.
-const defaultTimeout = 30 * time.Second
+// DefaultTimeout bounds a program when the Renderer sets no timeout. A delivery renders its
+// outputs and runs its validators under the config lock.
+const DefaultTimeout = 30 * time.Second
 
 // sandbox holds the properties of the units Sandbox runs.
 var sandbox = []string{
@@ -129,12 +134,15 @@ func sandboxArgs(unit string, p Program, input, output string) []string {
 		"--property=StandardError=journal",
 	)
 	if p.Write {
-		args = append(args, "--property=ReadWritePaths="+p.Out, "--property=RestrictAddressFamilies=AF_UNIX")
-	} else {
-		// A check may also talk netlink, which reaches the network namespace PrivateNetwork gives
-		// it or one of its own, so nft --check can take a ruleset to the kernel.
-		args = append(args, "--property=RestrictAddressFamilies=AF_UNIX AF_NETLINK")
+		args = append(args, "--property=ReadWritePaths="+p.Out)
 	}
+	families := "AF_UNIX"
+	if p.Netlink {
+		// Netlink reaches the network namespace PrivateNetwork gives the program or one of its
+		// own, so nft --check can take a ruleset to the kernel.
+		families += " AF_NETLINK"
+	}
+	args = append(args, "--property=RestrictAddressFamilies="+families)
 	return append(append(args, "--"), p.Argv...)
 }
 
