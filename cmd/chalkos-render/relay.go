@@ -80,7 +80,7 @@ func renderDHCPRelay(in map[string]any, out string) error {
 					continue
 				}
 				families[keaServer{vrf: vrf, v6: v6}] = r.Name
-				local, err := relayAddress(d, r.Name, fmt.Sprintf("spec.interfaces[%d]", slices.Index(r.Spec.Interfaces, l)), network, l, v6)
+				local, err := relayAddress(d, r.Name, interfacePath(r.Spec.Interfaces, l), network, l, v6)
 				if err != nil {
 					return within("DHCPRelay "+r.Name, err)
 				}
