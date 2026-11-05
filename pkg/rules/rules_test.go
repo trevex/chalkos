@@ -379,7 +379,7 @@ func TestEvaluateErrors(t *testing.T) {
 				"x": withRules(map[string]any{"type": "object"}, rule(tc.rule, "")),
 			}), nil))
 			_, err := set.Evaluate(Input{Documents: []config.Document{doc(t, "Demo", "a", `{"x": `+tc.spec+`}`)}})
-			if err == nil || err.Error() != `cannot check: Demo "a" spec.x: `+tc.want {
+			if err == nil || err.Error() != `cannot check: Demo/a: spec.x: `+tc.want {
 				t.Fatalf("err = %v, want %q", err, tc.want)
 			}
 			for _, v := range []string{"s3cret", "7777", "9223372036854775807"} {

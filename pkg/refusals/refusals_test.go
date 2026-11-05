@@ -87,12 +87,15 @@ func TestPrintable(t *testing.T) {
 }
 
 // A refusal of a whole document leaves out the path, and one of no document, such as a kind's
-// rule, is its message alone.
+// rule, is its message alone. Where is what comes before the message.
 func TestStringWithoutPath(t *testing.T) {
 	if got := (Refusal{Kind: "Demo", Name: "one", Message: "taken"}).String(); got != "Demo/one: taken" {
 		t.Errorf("without a path = %q", got)
 	}
 	if got := (Refusal{Kind: "Demo", Message: "at most one Demo"}).String(); got != "at most one Demo" {
 		t.Errorf("without a document = %q", got)
+	}
+	if got := (Refusal{Kind: "Demo", Name: "one", Path: "spec.x"}).Where(); got != "Demo/one: spec.x" {
+		t.Errorf("Where = %q", got)
 	}
 }

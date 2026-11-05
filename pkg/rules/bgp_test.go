@@ -201,7 +201,7 @@ func TestBGPRulesReadAddresses(t *testing.T) {
 		want string
 	}{
 		{"a neighbour address that is none", []config.Document{bgp, doc("BGPPeer", "upstream", `{"address": "198.51.100.300", "remoteAS": 64496, "families": {"ipv6": {}}}`)},
-			`cannot check: BGPPeer "upstream" spec.address: a rule cannot be evaluated: ` + errNotIP},
+			`cannot check: BGPPeer/upstream: spec.address: a rule cannot be evaluated: ` + errNotIP},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			_, err := set.Evaluate(Input{Documents: tc.docs, Node: "r1"})

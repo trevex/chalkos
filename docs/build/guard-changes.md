@@ -315,7 +315,7 @@ error.
 A refusal must not leak a secret or a fact's content that the rule only compared:
 
 - A rule that cannot be evaluated refuses the delivery with the kind of error alone, such as
-  `cannot check: Peer "router-a" spec.asn: a rule cannot be evaluated: no such key`. The kind is
+  `cannot check: Peer/router-a: spec.asn: a rule cannot be evaluated: no such key`. The kind is
   one of `no such key`, `index out of bounds`, `no such overload`, `unknown time zone`,
   `invalid input to a function`, `cost limit exceeded`, `overflow`, `division by zero` and
   `conversion error`. An error of chalkos's functions names the function, such as

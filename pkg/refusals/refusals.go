@@ -38,13 +38,23 @@ type Refusal struct {
 // path for a refusal of a whole document, and as the message alone for one of no document, such
 // as a kind's rule, whose message names what it is about.
 func (r Refusal) String() string {
+	if where := r.Where(); where != "" {
+		return where + ": " + r.Message
+	}
+	return r.Message
+}
+
+// Where is what String puts before the message: "<Kind>/<name>: <path>", "<Kind>/<name>" for a
+// whole document, and nothing for no document. A field's rule that cannot be evaluated names
+// its field this way too.
+func (r Refusal) Where() string {
 	switch {
 	case r.Name == "":
-		return r.Message
+		return ""
 	case r.Path == "":
-		return r.Kind + "/" + r.Name + ": " + r.Message
+		return r.Kind + "/" + r.Name
 	}
-	return r.Kind + "/" + r.Name + ": " + r.Path + ": " + r.Message
+	return r.Kind + "/" + r.Name + ": " + r.Path
 }
 
 var (

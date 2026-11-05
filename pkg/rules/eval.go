@@ -149,7 +149,7 @@ func (p *Program) evaluate(vars map[string]any, cfg, oldCfg, node map[string]any
 	bindFacts(vars, "facts", p.Facts, facts, &factErr)
 	where := p.Where()
 	if doc != "" {
-		where = fmt.Sprintf("%s %q %s", p.Kind.Kind, doc, strings.Join(p.Path, "."))
+		where = refusals.Refusal{Kind: p.Kind.Kind, Name: doc, Path: strings.Join(p.Path, ".")}.Where()
 	}
 	out, _, err := p.check.Eval(vars)
 	if factErr != nil {
