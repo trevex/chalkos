@@ -1,4 +1,4 @@
-# Two neighbours, one with a password.
+# Two neighbours, one with a password, on the subnet of the node's uplink.
 apiVersion: bgp.example.org/v1alpha1
 kind: Peer
 metadata: {name: router-a}
@@ -17,3 +17,10 @@ kind: Secret
 metadata: {name: bgp}
 spec:
   data: {password: example-password}
+---
+apiVersion: networkd.chalkos.dev/v1alpha1
+kind: Network
+metadata: {name: 10-uplink}
+spec:
+  match: {name: enp1s0}
+  network: {address: [10.0.0.11/24], gateway: 10.0.0.1}

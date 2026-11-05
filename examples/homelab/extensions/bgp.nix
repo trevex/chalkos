@@ -1,9 +1,10 @@
 # BGP sessions with bird, the running example of the image guides. The Peer kind holds a node's
-# neighbours, the output bird-conf renders bird's config from them, bird reloads when that config
-# changes, and the diagnostic bird-protocols shows bird's sessions. A Peer's password comes from a
-# Secret: bird gets it as a credential, and the rendered config names the credential, never the
-# value. A variant that carries this module accepts Peer documents. The comments # --8<-- mark
-# the sections the guides include.
+# neighbours, the validator bgp-peers refuses a neighbour bird cannot reach, the output bird-conf
+# renders bird's config from them, bird reloads when that config changes, and the diagnostic
+# bird-protocols shows bird's sessions. A Peer's password comes from a Secret: bird gets it as a
+# credential, and the rendered config names the credential, never the value. A variant that
+# carries this module accepts Peer documents. The comments # --8<-- mark the sections the guides
+# include.
 {
   config,
   lib,
@@ -106,6 +107,19 @@ in
     examples = ./bgp-examples;
   };
   # --8<-- [end:output]
+
+  # --8<-- [start:validator]
+  # bird talks to neighbours on the node's own links alone, which the Peer's schema cannot tell:
+  # the validator compares each Peer's address with the node's Network documents.
+  chalkos.validators.bgp-peers = {
+    inputs = [
+      "Peer"
+      "Network"
+    ];
+    program = lib.chalkos.validate.jq ./bgp-peers.jq;
+    examples = ./bgp-examples;
+  };
+  # --8<-- [end:validator]
 
   # --8<-- [start:service]
   services.bird = {
