@@ -1204,7 +1204,7 @@ cel.bind(was, cel.bind(nets, (("networkd.chalkos.dev/v1alpha1" in oldConfig && "
 Message of rule 1:
 
 ```text
-"the policy holds " + string(size(self)) + " terms; its route-map numbers them 10, 20 and on below the default's 65535, which leaves room for 6000"
+"the policy holds " + string(size(self)) + " terms; a route-map holds 6000 terms at most, numbered 10, 20 and on below its default's 65535"
 ```
 
 Expression of rule 3:

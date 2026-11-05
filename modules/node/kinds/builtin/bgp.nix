@@ -679,7 +679,7 @@ in
               {
                 description = "A RoutingPolicy holds 6000 terms at most.";
                 rule = "size(self) <= 6000";
-                messageExpression = ''"the policy holds " + string(size(self)) + " terms; its route-map numbers them 10, 20 and on below the default's 65535, which leaves room for 6000"'';
+                messageExpression = ''"the policy holds " + string(size(self)) + " terms; a route-map holds 6000 terms at most, numbered 10, 20 and on below its default's 65535"'';
               }
               {
                 description = "A term's asPath holds 200 characters at most.";

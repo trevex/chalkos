@@ -75,7 +75,7 @@ func TestBGPRules(t *testing.T) {
 			[]string{`BGP "bgp" spec.networks: the RoutingPolicy to-fabric of the network 192.0.2.0/24 matches PrefixLists of another family`}},
 		{"6000 terms", replace(edge, doc("RoutingPolicy", "from-fabric", `{"terms": [`+strings.Repeat(`{"then": {"action": "accept"}}, `, 5999)+`{"then": {"action": "accept"}}]}`)), nil},
 		{"6001 terms", replace(edge, doc("RoutingPolicy", "from-fabric", `{"terms": [`+strings.Repeat(`{"then": {"action": "accept"}}, `, 6000)+`{"then": {"action": "accept"}}]}`)),
-			[]string{`RoutingPolicy "from-fabric" spec.terms: the policy holds 6001 terms; its route-map numbers them 10, 20 and on below the default's 65535, which leaves room for 6000`}},
+			[]string{`RoutingPolicy "from-fabric" spec.terms: the policy holds 6001 terms; a route-map holds 6000 terms at most, numbered 10, 20 and on below its default's 65535`}},
 		{"an interface named as an address", replace(edge, doc("BGPPeer", "upstream", `{"interface": "198.51.100.1", "remoteAS": 64496, "families": {"ipv4": {}}}`)),
 			[]string{`BGPPeer "upstream" spec.interface: the interface 198.51.100.1 is named like an address, which FRR cannot tell from a neighbour's; give the peer its address, or rename the interface`}},
 		{"interfaces named as addresses", replace(edge, doc("BGPPeer", "fabric", `{"interfaces": ["eth1", "fe80::1"], "remoteAS": "external", "families": {"ipv6": {}}}`)),
