@@ -25,9 +25,9 @@ func TestDHCPSubnetIPv6Rules(t *testing.T) {
 	delegate := func(prefix string, length int) []config.Document {
 		return office6(fmt.Sprintf(`, "prefixDelegation": {"prefix": %q, "length": %d}`, prefix, length))
 	}
-	const at = `DHCPSubnet "office6" spec: `
+	const at = `DHCPSubnet/office6: spec: `
 	notDelegable := func(prefix string, length int) []string {
-		return []string{fmt.Sprintf(`DHCPSubnet "office6" spec.prefixDelegation: prefixDelegation's prefix %s is no IPv6 range shorter than %d bits apart from ::/8, fe80::/10 and ff00::/8`, prefix, length)}
+		return []string{fmt.Sprintf(`DHCPSubnet/office6: spec.prefixDelegation: prefixDelegation's prefix %s is no IPv6 range shorter than %d bits apart from ::/8, fe80::/10 and ff00::/8`, prefix, length)}
 	}
 	for _, tc := range []struct {
 		name string
@@ -38,14 +38,14 @@ func TestDHCPSubnetIPv6Rules(t *testing.T) {
 			"reservations": [{"mac": "52:54:00:12:34:56", "address": "2001:db8:1::10"}], "prefixDelegation": {"prefix": "2001:db8:100::/56", "length": 64}`), nil},
 		{"delegated prefixes alone", []config.Document{subnet("cpe", `{"interfaces": ["lan1"], "subnet": "2001:db8:2::/64", "prefixDelegation": {"prefix": "2001:db8:200::/48", "length": 56}}`)}, nil},
 		{"an IPv6 subnet of 121 bits", []config.Document{subnet("office6", `{"interfaces": ["lan0"], "subnet": "2001:db8:1::/121"}`)},
-			[]string{`DHCPSubnet "office6" spec.subnet: the subnet 2001:db8:1::/121 is no IPv4 range of 30 bits at most or IPv6 range of 120 bits at most of addresses a DHCP server leases`}},
+			[]string{`DHCPSubnet/office6: spec.subnet: the subnet 2001:db8:1::/121 is no IPv4 range of 30 bits at most or IPv6 range of 120 bits at most of addresses a DHCP server leases`}},
 		{"a link-local subnet", []config.Document{subnet("office6", `{"interfaces": ["lan0"], "subnet": "fe80::/64"}`)},
-			[]string{`DHCPSubnet "office6" spec.subnet: the subnet fe80::/64 is no IPv4 range of 30 bits at most or IPv6 range of 120 bits at most of addresses a DHCP server leases`}},
+			[]string{`DHCPSubnet/office6: spec.subnet: the subnet fe80::/64 is no IPv4 range of 30 bits at most or IPv6 range of 120 bits at most of addresses a DHCP server leases`}},
 		// fe00::/7 starts outside fe80::/10 and ff00::/8 and holds both.
 		{"a subnet over the link-local addresses", []config.Document{subnet("office6", `{"interfaces": ["lan0"], "subnet": "fe00::/7"}`)},
-			[]string{`DHCPSubnet "office6" spec.subnet: the subnet fe00::/7 is no IPv4 range of 30 bits at most or IPv6 range of 120 bits at most of addresses a DHCP server leases`}},
+			[]string{`DHCPSubnet/office6: spec.subnet: the subnet fe00::/7 is no IPv4 range of 30 bits at most or IPv6 range of 120 bits at most of addresses a DHCP server leases`}},
 		{"an IPv4-mapped subnet", []config.Document{subnet("office6", `{"interfaces": ["lan0"], "subnet": "::ffff:192.0.2.0/120"}`)},
-			[]string{`DHCPSubnet "office6" spec.subnet: the subnet ::ffff:192.0.2.0/120 is no IPv4 range of 30 bits at most or IPv6 range of 120 bits at most of addresses a DHCP server leases`}},
+			[]string{`DHCPSubnet/office6: spec.subnet: the subnet ::ffff:192.0.2.0/120 is no IPv4 range of 30 bits at most or IPv6 range of 120 bits at most of addresses a DHCP server leases`}},
 		{"two links", []config.Document{subnet("office6", `{"interfaces": ["lan0", "lan1"], "subnet": "2001:db8:1::/64"}`)},
 			[]string{at + "an IPv6 subnet is served on one link, the one Kea's subnet names; give each of lan0, lan1 a DHCPSubnet of its own"}},
 		{"a gateway", office6(`, "gateway": "2001:db8:1::1"`), []string{at + "gateway is for IPv4 subnets; IPv6 clients learn their routers from router advertisements"}},
@@ -60,9 +60,9 @@ func TestDHCPSubnetIPv6Rules(t *testing.T) {
 		{"a DNS server in a pool", office6(`, "pools": [{"first": "2001:db8:1::100", "last": "2001:db8:1::1ff"}], "dns": ["2001:db8:1::150"]`),
 			[]string{at + "the pool 2001:db8:1::100-2001:db8:1::1ff holds 2001:db8:1::150, a DNS server"}},
 		{"an IPv6 DNS server of an IPv4 subnet", []config.Document{subnet("office", `{"interfaces": ["lan0"], "subnet": "192.0.2.0/24", "dns": ["2001:db8::53"]}`)},
-			[]string{`DHCPSubnet "office" spec: the DNS server 2001:db8::53 is no IPv4 address`}},
+			[]string{`DHCPSubnet/office: spec: the DNS server 2001:db8::53 is no IPv4 address`}},
 		{"delegation in IPv4", []config.Document{subnet("office", `{"interfaces": ["lan0"], "subnet": "192.0.2.0/24", "prefixDelegation": {"prefix": "2001:db8:100::/56", "length": 64}}`)},
-			[]string{`DHCPSubnet "office" spec: prefixDelegation delegates IPv6 prefixes, which an IPv4 subnet has none of`}},
+			[]string{`DHCPSubnet/office: spec: prefixDelegation delegates IPv6 prefixes, which an IPv4 subnet has none of`}},
 		{"delegation of an IPv4 range", delegate("198.51.100.0/24", 28), notDelegable("198.51.100.0/24", 28)},
 		{"delegation of the range's length", delegate("2001:db8:100::/56", 56), notDelegable("2001:db8:100::/56", 56)},
 		{"delegation from ::/8", delegate("::/48", 56), notDelegable("::/48", 56)},
@@ -96,14 +96,14 @@ func TestDHCPRelayRules(t *testing.T) {
 		want    []string
 	}{
 		{"both families", `["198.51.100.53", "2001:db8:ff::53"]`, nil},
-		{"a broadcast", `["255.255.255.255"]`, []string{`DHCPRelay "guests" spec.servers: the server 255.255.255.255 is no unicast address a relay forwards to`}},
-		{"All_DHCP_Servers", `["ff05::1:3"]`, []string{`DHCPRelay "guests" spec.servers: the server ff05::1:3 is no unicast address a relay forwards to`}},
-		{"a link-local server", `["fe80::53"]`, []string{`DHCPRelay "guests" spec.servers: the server fe80::53 is no unicast address a relay forwards to`}},
-		{"a loopback server", `["127.0.0.1"]`, []string{`DHCPRelay "guests" spec.servers: the server 127.0.0.1 is no unicast address a relay forwards to`}},
-		{"a server in 0.0.0.0/8", `["0.1.2.3"]`, []string{`DHCPRelay "guests" spec.servers: the server 0.1.2.3 is no unicast address a relay forwards to`}},
-		{"a server in 240.0.0.0/4", `["240.0.0.1"]`, []string{`DHCPRelay "guests" spec.servers: the server 240.0.0.1 is no unicast address a relay forwards to`}},
-		{"a server in ::/8", `["::102:304"]`, []string{`DHCPRelay "guests" spec.servers: the server ::102:304 is no unicast address a relay forwards to`}},
-		{"an IPv4-mapped server", `["::ffff:198.51.100.53"]`, []string{`DHCPRelay "guests" spec.servers: the server ::ffff:198.51.100.53 is no unicast address a relay forwards to`}},
+		{"a broadcast", `["255.255.255.255"]`, []string{`DHCPRelay/guests: spec.servers: the server 255.255.255.255 is no unicast address a relay forwards to`}},
+		{"All_DHCP_Servers", `["ff05::1:3"]`, []string{`DHCPRelay/guests: spec.servers: the server ff05::1:3 is no unicast address a relay forwards to`}},
+		{"a link-local server", `["fe80::53"]`, []string{`DHCPRelay/guests: spec.servers: the server fe80::53 is no unicast address a relay forwards to`}},
+		{"a loopback server", `["127.0.0.1"]`, []string{`DHCPRelay/guests: spec.servers: the server 127.0.0.1 is no unicast address a relay forwards to`}},
+		{"a server in 0.0.0.0/8", `["0.1.2.3"]`, []string{`DHCPRelay/guests: spec.servers: the server 0.1.2.3 is no unicast address a relay forwards to`}},
+		{"a server in 240.0.0.0/4", `["240.0.0.1"]`, []string{`DHCPRelay/guests: spec.servers: the server 240.0.0.1 is no unicast address a relay forwards to`}},
+		{"a server in ::/8", `["::102:304"]`, []string{`DHCPRelay/guests: spec.servers: the server ::102:304 is no unicast address a relay forwards to`}},
+		{"an IPv4-mapped server", `["::ffff:198.51.100.53"]`, []string{`DHCPRelay/guests: spec.servers: the server ::ffff:198.51.100.53 is no unicast address a relay forwards to`}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			failures, err := set.Evaluate(Input{Documents: []config.Document{relay(tc.servers)}, Node: "r1"})

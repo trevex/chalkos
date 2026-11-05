@@ -57,18 +57,18 @@ func TestNextHopRules(t *testing.T) {
 			hop("ll6", `{"address": "fe80::1", "interface": "wanb0", "table": 202}`),
 			hop("ll4", `{"address": "169.254.0.1", "interface": "wanb0", "table": 203}`)), nil},
 		{"a next hop on lo", replaced(base, hop("b4", `{"address": "198.51.100.130", "interface": "lo", "table": 200}`)),
-			[]string{`NextHop "b4" spec.interface: the interface is lo, which no next hop is on; name the link the next hop is on`}},
+			[]string{`NextHop/b4: spec.interface: the interface is lo, which no next hop is on; name the link the next hop is on`}},
 		{"a next hop in the default table", replaced(base, hop("b4", `{"address": "198.51.100.130", "interface": "wanb0", "table": 253}`)),
-			[]string{`NextHop "b4" spec.table: the table is 253, 254 or 255, the kernel's own; give the NextHop a table of its own`}},
+			[]string{`NextHop/b4: spec.table: the table is 253, 254 or 255, the kernel's own; give the NextHop a table of its own`}},
 		{"a next hop in a VRF's table", replaced(base, hop("b4", `{"address": "198.51.100.130", "interface": "wanb0", "table": 100}`)),
-			[]string{`NextHop "b4" spec.table: the table is that of VRF transit; give the NextHop a table of its own`}},
+			[]string{`NextHop/b4: spec.table: the table is that of VRF transit; give the NextHop a table of its own`}},
 	} {
 		t.Run(tc.name, func(t *testing.T) { wantFailures(t, set, tc.docs, tc.want) })
 	}
 	for _, address := range []string{"0.0.0.0", "::", "127.0.0.1", "127.1.2.3", "::1", "224.0.0.1", "239.255.255.250", "ff02::1", "255.255.255.255", "::ffff:198.51.100.130", "::ffff:127.0.0.1"} {
 		t.Run("a next hop of "+address, func(t *testing.T) {
 			docs := replaced(base, hop("spare", `{"address": "`+address+`", "interface": "wanb0", "table": 204}`))
-			wantFailures(t, set, docs, []string{`NextHop "spare" spec.address: the next hop ` + address + ` is no unicast address of a router, or is an IPv4-mapped IPv6 address; give the router's address, an IPv4 one as IPv4`})
+			wantFailures(t, set, docs, []string{`NextHop/spare: spec.address: the next hop ` + address + ` is no unicast address of a router, or is an IPv4-mapped IPv6 address; give the router's address, an IPv4 one as IPv4`})
 		})
 	}
 }

@@ -148,10 +148,10 @@ func TestFieldRules(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := []string{
-		`Demo "a" spec.group.name: a group's name starts with g-`,
-		`Demo "a" spec.label: a label has at most 8 characters`,
-		`Demo "a" spec.size: the size only grows`,
-		`Solo "after" spec.size: the size only grows`,
+		`Demo/a: spec.group.name: a group's name starts with g-`,
+		`Demo/a: spec.label: a label has at most 8 characters`,
+		`Demo/a: spec.size: the size only grows`,
+		`Solo/after: spec.size: the size only grows`,
 	}
 	if got := messages(failures); !slices.Equal(got, want) {
 		t.Errorf("failures:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
@@ -190,7 +190,7 @@ func TestSpecRules(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []string{`Demo "a" spec: a reserved number lies in a pool of 1`, `Demo "a" spec: a Demo keeps its pools`}
+	want := []string{`Demo/a: spec: a reserved number lies in a pool of 1`, `Demo/a: spec: a Demo keeps its pools`}
 	if got := messages(failures); !slices.Equal(got, want) {
 		t.Errorf("failures:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
 	}
@@ -246,7 +246,7 @@ func TestNodeName(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []string{"node n1", `Demo "a" spec.label: a label is not the node's name`}
+	want := []string{"node n1", `Demo/a: spec.label: a label is not the node's name`}
 	if got := messages(failures); !slices.Equal(got, want) {
 		t.Errorf("failures = %q, want %q", got, want)
 	}
@@ -328,9 +328,9 @@ func TestMessageExpressionFallsBack(t *testing.T) {
 	want := []string{
 		"the static message",
 		"the config does not meet a rule of Demo, whose messageExpression fails: no such key",
-		`Demo "a" spec.x: the config does not meet a rule of Demo spec.x, whose messageExpression fails: no such key`,
-		`Demo "a" spec.x: the config does not meet a rule of Demo spec.x, whose messageExpression fails: it yields int, not a string`,
-		`Demo "a" spec.x: the config does not meet a rule of Demo spec.x`,
+		`Demo/a: spec.x: the config does not meet a rule of Demo spec.x, whose messageExpression fails: no such key`,
+		`Demo/a: spec.x: the config does not meet a rule of Demo spec.x, whose messageExpression fails: it yields int, not a string`,
+		`Demo/a: spec.x: the config does not meet a rule of Demo spec.x`,
 	}
 	if got := messages(failures); !slices.Equal(got, want) {
 		t.Errorf("failures = %q", got)
@@ -454,7 +454,7 @@ func TestRefusal(t *testing.T) {
 	}{
 		{[]Failure{reset}, "the config takes chalkctl storage reset: Volume extra: format xfs instead of ext4; reset it"},
 		{[]Failure{reset, reinstall}, "the config takes a reinstall of n1: Volume extra: format xfs instead of ext4; reset it; Volume data: removed; only a reinstall removes it"},
-		{[]Failure{reinstall, refuse}, `the config is refused: Volume data: removed; only a reinstall removes it; Cluster "default" spec.ipFamilies: fixed`},
+		{[]Failure{reinstall, refuse}, `the config is refused: Volume data: removed; only a reinstall removes it; Cluster/default: spec.ipFamilies: fixed`},
 	} {
 		if got := Refusal(tc.failures, "n1"); got != tc.want {
 			t.Errorf("Refusal = %q, want %q", got, tc.want)

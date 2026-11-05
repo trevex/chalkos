@@ -383,34 +383,34 @@ rule with its expression:
 
 | Message | Fix |
 | --- | --- |
-| `DHCPSubnet "office" spec.subnet: the subnet 192.0.2.0/31 is no IPv4 range of 30 bits at most or IPv6 range of 120 bits at most of addresses a DHCP server leases` | Give an IPv4 range of 30 bits at most, apart from `0.0.0.0/8`, `127.0.0.0/8`, `169.254.0.0/16` and `224.0.0.0/3`, or an IPv6 range of 120 bits at most, apart from `::/8`, `fe80::/10` and `ff00::/8`. |
-| `DHCPSubnet "office" spec: the pool 192.0.2.100-192.0.2.199 lies outside the subnet 192.0.2.0/25` | Move the pool into the subnet, or widen the subnet. |
-| `DHCPSubnet "office" spec: the pool 192.0.2.199-192.0.2.100 ends before it starts` | Swap `first` and `last`. |
-| `DHCPSubnet "office" spec: the pool 192.0.2.100-192.0.2.150 shares addresses with another pool` | Give each pool addresses of its own. |
-| `DHCPSubnet "office" spec: the pool 192.0.2.0-192.0.2.10 holds 192.0.2.0, the network address of the subnet 192.0.2.0/24` | Start the pool after the subnet's first address and end it before its last. |
-| `DHCPSubnet "office6" spec: the pool 2001:db8:1::-2001:db8:1::ff holds 2001:db8:1::, the subnet-router anycast address of the subnet 2001:db8:1::/64` | Start the pool after the subnet's first address. |
-| `DHCPSubnet "office" spec: the pool 192.0.2.100-192.0.2.199 holds 192.0.2.150, the gateway` | Keep the gateway, the DNS servers and boot's server out of the pools and reservations. |
-| `DHCPSubnet "office" spec: the reservation of 52:54:00:12:34:56, 198.51.100.10, lies outside the subnet 192.0.2.0/24` | Reserve an address of the subnet. |
-| `DHCPSubnet "office" spec: the reservation of 52:54:00:12:34:56, 192.0.2.120, lies in the pool 192.0.2.100-192.0.2.199; reserve addresses outside the pools` | Reserve an address outside the pools, or shrink the pool. |
-| `DHCPSubnet "office" spec: the reservation of 52:54:00:12:34:56, 192.0.2.255, is the broadcast address of the subnet 192.0.2.0/24` | Reserve an address between the subnet's first and last address. |
-| `DHCPSubnet "office" spec: the reservation of 52:54:00:12:34:56, 192.0.2.53, is a DNS server` | Keep the gateway, the DNS servers and boot's server out of the pools and reservations. |
-| `DHCPSubnet "office" spec: the gateway 198.51.100.1 lies outside the subnet 192.0.2.0/24` | Give a gateway of the subnet. |
-| `DHCPSubnet "office" spec: the gateway, 192.0.2.0, is the network address of the subnet 192.0.2.0/24` | Give a gateway between the subnet's first and last address. |
-| `DHCPSubnet "office" spec: the DNS server 2001:db8::53 is no IPv4 address` | Give DNS servers of the subnet's family. |
-| `DHCPSubnet "office6" spec: gateway is for IPv4 subnets; IPv6 clients learn their routers from router advertisements` | Drop `gateway`; send router advertisements from the link's `Network`. |
-| `DHCPSubnet "office6" spec: boot is for IPv4 subnets` | Drop `boot`. |
-| `DHCPSubnet "office" spec: prefixDelegation delegates IPv6 prefixes, which an IPv4 subnet has none of` | Drop `prefixDelegation`, or delegate in an IPv6 subnet. |
-| `DHCPSubnet "office6" spec: an IPv6 subnet is served on one link, the one Kea's subnet names; give each of lan0, lan1 a DHCPSubnet of its own` | Name one link. |
-| `DHCPSubnet "customers" spec.prefixDelegation: prefixDelegation's prefix 2001:db8:100::/56 is no IPv6 range shorter than 56 bits apart from ::/8, fe80::/10 and ff00::/8` | Give an IPv6 range apart from those ranges and a longer `length`. |
-| `DHCPSubnet "customers" spec: prefixDelegation's prefix 2001:db8::/32 overlaps the subnet 2001:db8:2::/64` | Delegate from a range apart from the subnet. |
-| `DHCPSubnet "office" spec.leaseTime: a lease of 999999d is longer than 4294967295 seconds, the longest Kea takes` | Shorten the lease to 49710 days or less. |
-| `DHCPSubnet "office" spec.boot: boot names no file; give bios, uefi or ipxe, or leave boot out` | Give a file, or drop `boot`. |
-| `DHCPSubnet "office" spec.boot: boot's server is no IPv4 address` | Give the TFTP server's IPv4 address. |
-| `DHCPSubnet "office" spec.boot: boot's bios and uefi files load over TFTP from boot's server; give server` | Give the TFTP server's address in `server`. |
+| `DHCPSubnet/office: spec.subnet: the subnet 192.0.2.0/31 is no IPv4 range of 30 bits at most or IPv6 range of 120 bits at most of addresses a DHCP server leases` | Give an IPv4 range of 30 bits at most, apart from `0.0.0.0/8`, `127.0.0.0/8`, `169.254.0.0/16` and `224.0.0.0/3`, or an IPv6 range of 120 bits at most, apart from `::/8`, `fe80::/10` and `ff00::/8`. |
+| `DHCPSubnet/office: spec: the pool 192.0.2.100-192.0.2.199 lies outside the subnet 192.0.2.0/25` | Move the pool into the subnet, or widen the subnet. |
+| `DHCPSubnet/office: spec: the pool 192.0.2.199-192.0.2.100 ends before it starts` | Swap `first` and `last`. |
+| `DHCPSubnet/office: spec: the pool 192.0.2.100-192.0.2.150 shares addresses with another pool` | Give each pool addresses of its own. |
+| `DHCPSubnet/office: spec: the pool 192.0.2.0-192.0.2.10 holds 192.0.2.0, the network address of the subnet 192.0.2.0/24` | Start the pool after the subnet's first address and end it before its last. |
+| `DHCPSubnet/office6: spec: the pool 2001:db8:1::-2001:db8:1::ff holds 2001:db8:1::, the subnet-router anycast address of the subnet 2001:db8:1::/64` | Start the pool after the subnet's first address. |
+| `DHCPSubnet/office: spec: the pool 192.0.2.100-192.0.2.199 holds 192.0.2.150, the gateway` | Keep the gateway, the DNS servers and boot's server out of the pools and reservations. |
+| `DHCPSubnet/office: spec: the reservation of 52:54:00:12:34:56, 198.51.100.10, lies outside the subnet 192.0.2.0/24` | Reserve an address of the subnet. |
+| `DHCPSubnet/office: spec: the reservation of 52:54:00:12:34:56, 192.0.2.120, lies in the pool 192.0.2.100-192.0.2.199; reserve addresses outside the pools` | Reserve an address outside the pools, or shrink the pool. |
+| `DHCPSubnet/office: spec: the reservation of 52:54:00:12:34:56, 192.0.2.255, is the broadcast address of the subnet 192.0.2.0/24` | Reserve an address between the subnet's first and last address. |
+| `DHCPSubnet/office: spec: the reservation of 52:54:00:12:34:56, 192.0.2.53, is a DNS server` | Keep the gateway, the DNS servers and boot's server out of the pools and reservations. |
+| `DHCPSubnet/office: spec: the gateway 198.51.100.1 lies outside the subnet 192.0.2.0/24` | Give a gateway of the subnet. |
+| `DHCPSubnet/office: spec: the gateway, 192.0.2.0, is the network address of the subnet 192.0.2.0/24` | Give a gateway between the subnet's first and last address. |
+| `DHCPSubnet/office: spec: the DNS server 2001:db8::53 is no IPv4 address` | Give DNS servers of the subnet's family. |
+| `DHCPSubnet/office6: spec: gateway is for IPv4 subnets; IPv6 clients learn their routers from router advertisements` | Drop `gateway`; send router advertisements from the link's `Network`. |
+| `DHCPSubnet/office6: spec: boot is for IPv4 subnets` | Drop `boot`. |
+| `DHCPSubnet/office: spec: prefixDelegation delegates IPv6 prefixes, which an IPv4 subnet has none of` | Drop `prefixDelegation`, or delegate in an IPv6 subnet. |
+| `DHCPSubnet/office6: spec: an IPv6 subnet is served on one link, the one Kea's subnet names; give each of lan0, lan1 a DHCPSubnet of its own` | Name one link. |
+| `DHCPSubnet/customers: spec.prefixDelegation: prefixDelegation's prefix 2001:db8:100::/56 is no IPv6 range shorter than 56 bits apart from ::/8, fe80::/10 and ff00::/8` | Give an IPv6 range apart from those ranges and a longer `length`. |
+| `DHCPSubnet/customers: spec: prefixDelegation's prefix 2001:db8::/32 overlaps the subnet 2001:db8:2::/64` | Delegate from a range apart from the subnet. |
+| `DHCPSubnet/office: spec.leaseTime: a lease of 999999d is longer than 4294967295 seconds, the longest Kea takes` | Shorten the lease to 49710 days or less. |
+| `DHCPSubnet/office: spec.boot: boot names no file; give bios, uefi or ipxe, or leave boot out` | Give a file, or drop `boot`. |
+| `DHCPSubnet/office: spec.boot: boot's server is no IPv4 address` | Give the TFTP server's IPv4 address. |
+| `DHCPSubnet/office: spec.boot: boot's bios and uefi files load over TFTP from boot's server; give server` | Give the TFTP server's address in `server`. |
 | `DHCPSubnet/office: spec.interfaces[0], spec.interfaces[2]: "lan0" is not unique; name each link once` | Name each link once. |
 | `DHCPSubnet/office: spec.reservations[0].mac, spec.reservations[2].mac: "52:54:00:12:34:56" is not unique; keep one reservation of the MAC address` | Keep one reservation of the MAC address. |
 | `DHCPSubnet/office: spec.reservations[1].address, spec.reservations[3].address: "192.0.2.10" is not unique; reserve each address once` | Reserve each address once. |
-| `DHCPRelay "office" spec.servers: the server ff05::1:3 is no unicast address a relay forwards to` | Name the servers by their unicast addresses. |
+| `DHCPRelay/office: spec.servers: the server ff05::1:3 is no unicast address a relay forwards to` | Name the servers by their unicast addresses. |
 | `DHCPRelay/office: spec.servers[0], spec.servers[1]: "2001:db8:ff::53" is not unique; name each server once` | Name each server once. |
 | `DHCPRelay/guests: spec.interfaces[0], DHCPRelay/office: spec.interfaces[1]: "lan0" is not unique; a link takes one relay` | Relay the link in one document, and name it once there. |
 

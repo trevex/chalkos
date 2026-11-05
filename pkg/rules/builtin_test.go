@@ -104,11 +104,11 @@ func TestRegistrationRules(t *testing.T) {
 	}{
 		{"unchanged", labels, scheduling, nil},
 		{"labels", `"labels": {"zone": "b"}, "taints": []`, scheduling,
-			[]string{`Node "default" spec.labels: the config changes the node's labels` + suffix + "change the Node object with kubectl label instead, or reinstall the node"}},
+			[]string{`Node/default: spec.labels: the config changes the node's labels` + suffix + "change the Node object with kubectl label instead, or reinstall the node"}},
 		{"taints", `"labels": {"zone": "a"}, "taints": [{"key": "dedicated", "value": null, "effect": "NoSchedule"}]`, scheduling,
-			[]string{`Node "default" spec.taints: the config changes the node's taints` + suffix + "change the Node object with kubectl taint instead, or reinstall the node"}},
+			[]string{`Node/default: spec.taints: the config changes the node's taints` + suffix + "change the Node object with kubectl taint instead, or reinstall the node"}},
 		{"scheduling", labels, `"allowSchedulingOnControlPlanes": true`,
-			[]string{`Cluster "default" spec.allowSchedulingOnControlPlanes: the config changes allowSchedulingOnControlPlanes` + suffix +
+			[]string{`Cluster/default: spec.allowSchedulingOnControlPlanes: the config changes allowSchedulingOnControlPlanes` + suffix +
 				"add or remove the node-role.kubernetes.io/control-plane:NoSchedule taint with kubectl taint instead, or reinstall the node"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

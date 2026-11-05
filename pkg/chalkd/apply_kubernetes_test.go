@@ -882,12 +882,12 @@ func TestApplyConfigRefusesChangedRegistrationFields(t *testing.T) {
 		before, after string
 		want          []string
 	}{
-		"labels added":    {true, workerConfig, labelled, []string{`Node "default" spec.labels: `, "kubectl label"}},
-		"labels changed":  {true, labelled, node("labels: {node.kubernetes.io/storage: hdd}"), []string{`Node "default" spec.labels: `, "kubectl label"}},
-		"labels removed":  {true, labelled, workerConfig, []string{`Node "default" spec.labels: `}},
-		"taints added":    {true, workerConfig, tainted, []string{`Node "default" spec.taints: `, "kubectl taint"}},
-		"taints removed":  {true, tainted, workerConfig, []string{`Node "default" spec.taints: `}},
-		"scheduling":      {true, workerConfig, withClusterSpec("{allowSchedulingOnControlPlanes: true}"), []string{`Cluster "default" spec.allowSchedulingOnControlPlanes: `, "kubectl taint"}},
+		"labels added":    {true, workerConfig, labelled, []string{`Node/default: spec.labels: `, "kubectl label"}},
+		"labels changed":  {true, labelled, node("labels: {node.kubernetes.io/storage: hdd}"), []string{`Node/default: spec.labels: `, "kubectl label"}},
+		"labels removed":  {true, labelled, workerConfig, []string{`Node/default: spec.labels: `}},
+		"taints added":    {true, workerConfig, tainted, []string{`Node/default: spec.taints: `, "kubectl taint"}},
+		"taints removed":  {true, tainted, workerConfig, []string{`Node/default: spec.taints: `}},
+		"scheduling":      {true, workerConfig, withClusterSpec("{allowSchedulingOnControlPlanes: true}"), []string{`Cluster/default: spec.allowSchedulingOnControlPlanes: `, "kubectl taint"}},
 		"unchanged":       {true, labelled, labelled, nil},
 		"the first Node":  {true, "", labelled, nil},
 		"no share":        {false, workerConfig, labelled, nil},

@@ -103,7 +103,7 @@ chalkctl refuses a delivery that removes the last `Network` of a management inte
 the router would stop configuring the interface that you reach it through. The refusal reads:
 
 ```text
-chalkctl: r1: the config is refused: Router "router" spec.management.interfaces: the config leaves the management interfaces eth1 without a Network document that matches them, so the router would no longer configure them; keep a Network that matches each, or change spec.management.interfaces in the same delivery
+chalkctl: r1: the config is refused: Router/router: spec.management.interfaces: the config leaves the management interfaces eth1 without a Network document that matches them, so the router would no longer configure them; keep a Network that matches each, or change spec.management.interfaces in the same delivery
 ```
 
 To move the node API, change `spec.management.interfaces` in the delivery that changes the

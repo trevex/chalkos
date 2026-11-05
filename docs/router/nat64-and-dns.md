@@ -92,7 +92,7 @@ The router's own connections take the kernel's ephemeral ports, 32768 to 60999, 
 refuses them in a pool. A range that touches them is refused:
 
 ```text
-chalkctl: r1: the config is refused: NAT64 "edge" spec.pool4: a pool entry takes the ports 1-65535, which touch the kernel's ephemeral ports, 32768 to 60999, which Jool refuses; give ports from 1 to 32767 or from 61000 to 65535
+chalkctl: r1: the config is refused: NAT64/edge: spec.pool4: a pool entry takes the ports 1-65535, which touch the kernel's ephemeral ports, 32768 to 60999, which Jool refuses; give ports from 1 to 32767 or from 61000 to 65535
 ```
 
 To give the pool's addresses most of their ports, give them two entries:

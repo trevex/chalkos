@@ -177,7 +177,7 @@ func TestRunRefuses(t *testing.T) {
 		want           string
 	}{
 		"the set":      {`cat > "$OUT/demo.json"`, base + "---\napiVersion: demo.example.org/v1alpha1\nkind: Demo\nmetadata: {name: one}\nspec: {name: twice}\n", false, false, StageConfig, `the config: two Demo documents named "one"`},
-		"a rule":       {`cat > "$OUT/demo.json"`, strings.Replace(base, "name: first", "name: second", 1), true, false, StageRules, `the config is refused: Demo "one" spec.name: the name stays while the demo is frozen`},
+		"a rule":       {`cat > "$OUT/demo.json"`, strings.Replace(base, "name: first", "name: second", 1), true, false, StageRules, `the config is refused: Demo/one: spec.name: the name stays while the demo is frozen`},
 		"a renderer":   {`exit 3`, base, false, false, StageOutputs, "output demo: its renderer failed (exit 3); see the node's journal"},
 		"an unchanged": {`cat > "$OUT/demo.json"`, base, true, false, "", ""},
 		"a fact":       {`cat > "$OUT/demo.json"`, strings.Replace(base, "name: first", "name: second", 1), false, true, StageRules, "cannot check: fact frozen: share.json is not JSON"},

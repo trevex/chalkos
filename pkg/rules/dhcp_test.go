@@ -34,7 +34,7 @@ func TestDHCPSubnetRules(t *testing.T) {
 	reserve := func(address string) string {
 		return `, "reservations": [{"mac": "52:54:00:12:34:56", "address": "` + address + `"}]`
 	}
-	const at = `DHCPSubnet "office" spec: `
+	const at = `DHCPSubnet/office: spec: `
 	for _, tc := range []struct {
 		name string
 		docs []config.Document
@@ -46,13 +46,13 @@ func TestDHCPSubnetRules(t *testing.T) {
 		{"reservations alone", []config.Document{subnet("lab", `{"interfaces": ["lab0"], "subnet": "198.51.100.0/30",
 			"reservations": [{"mac": "52:54:00:00:00:01", "address": "198.51.100.2"}]}`)}, nil},
 		{"a subnet of 31 bits", []config.Document{subnet("office", `{"interfaces": ["lan0"], "subnet": "192.0.2.0/31"}`)},
-			[]string{`DHCPSubnet "office" spec.subnet: the subnet 192.0.2.0/31 is no IPv4 range of 30 bits at most or IPv6 range of 120 bits at most of addresses a DHCP server leases`}},
+			[]string{`DHCPSubnet/office: spec.subnet: the subnet 192.0.2.0/31 is no IPv4 range of 30 bits at most or IPv6 range of 120 bits at most of addresses a DHCP server leases`}},
 		{"a subnet of loopback addresses", []config.Document{subnet("office", `{"interfaces": ["lan0"], "subnet": "127.0.0.0/24"}`)},
-			[]string{`DHCPSubnet "office" spec.subnet: the subnet 127.0.0.0/24 is no IPv4 range of 30 bits at most or IPv6 range of 120 bits at most of addresses a DHCP server leases`}},
+			[]string{`DHCPSubnet/office: spec.subnet: the subnet 127.0.0.0/24 is no IPv4 range of 30 bits at most or IPv6 range of 120 bits at most of addresses a DHCP server leases`}},
 		// The rule compares ranges, not first addresses: 192.0.0.0/2 starts outside 224.0.0.0/3
 		// and holds it.
 		{"a subnet over the multicast addresses", []config.Document{subnet("office", `{"interfaces": ["lan0"], "subnet": "192.0.0.0/2"}`)},
-			[]string{`DHCPSubnet "office" spec.subnet: the subnet 192.0.0.0/2 is no IPv4 range of 30 bits at most or IPv6 range of 120 bits at most of addresses a DHCP server leases`}},
+			[]string{`DHCPSubnet/office: spec.subnet: the subnet 192.0.0.0/2 is no IPv4 range of 30 bits at most or IPv6 range of 120 bits at most of addresses a DHCP server leases`}},
 		{"a subnet beside the loopback addresses", []config.Document{subnet("office", `{"interfaces": ["lan0"], "subnet": "128.0.0.0/30"}`)}, nil},
 		{"a pool outside the subnet", []config.Document{subnet("office", `{"interfaces": ["lan0"], "subnet": "192.0.2.0/25"`+pools("192.0.2.100", "192.0.2.199")+`}`)},
 			[]string{at + "the pool 192.0.2.100-192.0.2.199 lies outside the subnet 192.0.2.0/25"}},
@@ -102,14 +102,14 @@ func TestDHCPSubnetRules(t *testing.T) {
 		{"a DNS server of IPv6", office(`, "dns": ["192.0.2.1", "2001:db8::53"]`), []string{at + "the DNS server 2001:db8::53 is no IPv4 address"}},
 		{"an IPv4-mapped DNS server", office(`, "dns": ["::ffff:192.0.2.1"]`), []string{at + "the DNS server ::ffff:192.0.2.1 is no IPv4 address"}},
 		{"a boot of no file", office(`, "boot": {"server": "192.0.2.5"}`),
-			[]string{`DHCPSubnet "office" spec.boot: boot names no file; give bios, uefi or ipxe, or leave boot out`}},
+			[]string{`DHCPSubnet/office: spec.boot: boot names no file; give bios, uefi or ipxe, or leave boot out`}},
 		{"a boot server of IPv6", office(`, "boot": {"server": "2001:db8::5", "uefi": "ipxe.efi"}`),
-			[]string{`DHCPSubnet "office" spec.boot: boot's server is no IPv4 address`}},
+			[]string{`DHCPSubnet/office: spec.boot: boot's server is no IPv4 address`}},
 		{"an iPXE script without a server", office(`, "boot": {"ipxe": "http://192.0.2.5/boot.ipxe"}`), nil},
 		{"a BIOS file without a server", office(`, "boot": {"bios": "undionly.kpxe", "ipxe": "http://192.0.2.5/boot.ipxe"}`),
-			[]string{`DHCPSubnet "office" spec.boot: boot's bios and uefi files load over TFTP from boot's server; give server`}},
+			[]string{`DHCPSubnet/office: spec.boot: boot's bios and uefi files load over TFTP from boot's server; give server`}},
 		{"a UEFI file without a server", office(`, "boot": {"uefi": "ipxe.efi"}`),
-			[]string{`DHCPSubnet "office" spec.boot: boot's bios and uefi files load over TFTP from boot's server; give server`}},
+			[]string{`DHCPSubnet/office: spec.boot: boot's bios and uefi files load over TFTP from boot's server; give server`}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			failures, err := set.Evaluate(Input{Documents: tc.docs, Node: "r1"})
@@ -152,7 +152,7 @@ func TestDHCPSubnetManyRanges(t *testing.T) {
 			strings.Join(pools, ", ")+`], "reservations": [`+strings.Join(reservations, ", ")+`], "dns": [`+strings.Join(dns, ", ")+`]}`)
 	}
 	const pool = `{"first": "10.31.0.1", "last": "10.31.0.254"}`
-	const at = `DHCPSubnet "office" spec: `
+	const at = `DHCPSubnet/office: spec: `
 	for _, tc := range []struct {
 		name string
 		doc  config.Document
@@ -193,8 +193,8 @@ func TestDHCPSubnetLeaseTime(t *testing.T) {
 		"999999s": nil,
 		"999999h": nil,
 		"49710d":  nil,
-		"49711d":  {`DHCPSubnet "office" spec.leaseTime: a lease of 49711d is longer than 4294967295 seconds, the longest Kea takes`},
-		"999999d": {`DHCPSubnet "office" spec.leaseTime: a lease of 999999d is longer than 4294967295 seconds, the longest Kea takes`},
+		"49711d":  {`DHCPSubnet/office: spec.leaseTime: a lease of 49711d is longer than 4294967295 seconds, the longest Kea takes`},
+		"999999d": {`DHCPSubnet/office: spec.leaseTime: a lease of 999999d is longer than 4294967295 seconds, the longest Kea takes`},
 	} {
 		d := doc("DHCPSubnet", "office", `{"interfaces": ["lan0"], "subnet": "192.0.2.0/24", "leaseTime": "`+leaseTime+`"}`)
 		failures, err := set.Evaluate(Input{Documents: []config.Document{d}, Node: "r1"})

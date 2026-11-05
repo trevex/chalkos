@@ -42,12 +42,13 @@ stops before it sends anything:
 ```console
 $ chalkctl apply-config cp1
 cp1: config 0 added, 0 removed, 1 changed
-chalkctl: cp1: the config is refused: Peer "router-b" spec.asn: the AS number stays 64514; add a Peer of another name for 64600
+chalkctl: cp1: the config is refused: Peer/router-b: spec.asn: the AS number stays 64514; add a Peer of another name for 64600
 ```
 
-The error names the node, then the refusal. A field rule's message starts with the kind, the
-document's name and the field. The rest comes from `messageExpression`, which builds the message
-from the same variables as the rule.
+The error names the node, then the refusal. A field rule's refusal starts with the kind and the
+document's name, then the field, as `Peer/router-b: spec.asn:`, the form a renderer's refusal takes
+too. The rest comes from `messageExpression`, which builds the message from the same variables as
+the rule.
 
 ## A rule has five attributes
 
@@ -131,7 +132,7 @@ chalkos.kinds.Session.specRules = [
 ```
 
 A spec rule's message starts like a field rule's, with the kind, the document's name and `spec`:
-`Session "up" spec: a neighbour has the peer's own address; list the peer's neighbours alone`.
+`Session/up: spec: a neighbour has the peer's own address; list the peer's neighbours alone`.
 
 The same check as a kind rule loops over `documents` around the loop over the neighbours. A kind
 rule that compares two lists of each document, such as each reservation of a subnet with each of
@@ -194,7 +195,7 @@ the node refuses the delivery. chalkctl prints the node's error after `chalkctl:
 code. The message part of it is:
 
 ```text
-the config is refused: Rack "rack" spec.location: the survey found the node at rack-b/u3, not at rack-a/u12; fix the location, or survey the node again
+the config is refused: Rack/rack: spec.location: the survey found the node at rack-b/u3, not at rack-a/u12; fix the location, or survey the node again
 ```
 
 Set the location the survey found where the survey is right, or survey the node again where the

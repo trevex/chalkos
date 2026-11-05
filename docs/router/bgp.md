@@ -303,7 +303,7 @@ The list is of the family of the block that names it. The rules refuse a list of
 family, a list the config lacks and `defaultOriginateWhen` without `defaultOriginate: true`:
 
 ```text
-chalkctl: r1: the config is refused: BGPPeer "fabric" spec.families: the ipv6 family names defaultOriginateWhen without defaultOriginate: true; defaultOriginateWhen says when the router sends the default route that defaultOriginate originates
+chalkctl: r1: the config is refused: BGPPeer/fabric: spec.families: the ipv6 family names defaultOriginateWhen without defaultOriginate: true; defaultOriginateWhen says when the router sends the default route that defaultOriginate originates
 ```
 
 `chalkctl node routes` on the edge lists the tracked route as a path of its own, with the
@@ -437,7 +437,7 @@ of a peer's VRF.
 The rules refuse a delivery that changes `spec.asn` of the `BGP` document:
 
 ```text
-chalkctl: r1: the config is refused: BGP "bgp" spec.asn: the AS number stays 64512; to change it, deliver the config without the BGP document, which ends the router's sessions, and then with the new AS number
+chalkctl: r1: the config is refused: BGP/bgp: spec.asn: the AS number stays 64512; to change it, deliver the config without the BGP document, which ends the router's sessions, and then with the new AS number
 ```
 
 Deliver the config without the `BGP` and `BGPPeer` documents first, which ends every session, as

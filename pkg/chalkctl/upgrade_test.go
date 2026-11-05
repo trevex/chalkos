@@ -1799,7 +1799,7 @@ func TestApplyConfigStagedChecksRulesAgainstTheRunningConfig(t *testing.T) {
 	n.staged, n.stagedRoot, n.stagedConfig = "0.2.0", rootOf(t, img), want
 	n.config = strings.Replace(want, `"type":"worker"`, `"type":"controlplane"`, 1)
 	err = l.applyConfig("w1", "--staged")
-	if err == nil || !strings.Contains(err.Error(), `Node "default" spec.type: the type is fixed`) {
+	if err == nil || !strings.Contains(err.Error(), `Node/default: spec.type: the type is fixed`) {
 		t.Fatalf("err = %v", err)
 	}
 	if l.ta.stdout.String() != "w1: config unchanged\n" {

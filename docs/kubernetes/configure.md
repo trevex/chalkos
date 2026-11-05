@@ -80,7 +80,7 @@ joins, and chalkd never changes the Kubernetes node after that. So `labels` and 
 once the node holds a Kubernetes share, and a node refuses a delivery that changes them:
 
 ```text
-the config is refused: Node "default" spec.labels: the config changes the node's labels; the value applies when the node registers with the cluster, so changing it on a running node changes nothing; change the Node object with kubectl label instead, or reinstall the node
+the config is refused: Node/default: spec.labels: the config changes the node's labels; the value applies when the node registers with the cluster, so changing it on a running node changes nothing; change the Node object with kubectl label instead, or reinstall the node
 ```
 
 Change the labels and taints of a registered node with kubectl, and keep its `Node` document as it
@@ -118,7 +118,7 @@ once a node holds a Kubernetes share. Every node gets the same `Cluster` documen
 running node refuses a delivery that changes it:
 
 ```text
-the config is refused: Cluster "default" spec.allowSchedulingOnControlPlanes: the config changes allowSchedulingOnControlPlanes; the value applies when the node registers with the cluster, so changing it on a running node changes nothing; add or remove the node-role.kubernetes.io/control-plane:NoSchedule taint with kubectl taint instead, or reinstall the node
+the config is refused: Cluster/default: spec.allowSchedulingOnControlPlanes: the config changes allowSchedulingOnControlPlanes; the value applies when the node registers with the cluster, so changing it on a running node changes nothing; add or remove the node-role.kubernetes.io/control-plane:NoSchedule taint with kubectl taint instead, or reinstall the node
 ```
 
 On a running cluster, keep the setting and remove or add the taint with kubectl:

@@ -71,7 +71,7 @@ func TestCheckRules(t *testing.T) {
 		{"valid", greeting("hi"), "", ""},
 		{"too long", greeting("greetings-to-everyone"), "", "the config is refused: a message has at most 12 characters"},
 		{"changed without the node's config", greeting("bye"), "", ""},
-		{"changed", greeting("bye"), greeting("hi"), `the config is refused: Greeting "hello" spec.message: the message is fixed`},
+		{"changed", greeting("bye"), greeting("hi"), `the config is refused: Greeting/hello: spec.message: the message is fixed`},
 		{"unchanged", greeting("hi"), greeting("hi") + "---\napiVersion: gone.example.org/v1\nkind: Gone\nmetadata: {name: x}\nspec: {}\n", ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -126,7 +126,7 @@ func TestCheckRulesHashesAddonSecrets(t *testing.T) {
 		node, want string
 	}{
 		{"test", ""},
-		{"other", `the config is refused: Addon "a" spec.objects: the objects are fixed`},
+		{"other", `the config is refused: Addon/a: spec.objects: the objects are fixed`},
 	} {
 		served := config.Redact(greetings(t, addon(tc.node)))
 		err := checkRules(c, greetings(t, addon("test")), served, "n1")

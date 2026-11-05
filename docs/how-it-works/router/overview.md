@@ -147,7 +147,7 @@ that a running `Network` matches. A delivery that removes the last `Network` of 
 `lan0` is a management interface, is refused:
 
 ```text
-the config is refused: Router "router" spec.management.interfaces: the config leaves the management interfaces lan0 without a Network document that matches them, so the router would no longer configure them; keep a Network that matches each, or change spec.management.interfaces in the same delivery
+the config is refused: Router/router: spec.management.interfaces: the config leaves the management interfaces lan0 without a Network document that matches them, so the router would no longer configure them; keep a Network that matches each, or change spec.management.interfaces in the same delivery
 ```
 
 The rule reads the `Name=` of each `[Match]` section and splits it into names at spaces and tabs. It

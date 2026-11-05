@@ -50,13 +50,10 @@ type Failure struct {
 	Message  string
 }
 
-// String names the field a field's rule is about; a kind's rule names what it is about in its
-// message.
+// String is the failure as a refusal of the field a field's rule is about says it, as
+// refusals.Refusal does; a kind's rule names what it is about in its message alone.
 func (f Failure) String() string {
-	if f.Path == nil {
-		return f.Message
-	}
-	return fmt.Sprintf("%s %q %s: %s", f.Kind, f.Document, strings.Join(f.Path, "."), f.Message)
+	return refusals.Refusal{Kind: f.Kind, Name: f.Document, Path: strings.Join(f.Path, "."), Message: f.Message}.String()
 }
 
 // FactError is a fact a rule reads that could not be loaded; it refuses the delivery.

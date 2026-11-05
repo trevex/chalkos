@@ -255,23 +255,23 @@ expression:
 | --- | --- |
 | `PolicyRoute lan: in names a zone or interfaces, one of them; leave in out for traffic from every link` | Keep `zone` or `interfaces`, or drop `in`. |
 | `PolicyRoute/lan: spec.in.zone: FirewallZone "dmz" does not exist` | Add the zone, or name one that exists. |
-| `PolicyRoute "lan" spec.rules: a rule has an empty match, which would take every packet; to send every packet, say so, such as with source: {cidrs: [0.0.0.0/0]}` | Add a term to the match. |
-| `PolicyRoute "lan" spec.rules: a rule's source or destination names both set and cidrs, or neither; give one, or leave the field out to match every address` | Keep one of `set` and `cidrs`, or leave out an empty `source` or `destination`. |
+| `PolicyRoute/lan: spec.rules: a rule has an empty match, which would take every packet; to send every packet, say so, such as with source: {cidrs: [0.0.0.0/0]}` | Add a term to the match. |
+| `PolicyRoute/lan: spec.rules: a rule's source or destination names both set and cidrs, or neither; give one, or leave the field out to match every address` | Keep one of `set` and `cidrs`, or leave out an empty `source` or `destination`. |
 | `PolicyRoute/lan: spec.rules[1].match.source.set: AddressSet "guests" does not exist` | Add the `AddressSet` document, or fix the name. |
-| `PolicyRoute "lan" spec.rules: a rule has addresses or a set of another family than its own` | Drop the other family's addresses, or change the rule's `family`. |
-| `PolicyRoute "lan" spec.rules: a rule matches no packet: its family, protocol, addresses and sets leave neither IPv4 nor IPv6` | Make the rule's family, protocol, addresses and sets agree on one family. |
-| `PolicyRoute "lan" spec.rules: a rule has ports without the protocol tcp, udp or sctp` | Set `protocol` to `tcp`, `udp` or `sctp`. |
-| `PolicyRoute "lan" spec.rules: a rule's to names a VRF, a table or a next hop, one of them` | Keep one target in `to`. |
-| `PolicyRoute "servers" spec.rules: a rule's next hop is of another family than the packets the rule matches` | Match the `NextHop`'s family, or name a `NextHop` of the rule's family. |
+| `PolicyRoute/lan: spec.rules: a rule has addresses or a set of another family than its own` | Drop the other family's addresses, or change the rule's `family`. |
+| `PolicyRoute/lan: spec.rules: a rule matches no packet: its family, protocol, addresses and sets leave neither IPv4 nor IPv6` | Make the rule's family, protocol, addresses and sets agree on one family. |
+| `PolicyRoute/lan: spec.rules: a rule has ports without the protocol tcp, udp or sctp` | Set `protocol` to `tcp`, `udp` or `sctp`. |
+| `PolicyRoute/lan: spec.rules: a rule's to names a VRF, a table or a next hop, one of them` | Keep one target in `to`. |
+| `PolicyRoute/servers: spec.rules: a rule's next hop is of another family than the packets the rule matches` | Match the `NextHop`'s family, or name a `NextHop` of the rule's family. |
 | `PolicyRoute/lan: spec.rules[1].to.vrf: VRF "transit" does not exist` | Add the `VRF` document, or fix the name. |
 | `PolicyRoute/servers: spec.rules[0].to.nextHop: NextHop "wanb4" does not exist` | Add the `NextHop` document, or fix the name. |
-| `PolicyRoute "lan" spec.rules: a rule's table is 255, the kernel's local table, or a VRF's table; name the VRF in vrf, or take another table` | Name the VRF in `vrf`, or take another table. |
-| `PolicyRoute "lan" spec.rules: a rule's table 200 is the table of NextHop wanb4; name the NextHop in nextHop, or take another table` | Name the `NextHop` in `nextHop`, or take another table. |
+| `PolicyRoute/lan: spec.rules: a rule's table is 255, the kernel's local table, or a VRF's table; name the VRF in vrf, or take another table` | Name the VRF in `vrf`, or take another table. |
+| `PolicyRoute/lan: spec.rules: a rule's table 200 is the table of NextHop wanb4; name the NextHop in nextHop, or take another table` | Name the `NextHop` in `nextHop`, or take another table. |
 | `NextHop/wanb4, NextHop/wanb6: spec.table 200 is not unique; give each NextHop a table of its own` | Give each `NextHop` its own table. |
-| `NextHop "wanb4" spec.table: the table is 253, 254 or 255, the kernel's own; give the NextHop a table of its own` | Take a table that is not the kernel's. |
-| `NextHop "wanb4" spec.table: the table is that of VRF transit; give the NextHop a table of its own` | Take a table that no VRF uses. |
-| `NextHop "wanb4" spec.interface: the interface is lo, which no next hop is on; name the link the next hop is on` | Name the link the next hop is on in `interface`. |
-| `NextHop "wanb6" spec.address: the next hop ::ffff:198.51.100.130 is no unicast address of a router, or is an IPv4-mapped IPv6 address; give the router's address, an IPv4 one as IPv4` | Give the next hop's unicast address, an IPv4 address as IPv4. |
+| `NextHop/wanb4: spec.table: the table is 253, 254 or 255, the kernel's own; give the NextHop a table of its own` | Take a table that is not the kernel's. |
+| `NextHop/wanb4: spec.table: the table is that of VRF transit; give the NextHop a table of its own` | Take a table that no VRF uses. |
+| `NextHop/wanb4: spec.interface: the interface is lo, which no next hop is on; name the link the next hop is on` | Name the link the next hop is on in `interface`. |
+| `NextHop/wanb6: spec.address: the next hop ::ffff:198.51.100.130 is no unicast address of a router, or is an IPv4-mapped IPv6 address; give the router's address, an IPv4 one as IPv4` | Give the next hop's unicast address, an IPv4 address as IPv4. |
 
 The renderers of the outputs `router-nftables` and `networkd` check the rest, the number of
 target tables, the interfaces of `in` against the VRFs' devices and what depends on the `Network`

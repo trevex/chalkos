@@ -43,8 +43,8 @@ func TestDocument(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := []string{
-		`Zone "v6" spec.lane: the lane is not of ipv4`,
-		`Zone "missing" spec.lanes: a lane does not exist`,
+		`Zone/v6: spec.lane: the lane is not of ipv4`,
+		`Zone/missing: spec.lanes: a lane does not exist`,
 	}
 	if got := messages(failures); !slices.Equal(got, want) {
 		t.Errorf("failures = %q, want %q", got, want)
@@ -103,8 +103,8 @@ func TestDocumentIgnoresShadowedConfig(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := []string{
-		`Zone "missing" spec.lanes: a lane does not exist`,
-		`Zone "missing" spec.lanes: a bound lane does not exist`,
+		`Zone/missing: spec.lanes: a lane does not exist`,
+		`Zone/missing: spec.lanes: a bound lane does not exist`,
 	}
 	if got := messages(failures); !slices.Equal(got, want) {
 		t.Errorf("failures = %q, want %q", got, want)

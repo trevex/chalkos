@@ -34,8 +34,16 @@ type Refusal struct {
 	Message string `json:"message"`
 }
 
-// String is the refusal as chalkd reports it: "<Kind>/<name>: <path>: <message>".
+// String is the refusal as chalkd reports it: "<Kind>/<name>: <path>: <message>", without the
+// path for a refusal of a whole document, and as the message alone for one of no document, such
+// as a kind's rule, whose message names what it is about.
 func (r Refusal) String() string {
+	switch {
+	case r.Name == "":
+		return r.Message
+	case r.Path == "":
+		return r.Kind + "/" + r.Name + ": " + r.Message
+	}
 	return r.Kind + "/" + r.Name + ": " + r.Path + ": " + r.Message
 }
 
