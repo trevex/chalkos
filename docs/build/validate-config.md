@@ -94,8 +94,14 @@ addresses and refuses each IPv4 `Peer` outside them:
 --8<-- "examples/homelab/extensions/bgp-peers.jq"
 ```
 
-A node without a static IPv4 address passes, since its subnet is unknown. That keeps the
-validator from refusing every peer of a node that takes its address by DHCP.
+A section of a networkd document may be one object or a list of them, and a key one value or a
+list, so the program reads `address` from every `[Network]` section and every `[Address]`
+section, `spec.address`. An address without a prefix length counts as a host address, /32.
+
+The subnet of a link that takes its address by DHCP is unknown. So when any `Network` of the node
+has no static IPv4 address, or enables DHCPv4, the validator accepts every `Peer`; otherwise it
+would refuse a peer on that link. The check `example-homelab-bgp-peers` runs the program on these
+cases and on `router-c` below.
 
 ## Any program of the store validates
 
