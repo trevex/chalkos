@@ -344,11 +344,12 @@ func TestRenderTimeout(t *testing.T) {
 
 // A renderer runs as the unprivileged user, without capabilities or devices and with STATE, /var,
 // and chalkd's config, credentials and Kubernetes keys hidden; it may write $OUT alone and open
-// Unix sockets alone. A check may write nothing, and may open netlink sockets too. systemd stops
-// either at its timeout.
+// Unix sockets alone, and prints its report of refusals into a file of chalkd's, which the manager
+// opens. A check may write nothing, prints nowhere, and may open netlink sockets too. systemd
+// stops either at its timeout.
 func TestSandboxArgs(t *testing.T) {
-	p := Program{Argv: []string{"/nix/store/x/bin/r", "a"}, Out: "/run/chalkos/outputs/.staging/demo.1", Write: true, Timeout: 30 * time.Second}
-	args := strings.Join(sandboxArgs("chalkos-render-1.service", p, "/in"), "\n")
+	p := Program{Argv: []string{"/nix/store/x/bin/r", "a"}, Out: "/run/chalkos/outputs/.staging/demo.1", Write: true, Report: true, Timeout: 30 * time.Second}
+	args := strings.Join(sandboxArgs("chalkos-render-1.service", p, "/in", "/out"), "\n")
 	for _, want := range []string{
 		"--property=User=chalkos-render",
 		"--property=CapabilityBoundingSet=",
@@ -360,6 +361,7 @@ func TestSandboxArgs(t *testing.T) {
 		"--property=InaccessiblePaths=-/state -/var -/run/chalkos/config -/run/chalkos/credentials -/run/chalkos/kubernetes",
 		"--property=TimeoutStartSec=30000ms",
 		"--property=ReadWritePaths=/run/chalkos/outputs/.staging/demo.1",
+		"--property=StandardOutput=truncate:/out",
 		"--property=StandardInput=file:/in",
 		"--property=RestrictAddressFamilies=AF_UNIX",
 		"--\n/nix/store/x/bin/r\na",
@@ -368,10 +370,14 @@ func TestSandboxArgs(t *testing.T) {
 			t.Errorf("the arguments lack %q:\n%s", want, args)
 		}
 	}
-	p.Write = false
-	args = strings.Join(sandboxArgs("chalkos-render-1.service", p, "/in"), "\n")
+	p.Write, p.Report = false, false
+	args = strings.Join(sandboxArgs("chalkos-render-1.service", p, "/in", "/out"), "\n")
 	if strings.Contains(args, "ReadWritePaths") {
 		t.Errorf("a check may write:\n%s", args)
+	}
+	// What a check prints goes nowhere.
+	if !strings.Contains(args+"\n", "--property=StandardOutput=null\n") {
+		t.Errorf("a check prints somewhere:\n%s", args)
 	}
 	// A check talks netlink, as nft --check does; a renderer does not.
 	if !strings.Contains(args+"\n", "--property=RestrictAddressFamilies=AF_UNIX AF_NETLINK\n") {

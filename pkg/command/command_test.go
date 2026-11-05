@@ -41,6 +41,10 @@ func TestRun(t *testing.T) {
 			}
 		})
 	}
+	// What a program that fails printed comes back with its Error.
+	if out, err := Run(ctx, []string{"sh", "-c", "echo printed; exit 1"}, nil, 100); err == nil || string(out) != "printed\n" {
+		t.Errorf("a failed program = %q, %v", out, err)
+	}
 }
 
 // ResolveInStore follows a program's links within the image's store, absolute and relative, and

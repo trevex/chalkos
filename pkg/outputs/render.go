@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/trevex/chalkos/pkg/config"
+	"github.com/trevex/chalkos/pkg/refusals"
 	"github.com/trevex/chalkos/pkg/schema"
 )
 
@@ -68,22 +69,44 @@ func (d Definition) documents(in Input) []config.Document {
 
 // A Failure is an output that could not be rendered, or whose check refused it. Its problem names
 // what failed and its exit status alone: what the program wrote to standard error goes to the
-// journal, since it can echo the documents it read.
+// journal, since it can echo the documents it read. Refusals are what its renderer refused the
+// config for, which the problem lists too.
 type Failure struct {
 	Output, Problem string
+	Refusals        []refusals.Refusal
 }
 
 func (f Failure) Error() string { return "output " + f.Output + ": " + f.Problem }
 
 // Refusal is the message a delivery whose outputs failed is refused with, as chalkd and check.Run
-// say it: each failure as its Error says it, in the order given, joined by "; ". Join gives the
-// failures as one error instead.
+// say it. The renderers' refusals come first, as refusals.Message reports them: each once, since
+// the outputs that share a check refuse a config with the same refusal. Each other failure
+// follows as its Error says it, in the order given, all joined by "; ". Join gives the failures
+// as one error instead.
 func Refusal(failures []Failure) string {
-	msgs := make([]string, len(failures))
-	for i, f := range failures {
-		msgs[i] = f.Error()
+	var refused []refusals.Refusal
+	var msgs []string
+	for _, f := range failures {
+		if len(f.Refusals) == 0 {
+			msgs = append(msgs, f.Error())
+		}
+		refused = append(refused, f.Refusals...)
+	}
+	if len(refused) > 0 {
+		msgs = append([]string{refusals.Message(refused)}, msgs...)
 	}
 	return strings.Join(msgs, "; ")
+}
+
+// refused is a config an output's renderer refused, with the refusals it reported.
+type refused struct{ refusals []refusals.Refusal }
+
+func (r *refused) Error() string {
+	lines := make([]string, len(r.refusals))
+	for i, x := range r.refusals {
+		lines[i] = x.String()
+	}
+	return "its renderer refused the config: " + strings.Join(lines, "; ")
 }
 
 // Renderer renders outputs below Root.
@@ -113,7 +136,11 @@ func (r Renderer) Render(ctx context.Context, defs map[string]Definition, in Inp
 	staging := filepath.Join(r.Root, ".staging")
 	var failures []Failure
 	fail := func(name string, err error) {
-		failures = append(failures, Failure{Output: name, Problem: err.Error()})
+		f := Failure{Output: name, Problem: err.Error()}
+		if r, ok := err.(*refused); ok {
+			f.Refusals = r.refusals
+		}
+		failures = append(failures, f)
 	}
 	if err := os.RemoveAll(staging); err != nil {
 		for _, name := range slices.Sorted(maps.Keys(defs)) {
@@ -174,23 +201,37 @@ func (r Renderer) render(ctx context.Context, name string, d Definition, in Inpu
 }
 
 // run runs a renderer or a check of the output name, the renderer with out writable, logging what
-// a failed program wrote to standard error, or the unit whose journal holds it.
+// a failed program wrote to standard error, or the unit whose journal holds it. A renderer that
+// reports refusals on standard output refuses the config with them, as a *refused, whether it
+// failed or not; one that prints anything else there fails. A check's standard output is
+// discarded: a service's own check can echo the files, so its failure says no more than that.
 func (r Renderer) run(ctx context.Context, name string, what role, command string, stdin []byte, out string) error {
 	timeout := cmp.Or(r.Timeout, defaultTimeout)
 	argv := strings.Fields(command)
-	err := r.Run.Run(ctx, Program{Argv: argv, Stdin: stdin, Out: out, Write: what == roleRenderer, Timeout: timeout})
+	printed, err := r.Run.Run(ctx, Program{Argv: argv, Stdin: stdin, Out: out, Write: what == roleRenderer, Report: what == roleRenderer, Timeout: timeout})
 	var failed *ProgramError
-	switch {
-	case err == nil:
-		return nil
-	case errors.Is(err, context.DeadlineExceeded):
-		return fmt.Errorf("its %s did not finish within %s", what, timeout)
-	case errors.As(err, &failed):
+	if errors.As(err, &failed) {
 		if failed.Unit != "" {
 			log.Printf("output %s: its %s %s failed (%s); what it wrote to standard error is in the journal of %s", name, what, argv[0], failed.Status, failed.Unit)
 		} else {
 			log.Printf("output %s: its %s %s failed (%s): %q", name, what, argv[0], failed.Status, failed.Stderr)
 		}
+	}
+	if what == roleRenderer && (err == nil || failed != nil) {
+		rs, perr := refusals.Parse(printed)
+		switch {
+		case perr != nil:
+			return fmt.Errorf("its renderer's standard output: %w", perr)
+		case len(rs) > 0:
+			return &refused{rs}
+		}
+	}
+	switch {
+	case err == nil:
+		return nil
+	case errors.Is(err, context.DeadlineExceeded):
+		return fmt.Errorf("its %s did not finish within %s", what, timeout)
+	case failed != nil:
 		if what == roleCheck {
 			return fmt.Errorf("its check refused the rendered files (%s); see the node's journal", failed.Status)
 		}

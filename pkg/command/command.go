@@ -29,7 +29,8 @@ const maxStderr = 4096
 
 // Run runs argv with stdin and env added to the caller's environment, and returns its standard
 // output, refusing more than limit bytes. A program that fails is an Error that holds the start of
-// what it wrote to standard error.
+// what it wrote to standard error; Run returns what it printed before it failed too, as a renderer
+// prints its refusals and fails.
 func Run(ctx context.Context, argv []string, stdin []byte, limit int, env ...string) ([]byte, error) {
 	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
 	if len(env) > 0 {
@@ -50,7 +51,7 @@ func Run(ctx context.Context, argv []string, stdin []byte, limit int, env ...str
 		if exit.ExitCode() < 0 {
 			status = exit.String()
 		}
-		return nil, &Error{Status: status, Stderr: strings.TrimSpace(stderr.buf.String())}
+		return out.buf.Bytes(), &Error{Status: status, Stderr: strings.TrimSpace(stderr.buf.String())}
 	}
 	if err != nil {
 		return nil, err

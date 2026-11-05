@@ -30,6 +30,7 @@ callPackage ./go-module.nix { } {
     ../pkg/ociimage
     ../pkg/outputs
     ../pkg/pki
+    ../pkg/refusals
     ../pkg/router
     ../pkg/rules
     ../pkg/schema

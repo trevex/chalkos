@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/user"
 	"path/filepath"
@@ -11,6 +12,7 @@ import (
 	"time"
 
 	"github.com/trevex/chalkos/pkg/command"
+	"github.com/trevex/chalkos/pkg/refusals"
 )
 
 // A role is what an output's program does: render its files or check them.
@@ -30,19 +32,23 @@ func (r role) String() string {
 
 // A Program is a renderer or a check to run: its argv, the input it reads on standard input, and
 // $OUT, the directory of the output's files, which a renderer may write and a check may only read.
-// Timeout bounds it.
+// Report tells that the program prints a report of refusals on standard output, as a renderer
+// does, which the runner returns, up to refusals.MaxReport bytes; any other program's standard
+// output is discarded, since a service's own check can echo the files. Timeout bounds it.
 type Program struct {
 	Argv    []string
 	Stdin   []byte
 	Out     string
 	Write   bool
+	Report  bool
 	Timeout time.Duration
 }
 
-// Runner runs renderers and checks. A program that fails is a ProgramError, and one that does not
-// finish within its timeout an error that wraps context.DeadlineExceeded.
+// Runner runs renderers and checks, and returns what a program that reports refusals printed,
+// whether it failed or not. A program that fails is a ProgramError, and one that does not finish
+// within its timeout an error that wraps context.DeadlineExceeded.
 type Runner interface {
-	Run(ctx context.Context, p Program) error
+	Run(ctx context.Context, p Program) ([]byte, error)
 }
 
 // A ProgramError is a renderer or a check that failed. Status is "exit N", or why systemd
@@ -58,7 +64,8 @@ func (e *ProgramError) Error() string { return "the program failed (" + e.Status
 // $OUT while the renderer writes it.
 const RenderUser = "chalkos-render"
 
-// Sandbox runs programs as oneshot transient units that write standard error to the journal, in a
+// Sandbox runs programs as oneshot transient units that write standard error to the journal, and
+// standard output, of a program that reports refusals, to a file of chalkd's, in a
 // sandbox of their own: as RenderUser without capabilities, devices or network, on a read-only
 // system without STATE, /var, or the config, credentials and Kubernetes keys chalkd writes below
 // /run/chalkos, so a program reads no Secret's value; a renderer may write $OUT alone, and a check
@@ -101,15 +108,21 @@ var sandbox = []string{
 	"--property=DefaultDependencies=no",
 }
 
-// sandboxArgs is the systemd-run command line that runs p as unit, reading input.
-func sandboxArgs(unit string, p Program, input string) []string {
+// sandboxArgs is the systemd-run command line that runs p as unit, reading input and, for a
+// program that reports refusals, printing into output.
+func sandboxArgs(unit string, p Program, input, output string) []string {
 	args := append([]string{"systemd-run", "--quiet", "--service-type=oneshot", "--unit=" + unit}, sandbox...)
+	stdout := "null"
+	if p.Report {
+		// The manager opens the file, root's alone, before the unit drops its privileges.
+		stdout = "truncate:" + output
+	}
 	args = append(args,
 		// The start of a oneshot unit lasts until its program exits.
 		fmt.Sprintf("--property=TimeoutStartSec=%dms", p.Timeout.Milliseconds()),
 		"--setenv=OUT="+p.Out,
 		"--property=StandardInput=file:"+input,
-		"--property=StandardOutput=null",
+		"--property=StandardOutput="+stdout,
 		"--property=StandardError=journal",
 	)
 	if p.Write {
@@ -122,60 +135,100 @@ func sandboxArgs(unit string, p Program, input string) []string {
 	return append(append(args, "--"), p.Argv...)
 }
 
-func (Sandbox) Run(ctx context.Context, p Program) error {
-	input := p.Out + ".input"
+func (Sandbox) Run(ctx context.Context, p Program) ([]byte, error) {
+	input, output := p.Out+".input", p.Out+".output"
 	if err := os.WriteFile(input, p.Stdin, 0o600); err != nil {
-		return err
+		return nil, err
 	}
 	defer os.Remove(input)
+	if p.Report {
+		// systemd truncates the file and keeps its mode: root's alone.
+		if err := os.WriteFile(output, nil, 0o600); err != nil {
+			return nil, err
+		}
+		defer os.Remove(output)
+	}
 	if p.Write {
 		u, err := user.Lookup(RenderUser)
 		if err != nil {
-			return fmt.Errorf("the renderers' user: %w", err)
+			return nil, fmt.Errorf("the renderers' user: %w", err)
 		}
 		uid, _ := strconv.Atoi(u.Uid)
 		gid, _ := strconv.Atoi(u.Gid)
 		if err := os.Chown(p.Out, uid, gid); err != nil {
-			return err
+			return nil, err
 		}
 	}
 	unit := "chalkos-render-" + filepath.Ext(p.Out)[1:] + ".service"
 	waitCtx, cancel := context.WithTimeout(ctx, p.Timeout+stopMargin)
 	defer cancel()
-	_, err := command.Run(waitCtx, sandboxArgs(unit, p, input), nil, command.MaxOutput, command.Manager)
+	_, err := command.Run(waitCtx, sandboxArgs(unit, p, input, output), nil, command.MaxOutput, command.Manager)
 	if waitCtx.Err() != nil {
 		// systemd-run is gone, and the unit may run on.
 		command.StopUnit(unit)
-		return fmt.Errorf("%s: %w", unit, waitCtx.Err())
+		return nil, fmt.Errorf("%s: %w", unit, waitCtx.Err())
+	}
+	var printed []byte
+	if p.Report {
+		var rerr error
+		if printed, rerr = readOutput(output); rerr != nil {
+			return nil, rerr
+		}
 	}
 	var exit *command.Error
 	if !errors.As(err, &exit) {
-		return err
+		return printed, err
 	}
 	// A unit that failed stays loaded, with its result, until it is reset.
 	result, status, ok := command.FailedUnit(unit)
 	switch {
 	case !ok:
-		return &ProgramError{Status: exit.Status, Unit: unit}
+		return printed, &ProgramError{Status: exit.Status, Unit: unit}
 	case result == "timeout":
-		return fmt.Errorf("%s: %w", unit, context.DeadlineExceeded)
+		return nil, fmt.Errorf("%s: %w", unit, context.DeadlineExceeded)
 	}
-	return &ProgramError{Status: status, Unit: unit}
+	return printed, &ProgramError{Status: status, Unit: unit}
 }
 
-// Direct runs programs as they are, as the image's build and tests do; a check may write $OUT.
+// readOutput reads what a program printed into the file at path, and refuses more than
+// refusals.MaxReport bytes, as Direct refuses it.
+func readOutput(path string) ([]byte, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	data, err := io.ReadAll(io.LimitReader(f, refusals.MaxReport+1))
+	if err != nil {
+		return nil, err
+	}
+	if len(data) > refusals.MaxReport {
+		return nil, fmt.Errorf("it printed more than %d bytes", refusals.MaxReport)
+	}
+	return data, nil
+}
+
+// Direct runs programs as they are, as the image's build, its checker and tests do; a check may
+// write $OUT.
 type Direct struct{}
 
-func (Direct) Run(ctx context.Context, p Program) error {
+func (Direct) Run(ctx context.Context, p Program) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(ctx, p.Timeout)
 	defer cancel()
-	_, err := command.Run(ctx, p.Argv, p.Stdin, command.MaxOutput, "OUT="+p.Out)
+	limit := command.MaxOutput
+	if p.Report {
+		limit = refusals.MaxReport
+	}
+	printed, err := command.Run(ctx, p.Argv, p.Stdin, limit, "OUT="+p.Out)
+	if !p.Report {
+		printed = nil
+	}
 	if ctx.Err() != nil {
-		return ctx.Err()
+		return nil, ctx.Err()
 	}
 	var failed *command.Error
 	if errors.As(err, &failed) {
-		return &ProgramError{Status: failed.Status, Stderr: failed.Stderr}
+		return printed, &ProgramError{Status: failed.Status, Stderr: failed.Stderr}
 	}
-	return err
+	return printed, err
 }

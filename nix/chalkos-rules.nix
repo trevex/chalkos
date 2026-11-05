@@ -17,6 +17,7 @@ callPackage ./go-module.nix { } {
     ../pkg/jsonfile
     ../pkg/kubernetes
     ../pkg/outputs
+    ../pkg/refusals
     ../pkg/rules
     ../pkg/schema
     ../pkg/storage
