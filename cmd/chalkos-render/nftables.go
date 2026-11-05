@@ -67,16 +67,14 @@ type opening struct {
 // bgpOpenings are the ports of each BGPPeer, on its interfaces, of its VRF, or from its address
 // alone: BGP's TCP port 179 and, with bfd, BFD's UDP ports 3784 and 3785 of single-hop sessions,
 // and 4784 of multi-hop ones from an address peer; a peer on a link is one hop away. A peer of a
-// VRF is opened in its VRF alone. The output frr refuses a peer on a VRF's device.
+// VRF is opened in its VRF alone. The BGPPeer's rules make a peer name one of address, interface
+// and interfaces, and the output frr refuses a peer on a VRF's device.
 func bgpOpenings(peers []named[peerSpec]) ([]opening, error) {
 	var out []opening
 	for _, p := range peers {
 		what := "BGPPeer " + p.Name
 		o := opening{comment: what}
 		s := p.Spec
-		if !s.namesOneNeighbour() {
-			return nil, fmt.Errorf("%s names not exactly one of address, interface and interfaces", what)
-		}
 		switch {
 		case s.Address != nil:
 			a, err := neighbourAddress(*s.Address)
@@ -91,7 +89,7 @@ func bgpOpenings(peers []named[peerSpec]) ([]opening, error) {
 		}
 		if vrf := vrfOf(s.VRF); vrf != defaultVRF {
 			if !plainInterface.MatchString(vrf) {
-				return nil, fmt.Errorf("%s: the VRF %q is no VRF's name", what, vrf)
+				return nil, internalErrorf("%s: the VRF %q is no VRF's name", what, vrf)
 			}
 			o.vrf = vrf
 		}

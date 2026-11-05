@@ -99,7 +99,9 @@ session. A glob expands over the links of the peer's VRF alone, as
 
 A peer's single `interface` renders as it is written, whether or not a `Network` names it, and
 must be a link of the peer's VRF. A name that reads as an address, such as `fe80::1`, is refused
-in both, because FRR could not tell the interface from a neighbour's address. Two peers that name one session are refused too.
+in both, because FRR could not tell the interface from a neighbour's address: the rules refuse
+one that the peer writes out, and the renderer a link that a glob expands to. The renderer also
+refuses two peers that name one session.
 
 ## A default route while a route exists
 
@@ -196,19 +198,30 @@ no daemon takes, and a value outside a command's range, such as `le 129`. It doe
 the daemons would refuse when they apply it, such as a route-map that names a missing list.
 
 At boot, FRR's mgmtd applies the prefix lists, route-maps and static routes of the config in one
-transaction, so one value it refuses would leave all of them out. The schemas, the rules, the
-config's uniqueness check and the renderer therefore refuse the values FRR's daemons refuse. The
-uniqueness check refuses two entries of a PrefixList with one prefix, `ge` and `le`, one
-community twice in a CommunityList and two networks of one range, before any rule runs. The
-renderer checks again what the schemas and rules check, should a document bypass them, and more:
+transaction, so one value it refuses would leave all of them out. The schemas, the rules and the
+config's uniqueness check therefore refuse the values FRR's daemons refuse, and
+`chalkctl validate` runs them all. The uniqueness check refuses two entries of a PrefixList with
+one prefix, `ge` and `le`, one community twice in a CommunityList and two networks of one range,
+before any rule runs. The rules refuse a `ge` or `le` outside the prefix's length and the
+family's longest prefix, a policy whose PrefixLists are of both families, and a peer's or
+network's policy of another family. The schemas refuse a community with a part above 65535 in a
+standard community or above 4294967295 in a large one, and a description with an `@` or two
+spaces in a row.
 
-- a `ge` or `le` outside the prefix's length and the family's longest prefix, or a `ge` above `le`;
-- a community with a part above 65535 in a standard community, or above 4294967295 in a large
-  one;
-- a policy whose PrefixLists are of both families, and a peer's or network's policy of another
-  family;
+The renderer trusts what the schemas and rules check. It checks what depends on more than the
+documents of one kind or on bgpd itself, when the router renders its config, at a delivery or at
+`chalkctl apply-config --dry-run`:
+
 - an `asPath` that bgpd cannot compile;
-- a description with an `@`, two spaces in a row or more than 80 characters.
+- a session that two peers name, and an interface named like a peer's group;
+- a link that a peer's glob expands to and that is named like an address;
+- a peer's interface in another VRF than the peer's, or of a VRF's device;
+- a policy with `prepend` that instances of two AS numbers use.
+
+A value that would add a command to the config, such as a line break in a description, cannot
+pass the schemas. Should a document bypass them, the renderer fails with
+`internal error: ...; chalkd checks the config against the schemas and rules before it renders`
+rather than write it.
 
 bgpd compiles an `asPath` with glibc's `regcomp` as a POSIX extended regular expression, each `_`
 standing for the start, the end or a separator of the path. bgpd drops an as-path list it cannot

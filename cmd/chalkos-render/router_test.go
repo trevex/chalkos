@@ -518,12 +518,13 @@ func TestRouterRefusals(t *testing.T) {
 		"snat without to":        {[]string{"router-nftables", "50000"}, map[string][]any{"FirewallZone": {zone}, "NATRule": {doc("NATRule", "n", `{"type": "snat", "family": "ipv4", "out": {"zone": "wan", "interface": null}, "in": null, "match": {"source": [], "destination": [], "protocol": null, "destinationPorts": []}, "to": null}`)}}, "internal error: NATRule n: snat has no to"},
 		// A BGPPeer's ports open on its interfaces or from its address alone.
 		"a peer's interface that ends a set": {[]string{"router-nftables", "50000"}, map[string][]any{"BGPPeer": {doc("BGPPeer", "a", `{"interface": "eth1\" } accept; iifname { \"eth2"}`)}}, `internal error: BGPPeer a: "eth1\" } accept; iifname { \"eth2" is no interface name or glob`},
-		"a peer's address with a zone":       {[]string{"router-nftables", "50000"}, map[string][]any{"BGPPeer": {doc("BGPPeer", "a", `{"address": "fe80::1%eth1"}`)}}, `BGPPeer a: address "fe80::1%eth1" is no neighbour address`},
-		"a peer's address range":             {[]string{"router-nftables", "50000"}, map[string][]any{"BGPPeer": {doc("BGPPeer", "a", `{"address": "0.0.0.0/0"}`)}}, `BGPPeer a: address "0.0.0.0/0" is no neighbour address`},
-		"a peer's unspecified address":       {[]string{"router-nftables", "50000"}, map[string][]any{"BGPPeer": {doc("BGPPeer", "a", `{"address": "::"}`)}}, `BGPPeer a: address "::" is no neighbour address`},
+		"a peer's address with a zone":       {[]string{"router-nftables", "50000"}, map[string][]any{"BGPPeer": {doc("BGPPeer", "a", `{"address": "fe80::1%eth1"}`)}}, `internal error: BGPPeer a: address "fe80::1%eth1" is no address without a zone`},
+		"a peer's address range":             {[]string{"router-nftables", "50000"}, map[string][]any{"BGPPeer": {doc("BGPPeer", "a", `{"address": "0.0.0.0/0"}`)}}, `internal error: BGPPeer a: address "0.0.0.0/0" is no address without a zone`},
 		"a peer of no interface":             {[]string{"router-nftables", "50000"}, map[string][]any{"BGPPeer": {doc("BGPPeer", "a", `{"interfaces": []}`)}}, "internal error: BGPPeer a names no interface"},
-		"a peer of nothing":                  {[]string{"router-nftables", "50000"}, map[string][]any{"BGPPeer": {doc("BGPPeer", "a", `{}`)}}, "BGPPeer a names not exactly one of address, interface and interfaces"},
-		"a peer of an address and links":     {[]string{"router-nftables", "50000"}, map[string][]any{"BGPPeer": {doc("BGPPeer", "a", `{"address": "192.0.2.9", "interfaces": ["eth1"]}`)}}, "BGPPeer a names not exactly one of address, interface and interfaces"},
+		// Without address and interface, the opening is of the interfaces, which would open the
+		// port on every link.
+		"a peer of nothing":            {[]string{"router-nftables", "50000"}, map[string][]any{"BGPPeer": {doc("BGPPeer", "a", `{}`)}}, "internal error: BGPPeer a names no interface"},
+		"a peer's VRF that ends a set": {[]string{"router-nftables", "50000"}, map[string][]any{"BGPPeer": {doc("BGPPeer", "a", `{"vrf": "x\" accept", "interface": "eth1"}`)}}, `internal error: BGPPeer a: the VRF "x\" accept" is no VRF's name`},
 	} {
 		t.Run(name, func(t *testing.T) {
 			input, err := json.Marshal(map[string]any{"node": map[string]any{"name": "r1"}, "documents": c.docs})
@@ -537,9 +538,10 @@ func TestRouterRefusals(t *testing.T) {
 	}
 }
 
-// The FRR renderer refuses what the schemas and rules refuse, should a document bypass them, and
-// what FRR's mgmtd refuses when it applies the config at boot, which would leave all of the
-// config's lists and route-maps out.
+// The FRR renderer refuses what it alone can see: a session two peers name, an interface named as
+// another peer's group and an AS path bgpd would not compile. It guards, with an internal error,
+// values frr.conf would read as further commands or arguments, references to no document and a
+// prepend's count, should a document bypass the schemas and rules.
 func TestFRRRefusals(t *testing.T) {
 	doc := func(kind, name, spec string) any {
 		var s any
@@ -562,55 +564,24 @@ func TestFRRRefusals(t *testing.T) {
 		return doc("RoutingPolicy", name, `{"terms": [`+terms+`], "default": "reject"}`)
 	}
 	v6 := list("v6", "ipv6", `{"prefix": "2001:db8::/32", "action": "permit"}`)
-	v4 := list("v4", "ipv4", `{"prefix": "192.0.2.0/24", "action": "permit"}`)
+	description := func(d string) map[string][]any {
+		return map[string][]any{"BGP": {bgp("")}, "BGPPeer": {peer("a", `{"interface": "eth1", "remoteAS": "external", "description": `+strconv.Quote(d)+`, "families": {"ipv6": {}}}`)}}
+	}
+	const notDescription = "internal error: BGPPeer a: the description is printable ASCII characters but @, with single spaces between words"
 	for name, c := range map[string]struct {
 		docs map[string][]any
 		want string
 	}{
-		"peers without BGP":      {map[string][]any{"BGPPeer": {peer("a", `{"interface": "eth1", "remoteAS": "external", "families": {"ipv6": {}}}`)}}, "the config holds BGPPeer documents but no BGP document"},
-		"an IPv6 router ID":      {map[string][]any{"BGP": {doc("BGP", "bgp", `{"asn": 64512, "routerID": "2001:db8::1"}`)}}, `routerID "2001:db8::1" is no IPv4 unicast address`},
-		"an unknown remote AS":   {map[string][]any{"BGP": {bgp("")}, "BGPPeer": {peer("a", `{"interface": "eth1", "remoteAS": "anyone", "families": {"ipv6": {}}}`)}}, "remoteAS is external, internal or an AS number"},
-		"a community of 17 bits": {map[string][]any{"BGP": {bgp("")}, "CommunityList": {doc("CommunityList", "c", `{"communities": ["65536:1"]}`)}}, `"65536:1" is no community`},
-		"ge below the prefix":    {map[string][]any{"BGP": {bgp("")}, "PrefixList": {list("l", "ipv4", `{"prefix": "192.0.2.0/24", "ge": 16, "action": "permit"}`)}}, "ge 16 of 192.0.2.0/24 lies outside 24 to 32"},
-		"a policy of both families": {map[string][]any{"BGP": {bgp("")}, "PrefixList": {v4, v6},
-			"RoutingPolicy": {policy("p", `{"match": {"prefixList": "v4"}, "then": {"action": "accept"}}, {"match": {"prefixList": "v6"}, "then": {"action": "accept"}}`)}}, "it matches PrefixLists of both families"},
-		"a network's policy of the other family": {map[string][]any{"BGP": {bgp(`{"prefix": "192.0.2.0/24", "policy": "p"}`)}, "PrefixList": {v6},
-			"RoutingPolicy": {policy("p", `{"match": {"prefixList": "v6"}, "then": {"action": "accept"}}`)}}, "the RoutingPolicy p matches PrefixLists of ipv6, not ipv4"},
 		"two peers of one session": {map[string][]any{"BGP": {bgp("")}, "BGPPeer": {
 			peer("a", `{"interface": "eth1", "remoteAS": "external", "families": {"ipv6": {}}}`),
 			peer("b", `{"interface": "eth1", "remoteAS": "external", "families": {"ipv6": {}}}`)}}, "BGPPeer a and BGPPeer b both name eth1 in the VRF default"},
 		"an interface of a peer group's name": {map[string][]any{"BGP": {bgp("")}, "BGPPeer": {
 			peer("fabric", `{"interface": "eth1", "remoteAS": "external", "families": {"ipv6": {}}}`),
 			peer("x", `{"interface": "peer-fabric", "remoteAS": "external", "families": {"ipv6": {}}}`)}}, "BGPPeer x names peer-fabric, the peer group of BGPPeer fabric"},
-		"a password's key with a space":         {map[string][]any{"BGP": {bgp("")}, "BGPPeer": {peer("a", `{"interface": "eth1", "remoteAS": "external", "password": {"secretRef": {"name": "bgp", "key": "fab ric"}}, "families": {"ipv6": {}}}`)}}, `the password's Secret "bgp" and key "fab ric"`},
-		"an AS path that adds a command":        {map[string][]any{"BGP": {bgp("")}, "RoutingPolicy": {policy("p", `{"match": {"asPath": "^1$\n neighbor x shutdown"}, "then": {"action": "accept"}}`)}}, "holds more than digits, spaces and"},
-		"a description of two lines":            {map[string][]any{"BGP": {bgp("")}, "BGPPeer": {peer("a", `{"interface": "eth1", "remoteAS": "external", "description": "a\nb", "families": {"ipv6": {}}}`)}}, "the description is 1 to 80 printable ASCII characters"},
-		"a peer of no family":                   {map[string][]any{"BGP": {bgp("")}, "BGPPeer": {peer("a", `{"interface": "eth1", "remoteAS": "external"}`)}}, "it exchanges the routes of no family"},
-		"65 equal paths":                        {map[string][]any{"BGP": {doc("BGP", "bgp", `{"asn": 64512, "routerID": "192.0.2.1", "multipath": {"ebgp": 65, "ibgp": 1}, "bfd": {"receiveMs": 300, "transmitMs": 300, "multiplier": 3}}`)}}, "multipath.ebgp 65 lies outside 1 to 64"},
-		"a prepend of 11":                       {map[string][]any{"BGP": {bgp("")}, "RoutingPolicy": {policy("p", `{"then": {"action": "accept", "prepend": 11}}`)}}, "prepend 11 lies outside 1 to 10"},
-		"an AS path that does not compile":      {map[string][]any{"BGP": {bgp("")}, "RoutingPolicy": {policy("p", `{"match": {"asPath": "(1"}, "then": {"action": "accept"}}`)}}, `asPath "(1" is no regular expression`},
-		"a maximum of no prefix":                {map[string][]any{"BGP": {bgp("")}, "BGPPeer": {peer("a", `{"interface": "eth1", "remoteAS": "external", "families": {"ipv6": {"maxPrefix": 0}}}`)}}, "maxPrefix 0 accepts no route"},
-		"an interface that reads as an address": {map[string][]any{"BGP": {bgp("")}, "BGPPeer": {peer("a", `{"interface": "192.0.2.9", "remoteAS": "external", "families": {"ipv6": {}}}`)}}, `interface "192.0.2.9" is an address`},
 		"a link that reads as an address": {map[string][]any{"BGP": {bgp("")}, "BGPPeer": {peer("a", `{"interfaces": ["*"], "remoteAS": "external", "families": {"ipv6": {}}}`)},
-			"Network": {map[string]any{"apiVersion": config.NetworkdAPI, "kind": "Network", "metadata": map[string]any{"name": "n"}, "spec": map[string]any{"match": map[string]any{"name": "192.0.2.10"}}}}}, `interface "192.0.2.10" is an address`},
-		"a description of spaces":              {map[string][]any{"BGP": {bgp("")}, "BGPPeer": {peer("a", `{"interface": "eth1", "remoteAS": "external", "description": "  ", "families": {"ipv6": {}}}`)}}, "the description is 1 to 80 printable ASCII characters"},
-		"a description of two spaces in a row": {map[string][]any{"BGP": {bgp("")}, "BGPPeer": {peer("a", `{"interface": "eth1", "remoteAS": "external", "description": "a  b", "families": {"ipv6": {}}}`)}}, "the description is 1 to 80 printable ASCII characters"},
-		"a description that ends in a space":   {map[string][]any{"BGP": {bgp("")}, "BGPPeer": {peer("a", `{"interface": "eth1", "remoteAS": "external", "description": "a ", "families": {"ipv6": {}}}`)}}, "the description is 1 to 80 printable ASCII characters"},
-		"a description of 81 characters":       {map[string][]any{"BGP": {bgp("")}, "BGPPeer": {peer("a", `{"interface": "eth1", "remoteAS": "external", "description": "`+strings.Repeat("a", 81)+`", "families": {"ipv6": {}}}`)}}, "the description is 1 to 80 printable ASCII characters"},
-		"a large community of 33 bits":         {map[string][]any{"BGP": {bgp("")}, "CommunityList": {doc("CommunityList", "c", `{"communities": ["1:4294967296:1"]}`)}}, `"1:4294967296:1" is no community`},
-		"a router ID of no host":               {map[string][]any{"BGP": {doc("BGP", "bgp", `{"asn": 64512, "routerID": "0.0.0.0"}`)}}, `routerID "0.0.0.0" is no IPv4 unicast address`},
-		"a broadcast router ID":                {map[string][]any{"BGP": {doc("BGP", "bgp", `{"asn": 64512, "routerID": "255.255.255.255"}`)}}, `routerID "255.255.255.255" is no IPv4 unicast address`},
-		"a multicast router ID":                {map[string][]any{"BGP": {doc("BGP", "bgp", `{"asn": 64512, "routerID": "224.0.0.5"}`)}}, `routerID "224.0.0.5" is no IPv4 unicast address`},
-		"a link-local address":                 {map[string][]any{"BGP": {bgp("")}, "BGPPeer": {peer("a", `{"address": "fe80::1", "remoteAS": "external", "families": {"ipv6": {}}}`)}}, `address "fe80::1" is no neighbour address`},
-		"an IPv4-mapped address":               {map[string][]any{"BGP": {bgp("")}, "BGPPeer": {peer("a", `{"address": "::ffff:192.0.2.9", "remoteAS": "external", "families": {"ipv6": {}}}`)}}, `address "::ffff:192.0.2.9" is no neighbour address`},
-		"a loopback address":                   {map[string][]any{"BGP": {bgp("")}, "BGPPeer": {peer("a", `{"address": "127.0.0.1", "remoteAS": "external", "families": {"ipv4": {}}}`)}}, `address "127.0.0.1" is no neighbour address`},
-		"the IPv6 loopback address":            {map[string][]any{"BGP": {bgp("")}, "BGPPeer": {peer("a", `{"address": "::1", "remoteAS": "external", "families": {"ipv6": {}}}`)}}, `address "::1" is no neighbour address`},
-		"IPv4 routes over IPv6 alone":          {map[string][]any{"BGP": {bgp("")}, "BGPPeer": {peer("a", `{"address": "2001:db8::9", "remoteAS": "external", "families": {"ipv4": {}}}`)}}, "families.ipv4 at the IPv6 address 2001:db8::9 needs extendedNextHop"},
-		// The credentials helper fills in a placeholder wherever a line ends in one, and vtysh shows
-		// a description to every reader.
-		"a description that holds a placeholder": {map[string][]any{"BGP": {bgp("")}, "BGPPeer": {peer("a", `{"interface": "eth1", "remoteAS": "external", "description": "x password @secret_bgp.fabric@", "families": {"ipv6": {}}}`)}}, "the description is 1 to 80 printable ASCII characters"},
-		"a router ID of five parts":              {map[string][]any{"BGP": {doc("BGP", "bgp", `{"asn": 64512, "routerID": "192.0.2.1.1"}`)}}, `routerID "192.0.2.1.1" is no IPv4 unicast address`},
+			"Network": {map[string]any{"apiVersion": config.NetworkdAPI, "kind": "Network", "metadata": map[string]any{"name": "n"}, "spec": map[string]any{"match": map[string]any{"name": "192.0.2.10"}}}}}, `BGPPeer a: interface "192.0.2.10" is an address`},
 		// AS paths bgpd's regcomp refuses, which would leave the term matching no route.
+		"an AS path that does not compile":       {map[string][]any{"BGP": {bgp("")}, "RoutingPolicy": {policy("p", `{"match": {"asPath": "(1"}, "then": {"action": "accept"}}`)}}, `RoutingPolicy p: term 1: asPath "(1" is no regular expression bgpd compiles`},
 		"an AS path with a parenthesis too many": {map[string][]any{"BGP": {bgp("")}, "RoutingPolicy": {policy("p", `{"match": {"asPath": "1)"}, "then": {"action": "accept"}}`)}}, `asPath "1)" is no regular expression`},
 		"an AS path that starts with a star":     {map[string][]any{"BGP": {bgp("")}, "RoutingPolicy": {policy("p", `{"match": {"asPath": "*1"}, "then": {"action": "accept"}}`)}}, `asPath "*1" is no regular expression`},
 		"an AS path that repeats an anchor":      {map[string][]any{"BGP": {bgp("")}, "RoutingPolicy": {policy("p", `{"match": {"asPath": "^*1"}, "then": {"action": "accept"}}`)}}, `asPath "^*1" is no regular expression`},
@@ -619,36 +590,68 @@ func TestFRRRefusals(t *testing.T) {
 		"an AS path with an open interval":       {map[string][]any{"BGP": {bgp("")}, "RoutingPolicy": {policy("p", `{"match": {"asPath": "1{,5}"}, "then": {"action": "accept"}}`)}}, `asPath "1{,5}" is no regular expression`},
 		"an AS path with an inverted interval":   {map[string][]any{"BGP": {bgp("")}, "RoutingPolicy": {policy("p", `{"match": {"asPath": "1{3,2}"}, "then": {"action": "accept"}}`)}}, `asPath "1{3,2}" is no regular expression`},
 		"an AS path with an unclosed interval":   {map[string][]any{"BGP": {bgp("")}, "RoutingPolicy": {policy("p", `{"match": {"asPath": "1{2"}, "then": {"action": "accept"}}`)}}, `asPath "1{2" is no regular expression`},
-		// Values FRR would read as further commands or arguments of the config.
-		"a description that adds a neighbour":         {map[string][]any{"BGP": {bgp("")}, "BGPPeer": {peer("a", `{"interface": "eth1", "remoteAS": "external", "description": "x\n neighbor 192.0.2.9 remote-as 64999", "families": {"ipv6": {}}}`)}}, "the description is 1 to 80 printable ASCII characters"},
-		"a description that ends the router":          {map[string][]any{"BGP": {bgp("")}, "BGPPeer": {peer("a", `{"interface": "eth1", "remoteAS": "external", "description": "x\rexit\r", "families": {"ipv6": {}}}`)}}, "the description is 1 to 80 printable ASCII characters"},
-		"a remote AS that adds a neighbour":           {map[string][]any{"BGP": {bgp("")}, "BGPPeer": {peer("a", `{"interface": "eth1", "remoteAS": "external\n neighbor 192.0.2.9 remote-as 64999", "families": {"ipv6": {}}}`)}}, "remoteAS is external, internal or an AS number"},
-		"a fractional remote AS":                      {map[string][]any{"BGP": {bgp("")}, "BGPPeer": {peer("a", `{"interface": "eth1", "remoteAS": 64512.5, "families": {"ipv6": {}}}`)}}, "remoteAS is external, internal or an AS number"},
-		"an address that adds an argument":            {map[string][]any{"BGP": {bgp("")}, "BGPPeer": {peer("a", `{"address": "192.0.2.9 remote-as 64999", "remoteAS": "external", "families": {"ipv6": {}}}`)}}, `address "192.0.2.9 remote-as 64999" is no neighbour address`},
-		"an address with a zone":                      {map[string][]any{"BGP": {bgp("")}, "BGPPeer": {peer("a", `{"address": "fe80::1%eth1", "remoteAS": "external", "families": {"ipv6": {}}}`)}}, `address "fe80::1%eth1" is no neighbour address`},
-		"a multicast address":                         {map[string][]any{"BGP": {bgp("")}, "BGPPeer": {peer("a", `{"address": "ff02::1", "remoteAS": "external", "families": {"ipv6": {}}}`)}}, `address "ff02::1" is no neighbour address`},
-		"an interface that adds a command":            {map[string][]any{"BGP": {bgp("")}, "BGPPeer": {peer("a", `{"interface": "eth1\n neighbor 192.0.2.9 remote-as 64999", "remoteAS": "external", "families": {"ipv6": {}}}`)}}, "is no interface name"},
-		"interfaces that add a command":               {map[string][]any{"BGP": {bgp("")}, "BGPPeer": {peer("a", `{"interfaces": ["eth1 remote-as 64999"], "remoteAS": "external", "families": {"ipv6": {}}}`)}}, "is no interface name or glob"},
-		"a password that adds a command":              {map[string][]any{"BGP": {bgp("")}, "BGPPeer": {peer("a", `{"interface": "eth1", "remoteAS": "external", "password": {"secretRef": {"name": "bgp@\n neighbor 192.0.2.9 remote-as 64999\n", "key": "k"}}, "families": {"ipv6": {}}}`)}}, "the password's Secret"},
-		"a password's key with an @":                  {map[string][]any{"BGP": {bgp("")}, "BGPPeer": {peer("a", `{"interface": "eth1", "remoteAS": "external", "password": {"secretRef": {"name": "bgp", "key": "a@b"}}, "families": {"ipv6": {}}}`)}}, `the password's Secret "bgp" and key "a@b"`},
-		"a router ID that adds a command":             {map[string][]any{"BGP": {doc("BGP", "bgp", `{"asn": 64512, "routerID": "192.0.2.1\n neighbor 192.0.2.9 remote-as 64999"}`)}}, "is no IPv4 unicast address"},
-		"a network that adds an argument":             {map[string][]any{"BGP": {bgp(`{"prefix": "192.0.2.0/24 route-map x"}`)}}, `network "192.0.2.0/24 route-map x" is no address range`},
-		"a prefix that adds an argument":              {map[string][]any{"BGP": {bgp("")}, "PrefixList": {list("l", "ipv4", `{"prefix": "192.0.2.0/24 le 32", "action": "permit"}`)}}, `"192.0.2.0/24 le 32" is no ipv4 address range`},
-		"a prefix list action that adds a prefix":     {map[string][]any{"BGP": {bgp("")}, "PrefixList": {list("l", "ipv4", `{"prefix": "192.0.2.0/24", "action": "permit 0.0.0.0/0\nip prefix-list pl-l seq 1 permit"}`)}}, "is neither permit nor deny"},
-		"a family that adds a word":                   {map[string][]any{"BGP": {bgp("")}, "PrefixList": {list("l", "ipv4 x", `{"prefix": "192.0.2.0/24", "action": "permit"}`)}}, `family "ipv4 x" is neither ipv4 nor ipv6`},
-		"a community that adds an argument":           {map[string][]any{"BGP": {bgp("")}, "RoutingPolicy": {policy("p", `{"then": {"action": "accept", "addCommunities": ["64512:1 no-export"]}}`)}}, `"64512:1 no-export" is no community`},
-		"a community with a sign":                     {map[string][]any{"BGP": {bgp("")}, "CommunityList": {doc("CommunityList", "c", `{"communities": ["+1:1"]}`)}}, `"+1:1" is no community`},
-		"a term's action that adds a command":         {map[string][]any{"BGP": {bgp("")}, "RoutingPolicy": {policy("p", `{"then": {"action": "accept\nexit\nrouter bgp 64999"}}`)}}, "is neither accept nor reject"},
-		"a policy's default that adds a command":      {map[string][]any{"BGP": {bgp("")}, "RoutingPolicy": {doc("RoutingPolicy", "p", `{"terms": [], "default": "reject 1\nexit"}`)}}, "is neither accept nor reject"},
-		"a policy name that adds a command":           {map[string][]any{"BGP": {bgp("")}, "RoutingPolicy": {doc("RoutingPolicy", "p 10\nexit\nrouter bgp 64999", `{"terms": [], "default": "reject"}`)}}, "is no document name"},
-		"a peer name that adds a command":             {map[string][]any{"BGP": {bgp("")}, "BGPPeer": {peer("a remote-as 64999", `{"interface": "eth1", "remoteAS": "external", "families": {"ipv6": {}}}`)}}, "is no document name"},
-		"a list a term names that adds a command":     {map[string][]any{"BGP": {bgp("")}, "RoutingPolicy": {policy("p", `{"match": {"prefixList": "v4\n set metric 1"}, "then": {"action": "accept"}}`)}}, "internal error: the input holds no"},
-		"a policy a family names that adds a command": {map[string][]any{"BGP": {bgp("")}, "BGPPeer": {peer("a", `{"interface": "eth1", "remoteAS": "external", "families": {"ipv6": {"import": "p in\n neighbor 192.0.2.9 remote-as 64999"}}}`)}}, "internal error: BGPPeer a: families.ipv6: the input holds no"},
-		"a network's policy that adds a command":      {map[string][]any{"BGP": {bgp(`{"prefix": "192.0.2.0/24", "policy": "p\n neighbor 192.0.2.9 remote-as 64999"}`)}}, "internal error: BGP bgp: network 192.0.2.0/24: the input holds no"},
-		// A tracked list is one of the config's PrefixLists of the family.
-		"defaultOriginateWhen without defaultOriginate": {map[string][]any{"BGP": {bgp("")}, "PrefixList": {v6}, "BGPPeer": {peer("a", `{"interface": "eth1", "remoteAS": "external", "families": {"ipv6": {"defaultOriginateWhen": "v6"}}}`)}}, "families.ipv6: defaultOriginateWhen needs defaultOriginate"},
-		"a tracked list of the other family":            {map[string][]any{"BGP": {bgp("")}, "PrefixList": {v4}, "BGPPeer": {peer("a", `{"interface": "eth1", "remoteAS": "external", "families": {"ipv6": {"defaultOriginate": true, "defaultOriginateWhen": "v4"}}}`)}}, "families.ipv6: defaultOriginateWhen: the PrefixList v4 is of ipv4"},
-		"a tracked list that adds a command":            {map[string][]any{"BGP": {bgp("")}, "PrefixList": {v6}, "BGPPeer": {peer("a", `{"interface": "eth1", "remoteAS": "external", "families": {"ipv6": {"defaultOriginate": true, "defaultOriginateWhen": "v6\n neighbor 192.0.2.9 remote-as 64999"}}}`)}}, "internal error: BGPPeer a: families.ipv6: defaultOriginateWhen: the input holds no"},
+		// Guards of values FRR would read as further commands or arguments of the config.
+		"an IPv6 router ID":               {map[string][]any{"BGP": {doc("BGP", "bgp", `{"asn": 64512, "routerID": "2001:db8::1"}`)}}, `internal error: BGP bgp: routerID "2001:db8::1" is no IPv4 address`},
+		"a router ID of five parts":       {map[string][]any{"BGP": {doc("BGP", "bgp", `{"asn": 64512, "routerID": "192.0.2.1.1"}`)}}, `internal error: BGP bgp: routerID "192.0.2.1.1" is no IPv4 address`},
+		"a router ID that adds a command": {map[string][]any{"BGP": {doc("BGP", "bgp", `{"asn": 64512, "routerID": "192.0.2.1\n neighbor 192.0.2.9 remote-as 64999"}`)}}, `internal error: BGP bgp: routerID "192.0.2.1\n neighbor 192.0.2.9 remote-as 64999" is no IPv4 address`},
+		"an unknown remote AS":            {map[string][]any{"BGP": {bgp("")}, "BGPPeer": {peer("a", `{"interface": "eth1", "remoteAS": "anyone", "families": {"ipv6": {}}}`)}}, `internal error: BGPPeer a: remoteAS is external, internal or an AS number from 1 to 4294967295, not "anyone"`},
+		"a remote AS that adds a neighbour": {map[string][]any{"BGP": {bgp("")}, "BGPPeer": {peer("a", `{"interface": "eth1", "remoteAS": "external\n neighbor 192.0.2.9 remote-as 64999", "families": {"ipv6": {}}}`)}},
+			"internal error: BGPPeer a: remoteAS is external, internal or an AS number"},
+		"a fractional remote AS":       {map[string][]any{"BGP": {bgp("")}, "BGPPeer": {peer("a", `{"interface": "eth1", "remoteAS": 64512.5, "families": {"ipv6": {}}}`)}}, "internal error: BGPPeer a: remoteAS is external, internal or an AS number from 1 to 4294967295, not 64512.5"},
+		"a community of 17 bits":       {map[string][]any{"BGP": {bgp("")}, "CommunityList": {doc("CommunityList", "c", `{"communities": ["65536:1"]}`)}}, `internal error: CommunityList c: "65536:1" is no community: its parts are numbers of 16 bits`},
+		"a large community of 33 bits": {map[string][]any{"BGP": {bgp("")}, "CommunityList": {doc("CommunityList", "c", `{"communities": ["1:4294967296:1"]}`)}}, `internal error: CommunityList c: "1:4294967296:1" is no community: its parts are numbers of 32 bits`},
+		"a community with a sign":      {map[string][]any{"BGP": {bgp("")}, "CommunityList": {doc("CommunityList", "c", `{"communities": ["+1:1"]}`)}}, `internal error: CommunityList c: "+1:1" is no community`},
+		"a community that adds an argument": {map[string][]any{"BGP": {bgp("")}, "RoutingPolicy": {policy("p", `{"then": {"action": "accept", "addCommunities": ["64512:1 no-export"]}}`)}},
+			`internal error: RoutingPolicy p: term 1: "64512:1 no-export" is no community`},
+		"an AS path that adds a command": {map[string][]any{"BGP": {bgp("")}, "RoutingPolicy": {policy("p", `{"match": {"asPath": "^1$\n neighbor x shutdown"}, "then": {"action": "accept"}}`)}},
+			`internal error: RoutingPolicy p: term 1: asPath "^1$\n neighbor x shutdown" holds more than digits, single spaces and _^$.*+?()|{},-`},
+		"a description of two lines":           {description("a\nb"), notDescription},
+		"a description of spaces":              {description("  "), notDescription},
+		"a description of two spaces in a row": {description("a  b"), notDescription},
+		"a description that ends in a space":   {description("a "), notDescription},
+		"a description that adds a neighbour":  {description("x\n neighbor 192.0.2.9 remote-as 64999"), notDescription},
+		"a description that ends the router":   {description("x\rexit\r"), notDescription},
+		// The credentials helper fills in a placeholder of a password line, and vtysh shows a
+		// description to every reader.
+		"a description that holds a placeholder": {description("x password @secret_bgp.fabric@"), notDescription},
+		"a password's key with a space": {map[string][]any{"BGP": {bgp("")}, "BGPPeer": {peer("a", `{"interface": "eth1", "remoteAS": "external", "password": {"secretRef": {"name": "bgp", "key": "fab ric"}}, "families": {"ipv6": {}}}`)}},
+			`internal error: BGPPeer a: the password's Secret "bgp" and key "fab ric" are letters, digits, '.', '_' and '-' alone`},
+		"a password that adds a command": {map[string][]any{"BGP": {bgp("")}, "BGPPeer": {peer("a", `{"interface": "eth1", "remoteAS": "external", "password": {"secretRef": {"name": "bgp@\n neighbor 192.0.2.9 remote-as 64999\n", "key": "k"}}, "families": {"ipv6": {}}}`)}},
+			"internal error: BGPPeer a: the password's Secret"},
+		"a password's key with an @": {map[string][]any{"BGP": {bgp("")}, "BGPPeer": {peer("a", `{"interface": "eth1", "remoteAS": "external", "password": {"secretRef": {"name": "bgp", "key": "a@b"}}, "families": {"ipv6": {}}}`)}},
+			`internal error: BGPPeer a: the password's Secret "bgp" and key "a@b"`},
+		"an address that adds an argument": {map[string][]any{"BGP": {bgp("")}, "BGPPeer": {peer("a", `{"address": "192.0.2.9 remote-as 64999", "remoteAS": "external", "families": {"ipv6": {}}}`)}},
+			`internal error: BGPPeer a: address "192.0.2.9 remote-as 64999" is no address without a zone`},
+		"an address with a zone": {map[string][]any{"BGP": {bgp("")}, "BGPPeer": {peer("a", `{"address": "fe80::1%eth1", "remoteAS": "external", "families": {"ipv6": {}}}`)}},
+			`internal error: BGPPeer a: address "fe80::1%eth1" is no address without a zone`},
+		"an interface that adds a command": {map[string][]any{"BGP": {bgp("")}, "BGPPeer": {peer("a", `{"interface": "eth1\n neighbor 192.0.2.9 remote-as 64999", "remoteAS": "external", "families": {"ipv6": {}}}`)}},
+			`internal error: BGPPeer a: interface "eth1\n neighbor 192.0.2.9 remote-as 64999" is no interface name`},
+		"interfaces that add a command": {map[string][]any{"BGP": {bgp("")}, "BGPPeer": {peer("a", `{"interfaces": ["eth1 remote-as 64999"], "remoteAS": "external", "families": {"ipv6": {}}}`)}},
+			`internal error: BGPPeer a: interfaces: "eth1 remote-as 64999" is no interface name or glob`},
+		"a peer of nothing": {map[string][]any{"BGP": {bgp("")}, "BGPPeer": {peer("a", `{"remoteAS": "external", "families": {"ipv6": {}}}`)}},
+			"internal error: BGPPeer a: interfaces names no interface"},
+		"a network that adds an argument": {map[string][]any{"BGP": {bgp(`{"prefix": "192.0.2.0/24 route-map x"}`)}},
+			`internal error: BGP bgp: network "192.0.2.0/24 route-map x" is no address range`},
+		"a prefix that adds an argument": {map[string][]any{"BGP": {bgp("")}, "PrefixList": {list("l", "ipv4", `{"prefix": "192.0.2.0/24 le 32", "action": "permit"}`)}},
+			`internal error: PrefixList l: "192.0.2.0/24 le 32" is no address range`},
+		"a prefix list action that adds a prefix": {map[string][]any{"BGP": {bgp("")}, "PrefixList": {list("l", "ipv4", `{"prefix": "192.0.2.0/24", "action": "permit 0.0.0.0/0\nip prefix-list pl-l seq 1 permit"}`)}},
+			`internal error: PrefixList l: action "permit 0.0.0.0/0\nip prefix-list pl-l seq 1 permit" is neither permit nor deny`},
+		"a policy name that adds a command": {map[string][]any{"BGP": {bgp("")}, "RoutingPolicy": {doc("RoutingPolicy", "p 10\nexit\nrouter bgp 64999", `{"terms": [], "default": "reject"}`)}},
+			`internal error: a RoutingPolicy document: "p 10\nexit\nrouter bgp 64999" is no document name`},
+		"a peer name that adds a command": {map[string][]any{"BGP": {bgp("")}, "BGPPeer": {peer("a remote-as 64999", `{"interface": "eth1", "remoteAS": "external", "families": {"ipv6": {}}}`)}},
+			`internal error: a BGPPeer document: "a remote-as 64999" is no document name`},
+		"a list a term names that adds a command": {map[string][]any{"BGP": {bgp("")}, "RoutingPolicy": {policy("p", `{"match": {"prefixList": "v4\n set metric 1"}, "then": {"action": "accept"}}`)}},
+			`internal error: RoutingPolicy p: term 1: the input holds no PrefixList "v4\n set metric 1"`},
+		"a policy a family names that adds a command": {map[string][]any{"BGP": {bgp("")}, "BGPPeer": {peer("a", `{"interface": "eth1", "remoteAS": "external", "families": {"ipv6": {"import": "p in\n neighbor 192.0.2.9 remote-as 64999"}}}`)}},
+			`internal error: BGPPeer a: families.ipv6: the input holds no RoutingPolicy "p in\n neighbor 192.0.2.9 remote-as 64999"`},
+		"a network's policy that adds a command": {map[string][]any{"BGP": {bgp(`{"prefix": "192.0.2.0/24", "policy": "p\n neighbor 192.0.2.9 remote-as 64999"}`)}},
+			`internal error: BGP bgp: network 192.0.2.0/24: the input holds no RoutingPolicy`},
+		"a tracked list that adds a command": {map[string][]any{"BGP": {bgp("")}, "PrefixList": {v6}, "BGPPeer": {peer("a", `{"interface": "eth1", "remoteAS": "external", "families": {"ipv6": {"defaultOriginate": true, "defaultOriginateWhen": "v6\n neighbor 192.0.2.9 remote-as 64999"}}}`)}},
+			"internal error: BGPPeer a: families.ipv6: defaultOriginateWhen: the input holds no PrefixList"},
+		// A prepend's count sizes a list: below one it would panic, and a large one would take the
+		// memory.
+		"a prepend of 11":     {map[string][]any{"BGP": {bgp("")}, "RoutingPolicy": {policy("p", `{"then": {"action": "accept", "prepend": 11}}`)}}, "internal error: RoutingPolicy p: term 1: prepend 11 lies outside 1 to 10"},
+		"a prepend below one": {map[string][]any{"BGP": {bgp("")}, "RoutingPolicy": {policy("p", `{"then": {"action": "accept", "prepend": -1}}`)}}, "internal error: RoutingPolicy p: term 1: prepend -1 lies outside 1 to 10"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			input, err := json.Marshal(map[string]any{"node": map[string]any{"name": "r1"}, "documents": c.docs})
@@ -1067,8 +1070,10 @@ func TestVRFPeerOpenings(t *testing.T) {
 	}
 }
 
-// FRR's config refuses BGP and BGPPeer documents per VRF that the rules refuse, should they
-// bypass them, and values that would add to the config.
+// FRR's config refuses BGP and BGPPeer documents per VRF where the links networkd puts in each VRF
+// decide: an interface of a VRF's device or of another VRF than the peer's, a glob of other VRFs'
+// links alone, and a prepend that instances of two AS numbers share. It guards, with an internal
+// error, values that would add to the config and a peer whose VRF no instance serves.
 func TestFRRVRFRefusals(t *testing.T) {
 	timers := `"multipath": {"ebgp": 1, "ibgp": 1, "asPathRelax": false}, "bfd": {"receiveMs": 300, "transmitMs": 300, "multiplier": 3}`
 	bgp := func(name string, asn int, more string) any {
@@ -1079,8 +1084,6 @@ func TestFRRVRFRefusals(t *testing.T) {
 	}
 	tenant := routerDoc(t, "VRF", "tenant", `{"table": 100, "interfaces": ["eth2"]}`)
 	eth2 := document(t, "Network", "20-eth2", `{"match": {"name": "eth2"}}`)
-	v6 := routerDoc(t, "PrefixList", "v6", `{"family": "ipv6", "entries": [{"prefix": "2001:db8::/32", "action": "permit"}]}`)
-	from := routerDoc(t, "RoutingPolicy", "from", `{"terms": [{"match": {"prefixList": "v6"}, "then": {"action": "accept"}}], "default": "reject"}`)
 	prepend := routerDoc(t, "RoutingPolicy", "p", `{"terms": [{"then": {"action": "accept", "prepend": 1}}], "default": "reject"}`)
 	withTenant := func(docs map[string][]any) map[string][]any {
 		docs["VRF"], docs["Network"] = []any{tenant}, []any{eth2}
@@ -1090,10 +1093,6 @@ func TestFRRVRFRefusals(t *testing.T) {
 		docs map[string][]any
 		want string
 	}{
-		"a VRF that adds a command": {withTenant(map[string][]any{"BGP": {bgp("x", 64512, `, "vrf": "tenant\nrouter bgp 64999"`)}}),
-			`internal error: BGP x: the input holds no VRF "tenant\nrouter bgp 64999"`},
-		"a peer in a VRF without BGP": {withTenant(map[string][]any{"BGP": {bgp("bgp", 64512, "")}, "BGPPeer": {peer("leaves", `"vrf": "tenant", "interface": "eth2"`)}}),
-			"BGPPeer leaves runs in the VRF tenant, which no BGP document serves"},
 		"an interface of a VRF's device": {withTenant(map[string][]any{"BGP": {bgp("bgp", 64512, "")}, "BGPPeer": {peer("x", `"interface": "tenant"`)}}),
 			"interface tenant is the device of VRF tenant"},
 		"interfaces of a VRF's device": {withTenant(map[string][]any{"BGP": {bgp("bgp", 64512, "")}, "BGPPeer": {peer("x", `"interfaces": ["ten*"]`)}}),
@@ -1103,38 +1102,29 @@ func TestFRRVRFRefusals(t *testing.T) {
 			"interface lab is the device of VRF lab"},
 		"an interface of another VRF": {withTenant(map[string][]any{"BGP": {bgp("bgp", 64512, "")}, "BGPPeer": {peer("x", `"interface": "eth2"`)}}),
 			"interface eth2 is in the VRF tenant, not in the peer's VRF default"},
+		// A VRF's interface reaches its link through a Network, so one that no Network names is
+		// refused before a peer's interface of that name could be read as the default VRF's.
+		"an interface of another VRF that no Network names": {map[string][]any{"VRF": {tenant}, "Network": {document(t, "Network", "10-eth0", `{"match": {"name": "eth0"}}`)},
+			"BGP": {bgp("bgp", 64512, "")}, "BGPPeer": {peer("x", `"interface": "eth2"`)}},
+			"VRF tenant names the interface eth2, which no Network document's [Match] Name= matches without other [Match] keys"},
 		"interfaces of every link": {withTenant(map[string][]any{"BGP": {bgp("bgp", 64512, "")}, "BGPPeer": {peer("x", `"interfaces": ["*"]`)}}),
 			"interfaces: * matches tenant, the device of VRF tenant"},
 		"interfaces of another VRF's links alone": {withTenant(map[string][]any{"BGP": {bgp("bgp", 64512, "")}, "BGPPeer": {peer("x", `"interfaces": ["eth1", "eth2*"]`)}}),
 			"BGPPeer x: interfaces: eth2* matches no link of VRF default, only links of other VRFs"},
-		"an import of its own VRF": {map[string][]any{"BGP": {bgp("bgp", 64512, `, "import": {"ipv6": {"vrfs": ["default"]}}`)}},
-			"BGP bgp: import.ipv6 names its own VRF default"},
-		"an import of no VRF": {map[string][]any{"BGP": {bgp("bgp", 64512, `, "import": {"ipv6": {"vrfs": []}}`)}},
-			"BGP bgp: import.ipv6 names no VRF"},
-		"an import of a VRF without BGP": {withTenant(map[string][]any{"BGP": {bgp("bgp", 64512, `, "import": {"ipv6": {"vrfs": ["tenant"]}}`)}}),
-			`BGP bgp: import.ipv6 names the VRF "tenant", which no BGP document serves`},
-		"an import that adds a command": {map[string][]any{"BGP": {bgp("bgp", 64512, `, "import": {"ipv6": {"vrfs": ["x\n neighbor 192.0.2.9 remote-as 64999"]}}`)}},
-			`names the VRF "x\n neighbor 192.0.2.9 remote-as 64999", which no BGP document serves`},
-		"an import's policy of the other family": {withTenant(map[string][]any{"BGP": {bgp("bgp", 64512, `, "import": {"ipv4": {"vrfs": ["tenant"], "policy": "from"}}`), bgp("tenant", 64512, `, "vrf": "tenant"`)},
-			"PrefixList": {v6}, "RoutingPolicy": {from}}),
-			"BGP bgp: import.ipv4: the RoutingPolicy from matches PrefixLists of ipv6, not ipv4"},
 		"a prepend for two AS numbers": {withTenant(map[string][]any{"BGP": {bgp("bgp", 64512, `, "networks": [{"prefix": "2001:db8:1::/48", "policy": "p"}]`),
 			bgp("tenant", 64513, `, "vrf": "tenant", "networks": [{"prefix": "2001:db8:2::/48", "policy": "p"}]`)}, "RoutingPolicy": {prepend}}),
 			"RoutingPolicy p prepends the AS number, and BGP instances of AS 64512 and 64513 use it; give each AS a policy of its own"},
-		"a default-route network in a VRF": {withTenant(map[string][]any{"BGP": {bgp("bgp", 64512, ""), bgp("tenant", 64512, `, "vrf": "tenant", "networks": [{"prefix": "::/0"}]`)}}),
-			"BGP tenant: network ::/0 of VRF tenant would always be announced, as the VRF's table ends in an unreachable default route; use a peer family's defaultOriginate"},
-		"an IPv4 default-route network in a VRF": {withTenant(map[string][]any{"BGP": {bgp("bgp", 64512, ""), bgp("tenant", 64512, `, "vrf": "tenant", "networks": [{"prefix": "0.0.0.0/0"}]`)}}),
-			"BGP tenant: network 0.0.0.0/0 of VRF tenant would always be announced"},
-		"a default-route network with host bits in a VRF": {withTenant(map[string][]any{"BGP": {bgp("bgp", 64512, ""), bgp("tenant", 64512, `, "vrf": "tenant", "networks": [{"prefix": "10.0.0.0/0"}]`)}}),
-			"BGP tenant: network 10.0.0.0/0 of VRF tenant would always be announced"},
-		"an import of a VRF with a conntrack zone": {map[string][]any{
-			"VRF": {routerDoc(t, "VRF", "tenant", `{"table": 100, "interfaces": ["eth2"], "conntrackZone": 1}`)}, "Network": {eth2},
-			"BGP": {bgp("bgp", 64512, `, "import": {"ipv6": {"vrfs": ["tenant"]}}`), bgp("tenant", 64512, `, "vrf": "tenant"`)}},
-			"BGP bgp: import.ipv6 names the VRF tenant, and VRF tenant has a conntrack zone, so the replies of leaked connections would land in another zone; drop the zone or the import"},
-		"an import into a VRF with a conntrack zone": {map[string][]any{
-			"VRF": {routerDoc(t, "VRF", "tenant", `{"table": 100, "interfaces": ["eth2"], "conntrackZone": 1}`)}, "Network": {eth2},
-			"BGP": {bgp("bgp", 64512, ""), bgp("tenant", 64512, `, "vrf": "tenant", "import": {"ipv6": {"vrfs": ["default"]}}`)}},
-			"BGP tenant: import.ipv6 names the VRF default, and VRF tenant has a conntrack zone, so the replies of leaked connections would land in another zone; drop the zone or the import"},
+		// Guards of what frr.conf writes unquoted, and of a peer without its instance's block.
+		"a VRF that adds a command": {withTenant(map[string][]any{"BGP": {bgp("x", 64512, `, "vrf": "tenant\nrouter bgp 64999"`)}}),
+			`internal error: BGP x: the input holds no VRF "tenant\nrouter bgp 64999"`},
+		"a peer in a VRF without BGP": {withTenant(map[string][]any{"BGP": {bgp("bgp", 64512, "")}, "BGPPeer": {peer("leaves", `"vrf": "tenant", "interface": "eth2"`)}}),
+			"internal error: BGPPeer leaves runs in the VRF tenant, which no BGP document serves"},
+		"an import of a VRF without BGP": {withTenant(map[string][]any{"BGP": {bgp("bgp", 64512, `, "import": {"ipv6": {"vrfs": ["tenant"]}}`)}}),
+			`internal error: BGP bgp: import.ipv6 names the VRF "tenant", which no BGP document serves`},
+		"an import that adds a command": {map[string][]any{"BGP": {bgp("bgp", 64512, `, "import": {"ipv6": {"vrfs": ["x\n neighbor 192.0.2.9 remote-as 64999"]}}`)}},
+			`internal error: BGP bgp: import.ipv6 names the VRF "x\n neighbor 192.0.2.9 remote-as 64999", which no BGP document serves`},
+		"an import's policy that adds a command": {withTenant(map[string][]any{"BGP": {bgp("bgp", 64512, `, "import": {"ipv6": {"vrfs": ["tenant"], "policy": "x\n neighbor 192.0.2.9 remote-as 64999"}}`), bgp("tenant", 64512, `, "vrf": "tenant"`)}}),
+			`internal error: BGP bgp: import.ipv6: the input holds no RoutingPolicy "x\n neighbor 192.0.2.9 remote-as 64999"`},
 	} {
 		t.Run(name, func(t *testing.T) { refused(t, []string{"frr"}, c.docs, c.want) })
 	}

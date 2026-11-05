@@ -147,7 +147,8 @@ The address is a unicast address beyond the router. The rules refuse a loopback,
 broadcast address and an IPv4-mapped IPv6 address such as `::ffff:203.0.113.254`; give an IPv4
 neighbour its IPv4 address. A link-local address is refused too, as a neighbour on a link takes
 `interface` or `interfaces`. A peer at an IPv6 address that exchanges IPv4 routes needs
-`extendedNextHop: true`. A session that two peers name is refused.
+`extendedNextHop: true`. A session that two peers name is refused when the router renders its
+config, as [Fix a refused delivery](#fix-a-refused-delivery) describes.
 
 ## Filter routes with policies
 
@@ -241,8 +242,9 @@ spec:
 
 `asPath` is a regular expression over the route's AS path, in which `_` stands for the start, the
 end or a space between two ASes. It holds digits, single spaces and `_^$.*+?()|{},-`, without
-brackets. FRR's bgpd compiles it as a POSIX extended regular expression of glibc, and the
-delivery is refused when the output `frr` finds one that bgpd would not compile, such as `^*`.
+brackets. FRR's bgpd compiles it as a POSIX extended regular expression of glibc. The output
+`frr` refuses one that bgpd would not compile, such as `^*`, when the router renders its config;
+`chalkctl validate` does not check it.
 
 `prepend: 2` puts the router's AS in front of the path twice. A `CommunityList` holds standard
 communities, `<AS>:<value>`, or large ones, `<AS>:<value>:<value>`, not both, and each community
@@ -405,6 +407,26 @@ chalkctl node diag r1 --secrets secrets.age bgp-route family=ipv4 prefix=192.0.2
 
 `bgp-route` asks for IPv6 unless `family` says `ipv4`, and each asks the default VRF unless
 `vrf` names another. The status, the routes and these diagnostics need a reader client.
+
+## Fix a refused delivery
+
+`chalkctl validate` runs the schemas and rules. The renderer of the output `frr` checks the rest
+when the router renders its config, at a delivery or at `chalkctl apply-config --dry-run`, before
+the delivery changes anything: what depends on the `Network` documents, on more than one peer or
+policy, or on how bgpd compiles an AS path. Its refusal fails the delivery with
+`output frr: its renderer failed (exit 1); see the node's journal`, and `chalkctl logs r1` shows
+the reason on a line that starts with `chalkos-render:`:
+
+| Message | Fix |
+| --- | --- |
+| `BGPPeer fabric and BGPPeer spare both name eth1 in the VRF default; give each session one peer` | Drop the interface or address from one of the peers. |
+| `BGPPeer x names peer-fabric, the peer group of BGPPeer fabric; rename the document or the interface` | Rename the `BGPPeer` or the interface. |
+| `BGPPeer fabric: interface "192.0.2.10" is an address, which FRR cannot tell from a neighbour's` | Narrow the peer's glob, or rename the link that a `Network` names. |
+| `RoutingPolicy from-transit: term 2: asPath "^*1" is no regular expression bgpd compiles: the * at 2 repeats nothing` | Write the expression so that each repetition follows what it repeats. |
+| `RoutingPolicy p prepends the AS number, and BGP instances of AS 64512 and 64513 use it; give each AS a policy of its own` | Give each AS a policy of its own. |
+
+[Separate routing with VRFs](vrfs.md#fix-a-refused-delivery) lists the messages about the links
+of a peer's VRF.
 
 ## Change the AS number
 
