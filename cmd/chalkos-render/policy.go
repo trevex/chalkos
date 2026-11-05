@@ -343,7 +343,7 @@ func withPolicyRoutes(d routerDocuments, byKind, docs map[string]any) (map[strin
 	}
 	lo, err := loNetwork(units)
 	if err != nil {
-		return nil, err
+		return nil, within(policyDocuments(d), err)
 	}
 	if lo == "" {
 		spec := map[string]any{"match": map[string]any{"name": "lo"}}
@@ -361,7 +361,7 @@ func withPolicyRoutes(d routerDocuments, byKind, docs map[string]any) (map[strin
 	for _, h := range tables.hops {
 		link, err := soleNetwork(units, h.link, "NextHop", h.name, "spec.interface")
 		if err != nil {
-			return nil, err
+			return nil, within("NextHop "+h.name, err)
 		}
 		if link == "" {
 			return nil, refuse("NextHop", h.name, "spec.interface", "NextHop %s is on %s, which no Network document names; give the link one, which gets the next hop's route", h.name, h.link)
@@ -374,6 +374,29 @@ func withPolicyRoutes(d routerDocuments, byKind, docs map[string]any) (map[strin
 	out := maps.Clone(docs)
 	out["Network"] = networks
 	return out, nil
+}
+
+// policyDocuments names the documents whose sections go into the Network of lo: the PolicyRoute
+// documents with rules, whose targets' rules go there, and the NextHop documents, whose tables'
+// unreachable defaults do, as "PolicyRoute a, b and NextHop c".
+func policyDocuments(d routerDocuments) string {
+	var routes, hops []string
+	for _, p := range d.PolicyRoutes {
+		if len(p.Spec.Rules) > 0 {
+			routes = append(routes, p.Name)
+		}
+	}
+	for _, h := range d.NextHops {
+		hops = append(hops, h.Name)
+	}
+	var parts []string
+	if len(routes) > 0 {
+		parts = append(parts, "PolicyRoute "+strings.Join(routes, ", "))
+	}
+	if len(hops) > 0 {
+		parts = append(parts, "NextHop "+strings.Join(hops, ", "))
+	}
+	return strings.Join(parts, " and ")
 }
 
 // loNetwork is the Network document of byKind that networkd picks for lo, "" when the unit of the
