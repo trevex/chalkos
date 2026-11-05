@@ -110,6 +110,11 @@ func compile(files map[string][]byte, dir string) (*Schemas, error) {
 	c := jsonschema.NewCompiler()
 	c.DefaultDraft(jsonschema.Draft2020)
 	c.UseLoader(noLoader{})
+	// Draft 2020-12 takes "format" as an annotation; the kinds' schemas assert theirs.
+	c.AssertFormat()
+	for _, f := range formats {
+		c.RegisterFormat(f)
+	}
 	ss := &Schemas{schemas: map[Kind]*jsonschema.Schema{}, raw: map[Kind]any{}}
 	for _, name := range slices.Sorted(maps.Keys(files)) {
 		path := filepath.Join(dir, name)
