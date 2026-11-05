@@ -14,8 +14,8 @@
 // the node's journal alone.
 //
 // chalkd runs the validators after the change rules and before the renderers, in a delivery, its
-// dry run and the image's check of its own config. chalkctl runs the validators it links, Funcs
-// that read the same JSON, in-process when it checks a node's config.
+// dry run, an install in place and the image's check of its own config. chalkctl runs the
+// validators it links, Funcs that read the same JSON, in-process when it checks a node's config.
 package validators
 
 import (
