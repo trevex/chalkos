@@ -20,6 +20,8 @@ import (
 	"github.com/trevex/chalkos/pkg/client"
 	"github.com/trevex/chalkos/pkg/clustersecrets"
 	"github.com/trevex/chalkos/pkg/config"
+	"github.com/trevex/chalkos/pkg/schema"
+	"github.com/trevex/chalkos/pkg/validators"
 )
 
 // Plugin is a layer of chalkctl.
@@ -41,6 +43,17 @@ type Status interface {
 	// PrintStatus prints the layer's section of the status of the node conn reaches, whose image
 	// carries the layer.
 	PrintStatus(ctx context.Context, h Host, conn *client.Conn) error
+}
+
+// Validators is a plugin whose layer links validators of its kinds: the Go code its images run as
+// validator programs, which chalkctl runs in-process on a node's config wherever it checks the
+// config against the node's image, as validate and apply-config do. The image runs its own
+// programs again, which decide; chalkctl's copies refuse a config before it reaches the node.
+// chalkctl asks every compiled plugin.
+type Validators interface {
+	// Validators are the layer's validators that an image of the schemas runs, by the names the
+	// image gives them; none for an image without the layer's kinds.
+	Validators(s *schema.Schemas) []validators.Linked
 }
 
 // ImageFacts is a plugin whose layer's images carry facts config is translated with. chalkctl

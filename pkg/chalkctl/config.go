@@ -17,8 +17,10 @@ import (
 	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/identity"
 	"github.com/trevex/chalkos/pkg/inventory"
+	"github.com/trevex/chalkos/pkg/outputs"
 	"github.com/trevex/chalkos/pkg/rules"
 	"github.com/trevex/chalkos/pkg/schema"
+	"github.com/trevex/chalkos/pkg/validators"
 )
 
 // contract is what an image accepts as config: the platform it was built for, the schemas of its
@@ -154,8 +156,9 @@ func (c *cluster) deliveryFor(name string, ct contract) (delivery, error) {
 }
 
 // checkNodeConfig checks a node's config on the image the contract describes as the node does,
-// with config.Translate, and against the image's change rules that chalkctl can check without
-// the node's config. It returns the config as chalkctl delivers it.
+// with config.Translate, against the image's change rules that chalkctl can check without the
+// node's config, and with the validators chalkctl links. It returns the config as chalkctl
+// delivers it.
 func checkNodeConfig(nc *inventory.NodeConfig, c contract) (delivery, error) {
 	t := c.target
 	t.Platform = c.platform
@@ -164,6 +167,9 @@ func checkNodeConfig(nc *inventory.NodeConfig, c contract) (delivery, error) {
 		return delivery{}, err
 	}
 	if err := checkRules(c, set.Documents(), nil, nc.Name); err != nil {
+		return delivery{}, err
+	}
+	if err := checkValidators(c, set.Documents()); err != nil {
 		return delivery{}, err
 	}
 	e, err := config.Encode(nc.Documents)
@@ -200,6 +206,23 @@ func checkRules(c contract, next, old []config.Document, node string) error {
 	}
 	if len(failures) > 0 {
 		return errors.New(rules.Refusal(failures, node))
+	}
+	return nil
+}
+
+// checkValidators refuses docs, a node's config with its defaults, when a validator of a compiled
+// layer that the image the contract describes runs refuses it or fails, as the node would refuse
+// it. The validators run in-process on the JSON the image's programs read, with the secret values
+// hashed. A validator an extension declares is a program of the image alone, which chalkctl
+// cannot run, so the node checks it at the delivery.
+func checkValidators(c contract, docs []config.Document) error {
+	var linked []validators.Linked
+	for _, p := range compiled[layer.Validators]() {
+		linked = append(linked, p.Validators(c.schemas)...)
+	}
+	rs, failures := validators.RunLinked(linked, outputs.Input{Documents: docs})
+	if len(rs) > 0 || len(failures) > 0 {
+		return errors.New(validators.Refusal(rs, failures))
 	}
 	return nil
 }
