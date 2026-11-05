@@ -10,9 +10,10 @@ import (
 )
 
 // formats are the values of "format" that the kinds' schemas assert, besides JSON Schema's own:
-// an address, an address range and a range of ports, each read as the rules' ip(), cidr() and
-// portRange() and the renderers read them, so that a value the schema accepts parses everywhere.
-// A JSON Schema tool that knows none of them takes them as annotations.
+// an address, an address range and a range of ports. Each accepts a subset of what the rules'
+// ip(), cidr() and portRange() and the renderers read, stricter where they differ (ip refuses the
+// zones ip() reads), so that a value the schema accepts parses everywhere. A JSON Schema tool
+// that knows none of them takes them as annotations.
 var formats = []*jsonschema.Format{
 	{Name: "ip", Validate: validateIP},
 	{Name: "cidr", Validate: validateCIDR},
