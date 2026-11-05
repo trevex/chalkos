@@ -58,7 +58,7 @@ const (
 func TestCheck(t *testing.T) {
 	restarts := effect(`node.name == \"n1\"`, `facts.share != oldFacts.share`)
 	var out bytes.Buffer
-	if err := check(image(t, files(greeting(fieldRule, kindRule), lock, restarts)), &out); err != nil || out.String() != "2 rules and 2 effect rules compile, reading the facts lock, share; 0 outputs render 0 examples\n" {
+	if err := check(image(t, files(greeting(fieldRule, kindRule), lock, restarts)), &out); err != nil || out.String() != "2 rules and 2 effect rules compile, reading the facts lock, share; 0 outputs render 0 examples; 0 validators accept 0 examples\n" {
 		t.Errorf("check = %q, %v", out.String(), err)
 	}
 	for name, tc := range map[string]struct{ schema, facts, effects, want string }{
@@ -142,7 +142,7 @@ func TestCheckOutputs(t *testing.T) {
 	accepts := `grep -qx hello "$OUT/message"`
 	base := func() map[string]string { return files(greeting(fieldRule, kindRule), lock, "{}") }
 	var out bytes.Buffer
-	if err := check(image(t, withOutput(t, base(), render, accepts, map[string]string{"hello.yaml": hello})), &out); err != nil || !strings.HasSuffix(out.String(), "; 1 outputs render 1 examples\n") {
+	if err := check(image(t, withOutput(t, base(), render, accepts, map[string]string{"hello.yaml": hello})), &out); err != nil || !strings.HasSuffix(out.String(), "; 1 outputs render 1 examples; 0 validators accept 0 examples\n") {
 		t.Fatalf("check = %q, %v", out.String(), err)
 	}
 	// The renderer's and the check's arguments are no programs: a path that is not clean passes.
@@ -203,6 +203,68 @@ func TestCheckOutputs(t *testing.T) {
 			delete(f, "examples.json")
 			return f
 		}(), "effect greeter: an effect does not fire on Addon documents"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if err := check(image(t, tc.files), &bytes.Buffer{}); err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Errorf("err = %v, want %q", err, tc.want)
+			}
+		})
+	}
+}
+
+// withValidator adds to files the validator greeting of the Greeting documents, whose program
+// runs the shell commands given, with the examples given.
+func withValidator(t *testing.T, files map[string]string, commands string, examples map[string]string) map[string]string {
+	t.Helper()
+	sh := storeShell(t)
+	scripts := t.TempDir()
+	os.WriteFile(filepath.Join(scripts, "validate"), []byte("set -e\n"+commands+"\n"), 0o644)
+	files["validators.json"] = `{"greeting": {"inputs": ["Greeting"], "program": "` + sh + " " + filepath.Join(scripts, "validate") + `"}}`
+	files["validator-examples.json"] = `{"greeting": "` + filepath.Join(scripts, "examples") + `"}`
+	for name, text := range examples {
+		path := filepath.Join(scripts, "examples", name)
+		os.MkdirAll(filepath.Dir(path), 0o755)
+		os.WriteFile(path, []byte(text), 0o644)
+	}
+	return files
+}
+
+// The image's build runs each validator on each of its examples, which it must accept, and
+// refuses a validator it could not run on a node.
+func TestCheckValidators(t *testing.T) {
+	// The validator refuses a Greeting whose message is other.
+	validate := `if grep -q '"message":"other"'; then echo '{"refusals": [{"kind": "Greeting", "name": "g", "path": "spec.message", "message": "say hello"}]}'; fi`
+	base := func() map[string]string { return files(greeting(fieldRule, kindRule), lock, "{}") }
+	var out bytes.Buffer
+	if err := check(image(t, withValidator(t, base(), validate, map[string]string{"hello.yaml": hello})), &out); err != nil || !strings.HasSuffix(out.String(), "; 0 outputs render 0 examples; 1 validators accept 1 examples\n") {
+		t.Fatalf("check = %q, %v", out.String(), err)
+	}
+	other := strings.Replace(hello, "hello", "other", 1)
+	for name, tc := range map[string]struct {
+		files map[string]string
+		want  string
+	}{
+		"an example it refuses": {withValidator(t, base(), validate, map[string]string{"hello.yaml": hello, "other.yaml": other}), "validator greeting: example other.yaml: the config is refused: Greeting/g: spec.message: say hello"},
+		"an example it fails":   {withValidator(t, base(), "exit 4", map[string]string{"hello.yaml": hello}), "validator greeting: example hello.yaml: validator greeting failed (exit 4)"},
+		"an invalid example":    {withValidator(t, base(), validate, map[string]string{"bad.yaml": strings.Replace(hello, "kind: Greeting", "kind: Greting", 1)}), "validator greeting: example bad.yaml: "},
+		"no examples":           {withValidator(t, base(), validate, map[string]string{"README": "none"}), "validator greeting: its examples: "},
+		"examples of no validator": {func() map[string]string {
+			f := withValidator(t, base(), validate, nil)
+			f["validator-examples.json"] = `{"greting": "/nowhere"}`
+			return f
+		}(), "validator greting: it has examples but is no validator"},
+		"an undeclared kind": {func() map[string]string {
+			f := withValidator(t, base(), validate, nil)
+			f["validators.json"] = strings.Replace(f["validators.json"], `["Greeting"]`, `["Peer"]`, 1)
+			delete(f, "validator-examples.json")
+			return f
+		}(), "validator greeting: the image declares no kind Peer"},
+		"a program outside the store": {func() map[string]string {
+			f := withValidator(t, base(), validate, nil)
+			f["validators.json"] = strings.Replace(f["validators.json"], storeShell(t), "/bin/sh", 1)
+			delete(f, "validator-examples.json")
+			return f
+		}(), `validator greeting: the program "/bin/sh `},
 	} {
 		t.Run(name, func(t *testing.T) {
 			if err := check(image(t, tc.files), &bytes.Buffer{}); err == nil || !strings.Contains(err.Error(), tc.want) {
