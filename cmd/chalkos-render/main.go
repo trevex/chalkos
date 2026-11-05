@@ -3,7 +3,9 @@
 // unbound, kea and dhcp-relay. chalkd runs it in the sandbox of an output: it reads the output's
 // input as JSON on standard input, {"node": {"name": …}, "documents": {"<Kind>": [<document>, …]}},
 // and writes files into $OUT, the only path it may write. A router image's build runs it once more
-// for the image's fallback ruleset.
+// for the image's fallback ruleset. It is the program of the validator router too, which chalkd
+// runs as chalkos-render validate router in a validator's sandbox: it reads the documents as one
+// JSON array on standard input and prints its refusals on standard output.
 package main
 
 import (
@@ -36,6 +38,7 @@ const usage = `usage: chalkos-render template TEMPLATE FILE
        chalkos-render unbound TRUST-ANCHOR ZONE-FILE
        chalkos-render kea PD-HOOK
        chalkos-render dhcp-relay
+       chalkos-render validate router
 
 template executes the Go text/template TEMPLATE on the input and writes the result to $OUT/FILE;
 the template has the functions join, quote, json, default and refuse. documents writes each
@@ -57,16 +60,19 @@ and $OUT/kea-dhcp6-<vrf>.json for a VRF; a DHCPv6 server whose subnets delegate 
 the program PD-HOOK on their leases. dhcp-relay writes the config of dnsmasq's DHCP relay of
 each VRF whose links DHCPRelay documents relay as $OUT/dnsmasq-relay.conf for the default VRF and
 $OUT/dnsmasq-relay-<vrf>.conf for a VRF. Every command prints a config it refuses as
-{"refusals": [{"kind": …, "name": …, "path": …, "message": …}]} on standard output, and fails.`
+{"refusals": [{"kind": …, "name": …, "path": …, "message": …}]} on standard output, and fails.
+validate router reads the documents of the router's kinds as a validator does, as one JSON array
+on standard input, prints the report of the refusals of the validator router on standard output,
+one of no refusals for a config it accepts, and succeeds; it fails on input it cannot read.`
 
 // main runs the renderer. A config it refuses, a *refusals.Error, it prints as a report of
 // refusals on standard output for chalkd to report, and on standard error too, for the journal
 // and for a run by hand; any other error, an internal one or one of its command line, goes to
 // standard error alone, where chalkd shows it to no one but the node's journal, since it can echo
 // the documents. Either fails the renderer, so that a build that runs it, as the router's fallback
-// ruleset's does, fails too.
+// ruleset's does, fails too. A validator prints its report itself and fails on an error alone.
 func main() {
-	if err := run(os.Args[1:], os.Stdin, os.Getenv("OUT")); err != nil {
+	if err := run(os.Args[1:], os.Stdin, os.Stdout, os.Getenv("OUT")); err != nil {
 		var r *refusals.Error
 		if errors.As(err, &r) {
 			printRefusal(os.Stdout, r)
@@ -82,9 +88,14 @@ func main() {
 // errUsage is a command line chalkos-render does not take; main prints the usage after it.
 var errUsage = errors.New("unknown command line")
 
-func run(args []string, stdin io.Reader, out string) error {
+// run runs the command line args on stdin: a renderer writes into out, the output's directory, and
+// returns a config it refuses as a *refusals.Error; a validator prints its report on stdout.
+func run(args []string, stdin io.Reader, stdout io.Writer, out string) error {
 	if len(args) == 0 {
 		return errUsage
+	}
+	if args[0] == "validate" && len(args) == 2 {
+		return validate(args[1], stdin, stdout)
 	}
 	if out == "" {
 		return errors.New("$OUT names no directory to write")
@@ -120,6 +131,37 @@ func run(args []string, stdin io.Reader, out string) error {
 		return renderDHCPRelay(in, out)
 	}
 	return errUsage
+}
+
+// validators are the validators chalkos-render runs, by name: each takes the documents a
+// validator reads, one JSON array, and returns its refusals, as the validators.Func that chalkctl
+// links does; chalkos-render takes the standard library alone and so names no such type.
+var validators = map[string]func(documents []byte) ([]refusals.Refusal, error){
+	"router": derive.Validate,
+}
+
+// validate runs the validator name on the documents on stdin and prints its report on stdout,
+// one of no refusals for a config it accepts. An error is the validator's failure, which chalkd
+// reports without the report.
+func validate(name string, stdin io.Reader, stdout io.Writer) error {
+	v, ok := validators[name]
+	if !ok {
+		return errUsage
+	}
+	data, err := io.ReadAll(stdin)
+	if err != nil {
+		return fmt.Errorf("read the documents: %w", err)
+	}
+	rs, err := v(data)
+	if err != nil {
+		return fmt.Errorf("validator %s: %w", name, err)
+	}
+	report, err := refusals.Encode(rs)
+	if err != nil {
+		return err
+	}
+	_, err = stdout.Write(report)
+	return err
 }
 
 // readInput reads the input with its numbers exact, as documents hold them.

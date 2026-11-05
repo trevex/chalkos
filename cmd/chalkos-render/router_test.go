@@ -174,6 +174,39 @@ func TestRouterGolden(t *testing.T) {
 	}
 }
 
+// chalkos-render validate router reads the documents as a validator does, one JSON array, needs no
+// $OUT, and prints the report of the validator router, which refuses none of the examples. Input
+// it cannot read fails the validator, which then prints no report.
+func TestValidateRouter(t *testing.T) {
+	examples, err := filepath.Glob(filepath.Join(routerExamples, "*.yaml"))
+	if err != nil || len(examples) == 0 {
+		t.Fatalf("examples = %v, %v", examples, err)
+	}
+	for _, path := range examples {
+		var in struct{ Documents map[string][]json.RawMessage }
+		if err := json.Unmarshal([]byte(routerInput(t, path)), &in); err != nil {
+			t.Fatal(err)
+		}
+		var docs []json.RawMessage
+		for _, kind := range slices.Sorted(maps.Keys(in.Documents)) {
+			docs = append(docs, in.Documents[kind]...)
+		}
+		data, err := json.Marshal(docs)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var out strings.Builder
+		if err := run([]string{"validate", "router"}, strings.NewReader(string(data)), &out, ""); err != nil || out.String() != "{\"refusals\":[]}\n" {
+			t.Errorf("%s: validate router = %v, printed %q", filepath.Base(path), err, out.String())
+		}
+	}
+	var out strings.Builder
+	err = run([]string{"validate", "router"}, strings.NewReader(`{"node": {"name": "r1"}, "documents": {}}`), &out, "")
+	if err == nil || !strings.Contains(err.Error(), "validator router: the documents are no JSON array of documents") || out.Len() != 0 {
+		t.Errorf("validate router of an output's input = %v, printed %q", err, out.String())
+	}
+}
+
 // The fallback ruleset is that of a node without documents, but its forward chain drops what the
 // protected rules do not accept.
 func TestRouterFallbackGolden(t *testing.T) {

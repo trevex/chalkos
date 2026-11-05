@@ -1,7 +1,7 @@
 # The router layer, on images whose nodes route between networks: its marker, forwarding, the
 # router kinds' outputs and effects, the firewall that takes the place of NixOS's, BGP with FRR,
 # NAT64 with Jool, the resolver with Unbound, VRFs, policy routing, DHCP with Kea, DHCP relays
-# with dnsmasq and the router's diagnostics.
+# with dnsmasq, the router's diagnostics and the validator router.
 { config, lib, ... }:
 {
   imports = [
@@ -15,6 +15,7 @@
     ./policy-routing.nix
     ./dhcp.nix
     ./dhcp-relay.nix
+    ./validator.nix
   ];
 
   options.chalkos.router.enable = lib.mkOption {

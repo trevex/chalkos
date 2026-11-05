@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -18,7 +19,7 @@ const peers = `{"node": {"name": "cp1"}, "documents": {"Peer": [
 func render(t *testing.T, args []string, input string) (string, error) {
 	t.Helper()
 	out := t.TempDir()
-	return out, run(args, strings.NewReader(input), out)
+	return out, run(args, strings.NewReader(input), io.Discard, out)
 }
 
 // A template reads the node and the documents, prints numbers exactly, and has join, quote, json
@@ -94,12 +95,12 @@ func TestDocuments(t *testing.T) {
 }
 
 func TestUsage(t *testing.T) {
-	for _, args := range [][]string{nil, {"template", "x"}, {"documents"}, {"other", "x"}} {
+	for _, args := range [][]string{nil, {"template", "x"}, {"documents"}, {"other", "x"}, {"validate"}, {"validate", "other"}} {
 		if _, err := render(t, args, peers); !errors.Is(err, errUsage) {
 			t.Errorf("%v: %v", args, err)
 		}
 	}
-	if err := run([]string{"documents", "Peer"}, strings.NewReader(peers), ""); err == nil || !strings.Contains(err.Error(), "$OUT") {
+	if err := run([]string{"documents", "Peer"}, strings.NewReader(peers), io.Discard, ""); err == nil || !strings.Contains(err.Error(), "$OUT") {
 		t.Errorf("without $OUT: %v", err)
 	}
 }

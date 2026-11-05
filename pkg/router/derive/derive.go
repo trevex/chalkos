@@ -6,8 +6,9 @@
 // routing sends traffic to.
 //
 // chalkos-render builds the model from an output's input and renders the router's files from
-// it. Since every router image carries chalkos-render, the package takes the standard library
-// alone, besides package refusals.
+// it, and runs the validator router, Validate, as chalkos-render validate router; chalkctl links
+// Validate and runs it in-process on the same input. Since every router image carries
+// chalkos-render, the package takes the standard library alone, besides package refusals.
 //
 // A config the model refuses for what no schema or rule sees is a *refusals.Error that names the
 // document and its field. A guard of what the schemas and rules refuse before chalkd renders is
@@ -22,7 +23,9 @@ import (
 	"strings"
 )
 
-// Kinds are the kinds whose documents Build reads: the router layer's and networkd's Network.
+// Kinds are the kinds whose documents Build reads: the router layer's and networkd's Network. An
+// image declares those of its router features; the validator router reads the documents of the
+// kinds of Kinds that the image declares, on the node as in chalkctl.
 var Kinds = []string{
 	"Router", "FirewallZone", "FirewallPolicy", "AddressSet", "NATRule", "BGP", "BGPPeer", "PrefixList",
 	"CommunityList", "RoutingPolicy", "NAT64", "Resolver", "VRF", "PolicyRoute", "NextHop", "DHCPSubnet",
@@ -36,10 +39,10 @@ type Named[T any] struct {
 }
 
 // Model is the router's model of a node's config, as Build derives it from the documents of an
-// output's input: the router kinds' documents, each kind's in the input's order, which sorts them
-// by name, and what the Network and VRF documents say together. The parts that only some outputs
-// need, and that refuse what the others need not see, are methods: Units, NAT64Instances and
-// PolicyTables.
+// output's input or a validator's: the router kinds' documents, each kind's in the input's order,
+// which sorts them by name, and what the Network and VRF documents say together. The parts that
+// only some outputs need, and that refuse what the others need not see, are methods: Units,
+// NAT64Instances and PolicyTables.
 type Model struct {
 	Routers  []Named[RouterSpec]
 	Zones    []Named[ZoneSpec]

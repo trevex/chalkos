@@ -19,6 +19,8 @@ let
     (lib.fileset.fileFilter (f: f.hasExt "yaml") ../templates/lab)
     # The router outputs' examples, which chalkos-render's golden test renders.
     ../modules/node/examples/router
+    # The validator router's kinds, which pkg/router/derive's test holds to derive.Kinds.
+    ../modules/node/router/validator.nix
   ];
 in
 {
