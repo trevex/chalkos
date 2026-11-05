@@ -452,23 +452,22 @@ The rules check each document and what one document's fields say of another's. T
 the outputs `jool` and `unbound` compare the NAT64s and the records in pairs, and check the
 `listen` addresses against the `Network` documents, when the router renders its config, before
 the delivery changes anything. `chalkctl validate` does not run them;
-`chalkctl apply-config --dry-run` does. A renderer's refusal fails the delivery with a message
-for each output that refused, such as:
+`chalkctl apply-config --dry-run` does. A renderer's refusal fails the delivery, and `chalkctl`
+prints it after `the config is refused:`, as it prints a rule's, with the document and the field
+it is about:
 
 ```text
-output jool: its renderer failed (exit 1); see the node's journal
+chalkctl: r1: the config is refused: NAT64/lab: spec.prefix: NAT64 lab and NAT64 edge both translate addresses of 64:ff9b::/96 in VRF default; give each NAT64 of a VRF a prefix of its own
 ```
-
-`chalkctl logs r1` shows the reason on a line that starts with `chalkos-render:`:
 
 | Message | Fix |
 | --- | --- |
-| `NAT64 lab and NAT64 edge both translate addresses of 64:ff9b::/96 in VRF default; give each NAT64 of a VRF a prefix of its own` | Give one of the NAT64s another prefix, or move it to another VRF. |
-| `NAT64 lab: pool entry 1 shares addresses with the pool of NAT64 edge; give each NAT64 a pool of its own` | Split the addresses between the pools. |
-| `NAT64 nat8 and NAT64 nat282 both take the link addresses 169.254.120.112/30, which the hashes of their names pick; rename NAT64 nat8` | Rename the NAT64 you are adding. |
-| `Resolver resolver: local zone 1: lan.example.org: record 2: a.lan.example.org. AAAA 2001:db8::1 appears twice; Unbound keeps one, so drop the other` | Drop one of the records. |
-| `Resolver resolver: local zone 1: lan.example.org: record 2: www.lan.example.org holds a CNAME record and another record; a CNAME's name holds it alone` | Drop the other records of the name, or the CNAME record. |
-| `Resolver guest: the address 2001:db8:ffff::1 of listen belongs to links of Network 10-mgmt in VRF default alone, so the resolver of VRF guest never receives its queries; listen on an address of the VRF's links` | Listen on an address of the resolver's VRF. |
+| `NAT64/lab: spec.prefix: NAT64 lab and NAT64 edge both translate addresses of 64:ff9b::/96 in VRF default; give each NAT64 of a VRF a prefix of its own` | Give one of the NAT64s another prefix, or move it to another VRF. |
+| `NAT64/lab: spec.pool4[0]: the entry shares addresses with the pool of NAT64 edge; give each NAT64 a pool of its own` | Split the addresses between the pools. |
+| `NAT64/nat8: metadata.name: NAT64 nat8 and NAT64 nat282 both take the link addresses 169.254.120.112/30, which the hashes of their names pick; rename NAT64 nat8` | Rename the NAT64 you are adding. |
+| `Resolver/resolver: spec.localZones[0].records[1]: a.lan.example.org. AAAA 2001:db8::1 appears twice; Unbound keeps one, so drop the other` | Drop one of the records. |
+| `Resolver/resolver: spec.localZones[0].records[1]: www.lan.example.org holds a CNAME record and another record; a CNAME's name holds it alone` | Drop the other records of the name, or the CNAME record. |
+| `Resolver/guest: spec.listen[0]: the address 2001:db8:ffff::1 of listen belongs to links of Network 10-mgmt in VRF default alone, so the resolver of VRF guest never receives its queries; listen on an address of the VRF's links` | Listen on an address of the resolver's VRF. |
 
 ## Upgrade a router whose NAT64 ran beside its links
 

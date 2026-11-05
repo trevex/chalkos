@@ -277,22 +277,22 @@ The renderers of the outputs `router-nftables` and `networkd` check the rest, th
 target tables, the interfaces of `in` against the VRFs' devices and what depends on the `Network`
 documents, before the delivery changes anything.
 `chalkctl validate` does not run them.
-A renderer's refusal fails the delivery, and `chalkctl logs r1` shows the reason on a line that
-starts with `chalkos-render:`:
+A renderer's refusal fails the delivery, and `chalkctl` prints it after `the config is refused:`,
+as it prints a rule's, with the document and the field it is about:
 
 | Message | Fix |
 | --- | --- |
-| `PolicyRoute lan: tran* matches transit, the device of VRF transit; name the VRF's links or a zone of the VRF` | Name the VRF's links in `interfaces`, or a zone that holds them. The output refuses the VRF's own name, `transit`, the same way. |
-| `PolicyRoute lan: n64-* matches n64-edge, the link of NAT64 edge, whose traffic Jool translates; name other links` | Narrow the glob, so it leaves out the NAT64's link. |
-| `PolicyRoute lan: the zone guest holds n*, which matches n64-guest, the link of NAT64 guest, whose traffic Jool translates; name the zone's other links in interfaces` | Name the zone's other links in `interfaces`, or narrow the `Network` that puts `n*` in the zone's VRF. |
-| `PolicyRoute lan: the zone core holds no link` | Give the zone a link, or name another zone. |
-| `NextHop wanb4 is on wanb0, which no Network document names; give the link one, which gets the next hop's route` | Add a `Network` that names the link in `Name=`. The renderer checks every `NextHop`, also one that no rule names. |
-| `NextHop wanb4: Network 21-wan matches wanb0 and other links, which would take its policy routing too; give wanb0 a Network of its own` | Give the next hop's link a `Network` that names it alone. |
-| `NextHop wanb4: Network 21-wanb may match wanb0 by other [Match] keys; name wanb0 in a Network that its Name= alone matches` | Drop the other `[Match]` keys, or add a `Network` of `Name=wanb0` alone that sorts first. |
-| `PolicyRoute lan, servers and NextHop wanb4, wanb6: Network 00-nic may match lo by other [Match] keys; name lo in a Network that its Name= alone matches` | Add a `Network` of `Name=lo` that sorts before `00-nic`. A `00-nic` without `Name=` may instead sort after `00-policy-routing`. |
-| `PolicyRoute lan, servers and NextHop wanb4, wanb6: Network 99-all matches lo and other links, which would take its policy routing too; give lo a Network of its own` | Add a `Network` of `Name=lo` that sorts before `99-all`. |
-| `Network 00-policy-routing takes the name of the policy routing's unit; rename the document` | Rename the `Network`. |
-| `the PolicyRoute documents send traffic to 256 tables, more than the 255 their marks tell apart` | Send the traffic to fewer tables. |
+| `PolicyRoute/lan: spec.in.interfaces[0]: tran* matches transit, the device of VRF transit; name the VRF's links or a zone of the VRF` | Name the VRF's links in `interfaces`, or a zone that holds them. The output refuses the VRF's own name, `transit`, the same way. |
+| `PolicyRoute/lan: spec.in.interfaces[0]: n64-* matches n64-edge, the link of NAT64 edge, whose traffic Jool translates; name other links` | Narrow the glob, so it leaves out the NAT64's link. |
+| `PolicyRoute/lan: spec.in.zone: the zone guest holds n*, which matches n64-guest, the link of NAT64 guest, whose traffic Jool translates; name the zone's other links in interfaces` | Name the zone's other links in `interfaces`, or narrow the `Network` that puts `n*` in the zone's VRF. |
+| `PolicyRoute/lan: spec.in.zone: the zone core holds no link` | Give the zone a link, or name another zone. |
+| `NextHop/wanb4: spec.interface: NextHop wanb4 is on wanb0, which no Network document names; give the link one, which gets the next hop's route` | Add a `Network` that names the link in `Name=`. The renderer checks every `NextHop`, also one that no rule names. |
+| `Network/21-wan: spec.match.name: Network 21-wan matches wanb0 and other links, which would take its policy routing too; give wanb0 a Network of its own` | Give the next hop's link a `Network` that names it alone. |
+| `Network/21-wanb: spec.match: Network 21-wanb may match wanb0 by other [Match] keys; name wanb0 in a Network that its Name= alone matches` | Drop the other `[Match]` keys, or add a `Network` of `Name=wanb0` alone that sorts first. |
+| `Network/00-nic: spec.match: Network 00-nic may match lo by other [Match] keys; name lo in a Network that its Name= alone matches` | Add a `Network` of `Name=lo` that sorts before `00-nic`. A `00-nic` without `Name=` may instead sort after `00-policy-routing`. |
+| `Network/99-all: spec.match.name: Network 99-all matches lo and other links, which would take its policy routing too; give lo a Network of its own` | Add a `Network` of `Name=lo` that sorts before `99-all`. |
+| `Network/00-policy-routing: metadata.name: Network 00-policy-routing takes the name of the policy routing's unit; rename the document` | Rename the `Network`. |
+| `PolicyRoute/servers: spec.rules[3].to: the PolicyRoute documents send traffic to 256 tables, more than the 255 their marks tell apart` | Send the traffic to fewer tables. The refusal names the rule whose target is the 256th table, in the order of the documents and their rules. |
 
 The router writes the kernel's rules into the `Network` that networkd applies to `lo`. A
 `Network` that matches `lo` by a glob together with other links, such as `Name=*`, would carry

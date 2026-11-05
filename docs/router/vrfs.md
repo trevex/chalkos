@@ -414,34 +414,35 @@ chalkctl: r1: the config is refused: the config drops the default VRF's BGP docu
 The rules read the documents' names and globs without knowing which links networkd matches. The
 renderers of the outputs `networkd`, `frr` and `router-nftables` check the rest against the
 `Network` documents when the router renders its config, before the delivery changes anything.
-`chalkctl validate` does not run them. A renderer's refusal fails the delivery with a message for
-each output that refused, such as:
+`chalkctl validate` does not run them. A renderer's refusal fails the delivery, and `chalkctl`
+prints it after `the config is refused:`, as it prints a rule's, with the document and the field
+it is about:
 
 ```text
-output networkd: its renderer failed (exit 1); see the node's journal
+chalkctl: r1: the config is refused: Network/20-both: spec.match: Network 20-both matches links of no VRF and VRF a; the links of one Network are in one VRF
 ```
 
-`chalkctl logs r1` shows the reason on a line that starts with `chalkos-render:`. The renderers
-refuse what networkd, FRR or nftables would apply otherwise than the documents say:
+Outputs that share a check refuse with the same refusal, which `chalkctl` prints once. The
+renderers refuse what networkd, FRR or nftables would apply otherwise than the documents say:
 
 | Message | Fix |
 | --- | --- |
-| `VRF tenant names the interface eth9, which no Network document's [Match] Name= matches without other [Match] keys; VRF= reaches a link through its Network document, so give it one` | Add a `Network` that names the link in `Name=` without other `[Match]` keys. |
-| `Network 20-both matches links of no VRF and VRF a; the links of one Network are in one VRF` | Split the `Network`, so that each matches the links of one VRF. |
-| `Network 10-swp's Name=swp* may match links of VRF tenant and links outside it; name its links` | Name the links in `Name=`, or put the whole glob into the VRF. |
-| `Network 00-all matches the device of VRF tenant before 00-vrf-tenant; rename it to sort after 00-vrf-tenant` | Rename the `Network`, or narrow its `Name=`. |
-| `Network 00-all matches the link n64-guest of NAT64 guest before 00-n64-guest; rename it to sort after 00-n64-guest` | Rename the `Network`, or narrow its `Name=`. |
-| `Network 10-a is the first to match eth5, so networkd never applies Network 20-b's VRF=mgmt to it; give 10-a VRF=mgmt, rename it to sort after 20-b, or drop 20-b's VRF=` | Take one of the remedies the message lists. |
-| `Network 20-x: Name= holds "eth[0", which is no glob the renderer can match as networkd does` | Write `Name=` without backslashes and bracket expressions. |
-| `NetDev 20-dummy creates the device tenant, which VRF tenant creates; rename the VRF or the NetDev` | Rename the VRF, or the device in the `NetDev`'s `Name=`. |
-| `BGPPeer leaves: interfaces: swp* matches no link of VRF default, only links of other VRFs` | Give the peer the VRF of its links. |
-| `BGPPeer x: interface tenant is the device of VRF tenant` | Name the VRF's links, not its device. |
-| `BGPPeer x: interface eth2 is in the VRF tenant, not in the peer's VRF default` | Give the peer the VRF of its link, or name a link of the peer's VRF. |
-| `FirewallZone x: ten* matches tenant, the device of VRF tenant; name the VRF in vrfs` | Put the VRF into the zone's `vrfs`, or name its links. |
-| `FirewallZone x names eth2, which may be a link of VRF tenant, which FirewallZone tenant holds; give each link one zone` | Take the VRF out of the other zone's `vrfs` and name its links in each zone, or drop the link here. |
-| `FirewallZone tenant: VRF tenant holds the links of Network 50-lab's Name=lab[12], which nftables cannot match; name them by a name or a prefix and *` | Write the `Network`'s `Name=` as names or a prefix and `*`. |
-| `NATRule n: inter* matches no link, only internet, the device of VRF internet; name the VRF's links or a zone of the VRF` | Name the VRF's links, or a zone that holds the VRF. |
-| `Router: the management interface tenant matches tenant, the device of VRF tenant, and chalkd answers in the default VRF alone; name the default VRF's links` | Name links of the default VRF in `management.interfaces`. |
+| `VRF/tenant: spec.interfaces[0]: VRF tenant names the interface eth9, which no Network document's [Match] Name= matches without other [Match] keys; VRF= reaches a link through its Network document, so give it one` | Add a `Network` that names the link in `Name=` without other `[Match]` keys. |
+| `Network/20-both: spec.match: Network 20-both matches links of no VRF and VRF a; the links of one Network are in one VRF` | Split the `Network`, so that each matches the links of one VRF. |
+| `Network/10-swp: spec.match.name: Network 10-swp's Name=swp* may match links of VRF tenant and links outside it; name its links` | Name the links in `Name=`, or put the whole glob into the VRF. |
+| `Network/00-all: metadata.name: Network 00-all matches the device of VRF tenant before 00-vrf-tenant; rename it to sort after 00-vrf-tenant` | Rename the `Network`, or narrow its `Name=`. |
+| `Network/00-all: metadata.name: Network 00-all matches the link n64-guest of NAT64 guest before 00-n64-guest; rename it to sort after 00-n64-guest` | Rename the `Network`, or narrow its `Name=`. |
+| `Network/10-a: spec.match: Network 10-a is the first to match eth5, so networkd never applies Network 20-b's VRF=mgmt to it; give 10-a VRF=mgmt, rename it to sort after 20-b, or drop 20-b's VRF=` | Take one of the remedies the message lists. |
+| `Network/20-x: spec.match.name: Name= holds "eth[0", which is no glob the renderer can match as networkd does` | Write `Name=` without backslashes and bracket expressions. |
+| `NetDev/20-dummy: spec.netDev.name: NetDev 20-dummy creates the device tenant, which VRF tenant creates; rename the VRF or the NetDev` | Rename the VRF, or the device in the `NetDev`'s `Name=`. |
+| `BGPPeer/leaves: spec.interfaces[0]: swp* matches no link of VRF default, only links of other VRFs` | Give the peer the VRF of its links. |
+| `BGPPeer/x: spec.interface: interface tenant is the device of VRF tenant` | Name the VRF's links, not its device. |
+| `BGPPeer/x: spec.interface: interface eth2 is in the VRF tenant, not in the peer's VRF default` | Give the peer the VRF of its link, or name a link of the peer's VRF. |
+| `FirewallZone/x: spec.interfaces[0]: ten* matches tenant, the device of VRF tenant; name the VRF in vrfs` | Put the VRF into the zone's `vrfs`, or name its links. |
+| `FirewallZone/x: spec.interfaces[0]: FirewallZone x names eth2, which may be a link of VRF tenant, which FirewallZone tenant holds; give each link one zone` | Take the VRF out of the other zone's `vrfs` and name its links in each zone, or drop the link here. |
+| `Network/50-lab: spec.match.name: VRF tenant holds the links of Network 50-lab's Name=lab[12], which nftables cannot match; name them by a name or a prefix and *` | Write the `Network`'s `Name=` as names or a prefix and `*`. |
+| `NATRule/n: spec.out.interface: inter* matches no link, only internet, the device of VRF internet; name the VRF's links or a zone of the VRF` | Name the VRF's links, or a zone that holds the VRF. |
+| `Router/router: spec.management.interfaces[0]: the management interface tenant matches tenant, the device of VRF tenant, and chalkd answers in the default VRF alone; name the default VRF's links` | Name links of the default VRF in `management.interfaces`. |
 
 ## Limits
 

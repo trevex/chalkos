@@ -413,17 +413,21 @@ chalkctl node diag r1 --secrets secrets.age bgp-route family=ipv4 prefix=192.0.2
 `chalkctl validate` runs the schemas and rules. The renderer of the output `frr` checks the rest
 when the router renders its config, at a delivery or at `chalkctl apply-config --dry-run`, before
 the delivery changes anything: what depends on the `Network` documents, on more than one peer or
-policy, or on how bgpd compiles an AS path. Its refusal fails the delivery with
-`output frr: its renderer failed (exit 1); see the node's journal`, and `chalkctl logs r1` shows
-the reason on a line that starts with `chalkos-render:`:
+policy, or on how bgpd compiles an AS path. Its refusal fails the delivery, and `chalkctl` prints
+it after `the config is refused:`, as it prints a rule's. Each refusal names the document and the
+field:
+
+```text
+chalkctl: r1: the config is refused: BGPPeer/spare: spec.interface: BGPPeer fabric and BGPPeer spare both name eth1 in the VRF default; give each session one peer
+```
 
 | Message | Fix |
 | --- | --- |
-| `BGPPeer fabric and BGPPeer spare both name eth1 in the VRF default; give each session one peer` | Drop the interface or address from one of the peers. |
-| `BGPPeer x names peer-fabric, the peer group of BGPPeer fabric; rename the document or the interface` | Rename the `BGPPeer` or the interface. |
-| `BGPPeer fabric: interface "192.0.2.10" is an address, which FRR cannot tell from a neighbour's` | Narrow the peer's glob, or rename the link that a `Network` names. |
-| `RoutingPolicy from-transit: term 2: asPath "^*1" is no regular expression bgpd compiles: the * at 2 repeats nothing` | Write the expression so that each repetition follows what it repeats. |
-| `RoutingPolicy p prepends the AS number, and BGP instances of AS 64512 and 64513 use it; give each AS a policy of its own` | Give each AS a policy of its own. |
+| `BGPPeer/spare: spec.interface: BGPPeer fabric and BGPPeer spare both name eth1 in the VRF default; give each session one peer` | Drop the interface or address from one of the peers. |
+| `BGPPeer/fabric: metadata.name: BGPPeer x names peer-fabric, the peer group of BGPPeer fabric; rename the document or the interface` | Rename the `BGPPeer` or the interface. |
+| `BGPPeer/fabric: spec.interfaces[0]: interface "192.0.2.10" is an address, which FRR cannot tell from a neighbour's` | Narrow the peer's glob, or rename the link that a `Network` names. |
+| `RoutingPolicy/from-transit: spec.terms[1].match.asPath: asPath "^*1" is no regular expression bgpd compiles: the * at 2 repeats nothing` | Write the expression so that each repetition follows what it repeats. |
+| `RoutingPolicy/p: spec.terms[0].then.prepend: RoutingPolicy p prepends the AS number, and BGP instances of AS 64512 and 64513 use it; give each AS a policy of its own` | Give each AS a policy of its own. |
 
 [Separate routing with VRFs](vrfs.md#fix-a-refused-delivery) lists the messages about the links
 of a peer's VRF.
