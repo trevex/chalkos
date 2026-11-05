@@ -12,18 +12,19 @@ import (
 	"github.com/trevex/chalkos/pkg/schema"
 )
 
-// maxRecords are the records of a Resolver's local zones whose duplicates the rules check within
-// chalkd's runtime cost limit.
-const maxRecords = 150
+// manyRecords are records of a Resolver's local zones, many more than a router answers for, which
+// the rules check within chalkd's runtime cost limit.
+const manyRecords = 2000
 
 // The NAT64 and Resolver rules accept a fabric edge's documents, NAT64s of empty pools, one prefix
-// in two VRFs and resolvers of two VRFs, and refuse a name whose link n64-<name> is too long,
-// prefixes no NAT64 or DNS64 takes, two NAT64s of one prefix in one VRF or of one pool's
-// addresses, a pool entry of IPv6, of too many addresses, of addresses no connection leaves
-// from, of link-local addresses or of the kernel's ephemeral ports, two entries of one protocol's
-// addresses and ports, addresses no resolver listens on or forwards to, local zones with records
-// outside them or over ipv4only.arpa with DNS64, A and AAAA records of other data, a record twice,
-// more records than the rules can compare and names past 253 characters.
+// in two VRFs, resolvers of two VRFs and many records, and refuse a name whose link n64-<name> is
+// too long, prefixes no NAT64 or DNS64 takes, a pool entry of IPv6, of too many addresses, of
+// addresses no connection leaves from, of link-local addresses or of the kernel's ephemeral
+// ports, two entries of one protocol's addresses and ports, addresses no resolver listens on or
+// forwards to, local zones with records outside them or over ipv4only.arpa with DNS64, records
+// whose data is not of their type, and names past 253 characters. Two NAT64s of one prefix or of
+// one pool's addresses, a record twice and a CNAME beside another record pass them: the outputs
+// jool and unbound compare those in pairs.
 func TestNAT64Rules(t *testing.T) {
 	set, doc := routerRules(t)
 	edge := []config.Document{
@@ -49,7 +50,7 @@ func TestNAT64Rules(t *testing.T) {
 	}
 	long := strings.Repeat(strings.Repeat("a", 63)+".", 3) + strings.Repeat("a", 46) + ".lan.example.org"
 	// many are n records of one name, AAAA records or TXT records of 254 characters, which the
-	// rule that compares records in pairs compares at the highest cost.
+	// rules check at the highest cost per record.
 	many := func(n int, typ string) string {
 		var records []string
 		for i := range n {
@@ -88,28 +89,25 @@ func TestNAT64Rules(t *testing.T) {
 			[]string{`NAT64 "lab" spec.prefix: the prefix 2001:db8:64::/95 is no NAT64 prefix; give an IPv6 range of 32, 40, 48, 56, 64 or 96 bits, such as 64:ff9b::/96`}},
 		{"an IPv4 prefix", replace(doc("NAT64", "lab", `{"prefix": "192.0.2.0/24"}`)),
 			[]string{`NAT64 "lab" spec.prefix: the prefix 192.0.2.0/24 is no NAT64 prefix; give an IPv6 range of 32, 40, 48, 56, 64 or 96 bits, such as 64:ff9b::/96`}},
-		{"two NAT64s of one prefix", replace(doc("NAT64", "lab", `{"prefix": "64:ff9b::/96"}`)),
-			[]string{"NAT64 edge, NAT64 lab translate addresses of one prefix in one VRF; give each NAT64 of a VRF a prefix of its own"}},
-		{"a prefix within another's", replace(doc("NAT64", "lab", `{"prefix": "64:ff9b::/64"}`)),
-			[]string{"NAT64 edge, NAT64 lab translate addresses of one prefix in one VRF; give each NAT64 of a VRF a prefix of its own"}},
+		// The output jool compares the NAT64s' prefixes and pools in pairs.
+		{"two NAT64s of one prefix", replace(doc("NAT64", "lab", `{"prefix": "64:ff9b::/96"}`)), nil},
 		{"one prefix in two VRFs", replace(slices.Concat(tenant, []config.Document{doc("NAT64", "lab", `{"vrf": "tenant", "prefix": "64:ff9b::/96"}`)})...), nil},
-		{"two NAT64s of one prefix in a VRF", replace(slices.Concat(tenant, []config.Document{doc("NAT64", "lab", `{"vrf": "tenant", "prefix": "64:ff9b::/96"}`), doc("NAT64", "more", `{"vrf": "tenant", "prefix": "64:ff9b::/64"}`)})...),
-			[]string{"NAT64 lab, NAT64 more translate addresses of one prefix in one VRF; give each NAT64 of a VRF a prefix of its own"}},
 		{"a link-local pool", replace(doc("NAT64", "lab", `{"prefix": "2001:db8:64::/96", "pool4": [{"prefix": "169.254.64.0/30"}]}`)),
 			[]string{`NAT64 "lab" spec.pool4: the pool entry 169.254.64.0/30 holds link-local addresses, which the NAT64s' links take`}},
 		{"resolvers of two VRFs", replace(slices.Concat(tenant, []config.Document{doc("Resolver", "tenant", `{"vrf": "tenant", "listen": ["2001:db8:1::1"], "allow": ["2001:db8:1::/64"]}`)})...), nil},
-		{"two NAT64s of one pool's addresses", replace(doc("NAT64", "lab", `{"prefix": "2001:db8:64::/96", "pool4": [{"prefix": "192.0.2.9/32", "ports": "1-32767"}]}`)),
-			[]string{"NAT64 edge 192.0.2.8/30, NAT64 lab 192.0.2.9/32 share addresses; give each NAT64 a pool of its own"}},
+		{"two NAT64s of one pool's addresses", replace(doc("NAT64", "lab", `{"prefix": "2001:db8:64::/96", "pool4": [{"prefix": "192.0.2.9/32", "ports": "1-32767"}]}`)), nil},
 		{"an IPv6 pool", replace(doc("NAT64", "lab", `{"prefix": "2001:db8:64::/96", "pool4": [{"prefix": "2001:db8::/64"}]}`)),
 			[]string{`NAT64 "lab" spec.pool4: the pool entry 2001:db8::/64 is no IPv4 range of 16 bits or more`}},
 		{"a pool of a /15", replace(doc("NAT64", "lab", `{"prefix": "2001:db8:64::/96", "pool4": [{"prefix": "198.18.0.0/15"}]}`)),
 			[]string{`NAT64 "lab" spec.pool4: the pool entry 198.18.0.0/15 is no IPv4 range of 16 bits or more`}},
 		{"the kernel's ephemeral ports", replace(doc("NAT64", "lab", `{"prefix": "2001:db8:64::/96", "pool4": [{"prefix": "203.0.113.1/32", "ports": "1-65535"}]}`)),
-			[]string{`NAT64 "lab" spec.pool4: a pool entry takes the ports 1-65535, which lie outside 1-32767 and 61000-65535 or run backwards; Jool refuses the kernel's ephemeral ports, 32768 to 60999`}},
+			[]string{`NAT64 "lab" spec.pool4: a pool entry takes the ports 1-65535, which touch the kernel's ephemeral ports, 32768 to 60999, which Jool refuses; give ports from 1 to 32767 or from 61000 to 65535`}},
 		{"one ephemeral port", replace(doc("NAT64", "lab", `{"prefix": "2001:db8:64::/96", "pool4": [{"prefix": "203.0.113.1/32", "ports": 40000}]}`)),
-			[]string{`NAT64 "lab" spec.pool4: a pool entry takes the ports 40000, which lie outside 1-32767 and 61000-65535 or run backwards; Jool refuses the kernel's ephemeral ports, 32768 to 60999`}},
-		{"an inverted range", replace(doc("NAT64", "lab", `{"prefix": "2001:db8:64::/96", "pool4": [{"prefix": "203.0.113.1/32", "ports": "65000-61001"}]}`)),
-			[]string{`NAT64 "lab" spec.pool4: a pool entry takes the ports 65000-61001, which lie outside 1-32767 and 61000-65535 or run backwards; Jool refuses the kernel's ephemeral ports, 32768 to 60999`}},
+			[]string{`NAT64 "lab" spec.pool4: a pool entry takes the ports 40000, which touch the kernel's ephemeral ports, 32768 to 60999, which Jool refuses; give ports from 1 to 32767 or from 61000 to 65535`}},
+		{"the last port below the ephemeral ones", replace(doc("NAT64", "lab", `{"prefix": "2001:db8:64::/96", "pool4": [{"prefix": "203.0.113.1/32", "ports": "1-32767"}]}`)), nil},
+		{"the first port above the ephemeral ones", replace(doc("NAT64", "lab", `{"prefix": "2001:db8:64::/96", "pool4": [{"prefix": "203.0.113.1/32", "ports": "61000-65535"}]}`)), nil},
+		{"a range up to the first ephemeral port", replace(doc("NAT64", "lab", `{"prefix": "2001:db8:64::/96", "pool4": [{"prefix": "203.0.113.1/32", "ports": "30000-32768"}]}`)),
+			[]string{`NAT64 "lab" spec.pool4: a pool entry takes the ports 30000-32768, which touch the kernel's ephemeral ports, 32768 to 60999, which Jool refuses; give ports from 1 to 32767 or from 61000 to 65535`}},
 		{"a resolver on the unspecified address", replace(doc("Resolver", "resolver", `{"listen": ["::"], "allow": ["2001:db8::/32"]}`)),
 			[]string{`Resolver "resolver" spec.listen: the address :: is no unicast address the resolver can listen on`}},
 		{"a forwarder on loopback", replace(doc("Resolver", "resolver", `{"listen": ["2001:db8:ffff::1"], "allow": ["2001:db8::/32"], "forwarders": ["127.0.0.53"]}`)),
@@ -136,8 +134,23 @@ func TestNAT64Rules(t *testing.T) {
 		{"an AAAA record of IPv4", replace(resolver(record("AAAA", "192.0.2.1"))), recordMessage("AAAA", "192.0.2.1", "IPv6 address")},
 		{"an IPv4-mapped AAAA record", replace(resolver(record("AAAA", "::ffff:192.0.2.1"))), recordMessage("AAAA", "::ffff:192.0.2.1", "IPv6 address")},
 		{"an AAAA record of a zone", replace(resolver(record("AAAA", "fe80::1%eth0"))), recordMessage("AAAA", "fe80::1%eth0", "IPv6 address")},
-		{"a record twice", replace(resolver(record("AAAA", "2001:db8::1") + ", " + record("AAAA", "2001:DB8::1"))),
-			[]string{`Resolver "resolver" spec.localZones: the record a.lan.example.org AAAA 2001:db8::1 appears more than once; Unbound keeps one`}},
+		{"an A record of no address", replace(resolver(record("A", "foo"))), recordMessage("A", "foo", "IPv4 address")},
+		{"a CNAME in capitals", replace(resolver(record("CNAME", "Mail.lan.example.org"))),
+			recordMessage("CNAME", "Mail.lan.example.org", "DNS name in lower case without the root's dot")},
+		{"a CNAME of the root's dot", replace(resolver(record("CNAME", "mail.lan.example.org."))),
+			recordMessage("CNAME", "mail.lan.example.org.", "DNS name in lower case without the root's dot")},
+		{"a PTR of no name", replace(resolver(record("PTR", "a b"))), recordMessage("PTR", "a b", "DNS name in lower case without the root's dot")},
+		{"an MX record without a name", replace(resolver(record("MX", "10"))),
+			recordMessage("MX", "10", "preference from 0 to 65535 and DNS name, a single space apart")},
+		{"an MX record of a leading zero", replace(resolver(record("MX", "010 mail.lan.example.org"))),
+			recordMessage("MX", "010 mail.lan.example.org", "preference from 0 to 65535 and DNS name, a single space apart")},
+		{"an SRV record of a big port", replace(resolver(record("SRV", "0 1 65536 mail.lan.example.org"))),
+			recordMessage("SRV", "0 1 65536 mail.lan.example.org", "priority, weight and port from 0 to 65535 and DNS name, a single space apart")},
+		{"an SRV record of two spaces", replace(resolver(record("SRV", "0 1  993 mail.lan.example.org"))),
+			recordMessage("SRV", "0 1  993 mail.lan.example.org", "priority, weight and port from 0 to 65535 and DNS name, a single space apart")},
+		// The output unbound compares the records in pairs.
+		{"a record twice", replace(resolver(record("AAAA", "2001:db8::1") + ", " + record("AAAA", "2001:DB8::1"))), nil},
+		{"a CNAME beside another record", replace(resolver(record("CNAME", "r1.lan.example.org") + ", " + record("TXT", "x"))), nil},
 		{"a name of 254 characters", replace(resolver(`{"name": "` + long + `", "type": "A", "value": "192.0.2.1"}`)),
 			[]string{`Resolver "resolver" spec.localZones: the name ` + long + ` holds more than 253 characters`}},
 		{"two NAT64s of empty pools", replace(doc("NAT64", "edge", `{}`), doc("NAT64", "lab", `{"prefix": "2001:db8:64::/96"}`)), nil},
@@ -154,22 +167,13 @@ func TestNAT64Rules(t *testing.T) {
 		{"ipv4only.arpa as a local zone", replace(doc("Resolver", "resolver", `{"listen": ["2001:db8:ffff::1"], "allow": ["2001:db8::/32"], "dns64": {}, "localZones": [{"name": "arpa"}]}`)),
 			[]string{"Resolver resolver has a local zone over ipv4only.arpa, which Unbound would answer before DNS64; drop the zone or DNS64"}},
 		{"ipv4only.arpa without DNS64", replace(doc("Resolver", "resolver", `{"listen": ["2001:db8:ffff::1"], "allow": ["2001:db8::/32"], "localZones": [{"name": "ipv4only.arpa"}]}`)), nil},
-		{"the most AAAA records", replace(resolver(many(maxRecords, "AAAA"))), nil},
-		{"the most TXT records", replace(resolver(many(maxRecords, "TXT"))), nil},
-		{"too many records", replace(resolver(many(maxRecords+1, "AAAA"))),
-			[]string{`Resolver "resolver" spec.localZones: the local zones hold 151 records, more than the 150 whose duplicates chalkd can check`}},
-		{"the most records alike", replace(resolver(strings.Repeat(record("TXT", strings.Repeat("x", 254))+", ", maxRecords-1) + record("TXT", strings.Repeat("x", 254)))),
-			[]string{`Resolver "resolver" spec.localZones: a record appears more than once in the local zones, with one name, type and value; Unbound keeps one`}},
+		// The rules loop over the records once, so many of them stay within chalkd's runtime
+		// cost limit.
+		{"many AAAA records", replace(resolver(many(manyRecords, "AAAA"))), nil},
+		{"many TXT records", replace(resolver(many(manyRecords, "TXT"))), nil},
 		{"a redirect zone's record below it", replace(doc("Resolver", "resolver", `{"listen": ["2001:db8:ffff::1"], "allow": ["2001:db8::/32"], "localZones": [{"name": "lan.example.org", "type": "redirect", "records": [{"name": "a.lan.example.org", "type": "A", "value": "192.0.2.1"}]}]}`)),
 			[]string{`Resolver "resolver" spec.localZones: the redirect zone lan.example.org holds a record of a.lan.example.org; a redirect zone's records are of its own name, which Unbound answers for every name below it`}},
 		{"a redirect zone of its own name", replace(doc("Resolver", "resolver", `{"listen": ["2001:db8:ffff::1"], "allow": ["2001:db8::/32"], "localZones": [{"name": "lan.example.org", "type": "redirect", "records": [{"name": "lan.example.org", "type": "A", "value": "192.0.2.1"}]}]}`)), nil},
-		{"a CNAME beside another record", replace(resolver(record("CNAME", "r1.lan.example.org") + ", " + record("TXT", "x"))),
-			[]string{`Resolver "resolver" spec.localZones: a.lan.example.org holds a CNAME record and another record; a CNAME's name holds it alone`}},
-		{"two CNAMEs of one name", replace(resolver(record("CNAME", "r1.lan.example.org") + ", " + record("CNAME", "r2.lan.example.org"))),
-			[]string{`Resolver "resolver" spec.localZones: a.lan.example.org holds a CNAME record and another record; a CNAME's name holds it alone`}},
-		{"a CNAME in two zones", replace(doc("Resolver", "resolver", `{"listen": ["2001:db8:ffff::1"], "allow": ["2001:db8::/32"], "localZones": [{"name": "example.org", "type": "transparent", "records": [{"name": "a.lan.example.org", "type": "A", "value": "192.0.2.1"}]},
-			{"name": "lan.example.org", "records": [{"name": "a.lan.example.org", "type": "CNAME", "value": "r1.lan.example.org"}]}]}`)),
-			[]string{`Resolver "resolver" spec.localZones: a.lan.example.org holds a CNAME record and another record; a CNAME's name holds it alone`}},
 		{"listen and allow of other families", replace(doc("Resolver", "resolver", `{"listen": ["2001:db8:ffff::1"], "allow": ["192.0.2.0/24"]}`)),
 			[]string{"Resolver resolver listens on no address of a family its clients' ranges are of, so it would answer no one; give listen and allow a family in common"}},
 	} {
@@ -197,17 +201,6 @@ func TestPoolPortOfAnIntegerSpelling(t *testing.T) {
 		if err != nil || len(failures) > 0 {
 			t.Errorf("ports %s: failures %v, err %v", port, messages(failures), err)
 		}
-	}
-}
-
-// An A or AAAA record whose value is no address stops the rules with ip()'s error, which names the
-// field, in place of a failure of their own.
-func TestRecordOfNoAddress(t *testing.T) {
-	set, doc := routerRules(t)
-	r := doc("Resolver", "resolver", `{"listen": ["2001:db8:ffff::1"], "allow": ["2001:db8::/32"], "localZones": [{"name": "lan.example.org", "records": [{"name": "a.lan.example.org", "type": "A", "value": "foo"}]}]}`)
-	_, err := set.Evaluate(Input{Documents: []config.Document{r}, Node: "r1"})
-	if want := `Resolver "resolver" spec.localZones: a rule cannot be evaluated: ip: the argument is not an address`; err == nil || !strings.Contains(err.Error(), want) {
-		t.Errorf("err = %v, want %q", err, want)
 	}
 }
 

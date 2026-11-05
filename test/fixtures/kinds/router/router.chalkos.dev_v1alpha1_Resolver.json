@@ -38,14 +38,6 @@
           },
           "minItems": 1,
           "type": "array",
-          "x-chalkos-rules": [
-            {
-              "description": "The resolver's clients are address ranges.",
-              "message": "a client is no address range",
-              "rule": "self.all(p, cidr(p).prefix() >= 0)",
-              "takes": "refuse"
-            }
-          ],
           "x-chalkos-unique": [
             {
               "across": "list",
@@ -153,7 +145,7 @@
         },
         "localZones": {
           "default": [],
-          "description": "Zones the resolver answers from its own records, 150 records in all at most. With `dns64`, no zone holds `ipv4only.arpa`, which DNS64 answers.",
+          "description": "Zones the resolver answers from its own records. A record appears once, and a CNAME record's name holds no other record, which the output `unbound` checks. With `dns64`, no zone holds `ipv4only.arpa`, which DNS64 answers.",
           "items": {
             "additionalProperties": false,
             "properties": {
@@ -244,39 +236,21 @@
               "takes": "refuse"
             },
             {
-              "description": "The names of local zones and their records hold 253 characters at most.",
-              "messageExpression": "\"the name \" + (self.map(z, z.name) + self.map(z, z.records).flatten().map(r, r.name)).filter(n, size(n) > 253)[0] + \" holds more than 253 characters\"",
-              "rule": "self.all(z, size(z.name) <= 253) && self.map(z, z.records).flatten().all(r, size(r.name) <= 253)",
+              "description": "The names of local zones and their records are DNS names of 253 characters at most.",
+              "messageExpression": "\"the name \" + (self.map(z, z.name) + self.map(z, z.records).flatten().map(r, r.name)).filter(n, !isDNSName(n))[0] + \" holds more than 253 characters\"",
+              "rule": "self.all(z, isDNSName(z.name)) && self.map(z, z.records).flatten().all(r, isDNSName(r.name))",
               "takes": "refuse"
             },
             {
-              "description": "An A or AAAA record holds an address of its family.",
-              "messageExpression": "cel.bind(r, self.map(z, z.records).flatten().filter(r, !(r.type == \"A\" ? ip(r.value).family() == \"ipv4\" : r.type != \"AAAA\" || cel.bind(x, ip(r.value), x.family() == \"ipv6\" && !cidr(\"::ffff:0:0/96\").contains(x)) && !r.value.contains(\"%\")))[0], \"the \" + r.type + \" record of \" + r.name + \" holds \" + r.value + \", which is no \" + (r.type == \"A\" ? \"IPv4\" : \"IPv6\") + \" address\")",
-              "rule": "self.map(z, z.records).flatten().all(r, (r.type == \"A\" ? ip(r.value).family() == \"ipv4\" : r.type != \"AAAA\" || cel.bind(x, ip(r.value), x.family() == \"ipv6\" && !cidr(\"::ffff:0:0/96\").contains(x)) && !r.value.contains(\"%\")))",
-              "takes": "refuse"
-            },
-            {
-              "description": "The local zones hold 150 records at most, which the rules can compare in pairs.",
-              "messageExpression": "\"the local zones hold \" + string(size(self.map(z, z.records).flatten())) + \" records, more than the 150 whose duplicates chalkd can check\"",
-              "rule": "size(self.map(z, z.records).flatten()) <= 150",
-              "takes": "refuse"
-            },
-            {
-              "description": "A record appears once, as Unbound keeps one of its copies.",
-              "messageExpression": "cel.bind(e, self.map(z, z.records).flatten(), size(e) > 50 ? \"a record appears more than once in the local zones, with one name, type and value; Unbound keeps one\" : cel.bind(r, e.filter(x, size(e.filter(y, x.name == y.name && x.type == y.type && (x.type == \"AAAA\" ? ip(x.value) == ip(y.value) : x.value == y.value))) > 1)[0], \"the record \" + r.name + \" \" + r.type + \" \" + (r.type == \"AAAA\" ? string(ip(r.value)) : r.value) + \" appears more than once; Unbound keeps one\"))",
-              "rule": "cel.bind(e, self.map(z, z.records).flatten(), size(e) > 150 || e.all(x, size(e.filter(y, x.name == y.name && x.type == y.type && (x.type == \"AAAA\" ? ip(x.value) == ip(y.value) : x.value == y.value))) == 1))",
+              "description": "A record holds data of its type: an address of its family for A and AAAA, a DNS name for CNAME and PTR, numbers and a DNS name for MX and SRV.",
+              "messageExpression": "cel.bind(r, self.map(z, z.records).flatten().filter(r, !isRecordData(r.type, r.value))[0], \"the \" + r.type + \" record of \" + r.name + \" holds \" + r.value + \", which is no \" + {\"A\": \"IPv4 address\", \"AAAA\": \"IPv6 address\", \"CNAME\": \"DNS name in lower case without the root's dot\", \"PTR\": \"DNS name in lower case without the root's dot\", \"MX\": \"preference from 0 to 65535 and DNS name, a single space apart\", \"SRV\": \"priority, weight and port from 0 to 65535 and DNS name, a single space apart\", \"TXT\": \"text of 1 to 255 printable characters without quotes or backslashes\"}[r.type])",
+              "rule": "self.map(z, z.records).flatten().all(r, isRecordData(r.type, r.value))",
               "takes": "refuse"
             },
             {
               "description": "A redirect zone's records are of the zone's name, which Unbound answers for every name below it.",
               "messageExpression": "cel.bind(z, self.filter(z, z.type == \"redirect\" && !z.records.all(r, r.name == z.name))[0], \"the redirect zone \" + z.name + \" holds a record of \" + z.records.filter(r, r.name != z.name)[0].name + \"; a redirect zone's records are of its own name, which Unbound answers for every name below it\")",
               "rule": "self.all(z, z.type != \"redirect\" || z.records.all(r, r.name == z.name))",
-              "takes": "refuse"
-            },
-            {
-              "description": "A CNAME record's name holds no other record.",
-              "messageExpression": "cel.bind(e, self.map(z, z.records).flatten(), e.filter(x, x.type == \"CNAME\" && size(e.filter(y, y.name == x.name)) > 1)[0].name + \" holds a CNAME record and another record; a CNAME's name holds it alone\")",
-              "rule": "cel.bind(e, self.map(z, z.records).flatten(), size(e) > 150 || e.all(x, x.type != \"CNAME\" || size(e.filter(y, y.name == x.name)) == 1))",
               "takes": "refuse"
             }
           ],

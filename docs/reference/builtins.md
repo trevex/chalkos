@@ -734,16 +734,14 @@ documents.filter(n, size(documents[n].spec.interfaces) == 0 && size(documents[n]
 | Rule | Field | Guards | Takes | Expression | Message |
 | --- | --- | --- | --- | --- | --- |
 | 1 | — | A NAT64's name has 11 characters at most, as its link n64-&lt;name> is an interface's name of 15. | `refuse` | `documents.all(n, size(n) <= 11)` | after the table |
-| 2 | — | No two NAT64s of one VRF translate addresses of one prefix. | `refuse` | after the table | after the table |
-| 3 | — | No two NAT64s share an address of their pools. | `refuse` | after the table | after the table |
-| 4 | — | No NAT64's pool holds a static address a Network document gives a link, which the router answers itself. | `refuse` | after the table | after the table |
-| 5 | — | Beside NAT64s, no Network document gives a link a static address in 169.254.64.0/18, the range of the NAT64s' links. | `refuse` | after the table | after the table |
-| 6 | `spec.pool4` | A pool's entries are IPv4 ranges of 65536 addresses at most. | `refuse` | `self.all(a, cidr(a.prefix).ip(0).family() == "ipv4" && cidr(a.prefix).prefix() >= 16)` | after the table |
-| 7 | `spec.pool4` | A pool's entries hold no unspecified, loopback, multicast or broadcast address. | `refuse` | after the table | after the table |
-| 8 | `spec.pool4` | A pool's entries hold no link-local address; the NAT64s' links take 169.254.64.0/18. | `refuse` | `self.all(a, !cidr("169.254.0.0/16").contains(cidr(a.prefix).ip(0)))` | after the table |
-| 9 | `spec.pool4` | A pool entry's ports lie from 1 to 65535 and leave out the kernel's ephemeral ports, 32768 to 60999. | `refuse` | after the table | after the table |
-| 10 | `spec.pool4` | No two entries of a pool share a protocol, addresses and ports. | `refuse` | after the table | after the table |
-| 11 | `spec.prefix` | A NAT64 prefix is an IPv6 range of 32, 40, 48, 56, 64 or 96 bits of no link-local, multicast or unspecified addresses, whose bits 64 to 71 are zero, as RFC 6052 gives them. | `refuse` | after the table | after the table |
+| 2 | — | No NAT64's pool holds a static address a Network document gives a link, which the router answers itself. | `refuse` | after the table | after the table |
+| 3 | — | Beside NAT64s, no Network document gives a link a static address in 169.254.64.0/18, the range of the NAT64s' links. | `refuse` | after the table | after the table |
+| 4 | `spec.pool4` | A pool's entries are IPv4 ranges of 65536 addresses at most. | `refuse` | `self.all(a, cidr(a.prefix).ip(0).family() == "ipv4" && cidr(a.prefix).prefix() >= 16)` | after the table |
+| 5 | `spec.pool4` | A pool's entries hold no unspecified, loopback, multicast or broadcast address. | `refuse` | after the table | after the table |
+| 6 | `spec.pool4` | A pool's entries hold no link-local address; the NAT64s' links take 169.254.64.0/18. | `refuse` | `self.all(a, !cidr("169.254.0.0/16").contains(cidr(a.prefix).ip(0)))` | after the table |
+| 7 | `spec.pool4` | A pool entry's ports leave out the kernel's ephemeral ports, 32768 to 60999. | `refuse` | `self.all(a, portRange(a.ports).last < 32768 || portRange(a.ports).first > 60999)` | after the table |
+| 8 | `spec.pool4` | No two entries of a pool share a protocol, addresses and ports. | `refuse` | after the table | after the table |
+| 9 | `spec.prefix` | A NAT64 prefix is an IPv6 range of 32, 40, 48, 56, 64 or 96 bits of no link-local, multicast or unspecified addresses, whose bits 64 to 71 are zero, as RFC 6052 gives them. | `refuse` | after the table | after the table |
 
 Message of rule 1:
 
@@ -754,106 +752,76 @@ documents.filter(n, size(n) > 11).map(n, "NAT64 " + n).join(", ") + " has a name
 Expression of rule 2:
 
 ```text
-documents.all(n, documents.all(m, n == m || documents[n].spec.vrf != documents[m].spec.vrf || !(cidr(documents[n].spec.prefix).contains(cidr(documents[m].spec.prefix).ip(0)) || cidr(documents[m].spec.prefix).contains(cidr(documents[n].spec.prefix).ip(0)))))
+cel.bind(e, documents.map(n, documents[n].spec.pool4.map(a, a.prefix)).flatten(), cel.bind(nets, (("networkd.chalkos.dev/v1alpha1" in config && "Network" in config["networkd.chalkos.dev/v1alpha1"]) ? config["networkd.chalkos.dev/v1alpha1"].Network : {}), cel.bind(net, nets.map(n, has(nets[n].spec.network) ? (type(nets[n].spec.network) == list ? nets[n].spec.network : [nets[n].spec.network]) : []).flatten(), cel.bind(addr, nets.map(n, has(nets[n].spec.address) ? (type(nets[n].spec.address) == list ? nets[n].spec.address : [nets[n].spec.address]) : []).flatten(), cel.bind(dhcp, nets.map(n, has(nets[n].spec.dhcpServer) ? (type(nets[n].spec.dhcpServer) == list ? nets[n].spec.dhcpServer : [nets[n].spec.dhcpServer]) : []).flatten(), cel.bind(values, dyn(net.map(s, has(s.address) ? (type(s.address) == list ? s.address : [s.address]) : []).flatten() + addr.map(s, has(s.address) ? (type(s.address) == list ? s.address : [s.address]) : []).flatten() + dhcp.map(s, has(s.serverAddress) ? (type(s.serverAddress) == list ? s.serverAddress : [s.serverAddress]) : []).flatten()), cel.bind(statics, values.filter(v, type(v) == string && v.trim().matches("^(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])([.](25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])){3}(/(3[0-2]|[12]?[0-9]))?$")).map(v, v.trim().split("/")[0]), e.all(x, statics.all(a, !cidr(x).contains(ip(a)))))))))))
 ```
 
 Message of rule 2:
 
 ```text
-documents.filter(n, documents.exists(m, n != m && documents[n].spec.vrf == documents[m].spec.vrf && (cidr(documents[n].spec.prefix).contains(cidr(documents[m].spec.prefix).ip(0)) || cidr(documents[m].spec.prefix).contains(cidr(documents[n].spec.prefix).ip(0))))).map(n, "NAT64 " + n).join(", ") + " translate addresses of one prefix in one VRF; give each NAT64 of a VRF a prefix of its own"
+cel.bind(e, documents.map(n, documents[n].spec.pool4.map(a, a.prefix)).flatten(), cel.bind(nets, (("networkd.chalkos.dev/v1alpha1" in config && "Network" in config["networkd.chalkos.dev/v1alpha1"]) ? config["networkd.chalkos.dev/v1alpha1"].Network : {}), cel.bind(net, nets.map(n, has(nets[n].spec.network) ? (type(nets[n].spec.network) == list ? nets[n].spec.network : [nets[n].spec.network]) : []).flatten(), cel.bind(addr, nets.map(n, has(nets[n].spec.address) ? (type(nets[n].spec.address) == list ? nets[n].spec.address : [nets[n].spec.address]) : []).flatten(), cel.bind(dhcp, nets.map(n, has(nets[n].spec.dhcpServer) ? (type(nets[n].spec.dhcpServer) == list ? nets[n].spec.dhcpServer : [nets[n].spec.dhcpServer]) : []).flatten(), cel.bind(values, dyn(net.map(s, has(s.address) ? (type(s.address) == list ? s.address : [s.address]) : []).flatten() + addr.map(s, has(s.address) ? (type(s.address) == list ? s.address : [s.address]) : []).flatten() + dhcp.map(s, has(s.serverAddress) ? (type(s.serverAddress) == list ? s.serverAddress : [s.serverAddress]) : []).flatten()), cel.bind(statics, values.filter(v, type(v) == string && v.trim().matches("^(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])([.](25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])){3}(/(3[0-2]|[12]?[0-9]))?$")).map(v, v.trim().split("/")[0]), cel.bind(p, e.filter(x, statics.exists(a, cidr(x).contains(ip(a))))[0], "NAT64 " + documents.filter(n, documents[n].spec.pool4.exists(a, a.prefix == p))[0] + ": the pool entry " + string(cidr(p)) + " holds " + string(ip(statics.filter(a, cidr(p).contains(ip(a)))[0])) + ", an address a Network document gives a link; the router answers it itself, so leave pool4 empty to take the address of the link the connections leave through"))))))))
 ```
 
 Expression of rule 3:
 
 ```text
-cel.bind(e, documents.map(n, documents[n].spec.pool4.map(a, [n, a.prefix])).flatten(), e.all(x, e.all(y, x[0] == y[0] || !(cidr(x[1]).contains(cidr(y[1]).ip(0)) || cidr(y[1]).contains(cidr(x[1]).ip(0))))))
+size(documents) == 0 || cel.bind(nets, (("networkd.chalkos.dev/v1alpha1" in config && "Network" in config["networkd.chalkos.dev/v1alpha1"]) ? config["networkd.chalkos.dev/v1alpha1"].Network : {}), cel.bind(net, nets.map(n, has(nets[n].spec.network) ? (type(nets[n].spec.network) == list ? nets[n].spec.network : [nets[n].spec.network]) : []).flatten(), cel.bind(addr, nets.map(n, has(nets[n].spec.address) ? (type(nets[n].spec.address) == list ? nets[n].spec.address : [nets[n].spec.address]) : []).flatten(), cel.bind(dhcp, nets.map(n, has(nets[n].spec.dhcpServer) ? (type(nets[n].spec.dhcpServer) == list ? nets[n].spec.dhcpServer : [nets[n].spec.dhcpServer]) : []).flatten(), cel.bind(values, dyn(net.map(s, has(s.address) ? (type(s.address) == list ? s.address : [s.address]) : []).flatten() + addr.map(s, has(s.address) ? (type(s.address) == list ? s.address : [s.address]) : []).flatten() + dhcp.map(s, has(s.serverAddress) ? (type(s.serverAddress) == list ? s.serverAddress : [s.serverAddress]) : []).flatten()), cel.bind(statics, values.filter(v, type(v) == string && v.trim().matches("^(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])([.](25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])){3}(/(3[0-2]|[12]?[0-9]))?$")).map(v, v.trim().split("/")[0]), statics.all(a, !cidr("169.254.64.0/18").contains(ip(a)))))))))
 ```
 
 Message of rule 3:
 
 ```text
-cel.bind(e, documents.map(n, documents[n].spec.pool4.map(a, [n, a.prefix])).flatten(), e.filter(x, e.exists(y, x[0] != y[0] && (cidr(x[1]).contains(cidr(y[1]).ip(0)) || cidr(y[1]).contains(cidr(x[1]).ip(0))))).map(x, "NAT64 " + x[0] + " " + x[1]).join(", ") + " share addresses; give each NAT64 a pool of its own")
-```
-
-Expression of rule 4:
-
-```text
-cel.bind(e, documents.map(n, documents[n].spec.pool4.map(a, a.prefix)).flatten(), cel.bind(nets, (("networkd.chalkos.dev/v1alpha1" in config && "Network" in config["networkd.chalkos.dev/v1alpha1"]) ? config["networkd.chalkos.dev/v1alpha1"].Network : {}), cel.bind(net, nets.map(n, has(nets[n].spec.network) ? (type(nets[n].spec.network) == list ? nets[n].spec.network : [nets[n].spec.network]) : []).flatten(), cel.bind(addr, nets.map(n, has(nets[n].spec.address) ? (type(nets[n].spec.address) == list ? nets[n].spec.address : [nets[n].spec.address]) : []).flatten(), cel.bind(dhcp, nets.map(n, has(nets[n].spec.dhcpServer) ? (type(nets[n].spec.dhcpServer) == list ? nets[n].spec.dhcpServer : [nets[n].spec.dhcpServer]) : []).flatten(), cel.bind(values, dyn(net.map(s, has(s.address) ? (type(s.address) == list ? s.address : [s.address]) : []).flatten() + addr.map(s, has(s.address) ? (type(s.address) == list ? s.address : [s.address]) : []).flatten() + dhcp.map(s, has(s.serverAddress) ? (type(s.serverAddress) == list ? s.serverAddress : [s.serverAddress]) : []).flatten()), cel.bind(statics, values.filter(v, type(v) == string && v.trim().matches("^(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])([.](25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])){3}(/(3[0-2]|[12]?[0-9]))?$")).map(v, v.trim().split("/")[0]), e.all(x, statics.all(a, !cidr(x).contains(ip(a)))))))))))
+cel.bind(nets, (("networkd.chalkos.dev/v1alpha1" in config && "Network" in config["networkd.chalkos.dev/v1alpha1"]) ? config["networkd.chalkos.dev/v1alpha1"].Network : {}), cel.bind(net, nets.map(n, has(nets[n].spec.network) ? (type(nets[n].spec.network) == list ? nets[n].spec.network : [nets[n].spec.network]) : []).flatten(), cel.bind(addr, nets.map(n, has(nets[n].spec.address) ? (type(nets[n].spec.address) == list ? nets[n].spec.address : [nets[n].spec.address]) : []).flatten(), cel.bind(dhcp, nets.map(n, has(nets[n].spec.dhcpServer) ? (type(nets[n].spec.dhcpServer) == list ? nets[n].spec.dhcpServer : [nets[n].spec.dhcpServer]) : []).flatten(), cel.bind(values, dyn(net.map(s, has(s.address) ? (type(s.address) == list ? s.address : [s.address]) : []).flatten() + addr.map(s, has(s.address) ? (type(s.address) == list ? s.address : [s.address]) : []).flatten() + dhcp.map(s, has(s.serverAddress) ? (type(s.serverAddress) == list ? s.serverAddress : [s.serverAddress]) : []).flatten()), cel.bind(statics, values.filter(v, type(v) == string && v.trim().matches("^(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])([.](25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])){3}(/(3[0-2]|[12]?[0-9]))?$")).map(v, v.trim().split("/")[0]), "a Network document gives a link the address " + string(ip(statics.filter(a, cidr("169.254.64.0/18").contains(ip(a)))[0])) + ", which lies in 169.254.64.0/18, the range of the NAT64s' links; give the link another address"))))))
 ```
 
 Message of rule 4:
 
 ```text
-cel.bind(e, documents.map(n, documents[n].spec.pool4.map(a, a.prefix)).flatten(), cel.bind(nets, (("networkd.chalkos.dev/v1alpha1" in config && "Network" in config["networkd.chalkos.dev/v1alpha1"]) ? config["networkd.chalkos.dev/v1alpha1"].Network : {}), cel.bind(net, nets.map(n, has(nets[n].spec.network) ? (type(nets[n].spec.network) == list ? nets[n].spec.network : [nets[n].spec.network]) : []).flatten(), cel.bind(addr, nets.map(n, has(nets[n].spec.address) ? (type(nets[n].spec.address) == list ? nets[n].spec.address : [nets[n].spec.address]) : []).flatten(), cel.bind(dhcp, nets.map(n, has(nets[n].spec.dhcpServer) ? (type(nets[n].spec.dhcpServer) == list ? nets[n].spec.dhcpServer : [nets[n].spec.dhcpServer]) : []).flatten(), cel.bind(values, dyn(net.map(s, has(s.address) ? (type(s.address) == list ? s.address : [s.address]) : []).flatten() + addr.map(s, has(s.address) ? (type(s.address) == list ? s.address : [s.address]) : []).flatten() + dhcp.map(s, has(s.serverAddress) ? (type(s.serverAddress) == list ? s.serverAddress : [s.serverAddress]) : []).flatten()), cel.bind(statics, values.filter(v, type(v) == string && v.trim().matches("^(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])([.](25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])){3}(/(3[0-2]|[12]?[0-9]))?$")).map(v, v.trim().split("/")[0]), cel.bind(p, e.filter(x, statics.exists(a, cidr(x).contains(ip(a))))[0], "NAT64 " + documents.filter(n, documents[n].spec.pool4.exists(a, a.prefix == p))[0] + ": the pool entry " + string(cidr(p)) + " holds " + string(ip(statics.filter(a, cidr(p).contains(ip(a)))[0])) + ", an address a Network document gives a link; the router answers it itself, so leave pool4 empty to take the address of the link the connections leave through"))))))))
+"the pool entry " + self.filter(a, !(cidr(a.prefix).ip(0).family() == "ipv4" && cidr(a.prefix).prefix() >= 16))[0].prefix + " is no IPv4 range of 16 bits or more"
 ```
 
 Expression of rule 5:
 
 ```text
-size(documents) == 0 || cel.bind(nets, (("networkd.chalkos.dev/v1alpha1" in config && "Network" in config["networkd.chalkos.dev/v1alpha1"]) ? config["networkd.chalkos.dev/v1alpha1"].Network : {}), cel.bind(net, nets.map(n, has(nets[n].spec.network) ? (type(nets[n].spec.network) == list ? nets[n].spec.network : [nets[n].spec.network]) : []).flatten(), cel.bind(addr, nets.map(n, has(nets[n].spec.address) ? (type(nets[n].spec.address) == list ? nets[n].spec.address : [nets[n].spec.address]) : []).flatten(), cel.bind(dhcp, nets.map(n, has(nets[n].spec.dhcpServer) ? (type(nets[n].spec.dhcpServer) == list ? nets[n].spec.dhcpServer : [nets[n].spec.dhcpServer]) : []).flatten(), cel.bind(values, dyn(net.map(s, has(s.address) ? (type(s.address) == list ? s.address : [s.address]) : []).flatten() + addr.map(s, has(s.address) ? (type(s.address) == list ? s.address : [s.address]) : []).flatten() + dhcp.map(s, has(s.serverAddress) ? (type(s.serverAddress) == list ? s.serverAddress : [s.serverAddress]) : []).flatten()), cel.bind(statics, values.filter(v, type(v) == string && v.trim().matches("^(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])([.](25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])){3}(/(3[0-2]|[12]?[0-9]))?$")).map(v, v.trim().split("/")[0]), statics.all(a, !cidr("169.254.64.0/18").contains(ip(a)))))))))
+self.all(a, cel.bind(c, cidr(a.prefix), c.ip(0).family() != "ipv4" || c.ip(0) != ip("0.0.0.0") && !cidr("127.0.0.0/8").contains(c.ip(0)) && !cidr("224.0.0.0/4").contains(c.ip(0)) && !c.contains(ip("255.255.255.255"))))
 ```
 
 Message of rule 5:
 
 ```text
-cel.bind(nets, (("networkd.chalkos.dev/v1alpha1" in config && "Network" in config["networkd.chalkos.dev/v1alpha1"]) ? config["networkd.chalkos.dev/v1alpha1"].Network : {}), cel.bind(net, nets.map(n, has(nets[n].spec.network) ? (type(nets[n].spec.network) == list ? nets[n].spec.network : [nets[n].spec.network]) : []).flatten(), cel.bind(addr, nets.map(n, has(nets[n].spec.address) ? (type(nets[n].spec.address) == list ? nets[n].spec.address : [nets[n].spec.address]) : []).flatten(), cel.bind(dhcp, nets.map(n, has(nets[n].spec.dhcpServer) ? (type(nets[n].spec.dhcpServer) == list ? nets[n].spec.dhcpServer : [nets[n].spec.dhcpServer]) : []).flatten(), cel.bind(values, dyn(net.map(s, has(s.address) ? (type(s.address) == list ? s.address : [s.address]) : []).flatten() + addr.map(s, has(s.address) ? (type(s.address) == list ? s.address : [s.address]) : []).flatten() + dhcp.map(s, has(s.serverAddress) ? (type(s.serverAddress) == list ? s.serverAddress : [s.serverAddress]) : []).flatten()), cel.bind(statics, values.filter(v, type(v) == string && v.trim().matches("^(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])([.](25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])){3}(/(3[0-2]|[12]?[0-9]))?$")).map(v, v.trim().split("/")[0]), "a Network document gives a link the address " + string(ip(statics.filter(a, cidr("169.254.64.0/18").contains(ip(a)))[0])) + ", which lies in 169.254.64.0/18, the range of the NAT64s' links; give the link another address"))))))
+"the pool entry " + self.filter(a, !cel.bind(c, cidr(a.prefix), c.ip(0).family() != "ipv4" || c.ip(0) != ip("0.0.0.0") && !cidr("127.0.0.0/8").contains(c.ip(0)) && !cidr("224.0.0.0/4").contains(c.ip(0)) && !c.contains(ip("255.255.255.255"))))[0].prefix + " holds addresses no connection leaves from: the unspecified address, loopback, multicast or broadcast"
 ```
 
 Message of rule 6:
 
 ```text
-"the pool entry " + self.filter(a, !(cidr(a.prefix).ip(0).family() == "ipv4" && cidr(a.prefix).prefix() >= 16))[0].prefix + " is no IPv4 range of 16 bits or more"
-```
-
-Expression of rule 7:
-
-```text
-self.all(a, cel.bind(c, cidr(a.prefix), c.ip(0).family() != "ipv4" || c.ip(0) != ip("0.0.0.0") && !cidr("127.0.0.0/8").contains(c.ip(0)) && !cidr("224.0.0.0/4").contains(c.ip(0)) && !c.contains(ip("255.255.255.255"))))
+"the pool entry " + self.filter(a, cidr("169.254.0.0/16").contains(cidr(a.prefix).ip(0)))[0].prefix + " holds link-local addresses, which the NAT64s' links take"
 ```
 
 Message of rule 7:
 
 ```text
-"the pool entry " + self.filter(a, !cel.bind(c, cidr(a.prefix), c.ip(0).family() != "ipv4" || c.ip(0) != ip("0.0.0.0") && !cidr("127.0.0.0/8").contains(c.ip(0)) && !cidr("224.0.0.0/4").contains(c.ip(0)) && !c.contains(ip("255.255.255.255"))))[0].prefix + " holds addresses no connection leaves from: the unspecified address, loopback, multicast or broadcast"
+"a pool entry takes the ports " + string(self.filter(a, !(portRange(a.ports).last < 32768 || portRange(a.ports).first > 60999))[0].ports) + ", which touch the kernel's ephemeral ports, 32768 to 60999, which Jool refuses; give ports from 1 to 32767 or from 61000 to 65535"
+```
+
+Expression of rule 8:
+
+```text
+cel.bind(e, self.map(a, ["tcp", "udp", "icmp"].filter(p, p in a.protocols).map(p, [p, a.prefix, portRange(a.ports).first, portRange(a.ports).last])).flatten(), e.all(x, size(e.filter(y, x[0] == y[0] && (cidr(x[1]).contains(cidr(y[1]).ip(0)) || cidr(y[1]).contains(cidr(x[1]).ip(0))) && x[2] <= y[3] && y[2] <= x[3])) <= 1))
 ```
 
 Message of rule 8:
 
 ```text
-"the pool entry " + self.filter(a, cidr("169.254.0.0/16").contains(cidr(a.prefix).ip(0)))[0].prefix + " holds link-local addresses, which the NAT64s' links take"
+cel.bind(e, self.map(a, ["tcp", "udp", "icmp"].filter(p, p in a.protocols).map(p, [p, a.prefix, portRange(a.ports).first, portRange(a.ports).last])).flatten(), cel.bind(x, e.filter(x, size(e.filter(y, x[0] == y[0] && (cidr(x[1]).contains(cidr(y[1]).ip(0)) || cidr(y[1]).contains(cidr(x[1]).ip(0))) && x[2] <= y[3] && y[2] <= x[3])) > 1)[0], "the pool entry " + x[1] + " shares " + x[0] + " addresses and ports with another; give each entry of a protocol addresses or ports of its own"))
 ```
 
 Expression of rule 9:
 
 ```text
-self.all(a, cel.bind(lo, (type(a.ports) == int ? a.ports : int(a.ports.split("-")[0])), cel.bind(hi, (type(a.ports) == int ? a.ports : int(a.ports.split("-")[1])), lo >= 1 && lo <= hi && hi <= 65535 && (hi < 32768 || lo > 60999))))
-```
-
-Message of rule 9:
-
-```text
-"a pool entry takes the ports " + string(self.filter(a, !cel.bind(lo, (type(a.ports) == int ? a.ports : int(a.ports.split("-")[0])), cel.bind(hi, (type(a.ports) == int ? a.ports : int(a.ports.split("-")[1])), lo >= 1 && lo <= hi && hi <= 65535 && (hi < 32768 || lo > 60999))))[0].ports) + ", which lie outside 1-32767 and 61000-65535 or run backwards; Jool refuses the kernel's ephemeral ports, 32768 to 60999"
-```
-
-Expression of rule 10:
-
-```text
-cel.bind(e, self.map(a, ["tcp", "udp", "icmp"].filter(p, p in a.protocols).map(p, [p, a.prefix, (type(a.ports) == int ? a.ports : int(a.ports.split("-")[0])), (type(a.ports) == int ? a.ports : int(a.ports.split("-")[1]))])).flatten(), e.all(x, size(e.filter(y, x[0] == y[0] && (cidr(x[1]).contains(cidr(y[1]).ip(0)) || cidr(y[1]).contains(cidr(x[1]).ip(0))) && x[2] <= y[3] && y[2] <= x[3])) <= 1))
-```
-
-Message of rule 10:
-
-```text
-cel.bind(e, self.map(a, ["tcp", "udp", "icmp"].filter(p, p in a.protocols).map(p, [p, a.prefix, (type(a.ports) == int ? a.ports : int(a.ports.split("-")[0])), (type(a.ports) == int ? a.ports : int(a.ports.split("-")[1]))])).flatten(), cel.bind(x, e.filter(x, size(e.filter(y, x[0] == y[0] && (cidr(x[1]).contains(cidr(y[1]).ip(0)) || cidr(y[1]).contains(cidr(x[1]).ip(0))) && x[2] <= y[3] && y[2] <= x[3])) > 1)[0], "the pool entry " + x[1] + " shares " + x[0] + " addresses and ports with another; give each entry of a protocol addresses or ports of its own"))
-```
-
-Expression of rule 11:
-
-```text
 cidr(self).ip(0).family() == "ipv6" && cidr(self).prefix() in [32, 40, 48, 56, 64, 96] && !cidr("::ffff:0:0/96").contains(cidr(self).ip(0)) && cel.bind(x, cidr(self).ip(0), x != ip("::") && !cidr("fe80::/10").contains(x) && !cidr("ff00::/8").contains(x)) && cel.bind(a, string(cidr(self).ip(0)), cidr(a + "/72").ip(0) == cidr(a + "/64").ip(0))
 ```
 
-Message of rule 11:
+Message of rule 9:
 
 ```text
 !(cidr(self).ip(0).family() == "ipv6" && cidr(self).prefix() in [32, 40, 48, 56, 64, 96] && !cidr("::ffff:0:0/96").contains(cidr(self).ip(0))) ? "the prefix " + self + " is no NAT64 prefix; give an IPv6 range of 32, 40, 48, 56, 64 or 96 bits, such as 64:ff9b::/96" : !cel.bind(x, cidr(self).ip(0), x != ip("::") && !cidr("fe80::/10").contains(x) && !cidr("ff00::/8").contains(x)) ? "the prefix " + self + " holds link-local, multicast or unspecified addresses" : "the prefix " + self + " sets bits 64 to 71, which RFC 6052 keeps zero"
@@ -1042,17 +1010,13 @@ documents.filter(n, cel.bind(s, documents[n].spec, !s.entries.all(e, cel.bind(c,
 | --- | --- | --- | --- | --- | --- |
 | 1 | — | A Resolver listens on an address of a family its clients' ranges are of. | `refuse` | after the table | after the table |
 | 2 | — | With DNS64, no local zone holds ipv4only.arpa, which Unbound would answer before DNS64. | `refuse` | after the table | after the table |
-| 3 | `spec.allow` | The resolver's clients are address ranges. | `refuse` | `self.all(p, cidr(p).prefix() >= 0)` | a client is no address range |
-| 4 | `spec.dns64` | A NAT64 prefix is an IPv6 range of 32, 40, 48, 56, 64 or 96 bits of no link-local, multicast or unspecified addresses, whose bits 64 to 71 are zero, as RFC 6052 gives them. | `refuse` | after the table | after the table |
-| 5 | `spec.forwarders` | The resolver forwards to unicast addresses. | `refuse` | after the table | after the table |
-| 6 | `spec.listen` | The resolver listens on unicast addresses. | `refuse` | after the table | after the table |
-| 7 | `spec.localZones` | A local zone's records are of the zone's name or names below it. | `refuse` | `self.all(z, z.records.all(r, r.name == z.name || r.name.endsWith("." + z.name)))` | after the table |
-| 8 | `spec.localZones` | The names of local zones and their records hold 253 characters at most. | `refuse` | `self.all(z, size(z.name) <= 253) && self.map(z, z.records).flatten().all(r, size(r.name) <= 253)` | after the table |
-| 9 | `spec.localZones` | An A or AAAA record holds an address of its family. | `refuse` | after the table | after the table |
-| 10 | `spec.localZones` | The local zones hold 150 records at most, which the rules can compare in pairs. | `refuse` | `size(self.map(z, z.records).flatten()) <= 150` | after the table |
-| 11 | `spec.localZones` | A record appears once, as Unbound keeps one of its copies. | `refuse` | after the table | after the table |
-| 12 | `spec.localZones` | A redirect zone's records are of the zone's name, which Unbound answers for every name below it. | `refuse` | `self.all(z, z.type != "redirect" || z.records.all(r, r.name == z.name))` | after the table |
-| 13 | `spec.localZones` | A CNAME record's name holds no other record. | `refuse` | after the table | after the table |
+| 3 | `spec.dns64` | A NAT64 prefix is an IPv6 range of 32, 40, 48, 56, 64 or 96 bits of no link-local, multicast or unspecified addresses, whose bits 64 to 71 are zero, as RFC 6052 gives them. | `refuse` | after the table | after the table |
+| 4 | `spec.forwarders` | The resolver forwards to unicast addresses. | `refuse` | after the table | after the table |
+| 5 | `spec.listen` | The resolver listens on unicast addresses. | `refuse` | after the table | after the table |
+| 6 | `spec.localZones` | A local zone's records are of the zone's name or names below it. | `refuse` | `self.all(z, z.records.all(r, r.name == z.name || r.name.endsWith("." + z.name)))` | after the table |
+| 7 | `spec.localZones` | The names of local zones and their records are DNS names of 253 characters at most. | `refuse` | `self.all(z, isDNSName(z.name)) && self.map(z, z.records).flatten().all(r, isDNSName(r.name))` | after the table |
+| 8 | `spec.localZones` | A record holds data of its type: an address of its family for A and AAAA, a DNS name for CNAME and PTR, numbers and a DNS name for MX and SRV. | `refuse` | `self.map(z, z.records).flatten().all(r, isRecordData(r.type, r.value))` | after the table |
+| 9 | `spec.localZones` | A redirect zone's records are of the zone's name, which Unbound answers for every name below it. | `refuse` | `self.all(z, z.type != "redirect" || z.records.all(r, r.name == z.name))` | after the table |
 
 Expression of rule 1:
 
@@ -1078,16 +1042,28 @@ Message of rule 2:
 documents.filter(n, cel.bind(s, documents[n].spec, s.dns64 != null && s.localZones.exists(z, (z.name == "ipv4only.arpa" || z.name.endsWith(".ipv4only.arpa") || "ipv4only.arpa".endsWith("." + z.name))))).map(n, "Resolver " + n).join(", ") + " has a local zone over ipv4only.arpa, which Unbound would answer before DNS64; drop the zone or DNS64"
 ```
 
-Expression of rule 4:
+Expression of rule 3:
 
 ```text
 self == null || (cidr(self.prefix).ip(0).family() == "ipv6" && cidr(self.prefix).prefix() in [32, 40, 48, 56, 64, 96] && !cidr("::ffff:0:0/96").contains(cidr(self.prefix).ip(0)) && cel.bind(x, cidr(self.prefix).ip(0), x != ip("::") && !cidr("fe80::/10").contains(x) && !cidr("ff00::/8").contains(x)) && cel.bind(a, string(cidr(self.prefix).ip(0)), cidr(a + "/72").ip(0) == cidr(a + "/64").ip(0)))
 ```
 
-Message of rule 4:
+Message of rule 3:
 
 ```text
 !(cidr(self.prefix).ip(0).family() == "ipv6" && cidr(self.prefix).prefix() in [32, 40, 48, 56, 64, 96] && !cidr("::ffff:0:0/96").contains(cidr(self.prefix).ip(0))) ? "the prefix " + self.prefix + " is no NAT64 prefix; give an IPv6 range of 32, 40, 48, 56, 64 or 96 bits, such as 64:ff9b::/96" : !cel.bind(x, cidr(self.prefix).ip(0), x != ip("::") && !cidr("fe80::/10").contains(x) && !cidr("ff00::/8").contains(x)) ? "the prefix " + self.prefix + " holds link-local, multicast or unspecified addresses" : "the prefix " + self.prefix + " sets bits 64 to 71, which RFC 6052 keeps zero"
+```
+
+Expression of rule 4:
+
+```text
+self.all(a, cel.bind(x, ip(a), x != ip("0.0.0.0") && x != ip("::") && !cidr("127.0.0.0/8").contains(x) && x != ip("::1") && !cidr("169.254.0.0/16").contains(x) && !cidr("fe80::/10").contains(x) && !cidr("224.0.0.0/4").contains(x) && !cidr("ff00::/8").contains(x) && !cidr("::ffff:0:0/96").contains(x)))
+```
+
+Message of rule 4:
+
+```text
+"the forwarder " + self.filter(a, !cel.bind(x, ip(a), x != ip("0.0.0.0") && x != ip("::") && !cidr("127.0.0.0/8").contains(x) && x != ip("::1") && !cidr("169.254.0.0/16").contains(x) && !cidr("fe80::/10").contains(x) && !cidr("224.0.0.0/4").contains(x) && !cidr("ff00::/8").contains(x) && !cidr("::ffff:0:0/96").contains(x)))[0] + " is no unicast address"
 ```
 
 Expression of rule 5:
@@ -1099,79 +1075,31 @@ self.all(a, cel.bind(x, ip(a), x != ip("0.0.0.0") && x != ip("::") && !cidr("127
 Message of rule 5:
 
 ```text
-"the forwarder " + self.filter(a, !cel.bind(x, ip(a), x != ip("0.0.0.0") && x != ip("::") && !cidr("127.0.0.0/8").contains(x) && x != ip("::1") && !cidr("169.254.0.0/16").contains(x) && !cidr("fe80::/10").contains(x) && !cidr("224.0.0.0/4").contains(x) && !cidr("ff00::/8").contains(x) && !cidr("::ffff:0:0/96").contains(x)))[0] + " is no unicast address"
-```
-
-Expression of rule 6:
-
-```text
-self.all(a, cel.bind(x, ip(a), x != ip("0.0.0.0") && x != ip("::") && !cidr("127.0.0.0/8").contains(x) && x != ip("::1") && !cidr("169.254.0.0/16").contains(x) && !cidr("fe80::/10").contains(x) && !cidr("224.0.0.0/4").contains(x) && !cidr("ff00::/8").contains(x) && !cidr("::ffff:0:0/96").contains(x)))
+"the address " + self.filter(a, !cel.bind(x, ip(a), x != ip("0.0.0.0") && x != ip("::") && !cidr("127.0.0.0/8").contains(x) && x != ip("::1") && !cidr("169.254.0.0/16").contains(x) && !cidr("fe80::/10").contains(x) && !cidr("224.0.0.0/4").contains(x) && !cidr("ff00::/8").contains(x) && !cidr("::ffff:0:0/96").contains(x)))[0] + " is no unicast address the resolver can listen on"
 ```
 
 Message of rule 6:
 
 ```text
-"the address " + self.filter(a, !cel.bind(x, ip(a), x != ip("0.0.0.0") && x != ip("::") && !cidr("127.0.0.0/8").contains(x) && x != ip("::1") && !cidr("169.254.0.0/16").contains(x) && !cidr("fe80::/10").contains(x) && !cidr("224.0.0.0/4").contains(x) && !cidr("ff00::/8").contains(x) && !cidr("::ffff:0:0/96").contains(x)))[0] + " is no unicast address the resolver can listen on"
+cel.bind(z, self.filter(z, !z.records.all(r, r.name == z.name || r.name.endsWith("." + z.name)))[0], "the local zone " + z.name + " holds a record of " + z.records.filter(r, !(r.name == z.name || r.name.endsWith("." + z.name)))[0].name + ", which is outside it")
 ```
 
 Message of rule 7:
 
 ```text
-cel.bind(z, self.filter(z, !z.records.all(r, r.name == z.name || r.name.endsWith("." + z.name)))[0], "the local zone " + z.name + " holds a record of " + z.records.filter(r, !(r.name == z.name || r.name.endsWith("." + z.name)))[0].name + ", which is outside it")
+"the name " + (self.map(z, z.name) + self.map(z, z.records).flatten().map(r, r.name)).filter(n, !isDNSName(n))[0] + " holds more than 253 characters"
 ```
 
 Message of rule 8:
 
 ```text
-"the name " + (self.map(z, z.name) + self.map(z, z.records).flatten().map(r, r.name)).filter(n, size(n) > 253)[0] + " holds more than 253 characters"
-```
-
-Expression of rule 9:
-
-```text
-self.map(z, z.records).flatten().all(r, (r.type == "A" ? ip(r.value).family() == "ipv4" : r.type != "AAAA" || cel.bind(x, ip(r.value), x.family() == "ipv6" && !cidr("::ffff:0:0/96").contains(x)) && !r.value.contains("%")))
+cel.bind(r, self.map(z, z.records).flatten().filter(r, !isRecordData(r.type, r.value))[0], "the " + r.type + " record of " + r.name + " holds " + r.value + ", which is no " + {"A": "IPv4 address", "AAAA": "IPv6 address", "CNAME": "DNS name in lower case without the root's dot", "PTR": "DNS name in lower case without the root's dot", "MX": "preference from 0 to 65535 and DNS name, a single space apart", "SRV": "priority, weight and port from 0 to 65535 and DNS name, a single space apart", "TXT": "text of 1 to 255 printable characters without quotes or backslashes"}[r.type])
 ```
 
 Message of rule 9:
 
 ```text
-cel.bind(r, self.map(z, z.records).flatten().filter(r, !(r.type == "A" ? ip(r.value).family() == "ipv4" : r.type != "AAAA" || cel.bind(x, ip(r.value), x.family() == "ipv6" && !cidr("::ffff:0:0/96").contains(x)) && !r.value.contains("%")))[0], "the " + r.type + " record of " + r.name + " holds " + r.value + ", which is no " + (r.type == "A" ? "IPv4" : "IPv6") + " address")
-```
-
-Message of rule 10:
-
-```text
-"the local zones hold " + string(size(self.map(z, z.records).flatten())) + " records, more than the 150 whose duplicates chalkd can check"
-```
-
-Expression of rule 11:
-
-```text
-cel.bind(e, self.map(z, z.records).flatten(), size(e) > 150 || e.all(x, size(e.filter(y, x.name == y.name && x.type == y.type && (x.type == "AAAA" ? ip(x.value) == ip(y.value) : x.value == y.value))) == 1))
-```
-
-Message of rule 11:
-
-```text
-cel.bind(e, self.map(z, z.records).flatten(), size(e) > 50 ? "a record appears more than once in the local zones, with one name, type and value; Unbound keeps one" : cel.bind(r, e.filter(x, size(e.filter(y, x.name == y.name && x.type == y.type && (x.type == "AAAA" ? ip(x.value) == ip(y.value) : x.value == y.value))) > 1)[0], "the record " + r.name + " " + r.type + " " + (r.type == "AAAA" ? string(ip(r.value)) : r.value) + " appears more than once; Unbound keeps one"))
-```
-
-Message of rule 12:
-
-```text
 cel.bind(z, self.filter(z, z.type == "redirect" && !z.records.all(r, r.name == z.name))[0], "the redirect zone " + z.name + " holds a record of " + z.records.filter(r, r.name != z.name)[0].name + "; a redirect zone's records are of its own name, which Unbound answers for every name below it")
-```
-
-Expression of rule 13:
-
-```text
-cel.bind(e, self.map(z, z.records).flatten(), size(e) > 150 || e.all(x, x.type != "CNAME" || size(e.filter(y, y.name == x.name)) == 1))
-```
-
-Message of rule 13:
-
-```text
-cel.bind(e, self.map(z, z.records).flatten(), e.filter(x, x.type == "CNAME" && size(e.filter(y, y.name == x.name)) > 1)[0].name + " holds a CNAME record and another record; a CNAME's name holds it alone")
 ```
 
 #### Router { #rules-router }

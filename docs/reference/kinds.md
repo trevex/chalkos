@@ -495,15 +495,15 @@ A stateful NAT64 of the router, an instance of Jool in a network namespace of it
 
 `apiVersion: router.chalkos.dev/v1alpha1`
 
-A node's config may hold several, each with a name of its own. It has 11 [change rules](builtins.md#rules-nat64).
+A node's config may hold several, each with a name of its own. It has 9 [change rules](builtins.md#rules-nat64).
 
 | Field | Type | Default | Description |
 | --- | --- | --- | --- |
-| `spec.pool4` | list of object | `[]` | IPv4 addresses, with their ports, that the translated connections leave from: addresses routed to the router, not addresses of its links, which the router answers itself. The rules refuse an address that a `Network` document gives a link. An address a link takes from DHCP passes them, and `chalkos-nat64.service` then fails without changing an instance; leave pool4 empty instead. Empty takes the address of the link a connection leaves through, with the ports 61001 to 65535, which the router masquerades. The firewall's NAT rules leave the translated connections alone. |
+| `spec.pool4` | list of object | `[]` | IPv4 addresses, with their ports, that the translated connections leave from: addresses routed to the router, not addresses of its links, which the router answers itself. The rules refuse an address that a `Network` document gives a link. An address a link takes from DHCP passes them, and `chalkos-nat64.service` then fails without changing an instance; leave pool4 empty instead. Empty takes the address of the link a connection leaves through, with the ports 61001 to 65535, which the router masquerades. The pools of two NAT64s share no address, which the output `jool` checks. The firewall's NAT rules leave the translated connections alone. |
 | `spec.pool4[].ports` | integer from 1 to 65535 or range of ports | `"61001-65535"` | Ports, or ICMP identifiers, of the addresses the translated connections take: a port or a range `<first>-<last>` that leaves out the kernel's ephemeral ports, 32768 to 60999, which the router's own connections take. |
 | `spec.pool4[].prefix` | address range | required | IPv4 addresses the translated connections leave from, a range of 65536 addresses at most. |
 | `spec.pool4[].protocols` | list of one of `tcp`, `udp`, `icmp` | `["tcp","udp","icmp"]` | Protocols whose connections take the addresses and ports. Each item is unique within the list. |
-| `spec.prefix` | address range | `"64:ff9b::/96"` | IPv6 range whose addresses the NAT64 translates, each embedding an IPv4 address as RFC 6052 says: 32, 40, 48, 56, 64 or 96 bits, by default the well-known prefix. The router routes it to the NAT64's link in the NAT64's VRF, a route that BGP announces when `BGP.spec.networks` of that VRF names the prefix. |
+| `spec.prefix` | address range | `"64:ff9b::/96"` | IPv6 range whose addresses the NAT64 translates, each embedding an IPv4 address as RFC 6052 says: 32, 40, 48, 56, 64 or 96 bits, by default the well-known prefix. The router routes it to the NAT64's link in the NAT64's VRF, a route that BGP announces when `BGP.spec.networks` of that VRF names the prefix. The prefixes of the NAT64s of one VRF do not overlap, which the output `jool` checks. |
 | `spec.vrf` | name of a VRF, or `default` | `"default"` | VRF document whose links route the prefix to the NAT64 and carry its translated connections; `default` for the default VRF. The NAT64 runs in the network namespace nat64-&lt;name>, which the link n64-&lt;name> joins to the VRF. |
 
 ### NATRule { #natrule }
@@ -589,7 +589,7 @@ A DNS resolver of the router in one VRF, Unbound: the addresses it answers on, w
 
 `apiVersion: router.chalkos.dev/v1alpha1`
 
-A node's config may hold several, each with a name of its own. It has 13 [change rules](builtins.md#rules-resolver).
+A node's config may hold several, each with a name of its own. It has 9 [change rules](builtins.md#rules-resolver).
 
 | Field | Type | Default | Description |
 | --- | --- | --- | --- |
@@ -599,7 +599,7 @@ A node's config may hold several, each with a name of its own. It has 13 [change
 | `spec.dnssec` | boolean | `true` | Whether the resolver validates DNSSEC with the root's trust anchor of the image. The forwarders then pass DNSSEC records on. |
 | `spec.forwarders` | list of IP address | `[]` | Resolvers the router sends its queries to; empty resolves names itself, from the root servers. Each item is unique within the list, compared as addresses. |
 | `spec.listen` | list of IP address | required | Addresses of the router in the resolver's VRF on which it answers on port 53, over UDP and TCP; the firewall accepts DNS on them from `allow`. Each item is unique within the list, compared as addresses. |
-| `spec.localZones` | list of object | `[]` | Zones the resolver answers from its own records, 150 records in all at most. With `dns64`, no zone holds `ipv4only.arpa`, which DNS64 answers. Each item is unique within the list by `name`. |
+| `spec.localZones` | list of object | `[]` | Zones the resolver answers from its own records. A record appears once, and a CNAME record's name holds no other record, which the output `unbound` checks. With `dns64`, no zone holds `ipv4only.arpa`, which DNS64 answers. Each item is unique within the list by `name`. |
 | `spec.localZones[].name` | string | required | Name of the zone, in lower case and without the root's dot. |
 | `spec.localZones[].records` | list of object | `[]` | Records the router answers for names of the zone. |
 | `spec.localZones[].records[].name` | string | required | Name of the record: the zone's name or a name below it. |

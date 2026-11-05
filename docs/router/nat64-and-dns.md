@@ -92,7 +92,7 @@ The router's own connections take the kernel's ephemeral ports, 32768 to 60999, 
 refuses them in a pool. A range that touches them is refused:
 
 ```text
-chalkctl: r1: the config is refused: NAT64 "edge" spec.pool4: a pool entry takes the ports 1-65535, which lie outside 1-32767 and 61000-65535 or run backwards; Jool refuses the kernel's ephemeral ports, 32768 to 60999
+chalkctl: r1: the config is refused: NAT64 "edge" spec.pool4: a pool entry takes the ports 1-65535, which touch the kernel's ephemeral ports, 32768 to 60999, which Jool refuses; give ports from 1 to 32767 or from 61000 to 65535
 ```
 
 To give the pool's addresses most of their ports, give them two entries:
@@ -296,16 +296,24 @@ the names its records lack, and `always_nxdomain` answers that no name exists.
 [Config kinds](../reference/kinds.md#resolver) lists the other types and each record type's
 value.
 
-The local zones are refused when they break one of these rules:
+The rules refuse local zones that break one of these:
 
-- They hold 150 records at most, over all zones.
-- A record appears once, and an A or AAAA record holds an address of its family.
-- A CNAME record's name holds no other record, in any zone.
+- A record's value is data of its type: an address of its family for `A` and `AAAA`, a name for
+  `CNAME` and `PTR`, `<preference> <name>` for `MX` and `<priority> <weight> <port> <name>` for
+  `SRV`, each number from 0 to 65535. It holds up to 255 printable ASCII characters, without
+  quotes or backslashes.
 - A `redirect` zone holds records of its own name alone, which it answers for every name below
   it.
 - With `dns64`, no zone is `ipv4only.arpa`, below it or above it, such as `arpa`. The resolver
   would answer such a zone before DNS64 does.
-- A record's value holds up to 255 printable ASCII characters, without quotes or backslashes.
+
+The output `unbound` refuses a record that appears twice and a CNAME record beside another record
+of its name, in any zone. It checks when the router renders its config, at a delivery or at
+`chalkctl apply-config --dry-run`, and `chalkctl validate` does not:
+
+```text
+Resolver resolver: local zone 1: lan.example.org: record 2: www.lan.example.org holds a CNAME record and another record; a CNAME's name holds it alone
+```
 
 DNS64 synthesises no AAAA record from a local zone's A records.
 

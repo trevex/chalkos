@@ -27,7 +27,7 @@
       "properties": {
         "pool4": {
           "default": [],
-          "description": "IPv4 addresses, with their ports, that the translated connections leave from: addresses routed to the router, not addresses of its links, which the router answers itself. The rules refuse an address that a `Network` document gives a link. An address a link takes from DHCP passes them, and `chalkos-nat64.service` then fails without changing an instance; leave pool4 empty instead. Empty takes the address of the link a connection leaves through, with the ports 61001 to 65535, which the router masquerades. The firewall's NAT rules leave the translated connections alone.",
+          "description": "IPv4 addresses, with their ports, that the translated connections leave from: addresses routed to the router, not addresses of its links, which the router answers itself. The rules refuse an address that a `Network` document gives a link. An address a link takes from DHCP passes them, and `chalkos-nat64.service` then fails without changing an instance; leave pool4 empty instead. Empty takes the address of the link a connection leaves through, with the ports 61001 to 65535, which the router masquerades. The pools of two NAT64s share no address, which the output `jool` checks. The firewall's NAT rules leave the translated connections alone.",
           "examples": [
             [
               {
@@ -111,22 +111,22 @@
               "takes": "refuse"
             },
             {
-              "description": "A pool entry's ports lie from 1 to 65535 and leave out the kernel's ephemeral ports, 32768 to 60999.",
-              "messageExpression": "\"a pool entry takes the ports \" + string(self.filter(a, !cel.bind(lo, (type(a.ports) == int ? a.ports : int(a.ports.split(\"-\")[0])), cel.bind(hi, (type(a.ports) == int ? a.ports : int(a.ports.split(\"-\")[1])), lo >= 1 && lo <= hi && hi <= 65535 && (hi < 32768 || lo > 60999))))[0].ports) + \", which lie outside 1-32767 and 61000-65535 or run backwards; Jool refuses the kernel's ephemeral ports, 32768 to 60999\"",
-              "rule": "self.all(a, cel.bind(lo, (type(a.ports) == int ? a.ports : int(a.ports.split(\"-\")[0])), cel.bind(hi, (type(a.ports) == int ? a.ports : int(a.ports.split(\"-\")[1])), lo >= 1 && lo <= hi && hi <= 65535 && (hi < 32768 || lo > 60999))))",
+              "description": "A pool entry's ports leave out the kernel's ephemeral ports, 32768 to 60999.",
+              "messageExpression": "\"a pool entry takes the ports \" + string(self.filter(a, !(portRange(a.ports).last < 32768 || portRange(a.ports).first > 60999))[0].ports) + \", which touch the kernel's ephemeral ports, 32768 to 60999, which Jool refuses; give ports from 1 to 32767 or from 61000 to 65535\"",
+              "rule": "self.all(a, portRange(a.ports).last < 32768 || portRange(a.ports).first > 60999)",
               "takes": "refuse"
             },
             {
               "description": "No two entries of a pool share a protocol, addresses and ports.",
-              "messageExpression": "cel.bind(e, self.map(a, [\"tcp\", \"udp\", \"icmp\"].filter(p, p in a.protocols).map(p, [p, a.prefix, (type(a.ports) == int ? a.ports : int(a.ports.split(\"-\")[0])), (type(a.ports) == int ? a.ports : int(a.ports.split(\"-\")[1]))])).flatten(), cel.bind(x, e.filter(x, size(e.filter(y, x[0] == y[0] && (cidr(x[1]).contains(cidr(y[1]).ip(0)) || cidr(y[1]).contains(cidr(x[1]).ip(0))) && x[2] <= y[3] && y[2] <= x[3])) > 1)[0], \"the pool entry \" + x[1] + \" shares \" + x[0] + \" addresses and ports with another; give each entry of a protocol addresses or ports of its own\"))",
-              "rule": "cel.bind(e, self.map(a, [\"tcp\", \"udp\", \"icmp\"].filter(p, p in a.protocols).map(p, [p, a.prefix, (type(a.ports) == int ? a.ports : int(a.ports.split(\"-\")[0])), (type(a.ports) == int ? a.ports : int(a.ports.split(\"-\")[1]))])).flatten(), e.all(x, size(e.filter(y, x[0] == y[0] && (cidr(x[1]).contains(cidr(y[1]).ip(0)) || cidr(y[1]).contains(cidr(x[1]).ip(0))) && x[2] <= y[3] && y[2] <= x[3])) <= 1))",
+              "messageExpression": "cel.bind(e, self.map(a, [\"tcp\", \"udp\", \"icmp\"].filter(p, p in a.protocols).map(p, [p, a.prefix, portRange(a.ports).first, portRange(a.ports).last])).flatten(), cel.bind(x, e.filter(x, size(e.filter(y, x[0] == y[0] && (cidr(x[1]).contains(cidr(y[1]).ip(0)) || cidr(y[1]).contains(cidr(x[1]).ip(0))) && x[2] <= y[3] && y[2] <= x[3])) > 1)[0], \"the pool entry \" + x[1] + \" shares \" + x[0] + \" addresses and ports with another; give each entry of a protocol addresses or ports of its own\"))",
+              "rule": "cel.bind(e, self.map(a, [\"tcp\", \"udp\", \"icmp\"].filter(p, p in a.protocols).map(p, [p, a.prefix, portRange(a.ports).first, portRange(a.ports).last])).flatten(), e.all(x, size(e.filter(y, x[0] == y[0] && (cidr(x[1]).contains(cidr(y[1]).ip(0)) || cidr(y[1]).contains(cidr(x[1]).ip(0))) && x[2] <= y[3] && y[2] <= x[3])) <= 1))",
               "takes": "refuse"
             }
           ]
         },
         "prefix": {
           "default": "64:ff9b::/96",
-          "description": "IPv6 range whose addresses the NAT64 translates, each embedding an IPv4 address as RFC 6052 says: 32, 40, 48, 56, 64 or 96 bits, by default the well-known prefix. The router routes it to the NAT64's link in the NAT64's VRF, a route that BGP announces when `BGP.spec.networks` of that VRF names the prefix.",
+          "description": "IPv6 range whose addresses the NAT64 translates, each embedding an IPv4 address as RFC 6052 says: 32, 40, 48, 56, 64 or 96 bits, by default the well-known prefix. The router routes it to the NAT64's link in the NAT64's VRF, a route that BGP announces when `BGP.spec.networks` of that VRF names the prefix. The prefixes of the NAT64s of one VRF do not overlap, which the output `jool` checks.",
           "format": "cidr",
           "type": "string",
           "x-chalkos-rules": [
@@ -175,18 +175,6 @@
         "description": "A NAT64's name has 11 characters at most, as its link n64-<name> is an interface's name of 15.",
         "messageExpression": "documents.filter(n, size(n) > 11).map(n, \"NAT64 \" + n).join(\", \") + \" has a name of more than 11 characters, which its link n64-<name> does not take as an interface's name; give it a shorter one\"",
         "rule": "documents.all(n, size(n) <= 11)",
-        "takes": "refuse"
-      },
-      {
-        "description": "No two NAT64s of one VRF translate addresses of one prefix.",
-        "messageExpression": "documents.filter(n, documents.exists(m, n != m && documents[n].spec.vrf == documents[m].spec.vrf && (cidr(documents[n].spec.prefix).contains(cidr(documents[m].spec.prefix).ip(0)) || cidr(documents[m].spec.prefix).contains(cidr(documents[n].spec.prefix).ip(0))))).map(n, \"NAT64 \" + n).join(\", \") + \" translate addresses of one prefix in one VRF; give each NAT64 of a VRF a prefix of its own\"",
-        "rule": "documents.all(n, documents.all(m, n == m || documents[n].spec.vrf != documents[m].spec.vrf || !(cidr(documents[n].spec.prefix).contains(cidr(documents[m].spec.prefix).ip(0)) || cidr(documents[m].spec.prefix).contains(cidr(documents[n].spec.prefix).ip(0)))))",
-        "takes": "refuse"
-      },
-      {
-        "description": "No two NAT64s share an address of their pools.",
-        "messageExpression": "cel.bind(e, documents.map(n, documents[n].spec.pool4.map(a, [n, a.prefix])).flatten(), e.filter(x, e.exists(y, x[0] != y[0] && (cidr(x[1]).contains(cidr(y[1]).ip(0)) || cidr(y[1]).contains(cidr(x[1]).ip(0))))).map(x, \"NAT64 \" + x[0] + \" \" + x[1]).join(\", \") + \" share addresses; give each NAT64 a pool of its own\")",
-        "rule": "cel.bind(e, documents.map(n, documents[n].spec.pool4.map(a, [n, a.prefix])).flatten(), e.all(x, e.all(y, x[0] == y[0] || !(cidr(x[1]).contains(cidr(y[1]).ip(0)) || cidr(y[1]).contains(cidr(x[1]).ip(0))))))",
         "takes": "refuse"
       },
       {
