@@ -12,8 +12,9 @@ chalkctl validate [<node>...] [flags]
 Checks the config of the nodes named, or of every node of the inventory, as each node would
 check it on its image: the set the inventory gives the node, every document against the schemas of
 the node's image in the inventory, and the set's translation. The image's change rules that read no
-facts and compare with no running value run too. Every node whose files hold a Kubernetes Cluster
-document must hold the same Cluster spec, and the same Flannel spec or none. See
+facts and compare with no running value run too, and so does the validator router of a router
+image, which chalkctl links. Every node whose files hold a Kubernetes Cluster document must hold
+the same Cluster spec, and the same Flannel spec or none. See
 [chalkctl and chalkd both check the config](../../how-it-works/node/config.md#chalkctl-and-chalkd-both-check-the-config).
 
 The command prints a line for each node whose config is valid, with the digest of an image in a
@@ -22,8 +23,9 @@ which holds its keys and secrets, unencrypted. It reaches no node and needs no s
 client file.
 
 A config validate passes can still be refused on delivery: validate runs no rule that reads the
-node's facts or its running config, and none of the image's renderers or their checks. chalkctl
-apply-config --dry-run has the node run all of them, and changes nothing.
+node's facts or its running config, none of the image's other validators, and none of its
+renderers or their checks. chalkctl apply-config --dry-run has the node run all of them, and
+changes nothing.
 
 ## Flags
 

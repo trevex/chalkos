@@ -3,12 +3,15 @@ package chalkctl
 import (
 	"context"
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
 	"testing"
 
 	"github.com/trevex/chalkos/pkg/chalkctl/layer"
+	routerlayer "github.com/trevex/chalkos/pkg/chalkctl/layers/router"
 	"github.com/trevex/chalkos/pkg/refusals"
 	"github.com/trevex/chalkos/pkg/schema"
 	"github.com/trevex/chalkos/pkg/validators"
@@ -73,5 +76,74 @@ func TestValidateRunsLinkedValidators(t *testing.T) {
 	err := ta.run(context.Background(), []string{"validate", "--inventory", path})
 	if want := "node n1: the config is refused: Network/10-uplink: spec.network.address[0]: 10.0.0.99 is the lab's reserved address"; err == nil || !strings.Contains(err.Error(), want) {
 		t.Errorf("validate = %v, want %q", err, want)
+	}
+}
+
+// recordingRouter is chalkctl's router layer whose linked validators record the documents they
+// read before they run.
+type recordingRouter struct {
+	*routerlayer.Plugin
+	read *[][]byte
+}
+
+func (p recordingRouter) Validators(s *schema.Schemas) []validators.Linked {
+	linked := p.Plugin.Validators(s)
+	for i, l := range linked {
+		linked[i].Validate = func(docs []byte) ([]refusals.Refusal, error) {
+			*p.read = append(*p.read, docs)
+			return l.Validate(docs)
+		}
+	}
+	return linked
+}
+
+// chalkctl validate runs the router layer's validator router in-process on a node whose image
+// declares the router kinds, on the documents of the kinds the validator reads, and none on a node
+// of an image without them.
+func TestValidateRunsTheRouterValidator(t *testing.T) {
+	var read [][]byte
+	saved := plugins
+	plugins = slices.Clone(plugins)
+	for i, p := range plugins {
+		if r, ok := p.(*routerlayer.Plugin); ok {
+			plugins[i] = recordingRouter{r, &read}
+		}
+	}
+	t.Cleanup(func() { plugins = saved })
+	ta := newTestApp(t)
+	ta.withoutSecrets(t)
+	if err := ta.run(context.Background(), []string{"validate", "--inventory", writeInventory(t, ta.dir)}); err != nil || len(read) != 0 {
+		t.Fatalf("validate without the router kinds = %v, the validator read %q", err, read)
+	}
+	// The uplink is a link of the default VRF, which the router kinds' rules want for the node API.
+	uplink := strings.Replace(n1Network, "spec: {", "spec: {match: {name: enp1s0}, ", 1)
+	vrf := "apiVersion: router.chalkos.dev/v1alpha1\nkind: VRF\nmetadata: {name: tenant}\nspec: {table: 100}\n"
+	path := writeInventory(t, ta.dir, n1SystemDisk, uplink, vrf)
+	copyDir(t, "../../test/fixtures/kinds/router", filepath.Join(ta.dir, "images", "test-metal", "schemas"))
+	if err := ta.run(context.Background(), []string{"validate", "--inventory", path}); err != nil {
+		t.Fatal(err)
+	}
+	if len(read) != 1 {
+		t.Fatalf("the validator ran %d times", len(read))
+	}
+	var docs []struct{ Kind string }
+	if err := json.Unmarshal(read[0], &docs); err != nil || len(docs) != 2 || docs[0].Kind != "Network" || docs[1].Kind != "VRF" {
+		t.Errorf("the validator read %s: %v", read[0], err)
+	}
+}
+
+// copyDir copies the files of the directory src into dst.
+func copyDir(t *testing.T, src, dst string) {
+	t.Helper()
+	entries, err := os.ReadDir(src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range entries {
+		data, err := os.ReadFile(filepath.Join(src, e.Name()))
+		if err != nil {
+			t.Fatal(err)
+		}
+		writeFile(t, filepath.Join(dst, e.Name()), string(data))
 	}
 }
