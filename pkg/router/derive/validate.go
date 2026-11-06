@@ -15,9 +15,9 @@ import (
 // in-process on the same documents, so both refuse a config alike. documents is what a validator
 // reads on standard input, a JSON array of documents with their schema defaults and their secret
 // values hashed. Validate reads them as Build takes them and returns every refusal of the checks
-// that check runs, each once, with the runes of their messages that refusals.Unprintable reports
-// as spaces. An input that is no array of documents, and a guard's internal error, are its
-// error, the validator's failure: chalkd and chalkctl run the validator after the schemas, the
+// that check runs, each once; chalkos-render and chalkctl replace the runes of their messages that
+// refusals.Unprintable reports by spaces. An input that is no array of documents, and a guard's
+// internal error, are its error, the validator's failure: chalkd and chalkctl run the validator after the schemas, the
 // references and the rules have checked the documents, which keeps every guard from firing.
 func Validate(documents []byte) ([]refusals.Refusal, error) {
 	byKind, err := readDocuments(documents)
@@ -27,9 +27,6 @@ func Validate(documents []byte) ([]refusals.Refusal, error) {
 	rs, others := refusals.Split(check(byKind))
 	if len(others) > 0 {
 		return nil, errors.Join(others...)
-	}
-	for i := range rs {
-		rs[i].Message = refusals.Printable(rs[i].Message)
 	}
 	return rs, nil
 }

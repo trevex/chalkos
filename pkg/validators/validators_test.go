@@ -202,7 +202,8 @@ func TestRead(t *testing.T) {
 }
 
 // A linked validator reads the JSON a validator's program reads, and its refusals are held to the
-// format a program's report is: a refusal outside it, or an error, fails the validator.
+// format a program's report is: a refusal outside it, or an error, fails the validator. A message
+// that quotes a rune refusals.Unprintable reports stays a refusal, with a space for the rune.
 func TestRunLinked(t *testing.T) {
 	var read []byte
 	taken := refusals.Refusal{Kind: "Demo", Name: "one", Path: "spec.name", Message: "is taken"}
@@ -217,10 +218,13 @@ func TestRunLinked(t *testing.T) {
 		{Name: "malformed", Inputs: []string{"Demo"}, Validate: func([]byte) ([]refusals.Refusal, error) {
 			return []refusals.Refusal{{Kind: "Demo", Name: "one", Path: "spec name", Message: "is taken"}}, nil
 		}},
+		{Name: "quotes", Inputs: []string{"Demo"}, Validate: func([]byte) ([]refusals.Refusal, error) {
+			return []refusals.Refusal{{Kind: "Demo", Name: "two", Path: "spec.name", Message: "two\nlines\u202e"}}, nil
+		}},
 	}
 	in := input(t)
 	rs, failures := RunLinked(linked, in)
-	if !slices.Equal(rs, []refusals.Refusal{taken}) {
+	if !slices.Equal(rs, []refusals.Refusal{taken, {Kind: "Demo", Name: "two", Path: "spec.name", Message: "two lines "}}) {
 		t.Errorf("refusals = %v", rs)
 	}
 	want := []Failure{

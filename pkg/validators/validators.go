@@ -228,7 +228,9 @@ func RunLinked(linked []Linked, in outputs.Input) ([]refusals.Refusal, []Failure
 }
 
 // runLinked runs l on in, and parses its refusals as Run parses a program's report, so a linked
-// validator refuses nothing a program could not print.
+// validator refuses nothing a program could not print. It first replaces the runes of each message
+// that refusals.Unprintable reports by spaces, as chalkos-render does before it prints a report,
+// so a message that quotes one stays a refusal.
 func runLinked(l Linked, in outputs.Input) ([]refusals.Refusal, error) {
 	stdin, err := Stdin(in, l.Inputs)
 	if err != nil {
@@ -237,6 +239,9 @@ func runLinked(l Linked, in outputs.Input) ([]refusals.Refusal, error) {
 	rs, err := l.Validate(stdin)
 	if err != nil {
 		return nil, err
+	}
+	for i := range rs {
+		rs[i].Message = refusals.Printable(rs[i].Message)
 	}
 	report, err := refusals.Encode(rs)
 	if err != nil {
