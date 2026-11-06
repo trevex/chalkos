@@ -16,22 +16,24 @@ import (
 )
 
 // TestUpgrade installs the signed test image under Secure Boot, which boots its UKI as
-// chalkos_1.efi, and upgrades it to the upgrade image, which boots from slot B as chalkos_2.efi
-// with STATE and VAR unlocked by the TPM and is found healthy. chalkctl upgrade --rollback then
-// boots the test image again from slot A as chalkos_3, with the config it ran; run again, it
-// changes nothing. apply-config --staged then holds a Farewell the upgrade image's renderer
-// refuses as the node's pending config, and an operator's upgrade to the upgrade image, which
-// takes it, is refused: nothing is staged and the pending config stays. Another apply-config
-// --staged replaces it with the inventory's config, and an operator's upgrade then boots the
-// upgrade image with it again as chalkos_4, reusing its store in slot B. Last comes the unhealthy
-// image, installed as chalkos_5, which never becomes healthy: after its one try the node falls
-// back to chalkos_4.efi and says so. Each image is named by its root hash. The node pulls the
-// upgrade image through a Mirror of a registry host it cannot reach, whose endpoint is a registry
-// on the host that asks for the credentials of the endpoint's own Registry; the first upgrade
-// delivers the Mirror and the Registry. The operator's upgrades and the upgrade to the unhealthy
-// image stream it from its directory. The first upgrade carries config only the upgrade image
-// accepts, a Farewell, and the upgrade to the unhealthy image the test image's config again: the
-// fallback boots the upgrade image with its own config, Farewell included.
+// chalkos_1.efi, and upgrades it to the upgrade image step by step: upgrade --until stage stages
+// it, which status says, node activate makes it boot next, and node reboot boots it from slot B
+// as chalkos_2.efi with STATE and VAR unlocked by the TPM, found healthy. chalkctl upgrade
+// --rollback then boots the test image again from slot A as chalkos_3, with the config it ran;
+// run again, it changes nothing. apply-config --staged then holds a Farewell the upgrade image's
+// renderer refuses as the node's pending config, and an operator's upgrade to the upgrade
+// image, which takes it, is refused: nothing is staged and the pending config stays. Another
+// apply-config --staged replaces it with the inventory's config, and an operator's upgrade
+// then boots the upgrade image with it again as chalkos_4, reusing its store in slot B. Last
+// comes the unhealthy image, installed as chalkos_5, which never becomes healthy: after its
+// one try the node falls back to chalkos_4.efi and says so. Each image is named by its root
+// hash. The node pulls the upgrade image through a Mirror of a registry host it cannot reach,
+// whose endpoint is a registry on the host that asks for the credentials of the endpoint's own
+// Registry; the first upgrade delivers the Mirror and the Registry. The operator's upgrades and
+// the upgrade to the unhealthy image stream it from its directory. The first upgrade carries
+// config only the upgrade image accepts, a Farewell, and the upgrade to the unhealthy image
+// the test image's config again: the fallback boots the upgrade image with its own config,
+// Farewell included.
 func TestUpgrade(t *testing.T) {
 	requireEnv(t, append(secureBootEnv, append(chalkdEnv, "CHALKLAB_UPGRADE_IMAGE_DIR", "CHALKLAB_UNHEALTHY_IMAGE_DIR")...)...)
 	base, nextHash, badHash := rootHash(t, "CHALKLAB_IMAGE_DIR"), rootHash(t, "CHALKLAB_UPGRADE_IMAGE_DIR"), rootHash(t, "CHALKLAB_UNHEALTHY_IMAGE_DIR")
@@ -66,15 +68,24 @@ func TestUpgrade(t *testing.T) {
 	})
 	pinnedPrefix := mirroredGuest + "/chalkos/test-upgrade@sha256:"
 	upgraded := time.Now()
-	out, err := chalkctl(t, nil, "", "upgrade", "--inventory", pullInventory, "--nodes", "chalklab", "--address", "chalklab="+n.addr, "--timeout", "10m")
+	out, err := chalkctl(t, nil, "", "upgrade", "--inventory", pullInventory, "--nodes", "chalklab", "--address", "chalklab="+n.addr, "--until", "stage")
 	if err != nil || !strings.Contains(out, "chalklab: config 4 added, 0 removed, 0 changed\n") ||
 		!strings.Contains(out, "chalklab: installing "+nextHash[:12]+", which it pulls from "+pinnedPrefix) ||
-		!strings.Contains(out, "chalklab: installed "+nextHash[:12]+", which boots next as chalkos_2+3.efi") ||
-		!strings.Contains(out, "upgraded 1 node to "+nextHash[:12]) {
-		t.Fatalf("upgrade to %s: %v", nextHash[:12], err)
+		!strings.Contains(out, "chalklab: installed "+nextHash[:12]+", staged as .staged-chalkos_2.efi\n") ||
+		!strings.Contains(out, "staged "+nextHash[:12]+" on 1 node") {
+		t.Fatalf("stage %s: %v", nextHash[:12], err)
 	}
 	if _, ok := reg.served.Load(layers[ociimage.StoreType]); !ok {
 		t.Error("the node did not pull the store from the registry")
+	}
+	if out, err := chalkctl(t, n, "", "status", "chalklab", "--inventory", pullInventory); err != nil || !strings.Contains(out, "upgrade to "+nextHash[:12]+" staged; node activate makes it boot next\n") {
+		t.Errorf("status with the image staged: %v", err)
+	}
+	if out, err := chalkctl(t, n, "", "node", "activate", "chalklab", "--inventory", pullInventory); err != nil || !strings.Contains(out, "chalklab: activated "+nextHash[:12]+", which boots next as chalkos_2+3.efi\n") {
+		t.Fatalf("activate %s: %v", nextHash[:12], err)
+	}
+	if out, err := chalkctl(t, n, "", "node", "reboot", "chalklab", "--inventory", pullInventory, "--timeout", "10m"); err != nil || !strings.Contains(out, "chalklab: runs "+nextHash[:12]+", found healthy\n") {
+		t.Fatalf("reboot into %s: %v", nextHash[:12], err)
 	}
 	t.Logf("pulled and upgraded to %s in %v", nextHash[:12], time.Since(upgraded).Round(time.Second))
 	// Slot B, under Secure Boot, with the TPM unsealing STATE and VAR as before.
