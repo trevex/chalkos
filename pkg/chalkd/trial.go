@@ -473,7 +473,7 @@ func (s *Server) applyTrial(ctx context.Context, r applyRequest) (*connect.Respo
 		return nil, err
 	}
 	defer d.staged.Discard()
-	rec := trialRecord{Slot: filepath.Base(d.dir), Version: d.stored.Version, Previous: d.replaced, Deadline: time.Now().Add(r.try), IgnoreUnits: r.msg.IgnoreUnits}
+	rec := trialRecord{Slot: filepath.Base(d.dir), Version: d.stored.Version, Previous: d.replaced, IgnoreUnits: r.msg.IgnoreUnits}
 	second, err := s.planSecond(ctx, d)
 	if err == nil {
 		err = checkSecondTrial(second)
@@ -485,6 +485,9 @@ func (s *Server) applyTrial(ctx context.Context, r applyRequest) (*connect.Respo
 		s.refused(d.fx)
 		return nil, err
 	}
+	// The trial lasts from the record on: the staged image's check, which mounts its store and
+	// runs its checker and renderers, takes none of its time.
+	rec.Deadline = time.Now().Add(r.try)
 	if err := writeTrial(s.Paths.StateDir, rec); err != nil {
 		s.refused(d.fx)
 		return nil, failed(connect.CodeInternal, "record the trial: %v", err)
