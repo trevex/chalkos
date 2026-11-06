@@ -110,7 +110,7 @@ func (s *Server) Upgrade(ctx context.Context, stream *connect.ClientStream[nodev
 		log.Printf("upgrading to %q with the root hash %x", img.GetImageId(), img.GetRootHash())
 	}
 	res, staged, err := s.installImage(ctx, header, h.GetConfig(), h.GetFallbackSecret(), h.GetStageOnly(), parts)
-	if staged := (*upgrade.StagedError)(nil); errors.As(err, &staged) {
+	if unactivated := (*upgrade.StagedError)(nil); errors.As(err, &unactivated) {
 		log.Printf("upgrade to %x failed: %v", img.GetRootHash(), err)
 		// The image is staged with the config stageConfig wrote, as after an upgrade that stops
 		// there, and ActivateImage may activate it later: the node records its provenance, and how
