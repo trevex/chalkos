@@ -207,12 +207,12 @@ func (p *Plugin) CheckConfig(u layer.Upgrading, c layer.Cluster, named []string,
 		case first == "":
 			next, first = v, name
 		case v != next:
-			return fmt.Errorf("the config names the API server %s for %s and %s for %s; deliver one version at a time", next, first, v, name)
+			return fmt.Errorf("the config names the API server %s for %s and %s for %s; deliver one version at a time", next.Release(), first, v.Release(), name)
 		}
 	}
 	for _, name := range slices.Sorted(maps.Keys(r)) {
 		if v := r[name]; v.apiServer.Major != next.Major || v.kubelet.Major != next.Major {
-			return fmt.Errorf("images.apiServer: %s is of Kubernetes %d, and %s runs the API server %s and the kubelet %s", next, next.Major, name, v.apiServer, v.kubelet)
+			return fmt.Errorf("images.apiServer: %s is of Kubernetes %d, and %s runs the API server %s and the kubelet %s", next, next.Major, name, v.apiServer.Release(), v.kubelet.Release())
 		}
 	}
 	if oldest := r.extreme(k8s.KindControlPlane, apiServer, false); oldest != "" {
@@ -247,7 +247,7 @@ func (p *Plugin) CheckConfig(u layer.Upgrading, c layer.Cluster, named []string,
 	if len(behind) > 0 {
 		for _, name := range named {
 			if v, ok := r[name]; ok && v.kind != k8s.KindControlPlane {
-				return fmt.Errorf("%s is no control plane, and the control planes %s do not run the API server %s yet; deliver the config to them first", name, strings.Join(behind, ", "), next)
+				return fmt.Errorf("%s is no control plane, and the control planes %s do not run the API server %s yet; deliver the config to them first", name, strings.Join(behind, ", "), next.Release())
 			}
 		}
 	}
@@ -392,7 +392,7 @@ func (p *Plugin) Summary(c layer.Cluster, read layer.ReadVersions) []string {
 	for _, n := range read(nodes) {
 		key := "unknown"
 		if v, ok := n.Versions.(versions); ok && n.Err == nil {
-			key = v.apiServer.String()
+			key = v.apiServer.Release()
 		} else if n.Err == nil {
 			continue
 		}

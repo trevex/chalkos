@@ -165,8 +165,8 @@ prints which nodes run which API server:
 
 ```text
 cp2 runs config <previous-version> again: config <version> was rolled back
-API server v1.37.1: cp2, cp3, w1
-API server v1.37.2: cp1
+API server 1.37.1: cp2, cp3, w1
+API server 1.37.2: cp1
 chalkctl: cp2: config <version> was not confirmed within its trial: cp2: its control plane: kube-apiserver is not Ready
 ```
 
@@ -462,7 +462,7 @@ kubernetes versions: API server 1.37.2, kubelet 1.37.1, control-plane pods curre
   plane runs. Pass the flag when the downgrade is meant.
 - `images.apiServer: v1.38.0 is 4 minors newer than the kubelet 1.34 that w1 runs; ...`: a node
   runs a kubelet too old for the new API server. Upgrade that node's image first.
-- `w1 is no control plane, and the control planes cp2 do not run the API server v1.37.2 yet;
+- `w1 is no control plane, and the control planes cp2 do not run the API server 1.37.2 yet;
   deliver the config to them first`: the command named a worker before every control plane runs
   the new API server. Name the control planes too, or deliver to them first.
 - `cp2: its control plane: kube-apiserver is not Ready`: the control plane's static pods did not

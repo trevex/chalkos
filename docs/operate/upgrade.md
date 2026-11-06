@@ -534,7 +534,7 @@ w1 runs config <version>
 
 `...` stands for cp2's and cp3's lines, which repeat cp1's, and w1's first lines. When the first
 step fails, the run stops at that node, rolls its config back and prints which nodes run which API
-server, such as `API server v1.37.1: cp2, cp3, w1`. `chalkctl status cp2` shows the node's
+server, such as `API server 1.37.1: cp2, cp3, w1`. `chalkctl status cp2` shows the node's
 versions in its `kubernetes versions` line. Fix the reference or the registry, then run the same
 command again: it skips the nodes that run the config already. When the second step fails, the
 node rolls back as

@@ -280,7 +280,7 @@ func TestApplyConfigRolloutStopsAndContinues(t *testing.T) {
 		t.Errorf("events %q, want %q", got, want)
 	}
 	out := l.ta.stdout.String()
-	for _, line := range []string{"API server v1.37.1: cp2, cp3, w1\n", "API server v1.37.2: cp1\n", "cp2 runs config "} {
+	for _, line := range []string{"API server 1.37.1: cp2, cp3, w1\n", "API server 1.37.2: cp1\n", "cp2 runs config "} {
 		if !strings.Contains(out, line) {
 			t.Errorf("stdout lacks %q:\n%s", line, out)
 		}
@@ -312,7 +312,7 @@ func TestApplyConfigRolloutStopsAtARefusal(t *testing.T) {
 			t.Errorf("the run went on: %s", e)
 		}
 	}
-	if out := l.ta.stdout.String(); !strings.Contains(out, "API server v1.37.2: cp1\n") || !strings.Contains(out, "API server v1.37.1: cp2, cp3, w1\n") {
+	if out := l.ta.stdout.String(); !strings.Contains(out, "API server 1.37.2: cp1\n") || !strings.Contains(out, "API server 1.37.1: cp2, cp3, w1\n") {
 		t.Errorf("stdout = %s", out)
 	}
 }
@@ -334,7 +334,7 @@ func TestApplyConfigRefusesSkew(t *testing.T) {
 		"a downgrade, allowed": {"", controlPlanesOn("1.38.0"), []string{"cp1", "cp2", "cp3", "w1"}, []string{"--allow-downgrade"}, ""},
 		"an old kubelet": {"1.38.0", func(l *upgradeLab) { l.nodes["w1"].kubelet = "1.34.0" }, []string{"cp1", "cp2", "cp3", "w1"}, nil,
 			"images.apiServer: v1.38.0 is 4 minors newer than the kubelet 1.34 that w1 runs"},
-		"a worker first": {"1.37.2", nil, []string{"w1"}, nil, "w1 is no control plane, and the control planes cp1, cp2, cp3 do not run the API server v1.37.2 yet; deliver the config to them first"},
+		"a worker first": {"1.37.2", nil, []string{"w1"}, nil, "w1 is no control plane, and the control planes cp1, cp2, cp3 do not run the API server 1.37.2 yet; deliver the config to them first"},
 		"a worker down": {"1.37.2", func(l *upgradeLab) { l.nodes["w1"].rebooting = true }, []string{"cp1", "cp2", "cp3"}, nil,
 			"the versions w1 runs are unknown: "},
 		"a node without Kubernetes down": {"1.37.2", func(l *upgradeLab) { l.nodes["n1"].rebooting = true }, []string{"cp1", "cp2", "cp3"}, nil, ""},

@@ -159,13 +159,13 @@ func TestCheckConfig(t *testing.T) {
 		"a kubelet newer":     {with(threeAndOne("1.38.0", "1.37.1"), onKubelet("w1", "1.38.0")), all, "v1.37.9", true, "images.apiServer: v1.37.9 is older than the kubelet 1.38 that w1 runs; a kubelet must not be newer than the API server"},
 		"kubelet three older": {with(threeAndOne("1.39.0", "1.38.0"), onKubelet("w1", "1.37.0")), all, "v1.40.0", false, ""},
 		"kubelet four older":  {with(threeAndOne("1.40.0", "1.38.0"), onKubelet("w1", "1.37.0")), all, "v1.41.0", false, "images.apiServer: v1.41.0 is 4 minors newer than the kubelet 1.37 that w1 runs; a kubelet may be at most three minors older than the API server, so upgrade the nodes' images first"},
-		"another major":       {threeAndOne("1.37.1", "1.37.1"), all, "v2.0.0", false, "images.apiServer: v2.0.0 is of Kubernetes 2, and cp1 runs the API server v1.37.1 and the kubelet v1.37.1"},
+		"another major":       {threeAndOne("1.37.1", "1.37.1"), all, "v2.0.0", false, "images.apiServer: v2.0.0 is of Kubernetes 2, and cp1 runs the API server 1.37.1 and the kubelet 1.37.1"},
 		"a worker first": {[]runs{
 			{"cp1", k8s.KindControlPlane, "1.37.2", "1.37.1", nil},
 			{"cp2", k8s.KindControlPlane, "1.37.1", "1.37.1", nil},
 			{"cp3", k8s.KindControlPlane, "1.37.2", "1.37.1", nil},
 			{"w1", k8s.KindWorker, "1.37.1", "1.37.1", nil},
-		}, []string{"w1"}, "v1.37.2", false, "w1 is no control plane, and the control planes cp2 do not run the API server v1.37.2 yet; deliver the config to them first"},
+		}, []string{"w1"}, "v1.37.2", false, "w1 is no control plane, and the control planes cp2 do not run the API server 1.37.2 yet; deliver the config to them first"},
 		"a worker after the control planes": {with(threeAndOne("1.37.2", "1.37.1"), func(n *runs) {
 			if n.name == "w1" {
 				n.api = "1.37.1"
@@ -201,7 +201,7 @@ func TestCheckConfig(t *testing.T) {
 	// The nodes of a run get one API server.
 	c, nodes := versionsLab(t, threeAndOne("1.37.1", "1.37.1")...)
 	c.apiServer["cp1"], c.apiServer["cp2"] = apiServerRef("v1.37.2"), apiServerRef("v1.37.3")
-	want := "the config names the API server v1.37.2 for cp1 and v1.37.3 for cp2; deliver one version at a time"
+	want := "the config names the API server 1.37.2 for cp1 and 1.37.3 for cp2; deliver one version at a time"
 	if err := p.CheckConfig(fakeUpgrading{}, c, []string{"cp1", "cp2"}, readOf(nodes)); err == nil || err.Error() != want {
 		t.Errorf("two versions: err = %v, want %q", err, want)
 	}
@@ -350,7 +350,7 @@ func TestSummary(t *testing.T) {
 		runs{"cp3", k8s.KindControlPlane, "", "", errors.New("connection refused")},
 		runs{"w1", k8s.KindWorker, "1.37.1", "1.37.1", nil},
 	)
-	want := []string{"API server unknown: cp3", "API server v1.37.1: cp2, w1", "API server v1.37.2: cp1"}
+	want := []string{"API server 1.37.1: cp2, w1", "API server 1.37.2: cp1", "API server unknown: cp3"}
 	if got := New().Summary(c, readOf(all)); !slices.Equal(got, want) {
 		t.Errorf("Summary = %q, want %q", got, want)
 	}
