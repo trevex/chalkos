@@ -32,7 +32,7 @@ type imageStore interface {
 //     the meaning it gives them, whatever another image's defaults made of the old one;
 //   - secret is the fallback secret, which only the facts that declare it get, run by chalkd;
 //   - recorded, when set, stands for the storage STATE records, as for a check against storage
-//     that is yet to be made, and storage limits the check to the storage kinds' rules;
+//     that a delivery to the running image makes before the slot is written;
 //   - image is the root hash of the image that checks, which its errors name;
 //   - writing is the root hash of the image whose slot the config is for, when it is written,
 //     which a refusal of a storage change leaves out of the images it names.
@@ -40,7 +40,6 @@ type imageCheck struct {
 	delivered, old []config.Document
 	secret         string
 	recorded       *storage.Section
-	storage        bool
 	image, writing []byte
 }
 
@@ -89,7 +88,7 @@ func (s *Server) runImageCheck(ctx context.Context, st imageStore, system, platf
 	if err != nil {
 		return nil, err
 	}
-	in := &checkv1.Input{Node: name, Platform: platform, Storage: c.storage}
+	in := &checkv1.Input{Node: name, Platform: platform}
 	if in.Delivered, err = imagecheck.Encode(config.Redact(c.delivered)); err != nil {
 		return nil, failed(connect.CodeInvalidArgument, "encode the config: %v", err)
 	}

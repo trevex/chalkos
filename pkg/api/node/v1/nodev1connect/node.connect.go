@@ -106,7 +106,9 @@ type NodeServiceClient interface {
 	// rollback at a trial's deadline holds the lock that delivery needs, the change is refused with
 	// ABORTED. A trial whose node runs neither config ends, and the change goes ahead. A trial
 	// record the node cannot read refuses the change with INTERNAL until RollbackConfig removes it.
-	// Available in normal mode to admins.
+	// Config for the running image goes to the image staged in the inactive slot too, or replaces
+	// the pending config, as ApplyConfigRequest.config describes. Available in normal mode to
+	// admins.
 	ApplyConfig(context.Context, *connect.Request[v1.ApplyConfigRequest]) (*connect.Response[v1.ApplyConfigResponse], error)
 	// GetConfig returns the config a slot keeps, the running image's, its previous one or the staged
 	// image's, as it was delivered, with secret values replaced by their hashes. Available in normal
@@ -204,6 +206,8 @@ type NodeServiceClient interface {
 	// changed the node, it answers FAILED_PRECONDITION all the same: the node keeps trying to finish
 	// the rollback, and RollbackConfig to the trial's previous version finishes it at once. It
 	// answers INTERNAL when the node cannot read the trial's record, which RollbackConfig removes.
+	// A confirmation also writes what the trial's delivery held back until then: the config slot of
+	// the image staged in the inactive slot, or the pending config the config on trial replaces.
 	// Available in normal mode to admins.
 	ConfirmConfig(context.Context, *connect.Request[v1.ConfirmConfigRequest]) (*connect.Response[v1.ConfirmConfigResponse], error)
 }
@@ -460,7 +464,9 @@ type NodeServiceHandler interface {
 	// rollback at a trial's deadline holds the lock that delivery needs, the change is refused with
 	// ABORTED. A trial whose node runs neither config ends, and the change goes ahead. A trial
 	// record the node cannot read refuses the change with INTERNAL until RollbackConfig removes it.
-	// Available in normal mode to admins.
+	// Config for the running image goes to the image staged in the inactive slot too, or replaces
+	// the pending config, as ApplyConfigRequest.config describes. Available in normal mode to
+	// admins.
 	ApplyConfig(context.Context, *connect.Request[v1.ApplyConfigRequest]) (*connect.Response[v1.ApplyConfigResponse], error)
 	// GetConfig returns the config a slot keeps, the running image's, its previous one or the staged
 	// image's, as it was delivered, with secret values replaced by their hashes. Available in normal
@@ -558,6 +564,8 @@ type NodeServiceHandler interface {
 	// changed the node, it answers FAILED_PRECONDITION all the same: the node keeps trying to finish
 	// the rollback, and RollbackConfig to the trial's previous version finishes it at once. It
 	// answers INTERNAL when the node cannot read the trial's record, which RollbackConfig removes.
+	// A confirmation also writes what the trial's delivery held back until then: the config slot of
+	// the image staged in the inactive slot, or the pending config the config on trial replaces.
 	// Available in normal mode to admins.
 	ConfirmConfig(context.Context, *connect.Request[v1.ConfirmConfigRequest]) (*connect.Response[v1.ConfirmConfigResponse], error)
 }

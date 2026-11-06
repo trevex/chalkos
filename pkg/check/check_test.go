@@ -258,24 +258,6 @@ func TestRunAsksForTheFactsRulesRead(t *testing.T) {
 	}
 }
 
-// With Storage, Run checks the config against the storage kinds' rules alone and validates and
-// renders nothing: a Demo's frozen name, a validator and a renderer that fail do not refuse it,
-// and it gives the translation without staged outputs.
-func TestRunChecksStorageAlone(t *testing.T) {
-	img := testImage(t, `exit 3`)
-	img.Validators = map[string]validators.Definition{"demo": {Inputs: []string{"Demo"}, Program: script(t, `exit 4`)}}
-	in := running(t, testImage(t, `cat > "$OUT/demo.json"`), &facts{values: map[string]any{"frozen": true}})
-	in.Delivered = config.Redact(parse(t, strings.Replace(base, "name: first", "name: second", 1)))
-	in.Storage = true
-	res, err := Run(context.Background(), img, in)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if res.Staged != nil || len(res.Documents) != 3 || len(res.Identity) == 0 {
-		t.Errorf("result = %+v", res)
-	}
-}
-
 // A config refused by its rules or its outputs still gives its translation, whose storage a
 // caller names in the refusal; one refused by its translation gives none.
 func TestRunGivesTheTranslationWithARefusal(t *testing.T) {
@@ -297,15 +279,14 @@ func fixed(f rules.Facts) func(next, old []config.Document) rules.Facts {
 	return func([]config.Document, []config.Document) rules.Facts { return f }
 }
 
-// With Storage, a storage kind's rule still refuses: the system disk's var volume against the one
-// STATE records.
+// A storage kind's rule refuses the system disk's var volume against the one STATE records, as the
+// recorded fact gives it.
 func TestRunChecksStorageRules(t *testing.T) {
 	img := testImage(t, `cat > "$OUT/demo.json"`)
 	in := running(t, img, &facts{})
 	recorded := map[string]any{"volumes": map[string]any{"var": map[string]any{"format": "xfs", "encryption": "none"}}}
 	in.Facts = fixed(&facts{values: map[string]any{"recorded": recorded}})
 	in.Delivered = config.Redact(parse(t, base))
-	in.Storage = true
 	res, err := Run(context.Background(), img, in)
 	if r := new(Refusal); !errors.As(err, &r) || r.Stage != StageRules || !strings.Contains(r.Message, "format ext4 instead of xfs") || len(res.Identity) == 0 {
 		t.Errorf("Run = %+v, %v; want a refusal of the system disk by its rules", res, err)

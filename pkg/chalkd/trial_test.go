@@ -669,13 +669,7 @@ func sendTrial(s *Server, text string, d time.Duration) (*nodev1.ApplyConfigResp
 func trialServer(t *testing.T) *Server {
 	t.Helper()
 	s, _ := configServer(t)
-	t.Cleanup(func() {
-		s.mu.Lock()
-		defer s.mu.Unlock()
-		if s.trialTimer != nil {
-			s.trialTimer.Stop()
-		}
-	})
+	stopTrials(t, s)
 	return s
 }
 

@@ -42,8 +42,9 @@ func (s *Server) ApplyConfig(ctx context.Context, req *connect.Request[nodev1.Ap
 		return nil, err
 	}
 	// An upgrade writes its image's slot, checked against the machine, before the image is
-	// staged, so a machine change in between would escape checkStaged. TryLock never waits: the
-	// upgrade, an image rollback and a trial's deadline hold upgrading while they take s.mu.
+	// staged, so a delivery in between would find no staged image to write the slot of. TryLock
+	// never waits: the upgrade, an image rollback and a trial's deadline hold upgrading while they
+	// take s.mu.
 	// An upgrade reads and removes the pending config, so storing or dropping it waits for none
 	// either.
 	if req.Msg.Config != "" || req.Msg.DiscardPending {
@@ -84,13 +85,18 @@ func (s *Server) ApplyConfig(ctx context.Context, req *connect.Request[nodev1.Ap
 }
 
 // dryRun checks an ApplyConfig request as apply does, the trial's conditions with try, and
-// answers with what the delivery would do in place of doing it; the caller holds s.mu.
+// answers with what the delivery would do in place of doing it, the staged image's slot or the
+// pending config among it; the caller holds s.mu and, for a request with config, s.upgrading.
 func (s *Server) dryRun(ctx context.Context, r applyRequest) (*connect.Response[nodev1.ApplyConfigResponse], error) {
 	d, err := s.planDelivery(ctx, r)
 	if err != nil {
 		return nil, err
 	}
 	defer d.staged.Discard()
+	second, err := s.planSecond(ctx, d)
+	if err != nil {
+		return nil, err
+	}
 	o, warnings, err := s.outcome(ctx, d.fx, d.staged.States(), d.msg.FallbackSecret)
 	if err != nil {
 		return nil, err
@@ -107,17 +113,37 @@ func (s *Server) dryRun(ctx context.Context, r applyRequest) (*connect.Response[
 	for _, c := range d.machine.changes {
 		resp.Changes = append(resp.Changes, &nodev1.StorageChange{Volume: c.Volume, Reason: c.Reason})
 	}
+	if r.try > 0 {
+		if err := checkSecondTrial(second); err != nil {
+			return nil, err
+		}
+	}
+	second.plan(resp)
 	return connect.NewResponse(resp), nil
 }
 
-// apply delivers an ApplyConfig request whose config is translated; the caller holds s.mu.
+// apply delivers an ApplyConfig request whose config is translated: to the running image, then
+// to the staged image's slot or the pending config, as planSecond plans it before anything
+// changes. The caller holds s.mu and, for a request with config, s.upgrading.
 func (s *Server) apply(ctx context.Context, r applyRequest) (*connect.Response[nodev1.ApplyConfigResponse], error) {
 	d, err := s.planDelivery(ctx, r)
 	if err != nil {
 		return nil, err
 	}
 	defer d.staged.Discard()
-	return d.commit(ctx)
+	second, err := s.planSecond(ctx, d)
+	if err != nil {
+		s.refused(d.fx)
+		return nil, err
+	}
+	resp, err := d.commit(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := second.write(ctx, s, d.stored.Version, d.msg.FallbackSecret, resp.Msg); err != nil {
+		return nil, err
+	}
+	return resp, nil
 }
 
 // delivery is an ApplyConfig request that passed the checks made before the node changes; the
@@ -225,16 +251,9 @@ func (s *Server) planDelivery(ctx context.Context, r applyRequest) (*delivery, e
 	if err := s.checkNodeCertificate(m.NodeCertificate, m.NodeKey); err != nil {
 		return nil, err
 	}
-	// The staged image boots onto the machine's storage too, so the config's changes to it are
-	// checked against that image's config as well.
 	if !d.keep {
 		if d.machine, err = s.machineChanges(d.identity.section); err != nil {
 			return nil, err
-		}
-		if len(d.machine.changes) > 0 {
-			if err := s.checkStaged(ctx, name, r.next.Documents, d.identity.section, m.FallbackSecret); err != nil {
-				return nil, err
-			}
 		}
 	}
 	// A config on trial must be one its rollback undoes whole.

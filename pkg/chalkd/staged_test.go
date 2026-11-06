@@ -5,17 +5,21 @@ import (
 	"context"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"connectrpc.com/connect"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/config/slot"
 	"github.com/trevex/chalkos/pkg/pki"
+	"github.com/trevex/chalkos/pkg/storage"
 	"github.com/trevex/chalkos/pkg/tool/tooltest"
 	"github.com/trevex/chalkos/pkg/upgrade"
 )
@@ -197,29 +201,244 @@ func TestApplyConfigStagedAddsAVolume(t *testing.T) {
 	}
 }
 
-// TestApplyConfigRefusesAMachineChangeTheStagedImageWouldUndo refuses a volume added on the
-// running image while the staged image's config lacks it, which booting that image would remove,
-// and names apply-config --staged as the first step. Once the staged config adds the volume, as an
-// additive change, the running image's config that names it applies.
-func TestApplyConfigRefusesAMachineChangeTheStagedImageWouldUndo(t *testing.T) {
+// TestApplyConfigCoversTheStagedImage delivers config to the running image and, once that image
+// applied it, to the staged image's slot, in either state, which the staged image's checker passed:
+// both slots run the config, and the answer names the staged slot's versions.
+func TestApplyConfigCoversTheStagedImage(t *testing.T) {
+	for _, staged := range []string{"chalkos_3+3.efi", ".staged-chalkos_3.efi"} {
+		t.Run(staged, func(t *testing.T) {
+			s, r := stagedServerOf(t, fixtureSchemas(t), "chalkos_2.efi", staged)
+			next := strings.Replace(baseConfig, "name: first", "name: second", 1)
+			resp, err := sendConfig(s, next)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for name, image := range map[string][]byte{"running": runningImage, "staged": stagedImage} {
+				if v := slotVersion(t, s, image); v != hashOf(t, next) {
+					t.Errorf("%s version = %q, want the delivered config's", name, v)
+				}
+			}
+			if got := resp.Staged; got.GetVersion() != hashOf(t, next) || got.GetReplaces() != hashOf(t, baseConfig) {
+				t.Errorf("the answer names the staged slot %v", got)
+			}
+			if !contains(r.Calls, "systemctl try-restart demo.service") {
+				t.Errorf("the running image did not apply the config: %v", r.Calls)
+			}
+		})
+	}
+}
+
+// TestApplyConfigRefusedByEitherImage refuses config that either image refuses before anything
+// changes: the slots of both images stay, nothing runs and no baseline of the effects stays. The
+// staged image's refusal names it.
+func TestApplyConfigRefusedByEitherImage(t *testing.T) {
+	withoutDemo := fixtureSchemas(t)
+	delete(withoutDemo, "demo.example.org_v1alpha1_Demo.json")
+	for name, tc := range map[string]struct {
+		schemas map[string][]byte
+		config  string
+		code    connect.Code
+		want    string
+	}{
+		"by the staged image":  {withoutDemo, strings.Replace(baseConfig, "name: first", "name: second", 1), connect.CodeInvalidArgument, `the image 333333333333 staged in the inactive slot: the config does not suit the image: `},
+		"by the running image": {fixtureSchemas(t), strings.Replace(baseConfig, "{disk: {path: /dev/vda}}", "{disk: {path: /dev/vda}, var: {size: 1G}}", 1), connect.CodeFailedPrecondition, "only a reinstall of"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			s, r := stagedServer(t, tc.schemas)
+			_, err := sendConfig(s, tc.config)
+			if connect.CodeOf(err) != tc.code || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("err = %v, want %v naming %q", err, tc.code, tc.want)
+			}
+			for name, image := range map[string][]byte{"running": runningImage, "staged": stagedImage} {
+				if v := slotVersion(t, s, image); v != hashOf(t, baseConfig) {
+					t.Errorf("%s version = %q, want it unchanged", name, v)
+				}
+			}
+			if changed := withoutChecks(r.Calls); len(changed) != 0 {
+				t.Errorf("a refused config ran %v", changed)
+			}
+			if _, err := os.Stat(s.Paths.EffectsBaseline); !errors.Is(err, fs.ErrNotExist) {
+				t.Errorf("baseline after a refusal: %v", err)
+			}
+		})
+	}
+}
+
+// TestApplyConfigAddsAVolumeForBothImages adds a volume the config names to the machine once, as
+// the running image applies the config, and writes the staged image's slot after: that image
+// checked its config against the storage the running image records by then, which the new
+// volume is in, so its slot adds nothing more.
+func TestApplyConfigAddsAVolumeForBothImages(t *testing.T) {
 	s, r := stagedServer(t, fixtureSchemas(t))
 	r.Rules = volumeRules(s)
-	_, err := s.ApplyConfig(context.Background(), connect.NewRequest(&nodev1.ApplyConfigRequest{Config: extraConfig("ext4"), FallbackSecret: secret}))
-	if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "would refuse its own config once this config changes the storage, saying: Volume extra: ") || !strings.Contains(err.Error(), "; bring its config along first: run chalkctl apply-config --staged n1 with the new config, then apply it to the running image") || !strings.Contains(err.Error(), "extra") {
-		t.Fatalf("err = %v, want a refusal naming apply-config --staged", err)
+	m, err := s.ApplyConfig(context.Background(), connect.NewRequest(&nodev1.ApplyConfigRequest{Config: extraConfig("ext4"), FallbackSecret: secret}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := m.Msg.Changes; len(got) != 1 || got[0].Volume != "extra" {
+		t.Errorf("changes = %v, want the new volume once", got)
+	}
+	for name, image := range map[string][]byte{"running": runningImage, "staged": stagedImage} {
+		if v := slotVersion(t, s, image); v != hashOf(t, extraConfig("ext4")) {
+			t.Errorf("%s version = %q, want the config with the volume", name, v)
+		}
+	}
+}
+
+// TestApplyConfigNamesAStagedSlotItCouldNotWrite fails a delivery whose write of the staged
+// image's slot fails once the running image applied it, here as something that is no config link
+// stands where the slot's previous config would be: the running image runs the config, the staged
+// slot keeps its earlier one, and the error says so. Delivered again, the config goes to the staged
+// slot.
+func TestApplyConfigNamesAStagedSlotItCouldNotWrite(t *testing.T) {
+	s, _ := stagedServer(t, fixtureSchemas(t))
+	blocker := slot.Previous(slot.Dir(s.Loader.Slots, stagedImage))
+	write(t, blocker, "")
+	next := strings.Replace(baseConfig, "name: first", "name: second", 1)
+	_, err := sendConfig(s, next)
+	want := "the node runs config " + hashOf(t, next) + ", but writing the config slot of the image 333333333333 staged in the inactive slot failed, so it keeps config " + hashOf(t, baseConfig) + ": "
+	if connect.CodeOf(err) != connect.CodeInternal || !strings.Contains(err.Error(), want) || !strings.HasSuffix(err.Error(), "; deliver the config again to write it") {
+		t.Fatalf("err = %v, want %q", err, want)
+	}
+	if v := slotVersion(t, s, runningImage); v != hashOf(t, next) {
+		t.Errorf("running version = %q, want the delivered config's", v)
+	}
+	if v := slotVersion(t, s, stagedImage); v != hashOf(t, baseConfig) {
+		t.Errorf("staged version = %q, want it kept", v)
+	}
+	if err := os.Remove(blocker); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := sendConfig(s, next); err != nil {
+		t.Fatal(err)
+	}
+	if v := slotVersion(t, s, stagedImage); v != hashOf(t, next) {
+		t.Errorf("staged version after the second delivery = %q, want the delivered config's", v)
+	}
+}
+
+// TestDryRunPlansTheStagedSlot has a dry run check the config with both images and name the slot
+// the staged image's checker passed, with the storage its config adds, and change nothing; the
+// staged image's refusal refuses it.
+func TestDryRunPlansTheStagedSlot(t *testing.T) {
+	s, r := stagedServer(t, fixtureSchemas(t))
+	r.Rules = volumeRules(s)
+	m, err := s.ApplyConfig(context.Background(), connect.NewRequest(&nodev1.ApplyConfigRequest{Config: extraConfig("ext4"), FallbackSecret: secret, DryRun: true}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp := m.Msg
+	if got := resp.Staged; got.GetVersion() != hashOf(t, extraConfig("ext4")) || got.GetReplaces() != hashOf(t, baseConfig) {
+		t.Errorf("the plan names the staged slot %v", got)
+	}
+	if len(resp.Changes) != 1 || resp.Changes[0].Volume != "extra" {
+		t.Errorf("changes = %v, want the running image's new volume alone", resp.Changes)
+	}
+	if v := slotVersion(t, s, stagedImage); v != hashOf(t, baseConfig) {
+		t.Errorf("staged version = %q, want it unchanged", v)
 	}
 	if changed := withoutChecks(r.Calls); len(changed) != 0 {
-		t.Fatalf("a refused config ran %v", changed)
+		t.Errorf("a dry run ran %v", changed)
 	}
-	if _, err := s.ApplyConfig(context.Background(), connect.NewRequest(&nodev1.ApplyConfigRequest{Config: extraConfig("ext4"), Staged: true, FallbackSecret: secret})); err != nil {
+	withoutDemo := fixtureSchemas(t)
+	delete(withoutDemo, "demo.example.org_v1alpha1_Demo.json")
+	s, _ = stagedServer(t, withoutDemo)
+	if _, err := dryRun(s, baseConfig); connect.CodeOf(err) != connect.CodeInvalidArgument || !strings.Contains(err.Error(), "the image 333333333333 staged in the inactive slot: ") {
+		t.Errorf("a dry run the staged image refuses = %v", err)
+	}
+}
+
+// TestApplyConfigLeavesTheKnownGoodImage leaves the known-good image a rollback staged with the
+// config it last ran, without its check, and says so.
+func TestApplyConfigLeavesTheKnownGoodImage(t *testing.T) {
+	s, _ := knownGoodServer(t)
+	next := strings.Replace(baseConfig, "name: first", "name: second", 1)
+	resp, err := sendConfig(s, next)
+	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.ApplyConfig(context.Background(), connect.NewRequest(&nodev1.ApplyConfigRequest{Config: extraConfig("ext4"), FallbackSecret: secret})); err != nil {
+	if v := slotVersion(t, s, stagedImage); v != hashOf(t, baseConfig) {
+		t.Errorf("known-good version = %q, want it kept", v)
+	}
+	if resp.Staged != nil || len(resp.Warnings) != 1 || !strings.Contains(resp.Warnings[0], "is the one the node falls back to while the boot of chalkos_2+1-2.efi is not found healthy; its config stays as it last ran") {
+		t.Errorf("answer = %v", resp)
+	}
+}
+
+// TestTrialWritesTheStagedSlotOnceConfirmed checks config on trial with the staged image too, and
+// writes that image's slot from the copy the trial keeps only once the trial is confirmed; a trial
+// rolled back leaves it as it was. Either way the copy goes with the trial.
+func TestTrialWritesTheStagedSlotOnceConfirmed(t *testing.T) {
+	copyOf := func(s *Server) string { return slotVersionAt(t, filepath.Join(s.Paths.StateDir, trialStagedSlot)) }
+	for _, confirm := range []bool{true, false} {
+		t.Run(fmt.Sprintf("confirmed %v", confirm), func(t *testing.T) {
+			s, _ := stagedServer(t, fixtureSchemas(t))
+			stopTrials(t, s)
+			resp, err := sendTrial(s, nextConfig, time.Hour)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := resp.Staged; got.GetVersion() != hashOf(t, nextConfig) || got.GetReplaces() != hashOf(t, baseConfig) {
+				t.Errorf("the answer names the staged slot %v", got)
+			}
+			if v := slotVersion(t, s, stagedImage); v != hashOf(t, baseConfig) {
+				t.Errorf("staged version on trial = %q, want it kept", v)
+			}
+			if v := copyOf(s); v != hashOf(t, nextConfig) {
+				t.Errorf("the trial's copy holds %q", v)
+			}
+			want := hashOf(t, baseConfig)
+			if confirm {
+				m, err := s.ConfirmConfig(context.Background(), connect.NewRequest(&nodev1.ConfirmConfigRequest{Version: hashOf(t, nextConfig)}))
+				if err != nil || len(m.Msg.Warnings) != 0 {
+					t.Fatalf("confirm = %v, %v", m, err)
+				}
+				want = hashOf(t, nextConfig)
+			} else if _, err := s.RollbackConfig(context.Background(), connect.NewRequest(&nodev1.RollbackConfigRequest{Version: hashOf(t, baseConfig)})); err != nil {
+				t.Fatal(err)
+			}
+			if v := slotVersion(t, s, stagedImage); v != want {
+				t.Errorf("staged version = %q, want %q", v, want)
+			}
+			if v := copyOf(s); v != "" {
+				t.Errorf("the trial's copy stayed, holding %q", v)
+			}
+		})
+	}
+}
+
+// TestCheckSecondTrial refuses a trial whose config adds storage for the staged image on top of
+// what the running image's config adds, which a rollback cannot undo, as the image's own
+// translation of the config may.
+func TestCheckSecondTrial(t *testing.T) {
+	if err := checkSecondTrial(secondWrite{image: stagedImage}); err != nil {
+		t.Errorf("a staged slot without storage changes = %v", err)
+	}
+	w := secondWrite{image: stagedImage, slot: slotWrite{machine: machineChange{changes: []storage.Change{{Volume: "extra", Reason: "new volume"}}}}}
+	if err := checkSecondTrial(w); connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "for the image 333333333333 staged in the inactive slot, volume extra: new volume, which a rollback cannot undo") {
+		t.Errorf("err = %v", err)
+	}
+}
+
+// slotVersionAt is the version of the slot dir; empty without one.
+func slotVersionAt(t *testing.T, dir string) string {
+	t.Helper()
+	v, err := slot.Version(dir)
+	if err != nil {
 		t.Fatal(err)
 	}
-	if v := slotVersion(t, s, runningImage); v != hashOf(t, extraConfig("ext4")) {
-		t.Errorf("running version = %q, want the config with the volume", v)
-	}
+	return v
+}
+
+// stopTrials stops s's trial deadlines with the test.
+func stopTrials(t *testing.T, s *Server) {
+	t.Cleanup(func() {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		if s.trialTimer != nil {
+			s.trialTimer.Stop()
+		}
+	})
 }
 
 // TestApplyConfigWaitsForAnUpgrade refuses config while an upgrade runs, which writes the config

@@ -36,15 +36,21 @@ func (s *Server) holdPending(m *nodev1.ApplyConfigRequest, docs []config.Documen
 	if m.DryRun {
 		return connect.NewResponse(&nodev1.ApplyConfigResponse{Pending: &nodev1.PendingConfig{Version: version}}), nil
 	}
-	if err := slot.Write(slot.Pending(s.Loader.Slots), slot.Stored{Delivered: docs, Version: version}); err != nil {
-		return nil, failed(connect.CodeInternal, "store the pending config: %v", err)
-	}
-	log.Printf("config %s is held pending for the next upgrade, unchecked", version)
-	p, err := s.pendingConfig()
+	p, err := s.storePending(slot.Stored{Delivered: docs, Version: version})
 	if err != nil {
 		return nil, failed(connect.CodeInternal, "%v", err)
 	}
 	return connect.NewResponse(&nodev1.ApplyConfigResponse{Pending: p}), nil
+}
+
+// storePending keeps next, config as delivered and its version, as the node's pending config, in
+// place of any it held, and returns it as Status names it. The caller holds s.mu and s.upgrading.
+func (s *Server) storePending(next slot.Stored) (*nodev1.PendingConfig, error) {
+	if err := slot.Write(slot.Pending(s.Loader.Slots), slot.Stored{Delivered: next.Delivered, Version: next.Version}); err != nil {
+		return nil, fmt.Errorf("store the pending config: %w", err)
+	}
+	log.Printf("config %s is held pending for the next upgrade, unchecked", next.Version)
+	return s.pendingConfig()
 }
 
 // discardPending drops the node's pending config and answers with the one it dropped; a node

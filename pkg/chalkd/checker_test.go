@@ -127,8 +127,7 @@ func refusingImage(t *testing.T, s *Server) dirStore {
 }
 
 // chalkd check refuses config by the image's rules, its validators and its renderers, with the
-// stage and the identity of the translation; with Storage, it runs the storage kinds' rules alone
-// and validates and renders nothing.
+// stage and the identity of the translation.
 func TestCheckRefusesByRulesAndOutputs(t *testing.T) {
 	s, _ := configServer(t)
 	st := refusingImage(t, s)
@@ -145,18 +144,5 @@ func TestCheckRefusesByRulesAndOutputs(t *testing.T) {
 		if r.GetStage() != want.stage || !strings.Contains(r.GetMessage(), want.message) || res.GetIdentity() == "" {
 			t.Errorf("%s: result = %v, want a refusal of %s with the identity", name, res, want.stage)
 		}
-	}
-	docs, err := config.Parse(strings.NewReader(strings.Replace(baseConfig, "name: first", "name: refuse", 1)))
-	if err != nil {
-		t.Fatal(err)
-	}
-	delivered, err := imagecheck.Encode(config.Redact(docs))
-	if err != nil {
-		t.Fatal(err)
-	}
-	res, err := imagecheck.Local{Check: s.Check}.Run(context.Background(), imagecheck.Image{Store: st.Dir(), System: "/nix/store/x"},
-		&checkv1.Input{Node: "n1", Platform: "metal", Delivered: delivered, Storage: true}, noFacts{})
-	if err != nil || res.GetRefusal() != nil || res.GetError() != "" || res.GetIdentity() == "" {
-		t.Errorf("storage alone: result = %v, %v; want a pass", res, err)
 	}
 }

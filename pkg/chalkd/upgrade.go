@@ -17,6 +17,7 @@ import (
 	"github.com/trevex/chalkos/pkg/config/slot"
 	"github.com/trevex/chalkos/pkg/esp"
 	"github.com/trevex/chalkos/pkg/pki"
+	"github.com/trevex/chalkos/pkg/storage"
 	"github.com/trevex/chalkos/pkg/storeslot"
 	"github.com/trevex/chalkos/pkg/uki"
 	"github.com/trevex/chalkos/pkg/upgrade"
@@ -227,7 +228,10 @@ type slotWrite struct {
 
 // planSlot checks docs, config as delivered, for the config slot of an image that does not run,
 // whose store is st with the root hash, and changes nothing. system is the image's NixOS system in
-// st, platform its platform and secret the fallback secret. The caller holds s.mu.
+// st, platform its platform and secret the fallback secret. recorded, when set, is the storage a
+// delivery to the running image records before the slot is written, which the image checks the
+// config against and its storage changes are planned on top of; nil plans them on the storage
+// STATE records. The caller holds s.mu.
 //
 // The image checks the config itself, with its own chalkd, as it would check a delivery once it
 // runs: its schemas, its rules and its renderers, against the running slot's config as it was
@@ -237,7 +241,7 @@ type slotWrite struct {
 //   - config the image refuses, such as one that changes what a node holding a share was set up
 //     for, or one a renderer of the image cannot render;
 //   - storage changes that take a reset or a reinstall, which the image's storage rules refuse.
-func (s *Server) planSlot(ctx context.Context, st imageStore, system, platform string, rootHash []byte, docs []config.Document, secret string) (slotWrite, error) {
+func (s *Server) planSlot(ctx context.Context, st imageStore, system, platform string, rootHash []byte, docs []config.Document, secret string, recorded *storage.Section) (slotWrite, error) {
 	_, running, _, err := s.runningSlot()
 	if err != nil {
 		return slotWrite{}, err
@@ -246,7 +250,7 @@ func (s *Server) planSlot(ctx context.Context, st imageStore, system, platform s
 	if err != nil {
 		return slotWrite{}, err
 	}
-	next, warnings, err := s.checkWithImage(ctx, st, system, platform, name, imageCheck{delivered: docs, old: running.Delivered, secret: secret, image: rootHash, writing: rootHash})
+	next, warnings, err := s.checkWithImage(ctx, st, system, platform, name, imageCheck{delivered: docs, old: running.Delivered, secret: secret, recorded: recorded, image: rootHash, writing: rootHash})
 	if err != nil {
 		return slotWrite{}, err
 	}
@@ -254,8 +258,10 @@ func (s *Server) planSlot(ctx context.Context, st imageStore, system, platform s
 	if err != nil {
 		return slotWrite{}, err
 	}
-	mc, err := s.machineChanges(d.section)
-	if err != nil {
+	var mc machineChange
+	if recorded != nil {
+		mc = machineChange{recorded: *recorded, section: d.section, changes: storage.Changes(*recorded, d.section)}
+	} else if mc, err = s.machineChanges(d.section); err != nil {
 		return slotWrite{}, err
 	}
 	return slotWrite{next: next, machine: mc, warnings: warnings}, nil
@@ -268,7 +274,7 @@ func (s *Server) planSlot(ctx context.Context, st imageStore, system, platform s
 // volume only once it is written again. It returns the warnings of the image's check. The caller
 // holds s.mu.
 func (s *Server) writeSlot(ctx context.Context, st imageStore, system, platform string, rootHash []byte, docs []config.Document, secret string) ([]string, error) {
-	w, err := s.planSlot(ctx, st, system, platform, rootHash, docs, secret)
+	w, err := s.planSlot(ctx, st, system, platform, rootHash, docs, secret, nil)
 	if err != nil {
 		return nil, err
 	}

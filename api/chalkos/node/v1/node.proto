@@ -44,7 +44,9 @@ service NodeService {
   // rollback at a trial's deadline holds the lock that delivery needs, the change is refused with
   // ABORTED. A trial whose node runs neither config ends, and the change goes ahead. A trial
   // record the node cannot read refuses the change with INTERNAL until RollbackConfig removes it.
-  // Available in normal mode to admins.
+  // Config for the running image goes to the image staged in the inactive slot too, or replaces
+  // the pending config, as ApplyConfigRequest.config describes. Available in normal mode to
+  // admins.
   rpc ApplyConfig(ApplyConfigRequest) returns (ApplyConfigResponse);
   // GetConfig returns the config a slot keeps, the running image's, its previous one or the staged
   // image's, as it was delivered, with secret values replaced by their hashes. Available in normal
@@ -142,6 +144,8 @@ service NodeService {
   // changed the node, it answers FAILED_PRECONDITION all the same: the node keeps trying to finish
   // the rollback, and RollbackConfig to the trial's previous version finishes it at once. It
   // answers INTERNAL when the node cannot read the trial's record, which RollbackConfig removes.
+  // A confirmation also writes what the trial's delivery held back until then: the config slot of
+  // the image staged in the inactive slot, or the pending config the config on trial replaces.
   // Available in normal mode to admins.
   rpc ConfirmConfig(ConfirmConfigRequest) returns (ConfirmConfigResponse);
 }
@@ -451,6 +455,17 @@ message ApplyConfigRequest {
   // The node's config, as InstallHeader.config holds it, checked against the running image's
   // schemas. It replaces the node's config as a whole. Empty keeps the node's config and
   // storage, for a request that delivers only layer payloads, a node certificate or OS CAs.
+  //
+  // Without staged, the config is for the running image and for the image staged in the inactive
+  // slot, staged or active, as BootStatus.staged names it, unless that image is the known-good
+  // one a rollback staged, which keeps the config it last ran. Both images check the config, the
+  // staged one with its own checker as for staged, before anything changes, and a refusal of
+  // either refuses the request. The running image applies the config, and then the staged image's
+  // config slot is written. When that write fails, the slot keeps its earlier config and the
+  // request fails naming it; the request sent again writes it. On a node without a staged image
+  // that holds a pending config, the config replaces the pending config, unchecked, once the
+  // running image applied it, so the next upgrade boots the config delivered last. With try, the
+  // staged image's slot or the pending config is written once ConfirmConfig confirms the trial.
   string config = 5;
   // Whether the config is for the image in the inactive slot, staged or active, as
   // BootStatus.staged names it: chalkd checks it against that image
@@ -484,7 +499,9 @@ message ApplyConfigRequest {
   // otherwise answers with the delivery's plan and storage changes. With try, it checks the
   // trial's conditions too. It changes nothing: no config, storage, layer payload, certificate or
   // effect. With staged, the staged image checks the config; without an image staged, the
-  // response names the config it would hold pending, and nothing is kept.
+  // response names the config it would hold pending, and nothing is kept. Without staged, the
+  // staged image checks the config too, and the response names its slot as the delivery would
+  // write it, or the pending config the delivery would replace.
   bool dry_run = 10;
   // Whether chalkd drops the node's pending config, which staged without an image staged keeps.
   // It goes with staged alone, without config. The response names the config dropped.
@@ -525,8 +542,25 @@ message ApplyConfigResponse {
   Plan plan = 4;
   // The node's pending config: the config a request with staged keeps, or for a dry run would
   // keep, on a node without an image staged; for discard_pending, the config dropped, unset when
-  // the node held none. Unset for other requests.
+  // the node held none. For config to the running image on a node without an image staged that
+  // holds a pending config, the config that replaced it, or without since the one a dry run or a
+  // trial's confirmation would replace it with. Unset for other requests.
   PendingConfig pending = 5;
+  // For config to the running image while an image other than the known-good one is staged in
+  // the inactive slot: that image's config slot, which its checker passed, as the delivery wrote
+  // it, as a dry run would write it, or as a trial's confirmation writes it. The storage changes
+  // its config makes on top of the running image's are among changes. Unset otherwise.
+  StagedSlot staged = 6;
+}
+
+// The config slot of the image staged in the inactive slot, as config delivered to the running
+// image writes it.
+message StagedSlot {
+  // The version of the config the slot holds once written, as
+  // StatusResponse.staged_config_version gives it.
+  string version = 1;
+  // The version of the config the slot held before; empty when it held none.
+  string replaces = 2;
 }
 
 // Config a node holds for its next upgrade, kept unchecked until that upgrade checks it against
@@ -657,7 +691,12 @@ message ConfirmConfigRequest {
 }
 
 // The response of ConfirmConfig, once the trial ended.
-message ConfirmConfigResponse {}
+message ConfirmConfigResponse {
+  // What the confirmation could not write of what the trial's delivery held back: the config slot
+  // of the staged image or the pending config, and why. The trial ended all the same, and the
+  // config delivered again writes it.
+  repeated string warnings = 1;
+}
 
 // The request of Status.
 message StatusRequest {

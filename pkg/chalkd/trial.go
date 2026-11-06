@@ -25,6 +25,11 @@ import (
 // trialFile is where STATE keeps the record of a config on trial, below its mount point.
 const trialFile = "chalkd/trial"
 
+// trialStagedSlot is where STATE keeps, below its mount point, the config slot of the staged
+// image that a trial's confirmation writes, as that image's checker passed it when the trial's
+// config was delivered. It goes with the trial's record.
+const trialStagedSlot = "chalkd/trial-staged"
+
 // trialRecord is a config on trial: the slot it was delivered to, by its name below the slots'
 // directory; the version on trial; the version the slot ran before, which the slot keeps as its
 // previous config and a rollback delivers again; the deadline; and the units the trial's health
@@ -33,6 +38,11 @@ const trialFile = "chalkd/trial"
 // already, that ends the trial, or why the trial's slot could not be read at the deadline;
 // Attempts counts those that failed, and Changed is set once one failed after it changed the
 // node, which the deadline's retries or a rollback on request then finish.
+//
+// What the delivery writes besides the running slot waits for the confirmation, so a trial that
+// rolls back leaves it as it was: Staged is the root hash, in hex, of the staged image whose slot
+// the confirmation writes from the copy at trialStagedSlot, and Pending is set when the
+// confirmation replaces the node's pending config with the config on trial.
 type trialRecord struct {
 	Slot        string    `json:"slot"`
 	Version     string    `json:"version"`
@@ -42,6 +52,8 @@ type trialRecord struct {
 	Error       string    `json:"error,omitempty"`
 	Attempts    int       `json:"attempts,omitempty"`
 	Changed     bool      `json:"changed,omitempty"`
+	Staged      string    `json:"staged,omitempty"`
+	Pending     bool      `json:"pending,omitempty"`
 }
 
 // readTrial reads the trial record below stateDir; open is false without one.
@@ -69,7 +81,7 @@ func readTrial(stateDir string) (r trialRecord, open bool, err error) {
 // units, and with no rollback at the deadline attempted in between.
 func (r trialRecord) sameTrial(o trialRecord) bool {
 	return r.Slot == o.Slot && r.Version == o.Version && r.Previous == o.Previous && r.Deadline.Equal(o.Deadline) && slices.Equal(r.IgnoreUnits, o.IgnoreUnits) &&
-		r.Error == o.Error && r.Attempts == o.Attempts && r.Changed == o.Changed
+		r.Error == o.Error && r.Attempts == o.Attempts && r.Changed == o.Changed && r.Staged == o.Staged && r.Pending == o.Pending
 }
 
 // writeTrial writes the trial record below stateDir and syncs it, so it survives a crash once
@@ -83,13 +95,21 @@ func writeTrial(stateDir string, r trialRecord) error {
 }
 
 // removeTrial removes the trial record and syncs its directory, so that after a power cut no boot
-// rolls back a config whose trial ended.
+// rolls back a config whose trial ended, and then the copy of the staged image's slot the trial
+// kept. A copy that stays is no harm: only a record that names the staged image reads it, and a
+// trial that does writes its own copy first.
 func removeTrial(stateDir string) error {
 	path := filepath.Join(stateDir, trialFile)
 	if err := os.Remove(path); err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return err
 	}
-	return atomicfile.SyncDir(filepath.Dir(path))
+	if err := atomicfile.SyncDir(filepath.Dir(path)); err != nil {
+		return err
+	}
+	if err := slot.Remove(filepath.Join(stateDir, trialStagedSlot)); err != nil {
+		log.Printf("remove the copy of the staged image's config slot the trial kept: %v", err)
+	}
+	return nil
 }
 
 // trialState is where a trial stands, as its slot shows it.
@@ -190,11 +210,61 @@ func (s *Server) ConfirmConfig(ctx context.Context, req *connect.Request[nodev1.
 	if st != trialApplied {
 		return nil, failed(connect.CodeFailedPrecondition, "the node does not run config %s on trial with config %s as its previous config", r.Version, r.Previous)
 	}
+	warnings := s.writeHeldBack(r)
 	if err := s.endTrial(); err != nil {
 		return nil, failed(connect.CodeInternal, "end the trial: %v", err)
 	}
 	log.Printf("config %s was confirmed; its trial ended", version)
-	return connect.NewResponse(&nodev1.ConfirmConfigResponse{}), nil
+	return connect.NewResponse(&nodev1.ConfirmConfigResponse{Warnings: warnings}), nil
+}
+
+// writeHeldBack writes what the delivery of the trial r, now confirmed, held back: the staged
+// image's slot from the copy the trial kept, which that image's checker passed before the trial
+// began, or the pending config, which the config on trial replaces. Nothing that changes either
+// runs during a trial: deliveries, upgrades, activations and image rollbacks are refused. A
+// write that fails leaves the slot or the pending config as it was and is a warning: the
+// confirmation goes ahead, and the config delivered again writes it. The caller holds s.mu.
+func (s *Server) writeHeldBack(r trialRecord) []string {
+	switch {
+	case r.Staged != "":
+		if err := s.writeStagedCopy(r.Staged); err != nil {
+			return []string{fmt.Sprintf("config %s is confirmed, but writing the config slot of the image %.12s staged in the inactive slot failed, so it keeps its earlier config: %v; deliver the config again to write it", r.Version, r.Staged, err)}
+		}
+	case r.Pending:
+		running, _, err := slot.Read(filepath.Join(s.Loader.Slots, r.Slot))
+		if err == nil {
+			_, err = s.storePending(running)
+		}
+		if err != nil {
+			return []string{fmt.Sprintf("config %s is confirmed, but replacing the pending config with it failed, so the pending config stays: %v; deliver the config again to replace it", r.Version, err)}
+		}
+	}
+	return nil
+}
+
+// writeStagedCopy writes the copy a trial kept at trialStagedSlot to the config slot of the
+// staged image, whose root hash staged gives in hex. An image whose slot STATE no longer keeps is
+// no longer staged, and no slot is written for it. The caller holds s.mu.
+func (s *Server) writeStagedCopy(staged string) error {
+	image, err := hex.DecodeString(staged)
+	if err != nil {
+		return fmt.Errorf("the trial's record names no image: %w", err)
+	}
+	held, found, err := slot.Read(filepath.Join(s.Paths.StateDir, trialStagedSlot))
+	switch {
+	case err != nil:
+		return err
+	case !found:
+		return errors.New("the trial's copy of the slot is gone")
+	case !s.keepsSlot(image):
+		log.Printf("the image %.12s is no longer staged, so its config slot is not written", staged)
+		return nil
+	}
+	if err := slot.Write(slot.Dir(s.Loader.Slots, image), held); err != nil {
+		return err
+	}
+	log.Printf("the image %.12s staged in the inactive slot has config %s too", staged, held.Version)
+	return nil
 }
 
 // endTrial removes the trial's record and then stops its deadline; the caller holds s.mu. A record
@@ -342,6 +412,11 @@ func checkTrial(found bool, running, next string, m machineChange) error {
 // delivery ended, settleTrial arms the deadline or, when the slot does not run the config, ends
 // the trial. A delivery that failed says which: the config stays on trial until its deadline, or
 // the config from before it is delivered again. The caller holds s.mu and s.upgrading.
+//
+// The staged image checks the config before anything changes, as for a delivery without a trial,
+// but its slot is written only once the trial is confirmed, from a copy the trial keeps, and so is
+// the pending config replaced: a rollback, at the deadline, on request or at a boot, then leaves
+// both as they were.
 func (s *Server) applyTrial(ctx context.Context, r applyRequest) (*connect.Response[nodev1.ApplyConfigResponse], error) {
 	d, err := s.planDelivery(ctx, r)
 	if err != nil {
@@ -349,6 +424,17 @@ func (s *Server) applyTrial(ctx context.Context, r applyRequest) (*connect.Respo
 	}
 	defer d.staged.Discard()
 	rec := trialRecord{Slot: filepath.Base(d.dir), Version: d.stored.Version, Previous: d.replaced, Deadline: time.Now().Add(r.try), IgnoreUnits: r.msg.IgnoreUnits}
+	second, err := s.planSecond(ctx, d)
+	if err == nil {
+		err = checkSecondTrial(second)
+	}
+	if err == nil {
+		err = s.holdBack(&rec, second)
+	}
+	if err != nil {
+		s.refused(d.fx)
+		return nil, err
+	}
 	if err := writeTrial(s.Paths.StateDir, rec); err != nil {
 		s.refused(d.fx)
 		return nil, failed(connect.CodeInternal, "record the trial: %v", err)
@@ -357,6 +443,7 @@ func (s *Server) applyTrial(ctx context.Context, r applyRequest) (*connect.Respo
 	st, ferr := s.settleTrial(rec)
 	if err == nil {
 		log.Printf("config %s is on trial until %s; it rolls back to config %s unless confirmed", rec.Version, rec.Deadline.UTC().Format(time.RFC3339), rec.Previous)
+		second.plan(resp.Msg)
 		return resp, nil
 	}
 	switch {
@@ -368,6 +455,36 @@ func (s *Server) applyTrial(ctx context.Context, r applyRequest) (*connect.Respo
 		return nil, failed(connect.CodeOf(err), "%v; config %s is delivered again, and no trial is open", plain(err), rec.Previous)
 	}
 	return nil, err
+}
+
+// checkSecondTrial refuses a trial whose config makes the staged image's config add to the
+// machine's storage, which a rollback cannot undo, as checkTrial refuses the running image's.
+func checkSecondTrial(w secondWrite) error {
+	if len(w.slot.machine.changes) > 0 {
+		c := w.slot.machine.changes[0]
+		return failed(connect.CodeFailedPrecondition, "the config changes the node's storage for the image %x staged in the inactive slot, volume %s: %s, which a rollback cannot undo; deliver it without a trial", w.image[:6], c.Volume, c.Reason)
+	}
+	return nil
+}
+
+// holdBack records in rec, a trial's record yet to be written, what the trial's confirmation
+// writes of w: for the staged image, the slot its checker passed goes to the copy at
+// trialStagedSlot first. The caller holds s.mu.
+func (s *Server) holdBack(rec *trialRecord, w secondWrite) error {
+	switch {
+	case w.image != nil:
+		dir := filepath.Join(s.Paths.StateDir, trialStagedSlot)
+		if err := os.MkdirAll(filepath.Dir(dir), 0o755); err != nil {
+			return failed(connect.CodeInternal, "keep the staged image's config slot for the trial: %v", err)
+		}
+		if err := slot.Write(dir, w.slot.next); err != nil {
+			return failed(connect.CodeInternal, "keep the staged image's config slot for the trial: %v", err)
+		}
+		rec.Staged = hex.EncodeToString(w.image)
+	case w.pending != "":
+		rec.Pending = true
+	}
+	return nil
 }
 
 // settleTrial settles the trial r once its delivery ended or chalkd started, and returns where it

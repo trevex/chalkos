@@ -40,10 +40,7 @@ type Input struct {
 	// defaults, each one JSON object with its secret values hashed; empty when there is none. The
 	// image fills in its own defaults, as for the delivered documents, so its rules compare both
 	// with the meaning the image gives them.
-	Old []string `protobuf:"bytes,4,rep,name=old,proto3" json:"old,omitempty"`
-	// Check the documents against the rules of the storage kinds alone, and render nothing, as
-	// for a config the image accepted once, checked again for a change of the node's storage.
-	Storage       bool `protobuf:"varint,5,opt,name=storage,proto3" json:"storage,omitempty"`
+	Old           []string `protobuf:"bytes,4,rep,name=old,proto3" json:"old,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -104,13 +101,6 @@ func (x *Input) GetOld() []string {
 		return x.Old
 	}
 	return nil
-}
-
-func (x *Input) GetStorage() bool {
-	if x != nil {
-		return x.Storage
-	}
-	return false
 }
 
 // Result is what the image's checker found. A refused config sets refusal; a config that passed
@@ -364,13 +354,12 @@ var File_chalkos_check_v1_check_proto protoreflect.FileDescriptor
 
 const file_chalkos_check_v1_check_proto_rawDesc = "" +
 	"\n" +
-	"\x1cchalkos/check/v1/check.proto\x12\x10chalkos.check.v1\"\x81\x01\n" +
+	"\x1cchalkos/check/v1/check.proto\x12\x10chalkos.check.v1\"g\n" +
 	"\x05Input\x12\x12\n" +
 	"\x04node\x18\x01 \x01(\tR\x04node\x12\x1a\n" +
 	"\bplatform\x18\x02 \x01(\tR\bplatform\x12\x1c\n" +
 	"\tdelivered\x18\x03 \x03(\tR\tdelivered\x12\x10\n" +
-	"\x03old\x18\x04 \x03(\tR\x03old\x12\x18\n" +
-	"\astorage\x18\x05 \x01(\bR\astorage\"\xa9\x01\n" +
+	"\x03old\x18\x04 \x03(\tR\x03old\"\xa9\x01\n" +
 	"\x06Result\x123\n" +
 	"\arefusal\x18\x01 \x01(\v2\x19.chalkos.check.v1.RefusalR\arefusal\x12\x1c\n" +
 	"\tdocuments\x18\x02 \x03(\tR\tdocuments\x12\x1a\n" +

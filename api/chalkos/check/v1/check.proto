@@ -30,9 +30,6 @@ message Input {
   // image fills in its own defaults, as for the delivered documents, so its rules compare both
   // with the meaning the image gives them.
   repeated string old = 4;
-  // Check the documents against the rules of the storage kinds alone, and render nothing, as
-  // for a config the image accepted once, checked again for a change of the node's storage.
-  bool storage = 5;
 }
 
 // Result is what the image's checker found. A refused config sets refusal; a config that passed

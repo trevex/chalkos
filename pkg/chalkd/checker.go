@@ -64,7 +64,7 @@ func (s *Server) checkInput(ctx context.Context, system, dir string, in *checkv1
 	if err != nil {
 		return &checkv1.Result{Error: fmt.Sprintf("the old documents: %v", err)}
 	}
-	res, err := check.Run(ctx, img, check.Input{Node: in.GetNode(), Delivered: delivered, Old: old, Facts: f.For, Storage: in.GetStorage()})
+	res, err := check.Run(ctx, img, check.Input{Node: in.GetNode(), Delivered: delivered, Old: old, Facts: f.For})
 	var refusal *check.Refusal
 	switch {
 	case errors.As(err, &refusal):

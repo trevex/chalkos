@@ -156,7 +156,9 @@ delivery of that config, and the change goes ahead; while an Upgrade, a Rollback
 rollback at a trial's deadline holds the lock that delivery needs, the change is refused with
 ABORTED. A trial whose node runs neither config ends, and the change goes ahead. A trial
 record the node cannot read refuses the change with INTERNAL until RollbackConfig removes it.
-Available in normal mode to admins.
+Config for the running image goes to the image staged in the inactive slot too, or replaces
+the pending config, as ApplyConfigRequest.config describes. Available in normal mode to
+admins.
 
 Request: ApplyConfigRequest. Response: ApplyConfigResponse.
 
@@ -170,12 +172,14 @@ The request of ApplyConfig: a config, or layer payloads, a node certificate or O
 | `node_certificate` | bytes | A new node certificate for the node, followed by the certificate of the node CA that issued it (PEM), which chalkd serves from then on; empty keeps the node's. |
 | `node_key` | bytes | PEM key of node_certificate; empty keeps the node's. |
 | `trust` | bytes | The OS CAs the node trusts from now on (PEM), as InstallHeader.ca_certificate holds them; empty keeps the node's. They must verify the node's certificate, the caller's and a control plane's node CA. Not together with a node certificate. |
-| `config` | string | The node's config, as InstallHeader.config holds it, checked against the running image's schemas. It replaces the node's config as a whole. Empty keeps the node's config and storage, for a request that delivers only layer payloads, a node certificate or OS CAs. |
+| `config` | string | The node's config, as InstallHeader.config holds it, checked against the running image's schemas. It replaces the node's config as a whole. Empty keeps the node's config and storage, for a request that delivers only layer payloads, a node certificate or OS CAs.
+
+Without staged, the config is for the running image and for the image staged in the inactive slot, staged or active, as BootStatus.staged names it, unless that image is the known-good one a rollback staged, which keeps the config it last ran. Both images check the config, the staged one with its own checker as for staged, before anything changes, and a refusal of either refuses the request. The running image applies the config, and then the staged image's config slot is written. When that write fails, the slot keeps its earlier config and the request fails naming it; the request sent again writes it. On a node without a staged image that holds a pending config, the config replaces the pending config, unchecked, once the running image applied it, so the next upgrade boots the config delivered last. With try, the staged image's slot or the pending config is written once ConfirmConfig confirms the trial. |
 | `staged` | bool | Whether the config is for the image in the inactive slot, staged or active, as BootStatus.staged names it: chalkd checks it against that image and keeps it in that image's config slot, changing nothing the running image runs but the machine's storage. The config meets that image's change rules, compared with the running slot's config and the machine as for the running image, and the storage changes they accept are made at once, with fallback_secret. It takes the config and the fallback secret alone. Without an image staged, chalkd parses the config and keeps it as the node's pending config, unchecked, in place of any it held: the next upgrade checks it against its image and boots that image with it, unless the upgrade carries config of its own. A pending config takes no fallback secret; the upgrade that adds an encrypted volume carries it. |
 | `layers` | list of google.protobuf.Any | Payloads of the image's layers, such as a new chalkos.kubernetes.v1.Share replacing the node's, each kept by the layer whose type it is; the node refuses a payload no layer of its image takes. Empty keeps the layers' payloads. |
 | `try` | google.protobuf.Duration | How long the config is on trial: the node rolls it back by itself, as RollbackConfig does, unless ConfirmConfig confirms it within the duration, and a boot before that restores the config from before it. A trial takes config for the running image alone, without staged, layer payloads, a node certificate or OS CAs, and lasts at most 24 hours. The node refuses it with FAILED_PRECONDITION for a config that changes the node's storage, which a rollback cannot undo, for the config it runs already and on a node without config. Unset applies the config for good. |
 | `ignore_units` | list of string | With try, systemd units the health check that ConfirmConfig waits for leaves out, besides those the image ignores, such as demo.service: a unit that failed before the trial and is not the trial's concern. Each must be a unit name. The node keeps them with the trial. |
-| `dry_run` | bool | Whether the node only checks the request: it runs every check a delivery runs, the image's renderers and their checks among them, refuses the request as the delivery would, and otherwise answers with the delivery's plan and storage changes. With try, it checks the trial's conditions too. It changes nothing: no config, storage, layer payload, certificate or effect. With staged, the staged image checks the config; without an image staged, the response names the config it would hold pending, and nothing is kept. |
+| `dry_run` | bool | Whether the node only checks the request: it runs every check a delivery runs, the image's renderers and their checks among them, refuses the request as the delivery would, and otherwise answers with the delivery's plan and storage changes. With try, it checks the trial's conditions too. It changes nothing: no config, storage, layer payload, certificate or effect. With staged, the staged image checks the config; without an image staged, the response names the config it would hold pending, and nothing is kept. Without staged, the staged image checks the config too, and the response names its slot as the delivery would write it, or the pending config the delivery would replace. |
 | `discard_pending` | bool | Whether chalkd drops the node's pending config, which staged without an image staged keeps. It goes with staged alone, without config. The response names the config dropped. |
 
 #### ApplyConfigResponse { #message-applyconfigresponse }
@@ -188,9 +192,10 @@ The response of ApplyConfig: what the delivery changed on the node.
 | `restarted_units` | list of string | Units the delivery restarted, as the image's effects say. |
 | `warnings` | list of string | Why the rule of an effect could not be evaluated, without the values it read; the delivery took the effect all the same. |
 | `plan` | Plan | For a dry run, what the delivery would do; unset otherwise. |
-| `pending` | PendingConfig | The node's pending config: the config a request with staged keeps, or for a dry run would keep, on a node without an image staged; for discard_pending, the config dropped, unset when the node held none. Unset for other requests. |
+| `pending` | PendingConfig | The node's pending config: the config a request with staged keeps, or for a dry run would keep, on a node without an image staged; for discard_pending, the config dropped, unset when the node held none. For config to the running image on a node without an image staged that holds a pending config, the config that replaced it, or without since the one a dry run or a trial's confirmation would replace it with. Unset for other requests. |
+| `staged` | StagedSlot | For config to the running image while an image other than the known-good one is staged in the inactive slot: that image's config slot, which its checker passed, as the delivery wrote it, as a dry run would write it, or as a trial's confirmation writes it. The storage changes its config makes on top of the running image's are among changes. Unset otherwise. |
 
-Field types: [StorageChange](#message-storagechange), [Plan](#message-plan), [PendingConfig](#message-pendingconfig).
+Field types: [StorageChange](#message-storagechange), [Plan](#message-plan), [PendingConfig](#message-pendingconfig), [StagedSlot](#message-stagedslot).
 
 ### GetConfig { #method-getconfig }
 
@@ -551,6 +556,8 @@ confirmation ends the trial and the rollback's retries. Once such a rollback fai
 changed the node, it answers FAILED_PRECONDITION all the same: the node keeps trying to finish
 the rollback, and RollbackConfig to the trial's previous version finishes it at once. It
 answers INTERNAL when the node cannot read the trial's record, which RollbackConfig removes.
+A confirmation also writes what the trial's delivery held back until then: the config slot of
+the image staged in the inactive slot, or the pending config the config on trial replaces.
 Available in normal mode to admins.
 
 Request: ConfirmConfigRequest. Response: ConfirmConfigResponse.
@@ -567,7 +574,9 @@ The request of ConfirmConfig.
 
 The response of ConfirmConfig, once the trial ended.
 
-No fields.
+| Field | Type | Description |
+| ----- | ---- | ----------- |
+| `warnings` | list of string | What the confirmation could not write of what the trial's delivery held back: the config slot of the staged image or the pending config, and why. The trial ended all the same, and the config delivered again writes it. |
 
 ## Messages { #messages }
 
@@ -882,6 +891,16 @@ A chalkos image in an OCI registry.
 | Field | Type | Description |
 | ----- | ---- | ----------- |
 | `reference` | string | The image's repository and manifest digest, repository@sha256:…, as chalkctl resolved the inventory's reference. The node pulls that manifest and refuses it unless its config is the image the header describes and its store, hash-tree, UKI and, for an install, boot-loader layers have the header's sizes and SHA-256 sums. An upgrade pulls through the Mirror and authenticates with the Registry documents of the config the request delivers, or without one of the running config; an install through those of the config the request delivers. It tries each endpoint of the Mirror of the reference's host, then the host, each with the Registry of its own host, and pulls anonymously from a host without one. |
+
+### StagedSlot { #message-stagedslot }
+
+The config slot of the image staged in the inactive slot, as config delivered to the running
+image writes it.
+
+| Field | Type | Description |
+| ----- | ---- | ----------- |
+| `version` | string | The version of the config the slot holds once written, as StatusResponse.staged_config_version gives it. |
+| `replaces` | string | The version of the config the slot held before; empty when it held none. |
 
 ### StorageChange { #message-storagechange }
 

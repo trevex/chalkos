@@ -3,6 +3,7 @@ package chalkd
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -166,23 +167,68 @@ func TestPendingWaitsForAnUpgrade(t *testing.T) {
 	}
 }
 
-// TestPendingLeavesTheRunningImageAlone delivers config to the running image, plans one and keeps
-// the pending config as it is.
-func TestPendingLeavesTheRunningImageAlone(t *testing.T) {
+// TestApplyConfigReplacesPending has config delivered to the running image replace the pending
+// config, once the running image applied it, so the next upgrade boots the config delivered last:
+// a dry run names the pending config it would replace and keeps it, and a node without a pending
+// config holds none after a delivery. The fallback secret is not stored with it.
+func TestApplyConfigReplacesPending(t *testing.T) {
 	s, _ := configServer(t)
-	p := sendPending(t, s, baseConfig)
 	next := strings.Replace(baseConfig, "name: first", "name: second", 1)
-	if _, err := dryRun(s, next); err != nil {
+	if resp, err := sendConfig(s, next); err != nil || resp.Pending != nil || pendingVersion(t, s) != "" {
+		t.Fatalf("a delivery to a node without a pending config = %v, %v; pending %q", resp, err, pendingVersion(t, s))
+	}
+	p := sendPending(t, s, baseConfig)
+	resp, err := dryRun(s, next)
+	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := sendConfig(s, next); err != nil {
+	if resp.Pending.GetVersion() != hashOf(t, next) || resp.Pending.GetSince() != nil || pendingVersion(t, s) != p.Version {
+		t.Errorf("a dry run planned %v and left %q pending", resp.Pending, pendingVersion(t, s))
+	}
+	third := strings.Replace(baseConfig, "name: first", "name: third", 1)
+	m, err := s.ApplyConfig(context.Background(), connect.NewRequest(&nodev1.ApplyConfigRequest{Config: third, FallbackSecret: secret}))
+	if err != nil {
 		t.Fatal(err)
 	}
-	if v, _ := slot.Version(slotOf(t, s)); v != hashOf(t, next) {
+	if v, _ := slot.Version(slotOf(t, s)); v != hashOf(t, third) {
 		t.Errorf("running version = %q, want the delivered config's", v)
 	}
-	if v := pendingVersion(t, s); v != p.Version {
-		t.Errorf("pending version = %q, want %s kept", v, p.Version)
+	if got := m.Msg.Pending; got.GetVersion() != hashOf(t, third) || got.GetSince() == nil || pendingVersion(t, s) != hashOf(t, third) {
+		t.Errorf("the answer names the pending config %v; the node holds %q", got, pendingVersion(t, s))
+	}
+	held, _, err := slot.Read(slot.Pending(s.Loader.Slots))
+	if err != nil || len(held.Documents) != 0 || len(held.Identity) != 0 || len(held.Delivered) != len(parseConfig(t, third)) {
+		t.Errorf("pending slot = %+v, %v; want the documents as delivered alone", held, err)
+	}
+}
+
+// TestTrialReplacesPendingOnceConfirmed replaces the pending config with config on trial only once
+// the trial is confirmed: a trial rolled back leaves the pending config as it was.
+func TestTrialReplacesPendingOnceConfirmed(t *testing.T) {
+	for _, confirm := range []bool{true, false} {
+		t.Run(fmt.Sprintf("confirmed %v", confirm), func(t *testing.T) {
+			s := trialServer(t)
+			p := sendPending(t, s, baseConfig)
+			resp, err := sendTrial(s, nextConfig, time.Hour)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if resp.Pending.GetVersion() != hashOf(t, nextConfig) || pendingVersion(t, s) != p.Version {
+				t.Errorf("a trial named the pending config %v and left %q pending", resp.Pending, pendingVersion(t, s))
+			}
+			want := p.Version
+			if confirm {
+				if err := sendConfirm(s, hashOf(t, nextConfig)); err != nil {
+					t.Fatal(err)
+				}
+				want = hashOf(t, nextConfig)
+			} else if _, err := s.RollbackConfig(context.Background(), connect.NewRequest(&nodev1.RollbackConfigRequest{Version: hashOf(t, baseConfig)})); err != nil {
+				t.Fatal(err)
+			}
+			if v := pendingVersion(t, s); v != want {
+				t.Errorf("pending version = %q, want %q", v, want)
+			}
+		})
 	}
 }
 

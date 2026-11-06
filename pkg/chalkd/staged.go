@@ -2,6 +2,7 @@ package chalkd
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -11,7 +12,6 @@ import (
 
 	"connectrpc.com/connect"
 
-	checkv1 "github.com/trevex/chalkos/pkg/api/check/v1"
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/config/slot"
@@ -134,14 +134,13 @@ func (s *Server) readImage(ctx context.Context, rootHash []byte, read func(st im
 
 // applyStaged checks the config of a request against the image in the inactive slot, staged or
 // active, and keeps it in that image's slot, as an upgrade that finds the image staged already
-// does: checked by that
-// image's own checker against the running slot's config, and against the machine, whose storage
-// changes the image accepts it makes with the request's fallback secret. With dry_run it checks
-// the config the same way and answers with the plan, the slot's version before and after and the
-// storage changes, and changes nothing. Nothing the running image runs changes. Without an image
-// staged, the config is held pending for the next upgrade, as holdPending keeps it; a pending
-// config stays as it is while an image is staged, as after a rollback that staged the image
-// before. The caller holds s.mu.
+// does: checked by that image's own checker against the running slot's config, and against the
+// machine, whose storage changes the image accepts it makes with the request's fallback secret.
+// With dry_run it checks the config the same way and answers with the plan, the slot's version
+// before and after and the storage changes, and changes nothing. Nothing the running image runs
+// changes. Without an image staged, the config is held pending for the next upgrade, as
+// holdPending keeps it; a pending config stays as it is while an image is staged, as after a
+// rollback that staged the image before. The caller holds s.mu.
 func (s *Server) applyStaged(ctx context.Context, m *nodev1.ApplyConfigRequest) (*connect.Response[nodev1.ApplyConfigResponse], error) {
 	if m.Config == "" || len(m.Layers) > 0 || len(m.NodeCertificate) > 0 || len(m.NodeKey) > 0 || len(m.Trust) > 0 {
 		return nil, failed(connect.CodeInvalidArgument, "a request for the staged image delivers config alone, with the fallback secret: the share, the certificates and the OS CAs are the node's")
@@ -183,7 +182,7 @@ func (s *Server) applyStaged(ctx context.Context, m *nodev1.ApplyConfigRequest) 
 		var w slotWrite
 		if err := s.readImage(ctx, staged, func(st imageStore, system string) error {
 			var err error
-			w, err = s.planSlot(ctx, st, system, platform, staged, docs, m.FallbackSecret)
+			w, err = s.planSlot(ctx, st, system, platform, staged, docs, m.FallbackSecret, nil)
 			return err
 		}); err != nil {
 			return nil, err
@@ -218,59 +217,151 @@ func (s *Server) applyStaged(ctx context.Context, m *nodev1.ApplyConfigRequest) 
 	return connect.NewResponse(resp), nil
 }
 
-// checkStaged refuses a change of the machine's storage to section when the config slot of the
-// image in the inactive slot, staged or active, could not be written again after it. That happens
-// when the slot's config fails the storage rules against the new storage, for example when it
-// lacks a volume the change adds.
+// secondWrite is what config delivered to the running image writes besides the running slot, as
+// planSecond plans it before anything changes: the config slot of the image staged in the
+// inactive slot, staged or active, or else the node's pending config. Every config slot is
+// written only once the image that boots it checked it, so the staged image checks the config
+// too; the pending config waits, unchecked as apply-config --staged holds it, for the image of
+// the next upgrade, which then boots the config delivered last. Neither is set for a delivery
+// without config, or for a node that has neither.
+type secondWrite struct {
+	// image is the root hash of the staged image, slot its slot as that image's checker passed it,
+	// and held the version the slot holds until it is written.
+	image []byte
+	slot  slotWrite
+	held  string
+	// pending is the version of the pending config the delivery replaces with next, the config
+	// as delivered.
+	pending string
+	next    slot.Stored
+	// warnings say what the delivery leaves as it is: the config of the known-good image.
+	warnings []string
+}
+
+// planSecond plans what the delivery d writes besides the running slot, as secondWrite says,
+// before anything changes, so a refusal of the staged image refuses the delivery whole. The
+// known-good image a rollback staged counts as no staged image: it keeps the config it last ran,
+// as keepsKnownGood keeps it, and the pending config is replaced as on a node without a staged
+// image. The caller holds s.mu and s.upgrading, as for every write of a slot.
 //
-// The staged image would still boot and mount such a volume, because every boot sets up the
-// volumes storage.json records. Its next config, however, would be refused for removing it. The
-// operator first brings the staged slot along with chalkctl apply-config --staged, after which
-// the new volume is additive.
-//
-// The staged image checks its slot, as it would check it written again once the change is made:
-//   - against its own storage rules, which see the node called name;
-//   - with section, the storage this change makes, as the recorded storage, and next, the config
-//     this change runs, as the running config;
-//   - with secret, the delivery's fallback secret, for the facts that declare it.
-//
-// A write of the staged slot does not check the running slot in turn. The caller holds s.mu.
-func (s *Server) checkStaged(ctx context.Context, name string, next []config.Document, section storage.Section, secret string) error {
-	staged, err := s.stagedImage()
+// The staged image checks the config with its own checker as for apply-config --staged, and
+// against the storage STATE records once the running image applied d: d's changes are made
+// before the staged slot is written, and the changes the staged image's config makes on top of
+// them are planned and made after. The rules of both images thus see the storage each change
+// starts from.
+func (s *Server) planSecond(ctx context.Context, d *delivery) (secondWrite, error) {
+	if d.keep {
+		return secondWrite{}, nil
+	}
+	sl, ok, err := s.stagedEntry()
 	if err != nil {
-		return failed(connect.CodeInternal, "find the staged image: %v", err)
+		return secondWrite{}, failed(connect.CodeInternal, "find the staged image: %v", err)
 	}
-	if staged == nil {
-		return nil
+	if !ok || sl.knownGood() {
+		var w secondWrite
+		if ok {
+			w.warnings = []string{fmt.Sprintf("the image %x staged to boot next is the one the node falls back to while the boot of %s is not found healthy; its config stays as it last ran", sl.entry.RootHash[:6], sl.booted.File)}
+		}
+		if w.pending, err = slot.Version(slot.Pending(s.Loader.Slots)); err != nil {
+			return secondWrite{}, failed(connect.CodeInternal, "read the pending config's version: %v", err)
+		}
+		if w.pending != "" {
+			w.next = slot.Stored{Delivered: d.stored.Delivered, Version: d.stored.Version}
+		}
+		return w, nil
 	}
-	held, found, err := slot.Read(slot.Dir(s.Loader.Slots, staged))
+	staged := sl.entry.RootHash
+	held, err := slot.Version(slot.Dir(s.Loader.Slots, staged))
 	if err != nil {
-		return failed(connect.CodeInternal, "read the staged image's config slot: %v", err)
+		return secondWrite{}, failed(connect.CodeInternal, "read the staged image's config slot: %v", err)
 	}
-	if !found {
-		return nil
+	recorded := d.machine.recorded
+	if len(d.machine.changes) > 0 {
+		recorded = d.machine.section
 	}
 	platform := readOSRelease(s.Paths.OSRelease)["CHALKOS_PLATFORM"]
-	var refusal *checkv1.Refusal
+	var w slotWrite
 	if err := s.readImage(ctx, staged, func(st imageStore, system string) error {
-		res, err := s.runImageCheck(ctx, st, system, platform, name, imageCheck{delivered: held.Delivered, old: next, secret: secret, recorded: &section, storage: true, image: staged})
-		refusal = res.GetRefusal()
+		var err error
+		w, err = s.planSlot(ctx, st, system, platform, staged, d.stored.Delivered, d.msg.FallbackSecret, &recorded)
 		return err
 	}); err != nil {
-		code := connect.CodeInternal
-		if ce := new(connect.Error); errors.As(err, &ce) {
-			code = ce.Code()
+		return secondWrite{}, failed(codeOf(err), "the image %x staged in the inactive slot: %v", staged[:6], plain(err))
+	}
+	return secondWrite{image: staged, slot: w, held: held}, nil
+}
+
+// write writes what planSecond planned, once the running image applied version, the delivered
+// config, and adds it to resp: the staged image's slot, after the storage changes its config
+// makes on top of those of the running image, or the pending config. A write that fails leaves
+// the slot or the pending config as it was and fails the delivery, naming it; the running image
+// runs the config all the same, and the delivery sent again writes it. The caller holds s.mu.
+func (w secondWrite) write(ctx context.Context, s *Server, version, secret string, resp *nodev1.ApplyConfigResponse) error {
+	resp.Warnings = append(resp.Warnings, w.warnings...)
+	switch {
+	case w.image != nil:
+		// The running image made its changes to the machine by now, which planSecond planned the
+		// staged image's on top of.
+		mc, err := s.machineChanges(w.slot.machine.section)
+		if err == nil {
+			err = s.applyMachine(ctx, mc, secret)
 		}
-		return failed(code, "check the config of the image %x staged in the inactive slot: %v", staged[:6], plain(err))
+		if err == nil {
+			if err = slot.Write(slot.Dir(s.Loader.Slots, w.image), w.slot.next); err != nil {
+				err = fmt.Errorf("store the config: %w", err)
+			}
+		}
+		if err != nil {
+			return failed(codeOf(err), "the node runs config %s, but writing the config slot of the image %x staged in the inactive slot failed, so it keeps config %s: %v; deliver the config again to write it", version, w.image[:6], cmp.Or(w.held, "none"), plain(err))
+		}
+		log.Printf("the image %x staged in the inactive slot has config %s too", w.image[:6], w.slot.next.Version)
+		for _, c := range mc.changes {
+			resp.Changes = append(resp.Changes, &nodev1.StorageChange{Volume: c.Volume, Reason: c.Reason})
+		}
+		resp.Warnings = append(resp.Warnings, w.stagedWarnings()...)
+		resp.Staged = &nodev1.StagedSlot{Version: w.slot.next.Version, Replaces: w.held}
+	case w.pending != "":
+		p, err := s.storePending(w.next)
+		if err != nil {
+			return failed(connect.CodeInternal, "the node runs config %s, but replacing the pending config %s with it failed, so it stays: %v; deliver the config again to replace it", version, w.pending, err)
+		}
+		resp.Pending = p
 	}
-	if refusal == nil {
-		return nil
+	return nil
+}
+
+// plan adds to resp, a dry run's answer, what write would write: the staged image's slot and the
+// storage changes its config makes, or the pending config.
+func (w secondWrite) plan(resp *nodev1.ApplyConfigResponse) {
+	resp.Warnings = append(resp.Warnings, w.warnings...)
+	switch {
+	case w.image != nil:
+		for _, c := range w.slot.machine.changes {
+			resp.Changes = append(resp.Changes, &nodev1.StorageChange{Volume: c.Volume, Reason: c.Reason})
+		}
+		resp.Warnings = append(resp.Warnings, w.stagedWarnings()...)
+		resp.Staged = &nodev1.StagedSlot{Version: w.slot.next.Version, Replaces: w.held}
+	case w.pending != "":
+		resp.Pending = &nodev1.PendingConfig{Version: w.next.Version}
 	}
-	saying := refusal.GetMessage()
-	if len(refusal.GetFailures()) > 0 {
-		saying = strings.Join(refusal.GetFailures(), "; ")
+}
+
+// codeOf is the code err carries, or internal for an error without one: a failure of the node
+// itself.
+func codeOf(err error) connect.Code {
+	if ce := new(connect.Error); errors.As(err, &ce) {
+		return ce.Code()
 	}
-	return failed(connect.CodeFailedPrecondition, "the image %x staged in the inactive slot would refuse its own config once this config changes the storage, saying: %s; bring its config along first: run chalkctl apply-config --staged %s with the new config, then apply it to the running image", staged[:6], saying, name)
+	return connect.CodeInternal
+}
+
+// stagedWarnings are the warnings of the staged image's check, which name that image.
+func (w secondWrite) stagedWarnings() []string {
+	var out []string
+	for _, warning := range w.slot.warnings {
+		out = append(out, fmt.Sprintf("the image %x staged in the inactive slot: %s", w.image[:6], warning))
+	}
+	return out
 }
 
 // stagedVersion is the version of the config slot of the image the boot status names as staged;

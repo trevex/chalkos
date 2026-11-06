@@ -42,15 +42,12 @@ type Image struct {
 //     it.
 //   - Compare are what the effects compare the config with: the config the node runs, or a
 //     baseline and what the deliveries that failed since applied.
-//   - Storage checks the config against the storage kinds' rules alone, as a config that passed
-//     every check once is checked again for a change of the node's storage.
 type Input struct {
 	Node      string
 	Delivered []config.Document
 	Old       []config.Document
 	Facts     func(next, old []config.Document) rules.Facts
 	Compare   []Comparison
-	Storage   bool
 }
 
 // Result is a config that passed: its documents with their defaults and their secret values
@@ -94,9 +91,6 @@ func (r *Refusal) Error() string { return r.Message }
 // check, and plans the effects. A refused config is a *Refusal; any other error is the image's
 // own failure. A config refused after its translation still gives the translation, whose storage
 // a caller names in the refusal.
-//
-// With in.Storage, only the rules of the storage kinds run, and nothing validates, renders or
-// plans: Staged is nil.
 func Run(ctx context.Context, img Image, in Input) (Result, error) {
 	if in.Facts == nil {
 		return Result{}, errors.New("the check has no facts to give the rules")
@@ -105,20 +99,13 @@ func Run(ctx context.Context, img Image, in Input) (Result, error) {
 	if err != nil {
 		return Result{}, &Refusal{Stage: StageConfig, Message: ConfigRefusal(err)}
 	}
-	set := img.Rules
-	if in.Storage {
-		set = set.Of(config.StorageAPI)
-	}
 	old := Defaulted(img.Schemas, in.Old)
-	failures, err := Rules(set, in.Node, tr.Documents, old, in.Facts(tr.Documents, old))
+	failures, err := Rules(img.Rules, in.Node, tr.Documents, old, in.Facts(tr.Documents, old))
 	if err != nil {
 		return Result{Translated: tr}, &Refusal{Stage: StageRules, Message: err.Error()}
 	}
 	if len(failures) > 0 {
 		return Result{Translated: tr}, &Refusal{Stage: StageRules, Message: rules.Refusal(failures, in.Node), Failures: failures}
-	}
-	if in.Storage {
-		return Result{Translated: tr}, nil
 	}
 	input := outputs.Input{Node: in.Node, Documents: tr.Documents, Schemas: img.Schemas, Hashed: true}
 	rs, failed, err := validators.Run(ctx, img.Render, img.Validators, input)
