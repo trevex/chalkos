@@ -2295,9 +2295,9 @@ func TestUpgradeRollbackRefuses(t *testing.T) {
 	}
 }
 
-// TestUpgradeRollbackWithoutAReboot stages the previous image without draining or rebooting the
-// node and says that it boots with the next reboot; run again without --no-reboot, it finds the
-// image staged and reboots the node into it.
+// TestUpgradeRollbackWithoutAReboot stages the previous image with --until activate, without
+// draining or rebooting the node, and says that it boots with the next reboot; run again without
+// --until, it finds the image staged and reboots the node into it.
 func TestUpgradeRollbackWithoutAReboot(t *testing.T) {
 	l := newUpgradeLab(t, 3)
 	if err := l.upgrade(testUpgradeImage(t, "w", "0.2.0"), "--nodes", "w1"); err != nil {
