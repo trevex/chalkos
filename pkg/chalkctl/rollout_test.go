@@ -15,6 +15,7 @@ import (
 	"connectrpc.com/connect"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
+	"github.com/trevex/chalkos/pkg/chalkctl/layer"
 )
 
 // apiServerTag reads the API server's version from a config's text.
@@ -593,5 +594,31 @@ func TestOutsideTheClusterReachesNoneOfIt(t *testing.T) {
 	}
 	if got, want := deliveries(l.takeEvents()), []string{"n1 apply-config staged=false"}; !slices.Equal(got, want) {
 		t.Errorf("events %q, want %q", got, want)
+	}
+}
+
+// otherLayer is a layer whose cluster a node may coordinate besides the one an ordered run
+// orders.
+type otherLayer struct{ layer.Upgrade }
+
+func (otherLayer) Name() string { return "other" }
+
+// A node goes first in an ordered run when it acts for the others in the cluster of a layer that
+// orders the run, not in another layer's.
+func TestRolloutCoordinatorOfTheOrderedLayer(t *testing.T) {
+	k := compiled[layer.Rollout]()[0]
+	r := &configRollout{ordered: []layer.Rollout{k}, nodes: map[string]*rolloutNode{}}
+	ordering := k.(layer.Upgrade)
+	for name, roles := range map[string]upgradeRoles{
+		"a":  {{otherLayer{}, layer.UpgradeRole{Coordinator: true}}, {ordering, layer.UpgradeRole{Member: true}}},
+		"b":  {{ordering, layer.UpgradeRole{Coordinator: true}}},
+		"c0": {{otherLayer{}, layer.UpgradeRole{Coordinator: true}}},
+	} {
+		n := &rolloutNode{}
+		n.name, n.roles = name, roles
+		r.nodes[name] = n
+	}
+	if got, want := r.order(), []string{"b", "a", "c0"}; !slices.Equal(got, want) {
+		t.Errorf("order %q, want %q", got, want)
 	}
 }

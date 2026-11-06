@@ -224,7 +224,7 @@ func (r *configRollout) changes(ctx context.Context, conn *client.Conn, n *rollo
 func (r *configRollout) order() []string {
 	var coordinators, others []string
 	for _, name := range slices.Sorted(maps.Keys(r.nodes)) {
-		if r.nodes[name].roles.coordinator() {
+		if r.coordinator(r.nodes[name]) {
 			coordinators = append(coordinators, name)
 		} else {
 			others = append(others, name)
@@ -242,7 +242,7 @@ func (r *configRollout) node(ctx context.Context, n *rolloutNode) (bool, error) 
 	if err != nil {
 		return false, err
 	}
-	coordinator := len(r.ordered) > 0 && n.roles.coordinator()
+	coordinator := r.coordinator(n)
 	if n.runs != "" && n.runs == n.version {
 		r.say("%s runs config %s already", n.name, n.version)
 		if coordinator {
@@ -387,6 +387,12 @@ func (a *app) rollbackTrial(ctx context.Context, t *target, version, previous st
 	}
 	fmt.Fprintf(a.stdout, "%s runs config %s again: config %s was rolled back\n", t.name, previous, version)
 	return failure
+}
+
+// coordinator reports whether the node acts for the others in the cluster of a layer that orders
+// the run; a node that does so in another layer's cluster only goes with the other nodes.
+func (r *configRollout) coordinator(n *rolloutNode) bool {
+	return slices.ContainsFunc(r.ordered, func(l layer.Rollout) bool { return n.roleIn(l).Coordinator })
 }
 
 // roleIn is the node's role in the cluster of the layer l, as the layer's Upgrade hooks read it;
