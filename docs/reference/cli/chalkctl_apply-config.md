@@ -94,7 +94,9 @@ file.
 
 | Flag | Type | Default | Description |
 | --- | --- | --- | --- |
-| `--address`{ #flag-address } | string | the node's address in the inventory | Address of the node's chalkd, host or host:port. |
+| `--address`{ #flag-address } | list of string | each node's address in the inventory | Address of the node's chalkd, host or host:port, or NODE=ADDR of any node of the cluster; repeat it for several. |
+| `--allow-downgrade`{ #flag-allow-downgrade } | boolean | `false` | Deliver config whose API server is a minor release older than the one the control planes run. |
+| `--allow-downtime`{ #flag-allow-downtime } | boolean | `false` | Deliver config that changes the API server's version to a control plane of a cluster with one or two, whose API server is down while its control plane restarts. |
 | `--confirm`{ #flag-confirm } | boolean | `false` | Confirm the node's open trial once the node is healthy, so it keeps the config on trial. |
 | `--diff`{ #flag-diff } | boolean | `false` | Print what the config changes in the node's config, document by document and field by field, and change nothing; the node checks nothing, which --dry-run has it do. |
 | `--discard`{ #flag-discard } | boolean | `false` | With --staged, drop the config the node holds pending for its next upgrade; needs no inventory. |
@@ -110,6 +112,7 @@ file.
 | `--secrets`{ #flag-secrets } | string | — | Secrets file, encrypted with age or not, or - to read it from standard input. |
 | `--staged`{ #flag-staged } | boolean | `false` | Deliver the config for the image staged in the inactive slot instead, active or not, which checks it with its own chalkd after chalkctl checks it against the node's image in the inventory; without a staged image, the node holds it pending, unchecked, for the next upgrade, which checks it against its image; with --dry-run, the staged image checks it and nothing is kept; without one, --dry-run says what the node would hold pending. |
 | `--try`{ #flag-try } | duration | `0s` | Apply the config on trial for the duration, from 10s to 24h: the node rolls it back by itself unless chalkctl confirms it over a new connection once the node is healthy. |
+| `--until`{ #flag-until } | step | `confirm` | How far the delivery goes: deliver delivers to the first node that does not run the config, on trial, and leaves the trial open for apply-config --confirm; confirm delivers to every node. |
 
 ## Examples
 

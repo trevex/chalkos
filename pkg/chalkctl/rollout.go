@@ -1,0 +1,349 @@
+package chalkctl
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"maps"
+	"slices"
+	"time"
+
+	"connectrpc.com/connect"
+
+	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
+	"github.com/trevex/chalkos/pkg/chalkctl/layer"
+	"github.com/trevex/chalkos/pkg/client"
+)
+
+// rolloutTrial is how long an ordered delivery keeps a coordinator's config on trial without
+// --try: long enough for its components to pull their images and start, which Delivered waits for.
+const rolloutTrial = 10 * time.Minute
+
+// rolloutQuorumWait is how long an ordered delivery waits for a layer's hold before a coordinator
+// gets the config, such as etcd keeping its quorum. Tests lower it.
+var rolloutQuorumWait = time.Minute
+
+// applyStep is how far apply-config takes the nodes, as --until names it.
+type applyStep string
+
+const (
+	// untilDeliver delivers the config to the first node that does not run it, on trial, and leaves
+	// the trial open for apply-config --confirm.
+	untilDeliver applyStep = "deliver"
+	// untilConfirm delivers the config to every node and confirms each trial.
+	untilConfirm applyStep = "confirm"
+)
+
+func (s *applyStep) Set(v string) error {
+	switch applyStep(v) {
+	case untilDeliver, untilConfirm:
+		*s = applyStep(v)
+		return nil
+	}
+	return errors.New("want deliver or confirm")
+}
+
+func (s *applyStep) String() string { return string(*s) }
+func (s *applyStep) Type() string   { return "step" }
+
+// configRollout delivers the inventory's config to several nodes, one after the other, and stops
+// at the first that fails. When the config changes the versions a layer's cluster bounds, such as
+// the Kubernetes API server's, the run is ordered: the layer checks the versions every node runs
+// first, then the coordinators get the config one at a time, each held by the layer and on trial
+// until the layer finds it serves its cluster with the config, and the other nodes after them.
+// No node reboots. A node that runs the config already is left alone, so the same command run
+// again continues where a run stopped.
+type configRollout struct {
+	*rebooter
+	f applyConfigFlags
+	// ordered are the layers whose bounded versions the config changes; none for a run that
+	// delivers node by node in the order given.
+	ordered []layer.Rollout
+	// nodes are the run's nodes by name.
+	nodes map[string]*rolloutNode
+}
+
+// rolloutNode is a node of a run with what the run read of it before it delivered anything.
+type rolloutNode struct {
+	rebootNode
+	// layers are the node's Rollout layers, and versions what each of them reads it runs.
+	layers   []layer.Rollout
+	versions map[layer.Rollout]layer.NodeVersions
+	// version is the version of the config the run delivers it, and runs the version it runs.
+	version, runs string
+}
+
+// deliverToNodes delivers the inventory's config to the nodes named, as configRollout does.
+func (a *app) deliverToNodes(ctx context.Context, f applyConfigFlags, names []string, addresses map[string]string) error {
+	c, err := f.node.loadCluster(ctx)
+	if err != nil {
+		return err
+	}
+	creds, err := a.loadSecretCredentials(ctx, f.node.secrets)
+	if err != nil {
+		return err
+	}
+	if err := c.checkAddresses(addresses); err != nil {
+		return err
+	}
+	r := &configRollout{
+		rebooter: &rebooter{a: a, cluster: c, reach: nodeSet{cluster: c, creds: creds, addresses: addresses}, rebootOptions: a.rebootOptions(f.rollout, rolloutQuorumWait)},
+		f:        f,
+		nodes:    map[string]*rolloutNode{},
+	}
+	if err := r.plan(ctx, names); err != nil {
+		return err
+	}
+	order := names
+	if len(r.ordered) > 0 {
+		order = r.order()
+	}
+	for _, name := range order {
+		delivered, err := r.node(ctx, r.nodes[name])
+		if err != nil {
+			r.summary(ctx)
+			return err
+		}
+		if delivered && f.until == untilDeliver {
+			return nil
+		}
+	}
+	return nil
+}
+
+// plan reads each node's status, roles and versions and checks its config against the image it
+// runs, before anything is delivered; then it asks the layers whether the config changes the
+// versions they bound, and those that find it does check the versions every node of the cluster
+// runs.
+func (r *configRollout) plan(ctx context.Context, names []string) error {
+	probed := map[string]bool{}
+	byLayer := map[layer.Rollout][]layer.NodeVersions{}
+	var layers []layer.Rollout
+	for _, name := range names {
+		if err := r.cluster.node(name); err != nil {
+			return err
+		}
+		n := &rolloutNode{versions: map[layer.Rollout]layer.NodeVersions{}}
+		t, err := r.reach.target(name)
+		if err != nil {
+			return err
+		}
+		if err := callNode(t, func(conn *client.Conn) error {
+			info, err := conn.Info(ctx, connect.NewRequest(&nodev1.InfoRequest{}))
+			if err != nil {
+				return err
+			}
+			// Several nodes are checked before the first gets anything; one node is checked by its
+			// delivery, as before.
+			if len(names) > 1 {
+				st, err := conn.Status(ctx, connect.NewRequest(&nodev1.StatusRequest{}))
+				if err != nil {
+					return err
+				}
+				if err := trialOpen(name, st.Msg); err != nil {
+					return err
+				}
+				ct, err := nodeContract(ctx, conn, name)
+				if err != nil {
+					return err
+				}
+				d, err := r.cluster.deliveryFor(name, ct)
+				if err != nil {
+					return err
+				}
+				n.version, n.runs = d.Version, st.Msg.ConfigVersion
+			}
+			for _, u := range pluginsOf[layer.Upgrade](info.Msg.Layers) {
+				role, err := u.UpgradeRole(ctx, conn)
+				if err != nil {
+					return err
+				}
+				n.roles = append(n.roles, upgradeRole{u, role})
+			}
+			for _, l := range pluginsOf[layer.Rollout](info.Msg.Layers) {
+				v, err := l.Versions(ctx, conn)
+				n.layers = append(n.layers, l)
+				n.versions[l] = layer.NodeVersions{Name: name, Versions: v, Err: err}
+			}
+			return nil
+		}); err != nil {
+			return err
+		}
+		n.name = name
+		r.nodes[name] = n
+		probed[name] = n.roles.coordinator()
+		for _, l := range n.layers {
+			if !slices.Contains(layers, l) {
+				layers = append(layers, l)
+			}
+			byLayer[l] = append(byLayer[l], n.versions[l])
+		}
+	}
+	for _, l := range layers {
+		changes, err := l.Changes(pluginCluster{r.cluster}, byLayer[l])
+		if err != nil {
+			return err
+		}
+		if changes {
+			r.ordered = append(r.ordered, l)
+		}
+	}
+	if len(r.ordered) == 0 {
+		return nil
+	}
+	if r.f.payloads() {
+		return fmt.Errorf("the config changes versions the cluster orders its nodes by, so the control planes get it on trial, which %s does not go with; deliver it apart", r.f.payloadFlags)
+	}
+	all := r.clusterVersions(ctx)
+	for _, l := range r.ordered {
+		if err := l.CheckConfig(r, pluginCluster{r.cluster}, names, all[l]); err != nil {
+			return err
+		}
+	}
+	return r.findCoordinators(ctx, probed, nil)
+}
+
+// order is the order of an ordered run: the coordinators by name, then the other nodes by name.
+func (r *configRollout) order() []string {
+	var coordinators, others []string
+	for _, name := range slices.Sorted(maps.Keys(r.nodes)) {
+		if r.nodes[name].roles.coordinator() {
+			coordinators = append(coordinators, name)
+		} else {
+			others = append(others, name)
+		}
+	}
+	return append(coordinators, others...)
+}
+
+// node delivers the config to the node and reports whether it delivered it. A node that runs the
+// config already gets nothing; in an ordered run a coordinator is then checked as one the run
+// delivered to, so a run again continues once it serves its cluster. A coordinator of an ordered
+// run is held by its layers and gets the config on trial.
+func (r *configRollout) node(ctx context.Context, n *rolloutNode) (bool, error) {
+	t, err := r.reach.target(n.name)
+	if err != nil {
+		return false, err
+	}
+	coordinator := len(r.ordered) > 0 && n.roles.coordinator()
+	if n.runs != "" && n.runs == n.version {
+		r.say("%s runs config %s already", n.name, n.version)
+		if coordinator {
+			return false, r.a.waitDelivered(ctx, t, r.a.now().Add(rolloutTrial))
+		}
+		return false, nil
+	}
+	f := r.f
+	if coordinator {
+		for _, l := range r.ordered {
+			if err := l.BeforeDelivery(ctx, r, n.name, n.roleIn(l)); err != nil {
+				return false, err
+			}
+		}
+	}
+	if (coordinator || f.until == untilDeliver) && f.try == 0 {
+		f.try = rolloutTrial
+	}
+	f.noConfirm = f.noConfirm || f.until == untilDeliver
+	return true, r.a.deliverConfig(ctx, f, t)
+}
+
+// clusterVersions reads, from every node of the cluster, the versions each Rollout layer of its
+// image reads; a node chalkctl cannot reach is given to every compiled Rollout layer with the
+// error, and the layer decides whether it matters.
+func (b *rebooter) clusterVersions(ctx context.Context) map[layer.Rollout][]layer.NodeVersions {
+	all := map[layer.Rollout][]layer.NodeVersions{}
+	for _, name := range b.nodeNames() {
+		read := map[layer.Rollout]layer.NodeVersions{}
+		err := b.call(name, func(conn *client.Conn) error {
+			info, err := conn.Info(ctx, connect.NewRequest(&nodev1.InfoRequest{}))
+			if err != nil {
+				return err
+			}
+			for _, l := range pluginsOf[layer.Rollout](info.Msg.Layers) {
+				v, err := l.Versions(ctx, conn)
+				read[l] = layer.NodeVersions{Name: name, Versions: v, Err: err}
+			}
+			return nil
+		})
+		if err != nil {
+			for _, l := range compiled[layer.Rollout]() {
+				read[l] = layer.NodeVersions{Name: name, Err: err}
+			}
+		}
+		for l, v := range read {
+			all[l] = append(all[l], v)
+		}
+	}
+	return all
+}
+
+// summary prints which nodes run which versions, as the ordered layers say it, once a run stopped.
+func (r *configRollout) summary(ctx context.Context) {
+	if len(r.ordered) == 0 {
+		return
+	}
+	all := r.clusterVersions(ctx)
+	for _, l := range r.ordered {
+		for _, line := range l.Summary(all[l]) {
+			r.say("%s", line)
+		}
+	}
+}
+
+// waitDelivered waits, until the time given, for the Rollout layers of the image the node runs to
+// find that it serves their clusters with the config it runs, asking over a new connection each
+// time.
+func (a *app) waitDelivered(ctx context.Context, t *target, until time.Time) error {
+	var layers []layer.Rollout
+	if err := callNode(t, func(conn *client.Conn) error {
+		info, err := conn.Info(ctx, connect.NewRequest(&nodev1.InfoRequest{}))
+		if err == nil {
+			layers = pluginsOf[layer.Rollout](info.Msg.Layers)
+		}
+		return err
+	}); err != nil {
+		return err
+	}
+	if len(layers) == 0 {
+		return nil
+	}
+	fmt.Fprintf(a.stdout, "%s: waiting for its layers to serve with the config\n", t.name)
+	return layer.WaitFor(ctx, "", until.Sub(a.now()), a.poll(), func() error {
+		return callNode(t, func(conn *client.Conn) error {
+			for _, l := range layers {
+				if err := l.Delivered(ctx, conn); err != nil {
+					return fmt.Errorf("%s: %w", t.name, err)
+				}
+			}
+			return nil
+		})
+	})
+}
+
+// rollbackTrial rolls the node's config on trial back to config previous at once, after failure,
+// rather than at the trial's deadline. When the rollback fails, it waits for the node to roll the
+// config back by itself, as trialRolledBack does.
+func (a *app) rollbackTrial(ctx context.Context, t *target, version, previous string, deadline time.Time, failure error) error {
+	err := callNode(t, func(conn *client.Conn) error {
+		_, err := conn.RollbackConfig(ctx, connect.NewRequest(&nodev1.RollbackConfigRequest{Version: previous}))
+		return err
+	})
+	if err != nil {
+		fmt.Fprintf(a.stderr, "chalkctl: warning: %s: rolling config %s back failed: %v; waiting for the trial's deadline\n", t.name, version, err)
+		return a.trialRolledBack(ctx, t, version, previous, deadline, failure)
+	}
+	fmt.Fprintf(a.stdout, "%s runs config %s again: config %s was rolled back\n", t.name, previous, version)
+	return failure
+}
+
+// roleIn is the node's role in the cluster of the layer l, as the layer's Upgrade hooks read it;
+// none when the layer reads no role.
+func (n *rolloutNode) roleIn(l layer.Rollout) layer.UpgradeRole {
+	for _, r := range n.roles {
+		if p, ok := r.u.(layer.Plugin); ok && p == l.(layer.Plugin) {
+			return r.role
+		}
+	}
+	return layer.UpgradeRole{}
+}

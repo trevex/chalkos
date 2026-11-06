@@ -23,7 +23,10 @@ import (
 )
 
 type applyConfigFlags struct {
-	node         nodeFlags
+	node nodeFlags
+	// addresses are the values of --address: the address of the one node named, or NODE=ADDR of
+	// any node of the cluster.
+	addresses    []string
 	passwordFile string
 	staged, diff bool
 	// dryRun has the node check the config and print the delivery's plan in place of applying it.
@@ -41,6 +44,31 @@ type applyConfigFlags struct {
 	try                time.Duration
 	noConfirm, confirm bool
 	ignoreUnits        []string
+	// until is how far a delivery takes the nodes: untilDeliver leaves the first node it delivers
+	// to on trial.
+	until applyStep
+	// rollout are the values of the Rollout layers' flags, by layer.
+	rollout map[string]any
+}
+
+// addressesOf are the addresses --address gives, by node: a value without "=" is the address of
+// the one node named.
+func (f applyConfigFlags) addressesOf(names []string) (map[string]string, error) {
+	addresses := map[string]string{}
+	for _, v := range f.addresses {
+		node, addr, ok := strings.Cut(v, "=")
+		if !ok {
+			if len(names) != 1 {
+				return nil, cli.Usagef("--address %q: with several nodes, give each node's address as NODE=ADDR", v)
+			}
+			node, addr = names[0], v
+		}
+		if node == "" || addr == "" {
+			return nil, cli.Usagef("--address %q: want ADDR or NODE=ADDR", v)
+		}
+		addresses[node] = addr
+	}
+	return addresses, nil
 }
 
 // payloads reports whether a layer's flag asks for payloads.
@@ -77,7 +105,7 @@ type layerFlags struct {
 }
 
 func (a *app) applyConfigCommand() *cobra.Command {
-	f := applyConfigFlags{node: nodeFlags{needs: "apply-config"}}
+	f := applyConfigFlags{node: nodeFlags{needs: "apply-config"}, until: untilConfirm, rollout: map[string]any{}}
 	cmd := a.command(&cobra.Command{
 		Use:     "apply-config <node> [<node>...]",
 		Short:   "Deliver a node's config from the inventory",
@@ -86,7 +114,9 @@ func (a *app) applyConfigCommand() *cobra.Command {
 		Args:    cli.RangeArgs(1, math.MaxInt),
 	}, func(a *app, ctx context.Context, pos []string) error { return a.applyConfig(ctx, f, pos) })
 	fs := cmd.Flags()
-	f.node.register(fs)
+	f.node.cluster.register(fs)
+	f.node.secrets.register(fs)
+	fs.StringArrayVar(&f.addresses, "address", nil, "address of the node's chalkd, host or host:port, or NODE=ADDR of any node of the cluster; repeat it for several (default each node's address in the inventory)")
 	registerPasswordFile(fs, &f.passwordFile)
 	var payloadFlags []string
 	for _, d := range compiled[layer.Delivery]() {
@@ -107,12 +137,29 @@ func (a *app) applyConfigCommand() *cobra.Command {
 	fs.BoolVar(&f.noConfirm, "no-confirm", false, "with --try, leave the trial open for apply-config --confirm")
 	fs.BoolVar(&f.confirm, "confirm", false, "confirm the node's open trial once the node is healthy, so it keeps the config on trial")
 	fs.StringArrayVar(&f.ignoreUnits, "ignore-unit", nil, "with --try, leave the unit out of the health check the confirmation waits for, as the image's check leaves out the units it ignores")
+	fs.Var(&f.until, "until", "how far the delivery goes: deliver delivers to the first node that does not run the config, on trial, and leaves the trial open for apply-config --confirm; confirm delivers to every node")
+	for _, p := range plugins {
+		if l, ok := p.(layer.Rollout); ok {
+			f.rollout[p.Name()] = l.RolloutFlags(fs)
+		}
+	}
 	return cmd
 }
 
 func (a *app) applyConfig(ctx context.Context, f applyConfigFlags, pos []string) error {
-	if len(pos) > 1 && !f.dryRun {
-		return cli.Usagef("apply-config delivers to one node; --dry-run checks several, one after the other")
+	addresses, err := f.addressesOf(pos)
+	if err != nil {
+		return err
+	}
+	f.node.address = addresses[pos[0]]
+	several := len(pos) > 1
+	switch {
+	case several && (f.discard || f.confirm || f.rollback || f.staged || f.diff):
+		return cli.Usagef("--discard, --confirm, --rollback, --staged and --diff take one node")
+	case several && f.noConfirm:
+		return cli.Usagef("--no-confirm leaves one node's trial open; with several nodes, --until deliver does")
+	case f.until == untilDeliver && (f.dryRun || f.discard || f.confirm || f.rollback || f.staged || f.diff || f.noConfirm):
+		return cli.Usagef("--until deliver delivers the config on trial; it goes without --dry-run, --discard, --confirm, --rollback, --staged, --diff and --no-confirm")
 	}
 	switch {
 	case f.discard:
@@ -137,14 +184,17 @@ func (a *app) applyConfig(ctx context.Context, f applyConfigFlags, pos []string)
 	if f.force && !f.payloads() {
 		return cli.Usagef("--force goes with %s", f.payloadFlags)
 	}
-	if f.dryRun {
-		return a.dryRunConfig(ctx, f, pos)
+	switch {
+	case f.dryRun:
+		return a.dryRunConfig(ctx, f, pos, addresses)
+	case f.staged || f.diff:
+		t, err := a.target(ctx, f.node, pos[0])
+		if err != nil {
+			return err
+		}
+		return a.deliverConfig(ctx, f, t)
 	}
-	t, err := a.target(ctx, f.node, pos[0])
-	if err != nil {
-		return err
-	}
-	return a.deliverConfig(ctx, f, t)
+	return a.deliverToNodes(ctx, f, pos, addresses)
 }
 
 // checkDryRun refuses what --dry-run does not go with: it checks the inventory's config, for the
@@ -167,10 +217,7 @@ func (f applyConfigFlags) checkDryRun() error {
 // dryRunConfig has each node of names check the inventory's config as its delivery, one after
 // the other, and prints what each delivery would change. A node that refuses its config does not
 // stop the others.
-func (a *app) dryRunConfig(ctx context.Context, f applyConfigFlags, names []string) error {
-	if len(names) > 1 && f.node.address != "" {
-		return cli.Usagef("--address reaches one node; check the nodes one by one")
-	}
+func (a *app) dryRunConfig(ctx context.Context, f applyConfigFlags, names []string, addresses map[string]string) error {
 	c, err := f.node.loadCluster(ctx)
 	if err != nil {
 		return err
@@ -181,7 +228,7 @@ func (a *app) dryRunConfig(ctx context.Context, f applyConfigFlags, names []stri
 	}
 	var refused, failed []string
 	for _, name := range names {
-		t, err := targetIn(c, f.node.address, name, creds)
+		t, err := targetIn(c, addresses[name], name, creds)
 		if err == nil {
 			err = a.deliverConfig(ctx, f, t)
 		}

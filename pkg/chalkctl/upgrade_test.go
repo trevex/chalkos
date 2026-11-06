@@ -150,8 +150,13 @@ type upgradeFake struct {
 	// rolledBackTo is the root hash of the image the last rollback rolled back to, as chalkd records
 	// it; an upgrade that stages an image removes it.
 	rolledBackTo []byte
-	// trial is the config on trial the node's status shows; nil without one.
-	trial *nodev1.ConfigTrial
+	// trial is the config on trial the node's status shows; nil without one. trialPrevious is the
+	// config a rollback of it restores.
+	trial         *nodev1.ConfigTrial
+	trialPrevious string
+	// apiServer is the API server the node runs while its config names none, and kubelet its image's
+	// kubelet; 1.37.1 when empty.
+	apiServer, kubelet string
 }
 
 // upgradeLab is a cluster of fake nodes.
@@ -210,6 +215,10 @@ type upgradeLab struct {
 	configErrs map[string]error
 	// configAsked counts the GetConfig calls of each node.
 	configAsked map[string]int
+	// stuck holds the control planes whose static pods never run the images their config names.
+	stuck map[string]bool
+	// refuseConfig makes the node refuse its next delivery of config.
+	refuseConfig string
 }
 
 // asked returns how often each node was asked for its config.
@@ -336,9 +345,10 @@ func (n upgradeKubernetes) Status(context.Context, *connect.Request[kubernetesv1
 	n.lab.mu.Unlock()
 	switch n.kind {
 	case kubernetes.KindControlPlane:
-		return connect.NewResponse(&kubernetesv1.StatusResponse{Kind: n.kind, State: "bootstrapped", Phase: kubernetesv1.Phase_PHASE_BOOTSTRAPPED, NodeReady: ready}), nil
+		pods := n.controlPlanePods()
+		return connect.NewResponse(&kubernetesv1.StatusResponse{Kind: n.kind, State: "bootstrapped", Phase: kubernetesv1.Phase_PHASE_BOOTSTRAPPED, NodeReady: ready, ApiServerVersion: n.apiServerVersion(), KubeletVersion: n.kubeletVersion(), ControlPlanePods: pods, ControlPlanePodsCurrent: pods == "current"}), nil
 	case kubernetes.KindWorker:
-		return connect.NewResponse(&kubernetesv1.StatusResponse{Kind: n.kind, State: "joined", Phase: kubernetesv1.Phase_PHASE_JOINED, NodeReady: ready}), nil
+		return connect.NewResponse(&kubernetesv1.StatusResponse{Kind: n.kind, State: "joined", Phase: kubernetesv1.Phase_PHASE_JOINED, NodeReady: ready, ApiServerVersion: n.apiServerVersion(), KubeletVersion: n.kubeletVersion()}), nil
 	}
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("the kubernetes layer is not in this image"))
 }
@@ -2063,6 +2073,13 @@ func (n *upgradeFake) ApplyConfig(ctx context.Context, req *connect.Request[node
 		}
 		return connect.NewResponse(resp), nil
 	case !req.Msg.Staged:
+		if err := n.lab.refusedConfig(n.name); err != nil {
+			return nil, err
+		}
+		if req.Msg.Try != nil {
+			n.trial = &nodev1.ConfigTrial{Version: versionOf(req.Msg.Config), PreviousVersion: versionOf(n.config), Deadline: timestamppb.New(time.Now().Add(req.Msg.Try.AsDuration()))}
+			n.trialPrevious = n.config
+		}
 		n.config = req.Msg.Config
 		resp := &nodev1.ApplyConfigResponse{}
 		switch {

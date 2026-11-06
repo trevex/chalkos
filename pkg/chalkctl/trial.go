@@ -40,6 +40,19 @@ func (a *app) confirmTrial(ctx context.Context, t *target, version, previous str
 	if late {
 		until = a.now().Add(trialEnd)
 	}
+	// The layers find first that the node serves their clusters with the config, as a control
+	// plane's components run the images it names. A config they do not find so is rolled back now,
+	// as the node would roll it back at the deadline.
+	if err := a.waitDelivered(ctx, t, until); err != nil {
+		failure := fmt.Errorf("%s: config %s was not confirmed within its trial: %w", t.name, version, err)
+		switch {
+		case ctx.Err() != nil:
+			return fmt.Errorf("%w; %s runs config %s on trial; %s", err, t.name, version, endTrialHint(t.name))
+		case late:
+			return failure
+		}
+		return a.rollbackTrial(ctx, t, version, previous, deadline, failure)
+	}
 	fmt.Fprintf(a.stdout, "%s: waiting for a new connection and the node's health to confirm config %s\n", t.name, version)
 	var (
 		last     error
