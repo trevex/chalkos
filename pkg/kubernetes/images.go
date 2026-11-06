@@ -91,8 +91,9 @@ func (c Cluster) validateImages() error {
 // kubelet's.
 func checkSkew(kubelet imageref.Version, v map[string]imageref.Version) error {
 	api := v["apiServer"]
-	for field, version := range v {
-		if version.Major != kubelet.Major {
+	// In the order of the fields, so that the refusal names the same field every time.
+	for _, field := range []string{"apiServer", "controllerManager", "scheduler", "proxy"} {
+		if version := v[field]; version.Major != kubelet.Major {
 			return fmt.Errorf("images.%s: %s is of Kubernetes %d, the image's kubelet %s of Kubernetes %d", field, version, version.Major, kubelet, kubelet.Major)
 		}
 	}

@@ -43,7 +43,8 @@ func TestClusterVersionSkew(t *testing.T) {
 		"proxy four older than API":       {"1.37.0", "v1.40.0", "v1.40.0", "v1.40.0", "v1.36.0", "images.proxy: v1.36.0 is 4 minors older than images.apiServer v1.40.0"},
 		"proxy three newer than kubelet":  {"1.37.0", "v1.40.0", "v1.40.0", "v1.40.0", "v1.40.0", ""},
 		"proxy three older than kubelet":  {"1.37.0", "v1.37.0", "v1.37.0", "v1.37.0", "v1.37.0", ""},
-		"another major":                   {"1.37.1", "v2.37.1", "v2.37.1", "v2.37.1", "v2.37.1", "is of Kubernetes 2, the image's kubelet v1.37.1 of Kubernetes 1"},
+		"another major":                   {"1.37.1", "v2.37.1", "v2.37.1", "v2.37.1", "v2.37.1", "images.apiServer: v2.37.1 is of Kubernetes 2, the image's kubelet v1.37.1 of Kubernetes 1"},
+		"proxy of another major":          {"1.37.1", "v1.37.1", "v1.37.1", "v1.37.1", "v2.37.1", "images.proxy: v2.37.1 is of Kubernetes 2"},
 		"API server without a version":    {"1.37.1", "latest", "v1.37.1", "v1.37.1", "v1.37.1", "images.apiServer: registry.k8s.io/kube-apiserver:latest: its tag is no version"},
 		"proxy with a version of its own": {"1.37.1", "v1.37.1", "v1.37.1", "v1.37.1", "1.37.1", "images.proxy: registry.k8s.io/kube-proxy:1.37.1: its tag is no version"},
 	} {
