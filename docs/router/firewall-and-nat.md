@@ -50,22 +50,23 @@ spec: {vrfs: [tenant]}
 
 To split one VRF's links into several zones, name the links in `interfaces` and leave the VRF out
 of `vrfs`. A zone needs `interfaces`, `vrfs` or both, and a VRF is in one zone. A link of a VRF
-that a zone holds is in no other zone. The output `router-nftables` refuses a zone that names a
-link, or a glob that may match one, of a VRF that another zone holds. It also refuses an
-interface or glob that matches a VRF's device, such as `ten*` beside the VRF `tenant`:
+that a zone holds is in no other zone. The
+[validator `router`](../reference/builtins.md#validator-router) refuses a zone that names a link,
+or a glob that may match one, of a VRF that another zone holds. It also refuses an interface or
+glob that matches a VRF's device, such as `ten*` beside the VRF `tenant`:
 
 ```text
-FirewallZone x: ten* matches tenant, the device of VRF tenant; name the VRF in vrfs
+FirewallZone/x: spec.interfaces[0]: ten* matches tenant, the device of VRF tenant; name the VRF in vrfs
 ```
 
-It refuses an interface of a VRF's own name, such as `tenant`, the same way. The output checks
-when the router renders its config, at a delivery or at `chalkctl apply-config --dry-run`, and
-`chalkctl validate` does not.
+It refuses an interface of a VRF's own name, such as `tenant`, the same way. `chalkctl validate`
+and `chalkctl apply-config` run the validator before chalkctl sends anything, and the router runs
+it again at the delivery.
 
 Policies and NAT rules name these zones as any other. A policy between the zones of two VRFs
 forwards only what the VRFs' tables route, and
 [importing routes](vrfs.md#import-routes-from-another-vrf) puts the routes there. A NAT rule's
-`in.interface` and `out.interface` name links: the renderer refuses one that matches a VRF's
+`in.interface` and `out.interface` name links: the validator refuses one that matches a VRF's
 device and no link, such as `internet` or `inter*`, while `*` translates on every link.
 
 ## Let the LAN reach the WAN
@@ -159,7 +160,7 @@ NAT rules leave the connections of a NAT64 alone: they leave from the addresses 
 an empty pool's own masquerade translates them. The forward chain accepts a NAT64's translated
 traffic ahead of the policies, so no policy filters it. A NAT rule may not translate to an
 address of a NAT64's pool, nor a `dnat` rule match a destination in a pool or a NAT64 prefix.
-No zone holds a NAT64's link `n64-<name>`: the output `router-nftables` refuses a zone whose
+No zone holds a NAT64's link `n64-<name>`: the validator `router` refuses a zone whose
 `interfaces` name or glob one, such as `*`, and a NAT rule whose interface matches NAT64 links
 alone. [Translate to IPv4 and resolve names](nat64-and-dns.md) sets a NAT64 up.
 
@@ -194,8 +195,10 @@ The next delivery that changes the firewall documents loads the rendered ruleset
 
 chalkctl refuses documents before it sends anything: a value the kind's schema does not take,
 such as a range of ports that runs backwards, a field that names a document the config lacks, a
-value that two documents share where the kind takes it once, and what the rules of the router
-kinds refuse. Each message names the document:
+value that two documents share where the kind takes it once, what the rules of the router kinds
+refuse, and what the validator `router` refuses. Each message names the document.
+
+The schemas, the references and the rules refuse these:
 
 | Message | Fix |
 | --- | --- |
@@ -209,6 +212,22 @@ kinds refuse. Each message names the document:
 | `NATRule web has addresses of another family than ipv4` | Set `family: ipv6`, or give IPv4 addresses. |
 
 [Built-ins](../reference/builtins.md#rules-router-images) lists every rule of the router kinds.
+
+The [validator `router`](../reference/builtins.md#validator-router) checks the zones and NAT rules
+against the links that the `Network`, `VRF` and `NAT64` documents give. It reports every fault it
+finds at once, after `the config is refused:`, and the router runs it again at the delivery:
+
+| Message | Fix |
+| --- | --- |
+| `FirewallZone/x: spec.interfaces[0]: ten* matches tenant, the device of VRF tenant; name the VRF in vrfs` | Put the VRF into the zone's `vrfs`, or name its links. |
+| `FirewallZone/x: spec.interfaces[0]: FirewallZone x names eth2, which may be a link of VRF tenant, which FirewallZone tenant holds; give each link one zone` | Take the VRF out of the other zone's `vrfs` and name its links in each zone, or drop the link here. |
+| `FirewallZone/lan: spec.interfaces[0]: * matches n64-guest, the link of NAT64 guest, which no zone holds; name other links` | Name the zone's links without a glob that matches `n64-<name>`. |
+| `NATRule/n: spec.out.interface: inter* matches no link, only internet, the device of VRF internet; name the VRF's links or a zone of the VRF` | Name the VRF's links, or a zone that holds the VRF. |
+| `NATRule/n: spec.out.zone: the zone x holds no link` | Give the zone links, or name another zone. |
+| `NATRule/web: spec.to.address: to.address 203.0.113.5 lies in 203.0.113.0/28, the pool of NAT64 edge, whose addresses belong to the NAT64 whole; translate to an address outside the pool` | Translate to an address outside every NAT64's pool. |
+
+[Separate routing with VRFs](vrfs.md#fix-a-refused-delivery) lists its other refusals of zones
+and VRFs.
 
 ## What next
 

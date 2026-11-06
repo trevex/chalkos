@@ -273,19 +273,27 @@ expression:
 | `NextHop/wanb4: spec.interface: the interface is lo, which no next hop is on; name the link the next hop is on` | Name the link the next hop is on in `interface`. |
 | `NextHop/wanb6: spec.address: the next hop ::ffff:198.51.100.130 is no unicast address of a router, or is an IPv4-mapped IPv6 address; give the router's address, an IPv4 one as IPv4` | Give the next hop's unicast address, an IPv4 address as IPv4. |
 
-The renderers of the outputs `router-nftables` and `networkd` check the rest, the number of
-target tables, the interfaces of `in` against the VRFs' devices and what depends on the `Network`
-documents, before the delivery changes anything.
-`chalkctl validate` does not run them.
-A renderer's refusal fails the delivery, and `chalkctl` prints it after `the config is refused:`,
-as it prints a rule's, with the document and the field it is about:
+The [validator `router`](../reference/builtins.md#validator-router) checks `in` against the
+VRFs' devices, the NAT64s' links and the links of the zones. `chalkctl validate` and
+`chalkctl apply-config` run it before chalkctl sends anything, and the router runs it again at
+the delivery. It reports every fault it finds at once, and `chalkctl` prints its refusals after
+`the config is refused:`, as it prints a rule's, with the document and the field each is about:
 
 | Message | Fix |
 | --- | --- |
-| `PolicyRoute/lan: spec.in.interfaces[0]: tran* matches transit, the device of VRF transit; name the VRF's links or a zone of the VRF` | Name the VRF's links in `interfaces`, or a zone that holds them. The output refuses the VRF's own name, `transit`, the same way. |
+| `PolicyRoute/lan: spec.in.interfaces[0]: tran* matches transit, the device of VRF transit; name the VRF's links or a zone of the VRF` | Name the VRF's links in `interfaces`, or a zone that holds them. The validator refuses the VRF's own name, `transit`, the same way. |
 | `PolicyRoute/lan: spec.in.interfaces[0]: n64-* matches n64-edge, the link of NAT64 edge, whose traffic Jool translates; name other links` | Narrow the glob, so it leaves out the NAT64's link. |
 | `PolicyRoute/lan: spec.in.zone: the zone guest holds n*, which matches n64-guest, the link of NAT64 guest, whose traffic Jool translates; name the zone's other links in interfaces` | Name the zone's other links in `interfaces`, or narrow the `Network` that puts `n*` in the zone's VRF. |
 | `PolicyRoute/lan: spec.in.zone: the zone core holds no link` | Give the zone a link, or name another zone. |
+
+The renderers of the outputs `router-nftables` and `networkd` check the rest, the number of
+target tables and where the next hops' routes and the kernel's rules go among the `Network`
+documents, when the router renders its config, at a delivery or at
+`chalkctl apply-config --dry-run`. `chalkctl validate` does not run them. A renderer's refusal
+fails the delivery, and `chalkctl` prints it in the same form:
+
+| Message | Fix |
+| --- | --- |
 | `NextHop/wanb4: spec.interface: NextHop wanb4 is on wanb0, which no Network document names; give the link one, which gets the next hop's route` | Add a `Network` that names the link in `Name=`. The renderer checks every `NextHop`, also one that no rule names. |
 | `Network/21-wan: spec.match.name: Network 21-wan matches wanb0 and other links, which would take its policy routing too; give wanb0 a Network of its own` | Give the next hop's link a `Network` that names it alone. |
 | `Network/21-wanb: spec.match: Network 21-wanb may match wanb0 by other [Match] keys; name wanb0 in a Network that its Name= alone matches` | Drop the other `[Match]` keys, or add a `Network` of `Name=wanb0` alone that sorts first. |

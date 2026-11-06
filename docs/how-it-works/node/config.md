@@ -306,12 +306,13 @@ documents.
 
 Only chalkd runs the image's renderers and their checks, its other validators, and the rules that
 read facts, so a set chalkctl accepts can still be refused on delivery. A renderer repeats a check
-of the schemas or rules only where a bad value would break its output, such as a line break in a
-networkd unit's value. Such a check fails with `internal error: ...`, which a checked config never
-causes. [`chalkctl apply-config --dry-run`](../../reference/cli/chalkctl_apply-config.md) has
-chalkd run every check of a delivery and changes nothing. chalkd answers with what the delivery
-would do: the config versions, the outputs that change, the effects with what fires each, and the
-storage changes.
+of the schemas, the rules or the validators only where a bad value would break its output, such as
+a line break in a networkd unit's value. Such a check fails with `internal error: ...`, which a
+checked config never causes.
+[`chalkctl apply-config --dry-run`](../../reference/cli/chalkctl_apply-config.md) has chalkd run
+every check of a delivery and changes nothing. chalkd answers with what the delivery would do: the
+config versions, the outputs that change, the effects with what fires each, and the storage
+changes.
 
 ## chalkctl delivers a whole set at a time
 

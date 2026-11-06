@@ -147,8 +147,8 @@ The address is a unicast address beyond the router. The rules refuse a loopback,
 broadcast address and an IPv4-mapped IPv6 address such as `::ffff:203.0.113.254`; give an IPv4
 neighbour its IPv4 address. A link-local address is refused too, as a neighbour on a link takes
 `interface` or `interfaces`. A peer at an IPv6 address that exchanges IPv4 routes needs
-`extendedNextHop: true`. A session that two peers name is refused when the router renders its
-config, as [Fix a refused delivery](#fix-a-refused-delivery) describes.
+`extendedNextHop: true`. The validator `router` refuses a session that two peers name, as
+[Fix a refused delivery](#fix-a-refused-delivery) describes.
 
 ## Filter routes with policies
 
@@ -410,11 +410,12 @@ chalkctl node diag r1 --secrets secrets.age bgp-route family=ipv4 prefix=192.0.2
 
 ## Fix a refused delivery
 
-`chalkctl validate` runs the schemas and rules. The renderer of the output `frr` checks the rest
-when the router renders its config, at a delivery or at `chalkctl apply-config --dry-run`, before
-the delivery changes anything: what depends on the `Network` documents, on more than one peer or
-policy, or on how bgpd compiles an AS path. Its refusal fails the delivery, and `chalkctl` prints
-it after `the config is refused:`, as it prints a rule's. Each refusal names the document and the
+`chalkctl validate` runs the schemas, the rules and the
+[validator `router`](../reference/builtins.md#validator-router). The validator checks the peers'
+sessions against the `Network` and `VRF` documents and against each other. `chalkctl validate`
+and `chalkctl apply-config` run it before chalkctl sends anything, and the router runs it again
+at the delivery. It reports every fault it finds at once, and `chalkctl` prints its refusals
+after `the config is refused:`, as it prints a rule's. Each refusal names the document and the
 field:
 
 ```text
@@ -424,13 +425,22 @@ chalkctl: r1: the config is refused: BGPPeer/spare: spec.interface: BGPPeer fabr
 | Message | Fix |
 | --- | --- |
 | `BGPPeer/spare: spec.interface: BGPPeer fabric and BGPPeer spare both name eth1 in the VRF default; give each session one peer` | Drop the interface or address from one of the peers. |
-| `BGPPeer/fabric: metadata.name: BGPPeer x names peer-fabric, the peer group of BGPPeer fabric; rename the document or the interface` | Rename the `BGPPeer` or the interface. |
 | `BGPPeer/fabric: spec.interfaces[0]: interface "192.0.2.10" is an address, which FRR cannot tell from a neighbour's` | Narrow the peer's glob, or rename the link that a `Network` names. |
+
+The renderer of the output `frr` checks the rest when the router renders its config, at a
+delivery or at `chalkctl apply-config --dry-run`, before the delivery changes anything: the names
+of the peer groups, the AS numbers of a policy's users, and how bgpd compiles an AS path.
+`chalkctl validate` does not run it. Its refusal fails the delivery, and `chalkctl` prints it in
+the same form:
+
+| Message | Fix |
+| --- | --- |
+| `BGPPeer/fabric: metadata.name: BGPPeer x names peer-fabric, the peer group of BGPPeer fabric; rename the document or the interface` | Rename the `BGPPeer` or the interface. |
 | `RoutingPolicy/from-transit: spec.terms[1].match.asPath: asPath "^*1" is no regular expression bgpd compiles: the * at 2 repeats nothing` | Write the expression so that each repetition follows what it repeats. |
 | `RoutingPolicy/p: spec.terms[0].then.prepend: RoutingPolicy p prepends the AS number, and BGP instances of AS 64512 and 64513 use it; give each AS a policy of its own` | Give each AS a policy of its own. |
 
-[Separate routing with VRFs](vrfs.md#fix-a-refused-delivery) lists the messages about the links
-of a peer's VRF.
+[Separate routing with VRFs](vrfs.md#fix-a-refused-delivery) lists the validator's messages
+about the links of a peer's VRF.
 
 ## Change the AS number
 

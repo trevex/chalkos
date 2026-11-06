@@ -190,9 +190,9 @@ IPv6 clients ask a DHCPv6 server only when the router advertisements of their li
 They also learn their routers from the advertisements. The link's `Network` sends them, with
 `ipv6SendRA: true` in `network`, and its `ipv6SendRA` section sets the flags. A subnet that leases
 addresses, from pools or reservations, needs `managed: true`. One that gives only options or
-prefixes needs `managed: true` or `otherInformation: true`. The renderer refuses a subnet whose
-link's advertisements lack the flag. It also reads networkd's former names of these keys,
-`ipv6PrefixDelegation` in `network` and the section `ipv6PrefixDelegation`.
+prefixes needs `managed: true` or `otherInformation: true`. The validator `router` refuses a
+subnet whose link's advertisements lack the flag. It also reads networkd's former names of these
+keys, `ipv6PrefixDelegation` in `network` and the section `ipv6PrefixDelegation`.
 
 An IPv6 subnet differs from an IPv4 one in these ways:
 
@@ -414,12 +414,13 @@ rule with its expression:
 | `DHCPRelay/office: spec.servers[0], spec.servers[1]: "2001:db8:ff::53" is not unique; name each server once` | Name each server once. |
 | `DHCPRelay/guests: spec.interfaces[0], DHCPRelay/office: spec.interfaces[1]: "lan0" is not unique; a link takes one relay` | Relay the link in one document, and name it once there. |
 
-The renderers of the outputs `kea` and `dhcp-relay` check what spans documents, before the
-delivery changes anything: the links' VRFs and addresses, which `Network` documents give, the
-router advertisements of an IPv6 subnet's link, and the subnets and relays of a VRF together.
-`chalkctl validate` does not run them; `chalkctl apply-config --dry-run` does. A refusal fails
-the delivery, and `chalkctl` prints it after `the config is refused:`, as it prints a rule's,
-with the document and the field it is about:
+The [validator `router`](../reference/builtins.md#validator-router) checks what spans documents:
+the links' VRFs and addresses, which `Network` documents give, the router advertisements of an
+IPv6 subnet's link, and the subnets and relays of a VRF together. `chalkctl validate` and
+`chalkctl apply-config` run it before chalkctl sends anything, and the router runs it again at
+the delivery. It reports every fault it finds at once, and `chalkctl` prints its refusals after
+`the config is refused:`, as it prints a rule's, each with the document and the field it is
+about:
 
 | Message | Fix |
 | --- | --- |
@@ -432,7 +433,6 @@ with the document and the field it is about:
 | `DHCPSubnet/office: spec.interfaces[0]: n64-edge is the link of NAT64 edge` | Leave the NAT64's link out. |
 | `DHCPSubnet/office: spec.interfaces[0]: DHCPSubnet lab and DHCPSubnet office both serve lan0; a link takes one subnet of each family` | Serve the link in one subnet of each family. |
 | `DHCPSubnet/servers: spec.subnet: DHCPSubnet office and DHCPSubnet servers overlap in VRF default: 192.0.2.0/24 and 192.0.2.64/26` | Give the subnets ranges apart. |
-| `DHCPSubnet/office6: spec.subnet: DHCPSubnet lab6 and DHCPSubnet office6 get the same number 2387838497 in Kea; change one subnet's range` | Change the range of one IPv6 subnet, whose number is a hash of its range. |
 | `DHCPSubnet/office6: spec.interfaces[0]: Network 10-lan0 sends no router advertisements on lan0 with Managed=yes, which tell its clients to ask the DHCPv6 server for addresses; give it ipv6SendRA: true in network and managed: true in ipv6SendRA` | Send router advertisements with the Managed flag from the link's `Network`. |
 | `DHCPSubnet/customers: spec.interfaces[0]: Network 20-cust0 sends no router advertisements on cust0 with Managed=yes or OtherInformation=yes, which tell its clients to ask the DHCPv6 server; give it ipv6SendRA: true in network and otherInformation: true in ipv6SendRA` | Send router advertisements with the OtherInformation flag. |
 | `DHCPSubnet/customers: spec.prefixDelegation.prefix: prefixDelegation's prefix 2001:db8:100::/40 holds 2001:db8:100::1, the address Network 30-lan3 gives a link of VRF access` | Delegate from a range that holds none of the router's addresses in the VRF. |
@@ -441,6 +441,13 @@ with the document and the field it is about:
 | `DHCPSubnet/customers: spec.prefixDelegation.length: the DHCPSubnet documents delegate more than 65536 prefixes, the most the router routes; delegate fewer` | Delegate from smaller ranges or delegate shorter prefixes, so that all subnets together delegate 65 536 prefixes at most. The refusal names the first subnet, by name, whose prefixes cross the limit. |
 | `DHCPRelay/office: spec.interfaces[0]: Network 10-lan0 gives lan0 no static global IPv6 address, which the relay forwards its clients' requests from` | Give the link a static address of each family the relay's servers have. |
 | `DHCPSubnet/lab: spec.interfaces: DHCPRelay office relays DHCPv4 in VRF default and DHCPSubnet lab serves DHCPv4 in VRF lab; dnsmasq's and Kea's sockets of one family bind beside each other only in two VRFs other than the default one` | Relay and serve the family in two VRFs other than the default one. |
+
+The renderer of the output `kea` refuses one more config when the router renders it, at a
+delivery or at `chalkctl apply-config --dry-run`, and `chalkctl validate` does not run it:
+
+| Message | Fix |
+| --- | --- |
+| `DHCPSubnet/office6: spec.subnet: DHCPSubnet lab6 and DHCPSubnet office6 get the same number 2387838497 in Kea; change one subnet's range` | Change the range of one IPv6 subnet, whose number is a hash of its range. |
 
 ## Limits
 
@@ -452,15 +459,15 @@ with the document and the field it is about:
 - A family relayed and served on one router needs two VRFs other than the default one.
 - DHCPv6 reservations match a client's MAC address only when its DUID or link-local address holds
   it.
-- A link takes its address from a `Network` document. The renderer cannot check an address that
-  a link takes from DHCP or that another program sets, so such a link is refused.
+- A link takes its address from a `Network` document. The validator `router` cannot check an
+  address that a link takes from DHCP or that another program sets, so such a link is refused.
 - The leases live in a file of each server on the node's `/var`. Two routers do not share them,
   and a reinstall that wipes `/var` forgets them and the routes of their prefixes.
 - Kea tells the router of a release without waiting for it to record the lease before. A release
   right after its lease can leave the prefix routed until the lease would have ended, the
   subnet's `leaseTime` at most.
-- The router routes 65 536 delegated prefixes at most, of all its subnets together. The renderer
-  refuses subnets that delegate more, such as two ranges of /40 that delegate /56s.
+- The router routes 65 536 delegated prefixes at most, of all its subnets together. The validator
+  `router` refuses subnets that delegate more, such as two ranges of /40 that delegate /56s.
 - A `DHCPSubnet` holds 32 pools, 512 reservations and 16 DNS servers at most, and the schema
   refuses longer lists. The subnet's rules compare each reservation with each pool, and each pool
   and reservation with the servers. The bounds keep these checks within the cost a node allows a

@@ -62,21 +62,24 @@ spec:
   management: {interfaces: [eth0]}
 ```
 
-The rules refuse a VRF that holds an interface of `Router.spec.management.interfaces`, and match
-globs as globs on both sides, so a VRF's `eth*` holds the management interface `eth0`:
+The [validator `router`](../reference/builtins.md#validator-router) refuses a management
+interface or glob that may be a link of a VRF. It reads the links that a VRF document holds and
+those that a `Network`'s own `VRF=` puts in a VRF, so a VRF's `eth*` holds the management
+interface `eth0`:
 
 ```text
-chalkctl: r1: the config is refused: the management interface eth0 is in a VRF, and chalkd answers in the default VRF alone; keep the node API's interfaces out of every VRF
+chalkctl: r1: the config is refused: Router/router: spec.management.interfaces[0]: the management interface eth0 may be a link of VRF tenant, and chalkd answers in the default VRF alone; keep the node API's interfaces out of every VRF
 ```
 
-The output `router-nftables` refuses a management interface or glob that matches a VRF's device,
-which takes the VRF's name, such as `ten*` beside the VRF `tenant`. It checks when the router
-renders its config, at a delivery or at `chalkctl apply-config --dry-run`, and `chalkctl validate`
-does not. [Fix a refused delivery](#fix-a-refused-delivery) shows where its message appears:
+It also refuses a management interface or glob that matches a VRF's device, which takes the VRF's
+name, such as `ten*` beside the VRF `tenant`:
 
 ```text
-Router: the management interface ten* matches tenant, the device of VRF tenant, and chalkd answers in the default VRF alone; name the default VRF's links
+chalkctl: r1: the config is refused: Router/router: spec.management.interfaces[0]: the management interface ten* matches tenant, the device of VRF tenant, and chalkd answers in the default VRF alone; name the default VRF's links
 ```
+
+`chalkctl validate` and `chalkctl apply-config` run the validator before chalkctl sends anything,
+and the router runs it again at the delivery.
 
 A router without management interfaces answers the node API on every interface. The rules then
 want at least one link that a `Network` document names and no VRF holds. They cannot know which
@@ -203,10 +206,9 @@ spec:
 A peer's VRF needs a `BGP` document. A peer's `interfaces` stand for links of its VRF, so `swp*`
 in `tenant` runs a session on `swp1` and one on `swp2`. In the default VRF, a glob matches the
 links that no VRF holds. A peer's `interface` is a link of its own VRF, and a link that no
-`Network` names is in the default VRF. The output `frr` checks a peer's links against its VRF
-when the router renders its config, and `chalkctl validate` does not. The firewall accepts the
-BGP and BFD ports of a VRF's peer on the links of that VRF, and those of a peer of `address` from
-that address in its VRF alone.
+`Network` names is in the default VRF. The validator `router` checks a peer's links against its
+VRF, and `chalkctl validate` runs it. The firewall accepts the BGP and BFD ports of a VRF's peer
+on the links of that VRF, and those of a peer of `address` from that address in its VRF alone.
 
 ## Import routes from another VRF
 
@@ -412,18 +414,18 @@ chalkctl: r1: the config is refused: the config drops the default VRF's BGP docu
 ## Fix a refused delivery
 
 The rules read the documents' names and globs without knowing which links networkd matches. The
-renderers of the outputs `networkd`, `frr` and `router-nftables` check the rest against the
-`Network` documents when the router renders its config, before the delivery changes anything.
-`chalkctl validate` does not run them. A renderer's refusal fails the delivery, and `chalkctl`
-prints it after `the config is refused:`, as it prints a rule's, with the document and the field
-it is about:
+[validator `router`](../reference/builtins.md#validator-router) checks the rest against the
+`Network` documents. `chalkctl validate` and `chalkctl apply-config` run it before chalkctl sends
+anything, and the router runs it again at the delivery, after the rules and before the renderers.
+It reports every fault it finds at once, and each fault once. `chalkctl` prints its refusals after
+`the config is refused:`, as it prints a rule's, with the document and the field each is about,
+and joins several with `; `:
 
 ```text
 chalkctl: r1: the config is refused: Network/20-both: spec.match: Network 20-both matches links of no VRF and VRF a; the links of one Network are in one VRF
 ```
 
-Outputs that share a check refuse with the same refusal, which `chalkctl` prints once. The
-renderers refuse what networkd, FRR or nftables would apply otherwise than the documents say:
+The validator refuses what networkd, FRR or nftables would apply otherwise than the documents say:
 
 | Message | Fix |
 | --- | --- |
@@ -431,10 +433,8 @@ renderers refuse what networkd, FRR or nftables would apply otherwise than the d
 | `Network/20-both: spec.match: Network 20-both matches links of no VRF and VRF a; the links of one Network are in one VRF` | Split the `Network`, so that each matches the links of one VRF. |
 | `Network/10-swp: spec.match.name: Network 10-swp's Name=swp* may match links of VRF tenant and links outside it; name its links` | Name the links in `Name=`, or put the whole glob into the VRF. |
 | `Network/00-all: metadata.name: Network 00-all matches the device of VRF tenant before 00-vrf-tenant; rename it to sort after 00-vrf-tenant` | Rename the `Network`, or narrow its `Name=`. |
-| `Network/00-all: metadata.name: Network 00-all matches the link n64-guest of NAT64 guest before 00-n64-guest; rename it to sort after 00-n64-guest` | Rename the `Network`, or narrow its `Name=`. |
 | `Network/10-a: spec.match: Network 10-a is the first to match eth5, so networkd never applies Network 20-b's VRF=mgmt to it; give 10-a VRF=mgmt, rename it to sort after 20-b, or drop 20-b's VRF=` | Take one of the remedies the message lists. |
 | `Network/20-x: spec.match.name: Name= holds "eth[0", which is no glob the router can match as networkd does` | Write `Name=` without backslashes and bracket expressions. |
-| `NetDev/20-dummy: spec.netDev.name: NetDev 20-dummy creates the device tenant, which VRF tenant creates; rename the VRF or the NetDev` | Rename the VRF, or the device in the `NetDev`'s `Name=`. |
 | `BGPPeer/leaves: spec.interfaces[0]: swp* matches no link of VRF default, only links of other VRFs` | Give the peer the VRF of its links. |
 | `BGPPeer/x: spec.interface: interface tenant is the device of VRF tenant` | Name the VRF's links, not its device. |
 | `BGPPeer/x: spec.interface: interface eth2 is in the VRF tenant, not in the peer's VRF default` | Give the peer the VRF of its link, or name a link of the peer's VRF. |
@@ -443,6 +443,17 @@ renderers refuse what networkd, FRR or nftables would apply otherwise than the d
 | `Network/50-lab: spec.match.name: VRF tenant holds the links of Network 50-lab's Name=lab[12], which nftables cannot match; name them by a name or a prefix and *` | Write the `Network`'s `Name=` as names or a prefix and `*`. |
 | `NATRule/n: spec.out.interface: inter* matches no link, only internet, the device of VRF internet; name the VRF's links or a zone of the VRF` | Name the VRF's links, or a zone that holds the VRF. |
 | `Router/router: spec.management.interfaces[0]: the management interface tenant matches tenant, the device of VRF tenant, and chalkd answers in the default VRF alone; name the default VRF's links` | Name links of the default VRF in `management.interfaces`. |
+| `Router/router: spec.management.interfaces[0]: the management interface eth0 may be a link of VRF tenant, and chalkd answers in the default VRF alone; keep the node API's interfaces out of every VRF` | Take the link out of the VRF's `interfaces` and out of its `Network`'s `VRF=`, or name links of the default VRF in `management.interfaces`. |
+
+The renderer of the output `networkd` checks the unit names and the `NetDev` documents,
+which the validator does not read. It checks when the router renders its config, at a delivery
+or at `chalkctl apply-config --dry-run`, and `chalkctl validate` does not run it. A renderer's
+refusal fails the delivery, and `chalkctl` prints it in the same form:
+
+| Message | Fix |
+| --- | --- |
+| `Network/00-all: metadata.name: Network 00-all matches the link n64-guest of NAT64 guest before 00-n64-guest; rename it to sort after 00-n64-guest` | Rename the `Network`, or narrow its `Name=`. |
+| `NetDev/20-dummy: spec.netDev.name: NetDev 20-dummy creates the device tenant, which VRF tenant creates; rename the VRF or the NetDev` | Rename the VRF, or the device in the `NetDev`'s `Name=`. |
 
 ## Limits
 
@@ -456,8 +467,8 @@ renderers refuse what networkd, FRR or nftables would apply otherwise than the d
 - A VRF instance cannot announce a default route from its `networks`. Use a peer family's
   `defaultOriginate`.
 - networkd also matches `Name=` against a link's alternative names. The documents do not give
-  them, so the renderer cannot tell which link a `Network` matches by an alternative name. Name
-  links by their interface names.
+  them, so the validator `router` cannot tell which link a `Network` matches by an alternative
+  name. Name links by their interface names.
 - Routes leak between VRFs through BGP alone.
 
 ## What next

@@ -74,7 +74,7 @@ links, which nftables does not see, so the firewall cannot narrow what a glob wo
 that a later `Network` adds would be served without anyone naming it. The renderer finds each
 link's VRF as the other router outputs do, from the `VRF` documents and the `Network` documents'
 `VRF=`, and gives each VRF a config of its own. A VRF that a `Network`'s `VRF=` names and no `VRF`
-document declares gets no server: the renderer refuses the subnet.
+document declares would get no server, so the validator `router` refuses the subnet.
 
 Kea numbers each subnet. The renderer takes the subnet's first address as the number, here
 192.0.2.0 as 3221225984. No two subnets of a VRF overlap, so the number is unique within a
@@ -94,12 +94,13 @@ subnet-router anycast address, is refused, and so is one that holds the gateway,
 the boot server, as Kea would lease a client an address that a server of its clients uses. A
 gateway at the subnet's network or broadcast address is refused too.
 
-The renderer refuses what spans documents, which no rule of one document sees: subnets that
-overlap in a VRF, a link of two subnets, links of two VRFs, and an interface of a VRF's device or
-a NAT64's link. It also refuses a link without a static address in the subnet, from its
-`Network`, as Kea answers a link's clients from that address and serves no link without one, and
-a pool or reservation that holds that address. `chalkctl validate` does not run these checks; a
-delivery and `chalkctl apply-config --dry-run` do.
+The [validator `router`](../../reference/builtins.md#validator-router) refuses what spans
+documents, which no rule of one document sees: subnets that overlap in a VRF, a link of two
+subnets, links of two VRFs, and an interface of a VRF's device or a NAT64's link. It also refuses
+a link without a static address in the subnet, from its `Network`, as Kea answers a link's
+clients from that address and serves no link without one, and a pool or reservation that holds
+that address. It runs after the rules and before the renderers, at a delivery, at
+`chalkctl apply-config --dry-run` and in `chalkctl validate`.
 
 The output's check runs `kea-dhcp4 -t` or `kea-dhcp6 -t` on each config. Kea refuses a config
 that names a link the system lacks, and the check runs in a network namespace of its own, so it
@@ -159,11 +160,11 @@ so an IPv6 `DHCPSubnet` takes one link.
 An IPv6 client asks a DHCPv6 server when its link's router advertisements carry the Managed flag,
 for addresses, or the OtherInformation flag, for options. networkd sends advertisements on a link
 whose `Network` has `[Network] IPv6SendRA=yes`, with the flags of its `[IPv6SendRA]` section. The
-renderer reads the `Network` that networkd picks for the subnet's link as networkd reads it: the
-last value of `IPv6SendRA=`, `Managed=` and `OtherInformation=` that parses as a boolean, in any
-section of the name, each `no` by default. networkd also reads the former names
+validator `router` reads the `Network` that networkd picks for the subnet's link as networkd
+reads it: the last value of `IPv6SendRA=`, `Managed=` and `OtherInformation=` that parses as a
+boolean, in any section of the name, each `no` by default. networkd also reads the former names
 `IPv6PrefixDelegation=` and `[IPv6PrefixDelegation]`, which the unit lists before the current
-ones, so a valid value under a current name wins. The renderer refuses a subnet with pools or
+ones, so a valid value under a current name wins. The validator refuses a subnet with pools or
 reservations whose link's advertisements lack the Managed flag, and one of options or prefixes
 alone that lacks both flags.
 
@@ -206,16 +207,18 @@ maintenance mode, a run changes nothing.
 chalkd removes no record and trusts none, as `kea` writes them. It opens the directory and each
 record without following links and refuses a directory that every user may write. It reads
 regular files alone, without waiting for a writer, and 128 bytes of each. It routes 65 536 records
-that have not ended at most and, beyond those, removes no route. The renderer keeps the subnets
-within that limit: it refuses subnets that delegate more than 65 536 prefixes altogether, in all
-VRFs. A record that ended counts toward no limit, but stays in the directory, as chalkd removes
-none; the hook leaves one behind only when it misses an expiry. The records live on `/var`, so a
-boot routes the prefixes again before their routers renew them. A server facing the LAN never changes routes itself: chalkd
-checks each record against the configs before it routes it.
+that have not ended at most and, beyond those, removes no route. The validator `router` keeps
+the subnets within that limit: it refuses subnets that delegate more than 65 536 prefixes
+altogether, in all VRFs. A record that ended counts toward no limit, but stays in the directory,
+as chalkd removes none; the hook leaves one behind only when it misses an expiry. The records live
+on `/var`, so a boot routes the prefixes again before their routers renew them. A server facing
+the LAN never changes routes itself: chalkd checks each record against the configs before it
+routes it.
 
 A route of a delegated prefix replaces a route of the same prefix and shadows longer ones in the
-VRF's table. So the renderer refuses a delegated range that holds one of the router's addresses
-on the VRF's links, the destination of a `Network`'s route there or a NAT64's prefix in the VRF.
+VRF's table. So the validator `router` refuses a delegated range that holds one of the router's
+addresses on the VRF's links, the destination of a `Network`'s route there or a NAT64's prefix in
+the VRF.
 
 ## Relays run dnsmasq
 
@@ -272,7 +275,7 @@ of a different VRF, and a socket of the default VRF is bound to none. For DHCPv6
 port 547 and dnsmasq's would bind side by side. In one VRF, each would then take some of the
 link's requests, so a request could reach the relay instead of the server or the reverse.
 
-So the output `dhcp-relay` refuses a family that a `DHCPRelay` relays and a `DHCPSubnet` serves in
+So the validator `router` refuses a family that a `DHCPRelay` relays and a `DHCPSubnet` serves in
 one VRF, or when one of the two is in the default VRF, for both families alike. Two relays bind
 side by side in any two VRFs, as their sockets take `SO_REUSEADDR`, and so do two DHCPv6 servers.
 Different families never collide.
@@ -380,7 +383,8 @@ command on the control socket at a level its config keeps out of the journal.
 - Kea serves its own links. Requests that another relay forwards from other networks reach no
   subnet of its servers, and a prefix delegated through a relay is not routed.
 - A family relayed and served on one router needs two VRFs other than the default one.
-- The renderer finds a link's address and router advertisements in its `Network` document alone.
+- The validator `router` and the renderers find a link's address and router advertisements in
+  its `Network` document alone.
 - Kea updates no DNS records and shares its leases with no other server.
 
 ## Related pages

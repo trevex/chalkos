@@ -100,8 +100,8 @@ session. A glob expands over the links of the peer's VRF alone, as
 A peer's single `interface` renders as it is written, whether or not a `Network` names it, and
 must be a link of the peer's VRF. A name that reads as an address, such as `fe80::1`, is refused
 in both, because FRR could not tell the interface from a neighbour's address: the rules refuse
-one that the peer writes out, and the renderer a link that a glob expands to. The renderer also
-refuses two peers that name one session.
+one that the peer writes out, and the validator `router` a link that a glob expands to. The
+validator also refuses two peers that name one session.
 
 ## A default route while a route exists
 
@@ -190,7 +190,7 @@ therefore follows a tracked route within about 5 seconds. A delivery that adds, 
 a peer family's `defaultOriginateWhen` withdraws the default route at once, and the next check
 sends it again if the route exists.
 
-## The check parses the config, and the renderer checks the rest
+## The check parses the config, and the validator and the renderer check the rest
 
 A delivery renders `frr.conf` and checks it with `vtysh --dryrun` before it changes anything.
 vtysh parses each line with the daemons' commands and needs no daemon. It catches a command that
@@ -208,14 +208,22 @@ network's policy of another family. The schemas refuse a community with a part a
 standard community or above 4294967295 in a large one, and a description with an `@` or two
 spaces in a row.
 
-The renderer trusts what the schemas and rules check. It checks what depends on more than the
-documents of one kind or on bgpd itself, when the router renders its config, at a delivery or at
-`chalkctl apply-config --dry-run`:
+The [validator `router`](../../reference/builtins.md#validator-router) checks the peers' sessions
+against the `Network` and `VRF` documents and against each other. It runs after the rules and
+before the renderers, at a delivery, at `chalkctl apply-config --dry-run` and in
+`chalkctl validate`, and refuses:
+
+- a session that two peers name;
+- a link that a peer's glob expands to and that is named like an address;
+- a peer's interface in another VRF than the peer's, or of a VRF's device, and a glob that
+  matches links of other VRFs alone.
+
+The renderer trusts what the schemas, the rules and the validator check. It checks what depends
+on the names FRR gives its objects or on bgpd itself, when the router renders its config, at a
+delivery or at `chalkctl apply-config --dry-run`, and `chalkctl validate` does not run it:
 
 - an `asPath` that bgpd cannot compile;
-- a session that two peers name, and an interface named like a peer's group;
-- a link that a peer's glob expands to and that is named like an address;
-- a peer's interface in another VRF than the peer's, or of a VRF's device;
+- an interface named like a peer's group;
 - a policy with `prepend` that instances of two AS numbers use.
 
 A value that would add a command to the config, such as a line break in a description, cannot

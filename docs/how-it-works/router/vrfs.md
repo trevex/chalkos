@@ -23,7 +23,7 @@ The node's own services stay in the default VRF, which holds every link that no 
 
 chalkd, chrony, the node's own name resolution, image pulls and the health check's connection to
 chalkd run in the default VRF and know nothing of VRFs. The management VRF is the default VRF,
-together with the rule that no VRF holds a management interface. Data-plane traffic goes into
+together with the check that no VRF holds a management interface. Data-plane traffic goes into
 named VRFs.
 
 The output `router-sysctl` sets `net.ipv4.tcp_l3mdev_accept`, `udp_l3mdev_accept` and
@@ -32,12 +32,15 @@ takes no connection or datagram from a VRF's link, so chalkd cannot be reached t
 data-plane VRF, even where a firewall rule would let the packet in. The kernel's default for raw
 sockets is 1, so the router sets all three.
 
-Two rules guard the node API. A VRF may not hold an interface of
-`Router.spec.management.interfaces`, and the rule matches the globs on both sides as globs. While
-the node API answers on every interface, a `Network` document must name at least one link that no
-VRF holds. The rules cannot tell which link chalkctl reaches the router through, so a delivery
-with `apply-config --try` covers the rest: the router rolls the config back unless chalkctl
-confirms it over a new connection.
+Two checks guard the node API. The
+[validator `router`](../../reference/builtins.md#validator-router) refuses an interface or glob of
+`Router.spec.management.interfaces` that may be a link of a VRF, by a `VRF` document's
+`interfaces` or by a `Network`'s own `VRF=`, or that matches a VRF's device. It reads the links
+as the [membership](#membership-follows-how-networkd-picks-a-network) below finds them. While the
+node API answers on every interface, a rule wants a `Network` document that names at least one
+link that no VRF holds. Neither can tell which link chalkctl reaches the router through, so a
+delivery with `apply-config --try` covers the rest: the router rolls the config back unless
+chalkctl confirms it over a new connection.
 
 ## The output networkd renders the VRFs
 
@@ -99,9 +102,10 @@ VRF=tenant
 
 ## Membership follows how networkd picks a Network
 
-networkd applies to a link the first `.network` file, by file name, whose `[Match]` matches it. The
-renderer reads the `Network` documents the same way, so `VRF=` lands on the file that networkd
-applies to each of a VRF's links:
+networkd applies to a link the first `.network` file, by file name, whose `[Match]` matches it.
+The router's model in `pkg/router/derive`, which the validator `router` and the renderers share,
+reads the `Network` documents the same way, so `VRF=` lands on the file that networkd applies to
+each of a VRF's links:
 
 - It reads `Name=` as systemd does. A value splits into words at white space, an empty value
   resets the words before it, and a value whose first word starts with `!` negates all its words.
@@ -109,23 +113,27 @@ applies to each of a VRF's links:
 - A literal interface of a `VRF` document is the link of that name. A glob stands for the links
   that the `Network` documents may match, up to the first `Network` that matches all of them.
 - A `Network` with `[Match]` keys besides `Name=`, such as `MACAddress=`, may match a link that its
-  `Name=` matches, or not. The renderer cannot tell, so it reads later documents too, and it
-  refuses a VRF's link that only such a `Network` matches.
+  `Name=` matches, or not. The model cannot tell, so it reads later documents too, and the
+  validator refuses a VRF's link that only such a `Network` matches.
 - A `Network` gets the VRF of the links it is the first to match. Every link it may match belongs
-  to that VRF, or the renderer refuses the document.
+  to that VRF, or the validator refuses the document.
 - A `Network` that sorts before `00-vrf-<name>` and matches the VRF's device is refused, because
   networkd would apply it to the device.
 
-The renderer also refuses a link that globs of two VRFs may hold and a `Network` whose own `VRF=`
+The validator also refuses a link that globs of two VRFs may hold and a `Network` whose own `VRF=`
 names another VRF. A `Network` whose own `VRF=` an earlier `Network` hides from a link is
 refused, with the remedies: give the earlier one the same `VRF=`, rename it to sort after, or drop
-the `VRF=`. A networkd document named as a VRF's units and a `NetDev` that creates a device of a
-VRF's name, in any `[NetDev]` section and any value of its `Name=`, are refused too. These checks
-run when the router renders its config, at a delivery or at `chalkctl apply-config --dry-run`;
-`chalkctl validate` does not run them.
+the `VRF=`. It refuses a backslash in `Name=`, which systemd reads as an escape, and a bracket
+expression it cannot match as `fnmatch` does, such as `eth[0` or a class like `[[:digit:]]`. The
+validator runs after the rules and before the renderers, at a delivery, at
+`chalkctl apply-config --dry-run` and in `chalkctl validate`. It reports every fault it finds at
+once.
 
-The renderer refuses a backslash in `Name=`, which systemd reads as an escape, and a bracket
-expression it cannot match as `fnmatch` does, such as `eth[0` or a class like `[[:digit:]]`.
+The validator reads no `NetDev` and no unit names. The renderer of the output `networkd` refuses
+a networkd document named as a VRF's units and a `NetDev` that creates a device of a VRF's name,
+in any `[NetDev]` section and any value of its `Name=`. These checks run when the router renders
+its config, at a delivery or at `chalkctl apply-config --dry-run`; `chalkctl validate` does not
+run them.
 
 ## chalkos-vrf removes what networkd keeps
 
@@ -193,11 +201,11 @@ profile of its timers: `chalkos` for the default VRF's, `chalkos-<vrf>` for anot
 the kernel's VRFs itself, so an instance whose VRF networkd has not created yet waits for it.
 
 A peer's `interfaces` expand only over the links of the peer's VRF, as the membership rules above
-find them. For a peer of the default VRF, those are the links of no VRF. The renderer refuses a
-glob that matches links of other VRFs alone, a peer's `interface` that lies in another VRF and a
-peer that names a VRF's device, on which bgpd runs no session. It sees the VRF of a link as
-networkd puts it there, by the `VRF` documents and the `Network` documents' own `VRF=`, so the
-BGP kinds' rules leave these checks to it, and `chalkctl validate` does not run them.
+find them. For a peer of the default VRF, those are the links of no VRF. The validator `router`
+refuses a glob that matches links of other VRFs alone, a peer's `interface` that lies in another
+VRF and a peer that names a VRF's device, on which bgpd runs no session. It sees the VRF of a
+link as networkd puts it there, by the `VRF` documents and the `Network` documents' own `VRF=`,
+so the BGP kinds' rules leave these checks to it. `chalkctl validate` runs it too.
 
 A route-map's `set as-path prepend` repeats an AS number, and one route-map serves every instance
 that names its policy. The renderer prepends the AS number of the instances that use the policy,
@@ -300,10 +308,10 @@ networkd has since replaced does not count as running.
 - No protected rule covers the router's own traffic to its addresses in a VRF. The VRF's
   policies to `local` decide it.
 - The rules read interface names and globs without knowing which links networkd matches. The
-  renderers compare them with the names in the `Network` documents, not with the links the node
-  has.
+  validator `router` compares them with the names in the `Network` documents and cannot see the
+  links the node has.
 - networkd also matches `Name=` against a link's alternative names, which the documents do not
-  give. The renderer reads interface names alone.
+  give. The validator and the renderers read interface names alone.
 - Routes leak between VRFs through BGP alone.
 
 ## Related pages

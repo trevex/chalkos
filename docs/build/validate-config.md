@@ -167,6 +167,26 @@ validator writes no output's files, so it may write no path but its private `/tm
 a renderer, it opens no netlink socket. It must finish within 30 seconds, and the validators of a
 delivery run one after another.
 
+## Router images run the validator router
+
+A router image declares the [validator `router`](../reference/builtins.md#validator-router). It
+checks what the router kinds' documents and the `Network` documents mean together: which links
+networkd puts in which VRF, and those links against the firewall's zones, the NAT rules, the
+management interfaces, the policy routes' `in`, the BGP peers, the NAT64s, the resolvers and the
+DHCP subnets and relays. chalkctl links the same code, so `chalkctl validate` and
+`chalkctl apply-config` run it before they send anything, and the node runs it again as
+`chalkos-render validate router`. It reports every fault it finds at once.
+
+The router guide lists its messages and their fixes, beside those of the renderers, which run on
+the node alone:
+
+- [Separate routing with VRFs](../router/vrfs.md#fix-a-refused-delivery)
+- [Route with BGP](../router/bgp.md#fix-a-refused-delivery)
+- [Route traffic by policy](../router/policy-routing.md#fix-a-refused-delivery)
+- [Translate to IPv4 and resolve names](../router/nat64-and-dns.md#fix-a-refused-delivery)
+- [Lease addresses with DHCP](../router/dhcp.md#fix-a-refused-delivery)
+- [Filter and translate traffic](../router/firewall-and-nat.md#a-refusal-names-the-document)
+
 ## What next
 
 - [Render config files](render-config.md) renders `bird.conf` from the `Peer` documents.

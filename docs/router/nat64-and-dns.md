@@ -81,11 +81,12 @@ chalkos-nat64: NAT64 edge: the pool entry 192.0.2.252/30 holds 192.0.2.253, an a
 Give such an uplink an empty `pool4`.
 
 Each address of a pool belongs to its NAT64 alone. No `Network` gives a link one of them, and no
-NAT rule translates to one or matches a destination among them. The output `router-nftables`
-refuses such a rule:
+NAT rule translates to one or matches a destination among them. The
+[validator `router`](../reference/builtins.md#validator-router) refuses such a rule, and
+`chalkctl validate` reports it:
 
 ```text
-NATRule web: to.address 192.0.2.253 lies in 192.0.2.252/30, the pool of NAT64 edge, whose addresses belong to the NAT64 whole; translate to an address outside the pool
+chalkctl: r1: the config is refused: NATRule/web: spec.to.address: to.address 192.0.2.253 lies in 192.0.2.252/30, the pool of NAT64 edge, whose addresses belong to the NAT64 whole; translate to an address outside the pool
 ```
 
 The router's own connections take the kernel's ephemeral ports, 32768 to 60999, and Jool
@@ -107,14 +108,11 @@ spec:
 A node may hold several `NAT64` documents, each with a prefix and a pool of its own. A NAT64's
 name has 11 characters at most, because its link `n64-<name>` is an interface name, which has 15.
 Prefixes are 32, 40, 48, 56, 64 or 96 bits long, as RFC 6052 gives them. Two entries of one pool
-that share an address, a protocol and a port are refused. The output `jool` refuses two NAT64s of
-one VRF whose prefixes overlap and two NAT64s whose pools share an address. It checks when the
-router renders its config, at a delivery or at `chalkctl apply-config --dry-run`, and
-`chalkctl validate` does not. [Fix a refused delivery](#fix-a-refused-delivery) shows where its
-message appears:
+that share an address, a protocol and a port are refused. The validator `router` refuses two
+NAT64s of one VRF whose prefixes overlap and two NAT64s whose pools share an address:
 
 ```text
-NAT64 lab and NAT64 edge both translate addresses of 64:ff9b::/96 in VRF default; give each NAT64 of a VRF a prefix of its own
+chalkctl: r1: the config is refused: NAT64/lab: spec.prefix: NAT64 lab and NAT64 edge both translate addresses of 64:ff9b::/96 in VRF default; give each NAT64 of a VRF a prefix of its own
 ```
 
 A delivery that changes a NAT64's pool keeps its connections. One that changes its prefix, or
@@ -136,10 +134,10 @@ lie in the NAT64s' range, and no document names it. Leave it off on a router wit
 off unless a `Network` sets `linkLocalAddressing` to `ipv4` or `yes`.
 
 Two names may hash to the same /30. Among 10 NAT64s the chance is about 1%, and among 20 about
-4.5%. The output `jool` then refuses the later name:
+4.5%. The validator `router` then refuses the later name:
 
 ```text
-NAT64 nat8 and NAT64 nat282 both take the link addresses 169.254.120.112/30, which the hashes of their names pick; rename NAT64 nat8
+chalkctl: r1: the config is refused: NAT64/nat8: metadata.name: NAT64 nat8 and NAT64 nat282 both take the link addresses 169.254.120.112/30, which the hashes of their names pick; rename NAT64 nat8
 ```
 
 Rename the NAT64 you are adding, even when the message names the other one. The running NAT64
@@ -271,11 +269,11 @@ document.
 
 The resolver of `guest` answers on the VRF's links alone and sends its own queries out through
 them, so the VRF's table needs routes to the root servers or to the forwarders. `listen` holds
-addresses of the VRF's links. The output `unbound` refuses an address that `Network` documents
+addresses of the VRF's links. The validator `router` refuses an address that `Network` documents
 give only to links of other VRFs, such as `2001:db8:ffff::1` on the management link of `10-mgmt`:
 
 ```text
-Resolver guest: the address 2001:db8:ffff::1 of listen belongs to links of Network 10-mgmt in VRF default alone, so the resolver of VRF guest never receives its queries; listen on an address of the VRF's links
+chalkctl: r1: the config is refused: Resolver/guest: spec.listen[0]: the address 2001:db8:ffff::1 of listen belongs to links of Network 10-mgmt in VRF default alone, so the resolver of VRF guest never receives its queries; listen on an address of the VRF's links
 ```
 
 The firewall opens the resolver's port 53 on the VRF's links alone. Each VRF has one `Resolver`
@@ -319,7 +317,7 @@ of its name, in any zone. It checks when the router renders its config, at a del
 `chalkctl apply-config --dry-run`, and `chalkctl validate` does not:
 
 ```text
-Resolver resolver: local zone 1: lan.example.org: record 2: www.lan.example.org holds a CNAME record and another record; a CNAME's name holds it alone
+chalkctl: r1: the config is refused: Resolver/resolver: spec.localZones[0].records[1]: www.lan.example.org holds a CNAME record and another record; a CNAME's name holds it alone
 ```
 
 DNS64 synthesises no AAAA record from a local zone's A records.
@@ -355,8 +353,8 @@ chalkctl apply-config r1 --secrets secrets.age
 ```
 
 The delivery applies the NAT64s and reloads the resolvers, which keep their caches. A `Resolver`
-added starts its resolver, and one removed stops it. The rules check the documents before
-chalkctl sends anything. The renderers' checks run on the router, as
+added starts its resolver, and one removed stops it. The rules and the validator `router` check
+the documents before chalkctl sends anything. The renderers' checks run on the router, as
 [Fix a refused delivery](#fix-a-refused-delivery) describes.
 
 `chalkctl status` shows the NAT64s and the resolvers after the BGP sessions:
@@ -448,13 +446,12 @@ needs a reader.
 
 ## Fix a refused delivery
 
-The rules check each document and what one document's fields say of another's. The renderers of
-the outputs `jool` and `unbound` compare the NAT64s and the records in pairs, and check the
-`listen` addresses against the `Network` documents, when the router renders its config, before
-the delivery changes anything. `chalkctl validate` does not run them;
-`chalkctl apply-config --dry-run` does. A renderer's refusal fails the delivery, and `chalkctl`
-prints it after `the config is refused:`, as it prints a rule's, with the document and the field
-it is about:
+The rules check each document and what one document's fields say of another's. The
+[validator `router`](../reference/builtins.md#validator-router) compares the NAT64s in pairs and
+checks the `listen` addresses against the `Network` documents. `chalkctl validate` and
+`chalkctl apply-config` run it before chalkctl sends anything, and the router runs it again at
+the delivery. It reports every fault it finds at once. `chalkctl` prints its refusals after
+`the config is refused:`, as it prints a rule's, with the document and the field each is about:
 
 ```text
 chalkctl: r1: the config is refused: NAT64/lab: spec.prefix: NAT64 lab and NAT64 edge both translate addresses of 64:ff9b::/96 in VRF default; give each NAT64 of a VRF a prefix of its own
@@ -465,9 +462,16 @@ chalkctl: r1: the config is refused: NAT64/lab: spec.prefix: NAT64 lab and NAT64
 | `NAT64/lab: spec.prefix: NAT64 lab and NAT64 edge both translate addresses of 64:ff9b::/96 in VRF default; give each NAT64 of a VRF a prefix of its own` | Give one of the NAT64s another prefix, or move it to another VRF. |
 | `NAT64/lab: spec.pool4[0]: the entry shares addresses with the pool of NAT64 edge; give each NAT64 a pool of its own` | Split the addresses between the pools. |
 | `NAT64/nat8: metadata.name: NAT64 nat8 and NAT64 nat282 both take the link addresses 169.254.120.112/30, which the hashes of their names pick; rename NAT64 nat8` | Rename the NAT64 you are adding. |
+| `Resolver/guest: spec.listen[0]: the address 2001:db8:ffff::1 of listen belongs to links of Network 10-mgmt in VRF default alone, so the resolver of VRF guest never receives its queries; listen on an address of the VRF's links` | Listen on an address of the resolver's VRF. |
+
+The renderer of the output `unbound` compares the records in pairs when the router renders its
+config, at a delivery or at `chalkctl apply-config --dry-run`. `chalkctl validate` does not run
+it. Its refusal fails the delivery, and `chalkctl` prints it in the same form:
+
+| Message | Fix |
+| --- | --- |
 | `Resolver/resolver: spec.localZones[0].records[1]: a.lan.example.org. AAAA 2001:db8::1 appears twice; Unbound keeps one, so drop the other` | Drop one of the records. |
 | `Resolver/resolver: spec.localZones[0].records[1]: www.lan.example.org holds a CNAME record and another record; a CNAME's name holds it alone` | Drop the other records of the name, or the CNAME record. |
-| `Resolver/guest: spec.listen[0]: the address 2001:db8:ffff::1 of listen belongs to links of Network 10-mgmt in VRF default alone, so the resolver of VRF guest never receives its queries; listen on an address of the VRF's links` | Listen on an address of the resolver's VRF. |
 
 ## Upgrade a router whose NAT64 ran beside its links
 
@@ -492,19 +496,21 @@ change, except that it runs one NAT64 with an empty `pool4` at most:
   the one Jool of the router's namespace translated whatever reached its prefix, from any VRF
   whose routes led there. Each NAT64 now translates the traffic of its own VRF alone, so a VRF
   without one loses NAT64.
+- Rename one of two NAT64s whose names' hashes pick one /30, as
+  [Keep 169.254.64.0/18 free](#keep-16925464018-free) shows. The validator `router` of the new
+  image refuses them, and `chalkctl validate` with the new image in the inventory runs it.
+- Name the links a `FirewallZone` or a NAT rule means where its `interfaces` name or glob a
+  NAT64's link, such as `*` or `n*` in a zone, or where a NAT rule's interface matches NAT64 links
+  alone. The validator `router` refuses both.
 
 `chalkctl validate` does not run the renderers. The new image runs them when `chalkctl upgrade`
 installs it, and refuses the upgrade of a router whose config one of them refuses, so the router
-keeps booting the image it runs. Look for these before you upgrade:
+keeps booting the image it runs. Look for this before you upgrade:
 
-- Two NAT64 names whose hashes pick one /30, as
-  [Keep 169.254.64.0/18 free](#keep-16925464018-free) shows. Rename one of them.
 - A `Network` that sorts before `00-n64-<name>` and may match the NAT64's link `n64-<name>`, such
-  as a catch-all `00-all` with `Name=*`. The renderer refuses it with
-  `Network 00-all matches the link n64-edge of NAT64 edge before 00-n64-edge; rename it to sort after 00-n64-edge`.
+  as a catch-all `00-all` with `Name=*`. The renderer of the output `networkd` refuses it with
+  `Network/00-all: metadata.name: Network 00-all matches the link n64-edge of NAT64 edge before 00-n64-edge; rename it to sort after 00-n64-edge`.
   Rename it to sort after `00-n64-<name>`, or narrow its `Name=`.
-- A `FirewallZone` whose `interfaces` name or glob a NAT64's link, such as `*` or `n*`, and a
-  NAT rule whose interface matches NAT64 links alone. Name the links the zone or rule means.
 
 The upgrade reboots the router, and the NAT64s' connections end. Once `chalkos-nat64.service`
 runs on the new image, clients connect again. The translated connections now pass the firewall's

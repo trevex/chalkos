@@ -138,9 +138,9 @@ with the NAT64s' lines, ahead of the `NATRule` documents' lines. They accept con
 NAT64's link and from its prefix and explicit pool, and masquerade an empty pool's address to the
 address of the link a connection leaves through. A NAT64 with an empty pool renders the chain
 even without NAT rules. With `dnat` rules, the `dstnat` chain starts with lines that accept
-connections out of a NAT64's link and to its prefix and explicit pool. The renderer refuses a
-`dnat` rule whose destination lies in a prefix or pool, and a rule that translates to an address
-of a pool.
+connections out of a NAT64's link and to its prefix and explicit pool. The
+[validator `router`](../../reference/builtins.md#validator-router) refuses a `dnat` rule whose
+destination lies in a prefix or pool, and a rule that translates to an address of a pool.
 [NAT64 and DNS64 on a router](nat64-and-dns.md#the-firewall-around-the-nat64-links) shows the
 lines.
 
@@ -160,8 +160,8 @@ zone in three ways:
 
 A VRF's links are the interfaces of its document and the `Name=` words of the `Network`
 documents that give `VRF=` themselves. nftables matches names and a prefix followed by `*`. When a
-zone or a conntrack zone needs a VRF's links, the renderer refuses a `Name=` word of another form,
-such as `lab[12]`. The VRF example renders these jumps:
+zone or a conntrack zone needs a VRF's links, the validator `router` refuses a `Name=` word of
+another form, such as `lab[12]`. The VRF example renders these jumps:
 
 ```text
 iifname { "internet" } jump policy-internet-local
@@ -169,15 +169,16 @@ meta sdifname { "eth3" } oifname { "eth4" } jump policy-guest-out
 iifname { "tenant" } oifname { "eth1" } jump policy-tenant-internet
 ```
 
-A `NATRule` translates in prerouting and postrouting, which see links alone, so the renderer
+A `NATRule` translates in prerouting and postrouting, which see links alone, so the validator
 refuses a NAT rule's interface that matches a VRF's device and no link: a VRF's name, or a glob
 that matches no link the `Network` documents name. A glob such as `*` translates on the links it
-matches. The renderer refuses every interface that matches a VRF's device in a zone's
+matches. The validator refuses every interface that matches a VRF's device in a zone's
 `interfaces`, in a `PolicyRoute`'s `in` and in `Router.spec.management.interfaces`. A zone names
 the VRF in `vrfs` instead, a policy route the VRF's links, and chalkd answers in the default VRF
 alone. A VRF's device is that of a `VRF` document or of a `Network`'s own `VRF=`, and a glob
-matches it as a glob. The renderer alone checks the devices, when the router renders its config;
-`chalkctl validate` does not. A config without VRFs renders as it did before VRFs.
+matches it as a glob. The rules do not see the devices. The validator checks them after the rules
+and before the renderers, and `chalkctl validate` runs it too. A config without VRFs renders as
+it did before VRFs.
 
 ## Conntrack zones
 

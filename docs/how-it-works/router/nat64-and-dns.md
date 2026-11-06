@@ -99,10 +99,12 @@ the `[Network]` and `[Address]` sections and `ServerAddress=` in `[DHCPServer]`.
 leave it out. The rules also refuse a `VRF` whose name starts with `n64-`, which the NAT64s' links
 take.
 
-The renderer refuses what compares the NAT64s in pairs, which would cost the rules more than
-chalkd allows: two NAT64s of one VRF whose prefixes overlap, two NAT64s whose pools share an
-address, and two names whose hashes pick one /30. `chalkctl validate` does not run these checks;
-a delivery and `chalkctl apply-config --dry-run` do.
+The [validator `router`](../../reference/builtins.md#validator-router) refuses what compares the
+NAT64s in pairs, which would cost the rules more than chalkd allows: two NAT64s of one VRF whose
+prefixes overlap, two NAT64s whose pools share an address, and two names whose hashes pick one
+/30. It runs after the rules and before the renderers, at a delivery, at
+`chalkctl apply-config --dry-run` and in `chalkctl validate`. It checks the NAT64s whether or not
+the other documents pass.
 
 `jool file check`, the output's check, reads a file's syntax and bounds alone. The renderer
 guards, with an internal error, what that check passes and the kernel would refuse once the
@@ -225,9 +227,9 @@ oifname "n64-guest" ip6 daddr 64:ff9b::/96 accept comment "NAT64 guest"
 
 An empty pool's replies come back as part of the masqueraded connections, which the chain
 accepts as established. Anything else on a NAT64's link goes on to the zones' policies, and is
-dropped: the renderer refuses a `FirewallZone` whose `interfaces` name or glob a NAT64's link, so
-no zone holds one. It also refuses a NAT rule whose interface matches nothing but NAT64 links,
-which the NAT chains leave alone.
+dropped: the validator `router` refuses a `FirewallZone` whose `interfaces` name or glob a
+NAT64's link, so no zone holds one. It also refuses a NAT rule whose interface matches nothing
+but NAT64 links, which the NAT chains leave alone.
 
 The NAT rules leave the NAT64s' traffic alone. The `srcnat` chain, when it exists, starts with
 the NAT64s' lines, and an empty pool adds the chain by itself. The edge's lines exempt connections
@@ -250,7 +252,7 @@ ip saddr 169.254.111.206 masquerade comment "NAT64 guest"
 ```
 
 When the config has `dnat` rules, the `dstnat` chain starts with exemptions for connections out
-of each NAT64's link and to its prefix and explicit pool. The output refuses a `dnat` rule whose
+of each NAT64's link and to its prefix and explicit pool. The validator refuses a `dnat` rule whose
 `match.destination` lies in a prefix or pool, and a `dnat` or `snat` rule whose `to.address` lies
 in a pool, as a pool's addresses belong to its NAT64 alone.
 
@@ -331,11 +333,12 @@ package `pkg/dns`.
 
 The renderer refuses what compares the records in pairs, which would cost the rules more than
 chalkd allows: a duplicate record, which Unbound keeps one copy of, and a CNAME beside another
-record of its name, in any zone. It also refuses a `listen` address that `Network` documents give
-only to links of other VRFs, whose queries the resolver would never receive. An address from DHCP
-passes. `chalkctl validate` does not run these checks; a delivery and
-`chalkctl apply-config --dry-run` do. Two resolvers of one VRF never reach the renderer, because
-the config's uniqueness check in chalkctl and chalkd refuses them.
+record of its name, in any zone. `chalkctl validate` does not run these checks; a delivery and
+`chalkctl apply-config --dry-run` do. The validator `router` refuses a `listen` address that
+`Network` documents give only to links of other VRFs, whose queries the resolver would never
+receive, and `chalkctl validate` runs it too. An address from DHCP passes. Two resolvers of one
+VRF never reach the validator or the renderer, because the config's uniqueness check in chalkctl
+and chalkd refuses them.
 
 A zone's name stands between double quotes, a record between single quotes and a TXT record's
 text between double quotes. The renderer guards, with an internal error, a name, record or
@@ -459,15 +462,14 @@ sessions show who connects where.
 - Two NAT64 names that hash to one /30 are refused, about 1% of the time among 10 NAT64s and 4.5%
   among 20.
 - networkd's IPv4 link-local addressing may pick an address in `169.254.64.0/18`, which the
-  renderer cannot see.
+  validator and the renderers cannot see.
 - DNS64 synthesises no AAAA record from a local zone's records.
 - A pool's ports stay out of the kernel's ephemeral range, 32768 to 60999, also for addresses the
   router does not hold.
 - A NAT64 whose prefix changes, or which is renamed, loses its sessions.
 - The rules do not compare a resolver's DNS64 prefix with the NAT64s' prefixes.
-- `chalkctl validate` does not report two NAT64s of one VRF whose prefixes overlap, two NAT64s
-  whose pools share an address, a record twice or a CNAME beside another record. The renderers
-  refuse them at a delivery and at `chalkctl apply-config --dry-run`.
+- `chalkctl validate` does not report a record twice or a CNAME beside another record. The
+  renderer of `unbound` refuses them at a delivery and at `chalkctl apply-config --dry-run`.
 - `chalkos-nat64.service` and `chalkos-resolvers.service` are units of the boot. When one fails
   on an upgrade's first boot, the health check fails and the node falls back to its previous
   image.
@@ -483,4 +485,5 @@ sessions show who connects where.
 - [BGP on a router](bgp.md): announcing the prefix.
 - [How a router works](overview.md): the layer's outputs and the boot order.
 - [Built-ins](../../reference/builtins.md#outputs-router-images) for the outputs, their effects,
-  the rules and the diagnostics.
+  the rules, the diagnostics and
+  [the validator `router`](../../reference/builtins.md#validator-router).

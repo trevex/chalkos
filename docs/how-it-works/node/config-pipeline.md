@@ -115,8 +115,8 @@ asks the running chalkd for the facts its rules read. chalkd loads the facts the
 declares, and runs their commands from the image's store. The unit runs as a user of its own,
 without capabilities, network or access to STATE, `/var` and `/run/chalkos`, within 512 MiB
 and two minutes. Its validators, renderers and checks share those two minutes, and each of them
-may take up to 30 seconds. What its validators, renderers and checks write to standard error is in the
-unit's journal: `chalkctl logs <node> --unit=chalkos-check.service`.
+may take up to 30 seconds. What its validators, renderers and checks write to standard error is
+in the unit's journal: `chalkctl logs <node> --unit=chalkos-check.service`.
 
 An install in place runs the running image's validators, and renders and checks the outputs with
 its renderers, before it installs anything, and the boot that follows renders them again. An
