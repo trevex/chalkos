@@ -51,11 +51,20 @@ func translateSlot(name string, docs []config.Document, schemas *schema.Schemas,
 	return slot.Stored{Delivered: docs, Documents: tr.Documents, Version: version, Identity: tr.Identity}, nil
 }
 
-// runningTarget is the running image, as config for it is translated, and its schemas.
-func (s *Server) runningTarget() (config.Target, *schema.Schemas, error) {
+// runningSchemas are the running image's schemas.
+func (s *Server) runningSchemas() (*schema.Schemas, error) {
 	schemas, err := schema.LoadSchemas(s.Loader.Schemas)
 	if err != nil {
-		return config.Target{}, nil, failed(connect.CodeFailedPrecondition, "read the image's schemas: %v", err)
+		return nil, failed(connect.CodeFailedPrecondition, "read the image's schemas: %v", err)
+	}
+	return schemas, nil
+}
+
+// runningTarget is the running image, as config for it is translated, and its schemas.
+func (s *Server) runningTarget() (config.Target, *schema.Schemas, error) {
+	schemas, err := s.runningSchemas()
+	if err != nil {
+		return config.Target{}, nil, err
 	}
 	release := readOSRelease(s.Paths.OSRelease)
 	t := config.Target{Platform: release["CHALKOS_PLATFORM"]}

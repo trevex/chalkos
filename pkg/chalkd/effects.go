@@ -54,8 +54,10 @@ type pendingEffects struct {
 
 // effectsOf compiles the rules of the running image's effects and loads every fact they read.
 // The caller calls it before the delivery changes anything.
-//   - The delivery goes to the node called name and makes next, checked against schemas, the
-//     running slot's config in place of old. A delivery without config keeps old.
+//   - The delivery goes to the node called name and makes next the running slot's config in place
+//     of old. A delivery without config keeps old. schemas are the running image's, whose slot
+//     holds both, which next was checked against and which tell the secretRefs of both; nil only
+//     when there are no documents to read.
 //   - The image's build compiled the rules already, so one that does not compile is the node's
 //     own failure.
 //   - While a baseline exists, as a delivery that failed part way leaves one, the rules compare
@@ -77,15 +79,6 @@ func (s *Server) effectsOf(ctx context.Context, name string, next, old []config.
 			if _, err := s.Plugins.Action(a); err != nil {
 				return nil, failed(connect.CodeInternal, "%s: effect %s: %v", s.Loader.Effects, effect, err)
 			}
-		}
-	}
-	// A delivery without config checks no document against schemas, so schemas is nil; the kinds'
-	// hashes, here and in due, need the running image's own then, the way its outputs already load
-	// them for a nil schemas when there are outputs and documents to render. A delivery of neither
-	// config nor documents, such as a node's first certificate, hashes no kind and needs none.
-	if schemas == nil && (len(old) > 0 || len(next) > 0) {
-		if schemas, err = schema.LoadSchemas(s.Loader.Schemas); err != nil {
-			return nil, failed(connect.CodeInternal, "the running image's schemas: %v", err)
 		}
 	}
 	e := &pendingEffects{defs: defs, node: name, next: next, old: old, schemas: schemas}

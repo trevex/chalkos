@@ -20,7 +20,7 @@ import (
 
 // applyRequest is an ApplyConfig request once its config is translated: the identity the node
 // runs from now on, empty to keep its own; the config set it keeps and the schemas that set was
-// checked against; and the rest of the request.
+// checked against, the running image's; and the rest of the request.
 type applyRequest struct {
 	identity string
 	next     slot.Stored
@@ -244,18 +244,25 @@ func (s *Server) planDelivery(ctx context.Context, r applyRequest) (*delivery, e
 		}
 	}
 	// The effects compare the delivery with the running slot, the facts once it is applied with
-	// the facts loaded now, and the outputs rendered from it with those the node serves.
-	next := prev.Documents
+	// the facts loaded now, and the outputs rendered from it with those the node serves. Both read
+	// the documents with the schemas of the image whose slot holds them, the running image's: a
+	// delivery without config translated none, so they are read here, unless the slot holds no
+	// documents to read them for.
+	next, schemas := prev.Documents, r.schemas
 	if !d.keep {
 		next = r.next.Documents
+	} else if len(next) > 0 {
+		if schemas, err = s.runningSchemas(); err != nil {
+			return nil, err
+		}
 	}
-	if d.fx, err = s.effectsOf(ctx, name, next, prev.Documents, r.schemas, m.FallbackSecret, m.DryRun); err != nil {
+	if d.fx, err = s.effectsOf(ctx, name, next, prev.Documents, schemas, m.FallbackSecret, m.DryRun); err != nil {
 		return nil, err
 	}
 	// Every output renders from the delivered documents and passes its check, so a delivery a
 	// service would reject is refused whole. A delivery without config changes no document, so an
 	// output that fails does not refuse it.
-	if d.staged, err = s.renderOutputs(ctx, name, next, r.schemas, !d.keep, m.DryRun); err != nil {
+	if d.staged, err = s.renderOutputs(ctx, name, next, schemas, !d.keep, m.DryRun); err != nil {
 		s.refused(d.fx)
 		return nil, err
 	}
