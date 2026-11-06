@@ -2,6 +2,7 @@ package schema
 
 import (
 	"errors"
+	"fmt"
 	"net/netip"
 	"strconv"
 	"strings"
@@ -31,8 +32,8 @@ var (
 	errNotCIDR      = errors.New("an address range is an address, a slash and a prefix length of at most 32 for IPv4 or 128 for IPv6")
 	errNotPortRange = errors.New(`a range of ports is "<first>-<last>", each from 1 to 65535, and the first no higher than the last`)
 	errQuotedPort   = errors.New(errNotPortRange.Error() + "; a single port is a number, unquoted")
-	errNotImage     = errors.New("an image reference names its registry, its repository and a tag, a digest or both, as registry.k8s.io/pause:3.10.2@sha256:<digest>")
-	errNotVersioned = errors.New("this image names its version in its tag, as registry.k8s.io/kube-apiserver:v1.37.1, optionally followed by @sha256:<digest>; a reference by digest alone or with another tag has no version")
+	errNotImage     = errors.New("an image reference names its registry, its repository and a tag, a digest or both, as registry.example/app:v1.2.3@sha256:<digest>")
+	errNotVersioned = errors.New("this image names its version in its tag, as registry.example/app:v1.2.3, optionally followed by @sha256:<digest>; a reference by digest alone or with another tag has no version")
 )
 
 // validateImageReference accepts the references imageref.Parse reads.
@@ -42,9 +43,18 @@ func validateImageReference(v any) error {
 		return nil
 	}
 	if _, err := imageref.Parse(s); err != nil {
-		return errNotImage
+		return notImage(err)
 	}
 	return nil
+}
+
+// notImage is the error of a value imageref.Parse refuses: what Parse found wrong, and what a
+// reference names.
+func notImage(err error) error {
+	if cause := errors.Unwrap(err); cause != nil {
+		err = cause
+	}
+	return fmt.Errorf("%w; %w", err, errNotImage)
 }
 
 // validateVersionedImageReference accepts the references imageref.Parse reads whose tag is a
@@ -56,7 +66,7 @@ func validateVersionedImageReference(v any) error {
 	}
 	r, err := imageref.Parse(s)
 	if err != nil {
-		return errNotImage
+		return notImage(err)
 	}
 	if _, err := r.Version(); err != nil {
 		return errNotVersioned

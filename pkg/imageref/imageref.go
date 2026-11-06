@@ -24,11 +24,11 @@ type Reference struct {
 }
 
 // Parse reads a reference that names its registry and a tag, a digest, or both, as
-// repository:tag@sha256:<digest>.
+// repository:tag@sha256:<digest>. An error names s and wraps what is wrong with it.
 func Parse(s string) (Reference, error) {
 	// go-containerregistry takes https: for a registry.
 	if strings.Contains(s, "://") {
-		return Reference{}, fmt.Errorf("%q is no image reference: a reference names no URL scheme", s)
+		return Reference{}, fmt.Errorf("%q is no image reference: %w", s, errors.New("a reference names no URL scheme"))
 	}
 	base, digest, hasDigest := strings.Cut(s, "@")
 	var r Reference

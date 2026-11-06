@@ -122,7 +122,7 @@ A reference of these four fields without a version tag, such as one by digest al
 schema:
 
 ```text
-'registry.k8s.io/kube-apiserver@sha256:<digest>' is not valid versioned-image-reference: this image names its version in its tag, as registry.k8s.io/kube-apiserver:v1.37.1, optionally followed by @sha256:<digest>; a reference by digest alone or with another tag has no version
+'registry.k8s.io/kube-apiserver@sha256:<digest>' is not valid versioned-image-reference: this image names its version in its tag, as registry.example/app:v1.2.3, optionally followed by @sha256:<digest>; a reference by digest alone or with another tag has no version
 ```
 
 A change of `pause` restarts containerd, whose running containers keep running; pods started after
