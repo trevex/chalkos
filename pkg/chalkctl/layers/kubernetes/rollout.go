@@ -78,6 +78,16 @@ func apiServerOf(c layer.Cluster, name string) (imageref.Version, bool, error) {
 	if err != nil {
 		return imageref.Version{}, false, err
 	}
+	v, ok, err := apiServerIn(docs)
+	if err != nil {
+		return imageref.Version{}, false, fmt.Errorf("the config of %s: %w", name, err)
+	}
+	return v, ok, nil
+}
+
+// apiServerIn is the version of the API server the Cluster document of docs names; false without
+// one.
+func apiServerIn(docs []config.Document) (imageref.Version, bool, error) {
 	for _, d := range docs {
 		if d.APIVersion != config.KubernetesAPI || d.Kind != "Cluster" {
 			continue
@@ -86,34 +96,27 @@ func apiServerOf(c layer.Cluster, name string) (imageref.Version, bool, error) {
 		images, _ := spec["images"].(map[string]any)
 		ref, _ := images["apiServer"].(string)
 		v, err := k8s.Images{KubeAPIServer: ref}.APIServerVersion()
-		if err != nil {
-			return imageref.Version{}, false, fmt.Errorf("the config of %s: %w", name, err)
-		}
-		return v, true, nil
+		return v, err == nil, err
 	}
 	return imageref.Version{}, false, nil
 }
 
-// Changes reports whether the inventory's config changes the version of the API server any of
-// the nodes runs, patch releases included.
-func (p *Plugin) Changes(c layer.Cluster, nodes []layer.NodeVersions) (bool, error) {
-	changed := false
-	for _, n := range nodes {
-		next, ok, err := apiServerOf(c, n.Name)
-		switch {
-		case err != nil:
-			return false, err
-		case !ok:
-			continue
-		}
-		if n.Err != nil {
-			return false, fmt.Errorf("%s: %w", n.Name, n.Err)
-		}
-		if v, _ := n.Versions.(versions); next != v.apiServer {
-			changed = true
-		}
+// Changes says how the inventory's config changes the version of the API server the node's
+// running config names, patch releases included. A node whose running config names none, as one
+// that is no part of a cluster yet, runs no API server the delivery changes.
+func (p *Plugin) Changes(c layer.Cluster, name string, running []config.Document) (string, error) {
+	next, ok, err := apiServerOf(c, name)
+	if err != nil || !ok {
+		return "", err
 	}
-	return changed, nil
+	now, ok, err := apiServerIn(running)
+	switch {
+	case err != nil:
+		return "", fmt.Errorf("the config %s runs: %w", name, err)
+	case !ok || now == next:
+		return "", nil
+	}
+	return fmt.Sprintf("the API server from %s to %s", now.Release(), next.Release()), nil
 }
 
 // running is what the cluster's nodes run, by node, as their statuses report it.

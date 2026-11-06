@@ -208,9 +208,10 @@ continues a run that stopped. --discard, --confirm, --rollback, --staged, --diff
 take one node.
 
 When the config changes a version that a layer of the nodes' images bounds across the cluster,
-such as the Kubernetes API server's, the run is ordered, with one node or several. chalkctl first
-reads the versions every node of the cluster runs, and the layer refuses a config that would break
-its bounds, as Kubernetes's version skew policy does. The nodes that act for the others, such as
+such as the Kubernetes API server's, against the config a node runs, the run is ordered, with one
+node or several. A run that changes no such version asks no layer anything. An ordered run reads
+the versions every node of the cluster runs, and the layer refuses a config that would break its
+bounds, as Kubernetes's version skew policy does. The nodes that act for the others, such as
 Kubernetes control planes, go first, one at a time. Its layers hold each first, as Kubernetes
 waits for etcd to keep its quorum; then it gets the config on trial, for --try or else 10 minutes,
 until its layers find it serving with the config, as Kubernetes finds a control plane's static

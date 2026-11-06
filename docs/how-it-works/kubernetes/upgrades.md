@@ -46,8 +46,10 @@ its static pods run the images its config names. chalkctl reads these through ea
 so the checks need no access to the Kubernetes API.
 
 `chalkctl apply-config` compares the API server of each named node's new config with the one the
-node runs, patch releases included. When none changes, it delivers to the nodes one after the
-other, as for any config. When one changes, the run is ordered:
+config the node runs names, patch releases included. It reads that config from the node's chalkd,
+as `--diff` does. When none changes, it delivers to the nodes one after the other, as for any
+config, and asks no node's Kubernetes side anything, so the delivery also reaches a node whose
+Kubernetes side does not answer. When one changes, the run is ordered:
 
 1. chalkctl reads the versions of every node of the inventory and holds the config's API server to
    the skew policy against them: at most one minor from every running API server, no older minor

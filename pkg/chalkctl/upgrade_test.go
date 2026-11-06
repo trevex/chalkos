@@ -229,6 +229,9 @@ type upgradeLab struct {
 	hangAfterDelivery string
 	// hanging is the node whose Kubernetes status hangs.
 	hanging string
+	// kubernetesFails holds the nodes whose Kubernetes status fails, as while their API server does
+	// not answer.
+	kubernetesFails map[string]bool
 }
 
 // asked returns how often each node was asked for its config.
@@ -359,6 +362,10 @@ func (n upgradeKubernetes) Status(ctx context.Context, _ *connect.Request[kubern
 		n.lab.mu.Unlock()
 		<-ctx.Done()
 		return nil, ctx.Err()
+	}
+	if n.lab.kubernetesFails[n.name] {
+		n.lab.mu.Unlock()
+		return nil, connect.NewError(connect.CodeUnavailable, errors.New("the API server does not answer"))
 	}
 	ready := "True"
 	if n.lab.notReady[n.name] {

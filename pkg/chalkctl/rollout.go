@@ -68,9 +68,8 @@ type configRollout struct {
 // rolloutNode is a node of a run with what the run read of it before it delivered anything.
 type rolloutNode struct {
 	rebootNode
-	// layers are the node's Rollout layers, and versions what each of them reads it runs.
-	layers   []layer.Rollout
-	versions map[layer.Rollout]layer.NodeVersions
+	// layers are the layers of the image it runs, as its Info names them.
+	layers []string
 	// version is the version of the config the run delivers it, and runs the version it runs.
 	version, runs string
 }
@@ -113,19 +112,18 @@ func (a *app) deliverToNodes(ctx context.Context, f applyConfigFlags, names []st
 	return nil
 }
 
-// plan reads each node's status, roles and versions and checks its config against the image it
-// runs, before anything is delivered; then it asks the layers whether the config changes the
-// versions they bound, and those that find it does check the versions every node of the cluster
-// runs.
+// plan reads, before anything is delivered, each node's layers and, from several, its status,
+// and checks its config against the image it runs; then it asks the node's Rollout layers whether
+// the config changes the versions they bound against the config the node runs. A run that changes
+// none asks no layer's service anything. One that changes some reads each node's roles, and the
+// layers that find a change check the versions every node of the cluster runs.
 func (r *configRollout) plan(ctx context.Context, names []string) error {
-	probed := map[string]bool{}
-	byLayer := map[layer.Rollout][]layer.NodeVersions{}
-	var layers []layer.Rollout
 	for _, name := range names {
 		if err := r.cluster.node(name); err != nil {
 			return err
 		}
-		n := &rolloutNode{versions: map[layer.Rollout]layer.NodeVersions{}}
+		n := &rolloutNode{}
+		n.name = name
 		t, err := r.reach.target(name)
 		if err != nil {
 			return err
@@ -135,6 +133,7 @@ func (r *configRollout) plan(ctx context.Context, names []string) error {
 			if err != nil {
 				return err
 			}
+			n.layers = info.Msg.Layers
 			// Several nodes are checked before the first gets anything; one node is checked by its
 			// delivery, as before.
 			if len(names) > 1 {
@@ -155,46 +154,34 @@ func (r *configRollout) plan(ctx context.Context, names []string) error {
 				}
 				n.version, n.runs = d.Version, st.Msg.ConfigVersion
 			}
-			for _, u := range pluginsOf[layer.Upgrade](info.Msg.Layers) {
-				role, err := u.UpgradeRole(ctx, conn)
-				if err != nil {
-					return err
-				}
-				n.roles = append(n.roles, upgradeRole{u, role})
-			}
-			for _, l := range pluginsOf[layer.Rollout](info.Msg.Layers) {
-				v, err := l.Versions(ctx, conn)
-				n.layers = append(n.layers, l)
-				n.versions[l] = layer.NodeVersions{Name: name, Versions: v, Err: err}
-			}
-			return nil
+			return r.changes(ctx, conn, n)
 		}); err != nil {
 			return err
 		}
-		n.name = name
 		r.nodes[name] = n
-		probed[name] = n.roles.coordinator()
-		for _, l := range n.layers {
-			if !slices.Contains(layers, l) {
-				layers = append(layers, l)
-			}
-			byLayer[l] = append(byLayer[l], n.versions[l])
-		}
-	}
-	for _, l := range layers {
-		changes, err := l.Changes(pluginCluster{r.cluster}, byLayer[l])
-		if err != nil {
-			return err
-		}
-		if changes {
-			r.ordered = append(r.ordered, l)
-		}
 	}
 	if len(r.ordered) == 0 {
 		return nil
 	}
 	if r.f.payloads() {
 		return fmt.Errorf("the config changes versions the cluster orders its nodes by, so the control planes get it on trial, which %s does not go with; deliver it apart", r.f.payloadFlags)
+	}
+	probed := map[string]bool{}
+	for _, name := range names {
+		n := r.nodes[name]
+		if err := r.call(name, func(conn *client.Conn) error {
+			for _, u := range pluginsOf[layer.Upgrade](n.layers) {
+				role, err := u.UpgradeRole(ctx, conn)
+				if err != nil {
+					return err
+				}
+				n.roles = append(n.roles, upgradeRole{u, role})
+			}
+			return nil
+		}); err != nil {
+			return err
+		}
+		probed[name] = n.roles.coordinator()
 	}
 	all := r.clusterVersions(ctx)
 	for _, l := range r.ordered {
@@ -203,6 +190,34 @@ func (r *configRollout) plan(ctx context.Context, names []string) error {
 		}
 	}
 	return r.findCoordinators(ctx, probed, nil)
+}
+
+// changes asks the node's Rollout layers whether the inventory's config changes the versions they
+// bound against the config the node runs, which it reads on conn, says what each changes, and adds
+// the layers that find a change to the run's ordered ones.
+func (r *configRollout) changes(ctx context.Context, conn *client.Conn, n *rolloutNode) error {
+	layers := pluginsOf[layer.Rollout](n.layers)
+	if len(layers) == 0 {
+		return nil
+	}
+	running, err := slotConfig(ctx, conn, false)
+	if err != nil {
+		return err
+	}
+	for _, l := range layers {
+		change, err := l.Changes(pluginCluster{r.cluster}, n.name, running)
+		if err != nil {
+			return err
+		}
+		if change == "" {
+			continue
+		}
+		r.say("%s: the config changes %s", n.name, change)
+		if !slices.Contains(r.ordered, l) {
+			r.ordered = append(r.ordered, l)
+		}
+	}
+	return nil
 }
 
 // order is the order of an ordered run: the coordinators by name, then the other nodes by name.

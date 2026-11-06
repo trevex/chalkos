@@ -7,6 +7,7 @@ import (
 	"google.golang.org/protobuf/types/known/anypb"
 
 	"github.com/trevex/chalkos/pkg/client"
+	"github.com/trevex/chalkos/pkg/config"
 )
 
 // Rollout is a plugin whose layer's cluster bounds how far apart the versions its nodes run may
@@ -24,10 +25,13 @@ type Rollout interface {
 	// Versions reads, from the layer's service on conn, the versions the node runs that the bounds
 	// compare. chalkctl passes them back to the layer's other hooks unread.
 	Versions(ctx context.Context, conn *client.Conn) (any, error)
-	// Changes reports whether delivering the inventory's config to the nodes changes the versions
-	// the bounds compare, against what each of them runs. apply-config then reads every node's
-	// versions, has CheckConfig check them, and orders the delivery.
-	Changes(c Cluster, nodes []NodeVersions) (bool, error)
+	// Changes says how delivering the inventory's config to the node called name changes the
+	// versions the bounds compare, against running, the config the node runs, such as "the API
+	// server from 1.37.1 to 1.37.2"; "" when it changes none. It reads the configs alone, so a
+	// delivery that changes none asks the layer's service nothing. When a node's delivery changes
+	// them, apply-config reads every node's versions, has CheckConfig check them, and orders the
+	// delivery.
+	Changes(c Cluster, name string, running []config.Document) (string, error)
 	// CheckConfig refuses to deliver the inventory's config to the nodes named, which changes the
 	// versions the bounds compare, when it would break them against what the cluster's nodes run,
 	// as all reports it, or deliver it in an order the bounds do not allow.

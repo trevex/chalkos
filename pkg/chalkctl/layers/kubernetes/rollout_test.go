@@ -10,6 +10,7 @@ import (
 
 	kubernetesv1 "github.com/trevex/chalkos/pkg/api/kubernetes/v1"
 	"github.com/trevex/chalkos/pkg/chalkctl/layer"
+	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/imageref"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
 )
@@ -54,26 +55,31 @@ func threeAndOne(api, kubelet string) []runs {
 
 func apiServerRef(tag string) string { return "registry.k8s.io/kube-apiserver:" + tag }
 
+// Changes compares the API server the inventory's config names with the one the node's running
+// config names, patch releases included.
 func TestRolloutChanges(t *testing.T) {
 	p := New()
-	unknown := errors.New("connection refused")
+	runningOn := func(ref string) []config.Document {
+		docs, _ := fakeCluster{apiServer: map[string]string{"cp1": ref}}.Documents("cp1")
+		return docs
+	}
 	for name, tc := range map[string]struct {
-		nodes  []runs
-		config map[string]string
-		want   bool
-		err    string
+		running []config.Document
+		config  map[string]string
+		want    string
+		err     string
 	}{
-		"a patch":             {threeAndOne("1.37.1", "1.37.1"), map[string]string{"cp1": apiServerRef("v1.37.2")}, true, ""},
-		"the same":            {threeAndOne("1.37.1", "1.37.1"), map[string]string{"cp1": apiServerRef("v1.37.1"), "w1": apiServerRef("v1.37.1")}, false, ""},
-		"pinned, the same":    {threeAndOne("1.37.1", "1.37.1"), map[string]string{"cp1": apiServerRef("v1.37.1@sha256:e190f914a6cc21cab9268485d1ae7282fdeab1315ac64b668aa42d732fd1061d")}, false, ""},
-		"no Cluster document": {threeAndOne("1.37.1", "1.37.1"), map[string]string{}, false, ""},
-		"unknown versions":    {[]runs{{"cp1", k8s.KindControlPlane, "", "", unknown}}, map[string]string{"cp1": apiServerRef("v1.37.1")}, false, "cp1: connection refused"},
-		"no version tag":      {threeAndOne("1.37.1", "1.37.1"), map[string]string{"cp1": apiServerRef("latest")}, false, "the config of cp1: images.apiServer: "},
+		"a patch":             {runningOn(apiServerRef("v1.37.1")), map[string]string{"cp1": apiServerRef("v1.37.2")}, "the API server from 1.37.1 to 1.37.2", ""},
+		"the same":            {runningOn(apiServerRef("v1.37.1")), map[string]string{"cp1": apiServerRef("v1.37.1")}, "", ""},
+		"pinned, the same":    {runningOn(apiServerRef("v1.37.1")), map[string]string{"cp1": apiServerRef("v1.37.1@sha256:e190f914a6cc21cab9268485d1ae7282fdeab1315ac64b668aa42d732fd1061d")}, "", ""},
+		"no Cluster document": {runningOn(apiServerRef("v1.37.1")), map[string]string{}, "", ""},
+		"none running":        {nil, map[string]string{"cp1": apiServerRef("v1.37.2")}, "", ""},
+		"no version tag":      {runningOn(apiServerRef("v1.37.1")), map[string]string{"cp1": apiServerRef("latest")}, "", "the config of cp1: images.apiServer: "},
+		"none tagged running": {runningOn(apiServerRef("latest")), map[string]string{"cp1": apiServerRef("v1.37.2")}, "", "the config cp1 runs: images.apiServer: "},
 	} {
 		t.Run(name, func(t *testing.T) {
-			c, all := versionsLab(t, tc.nodes...)
-			c.apiServer = tc.config
-			got, err := p.Changes(c, all[:1])
+			c := fakeCluster{types: map[string]string{"cp1": k8s.KindControlPlane}, apiServer: tc.config}
+			got, err := p.Changes(c, "cp1", tc.running)
 			if tc.err != "" {
 				if err == nil || !strings.Contains(err.Error(), tc.err) {
 					t.Fatalf("err = %v, want one mentioning %q", err, tc.err)
@@ -81,7 +87,7 @@ func TestRolloutChanges(t *testing.T) {
 				return
 			}
 			if err != nil || got != tc.want {
-				t.Fatalf("Changes = %v, %v; want %v", got, err, tc.want)
+				t.Fatalf("Changes = %q, %v; want %q", got, err, tc.want)
 			}
 		})
 	}

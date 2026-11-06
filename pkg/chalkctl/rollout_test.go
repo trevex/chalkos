@@ -92,12 +92,13 @@ func (l *upgradeLab) rollTo(t *testing.T, version string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	text := regexp.MustCompile(`(kube-(apiserver|controller-manager|scheduler)):v[0-9.]+(@sha256:[0-9a-f]+)?`).ReplaceAllString(string(data), "${1}:v"+version)
+	text := componentTags.ReplaceAllString(string(data), "${1}:v"+version)
 	writeFile(t, path, text)
 }
 
 // newRolloutLab is a lab of three control planes and w1 whose inventory names an image directory
-// for each variant, which apply-config checks the config against.
+// for each variant, which apply-config checks the config against. Its Kubernetes nodes run a
+// config of the lab's Cluster document alone, which names the API server 1.37.1.
 func newRolloutLab(t *testing.T) *upgradeLab {
 	t.Helper()
 	l := newUpgradeLabOf(t, 3, []string{"w1"}, "cp", "w")
@@ -106,7 +107,31 @@ func newRolloutLab(t *testing.T) *upgradeLab {
 		images[v] = testUpgradeImage(t, v, "0.1.0")
 	}
 	l.useInventory(t, images)
+	l.runAPIServer("1.37.1")
 	return l
+}
+
+// componentTags are the tags of the components a Cluster document names that run on a control
+// plane, digests included.
+var componentTags = regexp.MustCompile(`(kube-(apiserver|controller-manager|scheduler)):v[0-9.]+(@sha256:[0-9a-f]+)?`)
+
+// runAPIServer has the nodes named, or else every Kubernetes node of the lab, run a config of the
+// lab's Cluster document alone, with the components of the control plane on the version.
+func (l *upgradeLab) runAPIServer(version string, names ...string) {
+	if len(names) == 0 {
+		for name, n := range l.nodes {
+			if n.kind != "" {
+				names = append(names, name)
+			}
+		}
+	}
+	text := componentTags.ReplaceAllString(testClusterYAML, "${1}:v"+version)
+	for _, name := range names {
+		n := l.nodes[name]
+		n.mu.Lock()
+		n.config = text
+		n.mu.Unlock()
+	}
 }
 
 // applyConfigTo runs apply-config on the nodes with the lab's inventory and every node's address.
@@ -152,6 +177,23 @@ func TestApplyConfigToSeveralNodes(t *testing.T) {
 		if want := name + " runs config " + versionOf(l.inventoryConfig(name)) + " already\n"; !strings.Contains(l.ta.stdout.String(), want) {
 			t.Errorf("stdout lacks %q:\n%s", want, l.ta.stdout)
 		}
+	}
+}
+
+// A config that keeps the API server asks no node's Kubernetes side anything, so it reaches nodes
+// whose Kubernetes side does not answer, as a delivery that mends them does.
+func TestApplyConfigWithoutAVersionChangeAsksNoLayer(t *testing.T) {
+	l := newRolloutLab(t)
+	l.kubernetesFails = map[string]bool{"cp1": true, "cp2": true, "w1": true}
+	if err := l.applyConfigTo([]string{"cp1"}); err != nil {
+		t.Fatalf("one node: %v\n%s", err, l.ta.stdout)
+	}
+	if err := l.applyConfigTo([]string{"w1", "cp2"}); err != nil {
+		t.Fatalf("several nodes: %v\n%s", err, l.ta.stdout)
+	}
+	want := []string{"cp1 apply-config staged=false", "w1 apply-config staged=false", "cp2 apply-config staged=false"}
+	if got := deliveries(l.takeEvents()); !slices.Equal(got, want) {
+		t.Errorf("events %q, want %q", got, want)
 	}
 }
 
@@ -205,6 +247,7 @@ func TestApplyConfigRolloutKeepsQuorum(t *testing.T) {
 
 	single := newUpgradeLabOf(t, 1, []string{"w1"}, "cp", "w")
 	single.useInventory(t, map[string]string{"cp": testUpgradeImage(t, "cp", "0.1.0"), "w": testUpgradeImage(t, "w", "0.1.0"), "plain": testUpgradeImage(t, "plain", "0.1.0")})
+	single.runAPIServer("1.37.1")
 	single.rollTo(t, "1.37.2")
 	err = single.applyConfigTo([]string{"cp1"})
 	if err == nil || !strings.Contains(err.Error(), "it and the API server are down while cp1 restarts its control plane; pass --allow-downtime to accept that") {
@@ -276,13 +319,7 @@ func TestApplyConfigRolloutStopsAtARefusal(t *testing.T) {
 // The version skew a delivery would break is refused before anything is delivered.
 func TestApplyConfigRefusesSkew(t *testing.T) {
 	controlPlanesOn := func(v string) func(l *upgradeLab) {
-		return func(l *upgradeLab) {
-			for _, n := range l.nodes {
-				if n.kind == "controlplane" {
-					n.apiServer = v
-				}
-			}
-		}
+		return func(l *upgradeLab) { l.runAPIServer(v, "cp1", "cp2", "cp3") }
 	}
 	for name, tc := range map[string]struct {
 		roll  string
