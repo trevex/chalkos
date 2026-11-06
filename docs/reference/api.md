@@ -1046,6 +1046,10 @@ The response of Status: the state of the node's Kubernetes.
 | `revoked_nodes` | list of RevokedNode | On a bootstrapped control-plane node: the nodes revoked in the cluster, in name order, as the ConfigMap kube-system/chalkos-revoked-nodes lists them. Empty when none is revoked, and when the list was not reported; revoked_nodes_read tells the two apart. |
 | `revoked_nodes_error` | string | On a bootstrapped control-plane node: why the revoked nodes could not be read; empty when they were. |
 | `revoked_nodes_read` | bool | Whether the node read the revoked nodes, so that an empty revoked_nodes means none is revoked. False on other nodes and when revoked_nodes_error is set. |
+| `api_server_version` | string | The Kubernetes version of the API server the node's running config names, from the tag of the Cluster document's images.apiServer, such as 1.37.2. Every node reports it, a worker too, whose config names the cluster's API server as the control planes' does. |
+| `kubelet_version` | string | The release of the running image's kubelet, as its image.json names it, such as 1.37.1. |
+| `control_plane_pods` | string | On a bootstrapped control-plane node: "current" once the static pods of kube-apiserver, kube-controller-manager and kube-scheduler run the images the node's running config names and are Ready, as their mirror pods in kube-system show it; otherwise what is not so, such as "kube-scheduler runs registry.k8s.io/kube-scheduler:v1.37.1, not registry.k8s.io/kube-scheduler:v1.37.2" or "kube-apiserver is not Ready". Empty on other nodes. |
+| `control_plane_pods_current` | bool | Whether control_plane_pods is "current". False on other nodes. |
 
 Field types: [Phase](#kubernetes-enum-phase), [RevokedNode](#kubernetes-message-revokednode).
 

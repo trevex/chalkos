@@ -29,3 +29,16 @@ func TestRevokedLines(t *testing.T) {
 		t.Errorf("lines = %q, want %q", got, want)
 	}
 }
+
+func TestVersionsLine(t *testing.T) {
+	for want, k := range map[string]*kubernetesv1.StatusResponse{
+		"kubernetes versions: API server 1.37.2, kubelet 1.37.1": {Kind: "worker", ApiServerVersion: "1.37.2", KubeletVersion: "1.37.1"},
+		"kubernetes versions: API server 1.37.2, kubelet 1.37.1, control-plane pods kube-apiserver is not Ready": {
+			Kind: "controlplane", ApiServerVersion: "1.37.2", KubeletVersion: "1.37.1", ControlPlanePods: "kube-apiserver is not Ready",
+		},
+	} {
+		if got := versionsLine(k); got != want {
+			t.Errorf("versionsLine(%v) = %q, want %q", k, got, want)
+		}
+	}
+}

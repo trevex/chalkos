@@ -61,7 +61,7 @@ func (k *side) status(ctx context.Context) (*kubernetesv1.StatusResponse, error)
 	if err != nil {
 		return nil, err
 	}
-	st := &kubernetesv1.StatusResponse{Kind: c.Kind, Phase: kubernetesv1.Phase_PHASE_PREPARING}
+	st := &kubernetesv1.StatusResponse{Kind: c.Kind, Phase: kubernetesv1.Phase_PHASE_PREPARING, ApiServerVersion: c.APIServerVersion, KubeletVersion: c.Version}
 	if _, err := os.Stat(k.paths.Share()); errors.Is(err, os.ErrNotExist) {
 		st.State = "no share"
 		return st, nil
@@ -76,6 +76,8 @@ func (k *side) status(ctx context.Context) (*kubernetesv1.StatusResponse, error)
 	if err != nil {
 		return nil, err
 	}
+	// The share of a bootstrapped control plane, which reaches its own API server.
+	var share *kpki.Share
 	switch {
 	case c.Kind == k8s.KindWorker:
 		st.State, st.Phase = "joined", kubernetesv1.Phase_PHASE_JOINED
@@ -100,9 +102,10 @@ func (k *side) status(ctx context.Context) (*kubernetesv1.StatusResponse, error)
 				st.Vip = "holder"
 			}
 		}
-		if share, err := knode.ReadShare(k.paths); err == nil {
+		if s, err := knode.ReadShare(k.paths); err == nil {
+			share = &s
 			st.ControlPlane, st.ControlPlaneCurrent = controlPlaneCurrent, true
-			if err := k.hooks.CheckControlPlane(ctx, c, share); err != nil {
+			if err := k.hooks.CheckControlPlane(ctx, c, s); err != nil {
 				st.ControlPlane, st.ControlPlaneCurrent = err.Error(), false
 			}
 		}
@@ -127,6 +130,14 @@ func (k *side) status(ctx context.Context) (*kubernetesv1.StatusResponse, error)
 		return st, nil
 	}
 	st.NodeReady = nodeReady(node)
+	if share != nil {
+		if cs, err := k.hooks.APIClient(c, *share); err != nil {
+			st.ControlPlanePods = "its static pods are unknown: " + err.Error()
+		} else {
+			st.ControlPlanePods = controlPlanePods(ctx, cs, c, node.Name)
+		}
+		st.ControlPlanePodsCurrent = st.ControlPlanePods == controlPlanePodsCurrent
+	}
 	if c.Kind == k8s.KindWorker {
 		problem, err := missingPodRanges(c, node)
 		if err != nil {

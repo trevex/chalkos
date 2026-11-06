@@ -17,6 +17,7 @@ func (p *Plugin) PrintStatus(ctx context.Context, h layer.Host, conn *client.Con
 		return layer.ServiceError(err, p.Name())
 	}
 	fmt.Fprintln(h.Stdout(), kubernetesLine(k))
+	fmt.Fprintln(h.Stdout(), versionsLine(k))
 	w := h.Table()
 	for _, line := range revokedLines(k) {
 		fmt.Fprintln(w, line)
@@ -35,6 +36,17 @@ func kubernetesLine(k *kubernetesv1.StatusResponse) string {
 	}
 	if k.ControlPlane != "" {
 		line += ", control plane " + k.ControlPlane
+	}
+	return line
+}
+
+// versionsLine is the status line of the versions the node runs: the API server its config names
+// and its image's kubelet, and on a control plane whether its static pods run what the config
+// names.
+func versionsLine(k *kubernetesv1.StatusResponse) string {
+	line := fmt.Sprintf("kubernetes versions: API server %s, kubelet %s", k.GetApiServerVersion(), k.GetKubeletVersion())
+	if p := k.GetControlPlanePods(); p != "" {
+		line += ", control-plane pods " + p
 	}
 	return line
 }

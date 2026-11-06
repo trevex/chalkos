@@ -251,8 +251,23 @@ type StatusResponse struct {
 	// Whether the node read the revoked nodes, so that an empty revoked_nodes means none is
 	// revoked. False on other nodes and when revoked_nodes_error is set.
 	RevokedNodesRead bool `protobuf:"varint,10,opt,name=revoked_nodes_read,json=revokedNodesRead,proto3" json:"revoked_nodes_read,omitempty"`
-	unknownFields    protoimpl.UnknownFields
-	sizeCache        protoimpl.SizeCache
+	// The Kubernetes version of the API server the node's running config names, from the tag of the
+	// Cluster document's images.apiServer, such as 1.37.2. Every node reports it, a worker too,
+	// whose config names the cluster's API server as the control planes' does.
+	ApiServerVersion string `protobuf:"bytes,11,opt,name=api_server_version,json=apiServerVersion,proto3" json:"api_server_version,omitempty"`
+	// The release of the running image's kubelet, as its image.json names it, such as 1.37.1.
+	KubeletVersion string `protobuf:"bytes,12,opt,name=kubelet_version,json=kubeletVersion,proto3" json:"kubelet_version,omitempty"`
+	// On a bootstrapped control-plane node: "current" once the static pods of kube-apiserver,
+	// kube-controller-manager and kube-scheduler run the images the node's running config names and
+	// are Ready, as their mirror pods in kube-system show it; otherwise what is not so, such as
+	// "kube-scheduler runs registry.k8s.io/kube-scheduler:v1.37.1, not
+	// registry.k8s.io/kube-scheduler:v1.37.2" or "kube-apiserver is not Ready". Empty on other
+	// nodes.
+	ControlPlanePods string `protobuf:"bytes,13,opt,name=control_plane_pods,json=controlPlanePods,proto3" json:"control_plane_pods,omitempty"`
+	// Whether control_plane_pods is "current". False on other nodes.
+	ControlPlanePodsCurrent bool `protobuf:"varint,14,opt,name=control_plane_pods_current,json=controlPlanePodsCurrent,proto3" json:"control_plane_pods_current,omitempty"`
+	unknownFields           protoimpl.UnknownFields
+	sizeCache               protoimpl.SizeCache
 }
 
 func (x *StatusResponse) Reset() {
@@ -351,6 +366,34 @@ func (x *StatusResponse) GetRevokedNodesError() string {
 func (x *StatusResponse) GetRevokedNodesRead() bool {
 	if x != nil {
 		return x.RevokedNodesRead
+	}
+	return false
+}
+
+func (x *StatusResponse) GetApiServerVersion() string {
+	if x != nil {
+		return x.ApiServerVersion
+	}
+	return ""
+}
+
+func (x *StatusResponse) GetKubeletVersion() string {
+	if x != nil {
+		return x.KubeletVersion
+	}
+	return ""
+}
+
+func (x *StatusResponse) GetControlPlanePods() string {
+	if x != nil {
+		return x.ControlPlanePods
+	}
+	return ""
+}
+
+func (x *StatusResponse) GetControlPlanePodsCurrent() bool {
+	if x != nil {
+		return x.ControlPlanePodsCurrent
 	}
 	return false
 }
@@ -1715,7 +1758,7 @@ var File_chalkos_kubernetes_v1_kubernetes_proto protoreflect.FileDescriptor
 const file_chalkos_kubernetes_v1_kubernetes_proto_rawDesc = "" +
 	"\n" +
 	"&chalkos/kubernetes/v1/kubernetes.proto\x12\x15chalkos.kubernetes.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\x0f\n" +
-	"\rStatusRequest\"\x9f\x03\n" +
+	"\rStatusRequest\"\xe1\x04\n" +
 	"\x0eStatusResponse\x12\x12\n" +
 	"\x04kind\x18\x01 \x01(\tR\x04kind\x12\x14\n" +
 	"\x05state\x18\x02 \x01(\tR\x05state\x122\n" +
@@ -1728,7 +1771,11 @@ const file_chalkos_kubernetes_v1_kubernetes_proto_rawDesc = "" +
 	"\rrevoked_nodes\x18\b \x03(\v2\".chalkos.kubernetes.v1.RevokedNodeR\frevokedNodes\x12.\n" +
 	"\x13revoked_nodes_error\x18\t \x01(\tR\x11revokedNodesError\x12,\n" +
 	"\x12revoked_nodes_read\x18\n" +
-	" \x01(\bR\x10revokedNodesRead\"\\\n" +
+	" \x01(\bR\x10revokedNodesRead\x12,\n" +
+	"\x12api_server_version\x18\v \x01(\tR\x10apiServerVersion\x12'\n" +
+	"\x0fkubelet_version\x18\f \x01(\tR\x0ekubeletVersion\x12,\n" +
+	"\x12control_plane_pods\x18\r \x01(\tR\x10controlPlanePods\x12;\n" +
+	"\x1acontrol_plane_pods_current\x18\x0e \x01(\bR\x17controlPlanePodsCurrent\"\\\n" +
 	"\vRevokedNode\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x129\n" +
 	"\n" +

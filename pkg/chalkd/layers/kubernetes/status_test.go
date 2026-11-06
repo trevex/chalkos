@@ -3,12 +3,17 @@ package kubernetes
 import (
 	"context"
 	"crypto/tls"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/kubernetes/fake"
 
 	"github.com/trevex/chalkos/pkg/chalkd/layers/kubernetes/kubernetestest"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
@@ -50,5 +55,92 @@ func TestServesFile(t *testing.T) {
 	}
 	if err := servesFile(context.Background(), "127.0.0.1:1", filepath.Join(dir, "served.crt")); err == nil || !strings.Contains(err.Error(), "does not answer") {
 		t.Errorf("nothing listening: %v", err)
+	}
+}
+
+// withKubelet rewrites the node's cluster file to name the image's kubelet of the version, so a
+// status tells it apart from the API server's 1.37.1.
+func withKubelet(t *testing.T, p *Plugin, version string) {
+	t.Helper()
+	data := readFile(t, p.k.paths.Cluster)
+	write(t, p.k.paths.Cluster, strings.Replace(data, `"version": "1.37.1"`, `"version": "`+version+`"`, 1))
+}
+
+// TestStatusReportsTheVersions checks that every node reports its config's API server and its
+// image's kubelet, also while it prepares, and that only a bootstrapped control plane reports its
+// static pods.
+func TestStatusReportsTheVersions(t *testing.T) {
+	for name, tc := range map[string]struct {
+		kind  string
+		share bool
+	}{
+		"preparing worker":        {k8s.KindWorker, false},
+		"joined worker":           {k8s.KindWorker, true},
+		"preparing control plane": {k8s.KindControlPlane, false},
+	} {
+		t.Run(name, func(t *testing.T) {
+			s, _ := kubernetesNode(t, tc.kind, tc.share)
+			withKubelet(t, s, "1.36.4")
+			st := kubernetestest.Status(t, s)
+			if st.ApiServerVersion != "1.37.1" || st.KubeletVersion != "1.36.4" {
+				t.Errorf("API server %q, kubelet %q; want 1.37.1 and 1.36.4", st.ApiServerVersion, st.KubeletVersion)
+			}
+			if st.ControlPlanePods != "" || st.ControlPlanePodsCurrent {
+				t.Errorf("control-plane pods %q, %v; want none", st.ControlPlanePods, st.ControlPlanePodsCurrent)
+			}
+		})
+	}
+}
+
+// TestStatusReportsTheStaticPods checks that a bootstrapped control plane reports whether its
+// static pods run its config's images, through its own API server.
+func TestStatusReportsTheStaticPods(t *testing.T) {
+	images := k8s.Images{
+		KubeAPIServer:         "registry.k8s.io/kube-apiserver:v1.37.1",
+		KubeControllerManager: "registry.k8s.io/kube-controller-manager:v1.37.1",
+		KubeScheduler:         "registry.k8s.io/kube-scheduler:v1.37.1",
+	}
+	for name, tc := range map[string]struct {
+		client  func(k8s.Cluster, kpki.Share) (kubernetes.Interface, error)
+		want    string
+		current bool
+	}{
+		"current": {func(k8s.Cluster, kpki.Share) (kubernetes.Interface, error) {
+			return fake.NewClientset(
+				mirrorPod("kube-apiserver", "n1", images.KubeAPIServer, true),
+				mirrorPod("kube-controller-manager", "n1", images.KubeControllerManager, true),
+				mirrorPod("kube-scheduler", "n1", images.KubeScheduler, true),
+			), nil
+		}, "current", true},
+		"not Ready": {func(k8s.Cluster, kpki.Share) (kubernetes.Interface, error) {
+			return fake.NewClientset(
+				mirrorPod("kube-apiserver", "n1", images.KubeAPIServer, false),
+				mirrorPod("kube-controller-manager", "n1", images.KubeControllerManager, true),
+				mirrorPod("kube-scheduler", "n1", images.KubeScheduler, true),
+			), nil
+		}, "kube-apiserver is not Ready", false},
+		"no client": {func(k8s.Cluster, kpki.Share) (kubernetes.Interface, error) {
+			return nil, errors.New("no share")
+		}, "its static pods are unknown: no share", false},
+	} {
+		t.Run(name, func(t *testing.T) {
+			s, _ := kubernetesNode(t, k8s.KindControlPlane, true)
+			if err := knode.MarkBootstrapped(s.k.paths, time.Now()); err != nil {
+				t.Fatal(err)
+			}
+			s.k.hooks.Node = func(context.Context) (*corev1.Node, error) {
+				n := kubernetestest.ReadyNode()
+				n.Name = "n1"
+				return n, nil
+			}
+			s.k.hooks.APIClient = tc.client
+			st := kubernetestest.Status(t, s)
+			if st.ControlPlanePods != tc.want || st.ControlPlanePodsCurrent != tc.current {
+				t.Errorf("control-plane pods %q, %v; want %q, %v", st.ControlPlanePods, st.ControlPlanePodsCurrent, tc.want, tc.current)
+			}
+			if st.ApiServerVersion != "1.37.1" || st.KubeletVersion != "1.37.1" {
+				t.Errorf("API server %q, kubelet %q", st.ApiServerVersion, st.KubeletVersion)
+			}
+		})
 	}
 }

@@ -124,6 +124,21 @@ message StatusResponse {
   // Whether the node read the revoked nodes, so that an empty revoked_nodes means none is
   // revoked. False on other nodes and when revoked_nodes_error is set.
   bool revoked_nodes_read = 10;
+  // The Kubernetes version of the API server the node's running config names, from the tag of the
+  // Cluster document's images.apiServer, such as 1.37.2. Every node reports it, a worker too,
+  // whose config names the cluster's API server as the control planes' does.
+  string api_server_version = 11;
+  // The release of the running image's kubelet, as its image.json names it, such as 1.37.1.
+  string kubelet_version = 12;
+  // On a bootstrapped control-plane node: "current" once the static pods of kube-apiserver,
+  // kube-controller-manager and kube-scheduler run the images the node's running config names and
+  // are Ready, as their mirror pods in kube-system show it; otherwise what is not so, such as
+  // "kube-scheduler runs registry.k8s.io/kube-scheduler:v1.37.1, not
+  // registry.k8s.io/kube-scheduler:v1.37.2" or "kube-apiserver is not Ready". Empty on other
+  // nodes.
+  string control_plane_pods = 13;
+  // Whether control_plane_pods is "current". False on other nodes.
+  bool control_plane_pods_current = 14;
 }
 
 // Where a node stands in its Kubernetes cluster. On a control-plane node it follows the node's
