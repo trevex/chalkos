@@ -175,7 +175,8 @@ networkd puts in which VRF, and those links against the firewall's zones, the NA
 management interfaces, the policy routes' `in`, the BGP peers, the NAT64s, the resolvers and the
 DHCP subnets and relays. chalkctl links the same code, so `chalkctl validate` and
 `chalkctl apply-config` run it before they send anything, and the node runs it again as
-`chalkos-render validate router`. It reports every fault it finds at once.
+`chalkos-render validate router`. It refuses the VRFs' links first. The checks that read the
+links run once those pass, and report every fault they find at once.
 
 The router guide lists its messages and their fixes, beside those of the renderers, which run on
 the node alone:

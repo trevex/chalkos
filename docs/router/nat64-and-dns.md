@@ -450,8 +450,10 @@ The rules check each document and what one document's fields say of another's. T
 [validator `router`](../reference/builtins.md#validator-router) compares the NAT64s in pairs and
 checks the `listen` addresses against the `Network` documents. `chalkctl validate` and
 `chalkctl apply-config` run it before chalkctl sends anything, and the router runs it again at
-the delivery. It reports every fault it finds at once. `chalkctl` prints its refusals after
-`the config is refused:`, as it prints a rule's, with the document and the field each is about:
+the delivery. It checks the VRFs' links first, and the `listen` addresses only once the
+links pass. Within each step it reports every fault it finds at once.
+`chalkctl` prints the refusals after `the config is refused:`, as it prints a rule's, with the
+document and the field each is about:
 
 ```text
 chalkctl: r1: the config is refused: NAT64/lab: spec.prefix: NAT64 lab and NAT64 edge both translate addresses of 64:ff9b::/96 in VRF default; give each NAT64 of a VRF a prefix of its own

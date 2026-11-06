@@ -418,9 +418,10 @@ The [validator `router`](../reference/builtins.md#validator-router) checks what 
 the links' VRFs and addresses, which `Network` documents give, the router advertisements of an
 IPv6 subnet's link, and the subnets and relays of a VRF together. `chalkctl validate` and
 `chalkctl apply-config` run it before chalkctl sends anything, and the router runs it again at
-the delivery. It reports every fault it finds at once, and `chalkctl` prints its refusals after
-`the config is refused:`, as it prints a rule's, each with the document and the field it is
-about:
+the delivery. It checks the VRFs' links first, and the subnets and relays only once the links
+pass. Within each step it reports every fault it finds at once.
+`chalkctl` prints the refusals after `the config is refused:`, as it prints a rule's, each with
+the document and the field it is about:
 
 | Message | Fix |
 | --- | --- |

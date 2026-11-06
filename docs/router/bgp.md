@@ -414,7 +414,8 @@ chalkctl node diag r1 --secrets secrets.age bgp-route family=ipv4 prefix=192.0.2
 [validator `router`](../reference/builtins.md#validator-router). The validator checks the peers'
 sessions against the `Network` and `VRF` documents and against each other. `chalkctl validate`
 and `chalkctl apply-config` run it before chalkctl sends anything, and the router runs it again
-at the delivery. It reports every fault it finds at once, and `chalkctl` prints its refusals
+at the delivery. It checks the VRFs' links first, and the peers only once the links pass.
+Within each step it reports every fault it finds at once. `chalkctl` prints the refusals
 after `the config is refused:`, as it prints a rule's. Each refusal names the document and the
 field:
 

@@ -276,7 +276,8 @@ expression:
 The [validator `router`](../reference/builtins.md#validator-router) checks `in` against the
 VRFs' devices, the NAT64s' links and the links of the zones. `chalkctl validate` and
 `chalkctl apply-config` run it before chalkctl sends anything, and the router runs it again at
-the delivery. It reports every fault it finds at once, and `chalkctl` prints its refusals after
+the delivery. It checks the VRFs' links first, and `in` only once the links pass. Within
+each step it reports every fault it finds at once. `chalkctl` prints the refusals after
 `the config is refused:`, as it prints a rule's, with the document and the field each is about:
 
 | Message | Fix |

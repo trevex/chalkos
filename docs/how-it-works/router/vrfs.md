@@ -126,7 +126,8 @@ refused, with the remedies: give the earlier one the same `VRF=`, rename it to s
 the `VRF=`. It refuses a backslash in `Name=`, which systemd reads as an escape, and a bracket
 expression it cannot match as `fnmatch` does, such as `eth[0` or a class like `[[:digit:]]`. The
 validator runs after the rules and before the renderers, at a delivery, at
-`chalkctl apply-config --dry-run` and in `chalkctl validate`. It reports every fault it finds at
+`chalkctl apply-config --dry-run`, in `chalkctl validate` and at boot. It refuses the VRFs' links
+first. The checks that read the links run once those pass, and report every fault they find at
 once.
 
 The validator reads no `NetDev` and no unit names. The renderer of the output `networkd` refuses

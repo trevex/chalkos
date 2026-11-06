@@ -417,9 +417,10 @@ The rules read the documents' names and globs without knowing which links networ
 [validator `router`](../reference/builtins.md#validator-router) checks the rest against the
 `Network` documents. `chalkctl validate` and `chalkctl apply-config` run it before chalkctl sends
 anything, and the router runs it again at the delivery, after the rules and before the renderers.
-It reports every fault it finds at once, and each fault once. `chalkctl` prints its refusals after
-`the config is refused:`, as it prints a rule's, with the document and the field each is about,
-and joins several with `; `:
+It checks the VRFs' links first, and what reads the links only once they pass. Within each
+step it reports every fault it finds at once, and each fault once. `chalkctl` prints the refusals
+after `the config is refused:`, as it prints a rule's, with the document and the field each is
+about, and joins several with `; `:
 
 ```text
 chalkctl: r1: the config is refused: Network/20-both: spec.match: Network 20-both matches links of no VRF and VRF a; the links of one Network are in one VRF
