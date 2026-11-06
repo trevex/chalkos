@@ -121,7 +121,8 @@ func (t bootTarget) booted(boot *nodev1.BootStatus) bool {
 // set, runs once the node is held, right before the reboot: an upgrade makes the image boot next
 // only then, so a refused hold, as when etcd would lose its quorum, leaves the image staged, which
 // no reboot of the node boots meanwhile. An activation that fails leaves the image staged too,
-// and the node, which does not reboot, is released at once.
+// and the node, which does not reboot, is released at once, unless the image boots next all the
+// same.
 func (b *rebooter) reboot(ctx context.Context, n *rebootNode, t bootTarget, hold bool, activate func() error) error {
 	if hold {
 		n.held = true
@@ -132,6 +133,12 @@ func (b *rebooter) reboot(ctx context.Context, n *rebootNode, t bootTarget, hold
 	if activate != nil {
 		if err := activate(); err != nil {
 			if !hold {
+				return err
+			}
+			// An activation whose answer was lost, or that failed after its rename, may have made
+			// the image boot next: released, the node would boot it at a reboot nothing holds it
+			// for. It stays held then, and while its status cannot tell.
+			if err := b.heldForActivation(ctx, n, t, err); err != nil {
 				return err
 			}
 			if rerr := b.hooks(ctx, n, layer.Upgrade.After); rerr != nil {
@@ -153,6 +160,31 @@ func (b *rebooter) reboot(ctx context.Context, n *rebootNode, t bootTarget, hold
 	}
 	b.say("%s: rebooting into %s", n.name, t.image)
 	return b.release(ctx, n, t, hold)
+}
+
+// heldForActivation is the error of a node held for a reboot whose activation failed with err,
+// when the node stays held: the target's image boots next all the same, or the node's status,
+// which tells, cannot be read. It is nil when the image does not boot next, so the node is
+// released.
+func (b *rebooter) heldForActivation(ctx context.Context, n *rebootNode, t bootTarget, err error) error {
+	held := "it stays held"
+	if n.roles.member() {
+		held = "it stays cordoned"
+	}
+	var st *nodev1.StatusResponse
+	if serr := b.call(n.name, func(conn *client.Conn) error {
+		s, err := conn.Status(ctx, connect.NewRequest(&nodev1.StatusRequest{}))
+		if err == nil {
+			st = s.Msg
+		}
+		return err
+	}); serr != nil {
+		return fmt.Errorf("%w; %s, as its status, which tells whether %s boots next, cannot be read: %w", err, held, t.image, serr)
+	}
+	if boot := st.GetBoot(); boot.GetStagedState() == nodev1.SlotState_SLOT_STATE_ACTIVE && bytes.Equal(boot.GetStaged().GetRootHash(), t.root) {
+		return fmt.Errorf("%w; %s boots next all the same, so %s: chalkctl node reboot %s boots it and releases the node", err, t.image, held, n.name)
+	}
+	return nil
 }
 
 // release waits until the node runs the target's image in another boot than the one before, its

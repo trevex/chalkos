@@ -190,6 +190,9 @@ type upgradeLab struct {
 	// refuseActivate makes the node refuse its next activation, as if Secure Boot would refuse the
 	// staged UKI.
 	refuseActivate string
+	// activateLost makes the node fail its next activation after it made the image boot next, as
+	// when syncing the ESP after the rename fails.
+	activateLost string
 	// refuseRollback makes the node refuse its next rollback, as if its UKI could not be renamed.
 	refuseRollback string
 	// uncountedRollback makes the nodes stage a rollback's image without tries, as chalkd does while
@@ -432,6 +435,10 @@ func (n *upgradeFake) ActivateImage(_ context.Context, req *connect.Request[node
 	if refuse {
 		n.lab.refuseActivate = ""
 	}
+	lost := n.lab.activateLost == n.name
+	if lost {
+		n.lab.activateLost = ""
+	}
 	n.lab.mu.Unlock()
 	n.mu.Lock()
 	defer n.mu.Unlock()
@@ -448,6 +455,9 @@ func (n *upgradeFake) ActivateImage(_ context.Context, req *connect.Request[node
 		return connect.NewResponse(&nodev1.ActivateImageResponse{AlreadyActive: true, Entry: n.entry()}), nil
 	}
 	n.active = true
+	if lost {
+		return nil, connect.NewError(connect.CodeInternal, errors.New("activate: sync the ESP: input/output error"))
+	}
 	return connect.NewResponse(&nodev1.ActivateImageResponse{Entry: n.entry()}), nil
 }
 
@@ -1259,6 +1269,34 @@ func TestNodeRebootWithoutTheBootBefore(t *testing.T) {
 	}
 	if waited := time.Since(start); waited < time.Second {
 		t.Errorf("the command stopped after %v, before its timeout", waited)
+	}
+}
+
+// TestUpgradeHoldsANodeWhoseImageBootsNextAfterAFailedActivation keeps the node it drained
+// cordoned when its activation failed after it made the image boot next: the node would boot the
+// image at a reboot nothing holds it for. chalkctl node reboot boots it and uncordons the node.
+func TestUpgradeHoldsANodeWhoseImageBootsNextAfterAFailedActivation(t *testing.T) {
+	l := newUpgradeLab(t, 3)
+	img := testUpgradeImage(t, "w", "0.2.0")
+	l.activateLost = "w2"
+	err := l.upgrade(img, "--nodes", "w2")
+	if err == nil || !strings.HasPrefix(err.Error(), "w2: ") || !strings.Contains(err.Error(), "sync the ESP: input/output error; "+shortOf(t, img)+" boots next all the same, so it stays cordoned: chalkctl node reboot w2 boots it and releases the node") {
+		t.Fatalf("upgrade = %v", err)
+	}
+	if got, want := l.takeEvents(), []string{"w2 upgrade", "w2 drain", "w2 activate"}; !slices.Equal(got, want) {
+		t.Errorf("events %q, want %q", got, want)
+	}
+	if n := l.nodes["w2"]; !l.cordoned["w2"] || !n.active {
+		t.Errorf("w2 cordoned: %v; active: %v", l.cordoned["w2"], n.active)
+	}
+	if err := l.run("node", "reboot", "w2"); err != nil {
+		t.Fatalf("%v\n%s", err, l.ta.stdout)
+	}
+	if got, want := l.takeEvents(), []string{"w2 drain", "w2 reboot", "w2 uncordon"}; !slices.Equal(got, want) {
+		t.Errorf("events %q, want %q", got, want)
+	}
+	if n := l.nodes["w2"]; l.cordoned["w2"] || n.image != "0.2.0" {
+		t.Errorf("w2 cordoned: %v; runs %s", l.cordoned["w2"], n.image)
 	}
 }
 
