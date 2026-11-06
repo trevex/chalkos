@@ -41,10 +41,14 @@ func (a *app) confirmTrial(ctx context.Context, t *target, version, previous str
 		until = a.now().Add(trialEnd)
 	}
 	fmt.Fprintf(a.stdout, "%s: waiting for a new connection and the node's health to confirm config %s\n", t.name, version)
-	var last error
+	var (
+		last     error
+		warnings []string
+	)
 	permanent := false
 	err := layer.WaitFor(ctx, "", until.Sub(a.now()), a.poll(), func() error {
-		err := confirmOnce(ctx, t, version, until.Sub(a.now()))
+		var err error
+		warnings, err = confirmOnce(ctx, t, version, until.Sub(a.now()))
 		// An attempt the deadline cut short says less than the one before it.
 		if err != nil && (last == nil || connect.CodeOf(err) != connect.CodeDeadlineExceeded) {
 			last = err
@@ -62,6 +66,7 @@ func (a *app) confirmTrial(ctx context.Context, t *target, version, previous str
 	switch {
 	case err == nil:
 		fmt.Fprintf(a.stdout, "%s keeps config %s: the trial is confirmed\n", t.name, version)
+		a.warnDelivery(t.name, &nodev1.ApplyConfigResponse{Warnings: warnings})
 		return nil
 	// Interrupted, chalkctl leaves the trial open.
 	case ctx.Err() != nil && late:
@@ -88,17 +93,22 @@ func unreadableTrial(err error) bool {
 	return errors.As(err, &ce) && ce.Code() == connect.CodeInternal && strings.HasPrefix(ce.Message(), "read the record of the config's trial: ")
 }
 
-// confirmOnce asks the node to confirm the trial over a new connection, for at most timeout.
-func confirmOnce(ctx context.Context, t *target, version string, timeout time.Duration) error {
+// confirmOnce asks the node to confirm the trial over a new connection, for at most timeout, and
+// returns the warnings of a confirmation that went through: what the node could not write of what
+// the trial held back, its staged image's slot or its pending config.
+func confirmOnce(ctx context.Context, t *target, version string, timeout time.Duration) ([]string, error) {
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	conn, err := dialInstalled(t)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer conn.Close()
-	_, err = conn.ConfirmConfig(ctx, connect.NewRequest(&nodev1.ConfirmConfigRequest{Version: version}))
-	return nodeError(err, t.name)
+	resp, err := conn.ConfirmConfig(ctx, connect.NewRequest(&nodev1.ConfirmConfigRequest{Version: version}))
+	if err != nil {
+		return nil, nodeError(err, t.name)
+	}
+	return resp.Msg.Warnings, nil
 }
 
 // trialRolledBack waits, over new connections, until trialEnd after the deadline, for the node to

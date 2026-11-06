@@ -26,15 +26,20 @@ what fires each, and the storage changes. A refusal is the delivery's, and the c
 config is refused apart from those it could not check, such as a node on trial. It goes without
 --diff, --rollback, --confirm, --try, --no-confirm, --ignore-unit, --force and the layers'
 payload flags. An effect whose rule compares the node's facts before and after the delivery is
-planned with the facts as they are. With --staged, the staged image checks the config with its
-own chalkd and renderers, and the plan has no outputs and no effects: that image renders its
+planned with the facts as they are. The plan ends with the staged image's config or the pending
+config, when the delivery writes either. With --staged, the staged image checks the config with
+its own chalkd and renderers, and the plan has no outputs and no effects: that image renders its
 outputs and takes its effects when it boots.
 
-Each image on a node keeps its own config. --staged delivers the config for the image in the
-node's inactive slot, staged by upgrade --until stage or active after upgrade --until activate,
-and nothing restarts. Without --staged,
-chalkctl warns of a staged image, whose config stays as it is. A config for the running image that
-adds storage the staged image's config lacks is refused: deliver the config with --staged first.
+Each image on a node keeps its own config. The image in the node's inactive slot, staged by
+upgrade --until stage or active after upgrade --until activate, boots with the config it checked
+itself. A delivery to the running image goes to that image too: it checks the config with its own
+chalkd and renderers, against the storage the running image's change leaves, before anything
+changes, and its refusal refuses the delivery. Once the running image applied the config, the node
+writes the staged image's config and says so. When that write fails, the staged image keeps its
+earlier config, the command fails naming it, and running it again writes it. The image a rollback
+staged while the running image's boot is not found healthy keeps the config it last ran, and the
+node warns of it. --staged delivers the config to the staged image alone, and nothing restarts.
 
 On a node without a staged image, --staged holds the config pending for the next upgrade, in place
 of any config held before. chalkctl checks it against the node's image in the inventory; the node
@@ -44,8 +49,9 @@ and the image checks it before the node installs anything. An upgrade that carri
 it. Either way the node drops the pending config once the image is staged; an upgrade
 that fails keeps it, and an image's refusal names it. A pending config is kept without the fallback
 secret, so an upgrade with one that adds an encrypted volume needs the config from the inventory.
---staged --dry-run says the config would be held pending and keeps nothing. --staged --discard
-drops the pending config and needs no inventory.
+A delivery to the running image replaces a pending config too, once the running image applied it,
+so the next upgrade boots the config delivered last. --staged --dry-run says the config would be
+held pending and keeps nothing. --staged --discard drops the pending config and needs no inventory.
 
 --rollback delivers the node's previous config again instead of the inventory's: the config the
 running image ran before the last delivery, which the node keeps. It goes through the same checks,
@@ -75,7 +81,8 @@ changed the config leaves the trial open, and chalkctl does not confirm it. When
 the config back fails, the node tries again each minute and --confirm still keeps the config,
 unless the failed attempt changed the node; --rollback then finishes the rollback. After a trial's
 rollback, the config on trial is the node's previous config, which --rollback delivers again
-without a trial.
+without a trial. The staged image checks config on trial as any delivery, but its config, or the
+pending config, is written only once the trial is confirmed, so a rollback leaves it as it was.
 
 --kubernetes-share also delivers a new Kubernetes share, such as a worker's new kubelet
 certificate. It is refused to a node revoked with chalkctl node revoke, and while no control plane

@@ -2024,7 +2024,8 @@ func TestUpgradeSendsAStagedImageAgainForItsConfig(t *testing.T) {
 }
 
 // ApplyConfig keeps the config for the running image, or with staged for the staged one, which
-// a node without one refuses.
+// a node without one holds pending. Config for the running image goes to the staged image too, or
+// replaces the pending config; a dry run of it plans both.
 func (n *upgradeFake) ApplyConfig(ctx context.Context, req *connect.Request[nodev1.ApplyConfigRequest]) (*connect.Response[nodev1.ApplyConfigResponse], error) {
 	if err := needsAdmin(ctx, "ApplyConfig"); err != nil {
 		return nil, err
@@ -2052,8 +2053,28 @@ func (n *upgradeFake) ApplyConfig(ctx context.Context, req *connect.Request[node
 		// The staged image checks the config and plans its version; nothing is kept.
 		plan := &nodev1.Plan{Version: versionOf(req.Msg.Config), Replaces: versionOf(n.stagedConfig)}
 		return connect.NewResponse(&nodev1.ApplyConfigResponse{Plan: plan, Changes: []*nodev1.StorageChange{{Volume: "extra", Reason: "new"}}}), nil
+	case req.Msg.DryRun:
+		resp := &nodev1.ApplyConfigResponse{Plan: &nodev1.Plan{Version: versionOf(req.Msg.Config), Replaces: versionOf(n.config)}}
+		switch {
+		case n.staged != "":
+			resp.Staged = &nodev1.StagedSlot{Version: versionOf(req.Msg.Config), Replaces: versionOf(n.stagedConfig)}
+		case n.pending != "":
+			resp.Pending = &nodev1.PendingConfig{Version: versionOf(req.Msg.Config)}
+		}
+		return connect.NewResponse(resp), nil
 	case !req.Msg.Staged:
 		n.config = req.Msg.Config
+		resp := &nodev1.ApplyConfigResponse{}
+		switch {
+		case n.staged != "":
+			resp.Staged = &nodev1.StagedSlot{Version: versionOf(req.Msg.Config), Replaces: versionOf(n.stagedConfig)}
+			n.stagedConfig = req.Msg.Config
+		case n.pending != "":
+			n.pending = req.Msg.Config
+			resp.Pending = &nodev1.PendingConfig{Version: versionOf(n.pending), Since: timestamppb.New(pendingSince)}
+		}
+		n.lab.record("%s apply-config staged=false", n.name)
+		return connect.NewResponse(resp), nil
 	default:
 		n.stagedConfig = req.Msg.Config
 	}
@@ -2093,11 +2114,9 @@ func (l *upgradeLab) applyConfig(name string, args ...string) error {
 	return l.ta.run(context.Background(), append([]string{"apply-config", name, "--inventory", l.inventory, "--address", l.addrs[name]}, args...))
 }
 
-//	TestApplyConfigStaged delivers the inventory's config for the staged image, checked against the
-//
-// image the inventory names for the node, and the running image's config warns of the staged one;
-// status
-// compares both with the inventory.
+// TestApplyConfigStaged delivers the inventory's config for the staged image, checked against the
+// image the inventory names for the node, and config for the running image goes to the staged one
+// too, as the node answers; a dry run names both slots. Status compares both with the inventory.
 func TestApplyConfigStaged(t *testing.T) {
 	l := newUpgradeLab(t, 1)
 	img := testUpgradeImage(t, "w", "0.2.0")
@@ -2114,18 +2133,25 @@ func TestApplyConfigStaged(t *testing.T) {
 	if !strings.Contains(l.ta.stdout.String(), "w1 boots config "+want+" with its staged image") {
 		t.Errorf("stdout = %q", l.ta.stdout)
 	}
+	n.stagedConfig = "{}"
+	if err := l.applyConfig("w1", "--dry-run"); err != nil {
+		t.Fatal(err)
+	}
+	if line := "w1: staged image's config " + versionOf("{}") + " → " + want + "\n"; !strings.HasSuffix(l.ta.stdout.String(), line) || n.stagedConfig != "{}" {
+		t.Errorf("stdout = %q, want it to end with %q", l.ta.stdout, line)
+	}
 	if err := l.applyConfig("w1"); err != nil {
 		t.Fatal(err)
 	}
-	if warning := "w1 has a staged image with its own config (version " + want + "); apply-config --staged updates it"; !strings.Contains(l.ta.stderr.String(), warning) {
-		t.Errorf("stderr = %q, want %q", l.ta.stderr, warning)
+	if out := l.ta.stdout.String(); !strings.HasSuffix(out, "w1 runs config "+want+"\nw1 boots config "+want+" with its staged image too\n") || n.stagedConfig != l.inventoryConfig("w1") || l.ta.stderr.Len() != 0 {
+		t.Errorf("stdout = %q, stderr %q", out, l.ta.stderr)
 	}
 	n.stagedConfig = "{}"
 	l.ta.stdout.Reset()
 	if err := l.ta.run(context.Background(), []string{"status", "w1", "--inventory", l.inventory, "--address", l.addrs["w1"]}); err != nil {
 		t.Fatal(err)
 	}
-	for _, line := range []string{"config " + want + " (the inventory's)", "staged config " + versionOf("{}") + " (not the inventory's; chalkctl apply-config --staged w1 delivers it)"} {
+	for _, line := range []string{"config " + want + " (the inventory's)", "staged config " + versionOf("{}") + " (not the inventory's; chalkctl apply-config w1 delivers it)"} {
 		if !strings.Contains(l.ta.stdout.String(), line) {
 			t.Errorf("status lacks %q:\n%s", line, l.ta.stdout)
 		}

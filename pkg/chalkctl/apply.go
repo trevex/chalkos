@@ -1,7 +1,6 @@
 package chalkctl
 
 import (
-	"bytes"
 	"cmp"
 	"context"
 	"errors"
@@ -297,12 +296,6 @@ func (a *app) deliverConfig(ctx context.Context, f applyConfigFlags, t *target) 
 			fmt.Fprintf(a.stderr, "chalkctl: warning: %s: %s\n", t.name, w)
 		}
 	}
-	if !f.staged && st.Msg.Boot.GetStaged() != nil {
-		fmt.Fprintln(a.stderr, stagedNote(t.name, st.Msg))
-	}
-	if p := st.Msg.PendingConfig; !f.staged && p != nil {
-		fmt.Fprintln(a.stderr, pendingNote(t.name, p))
-	}
 	// Without a staged image, --staged holds the config pending for the next upgrade, which takes
 	// it in place of the running config: the diff compares with the pending config, or else with
 	// the running one.
@@ -383,7 +376,7 @@ func (a *app) deliverConfig(ctx context.Context, f applyConfigFlags, t *target) 
 	}
 	// The node answers by what it found: an image staged in between takes the config as any
 	// --staged delivery, and a pending config is named whatever chalkctl expected.
-	if p := resp.Msg.Pending; p != nil {
+	if p := resp.Msg.Pending; p != nil && f.staged {
 		if f.dryRun {
 			fmt.Fprintf(a.stdout, "%s: no image is staged; config %s would be held pending, unchecked, for the next upgrade, which checks it against its image\n", t.name, p.Version)
 		} else {
@@ -409,9 +402,11 @@ func (a *app) deliverConfig(ctx context.Context, f applyConfigFlags, t *target) 
 		return nil
 	case f.try == 0:
 		fmt.Fprintf(a.stdout, "%s runs config %s\n", t.name, d.Version)
+		writeSecond(a.stdout, t.name, resp.Msg, "")
 		return nil
 	}
 	fmt.Fprintf(a.stdout, "%s runs config %s on trial; it rolls back to config %s by itself unless confirmed within %v\n", t.name, d.Version, st.Msg.ConfigVersion, f.try)
+	writeSecond(a.stdout, t.name, resp.Msg, " once the trial is confirmed")
 	if f.noConfirm {
 		fmt.Fprintln(a.stdout, endTrialHint(t.name))
 		return nil
@@ -452,11 +447,24 @@ func (a *app) failedTrial(ctx context.Context, conn *client.Conn, t *target, ver
 	return err
 }
 
+// writeSecond prints what a delivery of config to the running image of the node called name, which
+// resp answers, wrote besides, or with when, such as once a trial is confirmed, will write: the
+// staged image's slot, which that image checked, or the pending config.
+func writeSecond(w io.Writer, name string, resp *nodev1.ApplyConfigResponse, when string) {
+	if s := resp.GetStaged(); s != nil {
+		fmt.Fprintf(w, "%s boots config %s with its staged image too%s\n", name, s.GetVersion(), when)
+	}
+	if p := resp.GetPending(); p != nil {
+		fmt.Fprintf(w, "%s holds config %s pending%s, unchecked, in place of its pending config; the next upgrade checks it against its image\n", name, p.GetVersion(), when)
+	}
+}
+
 // writePlan prints the plan of a dry run of the node called name: the config it would replace and
 // run, then the outputs, the effects with their actions and what fired them, and the storage
 // changes, each section "none" when it has nothing. The plan of a dry run for the staged image
 // has its config and the storage changes alone: the image renders its outputs and takes no
-// effects until it boots.
+// effects until it boots. The plan of one for the running image ends with the staged image's
+// config, which that image checked, or the pending config the delivery would replace.
 func writePlan(w io.Writer, name string, resp *nodev1.ApplyConfigResponse, staged bool) {
 	p := resp.GetPlan()
 	which := "config"
@@ -492,6 +500,12 @@ func writePlan(w io.Writer, name string, resp *nodev1.ApplyConfigResponse, stage
 		storage = append(storage, fmt.Sprintf("volume %s: %s", c.Volume, c.Reason))
 	}
 	section("storage:", storage)
+	if s := resp.GetStaged(); s != nil {
+		fmt.Fprintf(w, "%s: staged image's config %s → %s\n", name, cmp.Or(s.GetReplaces(), "none"), s.GetVersion())
+	}
+	if p := resp.GetPending(); p != nil {
+		fmt.Fprintf(w, "%s: pending config → %s, unchecked; the next upgrade checks it against its image\n", name, p.GetVersion())
+	}
 }
 
 // endTrialHint names the commands that end the node's open trial.
@@ -645,25 +659,6 @@ func (a *app) resetVolume(ctx context.Context, f resetVolumeFlags, pos []string)
 	}
 	fmt.Fprintf(a.stdout, "volume %s of %s was wiped and created again\n", pos[1], t.name)
 	return nil
-}
-
-// stagedNote is the line apply-config prints of a node whose status names an image staged to boot
-// next, which keeps its own config. The image a rollback staged while the running image's boot is
-// not found healthy is the one the node falls back to, which keeps the config it last ran, so
-// apply-config --staged is not offered for it.
-func stagedNote(name string, st *nodev1.StatusResponse) string {
-	b := st.GetBoot()
-	if !b.GetBlessed() && bytes.Equal(b.GetRollback().GetRootHash(), b.GetStaged().GetRootHash()) {
-		return fmt.Sprintf("%s boots the image a rollback staged next, with the config it last ran (version %s), which stays until the boot of the running image is found healthy", name, cmp.Or(st.GetStagedConfigVersion(), "none"))
-	}
-	return fmt.Sprintf("%s has a staged image with its own config (version %s); apply-config --staged updates it", name, cmp.Or(st.GetStagedConfigVersion(), "none"))
-}
-
-// pendingNote is the line apply-config prints of a node that holds config pending for its next
-// upgrade, which a delivery to the running image leaves as it is: the next upgrade without config
-// of its own takes the pending config, not the running one.
-func pendingNote(name string, p *nodev1.PendingConfig) string {
-	return fmt.Sprintf("%s holds config %s pending for its next upgrade, which takes it in place of the running config; apply-config --staged --discard %s drops it", name, p.GetVersion(), name)
 }
 
 // discardPending has the node drop the config it holds pending and says which it dropped.

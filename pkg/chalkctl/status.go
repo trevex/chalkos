@@ -45,7 +45,7 @@ func (a *app) status(ctx context.Context, n nodeFlags, pos []string) error {
 		return err
 	}
 	s := resp.Msg
-	state := t.cluster.configState(t.name, s.ConfigVersion, false)
+	state := t.cluster.configState(t.name, s.ConfigVersion)
 	// A node installed before config documents runs an identity alone.
 	fmt.Fprintf(a.stdout, "config %s (%s)\n", cmp.Or(s.ConfigVersion, "none"), state)
 	if s.Trial != nil {
@@ -58,7 +58,7 @@ func (a *app) status(ctx context.Context, n nodeFlags, pos []string) error {
 		fmt.Fprintf(a.stdout, "previous config %s (apply-config --rollback restores it)\n", s.PreviousConfigVersion)
 	}
 	if s.Boot.GetStaged() != nil {
-		fmt.Fprintf(a.stdout, "staged config %s (%s)\n", cmp.Or(s.StagedConfigVersion, "none"), t.cluster.configState(t.name, s.StagedConfigVersion, true))
+		fmt.Fprintf(a.stdout, "staged config %s (%s)\n", cmp.Or(s.StagedConfigVersion, "none"), t.cluster.configState(t.name, s.StagedConfigVersion))
 	}
 	if p := s.PendingConfig; p != nil {
 		fmt.Fprintln(a.stdout, pendingLine(p))
@@ -250,9 +250,9 @@ func pendingLine(p *nodev1.PendingConfig) string {
 	return fmt.Sprintf("pending config %s (unchecked, since %s; the next upgrade checks it against its image)", p.GetVersion(), p.GetSince().AsTime().UTC().Format(time.RFC3339))
 }
 
-// configState says whether a slot of a node holds the config chalkctl delivers to it: the running
-// image's, or with staged the staged image's.
-func (c *cluster) configState(name, version string, staged bool) string {
+// configState says whether a slot of a node holds the config chalkctl delivers to it, the running
+// image's or the staged image's: a plain apply-config writes both.
+func (c *cluster) configState(name, version string) string {
 	if c.partial() {
 		return "no inventory to compare it with"
 	}
@@ -260,8 +260,6 @@ func (c *cluster) configState(name, version string, staged bool) string {
 	switch {
 	case err != nil:
 		return "cannot read the config the inventory gives it: " + err.Error()
-	case want != version && staged:
-		return "not the inventory's; chalkctl apply-config --staged " + name + " delivers it"
 	case want != version:
 		return "not the inventory's; chalkctl apply-config " + name + " delivers it"
 	}

@@ -14,8 +14,8 @@ var pendingSince = time.Date(2026, 11, 1, 12, 0, 0, 0, time.UTC)
 
 // apply-config --staged on a node without a staged image has it hold the inventory's config
 // pending, compared with the running config and sent without a fallback secret; status shows it,
-// a delivery to the running image names it, another --staged replaces it and --staged --discard
-// drops it, needing no inventory.
+// another --staged replaces it, a delivery to the running image replaces it too, as its dry run
+// says first, and --staged --discard drops it, needing no inventory.
 func TestApplyConfigStagedHoldsPending(t *testing.T) {
 	l := newUpgradeLab(t, 1)
 	l.useInventory(t, map[string]string{"w": testUpgradeImage(t, "w", "0.2.0")})
@@ -41,14 +41,18 @@ func TestApplyConfigStagedHoldsPending(t *testing.T) {
 	if line := "pending config " + want + " (unchecked, since 2026-11-01T12:00:00Z; the next upgrade checks it against its image)\n"; !strings.Contains(l.ta.stdout.String(), line) {
 		t.Errorf("status lacks %q:\n%s", line, l.ta.stdout)
 	}
+	n.pending = "{}"
+	if err := l.applyConfig("w1", "--dry-run"); err != nil {
+		t.Fatal(err)
+	}
+	if line := "w1: pending config → " + want + ", unchecked; the next upgrade checks it against its image\n"; !strings.HasSuffix(l.ta.stdout.String(), line) || n.pending != "{}" {
+		t.Errorf("stdout = %q, want it to end with %q", l.ta.stdout, line)
+	}
 	if err := l.applyConfig("w1"); err != nil {
 		t.Fatal(err)
 	}
-	if note := "w1 holds config " + want + " pending for its next upgrade, which takes it in place of the running config; apply-config --staged --discard w1 drops it"; !strings.Contains(l.ta.stderr.String(), note) {
-		t.Errorf("stderr = %q, want %q", l.ta.stderr, note)
-	}
-	if n.pending == "" {
-		t.Error("a delivery to the running image dropped the pending config")
+	if out := l.ta.stdout.String(); !strings.HasSuffix(out, "w1 runs config "+want+"\nw1 holds config "+want+" pending, unchecked, in place of its pending config; the next upgrade checks it against its image\n") || n.pending != l.inventoryConfig("w1") {
+		t.Errorf("stdout = %q, pending %q", out, n.pending)
 	}
 	if err := l.applyConfig("w1", "--discard"); err == nil || !strings.Contains(err.Error(), "pass --staged") {
 		t.Errorf("--discard without --staged = %v", err)
