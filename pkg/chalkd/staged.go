@@ -286,9 +286,23 @@ func (s *Server) planSecond(ctx context.Context, d *delivery) (secondWrite, erro
 		w, err = s.planSlot(ctx, st, system, platform, staged, d.stored.Delivered, d.msg.FallbackSecret, &recorded)
 		return err
 	}); err != nil {
-		return secondWrite{}, failed(codeOf(err), "the image %x staged in the inactive slot: %v", staged[:6], plain(err))
+		return secondWrite{}, s.stagedRefusal(staged, err, d.msg.FallbackSecret)
 	}
 	return secondWrite{image: staged, slot: w, held: held}, nil
+}
+
+// stagedRefusal is the refusal of a delivery for err, the staged image's, whose root hash is
+// staged; secret is the fallback secret the request carries. chalkctl sends that secret when the
+// running image's storage enrolls it on a new volume, so a staged image whose own translation of
+// the config adds an encrypted volume the running image's does not is refused without it; the
+// refusal then names the delivery that carries it, apply-config --staged, which chalkctl
+// translates for the inventory's image.
+func (s *Server) stagedRefusal(staged []byte, err error, secret string) error {
+	msg := fmt.Sprintf("the image %x staged in the inactive slot: %v", staged[:6], plain(err))
+	if secret == "" && strings.Contains(msg, storage.NoFallbackSecret) {
+		msg += fmt.Sprintf("; the staged image's storage enrolls the fallback secret on a volume the running image's does not, and chalkctl sends the secret for the running image's storage alone: chalkctl apply-config --staged %s delivers the config to the staged image with the secret", s.nodeName())
+	}
+	return failed(codeOf(err), "%s", msg)
 }
 
 // write writes what planSecond planned, once the running image applied version, the delivered

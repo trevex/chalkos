@@ -224,6 +224,13 @@ by the staged image starts with `the image <hash> staged in the inactive slot:`.
 image applied the config, the node writes the staged image's config. A volume the config adds is
 created once and serves both images.
 
+chalkctl sends the fallback secret when the running image's storage enrolls it on a new volume.
+When only the staged image's storage needs it, because that image encrypts a volume the running
+image does not, the staged image refuses the config with `... no fallback secret was sent` and
+names `chalkctl apply-config --staged w1`. That command translates the config for the image the
+inventory names, the staged one, sends the secret its storage needs and delivers the config to the
+staged image alone, as described below.
+
 When the node cannot write the staged image's config after the running image applied it, the
 command fails with
 `the node runs config <version>, but writing the config slot of the image <hash> staged in the inactive slot failed, so it keeps config <version>: ...`.
@@ -559,6 +566,9 @@ it runs delivered again, which removes the record as well.
 - `the pending config <version> does not suit the image: ...; a pending config is kept without the fallback secret, ...`:
   the pending config adds an encrypted volume, which needs the fallback secret. Upgrade with the
   config from the inventory and the secrets file.
+- `the image <hash> staged in the inactive slot: ... no fallback secret was sent; ...`: the staged
+  image's storage needs the fallback secret and the running image's does not. Deliver the config to
+  the staged image with `chalkctl apply-config --staged w1 --secrets secrets.age`.
 - `--staged delivers config alone; deliver the Kubernetes share to the running image`: `--staged`
   and `--kubernetes-share` do not combine.
 - `the image <hash> predates chalkd check; it cannot check its config`: the staged image, or the

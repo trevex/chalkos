@@ -264,6 +264,31 @@ func TestApplyConfigRefusedByEitherImage(t *testing.T) {
 	}
 }
 
+// TestStagedRefusalNamesTheFallbackSecret names the image in a refusal of the staged image, with
+// the refusal's code, and, when the staged image's storage needs the fallback secret the request
+// does not carry, apply-config --staged, which sends it for the staged image's storage.
+func TestStagedRefusalNamesTheFallbackSecret(t *testing.T) {
+	s, _ := stagedServer(t, fixtureSchemas(t))
+	refusal := failed(connect.CodeInvalidArgument, "volume extra is encrypted and the node's fallback is recovery-key, but %s", storage.NoFallbackSecret)
+	err := s.stagedRefusal(stagedImage, refusal, "")
+	want := "the image 333333333333 staged in the inactive slot: volume extra is encrypted and the node's fallback is recovery-key, but no fallback secret was sent; the staged image's storage enrolls the fallback secret on a volume the running image's does not, and chalkctl sends the secret for the running image's storage alone: chalkctl apply-config --staged n1 delivers the config to the staged image with the secret"
+	if connect.CodeOf(err) != connect.CodeInvalidArgument || !strings.HasSuffix(err.Error(), want) {
+		t.Errorf("err = %v, want %q", err, want)
+	}
+	for name, tc := range map[string]struct {
+		err    error
+		secret string
+	}{
+		"with a secret": {refusal, secret},
+		"other":         {failed(connect.CodeFailedPrecondition, "the config does not suit the image"), ""},
+	} {
+		err := s.stagedRefusal(stagedImage, tc.err, tc.secret)
+		if connect.CodeOf(err) != connect.CodeOf(tc.err) || strings.Contains(err.Error(), "--staged") || !strings.Contains(err.Error(), "the image 333333333333 staged in the inactive slot: ") {
+			t.Errorf("%s: err = %v", name, err)
+		}
+	}
+}
+
 // TestApplyConfigAddsAVolumeForBothImages adds a volume the config names to the machine once, as
 // the running image applies the config, and writes the staged image's slot after: that image
 // checked its config against the storage the running image records by then, which the new
