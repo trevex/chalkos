@@ -261,12 +261,11 @@ func (l Loader) outputs(docs []config.Document, schemas *schema.Schemas) (map[st
 }
 
 // renderAtBoot renders the outputs of the slot's documents and swaps in every one that passes,
-// since /run starts empty. The renderers assume documents the image's validators passed, and an
-// installer writes the slot without running them, so they run first, at every boot as they are
-// cheap: a refusal or a validator's failure renders nothing and fails the boot's config, which
-// fails its health check. An output that fails fails it too; the status names it. On an image
-// with outputs, a node certificate that cannot be read fails it as well, since the outputs render
-// for the node it names.
+// since /run starts empty. It runs no validators: every slot was written only once the checker of
+// the image that boots it passed the documents, its validators and renderers among it, whether an
+// install, an upgrade or a delivery wrote it. An output that fails fails the boot's config, which
+// fails its health check; the status names it. On an image with outputs, a node certificate that
+// cannot be read fails it as well, since the outputs render for the node it names.
 func (l Loader) renderAtBoot(docs []config.Document) error {
 	if l.Outputs == "" {
 		return nil
@@ -278,13 +277,6 @@ func (l Loader) renderAtBoot(docs []config.Document) error {
 	name, err := l.nodeName()
 	if err != nil {
 		return fmt.Errorf("the node's name for its outputs: %w", err)
-	}
-	rs, refused, err := l.Validate(context.Background(), config.Redact(docs))
-	if err != nil {
-		return fmt.Errorf("the image's validators: %w", err)
-	}
-	if len(rs) > 0 || len(refused) > 0 {
-		return fmt.Errorf("render no output: %s", validators.Refusal(rs, refused))
 	}
 	staged, failures, err := l.RenderOutputs(context.Background(), name, docs, nil, false)
 	if err != nil {
