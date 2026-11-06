@@ -552,3 +552,26 @@ func TestUpgradeRefusesAKubeletNewerThanTheAPIServer(t *testing.T) {
 		t.Errorf("a rollback: %v\n%s", err, l.ta.stdout)
 	}
 }
+
+// An upgrade whose config would change the API server a node runs is refused before any node is
+// sent anything; once apply-config delivered the config, the upgrade goes ahead.
+func TestUpgradeRefusesAConfigThatChangesTheAPIServer(t *testing.T) {
+	l := newUpgradeLab(t, 1)
+	l.runAPIServer("1.37.1")
+	l.rollTo(t, "1.37.2")
+	img := testUpgradeImage(t, "w", "0.2.0")
+	err := l.upgrade(img, "--nodes", "w1", "--until", "activate")
+	if want := "w1: the inventory's config changes the API server from 1.37.1 to 1.37.2, which an upgrade does not deliver; deliver the config with chalkctl apply-config first, which orders the nodes for it, then upgrade"; err == nil || err.Error() != want {
+		t.Errorf("err = %v, want %q", err, want)
+	}
+	if events := l.takeEvents(); len(events) != 0 {
+		t.Errorf("events %q, want none", events)
+	}
+	l.runAPIServer("1.37.2")
+	if err := l.upgrade(img, "--nodes", "w1", "--until", "activate"); err != nil {
+		t.Fatalf("%v\n%s", err, l.ta.stdout)
+	}
+	if got := l.nodes["w1"].staged; got != "0.2.0" {
+		t.Errorf("w1 stages %q", got)
+	}
+}

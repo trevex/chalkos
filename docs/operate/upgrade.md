@@ -507,6 +507,10 @@ server one minor older than the control planes run.
 A patch release of the control plane is the first step alone, and a patch release of the kubelet
 is the second step alone.
 
+The two steps run apart. An upgrade delivers each node's config with its image, so
+`chalkctl upgrade` refuses a config whose API server differs from the one a node runs, before it
+sends any image, and names `chalkctl apply-config` to deliver the config first.
+
 kube-proxy moves when the first control plane gets the config, because that control plane applies
 the add-ons. In a minor upgrade, kube-proxy then runs one minor ahead of the API servers not yet
 rolled, which the skew policy does not allow, until the rollout reaches the last control plane, so

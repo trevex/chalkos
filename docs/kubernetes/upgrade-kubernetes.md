@@ -78,6 +78,16 @@ A patch release of the control plane is the first step alone, and a patch releas
 the second step alone. Move one minor release at a time, as the
 [Kubernetes version skew policy](https://kubernetes.io/releases/version-skew-policy/) requires.
 
+The two steps run apart. `chalkctl upgrade` delivers each node's config with its image, so it
+refuses a config whose API server differs from the one the node runs, before it sends any image:
+
+```text
+chalkctl: w1: the inventory's config changes the API server from 1.37.1 to 1.37.2, which an upgrade does not deliver; deliver the config with chalkctl apply-config first, which orders the nodes for it, then upgrade
+```
+
+Deliver the new `Cluster` document with `chalkctl apply-config` to every node first. The upgrade
+that follows delivers the same config, which changes no API server.
+
 ## Roll the control plane out through config
 
 Change the four versioned references of the `Cluster` document to the new release, and the other

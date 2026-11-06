@@ -15,6 +15,7 @@ import (
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/chalkctl/layer"
 	"github.com/trevex/chalkos/pkg/client"
+	"github.com/trevex/chalkos/pkg/config"
 )
 
 // rolloutTrial is how long an ordered delivery keeps a coordinator's config on trial without
@@ -396,4 +397,47 @@ func (n *rolloutNode) roleIn(l layer.Rollout) layer.UpgradeRole {
 		}
 	}
 	return layer.UpgradeRole{}
+}
+
+// checkChanges refuses an upgrade whose config, which each node gets with its image, changes a
+// version a Rollout layer bounds, against the config the node runs: apply-config delivers such a
+// change in the order the layer needs, which an upgrade does not. A run that withholds config
+// delivers none, and a node that refuses to show its config has the run withhold it.
+func (r *upgradeRun) checkChanges(ctx context.Context) error {
+	layers := compiled[layer.Rollout]()
+	if len(layers) == 0 {
+		return nil
+	}
+	for _, name := range slices.Sorted(maps.Keys(r.nodes)) {
+		if r.deliveryOf(r.nodes[name]) == nil {
+			continue
+		}
+		var running []config.Document
+		denied := false
+		if err := r.call(name, func(conn *client.Conn) error {
+			var err error
+			running, err = slotConfig(ctx, conn, false)
+			if connect.CodeOf(err) == connect.CodePermissionDenied {
+				denied = true
+				return nil
+			}
+			return err
+		}); err != nil {
+			return err
+		}
+		if denied {
+			r.withholdDenied(name)
+			return nil
+		}
+		for _, l := range layers {
+			change, err := l.Changes(pluginCluster{r.cluster}, name, running)
+			if err != nil {
+				return err
+			}
+			if change != "" {
+				return fmt.Errorf("%s: the inventory's config changes %s, which an upgrade does not deliver; deliver the config with chalkctl apply-config first, which orders the nodes for it, then upgrade", name, change)
+			}
+		}
+	}
+	return nil
 }

@@ -223,6 +223,9 @@ func (a *app) upgrade(ctx context.Context, f upgradeFlags) error {
 	if err := r.showsConfig(ctx); err != nil {
 		return err
 	}
+	if err := r.checkChanges(ctx); err != nil {
+		return err
+	}
 	if err := r.fallbacks(ctx); err != nil {
 		return err
 	}
