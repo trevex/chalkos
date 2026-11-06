@@ -87,7 +87,7 @@ func (n *Node) Rollback(ctx context.Context, rootHash, last []byte, record func(
 			if err := record(); err != nil {
 				return Result{}, err
 			}
-			return Result{AlreadyStaged: true, Entry: staged.File}, nil
+			return Result{AlreadyStaged: true, Entry: staged.File, Active: true}, nil
 		// An upgrade counts the tries of the entry it stages. One without tries is the image a
 		// rollback from a boot not found healthy staged, or a blessed entry above the booted one,
 		// as when the boot menu picked an entry below it.
@@ -95,6 +95,13 @@ func (n *Node) Rollback(ctx context.Context, rootHash, last []byte, record func(
 			return Result{}, fmt.Errorf("the image %x is staged to boot next from %s", staged.RootHash, staged.File)
 		}
 		return Result{}, fmt.Errorf("the image %x is staged to boot next from %s; its upgrade replaced the image the node ran before", staged.RootHash, staged.File)
+	}
+	// An image staged and not active yet replaced the image before too: the upgrade that staged it
+	// retired that image's UKI and wrote over the slot.
+	if staged, ok, err := esp.Staged(n.ESP, imageID); err != nil {
+		return Result{}, err
+	} else if ok {
+		return Result{}, fmt.Errorf("the image %x is staged in the inactive slot; its upgrade replaced the image the node ran before", staged.RootHash)
 	}
 	prev, ok := Previous(all, imageID, booted, running)
 	switch {
@@ -125,7 +132,7 @@ func (n *Node) Rollback(ctx context.Context, rootHash, last []byte, record func(
 		return Result{}, fmt.Errorf("the inactive slot no longer holds the store of %x, which %s boots", rootHash, prev.File)
 	}
 	path := filepath.Join(n.ESP, esp.LinuxDir, prev.File)
-	tries, err := n.checkPreviousUKI(path, imageID, rootHash)
+	tries, err := n.checkKeptUKI(path, imageID, rootHash)
 	if err != nil {
 		return Result{}, err
 	}
@@ -144,14 +151,14 @@ func (n *Node) Rollback(ctx context.Context, rootHash, last []byte, record func(
 		return Result{}, err
 	}
 	log.Printf("%s %x boots next again as %s", imageID, rootHash, name)
-	return Result{Entry: name}, nil
+	return Result{Entry: name, Active: true}, nil
 }
 
-// checkPreviousUKI checks the UKI at path of the image a rollback boots as CheckUKI checks an
-// upgrade's, against the node's image ID, platform and architecture and the image's root hash,
-// and returns the tries it asks for. Firmware's db and dbx may have changed since the UKI was
-// installed, so its signature is checked again.
-func (n *Node) checkPreviousUKI(path, imageID string, rootHash []byte) (int, error) {
+// checkKeptUKI checks the UKI at path of the image a rollback or an activation boots as CheckUKI
+// checks an upgrade's, against the node's image ID, platform and architecture and the image's
+// root hash, and returns the tries it asks for. Firmware's db and dbx may have changed since the
+// UKI was installed, so its signature is checked again.
+func (n *Node) checkKeptUKI(path, imageID string, rootHash []byte) (int, error) {
 	f, err := os.Open(path)
 	if err != nil {
 		return 0, err

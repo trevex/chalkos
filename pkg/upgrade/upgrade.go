@@ -1,22 +1,35 @@
-// Package upgrade installs a new image into the node's inactive store slot and makes it the next
-// boot. systemd-boot counts its boots by the tries in the UKI's name, until the boot is found
-// healthy and blessed, and falls back to the running image once the tries are used up.
+// Package upgrade installs a new image into the node's inactive store slot, where it is staged,
+// and activates it, which makes it the next boot. systemd-boot counts its boots by the tries in
+// the UKI's name, until the boot is found healthy and blessed, and falls back to the running image
+// once the tries are used up.
 //
 // The node keeps no state of its own: the slots' partition UUIDs and labels and the UKIs on the
-// ESP say what is installed. Each step can be stopped at any point and the upgrade run again,
-// and at every point the disk boots the running image, or the new one with all its tries:
+// ESP say what is installed, staged and active. Each step can be stopped at any point and the
+// upgrade run again, and at every point the disk boots the running image, or the new one with all
+// its tries:
 //
 //  1. Retire the inactive slot: remove every UKI of the image but those booting the running store,
-//     then give the slot's partitions random UUIDs and the label _empty, so nothing boots it.
+//     the staged one included, then give the slot's partitions random UUIDs and the label _empty,
+//     so nothing boots it.
 //  2. Write the store and its hash tree into the slot, unless it holds them already, and check
 //     them against the root hash.
 //  3. Write the UKI under a name systemd-boot ignores and check it: it must boot this store, name
 //     the node's image and platform, and carry a signature of the firmware's db when Secure
 //     Boot is on. Then the caller checks the image itself, reading the store through dm-verity,
-//     as chalkd checks the node's config against the image's schemas and keeps it for the image.
-//  4. Activate: give the slot the partition UUIDs systemd derives from the root hash and the
-//     labels naming it, and rename the UKI to <id>_<generation>+<tries>.efi, one generation above
-//     the image's highest on the ESP.
+//     as chalkd has the image's own checker check the node's config and keeps it for the image.
+//  4. Stage, the end of Node.Install: give the slot the partition UUIDs systemd derives from the
+//     root hash and the labels naming it, and rename the UKI to .staged-<id>_<generation>.efi, a
+//     name systemd-boot ignores too and an upgrade's sweep of temporary UKIs leaves, so the
+//     staged image outlasts a restart of chalkd and a reboot. The generation is one above the
+//     image's highest on the ESP before step 1 retired any. Nothing boots the slot yet: only a
+//     UKI systemd-boot boots looks for its store by those UUIDs.
+//  5. Activate, Node.Activate: check the staged UKI again and rename it to
+//     <id>_<generation>+<tries>.efi, of the staged generation or, should a name on the ESP give
+//     a higher one by then, one above it. The image boots next.
+//
+// Node.Upgrade runs Install and Activate in turn. The image in the inactive slot is staged
+// between the two steps and active after the second; either way it is the image the node keeps
+// the second config slot for.
 //
 // An image is its store's root hash; nothing compares versions. systemd-boot orders chalkos's
 // entries by their IDs alone, the highest generation first, as every UKI's os-release names the
@@ -25,7 +38,7 @@
 //
 // The running slot and its UKI are never written. A rollback, Node.Rollback, makes the image before
 // an upgrade boot next again while the inactive slot still holds it: it renames that image's UKI
-// to the next generation, as step 4 names a new one. The name carries the UKI's tries while the
+// to the next generation, as step 5 names a staged one. The name carries the UKI's tries while the
 // running image's boot was found healthy, so the node falls back to it; before that it carries
 // none, so the image, whose boot was found healthy before, stays a known-good entry.
 //
@@ -96,17 +109,22 @@ func (n *Node) change(what string) error {
 type Result struct {
 	// AlreadyInstalled is set when the node runs the image already, and nothing changed.
 	AlreadyInstalled bool
-	// AlreadyStaged is set when the image boots next already, from Entry, and nothing changed.
+	// AlreadyStaged is set when the inactive slot held the image already, staged or active, so its
+	// store and UKI were not written again; Install checked it again unless it is the known-good
+	// image, and Activate changed nothing when it is active.
 	AlreadyStaged bool
-	// Entry is the UKI that boots the image from the next boot on.
+	// Entry is the image's UKI on the ESP: the one that boots it from the next boot on while it is
+	// active, its staged name while it is not.
 	Entry string
+	// Active is set when the image boots next.
+	Active bool
 	// Wrote is set when the store was written; it is not when the slot held it already.
 	Wrote bool
 }
 
-// StagedRetiredError is the error of an install that found its image staged to boot next already,
-// checked it again and retired it, as the check failed: the image no longer boots next. Err is
-// the check's error.
+// StagedRetiredError is the error of an install that found its image in the inactive slot
+// already, staged or active, checked it again and retired it, as the check failed: the slot holds
+// no image any more. Err is the check's error.
 type StagedRetiredError struct{ Err error }
 
 func (e *StagedRetiredError) Error() string { return e.Err.Error() }
@@ -121,9 +139,27 @@ func (e *CheckError) Error() string { return e.Err.Error() }
 
 func (e *CheckError) Unwrap() error { return e.Err }
 
+// Upgrade installs the image as Install does and activates it as Activate does, unless the node
+// runs it or it boots next already. An activation that fails leaves the image staged, which the
+// error says.
+func (n *Node) Upgrade(ctx context.Context, h Header, stream io.Reader) (Result, error) {
+	res, err := n.Install(ctx, h, stream)
+	if err != nil || res.AlreadyInstalled || res.Active {
+		return res, err
+	}
+	a, err := n.Activate(ctx, h.RootHash)
+	if err != nil {
+		return Result{}, fmt.Errorf("the image is staged as %s, but its activation failed: %w", res.Entry, err)
+	}
+	res.Entry, res.Active = a.Entry, true
+	return res, nil
+}
+
 // Install installs the image whose store, hash tree and UKI the stream holds, in that order, into
-// the inactive slot and makes it the next boot. Everything is checked before the slot is
-// retired, except what only the received image tells; the slot stays retired until that passed.
+// the inactive slot and stages it there, for Activate to make it the next boot. Everything is
+// checked before the slot is retired, except what only the received image tells; the slot stays
+// retired until that passed. An image the slot holds already, staged or active, is checked again
+// and stays as it is.
 func (n *Node) Install(ctx context.Context, h Header, stream io.Reader) (Result, error) {
 	if err := h.Validate(); err != nil {
 		return Result{}, err
@@ -182,8 +218,9 @@ func (n *Node) Install(ctx context.Context, h Header, stream io.Reader) (Result,
 			return Result{}, err
 		}
 	}
-	// The UKI is renamed last, to the image's next generation, above the generation any name on the
-	// ESP gives, so it replaces no UKI and shares no entry's ID.
+	// The staged UKI's name carries the image's next generation, above the generation any name on
+	// the ESP gives before the retirement removes some, which Activate names the entry: it replaces
+	// no UKI and shares no ID with an entry the node booted before.
 	generation, err := esp.NextGeneration(all, h.ImageID)
 	if err != nil {
 		return Result{}, err
@@ -194,9 +231,21 @@ func (n *Node) Install(ctx context.Context, h Header, stream io.Reader) (Result,
 		// The node's known-good image boots with the config it last ran: the caller refuses other
 		// config for it, and nothing is checked or written again.
 		if KnownGood(staged, booted) {
-			return Result{AlreadyStaged: true, Entry: staged.File}, nil
+			return Result{AlreadyStaged: true, Entry: staged.File, Active: true}, nil
 		}
-		if err := n.recheck(ctx, h, inactive, staged, all, booted, running); err != nil {
+		if err := n.recheck(ctx, h, inactive, staged, all, booted, running, true); err != nil {
+			return Result{}, err
+		}
+		return Result{AlreadyStaged: true, Entry: staged.File, Active: true}, nil
+	}
+	// The image is staged already, as an upgrade that stopped before the activation leaves it. It is
+	// checked again likewise, and stays staged.
+	staged, ok, err := esp.Staged(n.ESP, h.ImageID)
+	if err != nil {
+		return Result{}, err
+	}
+	if ok && bytes.Equal(staged.RootHash, h.RootHash) && inactive.Holds(h.RootHash) {
+		if err := n.recheck(ctx, h, inactive, staged, all, booted, running, false); err != nil {
 			return Result{}, err
 		}
 		return Result{AlreadyStaged: true, Entry: staged.File}, nil
@@ -232,9 +281,9 @@ func (n *Node) Install(ctx context.Context, h Header, stream io.Reader) (Result,
 	if err != nil {
 		return Result{}, err
 	}
-	tmp, tries, err := n.receiveUKI(h, stream)
+	tmp, err := n.receiveUKI(h, stream)
 	// A UKI under its temporary name boots nothing, but takes space on the ESP that the next
-	// upgrade needs; once activated it has its name, and should this removal fail, the next
+	// upgrade needs; once staged it has its staged name, and should this removal fail, the next
 	// retirement removes it.
 	defer func() {
 		if tmp == "" {
@@ -249,13 +298,100 @@ func (n *Node) Install(ctx context.Context, h Header, stream io.Reader) (Result,
 	}
 	var entry string
 	if err == nil {
-		entry, err = n.activate(ctx, h, inactive, tmp, generation, tries)
+		entry, err = n.stage(ctx, h, inactive, tmp, generation)
 	}
 	if err != nil {
 		return Result{}, err
 	}
-	log.Printf("installed %s %x into partitions %d and %d; it boots next as %s", h.ImageID, h.RootHash, inactive.Verity.Number, inactive.Data.Number, entry)
+	log.Printf("installed %s %x into partitions %d and %d; it is staged as %s", h.ImageID, h.RootHash, inactive.Verity.Number, inactive.Data.Number, entry)
 	return Result{Entry: entry, Wrote: wrote}, nil
+}
+
+// Activate makes the image staged in the inactive slot, by its root hash, boot next: the UKI
+// Install staged is checked again as Install checks a new one, against the node's image and
+// platform and, with Secure Boot on, the firmware's db and dbx, which may have changed since, and
+// renamed to <id>_<generation>+<tries>.efi, one generation above the image's highest on the ESP.
+// The config is not checked: Install staged the image only once CheckStore passed it. The rename
+// is the only change, so an activation that fails leaves the UKI under its staged name, and the
+// running image boots next.
+//   - A node that runs the image answers AlreadyInstalled, and one that boots it next already
+//     AlreadyStaged, so an activation asked for twice happens once.
+//   - Without an image staged, or with another one staged or boot next, it refuses.
+//
+// The caller keeps Install and Rollback from running meanwhile.
+func (n *Node) Activate(ctx context.Context, rootHash []byte) (Result, error) {
+	running, err := uki.RunningHash(n.Cmdline)
+	if err != nil {
+		return Result{}, err
+	}
+	if bytes.Equal(rootHash, running) {
+		return Result{AlreadyInstalled: true}, nil
+	}
+	imageID := n.OSRelease["IMAGE_ID"]
+	if imageID == "" {
+		return Result{}, errors.New("the running image names no image ID")
+	}
+	all, err := esp.Entries(n.ESP)
+	if err != nil {
+		return Result{}, err
+	}
+	booted, err := Booted(all, n.EFIVars, running)
+	if err != nil {
+		return Result{}, err
+	}
+	if active, ok := esp.StagedEntry(all, imageID, booted); ok {
+		if bytes.Equal(active.RootHash, rootHash) {
+			return Result{AlreadyStaged: true, Entry: active.File, Active: true}, nil
+		}
+		return Result{}, fmt.Errorf("no image is staged: the image %x boots next from %s", active.RootHash, active.File)
+	}
+	staged, ok, err := esp.Staged(n.ESP, imageID)
+	switch {
+	case err != nil:
+		return Result{}, err
+	case !ok:
+		return Result{}, errors.New("no image is staged in the inactive slot")
+	case !bytes.Equal(staged.RootHash, rootHash):
+		return Result{}, fmt.Errorf("the image staged in the inactive slot is %x, not %x", staged.RootHash, rootHash)
+	}
+	// The new entry boots before the others only while their names order them by generation, as
+	// Install checked before it staged the image; an entry may have changed since.
+	for _, e := range all {
+		if !ofImage(e, imageID) && e.ID != booted.ID {
+			continue
+		}
+		if err := misnamed(e, imageID); err != nil {
+			return Result{}, err
+		}
+	}
+	parts, err := n.slots().ReadTable(ctx)
+	if err != nil {
+		return Result{}, err
+	}
+	_, inactive, err := slots(parts, running)
+	if err != nil {
+		return Result{}, err
+	}
+	if !inactive.Holds(rootHash) {
+		return Result{}, fmt.Errorf("the inactive slot no longer holds the store of %x, which %s boots", rootHash, staged.File)
+	}
+	path := filepath.Join(n.ESP, esp.LinuxDir, staged.File)
+	tries, err := n.checkKeptUKI(path, imageID, rootHash)
+	if err != nil {
+		return Result{}, err
+	}
+	// The staged name's generation is above every entry's of the ESP at the time; an entry placed
+	// since may name a higher one.
+	next, err := esp.NextGeneration(all, imageID)
+	if err != nil {
+		return Result{}, err
+	}
+	name := esp.CountedEntryName(imageID, max(staged.Generation, next), tries)
+	if err := esp.Name(n.ESP, path, name, n.Change); err != nil {
+		return Result{}, err
+	}
+	log.Printf("activated %s %x; it boots next as %s", imageID, rootHash, name)
+	return Result{Entry: name, Active: true}, nil
 }
 
 // slots is the slot writer of the node's boot disk.
@@ -289,15 +425,15 @@ func misnamed(e esp.Entry, imageID string) error {
 	return fmt.Errorf("%s on the ESP is not named %s_<generation>.efi with a generation from 1 on and no leading zeros, so the next generation might not boot before it; reinstall the node, or rename the entry", e.File, imageID)
 }
 
-// recheck checks the image a staged entry boots, as an upgrade checks one it writes. When the
-// check fails:
-//   - the slot and the entry are retired, as after a failed check of a written image, and the
+// recheck checks the image the inactive slot holds, whose UKI is staged, the entry of an active
+// image, as an upgrade checks one it writes. When the check fails:
+//   - the slot and the UKI are retired, as after a failed check of a written image, and the
 //     running image stays the next boot. The error is a StagedRetiredError, which holds a
 //     CheckError when CheckStore refused the image.
-//   - when the retirement fails too, the staged image still boots next, and the error says so.
-//   - while the running image's boot has not been found healthy, nothing is retired: the staged
-//     image is the one the node falls back to.
-func (n *Node) recheck(ctx context.Context, h Header, slot storeslot.Slot, staged esp.Entry, all []esp.Entry, booted esp.Entry, running []byte) error {
+//   - when the retirement fails too, the image stays where it was, and the error says so.
+//   - while the running image's boot has not been found healthy, an active image is not retired:
+//     it is the one the node falls back to.
+func (n *Node) recheck(ctx context.Context, h Header, slot storeslot.Slot, staged esp.Entry, all []esp.Entry, booted esp.Entry, running []byte, active bool) error {
 	if n.CheckStore == nil {
 		return nil
 	}
@@ -307,19 +443,24 @@ func (n *Node) recheck(ctx context.Context, h Header, slot storeslot.Slot, stage
 	if err == nil {
 		return nil
 	}
-	// Until the running image's boot is found healthy, the staged image may be the one the node
+	// Until the running image's boot is found healthy, the active image may be the one the node
 	// falls back to, so it stays.
-	if booted.TriesLeft >= 0 {
+	if active && booted.TriesLeft >= 0 {
 		return err
 	}
 	if rerr := n.retire(ctx, all, h.ImageID, booted, running, slot); rerr != nil {
-		return errors.Join(err, fmt.Errorf("retire the staged image, which still boots next: %w", rerr))
+		where := "which is still staged"
+		if active {
+			where = "which still boots next"
+		}
+		return errors.Join(err, fmt.Errorf("retire the image in the inactive slot, %s: %w", where, rerr))
 	}
 	return &StagedRetiredError{Err: err}
 }
 
 // retire removes every UKI of the image but those booting the running store, along with UKIs an
-// upgrade left half written, and then makes the inactive slot one nothing finds.
+// upgrade left half written and the staged one, and then makes the inactive slot one nothing
+// finds.
 func (n *Node) retire(ctx context.Context, entries []esp.Entry, imageID string, booted esp.Entry, running []byte, slot storeslot.Slot) error {
 	remove, err := esp.Leftovers(n.ESP, "")
 	if err != nil {
@@ -330,6 +471,13 @@ func (n *Node) retire(ctx context.Context, entries []esp.Entry, imageID string, 
 			remove = append(remove, e.File)
 		}
 	}
+	// Every file under a staged name goes, also one that is no UKI of the image: the slot it would
+	// boot is retired.
+	staged, err := esp.StagedFiles(n.ESP)
+	if err != nil {
+		return err
+	}
+	remove = append(remove, staged...)
 	if err := esp.Remove(n.ESP, remove, n.Change); err != nil {
 		return err
 	}
@@ -337,23 +485,22 @@ func (n *Node) retire(ctx context.Context, entries []esp.Entry, imageID string, 
 }
 
 // receiveUKI writes the UKI to the ESP under a name systemd-boot ignores and checks it. It
-// returns the file, also when it fails once the file may exist, and the tries the image asks for.
-func (n *Node) receiveUKI(h Header, stream io.Reader) (string, int, error) {
+// returns the file, also when it fails once the file may exist.
+func (n *Node) receiveUKI(h Header, stream io.Reader) (string, error) {
 	if err := n.change("write the UKI"); err != nil {
-		return "", 0, err
+		return "", err
 	}
 	tmp, err := esp.Temporary(n.ESP, h.RootHash)
 	if err != nil {
-		return "", 0, err
+		return "", err
 	}
-	tries, err := ReceiveUKI(tmp, h, stream, n.EFIVars)
-	if err != nil {
-		return tmp, 0, err
+	if _, err := ReceiveUKI(tmp, h, stream, n.EFIVars); err != nil {
+		return tmp, err
 	}
 	if err := ExpectEnd(stream, "UKI"); err != nil {
-		return tmp, 0, err
+		return tmp, err
 	}
-	return tmp, tries, nil
+	return tmp, nil
 }
 
 // ExpectEnd checks that the stream ends after its last part, named last. A stream that goes on,
@@ -369,13 +516,13 @@ func ExpectEnd(stream io.Reader, last string) error {
 	return nil
 }
 
-// activate makes the slot hold the image as systemd finds it and gives the UKI its name, the
-// generation with the tries. Until the rename, nothing boots the slot.
-func (n *Node) activate(ctx context.Context, h Header, slot storeslot.Slot, tmp string, generation uint64, tries int) (string, error) {
+// stage makes the slot hold the image as systemd finds it and gives the UKI its staged name, which
+// systemd-boot ignores: nothing boots the slot until Activate renames the UKI.
+func (n *Node) stage(ctx context.Context, h Header, slot storeslot.Slot, tmp string, generation uint64) (string, error) {
 	if err := n.slots().Activate(ctx, slot, h.Store()); err != nil {
 		return "", err
 	}
-	name := esp.CountedEntryName(h.ImageID, generation, tries)
+	name := esp.StagedName(h.ImageID, generation)
 	if err := esp.Name(n.ESP, tmp, name, n.Change); err != nil {
 		return "", err
 	}

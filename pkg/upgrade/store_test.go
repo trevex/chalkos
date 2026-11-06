@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/trevex/chalkos/pkg/esp"
 	"github.com/trevex/chalkos/pkg/storage/gpt"
 	"github.com/trevex/chalkos/pkg/storeslot"
 	"github.com/trevex/chalkos/pkg/tool"
@@ -328,22 +329,30 @@ func TestReadImage(t *testing.T) {
 	}}
 	l.node.StoreMount = filepath.Join(t.TempDir(), "store")
 	l.node.CheckStore = func(Store) error { return nil }
-	if _, err := l.install(img); err != nil {
+	if _, err := l.node.Install(context.Background(), img.header, img.stream()); err != nil {
 		t.Fatal(err)
 	}
-	calls = nil
-	var toplevel string
-	if err := l.node.ReadImage(context.Background(), img.root, func(s Store) error {
-		toplevel = s.Toplevel
-		_, err := s.Resolve(s.Toplevel + "/../x/etc/chalkos/schemas")
-		return err
-	}); err != nil {
-		t.Fatal(err)
-	}
-	parts := l.table()
-	open := "veritysetup open " + parts[5].Node + " " + storeMapping + " " + parts[4].Node + " " + hex.EncodeToString(img.root)
-	if toplevel != "/nix/store/x" || !slices.Contains(calls, open) || calls[len(calls)-1] != "veritysetup close "+storeMapping {
-		t.Errorf("toplevel %q, ran %q", toplevel, calls)
+	// The image is read while it is staged, through its staged UKI, and once it is active.
+	for _, state := range []string{"staged", "active"} {
+		if state == "active" {
+			if _, err := l.node.Activate(context.Background(), img.root); err != nil {
+				t.Fatal(err)
+			}
+		}
+		calls = nil
+		var toplevel string
+		if err := l.node.ReadImage(context.Background(), img.root, func(s Store) error {
+			toplevel = s.Toplevel
+			_, err := s.Resolve(s.Toplevel + "/../x/etc/chalkos/schemas")
+			return err
+		}); err != nil {
+			t.Fatalf("%s: %v", state, err)
+		}
+		parts := l.table()
+		open := "veritysetup open " + parts[5].Node + " " + storeMapping + " " + parts[4].Node + " " + hex.EncodeToString(img.root)
+		if toplevel != "/nix/store/x" || !slices.Contains(calls, open) || calls[len(calls)-1] != "veritysetup close "+storeMapping {
+			t.Errorf("%s: toplevel %q, ran %q", state, toplevel, calls)
+		}
 	}
 	for name, root := range map[string][]byte{"the running image": old.root, "another image": bytes.Repeat([]byte{0xee}, 32)} {
 		err := l.node.ReadImage(context.Background(), root, func(Store) error { t.Errorf("%s: read", name); return nil })
@@ -384,5 +393,42 @@ func TestOnlyARecheckRetiresTheStagedImage(t *testing.T) {
 	l.setUUID(5, gpt.NewUUID())
 	if _, err := l.install(img); !errors.Is(err, refusal) || errors.As(err, &retired) {
 		t.Errorf("install into a changed slot = %v, want the check's refusal without a StagedRetiredError", err)
+	}
+}
+
+// TestARecheckRetiresAStagedImage: an image staged and not activated is checked again when it is
+// installed again, and stays staged once the check passes; a refusal retires it with its staged
+// UKI, and the disk boots the running image.
+func TestARecheckRetiresAStagedImage(t *testing.T) {
+	old, img := newImage(t, "a", 3), newImage(t, "b", 2)
+	l := newLab(t, old)
+	l.node.Run = storeRunner{Runner: l.node.Run, calls: &[]string{}, mounted: func(dir string) {
+		os.RemoveAll(dir)
+		writeStore(t, dir)
+	}}
+	l.node.StoreMount = filepath.Join(t.TempDir(), "store")
+	var refusal error
+	checks := 0
+	l.node.CheckStore = func(Store) error { checks++; return refusal }
+	stage := func() (Result, error) { return l.node.Install(context.Background(), img.header, img.stream()) }
+	if _, err := stage(); err != nil {
+		t.Fatal(err)
+	}
+	if res, err := stage(); err != nil || !res.AlreadyStaged || res.Active || checks != 2 {
+		t.Fatalf("stage again = %+v, %v after %d checks; want it staged and checked again", res, err, checks)
+	}
+	refusal = errors.New("the config does not suit the image")
+	var retired *StagedRetiredError
+	if _, err := stage(); !errors.Is(err, refusal) || !errors.As(err, &retired) {
+		t.Fatalf("stage = %v, want the check's refusal, which retired the staged image", err)
+	}
+	if files, err := esp.StagedFiles(l.esp); err != nil || len(files) != 0 {
+		t.Errorf("staged UKIs after the refusal = %q, %v; want none", files, err)
+	}
+	if e, name := l.boot(); name != old.name {
+		t.Errorf("after a refusal the disk boots %s from %s", name, e.File)
+	}
+	if parts := l.table(); parts[5].Name != "_empty" {
+		t.Errorf("after a refusal the slot is labelled %q", parts[5].Name)
 	}
 }

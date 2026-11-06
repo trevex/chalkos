@@ -343,7 +343,7 @@ func (s *Server) installImage(ctx context.Context, h upgrade.Header, text, secre
 		staged = c
 		return nil
 	}
-	res, err := n.Install(ctx, h, image)
+	res, err := n.Upgrade(ctx, h, image)
 	return res, staged, err
 }
 

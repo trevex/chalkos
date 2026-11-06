@@ -327,6 +327,79 @@ func TestAlreadyStaged(t *testing.T) {
 	l.boots(img, 3)
 }
 
+// TestStageAndActivate stages an image without activating it: the disk boots the running image,
+// and the UKI waits under its staged name with the generation it was staged with, which an install
+// of the image again keeps. Activate refuses another image and, stopped before its rename, leaves
+// the UKI staged; then it makes the image boot next with its tries and, asked again, answers that
+// it boots next already. Once the node runs it, staging another image replaces the image before,
+// so a rollback is refused, and staging a third replaces the staged one.
+func TestStageAndActivate(t *testing.T) {
+	a, b, c, d := newImage(t, "a", 3), newImage(t, "b", 2), newImage(t, "c", 3), newImage(t, "d", 3)
+	l := newLab(t, a)
+	ctx := context.Background()
+	if _, err := l.node.Activate(ctx, b.root); err == nil || !strings.Contains(err.Error(), "no image is staged in the inactive slot") {
+		t.Errorf("activate without a staged image = %v", err)
+	}
+	stage := func(img image) Result {
+		t.Helper()
+		res, err := l.node.Install(ctx, img.header, img.stream())
+		if err != nil {
+			t.Fatal(err)
+		}
+		return res
+	}
+	if res := stage(b); res.Active || res.AlreadyStaged || res.Entry != ".staged-chalkos_2.efi" || !res.Wrote {
+		t.Errorf("stage = %+v", res)
+	}
+	if e, name := l.boot(); name != "a" || e.File != "chalkos_1.efi" {
+		t.Errorf("the disk boots %s from %s, want a", name, e.File)
+	}
+	if staged, ok, err := esp.Staged(l.esp, "chalkos"); !ok || err != nil || !bytes.Equal(staged.RootHash, b.root) || staged.Generation != 2 {
+		t.Errorf("staged = %+v, %v, %v", staged, ok, err)
+	}
+	if res := stage(b); res.Active || !res.AlreadyStaged || res.Entry != ".staged-chalkos_2.efi" || res.Wrote {
+		t.Errorf("staging the staged image again = %+v", res)
+	}
+	if _, err := l.node.Activate(ctx, c.root); err == nil || !strings.Contains(err.Error(), fmt.Sprintf("the image staged in the inactive slot is %x, not %x", b.root, c.root)) {
+		t.Errorf("activate another image = %v", err)
+	}
+	l.node.Change = func(what string) error { return errCrash }
+	if _, err := l.node.Activate(ctx, b.root); !errors.Is(err, errCrash) || l.file(".staged-chalkos_2.efi") == nil {
+		t.Errorf("an activation stopped before its rename = %v; the staged UKI kept: %v", err, l.file(".staged-chalkos_2.efi") != nil)
+	}
+	l.node.Change = nil
+	res, err := l.node.Activate(ctx, b.root)
+	if err != nil || !res.Active || res.AlreadyStaged || res.Entry != "chalkos_2+2.efi" {
+		t.Fatalf("activate = %+v, %v", res, err)
+	}
+	l.boots(b, 2)
+	if res, err := l.node.Activate(ctx, b.root); err != nil || !res.Active || !res.AlreadyStaged || res.Entry != "chalkos_2+2.efi" {
+		t.Errorf("activate again = %+v, %v", res, err)
+	}
+
+	l.bless(l.attempt())
+	l.runFrom(b, "chalkos_2.efi", 4, 5)
+	if res, err := l.node.Activate(ctx, b.root); err != nil || !res.AlreadyInstalled {
+		t.Errorf("activate the running image = %+v, %v", res, err)
+	}
+	if res := stage(c); res.Entry != ".staged-chalkos_3.efi" || l.file("chalkos_1.efi") != nil {
+		t.Errorf("stage = %+v; the image before kept: %v", res, l.file("chalkos_1.efi") != nil)
+	}
+	if _, err := l.node.Rollback(ctx, a.root, nil, nil); err == nil || !strings.Contains(err.Error(), fmt.Sprintf("the image %x is staged in the inactive slot", c.root)) {
+		t.Errorf("rollback while an image is staged = %v", err)
+	}
+	if res := stage(d); res.Entry != ".staged-chalkos_3.efi" || !res.Wrote {
+		t.Errorf("stage another image = %+v", res)
+	}
+	if staged, ok, err := esp.Staged(l.esp, "chalkos"); !ok || err != nil || !bytes.Equal(staged.RootHash, d.root) {
+		t.Errorf("staged = %+v, %v, %v", staged, ok, err)
+	}
+	if res, err := l.node.Activate(ctx, d.root); err != nil || res.Entry != "chalkos_3+3.efi" {
+		t.Errorf("activate = %+v, %v", res, err)
+	}
+	l.boots(d, 3)
+}
+
 var errCrash = errors.New("crash")
 
 // TestInterruptedUpgrade stops an upgrade before each change it makes: the disk boots the running

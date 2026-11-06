@@ -93,8 +93,9 @@ func (n *Node) checkStore(ctx context.Context, h Header, slot storeslot.Slot, uk
 }
 
 // ReadImage reads the store of the image with the root hash, which the inactive slot holds, such
-// as the image staged to boot next: mounted read-only through dm-verity as an upgrade checks one,
-// passed to read with the system a UKI on the ESP that boots it names, and unmounted again. The
+// as the image staged there or active: mounted read-only through dm-verity as an upgrade checks
+// one, passed to read with the system its UKI on the ESP names, an entry's or the staged one, and
+// unmounted again. The
 // caller holds TableLock, if any, or leaves it unset. It fails for the running image and for one
 // the inactive slot does not hold.
 func (n *Node) ReadImage(ctx context.Context, rootHash []byte, read func(Store) error) error {
@@ -119,6 +120,11 @@ func (n *Node) ReadImage(ctx context.Context, rootHash []byte, read func(Store) 
 	entries, err := esp.Entries(n.ESP)
 	if err != nil {
 		return err
+	}
+	if staged, ok, err := esp.Staged(n.ESP, n.OSRelease["IMAGE_ID"]); err != nil {
+		return err
+	} else if ok {
+		entries = append(entries, staged)
 	}
 	i := slices.IndexFunc(entries, func(e esp.Entry) bool { return bytes.Equal(e.RootHash, rootHash) })
 	if i < 0 {

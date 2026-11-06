@@ -476,7 +476,7 @@ func (l *lab) boots(img image, tries int) {
 }
 
 func (l *lab) install(img image) (Result, error) {
-	return l.node.Install(context.Background(), img.header, img.stream())
+	return l.node.Upgrade(context.Background(), img.header, img.stream())
 }
 
 // file returns a UKI's content, or nil when it is gone.
