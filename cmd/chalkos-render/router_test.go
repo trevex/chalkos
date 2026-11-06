@@ -934,8 +934,8 @@ func TestUnboundRefusals(t *testing.T) {
 }
 
 // Each VRF's resolver renders a config of its own, unbound-<vrf>.conf, with a control socket of
-// its own; the default VRF's stays unbound.conf. A listen address that Network documents give only
-// to links of other VRFs is refused, one that the resolver's VRF holds too is not.
+// its own; the default VRF's stays unbound.conf. A listen address the resolver's VRF holds renders,
+// also when another VRF holds it too.
 func TestUnboundPerVRF(t *testing.T) {
 	docs := func(listen string) map[string][]any {
 		return map[string][]any{
@@ -971,13 +971,6 @@ func TestUnboundPerVRF(t *testing.T) {
 			t.Errorf("files = %v", got)
 		}
 	}
-	refused(t, args, docs("2001:db8:ffff::1"),
-		"Resolver/guest: spec.listen[0]: the address 2001:db8:ffff::1 of listen belongs to links of Network 10-eth0 in VRF default alone, so the resolver of VRF guest never receives its queries; listen on an address of the VRF's links")
-	// The default VRF's resolver is refused an address of a VRF's links alike.
-	vrfOnly := docs("2001:db8:3::1")
-	vrfOnly["Resolver"] = []any{routerDoc(t, "Resolver", "resolver", `{"listen": ["2001:db8:3::1"], "allow": ["2001:db8::/32"], "forwarders": [], "dnssec": false, "dns64": null, "localZones": []}`)}
-	refused(t, args, vrfOnly,
-		"Resolver/resolver: spec.listen[0]: the address 2001:db8:3::1 of listen belongs to links of Network 40-guest in VRF guest alone, so the resolver of VRF default never receives its queries")
 }
 
 // A peer in a VRF has its ports opened on its VRF's links by the VRF's device and sdifname: the

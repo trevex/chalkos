@@ -52,9 +52,9 @@ var localZoneTypes = []string{"static", "transparent", "typetransparent", "redir
 // and out/unbound-<vrf>.conf for a VRF's: the addresses it answers on and the clients it answers,
 // DNSSEC validation with the root's trust anchor in the file trustAnchor, DNS64 with the zone
 // ipv4only.arpa of the file zoneFile, the local zones, the forwarders, and the control socket. A
-// node without a Resolver gets no file and runs no Unbound. It refuses a listen address that
-// Network documents give only to links of other VRFs; the set check has refused two resolvers of
-// one VRF.
+// node without a Resolver gets no file and runs no Unbound. The validator router refuses a listen
+// address that Network documents give only to links of other VRFs; the set check has refused two
+// resolvers of one VRF.
 func renderUnbound(trustAnchor, zoneFile string, in map[string]any, out string) error {
 	for _, f := range []string{trustAnchor, zoneFile} {
 		if !storeFile.MatchString(f) || filepath.Clean(f) != f {
@@ -79,43 +79,12 @@ func renderUnbound(trustAnchor, zoneFile string, in map[string]any, out string) 
 		if !derive.PlainInterface.MatchString(vrf) {
 			return derive.InternalErrorf("Resolver %s: the VRF %q is no VRF's name", r.Name, vrf)
 		}
-		if err := checkListenVRF(d, r, vrf); err != nil {
-			return err
-		}
 		text, err := unboundConfig(r.Name, r.Spec, vrf, trustAnchor, zoneFile)
 		if err != nil {
 			return derive.Within("Resolver "+r.Name, err)
 		}
 		if err := writeFile(out, unboundFileOf(vrf), []byte(text)); err != nil {
 			return err
-		}
-	}
-	return nil
-}
-
-// checkListenVRF refuses an address of r's listen that Network documents give only to links of
-// other VRFs than vrf: the resolver's sockets are bound to vrf and never see its queries. An
-// address the documents do not give, such as one from DHCP, passes.
-func checkListenVRF(d derive.Model, r derive.Named[derive.ResolverSpec], vrf string) error {
-	for i, l := range r.Spec.Listen {
-		a, err := netip.ParseAddr(l)
-		if err != nil {
-			continue
-		}
-		var others []string
-		mine := false
-		for _, n := range d.Addresses {
-			if n.Prefix.Addr() != a {
-				continue
-			}
-			if v := d.VRFOfNetwork(n.Network); v == vrf {
-				mine = true
-			} else {
-				others = appendNew(others, "Network "+n.Network+" in VRF "+v)
-			}
-		}
-		if !mine && len(others) > 0 {
-			return refusals.Errorf("Resolver", r.Name, fmt.Sprintf("spec.listen[%d]", i), "the address %s of listen belongs to links of %s alone, so the resolver of VRF %s never receives its queries; listen on an address of the VRF's links", a, strings.Join(others, " and "), vrf)
 		}
 	}
 	return nil

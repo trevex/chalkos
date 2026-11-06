@@ -10,8 +10,9 @@
 # Network documents' static addresses bind their sections and their values as flat lists, and the
 # rules over the local zones' records loop over the records flattened. What compares the
 # documents of a kind, or all records, in pairs, the validator router and the outputs check: two
-# NAT64s of one VRF whose prefixes overlap and two NAT64s whose pools share an address (the
-# validator), and a record twice or a CNAME beside another record (output unbound).
+# NAT64s of one VRF whose prefixes overlap, two NAT64s whose pools share an address and a
+# resolver's address of another VRF's links (the validator), and a record twice or a CNAME beside
+# another record (output unbound).
 {
   config,
   lib,

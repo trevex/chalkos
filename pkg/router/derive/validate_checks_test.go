@@ -51,6 +51,48 @@ func accepted(t *testing.T, docs map[string][]any) {
 	}
 }
 
+// The validator reports every fault of a config it can see at once, each once, from several
+// documents of several kinds: here a Network that names a VRF's device, two NAT64s whose pools
+// share an address, a zone of a VRF's device and a resolver that listens on another VRF's address.
+// A check that reads the links' VRFs waits for the VRFs' links to pass, as their refusals leave it
+// nothing to read; the NAT64s' check, which does not read them, runs anyway.
+func TestValidateReportsEveryFault(t *testing.T) {
+	nat64 := func(name, pool string) any {
+		return routerDoc(t, "NAT64", name, `{"prefix": "64:ff9b::/96", "vrf": "`+name+`", "pool4": [{"prefix": "`+pool+`", "ports": "61001-65535", "protocols": ["tcp"]}]}`)
+	}
+	docs := map[string][]any{
+		"VRF": {
+			routerDoc(t, "VRF", "guest", `{"table": 300, "interfaces": ["eth3"]}`),
+			routerDoc(t, "VRF", "lab", `{"table": 400, "interfaces": ["eth4"]}`),
+		},
+		"Network": {
+			document(t, "Network", "10-eth0", `{"match": {"name": "eth0"}, "network": {"address": ["2001:db8:ffff::1/128"]}}`),
+			document(t, "Network", "40-guest", `{"match": {"name": "eth3"}}`),
+			document(t, "Network", "50-lab", `{"match": {"name": "eth4"}}`),
+		},
+		"NAT64":        {nat64("guest", "192.0.2.8/30"), nat64("lab", "192.0.2.10/32")},
+		"FirewallZone": {routerDoc(t, "FirewallZone", "x", `{"interfaces": ["lab"], "vrfs": []}`)},
+		"Resolver":     {routerDoc(t, "Resolver", "guest", `{"vrf": "guest", "listen": ["2001:db8:ffff::1"], "allow": ["2001:db8:3::/64"]}`)},
+	}
+	want := []string{
+		"NAT64/lab: spec.pool4[0]: the entry shares addresses with the pool of NAT64 guest; give each NAT64 a pool of its own",
+		"FirewallZone/x: spec.interfaces[0]: lab matches lab, the device of VRF lab; name the VRF in vrfs",
+		"Resolver/guest: spec.listen[0]: the address 2001:db8:ffff::1 of listen belongs to links of Network 10-eth0 in VRF default alone, so the resolver of VRF guest never receives its queries; listen on an address of the VRF's links",
+	}
+	if rs, err := validated(t, docs); err != nil || !slices.Equal(rs, want) {
+		t.Errorf("refusals = %q, %v, want %q", rs, err, want)
+	}
+	docs["Network"] = append(docs["Network"], document(t, "Network", "00-lab", `{"match": {"name": "lab"}}`))
+	want = []string{
+		"VRF/lab: metadata.name: a Network document names the link lab, the VRF's device",
+		"Network/00-lab: metadata.name: Network 00-lab matches the device of VRF lab before 00-vrf-lab; rename it to sort after 00-vrf-lab",
+		"NAT64/lab: spec.pool4[0]: the entry shares addresses with the pool of NAT64 guest; give each NAT64 a pool of its own",
+	}
+	if rs, err := validated(t, docs); err != nil || !slices.Equal(rs, want) {
+		t.Errorf("refusals = %q, %v, want %q", rs, err, want)
+	}
+}
+
 // vrfZoneDocs are a router's documents of three VRFs and their zones: guest of eth3 and eth4,
 // whose links two zones name, internet of eth1 and tenant of eth2 and swp*, each a zone's VRF,
 // and the zone lan of eth5 and vlan*, links of no VRF.
@@ -273,4 +315,32 @@ func TestPolicyRouteInRefusals(t *testing.T) {
 		t.Run(name, func(t *testing.T) { refused(t, c.docs, c.want) })
 	}
 	accepted(t, policyDocs(t, "a", `{"in": {"zone": "lan", "interfaces": []}, `+dscp+`}`))
+}
+
+// A resolver's listen address that Network documents give only to links of other VRFs is refused,
+// one that the resolver's VRF holds too is not, and so is one that no Network gives.
+func TestResolverListenRefusals(t *testing.T) {
+	docs := func(listen string) map[string][]any {
+		return map[string][]any{
+			"VRF": {routerDoc(t, "VRF", "guest", `{"table": 300, "interfaces": ["eth3"]}`)},
+			"Network": {
+				document(t, "Network", "10-eth0", `{"match": {"name": "eth0"}, "network": {"address": ["2001:db8:ffff::1/128", "2001:db8:3::9/64"]}}`),
+				document(t, "Network", "40-guest", `{"match": {"name": "eth3"}, "network": {"address": ["2001:db8:3::1/64", "2001:db8:3::9/64"]}}`),
+			},
+			"Resolver": {
+				routerDoc(t, "Resolver", "guest", `{"vrf": "guest", "listen": ["`+listen+`"], "allow": ["2001:db8:3::/64"]}`),
+				routerDoc(t, "Resolver", "resolver", `{"listen": ["2001:db8:ffff::1"], "allow": ["2001:db8::/32"]}`),
+			},
+		}
+	}
+	for _, listen := range []string{"2001:db8:3::1", "2001:db8:3::9", "2001:db8:3::53"} {
+		accepted(t, docs(listen))
+	}
+	refused(t, docs("2001:db8:ffff::1"),
+		"Resolver/guest: spec.listen[0]: the address 2001:db8:ffff::1 of listen belongs to links of Network 10-eth0 in VRF default alone, so the resolver of VRF guest never receives its queries; listen on an address of the VRF's links")
+	// The default VRF's resolver is refused an address of a VRF's links alike.
+	vrfOnly := docs("2001:db8:3::1")
+	vrfOnly["Resolver"] = []any{routerDoc(t, "Resolver", "resolver", `{"listen": ["2001:db8:3::1"], "allow": ["2001:db8::/32"]}`)}
+	refused(t, vrfOnly,
+		"Resolver/resolver: spec.listen[0]: the address 2001:db8:3::1 of listen belongs to links of Network 40-guest in VRF guest alone, so the resolver of VRF default never receives its queries")
 }
