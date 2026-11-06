@@ -396,6 +396,28 @@ func TestApplyConfigTrialWaitsForTheNodeToAnswer(t *testing.T) {
 	}
 }
 
+// A layer whose check does not answer holds a trial no longer than its deadline: the trial is
+// rolled back then.
+func TestApplyConfigTrialEndsAtALayerThatDoesNotAnswer(t *testing.T) {
+	defer func(m time.Duration) { minTrial = m }(minTrial)
+	minTrial = 0
+	l := newRolloutLab(t)
+	l.hangAfterDelivery = "w1"
+	done := make(chan error, 1)
+	go func() { done <- l.applyConfigTo([]string{"w1"}, "--try", "1s") }()
+	select {
+	case err := <-done:
+		if err == nil || !strings.Contains(err.Error(), "was not confirmed within its trial") {
+			t.Errorf("err = %v", err)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("apply-config still waits for the layer after the trial's deadline")
+	}
+	if got, want := deliveries(l.takeEvents()), []string{"w1 apply-config staged=false", "w1 rollback"}; !slices.Equal(got, want) {
+		t.Errorf("events %q, want %q", got, want)
+	}
+}
+
 // A delivery that changes the API server goes without the layers' payloads.
 func TestApplyConfigRolloutRefusesPayloads(t *testing.T) {
 	l := newRolloutLab(t)

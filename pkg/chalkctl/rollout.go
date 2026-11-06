@@ -1,6 +1,7 @@
 package chalkctl
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -320,8 +321,13 @@ func (r *upgradeRun) checkImages(ctx context.Context) error {
 // delivery, as one whose config restarts its network, is asked again until the time given.
 func (a *app) waitDelivered(ctx context.Context, t *target, until time.Time) error {
 	said := false
-	return layer.WaitFor(ctx, "", until.Sub(a.now()), a.poll(), func() error {
-		return callNode(t, func(conn *client.Conn) error {
+	var last error
+	err := layer.WaitFor(ctx, "", until.Sub(a.now()), a.poll(), func() error {
+		// An attempt ends with the wait, so a layer whose service does not answer holds the trial no
+		// longer than its deadline.
+		ctx, cancel := context.WithDeadline(ctx, until)
+		defer cancel()
+		err := callNode(t, func(conn *client.Conn) error {
 			info, err := conn.Info(ctx, connect.NewRequest(&nodev1.InfoRequest{}))
 			if err != nil {
 				return err
@@ -338,7 +344,16 @@ func (a *app) waitDelivered(ctx context.Context, t *target, until time.Time) err
 			}
 			return nil
 		})
+		// An attempt the deadline cut short says less than the one before it.
+		if err != nil && (last == nil || connect.CodeOf(err) != connect.CodeDeadlineExceeded) {
+			last = err
+		}
+		return err
 	})
+	if err != nil && ctx.Err() == nil {
+		return cmp.Or(last, err)
+	}
+	return err
 }
 
 // rollbackTrial rolls the node's config on trial back to config previous at once, after failure,

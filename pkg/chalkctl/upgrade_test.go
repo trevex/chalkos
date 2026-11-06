@@ -224,6 +224,11 @@ type upgradeLab struct {
 	dropAfterDelivery map[string]int
 	// unreachable counts the calls the node does not answer yet.
 	unreachable map[string]int
+	// hangAfterDelivery makes the node's Kubernetes status hang, once it was delivered config,
+	// until the caller gives up, as a layer's service stuck on an API server that does not answer.
+	hangAfterDelivery string
+	// hanging is the node whose Kubernetes status hangs.
+	hanging string
 }
 
 // asked returns how often each node was asked for its config.
@@ -345,11 +350,16 @@ type upgradeKubernetes struct {
 	kubernetesv1connect.UnimplementedKubernetesServiceHandler
 }
 
-func (n upgradeKubernetes) Status(context.Context, *connect.Request[kubernetesv1.StatusRequest]) (*connect.Response[kubernetesv1.StatusResponse], error) {
+func (n upgradeKubernetes) Status(ctx context.Context, _ *connect.Request[kubernetesv1.StatusRequest]) (*connect.Response[kubernetesv1.StatusResponse], error) {
 	if err := n.down(); err != nil {
 		return nil, err
 	}
 	n.lab.mu.Lock()
+	if n.lab.hanging == n.name {
+		n.lab.mu.Unlock()
+		<-ctx.Done()
+		return nil, ctx.Err()
+	}
 	ready := "True"
 	if n.lab.notReady[n.name] {
 		ready = "False"
@@ -2109,6 +2119,9 @@ func (n *upgradeFake) ApplyConfig(ctx context.Context, req *connect.Request[node
 				n.lab.unreachable = map[string]int{}
 			}
 			n.lab.unreachable[n.name] = k
+		}
+		if n.lab.hangAfterDelivery == n.name {
+			n.lab.hanging = n.name
 		}
 		n.lab.mu.Unlock()
 		return connect.NewResponse(resp), nil
