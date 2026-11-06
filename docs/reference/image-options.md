@@ -223,7 +223,9 @@ Example: `[ "example-sync.service" ]`
 Type: integer of at least 1 · Default: `300` · Declared in: [modules/node/upgrade.nix](https://github.com/trevex/chalkos/blob/main/modules/node/upgrade.nix)
 
 Seconds a boot of this image that systemd-boot counts has to become healthy. Then
-chalkd reboots the node, so the boot loader tries again or falls back.
+chalkd reboots the node, so the boot loader tries again or falls back. A boot that is
+not healthy this long after systemd finished starting it has settled, also when it is not
+counted, and chalkctl stops waiting for it.
 
 ## Debug and maintenance { #debug-and-maintenance }
 

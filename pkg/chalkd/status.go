@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
+	"golang.org/x/sys/unix"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/chalkd/layer"
@@ -192,14 +193,66 @@ func parseTracking(out []byte) (*nodev1.TimeStatus, error) {
 }
 
 // bootHealth is the health of the boot the node runs, as Healthy finds it now with the units the
-// image ignores. A boot the loader counts is blessed once the boot's health check finds the same;
-// an uncounted boot, of an entry blessed before, is checked by nothing else.
+// image ignores, and whether the boot settled. A boot the loader counts is blessed once the boot's
+// health check finds the same; an uncounted boot, of an entry blessed before, is checked by
+// nothing else.
 func (s *Server) bootHealth(ctx context.Context) *nodev1.BootHealth {
+	h := &nodev1.BootHealth{Healthy: true, Settled: s.bootSettled(ctx)}
 	if s.Healthy == nil {
-		return &nodev1.BootHealth{Healthy: true}
+		return h
 	}
 	if err := s.Healthy(ctx, nil); err != nil {
-		return &nodev1.BootHealth{Error: err.Error()}
+		h.Healthy, h.Error = false, err.Error()
 	}
-	return &nodev1.BootHealth{Healthy: true}
+	return h
+}
+
+// bootSettled reports whether systemd finished starting the boot, the system running or degraded,
+// and the image's health timeout passed since: the layers, such as Kubernetes's API server, come
+// up after the units that start them, within the time a counted boot has to become healthy. A
+// state that cannot be read counts as not settled, so a client keeps waiting until its timeout.
+func (s *Server) bootSettled(ctx context.Context) bool {
+	out, err := s.Run.Run(ctx, "systemctl", "show", "--property=SystemState", "--property=FinishTimestampMonotonic")
+	if err != nil {
+		log.Printf("read whether the boot settled: %v", err)
+		return false
+	}
+	var state string
+	var finished time.Duration
+	for _, line := range strings.Split(string(out), "\n") {
+		key, value, _ := strings.Cut(strings.TrimSpace(line), "=")
+		switch key {
+		case "SystemState":
+			state = value
+		case "FinishTimestampMonotonic":
+			us, err := strconv.ParseInt(value, 10, 64)
+			if err != nil {
+				log.Printf("read when the boot finished starting: %v", err)
+				return false
+			}
+			finished = time.Duration(us) * time.Microsecond
+		}
+	}
+	if state != "running" && state != "degraded" || finished == 0 {
+		return false
+	}
+	monotonic := s.Monotonic
+	if monotonic == nil {
+		monotonic = clockMonotonic
+	}
+	now, err := monotonic()
+	if err != nil {
+		log.Printf("read the monotonic clock: %v", err)
+		return false
+	}
+	return now-finished >= s.HealthTimeout
+}
+
+// clockMonotonic reads the kernel's CLOCK_MONOTONIC.
+func clockMonotonic() (time.Duration, error) {
+	var ts unix.Timespec
+	if err := unix.ClockGettime(unix.CLOCK_MONOTONIC, &ts); err != nil {
+		return 0, err
+	}
+	return time.Duration(ts.Nano()), nil
 }

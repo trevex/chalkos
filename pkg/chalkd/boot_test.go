@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"connectrpc.com/connect"
 	"google.golang.org/protobuf/proto"
@@ -15,6 +16,7 @@ import (
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/atomicfile"
 	"github.com/trevex/chalkos/pkg/config/slot"
+	"github.com/trevex/chalkos/pkg/tool/tooltest"
 	"github.com/trevex/chalkos/pkg/uki/ukitest"
 	"github.com/trevex/chalkos/pkg/upgrade"
 )
@@ -123,6 +125,42 @@ func TestStatusReportsTheBootsHealth(t *testing.T) {
 	}
 	if checks != 2 {
 		t.Errorf("%d checks, want 2", checks)
+	}
+}
+
+// TestStatusReportsWhetherTheBootSettled reports a boot settled once systemd finished starting it,
+// running or degraded, and the image's health timeout passed since; a boot still starting, one
+// that finished within the timeout, and a state that cannot be read are not settled.
+func TestStatusReportsWhetherTheBootSettled(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		show  string
+		err   error
+		now   time.Duration
+		ready bool
+	}{
+		{"running past the timeout", "SystemState=running\nFinishTimestampMonotonic=20000000\n", nil, 321 * time.Second, true},
+		{"degraded past the timeout", "SystemState=degraded\nFinishTimestampMonotonic=20000000\n", nil, 400 * time.Second, true},
+		{"within the timeout", "SystemState=running\nFinishTimestampMonotonic=20000000\n", nil, 319 * time.Second, false},
+		{"starting", "SystemState=starting\nFinishTimestampMonotonic=0\n", nil, 400 * time.Second, false},
+		{"initializing", "SystemState=initializing\nFinishTimestampMonotonic=0\n", nil, 400 * time.Second, false},
+		{"unreadable", "", errors.New("exit status 1"), 400 * time.Second, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s, r := installedServer(t, section("", ""), false)
+			writeESP(t, s.Paths.ESP, s.Paths.EFIVars, s.Paths.Cmdline, "chalkos_2.efi", "chalkos_2.efi")
+			r.Rules = append([]tooltest.Rule{{Prefix: "systemctl show --property=SystemState --property=FinishTimestampMonotonic", Out: tc.show, Err: tc.err}}, r.Rules...)
+			s.HealthTimeout = 300 * time.Second
+			s.Monotonic = func() (time.Duration, error) { return tc.now, nil }
+			s.Healthy = func(context.Context, []string) error { return errors.New("the API server is not ready") }
+			resp, err := s.Status(context.Background(), connect.NewRequest(&nodev1.StatusRequest{CheckHealth: true}))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if want := (&nodev1.BootHealth{Error: "the API server is not ready", Settled: tc.ready}); !proto.Equal(resp.Msg.Boot.Health, want) {
+				t.Errorf("health %v, want %v", resp.Msg.Boot.Health, want)
+			}
+		})
 	}
 }
 

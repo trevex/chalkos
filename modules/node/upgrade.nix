@@ -28,7 +28,9 @@ in
       default = 300;
       description = ''
         Seconds a boot of this image that systemd-boot counts has to become healthy. Then
-        chalkd reboots the node, so the boot loader tries again or falls back.
+        chalkd reboots the node, so the boot loader tries again or falls back. A boot that is
+        not healthy this long after systemd finished starting it has settled, also when it is not
+        counted, and chalkctl stops waiting for it.
       '';
     };
     healthIgnoreUnits = lib.mkOption {
@@ -85,8 +87,12 @@ in
       };
     };
     # chalkd confirms a config's trial only on a node this check would find healthy, so it ignores
-    # the same units.
-    systemd.services.chalkd.environment = lib.mkIf (cfg.healthIgnoreUnits != [ ]) {
+    # the same units. Its status reports a boot settled once the health timeout passed after the
+    # boot started, when a boot that is not healthy stays so.
+    systemd.services.chalkd.environment = {
+      CHALKD_HEALTH_TIMEOUT = toString cfg.healthTimeout;
+    }
+    // lib.optionalAttrs (cfg.healthIgnoreUnits != [ ]) {
       CHALKD_HEALTH_IGNORE_UNITS = lib.concatStringsSep " " cfg.healthIgnoreUnits;
     };
 

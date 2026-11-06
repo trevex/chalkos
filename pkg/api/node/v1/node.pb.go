@@ -3506,7 +3506,12 @@ type BootHealth struct {
 	// failed, besides those the image ignores.
 	Healthy bool `protobuf:"varint,1,opt,name=healthy,proto3" json:"healthy,omitempty"`
 	// Why the node is not healthy; empty when it is.
-	Error         string `protobuf:"bytes,2,opt,name=error,proto3" json:"error,omitempty"`
+	Error string `protobuf:"bytes,2,opt,name=error,proto3" json:"error,omitempty"`
+	// Whether the boot has settled: systemd finished starting it, the system running or degraded,
+	// and the image's health timeout, the time a counted boot has to become healthy, passed since.
+	// Until then the image's layers may still be starting; a boot that is not healthy once it
+	// settled is not found healthy by waiting, and a client stops waiting for it.
+	Settled       bool `protobuf:"varint,3,opt,name=settled,proto3" json:"settled,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -3553,6 +3558,13 @@ func (x *BootHealth) GetError() string {
 		return x.Error
 	}
 	return ""
+}
+
+func (x *BootHealth) GetSettled() bool {
+	if x != nil {
+		return x.Settled
+	}
+	return false
 }
 
 // An image a UKI on the ESP boots.
@@ -5259,11 +5271,12 @@ const file_chalkos_node_v1_node_proto_rawDesc = "" +
 	"\fstaged_state\x18\n" +
 	" \x01(\x0e2\x1a.chalkos.node.v1.SlotStateR\vstagedState\x12\x17\n" +
 	"\aboot_id\x18\v \x01(\tR\x06bootId\x123\n" +
-	"\x06health\x18\f \x01(\v2\x1b.chalkos.node.v1.BootHealthR\x06health\"<\n" +
+	"\x06health\x18\f \x01(\v2\x1b.chalkos.node.v1.BootHealthR\x06health\"V\n" +
 	"\n" +
 	"BootHealth\x12\x18\n" +
 	"\ahealthy\x18\x01 \x01(\bR\ahealthy\x12\x14\n" +
-	"\x05error\x18\x02 \x01(\tR\x05error\"v\n" +
+	"\x05error\x18\x02 \x01(\tR\x05error\x12\x18\n" +
+	"\asettled\x18\x03 \x01(\bR\asettled\"v\n" +
 	"\tBootImage\x12\x1b\n" +
 	"\troot_hash\x18\x01 \x01(\fR\brootHash\x12\x1e\n" +
 	"\n" +

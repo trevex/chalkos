@@ -797,6 +797,11 @@ message BootHealth {
   bool healthy = 1;
   // Why the node is not healthy; empty when it is.
   string error = 2;
+  // Whether the boot has settled: systemd finished starting it, the system running or degraded,
+  // and the image's health timeout, the time a counted boot has to become healthy, passed since.
+  // Until then the image's layers may still be starting; a boot that is not healthy once it
+  // settled is not found healthy by waiting, and a client stops waiting for it.
+  bool settled = 3;
 }
 
 // The state of the image in the node's inactive slot.

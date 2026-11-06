@@ -156,9 +156,10 @@ func (b *rebooter) release(ctx context.Context, n *rebootNode, t bootTarget, hel
 
 // waitHealthy waits until the node runs the target's image in another boot than the one before,
 // its boot was found healthy, and it serves the clusters of its layers again, or until it fell
-// back. The chalkd of the boot before may answer until it stops.
+// back or its boot settled without being found healthy. The chalkd of the boot before may answer
+// until it stops.
 func (b *rebooter) waitHealthy(ctx context.Context, n *rebootNode, t bootTarget) error {
-	var fellBack error
+	var fellBack, unhealthy error
 	err := layer.WaitFor(ctx, "", b.timeout, b.poll, func() error {
 		var st *nodev1.StatusResponse
 		var notReady error
@@ -191,14 +192,21 @@ func (b *rebooter) waitHealthy(ctx context.Context, n *rebootNode, t bootTarget)
 			return errors.New("its boot was not found healthy yet")
 		case boot.GetHealth() == nil:
 			return errors.New("it reports no health of its boot")
+		case !boot.GetHealth().GetHealthy() && boot.GetHealth().GetSettled():
+			// Waiting longer does not change a boot that settled: the boot loader counts it no more,
+			// and the node gave its layers the time a counted boot has.
+			unhealthy = unhealthyError(n, t, boot.GetHealth().GetError())
+			return layer.Permanent{Err: unhealthy}
 		case !boot.GetHealth().GetHealthy():
-			return fmt.Errorf("its boot is not healthy: %s", boot.GetHealth().GetError())
+			return fmt.Errorf("its boot is not healthy yet: %s", boot.GetHealth().GetError())
 		}
 		return notReady
 	})
 	switch {
 	case fellBack != nil:
 		return fellBack
+	case unhealthy != nil:
+		return unhealthy
 	case err != nil:
 		return fmt.Errorf("%s: waiting for %s to be found healthy: %w", n.name, t.image, err)
 	}
@@ -219,6 +227,16 @@ func (b *rebooter) failed(n *rebootNode, boot *nodev1.BootStatus) error {
 		return b.fellBack(n, boot)
 	}
 	return fellBackError(n, fmt.Sprintf("%s: its boot of %s failed: it fell back to %s", n.name, bootImageName(boot.Failed), bootImageName(boot.Running)), boot)
+}
+
+// unhealthyError is the error of a node whose boot of the target's image settled without being
+// found healthy, for why, with whether it stays held.
+func unhealthyError(n *rebootNode, t bootTarget, why string) error {
+	msg := fmt.Sprintf("%s: its boot of %s settled and is not healthy: %s", n.name, t.image, why)
+	if n.roles.member() && n.held {
+		msg += "; it stays cordoned"
+	}
+	return errors.New(msg)
 }
 
 // fellBackError is the error msg says of a node that fell back, with whether it stays held and

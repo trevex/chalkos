@@ -302,3 +302,18 @@ func TestHealthIgnoreUnits(t *testing.T) {
 		}
 	}
 }
+
+// chalkd's unit passes the time a counted boot has to become healthy in seconds, after which
+// Status reports a boot settled.
+func TestHealthTimeout(t *testing.T) {
+	for value, want := range map[string]time.Duration{"": 0, "300": 5 * time.Minute, "0": 0} {
+		if got, err := healthTimeout(func(string) string { return value }); err != nil || got != want {
+			t.Errorf("%q: %v, %v, want %v", value, got, err, want)
+		}
+	}
+	for _, value := range []string{"5m", "-1"} {
+		if _, err := healthTimeout(func(string) string { return value }); err == nil {
+			t.Errorf("%q: accepted", value)
+		}
+	}
+}

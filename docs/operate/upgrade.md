@@ -476,10 +476,12 @@ data after a Kubernetes upgrade.
   found no image staged, or another one than the inventory or `--image` names for the node. Stage
   the image with `chalkctl upgrade --nodes <node> --until stage` first, with the same `--image`
   when you activate one.
-- `w1: waiting for <image> to be found healthy: its boot is not healthy: ...`: the node runs the
-  image, but its boot fails the health check's checks, such as with a failed unit, until
-  `--timeout` passes. A boot of a blessed entry is not counted, so the node does not fall back.
-  `chalkctl status w1` lists the failed units, and `chalkctl logs w1` shows the boot's journal.
+- `w1: its boot of <image> settled and is not healthy: ...`: the node runs the image, but its
+  boot fails the health check's checks, such as with a failed unit, after systemd finished
+  starting it and the image's health timeout passed. A boot of a blessed entry is not counted,
+  so the node does not fall back. `chalkctl status w1` lists the failed units, and
+  `chalkctl logs w1` shows the boot's journal. A boot that is still starting at `--timeout` ends
+  with `w1: waiting for <image> to be found healthy: its boot is not healthy yet: ...` instead.
 - `no node keeps a previous image to roll back to: ...`: `--rollback` found no node with an image
   to boot again. [What keeps a node from rolling back](#what-keeps-a-node-from-rolling-back) lists
   the reasons.

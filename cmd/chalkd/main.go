@@ -372,6 +372,21 @@ func healthIgnoreUnits(getenv func(string) string) []string {
 	return strings.Fields(getenv("CHALKD_HEALTH_IGNORE_UNITS"))
 }
 
+// healthTimeout is the time a counted boot of the image has to become healthy, which chalkd's
+// unit passes in CHALKD_HEALTH_TIMEOUT in seconds, as the boot's health check waits; zero without
+// it.
+func healthTimeout(getenv func(string) string) (time.Duration, error) {
+	v := getenv("CHALKD_HEALTH_TIMEOUT")
+	if v == "" {
+		return 0, nil
+	}
+	seconds, err := strconv.Atoi(v)
+	if err != nil || seconds < 0 {
+		return 0, fmt.Errorf("CHALKD_HEALTH_TIMEOUT takes a number of seconds, not %q", v)
+	}
+	return time.Duration(seconds) * time.Second, nil
+}
+
 func serve() error {
 	paths := chalkd.DefaultPaths()
 	creds, err := loadCredentials(paths.StateDir, "/etc/chalkos/os-ca.crt", "/run/chalkd", time.Now())
@@ -414,6 +429,9 @@ func serve() error {
 		h := chalkd.DefaultHealth(layer.Active[layer.Health](srv.Plugins))
 		h.IgnoreUnits = healthIgnoreUnits(os.Getenv)
 		srv.Healthy = h.CheckIgnoring
+		if srv.HealthTimeout, err = healthTimeout(os.Getenv); err != nil {
+			return err
+		}
 	}
 
 	switch {

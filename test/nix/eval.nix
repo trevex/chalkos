@@ -3156,6 +3156,22 @@ lib.runTests {
       none = false;
     };
   };
+  # chalkd's status reports a boot settled once the image's health timeout passed after the boot
+  # started.
+  testHealthTimeoutReachesChalkd = {
+    expr =
+      let
+        timeout = c: c.systemd.services.chalkd.environment.CHALKD_HEALTH_TIMEOUT or null;
+      in
+      {
+        default = timeout (worker [ ]);
+        set = timeout (worker [ { chalkos.upgrade.healthTimeout = 30; } ]);
+      };
+    expected = {
+      default = "300";
+      set = "30";
+    };
+  };
   # An image has no version: chalkos orders boot entries by generation, so a node image or the
   # installer that sets system.image.version fails to build. The os-release the UKI carries names
   # an empty IMAGE_VERSION, without which systemd-boot would order entries by VERSION. The UKI

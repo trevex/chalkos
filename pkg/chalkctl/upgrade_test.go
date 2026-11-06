@@ -171,6 +171,9 @@ type upgradeLab struct {
 	// sick holds why the boots of an image are not healthy while the nodes run it, as a node's
 	// check of its boot finds it; the boot loader counts none of them, so none falls back.
 	sick map[string]string
+	// settling makes the nodes report their boots as still starting, so a boot that is not
+	// healthy may still become so.
+	settling bool
 	// unhealthyMembers are etcd members that do not answer.
 	unhealthyMembers []string
 	// cordoned holds the cordoned Nodes, and whether an upgrade marked them so.
@@ -243,7 +246,7 @@ func (n *upgradeFake) Status(_ context.Context, req *connect.Request[nodev1.Stat
 		return nil, err
 	}
 	n.lab.mu.Lock()
-	sick := maps.Clone(n.lab.sick)
+	sick, settling := maps.Clone(n.lab.sick), n.lab.settling
 	n.lab.mu.Unlock()
 	n.mu.Lock()
 	defer n.mu.Unlock()
@@ -253,7 +256,7 @@ func (n *upgradeFake) Status(_ context.Context, req *connect.Request[nodev1.Stat
 		BootId: fmt.Sprintf("boot-%d", n.boots),
 	}}
 	if req.Msg.GetCheckHealth() {
-		st.Boot.Health = &nodev1.BootHealth{Healthy: sick[n.image] == "", Error: sick[n.image]}
+		st.Boot.Health = &nodev1.BootHealth{Healthy: sick[n.image] == "", Error: sick[n.image], Settled: !settling}
 	}
 	// VAR, which every node has.
 	st.Volumes = []*nodev1.VolumeStatus{{Name: "var"}}
@@ -1142,16 +1145,34 @@ func TestNodeReboot(t *testing.T) {
 	if n := l.nodes["w2"]; n.boots != 1 {
 		t.Errorf("node reboot returned after %d boots of w2", n.boots)
 	}
-	// The entry stays blessed, but the node's check of the new boot decides.
+	// The entry stays blessed, but the node's check of the new boot decides. While the boot is
+	// still starting, the command waits for it to become healthy, until its timeout.
 	l.mu.Lock()
-	l.sick["0.1.0"] = "units failed: broken.service"
+	l.sick["0.1.0"], l.settling = "units failed: broken.service", true
 	l.mu.Unlock()
 	err := l.run("node", "reboot", "w2", "--no-drain", "--timeout", "1s")
-	if err == nil || !strings.Contains(err.Error(), "w2: waiting for 010101010101 to be found healthy: its boot is not healthy: units failed: broken.service") {
-		t.Errorf("node reboot into a boot that is not healthy = %v", err)
+	if err == nil || !strings.Contains(err.Error(), "w2: waiting for 010101010101 to be found healthy: its boot is not healthy yet: units failed: broken.service") {
+		t.Errorf("node reboot into a boot that is not healthy yet = %v", err)
 	}
-	if n := l.nodes["w2"]; n.boots != 2 {
-		t.Errorf("w2 booted %d times, want 2", n.boots)
+	// Once the boot settled, its result is final: the command stops at once, and the node it
+	// drained stays cordoned.
+	l.mu.Lock()
+	l.settling = false
+	l.mu.Unlock()
+	l.takeEvents()
+	start := time.Now()
+	err = l.run("node", "reboot", "w2", "--timeout", "1m")
+	if err == nil || err.Error() != "w2: its boot of 010101010101 settled and is not healthy: units failed: broken.service; it stays cordoned" {
+		t.Errorf("node reboot into a settled boot that is not healthy = %v", err)
+	}
+	if waited := time.Since(start); waited > 30*time.Second {
+		t.Errorf("the command waited %v for a settled boot", waited)
+	}
+	if got := l.takeEvents(); !slices.Equal(got, []string{"w2 drain", "w2 reboot"}) || !l.cordoned["w2"] {
+		t.Errorf("events %q, w2 cordoned: %v", got, l.cordoned["w2"])
+	}
+	if n := l.nodes["w2"]; n.boots != 3 {
+		t.Errorf("w2 booted %d times, want 3", n.boots)
 	}
 	l.mu.Lock()
 	delete(l.sick, "0.1.0")

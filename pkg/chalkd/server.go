@@ -153,6 +153,12 @@ type Server struct {
 	// when asked. ignore names the units the trial leaves out besides those the image ignores. nil
 	// finds the node healthy. Tests replace it.
 	Healthy func(ctx context.Context, ignore []string) error
+	// HealthTimeout is the time a counted boot of the image has to become healthy. Status reports
+	// a boot settled once it passed after systemd finished starting the boot.
+	HealthTimeout time.Duration
+	// Monotonic reads CLOCK_MONOTONIC, which systemd's timestamps of the boot count in; nil reads
+	// the kernel's. Tests replace it.
+	Monotonic func() (time.Duration, error)
 	// Journal streams the journal of the boot, or of one unit.
 	Journal func(ctx context.Context, unit string, follow bool) (io.ReadCloser, error)
 	// RebootNode reboots the node; it is called once the response has been sent.
