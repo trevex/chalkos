@@ -230,10 +230,10 @@ type slotWrite struct {
 // st, platform its platform and secret the fallback secret. The caller holds s.mu.
 //
 // The image checks the config itself, with its own chalkd, as it would check a delivery once it
-// runs: its schemas, its rules and its renderers, against the running slot's config and with its
-// own facts of this node. chalkd then checks the slot's storage against the machine, as for every
-// slot write. A config chalkos-config could not apply would leave boot counting to fall back.
-// planSlot refuses:
+// runs: its schemas, its rules and its renderers, against the running slot's config as it was
+// delivered and with its own facts of this node. chalkd then checks the slot's storage against
+// the machine, as for every slot write. A config chalkos-config could not apply would leave boot
+// counting to fall back. planSlot refuses:
 //   - config the image refuses, such as one that changes what a node holding a share was set up
 //     for, or one a renderer of the image cannot render;
 //   - storage changes that take a reset or a reinstall, which the image's storage rules refuse.
@@ -246,7 +246,7 @@ func (s *Server) planSlot(ctx context.Context, st imageStore, system, platform s
 	if err != nil {
 		return slotWrite{}, err
 	}
-	next, warnings, err := s.checkWithImage(ctx, st, system, platform, name, imageCheck{delivered: docs, old: running.Documents, secret: secret, image: rootHash, writing: rootHash})
+	next, warnings, err := s.checkWithImage(ctx, st, system, platform, name, imageCheck{delivered: docs, old: running.Delivered, secret: secret, image: rootHash, writing: rootHash})
 	if err != nil {
 		return slotWrite{}, err
 	}

@@ -36,8 +36,10 @@ type Input struct {
 	// string is its hash; one of another JSON type keeps that type, so the image's schema refuses
 	// it as it would refuse the value.
 	Delivered []string `protobuf:"bytes,3,rep,name=delivered,proto3" json:"delivered,omitempty"`
-	// The documents of the config the delivered ones replace, with their defaults, each one JSON
-	// object with its secret values hashed; empty when there is none.
+	// The documents of the config the delivered ones replace, as they were delivered, before
+	// defaults, each one JSON object with its secret values hashed; empty when there is none. The
+	// image fills in its own defaults, as for the delivered documents, so its rules compare both
+	// with the meaning the image gives them.
 	Old []string `protobuf:"bytes,4,rep,name=old,proto3" json:"old,omitempty"`
 	// Check the documents against the rules of the storage kinds alone, and render nothing, as
 	// for a config the image accepted once, checked again for a change of the node's storage.

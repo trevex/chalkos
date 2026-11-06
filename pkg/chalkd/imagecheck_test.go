@@ -92,6 +92,31 @@ func TestImageCheckGetsNoSecretValue(t *testing.T) {
 	}
 }
 
+// The checker compares the config with the running slot's documents as they were delivered,
+// without the running image's defaults, such as the Demo's mode: the image fills in its own.
+func TestImageCheckComparesWithTheRunningConfigAsDelivered(t *testing.T) {
+	s, _ := configServer(t)
+	rec := &recording{run: s.CheckImage}
+	s.CheckImage = rec
+	if _, err := s.stageConfig(context.Background(), imageWith(t, s, fixtureSchemas(t), ""), "/nix/store/x", "metal", newImage, "", ""); err != nil {
+		t.Fatal(err)
+	}
+	_, running, _, _ := s.runningSlot()
+	for _, d := range running.Documents {
+		if d.Kind == "Demo" && d.Object["spec"].(map[string]any)["mode"] != "safe" {
+			t.Fatalf("the running slot's Demo %v lacks the default mode", d.Object)
+		}
+	}
+	if len(rec.inputs) != 1 || len(rec.inputs[0].GetOld()) != 3 {
+		t.Fatalf("inputs = %v", rec.inputs)
+	}
+	for _, d := range rec.inputs[0].GetOld() {
+		if strings.Contains(d, `"mode"`) {
+			t.Errorf("the checker got the old document %s, with the running image's default mode", d)
+		}
+	}
+}
+
 // An image without a checker, as one built before chalkd check, cannot check its config and is
 // refused; so is a checker whose documents carry other secret values than were delivered.
 func TestImageCheckRefuses(t *testing.T) {

@@ -312,6 +312,41 @@ func TestRunChecksStorageRules(t *testing.T) {
 	}
 }
 
+// Run compares a config with the old one as delivered, with the image's defaults filled in: a
+// Demo's mode, which keeps its value, may not leave the default the old Demo had by leaving it
+// out. The facts get the old config with the defaults too. A document of a kind the image does
+// not accept is left out of the old config, as chalkctl's check leaves it out.
+func TestRunFillsInTheImagesDefaultsOfTheOldConfig(t *testing.T) {
+	img := testImage(t, `cat > "$OUT/demo.json"`)
+	img.Schemas = schemasWith(t, `"mode": { "enum": ["fast", "safe"], "default": "safe" }`, `"mode": { "enum": ["fast", "safe"], "default": "safe", "x-chalkos-rules": [{"rule": "self == oldSelf", "message": "the mode stays"}] }`)
+	set, err := rules.Compile(img.Schemas)
+	if err != nil {
+		t.Fatal(err)
+	}
+	img.Rules = set
+	old := config.Redact(parse(t, base+"---\napiVersion: gone.example.org/v1\nkind: Gone\nmetadata: {name: x}\nspec: {}\n"))
+	var seen []config.Document
+	in := Input{Node: "n1", Old: old, Facts: func(_, old []config.Document) rules.Facts { seen = old; return &facts{} }}
+	in.Delivered = config.Redact(parse(t, strings.Replace(base, "name: first,", "name: first, mode: fast,", 1)))
+	if _, err := Run(context.Background(), img, in); err == nil || !strings.Contains(err.Error(), "the mode stays") {
+		t.Errorf("a Demo that leaves its default mode = %v, want the rule's refusal", err)
+	}
+	if len(seen) != 3 {
+		t.Fatalf("the facts saw %d old documents, want the 3 the image accepts", len(seen))
+	}
+	for _, d := range seen {
+		if d.Kind == "Demo" && d.Object["spec"].(map[string]any)["mode"] != "safe" {
+			t.Errorf("the facts saw the old Demo %v, want its default mode", d.Object)
+		}
+	}
+	in.Delivered = config.Redact(parse(t, strings.Replace(base, "name: first,", "name: first, mode: safe,", 1)))
+	res, err := Run(context.Background(), img, in)
+	if err != nil {
+		t.Fatalf("a Demo that names its default mode = %v", err)
+	}
+	res.Staged.Discard()
+}
+
 // Run takes no input without facts, which its rules would need.
 func TestRunRequiresFacts(t *testing.T) {
 	if _, err := Run(context.Background(), testImage(t, `true`), Input{Node: "n1", Delivered: config.Redact(parse(t, base))}); err == nil {

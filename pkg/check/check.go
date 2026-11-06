@@ -35,9 +35,11 @@ type Image struct {
 
 // Input is a config to check for the node called Node:
 //   - Delivered are the documents as delivered, and Old the documents of the config they replace,
-//     with their defaults; nil at an install. The secret values of both are hashed.
-//   - Facts gives the node's facts for a check of the translated documents against Old, which
-//     command facts read; it loads a fact when a rule first reads it. Run requires it.
+//     as delivered too, or with the defaults of the image that checks; nil at an install. The
+//     secret values of both are hashed.
+//   - Facts gives the node's facts for a check of the translated documents against Old, with its
+//     defaults, which command facts read; it loads a fact when a rule first reads it. Run requires
+//     it.
 //   - Compare are what the effects compare the config with: the config the node runs, or a
 //     baseline and what the deliveries that failed since applied.
 //   - Storage checks the config against the storage kinds' rules alone, as a config that passed
@@ -88,9 +90,10 @@ type Refusal struct {
 func (r *Refusal) Error() string { return r.Message }
 
 // Run checks in as img checks it: it translates in.Delivered, runs the image's change rules
-// against in.Old, its validators, and every output's renderer and check, and plans the effects. A
-// refused config is a *Refusal; any other error is the image's own failure. A config refused after
-// its translation still gives the translation, whose storage a caller names in the refusal.
+// against in.Old with the image's defaults, its validators, and every output's renderer and
+// check, and plans the effects. A refused config is a *Refusal; any other error is the image's
+// own failure. A config refused after its translation still gives the translation, whose storage
+// a caller names in the refusal.
 //
 // With in.Storage, only the rules of the storage kinds run, and nothing validates, renders or
 // plans: Staged is nil.
@@ -106,7 +109,8 @@ func Run(ctx context.Context, img Image, in Input) (Result, error) {
 	if in.Storage {
 		set = set.Of(config.StorageAPI)
 	}
-	failures, err := Rules(set, in.Node, tr.Documents, in.Old, in.Facts(tr.Documents, in.Old))
+	old := Defaulted(img.Schemas, in.Old)
+	failures, err := Rules(set, in.Node, tr.Documents, old, in.Facts(tr.Documents, old))
 	if err != nil {
 		return Result{Translated: tr}, &Refusal{Stage: StageRules, Message: err.Error()}
 	}

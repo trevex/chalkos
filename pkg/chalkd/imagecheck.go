@@ -27,7 +27,9 @@ type imageStore interface {
 
 // imageCheck is config for an image that does not run, to check with that image's checker:
 //   - delivered is the config as delivered, with its Secret values, which the checker gets
-//     hashed; old the config it replaces, with its defaults: the running slot's documents;
+//     hashed; old the config it replaces as delivered, the running slot's, without the running
+//     image's defaults: the checker fills in its own, so its rules compare the two configs with
+//     the meaning it gives them, whatever another image's defaults made of the old one;
 //   - secret is the fallback secret, which only the facts that declare it get, run by chalkd;
 //   - recorded, when set, stands for the storage STATE records, as for a check against storage
 //     that is yet to be made, and storage limits the check to the storage kinds' rules;

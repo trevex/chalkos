@@ -35,6 +35,13 @@ const frozenRule = `"x-chalkos-rules": [{"rule": "facts.frozen != true || self =
 // testSchemas are the built-in kinds' schemas and the Demo kind's, whose name keeps frozenRule.
 func testSchemas(t *testing.T) *schema.Schemas {
 	t.Helper()
+	return schemasWith(t)
+}
+
+// schemasWith are testSchemas with each pair of old and new strings replaced once in the Demo
+// kind's schema.
+func schemasWith(t *testing.T, replace ...string) *schema.Schemas {
+	t.Helper()
 	files := map[string][]byte{}
 	for _, dir := range []string{"../../test/fixtures/kinds/builtin", "../../test/fixtures/kinds/image/schemas"} {
 		entries, err := os.ReadDir(dir)
@@ -51,6 +58,12 @@ func testSchemas(t *testing.T) *schema.Schemas {
 	}
 	demo := "demo.example.org_v1alpha1_Demo.json"
 	files[demo] = []byte(strings.Replace(string(files[demo]), `"name": { "type": "string", "description"`, `"name": { "type": "string", `+frozenRule+` "description"`, 1))
+	for i := 0; i+1 < len(replace); i += 2 {
+		if !strings.Contains(string(files[demo]), replace[i]) {
+			t.Fatalf("the Demo schema lacks %s", replace[i])
+		}
+		files[demo] = []byte(strings.Replace(string(files[demo]), replace[i], replace[i+1], 1))
+	}
 	s, err := schema.LoadFiles(files)
 	if err != nil {
 		t.Fatal(err)

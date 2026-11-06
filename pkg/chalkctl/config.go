@@ -13,6 +13,7 @@ import (
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/chalkctl/layer"
+	"github.com/trevex/chalkos/pkg/check"
 	"github.com/trevex/chalkos/pkg/client"
 	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/identity"
@@ -191,16 +192,7 @@ func checkRules(c contract, next, old []config.Document, node string) error {
 	if err != nil {
 		return fmt.Errorf("the image's rules: %w", err)
 	}
-	var baseline []config.Document
-	for _, d := range old {
-		filled, err := c.schemas.Default(d.Object)
-		if err != nil {
-			continue
-		}
-		d.Object = filled
-		baseline = append(baseline, d)
-	}
-	failures, err := set.Evaluate(rules.Input{Documents: next, Old: baseline, OldHashed: true, Node: node})
+	failures, err := set.Evaluate(rules.Input{Documents: next, Old: check.Defaulted(c.schemas, old), OldHashed: true, Node: node})
 	if err != nil {
 		return err
 	}
