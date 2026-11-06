@@ -21,9 +21,9 @@ import (
 )
 
 // writeUKI writes the image's UKI to the ESP, checked as an upgrade checks it, and then receives
-// the boot loader, which it checks and returns. The UKI is the image's first generation, with no
-// tries counter: the first boot has nothing to fall back to.
-func (i *Installer) writeUKI(ctx context.Context, espPart gpt.Partition, h upgrade.Header, parts io.Reader) (loader []byte, err error) {
+// the boot loader, which it checks and returns with the NixOS system the UKI boots. The UKI is the
+// image's first generation, with no tries counter: the first boot has nothing to fall back to.
+func (i *Installer) writeUKI(ctx context.Context, espPart gpt.Partition, h upgrade.Header, parts io.Reader) (loader []byte, system string, err error) {
 	err = i.withESP(ctx, espPart, func(dir string) error {
 		if err := i.change("write the UKI"); err != nil {
 			return err
@@ -32,7 +32,10 @@ func (i *Installer) writeUKI(ctx context.Context, espPart gpt.Partition, h upgra
 		if err != nil {
 			return err
 		}
-		if loader, err = i.receiveUKI(tmp, h, parts); err != nil {
+		if loader, err = i.receiveUKI(tmp, h, parts); err == nil {
+			system, err = upgrade.UKISystem(tmp)
+		}
+		if err != nil {
 			if rerr := os.Remove(tmp); rerr != nil && !errors.Is(rerr, os.ErrNotExist) {
 				log.Printf("remove %s: %v", tmp, rerr)
 			}
@@ -44,7 +47,7 @@ func (i *Installer) writeUKI(ctx context.Context, espPart gpt.Partition, h upgra
 		}
 		return esp.Name(dir, tmp, name, i.Change)
 	})
-	return loader, err
+	return loader, system, err
 }
 
 // removeOtherUKIs removes from the ESP mounted at dir every UKI of the image but the one named

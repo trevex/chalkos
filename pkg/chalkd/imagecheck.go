@@ -29,7 +29,8 @@ type imageStore interface {
 //   - delivered is the config as delivered, with its Secret values, which the checker gets
 //     hashed; old the config it replaces as delivered, the running slot's, without the running
 //     image's defaults: the checker fills in its own, so its rules compare the two configs with
-//     the meaning it gives them, whatever another image's defaults made of the old one;
+//     the meaning it gives them, whatever another image's defaults made of the old one; none at
+//     an install from the installer;
 //   - secret is the fallback secret, which only the facts that declare it get, run by chalkd;
 //   - recorded, when set, stands for the storage STATE records, as for a check against storage
 //     that a delivery to the running image makes before the slot is written;
@@ -45,9 +46,9 @@ type imageCheck struct {
 
 // checkWithImage has the image whose store is st and whose NixOS system is system check c for the
 // node called name, on platform, and returns the config slot the image keeps for it, with the
-// warnings of its check. The checker
-// is the image's own chalkd, which its store holds; the running chalkd reads nothing of the image
-// but its facts.json. The caller holds s.mu.
+// warnings of its check. The checker is the image's own chalkd, which its store holds; the running
+// chalkd, a node's or the installer's, reads nothing of the image but its facts.json. The caller
+// holds s.mu.
 //
 // The slot holds the documents with their Secret values, which the checker never had: chalkd puts
 // the delivered values in place of the hashes in the documents the checker gave back, with the
@@ -112,13 +113,16 @@ func (s *Server) runImageCheck(ctx context.Context, st imageStore, system, platf
 // imageRefusal is the error of a config the image refused, as a delivery to the running image
 // refuses one: a translation as invalid, a rule or an output as failing its precondition. A
 // refusal by the rules names the volumes of the identity the image gave that other images' slots
-// name, as elsewhere does.
+// name, as elsewhere does, on a node: the installer has neither volumes nor slots.
 func (s *Server) imageRefusal(r *checkv1.Refusal, identity string, writing []byte) error {
 	switch r.GetStage() {
 	case "config":
 		return failed(connect.CodeInvalidArgument, "the config does not suit the image: %s", strings.TrimPrefix(r.GetMessage(), "the config: "))
 	case "rules":
 		err := failed(connect.CodeFailedPrecondition, "%s", r.GetMessage())
+		if s.Installer {
+			return err
+		}
 		if d, perr := s.parseIdentity(identity); perr == nil {
 			return s.elsewhere(err, d.section, writing)
 		}

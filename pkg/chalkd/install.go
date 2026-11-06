@@ -75,7 +75,14 @@ func (s *Server) Install(ctx context.Context, stream *connect.ClientStream[nodev
 		}
 		defer pull.Close()
 	}
-	stored, err := s.installConfig(ctx, h, contract)
+	if h.Config == "" {
+		return nil, failed(connect.CodeInvalidArgument, "the header delivers no config")
+	}
+	name, err := headerName(h)
+	if err != nil {
+		return nil, err
+	}
+	stored, err := s.installConfig(ctx, h, name, contract)
 	if err != nil {
 		return nil, err
 	}
@@ -84,33 +91,21 @@ func (s *Server) Install(ctx context.Context, stream *connect.ClientStream[nodev
 		return nil, failed(connect.CodeInternal, "parse the identity: %v", err)
 	}
 	req := install.Request{
-		Config:          stored,
 		Section:         id.Storage,
 		NodeCertificate: h.NodeCertificate,
 		NodeKey:         h.NodeKey,
 		CA:              h.CaCertificate,
 		FallbackSecret:  h.FallbackSecret,
 	}
-	// The request's payloads go to the layers that take them.
-	deliveries := layer.Active[layer.Delivery](s.Plugins)
-	if s.Installer {
-		// The installer carries no layer; the image it installs does.
-		deliveries = layer.Compiled[layer.Delivery](s.Plugins)
-	}
-	commits, err := layer.Plan(ctx, deliveries, h.Layers, layer.Planned{Identity: stored.Identity, OSCA: string(h.CaCertificate), Install: true})
-	if err != nil {
-		return nil, err
-	}
-	for _, c := range commits {
-		if c.Payloads != nil {
-			req.Layers = append(req.Layers, c.Payloads)
-		}
-	}
 	switch target := h.Target.(type) {
 	case *nodev1.InstallHeader_InPlace:
 		running, rerr := uki.RunningHash(s.Paths.Cmdline)
 		if rerr != nil {
 			return nil, failed(connect.CodeInternal, "%v", rerr)
+		}
+		req.Config = stored
+		if req.Layers, err = s.installPayloads(ctx, layer.Active[layer.Delivery](s.Plugins), h, stored.Identity); err != nil {
+			return nil, err
 		}
 		log.Print("installing in place")
 		err = s.InPlace(ctx, req, running)
@@ -135,6 +130,9 @@ func (s *Server) Install(ctx context.Context, stream *connect.ClientStream[nodev
 			Parts:             parts,
 			SystemDefinitions: contract.GetSystemDefinitions(),
 			WipeDisk:          h.WipeDisk,
+			Check: func(ctx context.Context, st install.Store, system string) (install.Checked, error) {
+				return s.installCheck(ctx, st, system, h, name, stored.Delivered)
+			},
 		})
 	}
 	if err != nil {
@@ -145,6 +143,48 @@ func (s *Server) Install(ctx context.Context, stream *connect.ClientStream[nodev
 	log.Print("installed; rebooting")
 	s.rebootSoon()
 	return connect.NewResponse(&nodev1.InstallResponse{}), nil
+}
+
+// installCheck has the image an install from the installer writes check the config docs, as
+// delivered, for the node name, with the image's own checker in the store st that slot A of the
+// target holds, whose NixOS system is system, as an upgrade has the image it writes check its
+// config: its schemas, rules, validators and renderers, with its facts of this machine, against no
+// running config. The installer's machine has no STATE and no volumes, so a fact of what the node
+// holds reads null, and its hardware is the node's. The checker reads the image's layer facts
+// itself, with the image's compiled layers. It returns the image's config slot, its Secret values
+// restored, and the payloads of the header checked against the identity the checker gave, by the
+// layers compiled into the installer: it carries no layer of its own. Install holds s.mu.
+func (s *Server) installCheck(ctx context.Context, st imageStore, system string, h *nodev1.InstallHeader, name string, docs []config.Document) (install.Checked, error) {
+	root := h.GetImage().GetRootHash()
+	next, warnings, err := s.checkWithImage(ctx, st, system, h.GetImage().GetPlatform(), name, imageCheck{delivered: docs, secret: h.FallbackSecret, image: root, writing: root})
+	if err != nil {
+		return install.Checked{}, plain(err)
+	}
+	// An install's answer has no warnings; the journal keeps them.
+	for _, w := range warnings {
+		log.Printf("the config of %x: %s", root, w)
+	}
+	payloads, err := s.installPayloads(ctx, layer.Compiled[layer.Delivery](s.Plugins), h, next.Identity)
+	if err != nil {
+		return install.Checked{}, plain(err)
+	}
+	return install.Checked{Config: next, Layers: payloads}, nil
+}
+
+// installPayloads hands the header's payloads to the layers among deliveries that take them,
+// planned as an install with the identity the node is installed with, and returns their writers.
+func (s *Server) installPayloads(ctx context.Context, deliveries []layer.Delivery, h *nodev1.InstallHeader, identity []byte) ([]func(stateDir string) error, error) {
+	commits, err := layer.Plan(ctx, deliveries, h.Layers, layer.Planned{Identity: identity, OSCA: string(h.CaCertificate), Install: true})
+	if err != nil {
+		return nil, err
+	}
+	var writers []func(stateDir string) error
+	for _, c := range commits {
+		if c.Payloads != nil {
+			writers = append(writers, c.Payloads)
+		}
+	}
+	return writers, nil
 }
 
 // pullInstall prepares the pull of the image an install from the installer names in a registry.

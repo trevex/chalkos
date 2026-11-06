@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/hex"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -75,13 +74,9 @@ func TestInstallPullsTheImageFromTheRegistry(t *testing.T) {
 	s := maintenanceNode()
 	s.Installer = true
 	var got install.PartsRequest
+	var checked install.Checked
 	var pulled []byte
-	s.FromParts = func(_ context.Context, req install.PartsRequest) error {
-		got = req
-		var err error
-		pulled, err = io.ReadAll(req.Parts)
-		return err
-	}
+	checkingFromParts(s, newCheckerStore(t, ""), &got, &pulled, &checked)
 	addr := ta.startNode(t, s)
 	if err := ta.run(context.Background(), ta.args([]string{"install", "n1", "--fingerprint", s.Fingerprint}, addr)); err != nil {
 		t.Fatal(err)
@@ -92,8 +87,8 @@ func TestInstallPullsTheImageFromTheRegistry(t *testing.T) {
 	if !reflect.DeepEqual(got.SystemDefinitions, map[string]string{"00-esp.conf": "[Partition]\nType=esp\n"}) {
 		t.Errorf("definitions = %v", got.SystemDefinitions)
 	}
-	if got.Config.Version != ta.configVersion(t) {
-		t.Errorf("config = %+v, want the inventory's", got.Config)
+	if checked.Config.Version != ta.configVersion(t) {
+		t.Errorf("config = %+v, want the inventory's", checked.Config)
 	}
 	if want := ", which the installer pulls from " + pinned + "\n"; !strings.Contains(ta.stdout.String(), want) {
 		t.Errorf("stdout = %q, want %q", ta.stdout, want)

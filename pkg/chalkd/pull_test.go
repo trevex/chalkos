@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -27,11 +26,11 @@ import (
 	"github.com/trevex/chalkos/pkg/chalkd/layers/kubernetes/kubernetestest"
 	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/config/slot"
-	"github.com/trevex/chalkos/pkg/identity"
 	"github.com/trevex/chalkos/pkg/install"
 	"github.com/trevex/chalkos/pkg/ociimage"
 	"github.com/trevex/chalkos/pkg/ociimage/ocitest"
 	"github.com/trevex/chalkos/pkg/pki"
+	"github.com/trevex/chalkos/pkg/storage"
 	"github.com/trevex/chalkos/pkg/storeslot"
 	"github.com/trevex/chalkos/pkg/upgrade"
 )
@@ -331,8 +330,8 @@ func pulledInstall(t *testing.T, host, docs string) *nodev1.InstallHeader {
 // TestInstallPullsTheImage has the installer pull the image an install names in a registry, with
 // the credentials of the Registry of its host in the config the install delivers. It reads the
 // store, hash tree, UKI and boot loader as it reads them from chunks, and takes the repart
-// definitions, schemas and image.json from the image's contract layer: the config is translated
-// for an image with Kubernetes.
+// definitions, schemas and image.json from the image's contract layer, which it translates the
+// config with to lay the target out.
 func TestInstallPullsTheImage(t *testing.T) {
 	host := ocitest.AuthRegistry(t, "ci-bot", "s3cret")
 	s, _ := newTestServer(t, maintenance, vda)
@@ -354,12 +353,8 @@ func TestInstallPullsTheImage(t *testing.T) {
 	if !reflect.DeepEqual(got.SystemDefinitions, map[string]string{"50-state.conf": "[Partition]\nLabel=state\n"}) {
 		t.Errorf("definitions = %v", got.SystemDefinitions)
 	}
-	var id identity.Identity
-	if err := json.Unmarshal(got.Config.Identity, &id); err != nil {
-		t.Fatal(err)
-	}
-	if k := id.Kubernetes; k == nil || k.NodeName != "n1" {
-		t.Errorf("Kubernetes identity = %+v, want one translated with the contract's image.json", id.Kubernetes)
+	if got.Section.Disks[storage.SystemDisk].Ref.Path != "/dev/vda" {
+		t.Errorf("section = %+v, want the one the config gives", got.Section)
 	}
 }
 

@@ -92,6 +92,14 @@ func (f *fakeRunner) apply(name string, args []string, out []byte) ([]byte, erro
 			return nil, err
 		}
 		return out, nil
+	case f.devRoot != "" && name == "veritysetup" && len(args) == 5 && args[0] == "open":
+		// The mapping stands for the store's data partition.
+		return out, os.WriteFile(filepath.Join(f.devRoot, "mapper", args[2]), []byte(args[1]), 0o644)
+	case f.devRoot != "" && name == "veritysetup" && len(args) == 2 && args[0] == "close":
+		if err := os.Remove(filepath.Join(f.devRoot, "mapper", args[1])); err != nil {
+			return nil, &tool.Error{Command: name, Code: 4, Stderr: "Device " + args[1] + " is not active."}
+		}
+		return out, nil
 	case name == "sfdisk" && len(args) == 5 && args[1] == "--part-uuid":
 		if f.partUUIDs == nil {
 			f.partUUIDs = map[string]string{}

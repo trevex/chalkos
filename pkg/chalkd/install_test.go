@@ -24,10 +24,12 @@ import (
 
 	"connectrpc.com/connect"
 
+	checkv1 "github.com/trevex/chalkos/pkg/api/check/v1"
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	kubernetesplugin "github.com/trevex/chalkos/pkg/chalkd/layers/kubernetes"
 	"github.com/trevex/chalkos/pkg/chalkd/layers/kubernetes/kubernetestest"
 	"github.com/trevex/chalkos/pkg/identity"
+	"github.com/trevex/chalkos/pkg/imagecheck"
 	"github.com/trevex/chalkos/pkg/install"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
 	knode "github.com/trevex/chalkos/pkg/kubernetes/node"
@@ -363,46 +365,130 @@ func TestInstallInPlaceReadsNoFacts(t *testing.T) {
 	}
 }
 
+// checkedFromParts is a FromParts that has the image whose store is st check the config, as
+// FromParts does once it wrote slot A, and keeps the request and what the check gave.
+func checkedFromParts(st dirStore, got *install.PartsRequest, checked *install.Checked) func(context.Context, install.PartsRequest) error {
+	return func(ctx context.Context, req install.PartsRequest) error {
+		*got = req
+		if _, err := io.ReadAll(req.Parts); err != nil {
+			return err
+		}
+		c, err := req.Check(ctx, st, "/nix/store/x")
+		*checked = c
+		return err
+	}
+}
+
+// An install from the installer lays the target out by its own translation of the config and has
+// the image's own checker check the config once its store is written: the config slot written is
+// the checker's, and the share is checked against the identity it gave, by the Kubernetes layer
+// compiled into the installer, which carries no layer.
 func TestInstallFromPartsWithConfig(t *testing.T) {
 	s, _ := newTestServer(t, maintenance, vda)
 	s.Installer = true
 	var got install.PartsRequest
-	s.FromParts = func(_ context.Context, req install.PartsRequest) error {
-		got = req
-		_, err := io.ReadAll(req.Parts)
-		return err
-	}
+	var checked install.Checked
+	s.FromParts = checkedFromParts(imageWith(t, s, fixtureSchemas(t), kubernetestest.Image), &got, &checked)
 	h := header(t, &nodev1.InstallHeader_Disk{Disk: &nodev1.DiskReference{Serial: "chalk-target"}})
 	h.Config = workerConfig
 	contractOf(h).Schemas = fixtureSchemas(t)
 	contractOf(h).LayerFacts = factsLayers(t, kubernetestest.Image)
-	// The installer carries no layer: the compiled Kubernetes layer takes the share.
 	share := kubernetestest.Share(t, k8s.KindWorker, "n1")
 	h.Layers = shareLayers(t, share)
-	h.Image = &nodev1.ImageHeader{ImageId: "chalkos", Platform: "metal", Architecture: "x86-64"}
+	h.Image = &nodev1.ImageHeader{ImageId: "chalkos", Platform: "metal", Architecture: "x86-64", RootHash: newImage}
 
 	if err := sendInstall(t, s, h, nil); err != nil {
 		t.Fatal(err)
 	}
+	if got.Section.Disks[storage.SystemDisk].Ref.Path != "/dev/vda" || len(got.Config.Identity) != 0 || len(got.Layers) != 0 {
+		t.Errorf("parts request = %+v, want the section of the installer's translation and no config of its own", got.Request)
+	}
 	var id identity.Identity
-	if err := json.Unmarshal(got.Config.Identity, &id); err != nil || id.Platform != "metal" {
-		t.Errorf("identity = %s, %v", got.Config.Identity, err)
+	if err := json.Unmarshal(checked.Config.Identity, &id); err != nil || id.Platform != "metal" {
+		t.Errorf("identity = %s, %v", checked.Config.Identity, err)
 	}
 	if k := id.Kubernetes; k == nil || k.NodeName != "n1" || !slices.Equal(k.NodeIPs, []string{"192.168.100.21"}) {
 		t.Errorf("Kubernetes identity = %+v", id.Kubernetes)
 	}
-	if got.Config.Version != hashOf(t, workerConfig) {
-		t.Errorf("config = %+v", got.Config)
+	if checked.Config.Version != hashOf(t, workerConfig) || len(checked.Config.Documents) == 0 {
+		t.Errorf("config = %+v", checked.Config)
 	}
-	if len(got.Layers) != 1 {
-		t.Fatalf("the install request writes %d layer payloads, want the share", len(got.Layers))
+	if len(checked.Layers) != 1 {
+		t.Fatalf("the check gave %d layer payloads, want the share", len(checked.Layers))
 	}
 	state := t.TempDir()
-	if err := got.Layers[0](state); err != nil {
+	if err := checked.Layers[0](state); err != nil {
 		t.Fatal(err)
 	}
 	if got := readFile(t, filepath.Join(state, "kubernetes", "share.json")); got != string(share) {
 		t.Errorf("share.json = %s, want the share sent", got)
+	}
+}
+
+// factProbe runs the checker as run does, after reading the fact name as the checker would.
+type factProbe struct {
+	run  imagecheck.Runner
+	name string
+	got  *any
+}
+
+func (p factProbe) Run(ctx context.Context, img imagecheck.Image, in *checkv1.Input, f imagecheck.Facts) (*checkv1.Result, error) {
+	v, err := f.Fact(p.name, nil)
+	if err != nil {
+		return nil, err
+	}
+	*p.got = v
+	return p.run.Run(ctx, img, in, f)
+}
+
+// An install from the installer gives the image's checker the facts of this machine that the
+// image declares, which the node reads once it runs there: unlike an install in place, which reads
+// every fact as null, as the node it installs on may hold what an earlier attempt left.
+func TestInstallFromPartsGivesTheMachinesFacts(t *testing.T) {
+	s, _ := newTestServer(t, maintenance, vda)
+	s.Installer = true
+	st := imageWith(t, s, fixtureSchemas(t), "")
+	probe := filepath.Join(t.TempDir(), "probe.json")
+	write(t, probe, `"machine"`)
+	write(t, filepath.Join(string(st), "nix/store/x/etc/chalkos/facts.json"), `{"probe": {"file": "`+probe+`"}}`)
+	var probed any
+	s.CheckImage = factProbe{run: s.CheckImage, name: "probe", got: &probed}
+	var got install.PartsRequest
+	var checked install.Checked
+	s.FromParts = checkedFromParts(st, &got, &checked)
+	h := header(t, &nodev1.InstallHeader_Disk{Disk: &nodev1.DiskReference{Serial: "chalk-target"}})
+	contractOf(h).Schemas = fixtureSchemas(t)
+	h.Image = &nodev1.ImageHeader{ImageId: "chalkos", Platform: "metal", Architecture: "x86-64", RootHash: newImage}
+	if err := sendInstall(t, s, h, nil); err != nil {
+		t.Fatal(err)
+	}
+	if probed != "machine" {
+		t.Errorf("the checker's fact probe = %v, want the machine's", probed)
+	}
+}
+
+// The image's own renderers and validators check the config an install from the installer
+// delivers, which the installer cannot run: a refusal refuses the install with the image's
+// message, and the node is not installed.
+func TestInstallFromPartsRefusedByTheImage(t *testing.T) {
+	s, _ := newTestServer(t, maintenance, vda)
+	s.Installer = true
+	st := imageWith(t, s, fixtureSchemas(t), "")
+	demo := demoOutput(t, s, `grep -q first && exit 5; cat > "$OUT/demo.json"`, "")
+	demo.Dir = "/run/chalkos/outputs/demo"
+	withOutputs(t, st, map[string]outputs.Definition{"demo": demo})
+	var got install.PartsRequest
+	var checked install.Checked
+	s.FromParts = checkedFromParts(st, &got, &checked)
+	h := header(t, &nodev1.InstallHeader_Disk{Disk: &nodev1.DiskReference{Serial: "chalk-target"}})
+	contractOf(h).Schemas = fixtureSchemas(t)
+	h.Image = &nodev1.ImageHeader{ImageId: "chalkos", Platform: "metal", Architecture: "x86-64", RootHash: newImage}
+	err := sendInstall(t, s, h, nil)
+	if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.HasSuffix(err.Error(), "install: output demo: its renderer failed (exit 5); see the node's journal") {
+		t.Fatalf("install = %v, want the image's refusal", err)
+	}
+	if s.installed {
+		t.Error("the node counts as installed")
 	}
 }
 

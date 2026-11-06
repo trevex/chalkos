@@ -125,21 +125,21 @@ func TestApplyConfigRunningRulesThatDoNotCompile(t *testing.T) {
 	}
 }
 
-// Rules of an image the request brings that do not compile, as an installer's install carries
-// them, are the request's failure, and install nothing.
+// Rules of the image an installer's install writes that do not compile leave its checker unable
+// to check config, which refuses the install.
 func TestInstallRulesThatDoNotCompile(t *testing.T) {
 	s, _ := newTestServer(t, maintenance, vda)
 	s.Installer = true
-	s.FromParts = func(context.Context, install.PartsRequest) error {
-		t.Error("installed onto the disk")
-		return nil
-	}
+	schemas := fixtureSchemas(t)
+	schemas["storage.chalkos.dev_v1alpha1_SystemDisk.json"] = withBrokenRule(t, schemas["storage.chalkos.dev_v1alpha1_SystemDisk.json"])
+	var got install.PartsRequest
+	var checked install.Checked
+	s.FromParts = checkedFromParts(imageWith(t, s, schemas, ""), &got, &checked)
 	h := header(t, &nodev1.InstallHeader_Disk{Disk: &nodev1.DiskReference{Serial: "chalk-target"}})
-	h.Image = &nodev1.ImageHeader{ImageId: "chalkos", Platform: "metal", Architecture: "x86-64", RootHash: []byte{1}}
-	contractOf(h).Schemas = fixtureSchemas(t)
-	contractOf(h).Schemas["storage.chalkos.dev_v1alpha1_SystemDisk.json"] = withBrokenRule(t, contractOf(h).Schemas["storage.chalkos.dev_v1alpha1_SystemDisk.json"])
+	h.Image = &nodev1.ImageHeader{ImageId: "chalkos", Platform: "metal", Architecture: "x86-64", RootHash: newImage}
+	contractOf(h).Schemas = schemas
 	err := sendInstall(t, s, h, nil)
-	if connect.CodeOf(err) != connect.CodeInvalidArgument || !strings.Contains(err.Error(), "the image's rules: SystemDisk: rule ") {
+	if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "the image cannot check config: the image's rules: SystemDisk: rule ") {
 		t.Errorf("err = %v", err)
 	}
 }

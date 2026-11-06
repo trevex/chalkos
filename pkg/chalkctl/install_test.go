@@ -16,8 +16,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/trevex/chalkos/pkg/chalkd"
 	"github.com/trevex/chalkos/pkg/clustersecrets"
 	"github.com/trevex/chalkos/pkg/identity"
+	"github.com/trevex/chalkos/pkg/imagecheck"
 	"github.com/trevex/chalkos/pkg/install"
 	"github.com/trevex/chalkos/pkg/kubernetes"
 	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
@@ -216,8 +218,82 @@ func TestInstallInPlaceOnAnImageOfAnotherVariant(t *testing.T) {
 	}
 }
 
+// checkerStore is the store of an image whose system /nix/store/x holds a checker, the fixture
+// schemas and, unless empty, the image.json given, as install.Store reads it.
+type checkerStore string
+
+func newCheckerStore(t *testing.T, imageJSON string) checkerStore {
+	t.Helper()
+	root := t.TempDir()
+	system := filepath.Join(root, "nix/store/x")
+	writeFile(t, filepath.Join(system, "sw/bin/chalkd"), "")
+	copySchemas(t, filepath.Join(system, "etc/chalkos/schemas"))
+	if imageJSON != "" {
+		writeFile(t, filepath.Join(system, kubernetes.ImageFile), imageJSON)
+	}
+	return checkerStore(root)
+}
+
+func (d checkerStore) ReadFile(name string) ([]byte, error) {
+	return os.ReadFile(filepath.Join(string(d), name))
+}
+
+func (d checkerStore) Resolve(name string) (string, error) {
+	p := filepath.Join(string(d), name)
+	_, err := os.Stat(p)
+	return p, err
+}
+
+func (d checkerStore) Dir() string { return filepath.Join(string(d), "nix", "store") }
+
+// checkingFromParts makes s install from the installer as FromParts does, as far as the config
+// goes: it keeps the request and the image's parts, and has the image whose store is st check the
+// config, with s's own code as the image's checker, and keeps what the check gave.
+func checkingFromParts(s *chalkd.Server, st checkerStore, got *install.PartsRequest, parts *[]byte, checked *install.Checked) {
+	s.CheckImage = imagecheck.Local{Check: s.Check}
+	s.FromParts = func(ctx context.Context, req install.PartsRequest) error {
+		*got = req
+		var err error
+		if *parts, err = io.ReadAll(req.Parts); err != nil {
+			return err
+		}
+		c, err := req.Check(ctx, st, "/nix/store/x")
+		*checked = c
+		return err
+	}
+}
+
+// A config the image's validator refuses, which chalkctl's own checks pass, fails the install
+// from the installer with the image's message, and the node is not installed.
+func TestInstallFromPartsRefusedByTheImage(t *testing.T) {
+	ta := newTestApp(t)
+	imageDir := testUpgradeImage(t, "test", "0.1.0")
+	writeFile(t, filepath.Join(imageDir, "repart.d", "50-state.conf"), "[Partition]\nLabel=state\n")
+	s := maintenanceNode()
+	s.Installer = true
+	st := newCheckerStore(t, "")
+	validate := filepath.Join(t.TempDir(), "validate")
+	writeFile(t, validate, "#!/bin/sh\necho '{\"refusals\": [{\"kind\": \"SystemDisk\", \"name\": \"system\", \"path\": \"spec.disk\", \"message\": \"the image takes no such disk\"}]}'\n")
+	if err := os.Chmod(validate, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filepath.Join(string(st), "nix/store/x/etc/chalkos/validators.json"), `{"disk": {"inputs": ["SystemDisk"], "program": "`+validate+`"}}`)
+	var got install.PartsRequest
+	var checked install.Checked
+	checkingFromParts(s, st, &got, new([]byte), &checked)
+	addr := ta.startNode(t, s)
+	err := ta.run(context.Background(), ta.args([]string{"install", "n1", "--fingerprint", s.Fingerprint, "--image", imageDir}, addr))
+	if err == nil || !strings.HasSuffix(err.Error(), "install n1: failed_precondition: install: the config is refused: SystemDisk/system: spec.disk: the image takes no such disk") {
+		t.Fatalf("install = %v, want the image's refusal", err)
+	}
+	if strings.Contains(ta.stdout.String(), "is installed") {
+		t.Errorf("stdout = %q, want no install", ta.stdout)
+	}
+}
+
 // TestInstallFromPartsSendsTheImageContract sends the installer the schemas and image.json
-// of the image it installs, which it translates the config for.
+// of the image it installs, which it translates the config for, and the share, which the
+// installer's compiled Kubernetes layer checks once the image checked the config.
 func TestInstallFromPartsSendsTheImageContract(t *testing.T) {
 	ta := newTestApp(t)
 	withKind(t, ta, kubernetes.KindWorker)
@@ -232,24 +308,24 @@ func TestInstallFromPartsSendsTheImageContract(t *testing.T) {
 	// The installer's own image has no schemas: the config checks against those sent alone.
 	s.Loader.Schemas = filepath.Join(t.TempDir(), "none")
 	var got install.PartsRequest
-	s.FromParts = func(_ context.Context, req install.PartsRequest) error {
-		got = req
-		_, err := io.ReadAll(req.Parts)
-		return err
-	}
+	var checked install.Checked
+	checkingFromParts(s, newCheckerStore(t, testImageJSON), &got, new([]byte), &checked)
 	addr := ta.startNode(t, s)
 	if err := ta.run(context.Background(), ta.args([]string{"install", "n1", "--fingerprint", s.Fingerprint, "--image", imageDir}, addr)); err != nil {
 		t.Fatal(err)
 	}
+	if _, ok := got.Section.Disks[storage.SystemDisk]; !ok {
+		t.Errorf("install request section = %+v, want the one of the installer's translation", got.Section)
+	}
 	var id identity.Identity
-	if err := json.Unmarshal(got.Config.Identity, &id); err != nil {
+	if err := json.Unmarshal(checked.Config.Identity, &id); err != nil {
 		t.Fatal(err)
 	}
-	if got.Config.Version == "" || id.Kubernetes == nil || id.Kubernetes.NodeName != "n1" {
-		t.Errorf("install request config = %+v, kubernetes = %+v; want both translated for the image sent", got.Config, id.Kubernetes)
+	if checked.Config.Version == "" || id.Kubernetes == nil || id.Kubernetes.NodeName != "n1" {
+		t.Errorf("checked config = %+v, kubernetes = %+v; want both translated for the image sent", checked.Config, id.Kubernetes)
 	}
 	// The installer's compiled Kubernetes layer writes the share for the node.
-	share, err := kpki.ParseShare(shareOf(t, got.Request))
+	share, err := kpki.ParseShare(shareOf(t, install.Request{Layers: checked.Layers}))
 	if err != nil || share.Node() != "n1" {
 		t.Errorf("the share the install writes: %v, for %q", err, share.Node())
 	}

@@ -404,12 +404,17 @@ func (l *partsLab) request(img partsImage) PartsRequest {
 	l.t.Helper()
 	section := testSection(storage.EncryptionNone, storage.FallbackNone, labDev)
 	section.Disks[storage.SystemDisk].Repart["50-var.conf"] += "AddValidateFS=no\n"
+	req := testRequest(l.t, section)
+	// The image's checker passes the config the installer translated.
+	checked := Checked{Config: req.Config}
+	req.Config = slot.Stored{}
 	return PartsRequest{
-		Request:           testRequest(l.t, section),
+		Request:           req,
 		Target:            storage.Ref{Selector: storage.Selector{Serial: "chalk-target"}},
 		Image:             img.header,
 		Parts:             img.parts(),
 		SystemDefinitions: l.defs,
+		Check:             func(context.Context, Store, string) (Checked, error) { return checked, nil },
 	}
 }
 
@@ -1323,4 +1328,162 @@ func TestFromPartsRecordsTheImage(t *testing.T) {
 			t.Errorf("STATE's %s = %q, %v; want %q", upgrade.ImagesRecord, got, err, record)
 		}
 	}
+}
+
+// TestFromPartsChecksTheConfigWithTheImage has the image check the config once slot A holds its
+// store and the ESP its UKI, with the store mounted through dm-verity and the system the UKI
+// boots, before STATE holds anything of the node and before the target boots. The install writes
+// the config slot and the payloads the check gave.
+func TestFromPartsChecksTheConfigWithTheImage(t *testing.T) {
+	img := newPartsImage(t, "a")
+	l := newPartsLab(t)
+	req := l.request(img)
+	passed, err := req.Check(context.Background(), nil, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	passed.Config.Version = "checked"
+	passed.Layers = []func(string) error{func(dir string) error { return os.WriteFile(filepath.Join(dir, "payload"), []byte("checked"), 0o600) }}
+	checks := 0
+	req.Check = func(_ context.Context, _ Store, system string) (Checked, error) {
+		checks++
+		if system != "/nix/store/x" {
+			t.Errorf("the check got the system %q, want the UKI's init= directory", system)
+		}
+		if !slices.Contains(l.r.Calls, "mount -t erofs -o ro /dev/mapper/"+upgrade.StoreMapping+" "+filepath.Join(l.i.WorkDir, "store")) {
+			t.Errorf("the store is not mounted for the check: %q", l.r.Calls)
+		}
+		if !bytes.Equal(l.file("EFI/Linux/chalkos_1.efi"), img.uki) {
+			t.Error("the ESP does not hold the UKI at the check")
+		}
+		if l.bootable() || l.r.efi.bootNext != "" {
+			t.Error("the target boots before the check")
+		}
+		if mounted, _ := isMounted(l.i.MountInfo, l.i.StateDir); mounted {
+			t.Error("STATE is open at the check")
+		}
+		return passed, nil
+	}
+	if err := l.i.FromParts(context.Background(), req); err != nil {
+		t.Fatal(err)
+	}
+	l.checkInstalled(img)
+	if checks != 1 {
+		t.Errorf("the image checked the config %d times, want once", checks)
+	}
+	parts := l.table()
+	open := "veritysetup open " + parts[3].Node + " " + upgrade.StoreMapping + " " + parts[2].Node + " " + hex.EncodeToString(img.root)
+	if !slices.Contains(l.r.Calls, open) || !slices.Contains(l.r.Calls, "veritysetup close "+upgrade.StoreMapping) {
+		t.Errorf("the store was not opened through dm-verity with the root hash and closed: %q", l.r.Calls)
+	}
+	if mounted, _ := isMounted(l.i.MountInfo, filepath.Join(l.i.WorkDir, "store")); mounted {
+		t.Error("the install left the store mounted")
+	}
+	if _, err := os.Stat(filepath.Join(l.i.Host.DevRoot, "mapper", upgrade.StoreMapping)); err == nil {
+		t.Error("the install left the store's dm-verity device open")
+	}
+	if s, _, err := slot.Read(slot.Dir(filepath.Join(l.state(), "config"), img.root)); err != nil || s.Version != "checked" {
+		t.Errorf("STATE holds the config %q, want the one the check gave: %v", s.Version, err)
+	}
+	if got, err := os.ReadFile(filepath.Join(l.state(), "payload")); err != nil || string(got) != "checked" {
+		t.Errorf("STATE holds the payload %q, want the one the check gave: %v", got, err)
+	}
+}
+
+// TestFromPartsRefusedByTheImage leaves a target whose config the image refuses without a boot
+// loader, BootNext, a boot entry or anything of the node on STATE, and an install of the image
+// with config it accepts continues on it without writing slot A again.
+func TestFromPartsRefusedByTheImage(t *testing.T) {
+	img := newPartsImage(t, "a")
+	l := newPartsLab(t)
+	req := l.request(img)
+	req.Check = func(context.Context, Store, string) (Checked, error) {
+		return Checked{}, errors.New("the config is refused: Greeting/hello: spec.message: the message shouts")
+	}
+	err := l.i.FromParts(context.Background(), req)
+	if err == nil || err.Error() != "the config is refused: Greeting/hello: spec.message: the message shouts; the target disk boots nothing, and an install of the image continues on it" {
+		t.Fatalf("install = %v, want the image's refusal", err)
+	}
+	if l.bootable() || l.r.efi.bootNext != "" || l.installed() {
+		t.Errorf("the refused target boots: %v, next %q, installed %v", l.bootable(), l.r.efi.bootNext, l.installed())
+	}
+	for _, e := range l.r.efi.entries {
+		if e.label == bootLabel {
+			t.Errorf("the refused install added the boot entry %s", e.num)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(l.state(), "config")); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("STATE holds config after the refusal: %v", err)
+	}
+	if l.r.holds(labDev) {
+		t.Error("the refused install left the store or STATE open")
+	}
+	l.writes = 0
+	if err := l.install(img); err != nil {
+		t.Fatal(err)
+	}
+	if l.writes != 0 {
+		t.Error("the install after the refusal wrote slot A again")
+	}
+	l.checkInstalled(img)
+}
+
+// TestFromPartsRefusesAnotherStorageSection refuses the config when the identity the image's
+// checker gives has another storage section than the one the installer laid the target out by,
+// before anything of the node is on STATE.
+func TestFromPartsRefusesAnotherStorageSection(t *testing.T) {
+	img := newPartsImage(t, "a")
+	l := newPartsLab(t)
+	req := l.request(img)
+	other := testSection(storage.EncryptionTPM2, storage.FallbackNone, labDev)
+	other.Volumes["data"] = storage.Volume{Disk: storage.SystemDisk, Label: "data", Format: "ext4"}
+	text, err := json.Marshal(map[string]any{"hostname": "n1", "storage": other})
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Check = func(context.Context, Store, string) (Checked, error) {
+		return Checked{Config: slot.Stored{Identity: text}}, nil
+	}
+	err = l.i.FromParts(context.Background(), req)
+	if err == nil || !strings.Contains(err.Error(), "they differ in the encryption policy, disk system, volume data, volume var; install the image with the installer built with it") {
+		t.Fatalf("install = %v, want the storage refused", err)
+	}
+	if l.bootable() || l.installed() {
+		t.Error("the refused target boots or is installed")
+	}
+	if _, err := os.Stat(filepath.Join(l.state(), "config")); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("STATE holds config after the refusal: %v", err)
+	}
+}
+
+// A section without volumes is the same as one with an empty list of them.
+func TestSectionDifferenceTakesMissingForEmpty(t *testing.T) {
+	a := testSection(storage.EncryptionNone, storage.FallbackNone, labDev)
+	b := testSection(storage.EncryptionNone, storage.FallbackNone, labDev)
+	a.Volumes, b.Volumes = nil, map[string]storage.Volume{}
+	if diff := sectionDifference(a, b); len(diff) != 0 {
+		t.Errorf("difference = %q, want none", diff)
+	}
+}
+
+// TestFromPartsReleasesALeftoverStore frees slot A's store that a chalkd which crashed while the
+// image checked the config left mounted and open.
+func TestFromPartsReleasesALeftoverStore(t *testing.T) {
+	img := newPartsImage(t, "a")
+	l := newPartsLab(t)
+	req := l.request(img)
+	req.Check = func(context.Context, Store, string) (Checked, error) { return Checked{}, errStop }
+	if err := l.i.FromParts(context.Background(), req); !errors.Is(err, errStop) {
+		t.Fatalf("install = %v, want the stop", err)
+	}
+	write(t, filepath.Join(l.i.Host.DevRoot, "mapper", upgrade.StoreMapping), labDev+"3")
+	if err := l.mount("/dev/mapper/"+upgrade.StoreMapping, filepath.Join(l.i.WorkDir, "store")); err != nil {
+		t.Fatal(err)
+	}
+	l.r.Calls = nil
+	if err := l.install(img); err != nil {
+		t.Fatal(err)
+	}
+	assertCalls(t, l.r.Calls[:2], []string{"umount " + filepath.Join(l.i.WorkDir, "store"), "veritysetup close " + upgrade.StoreMapping})
+	l.checkInstalled(img)
 }

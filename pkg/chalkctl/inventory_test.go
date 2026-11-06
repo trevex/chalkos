@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/hex"
 	"fmt"
-	"io"
 	"net"
 	"os"
 	"path/filepath"
@@ -302,18 +301,15 @@ func TestInstallTakesItsImageFromTheInventory(t *testing.T) {
 	s := maintenanceNode()
 	s.Installer = true
 	var got install.PartsRequest
-	s.FromParts = func(_ context.Context, req install.PartsRequest) error {
-		got = req
-		_, err := io.ReadAll(req.Parts)
-		return err
-	}
+	var checked install.Checked
+	checkingFromParts(s, newCheckerStore(t, ""), &got, new([]byte), &checked)
 	addr := ta.startNode(t, s)
 	args := []string{"install", "n1", "--fingerprint", s.Fingerprint, "--inventory", path, "--address", addr}
 	if err := ta.run(context.Background(), args); err != nil {
 		t.Fatal(err)
 	}
-	if len(got.Image.RootHash) == 0 || got.Config.Version == "" {
-		t.Errorf("install request = %+v", got)
+	if len(got.Image.RootHash) == 0 || checked.Config.Version == "" {
+		t.Errorf("install request = %+v, checked config %+v", got, checked.Config)
 	}
 	md, _ := os.ReadFile(filepath.Join(img, "metadata.json"))
 	writeFile(t, filepath.Join(img, "metadata.json"), strings.Replace(string(md), hex.EncodeToString(got.Image.RootHash), testRootHash, 1))

@@ -89,6 +89,9 @@ func (i *Installer) InPlace(ctx context.Context, req Request, rootHash []byte) e
 	if err := req.validate(); err != nil {
 		return err
 	}
+	if len(req.Config.Identity) == 0 {
+		return errors.New("no identity")
+	}
 	if len(rootHash) == 0 {
 		return errors.New("the request names no root hash of the running image, whose config slot the install writes")
 	}
@@ -127,7 +130,9 @@ func (i *Installer) InPlace(ctx context.Context, req Request, rootHash []byte) e
 
 // installOn runs the steps both flows share on disk, which holds the node's image: STATE, the
 // node's volumes, the fallback key and the config slot of the image whose store has the root
-// hash, with the identity. defs are the image's repart definitions of the system region.
+// hash, with the identity. defs are the image's repart definitions of the system region. The
+// config is checked already: in place by the running image, which is the one that boots; from the
+// installer by the image's checker, run on the store written to slot A.
 func (i *Installer) installOn(ctx context.Context, disk storage.BlockDisk, defs map[string]string, req Request, rootHash []byte) error {
 	state, err := i.openState(ctx, disk, defs, req.Section.Encryption)
 	if err != nil {

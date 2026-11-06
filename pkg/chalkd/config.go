@@ -15,7 +15,6 @@ import (
 	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/config/slot"
 	"github.com/trevex/chalkos/pkg/pki"
-	"github.com/trevex/chalkos/pkg/rules"
 	"github.com/trevex/chalkos/pkg/schema"
 )
 
@@ -81,23 +80,25 @@ func (s *Server) runningTarget() (config.Target, *schema.Schemas, error) {
 	return t, schemas, nil
 }
 
-// installConfig translates the config an install header delivers into the identity of the node
-// for the image installed, and returns the config slot of that image, identity included. In place,
-// that image is the running one; from the installer, the header and contract describe it. The
-// config meets that image's rules with no running config to compare with: rules of a field that
-// read oldSelf do not run, the rules of a kind see no oldDocuments, and every fact is null:
-// an install in place that is tried again must not read what the attempt before it left on STATE.
-func (s *Server) installConfig(ctx context.Context, h *nodev1.InstallHeader, contract *nodev1.ImageContract) (slot.Stored, error) {
-	if h.Config == "" {
-		return slot.Stored{}, failed(connect.CodeInvalidArgument, "the header delivers no config")
-	}
-	name, err := headerName(h)
-	if err != nil {
-		return slot.Stored{}, err
-	}
+// installConfig translates the config an install header delivers, for the node name, into the
+// identity of the node for the image installed, and returns the config slot of that image,
+// identity included.
+//
+// In place, that image is the running one, which boots once the node is installed, so it checks
+// the config as it checks a delivery, before the install changes anything: its rules, with no
+// running config to compare with, so rules of a field that read oldSelf do not run, the rules of a
+// kind see no oldDocuments, and every fact is null, as an install in place that is tried again
+// must not read what the attempt before it left on STATE; then its validators and its renderers.
+//
+// From the installer, the header and contract describe the image, and the installer translates
+// the config with its own code alone: the storage section of that translation is what it lays the
+// target disk out by before the image's store is written. The image's own checker checks the
+// config once the store is (installCheck), and its slot is what the install writes.
+func (s *Server) installConfig(ctx context.Context, h *nodev1.InstallHeader, name string, contract *nodev1.ImageContract) (slot.Stored, error) {
 	var (
 		t       config.Target
 		schemas *schema.Schemas
+		err     error
 	)
 	switch {
 	case s.Installer:
@@ -111,21 +112,10 @@ func (s *Server) installConfig(ctx context.Context, h *nodev1.InstallHeader, con
 		return slot.Stored{}, err
 	}
 	stored, err := configure(name, h.Config, schemas, t)
-	if err != nil {
-		return slot.Stored{}, err
+	if err != nil || s.Installer {
+		return stored, err
 	}
-	// The installer checks the config of the image it installs with that image's schemas, which
-	// the header carries, and its own CEL library: it writes that image's store only after the
-	// config passed, so the image's checker cannot run yet. Rules that do not compile refuse the
-	// install.
-	var set *rules.Set
-	if s.Installer {
-		if set, err = rules.Compile(schemas); err != nil {
-			err = failed(connect.CodeInvalidArgument, "the image's rules: %v", err)
-		}
-	} else {
-		set, err = compileRunningRules(schemas)
-	}
+	set, err := compileRunningRules(schemas)
 	if err != nil {
 		return slot.Stored{}, err
 	}
@@ -137,23 +127,18 @@ func (s *Server) installConfig(ctx context.Context, h *nodev1.InstallHeader, con
 	if err := s.checkRules(set, name, stored.Documents, nil, f); err != nil {
 		return slot.Stored{}, err
 	}
-	// In place, the running image's validators and renderers check the config before the install
-	// changes anything; the node renders the outputs again at the boot that follows. The installer
-	// cannot run the installed image's programs, so that image runs its validators and renders its
-	// outputs at its first boot alone.
-	if !s.Installer {
-		if err := s.checkValidators(ctx, stored.Documents); err != nil {
-			return slot.Stored{}, err
-		}
-		staged, err := s.renderOutputs(ctx, name, stored.Documents, schemas, true, false)
-		if err != nil {
-			return slot.Stored{}, err
-		}
-		if err := staged.ClearFailures(); err != nil {
-			log.Printf("clear the outputs' failures: %v", err)
-		}
-		staged.Discard()
+	// The node renders the outputs again at the boot that follows.
+	if err := s.checkValidators(ctx, stored.Documents); err != nil {
+		return slot.Stored{}, err
 	}
+	staged, err := s.renderOutputs(ctx, name, stored.Documents, schemas, true, false)
+	if err != nil {
+		return slot.Stored{}, err
+	}
+	if err := staged.ClearFailures(); err != nil {
+		log.Printf("clear the outputs' failures: %v", err)
+	}
+	staged.Discard()
 	return stored, nil
 }
 
@@ -174,7 +159,8 @@ func headerName(h *nodev1.InstallHeader) (string, error) {
 }
 
 // headerTarget is the image an install from the installer writes, as its header and contract
-// describe it, and the contract's schemas.
+// describe it, and the contract's schemas: what the installer translates the config with to lay
+// the target disk out.
 func (s *Server) headerTarget(h *nodev1.InstallHeader, contract *nodev1.ImageContract) (config.Target, *schema.Schemas, error) {
 	if h.Image == nil {
 		return config.Target{}, nil, failed(connect.CodeInvalidArgument, "the installer needs the node's image to write to the target disk")
