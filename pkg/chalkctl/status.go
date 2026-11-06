@@ -282,14 +282,20 @@ func (c *cluster) slotState(name, version string, advice func(want string) strin
 // s names as staged, which holds other config. A plain apply-config writes both images' slots, but
 // not that of the known-good image a rollback from a boot not yet found healthy staged, which
 // keeps the config it last ran until that boot is found healthy; chalkd names that image in the
-// status, by the test its deliveries take. When the running image runs want already, only the
-// staged slot differs, as after a write of that slot that failed, and apply-config --staged writes
-// it alone.
+// status, by the test its deliveries take. While a trial is open the node takes no delivery, and
+// the trial's confirmation writes the staged slot it held back: the advice is the confirmation
+// when want is on trial, and the trial's end otherwise. When the running image runs want already,
+// only the staged slot differs, as after a write of that slot that failed, and apply-config
+// --staged writes it alone.
 func stagedAdvice(name, want string, s *nodev1.StatusResponse) string {
 	b := s.Boot
 	switch {
 	case b.GetStagedKnownGood():
 		return "the rollback image keeps the config it last ran while the boot of " + b.GetEntry() + " is not found healthy"
+	case s.Trial != nil && s.Trial.Version == want:
+		return "the confirmation of its trial writes it: chalkctl apply-config --confirm " + name
+	case s.Trial != nil:
+		return "the node takes no delivery until the trial of config " + s.Trial.Version + " ends"
 	case s.ConfigVersion == want:
 		return "chalkctl apply-config --staged " + name + " delivers it"
 	}

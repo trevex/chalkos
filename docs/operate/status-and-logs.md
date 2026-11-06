@@ -79,7 +79,9 @@ with. When it differs, its parentheses name `chalkctl apply-config w1`, which wr
 slots of both images, or `chalkctl apply-config --staged w1` when the running image runs the
 inventory's config already. After a rollback from a boot that was not found healthy, the staged
 image is the rollback image, and the parentheses say that it keeps the config it last ran until
-the boot is found healthy.
+the boot is found healthy. During a trial the node takes no delivery. When the inventory's config
+is on trial, the parentheses name `chalkctl apply-config --confirm w1`, because the confirmation
+writes the staged config. Otherwise they say that the trial must end first.
 
 A node that holds config for its next upgrade adds
 `pending config <version> (unchecked, since <time>; the next upgrade checks it against its image)`.

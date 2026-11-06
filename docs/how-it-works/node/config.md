@@ -597,7 +597,10 @@ gives it, in two ways:
   `chalkctl apply-config <node>`, which writes the config slots of both images, or
   `chalkctl apply-config --staged <node>` when the running slot holds the inventory's config
   already. A rollback image that keeps the config it last ran gets no advice. The node tells
-  that image in its boot status by the same test its deliveries take.
+  that image in its boot status by the same test its deliveries take. During a trial, which holds
+  every delivery back, the advice is `chalkctl apply-config --confirm <node>` when the inventory's
+  config is on trial, as the confirmation writes the staged slot, and the end of the trial
+  otherwise.
 - The image: chalkctl compares the root hash of the store the node booted with the root hash in
   the `metadata.json` of the directory of its image in the inventory. It names both when they
   differ, or says when the image is installed and waits for the node's next boot.
