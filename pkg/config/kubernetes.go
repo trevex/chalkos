@@ -46,6 +46,10 @@ func (docs Documents) Cluster(img kubernetes.Image) (kubernetes.Cluster, error) 
 		VIP:                            kubernetes.VIP{Mode: k.VIP.Mode, Interface: deref(node.VIP.Interface)},
 		ExtraArgs:                      maps.Clone(k.ExtraArgs),
 	}
+	// A reference without a version tag is refused by the schema and by Validate, which names it.
+	if v, err := c.Images.APIServerVersion(); err == nil {
+		c.APIServerVersion = v.Release()
+	}
 	// The kubelet's flags are the node's own, which the Node document names.
 	if err := kubernetes.ValidateFlags("kubelet", node.KubeletExtraArgs); err != nil {
 		return kubernetes.Cluster{}, fmt.Errorf("%s: kubeletExtraArgs: %w", nodeDoc, err)

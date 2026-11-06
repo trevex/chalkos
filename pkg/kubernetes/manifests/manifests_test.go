@@ -25,6 +25,7 @@ func testCluster() kubernetes.Cluster {
 		Kind:              kubernetes.KindControlPlane,
 		Endpoint:          "https://10.0.0.10:6443",
 		Version:           "1.37.1",
+		APIServerVersion:  "1.37.1",
 		PodCIDRs:          kubernetes.ByFamily[netip.Prefix]{IPv4: netip.MustParsePrefix("10.244.0.0/16"), IPv6: netip.MustParsePrefix("fd00:10:244::/56")},
 		ServiceCIDRs:      kubernetes.ByFamily[netip.Prefix]{IPv4: netip.MustParsePrefix("10.96.0.0/12"), IPv6: netip.MustParsePrefix("fd00:10:96::/112")},
 		DNSIPs:            kubernetes.ByFamily[netip.Addr]{IPv4: netip.MustParseAddr("10.96.0.10"), IPv6: netip.MustParseAddr("fd00:10:96::a")},

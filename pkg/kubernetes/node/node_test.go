@@ -40,7 +40,7 @@ func write(t *testing.T, path, content string) {
 // testCluster is the cluster of the nodes testNode prepares, of the kind given.
 func testCluster(kind string) kubernetes.Cluster {
 	return kubernetes.Cluster{
-		Kind: kind, Endpoint: "https://192.168.100.11:6443", Version: "1.37.1", Domain: "cluster.local",
+		Kind: kind, Endpoint: "https://192.168.100.11:6443", Version: "1.37.1", APIServerVersion: "1.37.1", Domain: "cluster.local",
 		PodCIDRs:          kubernetes.ByFamily[netip.Prefix]{IPv4: netip.MustParsePrefix("10.244.0.0/16"), IPv6: netip.MustParsePrefix("fd00:10:244::/56")},
 		ServiceCIDRs:      kubernetes.ByFamily[netip.Prefix]{IPv4: netip.MustParsePrefix("10.96.0.0/12"), IPv6: netip.MustParsePrefix("fd00:10:96::/112")},
 		DNSIPs:            kubernetes.ByFamily[netip.Addr]{IPv4: netip.MustParseAddr("10.96.0.10"), IPv6: netip.MustParseAddr("fd00:10:96::a")},

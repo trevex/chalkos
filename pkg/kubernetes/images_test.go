@@ -18,6 +18,7 @@ func skewCluster(t *testing.T, kubelet, api, cm, sched, proxy string) Cluster {
 	c.Images.KubeControllerManager = "registry.k8s.io/kube-controller-manager:" + cm
 	c.Images.KubeScheduler = "registry.k8s.io/kube-scheduler:" + sched
 	c.Images.KubeProxy = "registry.k8s.io/kube-proxy:" + proxy
+	c.APIServerVersion = strings.TrimPrefix(api, "v")
 	return c
 }
 
@@ -92,5 +93,17 @@ func TestClusterImages(t *testing.T) {
 				t.Fatalf("err = %v, want one mentioning %q", err, tc.want)
 			}
 		})
+	}
+}
+
+// The cluster fact's API server version is the one images.apiServer's tag names.
+func TestClusterAPIServerVersion(t *testing.T) {
+	for _, v := range []string{"1.37.0", ""} {
+		c := skewCluster(t, "1.37.1", "v1.37.1", "v1.37.1", "v1.37.1", "v1.37.1")
+		c.APIServerVersion = v
+		want := `apiServerVersion: "` + v + `", but images.apiServer names 1.37.1`
+		if err := c.Validate(); err == nil || !strings.Contains(err.Error(), want) {
+			t.Errorf("apiServerVersion %q: err = %v, want one mentioning %q", v, err, want)
+		}
 	}
 }

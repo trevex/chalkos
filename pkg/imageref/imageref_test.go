@@ -53,3 +53,17 @@ func TestVersion(t *testing.T) {
 		}
 	}
 }
+
+func TestVersionReleaseAndMinors(t *testing.T) {
+	rc := Version{1, 38, 0, "-rc.1"}
+	if got := rc.Release(); got != "1.38.0-rc.1" {
+		t.Errorf("Release() = %q, want 1.38.0-rc.1", got)
+	}
+	newer, older := Version{1, 39, 4, ""}, Version{1, 37, 9, ""}
+	if got := newer.Minors(older); got != 2 {
+		t.Errorf("1.39 against 1.37: %d minors, want 2", got)
+	}
+	if got := older.Minors(newer); got != -2 {
+		t.Errorf("1.37 against 1.39: %d minors, want -2", got)
+	}
+}

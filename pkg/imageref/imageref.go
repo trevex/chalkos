@@ -102,3 +102,9 @@ func (r Reference) Version() (Version, error) {
 
 // Pinned reports whether the reference names a digest, which containerd pulls by.
 func (r Reference) Pinned() bool { return r.Digest != "" }
+
+// Release is the version without its leading v, such as 1.37.1, as image.json names the kubelet's.
+func (v Version) Release() string { return strings.TrimPrefix(v.String(), "v") }
+
+// Minors is how many minors v is newer than o, of the same major; negative when it is older.
+func (v Version) Minors(o Version) int { return v.Minor - o.Minor }

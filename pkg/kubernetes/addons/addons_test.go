@@ -13,7 +13,7 @@ import (
 
 func testCluster(families ...nodeip.Family) kubernetes.Cluster {
 	return kubernetes.Cluster{
-		Kind: kubernetes.KindControlPlane, Endpoint: "https://10.0.0.10:6443", Version: "1.37.1", Domain: "lab.local",
+		Kind: kubernetes.KindControlPlane, Endpoint: "https://10.0.0.10:6443", Version: "1.37.1", APIServerVersion: "1.37.1", Domain: "lab.local",
 		IPFamilies:   families,
 		PodCIDRs:     kubernetes.ByFamily[netip.Prefix]{IPv4: netip.MustParsePrefix("10.244.0.0/16"), IPv6: netip.MustParsePrefix("fd00:10:244::/56")},
 		ServiceCIDRs: kubernetes.ByFamily[netip.Prefix]{IPv4: netip.MustParsePrefix("10.96.0.0/12"), IPv6: netip.MustParsePrefix("fd00:10:96::/112")},

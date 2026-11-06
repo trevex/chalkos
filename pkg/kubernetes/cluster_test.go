@@ -17,6 +17,7 @@ const clusterJSON = `{
   "kind": "controlplane",
   "endpoint": "https://10.0.0.10:6443",
   "version": "1.37.1",
+  "apiServerVersion": "1.37.1",
   "podCIDRs": {"ipv4": "10.244.0.0/16", "ipv6": "fd00:10:244::/56"},
   "serviceCIDRs": {"ipv4": "10.96.0.0/12", "ipv6": "fd00:10:96::/112"},
   "dnsIPs": {"ipv4": "10.96.0.10", "ipv6": "fd00:10:96::a"},

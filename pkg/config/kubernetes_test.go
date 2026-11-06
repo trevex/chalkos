@@ -99,7 +99,7 @@ func TestClusterFromDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c.Kind != kubernetes.KindWorker || c.Endpoint != "https://10.0.0.10:6443" || c.Version != "1.37.1" || c.Images.KubeProxy != testImages["proxy"] || c.Images.Pause != testImages["pause"] || c.Images.Flannel != testImages["flannel"] {
+	if c.Kind != kubernetes.KindWorker || c.Endpoint != "https://10.0.0.10:6443" || c.Version != "1.37.1" || c.APIServerVersion != "1.37.1" || c.Images.KubeProxy != testImages["proxy"] || c.Images.Pause != testImages["pause"] || c.Images.Flannel != testImages["flannel"] {
 		t.Errorf("cluster = %+v", c)
 	}
 	if c.Domain != "cluster.local" || c.PodCIDRs.IPv4 != netip.MustParsePrefix("10.244.0.0/16") || c.NodeCIDRMaskSizes.IPv4 != 24 || c.NodeIP.Timeout != 300 || c.VIP.Mode != "l2" {

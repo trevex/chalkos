@@ -84,7 +84,13 @@ func (c Cluster) validateImages() error {
 	if err != nil {
 		return fmt.Errorf("the image's kubelet: %w", err)
 	}
-	return checkSkew(kubelet, versions)
+	if err := checkSkew(kubelet, versions); err != nil {
+		return err
+	}
+	if api := versions["apiServer"].Release(); c.APIServerVersion != api {
+		return fmt.Errorf("apiServerVersion: %q, but images.apiServer names %s", c.APIServerVersion, api)
+	}
+	return nil
 }
 
 // checkSkew checks the components' versions by their config names against each other and the
@@ -121,4 +127,17 @@ func checkSkew(kubelet imageref.Version, v map[string]imageref.Version) error {
 		return fmt.Errorf("images.proxy: %s is %d minors older than images.apiServer %s; kube-proxy may be at most three minors older", proxy, -d, api)
 	}
 	return nil
+}
+
+// APIServerVersion is the Kubernetes version images.apiServer's tag names.
+func (i Images) APIServerVersion() (imageref.Version, error) {
+	r, err := imageref.Parse(i.KubeAPIServer)
+	if err != nil {
+		return imageref.Version{}, fmt.Errorf("images.apiServer: %w", err)
+	}
+	v, err := r.Version()
+	if err != nil {
+		return imageref.Version{}, fmt.Errorf("images.apiServer: %s: %w", i.KubeAPIServer, err)
+	}
+	return v, nil
 }

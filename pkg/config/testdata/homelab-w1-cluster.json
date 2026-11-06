@@ -2,6 +2,7 @@
   "kind": "worker",
   "endpoint": "https://10.0.0.11:6443",
   "version": "1.37.1",
+  "apiServerVersion": "1.37.1",
   "domain": "cluster.local",
   "allowSchedulingOnControlPlanes": false,
   "ipFamilies": [

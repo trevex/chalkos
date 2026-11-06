@@ -269,7 +269,7 @@ func copySchemas(t *testing.T, dir string) {
 
 // clusterFile is the cluster file chalkd writes for a node of the kind.
 func clusterFile(kind string) string {
-	return `{"kind": "` + kind + `", "endpoint": "https://10.0.0.10:6443", "version": "1.37.1",
+	return `{"kind": "` + kind + `", "endpoint": "https://10.0.0.10:6443", "version": "1.37.1", "apiServerVersion": "1.37.1",
 	  "ipFamilies": ["ipv4"], "podCIDRs": {"ipv4": "10.244.0.0/16"}, "serviceCIDRs": {"ipv4": "10.96.0.0/12"},
 	  "dnsIPs": {"ipv4": "10.96.0.10"}, "nodeCIDRMaskSizes": {"ipv4": 24}, "domain": "cluster.local",
 	  "nodeIP": {"validSubnets": [], "timeout": 300}, "vip": {"addresses": [], "mode": "l2"},

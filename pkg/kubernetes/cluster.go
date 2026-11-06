@@ -28,7 +28,10 @@ type Cluster struct {
 	// Endpoint is the API server's URL, such as https://10.0.0.10:6443.
 	Endpoint string `json:"endpoint"`
 	// Version is the release of the image's kubelet, such as 1.37.1.
-	Version                        string `json:"version"`
+	Version string `json:"version"`
+	// APIServerVersion is the Kubernetes version of the API server images.apiServer names, from
+	// its tag without the leading v, such as 1.37.2. The cluster fact carries it next to Version.
+	APIServerVersion               string `json:"apiServerVersion"`
 	Domain                         string `json:"domain"`
 	AllowSchedulingOnControlPlanes bool   `json:"allowSchedulingOnControlPlanes"`
 	// IPFamilies are the address families nodes have an address of, the primary one first.

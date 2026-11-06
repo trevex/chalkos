@@ -111,7 +111,7 @@ func ClusterFile(root string) string { return filepath.Join(root, "run", "chalko
 // https://192.168.100.11:6443; with a share, which the preparation took, when share is set.
 func WriteNode(t *testing.T, p knode.Paths, kind string, share bool) {
 	t.Helper()
-	write(t, p.Cluster, `{"kind": "`+kind+`", "endpoint": "https://192.168.100.11:6443", "version": "1.37.1",
+	write(t, p.Cluster, `{"kind": "`+kind+`", "endpoint": "https://192.168.100.11:6443", "version": "1.37.1", "apiServerVersion": "1.37.1",
 	  "podCIDRs": {"ipv4": "10.244.0.0/16"}, "serviceCIDRs": {"ipv4": "10.96.0.0/12"},
 	  "dnsIPs": {"ipv4": "10.96.0.10"}, "nodeCIDRMaskSizes": {"ipv4": 24}, "domain": "cluster.local",
 	  "extraArgs": {}, "images": `+ClusterImages+`}`)

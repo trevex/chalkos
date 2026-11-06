@@ -1,5 +1,6 @@
 {
   "allowSchedulingOnControlPlanes": true,
+  "apiServerVersion": "1.37.1",
   "dnsIPs": {
     "ipv4": "10.96.0.10",
     "ipv6": "fd00:10:96::a"
