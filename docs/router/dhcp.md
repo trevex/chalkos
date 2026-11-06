@@ -427,7 +427,7 @@ the document and the field it is about:
 | --- | --- |
 | `DHCPSubnet/office: spec.pools[0]: the pool 192.0.2.10-192.0.2.50 holds 192.0.2.30, the router's own address on the subnet's links` | Keep the router's addresses on the links out of the pools and reservations. |
 | `DHCPSubnet/office: spec.interfaces[0]: Network 10-lan0 gives lan0 no static address in the subnet 203.0.113.0/24, which Kea answers its clients from` | Give the link's `Network` an address in the subnet. |
-| `DHCPSubnet/office: spec.interfaces[0]: no Network document matches lan9 by Name= alone, so the renderer cannot find its address in the subnet 192.0.2.0/24; give the link one` | Add a `Network` that names the link. |
+| `DHCPSubnet/office: spec.interfaces[0]: no Network document matches lan9 by Name= alone, so the router cannot find its address in the subnet 192.0.2.0/24; give the link one` | Add a `Network` that names the link. |
 | `DHCPSubnet/office: spec.interfaces[1]: its links are in VRF default and VRF guest; a subnet is served in one VRF` | Give each VRF's links a subnet of their own. |
 | `DHCPSubnet/office: spec.interfaces: its links are in the VRF "lan", which no VRF document declares` | Declare the VRF with a `VRF` document, or drop `VRF=` from the link's `Network`. |
 | `DHCPSubnet/office: spec.interfaces[0]: guest is the device of VRF guest; name the VRF's links` | Name the VRF's links. |

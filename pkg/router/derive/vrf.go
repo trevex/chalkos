@@ -418,7 +418,7 @@ func firstNetworks(units []Unit, members []Member) (map[string]string, []error) 
 // shadowsVRF is the refusal of the unit u, of no VRF= of m's VRF, that may match links of the
 // member m of a Network's own VRF= first: before that Network, or after it when the Network's
 // other [Match] keys or negated words may leave the links to u. VRF= on u would put the links in
-// the VRF where networkd does not, so the renderer refuses rather than give u one.
+// the VRF where networkd does not, so the validator refuses rather than give u one.
 func shadowsVRF(units []Unit, u Unit, m Member, after bool) error {
 	var owner Unit
 	if i := slices.IndexFunc(units, func(o Unit) bool { return o.Name == m.Network }); i >= 0 {

@@ -236,7 +236,7 @@ func interfacePath(interfaces []string, link string) string {
 func linkNetwork(units []Unit, kind, name, path, link, why string) (string, error) {
 	cs := Candidates(units, link)
 	if len(cs) == 0 || cs[0].Narrowed {
-		return "", refusals.Errorf(kind, name, path, "no Network document matches %s by Name= alone, so the renderer cannot find %s; give the link one", link, why)
+		return "", refusals.Errorf(kind, name, path, "no Network document matches %s by Name= alone, so the router cannot find %s; give the link one", link, why)
 	}
 	return cs[0].Name, nil
 }
