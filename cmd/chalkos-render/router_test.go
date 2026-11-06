@@ -549,10 +549,10 @@ func TestRouterRefusals(t *testing.T) {
 	}
 }
 
-// The FRR renderer refuses what it alone can see: a session two peers name, an interface named as
-// another peer's group and an AS path bgpd would not compile. It guards, with an internal error,
-// values frr.conf would read as further commands or arguments, references to no document and a
-// prepend's count, should a document bypass the schemas and rules.
+// The FRR renderer refuses what it alone can see: an interface named as another peer's group and
+// an AS path bgpd would not compile. It guards, with an internal error, values frr.conf would read
+// as further commands or arguments, references to no document and a prepend's count, should a
+// document bypass the schemas, the rules and the validator router.
 func TestFRRRefusals(t *testing.T) {
 	doc := func(kind, name, spec string) any {
 		var s any
@@ -583,14 +583,9 @@ func TestFRRRefusals(t *testing.T) {
 		docs map[string][]any
 		want string
 	}{
-		"two peers of one session": {map[string][]any{"BGP": {bgp("")}, "BGPPeer": {
-			peer("a", `{"interface": "eth1", "remoteAS": "external", "families": {"ipv6": {}}}`),
-			peer("b", `{"interface": "eth1", "remoteAS": "external", "families": {"ipv6": {}}}`)}}, "BGPPeer/b: spec.interface: BGPPeer a and BGPPeer b both name eth1 in the VRF default"},
 		"an interface of a peer group's name": {map[string][]any{"BGP": {bgp("")}, "BGPPeer": {
 			peer("fabric", `{"interface": "eth1", "remoteAS": "external", "families": {"ipv6": {}}}`),
 			peer("x", `{"interface": "peer-fabric", "remoteAS": "external", "families": {"ipv6": {}}}`)}}, "BGPPeer/fabric: metadata.name: BGPPeer x names peer-fabric, the peer group of BGPPeer fabric"},
-		"a link that reads as an address": {map[string][]any{"BGP": {bgp("")}, "BGPPeer": {peer("a", `{"interfaces": ["*"], "remoteAS": "external", "families": {"ipv6": {}}}`)},
-			"Network": {map[string]any{"apiVersion": config.NetworkdAPI, "kind": "Network", "metadata": map[string]any{"name": "n"}, "spec": map[string]any{"match": map[string]any{"name": "192.0.2.10"}}}}}, `BGPPeer/a: spec.interfaces[0]: interface "192.0.2.10" is an address`},
 		// AS paths bgpd's regcomp refuses, which would leave the term matching no route.
 		"an AS path that does not compile":       {map[string][]any{"BGP": {bgp("")}, "RoutingPolicy": {policy("p", `{"match": {"asPath": "(1"}, "then": {"action": "accept"}}`)}}, `RoutingPolicy/p: spec.terms[0].match.asPath: asPath "(1" is no regular expression bgpd compiles`},
 		"an AS path with a parenthesis too many": {map[string][]any{"BGP": {bgp("")}, "RoutingPolicy": {policy("p", `{"match": {"asPath": "1)"}, "then": {"action": "accept"}}`)}}, `asPath "1)" is no regular expression`},
@@ -633,16 +628,6 @@ func TestFRRRefusals(t *testing.T) {
 			"internal error: BGPPeer a: the password's Secret"},
 		"a password's key with an @": {map[string][]any{"BGP": {bgp("")}, "BGPPeer": {peer("a", `{"interface": "eth1", "remoteAS": "external", "password": {"secretRef": {"name": "bgp", "key": "a@b"}}, "families": {"ipv6": {}}}`)}},
 			`internal error: BGPPeer a: the password's Secret "bgp" and key "a@b"`},
-		"an address that adds an argument": {map[string][]any{"BGP": {bgp("")}, "BGPPeer": {peer("a", `{"address": "192.0.2.9 remote-as 64999", "remoteAS": "external", "families": {"ipv6": {}}}`)}},
-			`internal error: BGPPeer a: address "192.0.2.9 remote-as 64999" is no address without a zone`},
-		"an address with a zone": {map[string][]any{"BGP": {bgp("")}, "BGPPeer": {peer("a", `{"address": "fe80::1%eth1", "remoteAS": "external", "families": {"ipv6": {}}}`)}},
-			`internal error: BGPPeer a: address "fe80::1%eth1" is no address without a zone`},
-		"an interface that adds a command": {map[string][]any{"BGP": {bgp("")}, "BGPPeer": {peer("a", `{"interface": "eth1\n neighbor 192.0.2.9 remote-as 64999", "remoteAS": "external", "families": {"ipv6": {}}}`)}},
-			`internal error: BGPPeer a: interface "eth1\n neighbor 192.0.2.9 remote-as 64999" is no interface name`},
-		"interfaces that add a command": {map[string][]any{"BGP": {bgp("")}, "BGPPeer": {peer("a", `{"interfaces": ["eth1 remote-as 64999"], "remoteAS": "external", "families": {"ipv6": {}}}`)}},
-			`internal error: BGPPeer a: interfaces: "eth1 remote-as 64999" is no interface name or glob`},
-		"a peer of nothing": {map[string][]any{"BGP": {bgp("")}, "BGPPeer": {peer("a", `{"remoteAS": "external", "families": {"ipv6": {}}}`)}},
-			"internal error: BGPPeer a: interfaces names no interface"},
 		"a network that adds an argument": {map[string][]any{"BGP": {bgp(`{"prefix": "192.0.2.0/24 route-map x"}`)}},
 			`internal error: BGP bgp: network "192.0.2.0/24 route-map x" is no address range`},
 		"a prefix that adds an argument": {map[string][]any{"BGP": {bgp("")}, "PrefixList": {list("l", "ipv4", `{"prefix": "192.0.2.0/24 le 32", "action": "permit"}`)}},
@@ -1029,10 +1014,9 @@ func TestVRFPeerOpenings(t *testing.T) {
 	}
 }
 
-// FRR's config refuses BGP and BGPPeer documents per VRF where the links networkd puts in each VRF
-// decide: an interface of a VRF's device or of another VRF than the peer's, a glob of other VRFs'
-// links alone, and a prepend that instances of two AS numbers share. It guards, with an internal
-// error, values that would add to the config and a peer whose VRF no instance serves.
+// FRR's config refuses a prepend that BGP instances of two AS numbers share. It guards, with an
+// internal error, values that would add to the config and a peer whose VRF no instance serves.
+// The validator router refuses a peer's sessions where the links networkd puts in each VRF decide.
 func TestFRRVRFRefusals(t *testing.T) {
 	timers := `"multipath": {"ebgp": 1, "ibgp": 1, "asPathRelax": false}, "bfd": {"receiveMs": 300, "transmitMs": 300, "multiplier": 3}`
 	bgp := func(name string, asn int, more string) any {
@@ -1052,24 +1036,6 @@ func TestFRRVRFRefusals(t *testing.T) {
 		docs map[string][]any
 		want string
 	}{
-		"an interface of a VRF's device": {withTenant(map[string][]any{"BGP": {bgp("bgp", 64512, "")}, "BGPPeer": {peer("x", `"interface": "tenant"`)}}),
-			"interface tenant is the device of VRF tenant"},
-		"interfaces of a VRF's device": {withTenant(map[string][]any{"BGP": {bgp("bgp", 64512, "")}, "BGPPeer": {peer("x", `"interfaces": ["ten*"]`)}}),
-			"BGPPeer/x: spec.interfaces[0]: ten* matches tenant, the device of VRF tenant"},
-		"an interface of the device of a Network's VRF=": {map[string][]any{"Network": {document(t, "Network", "20-eth3", `{"match": {"name": "eth3"}, "network": {"vrf": "lab"}}`)},
-			"BGP": {bgp("bgp", 64512, "")}, "BGPPeer": {peer("x", `"interface": "lab"`)}},
-			"interface lab is the device of VRF lab"},
-		"an interface of another VRF": {withTenant(map[string][]any{"BGP": {bgp("bgp", 64512, "")}, "BGPPeer": {peer("x", `"interface": "eth2"`)}}),
-			"BGPPeer/x: spec.interface: interface eth2 is in the VRF tenant, not in the peer's VRF default"},
-		// A VRF's interface reaches its link through a Network, so one that no Network names is
-		// refused before a peer's interface of that name could be read as the default VRF's.
-		"an interface of another VRF that no Network names": {map[string][]any{"VRF": {tenant}, "Network": {document(t, "Network", "10-eth0", `{"match": {"name": "eth0"}}`)},
-			"BGP": {bgp("bgp", 64512, "")}, "BGPPeer": {peer("x", `"interface": "eth2"`)}},
-			"VRF tenant names the interface eth2, which no Network document's [Match] Name= matches without other [Match] keys"},
-		"interfaces of every link": {withTenant(map[string][]any{"BGP": {bgp("bgp", 64512, "")}, "BGPPeer": {peer("x", `"interfaces": ["*"]`)}}),
-			"BGPPeer/x: spec.interfaces[0]: * matches tenant, the device of VRF tenant"},
-		"interfaces of another VRF's links alone": {withTenant(map[string][]any{"BGP": {bgp("bgp", 64512, "")}, "BGPPeer": {peer("x", `"interfaces": ["eth1", "eth2*"]`)}}),
-			"BGPPeer/x: spec.interfaces[1]: eth2* matches no link of VRF default, only links of other VRFs"},
 		"a prepend for two AS numbers": {withTenant(map[string][]any{"BGP": {bgp("bgp", 64512, `, "networks": [{"prefix": "2001:db8:1::/48", "policy": "p"}]`),
 			bgp("tenant", 64513, `, "vrf": "tenant", "networks": [{"prefix": "2001:db8:2::/48", "policy": "p"}]`)}, "RoutingPolicy": {prepend}}),
 			"RoutingPolicy/p: spec.terms[0].then.prepend: RoutingPolicy p prepends the AS number, and BGP instances of AS 64512 and 64513 use it; give each AS a policy of its own"},
@@ -1246,8 +1212,6 @@ func TestFRRVRFInterfaceByGlob(t *testing.T) {
 	if !strings.Contains(conf, "router bgp 64512 vrf tenant\n bgp router-id 192.0.2.1\n no bgp default ipv4-unicast\n neighbor peer-leaf peer-group\n neighbor peer-leaf remote-as external\n neighbor swp1 interface peer-group peer-leaf\n") {
 		t.Errorf("frr.conf runs no session on swp1 in tenant:\n%s", conf)
 	}
-	docs["BGPPeer"] = peer("")
-	refused(t, []string{"frr"}, docs, "BGPPeer/leaf: spec.interface: interface swp1 is in the VRF tenant, not in the peer's VRF default")
 	// A glob of a default-VRF peer expands to the links of no VRF alone.
 	docs["Network"] = append(docs["Network"],
 		document(t, "Network", "20-swp1", `{"match": {"name": "swp1"}}`),
@@ -1261,10 +1225,6 @@ func TestFRRVRFInterfaceByGlob(t *testing.T) {
 	if !strings.Contains(conf, " neighbor sw0 interface peer-group peer-leaves\n") || strings.Contains(conf, "neighbor swp1 ") {
 		t.Errorf("frr.conf runs sw*'s sessions elsewhere than on sw0:\n%s", conf)
 	}
-	// A Network whose other [Match] keys may not match swp1 leaves its VRF open.
-	docs["Network"] = []any{document(t, "Network", "30-swp", `{"match": {"name": "swp*", "macAddress": "02:00:00:00:00:01"}}`)}
-	docs["BGPPeer"] = peer(`, "vrf": "tenant"`)
-	refused(t, []string{"frr"}, docs, "networkd puts swp1 in VRF tenant only if the other [Match] keys of Network 30-swp match it")
 }
 
 // A prepend repeats the AS of the instance that uses its policy, the default VRF's or another's,

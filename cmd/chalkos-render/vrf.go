@@ -2,7 +2,6 @@ package main
 
 import (
 	"encoding/json"
-	"fmt"
 	"maps"
 	"slices"
 	"strconv"
@@ -238,23 +237,4 @@ func withNetworkVRF(doc map[string]any, vrf string) map[string]any {
 	out := maps.Clone(doc)
 	out["spec"] = spec
 	return out
-}
-
-// checkPeerDevices refuses a peer's interface that is a VRF's device, and a glob of its
-// interfaces that matches one, of the VRF devices that Model.Devices finds: bgpd runs no session on
-// the device, and the input hook sees it as the iifname of every packet from the VRF's links, so
-// router-nftables would open the peer's ports on all of them.
-func checkPeerDevices(p derive.Named[derive.PeerSpec], devices []string) error {
-	s := p.Spec
-	if s.Interface != nil {
-		if dev, ok := derive.DeviceMatch(*s.Interface, devices); ok {
-			return refusals.Errorf("BGPPeer", p.Name, "spec.interface", "interface %s is the device of VRF %s", dev, dev)
-		}
-	}
-	for i, glob := range s.Interfaces {
-		if dev, ok := derive.DeviceMatch(glob, devices); ok {
-			return refusals.Errorf("BGPPeer", p.Name, fmt.Sprintf("spec.interfaces[%d]", i), "%s matches %s, the device of VRF %s", glob, dev, dev)
-		}
-	}
-	return nil
 }

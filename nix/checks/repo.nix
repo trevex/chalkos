@@ -15,6 +15,12 @@ let
   fixtureImages = lib.mapAttrs (_: variable: testEnv.imageDirs.${variable}) (
     lib.importJSON ../../test/fixtures/clusters/images.json
   );
+  # The inventories of the e2e fixtures that an e2e test has chalkctl validate refuse, each with
+  # the refusal it wants; router_test.go names the same.
+  refusedFixtures = {
+    "chalklab/router-twice.yaml" =
+      "the config is refused: BGPPeer/fabric: spec.interfaces: BGPPeer again and BGPPeer fabric both name enp0s3 in the VRF default; give each session one peer";
+  };
 in
 {
   go-unit = chalkPkgs.chalkctl.overrideAttrs (
@@ -206,7 +212,8 @@ in
   docs-generated = docs.generated;
 
   # Every node of the e2e fixtures has config its image accepts, as chalkctl validate checks it
-  # against the directory of its image in the inventory.
+  # against the directory of its image in the inventory, but for the inventories the e2e tests
+  # want refused, which chalkctl validate refuses with their message.
   fixtures = checkLib.validateDirectory {
     name = "fixtures";
     src = ../../test/fixtures/clusters;
@@ -217,7 +224,20 @@ in
       inventories=$(grep -l '^kind: Inventory$' */*.yaml)
       test -n "$inventories"
       for inventory in $inventories; do
-        chalkctl validate --inventory "$inventory"
+        case "$inventory" in
+          ${lib.concatStrings (
+            lib.mapAttrsToList (inventory: message: ''
+              ${inventory})
+                if refusal=$(chalkctl validate --inventory "$inventory" 2>&1); then
+                  echo "$inventory: chalkctl validate accepts it" >&2
+                  exit 1
+                fi
+                grep -qF ${lib.escapeShellArg message} <<<"$refusal" || { echo "$refusal" >&2; exit 1; }
+                ;;
+            '') refusedFixtures
+          )}
+          *) chalkctl validate --inventory "$inventory" ;;
+        esac
       done
     '';
   };

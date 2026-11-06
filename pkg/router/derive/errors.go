@@ -20,6 +20,13 @@ func InternalErrorf(format string, args ...any) error {
 	return &internalError{fmt.Errorf(format, args...).Error() + "; chalkd checks the config against the schemas, the rules and the validators before it renders"}
 }
 
+// isInternal reports whether err holds an error that is no refusal, such as a guard's, which ends
+// a check that goes on past its refusals.
+func isInternal(err error) bool {
+	_, others := refusals.Split(err)
+	return len(others) > 0
+}
+
 // Within is err of what, such as a document or a rule of it: an internal error keeps its
 // "internal error:" in front, as "internal error: <what>: ...", a refusal, which names its
 // document and field already, stays as it is, and any other error reads "<what>: ...".

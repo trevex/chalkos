@@ -115,14 +115,8 @@ type frr struct {
 	entries map[string][]string
 	// policyNames holds the RoutingPolicy documents by name, which MustGet finds a reference in.
 	policyNames map[string]derive.RoutingPolicySpec
-	// neighbours are the interfaces or the address of each peer, by peer name.
-	neighbours map[string][]neighbour
-	// links are the links the Network documents name, and membership tells the VRF networkd puts
-	// a link in.
-	links      []string
-	membership derive.Membership
-	// devices are the VRF devices, as Model.Devices finds them.
-	devices []string
+	// neighbours are the sessions of each peer, by peer name.
+	neighbours map[string][]derive.Session
 	// prependAS is the AS number the prepends of each RoutingPolicy with one repeat, by name.
 	prependAS map[string]uint32
 	// tracked are the PrefixLists the peers' defaults track, by VRF and family, sorted.
@@ -161,12 +155,6 @@ func (in *instance) profile() string {
 		return bfdProfile
 	}
 	return bfdProfile + "-" + in.vrf
-}
-
-// A neighbour is one session of a peer: on the link of an interface, or with an address.
-type neighbour struct {
-	name   string
-	onLink bool
 }
 
 // community is a community as FRR writes it, and whether it is a large one. The schema's pattern
@@ -256,10 +244,10 @@ var credential = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
 // would end.
 var description = regexp.MustCompile(`^[!-?A-~]+( [!-?A-~]+)*$`)
 
-// newFRR checks what the schemas and rules cannot see, expands each peer's interfaces against the
-// links the Network documents name, which are in its VRF, and notes the PrefixLists each VRF's
-// peers track. It trusts what chalkd checked before it renders, and guards with an internal error
-// what frr.conf writes unquoted, which a value could add a command to, and what would panic.
+// newFRR checks what FRR's config alone sees, takes each peer's sessions from the model, which
+// Model.Sessions expands against the links of its VRF, and notes the PrefixLists each VRF's peers
+// track. It trusts what chalkd checked before it renders, and guards with an internal error what
+// frr.conf writes unquoted, which a value could add a command to, and what would panic.
 func newFRR(d derive.Model) (*frr, error) {
 	c := &frr{
 		peers:       d.Peers,
@@ -270,10 +258,7 @@ func newFRR(d derive.Model) (*frr, error) {
 		large:       map[string]bool{},
 		entries:     map[string][]string{},
 		policyNames: derive.ByName(d.RoutingPolicies),
-		neighbours:  map[string][]neighbour{},
-		links:       d.Links,
-		membership:  d.Membership,
-		devices:     d.Devices(),
+		neighbours:  map[string][]derive.Session{},
 		prependAS:   map[string]uint32{},
 		tracked:     map[string]map[string][]string{},
 	}
@@ -321,9 +306,13 @@ func newFRR(d derive.Model) (*frr, error) {
 			return nil, err
 		}
 	}
-	// Who names each session of a VRF, so two peers never name one, and who names each neighbour
-	// in any VRF, so none takes a peer group's name.
-	owner, sessions := map[string]string{}, map[string]string{}
+	// The sessions of each peer, which the validator router has checked, and who names each
+	// neighbour in any VRF, so none takes a peer group's name.
+	peerSessions, err := d.Sessions()
+	if err != nil {
+		return nil, err
+	}
+	sessions := map[string]string{}
 	for _, p := range d.Peers {
 		vrf := derive.VRFOf(p.Spec.VRF)
 		// The BGPPeer's rules refuse a peer of a VRF without a BGP document; without its
@@ -332,19 +321,13 @@ func newFRR(d derive.Model) (*frr, error) {
 		if in == nil {
 			return nil, derive.InternalErrorf("BGPPeer %s runs in the VRF %s, which no BGP document serves", p.Name, vrf)
 		}
-		ns, err := c.peerNeighbours(p, vrf)
-		if err != nil {
+		if err := c.checkPeer(p); err != nil {
 			return nil, derive.Within("BGPPeer "+p.Name, err)
 		}
-		for _, n := range ns {
-			key := vrf + " " + n.name
-			if other, ok := owner[key]; ok {
-				return nil, refusals.Errorf("BGPPeer", p.Name, peerField(p.Spec), "BGPPeer %s and BGPPeer %s both name %s in the VRF %s; give each session one peer", other, p.Name, n.name, vrf)
-			}
-			owner[key] = p.Name
-			sessions[n.name] = p.Name
+		for _, s := range peerSessions[p.Name] {
+			sessions[s.Neighbour] = p.Name
 		}
-		c.neighbours[p.Name] = ns
+		c.neighbours[p.Name] = peerSessions[p.Name]
 		in.peers = append(in.peers, p)
 		for fam, f := range map[string]*derive.PeerFamily{"ipv4": p.Spec.Families.IPv4, "ipv6": p.Spec.Families.IPv6} {
 			if f != nil && f.DefaultOriginateWhen != nil {
@@ -563,20 +546,16 @@ func (c *frr) policy(name string) error {
 	return err
 }
 
-// peerNeighbours are a peer's sessions: its address, its interface, which is a link of its VRF, or
-// the links of its VRF its interfaces name, globs matching the links the Network documents name.
-// A glob skips the links of other VRFs, those of no VRF for a peer of a VRF and those of a VRF
-// for a peer of the default one, and is refused when it matches only those. An interface or glob
-// of a VRF's device is refused, and a link a glob expands to that is named like an address. The
-// BGPPeer's schema and rules check the rest of the peer, one of address, interface and
-// interfaces among it; peerNeighbours guards what frr.conf writes unquoted.
-func (c *frr) peerNeighbours(p derive.Named[derive.PeerSpec], vrf string) ([]neighbour, error) {
+// checkPeer guards what frr.conf writes of a peer unquoted, its password's Secret and key and its
+// description, and the RoutingPolicy and PrefixList documents its families name. The BGPPeer's
+// schema and rules check the rest of the peer, and derive.Model.Sessions its sessions.
+func (c *frr) checkPeer(p derive.Named[derive.PeerSpec]) error {
 	s := p.Spec
 	if s.Password != nil && (!credential.MatchString(s.Password.SecretRef.Name) || !credential.MatchString(s.Password.SecretRef.Key)) {
-		return nil, derive.InternalErrorf("the password's Secret %q and key %q are letters, digits, '.', '_' and '-' alone", s.Password.SecretRef.Name, s.Password.SecretRef.Key)
+		return derive.InternalErrorf("the password's Secret %q and key %q are letters, digits, '.', '_' and '-' alone", s.Password.SecretRef.Name, s.Password.SecretRef.Key)
 	}
 	if s.Description != nil && !description.MatchString(*s.Description) {
-		return nil, derive.InternalErrorf("the description is printable ASCII characters but @, with single spaces between words")
+		return derive.InternalErrorf("the description is printable ASCII characters but @, with single spaces between words")
 	}
 	for _, f := range []struct {
 		name string
@@ -588,117 +567,17 @@ func (c *frr) peerNeighbours(p derive.Named[derive.PeerSpec], vrf string) ([]nei
 		for _, policy := range []*string{f.fam.Import, f.fam.Export} {
 			if policy != nil {
 				if err := c.policy(*policy); err != nil {
-					return nil, derive.Within("families."+f.name, err)
+					return derive.Within("families."+f.name, err)
 				}
 			}
 		}
 		if l := f.fam.DefaultOriginateWhen; l != nil {
 			if _, err := derive.MustGet(c.families, "PrefixList", *l); err != nil {
-				return nil, derive.Within(fmt.Sprintf("families.%s: defaultOriginateWhen", f.name), err)
+				return derive.Within(fmt.Sprintf("families.%s: defaultOriginateWhen", f.name), err)
 			}
 		}
 	}
-	if err := checkPeerDevices(p, c.devices); err != nil {
-		return nil, err
-	}
-	switch {
-	case s.Address != nil:
-		a, err := neighbourAddress(*s.Address)
-		if err != nil {
-			return nil, err
-		}
-		return []neighbour{{name: a.String()}}, nil
-	case s.Interface != nil:
-		if !derive.PlainInterface.MatchString(*s.Interface) {
-			return nil, derive.InternalErrorf("interface %q is no interface name", *s.Interface)
-		}
-		// The BGPPeer's rules refuse an interface named like an address; the VRF of its link is
-		// the renderer's to find, as networkd puts it.
-		linkIn, err := c.membership.LinkVRF(*s.Interface)
-		if err != nil {
-			return nil, err
-		}
-		if linkIn != vrf {
-			return nil, refusals.Errorf("BGPPeer", p.Name, "spec.interface", "interface %s is in the VRF %s, not in the peer's VRF %s", *s.Interface, linkIn, vrf)
-		}
-		return []neighbour{{name: *s.Interface, onLink: true}}, nil
-	}
-	if err := checkInterfaces("interfaces", s.Interfaces); err != nil {
-		return nil, err
-	}
-	var ns []neighbour
-	// own and other count the links of each glob in the peer's VRF and in other VRFs.
-	own, other := map[string]int{}, map[string]int{}
-	for _, link := range c.links {
-		var globs []string
-		for _, glob := range s.Interfaces {
-			if matchesGlob(glob, link) {
-				globs = append(globs, glob)
-			}
-		}
-		if len(globs) == 0 {
-			continue
-		}
-		linkIn, err := c.membership.LinkVRF(link)
-		if err != nil {
-			return nil, err
-		}
-		count := own
-		if linkIn != vrf {
-			count = other
-		}
-		for _, glob := range globs {
-			count[glob]++
-		}
-		if linkIn != vrf {
-			continue
-		}
-		// bgpd names a session on a link after its interface, and a line naming a link named like
-		// an address would name either. The BGPPeer's rules refuse an interface named like an
-		// address that the peer writes out; a glob's links are the renderer's to see.
-		if _, err := netip.ParseAddr(link); err == nil {
-			return nil, refusals.Errorf("BGPPeer", p.Name, fmt.Sprintf("spec.interfaces[%d]", slices.Index(s.Interfaces, globs[0])), "interface %q is an address, which FRR cannot tell from a neighbour's", link)
-		}
-		ns = append(ns, neighbour{name: link, onLink: true})
-	}
-	for i, glob := range s.Interfaces {
-		if own[glob] == 0 && other[glob] > 0 {
-			return nil, refusals.Errorf("BGPPeer", p.Name, fmt.Sprintf("spec.interfaces[%d]", i), "%s matches no link of VRF %s, only links of other VRFs", glob, vrf)
-		}
-	}
-	return ns, nil
-}
-
-// peerField is the field of a BGPPeer that names its sessions, which a refusal of a session
-// names: one of address, interface and interfaces, as the BGPPeer's rules require.
-func peerField(s derive.PeerSpec) string {
-	switch {
-	case s.Address != nil:
-		return "spec.address"
-	case s.Interface != nil:
-		return "spec.interface"
-	}
-	return "spec.interfaces"
-}
-
-// neighbourAddress parses a peer's address, which the BGPPeer's rule makes a unicast address
-// beyond the router. frr.conf and the ruleset write it unquoted, so it guards a value that is no
-// address, and one with a zone, which netip takes with any characters and the schema's format
-// refuses.
-func neighbourAddress(s string) (netip.Addr, error) {
-	a, err := netip.ParseAddr(s)
-	if err != nil || a.Zone() != "" {
-		return netip.Addr{}, derive.InternalErrorf("address %q is no address without a zone", s)
-	}
-	return a, nil
-}
-
-// matchesGlob reports whether an interface name or glob, a prefix and *, matches the link.
-func matchesGlob(glob, link string) bool {
-	if prefix, ok := strings.CutSuffix(glob, "*"); ok {
-		return strings.HasPrefix(link, prefix)
-	}
-	return glob == link
+	return nil
 }
 
 // ipWord is the word of FRR's IPv4 or IPv6 commands for a family.
@@ -974,10 +853,10 @@ func (c *frr) router(b *strings.Builder, in *instance) {
 			fmt.Fprintf(b, " neighbor %s shutdown\n", group)
 		}
 		for _, n := range c.neighbours[p.Name] {
-			if n.onLink {
-				fmt.Fprintf(b, " neighbor %s interface peer-group %s\n", n.name, group)
+			if n.OnLink {
+				fmt.Fprintf(b, " neighbor %s interface peer-group %s\n", n.Neighbour, group)
 			} else {
-				fmt.Fprintf(b, " neighbor %s peer-group %s\n", n.name, group)
+				fmt.Fprintf(b, " neighbor %s peer-group %s\n", n.Neighbour, group)
 			}
 		}
 	}
