@@ -918,6 +918,22 @@ lib.runTests {
       }
     ];
   };
+  # An image reference and one whose tag is a version, which the formats image-reference and
+  # versioned-image-reference check.
+  testImageReference = {
+    expr = propOf kindTypes.imageReference;
+    expected = {
+      type = "string";
+      format = "image-reference";
+    };
+  };
+  testVersionedImageReference = {
+    expr = propOf kindTypes.versionedImageReference;
+    expected = {
+      type = "string";
+      format = "versioned-image-reference";
+    };
+  };
   # An address and an address range, which the formats ip and cidr check.
   testAddress = {
     expr = propOf (types.listOf kindTypes.address);

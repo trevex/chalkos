@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"os"
+
+	"github.com/trevex/chalkos/pkg/imageref"
 )
 
 // CNI providers an image is built with.
@@ -14,14 +16,13 @@ const (
 )
 
 // Image is what a node's image fixes about Kubernetes, as /etc/chalkos/kubernetes/image.json
-// records it: the release, the images its components run from, and the pod network it ships.
-// Everything else about the cluster comes from the node's config.
+// records it: the kubelet's release and the pod network it ships. The images of the control plane,
+// the add-ons and the pod sandbox come from the node's config.
 type Image struct {
-	// Version is the Kubernetes release, such as 1.37.1.
+	// Version is the kubelet's release, such as 1.37.1.
 	Version string `json:"version"`
 	// CNI is the pod network the image ships: CNIFlannel or CNINone.
-	CNI    string `json:"cni"`
-	Images Images `json:"images"`
+	CNI string `json:"cni"`
 }
 
 // ReadImage reads and checks the image's Kubernetes facts.
@@ -46,33 +47,16 @@ func ParseImage(data []byte) (Image, error) {
 	return img, img.Validate()
 }
 
-// Validate checks that the image names a release, the images of the control plane, kube-proxy
-// and CoreDNS, and a flannel image exactly when flannel is its pod network.
+// Validate checks that the image names the kubelet's release and a known pod network.
 func (img Image) Validate() error {
 	if img.Version == "" {
 		return errors.New("no Kubernetes version")
 	}
-	for _, i := range []struct{ name, ref string }{
-		{"etcd", img.Images.Etcd},
-		{"kubeAPIServer", img.Images.KubeAPIServer},
-		{"kubeControllerManager", img.Images.KubeControllerManager},
-		{"kubeScheduler", img.Images.KubeScheduler},
-		{"kubeProxy", img.Images.KubeProxy},
-		{"coredns", img.Images.CoreDNS},
-	} {
-		if i.ref == "" {
-			return fmt.Errorf("no %s image", i.name)
-		}
+	if _, err := imageref.ParseVersion(img.Version); err != nil {
+		return fmt.Errorf("the kubelet's version: %w", err)
 	}
 	switch img.CNI {
-	case CNIFlannel:
-		if img.Images.Flannel == "" {
-			return errors.New("no flannel image, but its CNI provider is flannel")
-		}
-	case CNINone:
-		if img.Images.Flannel != "" {
-			return errors.New("a flannel image, but its CNI provider is none")
-		}
+	case CNIFlannel, CNINone:
 	default:
 		return fmt.Errorf("unknown CNI provider %q", img.CNI)
 	}

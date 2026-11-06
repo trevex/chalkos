@@ -38,6 +38,9 @@ func testCluster() kubernetes.Cluster {
 			KubeAPIServer:         "registry.k8s.io/kube-apiserver:v1.37.1",
 			KubeControllerManager: "registry.k8s.io/kube-controller-manager:v1.37.1",
 			KubeScheduler:         "registry.k8s.io/kube-scheduler:v1.37.1",
+			KubeProxy:             "registry.k8s.io/kube-proxy:v1.37.1",
+			CoreDNS:               "registry.k8s.io/coredns/coredns:v1.14.6",
+			Pause:                 "registry.k8s.io/pause:3.10.2",
 		},
 	}
 }

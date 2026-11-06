@@ -11,9 +11,20 @@ import (
 )
 
 // testImage is the facts of a flannel image.
-var testImage = kubernetes.Image{Version: "1.37.1", CNI: kubernetes.CNIFlannel, Images: kubernetes.Images{
-	Etcd: "e", KubeAPIServer: "a", KubeControllerManager: "c", KubeScheduler: "s", KubeProxy: "p", CoreDNS: "d", Flannel: "f",
-}}
+var testImage = kubernetes.Image{Version: "1.37.1", CNI: kubernetes.CNIFlannel}
+
+// testImages are the images clusterDoc names, by their fields: those of a flannel image, as the
+// test schemas are.
+var testImages = map[string]string{
+	"apiServer":         "registry.k8s.io/kube-apiserver:v1.37.1",
+	"controllerManager": "registry.k8s.io/kube-controller-manager:v1.37.1",
+	"scheduler":         "registry.k8s.io/kube-scheduler:v1.37.1",
+	"proxy":             "registry.k8s.io/kube-proxy:v1.37.1",
+	"etcd":              "registry.k8s.io/etcd:3.7.0-0",
+	"coredns":           "registry.k8s.io/coredns/coredns:v1.14.6",
+	"pause":             "registry.k8s.io/pause:3.10.2",
+	"flannel":           "ghcr.io/flannel-io/flannel:v0.28.9",
+}
 
 // kubernetesSet is minimal for a worker with an endpoint and the Cluster spec given, plus more
 // documents.
@@ -47,15 +58,27 @@ func flannelDoc(name, spec string) string {
 	return "---\napiVersion: kubernetes.chalkos.dev/v1alpha1\nkind: Flannel\nmetadata: {name: " + name + "}\nspec: " + spec + "\n"
 }
 
-// clusterDoc is a Kubernetes Cluster document called name with the endpoint https://10.0.0.10:6443
-// the fields the YAML mapping spec gives.
+// clusterDoc is a Kubernetes Cluster document called name with the endpoint https://10.0.0.10:6443,
+// testImages unless spec names images, and the fields the YAML mapping spec gives.
 func clusterDoc(name, spec string) string {
 	fields := strings.TrimSpace(strings.TrimSuffix(strings.TrimPrefix(strings.TrimSpace(spec), "{"), "}"))
-	if fields != "" {
-		fields = ", " + fields
+	if !strings.Contains(fields, "images:") {
+		b, _ := json.Marshal(testImages)
+		fields = strings.TrimSuffix("images: "+string(b)+", "+fields, ", ")
 	}
 	return "---\napiVersion: kubernetes.chalkos.dev/v1alpha1\nkind: Cluster\nmetadata: {name: " + name + "}\n" +
-		`spec: {endpoint: "https://10.0.0.10:6443"` + fields + "}\n"
+		`spec: {endpoint: "https://10.0.0.10:6443", ` + fields + "}\n"
+}
+
+// withoutFlannelImage drops flannel's image from the Cluster documents, as on an image without
+// flannel, whose schema has no such field.
+func withoutFlannelImage(docs Documents) Documents {
+	for _, d := range docs {
+		if d.APIVersion == KubernetesAPI && d.Kind == "Cluster" {
+			delete(d.Object["spec"].(map[string]any)["images"].(map[string]any), "flannel")
+		}
+	}
+	return docs
 }
 
 // The cluster's kind is the Kubernetes Node's type.
@@ -76,7 +99,7 @@ func TestClusterFromDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c.Kind != kubernetes.KindWorker || c.Endpoint != "https://10.0.0.10:6443" || c.Version != "1.37.1" || c.Images.KubeProxy != "p" {
+	if c.Kind != kubernetes.KindWorker || c.Endpoint != "https://10.0.0.10:6443" || c.Version != "1.37.1" || c.Images.KubeProxy != testImages["proxy"] || c.Images.Pause != testImages["pause"] || c.Images.Flannel != testImages["flannel"] {
 		t.Errorf("cluster = %+v", c)
 	}
 	if c.Domain != "cluster.local" || c.PodCIDRs.IPv4 != netip.MustParsePrefix("10.244.0.0/16") || c.NodeCIDRMaskSizes.IPv4 != 24 || c.NodeIP.Timeout != 300 || c.VIP.Mode != "l2" {
@@ -107,9 +130,13 @@ func TestClusterFromSettings(t *testing.T) {
 		t.Errorf("cluster = %+v", c)
 	}
 	none := testImage
-	none.CNI, none.Images.Flannel = kubernetes.CNINone, ""
-	if c, err := kubernetesSet(t, "{}", "").Documents().Cluster(none); err != nil || c.Flannel != nil {
-		t.Errorf("without flannel: %+v, %v", c.Flannel, err)
+	none.CNI = kubernetes.CNINone
+	if c, err := withoutFlannelImage(kubernetesSet(t, "{}", "").Documents()).Cluster(none); err != nil || c.Flannel != nil || c.Images.Flannel != "" {
+		t.Errorf("without flannel: %+v, %+v, %v", c.Flannel, c.Images, err)
+	}
+	// A cluster without flannel takes no image of it.
+	if _, err := kubernetesSet(t, "{}", "").Documents().Cluster(none); err == nil || err.Error() != `Cluster "default": images.flannel: an image, but the cluster runs no flannel` {
+		t.Errorf("without flannel, its image: err = %v", err)
 	}
 }
 
@@ -128,6 +155,9 @@ func TestClusterRejects(t *testing.T) {
 		"protected kubelet flag": {minimal + clusterDoc("k", "{}") +
 			nodeDoc("w", `{type: worker, kubeletExtraArgs: {anonymous-auth: "true"}}`),
 			`Node "w": kubeletExtraArgs: --anonymous-auth is set by chalkos and cannot be overridden`},
+		"API server older than the kubelet": {minimal + worker +
+			clusterDoc("k", "{images: "+images(t, map[string]string{"apiServer": "registry.k8s.io/kube-apiserver:v1.36.0"})+"}"),
+			`Cluster "k": images.apiServer: v1.36.0 is older than the image's kubelet 1.37; a kubelet must not be newer than the API server, so upgrade the control plane first`},
 	} {
 		t.Run(name, func(t *testing.T) {
 			s, err := NewSet(mustParse(t, tc.yaml), allSchemas(t))
@@ -215,7 +245,7 @@ func TestClusterTakesGivenDNSAndVIPInterface(t *testing.T) {
 // Errors name the document that holds the setting.
 func TestClusterNamesTheDocument(t *testing.T) {
 	endpoint := minimal + nodeDoc("default", "{type: worker}") +
-		"---\napiVersion: kubernetes.chalkos.dev/v1alpha1\nkind: Cluster\nmetadata: {name: k}\n" + `spec: {endpoint: "https://:6443"}` + "\n"
+		"---\napiVersion: kubernetes.chalkos.dev/v1alpha1\nkind: Cluster\nmetadata: {name: k}\n" + `spec: {endpoint: "https://:6443", images: ` + images(t, nil) + "}\n"
 	s, err := NewSet(mustParse(t, endpoint), allSchemas(t))
 	if err != nil {
 		t.Fatal(err)
@@ -255,7 +285,7 @@ func TestAddonObjectsKeepNumbers(t *testing.T) {
 func TestClusterTakesItsEndpoint(t *testing.T) {
 	s, err := NewSet(mustParse(t, minimal+nodeDoc("default", "{type: worker}")+
 		"---\napiVersion: kubernetes.chalkos.dev/v1alpha1\nkind: Cluster\nmetadata: {name: k}\n"+
-		`spec: {endpoint: "https://api.lab:6443"}`+"\n"), allSchemas(t))
+		`spec: {endpoint: "https://api.lab:6443", images: `+images(t, nil)+"}\n"), allSchemas(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -319,5 +349,50 @@ func TestClusterOfUncheckedDocuments(t *testing.T) {
 	docs := Documents(mustParse(t, minimal+nodeDoc("w", "{type: worker}")+clusterDoc("k", "{podCIDRs: {ipv4: 10.244.0.0}}")))
 	if _, err := docs.Cluster(testImage); err == nil || err.Error() != `Cluster "k": netip.ParsePrefix("10.244.0.0"): no '/'` {
 		t.Fatalf("err = %v", err)
+	}
+}
+
+// images is testImages with the changes given, as a YAML flow mapping; a field given as "" is
+// left out.
+func images(t *testing.T, changes map[string]string) string {
+	t.Helper()
+	m := map[string]string{}
+	for k, v := range testImages {
+		m[k] = v
+	}
+	for k, v := range changes {
+		if v == "" {
+			delete(m, k)
+		} else {
+			m[k] = v
+		}
+	}
+	b, err := json.Marshal(m)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(b)
+}
+
+// The schema refuses an images block without every image, a reference it cannot read, and a
+// reference of a Kubernetes component without a version tag.
+func TestClusterImagesRefusedBySchema(t *testing.T) {
+	const digest = "@sha256:e190f914a6cc21cab9268485d1ae7282fdeab1315ac64b668aa42d732fd1061d"
+	for name, tc := range map[string]struct {
+		changes map[string]string
+		want    string
+	}{
+		"no pause":                  {map[string]string{"pause": ""}, "missing property 'pause'"},
+		"no flannel":                {map[string]string{"flannel": ""}, "missing property 'flannel'"},
+		"API server by digest only": {map[string]string{"apiServer": "registry.k8s.io/kube-apiserver" + digest}, "is not valid versioned-image-reference"},
+		"proxy without a version":   {map[string]string{"proxy": "registry.k8s.io/kube-proxy:latest"}, "is not valid versioned-image-reference"},
+		"flannel without registry":  {map[string]string{"flannel": "flannel:v0.28.9"}, "'flannel:v0.28.9' is not valid image-reference"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			yaml := minimal + clusterDoc("k", "{images: "+images(t, tc.changes)+"}") + nodeDoc("w", "{type: worker}")
+			if _, err := NewSet(mustParse(t, yaml), allSchemas(t)); err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("err = %v, want one mentioning %q", err, tc.want)
+			}
+		})
 	}
 }

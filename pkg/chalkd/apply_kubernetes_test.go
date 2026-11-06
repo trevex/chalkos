@@ -57,8 +57,8 @@ func clusterServer(t *testing.T, kind string, adjust ...func(*kubernetesplugin.O
 // withClusterSpec is workerConfig with the fields the YAML mapping spec gives added to its
 // Cluster document's endpoint.
 func withClusterSpec(spec string) string {
-	return strings.Replace(workerConfig, `spec: {endpoint: "https://192.168.100.11:6443"}`,
-		`spec: {endpoint: "https://192.168.100.11:6443", `+strings.TrimPrefix(spec, "{"), 1)
+	return strings.Replace(workerConfig, `spec: {endpoint: "https://192.168.100.11:6443", `,
+		`spec: {endpoint: "https://192.168.100.11:6443", `+strings.TrimSuffix(strings.TrimPrefix(spec, "{"), "}")+", ", 1)
 }
 
 // loops records the layer actions deliveries run.
@@ -204,7 +204,7 @@ func TestApplyConfigRestartsKubernetesOnChange(t *testing.T) {
 		"the Node's name":     {strings.Replace(base, "kind: Node\nmetadata: {name: default}", "kind: Node\nmetadata: {name: node}", 1), false},
 		"a Host":              {base + hostConfig("default", "h1"), true},
 		"a static address":    {strings.Replace(base, "10.0.0.11/24", "10.0.0.12/24", 1), true},
-		"the cluster":         {strings.Replace(base, `spec: {endpoint: "https://192.168.100.11:6443"}`, `spec: {endpoint: "https://192.168.100.11:6443", domain: lab.local}`, 1), true},
+		"the cluster":         {strings.Replace(base, `spec: {endpoint: "https://192.168.100.11:6443", `, `spec: {endpoint: "https://192.168.100.11:6443", domain: lab.local, `, 1), true},
 		"the endpoint":        {strings.Replace(base, "192.168.100.11:6443", "192.168.100.12:6443", 1), true},
 		"a Flannel's sources": {base + "---\napiVersion: kubernetes.chalkos.dev/v1alpha1\nkind: Flannel\nmetadata: {name: default}\nspec: {vxlanSourceSubnets: [192.168.100.0/24]}\n", true},
 		"a Network's gateway": {strings.Replace(base, "address: [10.0.0.11/24]", "address: [10.0.0.11/24], gateway: 10.0.0.1", 1), false},
@@ -476,7 +476,7 @@ func TestApplyConfigWritesTheClusterAndRestartsKubernetes(t *testing.T) {
 		t.Fatal(err)
 	}
 	c, err := k8s.ReadCluster(kubernetesPaths(s).Cluster)
-	if err != nil || c.Domain != "cluster.local" || c.Images.KubeProxy != "p" {
+	if err != nil || c.Domain != "cluster.local" || c.Images.KubeProxy != "registry.k8s.io/kube-proxy:v1.37.1" {
 		t.Fatalf("cluster = %+v, %v", c, err)
 	}
 
@@ -968,7 +968,7 @@ func TestApplyConfigRestartsTheControlPlaneLoop(t *testing.T) {
 		t.Fatal(err)
 	}
 	eventually(t, "the loop after the first config", func() bool { return len(seen()) == 3 })
-	if _, err := sendConfig(s, strings.Replace(config, `:6443"}`, `:6443", domain: lab.local}`, 1)); err != nil {
+	if _, err := sendConfig(s, strings.Replace(config, `:6443", `, `:6443", domain: lab.local, `, 1)); err != nil {
 		t.Fatal(err)
 	}
 	eventually(t, "the loop after the changed cluster", func() bool { return len(seen()) == 5 })

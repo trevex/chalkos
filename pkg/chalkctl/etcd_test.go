@@ -41,9 +41,7 @@ func etcdNode(t *testing.T, ta *testApp, adjust func(*kubernetesplugin.Options))
 		t.Fatal(err)
 	}
 	writeFile(t, p.Share(), string(data))
-	writeFile(t, p.Cluster, `{"kind": "controlplane", "endpoint": "https://10.0.0.10:6443",
-	  "podCIDRs": {"ipv4": "10.244.0.0/16"}, "serviceCIDRs": {"ipv4": "10.96.0.0/12"},
-	  "dnsIPs": {"ipv4": "10.96.0.10"}, "nodeCIDRMaskSizes": {"ipv4": 24}, "domain": "cluster.local"}`)
+	writeFile(t, p.Cluster, clusterFile("controlplane"))
 	writeFile(t, p.NodeFile, `{"kubernetes": {"nodeName": "n1"}}`)
 	writeFile(t, p.Bootstrapped(), "")
 	return s

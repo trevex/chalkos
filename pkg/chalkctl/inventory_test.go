@@ -13,6 +13,7 @@ import (
 	"time"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
+	"github.com/trevex/chalkos/pkg/chalkd/layers/kubernetes/kubernetestest"
 	"github.com/trevex/chalkos/pkg/clustersecrets"
 	"github.com/trevex/chalkos/pkg/install"
 	"github.com/trevex/chalkos/pkg/kubernetes"
@@ -39,7 +40,7 @@ kind: Cluster
 metadata: {name: default}
 spec:
   endpoint: https://10.0.0.10:6443
-`
+  images: ` + kubernetestest.Images + "\n"
 
 // n1's documents: its system disk of serial chalk-target and its static address.
 const (
@@ -148,7 +149,7 @@ func TestValidateTheCluster(t *testing.T) {
 	path := writeInventory(t, dir)
 	// cluster.yaml holds nothing; n1 and n2 each get a Cluster document of another endpoint.
 	writeFile(t, filepath.Join(dir, "cluster.yaml"), "")
-	cluster := "apiVersion: kubernetes.chalkos.dev/v1alpha1\nkind: Cluster\nmetadata: {name: default}\nspec: {endpoint: \"https://%s:6443\"}\n"
+	cluster := "apiVersion: kubernetes.chalkos.dev/v1alpha1\nkind: Cluster\nmetadata: {name: default}\nspec: {endpoint: \"https://%s:6443\", images: " + kubernetestest.Images + "}\n"
 	writeFile(t, filepath.Join(dir, "nodes", "n1.yaml"), strings.Join([]string{n1SystemDisk, fmt.Sprintf(cluster, "10.0.0.10")}, "---\n"))
 	writeFile(t, filepath.Join(dir, "nodes", "n2.yaml"), strings.Join([]string{n1SystemDisk, fmt.Sprintf(cluster, "10.0.0.20")}, "---\n"))
 	writeFile(t, path, testInventoryYAML+"    n2: {address: 10.0.0.12, files: [nodes/n2.yaml]}\n")

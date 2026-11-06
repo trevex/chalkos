@@ -95,6 +95,28 @@ type clusterSpec struct {
 		Mode      string       `json:"mode"`
 	} `json:"vip"`
 	ExtraArgs map[string]map[string]string `json:"extraArgs"`
+	Images    clusterImages                `json:"images"`
+}
+
+// clusterImages is the Cluster's images block.
+type clusterImages struct {
+	APIServer         string `json:"apiServer"`
+	ControllerManager string `json:"controllerManager"`
+	Scheduler         string `json:"scheduler"`
+	Proxy             string `json:"proxy"`
+	Etcd              string `json:"etcd"`
+	CoreDNS           string `json:"coredns"`
+	Pause             string `json:"pause"`
+	// Flannel is empty on an image without flannel, whose schema has no such field.
+	Flannel string `json:"flannel"`
+}
+
+// images are the cluster's images as the cluster file names them.
+func (i clusterImages) images() kubernetes.Images {
+	return kubernetes.Images{
+		KubeAPIServer: i.APIServer, KubeControllerManager: i.ControllerManager, KubeScheduler: i.Scheduler,
+		KubeProxy: i.Proxy, Etcd: i.Etcd, CoreDNS: i.CoreDNS, Pause: i.Pause, Flannel: i.Flannel,
+	}
 }
 
 // flannelSpec is the Flannel document's, its ranges decoded as clusterSpec's are.

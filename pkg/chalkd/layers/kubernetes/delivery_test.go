@@ -40,6 +40,7 @@ spec:
   nodeIP: {validSubnets: [], timeout: 300}
   vip: {addresses: [], mode: l2}
   extraArgs: {etcd: {}, kube-apiserver: {}, kube-controller-manager: {}, kube-scheduler: {}}
+  images: ` + kubernetestest.Images + `
 ---
 apiVersion: kubernetes.chalkos.dev/v1alpha1
 kind: Node
@@ -82,7 +83,7 @@ func TestWriteConfigWritesTheCluster(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c.Kind != k8s.KindWorker || c.Endpoint != "https://10.0.0.10:6443" || c.DNSIPs.IPv4.String() != "10.96.0.10" || c.Images.KubeProxy != "p" {
+	if c.Kind != k8s.KindWorker || c.Endpoint != "https://10.0.0.10:6443" || c.DNSIPs.IPv4.String() != "10.96.0.10" || c.Images.KubeProxy != "registry.k8s.io/kube-proxy:v1.37.1" {
 		t.Errorf("cluster = %+v", c)
 	}
 	// Another cluster replaces it.

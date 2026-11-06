@@ -13,15 +13,7 @@ import (
 var update = flag.Bool("update", false, "rewrite the golden files")
 
 // homelabImage is the Kubernetes facts of the homelab's images.
-var homelabImage = kubernetes.Image{Version: "1.37.1", CNI: kubernetes.CNIFlannel, Images: kubernetes.Images{
-	Etcd:                  "registry.k8s.io/etcd:3.7.0-0",
-	KubeAPIServer:         "registry.k8s.io/kube-apiserver:v1.37.1",
-	KubeControllerManager: "registry.k8s.io/kube-controller-manager:v1.37.1",
-	KubeScheduler:         "registry.k8s.io/kube-scheduler:v1.37.1",
-	KubeProxy:             "registry.k8s.io/kube-proxy:v1.37.1",
-	CoreDNS:               "registry.k8s.io/coredns/coredns:v1.14.6",
-	Flannel:               "ghcr.io/flannel-io/flannel:v0.28.9",
-}}
+var homelabImage = kubernetes.Image{Version: "1.37.1", CNI: kubernetes.CNIFlannel}
 
 // The homelab worker's documents on the homelab's image give the whole cluster in
 // testdata/homelab-w1-cluster.json.

@@ -326,7 +326,7 @@ spec: {type: worker, nodeIP: {addresses: [192.168.100.21]}}
 apiVersion: kubernetes.chalkos.dev/v1alpha1
 kind: Cluster
 metadata: {name: default}
-spec: {endpoint: "https://192.168.100.11:6443"}
+spec: {endpoint: "https://192.168.100.11:6443", images: ` + kubernetestest.Images + `}
 `
 
 func TestInstallInPlaceWithConfig(t *testing.T) {

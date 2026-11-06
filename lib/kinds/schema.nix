@@ -155,6 +155,16 @@ let
         type = "string";
         format = "cidr";
       }
+    else if n == types.imageReference.name then
+      {
+        type = "string";
+        format = "image-reference";
+      }
+    else if n == types.versionedImageReference.name then
+      {
+        type = "string";
+        format = "versioned-image-reference";
+      }
     else if n == types.peerAS.name then
       {
         anyOf = [

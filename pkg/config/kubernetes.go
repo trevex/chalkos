@@ -14,10 +14,10 @@ import (
 
 // Cluster builds the Kubernetes cluster the documents give on an image with the facts img:
 // its kind, the kubelet's extra flags and the VIP's interface from the Kubernetes Node, its
-// endpoint and other settings from the Cluster document and, on a flannel image, flannel's from
-// the Flannel document, and checks it. It holds the per-family values of the cluster's families
-// alone, and each error names the document whose setting fails. docs carry their schema
-// defaults, as a Set and the stored config do.
+// endpoint, images and other settings from the Cluster document and, on a flannel image,
+// flannel's settings from the Flannel document, and checks it. It holds the per-family values of
+// the cluster's families alone, and each error names the document whose setting fails. docs carry
+// their schema defaults, as a Set and the stored config do.
 func (docs Documents) Cluster(img kubernetes.Image) (kubernetes.Cluster, error) {
 	nodeDoc, ok := docs.single(KubernetesAPI, "Node")
 	if !ok {
@@ -39,7 +39,7 @@ func (docs Documents) Cluster(img kubernetes.Image) (kubernetes.Cluster, error) 
 		Kind:                           node.Type,
 		Endpoint:                       k.Endpoint,
 		Version:                        img.Version,
-		Images:                         img.Images,
+		Images:                         k.Images.images(),
 		Domain:                         k.Domain,
 		AllowSchedulingOnControlPlanes: k.AllowSchedulingOnControlPlanes,
 		NodeIP:                         k.NodeIP,
@@ -59,26 +59,28 @@ func (docs Documents) Cluster(img kubernetes.Image) (kubernetes.Cluster, error) 
 		return kubernetes.Cluster{}, fmt.Errorf("%s: vip.interface: only control planes hold the VIP; leave it null on a worker", nodeDoc)
 	}
 	k.setFamilies(&c)
+	// On a flannel image the cluster runs flannel, with its defaults unless a Flannel document
+	// gives its settings, and the Cluster document names its image.
+	if img.CNI == kubernetes.CNIFlannel {
+		c.Flannel = &kubernetes.Flannel{VXLANSourceSubnets: []netip.Prefix{}}
+	}
 	if err := c.Validate(); err != nil {
 		return kubernetes.Cluster{}, fmt.Errorf("%s: %w", kdoc, err)
 	}
-	if img.CNI == kubernetes.CNIFlannel {
-		c.Flannel = &kubernetes.Flannel{VXLANSourceSubnets: []netip.Prefix{}}
-		if d, ok := docs.single(KubernetesAPI, "Flannel"); ok {
-			var f flannelSpec
-			if err := d.decodeSpec(&f); err != nil {
-				return kubernetes.Cluster{}, err
-			}
-			if f.MTU != nil {
-				c.Flannel.MTU = *f.MTU
-			}
-			c.Flannel.VXLANSourceSubnets = f.VXLANSourceSubnets
-			// The cluster without flannel is valid by now, so what fails is the Flannel
-			// document's MTU or VXLAN sources, checked against the Cluster document's families
-			// and ranges.
-			if err := c.Validate(); err != nil {
-				return kubernetes.Cluster{}, fmt.Errorf("%s: %w", d, err)
-			}
+	if d, ok := docs.single(KubernetesAPI, "Flannel"); ok && c.Flannel != nil {
+		var f flannelSpec
+		if err := d.decodeSpec(&f); err != nil {
+			return kubernetes.Cluster{}, err
+		}
+		if f.MTU != nil {
+			c.Flannel.MTU = *f.MTU
+		}
+		c.Flannel.VXLANSourceSubnets = f.VXLANSourceSubnets
+		// The cluster with flannel's defaults is valid by now, so what fails is the Flannel
+		// document's MTU or VXLAN sources, checked against the Cluster document's families and
+		// ranges.
+		if err := c.Validate(); err != nil {
+			return kubernetes.Cluster{}, fmt.Errorf("%s: %w", d, err)
 		}
 	}
 	return c, nil
@@ -114,6 +116,20 @@ func dnsIP(given *netip.Addr, service netip.Prefix) netip.Addr {
 		a = a.Next()
 	}
 	return a
+}
+
+// SandboxImage returns the pod sandbox's image the Cluster document names; "" without a Cluster
+// document, as before a node's first config.
+func (docs Documents) SandboxImage() (string, error) {
+	d, ok := docs.single(KubernetesAPI, "Cluster")
+	if !ok {
+		return "", nil
+	}
+	var k clusterSpec
+	if err := d.decodeSpec(&k); err != nil {
+		return "", err
+	}
+	return k.Images.Pause, nil
 }
 
 // AddonObjects returns the objects of the Addon documents, in the order of the documents' names

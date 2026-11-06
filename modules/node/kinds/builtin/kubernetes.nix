@@ -11,7 +11,30 @@ let
   inherit (import ./lib.nix) builtin groups;
   kubernetes = config.chalkos.kubernetes.enable;
   flannel = config.chalkos.cni.provider == "flannel";
-  inherit (import ../../../../lib/kinds/types.nix { inherit lib; }) kubernetesObject address prefix;
+  inherit (import ../../../../lib/kinds/types.nix { inherit lib; })
+    kubernetesObject
+    address
+    prefix
+    imageReference
+    versionedImageReference
+    ;
+  # An image of the cluster, which containerd pulls as written. A Kubernetes component's names its
+  # version in its tag, which the image's checker compares with the kubelet's.
+  image =
+    {
+      what,
+      versioned ? false,
+      example,
+      note ? "",
+    }:
+    mkOption {
+      type = if versioned then versionedImageReference else imageReference;
+      inherit example;
+      description =
+        "Image of ${what}. containerd pulls it as written: a registry, a repository and a tag, a digest or both. Written as repository:tag@sha256:<digest>, it is pulled by its digest."
+        + lib.optionalString versioned " Its tag is its Kubernetes version, v<major>.<minor>.<patch> with an optional suffix such as -rc.1, which the image's checker compares with the kubelet's and the other components' by Kubernetes's version skew policy."
+        + note;
+    };
   # An option per address family, as the cluster's ranges are given.
   perFamily =
     {
@@ -191,7 +214,7 @@ in
         };
       };
       Cluster = builtin groups.kubernetes // {
-        description = "The Kubernetes cluster the node belongs to: its API server's endpoint, its address families and ranges, its VIP and the flags of its control-plane components.";
+        description = "The Kubernetes cluster the node belongs to: its API server's endpoint, its address families and ranges, its VIP, the images of its components and the flags of its control-plane components.";
         rules = [
           (fixedRule {
             description = "The pod range of each family both configs have stays once the node holds a Kubernetes share.";
@@ -301,6 +324,47 @@ in
               type = types.enum [ "l2" ];
               default = "l2";
               description = "Way the node holding the VIP announces its addresses: `l2` adds them to an interface and announces them to the neighbours with gratuitous ARP and unsolicited neighbour advertisements.";
+            };
+          };
+          images = {
+            apiServer = image {
+              what = "the API server";
+              versioned = true;
+              example = "registry.k8s.io/kube-apiserver:v1.37.1@sha256:e190f914a6cc21cab9268485d1ae7282fdeab1315ac64b668aa42d732fd1061d";
+            };
+            controllerManager = image {
+              what = "the controller-manager";
+              versioned = true;
+              example = "registry.k8s.io/kube-controller-manager:v1.37.1@sha256:d470c1b85aebb466e971c06239cc6a31a4ac337a78600cef80375a79a1be1641";
+            };
+            scheduler = image {
+              what = "the scheduler";
+              versioned = true;
+              example = "registry.k8s.io/kube-scheduler:v1.37.1@sha256:b6e2474a6c20309f0df1e7337364281fda95c6a0722259ba7f032a1e177d3f29";
+            };
+            proxy = image {
+              what = "kube-proxy";
+              versioned = true;
+              example = "registry.k8s.io/kube-proxy:v1.37.1@sha256:b9ae667ed9c160c9d5b66f55e8afec97fc5483a12db0ada5286541b0385cb9f4";
+            };
+            etcd = image {
+              what = "etcd, which control planes run";
+              example = "registry.k8s.io/etcd:3.7.0-0@sha256:6ecefbe2510c4a30573a62a4d6dd175acf881ca67003fcd91849a16df7a724d5";
+            };
+            coredns = image {
+              what = "CoreDNS, the cluster DNS";
+              example = "registry.k8s.io/coredns/coredns:v1.14.6@sha256:900f9c109f7a33545d3c811516e8376df9019147b750f5ce3e254468769176ea";
+            };
+            pause = image {
+              what = "the pod sandbox, which containerd runs for every pod";
+              example = "registry.k8s.io/pause:3.10.2@sha256:f548e0e8e3dc1896ca956272154dde3314e8cc4fde0a57577ee9fa1c63f5baf4";
+            };
+          }
+          // lib.optionalAttrs flannel {
+            flannel = image {
+              what = "flannel";
+              note = " An image whose CNI is flannel requires it, and an image with another CNI refuses it.";
+              example = "ghcr.io/flannel-io/flannel:v0.28.9@sha256:708a2c9c1cfbfe529d1dbb249cb7113af117f3ed26b5e3e4c8ee015e10555204";
             };
           };
           extraArgs = {

@@ -29,7 +29,8 @@
     "kubeAPIServer": "registry.k8s.io/kube-apiserver:v1.37.1",
     "kubeControllerManager": "registry.k8s.io/kube-controller-manager:v1.37.1",
     "kubeProxy": "registry.k8s.io/kube-proxy:v1.37.1",
-    "kubeScheduler": "registry.k8s.io/kube-scheduler:v1.37.1"
+    "kubeScheduler": "registry.k8s.io/kube-scheduler:v1.37.1",
+    "pause": "registry.k8s.io/pause:3.10.2"
   },
   "ipFamilies": [
     "ipv4",

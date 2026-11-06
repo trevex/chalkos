@@ -26,8 +26,13 @@ const clusterJSON = `{
   "nodeIP": {"validSubnets": ["10.0.0.0/8", "!10.0.0.10/32"], "timeout": 300},
   "extraArgs": {"kube-apiserver": {"v": "2"}},
   "images": {"etcd": "registry.k8s.io/etcd:3.7.0-0", "kubeAPIServer": "registry.k8s.io/kube-apiserver:v1.37.1",
-    "kubeControllerManager": "registry.k8s.io/kube-controller-manager:v1.37.1", "kubeScheduler": "registry.k8s.io/kube-scheduler:v1.37.1"}
+    "kubeControllerManager": "registry.k8s.io/kube-controller-manager:v1.37.1", "kubeScheduler": "registry.k8s.io/kube-scheduler:v1.37.1",
+    "kubeProxy": "registry.k8s.io/kube-proxy:v1.37.1", "coredns": "registry.k8s.io/coredns/coredns:v1.14.6",
+    "pause": "registry.k8s.io/pause:3.10.2"}
 }`
+
+// flannelImage is the image of a cluster with flannel.
+const flannelImage = "ghcr.io/flannel-io/flannel:v0.28.9"
 
 // mustAddrs parses the addresses.
 func mustAddrs(list ...string) []netip.Addr {
@@ -167,13 +172,13 @@ func TestClusterValidate(t *testing.T) {
 		"domain":       func(c *Cluster) { c.Domain = "" },
 		"validSubnets": func(c *Cluster) { c.NodeIP.ValidSubnets = []string{"10.0.0.0"} },
 		"timeout":      func(c *Cluster) { c.NodeIP.Timeout = -1 },
-		"flannel MTU":  func(c *Cluster) { c.Flannel = &Flannel{MTU: -1} },
+		"flannel MTU":  func(c *Cluster) { c.Flannel, c.Images.Flannel = &Flannel{MTU: -1}, flannelImage },
 		// Pods get 50 less than flannel's MTU, which must leave them IPv4's minimum of 576, or
 		// IPv6's of 1280 with IPv6 in use (clusterJSON lists no families, so IPv4 alone).
-		"flannel MTU below IPv4's minimum": func(c *Cluster) { c.Flannel = &Flannel{MTU: 625} },
+		"flannel MTU below IPv4's minimum": func(c *Cluster) { c.Flannel, c.Images.Flannel = &Flannel{MTU: 625}, flannelImage },
 		"flannel MTU below IPv6's minimum": func(c *Cluster) {
 			c.IPFamilies = []nodeip.Family{"ipv4", "ipv6"}
-			c.Flannel = &Flannel{MTU: 1329}
+			c.Flannel, c.Images.Flannel = &Flannel{MTU: 1329}, flannelImage
 		},
 		// The kubelet's flags reach it through an environment variable that ExecStart splits at
 		// whitespace.
@@ -318,12 +323,12 @@ func TestClusterValidateFlannelMinimums(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	c.Flannel = &Flannel{MTU: 626}
+	c.Flannel, c.Images.Flannel = &Flannel{MTU: 626}, flannelImage
 	if err := c.Validate(); err != nil {
 		t.Errorf("IPv4's minimum: %v", err)
 	}
 	c.IPFamilies = []nodeip.Family{"ipv4", "ipv6"}
-	c.Flannel = &Flannel{MTU: 1330}
+	c.Flannel, c.Images.Flannel = &Flannel{MTU: 1330}, flannelImage
 	if err := c.Validate(); err != nil {
 		t.Errorf("IPv6's minimum: %v", err)
 	}
@@ -562,6 +567,7 @@ func TestVXLANSources(t *testing.T) {
 	}
 	c.IPFamilies = []nodeip.Family{"ipv4", "ipv6"}
 	c.Flannel = &Flannel{VXLANSourceSubnets: mustPrefixes("10.0.0.0/10", "fd00::/48", "192.168.0.0/16")}
+	c.Images.Flannel = flannelImage
 	if sources := c.VXLANSources(); fmt.Sprint(sources) != "[10.0.0.0/10 fd00::/48 192.168.0.0/16]" {
 		t.Errorf("VXLANSources() = %v", sources)
 	}

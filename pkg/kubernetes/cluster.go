@@ -27,7 +27,7 @@ type Cluster struct {
 	Kind string `json:"kind"`
 	// Endpoint is the API server's URL, such as https://10.0.0.10:6443.
 	Endpoint string `json:"endpoint"`
-	// Version is the Kubernetes release, such as 1.37.1.
+	// Version is the release of the image's kubelet, such as 1.37.1.
 	Version                        string `json:"version"`
 	Domain                         string `json:"domain"`
 	AllowSchedulingOnControlPlanes bool   `json:"allowSchedulingOnControlPlanes"`
@@ -101,18 +101,6 @@ type VIP struct {
 	Interface string `json:"interface"`
 }
 
-// Images are the images the cluster's components run from: the control plane's static pods and
-// the add-ons chalkd applies. Flannel is empty without flannel.
-type Images struct {
-	Etcd                  string `json:"etcd"`
-	KubeAPIServer         string `json:"kubeAPIServer"`
-	KubeControllerManager string `json:"kubeControllerManager"`
-	KubeScheduler         string `json:"kubeScheduler"`
-	KubeProxy             string `json:"kubeProxy"`
-	CoreDNS               string `json:"coredns"`
-	Flannel               string `json:"flannel"`
-}
-
 // ReadCluster reads and checks a cluster file.
 func ReadCluster(path string) (Cluster, error) {
 	data, err := os.ReadFile(path)
@@ -139,7 +127,7 @@ func parseCluster(data []byte) (Cluster, error) {
 }
 
 // Validate checks the endpoint, the extra flags, the kind, how nodes pick their address, the
-// address families and their ranges, flannel's settings and the VIPs.
+// address families and their ranges, flannel's settings, the VIPs and the images.
 func (c Cluster) Validate() error {
 	if _, err := parseEndpoint(c.Endpoint); err != nil {
 		return err
@@ -174,7 +162,10 @@ func (c Cluster) Validate() error {
 	if err := c.validateVXLANSources(families); err != nil {
 		return err
 	}
-	return c.validateVIP(families)
+	if err := c.validateVIP(families); err != nil {
+		return err
+	}
+	return c.validateImages()
 }
 
 // validateFamilies refuses unknown families and families listed twice.

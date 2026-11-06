@@ -80,6 +80,20 @@ rec {
     description = "address range";
   };
 
+  # A container image reference with its registry and a tag, a digest or both, as
+  # repository:tag@sha256:<digest>; and one whose tag is a version v<major>.<minor>.<patch> with an
+  # optional suffix. The schema converter gives them the formats image-reference and
+  # versioned-image-reference, which chalkctl and chalkd check; the patterns check only what Nix
+  # itself checks, such as defaults and examples.
+  imageReference = lib.types.strMatching "[^ ]+[:@][^ ]+" // {
+    name = "chalkosImageReference";
+    description = "image reference";
+  };
+  versionedImageReference = lib.types.strMatching "[^ ]+:v[0-9]+\\.[0-9]+\\.[0-9]+[^ ]*" // {
+    name = "chalkosVersionedImageReference";
+    description = "image reference with a version tag";
+  };
+
   # A port from 1, or a range of ports written "<first>-<last>", which the router kinds take. The
   # schema converter gives the range the format port-range, which chalkctl and chalkd check: both
   # ports from 1 to 65535 and the first no higher than the last.

@@ -34,9 +34,17 @@ import (
 // OSCA is the OS CA every test node trusts.
 var OSCA = sync.OnceValues(func() (pki.CertKey, error) { return pki.NewOSCA(time.Now()) })
 
-// Image is the image.json of a Kubernetes image without flannel.
-const Image = `{"version": "1.37.1", "cni": "none", "images": {"etcd": "e", "kubeAPIServer": "a",
-  "kubeControllerManager": "c", "kubeScheduler": "s", "kubeProxy": "p", "coredns": "d", "flannel": ""}}`
+// Image is the image.json of a Kubernetes image with flannel, as the builtin kinds of
+// test/fixtures/kinds are.
+const Image = `{"version": "1.37.1", "cni": "flannel"}`
+
+// Images is the images block of a Cluster document on Image, a YAML flow mapping on one line.
+const Images = `{apiServer: registry.k8s.io/kube-apiserver:v1.37.1, controllerManager: registry.k8s.io/kube-controller-manager:v1.37.1, scheduler: registry.k8s.io/kube-scheduler:v1.37.1, proxy: registry.k8s.io/kube-proxy:v1.37.1, etcd: registry.k8s.io/etcd:3.7.0-0, coredns: registry.k8s.io/coredns/coredns:v1.14.6, pause: registry.k8s.io/pause:3.10.2, flannel: ghcr.io/flannel-io/flannel:v0.28.9}`
+
+// ClusterImages is the images of a cluster file without flannel, as JSON.
+const ClusterImages = `{"etcd": "registry.k8s.io/etcd:3.7.0-0", "kubeAPIServer": "registry.k8s.io/kube-apiserver:v1.37.1",
+  "kubeControllerManager": "registry.k8s.io/kube-controller-manager:v1.37.1", "kubeScheduler": "registry.k8s.io/kube-scheduler:v1.37.1",
+  "kubeProxy": "registry.k8s.io/kube-proxy:v1.37.1", "coredns": "registry.k8s.io/coredns/coredns:v1.14.6", "pause": "registry.k8s.io/pause:3.10.2"}`
 
 // NodeCA returns a new node CA of the OS CA.
 func NodeCA(t *testing.T) pki.CertKey {
@@ -98,7 +106,7 @@ func WriteNode(t *testing.T, p knode.Paths, kind string, share bool) {
 	write(t, p.Cluster, `{"kind": "`+kind+`", "endpoint": "https://192.168.100.11:6443", "version": "1.37.1",
 	  "podCIDRs": {"ipv4": "10.244.0.0/16"}, "serviceCIDRs": {"ipv4": "10.96.0.0/12"},
 	  "dnsIPs": {"ipv4": "10.96.0.10"}, "nodeCIDRMaskSizes": {"ipv4": 24}, "domain": "cluster.local",
-	  "extraArgs": {}, "images": {"etcd": "e", "kubeAPIServer": "a", "kubeControllerManager": "c", "kubeScheduler": "s"}}`)
+	  "extraArgs": {}, "images": `+ClusterImages+`}`)
 	write(t, p.NodeFile, `{"hostname": "n1", "kubernetes": {"nodeName": "n1", "nodeIPs": ["192.168.100.11"]}}`)
 	if share {
 		write(t, p.Share(), string(Share(t, kind, "n1")))
