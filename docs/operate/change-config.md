@@ -233,8 +233,10 @@ staged image alone, as described below.
 
 When the node cannot write the staged image's config after the running image applied it, the
 command fails with
-`the node runs config <version>, but writing the config slot of the image <hash> staged in the inactive slot failed, so it keeps config <version>: ...`.
-The staged image keeps its earlier config. Run the command again to write it.
+`the node runs config <version> (<what it did>), but writing the config slot of the image <hash> staged in the inactive slot failed, so it keeps config <version>: ...`.
+The parentheses list the volumes the delivery made, the units it restarted and its warnings. The
+staged image keeps its earlier config. A volume that only the staged image's config adds is made
+before that config is written, and stays. Run the command again to write the config.
 
 `--dry-run` has both images check the config. Its plan ends with the staged image's config:
 `w1: staged image's config <previous-version> → <version>`. With `--try`, the staged image checks

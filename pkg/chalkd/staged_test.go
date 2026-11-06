@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -17,8 +18,11 @@ import (
 	"connectrpc.com/connect"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
+	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/config/slot"
+	"github.com/trevex/chalkos/pkg/identity"
 	"github.com/trevex/chalkos/pkg/pki"
+	"github.com/trevex/chalkos/pkg/schema"
 	"github.com/trevex/chalkos/pkg/storage"
 	"github.com/trevex/chalkos/pkg/tool/tooltest"
 	"github.com/trevex/chalkos/pkg/upgrade"
@@ -313,7 +317,7 @@ func TestApplyConfigAddsAVolumeForBothImages(t *testing.T) {
 // TestApplyConfigNamesAStagedSlotItCouldNotWrite fails a delivery whose write of the staged
 // image's slot fails once the running image applied it, here as something that is no config link
 // stands where the slot's previous config would be: the running image runs the config, the staged
-// slot keeps its earlier one, and the error says so. Delivered again, the config goes to the staged
+// slot keeps its earlier one, and the error says so, with the units the running image restarted. Delivered again, the config goes to the staged
 // slot.
 func TestApplyConfigNamesAStagedSlotItCouldNotWrite(t *testing.T) {
 	s, _ := stagedServer(t, fixtureSchemas(t))
@@ -321,7 +325,7 @@ func TestApplyConfigNamesAStagedSlotItCouldNotWrite(t *testing.T) {
 	write(t, blocker, "")
 	next := strings.Replace(baseConfig, "name: first", "name: second", 1)
 	_, err := sendConfig(s, next)
-	want := "the node runs config " + hashOf(t, next) + ", but writing the config slot of the image 333333333333 staged in the inactive slot failed, so it keeps config " + hashOf(t, baseConfig) + ": "
+	want := "the node runs config " + hashOf(t, next) + " (restarted demo.service), but writing the config slot of the image 333333333333 staged in the inactive slot failed, so it keeps config " + hashOf(t, baseConfig) + ": "
 	if connect.CodeOf(err) != connect.CodeInternal || !strings.Contains(err.Error(), want) || !strings.HasSuffix(err.Error(), "; deliver the config again to write it") {
 		t.Fatalf("err = %v, want %q", err, want)
 	}
@@ -339,6 +343,63 @@ func TestApplyConfigNamesAStagedSlotItCouldNotWrite(t *testing.T) {
 	}
 	if v := slotVersion(t, s, stagedImage); v != hashOf(t, next) {
 		t.Errorf("staged version after the second delivery = %q, want the delivered config's", v)
+	}
+}
+
+// TestStagedSlotOfItsOwnVolumeIsWrittenAfterIt makes the storage change the staged image's config
+// makes on top of the running image's, a volume of its own here, before it writes that image's
+// slot, and records it in storage.json first. A slot that cannot be written then leaves the volume
+// made and recorded, and the error says so with what the running image's delivery did; written
+// again, the slot takes the config and the volume is not made again.
+func TestStagedSlotOfItsOwnVolumeIsWrittenAfterIt(t *testing.T) {
+	s, r := stagedServer(t, fixtureSchemas(t))
+	r.Rules = volumeRules(s)
+	schemas, err := schema.LoadSchemas(s.Loader.Schemas)
+	if err != nil {
+		t.Fatal(err)
+	}
+	next, err := configure("n1", extraConfig("ext4"), schemas, config.Target{Platform: "metal"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var id identity.Identity
+	if err := json.Unmarshal(next.Identity, &id); err != nil {
+		t.Fatal(err)
+	}
+	w := secondWrite{image: stagedImage, held: hashOf(t, baseConfig), slot: slotWrite{next: next, machine: machineChange{section: id.Storage}}}
+	blocker := slot.Previous(slot.Dir(s.Loader.Slots, stagedImage))
+	write(t, blocker, "")
+	resp := &nodev1.ApplyConfigResponse{RestartedUnits: []string{"demo.service"}, Warnings: []string{"careful"}}
+	err = w.write(context.Background(), s, "v1", secret, resp)
+	want := "the node runs config v1 (volume extra: new volume on new disk extra; restarted demo.service; warning: careful), but writing the config slot of the image 333333333333 staged in the inactive slot failed, so it keeps config " + hashOf(t, baseConfig) + ": "
+	if connect.CodeOf(err) != connect.CodeInternal || !strings.Contains(err.Error(), want) {
+		t.Fatalf("err = %v, want %q", err, want)
+	}
+	if !contains(r.Calls, "systemctl start systemd-cryptsetup@extra.service srv-extra.mount") {
+		t.Errorf("the volume was not created: %v", r.Calls)
+	}
+	recorded, _, err := s.recorded()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := recorded.Volumes["extra"]; !ok {
+		t.Errorf("storage.json records %v, want the new volume", recorded.Volumes)
+	}
+	if v := slotVersion(t, s, stagedImage); v != hashOf(t, baseConfig) {
+		t.Errorf("staged version = %q, want it kept", v)
+	}
+	if err := os.Remove(blocker); err != nil {
+		t.Fatal(err)
+	}
+	resp = &nodev1.ApplyConfigResponse{}
+	if err := w.write(context.Background(), s, "v1", secret, resp); err != nil {
+		t.Fatal(err)
+	}
+	if len(resp.Changes) != 0 || resp.Staged.GetVersion() != next.Version {
+		t.Errorf("written again: changes %v, staged %v; want no change and the slot", resp.Changes, resp.Staged)
+	}
+	if v := slotVersion(t, s, stagedImage); v != next.Version {
+		t.Errorf("staged version = %q, want the config with the volume", v)
 	}
 }
 

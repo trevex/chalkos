@@ -308,8 +308,16 @@ func (s *Server) stagedRefusal(staged []byte, err error, secret string) error {
 // write writes what planSecond planned, once the running image applied version, the delivered
 // config, and adds it to resp: the staged image's slot, after the storage changes its config
 // makes on top of those of the running image, or the pending config. A write that fails leaves
-// the slot or the pending config as it was and fails the delivery, naming it; the running image
-// runs the config all the same, and the delivery sent again writes it. The caller holds s.mu.
+// the slot or the pending config as it was and fails the delivery, naming it and what the
+// delivery did, which resp held so far; the running image runs the config all the same, and the
+// delivery sent again writes it. The caller holds s.mu.
+//
+// The staged image's storage changes go first, recorded in storage.json, and its slot after.
+// Every boot sets up the volumes storage.json records and no others, so with the slot written
+// first, a failure before the volume was made would leave the staged image to boot a config that
+// names a volume that does not exist. This order leaves at worst a volume that storage.json
+// records and no slot names yet, which every boot mounts; the delivery sent again finds it made
+// and writes the slot alone.
 func (w secondWrite) write(ctx context.Context, s *Server, version, secret string, resp *nodev1.ApplyConfigResponse) error {
 	resp.Warnings = append(resp.Warnings, w.warnings...)
 	switch {
@@ -321,27 +329,47 @@ func (w secondWrite) write(ctx context.Context, s *Server, version, secret strin
 			err = s.applyMachine(ctx, mc, secret)
 		}
 		if err == nil {
+			for _, c := range mc.changes {
+				resp.Changes = append(resp.Changes, &nodev1.StorageChange{Volume: c.Volume, Reason: c.Reason})
+			}
 			if err = slot.Write(slot.Dir(s.Loader.Slots, w.image), w.slot.next); err != nil {
 				err = fmt.Errorf("store the config: %w", err)
 			}
 		}
 		if err != nil {
-			return failed(codeOf(err), "the node runs config %s, but writing the config slot of the image %x staged in the inactive slot failed, so it keeps config %s: %v; deliver the config again to write it", version, w.image[:6], cmp.Or(w.held, "none"), plain(err))
+			return failed(codeOf(err), "the node runs config %s%s, but writing the config slot of the image %x staged in the inactive slot failed, so it keeps config %s: %v; deliver the config again to write it", version, didOf(resp), w.image[:6], cmp.Or(w.held, "none"), plain(err))
 		}
 		log.Printf("the image %x staged in the inactive slot has config %s too", w.image[:6], w.slot.next.Version)
-		for _, c := range mc.changes {
-			resp.Changes = append(resp.Changes, &nodev1.StorageChange{Volume: c.Volume, Reason: c.Reason})
-		}
 		resp.Warnings = append(resp.Warnings, w.stagedWarnings()...)
 		resp.Staged = &nodev1.StagedSlot{Version: w.slot.next.Version, Replaces: w.held}
 	case w.pending != "":
 		p, err := s.storePending(w.next)
 		if err != nil {
-			return failed(connect.CodeInternal, "the node runs config %s, but replacing the pending config %s with it failed, so it stays: %v; deliver the config again to replace it", version, w.pending, err)
+			return failed(connect.CodeInternal, "the node runs config %s%s, but replacing the pending config %s with it failed, so it stays: %v; deliver the config again to replace it", version, didOf(resp), w.pending, err)
 		}
 		resp.Pending = p
 	}
 	return nil
+}
+
+// didOf is what a delivery whose answer is resp did, for an error that loses the answer: its
+// storage changes, the units it restarted and its warnings, in parentheses after a space; empty
+// when it did none of them.
+func didOf(resp *nodev1.ApplyConfigResponse) string {
+	var did []string
+	for _, c := range resp.Changes {
+		did = append(did, fmt.Sprintf("volume %s: %s", c.Volume, c.Reason))
+	}
+	for _, u := range resp.RestartedUnits {
+		did = append(did, "restarted "+u)
+	}
+	for _, w := range resp.Warnings {
+		did = append(did, "warning: "+w)
+	}
+	if len(did) == 0 {
+		return ""
+	}
+	return " (" + strings.Join(did, "; ") + ")"
 }
 
 // plan adds to resp, a dry run's answer, what write would write: the staged image's slot and the

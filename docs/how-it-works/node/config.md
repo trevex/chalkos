@@ -410,10 +410,12 @@ changes:
    writes the staged image's slot.
 
 A refusal in step 1 or 2 changes nothing. A failure in step 4 leaves the staged slot with its
-earlier config and fails the delivery with an error that names the slot; the running image runs
-the new config, and the same delivery sent again writes the staged slot. A dry run runs steps 1
-and 2 and plans both slots. On a node without a staged image, step 4 replaces the pending slot
-instead, when the node holds one, without a check.
+earlier config and fails the delivery with an error that names the slot and lists what the running
+image's delivery did; the running image runs the new config, and the same delivery sent again
+writes the staged slot. Step 4 records a new volume in `storage.json` before it writes the slot,
+so a failure in between leaves a volume that every boot mounts, never a slot that names a volume
+the node lacks. A dry run runs steps 1 and 2 and plans both slots. On a node without a staged
+image, step 4 replaces the pending slot instead, when the node holds one, without a check.
 
 A trial writes neither the staged slot nor the pending slot in step 4. It keeps the staged slot
 the staged image passed in `/state/chalkd/trial-staged`, next to the trial's record, and the
