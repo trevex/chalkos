@@ -1,6 +1,7 @@
 package chalkd
 
 import (
+	"bytes"
 	"context"
 	"encoding/hex"
 	"encoding/json"
@@ -20,6 +21,7 @@ import (
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/atomicfile"
 	"github.com/trevex/chalkos/pkg/config/slot"
+	"github.com/trevex/chalkos/pkg/uki"
 )
 
 // trialFile is where STATE keeps the record of a config on trial, below its mount point.
@@ -245,7 +247,10 @@ func (s *Server) ConfirmConfig(ctx context.Context, req *connect.Request[nodev1.
 func (s *Server) writeHeldBack(r trialRecord) []string {
 	switch {
 	case r.Staged != "":
-		if err := s.writeStagedCopy(r.Staged); err != nil {
+		switch err := s.writeStagedCopy(r.Staged); {
+		case errors.Is(err, errNoLongerStaged):
+			return []string{fmt.Sprintf("config %s is confirmed, but the image %.12s is no longer staged in the inactive slot, so the config it checked for its slot is dropped", r.Version, r.Staged)}
+		case err != nil:
 			return []string{fmt.Sprintf("config %s is confirmed, but writing the config slot of the image %.12s staged in the inactive slot failed, so it keeps its earlier config: %v; deliver the config again to write it", r.Version, r.Staged, err)}
 		}
 	case r.Pending:
@@ -260,13 +265,33 @@ func (s *Server) writeHeldBack(r trialRecord) []string {
 	return nil
 }
 
+// errNoLongerStaged is writeStagedCopy's error for an image that is no longer the one staged in
+// the inactive slot.
+var errNoLongerStaged = errors.New("the image is no longer staged")
+
 // writeStagedCopy writes the copy a trial kept at trialStagedSlot to the config slot of the
-// staged image, whose root hash staged gives in hex. An image whose slot STATE no longer keeps is
-// no longer staged, and no slot is written for it. The caller holds s.mu.
+// staged image, whose root hash staged gives in hex. The slot is written only while that image is
+// still the one in the inactive slot, as stagedEntry finds it, and not the running one, whose
+// slot runs the config on trial already, and while STATE keeps its slot; otherwise the copy is
+// dropped and errNoLongerStaged returned. Nothing staged another image during the trial, but a
+// boot may have: one into the staged image, whose rollback of the trial failed, keeps the record
+// open, and the running slot is then the staged image's. The caller holds s.mu.
 func (s *Server) writeStagedCopy(staged string) error {
 	image, err := hex.DecodeString(staged)
 	if err != nil {
 		return fmt.Errorf("the trial's record names no image: %w", err)
+	}
+	sl, ok, err := s.stagedEntry()
+	if err != nil {
+		return fmt.Errorf("find the staged image: %w", err)
+	}
+	running, err := uki.RunningHash(s.Paths.Cmdline)
+	if err != nil {
+		return err
+	}
+	if !ok || !bytes.Equal(sl.entry.RootHash, image) || bytes.Equal(image, running) || !s.keepsSlot(image) {
+		log.Printf("the image %.12s is no longer staged, so the copy of its config slot the trial kept is dropped", staged)
+		return errNoLongerStaged
 	}
 	held, found, err := slot.Read(filepath.Join(s.Paths.StateDir, trialStagedSlot))
 	switch {
@@ -274,9 +299,6 @@ func (s *Server) writeStagedCopy(staged string) error {
 		return err
 	case !found:
 		return errors.New("the trial's copy of the slot is gone")
-	case !s.keepsSlot(image):
-		log.Printf("the image %.12s is no longer staged, so its config slot is not written", staged)
-		return nil
 	}
 	if err := slot.Write(slot.Dir(s.Loader.Slots, image), held); err != nil {
 		return err

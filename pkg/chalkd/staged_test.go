@@ -545,6 +545,51 @@ func TestConfirmConfigWarnsOfAHeldBackWriteThatFailed(t *testing.T) {
 	})
 }
 
+// TestConfirmConfigDropsTheCopyOfAnImageNoLongerStaged writes the trial's copy only to the slot of
+// the image still staged in the inactive slot, and not the running one: after a boot into the
+// staged image whose rollback of the trial failed, the record names the running image, and once
+// the staged image's slot is retired it names none. Either way the confirmation warns, the copy
+// goes, and no slot takes it.
+func TestConfirmConfigDropsTheCopyOfAnImageNoLongerStaged(t *testing.T) {
+	for name, tc := range map[string]struct {
+		change func(*Server) error
+		// kept is whether STATE still keeps the staged image's slot, which then holds the config
+		// from before the trial.
+		kept bool
+	}{
+		"booted": {func(s *Server) error {
+			writeESP(t, s.Paths.ESP, s.Paths.EFIVars, s.Paths.Cmdline, "chalkos_3.efi")
+			return nil
+		}, true},
+		"retired": {func(s *Server) error { return slot.Retire(s.Loader.Slots, [][]byte{runningImage}) }, false},
+	} {
+		t.Run(name, func(t *testing.T) {
+			s := stagedTrial(t)
+			if err := tc.change(s); err != nil {
+				t.Fatal(err)
+			}
+			m, err := s.ConfirmConfig(context.Background(), connect.NewRequest(&nodev1.ConfirmConfigRequest{Version: hashOf(t, nextConfig)}))
+			if err != nil {
+				t.Fatal(err)
+			}
+			want := "config " + hashOf(t, nextConfig) + " is confirmed, but the image 333333333333 is no longer staged in the inactive slot, so the config it checked for its slot is dropped"
+			if w := m.Msg.Warnings; len(w) != 1 || w[0] != want {
+				t.Errorf("warnings = %q, want %q", w, want)
+			}
+			held := ""
+			if tc.kept {
+				held = hashOf(t, baseConfig)
+			}
+			if v := slotVersion(t, s, stagedImage); v != held {
+				t.Errorf("the slot of the image no longer staged holds %q, want %q", v, held)
+			}
+			if trialOpenOn(t, s) || trialCopy(t, s) != "" {
+				t.Errorf("the trial is open %v with the copy %q, want both gone", trialOpenOn(t, s), trialCopy(t, s))
+			}
+		})
+	}
+}
+
 // TestEveryEndOfATrialDropsItsCopy removes the copy of the staged slot a trial kept, and writes
 // nothing to the staged slot, at every end of the trial besides its confirmation: a rollback on
 // request, a boot, and the deadline that finds the slot running the config from before the trial.
