@@ -1,7 +1,6 @@
 package chalkd
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -374,8 +373,9 @@ func (s *Server) installImage(ctx context.Context, h upgrade.Header, text, secre
 // ActivateImage makes the image staged in the inactive slot boot next, as upgrade.Node.Activate
 // does, under the lock an upgrade and a rollback hold, so none of them writes the ESP while
 // another does. It runs no check of the config: the image's own checker passed its slot before
-// the image was staged. An image whose config slot STATE no longer keeps is refused first: it
-// would boot without config, fail its health check and fall back.
+// the image was staged. A staged image whose config slot STATE no longer keeps is refused before
+// anything changes: it would boot without config, fail its health check and fall back. Refusals
+// fail the precondition, and a failure to read or change the disk or the ESP is internal.
 func (s *Server) ActivateImage(ctx context.Context, req *connect.Request[nodev1.ActivateImageRequest]) (*connect.Response[nodev1.ActivateImageResponse], error) {
 	root := req.Msg.RootHash
 	if len(root) == 0 {
@@ -388,22 +388,14 @@ func (s *Server) ActivateImage(ctx context.Context, req *connect.Request[nodev1.
 	if err := s.refuseOnTrialLocking("an image's activation"); err != nil {
 		return nil, err
 	}
-	running, err := uki.RunningHash(s.Paths.Cmdline)
-	if err != nil {
-		return nil, failed(connect.CodeInternal, "%v", err)
-	}
-	if !bytes.Equal(running, root) {
-		s.mu.Lock()
-		kept := s.keepsSlot(root)
-		s.mu.Unlock()
-		if !kept {
-			return nil, failed(connect.CodeFailedPrecondition, "STATE holds no config for the image %x, which an upgrade stages with its config; it would boot without config", root)
-		}
-	}
 	res, err := s.activateStaged(ctx, root)
 	if err != nil {
 		log.Printf("activation of %x failed: %v", root, err)
-		return nil, failed(connect.CodeFailedPrecondition, "activate: %v", err)
+		code := connect.CodeInternal
+		if refusal := (*upgrade.RefusalError)(nil); errors.As(err, &refusal) {
+			code = connect.CodeFailedPrecondition
+		}
+		return nil, failed(code, "activate: %v", err)
 	}
 	switch {
 	case res.AlreadyInstalled:
@@ -426,7 +418,19 @@ func (s *Server) activateStaged(ctx context.Context, rootHash []byte) (upgrade.R
 	if err != nil {
 		return upgrade.Result{}, err
 	}
+	n.CheckStaged = s.checkStagedSlot
 	return n.Activate(ctx, rootHash)
+}
+
+// checkStagedSlot refuses to activate the staged image, by its root hash, while STATE keeps no
+// config slot for it: the image would boot without config, fail its health check and fall back.
+func (s *Server) checkStagedSlot(rootHash []byte) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if !s.keepsSlot(rootHash) {
+		return fmt.Errorf("STATE holds no config for the image %x, which an upgrade stages with its config; it would boot without config", rootHash)
+	}
+	return nil
 }
 
 // upgradeNode is the node an upgrade changes. It reads and changes the boot disk's partition

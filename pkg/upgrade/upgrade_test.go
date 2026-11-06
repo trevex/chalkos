@@ -337,8 +337,9 @@ func TestStageAndActivate(t *testing.T) {
 	a, b, c, d := newImage(t, "a", 3), newImage(t, "b", 2), newImage(t, "c", 3), newImage(t, "d", 3)
 	l := newLab(t, a)
 	ctx := context.Background()
-	if _, err := l.node.Activate(ctx, b.root); err == nil || !strings.Contains(err.Error(), "no image is staged in the inactive slot") {
-		t.Errorf("activate without a staged image = %v", err)
+	var refusal *RefusalError
+	if _, err := l.node.Activate(ctx, b.root); !errors.As(err, &refusal) || !strings.Contains(err.Error(), "no image is staged in the inactive slot") {
+		t.Errorf("activate without a staged image = %v, want a refusal", err)
 	}
 	stage := func(img image) Result {
 		t.Helper()
@@ -360,12 +361,25 @@ func TestStageAndActivate(t *testing.T) {
 	if res := stage(b); res.Active || !res.AlreadyStaged || res.Entry != ".staged-chalkos_2.efi" || res.Wrote {
 		t.Errorf("staging the staged image again = %+v", res)
 	}
-	if _, err := l.node.Activate(ctx, c.root); err == nil || !strings.Contains(err.Error(), fmt.Sprintf("the image staged in the inactive slot is %x, not %x", b.root, c.root)) {
-		t.Errorf("activate another image = %v", err)
+	// CheckStaged is asked only once the image staged is the one asked for, and its error refuses.
+	var checked [][]byte
+	l.node.CheckStaged = func(rootHash []byte) error {
+		checked = append(checked, rootHash)
+		return errors.New("no config")
 	}
+	if _, err := l.node.Activate(ctx, c.root); !errors.As(err, &refusal) || !strings.Contains(err.Error(), fmt.Sprintf("the image staged in the inactive slot is %x, not %x", b.root, c.root)) {
+		t.Errorf("activate another image = %v, want a refusal", err)
+	}
+	if _, err := l.node.Activate(ctx, b.root); !errors.As(err, &refusal) || err.Error() != "no config" || l.file(".staged-chalkos_2.efi") == nil {
+		t.Errorf("an activation CheckStaged refuses = %v, want a refusal; the staged UKI kept: %v", err, l.file(".staged-chalkos_2.efi") != nil)
+	}
+	if len(checked) != 1 || !bytes.Equal(checked[0], b.root) {
+		t.Errorf("CheckStaged checked %x, want %x alone", checked, b.root)
+	}
+	l.node.CheckStaged = func([]byte) error { return nil }
 	l.node.Change = func(what string) error { return errCrash }
-	if _, err := l.node.Activate(ctx, b.root); !errors.Is(err, errCrash) || l.file(".staged-chalkos_2.efi") == nil {
-		t.Errorf("an activation stopped before its rename = %v; the staged UKI kept: %v", err, l.file(".staged-chalkos_2.efi") != nil)
+	if _, err := l.node.Activate(ctx, b.root); !errors.Is(err, errCrash) || errors.As(err, &refusal) || l.file(".staged-chalkos_2.efi") == nil {
+		t.Errorf("an activation stopped before its rename = %v, want no refusal; the staged UKI kept: %v", err, l.file(".staged-chalkos_2.efi") != nil)
 	}
 	l.node.Change = nil
 	res, err := l.node.Activate(ctx, b.root)

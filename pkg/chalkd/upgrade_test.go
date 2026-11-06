@@ -3,6 +3,7 @@ package chalkd
 import (
 	"bytes"
 	"context"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"io"
@@ -165,10 +166,19 @@ func TestUpgradeStageOnly(t *testing.T) {
 	}
 }
 
+// activateOn asks s to activate the image with the root hash.
+func activateOn(s *Server, root []byte) (*nodev1.ActivateImageResponse, error) {
+	resp, err := s.ActivateImage(context.Background(), connect.NewRequest(&nodev1.ActivateImageRequest{RootHash: root}))
+	if err != nil {
+		return nil, err
+	}
+	return resp.Msg, nil
+}
+
 // TestActivateImage activates the staged image through the boot disk's activation and answers with
 // the entry that boots it next, or that it boots next or runs already. It refuses a request without
-// an image, and an image whose config slot STATE does not keep, before it activates anything, and
-// passes an activation's refusal on.
+// an image, and passes an activation's refusal on as a failed precondition and any other failure
+// as internal.
 func TestActivateImage(t *testing.T) {
 	s, _ := stagedServerOf(t, fixtureSchemas(t), "chalkos_2.efi", ".staged-chalkos_3.efi")
 	var asked [][]byte
@@ -177,39 +187,97 @@ func TestActivateImage(t *testing.T) {
 		asked = append(asked, rootHash)
 		return result, refusal
 	}
-	activate := func(root []byte) (*nodev1.ActivateImageResponse, error) {
-		resp, err := s.ActivateImage(context.Background(), connect.NewRequest(&nodev1.ActivateImageRequest{RootHash: root}))
-		if err != nil {
-			return nil, err
-		}
-		return resp.Msg, nil
-	}
-	if _, err := activate(nil); connect.CodeOf(err) != connect.CodeInvalidArgument {
+	if _, err := activateOn(s, nil); connect.CodeOf(err) != connect.CodeInvalidArgument {
 		t.Errorf("activate no image = %v, want invalid", err)
-	}
-	if _, err := activate(bytes.Repeat([]byte{'4'}, 32)); connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "STATE holds no config for the image") {
-		t.Errorf("activate an image without a config slot = %v", err)
 	}
 	if len(asked) != 0 {
 		t.Fatalf("activated %x", asked)
 	}
-	if resp, err := activate(stagedImage); err != nil || resp.Entry != "chalkos_3+3.efi" || resp.AlreadyActive || resp.AlreadyInstalled {
+	if resp, err := activateOn(s, stagedImage); err != nil || resp.Entry != "chalkos_3+3.efi" || resp.AlreadyActive || resp.AlreadyInstalled {
 		t.Errorf("activate = %v, %v", resp, err)
 	}
 	result = upgrade.Result{AlreadyStaged: true, Entry: "chalkos_3+3.efi", Active: true}
-	if resp, err := activate(stagedImage); err != nil || !resp.AlreadyActive {
+	if resp, err := activateOn(s, stagedImage); err != nil || !resp.AlreadyActive {
 		t.Errorf("activate again = %v, %v", resp, err)
 	}
 	result = upgrade.Result{AlreadyInstalled: true}
-	if resp, err := activate(runningImage); err != nil || !resp.AlreadyInstalled {
+	if resp, err := activateOn(s, runningImage); err != nil || !resp.AlreadyInstalled {
 		t.Errorf("activate the running image = %v, %v", resp, err)
 	}
-	refusal = errors.New("the image staged in the inactive slot is 33, not 34")
-	if _, err := activate(stagedImage); connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "activate: the image staged") {
+	refusal = &upgrade.RefusalError{Err: errors.New("the image staged in the inactive slot is 33, not 34")}
+	if _, err := activateOn(s, stagedImage); connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "activate: the image staged") {
 		t.Errorf("a refused activation = %v", err)
 	}
-	if len(asked) != 4 || !bytes.Equal(asked[2], runningImage) {
+	refusal = errors.New("rename the UKI: input/output error")
+	if _, err := activateOn(s, stagedImage); connect.CodeOf(err) != connect.CodeInternal || !strings.Contains(err.Error(), "activate: rename the UKI") {
+		t.Errorf("a failed activation = %v, want it internal", err)
+	}
+	if len(asked) != 5 || !bytes.Equal(asked[2], runningImage) {
 		t.Errorf("activated %x", asked)
+	}
+}
+
+// TestActivateImageRefusals activates on the boot disk and refuses what is staged before the config
+// slot: without an image staged, or with another one staged, the answer says so, and only the image
+// staged is refused for a config slot STATE does not keep. Each is a failed precondition, before
+// anything changes.
+func TestActivateImageRefusals(t *testing.T) {
+	other := bytes.Repeat([]byte{'4'}, 32)
+	for _, tc := range []struct {
+		name string
+		root []byte
+		// prepare changes the node with the image staged as .staged-chalkos_3.efi.
+		prepare func(t *testing.T, s *Server)
+		want    string
+	}{
+		{"nothing staged", stagedImage, func(t *testing.T, s *Server) {
+			if err := os.Remove(filepath.Join(s.Paths.ESP, "EFI", "Linux", ".staged-chalkos_3.efi")); err != nil {
+				t.Fatal(err)
+			}
+			// The retirement that removed the staged UKI removed its config slot too.
+			if err := slot.Retire(s.Loader.Slots, [][]byte{runningImage}); err != nil {
+				t.Fatal(err)
+			}
+		}, "activate: no image is staged in the inactive slot"},
+		// STATE keeps no config slot for the other image either.
+		{"another image staged", other, nil, "activate: the image staged in the inactive slot is " + hex.EncodeToString(stagedImage) + ", not " + hex.EncodeToString(other)},
+		{"the staged image without a config slot", stagedImage, func(t *testing.T, s *Server) {
+			if err := slot.Retire(s.Loader.Slots, [][]byte{runningImage}); err != nil {
+				t.Fatal(err)
+			}
+		}, "activate: STATE holds no config for the image " + hex.EncodeToString(stagedImage)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s, r := stagedServerOf(t, fixtureSchemas(t), "chalkos_2.efi", ".staged-chalkos_3.efi")
+			if tc.prepare != nil {
+				tc.prepare(t, s)
+			}
+			r.Calls = nil
+			if _, err := activateOn(s, tc.root); connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), tc.want) {
+				t.Errorf("activate = %v, want %q", err, tc.want)
+			}
+			if len(r.Calls) != 0 {
+				t.Errorf("the refusal ran %v", r.Calls)
+			}
+		})
+	}
+}
+
+// TestActivateImageWaitsForATrial refuses to activate the staged image while a config is on trial,
+// naming how to end it, and leaves the image staged.
+func TestActivateImageWaitsForATrial(t *testing.T) {
+	s, r := stagedServerOf(t, fixtureSchemas(t), "chalkos_2.efi", ".staged-chalkos_3.efi")
+	rec := recordTrial(t, s, nextConfig)
+	r.Calls = nil
+	want := "config " + rec.Version + " is on trial until " + rec.Deadline.Format(time.RFC3339) + ": confirm it with chalkctl apply-config --confirm n1, or roll it back with chalkctl apply-config --rollback n1, before an image's activation"
+	if _, err := activateOn(s, stagedImage); connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), want) {
+		t.Errorf("activate = %v, want %q", err, want)
+	}
+	if _, err := os.Stat(filepath.Join(s.Paths.ESP, "EFI", "Linux", ".staged-chalkos_3.efi")); err != nil {
+		t.Errorf("the staged UKI: %v", err)
+	}
+	if len(r.Calls) != 0 {
+		t.Errorf("the refusal ran %v", r.Calls)
 	}
 }
 

@@ -157,7 +157,7 @@ func (n *Node) Rollback(ctx context.Context, rootHash, last []byte, record func(
 // checkKeptUKI checks the UKI at path of the image a rollback or an activation boots as CheckUKI
 // checks an upgrade's, against the node's image ID, platform and architecture and the image's
 // root hash, and returns the tries it asks for. Firmware's db and dbx may have changed since the
-// UKI was installed, so its signature is checked again.
+// UKI was installed, so its signature is checked again. A UKI the check refuses is a RefusalError.
 func (n *Node) checkKeptUKI(path, imageID string, rootHash []byte) (int, error) {
 	f, err := os.Open(path)
 	if err != nil {
@@ -169,7 +169,11 @@ func (n *Node) checkKeptUKI(path, imageID string, rootHash []byte) (int, error) 
 		return 0, err
 	}
 	h := Header{ImageID: imageID, Platform: n.OSRelease["CHALKOS_PLATFORM"], Architecture: n.Architecture, RootHash: rootHash, UKISize: info.Size()}
-	return CheckUKI(f, h, n.EFIVars)
+	tries, err := CheckUKI(f, h, n.EFIVars)
+	if err != nil {
+		return 0, refused(err)
+	}
+	return tries, nil
 }
 
 // KnownGood reports whether the staged entry is the node's known-good image, as a rollback from

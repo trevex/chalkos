@@ -97,6 +97,10 @@ type Node struct {
 	// stays the next boot.
 	CheckStore func(Store) error
 	StoreMount string
+	// CheckStaged, when set, checks the image Activate makes the next boot once the image staged
+	// is the one asked for, before the UKI or the slot is checked and anything changes, such as
+	// chalkd checking that STATE keeps the image's config. Its error refuses the activation.
+	CheckStaged func(rootHash []byte) error
 }
 
 func (n *Node) change(what string) error {
@@ -139,6 +143,18 @@ type CheckError struct{ Err error }
 func (e *CheckError) Error() string { return e.Err.Error() }
 
 func (e *CheckError) Unwrap() error { return e.Err }
+
+// RefusalError is Activate's refusal of the activation, of what the ESP stages or boots next or
+// of the staged UKI, as opposed to a failure to read or change the disk or the ESP. Err is the
+// refusal.
+type RefusalError struct{ Err error }
+
+func (e *RefusalError) Error() string { return e.Err.Error() }
+
+func (e *RefusalError) Unwrap() error { return e.Err }
+
+// refused is err as a RefusalError.
+func refused(err error) error { return &RefusalError{Err: err} }
 
 // Upgrade installs the image as Install does and activates it as Activate does, unless the node
 // runs it or it boots next already. An activation that fails leaves the image staged, which the
@@ -312,12 +328,14 @@ func (n *Node) Install(ctx context.Context, h Header, stream io.Reader) (Result,
 // Install staged is checked again as Install checks a new one, against the node's image and
 // platform and, with Secure Boot on, the firmware's db and dbx, which may have changed since, and
 // renamed to <id>_<generation>+<tries>.efi, one generation above the image's highest on the ESP.
-// The config is not checked: Install staged the image only once CheckStore passed it. The rename
-// is the only change, so an activation that fails leaves the UKI under its staged name, and the
-// running image boots next.
+// The config is not checked: Install staged the image only once CheckStore passed it; CheckStaged
+// may check what else the image needs. The rename is the only change, so an activation that fails
+// leaves the UKI under its staged name, and the running image boots next.
 //   - A node that runs the image answers AlreadyInstalled, and one that boots it next already
 //     AlreadyStaged, so an activation asked for twice happens once.
 //   - Without an image staged, or with another one staged or boot next, it refuses.
+//
+// A refusal is a RefusalError; other errors failed to read or change the disk or the ESP.
 //
 // The caller keeps Install and Rollback from running meanwhile.
 func (n *Node) Activate(ctx context.Context, rootHash []byte) (Result, error) {
@@ -344,16 +362,21 @@ func (n *Node) Activate(ctx context.Context, rootHash []byte) (Result, error) {
 		if bytes.Equal(active.RootHash, rootHash) {
 			return Result{AlreadyStaged: true, Entry: active.File, Active: true}, nil
 		}
-		return Result{}, fmt.Errorf("no image is staged: the image %x boots next from %s", active.RootHash, active.File)
+		return Result{}, refused(fmt.Errorf("no image is staged: the image %x boots next from %s", active.RootHash, active.File))
 	}
 	staged, ok, err := esp.Staged(n.ESP, imageID)
 	switch {
 	case err != nil:
 		return Result{}, err
 	case !ok:
-		return Result{}, errors.New("no image is staged in the inactive slot")
+		return Result{}, refused(errors.New("no image is staged in the inactive slot"))
 	case !bytes.Equal(staged.RootHash, rootHash):
-		return Result{}, fmt.Errorf("the image staged in the inactive slot is %x, not %x", staged.RootHash, rootHash)
+		return Result{}, refused(fmt.Errorf("the image staged in the inactive slot is %x, not %x", staged.RootHash, rootHash))
+	}
+	if n.CheckStaged != nil {
+		if err := n.CheckStaged(rootHash); err != nil {
+			return Result{}, refused(err)
+		}
 	}
 	// The new entry boots before the others only while their names order them by generation, as
 	// Install checked before it staged the image; an entry may have changed since.
@@ -362,7 +385,7 @@ func (n *Node) Activate(ctx context.Context, rootHash []byte) (Result, error) {
 			continue
 		}
 		if err := misnamed(e, imageID); err != nil {
-			return Result{}, err
+			return Result{}, refused(err)
 		}
 	}
 	parts, err := n.slots().ReadTable(ctx)
@@ -374,7 +397,7 @@ func (n *Node) Activate(ctx context.Context, rootHash []byte) (Result, error) {
 		return Result{}, err
 	}
 	if !inactive.Holds(rootHash) {
-		return Result{}, fmt.Errorf("the inactive slot no longer holds the store of %x, which %s boots", rootHash, staged.File)
+		return Result{}, refused(fmt.Errorf("the inactive slot no longer holds the store of %x, which %s boots", rootHash, staged.File))
 	}
 	path := filepath.Join(n.ESP, esp.LinuxDir, staged.File)
 	tries, err := n.checkKeptUKI(path, imageID, rootHash)
@@ -385,7 +408,7 @@ func (n *Node) Activate(ctx context.Context, rootHash []byte) (Result, error) {
 	// since may name a higher one.
 	next, err := esp.NextGeneration(all, imageID)
 	if err != nil {
-		return Result{}, err
+		return Result{}, refused(err)
 	}
 	name := esp.CountedEntryName(imageID, max(staged.Generation, next), tries)
 	if err := esp.Name(n.ESP, path, name, n.Change); err != nil {
