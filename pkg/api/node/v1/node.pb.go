@@ -997,9 +997,10 @@ type InstallHeader struct {
 	Image *ImageHeader `protobuf:"bytes,7,opt,name=image,proto3" json:"image,omitempty"`
 	// Whether the installer may replace what the target disk holds, including an installed node.
 	WipeDisk bool `protobuf:"varint,8,opt,name=wipe_disk,json=wipeDisk,proto3" json:"wipe_disk,omitempty"`
-	// The node's config: YAML documents separated by ---. chalkd checks them as a set against the
-	// schemas of the image it installs, fills in their defaults, keeps them on STATE and translates
-	// them into what the node applies at boot. Required.
+	// The node's config: YAML documents separated by ---. The image the node boots checks them as a
+	// set, fills in their defaults and translates them into what the node applies at boot, which
+	// STATE keeps with them: in place the running image, from the installer the image's own
+	// checker, once its store is on the target disk. Required.
 	Config string `protobuf:"bytes,9,opt,name=config,proto3" json:"config,omitempty"`
 	// Where the installer takes the contract and the parts of the image it writes from.
 	//
@@ -1196,8 +1197,8 @@ type ImageContract struct {
 	// name, which the installer lays out the target disk with. Each image chooses its partition
 	// sizes, so the installer's own may not fit.
 	SystemDefinitions map[string]string `protobuf:"bytes,1,rep,name=system_definitions,json=systemDefinitions,proto3" json:"system_definitions,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
-	// The image's schemas by file name, as its image directory's schemas/ holds them; the config is
-	// checked against them.
+	// The image's schemas by file name, as its image directory's schemas/ holds them, which the
+	// installer translates the config with to lay out the target disk.
 	Schemas map[string][]byte `protobuf:"bytes,2,rep,name=schemas,proto3" json:"schemas,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
 	// The facts of the image's layers, such as chalkos.kubernetes.v1.ImageFacts; empty for an image
 	// whose layers have none.

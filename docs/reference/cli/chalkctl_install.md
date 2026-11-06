@@ -21,7 +21,9 @@ keyslot and the payloads of its layers, such as a Kubernetes node's share. A nod
 image already installs in place. A node that runs the installer also gets the image --image names,
 or the node's image in the inventory, and writes it to the disk its SystemDisk names: a disk on
 which blkid finds no signature, one holding an unfinished install of the node, or any disk with
---wipe-disk. The node then reboots into the image. See
+--wipe-disk. Once the image's store is on the disk, the image's own checker checks the config with
+its rules, validators and renderers; a config it refuses leaves a disk that boots nothing, and the
+next install of the image continues there. The node then reboots into the image. See
 [An install turns a machine in maintenance mode into a node](../../how-it-works/node/overview.md#an-install-turns-a-machine-in-maintenance-mode-into-a-node).
 
 A name revoked with chalkctl node revoke is refused, as is any node while a layer cannot say which

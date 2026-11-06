@@ -121,8 +121,11 @@ The response of Contract: the config contract of the image the node runs.
 Install turns a node in maintenance mode into an installed node and reboots it. The first
 message carries the header; when the node is the installer, the image's store data, hash
 tree, UKI and boot loader follow as chunks, unless the header's source names an image in a
-registry, which the installer pulls. An install the installer did not finish continues when
-run again, from either. Available in maintenance mode to admins.
+registry, which the installer pulls. The installer has the image's own checker check the
+config once the image's store is on the target disk, before it writes STATE or the boot
+loader; a refusal fails the precondition and leaves a target that boots nothing. An install
+the installer did not finish continues when run again, from either. Available in maintenance
+mode to admins.
 
 Request: a stream of InstallRequest. Response: InstallResponse.
 
@@ -747,7 +750,7 @@ The contract of the image an installer writes, as its image directory holds it.
 | Field | Type | Description |
 | ----- | ---- | ----------- |
 | `system_definitions` | map of string | The image's repart definitions of the system region (ESP, slots A and B, STATE) by file name, which the installer lays out the target disk with. Each image chooses its partition sizes, so the installer's own may not fit. |
-| `schemas` | map of bytes | The image's schemas by file name, as its image directory's schemas/ holds them; the config is checked against them. |
+| `schemas` | map of bytes | The image's schemas by file name, as its image directory's schemas/ holds them, which the installer translates the config with to lay out the target disk. |
 | `layer_facts` | list of google.protobuf.Any | The facts of the image's layers, such as chalkos.kubernetes.v1.ImageFacts; empty for an image whose layers have none. |
 
 ### ImageHeader { #message-imageheader }
@@ -810,7 +813,7 @@ What an install delivers: the node's credentials and config, the target and the 
 | `disk` | DiskReference, oneof target | Target disk, which the installer lays out and writes the streamed image to. |
 | `image` | ImageHeader | The image the installer writes to the target disk; it must name the boot loader. Installer only. |
 | `wipe_disk` | bool | Whether the installer may replace what the target disk holds, including an installed node. |
-| `config` | string | The node's config: YAML documents separated by ---. chalkd checks them as a set against the schemas of the image it installs, fills in their defaults, keeps them on STATE and translates them into what the node applies at boot. Required. |
+| `config` | string | The node's config: YAML documents separated by ---. The image the node boots checks them as a set, fills in their defaults and translates them into what the node applies at boot, which STATE keeps with them: in place the running image, from the installer the image's own checker, once its store is on the target disk. Required. |
 | `contract` | ImageContract, oneof origin | The contract of an image whose parts follow the header as chunks. Installer only: in place, chalkd checks the config against the running image. |
 | `source` | ImageSource, oneof origin | An image in a registry, which the installer pulls. Its contract layer holds the image's contract, and the request carries nothing after the header. Installer only. |
 | `layers` | list of google.protobuf.Any | Payloads of the installed image's layers, such as chalkos.kubernetes.v1.Share, which the node keeps on STATE. The node refuses a payload no layer takes. |
