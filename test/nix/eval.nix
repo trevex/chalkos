@@ -2806,15 +2806,16 @@ lib.runTests {
         pinned =
           config.virtualisation.containerd.settings.plugins."io.containerd.cri.v1.images" ? pinned_images;
         grant = services.chalkos-containerd-config.kinds;
-        requiredBy = unit.requiredBy;
+        inherit (unit) wantedBy requiredBy;
         beforeContainerd = lib.elem "containerd.service" unit.before;
         execStart = lib.hasSuffix "kubernetes containerd-config /run/containerd/conf.d/chalkos.toml" unit.serviceConfig.ExecStart;
       };
       expected = {
-        imports = [ "/run/containerd/conf.d/chalkos.toml" ];
+        imports = [ "/run/containerd/conf.d/*.toml" ];
         pinned = false;
         grant = [ "Cluster" ];
-        requiredBy = [ "containerd.service" ];
+        wantedBy = [ "containerd.service" ];
+        requiredBy = [ ];
         beforeContainerd = true;
         execStart = true;
       };

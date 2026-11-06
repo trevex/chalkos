@@ -10,7 +10,8 @@
 let
   flannel = config.chalkos.cni.provider == "flannel";
   # containerd's settings from the node's config, which its own config imports.
-  clusterSettings = "/run/containerd/conf.d/chalkos.toml";
+  importDir = "/run/containerd/conf.d";
+  clusterSettings = "${importDir}/chalkos.toml";
 
   # The reference plugins the image names (chalkos.cni.plugins), and with flannel its own plugin.
   # Copies, so the store holds these alone.
@@ -70,8 +71,10 @@ in
       enable = true;
       settings = lib.mkForce {
         version = 4;
-        # The settings of the Cluster document, which chalkos-containerd-config writes.
-        imports = [ clusterSettings ];
+        # The settings of the Cluster document, which chalkos-containerd-config writes. The pattern
+        # matches no file until the unit has written one, and containerd then starts with its own
+        # settings.
+        imports = [ "${importDir}/*.toml" ];
         plugins."io.containerd.cri.v1.images" = {
           # The hosts.toml files of the Mirror and Registry documents, which containerd reads on
           # every pull.
@@ -88,12 +91,12 @@ in
       };
     };
 
-    # The pod sandbox's image, from the Cluster document. containerd fails to start without the
-    # file it imports, so a node whose config names no sandbox image gets a file that sets none.
+    # The pod sandbox's image, from the Cluster document. containerd also starts without the file,
+    # with its own sandbox image, so containerd does not depend on this unit.
     systemd.services.chalkos-containerd-config = {
       description = "Write containerd's settings from the Cluster document";
       chalkos.kinds = [ "Cluster" ];
-      requiredBy = [ "containerd.service" ];
+      wantedBy = [ "containerd.service" ];
       before = [ "containerd.service" ];
       after = [ "chalkos-config.service" ];
       serviceConfig = {
