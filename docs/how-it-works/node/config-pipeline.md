@@ -94,10 +94,9 @@ output that passes. The outputs render for the node's name, the subject of its n
 STATE. A node certificate that cannot be read fails `chalkos-config.service` before any output
 renders.
 
-The renderers assume documents that the image's validators passed, and an install from the
-installer writes the slot without running them. So the boot runs the validators first, every
-time. If a validator refuses the config or fails, no output renders and `chalkos-config.service`
-fails.
+The boot runs no validators. Every config slot was written only after the checker of the image
+that boots it passed the documents, validators and renderers included, so the renderers get
+documents the image's validators passed.
 
 A renderer or check that fails fails `chalkos-config.service` once the rest of the config is
 applied, and so fails the boot's [health check](boot-and-rollback.md). A boot that the boot loader
@@ -127,9 +126,11 @@ in the unit's journal: `chalkctl logs <node> --unit=chalkos-check.service`.
 
 An install in place runs the running image's validators, and renders and checks the outputs with
 its renderers, before it installs anything, and the boot that follows renders them again. An
-install from the installer checks the config with the installed image's schemas and rules,
-evaluated by the installer's chalkd, but cannot run that image's programs. That image renders its
-outputs at its first boot alone, and runs its validators there first.
+install from the installer has the installed image check the config the same way, once the
+image's store is in slot A of the target disk and before STATE holds the node's config. The
+installer's chalkd loads the facts the image declares from its own machine, the one the node runs
+on. Its own code only translates the config for the storage it lays the disk out with, which must
+match the storage the image's checker gets from the config.
 
 ## Limits
 

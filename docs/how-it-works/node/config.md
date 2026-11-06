@@ -388,14 +388,16 @@ fails with it, and a counted boot falls back.
 
 ## Every slot is checked by the image that boots it
 
-An upgrade and every `apply-config` write a config slot only after the image that boots it checked
-the config with its own checker: its schemas, its CEL rules, its facts, its validators and its
-renderers with their checks. The running image checks a delivery to its own slot in chalkd. An
-image that does not run checks config with its own `chalkd check`, which chalkd runs from that
-image's store in a sandbox, as
+An install, an upgrade and every `apply-config` write a config slot only after the image that
+boots it checked the config with its own checker: its schemas, its CEL rules, its facts, its
+validators and its renderers with their checks. The running image checks a delivery to its own
+slot in chalkd, and an install in place. An image that does not run checks config with its own
+`chalkd check`, which chalkd runs from that image's store in a sandbox, as
 [An image that does not run checks its own config](config-pipeline.md#an-image-that-does-not-run-checks-its-own-config)
-describes. That is how an upgrade checks the new image's config, and how `apply-config --staged`
-checks the staged image's.
+describes. That is how an upgrade checks the new image's config, how `apply-config --staged`
+checks the staged image's, and how the installer checks the config of the image it writes, once
+the image's store is on the target disk and before STATE holds any of the node. A boot therefore
+renders the outputs of its slot and runs no validators.
 
 `apply-config` without `--staged` on a node with a staged image runs both checks before anything
 changes:

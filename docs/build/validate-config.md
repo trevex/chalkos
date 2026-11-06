@@ -158,7 +158,9 @@ chalkctl logs cp1 --unit=chalkos-render-<n>.service
 
 `chalkctl apply-config` while an image is staged, with or without `--staged`, and
 `chalkctl upgrade` run the validators of the image the config is for, from that image's store, in
-`chalkos-check.service`.
+`chalkos-check.service`. So does `chalkctl install` on a machine that runs the installer, once the
+image's store is on the target disk. A boot runs no validator, since every config slot passed the
+validators of its image before it was written.
 
 ## The validator runs in a sandbox
 

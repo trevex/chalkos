@@ -229,8 +229,11 @@ for. Several cases give null, so a rule treats null as unknown:
 - A file fact whose file is missing.
 - A fact that the running image does not declare, as when a newer image's rules read a new fact
   during the upgrade to it.
-- Every fact at an install, in place or from the installer, so a repeated install does not read
-  what an earlier attempt left on STATE.
+- Every fact at an install in place, so a repeated install does not read what an earlier attempt
+  left on STATE.
+- A fact of what the node holds, such as a file on STATE, at an install from the installer. The
+  installer's machine has no STATE, but its hardware is the node's, so a command fact that reads
+  the disks finds the node's disks.
 
 An install also has no running config: rules of fields that read `oldSelf` do not run, and the
 rules of kinds see no `oldDocuments`. The `Rack` rule therefore accepts any location at install.
@@ -243,16 +246,13 @@ changes anything:
 - `chalkctl apply-config` for the running image, with the running image's rules;
 - `chalkctl apply-config` while an image is staged, `chalkctl apply-config --staged` and upgrades,
   with the rules of the image the slot is for, which that image's own chalkd evaluates;
-- `chalkctl install`, with the rules of the image it installs.
+- `chalkctl install`, with the rules of the image it installs: in place the running image's, from
+  the installer those that the image's own chalkd evaluates once its store is on the target disk.
 
-An image checks config for itself before it boots: the node runs the image's `chalkd check`
-with the image's store in place of its own. The image's rules therefore compile with the CEL
-library of the image's chalkd, and may call any function that chalkd has, whatever the running
-image's chalkd has.
-
-An install from the installer is the exception. The installer's chalkd evaluates the installed
-image's rules with its own CEL library, and refuses the install when a rule calls a function it
-lacks. Install with an installer of the same chalkos release as the image.
+An image checks config for itself before it boots: the node or the installer runs the image's
+`chalkd check` with the image's store in place of its own. The image's rules therefore compile
+with the CEL library of the image's chalkd, and may call any function that chalkd has, whatever
+the running image's or the installer's chalkd has.
 
 chalkctl evaluates the rules that read no facts, because the facts are the node's. `chalkctl
 validate` has no running config, so it runs the rules of kinds and the rules of fields that do not

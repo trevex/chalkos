@@ -531,12 +531,23 @@ the machine never reboots into an image its firmware refuses. The installer writ
 the system disk, sets up STATE, VAR and the volumes, and adds a UEFI boot entry named `chalkos`,
 as [An install runs in fixed steps](../contribute/architecture.md#an-install-runs-in-fixed-steps) follows step by step.
 
-The installer's chalkd checks the node's config before it writes anything: against the installed
-image's schemas and rules, which it evaluates with its own CEL library. A rule that calls a
-function the installer's chalkd lacks refuses the install. The installer cannot run the installed
-image's renderers and their checks, so they first run at that image's first boot, and one that
-fails there fails the boot's health check. Build the installer from the same chalkos release as
-the image, so that both check config the same way.
+The installed image checks the node's config itself, as an upgrade's image does. Before the
+installer changes the disk, it translates the config with its own chalkd for the storage that the
+disk is laid out with. Once slot A holds the image's store, the installer mounts it and runs the
+image's own checker on the config: its schemas, rules, validators and renderers, with the facts of
+this machine. The storage that the checker gets from the config must be the storage the disk was
+laid out with. Only then does the installer write STATE, the boot loader and the boot entry.
+
+A refusal ends `chalkctl install` with the image's message, such as that of the homelab's
+validator `bgp-peers` from [Validate config with a program](../build/validate-config.md):
+
+```text
+chalkctl: install cp1: failed_precondition: install: the config is refused: Peer/router-c: spec.address: 10.0.1.1 lies on no subnet of the node's addresses, 10.0.0.11/24; bird reaches a neighbour on a link of its own alone; the target disk boots nothing, and an install of the image continues on it
+```
+
+The machine stays in maintenance mode. Fix the config and run `chalkctl install cp1` again: the
+install continues on the disk without `--wipe-disk`. Build the installer from the same chalkos
+release as the image, so that both lay out the storage the same way.
 
 The boot entry the install creates goes first in the boot order, so the stick may stay in. Remove
 it before the next install elsewhere.
