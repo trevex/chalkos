@@ -1,0 +1,1 @@
+{"router":{"inputs":["Router","FirewallZone","VRF","Network"],"program":"/nix/store/0123456789abcdfghijklmnpqrsvwxyz-chalkos-render-0.1.0/bin/chalkos-render"}}

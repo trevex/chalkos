@@ -39,6 +39,11 @@ func TestWriteBuiltins(t *testing.T) {
 		"\n### Images with Kubernetes { #facts-kubernetes }\n\n",
 		"| `share`{ #fact-share } |",
 		"\n### Router images { #facts-router-images }\n\nNone.\n",
+		"\n## Validators { #validators }\n\n",
+		"\n### Every image { #validators-every-image }\n\nNone.\n",
+		"\n### Images with Kubernetes { #validators-kubernetes }\n\nNone.\n",
+		"\n### Router images { #validators-router-images }\n\n",
+		"| `router`{ #validator-router } |",
 		"\n## Outputs { #outputs }\n\n",
 		"\n### Every image { #outputs-every-image }\n\n",
 		"| `chrony`{ #output-chrony } |",
@@ -111,6 +116,9 @@ func TestWriteBuiltins(t *testing.T) {
 			"| `tcp-connect`{ #diagnostic-tcp-connect } | Opens a TCP connection to an address and port. Runs `bash -c <script> tcp-connect {address} {port}`, with the script after the table. | `address`, address; `port`, int from 1 to 65535 | operator | — |\n" +
 			"\nScript of `tcp-connect`:\n\n```text\nif : <>\"/dev/tcp/$1/$2\"; then\n  echo \"connected to $1 port $2\"\nfi\n```\n",
 		"| `crictl-pods`{ #diagnostic-crictl-pods } | The pods the kubelet runs, as crictl pods prints them. Runs `crictl pods`. | — | reader | — |\n",
+		// A validator's command is its program, without its store path, with validate and its name.
+		"The validators router images add.\n\n| Validator | Inputs | Command |\n| --- | --- | --- |\n" +
+			"| `router`{ #validator-router } | `Router`, `FirewallZone`, `VRF`, `Network` | `chalkos-render validate router` |\n",
 		// The router image's built-ins are those it adds to the image without Kubernetes.
 		"| 1 | — | No FirewallZone is named local. | `refuse` | `!(\"local\" in documents)` | a zone is named local |\n",
 		// An output of every image that the router image declares otherwise is listed again, as

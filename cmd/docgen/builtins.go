@@ -18,28 +18,34 @@ import (
 	"github.com/trevex/chalkos/pkg/facts"
 	"github.com/trevex/chalkos/pkg/outputs"
 	"github.com/trevex/chalkos/pkg/rules"
+	"github.com/trevex/chalkos/pkg/validators"
 )
 
 // builtinsDescription is the description of the page of built-ins.
-const builtinsDescription = "The change rules, facts, outputs, effects and diagnostics that chalkos's images declare"
+const builtinsDescription = "The change rules, facts, validators, outputs, effects and diagnostics that chalkos's images declare"
 
 // builtinsIntro opens the page of built-ins, after its front matter.
 const builtinsIntro = "# Built-ins\n\n" +
 	"This page is for image authors and operators who want to know why a node refused a config,\n" +
 	"what a delivery reloads and restarts, or what `chalkctl node diag` runs. It lists the change\n" +
-	"rules, facts, outputs, effects and diagnostics that chalkos's own modules declare: those of every\n" +
-	"image, and those that images with Kubernetes and router images add. An extension declares more\n" +
-	"with the [Extension API](extension-api.md), and its outputs, effects and diagnostics take names\n" +
-	"other than these.\n"
+	"rules, facts, validators, outputs, effects and diagnostics that chalkos's own modules declare:\n" +
+	"those of every image, and those that images with Kubernetes and router images add. An extension\n" +
+	"declares more with the [Extension API](extension-api.md), and its validators, outputs, effects\n" +
+	"and diagnostics take names other than these.\n"
 
 // builtinsSources closes the page of built-ins.
-const builtinsSources = "\nSources: the schemas, `facts.json`, `outputs.json`, `effects.json` and `diagnostics.json` that\n" +
-	"an image holds in `/etc/chalkos`, of an image of the default variant, of one with\n" +
-	"`kubernetes = false` and of one with `router = true`, which the node modules in `modules/node/`\n" +
-	"declare.\n"
+const builtinsSources = "\nSources: the schemas, `facts.json`, `validators.json`, `outputs.json`, `effects.json` and\n" +
+	"`diagnostics.json` that an image holds in `/etc/chalkos`, of an image of the default variant, of\n" +
+	"one with `kubernetes = false` and of one with `router = true`, which the node modules in\n" +
+	"`modules/node/` declare.\n"
 
 // The openings of the page's sections.
 const (
+	validatorsIntro = "A validator checks what several documents mean together, which no rule of one kind sees,\n" +
+		"after the change rules and before the outputs render. [Validate config with a\n" +
+		"program](../build/validate-config.md) describes them. Each table gives the kinds a validator\n" +
+		"reads and the command chalkd runs it as. `chalkctl validate` runs the validators it links, the\n" +
+		"router layer's `router`, whose refusals the pages of [Run a router](../router/index.md) list.\n"
 	rulesIntro = "A change rule refuses a config that breaks it before the node applies any of it.\n" +
 		"[Guard changes with rules and facts](../build/guard-changes.md) describes how rules are written\n" +
 		"and where they run. Each table holds a kind's rules: the field a field rule sits on, or `—` for\n" +
@@ -78,10 +84,12 @@ type kindRules struct {
 }
 
 // builtinImage is what an image's rules image holds of its built-ins: its kinds' rules, in the
-// order of the page of config kinds, and its facts, outputs, effects and diagnostics by name.
+// order of the page of config kinds, and its facts, validators, outputs, effects and diagnostics by
+// name.
 type builtinImage struct {
 	kinds       []kindRules
 	facts       map[string]facts.Definition
+	validators  map[string]validators.Definition
 	outputs     map[string]outputs.Definition
 	effects     map[string]effects.Definition
 	diagnostics map[string]diagnostics.Definition
@@ -139,6 +147,20 @@ func writeBuiltins(page, def, plain, router string) error {
 	writeFacts(&b, "facts-router-images", layerIntro("The facts router images add", "fact", "router images", routerChangedFacts),
 		sortedUnion(routerFacts, routerChangedFacts), routerChangedFacts, r)
 
+	everyValidators, kubeValidators, err := splitEvery("validator", d.validators, p.validators)
+	if err != nil {
+		return err
+	}
+	_, routerValidators, routerChangedValidators, err := split("validator", "the router image", r.validators, p.validators)
+	if err != nil {
+		return err
+	}
+	fmt.Fprintf(&b, "\n## Validators { #validators }\n\n%s", validatorsIntro)
+	writeValidators(&b, "validators-every-image", "The validators every image runs.", everyValidators, nil, d.validators)
+	writeValidators(&b, "validators-kubernetes", "The validators images with Kubernetes add.", kubeValidators, nil, d.validators)
+	writeValidators(&b, "validators-router-images", layerIntro("The validators router images add", "validator", "router images", routerChangedValidators),
+		sortedUnion(routerValidators, routerChangedValidators), routerChangedValidators, r.validators)
+
 	everyOutputs, kubeOutputs, err := splitEvery("output", d.outputs, p.outputs)
 	if err != nil {
 		return err
@@ -185,8 +207,8 @@ func writeBuiltins(page, def, plain, router string) error {
 	return os.WriteFile(page, []byte(b.String()), 0o644)
 }
 
-// readBuiltinImage reads the schemas, facts.json, outputs.json, effects.json and diagnostics.json
-// of a rules image.
+// readBuiltinImage reads the schemas, facts.json, validators.json, outputs.json, effects.json and
+// diagnostics.json of a rules image.
 func readBuiltinImage(dir string) (builtinImage, error) {
 	var img builtinImage
 	entries, err := os.ReadDir(filepath.Join(dir, "schemas"))
@@ -215,13 +237,16 @@ func readBuiltinImage(dir string) (builtinImage, error) {
 		}
 	}
 	// The readers take a missing file for an image that declares none, but a rules image holds all
-	// four.
-	for _, name := range []string{"facts.json", "outputs.json", "effects.json", "diagnostics.json"} {
+	// five.
+	for _, name := range []string{"facts.json", "validators.json", "outputs.json", "effects.json", "diagnostics.json"} {
 		if _, err := os.Stat(filepath.Join(dir, name)); err != nil {
 			return img, err
 		}
 	}
 	if img.facts, err = facts.Read(filepath.Join(dir, "facts.json")); err != nil {
+		return img, err
+	}
+	if img.validators, err = validators.Read(filepath.Join(dir, "validators.json")); err != nil {
 		return img, err
 	}
 	if img.outputs, err = outputs.Read(filepath.Join(dir, "outputs.json"), outputs.DefaultRoot); err != nil {
@@ -622,6 +647,21 @@ func writeOutputs(b *strings.Builder, anchor, intro string, names, changed []str
 		}
 		fmt.Fprintf(b, "| `%s`{ #%s } | %s | %s | %s | %s |\n",
 			name, rowAnchor("output", anchor, name, changed), strings.Join(codes(o.Inputs), ", "), code(o.Dir), tableCell(renderer(o.Render)), check)
+	}
+}
+
+// writeValidators writes a section of validators, each with the kinds it reads and the command
+// chalkd runs it as: its program with validate and its name.
+func writeValidators(b *strings.Builder, anchor, intro string, names, changed []string, defs map[string]validators.Definition) {
+	writeSubsection(b, anchor, intro, len(names))
+	if len(names) == 0 {
+		return
+	}
+	b.WriteString("| Validator | Inputs | Command |\n| --- | --- | --- |\n")
+	for _, name := range names {
+		v := defs[name]
+		command := strings.Join(append(strings.Fields(stripStore(v.Program)), "validate", name), " ")
+		fmt.Fprintf(b, "| `%s`{ #%s } | %s | %s |\n", name, rowAnchor("validator", anchor, name, changed), strings.Join(codes(v.Inputs), ", "), code(command))
 	}
 }
 

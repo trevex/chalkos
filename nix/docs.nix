@@ -130,13 +130,14 @@ let
     mkdir $out
     ln -s ${imageSystem.config.system.build.chalkosSchemas}/*.json ${routerSchemas} $out/
   '';
-  # The schemas, facts, outputs, effects and diagnostics of an image, which the page of built-ins
-  # lists.
+  # The schemas, facts, validators, outputs, effects and diagnostics of an image, which the page of
+  # built-ins lists.
   builtinsImage =
     name: system:
     pkgs.linkFarm "chalkos-docs-builtins-${name}" {
       schemas = system.config.system.build.chalkosSchemas;
       "facts.json" = system.config.system.build.chalkosFacts;
+      "validators.json" = system.config.system.build.chalkosValidators;
       "outputs.json" = system.config.system.build.chalkosOutputs;
       "effects.json" = system.config.system.build.chalkosEffects;
       "diagnostics.json" = system.config.system.build.chalkosDiagnostics;

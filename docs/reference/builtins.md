@@ -1,16 +1,16 @@
 ---
 title: "Built-ins"
-description: "The change rules, facts, outputs, effects and diagnostics that chalkos's images declare"
+description: "The change rules, facts, validators, outputs, effects and diagnostics that chalkos's images declare"
 ---
 
 # Built-ins
 
 This page is for image authors and operators who want to know why a node refused a config,
 what a delivery reloads and restarts, or what `chalkctl node diag` runs. It lists the change
-rules, facts, outputs, effects and diagnostics that chalkos's own modules declare: those of every
-image, and those that images with Kubernetes and router images add. An extension declares more
-with the [Extension API](extension-api.md), and its outputs, effects and diagnostics take names
-other than these.
+rules, facts, validators, outputs, effects and diagnostics that chalkos's own modules declare:
+those of every image, and those that images with Kubernetes and router images add. An extension
+declares more with the [Extension API](extension-api.md), and its validators, outputs, effects
+and diagnostics take names other than these.
 
 ## Change rules { #change-rules }
 
@@ -1298,6 +1298,30 @@ The facts images with Kubernetes add.
 
 None.
 
+## Validators { #validators }
+
+A validator checks what several documents mean together, which no rule of one kind sees,
+after the change rules and before the outputs render. [Validate config with a
+program](../build/validate-config.md) describes them. Each table gives the kinds a validator
+reads and the command chalkd runs it as. `chalkctl validate` runs the validators it links, the
+router layer's `router`, whose refusals the pages of [Run a router](../router/index.md) list.
+
+### Every image { #validators-every-image }
+
+None.
+
+### Images with Kubernetes { #validators-kubernetes }
+
+None.
+
+### Router images { #validators-router-images }
+
+The validators router images add.
+
+| Validator | Inputs | Command |
+| --- | --- | --- |
+| `router`{ #validator-router } | `Router`, `FirewallZone`, `FirewallPolicy`, `AddressSet`, `NATRule`, `BGP`, `BGPPeer`, `PrefixList`, `CommunityList`, `RoutingPolicy`, `NAT64`, `Resolver`, `VRF`, `PolicyRoute`, `NextHop`, `DHCPSubnet`, `DHCPRelay`, `Network` | `chalkos-render validate router` |
+
 ## Outputs { #outputs }
 
 An output is a set of config files that chalkd renders from the node's documents at every
@@ -1536,7 +1560,7 @@ for protocol in --tcp --udp --icmp; do
 done
 ```
 
-Sources: the schemas, `facts.json`, `outputs.json`, `effects.json` and `diagnostics.json` that
-an image holds in `/etc/chalkos`, of an image of the default variant, of one with
-`kubernetes = false` and of one with `router = true`, which the node modules in `modules/node/`
-declare.
+Sources: the schemas, `facts.json`, `validators.json`, `outputs.json`, `effects.json` and
+`diagnostics.json` that an image holds in `/etc/chalkos`, of an image of the default variant, of
+one with `kubernetes = false` and of one with `router = true`, which the node modules in
+`modules/node/` declare.
