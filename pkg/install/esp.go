@@ -28,7 +28,7 @@ func (i *Installer) writeUKI(ctx context.Context, espPart gpt.Partition, h upgra
 		if err := i.change("write the UKI"); err != nil {
 			return err
 		}
-		tmp, err := esp.Stage(dir, h.RootHash)
+		tmp, err := esp.Temporary(dir, h.RootHash)
 		if err != nil {
 			return err
 		}
@@ -48,14 +48,20 @@ func (i *Installer) writeUKI(ctx context.Context, espPart gpt.Partition, h upgra
 }
 
 // removeOtherUKIs removes from the ESP mounted at dir every UKI of the image but the one named
-// keep, and UKIs an earlier install left half written but tmp. An install continued over an
-// earlier attempt finds that attempt's files there, and systemd-boot would boot a UKI of the
-// image of a higher generation before the one the install writes.
+// keep, UKIs an earlier install left half written but tmp, and staged UKIs. An install continued
+// over an earlier attempt finds that attempt's files there, and systemd-boot would boot a UKI of
+// the image of a higher generation before the one the install writes. A disk installed again may
+// hold an image an upgrade staged, which no config slot of the new install boots with.
 func (i *Installer) removeOtherUKIs(dir, imageID, keep, tmp string) error {
 	remove, err := esp.Leftovers(dir, tmp)
 	if err != nil {
 		return err
 	}
+	staged, err := esp.StagedFiles(dir)
+	if err != nil {
+		return err
+	}
+	remove = append(remove, staged...)
 	entries, err := esp.Entries(dir)
 	if err != nil {
 		return err

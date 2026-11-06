@@ -342,7 +342,7 @@ func (n *Node) receiveUKI(h Header, stream io.Reader) (string, int, error) {
 	if err := n.change("write the UKI"); err != nil {
 		return "", 0, err
 	}
-	tmp, err := esp.Stage(n.ESP, h.RootHash)
+	tmp, err := esp.Temporary(n.ESP, h.RootHash)
 	if err != nil {
 		return "", 0, err
 	}

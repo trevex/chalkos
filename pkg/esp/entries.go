@@ -1,6 +1,7 @@
 // Package esp reads and writes the UKIs on an ESP, as systemd-boot finds them in /EFI/Linux: it
-// lists them with the image and generation each boots, and stages a new UKI under a name
-// systemd-boot ignores before naming it.
+// lists them with the image and generation each boots, writes a new UKI under a name systemd-boot
+// ignores before naming it, and keeps the UKI of an image staged in the inactive slot under such a
+// name until the image is activated.
 package esp
 
 import (

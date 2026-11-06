@@ -16,7 +16,7 @@ func TestStageAndName(t *testing.T) {
 	a, b := bytes.Repeat([]byte{0xa}, 32), bytes.Repeat([]byte{0xb}, 32)
 	staged := map[string]string{}
 	for name, root := range map[string][]byte{"a": a, "b": b} {
-		path, err := Stage(dir, root)
+		path, err := Temporary(dir, root)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -52,7 +52,7 @@ func TestStageAndName(t *testing.T) {
 	}
 
 	stop := errors.New("stopped")
-	path, err := Stage(dir, a)
+	path, err := Temporary(dir, a)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -72,5 +72,51 @@ func TestStageAndName(t *testing.T) {
 func TestSyncWithoutUKIs(t *testing.T) {
 	if err := Sync(t.TempDir()); err != nil {
 		t.Error(err)
+	}
+}
+
+// TestStaged reads the UKI of an image staged in the inactive slot under its staged name, with the
+// generation the name gives, which Entries does not list, as systemd-boot does not boot it, and
+// which Leftovers leaves; a file of the prefix that is no UKI of the image, or whose name gives no
+// generation, is none, and StagedFiles lists them all.
+func TestStaged(t *testing.T) {
+	dir := t.TempDir()
+	if _, ok, err := Staged(dir, "chalkos"); ok || err != nil {
+		t.Fatalf("staged on an empty ESP = %v, %v; want none", ok, err)
+	}
+	root := bytes.Repeat([]byte{0xc}, 32)
+	tmp, err := Temporary(dir, root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(tmp, testUKI(root), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := Name(dir, tmp, StagedName("chalkos", 3), nil); err != nil {
+		t.Fatal(err)
+	}
+	e, ok, err := Staged(dir, "chalkos")
+	if err != nil || !ok || e.File != ".staged-chalkos_3.efi" || e.Generation != 3 || !bytes.Equal(e.RootHash, root) || e.TriesLeft != -1 || e.ID != "" {
+		t.Errorf("staged = %+v, %v, %v", e, ok, err)
+	}
+	if list, err := Entries(dir); err != nil || len(list) != 0 {
+		t.Errorf("entries = %+v, %v; want none", list, err)
+	}
+	if left, err := Leftovers(dir, ""); err != nil || len(left) != 0 {
+		t.Errorf("leftovers = %q, %v; want none", left, err)
+	}
+	if _, ok, err := Staged(dir, "other"); ok || err != nil {
+		t.Errorf("staged of another image = %v, %v; want none", ok, err)
+	}
+	for _, name := range []string{StagedName("chalkos", 4), ".staged-chalkos_05.efi", ".staged-x.efi"} {
+		if err := os.WriteFile(filepath.Join(dir, LinuxDir, name), []byte("no UKI"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if e, ok, err := Staged(dir, "chalkos"); !ok || err != nil || e.File != ".staged-chalkos_3.efi" {
+		t.Errorf("staged beside files that are none = %+v, %v, %v", e, ok, err)
+	}
+	if files, err := StagedFiles(dir); err != nil || !reflect.DeepEqual(files, []string{".staged-chalkos_05.efi", ".staged-chalkos_3.efi", ".staged-chalkos_4.efi", ".staged-x.efi"}) {
+		t.Errorf("staged files = %q, %v", files, err)
 	}
 }

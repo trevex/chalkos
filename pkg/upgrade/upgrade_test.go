@@ -360,7 +360,7 @@ func TestInterruptedUpgrade(t *testing.T) {
 			for range 3 {
 				l.attempt()
 			}
-			staged, err := esp.Stage(l.esp, b.root)
+			staged, err := esp.Temporary(l.esp, b.root)
 			if err != nil {
 				t.Fatal(err)
 			}

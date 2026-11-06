@@ -1264,9 +1264,9 @@ func TestFromPartsUnbootsAResumedTarget(t *testing.T) {
 }
 
 // TestFromPartsLeavesOneUKI continues an install over an ESP that holds UKIs of the image an
-// earlier attempt or node left, of higher generations or under names that give none, and a UKI
-// left half written: only the install's own, chalkos_1.efi, stays of the image, so systemd-boot
-// boots it. UKIs of other images stay.
+// earlier attempt or node left, of higher generations or under names that give none, a UKI left
+// half written and one an upgrade staged: only the install's own, chalkos_1.efi, stays of the
+// image, so systemd-boot boots it. UKIs of other images stay.
 func TestFromPartsLeavesOneUKI(t *testing.T) {
 	img := newPartsImage(t, "a")
 	l := newPartsLab(t)
@@ -1275,14 +1275,16 @@ func TestFromPartsLeavesOneUKI(t *testing.T) {
 	rescue := ukitest.UKI(map[string]string{"IMAGE_ID": "rescue"}, fmt.Sprintf("usrhash=%x", sha([]byte("rescue"))))
 	for name, data := range map[string][]byte{
 		"chalkos_5+0-3.efi": other,
-		"chalkos.efi":       other,
-		"rescue_1.efi":      rescue,
+		// An image an upgrade staged on the disk before.
+		esp.StagedName("chalkos", 6): other,
+		"chalkos.efi":                other,
+		"rescue_1.efi":               rescue,
 	} {
 		if err := os.WriteFile(filepath.Join(l.esp(), "EFI/Linux", name), data, 0o644); err != nil {
 			t.Fatal(err)
 		}
 	}
-	staged, err := esp.Stage(l.esp(), sha(nil))
+	staged, err := esp.Temporary(l.esp(), sha(nil))
 	if err != nil {
 		t.Fatal(err)
 	}
