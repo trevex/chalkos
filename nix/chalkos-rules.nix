@@ -20,6 +20,7 @@ callPackage ./go-module.nix { } {
     ../pkg/refusals
     ../pkg/rules
     ../pkg/schema
+    ../pkg/imageref
     ../pkg/storage
     ../pkg/validators
   ];

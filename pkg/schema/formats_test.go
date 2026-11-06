@@ -26,9 +26,10 @@ func TestPortRange(t *testing.T) {
 	}
 }
 
-// The formats a kind's schema asserts refuse what ip(), cidr() and portRange() do not read, and
-// say what they take. A value of another type passes them, for "type" to refuse.
+// The formats a kind's schema asserts refuse what ip(), cidr(), portRange() and imageref.Parse do
+// not read, and say what they take. A value of another type passes them, for "type" to refuse.
 func TestFormats(t *testing.T) {
+	const digest = "sha256:e190f914a6cc21cab9268485d1ae7282fdeab1315ac64b668aa42d732fd1061d"
 	doc := `{
 		"$schema": "https://json-schema.org/draft/2020-12/schema",
 		"title": "Hop", "type": "object",
@@ -38,7 +39,9 @@ func TestFormats(t *testing.T) {
 			"spec": {"type": "object", "properties": {
 				"address": {"type": "string", "format": "ip"},
 				"prefixes": {"type": "array", "items": {"type": "string", "format": "cidr"}},
-				"ports": {"anyOf": [{"type": "integer"}, {"type": "string", "format": "port-range"}]}
+				"ports": {"anyOf": [{"type": "integer"}, {"type": "string", "format": "port-range"}]},
+				"image": {"type": "string", "format": "image-reference"},
+				"versioned": {"type": "string", "format": "versioned-image-reference"}
 			}}
 		},
 		"x-chalkos-kind": {"group": "r.example.org", "version": "v1", "kind": "Hop", "multiple": true}
@@ -48,22 +51,33 @@ func TestFormats(t *testing.T) {
 		t.Fatal(err)
 	}
 	for spec, want := range map[string]string{
-		`{"address": "192.0.2.1"}`:                         "",
-		`{"address": "2001:DB8::1"}`:                       "",
-		`{"address": "::ffff:192.0.2.1"}`:                  "",
-		`{"address": "192.0.2.256"}`:                       `at '/spec/address': '192.0.2.256' is not valid ip: an address is an IPv4 address of four numbers from 0 to 255 without leading zeros, or an IPv6 address without a zone`,
-		`{"address": "192.0.2.01"}`:                        "is not valid ip",
-		`{"address": "fe80::1%eth0"}`:                      "is not valid ip",
-		`{"address": "192.0.2.0/24"}`:                      "is not valid ip",
-		`{"prefixes": ["192.0.2.0/24", "2001:db8::1/64"]}`: "",
-		`{"prefixes": ["192.0.2.0/24", "192.0.2.0/33"]}`:   `at '/spec/prefixes/1': '192.0.2.0/33' is not valid cidr: an address range is an address, a slash and a prefix length of at most 32 for IPv4 or 128 for IPv6`,
-		`{"prefixes": ["192.0.2.1"]}`:                      "is not valid cidr",
-		`{"ports": 22}`:                                    "",
-		`{"ports": "8000-8100"}`:                           "",
-		`{"ports": "9-1"}`:                                 `at '/spec/ports': '9-1' is not valid port-range: a range of ports is "<first>-<last>", each from 1 to 65535, and the first no higher than the last`,
-		`{"ports": "70000-80000"}`:                         "is not valid port-range",
-		`{"ports": "22"}`:                                  `'22' is not valid port-range: a range of ports is "<first>-<last>", each from 1 to 65535, and the first no higher than the last; a single port is a number, unquoted`,
-		`{"address": 7}`:                                   "got number, want string",
+		`{"address": "192.0.2.1"}`:                                 "",
+		`{"address": "2001:DB8::1"}`:                               "",
+		`{"address": "::ffff:192.0.2.1"}`:                          "",
+		`{"address": "192.0.2.256"}`:                               `at '/spec/address': '192.0.2.256' is not valid ip: an address is an IPv4 address of four numbers from 0 to 255 without leading zeros, or an IPv6 address without a zone`,
+		`{"address": "192.0.2.01"}`:                                "is not valid ip",
+		`{"address": "fe80::1%eth0"}`:                              "is not valid ip",
+		`{"address": "192.0.2.0/24"}`:                              "is not valid ip",
+		`{"prefixes": ["192.0.2.0/24", "2001:db8::1/64"]}`:         "",
+		`{"prefixes": ["192.0.2.0/24", "192.0.2.0/33"]}`:           `at '/spec/prefixes/1': '192.0.2.0/33' is not valid cidr: an address range is an address, a slash and a prefix length of at most 32 for IPv4 or 128 for IPv6`,
+		`{"prefixes": ["192.0.2.1"]}`:                              "is not valid cidr",
+		`{"ports": 22}`:                                            "",
+		`{"ports": "8000-8100"}`:                                   "",
+		`{"ports": "9-1"}`:                                         `at '/spec/ports': '9-1' is not valid port-range: a range of ports is "<first>-<last>", each from 1 to 65535, and the first no higher than the last`,
+		`{"ports": "70000-80000"}`:                                 "is not valid port-range",
+		`{"ports": "22"}`:                                          `'22' is not valid port-range: a range of ports is "<first>-<last>", each from 1 to 65535, and the first no higher than the last; a single port is a number, unquoted`,
+		`{"address": 7}`:                                           "got number, want string",
+		`{"image": "registry.k8s.io/pause:3.10.2"}`:                "",
+		`{"image": "registry.k8s.io/pause:3.10.2@` + digest + `"}`: "",
+		`{"image": "registry.k8s.io/pause@` + digest + `"}`:        "",
+		`{"image": "pause:3.10"}`:                                  `at '/spec/image': 'pause:3.10' is not valid image-reference: an image reference names its registry, its repository and a tag, a digest or both, as registry.k8s.io/pause:3.10.2@sha256:<digest>`,
+		`{"image": 7}`:                                             "got number, want string",
+		`{"versioned": "registry.k8s.io/kube-apiserver:v1.37.1"}`:  "",
+		`{"versioned": "registry.k8s.io/kube-apiserver:v1.37.1@` + digest + `"}`: "",
+		`{"versioned": "registry.k8s.io/kube-apiserver@` + digest + `"}`:         `is not valid versioned-image-reference: this image names its version in its tag, as registry.k8s.io/kube-apiserver:v1.37.1, optionally followed by @sha256:<digest>; a reference by digest alone or with another tag has no version`,
+		`{"versioned": "registry.k8s.io/kube-apiserver:latest"}`:                 "is not valid versioned-image-reference: this image names its version in its tag",
+		`{"versioned": "kube-apiserver:v1.37.1"}`:                                "is not valid versioned-image-reference: an image reference names its registry",
+		`{"versioned": 7}`: "got number, want string",
 	} {
 		err := s.Validate(decode(t, `{"apiVersion": "r.example.org/v1", "kind": "Hop", "metadata": {"name": "a"}, "spec": `+spec+`}`))
 		switch {

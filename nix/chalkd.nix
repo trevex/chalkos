@@ -34,6 +34,7 @@ callPackage ./go-module.nix { } {
     ../pkg/router
     ../pkg/rules
     ../pkg/schema
+    ../pkg/imageref
     ../pkg/secureboot
     ../pkg/storage
     ../pkg/storeslot

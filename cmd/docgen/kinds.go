@@ -381,9 +381,11 @@ func typeOf(root, s map[string]any) string {
 // formatNames name the strings of the formats the kinds' schemas assert, as pkg/schema checks
 // them.
 var formatNames = map[string]string{
-	"ip":         "IP address",
-	"cidr":       "address range",
-	"port-range": "range of ports",
+	"ip":                        "IP address",
+	"cidr":                      "address range",
+	"port-range":                "range of ports",
+	"image-reference":           "image reference",
+	"versioned-image-reference": "image reference with a version tag",
 }
 
 // rangeOf describes the bounds of an integer schema.
