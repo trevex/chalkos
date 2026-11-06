@@ -28,8 +28,8 @@ type rolloutFlags struct {
 // RolloutFlags registers --allow-downtime and --allow-downgrade of apply-config.
 func (p *Plugin) RolloutFlags(fs *pflag.FlagSet) any {
 	f := &rolloutFlags{}
-	fs.BoolVar(&f.allowDowntime, "allow-downtime", false, "deliver config that changes the API server's version to a control plane of a cluster with one or two, whose API server is down while its control plane restarts")
-	fs.BoolVar(&f.allowDowngrade, "allow-downgrade", false, "deliver config whose API server is a minor release older than the one the control planes run")
+	fs.BoolVar(&f.allowDowntime, "allow-downtime", false, "deliver a new API server version to a control plane of a cluster with one or two, whose etcd loses its quorum and API server is down while its control plane restarts")
+	fs.BoolVar(&f.allowDowngrade, "allow-downgrade", false, "deliver an API server one minor release older than the newest the control planes run")
 	return f
 }
 

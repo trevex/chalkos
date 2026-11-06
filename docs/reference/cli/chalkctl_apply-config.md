@@ -18,6 +18,26 @@ change, the node refuses the whole config and names the remedy. chalkctl warns o
 reference in the config that names a tag but no digest, and delivers the config all the same. See
 [Change rules decide which changes a node accepts](../../how-it-works/node/config.md#change-rules-decide-which-changes-a-node-accepts).
 
+With several nodes, apply-config delivers to them one after the other and stops at the first that
+fails. --address gives each node's address as NODE=ADDR where it is not the inventory's. chalkctl
+reads each node's status and checks its config against its image before the first node gets
+anything, and leaves a node that runs the config already alone, so the same command run again
+continues a run that stopped. --discard, --confirm, --rollback, --staged, --diff and --no-confirm
+take one node.
+
+When the config changes a version that a layer of the nodes' images bounds across the cluster,
+such as the Kubernetes API server's, the run is ordered, with one node or several. chalkctl first
+reads the versions every node of the cluster runs, and the layer refuses a config that would break
+its bounds, as Kubernetes's version skew policy does. The nodes that act for the others, such as
+Kubernetes control planes, go first, one at a time. Its layers hold each first, as Kubernetes
+waits for etcd to keep its quorum; then it gets the config on trial, for --try or else 10 minutes,
+until its layers find it serving with the config, as Kubernetes finds a control plane's static
+pods running the new images. Then the other nodes get the config as in any run. The first failure
+rolls that node's trial back at once, and chalkctl prints which nodes run which version. --until
+deliver delivers on trial to the first node that does not run the config and leaves its trial open
+for --confirm. An ordered run goes without the layers' payload flags. See
+[Upgrade Kubernetes](../../kubernetes/upgrade-kubernetes.md).
+
 --diff prints what the config changes in the node's config, document by document, and checks
 nothing on the node. --dry-run has the node check the config as it checks a delivery, with its
 facts, the image's renderers and their checks, and changes nothing. It prints the diff, then the
@@ -68,8 +88,11 @@ confirms the config within it, the node rolls the config back by itself through 
 --rollback. chalkctl confirms it over a new connection, which proves that the config left the node
 reachable, once the node is healthy as an upgrade's boot must be: chalkd serves, no unit of the
 boot failed, and the image's layers find their services healthy. The check leaves out the units the
-image ignores and those --ignore-unit names, one unit per flag. chalkctl warns of units that failed
-before the trial, which keep the check from passing unless they recover. When the config is not
+image ignores and those --ignore-unit names, one unit per flag. Before it confirms, chalkctl also
+waits for the image's layers to find the node serving with the config, as Kubernetes finds its Node
+Ready and a control plane's static pods on the images its config names; when they do not by the
+deadline, chalkctl rolls the config back at once. chalkctl warns of units that failed before the
+trial, which keep the check from passing unless they recover. When the config is not
 confirmed, or the answer to its delivery is lost, as when the config cuts chalkctl off, chalkctl
 waits up to two minutes after the deadline for the node's rollback, reports it and exits non-zero.
 Interrupting chalkctl leaves the trial open. A trial delivers config alone and is refused for a
@@ -95,8 +118,8 @@ file.
 | Flag | Type | Default | Description |
 | --- | --- | --- | --- |
 | `--address`{ #flag-address } | list of string | each node's address in the inventory | Address of the node's chalkd, host or host:port, or NODE=ADDR of any node of the cluster; repeat it for several. |
-| `--allow-downgrade`{ #flag-allow-downgrade } | boolean | `false` | Deliver config whose API server is a minor release older than the one the control planes run. |
-| `--allow-downtime`{ #flag-allow-downtime } | boolean | `false` | Deliver config that changes the API server's version to a control plane of a cluster with one or two, whose API server is down while its control plane restarts. |
+| `--allow-downgrade`{ #flag-allow-downgrade } | boolean | `false` | Deliver an API server one minor release older than the newest the control planes run. |
+| `--allow-downtime`{ #flag-allow-downtime } | boolean | `false` | Deliver a new API server version to a control plane of a cluster with one or two, whose etcd loses its quorum and API server is down while its control plane restarts. |
 | `--confirm`{ #flag-confirm } | boolean | `false` | Confirm the node's open trial once the node is healthy, so it keeps the config on trial. |
 | `--diff`{ #flag-diff } | boolean | `false` | Print what the config changes in the node's config, document by document and field by field, and change nothing; the node checks nothing, which --dry-run has it do. |
 | `--discard`{ #flag-discard } | boolean | `false` | With --staged, drop the config the node holds pending for its next upgrade; needs no inventory. |
@@ -145,6 +168,15 @@ chalkctl apply-config w1 --secrets secrets.age --try 5m
 # Keep a trial open while you test by hand, then keep the config.
 chalkctl apply-config w1 --secrets secrets.age --try 30m --no-confirm
 chalkctl apply-config w1 --secrets secrets.age --confirm
+
+# Deliver the cluster's config to every node. When it names a new API server, the control
+# planes get it first, one at a time, each on trial until its static pods run the new images.
+chalkctl apply-config cp1 cp2 cp3 w1 w2 --secrets secrets.age
+
+# Walk the control planes by hand: deliver to the first that lacks the config, leave its trial
+# open, check it, confirm it, and run the first command again for the next.
+chalkctl apply-config cp1 cp2 cp3 --secrets secrets.age --until deliver
+chalkctl apply-config cp1 --secrets secrets.age --confirm
 ```
 
 ## See also

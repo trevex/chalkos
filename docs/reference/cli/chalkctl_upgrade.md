@@ -21,6 +21,10 @@ release it once its boot was found healthy: Kubernetes keeps etcd's quorum, drai
 uncordons it once it is Ready. A node that falls back to the image before stops the run. --until
 stage or --until activate stops each node after that step and holds no node.
 
+Before any node gets its image, the image's layers check the versions it brings against what the
+cluster runs and refuse an image that would break their bounds, as Kubernetes refuses a kubelet
+newer than the oldest API server the control planes run.
+
 Each node gets its config with the image, checked against it before any node is drained, and
 chalkctl prints a line of what it changes and warns of each image reference in the config that
 names a tag but no digest; --diff prints the whole diff and changes nothing.
