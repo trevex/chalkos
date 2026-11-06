@@ -426,11 +426,21 @@ healthy. [The health check decides whether a counted boot is good](../how-it-wor
 describes the check.
 
 Before it asks the node, chalkctl waits until the image's layers find the node serving with the
-config, and prints `w1: waiting for its layers to serve with the config`. On Kubernetes that means
-the node's Node is Ready and, on a control plane, its API server, controller-manager and scheduler
-run the images the config names and are Ready. When they do not by the deadline, chalkctl rolls the
-config back at once and prints `w1 runs config <previous-version> again: config <version> was
-rolled back`.
+config, and prints `w1: waiting for its layers to serve with the config`. On a Kubernetes node
+that means its Node is Ready and, on a control plane, its API server, controller-manager and
+scheduler run the images the config names and are Ready. A Node that is not Ready only because no
+CNI runs yet, as in a cluster created without one, passes: its Ready condition names
+`NetworkReady=false` as its only cause. When the layers do not find the node serving by the
+deadline, chalkctl rolls the config back at once and prints
+`w1 runs config <previous-version> again: config <version> was rolled back`.
+
+A trial on a Kubernetes node whose Node is not Ready for another reason, such as a kubelet that
+cannot reach its container runtime, therefore rolls back. To deliver a config that is meant to fix
+such a node, leave out `--try`: the node then applies the config for good, and chalkctl waits for
+no layer and no health check. A config that changes the API server's version goes to a control
+plane on trial even without `--try`, as
+[Upgrade Kubernetes](../kubernetes/upgrade-kubernetes.md#roll-the-control-plane-out-through-config)
+describes, so mend the node with a config that keeps the version first.
 
 With several nodes, `--try` tries the config on each in turn, and confirms one node's trial before
 the next node gets the config. `--until deliver` delivers on trial to the first node that does not
