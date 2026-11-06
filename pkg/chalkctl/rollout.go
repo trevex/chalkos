@@ -316,24 +316,21 @@ func (r *upgradeRun) checkImages(ctx context.Context) error {
 
 // waitDelivered waits, until the time given, for the Rollout layers of the image the node runs to
 // find that it serves their clusters with the config it runs, asking over a new connection each
-// time.
+// time. The layers are read on each attempt too: a node that does not answer for a while after a
+// delivery, as one whose config restarts its network, is asked again until the time given.
 func (a *app) waitDelivered(ctx context.Context, t *target, until time.Time) error {
-	var layers []layer.Rollout
-	if err := callNode(t, func(conn *client.Conn) error {
-		info, err := conn.Info(ctx, connect.NewRequest(&nodev1.InfoRequest{}))
-		if err == nil {
-			layers = pluginsOf[layer.Rollout](info.Msg.Layers)
-		}
-		return err
-	}); err != nil {
-		return err
-	}
-	if len(layers) == 0 {
-		return nil
-	}
-	fmt.Fprintf(a.stdout, "%s: waiting for its layers to serve with the config\n", t.name)
+	said := false
 	return layer.WaitFor(ctx, "", until.Sub(a.now()), a.poll(), func() error {
 		return callNode(t, func(conn *client.Conn) error {
+			info, err := conn.Info(ctx, connect.NewRequest(&nodev1.InfoRequest{}))
+			if err != nil {
+				return err
+			}
+			layers := pluginsOf[layer.Rollout](info.Msg.Layers)
+			if len(layers) > 0 && !said {
+				fmt.Fprintf(a.stdout, "%s: waiting for its layers to serve with the config\n", t.name)
+				said = true
+			}
 			for _, l := range layers {
 				if err := l.Delivered(ctx, conn); err != nil {
 					return fmt.Errorf("%s: %w", t.name, err)

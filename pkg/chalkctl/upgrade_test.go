@@ -219,6 +219,11 @@ type upgradeLab struct {
 	stuck map[string]bool
 	// refuseConfig makes the node refuse its next delivery of config.
 	refuseConfig string
+	// dropAfterDelivery makes the node unreachable for that many calls after its next delivery of
+	// config, as a config that restarts its network does.
+	dropAfterDelivery map[string]int
+	// unreachable counts the calls the node does not answer yet.
+	unreachable map[string]int
 }
 
 // asked returns how often each node was asked for its config.
@@ -244,9 +249,16 @@ func (l *upgradeLab) takeEvents() []string {
 
 func (n *upgradeFake) down() error {
 	n.mu.Lock()
-	defer n.mu.Unlock()
-	if n.rebooting {
+	rebooting := n.rebooting
+	n.mu.Unlock()
+	if rebooting {
 		return connect.NewError(connect.CodeUnavailable, errors.New("the node reboots"))
+	}
+	n.lab.mu.Lock()
+	defer n.lab.mu.Unlock()
+	if n.lab.unreachable[n.name] > 0 {
+		n.lab.unreachable[n.name]--
+		return connect.NewError(connect.CodeUnavailable, errors.New("the node restarts its network"))
 	}
 	return nil
 }
@@ -2091,6 +2103,14 @@ func (n *upgradeFake) ApplyConfig(ctx context.Context, req *connect.Request[node
 			resp.Pending = &nodev1.PendingConfig{Version: versionOf(n.pending), Since: timestamppb.New(pendingSince)}
 		}
 		n.lab.record("%s apply-config staged=false", n.name)
+		n.lab.mu.Lock()
+		if k := n.lab.dropAfterDelivery[n.name]; k > 0 {
+			if n.lab.unreachable == nil {
+				n.lab.unreachable = map[string]int{}
+			}
+			n.lab.unreachable[n.name] = k
+		}
+		n.lab.mu.Unlock()
 		return connect.NewResponse(resp), nil
 	default:
 		n.stagedConfig = req.Msg.Config

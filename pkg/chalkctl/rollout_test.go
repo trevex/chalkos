@@ -381,6 +381,21 @@ func TestApplyConfigConfirmWaitsForTheLayers(t *testing.T) {
 	}
 }
 
+// A trial whose node does not answer for a while after the delivery, as a config that restarts
+// its network leaves it, is confirmed once the node answers again within the trial.
+func TestApplyConfigTrialWaitsForTheNodeToAnswer(t *testing.T) {
+	defer func(m time.Duration) { minTrial = m }(minTrial)
+	minTrial = 0
+	l := newRolloutLab(t)
+	l.dropAfterDelivery = map[string]int{"w1": 3}
+	if err := l.applyConfigTo([]string{"w1"}, "--try", "5s"); err != nil {
+		t.Fatalf("%v\n%s", err, l.ta.stdout)
+	}
+	if got, want := deliveries(l.takeEvents()), []string{"w1 apply-config staged=false", "w1 confirm"}; !slices.Equal(got, want) {
+		t.Errorf("events %q, want %q\n%s", got, want, l.ta.stdout)
+	}
+}
+
 // A delivery that changes the API server goes without the layers' payloads.
 func TestApplyConfigRolloutRefusesPayloads(t *testing.T) {
 	l := newRolloutLab(t)
