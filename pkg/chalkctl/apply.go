@@ -276,6 +276,7 @@ func (a *app) deliverConfig(ctx context.Context, f applyConfigFlags, t *target) 
 	if err != nil {
 		return err
 	}
+	a.warnUnpinned(t.name, d)
 	st, err := conn.Status(ctx, connect.NewRequest(&nodev1.StatusRequest{}))
 	if err != nil {
 		return err

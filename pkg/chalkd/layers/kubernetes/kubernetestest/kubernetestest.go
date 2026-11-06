@@ -38,8 +38,16 @@ var OSCA = sync.OnceValues(func() (pki.CertKey, error) { return pki.NewOSCA(time
 // test/fixtures/kinds are.
 const Image = `{"version": "1.37.1", "cni": "flannel"}`
 
-// Images is the images block of a Cluster document on Image, a YAML flow mapping on one line.
-const Images = `{apiServer: registry.k8s.io/kube-apiserver:v1.37.1, controllerManager: registry.k8s.io/kube-controller-manager:v1.37.1, scheduler: registry.k8s.io/kube-scheduler:v1.37.1, proxy: registry.k8s.io/kube-proxy:v1.37.1, etcd: registry.k8s.io/etcd:3.7.0-0, coredns: registry.k8s.io/coredns/coredns:v1.14.6, pause: registry.k8s.io/pause:3.10.2, flannel: ghcr.io/flannel-io/flannel:v0.28.9}`
+// Images is the images block of a Cluster document on Image, a YAML flow mapping on one line. Each
+// reference names a digest, so chalkctl warns of none.
+const Images = `{apiServer: "registry.k8s.io/kube-apiserver:v1.37.1@sha256:e190f914a6cc21cab9268485d1ae7282fdeab1315ac64b668aa42d732fd1061d", ` +
+	`controllerManager: "registry.k8s.io/kube-controller-manager:v1.37.1@sha256:d470c1b85aebb466e971c06239cc6a31a4ac337a78600cef80375a79a1be1641", ` +
+	`scheduler: "registry.k8s.io/kube-scheduler:v1.37.1@sha256:b6e2474a6c20309f0df1e7337364281fda95c6a0722259ba7f032a1e177d3f29", ` +
+	`proxy: "registry.k8s.io/kube-proxy:v1.37.1@sha256:b9ae667ed9c160c9d5b66f55e8afec97fc5483a12db0ada5286541b0385cb9f4", ` +
+	`etcd: "registry.k8s.io/etcd:3.7.0-0@sha256:6ecefbe2510c4a30573a62a4d6dd175acf881ca67003fcd91849a16df7a724d5", ` +
+	`coredns: "registry.k8s.io/coredns/coredns:v1.14.6@sha256:900f9c109f7a33545d3c811516e8376df9019147b750f5ce3e254468769176ea", ` +
+	`pause: "registry.k8s.io/pause:3.10.2@sha256:f548e0e8e3dc1896ca956272154dde3314e8cc4fde0a57577ee9fa1c63f5baf4", ` +
+	`flannel: "ghcr.io/flannel-io/flannel:v0.28.9@sha256:708a2c9c1cfbfe529d1dbb249cb7113af117f3ed26b5e3e4c8ee015e10555204"}`
 
 // ClusterImages is the images of a cluster file without flannel, as JSON.
 const ClusterImages = `{"etcd": "registry.k8s.io/etcd:3.7.0-0", "kubeAPIServer": "registry.k8s.io/kube-apiserver:v1.37.1",

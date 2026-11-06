@@ -14,7 +14,8 @@ it. chalkctl checks them against the contract of the image the node runs, with t
 rules that read no facts, and the node checks them again. The node replaces its config as a whole,
 applies additive storage changes such as a new volume while it runs, and restarts the units that
 read what changed; chalkctl prints the changes and the units. When the image's rules refuse a
-change, the node refuses the whole config and names the remedy. See
+change, the node refuses the whole config and names the remedy. chalkctl warns of each image
+reference in the config that names a tag but no digest, and delivers the config all the same. See
 [Change rules decide which changes a node accepts](../../how-it-works/node/config.md#change-rules-decide-which-changes-a-node-accepts).
 
 --diff prints what the config changes in the node's config, document by document, and checks

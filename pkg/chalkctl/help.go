@@ -167,7 +167,8 @@ https://trevex.github.io/chalkos/how-it-works/node/overview/#an-install-turns-a-
 
 A name revoked with chalkctl node revoke is refused, as is any node while a layer cannot say which
 names are revoked, as when a bootstrapped Kubernetes cluster's control planes do not answer;
---force installs without asking. The command needs the secrets file.`
+--force installs without asking. chalkctl warns of each image reference in the config that names a
+tag but no digest. The command needs the secrets file.`
 
 const installExample = `  # Install cp1, comparing the certificate with the fingerprint on its console.
   chalkctl install cp1 --secrets secrets.age \
@@ -195,7 +196,8 @@ it. chalkctl checks them against the contract of the image the node runs, with t
 rules that read no facts, and the node checks them again. The node replaces its config as a whole,
 applies additive storage changes such as a new volume while it runs, and restarts the units that
 read what changed; chalkctl prints the changes and the units. When the image's rules refuse a
-change, the node refuses the whole config and names the remedy. See
+change, the node refuses the whole config and names the remedy. chalkctl warns of each image
+reference in the config that names a tag but no digest, and delivers the config all the same. See
 https://trevex.github.io/chalkos/how-it-works/node/config/#change-rules-decide-which-changes-a-node-accepts.
 
 --diff prints what the config changes in the node's config, document by document, and checks
@@ -404,7 +406,8 @@ uncordons it once it is Ready. A node that falls back to the image before stops 
 stage or --until activate stops each node after that step and holds no node.
 
 Each node gets its config with the image, checked against it before any node is drained, and
-chalkctl prints a line of what it changes; --diff prints the whole diff and changes nothing.
+chalkctl prints a line of what it changes and warns of each image reference in the config that
+names a tag but no digest; --diff prints the whole diff and changes nothing.
 Delivering config needs the admin role: with an operator client file, each node gives the image
 its pending config, else carries its own config over. A new volume is enrolled with the recovery
 key, which only the secrets file gives, or the password --password-file holds.
@@ -450,8 +453,9 @@ https://trevex.github.io/chalkos/how-it-works/node/config/#chalkctl-and-chalkd-b
 
 The command prints a line for each node whose config is valid, with the digest of an image in a
 registry, names each node whose config is not, and warns of a node whose SystemDisk leaves STATE,
-which holds its keys and secrets, unencrypted. It reaches no node and needs no secrets file or
-client file.
+which holds its keys and secrets, unencrypted, and of each image reference that names a tag but no
+digest, which nodes pull by whatever the tag points to when they pull. It reaches no node and
+needs no secrets file or client file.
 
 A config validate passes can still be refused on delivery: validate runs no rule that reads the
 node's facts or its running config, none of the image's other validators, and none of its

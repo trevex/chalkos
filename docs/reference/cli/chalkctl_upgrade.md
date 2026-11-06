@@ -22,7 +22,8 @@ uncordons it once it is Ready. A node that falls back to the image before stops 
 stage or --until activate stops each node after that step and holds no node.
 
 Each node gets its config with the image, checked against it before any node is drained, and
-chalkctl prints a line of what it changes; --diff prints the whole diff and changes nothing.
+chalkctl prints a line of what it changes and warns of each image reference in the config that
+names a tag but no digest; --diff prints the whole diff and changes nothing.
 Delivering config needs the admin role: with an operator client file, each node gives the image
 its pending config, else carries its own config over. A new volume is enrolled with the recovery
 key, which only the secrets file gives, or the password --password-file holds.

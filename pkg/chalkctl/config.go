@@ -133,6 +133,9 @@ type delivery struct {
 	config.Encoded
 	identity  identity.Identity
 	documents []config.Document
+	// unpinned names the image references that have a tag but no digest, which chalkctl warns
+	// about.
+	unpinned []string
 }
 
 // deliveryFor is a node's config as chalkctl delivers it for the image the contract describes,
@@ -177,7 +180,7 @@ func checkNodeConfig(nc *inventory.NodeConfig, c contract) (delivery, error) {
 	if err != nil {
 		return delivery{}, err
 	}
-	return delivery{Encoded: e, identity: id, documents: set.Documents()}, nil
+	return delivery{Encoded: e, identity: id, documents: set.Documents(), unpinned: set.Documents().UnpinnedImages(c.schemas)}, nil
 }
 
 // checkRules refuses next, a node's config with its defaults, when the change rules of the image
@@ -262,4 +265,12 @@ func inventoryContract(nc *inventory.NodeConfig) (contract, error) {
 		return contract{}, fmt.Errorf("%s: %w", a.Reference, err)
 	}
 	return c, nil
+}
+
+// warnUnpinned prints the image references of the node's config that name a tag but no digest,
+// which every command that checks or delivers config warns about.
+func (a *app) warnUnpinned(name string, d delivery) {
+	for _, w := range d.unpinned {
+		fmt.Fprintf(a.stderr, "chalkctl: warning: %s: %s\n", name, w)
+	}
 }

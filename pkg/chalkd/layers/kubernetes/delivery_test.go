@@ -83,7 +83,7 @@ func TestWriteConfigWritesTheCluster(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c.Kind != k8s.KindWorker || c.Endpoint != "https://10.0.0.10:6443" || c.DNSIPs.IPv4.String() != "10.96.0.10" || c.Images.KubeProxy != "registry.k8s.io/kube-proxy:v1.37.1" {
+	if c.Kind != k8s.KindWorker || c.Endpoint != "https://10.0.0.10:6443" || c.DNSIPs.IPv4.String() != "10.96.0.10" || !strings.HasPrefix(c.Images.KubeProxy, "registry.k8s.io/kube-proxy:v1.37.1@sha256:") {
 		t.Errorf("cluster = %+v", c)
 	}
 	// Another cluster replaces it.

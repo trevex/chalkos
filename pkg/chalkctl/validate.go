@@ -102,6 +102,9 @@ func validateNode(inv *inventory.Inventory, name string) (string, []string, erro
 		return "", nil, fmt.Errorf("node %s: %w", name, err)
 	}
 	var warnings []string
+	for _, w := range d.unpinned {
+		warnings = append(warnings, fmt.Sprintf("node %s: %s", name, w))
+	}
 	// STATE follows the SystemDisk's encryption mode, and holds the node's keys and secrets.
 	if d.identity.Storage.Encryption == storage.EncryptionNone {
 		warnings = append(warnings, fmt.Sprintf("node %s: its SystemDisk's encryption.mode is none, so STATE, which holds the node's keys and secrets, is not encrypted", name))

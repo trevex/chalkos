@@ -411,6 +411,7 @@ func (r *upgradeRun) checkConfig() error {
 		if err != nil {
 			return fmt.Errorf("the config of %s: %w", name, err)
 		}
+		r.a.warnUnpinned(name, d)
 		r.nodes[name].delivery = &d
 	}
 	return nil

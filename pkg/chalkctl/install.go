@@ -129,6 +129,7 @@ func (a *app) install(ctx context.Context, f installFlags, pos []string) error {
 	if err != nil {
 		return err
 	}
+	a.warnUnpinned(t.name, d)
 	header.Config = d.Text
 	names, err := t.cluster.certNames(t.name)
 	if err != nil {

@@ -72,7 +72,7 @@ func writeImageDir(t *testing.T, dir, variant, platform, rootHash string, kubern
 	t.Helper()
 	k := "null"
 	if kubernetes {
-		k = `{"version": "1.37.1", "cni": "none"}`
+		k = `{"version": "1.37.1", "cni": "flannel"}`
 		writeFile(t, filepath.Join(dir, "image.json"), testImageJSON)
 	}
 	writeFile(t, filepath.Join(dir, "metadata.json"), fmt.Sprintf(`{"schemaVersion": 0, "id": "chalkos", "variant": %q, "platform": %q, "rootHash": %q, "kubernetes": %s, "kinds": []}`, variant, platform, rootHash, k))

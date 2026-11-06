@@ -92,7 +92,7 @@ func testImageOf(t *testing.T, variant, platform, name string, blockSize int, ed
 	k := "null"
 	if variant == "cp" || variant == "w" || variant == "k8s" {
 		writeFile(t, filepath.Join(imgDir, "image.json"), testImageJSON)
-		k = `{"version": "1.37.1", "cni": "none"}`
+		k = `{"version": "1.37.1", "cni": "flannel"}`
 	}
 	writeFile(t, filepath.Join(imgDir, "metadata.json"), fmt.Sprintf(`{"schemaVersion": 0, "id": "chalkos", "variant": %q, "platform": %q, "rootHash": %q, "kubernetes": %s, "kinds": []}`,
 		variant, platform, hex.EncodeToString(root), k))

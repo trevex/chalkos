@@ -28,7 +28,8 @@ next install of the image continues there. The node then reboots into the image.
 
 A name revoked with chalkctl node revoke is refused, as is any node while a layer cannot say which
 names are revoked, as when a bootstrapped Kubernetes cluster's control planes do not answer;
---force installs without asking. The command needs the secrets file.
+--force installs without asking. chalkctl warns of each image reference in the config that names a
+tag but no digest. The command needs the secrets file.
 
 ## Flags
 

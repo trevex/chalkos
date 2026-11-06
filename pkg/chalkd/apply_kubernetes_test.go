@@ -476,7 +476,7 @@ func TestApplyConfigWritesTheClusterAndRestartsKubernetes(t *testing.T) {
 		t.Fatal(err)
 	}
 	c, err := k8s.ReadCluster(kubernetesPaths(s).Cluster)
-	if err != nil || c.Domain != "cluster.local" || c.Images.KubeProxy != "registry.k8s.io/kube-proxy:v1.37.1" {
+	if err != nil || c.Domain != "cluster.local" || !strings.HasPrefix(c.Images.KubeProxy, "registry.k8s.io/kube-proxy:v1.37.1@sha256:") {
 		t.Fatalf("cluster = %+v, %v", c, err)
 	}
 

@@ -19,8 +19,9 @@ the same Cluster spec, and the same Flannel spec or none. See
 
 The command prints a line for each node whose config is valid, with the digest of an image in a
 registry, names each node whose config is not, and warns of a node whose SystemDisk leaves STATE,
-which holds its keys and secrets, unencrypted. It reaches no node and needs no secrets file or
-client file.
+which holds its keys and secrets, unencrypted, and of each image reference that names a tag but no
+digest, which nodes pull by whatever the tag points to when they pull. It reaches no node and
+needs no secrets file or client file.
 
 A config validate passes can still be refused on delivery: validate runs no rule that reads the
 node's facts or its running config, none of the image's other validators, and none of its
