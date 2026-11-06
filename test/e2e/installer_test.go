@@ -12,7 +12,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/google/go-containerregistry/pkg/v1/types"
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/lab"
 	"github.com/trevex/chalkos/pkg/ociimage"
@@ -80,27 +79,39 @@ func TestInstallerInstallsOntoBlankDisk(t *testing.T) {
 		t.Errorf("chalkctl sent %d bytes, want less than 400 MiB", sent)
 	}
 	// A Greeting that shouts passes chalkctl's checks; the image's validator refuses it once the
-	// image's store is on the disk, and the target boots nothing.
+	// image's store is on the disk, and the target boots nothing. The refused install took the disk
+	// up where the cancelled one left it, not laid out anew, and pulled the store from the registry.
 	out, err := chalkctl(t, n, "", "install", "chalklab-target", "--fingerprint", fingerprint, "--inventory", shoutingTarget(t, inv))
 	if err == nil || !strings.Contains(out, "Greeting/hello: spec.message: the message shouts; write it in lower case; the target disk boots nothing") {
 		t.Fatalf("an install of a Greeting that shouts: %v", err)
 	}
+	continued := func(which string) {
+		t.Helper()
+		logged, cancel := context.WithTimeout(context.Background(), time.Minute)
+		defer cancel()
+		if _, err := n.vm.Console.WaitFor(logged, regexp.MustCompile(`continuing the install on `)); err != nil {
+			t.Fatalf("the %s install did not continue the one before it: %v", which, err)
+		}
+	}
+	continued("refused")
+	if _, ok := reg.served.Load(layers[ociimage.StoreType]); !ok {
+		t.Errorf("the installer did not pull the %s layer from the registry", ociimage.StoreType)
+	}
+	// The install of the fixed config continues on the disk too. Slot A holds the store already,
+	// so it pulls the layers after it and not the store.
+	reg.served.Clear()
 	pulled := time.Now()
 	out, err = chalkctl(t, n, "", install...)
 	if err != nil || !strings.Contains(out, "which the installer pulls from "+registryGuest+"/chalkos/test@sha256:") {
 		t.Fatalf("install: %v", err)
 	}
 	t.Logf("pulled and installed in %v", time.Since(pulled).Round(time.Second))
-	for _, mt := range []types.MediaType{ociimage.StoreType, ociimage.BootLoaderType} {
-		if _, ok := reg.served.Load(layers[mt]); !ok {
-			t.Errorf("the installer did not pull the %s layer from the registry", mt)
-		}
+	continued("final")
+	if _, ok := reg.served.Load(layers[ociimage.BootLoaderType]); !ok {
+		t.Errorf("the installer did not pull the %s layer from the registry", ociimage.BootLoaderType)
 	}
-	// The second run took the disk up where the first left it, not laid out anew.
-	logged, cancelLogged := context.WithTimeout(context.Background(), time.Minute)
-	defer cancelLogged()
-	if _, err := n.vm.Console.WaitFor(logged, regexp.MustCompile(`continuing the install on `)); err != nil {
-		t.Fatalf("the second install did not continue the first: %v", err)
+	if _, ok := reg.served.Load(layers[ociimage.StoreType]); ok {
+		t.Errorf("the installer pulled the %s layer, which slot A holds already", ociimage.StoreType)
 	}
 
 	// The boot entry the installer added makes the VM boot the target.
