@@ -86,7 +86,7 @@ and `upgrade` warn of it, because each node pulls whatever the tag points to whe
 nodes may run different images under one reference:
 
 ```text
-chalkctl: warning: cp1: Cluster "default": spec.images.proxy: registry.k8s.io/kube-proxy:v1.37.1 names a tag but no digest, so nodes pull whatever the tag points to when they pull; pin it as registry.k8s.io/kube-proxy:v1.37.1@sha256:<digest>
+chalkctl: warning: cp1: Cluster "default": images.proxy: registry.k8s.io/kube-proxy:v1.37.1 names a tag but no digest, so nodes pull whatever the tag points to when they pull; pin it as registry.k8s.io/kube-proxy:v1.37.1@sha256:<digest>
 ```
 
 containerd pulls the images when the static pods, the add-ons and the pods need them, through the

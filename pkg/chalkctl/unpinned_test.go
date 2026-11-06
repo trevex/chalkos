@@ -11,7 +11,7 @@ import (
 )
 
 // unpinnedProxy is the warning of a Cluster document whose kube-proxy names a tag but no digest.
-const unpinnedProxy = `Cluster "default": spec.images.proxy: registry.k8s.io/kube-proxy:v1.37.1 names a tag but no digest, so nodes pull whatever the tag points to when they pull; pin it as registry.k8s.io/kube-proxy:v1.37.1@sha256:<digest>`
+const unpinnedProxy = `Cluster "default": images.proxy: registry.k8s.io/kube-proxy:v1.37.1 names a tag but no digest, so nodes pull whatever the tag points to when they pull; pin it as registry.k8s.io/kube-proxy:v1.37.1@sha256:<digest>`
 
 // unpinProxy drops the digest of kube-proxy's image from the cluster.yaml in dir.
 func unpinProxy(t *testing.T, dir string) {

@@ -17,12 +17,12 @@ func TestUnpinnedImages(t *testing.T) {
 	}
 	s := kubernetesSet(t, "{images: "+images(t, pinned)+"}", "")
 	got := s.Documents().UnpinnedImages(allSchemas(t))
-	want := `Cluster "default": spec.images.proxy: registry.k8s.io/kube-proxy:v1.37.1 names a tag but no digest, so nodes pull whatever the tag points to when they pull; pin it as registry.k8s.io/kube-proxy:v1.37.1@sha256:<digest>`
+	want := `Cluster "default": images.proxy: registry.k8s.io/kube-proxy:v1.37.1 names a tag but no digest, so nodes pull whatever the tag points to when they pull; pin it as registry.k8s.io/kube-proxy:v1.37.1@sha256:<digest>`
 	if len(got) != 1 || got[0] != want {
 		t.Errorf("UnpinnedImages() = %q, want [%q]", got, want)
 	}
 	all := kubernetesSet(t, "{}", "").Documents().UnpinnedImages(allSchemas(t))
-	if len(all) != len(testImages) || !strings.Contains(strings.Join(all, "\n"), `Cluster "default": spec.images.flannel: `+testImages["flannel"]+" names a tag") {
+	if len(all) != len(testImages) || !strings.Contains(strings.Join(all, "\n"), `Cluster "default": images.flannel: `+testImages["flannel"]+" names a tag") {
 		t.Errorf("UnpinnedImages() = %q, want a line for each of the Cluster's images", all)
 	}
 }
