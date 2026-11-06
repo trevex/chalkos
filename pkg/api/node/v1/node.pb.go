@@ -3474,9 +3474,15 @@ type BootStatus struct {
 	// The health of the boot the node runs, as the health check of a boot finds the node now; unset
 	// unless the request asked for it. blessed tells of the boot entry, which stays blessed across
 	// boots and is not counted again; this tells of the boot itself, also of an uncounted one.
-	Health        *BootHealth `protobuf:"bytes,12,opt,name=health,proto3" json:"health,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	Health *BootHealth `protobuf:"bytes,12,opt,name=health,proto3" json:"health,omitempty"`
+	// Whether the image staged is the node's known-good image: active and uncounted, as a rollback
+	// from a boot that was not found healthy stages it, while the boot the node runs is counted.
+	// Until that boot is found healthy the node falls back to that image, which keeps the config it
+	// last ran: a delivery leaves its config slot as it is, and apply-config --staged refuses other
+	// config for it. False without an image staged.
+	StagedKnownGood bool `protobuf:"varint,13,opt,name=staged_known_good,json=stagedKnownGood,proto3" json:"staged_known_good,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
 }
 
 func (x *BootStatus) Reset() {
@@ -3591,6 +3597,13 @@ func (x *BootStatus) GetHealth() *BootHealth {
 		return x.Health
 	}
 	return nil
+}
+
+func (x *BootStatus) GetStagedKnownGood() bool {
+	if x != nil {
+		return x.StagedKnownGood
+	}
+	return false
 }
 
 // The health of the boot a node runs.
@@ -5358,7 +5371,7 @@ const file_chalkos_node_v1_node_proto_rawDesc = "" +
 	"\fOutputStatus\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x12\n" +
 	"\x04hash\x18\x02 \x01(\tR\x04hash\x12\x14\n" +
-	"\x05error\x18\x03 \x01(\tR\x05error\"\x87\x04\n" +
+	"\x05error\x18\x03 \x01(\tR\x05error\"\xb3\x04\n" +
 	"\n" +
 	"BootStatus\x124\n" +
 	"\arunning\x18\x01 \x01(\v2\x1a.chalkos.node.v1.BootImageR\arunning\x12\x14\n" +
@@ -5373,7 +5386,8 @@ const file_chalkos_node_v1_node_proto_rawDesc = "" +
 	"\fstaged_state\x18\n" +
 	" \x01(\x0e2\x1a.chalkos.node.v1.SlotStateR\vstagedState\x12\x17\n" +
 	"\aboot_id\x18\v \x01(\tR\x06bootId\x123\n" +
-	"\x06health\x18\f \x01(\v2\x1b.chalkos.node.v1.BootHealthR\x06health\"V\n" +
+	"\x06health\x18\f \x01(\v2\x1b.chalkos.node.v1.BootHealthR\x06health\x12*\n" +
+	"\x11staged_known_good\x18\r \x01(\bR\x0fstagedKnownGood\"V\n" +
 	"\n" +
 	"BootHealth\x12\x18\n" +
 	"\ahealthy\x18\x01 \x01(\bR\ahealthy\x12\x14\n" +

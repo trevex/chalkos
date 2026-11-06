@@ -121,8 +121,8 @@ func TestApplyConfigStaged(t *testing.T) {
 			if got.StagedConfigVersion != hashOf(t, next) || got.ConfigVersion != hashOf(t, baseConfig) {
 				t.Errorf("status names the versions %q and staged %q", got.ConfigVersion, got.StagedConfigVersion)
 			}
-			if !bytes.Equal(got.Boot.GetStaged().GetRootHash(), stagedImage) || got.Boot.GetStagedState() != tc.state {
-				t.Errorf("status names the staged image %x, %v", got.Boot.GetStaged().GetRootHash(), got.Boot.GetStagedState())
+			if !bytes.Equal(got.Boot.GetStaged().GetRootHash(), stagedImage) || got.Boot.GetStagedState() != tc.state || got.Boot.GetStagedKnownGood() {
+				t.Errorf("status names the staged image %x, %v, known-good %v", got.Boot.GetStaged().GetRootHash(), got.Boot.GetStagedState(), got.Boot.GetStagedKnownGood())
 			}
 			resp, err := s.GetConfig(context.Background(), connect.NewRequest(&nodev1.GetConfigRequest{Staged: true}))
 			if err != nil || resp.Msg.Version != hashOf(t, next) {
@@ -473,9 +473,13 @@ func TestDryRunPlansTheStagedSlot(t *testing.T) {
 }
 
 // TestApplyConfigLeavesTheKnownGoodImage leaves the known-good image a rollback staged with the
-// config it last ran, without its check, and says so.
+// config it last ran, without its check, and says so; Status names the image known-good, so a
+// client advises no delivery for it.
 func TestApplyConfigLeavesTheKnownGoodImage(t *testing.T) {
 	s, _ := knownGoodServer(t)
+	if b := status(t, s).Boot; !bytes.Equal(b.GetStaged().GetRootHash(), stagedImage) || !b.GetStagedKnownGood() {
+		t.Errorf("status names the staged image %x, known-good %v", b.GetStaged().GetRootHash(), b.GetStagedKnownGood())
+	}
 	next := strings.Replace(baseConfig, "name: first", "name: second", 1)
 	resp, err := sendConfig(s, next)
 	if err != nil {

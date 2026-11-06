@@ -53,7 +53,7 @@ func TestStatusReportsTheBoot(t *testing.T) {
 		// A rollback before the boot was found healthy stages the image before without tries; once
 		// that image boots, the image it rolled back from is counted below it and boots no more.
 		{"a rollback staged uncounted", []string{"chalkos_2+2-1.efi", "chalkos_3.efi"}, nil, "",
-			&nodev1.BootStatus{Running: runs, Entry: "chalkos_2+2-1.efi", Staged: &nodev1.BootImage{RootHash: next, Generation: 3}, StagedState: nodev1.SlotState_SLOT_STATE_ACTIVE}},
+			&nodev1.BootStatus{Running: runs, Entry: "chalkos_2+2-1.efi", Staged: &nodev1.BootImage{RootHash: next, Generation: 3}, StagedState: nodev1.SlotState_SLOT_STATE_ACTIVE, StagedKnownGood: true}},
 		{"rolled back uncounted", []string{"chalkos_1+1-1.efi", "chalkos_2.efi"}, nil, "",
 			&nodev1.BootStatus{Running: runs, Entry: "chalkos_2.efi", Blessed: true}},
 		{"rolled back", []string{"chalkos_2.efi", "chalkos_3+0-3.efi"}, nil, header + journal,

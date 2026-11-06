@@ -826,6 +826,12 @@ message BootStatus {
   // unless the request asked for it. blessed tells of the boot entry, which stays blessed across
   // boots and is not counted again; this tells of the boot itself, also of an uncounted one.
   BootHealth health = 12;
+  // Whether the image staged is the node's known-good image: active and uncounted, as a rollback
+  // from a boot that was not found healthy stages it, while the boot the node runs is counted.
+  // Until that boot is found healthy the node falls back to that image, which keeps the config it
+  // last ran: a delivery leaves its config slot as it is, and apply-config --staged refuses other
+  // config for it. False without an image staged.
+  bool staged_known_good = 13;
 }
 
 // The health of the boot a node runs.

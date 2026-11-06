@@ -281,14 +281,14 @@ func (c *cluster) slotState(name, version string, advice func(want string) strin
 // stagedAdvice is what delivers want, the inventory's config, to the slot of the image the status
 // s names as staged, which holds other config. A plain apply-config writes both images' slots, but
 // not that of the known-good image a rollback from a boot not yet found healthy staged, which
-// keeps the config it last ran: the rollback staged the image, the boot loader counts the running
-// image's boot, which is not blessed, and nothing delivers the config to it until that boot is
-// found healthy. When the running image runs want already, only the staged slot differs, as after
-// a write of that slot that failed, and apply-config --staged writes it alone.
+// keeps the config it last ran until that boot is found healthy; chalkd names that image in the
+// status, by the test its deliveries take. When the running image runs want already, only the
+// staged slot differs, as after a write of that slot that failed, and apply-config --staged writes
+// it alone.
 func stagedAdvice(name, want string, s *nodev1.StatusResponse) string {
 	b := s.Boot
 	switch {
-	case b.GetStaged() != nil && b.GetStagedState() == nodev1.SlotState_SLOT_STATE_ACTIVE && !b.GetBlessed() && bytes.Equal(b.GetRollback().GetRootHash(), b.GetStaged().GetRootHash()):
+	case b.GetStagedKnownGood():
 		return "the rollback image keeps the config it last ran while the boot of " + b.GetEntry() + " is not found healthy"
 	case s.ConfigVersion == want:
 		return "chalkctl apply-config --staged " + name + " delivers it"

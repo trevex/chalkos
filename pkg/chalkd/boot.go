@@ -61,6 +61,9 @@ func (s *Server) bootStatus() *nodev1.BootStatus {
 	// image the node rolled back from leaves it, does not boot next.
 	if e, ok := esp.StagedEntry(entries, booted.ImageID, booted); ok {
 		st.Staged, st.StagedState = bootImage(images, e.RootHash, e.Generation), nodev1.SlotState_SLOT_STATE_ACTIVE
+		// The same test a delivery takes to leave the image's config slot alone, so a client
+		// that advises a delivery tells the known-good image as chalkd does.
+		st.StagedKnownGood = secondSlot{entry: e, booted: booted, active: true}.knownGood()
 	} else if e, ok, err := esp.Staged(s.Paths.ESP, booted.ImageID); err != nil {
 		st.Error = err.Error()
 		return st
