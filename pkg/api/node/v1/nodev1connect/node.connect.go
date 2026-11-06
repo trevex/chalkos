@@ -57,6 +57,9 @@ const (
 	NodeServiceRebootProcedure = "/chalkos.node.v1.NodeService/Reboot"
 	// NodeServiceUpgradeProcedure is the fully-qualified name of the NodeService's Upgrade RPC.
 	NodeServiceUpgradeProcedure = "/chalkos.node.v1.NodeService/Upgrade"
+	// NodeServiceActivateImageProcedure is the fully-qualified name of the NodeService's ActivateImage
+	// RPC.
+	NodeServiceActivateImageProcedure = "/chalkos.node.v1.NodeService/ActivateImage"
 	// NodeServiceDiagnosticsProcedure is the fully-qualified name of the NodeService's Diagnostics RPC.
 	NodeServiceDiagnosticsProcedure = "/chalkos.node.v1.NodeService/Diagnostics"
 	// NodeServiceRunDiagnosticProcedure is the fully-qualified name of the NodeService's RunDiagnostic
@@ -123,19 +126,32 @@ type NodeServiceClient interface {
 	// Reboot reboots the node once the response is sent. Available in maintenance and normal mode
 	// to operators.
 	Reboot(context.Context, *connect.Request[v1.RebootRequest]) (*connect.Response[v1.RebootResponse], error)
-	// Upgrade installs a new image into the node's inactive slot, from which it boots next, counting
-	// the image's boot tries until a boot is found healthy, and reboots the node when asked to.
-	// The first message carries the header; the store, its hash tree and the UKI follow as chunks,
-	// unless the header's source names an image in a registry, which the node pulls. Available in
-	// normal mode to operators. Delivering config or a fallback secret with the upgrade needs the
-	// admin role, as ApplyConfig does; without them the node gives the image its pending config,
-	// else carries the running image's config over. The node checks that the image is of its
-	// platform, and, once the store is written and before the image becomes the next boot, that the
-	// schemas in the image accept the config it keeps for the image. It does not check that the
+	// Upgrade installs a new image into the node's inactive slot and stages it there, then activates
+	// it as ActivateImage does, so it boots next, counting the image's boot tries until a boot is
+	// found healthy, and reboots the node when asked to. With the header's stage_only it stops once
+	// the image is staged. The first message carries the header; the store, its hash tree and the
+	// UKI follow as chunks, unless the header's source names an image in a registry, which the node
+	// pulls. Available in normal mode to operators. Delivering config or a fallback secret with the
+	// upgrade needs the admin role, as ApplyConfig does; without them the node gives the image its
+	// pending config, else carries the running image's config over. The node checks that the image
+	// is of its platform, and, once the store is written and before the image is staged, that the
+	// image's own checker accepts the config it keeps for the image. It does not check that the
 	// image is one to trust: without Secure Boot, an operator can run any image as root, with STATE
 	// and VAR unsealed, as their keys are sealed to PCR 7 alone. Secure Boot is what limits upgrades
 	// to images signed for db.
 	Upgrade(context.Context) *connect.ClientStreamForClient[v1.UpgradeRequest, v1.UpgradeResponse]
+	// ActivateImage makes the image staged in the node's inactive slot boot next: it gives the
+	// image's UKI its boot entry's name, one generation above the others, with the tries the UKI
+	// asks for, so boot counting falls back to the running image should its boots fail. It checks
+	// the UKI again as an upgrade checks a new one, as the firmware's db may have changed since,
+	// and runs no check of the config: the image's own checker passed its config slot before the
+	// image was staged. It answers already_active while the image boots next, and
+	// already_installed while the node runs it, so a request sent twice activates once. It is
+	// refused with FAILED_PRECONDITION when no image is staged, when the staged image has another
+	// root hash, and when STATE keeps no config slot of the image. An activation that fails leaves
+	// the UKI under its staged name, and the node keeps booting the running image. Available in
+	// normal mode to operators.
+	ActivateImage(context.Context, *connect.Request[v1.ActivateImageRequest]) (*connect.Response[v1.ActivateImageResponse], error)
 	// Diagnostics lists the diagnostics the image declares: read-only commands of the image, such as
 	// ip route get, that RunDiagnostic runs. Available in maintenance and normal mode to readers.
 	Diagnostics(context.Context, *connect.Request[v1.DiagnosticsRequest]) (*connect.Response[v1.DiagnosticsResponse], error)
@@ -269,6 +285,12 @@ func NewNodeServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			connect.WithSchema(nodeServiceMethods.ByName("Upgrade")),
 			connect.WithClientOptions(opts...),
 		),
+		activateImage: connect.NewClient[v1.ActivateImageRequest, v1.ActivateImageResponse](
+			httpClient,
+			baseURL+NodeServiceActivateImageProcedure,
+			connect.WithSchema(nodeServiceMethods.ByName("ActivateImage")),
+			connect.WithClientOptions(opts...),
+		),
 		diagnostics: connect.NewClient[v1.DiagnosticsRequest, v1.DiagnosticsResponse](
 			httpClient,
 			baseURL+NodeServiceDiagnosticsProcedure,
@@ -315,6 +337,7 @@ type nodeServiceClient struct {
 	logs           *connect.Client[v1.LogsRequest, v1.LogsResponse]
 	reboot         *connect.Client[v1.RebootRequest, v1.RebootResponse]
 	upgrade        *connect.Client[v1.UpgradeRequest, v1.UpgradeResponse]
+	activateImage  *connect.Client[v1.ActivateImageRequest, v1.ActivateImageResponse]
 	diagnostics    *connect.Client[v1.DiagnosticsRequest, v1.DiagnosticsResponse]
 	runDiagnostic  *connect.Client[v1.RunDiagnosticRequest, v1.RunDiagnosticResponse]
 	rollbackConfig *connect.Client[v1.RollbackConfigRequest, v1.RollbackConfigResponse]
@@ -375,6 +398,11 @@ func (c *nodeServiceClient) Reboot(ctx context.Context, req *connect.Request[v1.
 // Upgrade calls chalkos.node.v1.NodeService.Upgrade.
 func (c *nodeServiceClient) Upgrade(ctx context.Context) *connect.ClientStreamForClient[v1.UpgradeRequest, v1.UpgradeResponse] {
 	return c.upgrade.CallClientStream(ctx)
+}
+
+// ActivateImage calls chalkos.node.v1.NodeService.ActivateImage.
+func (c *nodeServiceClient) ActivateImage(ctx context.Context, req *connect.Request[v1.ActivateImageRequest]) (*connect.Response[v1.ActivateImageResponse], error) {
+	return c.activateImage.CallUnary(ctx, req)
 }
 
 // Diagnostics calls chalkos.node.v1.NodeService.Diagnostics.
@@ -452,19 +480,32 @@ type NodeServiceHandler interface {
 	// Reboot reboots the node once the response is sent. Available in maintenance and normal mode
 	// to operators.
 	Reboot(context.Context, *connect.Request[v1.RebootRequest]) (*connect.Response[v1.RebootResponse], error)
-	// Upgrade installs a new image into the node's inactive slot, from which it boots next, counting
-	// the image's boot tries until a boot is found healthy, and reboots the node when asked to.
-	// The first message carries the header; the store, its hash tree and the UKI follow as chunks,
-	// unless the header's source names an image in a registry, which the node pulls. Available in
-	// normal mode to operators. Delivering config or a fallback secret with the upgrade needs the
-	// admin role, as ApplyConfig does; without them the node gives the image its pending config,
-	// else carries the running image's config over. The node checks that the image is of its
-	// platform, and, once the store is written and before the image becomes the next boot, that the
-	// schemas in the image accept the config it keeps for the image. It does not check that the
+	// Upgrade installs a new image into the node's inactive slot and stages it there, then activates
+	// it as ActivateImage does, so it boots next, counting the image's boot tries until a boot is
+	// found healthy, and reboots the node when asked to. With the header's stage_only it stops once
+	// the image is staged. The first message carries the header; the store, its hash tree and the
+	// UKI follow as chunks, unless the header's source names an image in a registry, which the node
+	// pulls. Available in normal mode to operators. Delivering config or a fallback secret with the
+	// upgrade needs the admin role, as ApplyConfig does; without them the node gives the image its
+	// pending config, else carries the running image's config over. The node checks that the image
+	// is of its platform, and, once the store is written and before the image is staged, that the
+	// image's own checker accepts the config it keeps for the image. It does not check that the
 	// image is one to trust: without Secure Boot, an operator can run any image as root, with STATE
 	// and VAR unsealed, as their keys are sealed to PCR 7 alone. Secure Boot is what limits upgrades
 	// to images signed for db.
 	Upgrade(context.Context, *connect.ClientStream[v1.UpgradeRequest]) (*connect.Response[v1.UpgradeResponse], error)
+	// ActivateImage makes the image staged in the node's inactive slot boot next: it gives the
+	// image's UKI its boot entry's name, one generation above the others, with the tries the UKI
+	// asks for, so boot counting falls back to the running image should its boots fail. It checks
+	// the UKI again as an upgrade checks a new one, as the firmware's db may have changed since,
+	// and runs no check of the config: the image's own checker passed its config slot before the
+	// image was staged. It answers already_active while the image boots next, and
+	// already_installed while the node runs it, so a request sent twice activates once. It is
+	// refused with FAILED_PRECONDITION when no image is staged, when the staged image has another
+	// root hash, and when STATE keeps no config slot of the image. An activation that fails leaves
+	// the UKI under its staged name, and the node keeps booting the running image. Available in
+	// normal mode to operators.
+	ActivateImage(context.Context, *connect.Request[v1.ActivateImageRequest]) (*connect.Response[v1.ActivateImageResponse], error)
 	// Diagnostics lists the diagnostics the image declares: read-only commands of the image, such as
 	// ip route get, that RunDiagnostic runs. Available in maintenance and normal mode to readers.
 	Diagnostics(context.Context, *connect.Request[v1.DiagnosticsRequest]) (*connect.Response[v1.DiagnosticsResponse], error)
@@ -594,6 +635,12 @@ func NewNodeServiceHandler(svc NodeServiceHandler, opts ...connect.HandlerOption
 		connect.WithSchema(nodeServiceMethods.ByName("Upgrade")),
 		connect.WithHandlerOptions(opts...),
 	)
+	nodeServiceActivateImageHandler := connect.NewUnaryHandler(
+		NodeServiceActivateImageProcedure,
+		svc.ActivateImage,
+		connect.WithSchema(nodeServiceMethods.ByName("ActivateImage")),
+		connect.WithHandlerOptions(opts...),
+	)
 	nodeServiceDiagnosticsHandler := connect.NewUnaryHandler(
 		NodeServiceDiagnosticsProcedure,
 		svc.Diagnostics,
@@ -648,6 +695,8 @@ func NewNodeServiceHandler(svc NodeServiceHandler, opts ...connect.HandlerOption
 			nodeServiceRebootHandler.ServeHTTP(w, r)
 		case NodeServiceUpgradeProcedure:
 			nodeServiceUpgradeHandler.ServeHTTP(w, r)
+		case NodeServiceActivateImageProcedure:
+			nodeServiceActivateImageHandler.ServeHTTP(w, r)
 		case NodeServiceDiagnosticsProcedure:
 			nodeServiceDiagnosticsHandler.ServeHTTP(w, r)
 		case NodeServiceRunDiagnosticProcedure:
@@ -709,6 +758,10 @@ func (UnimplementedNodeServiceHandler) Reboot(context.Context, *connect.Request[
 
 func (UnimplementedNodeServiceHandler) Upgrade(context.Context, *connect.ClientStream[v1.UpgradeRequest]) (*connect.Response[v1.UpgradeResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("chalkos.node.v1.NodeService.Upgrade is not implemented"))
+}
+
+func (UnimplementedNodeServiceHandler) ActivateImage(context.Context, *connect.Request[v1.ActivateImageRequest]) (*connect.Response[v1.ActivateImageResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("chalkos.node.v1.NodeService.ActivateImage is not implemented"))
 }
 
 func (UnimplementedNodeServiceHandler) Diagnostics(context.Context, *connect.Request[v1.DiagnosticsRequest]) (*connect.Response[v1.DiagnosticsResponse], error) {

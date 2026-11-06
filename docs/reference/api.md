@@ -171,7 +171,7 @@ The request of ApplyConfig: a config, or layer payloads, a node certificate or O
 | `node_key` | bytes | PEM key of node_certificate; empty keeps the node's. |
 | `trust` | bytes | The OS CAs the node trusts from now on (PEM), as InstallHeader.ca_certificate holds them; empty keeps the node's. They must verify the node's certificate, the caller's and a control plane's node CA. Not together with a node certificate. |
 | `config` | string | The node's config, as InstallHeader.config holds it, checked against the running image's schemas. It replaces the node's config as a whole. Empty keeps the node's config and storage, for a request that delivers only layer payloads, a node certificate or OS CAs. |
-| `staged` | bool | Whether the config is for the image staged to boot next: chalkd checks it against that image and keeps it in that image's config slot, changing nothing the running image runs but the machine's storage. The config meets that image's change rules, compared with the running slot's config and the machine as for the running image, and the storage changes they accept are made at once, with fallback_secret. It takes the config and the fallback secret alone. Without an image staged, chalkd parses the config and keeps it as the node's pending config, unchecked, in place of any it held: the next upgrade checks it against its image and boots that image with it, unless the upgrade carries config of its own. A pending config takes no fallback secret; the upgrade that adds an encrypted volume carries it. |
+| `staged` | bool | Whether the config is for the image in the inactive slot, staged or active, as BootStatus.staged names it: chalkd checks it against that image and keeps it in that image's config slot, changing nothing the running image runs but the machine's storage. The config meets that image's change rules, compared with the running slot's config and the machine as for the running image, and the storage changes they accept are made at once, with fallback_secret. It takes the config and the fallback secret alone. Without an image staged, chalkd parses the config and keeps it as the node's pending config, unchecked, in place of any it held: the next upgrade checks it against its image and boots that image with it, unless the upgrade carries config of its own. A pending config takes no fallback secret; the upgrade that adds an encrypted volume carries it. |
 | `layers` | list of google.protobuf.Any | Payloads of the image's layers, such as a new chalkos.kubernetes.v1.Share replacing the node's, each kept by the layer whose type it is; the node refuses a payload no layer of its image takes. Empty keeps the layers' payloads. |
 | `try` | google.protobuf.Duration | How long the config is on trial: the node rolls it back by itself, as RollbackConfig does, unless ConfirmConfig confirms it within the duration, and a boot before that restores the config from before it. A trial takes config for the running image alone, without staged, layer payloads, a node certificate or OS CAs, and lasts at most 24 hours. The node refuses it with FAILED_PRECONDITION for a config that changes the node's storage, which a rollback cannot undo, for the config it runs already and on a node without config. Unset applies the config for good. |
 | `ignore_units` | list of string | With try, systemd units the health check that ConfirmConfig waits for leaves out, besides those the image ignores, such as demo.service: a unit that failed before the trial and is not the trial's concern. Each must be a unit name. The node keeps them with the trial. |
@@ -271,7 +271,7 @@ The response of Status: the state of an installed node.
 | `boot` | BootStatus | The image the node booted, and what upgrades installed beside it. |
 | `platform` | string | The platform the running image was built for. |
 | `config_version` | string | SHA-256 of the config the node runs, as it was delivered, in lower-case hex: of its documents in canonical JSON, ordered by apiVersion, kind and name, with each Secret value replaced by its own SHA-256. Empty on a node that runs no config. |
-| `staged_config_version` | string | The version of the config kept for the image staged to boot next, as config_version gives the running one's; empty without a staged image or config for it. |
+| `staged_config_version` | string | The version of the config kept for the image in the inactive slot, BootStatus.staged, as config_version gives the running one's; empty without a staged image or config for it. |
 | `outputs` | list of OutputStatus | The image's outputs, by name. |
 | `previous_config_version` | string | The version of the running image's previous config, which RollbackConfig delivers again, as config_version gives the running one's; empty while the node keeps none, as after an install or an upgrade. |
 | `trial` | ConfigTrial | The config on trial, while one is; unset otherwise. |
@@ -325,15 +325,16 @@ No fields.
 
 ### Upgrade { #method-upgrade }
 
-Upgrade installs a new image into the node's inactive slot, from which it boots next, counting
-the image's boot tries until a boot is found healthy, and reboots the node when asked to.
-The first message carries the header; the store, its hash tree and the UKI follow as chunks,
-unless the header's source names an image in a registry, which the node pulls. Available in
-normal mode to operators. Delivering config or a fallback secret with the upgrade needs the
-admin role, as ApplyConfig does; without them the node gives the image its pending config,
-else carries the running image's config over. The node checks that the image is of its
-platform, and, once the store is written and before the image becomes the next boot, that the
-schemas in the image accept the config it keeps for the image. It does not check that the
+Upgrade installs a new image into the node's inactive slot and stages it there, then activates
+it as ActivateImage does, so it boots next, counting the image's boot tries until a boot is
+found healthy, and reboots the node when asked to. With the header's stage_only it stops once
+the image is staged. The first message carries the header; the store, its hash tree and the
+UKI follow as chunks, unless the header's source names an image in a registry, which the node
+pulls. Available in normal mode to operators. Delivering config or a fallback secret with the
+upgrade needs the admin role, as ApplyConfig does; without them the node gives the image its
+pending config, else carries the running image's config over. The node checks that the image
+is of its platform, and, once the store is written and before the image is staged, that the
+image's own checker accepts the config it keeps for the image. It does not check that the
 image is one to trust: without Secure Boot, an operator can run any image as root, with STATE
 and VAR unsealed, as their keys are sealed to PCR 7 alone. Secure Boot is what limits upgrades
 to images signed for db.
@@ -358,12 +359,47 @@ The response of Upgrade.
 | Field | Type | Description |
 | ----- | ---- | ----------- |
 | `already_installed` | bool | Whether the node runs the image already, so nothing changed. |
-| `entry` | string | The file name of the UKI that boots the image next, with its tries. |
+| `entry` | string | The file name of the UKI that boots the image next, with its tries; while the image is staged alone, the name its UKI has until ActivateImage. |
 | `rebooting` | bool | Whether the node reboots into the image. |
-| `already_staged` | bool | Whether the image boots next already, from entry, as an earlier upgrade without a reboot left it; the image was not written again, and the config the upgrade carries, or the running image's, replaced the config kept for it. |
+| `already_staged` | bool | Whether the inactive slot held the image already, staged or active, as an earlier upgrade with stage_only or without a reboot left it; the image was not written again, and the config the upgrade carries, or the running image's, replaced the config kept for it. |
 | `pending` | PendingOutcome | What the upgrade did with the config the node held pending as it began; unset when it held none. |
+| `active` | bool | Whether the image boots next; false while it is staged alone, as stage_only leaves it. |
 
 Field types: [PendingOutcome](#message-pendingoutcome).
+
+### ActivateImage { #method-activateimage }
+
+ActivateImage makes the image staged in the node's inactive slot boot next: it gives the
+image's UKI its boot entry's name, one generation above the others, with the tries the UKI
+asks for, so boot counting falls back to the running image should its boots fail. It checks
+the UKI again as an upgrade checks a new one, as the firmware's db may have changed since,
+and runs no check of the config: the image's own checker passed its config slot before the
+image was staged. It answers already_active while the image boots next, and
+already_installed while the node runs it, so a request sent twice activates once. It is
+refused with FAILED_PRECONDITION when no image is staged, when the staged image has another
+root hash, and when STATE keeps no config slot of the image. An activation that fails leaves
+the UKI under its staged name, and the node keeps booting the running image. Available in
+normal mode to operators.
+
+Request: ActivateImageRequest. Response: ActivateImageResponse.
+
+#### ActivateImageRequest { #message-activateimagerequest }
+
+The request of ActivateImage.
+
+| Field | Type | Description |
+| ----- | ---- | ----------- |
+| `root_hash` | bytes | The verity root hash of the staged image's store, as BootStatus.staged gives it. The node refuses another. Required. |
+
+#### ActivateImageResponse { #message-activateimageresponse }
+
+The response of ActivateImage.
+
+| Field | Type | Description |
+| ----- | ---- | ----------- |
+| `entry` | string | The file name of the UKI that boots the image next, with its tries. |
+| `already_active` | bool | Whether the image boots next already, from entry, so nothing changed. |
+| `already_installed` | bool | Whether the node runs the image already, so nothing changed. |
 
 ### Diagnostics { #method-diagnostics }
 
@@ -555,14 +591,16 @@ The images on the node's ESP and how the running one booted.
 | `running` | BootImage | The image the node runs. |
 | `entry` | string | File name of the UKI the node booted, in the ESP's /EFI/Linux, with its tries counter while it has one. |
 | `blessed` | bool | Whether the boot was found healthy and marked good, or not counted by the boot loader at all; false while the boot loader counts the boot's tries. |
-| `staged` | BootImage | The image an upgrade installed or a rollback made to boot next; unset without one. |
+| `staged` | BootImage | The image in the inactive slot that an upgrade staged, or that an upgrade or a rollback made boot next, as staged_state tells; unset without one. |
 | `failed` | BootImage | The image whose boots used up their tries without being found healthy, from which the node fell back; unset without one. The failed UKI stays until the next upgrade. |
 | `journal` | list of string | The last lines chalkd and the health check logged during the failed image's last boot, as the check recorded them on VAR; empty without that record. |
 | `error` | string | Why the boot could not be read; empty when it was. The running image's root hash is set when the kernel command line could be read. |
 | `previous` | BootImage | The image RollbackImage boots: the one an upgrade replaced, whose UKI is on the ESP and whose config slot STATE keeps; unset without one, as after an install, while another image is staged, or after a fallback. |
 | `rollback` | BootImage | The image the last RollbackImage rolled back to, while the node runs it or boots it next; unset otherwise, and once an upgrade replaced it. A client that rolls back several nodes to one image knows by it which of them a rollback got there already. |
+| `staged_state` | SlotState | Whether the image staged boots next; unspecified without one. |
+| `boot_id` | string | The ID of the boot the node runs, as the kernel's random boot_id gives it, another for each boot: a client that rebooted the node tells the new boot from the one before by it, also when both run one image. Empty when it could not be read. |
 
-Field types: [BootImage](#message-bootimage).
+Field types: [BootImage](#message-bootimage), [SlotState](#enum-slotstate).
 
 ### CertificateStatus { #message-certificatestatus }
 
@@ -870,9 +908,10 @@ What an upgrade delivers: the image and, optionally, the node's config for it.
 | ----- | ---- | ----------- |
 | `image` | ImageHeader | The image to install. The node refuses another ID or platform than its own, and an image that names a boot loader: an upgrade leaves the boot loader as it is. |
 | `reboot` | bool | Whether the node reboots into the image once it is installed. |
-| `config` | string | The node's config for the image, as ApplyConfigRequest.config holds it. The node checks it against the image's schemas and change rules as ApplyConfig does: it refuses what the rules refuse, such as a storage change that takes a reset or a reinstall, or a change of a fixed Kubernetes setting, makes the storage changes they accept, such as a new volume, at once, and keeps the config in the image's config slot. Empty takes the node's pending config, which ApplyConfigRequest.staged keeps, or without one carries the running image's config over, checked against the image the same way. Once the image is staged to boot next, the node drops its pending config, used or not; an upgrade that fails keeps it. Only the admin role may set it. |
+| `config` | string | The node's config for the image, as ApplyConfigRequest.config holds it. The node checks it against the image's schemas and change rules as ApplyConfig does: it refuses what the rules refuse, such as a storage change that takes a reset or a reinstall, or a change of a fixed Kubernetes setting, makes the storage changes they accept, such as a new volume, at once, and keeps the config in the image's config slot. Empty takes the node's pending config, which ApplyConfigRequest.staged keeps, or without one carries the running image's config over, checked against the image the same way. Once the upgrade staged the image, and activated it unless stage_only is set, the node drops its pending config, used or not; an upgrade that fails keeps it. Only the admin role may set it. |
 | `fallback_secret` | string | Recovery key or password enrolled on the encrypted volumes the config adds, as ApplyConfigRequest.fallback_secret is; required when it adds one and the node's fallback is not none. Only the admin role may set it. |
 | `source` | ImageSource | Where the node takes the image's parts from. Absent, they follow the header as chunks; for an image in a registry, the node pulls them and the request carries nothing after the header. |
+| `stage_only` | bool | Whether the node stops once the image is staged: its store written, its config checked by the image's own checker and kept in its config slot, its UKI on the ESP under a name the boot loader does not boot. ActivateImage makes it boot next. An image that boots next already stays so. The node refuses it together with reboot. |
 
 Field types: [ImageHeader](#message-imageheader), [ImageSource](#message-imagesource).
 
@@ -921,6 +960,16 @@ The state of Secure Boot, as the firmware's EFI variables SecureBoot and SetupMo
 | `SECURE_BOOT_DISABLED` | 1 | Secure Boot is off, or its EFI variables cannot be read. |
 | `SECURE_BOOT_ENABLED` | 2 | Secure Boot is on: the firmware starts only binaries that db allows. |
 | `SECURE_BOOT_SETUP_MODE` | 3 | The firmware accepts new Secure Boot keys without authentication. |
+
+### SlotState { #enum-slotstate }
+
+The state of the image in the node's inactive slot.
+
+| Name | Number | Description |
+| ---- | ------ | ----------- |
+| `SLOT_STATE_UNSPECIFIED` | 0 | No image is staged. |
+| `SLOT_STATE_STAGED` | 1 | The image's store is written and its own checker accepted its config, which STATE keeps in its config slot; its UKI is on the ESP under a name the boot loader does not boot. ActivateImage makes it boot next; a reboot boots the running image again. |
+| `SLOT_STATE_ACTIVE` | 2 | The image boots next: its UKI has its boot entry's name, counted after an upgrade and uncounted after a rollback from a boot that was not found healthy. |
 
 The definition is `api/chalkos/kubernetes/v1/kubernetes.proto`, package `chalkos.kubernetes.v1`.
 

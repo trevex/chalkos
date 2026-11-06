@@ -64,19 +64,32 @@ service NodeService {
   // Reboot reboots the node once the response is sent. Available in maintenance and normal mode
   // to operators.
   rpc Reboot(RebootRequest) returns (RebootResponse);
-  // Upgrade installs a new image into the node's inactive slot, from which it boots next, counting
-  // the image's boot tries until a boot is found healthy, and reboots the node when asked to.
-  // The first message carries the header; the store, its hash tree and the UKI follow as chunks,
-  // unless the header's source names an image in a registry, which the node pulls. Available in
-  // normal mode to operators. Delivering config or a fallback secret with the upgrade needs the
-  // admin role, as ApplyConfig does; without them the node gives the image its pending config,
-  // else carries the running image's config over. The node checks that the image is of its
-  // platform, and, once the store is written and before the image becomes the next boot, that the
-  // schemas in the image accept the config it keeps for the image. It does not check that the
+  // Upgrade installs a new image into the node's inactive slot and stages it there, then activates
+  // it as ActivateImage does, so it boots next, counting the image's boot tries until a boot is
+  // found healthy, and reboots the node when asked to. With the header's stage_only it stops once
+  // the image is staged. The first message carries the header; the store, its hash tree and the
+  // UKI follow as chunks, unless the header's source names an image in a registry, which the node
+  // pulls. Available in normal mode to operators. Delivering config or a fallback secret with the
+  // upgrade needs the admin role, as ApplyConfig does; without them the node gives the image its
+  // pending config, else carries the running image's config over. The node checks that the image
+  // is of its platform, and, once the store is written and before the image is staged, that the
+  // image's own checker accepts the config it keeps for the image. It does not check that the
   // image is one to trust: without Secure Boot, an operator can run any image as root, with STATE
   // and VAR unsealed, as their keys are sealed to PCR 7 alone. Secure Boot is what limits upgrades
   // to images signed for db.
   rpc Upgrade(stream UpgradeRequest) returns (UpgradeResponse);
+  // ActivateImage makes the image staged in the node's inactive slot boot next: it gives the
+  // image's UKI its boot entry's name, one generation above the others, with the tries the UKI
+  // asks for, so boot counting falls back to the running image should its boots fail. It checks
+  // the UKI again as an upgrade checks a new one, as the firmware's db may have changed since,
+  // and runs no check of the config: the image's own checker passed its config slot before the
+  // image was staged. It answers already_active while the image boots next, and
+  // already_installed while the node runs it, so a request sent twice activates once. It is
+  // refused with FAILED_PRECONDITION when no image is staged, when the staged image has another
+  // root hash, and when STATE keeps no config slot of the image. An activation that fails leaves
+  // the UKI under its staged name, and the node keeps booting the running image. Available in
+  // normal mode to operators.
+  rpc ActivateImage(ActivateImageRequest) returns (ActivateImageResponse);
   // Diagnostics lists the diagnostics the image declares: read-only commands of the image, such as
   // ip route get, that RunDiagnostic runs. Available in maintenance and normal mode to readers.
   rpc Diagnostics(DiagnosticsRequest) returns (DiagnosticsResponse);
@@ -439,7 +452,8 @@ message ApplyConfigRequest {
   // schemas. It replaces the node's config as a whole. Empty keeps the node's config and
   // storage, for a request that delivers only layer payloads, a node certificate or OS CAs.
   string config = 5;
-  // Whether the config is for the image staged to boot next: chalkd checks it against that image
+  // Whether the config is for the image in the inactive slot, staged or active, as
+  // BootStatus.staged names it: chalkd checks it against that image
   // and keeps it in that image's config slot, changing nothing the running image runs but the
   // machine's storage. The config meets that image's change rules, compared with the running
   // slot's config and the machine as for the running image, and the storage changes they accept
@@ -619,6 +633,23 @@ message RollbackImageResponse {
   bool already_staged = 4;
 }
 
+// The request of ActivateImage.
+message ActivateImageRequest {
+  // The verity root hash of the staged image's store, as BootStatus.staged gives it. The node
+  // refuses another. Required.
+  bytes root_hash = 1;
+}
+
+// The response of ActivateImage.
+message ActivateImageResponse {
+  // The file name of the UKI that boots the image next, with its tries.
+  string entry = 1;
+  // Whether the image boots next already, from entry, so nothing changed.
+  bool already_active = 2;
+  // Whether the node runs the image already, so nothing changed.
+  bool already_installed = 3;
+}
+
 // The request of ConfirmConfig.
 message ConfirmConfigRequest {
   // The version of the config on trial, as ConfigTrial.version gives it. Required.
@@ -653,8 +684,8 @@ message StatusResponse {
   // in canonical JSON, ordered by apiVersion, kind and name, with each Secret value replaced by
   // its own SHA-256. Empty on a node that runs no config.
   string config_version = 9;
-  // The version of the config kept for the image staged to boot next, as config_version gives
-  // the running one's; empty without a staged image or config for it.
+  // The version of the config kept for the image in the inactive slot, BootStatus.staged, as
+  // config_version gives the running one's; empty without a staged image or config for it.
   string staged_config_version = 10;
   // The image's outputs, by name.
   repeated OutputStatus outputs = 11;
@@ -721,7 +752,8 @@ message BootStatus {
   // Whether the boot was found healthy and marked good, or not counted by the boot loader at
   // all; false while the boot loader counts the boot's tries.
   bool blessed = 3;
-  // The image an upgrade installed or a rollback made to boot next; unset without one.
+  // The image in the inactive slot that an upgrade staged, or that an upgrade or a rollback made
+  // boot next, as staged_state tells; unset without one.
   BootImage staged = 4;
   // The image whose boots used up their tries without being found healthy, from which the node
   // fell back; unset without one. The failed UKI stays until the next upgrade.
@@ -740,6 +772,25 @@ message BootStatus {
   // otherwise, and once an upgrade replaced it. A client that rolls back several nodes to one image
   // knows by it which of them a rollback got there already.
   BootImage rollback = 9;
+  // Whether the image staged boots next; unspecified without one.
+  SlotState staged_state = 10;
+  // The ID of the boot the node runs, as the kernel's random boot_id gives it, another for each
+  // boot: a client that rebooted the node tells the new boot from the one before by it, also when
+  // both run one image. Empty when it could not be read.
+  string boot_id = 11;
+}
+
+// The state of the image in the node's inactive slot.
+enum SlotState {
+  // No image is staged.
+  SLOT_STATE_UNSPECIFIED = 0;
+  // The image's store is written and its own checker accepted its config, which STATE keeps in
+  // its config slot; its UKI is on the ESP under a name the boot loader does not boot.
+  // ActivateImage makes it boot next; a reboot boots the running image again.
+  SLOT_STATE_STAGED = 1;
+  // The image boots next: its UKI has its boot entry's name, counted after an upgrade and
+  // uncounted after a rollback from a boot that was not found healthy.
+  SLOT_STATE_ACTIVE = 2;
 }
 
 // An image a UKI on the ESP boots.
@@ -872,9 +923,9 @@ message UpgradeHeader {
   // Kubernetes setting, makes the storage changes they accept, such as a new volume, at once, and
   // keeps the config in the image's config slot. Empty takes the node's pending config, which
   // ApplyConfigRequest.staged keeps, or without one carries the running image's config over,
-  // checked against the image the same way. Once the image is staged to boot next, the node
-  // drops its pending config, used or not; an upgrade that fails keeps it. Only the admin role
-  // may set it.
+  // checked against the image the same way. Once the upgrade staged the image, and activated it
+  // unless stage_only is set, the node drops its pending config, used or not; an upgrade that
+  // fails keeps it. Only the admin role may set it.
   string config = 3;
   // Recovery key or password enrolled on the encrypted volumes the config adds, as
   // ApplyConfigRequest.fallback_secret is; required when it adds one and the node's fallback is
@@ -883,23 +934,31 @@ message UpgradeHeader {
   // Where the node takes the image's parts from. Absent, they follow the header as chunks; for
   // an image in a registry, the node pulls them and the request carries nothing after the header.
   ImageSource source = 5;
+  // Whether the node stops once the image is staged: its store written, its config checked by
+  // the image's own checker and kept in its config slot, its UKI on the ESP under a name the
+  // boot loader does not boot. ActivateImage makes it boot next. An image that boots next
+  // already stays so. The node refuses it together with reboot.
+  bool stage_only = 6;
 }
 
 // The response of Upgrade.
 message UpgradeResponse {
   // Whether the node runs the image already, so nothing changed.
   bool already_installed = 1;
-  // The file name of the UKI that boots the image next, with its tries.
+  // The file name of the UKI that boots the image next, with its tries; while the image is
+  // staged alone, the name its UKI has until ActivateImage.
   string entry = 2;
   // Whether the node reboots into the image.
   bool rebooting = 3;
-  // Whether the image boots next already, from entry, as an earlier upgrade without a reboot left
-  // it; the image was not written again, and the config the upgrade carries, or the running
-  // image's, replaced the config kept for it.
+  // Whether the inactive slot held the image already, staged or active, as an earlier upgrade
+  // with stage_only or without a reboot left it; the image was not written again, and the config
+  // the upgrade carries, or the running image's, replaced the config kept for it.
   bool already_staged = 4;
   // What the upgrade did with the config the node held pending as it began; unset when it held
   // none.
   PendingOutcome pending = 5;
+  // Whether the image boots next; false while it is staged alone, as stage_only leaves it.
+  bool active = 6;
 }
 
 // What an upgrade did with the node's pending config.

@@ -19,10 +19,10 @@ import (
 )
 
 // TestStatusReportsTheBoot reads the boot from the ESP: the entry booted and whether it was
-// blessed, an upgrade staged to boot next, and one the node fell back from, with what chalkd and
-// the health check logged during its last boot, as the check recorded it; a record of another
-// store or generation is not shown, nor UKIs of other images. It names each image by its root
-// hash and generation, with the provenance the record of installed images knows.
+// blessed, an upgrade staged or active, which boots next, and one the node fell back from, with
+// what chalkd and the health check logged during its last boot, as the check recorded it; a record
+// of another store or generation is not shown, nor UKIs of other images. It names each image by
+// its root hash and generation, with the provenance the record of installed images knows.
 func TestStatusReportsTheBoot(t *testing.T) {
 	journal := "2026-10-09T12:00:00+0000 node chalkd[401]: not healthy yet: units failed: broken.service\n" +
 		"2026-10-09T12:00:30+0000 node chalkd[401]: rebooting\n"
@@ -42,12 +42,15 @@ func TestStatusReportsTheBoot(t *testing.T) {
 			&nodev1.BootStatus{Running: runs, Entry: "chalkos_2.efi", Blessed: true}},
 		{"counted", []string{"chalkos_1.efi", "chalkos_2+2-1.efi"}, nil, "",
 			&nodev1.BootStatus{Running: runs, Entry: "chalkos_2+2-1.efi"}},
-		{"staged", []string{"chalkos_2.efi", "chalkos_3+3.efi"}, nil, "",
-			&nodev1.BootStatus{Running: runs, Entry: "chalkos_2.efi", Blessed: true, Staged: &nodev1.BootImage{RootHash: next, Generation: 3}}},
+		{"active", []string{"chalkos_2.efi", "chalkos_3+3.efi"}, nil, "",
+			&nodev1.BootStatus{Running: runs, Entry: "chalkos_2.efi", Blessed: true, Staged: &nodev1.BootImage{RootHash: next, Generation: 3}, StagedState: nodev1.SlotState_SLOT_STATE_ACTIVE}},
+		// An image staged and not active boots from no entry; its staged name gives its generation.
+		{"staged", []string{"chalkos_2.efi", ".staged-chalkos_3.efi"}, nil, "",
+			&nodev1.BootStatus{Running: runs, Entry: "chalkos_2.efi", Blessed: true, Staged: &nodev1.BootImage{RootHash: next, Generation: 3}, StagedState: nodev1.SlotState_SLOT_STATE_STAGED}},
 		// A rollback before the boot was found healthy stages the image before without tries; once
 		// that image boots, the image it rolled back from is counted below it and boots no more.
 		{"a rollback staged uncounted", []string{"chalkos_2+2-1.efi", "chalkos_3.efi"}, nil, "",
-			&nodev1.BootStatus{Running: runs, Entry: "chalkos_2+2-1.efi", Staged: &nodev1.BootImage{RootHash: next, Generation: 3}}},
+			&nodev1.BootStatus{Running: runs, Entry: "chalkos_2+2-1.efi", Staged: &nodev1.BootImage{RootHash: next, Generation: 3}, StagedState: nodev1.SlotState_SLOT_STATE_ACTIVE}},
 		{"rolled back uncounted", []string{"chalkos_1+1-1.efi", "chalkos_2.efi"}, nil, "",
 			&nodev1.BootStatus{Running: runs, Entry: "chalkos_2.efi", Blessed: true}},
 		{"rolled back", []string{"chalkos_2.efi", "chalkos_3+0-3.efi"}, nil, header + journal,
@@ -102,11 +105,25 @@ func TestStatusWithoutTheRecordOfImages(t *testing.T) {
 				t.Fatal(err)
 			}
 			want := &nodev1.BootStatus{Running: &nodev1.BootImage{RootHash: bytes.Repeat([]byte{0x32}, 32), Generation: 2}, Entry: "chalkos_2.efi", Blessed: true,
-				Staged: &nodev1.BootImage{RootHash: bytes.Repeat([]byte{0x33}, 32), Generation: 3}}
+				Staged: &nodev1.BootImage{RootHash: bytes.Repeat([]byte{0x33}, 32), Generation: 3}, StagedState: nodev1.SlotState_SLOT_STATE_ACTIVE}
 			if !proto.Equal(resp.Msg.Boot, want) {
 				t.Errorf("boot = %v, want %v", resp.Msg.Boot, want)
 			}
 		})
+	}
+}
+
+// TestStatusReportsTheBootID names the boot by the ID the kernel gives it, also when the boot
+// cannot be read otherwise, and names none when the ID cannot be read.
+func TestStatusReportsTheBootID(t *testing.T) {
+	s, _ := installedServer(t, section("", ""), false)
+	if got := status(t, s).Boot.GetBootId(); got != "" {
+		t.Errorf("boot ID without the file = %q", got)
+	}
+	s.Paths.BootID = filepath.Join(t.TempDir(), "boot_id")
+	write(t, s.Paths.BootID, "9a1c7f0e-2b9c-4f7e-a0b1-5d6c7e8f9a0b\n")
+	if got := status(t, s).Boot; got.GetBootId() != "9a1c7f0e-2b9c-4f7e-a0b1-5d6c7e8f9a0b" || got.GetError() == "" {
+		t.Errorf("boot = %v, want the ID beside the error of an ESP without UKIs", got)
 	}
 }
 

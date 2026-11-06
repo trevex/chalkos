@@ -15,7 +15,7 @@ import (
 )
 
 // bootStatus reads the boot from the ESP: the entry the node booted and whether it was blessed,
-// and the other UKI of its image an upgrade installed, staged to boot next or failed. A UKI whose
+// and the other UKI of its image an upgrade installed: staged, active or failed. A UKI whose
 // tries are used up while the node runs another image is an image it fell back from. It also
 // names the image a rollback boots, the one an upgrade replaced, while STATE keeps its config
 // slot, and the image the last rollback rolled back to, while the node runs or stages it. Each
@@ -23,6 +23,11 @@ import (
 // images gives it.
 func (s *Server) bootStatus() *nodev1.BootStatus {
 	st := &nodev1.BootStatus{}
+	// A client that rebooted the node waits for another boot by its ID; without one it waits for
+	// the image alone.
+	if id, err := os.ReadFile(s.Paths.BootID); err == nil {
+		st.BootId = strings.TrimSpace(string(id))
+	}
 	running, err := uki.RunningHash(s.Paths.Cmdline)
 	if err != nil {
 		st.Error = err.Error()
@@ -55,7 +60,14 @@ func (s *Server) bootStatus() *nodev1.BootStatus {
 	// rollback from a boot that was not found healthy; a counted entry below the booted one, as an
 	// image the node rolled back from leaves it, does not boot next.
 	if e, ok := esp.StagedEntry(entries, booted.ImageID, booted); ok {
-		st.Staged = bootImage(images, e.RootHash, e.Generation)
+		st.Staged, st.StagedState = bootImage(images, e.RootHash, e.Generation), nodev1.SlotState_SLOT_STATE_ACTIVE
+	} else if e, ok, err := esp.Staged(s.Paths.ESP, booted.ImageID); err != nil {
+		st.Error = err.Error()
+		return st
+	} else if ok {
+		// An image staged and not active yet waits under its staged name, whose generation is the
+		// one its activation names the entry at least.
+		st.Staged, st.StagedState = bootImage(images, e.RootHash, e.Generation), nodev1.SlotState_SLOT_STATE_STAGED
 	}
 	if failed.File != "" {
 		st.Failed = bootImage(images, failed.RootHash, failed.Generation)

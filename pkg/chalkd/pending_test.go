@@ -298,7 +298,7 @@ func upgradePending(t *testing.T, s *Server, role pki.Role, cfg string, fail err
 	// The upgrade retires the slots of images the ESP does not boot, newImage's among them, so
 	// the installation reads the slot it wrote.
 	var version string
-	s.InstallImage = func(ctx context.Context, _ upgrade.Header, config, secret string, r io.Reader) (upgrade.Result, imageConfig, error) {
+	s.InstallImage = func(ctx context.Context, _ upgrade.Header, config, secret string, _ bool, r io.Reader) (upgrade.Result, imageConfig, error) {
 		io.Copy(io.Discard, r)
 		wrote, err := s.stageConfig(ctx, imageWith(t, s, fixtureSchemas(t), ""), "/nix/store/x", "metal", newImage, config, secret)
 		if err != nil {
@@ -441,7 +441,7 @@ func TestApplyConfigDiscardPendingTakesStagedAlone(t *testing.T) {
 func TestUpgradeAnswersAPendingConfigKept(t *testing.T) {
 	s, _ := configServer(t)
 	p := sendPending(t, s, baseConfig)
-	s.InstallImage = func(_ context.Context, _ upgrade.Header, _, _ string, r io.Reader) (upgrade.Result, imageConfig, error) {
+	s.InstallImage = func(_ context.Context, _ upgrade.Header, _, _ string, _ bool, r io.Reader) (upgrade.Result, imageConfig, error) {
 		io.Copy(io.Discard, r)
 		return upgrade.Result{AlreadyInstalled: true}, imageConfig{}, nil
 	}

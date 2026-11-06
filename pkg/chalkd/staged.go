@@ -21,54 +21,80 @@ import (
 	"github.com/trevex/chalkos/pkg/upgrade"
 )
 
-// stagedImage is the root hash of the image staged to boot next instead of the running one, as an
-// upgrade or a rollback without a reboot leaves it; nil without one. A node whose config slots are
-// the running image's alone has none, whatever the ESP holds: no upgrade wrote config for another.
+// stagedImage is the root hash of the image in the inactive slot that the node keeps a config slot
+// for: staged, as an upgrade that stopped before the activation leaves it, or active, booting next
+// instead of the running one, as an upgrade or a rollback without a reboot leaves it; nil without
+// one. Everything that reads or writes the staged image's config treats both alike. A node whose
+// config slots are the running image's alone has none, whatever the ESP holds: no upgrade wrote
+// config for another.
 func (s *Server) stagedImage() ([]byte, error) {
-	staged, _, ok, err := s.stagedEntry()
+	sl, ok, err := s.stagedEntry()
 	if err != nil || !ok {
 		return nil, err
 	}
-	return staged.RootHash, nil
+	return sl.entry.RootHash, nil
 }
 
-// stagedEntry is the entry of the image staged to boot next, as stagedImage finds it, with the
-// entry the node booted; false without one.
-func (s *Server) stagedEntry() (staged, booted esp.Entry, ok bool, err error) {
+// secondSlot is the image in the inactive slot, as stagedEntry finds it: its UKI, the entry that
+// boots it next while it is active or the staged UKI while it is not, and the entry the node
+// booted.
+type secondSlot struct {
+	entry, booted esp.Entry
+	active        bool
+}
+
+// knownGood reports whether the image is the node's known-good image, as upgrade.KnownGood tells:
+// an active one a rollback from a boot that was not found healthy staged. An image staged and not
+// active never is.
+func (sl secondSlot) knownGood() bool {
+	return sl.active && upgrade.KnownGood(sl.entry, sl.booted)
+}
+
+// stagedEntry finds the image in the inactive slot, as stagedImage names it: the entry that boots
+// next instead of the booted one, or else the UKI staged under its staged name; false without
+// either.
+func (s *Server) stagedEntry() (secondSlot, bool, error) {
 	running, err := uki.RunningHash(s.Paths.Cmdline)
 	if err != nil {
-		return esp.Entry{}, esp.Entry{}, false, err
+		return secondSlot{}, false, err
 	}
 	hashes, err := slot.List(s.Loader.Slots)
 	if err != nil {
-		return esp.Entry{}, esp.Entry{}, false, err
+		return secondSlot{}, false, err
 	}
 	if !slices.ContainsFunc(hashes, func(h []byte) bool { return !bytes.Equal(h, running) }) {
-		return esp.Entry{}, esp.Entry{}, false, nil
+		return secondSlot{}, false, nil
 	}
 	entries, err := esp.Entries(s.Paths.ESP)
 	if err != nil {
-		return esp.Entry{}, esp.Entry{}, false, err
+		return secondSlot{}, false, err
 	}
-	booted, err = upgrade.Booted(entries, s.Paths.EFIVars, running)
+	booted, err := upgrade.Booted(entries, s.Paths.EFIVars, running)
 	if err != nil {
-		return esp.Entry{}, esp.Entry{}, false, err
+		return secondSlot{}, false, err
 	}
-	staged, ok = esp.StagedEntry(entries, readOSRelease(s.Paths.OSRelease)["IMAGE_ID"], booted)
-	return staged, booted, ok, nil
+	imageID := readOSRelease(s.Paths.OSRelease)["IMAGE_ID"]
+	if e, ok := esp.StagedEntry(entries, imageID, booted); ok {
+		return secondSlot{entry: e, booted: booted, active: true}, true, nil
+	}
+	e, ok, err := esp.Staged(s.Paths.ESP, imageID)
+	if err != nil || !ok {
+		return secondSlot{}, false, err
+	}
+	return secondSlot{entry: e, booted: booted}, true, nil
 }
 
 // keepsKnownGood refuses config for the image of the root hash while it is staged as the node's
-// known-good image, as upgrade.KnownGood tells: a rollback from a boot that was not found healthy
-// staged it, and it boots with the config it last ran. text, the config delivered, passes when it
-// is that config; empty delivers none. It reports whether the image is the known-good one. The
-// caller holds s.mu.
+// known-good image, as secondSlot.knownGood tells: a rollback from a boot that was not found
+// healthy staged it, and it boots with the config it last ran. text, the config delivered, passes
+// when it is that config; empty delivers none. It reports whether the image is the known-good one.
+// The caller holds s.mu.
 func (s *Server) keepsKnownGood(rootHash []byte, text string) (bool, error) {
-	staged, booted, ok, err := s.stagedEntry()
+	sl, ok, err := s.stagedEntry()
 	if err != nil {
 		return false, failed(connect.CodeInternal, "find the staged image: %v", err)
 	}
-	if !ok || !bytes.Equal(staged.RootHash, rootHash) || !upgrade.KnownGood(staged, booted) {
+	if !ok || !bytes.Equal(sl.entry.RootHash, rootHash) || !sl.knownGood() {
 		return false, nil
 	}
 	if text == "" {
@@ -87,7 +113,7 @@ func (s *Server) keepsKnownGood(rootHash []byte, text string) (bool, error) {
 		return true, failed(connect.CodeInternal, "read the staged image's config slot: %v", err)
 	}
 	if version != held {
-		return true, failed(connect.CodeFailedPrecondition, "the image %x staged to boot next is the one the node falls back to while the boot of %s is not found healthy; its config stays as it last ran until that boot is found healthy", rootHash, booted.File)
+		return true, failed(connect.CodeFailedPrecondition, "the image %x staged to boot next is the one the node falls back to while the boot of %s is not found healthy; its config stays as it last ran until that boot is found healthy", rootHash, sl.booted.File)
 	}
 	return true, nil
 }
@@ -106,8 +132,9 @@ func (s *Server) readImage(ctx context.Context, rootHash []byte, read func(st im
 	return n.ReadImage(ctx, rootHash, func(st upgrade.Store) error { return read(st, st.Toplevel) })
 }
 
-// applyStaged checks the config of a request against the image staged to boot next and keeps it in
-// that image's slot, as an upgrade that finds the image staged already does: checked by that
+// applyStaged checks the config of a request against the image in the inactive slot, staged or
+// active, and keeps it in that image's slot, as an upgrade that finds the image staged already
+// does: checked by that
 // image's own checker against the running slot's config, and against the machine, whose storage
 // changes the image accepts it makes with the request's fallback secret. With dry_run it checks
 // the config the same way and answers with the plan, the slot's version before and after and the
@@ -179,7 +206,7 @@ func (s *Server) applyStaged(ctx context.Context, m *nodev1.ApplyConfigRequest) 
 	}); err != nil {
 		return nil, err
 	}
-	log.Printf("the image %x staged to boot next has new config", staged[:6])
+	log.Printf("the image %x staged in the inactive slot has new config", staged[:6])
 	after, _, err := s.recorded()
 	if err != nil {
 		return nil, err
@@ -192,9 +219,9 @@ func (s *Server) applyStaged(ctx context.Context, m *nodev1.ApplyConfigRequest) 
 }
 
 // checkStaged refuses a change of the machine's storage to section when the config slot of the
-// image staged to boot next could not be written again after it. That happens when the slot's
-// config fails the storage rules against the new storage, for example when it lacks a volume the
-// change adds.
+// image in the inactive slot, staged or active, could not be written again after it. That happens
+// when the slot's config fails the storage rules against the new storage, for example when it
+// lacks a volume the change adds.
 //
 // The staged image would still boot and mount such a volume, because every boot sets up the
 // volumes storage.json records. Its next config, however, would be refused for removing it. The
@@ -234,7 +261,7 @@ func (s *Server) checkStaged(ctx context.Context, name string, next []config.Doc
 		if ce := new(connect.Error); errors.As(err, &ce) {
 			code = ce.Code()
 		}
-		return failed(code, "check the config of the image %x staged to boot next: %v", staged[:6], plain(err))
+		return failed(code, "check the config of the image %x staged in the inactive slot: %v", staged[:6], plain(err))
 	}
 	if refusal == nil {
 		return nil
@@ -243,7 +270,7 @@ func (s *Server) checkStaged(ctx context.Context, name string, next []config.Doc
 	if len(refusal.GetFailures()) > 0 {
 		saying = strings.Join(refusal.GetFailures(), "; ")
 	}
-	return failed(connect.CodeFailedPrecondition, "the image %x staged to boot next would refuse its own config once this config changes the storage, saying: %s; bring its config along first: run chalkctl apply-config --staged %s with the new config, then apply it to the running image", staged[:6], saying, name)
+	return failed(connect.CodeFailedPrecondition, "the image %x staged in the inactive slot would refuse its own config once this config changes the storage, saying: %s; bring its config along first: run chalkctl apply-config --staged %s with the new config, then apply it to the running image", staged[:6], saying, name)
 }
 
 // stagedVersion is the version of the config slot of the image the boot status names as staged;

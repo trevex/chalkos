@@ -1,6 +1,7 @@
 package chalkd
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -22,12 +23,13 @@ import (
 	"github.com/trevex/chalkos/pkg/upgrade"
 )
 
-// Upgrade installs the image an operator streams with the node's config for it. It checks that
-// the image is of the node's platform, whatever its variant, that it boots the store it carries
-// and, before it becomes the next boot, that the image's own checker accepts the config, but
-// cannot tell an image to trust from another: without Secure Boot, an operator can run any image
-// as root, with STATE and VAR unsealed, as their keys are sealed to PCR 7 alone. Secure Boot is
-// what limits upgrades to images signed for db.
+// Upgrade installs the image an operator streams with the node's config for it, stages it and,
+// unless the header asks to stop there, activates it as ActivateImage does. It checks that the
+// image is of the node's platform, whatever its variant, that it boots the store it carries and,
+// before it is staged, that the image's own checker accepts the config, but cannot tell an image
+// to trust from another: without Secure Boot, an operator can run any image as root, with STATE
+// and VAR unsealed, as their keys are sealed to PCR 7 alone. Secure Boot is what limits upgrades
+// to images signed for db.
 //
 // An operator may upgrade, but only an admin may deliver config with the upgrade, as ApplyConfig
 // needs: config names the node's Addons, networks and volumes, and what an operator may not
@@ -64,6 +66,8 @@ func (s *Server) Upgrade(ctx context.Context, stream *connect.ClientStream[nodev
 		return nil, failed(connect.CodeInvalidArgument, "the header names no image")
 	case img.GetBootLoader() != nil:
 		return nil, failed(connect.CodeInvalidArgument, "an upgrade carries no boot loader: it leaves the node's as it is")
+	case h.GetStageOnly() && h.GetReboot():
+		return nil, failed(connect.CodeInvalidArgument, "an upgrade that stops once the image is staged does not reboot: the node boots a staged image only once ActivateImage activated it")
 	}
 	header := imageHeader(img)
 	// The node's known-good image, staged by a rollback, keeps the config it last ran. Only config
@@ -106,7 +110,7 @@ func (s *Server) Upgrade(ctx context.Context, stream *connect.ClientStream[nodev
 	} else {
 		log.Printf("upgrading to %q with the root hash %x", img.GetImageId(), img.GetRootHash())
 	}
-	res, staged, err := s.installImage(ctx, header, h.GetConfig(), h.GetFallbackSecret(), parts)
+	res, staged, err := s.installImage(ctx, header, h.GetConfig(), h.GetFallbackSecret(), h.GetStageOnly(), parts)
 	if err != nil {
 		log.Printf("upgrade to %x failed: %v", img.GetRootHash(), err)
 		// A refusal retired the image, so its config slot goes too.
@@ -120,18 +124,19 @@ func (s *Server) Upgrade(ctx context.Context, stream *connect.ClientStream[nodev
 		if errors.As(err, &retired) {
 			var check *upgrade.CheckError
 			if !errors.As(retired.Err, &check) {
-				return nil, failed(connect.CodeFailedPrecondition, "upgrade: %v; the image staged to boot next was retired with it", err)
+				return nil, failed(connect.CodeFailedPrecondition, "upgrade: %v; the staged image was retired with it", err)
 			}
-			return nil, failed(connect.CodeFailedPrecondition, "upgrade: %v; the image staged to boot next was retired with it: chalkctl apply-config --staged %s changes a staged image's config without retiring the image on a refusal", err, s.nodeName())
+			return nil, failed(connect.CodeFailedPrecondition, "upgrade: %v; the staged image was retired with it: chalkctl apply-config --staged %s changes a staged image's config without retiring the image on a refusal", err, s.nodeName())
 		}
 		return nil, failed(connect.CodeFailedPrecondition, "upgrade: %v", err)
 	}
 	s.recordImages(&header)
-	// The image boots next with the config stageConfig gave it, so the pending config it took or
-	// that the upgrade's config replaced goes. An image the node runs already or the known-good
-	// image kept with its config never had its slot written, and the pending config stays.
+	// The image is staged, or boots next, with the config stageConfig gave it, so the pending config
+	// it took or that the upgrade's config replaced goes. An image the node runs already or the
+	// known-good image kept with its config never had its slot written, and the pending config
+	// stays.
 	pending := s.settlePending(staged, img.GetRootHash())
-	resp := &nodev1.UpgradeResponse{AlreadyInstalled: res.AlreadyInstalled, AlreadyStaged: res.AlreadyStaged, Entry: res.Entry, Pending: pending}
+	resp := &nodev1.UpgradeResponse{AlreadyInstalled: res.AlreadyInstalled, AlreadyStaged: res.AlreadyStaged, Entry: res.Entry, Active: res.Active, Pending: pending}
 	if res.AlreadyInstalled {
 		log.Printf("%x runs already", img.GetRootHash())
 		return connect.NewResponse(resp), nil
@@ -147,11 +152,14 @@ func (s *Server) Upgrade(ctx context.Context, stream *connect.ClientStream[nodev
 		log.Printf("%x boots next already, as %s, with the config it last ran", img.GetRootHash(), res.Entry)
 	case res.AlreadyStaged:
 		s.forgetRollback()
-		log.Printf("%x boots next already, as %s; its config is replaced", img.GetRootHash(), res.Entry)
+		log.Printf("%x was in the inactive slot already, as %s; its config is replaced", img.GetRootHash(), res.Entry)
 	default:
 		// The upgrade replaced how the node got to the image it stages; one to the image it runs
 		// already leaves the record of a rollback to that image.
 		s.forgetRollback()
+	}
+	if !res.Active {
+		log.Printf("%x is staged as %s; ActivateImage makes it boot next", img.GetRootHash(), res.Entry)
 	}
 	if h.Reboot {
 		log.Printf("rebooting into %x", img.GetRootHash())
@@ -166,11 +174,11 @@ func (s *Server) Upgrade(ctx context.Context, stream *connect.ClientStream[nodev
 // config, or else the running slot's documents as they were delivered, as upgradeConfig chooses.
 // secret is the fallback secret a new encrypted volume is enrolled with. It returns the config it
 // wrote, without its documents, which names the pending config the image took or the upgrade's
-// config replaced. Upgrade drops that once the image is staged: until then the image may still
-// fail to become the next boot, and the pending config waits for the upgrade after. A refusal
-// keeps it, for apply-config --staged to replace. It runs once the store is written to the
-// inactive slot, before the image becomes the next boot, and again for an image that boots next
-// already.
+// config replaced. Upgrade drops that once the image is staged, and activated unless the upgrade
+// stops at staging: until then the image may still fail to be staged or to become the next boot,
+// and the pending config waits for the upgrade after. A refusal keeps it, for apply-config
+// --staged to replace. It runs once the store is written to the inactive slot, before the image
+// is staged, and again for an image the slot holds already, staged or active.
 func (s *Server) stageConfig(ctx context.Context, st imageStore, system, platform string, rootHash []byte, text, secret string) (imageConfig, error) {
 	// ApplyConfig writes the slots and changes the machine under the same lock.
 	s.mu.Lock()
@@ -276,7 +284,8 @@ func imageHeader(h *nodev1.ImageHeader) upgrade.Header {
 	}
 }
 
-// recordImages forgets every image no UKI on the ESP boots any more, in one step:
+// recordImages forgets every image no UKI on the ESP boots any more, an entry's or the staged
+// one's, in one step:
 //   - the record of installed images keeps only the others;
 //   - the config slots keep only those of the others and of the running image.
 //
@@ -288,6 +297,16 @@ func (s *Server) recordImages(installed *upgrade.Header) {
 	if err != nil {
 		log.Printf("forget the images the ESP no longer boots: %v", err)
 		return
+	}
+	// The image staged and not active yet boots from no entry, but its activation boots it with
+	// its slot.
+	staged, ok, err := esp.Staged(s.Paths.ESP, readOSRelease(s.Paths.OSRelease)["IMAGE_ID"])
+	if err != nil {
+		log.Printf("forget the images the ESP no longer boots: %v", err)
+		return
+	}
+	if ok {
+		entries = append(entries, staged)
 	}
 	var keep [][]byte
 	for _, e := range entries {
@@ -323,12 +342,13 @@ func (s *Server) recordImages(installed *upgrade.Header) {
 }
 
 // installImage installs an upgrade's image on the node's boot disk, with the config text delivers
-// for it and the fallback secret new encrypted volumes are enrolled with. Next to the result it
-// returns the config stageConfig wrote to the image's slot; none when no slot was written, as for
-// an image the node runs already or the known-good image kept with its config.
-func (s *Server) installImage(ctx context.Context, h upgrade.Header, text, secret string, image io.Reader) (upgrade.Result, imageConfig, error) {
+// for it and the fallback secret new encrypted volumes are enrolled with, and stages it there.
+// Unless stageOnly is set it then activates the image, as ActivateImage does. Next to the result
+// it returns the config stageConfig wrote to the image's slot; none when no slot was written, as
+// for an image the node runs already or the known-good image kept with its config.
+func (s *Server) installImage(ctx context.Context, h upgrade.Header, text, secret string, stageOnly bool, image io.Reader) (upgrade.Result, imageConfig, error) {
 	if s.InstallImage != nil {
-		return s.InstallImage(ctx, h, text, secret, image)
+		return s.InstallImage(ctx, h, text, secret, stageOnly, image)
 	}
 	n, err := s.upgradeNode()
 	if err != nil {
@@ -343,8 +363,70 @@ func (s *Server) installImage(ctx context.Context, h upgrade.Header, text, secre
 		staged = c
 		return nil
 	}
-	res, err := n.Upgrade(ctx, h, image)
+	install := n.Upgrade
+	if stageOnly {
+		install = n.Install
+	}
+	res, err := install(ctx, h, image)
 	return res, staged, err
+}
+
+// ActivateImage makes the image staged in the inactive slot boot next, as upgrade.Node.Activate
+// does, under the lock an upgrade and a rollback hold, so none of them writes the ESP while
+// another does. It runs no check of the config: the image's own checker passed its slot before
+// the image was staged. An image whose config slot STATE no longer keeps is refused first: it
+// would boot without config, fail its health check and fall back.
+func (s *Server) ActivateImage(ctx context.Context, req *connect.Request[nodev1.ActivateImageRequest]) (*connect.Response[nodev1.ActivateImageResponse], error) {
+	root := req.Msg.RootHash
+	if len(root) == 0 {
+		return nil, failed(connect.CodeInvalidArgument, "the request names no image to activate")
+	}
+	if !s.upgrading.TryLock() {
+		return nil, failed(connect.CodeAborted, "an upgrade, an image rollback, a config delivery or the rollback at a trial's deadline is running")
+	}
+	defer s.upgrading.Unlock()
+	if err := s.refuseOnTrialLocking("an image's activation"); err != nil {
+		return nil, err
+	}
+	running, err := uki.RunningHash(s.Paths.Cmdline)
+	if err != nil {
+		return nil, failed(connect.CodeInternal, "%v", err)
+	}
+	if !bytes.Equal(running, root) {
+		s.mu.Lock()
+		kept := s.keepsSlot(root)
+		s.mu.Unlock()
+		if !kept {
+			return nil, failed(connect.CodeFailedPrecondition, "STATE holds no config for the image %x, which an upgrade stages with its config; it would boot without config", root)
+		}
+	}
+	res, err := s.activateStaged(ctx, root)
+	if err != nil {
+		log.Printf("activation of %x failed: %v", root, err)
+		return nil, failed(connect.CodeFailedPrecondition, "activate: %v", err)
+	}
+	switch {
+	case res.AlreadyInstalled:
+		log.Printf("%x runs already", root)
+	case res.AlreadyStaged:
+		log.Printf("%x boots next already, as %s", root, res.Entry)
+	default:
+		log.Printf("activated %x, which boots next as %s", root, res.Entry)
+	}
+	return connect.NewResponse(&nodev1.ActivateImageResponse{Entry: res.Entry, AlreadyActive: res.AlreadyStaged, AlreadyInstalled: res.AlreadyInstalled}), nil
+}
+
+// activateStaged activates the image staged in the inactive slot, by its root hash, on the boot
+// disk.
+func (s *Server) activateStaged(ctx context.Context, rootHash []byte) (upgrade.Result, error) {
+	if s.ActivateStaged != nil {
+		return s.ActivateStaged(ctx, rootHash)
+	}
+	n, err := s.upgradeNode()
+	if err != nil {
+		return upgrade.Result{}, err
+	}
+	return n.Activate(ctx, rootHash)
 }
 
 // upgradeNode is the node an upgrade changes. It reads and changes the boot disk's partition

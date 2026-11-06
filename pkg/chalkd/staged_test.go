@@ -32,12 +32,22 @@ var (
 // holds the schemas given.
 func stagedServer(t *testing.T, schemas map[string][]byte) (*Server, *tooltest.Runner) {
 	t.Helper()
+	return stagedServerOf(t, schemas, "chalkos_2.efi", "chalkos_3+3.efi")
+}
+
+// stagedServerOf is stagedServer with the staged image's UKI under the name staged, its entry's
+// while it is active or .staged-chalkos_3.efi while it is staged alone, and the node booted from
+// the entry booted of the running image.
+func stagedServerOf(t *testing.T, schemas map[string][]byte, booted, staged string) (*Server, *tooltest.Runner) {
+	t.Helper()
 	s, r := configServer(t)
 	_, held, _, err := s.runningSlot()
 	if err != nil {
 		t.Fatal(err)
 	}
-	writeESP(t, s.Paths.ESP, s.Paths.EFIVars, s.Paths.Cmdline, "chalkos_2.efi", "chalkos_2.efi", "chalkos_3+3.efi")
+	// The boot loader names the entry by its ID, the name without the tries.
+	id, _, _ := strings.Cut(booted, "+")
+	writeESP(t, s.Paths.ESP, s.Paths.EFIVars, s.Paths.Cmdline, strings.TrimSuffix(id, ".efi")+".efi", booted, staged)
 	for _, h := range [][]byte{runningImage, stagedImage} {
 		if err := slot.Write(slot.Dir(s.Loader.Slots, h), held); err != nil {
 			t.Fatal(err)
@@ -71,24 +81,63 @@ func sendStaged(s *Server, text string) error {
 }
 
 // TestApplyConfigStaged checks config against the staged image and keeps it in that image's slot
-// alone: the running slot stays, and nothing restarts.
+// alone: the running slot stays, and nothing restarts. An image staged and not active yet is the
+// staged image as one that boots next is, and so is it to GetConfig and Status, whose boot names
+// its state. Neither is the known-good image, not even while the running image's boot was not
+// found healthy, as a staged UKI carries no tries.
 func TestApplyConfigStaged(t *testing.T) {
-	s, r := stagedServer(t, fixtureSchemas(t))
-	next := strings.Replace(baseConfig, "name: first", "name: second", 1)
-	if err := sendStaged(s, next); err != nil {
+	for _, tc := range []struct {
+		booted, staged string
+		state          nodev1.SlotState
+	}{
+		{"chalkos_2.efi", "chalkos_3+3.efi", nodev1.SlotState_SLOT_STATE_ACTIVE},
+		{"chalkos_2.efi", ".staged-chalkos_3.efi", nodev1.SlotState_SLOT_STATE_STAGED},
+		{"chalkos_2+2-1.efi", ".staged-chalkos_3.efi", nodev1.SlotState_SLOT_STATE_STAGED},
+	} {
+		t.Run(tc.booted+" "+tc.staged, func(t *testing.T) {
+			s, r := stagedServerOf(t, fixtureSchemas(t), tc.booted, tc.staged)
+			next := strings.Replace(baseConfig, "name: first", "name: second", 1)
+			if err := sendStaged(s, next); err != nil {
+				t.Fatal(err)
+			}
+			if v := slotVersion(t, s, stagedImage); v != hashOf(t, next) {
+				t.Errorf("staged version = %q, want the delivered config's", v)
+			}
+			if v := slotVersion(t, s, runningImage); v != hashOf(t, baseConfig) {
+				t.Errorf("running version = %q, want it unchanged", v)
+			}
+			if len(r.Calls) != 0 {
+				t.Errorf("ran %v", r.Calls)
+			}
+			got := status(t, s)
+			if got.StagedConfigVersion != hashOf(t, next) || got.ConfigVersion != hashOf(t, baseConfig) {
+				t.Errorf("status names the versions %q and staged %q", got.ConfigVersion, got.StagedConfigVersion)
+			}
+			if !bytes.Equal(got.Boot.GetStaged().GetRootHash(), stagedImage) || got.Boot.GetStagedState() != tc.state {
+				t.Errorf("status names the staged image %x, %v", got.Boot.GetStaged().GetRootHash(), got.Boot.GetStagedState())
+			}
+			resp, err := s.GetConfig(context.Background(), connect.NewRequest(&nodev1.GetConfigRequest{Staged: true}))
+			if err != nil || resp.Msg.Version != hashOf(t, next) {
+				t.Errorf("GetConfig of the staged image = %v, %v", resp, err)
+			}
+		})
+	}
+}
+
+// TestRecordImagesKeepsTheStagedSlot forgets the config slots of images no UKI boots, but keeps
+// the slot of the image staged and not active yet, whose activation boots it with that slot.
+func TestRecordImagesKeepsTheStagedSlot(t *testing.T) {
+	s, _ := stagedServerOf(t, fixtureSchemas(t), "chalkos_2.efi", ".staged-chalkos_3.efi")
+	s.recordImages(nil)
+	if !s.keepsSlot(stagedImage) || !s.keepsSlot(runningImage) {
+		t.Errorf("the slots kept: staged %v, running %v", s.keepsSlot(stagedImage), s.keepsSlot(runningImage))
+	}
+	if err := os.Remove(filepath.Join(s.Paths.ESP, "EFI", "Linux", ".staged-chalkos_3.efi")); err != nil {
 		t.Fatal(err)
 	}
-	if v := slotVersion(t, s, stagedImage); v != hashOf(t, next) {
-		t.Errorf("staged version = %q, want the delivered config's", v)
-	}
-	if v := slotVersion(t, s, runningImage); v != hashOf(t, baseConfig) {
-		t.Errorf("running version = %q, want it unchanged", v)
-	}
-	if len(r.Calls) != 0 {
-		t.Errorf("ran %v", r.Calls)
-	}
-	if got := status(t, s); got.StagedConfigVersion != hashOf(t, next) || got.ConfigVersion != hashOf(t, baseConfig) {
-		t.Errorf("status names the versions %q and staged %q", got.ConfigVersion, got.StagedConfigVersion)
+	s.recordImages(nil)
+	if s.keepsSlot(stagedImage) {
+		t.Error("the slot of an image no UKI boots stayed")
 	}
 }
 
@@ -207,7 +256,7 @@ func TestUpgradeOfAStagedImageNamesApplyConfigStaged(t *testing.T) {
 	s, _ := stagedServer(t, fixtureSchemas(t))
 	refusal := errors.New("the config does not suit the image")
 	installErr := error(refusal)
-	s.InstallImage = func(_ context.Context, _ upgrade.Header, _, _ string, r io.Reader) (upgrade.Result, imageConfig, error) {
+	s.InstallImage = func(_ context.Context, _ upgrade.Header, _, _ string, _ bool, r io.Reader) (upgrade.Result, imageConfig, error) {
 		io.Copy(io.Discard, r)
 		return upgrade.Result{}, imageConfig{}, installErr
 	}
@@ -229,12 +278,12 @@ func TestUpgradeOfAStagedImageNamesApplyConfigStaged(t *testing.T) {
 		t.Errorf("upgrade of the staged image that fails before the recheck = %v, want no --staged named", err)
 	}
 	installErr = &upgrade.StagedRetiredError{Err: &upgrade.CheckError{Err: refusal}}
-	if err := send(stagedImage); err == nil || !strings.Contains(err.Error(), "the image staged to boot next was retired with it: chalkctl apply-config --staged") {
+	if err := send(stagedImage); err == nil || !strings.Contains(err.Error(), "the staged image was retired with it: chalkctl apply-config --staged") {
 		t.Errorf("upgrade of the staged image = %v, want apply-config --staged named", err)
 	}
 	// A recheck that could not mount the store retired the image without refusing its config.
 	installErr = &upgrade.StagedRetiredError{Err: errors.New("mount the written store: wrong fs type")}
-	if err := send(stagedImage); err == nil || !strings.Contains(err.Error(), "the image staged to boot next was retired with it") || strings.Contains(err.Error(), "--staged") {
+	if err := send(stagedImage); err == nil || !strings.Contains(err.Error(), "the staged image was retired with it") || strings.Contains(err.Error(), "--staged") {
 		t.Errorf("upgrade of the staged image whose store did not mount = %v, want it retired and no --staged named", err)
 	}
 }
@@ -285,7 +334,7 @@ func TestKnownGoodImageKeepsItsConfig(t *testing.T) {
 		if err := os.WriteFile(record, []byte(hex.EncodeToString(stagedImage)+"\n"), 0o644); err != nil {
 			t.Fatal(err)
 		}
-		s.InstallImage = func(_ context.Context, _ upgrade.Header, _, _ string, r io.Reader) (upgrade.Result, imageConfig, error) {
+		s.InstallImage = func(_ context.Context, _ upgrade.Header, _, _ string, _ bool, r io.Reader) (upgrade.Result, imageConfig, error) {
 			io.Copy(io.Discard, r)
 			return upgrade.Result{AlreadyStaged: true, Entry: "chalkos_3.efi"}, imageConfig{}, nil
 		}

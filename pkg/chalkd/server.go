@@ -67,9 +67,11 @@ type Paths struct {
 	TPM           string
 	StorageStatus string
 	MountInfo     string
-	// ESP is where the ESP is mounted, and Cmdline the kernel's command line.
+	// ESP is where the ESP is mounted, Cmdline the kernel's command line, and BootID the ID the
+	// kernel gives the boot.
 	ESP     string
 	Cmdline string
+	BootID  string
 	// FailedBoot, on VAR, keeps what chalkd and the health check logged during the last boot that
 	// was not found healthy.
 	FailedBoot string
@@ -96,6 +98,7 @@ func DefaultPaths() Paths {
 		MountInfo:       "/proc/self/mountinfo",
 		ESP:             "/efi",
 		Cmdline:         "/proc/cmdline",
+		BootID:          "/proc/sys/kernel/random/boot_id",
 		FailedBoot:      "/var/lib/chalkd/failed-boot",
 		Facts:           facts.DefaultPath,
 		Diagnostics:     diagnostics.DefaultPath,
@@ -128,9 +131,13 @@ type Server struct {
 	InPlace   func(ctx context.Context, req install.Request, rootHash []byte) error
 	FromParts func(context.Context, install.PartsRequest) error
 	// InstallImage installs an upgrade's image with the config and the fallback secret the upgrade
-	// delivers, and returns the config it wrote to the image's slot, as installImage does; nil
-	// installs it on the boot disk. Tests replace it.
-	InstallImage func(ctx context.Context, h upgrade.Header, config, secret string, image io.Reader) (upgrade.Result, imageConfig, error)
+	// delivers, stages it and, unless stageOnly is set, activates it, and returns the config it
+	// wrote to the image's slot, as installImage does; nil installs it on the boot disk. Tests
+	// replace it.
+	InstallImage func(ctx context.Context, h upgrade.Header, config, secret string, stageOnly bool, image io.Reader) (upgrade.Result, imageConfig, error)
+	// ActivateStaged makes the image staged in the inactive slot, by its root hash, boot next, as
+	// upgrade.Node.Activate does; nil activates it on the boot disk. Tests replace it.
+	ActivateStaged func(ctx context.Context, rootHash []byte) (upgrade.Result, error)
 	// ReadImage reads the store of an image in the inactive slot, as apply-config --staged checks
 	// config against it; nil mounts it from the boot disk. Tests replace it.
 	ReadImage func(ctx context.Context, rootHash []byte, read func(st imageStore, system string) error) error
@@ -219,6 +226,7 @@ var permissions = map[string]layer.Permission{
 	// Upgrade needs the admin role when its header carries config or a fallback secret, as
 	// ApplyConfig does; Upgrade checks that itself, as the table cannot see the header.
 	nodev1connect.NodeServiceUpgradeProcedure:       {Modes: layer.NormalOnly, Role: pki.RoleOperator},
+	nodev1connect.NodeServiceActivateImageProcedure: {Modes: layer.NormalOnly, Role: pki.RoleOperator},
 	nodev1connect.NodeServiceRollbackImageProcedure: {Modes: layer.NormalOnly, Role: pki.RoleOperator},
 }
 

@@ -24,7 +24,7 @@ import (
 // and s.upgrading, so no upgrade reads the pending config while it is replaced.
 func (s *Server) holdPending(m *nodev1.ApplyConfigRequest, docs []config.Document) (*connect.Response[nodev1.ApplyConfigResponse], error) {
 	if m.FallbackSecret != "" {
-		return nil, failed(connect.CodeInvalidArgument, "no image is staged to boot next, so the config is held pending for the next upgrade, which is stored without the fallback secret; the upgrade that adds an encrypted volume carries it")
+		return nil, failed(connect.CodeInvalidArgument, "no image is staged, so the config is held pending for the next upgrade, which is stored without the fallback secret; the upgrade that adds an encrypted volume carries it")
 	}
 	if len(docs) == 0 {
 		return nil, failed(connect.CodeInvalidArgument, "the config holds no documents")

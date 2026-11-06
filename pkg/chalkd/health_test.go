@@ -117,13 +117,14 @@ func espWith(t *testing.T, booted string, files ...string) *Health {
 	return h
 }
 
-// writeESP writes UKIs to an ESP, chalkos_<generation>.efi with or without a tries counter, each
-// booting the store whose root hash repeats the generation's digit in ASCII, 0x32 for generation
-// 2, and marks the named one as the entry the node booted from that store.
+// writeESP writes UKIs to an ESP, chalkos_<generation>.efi with or without a tries counter or
+// staged as .staged-chalkos_<generation>.efi, each booting the store whose root hash repeats the
+// generation's digit in ASCII, 0x32 for generation 2, and marks the named one as the entry the
+// node booted from that store.
 func writeESP(t *testing.T, esp, efivars, cmdline, booted string, files ...string) {
 	t.Helper()
 	hash := func(file string) string {
-		return strings.Repeat(fmt.Sprintf("%02x", strings.TrimPrefix(file, "chalkos_")[0]), 32)
+		return strings.Repeat(fmt.Sprintf("%02x", strings.TrimPrefix(strings.TrimPrefix(file, ".staged-"), "chalkos_")[0]), 32)
 	}
 	for _, f := range files {
 		write(t, filepath.Join(esp, "EFI", "Linux", f), string(ukitest.UKI(map[string]string{"IMAGE_ID": "chalkos", "IMAGE_VERSION": ""}, "usrhash="+hash(f))))

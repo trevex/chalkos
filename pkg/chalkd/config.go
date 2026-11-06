@@ -279,7 +279,7 @@ func (s *Server) GetConfig(ctx context.Context, req *connect.Request[nodev1.GetC
 	case !found && req.Msg.Previous:
 		return nil, failed(connect.CodeNotFound, "the node keeps no previous config of the running image")
 	case !found && pending:
-		return nil, failed(connect.CodeNotFound, "no image is staged to boot next, and the node holds no pending config")
+		return nil, failed(connect.CodeNotFound, "no image is staged, and the node holds no pending config")
 	case !found:
 		return nil, failed(connect.CodeNotFound, "STATE holds no config for the image")
 	}
