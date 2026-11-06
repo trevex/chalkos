@@ -26,7 +26,8 @@ func TestApplyConfigDryRun(t *testing.T) {
 		"+ Cluster \"default\"\n+ Network \"10-uplink\"\n+ SystemDisk \"system\"\n" +
 		"n1: config none → " + ta.configVersion(t) + "\n" +
 		"  outputs:  none\n" +
-		"  effects:  kubernetes: restart chalkos-kubernetes.service kubelet.service (rule)\n" +
+		"  effects:  containerd-config: restart chalkos-containerd-config.service containerd.service (rule)\n" +
+		"            kubernetes: restart chalkos-kubernetes.service kubelet.service (rule)\n" +
 		"  storage:  none\n"
 	if ta.stdout.String() != want {
 		t.Errorf("stdout = %q, want %q", ta.stdout, want)

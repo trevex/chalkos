@@ -54,11 +54,6 @@ in
         replaces them.
       '';
     };
-    flannel.image = lib.mkOption {
-      type = lib.types.str;
-      default = "ghcr.io/flannel-io/flannel:v0.28.9";
-      description = "Image of flannel.";
-    };
   };
 
   # A definition rather than the option's default, so a variant's definitions add to it.

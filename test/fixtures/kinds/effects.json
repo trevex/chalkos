@@ -47,6 +47,20 @@
     "start": false,
     "when": "cel.bind(d, ((\"time.chalkos.dev/v1alpha1\" in config && \"TimeSync\" in config[\"time.chalkos.dev/v1alpha1\"]) ? config[\"time.chalkos.dev/v1alpha1\"].TimeSync : {}), d.map(n, d[n].spec)) != cel.bind(d, ((\"time.chalkos.dev/v1alpha1\" in oldConfig && \"TimeSync\" in oldConfig[\"time.chalkos.dev/v1alpha1\"]) ? oldConfig[\"time.chalkos.dev/v1alpha1\"].TimeSync : {}), d.map(n, d[n].spec))"
   },
+  "containerd-config": {
+    "chalkd": "",
+    "hint": null,
+    "kinds": [],
+    "outputs": [],
+    "reload": [],
+    "restart": [
+      "chalkos-containerd-config.service",
+      "containerd.service"
+    ],
+    "run": "",
+    "start": false,
+    "when": "cel.bind(d, ((\"kubernetes.chalkos.dev/v1alpha1\" in config && \"Cluster\" in config[\"kubernetes.chalkos.dev/v1alpha1\"]) ? config[\"kubernetes.chalkos.dev/v1alpha1\"].Cluster : {}), d.map(n, d[n].spec)).map(s, s.images.pause) != cel.bind(d, ((\"kubernetes.chalkos.dev/v1alpha1\" in oldConfig && \"Cluster\" in oldConfig[\"kubernetes.chalkos.dev/v1alpha1\"]) ? oldConfig[\"kubernetes.chalkos.dev/v1alpha1\"].Cluster : {}), d.map(n, d[n].spec)).map(s, s.images.pause)"
+  },
   "controlplane-ports": {
     "chalkd": "",
     "hint": null,

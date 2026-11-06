@@ -1387,6 +1387,7 @@ The effects images with Kubernetes add.
 | --- | --- | --- |
 | `chalkd-cluster`{ #effect-chalkd-cluster } | The `when` after the table holds, which reads the documents of `Cluster` and `Flannel` and the fact `cluster`. | Runs chalkd's action `kubernetes:restart`. |
 | `chalkd-share`{ #effect-chalkd-share } | The `when` after the table holds, which reads the documents of `Addon`, `Cluster`, `Flannel` and `Node` and the facts `cluster` and `share`. | Runs chalkd's action `kubernetes:reload`. |
+| `containerd-config`{ #effect-containerd-config } | The `when` after the table holds, which reads the documents of `Cluster`. | Restarts `chalkos-containerd-config.service` and `containerd.service`. |
 | `controlplane-ports`{ #effect-controlplane-ports } | The `when` after the table holds, which reads the documents of `Node`. | Restarts `chalkos-controlplane.service`. |
 | `kubernetes`{ #effect-kubernetes } | The `when` after the table holds, which reads the documents of `Cluster`, `Flannel`, `Host`, `Network` and `Node` and the facts `cluster` and `share`. | Restarts `chalkos-kubernetes.service` and `kubelet.service`, and starts them when they are stopped. |
 | `registry-credentials`{ #effect-registry-credentials } | The documents of `Registry`, or a value of a Secret they reference, changed. | Restarts `chalkos-registry-credentials.service` and `kubelet.service`. |
@@ -1402,6 +1403,12 @@ facts.cluster != oldFacts.cluster || cel.bind(d, (("kubernetes.chalkos.dev/v1alp
 
 ```text
 (cel.bind(was, oldFacts.share, cel.bind(gets, facts.share, was == null || gets == null ? was != gets : was.filter(k, k != "nodeCA").map(k, k + "=" + was[k]) != gets.filter(k, k != "nodeCA").map(k, k + "=" + gets[k]))) || (cel.bind(d, (("kubernetes.chalkos.dev/v1alpha1" in config && "Node" in config["kubernetes.chalkos.dev/v1alpha1"]) ? config["kubernetes.chalkos.dev/v1alpha1"].Node : {}), d.exists(n, d[n].spec.type == "controlplane")) && cel.bind(d, (("kubernetes.chalkos.dev/v1alpha1" in config && "Addon" in config["kubernetes.chalkos.dev/v1alpha1"]) ? config["kubernetes.chalkos.dev/v1alpha1"].Addon : {}), d.map(n, d[n].spec)).map(s, s.objects).flatten() != cel.bind(d, (("kubernetes.chalkos.dev/v1alpha1" in oldConfig && "Addon" in oldConfig["kubernetes.chalkos.dev/v1alpha1"]) ? oldConfig["kubernetes.chalkos.dev/v1alpha1"].Addon : {}), d.map(n, d[n].spec)).map(s, s.objects).flatten())) && !(facts.cluster != oldFacts.cluster || cel.bind(d, (("kubernetes.chalkos.dev/v1alpha1" in config && "Cluster" in config["kubernetes.chalkos.dev/v1alpha1"]) ? config["kubernetes.chalkos.dev/v1alpha1"].Cluster : {}), d.map(n, d[n].spec)) != cel.bind(d, (("kubernetes.chalkos.dev/v1alpha1" in oldConfig && "Cluster" in oldConfig["kubernetes.chalkos.dev/v1alpha1"]) ? oldConfig["kubernetes.chalkos.dev/v1alpha1"].Cluster : {}), d.map(n, d[n].spec)) || cel.bind(d, (("kubernetes.chalkos.dev/v1alpha1" in config && "Flannel" in config["kubernetes.chalkos.dev/v1alpha1"]) ? config["kubernetes.chalkos.dev/v1alpha1"].Flannel : {}), d.map(n, d[n].spec)) != cel.bind(d, (("kubernetes.chalkos.dev/v1alpha1" in oldConfig && "Flannel" in oldConfig["kubernetes.chalkos.dev/v1alpha1"]) ? oldConfig["kubernetes.chalkos.dev/v1alpha1"].Flannel : {}), d.map(n, d[n].spec)))
+```
+
+`when` of `containerd-config`:
+
+```text
+cel.bind(d, (("kubernetes.chalkos.dev/v1alpha1" in config && "Cluster" in config["kubernetes.chalkos.dev/v1alpha1"]) ? config["kubernetes.chalkos.dev/v1alpha1"].Cluster : {}), d.map(n, d[n].spec)).map(s, s.images.pause) != cel.bind(d, (("kubernetes.chalkos.dev/v1alpha1" in oldConfig && "Cluster" in oldConfig["kubernetes.chalkos.dev/v1alpha1"]) ? oldConfig["kubernetes.chalkos.dev/v1alpha1"].Cluster : {}), d.map(n, d[n].spec)).map(s, s.images.pause)
 ```
 
 `when` of `controlplane-ports`:

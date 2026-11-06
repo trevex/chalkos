@@ -121,15 +121,5 @@ images
   };
   # The Kubernetes image the HA test's rolling upgrade installs.
   haUpgradeImage = variantAs "k8s" "upgrade" { };
-  kubernetesImages = import ./kubernetes-images.nix {
-    inherit pkgs;
-    # What the Kubernetes test image's nodes pull: the control plane's and flannel's images, which
-    # the release and the options name, and the pod sandbox.
-    pulls =
-      let
-        inherit (images.nixos.k8s-metal) config;
-      in
-      builtins.attrValues config.system.build.chalkosKubernetesImage.images
-      ++ [ config.chalkos.kubernetes.images.pause ];
-  };
+  kubernetesImages = import ./kubernetes-images.nix { inherit pkgs; };
 }

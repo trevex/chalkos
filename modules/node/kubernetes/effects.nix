@@ -23,6 +23,8 @@ let
     (cel.specsChanged apiVersions.kubernetes "Cluster")
     (cel.specsChanged apiVersions.kubernetes "Flannel")
   ];
+  # The pod sandbox's image of the Cluster documents of c, config or oldConfig.
+  sandboxImage = c: "${cel.specs c apiVersions.kubernetes "Cluster"}.map(s, s.images.pause)";
   # A share that differs in more than its node CA: the node CA is read from the share whenever a
   # node certificate is issued, and nothing else uses it, so a new one restarts nothing. The share
   # fact, declared in kinds/builtin/kubernetes.nix, keeps the hashes of its keys.
@@ -67,6 +69,15 @@ in
         restart = [
           "chalkos-registry-credentials.service"
           "kubelet.service"
+        ];
+      };
+      # containerd reads the pod sandbox's image when it starts. A restart leaves the running
+      # containers alone; pods started after it get the new sandbox image.
+      containerd-config = {
+        when = "${sandboxImage "config"} != ${sandboxImage "oldConfig"}";
+        restart = [
+          "chalkos-containerd-config.service"
+          "containerd.service"
         ];
       };
       # The control plane's ports read the Node document when they start; it references no

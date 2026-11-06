@@ -21,20 +21,12 @@ let
   # Where chalkd writes the node's Kubernetes files: RunDir in Go (pkg/kubernetes), whose
   # CredentialProviderDir is the credential-provider directory below it.
   run = "/run/chalkos/kubernetes";
-  flannel = config.chalkos.cni.provider == "flannel";
 
-  # Read by chalkd with the node's config: what the image fixes about Kubernetes.
+  # Read by chalkd with the node's config: what the image fixes about Kubernetes. The Cluster
+  # document names the images the cluster's components run from.
   imageFile = {
     version = k.package.version;
     cni = config.chalkos.cni.provider;
-    images = {
-      inherit (k.images) etcd coredns;
-      kubeAPIServer = "registry.k8s.io/kube-apiserver:v${k.package.version}";
-      kubeControllerManager = "registry.k8s.io/kube-controller-manager:v${k.package.version}";
-      kubeScheduler = "registry.k8s.io/kube-scheduler:v${k.package.version}";
-      kubeProxy = "registry.k8s.io/kube-proxy:v${k.package.version}";
-      flannel = if flannel then config.chalkos.cni.flannel.image else "";
-    };
   };
 in
 {
@@ -61,26 +53,11 @@ in
       default = pkgs.kubernetes;
       defaultText = lib.literalExpression "pkgs.kubernetes";
       description = ''
-        Kubernetes release of the image. Nodes run its kubelet; control planes run the
-        upstream images of the same version. A Kubernetes upgrade is an image upgrade.
+        Kubernetes release whose kubelet the image runs; image.json names its version. The
+        Cluster document names the images of the control plane, kube-proxy, CoreDNS, flannel and
+        the pod sandbox, and the image's checker holds their versions to Kubernetes's version
+        skew policy against this kubelet's.
       '';
-    };
-    images = {
-      etcd = lib.mkOption {
-        type = lib.types.str;
-        default = "registry.k8s.io/etcd:3.7.0-0";
-        description = "Image of etcd. The default is the version kubeadm uses with the release of the default `chalkos.kubernetes.package`; an image with another release may need another.";
-      };
-      pause = lib.mkOption {
-        type = lib.types.str;
-        default = "registry.k8s.io/pause:3.10.2";
-        description = "Image of the pod sandbox.";
-      };
-      coredns = lib.mkOption {
-        type = lib.types.str;
-        default = "registry.k8s.io/coredns/coredns:v1.14.6";
-        description = "Image of the cluster DNS.";
-      };
     };
   };
 

@@ -556,7 +556,7 @@ in
           exit 1
         fi
         k=${chalkPkgs.test-kubernetes-image}
-        jq -e '.cni == "flannel" and (. as $i | $i.images.kubeProxy | endswith(":v" + $i.version))' $k/image.json
+        jq -e '.cni == "flannel" and (keys == ["cni", "version"])' $k/image.json
         jq -e --slurpfile img $k/image.json \
           '.kubernetes == {version: $img[0].version, cni: $img[0].cni}' $k/metadata.json
         jq -e '.variant == "k8s"' $k/metadata.json

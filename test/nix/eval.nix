@@ -2011,29 +2011,24 @@ lib.runTests {
       chalkos = true;
     };
   };
-  # A variant's modules set the image's Kubernetes release and pod network, which its image.json
-  # names.
-  testVariantSetsKubernetesImageOptions = {
+  # A variant's modules set the image's pod network, which its image.json names; the image names
+  # no images of the cluster, which its config does.
+  testVariantSetsKubernetesPodNetwork = {
     expr =
       let
         n =
           (mkImages {
-            variants.node.modules = [
-              {
-                chalkos.kubernetes.images.etcd = "registry.example/etcd:1";
-                chalkos.cni.provider = "none";
-              }
-            ];
+            variants.node.modules = [ { chalkos.cni.provider = "none"; } ];
           }).nixos.node-metal;
         facts = builtins.fromJSON n.config.environment.etc."chalkos/kubernetes/image.json".text;
       in
       {
         inherit (facts) cni;
-        inherit (facts.images) etcd;
+        images = facts ? images;
       };
     expected = {
       cni = "none";
-      etcd = "registry.example/etcd:1";
+      images = false;
     };
   };
   testImageRejectsUnknownSetting = {
@@ -2507,8 +2502,8 @@ lib.runTests {
     expr = lib.any (p: (p.pname or "") == "nftables") (worker [ ]).systemd.services.containerd.path;
     expected = true;
   };
-  # The image fixes its Kubernetes release, the images of etcd, the pod sandbox and CoreDNS, and
-  # its pod network, as options of its own; testVariantSetsKubernetesImageOptions sets them.
+  # The image fixes its Kubernetes release, whose kubelet it runs, and its pod network, as options
+  # of its own; the Cluster document names the other images, which no option sets.
   testImageKubernetesOptions = {
     expr =
       let
@@ -2517,18 +2512,21 @@ lib.runTests {
       {
         inherit (c.chalkos.kubernetes) enable;
         version = c.chalkos.kubernetes.package.version;
-        inherit (c.chalkos.kubernetes.images) etcd pause coredns;
         inherit (c.chalkos.cni) provider;
-        flannel = c.chalkos.cni.flannel.image;
+        images =
+          fails
+            (worker [ { chalkos.kubernetes.images.pause = "registry.k8s.io/pause:3.10.2"; } ])
+            .chalkos.kubernetes;
+        flannel =
+          fails
+            (worker [ { chalkos.cni.flannel.image = "ghcr.io/flannel-io/flannel:v0.28.9"; } ]).chalkos.cni;
       };
     expected = {
       enable = true;
       version = pkgs.kubernetes.version;
-      etcd = "registry.k8s.io/etcd:3.7.0-0";
-      pause = "registry.k8s.io/pause:3.10.2";
-      coredns = "registry.k8s.io/coredns/coredns:v1.14.6";
       provider = "flannel";
-      flannel = "ghcr.io/flannel-io/flannel:v0.28.9";
+      images = true;
+      flannel = true;
     };
   };
   testKubernetesOnlyInKubernetesVariants = {
@@ -2794,7 +2792,35 @@ lib.runTests {
         afterConfig = true;
       };
     };
-  # The image's build-time facts, which chalkd reads with the node's config.
+  # containerd's settings of the Cluster document, the pod sandbox's image, come from a file in /run
+  # that chalkos-containerd-config writes before containerd starts; the image bakes in none.
+  testContainerdImportsClusterSettings =
+    let
+      config = worker [ ];
+      unit = config.systemd.services.chalkos-containerd-config;
+      services = builtins.fromJSON config.environment.etc."chalkos/services.json".text;
+    in
+    {
+      expr = {
+        inherit (config.virtualisation.containerd.settings) imports;
+        pinned =
+          config.virtualisation.containerd.settings.plugins."io.containerd.cri.v1.images" ? pinned_images;
+        grant = services.chalkos-containerd-config.kinds;
+        requiredBy = unit.requiredBy;
+        beforeContainerd = lib.elem "containerd.service" unit.before;
+        execStart = lib.hasSuffix "kubernetes containerd-config /run/containerd/conf.d/chalkos.toml" unit.serviceConfig.ExecStart;
+      };
+      expected = {
+        imports = [ "/run/containerd/conf.d/chalkos.toml" ];
+        pinned = false;
+        grant = [ "Cluster" ];
+        requiredBy = [ "containerd.service" ];
+        beforeContainerd = true;
+        execStart = true;
+      };
+    };
+  # The image's build-time facts, which chalkd reads with the node's config: the kubelet's release
+  # and the pod network.
   testImageFacts =
     let
       image = builtins.fromJSON (worker [ ]).environment.etc."chalkos/kubernetes/image.json".text;
@@ -2804,29 +2830,15 @@ lib.runTests {
           .environment.etc."chalkos/kubernetes/image.json".text;
     in
     {
-      expr = {
-        inherit (image) version cni;
-        inherit (image.images)
-          kubeAPIServer
-          kubeProxy
-          coredns
-          flannel
-          ;
-        noFlannel = {
-          inherit (noFlannel) cni;
-          inherit (noFlannel.images) flannel;
-        };
-      };
+      expr = { inherit image noFlannel; };
       expected = {
-        version = pkgs.kubernetes.version;
-        cni = "flannel";
-        kubeAPIServer = "registry.k8s.io/kube-apiserver:v${pkgs.kubernetes.version}";
-        kubeProxy = "registry.k8s.io/kube-proxy:v${pkgs.kubernetes.version}";
-        coredns = "registry.k8s.io/coredns/coredns:v1.14.6";
-        flannel = "ghcr.io/flannel-io/flannel:v0.28.9";
+        image = {
+          version = pkgs.kubernetes.version;
+          cni = "flannel";
+        };
         noFlannel = {
+          version = pkgs.kubernetes.version;
           cni = "none";
-          flannel = "";
         };
       };
     };

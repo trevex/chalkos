@@ -1,6 +1,7 @@
 # containerd on images that run Kubernetes: the binaries, the CNI plugins the image names and the
 # CRI settings.
 {
+  chalkosPackages,
   config,
   lib,
   pkgs,
@@ -8,6 +9,8 @@
 }:
 let
   flannel = config.chalkos.cni.provider == "flannel";
+  # containerd's settings from the node's config, which its own config imports.
+  clusterSettings = "/run/containerd/conf.d/chalkos.toml";
 
   # The reference plugins the image names (chalkos.cni.plugins), and with flannel its own plugin.
   # Copies, so the store holds these alone.
@@ -67,11 +70,12 @@ in
       enable = true;
       settings = lib.mkForce {
         version = 4;
+        # The settings of the Cluster document, which chalkos-containerd-config writes.
+        imports = [ clusterSettings ];
         plugins."io.containerd.cri.v1.images" = {
           # The hosts.toml files of the Mirror and Registry documents, which containerd reads on
           # every pull.
           registry.config_path = "/run/containerd/certs.d";
-          pinned_images.sandbox = config.chalkos.kubernetes.images.pause;
         };
         plugins."io.containerd.cri.v1.runtime" = {
           # /etc is read-only, so the pod network's configuration lives on VAR.
@@ -81,6 +85,21 @@ in
           };
           containerd.runtimes.runc.options.SystemdCgroup = true;
         };
+      };
+    };
+
+    # The pod sandbox's image, from the Cluster document. containerd fails to start without the
+    # file it imports, so a node whose config names no sandbox image gets a file that sets none.
+    systemd.services.chalkos-containerd-config = {
+      description = "Write containerd's settings from the Cluster document";
+      chalkos.kinds = [ "Cluster" ];
+      requiredBy = [ "containerd.service" ];
+      before = [ "containerd.service" ];
+      after = [ "chalkos-config.service" ];
+      serviceConfig = {
+        Type = "oneshot";
+        RemainAfterExit = true;
+        ExecStart = "${lib.getExe chalkosPackages.chalkd} kubernetes containerd-config ${clusterSettings}";
       };
     };
 

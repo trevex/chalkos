@@ -1,7 +1,7 @@
 # Container images the Kubernetes e2e test serves from its registry, fetched by digest (amd64),
 # so the test runs without network access. images.json maps each reference, as the cluster's
 # nodes pull it, to its docker archive.
-{ pkgs, pulls }:
+{ pkgs }:
 let
   images = [
     {
@@ -68,12 +68,15 @@ let
       finalImageTag = image.tag;
       inherit (image) hash;
     };
-  references = map (image: "${image.name}:${image.tag}") images;
-  unpinned = pkgs.lib.subtractLists references (pkgs.lib.remove "" pulls);
+  # The Kubernetes components the e2e clusters name, whose tags follow the kubelet of the test
+  # images: nixpkgs's Kubernetes release.
+  stale = builtins.filter (
+    image:
+    pkgs.lib.hasPrefix "registry.k8s.io/kube-" image.name && image.tag != "v${pkgs.kubernetes.version}"
+  ) images;
 in
-# The images follow nixpkgs's Kubernetes release and the image options' defaults.
-assert pkgs.lib.assertMsg (unpinned == [ ])
-  "the Kubernetes test image pulls ${toString unpinned}, which nix/testing/kubernetes-images.nix does not pin";
+assert pkgs.lib.assertMsg (stale == [ ])
+  "nix/testing/kubernetes-images.nix pins ${toString (map (image: "${image.name}:${image.tag}") stale)}, but the test images' kubelet is ${pkgs.kubernetes.version}";
 pkgs.writeTextDir "images.json" (
   builtins.toJSON (
     builtins.listToAttrs (

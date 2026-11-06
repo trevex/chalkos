@@ -4,6 +4,11 @@
       "TimeSync"
     ]
   },
+  "chalkos-containerd-config": {
+    "kinds": [
+      "Cluster"
+    ]
+  },
   "chalkos-controlplane": {
     "kinds": [
       "Node"

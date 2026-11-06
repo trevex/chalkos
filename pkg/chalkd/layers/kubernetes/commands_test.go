@@ -74,6 +74,36 @@ spec: {host: docker.io, username: hub-bot, password: {secretRef: {name: hub, key
 	}
 }
 
+// TestContainerdConfig writes the pod sandbox's image of the node's Cluster document as
+// containerd's pinned sandbox image, and no setting without a Cluster document.
+func TestContainerdConfig(t *testing.T) {
+	const pause = "registry.k8s.io/pause:3.10.2@sha256:f548e0e8e3dc1896ca956272154dde3314e8cc4fde0a57577ee9fa1c63f5baf4"
+	for name, tc := range map[string]struct{ yaml, want string }{
+		"Cluster": {"apiVersion: kubernetes.chalkos.dev/v1alpha1\nkind: Cluster\nmetadata: {name: default}\nspec: {images: {pause: \"" + pause + "\"}}\n",
+			"version = 4\n\n[plugins.\"io.containerd.cri.v1.images\".pinned_images]\n  sandbox = \"" + pause + "\"\n"},
+		"no Cluster": {"apiVersion: oci.chalkos.dev/v1alpha1\nkind: Registry\nmetadata: {name: lan}\nspec: {host: \"10.0.0.5:5000\"}\n",
+			"version = 4\n"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			runDir := t.TempDir()
+			docs, err := config.Parse(strings.NewReader(tc.yaml))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := slot.WriteRuntime(runDir, docs, nil, nil); err != nil {
+				t.Fatal(err)
+			}
+			file := filepath.Join(t.TempDir(), "conf.d", "chalkos.toml")
+			if err := containerdConfig(runDir, file); err != nil {
+				t.Fatal(err)
+			}
+			if data, err := os.ReadFile(file); err != nil || string(data) != tc.want {
+				t.Errorf("%s = %q, %v; want %q", file, data, err, tc.want)
+			}
+		})
+	}
+}
+
 // TestKubernetesCommandsRefuseArguments refuses, before running anything, the arguments a
 // command of the layer does not take.
 func TestKubernetesCommandsRefuseArguments(t *testing.T) {
@@ -88,6 +118,8 @@ func TestKubernetesCommandsRefuseArguments(t *testing.T) {
 		{"containerd-hosts", []string{"x"}},
 		{"registry-credentials", []string{"x"}},
 		{"credential-provider", []string{"x"}},
+		{"containerd-config", nil},
+		{"containerd-config", []string{"a", "b"}},
 	} {
 		if _, ok := errors.AsType[layer.UsageError](cmds[tc.command].Run(tc.args)); !ok {
 			t.Errorf("%s %q ran", tc.command, tc.args)

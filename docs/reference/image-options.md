@@ -84,36 +84,14 @@ node's Kubernetes configuration. One image serves control planes and workers: th
 of the node's Kubernetes Node document makes it one or the other. mkImages sets it from
 the variant's `kubernetes`; the installer runs none.
 
-### `chalkos.kubernetes.images.coredns` { #chalkoskubernetesimagescoredns }
-
-Type: string · Default: `"registry.k8s.io/coredns/coredns:v1.14.6"` · Declared in: [modules/node/kubernetes/default.nix](https://github.com/trevex/chalkos/blob/main/modules/node/kubernetes/default.nix)
-
-Image of the cluster DNS.
-
-### `chalkos.kubernetes.images.etcd` { #chalkoskubernetesimagesetcd }
-
-Type: string · Default: `"registry.k8s.io/etcd:3.7.0-0"` · Declared in: [modules/node/kubernetes/default.nix](https://github.com/trevex/chalkos/blob/main/modules/node/kubernetes/default.nix)
-
-Image of etcd. The default is the version kubeadm uses with the release of the default `chalkos.kubernetes.package`; an image with another release may need another.
-
-### `chalkos.kubernetes.images.pause` { #chalkoskubernetesimagespause }
-
-Type: string · Default: `"registry.k8s.io/pause:3.10.2"` · Declared in: [modules/node/kubernetes/default.nix](https://github.com/trevex/chalkos/blob/main/modules/node/kubernetes/default.nix)
-
-Image of the pod sandbox.
-
 ### `chalkos.kubernetes.package` { #chalkoskubernetespackage }
 
 Type: package · Default: `pkgs.kubernetes` · Declared in: [modules/node/kubernetes/default.nix](https://github.com/trevex/chalkos/blob/main/modules/node/kubernetes/default.nix)
 
-Kubernetes release of the image. Nodes run its kubelet; control planes run the
-upstream images of the same version. A Kubernetes upgrade is an image upgrade.
-
-### `chalkos.cni.flannel.image` { #chalkoscniflannelimage }
-
-Type: string · Default: `"ghcr.io/flannel-io/flannel:v0.28.9"` · Declared in: [modules/node/cni.nix](https://github.com/trevex/chalkos/blob/main/modules/node/cni.nix)
-
-Image of flannel.
+Kubernetes release whose kubelet the image runs; image.json names its version. The
+Cluster document names the images of the control plane, kube-proxy, CoreDNS, flannel and
+the pod sandbox, and the image's checker holds their versions to Kubernetes's version
+skew policy against this kubelet's.
 
 ### `chalkos.cni.plugins` { #chalkoscniplugins }
 

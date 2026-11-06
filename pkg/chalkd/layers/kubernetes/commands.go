@@ -9,6 +9,7 @@ import (
 	"slices"
 	"time"
 
+	"github.com/trevex/chalkos/pkg/atomicfile"
 	"github.com/trevex/chalkos/pkg/chalkd/layer"
 	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/config/slot"
@@ -36,6 +37,11 @@ func (p *Plugin) Commands() map[string]layer.Command {
 		"containerd-hosts": {
 			Help: "print containerd's hosts.toml of each registry the node's\nMirror and Registry documents name, each after a line\n\"=== <directory>\"",
 			Run:  layer.NoArgs(func() error { return containerdHosts(os.Stdout, "/run/chalkos") }),
+		},
+		"containerd-config": {
+			Args: "FILE",
+			Help: "write containerd's settings from the node's Cluster document,\nthe pod sandbox's image, to FILE, which containerd imports",
+			Run:  containerdConfigCommand,
 		},
 		"registry-credentials": {
 			Help: "write the kubelet's credential provider config and the node's\nregistry credentials from its Registry documents",
@@ -96,6 +102,37 @@ func containerdHosts(w io.Writer, runDir string) error {
 		}
 	}
 	return nil
+}
+
+func containerdConfigCommand(args []string) error {
+	if len(args) != 1 {
+		return layer.UsageError{Err: fmt.Errorf("takes one file, not %q", args)}
+	}
+	return containerdConfig("/run/chalkos", args[0])
+}
+
+// containerdConfig writes the containerd settings that come from the node's Cluster document
+// below runDir to file, which containerd's config imports: the pod sandbox's image. Without a
+// Cluster document the file sets nothing, and containerd keeps its own sandbox image.
+func containerdConfig(runDir, file string) error {
+	docs, err := slot.ReadRuntime(runDir)
+	if err != nil {
+		return err
+	}
+	pause, err := config.Documents(docs).SandboxImage()
+	if err != nil {
+		return err
+	}
+	// containerd refuses an imported file of a newer version than its own config's, which
+	// containerd.nix sets to 4.
+	text := "version = 4\n"
+	if pause != "" {
+		text += fmt.Sprintf("\n[plugins.\"io.containerd.cri.v1.images\".pinned_images]\n  sandbox = %q\n", pause)
+	}
+	if err := os.MkdirAll(filepath.Dir(file), 0o755); err != nil {
+		return err
+	}
+	return atomicfile.WriteFile(file, []byte(text), 0o644)
 }
 
 // registryCredentials writes the kubelet's credential provider files into dir from the node's

@@ -32,14 +32,18 @@ func TestApplyConfigAndStatus(t *testing.T) {
 		t.Fatal(err)
 	}
 	// The node's slot held no documents, so the config's Network is new: the units of the default
-	// image that read the node's static addresses restart. The node declares no outputs, so the
-	// effect on networkd's output does not fire.
+	// image that read the node's static addresses restart, and so does containerd with its
+	// settings, for the Cluster's pod sandbox image is new too. The node declares no outputs, so
+	// the effect on networkd's output does not fire.
 	if !reflect.DeepEqual(r.calls, []string{
 		"systemctl list-units --state=failed --plain --no-legend --no-pager", "chronyc -n -c tracking",
+		"systemctl show --property=ActiveState --value chalkos-containerd-config.service",
 		"systemctl show --property=ActiveState --value chalkos-kubernetes.service",
+		"systemctl show --property=ActiveState --value containerd.service",
 		"systemctl show --property=ActiveState --value kubelet.service",
-		"systemctl show --property=Names,After chalkos-kubernetes.service kubelet.service",
+		"systemctl show --property=Names,After chalkos-kubernetes.service kubelet.service chalkos-containerd-config.service containerd.service",
 		"systemctl restart chalkos-kubernetes.service kubelet.service",
+		"systemctl try-restart chalkos-containerd-config.service containerd.service",
 	}) {
 		t.Errorf("node ran %v", r.calls)
 	}
@@ -85,7 +89,7 @@ func TestApplyConfigWarnsOfRulesThatFail(t *testing.T) {
 	if ta.stderr.String() != want {
 		t.Errorf("stderr = %q, want %q", ta.stderr, want)
 	}
-	if !slices.Contains(r.calls, "systemctl try-restart report.service") {
+	if !slices.Contains(r.calls, "systemctl try-restart chalkos-containerd-config.service containerd.service report.service") {
 		t.Errorf("node ran %v, want report restarted", r.calls)
 	}
 }
