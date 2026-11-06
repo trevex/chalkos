@@ -9,11 +9,14 @@ import (
 	"github.com/trevex/chalkos/pkg/client"
 )
 
-// fakeUpgrading is a run whose ViaCoordinators fails with err.
+// fakeUpgrading is a run whose ViaCoordinators fails with err and whose Flags are flags.
 type fakeUpgrading struct {
 	layer.Upgrading
-	err error
+	err   error
+	flags any
 }
+
+func (u fakeUpgrading) Flags(string) any { return u.flags }
 
 func (u fakeUpgrading) ViaCoordinators(string, func(error) bool, func(*client.Conn) error) error {
 	return u.err

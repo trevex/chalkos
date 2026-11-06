@@ -4,6 +4,12 @@
 // node once no control plane lists it as revoked, an upgrade's checks of etcd's quorum, its
 // drains and its uncordons, and the rotations of the Kubernetes CAs, the service-account key and
 // the encryption key.
+//
+// It also holds the cluster to Kubernetes's version skew policy. A delivery of config that changes
+// the API server's version is checked against the API servers and kubelets every node runs, and
+// goes to the control planes first, one at a time: each after etcd's quorum check, on trial, and
+// confirmed once its static pods run the new images and are Ready. chalkctl upgrade refuses an
+// image whose kubelet would be newer than the oldest API server the control planes run.
 package kubernetes
 
 import (
@@ -27,6 +33,7 @@ var (
 	_ layer.Coordinators  = (*Plugin)(nil)
 	_ layer.Rotation      = (*Plugin)(nil)
 	_ layer.RotationNodes = (*Plugin)(nil)
+	_ layer.Rollout       = (*Plugin)(nil)
 )
 
 // New returns chalkctl's Kubernetes layer.

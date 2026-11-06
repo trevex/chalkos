@@ -13,6 +13,9 @@ import (
 type fakeCluster struct {
 	layer.Cluster
 	types map[string]string
+	// apiServer is, by node, the images.apiServer of a Cluster document its config holds; none for a
+	// node it does not name.
+	apiServer map[string]string
 }
 
 func (c fakeCluster) NodeNames() []string {
@@ -28,6 +31,11 @@ func (c fakeCluster) Documents(name string) ([]config.Document, error) {
 	docs := []config.Document{{APIVersion: config.CoreAPI, Kind: "Host", Object: map[string]any{"spec": map[string]any{}}}}
 	if kind := c.types[name]; kind != "" {
 		docs = append(docs, config.Document{APIVersion: config.KubernetesAPI, Kind: "Node", Name: "default", Object: map[string]any{"spec": map[string]any{"type": kind}}})
+	}
+	if ref, ok := c.apiServer[name]; ok {
+		docs = append(docs, config.Document{APIVersion: config.KubernetesAPI, Kind: "Cluster", Name: "default", Object: map[string]any{
+			"spec": map[string]any{"images": map[string]any{"apiServer": ref}},
+		}})
 	}
 	return docs, nil
 }

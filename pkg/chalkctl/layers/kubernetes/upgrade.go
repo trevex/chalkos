@@ -73,7 +73,7 @@ func (p *Plugin) flagsOf(u layer.Upgrading) upgradeFlags {
 // of the cluster.
 func (p *Plugin) BeforeReboot(ctx context.Context, u layer.Upgrading, name string, role layer.UpgradeRole) error {
 	if role.Coordinator {
-		if err := quorum(ctx, u, p.flagsOf(u).allowDowntime, name); err != nil {
+		if err := quorum(ctx, u, p.flagsOf(u).allowDowntime, name, "reboots"); err != nil {
 			return err
 		}
 	}
@@ -110,14 +110,14 @@ func (p *Plugin) After(ctx context.Context, u layer.Upgrading, name string, role
 // must be healthy and enough for a quorum. With one or two voters the others can never be enough,
 // and the API server is down while it reboots, which only --allow-downtime accepts. etcd may need
 // a moment after the control plane before came back, so the check is tried for a while.
-func quorum(ctx context.Context, u layer.Upgrading, allowDowntime bool, name string) error {
-	return layer.WaitFor(ctx, "", u.QuorumWait(), u.Poll(), func() error { return quorumOnce(ctx, u, allowDowntime, name) })
+func quorum(ctx context.Context, u layer.Upgrading, allowDowntime bool, name, does string) error {
+	return layer.WaitFor(ctx, "", u.QuorumWait(), u.Poll(), func() error { return quorumOnce(ctx, u, allowDowntime, name, does) })
 }
 
 // quorumOnce checks the quorum once. A reboot keeps every voter, so the quorum counts them all,
 // the rebooting one included; etcd.CheckQuorum counts a removal's quorum over the voters left.
 // With 4 voters a reboot needs 3 healthy others, a removal 2.
-func quorumOnce(ctx context.Context, u layer.Upgrading, allowDowntime bool, name string) error {
+func quorumOnce(ctx context.Context, u layer.Upgrading, allowDowntime bool, name, does string) error {
 	var members []*kubernetesv1.EtcdMember
 	err := viaControlPlanes(u, name, tryNextControlPlane, func(conn *client.Conn) error {
 		resp, err := Client(conn).EtcdMembers(ctx, connect.NewRequest(&kubernetesv1.EtcdMembersRequest{}))
@@ -147,7 +147,7 @@ func quorumOnce(ctx context.Context, u layer.Upgrading, allowDowntime bool, name
 		// A control plane that is no etcd member takes nothing of etcd down.
 		return nil
 	case voters-1 < quorum && !allowDowntime:
-		return layer.Permanent{Err: fmt.Errorf("etcd has %s, and without %s fewer than the %d its quorum needs: it and the API server are down while %s reboots; pass --allow-downtime to accept that", layer.Count(voters, "voter"), name, quorum, name)}
+		return layer.Permanent{Err: fmt.Errorf("etcd has %s, and without %s fewer than the %d its quorum needs: it and the API server are down while %s %s; pass --allow-downtime to accept that", layer.Count(voters, "voter"), name, quorum, name, does)}
 	case voters-1 < quorum:
 		return nil
 	case healthy < quorum:
