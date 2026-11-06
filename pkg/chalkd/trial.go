@@ -94,22 +94,35 @@ func writeTrial(stateDir string, r trialRecord) error {
 	return atomicfile.WriteFile(filepath.Join(stateDir, trialFile), append(data, '\n'), 0o644)
 }
 
-// removeTrial removes the trial record and syncs its directory, so that after a power cut no boot
-// rolls back a config whose trial ended, and then the copy of the staged image's slot the trial
-// kept. A copy that stays is no harm: only a record that names the staged image reads it, and a
-// trial that does writes its own copy first.
+// removeTrial removes the trial record, as removeTrialRecord does, and then the copy of the staged
+// image's slot the trial kept, as removeStagedCopy does.
 func removeTrial(stateDir string) error {
+	if err := removeTrialRecord(stateDir); err != nil {
+		return err
+	}
+	removeStagedCopy(stateDir)
+	return nil
+}
+
+// removeTrialRecord removes the trial record and syncs its directory, so that after a power cut
+// no boot rolls back a config whose trial ended.
+func removeTrialRecord(stateDir string) error {
 	path := filepath.Join(stateDir, trialFile)
 	if err := os.Remove(path); err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return err
 	}
-	if err := atomicfile.SyncDir(filepath.Dir(path)); err != nil {
-		return err
-	}
+	return atomicfile.SyncDir(filepath.Dir(path))
+}
+
+// removeStagedCopy removes the copy of the staged image's slot a trial kept at trialStagedSlot,
+// once the trial's record is gone; a failure is logged. A copy without a record, which a crash or
+// a failed removal leaves, is no harm: only a confirmation reads the copy, and only while the
+// record that names the staged image is open, and a trial that names it writes its own copy
+// before its record. The boot and chalkd's start remove such a copy.
+func removeStagedCopy(stateDir string) {
 	if err := slot.Remove(filepath.Join(stateDir, trialStagedSlot)); err != nil {
 		log.Printf("remove the copy of the staged image's config slot the trial kept: %v", err)
 	}
-	return nil
 }
 
 // trialState is where a trial stands, as its slot shows it.
@@ -210,11 +223,16 @@ func (s *Server) ConfirmConfig(ctx context.Context, req *connect.Request[nodev1.
 	if st != trialApplied {
 		return nil, failed(connect.CodeFailedPrecondition, "the node does not run config %s on trial with config %s as its previous config", r.Version, r.Previous)
 	}
-	warnings := s.writeHeldBack(r)
-	if err := s.endTrial(); err != nil {
+	// The record goes to disk first: the staged slot or the pending config is written only for a
+	// trial that no boot, deadline or rollback undoes any more. A crash after the record went
+	// leaves them as they were, which a delivery of the config again writes, as a write that
+	// fails does.
+	if err := s.closeTrial(); err != nil {
 		return nil, failed(connect.CodeInternal, "end the trial: %v", err)
 	}
 	log.Printf("config %s was confirmed; its trial ended", version)
+	warnings := s.writeHeldBack(r)
+	removeStagedCopy(s.Paths.StateDir)
 	return connect.NewResponse(&nodev1.ConfirmConfigResponse{Warnings: warnings}), nil
 }
 
@@ -267,10 +285,20 @@ func (s *Server) writeStagedCopy(staged string) error {
 	return nil
 }
 
-// endTrial removes the trial's record and then stops its deadline; the caller holds s.mu. A record
-// that cannot be removed keeps the deadline, if one is armed, so the trial is not lost.
+// endTrial ends the trial as closeTrial does and removes the copy of the staged image's slot it
+// kept, which nothing writes then; the caller holds s.mu.
 func (s *Server) endTrial() error {
-	if err := removeTrial(s.Paths.StateDir); err != nil {
+	if err := s.closeTrial(); err != nil {
+		return err
+	}
+	removeStagedCopy(s.Paths.StateDir)
+	return nil
+}
+
+// closeTrial removes the trial's record and then stops its deadline; the caller holds s.mu. A
+// record that cannot be removed keeps the deadline, if one is armed, so the trial is not lost.
+func (s *Server) closeTrial() error {
+	if err := removeTrialRecord(s.Paths.StateDir); err != nil {
 		return err
 	}
 	if s.trialTimer != nil {
@@ -657,7 +685,9 @@ func (s *Server) expireTrial(version string, deadline time.Time, armed uint64) {
 // before the slot was written leaves it, is finished. A record that cannot be read stays, so
 // every change is refused until RollbackConfig removes it. ctx ends when chalkd stops, and so do
 // the rollbacks of trials from then on, this one's and those at a deadline. A trial chalkd
-// stopped before ResumeTrial took the locks stays as it is for the next start.
+// stopped before ResumeTrial took the locks stays as it is for the next start. Without a record,
+// the copy of the staged image's slot a trial kept goes, as a crash during a confirmation leaves
+// it.
 //
 // chalkd calls it in normal mode once it serves, so a rollback does not keep the node from being
 // reached. Until it ends, an upgrade or an image rollback is refused with ABORTED, and the
@@ -680,11 +710,13 @@ func (s *Server) ResumeTrial(ctx context.Context) {
 		log.Printf("read the record of the config's trial: %v; keeping it, so the node takes no change until a rollback removes it", err)
 		return
 	}
-	if open {
-		log.Printf("config %s is on trial until %s", r.Version, r.Deadline.UTC().Format(time.RFC3339))
-		// A failure is logged, and the retry is armed.
-		_, _ = s.settleTrial(r)
+	if !open {
+		removeStagedCopy(s.Paths.StateDir)
+		return
 	}
+	log.Printf("config %s is on trial until %s", r.Version, r.Deadline.UTC().Format(time.RFC3339))
+	// A failure is logged, and the retry is armed.
+	_, _ = s.settleTrial(r)
 }
 
 // RestoreTrialAtBoot ends a trial that was open when the node booted, before chalkos-config applies
@@ -695,11 +727,16 @@ func (s *Server) ResumeTrial(ctx context.Context) {
 // the record stays with the boot's time as its deadline: chalkd then rolls the trial back at once
 // as it starts, and a confirmation keeps it only once that rollback failed without changing the
 // node. A record that cannot be read stays as well, and the node takes no change until
-// RollbackConfig removes it.
+// RollbackConfig removes it. Without a record, the copy of the staged image's slot a trial kept
+// goes, as a crash during a confirmation leaves it.
 func RestoreTrialAtBoot(stateDir, slots string) error {
 	r, open, err := readTrial(stateDir)
-	if err != nil || !open {
+	if err != nil {
 		return err
+	}
+	if !open {
+		removeStagedCopy(stateDir)
+		return nil
 	}
 	dir, st, err := r.state(slots)
 	if err != nil {

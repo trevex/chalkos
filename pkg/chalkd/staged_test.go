@@ -407,6 +407,181 @@ func TestTrialWritesTheStagedSlotOnceConfirmed(t *testing.T) {
 	}
 }
 
+// stagedTrial is stagedServer with config nextConfig on trial for an hour, whose staged slot the
+// trial holds back in its copy.
+func stagedTrial(t *testing.T) *Server {
+	t.Helper()
+	s, _ := stagedServer(t, fixtureSchemas(t))
+	stopTrials(t, s)
+	if _, err := sendTrial(s, nextConfig, time.Hour); err != nil {
+		t.Fatal(err)
+	}
+	return s
+}
+
+// trialCopy is the version the copy of the staged image's slot that a trial keeps holds; empty
+// without one.
+func trialCopy(t *testing.T, s *Server) string {
+	t.Helper()
+	return slotVersionAt(t, filepath.Join(s.Paths.StateDir, trialStagedSlot))
+}
+
+// TestConfirmConfigKeepsTheStagedSlotWhileTheTrialStays writes the staged slot only once the
+// trial's record is gone: a confirmation that cannot remove it fails and writes nothing, so the
+// rollback at the deadline or on request leaves both slots as they were before the trial.
+func TestConfirmConfigKeepsTheStagedSlotWhileTheTrialStays(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root writes to read-only directories")
+	}
+	s := stagedTrial(t)
+	dir := filepath.Dir(filepath.Join(s.Paths.StateDir, trialFile))
+	if err := os.Chmod(dir, 0o555); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chmod(dir, 0o755) })
+	if err := sendConfirm(s, hashOf(t, nextConfig)); connect.CodeOf(err) != connect.CodeInternal || !strings.Contains(err.Error(), "end the trial: ") {
+		t.Fatalf("confirm = %v, want the record's removal failed", err)
+	}
+	if v := slotVersion(t, s, stagedImage); v != hashOf(t, baseConfig) {
+		t.Errorf("staged version = %q, want it kept while the trial stays", v)
+	}
+	if !trialOpenOn(t, s) || trialCopy(t, s) != hashOf(t, nextConfig) {
+		t.Errorf("the trial is open %v with the copy %q, want both kept", trialOpenOn(t, s), trialCopy(t, s))
+	}
+	if err := os.Chmod(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := sendRollback(s, hashOf(t, baseConfig)); err != nil {
+		t.Fatal(err)
+	}
+	if v := slotVersion(t, s, stagedImage); v != hashOf(t, baseConfig) || trialCopy(t, s) != "" {
+		t.Errorf("after the rollback the staged slot holds %q and the copy %q", v, trialCopy(t, s))
+	}
+}
+
+// TestALeftoverTrialCopyIsNeverWritten leaves the copy of the staged slot as a crash does after a
+// confirmation removed the trial's record: nothing writes it, a confirmation sent again finds the
+// node on the config, the boot and chalkd's start remove it, and the config delivered again writes
+// the staged slot.
+func TestALeftoverTrialCopyIsNeverWritten(t *testing.T) {
+	for name, remove := range map[string]func(*Server) error{
+		"at boot": func(s *Server) error { return RestoreTrialAtBoot(s.Paths.StateDir, s.Loader.Slots) },
+		"as chalkd starts": func(s *Server) error {
+			s.ResumeTrial(t.Context())
+			return nil
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			s := stagedTrial(t)
+			if err := removeTrialRecord(s.Paths.StateDir); err != nil {
+				t.Fatal(err)
+			}
+			if err := sendConfirm(s, hashOf(t, nextConfig)); err != nil {
+				t.Fatalf("a confirmation sent again = %v", err)
+			}
+			if v := slotVersion(t, s, stagedImage); v != hashOf(t, baseConfig) {
+				t.Errorf("staged version = %q, want the copy left unwritten", v)
+			}
+			if err := remove(s); err != nil {
+				t.Fatal(err)
+			}
+			if v := trialCopy(t, s); v != "" {
+				t.Errorf("the copy stayed, holding %q", v)
+			}
+			if v := slotVersion(t, s, stagedImage); v != hashOf(t, baseConfig) {
+				t.Errorf("staged version = %q, want the copy left unwritten", v)
+			}
+			if _, err := sendConfig(s, nextConfig); err != nil {
+				t.Fatal(err)
+			}
+			if v := slotVersion(t, s, stagedImage); v != hashOf(t, nextConfig) {
+				t.Errorf("staged version after the delivery = %q, want the config's", v)
+			}
+		})
+	}
+}
+
+// TestConfirmConfigWarnsOfAHeldBackWriteThatFailed confirms a trial whose staged slot or pending
+// config cannot be written, as something that is no config link stands where the slot's previous
+// config would be, and warns of it: the trial ends, the slot keeps what it held, and the copy
+// goes.
+func TestConfirmConfigWarnsOfAHeldBackWriteThatFailed(t *testing.T) {
+	confirm := func(t *testing.T, s *Server) []string {
+		t.Helper()
+		m, err := s.ConfirmConfig(context.Background(), connect.NewRequest(&nodev1.ConfirmConfigRequest{Version: hashOf(t, nextConfig)}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if trialOpenOn(t, s) || trialCopy(t, s) != "" {
+			t.Errorf("the trial is open %v with the copy %q, want both gone", trialOpenOn(t, s), trialCopy(t, s))
+		}
+		return m.Msg.Warnings
+	}
+	t.Run("staged slot", func(t *testing.T) {
+		s := stagedTrial(t)
+		write(t, slot.Previous(slot.Dir(s.Loader.Slots, stagedImage)), "")
+		want := "config " + hashOf(t, nextConfig) + " is confirmed, but writing the config slot of the image 333333333333 staged in the inactive slot failed, so it keeps its earlier config: "
+		if w := confirm(t, s); len(w) != 1 || !strings.HasPrefix(w[0], want) || !strings.HasSuffix(w[0], "; deliver the config again to write it") {
+			t.Errorf("warnings = %q, want %q", w, want)
+		}
+		if v := slotVersion(t, s, stagedImage); v != hashOf(t, baseConfig) {
+			t.Errorf("staged version = %q, want it kept", v)
+		}
+	})
+	t.Run("pending config", func(t *testing.T) {
+		s := trialServer(t)
+		p := sendPending(t, s, baseConfig)
+		if _, err := sendTrial(s, nextConfig, time.Hour); err != nil {
+			t.Fatal(err)
+		}
+		write(t, slot.Previous(slot.Pending(s.Loader.Slots)), "")
+		want := "config " + hashOf(t, nextConfig) + " is confirmed, but replacing the pending config with it failed, so the pending config stays: "
+		if w := confirm(t, s); len(w) != 1 || !strings.HasPrefix(w[0], want) {
+			t.Errorf("warnings = %q, want %q", w, want)
+		}
+		if v := pendingVersion(t, s); v != p.Version {
+			t.Errorf("pending version = %q, want it kept", v)
+		}
+	})
+}
+
+// TestEveryEndOfATrialDropsItsCopy removes the copy of the staged slot a trial kept, and writes
+// nothing to the staged slot, at every end of the trial besides its confirmation: a rollback on
+// request, a boot, and the deadline that finds the slot running the config from before the trial.
+func TestEveryEndOfATrialDropsItsCopy(t *testing.T) {
+	for name, end := range map[string]func(*Server) error{
+		"rollback": func(s *Server) error {
+			_, err := sendRollback(s, hashOf(t, baseConfig))
+			return err
+		},
+		"boot": func(s *Server) error { return RestoreTrialAtBoot(s.Paths.StateDir, s.Loader.Slots) },
+		"ended at the deadline": func(s *Server) error {
+			r, _, err := readTrial(s.Paths.StateDir)
+			if err != nil {
+				return err
+			}
+			if err := slot.RestorePrevious(slotOf(t, s)); err != nil {
+				return err
+			}
+			expire(s, r)
+			return nil
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			s := stagedTrial(t)
+			if err := end(s); err != nil {
+				t.Fatal(err)
+			}
+			if trialOpenOn(t, s) || trialCopy(t, s) != "" {
+				t.Errorf("the trial is open %v with the copy %q, want both gone", trialOpenOn(t, s), trialCopy(t, s))
+			}
+			if v := slotVersion(t, s, stagedImage); v != hashOf(t, baseConfig) {
+				t.Errorf("staged version = %q, want it kept", v)
+			}
+		})
+	}
+}
+
 // TestCheckSecondTrial refuses a trial whose config adds storage for the staged image on top of
 // what the running image's config adds, which a rollback cannot undo, as the image's own
 // translation of the config may.

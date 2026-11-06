@@ -338,7 +338,8 @@ running image's delivery records, after `planDelivery` checked it for the runnin
 `commit` changes anything; `secondWrite.write` writes the staged slot once `commit` succeeded. On
 a node without a staged image it replaces the pending config instead. A trial holds both back:
 `holdBack` keeps the checked slot at `/state/chalkd/trial-staged`, the trial's record names it,
-and `ConfirmConfig` writes it; every other end of the trial removes the copy with the record. An
+and `ConfirmConfig` writes it once it removed the record; every other end of the trial removes the
+copy with the record. An
 image's checker compares with the running slot's delivered documents and fills in its own
 defaults (`check.Defaulted`), as chalkctl's `checkRules` does.
 
