@@ -160,11 +160,12 @@ bits. chalkd never writes such names.
 An upgrade first removes every UKI of the image's ID, and every file that is no UKI whose name
 gives a generation, except the one the node booted and those booting the running store, then
 receives the new one, so the ESP holds the UKIs of both slots and, during an upgrade, a third. An
-install from the installer removes every UKI of the image's ID but the `chalkos_1.efi` it
-writes. UKIs of other image IDs, or of none, such as a rescue system's, stay. systemd-boot sorts entries by
-image ID, lowest first, before their file names, so such a UKI whose image ID sorts before
-`chalkos`, such as one with `IMAGE_ID=alpine`, boots before every chalkos entry. chalkos itself
-never puts UKIs of other image IDs on the ESP. An upgrade leaves systemd-boot alone: only an
+install from the installer removes every UKI on the ESP but the `chalkos_1.efi` it writes, of
+any image ID or of none: the installer laid the ESP out, and an earlier attempt with another
+image may have left that image's UKI. systemd-boot sorts entries by image ID, lowest first,
+before their file names, so a UKI whose image ID sorts before `chalkos`, such as one with
+`IMAGE_ID=acme`, would boot before every chalkos entry. chalkos itself never puts UKIs of other
+image IDs on the ESP. An upgrade leaves systemd-boot alone: only an
 install writes the boot loader.
 
 systemd-boot boots the highest generation whose tries are not used up, comparing the numbers as

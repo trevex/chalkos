@@ -43,6 +43,8 @@ type partsImage struct {
 	store, hash, uki, loader []byte
 	root                     []byte
 	header                   upgrade.Header
+	// imageID is the image ID the UKI's os-release and the header name.
+	imageID string
 }
 
 // newPartsImage makes an image whose store is random data of the seed, with a UKI that boots it
@@ -55,6 +57,12 @@ func newPartsImage(t *testing.T, seed string) partsImage {
 // newPartsImageOfBlocks makes an image whose store has the number of 4 KiB blocks.
 func newPartsImageOfBlocks(t *testing.T, seed string, blocks uint64) partsImage {
 	t.Helper()
+	return newPartsImageOf(t, seed, blocks, "chalkos")
+}
+
+// newPartsImageOf makes an image of the image ID whose store has the number of 4 KiB blocks.
+func newPartsImageOf(t *testing.T, seed string, blocks uint64, imageID string) partsImage {
+	t.Helper()
 	s := sha256.Sum256([]byte(seed))
 	r := mrand.New(mrand.NewPCG(binary.LittleEndian.Uint64(s[:]), binary.LittleEndian.Uint64(s[8:])))
 	const blockSize = 4096
@@ -66,9 +74,9 @@ func newPartsImageOfBlocks(t *testing.T, seed string, blocks uint64) partsImage 
 	if err != nil {
 		t.Fatal(err)
 	}
-	img := partsImage{store: store, hash: hash, root: root}
+	img := partsImage{store: store, hash: hash, root: root, imageID: imageID}
 	img.uki = ukitest.UKI(map[string]string{
-		"IMAGE_ID": "chalkos", "IMAGE_VERSION": "", "CHALKOS_VARIANT": "worker", "CHALKOS_PLATFORM": "metal", "CHALKOS_BOOT_TRIES": "3",
+		"IMAGE_ID": imageID, "IMAGE_VERSION": "", "CHALKOS_VARIANT": "worker", "CHALKOS_PLATFORM": "metal", "CHALKOS_BOOT_TRIES": "3",
 	}, fmt.Sprintf("init=/nix/store/x/init usrhash=%x", root))
 	img.loader = ukitest.Build(map[string][]byte{".text": []byte("systemd-boot " + seed)})
 	img.header = img.headerFor()
@@ -78,7 +86,7 @@ func newPartsImageOfBlocks(t *testing.T, seed string, blocks uint64) partsImage 
 // headerFor describes the image as it is.
 func (img partsImage) headerFor() upgrade.Header {
 	return upgrade.Header{
-		ImageID: "chalkos", Platform: "metal", Architecture: "x86-64", RootHash: img.root,
+		ImageID: img.imageID, Platform: "metal", Architecture: "x86-64", RootHash: img.root,
 		StoreSize: int64(len(img.store)), VeritySize: int64(len(img.hash)), UKISize: int64(len(img.uki)), BootLoaderSize: int64(len(img.loader)),
 		StoreSHA256: sha(img.store), VeritySHA256: sha(img.hash), UKISHA256: sha(img.uki), BootLoaderSHA256: sha(img.loader),
 	}
@@ -1277,20 +1285,20 @@ func TestFromPartsUnbootsAResumedTarget(t *testing.T) {
 
 // TestFromPartsLeavesOneUKI continues an install over an ESP that holds UKIs of the image an
 // earlier attempt or node left, of higher generations or under names that give none, a UKI left
-// half written and one an upgrade staged: only the install's own, chalkos_1.efi, stays of the
-// image, so systemd-boot boots it. UKIs of other images stay.
+// half written, one an upgrade staged, and one of another image ID that an attempt with another
+// image left: only the install's own, chalkos_1.efi, stays, so systemd-boot boots it.
 func TestFromPartsLeavesOneUKI(t *testing.T) {
 	img := newPartsImage(t, "a")
 	l := newPartsLab(t)
 	l.stopAt(img, "name the UKI chalkos_1.efi")
 	other := ukitest.UKI(map[string]string{"IMAGE_ID": "chalkos", "IMAGE_VERSION": "", "CHALKOS_BOOT_TRIES": "3"}, fmt.Sprintf("usrhash=%x", sha([]byte("another store"))))
-	rescue := ukitest.UKI(map[string]string{"IMAGE_ID": "rescue"}, fmt.Sprintf("usrhash=%x", sha([]byte("rescue"))))
+	acme := ukitest.UKI(map[string]string{"IMAGE_ID": "acme"}, fmt.Sprintf("usrhash=%x", sha([]byte("acme"))))
 	for name, data := range map[string][]byte{
 		"chalkos_5+0-3.efi": other,
 		// An image an upgrade staged on the disk before.
 		esp.StagedName("chalkos", 6): other,
 		"chalkos.efi":                other,
-		"rescue_1.efi":               rescue,
+		"acme_1.efi":                 acme,
 	} {
 		if err := os.WriteFile(filepath.Join(l.esp(), "EFI/Linux", name), data, 0o644); err != nil {
 			t.Fatal(err)
@@ -1311,8 +1319,8 @@ func TestFromPartsLeavesOneUKI(t *testing.T) {
 	for _, f := range files {
 		names = append(names, f.Name())
 	}
-	if !slices.Equal(names, []string{"chalkos_1.efi", "rescue_1.efi"}) || !bytes.Equal(l.file("EFI/Linux/chalkos_1.efi"), img.uki) {
-		t.Errorf("the ESP holds %q, want the image's UKI as chalkos_1.efi and the rescue system's", names)
+	if !slices.Equal(names, []string{"chalkos_1.efi"}) || !bytes.Equal(l.file("EFI/Linux/chalkos_1.efi"), img.uki) {
+		t.Errorf("the ESP holds %q, want the image's UKI as chalkos_1.efi alone", names)
 	}
 }
 
@@ -1438,33 +1446,40 @@ func TestFromPartsRefusedByTheImage(t *testing.T) {
 // TestFromPartsWritesAnotherImageOverAnUninstalledTarget installs another image onto a target an
 // earlier install left before STATE held anything of the node, as a refusal by the image's
 // checker or a stop before STATE leaves it: without --wipe-disk, the install writes its image over
-// slot A and replaces the other image's UKI.
+// slot A and replaces the other image's UKI. The other image may have another image ID, whose UKI
+// systemd-boot would sort before the install's own and boot without its store.
 func TestFromPartsWritesAnotherImageOverAnUninstalledTarget(t *testing.T) {
-	img, other := newPartsImage(t, "a"), newPartsImage(t, "b")
-	for name, setup := range map[string]func(l *partsLab){
-		"refused by the image": func(l *partsLab) {
-			req := l.request(img)
-			req.Check = func(context.Context, Store, string) (Checked, error) {
-				return Checked{}, errors.New("the config is refused")
-			}
-			if err := l.i.FromParts(context.Background(), req); err == nil {
-				t.Fatal("the install was not refused")
-			}
-		},
-		"stopped before STATE": func(l *partsLab) { l.stopAt(img, "open STATE") },
-	} {
-		t.Run(name, func(t *testing.T) {
-			l := newPartsLab(t)
-			setup(l)
-			l.r.Calls = nil
-			if err := l.install(other); err != nil {
-				t.Fatal(err)
-			}
-			if hasPrefix(l.r.Calls, "systemd-repart --dry-run=no --empty=require") {
-				t.Error("the target was laid out anew")
-			}
-			l.checkInstalled(other)
-		})
+	other := newPartsImage(t, "b")
+	for _, imageID := range []string{"chalkos", "acme"} {
+		img := newPartsImageOf(t, "a", 300, imageID)
+		for name, setup := range map[string]func(l *partsLab){
+			"refused by the image": func(l *partsLab) {
+				req := l.request(img)
+				req.Check = func(context.Context, Store, string) (Checked, error) {
+					return Checked{}, errors.New("the config is refused")
+				}
+				if err := l.i.FromParts(context.Background(), req); err == nil {
+					t.Fatal("the install was not refused")
+				}
+			},
+			"stopped before STATE": func(l *partsLab) { l.stopAt(img, "open STATE") },
+		} {
+			t.Run(imageID+" "+name, func(t *testing.T) {
+				l := newPartsLab(t)
+				setup(l)
+				if l.file("EFI/Linux/"+esp.EntryName(imageID, 1)) == nil {
+					t.Fatalf("the earlier install left no UKI %s", esp.EntryName(imageID, 1))
+				}
+				l.r.Calls = nil
+				if err := l.install(other); err != nil {
+					t.Fatal(err)
+				}
+				if hasPrefix(l.r.Calls, "systemd-repart --dry-run=no --empty=require") {
+					t.Error("the target was laid out anew")
+				}
+				l.checkInstalled(other)
+			})
+		}
 	}
 }
 

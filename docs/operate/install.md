@@ -587,8 +587,8 @@ half-installed node.
 
 An install with another image that lays the disk out the same way continues on it too, as long as
 STATE holds neither an installed node nor the config of the earlier attempt's image. A refused
-config leaves STATE so. The installer logs that slot A holds the store of another image and writes
-the new image over it. Once an earlier attempt wrote the node's config to STATE, the disk takes an
+config leaves STATE so. The installer logs that slot A holds the store of another image, writes
+the new image over it, and removes the earlier image's UKI from the ESP, whatever its image ID. Once an earlier attempt wrote the node's config to STATE, the disk takes an
 install of that image, and of another image only with `--wipe-disk`.
 
 ## Replace what a disk holds

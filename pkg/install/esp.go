@@ -42,7 +42,7 @@ func (i *Installer) writeUKI(ctx context.Context, espPart gpt.Partition, h upgra
 			return err
 		}
 		name := esp.EntryName(h.ImageID, 1)
-		if err := i.removeOtherUKIs(dir, h.ImageID, name, tmp); err != nil {
+		if err := i.removeOtherUKIs(dir, name, tmp); err != nil {
 			return err
 		}
 		return esp.Name(dir, tmp, name, i.Change)
@@ -50,12 +50,15 @@ func (i *Installer) writeUKI(ctx context.Context, espPart gpt.Partition, h upgra
 	return loader, system, err
 }
 
-// removeOtherUKIs removes from the ESP mounted at dir every UKI of the image but the one named
-// keep, UKIs an earlier install left half written but tmp, and staged UKIs. An install continued
-// over an earlier attempt finds that attempt's files there, and systemd-boot would boot a UKI of
-// the image of a higher generation before the one the install writes. A disk installed again may
+// removeOtherUKIs removes from the ESP mounted at dir every UKI but the one named keep, of the
+// image or of any other, UKIs an earlier install left half written but tmp, and staged UKIs. The
+// installer laid the ESP out, or an earlier attempt of an install did, so nothing else on it is
+// the node's. An install continued over an earlier attempt finds that attempt's files there:
+// systemd-boot would boot a UKI of the image of a higher generation before the one the install
+// writes, and a UKI of an image whose ID sorts first, which an attempt with another image left,
+// before any of the image's, though slot A holds its store no more. A disk installed again may
 // hold an image an upgrade staged, which no config slot of the new install boots with.
-func (i *Installer) removeOtherUKIs(dir, imageID, keep, tmp string) error {
+func (i *Installer) removeOtherUKIs(dir, keep, tmp string) error {
 	remove, err := esp.Leftovers(dir, tmp)
 	if err != nil {
 		return err
@@ -70,7 +73,7 @@ func (i *Installer) removeOtherUKIs(dir, imageID, keep, tmp string) error {
 		return err
 	}
 	for _, e := range entries {
-		if e.ImageID == imageID && e.File != keep {
+		if e.File != keep {
 			remove = append(remove, e.File)
 		}
 	}
