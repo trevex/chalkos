@@ -91,10 +91,41 @@ func ReceiveUKI(path string, h Header, stream io.Reader, efivars string) (int, e
 	return tries, f.Close()
 }
 
+// UKIError is CheckUKI's refusal of a UKI, as opposed to a failure to read the UKI or the
+// firmware's db and dbx. Err is the refusal.
+type UKIError struct{ Err error }
+
+func (e *UKIError) Error() string { return e.Err.Error() }
+
+func (e *UKIError) Unwrap() error { return e.Err }
+
 // CheckUKI checks the image's UKI against its header: it must name the image's ID and platform
 // and an empty IMAGE_VERSION, boot the image's store and ask for a positive number of boot tries,
-// and with Secure Boot enforced, firmware must accept its signature. It returns the tries.
+// and with Secure Boot enforced, firmware must accept its signature. It returns the tries. A UKI
+// the check refuses is a UKIError; a UKI cut short or not a UKI at all is refused too, while a
+// failure to read it or the firmware's variables is not.
 func CheckUKI(r io.ReaderAt, h Header, efivars string) (int, error) {
+	db, dbx, enforced, err := firmwareDatabases(efivars)
+	if err != nil {
+		return 0, err
+	}
+	read := &readErrors{ReaderAt: r}
+	tries, err := checkUKI(read, h)
+	if err == nil && enforced {
+		err = verifySignature(read, h.UKISize, db, dbx, "UKI")
+	}
+	switch {
+	case err == nil:
+		return tries, nil
+	case read.err != nil:
+		// The check failed on what it could not read, so it refused nothing.
+		return 0, fmt.Errorf("read the UKI: %w", read.err)
+	}
+	return 0, &UKIError{Err: err}
+}
+
+// checkUKI is CheckUKI without the signature.
+func checkUKI(r io.ReaderAt, h Header) (int, error) {
 	img, err := uki.Read(r)
 	if err != nil {
 		return 0, err
@@ -120,22 +151,45 @@ func CheckUKI(r io.ReaderAt, h Header, efivars string) (int, error) {
 	if err != nil || tries < 1 {
 		return 0, fmt.Errorf("the UKI's boot tries %q are not a positive number", img.BootTries())
 	}
-	if err := CheckSecureBoot(r, h.UKISize, efivars, "UKI"); err != nil {
-		return 0, err
-	}
 	return tries, nil
+}
+
+// readErrors reads through ReaderAt and keeps the first error of a read other than io.EOF, which
+// only says a read reached the end, as of a binary cut short.
+type readErrors struct {
+	io.ReaderAt
+	err error
+}
+
+func (r *readErrors) ReadAt(p []byte, off int64) (int, error) {
+	n, err := r.ReaderAt.ReadAt(p, off)
+	if err != nil && err != io.EOF && r.err == nil {
+		r.err = err
+	}
+	return n, err
 }
 
 // CheckSecureBoot checks the signature of an EFI binary of the image, the UKI or the boot
 // loader, against the firmware's db and dbx, as firmware will when it starts the binary. It
 // checks nothing when Secure Boot is not enforced.
 func CheckSecureBoot(r io.ReaderAt, size int64, efivars, what string) error {
-	db, dbx, enforced, err := secureboot.Databases(func(name, vendor string) ([]byte, error) {
-		return readVariable(efivars, name, vendor)
-	})
+	db, dbx, enforced, err := firmwareDatabases(efivars)
 	if err != nil || !enforced {
 		return err
 	}
+	return verifySignature(r, size, db, dbx, what)
+}
+
+// firmwareDatabases reads the firmware's db and dbx from efivars, and whether Secure Boot is
+// enforced.
+func firmwareDatabases(efivars string) (db, dbx secureboot.Database, enforced bool, err error) {
+	return secureboot.Databases(func(name, vendor string) ([]byte, error) {
+		return readVariable(efivars, name, vendor)
+	})
+}
+
+// verifySignature checks the signature of the EFI binary named what against db and dbx.
+func verifySignature(r io.ReaderAt, size int64, db, dbx secureboot.Database, what string) error {
 	if err := secureboot.VerifySignature(r, size, db, dbx); err != nil {
 		return fmt.Errorf("Secure Boot would refuse the %s: %w", what, err)
 	}

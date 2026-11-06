@@ -4,10 +4,13 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/trevex/chalkos/pkg/esp"
+	"github.com/trevex/chalkos/pkg/secureboot"
 )
 
 // TestPrevious finds the image a rollback boots: of the image's entries below the booted one's
@@ -265,4 +268,44 @@ func TestRollbackBeforeTheBootIsHealthy(t *testing.T) {
 		t.Fatalf("rollback to b = %+v, %v; want it counted", res, err)
 	}
 	l.boots(b, 2)
+}
+
+// TestCheckKeptUKIRefusesOnlyWhatItChecks refuses a kept UKI the check refuses, one of another
+// platform or one that is no UKI at all, and passes a failure to read the UKI or the firmware's
+// variables on as it is, which refuses nothing.
+func TestCheckKeptUKIRefusesOnlyWhatItChecks(t *testing.T) {
+	a := newImage(t, "a", 3)
+	l := newLab(t, a)
+	dir := t.TempDir()
+	kept, junk := filepath.Join(dir, "kept.efi"), filepath.Join(dir, "junk.efi")
+	if err := os.WriteFile(kept, a.uki, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(junk, []byte("not a PE file"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if tries, err := l.node.checkKeptUKI(kept, "chalkos", a.root); err != nil || tries != 3 {
+		t.Fatalf("check = %d, %v", tries, err)
+	}
+	var refusal *RefusalError
+	if _, err := l.node.checkKeptUKI(junk, "chalkos", a.root); !errors.As(err, &refusal) || !strings.Contains(err.Error(), "not a UKI") {
+		t.Errorf("a file that is no UKI = %v, want a refusal", err)
+	}
+	platform := l.node.OSRelease["CHALKOS_PLATFORM"]
+	l.node.OSRelease["CHALKOS_PLATFORM"] = "elsewhere"
+	if _, err := l.node.checkKeptUKI(kept, "chalkos", a.root); !errors.As(err, &refusal) || !strings.Contains(err.Error(), "the UKI's platform is") {
+		t.Errorf("a UKI of another platform = %v, want a refusal", err)
+	}
+	l.node.OSRelease["CHALKOS_PLATFORM"] = platform
+	// A directory opens, but reading it fails.
+	if _, err := l.node.checkKeptUKI(dir, "chalkos", a.root); err == nil || errors.As(err, &refusal) || !strings.Contains(err.Error(), "read the UKI: ") {
+		t.Errorf("a UKI that cannot be read = %v, want a failure that refuses nothing", err)
+	}
+	// The firmware's SecureBoot variable cannot be read, as a directory.
+	if err := os.Mkdir(filepath.Join(l.efivars, "SecureBoot-"+secureboot.GlobalVendor), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := l.node.checkKeptUKI(kept, "chalkos", a.root); err == nil || errors.As(err, &refusal) || !strings.Contains(err.Error(), "read the EFI variable SecureBoot") {
+		t.Errorf("firmware variables that cannot be read = %v, want a failure that refuses nothing", err)
+	}
 }
