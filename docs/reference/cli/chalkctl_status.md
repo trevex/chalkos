@@ -12,7 +12,8 @@ chalkctl status <node> [flags]
 Shows an installed node's status: the config it runs and whether it is the one the inventory
 gives; its platform; the image it booted, by its store's root hash and the tag and revision it
 was built from as far as the node knows them, the boot entry and whether that boot was found
-healthy; an upgrade that is installed and boots next; an upgrade that failed and was rolled back,
+healthy; an upgrade that is staged, or active and boots next; an upgrade that failed and was
+rolled back,
 with the journal of the boot that failed; a config on trial and when it rolls back; the config it
 holds pending for its next upgrade, unchecked, and since when; the previous config and image a
 rollback restores; whether its store is the image the inventory names for it; its volumes and

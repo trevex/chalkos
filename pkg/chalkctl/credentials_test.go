@@ -114,7 +114,7 @@ func TestClientFileRole(t *testing.T) {
 	if err := ta.run(context.Background(), ta.args([]string{"status", "n1", "--config", reader}, addr)); err != nil {
 		t.Errorf("status as a reader: %v", err)
 	}
-	if err := ta.run(context.Background(), ta.args([]string{"reboot", "n1", "--config", reader}, addr)); connect.CodeOf(err) != connect.CodePermissionDenied {
+	if err := ta.run(context.Background(), ta.args([]string{"node", "reboot", "n1", "--config", reader}, addr)); connect.CodeOf(err) != connect.CodePermissionDenied {
 		t.Errorf("reboot as a reader: %v, want permission denied", err)
 	}
 	// Commands that need the secrets file do not take a client file.
@@ -136,7 +136,7 @@ func TestCredentialChoice(t *testing.T) {
 	t.Setenv("CHALKOSCONFIG", reader)
 	// The app's own run names no secrets file of the test's.
 	reboot := func(args ...string) error {
-		return ta.app.run(context.Background(), append(ta.args([]string{"reboot", "n1"}, addr), args...))
+		return ta.app.run(context.Background(), append(ta.args([]string{"node", "reboot", "n1"}, addr), args...))
 	}
 
 	if err := reboot(); connect.CodeOf(err) != connect.CodePermissionDenied {

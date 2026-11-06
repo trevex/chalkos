@@ -65,7 +65,7 @@ func readerClientFile(t *testing.T, w1 *node, path string) {
 	if out, err := chalkctlWith(t, w1, "base", path, "status", "w1"); err != nil || !strings.Contains(out, "kubernetes worker: joined") {
 		t.Errorf("status of w1 as a reader: %v", err)
 	}
-	if out, err := chalkctlWith(t, w1, "base", path, "reboot", "w1"); err == nil || !strings.Contains(out, "needs the operator role") {
+	if out, err := chalkctlWith(t, w1, "base", path, "node", "reboot", "w1", "--no-drain"); err == nil || !strings.Contains(out, "needs the operator role") {
 		t.Errorf("a reader rebooted w1: %v", err)
 	}
 }

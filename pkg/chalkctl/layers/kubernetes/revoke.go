@@ -225,7 +225,7 @@ func unrevokedLine(name string, at time.Time, stale []string) string {
 		verb = "were"
 	}
 	return fmt.Sprintf("unrevoked node %s; its certificates from before %s work again until they expire: the %s %s not rotated since\n"+
-		"the old %s's kubelet does not register its Node again by itself: reboot it with chalkctl reboot %s, or restart its kubelet; "+
+		"the old %s's kubelet does not register its Node again by itself: reboot it with chalkctl node reboot %s --no-drain, or restart its kubelet; "+
 		"a node installed afresh as %s registers as usual",
 		name, when, strings.Join(stale, " and "), verb, name, name, name)
 }

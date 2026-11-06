@@ -15,10 +15,11 @@ names another; commands read it from there, or from the path --config or $CHALKO
 client file names no cluster: its OS CA ties it to one, and a node of another cluster fails the TLS
 handshake, which chalkctl reports as a node that does not accept the client file.
 
-A client file works for status, logs, disks, reboot, storage reset, bootstrap, the etcd commands
-and upgrade; every other command needs the secrets file. A reader may read nodes' information,
-disks, status and logs and etcd's members; an operator may also reboot, upgrade, drain and
-uncordon nodes; an admin may call every method of chalkd but the node's own renewal. See
+A client file works for status, logs, disks, node activate, node reboot, storage reset,
+bootstrap, the etcd commands and upgrade; every other command needs the secrets file. A reader may
+read nodes' information, disks, status and logs and etcd's members; an operator may also upgrade,
+activate staged images, reboot, drain and uncordon nodes; an admin may call every method of chalkd
+but the node's own renewal. See
 [chalkd checks the role of every request](../../how-it-works/node/security.md#chalkd-checks-the-role-of-every-request).
 
 The command needs the secrets file and no inventory.

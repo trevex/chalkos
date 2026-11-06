@@ -51,14 +51,17 @@ const genSecretsExample = `  # Encrypt the secrets to an age key and an SSH key.
   chalkctl gen secrets --recipient age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p \
     --out - --public-out secrets.pub.json | pass insert --multiline chalkos/secrets`
 
-const nodeLong = `Manages a node's access to the cluster and shows its state: renews its node certificate, revokes
-and unrevokes it by name, lists and runs the diagnostics its image declares, and shows a router's
-routes. node renew needs the secrets file; node revoke and node unrevoke need an admin client
-file or the secrets file; node diag and node routes need a reader client file or the secrets
-file.`
+const nodeLong = `Manages a node's access to the cluster and its boot and shows its state: renews its node
+certificate, revokes and unrevokes it by name, makes the image staged on it boot next, reboots it
+held by its layers, lists and runs the diagnostics its image declares, and shows a router's routes.
+node renew needs the secrets file; node revoke and node unrevoke need an admin client file or the
+secrets file; node activate and node reboot need an operator client file or the secrets file;
+node diag and node routes need a reader client file or the secrets file.`
 
 const nodeExample = `  chalkctl node renew w1
   chalkctl node revoke w1
+  chalkctl node activate w1
+  chalkctl node reboot w1
   chalkctl node diag w1 route-get address=2001:db8::1
   chalkctl node routes r1 ::/0`
 
@@ -108,10 +111,11 @@ names another; commands read it from there, or from the path --config or $CHALKO
 client file names no cluster: its OS CA ties it to one, and a node of another cluster fails the TLS
 handshake, which chalkctl reports as a node that does not accept the client file.
 
-A client file works for status, logs, disks, reboot, storage reset, bootstrap, the etcd commands
-and upgrade; every other command needs the secrets file. A reader may read nodes' information,
-disks, status and logs and etcd's members; an operator may also reboot, upgrade, drain and
-uncordon nodes; an admin may call every method of chalkd but the node's own renewal. See
+A client file works for status, logs, disks, node activate, node reboot, storage reset,
+bootstrap, the etcd commands and upgrade; every other command needs the secrets file. A reader may
+read nodes' information, disks, status and logs and etcd's members; an operator may also upgrade,
+activate staged images, reboot, drain and uncordon nodes; an admin may call every method of chalkd
+but the node's own renewal. See
 https://trevex.github.io/chalkos/how-it-works/node/security/#chalkd-checks-the-role-of-every-request.
 
 The command needs the secrets file and no inventory.`
@@ -205,8 +209,9 @@ planned with the facts as they are. With --staged, the staged image checks the c
 own chalkd and renderers, and the plan has no outputs and no effects: that image renders its
 outputs and takes its effects when it boots.
 
-Each image on a node keeps its own config. --staged delivers the config for the image staged to
-boot next, as an upgrade with --no-reboot leaves it, and nothing restarts. Without --staged,
+Each image on a node keeps its own config. --staged delivers the config for the image in the
+node's inactive slot, staged by upgrade --until stage or active after upgrade --until activate,
+and nothing restarts. Without --staged,
 chalkctl warns of a staged image, whose config stays as it is. A config for the running image that
 adds storage the staged image's config lacks is refused: deliver the config with --staged first.
 
@@ -215,7 +220,7 @@ of any config held before. chalkctl checks it against the node's image in the in
 only parses it, as no image is there to check it against. The next upgrade that carries no config
 of its own, such as an operator's, gives the image the pending config in place of the running one,
 and the image checks it before the node installs anything. An upgrade that carries config replaces
-it. Either way the node drops the pending config once the image is staged to boot next; an upgrade
+it. Either way the node drops the pending config once the image is staged; an upgrade
 that fails keeps it, and an image's refusal names it. A pending config is kept without the fallback
 secret, so an upgrade with one that adds an encrypted volume needs the config from the inventory.
 --staged --dry-run says the config would be held pending and keeps nothing. --staged --discard
@@ -268,8 +273,8 @@ const applyConfigExample = `  # Apply w1's changed network and labels.
   # Have w1 and w2 check their config, renderers included, and show what a delivery would do.
   chalkctl apply-config w1 w2 --secrets secrets.age --dry-run
 
-  # Deliver w1's config for the image an upgrade with --no-reboot staged, or without one hold it
-  # pending for w1's next upgrade.
+  # Deliver w1's config for the image an upgrade staged, or without one hold it pending for w1's
+  # next upgrade.
   chalkctl apply-config w1 --secrets secrets.age --staged
 
   # Drop the config w1 holds pending.
@@ -288,7 +293,8 @@ const applyConfigExample = `  # Apply w1's changed network and labels.
 const statusLong = `Shows an installed node's status: the config it runs and whether it is the one the inventory
 gives; its platform; the image it booted, by its store's root hash and the tag and revision it
 was built from as far as the node knows them, the boot entry and whether that boot was found
-healthy; an upgrade that is installed and boots next; an upgrade that failed and was rolled back,
+healthy; an upgrade that is staged, or active and boots next; an upgrade that failed and was
+rolled back,
 with the journal of the boot that failed; a config on trial and when it rolls back; the config it
 holds pending for its next upgrade, unchecked, and since when; the previous config and image a
 rollback restores; whether its store is the image the inventory names for it; its volumes and
@@ -309,11 +315,36 @@ secrets file. A node in maintenance mode is reached with --fingerprint or --inse
 const logsExample = `  # Follow chalkd's log on cp1.
   chalkctl logs cp1 --unit chalkd.service -f`
 
-const rebootLong = `Reboots a node, installed or in maintenance mode. An installed node does not drain its
-Kubernetes pods first. The command needs an operator client file or the secrets file; a node in
-maintenance mode is reached with --fingerprint or --insecure as well.`
+const nodeActivateLong = `Makes the image staged on a node boot next, as chalkctl upgrade --until stage leaves it:
+the node renames the image's UKI to its boot entry's name with the tries the image asks for, so
+boot counting falls back to the running image should its boots fail. chalkctl names the image the
+inventory gives the node, by its root hash, and the node refuses when it has no image staged or
+another one. The node checks the UKI again, and not the config: the image's own checker passed
+the config before the image was staged. Asked again, the command says that the image boots next
+already. The image boots with the node's next reboot, which chalkctl node reboot runs. The command
+needs an operator client file or the secrets file.`
 
-const rebootExample = `  chalkctl reboot w1`
+const nodeActivateExample = `  chalkctl upgrade --nodes w1 --until stage
+  chalkctl node activate w1
+  chalkctl node reboot w1`
+
+const nodeRebootLong = `Reboots a node as chalkctl upgrade does once the node's image is active: its layers hold it
+first, as Kubernetes keeps etcd's quorum while a control plane reboots and drains the node; then
+the node reboots, and chalkctl waits until it runs the image it boots next, an image activated by
+chalkctl node activate or the one it ran, and its boot was found healthy, and its layers release
+it, as Kubernetes uncordons it once its Node is Ready. A node that falls back from the image stops
+the command and stays held. --no-drain reboots the node without its layers holding or releasing
+it, and still waits. Draining a node goes through the cluster's control planes, which the
+inventory names.
+
+A node in maintenance mode, reached with --fingerprint or --insecure, reboots without more. The
+command needs an operator client file or the secrets file.`
+
+const nodeRebootExample = `  # Drain w1, reboot it into the image it boots next and uncordon it once it is Ready.
+  chalkctl node reboot w1
+
+  # Reboot w1 without draining it first.
+  chalkctl node reboot w1 --no-drain`
 
 const rotateLong = `Rotates a CA or key of the cluster from the secrets file, in phases every node confirms in its
 status before the next one starts: accept, switch, refresh and, with --finish, finish. A rotation
@@ -343,10 +374,14 @@ const rotateExample = `  # Rotate the Kubernetes CA. It pauses after the accept 
 const upgradeLong = `Installs a new image on each node: first the nodes that act for the others, such as Kubernetes
 control planes, one at a time, then the other nodes in batches of --max-unavailable. Without
 --image, each node, or each node --nodes names, gets the image the inventory names for it; with
---image, the nodes that run the image's variant get it, or those --nodes names. A node gets the
-image in its inactive slot and reboots into it. Its layers hold it before and release it once its
-boot was found healthy: Kubernetes keeps etcd's quorum, drains the node and uncordons it once it is
-Ready. A node that falls back to the image before stops the run.
+--image, the nodes that run the image's variant get it, or those --nodes names. Each node goes
+through the steps the step-by-step path runs one at a time: the node stages the image in its
+inactive slot once the image's own checker accepted its config, as upgrade --until stage stops
+there; it activates the image, which then boots next, as chalkctl node activate does; and it
+reboots into the image as chalkctl node reboot does. Its layers hold it before the reboot and
+release it once its boot was found healthy: Kubernetes keeps etcd's quorum, drains the node and
+uncordons it once it is Ready. A node that falls back to the image before stops the run. --until
+stage or --until activate stops each node after that step and holds no node.
 
 Each node gets its config with the image, checked against it before any node is drained, and
 chalkctl prints a line of what it changes; --diff prints the whole diff and changes nothing.
@@ -361,9 +396,9 @@ cluster, must roll back to the same image or run it already, or the command refu
 --nodes. Boot counting protects the boot as it protects an upgrade's, except on a node whose
 running image's boot was not found healthy: the image before, found healthy once, then boots
 uncounted, as the node's known-good image, and is not fallen back from. The run holds and releases
-each node as an upgrade does. Run again, it continues with the same image and leaves the nodes
-that run it alone. Once the nodes run the image before, an upgrade to the inventory's image undoes
-the rollback.
+each node as an upgrade does; it stages nothing, so it takes --until activate and reboot alone.
+Run again, it continues with the same image and leaves the nodes that run it alone. Once the nodes
+run the image before, an upgrade to the inventory's image undoes the rollback.
 
 Run again, an upgrade continues where it stopped, and --retry-failed installs the image once more
 on nodes that fell back from it. See
@@ -376,6 +411,11 @@ const upgradeExample = `  # Upgrade the whole cluster, each node to the image th
 
   # Upgrade the nodes that run an image's variant, two at a time, with an image chalkbuild signed.
   chalkctl upgrade --image ./worker-image --max-unavailable 2
+
+  # Upgrade w1 step by step: stage its image, make it boot next, reboot into it.
+  chalkctl upgrade --nodes w1 --until stage
+  chalkctl node activate w1
+  chalkctl node reboot w1
 
   # Boot the image w1 and w2 ran before their last upgrade again.
   chalkctl upgrade --rollback --nodes w1,w2`

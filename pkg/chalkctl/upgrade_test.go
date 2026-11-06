@@ -31,6 +31,7 @@ import (
 	"github.com/trevex/chalkos/pkg/client"
 	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/image/imagetest"
+	"github.com/trevex/chalkos/pkg/internal/cli"
 	"github.com/trevex/chalkos/pkg/kubernetes"
 	"github.com/trevex/chalkos/pkg/layers"
 	"github.com/trevex/chalkos/pkg/ociimage"
@@ -116,6 +117,11 @@ type upgradeFake struct {
 	// failed, and generation the generation of the entry the node booted image from.
 	root, stagedRoot, failedRoot []byte
 	generation                   uint64
+	// active is set while the staged image boots next; an image staged alone waits for
+	// ActivateImage and a reboot boots the running image again.
+	active bool
+	// boots counts the node's reboots, which name its boot's ID.
+	boots int
 	// config and stagedConfig are the config the node runs and the one kept for the staged image, as
 	// delivered.
 	config, stagedConfig string
@@ -235,11 +241,16 @@ func (n *upgradeFake) Status(context.Context, *connect.Request[nodev1.StatusRequ
 	st := &nodev1.StatusResponse{Boot: &nodev1.BootStatus{
 		Running: &nodev1.BootImage{RootHash: n.root, Generation: n.generation},
 		Entry:   fmt.Sprintf("chalkos_%d.efi", n.generation), Blessed: true,
+		BootId: fmt.Sprintf("boot-%d", n.boots),
 	}}
 	// VAR, which every node has.
 	st.Volumes = []*nodev1.VolumeStatus{{Name: "var"}}
 	if n.staged != "" {
 		st.Boot.Staged = &nodev1.BootImage{RootHash: n.stagedRoot, Generation: n.generation + 1}
+		st.Boot.StagedState = nodev1.SlotState_SLOT_STATE_STAGED
+		if n.active {
+			st.Boot.StagedState = nodev1.SlotState_SLOT_STATE_ACTIVE
+		}
 		st.StagedConfigVersion = versionOf(n.stagedConfig)
 	}
 	if n.previous != "" {
@@ -334,6 +345,9 @@ func (n *upgradeFake) Upgrade(ctx context.Context, stream *connect.ClientStream[
 		return connect.NewResponse(&nodev1.UpgradeResponse{AlreadyInstalled: true, Pending: n.pendingOutcome(nodev1.PendingFate_PENDING_FATE_KEPT)}), nil
 	}
 	name, _ := testImageNames.Load(string(h.RootHash))
+	// An image staged again stays active; another one is staged anew, and activated unless the
+	// upgrade stops at staging.
+	n.active = n.active && bytes.Equal(n.stagedRoot, h.RootHash) || !header.GetStageOnly()
 	n.staged, n.stagedRoot, n.failed, n.failedRoot = name.(string), h.RootHash, "", nil
 	n.previous, n.previousRoot, n.previousConfig, n.rolledBackTo = "", nil, "", nil
 	// The image gets the pending config unless the upgrade carries config; either way the node
@@ -352,10 +366,39 @@ func (n *upgradeFake) Upgrade(ctx context.Context, stream *connect.ClientStream[
 	}
 	n.stagedStoreSize, n.stagedVeritySize = h.Store.Size, h.HashTree.Size
 	n.header = header
-	if n.alreadyStaged {
-		return connect.NewResponse(&nodev1.UpgradeResponse{AlreadyStaged: true, Entry: fmt.Sprintf("chalkos_%d+3.efi", n.generation+1), Pending: pending}), nil
+	resp := &nodev1.UpgradeResponse{AlreadyStaged: n.alreadyStaged, Entry: n.entry(), Active: n.active, Pending: pending}
+	return connect.NewResponse(resp), nil
+}
+
+// entry is the file name of the staged image's UKI: its staged name, or its entry's while it is
+// active.
+func (n *upgradeFake) entry() string {
+	if n.active {
+		return fmt.Sprintf("chalkos_%d+3.efi", n.generation+1)
 	}
-	return connect.NewResponse(&nodev1.UpgradeResponse{Entry: fmt.Sprintf("chalkos_%d+3.efi", n.generation+1), Pending: pending}), nil
+	return fmt.Sprintf(".staged-chalkos_%d.efi", n.generation+1)
+}
+
+// ActivateImage makes the staged image boot next, as chalkd renames its UKI.
+func (n *upgradeFake) ActivateImage(_ context.Context, req *connect.Request[nodev1.ActivateImageRequest]) (*connect.Response[nodev1.ActivateImageResponse], error) {
+	if err := n.down(); err != nil {
+		return nil, err
+	}
+	n.lab.record("%s activate", n.name)
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	switch {
+	case bytes.Equal(req.Msg.RootHash, n.root):
+		return connect.NewResponse(&nodev1.ActivateImageResponse{AlreadyInstalled: true}), nil
+	case n.staged == "":
+		return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("activate: no image is staged in the inactive slot"))
+	case !bytes.Equal(req.Msg.RootHash, n.stagedRoot):
+		return nil, connect.NewError(connect.CodeFailedPrecondition, fmt.Errorf("activate: the image staged in the inactive slot is %x, not %x", n.stagedRoot, req.Msg.RootHash))
+	case n.active:
+		return connect.NewResponse(&nodev1.ActivateImageResponse{AlreadyActive: true, Entry: n.entry()}), nil
+	}
+	n.active = true
+	return connect.NewResponse(&nodev1.ActivateImageResponse{Entry: n.entry()}), nil
 }
 
 // pendingOutcome is the answer of an upgrade that left the pending config to fate; nil without one.
@@ -366,17 +409,19 @@ func (n *upgradeFake) pendingOutcome(fate nodev1.PendingFate) *nodev1.PendingOut
 	return &nodev1.PendingOutcome{Version: versionOf(n.pending), Fate: fate}
 }
 
-// Reboot boots the staged image, which falls back after its tries when the lab makes it
-// unhealthy.
+// Reboot boots the staged image while it is active, which falls back after its tries when the lab
+// makes it unhealthy; a reboot of a node whose image is staged alone boots the running image again.
+// The node answers as before for a moment, as chalkd does until the reboot stops it.
 func (n *upgradeFake) Reboot(context.Context, *connect.Request[nodev1.RebootRequest]) (*connect.Response[nodev1.RebootResponse], error) {
 	if err := n.down(); err != nil {
 		return nil, err
 	}
 	n.lab.record("%s reboot", n.name)
-	n.mu.Lock()
-	n.rebooting = true
-	n.mu.Unlock()
 	go func() {
+		time.Sleep(15 * time.Millisecond)
+		n.mu.Lock()
+		n.rebooting = true
+		n.mu.Unlock()
 		time.Sleep(30 * time.Millisecond)
 		n.lab.mu.Lock()
 		unhealthy := n.lab.unhealthy[n.staged]
@@ -384,13 +429,14 @@ func (n *upgradeFake) Reboot(context.Context, *connect.Request[nodev1.RebootRequ
 		n.mu.Lock()
 		defer n.mu.Unlock()
 		n.rebooting = false
+		n.boots++
 		switch {
-		case n.staged == "":
+		case n.staged == "" || !n.active:
 		case unhealthy:
-			n.failed, n.failedRoot, n.staged, n.stagedRoot = n.staged, n.stagedRoot, "", nil
+			n.failed, n.failedRoot, n.staged, n.stagedRoot, n.active = n.staged, n.stagedRoot, "", nil, false
 		default:
 			n.previous, n.previousRoot, n.previousConfig = n.image, n.root, n.config
-			n.image, n.root, n.staged, n.stagedRoot = n.staged, n.stagedRoot, "", nil
+			n.image, n.root, n.staged, n.stagedRoot, n.active = n.staged, n.stagedRoot, "", nil, false
 			n.config, n.stagedConfig = n.stagedConfig, ""
 			n.generation++
 		}
@@ -425,7 +471,7 @@ func (n *upgradeFake) RollbackImage(_ context.Context, req *connect.Request[node
 	case n.previous == "" || !bytes.Equal(req.Msg.RootHash, n.previousRoot):
 		return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("roll back: the node keeps no image it ran before to roll back to"))
 	}
-	n.staged, n.stagedRoot, n.stagedConfig = n.previous, n.previousRoot, n.previousConfig
+	n.staged, n.stagedRoot, n.stagedConfig, n.active = n.previous, n.previousRoot, n.previousConfig, true
 	n.previous, n.previousRoot, n.previousConfig = "", nil, ""
 	n.rolledBackTo = req.Msg.RootHash
 	return connect.NewResponse(&nodev1.RollbackImageResponse{Entry: fmt.Sprintf(entry, n.generation+1)}), nil
@@ -669,8 +715,9 @@ func TestUpgradeFromARegistry(t *testing.T) {
 	}
 }
 
-// TestUpgradeControlPlanesInTurn upgrades the control planes one at a time: each only while the
-// others keep etcd's quorum, the image installed before it is drained, and uncordoned once back.
+// TestUpgradeControlPlanesInTurn upgrades the control planes one at a time: each gets its image
+// staged, then only while the others keep etcd's quorum is drained, has the image activated and
+// reboots, and is uncordoned once back.
 func TestUpgradeControlPlanesInTurn(t *testing.T) {
 	l := newUpgradeLab(t, 3)
 	img := testUpgradeImage(t, "cp", "0.2.0")
@@ -679,7 +726,7 @@ func TestUpgradeControlPlanesInTurn(t *testing.T) {
 	}
 	var want []string
 	for _, cp := range []string{"cp1", "cp2", "cp3"} {
-		want = append(want, cp+" members", cp+" upgrade", cp+" drain", cp+" reboot", cp+" uncordon")
+		want = append(want, cp+" upgrade", cp+" members", cp+" drain", cp+" activate", cp+" reboot", cp+" uncordon")
 	}
 	if got := l.takeEvents(); !slices.Equal(got, want) {
 		t.Errorf("events:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
@@ -704,8 +751,8 @@ func TestUpgradeControlPlanesInTurn(t *testing.T) {
 
 // TestUpgradeOneVariantControlPlanesFirst upgrades control planes and workers that share a variant and
 // its image: the control planes one at a time, each back before the next, and the workers after
-// them all, although their names sort first, each drained before it gets the image and without a
-// check of etcd's quorum.
+// them all, although their names sort first, each drained once it has the image staged and before
+// it is activated, without a check of etcd's quorum.
 func TestUpgradeOneVariantControlPlanesFirst(t *testing.T) {
 	l := newUpgradeLabOf(t, 3, []string{"a1", "a2"}, "k8s", "k8s")
 	if err := l.upgrade(testUpgradeImage(t, "k8s", "0.2.0")); err != nil {
@@ -721,7 +768,7 @@ func TestUpgradeOneVariantControlPlanesFirst(t *testing.T) {
 	}
 	cps := []string{"cp1", "cp2", "cp3"}
 	for i, cp := range cps {
-		if !(at(cp+" upgrade") < at(cp+" drain") && at(cp+" drain") < at(cp+" reboot") && at(cp+" reboot") < at(cp+" uncordon")) {
+		if !(at(cp+" upgrade") < at(cp+" drain") && at(cp+" drain") < at(cp+" activate") && at(cp+" activate") < at(cp+" reboot") && at(cp+" reboot") < at(cp+" uncordon")) {
 			t.Errorf("%s out of order: %q", cp, events)
 		}
 		if i > 0 && at(cps[i-1]+" uncordon") > at(cp+" upgrade") {
@@ -732,7 +779,7 @@ func TestUpgradeOneVariantControlPlanesFirst(t *testing.T) {
 		if at(w+" drain") < at("cp3 uncordon") {
 			t.Errorf("%s was drained before the control planes were upgraded: %q", w, events)
 		}
-		if !(at(w+" drain") < at(w+" upgrade") && at(w+" upgrade") < at(w+" reboot") && at(w+" reboot") < at(w+" uncordon")) {
+		if !(at(w+" upgrade") < at(w+" drain") && at(w+" drain") < at(w+" activate") && at(w+" activate") < at(w+" reboot") && at(w+" reboot") < at(w+" uncordon")) {
 			t.Errorf("%s out of order: %q", w, events)
 		}
 	}
@@ -755,7 +802,7 @@ func TestUpgradeOneVariantControlPlanesFirst(t *testing.T) {
 
 // TestUpgradeKeepsQuorum refuses a control plane whose reboot would leave etcd without its
 // quorum, and one or two control planes, which lose it while one reboots, without
-// --allow-downtime.
+// --allow-downtime. A refused node keeps the image staged and not active, so no reboot boots it.
 func TestUpgradeKeepsQuorum(t *testing.T) {
 	l := newUpgradeLab(t, 3)
 	l.unhealthyMembers = []string{"cp2"}
@@ -764,9 +811,12 @@ func TestUpgradeKeepsQuorum(t *testing.T) {
 		t.Errorf("upgrade = %v", err)
 	}
 	for _, e := range l.takeEvents() {
-		if !strings.HasSuffix(e, " members") {
+		if e != "cp1 upgrade" && !strings.HasSuffix(e, " members") {
 			t.Errorf("the refused run asked %q", e)
 		}
+	}
+	if n := l.nodes["cp1"]; n.staged != "0.2.0" || n.active {
+		t.Errorf("cp1 has %q staged, active: %v; want it staged alone", n.staged, n.active)
 	}
 
 	single := newUpgradeLab(t, 1)
@@ -797,8 +847,9 @@ func TestUpgradeKeepsQuorum(t *testing.T) {
 	}
 }
 
-// TestUpgradeWorkersInBatches drains each worker before it gets the image, takes at most
-// --max-unavailable at once, and starts a batch once the one before is back.
+// TestUpgradeWorkersInBatches stages each worker's image, then drains it, activates the image and
+// reboots it, takes at most --max-unavailable at once, and starts a batch once the one before is
+// back.
 func TestUpgradeWorkersInBatches(t *testing.T) {
 	l := newUpgradeLab(t, 3)
 	if err := l.upgrade(testUpgradeImage(t, "w", "0.2.0"), "--max-unavailable", "2"); err != nil {
@@ -813,11 +864,11 @@ func TestUpgradeWorkersInBatches(t *testing.T) {
 		return i
 	}
 	for _, w := range []string{"w1", "w2", "w3"} {
-		if !(at(w+" drain") < at(w+" upgrade") && at(w+" upgrade") < at(w+" reboot") && at(w+" reboot") < at(w+" uncordon")) {
+		if !(at(w+" upgrade") < at(w+" drain") && at(w+" drain") < at(w+" activate") && at(w+" activate") < at(w+" reboot") && at(w+" reboot") < at(w+" uncordon")) {
 			t.Errorf("%s out of order: %q", w, events)
 		}
 	}
-	if at("w3 drain") < at("w1 uncordon") || at("w3 drain") < at("w2 uncordon") {
+	if at("w3 upgrade") < at("w1 uncordon") || at("w3 upgrade") < at("w2 uncordon") {
 		t.Errorf("w3 started before the first batch was back: %q", events)
 	}
 	if at("w2 drain") > at("w1 uncordon") {
@@ -840,7 +891,7 @@ func TestUpgradeStopsAtARollback(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "w1: upgrade to "+shortOf(t, img)+" failed: rolled back to 010101010101; it stays cordoned") || !strings.Contains(err.Error(), "units failed: broken.service") {
 		t.Fatalf("upgrade = %v", err)
 	}
-	if got := l.takeEvents(); !slices.Equal(got, []string{"w1 drain", "w1 upgrade", "w1 reboot"}) {
+	if got := l.takeEvents(); !slices.Equal(got, []string{"w1 upgrade", "w1 drain", "w1 activate", "w1 reboot"}) {
 		t.Errorf("events %q", got)
 	}
 	if !l.cordoned["w1"] {
@@ -856,8 +907,8 @@ func TestUpgradeStopsAtARollback(t *testing.T) {
 }
 
 // TestUpgradeContinues runs again after a run stopped: a node that runs the image is skipped, a
-// node with the image installed is rebooted without sending it again, and only nodes the
-// upgrade cordoned are uncordoned.
+// node with the image staged is activated and rebooted without sending it again, and only nodes
+// the upgrade cordoned are uncordoned.
 func TestUpgradeContinues(t *testing.T) {
 	l := newUpgradeLab(t, 3)
 	img := testUpgradeImage(t, "w", "0.2.0")
@@ -872,7 +923,7 @@ func TestUpgradeContinues(t *testing.T) {
 	if err := l.upgrade(img); err != nil {
 		t.Fatalf("%v\n%s", err, l.ta.stdout)
 	}
-	want := []string{"w2 drain", "w2 upgrade", "w2 reboot", "w2 uncordon", "w3 drain", "w3 reboot"}
+	want := []string{"w2 upgrade", "w2 drain", "w2 activate", "w2 reboot", "w2 uncordon", "w3 drain", "w3 activate", "w3 reboot"}
 	if got := l.takeEvents(); !slices.Equal(got, want) {
 		t.Errorf("events %q, want %q", got, want)
 	}
@@ -903,18 +954,132 @@ func TestUpgradeSendsOverAnotherStagedImage(t *testing.T) {
 	}
 }
 
-// TestUpgradeWithoutReboot installs the image on every node of the variant and leaves them as they
-// run.
+// TestUpgradeWithoutReboot installs the image on every node of the variant and makes it boot next
+// with --until activate, and leaves the nodes as they run, without draining them.
 func TestUpgradeWithoutReboot(t *testing.T) {
 	l := newUpgradeLab(t, 3)
-	if err := l.upgrade(testUpgradeImage(t, "cp", "0.2.0"), "--no-reboot"); err != nil {
+	img := testUpgradeImage(t, "cp", "0.2.0")
+	if err := l.upgrade(img, "--until", "activate"); err != nil {
 		t.Fatal(err)
 	}
-	if got := l.takeEvents(); !slices.Equal(got, []string{"cp1 upgrade", "cp2 upgrade", "cp3 upgrade"}) {
+	if got := l.takeEvents(); !slices.Equal(got, []string{"cp1 upgrade", "cp1 activate", "cp2 upgrade", "cp2 activate", "cp3 upgrade", "cp3 activate"}) {
 		t.Errorf("events %q", got)
 	}
-	if n := l.nodes["cp2"]; n.staged != "0.2.0" || n.image != "0.1.0" {
-		t.Errorf("cp2 runs %s with %s staged", n.image, n.staged)
+	if n := l.nodes["cp2"]; n.staged != "0.2.0" || !n.active || n.image != "0.1.0" {
+		t.Errorf("cp2 runs %s with %s staged, active: %v", n.image, n.staged, n.active)
+	}
+	if want := "cp1: activated " + shortOf(t, img) + ", which boots next as chalkos_2+3.efi\n"; !strings.Contains(l.ta.stdout.String(), want) {
+		t.Errorf("output lacks %q:\n%s", want, l.ta.stdout)
+	}
+}
+
+// TestUpgradeUntilStage stages the image on every node of the variant, each sent with the header
+// that stops the node there, and leaves it staged; run again with --until activate, it activates
+// the image without sending it again; node reboot then drains each node, reboots it into the
+// image and uncordons it.
+func TestUpgradeUntilStage(t *testing.T) {
+	l := newUpgradeLab(t, 3)
+	img := testUpgradeImage(t, "w", "0.2.0")
+	if err := l.upgrade(img, "--until", "stage"); err != nil {
+		t.Fatalf("%v\n%s", err, l.ta.stdout)
+	}
+	if got := l.takeEvents(); !slices.Equal(got, []string{"w1 upgrade", "w2 upgrade", "w3 upgrade"}) {
+		t.Errorf("events %q", got)
+	}
+	for _, w := range []string{"w1", "w2", "w3"} {
+		if n := l.nodes[w]; n.staged != "0.2.0" || n.active || !n.header.GetStageOnly() {
+			t.Errorf("%s has %s staged, active: %v, stage only: %v", w, n.staged, n.active, n.header.GetStageOnly())
+		}
+	}
+	out := l.ta.stdout.String()
+	if !strings.Contains(out, "w1: installed "+shortOf(t, img)+", staged as .staged-chalkos_2.efi\n") || !strings.Contains(out, "staged "+shortOf(t, img)+" on 3 nodes; chalkctl node activate makes it boot next\n") {
+		t.Errorf("output:\n%s", out)
+	}
+	if err := l.upgrade(img, "--nodes", "w1", "--until", "activate"); err != nil {
+		t.Fatalf("%v\n%s", err, l.ta.stdout)
+	}
+	if got := l.takeEvents(); !slices.Equal(got, []string{"w1 activate"}) {
+		t.Errorf("events %q, want w1's image activated without sending it again", got)
+	}
+	if err := l.run("node", "reboot", "w1"); err != nil {
+		t.Fatalf("%v\n%s", err, l.ta.stdout)
+	}
+	if got := l.takeEvents(); !slices.Equal(got, []string{"w1 drain", "w1 reboot", "w1 uncordon"}) {
+		t.Errorf("events %q", got)
+	}
+	if v := l.images()["w1"]; v != "0.2.0" {
+		t.Errorf("w1 runs %s", v)
+	}
+	for _, args := range [][]string{{"upgrade", "--until", "boot"}, {"upgrade", "--rollback", "--until", "stage"}} {
+		if err := l.run(args...); !errors.Is(err, cli.ErrUsage) {
+			t.Errorf("%q = %v, want a usage error", args, err)
+		}
+	}
+}
+
+// TestNodeActivate activates the image the inventory names for the node, staged there, and says
+// that node reboot boots it; asked again, it says the image boots next already. A node without
+// that image staged refuses.
+func TestNodeActivate(t *testing.T) {
+	l := newUpgradeLab(t, 1)
+	img := testUpgradeImage(t, "w", "0.2.0")
+	l.useInventory(t, map[string]string{"w": img})
+	activate := func(name string) error {
+		return l.ta.run(context.Background(), []string{"node", "activate", name, "--inventory", l.inventory, "--address", l.addrs[name]})
+	}
+	if err := activate("w1"); err == nil || !strings.Contains(err.Error(), "no image is staged") {
+		t.Errorf("activate without a staged image = %v", err)
+	}
+	if err := l.run("upgrade", "--nodes", "w1", "--until", "stage"); err != nil {
+		t.Fatalf("%v\n%s", err, l.ta.stdout)
+	}
+	l.takeEvents()
+	l.ta.stdout.Reset()
+	if err := activate("w1"); err != nil {
+		t.Fatal(err)
+	}
+	if want := "w1: activated " + shortOf(t, img) + ", which boots next as chalkos_2+3.efi\nw1: chalkctl node reboot w1 boots it\n"; l.ta.stdout.String() != want {
+		t.Errorf("output %q, want %q", l.ta.stdout, want)
+	}
+	if err := activate("w1"); err != nil || !strings.Contains(l.ta.stdout.String(), "w1: "+shortOf(t, img)+" boots next already, as chalkos_2+3.efi\n") {
+		t.Errorf("activate again = %v:\n%s", err, l.ta.stdout)
+	}
+	if got := l.takeEvents(); !slices.Equal(got, []string{"w1 activate", "w1 activate"}) || !l.nodes["w1"].active {
+		t.Errorf("events %q, w1 active: %v", got, l.nodes["w1"].active)
+	}
+}
+
+// TestNodeReboot reboots a node into the image it boots next, the running one without an image
+// active: without its layers holding it with --no-drain, and else drained first and uncordoned
+// once it is back. A node that falls back from the image it boots stops the command and stays
+// cordoned.
+func TestNodeReboot(t *testing.T) {
+	l := newUpgradeLab(t, 1)
+	if err := l.run("node", "reboot", "w2", "--no-drain"); err != nil {
+		t.Fatalf("%v\n%s", err, l.ta.stdout)
+	}
+	if got := l.takeEvents(); !slices.Equal(got, []string{"w2 reboot"}) {
+		t.Errorf("events %q", got)
+	}
+	if out := l.ta.stdout.String(); !strings.Contains(out, "w2: rebooting into 010101010101\n") || !strings.Contains(out, "w2: runs 010101010101, found healthy\n") {
+		t.Errorf("output:\n%s", out)
+	}
+	// The node answered for the boot before as it rebooted; the command waited for the next.
+	if n := l.nodes["w2"]; n.boots != 1 {
+		t.Errorf("node reboot returned after %d boots of w2", n.boots)
+	}
+	l.unhealthy["0.3.0"] = true
+	img := testUpgradeImage(t, "w", "0.3.0")
+	if err := l.upgrade(img, "--nodes", "w3", "--until", "activate"); err != nil {
+		t.Fatalf("%v\n%s", err, l.ta.stdout)
+	}
+	l.takeEvents()
+	err := l.run("node", "reboot", "w3")
+	if err == nil || !strings.Contains(err.Error(), "w3: its boot of "+shortOf(t, img)+" failed: it fell back to 010101010101; it stays cordoned") {
+		t.Errorf("node reboot into an image that falls back = %v", err)
+	}
+	if got := l.takeEvents(); !slices.Equal(got, []string{"w3 drain", "w3 reboot"}) || !l.cordoned["w3"] {
+		t.Errorf("events %q, w3 cordoned: %v", got, l.cordoned["w3"])
 	}
 }
 
@@ -924,10 +1089,10 @@ func TestUpgradeReportsAStagedImage(t *testing.T) {
 	l := newUpgradeLab(t, 3)
 	img := testUpgradeImage(t, "w", "0.2.0")
 	l.nodes["w1"].alreadyStaged = true
-	if err := l.upgrade(img, "--nodes", "w1", "--no-reboot"); err != nil {
+	if err := l.upgrade(img, "--nodes", "w1", "--until", "activate"); err != nil {
 		t.Fatalf("%v\n%s", err, l.ta.stdout)
 	}
-	if want := "w1: " + shortOf(t, img) + " is staged already, as chalkos_2+3.efi\n"; !strings.Contains(l.ta.stdout.String(), want) {
+	if want := "w1: " + shortOf(t, img) + " is staged already, as .staged-chalkos_2.efi; its config is replaced\n"; !strings.Contains(l.ta.stdout.String(), want) {
 		t.Errorf("output lacks %q:\n%s", want, l.ta.stdout)
 	}
 	if n := l.nodes["w1"]; n.staged != "0.2.0" || n.image != "0.1.0" {
@@ -939,7 +1104,7 @@ func TestUpgradeReportsAStagedImage(t *testing.T) {
 // and its hash tree, as long as the tree's superblock counts them.
 func TestUpgradeWith4KiBVerityBlocks(t *testing.T) {
 	l := newUpgradeLab(t, 3)
-	if err := l.upgrade(testUpgradeImageOfBlocks(t, "cp", "metal", "0.2.0", 4096), "--no-reboot"); err != nil {
+	if err := l.upgrade(testUpgradeImageOfBlocks(t, "cp", "metal", "0.2.0", 4096), "--until", "activate"); err != nil {
 		t.Fatal(err)
 	}
 	// 300 data blocks; the superblock's block, three of digests and their root.
@@ -957,7 +1122,7 @@ func TestUpgradeWithAnOperatorClientFile(t *testing.T) {
 	config := l.ta.writeConfig(t, "ops", pki.RoleOperator, time.Hour, time.Now())
 	l.ta.withoutSecrets(t)
 	l.nodes["n1"].config = "{}"
-	if err := l.upgrade(testUpgradeImage(t, "plain", "0.2.0"), "--config", config, "--no-reboot"); err != nil {
+	if err := l.upgrade(testUpgradeImage(t, "plain", "0.2.0"), "--config", config, "--until", "activate"); err != nil {
 		t.Fatalf("%v\n%s", err, l.ta.stdout)
 	}
 	if n := l.nodes["n1"]; n.staged != "0.2.0" || n.stagedConfig != "" {
@@ -978,7 +1143,7 @@ func TestUpgradeWithAnOperatorClientFile(t *testing.T) {
 func TestUpgradeWithAnOperatorClientFileAlone(t *testing.T) {
 	l := newUpgradeLab(t, 1)
 	config := l.ta.writeConfig(t, "ops", pki.RoleOperator, time.Hour, time.Now())
-	args := []string{"upgrade", "--image", testUpgradeImage(t, "w", "0.2.0"), "--config", config, "--nodes", "w1", "--no-reboot"}
+	args := []string{"upgrade", "--image", testUpgradeImage(t, "w", "0.2.0"), "--config", config, "--nodes", "w1", "--until", "activate"}
 	for name, addr := range l.addrs {
 		args = append(args, "--address", name+"="+addr)
 	}
@@ -1020,7 +1185,7 @@ func TestUpgradeWithholdsConfigANodeDoesNotShow(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "w1 refuses to show its config to these credentials; upgrade --diff") {
 		t.Errorf("upgrade --diff = %v, want w1's refusal named", err)
 	}
-	if err := l.upgrade(img, "--nodes", "w1,w2", "--no-reboot", "--max-unavailable", "2"); err != nil {
+	if err := l.upgrade(img, "--nodes", "w1,w2", "--until", "activate", "--max-unavailable", "2"); err != nil {
 		t.Fatalf("%v\n%s", err, l.ta.stdout)
 	}
 	for _, name := range []string{"w1", "w2"} {
@@ -1073,7 +1238,7 @@ func TestUpgradeAsksTheFirstNodeItInstallsForItsConfig(t *testing.T) {
 	prompts := recordPrompts(l)
 	l.nodes["w1"].image, l.nodes["w1"].root = "0.2.0", rootOf(t, img)
 	l.configErrs = map[string]error{"w2": connect.NewError(connect.CodePermissionDenied, errors.New("GetConfig needs the admin role"))}
-	if err := l.upgrade(img, "--nodes", "w1,w2", "--no-reboot"); err != nil {
+	if err := l.upgrade(img, "--nodes", "w1,w2", "--until", "activate"); err != nil {
 		t.Fatalf("%v\n%s", err, l.ta.stdout)
 	}
 	if asked := l.asked(); asked["w2"] == 0 {
@@ -1123,7 +1288,7 @@ func TestUpgradeAsksNoPasswordOfANodeItDoesNotInstall(t *testing.T) {
 	prompts := recordPrompts(l)
 	l.nodes["w1"].image, l.nodes["w1"].root = "0.2.0", rootOf(t, img)
 	l.nodes["w2"].staged, l.nodes["w2"].stagedRoot, l.nodes["w2"].stagedConfig = "0.2.0", rootOf(t, img), l.inventoryConfig("w2")
-	if err := l.upgrade(img, "--nodes", "w1,w2", "--no-reboot"); err != nil {
+	if err := l.upgrade(img, "--nodes", "w1,w2", "--until", "activate"); err != nil {
 		t.Fatalf("%v\n%s", err, l.ta.stdout)
 	}
 	if len(*prompts) != 0 {
@@ -1200,7 +1365,7 @@ func TestUpgradeNeedsTheImageContract(t *testing.T) {
 	if err := os.RemoveAll(filepath.Join(bare, "schemas")); err != nil {
 		t.Fatal(err)
 	}
-	if err := l.upgrade(bare, "--nodes", "w1", "--no-reboot"); err == nil || !strings.Contains(err.Error(), "has no schemas/") {
+	if err := l.upgrade(bare, "--nodes", "w1", "--until", "activate"); err == nil || !strings.Contains(err.Error(), "has no schemas/") {
 		t.Errorf("an image without schemas: %v", err)
 	}
 }
@@ -1317,7 +1482,7 @@ func TestUpgradeRetriesAFailedImage(t *testing.T) {
 	if err := l.upgrade(img, "--retry-failed"); err == nil || !strings.Contains(err.Error(), "w1: upgrade to "+shortOf(t, img)+" failed: rolled back to 010101010101") {
 		t.Fatalf("a retry of an image that stays unhealthy = %v", err)
 	}
-	if got := l.takeEvents(); !slices.Equal(got, []string{"w1 drain", "w1 upgrade", "w1 reboot"}) {
+	if got := l.takeEvents(); !slices.Equal(got, []string{"w1 upgrade", "w1 drain", "w1 activate", "w1 reboot"}) {
 		t.Errorf("events %q", got)
 	}
 	// Healthy now, as after a transient failure outside the image.
@@ -1406,7 +1571,7 @@ func TestUpgradeStopsAtADrainTimeout(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "pods default/web still run: they did not stop") {
 		t.Fatalf("upgrade = %v", err)
 	}
-	if got := l.takeEvents(); !slices.Equal(got, []string{"w1 drain"}) {
+	if got := l.takeEvents(); !slices.Equal(got, []string{"w1 upgrade", "w1 drain"}) {
 		t.Errorf("events %q", got)
 	}
 }
@@ -1610,7 +1775,7 @@ func (l *upgradeLab) inventoryConfig(name string) string {
 // keeps for the image.
 func TestUpgradeSendsTheConfig(t *testing.T) {
 	l := newUpgradeLab(t, 1)
-	if err := l.upgrade(testUpgradeImage(t, "w", "0.2.0"), "--nodes", "w1", "--no-reboot"); err != nil {
+	if err := l.upgrade(testUpgradeImage(t, "w", "0.2.0"), "--nodes", "w1", "--until", "activate"); err != nil {
 		t.Fatalf("%v\n%s", err, l.ta.stdout)
 	}
 	if got := l.nodes["w1"].stagedConfig; got == "" || got != l.inventoryConfig("w1") {
@@ -1624,16 +1789,16 @@ func TestUpgradeSendsAStagedImageAgainForItsConfig(t *testing.T) {
 	l := newUpgradeLab(t, 1)
 	img := testUpgradeImage(t, "w", "0.2.0")
 	l.nodes["w1"].staged, l.nodes["w1"].stagedRoot, l.nodes["w1"].stagedConfig = "0.2.0", rootOf(t, img), "{}"
-	if err := l.upgrade(img, "--nodes", "w1", "--no-reboot"); err != nil {
+	if err := l.upgrade(img, "--nodes", "w1", "--until", "activate"); err != nil {
 		t.Fatalf("%v\n%s", err, l.ta.stdout)
 	}
-	if got := l.takeEvents(); !slices.Equal(got, []string{"w1 upgrade"}) {
+	if got := l.takeEvents(); !slices.Equal(got, []string{"w1 upgrade", "w1 activate"}) {
 		t.Errorf("events %q, want the image sent again", got)
 	}
 	if got := l.nodes["w1"].stagedConfig; got != l.inventoryConfig("w1") {
 		t.Errorf("w1 keeps the config %q, want the inventory's", got)
 	}
-	if err := l.upgrade(img, "--nodes", "w1", "--no-reboot"); err != nil {
+	if err := l.upgrade(img, "--nodes", "w1", "--until", "activate"); err != nil {
 		t.Fatal(err)
 	}
 	if got := l.takeEvents(); len(got) != 0 {
@@ -1835,7 +2000,7 @@ func (n *upgradeFake) GetConfig(ctx context.Context, req *connect.Request[nodev1
 	case req.Msg.Staged && n.pending != "":
 		text = n.pending
 	case req.Msg.Staged:
-		return nil, connect.NewError(connect.CodeNotFound, errors.New("no image is staged to boot next, and the node holds no pending config"))
+		return nil, connect.NewError(connect.CodeNotFound, errors.New("no image is staged, and the node holds no pending config"))
 	}
 	docs, err := config.Parse(strings.NewReader(text))
 	if err != nil {
@@ -1898,7 +2063,7 @@ func TestUpgradeDiff(t *testing.T) {
 		t.Errorf("output:\n%s", out)
 	}
 	l.ta.stdout.Reset()
-	if err := l.upgrade(img, "--nodes", "w1", "--no-reboot"); err != nil {
+	if err := l.upgrade(img, "--nodes", "w1", "--until", "activate"); err != nil {
 		t.Fatal(err)
 	}
 	if out := l.ta.stdout.String(); !strings.Contains(out, "w1: config unchanged\nw1: installed ") || strings.Contains(out, "when it first boots") {
@@ -2055,7 +2220,7 @@ func TestUpgradeRollbackWithoutAReboot(t *testing.T) {
 	}
 	l.takeEvents()
 	l.ta.stdout.Reset()
-	if err := l.run("upgrade", "--rollback", "--nodes", "w1", "--no-reboot"); err != nil {
+	if err := l.run("upgrade", "--rollback", "--nodes", "w1", "--until", "activate"); err != nil {
 		t.Fatalf("%v\n%s", err, l.ta.stdout)
 	}
 	if got, want := l.takeEvents(), []string{"w1 rollback"}; !slices.Equal(got, want) {
@@ -2149,7 +2314,7 @@ func TestUpgradeRollbackOfAControlPlane(t *testing.T) {
 	if err := l.run("upgrade", "--rollback", "--nodes", "cp1"); err != nil {
 		t.Fatalf("%v\n%s", err, l.ta.stdout)
 	}
-	if got, want := l.takeEvents(), []string{"cp1 members", "cp1 rollback", "cp1 drain", "cp1 reboot", "cp1 uncordon"}; !slices.Equal(got, want) {
+	if got, want := l.takeEvents(), []string{"cp1 members", "cp1 drain", "cp1 rollback", "cp1 reboot", "cp1 uncordon"}; !slices.Equal(got, want) {
 		t.Errorf("events %q, want %q", got, want)
 	}
 	if v := l.images()["cp1"]; v != "0.1.0" {

@@ -158,8 +158,10 @@ func bootLines(b *nodev1.BootStatus) []string {
 	switch {
 	case b.Staged != nil && bytes.Equal(b.GetRollback().GetRootHash(), b.Staged.GetRootHash()):
 		lines = append(lines, fmt.Sprintf("rollback to %s staged; it boots next", bootImageName(b.Staged)))
+	case b.Staged != nil && b.StagedState == nodev1.SlotState_SLOT_STATE_STAGED:
+		lines = append(lines, fmt.Sprintf("upgrade to %s staged; node activate makes it boot next", bootImageName(b.Staged)))
 	case b.Staged != nil:
-		lines = append(lines, fmt.Sprintf("upgrade to %s installed; it boots next", bootImageName(b.Staged)))
+		lines = append(lines, fmt.Sprintf("upgrade to %s active; it boots next", bootImageName(b.Staged)))
 	}
 	if b.Previous != nil {
 		lines = append(lines, fmt.Sprintf("previous image %s (upgrade --rollback boots it)", bootImageName(b.Previous)))
@@ -286,9 +288,13 @@ func (c *cluster) imageLine(name string, boot *nodev1.BootStatus) string {
 		return ""
 	}
 	line := fmt.Sprintf("its store's root hash is %x, not that of the image %s the inventory names, %s", running, nc.ImageName, md.RootHash)
-	// After an upgrade with --no-reboot the image waits for the node's next boot.
+	// After an upgrade --until stage the image waits for its activation, after --until activate for
+	// the node's next boot.
 	if want, err := hex.DecodeString(md.RootHash); err == nil && bytes.Equal(boot.GetStaged().GetRootHash(), want) {
-		return fmt.Sprintf("%s; it has %s staged, which it boots with its next reboot: chalkctl reboot %s", line, bootImageName(boot.GetStaged()), name)
+		if boot.GetStagedState() == nodev1.SlotState_SLOT_STATE_STAGED {
+			return fmt.Sprintf("%s; it has %s staged: chalkctl node activate %s makes it boot next", line, bootImageName(boot.GetStaged()), name)
+		}
+		return fmt.Sprintf("%s; it has %s active, which it boots with its next reboot: chalkctl node reboot %s", line, bootImageName(boot.GetStaged()), name)
 	}
 	return fmt.Sprintf("%s; chalkctl upgrade --nodes %s installs that image", line, name)
 }

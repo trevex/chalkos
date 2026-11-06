@@ -46,7 +46,7 @@ $ chalkctl install cp1 \
     ```
 
 ```SH
-chalkctl reboot w1
+chalkctl node reboot w1
 ```
 
 ```sh

@@ -30,7 +30,7 @@ func TestUnrevokedLine(t *testing.T) {
 
 // reregister is the line that tells how the old node registers its Node again.
 func reregister(name string) string {
-	return "the old " + name + "'s kubelet does not register its Node again by itself: reboot it with chalkctl reboot " + name +
+	return "the old " + name + "'s kubelet does not register its Node again by itself: reboot it with chalkctl node reboot " + name + " --no-drain" +
 		", or restart its kubelet; a node installed afresh as " + name + " registers as usual"
 }
 

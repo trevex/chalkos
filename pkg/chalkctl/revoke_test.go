@@ -105,7 +105,7 @@ func TestNodeUnrevoke(t *testing.T) {
 	if err := ta.run(ctx, ta.args([]string{"node", "unrevoke", "w2", "--via", "n1", "--force"}, addr)); err != nil {
 		t.Fatal(err)
 	}
-	want := "unrevoked node w2; its certificates from before " + future.Format(time.RFC3339) + " work again until they expire: the os-ca and kubernetes-ca were not rotated since\nthe old w2's kubelet does not register its Node again by itself: reboot it with chalkctl reboot w2, " +
+	want := "unrevoked node w2; its certificates from before " + future.Format(time.RFC3339) + " work again until they expire: the os-ca and kubernetes-ca were not rotated since\nthe old w2's kubelet does not register its Node again by itself: reboot it with chalkctl node reboot w2 --no-drain, " +
 		"or restart its kubelet; a node installed afresh as w2 registers as usual\n"
 	if got := ta.stdout.String(); got != want {
 		t.Errorf("forced: stdout = %q, want %q", got, want)

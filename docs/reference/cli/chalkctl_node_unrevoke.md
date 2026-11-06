@@ -18,7 +18,8 @@ installed afresh under the name then joins as usual. See
 
 --force unrevokes the node anyway, and its old certificates work again until they expire. The old
 node does not come back by itself: its kubelet registers its Node once as it starts, so reboot it
-with chalkctl reboot, or restart its kubelet.
+with chalkctl node reboot --no-drain, as its Node is gone and holds nothing to drain, or restart
+its kubelet.
 
 A control plane unrevokes the node: --via, or the first one that answers. The command needs an
 admin client file or the secrets file.
@@ -43,9 +44,9 @@ chalkctl node unrevoke w1
 
 # Let the old w1 back in, certificates and all.
 chalkctl node unrevoke w1 --force
-chalkctl reboot w1
+chalkctl node reboot w1 --no-drain
 ```
 
 ## See also
 
-- [chalkctl node](chalkctl_node.md): Manage a node's access and show its diagnostics and routes
+- [chalkctl node](chalkctl_node.md): Manage a node's access, activate its staged image, reboot it and show its diagnostics and routes

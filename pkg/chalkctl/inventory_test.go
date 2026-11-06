@@ -473,8 +473,9 @@ func TestCommandsThatNeedAnInventory(t *testing.T) {
 }
 
 // TestImageLineOfAStagedImage advises a reboot to a node that has its image in the inventory
-// staged, by its root hash; another image staged is no reason to reboot. It says why the store is
-// not compared when the image's directory cannot be read.
+// active, by its root hash, and an activation to one that has it staged alone; another image in
+// the inactive slot is no reason to reboot. It says why the store is not compared when the image's
+// directory cannot be read.
 func TestImageLineOfAStagedImage(t *testing.T) {
 	dir := t.TempDir()
 	c, err := loadInventory(context.Background(), writeInventory(t, dir))
@@ -484,11 +485,15 @@ func TestImageLineOfAStagedImage(t *testing.T) {
 	other := bytes.Repeat([]byte{0xcd}, 32)
 	want, _ := hex.DecodeString(testRootHash)
 	running := &nodev1.BootImage{RootHash: other, Generation: 1}
-	staged := &nodev1.BootStatus{Running: running, Staged: &nodev1.BootImage{RootHash: want, Generation: 2, Tag: "v1.5.0"}}
-	if got := c.imageLine("n1", staged); !strings.Contains(got, "it has "+testRootHash[:12]+" (v1.5.0) staged, which it boots with its next reboot: chalkctl reboot n1") {
+	active := &nodev1.BootStatus{Running: running, Staged: &nodev1.BootImage{RootHash: want, Generation: 2, Tag: "v1.5.0"}, StagedState: nodev1.SlotState_SLOT_STATE_ACTIVE}
+	if got := c.imageLine("n1", active); !strings.Contains(got, "it has "+testRootHash[:12]+" (v1.5.0) active, which it boots with its next reboot: chalkctl node reboot n1") {
+		t.Errorf("the line of an active image = %q", got)
+	}
+	staged := &nodev1.BootStatus{Running: running, Staged: active.Staged, StagedState: nodev1.SlotState_SLOT_STATE_STAGED}
+	if got := c.imageLine("n1", staged); !strings.Contains(got, "it has "+testRootHash[:12]+" (v1.5.0) staged: chalkctl node activate n1 makes it boot next") {
 		t.Errorf("the line of a staged image = %q", got)
 	}
-	if got := c.imageLine("n1", &nodev1.BootStatus{Running: running, Staged: &nodev1.BootImage{RootHash: bytes.Repeat([]byte{0xee}, 32), Generation: 2}}); strings.Contains(got, "chalkctl reboot") || !strings.Contains(got, "chalkctl upgrade --nodes n1 installs that image") {
+	if got := c.imageLine("n1", &nodev1.BootStatus{Running: running, Staged: &nodev1.BootImage{RootHash: bytes.Repeat([]byte{0xee}, 32), Generation: 2}, StagedState: nodev1.SlotState_SLOT_STATE_ACTIVE}); strings.Contains(got, "node reboot") || !strings.Contains(got, "chalkctl upgrade --nodes n1 installs that image") {
 		t.Errorf("the line of another image staged = %q", got)
 	}
 	if err := os.Remove(filepath.Join(dir, "images", "test-metal", "metadata.json")); err != nil {

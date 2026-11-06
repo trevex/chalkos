@@ -41,8 +41,7 @@ chalkctl kubeconfig --secrets secrets.age
 - [chalkctl install](chalkctl_install.md): Install a node that waits in maintenance mode
 - [chalkctl kubeconfig](chalkctl_kubeconfig.md): Write an admin kubeconfig
 - [chalkctl logs](chalkctl_logs.md): Show a node's journal
-- [chalkctl node](chalkctl_node.md): Manage a node's access and show its diagnostics and routes
-- [chalkctl reboot](chalkctl_reboot.md): Reboot a node
+- [chalkctl node](chalkctl_node.md): Manage a node's access, activate its staged image, reboot it and show its diagnostics and routes
 - [chalkctl recovery-key](chalkctl_recovery-key.md): Print a node's recovery key
 - [chalkctl rotate](chalkctl_rotate.md): Rotate os-ca, node-ca, kubernetes-ca, service-account-key or encryption-key
 - [chalkctl status](chalkctl_status.md): Show an installed node's status

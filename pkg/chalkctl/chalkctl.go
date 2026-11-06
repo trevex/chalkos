@@ -57,8 +57,8 @@ func newCommand(a *app) *cobra.Command {
 
 	gen := cli.Group(&cobra.Command{Use: "gen", Short: "Generate files of a cluster", Long: genLong, Example: genExample})
 	gen.AddCommand(a.genSecretsCommand())
-	node := cli.Group(&cobra.Command{Use: "node", Short: "Manage a node's access and show its diagnostics and routes", Long: nodeLong, Example: nodeExample})
-	node.AddCommand(a.nodeRenewCommand(), a.nodeDiagCommand())
+	node := cli.Group(&cobra.Command{Use: "node", Short: "Manage a node's access, activate its staged image, reboot it and show its diagnostics and routes", Long: nodeLong, Example: nodeExample})
+	node.AddCommand(a.nodeRenewCommand(), a.nodeDiagCommand(), a.nodeActivateCommand(), a.nodeRebootCommand())
 	config := cli.Group(&cobra.Command{Use: "config", Short: "Manage client files", Long: configLong, Example: configExample})
 	config.AddCommand(a.configNewCommand())
 	storage := cli.Group(&cobra.Command{Use: "storage", Short: "Manage a node's volumes", Long: storageLong, Example: storageExample})
@@ -71,7 +71,6 @@ func newCommand(a *app) *cobra.Command {
 		a.applyConfigCommand(),
 		a.statusCommand(),
 		a.logsCommand(),
-		a.rebootCommand(),
 		a.rotateCommand(),
 		a.upgradeCommand(),
 		a.validateCommand(),

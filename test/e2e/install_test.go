@@ -143,7 +143,7 @@ func TestInstallInPlace(t *testing.T) {
 	}
 
 	// After a reboot the new volume opens like the others, with its fallback keyslot.
-	if _, err := chalkctl(t, n, "added", "reboot", "chalklab"); err != nil {
+	if _, err := chalkctl(t, n, "added", "node", "reboot", "chalklab", "--no-drain"); err != nil {
 		t.Fatal(err)
 	}
 	assertFacts(t, readFacts(t, n.vm, 5*time.Minute), map[string]string{

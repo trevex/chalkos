@@ -96,17 +96,15 @@ type ApplyFlags interface {
 	None(name string) error
 }
 
-// Upgrade is a plugin whose layer takes part in chalkctl upgrade. chalkctl asks, for a node, the
-// plugins of the layers its Info names.
+// Upgrade is a plugin whose layer takes part in the reboot of a node that chalkctl upgrade and
+// chalkctl node reboot share. chalkctl asks, for a node, the plugins of the layers its Info names.
 type Upgrade interface {
 	// UpgradeRole reads the node's part in the layer's cluster from its service on conn.
 	UpgradeRole(ctx context.Context, conn *client.Conn) (UpgradeRole, error)
 	// NoCoordinator is the error of a run that must reach the layer's coordinators for the node,
 	// a member, while the cluster has none to ask.
 	NoCoordinator(name string) error
-	// BeforeInstall runs before a node that reboots is sent its image.
-	BeforeInstall(ctx context.Context, u Upgrading, name string, role UpgradeRole) error
-	// BeforeReboot runs once the node has its image, before it reboots.
+	// BeforeReboot holds the node before it reboots, as into the image an upgrade activated.
 	BeforeReboot(ctx context.Context, u Upgrading, name string, role UpgradeRole) error
 	// Ready checks, from the layer's service on conn, that the node serves its cluster again.
 	Ready(ctx context.Context, conn *client.Conn, role UpgradeRole) error
@@ -114,11 +112,11 @@ type Upgrade interface {
 	After(ctx context.Context, u Upgrading, name string, role UpgradeRole) error
 }
 
-// UpgradeFlags is a plugin that adds flags to chalkctl upgrade, which its Upgrade hooks read.
-// chalkctl asks every compiled plugin.
+// UpgradeFlags is a plugin that adds flags to chalkctl upgrade and chalkctl node reboot, which its
+// Upgrade hooks read. chalkctl asks every compiled plugin.
 type UpgradeFlags interface {
-	// UpgradeFlags registers the layer's flags of chalkctl upgrade on fs and returns where their
-	// values go, which Upgrading.Flags gives the layer's hooks during a run.
+	// UpgradeFlags registers the layer's flags of the command on fs and returns where their values
+	// go, which Upgrading.Flags gives the layer's hooks during a run.
 	UpgradeFlags(fs *pflag.FlagSet) any
 }
 
@@ -144,7 +142,7 @@ type UpgradeRole struct {
 	Member bool
 }
 
-// Upgrading is a run of chalkctl upgrade, as a plugin's hooks use it.
+// Upgrading is a run of chalkctl upgrade or chalkctl node reboot, as a plugin's hooks use it.
 type Upgrading interface {
 	// Say prints a line of the run's progress.
 	Say(format string, args ...any)

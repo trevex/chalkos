@@ -73,7 +73,7 @@ func TestApplyConfigStagedDryRunHoldsNothing(t *testing.T) {
 	if err := l.applyConfig("w1", "--staged", "--dry-run"); err != nil {
 		t.Fatal(err)
 	}
-	want := "w1: no image is staged to boot next; config " + versionOf(l.inventoryConfig("w1")) + " would be held pending, unchecked, for the next upgrade, which checks it against its image\n"
+	want := "w1: no image is staged; config " + versionOf(l.inventoryConfig("w1")) + " would be held pending, unchecked, for the next upgrade, which checks it against its image\n"
 	if out := l.ta.stdout.String(); !strings.HasSuffix(out, want) {
 		t.Errorf("stdout = %q, want it to end with %q", out, want)
 	}
@@ -92,10 +92,10 @@ func TestUpgradeNamesThePendingConfig(t *testing.T) {
 	n := l.nodes["w1"]
 	n.pending = "{}"
 	config := l.ta.writeConfig(t, "ops", pki.RoleOperator, time.Hour, time.Now())
-	if err := l.upgrade(img, "--nodes", "w1", "--no-reboot", "--config", config); err != nil {
+	if err := l.upgrade(img, "--nodes", "w1", "--until", "activate", "--config", config); err != nil {
 		t.Fatalf("%v\n%s", err, l.ta.stdout)
 	}
-	if line := ", which boots next as chalkos_2+3.efi\nw1: the image took the pending config " + versionOf("{}") + ", which it checked first\n"; !strings.Contains(l.ta.stdout.String(), line) {
+	if line := ", staged as .staged-chalkos_2.efi\nw1: the image took the pending config " + versionOf("{}") + ", which it checked first\n"; !strings.Contains(l.ta.stdout.String(), line) {
 		t.Errorf("output lacks %q:\n%s", line, l.ta.stdout)
 	}
 	if n.stagedConfig != "{}" || n.pending != "" {
@@ -103,7 +103,7 @@ func TestUpgradeNamesThePendingConfig(t *testing.T) {
 	}
 	n.staged, n.stagedRoot, n.stagedConfig, n.pending = "", nil, "", "{}"
 	l.ta.stdout.Reset()
-	if err := l.upgrade(img, "--nodes", "w1", "--no-reboot"); err != nil {
+	if err := l.upgrade(img, "--nodes", "w1", "--until", "activate"); err != nil {
 		t.Fatalf("%v\n%s", err, l.ta.stdout)
 	}
 	if line := "w1: the inventory's config replaced the pending config " + versionOf("{}") + "\n"; !strings.Contains(l.ta.stdout.String(), line) {
@@ -123,7 +123,7 @@ func TestUpgradeNotesAPendingConfigKept(t *testing.T) {
 	n := l.nodes["w1"]
 	n.pending, n.keepPending = "{}", true
 	config := l.ta.writeConfig(t, "ops", pki.RoleOperator, time.Hour, time.Now())
-	if err := l.upgrade(img, "--nodes", "w1", "--no-reboot", "--config", config); err != nil {
+	if err := l.upgrade(img, "--nodes", "w1", "--until", "activate", "--config", config); err != nil {
 		t.Fatalf("%v\n%s", err, l.ta.stdout)
 	}
 	if line := "w1: keeps the pending config " + versionOf("{}") + " for a later upgrade\n"; !strings.Contains(l.ta.stdout.String(), line) || strings.Contains(l.ta.stdout.String(), "took the pending config") {

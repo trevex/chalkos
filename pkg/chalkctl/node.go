@@ -144,34 +144,3 @@ func (a *app) logs(ctx context.Context, f logsFlags, pos []string) error {
 	}
 	return nil
 }
-
-func (a *app) rebootCommand() *cobra.Command {
-	var f nodePinFlags
-	cmd := a.command(&cobra.Command{
-		Use:     "reboot <node>",
-		Short:   "Reboot a node",
-		Long:    rebootLong,
-		Example: rebootExample,
-		Args:    cli.ExactArgs(1),
-	}, func(a *app, ctx context.Context, pos []string) error { return a.reboot(ctx, f, pos) })
-	f.node.registerClient(cmd.Flags())
-	f.pin.register(cmd.Flags())
-	return cmd
-}
-
-func (a *app) reboot(ctx context.Context, f nodePinFlags, pos []string) error {
-	t, err := a.clientTarget(ctx, f.node, pos[0])
-	if err != nil {
-		return err
-	}
-	conn, err := a.dialEither(t, f.pin)
-	if err != nil {
-		return err
-	}
-	defer conn.Close()
-	if _, err := conn.Reboot(ctx, connect.NewRequest(&nodev1.RebootRequest{})); err != nil {
-		return err
-	}
-	fmt.Fprintf(a.stdout, "%s reboots\n", t.name)
-	return nil
-}

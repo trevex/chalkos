@@ -32,6 +32,7 @@ import (
 	"github.com/trevex/chalkos/pkg/nodeconfig"
 	"github.com/trevex/chalkos/pkg/pki"
 	"github.com/trevex/chalkos/pkg/storage"
+	"github.com/trevex/chalkos/pkg/uki/ukitest"
 )
 
 // testApp is chalkctl with the test cluster's inventory and a plaintext secrets file in a
@@ -304,6 +305,10 @@ func installedNode(t *testing.T, ta *testApp, recorded []byte) (*chalkd.Server, 
 	s.Loader.Cmdline = filepath.Join(root, "cmdline")
 	s.Paths.Cmdline = s.Loader.Cmdline
 	writeFile(t, s.Loader.Cmdline, "init=/x usrhash="+strings.Repeat("ab", 32)+"\n")
+	// The ESP holds the UKI the node booted the image from, uncounted, so its boot is found
+	// healthy, as after an install.
+	s.Paths.ESP, s.Paths.EFIVars = filepath.Join(root, "esp"), filepath.Join(root, "efivars")
+	writeFile(t, filepath.Join(s.Paths.ESP, "EFI", "Linux", "chalkos_1.efi"), string(ukitest.UKI(map[string]string{"IMAGE_ID": "chalkos", "IMAGE_VERSION": ""}, "init=/x usrhash="+strings.Repeat("ab", 32))))
 	if err := slot.Write(slotOf(t, s), slot.Stored{Identity: recorded}); err != nil {
 		t.Fatal(err)
 	}

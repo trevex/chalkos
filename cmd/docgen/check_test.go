@@ -90,7 +90,7 @@ func TestInvocationsOfTheGoodPage(t *testing.T) {
 		"chalklab status",
 		"chalkctl install cp1 --fingerprint 00ff",
 		"chalkctl completion bash",
-		"chalkctl reboot w1",
+		"chalkctl node reboot w1",
 		"chalkctl status cp8",
 		"chalkctl status cp9",
 		"chalklab status",

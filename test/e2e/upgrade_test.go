@@ -143,7 +143,7 @@ func TestUpgrade(t *testing.T) {
 		t.Fatalf("apply-config --staged replacing the pending config: %v\n%s", err, out)
 	}
 	out, err = chalkctlWith(t, nil, "base", operator, upgradeAsOperator...)
-	if err != nil || !strings.Contains(out, "chalklab: installed "+nextHash[:12]+", which boots next as chalkos_4+3.efi\nchalklab: the image took the pending config "+pending[1]+", which it checked first\n") {
+	if err != nil || !strings.Contains(out, "chalklab: installed "+nextHash[:12]+", staged as .staged-chalkos_4.efi\nchalklab: the image took the pending config "+pending[1]+", which it checked first\n") || !strings.Contains(out, "chalklab: activated "+nextHash[:12]+", which boots next as chalkos_4+3.efi\n") {
 		t.Fatalf("upgrade back to %s with the pending config: %v", nextHash[:12], err)
 	}
 	assertFacts(t, readFacts(t, n.vm, time.Minute), map[string]string{"store_label": "store_" + nextHash[:16], "store_partition": "5", "state_boots": "5", "var_boots": "4"})
@@ -155,7 +155,7 @@ func TestUpgrade(t *testing.T) {
 	failed := time.Now()
 	out, err = chalkctl(t, nil, "base", "upgrade", "--image", badImage, "--nodes", "chalklab", "--address", "chalklab="+n.addr, "--timeout", "10m")
 	if err == nil || !strings.Contains(out, `chalklab: config 0 added, 4 removed (Secret "registry", Farewell "bye", Mirror "e2e", Registry "e2e"), 0 changed`+"\n") ||
-		!strings.Contains(out, "chalklab: installed "+badHash[:12]+", which boots next as chalkos_5+1.efi") ||
+		!strings.Contains(out, "chalklab: activated "+badHash[:12]+", which boots next as chalkos_5+1.efi") ||
 		!strings.Contains(out, "chalklab: upgrade to "+badHash[:12]+" failed: rolled back to "+nextHash[:12]) || !strings.Contains(out, "units failed: chalktest-broken.service") {
 		t.Fatalf("upgrade to %s: %v", badHash[:12], err)
 	}

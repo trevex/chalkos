@@ -184,7 +184,7 @@ func TestKubernetesCluster(t *testing.T) {
 		cp1 := nodes["cp1"]
 		cp1.vm.Console.Skip()
 		requested := time.Now()
-		if _, err := chalkctl(t, cp1, "base", "reboot", "cp1"); err != nil {
+		if _, err := chalkctl(t, cp1, "base", "node", "reboot", "cp1", "--no-drain"); err != nil {
 			t.Fatal(err)
 		}
 		rebootCtx, cancel := context.WithTimeout(ctx, 10*time.Minute)
@@ -352,7 +352,7 @@ func revocation(t *testing.T, ctx context.Context, nodes map[string]*node, kubec
 		t.Errorf("w1's Node after the unrevoke, before w1 rebooted: %s, want not found", describe(err))
 	}
 	w1.vm.Console.Skip()
-	if _, err := chalkctl(t, w1, "base", "reboot", "w1"); err != nil {
+	if _, err := chalkctl(t, w1, "base", "node", "reboot", "w1", "--no-drain"); err != nil {
 		t.Fatal(err)
 	}
 	rebootCtx, cancel := context.WithTimeout(ctx, 10*time.Minute)

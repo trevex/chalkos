@@ -47,16 +47,16 @@ func viaControlPlanes(u layer.Upgrading, prefer string, next func(error) bool, f
 	return err
 }
 
-// upgradeFlags are the Kubernetes layer's flags of chalkctl upgrade.
+// upgradeFlags are the Kubernetes layer's flags of chalkctl upgrade and chalkctl node reboot.
 type upgradeFlags struct {
 	// allowDowntime is --allow-downtime, deleteEmptyDir --delete-emptydir-data.
 	allowDowntime, deleteEmptyDir bool
 }
 
-// UpgradeFlags registers --allow-downtime and --delete-emptydir-data.
+// UpgradeFlags registers --allow-downtime and --delete-emptydir-data of upgrade and node reboot.
 func (p *Plugin) UpgradeFlags(fs *pflag.FlagSet) any {
 	f := &upgradeFlags{}
-	fs.BoolVar(&f.allowDowntime, "allow-downtime", false, "upgrade one or two control planes, whose etcd loses its quorum and API server is down while one reboots")
+	fs.BoolVar(&f.allowDowntime, "allow-downtime", false, "reboot a control plane of a cluster with one or two, whose etcd loses its quorum and API server is down while it reboots")
 	fs.BoolVar(&f.deleteEmptyDir, "delete-emptydir-data", false, "evict pods with emptyDir volumes too, deleting their data")
 	return f
 }
@@ -69,21 +69,15 @@ func (p *Plugin) flagsOf(u layer.Upgrading) upgradeFlags {
 	return upgradeFlags{}
 }
 
-// BeforeInstall waits for etcd to keep its quorum while a control plane reboots, and drains a
-// worker of the cluster.
-func (p *Plugin) BeforeInstall(ctx context.Context, u layer.Upgrading, name string, role layer.UpgradeRole) error {
+// BeforeReboot waits for etcd to keep its quorum while a control plane reboots, then drains a node
+// of the cluster.
+func (p *Plugin) BeforeReboot(ctx context.Context, u layer.Upgrading, name string, role layer.UpgradeRole) error {
 	if role.Coordinator {
-		return quorum(ctx, u, p.flagsOf(u).allowDowntime, name)
+		if err := quorum(ctx, u, p.flagsOf(u).allowDowntime, name); err != nil {
+			return err
+		}
 	}
 	if role.Member {
-		return drain(ctx, u, p.flagsOf(u).deleteEmptyDir, name)
-	}
-	return nil
-}
-
-// BeforeReboot drains a control plane of the cluster, once it has its image.
-func (p *Plugin) BeforeReboot(ctx context.Context, u layer.Upgrading, name string, role layer.UpgradeRole) error {
-	if role.Coordinator && role.Member {
 		return drain(ctx, u, p.flagsOf(u).deleteEmptyDir, name)
 	}
 	return nil

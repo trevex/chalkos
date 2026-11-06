@@ -30,8 +30,9 @@ planned with the facts as they are. With --staged, the staged image checks the c
 own chalkd and renderers, and the plan has no outputs and no effects: that image renders its
 outputs and takes its effects when it boots.
 
-Each image on a node keeps its own config. --staged delivers the config for the image staged to
-boot next, as an upgrade with --no-reboot leaves it, and nothing restarts. Without --staged,
+Each image on a node keeps its own config. --staged delivers the config for the image in the
+node's inactive slot, staged by upgrade --until stage or active after upgrade --until activate,
+and nothing restarts. Without --staged,
 chalkctl warns of a staged image, whose config stays as it is. A config for the running image that
 adds storage the staged image's config lacks is refused: deliver the config with --staged first.
 
@@ -40,7 +41,7 @@ of any config held before. chalkctl checks it against the node's image in the in
 only parses it, as no image is there to check it against. The next upgrade that carries no config
 of its own, such as an operator's, gives the image the pending config in place of the running one,
 and the image checks it before the node installs anything. An upgrade that carries config replaces
-it. Either way the node drops the pending config once the image is staged to boot next; an upgrade
+it. Either way the node drops the pending config once the image is staged; an upgrade
 that fails keeps it, and an image's refusal names it. A pending config is kept without the fallback
 secret, so an upgrade with one that adds an encrypted volume needs the config from the inventory.
 --staged --dry-run says the config would be held pending and keeps nothing. --staged --discard
@@ -99,7 +100,7 @@ file.
 | `--password-file`{ #flag-password-file } | string | — | File holding the password of a node whose fallback is a password. |
 | `--rollback`{ #flag-rollback } | boolean | `false` | Deliver the node's previous config again, the one its image ran before the last delivery, instead of the inventory's. |
 | `--secrets`{ #flag-secrets } | string | — | Secrets file, encrypted with age or not, or - to read it from standard input. |
-| `--staged`{ #flag-staged } | boolean | `false` | Deliver the config for the image staged to boot next instead, which checks it with its own chalkd after chalkctl checks it against the node's image in the inventory; without a staged image, the node holds it pending, unchecked, for the next upgrade, which checks it against its image; with --dry-run, the staged image checks it and nothing is kept; without one, --dry-run says what the node would hold pending. |
+| `--staged`{ #flag-staged } | boolean | `false` | Deliver the config for the image staged in the inactive slot instead, active or not, which checks it with its own chalkd after chalkctl checks it against the node's image in the inventory; without a staged image, the node holds it pending, unchecked, for the next upgrade, which checks it against its image; with --dry-run, the staged image checks it and nothing is kept; without one, --dry-run says what the node would hold pending. |
 | `--try`{ #flag-try } | duration | `0s` | Apply the config on trial for the duration, from 10s to 24h: the node rolls it back by itself unless chalkctl confirms it over a new connection once the node is healthy. |
 
 ## Examples
@@ -117,8 +118,8 @@ chalkctl apply-config w1 --secrets secrets.age --diff
 # Have w1 and w2 check their config, renderers included, and show what a delivery would do.
 chalkctl apply-config w1 w2 --secrets secrets.age --dry-run
 
-# Deliver w1's config for the image an upgrade with --no-reboot staged, or without one hold it
-# pending for w1's next upgrade.
+# Deliver w1's config for the image an upgrade staged, or without one hold it pending for w1's
+# next upgrade.
 chalkctl apply-config w1 --secrets secrets.age --staged
 
 # Drop the config w1 holds pending.

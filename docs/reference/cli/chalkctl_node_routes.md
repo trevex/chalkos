@@ -50,4 +50,4 @@ chalkctl node routes r1 --protocol bgp --table all
 
 ## See also
 
-- [chalkctl node](chalkctl_node.md): Manage a node's access and show its diagnostics and routes
+- [chalkctl node](chalkctl_node.md): Manage a node's access, activate its staged image, reboot it and show its diagnostics and routes

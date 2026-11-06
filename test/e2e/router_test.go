@@ -689,7 +689,7 @@ func TestRouterLab(t *testing.T) {
 		waitFor(t, time.Minute, "r1's policy routing", policyHeld)
 		// A boot of r1 brings them back, with the session in fabric and no failed unit.
 		start = time.Now()
-		if out, err := chalkctl(t, nodes["r1"], "vrf", "reboot", "r1"); err != nil {
+		if out, err := chalkctl(t, nodes["r1"], "vrf", "node", "reboot", "r1", "--no-drain"); err != nil {
 			t.Fatalf("reboot of r1: %v\n%s", err, out)
 		}
 		waitFor(t, 5*time.Minute, "r1's session with r2 in fabric after its boot", func() error { return inFabric("r1", "fabric", start) })
@@ -988,7 +988,7 @@ func TestRouterLab(t *testing.T) {
 		// the server. A renewal before the boot ends at most two minutes after start; one after the
 		// boot, which takes half a minute at least, ends later than 140 s after it.
 		start := time.Now()
-		if out, err := chalkctl(t, nodes["r1"], "dhcp", "reboot", "r1"); err != nil {
+		if out, err := chalkctl(t, nodes["r1"], "dhcp", "node", "reboot", "r1", "--no-drain"); err != nil {
 			t.Fatalf("reboot of r1: %v\n%s", err, out)
 		}
 		waitFor(t, 5*time.Minute, "r1's DHCP server of lan after its boot", serving)

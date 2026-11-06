@@ -90,7 +90,8 @@ https://trevex.github.io/chalkos/how-it-works/kubernetes/certificates/#revoking-
 
 --force unrevokes the node anyway, and its old certificates work again until they expire. The old
 node does not come back by itself: its kubelet registers its Node once as it starts, so reboot it
-with chalkctl reboot, or restart its kubelet.
+with chalkctl node reboot --no-drain, as its Node is gone and holds nothing to drain, or restart
+its kubelet.
 
 A control plane unrevokes the node: --via, or the first one that answers. The command needs an
 admin client file or the secrets file.`
@@ -100,4 +101,4 @@ const nodeUnrevokeExample = `  # Reuse the name w1 once the rotations of os-ca a
 
   # Let the old w1 back in, certificates and all.
   chalkctl node unrevoke w1 --force
-  chalkctl reboot w1`
+  chalkctl node reboot w1 --no-drain`

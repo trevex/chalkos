@@ -99,7 +99,7 @@ func (a *app) applyConfigCommand() *cobra.Command {
 		f.payloadFlags = strings.Join(payloadFlags, " or ")
 		fs.BoolVar(&f.force, "force", false, "with "+f.payloadFlags+", deliver without asking whether the node is revoked")
 	}
-	fs.BoolVar(&f.staged, "staged", false, "deliver the config for the image staged to boot next instead, which checks it with its own chalkd after chalkctl checks it against the node's image in the inventory; without a staged image, the node holds it pending, unchecked, for the next upgrade, which checks it against its image; with --dry-run, the staged image checks it and nothing is kept; without one, --dry-run says what the node would hold pending")
+	fs.BoolVar(&f.staged, "staged", false, "deliver the config for the image staged in the inactive slot instead, active or not, which checks it with its own chalkd after chalkctl checks it against the node's image in the inventory; without a staged image, the node holds it pending, unchecked, for the next upgrade, which checks it against its image; with --dry-run, the staged image checks it and nothing is kept; without one, --dry-run says what the node would hold pending")
 	fs.BoolVar(&f.discard, "discard", false, "with --staged, drop the config the node holds pending for its next upgrade; needs no inventory")
 	fs.BoolVar(&f.diff, "diff", false, "print what the config changes in the node's config, document by document and field by field, and change nothing; the node checks nothing, which --dry-run has it do")
 	fs.BoolVar(&f.dryRun, "dry-run", false, "have the node check the config as it checks a delivery, its renderers and facts included, print the diff and what the delivery would change, and change nothing; with --staged, the staged image checks it; takes several nodes")
@@ -385,7 +385,7 @@ func (a *app) deliverConfig(ctx context.Context, f applyConfigFlags, t *target) 
 	// --staged delivery, and a pending config is named whatever chalkctl expected.
 	if p := resp.Msg.Pending; p != nil {
 		if f.dryRun {
-			fmt.Fprintf(a.stdout, "%s: no image is staged to boot next; config %s would be held pending, unchecked, for the next upgrade, which checks it against its image\n", t.name, p.Version)
+			fmt.Fprintf(a.stdout, "%s: no image is staged; config %s would be held pending, unchecked, for the next upgrade, which checks it against its image\n", t.name, p.Version)
 		} else {
 			fmt.Fprintf(a.stdout, "%s holds config %s pending, unchecked; the next upgrade checks it against its image\n", t.name, p.Version)
 		}

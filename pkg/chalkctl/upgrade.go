@@ -26,12 +26,13 @@ import (
 	"github.com/trevex/chalkos/pkg/storage"
 )
 
-// upgradeRun upgrades nodes to the image given, or to the images the inventory names for them.
+// upgradeRun upgrades nodes to the image given, or to the images the inventory names for them:
+// each node gets its image staged, activated and booted in the steps chalkctl upgrade --until
+// stage, chalkctl node activate and chalkctl node reboot run one at a time, as far as --until
+// says.
 type upgradeRun struct {
-	a       *app
-	cluster *cluster
-	// reach reaches the nodes with the run's credentials, at the addresses --address gives.
-	reach nodeSet
+	// rebooter reboots each node into its image, the step chalkctl node reboot runs too.
+	*rebooter
 	upgradeOptions
 	upgradePlan
 	// role is the credentials' role. Below admin a node accepts no config with an upgrade, so the
@@ -45,35 +46,59 @@ type upgradeRun struct {
 	diffing bool
 	// rollback is set for upgrade --rollback, which boots the nodes' previous image.
 	rollback bool
-	out      sync.Mutex
 }
+
+// upgradeStep is how far a run takes each node, as --until names it.
+type upgradeStep string
+
+const (
+	// untilStage stops once the node's image is staged: its store written, its config checked by
+	// the image's own checker and kept, its UKI on the ESP under a name the boot loader does not
+	// boot.
+	untilStage upgradeStep = "stage"
+	// untilActivate stops once the image boots next.
+	untilActivate upgradeStep = "activate"
+	// untilReboot reboots the node into the image, held by its layers, and waits until it is
+	// healthy.
+	untilReboot upgradeStep = "reboot"
+)
+
+func (s *upgradeStep) Set(v string) error {
+	switch upgradeStep(v) {
+	case untilStage, untilActivate, untilReboot:
+		*s = upgradeStep(v)
+		return nil
+	}
+	return errors.New("want stage, activate or reboot")
+}
+
+func (s *upgradeStep) String() string { return string(*s) }
+func (s *upgradeStep) Type() string   { return "step" }
 
 // upgradeOptions are how a run upgrades, as its flags give it.
 type upgradeOptions struct {
-	noReboot bool
+	until upgradeStep
 	// retryFailed installs the image again on nodes that fell back from it; each node is upgraded
 	// once per run, so a second fall back stops the run.
 	retryFailed    bool
 	maxUnavailable int
-	// layerFlags are the values of the layers' flags, by layer, as their UpgradeFlags returned them.
-	layerFlags map[string]any
 	// passwordFile holds the password of nodes whose fallback is a password, which the config's new
 	// encrypted volumes are enrolled with.
-	passwordFile                            string
-	timeout, drainTimeout, poll, quorumWait time.Duration
+	passwordFile string
 }
 
 type upgradeFlags struct {
-	cluster               clusterFlags
-	secrets               secretFlags
-	config, image, nodes  string
-	passwordFile          string
-	addresses             addressList
-	maxUnavailable        positiveInt
-	noReboot, retryFailed bool
-	diff, rollback        bool
-	layers                map[string]any
-	timeout               time.Duration
+	cluster              clusterFlags
+	secrets              secretFlags
+	config, image, nodes string
+	passwordFile         string
+	addresses            addressList
+	maxUnavailable       positiveInt
+	until                upgradeStep
+	retryFailed          bool
+	diff, rollback       bool
+	layers               map[string]any
+	timeout              time.Duration
 }
 
 // positiveInt is the value of an integer flag that is at least 1.
@@ -95,7 +120,7 @@ func (n *positiveInt) String() string { return strconv.Itoa(int(*n)) }
 func (n *positiveInt) Type() string   { return "int" }
 
 func (a *app) upgradeCommand() *cobra.Command {
-	f := upgradeFlags{addresses: addressList{}, maxUnavailable: 1, layers: map[string]any{}}
+	f := upgradeFlags{addresses: addressList{}, maxUnavailable: 1, until: untilReboot, layers: map[string]any{}}
 	cmd := a.command(&cobra.Command{
 		Use:     "upgrade",
 		Short:   "Install new images on the cluster's nodes, or boot their previous ones again",
@@ -116,7 +141,7 @@ func (a *app) upgradeCommand() *cobra.Command {
 			f.layers[p.Name()] = u.UpgradeFlags(fs)
 		}
 	}
-	fs.BoolVar(&f.noReboot, "no-reboot", false, "install the images on the nodes without draining or rebooting them; they boot with their next reboot")
+	fs.Var(&f.until, "until", "how far each node gets: stage installs its image and leaves it staged, which chalkctl node activate makes boot next; activate makes it boot next, which chalkctl node reboot boots; reboot drains and reboots the node and waits until it is healthy")
 	fs.BoolVar(&f.retryFailed, "retry-failed", false, "install an image again, once, on nodes that fell back from it")
 	fs.BoolVar(&f.rollback, "rollback", false, "boot the image the nodes ran before their last upgrade again, which their inactive slots still hold, instead of installing an image")
 	fs.DurationVar(&f.timeout, "timeout", 30*time.Minute, "how long to wait for each node to come back healthy and for its drain")
@@ -134,6 +159,8 @@ func (a *app) upgrade(ctx context.Context, f upgradeFlags) error {
 			return cli.Usagef("--rollback delivers no config; --diff goes without it")
 		case f.retryFailed:
 			return cli.Usagef("--retry-failed goes without --rollback")
+		case f.until == untilStage:
+			return cli.Usagef("--rollback stages no image: it makes the image the nodes ran before boot next; --until activate stops there")
 		}
 	}
 	c, err := loadCluster(ctx, f.cluster)
@@ -161,10 +188,14 @@ func (a *app) upgrade(ctx context.Context, f upgradeFlags) error {
 		return errors.New("without --image each node gets the image the inventory names for it, which needs an inventory; pass --image, or --inventory")
 	}
 	r := &upgradeRun{
-		a: a, cluster: c, reach: nodeSet{cluster: c, creds: creds, addresses: f.addresses},
-		upgradeOptions: f.options(a.poll()), role: creds.role(),
+		rebooter: &rebooter{
+			a: a, cluster: c, reach: nodeSet{cluster: c, creds: creds, addresses: f.addresses},
+			rebootOptions: newRebootOptions(f.layers, f.timeout, a.poll()),
+		},
+		upgradeOptions: f.options(), role: creds.role(),
 		rollback: f.rollback,
 	}
+	r.fellBack = r.rolledBack
 	var named []string
 	if f.nodes != "" {
 		named = strings.Split(f.nodes, ",")
@@ -195,14 +226,9 @@ func (a *app) upgrade(ctx context.Context, f upgradeFlags) error {
 	return r.run(ctx)
 }
 
-// options are the run's options as the flags give them; poll is the time between two looks at a
-// node waited for.
-func (f upgradeFlags) options(poll time.Duration) upgradeOptions {
-	return upgradeOptions{
-		noReboot: f.noReboot, maxUnavailable: int(f.maxUnavailable), retryFailed: f.retryFailed,
-		layerFlags: f.layers, passwordFile: f.passwordFile,
-		timeout: f.timeout, drainTimeout: f.timeout, poll: poll, quorumWait: min(f.timeout, time.Minute),
-	}
+// options are the run's options as the flags give them.
+func (f upgradeFlags) options() upgradeOptions {
+	return upgradeOptions{until: f.until, maxUnavailable: int(f.maxUnavailable), retryFailed: f.retryFailed, passwordFile: f.passwordFile}
 }
 
 // chooseConfig decides whether the run delivers the inventory's config with the images, which
@@ -390,71 +416,6 @@ func (r *upgradeRun) checkConfig() error {
 	return nil
 }
 
-// say prints a line of the run's progress, from any node's goroutine.
-func (r *upgradeRun) say(format string, args ...any) {
-	r.out.Lock()
-	defer r.out.Unlock()
-	fmt.Fprintf(r.a.stdout, format+"\n", args...)
-}
-
-// call runs fn against a node; fn's error names the node.
-func (r *upgradeRun) call(name string, fn func(conn *client.Conn) error) error {
-	return r.reach.call(name, func(conn *client.Conn) error {
-		if err := fn(conn); err != nil {
-			return fmt.Errorf("%s: %w", name, err)
-		}
-		return nil
-	})
-}
-
-// probe reads what a node runs, its status and its roles in the clusters of its layers.
-func (r *upgradeRun) probe(ctx context.Context, name string) (*nodev1.InfoResponse, *nodev1.StatusResponse, upgradeRoles, error) {
-	var info *nodev1.InfoResponse
-	var st *nodev1.StatusResponse
-	var roles upgradeRoles
-	err := r.call(name, func(conn *client.Conn) error {
-		i, err := conn.Info(ctx, connect.NewRequest(&nodev1.InfoRequest{}))
-		if err != nil {
-			return err
-		}
-		s, err := conn.Status(ctx, connect.NewRequest(&nodev1.StatusRequest{}))
-		if err != nil {
-			return err
-		}
-		for _, u := range pluginsOf[layer.Upgrade](i.Msg.Layers) {
-			role, err := u.UpgradeRole(ctx, conn)
-			if err != nil {
-				return err
-			}
-			roles = append(roles, upgradeRole{u, role})
-		}
-		info, st = i.Msg, s.Msg
-		return nil
-	})
-	return info, st, roles, err
-}
-
-// ready checks, on conn, that the node serves the cluster of each of its layers again.
-func (n *upgradeNode) ready(ctx context.Context, conn *client.Conn) error {
-	for _, r := range n.roles {
-		if err := r.u.Ready(ctx, conn, r.role); err != nil {
-			return fmt.Errorf("%s: %w", n.name, err)
-		}
-	}
-	return nil
-}
-
-// noCoordinator is the error of the first of the node's layers that needs a coordinator for it,
-// a member; nil when none does.
-func (n *upgradeNode) noCoordinator(name string) error {
-	for _, r := range n.roles {
-		if r.role.Member {
-			return r.u.NoCoordinator(name)
-		}
-	}
-	return nil
-}
-
 // run upgrades the coordinators one at a time, then the other nodes in batches.
 func (r *upgradeRun) run(ctx context.Context) error {
 	coordinators, others := r.split()
@@ -487,24 +448,29 @@ func (r *upgradeRun) run(ctx context.Context) error {
 		}
 	}
 	names := strings.Join(slices.Sorted(maps.Keys(images)), ", ")
+	count := layer.Count(len(r.nodes), "node")
 	switch {
-	case r.rollback && r.noReboot:
-		r.say("staged %s on %s; it boots with their next reboot, and an upgrade to the image they run leaves it staged", bootImageName(r.rollbackTo), layer.Count(len(r.nodes), "node"))
+	case r.rollback && r.until == untilActivate:
+		r.say("staged %s on %s; it boots with their next reboot, which chalkctl node reboot runs, and an upgrade to the image they run leaves it staged", bootImageName(r.rollbackTo), count)
 	case r.rollback:
-		r.say("rolled back %s to %s", layer.Count(len(r.nodes), "node"), bootImageName(r.rollbackTo))
-	case r.noReboot:
-		r.say("installed %s on %s; it boots with their next reboot", names, layer.Count(len(r.nodes), "node"))
+		r.say("rolled back %s to %s", count, bootImageName(r.rollbackTo))
+	case r.until == untilStage:
+		r.say("staged %s on %s; chalkctl node activate makes it boot next", names, count)
+	case r.until == untilActivate:
+		r.say("activated %s on %s; it boots with their next reboot, which chalkctl node reboot runs", names, count)
 	default:
-		r.say("upgraded %s to %s", layer.Count(len(r.nodes), "node"), names)
+		r.say("upgraded %s to %s", count, names)
 	}
 	return nil
 }
 
-// node upgrades one node, continuing where an earlier run stopped: a node that runs the image
-// and was found healthy is released once it serves its clusters again, one that booted it is
-// waited for, and the image installed already is not sent again. Its layers' hooks hold it before
-// it reboots and release it after. An image is its store's root hash: a node runs, stages or fell
-// back from the image when it names that root hash.
+// node upgrades one node, continuing where an earlier run stopped, in the steps the step-by-step
+// path runs: the image is staged, activated, and the node rebooted into it, as far as --until
+// says. A node that runs the image and was found healthy is released once it serves its clusters
+// again, one that booted it is waited for, and the image staged or active already is not sent
+// again. Its layers' hooks hold it before it reboots and release it after. An image is its
+// store's root hash: a node runs, stages or fell back from the image when it names that root
+// hash.
 func (r *upgradeRun) node(ctx context.Context, n *upgradeNode) error {
 	image, target := n.target()
 	_, st, _, err := r.probe(ctx, n.name)
@@ -518,9 +484,9 @@ func (r *upgradeRun) node(ctx context.Context, n *upgradeNode) error {
 	case boot.GetError() != "":
 		return fmt.Errorf("%s: its boot is unknown: %s", n.name, boot.GetError())
 	case failed && !r.retryFailed:
-		return r.rolledBack(n, boot)
+		return r.rolledBack(&n.rebootNode, boot)
 	case runs && boot.GetBlessed():
-		if r.noReboot {
+		if r.until != untilReboot {
 			r.say("%s: runs %s", n.name, image)
 			return nil
 		}
@@ -532,47 +498,88 @@ func (r *upgradeRun) node(ctx context.Context, n *upgradeNode) error {
 		if failed {
 			r.say("%s: fell back from %s before; trying it again", n.name, image)
 		}
-		if !r.noReboot {
-			if err := r.hooks(ctx, n, layer.Upgrade.BeforeInstall); err != nil {
-				return err
-			}
-		}
-		// A staged image is sent again only for its config: the node finds the image staged and
-		// replaces the config it keeps for it.
-		if r.stagedAlready(n, st) {
-			// A rollback stages its image without tries while the boot the node runs was not
-			// found healthy.
-			n.uncounted = n.rollbackTo != nil && !boot.GetBlessed()
-			if r.rollback {
-				r.say("%s: %s is staged already", n.name, image)
-			} else {
-				r.say("%s: %s is installed already", n.name, image)
-			}
-		} else if err := r.install(ctx, n); err != nil {
+		sent, err := r.stage(ctx, n, st)
+		if err != nil {
 			return err
 		}
-		if r.noReboot {
+		activate := func() error { return r.activate(ctx, n, st, sent) }
+		switch r.until {
+		case untilStage:
 			return nil
+		case untilActivate:
+			return activate()
 		}
-		if err := r.hooks(ctx, n, layer.Upgrade.BeforeReboot); err != nil {
-			return err
-		}
+		// The image boots next only once the node's layers hold it.
+		return r.reboot(ctx, &n.rebootNode, bootOf(image, target, st), true, activate)
+	}
+	return r.release(ctx, &n.rebootNode, bootTarget{image: image, root: target}, true)
+}
+
+// stage stages the image on the node, as chalkctl upgrade --until stage does: it sends the image
+// unless the node has it staged or active already with the config the run gives it, and reports
+// whether it sent it. A rollback stages nothing: its image is in the node's inactive slot already.
+func (r *upgradeRun) stage(ctx context.Context, n *upgradeNode, st *nodev1.StatusResponse) (bool, error) {
+	if n.rollbackTo != nil {
+		return false, nil
+	}
+	// An image staged or active is sent again only for its config: the node finds the image in its
+	// inactive slot and replaces the config it keeps for it.
+	if r.stagedAlready(n, st) {
+		image, _ := n.target()
+		r.say("%s: %s is installed already", n.name, image)
+		return false, nil
+	}
+	return true, r.install(ctx, n)
+}
+
+// activate makes the image boot next on the node, as chalkctl node activate does, unless the
+// node's status said it boots next already and the run did not send it again; a rollback's image
+// is made boot next by the rollback, which stages it as an upgrade's activation does.
+func (r *upgradeRun) activate(ctx context.Context, n *upgradeNode, st *nodev1.StatusResponse, sent bool) error {
+	image, target := n.target()
+	boot := st.GetBoot()
+	if n.rollbackTo == nil && !sent && boot.GetStagedState() == nodev1.SlotState_SLOT_STATE_ACTIVE && bytes.Equal(boot.GetStaged().GetRootHash(), target) {
+		r.say("%s: %s boots next already", n.name, image)
+		return nil
+	}
+	if n.rollbackTo == nil {
+		var resp *nodev1.ActivateImageResponse
 		if err := r.call(n.name, func(conn *client.Conn) error {
-			_, err := conn.Reboot(ctx, connect.NewRequest(&nodev1.RebootRequest{}))
+			res, err := conn.ActivateImage(ctx, connect.NewRequest(&nodev1.ActivateImageRequest{RootHash: target}))
+			if err == nil {
+				resp = res.Msg
+			}
 			return err
 		}); err != nil {
 			return err
 		}
-		r.say("%s: rebooting into %s", n.name, image)
+		r.say("%s", activatedLine(n.name, image, resp))
+		return nil
 	}
-	if err := r.waitHealthy(ctx, n); err != nil {
-		return err
+	if r.stagedAlready(n, st) {
+		// A rollback stages its image without tries while the boot the node runs was not found
+		// healthy.
+		n.uncounted = !st.GetBoot().GetBlessed()
+		r.say("%s: %s is staged already", n.name, image)
+		return nil
 	}
-	return r.hooks(ctx, n, layer.Upgrade.After)
+	return r.reactivate(ctx, n)
 }
 
-// stagedAlready reports whether the node has the image staged with the config the run gives it,
-// so the image is not sent again: a staged image is sent again only for its config.
+// activatedLine says what an activation of the image on the node did, as resp answers.
+func activatedLine(name, image string, resp *nodev1.ActivateImageResponse) string {
+	switch {
+	case resp.AlreadyInstalled:
+		return fmt.Sprintf("%s: runs %s already", name, image)
+	case resp.AlreadyActive:
+		return fmt.Sprintf("%s: %s boots next already, as %s", name, image, resp.Entry)
+	}
+	return fmt.Sprintf("%s: activated %s, which boots next as %s", name, image, resp.Entry)
+}
+
+// stagedAlready reports whether the node has the image in its inactive slot, staged or active,
+// with the config the run gives it, so the image is not sent again: an image the slot holds is
+// sent again only for its config.
 func (r *upgradeRun) stagedAlready(n *upgradeNode, st *nodev1.StatusResponse) bool {
 	d := r.deliveryOf(n)
 	_, target := n.target()
@@ -625,11 +632,9 @@ func (r *upgradeRun) fallbacks(ctx context.Context) error {
 }
 
 // install sends the node its image with its config, and the fallback secret when the config adds
-// an encrypted volume, which the node creates before the image boots.
+// an encrypted volume, which the node creates before the image boots. The node stages the image
+// and stops there; activate makes it boot next.
 func (r *upgradeRun) install(ctx context.Context, n *upgradeNode) error {
-	if n.rollbackTo != nil {
-		return r.reactivate(ctx, n)
-	}
 	name, img := n.name, n.image
 	parts := io.MultiReader()
 	if ref := img.source.GetOci().GetReference(); ref != "" {
@@ -648,7 +653,7 @@ func (r *upgradeRun) install(ctx context.Context, n *upgradeNode) error {
 		if _, err := r.configChanges(ctx, conn, n); err != nil {
 			return err
 		}
-		header := &nodev1.UpgradeHeader{Image: img.header, Source: img.source}
+		header := &nodev1.UpgradeHeader{Image: img.header, Source: img.source, StageOnly: true}
 		if d := r.deliveryOf(n); d != nil {
 			header.Config, header.FallbackSecret = d.Text, n.secret
 		}
@@ -674,10 +679,12 @@ func (r *upgradeRun) install(ctx context.Context, n *upgradeNode) error {
 	switch {
 	case resp.AlreadyInstalled:
 		r.say("%s: runs %s already", name, img.name())
+	case resp.AlreadyStaged && resp.Active:
+		r.say("%s: %s boots next already, as %s; its config is replaced", name, img.name(), resp.Entry)
 	case resp.AlreadyStaged:
-		r.say("%s: %s is staged already, as %s", name, img.name(), resp.Entry)
+		r.say("%s: %s is staged already, as %s; its config is replaced", name, img.name(), resp.Entry)
 	default:
-		r.say("%s: installed %s, which boots next as %s", name, img.name(), resp.Entry)
+		r.say("%s: installed %s, staged as %s", name, img.name(), resp.Entry)
 	}
 	if note := pendingOutcome(name, resp.Pending); note != "" {
 		r.say("%s", note)
@@ -735,96 +742,13 @@ func (r *upgradeRun) reactivate(ctx context.Context, n *upgradeNode) error {
 // uncountedRollback says why a rollback's entry carries no tries.
 const uncountedRollback = "without boot counting: the boot the node runs was not found healthy, so the image before, found healthy once, is its known-good image again and is not fallen back from"
 
-// waitHealthy waits until the node runs the image, its boot was found healthy, and it serves the
-// clusters of its layers again, or until it fell back.
-func (r *upgradeRun) waitHealthy(ctx context.Context, n *upgradeNode) error {
-	image, target := n.target()
-	var fellBack error
-	err := layer.WaitFor(ctx, "", r.timeout, r.poll, func() error {
-		var st *nodev1.StatusResponse
-		var notReady error
-		err := r.call(n.name, func(conn *client.Conn) error {
-			s, err := conn.Status(ctx, connect.NewRequest(&nodev1.StatusRequest{}))
-			if err != nil {
-				return err
-			}
-			st = s.Msg
-			if boot := st.GetBoot(); bytes.Equal(boot.GetRunning().GetRootHash(), target) && boot.GetBlessed() {
-				notReady = n.ready(ctx, conn)
-			}
-			return nil
-		})
-		switch {
-		case err != nil:
-			return err
-		case bytes.Equal(st.GetBoot().GetFailed().GetRootHash(), target):
-			fellBack = r.rolledBack(n, st.GetBoot())
-			return layer.Permanent{Err: fellBack}
-		case !bytes.Equal(st.GetBoot().GetRunning().GetRootHash(), target):
-			return fmt.Errorf("it runs %s", bootImageName(st.GetBoot().GetRunning()))
-		case !st.GetBoot().GetBlessed():
-			return errors.New("its boot was not found healthy yet")
-		}
-		return notReady
-	})
-	switch {
-	case fellBack != nil:
-		return fellBack
-	case err != nil:
-		return fmt.Errorf("%s: waiting for %s to be found healthy: %w", n.name, image, err)
-	}
-	if n.uncounted {
-		// The entry is blessed from the start, so no boot of it was found healthy.
-		r.say("%s: runs %s (its boots are not counted)", n.name, image)
-		return nil
-	}
-	r.say("%s: runs %s, found healthy", n.name, image)
-	return nil
-}
-
-// rolledBack is the error of a node that fell back from the image, with what its boots logged. A
-// node that serves a cluster stays held there, for an operator to look at.
-func (r *upgradeRun) rolledBack(n *upgradeNode, boot *nodev1.BootStatus) error {
+// rolledBack is the error of a node that fell back from the image an upgrade or a rollback booted,
+// with what its boots logged. A node that serves a cluster stays held there, for an operator to
+// look at.
+func (r *upgradeRun) rolledBack(n *rebootNode, boot *nodev1.BootStatus) error {
 	msg := fmt.Sprintf("%s: upgrade to %s failed: rolled back to %s", n.name, bootImageName(boot.Failed), bootImageName(boot.Running))
 	if r.rollback {
 		msg = fmt.Sprintf("%s: rollback to %s failed: it fell back to %s", n.name, bootImageName(boot.Failed), bootImageName(boot.Running))
 	}
-	if n.roles.member() && !r.noReboot {
-		msg += "; it stays cordoned"
-	}
-	if len(boot.Journal) > 0 {
-		msg += "; its boots logged:\n  " + strings.Join(boot.Journal, "\n  ")
-	}
-	return errors.New(msg)
-}
-
-// hooks runs a hook of each of the node's layers, in their order.
-func (r *upgradeRun) hooks(ctx context.Context, n *upgradeNode, hook func(layer.Upgrade, context.Context, layer.Upgrading, string, layer.UpgradeRole) error) error {
-	for _, role := range n.roles {
-		if err := hook(role.u, ctx, r, n.name, role.role); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-var _ layer.Upgrading = (*upgradeRun)(nil)
-
-func (r *upgradeRun) Say(format string, args ...any) { r.say(format, args...) }
-func (r *upgradeRun) Flags(layer string) any         { return r.layerFlags[layer] }
-func (r *upgradeRun) DrainTimeout() time.Duration    { return r.drainTimeout }
-func (r *upgradeRun) QuorumWait() time.Duration      { return r.quorumWait }
-func (r *upgradeRun) Poll() time.Duration            { return r.poll }
-
-// ViaCoordinators calls fn on a coordinator: the node itself first when it is one, then the
-// others, moving on past those whose error next accepts.
-func (r *upgradeRun) ViaCoordinators(prefer string, next func(error) bool, fn func(conn *client.Conn) error) error {
-	names := slices.Clone(r.coordinators)
-	if i := slices.Index(names, prefer); i > 0 {
-		names = append([]string{prefer}, slices.Delete(names, i, i+1)...)
-	}
-	if len(names) == 0 {
-		return layer.ErrNoCoordinator
-	}
-	return r.reach.viaFirst(names, next, fn)
+	return fellBackError(n, msg, boot)
 }
