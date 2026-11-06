@@ -125,9 +125,9 @@ schema:
 'registry.k8s.io/kube-apiserver@sha256:<digest>' is not valid versioned-image-reference: this image names its version in its tag, as registry.example/app:v1.2.3, optionally followed by @sha256:<digest>; a reference by digest alone or with another tag has no version
 ```
 
-A change of `pause` restarts containerd, whose running containers keep running; pods started after
-it get the new sandbox. A change of the other images restarts the kubelet and the preparation,
-which writes the static pods, and chalkd applies the add-ons again.
+A change of any image restarts the kubelet and the preparation, which writes the static pods, and
+chalkd applies the add-ons again. A change of `pause` also restarts containerd, whose running
+containers keep running; pods started after it get the new sandbox.
 
 ## The Node document gives a node its type, labels and taints
 
