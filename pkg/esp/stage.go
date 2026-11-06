@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"golang.org/x/sys/unix"
@@ -85,6 +86,23 @@ func StagedFiles(dir string) ([]string, error) {
 		}
 	}
 	return staged, nil
+}
+
+// NextStagedGeneration is the generation an upgrade names the UKI it stages in the ESP mounted at
+// dir: NextGeneration of the entries, and above the generation any file under a staged name gives
+// the image too, whatever it holds. The retirement before staging removes a staged UKI whose
+// generation was chosen above an entry it removed as well, such as a failed one's: without the
+// staged name, the next image staged would take that entry's generation again.
+func NextStagedGeneration(dir string, entries []Entry, imageID string) (uint64, error) {
+	names, err := StagedFiles(dir)
+	if err != nil {
+		return 0, err
+	}
+	all := slices.Clone(entries)
+	for _, name := range names {
+		all = append(all, Entry{File: name, ID: strings.ToLower(strings.TrimPrefix(name, stagedPrefix))})
+	}
+	return NextGeneration(all, imageID)
 }
 
 // Leftovers lists the UKIs in the ESP mounted at dir that were written under a Temporary name and

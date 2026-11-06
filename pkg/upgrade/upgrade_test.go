@@ -388,13 +388,56 @@ func TestStageAndActivate(t *testing.T) {
 	if _, err := l.node.Rollback(ctx, a.root, nil, nil); err == nil || !strings.Contains(err.Error(), fmt.Sprintf("the image %x is staged in the inactive slot", c.root)) {
 		t.Errorf("rollback while an image is staged = %v", err)
 	}
-	if res := stage(d); res.Entry != ".staged-chalkos_3.efi" || !res.Wrote {
-		t.Errorf("stage another image = %+v", res)
+	// The staged UKI's generation counts as an entry's: the image staged next takes the one above.
+	if res := stage(d); res.Entry != ".staged-chalkos_4.efi" || !res.Wrote || l.file(".staged-chalkos_3.efi") != nil {
+		t.Errorf("stage another image = %+v; the staged UKI before kept: %v", res, l.file(".staged-chalkos_3.efi") != nil)
 	}
 	if staged, ok, err := esp.Staged(l.esp, "chalkos"); !ok || err != nil || !bytes.Equal(staged.RootHash, d.root) {
 		t.Errorf("staged = %+v, %v, %v", staged, ok, err)
 	}
-	if res, err := l.node.Activate(ctx, d.root); err != nil || res.Entry != "chalkos_3+3.efi" {
+	if res, err := l.node.Activate(ctx, d.root); err != nil || res.Entry != "chalkos_4+3.efi" {
+		t.Errorf("activate = %+v, %v", res, err)
+	}
+	l.boots(d, 3)
+}
+
+// TestStagedGenerationsNeverGoBack stages an image after one that failed and fell back, whose
+// entry the retirement removes, and stages another over it: the staged UKI's generation was
+// chosen above the failed entry's, so the image staged next takes one above that, and no entry
+// takes the ID of one the node booted before.
+func TestStagedGenerationsNeverGoBack(t *testing.T) {
+	a, b, c, d := newImage(t, "a", 3), newImage(t, "b", 2), newImage(t, "c", 3), newImage(t, "d", 3)
+	l := newLab(t, a)
+	ctx := context.Background()
+	stage := func(img image) Result {
+		t.Helper()
+		res, err := l.node.Install(ctx, img.header, img.stream())
+		if err != nil {
+			t.Fatal(err)
+		}
+		return res
+	}
+	if res := stage(b); res.Entry != ".staged-chalkos_2.efi" {
+		t.Fatalf("stage = %+v", res)
+	}
+	if res, err := l.node.Activate(ctx, b.root); err != nil || res.Entry != "chalkos_2+2.efi" {
+		t.Fatalf("activate = %+v, %v", res, err)
+	}
+	for range 2 {
+		if e := l.attempt(); !bytes.Equal(e.RootHash, b.root) {
+			t.Fatalf("booted %s", e.File)
+		}
+	}
+	if e, name := l.boot(); name != "a" || e.File != "chalkos_1.efi" || l.file("chalkos_2+0-2.efi") == nil {
+		t.Fatalf("after the tries the disk boots %s from %s, want a beside the failed chalkos_2+0-2.efi", name, e.File)
+	}
+	if res := stage(c); res.Entry != ".staged-chalkos_3.efi" || l.file("chalkos_2+0-2.efi") != nil {
+		t.Fatalf("stage = %+v; the failed UKI kept: %v", res, l.file("chalkos_2+0-2.efi") != nil)
+	}
+	if res := stage(d); res.Entry != ".staged-chalkos_4.efi" {
+		t.Errorf("stage over the staged image = %+v, want generation 4", res)
+	}
+	if res, err := l.node.Activate(ctx, d.root); err != nil || res.Entry != "chalkos_4+3.efi" {
 		t.Errorf("activate = %+v, %v", res, err)
 	}
 	l.boots(d, 3)

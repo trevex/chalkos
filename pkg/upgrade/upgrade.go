@@ -21,8 +21,9 @@
 //     root hash and the labels naming it, and rename the UKI to .staged-<id>_<generation>.efi, a
 //     name systemd-boot ignores too and an upgrade's sweep of temporary UKIs leaves, so the
 //     staged image outlasts a restart of chalkd and a reboot. The generation is one above the
-//     image's highest on the ESP before step 1 retired any. Nothing boots the slot yet: only a
-//     UKI systemd-boot boots looks for its store by those UUIDs.
+//     image's highest any name on the ESP gave before step 1 retired any, a staged UKI's
+//     included. Nothing boots the slot yet: only a UKI systemd-boot boots looks for its store by
+//     those UUIDs.
 //  5. Activate, Node.Activate: check the staged UKI again and rename it to
 //     <id>_<generation>+<tries>.efi, of the staged generation or, should a name on the ESP give
 //     a higher one by then, one above it. The image boots next.
@@ -219,9 +220,9 @@ func (n *Node) Install(ctx context.Context, h Header, stream io.Reader) (Result,
 		}
 	}
 	// The staged UKI's name carries the image's next generation, above the generation any name on
-	// the ESP gives before the retirement removes some, which Activate names the entry: it replaces
-	// no UKI and shares no ID with an entry the node booted before.
-	generation, err := esp.NextGeneration(all, h.ImageID)
+	// the ESP gives before the retirement removes some, a staged UKI's too, which Activate names
+	// the entry: it replaces no UKI and shares no ID with an entry the node booted before.
+	generation, err := esp.NextStagedGeneration(n.ESP, all, h.ImageID)
 	if err != nil {
 		return Result{}, err
 	}

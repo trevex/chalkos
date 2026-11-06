@@ -119,4 +119,11 @@ func TestStaged(t *testing.T) {
 	if files, err := StagedFiles(dir); err != nil || !reflect.DeepEqual(files, []string{".staged-chalkos_05.efi", ".staged-chalkos_3.efi", ".staged-chalkos_4.efi", ".staged-x.efi"}) {
 		t.Errorf("staged files = %q, %v", files, err)
 	}
+	// Every staged name counts for the next generation, whatever the file holds, as an entry's.
+	if g, err := NextStagedGeneration(dir, []Entry{{File: "chalkos_2.efi", ID: "chalkos_2.efi"}}, "chalkos"); err != nil || g != 6 {
+		t.Errorf("the next staged generation = %d, %v, want 6 above .staged-chalkos_05.efi", g, err)
+	}
+	if g, err := NextStagedGeneration(dir, []Entry{{File: "chalkos_9+1.efi", ID: "chalkos_9.efi"}}, "chalkos"); err != nil || g != 10 {
+		t.Errorf("the next staged generation = %d, %v, want 10 above chalkos_9+1.efi", g, err)
+	}
 }
