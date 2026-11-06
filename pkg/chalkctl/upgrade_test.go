@@ -1093,6 +1093,36 @@ func TestNodeActivate(t *testing.T) {
 	}
 }
 
+// TestNodeActivateImage activates the image --image names, as upgrade --image staged it, also
+// without an inventory; without --image the command needs one, for the node's image.
+func TestNodeActivateImage(t *testing.T) {
+	l := newUpgradeLab(t, 1)
+	img, other := testUpgradeImage(t, "w", "0.2.0"), testUpgradeImage(t, "w", "0.3.0")
+	activate := func(args ...string) error {
+		return l.ta.run(context.Background(), append([]string{"node", "activate", "w1", "--address", l.addrs["w1"]}, args...))
+	}
+	if err := activate(); err == nil || !strings.Contains(err.Error(), "node activate") {
+		t.Errorf("activate without an inventory or --image = %v, want it refused", err)
+	}
+	if err := l.upgrade(img, "--nodes", "w1", "--until", "stage"); err != nil {
+		t.Fatalf("%v\n%s", err, l.ta.stdout)
+	}
+	if err := activate("--image", other); err == nil || !strings.Contains(err.Error(), "the image staged in the inactive slot is "+hex.EncodeToString(l.nodes["w1"].stagedRoot)) {
+		t.Errorf("activate another image = %v", err)
+	}
+	l.takeEvents()
+	l.ta.stdout.Reset()
+	if err := activate("--image", img); err != nil {
+		t.Fatal(err)
+	}
+	if want := "w1: activated " + shortOf(t, img) + ", which boots next as chalkos_2+3.efi\nw1: chalkctl node reboot w1 boots it\n"; l.ta.stdout.String() != want {
+		t.Errorf("output %q, want %q", l.ta.stdout, want)
+	}
+	if got := l.takeEvents(); !slices.Equal(got, []string{"w1 activate"}) || !l.nodes["w1"].active {
+		t.Errorf("events %q, w1 active: %v", got, l.nodes["w1"].active)
+	}
+}
+
 // TestNodeReboot reboots a node into the image it boots next, the running one without an image
 // active: without its layers holding it with --no-drain, and else drained first and uncordoned
 // once it is back. A node that falls back from the image it boots stops the command and stays

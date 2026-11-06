@@ -198,9 +198,10 @@ w1: uncordoned
   `upgrade to <new> staged; node activate makes it boot next`.
 - `chalkctl node activate <node>` makes the image staged on the node boot next. chalkctl names the
   image the inventory gives the node, and the node refuses when it has another image staged or
-  none. The node checks the UKI again, Secure Boot included, and does not check the config again:
-  the image checked it before the node staged it. `chalkctl status` then shows
-  `upgrade to <new> active; it boots next`.
+  none. After `chalkctl upgrade --image <dir> --until stage`, pass the same `--image <dir>` to
+  `chalkctl node activate`. The node checks the UKI again, Secure Boot included, and does not
+  check the config again: the image checked it before the node staged it. `chalkctl status` then
+  shows `upgrade to <new> active; it boots next`.
 - `--until activate` stages and activates the image on each node, and stops before any drain or
   reboot. Each node boots the image at its next reboot.
 - `chalkctl node reboot <node>` drains the node, reboots it into the image it boots next, waits
@@ -472,8 +473,9 @@ data after a Kubernetes upgrade.
   reader role. Use an operator or admin client file.
 - `activate: no image is staged in the inactive slot` or
   `activate: the image staged in the inactive slot is <a>, not <b>`: `chalkctl node activate`
-  found no image staged, or another one than the inventory names for the node. Stage the
-  inventory's image with `chalkctl upgrade --nodes <node> --until stage` first.
+  found no image staged, or another one than the inventory or `--image` names for the node. Stage
+  the image with `chalkctl upgrade --nodes <node> --until stage` first, with the same `--image`
+  when you activate one.
 - `w1: waiting for <image> to be found healthy: its boot is not healthy: ...`: the node runs the
   image, but its boot fails the health check's checks, such as with a failed unit, until
   `--timeout` passes. A boot of a blessed entry is not counted, so the node does not fall back.

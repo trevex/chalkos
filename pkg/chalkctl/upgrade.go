@@ -141,7 +141,7 @@ func (a *app) upgradeCommand() *cobra.Command {
 			f.layers[p.Name()] = u.UpgradeFlags(fs)
 		}
 	}
-	fs.Var(&f.until, "until", "how far each node gets: stage installs its image and leaves it staged, which chalkctl node activate makes boot next; activate makes it boot next, which chalkctl node reboot boots; reboot drains and reboots the node and waits until it is healthy")
+	fs.Var(&f.until, "until", "how far each node gets: stage installs its image and leaves it staged, which chalkctl node activate makes boot next, with the same --image when the run had one; activate makes it boot next, which chalkctl node reboot boots; reboot drains and reboots the node and waits until it is healthy")
 	fs.BoolVar(&f.retryFailed, "retry-failed", false, "install an image again, once, on nodes that fell back from it")
 	fs.BoolVar(&f.rollback, "rollback", false, "boot the image the nodes ran before their last upgrade again, which their inactive slots still hold, instead of installing an image")
 	fs.DurationVar(&f.timeout, "timeout", 30*time.Minute, "how long to wait for each node to come back healthy and for its drain")

@@ -318,15 +318,20 @@ const logsExample = `  # Follow chalkd's log on cp1.
 const nodeActivateLong = `Makes the image staged on a node boot next, as chalkctl upgrade --until stage leaves it:
 the node renames the image's UKI to its boot entry's name with the tries the image asks for, so
 boot counting falls back to the running image should its boots fail. chalkctl names the image the
-inventory gives the node, by its root hash, and the node refuses when it has no image staged or
-another one. The node checks the UKI again, and not the config: the image's own checker passed
+inventory gives the node, or with --image the image upgrade --image staged, by its root hash, and
+the node refuses when it has no image staged or another one. With --image the command needs no
+inventory. The node checks the UKI again, and not the config: the image's own checker passed
 the config before the image was staged. Asked again, the command says that the image boots next
 already. The image boots with the node's next reboot, which chalkctl node reboot runs. The command
 needs an operator client file or the secrets file.`
 
 const nodeActivateExample = `  chalkctl upgrade --nodes w1 --until stage
   chalkctl node activate w1
-  chalkctl node reboot w1`
+  chalkctl node reboot w1
+
+  # Activate the image upgrade --image staged.
+  chalkctl upgrade --image ./worker-image --nodes w1 --until stage
+  chalkctl node activate w1 --image ./worker-image`
 
 const nodeRebootLong = `Reboots a node as chalkctl upgrade does once the node's image is active: its layers hold it
 first, as Kubernetes keeps etcd's quorum while a control plane reboots and drains the node; then

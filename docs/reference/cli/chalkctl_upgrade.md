@@ -63,7 +63,7 @@ operator client file or the secrets file.
 | `--rollback`{ #flag-rollback } | boolean | `false` | Boot the image the nodes ran before their last upgrade again, which their inactive slots still hold, instead of installing an image. |
 | `--secrets`{ #flag-secrets } | string | — | Secrets file, encrypted with age or not, or - to read it from standard input. |
 | `--timeout`{ #flag-timeout } | duration | `30m0s` | How long to wait for each node to come back healthy and for its drain. |
-| `--until`{ #flag-until } | step | `reboot` | How far each node gets: stage installs its image and leaves it staged, which chalkctl node activate makes boot next; activate makes it boot next, which chalkctl node reboot boots; reboot drains and reboots the node and waits until it is healthy. |
+| `--until`{ #flag-until } | step | `reboot` | How far each node gets: stage installs its image and leaves it staged, which chalkctl node activate makes boot next, with the same --image when the run had one; activate makes it boot next, which chalkctl node reboot boots; reboot drains and reboots the node and waits until it is healthy. |
 
 ## Examples
 
