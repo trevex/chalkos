@@ -460,7 +460,7 @@ func TestApplyConfigRolloutRefusesPayloads(t *testing.T) {
 	l := newRolloutLab(t)
 	l.rollTo(t, "1.37.2")
 	err := l.applyConfigTo([]string{"cp1"}, "--kubernetes-share")
-	if err == nil || !strings.Contains(err.Error(), "the config changes versions the cluster orders its nodes by, so the control planes get it on trial, which --kubernetes-share does not go with; deliver it apart") {
+	if err == nil || !strings.Contains(err.Error(), "the config changes versions the cluster orders its nodes by, so the nodes that act for the others get it on trial, which --kubernetes-share does not go with; deliver it apart") {
 		t.Errorf("err = %v", err)
 	}
 	if got := deliveries(l.takeEvents()); len(got) != 0 {

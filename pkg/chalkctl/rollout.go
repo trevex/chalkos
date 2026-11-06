@@ -165,7 +165,7 @@ func (r *configRollout) plan(ctx context.Context, names []string) error {
 		return nil
 	}
 	if r.f.payloads() {
-		return fmt.Errorf("the config changes versions the cluster orders its nodes by, so the control planes get it on trial, which %s does not go with; deliver it apart", r.f.payloadFlags)
+		return fmt.Errorf("the config changes versions the cluster orders its nodes by, so the nodes that act for the others get it on trial, which %s does not go with; deliver it apart", r.f.payloadFlags)
 	}
 	probed := map[string]bool{}
 	for _, name := range names {
