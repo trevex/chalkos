@@ -457,6 +457,30 @@ func TestStagedGenerationsNeverGoBack(t *testing.T) {
 	l.boots(d, 3)
 }
 
+// TestUpgradeWhoseActivationFails stops an upgrade at its activation: the error is a StagedError
+// that names the staged UKI, and the image stays staged for a later activation.
+func TestUpgradeWhoseActivationFails(t *testing.T) {
+	a, b := newImage(t, "a", 3), newImage(t, "b", 2)
+	l := newLab(t, a)
+	l.node.Change = func(what string) error {
+		if what == "name the UKI chalkos_2+2.efi" {
+			return errCrash
+		}
+		return nil
+	}
+	_, err := l.install(b)
+	var staged *StagedError
+	if !errors.As(err, &staged) || !errors.Is(err, errCrash) || staged.Result.Entry != ".staged-chalkos_2.efi" || !staged.Result.Wrote ||
+		err.Error() != "the image is staged as .staged-chalkos_2.efi, but its activation failed: crash" {
+		t.Fatalf("upgrade = %v, want the image staged", err)
+	}
+	l.node.Change = nil
+	if res, err := l.node.Activate(context.Background(), b.root); err != nil || res.Entry != "chalkos_2+2.efi" {
+		t.Errorf("activate = %+v, %v", res, err)
+	}
+	l.boots(b, 2)
+}
+
 var errCrash = errors.New("crash")
 
 // TestInterruptedUpgrade stops an upgrade before each change it makes: the disk boots the running

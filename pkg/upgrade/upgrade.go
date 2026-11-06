@@ -156,9 +156,22 @@ func (e *RefusalError) Unwrap() error { return e.Err }
 // refused is err as a RefusalError.
 func refused(err error) error { return &RefusalError{Err: err} }
 
+// StagedError is the error of an Upgrade whose activation failed once Install staged the image:
+// the image stays staged, as Result, Install's, says. Err is the activation's error.
+type StagedError struct {
+	Result Result
+	Err    error
+}
+
+func (e *StagedError) Error() string {
+	return fmt.Sprintf("the image is staged as %s, but its activation failed: %v", e.Result.Entry, e.Err)
+}
+
+func (e *StagedError) Unwrap() error { return e.Err }
+
 // Upgrade installs the image as Install does and activates it as Activate does, unless the node
 // runs it or it boots next already. An activation that fails leaves the image staged, which the
-// error says.
+// error, a StagedError, says.
 func (n *Node) Upgrade(ctx context.Context, h Header, stream io.Reader) (Result, error) {
 	res, err := n.Install(ctx, h, stream)
 	if err != nil || res.AlreadyInstalled || res.Active {
@@ -166,7 +179,7 @@ func (n *Node) Upgrade(ctx context.Context, h Header, stream io.Reader) (Result,
 	}
 	a, err := n.Activate(ctx, h.RootHash)
 	if err != nil {
-		return Result{}, fmt.Errorf("the image is staged as %s, but its activation failed: %w", res.Entry, err)
+		return Result{}, &StagedError{Result: res, Err: err}
 	}
 	res.Entry, res.Active = a.Entry, true
 	return res, nil

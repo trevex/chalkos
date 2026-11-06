@@ -166,6 +166,36 @@ func TestUpgradeStageOnly(t *testing.T) {
 	}
 }
 
+// TestUpgradeWhoseActivationFails answers an upgrade whose image was staged and then not activated
+// with the activation's error, and keeps what a staged image needs: the record of its provenance,
+// and none of the rollback the staging replaced.
+func TestUpgradeWhoseActivationFails(t *testing.T) {
+	c := newCreds(t)
+	s, _ := newTestServer(t, normal, vda)
+	record := filepath.Join(s.Paths.StateDir, "chalkd", "rollback")
+	write(t, record, strings.Repeat("31", 32)+"\n")
+	s.InstallImage = func(_ context.Context, _ upgrade.Header, _, _ string, _ bool, r io.Reader) (upgrade.Result, imageConfig, error) {
+		io.Copy(io.Discard, r)
+		return upgrade.Result{}, imageConfig{}, &upgrade.StagedError{Result: upgrade.Result{Entry: ".staged-chalkos_2.efi", Wrote: true}, Err: &upgrade.RefusalError{Err: errors.New("Secure Boot would refuse the UKI")}}
+	}
+	conn := dial(t, serve(t, s, c, c.pool), c.clients[pki.RoleOperator])
+	stream := conn.Upgrade(context.Background())
+	h := &nodev1.UpgradeHeader{Reboot: true, Image: &nodev1.ImageHeader{ImageId: "chalkos", RootHash: []byte{1, 2}, Revision: "a1b2c3d4e5f6", Tag: "v1.5.0"}}
+	if err := stream.Send(&nodev1.UpgradeRequest{Message: &nodev1.UpgradeRequest_Header{Header: h}}); err != nil {
+		t.Fatal(err)
+	}
+	_, err := stream.CloseAndReceive()
+	if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "upgrade: the image is staged as .staged-chalkos_2.efi, but its activation failed: Secure Boot would refuse the UKI") {
+		t.Errorf("upgrade = %v", err)
+	}
+	if p := upgrade.ReadImages(filepath.Join(s.Paths.StateDir, upgrade.ImagesRecord)).Of([]byte{1, 2}); p != (upgrade.Provenance{Revision: "a1b2c3d4e5f6", Tag: "v1.5.0"}) {
+		t.Errorf("the record of installed images names %+v for the staged image", p)
+	}
+	if _, err := os.Stat(record); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("the record of the last rollback: %v", err)
+	}
+}
+
 // activateOn asks s to activate the image with the root hash.
 func activateOn(s *Server, root []byte) (*nodev1.ActivateImageResponse, error) {
 	resp, err := s.ActivateImage(context.Background(), connect.NewRequest(&nodev1.ActivateImageRequest{RootHash: root}))

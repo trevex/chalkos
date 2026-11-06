@@ -110,6 +110,16 @@ func (s *Server) Upgrade(ctx context.Context, stream *connect.ClientStream[nodev
 		log.Printf("upgrading to %q with the root hash %x", img.GetImageId(), img.GetRootHash())
 	}
 	res, staged, err := s.installImage(ctx, header, h.GetConfig(), h.GetFallbackSecret(), h.GetStageOnly(), parts)
+	if staged := (*upgrade.StagedError)(nil); errors.As(err, &staged) {
+		log.Printf("upgrade to %x failed: %v", img.GetRootHash(), err)
+		// The image is staged with the config stageConfig wrote, as after an upgrade that stops
+		// there, and ActivateImage may activate it later: the node records its provenance, and how
+		// the node got to the image the inactive slot held before is gone with that image. The
+		// pending config stays until the image boots next.
+		s.recordImages(&header)
+		s.forgetRollback()
+		return nil, failed(connect.CodeFailedPrecondition, "upgrade: %v", err)
+	}
 	if err != nil {
 		log.Printf("upgrade to %x failed: %v", img.GetRootHash(), err)
 		// A refusal retired the image, so its config slot goes too.
