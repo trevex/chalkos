@@ -71,3 +71,17 @@ func TestControlPlanePods(t *testing.T) {
 		t.Errorf("a failed list: %q", got)
 	}
 }
+
+// The static pods are listed from the API server's watch cache, not from etcd.
+func TestControlPlanePodsFromTheWatchCache(t *testing.T) {
+	cs := fake.NewClientset()
+	var version string
+	cs.PrependReactor("list", "pods", func(a k8stesting.Action) (bool, runtime.Object, error) {
+		version = a.(k8stesting.ListActionImpl).ListOptions.ResourceVersion
+		return false, nil, nil
+	})
+	controlPlanePods(context.Background(), cs, k8s.Cluster{}, "cp1")
+	if version != "0" {
+		t.Errorf("listed at resource version %q, want 0", version)
+	}
+}

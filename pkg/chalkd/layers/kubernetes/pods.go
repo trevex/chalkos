@@ -29,6 +29,9 @@ func controlPlanePods(ctx context.Context, cs kubernetes.Interface, c k8s.Cluste
 	pods, err := cs.CoreV1().Pods(metav1.NamespaceSystem).List(ctx, metav1.ListOptions{
 		LabelSelector: "tier=control-plane",
 		FieldSelector: fields.OneTermEqualSelector("spec.nodeName", node).String(),
+		// The API server's watch cache serves the list, which reads etcd only for a list of the
+		// latest version.
+		ResourceVersion: "0",
 	})
 	if err != nil {
 		return fmt.Sprintf("its static pods are unknown: %v", err)
