@@ -120,7 +120,7 @@ file.
 | --- | --- | --- | --- |
 | `--address`{ #flag-address } | list of string | each node's address in the inventory | Address of the node's chalkd, host or host:port, or NODE=ADDR of any node of the cluster; repeat it for several. |
 | `--allow-downgrade`{ #flag-allow-downgrade } | boolean | `false` | Deliver an API server one minor release older than the newest the control planes run. |
-| `--allow-downtime`{ #flag-allow-downtime } | boolean | `false` | Deliver a new API server version to a control plane of a cluster with one or two, whose etcd loses its quorum and API server is down while its control plane restarts. |
+| `--allow-downtime`{ #flag-allow-downtime } | boolean | `false` | Deliver a new API server version to a control plane of a cluster with one or two, whose API may be unavailable while that control plane's API server restarts. |
 | `--confirm`{ #flag-confirm } | boolean | `false` | Confirm the node's open trial once the node is healthy, so it keeps the config on trial. |
 | `--diff`{ #flag-diff } | boolean | `false` | Print what the config changes in the node's config, document by document and field by field, and change nothing; the node checks nothing, which --dry-run has it do. |
 | `--discard`{ #flag-discard } | boolean | `false` | With --staged, drop the config the node holds pending for its next upgrade; needs no inventory. |

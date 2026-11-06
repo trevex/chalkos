@@ -299,10 +299,12 @@ chalkctl: etcd has 2 voters, and without cp1 fewer than the 2 its quorum needs: 
 Pass `--allow-downtime` when that downtime is acceptable. With three or more control planes, the
 flag changes nothing: chalkctl still waits for the other voters to be healthy.
 
-`chalkctl apply-config` runs the same check before each control plane gets a new API server, since
-the control plane's static pods restart. Its message ends `it and the API server are down while cp1
-restarts its control plane; pass --allow-downtime to accept that`, and its `--allow-downtime`
-accepts it the same way.
+`chalkctl apply-config` runs the same check before each control plane gets a new API server. The
+delivery restarts that control plane's API server, controller-manager and scheduler, not etcd, so
+with too few other control planes the cluster's API may be unavailable meanwhile. Its message reads
+`the API server of cp1 restarts, and with no other control plane the cluster's API may be
+unavailable meanwhile; pass --allow-downtime to accept that`, and its `--allow-downtime` accepts
+it the same way.
 
 A control plane that is joining blocks the run too, because its etcd member is a learner. The
 message reads `etcd member cp3 is a learner yet; upgrade once it joined`. Run the command again
@@ -357,7 +359,7 @@ These flags of `chalkctl apply-config` change how it rolls the control plane out
 
 | Flag | Default | Effect |
 | --- | --- | --- |
-| `--allow-downtime` | off | Lets a cluster of one or two control planes take a new API server, although etcd and the API server are down while the control plane restarts. |
+| `--allow-downtime` | off | Lets a cluster of one or two control planes take a new API server, although the cluster's API may be unavailable while a control plane's API server restarts. |
 | `--allow-downgrade` | off | Lets the config name an API server one minor older than the newest the control planes run. |
 | `--try=<duration>` | 10 minutes for control planes | How long each node's trial lasts. Its static pods must run the new images within it. |
 | `--until=deliver` | `confirm` | Leaves the first node's trial open, for `--confirm`. |

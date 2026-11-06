@@ -28,7 +28,7 @@ type rolloutFlags struct {
 // RolloutFlags registers --allow-downtime and --allow-downgrade of apply-config.
 func (p *Plugin) RolloutFlags(fs *pflag.FlagSet) any {
 	f := &rolloutFlags{}
-	fs.BoolVar(&f.allowDowntime, "allow-downtime", false, "deliver a new API server version to a control plane of a cluster with one or two, whose etcd loses its quorum and API server is down while its control plane restarts")
+	fs.BoolVar(&f.allowDowntime, "allow-downtime", false, "deliver a new API server version to a control plane of a cluster with one or two, whose API may be unavailable while that control plane's API server restarts")
 	fs.BoolVar(&f.allowDowngrade, "allow-downgrade", false, "deliver an API server one minor release older than the newest the control planes run")
 	return f
 }
@@ -330,12 +330,13 @@ func members(c layer.Cluster) ([]string, error) {
 	return names, nil
 }
 
-// BeforeDelivery waits for etcd to keep its quorum while a control plane's API server restarts.
+// BeforeDelivery waits for etcd to keep its quorum without a control plane whose API server
+// restarts, so the cluster's other API servers keep serving meanwhile.
 func (p *Plugin) BeforeDelivery(ctx context.Context, u layer.Upgrading, name string, role layer.UpgradeRole) error {
 	if !role.Coordinator {
 		return nil
 	}
-	return quorum(ctx, u, p.rolloutFlagsOf(u).allowDowntime, name, "restarts its control plane")
+	return quorum(ctx, u, p.rolloutFlagsOf(u).allowDowntime, name, false)
 }
 
 // Delivered checks that a node of the cluster has its Node Ready, or held back by its container

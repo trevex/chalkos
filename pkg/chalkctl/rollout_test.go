@@ -250,7 +250,7 @@ func TestApplyConfigRolloutKeepsQuorum(t *testing.T) {
 	single.runAPIServer("1.37.1")
 	single.rollTo(t, "1.37.2")
 	err = single.applyConfigTo([]string{"cp1"})
-	if err == nil || !strings.Contains(err.Error(), "it and the API server are down while cp1 restarts its control plane; pass --allow-downtime to accept that") {
+	if err == nil || !strings.Contains(err.Error(), "the API server of cp1 restarts, and with no other control plane the cluster's API may be unavailable meanwhile; pass --allow-downtime to accept that") {
 		t.Errorf("one control plane: %v", err)
 	}
 	if err := single.applyConfigTo([]string{"cp1"}, "--allow-downtime"); err != nil {
