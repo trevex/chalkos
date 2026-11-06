@@ -44,48 +44,19 @@ func subnetDoc(t *testing.T, name, spec string) any {
 	return routerDoc(t, "DHCPSubnet", name, string(data))
 }
 
-// The renderer refuses what spans documents: a subnet's link that is a VRF's device or a NAT64's
-// link, a link of no Network, links of two VRFs or of a VRF no document declares, a link without
-// the router's address in the subnet, a link of two subnets, subnets that overlap in a VRF, and a
-// pool or reservation of the router's own address. It guards, with an internal error, values
-// that Kea's check passes and that would panic the renderer or that Kea's option data would read
-// as more values, and names that dnsmasq's config and the firewall's ruleset would read as
-// syntax. The rules refuse the rest of what a subnet says wrong, and Kea's check what it cannot
-// load.
+// The renderer guards, with an internal error, values that Kea's check passes and that would
+// panic the renderer or that Kea's option data would read as more values. The validator router
+// refuses what spans documents, the rules the rest of what a subnet says wrong, and Kea's check
+// what it cannot load.
 func TestKeaRefusals(t *testing.T) {
 	office := func(more string) any {
 		return subnetDoc(t, "office", `{"interfaces": ["lan0"], "subnet": "192.0.2.0/24"`+more+`}`)
-	}
-	pool := func(first, last string) any {
-		return office(`, "pools": [{"first": "` + first + `", "last": "` + last + `"}]`)
-	}
-	reserve := func(address string) any {
-		return office(`, "reservations": [{"mac": "52:54:00:12:34:56", "address": "` + address + `", "hostname": null}]`)
 	}
 	const checked = "; chalkd checks the config against the schemas, the rules and the validators before it renders"
 	for name, c := range map[string]struct {
 		subnets []any
 		want    string
 	}{
-		"a VRF's device":         {[]any{subnetDoc(t, "office", `{"interfaces": ["guest"], "subnet": "192.0.2.0/24"}`)}, "DHCPSubnet/office: spec.interfaces[0]: guest is the device of VRF guest; name the VRF's links"},
-		"a NAT64's link":         {[]any{subnetDoc(t, "office", `{"interfaces": ["n64-edge"], "subnet": "192.0.2.0/24"}`)}, "DHCPSubnet/office: spec.interfaces[0]: n64-edge is the link of NAT64 edge"},
-		"links of two VRFs":      {[]any{subnetDoc(t, "office", `{"interfaces": ["lan0", "vlan20"], "subnet": "192.0.2.0/24"}`)}, "its links are in VRF default and VRF guest; a subnet is served in one VRF"},
-		"a VRF of no document":   {[]any{subnetDoc(t, "office", `{"interfaces": ["lan2"], "subnet": "203.0.113.0/24"}`)}, `DHCPSubnet/office: spec.interfaces: its links are in the VRF "ghost", which no VRF document declares`},
-		"a link of no Network":   {[]any{subnetDoc(t, "office", `{"interfaces": ["lan9"], "subnet": "192.0.2.0/24"}`)}, "no Network document matches lan9 by Name= alone"},
-		"a link without address": {[]any{subnetDoc(t, "office", `{"interfaces": ["lan0"], "subnet": "203.0.113.0/24"}`)}, "Network 10-lan0 gives lan0 no static address in the subnet 203.0.113.0/24, which Kea answers its clients from"},
-		"a link of two subnets":  {[]any{office(""), subnetDoc(t, "other", `{"interfaces": ["lan0"], "subnet": "192.0.2.0/24"}`)}, "DHCPSubnet office and DHCPSubnet other both serve lan0; a link takes one subnet"},
-		"overlapping subnets":    {[]any{office(""), subnetDoc(t, "servers", `{"interfaces": ["lan1"], "subnet": "192.0.2.64/26"}`)}, "DHCPSubnet office and DHCPSubnet servers overlap in VRF default: 192.0.2.0/24 and 192.0.2.64/26"},
-		"a pool's first address": {[]any{pool("192.0.2.1", "192.0.2.10")}, "DHCPSubnet/office: spec.pools[0]: the pool 192.0.2.1-192.0.2.10 holds 192.0.2.1, the router's own address on the subnet's links"},
-		"a pool of the router's": {[]any{pool("192.0.2.10", "192.0.2.50")}, "DHCPSubnet/office: spec.pools[0]: the pool 192.0.2.10-192.0.2.50 holds 192.0.2.30, the router's own address on the subnet's links"},
-		"the router reserved":    {[]any{reserve("192.0.2.30")}, "DHCPSubnet/office: spec.reservations[0].address: the reservation of 52:54:00:12:34:56, 192.0.2.30, is the router's own address on the subnet's links"},
-		// Values that Kea's check passes and the renderer would panic on, or that Kea's option
-		// data would read as more values.
-		"no interface":                {[]any{subnetDoc(t, "office", `{"interfaces": [], "subnet": "192.0.2.0/24"}`)}, "internal error: DHCPSubnet office: interfaces names no interface" + checked},
-		"a glob":                      {[]any{subnetDoc(t, "office", `{"interfaces": ["lan*"], "subnet": "192.0.2.0/24"}`)}, `internal error: DHCPSubnet office: interfaces: "lan*" is no interface name` + checked},
-		"an interface of a quote":     {[]any{subnetDoc(t, "office", `{"interfaces": ["lan0\""], "subnet": "192.0.2.0/24"}`)}, `internal error: DHCPSubnet office: interfaces: "lan0\"" is no interface name`},
-		"a subnet of no range":        {[]any{subnetDoc(t, "office", `{"interfaces": ["lan0"], "subnet": "192.0.2.0"}`)}, `internal error: DHCPSubnet office: the subnet "192.0.2.0" is no address range` + checked},
-		"a pool of no address":        {[]any{pool("192.0.2.100", "192.0.2.x")}, `internal error: DHCPSubnet office: "192.0.2.x" is no address without a zone` + checked},
-		"a reservation of no address": {[]any{reserve("printer")}, `internal error: DHCPSubnet office: "printer" is no address without a zone`},
 		"a gateway of no address":     {[]any{office(`, "gateway": "router"`)}, `internal error: DHCPSubnet office: "router" is no address without a zone`},
 		"a boot server of no address": {[]any{office(`, "boot": {"server": "tftp", "bios": "undionly.kpxe", "uefi": null, "ipxe": null}`)}, `internal error: DHCPSubnet office: "tftp" is no address without a zone`},
 		"a DNS server of a zone":      {[]any{office(`, "dns": ["fe80::53%lan0,192.0.2.66"]`)}, `internal error: DHCPSubnet office: "fe80::53%lan0,192.0.2.66" is no address without a zone`},

@@ -3,20 +3,18 @@ package main
 import (
 	"fmt"
 	"maps"
-	"net/netip"
 	"slices"
 	"strings"
 
-	"github.com/trevex/chalkos/pkg/refusals"
 	"github.com/trevex/chalkos/pkg/router/derive"
 )
 
 // The output dhcp-relay: the config of dnsmasq's DHCP relay of each VRF whose links DHCPRelay
 // documents relay, which forwards the DHCPv4 and DHCPv6 requests of the clients on the links to
-// the relays' servers through the VRF's table. The renderer checks what the kind's rules cannot:
-// one VRF per relay, the router's address of each family the servers have on each link, which
-// the servers tell the link by, and that dnsmasq's sockets bind beside Kea's. The set check has
-// refused a link that two relays name.
+// the relays' servers through the VRF's table. The validator router checks what the kind's rules
+// cannot, with derive.Model.Relays: one VRF per relay, the router's address of each family the
+// servers have on each link, which the servers tell the link by, and that dnsmasq's sockets bind
+// beside Kea's. The set check has refused a link that two relays name.
 
 // relayFile is the file renderDHCPRelay writes for the default VRF's relay; a VRF's gets
 // dnsmasq-relay-<vrf>.conf.
@@ -29,9 +27,6 @@ func relayFileOf(vrf string) string {
 	}
 	return "dnsmasq-relay-" + vrf + ".conf"
 }
-
-// relayWords ends the refusal of a relay's links in two VRFs.
-var relayWords = "a relay relays in one VRF"
 
 // relayVRF is the part of a relay's config of one VRF: the links it relays on and its dhcp-relay
 // lines, each the router's address on a link and a server.
@@ -48,52 +43,25 @@ func renderDHCPRelay(in map[string]any, out string) error {
 	if err != nil {
 		return err
 	}
-	units, err := d.Units()
+	relays, err := d.Relays()
 	if err != nil {
 		return err
 	}
-	devices := d.Devices()
-	// families are the relays that relay each family in each VRF, by Kea's server of the same.
-	families := map[keaServer]string{}
 	byVRF := map[string]*relayVRF{}
-	for _, r := range d.DHCPRelays {
-		links, vrf, err := subnetLinks(d, devices, "DHCPRelay", r.Name, r.Spec.Interfaces, relayWords)
-		if err != nil {
-			return derive.Within("DHCPRelay "+r.Name, err)
-		}
-		servers, err := relayServers(r.Spec.Servers)
-		if err != nil {
-			return derive.Within("DHCPRelay "+r.Name, err)
-		}
-		v := byVRF[vrf]
+	for _, r := range relays {
+		v := byVRF[r.VRF]
 		if v == nil {
 			v = &relayVRF{}
-			byVRF[vrf] = v
+			byVRF[r.VRF] = v
 		}
-		for _, l := range links {
-			v.links = append(v.links, l)
-			network, err := linkNetwork(units, "DHCPRelay", r.Name, interfacePath(r.Spec.Interfaces, l), l, "its addresses")
-			if err != nil {
-				return derive.Within("DHCPRelay "+r.Name, err)
-			}
+		for _, l := range r.Links {
+			v.links = append(v.links, l.Link)
 			for _, v6 := range []bool{false, true} {
-				fam := servers[v6]
-				if len(fam) == 0 {
-					continue
-				}
-				families[keaServer{vrf: vrf, v6: v6}] = r.Name
-				local, err := relayAddress(d, r.Name, interfacePath(r.Spec.Interfaces, l), network, l, v6)
-				if err != nil {
-					return derive.Within("DHCPRelay "+r.Name, err)
-				}
-				for _, s := range fam {
-					v.lines = append(v.lines, "dhcp-relay="+local.String()+","+s.String())
+				for _, s := range r.Servers[v6] {
+					v.lines = append(v.lines, "dhcp-relay="+l.Local[v6].String()+","+s.String())
 				}
 			}
 		}
-	}
-	if err := relaysBesideServers(d, devices, families); err != nil {
-		return err
 	}
 	vrfs := slices.Collect(maps.Keys(byVRF))
 	slices.SortFunc(vrfs, func(a, b string) int { return strings.Compare(vrfOrder(a), vrfOrder(b)) })
@@ -116,95 +84,6 @@ func renderDHCPRelay(in map[string]any, out string) error {
 		}
 		if err := writeFile(out, relayFileOf(vrf), []byte(b.String())); err != nil {
 			return err
-		}
-	}
-	return nil
-}
-
-// notUnicast are the ranges a relay neither forwards to nor from, which DHCPRelay's rule refuses
-// servers of.
-var notUnicast = []netip.Prefix{
-	netip.MustParsePrefix("0.0.0.0/8"), netip.MustParsePrefix("127.0.0.0/8"), netip.MustParsePrefix("169.254.0.0/16"), netip.MustParsePrefix("224.0.0.0/3"),
-	netip.MustParsePrefix("::/8"), netip.MustParsePrefix("fe80::/10"), netip.MustParsePrefix("ff00::/8"),
-}
-
-// relayUnicast reports whether a is an address a relay forwards to or from: no zone, and outside
-// notUnicast, which holds the IPv4-mapped IPv6 addresses too.
-func relayUnicast(a netip.Addr) bool {
-	if !a.IsValid() || a.Zone() != "" {
-		return false
-	}
-	for _, p := range notUnicast {
-		if p.Contains(a) {
-			return false
-		}
-	}
-	return true
-}
-
-// relayServers are a relay's servers by family, IPv6 under true: unicast addresses, as the rules
-// have checked, once each, as the set check has refused a repeat. It guards, with an internal
-// error, a server that is no address without a zone: netip takes a zone of any characters, a line
-// break among them, which dnsmasq's config would read as another option.
-func relayServers(servers []string) (map[bool][]netip.Addr, error) {
-	out := map[bool][]netip.Addr{}
-	for _, s := range servers {
-		a, err := netip.ParseAddr(s)
-		if err != nil || a.Zone() != "" {
-			return nil, derive.InternalErrorf("the server %q is no address without a zone", s)
-		}
-		out[a.Is6()] = append(out[a.Is6()], a)
-	}
-	return out, nil
-}
-
-// relayAddress is the router's first static address of a family on the link, which the Network
-// network gives it: the relay forwards a request from it, and the server picks the subnet of the
-// request's link by it, so a DHCPv6 relay takes a global one. A link without one refuses the
-// DHCPRelay called relay at path, the field that names the link.
-func relayAddress(d derive.Model, relay, path, network, link string, v6 bool) (netip.Addr, error) {
-	for _, a := range d.Addresses {
-		addr := a.Prefix.Addr()
-		if a.Network == network && addr.Is6() == v6 && relayUnicast(addr) {
-			return addr, nil
-		}
-	}
-	family := "IPv4"
-	if v6 {
-		family = "global IPv6"
-	}
-	return netip.Addr{}, refusals.Errorf("DHCPRelay", relay, path, "Network %s gives %s no static %s address, which the relay forwards its clients' requests from", network, link, family)
-}
-
-// relaysBesideServers refuses a family that DHCPRelay documents relay and DHCPSubnet documents
-// serve in one VRF, or in two VRFs one of which is the default: dnsmasq's and Kea's sockets of a
-// family bind beside each other only when each is bound to its own VRF's device. families are the
-// relays of each family in each VRF.
-func relaysBesideServers(d derive.Model, devices []string, families map[keaServer]string) error {
-	for _, s := range d.DHCPSubnets {
-		p, err := netip.ParsePrefix(s.Spec.Subnet)
-		if err != nil {
-			continue
-		}
-		// The output kea refuses a subnet of links it cannot place.
-		_, vrf, err := subnetLinks(d, devices, "DHCPSubnet", s.Name, s.Spec.Interfaces, subnetWords)
-		if err != nil {
-			continue
-		}
-		v6 := subnetIs6(p)
-		keys := slices.SortedFunc(maps.Keys(families), func(a, b keaServer) int {
-			return strings.Compare(vrfOrder(a.vrf)+" "+a.family(), vrfOrder(b.vrf)+" "+b.family())
-		})
-		for _, k := range keys {
-			relay := families[k]
-			if k.v6 != v6 || (k.vrf != vrf && k.vrf != derive.DefaultVRF && vrf != derive.DefaultVRF) {
-				continue
-			}
-			version := 4
-			if v6 {
-				version = 6
-			}
-			return refusals.Errorf("DHCPSubnet", s.Name, "spec.interfaces", "DHCPRelay %s relays DHCPv%d in VRF %s and DHCPSubnet %s serves DHCPv%d in VRF %s; dnsmasq's and Kea's sockets of one family bind beside each other only in two VRFs other than the default one", relay, version, k.vrf, s.Name, version, vrf)
 		}
 	}
 	return nil

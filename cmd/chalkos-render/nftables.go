@@ -1031,36 +1031,34 @@ func (o opening) lines() ([]string, error) {
 // an IPv4 server. Kea's DHCPv4 server reads and answers on raw sockets ahead of the firewall and
 // needs none, and the servers' answers to the relay pass as replies to its requests.
 func dhcpOpenings(d derive.Model) ([]opening, error) {
-	devices := d.Devices()
+	subnets, err := d.Subnets()
+	if err != nil {
+		return nil, err
+	}
+	relays, err := d.Relays()
+	if err != nil {
+		return nil, err
+	}
 	var out []opening
-	for _, s := range d.DHCPSubnets {
-		p, err := netip.ParsePrefix(s.Spec.Subnet)
-		if err != nil || !subnetIs6(p) {
+	for _, s := range subnets {
+		if !s.Is6() {
 			continue
 		}
-		links, vrf, err := subnetLinks(d, devices, "DHCPSubnet", s.Name, s.Spec.Interfaces, subnetWords)
-		if err != nil {
-			return nil, derive.Within("DHCPSubnet "+s.Name, err)
-		}
 		out = append(out, opening{comment: "DHCPSubnet " + s.Name, protocol: "udp", ports: []derive.PortRange{"547"},
-			interfaces: links, vrf: vrfOpening(vrf), sources: []string{"fe80::/10"}})
+			interfaces: s.Links, vrf: vrfOpening(s.VRF), sources: []string{"fe80::/10"}})
 	}
-	for _, r := range d.DHCPRelays {
-		links, vrf, err := subnetLinks(d, devices, "DHCPRelay", r.Name, r.Spec.Interfaces, relayWords)
-		if err != nil {
-			return nil, derive.Within("DHCPRelay "+r.Name, err)
+	for _, r := range relays {
+		var links []string
+		for _, l := range r.Links {
+			links = append(links, l.Link)
 		}
-		servers, err := relayServers(r.Spec.Servers)
-		if err != nil {
-			return nil, derive.Within("DHCPRelay "+r.Name, err)
-		}
-		o := opening{comment: "DHCPRelay " + r.Name, protocol: "udp", interfaces: links, vrf: vrfOpening(vrf)}
-		if len(servers[false]) > 0 {
+		o := opening{comment: "DHCPRelay " + r.Name, protocol: "udp", interfaces: links, vrf: vrfOpening(r.VRF)}
+		if len(r.Servers[false]) > 0 {
 			v4 := o
 			v4.ports, v4.sources = []derive.PortRange{"67"}, []string{"0.0.0.0/0"}
 			out = append(out, v4)
 		}
-		if len(servers[true]) > 0 {
+		if len(r.Servers[true]) > 0 {
 			v6 := o
 			v6.ports, v6.sources = []derive.PortRange{"547"}, []string{"fe80::/10"}
 			out = append(out, v6)

@@ -11,9 +11,9 @@
 # orders them. chalkd stops a rule at a cost of 1,000,000 on the config it meets, so the lists
 # those rules pair are bounded: 32 pools, 512 reservations and 16 DNS servers, at which the
 # costliest rule, reservations against pools, costs about 330,000, and its message as much. The
-# reservations' MAC addresses and addresses are declared unique. The output kea
-# refuses what spans documents: a link of two subnets of a family, subnets that overlap in a VRF,
-# the router's own addresses on the links in a pool or reservation, and the links' router
+# reservations' MAC addresses and addresses are declared unique. The validator router refuses
+# what spans documents: a link of two subnets of a family, subnets that overlap in a VRF, the
+# router's own addresses on the links in a pool or reservation, and the links' router
 # advertisements.
 {
   config,

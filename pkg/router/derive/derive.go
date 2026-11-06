@@ -47,7 +47,8 @@ type Named[T any] struct {
 // output's input or a validator's: the router kinds' documents, each kind's in the input's order,
 // which sorts them by name, and what the Network and VRF documents say together. The parts that
 // only some outputs need, and that refuse what the others need not see, are methods: Units,
-// NAT64Instances and PolicyTables.
+// NAT64Instances, PolicyTables, Sessions, Subnets and Relays. Validate calls each, where an output
+// would, and the outputs that need one call it again.
 type Model struct {
 	Routers  []Named[RouterSpec]
 	Zones    []Named[ZoneSpec]
