@@ -340,8 +340,11 @@ chalkctl node activate or the one it ran, and its boot was found healthy, and it
 it, as Kubernetes uncordons it once its Node is Ready. The node checks the health of the new boot
 itself, also of a boot of an entry blessed before, which the boot loader does not count. A node
 that falls back from the image stops the command and stays held, and so does a node whose boot
-settled without being found healthy: systemd finished starting the boot, and the image's health
-timeout, 300 seconds by default, passed since. A boot not found healthy within --timeout stops the
+settled and stays unhealthy for a minute: the boot settled once systemd finished starting it and
+the image's health timeout, 300 seconds by default, passed since. A check that fails once, such as
+etcd answering late, does not stop the command, and a healthy look starts the minute over. When
+the node's status gave no ID of the boot before the reboot, chalkctl cannot tell the new boot from
+that one and waits for --timeout instead. A boot not found healthy within --timeout stops the
 command too. --no-drain reboots the node without its layers holding or releasing it, and still
 waits. Draining a node goes through the cluster's control planes, which the inventory names.
 

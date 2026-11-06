@@ -28,6 +28,9 @@ type app struct {
 	// node waited for; zero is three seconds. Tests set both.
 	clock        func() time.Time
 	pollInterval time.Duration
+	// unhealthyGrace is how long a node's boot may be found unhealthy after it settled before a
+	// reboot's wait for it stops; zero is a minute. Tests set it.
+	unhealthyGrace time.Duration
 }
 
 // NewCommand returns chalkctl's root command, with age and SSH keys from the user's home directory

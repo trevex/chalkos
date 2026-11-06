@@ -174,6 +174,13 @@ type upgradeLab struct {
 	// settling makes the nodes report their boots as still starting, so a boot that is not
 	// healthy may still become so.
 	settling bool
+	// flaky is the number of checks of a boot's health, of any node, that find it settled and
+	// unhealthy before the lab answers as it would, as when etcd answers late.
+	flaky int
+	// noBootID makes the nodes report no boot ID, as a chalkd that cannot read it.
+	noBootID bool
+	// healthChecked holds the IDs of the boots whose health each node was asked to check, in order.
+	healthChecked map[string][]string
 	// unhealthyMembers are etcd members that do not answer.
 	unhealthyMembers []string
 	// cordoned holds the cordoned Nodes, and whether an upgrade marked them so.
@@ -246,8 +253,21 @@ func (n *upgradeFake) Status(_ context.Context, req *connect.Request[nodev1.Stat
 		return nil, err
 	}
 	n.lab.mu.Lock()
-	sick, settling := maps.Clone(n.lab.sick), n.lab.settling
+	sick, settling, noBootID := maps.Clone(n.lab.sick), n.lab.settling, n.lab.noBootID
+	flaky := req.Msg.GetCheckHealth() && n.lab.flaky > 0
+	if flaky {
+		n.lab.flaky--
+	}
 	n.lab.mu.Unlock()
+	// The boot IDs of the looks that checked health are recorded once the node is unlocked.
+	var checked string
+	defer func() {
+		if req.Msg.GetCheckHealth() {
+			n.lab.mu.Lock()
+			n.lab.healthChecked[n.name] = append(n.lab.healthChecked[n.name], checked)
+			n.lab.mu.Unlock()
+		}
+	}()
 	n.mu.Lock()
 	defer n.mu.Unlock()
 	st := &nodev1.StatusResponse{Boot: &nodev1.BootStatus{
@@ -255,8 +275,15 @@ func (n *upgradeFake) Status(_ context.Context, req *connect.Request[nodev1.Stat
 		Entry:   fmt.Sprintf("chalkos_%d.efi", n.generation), Blessed: true,
 		BootId: fmt.Sprintf("boot-%d", n.boots),
 	}}
+	if noBootID {
+		st.Boot.BootId = ""
+	}
 	if req.Msg.GetCheckHealth() {
 		st.Boot.Health = &nodev1.BootHealth{Healthy: sick[n.image] == "", Error: sick[n.image], Settled: !settling}
+		if flaky {
+			st.Boot.Health = &nodev1.BootHealth{Error: "etcd: context deadline exceeded", Settled: true}
+		}
+		checked = fmt.Sprintf("boot-%d", n.boots)
 	}
 	// VAR, which every node has.
 	st.Volumes = []*nodev1.VolumeStatus{{Name: "var"}}
@@ -592,6 +619,7 @@ func newUpgradeLabOf(t *testing.T, controlPlanes int, workers []string, cpVarian
 	t.Helper()
 	ta := newTestApp(t)
 	ta.pollInterval = 5 * time.Millisecond
+	ta.unhealthyGrace = 200 * time.Millisecond
 	var nodes []testNode
 	for i := 1; i <= controlPlanes; i++ {
 		nodes = append(nodes, testNode{fmt.Sprintf("cp%d", i), kubernetes.KindControlPlane, cpVariant})
@@ -600,7 +628,7 @@ func newUpgradeLabOf(t *testing.T, controlPlanes int, workers []string, cpVarian
 		nodes = append(nodes, testNode{w, kubernetes.KindWorker, wVariant})
 	}
 	nodes = append(nodes, testNode{"n1", "", "plain"})
-	l := &upgradeLab{t: t, ta: ta, nodes: map[string]*upgradeFake{}, addrs: map[string]string{}, unhealthy: map[string]bool{}, sick: map[string]string{}, cordoned: map[string]bool{}, emptyDir: map[string]bool{}, stopping: map[string]bool{}, notReady: map[string]bool{}}
+	l := &upgradeLab{t: t, ta: ta, nodes: map[string]*upgradeFake{}, addrs: map[string]string{}, unhealthy: map[string]bool{}, sick: map[string]string{}, cordoned: map[string]bool{}, emptyDir: map[string]bool{}, stopping: map[string]bool{}, notReady: map[string]bool{}, healthChecked: map[string][]string{}}
 	for _, node := range nodes {
 		name := node.name
 		n := &upgradeFake{lab: l, name: name, variant: node.variant, platform: "metal", kind: node.kind, image: "0.1.0", root: bytes.Repeat([]byte{1}, 32), generation: 1}
@@ -1154,8 +1182,8 @@ func TestNodeReboot(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "w2: waiting for 010101010101 to be found healthy: its boot is not healthy yet: units failed: broken.service") {
 		t.Errorf("node reboot into a boot that is not healthy yet = %v", err)
 	}
-	// Once the boot settled, its result is final: the command stops at once, and the node it
-	// drained stays cordoned.
+	// Once the boot settled and stayed unhealthy for the grace period, its result is final: the
+	// command stops long before its timeout, and the node it drained stays cordoned.
 	l.mu.Lock()
 	l.settling = false
 	l.mu.Unlock()
@@ -1165,8 +1193,8 @@ func TestNodeReboot(t *testing.T) {
 	if err == nil || err.Error() != "w2: its boot of 010101010101 settled and is not healthy: units failed: broken.service; it stays cordoned" {
 		t.Errorf("node reboot into a settled boot that is not healthy = %v", err)
 	}
-	if waited := time.Since(start); waited > 30*time.Second {
-		t.Errorf("the command waited %v for a settled boot", waited)
+	if waited := time.Since(start); waited < 200*time.Millisecond || waited > 30*time.Second {
+		t.Errorf("the command waited %v for a settled boot, want the grace period of 200ms and less than the timeout", waited)
 	}
 	if got := l.takeEvents(); !slices.Equal(got, []string{"w2 drain", "w2 reboot"}) || !l.cordoned["w2"] {
 		t.Errorf("events %q, w2 cordoned: %v", got, l.cordoned["w2"])
@@ -1189,6 +1217,48 @@ func TestNodeReboot(t *testing.T) {
 	}
 	if got := l.takeEvents(); !slices.Equal(got, []string{"w3 drain", "w3 reboot"}) || !l.cordoned["w3"] {
 		t.Errorf("events %q, w3 cordoned: %v", got, l.cordoned["w3"])
+	}
+}
+
+// TestNodeRebootWaitsOutAnUnhealthyCheck goes on waiting when a settled boot is found unhealthy
+// for less than the grace period, as when etcd answers late, and returns once it is healthy. The
+// node is asked to check the health of the new boot alone.
+func TestNodeRebootWaitsOutAnUnhealthyCheck(t *testing.T) {
+	l := newUpgradeLab(t, 1)
+	l.mu.Lock()
+	l.flaky = 3
+	l.mu.Unlock()
+	if err := l.run("node", "reboot", "w2", "--no-drain", "--timeout", "1m"); err != nil {
+		t.Fatalf("%v\n%s", err, l.ta.stdout)
+	}
+	if !strings.Contains(l.ta.stdout.String(), "w2: runs 010101010101, found healthy\n") {
+		t.Errorf("output:\n%s", l.ta.stdout)
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.flaky != 0 {
+		t.Errorf("%d of the unhealthy checks were not asked for", l.flaky)
+	}
+	if checked := l.healthChecked["w2"]; len(checked) < 4 || slices.ContainsFunc(checked, func(id string) bool { return id != "boot-1" }) {
+		t.Errorf("the node checked the health of the boots %q, want boot-1 alone, at least 4 times", checked)
+	}
+}
+
+// TestNodeRebootWithoutTheBootBefore waits until its timeout for a boot that settled and is not
+// healthy while the node reports no boot ID: the boot may be the one before the reboot, whose
+// chalkd still answers.
+func TestNodeRebootWithoutTheBootBefore(t *testing.T) {
+	l := newUpgradeLab(t, 1)
+	l.mu.Lock()
+	l.noBootID, l.sick["0.1.0"] = true, "units failed: broken.service"
+	l.mu.Unlock()
+	start := time.Now()
+	err := l.run("node", "reboot", "w2", "--no-drain", "--timeout", "1s")
+	if err == nil || !strings.Contains(err.Error(), "w2: waiting for 010101010101 to be found healthy: its boot settled and is not healthy: units failed: broken.service") {
+		t.Errorf("node reboot without the boot before = %v", err)
+	}
+	if waited := time.Since(start); waited < time.Second {
+		t.Errorf("the command stopped after %v, before its timeout", waited)
 	}
 }
 

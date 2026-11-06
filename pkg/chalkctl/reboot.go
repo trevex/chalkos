@@ -46,12 +46,20 @@ type rebootOptions struct {
 	// layerFlags are the values of the layers' flags, by layer, as their UpgradeFlags returned them.
 	layerFlags                              map[string]any
 	timeout, drainTimeout, poll, quorumWait time.Duration
+	// grace is how long a node's boot may stay unhealthy after it settled before the wait for it
+	// stops: a check of the layers, such as etcd's or the kubelet's, may fail once while the
+	// node serves.
+	grace time.Duration
 }
 
-// newRebootOptions are the options of a run whose wait for each node and each drain take timeout
-// at most; poll is the time between two looks at a node waited for.
-func newRebootOptions(layerFlags map[string]any, timeout, poll time.Duration) rebootOptions {
-	return rebootOptions{layerFlags: layerFlags, timeout: timeout, drainTimeout: timeout, poll: poll, quorumWait: min(timeout, time.Minute)}
+// rebootOptions are the options of a run whose wait for each node and each drain take timeout
+// at most.
+func (a *app) rebootOptions(layerFlags map[string]any, timeout time.Duration) rebootOptions {
+	grace := time.Minute
+	if a.unhealthyGrace > 0 {
+		grace = a.unhealthyGrace
+	}
+	return rebootOptions{layerFlags: layerFlags, timeout: timeout, drainTimeout: timeout, poll: a.poll(), quorumWait: min(timeout, time.Minute), grace: grace}
 }
 
 // rebootNode is a node the reboot step reboots, by its roles in the clusters of its layers.
@@ -100,6 +108,12 @@ type bootTarget struct {
 // boot before.
 func bootOf(image string, root []byte, st *nodev1.StatusResponse) bootTarget {
 	return bootTarget{image: image, root: root, before: st.GetBoot().GetBootId()}
+}
+
+// booted reports whether the boot of a node's status is the one waited for: of the target's image,
+// from an entry that is blessed, and, as far as the status tells, other than the boot before.
+func (t bootTarget) booted(boot *nodev1.BootStatus) bool {
+	return bytes.Equal(boot.GetRunning().GetRootHash(), t.root) && boot.GetBlessed() && (t.before == "" || boot.GetBootId() != t.before)
 }
 
 // reboot runs the reboot step for the node: its layers hold it unless hold is false, it reboots
@@ -156,31 +170,54 @@ func (b *rebooter) release(ctx context.Context, n *rebootNode, t bootTarget, hel
 
 // waitHealthy waits until the node runs the target's image in another boot than the one before,
 // its boot was found healthy, and it serves the clusters of its layers again, or until it fell
-// back or its boot settled without being found healthy. The chalkd of the boot before may answer
-// until it stops.
+// back or its boot settled and stayed unhealthy for the grace period. The chalkd of the boot
+// before may answer until it stops, so without the ID of that boot a settled boot that is not
+// healthy may be the one before, and only the timeout ends the wait.
 func (b *rebooter) waitHealthy(ctx context.Context, n *rebootNode, t bootTarget) error {
 	var fellBack, unhealthy error
+	// checkHealth is set once a look found the boot the wait is for; only then is the node asked
+	// to check its health, which runs the checks of its layers.
+	var checkHealth bool
+	// unhealthySince is when the looks since began to find the boot settled and unhealthy; zero
+	// once one found it otherwise. A look that reached no node changes nothing.
+	var unhealthySince time.Time
 	err := layer.WaitFor(ctx, "", b.timeout, b.poll, func() error {
 		var st *nodev1.StatusResponse
 		var notReady error
 		err := b.call(n.name, func(conn *client.Conn) error {
+			status := func() error {
+				s, err := conn.Status(ctx, connect.NewRequest(&nodev1.StatusRequest{CheckHealth: checkHealth}))
+				if err == nil {
+					st = s.Msg
+				}
+				return err
+			}
+			if err := status(); err != nil {
+				return err
+			}
+			if !checkHealth && t.booted(st.GetBoot()) {
+				checkHealth = true
+				if err := status(); err != nil {
+					return err
+				}
+			}
 			// The node checks this boot's health as its boot's health check does: blessed tells of
 			// the entry, which an uncounted boot, as of an entry blessed before, finds blessed from
 			// the start.
-			s, err := conn.Status(ctx, connect.NewRequest(&nodev1.StatusRequest{CheckHealth: true}))
-			if err != nil {
-				return err
-			}
-			st = s.Msg
-			if boot := st.GetBoot(); bytes.Equal(boot.GetRunning().GetRootHash(), t.root) && boot.GetBlessed() && boot.GetHealth().GetHealthy() {
+			if boot := st.GetBoot(); t.booted(boot) && boot.GetHealth().GetHealthy() {
 				notReady = n.ready(ctx, conn)
 			}
 			return nil
 		})
-		boot := st.GetBoot()
-		switch {
-		case err != nil:
+		if err != nil {
 			return err
+		}
+		boot := st.GetBoot()
+		health := boot.GetHealth()
+		if settledUnhealthy := health.GetSettled() && !health.GetHealthy(); !settledUnhealthy {
+			unhealthySince = time.Time{}
+		}
+		switch {
 		case t.before != "" && boot.GetBootId() == t.before:
 			return errors.New("it did not reboot yet")
 		case bytes.Equal(boot.GetFailed().GetRootHash(), t.root):
@@ -190,15 +227,23 @@ func (b *rebooter) waitHealthy(ctx context.Context, n *rebootNode, t bootTarget)
 			return fmt.Errorf("it runs %s", bootImageName(boot.GetRunning()))
 		case !boot.GetBlessed():
 			return errors.New("its boot was not found healthy yet")
-		case boot.GetHealth() == nil:
+		case health == nil:
 			return errors.New("it reports no health of its boot")
-		case !boot.GetHealth().GetHealthy() && boot.GetHealth().GetSettled():
-			// Waiting longer does not change a boot that settled: the boot loader counts it no more,
-			// and the node gave its layers the time a counted boot has.
-			unhealthy = unhealthyError(n, t, boot.GetHealth().GetError())
-			return layer.Permanent{Err: unhealthy}
-		case !boot.GetHealth().GetHealthy():
-			return fmt.Errorf("its boot is not healthy yet: %s", boot.GetHealth().GetError())
+		case !health.GetHealthy() && health.GetSettled():
+			// The boot loader counts a boot that settled no more, and the node gave its layers the
+			// time a counted boot has, so waiting changes little. A check of a layer may still fail
+			// once, as when etcd answers late, so the boot must stay unhealthy for the grace
+			// period. A boot that may be the one before ends no wait.
+			if unhealthySince.IsZero() {
+				unhealthySince = time.Now()
+			}
+			if t.before != "" && time.Since(unhealthySince) >= b.grace {
+				unhealthy = unhealthyError(n, t, health.GetError())
+				return layer.Permanent{Err: unhealthy}
+			}
+			return fmt.Errorf("its boot settled and is not healthy: %s", health.GetError())
+		case !health.GetHealthy():
+			return fmt.Errorf("its boot is not healthy yet: %s", health.GetError())
 		}
 		return notReady
 	})
@@ -476,7 +521,7 @@ func (a *app) nodeReboot(ctx context.Context, f nodeRebootFlags, name string) er
 		return err
 	}
 	// Below the operator role the node refuses the drain or the reboot, naming the role.
-	b := &rebooter{a: a, cluster: c, reach: nodeSet{cluster: c, creds: creds, addresses: addresses}, rebootOptions: newRebootOptions(f.layers, f.timeout, a.poll())}
+	b := &rebooter{a: a, cluster: c, reach: nodeSet{cluster: c, creds: creds, addresses: addresses}, rebootOptions: a.rebootOptions(f.layers, f.timeout)}
 	if err := c.node(name); err != nil {
 		return err
 	}

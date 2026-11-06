@@ -208,7 +208,10 @@ w1: uncordoned
   until its boot is found healthy and uncordons it, as the upgrade does for each node.
   `--no-drain` reboots the node without the drain and still waits for it. The node checks the
   health of the new boot itself, also when it boots the image it ran, whose entry was blessed
-  before and is not counted.
+  before and is not counted. Once the boot has settled, after systemd finished starting it and
+  the image's health timeout passed, the command stops when the boot stays unhealthy for a
+  minute. A check that fails once, such as an etcd health check that answered late, does not
+  stop it, and a healthy look starts the minute over.
 
 Staging another image replaces a staged one. `apply-config --staged` delivers config to a staged
 image as to an active one, as
@@ -477,11 +480,17 @@ data after a Kubernetes upgrade.
   the image with `chalkctl upgrade --nodes <node> --until stage` first, with the same `--image`
   when you activate one.
 - `w1: its boot of <image> settled and is not healthy: ...`: the node runs the image, but its
-  boot fails the health check's checks, such as with a failed unit, after systemd finished
-  starting it and the image's health timeout passed. A boot of a blessed entry is not counted,
-  so the node does not fall back. `chalkctl status w1` lists the failed units, and
-  `chalkctl logs w1` shows the boot's journal. A boot that is still starting at `--timeout` ends
-  with `w1: waiting for <image> to be found healthy: its boot is not healthy yet: ...` instead.
+  boot failed the node's health checks for a minute in a row, after systemd finished starting it
+  and the image's health timeout passed. The checks are that chalkd serves and then those of the
+  image's layer: on Kubernetes, the etcd member, the API server and the kubelet of a control
+  plane, or the kubelet and the Node of a worker. A node whose layer does not decide fails on a
+  failed unit or an identity that was not applied. The message names the check that failed. A
+  boot of a blessed entry is not counted, so the node does not fall back. `chalkctl status w1`
+  lists failed units, and `chalkctl logs w1` shows the boot's journal. A boot that is still
+  starting at `--timeout` ends with
+  `w1: waiting for <image> to be found healthy: its boot is not healthy yet: ...` instead. When
+  the node's status gave no boot ID before the reboot, chalkctl cannot tell the new boot from the
+  old one and waits until `--timeout`, ending with `its boot settled and is not healthy: ...`.
 - `no node keeps a previous image to roll back to: ...`: `--rollback` found no node with an image
   to boot again. [What keeps a node from rolling back](#what-keeps-a-node-from-rolling-back) lists
   the reasons.

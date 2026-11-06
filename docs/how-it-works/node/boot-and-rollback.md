@@ -239,7 +239,9 @@ chalkctl does not take a blessed entry for a healthy boot. When `chalkctl node r
 boot itself, and chalkd runs the health check's checks on the spot. While the boot is starting,
 chalkctl waits. Once systemd finished starting the boot and the image's health timeout passed,
 the time a counted boot has to become healthy, the boot has settled. A settled boot of a blessed
-image that fails the checks stops the command at once, with what failed. Nothing rolls back.
+image that fails the checks for a minute in a row stops the command, with what failed. A check
+that fails once, such as an etcd health check that answered late, does not stop it. Nothing rolls
+back.
 
 `chalkctl upgrade --rollback` boots the image before again on request, while the inactive slot
 still holds it, as [Upgrades](upgrades.md#a-rollback-boots-the-image-before-again) describes.

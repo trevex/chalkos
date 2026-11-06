@@ -87,8 +87,8 @@ in
       };
     };
     # chalkd confirms a config's trial only on a node this check would find healthy, so it ignores
-    # the same units. Its status reports a boot settled once the health timeout passed after the
-    # boot started, when a boot that is not healthy stays so.
+    # the same units. Its status reports a boot settled once the health timeout passed after systemd
+    # finished starting the boot, when a boot that is not healthy is likely to stay so.
     systemd.services.chalkd.environment = {
       CHALKD_HEALTH_TIMEOUT = toString cfg.healthTimeout;
     }

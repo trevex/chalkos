@@ -3510,7 +3510,8 @@ type BootHealth struct {
 	// Whether the boot has settled: systemd finished starting it, the system running or degraded,
 	// and the image's health timeout, the time a counted boot has to become healthy, passed since.
 	// Until then the image's layers may still be starting; a boot that is not healthy once it
-	// settled is not found healthy by waiting, and a client stops waiting for it.
+	// settled is likely to stay so, and a client stops waiting for it once it stays unhealthy for a
+	// while, as a single check of a layer may fail on a healthy node.
 	Settled       bool `protobuf:"varint,3,opt,name=settled,proto3" json:"settled,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache

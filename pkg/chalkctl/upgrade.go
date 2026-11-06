@@ -190,7 +190,7 @@ func (a *app) upgrade(ctx context.Context, f upgradeFlags) error {
 	r := &upgradeRun{
 		rebooter: &rebooter{
 			a: a, cluster: c, reach: nodeSet{cluster: c, creds: creds, addresses: f.addresses},
-			rebootOptions: newRebootOptions(f.layers, f.timeout, a.poll()),
+			rebootOptions: a.rebootOptions(f.layers, f.timeout),
 		},
 		upgradeOptions: f.options(), role: creds.role(),
 		rollback: f.rollback,
