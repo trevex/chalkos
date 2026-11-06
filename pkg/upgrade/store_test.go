@@ -138,9 +138,9 @@ func TestTheImageIsCheckedBeforeItBoots(t *testing.T) {
 		t.Errorf("toplevel = %q, want the UKI's init= directory", toplevel)
 	}
 	parts := l.table()
-	open := "veritysetup open " + parts[5].Node + " " + storeMapping + " " + parts[4].Node + " " + hex.EncodeToString(img.root)
-	if !slices.Contains(calls, open) || !slices.Contains(calls, "mount -t erofs -o ro /dev/mapper/"+storeMapping+" "+mount) ||
-		calls[len(calls)-1] != "veritysetup close "+storeMapping {
+	open := "veritysetup open " + parts[5].Node + " " + StoreMapping + " " + parts[4].Node + " " + hex.EncodeToString(img.root)
+	if !slices.Contains(calls, open) || !slices.Contains(calls, "mount -t erofs -o ro /dev/mapper/"+StoreMapping+" "+mount) ||
+		calls[len(calls)-1] != "veritysetup close "+StoreMapping {
 		t.Errorf("ran %q", calls)
 	}
 	if e, name := l.boot(); name != old.name {
@@ -181,7 +181,7 @@ func TestALeftOpenStoreIsClosedFirst(t *testing.T) {
 		t.Fatal(err)
 	}
 	l.boots(img, 2)
-	if len(calls) < 2 || calls[0] != "umount "+l.node.StoreMount || calls[1] != "veritysetup close "+storeMapping {
+	if len(calls) < 2 || calls[0] != "umount "+l.node.StoreMount || calls[1] != "veritysetup close "+StoreMapping {
 		t.Errorf("ran %q, want the store closed first", calls)
 	}
 }
@@ -199,7 +199,7 @@ func TestAStoreThatDoesNotMountIsClosed(t *testing.T) {
 		t.Fatalf("install = %v", err)
 	}
 	i := slices.IndexFunc(calls, func(c string) bool { return strings.HasPrefix(c, "mount ") })
-	if i < 0 || !slices.Equal(calls[i+1:], []string{"veritysetup close " + storeMapping}) {
+	if i < 0 || !slices.Equal(calls[i+1:], []string{"veritysetup close " + StoreMapping}) {
 		t.Errorf("ran %q, want the device closed and nothing unmounted after the mount", calls)
 	}
 	if e, name := l.boot(); name != old.name {
@@ -311,7 +311,7 @@ func TestAStagedImageIsCheckedAgain(t *testing.T) {
 	if parts := l.table(); parts[5].Name != "_empty" {
 		t.Errorf("after a refusal the slot is labelled %q", parts[5].Name)
 	}
-	if calls[len(calls)-1] != "veritysetup close "+storeMapping {
+	if calls[len(calls)-1] != "veritysetup close "+StoreMapping {
 		t.Errorf("ran %q, want the store closed", calls)
 	}
 }
@@ -349,8 +349,8 @@ func TestReadImage(t *testing.T) {
 			t.Fatalf("%s: %v", state, err)
 		}
 		parts := l.table()
-		open := "veritysetup open " + parts[5].Node + " " + storeMapping + " " + parts[4].Node + " " + hex.EncodeToString(img.root)
-		if toplevel != "/nix/store/x" || !slices.Contains(calls, open) || calls[len(calls)-1] != "veritysetup close "+storeMapping {
+		open := "veritysetup open " + parts[5].Node + " " + StoreMapping + " " + parts[4].Node + " " + hex.EncodeToString(img.root)
+		if toplevel != "/nix/store/x" || !slices.Contains(calls, open) || calls[len(calls)-1] != "veritysetup close "+StoreMapping {
 			t.Errorf("%s: toplevel %q, ran %q", state, toplevel, calls)
 		}
 	}
