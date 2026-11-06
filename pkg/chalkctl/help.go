@@ -201,11 +201,11 @@ reference in the config that names a tag but no digest, and delivers the config 
 https://trevex.github.io/chalkos/how-it-works/node/config/#change-rules-decide-which-changes-a-node-accepts.
 
 With several nodes, apply-config delivers to them one after the other and stops at the first that
-fails. --address gives each node's address as NODE=ADDR where it is not the inventory's. chalkctl
-reads each node's status and checks its config against its image before the first node gets
-anything, and leaves a node that runs the config already alone, so the same command run again
-continues a run that stopped. --discard, --confirm, --rollback, --staged, --diff and --no-confirm
-take one node.
+fails; a node named twice gets the config once. --address gives each node's address as NODE=ADDR
+where it is not the inventory's. chalkctl reads each node's status and checks its config against
+its image before the first node gets anything, and leaves a node that runs the config already
+alone, so the same command run again continues a run that stopped. --discard, --confirm,
+--rollback, --staged, --diff and --no-confirm take one node.
 
 When the config changes a version that a layer of the nodes' images bounds across the cluster,
 such as the Kubernetes API server's, against the config a node runs, the run is ordered, with one

@@ -622,3 +622,14 @@ func TestRolloutCoordinatorOfTheOrderedLayer(t *testing.T) {
 		t.Errorf("order %q, want %q", got, want)
 	}
 }
+
+// A node named twice gets the config once.
+func TestApplyConfigToANodeNamedTwice(t *testing.T) {
+	l := newRolloutLab(t)
+	if err := l.applyConfigTo([]string{"w1", "cp1", "w1"}); err != nil {
+		t.Fatalf("%v\n%s", err, l.ta.stdout)
+	}
+	if got, want := deliveries(l.takeEvents()), []string{"w1 apply-config staged=false", "cp1 apply-config staged=false"}; !slices.Equal(got, want) {
+		t.Errorf("events %q, want %q", got, want)
+	}
+}

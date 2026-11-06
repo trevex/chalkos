@@ -147,6 +147,14 @@ func (a *app) applyConfigCommand() *cobra.Command {
 }
 
 func (a *app) applyConfig(ctx context.Context, f applyConfigFlags, pos []string) error {
+	// A node named twice gets the config once, as upgrade --nodes upgrades it once.
+	var names []string
+	for _, name := range pos {
+		if !slices.Contains(names, name) {
+			names = append(names, name)
+		}
+	}
+	pos = names
 	addresses, err := f.addressesOf(pos)
 	if err != nil {
 		return err
