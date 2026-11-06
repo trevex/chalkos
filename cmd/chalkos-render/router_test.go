@@ -427,35 +427,13 @@ func TestNAT64Firewall(t *testing.T) {
 	}
 }
 
-// A NATRule that translates to an address of a NAT64's explicit pool is refused: the pool's
-// addresses belong to the NAT64, whose route and exemptions take every connection to them.
-func TestNATRuleIntoNAT64Pool(t *testing.T) {
+// A dnat rule whose destination is wider than a NAT64's pool translates the connections the NAT64
+// does not take; the validator router refuses a destination inside the pool or the prefix.
+func TestNATRuleWiderThanNAT64Pool(t *testing.T) {
 	nat64 := routerDoc(t, "NAT64", "edge", `{"prefix": "64:ff9b::/96", "pool4": [{"prefix": "192.0.2.8/30", "ports": "61001-65535", "protocols": ["tcp"]}]}`)
 	zone := routerDoc(t, "FirewallZone", "wan", `{"interfaces": ["eth0"]}`)
-	for typ, place := range map[string]string{"dnat": `"in": {"zone": "wan"}`, "snat": `"out": {"zone": "wan"}`} {
-		rule := routerDoc(t, "NATRule", "web", `{"type": "`+typ+`", "family": "ipv4", `+place+`, "to": {"address": "192.0.2.10"}}`)
-		refused(t, []string{"router-nftables", "50000"}, map[string][]any{"NAT64": {nat64}, "FirewallZone": {zone}, "NATRule": {rule}},
-			"NATRule/web: spec.to.address: to.address 192.0.2.10 lies in 192.0.2.8/30, the pool of NAT64 edge, whose addresses belong to the NAT64 whole; translate to an address outside the pool")
-	}
-}
-
-// A dnat rule whose destination lies in a NAT64's prefix or explicit pool is refused: the dstnat
-// chain accepts those connections before any NATRule. A wider destination is no NAT64's alone.
-func TestNATRuleFromNAT64Destination(t *testing.T) {
-	nat64 := routerDoc(t, "NAT64", "edge", `{"prefix": "64:ff9b::/96", "pool4": [{"prefix": "192.0.2.8/30", "ports": "61001-65535", "protocols": ["tcp"]}]}`)
-	zone := routerDoc(t, "FirewallZone", "wan", `{"interfaces": ["eth0"]}`)
-	rule := func(family, destination, to string) any {
-		return routerDoc(t, "NATRule", "web", `{"type": "dnat", "family": "`+family+`", "in": {"zone": "wan"}, "match": {"destination": ["`+destination+`"]}, "to": {"address": "`+to+`"}}`)
-	}
-	for _, c := range []struct{ family, destination, to, held string }{
-		{"ipv4", "192.0.2.9/32", "198.51.100.1", "192.0.2.8/30"},
-		{"ipv4", "192.0.2.8/30", "198.51.100.1", "192.0.2.8/30"},
-		{"ipv6", "64:ff9b::c000:201/128", "2001:db8::1", "64:ff9b::/96"},
-	} {
-		refused(t, []string{"router-nftables", "50000"}, map[string][]any{"NAT64": {nat64}, "FirewallZone": {zone}, "NATRule": {rule(c.family, c.destination, c.to)}},
-			"NATRule/web: spec.match.destination[0]: match.destination "+c.destination+" lies in "+c.held+" of NAT64 edge, whose connections the firewall accepts before any NATRule; match a range outside it")
-	}
-	docs := map[string][]any{"NAT64": {nat64}, "FirewallZone": {zone}, "NATRule": {rule("ipv4", "192.0.2.0/24", "198.51.100.1")}}
+	rule := routerDoc(t, "NATRule", "web", `{"type": "dnat", "family": "ipv4", "in": {"zone": "wan"}, "match": {"destination": ["192.0.2.0/24"]}, "to": {"address": "198.51.100.1"}}`)
+	docs := map[string][]any{"NAT64": {nat64}, "FirewallZone": {zone}, "NATRule": {rule}}
 	input, err := json.Marshal(map[string]any{"node": map[string]any{"name": "r1"}, "documents": docs})
 	if err != nil {
 		t.Fatal(err)
@@ -1454,62 +1432,6 @@ func TestVRFNATOfEveryInterface(t *testing.T) {
 	}
 }
 
-// The firewall refuses zones whose links it cannot tell apart from a VRF's: an interface, by name
-// or glob, that matches a VRF's device, one that may be a link of a VRF another zone holds, and a
-// VRF whose links nftables cannot match. A NAT rule's interface that matches nothing but VRF
-// devices translates nothing, and a VRF's name matches its device alone, also where a glob of
-// another VRF's links covers the name. A management interface of a VRF's device takes no
-// connection to chalkd.
-func TestVRFZoneRefusals(t *testing.T) {
-	zone := func(name, spec string) any { return routerDoc(t, "FirewallZone", name, spec) }
-	tenant := zone("tenant", `{"interfaces": [], "vrfs": ["tenant"]}`)
-	with := func(zones ...any) map[string][]any {
-		docs := vrfZoneDocs(t)
-		docs["FirewallZone"], docs["FirewallPolicy"], docs["NATRule"] = zones, nil, nil
-		return docs
-	}
-	unmatchable := with(tenant)
-	unmatchable["Network"] = append(unmatchable["Network"], document(t, "Network", "50-lab", `{"match": {"name": "lab[12]"}, "network": {"vrf": "tenant"}}`))
-	empty := with(zone("x", `{"interfaces": [], "vrfs": ["empty"]}`))
-	empty["VRF"] = append(empty["VRF"], routerDoc(t, "VRF", "empty", `{"table": 400, "interfaces": []}`))
-	empty["NATRule"] = []any{routerDoc(t, "NATRule", "n", `{"type": "masquerade", "family": "ipv4", "out": {"zone": "x", "interface": null}, "in": null, "match": {"source": [], "destination": [], "protocol": null, "destinationPorts": []}, "to": null}`)}
-	natOut := func(i string) map[string][]any {
-		docs := with(tenant)
-		docs["NATRule"] = []any{routerDoc(t, "NATRule", "n", `{"type": "masquerade", "family": "ipv4", "out": {"zone": null, "interface": "`+i+`"}, "in": null, "match": {"source": [], "destination": [], "protocol": null, "destinationPorts": []}, "to": null}`)}
-		return docs
-	}
-	// The Network 50-in puts the links of in* into the VRF lab; in* covers the name of the device
-	// internet as well.
-	covered := natOut("internet")
-	covered["Network"] = append(covered["Network"], document(t, "Network", "50-in", `{"match": {"name": "in*"}, "network": {"vrf": "lab"}}`))
-	narrowed := with(zone("x", `{"interfaces": ["swp3"], "vrfs": []}`))
-	narrowed["Network"] = append(narrowed["Network"], document(t, "Network", "25-swp", `{"match": {"name": "swp3", "macAddress": "02:00:00:00:00:01"}}`))
-	management := func(i string) map[string][]any {
-		docs := with(tenant)
-		docs["Router"] = []any{routerDoc(t, "Router", "router", `{"forwarding": {"ipv4": true, "ipv6": true}, "rpFilter": "loose", "ecmpHash": "l4", "conntrackMax": null, "management": {"interfaces": ["eth0", "`+i+`"]}}`)}
-		return docs
-	}
-	for name, c := range map[string]struct {
-		docs map[string][]any
-		want string
-	}{
-		"a VRF's device":                                  {with(zone("x", `{"interfaces": ["eth9", "tenant"], "vrfs": []}`)), "FirewallZone/x: spec.interfaces[1]: tenant matches tenant, the device of VRF tenant; name the VRF in vrfs"},
-		"a glob of a VRF's device":                        {with(zone("x", `{"interfaces": ["ten*"], "vrfs": []}`)), "FirewallZone/x: spec.interfaces[0]: ten* matches tenant, the device of VRF tenant; name the VRF in vrfs"},
-		"a link of another zone's VRF":                    {with(tenant, zone("x", `{"interfaces": ["eth2"], "vrfs": []}`)), "FirewallZone/x: spec.interfaces[0]: FirewallZone x names eth2, which may be a link of VRF tenant, which FirewallZone tenant holds; give each link one zone"},
-		"a glob of another zone's VRF":                    {with(tenant, zone("x", `{"interfaces": ["swp1*"], "vrfs": []}`)), "FirewallZone/x: spec.interfaces[0]: FirewallZone x names swp1*, which may be a link of VRF tenant, which FirewallZone tenant holds; give each link one zone"},
-		"links nftables cannot match":                     {unmatchable, "Network/50-lab: spec.match.name: VRF tenant holds the links of Network 50-lab's Name=lab[12], which nftables cannot match; name them by a name or a prefix and *"},
-		"a NAT zone of no link":                           {empty, "NATRule/n: spec.out.zone: the zone x holds no link"},
-		"a NAT interface of a VRF's device":               {natOut("internet"), "NATRule/n: spec.out.interface: internet matches no link, only internet, the device of VRF internet; name the VRF's links or a zone of the VRF"},
-		"a NAT glob of a VRF's device alone":              {natOut("inter*"), "NATRule/n: spec.out.interface: inter* matches no link, only internet, the device of VRF internet; name the VRF's links or a zone of the VRF"},
-		"a NAT interface of a VRF's device a glob covers": {covered, "NATRule/n: spec.out.interface: internet matches no link, only internet, the device of VRF internet; name the VRF's links or a zone of the VRF"},
-		"a link of a narrowed Network":                    {narrowed, "Network/25-swp: spec.match: networkd puts swp3 in VRF tenant only if the other [Match] keys of Network 25-swp match it"},
-		"a management VRF device":                         {management("tenant"), "Router/router: spec.management.interfaces[1]: the management interface tenant matches tenant, the device of VRF tenant, and chalkd answers in the default VRF alone; name the default VRF's links"},
-		"a management glob of a VRF device":               {management("gu*"), "Router/router: spec.management.interfaces[1]: the management interface gu* matches guest, the device of VRF guest, and chalkd answers in the default VRF alone; name the default VRF's links"},
-	} {
-		t.Run(name, func(t *testing.T) { refused(t, []string{"router-nftables", "50000"}, c.docs, c.want) })
-	}
-}
-
 // A VRF with a conntrack zone puts the connections through its links in its zone before conntrack
 // sees them: in prerouting by the link a packet comes in on, whose pass decides its zone, and in
 // output by the link the router sends it through. Without zones the ruleset has neither chain.
@@ -1561,57 +1483,5 @@ func TestConntrackZonesOfSeveralVRFs(t *testing.T) {
 	}
 }
 
-// The firewall refuses a conntrack zone of links nftables cannot match.
-func TestConntrackZoneRefusals(t *testing.T) {
-	with := func(guest, internet string) map[string][]any {
-		docs := vrfZoneDocs(t)
-		docs["VRF"][0] = routerDoc(t, "VRF", "guest", `{"table": 300, "interfaces": ["eth3", "eth4"]`+guest+`}`)
-		docs["VRF"][1] = routerDoc(t, "VRF", "internet", `{"table": 100, "interfaces": ["eth1"]`+internet+`}`)
-		return docs
-	}
-	unmatchable := with(`, "conntrackZone": 1`, "")
-	unmatchable["Network"] = append(unmatchable["Network"], document(t, "Network", "50-lab", `{"match": {"name": "lab[12]"}, "network": {"vrf": "guest"}}`))
-	for name, c := range map[string]struct {
-		docs map[string][]any
-		want string
-	}{
-		"links nftables cannot match": {unmatchable, "VRF guest holds the links of Network 50-lab's Name=lab[12], which nftables cannot match"},
-	} {
-		t.Run(name, func(t *testing.T) { refused(t, []string{"router-nftables", "50000"}, c.docs, c.want) })
-	}
-}
-
 // ptr is a pointer to s.
 func ptr(s string) *string { return &s }
-
-// No zone names a NAT64's link, by name or glob: the forward chain lets the NAT64s' translated
-// traffic through ahead of the zones and drops the rest, which a zone of the link would accept. A
-// NAT rule of nothing but NAT64s' links translates nothing, as NAT leaves the links alone.
-func TestNAT64LinkOutsideZones(t *testing.T) {
-	with := func(zone, out string) map[string][]any {
-		docs := vrfZoneDocs(t)
-		docs["NAT64"] = []any{routerDoc(t, "NAT64", "guest", `{"vrf": "guest", "prefix": "64:ff9b::/96", "pool4": []}`)}
-		if zone != "" {
-			docs["FirewallZone"] = append(docs["FirewallZone"], routerDoc(t, "FirewallZone", "x", `{"interfaces": ["`+zone+`"], "vrfs": []}`))
-		}
-		if out != "" {
-			docs["NATRule"] = []any{routerDoc(t, "NATRule", "n", `{"type": "masquerade", "family": "ipv4", "out": {"zone": null, "interface": "`+out+`"}, "in": null, "match": {"source": [], "destination": [], "protocol": null, "destinationPorts": []}, "to": null}`)}
-		}
-		return docs
-	}
-	for name, c := range map[string]struct {
-		docs map[string][]any
-		want string
-	}{
-		"a zone of the link":     {with("n64-guest", ""), "FirewallZone/x: spec.interfaces[0]: n64-guest matches n64-guest, the link of NAT64 guest, which no zone holds; name other links"},
-		"a zone's glob":          {with("n6*", ""), "FirewallZone/x: spec.interfaces[0]: n6* matches n64-guest, the link of NAT64 guest, which no zone holds; name other links"},
-		"a NAT rule of the link": {with("", "n64-guest"), "NATRule/n: spec.out.interface: n64-guest matches no link but n64-guest, the link of NAT64 guest, which no NAT rule translates; name other links"},
-		"a NAT rule's glob":      {with("", "n6*"), "NATRule/n: spec.out.interface: n6* matches no link but n64-guest, the link of NAT64 guest, which no NAT rule translates; name other links"},
-	} {
-		t.Run(name, func(t *testing.T) { refused(t, []string{"router-nftables", "50000"}, c.docs, c.want) })
-	}
-	// A link of another NAT64's name is no NAT64's, and a NAT rule of every link translates
-	// the others' connections.
-	vrfRuleset(t, with("n64-other", "n64-other"))
-	vrfRuleset(t, with("", "*"))
-}

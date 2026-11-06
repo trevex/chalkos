@@ -51,11 +51,11 @@ func nextHopRoute(hop string) string {
 	return `{"rules": [{"match": {"dscp": [46]}, "to": {"nextHop": "` + hop + `"}}]}`
 }
 
-// The firewall's renderer refuses what it alone can see: an interface or glob of in that matches
-// a VRF's device or a NAT64's link, a zone that holds a NAT64's link or no link, and more than
-// 255 tables. It guards, with an internal error, values that would add syntax to the ruleset, a
-// rule of no target, a NextHop the input lacks, a NextHop's address of a zone and table 0, should
-// a document bypass the schemas, rules and reference check.
+// The firewall's renderer refuses more than 255 tables, which its marks cannot tell apart. It
+// guards, with an internal error, values that would add syntax to the ruleset, a zone of no link,
+// whose empty set nftables would not load, a rule of no target, a NextHop the input lacks, a
+// NextHop's address of a zone and table 0, should a document bypass the schemas, the rules, the
+// reference check and the validator router.
 func TestPolicyRouteRefusals(t *testing.T) {
 	nft := []string{"router-nftables", "50000"}
 	dscp := `"rules": [{"match": {"dscp": [46]}, "to": {"vrf": "transit"}}]`
@@ -63,28 +63,13 @@ func TestPolicyRouteRefusals(t *testing.T) {
 		docs map[string][]any
 		want string
 	}{
-		"a VRF's device":               {policyDocs(t, "a", `{"in": {"zone": null, "interfaces": ["lan0", "transit"]}, `+dscp+`}`), "PolicyRoute/a: spec.in.interfaces[1]: transit matches transit, the device of VRF transit; name the VRF's links or a zone of the VRF"},
-		"a glob of a VRF's device":     {policyDocs(t, "a", `{"in": {"zone": null, "interfaces": ["tran*"]}, `+dscp+`}`), "PolicyRoute/a: spec.in.interfaces[0]: tran* matches transit, the device of VRF transit"},
 		"an interface that ends a set": {policyDocs(t, "a", `{"in": {"zone": null, "interfaces": ["lan0\" } accept; iifname { \"x"]}, `+dscp+`}`), `internal error: PolicyRoute a: "lan0\" } accept; iifname { \"x" is no interface name or glob`},
-		"a glob of a NAT64's link": {func() map[string][]any {
-			d := policyDocs(t, "a", `{"in": {"zone": null, "interfaces": ["n64-*"]}, `+dscp+`}`)
-			d["NAT64"] = []any{routerDoc(t, "NAT64", "edge", `{"prefix": "64:ff9b::/96", "pool4": []}`)}
-			return d
-		}(), "PolicyRoute/a: spec.in.interfaces[0]: n64-* matches n64-edge, the link of NAT64 edge"},
-		"a zone of a NAT64's link": {func() map[string][]any {
-			d := policyDocs(t, "a", `{"in": {"zone": "core", "interfaces": []}, `+dscp+`}`)
-			d["VRF"] = append(d["VRF"], routerDoc(t, "VRF", "core", `{"table": 400, "interfaces": ["n*"]}`))
-			d["Network"] = append(d["Network"], document(t, "Network", "40-core", `{"match": {"name": "n*"}}`))
-			d["FirewallZone"] = append(d["FirewallZone"], routerDoc(t, "FirewallZone", "core", `{"interfaces": [], "vrfs": ["core"]}`))
-			d["NAT64"] = []any{routerDoc(t, "NAT64", "edge", `{"vrf": "core", "prefix": "64:ff9b::/96", "pool4": []}`)}
-			return d
-		}(), "PolicyRoute/a: spec.in.zone: the zone core holds n*, which matches n64-edge, the link of NAT64 edge"},
 		"a zone without links": {func() map[string][]any {
 			d := policyDocs(t, "a", `{"in": {"zone": "core", "interfaces": []}, `+dscp+`}`)
 			d["VRF"] = append(d["VRF"], routerDoc(t, "VRF", "core", `{"table": 400, "interfaces": []}`))
 			d["FirewallZone"] = append(d["FirewallZone"], routerDoc(t, "FirewallZone", "core", `{"interfaces": [], "vrfs": ["core"]}`))
 			return d
-		}(), "PolicyRoute/a: spec.in.zone: the zone core holds no link"},
+		}(), "internal error: PolicyRoute a: the zone core holds no link"},
 		"no target":         {policyDocs(t, "a", `{"rules": [{"match": {"dscp": [46]}, "to": {}}]}`), "internal error: PolicyRoute a rule 1: to names no target"},
 		"table 0":           {policyDocs(t, "a", `{"rules": [{"match": {"dscp": [46]}, "to": {"table": 0}}]}`), "internal error: PolicyRoute a rule 1: table 0 is no table"},
 		"a missing NextHop": {policyDocs(t, "a", nextHopRoute("b6")), `internal error: PolicyRoute a rule 1: the input holds no NextHop "b6", which a reference names`},

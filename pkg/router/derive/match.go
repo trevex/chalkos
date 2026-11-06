@@ -290,3 +290,23 @@ func globContains(outer, inner string) bool {
 	prefix := globPrefix(outer)
 	return outer == inner || outer == prefix+"*" && strings.HasPrefix(globPrefix(inner), prefix)
 }
+
+// MatchesGlob reports whether an interface name or glob of the router kinds, a name or a prefix
+// and *, matches the link.
+func MatchesGlob(glob, link string) bool {
+	if prefix, ok := strings.CutSuffix(glob, "*"); ok {
+		return strings.HasPrefix(link, prefix)
+	}
+	return glob == link
+}
+
+// DeviceMatch returns the first VRF device of devices, as Model.Devices finds them, that the
+// interface or glob matches.
+func DeviceMatch(glob string, devices []string) (string, bool) {
+	for _, dev := range devices {
+		if MatchesGlob(glob, dev) {
+			return dev, true
+		}
+	}
+	return "", false
+}

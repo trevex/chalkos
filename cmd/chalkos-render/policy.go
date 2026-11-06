@@ -124,10 +124,11 @@ func (f *firewall) policyLines(d derive.Model) ([]string, error) {
 
 // policyHead matches where a PolicyRoute's traffic comes in, as prerouting sees it: the links of
 // its zone, its interfaces or, without in, every link. The kind's rules check that in names a zone
-// or interfaces, one of them. It refuses a zone that holds no link, an interface or glob that
-// matches a VRF's device, which prerouting sees for a VRF's link only after the pass that decides
-// the mark, and a zone's link or an interface that matches a NAT64's link, whose traffic Jool
-// translates. The devices include those of the Networks' own VRF=, which the rules cannot see.
+// or interfaces, one of them. The validator router refuses a zone that holds no link, an interface
+// or glob that matches a VRF's device, which prerouting sees for a VRF's link only after the pass
+// that decides the mark, and a zone's link or an interface that matches a NAT64's link, whose
+// traffic Jool translates. policyHead guards a zone of no link, whose empty set nftables would
+// not load.
 func (f *firewall) policyHead(p derive.Named[derive.PolicyRouteSpec]) (string, error) {
 	what := "PolicyRoute " + p.Name
 	in := p.Spec.In
@@ -140,40 +141,15 @@ func (f *firewall) policyHead(p derive.Named[derive.PolicyRouteSpec]) (string, e
 			return "", derive.Within(what, err)
 		}
 		if len(z.links) == 0 {
-			return "", refusals.Errorf("PolicyRoute", p.Name, "spec.in.zone", "the zone %s holds no link", *in.Zone)
-		}
-		for _, l := range z.links {
-			if link, n, ok := f.nat64Link(l); ok {
-				return "", refusals.Errorf("PolicyRoute", p.Name, "spec.in.zone", "the zone %s holds %s, which matches %s, the link of NAT64 %s, whose traffic Jool translates; name the zone's other links in interfaces", *in.Zone, l, link, n)
-			}
+			return "", derive.InternalErrorf("%s: the zone %s holds no link", what, *in.Zone)
 		}
 		return "iifname " + interfaceSet(z.links), nil
 	default:
 		if err := checkInterfaces(what, in.Interfaces); err != nil {
 			return "", err
 		}
-		for j, i := range in.Interfaces {
-			at := fmt.Sprintf("spec.in.interfaces[%d]", j)
-			if dev, ok := vrfDeviceMatch(i, f.vrfDevices); ok {
-				return "", refusals.Errorf("PolicyRoute", p.Name, at, "%s matches %s, the device of VRF %s; name the VRF's links or a zone of the VRF", i, dev, dev)
-			}
-			if link, n, ok := f.nat64Link(i); ok {
-				return "", refusals.Errorf("PolicyRoute", p.Name, at, "%s matches %s, the link of NAT64 %s, whose traffic Jool translates; name other links", i, link, n)
-			}
-		}
 		return "iifname " + interfaceSet(in.Interfaces), nil
 	}
-}
-
-// nat64Link is the link of the first NAT64 whose link the interface or glob i matches, and the
-// NAT64's name.
-func (f *firewall) nat64Link(i string) (string, string, bool) {
-	for _, n := range f.nat64 {
-		if link := derive.NAT64LinkPrefix + n.Name; matchesGlob(i, link) {
-			return link, n.Name, true
-		}
-	}
-	return "", "", false
 }
 
 // policyMatches are a rule's matches, one per family as a firewall rule's, with its DSCP values

@@ -7,7 +7,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/trevex/chalkos/pkg/refusals"
 	"github.com/trevex/chalkos/pkg/router/derive"
 )
 
@@ -193,30 +192,18 @@ func newFirewall(d derive.Model, port int, closed bool) (*firewall, error) {
 	}
 	devices := d.Devices()
 	f.vrfDevices = devices
+	// The validator router refuses a management interface that matches a VRF's device.
 	if m := f.router.Management.Interfaces; m != nil {
 		if err := checkInterfaces("Router: management.interfaces", m); err != nil {
 			return nil, err
 		}
-		// The input hook sees the VRF's device for each of its links, while chalkd listens in
-		// the default VRF alone. The devices are those of the VRF documents and of the Networks'
-		// own VRF=, which the VRF's rules cannot see, so the check is the renderer's alone. Only a
-		// Router document sets management interfaces, so d.Routers holds it.
-		for j, i := range m {
-			if dev, ok := vrfDeviceMatch(i, devices); ok {
-				return nil, refusals.Errorf("Router", d.Routers[0].Name, fmt.Sprintf("spec.management.interfaces[%d]", j),
-					"the management interface %s matches %s, the device of VRF %s, and chalkd answers in the default VRF alone; name the default VRF's links", i, dev, dev)
-			}
-		}
 	}
-	zones, err := zoneLinksOf(d, devices)
+	zones, err := zoneLinksOf(d)
 	if err != nil {
 		return nil, err
 	}
 	f.zones = zones
 	if f.nat64, err = d.NAT64Instances(); err != nil {
-		return nil, err
-	}
-	if err := f.nat64LinksUnnamed(d); err != nil {
 		return nil, err
 	}
 	for _, v := range d.VRFs {
@@ -238,17 +225,13 @@ func newFirewall(d derive.Model, port int, closed bool) (*firewall, error) {
 			f.ctZones = append(f.ctZones, ctZone{vrf: v.Name, zone: z, links: links})
 		}
 	}
+	// The validator router refuses a NAT rule's interface that matches no link but a VRF's device
+	// or a NAT64's link, which prerouting and postrouting never translate.
 	for _, n := range d.NAT {
 		for _, place := range natPlaces(n.Spec) {
 			if place.Interface != nil {
 				if err := checkInterfaces("NATRule "+n.Name, []string{*place.Interface}); err != nil {
 					return nil, err
-				}
-				// Prerouting and postrouting translate by the links, never by a VRF's device: an
-				// interface that matches a device and no link translates nothing.
-				if dev, ok := onlyDevice(d, devices, *place.Interface); ok {
-					return nil, refusals.Errorf("NATRule", n.Name, place.path+".interface",
-						"%s matches no link, only %s, the device of VRF %s; name the VRF's links or a zone of the VRF", *place.Interface, dev, dev)
 				}
 			}
 		}
@@ -331,23 +314,22 @@ func (z zoneLinks) entries() []string {
 }
 
 // zoneLinksOf finds where the hooks see each zone's connections. Without VRFs a zone's
-// interfaces are its in and its links, as before VRFs. It refuses an interface or glob that
-// matches a VRF's device, which the input and forward hooks see for each of the VRF's links, and
-// an interface that may be a link of a VRF another zone holds. The devices include those of the
-// Networks' own VRF=, and globs match them as globs, which the FirewallZone's rules cannot see.
-// The uniqueness check refuses a VRF that two zones hold, so each VRF has one zone in held.
-func zoneLinksOf(d derive.Model, devices []string) (map[string]zoneLinks, error) {
+// interfaces are its in and its links, as before VRFs. The validator router has refused an
+// interface or glob that matches a VRF's device or a NAT64's link, and an interface that may be a
+// link of a VRF another zone holds, so a VRF a zone holds is the zone's own, whose device covers
+// its links. The uniqueness check refuses a VRF that two zones hold.
+func zoneLinksOf(d derive.Model) (map[string]zoneLinks, error) {
 	declared := map[string]bool{}
 	for _, v := range d.VRFs {
 		declared[v.Name] = true
 	}
-	held := map[string]string{}
+	held := map[string]bool{}
 	for _, z := range d.Zones {
 		for _, v := range z.Spec.VRFs {
 			if _, err := derive.MustGet(declared, "VRF", v); err != nil {
 				return nil, derive.Within("FirewallZone "+z.Name, err)
 			}
-			held[v] = z.Name
+			held[v] = true
 		}
 	}
 	out := map[string]zoneLinks{}
@@ -359,28 +341,18 @@ func zoneLinksOf(d derive.Model, devices []string) (map[string]zoneLinks, error)
 			}
 		}
 		var zl zoneLinks
-		for j, i := range z.Spec.Interfaces {
-			at := fmt.Sprintf("spec.interfaces[%d]", j)
-			if dev, ok := vrfDeviceMatch(i, devices); ok {
-				return nil, refusals.Errorf("FirewallZone", z.Name, at, "%s matches %s, the device of VRF %s; name the VRF in vrfs", i, dev, dev)
-			}
+		for _, i := range z.Spec.Interfaces {
 			vrfs, err := d.Membership.InterfaceVRFs(i)
 			if err != nil {
 				return nil, derive.Within(what, err)
 			}
 			for _, v := range vrfs {
-				if v == derive.DefaultVRF {
+				switch {
+				case v == derive.DefaultVRF:
 					zl.in = appendNew(zl.in, i)
-					continue
+				case !held[v]:
+					zl.sdif = appendNew(zl.sdif, i)
 				}
-				if other, ok := held[v]; ok {
-					if other != z.Name {
-						return nil, refusals.Errorf("FirewallZone", z.Name, at, "%s names %s, which may be a link of VRF %s, which FirewallZone %s holds; give each link one zone", what, i, v, other)
-					}
-					// The device of the zone's own VRF covers its links.
-					continue
-				}
-				zl.sdif = appendNew(zl.sdif, i)
 			}
 			zl.links = appendNew(zl.links, i)
 		}
@@ -397,82 +369,6 @@ func zoneLinksOf(d derive.Model, devices []string) (map[string]zoneLinks, error)
 		out[z.Name] = zl
 	}
 	return out, nil
-}
-
-// onlyDevice returns the first VRF device of devices that the interface or glob i matches, when
-// i matches no link: none the Network documents name and no glob of a VRF's links. A glob such
-// as *, which matches links too, is not one. An interface that is a device's name matches that
-// device alone, whatever glob of a VRF's links covers the name too.
-func onlyDevice(d derive.Model, devices []string, i string) (string, bool) {
-	dev, ok := vrfDeviceMatch(i, devices)
-	if !ok || !strings.HasSuffix(i, "*") {
-		return dev, ok
-	}
-	for _, l := range d.Links {
-		if !slices.Contains(devices, l) && matchesGlob(i, l) {
-			return "", false
-		}
-	}
-	for _, m := range d.Membership.Members {
-		if derive.GlobsOverlap(i, m.Glob) {
-			return "", false
-		}
-	}
-	return dev, true
-}
-
-// nat64LinksUnnamed refuses a zone's interface that names or globs a NAT64's link, and a NAT
-// rule's interface that matches nothing else. The forward chain accepts a NAT64's translated
-// traffic ahead of the zones and drops the rest of its link's, which a zone of the link would
-// accept; destination and source NAT leave a NAT64's link alone ahead of the NAT rules, so a NAT
-// rule of NAT64s' links alone translates nothing.
-func (f *firewall) nat64LinksUnnamed(d derive.Model) error {
-	match := func(i string) (string, string, bool) {
-		for _, n := range f.nat64 {
-			if link := derive.NAT64LinkPrefix + n.Name; matchesGlob(i, link) {
-				return link, n.Name, true
-			}
-		}
-		return "", "", false
-	}
-	for _, z := range d.Zones {
-		for j, i := range z.Spec.Interfaces {
-			if link, n, ok := match(i); ok {
-				return refusals.Errorf("FirewallZone", z.Name, fmt.Sprintf("spec.interfaces[%d]", j), "%s matches %s, the link of NAT64 %s, which no zone holds; name other links", i, link, n)
-			}
-		}
-	}
-	// Whether the interface or glob i may match a link that is no NAT64's.
-	other := func(i string) bool {
-		for _, l := range d.Links {
-			if _, _, isNAT64 := match(l); !isNAT64 && matchesGlob(i, l) {
-				return true
-			}
-		}
-		return slices.ContainsFunc(d.Membership.Members, func(m derive.Member) bool { return derive.GlobsOverlap(i, m.Glob) })
-	}
-	for _, r := range d.NAT {
-		for _, place := range natPlaces(r.Spec) {
-			if place.Interface == nil {
-				continue
-			}
-			if link, n, ok := match(*place.Interface); ok && !other(*place.Interface) {
-				return refusals.Errorf("NATRule", r.Name, place.path+".interface", "%s matches no link but %s, the link of NAT64 %s, which no NAT rule translates; name other links", *place.Interface, link, n)
-			}
-		}
-	}
-	return nil
-}
-
-// vrfDeviceMatch returns the first VRF device of devices, as Model.Devices finds them, that the
-// interface or glob matches.
-func vrfDeviceMatch(glob string, devices []string) (string, bool) {
-	for _, dev := range devices {
-		if matchesGlob(glob, dev) {
-			return dev, true
-		}
-	}
-	return "", false
 }
 
 // appendNew appends s to l unless l holds it.
@@ -781,8 +677,9 @@ func (f *firewall) nat64Lines() []string {
 }
 
 // natLine renders a NATRule. The NATRule's rules check its place, to, family and ports; natLine
-// guards what would panic or add syntax to the ruleset. It refuses a zone without links, which
-// would translate nothing, and a to.address in a NAT64's pool.
+// guards what would panic or add syntax to the ruleset, and a zone without links, whose empty set
+// nftables would not load. The validator router refuses that zone, a to.address in a NAT64's pool
+// and a destination in a NAT64's prefix or pool.
 func (f *firewall) natLine(doc derive.Named[derive.NATSpec]) (string, error) {
 	n := doc.Spec
 	family, ok := familyWords[n.Family]
@@ -790,9 +687,9 @@ func (f *firewall) natLine(doc derive.Named[derive.NATSpec]) (string, error) {
 		return "", derive.InternalErrorf("family %q is neither ipv4 nor ipv6", n.Family)
 	}
 	parts := []string{"meta nfproto " + n.Family}
-	place, dir, at := n.Out, "oifname", "spec.out"
+	place, dir := n.Out, "oifname"
 	if n.Type == "dnat" {
-		place, dir, at = n.In, "iifname", "spec.in"
+		place, dir = n.In, "iifname"
 	}
 	switch {
 	case place == nil:
@@ -803,7 +700,7 @@ func (f *firewall) natLine(doc derive.Named[derive.NATSpec]) (string, error) {
 			return "", err
 		}
 		if len(z.links) == 0 {
-			return "", refusals.Errorf("NATRule", doc.Name, at+".zone", "the zone %s holds no link", *place.Zone)
+			return "", derive.InternalErrorf("the zone %s holds no link", *place.Zone)
 		}
 		parts = append(parts, dir+" "+interfaceSet(z.links))
 	case place.Interface != nil:
@@ -821,11 +718,6 @@ func (f *firewall) natLine(doc derive.Named[derive.NATSpec]) (string, error) {
 		elements, err := prefixes(side.ranges)
 		if err != nil {
 			return "", err
-		}
-		if n.Type == "dnat" && side.dir == "daddr" {
-			if err := f.nat64Destinations(doc.Name, elements); err != nil {
-				return "", err
-			}
 		}
 		parts = append(parts, fmt.Sprintf("%s %s { %s }", family, side.dir, strings.Join(elements, ", ")))
 	}
@@ -847,13 +739,6 @@ func (f *firewall) natLine(doc derive.Named[derive.NATSpec]) (string, error) {
 		if err != nil {
 			return "", derive.InternalErrorf("to.address %q is no address", n.To.Address)
 		}
-		for _, x := range f.nat64 {
-			for _, p := range x.Pools {
-				if p.Contains(a) {
-					return "", refusals.Errorf("NATRule", doc.Name, "spec.to.address", "to.address %s lies in %s, the pool of NAT64 %s, whose addresses belong to the NAT64 whole; translate to an address outside the pool", a, p, x.Name)
-				}
-			}
-		}
 		to := a.String()
 		if n.To.Port != nil {
 			if a.Is6() {
@@ -866,23 +751,6 @@ func (f *firewall) natLine(doc derive.Named[derive.NATSpec]) (string, error) {
 		return "", derive.InternalErrorf("type %q is none of masquerade, snat and dnat", n.Type)
 	}
 	return strings.Join(parts, " "), nil
-}
-
-// nat64Destinations refuses a destination range of the dnat rule rule that lies in a NAT64's
-// prefix or explicit pool, whose connections the dstnat chain accepts before any rule. ranges are
-// the rule's match.destination, masked, in its order.
-func (f *firewall) nat64Destinations(rule string, ranges []string) error {
-	for i, r := range ranges {
-		d := netip.MustParsePrefix(r)
-		for _, x := range f.nat64 {
-			for _, p := range append(slices.Clone(x.Pools), x.Prefix) {
-				if p.Bits() <= d.Bits() && p.Contains(d.Addr()) {
-					return refusals.Errorf("NATRule", rule, fmt.Sprintf("spec.match.destination[%d]", i), "match.destination %s lies in %s of NAT64 %s, whose connections the firewall accepts before any NATRule; match a range outside it", d, p, x.Name)
-				}
-			}
-		}
-	}
-	return nil
 }
 
 // familyWords are nftables's words for the address families: ip and ip6.

@@ -35,16 +35,22 @@ func Validate(documents []byte) ([]refusals.Refusal, error) {
 }
 
 // check runs the router's checks of what the documents of byKind mean together, which no schema
-// or rule sees, and joins their refusals: the VRFs' links as Build checks them and the NAT64s as
-// NAT64Instances checks them. Each goes on past a refusal to the next document, so a config with
-// several faults gets a refusal for each. A check refuses what the outputs that apply its
-// documents would apply otherwise than the documents say, so it runs whether or not the image
-// renders those outputs: an image without a feature declares none of its kinds, whose documents
-// the validator then never reads.
+// or rule sees, and joins their refusals: the VRFs' links as Build checks them, the NAT64s as
+// NAT64Instances checks them, and the firewall's zones, NAT rules, management interfaces and
+// policy routes' in. Each goes on past a refusal to the next document, so a config with several
+// faults gets a refusal for each. The checks that read the links' VRFs run once Build accepts
+// them, since a refusal of Build leaves them wrong, and those that read the NAT64s' pools once
+// NAT64Instances accepts them. A check refuses what the outputs that apply its documents would
+// apply otherwise than the documents say, so it runs whether or not the image renders those
+// outputs: an image without a feature declares none of its kinds, whose documents the validator
+// then never reads.
 func check(byKind map[string]any) error {
 	d, err := Build(byKind)
-	_, nerr := d.NAT64Instances()
-	return errors.Join(err, nerr)
+	nat64, nerr := d.NAT64Instances()
+	if err != nil {
+		return errors.Join(err, nerr)
+	}
+	return errors.Join(nerr, d.checkFirewall(nat64))
 }
 
 // readDocuments is data, a JSON array of documents, as Build takes it: by kind, each kind's

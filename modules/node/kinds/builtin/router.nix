@@ -362,8 +362,8 @@ in
           }
         ];
         spec = {
-          # An interface or glob is in one FirewallZone, once, compared as written; the output
-          # router-nftables refuses an interface that may be a link of a VRF another zone holds.
+          # An interface or glob is in one FirewallZone, once, compared as written; the validator
+          # router refuses an interface that may be a link of a VRF another zone holds.
           interfaces = lib.chalkos.mkOption {
             type = types.listOf interface;
             unique.hint = "give each interface one zone";

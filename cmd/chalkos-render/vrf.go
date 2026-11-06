@@ -247,12 +247,12 @@ func withNetworkVRF(doc map[string]any, vrf string) map[string]any {
 func checkPeerDevices(p derive.Named[derive.PeerSpec], devices []string) error {
 	s := p.Spec
 	if s.Interface != nil {
-		if dev, ok := vrfDeviceMatch(*s.Interface, devices); ok {
+		if dev, ok := derive.DeviceMatch(*s.Interface, devices); ok {
 			return refusals.Errorf("BGPPeer", p.Name, "spec.interface", "interface %s is the device of VRF %s", dev, dev)
 		}
 	}
 	for i, glob := range s.Interfaces {
-		if dev, ok := vrfDeviceMatch(glob, devices); ok {
+		if dev, ok := derive.DeviceMatch(glob, devices); ok {
 			return refusals.Errorf("BGPPeer", p.Name, fmt.Sprintf("spec.interfaces[%d]", i), "%s matches %s, the device of VRF %s", glob, dev, dev)
 		}
 	}
