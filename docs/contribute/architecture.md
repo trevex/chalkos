@@ -312,7 +312,7 @@ declares from the installer's machine, which the node runs on. The identity the 
 must have the storage section the disk was laid out by, or the install is refused
 (`sectionDifference`). STATE gets the config slot the checker returned, and the layers' payloads
 are checked against its identity. A refusal comes before STATE, the boot loader and the boot
-entry, so the disk boots nothing, and an install of the same image continues on it.
+entry, so the disk boots nothing, and an install continues on it, of the same image or another.
 
 Every config slot is therefore written only after the image that boots it checked it: in place the
 running image, from the installer the image's own checker, on upgrades and deliveries as

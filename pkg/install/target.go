@@ -17,8 +17,11 @@ import (
 )
 
 // classify tells whether the target is laid out anew: when it is empty or the request wipes it.
-// A target that holds what an earlier attempt of this install left is continued, and anything
-// else refused, naming what it holds.
+// A target that holds what an earlier attempt of an install left is continued, and anything else
+// refused, naming what it holds. The earlier attempt may have written another image to slot A, as
+// an install the image's checker refused leaves it: while STATE holds neither an installed node
+// nor a config slot, nothing of the node belongs to that image, and the install writes its own
+// image over it.
 func (i *Installer) classify(ctx context.Context, target storage.BlockDisk, l layout, req PartsRequest) (bool, error) {
 	if req.WipeDisk {
 		return true, nil
@@ -47,11 +50,15 @@ func (i *Installer) classify(ctx context.Context, target storage.BlockDisk, l la
 	if err != nil {
 		return false, err
 	}
-	if a := pairs[0]; a.Label() != "" && !a.Holds(req.Image.RootHash) {
-		return false, fmt.Errorf("slot A of the target disk %s holds the store %s of another image; pass --wipe-disk to replace it", target, a.Label())
-	}
-	if err := i.checkState(ctx, target, table, req.Section.Encryption); err != nil {
+	configured, err := i.checkState(ctx, target, table)
+	if err != nil {
 		return false, err
+	}
+	if a := pairs[0]; a.Label() != "" && !a.Holds(req.Image.RootHash) {
+		if configured {
+			return false, fmt.Errorf("slot A of the target disk %s holds the store %s of another image, whose config STATE holds; pass --wipe-disk to replace it", target, a.Label())
+		}
+		log.Printf("slot A of %s holds the store %s of another image, which no installed node boots; writing this image over it", target, a.Label())
 	}
 	log.Printf("continuing the install on %s", target)
 	return false, nil

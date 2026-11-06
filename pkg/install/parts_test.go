@@ -758,7 +758,14 @@ func TestFromPartsRefuses(t *testing.T) {
 			l.luksState()
 			l.tpmFails = true
 		}, img, nil, "does not open on this machine"},
-		{"slot A holding another store", func(l *partsLab) { l.stopAt(img, "write the UKI") }, newPartsImage(t, "b"), nil, "slot A of the target disk"},
+		{"an installed disk of another image", func(l *partsLab) {
+			if err := l.install(img); err != nil {
+				t.Fatal(err)
+			}
+			os.Remove(filepath.Join(l.esp(), "EFI/BOOT/BOOTX64.EFI"))
+			l.r.efi.bootNext = ""
+		}, newPartsImage(t, "b"), nil, "holds an installed node"},
+		{"slot A of another image whose config STATE holds", func(l *partsLab) { l.stopAt(img, "write the boot loader") }, newPartsImage(t, "b"), nil, "of another image, whose config STATE holds"},
 		{"another platform", nil, img, func(r *PartsRequest) { r.Image.Platform = "kvm" }, "the UKI's platform is \"metal\""},
 		{"a corrupt store", nil, img, func(r *PartsRequest) {
 			corrupt := bytes.Clone(img.store)
@@ -817,7 +824,7 @@ func TestFromPartsRefuses(t *testing.T) {
 			if l.tpmFails && !hasPrefix(l.r.Calls, "systemd-cryptsetup attach state /dev/vdb6 - tpm2-device=auto,headless=true,read-only") {
 				t.Errorf("STATE was not opened read-only: %q", l.r.Calls)
 			}
-			if tc.name != "an installed disk" && l.installed() {
+			if !strings.HasPrefix(tc.name, "an installed disk") && l.installed() {
 				t.Error("the target is installed")
 			}
 			if l.r.efi.bootNext != "" {
@@ -1426,6 +1433,39 @@ func TestFromPartsRefusedByTheImage(t *testing.T) {
 		t.Error("the install after the refusal wrote slot A again")
 	}
 	l.checkInstalled(img)
+}
+
+// TestFromPartsWritesAnotherImageOverAnUninstalledTarget installs another image onto a target an
+// earlier install left before STATE held anything of the node, as a refusal by the image's
+// checker or a stop before STATE leaves it: without --wipe-disk, the install writes its image over
+// slot A and replaces the other image's UKI.
+func TestFromPartsWritesAnotherImageOverAnUninstalledTarget(t *testing.T) {
+	img, other := newPartsImage(t, "a"), newPartsImage(t, "b")
+	for name, setup := range map[string]func(l *partsLab){
+		"refused by the image": func(l *partsLab) {
+			req := l.request(img)
+			req.Check = func(context.Context, Store, string) (Checked, error) {
+				return Checked{}, errors.New("the config is refused")
+			}
+			if err := l.i.FromParts(context.Background(), req); err == nil {
+				t.Fatal("the install was not refused")
+			}
+		},
+		"stopped before STATE": func(l *partsLab) { l.stopAt(img, "open STATE") },
+	} {
+		t.Run(name, func(t *testing.T) {
+			l := newPartsLab(t)
+			setup(l)
+			l.r.Calls = nil
+			if err := l.install(other); err != nil {
+				t.Fatal(err)
+			}
+			if hasPrefix(l.r.Calls, "systemd-repart --dry-run=no --empty=require") {
+				t.Error("the target was laid out anew")
+			}
+			l.checkInstalled(other)
+		})
+	}
 }
 
 // TestFromPartsRefusesAnotherStorageSection refuses the config when the identity the image's

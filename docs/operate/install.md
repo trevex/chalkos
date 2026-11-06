@@ -546,8 +546,11 @@ chalkctl: install cp1: failed_precondition: install: the config is refused: Peer
 ```
 
 The machine stays in maintenance mode. Fix the config and run `chalkctl install cp1` again: the
-install continues on the disk without `--wipe-disk`. Build the installer from the same chalkos
-release as the image, so that both lay out the storage the same way.
+install continues on the disk without `--wipe-disk`. It does so with another image too, such as
+one rebuilt with a fixed validator, as
+[Continue an install that stopped](#continue-an-install-that-stopped) describes. Build the
+installer from the same chalkos release as the image, so that both lay out the storage the same
+way.
 
 The boot entry the install creates goes first in the boot order, so the stick may stay in. Remove
 it before the next install elsewhere.
@@ -582,6 +585,12 @@ that holds the image already, and logs `continuing the install on <disk>` on the
 the boot loader is written, the disk holds nothing the firmware boots, so a machine never boots a
 half-installed node.
 
+An install with another image that lays the disk out the same way continues on it too, as long as
+STATE holds neither an installed node nor the config of the earlier attempt's image. A refused
+config leaves STATE so. The installer logs that slot A holds the store of another image and writes
+the new image over it. Once an earlier attempt wrote the node's config to STATE, the disk takes an
+install of that image, and of another image only with `--wipe-disk`.
+
 ## Replace what a disk holds
 
 The installer takes a disk on which `blkid` finds no signature or only an empty partition table,
@@ -592,6 +601,7 @@ names what it found, for example:
 the target disk /dev/nvme0n1 (model "...", size ..., serial "...") carries data (dos); pass --wipe-disk to replace it
 the target disk /dev/nvme0n1 (model "...", size ..., serial "...") is not one an earlier install of this image left: ...; pass --wipe-disk to replace it
 the target disk /dev/nvme0n1 (model "...", size ..., serial "...") holds an installed node; pass --wipe-disk to replace it
+slot A of the target disk /dev/nvme0n1 (model "...", size ..., serial "...") holds the store 3df89200aef8615c of another image, whose config STATE holds; pass --wipe-disk to replace it
 ```
 
 `--wipe-disk` lets the installer clear the disk's partition tables and lay it out anew.

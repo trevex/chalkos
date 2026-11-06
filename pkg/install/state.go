@@ -103,37 +103,45 @@ func (i *Installer) prepareState(ctx context.Context, disk storage.BlockDisk, de
 
 // checkState refuses a target whose STATE belongs to an installed node or to another machine:
 // one that holds the installed marker, or that this machine's TPM does not open. A STATE that
-// holds no file system yet is installed over.
-func (i *Installer) checkState(ctx context.Context, target storage.BlockDisk, table partitionTable, policy string) error {
+// holds no file system yet is installed over. It reports whether STATE holds a config slot, which
+// an earlier attempt writes once the image's checker passed its config.
+func (i *Installer) checkState(ctx context.Context, target storage.BlockDisk, table partitionTable) (bool, error) {
 	state, err := table.find(stateLabel, storage.PartitionType(stateLabel))
 	if err != nil {
-		return err
+		return false, err
 	}
 	found, err := node.Content(ctx, i.Run, state.Node)
 	if err != nil {
-		return err
+		return false, err
 	}
 	switch found {
 	case "":
-		return nil
+		return false, nil
 	case node.ContentLUKS, node.ContentExt4:
 	default:
-		return fmt.Errorf("STATE on the target disk %s holds %q; pass --wipe-disk to replace it", target, found)
+		return false, fmt.Errorf("STATE on the target disk %s holds %q; pass --wipe-disk to replace it", target, found)
 	}
 	if err := i.openStateReadOnly(ctx, state.Node, found == node.ContentLUKS); err != nil {
-		return fmt.Errorf("STATE on the target disk %s does not open on this machine, so it belongs to another node: %w; pass --wipe-disk to replace it", target, err)
+		return false, fmt.Errorf("STATE on the target disk %s does not open on this machine, so it belongs to another node: %w; pass --wipe-disk to replace it", target, err)
 	}
 	installed, err := Installed(i.StateDir)
+	var slots []os.DirEntry
+	if err == nil {
+		slots, err = os.ReadDir(filepath.Join(i.StateDir, "config"))
+		if errors.Is(err, fs.ErrNotExist) {
+			err = nil
+		}
+	}
 	if cerr := i.closeState(ctx); err == nil {
 		err = cerr
 	}
 	if err != nil {
-		return err
+		return false, err
 	}
 	if installed {
-		return fmt.Errorf("the target disk %s holds an installed node; pass --wipe-disk to replace it", target)
+		return false, fmt.Errorf("the target disk %s holds an installed node; pass --wipe-disk to replace it", target)
 	}
-	return nil
+	return len(slots) > 0, nil
 }
 
 // openStateReadOnly opens STATE to look at it, without writing to the disk: LUKS attached
