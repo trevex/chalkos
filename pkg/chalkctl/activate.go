@@ -105,9 +105,6 @@ func imageRoot(ctx context.Context, path string, stderr io.Writer) (root []byte,
 		return nil, "", "", err
 	}
 	defer p.Close()
-	revision, tag, err = image.Provenance(filepath.Dir(raw), p.Store.RootHash)
-	if err != nil {
-		fmt.Fprintf(stderr, "chalkctl: warning: ignoring %s, so the image is named without a revision and tag: %v\n", filepath.Join(filepath.Dir(raw), "metadata.json"), err)
-	}
+	revision, tag = provenance(filepath.Dir(raw), p.Store.RootHash, stderr)
 	return p.Store.RootHash, revision, tag, nil
 }

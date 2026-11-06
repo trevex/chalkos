@@ -242,7 +242,7 @@ func sendChunks(r io.Reader, send func(*nodev1.ImageChunk) error) error {
 func provenance(dir string, rootHash []byte, stderr io.Writer) (revision, tag string) {
 	revision, tag, err := image.Provenance(dir, rootHash)
 	if err != nil {
-		fmt.Fprintf(stderr, "chalkctl: warning: ignoring %s, so the image is sent without a revision and tag: %v\n", filepath.Join(dir, "metadata.json"), err)
+		fmt.Fprintf(stderr, "chalkctl: warning: ignoring %s, so the image has no revision and tag: %v\n", filepath.Join(dir, "metadata.json"), err)
 	}
 	return revision, tag
 }
