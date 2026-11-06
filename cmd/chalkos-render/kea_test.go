@@ -62,7 +62,7 @@ func TestKeaRefusals(t *testing.T) {
 	reserve := func(address string) any {
 		return office(`, "reservations": [{"mac": "52:54:00:12:34:56", "address": "` + address + `", "hostname": null}]`)
 	}
-	const checked = "; chalkd checks the config against the schemas and rules before it renders"
+	const checked = "; chalkd checks the config against the schemas, the rules and the validators before it renders"
 	for name, c := range map[string]struct {
 		subnets []any
 		want    string

@@ -54,10 +54,10 @@ func TestRelayRefusals(t *testing.T) {
 		"relayed in a VRF":       {[]any{relay("guests", `["lan2"]`, `["2001:db8:ff::53"]`)}, []any{subnetDoc(t, "office6", `{"interfaces": ["lan0"], "subnet": "2001:db8:1::/64"}`)}, "DHCPSubnet/office6: spec.interfaces: DHCPRelay guests relays DHCPv6 in VRF guest and DHCPSubnet office6 serves DHCPv6 in VRF default"},
 		// Values dnsmasq's config would read as syntax.
 		"a glob": {[]any{relay("office", `["lan*"]`, `["198.51.100.53"]`)}, nil,
-			`internal error: DHCPRelay office: interfaces: "lan*" is no interface name; chalkd checks the config against the schemas and rules before it renders`},
+			`internal error: DHCPRelay office: interfaces: "lan*" is no interface name; chalkd checks the config against the schemas, the rules and the validators before it renders`},
 		"a link that adds an option": {[]any{relay("office", `["lan0\ndhcp-range=lan0"]`, `["198.51.100.53"]`)}, nil, `internal error: DHCPRelay office: interfaces: "lan0\ndhcp-range=lan0" is no interface name`},
 		"a server that adds an option": {[]any{relay("office", `["lan0"]`, `["fe80::53%x\ndhcp-range=lan0"]`)}, nil,
-			`internal error: DHCPRelay office: the server "fe80::53%x\ndhcp-range=lan0" is no address without a zone; chalkd checks the config against the schemas and rules before it renders`},
+			`internal error: DHCPRelay office: the server "fe80::53%x\ndhcp-range=lan0" is no address without a zone; chalkd checks the config against the schemas, the rules and the validators before it renders`},
 		"a server of no address": {[]any{relay("office", `["lan0"]`, `["dhcp.example.org"]`)}, nil, `internal error: DHCPRelay office: the server "dhcp.example.org" is no address without a zone`},
 	} {
 		t.Run(name, func(t *testing.T) { refused(t, []string{"dhcp-relay"}, relayDocs(t, c.relays, c.subnets...), c.want) })
@@ -137,7 +137,7 @@ func TestDHCPOpenings(t *testing.T) {
 	}
 	// The schema takes no glob, which the opening would write into the ruleset.
 	refused(t, []string{"router-nftables", "50000"}, relayDocs(t, []any{relay("office", `["lan*"]`, `["198.51.100.53"]`)}),
-		`internal error: DHCPRelay office: interfaces: "lan*" is no interface name; chalkd checks the config against the schemas and rules before it renders`)
+		`internal error: DHCPRelay office: interfaces: "lan*" is no interface name; chalkd checks the config against the schemas, the rules and the validators before it renders`)
 }
 
 // A relay forwards from none of the router's addresses on a link that the servers' rule refuses,

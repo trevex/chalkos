@@ -9,9 +9,9 @@
 # rule over two entries of one pool loops over the pool's ranges flattened, the rules over the
 # Network documents' static addresses bind their sections and their values as flat lists, and the
 # rules over the local zones' records loop over the records flattened. What compares the
-# documents of a kind, or all records, in pairs, the outputs check when the router renders its
-# config: two NAT64s of one VRF whose prefixes overlap and two NAT64s whose pools share an address
-# (output jool), and a record twice or a CNAME beside another record (output unbound).
+# documents of a kind, or all records, in pairs, the validator router and the outputs check: two
+# NAT64s of one VRF whose prefixes overlap and two NAT64s whose pools share an address (the
+# validator), and a record twice or a CNAME beside another record (output unbound).
 {
   config,
   lib,
@@ -243,14 +243,14 @@ in
             prefix = lib.chalkos.mkOption {
               type = prefix;
               default = "64:ff9b::/96";
-              description = "IPv6 range whose addresses the NAT64 translates, each embedding an IPv4 address as RFC 6052 says: 32, 40, 48, 56, 64 or 96 bits, by default the well-known prefix. The router routes it to the NAT64's link in the NAT64's VRF, a route that BGP announces when `BGP.spec.networks` of that VRF names the prefix. The prefixes of the NAT64s of one VRF do not overlap, which the output `jool` checks.";
+              description = "IPv6 range whose addresses the NAT64 translates, each embedding an IPv4 address as RFC 6052 says: 32, 40, 48, 56, 64 or 96 bits, by default the well-known prefix. The router routes it to the NAT64's link in the NAT64's VRF, a route that BGP announces when `BGP.spec.networks` of that VRF names the prefix. The prefixes of the NAT64s of one VRF do not overlap, which the validator `router` checks.";
               rules = [ (nat64Prefix "self") ];
             };
             pool4 = lib.chalkos.mkOption {
               type = types.listOf poolEntry;
               default = [ ];
               example = [ { prefix = "192.0.2.10/32"; } ];
-              description = "IPv4 addresses, with their ports, that the translated connections leave from: addresses routed to the router, not addresses of its links, which the router answers itself. The rules refuse an address that a `Network` document gives a link. An address a link takes from DHCP passes them, and `chalkos-nat64.service` then fails without changing an instance; leave pool4 empty instead. Empty takes the address of the link a connection leaves through, with the ports 61001 to 65535, which the router masquerades. The pools of two NAT64s share no address, which the output `jool` checks. The firewall's NAT rules leave the translated connections alone.";
+              description = "IPv4 addresses, with their ports, that the translated connections leave from: addresses routed to the router, not addresses of its links, which the router answers itself. The rules refuse an address that a `Network` document gives a link. An address a link takes from DHCP passes them, and `chalkos-nat64.service` then fails without changing an instance; leave pool4 empty instead. Empty takes the address of the link a connection leaves through, with the ports 61001 to 65535, which the router masquerades. The pools of two NAT64s share no address, which the validator `router` checks. The firewall's NAT rules leave the translated connections alone.";
               rules = [
                 {
                   description = "A pool's entries are IPv4 ranges of 65536 addresses at most.";

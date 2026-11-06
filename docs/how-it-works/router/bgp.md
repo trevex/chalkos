@@ -220,7 +220,7 @@ documents of one kind or on bgpd itself, when the router renders its config, at 
 
 A value that would add a command to the config, such as a line break in a description, cannot
 pass the schemas. Should a document bypass them, the renderer fails with
-`internal error: ...; chalkd checks the config against the schemas and rules before it renders`
+`internal error: ...; chalkd checks the config against the schemas, the rules and the validators before it renders`
 rather than write it.
 
 bgpd compiles an `asPath` with glibc's `regcomp` as a POSIX extended regular expression, each `_`

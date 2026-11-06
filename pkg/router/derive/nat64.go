@@ -2,6 +2,7 @@ package derive
 
 import (
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"hash/fnv"
 	"net/netip"
@@ -63,13 +64,15 @@ type PoolRange struct {
 }
 
 // NAT64Instances are the NAT64 documents of d as chalkos-nat64 runs them. It refuses what
-// nat64Pools refuses and two names whose hashes pick one link. The rules refuse a pool entry
-// that holds a static address of a Network document and a static address in nat64Range.
+// nat64Pools refuses and each NAT64 whose name's hash picks the link of one before it, every one
+// it finds. The rules refuse a pool entry that holds a static address of a Network document and
+// a static address in nat64Range.
 func (d Model) NAT64Instances() ([]NAT64Instance, error) {
 	out, err := nat64Pools(d.NAT64)
 	if err != nil {
 		return nil, err
 	}
+	var errs []error
 	tables := map[string]uint32{DefaultVRF: mainTable}
 	for _, v := range d.VRFs {
 		tables[v.Name] = v.Spec.Table
@@ -86,15 +89,19 @@ func (d Model) NAT64Instances() ([]NAT64Instance, error) {
 		n.Table = table
 		n.Outer, n.Inner = nat64LinkAddresses(slot)
 		if o, ok := taken[slot]; ok {
-			return nil, refusals.Errorf("NAT64", n.Name, "metadata.name", "NAT64 %s and NAT64 %s both take the link addresses %s, which the hashes of their names pick; rename NAT64 %s", n.Name, o, n.Outer.Masked(), n.Name)
+			errs = append(errs, refusals.Errorf("NAT64", n.Name, "metadata.name", "NAT64 %s and NAT64 %s both take the link addresses %s, which the hashes of their names pick; rename NAT64 %s", n.Name, o, n.Outer.Masked(), n.Name))
+		} else {
+			taken[slot] = n.Name
 		}
-		taken[slot] = n.Name
 		// Each prefix of the pool once, as several entries may share it.
 		for _, e := range n.Pool4 {
 			if !slices.Contains(n.Pools, e.Prefix) {
 				n.Pools = append(n.Pools, e.Prefix)
 			}
 		}
+	}
+	if err := errors.Join(errs...); err != nil {
+		return nil, err
 	}
 	return out, nil
 }
@@ -118,12 +125,13 @@ func nat64LinkAddresses(s int) (outer, inner netip.Prefix) {
 
 // nat64Pools are the NAT64 documents' names, VRFs, prefixes and pools, as Jool takes them. They
 // refuse two NAT64s of one VRF whose prefixes overlap and two NAT64s whose pools share an address,
-// which the rules leave to the model, as they would compare the documents in pairs. They
-// guard, with an internal error, what jool file check passes and the kernel refuses once
-// chalkos-nat64 loads the instance: a name whose link is longer than an interface's name, a pool
-// entry of no protocol Jool takes, and what NAT64Prefix and poolEntryRange guard.
+// which the rules leave to the model, as they would compare the documents in pairs, each pair they
+// find. They guard, with an internal error, what jool file check passes and the kernel refuses
+// once chalkos-nat64 loads the instance: a name whose link is longer than an interface's name, a
+// pool entry of no protocol Jool takes, and what NAT64Prefix and poolEntryRange guard.
 func nat64Pools(docs []Named[NAT64Spec]) ([]NAT64Instance, error) {
 	var out []NAT64Instance
+	var errs []error
 	// The pools' prefixes of the documents before the one at hand.
 	var pools []Named[netip.Prefix]
 	for _, n := range docs {
@@ -140,7 +148,7 @@ func nat64Pools(docs []Named[NAT64Spec]) ([]NAT64Instance, error) {
 		vrf := VRFOf(n.Spec.VRF)
 		for _, o := range out {
 			if o.VRF == vrf && o.Prefix.Overlaps(p) {
-				return nil, refusals.Errorf("NAT64", n.Name, "spec.prefix", "NAT64 %s and NAT64 %s both translate addresses of %s in VRF %s; give each NAT64 of a VRF a prefix of its own", n.Name, o.Name, p, vrf)
+				errs = append(errs, refusals.Errorf("NAT64", n.Name, "spec.prefix", "NAT64 %s and NAT64 %s both translate addresses of %s in VRF %s; give each NAT64 of a VRF a prefix of its own", n.Name, o.Name, p, vrf))
 			}
 		}
 		inst := NAT64Instance{Name: n.Name, VRF: vrf, Prefix: p}
@@ -152,7 +160,7 @@ func nat64Pools(docs []Named[NAT64Spec]) ([]NAT64Instance, error) {
 			}
 			for _, o := range pools {
 				if o.Spec.Overlaps(prefix) {
-					return nil, refusals.Errorf("NAT64", n.Name, fmt.Sprintf("spec.pool4[%d]", i), "the entry shares addresses with the pool of NAT64 %s; give each NAT64 a pool of its own", o.Name)
+					errs = append(errs, refusals.Errorf("NAT64", n.Name, fmt.Sprintf("spec.pool4[%d]", i), "the entry shares addresses with the pool of NAT64 %s; give each NAT64 a pool of its own", o.Name))
 				}
 			}
 			// The entry's protocols in Jool's order. The schema takes no other protocol; an entry
@@ -172,6 +180,9 @@ func nat64Pools(docs []Named[NAT64Spec]) ([]NAT64Instance, error) {
 			pools = append(pools, Named[netip.Prefix]{n.Name, r.Prefix})
 		}
 		out = append(out, inst)
+	}
+	if err := errors.Join(errs...); err != nil {
+		return nil, err
 	}
 	return out, nil
 }

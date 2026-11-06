@@ -206,6 +206,14 @@ func TestValidateRouter(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "validator router: the documents are no JSON array of documents") || out.Len() != 0 {
 		t.Errorf("validate router of an output's input = %v, printed %q", err, out.String())
 	}
+	// A config it refuses is a report of its refusals, and the validator succeeds.
+	out.Reset()
+	refused := `[{"kind": "Network", "metadata": {"name": "20-tenant"}, "spec": {"match": {"name": "tenant"}}},
+		{"kind": "VRF", "metadata": {"name": "tenant"}, "spec": {"table": 100}}]`
+	want := `{"refusals":[{"kind":"VRF","name":"tenant","path":"metadata.name","message":"a Network document names the link tenant, the VRF's device"}]}` + "\n"
+	if err := run([]string{"validate", "router"}, strings.NewReader(refused), &out, ""); err != nil || out.String() != want {
+		t.Errorf("validate router of a refused config = %v, printed %q, want %q", err, out.String(), want)
+	}
 	// A message's control and bidirectional runes print as spaces, as the report's format takes
 	// them, whatever validator returns them.
 	validators["test"] = func([]byte) ([]refusals.Refusal, error) {
@@ -745,36 +753,21 @@ func refused(t *testing.T, args []string, docs map[string][]any, want string) {
 	}
 }
 
-// The Jool renderer refuses what the rules leave to it, as they would compare the NAT64 documents
-// in pairs: two NAT64s of one VRF whose prefixes overlap, two NAT64s whose pools share an address
-// and two names whose hashes pick one link. It guards, with an internal error, what jool file check
-// passes and the kernel refuses once chalkos-nat64 loads an instance, and values that would add to
-// the JSON Jool reads, were it written by hand.
+// The Jool renderer guards, with an internal error, what jool file check passes and the kernel
+// refuses once chalkos-nat64 loads an instance, and values that would add to the JSON Jool reads,
+// were it written by hand. The validator router refuses NAT64s that share a prefix, a pool's
+// address or a link.
 func TestJoolRefusals(t *testing.T) {
 	nat64 := func(name, spec string) any { return routerDoc(t, "NAT64", name, spec) }
 	pool := func(entries string) any { return nat64("edge", `{"prefix": "64:ff9b::/96", "pool4": [`+entries+`]}`) }
-	tenant := func(name, prefix string) any {
-		return nat64(name, `{"vrf": "tenant", "prefix": "`+prefix+`", "pool4": []}`)
-	}
-	const notPrefix = "is no IPv6 range of 32, 40, 48, 56, 64 or 96 bits whose bits 64 to 71 are zero; chalkd checks the config against the schemas and rules before it renders"
+	const notPrefix = "is no IPv6 range of 32, 40, 48, 56, 64 or 96 bits whose bits 64 to 71 are zero; chalkd checks the config against the schemas, the rules and the validators before it renders"
 	for name, c := range map[string]struct {
 		docs []any
 		want string
 	}{
-		"two names of one link": {[]any{nat64("nat282", `{"prefix": "2001:db8:282::/96", "pool4": []}`), nat64("nat8", `{"prefix": "2001:db8:8::/96", "pool4": []}`)},
-			"NAT64/nat8: metadata.name: NAT64 nat8 and NAT64 nat282 both take the link addresses 169.254.120.112/30, which the hashes of their names pick; rename NAT64 nat8"},
-		"two NAT64s of one prefix": {[]any{nat64("a", `{"prefix": "64:ff9b::/96", "pool4": []}`), nat64("b", `{"prefix": "64:ff9b::/96", "pool4": []}`)},
-			"NAT64/b: spec.prefix: NAT64 b and NAT64 a both translate addresses of 64:ff9b::/96 in VRF default; give each NAT64 of a VRF a prefix of its own"},
-		"a prefix within another's": {[]any{nat64("a", `{"prefix": "64:ff9b::/96", "pool4": []}`), nat64("b", `{"prefix": "64:ff9b::/64", "pool4": []}`)},
-			"NAT64/b: spec.prefix: NAT64 b and NAT64 a both translate addresses of 64:ff9b::/64 in VRF default; give each NAT64 of a VRF a prefix of its own"},
-		"two NAT64s of one prefix in a VRF": {[]any{tenant("a", "64:ff9b::/96"), tenant("b", "64:ff9b::/64")},
-			"NAT64/b: spec.prefix: NAT64 b and NAT64 a both translate addresses of 64:ff9b::/64 in VRF tenant; give each NAT64 of a VRF a prefix of its own"},
-		"two NAT64s of one pool's address": {[]any{pool(`{"prefix": "192.0.2.8/30", "ports": "61001-65535", "protocols": ["tcp"]}`),
-			nat64("lab", `{"prefix": "2001:db8:64::/96", "pool4": [{"prefix": "192.0.2.10/32", "ports": "1-1000", "protocols": ["udp"]}]}`)},
-			"NAT64/lab: spec.pool4[0]: the entry shares addresses with the pool of NAT64 edge; give each NAT64 a pool of its own"},
 		// What jool file check passes and the kernel refuses once chalkos-nat64 loads the instance.
 		"a name of 12 characters": {[]any{nat64("abcdefghijkl", `{"prefix": "64:ff9b::/96", "pool4": []}`)},
-			"internal error: NAT64 abcdefghijkl: its link n64-abcdefghijkl is longer than an interface name's 15 characters; chalkd checks the config against the schemas and rules before it renders"},
+			"internal error: NAT64 abcdefghijkl: its link n64-abcdefghijkl is longer than an interface name's 15 characters; chalkd checks the config against the schemas, the rules and the validators before it renders"},
 		"a prefix of 95 bits": {[]any{nat64("edge", `{"prefix": "64:ff9b::/95", "pool4": []}`)}, `internal error: NAT64 edge: the prefix "64:ff9b::/95" ` + notPrefix},
 		"an IPv4 prefix":      {[]any{nat64("edge", `{"prefix": "192.0.2.0/24", "pool4": []}`)}, `internal error: NAT64 edge: the prefix "192.0.2.0/24" ` + notPrefix},
 		"bits 64 to 71 set":   {[]any{nat64("edge", `{"prefix": "2001:db8:0:0:ff00::/96", "pool4": []}`)}, `internal error: NAT64 edge: the prefix "2001:db8:0:0:ff00::/96" ` + notPrefix},
@@ -904,7 +897,7 @@ func TestUnboundRefusals(t *testing.T) {
 	}
 	// data is the internal error of a record whose data is not of its type.
 	data := func(typ, value string) string {
-		return "internal error: Resolver resolver: local zone 1: lan.example.org: record 1: " + strconv.Quote(value) + " is no " + typ + " record's data; chalkd checks the config against the schemas and rules before it renders"
+		return "internal error: Resolver resolver: local zone 1: lan.example.org: record 1: " + strconv.Quote(value) + " is no " + typ + " record's data; chalkd checks the config against the schemas, the rules and the validators before it renders"
 	}
 	args := []string{"unbound", testTrustAnchor, testZoneFile}
 	for name, c := range map[string]struct {

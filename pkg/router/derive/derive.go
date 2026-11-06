@@ -11,8 +11,10 @@
 // chalkos-render, the package takes the standard library alone, besides package refusals.
 //
 // A config the model refuses for what no schema or rule sees is a *refusals.Error that names the
-// document and its field. A guard of what the schemas and rules refuse before chalkd renders is
-// an internal error, as InternalErrorf makes it.
+// document and its field, or several of them joined, one for each fault a check finds. Validate
+// runs every check, so the renderers render a config the model accepts and refuse none of what
+// it checks. A guard of what the schemas and rules refuse before the validator runs is an
+// internal error, as InternalErrorf makes it.
 package derive
 
 import (

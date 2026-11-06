@@ -112,7 +112,7 @@ func TestNetworkdWithoutDocuments(t *testing.T) {
 // schema does not annotate; each is an internal error. A kind whose schema the image lacks is the
 // image's fault, and its error names the schema.
 func TestNetworkdRefusesWhatTheSchemasRefuse(t *testing.T) {
-	const checked = "; chalkd checks the config against the schemas and rules before it renders"
+	const checked = "; chalkd checks the config against the schemas, the rules and the validators before it renders"
 	for name, c := range map[string]struct {
 		kind, spec, want string
 	}{

@@ -61,7 +61,7 @@ func TestKea6Refusals(t *testing.T) {
 		"options without a flag":      {[]any{subnetDoc(t, "lab", `{"interfaces": ["lan3"], "subnet": "2001:db8:4::/64", "dns": ["2001:db8:4::1"]}`)}, "Network 13-lan3 sends no router advertisements on lan3 with Managed=yes or OtherInformation=yes, which tell its clients to ask the DHCPv6 server; give it ipv6SendRA: true in network and otherInformation: true in ipv6SendRA"},
 		// What the renderer would count by a negative shift.
 		"delegating short prefixes": {[]any{office(`, "prefixDelegation": {"prefix": "2001:db8:100::/56", "length": 56}`)},
-			`internal error: DHCPSubnet office6: prefixDelegation's prefix "2001:db8:100::/56" is no range shorter than its length 56; chalkd checks the config against the schemas and rules before it renders`},
+			`internal error: DHCPSubnet office6: prefixDelegation's prefix "2001:db8:100::/56" is no range shorter than its length 56; chalkd checks the config against the schemas, the rules and the validators before it renders`},
 		"delegating no range": {[]any{office(`, "prefixDelegation": {"prefix": "2001:db8:100::", "length": 56}`)},
 			`internal error: DHCPSubnet office6: prefixDelegation's prefix "2001:db8:100::" is no range shorter than its length 56`},
 	} {
