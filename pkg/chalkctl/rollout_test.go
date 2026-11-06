@@ -414,3 +414,67 @@ func TestApplyConfigAddresses(t *testing.T) {
 		t.Fatalf("one node, a bare address: %v\n%s", err, l.ta.stdout)
 	}
 }
+
+// testImageWithKubelet is a test image of the variant whose image.json names a kubelet of the
+// version.
+func testImageWithKubelet(t *testing.T, variant, name, version string) string {
+	t.Helper()
+	dir := testUpgradeImage(t, variant, name)
+	k := `{"version": "` + version + `", "cni": "flannel"}`
+	writeFile(t, filepath.Join(dir, "image.json"), k)
+	md, err := os.ReadFile(filepath.Join(dir, "metadata.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filepath.Join(dir, "metadata.json"), strings.Replace(string(md), `{"version": "1.37.1", "cni": "flannel"}`, k, 1))
+	return dir
+}
+
+// An image whose kubelet would be newer than the oldest API server the control planes run is
+// refused before any node is sent anything; patch releases pass, and a rollback asks nothing.
+func TestUpgradeRefusesAKubeletNewerThanTheAPIServer(t *testing.T) {
+	l := newUpgradeLab(t, 3)
+	newer := testImageWithKubelet(t, "w", "0.2.0", "1.38.0")
+	upgraded := func() bool {
+		return slices.ContainsFunc(l.takeEvents(), func(e string) bool { return strings.HasSuffix(e, " upgrade") })
+	}
+	err := l.upgrade(newer, "--nodes", "w1", "--until", "activate")
+	if want := "w1: the image's kubelet 1.38.0 would be newer than the API server 1.37.1 that cp1 runs, the oldest of the cluster; upgrade the control plane first: name the new release's images in the Cluster document and deliver it with chalkctl apply-config"; err == nil || err.Error() != want {
+		t.Errorf("err = %v, want %q", err, want)
+	}
+	if upgraded() {
+		t.Error("a refused image was sent")
+	}
+
+	l.nodes["cp2"].rebooting = true
+	if err := l.upgrade(testImageWithKubelet(t, "w", "0.3.0", "1.37.5"), "--nodes", "w1", "--until", "activate"); err == nil || !strings.Contains(err.Error(), "the versions cp2 runs are unknown: ") || !strings.Contains(err.Error(), "the version skew check needs every control plane") {
+		t.Errorf("cp2 down: %v", err)
+	}
+	if upgraded() {
+		t.Error("an image was sent while cp2 was down")
+	}
+	l.nodes["cp2"].rebooting = false
+
+	if err := l.upgrade(testImageWithKubelet(t, "w", "0.3.0", "1.37.5"), "--nodes", "w1", "--until", "activate"); err != nil {
+		t.Errorf("a patch release: %v\n%s", err, l.ta.stdout)
+	}
+	l.nodes["w2"].rebooting = true
+	if err := l.upgrade(testUpgradeImage(t, "cp", "0.2.0"), "--nodes", "cp1", "--until", "activate"); err != nil {
+		t.Errorf("w2 down: %v\n%s", err, l.ta.stdout)
+	}
+	l.nodes["w2"].rebooting = false
+	for _, name := range []string{"cp1", "cp2", "cp3"} {
+		l.nodes[name].apiServer = "1.38.0"
+	}
+	l.rollTo(t, "1.38.0")
+	if err := l.upgrade(newer, "--nodes", "w3"); err != nil {
+		t.Fatalf("API servers on 1.38: %v\n%s", err, l.ta.stdout)
+	}
+	l.takeEvents()
+	// A rollback opens no image, so it checks none, and a control plane that is down does not
+	// stop it.
+	l.nodes["cp2"].rebooting = true
+	if err := l.run("upgrade", "--rollback", "--nodes", "w3"); err != nil {
+		t.Errorf("a rollback: %v\n%s", err, l.ta.stdout)
+	}
+}

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
+	"google.golang.org/protobuf/types/known/anypb"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/chalkctl/layer"
@@ -289,6 +290,28 @@ func (r *configRollout) summary(ctx context.Context) {
 			r.say("%s", line)
 		}
 	}
+}
+
+// checkImages has the Rollout layers refuse images whose versions would break their bounds
+// against what every node of the cluster runs, before any node is sent its image.
+func (r *upgradeRun) checkImages(ctx context.Context) error {
+	layers := compiled[layer.Rollout]()
+	if len(layers) == 0 {
+		return nil
+	}
+	images := map[string][]*anypb.Any{}
+	for name, n := range r.nodes {
+		if n.image != nil && n.image.contract != nil {
+			images[name] = n.image.contract.facts
+		}
+	}
+	all := r.clusterVersions(ctx)
+	for _, l := range layers {
+		if err := l.CheckImages(pluginCluster{r.cluster}, images, all[l]); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // waitDelivered waits, until the time given, for the Rollout layers of the image the node runs to

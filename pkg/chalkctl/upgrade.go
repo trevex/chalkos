@@ -211,6 +211,9 @@ func (a *app) upgrade(ctx context.Context, f upgradeFlags) error {
 	if err != nil {
 		return err
 	}
+	if err := r.checkImages(ctx); err != nil {
+		return err
+	}
 	if err := r.chooseConfig(f.diff); err != nil {
 		return err
 	}
