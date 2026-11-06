@@ -17,8 +17,9 @@ import (
 
 // TestUpgrade installs the signed test image under Secure Boot, which boots its UKI as
 // chalkos_1.efi, and upgrades it to the upgrade image step by step: upgrade --until stage stages
-// it, which status says, node activate makes it boot next, and node reboot boots it from slot B
-// as chalkos_2.efi with STATE and VAR unlocked by the TPM, found healthy. chalkctl upgrade
+// it, which status says, a plain apply-config goes to both images, node activate makes the
+// upgrade image boot next, and node reboot boots it from slot B as chalkos_2.efi with STATE and
+// VAR unlocked by the TPM, found healthy, with the config apply-config delivered. chalkctl upgrade
 // --rollback then boots the test image again from slot A as chalkos_3, with the config it ran;
 // run again, it changes nothing. apply-config --staged then holds a Farewell the upgrade image's
 // renderer refuses as the node's pending config, and an operator's upgrade to the upgrade
@@ -81,6 +82,15 @@ func TestUpgrade(t *testing.T) {
 	if out, err := chalkctl(t, n, "", "status", "chalklab", "--inventory", pullInventory); err != nil || !strings.Contains(out, "upgrade to "+nextHash[:12]+" staged; node activate makes it boot next\n") {
 		t.Errorf("status with the image staged: %v", err)
 	}
+	// Config for the running image goes to the staged one too, which checks it with its own
+	// chalkd, so it must suit both: the inventory's without the Farewell the test image lacks, and
+	// with another Greeting.
+	both := bothImagesInventory(t, pullInventory)
+	out, err = chalkctl(t, n, "", "apply-config", "chalklab", "--inventory", both)
+	delivered := runsConfig.FindStringSubmatch(out)
+	if err != nil || delivered == nil || !strings.Contains(out, "chalklab boots config "+delivered[1]+" with its staged image too\n") {
+		t.Fatalf("apply-config with the image staged: %v", err)
+	}
 	if out, err := chalkctl(t, n, "", "node", "activate", "chalklab", "--inventory", pullInventory); err != nil || !strings.Contains(out, "chalklab: activated "+nextHash[:12]+", which boots next as chalkos_2+3.efi\n") {
 		t.Fatalf("activate %s: %v", nextHash[:12], err)
 	}
@@ -100,7 +110,7 @@ func TestUpgrade(t *testing.T) {
 		"state_boots":     "3",
 		"var_boots":       "2",
 	})
-	if out, err := chalkctl(t, n, "", "status", "chalklab", "--inventory", pullInventory); err != nil || !strings.Contains(out, "image "+nextHash[:12]+", booted from chalkos_2.efi\n") || !inventoryConfig.MatchString(out) {
+	if out, err := chalkctl(t, n, "", "status", "chalklab", "--inventory", both); err != nil || !strings.Contains(out, "image "+nextHash[:12]+", booted from chalkos_2.efi\n") || !strings.Contains(out, "config "+delivered[1]+" (the inventory's)\n") {
 		t.Errorf("status after the upgrade: %v", err)
 	}
 
@@ -186,6 +196,31 @@ func TestUpgrade(t *testing.T) {
 
 // inventoryConfig is status's line of a node that runs the config of the inventory it was given.
 var inventoryConfig = regexp.MustCompile(`(?m)^config [0-9a-f]{64} \(the inventory's\)$`)
+
+// runsConfig is apply-config's line of a node that runs the config delivered, with its version.
+var runsConfig = regexp.MustCompile(`(?m)^chalklab runs config ([0-9a-f]{64})$`)
+
+// bothImagesInventory writes, beside the inventory at path, one that gives chalklab its config
+// without the Farewell and with a Greeting of another message, which the test image and the
+// upgrade image both accept, and returns its path.
+func bothImagesInventory(t *testing.T, path string) string {
+	t.Helper()
+	dir := filepath.Dir(path)
+	greeting := "apiVersion: greeting.example.org/v1alpha1\nkind: Greeting\nmetadata: {name: hello}\nspec: {message: hello both, token: {secretRef: {name: greeting, key: token}}}\n"
+	if err := os.WriteFile(filepath.Join(dir, "nodes/chalklab/greeting-both.yaml"), []byte(greeting), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	inv := replaceOnce(t, string(data), "nodes/chalklab/greeting.yaml, nodes/chalklab/farewell.yaml", "nodes/chalklab/greeting-both.yaml")
+	both := filepath.Join(dir, "upgrade-both.yaml")
+	if err := os.WriteFile(both, []byte(inv), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return both
+}
 
 // pendingHeld is apply-config's line of a node that holds the config pending, with its version.
 var pendingHeld = regexp.MustCompile(`(?m)^chalklab holds config ([0-9a-f]{64}) pending, unchecked; the next upgrade checks it against its image$`)
