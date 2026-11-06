@@ -11,7 +11,9 @@ spec:
   # flake builds, the Kubernetes release of its nixpkgs; the image's checker holds them to
   # Kubernetes's version skew policy. The digests pin what containerd pulls. Read the digest of
   # another reference with `crane digest <ref>` or
-  # `skopeo inspect --format '{{.Digest}}' docker://<ref>`.
+  # `skopeo inspect --format '{{.Digest}}' docker://<ref>`. The documentation includes the
+  # section the comments --8<-- mark.
+  # --8<-- [start:images]
   images:
     apiServer: registry.k8s.io/kube-apiserver:v1.37.1@sha256:e190f914a6cc21cab9268485d1ae7282fdeab1315ac64b668aa42d732fd1061d
     controllerManager: registry.k8s.io/kube-controller-manager:v1.37.1@sha256:d470c1b85aebb466e971c06239cc6a31a4ac337a78600cef80375a79a1be1641
@@ -21,3 +23,4 @@ spec:
     coredns: registry.k8s.io/coredns/coredns:v1.14.6@sha256:900f9c109f7a33545d3c811516e8376df9019147b750f5ce3e254468769176ea
     pause: registry.k8s.io/pause:3.10.2@sha256:f548e0e8e3dc1896ca956272154dde3314e8cc4fde0a57577ee9fa1c63f5baf4
     flannel: ghcr.io/flannel-io/flannel:v0.28.9@sha256:708a2c9c1cfbfe529d1dbb249cb7113af117f3ed26b5e3e4c8ee015e10555204
+  # --8<-- [end:images]

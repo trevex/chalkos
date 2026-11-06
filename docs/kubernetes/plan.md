@@ -25,6 +25,7 @@ spec:
   ipFamilies: [ipv4]
   podCIDRs: {ipv4: 10.244.0.0/16}
   serviceCIDRs: {ipv4: 10.96.0.0/12}
+  --8<-- "examples/homelab/cluster/cluster.yaml:images"
 ```
 
 ## Before you begin
@@ -145,6 +146,7 @@ spec:
   serviceCIDRs:
     ipv4: 10.96.0.0/12
     ipv6: fd00:10:96::/112
+  --8<-- "examples/homelab/cluster/cluster.yaml:images"
 ```
 
 [Kubernetes networking](../how-it-works/kubernetes/networking.md#each-node-picks-one-address-per-family-before-the-kubelet-starts)

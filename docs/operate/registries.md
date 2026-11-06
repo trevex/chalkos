@@ -135,14 +135,10 @@ without `imagePullSecrets`.
 describes how the kubelet gets the credentials.
 
 A cluster without internet access pulls every container image from a mirror, so the mirror must
-hold them all. Besides the workloads' images, these are the images chalkos runs:
-
-- `kube-apiserver`, `kube-controller-manager`, `kube-scheduler` and `kube-proxy` from
-  `registry.k8s.io`, tagged with the Kubernetes release of the node's image.
-- The images that the image options `chalkos.kubernetes.images.etcd`, `.coredns` and `.pause` and
-  `chalkos.cni.flannel.image` name. The
-  [image options](../reference/image-options.md#chalkoskubernetesimagescoredns) list their defaults;
-  the image's author knows whether the image changes them.
+hold them all. Besides the workloads' images, these are the images the `images` block of the
+[`Cluster`](../reference/kinds.md#cluster) document names: the API server, the controller-manager,
+the scheduler, kube-proxy, etcd, CoreDNS, the pod sandbox and, on an image with flannel, flannel.
+The mirror serves each under the repository and the tag or digest the reference names.
 
 !!! warning "On the shipped variant, a mirror receives the registry's credentials"
 

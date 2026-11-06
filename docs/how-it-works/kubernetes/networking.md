@@ -79,6 +79,7 @@ spec:
   endpoint: https://10.0.0.10:6443
   nodeIP:
     validSubnets: [10.0.0.0/24, "!10.0.0.200/29"]
+  --8<-- "examples/homelab/cluster/cluster.yaml:images"
 ```
 
 A subnet that starts with `!` is quoted, because YAML reads an unquoted `!` as a tag.
@@ -152,6 +153,7 @@ metadata: {name: default}
 spec:
   endpoint: https://10.0.0.10:6443
   ipFamilies: [ipv6, ipv4]
+  --8<-- "examples/homelab/cluster/cluster.yaml:images"
 ```
 
 The cluster DNS service has an address of the primary family alone, as kubeadm's does, because the
@@ -178,6 +180,7 @@ metadata: {name: default}
 spec:
   endpoint: https://10.0.0.10:6443
   vip: {addresses: [10.0.0.10]}
+  --8<-- "examples/homelab/cluster/cluster.yaml:images"
 ```
 
 chalkd on every bootstrapped control plane takes part in an election held in etcd under

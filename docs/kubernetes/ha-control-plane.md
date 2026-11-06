@@ -45,6 +45,7 @@ metadata: {name: default}
 spec:
   endpoint: https://192.168.123.10:6443
   vip: {addresses: [192.168.123.10]}
+  --8<-- "examples/homelab/cluster/cluster.yaml:images"
 ```
 
 Each control plane has a file of its own with `type: controlplane`, its system disk and its static

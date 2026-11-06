@@ -68,7 +68,7 @@ layout and its limits.
 | Addresses | Static addresses in the node's `Network` documents, or DHCP on interfaces that none of them matches. A control plane that joined etcd keeps the addresses it joined with. |
 | Ports | chalkd listens on TCP 50000 and a control plane's API server on TCP 6443. |
 | Time | Reachable time servers, because certificates are checked against the clock and a node whose clock is off reaches no other node. The default servers are `ptbtime1.ptb.de` to `ptbtime3.ptb.de`, authenticated with NTS; `spec.servers` of a `TimeSync` document replaces them. |
-| Container registries | Access to `registry.k8s.io` for the control plane, etcd, kube-proxy, CoreDNS and pause images and to `ghcr.io` for flannel, or mirrors of them in `Mirror` documents. The kubelet and containerd are in the image. |
+| Container registries | Access to the registries the `Cluster` document's images name, `registry.k8s.io` and `ghcr.io` in the lab template, or mirrors of them in `Mirror` documents. The kubelet and containerd are in the image. |
 
 [Ports and firewall](../reference/ports-and-firewall.md) lists every port between nodes and from
 operators. The kinds [`Network`](../reference/kinds.md#network),

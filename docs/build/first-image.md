@@ -132,8 +132,8 @@ The build writes six entries:
 - `metadata.json` names the image's root hash, variant and platform, the revision and tag it was
   built from, and the kinds it accepts.
 - `schemas` holds the JSON Schema of each kind the image accepts.
-- `image.json` records what the image fixes about Kubernetes. It exists only on an image with
-  Kubernetes.
+- `image.json` records what the image fixes about Kubernetes: the release of its kubelet and its
+  pod network. It exists only on an image with Kubernetes.
 
 chalkctl reads `metadata.json`, `schemas` and `image.json` when it validates, installs or upgrades
 a node whose image in the inventory is this directory.

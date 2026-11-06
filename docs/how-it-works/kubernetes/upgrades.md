@@ -1,13 +1,13 @@
 ---
 title: "Kubernetes upgrades"
-description: "How a new Kubernetes version reaches a cluster: an image upgrade that rolls through the control planes first"
+description: "How a new kubelet reaches a cluster: an image upgrade that rolls through the control planes first"
 ---
 
 # Kubernetes upgrades
 
-A new Kubernetes version reaches a cluster in a new image. Each image runs one Kubernetes version,
-so `chalkctl upgrade` rolls the version through the cluster with the image. The diagram shows the
-order in which a run upgrades the nodes.
+A new kubelet reaches a cluster in a new image, because each image fixes its kubelet's release.
+`chalkctl upgrade` rolls the image through the cluster. The diagram shows the order in which a run
+upgrades the nodes.
 
 ```mermaid
 flowchart LR
@@ -16,13 +16,16 @@ flowchart LR
     batch1 --> batch2["Batch 2"]
 ```
 
-## A Kubernetes upgrade is an image upgrade
+## A kubelet upgrade is an image upgrade
 
-There is no separate Kubernetes upgrade. A new Kubernetes release is a new image built with a new
+A new kubelet release is a new image built with a new
 [`chalkos.kubernetes.package`](../../reference/image-options.md#chalkoskubernetespackage), installed like
-any other, because the image fixes the release of the kubelet and the control plane, as
-[The image fixes one Kubernetes version](overview.md#the-image-fixes-one-kubernetes-version)
-describes. The steps a single node takes, from the image to the bless, are on
+any other, because the image fixes the kubelet's release, as
+[The image fixes the kubelet, the config names the other images](overview.md#the-image-fixes-the-kubelet-the-config-names-the-other-images)
+describes. The control plane, kube-proxy and the add-ons run the images the `Cluster` document
+names, so their versions change with the config. The image's checker refuses a config whose API
+server is older than the new image's kubelet, so the control plane's images move to the new
+release before the kubelets do. The steps a single node takes, from the image to the bless, are on
 [Upgrades](../node/upgrades.md).
 
 The config an upgrade carries meets the new image's change rules, and a change of a fixed

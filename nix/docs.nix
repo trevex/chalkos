@@ -13,6 +13,8 @@ let
     "nodes"
     "cluster"
   ];
+  # The lab template's files the pages include as snippets.
+  templateSnippets = [ "cluster" ];
   src = lib.fileset.toSource {
     root = ../.;
     fileset = lib.fileset.unions (
@@ -22,6 +24,7 @@ let
         ../includes
       ]
       ++ map (path: ../examples/homelab + "/${path}") homelabSnippets
+      ++ map (path: ../templates/lab + "/${path}") templateSnippets
     );
   };
   # The pages and files docgen writes, as they lie in the repository.
@@ -311,6 +314,10 @@ rec {
         mkdir -p "$work/examples/homelab"
         for path in ${lib.escapeShellArgs homelabSnippets}; do
           rsync -a --delete "examples/homelab/$path" "$work/examples/homelab/"
+        done
+        mkdir -p "$work/templates/lab"
+        for path in ${lib.escapeShellArgs templateSnippets}; do
+          rsync -a --delete "templates/lab/$path" "$work/templates/lab/"
         done
       }
       copy

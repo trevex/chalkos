@@ -30,23 +30,30 @@ flowchart TB
 ```
 
 containerd and the kubelet are systemd units of the image. etcd, the API server, the
-controller-manager and the scheduler run as static pods from the upstream images. chalkd renders
-them on every control plane. Certificates come from the cluster's secrets file instead of
+controller-manager and the scheduler run as static pods from the images the config names. chalkd
+renders them on every control plane. Certificates come from the cluster's secrets file instead of
 `kubeadm init`. Control planes join etcd on their own, and chalkd applies the cluster's add-ons at
-every boot. The image fixes the Kubernetes release. Every setting of the cluster and of each node
-is a config document. [The control plane](control-plane.md) explains the static pods, the
-bootstrap, the joins and the add-ons.
+every boot. The image fixes the kubelet's release. Every other image and every setting of the
+cluster and of each node is in a config document. [The control plane](control-plane.md) explains
+the static pods, the bootstrap, the joins and the add-ons.
 
-## The image fixes one Kubernetes version
+## The image fixes the kubelet, the config names the other images
 
-Each image runs one Kubernetes version:
+Each image fixes the parts of Kubernetes that run on the host: containerd, the CNI plugins and
+the kubelet of
 [`chalkos.kubernetes.package`](../../reference/image-options.md#chalkoskubernetespackage), which is
-nixpkgs's `kubernetes` by default. Nodes run its kubelet. The control plane runs the upstream
-images of the same version from `registry.k8s.io`, so a node's kubelet and control plane always
-run the same version. etcd, the pause image and CoreDNS have their own images under
-[`chalkos.kubernetes.images`](../../reference/image-options.md#chalkoskubernetesimagesetcd). So a
-Kubernetes upgrade is an image upgrade, which [Kubernetes upgrades](upgrades.md)
-describes.
+nixpkgs's `kubernetes` by default. The `images` block of the
+[`Cluster`](../../reference/kinds.md#cluster) document names every other image: the API server,
+the controller-manager, the scheduler, kube-proxy, etcd, CoreDNS, the pod sandbox and, on an image
+with flannel, flannel. containerd pulls them through the `Registry` and `Mirror` documents, which
+[Registries and mirrors](../../operate/registries.md) describes.
+
+The tags of the API server, the controller-manager, the scheduler and kube-proxy name their
+Kubernetes version. The image's checker holds these versions to Kubernetes's version skew policy
+against the image's kubelet, so a config whose control plane is older than the kubelet is refused.
+[Configure Kubernetes](../../kubernetes/configure.md#images-name-every-component-but-the-kubelet)
+lists the rules. An upgrade of the kubelet is an image upgrade, which
+[Kubernetes upgrades](upgrades.md) describes.
 
 ## The type of a node decides what runs
 
@@ -75,14 +82,14 @@ it.
 
 ## Four kinds of document describe the cluster
 
-The image fixes what it ships: the Kubernetes release, the images of its components and the pod
-network. It records them in `/etc/chalkos/kubernetes/image.json`. Everything else is config, in
-documents of the kinds of the group `kubernetes.chalkos.dev`:
+The image fixes what it ships: the kubelet's release and the pod network. It records them in
+`/etc/chalkos/kubernetes/image.json`. Everything else is config, in documents of the kinds of the
+group `kubernetes.chalkos.dev`:
 
 - One [`Cluster`](../../reference/kinds.md#cluster) document, which is required. It holds the URL
   of the cluster's API server, the address families and ranges, the DNS domain and address, how
-  nodes pick their addresses, the VIP, scheduling on control planes and extra flags of the control
-  plane's components.
+  nodes pick their addresses, the VIP, scheduling on control planes, the images of the cluster's
+  components and extra flags of the control plane's components.
 - One [`Node`](../../reference/kinds.md#node) document, which is required. It holds the node's
   type and its own labels, taints, addresses, extra flags of its kubelet and the interface it holds
   the VIP on.
@@ -106,18 +113,11 @@ no Node: the config of a node whose image runs Kubernetes holds one Node documen
 ```
 
 The `Cluster` document names the cluster endpoint, the URL of the API server, which every node
-names alike. Every other field has a default. A cluster on IPv4 with the default ranges
-needs no more than the lab template's document:
+names alike, and the images of the cluster's components. Every other field has a default. A
+cluster on IPv4 with the default ranges needs no more than the lab template's document:
 
 ```yaml
-# Kubernetes with its defaults: IPv4, the pod range 10.244.0.0/16 and the service range
-# 10.96.0.0/12.
-apiVersion: kubernetes.chalkos.dev/v1alpha1
-kind: Cluster
-metadata: {name: default}
-spec:
-  # cp1 on the lab network: the API server of the only control plane.
-  endpoint: https://192.168.123.11:6443
+--8<-- "templates/lab/cluster/cluster.yaml"
 ```
 
 chalkctl delivers the documents at install and with

@@ -9,7 +9,7 @@ This page is for an operator who sets how Kubernetes runs on the cluster's nodes
 documents hold the settings: `Cluster` for what every node shares, `Node` for one node, `Flannel`
 for the pod network and `Addon` for objects the control planes apply. At the end the nodes run
 with your settings, delivered with the rest of their config. The page builds on the homelab, whose
-`cluster/cluster.yaml` sets only the endpoint:
+`cluster/cluster.yaml` sets the endpoint and the images:
 
 ```yaml title="cluster/cluster.yaml"
 --8<-- "examples/homelab/cluster/cluster.yaml"
@@ -34,6 +34,7 @@ document. Its fields fall into groups:
 | Fields | Set | Default |
 | --- | --- | --- |
 | `endpoint` | The URL of the API server, the cluster endpoint | required |
+| `images` | The images of the control plane, kube-proxy, CoreDNS, the pod sandbox and flannel | required |
 | `domain` | The cluster's DNS domain | `cluster.local` |
 | `ipFamilies`, `podCIDRs`, `serviceCIDRs`, `dnsIPs` | The address families, their pod and service ranges and the cluster DNS address of each; fixed once the cluster exists | IPv4, `10.244.0.0/16`, `10.96.0.0/12`, the 10th address of the service range |
 | `nodeCIDRMaskSizes` | The prefix length of each node's part of the pod range | 24 for IPv4, 64 for IPv6 |
@@ -43,7 +44,90 @@ document. Its fields fall into groups:
 | `extraArgs` | Extra flags of etcd, the API server, the controller-manager and the scheduler | none |
 
 [Plan a cluster](plan.md) covers the endpoint, the VIP and the address families. The sections
-below cover scheduling and the extra flags.
+below cover the images, scheduling and the extra flags.
+
+## Images name every component but the kubelet
+
+The node's image fixes the kubelet, containerd and the CNI plugins. The `images` block of the
+`Cluster` document names every other image the cluster runs, so a control-plane release changes
+with the config. Every field is required:
+
+| Field | Image | Tag |
+| --- | --- | --- |
+| `apiServer` | `kube-apiserver` | a Kubernetes version |
+| `controllerManager` | `kube-controller-manager` | a Kubernetes version |
+| `scheduler` | `kube-scheduler` | a Kubernetes version |
+| `proxy` | `kube-proxy` | a Kubernetes version |
+| `etcd` | etcd, which control planes run | any |
+| `coredns` | CoreDNS, the cluster DNS | any |
+| `pause` | the pod sandbox, which containerd runs for every pod | any |
+| `flannel` | flannel, on an image whose CNI is flannel; another image refuses it | any |
+
+Each field is one image reference, used as written. A reference names its registry, its
+repository, and a tag, a digest or both, such as
+`registry.k8s.io/kube-apiserver:v1.37.1@sha256:<digest>`. chalkos adds no default registry, so
+`kube-apiserver:v1.37.1` is refused. With a digest, containerd pulls the image by its digest, and
+the tag labels it. The homelab's block pins every image this way:
+
+```yaml title="cluster/cluster.yaml"
+apiVersion: kubernetes.chalkos.dev/v1alpha1
+kind: Cluster
+metadata: {name: default}
+spec:
+  endpoint: https://10.0.0.11:6443
+  --8<-- "examples/homelab/cluster/cluster.yaml:images"
+```
+
+`crane digest <ref>` or `skopeo inspect --format '{{.Digest}}' docker://<ref>` prints the digest of
+a reference. Nothing offline checks that a tag and a digest agree.
+
+A reference with a tag and no digest is valid, but `chalkctl validate`, `apply-config`, `install`
+and `upgrade` warn of it, because each node pulls whatever the tag points to when it pulls, so two
+nodes may run different images under one reference:
+
+```text
+chalkctl: warning: cp1: Cluster "default": spec.images.proxy: registry.k8s.io/kube-proxy:v1.37.1 names a tag but no digest, so nodes pull whatever the tag points to when they pull; pin it as registry.k8s.io/kube-proxy:v1.37.1@sha256:<digest>
+```
+
+containerd pulls the images when the static pods, the add-ons and the pods need them, through the
+`Registry` and `Mirror` documents. A cluster without internet access serves them from a mirror, as
+[Registries and mirrors](../operate/registries.md#container-images-use-the-same-documents)
+describes.
+
+### The image's checker holds the versions to the skew policy
+
+The tags of `apiServer`, `controllerManager`, `scheduler` and `proxy` name their Kubernetes
+version, `v<major>.<minor>.<patch>` with an optional suffix such as `-rc.1`. The image's checker
+compares them with each other and with the release of the image's kubelet, by the
+[Kubernetes version skew policy](https://kubernetes.io/releases/version-skew-policy/). It compares
+minor versions alone, so patch releases may differ:
+
+| Image | Allowed versions |
+| --- | --- |
+| `apiServer` | no older than the kubelet, at most three minors newer |
+| `controllerManager`, `scheduler` | no newer than `apiServer`, at most one minor older |
+| `proxy` | no newer than `apiServer`, at most three minors older than it, and at most three minors older or newer than the kubelet |
+
+Each image's checker checks the config against its own kubelet, so a config delivered while a new
+image is staged must suit the staged image's kubelet too. The refusals name the field:
+
+```text
+Cluster "default": images.apiServer: v1.36.0 is older than the image's kubelet 1.37; a kubelet must not be newer than the API server, so upgrade the control plane first
+Cluster "default": images.apiServer: v1.41.0 is 4 minors newer than the image's kubelet 1.37; a kubelet may be at most three minors older than the API server, so upgrade the nodes' images first
+Cluster "default": images.scheduler: v1.38.0 is newer than images.apiServer v1.37.1; it must not be newer than the API server
+Cluster "default": images.proxy: v1.36.0 is 4 minors older than images.apiServer v1.40.0; kube-proxy may be at most three minors older
+```
+
+A reference of these four fields without a version tag, such as one by digest alone, fails the
+schema:
+
+```text
+'registry.k8s.io/kube-apiserver@sha256:<digest>' is not valid versioned-image-reference: this image names its version in its tag, as registry.k8s.io/kube-apiserver:v1.37.1, optionally followed by @sha256:<digest>; a reference by digest alone or with another tag has no version
+```
+
+A change of `pause` restarts containerd, whose running containers keep running; pods started after
+it get the new sandbox. A change of the other images restarts the kubelet and the preparation,
+which writes the static pods, and chalkd applies the add-ons again.
 
 ## The Node document gives a node its type, labels and taints
 
@@ -111,6 +195,7 @@ metadata: {name: default}
 spec:
   endpoint: https://10.0.0.11:6443
   allowSchedulingOnControlPlanes: true
+  --8<-- "examples/homelab/cluster/cluster.yaml:images"
 ```
 
 The taint is part of the control plane's registration, so `allowSchedulingOnControlPlanes` is fixed
@@ -144,6 +229,7 @@ spec:
     kube-apiserver: {service-node-port-range: 30000-31000}
     # etcd may grow to 8 GiB.
     etcd: {quota-backend-bytes: "8589934592"}
+  --8<-- "examples/homelab/cluster/cluster.yaml:images"
 ```
 
 The components take the flags on every control plane. A flag chalkos also sets takes your value.

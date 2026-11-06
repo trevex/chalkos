@@ -49,14 +49,7 @@ and not a value that nothing reads. A file holds any number of documents, separa
 The lab template's shared file holds the documents every node of the lab gets:
 
 ```yaml title="cluster/cluster.yaml"
-# Kubernetes with its defaults: IPv4, the pod range 10.244.0.0/16 and the service range
-# 10.96.0.0/12.
-apiVersion: kubernetes.chalkos.dev/v1alpha1
-kind: Cluster
-metadata: {name: default}
-spec:
-  # cp1 on the lab network: the API server of the only control plane.
-  endpoint: https://192.168.123.11:6443
+--8<-- "templates/lab/cluster/cluster.yaml"
 ```
 
 ## chalkos's kinds live in the group chalkos.dev

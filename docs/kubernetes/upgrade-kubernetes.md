@@ -49,18 +49,25 @@ The output comes from a lab cluster. `...` stands for cp2's and cp3's lines, whi
   two needs `--allow-downtime`, described below.
 - kubectl is on your workstation, for the checks.
 
-## A new Kubernetes release is a new image
+## A new Kubernetes release takes the config and then a new image
 
-The image fixes the Kubernetes release: every node runs the kubelet of its image, and control
-planes run the upstream images of the same release. The image author sets it in the image's
-modules, as [`chalkos.kubernetes.package`](../reference/image-options.md#chalkoskubernetespackage)
-describes, and every variant with Kubernetes gets a new image. The upgrade itself is the same as for
-any other image.
+The image fixes the kubelet's release. The image author sets it in the image's modules, as
+[`chalkos.kubernetes.package`](../reference/image-options.md#chalkoskubernetespackage) describes,
+and every variant with Kubernetes gets a new image. The control plane, kube-proxy, CoreDNS and the
+pod sandbox run the images the `Cluster` document names, as
+[Images name every component but the kubelet](configure.md#images-name-every-component-but-the-kubelet)
+describes.
+
+The new image's checker refuses a config whose API server is older than its kubelet, so the
+control plane moves first: change the references of `images` in the `Cluster` document to the new
+release and deliver the config with `chalkctl apply-config`, then upgrade the nodes to the new
+image. The upgrade itself is the same as for any other image.
 
 Move one minor release at a time, as the
 [Kubernetes version skew policy](https://kubernetes.io/releases/version-skew-policy/) requires.
-chalkctl compares no versions, so it does not stop a run that skips a minor release. It upgrades
-the control planes before the workers, so no kubelet runs a newer release than the API servers.
+The checker compares the config's versions with the image's kubelet alone, and chalkctl compares
+no versions across nodes, so neither stops a run that skips a minor release. chalkctl upgrades the
+control planes before the workers.
 
 ## Control planes go one at a time, then workers in batches
 
