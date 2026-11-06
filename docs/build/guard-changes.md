@@ -223,12 +223,20 @@ by itself fails the build.
 
 ## Null means the node does not know
 
-Facts are the running image's, because they describe this node, whichever image the config is
-for. Several cases give null, so a rule treats null as unknown:
+Facts describe the node, and a rule reads the facts that its own image declares: the build refuses
+a rule that reads a fact its image does not declare. chalkd loads the facts on the machine the
+node runs on:
+
+- When the running image checks the config, as for `chalkctl apply-config` to its own slot, the
+  facts are the running image's. A command fact runs the running image's program.
+- When an image that does not run checks the config, as for an upgrade, a delivery to a staged
+  image or an install from the installer, the facts are those that image's `facts.json` declares.
+  A file fact reads the file on this machine, and a command fact runs that image's program from
+  its store.
+
+Several cases give null, so a rule treats null as unknown:
 
 - A file fact whose file is missing.
-- A fact that the running image does not declare, as when a newer image's rules read a new fact
-  during the upgrade to it.
 - Every fact at an install in place, so a repeated install does not read what an earlier attempt
   left on STATE.
 - A fact of what the node holds, such as a file on STATE, at an install from the installer. The
@@ -360,8 +368,8 @@ leads to under that name, so `lsmod` would run as `kmod`.
 - Rules compare the config with the running image's config. An image that does not run compares
   with that config as it was delivered, with its own defaults filled in. No rule reads the slot
   of another image.
-- A command fact runs with the running image's program, so a fact that a newer image adds is null
-  until that image runs.
+- A command fact runs the program of the image that checks the config, from that image's store. A
+  newer image's rules therefore get the facts it adds during the upgrade to it.
 
 ## Built into chalkos
 

@@ -149,8 +149,8 @@ func (l *Loader) Override(name string, v any) {
 	l.loaded[name] = loaded{value: v}
 }
 
-// Fact is the value of the fact name: null for a fact the image does not declare, as a fact a
-// newer image's rules read and the running image lacks.
+// Fact is the value of the fact name: null for a fact the image does not declare, which no rule
+// of a built image reads: the build refuses one that does.
 func (l *Loader) Fact(name string) (any, error) {
 	if f, ok := l.loaded[name]; ok {
 		return f.value, f.err
