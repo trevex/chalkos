@@ -47,10 +47,10 @@ func (i Images) fields() []imageField {
 //   - the API server is no older than the kubelet, and at most three minors newer;
 //   - the controller-manager and the scheduler are no newer than the API server, and at most one
 //     minor older;
-//   - kube-proxy is no newer than the API server, at most three minors older than it, and at most
-//     three minors older or newer than the kubelet.
+//   - kube-proxy is no newer than the API server, and at most three minors older.
 //
-// The policy compares minor versions; patch releases and suffixes do not count.
+// The policy also keeps kube-proxy within three minors of the kubelet, which the bounds above
+// already ensure. The policy compares minor versions; patch releases and suffixes do not count.
 func (c Cluster) validateImages() error {
 	versions := map[string]imageref.Version{}
 	for _, f := range c.Images.fields() {
@@ -119,9 +119,6 @@ func checkSkew(kubelet imageref.Version, v map[string]imageref.Version) error {
 		return fmt.Errorf("images.proxy: %s is newer than images.apiServer %s; kube-proxy must not be newer than the API server", proxy, api)
 	case d < -3:
 		return fmt.Errorf("images.proxy: %s is %d minors older than images.apiServer %s; kube-proxy may be at most three minors older", proxy, -d, api)
-	}
-	if d := minors(proxy, kubelet); d > 3 || d < -3 {
-		return fmt.Errorf("images.proxy: %s is %d minors away from the image's kubelet %s; kube-proxy may be at most three minors older or newer than the kubelet", proxy, max(d, -d), kubelet.MinorString())
 	}
 	return nil
 }
