@@ -136,7 +136,7 @@ func TestSubnetRefusals(t *testing.T) {
 		"a pool of no address":        {[]any{pool("192.0.2.100", "192.0.2.x")}, `internal error: DHCPSubnet office: the pool "192.0.2.100"-"192.0.2.x" is no range of addresses` + checked},
 		"a reservation of no address": {[]any{reserve("printer")}, `internal error: DHCPSubnet office: the reservation of 52:54:00:12:34:56, "printer", is no address`},
 	} {
-		t.Run(name, func(t *testing.T) { refused(t, keaDocs(t, c.subnets...), c.want) })
+		t.Run(name, func(t *testing.T) { refusedOrGuarded(t, keaDocs(t, c.subnets...), c.want) })
 	}
 }
 
@@ -163,7 +163,7 @@ func TestSubnet6Refusals(t *testing.T) {
 		"delegating another's":        {[]any{office(""), subnetDoc(t, "cpe", `{"interfaces": ["lan1"], "subnet": "2001:db8:2::/64", "prefixDelegation": {"prefix": "2001:db8:1:0:8000::/65", "length": 72}}`)}, "DHCPSubnet/cpe: spec.prefixDelegation.prefix: DHCPSubnet office6 and DHCPSubnet cpe overlap in VRF default: 2001:db8:1::/64 and 2001:db8:1:0:8000::/65"},
 		"delegating a link's address": {[]any{subnetDoc(t, "cpe", `{"interfaces": ["lan1"], "subnet": "2001:db8:2::/64", "prefixDelegation": {"prefix": "2001:db8:4::/48", "length": 56}}`)}, "DHCPSubnet/cpe: spec.prefixDelegation.prefix: prefixDelegation's prefix 2001:db8:4::/48 holds 2001:db8:4::1, the address Network 13-lan3 gives a link of VRF default"},
 		"no advertisements":           {[]any{subnetDoc(t, "lab", `{"interfaces": ["lan2"], "subnet": "2001:db8:3::/64"`+strings.ReplaceAll(pool, ":1::", ":3::")+`}`)}, "DHCPSubnet/lab: spec.interfaces[0]: Network 12-lan2 sends no router advertisements on lan2 with Managed=yes, which tell its clients to ask the DHCPv6 server for addresses; give it ipv6SendRA: true in network and managed: true in ipv6SendRA"},
-		"addresses without Managed":   {[]any{subnetDoc(t, "cpe", `{"interfaces": ["lan1"], "subnet": "2001:db8:2::/64"`+strings.ReplaceAll(pool, ":1::", ":2::")+`}`)}, "Network 11-lan1 sends no router advertisements on lan1 with Managed=yes"},
+		"addresses without Managed":   {[]any{subnetDoc(t, "cpe", `{"interfaces": ["lan1"], "subnet": "2001:db8:2::/64"`+strings.ReplaceAll(pool, ":1::", ":2::")+`}`)}, "DHCPSubnet/cpe: spec.interfaces[0]: Network 11-lan1 sends no router advertisements on lan1 with Managed=yes, which tell its clients to ask the DHCPv6 server for addresses; give it ipv6SendRA: true in network and managed: true in ipv6SendRA"},
 		"options without a flag":      {[]any{subnetDoc(t, "lab", `{"interfaces": ["lan3"], "subnet": "2001:db8:4::/64", "dns": ["2001:db8:4::1"]}`)}, "DHCPSubnet/lab: spec.interfaces[0]: Network 13-lan3 sends no router advertisements on lan3 with Managed=yes or OtherInformation=yes, which tell its clients to ask the DHCPv6 server; give it ipv6SendRA: true in network and otherInformation: true in ipv6SendRA"},
 		// What the model would count by a negative shift.
 		"delegating short prefixes": {[]any{office(`, "prefixDelegation": {"prefix": "2001:db8:100::/56", "length": 56}`)},
@@ -171,7 +171,7 @@ func TestSubnet6Refusals(t *testing.T) {
 		"delegating no range": {[]any{office(`, "prefixDelegation": {"prefix": "2001:db8:100::", "length": 56}`)},
 			`internal error: DHCPSubnet office6: prefixDelegation's prefix "2001:db8:100::" is no range shorter than its length 56`},
 	} {
-		t.Run(name, func(t *testing.T) { refused(t, kea6Docs(t, c.subnets...), c.want) })
+		t.Run(name, func(t *testing.T) { refusedOrGuarded(t, kea6Docs(t, c.subnets...), c.want) })
 	}
 }
 
@@ -228,7 +228,7 @@ func TestSubnet6FormerAdvertisementNames(t *testing.T) {
 				accepted(t, docs)
 				return
 			}
-			refused(t, docs, "Network 10-lan0 sends no router advertisements on lan0 with Managed=yes")
+			refused(t, docs, "DHCPSubnet/office6: spec.interfaces[0]: Network 10-lan0 sends no router advertisements on lan0 with Managed=yes, which tell its clients to ask the DHCPv6 server for addresses; give it ipv6SendRA: true in network and managed: true in ipv6SendRA")
 		})
 	}
 }
@@ -249,7 +249,7 @@ func TestSubnet6DelegatesNoConfiguredRoute(t *testing.T) {
 		want  string
 	}{
 		"a static route":           {map[string][]any{"Network": {route("40-lan9", "lan9", "2001:db8:100:100::/56")}}, "DHCPSubnet/cpe: spec.prefixDelegation.prefix: prefixDelegation's prefix 2001:db8:100::/40 holds the route of 2001:db8:100:100::/56 that Network 40-lan9 gives a link of VRF default"},
-		"a static route's address": {map[string][]any{"Network": {route("40-lan9", "lan9", "2001:db8:100::5")}}, "holds the route of 2001:db8:100::5/128 that Network 40-lan9 gives"},
+		"a static route's address": {map[string][]any{"Network": {route("40-lan9", "lan9", "2001:db8:100::5")}}, "DHCPSubnet/cpe: spec.prefixDelegation.prefix: prefixDelegation's prefix 2001:db8:100::/40 holds the route of 2001:db8:100::5/128 that Network 40-lan9 gives a link of VRF default"},
 		"a NAT64's prefix":         {map[string][]any{"NAT64": {nat64("null")}}, "DHCPSubnet/cpe: spec.prefixDelegation.prefix: prefixDelegation's prefix 2001:db8:100::/40 holds NAT64 nat64's prefix 2001:db8:100:ff::/96 of VRF default"},
 		"a wider route":            {map[string][]any{"Network": {route("40-lan9", "lan9", "2001:db8::/32")}}, ""},
 		"another VRF's route":      {map[string][]any{"Network": {route("40-lan9", "lan9", "2001:db8:100:100::/56")}, "VRF": {routerDoc(t, "VRF", "lab", `{"table": 400, "interfaces": ["lan9"]}`)}}, ""},
@@ -281,7 +281,7 @@ func TestSubnet6DelegatesAtMost65536(t *testing.T) {
 		cpe("guests6", "vlan30", "2001:db8:1::/64", "2001:db8:200::/48", 56),
 	), "DHCPSubnet/guests6: spec.prefixDelegation.length: the DHCPSubnet documents delegate more than 65536 prefixes, the most the router routes; delegate fewer")
 	refused(t, kea6Docs(t, cpe("cpe", "lan1", "2001:db8:2::/64", "2001:db9::/32", 128)),
-		"the DHCPSubnet documents delegate more than 65536 prefixes, the most the router routes; delegate fewer")
+		"DHCPSubnet/cpe: spec.prefixDelegation.length: the DHCPSubnet documents delegate more than 65536 prefixes, the most the router routes; delegate fewer")
 }
 
 // The validator refuses what spans a relay's documents: a VRF's device, links of two VRFs, a link
@@ -300,10 +300,10 @@ func TestRelayRefusals(t *testing.T) {
 		"links of two VRFs":      {[]any{relayDoc(t, "office", `["lan0", "lan2"]`, `["198.51.100.53"]`)}, nil, "DHCPRelay/office: spec.interfaces[1]: its links are in VRF default and VRF guest; a relay relays in one VRF"},
 		"a link of no Network":   {[]any{relayDoc(t, "office", `["lan9"]`, `["198.51.100.53"]`)}, nil, "DHCPRelay/office: spec.interfaces[0]: no Network document matches lan9 by Name= alone, so the router cannot find its addresses; give the link one"},
 		"no IPv6 address":        {[]any{relayDoc(t, "office", `["lan1"]`, `["2001:db8:ff::53"]`)}, nil, "DHCPRelay/office: spec.interfaces[0]: Network 11-lan1 gives lan1 no static global IPv6 address, which the relay forwards its clients' requests from"},
-		"no IPv4 address":        {[]any{relayDoc(t, "office", `["lan4"]`, `["198.51.100.53"]`)}, nil, "Network 14-lan4 gives lan4 no static IPv4 address"},
+		"no IPv4 address":        {[]any{relayDoc(t, "office", `["lan4"]`, `["198.51.100.53"]`)}, nil, "DHCPRelay/office: spec.interfaces[0]: Network 14-lan4 gives lan4 no static IPv4 address, which the relay forwards its clients' requests from"},
 		"served in the same VRF": {[]any{office}, []any{subnetDoc(t, "lan", `{"interfaces": ["lan1"], "subnet": "198.51.100.0/24"}`)}, "DHCPSubnet/lan: spec.interfaces: DHCPRelay office relays DHCPv4 in VRF default and DHCPSubnet lan serves DHCPv4 in VRF default; dnsmasq's and Kea's sockets of one family bind beside each other only in two VRFs other than the default one"},
-		"served in a VRF":        {[]any{office}, []any{subnetDoc(t, "dmz", `{"interfaces": ["lan3"], "subnet": "203.0.113.64/26"}`)}, "DHCPSubnet/dmz: spec.interfaces: DHCPRelay office relays DHCPv4 in VRF default and DHCPSubnet dmz serves DHCPv4 in VRF dmz"},
-		"relayed in a VRF":       {[]any{relayDoc(t, "guests", `["lan2"]`, `["2001:db8:ff::53"]`)}, []any{subnetDoc(t, "office6", `{"interfaces": ["lan0"], "subnet": "2001:db8:1::/64"}`)}, "DHCPSubnet/office6: spec.interfaces: DHCPRelay guests relays DHCPv6 in VRF guest and DHCPSubnet office6 serves DHCPv6 in VRF default"},
+		"served in a VRF":        {[]any{office}, []any{subnetDoc(t, "dmz", `{"interfaces": ["lan3"], "subnet": "203.0.113.64/26"}`)}, "DHCPSubnet/dmz: spec.interfaces: DHCPRelay office relays DHCPv4 in VRF default and DHCPSubnet dmz serves DHCPv4 in VRF dmz; dnsmasq's and Kea's sockets of one family bind beside each other only in two VRFs other than the default one"},
+		"relayed in a VRF":       {[]any{relayDoc(t, "guests", `["lan2"]`, `["2001:db8:ff::53"]`)}, []any{subnetDoc(t, "office6", `{"interfaces": ["lan0"], "subnet": "2001:db8:1::/64"}`)}, "DHCPSubnet/office6: spec.interfaces: DHCPRelay guests relays DHCPv6 in VRF guest and DHCPSubnet office6 serves DHCPv6 in VRF default; dnsmasq's and Kea's sockets of one family bind beside each other only in two VRFs other than the default one"},
 		// Values dnsmasq's config would read as syntax.
 		"a glob": {[]any{relayDoc(t, "office", `["lan*"]`, `["198.51.100.53"]`)}, nil,
 			`internal error: DHCPRelay office: interfaces: "lan*" is no interface name; chalkd checks the config against the schemas, the rules and the validators before it renders`},
@@ -312,7 +312,7 @@ func TestRelayRefusals(t *testing.T) {
 			`internal error: DHCPRelay office: the server "fe80::53%x\ndhcp-range=lan0" is no address without a zone; chalkd checks the config against the schemas, the rules and the validators before it renders`},
 		"a server of no address": {[]any{relayDoc(t, "office", `["lan0"]`, `["dhcp.example.org"]`)}, nil, `internal error: DHCPRelay office: the server "dhcp.example.org" is no address without a zone`},
 	} {
-		t.Run(name, func(t *testing.T) { refused(t, relayDocs(t, c.relays, c.subnets...), c.want) })
+		t.Run(name, func(t *testing.T) { refusedOrGuarded(t, relayDocs(t, c.relays, c.subnets...), c.want) })
 	}
 }
 
@@ -333,9 +333,9 @@ func TestRelaysBesideServers(t *testing.T) {
 func TestRelayAddressRanges(t *testing.T) {
 	relay := relayDoc(t, "lab", `["lan5"]`, `["198.51.100.53", "2001:db8:ff::53"]`)
 	for name, c := range map[string]struct{ addresses, want string }{
-		"IPv4 in 240.0.0.0/4": {`"240.0.0.1/24", "2001:db8:5::1/64"`, "Network 15-lan5 gives lan5 no static IPv4 address"},
-		"IPv4 in 0.0.0.0/8":   {`"0.0.0.1/24", "2001:db8:5::1/64"`, "Network 15-lan5 gives lan5 no static IPv4 address"},
-		"IPv6 in ::/8":        {`"192.0.2.65/26", "::1:0:0:1/64"`, "Network 15-lan5 gives lan5 no static global IPv6 address"},
+		"IPv4 in 240.0.0.0/4": {`"240.0.0.1/24", "2001:db8:5::1/64"`, "DHCPRelay/lab: spec.interfaces[0]: Network 15-lan5 gives lan5 no static IPv4 address, which the relay forwards its clients' requests from"},
+		"IPv4 in 0.0.0.0/8":   {`"0.0.0.1/24", "2001:db8:5::1/64"`, "DHCPRelay/lab: spec.interfaces[0]: Network 15-lan5 gives lan5 no static IPv4 address, which the relay forwards its clients' requests from"},
+		"IPv6 in ::/8":        {`"192.0.2.65/26", "::1:0:0:1/64"`, "DHCPRelay/lab: spec.interfaces[0]: Network 15-lan5 gives lan5 no static global IPv6 address, which the relay forwards its clients' requests from"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			docs := relayDocs(t, []any{relay})

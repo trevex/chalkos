@@ -78,7 +78,7 @@ func TestSessionRefusals(t *testing.T) {
 		// A VRF's interface reaches its link through a Network, so one that no Network names is
 		// refused before a peer's interface of that name could be read as the default VRF's.
 		"an interface of another VRF that no Network names": {map[string][]any{"VRF": {tenant}, "Network": {document(t, "Network", "10-eth0", `{"match": {"name": "eth0"}}`)}, "BGPPeer": {peerDoc(t, "x", `"interface": "eth2"`)}},
-			"VRF/tenant: spec.interfaces[0]: VRF tenant names the interface eth2, which no Network document's [Match] Name= matches without other [Match] keys"},
+			"VRF/tenant: spec.interfaces[0]: VRF tenant names the interface eth2, which no Network document's [Match] Name= matches without other [Match] keys; VRF= reaches a link through its Network document, so give it one"},
 		"interfaces of every link": {withTenant(peerDoc(t, "x", `"interfaces": ["*"]`)),
 			"BGPPeer/x: spec.interfaces[0]: * matches tenant, the device of VRF tenant"},
 		"interfaces of another VRF's links alone": {withTenant(peerDoc(t, "x", `"interfaces": ["eth1", "eth2*"]`)),
@@ -95,6 +95,6 @@ func TestSessionRefusals(t *testing.T) {
 		"a peer of nothing": {map[string][]any{"BGPPeer": {routerDoc(t, "BGPPeer", "a", `{"remoteAS": "external", "families": {"ipv6": {}}}`)}},
 			"internal error: BGPPeer a: interfaces names no interface"},
 	} {
-		t.Run(name, func(t *testing.T) { refused(t, c.docs, c.want) })
+		t.Run(name, func(t *testing.T) { refusedOrGuarded(t, c.docs, c.want) })
 	}
 }

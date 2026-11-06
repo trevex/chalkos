@@ -27,19 +27,34 @@ func validated(t *testing.T, docs map[string][]any) ([]string, error) {
 	return lines, err
 }
 
-// refused wants the validator to refuse docs with a refusal that holds want, or to fail with an
-// error that holds it, as a guard does.
+// refused wants the validator to refuse docs with want among its refusals, a refusal as chalkd
+// reports it, whole.
 func refused(t *testing.T, docs map[string][]any, want string) {
 	t.Helper()
 	rs, err := validated(t, docs)
-	if err != nil {
-		if !strings.Contains(err.Error(), want) {
-			t.Errorf("err = %v, want %q", err, want)
-		}
-		return
+	if err != nil || !slices.Contains(rs, want) {
+		t.Errorf("refusals = %q, %v, want %q", rs, err, want)
 	}
-	if !slices.ContainsFunc(rs, func(r string) bool { return strings.Contains(r, want) }) {
-		t.Errorf("refusals = %q, want %q", rs, want)
+}
+
+// guarded wants the validator to fail on docs with an error that holds want, as a guard's
+// internal error does, and to refuse nothing.
+func guarded(t *testing.T, docs map[string][]any, want string) {
+	t.Helper()
+	rs, err := validated(t, docs)
+	if err == nil || !strings.Contains(err.Error(), want) || len(rs) > 0 {
+		t.Errorf("refusals = %q, err = %v, want the error %q", rs, err, want)
+	}
+}
+
+// refusedOrGuarded is guarded for a want of a guard, which starts with "internal error: ", and
+// refused for any other.
+func refusedOrGuarded(t *testing.T, docs map[string][]any, want string) {
+	t.Helper()
+	if strings.HasPrefix(want, "internal error: ") {
+		guarded(t, docs, want)
+	} else {
+		refused(t, docs, want)
 	}
 }
 
@@ -180,21 +195,21 @@ func TestFirewallRefusals(t *testing.T) {
 		"a link of another zone's VRF":                    {with(tenant, zone("x", `{"interfaces": ["eth2"], "vrfs": []}`)), "FirewallZone/x: spec.interfaces[0]: FirewallZone x names eth2, which may be a link of VRF tenant, which FirewallZone tenant holds; give each link one zone"},
 		"a glob of another zone's VRF":                    {with(tenant, zone("x", `{"interfaces": ["swp1*"], "vrfs": []}`)), "FirewallZone/x: spec.interfaces[0]: FirewallZone x names swp1*, which may be a link of VRF tenant, which FirewallZone tenant holds; give each link one zone"},
 		"links nftables cannot match":                     {unmatchable, "Network/50-lab: spec.match.name: VRF tenant holds the links of Network 50-lab's Name=lab[12], which nftables cannot match; name them by a name or a prefix and *"},
-		"a conntrack zone nftables cannot match":          {conntrack, "Network/50-lab: spec.match.name: VRF guest holds the links of Network 50-lab's Name=lab[12], which nftables cannot match"},
+		"a conntrack zone nftables cannot match":          {conntrack, "Network/50-lab: spec.match.name: VRF guest holds the links of Network 50-lab's Name=lab[12], which nftables cannot match; name them by a name or a prefix and *"},
 		"a NAT zone of no link":                           {empty, "NATRule/n: spec.out.zone: the zone x holds no link"},
 		"a NAT interface of a VRF's device":               {natOut("internet"), "NATRule/n: spec.out.interface: internet matches no link, only internet, the device of VRF internet; name the VRF's links or a zone of the VRF"},
 		"a NAT glob of a VRF's device alone":              {natOut("inter*"), "NATRule/n: spec.out.interface: inter* matches no link, only internet, the device of VRF internet; name the VRF's links or a zone of the VRF"},
 		"a NAT interface of a VRF's device a glob covers": {covered, "NATRule/n: spec.out.interface: internet matches no link, only internet, the device of VRF internet; name the VRF's links or a zone of the VRF"},
-		"a link of a narrowed Network":                    {narrowed, "Network/25-swp: spec.match: networkd puts swp3 in VRF tenant only if the other [Match] keys of Network 25-swp match it"},
+		"a link of a narrowed Network":                    {narrowed, "Network/25-swp: spec.match: networkd puts swp3 in VRF tenant only if the other [Match] keys of Network 25-swp match it; give the link a Network that matches it by Name= alone"},
 		"a management VRF device":                         {management("tenant"), "Router/router: spec.management.interfaces[1]: the management interface tenant matches tenant, the device of VRF tenant, and chalkd answers in the default VRF alone; name the default VRF's links"},
 		"a management glob of a VRF device":               {management("gu*"), "Router/router: spec.management.interfaces[1]: the management interface gu* matches guest, the device of VRF guest, and chalkd answers in the default VRF alone; name the default VRF's links"},
 		"a management interface in a VRF":                 {management("eth1"), "Router/router: spec.management.interfaces[1]: the management interface eth1 may be a link of VRF internet, and chalkd answers in the default VRF alone; keep the node API's interfaces out of every VRF"},
-		"a management interface a VRF's glob holds":       {management("swp2"), "Router/router: spec.management.interfaces[1]: the management interface swp2 may be a link of VRF tenant"},
-		"a management glob over a VRF's interface":        {management("eth*"), "Router/router: spec.management.interfaces[1]: the management interface eth* may be a link of VRF guest"},
-		"a management glob over a VRF's glob":             {management("sw*"), "Router/router: spec.management.interfaces[1]: the management interface sw* may be a link of VRF tenant"},
-		"a management interface a Network's VRF= holds":   {withLab(management("eth6")), "Router/router: spec.management.interfaces[1]: the management interface eth6 may be a link of VRF lab"},
+		"a management interface a VRF's glob holds":       {management("swp2"), "Router/router: spec.management.interfaces[1]: the management interface swp2 may be a link of VRF tenant, and chalkd answers in the default VRF alone; keep the node API's interfaces out of every VRF"},
+		"a management glob over a VRF's interface":        {management("eth*"), "Router/router: spec.management.interfaces[1]: the management interface eth* may be a link of VRF guest, and chalkd answers in the default VRF alone; keep the node API's interfaces out of every VRF"},
+		"a management glob over a VRF's glob":             {management("sw*"), "Router/router: spec.management.interfaces[1]: the management interface sw* may be a link of VRF tenant, and chalkd answers in the default VRF alone; keep the node API's interfaces out of every VRF"},
+		"a management interface a Network's VRF= holds":   {withLab(management("eth6")), "Router/router: spec.management.interfaces[1]: the management interface eth6 may be a link of VRF lab, and chalkd answers in the default VRF alone; keep the node API's interfaces out of every VRF"},
 	} {
-		t.Run(name, func(t *testing.T) { refused(t, c.docs, c.want) })
+		t.Run(name, func(t *testing.T) { refusedOrGuarded(t, c.docs, c.want) })
 	}
 	accepted(t, vrfZoneDocs(t))
 	// A NAT rule of every link translates links of VRFs as well, and a management glob of no
@@ -227,7 +242,7 @@ func TestNAT64LinkOutsideZones(t *testing.T) {
 		"a NAT rule of the link": {with("", "n64-guest"), "NATRule/n: spec.out.interface: n64-guest matches no link but n64-guest, the link of NAT64 guest, which no NAT rule translates; name other links"},
 		"a NAT rule's glob":      {with("", "n6*"), "NATRule/n: spec.out.interface: n6* matches no link but n64-guest, the link of NAT64 guest, which no NAT rule translates; name other links"},
 	} {
-		t.Run(name, func(t *testing.T) { refused(t, c.docs, c.want) })
+		t.Run(name, func(t *testing.T) { refusedOrGuarded(t, c.docs, c.want) })
 	}
 	// A link of another NAT64's name is no NAT64's, and a NAT rule of every link translates
 	// the others' connections.
@@ -291,7 +306,7 @@ func TestPolicyRouteInRefusals(t *testing.T) {
 		want string
 	}{
 		"a VRF's device":           {policyDocs(t, "a", `{"in": {"zone": null, "interfaces": ["lan0", "transit"]}, `+dscp+`}`), "PolicyRoute/a: spec.in.interfaces[1]: transit matches transit, the device of VRF transit; name the VRF's links or a zone of the VRF"},
-		"a glob of a VRF's device": {policyDocs(t, "a", `{"in": {"zone": null, "interfaces": ["tran*"]}, `+dscp+`}`), "PolicyRoute/a: spec.in.interfaces[0]: tran* matches transit, the device of VRF transit"},
+		"a glob of a VRF's device": {policyDocs(t, "a", `{"in": {"zone": null, "interfaces": ["tran*"]}, `+dscp+`}`), "PolicyRoute/a: spec.in.interfaces[0]: tran* matches transit, the device of VRF transit; name the VRF's links or a zone of the VRF"},
 		"a glob of a NAT64's link": {func() map[string][]any {
 			d := policyDocs(t, "a", `{"in": {"zone": null, "interfaces": ["n64-*"]}, `+dscp+`}`)
 			d["NAT64"] = []any{routerDoc(t, "NAT64", "edge", `{"prefix": "64:ff9b::/96", "pool4": []}`)}
@@ -312,7 +327,7 @@ func TestPolicyRouteInRefusals(t *testing.T) {
 			return d
 		}(), "PolicyRoute/a: spec.in.zone: the zone core holds no link"},
 	} {
-		t.Run(name, func(t *testing.T) { refused(t, c.docs, c.want) })
+		t.Run(name, func(t *testing.T) { refusedOrGuarded(t, c.docs, c.want) })
 	}
 	accepted(t, policyDocs(t, "a", `{"in": {"zone": "lan", "interfaces": []}, `+dscp+`}`))
 }
@@ -342,5 +357,5 @@ func TestResolverListenRefusals(t *testing.T) {
 	vrfOnly := docs("2001:db8:3::1")
 	vrfOnly["Resolver"] = []any{routerDoc(t, "Resolver", "resolver", `{"listen": ["2001:db8:3::1"], "allow": ["2001:db8::/32"]}`)}
 	refused(t, vrfOnly,
-		"Resolver/resolver: spec.listen[0]: the address 2001:db8:3::1 of listen belongs to links of Network 40-guest in VRF guest alone, so the resolver of VRF default never receives its queries")
+		"Resolver/resolver: spec.listen[0]: the address 2001:db8:3::1 of listen belongs to links of Network 40-guest in VRF guest alone, so the resolver of VRF default never receives its queries; listen on an address of the VRF's links")
 }
