@@ -10,14 +10,16 @@ for one node of a run, shortened:
 
 ```text
 cp1: installing 3fa9c1e2b7d0 (v1.5.0, a1b2c3d4e5f6)
-cp1: installed 3fa9c1e2b7d0 (v1.5.0, a1b2c3d4e5f6), which boots next as chalkos_2+3.efi
+cp1: installed 3fa9c1e2b7d0 (v1.5.0, a1b2c3d4e5f6), staged as .staged-chalkos_2.efi
+cp1: activated 3fa9c1e2b7d0 (v1.5.0, a1b2c3d4e5f6), which boots next as chalkos_2+3.efi
 cp1: rebooting into 3fa9c1e2b7d0 (v1.5.0, a1b2c3d4e5f6)
 cp1: runs 3fa9c1e2b7d0 (v1.5.0, a1b2c3d4e5f6), found healthy
 ```
 
-chalkd writes the image into the node's inactive slot and installs its UKI with a fixed number of
-tries. The node then boots the new image, and an image that does not become healthy is replaced
-by the one before. This page follows one node's upgrade.
+chalkd writes the image into the node's inactive slot and stages it there once the image's own
+checker accepted the node's config. Activating the image gives its UKI a boot entry's name with a
+fixed number of tries. The node then boots the new image, and an image that does not become
+healthy is replaced by the one before. This page follows one node's upgrade.
 
 !!! note "On the shipped variant, chalkctl rolls the upgrade through the cluster"
 
@@ -124,17 +126,17 @@ over, checked against the new image the same way.
 
 The pending config is the set that `chalkctl apply-config --staged` stores in
 `/state/config/pending` on a node without a staged image. chalkd only parses it there; the image
-an upgrade installs checks it as it checks any config. chalkd removes the pending config once that
-image is staged to boot next, whether the image got it or the upgrade carried config of its own.
-An upgrade that fails before, in the image's check or while chalkd activates its boot entry,
-keeps it. An activation that fails once the UKI has its boot name can leave the image to boot
-next while the node keeps the pending config. Sending that image again without config then
-rewrites its slot with the pending config. Should the removal itself fail, chalkd logs it, the
-upgrade still succeeds, and status keeps showing the pending config until
-`apply-config --staged --discard` removes it. An upgrade that pulls its image takes the Registry
-and Mirror documents from the same config: the upgrade's, else the pending config, else the
-running one. A pending config holds no fallback secret, so an upgrade refuses one that adds an
-encrypted volume, and the error says to upgrade with the config from an inventory.
+an upgrade installs checks it as it checks any config. chalkd removes the pending config once the
+upgrade staged that image, and activated it unless the upgrade stops at staging, whether the image
+got it or the upgrade carried config of its own. An upgrade that fails before, in the image's
+check or while chalkd stages the image, keeps it. An activation that fails, in an upgrade that
+activates the image as well, leaves the image staged while the node keeps the pending config.
+Sending that image again without config then rewrites its slot with the pending config. Should
+the removal itself fail, chalkd logs it, the upgrade still succeeds, and status keeps showing the
+pending config until `apply-config --staged --discard` removes it. An upgrade that pulls its image
+takes the Registry and Mirror documents from the same config: the upgrade's, else the pending
+config, else the running one. A pending config holds no fallback secret, so an upgrade refuses
+one that adds an encrypted volume, and the error says to upgrade with the config from an inventory.
 
 The config meets the new image's [change rules](../../build/guard-changes.md) as `apply-config`'s
 config meets the running image's. The rules compare it with the running slot's config and the
@@ -182,10 +184,10 @@ a positive number. With Secure Boot enforced, chalkd checks its signature as
 [The UKI is checked against db and dbx before anything runs it](image.md#the-uki-is-checked-against-db-and-dbx-before-anything-runs-it)
 describes.
 
-## chalkd writes the inactive slot in five steps
+## chalkd stages the image in five steps and activates it in a sixth
 
-chalkd installs in five steps. At every point between them the disk boots the running image, or,
-after the last step, the new one with all its tries.
+chalkd stages an image in five steps and activates it in a sixth. At every point between them the
+disk boots the running image, or, after the last step, the new one with all its tries.
 
 ```mermaid
 flowchart TD
@@ -193,13 +195,19 @@ flowchart TD
     retire -->|"disk boots: running"| write["2. Write and verify the store"]
     write -->|"disk boots: running"| uki["3. Receive the UKI"]
     uki -->|"disk boots: running"| config["4. Check and keep the config"]
-    config -->|"disk boots: running"| activate["5. Activate"]
+    config -->|"disk boots: running"| stage["5. Stage"]
+    stage -->|"disk boots: running"| activate["6. Activate"]
     activate -->|"disk boots: new, all tries"| reboot(["Reboot"])
 ```
 
+The Upgrade call runs all six steps, or the first five when its header asks to stop once the image
+is staged, as `chalkctl upgrade` does. The ActivateImage call runs the sixth, which `chalkctl
+upgrade` and `chalkctl node activate` call.
+
 1. Retire the inactive slot. chalkd removes every UKI of the image on the ESP except those that
    boot the running store. This includes a UKI that a stopped upgrade left under its temporary
-   name, and a file whose name gives a generation of the image but that is no UKI. A UKI whose
+   name, the UKI of an image staged before, and a file whose name gives a generation of the image
+   but that is no UKI. A UKI whose
    os-release names no `IMAGE_ID`, such as another system's, stays. A UKI the ESP fails to read
    stops the upgrade. Then chalkd gives the slot's partitions random UUIDs and the label `_empty`,
    so nothing can boot them.
@@ -223,30 +231,44 @@ flowchart TD
    stays the next boot, and the next upgrade reuses or overwrites the slot. A pending config
    stays when the image refuses it, and the error names it. A node whose running slot holds no
    documents and that gets none refuses the upgrade.
-5. Activate. chalkd gives the slot the partition UUIDs derived from the root hash and the labels
+5. Stage. chalkd gives the slot the partition UUIDs derived from the root hash and the labels
    `store_<hash16>` and `store-verity_<hash16>`, from the root hash's first 16 hex characters. It
-   renames the UKI to `chalkos_<generation>+<tries>.efi`, one generation above the highest any
-   name on the ESP gave, whatever its UKI holds. The rename is the last change: before it, nothing
-   boots the slot. After it, chalkd records the image's revision and tag in
-   `/state/chalkd/images.json`. It forgets the images that no UKI on the ESP boots any more, with
-   their config slots. A refused upgrade forgets the images it retired the same way. Last,
-   chalkd removes the pending config that the image took or that the upgrade's config replaced.
+   renames the UKI to `.staged-chalkos_<generation>.efi`, of the generation one above the highest
+   any name on the ESP gave before step 1, whatever its UKI holds. systemd-boot ignores the name,
+   as it does the temporary one, and nothing boots the slot: only a UKI systemd-boot boots looks
+   for a store by the slot's UUIDs. An upgrade's sweep of temporary UKIs leaves the staged one,
+   so the image stays staged across a restart of chalkd and a reboot, which boots the running
+   image. chalkd then records the image's revision and tag in `/state/chalkd/images.json`. It
+   forgets the images that no UKI on the ESP boots any more, the staged one counting as a UKI that
+   boots its image, with their config slots. A refused upgrade forgets the images it retired the
+   same way. Last, chalkd removes the pending config that the image took or that the upgrade's
+   config replaced.
+6. Activate. chalkd checks the staged UKI again as step 3 checked it, Secure Boot included,
+   because db and dbx may have changed since. It does not check the config again: the image's
+   checker passed it in step 4. Then it renames the UKI to `chalkos_<generation>+<tries>.efi`, of
+   the staged generation, or one above the highest any name on the ESP gives when that is higher.
+   The rename is the only change, so an activation that fails leaves the image staged. ActivateImage
+   refuses when no image is staged, when the staged image has another root hash than the one the
+   request names, and when STATE keeps no config slot of the image.
 
 The running slot and its UKI are never written. When the client stops sending, chalkd stops
 between steps, never in the middle of a partition table change.
 
 ## The node boots the new image on trial
 
-After the install, chalkctl reboots the node and waits until it runs the new image's root hash
-and its boot was found healthy. systemd-boot counts the new entry's tries, and the health check
-blesses the entry once the boot is good. [Boot, health and rollback](boot-and-rollback.md)
-explains the counted tries, the health check, the blessed boot and the fallback.
+Once the image is staged, chalkctl has the node's layers hold it, activates the image, reboots the
+node and waits until it runs the new image's root hash in a new boot, as the boot ID in its status
+tells, and its boot was found healthy. `chalkctl node reboot` runs the same step. systemd-boot
+counts the new entry's tries, and the health check blesses the entry once the boot is good.
+[Boot, health and rollback](boot-and-rollback.md) explains the counted tries, the health check,
+the blessed boot and the fallback.
 
 chalkctl upgrades nodes without Kubernetes in batches of `--max-unavailable`, 1 by default. With
-`--no-reboot`, it installs on every node without rebooting it, and each node boots the new image at
-its next reboot. A node that has the image staged already, after an upgrade with `--no-reboot`,
-gets the image again only when the config kept for it is not the inventory's. The node then
-replaces that config without writing the image again.
+`--until stage`, it stages the image on every node and stops, and `chalkctl node activate` later
+makes it boot next. With `--until activate`, it stages and activates the image on every node
+without holding or rebooting it, and each node boots the new image at its next reboot. A node that
+has the image staged or active already gets the image again only when the config kept for it is
+not the inventory's. The node then replaces that config without writing the image again.
 
 ## A rolled-back node stops the run
 
@@ -267,7 +289,8 @@ Running the same command again continues where the last run stopped:
 
 - A node that runs the new image with a blessed boot is skipped.
 - A node that booted the new image and is still being counted is waited for.
-- A node that has the image installed already is rebooted without the image being sent again.
+- A node that has the image staged or active already is activated, where it is staged, and
+  rebooted without the image being sent again.
 
 A node that fell back from the image stops every later run too, so a known-bad image never boots
 again by itself. `--retry-failed` installs it once more on such nodes, as the next generation, for
@@ -289,8 +312,8 @@ the UKI was installed. Then it renames the UKI to the next generation. Nothing i
 slot. While the running image's boot was found healthy the new name carries the UKI's tries, so
 the boot is counted and falls back to the running image. Before that it carries none, as
 [Boot, health and rollback](boot-and-rollback.md#a-blessed-image-is-rolled-back-only-on-request)
-explains. A staged upgrade has written over the inactive slot, so a rollback is refused while one
-is staged.
+explains. An upgrade's staged or active image has written over the inactive slot, so a rollback
+is refused while the slot holds one.
 
 The run around it is an upgrade's: the same order, batches, layer hooks, reboot and wait for a
 healthy boot. chalkctl picks one target image for the run at plan time, from the selected nodes'

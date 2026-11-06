@@ -206,8 +206,9 @@ them.
 
 ## Deliver config to a staged image
 
-Each image on a node keeps its own config. After `chalkctl upgrade --no-reboot`, the image staged
-to boot next has its own config until the node reboots into it. `--staged` delivers to that image:
+Each image on a node keeps its own config. After `chalkctl upgrade --until stage` or
+`--until activate`, the image in the node's inactive slot, staged or active, has its own config
+until the node reboots into it. `--staged` delivers to that image, in either state:
 
 ```sh
 chalkctl apply-config w1 --staged --secrets secrets.age
@@ -257,10 +258,9 @@ The next upgrade that carries no config of its own, such as one run with an oper
 gives the new image the pending config in place of the running one. The image checks it with its
 own chalkd before the node installs anything. An upgrade that carries config, run with the secrets
 file and an inventory, replaces the pending config. In both cases the node removes the pending
-config once the new image is staged to boot next. When the image refuses the pending config, the
-upgrade fails with `the pending config <version> does not suit the image: ...`, and the node keeps
-the pending config. An upgrade that fails after the check, while the node activates the image's
-boot entry, keeps it too.
+config once it staged the new image. When the image refuses the pending config, the upgrade fails
+with `the pending config <version> does not suit the image: ...`, and the node keeps the pending
+config. An upgrade that fails after the check, while the node stages the image, keeps it too.
 
 The node stores a pending config without the fallback secret. A pending config that adds an
 encrypted volume therefore needs an upgrade that carries the config from the inventory, which

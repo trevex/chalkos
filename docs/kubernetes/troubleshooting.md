@@ -244,8 +244,8 @@ The name `w1` is in the cluster's revoked nodes, which `chalkctl status cp1` lis
   [Reuse a removed node's name](../operate/add-remove-nodes.md#reuse-a-removed-nodes-name)
   describes.
 - A node revoked by mistake comes back with `chalkctl node unrevoke w1 --force`, which lets its
-  old certificates work again. Then reboot it with `chalkctl reboot w1`, because its kubelet
-  registers its Node only as it starts.
+  old certificates work again. Then reboot it with `chalkctl node reboot w1 --no-drain`, because
+  its kubelet registers its Node only as it starts.
 
 ## What next
 

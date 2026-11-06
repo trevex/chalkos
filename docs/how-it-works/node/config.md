@@ -358,13 +358,14 @@ At every boot, `chalkos-config.service` loads the slot of the image the kernel c
 - An upgrade writes the slot of the new image. The image before keeps its own, so a
   [fallback](boot-and-rollback.md) or `upgrade --rollback` boots it with the config it ran.
 - `apply-config` writes the slot of the running image, and `apply-config --staged` the slot of the
-  image an upgrade with `--no-reboot` staged to boot next. Nothing restarts for the staged slot.
+  image in the inactive slot, staged by `upgrade --until stage` or active after
+  `upgrade --until activate`. Nothing restarts for the staged slot.
 - `apply-config --staged` on a node without a staged image writes the pending slot
   `/state/config/pending` instead: the documents as delivered and their version, with Secrets
   readable by root alone, and no defaults or identity. No boot loads it, and nothing checks it
   until the next upgrade gives it to its image. That image checks it, and the upgrade writes it
   to the image's slot unless the upgrade carries config of its own. The upgrade removes the
-  pending slot either way, once the image is staged to boot next. The pending slot's name is no
+  pending slot either way, once it staged the image. The pending slot's name is no
   root hash, so an upgrade's removal of other images' slots leaves it.
 - `apply-config` keeps the config it replaces as the slot's previous config,
   `/state/config/.<root-hash>.previous`, one level deep. `apply-config --rollback` delivers that

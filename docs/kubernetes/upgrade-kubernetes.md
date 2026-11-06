@@ -17,18 +17,20 @@ A run on three control planes and a worker reads:
 upgrading node on kvm to 23112865089f (v2): cp1, cp2, cp3, w1
 cp1: installing 23112865089f (v2)
 cp1: config unchanged
-cp1: installed 23112865089f (v2), which boots next as chalkos_2+3.efi
+cp1: installed 23112865089f (v2), staged as .staged-chalkos_2.efi
 cp1: cordoned, evicted 2 pods, kept 6
+cp1: activated 23112865089f (v2), which boots next as chalkos_2+3.efi
 cp1: rebooting into 23112865089f (v2)
 cp1: runs 23112865089f (v2), found healthy
 cp1: uncordoned
 cp2: installing 23112865089f (v2)
 ...
 cp3: uncordoned
-w1: cordoned, evicted 1 pod, kept 2
 w1: installing 23112865089f (v2)
 w1: config unchanged
-w1: installed 23112865089f (v2), which boots next as chalkos_2+3.efi
+w1: installed 23112865089f (v2), staged as .staged-chalkos_2.efi
+w1: cordoned, evicted 1 pod, kept 2
+w1: activated 23112865089f (v2), which boots next as chalkos_2+3.efi
 w1: rebooting into 23112865089f (v2)
 w1: runs 23112865089f (v2), found healthy
 w1: uncordoned
@@ -67,12 +69,13 @@ without it. The workers follow in batches of `--max-unavailable`, one node by de
 
 ```mermaid
 flowchart TD
-    guard["Check etcd's quorum without the control plane"] -->|quorum kept| cp["Install, drain and reboot the control plane"]
+    stagecp["Stage the control plane's image"] --> guard["Check etcd's quorum without the control plane"]
+    guard -->|quorum kept| cp["Drain, activate and reboot the control plane"]
     cp --> healthy{"Found healthy and Ready?"}
     healthy -->|yes| uncordon["Uncordon it"]
-    uncordon -->|next control plane| guard
-    uncordon -->|last control plane| batch["Drain a batch of workers"]
-    batch --> install["Install and reboot the batch"]
+    uncordon -->|next control plane| stagecp
+    uncordon -->|last control plane| batch["Stage a batch of workers' images"]
+    batch --> install["Drain, activate and reboot the batch"]
     install --> ready{"Found healthy and Ready?"}
     ready -->|yes| next["Uncordon the batch"]
     next -->|next batch| batch
@@ -81,11 +84,13 @@ flowchart TD
     ready -->|no| stop
 ```
 
-The diagram shows the order. Within each group the nodes go in the order of their names. A
-control plane is drained right before it reboots, after its image is installed. A worker is drained
-before its image is sent. After each reboot, chalkctl waits
-until the node runs the new image, its boot was found healthy and its Node is `Ready`. Then it
-uncordons the node.
+The diagram shows the order. Within each group the nodes go in the order of their names. A node is
+drained once its image is staged, and the image is activated right after the drain, before the
+node reboots. A quorum check or a drain that fails stops the run with the image staged and not
+active, so the node keeps booting its current image. After each reboot, chalkctl waits until the
+node runs the new image, its boot was found healthy and its Node is `Ready`. Then it uncordons the
+node. `chalkctl node reboot` runs the same quorum check, drain, reboot, wait and uncordon for one
+node.
 
 ## etcd keeps its quorum while a control plane reboots
 

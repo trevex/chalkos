@@ -73,8 +73,9 @@ parentheses say otherwise when they differ:
 - `no inventory to compare it with`: chalkctl found no inventory, neither by `--inventory` nor as
   `chalkos.yaml` in the current directory.
 
-`config none` is a node installed before config documents existed. A node with a staged image adds
-`staged config <version> (...)`, the config that image boots with. Its parentheses name
+`config none` is a node installed before config documents existed. A node with an image staged or
+active in its inactive slot adds `staged config <version> (...)`, the config that image boots
+with. Its parentheses name
 `chalkctl apply-config --staged w1` when it differs.
 
 A node that holds config for its next upgrade adds
@@ -120,9 +121,13 @@ whose image in the inventory is built for another platform shows
 The image line names the image the node booted and its boot entry. A boot that the health check
 still checks ends in `, not found healthy yet`. More lines follow after an upgrade or a rollback:
 
-- `upgrade to <image> installed; it boots next`: an upgrade with `--no-reboot` staged the image.
-- `rollback to <image> staged; it boots next`: `chalkctl upgrade --rollback --no-reboot` staged
-  the image the node ran before.
+- `upgrade to <image> staged; node activate makes it boot next`: an upgrade with `--until stage`
+  staged the image, and the node boots its current image until `chalkctl node activate`
+  activates it.
+- `upgrade to <image> active; it boots next`: an upgrade with `--until activate`, or
+  `chalkctl node activate`, made the image boot next, and the next reboot boots it.
+- `rollback to <image> staged; it boots next`: `chalkctl upgrade --rollback --until activate`
+  made the image the node ran before boot next.
 - `previous image <image> (upgrade --rollback boots it)`: the inactive slot still holds the image
   the node ran before, which
   [Go back to the previous image](upgrade.md#go-back-to-the-previous-image) boots again. The line
@@ -134,8 +139,9 @@ still checks ends in `, not found healthy yet`. More lines follow after an upgra
   says what to do.
 - `its store's root hash is ..., not that of the image ... the inventory names, ...`: the image was
   rebuilt since the node's upgrade. The line ends in `chalkctl upgrade --nodes w1 installs that
-  image`, or in `it has ... staged, which it boots with its next reboot` when it waits for a
-  reboot.
+  image`, in `it has ... staged: chalkctl node activate w1 makes it boot next` when the image
+  waits for its activation, or in `it has ... active, which it boots with its next reboot:
+  chalkctl node reboot w1` when it waits for a reboot.
 
 `image ...; its boot is unknown: ...` means chalkd could not read the boot entries on the ESP or
 the running store, for the reason named.

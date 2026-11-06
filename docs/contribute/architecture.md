@@ -82,7 +82,7 @@ Each directory of `cmd/` is a main that wires a package up; the logic lives in `
 | `chalkcfg` | The chalkcfg command tree: reads the documents below `/run/chalkos/config` and the kinds the image's schemas name, and prints them. |
 | `chalkctl` | The chalkctl command tree, and the list of its layer plugins in `layers.go`. |
 | `chalkctl/layer` | The interfaces of chalkctl's layer plugins: the plugin, its optional hooks and the `Host` through which a plugin reaches the cluster and its nodes. |
-| `chalkctl/layers/kubernetes` | chalkctl's Kubernetes layer: the commands that run Kubernetes and etcd and revoke nodes, the Kubernetes section of a node's status, the facts of its images, the share it delivers, an upgrade's quorum checks, drains and uncordons, and the rotations of the Kubernetes secrets. |
+| `chalkctl/layers/kubernetes` | chalkctl's Kubernetes layer: the commands that run Kubernetes and etcd and revoke nodes, the Kubernetes section of a node's status, the facts of its images, the share it delivers, the quorum checks, drains and uncordons of the reboot step that `upgrade` and `node reboot` share, and the rotations of the Kubernetes secrets. |
 | `chalkctl/layers/router` | chalkctl's router layer: `chalkctl node routes`, the router's section of a node's status and the validator router, which it links. |
 | `chalkd` | The node API server, with the permissions of each NodeService method; the registry of layer plugins it mounts, starts and asks for hooks; and chalkd's work at boot: the node certificate's renewal and the health check. |
 | `chalkd/layer` | The interfaces of chalkd's layer plugins, their optional hooks and the registry of the compiled and active plugins. |
@@ -100,7 +100,7 @@ Each directory of `cmd/` is a main that wires a package up; the logic lives in `
 | `diagnostics` | Reads the image's `diagnostics.json`, checks a call's arguments against their parameters' types, builds the command line, and runs it as a transient systemd unit with a sandbox of its own. |
 | `dns` | The syntax of the DNS names and record data of a `Resolver`'s local zones, which the rules' `isDNSName()` and `isRecordData()` check and the output `unbound` guards with, so the two cannot drift apart. |
 | `effects` | Reads the image's `services.json`, the units granted config kinds, and `effects.json`, what a delivery does to those units and to chalkd, and refuses an effect chalkd could not carry out. |
-| `esp` | Lists the UKIs on an ESP with the image and generation each boots, and stages, removes and names a UKI, for an install and an upgrade. |
+| `esp` | Lists the UKIs on an ESP with the image and generation each boots, writes a UKI under a temporary name, reads the UKI of an image staged in the inactive slot, and removes and names UKIs, for an install and an upgrade. |
 | `facts` | Loads the facts change rules read: files, and commands of the image's store run in a sandbox. |
 | `identity` | The node's identity, the form its config translates to, which the node applies at boot and its Kubernetes side reads. |
 | `image` | Reads a disk image: its partitions from `repart-output.json`, its store and hash tree, the UKI and boot loader off its ESP, and the provenance `metadata.json` names. |
@@ -141,7 +141,7 @@ Each directory of `cmd/` is a main that wires a package up; the logic lives in `
 | `storeslot` | The store slots of a disk and the writer an upgrade and an install share: retire a slot, write and verify the store, activate the slot. |
 | `tool` | Runs the command-line tools chalkd, the installer and the storage code drive, such as cryptsetup, sfdisk and systemctl. |
 | `uki` | Reads a UKI's os-release and command line and an EFI binary's architecture, and refuses an image version systemd-boot would order its entry by. |
-| `upgrade` | Writes an image into the inactive slot and makes it the next boot; the image header and the checks of its UKI and boot loader an install shares; the booted entry and the provenance record. |
+| `upgrade` | Writes an image into the inactive slot and stages it there (`Install`), makes the staged image the next boot (`Activate`), or both (`Upgrade`); the image header and the checks of its UKI and boot loader an install shares; the booted entry and the provenance record. |
 | `validators` | Runs the image's validators in the outputs' sandbox, and the validators chalkctl links in-process on the same JSON, and reads their reports of refusals. |
 | `verity` | Reads and checks dm-verity hash trees. |
 
@@ -216,8 +216,9 @@ live in `pkg/chalkd/layers/kubernetes` and `pkg/chalkd/layers/router`.
 `pkg/chalkctl/layer` declares chalkctl's side in the same way: a `Plugin` with hooks for commands,
 a node's status section, image facts, the payloads of a delivery and their admission, the
 coordinators that upgrade and rotate take first, an upgrade's checks, the rotation kinds a layer
-runs and the validators it links. `UpgradeFlags` adds a layer's flags to `chalkctl upgrade`, such
-as the Kubernetes plugin's `--allow-downtime`, and the layer's upgrade hooks read them back. A
+runs and the validators it links. `UpgradeFlags` adds a layer's flags to `chalkctl upgrade` and
+`chalkctl node reboot`, such as the Kubernetes plugin's `--allow-downtime`, and the layer's hooks
+of the reboot step read them back. A
 plugin also names the nodes every rotation leaves out and those that hold the node CA. chalkctl
 runs the rotations of the OS CA and the node CA itself, in `pkg/chalkctl/rotate_ca.go`, since
 every node takes part in them, and asks the plugins for their kinds. For what the inventory and
@@ -312,6 +313,29 @@ For an image with Kubernetes that is about 300 MiB, instead of the multi-gigabyt
 After the reboot, the initrd unseals STATE and VAR with the TPM, `chalkos-config.service` applies
 the config, and chalkd finds the `installed` marker and starts in normal mode with the node
 certificate from STATE.
+
+## An upgrade stages an image, then activates it
+
+The image in a node's inactive slot is staged or active. `upgrade.Node.Install` writes the store,
+has chalkd's `CheckStore` run the image's own checker on the config it keeps for the image, gives
+the slot its partition UUIDs and names the UKI `.staged-<id>_<generation>.efi`
+(`esp.StagedName`), which systemd-boot does not boot and an upgrade's sweep of temporary UKIs
+leaves. `upgrade.Node.Activate` checks the staged UKI again and renames it to its counted entry
+name; `upgrade.Node.Upgrade` runs both. chalkd's `Upgrade` stages and, unless the header's
+`stage_only` is set, activates; `ActivateImage` activates alone. The ESP and the partition table
+say which state the slot is in, so both survive a restart of chalkd and a reboot.
+
+Everything in chalkd that reads or writes the image in the inactive slot treats both states
+alike: `stagedEntry` in `pkg/chalkd/staged.go` finds the active entry or else the staged UKI, and
+`apply-config --staged`, `GetConfig`, Status, the recheck of an image sent again and the record
+of installed images use it. The known-good image a rollback stages keeps the config it last ran,
+and that image is always active.
+
+chalkctl runs the steps through the same calls. `pkg/chalkctl/upgrade.go` stages each node's
+image with `stage_only`, then hands the node to the reboot step in `pkg/chalkctl/reboot.go`, which
+holds the node through its layers, activates the image, reboots the node, waits for a new boot ID
+and a healthy boot, and releases the node. `chalkctl node reboot` runs the same reboot step
+without an activation, and `chalkctl node activate` calls `ActivateImage`.
 
 ## Storage partitions are matched deterministically
 

@@ -169,8 +169,8 @@ The console shows chalkd's certificate fingerprint and the node's addresses, and
 - The install did not finish. Run `chalkctl install` again. It continues an unfinished install of
   the node on the same disk.
 
-A node in maintenance mode answers `chalkctl logs` and `chalkctl reboot` with `--fingerprint` or
-`--insecure`, so you can read why an install failed:
+A node in maintenance mode answers `chalkctl logs` and `chalkctl node reboot` with
+`--fingerprint` or `--insecure`, so you can read why an install failed:
 
 ```sh
 chalkctl logs w1 --address=<address> --insecure --unit=chalkd.service
@@ -192,9 +192,9 @@ steps, including the Kubernetes steps of the shipped variant.
 
 Without the secrets file or a backup of it, the nodes keep running, but much of their management
 is gone for good. Commands with existing client files still work within their roles: `status`,
-`logs`, `disks`, `reboot` and `upgrade`. `storage reset` still works where it creates no volume
-whose fallback is the recovery key. Control planes keep renewing the nodes' certificates until the
-node CA expires.
+`logs`, `disks`, `node activate`, `node reboot` and `upgrade`. `storage reset` still works where it
+creates no volume whose fallback is the recovery key. Control planes keep renewing the nodes'
+certificates until the node CA expires.
 
 These are gone:
 

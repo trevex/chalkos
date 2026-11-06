@@ -113,7 +113,8 @@ bird a config `bird -p` rejects refuses the whole delivery. chalkctl prints each
 restarted, as `restarted <unit>`, and then the config the node runs, as `cp1 runs config <hash>`.
 Reloaded units are not listed.
 
-After an upgrade with `--no-reboot`, the staged image keeps a config of its own.
+After an upgrade with `--until stage` or `--until activate`, the image in the node's inactive slot
+keeps a config of its own, staged or active.
 `chalkctl apply-config --staged` delivers to that image instead of the running one.
 `chalkctl apply-config --staged --dry-run` has the staged image check the config and changes
 nothing.

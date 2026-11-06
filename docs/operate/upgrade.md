@@ -34,13 +34,24 @@ they change any node while one does. Confirm the config with `chalkctl apply-con
 `chalkctl apply-config --rollback <node>` first, as
 [Try a config change](change-config.md#try-a-config-change) describes.
 
-## Each node takes the new image in one reboot
+## Each node takes the new image in three steps
 
-An upgrade writes the new image into the node's inactive slot and reboots the node into it, with
-three tries by default. A boot that passes the health check within 300 seconds, by default, is
-blessed, and the node keeps the image. After the last failed try, the node boots the previous
-image, which the other slot still holds. An upgrade leaves the node's boot loader as it is.
-[Upgrades](../how-it-works/node/upgrades.md) and
+An upgrade takes each node through three steps:
+
+1. Stage: the node writes the new image into its inactive slot, the image checks the node's
+   config with its own checker, and the node keeps that config for the image. The image's UKI
+   waits on the ESP under a name the boot loader does not boot, so the node still boots its
+   current image.
+2. Activate: the node gives the UKI its boot entry's name, and the image boots next, with three
+   tries by default.
+3. Reboot: the node reboots into the image. A boot that passes the health check within 300
+   seconds, by default, is blessed, and the node keeps the image. After the last failed try, the
+   node boots the previous image, which the other slot still holds.
+
+`chalkctl upgrade` runs all three steps for each node. The same steps run one at a time with
+`chalkctl upgrade --until stage`, `chalkctl node activate` and `chalkctl node reboot`, as
+[Upgrade step by step](#upgrade-step-by-step) shows. An upgrade leaves the node's boot loader as it
+is. [Upgrades](../how-it-works/node/upgrades.md) and
 [Boot, health and rollback](../how-it-works/node/boot-and-rollback.md) explain the mechanism.
 
 ## Point the inventory at the new image
@@ -112,15 +123,17 @@ $ chalkctl upgrade --secrets secrets.age --allow-downtime
 upgrading node on metal to <new>: cp1, w1
 cp1: installing <new>
 cp1: config unchanged
-cp1: installed <new>, which boots next as chalkos_2+3.efi
+cp1: installed <new>, staged as .staged-chalkos_2.efi
 cp1: cordoned, evicted <n> pods, kept <n>
+cp1: activated <new>, which boots next as chalkos_2+3.efi
 cp1: rebooting into <new>
 cp1: runs <new>, found healthy
 cp1: uncordoned
-w1: cordoned, evicted <n> pods, kept <n>
 w1: installing <new>
 w1: config unchanged
-w1: installed <new>, which boots next as chalkos_2+3.efi
+w1: installed <new>, staged as .staged-chalkos_2.efi
+w1: cordoned, evicted <n> pods, kept <n>
+w1: activated <new>, which boots next as chalkos_2+3.efi
 w1: rebooting into <new>
 w1: runs <new>, found healthy
 w1: uncordoned
@@ -130,8 +143,9 @@ upgraded 2 nodes to <new>
 `<new>` stands for the new image's name. chalkctl names an image by the first 12 hex characters of
 its root hash. When the build names a tag or a git revision, they follow in parentheses, the
 revision cut to 12 characters, as in `<root hash> (<tag>, <revision>)`. `<n>` stands for numbers of
-pods. `chalkos_2+3.efi` is the new boot entry on a node that was installed with `chalkos_1.efi`:
-generation 2, with three tries.
+pods. `.staged-chalkos_2.efi` is the staged UKI on a node that was installed with
+`chalkos_1.efi`, and `chalkos_2+3.efi` the boot entry its activation gives it: generation 2, with
+three tries.
 
 The first line names the image's variant and platform and the nodes that get it. Then each node
 shows its steps:
@@ -139,22 +153,63 @@ shows its steps:
 1. `installing` starts sending the image.
 2. The config line says what the node's config changes with the image. `config unchanged` means
    the inventory gives the node the config it runs.
-3. `installed ..., which boots next as ...` names the new boot entry. The image checked the config
-   with its own renderers before the node installed it.
-4. `rebooting into` reboots the node.
-5. `runs ..., found healthy` means the boot was blessed.
+3. `installed ..., staged as ...` names the staged UKI. The image checked the config with its own
+   checker, renderers included, before the node staged it.
+4. `activated ..., which boots next as ...` names the new boot entry.
+5. `rebooting into` reboots the node.
+6. `runs ..., found healthy` means the boot was blessed.
 
 The last line counts the nodes upgraded.
 
 !!! note "On the shipped variant, chalkctl also drains each node and guards etcd's quorum"
 
-    The `cordoned` and `uncordoned` lines belong to Kubernetes. A worker is drained before it gets
-    the image, a control plane right before it reboots. chalkctl also waits until the node's Node
-    is Ready. Before a control plane reboots, chalkctl checks that etcd keeps its quorum without
+    The `cordoned` and `uncordoned` lines belong to Kubernetes. chalkctl drains a node once its
+    image is staged, and activates the image only after the drain, so a refused drain leaves the
+    image staged and the node boots its current image. chalkctl also waits until the node's Node
+    is Ready. Before a control plane is drained, chalkctl checks that etcd keeps its quorum without
     it. The homelab has one control plane, so etcd and the API server are down while `cp1`
     reboots, and the run needs `--allow-downtime`.
     [Upgrade Kubernetes](../kubernetes/upgrade-kubernetes.md) covers the drain, the quorum and
     Kubernetes releases.
+
+## Upgrade step by step
+
+`--until` stops each node after a step. A later command runs the next step, for one node at a time:
+
+```console
+$ chalkctl upgrade --nodes w1 --until stage --secrets secrets.age
+upgrading node on metal to <new>: w1
+w1: installing <new>
+w1: config unchanged
+w1: installed <new>, staged as .staged-chalkos_2.efi
+staged <new> on 1 node; chalkctl node activate makes it boot next
+$ chalkctl node activate w1 --secrets secrets.age
+w1: activated <new>, which boots next as chalkos_2+3.efi
+w1: chalkctl node reboot w1 boots it
+$ chalkctl node reboot w1 --secrets secrets.age
+w1: cordoned, evicted <n> pods, kept <n>
+w1: rebooting into <new>
+w1: runs <new>, found healthy
+w1: uncordoned
+```
+
+- `--until stage` stages the image on each node and stops. The node keeps booting its current
+  image, also across a reboot or a restart of chalkd. `chalkctl status` shows
+  `upgrade to <new> staged; node activate makes it boot next`.
+- `chalkctl node activate <node>` makes the image staged on the node boot next. chalkctl names the
+  image the inventory gives the node, and the node refuses when it has another image staged or
+  none. The node checks the UKI again, Secure Boot included, and does not check the config again:
+  the image checked it before the node staged it. `chalkctl status` then shows
+  `upgrade to <new> active; it boots next`.
+- `--until activate` stages and activates the image on each node, and stops before any drain or
+  reboot. Each node boots the image at its next reboot.
+- `chalkctl node reboot <node>` drains the node, reboots it into the image it boots next, waits
+  until its boot is found healthy and uncordons it, as the upgrade does for each node.
+  `--no-drain` reboots the node without the drain and still waits for it.
+
+Staging another image replaces a staged one. `apply-config --staged` delivers config to a staged
+image as to an active one, as
+[Deliver config to a staged image](change-config.md#deliver-config-to-a-staged-image) describes.
 
 ## Control planes go first, then the other nodes in batches
 
@@ -168,7 +223,7 @@ status shows Kubernetes. These flags change which nodes go and how:
 | --- | --- |
 | `--max-unavailable=<n>` | Upgrades `<n>` workers or nodes without Kubernetes at once; 1 by default. Control planes always go one at a time. |
 | `--nodes=<nodes>` | Upgrades only the comma-separated nodes named. |
-| `--no-reboot` | Installs the images without draining or rebooting. Each node boots its new image at its next reboot. |
+| `--until=<step>` | How far each node gets: `stage` stages the image, `activate` also makes it boot next, and `reboot`, the default, drains and reboots the node and waits for it. `stage` and `activate` drain and reboot no node. |
 | `--timeout=<duration>` | How long to wait for each drain and for each node to come back healthy; 30 minutes by default. |
 | `--retry-failed` | Installs an image once more on nodes that fell back from it. |
 | `--diff` | Prints what each node's config changes and changes nothing. |
@@ -225,7 +280,7 @@ for each node.
 A node can hold a pending config, which `chalkctl apply-config --staged` stores on a node without
 a staged image. An upgrade that sends no config gives the new image the pending config in place of
 the running one, and an upgrade that delivers config replaces it. The node removes the pending
-config once the new image is staged to boot next. The run then prints
+config once it staged the new image. The run then prints
 `<node>: the image took the pending config <version>, which it checked first` or
 `<node>: the inventory's config replaced the pending config <version>` after the line of the
 install. An upgrade that fails before that, such as one whose image refuses the pending config,
@@ -236,7 +291,8 @@ the node runs already. The run then prints
 [Prepare config for the next upgrade](change-config.md#prepare-config-for-the-next-upgrade)
 describes how to hold config pending.
 
-An image the run leaves staged, with `--no-reboot`, keeps its own config until the node boots it.
+An image the run leaves staged or active, with `--until stage` or `--until activate`, keeps its
+own config until the node boots it.
 [Deliver config to a staged image](change-config.md#deliver-config-to-a-staged-image) changes that
 config.
 
@@ -253,8 +309,9 @@ image <new>, booted from chalkos_2.efi
 ```
 
 A blessed entry has lost its counter, so its name has no `+`. A boot that is still being checked
-ends in `not found healthy yet`. A node that got its image with `--no-reboot` shows
-`upgrade to <new> installed; it boots next`.
+ends in `not found healthy yet`. A node that got its image with `--until stage` shows
+`upgrade to <new> staged; node activate makes it boot next`, and one that got it with
+`--until activate` or `chalkctl node activate` shows `upgrade to <new> active; it boots next`.
 
 ## A node that fails its health check rolls back
 
@@ -300,9 +357,10 @@ An upgrade that stopped continues when you run the same command again. chalkctl:
 
 - skips nodes that run the new image and were found healthy;
 - waits for a node that booted the image and is still being checked;
-- does not send an image a node holds already, unless the image is staged with a config other than
-  the one the inventory gives the node. Then it sends the image again, and the node replaces the
-  config it keeps for that image;
+- does not send an image a node holds already, staged or active, unless the node keeps a config
+  for it other than the one the inventory gives the node. Then it sends the image again, and the
+  node replaces the config it keeps for that image;
+- activates a staged image and reboots the node into it;
 - uncordons only nodes it cordoned itself.
 
 An image whose transfer was interrupted leaves the inactive slot empty, and the node keeps booting
@@ -322,9 +380,9 @@ previous image <old> (upgrade --rollback boots it)
 ```console
 $ chalkctl upgrade --rollback --allow-downtime
 rolling back 2 nodes to <old>: cp1, w1
+cp1: cordoned, evicted <n> pods, kept <n>
 cp1: rolling back to <old>
 cp1: <old> boots next as chalkos_3+3.efi
-cp1: cordoned, evicted <n> pods, kept <n>
 cp1: rebooting into <old>
 cp1: runs <old>, found healthy
 cp1: uncordoned
@@ -341,7 +399,8 @@ The node writes no image. It checks that the inactive slot still holds the store
 image's UKI as an upgrade does, Secure Boot included. Then it renames the UKI to the next
 generation, here `chalkos_3+3.efi`. chalkctl runs it as it runs an upgrade, in the same order and
 batches, holding, draining and waiting for each node as an upgrade does, and it takes `--nodes`,
-`--no-reboot`, `--max-unavailable` and `--timeout`. The image boots with the config it last ran, so
+`--until activate`, `--max-unavailable` and `--timeout`. A rollback stages no image, so it does
+not take `--until stage`. The image boots with the config it last ran, so
 the rollback delivers no config and an operator client file suffices. `--image`, `--diff` and
 `--retry-failed` do not combine with `--rollback`.
 
@@ -382,9 +441,11 @@ it out with --nodes`.
 ### What keeps a node from rolling back
 
 A node keeps no previous image after an install, and after an upgrade or rollback it fell back
-from. An image staged with `upgrade --no-reboot` has written over the inactive slot, so the
-rollback is refused while it is staged; `chalkctl reboot` boots it. A rollback staged with
-`--no-reboot` boots at the next reboot, and an upgrade to the image the node runs leaves it staged.
+from. An image staged with `upgrade --until stage` or activated with `--until activate` has written
+over the inactive slot, so the rollback is refused while it is there; `chalkctl node activate`
+makes a staged image boot next, and `chalkctl node reboot` boots it. A rollback run with
+`--until activate` boots at the next reboot, and an upgrade to the image the node runs leaves it
+active.
 
 `chalkctl upgrade` to the inventory's image undoes a rollback once the nodes run the image before.
 The newer image is still in the inactive slot, so the node reuses it without a new copy.
@@ -407,6 +468,10 @@ data after a Kubernetes upgrade.
   inventory, or reinstall the node.
 - `upgrade needs the operator role; the reader role may not upgrade nodes`: the client file has the
   reader role. Use an operator or admin client file.
+- `activate: no image is staged in the inactive slot` or
+  `activate: the image staged in the inactive slot is <a>, not <b>`: `chalkctl node activate`
+  found no image staged, or another one than the inventory names for the node. Stage the
+  inventory's image with `chalkctl upgrade --nodes <node> --until stage` first.
 - `no node keeps a previous image to roll back to: ...`: `--rollback` found no node with an image
   to boot again. [What keeps a node from rolling back](#what-keeps-a-node-from-rolling-back) lists
   the reasons.

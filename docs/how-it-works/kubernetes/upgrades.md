@@ -39,17 +39,18 @@ order also keeps every kubelet at or behind its API server's version, as Kuberne
 For each node, chalkctl:
 
 1. reads what the node runs and its boot status;
-2. on a control plane, checks that etcd keeps its quorum while the node reboots;
-3. on a worker, drains the node;
-4. streams the image, or tells the node to pull it from the registry, unless the node has it
-   installed already;
-5. on a control plane, drains the node;
+2. streams the image, or tells the node to pull it from the registry, unless the node has it
+   staged or active already; the node stages it;
+3. on a control plane, checks that etcd keeps its quorum while the node reboots;
+4. drains the node;
+5. activates the image, which then boots next;
 6. reboots the node;
 7. waits until the node runs the new image's root hash, its boot was found healthy and its Node is
    Ready;
 8. uncordons the node, if the upgrade cordoned it.
 
-The sequence shows a worker's upgrade.
+Steps 3 to 8 are the step `chalkctl node reboot` runs, with the activation in step 5 left to
+`chalkctl node activate`. The sequence shows a worker's upgrade.
 
 ```mermaid
 sequenceDiagram
@@ -60,13 +61,15 @@ sequenceDiagram
     participant boot as systemd-boot
     participant health as Health check
     chalkctl->>chalkctl: build and check the image
-    chalkctl->>cp: DrainNode
-    cp-->>chalkctl: cordoned, pods evicted
-    chalkctl->>node: Upgrade: header, store, hash tree, UKI
+    chalkctl->>node: Upgrade, stopping once staged: header, store, hash tree, UKI
     node->>disk: retire the inactive slot
     node->>disk: write and verify the store
     node->>disk: write and check the UKI
-    node->>disk: activate: UUIDs, labels, next generation with tries
+    node->>disk: stage: UUIDs, labels, staged UKI name
+    chalkctl->>cp: DrainNode
+    cp-->>chalkctl: cordoned, pods evicted
+    chalkctl->>node: ActivateImage
+    node->>disk: next generation with tries
     chalkctl->>node: Reboot
     boot->>boot: counted boot of the new UKI
     health->>health: chalkd, kubelet and Node healthy
@@ -82,9 +85,10 @@ controller, `default/debug`, stays where it is:
 ```text
 upgrading node on metal to 3fa9c1e2b7d0 (v1.5.0, a1b2c3d4e5f6): cp1, cp2, cp3
 cp1: installing 3fa9c1e2b7d0 (v1.5.0, a1b2c3d4e5f6)
-cp1: installed 3fa9c1e2b7d0 (v1.5.0, a1b2c3d4e5f6), which boots next as chalkos_2+3.efi
+cp1: installed 3fa9c1e2b7d0 (v1.5.0, a1b2c3d4e5f6), staged as .staged-chalkos_2.efi
 cp1: cordoned, evicted 2 pods, kept 7
 cp1: keeps pods without a controller: default/debug; nothing starts them elsewhere, and they are deleted for good if the node stays down longer than their tolerations allow
+cp1: activated 3fa9c1e2b7d0 (v1.5.0, a1b2c3d4e5f6), which boots next as chalkos_2+3.efi
 cp1: rebooting into 3fa9c1e2b7d0 (v1.5.0, a1b2c3d4e5f6)
 cp1: runs 3fa9c1e2b7d0 (v1.5.0, a1b2c3d4e5f6), found healthy
 cp1: uncordoned
@@ -117,8 +121,10 @@ only with `--delete-emptydir-data`, which deletes their data. Without it, a node
 pod is not drained, the run stops and the node stays cordoned. A drain that does not finish within
 `--timeout`, 30 minutes by default, stops the run and leaves the node cordoned.
 
-A worker is drained before its image is sent. A control plane gets its image first and is drained
-right before it reboots. `--no-reboot` installs on every node without draining it.
+Each node is drained once its image is staged, and its image is activated after the drain, right
+before it reboots. A drain that fails leaves the image staged and not active, so the node keeps
+booting its current image. `--until stage` and `--until activate` drain no node.
+`chalkctl node reboot` drains a node the same way, and `--no-drain` skips the drain.
 
 ## A stopped run leaves its nodes cordoned
 

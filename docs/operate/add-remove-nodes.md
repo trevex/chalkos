@@ -286,11 +286,12 @@ example after revoking the wrong node. Its old certificates then work again unti
 ```console
 $ chalkctl node unrevoke w1 --force --secrets secrets.age
 unrevoked node w1; its certificates from before 2026-10-23T22:42:25Z work again until they expire: the os-ca and kubernetes-ca were not rotated since
-the old w1's kubelet does not register its Node again by itself: reboot it with chalkctl reboot w1, or restart its kubelet; a node installed afresh as w1 registers as usual
+the old w1's kubelet does not register its Node again by itself: reboot it with chalkctl node reboot w1 --no-drain, or restart its kubelet; a node installed afresh as w1 registers as usual
 ```
 
 The old machine's kubelet registers its Node once as it starts, and the revocation deleted that
-Node. Reboot the machine with `chalkctl reboot w1`, and its Node comes back.
+Node. Reboot the machine with `chalkctl node reboot w1 --no-drain`, and its Node comes back. The
+deleted Node holds no pods to drain.
 
 ## Check that it worked
 

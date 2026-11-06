@@ -104,8 +104,9 @@ Stage 2 starts the node's own services in order:
 
 ## A new image's entry boots a fixed number of times
 
-An upgrade installs the new UKI as `chalkos_<generation>+<tries>.efi`. `<generation>` is one above
-the highest generation on the ESP. `<tries>` is the new image's
+An upgrade stages the new UKI as `.staged-chalkos_<generation>.efi`, which systemd-boot does not
+boot, and its activation renames it to `chalkos_<generation>+<tries>.efi`. `<generation>` is one
+above the highest generation on the ESP. `<tries>` is the new image's
 [`chalkos.upgrade.bootTries`](../../reference/image-options.md#chalkosupgradeboottries), 3 by default.
 The number travels in the image's os-release as `CHALKOS_BOOT_TRIES`, so the image being installed
 sets it, not the one running.
@@ -118,12 +119,14 @@ skips it. The diagram shows the states of a new image's entry.
 
 ```mermaid
 stateDiagram-v2
-    state "Staged with tries" as Staged
+    state "Staged, not booted" as Staged
+    state "Active with tries" as Active
     state "Counted boot" as Counted
     state "Tries used up" as UsedUp
     state "Previous image boots" as Fallback
     [*] --> Staged: upgrade writes the inactive slot
-    Staged --> Counted: reboot, systemd-boot takes a try
+    Staged --> Active: activation names the entry
+    Active --> Counted: reboot, systemd-boot takes a try
     Counted --> Blessed: health check passes
     Counted --> Counted: unhealthy, tries left, chalkd reboots
     Counted --> UsedUp: unhealthy on the last try
@@ -257,8 +260,9 @@ explains each image line. `chalkctl upgrade` stops at a node that rolled back, a
 
 Status also names the previous image, the one `chalkctl upgrade --rollback` boots. It is the
 newest entry below the booted one that is not used up and boots another store, while STATE keeps
-its config slot and no image is staged to boot next. chalkd records on STATE the image the last
-rollback went to, and status reports that record while the node runs the image or boots it next.
+its config slot and the inactive slot holds no image staged or active. chalkd records on STATE the
+image the last rollback went to, and status reports that record while the node runs the image or
+boots it next.
 
 ## Limits
 
