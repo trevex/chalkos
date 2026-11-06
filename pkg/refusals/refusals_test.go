@@ -114,3 +114,22 @@ func TestErrorf(t *testing.T) {
 		t.Errorf("Error() = %q, want %q", e.Error(), want)
 	}
 }
+
+// Split finds every Error that errors.Join and %w wrap, each once and in order, and returns what
+// else the tree holds, with the text around it, as errors of their own.
+func TestSplit(t *testing.T) {
+	a := Errorf("VRF", "a", "spec.table", "one")
+	b := Errorf("VRF", "b", "spec.table", "two")
+	internal := errors.New("internal error: a guard")
+	err := errors.Join(a, fmt.Errorf("Network 20-x: %w", errors.Join(b, a)), nil, fmt.Errorf("render: %w", internal))
+	rs, others := Split(err)
+	if want := []Refusal{a.(*Error).Refusal, b.(*Error).Refusal}; !slices.Equal(rs, want) {
+		t.Errorf("refusals = %v, want %v", rs, want)
+	}
+	if len(others) != 1 || others[0].Error() != "render: internal error: a guard" {
+		t.Errorf("others = %v", others)
+	}
+	if rs, others := Split(nil); rs != nil || others != nil {
+		t.Errorf("Split(nil) = %v, %v", rs, others)
+	}
+}

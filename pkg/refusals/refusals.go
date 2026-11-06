@@ -72,6 +72,46 @@ func Errorf(kind, name, path, format string, args ...any) error {
 	return &Error{Refusal{Kind: kind, Name: name, Path: path, Message: fmt.Sprintf(format, args...)}}
 }
 
+// Split is what err refuses, the refusals of the Errors in err's tree as errors.Join and %w build
+// it, each once, in the order errors.As would find them, and the errors of the tree that hold no
+// Error, which are no refusal, such as an internal error. A check that goes on past its first
+// refusal joins the refusals it finds, so that a program reports them all; the text that a %w
+// wraps around an Error goes, since the Error names its document and field already.
+func Split(err error) ([]Refusal, []error) {
+	var rs []Refusal
+	var others []error
+	var walk func(error)
+	walk = func(err error) {
+		switch e := err.(type) {
+		case nil:
+		case *Error:
+			if !slices.Contains(rs, e.Refusal) {
+				rs = append(rs, e.Refusal)
+			}
+		case interface{ Unwrap() []error }:
+			for _, inner := range e.Unwrap() {
+				walk(inner)
+			}
+		case interface{ Unwrap() error }:
+			if inner := e.Unwrap(); inner != nil && holdsError(inner) {
+				walk(inner)
+			} else {
+				others = append(others, err)
+			}
+		default:
+			others = append(others, err)
+		}
+	}
+	walk(err)
+	return rs, others
+}
+
+// holdsError reports whether err's tree holds an Error.
+func holdsError(err error) bool {
+	var e *Error
+	return errors.As(err, &e)
+}
+
 var (
 	// kind is a kind's name, as a kind's schema declares it.
 	kind = regexp.MustCompile(`^[A-Z][A-Za-z0-9]*$`)
