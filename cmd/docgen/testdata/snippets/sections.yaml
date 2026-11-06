@@ -1,0 +1,7 @@
+# Sections of a Node's spec that page.md includes.
+# --8<-- [start:good]
+  hostname: node-metal
+# --8<-- [end:good]
+# --8<-- [start:bad]
+  hostnme: node-metal
+# --8<-- [end:bad]

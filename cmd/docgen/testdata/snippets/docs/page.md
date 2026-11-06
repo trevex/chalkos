@@ -111,3 +111,20 @@ YAML blocks that only include files, whose documents the homelab's check validat
 
 --8<-- "examples/homelab/cluster/bgp.yaml"
 ```
+
+A document that takes its spec from a section of a file, and one whose section holds a misspelled
+field:
+
+```yaml
+apiVersion: chalkos.dev/v1alpha1
+kind: Node
+metadata: {name: w6}
+spec:
+  --8<-- "testdata/snippets/sections.yaml:good"
+---
+apiVersion: chalkos.dev/v1alpha1
+kind: Node
+metadata: {name: w7}
+spec:
+  --8<-- "testdata/snippets/sections.yaml:bad"
+```

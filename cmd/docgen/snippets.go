@@ -22,8 +22,11 @@ import (
 // validation chalkctl uses for a node's files. A document is checked when its group is chalkos's
 // own, chalkos.dev or a subdomain of it, or one the schemas declare, so a kind that no image
 // declares fails. Other documents, such as Kubernetes objects, fragments without an apiVersion
-// and documents that are not objects pass unchecked. A block of snippet includes alone reads as a
-// string, so it passes too: the example's own check validates the included files. A block that
+// and documents that are not objects pass unchecked. A line that includes a section of a file is
+// replaced by the section, as the site renders it, so a document may take part of itself from a
+// file the repository checks; a line after it is numbered as the block numbers it. A block of
+// whole-file includes alone reads as a string, so it passes: the example's own check validates
+// the included files. A block that
 // is not YAML fails. Each problem names the page's line its document starts on, or the line of a
 // syntax error.
 func checkYAML(dir, schemasDir string) error {
@@ -47,7 +50,12 @@ func checkYAML(dir, schemasDir string) error {
 			return err
 		}
 		for _, b := range blocks {
-			docs, line, err := blockDocuments(b.lines)
+			lines, err := expandSections(b.lines)
+			if err != nil {
+				problems = append(problems, problem(path, b.first, err))
+				continue
+			}
+			docs, line, err := blockDocuments(lines)
 			if err != nil {
 				problems = append(problems, problem(path, b.first+line-1, err))
 				continue
@@ -177,4 +185,76 @@ func snippetsOnly(lines []string) bool {
 // are indented under it.
 func problem(path string, line int, err error) string {
 	return fmt.Sprintf("%s:%d: %s", path, line, strings.ReplaceAll(err.Error(), "\n", "\n    "))
+}
+
+// snippetSection matches a line that includes a section of a file, as pymdownx.snippets reads it:
+// its indentation, the file, relative to the site's root, and the section's name.
+var snippetSection = regexp.MustCompile(`^([ \t]*)--8<--\s+"([^":]+):([A-Za-z0-9_-]+)"\s*$`)
+
+// expandSections replaces each line of lines that includes a section of a file with the section's
+// lines, dedented and then indented as the include line is, as zensical.toml has the site render
+// them. A file's path is relative to the working directory, which docgen runs in at the site's
+// root.
+func expandSections(lines []string) ([]string, error) {
+	var out []string
+	for _, l := range lines {
+		m := snippetSection.FindStringSubmatch(l)
+		if m == nil {
+			out = append(out, l)
+			continue
+		}
+		section, err := fileSection(m[2], m[3])
+		if err != nil {
+			return nil, err
+		}
+		for _, s := range section {
+			if strings.TrimSpace(s) == "" {
+				out = append(out, "")
+			} else {
+				out = append(out, m[1]+s)
+			}
+		}
+	}
+	return out, nil
+}
+
+// fileSection reads the lines between the markers "--8<-- [start:<name>]" and "--8<-- [end:<name>]"
+// of the file, without their common indentation.
+func fileSection(path, name string) ([]string, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	var section []string
+	in, found := false, false
+	for _, l := range strings.Split(string(data), "\n") {
+		switch {
+		case strings.Contains(l, "--8<-- [start:"+name+"]"):
+			in, found = true, true
+		case strings.Contains(l, "--8<-- [end:"+name+"]"):
+			in = false
+		case in:
+			section = append(section, l)
+		}
+	}
+	if !found {
+		return nil, fmt.Errorf("%s has no section %s", path, name)
+	}
+	indent := -1
+	for _, l := range section {
+		if strings.TrimSpace(l) == "" {
+			continue
+		}
+		if n := len(l) - len(strings.TrimLeft(l, " \t")); indent < 0 || n < indent {
+			indent = n
+		}
+	}
+	for i, l := range section {
+		if strings.TrimSpace(l) == "" {
+			section[i] = ""
+		} else {
+			section[i] = l[indent:]
+		}
+	}
+	return section, nil
 }

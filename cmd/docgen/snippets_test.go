@@ -9,7 +9,7 @@ import (
 
 // Each refused document is reported at its first line, and a syntax error at its line; the
 // documents the check passes over (a valid one, a Kubernetes object, a fragment, a list, the
-// plan's) are not.
+// plan's, one that takes a valid section of a file) are not.
 func TestCheckYAML(t *testing.T) {
 	err := checkYAML("testdata/snippets/docs", "testdata/snippets/schemas")
 	if err == nil {
@@ -29,6 +29,7 @@ func TestCheckYAML(t *testing.T) {
 		{"testdata/snippets/docs/page.md:56: ", "document 1"},
 		{"testdata/snippets/docs/page.md:86: ", `Node "w5"`},
 		{"testdata/snippets/docs/page.md:94: ", "document 1"},
+		{"testdata/snippets/docs/page.md:125: ", `Node "w7"`},
 	}
 	if len(got) != len(want) {
 		t.Fatalf("problems:\n%s\nwant %d", strings.Join(got, "\n"), len(want))
