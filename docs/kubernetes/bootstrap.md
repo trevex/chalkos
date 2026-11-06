@@ -110,6 +110,7 @@ same as the first one:
 
 ```text
 kubernetes controlplane: bootstrapped, node ready: True, vip standby, control plane current
+kubernetes versions: API server 1.37.1, kubelet 1.37.1, control-plane pods current
 ```
 
 `vip standby` appears when the cluster has a VIP and another control plane holds it; the holder
@@ -121,6 +122,7 @@ install. Once flannel runs on the node, the node is ready:
 
 ```text
 kubernetes worker: joined, node ready: True
+kubernetes versions: API server 1.37.1, kubelet 1.37.1
 ```
 
 ## Get a kubeconfig

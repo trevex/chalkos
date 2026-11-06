@@ -1,13 +1,16 @@
 ---
 title: "Kubernetes upgrades"
-description: "How a new kubelet reaches a cluster: an image upgrade that rolls through the control planes first"
+description: "How a new Kubernetes release reaches a cluster: the control plane through config, then the kubelets in images that roll through the control planes first"
 ---
 
 # Kubernetes upgrades
 
-A new kubelet reaches a cluster in a new image, because each image fixes its kubelet's release.
-`chalkctl upgrade` rolls the image through the cluster. The diagram shows the order in which a run
-upgrades the nodes.
+A new Kubernetes release reaches a cluster in two steps. The control plane moves first, through
+config: `chalkctl apply-config` delivers the new image references to the control planes one at a
+time, then to the other nodes. The kubelets follow in a new image, because each image fixes its
+kubelet's release: `chalkctl upgrade` rolls the image through the cluster. The diagram shows the
+order of an upgrade; a rollout of config takes the control planes in the same order, then the other
+nodes one at a time.
 
 ```mermaid
 flowchart LR
@@ -25,12 +28,53 @@ any other, because the image fixes the kubelet's release, as
 describes. The control plane, kube-proxy and the add-ons run the images the `Cluster` document
 names, so their versions change with the config. The image's checker refuses a config whose API
 server is older than the new image's kubelet, so the control plane's images move to the new
-release before the kubelets do. The steps a single node takes, from the image to the bless, are on
+release before the kubelets do. They move through config, as
+[The control plane rolls out through config](#the-control-plane-rolls-out-through-config)
+describes, and `chalkctl upgrade` refuses an image whose kubelet would be newer than the oldest API
+server the control planes run. The steps a single node takes, from the image to the bless, are on
 [Upgrades](../node/upgrades.md).
 
 The config an upgrade carries meets the new image's change rules, and a change of a fixed
 Kubernetes setting is refused. The check of the config against the image includes the cluster it
 gives.
+
+## The control plane rolls out through config
+
+Each node's Kubernetes status reports the Kubernetes version of the API server its running config
+names and the release of its image's kubelet. A bootstrapped control plane also reports whether
+its static pods run the images its config names. chalkctl reads these through each node's chalkd,
+so the checks need no access to the Kubernetes API.
+
+`chalkctl apply-config` compares the API server of each named node's new config with the one the
+node runs, patch releases included. When none changes, it delivers to the nodes one after the
+other, as for any config. When one changes, the run is ordered:
+
+1. chalkctl reads the versions of every node of the inventory and holds the config's API server to
+   the skew policy against them: at most one minor from every running API server, no older minor
+   without `--allow-downgrade`, no kubelet newer and none more than three minors older. The nodes
+   of a run get one API server, and a node that is no control plane gets it only once every
+   control plane runs it. A node that does not answer stops the run, since its kubelet may be the
+   oldest.
+2. The control planes get the config one at a time, in the order of their names. Before each,
+   chalkctl checks etcd's quorum, as before a reboot. It delivers the config on trial, and the node
+   restarts its preparation and its kubelet, which replaces the static pods with ones of the new
+   images. chalkctl then waits until the node's Node is Ready and the mirror pods of
+   kube-apiserver, kube-controller-manager and kube-scheduler on the node name the new images and
+   are Ready. The kubelet replaces a static pod and its mirror pod together, so a Ready mirror pod
+   that names the new image belongs to the new pod. Then chalkctl confirms the trial.
+3. The other nodes get the config after the last control plane.
+
+A control plane whose static pods do not come up by the trial's deadline stops the run, and
+chalkctl rolls its config back at once; the node itself would roll it back only at the trial's
+deadline. The nodes done before it keep the new API server, which the skew policy allows, and
+chalkctl prints which nodes run which version. etcd's image is not part of the check: its version
+is not one the rollout compares, and the API server answers only while etcd serves.
+
+Run again, the same command continues. A node that runs the delivery's config already gets
+nothing, and a control plane among them is checked with the same wait before the run goes on. A
+node with an open trial stops the run until `chalkctl apply-config --confirm` or `--rollback`
+ends the trial. `--try` and `--confirm` wait for the same check on every trial, so a trial that
+`--until deliver` left open is confirmed only once the node's static pods run the new images.
 
 ## Control planes roll first, one at a time
 
@@ -146,18 +190,30 @@ again continues from there:
 - A node is uncordoned only if the annotation `chalkos.dev/upgrade-cordon` shows that the upgrade
   cordoned it, so a node an operator cordoned stays cordoned.
 
-## Add-ons follow the new image
+## Add-ons follow the new image and the new config
 
 chalkd applies chalkos's add-ons on every bootstrapped control plane each time it starts its
-Kubernetes work, at boot among others. An image upgrade therefore rolls out changed add-ons without
-a separate step, as [The control plane](control-plane.md#the-control-plane-applies-the-add-ons-and-the-addon-documents)
+Kubernetes work, at boot and after the node's cluster changed among others. An image upgrade or a
+delivery of config therefore rolls out changed add-ons without a separate step, as
+[The control plane](control-plane.md#the-control-plane-applies-the-add-ons-and-the-addon-documents)
 describes.
+
+In a rollout of config, the first control plane that gets the config applies the add-ons, so
+kube-proxy's DaemonSet moves to the new image then, while the other control planes still run the
+old API server. Within a patch release the skew policy allows that; in a minor upgrade, kube-proxy
+runs one minor ahead of the API servers not yet rolled until the rollout finishes.
 
 ## Limits
 
-- chalkctl does not check Kubernetes's
-  [version skew policy](https://kubernetes.io/releases/version-skew-policy/) beyond upgrading
-  control planes first. An image that skips a Kubernetes minor version is not refused.
+- chalkctl checks Kubernetes's
+  [version skew policy](https://kubernetes.io/releases/version-skew-policy/) across the nodes for
+  the API server and the kubelet alone. The image's checker holds the controller-manager, the
+  scheduler and kube-proxy to the API server and the kubelet of the same config and image.
+- A control plane that stays on the old config while a rollout stopped applies the add-ons of its
+  own config when its chalkd restarts, so kube-proxy's image may move back until the rollout
+  finishes.
+- Every node must answer for a rollout of a new API server, and every control plane for an
+  upgrade. A node that is down blocks the run until it is back or out of the inventory.
 - A cluster of one or two control planes loses etcd's quorum, and with it the API server, while a
   control plane reboots during an upgrade.
 - The health check decides on chalkd, etcd, the API server and the kubelet. An image that breaks

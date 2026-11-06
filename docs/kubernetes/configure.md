@@ -118,6 +118,11 @@ Cluster "default": images.scheduler: v1.38.0 is newer than images.apiServer v1.3
 Cluster "default": images.proxy: v1.36.0 is 4 minors older than images.apiServer v1.40.0; kube-proxy may be at most three minors older
 ```
 
+The checker sees the config and its own image alone. `chalkctl apply-config` also checks the API
+server against the versions every node of the cluster runs, and `chalkctl upgrade` checks a new
+image's kubelet against the oldest API server, as
+[Upgrade Kubernetes](upgrade-kubernetes.md#chalkctl-checks-the-versions-every-node-runs) describes.
+
 A reference of these four fields without a version tag, such as one by digest alone, fails the
 schema:
 
@@ -405,11 +410,14 @@ A node that holds a Kubernetes share refuses a config that changes `ipFamilies`,
 
 ## Check that it worked
 
-`chalkctl status` shows each control plane's Kubernetes line. `control plane current` means its API
-server and etcd run with the certificates the node holds and the API server answers ready:
+`chalkctl status` shows each control plane's Kubernetes lines. `control plane current` means its API
+server and etcd run with the certificates the node holds and the API server answers ready.
+`control-plane pods current` means its API server, controller-manager and scheduler run the images
+the `Cluster` document names and are Ready:
 
 ```text
 kubernetes controlplane: bootstrapped, node ready: True, control plane current
+kubernetes versions: API server 1.37.1, kubelet 1.37.1, control-plane pods current
 ```
 
 kubectl shows what reached Kubernetes. The labels and taints of a node, and the objects of the

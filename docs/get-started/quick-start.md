@@ -331,6 +331,7 @@ OUTPUT    HASH          STATE
 chrony    0af9b0bd41ca  rendered
 networkd  4cd3700df352  rendered
 kubernetes controlplane: bootstrapped, node ready: True, control plane current
+kubernetes versions: API server 1.37.1, kubelet 1.37.1, control-plane pods current
 certificates:
   node                      expires 2027-10-23
   OS CA                     expires 2036-10-20
@@ -535,6 +536,7 @@ OUTPUT    HASH          STATE
 chrony    3b1ba1116223  rendered
 networkd  195ac3c4ec51  rendered
 kubernetes worker: joined, node ready: True
+kubernetes versions: API server 1.37.1, kubelet 1.37.1
 certificates:
   node             expires 2027-10-23
   OS CA            expires 2036-10-20

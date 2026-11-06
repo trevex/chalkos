@@ -468,6 +468,75 @@ commit and `flake.lock`, and keep its directory until the new image has proven i
 older image can read what the newer one wrote is for you to check in either case, such as etcd's
 data after a Kubernetes upgrade.
 
+## Upgrade Kubernetes
+
+A new Kubernetes release takes two steps, the control plane first:
+
+1. Change the references of `images` in the `Cluster` document to the new release and deliver the
+   config to the cluster's nodes with `chalkctl apply-config cp1 cp2 cp3 w1 ...`. chalkctl rolls
+   the new API server, controller-manager and scheduler out to the control planes one at a time,
+   then delivers the config to the other nodes. No node reboots.
+2. Build images with the new kubelet and run `chalkctl upgrade`, as the sections above describe.
+
+The control plane goes first because a kubelet must not be newer than the API server it talks to.
+The image's checker refuses a config whose API server is older than its kubelet, and
+`chalkctl upgrade` refuses an image whose kubelet would be newer than the oldest API server the
+control planes run:
+
+```text
+chalkctl: w1: the image's kubelet 1.38.0 would be newer than the API server 1.37.2 that cp2 runs, the oldest of the cluster; upgrade the control plane first: name the new release's images in the Cluster document and deliver it with chalkctl apply-config
+```
+
+The [Kubernetes version skew policy](https://kubernetes.io/releases/version-skew-policy/) bounds
+the versions, minor releases compared:
+
+| Component | Allowed versions |
+| --- | --- |
+| API servers | at most one minor apart from each other |
+| kubelet | no newer than the API server, at most three minors older |
+| controller-manager, scheduler | no newer than the API server, at most one minor older |
+| kube-proxy | no newer than the API server, at most three minors older |
+
+The image's checker holds the config to them against its own kubelet, as
+[The image's checker holds the versions to the skew policy](../kubernetes/configure.md#the-images-checker-holds-the-versions-to-the-skew-policy)
+describes. `chalkctl apply-config` checks the config's API server against the versions every node
+runs, and `chalkctl upgrade` checks each image's kubelet against the oldest API server. Move one
+minor release at a time; `chalkctl apply-config --allow-downgrade` lets the config name an API
+server one minor older than the control planes run.
+
+A patch release of the control plane is the first step alone, and a patch release of the kubelet
+is the second step alone.
+
+kube-proxy moves when the first control plane gets the config, because that control plane applies
+the add-ons. In a minor upgrade, kube-proxy then runs one minor ahead of the API servers not yet
+rolled, which the skew policy does not allow, until the rollout reaches the last control plane, so
+run the rollout to the end in one command.
+
+A run of the first step on three control planes and a worker reads:
+
+```text
+cp1: config 0 added, 0 removed, 1 changed
+cp1: delivering config <version> on trial until <deadline>
+restarted chalkos-kubernetes.service
+restarted kubelet.service
+cp1 runs config <version> on trial; it rolls back to config <previous-version> by itself unless confirmed within 10m0s
+cp1: waiting for its layers to serve with the config
+cp1: waiting for a new connection and the node's health to confirm config <version>
+cp1 keeps config <version>: the trial is confirmed
+cp2: config 0 added, 0 removed, 1 changed
+...
+w1 runs config <version>
+```
+
+`...` stands for cp2's and cp3's lines, which repeat cp1's, and w1's first lines. When the first
+step fails, the run stops at that node, rolls its config back and prints which nodes run which API
+server, such as `API server v1.37.1: cp2, cp3, w1`. `chalkctl status cp2` shows the node's
+versions in its `kubernetes versions` line. Fix the reference or the registry, then run the same
+command again: it skips the nodes that run the config already. When the second step fails, the
+node rolls back as
+[A node that fails its health check rolls back](#a-node-that-fails-its-health-check-rolls-back)
+describes. [Upgrade Kubernetes](../kubernetes/upgrade-kubernetes.md) covers both steps in full.
+
 ## If something goes wrong
 
 - `the boot of chalkos_2+2-1.efi has not been found healthy yet; upgrade once it is, ...`: the node

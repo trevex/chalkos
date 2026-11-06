@@ -7,15 +7,18 @@ description: "How chalkd runs etcd and the control plane as static pods, starts 
 
 Every control plane runs etcd, the API server, the controller-manager and the scheduler as static
 pods that chalkd renders. One control plane starts the cluster with `chalkctl bootstrap`, and the
-others join it on their own. A healthy control plane that holds the VIP reports this line in
+others join it on their own. A healthy control plane that holds the VIP reports these lines in
 [`chalkctl status`](../../reference/cli/chalkctl_status.md):
 
 ```text
 kubernetes controlplane: bootstrapped, node ready: True, vip holder, control plane current
+kubernetes versions: API server 1.37.1, kubelet 1.37.1, control-plane pods current
 ```
 
-The line names the node's kind and state, whether its Node is Ready, its VIP role and whether the
-control plane runs on its current certificates.
+The first line names the node's kind and state, whether its Node is Ready, its VIP role and whether
+the control plane runs on its current certificates. The second gives the version of the API server
+its config names, the release of its image's kubelet and whether its static pods run the images
+of the config.
 
 ## chalkd renders the control plane as static pods
 

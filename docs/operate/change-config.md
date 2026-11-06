@@ -144,12 +144,24 @@ its facts, renders the outputs of the image and checks them. Any failure refuses
 delivery, and the node keeps the config it ran. Then it applies additive storage changes, writes
 the config and takes the effects.
 
-Deliver the config to each node whose files changed, one command per node. The homelab's change
-reaches `cp1` as well:
+Deliver the config to each node whose files changed. One command takes several nodes and delivers
+to them one after the other. The homelab's change reaches `cp1` as well:
 
 ```sh
-chalkctl apply-config cp1 --secrets secrets.age
+chalkctl apply-config w1 cp1 --secrets secrets.age
 ```
+
+With several nodes, chalkctl reads each node's status and checks its config against its image
+before the first node gets anything. The run stops at the first node that fails. A node that runs
+the config already gets nothing, and chalkctl prints `cp1 runs config <version> already`, so the
+same command run again continues where a run stopped. A node reached at another address than the
+inventory's takes `--address cp1=<address>`, once per node; a bare `--address <address>` goes with
+one node alone.
+
+A config that changes a version the cluster bounds, such as the Kubernetes API server's, goes to
+the control planes first, one at a time and on trial, also when the command names one node.
+[Roll the control plane out through config](../kubernetes/upgrade-kubernetes.md#roll-the-control-plane-out-through-config)
+describes that run.
 
 ## Only the services that read a change restart
 
@@ -398,6 +410,7 @@ w1: config 1 added, 0 removed, 0 changed
 w1: delivering config <version> on trial until <deadline>
 restarted <unit>
 w1 runs config <version> on trial; it rolls back to config <previous-version> by itself unless confirmed within 5m0s
+w1: waiting for its layers to serve with the config
 w1: waiting for a new connection and the node's health to confirm config <version>
 w1 keeps config <version>: the trial is confirmed
 ```
@@ -412,9 +425,17 @@ it: chalkd serves, no unit of the boot has failed, and the image's layers find t
 healthy. [The health check decides whether a counted boot is good](../how-it-works/node/boot-and-rollback.md#the-health-check-decides-whether-a-counted-boot-is-good)
 describes the check.
 
-`--try` delivers one node's config per command. To try a change on several nodes, deliver it to
-each node with `--no-confirm`, then confirm each node with `--confirm`, as
-[Confirm a trial later](#confirm-a-trial-later) describes.
+Before it asks the node, chalkctl waits until the image's layers find the node serving with the
+config, and prints `w1: waiting for its layers to serve with the config`. On Kubernetes that means
+the node's Node is Ready and, on a control plane, its API server, controller-manager and scheduler
+run the images the config names and are Ready. When they do not by the deadline, chalkctl rolls the
+config back at once and prints `w1 runs config <previous-version> again: config <version> was
+rolled back`.
+
+With several nodes, `--try` tries the config on each in turn, and confirms one node's trial before
+the next node gets the config. `--until deliver` delivers on trial to the first node that does not
+run the config yet, leaves its trial open and stops, as
+[Confirm a trial later](#confirm-a-trial-later) describes. `--no-confirm` takes one node.
 
 ### Units that failed before the trial
 
@@ -476,8 +497,8 @@ with the two commands that end the trial:
 chalkctl apply-config --confirm w1 keeps it; chalkctl apply-config --rollback w1 rolls it back now
 ```
 
-`--confirm` confirms the trial in the same way as `--try`, over new connections and once the node
-is healthy, and tries until the trial's deadline:
+`--confirm` confirms the trial in the same way as `--try`: it waits for the image's layers first,
+then asks over new connections once the node is healthy, and tries until the trial's deadline:
 
 ```sh
 chalkctl apply-config w1 --secrets secrets.age --try 30m --no-confirm

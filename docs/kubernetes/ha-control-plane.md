@@ -141,6 +141,7 @@ waits for exactly these addresses before it starts etcd. A joined control plane 
 
 ```text
 kubernetes controlplane: bootstrapped, node ready: True, vip standby, control plane current
+kubernetes versions: API server 1.37.1, kubelet 1.37.1, control-plane pods current
 ```
 
 `vip standby` means another control plane holds the VIP, and the holder shows `vip holder`. A

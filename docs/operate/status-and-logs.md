@@ -35,6 +35,7 @@ chrony     <hash>  rendered
 hardware   <hash>  rendered
 networkd   <hash>  rendered
 kubernetes worker: joined, node ready: True
+kubernetes versions: API server 1.37.1, kubelet 1.37.1
 certificates:
   node             expires <date>
   OS CA            expires <date>
@@ -184,6 +185,11 @@ state and whether its Node is Ready. A control plane adds its VIP role, `vip hol
 certificates and the API server answers ready.
 [Kubernetes status states](../reference/kubernetes.md#kubernetes-status-states)
 lists every state, and [Troubleshoot Kubernetes](../kubernetes/troubleshooting.md) acts on them.
+
+The line after it, `kubernetes versions: API server 1.37.1, kubelet 1.37.1`, names the Kubernetes
+version of the API server the node's config names and the release of its image's kubelet. A
+bootstrapped control plane adds `control-plane pods current` once its API server, controller-manager
+and scheduler run the images its config names and are Ready, or says which of them does not yet.
 
 ## The certificates section warns before an expiry
 
