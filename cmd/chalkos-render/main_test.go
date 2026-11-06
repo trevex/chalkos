@@ -103,6 +103,12 @@ func TestUsage(t *testing.T) {
 	if err := run([]string{"documents", "Peer"}, strings.NewReader(peers), io.Discard, ""); err == nil || !strings.Contains(err.Error(), "$OUT") {
 		t.Errorf("without $OUT: %v", err)
 	}
+	// A validator needs no $OUT, and its command line is checked without one.
+	for _, args := range [][]string{{"validate"}, {"validate", "router", "x"}} {
+		if err := run(args, strings.NewReader("[]"), io.Discard, ""); !errors.Is(err, errUsage) {
+			t.Errorf("%v without $OUT: %v", args, err)
+		}
+	}
 }
 
 // A key a document lacks, or that holds null, prints as nothing, in every template the file

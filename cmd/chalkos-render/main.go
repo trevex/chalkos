@@ -72,9 +72,11 @@ one of no refusals for a config it accepts, and succeeds; it fails on input it c
 // the documents. Either fails the renderer, so that a build that runs it, as the router's fallback
 // ruleset's does, fails too. A validator prints its report itself and fails on an error alone.
 func main() {
-	if err := run(os.Args[1:], os.Stdin, os.Stdout, os.Getenv("OUT")); err != nil {
+	args := os.Args[1:]
+	if err := run(args, os.Stdin, os.Stdout, os.Getenv("OUT")); err != nil {
+		// A validator's error is its failure, whose standard output chalkd reads no report from.
 		var r *refusals.Error
-		if errors.As(err, &r) {
+		if errors.As(err, &r) && args[0] != "validate" {
 			printRefusal(os.Stdout, r)
 		}
 		fmt.Fprintln(os.Stderr, "chalkos-render: "+err.Error())
@@ -94,7 +96,10 @@ func run(args []string, stdin io.Reader, stdout io.Writer, out string) error {
 	if len(args) == 0 {
 		return errUsage
 	}
-	if args[0] == "validate" && len(args) == 2 {
+	if args[0] == "validate" {
+		if len(args) != 2 {
+			return errUsage
+		}
 		return validate(args[1], stdin, stdout)
 	}
 	if out == "" {
@@ -141,8 +146,9 @@ var validators = map[string]func(documents []byte) ([]refusals.Refusal, error){
 }
 
 // validate runs the validator name on the documents on stdin and prints its report on stdout,
-// one of no refusals for a config it accepts. An error is the validator's failure, which chalkd
-// reports without the report.
+// one of no refusals for a config it accepts, with the runes of each message that
+// refusals.Unprintable reports as spaces, so that a message that quotes one stays a refusal. An
+// error is the validator's failure, which chalkd reports without the report.
 func validate(name string, stdin io.Reader, stdout io.Writer) error {
 	v, ok := validators[name]
 	if !ok {
@@ -155,6 +161,9 @@ func validate(name string, stdin io.Reader, stdout io.Writer) error {
 	rs, err := v(data)
 	if err != nil {
 		return fmt.Errorf("validator %s: %w", name, err)
+	}
+	for i := range rs {
+		rs[i].Message = refusals.Printable(rs[i].Message)
 	}
 	report, err := refusals.Encode(rs)
 	if err != nil {

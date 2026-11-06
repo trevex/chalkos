@@ -16,6 +16,7 @@ import (
 	"testing"
 
 	"github.com/trevex/chalkos/pkg/config"
+	"github.com/trevex/chalkos/pkg/refusals"
 	"github.com/trevex/chalkos/pkg/router/derive"
 	"github.com/trevex/chalkos/pkg/schema"
 )
@@ -204,6 +205,16 @@ func TestValidateRouter(t *testing.T) {
 	err = run([]string{"validate", "router"}, strings.NewReader(`{"node": {"name": "r1"}, "documents": {}}`), &out, "")
 	if err == nil || !strings.Contains(err.Error(), "validator router: the documents are no JSON array of documents") || out.Len() != 0 {
 		t.Errorf("validate router of an output's input = %v, printed %q", err, out.String())
+	}
+	// A message's control and bidirectional runes print as spaces, as the report's format takes
+	// them, whatever validator returns them.
+	validators["test"] = func([]byte) ([]refusals.Refusal, error) {
+		return []refusals.Refusal{{Kind: "VRF", Name: "a", Path: "spec", Message: "two\nlines\u202e"}}, nil
+	}
+	t.Cleanup(func() { delete(validators, "test") })
+	out.Reset()
+	if err := run([]string{"validate", "test"}, strings.NewReader("[]"), &out, ""); err != nil || out.String() != `{"refusals":[{"kind":"VRF","name":"a","path":"spec","message":"two lines "}]}`+"\n" {
+		t.Errorf("validate test = %v, printed %q", err, out.String())
 	}
 }
 
