@@ -156,8 +156,11 @@ func (i *Installer) fromParts(ctx context.Context, target storage.BlockDisk, l l
 // dm-verity, with system, the image's NixOS system its UKI boots, and passes it to req.Check. The
 // identity the checker gives must have the storage section the target was laid out by: the
 // installer translated the config with its own code to lay the target out before the image could
-// check it, and the image boots with what its own code makes of the config.
+// check it, and the image boots with what its own code makes of the config. Every refusal says
+// what it leaves of the target: nothing boots it. An installer built with the image may lay the
+// target out otherwise than this one, and refuse to continue on it without --wipe-disk.
 func (i *Installer) checkConfig(ctx context.Context, slot storeslot.Slot, system string, req PartsRequest) (Checked, error) {
+	const continues = "the target disk boots nothing, and an install of the image continues on it"
 	var checked Checked
 	err := upgrade.OpenStore(ctx, i.Run, i.storeDir(), req.Image.RootHash, slot, system, func(st upgrade.Store) error {
 		var err error
@@ -165,17 +168,17 @@ func (i *Installer) checkConfig(ctx context.Context, slot storeslot.Slot, system
 		return err
 	})
 	if err != nil {
-		return Checked{}, fmt.Errorf("%w; the target disk boots nothing, and an install of the image continues on it", err)
+		return Checked{}, fmt.Errorf("%w; %s", err, continues)
 	}
 	if len(checked.Config.Identity) == 0 {
-		return Checked{}, errors.New("the image's checker gave no identity")
+		return Checked{}, fmt.Errorf("the image's checker gave no identity; %s", continues)
 	}
 	var id identity.Identity
 	if err := json.Unmarshal(checked.Config.Identity, &id); err != nil {
-		return Checked{}, fmt.Errorf("parse the identity the image's checker gave: %w", err)
+		return Checked{}, fmt.Errorf("parse the identity the image's checker gave: %w; %s", err, continues)
 	}
 	if diff := sectionDifference(req.Section, id.Storage); len(diff) > 0 {
-		return Checked{}, fmt.Errorf("the image translates the config's storage otherwise than the installer, which laid the target disk out by its own translation: they differ in %s; install the image with the installer built with it", strings.Join(diff, ", "))
+		return Checked{}, fmt.Errorf("the image translates the config's storage otherwise than the installer, which laid the target disk out by its own translation: they differ in %s; the target disk boots nothing; install the image with the installer built with it, with --wipe-disk if that installer refuses the disk's layout", strings.Join(diff, ", "))
 	}
 	return checked, nil
 }

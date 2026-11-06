@@ -1500,7 +1500,7 @@ func TestFromPartsRefusesAnotherStorageSection(t *testing.T) {
 		return Checked{Config: slot.Stored{Identity: text}}, nil
 	}
 	err = l.i.FromParts(context.Background(), req)
-	if err == nil || !strings.Contains(err.Error(), "they differ in the encryption policy, disk system, volume data, volume var; install the image with the installer built with it") {
+	if err == nil || !strings.Contains(err.Error(), "they differ in the encryption policy, disk system, volume data, volume var; the target disk boots nothing; install the image with the installer built with it, with --wipe-disk if that installer refuses the disk's layout") {
 		t.Fatalf("install = %v, want the storage refused", err)
 	}
 	if l.bootable() || l.installed() {
@@ -1508,6 +1508,33 @@ func TestFromPartsRefusesAnotherStorageSection(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(l.state(), "config")); !errors.Is(err, os.ErrNotExist) {
 		t.Errorf("STATE holds config after the refusal: %v", err)
+	}
+}
+
+// TestFromPartsRefusesACheckerWithoutAnIdentity refuses the config when the image's checker gives
+// no identity, or one that does not parse, and says that the target boots nothing.
+func TestFromPartsRefusesACheckerWithoutAnIdentity(t *testing.T) {
+	img := newPartsImage(t, "a")
+	for name, tc := range map[string]struct {
+		identity []byte
+		want     string
+	}{
+		"none":        {nil, "the image's checker gave no identity; the target disk boots nothing, and an install of the image continues on it"},
+		"not as JSON": {[]byte("hostname"), "parse the identity the image's checker gave: invalid character 'h' looking for beginning of value; the target disk boots nothing, and an install of the image continues on it"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			l := newPartsLab(t)
+			req := l.request(img)
+			req.Check = func(context.Context, Store, string) (Checked, error) {
+				return Checked{Config: slot.Stored{Identity: tc.identity}}, nil
+			}
+			if err := l.i.FromParts(context.Background(), req); err == nil || !strings.HasSuffix(err.Error(), tc.want) {
+				t.Fatalf("install = %v, want %q", err, tc.want)
+			}
+			if l.bootable() || l.installed() {
+				t.Error("the refused target boots or is installed")
+			}
+		})
 	}
 }
 

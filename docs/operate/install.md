@@ -550,7 +550,10 @@ install continues on the disk without `--wipe-disk`. It does so with another ima
 one rebuilt with a fixed validator, as
 [Continue an install that stopped](#continue-an-install-that-stopped) describes. Build the
 installer from the same chalkos release as the image, so that both lay out the storage the same
-way.
+way. When they do not, the installer refuses the config once the image's store is on the disk,
+names the parts of the storage that differ, and leaves a disk that boots nothing. Install the
+image with the installer built with it then, with `--wipe-disk` if that installer refuses the
+disk's layout.
 
 The boot entry the install creates goes first in the boot order, so the stick may stay in. Remove
 it before the next install elsewhere.
