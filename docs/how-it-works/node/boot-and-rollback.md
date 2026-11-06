@@ -234,6 +234,11 @@ nothing rolls back on its own, and status lists the failed units. The check also
 it checks: a new image whose workloads fail while the parts the check covers are healthy is
 blessed.
 
+chalkctl does not take a blessed entry for a healthy boot. When `chalkctl node reboot` or
+`chalkctl upgrade` waits for a node it rebooted, it asks the node's status for the health of the
+boot itself, and chalkd runs the health check's checks on the spot. A boot of a blessed image
+that fails them stops the command at its `--timeout`, with what failed. Nothing rolls back.
+
 `chalkctl upgrade --rollback` boots the image before again on request, while the inactive slot
 still holds it, as [Upgrades](upgrades.md#a-rollback-boots-the-image-before-again) describes.
 Whether its boot is counted depends on the boot the node runs:

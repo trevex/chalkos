@@ -25,7 +25,7 @@ import (
 	"github.com/trevex/chalkos/pkg/tool"
 )
 
-func (s *Server) Status(ctx context.Context, _ *connect.Request[nodev1.StatusRequest]) (*connect.Response[nodev1.StatusResponse], error) {
+func (s *Server) Status(ctx context.Context, req *connect.Request[nodev1.StatusRequest]) (*connect.Response[nodev1.StatusResponse], error) {
 	resp := &nodev1.StatusResponse{Platform: readOSRelease(s.Paths.OSRelease)["CHALKOS_PLATFORM"]}
 	dir, err := s.Loader.Slot()
 	if err != nil {
@@ -98,6 +98,9 @@ func (s *Server) Status(ctx context.Context, _ *connect.Request[nodev1.StatusReq
 	}
 	resp.Time = s.timeStatus(ctx)
 	resp.Boot = s.bootStatus()
+	if req.Msg.GetCheckHealth() {
+		resp.Boot.Health = s.bootHealth(ctx)
+	}
 	if resp.StagedConfigVersion, err = s.stagedVersion(resp.Boot); err != nil {
 		return nil, failed(connect.CodeInternal, "%v", err)
 	}
@@ -186,4 +189,17 @@ func parseTracking(out []byte) (*nodev1.TimeStatus, error) {
 		st.Source = r[1]
 	}
 	return st, nil
+}
+
+// bootHealth is the health of the boot the node runs, as Healthy finds it now with the units the
+// image ignores. A boot the loader counts is blessed once the boot's health check finds the same;
+// an uncounted boot, of an entry blessed before, is checked by nothing else.
+func (s *Server) bootHealth(ctx context.Context) *nodev1.BootHealth {
+	if s.Healthy == nil {
+		return &nodev1.BootHealth{Healthy: true}
+	}
+	if err := s.Healthy(ctx, nil); err != nil {
+		return &nodev1.BootHealth{Error: err.Error()}
+	}
+	return &nodev1.BootHealth{Healthy: true}
 }

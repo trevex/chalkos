@@ -151,12 +151,15 @@ func (b *rebooter) waitHealthy(ctx context.Context, n *rebootNode, t bootTarget)
 		var st *nodev1.StatusResponse
 		var notReady error
 		err := b.call(n.name, func(conn *client.Conn) error {
-			s, err := conn.Status(ctx, connect.NewRequest(&nodev1.StatusRequest{}))
+			// The node checks this boot's health as its boot's health check does: blessed tells of
+			// the entry, which an uncounted boot, as of an entry blessed before, finds blessed from
+			// the start.
+			s, err := conn.Status(ctx, connect.NewRequest(&nodev1.StatusRequest{CheckHealth: true}))
 			if err != nil {
 				return err
 			}
 			st = s.Msg
-			if boot := st.GetBoot(); bytes.Equal(boot.GetRunning().GetRootHash(), t.root) && boot.GetBlessed() {
+			if boot := st.GetBoot(); bytes.Equal(boot.GetRunning().GetRootHash(), t.root) && boot.GetBlessed() && boot.GetHealth().GetHealthy() {
 				notReady = n.ready(ctx, conn)
 			}
 			return nil
@@ -174,6 +177,10 @@ func (b *rebooter) waitHealthy(ctx context.Context, n *rebootNode, t bootTarget)
 			return fmt.Errorf("it runs %s", bootImageName(boot.GetRunning()))
 		case !boot.GetBlessed():
 			return errors.New("its boot was not found healthy yet")
+		case boot.GetHealth() == nil:
+			return errors.New("it reports no health of its boot")
+		case !boot.GetHealth().GetHealthy():
+			return fmt.Errorf("its boot is not healthy: %s", boot.GetHealth().GetError())
 		}
 		return notReady
 	})
@@ -184,8 +191,9 @@ func (b *rebooter) waitHealthy(ctx context.Context, n *rebootNode, t bootTarget)
 		return fmt.Errorf("%s: waiting for %s to be found healthy: %w", n.name, t.image, err)
 	}
 	if n.uncounted {
-		// The entry is blessed from the start, so no boot of it was found healthy.
-		b.say("%s: runs %s (its boots are not counted)", n.name, t.image)
+		// The entry is blessed from the start, so the boot loader counts none of its boots: only
+		// the node's check found this one healthy.
+		b.say("%s: runs %s, found healthy; its boots are not counted", n.name, t.image)
 		return nil
 	}
 	b.say("%s: runs %s, found healthy", n.name, t.image)

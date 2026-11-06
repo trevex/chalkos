@@ -149,9 +149,9 @@ type Server struct {
 	// boot disk. Tests replace it.
 	ReactivateImage func(ctx context.Context, rootHash []byte, record func() error) (upgrade.Result, error)
 	// Healthy checks the node as the health check of a boot does, the image's layers included,
-	// which ConfirmConfig waits for before it ends a config's trial. ignore names the units the
-	// trial leaves out besides those the image ignores. nil finds the node healthy. Tests replace
-	// it.
+	// which ConfirmConfig waits for before it ends a config's trial and Status reports of the boot
+	// when asked. ignore names the units the trial leaves out besides those the image ignores. nil
+	// finds the node healthy. Tests replace it.
 	Healthy func(ctx context.Context, ignore []string) error
 	// Journal streams the journal of the boot, or of one unit.
 	Journal func(ctx context.Context, unit string, follow bool) (io.ReadCloser, error)

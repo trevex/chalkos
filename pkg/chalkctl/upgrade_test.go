@@ -168,6 +168,9 @@ type upgradeLab struct {
 	events []string
 	// unhealthy images never become healthy, so their nodes fall back.
 	unhealthy map[string]bool
+	// sick holds why the boots of an image are not healthy while the nodes run it, as a node's
+	// check of its boot finds it; the boot loader counts none of them, so none falls back.
+	sick map[string]string
 	// unhealthyMembers are etcd members that do not answer.
 	unhealthyMembers []string
 	// cordoned holds the cordoned Nodes, and whether an upgrade marked them so.
@@ -232,10 +235,13 @@ func (n *upgradeFake) Info(context.Context, *connect.Request[nodev1.InfoRequest]
 	return connect.NewResponse(&nodev1.InfoResponse{RootHash: n.root, ImageId: "chalkos", Variant: n.variant, Platform: n.platform, Layers: n.layers}), nil
 }
 
-func (n *upgradeFake) Status(context.Context, *connect.Request[nodev1.StatusRequest]) (*connect.Response[nodev1.StatusResponse], error) {
+func (n *upgradeFake) Status(_ context.Context, req *connect.Request[nodev1.StatusRequest]) (*connect.Response[nodev1.StatusResponse], error) {
 	if err := n.down(); err != nil {
 		return nil, err
 	}
+	n.lab.mu.Lock()
+	sick := maps.Clone(n.lab.sick)
+	n.lab.mu.Unlock()
 	n.mu.Lock()
 	defer n.mu.Unlock()
 	st := &nodev1.StatusResponse{Boot: &nodev1.BootStatus{
@@ -243,6 +249,9 @@ func (n *upgradeFake) Status(context.Context, *connect.Request[nodev1.StatusRequ
 		Entry:   fmt.Sprintf("chalkos_%d.efi", n.generation), Blessed: true,
 		BootId: fmt.Sprintf("boot-%d", n.boots),
 	}}
+	if req.Msg.GetCheckHealth() {
+		st.Boot.Health = &nodev1.BootHealth{Healthy: sick[n.image] == "", Error: sick[n.image]}
+	}
 	// VAR, which every node has.
 	st.Volumes = []*nodev1.VolumeStatus{{Name: "var"}}
 	if n.staged != "" {
@@ -577,7 +586,7 @@ func newUpgradeLabOf(t *testing.T, controlPlanes int, workers []string, cpVarian
 		nodes = append(nodes, testNode{w, kubernetes.KindWorker, wVariant})
 	}
 	nodes = append(nodes, testNode{"n1", "", "plain"})
-	l := &upgradeLab{t: t, ta: ta, nodes: map[string]*upgradeFake{}, addrs: map[string]string{}, unhealthy: map[string]bool{}, cordoned: map[string]bool{}, emptyDir: map[string]bool{}, stopping: map[string]bool{}, notReady: map[string]bool{}}
+	l := &upgradeLab{t: t, ta: ta, nodes: map[string]*upgradeFake{}, addrs: map[string]string{}, unhealthy: map[string]bool{}, sick: map[string]string{}, cordoned: map[string]bool{}, emptyDir: map[string]bool{}, stopping: map[string]bool{}, notReady: map[string]bool{}}
 	for _, node := range nodes {
 		name := node.name
 		n := &upgradeFake{lab: l, name: name, variant: node.variant, platform: "metal", kind: node.kind, image: "0.1.0", root: bytes.Repeat([]byte{1}, 32), generation: 1}
@@ -1068,13 +1077,27 @@ func TestNodeReboot(t *testing.T) {
 	if n := l.nodes["w2"]; n.boots != 1 {
 		t.Errorf("node reboot returned after %d boots of w2", n.boots)
 	}
+	// The entry stays blessed, but the node's check of the new boot decides.
+	l.mu.Lock()
+	l.sick["0.1.0"] = "units failed: broken.service"
+	l.mu.Unlock()
+	err := l.run("node", "reboot", "w2", "--no-drain", "--timeout", "1s")
+	if err == nil || !strings.Contains(err.Error(), "w2: waiting for 010101010101 to be found healthy: its boot is not healthy: units failed: broken.service") {
+		t.Errorf("node reboot into a boot that is not healthy = %v", err)
+	}
+	if n := l.nodes["w2"]; n.boots != 2 {
+		t.Errorf("w2 booted %d times, want 2", n.boots)
+	}
+	l.mu.Lock()
+	delete(l.sick, "0.1.0")
+	l.mu.Unlock()
 	l.unhealthy["0.3.0"] = true
 	img := testUpgradeImage(t, "w", "0.3.0")
 	if err := l.upgrade(img, "--nodes", "w3", "--until", "activate"); err != nil {
 		t.Fatalf("%v\n%s", err, l.ta.stdout)
 	}
 	l.takeEvents()
-	err := l.run("node", "reboot", "w3")
+	err = l.run("node", "reboot", "w3")
 	if err == nil || !strings.Contains(err.Error(), "w3: its boot of "+shortOf(t, img)+" failed: it fell back to 010101010101; it stays cordoned") {
 		t.Errorf("node reboot into an image that falls back = %v", err)
 	}
@@ -2166,13 +2189,10 @@ func TestUpgradeRollbackSkipsNodesOnTheTarget(t *testing.T) {
 	if got, want := l.takeEvents(), []string{"w1 drain", "w1 rollback", "w1 reboot", "w1 uncordon"}; !slices.Equal(got, want) {
 		t.Errorf("events %q, want %q", got, want)
 	}
-	for _, line := range []string{"w1: 010101010101 boots next as chalkos_3.efi, without boot counting", "w1: runs 010101010101 (its boots are not counted)"} {
+	for _, line := range []string{"w1: 010101010101 boots next as chalkos_3.efi, without boot counting", "w1: runs 010101010101, found healthy; its boots are not counted\n"} {
 		if !strings.Contains(l.ta.stdout.String(), line) {
 			t.Errorf("output lacks %q:\n%s", line, l.ta.stdout)
 		}
-	}
-	if line := "w1: runs 010101010101, found healthy"; strings.Contains(l.ta.stdout.String(), line) {
-		t.Errorf("output says %q of a boot that is not counted:\n%s", line, l.ta.stdout)
 	}
 }
 

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/hex"
+	"errors"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -85,6 +86,43 @@ func TestStatusReportsTheBoot(t *testing.T) {
 				t.Errorf("boot = %v, want %v", resp.Msg.Boot, tc.want)
 			}
 		})
+	}
+}
+
+// TestStatusReportsTheBootsHealth checks the boot's health only when the request asks for it, also
+// of a boot of a blessed entry, and says why the node is not healthy.
+func TestStatusReportsTheBootsHealth(t *testing.T) {
+	s, _ := installedServer(t, section("", ""), false)
+	writeESP(t, s.Paths.ESP, s.Paths.EFIVars, s.Paths.Cmdline, "chalkos_2.efi", "chalkos_2.efi")
+	checks := 0
+	unhealthy := error(nil)
+	s.Healthy = func(_ context.Context, ignore []string) error {
+		checks++
+		if len(ignore) != 0 {
+			t.Errorf("the check ignores %q besides the image's units", ignore)
+		}
+		return unhealthy
+	}
+	status := func(check bool) *nodev1.BootStatus {
+		t.Helper()
+		resp, err := s.Status(context.Background(), connect.NewRequest(&nodev1.StatusRequest{CheckHealth: check}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return resp.Msg.Boot
+	}
+	if b := status(false); b.Health != nil || checks != 0 {
+		t.Errorf("health %v unasked, %d checks", b.Health, checks)
+	}
+	if b := status(true); !b.Blessed || !proto.Equal(b.Health, &nodev1.BootHealth{Healthy: true}) {
+		t.Errorf("boot %v, want it blessed and healthy", b)
+	}
+	unhealthy = errors.New("units failed: broken.service")
+	if b := status(true); !b.Blessed || !proto.Equal(b.Health, &nodev1.BootHealth{Error: "units failed: broken.service"}) {
+		t.Errorf("boot %v, want it blessed and not healthy", b)
+	}
+	if checks != 2 {
+		t.Errorf("%d checks, want 2", checks)
 	}
 }
 

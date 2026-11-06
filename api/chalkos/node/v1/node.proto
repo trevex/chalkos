@@ -660,7 +660,12 @@ message ConfirmConfigRequest {
 message ConfirmConfigResponse {}
 
 // The request of Status.
-message StatusRequest {}
+message StatusRequest {
+  // Whether to check the health of the boot the node runs and report it in BootStatus.health. The
+  // node runs the checks a boot's health check runs, the image's layers included, which may take
+  // a few seconds; a client that waits for a node it rebooted asks for it.
+  bool check_health = 1;
+}
 
 // The response of Status: the state of an installed node.
 message StatusResponse {
@@ -778,6 +783,20 @@ message BootStatus {
   // boot: a client that rebooted the node tells the new boot from the one before by it, also when
   // both run one image. Empty when it could not be read.
   string boot_id = 11;
+  // The health of the boot the node runs, as the health check of a boot finds the node now; unset
+  // unless the request asked for it. blessed tells of the boot entry, which stays blessed across
+  // boots and is not counted again; this tells of the boot itself, also of an uncounted one.
+  BootHealth health = 12;
+}
+
+// The health of the boot a node runs.
+message BootHealth {
+  // Whether the node passes the checks of a boot's health check: chalkd serves, and the first of
+  // the image's layers that runs decides or else the config was applied and no unit of the boot
+  // failed, besides those the image ignores.
+  bool healthy = 1;
+  // Why the node is not healthy; empty when it is.
+  string error = 2;
 }
 
 // The state of the image in the node's inactive slot.

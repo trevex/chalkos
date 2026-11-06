@@ -258,8 +258,11 @@ between steps, never in the middle of a partition table change.
 
 Once the image is staged, chalkctl has the node's layers hold it, activates the image, reboots the
 node and waits until it runs the new image's root hash in a new boot, as the boot ID in its status
-tells, and its boot was found healthy. `chalkctl node reboot` runs the same step. systemd-boot
-counts the new entry's tries, and the health check blesses the entry once the boot is good.
+tells, and its boot was found healthy: the entry is blessed, and the node's status, which runs the
+health check's checks when chalkctl asks, finds the boot itself healthy. The status check also
+covers the boot of an entry blessed before, which systemd-boot does not count.
+`chalkctl node reboot` runs the same step. systemd-boot counts the new entry's tries, and the
+health check blesses the entry once the boot is good.
 [Boot, health and rollback](boot-and-rollback.md) explains the counted tries, the health check,
 the blessed boot and the fallback.
 

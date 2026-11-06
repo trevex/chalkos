@@ -254,7 +254,9 @@ Request: StatusRequest. Response: StatusResponse.
 
 The request of Status.
 
-No fields.
+| Field | Type | Description |
+| ----- | ---- | ----------- |
+| `check_health` | bool | Whether to check the health of the boot the node runs and report it in BootStatus.health. The node runs the checks a boot's health check runs, the image's layers included, which may take a few seconds; a client that waits for a node it rebooted asks for it. |
 
 #### StatusResponse { #message-statusresponse }
 
@@ -571,6 +573,15 @@ No fields.
 
 These messages are held by fields of other messages.
 
+### BootHealth { #message-boothealth }
+
+The health of the boot a node runs.
+
+| Field | Type | Description |
+| ----- | ---- | ----------- |
+| `healthy` | bool | Whether the node passes the checks of a boot's health check: chalkd serves, and the first of the image's layers that runs decides or else the config was applied and no unit of the boot failed, besides those the image ignores. |
+| `error` | string | Why the node is not healthy; empty when it is. |
+
 ### BootImage { #message-bootimage }
 
 An image a UKI on the ESP boots.
@@ -599,8 +610,9 @@ The images on the node's ESP and how the running one booted.
 | `rollback` | BootImage | The image the last RollbackImage rolled back to, while the node runs it or boots it next; unset otherwise, and once an upgrade replaced it. A client that rolls back several nodes to one image knows by it which of them a rollback got there already. |
 | `staged_state` | SlotState | Whether the image staged boots next; unspecified without one. |
 | `boot_id` | string | The ID of the boot the node runs, as the kernel's random boot_id gives it, another for each boot: a client that rebooted the node tells the new boot from the one before by it, also when both run one image. Empty when it could not be read. |
+| `health` | BootHealth | The health of the boot the node runs, as the health check of a boot finds the node now; unset unless the request asked for it. blessed tells of the boot entry, which stays blessed across boots and is not counted again; this tells of the boot itself, also of an uncounted one. |
 
-Field types: [BootImage](#message-bootimage), [SlotState](#enum-slotstate).
+Field types: [BootImage](#message-bootimage), [SlotState](#enum-slotstate), [BootHealth](#message-boothealth).
 
 ### CertificateStatus { #message-certificatestatus }
 

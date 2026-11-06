@@ -205,7 +205,9 @@ w1: uncordoned
   reboot. Each node boots the image at its next reboot.
 - `chalkctl node reboot <node>` drains the node, reboots it into the image it boots next, waits
   until its boot is found healthy and uncordons it, as the upgrade does for each node.
-  `--no-drain` reboots the node without the drain and still waits for it.
+  `--no-drain` reboots the node without the drain and still waits for it. The node checks the
+  health of the new boot itself, also when it boots the image it ran, whose entry was blessed
+  before and is not counted.
 
 Staging another image replaces a staged one. `apply-config --staged` delivers config to a staged
 image as to an active one, as
@@ -472,6 +474,10 @@ data after a Kubernetes upgrade.
   `activate: the image staged in the inactive slot is <a>, not <b>`: `chalkctl node activate`
   found no image staged, or another one than the inventory names for the node. Stage the
   inventory's image with `chalkctl upgrade --nodes <node> --until stage` first.
+- `w1: waiting for <image> to be found healthy: its boot is not healthy: ...`: the node runs the
+  image, but its boot fails the health check's checks, such as with a failed unit, until
+  `--timeout` passes. A boot of a blessed entry is not counted, so the node does not fall back.
+  `chalkctl status w1` lists the failed units, and `chalkctl logs w1` shows the boot's journal.
 - `no node keeps a previous image to roll back to: ...`: `--rollback` found no node with an image
   to boot again. [What keeps a node from rolling back](#what-keeps-a-node-from-rolling-back) lists
   the reasons.
