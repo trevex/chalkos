@@ -547,9 +547,17 @@ func TestConfirmConfigKeepsTheStagedSlotWhileTheTrialStays(t *testing.T) {
 
 // TestALeftoverTrialCopyIsNeverWritten leaves the copy of the staged slot as a crash does after a
 // confirmation removed the trial's record: nothing writes it, a confirmation sent again finds the
-// node on the config, the boot and chalkd's start remove it, and the config delivered again writes
-// the staged slot.
+// node on the config and warns that the staged slot was not written, the boot and chalkd's start
+// remove it, and the config delivered again writes the staged slot.
 func TestALeftoverTrialCopyIsNeverWritten(t *testing.T) {
+	confirmAgain := func(t *testing.T, s *Server) []string {
+		t.Helper()
+		m, err := s.ConfirmConfig(context.Background(), connect.NewRequest(&nodev1.ConfirmConfigRequest{Version: hashOf(t, nextConfig)}))
+		if err != nil {
+			t.Fatalf("a confirmation sent again = %v", err)
+		}
+		return m.Msg.Warnings
+	}
 	for name, remove := range map[string]func(*Server) error{
 		"at boot": func(s *Server) error { return RestoreTrialAtBoot(s.Paths.StateDir, s.Loader.Slots) },
 		"as chalkd starts": func(s *Server) error {
@@ -562,8 +570,9 @@ func TestALeftoverTrialCopyIsNeverWritten(t *testing.T) {
 			if err := removeTrialRecord(s.Paths.StateDir); err != nil {
 				t.Fatal(err)
 			}
-			if err := sendConfirm(s, hashOf(t, nextConfig)); err != nil {
-				t.Fatalf("a confirmation sent again = %v", err)
+			want := "config " + hashOf(t, nextConfig) + " is confirmed, but the confirmation that ended its trial stopped before it wrote the config slot of the image 333333333333 staged in the inactive slot, which keeps config " + hashOf(t, baseConfig) + "; deliver the config again to write it"
+			if w := confirmAgain(t, s); len(w) != 1 || w[0] != want {
+				t.Errorf("warnings = %q, want %q", w, want)
 			}
 			if v := slotVersion(t, s, stagedImage); v != hashOf(t, baseConfig) {
 				t.Errorf("staged version = %q, want the copy left unwritten", v)
@@ -582,6 +591,18 @@ func TestALeftoverTrialCopyIsNeverWritten(t *testing.T) {
 			}
 			if v := slotVersion(t, s, stagedImage); v != hashOf(t, nextConfig) {
 				t.Errorf("staged version after the delivery = %q, want the config's", v)
+			}
+			// A copy whose slot was written, as a removal that failed after the write leaves it, says
+			// nothing.
+			held, _, err := slot.Read(slot.Dir(s.Loader.Slots, stagedImage))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := slot.Write(filepath.Join(s.Paths.StateDir, trialStagedSlot), held); err != nil {
+				t.Fatal(err)
+			}
+			if w := confirmAgain(t, s); len(w) != 0 {
+				t.Errorf("warnings of a copy that was written = %q", w)
 			}
 		})
 	}
@@ -632,35 +653,48 @@ func TestConfirmConfigWarnsOfAHeldBackWriteThatFailed(t *testing.T) {
 }
 
 // TestConfirmConfigDropsTheCopyOfAnImageNoLongerStaged writes the trial's copy only to the slot of
-// the image still staged in the inactive slot, and not the running one: after a boot into the
-// staged image whose rollback of the trial failed, the record names the running image, and once
-// the staged image's slot is retired it names none. Either way the confirmation warns, the copy
-// goes, and no slot takes it.
+// the image still staged in the inactive slot, and not the running one, and not the known-good
+// one: after a boot into the staged image whose rollback of the trial failed, the record names the
+// running image, whose slot never got the config; once the staged image's slot is retired it
+// names none; and after a fallback that left the staged image as the one the node falls back to,
+// it names the known-good image, which keeps the config it last ran. Each time the confirmation
+// warns, the copy goes, and no slot takes it.
 func TestConfirmConfigDropsTheCopyOfAnImageNoLongerStaged(t *testing.T) {
+	version := hashOf(t, nextConfig)
 	for name, tc := range map[string]struct {
 		change func(*Server) error
 		// kept is whether STATE still keeps the staged image's slot, which then holds the config
 		// from before the trial.
 		kept bool
+		want string
 	}{
 		"booted": {func(s *Server) error {
 			writeESP(t, s.Paths.ESP, s.Paths.EFIVars, s.Paths.Cmdline, "chalkos_3.efi")
 			return nil
-		}, true},
-		"retired": {func(s *Server) error { return slot.Retire(s.Loader.Slots, [][]byte{runningImage}) }, false},
+		}, true, "config " + version + " is confirmed, but the image 333333333333, staged in the inactive slot when the trial began, is the running image now, and its config slot never got the config; deliver the config again to write it"},
+		"retired": {func(s *Server) error { return slot.Retire(s.Loader.Slots, [][]byte{runningImage}) }, false,
+			"config " + version + " is confirmed, but the image 333333333333 is no longer staged in the inactive slot, so the config it checked for its slot is dropped"},
+		"known-good": {func(s *Server) error {
+			for _, f := range []string{"chalkos_2.efi", "chalkos_3+3.efi"} {
+				if err := os.Remove(filepath.Join(s.Paths.ESP, "EFI", "Linux", f)); err != nil {
+					return err
+				}
+			}
+			writeESP(t, s.Paths.ESP, s.Paths.EFIVars, s.Paths.Cmdline, "chalkos_2.efi", "chalkos_2+1-2.efi", "chalkos_3.efi")
+			return nil
+		}, true, "config " + version + " is confirmed, but the image 333333333333 staged in the inactive slot is the one the node falls back to now while the boot it runs is not found healthy, so its config stays as it last ran and the config it checked for its slot is dropped"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			s := stagedTrial(t)
 			if err := tc.change(s); err != nil {
 				t.Fatal(err)
 			}
-			m, err := s.ConfirmConfig(context.Background(), connect.NewRequest(&nodev1.ConfirmConfigRequest{Version: hashOf(t, nextConfig)}))
+			m, err := s.ConfirmConfig(context.Background(), connect.NewRequest(&nodev1.ConfirmConfigRequest{Version: version}))
 			if err != nil {
 				t.Fatal(err)
 			}
-			want := "config " + hashOf(t, nextConfig) + " is confirmed, but the image 333333333333 is no longer staged in the inactive slot, so the config it checked for its slot is dropped"
-			if w := m.Msg.Warnings; len(w) != 1 || w[0] != want {
-				t.Errorf("warnings = %q, want %q", w, want)
+			if w := m.Msg.Warnings; len(w) != 1 || w[0] != tc.want {
+				t.Errorf("warnings = %q, want %q", w, tc.want)
 			}
 			held := ""
 			if tc.kept {

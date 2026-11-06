@@ -571,6 +571,12 @@ it runs delivered again, which removes the record as well.
 - `the image <hash> staged in the inactive slot: ... no fallback secret was sent; ...`: the staged
   image's storage needs the fallback secret and the running image's does not. Deliver the config to
   the staged image with `chalkctl apply-config --staged w1 --secrets secrets.age`.
+- `config <version> is confirmed, but the image <hash>, staged in the inactive slot when the trial began, is the running image now, ...`:
+  the node booted into the staged image during the trial, so the running image's config slot never
+  got the confirmed config. Run `chalkctl apply-config w1 --secrets secrets.age` to write it.
+- `config <version> is confirmed, but the confirmation that ended its trial stopped before it wrote the config slot of the image <hash> ...`:
+  chalkd or the node stopped while it confirmed the trial, and the staged image kept its earlier
+  config. Run `chalkctl apply-config w1 --secrets secrets.age` to write it.
 - `--staged delivers config alone; deliver the Kubernetes share to the running image`: `--staged`
   and `--kubernetes-share` do not combine.
 - `the image <hash> predates chalkd check; it cannot check its config`: the staged image, or the

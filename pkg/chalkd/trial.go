@@ -2,6 +2,7 @@ package chalkd
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"encoding/hex"
 	"encoding/json"
@@ -200,9 +201,11 @@ func (s *Server) ConfirmConfig(ctx context.Context, req *connect.Request[nodev1.
 		if err != nil {
 			return nil, failed(connect.CodeInternal, "read the config's version: %v", err)
 		}
-		// A confirmation sent again, whose first answer was lost, finds the node on the config.
+		// A confirmation sent again, whose first answer was lost, finds the node on the config. One
+		// whose first attempt crashed after it removed the record finds the copy of the staged slot
+		// it never wrote, and says so.
 		if running == version {
-			return connect.NewResponse(&nodev1.ConfirmConfigResponse{}), nil
+			return connect.NewResponse(&nodev1.ConfirmConfigResponse{Warnings: s.unwrittenCopy(version)}), nil
 		}
 		return nil, failed(connect.CodeFailedPrecondition, "no trial is open, and the node runs config %s, not %s", running, version)
 	}
@@ -248,8 +251,12 @@ func (s *Server) writeHeldBack(r trialRecord) []string {
 	switch {
 	case r.Staged != "":
 		switch err := s.writeStagedCopy(r.Staged); {
+		case errors.Is(err, errStagedRuns):
+			return []string{fmt.Sprintf("config %s is confirmed, but the image %.12s, staged in the inactive slot when the trial began, is the running image now, and its config slot never got the config; deliver the config again to write it", r.Version, r.Staged)}
 		case errors.Is(err, errNoLongerStaged):
 			return []string{fmt.Sprintf("config %s is confirmed, but the image %.12s is no longer staged in the inactive slot, so the config it checked for its slot is dropped", r.Version, r.Staged)}
+		case errors.Is(err, errKnownGood):
+			return []string{fmt.Sprintf("config %s is confirmed, but the image %.12s staged in the inactive slot is the one the node falls back to now while the boot it runs is not found healthy, so its config stays as it last ran and the config it checked for its slot is dropped", r.Version, r.Staged)}
 		case err != nil:
 			return []string{fmt.Sprintf("config %s is confirmed, but writing the config slot of the image %.12s staged in the inactive slot failed, so it keeps its earlier config: %v; deliver the config again to write it", r.Version, r.Staged, err)}
 		}
@@ -265,33 +272,86 @@ func (s *Server) writeHeldBack(r trialRecord) []string {
 	return nil
 }
 
-// errNoLongerStaged is writeStagedCopy's error for an image that is no longer the one staged in
-// the inactive slot.
-var errNoLongerStaged = errors.New("the image is no longer staged")
+// unwrittenCopy warns, for a confirmation of version sent again without a trial open, of the copy
+// of the staged image's slot that the first confirmation never wrote: it removed the trial's
+// record and crashed before writeHeldBack. The copy, which holds version, stays until the next
+// boot or chalkd's start, and the image in the inactive slot, still staged and not the known-good
+// one, holds other config. A copy that only a failed removal left after its write, or that a
+// trial of another version left, says nothing. A pending config the crash left unreplaced leaves
+// no trace and goes without a warning; nothing reads it before the next upgrade, which checks it.
+// The caller holds s.mu.
+func (s *Server) unwrittenCopy(version string) []string {
+	held, found, err := slot.Read(filepath.Join(s.Paths.StateDir, trialStagedSlot))
+	if err != nil {
+		log.Printf("read the copy of the staged image's config slot a trial kept: %v", err)
+		return nil
+	}
+	if !found || held.Version != version {
+		return nil
+	}
+	sl, ok, err := s.stagedEntry()
+	if err != nil {
+		log.Printf("find the staged image: %v", err)
+		return nil
+	}
+	if !ok || sl.knownGood() {
+		return nil
+	}
+	image := sl.entry.RootHash
+	current, err := slot.Version(slot.Dir(s.Loader.Slots, image))
+	if err != nil {
+		log.Printf("read the staged image's config slot: %v", err)
+		return nil
+	}
+	if current == version {
+		return nil
+	}
+	return []string{fmt.Sprintf("config %s is confirmed, but the confirmation that ended its trial stopped before it wrote the config slot of the image %x staged in the inactive slot, which keeps config %s; deliver the config again to write it", version, image[:6], cmp.Or(current, "none"))}
+}
+
+// writeStagedCopy's errors for a copy it drops: errNoLongerStaged for an image that is no longer
+// the one staged in the inactive slot, errStagedRuns for one that is the running image now, and
+// errKnownGood for one that is the node's known-good image now.
+var (
+	errNoLongerStaged = errors.New("the image is no longer staged")
+	errStagedRuns     = errors.New("the staged image is the running one")
+	errKnownGood      = errors.New("the staged image is the known-good one")
+)
 
 // writeStagedCopy writes the copy a trial kept at trialStagedSlot to the config slot of the
 // staged image, whose root hash staged gives in hex. The slot is written only while that image is
-// still the one in the inactive slot, as stagedEntry finds it, and not the running one, whose
-// slot runs the config on trial already, and while STATE keeps its slot; otherwise the copy is
-// dropped and errNoLongerStaged returned. Nothing staged another image during the trial, but a
-// boot may have: one into the staged image, whose rollback of the trial failed, keeps the record
-// open, and the running slot is then the staged image's. The caller holds s.mu.
+// still the one in the inactive slot, as stagedEntry finds it, while STATE keeps its slot, and
+// while it is not the node's known-good image, which keeps the config it last ran, as
+// keepsKnownGood keeps it; otherwise the copy is dropped and the error says why. Nothing staged
+// another image during the trial, but a boot may have: one into the staged image, whose rollback
+// of the trial failed, keeps the record open, and the running slot is then the staged image's,
+// which never got the config on trial, as the trial's slot is that of the image that ran before.
+// A boot that was not found healthy may likewise have left the staged image as the known-good
+// one. The caller holds s.mu.
 func (s *Server) writeStagedCopy(staged string) error {
 	image, err := hex.DecodeString(staged)
 	if err != nil {
 		return fmt.Errorf("the trial's record names no image: %w", err)
 	}
-	sl, ok, err := s.stagedEntry()
-	if err != nil {
-		return fmt.Errorf("find the staged image: %w", err)
-	}
 	running, err := uki.RunningHash(s.Paths.Cmdline)
 	if err != nil {
 		return err
 	}
-	if !ok || !bytes.Equal(sl.entry.RootHash, image) || bytes.Equal(image, running) || !s.keepsSlot(image) {
+	if bytes.Equal(image, running) {
+		log.Printf("the image %.12s runs now, so the copy of its config slot the trial kept is dropped", staged)
+		return errStagedRuns
+	}
+	sl, ok, err := s.stagedEntry()
+	if err != nil {
+		return fmt.Errorf("find the staged image: %w", err)
+	}
+	if !ok || !bytes.Equal(sl.entry.RootHash, image) || !s.keepsSlot(image) {
 		log.Printf("the image %.12s is no longer staged, so the copy of its config slot the trial kept is dropped", staged)
 		return errNoLongerStaged
+	}
+	if sl.knownGood() {
+		log.Printf("the image %.12s is the node's known-good image now, so the copy of its config slot the trial kept is dropped", staged)
+		return errKnownGood
 	}
 	held, found, err := slot.Read(filepath.Join(s.Paths.StateDir, trialStagedSlot))
 	switch {

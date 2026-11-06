@@ -421,8 +421,11 @@ A trial writes neither the staged slot nor the pending slot in step 4. It keeps 
 the staged image passed in `/state/chalkd/trial-staged`, next to the trial's record, and the
 record says what the confirmation writes. ConfirmConfig first removes the record, so no boot or
 rollback undoes the trial any more, and then writes the staged slot from that copy, or the pending
-slot from the running slot. A crash in between leaves both slots as they were, as a failed write
-does, and delivering the config again writes them. Every other end of a trial, a rollback at the
+slot from the running slot. The confirmation drops the copy and warns when the image is no longer
+staged in the inactive slot, is the running image after a boot into it, or is now the node's
+known-good image. A crash in between leaves both slots as they were, as a failed write does, and
+delivering the config again writes them. A confirmation sent again after such a crash finds the
+copy and warns that the staged slot was not written. Every other end of a trial, a rollback at the
 deadline or on request or a boot, removes the copy with the record, so the staged slot and the
 pending slot keep what they held before the trial. A copy without a record is never written; the
 next boot or chalkd start removes it. Nothing else writes either slot
