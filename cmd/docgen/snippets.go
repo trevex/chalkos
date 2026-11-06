@@ -24,11 +24,10 @@ import (
 // declares fails. Other documents, such as Kubernetes objects, fragments without an apiVersion
 // and documents that are not objects pass unchecked. A line that includes a section of a file is
 // replaced by the section, as the site renders it, so a document may take part of itself from a
-// file the repository checks; a line after it is numbered as the block numbers it. A block of
-// whole-file includes alone reads as a string, so it passes: the example's own check validates
-// the included files. A block that
-// is not YAML fails. Each problem names the page's line its document starts on, or the line of a
-// syntax error.
+// file the repository checks. A block of whole-file includes alone reads as a string, so it
+// passes: the example's own check validates the included files. A block that is not YAML fails.
+// Each problem names the page's line its document starts on, or the line of a syntax error; a
+// line of a section is at its include line.
 func checkYAML(dir, schemasDir string) error {
 	schemas, err := schema.LoadSchemas(schemasDir)
 	if err != nil {
@@ -50,14 +49,14 @@ func checkYAML(dir, schemasDir string) error {
 			return err
 		}
 		for _, b := range blocks {
-			lines, err := expandSections(b.lines)
+			lines, source, err := expandSections(b.lines)
 			if err != nil {
 				problems = append(problems, problem(path, b.first, err))
 				continue
 			}
 			docs, line, err := blockDocuments(lines)
 			if err != nil {
-				problems = append(problems, problem(path, b.first+line-1, err))
+				problems = append(problems, problem(path, b.first+sourceLine(source, line)-1, err))
 				continue
 			}
 			for _, d := range docs {
@@ -66,7 +65,7 @@ func checkYAML(dir, schemasDir string) error {
 					continue
 				}
 				if err := schemas.Validate(d.doc.Object); err != nil {
-					problems = append(problems, problem(path, b.first+d.line-1, err))
+					problems = append(problems, problem(path, b.first+sourceLine(source, d.line)-1, err))
 				}
 			}
 		}
@@ -194,28 +193,44 @@ var snippetSection = regexp.MustCompile(`^([ \t]*)--8<--\s+"([^":]+):([A-Za-z0-9
 // expandSections replaces each line of lines that includes a section of a file with the section's
 // lines, dedented and then indented as the include line is, as zensical.toml has the site render
 // them. A file's path is relative to the working directory, which docgen runs in at the site's
-// root.
-func expandSections(lines []string) ([]string, error) {
-	var out []string
-	for _, l := range lines {
+// root. It returns the expanded lines, each with the line of lines it comes from, counted from 1:
+// a line of a section comes from its include line.
+func expandSections(lines []string) (out []string, source []int, err error) {
+	for i, l := range lines {
 		m := snippetSection.FindStringSubmatch(l)
 		if m == nil {
-			out = append(out, l)
+			out, source = append(out, l), append(source, i+1)
 			continue
 		}
 		section, err := fileSection(m[2], m[3])
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		for _, s := range section {
-			if strings.TrimSpace(s) == "" {
-				out = append(out, "")
-			} else {
-				out = append(out, m[1]+s)
+			if strings.TrimSpace(s) != "" {
+				s = m[1] + s
 			}
+			out, source = append(out, s), append(source, i+1)
 		}
 	}
-	return out, nil
+	return out, source, nil
+}
+
+// sourceLine is the line of a block that line n of its expanded lines comes from, by the source
+// lines expandSections returns. A line past the end, as an error at the end of the text names,
+// counts on from the block's last line.
+func sourceLine(source []int, n int) int {
+	if n < 1 {
+		return 1
+	}
+	if n <= len(source) {
+		return source[n-1]
+	}
+	last := 0
+	if len(source) > 0 {
+		last = source[len(source)-1]
+	}
+	return last + n - len(source)
 }
 
 // fileSection reads the lines between the markers "--8<-- [start:<name>]" and "--8<-- [end:<name>]"

@@ -128,3 +128,29 @@ metadata: {name: w7}
 spec:
   --8<-- "testdata/snippets/sections.yaml:bad"
 ```
+
+A document that takes several lines from a section, followed by a refused document and one that
+is not YAML:
+
+```yaml
+apiVersion: chalkos.dev/v1alpha1
+kind: Node
+metadata: {name: w8}
+spec:
+  --8<-- "testdata/snippets/sections.yaml:multi"
+---
+apiVersion: chalkos.dev/v1alpha1
+kind: Node
+metadata: {name: w9}
+spec: {hostnme: node-metal}
+```
+
+```yaml
+apiVersion: chalkos.dev/v1alpha1
+kind: Node
+metadata: {name: w10}
+spec:
+  --8<-- "testdata/snippets/sections.yaml:multi"
+---
+a: [
+```

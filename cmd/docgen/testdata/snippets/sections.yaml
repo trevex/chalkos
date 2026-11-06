@@ -5,3 +5,9 @@
 # --8<-- [start:bad]
   hostnme: node-metal
 # --8<-- [end:bad]
+# --8<-- [start:multi]
+  hostname: node-metal
+  # A section of several lines, which moves the lines after its include line.
+
+  # The documents after it are reported at their page's lines.
+# --8<-- [end:multi]
