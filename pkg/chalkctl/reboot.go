@@ -106,7 +106,8 @@ func bootOf(image string, root []byte, st *nodev1.StatusResponse) bootTarget {
 // into the target's image, and release waits for that boot and releases the node. activate, when
 // set, runs once the node is held, right before the reboot: an upgrade makes the image boot next
 // only then, so a refused hold, as when etcd would lose its quorum, leaves the image staged, which
-// no reboot of the node boots meanwhile.
+// no reboot of the node boots meanwhile. An activation that fails leaves the image staged too,
+// and the node, which does not reboot, is released at once.
 func (b *rebooter) reboot(ctx context.Context, n *rebootNode, t bootTarget, hold bool, activate func() error) error {
 	if hold {
 		n.held = true
@@ -116,6 +117,17 @@ func (b *rebooter) reboot(ctx context.Context, n *rebootNode, t bootTarget, hold
 	}
 	if activate != nil {
 		if err := activate(); err != nil {
+			if !hold {
+				return err
+			}
+			if rerr := b.hooks(ctx, n, layer.Upgrade.After); rerr != nil {
+				msg := "releasing it failed"
+				if n.roles.member() {
+					msg = "it stays cordoned, as releasing it failed"
+				}
+				return fmt.Errorf("%w; %s: %w", err, msg, rerr)
+			}
+			n.held = false
 			return err
 		}
 	}

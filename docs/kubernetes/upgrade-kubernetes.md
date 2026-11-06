@@ -87,7 +87,8 @@ flowchart TD
 The diagram shows the order. Within each group the nodes go in the order of their names. A node is
 drained once its image is staged, and the image is activated right after the drain, before the
 node reboots. A quorum check or a drain that fails stops the run with the image staged and not
-active, so the node keeps booting its current image. After each reboot, chalkctl waits until the
+active, so the node keeps booting its current image. An activation that fails stops the run too,
+and chalkctl uncordons the node, which does not reboot. After each reboot, chalkctl waits until the
 node runs the new image, its boot was found healthy and its Node is `Ready`. Then it uncordons the
 node. `chalkctl node reboot` runs the same quorum check, drain, reboot, wait and uncordon for one
 node.

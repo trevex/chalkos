@@ -177,6 +177,9 @@ type upgradeLab struct {
 	cordoned map[string]bool
 	// refuseUpgrade makes the node refuse its next upgrade, as if the transfer broke.
 	refuseUpgrade string
+	// refuseActivate makes the node refuse its next activation, as if Secure Boot would refuse the
+	// staged UKI.
+	refuseActivate string
 	// refuseRollback makes the node refuse its next rollback, as if its UKI could not be renamed.
 	refuseRollback string
 	// uncountedRollback makes the nodes stage a rollback's image without tries, as chalkd does while
@@ -394,9 +397,17 @@ func (n *upgradeFake) ActivateImage(_ context.Context, req *connect.Request[node
 		return nil, err
 	}
 	n.lab.record("%s activate", n.name)
+	n.lab.mu.Lock()
+	refuse := n.lab.refuseActivate == n.name
+	if refuse {
+		n.lab.refuseActivate = ""
+	}
+	n.lab.mu.Unlock()
 	n.mu.Lock()
 	defer n.mu.Unlock()
 	switch {
+	case refuse:
+		return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("activate: Secure Boot would refuse the UKI"))
 	case bytes.Equal(req.Msg.RootHash, n.root):
 		return connect.NewResponse(&nodev1.ActivateImageResponse{AlreadyInstalled: true}), nil
 	case n.staged == "":
@@ -912,6 +923,30 @@ func TestUpgradeStopsAtARollback(t *testing.T) {
 	}
 	if got := l.takeEvents(); len(got) != 0 {
 		t.Errorf("a second run asked %q", got)
+	}
+}
+
+// TestUpgradeReleasesANodeWhoseActivationFails uncordons the node it drained when the image it
+// staged fails to activate: the node does not reboot, and the run stops with the image staged.
+// Run again, the upgrade activates the image and reboots the node.
+func TestUpgradeReleasesANodeWhoseActivationFails(t *testing.T) {
+	l := newUpgradeLab(t, 3)
+	img := testUpgradeImage(t, "w", "0.2.0")
+	l.refuseActivate = "w2"
+	if err := l.upgrade(img, "--nodes", "w2"); err == nil || !strings.HasPrefix(err.Error(), "w2: ") || !strings.Contains(err.Error(), "Secure Boot would refuse the UKI") {
+		t.Fatalf("upgrade = %v", err)
+	}
+	if got, want := l.takeEvents(), []string{"w2 upgrade", "w2 drain", "w2 activate", "w2 uncordon"}; !slices.Equal(got, want) {
+		t.Errorf("events %q, want %q", got, want)
+	}
+	if n := l.nodes["w2"]; l.cordoned["w2"] || n.staged != "0.2.0" || n.active {
+		t.Errorf("w2 cordoned: %v; staged %q, active: %v", l.cordoned["w2"], n.staged, n.active)
+	}
+	if err := l.upgrade(img, "--nodes", "w2"); err != nil {
+		t.Fatalf("%v\n%s", err, l.ta.stdout)
+	}
+	if got, want := l.takeEvents(), []string{"w2 drain", "w2 activate", "w2 reboot", "w2 uncordon"}; !slices.Equal(got, want) {
+		t.Errorf("events %q, want %q", got, want)
 	}
 }
 

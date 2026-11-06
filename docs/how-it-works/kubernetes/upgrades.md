@@ -123,14 +123,17 @@ pod is not drained, the run stops and the node stays cordoned. A drain that does
 
 Each node is drained once its image is staged, and its image is activated after the drain, right
 before it reboots. A drain that fails leaves the image staged and not active, so the node keeps
-booting its current image. `--until stage` and `--until activate` drain no node.
+booting its current image. An activation that fails after the drain leaves the image staged too:
+the node does not reboot, chalkctl uncordons it, and the run stops. `--until stage` and
+`--until activate` drain no node.
 `chalkctl node reboot` drains a node the same way, and `--no-drain` skips the drain.
 
 ## A stopped run leaves its nodes cordoned
 
 A run stops at the first node that fails. A node that rolled back stays cordoned for an operator
 to look at. A run also stops when a drain times out, when a control plane would take etcd's quorum
-with it, or when a node does not come back healthy and Ready within `--timeout`.
+with it, or when a node does not come back healthy and Ready within `--timeout`. A node whose image
+fails to activate after its drain is uncordoned before the run stops, as it does not reboot.
 
 The root hashes the nodes run and their cordons say how far a run got. Running the same command
 again continues from there:
