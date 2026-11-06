@@ -9,13 +9,13 @@ const digest = "sha256:e190f914a6cc21cab9268485d1ae7282fdeab1315ac64b668aa42d732
 
 func TestParse(t *testing.T) {
 	for s, want := range map[string]Reference{
-		"registry.k8s.io/kube-apiserver:v1.37.1":               {"registry.k8s.io/kube-apiserver", "v1.37.1", ""},
-		"registry.k8s.io/kube-apiserver:v1.37.1@" + digest:     {"registry.k8s.io/kube-apiserver", "v1.37.1", digest},
-		"registry.k8s.io/kube-apiserver@" + digest:             {"registry.k8s.io/kube-apiserver", "", digest},
-		"localhost:5000/kube-apiserver:v1.37.1@" + digest:      {"localhost:5000/kube-apiserver", "v1.37.1", digest},
-		"registry.k8s.io/coredns/coredns:v1.14.6":              {"registry.k8s.io/coredns/coredns", "v1.14.6", ""},
-		"registry.k8s.io/etcd:3.7.0-0@" + digest:               {"registry.k8s.io/etcd", "3.7.0-0", digest},
-		"[2001:db8::1]:5000/kube-proxy:v1.37.1-rc.1@" + digest: {"[2001:db8::1]:5000/kube-proxy", "v1.37.1-rc.1", digest},
+		"registry.k8s.io/kube-apiserver:v1.37.1":               {"v1.37.1", ""},
+		"registry.k8s.io/kube-apiserver:v1.37.1@" + digest:     {"v1.37.1", digest},
+		"registry.k8s.io/kube-apiserver@" + digest:             {"", digest},
+		"localhost:5000/kube-apiserver:v1.37.1@" + digest:      {"v1.37.1", digest},
+		"registry.k8s.io/coredns/coredns:v1.14.6":              {"v1.14.6", ""},
+		"registry.k8s.io/etcd:3.7.0-0@" + digest:               {"3.7.0-0", digest},
+		"[2001:db8::1]:5000/kube-proxy:v1.37.1-rc.1@" + digest: {"v1.37.1-rc.1", digest},
 	} {
 		got, err := Parse(s)
 		if err != nil || got != want {

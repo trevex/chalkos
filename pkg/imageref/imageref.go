@@ -13,10 +13,8 @@ import (
 	"github.com/google/go-containerregistry/pkg/name"
 )
 
-// Reference is an image reference split into its parts.
+// Reference is what Parse reads of an image reference besides its repository.
 type Reference struct {
-	// Repository is the registry and the repository, such as registry.k8s.io/kube-apiserver.
-	Repository string
 	// Tag is the tag, empty for a reference by digest alone.
 	Tag string
 	// Digest is the digest, such as sha256:…; empty for a reference by tag alone.
@@ -33,12 +31,10 @@ func Parse(s string) (Reference, error) {
 	base, digest, hasDigest := strings.Cut(s, "@")
 	var r Reference
 	if hasDigest {
-		d, err := name.NewDigest(s, name.StrictValidation)
-		if err != nil {
+		if _, err := name.NewDigest(s, name.StrictValidation); err != nil {
 			return Reference{}, fmt.Errorf("%q is no image reference: %w", s, err)
 		}
 		r.Digest = digest
-		r.Repository = d.Context().Name()
 		// NewDigest drops the tag; read it from what precedes the digest.
 		if t, err := name.NewTag(base, name.StrictValidation); err == nil {
 			r.Tag = t.TagStr()
@@ -51,7 +47,7 @@ func Parse(s string) (Reference, error) {
 	if err != nil {
 		return Reference{}, fmt.Errorf("%q is no image reference with a registry and a tag or digest: %w", s, err)
 	}
-	return Reference{Repository: t.Context().Name(), Tag: t.TagStr()}, nil
+	return Reference{Tag: t.TagStr()}, nil
 }
 
 // Version is a version as a tag names it, v<major>.<minor>.<patch> with an optional suffix
