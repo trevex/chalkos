@@ -83,7 +83,7 @@ func parseNameMatch(network string, spec map[string]any) (NameMatch, error) {
 				}
 				word.Glob = goGlob(w)
 				if _, err := path.Match(word.Glob, ""); err != nil || bracketHolds(w, '[') {
-					return m, refusals.Errorf("Network", network, at, "Name= holds %q, which is no glob the renderer can match as networkd does", word.Text)
+					return m, refusals.Errorf("Network", network, at, "Name= holds %q, which is no glob the router can match as networkd does", word.Text)
 				}
 				m.Words = append(m.Words, word)
 			}

@@ -433,7 +433,7 @@ renderers refuse what networkd, FRR or nftables would apply otherwise than the d
 | `Network/00-all: metadata.name: Network 00-all matches the device of VRF tenant before 00-vrf-tenant; rename it to sort after 00-vrf-tenant` | Rename the `Network`, or narrow its `Name=`. |
 | `Network/00-all: metadata.name: Network 00-all matches the link n64-guest of NAT64 guest before 00-n64-guest; rename it to sort after 00-n64-guest` | Rename the `Network`, or narrow its `Name=`. |
 | `Network/10-a: spec.match: Network 10-a is the first to match eth5, so networkd never applies Network 20-b's VRF=mgmt to it; give 10-a VRF=mgmt, rename it to sort after 20-b, or drop 20-b's VRF=` | Take one of the remedies the message lists. |
-| `Network/20-x: spec.match.name: Name= holds "eth[0", which is no glob the renderer can match as networkd does` | Write `Name=` without backslashes and bracket expressions. |
+| `Network/20-x: spec.match.name: Name= holds "eth[0", which is no glob the router can match as networkd does` | Write `Name=` without backslashes and bracket expressions. |
 | `NetDev/20-dummy: spec.netDev.name: NetDev 20-dummy creates the device tenant, which VRF tenant creates; rename the VRF or the NetDev` | Rename the VRF, or the device in the `NetDev`'s `Name=`. |
 | `BGPPeer/leaves: spec.interfaces[0]: swp* matches no link of VRF default, only links of other VRFs` | Give the peer the VRF of its links. |
 | `BGPPeer/x: spec.interface: interface tenant is the device of VRF tenant` | Name the VRF's links, not its device. |
