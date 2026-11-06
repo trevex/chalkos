@@ -299,9 +299,11 @@ sequenceDiagram
 
 Before anything is written, the installer translates the config with its own code and the
 image's schemas, for the storage section it lays the disk out by, and checks that the image is
-built for the machine's architecture. With Secure Boot enforced, it checks the UKI's and the boot
-loader's signatures against the firmware's db and dbx, as the firmware will at the next boot. It
-checks each when it receives it: after slot A is written and before the boot loader is.
+built for the machine's architecture. It plans the layers' payloads against that translation's
+identity, so a payload no layer takes, or a Kubernetes share for another node, is refused with the
+disk untouched. With Secure Boot enforced, it checks the UKI's and the boot loader's signatures
+against the firmware's db and dbx, as the firmware will at the next boot. It checks each when it
+receives it: after slot A is written and before the boot loader is.
 
 The image checks its config itself, as an upgrade's image does. Once slot A holds the store and the
 ESP the UKI, `Installer.checkConfig` mounts the store read-only through dm-verity
@@ -311,8 +313,9 @@ schemas, rules, validators and renderers, and chalkd loads the facts the image's
 declares from the installer's machine, which the node runs on. The identity the checker returns
 must have the storage section the disk was laid out by, or the install is refused
 (`sectionDifference`). STATE gets the config slot the checker returned, and the layers' payloads
-are checked against its identity. A refusal comes before STATE, the boot loader and the boot
-entry, so the disk boots nothing, and an install continues on it, of the same image or another.
+are planned again against its identity, which STATE records them with. A refusal comes before
+STATE, the boot loader and the boot entry, so the disk boots nothing, and an install continues on
+it, of the same image or another.
 
 Every config slot is therefore written only after the image that boots it checked it: in place the
 running image, from the installer the image's own checker, on upgrades and deliveries as

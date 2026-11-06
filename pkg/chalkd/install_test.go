@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
+	"google.golang.org/protobuf/types/known/anypb"
 
 	checkv1 "github.com/trevex/chalkos/pkg/api/check/v1"
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
@@ -525,6 +526,17 @@ func TestInstallRefusesConfig(t *testing.T) {
 			contractOf(h).LayerFacts = factsLayers(t, kubernetestest.Image)
 			contractOf(h).Schemas = map[string][]byte{"../x.json": []byte("{}")}
 		}, `"../x.json" is not the name of a schema file`},
+		// The payloads are checked against the installer's own translation before the disk changes.
+		"from the installer with a share for another node": {true, func(h *nodev1.InstallHeader) {
+			fromInstaller(h)
+			contractOf(h).LayerFacts = factsLayers(t, kubernetestest.Image)
+			h.Layers = shareLayers(t, kubernetestest.Share(t, k8s.KindWorker, "other"))
+		}, "Kubernetes share"},
+		"from the installer with a payload no layer takes": {true, func(h *nodev1.InstallHeader) {
+			fromInstaller(h)
+			contractOf(h).LayerFacts = factsLayers(t, kubernetestest.Image)
+			h.Layers = []*anypb.Any{{TypeUrl: "type.googleapis.com/chalkos.unknown.v1.Payload"}}
+		}, "which no layer of this image takes"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			s, _ := newTestServer(t, maintenance, vda)

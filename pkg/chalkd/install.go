@@ -112,6 +112,13 @@ func (s *Server) Install(ctx context.Context, stream *connect.ClientStream[nodev
 	case *nodev1.InstallHeader_Disk:
 		d := target.Disk
 		ref := storage.Ref{Path: d.Path, Selector: storage.Selector{Model: d.Model, Serial: d.Serial, WWN: d.Wwn, Size: d.Size, Type: d.Type}}
+		// The payloads are planned against the installer's own translation before the disk
+		// changes, so one no layer takes, or a share for another node or kind, is refused with the
+		// disk untouched. installCheck plans them again against the identity the image's checker
+		// gives, which STATE records them with.
+		if _, err := s.installPayloads(ctx, layer.Compiled[layer.Delivery](s.Plugins), h, stored.Identity); err != nil {
+			return nil, err
+		}
 		img := imageHeader(h.Image)
 		parts := chunks(stream)
 		from := ""
