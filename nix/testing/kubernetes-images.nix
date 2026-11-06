@@ -122,14 +122,14 @@ let
   # The Kubernetes components the e2e clusters name follow the kubelet of the test images:
   # nixpkgs's Kubernetes release. Those the HA test rolls out to are a later patch release of the
   # same minor, which the skew rules let the API server run ahead of the kubelet.
-  kubelet = pkgs.lib.versions.majorMinor pkgs.kubernetes.version;
+  kubeletMinor = pkgs.lib.versions.majorMinor pkgs.kubernetes.version;
   stale = map (image: "${image.name}:${image.tag}") (
     builtins.filter (
       image:
       pkgs.lib.hasPrefix "registry.k8s.io/kube-" image.name
       && (
         if image.rollout or false then
-          pkgs.lib.versions.majorMinor (pkgs.lib.removePrefix "v" image.tag) != kubelet
+          pkgs.lib.versions.majorMinor (pkgs.lib.removePrefix "v" image.tag) != kubeletMinor
           || builtins.compareVersions (pkgs.lib.removePrefix "v" image.tag) pkgs.kubernetes.version <= 0
         else
           image.tag != "v${pkgs.kubernetes.version}"
@@ -138,7 +138,7 @@ let
   );
 in
 assert pkgs.lib.assertMsg (stale == [ ])
-  "nix/testing/kubernetes-images.nix pins ${toString stale}, but the test images' kubelet is ${pkgs.kubernetes.version}: the cluster's components follow it, and the rollout's are a later patch release of ${kubelet}";
+  "nix/testing/kubernetes-images.nix pins ${toString stale}, but the test images' kubelet is ${pkgs.kubernetes.version}: the cluster's components follow it, and the rollout's are a later patch release of ${kubeletMinor}";
 pkgs.writeTextDir "images.json" (
   builtins.toJSON (
     builtins.listToAttrs (
