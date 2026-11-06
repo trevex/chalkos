@@ -51,7 +51,7 @@ func (s *applyStep) Type() string   { return "step" }
 
 // configRollout delivers the inventory's config to several nodes, one after the other, and stops
 // at the first that fails. When the config changes the versions a layer's cluster bounds, such as
-// the Kubernetes API server's, the run is ordered: the layer checks the versions every node runs
+// the Kubernetes API server's, the run is ordered: the layer checks the versions its nodes run
 // first, then the coordinators get the config one at a time, each held by the layer and on trial
 // until the layer finds it serves its cluster with the config, and the other nodes after them.
 // No node reboots. A node that runs the config already is left alone, so the same command run
@@ -117,7 +117,7 @@ func (a *app) deliverToNodes(ctx context.Context, f applyConfigFlags, names []st
 // and checks its config against the image it runs; then it asks the node's Rollout layers whether
 // the config changes the versions they bound against the config the node runs. A run that changes
 // none asks no layer's service anything. One that changes some reads each node's roles, and the
-// layers that find a change check the versions every node of the cluster runs.
+// layers that find a change check the versions the nodes of their clusters run.
 func (r *configRollout) plan(ctx context.Context, names []string) error {
 	for _, name := range names {
 		if err := r.cluster.node(name); err != nil {
@@ -184,9 +184,8 @@ func (r *configRollout) plan(ctx context.Context, names []string) error {
 		}
 		probed[name] = n.roles.coordinator()
 	}
-	all := r.clusterVersions(ctx)
 	for _, l := range r.ordered {
-		if err := l.CheckConfig(r, pluginCluster{r.cluster}, names, all[l]); err != nil {
+		if err := l.CheckConfig(r, pluginCluster{r.cluster}, names, r.readVersions(ctx, l)); err != nil {
 			return err
 		}
 	}
@@ -266,34 +265,37 @@ func (r *configRollout) node(ctx context.Context, n *rolloutNode) (bool, error) 
 	return true, r.a.deliverConfig(ctx, f, t)
 }
 
-// clusterVersions reads, from every node of the cluster, the versions each Rollout layer of its
-// image reads; a node chalkctl cannot reach is given to every compiled Rollout layer with the
-// error, and the layer decides whether it matters.
-func (b *rebooter) clusterVersions(ctx context.Context) map[layer.Rollout][]layer.NodeVersions {
-	all := map[layer.Rollout][]layer.NodeVersions{}
-	for _, name := range b.nodeNames() {
-		read := map[layer.Rollout]layer.NodeVersions{}
-		err := b.call(name, func(conn *client.Conn) error {
-			info, err := conn.Info(ctx, connect.NewRequest(&nodev1.InfoRequest{}))
-			if err != nil {
-				return err
-			}
-			for _, l := range pluginsOf[layer.Rollout](info.Msg.Layers) {
-				v, err := l.Versions(ctx, conn)
-				read[l] = layer.NodeVersions{Name: name, Versions: v, Err: err}
-			}
-			return nil
-		})
-		if err != nil {
-			for _, l := range compiled[layer.Rollout]() {
-				read[l] = layer.NodeVersions{Name: name, Err: err}
+// readVersions reads, for the Rollout layer l, the versions the nodes it names run, as
+// layer.ReadVersions describes: only the nodes the layer names are reached, and a node chalkctl
+// cannot reach is given with the error to l alone.
+func (b *rebooter) readVersions(ctx context.Context, l layer.Rollout) layer.ReadVersions {
+	return func(names []string) []layer.NodeVersions {
+		if names == nil {
+			names = b.nodeNames()
+		}
+		var all []layer.NodeVersions
+		for _, name := range names {
+			var v *layer.NodeVersions
+			err := b.call(name, func(conn *client.Conn) error {
+				info, err := conn.Info(ctx, connect.NewRequest(&nodev1.InfoRequest{}))
+				if err != nil {
+					return err
+				}
+				if slices.Contains(pluginsOf[layer.Rollout](info.Msg.Layers), l) {
+					versions, err := l.Versions(ctx, conn)
+					v = &layer.NodeVersions{Name: name, Versions: versions, Err: err}
+				}
+				return nil
+			})
+			switch {
+			case err != nil:
+				all = append(all, layer.NodeVersions{Name: name, Err: err})
+			case v != nil:
+				all = append(all, *v)
 			}
 		}
-		for l, v := range read {
-			all[l] = append(all[l], v)
-		}
+		return all
 	}
-	return all
 }
 
 // summary prints which nodes run which versions, as the ordered layers say it, once a run stopped.
@@ -301,16 +303,16 @@ func (r *configRollout) summary(ctx context.Context) {
 	if len(r.ordered) == 0 {
 		return
 	}
-	all := r.clusterVersions(ctx)
 	for _, l := range r.ordered {
-		for _, line := range l.Summary(all[l]) {
+		for _, line := range l.Summary(pluginCluster{r.cluster}, r.readVersions(ctx, l)) {
 			r.say("%s", line)
 		}
 	}
 }
 
 // checkImages has the Rollout layers refuse images whose versions would break their bounds
-// against what every node of the cluster runs, before any node is sent its image.
+// against what the nodes of their clusters run, before any node is sent its image. A layer reads
+// the nodes' versions only when an image concerns a node of its cluster.
 func (r *upgradeRun) checkImages(ctx context.Context) error {
 	layers := compiled[layer.Rollout]()
 	if len(layers) == 0 {
@@ -322,9 +324,8 @@ func (r *upgradeRun) checkImages(ctx context.Context) error {
 			images[name] = n.image.contract.facts
 		}
 	}
-	all := r.clusterVersions(ctx)
 	for _, l := range layers {
-		if err := l.CheckImages(pluginCluster{r.cluster}, images, all[l]); err != nil {
+		if err := l.CheckImages(pluginCluster{r.cluster}, images, r.readVersions(ctx, l)); err != nil {
 			return err
 		}
 	}

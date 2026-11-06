@@ -51,7 +51,7 @@ as `--diff` does. When none changes, it delivers to the nodes one after the othe
 config, and asks no node's Kubernetes side anything, so the delivery also reaches a node whose
 Kubernetes side does not answer. When one changes, the run is ordered:
 
-1. chalkctl reads the versions of every node of the inventory and holds the config's API server to
+1. chalkctl reads the versions of every node with a `Node` document and holds the config's API server to
    the skew policy against them: at most one minor from every running API server, no older minor
    without `--allow-downgrade`, no kubelet newer and none more than three minors older. The nodes
    of a run get one API server, and a node that is no control plane gets it only once every

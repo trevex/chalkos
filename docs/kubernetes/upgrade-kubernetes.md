@@ -206,8 +206,8 @@ other nodes and finishes.
 ## chalkctl checks the versions every node runs
 
 Each node reports, in its status, the Kubernetes version of the API server its config names and the
-release of its image's kubelet. chalkctl reads them from every node of the inventory and holds them
-to the [Kubernetes version skew policy](https://kubernetes.io/releases/version-skew-policy/), minor
+release of its image's kubelet. chalkctl reads them from the inventory's nodes with a `Node`
+document and holds them to the [Kubernetes version skew policy](https://kubernetes.io/releases/version-skew-policy/), minor
 versions compared:
 
 | Rule | Checked by |
@@ -222,7 +222,9 @@ The image's checker compares the config with the image's own kubelet, as
 [The image's checker holds the versions to the skew policy](configure.md#the-images-checker-holds-the-versions-to-the-skew-policy)
 describes. `chalkctl apply-config` compares the config's API server with every node's API server
 and kubelet before it delivers anything to a node, and `chalkctl upgrade` compares each new image's
-kubelet with the oldest API server the control planes run before it sends any image. A refusal
+kubelet with the oldest API server the control planes run before it sends any image. The upgrade
+asks the control planes only when it gives an image with a kubelet to a node with a `Node`
+document, so an upgrade of nodes outside the cluster reaches none of the cluster's nodes. A refusal
 names the node:
 
 ```text

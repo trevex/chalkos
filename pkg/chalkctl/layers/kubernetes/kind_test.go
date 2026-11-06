@@ -16,7 +16,11 @@ type fakeCluster struct {
 	// apiServer is, by node, the images.apiServer of a Cluster document its config holds; none for a
 	// node it does not name.
 	apiServer map[string]string
+	// partial is set for a cluster without an inventory.
+	partial bool
 }
+
+func (c fakeCluster) Partial() bool { return c.partial }
 
 func (c fakeCluster) NodeNames() []string {
 	var names []string

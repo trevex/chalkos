@@ -575,3 +575,23 @@ func TestUpgradeRefusesAConfigThatChangesTheAPIServer(t *testing.T) {
 		t.Errorf("w1 stages %q", got)
 	}
 }
+
+// An upgrade of a node outside the Kubernetes cluster reaches none of the cluster's nodes, so a
+// control plane that does not answer does not stop it; nor does it stop apply-config to that node,
+// whose config names the cluster's API server too.
+func TestOutsideTheClusterReachesNoneOfIt(t *testing.T) {
+	l := newRolloutLab(t)
+	l.nodes["cp1"].rebooting = true
+	if err := l.upgrade(testUpgradeImage(t, "plain", "0.2.0"), "--nodes", "n1", "--until", "activate"); err != nil {
+		t.Fatalf("upgrade: %v\n%s", err, l.ta.stdout)
+	}
+	l.takeEvents()
+	l.runAPIServer("1.37.1", "n1")
+	l.rollTo(t, "1.37.2")
+	if err := l.applyConfigTo([]string{"n1"}); err != nil {
+		t.Fatalf("apply-config: %v\n%s", err, l.ta.stdout)
+	}
+	if got, want := deliveries(l.takeEvents()), []string{"n1 apply-config staged=false"}; !slices.Equal(got, want) {
+		t.Errorf("events %q, want %q", got, want)
+	}
+}

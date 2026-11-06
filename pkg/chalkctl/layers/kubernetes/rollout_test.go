@@ -55,6 +55,31 @@ func threeAndOne(api, kubelet string) []runs {
 
 func apiServerRef(tag string) string { return "registry.k8s.io/kube-apiserver:" + tag }
 
+// readOf reads the versions of all, as chalkctl reads them from the nodes named, or from every
+// node with nil.
+func readOf(all []layer.NodeVersions) layer.ReadVersions {
+	return func(names []string) []layer.NodeVersions {
+		if names == nil {
+			return all
+		}
+		var read []layer.NodeVersions
+		for _, n := range all {
+			if slices.Contains(names, n.Name) {
+				read = append(read, n)
+			}
+		}
+		return read
+	}
+}
+
+// readNothing fails the test when a check reads any node's versions.
+func readNothing(t *testing.T) layer.ReadVersions {
+	return func(names []string) []layer.NodeVersions {
+		t.Errorf("read the versions of %q", names)
+		return nil
+	}
+}
+
 // Changes compares the API server the inventory's config names with the one the node's running
 // config names, patch releases included.
 func TestRolloutChanges(t *testing.T) {
@@ -71,6 +96,7 @@ func TestRolloutChanges(t *testing.T) {
 	}{
 		"a patch":             {runningOn(apiServerRef("v1.37.1")), map[string]string{"cp1": apiServerRef("v1.37.2")}, "the API server from 1.37.1 to 1.37.2", ""},
 		"the same":            {runningOn(apiServerRef("v1.37.1")), map[string]string{"cp1": apiServerRef("v1.37.1")}, "", ""},
+		"no Node document":    {runningOn(apiServerRef("v1.37.1")), map[string]string{"n1": apiServerRef("v1.37.2")}, "", ""},
 		"pinned, the same":    {runningOn(apiServerRef("v1.37.1")), map[string]string{"cp1": apiServerRef("v1.37.1@sha256:e190f914a6cc21cab9268485d1ae7282fdeab1315ac64b668aa42d732fd1061d")}, "", ""},
 		"no Cluster document": {runningOn(apiServerRef("v1.37.1")), map[string]string{}, "", ""},
 		"none running":        {nil, map[string]string{"cp1": apiServerRef("v1.37.2")}, "", ""},
@@ -79,7 +105,11 @@ func TestRolloutChanges(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			c := fakeCluster{types: map[string]string{"cp1": k8s.KindControlPlane}, apiServer: tc.config}
-			got, err := p.Changes(c, "cp1", tc.running)
+			name := "cp1"
+			if _, ok := tc.config["n1"]; ok {
+				name = "n1"
+			}
+			got, err := p.Changes(c, name, tc.running)
 			if tc.err != "" {
 				if err == nil || !strings.Contains(err.Error(), tc.err) {
 					t.Fatalf("err = %v, want one mentioning %q", err, tc.err)
@@ -159,7 +189,7 @@ func TestCheckConfig(t *testing.T) {
 				c.apiServer[n] = apiServerRef(tc.tag)
 			}
 			u := fakeUpgrading{flags: &rolloutFlags{allowDowngrade: tc.downgrade}}
-			err := p.CheckConfig(u, c, tc.named, nodes)
+			err := p.CheckConfig(u, c, tc.named, readOf(nodes))
 			switch {
 			case tc.want == "" && err != nil:
 				t.Fatalf("err = %v, want none", err)
@@ -172,7 +202,7 @@ func TestCheckConfig(t *testing.T) {
 	c, nodes := versionsLab(t, threeAndOne("1.37.1", "1.37.1")...)
 	c.apiServer["cp1"], c.apiServer["cp2"] = apiServerRef("v1.37.2"), apiServerRef("v1.37.3")
 	want := "the config names the API server v1.37.2 for cp1 and v1.37.3 for cp2; deliver one version at a time"
-	if err := p.CheckConfig(fakeUpgrading{}, c, []string{"cp1", "cp2"}, nodes); err == nil || err.Error() != want {
+	if err := p.CheckConfig(fakeUpgrading{}, c, []string{"cp1", "cp2"}, readOf(nodes)); err == nil || err.Error() != want {
 		t.Errorf("two versions: err = %v, want %q", err, want)
 	}
 }
@@ -217,7 +247,7 @@ func TestCheckImages(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			c, all := versionsLab(t, tc.nodes...)
-			err := p.CheckImages(c, tc.images, all)
+			err := p.CheckImages(c, tc.images, readOf(all))
 			switch {
 			case tc.want == "" && err != nil:
 				t.Fatalf("err = %v, want none", err)
@@ -225,6 +255,30 @@ func TestCheckImages(t *testing.T) {
 				t.Fatalf("err = %v, want one mentioning %q", err, tc.want)
 			}
 		})
+	}
+}
+
+// An upgrade whose images concern no node of the cluster reads no node's versions: neither an
+// image without a kubelet nor one for a node without a Node document.
+func TestCheckImagesOutsideTheCluster(t *testing.T) {
+	p := New()
+	c, _ := versionsLab(t, append(threeAndOne("1.37.1", "1.37.1"), runs{"n1", "", "", "", errors.New("connection refused")})...)
+	if err := p.CheckImages(c, map[string][]*anypb.Any{"n1": imageOf(t, "1.38.0")}, readNothing(t)); err != nil {
+		t.Errorf("a node without Kubernetes: %v", err)
+	}
+	if err := p.CheckImages(c, map[string][]*anypb.Any{"w1": nil}, readNothing(t)); err != nil {
+		t.Errorf("an image without a kubelet: %v", err)
+	}
+	// The kubelet's check reads the control planes alone.
+	read := func(names []string) []layer.NodeVersions {
+		if !slices.Equal(names, []string{"cp1", "cp2", "cp3"}) {
+			t.Errorf("read the versions of %q, want the control planes", names)
+		}
+		_, all := versionsLab(t, threeAndOne("1.37.1", "1.37.1")...)
+		return all[:3]
+	}
+	if err := p.CheckImages(c, map[string][]*anypb.Any{"w1": imageOf(t, "1.37.1")}, read); err != nil {
+		t.Errorf("a worker's image: %v", err)
 	}
 }
 
@@ -253,14 +307,14 @@ func TestDelivered(t *testing.T) {
 }
 
 func TestSummary(t *testing.T) {
-	_, all := versionsLab(t,
+	c, all := versionsLab(t,
 		runs{"cp1", k8s.KindControlPlane, "1.37.2", "1.37.1", nil},
 		runs{"cp2", k8s.KindControlPlane, "1.37.1", "1.37.1", nil},
 		runs{"cp3", k8s.KindControlPlane, "", "", errors.New("connection refused")},
 		runs{"w1", k8s.KindWorker, "1.37.1", "1.37.1", nil},
 	)
 	want := []string{"API server unknown: cp3", "API server v1.37.1: cp2, w1", "API server v1.37.2: cp1"}
-	if got := New().Summary(all); !slices.Equal(got, want) {
+	if got := New().Summary(c, readOf(all)); !slices.Equal(got, want) {
 		t.Errorf("Summary = %q, want %q", got, want)
 	}
 }

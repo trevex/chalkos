@@ -16,8 +16,9 @@ import (
 // have it refuse what would break the bounds. When a delivery of config changes the versions it
 // bounds, apply-config orders the delivery: the coordinators first, one at a time, each held by
 // BeforeDelivery and delivered on trial, which chalkctl confirms only once Delivered passes; then
-// the other nodes. chalkctl asks, for a node, the plugins of the layers its Info names; for a node
-// it cannot reach, and for RolloutFlags, every compiled plugin.
+// the other nodes. chalkctl asks, for a node, the plugins of the layers its Info names, and for
+// RolloutFlags every compiled plugin. The layer names the nodes whose versions chalkctl reads, so
+// a run that concerns no node of its cluster reaches none of them.
 type Rollout interface {
 	// RolloutFlags registers the layer's flags of apply-config on fs and returns where their values
 	// go, which Upgrading.Flags gives the layer's hooks during a delivery.
@@ -27,19 +28,20 @@ type Rollout interface {
 	Versions(ctx context.Context, conn *client.Conn) (any, error)
 	// Changes says how delivering the inventory's config to the node called name changes the
 	// versions the bounds compare, against running, the config the node runs, such as "the API
-	// server from 1.37.1 to 1.37.2"; "" when it changes none. It reads the configs alone, so a
-	// delivery that changes none asks the layer's service nothing. When a node's delivery changes
-	// them, apply-config reads every node's versions, has CheckConfig check them, and orders the
-	// delivery.
+	// server from 1.37.1 to 1.37.2"; "" when it changes none, as for a node outside the layer's
+	// cluster. It reads the configs alone, so a delivery that changes none asks the layer's
+	// service nothing. When a node's delivery changes them, apply-config has CheckConfig check the
+	// versions the nodes run and orders the delivery, and chalkctl upgrade refuses the config.
 	Changes(c Cluster, name string, running []config.Document) (string, error)
 	// CheckConfig refuses to deliver the inventory's config to the nodes named, which changes the
 	// versions the bounds compare, when it would break them against what the cluster's nodes run,
-	// as all reports it, or deliver it in an order the bounds do not allow.
-	CheckConfig(u Upgrading, c Cluster, named []string, all []NodeVersions) error
+	// as read reads it, or deliver it in an order the bounds do not allow.
+	CheckConfig(u Upgrading, c Cluster, named []string, read ReadVersions) error
 	// CheckImages refuses to install on each node of images the image whose layer facts it gives,
 	// when the versions the facts name would break the bounds against what the cluster's nodes
-	// run, as all reports it.
-	CheckImages(c Cluster, images map[string][]*anypb.Any, all []NodeVersions) error
+	// run, as read reads it. An upgrade whose images concern no node of the layer's cluster reads
+	// nothing.
+	CheckImages(c Cluster, images map[string][]*anypb.Any, read ReadVersions) error
 	// BeforeDelivery holds a coordinator before an ordered delivery changes what it runs, as
 	// Kubernetes waits for etcd to keep its quorum.
 	BeforeDelivery(ctx context.Context, u Upgrading, name string, role UpgradeRole) error
@@ -47,9 +49,16 @@ type Rollout interface {
 	// with the config it runs, as a control plane's components run the images its config names.
 	// chalkctl confirms a config's trial only once it passes, and asks again until then.
 	Delivered(ctx context.Context, conn *client.Conn) error
-	// Summary says, from all, which nodes run which versions, as a delivery that stopped prints it.
-	Summary(all []NodeVersions) []string
+	// Summary says, from what read reads, which nodes run which versions, as a delivery that
+	// stopped prints it.
+	Summary(c Cluster, read ReadVersions) []string
 }
+
+// ReadVersions reads, through Versions, the versions the nodes named run, or with nil those of
+// every node chalkctl knows of, as of a cluster without an inventory. A node whose image does not
+// have the layer is left out; one chalkctl cannot reach is given with the error, and the layer
+// decides whether it matters.
+type ReadVersions func(names []string) []NodeVersions
 
 // NodeVersions are the versions a node runs, as a Rollout layer's Versions read them.
 type NodeVersions struct {

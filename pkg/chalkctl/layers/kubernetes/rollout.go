@@ -102,9 +102,13 @@ func apiServerIn(docs []config.Document) (imageref.Version, bool, error) {
 }
 
 // Changes says how the inventory's config changes the version of the API server the node's
-// running config names, patch releases included. A node whose running config names none, as one
-// that is no part of a cluster yet, runs no API server the delivery changes.
+// running config names, patch releases included. A node without a Node document is no part of
+// the cluster, and a node whose running config names no API server, as one that joins the
+// cluster, runs none the delivery changes.
 func (p *Plugin) Changes(c layer.Cluster, name string, running []config.Document) (string, error) {
+	if kind, err := kindOf(c, name); err != nil || kind == "" {
+		return "", err
+	}
 	next, ok, err := apiServerOf(c, name)
 	if err != nil || !ok {
 		return "", err
@@ -181,8 +185,12 @@ func kubelet(v versions) imageref.Version   { return v.kubelet }
 //   - no kubelet is newer than the API server, nor more than three minors older;
 //   - every node of the run gets the same API server, and a node that is no control plane only
 //     once every control plane runs it.
-func (p *Plugin) CheckConfig(u layer.Upgrading, c layer.Cluster, named []string, all []layer.NodeVersions) error {
-	r, err := runningOf(c, all, "")
+func (p *Plugin) CheckConfig(u layer.Upgrading, c layer.Cluster, named []string, read layer.ReadVersions) error {
+	nodes, err := members(c)
+	if err != nil {
+		return err
+	}
+	r, err := runningOf(c, read(nodes), "")
 	if err != nil {
 		return err
 	}
@@ -247,18 +255,20 @@ func (p *Plugin) CheckConfig(u layer.Upgrading, c layer.Cluster, named []string,
 }
 
 // CheckImages refuses an image whose kubelet would be newer than the oldest API server the
-// cluster's control planes run, minor releases compared.
-func (p *Plugin) CheckImages(c layer.Cluster, images map[string][]*anypb.Any, all []layer.NodeVersions) error {
-	r, err := runningOf(c, all, k8s.KindControlPlane)
-	if err != nil {
-		return err
-	}
-	oldest := r.extreme(k8s.KindControlPlane, apiServer, false)
-	if oldest == "" {
-		return nil
-	}
-	api := r[oldest].apiServer
+// cluster's control planes run, minor releases compared. Only the images of the cluster's nodes
+// that carry a kubelet are checked, against the control planes alone: an upgrade of nodes outside
+// the cluster reaches none of its nodes.
+func (p *Plugin) CheckImages(c layer.Cluster, images map[string][]*anypb.Any, read layer.ReadVersions) error {
+	kubelets := map[string]imageref.Version{}
 	for _, name := range slices.Sorted(maps.Keys(images)) {
+		kind, err := kindOf(c, name)
+		if err != nil {
+			return err
+		}
+		// Without an inventory no node's kind is known, so every image is checked.
+		if kind == "" && !c.Partial() {
+			continue
+		}
 		for _, f := range images[name] {
 			img, ok, err := k8s.ImageOfPayload(f)
 			if !ok {
@@ -267,16 +277,57 @@ func (p *Plugin) CheckImages(c layer.Cluster, images map[string][]*anypb.Any, al
 			if err != nil {
 				return fmt.Errorf("%s: the image's image.json: %w", name, err)
 			}
-			v, err := imageref.ParseVersion(img.Version)
-			if err != nil {
+			if kubelets[name], err = imageref.ParseVersion(img.Version); err != nil {
 				return fmt.Errorf("%s: the image's kubelet: %w", name, err)
-			}
-			if v.Major != api.Major || v.Minors(api) > 0 {
-				return fmt.Errorf("%s: the image's kubelet %s would be newer than the API server %s that %s runs, the oldest of the cluster; upgrade the control plane first: name the new release's images in the Cluster document and deliver it with chalkctl apply-config", name, v.Release(), api.Release(), oldest)
 			}
 		}
 	}
+	if len(kubelets) == 0 {
+		return nil
+	}
+	var controlPlanes []string
+	if !c.Partial() {
+		names, err := nodesOf(c, k8s.KindControlPlane, "")
+		if err != nil || len(names) == 0 {
+			return err
+		}
+		controlPlanes = names
+	}
+	r, err := runningOf(c, read(controlPlanes), k8s.KindControlPlane)
+	if err != nil {
+		return err
+	}
+	oldest := r.extreme(k8s.KindControlPlane, apiServer, false)
+	if oldest == "" {
+		return nil
+	}
+	api := r[oldest].apiServer
+	for _, name := range slices.Sorted(maps.Keys(kubelets)) {
+		if v := kubelets[name]; v.Major != api.Major || v.Minors(api) > 0 {
+			return fmt.Errorf("%s: the image's kubelet %s would be newer than the API server %s that %s runs, the oldest of the cluster; upgrade the control plane first: name the new release's images in the Cluster document and deliver it with chalkctl apply-config", name, v.Release(), api.Release(), oldest)
+		}
+	}
 	return nil
+}
+
+// members are the nodes of the inventory with a Node document, whose versions the checks read;
+// nil, which reads every node chalkctl knows of, for a cluster without an inventory, whose nodes'
+// kinds are known only from what they run.
+func members(c layer.Cluster) ([]string, error) {
+	if c.Partial() {
+		return nil, nil
+	}
+	names := []string{}
+	for _, name := range c.NodeNames() {
+		kind, err := kindOf(c, name)
+		if err != nil {
+			return nil, err
+		}
+		if kind != "" {
+			names = append(names, name)
+		}
+	}
+	return names, nil
 }
 
 // BeforeDelivery waits for etcd to keep its quorum while a control plane's API server restarts.
@@ -312,10 +363,14 @@ func deliveredOf(k *kubernetesv1.StatusResponse) error {
 	return nil
 }
 
-// Summary groups the nodes by the API server their running config names.
-func (p *Plugin) Summary(all []layer.NodeVersions) []string {
+// Summary groups the cluster's nodes by the API server their running config names.
+func (p *Plugin) Summary(c layer.Cluster, read layer.ReadVersions) []string {
+	nodes, err := members(c)
+	if err != nil {
+		return []string{"the cluster's nodes: " + err.Error()}
+	}
 	by := map[string][]string{}
-	for _, n := range all {
+	for _, n := range read(nodes) {
 		key := "unknown"
 		if v, ok := n.Versions.(versions); ok && n.Err == nil {
 			key = v.apiServer.String()
