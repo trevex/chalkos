@@ -331,6 +331,17 @@ alike: `stagedEntry` in `pkg/chalkd/staged.go` finds the active entry or else th
 of installed images use it. The known-good image a rollback stages keeps the config it last ran,
 and that image is always active.
 
+A config slot is written only once the image that boots it checked the config. A plain
+`ApplyConfig` therefore goes to the staged image too: `planSecond` in `pkg/chalkd/staged.go` has
+that image's checker (`planSlot`, `checkWithImage`) check the config against the storage the
+running image's delivery records, after `planDelivery` checked it for the running image and before
+`commit` changes anything; `secondWrite.write` writes the staged slot once `commit` succeeded. On
+a node without a staged image it replaces the pending config instead. A trial holds both back:
+`holdBack` keeps the checked slot at `/state/chalkd/trial-staged`, the trial's record names it,
+and `ConfirmConfig` writes it; every other end of the trial removes the copy with the record. An
+image's checker compares with the running slot's delivered documents and fills in its own
+defaults (`check.Defaulted`), as chalkctl's `checkRules` does.
+
 chalkctl runs the steps through the same calls. `pkg/chalkctl/upgrade.go` stages each node's
 image with `stage_only`, then hands the node to the reboot step in `pkg/chalkctl/reboot.go`, which
 holds the node through its layers, activates the image, reboots the node, waits for a new boot ID

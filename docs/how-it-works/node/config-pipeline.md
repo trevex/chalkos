@@ -108,12 +108,14 @@ output.
 ## An image that does not run checks its own config
 
 A staged image's validators and renderers live in its own store. Before an upgrade writes the
-image's config slot, and for `chalkctl apply-config --staged`, the node mounts that store
-read-only and runs the image's own `chalkd check` in a transient unit, `chalkos-check.service`,
-with the image's store in place of its own. The checker runs every check of a delivery against
-the image's schemas, rules, validators and renderers. A refusal refuses the upgrade or the
-delivery before the image's config slot is written. The image renders its outputs again at its
-first boot, from the same documents.
+image's config slot, and for every `chalkctl apply-config` while an image is staged, with or
+without `--staged`, the node mounts that store read-only and runs the image's own `chalkd check`
+in a transient unit, `chalkos-check.service`, with the image's store in place of its own. The
+checker runs every check of a delivery against the image's schemas, rules, validators and
+renderers. Its rules compare the config with the running slot's documents as they were
+delivered, with the image's own defaults filled in. A refusal refuses the upgrade or the delivery
+before the image's config slot is written. The image renders its outputs again at its first boot,
+from the same documents.
 
 The checker gets the documents with their Secret values hashed, as renderers always do, and
 asks the running chalkd for the facts its rules read. chalkd loads the facts the image

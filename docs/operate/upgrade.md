@@ -213,9 +213,11 @@ w1: uncordoned
   minute. A check that fails once, such as an etcd health check that answered late, does not
   stop it, and a healthy look starts the minute over.
 
-Staging another image replaces a staged one. `apply-config --staged` delivers config to a staged
-image as to an active one, as
-[Deliver config to a staged image](change-config.md#deliver-config-to-a-staged-image) describes.
+Staging another image replaces a staged one. Between the steps, `chalkctl apply-config <node>`
+delivers config to the running image and to the staged one, and both images check it before the
+node changes anything. `apply-config --staged` delivers config to the staged image alone, staged or
+active, as [Deliver config to a staged image](change-config.md#deliver-config-to-a-staged-image)
+describes.
 
 ## Control planes go first, then the other nodes in batches
 
@@ -284,9 +286,10 @@ Without an inventory, chalkctl has no config to send. An upgrade with `--image` 
 for each node.
 
 A node can hold a pending config, which `chalkctl apply-config --staged` stores on a node without
-a staged image. An upgrade that sends no config gives the new image the pending config in place of
-the running one, and an upgrade that delivers config replaces it. The node removes the pending
-config once it staged the new image. The run then prints
+a staged image and every later `apply-config` to the running image replaces. An upgrade that
+sends no config gives the new image the pending config in place of the running one, and an
+upgrade that delivers config replaces it. The node removes the pending config once it staged the
+new image. The run then prints
 `<node>: the image took the pending config <version>, which it checked first` or
 `<node>: the inventory's config replaced the pending config <version>` after the line of the
 install. An upgrade that fails before that, such as one whose image refuses the pending config,
@@ -297,10 +300,13 @@ the node runs already. The run then prints
 [Prepare config for the next upgrade](change-config.md#prepare-config-for-the-next-upgrade)
 describes how to hold config pending.
 
-An image the run leaves staged or active, with `--until stage` or `--until activate`, keeps its
-own config until the node boots it.
-[Deliver config to a staged image](change-config.md#deliver-config-to-a-staged-image) changes that
-config.
+An image the run leaves staged or active, with `--until stage` or `--until activate`, boots with
+the config the upgrade gave it, unless a later `apply-config` changes it, as
+[Deliver config to a staged image](change-config.md#deliver-config-to-a-staged-image) describes.
+
+The new image's checker compares the config with the running image's config as it was delivered,
+and fills in its own defaults. A default that changed between the images therefore counts as the
+new image's default on both sides, and a rule that keeps a field's value sees no change.
 
 ## Check that it worked
 

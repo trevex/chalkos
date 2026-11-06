@@ -125,7 +125,9 @@ its pending config, when it holds one, or else carries the documents of the runn
 over, checked against the new image the same way.
 
 The pending config is the set that `chalkctl apply-config --staged` stores in
-`/state/config/pending` on a node without a staged image. chalkd only parses it there; the image
+`/state/config/pending` on a node without a staged image. Every later `apply-config` to the
+running image replaces it with the config the running image applied, so the next upgrade boots the
+config delivered last. chalkd only parses it there; the image
 an upgrade installs checks it as it checks any config. chalkd removes the pending config once the
 upgrade staged that image, and activated it unless the upgrade stops at staging, whether the image
 got it or the upgrade carried config of its own. An upgrade that fails before, in the image's
@@ -222,9 +224,10 @@ upgrade` and `chalkctl node activate` call.
    carries, or without one the node's pending config, or without that the running slot's
    documents, as it checks a delivery once it runs: the set rules, each document's schema, the
    cluster it gives on an image with Kubernetes, the image's change rules against the running
-   slot's config, the storage STATE records and the facts the image declares, and every output's
-   renderer and check. The checker never sees a Secret's value. chalkd then makes the storage
-   changes the image's rules accept, such as a new volume, and writes the image's config slot
+   slot's documents as they were delivered, with the image's own defaults filled in, the storage
+   STATE records and the facts the image declares, and every output's renderer and check. The
+   checker never sees a Secret's value. chalkd then makes the storage changes the image's rules
+   accept, such as a new volume, and writes the image's config slot
    `/state/config/<root-hash>`, with the image's defaults and the delivered Secret values. An
    image without `chalkd check`, built before it existed, is refused. When the check refuses,
    chalkd answers with the reason, removes the UKI and leaves the slot retired. The running image

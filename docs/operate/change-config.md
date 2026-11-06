@@ -207,16 +207,46 @@ them.
 ## Deliver config to a staged image
 
 Each image on a node keeps its own config. After `chalkctl upgrade --until stage` or
-`--until activate`, the image in the node's inactive slot, staged or active, has its own config
-until the node reboots into it. `--staged` delivers to that image, in either state:
+`--until activate`, the image in the node's inactive slot, staged or active, boots with config it
+checked itself. A plain `apply-config` delivers to that image too:
+
+```console
+$ chalkctl apply-config w1 --secrets secrets.age
+w1: config 1 added, 0 removed, 0 changed
+w1 runs config <version>
+w1 boots config <version> with its staged image too
+```
+
+The running image checks the config as it checks every delivery. The staged image checks it as
+well, with its own chalkd, schemas, rules and renderers, against the storage the node has once
+the running image applied the config. The node changes nothing until both checks pass. A refusal
+by the staged image starts with `the image <hash> staged in the inactive slot:`. Once the running
+image applied the config, the node writes the staged image's config. A volume the config adds is
+created once and serves both images.
+
+When the node cannot write the staged image's config after the running image applied it, the
+command fails with
+`the node runs config <version>, but writing the config slot of the image <hash> staged in the inactive slot failed, so it keeps config <version>: ...`.
+The staged image keeps its earlier config. Run the command again to write it.
+
+`--dry-run` has both images check the config. Its plan ends with the staged image's config:
+`w1: staged image's config <previous-version> → <version>`. With `--try`, the staged image checks
+the config before the trial begins, and the node writes the staged image's config only once the
+trial is confirmed. A trial that rolls back leaves it as it was.
+
+After a rollback from a boot that was not found healthy, the image in the inactive slot is the
+node's known-good image. It keeps the config it last ran, and the delivery warns:
+`the image <hash> staged to boot next is the one the node falls back to while the boot of <entry> is not found healthy; its config stays as it last ran`.
+
+`--staged` delivers to the staged image alone, in either state:
 
 ```sh
 chalkctl apply-config w1 --staged --secrets secrets.age
 ```
 
 chalkctl checks the files against the node's image in the inventory. The staged image then checks
-them itself, with its own chalkd, schemas, rules and renderers, before the node keeps them.
-Nothing restarts. The command ends with `w1 boots config <version> with its staged image`.
+them itself before the node keeps them. Nothing restarts. The command ends with
+`w1 boots config <version> with its staged image`.
 
 `--dry-run` with `--staged` has the staged image check the config and keeps nothing:
 
@@ -230,13 +260,6 @@ w1: staged image's config <previous-version> → <version>
 
 The plan has no outputs and no effects: the staged image renders its outputs and takes its
 effects when it boots.
-
-Without `--staged`, the command changes the running image's config alone and warns:
-`w1 has a staged image with its own config (version <version>); apply-config --staged updates it`.
-
-A change to the running image that adds a volume the staged image's config lacks is refused.
-Once the volume exists, the staged image's config would count as removing it. Deliver the change
-with `--staged` first, which creates the volume, then without.
 
 ## Prepare config for the next upgrade
 
@@ -266,9 +289,19 @@ The node stores a pending config without the fallback secret. A pending config t
 encrypted volume therefore needs an upgrade that carries the config from the inventory, which
 sends the secret along.
 
-A pending config leaves the running image alone. `apply-config` without `--staged` still delivers
-to the running image, and warns:
-`w1 holds config <version> pending for its next upgrade, which takes it in place of the running config; apply-config --staged --discard w1 drops it`.
+`apply-config` without `--staged` delivers to the running image and, once the running image
+applied the config, replaces the pending config with it, unchecked. The next upgrade then boots
+the config delivered last:
+
+```console
+$ chalkctl apply-config w1 --secrets secrets.age
+w1: config 1 added, 0 removed, 0 changed
+w1 runs config <version>
+w1 holds config <version> pending, unchecked, in place of its pending config; the next upgrade checks it against its image
+```
+
+`--dry-run` names the pending config it would store, and a trial replaces the pending config only
+once it is confirmed. A later `--staged` holds config for the next image alone again.
 
 `--dry-run` with `--staged` reports that the node would hold the config pending, and stores
 nothing. `--staged --discard` removes the pending config and needs no inventory:

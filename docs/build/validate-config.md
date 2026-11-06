@@ -156,8 +156,9 @@ chalkctl logs cp1 --unit=chalkd.service
 chalkctl logs cp1 --unit=chalkos-render-<n>.service
 ```
 
-`chalkctl apply-config --staged` and `chalkctl upgrade` run the validators of the image the
-config is for, from that image's store, in `chalkos-check.service`.
+`chalkctl apply-config` while an image is staged, with or without `--staged`, and
+`chalkctl upgrade` run the validators of the image the config is for, from that image's store, in
+`chalkos-check.service`.
 
 ## The validator runs in a sandbox
 

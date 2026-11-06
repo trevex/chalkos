@@ -215,9 +215,9 @@ A fact is a file or a command:
   reads the fallback secret delivered with the config. No other command reads it.
 
 chalkd loads a fact when a rule first reads it, and keeps it for the rest of the delivery. A file
-is read once. A command runs once for each config it reads: a storage change of the running
-image's config also checks the staged image's slot, and gives the command that slot's config to
-read. A rule that does not reach a fact, such as one whose first operand of `||` holds, loads
+is read once. A command runs once for each config it reads: a delivery while an image is staged
+runs the command once for the running image's check and once for the staged image's. A rule that
+does not reach a fact, such as one whose first operand of `||` holds, loads
 none. A fact is read by its name alone: `facts["rackSurvey"]`, `has(facts.rackSurvey)` or `facts`
 by itself fails the build.
 
@@ -241,8 +241,8 @@ chalkd evaluates every rule, with its facts, each time it writes a config slot a
 changes anything:
 
 - `chalkctl apply-config` for the running image, with the running image's rules;
-- `chalkctl apply-config --staged` and upgrades, with the rules of the image the slot is for,
-  which that image's own chalkd evaluates;
+- `chalkctl apply-config` while an image is staged, `chalkctl apply-config --staged` and upgrades,
+  with the rules of the image the slot is for, which that image's own chalkd evaluates;
 - `chalkctl install`, with the rules of the image it installs.
 
 An image checks config for itself before it boots: the node runs the image's `chalkd check`
@@ -357,9 +357,9 @@ leads to under that name, so `lsmod` would run as `kmod`.
 
 ## Rules compare with the running config alone
 
-- Rules compare the config with the running image's config. The one check that reads another
-  slot is a storage change of the running image's config, which also evaluates the storage rules
-  against the staged image's slot.
+- Rules compare the config with the running image's config. An image that does not run compares
+  with that config as it was delivered, with its own defaults filled in. No rule reads the slot
+  of another image.
 - A command fact runs with the running image's program, so a fact that a newer image adds is null
   until that image runs.
 

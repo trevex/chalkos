@@ -114,10 +114,9 @@ restarted, as `restarted <unit>`, and then the config the node runs, as `cp1 run
 Reloaded units are not listed.
 
 After an upgrade with `--until stage` or `--until activate`, the image in the node's inactive slot
-keeps a config of its own, staged or active.
-`chalkctl apply-config --staged` delivers to that image instead of the running one.
-`chalkctl apply-config --staged --dry-run` has the staged image check the config and changes
-nothing.
+keeps a config of its own, staged or active. `chalkctl apply-config` delivers to that image as
+well as to the running one, once both checked the config, and `chalkctl apply-config --staged`
+delivers to that image alone. With `--dry-run`, both check the config and nothing changes.
 
 Config for an image that is not installed yet can wait on the node. Without a staged image,
 `chalkctl apply-config --staged` holds the config pending, and the next upgrade gives it to the
