@@ -94,6 +94,11 @@ output that passes. The outputs render for the node's name, the subject of its n
 STATE. A node certificate that cannot be read fails `chalkos-config.service` before any output
 renders.
 
+The renderers assume documents that the image's validators passed, and an install from the
+installer writes the slot without running them. So the boot runs the validators first, every
+time. If a validator refuses the config or fails, no output renders and `chalkos-config.service`
+fails.
+
 A renderer or check that fails fails `chalkos-config.service` once the rest of the config is
 applied, and so fails the boot's [health check](boot-and-rollback.md). A boot that the boot loader
 counts then falls back to the previous image and its config. A boot that was blessed already comes
@@ -122,7 +127,7 @@ An install in place runs the running image's validators, and renders and checks 
 its renderers, before it installs anything, and the boot that follows renders them again. An
 install from the installer checks the config with the installed image's schemas and rules,
 evaluated by the installer's chalkd, but cannot run that image's programs. That image renders its
-outputs at its first boot alone, and runs its validators first at the next delivery.
+outputs at its first boot alone, and runs its validators there first.
 
 ## Limits
 

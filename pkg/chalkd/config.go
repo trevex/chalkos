@@ -130,8 +130,8 @@ func (s *Server) installConfig(ctx context.Context, h *nodev1.InstallHeader, con
 	}
 	// In place, the running image's validators and renderers check the config before the install
 	// changes anything; the node renders the outputs again at the boot that follows. The installer
-	// cannot run the installed image's programs, so that image renders its outputs at its first
-	// boot alone, and its validators first run at the next delivery.
+	// cannot run the installed image's programs, so that image runs its validators and renders its
+	// outputs at its first boot alone.
 	if !s.Installer {
 		if err := s.checkValidators(ctx, stored.Documents); err != nil {
 			return slot.Stored{}, err

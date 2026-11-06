@@ -14,7 +14,8 @@
 // the node's journal alone.
 //
 // chalkd runs the validators after the change rules and before the renderers, in a delivery, its
-// dry run, an install in place and the image's check of its own config. chalkctl runs the
+// dry run, an install in place and the image's check of its own config, and at boot before it
+// renders the outputs, as an installer writes a slot without running them. chalkctl runs the
 // validators it links, Funcs that read the same JSON, in-process when it checks a node's config.
 package validators
 

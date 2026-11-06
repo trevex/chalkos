@@ -334,3 +334,29 @@ func TestLoadFailsWithoutTheNodesName(t *testing.T) {
 		t.Errorf("rendered without the node's name: %v", err)
 	}
 }
+
+// A boot runs the image's validators before it renders, since an installer writes the slot
+// without running them and the renderers assume documents they passed: a refusal fails the load
+// and renders nothing.
+func TestLoadFailsForARefusingValidator(t *testing.T) {
+	l := outputLoader(t, `cat > "$OUT/demo.json"`)
+	script := filepath.Join(t.TempDir(), "validate")
+	write(t, script, `#!/bin/sh
+echo '{"refusals": [{"kind": "Demo", "name": "one", "path": "spec.name", "message": "the name is vetoed"}]}'
+`)
+	if err := os.Chmod(script, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	l.Validators = filepath.Join(filepath.Dir(l.Outputs), "validators.json")
+	write(t, l.Validators, `{"demo": {"inputs": ["Demo"], "program": "`+script+`"}}`)
+	err := l.Load()
+	if err == nil || !strings.Contains(err.Error(), "render no output: the config is refused: Demo/one: spec.name: the name is vetoed") {
+		t.Fatalf("err = %v, want the refusal", err)
+	}
+	if _, err := os.Stat(filepath.Join(l.RunDir, "outputs", "demo")); !os.IsNotExist(err) {
+		t.Errorf("rendered a config the validators refuse: %v", err)
+	}
+	if got := read(t, filepath.Join(l.RunDir, "node.json")); got != nodeIdentity {
+		t.Errorf("node.json = %s, want the identity applied all the same", got)
+	}
+}
