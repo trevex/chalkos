@@ -1,6 +1,9 @@
-# Container images the Kubernetes e2e test serves from its registry, fetched by digest (amd64),
-# so the test runs without network access. images.json maps each reference, as the cluster's
-# nodes pull it, to its docker archive.
+# Container images the Kubernetes e2e test serves from its registry, fetched by the digest of their
+# amd64 manifest, so the test runs without network access. Each is an OCI layout that keeps the
+# manifest as the registry served it, so the test's registry serves it under the same digest and
+# the nodes pull the cluster's pinned references through the Mirror. images.json maps each
+# reference, as the e2e clusters name it, to its layout: <name>:<tag>@<digest>, and the workload's
+# busybox, which the test pulls by its tag, <name>:<tag>.
 { pkgs }:
 let
   images = [
@@ -8,81 +11,94 @@ let
       name = "registry.k8s.io/kube-apiserver";
       tag = "v1.37.1";
       digest = "sha256:1f207ab66b1ca6579dd5bf1024396015ca2a0f638157a7741d2d88d7b3c82c51";
-      hash = "sha256-tzJA1MLwCqPrF32pAmBSB5IeF/EPNa2eHeiahAUi/Bg=";
+      hash = "sha256-rZRfBVVZTdOpxeQEQN1vBPDscA3rahE0PLSrSc6IpyY=";
     }
     {
       name = "registry.k8s.io/kube-controller-manager";
       tag = "v1.37.1";
       digest = "sha256:24366808a9bf9dfefb3aa171f0fadac61a1dde50a43e578c42eb3d8785cb606e";
-      hash = "sha256-u3hHE0lS7IsHR8z/RkWaJirBFlGP5ZbycpVX+YV9fs8=";
+      hash = "sha256-BhV6Tm4Mxw8Bj14uOPl74GocAhsuxINEXNXqg6AAIvM=";
     }
     {
       name = "registry.k8s.io/kube-scheduler";
       tag = "v1.37.1";
       digest = "sha256:e4fc6f552722518aaa7d6cddbb8b638df275a5adbc5d1e5d59276af52692fb2c";
-      hash = "sha256-FDQHWEJGHlk1YFRfnTKFyFQ7xZri5Q4mlqYqQjeJGOw=";
+      hash = "sha256-x2AjDmpK96WZhdXFKJIGsAhb39rkIaG1S7jytfnSyRk=";
     }
     {
       name = "registry.k8s.io/kube-proxy";
       tag = "v1.37.1";
       digest = "sha256:abbadc84931b520750bcda3350819f6a828ee44a4a0cab548a26016aa7e2a3b7";
-      hash = "sha256-L4wbY0C1/K4Zpm2HDC60w1o3GtTfDDXAtSrbwqTbVuM=";
+      hash = "sha256-yLZYcp1xzQcK8GcgKwmMS6Pe9od6agB92FrFGY5sbEw=";
     }
     {
       name = "registry.k8s.io/etcd";
       tag = "3.7.0-0";
       digest = "sha256:1f445fa5dd06b08f3c0cf9f46e2891e9bc66cbf7e0b9c66627c40658edf4bc98";
-      hash = "sha256-/6xqVktC/lxw113eZgmVIdbChWWLAuEsnUp5uLwhQgk=";
+      hash = "sha256-tG4zthATurU3VG3sHsP8Qqy28IiC9xyUTZDPEUsbBxg=";
     }
     {
       name = "registry.k8s.io/pause";
       tag = "3.10.2";
       digest = "sha256:412c4a7219cb8a299a37337f3d87810c5340095322e15594a1637785adad0f17";
-      hash = "sha256-cUFZbZrduX9FQBtrZnceMqXtK0qgRwFqySZT2YlPOJs=";
+      hash = "sha256-kdG69gjzO6xVZ/y7Wng+7WVsd53NGmGP0cnk/YzqXKQ=";
     }
     {
       name = "registry.k8s.io/coredns/coredns";
       tag = "v1.14.6";
       digest = "sha256:1ba6f47265602e2e50a9c4669e3a955e4298a0d30dc82f39293d4bf1a851e0ff";
-      hash = "sha256-FBp3wbQ9tkw9nf5w1tgs6ysx8UBBHaHxUHL7TJYK9L0=";
+      hash = "sha256-N7ldnSunxZQVg/wa0+BrXnwlDlRIxYzihJ7V/tfiVfE=";
     }
     {
       name = "ghcr.io/flannel-io/flannel";
       tag = "v0.28.9";
       digest = "sha256:d666a036197fe6c8928f82b670d89f38f5830d25e70bfcc35641da06f03cfcad";
-      hash = "sha256-sYSH1GsSHSlCpbmT2/0/fti1F5jCb9rU4FbehSDvtYQ=";
+      hash = "sha256-a6xcrSbXIGFiN2gXKUNV+xZBi3Ni21GJXQ6EWXZ13n4=";
     }
-    # The test's workload.
+    # The test's workload, which it pulls by its tag.
     {
       name = "docker.io/library/busybox";
       tag = "1.37.0";
       digest = "sha256:66a6306db78bf2dbf3487f293aa8d6990d8e506fdffab9cc43fe422becf886e4";
-      hash = "sha256-98/1k//BY97IullBA0SWUTAsMhNoD264phJa5wqiBzE=";
+      hash = "sha256-gOaQi+gohzffDp7A6ScEbPqzFXEKlao2C1M+eKm+sPI=";
+      pinned = false;
     }
   ];
-  archive =
+  # The image as an OCI layout of the amd64 manifest alone, copied with the manifest's bytes kept.
+  layout =
     image:
-    pkgs.dockerTools.pullImage {
-      imageName = image.name;
-      imageDigest = image.digest;
-      finalImageTag = image.tag;
-      inherit (image) hash;
-    };
+    pkgs.runCommand "${baseNameOf image.name}-${image.tag}-oci"
+      {
+        nativeBuildInputs = [ pkgs.skopeo ];
+        outputHashMode = "recursive";
+        outputHashAlgo = "sha256";
+        outputHash = image.hash;
+        SSL_CERT_FILE = "${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt";
+        impureEnvVars = pkgs.lib.fetchers.proxyImpureEnvVars;
+      }
+      ''
+        export HOME=$TMPDIR
+        skopeo --insecure-policy --override-os linux --override-arch amd64 copy --preserve-digests \
+          docker://${image.name}@${image.digest} oci:$out:${image.tag}
+      '';
   # The Kubernetes components the e2e clusters name, whose tags follow the kubelet of the test
   # images: nixpkgs's Kubernetes release.
-  stale = builtins.filter (
-    image:
-    pkgs.lib.hasPrefix "registry.k8s.io/kube-" image.name && image.tag != "v${pkgs.kubernetes.version}"
-  ) images;
+  stale = map (image: "${image.name}:${image.tag}") (
+    builtins.filter (
+      image:
+      pkgs.lib.hasPrefix "registry.k8s.io/kube-" image.name && image.tag != "v${pkgs.kubernetes.version}"
+    ) images
+  );
 in
 assert pkgs.lib.assertMsg (stale == [ ])
-  "nix/testing/kubernetes-images.nix pins ${toString (map (image: "${image.name}:${image.tag}") stale)}, but the test images' kubelet is ${pkgs.kubernetes.version}";
+  "nix/testing/kubernetes-images.nix pins ${toString stale}, but the test images' kubelet is ${pkgs.kubernetes.version}";
 pkgs.writeTextDir "images.json" (
   builtins.toJSON (
     builtins.listToAttrs (
       map (image: {
-        name = "${image.name}:${image.tag}";
-        value = archive image;
+        name =
+          "${image.name}:${image.tag}" + pkgs.lib.optionalString (image.pinned or true) "@${image.digest}";
+        value = layout image;
       }) images
     )
   )

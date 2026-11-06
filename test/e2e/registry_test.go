@@ -17,8 +17,8 @@ import (
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/google/go-containerregistry/pkg/registry"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
+	"github.com/google/go-containerregistry/pkg/v1/layout"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
-	"github.com/google/go-containerregistry/pkg/v1/tarball"
 )
 
 // The private repository of startRegistry's registry, which answers only the user e2e with
@@ -33,7 +33,7 @@ const (
 // startRegistry serves the images CHALKLAB_K8S_IMAGES lists from memory, and busybox again as
 // privateRepo, which asks for credentials, and returns the host address it listens on. Each
 // image is served under its repository without the registry's host, as containerd asks a mirror
-// for it.
+// for it, and under the digest of the manifest upstream serves, which a pinned reference names.
 func startRegistry(t *testing.T) string {
 	t.Helper()
 	data, err := os.ReadFile(os.Getenv("CHALKLAB_K8S_IMAGES"))
@@ -56,39 +56,55 @@ func startRegistry(t *testing.T) string {
 	}))
 	t.Cleanup(srv.Close)
 	host := strings.TrimPrefix(srv.URL, "http://")
-	for ref, archive := range images {
-		tag, err := name.NewTag(ref)
+	for ref, dir := range images {
+		tagged, digest, _ := strings.Cut(ref, "@")
+		tag, err := name.NewTag(tagged)
 		if err != nil {
 			t.Fatal(err)
 		}
-		img, err := tarball.ImageFromPath(archive, nil)
-		if err != nil {
-			t.Fatalf("%s: %v", archive, err)
-		}
-		dst, err := name.NewTag(host+"/"+tag.RepositoryStr()+":"+tag.TagStr(), name.Insecure)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if err := remote.Write(dst, img); err != nil {
-			t.Fatalf("push %s: %v", ref, err)
-		}
+		pushLayout(t, dir, host+"/"+tag.RepositoryStr()+":"+tag.TagStr(), digest)
 	}
 	busybox, ok := images["docker.io/library/busybox:1.37.0"]
 	if !ok {
 		t.Fatal("CHALKLAB_K8S_IMAGES holds no busybox, which the private repository serves")
 	}
-	img, err := tarball.ImageFromPath(busybox, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	dst, err := name.NewTag(host+"/"+privateRepo+":1.37.0", name.Insecure)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := remote.Write(dst, img, remote.WithAuth(&authn.Basic{Username: "e2e", Password: privatePassword})); err != nil {
-		t.Fatalf("push %s: %v", privateRepo, err)
-	}
+	pushLayout(t, busybox, host+"/"+privateRepo+":1.37.0", "", remote.WithAuth(&authn.Basic{Username: "e2e", Password: privatePassword}))
 	return host
+}
+
+// pushLayout pushes the one image of the OCI layout dir to ref with its manifest's bytes, and
+// fails the test unless its digest is the digest given, when one is.
+func pushLayout(t *testing.T, dir, ref, digest string, options ...remote.Option) {
+	t.Helper()
+	index, err := layout.ImageIndexFromPath(dir)
+	if err != nil {
+		t.Fatalf("%s: %v", dir, err)
+	}
+	manifest, err := index.IndexManifest()
+	if err != nil {
+		t.Fatalf("%s: %v", dir, err)
+	}
+	if len(manifest.Manifests) != 1 {
+		t.Fatalf("%s holds %d images, want one", dir, len(manifest.Manifests))
+	}
+	img, err := index.Image(manifest.Manifests[0].Digest)
+	if err != nil {
+		t.Fatalf("%s: %v", dir, err)
+	}
+	dst, err := name.NewTag(ref, name.Insecure)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := remote.Write(dst, img, options...); err != nil {
+		t.Fatalf("push %s: %v", ref, err)
+	}
+	got, err := img.Digest()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if digest != "" && got.String() != digest {
+		t.Fatalf("%s pushed as %s, but its pinned reference names %s", dir, got, digest)
+	}
 }
 
 // unauthorized answers a request that lacks the right credentials as a registry with Basic

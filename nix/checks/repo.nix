@@ -238,7 +238,7 @@ in
     src = ../../test/fixtures/clusters;
     images = fixtureImages;
     # Every inventory of every cluster; the clusters' other files at the top, such as lab files,
-    # are no inventories.
+    # are no inventories. Every image the clusters name is one the e2e tests' registry serves.
     command = ''
       inventories=$(grep -l '^kind: Inventory$' */*.yaml)
       test -n "$inventories"
@@ -257,6 +257,13 @@ in
           )}
           *) chalkctl validate --inventory "$inventory" ;;
         esac
+      done
+      # The images the clusters name are those the e2e tests' registry serves.
+      for ref in $(grep -rhoE '(registry\.k8s\.io|ghcr\.io)/[^ "]+' --include='*.yaml' . | sort -u); do
+        ${pkgs.jq}/bin/jq -e --arg r "$ref" 'has($r)' ${chalkPkgs.test-kubernetes-images}/images.json >/dev/null || {
+          echo "error: the fixtures name $ref, which nix/testing/kubernetes-images.nix does not serve" >&2
+          exit 1
+        }
       done
     '';
   };
