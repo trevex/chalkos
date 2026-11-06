@@ -2151,7 +2151,7 @@ func TestApplyConfigStaged(t *testing.T) {
 	if err := l.ta.run(context.Background(), []string{"status", "w1", "--inventory", l.inventory, "--address", l.addrs["w1"]}); err != nil {
 		t.Fatal(err)
 	}
-	for _, line := range []string{"config " + want + " (the inventory's)", "staged config " + versionOf("{}") + " (not the inventory's; chalkctl apply-config w1 delivers it)"} {
+	for _, line := range []string{"config " + want + " (the inventory's)", "staged config " + versionOf("{}") + " (not the inventory's; chalkctl apply-config --staged w1 delivers it)"} {
 		if !strings.Contains(l.ta.stdout.String(), line) {
 			t.Errorf("status lacks %q:\n%s", line, l.ta.stdout)
 		}

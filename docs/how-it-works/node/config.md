@@ -590,8 +590,10 @@ gives it, in two ways:
   which each `Secret` value is replaced by its own hash, and compares the result with the hash the
   node reports. A node that differs shows
   `not the inventory's; chalkctl apply-config <node> delivers it`. With an image staged, status
-  compares the staged slot's config the same way and shows the same advice when it differs:
-  `chalkctl apply-config <node>` writes the config slots of both images.
+  compares the staged slot's config the same way. When it differs, the advice names
+  `chalkctl apply-config <node>`, which writes the config slots of both images, or
+  `chalkctl apply-config --staged <node>` when the running slot holds the inventory's config
+  already. A rollback image that keeps the config it last ran gets no advice.
 - The image: chalkctl compares the root hash of the store the node booted with the root hash in
   the `metadata.json` of the directory of its image in the inventory. It names both when they
   differ, or says when the image is installed and waits for the node's next boot.

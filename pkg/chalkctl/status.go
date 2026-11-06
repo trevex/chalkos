@@ -58,7 +58,7 @@ func (a *app) status(ctx context.Context, n nodeFlags, pos []string) error {
 		fmt.Fprintf(a.stdout, "previous config %s (apply-config --rollback restores it)\n", s.PreviousConfigVersion)
 	}
 	if s.Boot.GetStaged() != nil {
-		fmt.Fprintf(a.stdout, "staged config %s (%s)\n", cmp.Or(s.StagedConfigVersion, "none"), t.cluster.configState(t.name, s.StagedConfigVersion))
+		fmt.Fprintf(a.stdout, "staged config %s (%s)\n", cmp.Or(s.StagedConfigVersion, "none"), t.cluster.stagedConfigState(t.name, s))
 	}
 	if p := s.PendingConfig; p != nil {
 		fmt.Fprintln(a.stdout, pendingLine(p))
@@ -250,9 +250,21 @@ func pendingLine(p *nodev1.PendingConfig) string {
 	return fmt.Sprintf("pending config %s (unchecked, since %s; the next upgrade checks it against its image)", p.GetVersion(), p.GetSince().AsTime().UTC().Format(time.RFC3339))
 }
 
-// configState says whether a slot of a node holds the config chalkctl delivers to it, the running
-// image's or the staged image's: a plain apply-config writes both.
+// configState says whether the running image's slot of a node holds the config chalkctl delivers
+// to it.
 func (c *cluster) configState(name, version string) string {
+	return c.slotState(name, version, func(string) string { return "chalkctl apply-config " + name + " delivers it" })
+}
+
+// stagedConfigState says whether the slot of the image the status s names as staged holds the
+// config chalkctl delivers to the node, as stagedAdvice advises.
+func (c *cluster) stagedConfigState(name string, s *nodev1.StatusResponse) string {
+	return c.slotState(name, s.StagedConfigVersion, func(want string) string { return stagedAdvice(name, want, s) })
+}
+
+// slotState says whether a slot of a node holds version, the config chalkctl delivers to it, and
+// when it does not, what advice says delivers it, given the inventory's version.
+func (c *cluster) slotState(name, version string, advice func(want string) string) string {
 	if c.partial() {
 		return "no inventory to compare it with"
 	}
@@ -261,9 +273,27 @@ func (c *cluster) configState(name, version string) string {
 	case err != nil:
 		return "cannot read the config the inventory gives it: " + err.Error()
 	case want != version:
-		return "not the inventory's; chalkctl apply-config " + name + " delivers it"
+		return "not the inventory's; " + advice(want)
 	}
 	return "the inventory's"
+}
+
+// stagedAdvice is what delivers want, the inventory's config, to the slot of the image the status
+// s names as staged, which holds other config. A plain apply-config writes both images' slots, but
+// not that of the known-good image a rollback from a boot not yet found healthy staged, which
+// keeps the config it last ran: the rollback staged the image, the boot loader counts the running
+// image's boot, which is not blessed, and nothing delivers the config to it until that boot is
+// found healthy. When the running image runs want already, only the staged slot differs, as after
+// a write of that slot that failed, and apply-config --staged writes it alone.
+func stagedAdvice(name, want string, s *nodev1.StatusResponse) string {
+	b := s.Boot
+	switch {
+	case b.GetStaged() != nil && b.GetStagedState() == nodev1.SlotState_SLOT_STATE_ACTIVE && !b.GetBlessed() && bytes.Equal(b.GetRollback().GetRootHash(), b.GetStaged().GetRootHash()):
+		return "the rollback image keeps the config it last ran while the boot of " + b.GetEntry() + " is not found healthy"
+	case s.ConfigVersion == want:
+		return "chalkctl apply-config --staged " + name + " delivers it"
+	}
+	return "chalkctl apply-config " + name + " delivers it"
 }
 
 // imageLine is the status line of a node whose store has another root hash than the image the

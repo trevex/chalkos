@@ -106,3 +106,32 @@ func TestBootLines(t *testing.T) {
 		}
 	}
 }
+
+// TestStagedAdvice advises the delivery that gives the staged image's slot the inventory's config:
+// a plain apply-config, which writes both slots, while the running image's differs too;
+// apply-config --staged while the running image runs the inventory's config already; and none for
+// the known-good image a rollback from a boot not found healthy staged, which keeps the config it
+// last ran.
+func TestStagedAdvice(t *testing.T) {
+	staged := &nodev1.BootImage{RootHash: []byte{3}}
+	status := func(config string, blessed bool, rollback *nodev1.BootImage) *nodev1.StatusResponse {
+		return &nodev1.StatusResponse{ConfigVersion: config, Boot: &nodev1.BootStatus{
+			Entry: "chalkos_4+1-2.efi", Blessed: blessed, Staged: staged, StagedState: nodev1.SlotState_SLOT_STATE_ACTIVE, Rollback: rollback,
+		}}
+	}
+	for name, tc := range map[string]struct {
+		s    *nodev1.StatusResponse
+		want string
+	}{
+		"running differs":       {status("old", true, nil), "chalkctl apply-config w1 delivers it"},
+		"running is the same":   {status("want", true, nil), "chalkctl apply-config --staged w1 delivers it"},
+		"blessed rollback":      {status("old", true, staged), "chalkctl apply-config w1 delivers it"},
+		"known-good image":      {status("want", false, staged), "the rollback image keeps the config it last ran while the boot of chalkos_4+1-2.efi is not found healthy"},
+		"upgrade, not blessed":  {status("old", false, nil), "chalkctl apply-config w1 delivers it"},
+		"rollback of the other": {status("want", false, &nodev1.BootImage{RootHash: []byte{2}}), "chalkctl apply-config --staged w1 delivers it"},
+	} {
+		if got := stagedAdvice("w1", "want", tc.s); got != tc.want {
+			t.Errorf("%s: %q, want %q", name, got, tc.want)
+		}
+	}
+}

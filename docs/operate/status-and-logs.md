@@ -75,8 +75,11 @@ parentheses say otherwise when they differ:
 
 `config none` is a node installed before config documents existed. A node with an image staged or
 active in its inactive slot adds `staged config <version> (...)`, the config that image boots
-with. Its parentheses name `chalkctl apply-config w1` when it differs, which writes the config
-slots of both images.
+with. When it differs, its parentheses name `chalkctl apply-config w1`, which writes the config
+slots of both images, or `chalkctl apply-config --staged w1` when the running image runs the
+inventory's config already. After a rollback from a boot that was not found healthy, the staged
+image is the rollback image, and the parentheses say that it keeps the config it last ran until
+the boot is found healthy.
 
 A node that holds config for its next upgrade adds
 `pending config <version> (unchecked, since <time>; the next upgrade checks it against its image)`.
