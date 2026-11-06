@@ -21,6 +21,21 @@ let
     "chalklab/router-twice.yaml" =
       "the config is refused: BGPPeer/fabric: spec.interfaces: BGPPeer again and BGPPeer fabric both name enp0s3 in the VRF default; give each session one peer";
   };
+  # chalkctl validate of a tree whose Cluster document pins every image: a reference with a tag
+  # and no digest fails the check, and so does an API server that no longer follows the kubelet
+  # of nixpkgs's Kubernetes release.
+  validatePinned = ''
+    chalkctl validate 2>warnings || { cat warnings >&2; exit 1; }
+    cat warnings >&2
+    if grep -q "names a tag but no digest" warnings; then
+      echo "error: the Cluster document names an image without a digest" >&2
+      exit 1
+    fi
+    grep -qF "kube-apiserver:v${pkgs.kubernetes.version}@sha256:" cluster/cluster.yaml || {
+      echo "error: cluster/cluster.yaml names no kube-apiserver:v${pkgs.kubernetes.version} by its digest, the kubelet's release" >&2
+      exit 1
+    }
+  '';
 in
 {
   go-unit = chalkPkgs.chalkctl.overrideAttrs (
@@ -102,9 +117,10 @@ in
 
   # The lab template: its flake builds the nodes' kvm image with mkImages, and its dev shell
   # brings chalklab, chalkctl and kubectl. chalkctl validate accepts the template's nodes with that
-  # image where their Image points; TestTheLabFiles of go-unit checks chalklab.yaml's MAC
-  # addresses. The flake's mkImages gets the test secrets' OS CA in place of the secrets.pub.json
-  # chalkctl gen secrets writes, which the repository does not hold.
+  # image where their Image points, and validatePinned checks its Cluster document's images;
+  # TestTheLabFiles of go-unit checks chalklab.yaml's MAC addresses. The flake's mkImages gets the
+  # test secrets' OS CA in place of the secrets.pub.json chalkctl gen secrets writes, which the
+  # repository does not hold.
   template-lab =
     let
       system = pkgs.stdenv.hostPlatform.system;
@@ -134,11 +150,13 @@ in
       name = "template-lab";
       src = ../../templates/lab;
       images."images/node-kvm" = template.packages.${system}.node-kvm;
+      command = validatePinned;
     };
 
   # The homelab example: its flake builds the nodes' metal image with the Rack, Hardware and BGP
   # extensions, and chalkctl validate accepts its nodes' YAML, Rack, Hardware and Peer documents
-  # included, with that image where their Image points.
+  # included, with that image where their Image points, and validatePinned checks its Cluster
+  # document's images.
   example-homelab =
     let
       homelab = (import ../../examples/homelab/flake.nix).outputs {
@@ -150,6 +168,7 @@ in
       name = "example-homelab";
       src = ../../examples/homelab;
       images."images/node-metal" = homelab.packages.${pkgs.stdenv.hostPlatform.system}.node-metal;
+      command = validatePinned;
     };
 
   # The homelab's validator bgp-peers refuses router-c with the report validate-config.md shows,
