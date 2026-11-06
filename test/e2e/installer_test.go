@@ -33,8 +33,10 @@ func consoleFingerprint(t *testing.T, vm *lab.VM) string {
 // TestInstallerInstallsOntoBlankDisk boots the test cluster's signed installer under Secure Boot
 // next to a blank disk and installs a node onto that disk from its image, signed beforehand as
 // chalkbuild signs it. The first install streams the image's parts from the host and is cancelled
-// while slot A is written. The install run again without --wipe-disk continues it, with the image
-// pulled from a registry on the host with the credentials of a Registry in the node's config. The
+// while slot A is written. The second, of config with a Greeting that shouts, is refused by the
+// image's validator once the image's store is on the disk. The install run again without
+// --wipe-disk continues on the disk, with the image pulled from a registry on the host with the
+// credentials of a Registry in the node's config. The
 // node then boots from the disk installed: slot A holding the image under labels of its root
 // hash, its UKI as chalkos_1.efi, slot B empty, VAR mounted, STATE and VAR with two keyslots,
 // chalkd over mTLS.
@@ -77,8 +79,14 @@ func TestInstallerInstallsOntoBlankDisk(t *testing.T) {
 	if sent, _ := strconv.ParseInt(m[1], 10, 64); sent >= 400<<20 {
 		t.Errorf("chalkctl sent %d bytes, want less than 400 MiB", sent)
 	}
+	// A Greeting that shouts passes chalkctl's checks; the image's validator refuses it once the
+	// image's store is on the disk, and the target boots nothing.
+	out, err := chalkctl(t, n, "", "install", "chalklab-target", "--fingerprint", fingerprint, "--inventory", shoutingTarget(t, inv))
+	if err == nil || !strings.Contains(out, "Greeting/hello: spec.message: the message shouts; write it in lower case; the target disk boots nothing") {
+		t.Fatalf("an install of a Greeting that shouts: %v", err)
+	}
 	pulled := time.Now()
-	out, err := chalkctl(t, n, "", install...)
+	out, err = chalkctl(t, n, "", install...)
 	if err != nil || !strings.Contains(out, "which the installer pulls from "+registryGuest+"/chalkos/test@sha256:") {
 		t.Fatalf("install: %v", err)
 	}
@@ -117,6 +125,24 @@ func TestInstallerInstallsOntoBlankDisk(t *testing.T) {
 		t.Errorf("status: %v", err)
 	}
 	t.Logf("the test took %v", time.Since(start).Round(time.Second))
+}
+
+// shoutingTarget writes, beside the inventory inv, one whose chalklab-target also gets the
+// Greeting that shouts, which the image's validator refuses and chalkctl's checks pass, and its
+// token, and returns its path.
+func shoutingTarget(t *testing.T, inv string) string {
+	t.Helper()
+	data, err := os.ReadFile(inv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	files := "nodes/chalklab-target.yaml, nodes/chalklab-target-registry.yaml"
+	shout := replaceOnce(t, string(data), files+"]", files+", nodes/chalklab/greeting-token.yaml, nodes/chalklab/greeting-shout.yaml]")
+	path := filepath.Join(filepath.Dir(inv), "install-shout.yaml")
+	if err := os.WriteFile(path, []byte(shout), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return path
 }
 
 // cancelledInstall runs chalkctl with the inventory given, as chalkctl takes it, and the arguments
