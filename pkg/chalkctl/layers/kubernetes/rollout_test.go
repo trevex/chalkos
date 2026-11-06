@@ -237,7 +237,9 @@ func TestCheckImages(t *testing.T) {
 	}{
 		"a minor newer": {threeAndOne("1.37.2", "1.37.1"), map[string][]*anypb.Any{"w1": imageOf(t, "1.38.0")},
 			"w1: the image's kubelet 1.38.0 would be newer than the API server 1.37.2 that cp1 runs, the oldest of the cluster; upgrade the control plane first: name the new release's images in the Cluster document and deliver it with chalkctl apply-config"},
-		"a patch newer":         {threeAndOne("1.37.2", "1.37.1"), map[string][]*anypb.Any{"w1": imageOf(t, "1.37.5")}, ""},
+		"a patch newer": {threeAndOne("1.37.2", "1.37.1"), map[string][]*anypb.Any{"w1": imageOf(t, "1.37.5")}, ""},
+		"another major, older": {threeAndOne("2.0.0", "1.37.1"), map[string][]*anypb.Any{"w1": imageOf(t, "1.37.5")},
+			"w1: the image's kubelet 1.37.5 is of Kubernetes 1, and the API server 2.0.0 that cp1 runs, the oldest of the cluster, of Kubernetes 2; a kubelet and its API server are of one major release"},
 		"the oldest API server": {mixed, map[string][]*anypb.Any{"cp1": imageOf(t, "1.38.0")}, "cp1: the image's kubelet 1.38.0 would be newer than the API server 1.37.2 that cp2 runs"},
 		"no control plane":      {[]runs{{"w1", k8s.KindWorker, "1.37.1", "1.37.1", nil}}, map[string][]*anypb.Any{"w1": imageOf(t, "1.38.0")}, ""},
 		"another layer's facts": {threeAndOne("1.37.2", "1.37.1"), map[string][]*anypb.Any{"w1": {other}}, ""},

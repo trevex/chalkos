@@ -303,7 +303,10 @@ func (p *Plugin) CheckImages(c layer.Cluster, images map[string][]*anypb.Any, re
 	}
 	api := r[oldest].apiServer
 	for _, name := range slices.Sorted(maps.Keys(kubelets)) {
-		if v := kubelets[name]; v.Major != api.Major || v.Minors(api) > 0 {
+		switch v := kubelets[name]; {
+		case v.Major != api.Major:
+			return fmt.Errorf("%s: the image's kubelet %s is of Kubernetes %d, and the API server %s that %s runs, the oldest of the cluster, of Kubernetes %d; a kubelet and its API server are of one major release", name, v.Release(), v.Major, api.Release(), oldest, api.Major)
+		case v.Minors(api) > 0:
 			return fmt.Errorf("%s: the image's kubelet %s would be newer than the API server %s that %s runs, the oldest of the cluster; upgrade the control plane first: name the new release's images in the Cluster document and deliver it with chalkctl apply-config", name, v.Release(), api.Release(), oldest)
 		}
 	}
