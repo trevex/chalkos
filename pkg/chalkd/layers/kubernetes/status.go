@@ -129,7 +129,7 @@ func (k *side) status(ctx context.Context) (*kubernetesv1.StatusResponse, error)
 		st.NodeReady = fmt.Sprintf("unknown: %v", err)
 		return st, nil
 	}
-	st.NodeReady = nodeReady(node)
+	st.NodeReady, st.NodeReadyReason, st.NodeReadyMessage = nodeReady(node)
 	if share != nil {
 		if cs, err := k.hooks.APIClient(c, *share); err != nil {
 			st.ControlPlanePods = "its static pods are unknown: " + err.Error()
@@ -215,14 +215,14 @@ func (k *side) node(ctx context.Context) (*corev1.Node, error) {
 	return client.CoreV1().Nodes().Get(ctx, n.Name, metav1.GetOptions{})
 }
 
-// nodeReady returns the status of the Node's Ready condition.
-func nodeReady(node *corev1.Node) string {
+// nodeReady returns the status, the reason and the message of the Node's Ready condition.
+func nodeReady(node *corev1.Node) (status, reason, message string) {
 	for _, cond := range node.Status.Conditions {
 		if cond.Type == corev1.NodeReady {
-			return string(cond.Status)
+			return string(cond.Status), cond.Reason, cond.Message
 		}
 	}
-	return string(corev1.ConditionUnknown)
+	return string(corev1.ConditionUnknown), "", ""
 }
 
 // missingPodRanges says which of the cluster's families the Node has no pod range of, once the

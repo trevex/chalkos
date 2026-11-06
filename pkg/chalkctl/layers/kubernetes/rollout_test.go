@@ -282,6 +282,35 @@ func TestCheckImagesOutsideTheCluster(t *testing.T) {
 	}
 }
 
+// The messages the kubelet gives a Node's Ready condition of False: its container network not
+// ready, as on a cluster without a CNI, and its container runtime not ready.
+const (
+	networkNotReady = "container runtime network not ready: NetworkReady=false reason:NetworkPluginNotReady message:Network plugin returns error: cni plugin not initialized"
+	runtimeNotReady = "container runtime not ready: RuntimeReady=false reason:RuntimeNotReady message:the runtime does not answer"
+)
+
+// A Node held back by its container network alone passes; any other cause, alone or besides the
+// network, does not.
+func TestNetworkOnly(t *testing.T) {
+	for name, tc := range map[string]struct {
+		reason, message string
+		want            bool
+	}{
+		"the network alone":               {"KubeletNotReady", networkNotReady, true},
+		"another cause":                   {"KubeletNotReady", runtimeNotReady, false},
+		"the network and another cause":   {"KubeletNotReady", "[" + runtimeNotReady + ", " + networkNotReady + "]", false},
+		"the network and a storage cause": {"KubeletNotReady", "[" + networkNotReady + ", Missing node capacity for resources: pods]", false},
+		"not the kubelet's":               {"NodeStatusUnknown", networkNotReady, false},
+		"no message":                      {"KubeletNotReady", "", false},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if got := networkOnly(tc.reason, tc.message); got != tc.want {
+				t.Errorf("networkOnly = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestDelivered(t *testing.T) {
 	for name, tc := range map[string]struct {
 		status *kubernetesv1.StatusResponse
@@ -289,6 +318,14 @@ func TestDelivered(t *testing.T) {
 	}{
 		"preparing": {&kubernetesv1.StatusResponse{Kind: k8s.KindControlPlane, Phase: kubernetesv1.Phase_PHASE_PREPARING}, ""},
 		"not Ready": {&kubernetesv1.StatusResponse{Kind: k8s.KindWorker, Phase: kubernetesv1.Phase_PHASE_JOINED, NodeReady: "False"}, "its Node is not Ready: False"},
+		"waiting for a CNI": {&kubernetesv1.StatusResponse{Kind: k8s.KindControlPlane, Phase: kubernetesv1.Phase_PHASE_BOOTSTRAPPED, NodeReady: "False", NodeReadyReason: "KubeletNotReady", NodeReadyMessage: networkNotReady,
+			ControlPlanePods: "current", ControlPlanePodsCurrent: true}, ""},
+		"waiting for a CNI, pods behind": {&kubernetesv1.StatusResponse{Kind: k8s.KindControlPlane, Phase: kubernetesv1.Phase_PHASE_BOOTSTRAPPED, NodeReady: "False", NodeReadyReason: "KubeletNotReady", NodeReadyMessage: networkNotReady,
+			ControlPlanePods: "kube-apiserver is not Ready"}, "its control plane: kube-apiserver is not Ready"},
+		"not Ready for another reason": {&kubernetesv1.StatusResponse{Kind: k8s.KindWorker, Phase: kubernetesv1.Phase_PHASE_JOINED, NodeReady: "False", NodeReadyReason: "KubeletNotReady", NodeReadyMessage: runtimeNotReady},
+			"its Node is not Ready: False: " + runtimeNotReady},
+		"no longer posting": {&kubernetesv1.StatusResponse{Kind: k8s.KindWorker, Phase: kubernetesv1.Phase_PHASE_JOINED, NodeReady: "Unknown", NodeReadyReason: "NodeStatusUnknown", NodeReadyMessage: "Kubelet stopped posting node status."},
+			"its Node is not Ready: Unknown: Kubelet stopped posting node status."},
 		"pods behind": {&kubernetesv1.StatusResponse{Kind: k8s.KindControlPlane, Phase: kubernetesv1.Phase_PHASE_BOOTSTRAPPED, NodeReady: "True", ControlPlanePods: "kube-scheduler is not Ready"},
 			"its control plane: kube-scheduler is not Ready"},
 		"current":        {&kubernetesv1.StatusResponse{Kind: k8s.KindControlPlane, Phase: kubernetesv1.Phase_PHASE_BOOTSTRAPPED, NodeReady: "True", ControlPlanePods: "current", ControlPlanePodsCurrent: true}, ""},

@@ -144,3 +144,19 @@ func TestStatusReportsTheStaticPods(t *testing.T) {
 		})
 	}
 }
+
+// TestStatusReportsWhyTheNodeIsNotReady checks that the status carries the reason and the message
+// of the Node's Ready condition, as the kubelet gives them on a cluster without a CNI.
+func TestStatusReportsWhyTheNodeIsNotReady(t *testing.T) {
+	s, _ := kubernetesNode(t, k8s.KindWorker, true)
+	const message = "container runtime network not ready: NetworkReady=false reason:NetworkPluginNotReady message:Network plugin returns error: cni plugin not initialized"
+	s.k.hooks.Node = func(context.Context) (*corev1.Node, error) {
+		n := kubernetestest.ReadyNode()
+		n.Status.Conditions = []corev1.NodeCondition{{Type: corev1.NodeReady, Status: corev1.ConditionFalse, Reason: "KubeletNotReady", Message: message}}
+		return n, nil
+	}
+	st := kubernetestest.Status(t, s)
+	if st.NodeReady != "False" || st.NodeReadyReason != "KubeletNotReady" || st.NodeReadyMessage != message {
+		t.Errorf("node ready %q, reason %q, message %q", st.NodeReady, st.NodeReadyReason, st.NodeReadyMessage)
+	}
+}

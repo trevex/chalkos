@@ -338,9 +338,11 @@ func (p *Plugin) BeforeDelivery(ctx context.Context, u layer.Upgrading, name str
 	return quorum(ctx, u, p.rolloutFlagsOf(u).allowDowntime, name, "restarts its control plane")
 }
 
-// Delivered checks that a node of the cluster has its Node Ready and, on a control plane, that its
-// static pods run the images its config names and are Ready. A node that is no part of the cluster
-// yet, such as a control plane waiting for the bootstrap, has nothing to check.
+// Delivered checks that a node of the cluster has its Node Ready, or held back by its container
+// network alone, and on a control plane that its static pods run the images its config names and
+// are Ready. A node that is no part of the cluster yet, such as a control plane waiting for the
+// bootstrap, has nothing to check. The kubelet's own health is the node's: the trial's
+// confirmation waits for it.
 func (p *Plugin) Delivered(ctx context.Context, conn *client.Conn) error {
 	k, err := Status(ctx, conn)
 	if err != nil {
@@ -354,13 +356,29 @@ func deliveredOf(k *kubernetesv1.StatusResponse) error {
 	if !inCluster(k) {
 		return nil
 	}
-	if k.GetNodeReady() != "True" {
-		return fmt.Errorf("its Node is not Ready: %s", k.GetNodeReady())
+	switch ready := k.GetNodeReady(); {
+	case ready == "True":
+	case ready == "False" && networkOnly(k.GetNodeReadyReason(), k.GetNodeReadyMessage()):
+		// A cluster created without a CNI has its Nodes NotReady until one is installed; the static
+		// pods use the host's network and come up all the same.
+	case k.GetNodeReadyMessage() != "":
+		return fmt.Errorf("its Node is not Ready: %s: %s", ready, k.GetNodeReadyMessage())
+	default:
+		return fmt.Errorf("its Node is not Ready: %s", ready)
 	}
 	if k.GetKind() == k8s.KindControlPlane && !k.GetControlPlanePodsCurrent() {
 		return errors.New("its control plane: " + k.GetControlPlanePods())
 	}
 	return nil
+}
+
+// networkOnly reports whether the reason and the message the kubelet gives a Node's Ready
+// condition of False hold the node back for its container network alone, as on a cluster without
+// a CNI yet. The kubelet's message names each cause, the network's with its NetworkReady=false
+// marker, and joins several causes in brackets, so one cause with that marker is the network's
+// alone.
+func networkOnly(reason, message string) bool {
+	return reason == "KubeletNotReady" && !strings.HasPrefix(message, "[") && strings.Contains(message, "NetworkReady=false")
 }
 
 // Summary groups the cluster's nodes by the API server their running config names.

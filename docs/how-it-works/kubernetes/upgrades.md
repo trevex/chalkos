@@ -63,7 +63,11 @@ Kubernetes side does not answer. When one changes, the run is ordered:
    images. chalkctl then waits until the node's Node is Ready and the mirror pods of
    kube-apiserver, kube-controller-manager and kube-scheduler on the node name the new images and
    are Ready. The kubelet replaces a static pod and its mirror pod together, so a Ready mirror pod
-   that names the new image belongs to the new pod. Then chalkctl confirms the trial.
+   that names the new image belongs to the new pod. A Node whose Ready condition names the
+   container network as its only cause, `NetworkReady=false`, passes too: a cluster created
+   without a CNI keeps its Nodes NotReady until one runs, and the static pods use the host's
+   network. Then chalkctl confirms the trial, which the node keeps only once its own health check,
+   the kubelet's health included, passes.
 3. The other nodes get the config after the last control plane.
 
 A control plane whose static pods do not come up by the trial's deadline stops the run, and

@@ -1050,6 +1050,8 @@ The response of Status: the state of the node's Kubernetes.
 | `kubelet_version` | string | The release of the running image's kubelet, as its image.json names it, such as 1.37.1. |
 | `control_plane_pods` | string | On a bootstrapped control-plane node: "current" once the static pods of kube-apiserver, kube-controller-manager and kube-scheduler run the images the node's running config names and are Ready, as their mirror pods in kube-system show it; otherwise what is not so, such as "kube-scheduler runs registry.k8s.io/kube-scheduler:v1.37.1, not registry.k8s.io/kube-scheduler:v1.37.2" or "kube-apiserver is not Ready". Empty on other nodes. |
 | `control_plane_pods_current` | bool | Whether control_plane_pods is "current". False on other nodes. |
+| `node_ready_reason` | string | The reason the kubelet gives the Node's Ready condition, such as KubeletNotReady. Empty while the condition gives none, and when node_ready says why the Node could not be read. |
+| `node_ready_message` | string | The message the kubelet gives the Node's Ready condition, such as "container runtime network not ready: NetworkReady=false reason:NetworkPluginNotReady message:Network plugin returns error: cni plugin not initialized" on a node whose cluster has no CNI yet. Empty while the condition gives none, and when node_ready says why the Node could not be read. |
 
 Field types: [Phase](#kubernetes-enum-phase), [RevokedNode](#kubernetes-message-revokednode).
 

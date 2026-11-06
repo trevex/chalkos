@@ -139,6 +139,14 @@ message StatusResponse {
   string control_plane_pods = 13;
   // Whether control_plane_pods is "current". False on other nodes.
   bool control_plane_pods_current = 14;
+  // The reason the kubelet gives the Node's Ready condition, such as KubeletNotReady. Empty while
+  // the condition gives none, and when node_ready says why the Node could not be read.
+  string node_ready_reason = 15;
+  // The message the kubelet gives the Node's Ready condition, such as "container runtime network
+  // not ready: NetworkReady=false reason:NetworkPluginNotReady message:Network plugin returns
+  // error: cni plugin not initialized" on a node whose cluster has no CNI yet. Empty while the
+  // condition gives none, and when node_ready says why the Node could not be read.
+  string node_ready_message = 16;
 }
 
 // Where a node stands in its Kubernetes cluster. On a control-plane node it follows the node's

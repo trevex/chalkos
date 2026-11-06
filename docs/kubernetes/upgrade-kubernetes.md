@@ -120,7 +120,8 @@ whatever order the command names them in:
 2. It delivers the config on trial, for `--try` or else 10 minutes. The kubelet restarts and
    replaces the static pods of the API server, the controller-manager and the scheduler.
 3. It waits until the node's Node is `Ready` and its three static pods run the images the config
-   names and are `Ready`.
+   names and are `Ready`. A Node that is not `Ready` only because no CNI runs yet passes, as in a
+   cluster created without one.
 4. It confirms the trial once the node is healthy, as any trial.
 
 The other nodes get the config after the last control plane, without a trial unless `--try` asks
