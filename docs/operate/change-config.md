@@ -227,16 +227,18 @@ created once and serves both images.
 chalkctl sends the fallback secret when the running image's storage enrolls it on a new volume.
 When only the staged image's storage needs it, because that image encrypts a volume the running
 image does not, the staged image refuses the config with `... no fallback secret was sent` and
-names `chalkctl apply-config --staged w1`. That command translates the config for the image the
-inventory names, the staged one, sends the secret its storage needs and delivers the config to the
-staged image alone, as described below.
+names `chalkctl apply-config --staged w1 --secrets FILE`. That command translates the config for
+the image the inventory names, the staged one, sends the secret its storage needs and delivers the
+config to the staged image alone, as described below.
 
 When the node cannot write the staged image's config after the running image applied it, the
 command fails with
 `the node runs config <version> (<what it did>), but writing the config slot of the image <hash> staged in the inactive slot failed, so it keeps config <version>: ...`.
-The parentheses list the volumes the delivery made, the units it restarted and its warnings. The
-staged image keeps its earlier config. A volume that only the staged image's config adds is made
-before that config is written, and stays. Run the command again to write the config.
+The parentheses list the volumes the node recorded for the delivery, the units it restarted and
+its warnings. The staged image keeps its earlier config. A volume that only the staged image's
+config adds is made and recorded before that config is written, and stays. A storage change that
+fails before the node records it lists no volume, although a partition it made may stay. Run the
+command again to write the config; it finds the volumes and partitions already made.
 
 `--dry-run` has both images check the config. Its plan ends with the staged image's config:
 `w1: staged image's config <previous-version> → <version>`. With `--try`, the staged image checks

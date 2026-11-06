@@ -275,7 +275,7 @@ func TestStagedRefusalNamesTheFallbackSecret(t *testing.T) {
 	s, _ := stagedServer(t, fixtureSchemas(t))
 	refusal := failed(connect.CodeInvalidArgument, "volume extra is encrypted and the node's fallback is recovery-key, but %s", storage.NoFallbackSecret)
 	err := s.stagedRefusal(stagedImage, refusal, "")
-	want := "the image 333333333333 staged in the inactive slot: volume extra is encrypted and the node's fallback is recovery-key, but no fallback secret was sent; the staged image's storage enrolls the fallback secret on a volume the running image's does not, and chalkctl sends the secret for the running image's storage alone: chalkctl apply-config --staged n1 delivers the config to the staged image with the secret"
+	want := "the image 333333333333 staged in the inactive slot: volume extra is encrypted and the node's fallback is recovery-key, but no fallback secret was sent; the staged image's storage enrolls the fallback secret on a volume the running image's does not, and chalkctl sends the secret for the running image's storage alone: chalkctl apply-config --staged n1 --secrets FILE delivers the config to the staged image with the secret"
 	if connect.CodeOf(err) != connect.CodeInvalidArgument || !strings.HasSuffix(err.Error(), want) {
 		t.Errorf("err = %v, want %q", err, want)
 	}
@@ -400,6 +400,44 @@ func TestStagedSlotOfItsOwnVolumeIsWrittenAfterIt(t *testing.T) {
 	}
 	if v := slotVersion(t, s, stagedImage); v != next.Version {
 		t.Errorf("staged version = %q, want the config with the volume", v)
+	}
+}
+
+// TestStagedStorageChangeFailingPartWay names the volume a storage change of the staged image's
+// config recorded before it failed, here as its units do not start, in the error of the delivery,
+// and leaves the slot as it was; one that fails before it records anything names none.
+func TestStagedStorageChangeFailingPartWay(t *testing.T) {
+	for name, tc := range map[string]struct {
+		fail string
+		want string
+	}{
+		"after the record":  {"systemctl start systemd-cryptsetup@extra.service", "the node runs config v1 (volume extra: new volume on new disk extra), but "},
+		"before the record": {"systemd-repart --dry-run=no", "the node runs config v1, but "},
+	} {
+		t.Run(name, func(t *testing.T) {
+			s, r := stagedServer(t, fixtureSchemas(t))
+			r.Rules = append([]tooltest.Rule{{Prefix: tc.fail, Err: errors.New("exit status 1")}}, volumeRules(s)...)
+			schemas, err := schema.LoadSchemas(s.Loader.Schemas)
+			if err != nil {
+				t.Fatal(err)
+			}
+			next, err := configure("n1", extraConfig("ext4"), schemas, config.Target{Platform: "metal"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			var id identity.Identity
+			if err := json.Unmarshal(next.Identity, &id); err != nil {
+				t.Fatal(err)
+			}
+			w := secondWrite{image: stagedImage, held: hashOf(t, baseConfig), slot: slotWrite{next: next, machine: machineChange{section: id.Storage}}}
+			err = w.write(context.Background(), s, "v1", secret, &nodev1.ApplyConfigResponse{})
+			if err == nil || !strings.Contains(err.Error(), tc.want+"writing the config slot of the image 333333333333 staged in the inactive slot failed") {
+				t.Fatalf("err = %v, want %q", err, tc.want)
+			}
+			if v := slotVersion(t, s, stagedImage); v != hashOf(t, baseConfig) {
+				t.Errorf("staged version = %q, want it kept", v)
+			}
+		})
 	}
 }
 

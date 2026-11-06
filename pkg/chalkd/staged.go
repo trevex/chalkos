@@ -295,12 +295,16 @@ func (s *Server) planSecond(ctx context.Context, d *delivery) (secondWrite, erro
 // staged; secret is the fallback secret the request carries. chalkctl sends that secret when the
 // running image's storage enrolls it on a new volume, so a staged image whose own translation of
 // the config adds an encrypted volume the running image's does not is refused without it; the
-// refusal then names the delivery that carries it, apply-config --staged, which chalkctl
-// translates for the inventory's image.
+// refusal then names the delivery that carries it, apply-config --staged with the secrets file,
+// which chalkctl translates for the inventory's image.
+//
+// The refusal is the staged image's storage rule, which its own checker evaluates: another
+// image's chalkd, whose errors reach this one as text alone. That rule's message ends with
+// storage.NoFallbackSecret, so the text is what tells the refusal apart.
 func (s *Server) stagedRefusal(staged []byte, err error, secret string) error {
 	msg := fmt.Sprintf("the image %x staged in the inactive slot: %v", staged[:6], plain(err))
 	if secret == "" && strings.Contains(msg, storage.NoFallbackSecret) {
-		msg += fmt.Sprintf("; the staged image's storage enrolls the fallback secret on a volume the running image's does not, and chalkctl sends the secret for the running image's storage alone: chalkctl apply-config --staged %s delivers the config to the staged image with the secret", s.nodeName())
+		msg += fmt.Sprintf("; the staged image's storage enrolls the fallback secret on a volume the running image's does not, and chalkctl sends the secret for the running image's storage alone: chalkctl apply-config --staged %s --secrets FILE delivers the config to the staged image with the secret", s.nodeName())
 	}
 	return failed(codeOf(err), "%s", msg)
 }
@@ -309,8 +313,9 @@ func (s *Server) stagedRefusal(staged []byte, err error, secret string) error {
 // config, and adds it to resp: the staged image's slot, after the storage changes its config
 // makes on top of those of the running image, or the pending config. A write that fails leaves
 // the slot or the pending config as it was and fails the delivery, naming it and what the
-// delivery did, which resp held so far; the running image runs the config all the same, and the
-// delivery sent again writes it. The caller holds s.mu.
+// delivery did, which resp held so far, with the volumes a storage change of the staged image
+// recorded before it failed, as recordedSince finds them; the running image runs the config all
+// the same, and the delivery sent again writes it. The caller holds s.mu.
 //
 // The staged image's storage changes go first, recorded in storage.json, and its slot after.
 // Every boot sets up the volumes storage.json records and no others, so with the slot written
@@ -327,11 +332,15 @@ func (w secondWrite) write(ctx context.Context, s *Server, version, secret strin
 		mc, err := s.machineChanges(w.slot.machine.section)
 		if err == nil {
 			err = s.applyMachine(ctx, mc, secret)
-		}
-		if err == nil {
-			for _, c := range mc.changes {
+			made := mc.changes
+			if err != nil {
+				made = s.recordedSince(mc.recorded)
+			}
+			for _, c := range made {
 				resp.Changes = append(resp.Changes, &nodev1.StorageChange{Volume: c.Volume, Reason: c.Reason})
 			}
+		}
+		if err == nil {
 			if err = slot.Write(slot.Dir(s.Loader.Slots, w.image), w.slot.next); err != nil {
 				err = fmt.Errorf("store the config: %w", err)
 			}
@@ -350,6 +359,21 @@ func (w secondWrite) write(ctx context.Context, s *Server, version, secret strin
 		resp.Pending = p
 	}
 	return nil
+}
+
+// recordedSince is what storage.json records beyond recorded, the storage it recorded before a
+// change that failed: the change records the volumes it made all at once, after it made them, so
+// a failure before the record leaves none and one after it, as when a new volume's units do not
+// start, leaves them all. A partition repart made before a failure that kept it from the record
+// is not listed; the change sent again finds it made. A record that cannot be read lists none,
+// which is logged.
+func (s *Server) recordedSince(recorded storage.Section) []storage.Change {
+	after, _, err := s.recorded()
+	if err != nil {
+		log.Printf("read what the failed storage change recorded: %v", err)
+		return nil
+	}
+	return storage.Changes(recorded, after)
 }
 
 // didOf is what a delivery whose answer is resp did, for an error that loses the answer: its
