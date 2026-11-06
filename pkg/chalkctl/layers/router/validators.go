@@ -19,9 +19,10 @@ func (*Plugin) Validators(s *schema.Schemas) []validators.Linked {
 	if !slices.ContainsFunc(kinds, func(k schema.Kind) bool { return k.APIVersion == config.RouterAPI && k.Kind == "Router" }) {
 		return nil
 	}
+	read := derive.Kinds()
 	var inputs []string
 	for _, k := range kinds {
-		if slices.Contains(derive.Kinds, k.Kind) && !slices.Contains(inputs, k.Kind) {
+		if slices.Contains(read, k.Kind) && !slices.Contains(inputs, k.Kind) {
 			inputs = append(inputs, k.Kind)
 		}
 	}

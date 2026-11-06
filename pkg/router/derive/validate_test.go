@@ -12,7 +12,7 @@ import (
 func array(t *testing.T, byKind map[string]any) []byte {
 	t.Helper()
 	var docs []any
-	for _, kind := range Kinds {
+	for _, kind := range Kinds() {
 		list, _ := byKind[kind].([]any)
 		docs = append(docs, list...)
 	}

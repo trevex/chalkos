@@ -23,10 +23,13 @@ import (
 	"strings"
 )
 
-// Kinds are the kinds whose documents Build reads: the router layer's and networkd's Network. An
+// Kinds are the kinds whose documents Build reads, a copy of kinds for the caller to keep.
+func Kinds() []string { return slices.Clone(kinds) }
+
+// kinds are the kinds whose documents Build reads: the router layer's and networkd's Network. An
 // image declares those of its router features; the validator router reads the documents of the
 // kinds of Kinds that the image declares, on the node as in chalkctl.
-var Kinds = []string{
+var kinds = []string{
 	"Router", "FirewallZone", "FirewallPolicy", "AddressSet", "NATRule", "BGP", "BGPPeer", "PrefixList",
 	"CommunityList", "RoutingPolicy", "NAT64", "Resolver", "VRF", "PolicyRoute", "NextHop", "DHCPSubnet",
 	"DHCPRelay", "Network",

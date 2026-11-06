@@ -50,7 +50,7 @@ func example(t *testing.T, name string) map[string]any {
 				t.Fatal(err)
 			}
 		}
-		if slices.Contains(Kinds, d.Kind) {
+		if slices.Contains(Kinds(), d.Kind) {
 			byKind[d.Kind] = append(byKind[d.Kind], obj)
 		}
 	}
@@ -103,7 +103,7 @@ func TestKinds(t *testing.T) {
 		_, kind, _ := strings.Cut(strings.TrimSuffix(e.Name(), ".json"), "_v1alpha1_")
 		want = append(want, kind)
 	}
-	if got := slices.Sorted(slices.Values(Kinds)); !slices.Equal(got, slices.Sorted(slices.Values(want))) {
+	if got := slices.Sorted(slices.Values(Kinds())); !slices.Equal(got, slices.Sorted(slices.Values(want))) {
 		t.Errorf("Kinds = %v, want %v", got, want)
 	}
 	module, err := os.ReadFile("../../../modules/node/router/validator.nix")
@@ -116,8 +116,8 @@ func TestKinds(t *testing.T) {
 	for _, l := range strings.Split(list, "\n") {
 		inNix = append(inNix, strings.Trim(l, ` "`))
 	}
-	if !slices.Equal(inNix, Kinds) {
-		t.Errorf("the kinds of modules/node/router/validator.nix are %v, want Kinds, %v", inNix, Kinds)
+	if !slices.Equal(inNix, Kinds()) {
+		t.Errorf("the kinds of modules/node/router/validator.nix are %v, want Kinds, %v", inNix, Kinds())
 	}
 }
 

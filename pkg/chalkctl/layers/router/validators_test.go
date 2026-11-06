@@ -52,8 +52,8 @@ func TestValidators(t *testing.T) {
 	if len(got) != 1 || got[0].Name != "router" {
 		t.Fatalf("validators = %v", got)
 	}
-	if inputs := slices.Sorted(slices.Values(got[0].Inputs)); !slices.Equal(inputs, slices.Sorted(slices.Values(derive.Kinds))) {
-		t.Errorf("inputs = %v, want %v", inputs, derive.Kinds)
+	if inputs := slices.Sorted(slices.Values(got[0].Inputs)); !slices.Equal(inputs, slices.Sorted(slices.Values(derive.Kinds()))) {
+		t.Errorf("inputs = %v, want %v", inputs, derive.Kinds())
 	}
 	if rs, err := got[0].Validate([]byte("[]")); err != nil || len(rs) != 0 {
 		t.Errorf("Validate([]) = %v, %v", rs, err)
