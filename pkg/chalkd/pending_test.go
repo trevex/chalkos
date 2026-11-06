@@ -361,18 +361,37 @@ func TestUpgradeDropsThePendingConfig(t *testing.T) {
 }
 
 // TestUpgradeKeepsThePendingConfigWhenStagingFails keeps the pending config the image's slot took
-// when the image does not become the next boot after all, as when its UKI fails to activate.
+// when the image is not staged after all, as when writing its UKI fails.
 func TestUpgradeKeepsThePendingConfigWhenStagingFails(t *testing.T) {
 	s, _ := configServer(t)
 	p := sendPending(t, s, strings.Replace(baseConfig, "name: first", "name: second", 1))
-	if _, _, err := upgradePending(t, s, pki.RoleOperator, "", errors.New("activate the UKI: no space left on device"), nil); err == nil || !strings.Contains(err.Error(), "no space left on device") {
-		t.Fatalf("upgrade = %v, want the activation's failure", err)
+	if _, _, err := upgradePending(t, s, pki.RoleOperator, "", errors.New("write the UKI to the ESP: no space left on device"), nil); err == nil || !strings.Contains(err.Error(), "no space left on device") {
+		t.Fatalf("upgrade = %v, want the staging's failure", err)
 	}
 	if v := pendingVersion(t, s); v != p.Version {
 		t.Errorf("pending version = %q, want %s kept", v, p.Version)
 	}
 	if got := status(t, s).PendingConfig; got.GetVersion() != p.Version {
 		t.Errorf("status names the pending config %v, want %s", got, p.Version)
+	}
+}
+
+// TestUpgradeSettlesThePendingConfigWhenActivationFails drops the pending config the image's slot
+// took once the image is staged, also when its activation fails after: the image stays staged
+// with that config, and an upgrade after must not give it to another image.
+func TestUpgradeSettlesThePendingConfigWhenActivationFails(t *testing.T) {
+	s, _ := configServer(t)
+	sendPending(t, s, strings.Replace(baseConfig, "name: first", "name: second", 1))
+	unactivated := &upgrade.StagedError{Result: upgrade.Result{Entry: ".staged-chalkos_2.efi", Wrote: true}, Err: errors.New("rename the UKI: input/output error")}
+	_, _, err := upgradePending(t, s, pki.RoleOperator, "", unactivated, nil)
+	if connect.CodeOf(err) != connect.CodeInternal || !strings.Contains(err.Error(), "the image is staged as .staged-chalkos_2.efi, but its activation failed: rename the UKI: input/output error") {
+		t.Fatalf("upgrade = %v, want the activation's failure, internal", err)
+	}
+	if v := pendingVersion(t, s); v != "" {
+		t.Errorf("pending config %s is kept", v)
+	}
+	if got := status(t, s).PendingConfig; got != nil {
+		t.Errorf("status names the pending config %v", got)
 	}
 }
 

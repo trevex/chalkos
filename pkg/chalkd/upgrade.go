@@ -113,12 +113,21 @@ func (s *Server) Upgrade(ctx context.Context, stream *connect.ClientStream[nodev
 	if unactivated := (*upgrade.StagedError)(nil); errors.As(err, &unactivated) {
 		log.Printf("upgrade to %x failed: %v", img.GetRootHash(), err)
 		// The image is staged with the config stageConfig wrote, as after an upgrade that stops
-		// there, and ActivateImage may activate it later: the node records its provenance, and how
-		// the node got to the image the inactive slot held before is gone with that image. The
-		// pending config stays until the image boots next.
+		// there, and ActivateImage may activate it later: the node records its provenance, how the
+		// node got to the image the inactive slot held before is gone with that image, and the
+		// pending config goes as once a stage-only upgrade staged the image, since the image's slot
+		// holds the config that took or replaced it. The answer is an error, which names no pending
+		// config; Status tells.
 		s.recordImages(&header)
 		s.forgetRollback()
-		return nil, failed(connect.CodeFailedPrecondition, "upgrade: %v", err)
+		s.settlePending(staged, img.GetRootHash())
+		// An activation that refused the staged UKI fails the precondition, and one that failed to
+		// read or change the disk or the ESP is internal, as ActivateImage answers them.
+		code := connect.CodeInternal
+		if refusal := (*upgrade.RefusalError)(nil); errors.As(err, &refusal) {
+			code = connect.CodeFailedPrecondition
+		}
+		return nil, failed(code, "upgrade: %v", err)
 	}
 	if err != nil {
 		log.Printf("upgrade to %x failed: %v", img.GetRootHash(), err)

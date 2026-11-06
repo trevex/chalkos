@@ -158,11 +158,12 @@ func (c imageConfig) refused(err error, name string) error {
 
 // settlePending removes the pending config that c, the config stageConfig wrote to the image's
 // slot, names: the one the image an upgrade staged took, or the one the config the upgrade carried
-// replaced; c names none when no slot was written. That image boots next with its config now, and
-// a later upgrade must not take the pending config. Only now, once the image is staged, may it go:
-// an upgrade that fails after the image's slot was written, as when its UKI fails to activate,
-// keeps it for the upgrade after. The image is staged already, so a failure to remove it does not
-// fail the upgrade: the journal says so, Status keeps naming the pending config, and apply-config
+// replaced; c names none when no slot was written. That image is staged with its config now, and
+// a later upgrade must not take the pending config. Only once the image is staged may it go: an
+// upgrade that fails after the image's slot was written but before the image was staged, as when
+// writing its UKI fails, retires the slot and keeps the pending config for the upgrade after, and
+// one whose activation fails once the image is staged settles it too. The image is staged
+// already, so a failure to remove it does not fail the upgrade: the journal says so, Status keeps naming the pending config, and apply-config
 // --staged --discard drops it. It returns what became of the pending config for the upgrade's
 // answer, as chalkd knows it, since chalkd reboots soon after; nil when the node held none, or
 // when reading one it keeps failed, which the journal records. The caller holds s.upgrading.
