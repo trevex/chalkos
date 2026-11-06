@@ -50,8 +50,9 @@ func TestSessions(t *testing.T) {
 }
 
 // The validator refuses a peer's sessions where the links networkd puts in each VRF decide: an
-// interface of a VRF's device or of another VRF than the peer's, a glob of other VRFs' links
-// alone, a link a glob expands to that is named like an address, and a session two peers name.
+// interface of a VRF's device or of another VRF than the peer's, whether the VRF names it or a
+// glob of it, a glob of other VRFs' links alone, a link a glob expands to that is named like an
+// address, and a session two peers name.
 // It guards, with an internal error, values frr.conf and the firewall would read as syntax.
 func TestSessionRefusals(t *testing.T) {
 	tenant := routerDoc(t, "VRF", "tenant", `{"table": 100, "interfaces": ["eth2"]}`)
@@ -75,6 +76,16 @@ func TestSessionRefusals(t *testing.T) {
 			"BGPPeer/x: spec.interface: interface lab is the device of VRF lab"},
 		"an interface of another VRF": {withTenant(peerDoc(t, "x", `"interface": "eth2"`)),
 			"BGPPeer/x: spec.interface: interface eth2 is in the VRF tenant, not in the peer's VRF default"},
+		"an interface a VRF's glob holds": {map[string][]any{
+			"VRF":     {routerDoc(t, "VRF", "tenant", `{"table": 100, "interfaces": ["swp*"]}`)},
+			"Network": {document(t, "Network", "30-swp", `{"match": {"name": "swp*"}}`)},
+			"BGPPeer": {peerDoc(t, "leaf", `"interface": "swp1"`)},
+		}, "BGPPeer/leaf: spec.interface: interface swp1 is in the VRF tenant, not in the peer's VRF default"},
+		"interfaces a VRF's glob holds alone": {map[string][]any{
+			"VRF":     {routerDoc(t, "VRF", "tenant", `{"table": 100, "interfaces": ["swp*"]}`)},
+			"Network": {document(t, "Network", "30-swp", `{"match": {"name": "swp*"}}`), document(t, "Network", "20-swp1", `{"match": {"name": "swp1"}}`)},
+			"BGPPeer": {peerDoc(t, "leaves", `"interfaces": ["sw*"]`)},
+		}, "BGPPeer/leaves: spec.interfaces[0]: sw* matches no link of VRF default, only links of other VRFs"},
 		// A VRF's interface reaches its link through a Network, so one that no Network names is
 		// refused before a peer's interface of that name could be read as the default VRF's.
 		"an interface of another VRF that no Network names": {map[string][]any{"VRF": {tenant}, "Network": {document(t, "Network", "10-eth0", `{"match": {"name": "eth0"}}`)}, "BGPPeer": {peerDoc(t, "x", `"interface": "eth2"`)}},
