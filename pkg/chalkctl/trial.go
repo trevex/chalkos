@@ -48,7 +48,7 @@ func (a *app) confirmTrial(ctx context.Context, t *target, version, previous str
 		failure := &layer.NodeError{Node: t.name, Err: fmt.Errorf("config %s was not confirmed within its trial: %w", version, layer.Unnamed(t.name, err))}
 		switch {
 		case ctx.Err() != nil:
-			return fmt.Errorf("%w; %s runs config %s on trial; %s", err, t.name, version, endTrialHint(t.name))
+			return &layer.NodeError{Node: t.name, Err: fmt.Errorf("%w; %s runs config %s on trial; %s", err, t.name, version, endTrialHint(t.name)), Named: true}
 		case late:
 			return failure
 		}

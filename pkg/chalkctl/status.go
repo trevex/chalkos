@@ -14,6 +14,7 @@ import (
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/chalkctl/layer"
+	"github.com/trevex/chalkos/pkg/client"
 	"github.com/trevex/chalkos/pkg/internal/cli"
 )
 
@@ -35,14 +36,14 @@ func (a *app) status(ctx context.Context, n nodeFlags, pos []string) error {
 	if err != nil {
 		return err
 	}
-	conn, err := dialInstalled(t)
-	if err != nil {
-		return err
-	}
-	defer conn.Close()
+	return callNode(t, func(conn *client.Conn) error { return a.printStatus(ctx, t, conn) })
+}
+
+// printStatus prints the status of the node t over conn.
+func (a *app) printStatus(ctx context.Context, t *target, conn *client.Conn) error {
 	resp, err := conn.Status(ctx, connect.NewRequest(&nodev1.StatusRequest{}))
 	if err != nil {
-		return layer.Named(t.name, err)
+		return err
 	}
 	s := resp.Msg
 	state := t.cluster.configState(t.name, s.ConfigVersion)
