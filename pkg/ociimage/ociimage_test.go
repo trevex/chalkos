@@ -301,10 +301,12 @@ func TestParseContract(t *testing.T) {
 		t.Errorf("ParseContract = %+v, %v", c, err)
 	}
 	for name, entries := range map[string][]*tar.Header{
-		"is no regular file":           append(valid, &tar.Header{Typeflag: tar.TypeSymlink, Name: "schemas/b.json", Linkname: "/etc/passwd"}),
-		"the contract has no metadata": valid[1:],
-		"holds facts/test.json twice":  append(valid, reg("facts/test.json"), reg("facts/test.json")),
-		"a layer without a name":       append(valid, reg("facts/.json")),
+		"is no regular file":                                       append(valid, &tar.Header{Typeflag: tar.TypeSymlink, Name: "schemas/b.json", Linkname: "/etc/passwd"}),
+		"the contract has no metadata":                             valid[1:],
+		"holds facts/test.json twice":                              append(valid, reg("facts/test.json"), reg("facts/test.json")),
+		`"facts/.json", the facts of a layer whose name is not`:    append(valid, reg("facts/.json")),
+		`"facts/Kubernetes.json", the facts of a layer whose name`: append(valid, reg("facts/Kubernetes.json")),
+		`"facts/a_b.json", the facts of a layer whose name`:        append(valid, reg("facts/test.json"), reg("facts/a_b.json")),
 	} {
 		if _, err := ociimage.ParseContract(bytes.NewReader(tarOf(entries...))); err == nil || !strings.Contains(err.Error(), name) {
 			t.Errorf("ParseContract = %v, want %q", err, name)
@@ -313,7 +315,8 @@ func TestParseContract(t *testing.T) {
 }
 
 // TestReadContractDirRefusesFactsWithoutALayerName refuses an image directory whose facts/ holds
-// .json, which names no layer.
+// .json, which names no layer, or the facts of a layer whose name is not lower-case letters,
+// digits and dashes.
 func TestReadContractDirRefusesFactsWithoutALayerName(t *testing.T) {
 	dir := t.TempDir()
 	writeImage(t, dir)
@@ -326,8 +329,14 @@ func TestReadContractDirRefusesFactsWithoutALayerName(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "facts", ".json"), []byte("{}"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := ociimage.ReadContractDir(dir); err == nil || !strings.Contains(err.Error(), "a layer without a name") {
+	if _, err := ociimage.ReadContractDir(dir); err == nil || !strings.Contains(err.Error(), `"facts/.json", the facts of a layer whose name`) {
 		t.Errorf("ReadContractDir = %v, want the facts of a layer without a name refused", err)
+	}
+	if err := os.Rename(filepath.Join(dir, "facts", ".json"), filepath.Join(dir, "facts", "Kube.json")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ociimage.ReadContractDir(dir); err == nil || !strings.Contains(err.Error(), `"facts/Kube.json", the facts of a layer whose name`) {
+		t.Errorf("ReadContractDir = %v, want the facts of the layer Kube refused", err)
 	}
 }
 

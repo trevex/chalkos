@@ -11,6 +11,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 	"time"
@@ -95,10 +96,20 @@ func readFiles(dir, pattern string) (map[string][]byte, error) {
 	return files, nil
 }
 
-// check refuses a contract without metadata.json, schemas or repart definitions, and one with
-// facts/.json, the facts of a layer without a name.
+// layerName is the pattern of a layer's name, as an image's build checks the names of
+// chalkos.imageDirectory.facts: lower-case letters, digits and dashes.
+var layerName = regexp.MustCompile(`^[a-z0-9-]+$`)
+
+// check refuses a contract without metadata.json, schemas or repart definitions, and one with the
+// facts of a layer whose name is not layerName's, such as facts/.json.
 func (c Contract) check() error {
-	_, unnamed := c.Facts[""]
+	var badNames []string
+	for layer := range c.Facts {
+		if !layerName.MatchString(layer) {
+			badNames = append(badNames, layer)
+		}
+	}
+	slices.Sort(badNames)
 	switch {
 	case len(c.Metadata) == 0:
 		return errors.New("the contract has no metadata.json")
@@ -106,8 +117,8 @@ func (c Contract) check() error {
 		return errors.New("the contract has no schemas/*.json")
 	case len(c.Definitions) == 0:
 		return errors.New("the contract has no repart.d/*.conf")
-	case unnamed:
-		return errors.New("the contract has facts/.json, the facts of a layer without a name")
+	case len(badNames) > 0:
+		return fmt.Errorf("the contract has %q, the facts of a layer whose name is not lower-case letters, digits and dashes", "facts/"+badNames[0]+".json")
 	}
 	return nil
 }
