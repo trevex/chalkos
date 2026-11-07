@@ -4,11 +4,12 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 )
 
 func TestUnitsOf(t *testing.T) {
-	st := &Storage{StateDir: t.TempDir()}
+	st := &Storage{StateDir: t.TempDir(), BootPartitions: "/dev/disk/chalk-boot"}
 	dir := st.StorageDir()
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
@@ -48,5 +49,10 @@ func TestUnitsOf(t *testing.T) {
 		if got := units.Of(volume); !reflect.DeepEqual(got, want) {
 			t.Errorf("units of %s = %v, want %v", volume, got, want)
 		}
+	}
+	// A system-disk volume names the boot disk's link to its partition, not its PARTUUID, which
+	// a copy of the system disk shares.
+	if mount := units.files["srv-plain.mount"]; !strings.Contains(mount, "\nWhat=/dev/disk/chalk-boot/plain\n") {
+		t.Errorf("srv-plain.mount does not mount /dev/disk/chalk-boot/plain:\n%s", mount)
 	}
 }
