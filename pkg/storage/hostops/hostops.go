@@ -7,7 +7,6 @@ package hostops
 import (
 	"context"
 	"encoding/hex"
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -136,28 +135,25 @@ func MountPoints(mountInfo string) (map[string]bool, error) {
 }
 
 // Release unmounts dir, if a file system is mounted there, and then closes the device-mapper
-// volume mapper with close, if it is open: what a crashed process may have left behind. An empty
-// mapper closes nothing. Errors name what is released.
-func Release(ctx context.Context, o Ops, what, dir, mapper string, close func(ctx context.Context, name string) error) error {
+// volume mapper with closeVolume, if it is open: what a crashed process may have left behind. An
+// empty mapper closes nothing. Errors name what is released.
+func Release(ctx context.Context, o Ops, what, dir, mapper string, closeVolume func(ctx context.Context, name string) error) error {
 	mounted, err := o.Mounted(dir)
 	if err != nil {
 		return err
 	}
 	if mounted {
-		// It may have been unmounted since the mount table was read.
-		if err := o.Unmount(ctx, dir); err != nil && !notMounted(err) {
-			return fmt.Errorf("unmount %s: %w", what, err)
+		if err := o.Unmount(ctx, dir); err != nil {
+			// It may have been unmounted since the mount table was read.
+			if still, merr := o.Mounted(dir); merr != nil || still {
+				return fmt.Errorf("unmount %s: %w", what, err)
+			}
 		}
 	}
 	if mapper != "" && o.Mapped(mapper) {
-		if err := close(ctx, mapper); err != nil {
+		if err := closeVolume(ctx, mapper); err != nil {
 			return fmt.Errorf("close %s: %w", what, err)
 		}
 	}
 	return nil
-}
-
-func notMounted(err error) bool {
-	te, ok := errors.AsType[*tool.Error](err)
-	return ok && strings.Contains(te.Stderr, "not mounted")
 }

@@ -98,20 +98,45 @@ func TestRelease(t *testing.T) {
 		t.Errorf("Release = %v, ran %q", err, r.Calls)
 	}
 
-	// A file system unmounted since the mount table was read is released.
-	r.Rules = []tooltest.Rule{{Prefix: "umount", Err: &tool.Error{Command: "umount", Code: 32, Stderr: "umount: /esp: not mounted."}}}
-	f.SetMounted("/dev/vda1", "/esp")
-	if err := hostops.Release(ctx, f, "the ESP", "/esp", "", nil); err != nil {
-		t.Errorf("Release = %v", err)
-	}
-	r.Rules = []tooltest.Rule{{Prefix: "umount", Err: &tool.Error{Command: "umount", Code: 32, Stderr: "target is busy"}}}
-	if err := hostops.Release(ctx, f, "the ESP", "/esp", "", nil); err == nil || !strings.HasPrefix(err.Error(), "unmount the ESP: ") {
-		t.Errorf("Release = %v, want the unmount's error", err)
-	}
 	r.Rules = []tooltest.Rule{{Prefix: "veritysetup close", Err: &tool.Error{Command: "veritysetup", Code: 5, Stderr: "busy"}}}
 	f.SetMapped("store", "/dev/vda3")
 	if err := hostops.Release(ctx, f, "the checked store", "/store", "store", f.CloseVerity); err == nil || !strings.HasPrefix(err.Error(), "close the checked store: ") {
 		t.Errorf("Release = %v, want the close's error", err)
+	}
+}
+
+// An unmount that fails is no error when the file system is gone from the mount table since it
+// was read, whatever umount said; one still mounted is.
+func TestReleaseAFailedUnmount(t *testing.T) {
+	ctx := context.Background()
+	mountInfo := filepath.Join(t.TempDir(), "mountinfo")
+	const esp = "42 30 259:1 / /esp rw - vfat /dev/vda1 rw\n"
+	for _, c := range []struct {
+		name  string
+		after string
+		fails bool
+	}{
+		{"unmounted meanwhile", "", false},
+		{"still mounted", esp, true},
+	} {
+		if err := os.WriteFile(mountInfo, []byte(esp), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		r := &tooltest.Runner{
+			Rules: []tooltest.Rule{{Prefix: "umount", Err: &tool.Error{Command: "umount", Code: 32, Stderr: "umount: /esp: Ziel ist nicht eingehängt."}}},
+			Before: func(string) {
+				if err := os.WriteFile(mountInfo, []byte(c.after), 0o644); err != nil {
+					t.Error(err)
+				}
+			},
+		}
+		err := hostops.Release(ctx, hostops.Tools{Run: r, MountInfo: mountInfo}, "the ESP", "/esp", "", nil)
+		if c.fails && (err == nil || !strings.HasPrefix(err.Error(), "unmount the ESP: ")) || !c.fails && err != nil {
+			t.Errorf("%s: Release = %v", c.name, err)
+		}
+		if !slices.Equal(r.Calls, []string{"umount /esp"}) {
+			t.Errorf("%s: ran %q", c.name, r.Calls)
+		}
 	}
 }
 
