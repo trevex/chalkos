@@ -50,14 +50,14 @@ func (k *side) trust() []*nodev1.TrustStatus {
 		if err != nil {
 			return nil
 		}
-		return []*nodev1.TrustStatus{{Name: client.NameKubernetesCA, Fingerprints: fps}}
+		return []*nodev1.TrustStatus{{Name: kpki.NameKubernetesCA, Fingerprints: fps}}
 	}
 	file := func(name string) string { return filepath.Join(k.paths.PKI, name) }
 	var list []*nodev1.TrustStatus
 	for _, ca := range []struct{ name, bundle, leaf string }{
-		{client.NameKubernetesCA, kpki.FileCA, kpki.FileAPIServer},
-		{client.NameFrontProxyCA, kpki.FileFrontProxyCA, kpki.FileFrontProxyClient},
-		{client.NameEtcdCA, kpki.FileEtcdCA, kpki.FileEtcdServer},
+		{kpki.NameKubernetesCA, kpki.FileCA, kpki.FileAPIServer},
+		{kpki.NameFrontProxyCA, kpki.FileFrontProxyCA, kpki.FileFrontProxyClient},
+		{kpki.NameEtcdCA, kpki.FileEtcdCA, kpki.FileEtcdServer},
 	} {
 		data, err := os.ReadFile(file(ca.bundle))
 		if err != nil {
@@ -79,7 +79,7 @@ func (k *side) trust() []*nodev1.TrustStatus {
 		list = append(list, st)
 	}
 	if pubs, err := os.ReadFile(file(kpki.FileServiceAccountPub)); err == nil {
-		st := &nodev1.TrustStatus{Name: client.NameServiceAccountKeys}
+		st := &nodev1.TrustStatus{Name: kpki.NameServiceAccountKeys}
 		rest := pubs
 		for {
 			var block *pem.Block
@@ -99,7 +99,7 @@ func (k *side) trust() []*nodev1.TrustStatus {
 	}
 	if config, err := os.ReadFile(file(kpki.FileEncryptionConfig)); err == nil {
 		if keys, err := kpki.ParseEncryptionConfig(config); err == nil && len(keys) > 0 {
-			st := &nodev1.TrustStatus{Name: client.NameEncryptionKeys, Issuing: keys[0].Fingerprint()}
+			st := &nodev1.TrustStatus{Name: kpki.NameEncryptionKeys, Issuing: keys[0].Fingerprint()}
 			for _, key := range keys {
 				st.Fingerprints = append(st.Fingerprints, key.Fingerprint())
 			}
@@ -119,7 +119,7 @@ func (k *side) certificates(now time.Time) []*nodev1.CertificateStatus {
 	}
 	if err != nil {
 		// Its expiry is unknown, as are those of the certificates the share holds.
-		return []*nodev1.CertificateStatus{{Name: client.NameKubernetesShare, Problem: "unreadable: " + err.Error()}}
+		return []*nodev1.CertificateStatus{{Name: kpki.NameKubernetesShare, Problem: "unreadable: " + err.Error()}}
 	}
 	// The CAs that may have issued the node's Kubernetes certificates.
 	var issuers []*x509.Certificate
@@ -138,9 +138,9 @@ func (k *side) certificates(now time.Time) []*nodev1.CertificateStatus {
 		hint    string
 	}{
 		{client.NameNodeCA, share.NodeCA, nodeCAWarning, "; run chalkctl rotate node-ca"},
-		{client.NameKubernetesCA, &share.CA, layer.CAWarning, ""},
-		{client.NameFrontProxyCA, share.FrontProxyCA, layer.CAWarning, ""},
-		{client.NameEtcdCA, share.EtcdCA, layer.CAWarning, ""},
+		{kpki.NameKubernetesCA, &share.CA, layer.CAWarning, ""},
+		{kpki.NameFrontProxyCA, share.FrontProxyCA, layer.CAWarning, ""},
+		{kpki.NameEtcdCA, share.EtcdCA, layer.CAWarning, ""},
 	}
 	for _, ca := range cas {
 		if ca.ca == nil {
@@ -160,12 +160,12 @@ func (k *side) certificates(now time.Time) []*nodev1.CertificateStatus {
 			if p := k.leavesProblem(); p != "" {
 				problem = p
 			}
-			add(client.NameControlPlane, first, problem)
+			add(kpki.NameControlPlane, first, problem)
 		}
 	}
 	kubelet, clientErr := layer.ReadPEMCertificate(k.paths.KubeletClient())
 	if clientErr == nil {
-		add(client.NameKubeletClient, kubelet, kubeletProblem(kubelet, now))
+		add(kpki.NameKubeletClient, kubelet, kubeletProblem(kubelet, now))
 	}
 	// A worker whose kubelet renewed its certificate on VAR starts from the share's again once
 	// VAR is lost; if that one expired too, the kubelet cannot join until a new one arrives.
@@ -175,11 +175,11 @@ func (k *side) certificates(now time.Time) []*nodev1.CertificateStatus {
 			if n, err := k8s.ReadNode(k.paths.NodeFile); err == nil {
 				name = n.Name
 			}
-			add(client.NameKubeletClient, cert, "expired; deliver a new one with chalkctl apply-config "+name+" --kubernetes-share")
+			add(kpki.NameKubeletClient, cert, "expired; deliver a new one with chalkctl apply-config "+name+" --kubernetes-share")
 		}
 	}
 	if serving, err := layer.ReadPEMCertificate(k.paths.KubeletServing()); err == nil {
-		add(client.NameKubeletServing, serving, kubeletProblem(serving, now))
+		add(kpki.NameKubeletServing, serving, kubeletProblem(serving, now))
 	}
 	return list
 }

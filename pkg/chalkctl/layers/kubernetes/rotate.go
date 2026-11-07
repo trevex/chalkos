@@ -15,6 +15,7 @@ import (
 	"github.com/trevex/chalkos/pkg/client"
 	"github.com/trevex/chalkos/pkg/clustersecrets"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
+	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
 	"github.com/trevex/chalkos/pkg/pki"
 )
 
@@ -100,11 +101,11 @@ func expectations(s clustersecrets.Secrets, kind clustersecrets.RotationKind, no
 	var list []expectation
 	switch kind {
 	case clustersecrets.RotateKubernetesCA:
-		cas := []struct{ name, bundle, issuing string }{{client.NameKubernetesCA, k.CABundle(), k.CA.Certificate}}
+		cas := []struct{ name, bundle, issuing string }{{kpki.NameKubernetesCA, k.CABundle(), k.CA.Certificate}}
 		if controlPlane {
 			cas = append(cas,
-				struct{ name, bundle, issuing string }{client.NameFrontProxyCA, k.FrontProxyCABundle(), k.FrontProxyCA.Certificate},
-				struct{ name, bundle, issuing string }{client.NameEtcdCA, k.EtcdCABundle(), k.EtcdCA.Certificate})
+				struct{ name, bundle, issuing string }{kpki.NameFrontProxyCA, k.FrontProxyCABundle(), k.FrontProxyCA.Certificate},
+				struct{ name, bundle, issuing string }{kpki.NameEtcdCA, k.EtcdCABundle(), k.EtcdCA.Certificate})
 		}
 		for _, ca := range cas {
 			values, err := pki.Fingerprints(ca.bundle)
@@ -124,7 +125,7 @@ func expectations(s clustersecrets.Secrets, kind clustersecrets.RotationKind, no
 		if err != nil {
 			return nil, err
 		}
-		e := expectation{name: client.NameServiceAccountKeys}
+		e := expectation{name: kpki.NameServiceAccountKeys}
 		for _, pub := range pubs {
 			fp, err := pki.PublicKeyFingerprint(pub)
 			if err != nil {
@@ -135,7 +136,7 @@ func expectations(s clustersecrets.Secrets, kind clustersecrets.RotationKind, no
 		e.issuing = e.values[0]
 		list = append(list, e)
 	case clustersecrets.RotateEncryptionKey:
-		e := expectation{name: client.NameEncryptionKeys}
+		e := expectation{name: kpki.NameEncryptionKeys}
 		for _, key := range k.EncryptionKeys() {
 			e.values = append(e.values, key.Fingerprint())
 		}
@@ -317,20 +318,20 @@ func refreshKubernetesCA(ctx context.Context, r layer.Rotating, workers []string
 		return err
 	}
 	if err := layer.EachNode(workers, func(name string) error {
-		if st, err := r.Status(ctx, name); err == nil && layer.IssuedBy(st, client.NameKubeletClient, ca) == nil {
+		if st, err := r.Status(ctx, name); err == nil && layer.IssuedBy(st, kpki.NameKubeletClient, ca) == nil {
 			return nil
 		}
 		if err := r.DeliverPayloads(ctx, name); err != nil {
 			return err
 		}
 		return layer.WaitStatus(ctx, r, name, "to use a kubelet client certificate of the new CA", func(st *nodev1.StatusResponse) error {
-			return layer.IssuedBy(st, client.NameKubeletClient, ca)
+			return layer.IssuedBy(st, kpki.NameKubeletClient, ca)
 		})
 	}); err != nil {
 		return err
 	}
 	return layer.EachNode(append(rotatingNodesOf(r, k8s.KindControlPlane), workers...), func(name string) error {
-		if st, err := r.Status(ctx, name); err == nil && layer.IssuedBy(st, client.NameKubeletServing, ca) == nil {
+		if st, err := r.Status(ctx, name); err == nil && layer.IssuedBy(st, kpki.NameKubeletServing, ca) == nil {
 			r.Say("  %s's kubelet serves a certificate of the new CA already", name)
 			return nil
 		}
@@ -343,7 +344,7 @@ func refreshKubernetesCA(ctx context.Context, r layer.Rotating, workers []string
 			return err
 		}
 		if err := layer.WaitStatus(ctx, r, name, "for a kubelet serving certificate of the new CA", func(st *nodev1.StatusResponse) error {
-			return layer.IssuedBy(st, client.NameKubeletServing, ca)
+			return layer.IssuedBy(st, kpki.NameKubeletServing, ca)
 		}); err != nil {
 			return err
 		}
