@@ -399,20 +399,26 @@ func (a *app) startSupervisor(ctx context.Context, dir string) error {
 	}
 	exited := make(chan error, 1)
 	go func() { exited <- cmd.Wait() }()
-	deadline := time.After(2 * time.Minute)
-	for !lab.Ready(dir) {
+	errNotReady := errors.New("the lab is not ready")
+	err = poll.Until(ctx, "", 2*time.Minute, 100*time.Millisecond, func() error {
+		if lab.Ready(dir) {
+			return nil
+		}
 		select {
 		case err := <-exited:
 			out, _ := os.ReadFile(log.Name())
-			return fmt.Errorf("the supervisor ended: %v: %s", err, bytes.TrimSpace(out))
-		case <-deadline:
-			return fmt.Errorf("the supervisor did not start the VMs in 2 minutes; see %s", log.Name())
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-time.After(100 * time.Millisecond):
+			return poll.Permanent{Err: fmt.Errorf("the supervisor ended: %v: %s", err, bytes.TrimSpace(out))}
+		default:
+			return errNotReady
 		}
+	})
+	switch {
+	case err == nil || !errors.Is(err, errNotReady):
+		return err
+	case ctx.Err() != nil:
+		return ctx.Err()
 	}
-	return nil
+	return fmt.Errorf("the supervisor did not start the VMs in 2 minutes; see %s", log.Name())
 }
 
 // maintenanceRE is chalkd's line on the console in maintenance mode.

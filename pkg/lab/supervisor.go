@@ -220,28 +220,28 @@ func StartStopped(ctx context.Context, dir string) error {
 	// supervisor runs it still and skips it: the supervisor is asked again until every VM runs.
 	// It starts only the VMs that do not run, so asking again starts none twice.
 	var signalled time.Time
-	for {
+	err = poll.UntilDone(ctx, "", 100*time.Millisecond, func() error {
+		if _, running, err := Supervisor(dir); err != nil {
+			return poll.Permanent{Err: err}
+		} else if !running {
+			return poll.Permanent{Err: fmt.Errorf("the supervisor %d ended; see %s", pid, filepath.Join(dir, "supervisor.log"))}
+		}
 		// The lab may be ready still while its supervisor has not yet heard that a VM exited.
 		if Ready(dir) && allRunning(l) {
 			return nil
 		}
 		if time.Since(signalled) >= time.Second {
 			if err := syscall.Kill(pid, startSignal); err != nil {
-				return fmt.Errorf("signal the supervisor %d: %w", pid, err)
+				return poll.Permanent{Err: fmt.Errorf("signal the supervisor %d: %w", pid, err)}
 			}
 			signalled = time.Now()
 		}
-		select {
-		case <-ctx.Done():
-			return fmt.Errorf("waiting for the supervisor %d to start the VMs: %w; see %s", pid, ctx.Err(), filepath.Join(dir, "supervisor.log"))
-		case <-time.After(100 * time.Millisecond):
-		}
-		if _, running, err := Supervisor(dir); err != nil {
-			return err
-		} else if !running {
-			return fmt.Errorf("the supervisor %d ended; see %s", pid, filepath.Join(dir, "supervisor.log"))
-		}
+		return errors.New("a VM does not run yet")
+	})
+	if err != nil && ctx.Err() != nil {
+		return fmt.Errorf("waiting for the supervisor %d to start the VMs: %w; see %s", pid, ctx.Err(), filepath.Join(dir, "supervisor.log"))
 	}
+	return err
 }
 
 func allRunning(l *Lab) bool {
@@ -317,7 +317,7 @@ func StopLab(ctx context.Context, dir string) error {
 		if err := syscall.Kill(pid, syscall.SIGTERM); err != nil && !errors.Is(err, syscall.ESRCH) {
 			return fmt.Errorf("stop the supervisor: %w", err)
 		}
-		err := poll.Until(ctx, fmt.Sprintf("the supervisor %d to stop the lab", pid), 0, 100*time.Millisecond, func() error {
+		err := poll.UntilDone(ctx, fmt.Sprintf("the supervisor %d to stop the lab", pid), 100*time.Millisecond, func() error {
 			_, running, err := Supervisor(dir)
 			switch {
 			case err != nil:
