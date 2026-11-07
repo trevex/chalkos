@@ -67,6 +67,17 @@ type ImageFacts interface {
 	Target(facts *anypb.Any, t *config.Target) (claimed bool, err error)
 }
 
+// Inventory is a plugin whose layer filters each node's documents and checks an inventory's nodes
+// together. chalkctl asks every compiled plugin.
+type Inventory interface {
+	// NodeDocuments are the documents of a node's files that the node gets, as an
+	// inventory.Filter: docs or a new slice, with no document changed.
+	NodeDocuments(docs []config.Document) []config.Document
+	// CheckInventory refuses the cluster's nodes when their documents do not go together, such as
+	// nodes of one cluster that describe it differently. chalkctl checks every inventory it loads.
+	CheckInventory(c Cluster) error
+}
+
 // Delivery is a plugin whose layer takes payloads that chalkctl issues a node from the secrets
 // file, and which admits a node to them. chalkctl asks every compiled plugin.
 type Delivery interface {
@@ -215,16 +226,14 @@ type Cluster interface {
 	Name() string
 	// InventoryName is the inventory's metadata.name.
 	InventoryName() string
-	// Endpoint is the URL the Cluster document names; "" without one.
-	Endpoint() string
 	// Partial reports whether the cluster comes without an inventory.
 	Partial() bool
 	// RequireNodes refuses a partial cluster for the command, which needs the nodes' config.
 	RequireNodes(command string) error
 	// NodeNames are the inventory's nodes in name order; none on a partial cluster.
 	NodeNames() []string
-	// Documents are the node's config documents as the inventory gives them; none on a partial
-	// cluster. They are the inventory's own, which callers read and never change.
+	// Documents are the node's config documents as the inventory gives them, after every
+	// Inventory plugin's NodeDocuments; none on a partial cluster. They are the inventory's own, which callers read and never change.
 	Documents(name string) ([]config.Document, error)
 }
 

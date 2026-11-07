@@ -31,19 +31,19 @@ func (a *app) validateCommand() *cobra.Command {
 }
 
 // validate checks the config of the nodes named, or of every node of the inventory, and names
-// every node whose config is invalid. The nodes' Cluster and Flannel specs are checked first, as
-// every other command checks them when it loads the inventory. A valid config that
+// every node whose config is invalid. The compiled layers check the nodes together first, as
+// every other command does when it loads the inventory. A valid config that
 // leaves the node's secrets unencrypted draws a warning.
 func (a *app) validate(ctx context.Context, f validateFlags, names []string) error {
 	path := f.inventory
 	if path == "" {
 		path = inventory.DefaultFile
 	}
-	inv, err := inventory.Load(path)
+	c, err := readInventory(ctx, path)
 	if err != nil {
 		return err
 	}
-	inv.SetContext(ctx)
+	inv := c.inv
 	// A node named twice is checked once; a node the inventory does not have is a usage error,
 	// before any node is checked.
 	var nodes []string
@@ -60,12 +60,12 @@ func (a *app) validate(ctx context.Context, f validateFlags, names []string) err
 			return fmt.Errorf("the inventory %s names no node", path)
 		}
 	}
-	if _, err := inv.Endpoint(); err != nil {
+	if err := c.check(); err != nil {
 		return fmt.Errorf("%s: %w", path, err)
 	}
 	var failed []string
 	for _, name := range nodes {
-		line, warnings, err := validateNode(inv, name)
+		line, warnings, err := validateNode(c, name)
 		if err != nil {
 			failed = append(failed, err.Error())
 			continue
@@ -84,8 +84,8 @@ func (a *app) validate(ctx context.Context, f validateFlags, names []string) err
 // validateNode checks a node's config against the image the inventory names for it, as the node
 // would, and returns what a valid config warrants a warning for. Its errors and warnings name the
 // node.
-func validateNode(inv *inventory.Inventory, name string) (string, []string, error) {
-	nc, err := inv.Node(name)
+func validateNode(cl *cluster, name string) (string, []string, error) {
+	nc, err := cl.config(name)
 	if err != nil {
 		return "", nil, err
 	}

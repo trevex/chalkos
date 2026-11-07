@@ -281,13 +281,20 @@ func TestKubeconfigContext(t *testing.T) {
 }
 
 // TestKubeconfigNeedsAnEndpoint refuses an inventory whose nodes' Cluster documents name no
-// endpoint, as there is none to point clients at.
+// endpoint, as there is none to point clients at, and an inventory without nodes, whose shared
+// files' Cluster document no node holds.
 func TestKubeconfigNeedsAnEndpoint(t *testing.T) {
 	ta := newTestApp(t)
 	writeFile(t, filepath.Join(ta.dir, "cluster.yaml"), "")
 	err := ta.run(context.Background(), []string{"kubeconfig", "--inventory", ta.inventory, "--out", "-"})
 	if err == nil || !strings.Contains(err.Error(), "no Cluster document of the cluster lab names an endpoint") {
 		t.Errorf("kubeconfig without an endpoint = %v", err)
+	}
+	ta = newTestApp(t)
+	writeFile(t, ta.inventory, strings.SplitAfter(testInventoryYAML, "files: [cluster.yaml]}\n")[0])
+	err = ta.run(context.Background(), []string{"kubeconfig", "--inventory", ta.inventory, "--out", "-"})
+	if err == nil || !strings.Contains(err.Error(), "no Cluster document of the cluster lab names an endpoint") {
+		t.Errorf("kubeconfig of an inventory without nodes = %v", err)
 	}
 }
 

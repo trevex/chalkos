@@ -21,12 +21,14 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/image"
 	"github.com/trevex/chalkos/pkg/imagesign"
 	"github.com/trevex/chalkos/pkg/internal/cli"
 	"github.com/trevex/chalkos/pkg/internal/poll"
 	"github.com/trevex/chalkos/pkg/inventory"
 	"github.com/trevex/chalkos/pkg/kubernetes"
+	"github.com/trevex/chalkos/pkg/kubernetes/translate"
 	"github.com/trevex/chalkos/pkg/lab"
 	"github.com/trevex/chalkos/pkg/pki"
 )
@@ -159,14 +161,21 @@ func newLab(path, code string, guestForwards []lab.GuestForward) (*lab.Lab, *inv
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	inv, err := inventory.Load(lf.inventory)
+	inv, err := inventory.Load(lf.inventory, translate.NodeDocuments)
 	if err != nil {
 		return nil, nil, nil, err
 	}
 	// chalkctl, which installs the nodes, refuses an inventory whose nodes hold different Cluster
 	// or Flannel specs, or one holding two Cluster documents; such an inventory is refused before
 	// the lab is made.
-	if _, err := inv.Endpoint(); err != nil {
+	documents := func(name string) ([]config.Document, error) {
+		nc, err := inv.Node(name)
+		if err != nil {
+			return nil, err
+		}
+		return nc.Documents, nil
+	}
+	if _, err := translate.Endpoint(inv.NodeNames(), documents); err != nil {
 		return nil, nil, nil, fmt.Errorf("%s: %w", lf.inventory, err)
 	}
 	nodes, images, err := labNodes(inv, lf)
@@ -280,8 +289,9 @@ func labNodes(inv *inventory.Inventory, lf *labFile) ([]lab.Node, map[string]str
 			return nil, nil, fmt.Errorf("%s gives %s and %s the same MAC address %s", lf.path, other, name, mac)
 		}
 		macs[mac] = name
-		n := lab.Node{Name: name, Kind: nc.Type, MAC: mac, MemoryMB: 2048, CPUs: 2, Disks: []lab.Disk{{Size: "16G"}}}
-		if nc.Type == kubernetes.KindControlPlane {
+		kind := translate.NodeType(nc.Documents)
+		n := lab.Node{Name: name, Kind: kind, MAC: mac, MemoryMB: 2048, CPUs: 2, Disks: []lab.Disk{{Size: "16G"}}}
+		if kind == kubernetes.KindControlPlane {
 			n.MemoryMB = 3072
 		}
 		if m.Memory != 0 {

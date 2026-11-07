@@ -99,6 +99,8 @@ type Inventory struct {
 	Path string
 	Name string
 	Spec Spec
+	// filters take the documents a node gets from those of its files, in their order.
+	filters []Filter
 	// parsed holds the documents of each config file read so far, by path.
 	parsed map[string][]config.Document
 	// ctx is the context of the command that reads the inventory, which ends its reads of
@@ -125,9 +127,14 @@ type artifactRead struct {
 	err      error
 }
 
+// Filter takes the documents a node gets from those of its files, such as a layer that gives
+// some kinds only to some nodes. It returns docs or a new slice, and changes no document.
+type Filter func(docs []config.Document) []config.Document
+
 // Load reads an inventory and checks it against its schema and its own references: every group a
-// node is in and every image named must be defined, and every node must have one image.
-func Load(path string) (*Inventory, error) {
+// node is in and every image named must be defined, and every node must have one image. Each
+// node's documents pass through the filters in their order.
+func Load(path string, filters ...Filter) (*Inventory, error) {
 	abs, err := filepath.Abs(path)
 	if err != nil {
 		return nil, err
@@ -140,6 +147,7 @@ func Load(path string) (*Inventory, error) {
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", path, err)
 	}
+	inv.filters = filters
 	return inv, nil
 }
 

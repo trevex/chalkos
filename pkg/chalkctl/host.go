@@ -136,7 +136,6 @@ func (c pluginCluster) InventoryName() string {
 	return c.c.inv.Name
 }
 
-func (c pluginCluster) Endpoint() string                  { return c.c.endpoint }
 func (c pluginCluster) Partial() bool                     { return c.c.partial() }
 func (c pluginCluster) RequireNodes(command string) error { return c.c.requireNodes(command) }
 func (c pluginCluster) NodeNames() []string               { return c.c.nodeNames() }

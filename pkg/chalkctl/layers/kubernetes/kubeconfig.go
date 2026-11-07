@@ -67,7 +67,11 @@ func kubeconfig(h layer.Host, ctx context.Context, f kubeconfigFlags) error {
 	case !f.contextSet:
 		contextName = c.InventoryName()
 	}
-	if c.Endpoint() == "" {
+	server, err := endpoint(c)
+	if err != nil {
+		return err
+	}
+	if server == "" {
 		return fmt.Errorf("no Cluster document of the cluster %s names an endpoint, which a kubeconfig points clients at", c.Name())
 	}
 	secrets, err := h.Secrets(ctx, f.secrets)
@@ -79,13 +83,13 @@ func kubeconfig(h layer.Host, ctx context.Context, f kubeconfigFlags) error {
 	if err != nil {
 		return err
 	}
-	kc := kpki.Kubeconfig{Name: contextName, Server: c.Endpoint(), CA: []byte(k.CABundle()), Client: admin}
+	kc := kpki.Kubeconfig{Name: contextName, Server: server, CA: []byte(k.CABundle()), Client: admin}
 	if f.server != "" {
-		endpoint, err := url.Parse(c.Endpoint())
+		u, err := url.Parse(server)
 		if err != nil {
 			return fmt.Errorf("the cluster endpoint: %w", err)
 		}
-		kc.Server, kc.ServerName = f.server, endpoint.Hostname()
+		kc.Server, kc.ServerName = f.server, u.Hostname()
 	}
 	data, err := kc.Encode()
 	if err != nil {

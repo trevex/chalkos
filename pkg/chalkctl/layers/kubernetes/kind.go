@@ -2,7 +2,7 @@ package kubernetes
 
 import (
 	"github.com/trevex/chalkos/pkg/chalkctl/layer"
-	"github.com/trevex/chalkos/pkg/inventory"
+	"github.com/trevex/chalkos/pkg/kubernetes/translate"
 )
 
 // kindOf is what the node is in Kubernetes: the type its Node document names, a control plane or
@@ -12,7 +12,7 @@ func kindOf(c layer.Cluster, name string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return inventory.NodeType(docs), nil
+	return translate.NodeType(docs), nil
 }
 
 // nodesOf lists the cluster's nodes of a Kubernetes kind but skip, in name order.

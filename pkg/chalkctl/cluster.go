@@ -13,6 +13,7 @@ import (
 
 	"github.com/spf13/pflag"
 
+	"github.com/trevex/chalkos/pkg/chalkctl/layer"
 	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/inventory"
 	"github.com/trevex/chalkos/pkg/pki"
@@ -30,8 +31,8 @@ func (c *clusterFlags) register(fs *pflag.FlagSet) {
 // an inventory. Without one it is partial and nameless: each command names its node and --address
 // reaches it.
 type cluster struct {
-	name, endpoint string
-	inv            *inventory.Inventory
+	name string
+	inv  *inventory.Inventory
 	// configs holds each node's config, once read from the inventory.
 	configs map[string]*inventory.NodeConfig
 }
@@ -55,20 +56,43 @@ func loadCluster(ctx context.Context, f clusterFlags) (*cluster, error) {
 	return &cluster{}, nil
 }
 
-// loadInventory reads an inventory and the endpoint its nodes' Cluster documents name; every
-// command refuses to act on an inventory whose nodes hold different Cluster or Flannel specs. The
-// inventory reads its images in registries under ctx, the command's context.
+// loadInventory reads an inventory, whose images in registries it reads under ctx, the command's
+// context. Every command refuses to act on an inventory whose nodes a compiled layer refuses,
+// such as nodes that hold different Cluster or Flannel specs.
 func loadInventory(ctx context.Context, path string) (*cluster, error) {
-	inv, err := inventory.Load(path)
+	c, err := readInventory(ctx, path)
+	if err != nil {
+		return nil, err
+	}
+	if err := c.check(); err != nil {
+		return nil, fmt.Errorf("%s: %w", path, err)
+	}
+	return c, nil
+}
+
+// readInventory reads an inventory, whose images in registries it reads under ctx, with each
+// node's documents filtered by every compiled layer, and leaves it unchecked.
+func readInventory(ctx context.Context, path string) (*cluster, error) {
+	var filters []inventory.Filter
+	for _, p := range compiled[layer.Inventory]() {
+		filters = append(filters, p.NodeDocuments)
+	}
+	inv, err := inventory.Load(path, filters...)
 	if err != nil {
 		return nil, err
 	}
 	inv.SetContext(ctx)
-	endpoint, err := inv.Endpoint()
-	if err != nil {
-		return nil, fmt.Errorf("%s: %w", path, err)
+	return &cluster{name: inv.Name, inv: inv, configs: map[string]*inventory.NodeConfig{}}, nil
+}
+
+// check refuses the inventory's nodes when a compiled layer refuses them together.
+func (c *cluster) check() error {
+	for _, p := range compiled[layer.Inventory]() {
+		if err := p.CheckInventory(pluginCluster{c}); err != nil {
+			return err
+		}
 	}
-	return &cluster{name: inv.Name, endpoint: endpoint, inv: inv, configs: map[string]*inventory.NodeConfig{}}, nil
+	return nil
 }
 
 // requireNodes refuses a partial cluster for a command that needs the nodes' config.
