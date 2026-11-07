@@ -272,7 +272,7 @@ func TestApplyConfigRolloutStopsAndContinues(t *testing.T) {
 	l.rollTo(t, "1.37.2")
 	l.stuck = map[string]bool{"cp2": true}
 	err := l.applyConfigTo([]string{"cp1", "cp2", "cp3", "w1"}, "--try", "200ms")
-	if err == nil || !strings.Contains(err.Error(), "cp2: its control plane: kube-apiserver is not Ready") {
+	if err == nil || !strings.HasPrefix(err.Error(), "cp2: config ") || !strings.Contains(err.Error(), " was not confirmed within its trial: its control plane: kube-apiserver is not Ready") {
 		t.Fatalf("err = %v\n%s", err, l.ta.stdout)
 	}
 	want := []string{"members", "cp1 apply-config staged=false", "cp1 confirm", "members", "cp2 apply-config staged=false", "cp2 rollback"}
@@ -411,7 +411,7 @@ func TestApplyConfigConfirmWaitsForTheLayers(t *testing.T) {
 		t.Fatalf("%v\n%s", err, l.ta.stdout)
 	}
 	err := l.applyConfigTo([]string{"cp1"}, "--confirm")
-	if err == nil || !strings.Contains(err.Error(), "cp1: its control plane: kube-apiserver is not Ready") {
+	if err == nil || !strings.HasPrefix(err.Error(), "cp1: config ") || !strings.Contains(err.Error(), " was not confirmed within its trial: its control plane: kube-apiserver is not Ready") {
 		t.Fatalf("err = %v\n%s", err, l.ta.stdout)
 	}
 	if got, want := deliveries(l.takeEvents()), []string{"cp1 apply-config staged=false", "cp1 rollback"}; !slices.Equal(got, want) {

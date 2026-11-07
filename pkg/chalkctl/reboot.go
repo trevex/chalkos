@@ -174,7 +174,7 @@ func (b *rebooter) heldForActivation(ctx context.Context, n *rebootNode, t bootT
 	}
 	st, serr := b.reach.status(ctx, n.name)
 	if serr != nil {
-		return fmt.Errorf("%w; %s, as its status, which tells whether %s boots next, cannot be read: %s: %w", err, held, t.image, n.name, serr)
+		return fmt.Errorf("%w; %s, as its status, which tells whether %s boots next, cannot be read: %w", err, held, t.image, serr)
 	}
 	if boot := st.GetBoot(); boot.GetStagedState() == nodev1.SlotState_SLOT_STATE_ACTIVE && bytes.Equal(boot.GetStaged().GetRootHash(), t.root) {
 		return fmt.Errorf("%w; %s boots next all the same, so %s: chalkctl node reboot %s boots it and releases the node", err, t.image, held, n.name)
@@ -327,7 +327,7 @@ func fellBackError(n *rebootNode, msg string, boot *nodev1.BootStatus) error {
 func (n *rebootNode) ready(ctx context.Context, conn *client.Conn) error {
 	for _, r := range n.roles {
 		if err := r.u.Ready(ctx, conn, r.role); err != nil {
-			return fmt.Errorf("%s: %w", n.name, err)
+			return layer.Named(n.name, err)
 		}
 	}
 	return nil
@@ -361,14 +361,9 @@ func (b *rebooter) say(format string, args ...any) {
 	fmt.Fprintf(b.a.stdout, format+"\n", args...)
 }
 
-// call runs fn against a node; fn's error names the node.
+// call runs fn against a node; its error names the node.
 func (b *rebooter) call(name string, fn func(conn *client.Conn) error) error {
-	return b.reach.call(name, func(conn *client.Conn) error {
-		if err := fn(conn); err != nil {
-			return fmt.Errorf("%s: %w", name, err)
-		}
-		return nil
-	})
+	return b.reach.call(name, fn)
 }
 
 // probe reads what a node runs, its status and its roles in the clusters of its layers.

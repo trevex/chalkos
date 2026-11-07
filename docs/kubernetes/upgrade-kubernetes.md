@@ -167,7 +167,7 @@ prints which nodes run which API server:
 cp2 runs config <previous-version> again: config <version> was rolled back
 API server 1.37.1: cp2, cp3, w1
 API server 1.37.2: cp1
-chalkctl: cp2: config <version> was not confirmed within its trial: cp2: its control plane: kube-apiserver is not Ready
+chalkctl: cp2: config <version> was not confirmed within its trial: its control plane: kube-apiserver is not Ready
 ```
 
 Nodes that run the new version keep it, which the skew policy allows. The error names what the
@@ -465,9 +465,10 @@ kubernetes versions: API server 1.37.2, kubelet 1.37.1, control-plane pods curre
 - `w1 is no control plane, and the control planes cp2 do not run the API server 1.37.2 yet;
   deliver the config to them first`: the command named a worker before every control plane runs
   the new API server. Name the control planes too, or deliver to them first.
-- `cp2: its control plane: kube-apiserver is not Ready`: the control plane's static pods did not
-  run the new images within the trial, and chalkctl rolled its config back. Check that the
-  registry or the mirror serves the references, then run the same command again.
+- `cp2: config <version> was not confirmed within its trial: its control plane: kube-apiserver is
+  not Ready`: the control plane's static pods did not run the new images within the trial, and
+  chalkctl rolled its config back. Check that the registry or the mirror serves the references,
+  then run the same command again.
 - `the versions w1 runs are unknown: ...; the version skew check needs every node of the cluster`:
   chalkctl could not read a node's versions. Bring the node back, or remove it from the inventory.
 - `w1: the image's kubelet 1.38.0 would be newer than the API server 1.37.2 that cp2 runs, ...`:

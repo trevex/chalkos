@@ -114,7 +114,7 @@ func everyControlPlaneReads(ctx context.Context, controlPlanes []string, name st
 			continue
 		}
 		if err != nil {
-			why = append(why, fmt.Sprintf("%s: %v", cp, err))
+			why = append(why, layer.Named(cp, err).Error())
 			continue
 		}
 		switch {

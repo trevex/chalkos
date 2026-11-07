@@ -42,7 +42,7 @@ func (a *app) status(ctx context.Context, n nodeFlags, pos []string) error {
 	defer conn.Close()
 	resp, err := conn.Status(ctx, connect.NewRequest(&nodev1.StatusRequest{}))
 	if err != nil {
-		return err
+		return layer.Named(t.name, err)
 	}
 	s := resp.Msg
 	state := t.cluster.configState(t.name, s.ConfigVersion)

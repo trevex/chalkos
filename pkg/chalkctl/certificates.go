@@ -67,7 +67,7 @@ func (a *app) nodeRenew(ctx context.Context, f nodeRenewFlags, pos []string) err
 		NodeKey:         []byte(cert.Key),
 	}))
 	if err != nil {
-		return fmt.Errorf("deliver the node certificate of %s: %w", t.name, nodeError(err, t.name))
+		return &layer.NodeError{Node: t.name, Err: fmt.Errorf("deliver the node certificate of %s: %w", t.name, err), Named: true}
 	}
 	a.warnDelivery(t.name, resp.Msg)
 	leaf, err := pki.ParseCertificate([]byte(cert.Certificate))

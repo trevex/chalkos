@@ -186,7 +186,7 @@ func etcdLeave(h layer.Host, ctx context.Context, f viaFlags, pos []string) erro
 		_, err := Client(conn).EtcdLeave(ctx, connect.NewRequest(&kubernetesv1.EtcdLeaveRequest{Force: f.force}))
 		return err
 	}); err != nil {
-		return fmt.Errorf("%s: %w", t.Name(), err)
+		return err
 	}
 	fmt.Fprintf(h.Stdout(), "%s left etcd; reinstall it to join the cluster again\n", t.Name())
 	return nil

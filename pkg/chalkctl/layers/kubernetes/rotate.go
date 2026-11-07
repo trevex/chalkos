@@ -219,10 +219,10 @@ func controlPlanesInTurn(ctx context.Context, r layer.Rotating, kind clustersecr
 	}
 	for _, name := range rotatingNodesOf(r, k8s.KindControlPlane) {
 		if err := waitQuorum(ctx, r, name); err != nil {
-			return fmt.Errorf("%s: %w", name, err)
+			return layer.Named(name, err)
 		}
 		if err := r.DeliverPayloads(ctx, name); err != nil {
-			return fmt.Errorf("%s: %w", name, err)
+			return layer.Named(name, err)
 		}
 		if err := layer.WaitStatus(ctx, r, name, "to run on its new files", func(st *nodev1.StatusResponse) error {
 			if err := applied(st, want); err != nil {
@@ -240,7 +240,7 @@ func controlPlanesInTurn(ctx context.Context, r layer.Rotating, kind clustersecr
 			return err
 		}
 		if err := waitQuorum(ctx, r, name); err != nil {
-			return fmt.Errorf("%s: %w", name, err)
+			return layer.Named(name, err)
 		}
 		r.Say("  %s runs on its new files", name)
 	}
@@ -272,6 +272,10 @@ func waitQuorum(ctx context.Context, r layer.Rotating, name string) error {
 			if silent.IsZero() {
 				silent = time.Now()
 			} else if time.Since(silent) >= window {
+				// The sentence names the node, so the error goes without its name.
+				if e, ok := errors.AsType[*layer.NodeError](err); ok {
+					err = e.Err
+				}
 				return poll.Permanent{Err: fmt.Errorf("%s does not answer: %w", name, err)}
 			}
 			return err

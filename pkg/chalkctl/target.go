@@ -13,6 +13,7 @@ import (
 	"github.com/spf13/pflag"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
+	"github.com/trevex/chalkos/pkg/chalkctl/layer"
 	"github.com/trevex/chalkos/pkg/client"
 	"github.com/trevex/chalkos/pkg/clustersecrets"
 )
@@ -167,25 +168,6 @@ func (p pinFlags) dial(addr, source string, cert *tls.Certificate) (*client.Conn
 	return client.Dial(addr, client.Options{Verify: verify, Certificate: cert, Source: source})
 }
 
-// nodeError puts the node's name where the node's own messages say <node>. The error it wraps
-// stays reachable, so its connect code still decides whether another node is tried.
-func nodeError(err error, name string) error {
-	if err == nil {
-		return nil
-	}
-	return namedError{err, name}
-}
-
-// namedError is a node's error with the node's name in place of <node>.
-type namedError struct {
-	err  error
-	name string
-}
-
-func (e namedError) Error() string { return strings.ReplaceAll(e.err.Error(), "<node>", e.name) }
-
-func (e namedError) Unwrap() error { return e.err }
-
 // nodePinFlags are the flags of a command that reaches an installed node or, with a fingerprint
 // or --insecure, a node in maintenance mode.
 type nodePinFlags struct {
@@ -267,15 +249,15 @@ func (s nodeSet) call(name string, fn func(conn *client.Conn) error) error {
 	return callNode(t, fn)
 }
 
-// callNode runs fn on a connection to an installed node and closes the connection. fn's error
-// carries the node's name in place of <node>.
+// callNode runs fn on a connection to an installed node and closes the connection. Its error,
+// the connection's or fn's, names the node, as layer.NodeError does.
 func callNode(t *target, fn func(conn *client.Conn) error) error {
 	conn, err := dialInstalled(t)
 	if err != nil {
-		return err
+		return layer.Named(t.name, err)
 	}
 	defer conn.Close()
-	return nodeError(fn(conn), t.name)
+	return layer.Named(t.name, fn(conn))
 }
 
 // status reads an installed node's status.
@@ -312,7 +294,7 @@ func (s nodeSet) viaFirst(names []string, next func(error) bool, fn func(conn *c
 		if err == nil {
 			return nil
 		}
-		last = fmt.Errorf("%s: %w", name, err)
+		last = layer.Named(name, err)
 		if !next(err) {
 			return last
 		}

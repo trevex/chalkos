@@ -3,7 +3,6 @@ package layer
 import (
 	"context"
 	"errors"
-	"fmt"
 	"strings"
 	"time"
 
@@ -87,12 +86,12 @@ func WaitStatus(ctx context.Context, r Rotating, name, what string, check func(s
 	})
 }
 
-// EachNode runs fn for every node, also after one failed, and names those that failed.
+// EachNode runs fn for every node, also after one failed, and names those that failed, once.
 func EachNode(names []string, fn func(name string) error) error {
 	var failed []string
 	for _, name := range names {
 		if err := fn(name); err != nil {
-			failed = append(failed, fmt.Sprintf("%s: %v", name, err))
+			failed = append(failed, Named(name, err).Error())
 		}
 	}
 	if len(failed) > 0 {

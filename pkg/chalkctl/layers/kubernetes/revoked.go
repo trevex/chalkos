@@ -31,7 +31,7 @@ func revokedNodesOf(ctx context.Context, controlPlanes []string, status func(ctx
 		}
 		if err != nil {
 			bootstrapped = bootstrapped || !errors.As(err, new(notInstalledYet))
-			why = append(why, fmt.Sprintf("%s: %v", name, err))
+			why = append(why, layer.Named(name, err).Error())
 			continue
 		}
 		switch {

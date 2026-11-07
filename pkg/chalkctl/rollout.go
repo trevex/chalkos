@@ -344,7 +344,7 @@ func (a *app) waitDelivered(ctx context.Context, t *target, until time.Time) err
 			}
 			for _, l := range layers {
 				if err := l.Delivered(ctx, conn); err != nil {
-					return fmt.Errorf("%s: %w", t.name, err)
+					return err
 				}
 			}
 			return nil
@@ -370,7 +370,7 @@ func (a *app) rollbackTrial(ctx context.Context, t *target, version, previous st
 		return err
 	})
 	if err != nil {
-		fmt.Fprintf(a.stderr, "chalkctl: warning: %s: rolling config %s back failed: %v; waiting for the trial's deadline\n", t.name, version, err)
+		fmt.Fprintf(a.stderr, "chalkctl: warning: rolling config %s back failed: %v; waiting for the trial's deadline\n", version, err)
 		return a.trialRolledBack(ctx, t, version, previous, deadline, failure)
 	}
 	fmt.Fprintf(a.stdout, "%s runs config %s again: config %s was rolled back\n", t.name, previous, version)

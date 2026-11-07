@@ -12,6 +12,7 @@ import (
 	"connectrpc.com/connect"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
+	"github.com/trevex/chalkos/pkg/chalkctl/layer"
 	"github.com/trevex/chalkos/pkg/internal/cli"
 	"github.com/trevex/chalkos/pkg/internal/poll"
 )
@@ -44,7 +45,7 @@ func (a *app) confirmTrial(ctx context.Context, t *target, version, previous str
 	// plane's components run the images it names. A config they do not find so is rolled back now,
 	// as the node would roll it back at the deadline.
 	if err := a.waitDelivered(ctx, t, until); err != nil {
-		failure := fmt.Errorf("%s: config %s was not confirmed within its trial: %w", t.name, version, err)
+		failure := &layer.NodeError{Node: t.name, Err: fmt.Errorf("config %s was not confirmed within its trial: %w", version, layer.Unnamed(t.name, err))}
 		switch {
 		case ctx.Err() != nil:
 			return fmt.Errorf("%w; %s runs config %s on trial; %s", err, t.name, version, endTrialHint(t.name))
@@ -83,11 +84,11 @@ func (a *app) confirmTrial(ctx context.Context, t *target, version, previous str
 		return nil
 	// Interrupted, chalkctl leaves the trial open.
 	case ctx.Err() != nil && late:
-		return fmt.Errorf("%w; %s runs config %s on trial; %s", err, t.name, version, endTrialHint(t.name))
+		return &layer.NodeError{Node: t.name, Err: fmt.Errorf("%w; %s runs config %s on trial; %s", err, t.name, version, endTrialHint(t.name)), Named: true}
 	case ctx.Err() != nil:
-		return fmt.Errorf("%w; %s runs config %s on trial until %s; %s", err, t.name, version, deadline.UTC().Format(time.RFC3339), endTrialHint(t.name))
+		return &layer.NodeError{Node: t.name, Err: fmt.Errorf("%w; %s runs config %s on trial until %s; %s", err, t.name, version, deadline.UTC().Format(time.RFC3339), endTrialHint(t.name)), Named: true}
 	}
-	failure := fmt.Errorf("%s: config %s was not confirmed within its trial: %w", t.name, version, cmp.Or(last, err))
+	failure := &layer.NodeError{Node: t.name, Err: fmt.Errorf("config %s was not confirmed within its trial: %w", version, cmp.Or(last, err))}
 	switch {
 	// A record the node cannot read names its remedy, which neither the deadline nor a
 	// confirmation changes.
@@ -119,7 +120,7 @@ func confirmOnce(ctx context.Context, t *target, version string, timeout time.Du
 	defer conn.Close()
 	resp, err := conn.ConfirmConfig(ctx, connect.NewRequest(&nodev1.ConfirmConfigRequest{Version: version}))
 	if err != nil {
-		return nil, nodeError(err, t.name)
+		return nil, err
 	}
 	return resp.Msg.Warnings, nil
 }
@@ -200,7 +201,7 @@ func (a *app) confirmConfig(ctx context.Context, f applyConfigFlags, name string
 	resp, err := conn.Status(ctx, connect.NewRequest(&nodev1.StatusRequest{}))
 	conn.Close()
 	if err != nil {
-		return nodeError(err, t.name)
+		return layer.Named(t.name, err)
 	}
 	if resp.Msg.TrialError != "" {
 		return trialOpen(t.name, resp.Msg)
@@ -220,14 +221,14 @@ func (a *app) confirmConfig(ctx context.Context, f applyConfigFlags, name string
 // holds back every change but a rollback.
 func trialOpen(name string, st *nodev1.StatusResponse) error {
 	if e := st.GetTrialError(); e != "" {
-		return namedErr{fmt.Errorf("%s: the record of a config's trial cannot be read: %s; other changes are refused until chalkctl apply-config --rollback %s restores the previous config", name, e, name)}
+		return &layer.NodeError{Node: name, Err: fmt.Errorf("%s: the record of a config's trial cannot be read: %s; other changes are refused until chalkctl apply-config --rollback %s restores the previous config", name, e, name), Named: true}
 	}
 	tr := st.GetTrial()
 	if tr == nil || st.GetConfigVersion() == tr.PreviousVersion {
 		return nil
 	}
-	return namedErr{fmt.Errorf("%s runs config %s on trial until %s; confirm it with chalkctl apply-config --confirm %s, or roll it back with chalkctl apply-config --rollback %s, first",
-		name, tr.Version, deadlineOf(tr), name, name)}
+	return &layer.NodeError{Node: name, Err: fmt.Errorf("%s runs config %s on trial until %s; confirm it with chalkctl apply-config --confirm %s, or roll it back with chalkctl apply-config --rollback %s, first",
+		name, tr.Version, deadlineOf(tr), name, name), Named: true}
 }
 
 // trialLine is the status line of a config on trial.

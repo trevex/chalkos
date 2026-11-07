@@ -243,8 +243,8 @@ func (a *app) dryRunConfig(ctx context.Context, f applyConfigFlags, names []stri
 		case err != nil && len(names) == 1:
 			return err
 		case err != nil:
-			fmt.Fprintf(a.stderr, "chalkctl: %s\n", namedOnce(name, err))
-			if _, ok := errors.AsType[refusal](err); ok {
+			fmt.Fprintf(a.stderr, "chalkctl: %s\n", layer.Named(name, err))
+			if refusesConfig(err) {
 				refused = append(refused, name)
 			} else {
 				failed = append(failed, name)
@@ -264,13 +264,17 @@ func (a *app) dryRunConfig(ctx context.Context, f applyConfigFlags, names []stri
 	return nil
 }
 
-// refusal is a refusal of a node's config: by chalkctl's checks of it against the image's schemas
-// and rules, or by the node's checks. A dry run counts it apart from a failure before the config
-// is checked, as of a node missing from the inventory, unreachable or on trial, which refuses
-// nothing; other commands print it as any error.
-type refusal struct{ error }
-
-func (r refusal) Unwrap() error { return r.error }
+// refusesConfig reports whether err refuses a node's config, as a layer.NodeError says: a dry run counts
+// it apart from a failure before the config is checked, as of a node missing from the inventory,
+// unreachable or on trial, which refuses nothing; other commands print it as any error.
+func refusesConfig(err error) bool {
+	for e, ok := errors.AsType[*layer.NodeError](err); ok; e, ok = errors.AsType[*layer.NodeError](e.Err) {
+		if e.Refused {
+			return true
+		}
+	}
+	return false
+}
 
 // refusedByNode reports whether the node's answer to a dry run refuses the config, as it would
 // refuse the delivery, rather than failing for the node's own reasons, such as an upgrade that
@@ -281,22 +285,6 @@ func refusedByNode(err error) bool {
 		return connect.IsWireError(err)
 	}
 	return false
-}
-
-// namedErr marks an error whose message names the node it is about already, as the errors of the
-// node's trial, of the config it holds and of chalkctl's check of the image's rules do. It changes
-// no message; namedError, by contrast, puts the name in place of <node>.
-type namedErr struct{ error }
-
-func (e namedErr) Unwrap() error { return e.error }
-
-// namedOnce is err as a line of several nodes' output names the node called name: prefixed with
-// the name unless err, or an error it wraps, is a namedErr.
-func namedOnce(name string, err error) string {
-	if _, ok := errors.AsType[namedErr](err); ok {
-		return err.Error()
-	}
-	return name + ": " + err.Error()
 }
 
 // deliverConfig delivers the inventory's config to the node t, or with --dry-run has the node
@@ -342,7 +330,7 @@ func (a *app) deliverConfig(ctx context.Context, f applyConfigFlags, t *target) 
 		}
 	}
 	if f.try > 0 && st.Msg.ConfigVersion == d.Version {
-		return namedErr{fmt.Errorf("%s runs config %s already; --try needs a config that changes it", t.name, d.Version)}
+		return &layer.NodeError{Node: t.name, Err: fmt.Errorf("%s runs config %s already; --try needs a config that changes it", t.name, d.Version), Named: true}
 	}
 	// A unit that failed before the trial keeps its confirmation from passing, also later with
 	// --confirm, unless it recovers or is left out.
@@ -360,7 +348,7 @@ func (a *app) deliverConfig(ctx context.Context, f applyConfigFlags, t *target) 
 		nodeDocs, err = slotConfig(ctx, conn, false)
 	}
 	if err != nil {
-		return namedErr{fmt.Errorf("%s: %w", t.name, err)}
+		return layer.Named(t.name, err)
 	}
 	changes := diffConfig(nodeDocs, d.Documents)
 	fmt.Fprintf(a.stdout, "%s: %s\n", t.name, changes.summary())
@@ -376,11 +364,11 @@ func (a *app) deliverConfig(ctx context.Context, f applyConfigFlags, t *target) 
 	baseline := nodeDocs
 	if f.staged {
 		if baseline, err = slotConfig(ctx, conn, false); err != nil {
-			return namedErr{fmt.Errorf("%s: %w", t.name, err)}
+			return layer.Named(t.name, err)
 		}
 	}
 	if err := checkRules(c, d.documents, baseline, t.name); err != nil {
-		return refusal{namedErr{fmt.Errorf("%s: %w", t.name, err)}}
+		return &layer.NodeError{Node: t.name, Err: err, Refused: true}
 	}
 	// A pending config is kept without the fallback secret: the upgrade that adds an encrypted
 	// volume carries it. A staged image that goes between the Status read and the delivery, as an
@@ -425,9 +413,9 @@ func (a *app) deliverConfig(ctx context.Context, f applyConfigFlags, t *target) 
 			return a.failedTrial(ctx, conn, t, d.Version, st.Msg.ConfigVersion, deadline, err)
 		}
 		if f.dryRun && refusedByNode(err) {
-			return refusal{nodeError(err, t.name)}
+			return &layer.NodeError{Node: t.name, Err: err, Refused: true}
 		}
-		return nodeError(err, t.name)
+		return layer.Named(t.name, err)
 	}
 	// The node answers by what it found: an image staged in between takes the config as any
 	// --staged delivery, and a pending config is named whatever chalkctl expected.
@@ -483,7 +471,7 @@ func (a *app) failedTrial(ctx context.Context, conn *client.Conn, t *target, ver
 		conn.Close()
 		return a.trialRolledBack(ctx, t, version, previous, deadline, fmt.Errorf("%s: config %s was not confirmed within its trial: the answer to its delivery did not come: %w", t.name, version, err))
 	}
-	err = nodeError(err, t.name)
+	err = layer.Named(t.name, err)
 	st, serr := conn.Status(ctx, connect.NewRequest(&nodev1.StatusRequest{}))
 	if serr != nil {
 		if c, derr := dialInstalled(t); derr == nil {
@@ -590,7 +578,7 @@ func (a *app) rollbackConfig(ctx context.Context, f applyConfigFlags, name strin
 	defer conn.Close()
 	st, err := conn.Status(ctx, connect.NewRequest(&nodev1.StatusRequest{}))
 	if err != nil {
-		return nodeError(err, t.name)
+		return layer.Named(t.name, err)
 	}
 	version, replaced := st.Msg.PreviousConfigVersion, st.Msg.ConfigVersion
 	// During a trial the node rolls back to the config from before it alone. A node that runs that
@@ -619,12 +607,12 @@ func (a *app) rollbackConfig(ctx context.Context, f applyConfigFlags, name strin
 	}
 	running, err := slotConfig(ctx, conn, false)
 	if err != nil {
-		return fmt.Errorf("%s: %w", t.name, err)
+		return layer.Named(t.name, err)
 	}
 	previous := running
 	if version != st.Msg.ConfigVersion {
 		if previous, err = getConfig(ctx, conn, &nodev1.GetConfigRequest{Previous: true}); err != nil {
-			return fmt.Errorf("%s: %w", t.name, err)
+			return layer.Named(t.name, err)
 		}
 	}
 	changes := diffConfig(running, previous)
@@ -635,7 +623,7 @@ func (a *app) rollbackConfig(ctx context.Context, f applyConfigFlags, name strin
 	}
 	resp, err := conn.RollbackConfig(ctx, connect.NewRequest(&nodev1.RollbackConfigRequest{Version: version}))
 	if err != nil {
-		return nodeError(err, t.name)
+		return layer.Named(t.name, err)
 	}
 	printApplied(a.stdout, resp.Msg.Changes, resp.Msg.RestartedUnits)
 	a.warnDelivery(t.name, &nodev1.ApplyConfigResponse{Warnings: resp.Msg.Warnings})
@@ -710,7 +698,7 @@ func (a *app) resetVolume(ctx context.Context, f resetVolumeFlags, pos []string)
 		return err
 	}
 	if _, err := conn.ResetVolume(ctx, connect.NewRequest(&nodev1.ResetVolumeRequest{Volume: pos[1], Config: d.Text, FallbackSecret: fallback})); err != nil {
-		return nodeError(err, t.name)
+		return layer.Named(t.name, err)
 	}
 	fmt.Fprintf(a.stdout, "volume %s of %s was wiped and created again\n", pos[1], t.name)
 	return nil
@@ -744,7 +732,7 @@ func (a *app) discardPending(ctx context.Context, f applyConfigFlags, name strin
 	defer conn.Close()
 	resp, err := conn.ApplyConfig(ctx, connect.NewRequest(&nodev1.ApplyConfigRequest{Staged: true, DiscardPending: true}))
 	if err != nil {
-		return nodeError(err, t.name)
+		return layer.Named(t.name, err)
 	}
 	if p := resp.Msg.Pending; p != nil {
 		fmt.Fprintf(a.stdout, "%s dropped its pending config %s\n", t.name, p.Version)

@@ -154,7 +154,7 @@ func (c *cluster) deliveryFor(name string, ct contract) (delivery, error) {
 	}
 	d, err := checkNodeConfig(nc, ct)
 	if err != nil {
-		return delivery{}, refusal{namedErr{fmt.Errorf("the config of %s: %w", name, err)}}
+		return delivery{}, &layer.NodeError{Node: name, Err: fmt.Errorf("the config of %s: %w", name, err), Named: true, Refused: true}
 	}
 	return d, nil
 }
