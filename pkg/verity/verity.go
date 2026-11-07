@@ -188,7 +188,7 @@ func Tree(data io.ReaderAt, sb Superblock) ([]byte, []byte, error) {
 	}
 	dev := make([]byte, sb.HashSize())
 	copy(dev, sb.Marshal())
-	root, err := sb.walk(data, bytesAt(dev), func(l level, j int64, block []byte) error {
+	root, err := sb.walk(data, bytes.NewReader(dev), func(l level, j int64, block []byte) error {
 		copy(dev[(l.start+j)*int64(sb.HashBlockSize):], block)
 		return nil
 	})
@@ -269,13 +269,6 @@ func readSuperblock(hash io.ReaderAt) (Superblock, error) {
 		return Superblock{}, fmt.Errorf("read the verity superblock: %w", err)
 	}
 	return ParseSuperblock(head)
-}
-
-// bytesAt reads a byte slice as a device.
-type bytesAt []byte
-
-func (b bytesAt) ReadAt(p []byte, off int64) (int, error) {
-	return bytes.NewReader(b).ReadAt(p, off)
 }
 
 // Root reads the hash device's superblock and computes the root hash from its top hash block,
