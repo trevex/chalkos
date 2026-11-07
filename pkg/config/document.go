@@ -240,7 +240,10 @@ func (d Document) IsSecret() bool { return d.APIVersion == CoreAPI && d.Kind == 
 // IsAddon tells whether d is an Addon. An Addon stays in the node's stored set alone and is never
 // written below /run for the node's services: chalkd reads its objects, Secrets among them, from
 // the stored set and applies them on control planes, and no service reads it.
-func (d Document) IsAddon() bool { return d.APIVersion == KubernetesAPI && d.Kind == withheld.Addon }
+func (d Document) IsAddon() bool { return d.APIVersion == addonAPI && d.Kind == withheld.Addon }
+
+// addonAPI is the apiVersion of the Addon kind.
+const addonAPI = "kubernetes.chalkos.dev/v1alpha1"
 
 // SortDocuments orders docs by apiVersion, kind and name.
 func SortDocuments(docs []Document) {

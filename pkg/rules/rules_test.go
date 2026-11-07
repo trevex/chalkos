@@ -10,6 +10,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/trevex/chalkos/pkg/config"
+	"github.com/trevex/chalkos/pkg/kubernetes/translate"
 	"github.com/trevex/chalkos/pkg/schema"
 )
 
@@ -526,14 +527,14 @@ func addonSchema() map[string]any {
 		rule(`documents.all(n, documents[n].spec.objects[0].data.token != "plain")`, "documents show the token"),
 		rule(`config["kubernetes.chalkos.dev/v1alpha1"].Addon.a.spec.objects[0].data.token != "plain"`, "config shows the token"),
 	})
-	sch["properties"].(map[string]any)["apiVersion"] = map[string]any{"const": config.KubernetesAPI}
+	sch["properties"].(map[string]any)["apiVersion"] = map[string]any{"const": translate.API}
 	xk := sch["x-chalkos-kind"].(map[string]any)
 	xk["group"], xk["version"] = "kubernetes.chalkos.dev", "v1alpha1"
 	return sch
 }
 
 func addon(token string) config.Document {
-	return config.FromObject(map[string]any{"apiVersion": config.KubernetesAPI, "kind": "Addon",
+	return config.FromObject(map[string]any{"apiVersion": translate.API, "kind": "Addon",
 		"metadata": map[string]any{"name": "a"}, "spec": map[string]any{"objects": []any{
 			map[string]any{"apiVersion": "v1", "kind": "Secret", "metadata": map[string]any{"name": "k"},
 				"data": map[string]any{"token": token}},
@@ -578,7 +579,7 @@ func TestAddonSecretsHashed(t *testing.T) {
 			t.Errorf("running token %s: the node's own config fails %v, the served one %v; want %d", token, messages(own), messages(served), want)
 		}
 	}
-	if got := ConfigOf(next)[config.KubernetesAPI].(map[string]any)["Addon"].(map[string]any)["a"]; strings.Contains(fmt.Sprint(got), "plain") {
+	if got := ConfigOf(next)[translate.API].(map[string]any)["Addon"].(map[string]any)["a"]; strings.Contains(fmt.Sprint(got), "plain") {
 		t.Errorf("ConfigOf shows the token: %v", got)
 	}
 }

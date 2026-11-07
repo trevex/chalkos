@@ -11,6 +11,7 @@ import (
 	"github.com/trevex/chalkos/pkg/chalkd/layer"
 	"github.com/trevex/chalkos/pkg/config"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
+	"github.com/trevex/chalkos/pkg/kubernetes/translate"
 )
 
 var _ layer.ImageFacts = (*Plugin)(nil)
@@ -44,13 +45,9 @@ func factsOf(data []byte, err error) (*anypb.Any, error) {
 // Target adds the translation of an image with the Kubernetes facts f, the facts the cluster is
 // built from at boot.
 func (p *Plugin) Target(f *anypb.Any, t *config.Target) (bool, error) {
-	img, ok, err := k8s.ImageOfPayload(f)
-	if !ok {
-		return false, nil
-	}
+	claimed, err := translate.Target(f, t)
 	if err != nil {
 		return true, layer.Errorf(connect.CodeInvalidArgument, "the image's image.json: %w", err)
 	}
-	t.Translators = append(t.Translators, config.KubernetesTranslator(img))
-	return true, nil
+	return claimed, nil
 }

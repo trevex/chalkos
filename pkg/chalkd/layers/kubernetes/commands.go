@@ -16,6 +16,7 @@ import (
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
 	"github.com/trevex/chalkos/pkg/kubernetes/credprovider"
 	knode "github.com/trevex/chalkos/pkg/kubernetes/node"
+	"github.com/trevex/chalkos/pkg/kubernetes/translate"
 	"github.com/trevex/chalkos/pkg/kubernetes/vxlan"
 )
 
@@ -119,7 +120,7 @@ func containerdConfig(runDir, file string) error {
 	if err != nil {
 		return err
 	}
-	pause, err := config.Documents(docs).SandboxImage()
+	pause, err := translate.SandboxImage(docs)
 	if err != nil {
 		return err
 	}

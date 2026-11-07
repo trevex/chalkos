@@ -80,8 +80,11 @@ func TestParseRejectsNonFiniteFloats(t *testing.T) {
 
 // A hex port is the number it denotes in the document chrony's output renders from.
 func TestAHexPortTranslates(t *testing.T) {
-	s := kubernetesSet(t, "{}", "---\napiVersion: time.chalkos.dev/v1alpha1\nkind: TimeSync\nmetadata: {name: t}\n"+
-		"spec: {servers: [{host: ntp.example.org, port: 0x7b}]}\n")
+	s, err := NewSet(mustParse(t, minimal+"---\napiVersion: time.chalkos.dev/v1alpha1\nkind: TimeSync\nmetadata: {name: t}\n"+
+		"spec: {servers: [{host: ntp.example.org, port: 0x7b}]}\n"), allSchemas(t))
+	if err != nil {
+		t.Fatal(err)
+	}
 	d, ok := s.One("TimeSync")
 	if !ok {
 		t.Fatal("no TimeSync")

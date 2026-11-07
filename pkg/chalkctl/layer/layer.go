@@ -62,8 +62,8 @@ type ImageFacts interface {
 	// ContractFacts reads the facts of an image's contract: read takes a file name within the
 	// image's directory, as its contract layer holds it. They are nil for an image without them.
 	ContractFacts(read func(name string) ([]byte, error)) (*anypb.Any, error)
-	// Target sets on t what the facts give config's translation; claimed is false for facts of
-	// another layer.
+	// Target adds to t's translators the layer's translation of an image with the facts; claimed
+	// is false for facts of another layer.
 	Target(facts *anypb.Any, t *config.Target) (claimed bool, err error)
 }
 

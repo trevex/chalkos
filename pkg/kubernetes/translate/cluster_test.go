@@ -1,4 +1,4 @@
-package config
+package translate
 
 import (
 	"encoding/json"
@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/kubernetes"
 )
 
@@ -28,20 +29,20 @@ var testImages = map[string]string{
 
 // kubernetesSet is minimal for a worker with an endpoint and the Cluster spec given, plus more
 // documents.
-func kubernetesSet(t *testing.T, spec, more string) *Set {
+func kubernetesSet(t *testing.T, spec, more string) *config.Set {
 	t.Helper()
 	return kubernetesNodeSet(t, spec, "", more)
 }
 
 // kubernetesNodeSet is kubernetesSet with the fields node gives, as YAML, in the worker's Node.
-func kubernetesNodeSet(t *testing.T, spec, node, more string) *Set {
+func kubernetesNodeSet(t *testing.T, spec, node, more string) *config.Set {
 	t.Helper()
 	if node != "" {
 		node = ", " + node
 	}
 	yaml := minimal + clusterDoc("default", spec) +
 		nodeDoc("default", "{type: worker"+node+"}") + more
-	s, err := NewSet(mustParse(t, yaml), allSchemas(t))
+	s, err := config.NewSet(mustParse(t, yaml), allSchemas(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -72,9 +73,9 @@ func clusterDoc(name, spec string) string {
 
 // withoutFlannelImage drops flannel's image from the Cluster documents, as on an image without
 // flannel, whose schema has no such field.
-func withoutFlannelImage(docs Documents) Documents {
+func withoutFlannelImage(docs config.Documents) config.Documents {
 	for _, d := range docs {
-		if d.APIVersion == KubernetesAPI && d.Kind == "Cluster" {
+		if d.APIVersion == API && d.Kind == "Cluster" {
 			delete(d.Object["spec"].(map[string]any)["images"].(map[string]any), "flannel")
 		}
 	}
@@ -83,19 +84,19 @@ func withoutFlannelImage(docs Documents) Documents {
 
 // The cluster's kind is the Kubernetes Node's type.
 func TestClusterTakesTheNodesType(t *testing.T) {
-	s, err := NewSet(mustParse(t, minimal+
+	s, err := config.NewSet(mustParse(t, minimal+
 		clusterDoc("k", "{}")+
 		nodeDoc("cp", "{type: controlplane}")), allSchemas(t))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c, err := s.Documents().Cluster(testImage); err != nil || c.Kind != kubernetes.KindControlPlane {
+	if c, err := Cluster(s.Documents(), testImage); err != nil || c.Kind != kubernetes.KindControlPlane {
 		t.Errorf("kind = %q, %v, want %q", c.Kind, err, kubernetes.KindControlPlane)
 	}
 }
 
 func TestClusterFromDefaults(t *testing.T) {
-	c, err := kubernetesSet(t, "{}", "").Documents().Cluster(testImage)
+	c, err := Cluster(kubernetesSet(t, "{}", "").Documents(), testImage)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -106,7 +107,7 @@ func TestClusterFromDefaults(t *testing.T) {
 		t.Errorf("defaults = %+v", c)
 	}
 	// The DNS address defaults to the 10th address of each service range.
-	dual, err := kubernetesSet(t, "{ipFamilies: [ipv4, ipv6]}", "").Documents().Cluster(testImage)
+	dual, err := Cluster(kubernetesSet(t, "{ipFamilies: [ipv4, ipv6]}", "").Documents(), testImage)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -122,7 +123,7 @@ func TestClusterFromDefaults(t *testing.T) {
 func TestClusterFromSettings(t *testing.T) {
 	s := kubernetesNodeSet(t, `{ipFamilies: [ipv6, ipv4], serviceCIDRs: {ipv4: 10.100.0.0/16}, vip: {addresses: [10.0.0.10]}}`,
 		`kubeletExtraArgs: {v: "2"}`, flannelDoc("default", `{mtu: 1430, vxlanSourceSubnets: ["fd00:1::/64", "10.0.0.0/24"]}`))
-	c, err := s.Documents().Cluster(testImage)
+	c, err := Cluster(s.Documents(), testImage)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -131,11 +132,11 @@ func TestClusterFromSettings(t *testing.T) {
 	}
 	none := testImage
 	none.CNI = kubernetes.CNINone
-	if c, err := withoutFlannelImage(kubernetesSet(t, "{}", "").Documents()).Cluster(none); err != nil || c.Flannel != nil || c.Images.Flannel != "" {
+	if c, err := Cluster(withoutFlannelImage(kubernetesSet(t, "{}", "").Documents()), none); err != nil || c.Flannel != nil || c.Images.Flannel != "" {
 		t.Errorf("without flannel: %+v, %+v, %v", c.Flannel, c.Images, err)
 	}
 	// A cluster without flannel takes no image of it.
-	if _, err := kubernetesSet(t, "{}", "").Documents().Cluster(none); err == nil || err.Error() != `Cluster "default": images.flannel: an image, but the cluster runs no flannel` {
+	if _, err := Cluster(kubernetesSet(t, "{}", "").Documents(), none); err == nil || err.Error() != `Cluster "default": images.flannel: an image, but the cluster runs no flannel` {
 		t.Errorf("without flannel, its image: err = %v", err)
 	}
 }
@@ -160,11 +161,11 @@ func TestClusterRejects(t *testing.T) {
 			`Cluster "k": images.apiServer: v1.36.0 is older than the image's kubelet 1.37; a kubelet must not be newer than the API server, so upgrade the control plane first`},
 	} {
 		t.Run(name, func(t *testing.T) {
-			s, err := NewSet(mustParse(t, tc.yaml), allSchemas(t))
+			s, err := config.NewSet(mustParse(t, tc.yaml), allSchemas(t))
 			if err != nil {
 				t.Fatal(err)
 			}
-			if _, err := s.Documents().Cluster(testImage); err == nil || !strings.Contains(err.Error(), tc.want) {
+			if _, err := Cluster(s.Documents(), testImage); err == nil || !strings.Contains(err.Error(), tc.want) {
 				t.Fatalf("err = %v, want one mentioning %q", err, tc.want)
 			}
 		})
@@ -180,7 +181,7 @@ func TestAddonObjectsInNameOrder(t *testing.T) {
 		return "---\napiVersion: kubernetes.chalkos.dev/v1alpha1\nkind: Addon\nmetadata: {name: " + name + "}\nspec: {objects: [" + strings.Join(list, ", ") + "]}\n"
 	}
 	s := kubernetesSet(t, "{}", addon("b", "third")+addon("a", "first", "second"))
-	objects, err := s.Documents().AddonObjects()
+	objects, err := AddonObjects(s.Documents())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -204,14 +205,14 @@ func TestIdentityTakesTheDocumentsFamilies(t *testing.T) {
 
 // The cluster holds the values of its families alone.
 func TestClusterKeepsTheFamiliesInUse(t *testing.T) {
-	c, err := kubernetesSet(t, `{podCIDRs: {ipv6: "fd00:1::/56"}, serviceCIDRs: {ipv6: "fd00:2::/112"},
-  dnsIPs: {ipv6: "fd00:2::b"}, nodeCIDRMaskSizes: {ipv6: 60}}`, "").Documents().Cluster(testImage)
+	c, err := Cluster(kubernetesSet(t, `{podCIDRs: {ipv6: "fd00:1::/56"}, serviceCIDRs: {ipv6: "fd00:2::/112"},
+  dnsIPs: {ipv6: "fd00:2::b"}, nodeCIDRMaskSizes: {ipv6: 60}}`, "").Documents(), testImage)
 	if err != nil {
 		t.Fatal(err)
 	}
 	// The values of the other families are neither kept nor checked beyond their formats: an IPv4
 	// range, a range with host bits and an IPv4 DNS address pass as an IPv4 cluster's IPv6 values.
-	if _, err := kubernetesSet(t, `{podCIDRs: {ipv6: "10.0.0.0/8"}, serviceCIDRs: {ipv6: "fd00:2::1/112"}, dnsIPs: {ipv6: "10.0.0.1"}}`, "").Documents().Cluster(testImage); err != nil {
+	if _, err := Cluster(kubernetesSet(t, `{podCIDRs: {ipv6: "10.0.0.0/8"}, serviceCIDRs: {ipv6: "fd00:2::1/112"}, dnsIPs: {ipv6: "10.0.0.1"}}`, "").Documents(), testImage); err != nil {
 		t.Errorf("an ipv4 cluster checked its ipv6 values: %v", err)
 	}
 	want := kubernetes.ByFamily[netip.Prefix]{IPv4: netip.MustParsePrefix("10.244.0.0/16")}
@@ -223,13 +224,13 @@ func TestClusterKeepsTheFamiliesInUse(t *testing.T) {
 
 // The VIP's interface is the Node's, which a worker, holding no VIP, leaves null.
 func TestClusterTakesGivenDNSAndVIPInterface(t *testing.T) {
-	s, err := NewSet(mustParse(t, minimal+
+	s, err := config.NewSet(mustParse(t, minimal+
 		clusterDoc("k", `{dnsIPs: {ipv4: 10.96.0.53}, vip: {addresses: [10.0.0.10]}}`)+
 		nodeDoc("cp", "{type: controlplane, vip: {interface: lan0}}")), allSchemas(t))
 	if err != nil {
 		t.Fatal(err)
 	}
-	c, err := s.Documents().Cluster(testImage)
+	c, err := Cluster(s.Documents(), testImage)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -237,7 +238,7 @@ func TestClusterTakesGivenDNSAndVIPInterface(t *testing.T) {
 		t.Errorf("cluster = %+v", c)
 	}
 	want := `Node "default": vip.interface: only control planes hold the VIP; leave it null on a worker`
-	if _, err := kubernetesNodeSet(t, `{vip: {addresses: [10.0.0.10]}}`, "vip: {interface: lan0}", "").Documents().Cluster(testImage); err == nil || err.Error() != want {
+	if _, err := Cluster(kubernetesNodeSet(t, `{vip: {addresses: [10.0.0.10]}}`, "vip: {interface: lan0}", "").Documents(), testImage); err == nil || err.Error() != want {
 		t.Errorf("a worker's VIP interface: err = %v, want %q", err, want)
 	}
 }
@@ -246,20 +247,20 @@ func TestClusterTakesGivenDNSAndVIPInterface(t *testing.T) {
 func TestClusterNamesTheDocument(t *testing.T) {
 	endpoint := minimal + nodeDoc("default", "{type: worker}") +
 		"---\napiVersion: kubernetes.chalkos.dev/v1alpha1\nkind: Cluster\nmetadata: {name: k}\n" + `spec: {endpoint: "https://:6443", images: ` + images(t, nil) + "}\n"
-	s, err := NewSet(mustParse(t, endpoint), allSchemas(t))
+	s, err := config.NewSet(mustParse(t, endpoint), allSchemas(t))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.Documents().Cluster(testImage); err == nil || !strings.HasPrefix(err.Error(), `Cluster "k": endpoint`) {
+	if _, err := Cluster(s.Documents(), testImage); err == nil || !strings.HasPrefix(err.Error(), `Cluster "k": endpoint`) {
 		t.Errorf("endpoint: err = %v", err)
 	}
 	s = kubernetesSet(t, "{}", flannelDoc("flannel", "{mtu: 600}"))
-	if _, err := s.Documents().Cluster(testImage); err == nil || !strings.HasPrefix(err.Error(), `Flannel "flannel": flannel: the MTU 600`) {
+	if _, err := Cluster(s.Documents(), testImage); err == nil || !strings.HasPrefix(err.Error(), `Flannel "flannel": flannel: the MTU 600`) {
 		t.Errorf("mtu: err = %v", err)
 	}
 	// VXLAN sources are flannel's, checked against the Cluster document's families and ranges.
 	s = kubernetesSet(t, "{}", flannelDoc("flannel", "{vxlanSourceSubnets: [10.244.0.0/24]}"))
-	if _, err := s.Documents().Cluster(testImage); err == nil || err.Error() != `Flannel "flannel": vxlanSourceSubnets: 10.244.0.0/24 overlaps podCIDRs.ipv4 10.244.0.0/16` {
+	if _, err := Cluster(s.Documents(), testImage); err == nil || err.Error() != `Flannel "flannel": vxlanSourceSubnets: 10.244.0.0/24 overlaps podCIDRs.ipv4 10.244.0.0/16` {
 		t.Errorf("vxlanSourceSubnets: err = %v", err)
 	}
 }
@@ -268,7 +269,7 @@ func TestClusterNamesTheDocument(t *testing.T) {
 func TestAddonObjectsKeepNumbers(t *testing.T) {
 	s := kubernetesSet(t, "{}", "---\napiVersion: kubernetes.chalkos.dev/v1alpha1\nkind: Addon\nmetadata: {name: m}\n"+
 		"spec: {objects: [{apiVersion: v1, kind: ConfigMap, metadata: {name: c}, data: {}, big: 9007199254740993, f: 1.5}]}\n")
-	objects, err := s.Documents().AddonObjects()
+	objects, err := AddonObjects(s.Documents())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -283,13 +284,13 @@ func TestAddonObjectsKeepNumbers(t *testing.T) {
 
 // The cluster's endpoint is the Cluster document's.
 func TestClusterTakesItsEndpoint(t *testing.T) {
-	s, err := NewSet(mustParse(t, minimal+nodeDoc("default", "{type: worker}")+
+	s, err := config.NewSet(mustParse(t, minimal+nodeDoc("default", "{type: worker}")+
 		"---\napiVersion: kubernetes.chalkos.dev/v1alpha1\nkind: Cluster\nmetadata: {name: k}\n"+
 		`spec: {endpoint: "https://api.lab:6443", images: `+images(t, nil)+"}\n"), allSchemas(t))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c, err := s.Documents().Cluster(testImage); err != nil || c.Endpoint != "https://api.lab:6443" {
+	if c, err := Cluster(s.Documents(), testImage); err != nil || c.Endpoint != "https://api.lab:6443" {
 		t.Errorf("endpoint = %q, %v", c.Endpoint, err)
 	}
 }
@@ -298,7 +299,7 @@ func TestClusterTakesItsEndpoint(t *testing.T) {
 func TestClusterWithoutEndpointIsInvalid(t *testing.T) {
 	docs := mustParse(t, minimal+nodeDoc("default", "{type: worker}")+
 		"---\napiVersion: kubernetes.chalkos.dev/v1alpha1\nkind: Cluster\nmetadata: {name: k}\nspec: {}\n")
-	if _, err := NewSet(docs, allSchemas(t)); err == nil || !strings.Contains(err.Error(), "endpoint") {
+	if _, err := config.NewSet(docs, allSchemas(t)); err == nil || !strings.Contains(err.Error(), "endpoint") {
 		t.Fatalf("err = %v, want one naming the endpoint", err)
 	}
 }
@@ -306,7 +307,7 @@ func TestClusterWithoutEndpointIsInvalid(t *testing.T) {
 // VXLAN source ranges are flannel's, so the Cluster has none of its own.
 func TestClusterWithVXLANSourcesIsInvalid(t *testing.T) {
 	docs := mustParse(t, minimal+nodeDoc("default", "{type: worker}")+clusterDoc("default", "{vxlanSourceSubnets: [10.0.0.0/24]}"))
-	if _, err := NewSet(docs, allSchemas(t)); err == nil || !strings.Contains(err.Error(), "vxlanSourceSubnets") {
+	if _, err := config.NewSet(docs, allSchemas(t)); err == nil || !strings.Contains(err.Error(), "vxlanSourceSubnets") {
 		t.Fatalf("err = %v, want one naming vxlanSourceSubnets", err)
 	}
 }
@@ -336,7 +337,7 @@ func TestKubernetesAddressFormats(t *testing.T) {
 			`Node "w": - at '/spec/nodeIP/addresses/0': 'fe80::1%eth0' ` + notIP},
 	} {
 		t.Run(name, func(t *testing.T) {
-			if _, err := NewSet(mustParse(t, tc.yaml), allSchemas(t)); err == nil || err.Error() != tc.want {
+			if _, err := config.NewSet(mustParse(t, tc.yaml), allSchemas(t)); err == nil || err.Error() != tc.want {
 				t.Fatalf("err = %v, want %q", err, tc.want)
 			}
 		})
@@ -346,8 +347,8 @@ func TestKubernetesAddressFormats(t *testing.T) {
 // Documents no schema checked, such as a test's, fail to decode a range that does not parse, so
 // the cluster is never built from it.
 func TestClusterOfUncheckedDocuments(t *testing.T) {
-	docs := Documents(mustParse(t, minimal+nodeDoc("w", "{type: worker}")+clusterDoc("k", "{podCIDRs: {ipv4: 10.244.0.0}}")))
-	if _, err := docs.Cluster(testImage); err == nil || err.Error() != `Cluster "k": netip.ParsePrefix("10.244.0.0"): no '/'` {
+	docs := config.Documents(mustParse(t, minimal+nodeDoc("w", "{type: worker}")+clusterDoc("k", "{podCIDRs: {ipv4: 10.244.0.0}}")))
+	if _, err := Cluster(docs, testImage); err == nil || err.Error() != `Cluster "k": netip.ParsePrefix("10.244.0.0"): no '/'` {
 		t.Fatalf("err = %v", err)
 	}
 }
@@ -390,9 +391,35 @@ func TestClusterImagesRefusedBySchema(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			yaml := minimal + clusterDoc("k", "{images: "+images(t, tc.changes)+"}") + nodeDoc("w", "{type: worker}")
-			if _, err := NewSet(mustParse(t, yaml), allSchemas(t)); err == nil || !strings.Contains(err.Error(), tc.want) {
+			if _, err := config.NewSet(mustParse(t, yaml), allSchemas(t)); err == nil || !strings.Contains(err.Error(), tc.want) {
 				t.Fatalf("err = %v, want one mentioning %q", err, tc.want)
 			}
 		})
+	}
+}
+
+// The pod sandbox's image is the Cluster document's; a node without one has none.
+func TestSandboxImage(t *testing.T) {
+	if got, err := SandboxImage(kubernetesSet(t, "{}", "").Documents()); err != nil || got != testImages["pause"] {
+		t.Errorf("SandboxImage() = %q, %v, want %q", got, err, testImages["pause"])
+	}
+	s, err := config.NewSet(mustParse(t, minimal), allSchemas(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, err := SandboxImage(s.Documents()); err != nil || got != "" {
+		t.Errorf("without a Cluster: SandboxImage() = %q, %v, want none", got, err)
+	}
+}
+
+// A Cluster's integer fields decode however the config writes them.
+func TestClusterTakesIntegerSpellings(t *testing.T) {
+	s := kubernetesSet(t, "{nodeCIDRMaskSizes: {ipv4: 2.4e1}}", flannelDoc("default", "{mtu: 1450.0}"))
+	c, err := Cluster(s.Documents(), testImage)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Flannel == nil || c.Flannel.MTU != 1450 || c.NodeCIDRMaskSizes.IPv4 != 24 {
+		t.Errorf("cluster = %+v, flannel = %+v", c, c.Flannel)
 	}
 }

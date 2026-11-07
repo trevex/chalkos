@@ -25,8 +25,7 @@ var singletons = []struct{ apiVersion, kind string }{
 // kind is one the image accepts, kinds that are not multiple appear once, names are unique per
 // kind, the SystemDisk is present, and every reference names a document of the set, a key
 // reference a key its Secret holds and a credential file of its own, and no value repeats that
-// the schemas declare unique. The Cluster and Node documents an image with Kubernetes requires are
-// its cluster's, which Documents.Cluster checks.
+// the schemas declare unique. A layer's Translator checks the documents its layer requires.
 func NewSet(docs []Document, s *schema.Schemas) (*Set, error) {
 	multiple := map[string]bool{}
 	for _, k := range s.Kinds() {

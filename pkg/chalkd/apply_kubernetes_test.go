@@ -28,6 +28,7 @@ import (
 	"github.com/trevex/chalkos/pkg/kubernetes/addons"
 	knode "github.com/trevex/chalkos/pkg/kubernetes/node"
 	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
+	"github.com/trevex/chalkos/pkg/kubernetes/translate"
 	"github.com/trevex/chalkos/pkg/layers"
 	"github.com/trevex/chalkos/pkg/pki"
 	"github.com/trevex/chalkos/pkg/tool/tooltest"
@@ -1026,7 +1027,7 @@ func TestApplyConfigAppliesChangedAddons(t *testing.T) {
 			if err != nil {
 				return err
 			}
-			extra, err := stored.Documents.AddonObjects()
+			extra, err := translate.AddonObjects(stored.Documents)
 			if err != nil {
 				return err
 			}

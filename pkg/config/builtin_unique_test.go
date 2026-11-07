@@ -32,7 +32,7 @@ func TestBuiltinUnique(t *testing.T) {
 			volume("a", `{size: 1G, mountPoint: /srv}`) + volume("b", `{size: 1G, mountPoint: /srv}`) + volume("c", `{size: 1G}`) + volume("d", `{size: 1G}`),
 			`Volume/a, Volume/b: spec.mountPoint "/srv" is not unique; mount each volume at a path of its own`},
 		{"a family twice",
-			builtinDoc(KubernetesAPI, "Cluster", "k", `{endpoint: "https://k.example:6443", ipFamilies: [ipv6, ipv4, ipv6], images: `+images(t, nil)+`}`),
+			builtinDoc("kubernetes.chalkos.dev/v1alpha1", "Cluster", "k", `{endpoint: "https://k.example:6443", ipFamilies: [ipv6, ipv4, ipv6], images: `+images(t, nil)+`}`),
 			`Cluster/k: spec.ipFamilies[0], spec.ipFamilies[2]: "ipv6" is not unique; name each family once`},
 	} {
 		t.Run(c.name, func(t *testing.T) {

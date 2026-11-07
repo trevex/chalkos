@@ -62,15 +62,3 @@ func TestSetHoldsIntegersInPlainDigits(t *testing.T) {
 		t.Errorf("FromJSON: table %#v, want 100", got)
 	}
 }
-
-// A Cluster's integer fields decode however the config writes them.
-func TestClusterTakesIntegerSpellings(t *testing.T) {
-	s := kubernetesSet(t, "{nodeCIDRMaskSizes: {ipv4: 2.4e1}}", flannelDoc("default", "{mtu: 1450.0}"))
-	c, err := s.Documents().Cluster(testImage)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if c.Flannel == nil || c.Flannel.MTU != 1450 || c.NodeCIDRMaskSizes.IPv4 != 24 {
-		t.Errorf("cluster = %+v, flannel = %+v", c, c.Flannel)
-	}
-}

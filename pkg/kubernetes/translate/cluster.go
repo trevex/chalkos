@@ -1,4 +1,4 @@
-package config
+package translate
 
 import (
 	"cmp"
@@ -8,7 +8,7 @@ import (
 	"net/netip"
 	"slices"
 
-	"github.com/trevex/chalkos/pkg/identity"
+	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/kubernetes"
 	"github.com/trevex/chalkos/pkg/kubernetes/nodeip"
 )
@@ -19,8 +19,8 @@ import (
 // flannel's settings from the Flannel document, and checks it. It holds the per-family values of
 // the cluster's families alone, and each error names the document whose setting fails. docs carry
 // their schema defaults, as a Set and the stored config do.
-func (docs Documents) Cluster(img kubernetes.Image) (kubernetes.Cluster, error) {
-	nodeDoc, ok := docs.Single(KubernetesAPI, "Node")
+func Cluster(docs config.Documents, img kubernetes.Image) (kubernetes.Cluster, error) {
+	nodeDoc, ok := docs.Single(API, "Node")
 	if !ok {
 		return kubernetes.Cluster{}, errors.New("no Node: the config of a node whose image runs Kubernetes holds one Node document")
 	}
@@ -28,7 +28,7 @@ func (docs Documents) Cluster(img kubernetes.Image) (kubernetes.Cluster, error) 
 	if err := nodeDoc.DecodeSpec(&node); err != nil {
 		return kubernetes.Cluster{}, err
 	}
-	kdoc, ok := docs.Single(KubernetesAPI, "Cluster")
+	kdoc, ok := docs.Single(API, "Cluster")
 	if !ok {
 		return kubernetes.Cluster{}, errors.New("no Cluster: the config of a node whose image runs Kubernetes holds one Cluster document")
 	}
@@ -72,7 +72,7 @@ func (docs Documents) Cluster(img kubernetes.Image) (kubernetes.Cluster, error) 
 	if err := c.Validate(); err != nil {
 		return kubernetes.Cluster{}, fmt.Errorf("%s: %w", kdoc, err)
 	}
-	if d, ok := docs.Single(KubernetesAPI, "Flannel"); ok && c.Flannel != nil {
+	if d, ok := docs.Single(API, "Flannel"); ok && c.Flannel != nil {
 		var f flannelSpec
 		if err := d.DecodeSpec(&f); err != nil {
 			return kubernetes.Cluster{}, err
@@ -125,8 +125,8 @@ func dnsIP(given *netip.Addr, service netip.Prefix) netip.Addr {
 
 // SandboxImage returns the pod sandbox's image the Cluster document names; "" without a Cluster
 // document, as before a node's first config.
-func (docs Documents) SandboxImage() (string, error) {
-	d, ok := docs.Single(KubernetesAPI, "Cluster")
+func SandboxImage(docs config.Documents) (string, error) {
+	d, ok := docs.Single(API, "Cluster")
 	if !ok {
 		return "", nil
 	}
@@ -139,9 +139,9 @@ func (docs Documents) SandboxImage() (string, error) {
 
 // AddonObjects returns the objects of the Addon documents, in the order of the documents' names
 // and each document's own order: the objects the control planes apply after chalkos's.
-func (docs Documents) AddonObjects() ([]map[string]any, error) {
-	addons := docs.Of(KubernetesAPI, "Addon")
-	slices.SortStableFunc(addons, func(a, b Document) int { return cmp.Compare(a.Name, b.Name) })
+func AddonObjects(docs config.Documents) ([]map[string]any, error) {
+	addons := docs.Of(API, "Addon")
+	slices.SortStableFunc(addons, func(a, b config.Document) int { return cmp.Compare(a.Name, b.Name) })
 	var out []map[string]any
 	for _, d := range addons {
 		var spec addonSpec
@@ -151,24 +151,4 @@ func (docs Documents) AddonObjects() ([]map[string]any, error) {
 		out = append(out, spec.Objects...)
 	}
 	return out, nil
-}
-
-// KubernetesTranslator is the translation of an image with the facts img: it builds the cluster
-// the Node, Cluster and Flannel documents give, adds the node's Kubernetes settings from its Node
-// document to the identity, the Kubernetes node called name, and refuses Addon documents that do
-// not decode.
-func KubernetesTranslator(img kubernetes.Image) Translator {
-	return func(s *Set, name string, id *identity.Identity) error {
-		// The node's addresses follow the families and nodeIP.validSubnets of the cluster the
-		// documents give, which needs a Node and a Cluster document.
-		c, err := s.docs.Cluster(img)
-		if err != nil {
-			return fmt.Errorf("the Kubernetes cluster the documents give: %w", err)
-		}
-		if err := kubelet(s, id, name, c); err != nil {
-			return err
-		}
-		_, err = s.docs.AddonObjects()
-		return err
-	}
 }

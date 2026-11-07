@@ -1,4 +1,4 @@
-package config
+package translate
 
 import (
 	"bytes"
@@ -18,7 +18,7 @@ var homelabImage = kubernetes.Image{Version: "1.37.1", CNI: kubernetes.CNIFlanne
 // The homelab worker's documents on the homelab's image give the whole cluster in
 // testdata/homelab-w1-cluster.json.
 func TestClusterHomelabWorker(t *testing.T) {
-	c, err := homelabSet(t, "w1").Documents().Cluster(homelabImage)
+	c, err := Cluster(homelabSet(t, "w1").Documents(), homelabImage)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -41,6 +41,6 @@ func TestClusterHomelabWorker(t *testing.T) {
 		t.Fatal(err)
 	}
 	if b.String() != string(want) {
-		t.Errorf("the cluster differs from %s; run go test ./pkg/config -update and review the diff:\n%s", golden, b.String())
+		t.Errorf("the cluster differs from %s; run go test ./pkg/kubernetes/translate -update and review the diff:\n%s", golden, b.String())
 	}
 }

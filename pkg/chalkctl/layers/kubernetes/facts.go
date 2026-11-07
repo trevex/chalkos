@@ -9,6 +9,7 @@ import (
 
 	"github.com/trevex/chalkos/pkg/config"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
+	"github.com/trevex/chalkos/pkg/kubernetes/translate"
 )
 
 // ContractFacts read the image.json of an image's directory; none when it does not exist or is
@@ -27,13 +28,9 @@ func (p *Plugin) ContractFacts(read func(name string) ([]byte, error)) (*anypb.A
 // Target adds the translation of an image with the Kubernetes facts f, which config's cluster is
 // built from.
 func (p *Plugin) Target(f *anypb.Any, t *config.Target) (bool, error) {
-	img, ok, err := k8s.ImageOfPayload(f)
-	if !ok {
-		return false, nil
-	}
+	claimed, err := translate.Target(f, t)
 	if err != nil {
 		return true, fmt.Errorf("image.json: %w", err)
 	}
-	t.Translators = append(t.Translators, config.KubernetesTranslator(img))
-	return true, nil
+	return claimed, nil
 }

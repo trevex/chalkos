@@ -21,6 +21,7 @@ import (
 	"github.com/trevex/chalkos/pkg/kubernetes/etcd"
 	knode "github.com/trevex/chalkos/pkg/kubernetes/node"
 	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
+	"github.com/trevex/chalkos/pkg/kubernetes/translate"
 )
 
 // controlPlaneRenewal renews the control plane's certificates.
@@ -264,7 +265,7 @@ func (k *side) objects(c k8s.Cluster) ([]map[string]any, error) {
 	if err != nil {
 		return nil, fmt.Errorf("read the stored config: %w", err)
 	}
-	extra, err := stored.Documents.AddonObjects()
+	extra, err := translate.AddonObjects(stored.Documents)
 	if err != nil {
 		return nil, err
 	}

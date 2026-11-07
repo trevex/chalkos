@@ -616,7 +616,7 @@ func TestVXLANSources(t *testing.T) {
 // A cluster file as chalkd writes it reads back into the same bytes: the typed families, ranges
 // and addresses keep every value as written.
 func TestClusterFileRoundTrip(t *testing.T) {
-	path := filepath.Join("..", "config", "testdata", "homelab-w1-cluster.json")
+	path := filepath.Join("translate", "testdata", "homelab-w1-cluster.json")
 	data, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)

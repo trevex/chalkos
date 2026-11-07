@@ -21,6 +21,7 @@ import (
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
 	knode "github.com/trevex/chalkos/pkg/kubernetes/node"
 	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
+	"github.com/trevex/chalkos/pkg/kubernetes/translate"
 	"github.com/trevex/chalkos/pkg/nodeconfig"
 	"github.com/trevex/chalkos/pkg/pki"
 )
@@ -121,7 +122,7 @@ func (p *Plugin) cluster(docs config.Documents) (*k8s.Cluster, error) {
 	if err != nil {
 		return nil, err
 	}
-	c, err := docs.Cluster(img)
+	c, err := translate.Cluster(docs, img)
 	if err != nil {
 		return nil, err
 	}

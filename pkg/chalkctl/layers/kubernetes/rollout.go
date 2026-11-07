@@ -17,6 +17,7 @@ import (
 	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/imageref"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
+	"github.com/trevex/chalkos/pkg/kubernetes/translate"
 )
 
 // rolloutFlags are the Kubernetes layer's flags of chalkctl apply-config.
@@ -89,7 +90,7 @@ func apiServerOf(c layer.Cluster, name string) (imageref.Version, bool, error) {
 // one.
 func apiServerIn(docs []config.Document) (imageref.Version, bool, error) {
 	for _, d := range docs {
-		if d.APIVersion != config.KubernetesAPI || d.Kind != "Cluster" {
+		if d.APIVersion != translate.API || d.Kind != "Cluster" {
 			continue
 		}
 		spec, _ := d.Object["spec"].(map[string]any)

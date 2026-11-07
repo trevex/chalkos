@@ -14,6 +14,7 @@ import (
 	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/internal/strs"
 	"github.com/trevex/chalkos/pkg/kubernetes"
+	"github.com/trevex/chalkos/pkg/kubernetes/translate"
 	"github.com/trevex/chalkos/pkg/ociimage"
 	"github.com/trevex/chalkos/pkg/schema"
 )
@@ -94,7 +95,7 @@ func (inv *Inventory) Node(name string) (*NodeConfig, error) {
 func NodeType(docs []config.Document) string {
 	kind := ""
 	for _, d := range docs {
-		if d.APIVersion == config.KubernetesAPI && d.Kind == "Node" {
+		if d.APIVersion == translate.API && d.Kind == "Node" {
 			node, _ := d.Object["spec"].(map[string]any)
 			kind, _ = node["type"].(string)
 		}
@@ -177,7 +178,7 @@ func (inv *Inventory) Endpoint() (string, error) {
 				return nil, err
 			}
 			for _, d := range docs {
-				if d.APIVersion == config.KubernetesAPI && slices.Contains(clusterKinds, d.Kind) {
+				if d.APIVersion == translate.API && slices.Contains(clusterKinds, d.Kind) {
 					spec, _ := d.Object["spec"].(map[string]any)
 					if spec == nil {
 						spec = map[string]any{}

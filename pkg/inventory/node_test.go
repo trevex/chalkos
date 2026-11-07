@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/trevex/chalkos/pkg/config"
+	"github.com/trevex/chalkos/pkg/kubernetes/translate"
 )
 
 // cluster is an inventory of a control plane and a worker that share cluster/ and run the image
@@ -115,7 +116,7 @@ func TestNode(t *testing.T) {
 func TestNodeType(t *testing.T) {
 	host := config.Document{APIVersion: config.CoreAPI, Kind: "Host", Object: map[string]any{"spec": map[string]any{"hostname": "n1.lab"}}}
 	node := func(kind string) config.Document {
-		return config.Document{APIVersion: config.KubernetesAPI, Kind: "Node", Name: "default", Object: map[string]any{"spec": map[string]any{"type": kind}}}
+		return config.Document{APIVersion: translate.API, Kind: "Node", Name: "default", Object: map[string]any{"spec": map[string]any{"type": kind}}}
 	}
 	for name, tc := range map[string]struct {
 		docs []config.Document

@@ -133,8 +133,9 @@ type ImageFacts interface {
 	// ContractFacts reads the facts of an image's contract: read takes a file name within the
 	// image's directory, as its contract layer holds it. chalkd asks every compiled plugin.
 	ContractFacts(read func(name string) ([]byte, error)) (*anypb.Any, error)
-	// Target sets on t what the facts give config's translation; claimed is false for facts of
-	// another layer. chalkd asks every compiled plugin, as the facts may be another image's.
+	// Target adds to t's translators the layer's translation of an image with the facts; claimed
+	// is false for facts of another layer. chalkd asks every compiled plugin, as the facts may be
+	// another image's.
 	Target(facts *anypb.Any, t *config.Target) (claimed bool, err error)
 }
 

@@ -7,6 +7,7 @@ import (
 	"github.com/trevex/chalkos/pkg/chalkctl/layer"
 	"github.com/trevex/chalkos/pkg/config"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
+	"github.com/trevex/chalkos/pkg/kubernetes/translate"
 )
 
 // fakeCluster is a cluster of nodes with the Node types given; "" for a node without one.
@@ -34,10 +35,10 @@ func (c fakeCluster) NodeNames() []string {
 func (c fakeCluster) Documents(name string) ([]config.Document, error) {
 	docs := []config.Document{{APIVersion: config.CoreAPI, Kind: "Host", Object: map[string]any{"spec": map[string]any{}}}}
 	if kind := c.types[name]; kind != "" {
-		docs = append(docs, config.Document{APIVersion: config.KubernetesAPI, Kind: "Node", Name: "default", Object: map[string]any{"spec": map[string]any{"type": kind}}})
+		docs = append(docs, config.Document{APIVersion: translate.API, Kind: "Node", Name: "default", Object: map[string]any{"spec": map[string]any{"type": kind}}})
 	}
 	if ref, ok := c.apiServer[name]; ok {
-		docs = append(docs, config.Document{APIVersion: config.KubernetesAPI, Kind: "Cluster", Name: "default", Object: map[string]any{
+		docs = append(docs, config.Document{APIVersion: translate.API, Kind: "Cluster", Name: "default", Object: map[string]any{
 			"spec": map[string]any{"images": map[string]any{"apiServer": ref}},
 		}})
 	}

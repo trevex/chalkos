@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/trevex/chalkos/pkg/config"
+	"github.com/trevex/chalkos/pkg/kubernetes/translate"
 	"github.com/trevex/chalkos/pkg/schema"
 	"github.com/trevex/chalkos/pkg/storage"
 )
@@ -87,8 +88,8 @@ func TestRegistrationRules(t *testing.T) {
 	}
 	docs := func(node, cluster string) []config.Document {
 		return []config.Document{
-			builtinDoc(t, config.KubernetesAPI, "Node", "default", `{"type": "controlplane", `+node+`}`),
-			builtinDoc(t, config.KubernetesAPI, "Cluster", "default", `{"endpoint": "https://10.0.0.11:6443", "ipFamilies": ["ipv4"], "podCIDRs": {"ipv4": "10.244.0.0/16"}, "serviceCIDRs": {"ipv4": "10.96.0.0/12"}, "dnsIPs": {"ipv4": null}, `+cluster+`}`),
+			builtinDoc(t, translate.API, "Node", "default", `{"type": "controlplane", `+node+`}`),
+			builtinDoc(t, translate.API, "Cluster", "default", `{"endpoint": "https://10.0.0.11:6443", "ipFamilies": ["ipv4"], "podCIDRs": {"ipv4": "10.244.0.0/16"}, "serviceCIDRs": {"ipv4": "10.96.0.0/12"}, "dnsIPs": {"ipv4": null}, `+cluster+`}`),
 		}
 	}
 	const (

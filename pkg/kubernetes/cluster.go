@@ -20,7 +20,7 @@ const (
 	KindWorker       = "worker"
 )
 
-// Cluster is the node's Kubernetes cluster. config.Documents.Cluster builds it from the node's
+// Cluster is the node's Kubernetes cluster. translate.Cluster builds it from the node's
 // config and the image's Kubernetes facts (image.json), and nodeconfig writes it to ClusterFile.
 type Cluster struct {
 	// Kind is the node's kind: KindControlPlane or KindWorker.

@@ -1,4 +1,4 @@
-package config
+package translate
 
 import (
 	"fmt"
@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/identity"
 	"github.com/trevex/chalkos/pkg/internal/strs"
 	"github.com/trevex/chalkos/pkg/kubernetes"
@@ -43,7 +44,7 @@ func refusedLabel(key string) bool {
 // kubelet fills in the node's Kubernetes settings from its Node document, which the cluster c
 // was built with, and refuses settings the kubelet would not start with. The errors come in this
 // order: refused labels and swap volumes by name, then the node's addresses.
-func kubelet(s *Set, id *identity.Identity, name string, c kubernetes.Cluster) error {
+func kubelet(s *config.Set, id *identity.Identity, name string, c kubernetes.Cluster) error {
 	var spec nodeSpec
 	if d, ok := s.One("Node"); ok {
 		if err := d.DecodeSpec(&spec); err != nil {
