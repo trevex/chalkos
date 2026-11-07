@@ -91,6 +91,12 @@ in
     };
   };
 
+  # A layer's name is a file name in facts/ and the name chalkctl and chalkd look its facts up by.
+  config.assertions = map (layer: {
+    assertion = builtins.match "[a-z0-9-]+" layer != null;
+    message = "chalkos.imageDirectory.facts names the layer \"${layer}\"; a layer's name is lower-case letters, digits and dashes";
+  }) (lib.attrNames config.chalkos.imageDirectory.facts);
+
   config.system.build = {
     chalkosImageFits = fits;
     chalkosMetadata = metadata;

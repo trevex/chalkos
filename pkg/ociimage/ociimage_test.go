@@ -304,10 +304,30 @@ func TestParseContract(t *testing.T) {
 		"is no regular file":           append(valid, &tar.Header{Typeflag: tar.TypeSymlink, Name: "schemas/b.json", Linkname: "/etc/passwd"}),
 		"the contract has no metadata": valid[1:],
 		"holds facts/test.json twice":  append(valid, reg("facts/test.json"), reg("facts/test.json")),
+		"a layer without a name":       append(valid, reg("facts/.json")),
 	} {
 		if _, err := ociimage.ParseContract(bytes.NewReader(tarOf(entries...))); err == nil || !strings.Contains(err.Error(), name) {
 			t.Errorf("ParseContract = %v, want %q", err, name)
 		}
+	}
+}
+
+// TestReadContractDirRefusesFactsWithoutALayerName refuses an image directory whose facts/ holds
+// .json, which names no layer.
+func TestReadContractDirRefusesFactsWithoutALayerName(t *testing.T) {
+	dir := t.TempDir()
+	writeImage(t, dir)
+	if _, err := ociimage.ReadContractDir(dir); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(dir, "facts"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "facts", ".json"), []byte("{}"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ociimage.ReadContractDir(dir); err == nil || !strings.Contains(err.Error(), "a layer without a name") {
+		t.Errorf("ReadContractDir = %v, want the facts of a layer without a name refused", err)
 	}
 }
 

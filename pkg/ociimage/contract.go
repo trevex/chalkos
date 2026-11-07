@@ -95,8 +95,10 @@ func readFiles(dir, pattern string) (map[string][]byte, error) {
 	return files, nil
 }
 
-// check refuses a contract without metadata.json, schemas or repart definitions.
+// check refuses a contract without metadata.json, schemas or repart definitions, and one with
+// facts/.json, the facts of a layer without a name.
 func (c Contract) check() error {
+	_, unnamed := c.Facts[""]
 	switch {
 	case len(c.Metadata) == 0:
 		return errors.New("the contract has no metadata.json")
@@ -104,6 +106,8 @@ func (c Contract) check() error {
 		return errors.New("the contract has no schemas/*.json")
 	case len(c.Definitions) == 0:
 		return errors.New("the contract has no repart.d/*.conf")
+	case unnamed:
+		return errors.New("the contract has facts/.json, the facts of a layer without a name")
 	}
 	return nil
 }

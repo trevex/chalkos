@@ -2156,6 +2156,36 @@ lib.runTests {
     expr = plainImage.chalkos.imageDirectory.facts;
     expected = { };
   };
+  # A layer's name is a file name in facts/: lower-case letters, digits and dashes.
+  testImageDirectoryRefusesFactsOfABadLayerName = {
+    expr =
+      let
+        failed =
+          layer:
+          map (a: a.message) (
+            lib.filter (a: !a.assertion)
+              (worker [ { chalkos.imageDirectory.facts.${layer} = ./kinds.nix; } ]).assertions
+          );
+      in
+      map failed [
+        "edge-2"
+        ""
+        "Edge"
+        "a/b"
+      ];
+    expected = [
+      [ ]
+      [
+        "chalkos.imageDirectory.facts names the layer \"\"; a layer's name is lower-case letters, digits and dashes"
+      ]
+      [
+        "chalkos.imageDirectory.facts names the layer \"Edge\"; a layer's name is lower-case letters, digits and dashes"
+      ]
+      [
+        "chalkos.imageDirectory.facts names the layer \"a/b\"; a layer's name is lower-case letters, digits and dashes"
+      ]
+    ];
+  };
   testGetPath = {
     expr = getPeering {
       name = "uplink";
