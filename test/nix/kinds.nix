@@ -1289,15 +1289,23 @@ lib.runTests {
     ] (kindNames plainImage);
     expected = [ ];
   };
-  # The kinds of router.chalkos.dev exist on router images alone.
+  # The kinds of router.chalkos.dev exist on router images alone, and their schemas lie in the
+  # fixtures, which pkg/router/derive's test holds to the kinds the router's model reads, as the
+  # validator router reads those the image declares.
   testRouterKindsOnRouterImagesAlone = {
     expr = {
-      router = lib.intersectLists routerKinds (kindNames routerImage);
+      router = lib.attrNames (
+        lib.filterAttrs (_: k: k.group == "router.chalkos.dev") routerImage.chalkos.kinds
+      );
+      fixtures = map (
+        file: lib.removeSuffix ".json" (lib.removePrefix "router.chalkos.dev_v1alpha1_" file)
+      ) (lib.attrNames (builtins.readDir ../fixtures/kinds/router));
       kubernetes = lib.intersectLists routerKinds (kindNames kubernetesImage);
       plain = lib.intersectLists routerKinds (kindNames plainImage);
     };
     expected = {
       router = routerKinds;
+      fixtures = routerKinds;
       kubernetes = [ ];
       plain = [ ];
     };

@@ -1320,7 +1320,7 @@ The validators router images add.
 
 | Validator | Inputs | Command |
 | --- | --- | --- |
-| `router`{ #validator-router } | `Router`, `FirewallZone`, `FirewallPolicy`, `AddressSet`, `NATRule`, `BGP`, `BGPPeer`, `PrefixList`, `CommunityList`, `RoutingPolicy`, `NAT64`, `Resolver`, `VRF`, `PolicyRoute`, `NextHop`, `DHCPSubnet`, `DHCPRelay`, `Network` | `chalkos-render validate router` |
+| `router`{ #validator-router } | `AddressSet`, `BGP`, `BGPPeer`, `CommunityList`, `DHCPRelay`, `DHCPSubnet`, `FirewallPolicy`, `FirewallZone`, `NAT64`, `NATRule`, `NextHop`, `PolicyRoute`, `PrefixList`, `Resolver`, `Router`, `RoutingPolicy`, `VRF`, `Network` | `chalkos-render validate router` |
 
 ## Outputs { #outputs }
 

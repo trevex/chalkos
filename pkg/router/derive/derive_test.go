@@ -90,9 +90,8 @@ func withSpec(t *testing.T, apiVersion, kind, name, spec string) any {
 	return map[string]any{"apiVersion": apiVersion, "kind": kind, "metadata": map[string]any{"name": name}, "spec": decode(t, []byte(spec))}
 }
 
-// Kinds are the router kinds, those of the router image's schemas, and networkd's Network, and the
-// kinds the router module gives the validator router, so that the node's validator reads what
-// chalkctl's does.
+// Kinds are the router kinds, those of the router image's schemas, and networkd's Network, as
+// the router module gives the validator router the router kinds the image declares and Network.
 func TestKinds(t *testing.T) {
 	entries, err := os.ReadDir(routerSchemas)
 	if err != nil {
@@ -105,19 +104,6 @@ func TestKinds(t *testing.T) {
 	}
 	if got := slices.Sorted(slices.Values(Kinds())); !slices.Equal(got, slices.Sorted(slices.Values(want))) {
 		t.Errorf("Kinds = %v, want %v", got, want)
-	}
-	module, err := os.ReadFile("../../../modules/node/router/validator.nix")
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, list, _ := strings.Cut(string(module), "\n  kinds = [\n")
-	list, _, _ = strings.Cut(list, "\n  ];\n")
-	var inNix []string
-	for _, l := range strings.Split(list, "\n") {
-		inNix = append(inNix, strings.Trim(l, ` "`))
-	}
-	if !slices.Equal(inNix, Kinds()) {
-		t.Errorf("the kinds of modules/node/router/validator.nix are %v, want Kinds, %v", inNix, Kinds())
 	}
 }
 

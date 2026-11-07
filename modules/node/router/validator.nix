@@ -9,35 +9,17 @@
   ...
 }:
 let
-  # The kinds the model reads, as derive.Kinds lists them. A variant that leaves a router feature
-  # out declares none of its kinds, and the validator reads the kinds the image declares, as
-  # chalkctl's copy does.
-  kinds = [
-    "Router"
-    "FirewallZone"
-    "FirewallPolicy"
-    "AddressSet"
-    "NATRule"
-    "BGP"
-    "BGPPeer"
-    "PrefixList"
-    "CommunityList"
-    "RoutingPolicy"
-    "NAT64"
-    "Resolver"
-    "VRF"
-    "PolicyRoute"
-    "NextHop"
-    "DHCPSubnet"
-    "DHCPRelay"
+  inherit (import ../../../lib/kinds/api.nix) groups;
+  # The router kinds the image declares, and Network. A variant that leaves a router feature out
+  # declares none of its kinds, and chalkctl's copy reads only the kinds the image declares too.
+  kinds = lib.attrNames (lib.filterAttrs (_: k: k.group == groups.router) config.chalkos.kinds) ++ [
     "Network"
   ];
-  declared = lib.attrNames config.chalkos.kinds ++ (import ../../../lib/kinds/api.nix).networkdKinds;
 in
 {
   config = lib.mkIf config.chalkos.router.enable {
     chalkos.validators.router = {
-      inputs = lib.filter (kind: lib.elem kind declared) kinds;
+      inputs = kinds;
       program = lib.getExe chalkosPackages.chalkos-render;
       examples = config.chalkos.router.examples;
     };
