@@ -8,12 +8,8 @@ callPackage ./go-module.nix { } {
     ../pkg/storage
     ../pkg/tool
   ];
-  subPackages = [ "cmd/chalkos-storage" ];
   ldflags = [
     "-s"
     "-w"
   ];
-  # The go-unit check runs the tests.
-  doCheck = false;
-  meta.mainProgram = "chalkos-storage";
 }

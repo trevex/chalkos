@@ -24,8 +24,4 @@ callPackage ./go-module.nix { } {
     ../pkg/storage
     ../pkg/validators
   ];
-  subPackages = [ "cmd/chalkos-rules" ];
-  # The go-unit check runs the tests.
-  doCheck = false;
-  meta.mainProgram = "chalkos-rules";
 }

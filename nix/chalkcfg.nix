@@ -9,12 +9,8 @@ callPackage ./go-module.nix { } {
     ../pkg/config/withheld
     ../pkg/internal/cli
   ];
-  subPackages = [ "cmd/chalkcfg" ];
   ldflags = [
     "-s"
     "-w"
   ];
-  # The go-unit check runs the tests.
-  doCheck = false;
-  meta.mainProgram = "chalkcfg";
 }

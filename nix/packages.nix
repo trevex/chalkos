@@ -30,8 +30,8 @@ in
   chalkctl = goModule {
     pname = "chalkctl";
     paths = goPaths;
-    subPackages = [ "cmd/chalkctl" ];
-    meta.mainProgram = "chalkctl";
+    # Its tests run as it is built.
+    doCheck = true;
     nativeBuildInputs = [ pkgs.makeWrapper ];
     postFixup = ''
       wrapProgram $out/bin/chalkctl --prefix PATH : ${
@@ -49,10 +49,6 @@ in
   chalklab = goModule {
     pname = "chalklab";
     paths = goPaths;
-    subPackages = [ "cmd/chalklab" ];
-    # The go-unit check runs its tests.
-    doCheck = false;
-    meta.mainProgram = "chalklab";
     nativeBuildInputs = [ pkgs.makeWrapper ];
     postFixup = ''
       wrapProgram $out/bin/chalklab --prefix PATH : ${
@@ -112,7 +108,7 @@ in
   chalklab-e2e = goModule {
     pname = "chalklab-e2e";
     paths = goPaths;
-    doCheck = false;
+    subPackages = null;
     buildPhase = ''
       runHook preBuild
       go test -c -o chalklab-e2e ./test/e2e

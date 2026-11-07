@@ -6,8 +6,4 @@ callPackage ./go-module.nix { } {
     ../cmd/chalkos-networkd-schema
     ../pkg/networkdschema
   ];
-  subPackages = [ "cmd/chalkos-networkd-schema" ];
-  # The go-unit check runs the tests.
-  doCheck = false;
-  meta.mainProgram = "chalkos-networkd-schema";
 }

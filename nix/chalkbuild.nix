@@ -26,10 +26,6 @@ callPackage ./go-module.nix { } {
     ../pkg/uki
     ../pkg/verity
   ];
-  subPackages = [ "cmd/chalkbuild" ];
-  # The go-unit check runs its tests.
-  doCheck = false;
-  meta.mainProgram = "chalkbuild";
   nativeBuildInputs = [ makeWrapper ];
   postFixup = ''
     wrapProgram $out/bin/chalkbuild --prefix PATH : ${

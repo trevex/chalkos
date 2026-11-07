@@ -53,9 +53,6 @@ let
       ../cmd
       ../pkg
     ];
-    subPackages = [ "cmd/docgen" ];
-    # The go-unit check runs its tests.
-    doCheck = false;
   };
 
   # Declarations link to the repository rather than to the store path of the flake's source.

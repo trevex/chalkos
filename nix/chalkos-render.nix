@@ -13,12 +13,8 @@ callPackage ./go-module.nix { } {
     ../pkg/refusals
     ../pkg/router/derive
   ];
-  subPackages = [ "cmd/chalkos-render" ];
   ldflags = [
     "-s"
     "-w"
   ];
-  # The go-unit check runs the tests.
-  doCheck = false;
-  meta.mainProgram = "chalkos-render";
 }

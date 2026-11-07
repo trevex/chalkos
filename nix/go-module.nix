@@ -1,6 +1,7 @@
 # Builds Go programs of this repository. They share go.mod and go.sum; with proxyVendor the
 # module download depends on those two files alone, so one vendorHash serves programs built from
-# different parts of the source.
+# different parts of the source. A program is built from cmd/<pname> unless subPackages says
+# otherwise, and without its tests, which the go-unit check runs.
 { lib, buildGoModule }:
 {
   pname,
@@ -26,6 +27,9 @@ buildGoModule (
     # copy the hash it reports.
     vendorHash = "sha256-wDc7+u9ue31pott6agQnX6I+AJH6wsQYNG+ZUdu6zzU=";
     env.CGO_ENABLED = "0";
+    subPackages = [ "cmd/${pname}" ];
+    doCheck = false;
+    meta.mainProgram = pname;
   }
   // removeAttrs args [ "paths" ]
 )

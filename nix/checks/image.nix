@@ -116,8 +116,6 @@ in
           ../../pkg/verity
         ];
         subPackages = [ "test/veritysize" ];
-        # The go-unit check runs package verity's tests.
-        doCheck = false;
       };
       ceilings = import ../testing/image-sizes.nix;
       measure =

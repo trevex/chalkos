@@ -44,12 +44,8 @@ callPackage ./go-module.nix { } {
     ../pkg/validators
     ../pkg/verity
   ];
-  subPackages = [ "cmd/chalkd" ];
   ldflags = [
     "-s"
     "-w"
   ];
-  # The go-unit check runs the tests.
-  doCheck = false;
-  meta.mainProgram = "chalkd";
 }
