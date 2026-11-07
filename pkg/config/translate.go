@@ -79,7 +79,7 @@ func (s *Set) Identity(name string, t Target) (identity.Identity, error) {
 	}
 	if hostDoc, ok := s.One("Host"); ok {
 		var host hostSpec
-		if err := hostDoc.decodeSpec(&host); err != nil {
+		if err := hostDoc.DecodeSpec(&host); err != nil {
 			return identity.Identity{}, err
 		}
 		if host.Hostname != nil {
@@ -132,7 +132,7 @@ func refusedLabel(key string) bool {
 func (s *Set) kubelet(id *identity.Identity, name string, c kubernetes.Cluster) error {
 	var spec nodeSpec
 	if d, ok := s.One("Node"); ok {
-		if err := d.decodeSpec(&spec); err != nil {
+		if err := d.DecodeSpec(&spec); err != nil {
 			return err
 		}
 	}

@@ -44,7 +44,7 @@ func RegistriesOf(docs Documents, secret func(SecretRef) (string, bool)) (Regist
 	logins := map[string]named{}
 	for _, d := range docs.Of(OCIAPI, "Registry") {
 		var spec registrySpec
-		if err := d.decodeSpec(&spec); err != nil {
+		if err := d.DecodeSpec(&spec); err != nil {
 			return Registries{}, err
 		}
 		reg, err := imageref.RegistryHost(spec.Host)
@@ -75,7 +75,7 @@ func RegistriesOf(docs Documents, secret func(SecretRef) (string, bool)) (Regist
 	mirrors := map[string]named{}
 	for _, d := range docs.Of(OCIAPI, "Mirror") {
 		var spec mirrorSpec
-		if err := d.decodeSpec(&spec); err != nil {
+		if err := d.DecodeSpec(&spec); err != nil {
 			return Registries{}, err
 		}
 		reg, err := imageref.RegistryHost(spec.Registry)

@@ -63,7 +63,7 @@ type namedVolume struct {
 func (s *Set) storage(name string) (storage.Section, error) {
 	sd, _ := s.One("SystemDisk")
 	var sys systemDiskSpec
-	if err := sd.decodeSpec(&sys); err != nil {
+	if err := sd.DecodeSpec(&sys); err != nil {
 		return storage.Section{}, err
 	}
 	systemRef, err := sys.Disk.Ref()
@@ -73,7 +73,7 @@ func (s *Set) storage(name string) (storage.Section, error) {
 	var vols []namedVolume
 	for _, d := range s.docs.Of(StorageAPI, "Volume") {
 		v := namedVolume{name: d.Name}
-		if err := d.decodeSpec(&v.spec); err != nil {
+		if err := d.DecodeSpec(&v.spec); err != nil {
 			return storage.Section{}, err
 		}
 		if v.spec.Disk != nil {

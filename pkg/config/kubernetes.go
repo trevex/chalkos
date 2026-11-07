@@ -19,20 +19,20 @@ import (
 // the cluster's families alone, and each error names the document whose setting fails. docs carry
 // their schema defaults, as a Set and the stored config do.
 func (docs Documents) Cluster(img kubernetes.Image) (kubernetes.Cluster, error) {
-	nodeDoc, ok := docs.single(KubernetesAPI, "Node")
+	nodeDoc, ok := docs.Single(KubernetesAPI, "Node")
 	if !ok {
 		return kubernetes.Cluster{}, errors.New("no Node: the config of a node whose image runs Kubernetes holds one Node document")
 	}
 	var node nodeSpec
-	if err := nodeDoc.decodeSpec(&node); err != nil {
+	if err := nodeDoc.DecodeSpec(&node); err != nil {
 		return kubernetes.Cluster{}, err
 	}
-	kdoc, ok := docs.single(KubernetesAPI, "Cluster")
+	kdoc, ok := docs.Single(KubernetesAPI, "Cluster")
 	if !ok {
 		return kubernetes.Cluster{}, errors.New("no Cluster: the config of a node whose image runs Kubernetes holds one Cluster document")
 	}
 	var k clusterSpec
-	if err := kdoc.decodeSpec(&k); err != nil {
+	if err := kdoc.DecodeSpec(&k); err != nil {
 		return kubernetes.Cluster{}, err
 	}
 	c := kubernetes.Cluster{
@@ -71,9 +71,9 @@ func (docs Documents) Cluster(img kubernetes.Image) (kubernetes.Cluster, error) 
 	if err := c.Validate(); err != nil {
 		return kubernetes.Cluster{}, fmt.Errorf("%s: %w", kdoc, err)
 	}
-	if d, ok := docs.single(KubernetesAPI, "Flannel"); ok && c.Flannel != nil {
+	if d, ok := docs.Single(KubernetesAPI, "Flannel"); ok && c.Flannel != nil {
 		var f flannelSpec
-		if err := d.decodeSpec(&f); err != nil {
+		if err := d.DecodeSpec(&f); err != nil {
 			return kubernetes.Cluster{}, err
 		}
 		if f.MTU != nil {
@@ -125,12 +125,12 @@ func dnsIP(given *netip.Addr, service netip.Prefix) netip.Addr {
 // SandboxImage returns the pod sandbox's image the Cluster document names; "" without a Cluster
 // document, as before a node's first config.
 func (docs Documents) SandboxImage() (string, error) {
-	d, ok := docs.single(KubernetesAPI, "Cluster")
+	d, ok := docs.Single(KubernetesAPI, "Cluster")
 	if !ok {
 		return "", nil
 	}
 	var k clusterSpec
-	if err := d.decodeSpec(&k); err != nil {
+	if err := d.DecodeSpec(&k); err != nil {
 		return "", err
 	}
 	return k.Images.Pause, nil
@@ -144,7 +144,7 @@ func (docs Documents) AddonObjects() ([]map[string]any, error) {
 	var out []map[string]any
 	for _, d := range addons {
 		var spec addonSpec
-		if err := d.decodeSpec(&spec); err != nil {
+		if err := d.DecodeSpec(&spec); err != nil {
 			return nil, err
 		}
 		out = append(out, spec.Objects...)

@@ -45,8 +45,8 @@ func (docs Documents) Of(apiVersion, kind string) Documents {
 	return out
 }
 
-// single returns the document of a kind when docs hold exactly one.
-func (docs Documents) single(apiVersion, kind string) (Document, bool) {
+// Single returns the document of a kind when docs hold exactly one.
+func (docs Documents) Single(apiVersion, kind string) (Document, bool) {
 	if found := docs.Of(apiVersion, kind); len(found) == 1 {
 		return found[0], true
 	}
@@ -201,9 +201,9 @@ func keyText(n *yaml.Node) string {
 	return n.ShortTag()
 }
 
-// decodeSpec decodes the document's spec into v. Numbers in untyped fields stay json.Number,
+// DecodeSpec decodes the document's spec into v. Numbers in untyped fields stay json.Number,
 // exact as written, such as those of the Kubernetes objects an Addon carries.
-func (d Document) decodeSpec(v any) error {
+func (d Document) DecodeSpec(v any) error {
 	b, err := json.Marshal(d.Object["spec"])
 	if err != nil {
 		return err
