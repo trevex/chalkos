@@ -16,6 +16,8 @@ import (
 	"strings"
 	"time"
 
+	corev1 "k8s.io/api/core/v1"
+
 	"github.com/trevex/chalkos/pkg/atomicfile"
 	"github.com/trevex/chalkos/pkg/kubernetes"
 	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
@@ -130,11 +132,7 @@ func kubeletFlags(c kubernetes.Cluster, n kubernetes.Node) []string {
 		taints = append(taints, "node-role.kubernetes.io/control-plane:NoSchedule")
 	}
 	for _, t := range n.Taints {
-		taint := t.Key
-		if t.Value != "" {
-			taint += "=" + t.Value
-		}
-		taints = append(taints, taint+":"+t.Effect)
+		taints = append(taints, (&corev1.Taint{Key: t.Key, Value: t.Value, Effect: corev1.TaintEffect(t.Effect)}).ToString())
 	}
 	if len(taints) > 0 {
 		flags = append(flags, "--register-with-taints="+strings.Join(taints, ","))

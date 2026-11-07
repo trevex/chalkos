@@ -11,13 +11,14 @@ import (
 	"k8s.io/client-go/kubernetes"
 
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
+	"github.com/trevex/chalkos/pkg/kubernetes/manifests"
 )
 
 // EndpointsFromPods lists the client URLs of the etcd members not at an address in self, from the
 // mirror pods of etcd's static pods the API server has. The URLs are sorted; finding none is an
 // error.
 func EndpointsFromPods(ctx context.Context, client kubernetes.Interface, self []netip.Addr) ([]string, error) {
-	pods, err := client.CoreV1().Pods("kube-system").List(ctx, metav1.ListOptions{LabelSelector: "component=etcd,tier=control-plane"})
+	pods, err := client.CoreV1().Pods(metav1.NamespaceSystem).List(ctx, metav1.ListOptions{LabelSelector: manifests.Selector("etcd")})
 	if err != nil {
 		return nil, err
 	}

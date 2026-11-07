@@ -18,12 +18,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 
+	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
 	"github.com/trevex/chalkos/pkg/kubernetes/revoked"
-)
-
-const (
-	nodeUserPrefix = "system:node:"
-	nodesGroup     = "system:nodes"
 )
 
 // Approvable returns nil when a kubelet serving certificate request may be approved: a node
@@ -33,8 +29,8 @@ func Approvable(csr *certificatesv1.CertificateSigningRequest, node *corev1.Node
 	if csr.Spec.SignerName != certificatesv1.KubeletServingSignerName {
 		return fmt.Errorf("signer %s is not the kubelet serving signer", csr.Spec.SignerName)
 	}
-	name, ok := strings.CutPrefix(csr.Spec.Username, nodeUserPrefix)
-	if !ok || name == "" || !slices.Contains(csr.Spec.Groups, nodesGroup) {
+	name, ok := strings.CutPrefix(csr.Spec.Username, kpki.NodeUserPrefix)
+	if !ok || name == "" || !slices.Contains(csr.Spec.Groups, kpki.NodesGroup) {
 		return fmt.Errorf("requested by %s, which is not a node", csr.Spec.Username)
 	}
 	if node == nil || node.Name != name {
@@ -48,7 +44,7 @@ func Approvable(csr *certificatesv1.CertificateSigningRequest, node *corev1.Node
 	if err != nil {
 		return fmt.Errorf("parse the certificate request: %w", err)
 	}
-	if req.Subject.CommonName != csr.Spec.Username || !slices.Equal(req.Subject.Organization, []string{nodesGroup}) {
+	if req.Subject.CommonName != csr.Spec.Username || !slices.Equal(req.Subject.Organization, []string{kpki.NodesGroup}) {
 		return fmt.Errorf("the request's subject %s is not the requesting node's", req.Subject)
 	}
 	if len(req.EmailAddresses) > 0 || len(req.URIs) > 0 {
@@ -174,7 +170,7 @@ func (a *Approver) review(ctx context.Context, csr *certificatesv1.CertificateSi
 		return nil
 	}
 	var node *corev1.Node
-	if name, ok := strings.CutPrefix(csr.Spec.Username, nodeUserPrefix); ok && name != "" {
+	if name, ok := strings.CutPrefix(csr.Spec.Username, kpki.NodeUserPrefix); ok && name != "" {
 		list, err := revokedNodes()
 		if err != nil {
 			return unreadRevoked{err}

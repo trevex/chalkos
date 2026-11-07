@@ -221,12 +221,12 @@ func kubeProxy(c kubernetes.Cluster, families []nodeip.Family) ([]any, error) {
 	}
 	labels := map[string]string{"k8s-app": "kube-proxy"}
 	return []any{
-		corev1ac.ServiceAccount("kube-proxy", "kube-system"),
-		clusterRoleBinding("chalkos:node-proxier", "system:node-proxier", serviceAccountSubject("kube-proxy", "kube-system")),
-		corev1ac.ConfigMap("kube-proxy", "kube-system").
+		corev1ac.ServiceAccount("kube-proxy", metav1.NamespaceSystem),
+		clusterRoleBinding("chalkos:node-proxier", "system:node-proxier", serviceAccountSubject("kube-proxy", metav1.NamespaceSystem)),
+		corev1ac.ConfigMap("kube-proxy", metav1.NamespaceSystem).
 			WithLabels(map[string]string{"app": "kube-proxy"}).
 			WithData(map[string]string{"kubeconfig.conf": kubeconfig, "config.conf": config}),
-		appsv1ac.DaemonSet("kube-proxy", "kube-system").
+		appsv1ac.DaemonSet("kube-proxy", metav1.NamespaceSystem).
 			WithLabels(labels).
 			WithSpec(appsv1ac.DaemonSetSpec().
 				WithSelector(metav1ac.LabelSelector().WithMatchLabels(labels)).
@@ -356,10 +356,7 @@ func flannel(c kubernetes.Cluster, families []nodeip.Family) ([]any, error) {
 				rule("", []string{"nodes"}, "get", "list", "watch"),
 				rule("", []string{"nodes/status"}, "patch"),
 			),
-		rbacv1ac.ClusterRoleBinding("flannel").
-			WithLabels(flannelLabel).
-			WithRoleRef(rbacv1ac.RoleRef().WithAPIGroup("rbac.authorization.k8s.io").WithKind("ClusterRole").WithName("flannel")).
-			WithSubjects(serviceAccountSubject("flannel", "kube-flannel")),
+		clusterRoleBinding("flannel", "flannel", serviceAccountSubject("flannel", "kube-flannel")).WithLabels(flannelLabel),
 		corev1ac.ServiceAccount("flannel", "kube-flannel").WithLabels(flannelLabel),
 		corev1ac.ConfigMap("kube-flannel-cfg", "kube-flannel").
 			WithLabels(labels).
@@ -462,17 +459,15 @@ func coreDNS(c kubernetes.Cluster, primary nodeip.Family) []any {
 		return corev1ac.ServicePort().WithName(name).WithPort(number).WithProtocol(protocol).WithTargetPort(intstr.FromInt32(number))
 	}
 	return []any{
-		corev1ac.ServiceAccount("coredns", "kube-system"),
+		corev1ac.ServiceAccount("coredns", metav1.NamespaceSystem),
 		rbacv1ac.ClusterRole("system:coredns").WithRules(
 			rule("", []string{"endpoints", "services", "pods", "namespaces"}, "list", "watch"),
 			rule("discovery.k8s.io", []string{"endpointslices"}, "list", "watch"),
 		),
-		rbacv1ac.ClusterRoleBinding("system:coredns").
-			WithRoleRef(rbacv1ac.RoleRef().WithAPIGroup("rbac.authorization.k8s.io").WithKind("ClusterRole").WithName("system:coredns")).
-			WithSubjects(serviceAccountSubject("coredns", "kube-system")),
-		corev1ac.ConfigMap("coredns", "kube-system").
+		clusterRoleBinding("system:coredns", "system:coredns", serviceAccountSubject("coredns", metav1.NamespaceSystem)),
+		corev1ac.ConfigMap("coredns", metav1.NamespaceSystem).
 			WithData(map[string]string{"Corefile": fmt.Sprintf(corefile, c.Domain)}),
-		appsv1ac.Deployment("coredns", "kube-system").
+		appsv1ac.Deployment("coredns", metav1.NamespaceSystem).
 			WithLabels(labels).
 			WithSpec(appsv1ac.DeploymentSpec().
 				WithReplicas(2).
@@ -533,7 +528,7 @@ func coreDNS(c kubernetes.Cluster, primary nodeip.Family) []any {
 							WithConfigMap(corev1ac.ConfigMapVolumeSource().
 								WithName("coredns").
 								WithItems(corev1ac.KeyToPath().WithKey("Corefile").WithPath("Corefile"))))))),
-		corev1ac.Service("kube-dns", "kube-system").
+		corev1ac.Service("kube-dns", metav1.NamespaceSystem).
 			WithLabels(serviceLabels).
 			// One address of the primary family, which every pod has, as kubeadm's DNS service
 			// gets: the kubelet hands pods one name server. It still answers A and AAAA queries.

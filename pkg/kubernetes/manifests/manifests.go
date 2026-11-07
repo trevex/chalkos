@@ -20,6 +20,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/util/intstr"
 
 	"github.com/trevex/chalkos/pkg/kubernetes"
@@ -240,6 +241,29 @@ func (pr probe) get(path string, delay, failures, period int32) *corev1.Probe {
 	}
 }
 
+// The labels of the control plane's static pods, which their mirror pods carry.
+const (
+	// LabelComponent names the component a pod runs, such as etcd or kube-apiserver.
+	LabelComponent = "component"
+	// LabelTier is control-plane for every static pod.
+	LabelTier        = "tier"
+	tierControlPlane = "control-plane"
+)
+
+// Labels are the labels of the static pod of component.
+func Labels(component string) map[string]string {
+	return map[string]string{LabelComponent: component, LabelTier: tierControlPlane}
+}
+
+// Selector selects the mirror pods of component's static pods, or of every static pod for an empty
+// component.
+func Selector(component string) string {
+	if component == "" {
+		return labels.Set{LabelTier: tierControlPlane}.String()
+	}
+	return labels.Set(Labels(component)).String()
+}
+
 // pod is the static pod that runs the component.
 func pod(c component) *corev1.Pod {
 	requests := corev1.ResourceList{corev1.ResourceCPU: resource.MustParse(c.cpu)}
@@ -264,8 +288,8 @@ func pod(c component) *corev1.Pod {
 		TypeMeta: metav1.TypeMeta{APIVersion: "v1", Kind: "Pod"},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      c.name,
-			Namespace: "kube-system",
-			Labels:    map[string]string{"component": c.name, "tier": "control-plane"},
+			Namespace: metav1.NamespaceSystem,
+			Labels:    Labels(c.name),
 		},
 		Spec: corev1.PodSpec{
 			Containers:        []corev1.Container{container},

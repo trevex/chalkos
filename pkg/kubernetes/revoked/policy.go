@@ -9,6 +9,8 @@ import (
 
 	admissionv1 "k8s.io/api/admissionregistration/v1"
 	admissionv1ac "k8s.io/client-go/applyconfigurations/admissionregistration/v1"
+
+	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
 )
 
 // Policy returns the admission policy that denies every write by a node of the list, and its
@@ -34,10 +36,10 @@ func Policy(l List) (*admissionv1ac.ValidatingAdmissionPolicyApplyConfiguration,
 			// Requests by anyone but a node end here.
 			WithMatchConditions(admissionv1ac.MatchCondition().
 				WithName("node").
-				WithExpression(`request.userInfo.username.startsWith("system:node:")`)).
+				WithExpression("request.userInfo.username.startsWith("+strconv.Quote(kpki.NodeUserPrefix)+")")).
 			WithVariables(
 				admissionv1ac.Variable().WithName("revoked").WithExpression(literal(l)),
-				admissionv1ac.Variable().WithName("node").WithExpression("request.userInfo.username.substring(12)"),
+				admissionv1ac.Variable().WithName("node").WithExpression("request.userInfo.username.substring("+strconv.Itoa(len(kpki.NodeUserPrefix))+")"),
 			).
 			WithValidations(admissionv1ac.Validation().
 				WithExpression("!(variables.node in variables.revoked)").

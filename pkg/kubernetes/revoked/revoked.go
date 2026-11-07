@@ -18,7 +18,7 @@ import (
 
 // The ConfigMap's data maps each revoked node's name to its revocation time in TimeFormat.
 const (
-	Namespace  = "kube-system"
+	Namespace  = metav1.NamespaceSystem
 	Name       = "chalkos-revoked-nodes"
 	TimeFormat = time.RFC3339
 )

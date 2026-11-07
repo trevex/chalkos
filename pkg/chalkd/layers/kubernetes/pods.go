@@ -10,6 +10,7 @@ import (
 	"k8s.io/client-go/kubernetes"
 
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
+	"github.com/trevex/chalkos/pkg/kubernetes/manifests"
 )
 
 // controlPlanePodsCurrent is the status of a control plane whose static pods run the images its
@@ -27,7 +28,7 @@ const controlPlanePodsCurrent = "current"
 // image.
 func controlPlanePods(ctx context.Context, cs kubernetes.Interface, c k8s.Cluster, node string) string {
 	pods, err := cs.CoreV1().Pods(metav1.NamespaceSystem).List(ctx, metav1.ListOptions{
-		LabelSelector: "tier=control-plane",
+		LabelSelector: manifests.Selector(""),
 		FieldSelector: fields.OneTermEqualSelector("spec.nodeName", node).String(),
 		// The API server's watch cache serves the list, which reads etcd only for a list of the
 		// latest version.
@@ -42,7 +43,7 @@ func controlPlanePods(ctx context.Context, cs kubernetes.Interface, c k8s.Cluste
 		// The field selector is checked again: a client that ignores it, as client-go's fake does,
 		// returns every node's pods.
 		if _, mirror := p.Annotations[corev1.MirrorPodAnnotationKey]; mirror && p.Spec.NodeName == node {
-			byComponent[p.Labels["component"]] = p
+			byComponent[p.Labels[manifests.LabelComponent]] = p
 		}
 	}
 	for _, want := range []struct{ component, image string }{
