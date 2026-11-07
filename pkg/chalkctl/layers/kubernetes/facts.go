@@ -24,7 +24,8 @@ func (p *Plugin) ContractFacts(read func(name string) ([]byte, error)) (*anypb.A
 	return k8s.FactsPayload(data)
 }
 
-// Target sets the image's Kubernetes facts, which config's cluster is built from.
+// Target adds the translation of an image with the Kubernetes facts f, which config's cluster is
+// built from.
 func (p *Plugin) Target(f *anypb.Any, t *config.Target) (bool, error) {
 	img, ok, err := k8s.ImageOfPayload(f)
 	if !ok {
@@ -33,8 +34,6 @@ func (p *Plugin) Target(f *anypb.Any, t *config.Target) (bool, error) {
 	if err != nil {
 		return true, fmt.Errorf("image.json: %w", err)
 	}
-	if t.Image == nil {
-		t.Image = &img
-	}
+	t.Translators = append(t.Translators, config.KubernetesTranslator(img))
 	return true, nil
 }

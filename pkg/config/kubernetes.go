@@ -8,6 +8,7 @@ import (
 	"net/netip"
 	"slices"
 
+	"github.com/trevex/chalkos/pkg/identity"
 	"github.com/trevex/chalkos/pkg/kubernetes"
 	"github.com/trevex/chalkos/pkg/kubernetes/nodeip"
 )
@@ -152,13 +153,22 @@ func (docs Documents) AddonObjects() ([]map[string]any, error) {
 	return out, nil
 }
 
-// CheckKubernetes refuses a set whose Node, Cluster, Flannel and Addon documents a node of an
-// image with the facts img could not run on: a cluster the Node, Cluster and Flannel documents do
-// not build, and Addon documents that do not decode.
-func (s *Set) CheckKubernetes(img kubernetes.Image) error {
-	if _, err := s.docs.Cluster(img); err != nil {
+// KubernetesTranslator is the translation of an image with the facts img: it builds the cluster
+// the Node, Cluster and Flannel documents give, adds the node's Kubernetes settings from its Node
+// document to the identity, the Kubernetes node called name, and refuses Addon documents that do
+// not decode.
+func KubernetesTranslator(img kubernetes.Image) Translator {
+	return func(s *Set, name string, id *identity.Identity) error {
+		// The node's addresses follow the families and nodeIP.validSubnets of the cluster the
+		// documents give, which needs a Node and a Cluster document.
+		c, err := s.docs.Cluster(img)
+		if err != nil {
+			return fmt.Errorf("the Kubernetes cluster the documents give: %w", err)
+		}
+		if err := kubelet(s, id, name, c); err != nil {
+			return err
+		}
+		_, err = s.docs.AddonObjects()
 		return err
 	}
-	_, err := s.docs.AddonObjects()
-	return err
 }
