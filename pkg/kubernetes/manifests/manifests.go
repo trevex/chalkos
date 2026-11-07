@@ -12,7 +12,6 @@ import (
 	"net"
 	"path"
 	"slices"
-	"sort"
 	"strconv"
 	"strings"
 
@@ -320,7 +319,7 @@ func certificatesHash(p *corev1.Pod, pkiDir string, files map[string][]byte) (st
 	if len(names) == 0 {
 		return "", fmt.Errorf("%s mounts no certificates", p.Name)
 	}
-	sort.Strings(names)
+	slices.Sort(names)
 	h := sha256.New()
 	for _, name := range names {
 		fmt.Fprintf(h, "%s\x00%d\x00", name, len(files[name]))

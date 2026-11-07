@@ -10,7 +10,6 @@ import (
 	"errors"
 	"fmt"
 	"slices"
-	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -68,7 +67,7 @@ func Members(ctx context.Context, cli *clientv3.Client) ([]Member, error) {
 	for i, m := range resp.Members {
 		members[i] = member(m)
 	}
-	sort.Slice(members, func(i, j int) bool { return members[i].Name < members[j].Name })
+	slices.SortFunc(members, func(a, b Member) int { return strings.Compare(a.Name, b.Name) })
 	return members, nil
 }
 
@@ -197,7 +196,7 @@ func InitialCluster(members []Member, id uint64, name string) string {
 			entries = append(entries, n+"="+u)
 		}
 	}
-	sort.Strings(entries)
+	slices.Sort(entries)
 	return strings.Join(entries, ",")
 }
 
@@ -325,7 +324,7 @@ func (e *SplitError) Error() string {
 	for endpoint, id := range e.IDs {
 		ids = append(ids, fmt.Sprintf("%x at %s", id, endpoint))
 	}
-	sort.Strings(ids)
+	slices.Sort(ids)
 	return fmt.Sprintf("the endpoints belong to different etcd clusters (%s); two nodes were bootstrapped separately", strings.Join(ids, ", "))
 }
 

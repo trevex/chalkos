@@ -9,7 +9,6 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
-	"sort"
 	"time"
 
 	"connectrpc.com/connect"
@@ -298,7 +297,7 @@ func tokenSecrets(ctx context.Context, client kubernetes.Interface) ([]string, e
 		}
 		opts.Continue = list.Continue
 	}
-	sort.Strings(names)
+	slices.Sort(names)
 	return names, nil
 }
 

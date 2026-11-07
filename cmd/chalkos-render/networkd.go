@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strings"
 
 	"github.com/trevex/chalkos/pkg/router/derive"
@@ -85,12 +85,15 @@ func renderUnit(what string, doc, raw map[string]any) (string, error) {
 			sections = append(sections, section{name: name, body: m, def: def})
 		}
 	}
-	sort.SliceStable(sections, func(i, j int) bool {
-		a, b := sections[i].name, sections[j].name
+	slices.SortStableFunc(sections, func(x, y section) int {
+		a, b := x.name, y.name
 		if (a == "Match") != (b == "Match") {
-			return a == "Match"
+			if a == "Match" {
+				return -1
+			}
+			return 1
 		}
-		return a < b
+		return strings.Compare(a, b)
 	})
 	var b strings.Builder
 	for _, sec := range sections {
@@ -112,7 +115,7 @@ func renderUnit(what string, doc, raw map[string]any) (string, error) {
 				lines = append(lines, [2]string{key, value})
 			}
 		}
-		sort.SliceStable(lines, func(i, j int) bool { return lines[i][0] < lines[j][0] })
+		slices.SortStableFunc(lines, func(a, b [2]string) int { return strings.Compare(a[0], b[0]) })
 		fmt.Fprintf(&b, "[%s]\n", sec.name)
 		for _, l := range lines {
 			fmt.Fprintf(&b, "%s=%s\n", l[0], l[1])

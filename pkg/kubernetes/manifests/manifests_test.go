@@ -3,11 +3,12 @@ package manifests
 import (
 	"encoding/json"
 	"flag"
+	"maps"
 	"net"
 	"net/netip"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strings"
 	"testing"
 
@@ -99,11 +100,7 @@ func TestStaticPodsGolden(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		var names []string
-		for name := range pods {
-			names = append(names, name)
-		}
-		sort.Strings(names)
+		names := slices.Sorted(maps.Keys(pods))
 		if strings.Join(names, " ") != "etcd.json kube-apiserver.json kube-controller-manager.json kube-scheduler.json" {
 			t.Fatalf("pods %v", names)
 		}

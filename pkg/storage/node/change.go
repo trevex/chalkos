@@ -8,7 +8,6 @@ import (
 	"maps"
 	"path/filepath"
 	"slices"
-	"sort"
 	"strconv"
 	"strings"
 
@@ -153,7 +152,7 @@ func (s *Storage) Change(ctx context.Context, recorded, section storage.Section,
 			added = append(added, name)
 		}
 	}
-	sort.Strings(added)
+	slices.Sort(added)
 	old, err := s.Generate(unitNames)
 	if err != nil {
 		return internalError{err}

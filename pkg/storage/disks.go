@@ -8,7 +8,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -132,7 +132,7 @@ func (h Host) Disks() ([]BlockDisk, error) {
 			disks = append(disks, d)
 		}
 	}
-	sort.Slice(disks, func(i, j int) bool { return disks[i].Name < disks[j].Name })
+	slices.SortFunc(disks, func(a, b BlockDisk) int { return strings.Compare(a.Name, b.Name) })
 	return disks, nil
 }
 

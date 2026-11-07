@@ -11,7 +11,6 @@ import (
 	"path/filepath"
 	"regexp"
 	"slices"
-	"sort"
 	"strings"
 )
 
@@ -116,7 +115,7 @@ func (r *Ref) UnmarshalJSON(data []byte) error {
 			unknown = append(unknown, key)
 		}
 	}
-	sort.Strings(unknown)
+	slices.Sort(unknown)
 	r.Selector.unknown = strings.Join(unknown, ", ")
 	return nil
 }
@@ -224,7 +223,7 @@ func (s Section) DiskNames() []string {
 			names = append(names, name)
 		}
 	}
-	sort.Strings(names)
+	slices.Sort(names)
 	if _, ok := s.Disks[SystemDisk]; ok {
 		names = append([]string{SystemDisk}, names...)
 	}

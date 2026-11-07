@@ -9,7 +9,6 @@ import (
 	"maps"
 	"path/filepath"
 	"slices"
-	"sort"
 	"strconv"
 
 	"github.com/trevex/chalkos/pkg/storage"
@@ -245,7 +244,7 @@ func passwordSlots(dump []byte) ([]string, error) {
 			slots = append(slots, n)
 		}
 	}
-	sort.Ints(slots)
+	slices.Sort(slots)
 	var out []string
 	for _, n := range slots {
 		out = append(out, strconv.Itoa(n))

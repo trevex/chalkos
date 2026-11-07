@@ -7,7 +7,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strings"
 
 	"github.com/trevex/chalkos/pkg/storage"
@@ -44,7 +44,7 @@ func (s *Storage) Generate(cryptsetup string) (Units, error) {
 			names = append(names, name)
 		}
 	}
-	sort.Strings(names)
+	slices.Sort(names)
 	for _, name := range names {
 		v := section.Volumes[name]
 		uuid := pins.Disks[v.Disk].Partitions[name]
@@ -183,12 +183,15 @@ func (u Units) Of(volume string) []string {
 		}
 	}
 	// The cryptsetup service comes before the mount or swap unit on it.
-	sort.Slice(names, func(i, j int) bool {
-		ci, cj := strings.HasPrefix(names[i], "systemd-cryptsetup@"), strings.HasPrefix(names[j], "systemd-cryptsetup@")
-		if ci != cj {
-			return ci
+	slices.SortFunc(names, func(a, b string) int {
+		ca, cb := strings.HasPrefix(a, "systemd-cryptsetup@"), strings.HasPrefix(b, "systemd-cryptsetup@")
+		if ca != cb {
+			if ca {
+				return -1
+			}
+			return 1
 		}
-		return names[i] < names[j]
+		return strings.Compare(a, b)
 	})
 	return names
 }

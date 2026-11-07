@@ -5,7 +5,6 @@ import (
 	"errors"
 	"net/netip"
 	"slices"
-	"sort"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
@@ -33,6 +32,6 @@ func EndpointsFromPods(ctx context.Context, client kubernetes.Interface, self []
 	if len(endpoints) == 0 {
 		return nil, errors.New("the cluster lists no etcd members")
 	}
-	sort.Strings(endpoints)
+	slices.Sort(endpoints)
 	return endpoints, nil
 }

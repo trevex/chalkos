@@ -1,10 +1,11 @@
 package storage
 
 import (
+	"cmp"
 	"fmt"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -53,7 +54,7 @@ func (h Host) Partitions(disk BlockDisk) ([]Partition, error) {
 		p.Number = n
 		parts = append(parts, p)
 	}
-	sort.Slice(parts, func(i, j int) bool { return parts[i].Number < parts[j].Number })
+	slices.SortFunc(parts, func(a, b Partition) int { return cmp.Compare(a.Number, b.Number) })
 	return parts, nil
 }
 

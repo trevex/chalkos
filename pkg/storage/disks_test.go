@@ -4,7 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -89,7 +89,7 @@ func newHost(t *testing.T, disks ...fixtureDisk) Host {
 		for k, v := range d.props {
 			lines = append(lines, "E:"+k+"="+v)
 		}
-		sort.Strings(lines)
+		slices.Sort(lines)
 		write(filepath.Join(h.UdevRoot, "b"+d.devnum), "I:1234\n"+strings.Join(lines, "\n")+"\n")
 		node := filepath.Join(h.DevRoot, d.name)
 		write(node, "")

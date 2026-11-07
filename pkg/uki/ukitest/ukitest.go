@@ -4,7 +4,8 @@ package ukitest
 import (
 	"encoding/binary"
 	"fmt"
-	"sort"
+	"maps"
+	"slices"
 	"strings"
 )
 
@@ -19,11 +20,7 @@ func align(n, a int) int { return (n + a - 1) / a * a }
 // Build returns a PE32+ EFI application holding the sections, in name order, with nothing to run.
 // sbsign signs it, and debug/pe reads it, as they would a UKI.
 func Build(sections map[string][]byte) []byte {
-	names := make([]string, 0, len(sections))
-	for name := range sections {
-		names = append(names, name)
-	}
-	sort.Strings(names)
+	names := slices.Sorted(maps.Keys(sections))
 	headers := align(0x40+4+20+optSize+40*len(names), fileAlign)
 	le := binary.LittleEndian
 	out := make([]byte, headers)
@@ -66,11 +63,7 @@ func Build(sections map[string][]byte) []byte {
 
 // UKI builds a UKI-like image: os-release values and a command line.
 func UKI(osRelease map[string]string, cmdline string) []byte {
-	keys := make([]string, 0, len(osRelease))
-	for k := range osRelease {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
+	keys := slices.Sorted(maps.Keys(osRelease))
 	var b strings.Builder
 	for _, k := range keys {
 		fmt.Fprintf(&b, "%s=%q\n", k, osRelease[k])
