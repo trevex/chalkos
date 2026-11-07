@@ -12,10 +12,7 @@ let
           requiredSystemFeatures = [ "kvm" ];
           nativeBuildInputs = testEnv.tools ++ [ chalkPkgs.chalklab-e2e ];
         }
-        // testEnv.e2eVars
-        // lib.getAttrs imageDirs testEnv.imageDirs
-        // vars
-        // testEnv.vars
+        // testEnv.e2eEnv imageDirs vars
       )
       ''
         export HOME=$TMPDIR

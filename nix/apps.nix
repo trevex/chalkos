@@ -19,10 +19,7 @@ let
     text = ''
       ${lib.concatStrings (
         lib.mapAttrsToList (name: value: "export ${name}=${lib.escapeShellArg value}\n") (
-          testEnv.vars
-          // testEnv.e2eVars
-          // lib.getAttrs [ "CHALKLAB_K8S_IMAGE_DIR" ] testEnv.imageDirs
-          // {
+          testEnv.e2eEnv [ "CHALKLAB_K8S_IMAGE_DIR" ] {
             CHALKLAB_CHALKLAB = lib.getExe chalkPkgs.chalklab;
             CHALKLAB_K8S_ONLINE = "1";
           }

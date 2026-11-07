@@ -4,7 +4,7 @@ let
   chalkPkgs = self.packages.${pkgs.stdenv.hostPlatform.system};
   secureboot = chalkPkgs.test-secureboot;
 in
-{
+rec {
   tools = [
     # Headless, from the binary cache; the tests deny it io_uring, whose main loop loses TPM
     # emulator commands.
@@ -61,4 +61,8 @@ in
     CHALKLAB_INSTALLER_DIR = chalkPkgs.test-installer;
     CHALKLAB_GENERIC_INSTALLER_DIR = chalkPkgs.installer;
   };
+
+  # The variables of an e2e test: those of every Go test and every e2e test, the image
+  # directories of the variables names lists, and the further variables extra.
+  e2eEnv = names: extra: vars // e2eVars // pkgs.lib.getAttrs names imageDirs // extra;
 }
