@@ -83,7 +83,7 @@ func TestEtcdLeaveRefusesLastVoter(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "etcd's last voter") {
 		t.Errorf("err = %v, want a refusal for the last voter", err)
 	}
-	if bootstrapped, _ := knode.Bootstrapped(kubernetesPaths(s)); !bootstrapped {
+	if m, _, _ := knode.ReadMembership(kubernetesPaths(s)); m != knode.MembershipBootstrapped {
 		t.Error("a refused leave changed the node")
 	}
 }

@@ -127,7 +127,7 @@ func TestJoin(t *testing.T) {
 	case <-time.After(time.Minute):
 		t.Fatal("the control plane's loop did not start after the join")
 	}
-	if bootstrapped, _ := knode.Bootstrapped(p); !bootstrapped {
+	if m, _, _ := knode.ReadMembership(p); m != knode.MembershipBootstrapped {
 		t.Error("the joined node is not marked bootstrapped")
 	}
 	if initialised, _ := knode.EtcdInitialised(p); !initialised {

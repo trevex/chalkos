@@ -46,8 +46,8 @@ func TestBootstrap(t *testing.T) {
 		t.Errorf("applied %d objects", resp.Applied)
 	}
 	p := s.k.paths
-	if bootstrapped, err := knode.Bootstrapped(p); err != nil || !bootstrapped {
-		t.Errorf("bootstrapped = %v, %v", bootstrapped, err)
+	if m, _, err := knode.ReadMembership(p); err != nil || m != knode.MembershipBootstrapped {
+		t.Errorf("membership = %v, %v", m, err)
 	}
 	entries, _ := os.ReadDir(p.Manifests())
 	if len(entries) != 4 {
@@ -151,7 +151,7 @@ func TestBootstrapReturnsBeforeManifestsApplied(t *testing.T) {
 		t.Fatalf("err = %v, want deadline exceeded", err)
 	}
 	// The node stays committed: it never initialises a second cluster.
-	if bootstrapped, _ := knode.Bootstrapped(s.k.paths); !bootstrapped {
+	if m, _, _ := knode.ReadMembership(s.k.paths); m != knode.MembershipBootstrapped {
 		t.Error("the node lost its bootstrap marker")
 	}
 }

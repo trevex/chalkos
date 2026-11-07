@@ -79,11 +79,11 @@ func TestReadMembershipUnreadable(t *testing.T) {
 
 func TestPinned(t *testing.T) {
 	p := Paths{State: t.TempDir()}
-	if pinned, err := Pinned(p); err != nil || pinned {
-		t.Errorf("not pinned: %v, %v", pinned, err)
+	if _, l, err := ReadMembership(p); err != nil || l.Pinned {
+		t.Errorf("not pinned: %v, %v", l.Pinned, err)
 	}
 	write(t, p.Pin(), "192.168.100.11\n")
-	if pinned, err := Pinned(p); err != nil || !pinned {
-		t.Errorf("pinned: %v, %v", pinned, err)
+	if _, l, err := ReadMembership(p); err != nil || !l.Pinned {
+		t.Errorf("pinned: %v, %v", l.Pinned, err)
 	}
 }

@@ -544,22 +544,22 @@ func TestReadPin(t *testing.T) {
 // A node that started joining stays marked until the join completes.
 func TestMarkJoined(t *testing.T) {
 	p := testNode(t, kubernetes.KindControlPlane, "cp1", nil)
-	if joining, err := Joining(p); err != nil || joining {
+	if joining, err := marked(p.Joining()); err != nil || joining {
 		t.Fatalf("before: %v, %v", joining, err)
 	}
 	if err := MarkJoining(p, "https://192.168.100.10:6443"); err != nil {
 		t.Fatal(err)
 	}
-	if joining, err := Joining(p); err != nil || !joining {
+	if joining, err := marked(p.Joining()); err != nil || !joining {
 		t.Fatalf("after MarkJoining: %v, %v", joining, err)
 	}
 	if err := MarkJoined(p, now); err != nil {
 		t.Fatal(err)
 	}
-	if joining, err := Joining(p); err != nil || joining {
+	if joining, err := marked(p.Joining()); err != nil || joining {
 		t.Errorf("after MarkJoined: joining %v, %v", joining, err)
 	}
-	if bootstrapped, err := Bootstrapped(p); err != nil || !bootstrapped {
+	if bootstrapped, err := marked(p.Bootstrapped()); err != nil || !bootstrapped {
 		t.Errorf("after MarkJoined: bootstrapped %v, %v", bootstrapped, err)
 	}
 }
@@ -616,14 +616,14 @@ func TestRemoveEtcdData(t *testing.T) {
 func TestPrepareAfterLeaving(t *testing.T) {
 	p := testNode(t, kubernetes.KindControlPlane, "cp1", secrets(t))
 	write(t, p.Bootstrapped(), "")
-	if left, err := Left(p); err != nil || left {
-		t.Fatalf("Left() = %v, %v before leaving", left, err)
+	if left, err := marked(p.Left()); err != nil || left {
+		t.Fatalf("left = %v, %v before leaving", left, err)
 	}
 	if err := MarkLeft(p, now); err != nil {
 		t.Fatal(err)
 	}
-	if left, err := Left(p); err != nil || !left {
-		t.Errorf("Left() = %v, %v", left, err)
+	if left, err := marked(p.Left()); err != nil || !left {
+		t.Errorf("left = %v, %v", left, err)
 	}
 	if err := Prepare(p, now, picked, nil); err != nil {
 		t.Fatal(err)

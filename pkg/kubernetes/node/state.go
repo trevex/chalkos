@@ -32,19 +32,9 @@ func ReadShare(p Paths) (kpki.Share, error) {
 // after VAR was reset: etcd would start a new, empty cluster.
 var ErrEtcdDataMissing = errors.New("etcd data is missing on a node whose cluster was initialised; restore etcd or reinstall the node")
 
-// Bootstrapped reports whether this control-plane node was told to initialise etcd.
-func Bootstrapped(p Paths) (bool, error) {
-	return marked(p.Bootstrapped())
-}
-
 // EtcdInitialised reports whether etcd on this node answered ready after the bootstrap.
 func EtcdInitialised(p Paths) (bool, error) {
 	return marked(p.EtcdInitialised())
-}
-
-// Joining reports whether the node started joining the cluster and has not finished.
-func Joining(p Paths) (bool, error) {
-	return marked(p.Joining())
 }
 
 // MarkJoining records that the node starts joining the cluster at the endpoint.
@@ -79,11 +69,6 @@ func ClearMembership(p Paths) error {
 		}
 	}
 	return nil
-}
-
-// Left reports whether the node left etcd.
-func Left(p Paths) (bool, error) {
-	return marked(p.Left())
 }
 
 // MarkLeft records that the node left etcd. It comes before the node deletes its etcd data and
@@ -185,11 +170,6 @@ func CheckEtcdData(p Paths) error {
 // WriteInitialCluster records the initial cluster the node's etcd joins with.
 func WriteInitialCluster(p Paths, initialCluster string) error {
 	return atomicfile.WriteFile(p.EtcdInitialCluster(), []byte(initialCluster+"\n"), 0o644)
-}
-
-// HasInitialCluster reports whether the node recorded the initial cluster its etcd joins with.
-func HasInitialCluster(p Paths) (bool, error) {
-	return marked(p.EtcdInitialCluster())
 }
 
 // readInitialCluster returns the initial cluster the node joined with, "" when it started its own.

@@ -94,7 +94,7 @@ func TestHealthOfAControlPlane(t *testing.T) {
 
 	// A control plane waiting for its bootstrap is healthy once its identity was applied.
 	s2, r := kubernetesNode(t, k8s.KindControlPlane, true)
-	if bootstrapped, _ := knode.Bootstrapped(s2.k.paths); bootstrapped {
+	if m, _, _ := knode.ReadMembership(s2.k.paths); m == knode.MembershipBootstrapped {
 		t.Fatal("bootstrapped")
 	}
 	s2.k.kubelet = "http://127.0.0.1:1/healthz"

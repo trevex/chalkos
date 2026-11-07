@@ -125,8 +125,8 @@ func checkLeft(t *testing.T, s *Plugin) {
 	if hasData, _ := knode.EtcdHasData(p); hasData {
 		t.Error("etcd's data outlived leaving")
 	}
-	if left, err := knode.Left(p); err != nil || !left {
-		t.Errorf("Left() = %v, %v after leaving", left, err)
+	if m, _, err := knode.ReadMembership(p); err != nil || m != knode.MembershipLeft {
+		t.Errorf("membership = %v, %v after leaving", m, err)
 	}
 	if got := kubernetesState(t, s); got != "left etcd; reinstall the node to join the cluster again" {
 		t.Errorf("state %q", got)

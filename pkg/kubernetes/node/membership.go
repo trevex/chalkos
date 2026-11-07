@@ -48,22 +48,22 @@ type Leftovers struct {
 //     joining marker.
 func ReadMembership(p Paths) (Membership, Leftovers, error) {
 	var l Leftovers
-	left, err := Left(p)
+	left, err := marked(p.Left())
 	if err != nil {
 		return MembershipNone, l, err
 	}
-	bootstrapped, err := Bootstrapped(p)
+	bootstrapped, err := marked(p.Bootstrapped())
 	if err != nil {
 		return MembershipNone, l, err
 	}
-	joining, err := Joining(p)
+	joining, err := marked(p.Joining())
 	if err != nil {
 		return MembershipNone, l, err
 	}
-	if l.InitialCluster, err = HasInitialCluster(p); err != nil {
+	if l.InitialCluster, err = marked(p.EtcdInitialCluster()); err != nil {
 		return MembershipNone, l, err
 	}
-	if l.Pinned, err = Pinned(p); err != nil {
+	if l.Pinned, err = marked(p.Pin()); err != nil {
 		return MembershipNone, l, err
 	}
 	if l.EtcdData, err = EtcdHasData(p); err != nil {
@@ -83,9 +83,4 @@ func ReadMembership(p Paths) (Membership, Leftovers, error) {
 		return MembershipJoining, l, nil
 	}
 	return MembershipNone, l, nil
-}
-
-// Pinned reports whether the node is pinned to the addresses etcd advertises.
-func Pinned(p Paths) (bool, error) {
-	return marked(p.Pin())
 }
