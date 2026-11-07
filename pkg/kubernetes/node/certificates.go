@@ -21,7 +21,7 @@ import (
 // polls, as flock cannot be interrupted: a preparation waiting for the node's addresses may hold
 // the lock for long.
 func LockPKI(ctx context.Context, p Paths) (unlock func(), err error) {
-	err = poll.Until(ctx, "the lock on the control plane's certificates", 0, 100*time.Millisecond, func() error {
+	err = poll.UntilDone(ctx, "the lock on the control plane's certificates", 100*time.Millisecond, func() error {
 		var err error
 		unlock, err = lockPKI(p, false)
 		if err != nil && !errors.Is(err, errPKIBusy) {

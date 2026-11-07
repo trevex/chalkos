@@ -24,7 +24,7 @@ type QMP struct {
 func dialQMP(ctx context.Context, path string) (*QMP, error) {
 	var d net.Dialer
 	var conn net.Conn
-	err := poll.Until(ctx, "", 0, 50*time.Millisecond, func() error {
+	err := poll.UntilDone(ctx, "", 50*time.Millisecond, func() error {
 		var err error
 		if conn, err = d.DialContext(ctx, "unix", path); err != nil {
 			return fmt.Errorf("dial qmp %s: %w", path, err)

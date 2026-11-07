@@ -149,7 +149,7 @@ func (k *side) restartAddons(ctx context.Context, c k8s.Cluster, client kubernet
 			continue
 		}
 		waited[w.namespace] = true
-		if err := poll.Until(ctx, "kube-root-ca.crt of "+w.namespace+" to hold the Kubernetes CAs", 0, k.timing.Poll, func() error {
+		if err := poll.UntilDone(ctx, "kube-root-ca.crt of "+w.namespace+" to hold the Kubernetes CAs", k.timing.Poll, func() error {
 			return rootCAHolds(ctx, client, w.namespace, want)
 		}); err != nil {
 			return nil, nil, err
@@ -191,7 +191,7 @@ func (k *side) restartAddons(ctx context.Context, c k8s.Cluster, client kubernet
 		}
 	}
 	for _, w := range rollouts {
-		if err := poll.Until(ctx, w.String()+" to roll out", 0, k.timing.Poll, func() error { return rolledOut(ctx, client, w) }); err != nil {
+		if err := poll.UntilDone(ctx, w.String()+" to roll out", k.timing.Poll, func() error { return rolledOut(ctx, client, w) }); err != nil {
 			return restarted, notWaited, err
 		}
 	}

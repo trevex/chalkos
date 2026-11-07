@@ -27,8 +27,7 @@ type Applier struct {
 	dynamic dynamic.Interface
 	mapper  meta.ResettableRESTMapper
 	// NoMatchRetry is how long Apply waits for the API server to serve a kind it does not know
-	// yet, such as a custom resource whose definition was applied just before. Zero waits until
-	// Apply's context ends.
+	// yet, such as a custom resource whose definition was applied just before. Zero tries once.
 	NoMatchRetry time.Duration
 }
 
@@ -105,7 +104,7 @@ func WaitReady(ctx context.Context, cfg *rest.Config) error {
 		return err
 	}
 	client := dc.RESTClient()
-	return poll.Until(ctx, "the API server to be ready", 0, 2*time.Second, func() error {
+	return poll.UntilDone(ctx, "the API server to be ready", 2*time.Second, func() error {
 		body, err := client.Get().AbsPath("/readyz").Timeout(5 * time.Second).DoRaw(ctx)
 		if err == nil && string(body) != "ok" {
 			err = fmt.Errorf("/readyz answered %q", body)
