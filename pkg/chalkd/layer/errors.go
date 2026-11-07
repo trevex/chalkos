@@ -47,8 +47,11 @@ func CodeFor[T error](code connect.Code) func(error) (connect.Code, bool) {
 
 // Of is the code of the first error in err's tree, depth first, that carries one or that c maps:
 // the outermost, so a handler that wraps an error with a code of its own decides. An error with
-// neither is a failure of the node itself, CodeInternal.
+// neither is a failure of the node itself, CodeInternal. No error has no code, 0.
 func (c Codes) Of(err error) connect.Code {
+	if err == nil {
+		return 0
+	}
 	if code, ok := c.find(err); ok {
 		return code
 	}
@@ -95,5 +98,6 @@ func (c Codes) Error(err error) *connect.Error {
 	return ce
 }
 
-// CodeOf is the code err answers an RPC with, as Codes.Of finds it without domain errors.
+// CodeOf is the code err answers an RPC with, as Codes.Of finds it without domain errors: 0 for no
+// error.
 func CodeOf(err error) connect.Code { return Codes(nil).Of(err) }

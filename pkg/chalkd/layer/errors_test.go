@@ -19,6 +19,7 @@ func TestCodes(t *testing.T) {
 		err  error
 		want connect.Code
 	}{
+		"no error":             {nil, 0},
 		"no code":              {fs.ErrNotExist, connect.CodeInternal},
 		"a code":               {refused, connect.CodeInvalidArgument},
 		"a wrapped code":       {fmt.Errorf("upgrade: %w", refused), connect.CodeInvalidArgument},
