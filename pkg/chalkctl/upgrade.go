@@ -123,6 +123,9 @@ func (a *app) upgrade(ctx context.Context, f upgradeFlags) error {
 	if f.maxUnavailable < 1 {
 		return cli.Usagef("--max-unavailable must be at least 1")
 	}
+	if f.timeout <= 0 {
+		return cli.Usagef("--timeout must be positive")
+	}
 	if f.rollback {
 		switch {
 		case f.image != "":

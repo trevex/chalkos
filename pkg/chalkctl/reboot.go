@@ -518,6 +518,9 @@ func (a *app) nodeRebootCommand() *cobra.Command {
 // boots next: the one an upgrade or a rollback activated, or else the one it runs. A node in
 // maintenance mode, reached with --fingerprint or --insecure, reboots without more.
 func (a *app) nodeReboot(ctx context.Context, f nodeRebootFlags, name string) error {
+	if f.timeout <= 0 {
+		return cli.Usagef("--timeout must be positive")
+	}
 	addresses, err := f.addressesOf(name)
 	if err != nil {
 		return err

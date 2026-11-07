@@ -57,6 +57,8 @@ func (a *app) rotate(ctx context.Context, f rotateFlags, pos []string) error {
 		return cli.Usagef("pass --resume or --finish, not both")
 	case f.force && !f.finish:
 		return cli.Usagef("--force goes with --finish")
+	case f.timeout <= 0:
+		return cli.Usagef("--timeout must be positive")
 	}
 	kind := clustersecrets.RotationKind(pos[0])
 	if !slices.Contains(clustersecrets.RotationKinds, kind) {

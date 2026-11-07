@@ -31,6 +31,7 @@ func TestExecuteUsageErrors(t *testing.T) {
 		{"status", "--bogus"}, {"status", "n1", "--bogus"},
 		{"config", "new"}, {"config", "new", "--name", "ada"},
 		{"upgrade", "--max-unavailable", "0"}, {"rotate", "os-ca", "--resume", "--finish"},
+		{"upgrade", "--timeout", "0"}, {"rotate", "os-ca", "--timeout", "0"}, {"node", "reboot", "n1", "--timeout", "-1s"},
 	} {
 		ta := newTestApp(t)
 		if got := ta.execute(context.Background(), args...); got != 2 {
