@@ -144,8 +144,10 @@ func (a *Approver) Once(ctx context.Context) error {
 	for i := range list.Items {
 		csr := &list.Items[i]
 		exists[csr.Name] = true
-		switch err := a.review(ctx, csr, revokedNodes); {
-		case errors.As(err, new(unreadRevoked)):
+		err := a.review(ctx, csr, revokedNodes)
+		_, pending := errors.AsType[unreadRevoked](err)
+		switch {
+		case pending:
 			unread++
 		case err != nil:
 			errs = append(errs, fmt.Errorf("certificate request %s: %w", csr.Name, err))
