@@ -1,70 +1,64 @@
 package nodeip
 
 import (
-	"encoding/binary"
-	"net/netip"
-	"os"
-	"os/exec"
 	"slices"
-	"syscall"
 	"testing"
+
+	"golang.org/x/sys/unix"
+
+	"github.com/trevex/chalkos/pkg/internal/netnstest"
 )
 
-type rtattr struct {
-	typ   uint16
-	value []byte
-}
-
-// addrMessage builds an RTM_NEWADDR message as the kernel sends it.
-func addrMessage(family, flags uint8, index uint32, attrs ...rtattr) syscall.NetlinkMessage {
-	data := make([]byte, syscall.SizeofIfAddrmsg)
-	data[0], data[1], data[2] = family, 24, flags
-	binary.NativeEndian.PutUint32(data[4:], index)
-	for _, a := range attrs {
-		n := syscall.SizeofRtAttr + len(a.value)
-		b := make([]byte, (n+3)&^3)
-		binary.NativeEndian.PutUint16(b[0:], uint16(n))
-		binary.NativeEndian.PutUint16(b[2:], a.typ)
-		copy(b[syscall.SizeofRtAttr:], a.value)
-		data = append(data, b...)
-	}
-	return syscall.NetlinkMessage{
-		Header: syscall.NlMsghdr{Len: uint32(syscall.NLMSG_HDRLEN + len(data)), Type: syscall.RTM_NEWADDR},
-		Data:   data,
-	}
-}
-
-func ip(s string) []byte { return netip.MustParseAddr(s).AsSlice() }
-
-func extendedFlags(flags uint32) rtattr {
-	v := make([]byte, 4)
-	binary.NativeEndian.PutUint32(v, flags)
-	return rtattr{ifaFlags, v}
-}
-
-func TestParseAddresses(t *testing.T) {
-	up := map[uint32]Link{1: {Name: "lo", Loopback: true}, 2: {Name: "eth0"}, 4: {Name: "ppp0"}}
-	msgs := []syscall.NetlinkMessage{
-		addrMessage(syscall.AF_INET, 0, 1, rtattr{syscall.IFA_ADDRESS, ip("127.0.0.1")}, rtattr{syscall.IFA_LOCAL, ip("127.0.0.1")}),
-		addrMessage(syscall.AF_INET, 0, 2, rtattr{syscall.IFA_ADDRESS, ip("10.0.2.15")}, rtattr{syscall.IFA_LOCAL, ip("10.0.2.15")}),
+func TestUsable(t *testing.T) {
+	for _, c := range []struct {
+		ipv6  bool
+		flags uint32
+		want  bool
+	}{
+		{false, 0, true},
+		{true, unix.IFA_F_PERMANENT, true},
+		{true, unix.IFA_F_NODAD, true},
+		{true, unix.IFA_F_TENTATIVE, false},
+		{true, unix.IFA_F_DADFAILED, false},
+		{true, unix.IFA_F_DEPRECATED, false},
+		{false, unix.IFA_F_DEPRECATED, false},
+		{true, unix.IFA_F_TEMPORARY, false},
 		// A secondary IPv4 address carries the bit IPv6 uses for temporary addresses.
-		addrMessage(syscall.AF_INET, syscall.IFA_F_SECONDARY, 2, rtattr{syscall.IFA_ADDRESS, ip("10.0.2.16")}, rtattr{syscall.IFA_LOCAL, ip("10.0.2.16")}),
-		// The interface is down.
-		addrMessage(syscall.AF_INET, 0, 3, rtattr{syscall.IFA_ADDRESS, ip("192.168.1.5")}, rtattr{syscall.IFA_LOCAL, ip("192.168.1.5")}),
-		// Point to point: IFA_ADDRESS is the peer.
-		addrMessage(syscall.AF_INET, 0, 4, rtattr{syscall.IFA_ADDRESS, ip("203.0.113.1")}, rtattr{syscall.IFA_LOCAL, ip("203.0.113.2")}),
-		addrMessage(syscall.AF_INET6, syscall.IFA_F_PERMANENT, 2, rtattr{syscall.IFA_ADDRESS, ip("2001:db8::15")}),
-		addrMessage(syscall.AF_INET6, syscall.IFA_F_TENTATIVE, 2, rtattr{syscall.IFA_ADDRESS, ip("2001:db8::16")}),
-		addrMessage(syscall.AF_INET6, syscall.IFA_F_DADFAILED, 2, rtattr{syscall.IFA_ADDRESS, ip("2001:db8::17")}),
-		addrMessage(syscall.AF_INET6, syscall.IFA_F_DEPRECATED, 2, rtattr{syscall.IFA_ADDRESS, ip("2001:db8::18")}),
-		addrMessage(syscall.AF_INET6, syscall.IFA_F_TEMPORARY, 2, rtattr{syscall.IFA_ADDRESS, ip("2001:db8::19")}),
-		// IFA_FLAGS holds all flags and overrides the header's.
-		addrMessage(syscall.AF_INET6, 0, 2, rtattr{syscall.IFA_ADDRESS, ip("2001:db8::20")}, extendedFlags(syscall.IFA_F_TENTATIVE)),
-		addrMessage(syscall.AF_INET6, syscall.IFA_F_TENTATIVE, 2, rtattr{syscall.IFA_ADDRESS, ip("2001:db8::21")}, extendedFlags(syscall.IFA_F_PERMANENT)),
-		{Header: syscall.NlMsghdr{Type: syscall.NLMSG_DONE}},
-		addrMessage(syscall.AF_INET, 0, 2, rtattr{syscall.IFA_ADDRESS, ip("10.0.2.99")}),
+		{false, unix.IFA_F_SECONDARY, true},
+	} {
+		if got := usable(c.ipv6, c.flags); got != c.want {
+			t.Errorf("usable(%v, %#x) = %v, want %v", c.ipv6, c.flags, got, c.want)
+		}
 	}
-	addrs, err := parseAddresses(msgs, up)
+}
+
+// The system's addresses leave out those of interfaces that are down and those that are
+// tentative or deprecated, keep secondary IPv4 addresses, and give the node's own end of a
+// point-to-point address.
+func TestSystemAddressesOfNamespace(t *testing.T) {
+	if !netnstest.InNamespace(t) {
+		return
+	}
+	for _, args := range [][]string{
+		{"link", "set", "lo", "up"},
+		{"link", "add", "eth0", "type", "dummy"},
+		{"link", "set", "eth0", "addrgenmode", "none"},
+		{"addr", "add", "10.0.2.15/24", "dev", "eth0"},
+		{"addr", "add", "10.0.2.16/24", "dev", "eth0"},
+		{"addr", "add", "10.0.2.17/32", "peer", "203.0.113.1/32", "dev", "eth0"},
+		{"addr", "add", "2001:db8::15/64", "dev", "eth0", "nodad"},
+		{"addr", "add", "2001:db8::18/64", "dev", "eth0", "nodad", "preferred_lft", "0"},
+		{"link", "set", "eth0", "up"},
+		{"link", "add", "down0", "type", "dummy"},
+		{"addr", "add", "192.168.1.5/24", "dev", "down0"},
+		// Without a carrier, duplicate address detection waits, and the address stays tentative.
+		{"link", "add", "v0", "type", "veth", "peer", "name", "v1"},
+		{"link", "set", "v0", "up"},
+		{"addr", "add", "2001:db8:1::16/64", "dev", "v0"},
+	} {
+		netnstest.IP(t, args...)
+	}
+	addrs, err := SystemAddresses()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -72,84 +66,18 @@ func TestParseAddresses(t *testing.T) {
 	for _, a := range addrs {
 		got = append(got, a.String())
 	}
-	want := []string{"127.0.0.1 on lo", "10.0.2.15 on eth0", "10.0.2.16 on eth0", "203.0.113.2 on ppp0", "2001:db8::15 on eth0", "2001:db8::21 on eth0"}
+	want := []string{"127.0.0.1 on lo", "::1 on lo", "10.0.2.15 on eth0", "10.0.2.16 on eth0", "10.0.2.17 on eth0", "2001:db8::15 on eth0"}
+	slices.Sort(got)
+	slices.Sort(want)
 	if !slices.Equal(got, want) {
 		t.Errorf("addresses %v, want %v", got, want)
 	}
-	if !addrs[0].Link.Loopback || addrs[1].Link.Loopback {
-		t.Errorf("links %+v, %+v", addrs[0].Link, addrs[1].Link)
-	}
-
-	short := syscall.NetlinkMessage{Header: syscall.NlMsghdr{Type: syscall.RTM_NEWADDR}, Data: []byte{2, 24}}
-	if _, err := parseAddresses([]syscall.NetlinkMessage{short}, up); err == nil {
-		t.Error("parsed a short message")
-	}
-}
-
-// linkMessage builds an RTM_NEWLINK message whose IFLA_LINKINFO names the kind, if any.
-func linkMessage(index uint32, kind string) syscall.NetlinkMessage {
-	data := make([]byte, syscall.SizeofIfInfomsg)
-	binary.NativeEndian.PutUint32(data[4:], index)
-	attr := func(typ uint16, value []byte) []byte {
-		n := syscall.SizeofRtAttr + len(value)
-		b := make([]byte, (n+3)&^3)
-		binary.NativeEndian.PutUint16(b[0:], uint16(n))
-		binary.NativeEndian.PutUint16(b[2:], typ)
-		copy(b[syscall.SizeofRtAttr:], value)
-		return b
-	}
-	data = append(data, attr(syscall.IFLA_IFNAME, []byte("x\x00"))...)
-	if kind != "" {
-		// IFLA_INFO_DATA follows the kind, as for a vlan.
-		data = append(data, attr(syscall.IFLA_LINKINFO, append(attr(iflaInfoKind, []byte(kind+"\x00")), attr(2, []byte{1, 0, 0, 0})...))...)
-	}
-	return syscall.NetlinkMessage{
-		Header: syscall.NlMsghdr{Len: uint32(syscall.NLMSG_HDRLEN + len(data)), Type: syscall.RTM_NEWLINK},
-		Data:   data,
-	}
-}
-
-func TestParseLinkKinds(t *testing.T) {
-	kinds, err := parseLinkKinds([]syscall.NetlinkMessage{linkMessage(1, ""), linkMessage(2, "dummy"), linkMessage(3, "vlan")})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(kinds) != 2 || kinds[2] != "dummy" || kinds[3] != "vlan" {
-		t.Errorf("kinds %v", kinds)
-	}
-	broken := linkMessage(2, "dummy")
-	binary.NativeEndian.PutUint16(broken.Data[syscall.SizeofIfInfomsg+8+syscall.SizeofRtAttr:], 200)
-	if _, err := parseLinkKinds([]syscall.NetlinkMessage{broken}); err == nil {
-		t.Error("parsed a malformed link info attribute")
-	}
-}
-
-// inNamespace reports whether the test runs in its own user and network namespace, where it may
-// add interfaces. Called outside one, it runs the test again in a new one and returns false.
-func inNamespace(t *testing.T) bool {
-	t.Helper()
-	if os.Getenv("CHALKOS_TEST_NETNS") == "1" {
-		return true
-	}
-	cmd := exec.Command(os.Args[0], "-test.run", "^"+t.Name()+"$", "-test.v")
-	cmd.Env = append(os.Environ(), "CHALKOS_TEST_NETNS=1")
-	cmd.SysProcAttr = &syscall.SysProcAttr{
-		Cloneflags:  syscall.CLONE_NEWUSER | syscall.CLONE_NEWNET,
-		UidMappings: []syscall.SysProcIDMap{{ContainerID: 0, HostID: os.Getuid(), Size: 1}},
-		GidMappings: []syscall.SysProcIDMap{{ContainerID: 0, HostID: os.Getgid(), Size: 1}},
-	}
-	out, err := cmd.CombinedOutput()
-	t.Logf("in a new network namespace:\n%s", out)
-	if err != nil {
-		t.Fatalf("%v", err)
-	}
-	return false
 }
 
 // The links of the system's addresses say which interface is the loopback one and which is a
 // dummy, with its MTU.
 func TestSystemAddressLinks(t *testing.T) {
-	if !inNamespace(t) {
+	if !netnstest.InNamespace(t) {
 		return
 	}
 	for _, args := range [][]string{
@@ -159,9 +87,7 @@ func TestSystemAddressLinks(t *testing.T) {
 		{"addr", "add", "fd00:200::12/128", "dev", "bgp0", "nodad"},
 		{"link", "set", "bgp0", "up"},
 	} {
-		if out, err := exec.Command("ip", args...).CombinedOutput(); err != nil {
-			t.Fatalf("ip %v: %v\n%s", args, err, out)
-		}
+		netnstest.IP(t, args...)
 	}
 	addrs, err := SystemAddresses()
 	if err != nil {
