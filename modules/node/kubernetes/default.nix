@@ -27,11 +27,14 @@ let
   run = "/run/chalkos/kubernetes";
 
   # Read by chalkd with the node's config: what the image fixes about Kubernetes. The Cluster
-  # document names the images the cluster's components run from.
-  imageFile = {
-    version = k.package.version;
-    cni = config.chalkos.cni.provider;
-  };
+  # document names the images the cluster's components run from. A file made at evaluation, so
+  # that its content is known without a build.
+  imageFile = builtins.toFile "image.json" (
+    builtins.toJSON {
+      version = k.package.version;
+      cni = config.chalkos.cni.provider;
+    }
+  );
 in
 {
   imports = [
@@ -111,12 +114,10 @@ in
       "kernel.keys.root_maxbytes" = 25000000;
     };
 
-    # What the image fixes about Kubernetes, which its image directory's metadata.json names.
-    system.build.chalkosKubernetesImage = imageFile;
-
-    environment.etc = {
-      "chalkos/kubernetes/image.json".text = builtins.toJSON imageFile;
-    };
+    # What the image fixes about Kubernetes, on the node and as the layer's facts in its image
+    # directory, which chalkctl checks config against.
+    chalkos.imageDirectory.facts.kubernetes = imageFile;
+    environment.etc."chalkos/kubernetes/image.json".source = imageFile;
 
     # Certificates, kubeconfigs and kubelet flags from the node's share and identity, prepared once
     # the node's addresses settled, waiting up to nodeIP.timeout for them. With flannel's VXLAN

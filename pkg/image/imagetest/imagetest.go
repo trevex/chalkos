@@ -139,13 +139,14 @@ func SBSign(t testing.TB, binary []byte, key, cert string) []byte {
 
 // WriteContract writes the contract files of an image directory into dir: metadata.json of the
 // image's variant and platform and the root hash, built from the revision abc123 and the tag v1,
-// one schema and one repart definition.
+// one schema, one repart definition and the facts of a layer named test.
 func WriteContract(t testing.TB, dir string, img Image, root []byte) {
 	t.Helper()
-	md := fmt.Sprintf(`{"schemaVersion": 0, "id": "chalkos", "revision": "abc123", "tag": "v1", "variant": %q, "platform": %q, "rootHash": %q, "kubernetes": null, "kinds": []}`, img.Variant, img.Platform, hex.EncodeToString(root))
+	md := fmt.Sprintf(`{"schemaVersion": 0, "id": "chalkos", "revision": "abc123", "tag": "v1", "variant": %q, "platform": %q, "rootHash": %q, "kinds": []}`, img.Variant, img.Platform, hex.EncodeToString(root))
 	write(t, filepath.Join(dir, "metadata.json"), []byte(md))
 	write(t, filepath.Join(dir, "schemas", "test.example.org_v1alpha1_Test.json"), []byte(`{"x-chalkos-kind": {"group": "test.example.org", "version": "v1alpha1", "kind": "Test", "multiple": false}}`))
 	write(t, filepath.Join(dir, "repart.d", "00-esp.conf"), []byte("[Partition]\nType=esp\n"))
+	write(t, filepath.Join(dir, "facts", "test.json"), []byte(`{"answer": 42}`))
 }
 
 // write writes a file, making its directory.

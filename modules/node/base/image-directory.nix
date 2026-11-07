@@ -1,6 +1,6 @@
 # The image directory mkImages returns: the raw image with slot A labelled by its root hash,
-# repart's report, the system region's repart definitions, the schemas, the image's Kubernetes
-# facts and metadata.json. Its build fails when the image leaves no room for the next one.
+# repart's report, the system region's repart definitions, the schemas, the facts of the image's
+# layers and metadata.json. Its build fails when the image leaves no room for the next one.
 {
   chalkosPackages,
   config,
@@ -42,12 +42,6 @@ let
       inherit (config.chalkos.provenance) revision tag;
       variant = config.chalkos.variant.name;
       platform = config.chalkos.platform.name;
-      # The Kubernetes release and pod network, null on an image without Kubernetes.
-      kubernetes =
-        let
-          facts = config.system.build.chalkosKubernetesImage or null;
-        in
-        if facts == null then null else { inherit (facts) version cni; };
       kinds = config.system.build.chalkosKinds;
     }
   );
@@ -58,11 +52,25 @@ let
           '. + { rootHash: ([$repart[0][] | .roothash // empty] | first) }' \
           ${metadataFields} > $out
       '';
-  # What the image fixes about Kubernetes, which chalkctl sends with the schemas, so a node checks
-  # config against the image it is for; null on an image without Kubernetes.
-  kubernetesImage = config.environment.etc."chalkos/kubernetes/image.json".source or null;
+  # The layers' facts as facts/<layer>.json.
+  facts = pkgs.linkFarm "${config.image.repart.name}-facts" (
+    lib.mapAttrsToList (layer: path: {
+      name = "${layer}.json";
+      inherit path;
+    }) config.chalkos.imageDirectory.facts
+  );
 in
 {
+  options.chalkos.imageDirectory.facts = lib.mkOption {
+    type = lib.types.attrsOf lib.types.path;
+    default = { };
+    description = ''
+      The facts of the image's layers by layer name, each a JSON file the image directory holds as
+      `facts/<layer>.json`. chalkctl reads them with the schemas and checks config against both,
+      as a node does against those of its image. A layer without facts sets none.
+    '';
+  };
+
   options.chalkos.provenance = {
     revision = lib.mkOption {
       type = lib.types.nullOr lib.types.str;
@@ -117,7 +125,7 @@ in
             ${image}/repart-output.json > $out/repart-output.json
           ln -s ${config.environment.etc."chalkos/repart.d".source} $out/repart.d
           ln -s ${config.system.build.chalkosSchemas} $out/schemas
-          ${lib.optionalString (kubernetesImage != null) "ln -s ${kubernetesImage} $out/image.json"}
+          ln -s ${facts} $out/facts
           cp ${metadata} $out/metadata.json
         '';
   };

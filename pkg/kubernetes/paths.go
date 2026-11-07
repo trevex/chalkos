@@ -14,6 +14,8 @@ const (
 	CredentialProviderDir = RunDir + "/credential-provider"
 	// ImageFile is the image's Kubernetes facts; it exists exactly on images with Kubernetes.
 	ImageFile = "/etc/chalkos/kubernetes/image.json"
+	// ContractFactsFile is the same facts in an image directory and its contract, by their name there.
+	ContractFactsFile = "facts/kubernetes.json"
 	// EtcdDataDir is etcd's data directory on VAR.
 	EtcdDataDir = "/var/lib/etcd"
 )

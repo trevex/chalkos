@@ -309,7 +309,7 @@ func imagePart(data string) *nodev1.ImagePart {
 }
 
 // pulledInstall pushes a small chalkos image, whose contract holds the fixture schemas, a repart
-// definition and image.json, to the registry at host. It returns the header of an install from
+// definition and the Kubernetes facts, to the registry at host. It returns the header of an install from
 // the installer that pulls the image, as chalkctl sends it, with the worker config and the
 // documents given.
 func pulledInstall(t *testing.T, host, docs string) *nodev1.InstallHeader {
@@ -317,7 +317,7 @@ func pulledInstall(t *testing.T, host, docs string) *nodev1.InstallHeader {
 	root := strings.Repeat("ab", 32)
 	md := `{"schemaVersion": 0, "id": "chalkos", "variant": "worker", "platform": "metal", "rootHash": "` + root + `", "kinds": []}`
 	img := ocitest.Image(t, ociimage.Header{ImageID: "chalkos", RootHash: root, Architecture: "x86-64", Platform: "metal"},
-		ociimage.Contract{Metadata: []byte(md), Schemas: fixtureSchemas(t), Definitions: map[string][]byte{"50-state.conf": []byte("[Partition]\nLabel=state\n")}, ImageJSON: []byte(kubernetestest.Image)})
+		ociimage.Contract{Metadata: []byte(md), Schemas: fixtureSchemas(t), Definitions: map[string][]byte{"50-state.conf": []byte("[Partition]\nLabel=state\n")}, Facts: map[string][]byte{"kubernetes": []byte(kubernetestest.Image)}})
 	ref := ocitest.Push(t, img, host+"/lab/worker-metal:v1")
 	h := header(t, &nodev1.InstallHeader_Disk{Disk: &nodev1.DiskReference{Serial: "chalk-target"}})
 	h.Config = workerConfig + "---\n" + docs
@@ -330,7 +330,7 @@ func pulledInstall(t *testing.T, host, docs string) *nodev1.InstallHeader {
 // TestInstallPullsTheImage has the installer pull the image an install names in a registry, with
 // the credentials of the Registry of its host in the config the install delivers. It reads the
 // store, hash tree, UKI and boot loader as it reads them from chunks, and takes the repart
-// definitions, schemas and image.json from the image's contract layer, which it translates the
+// definitions, schemas and Kubernetes facts from the image's contract layer, which it translates the
 // config with to lay the target out.
 func TestInstallPullsTheImage(t *testing.T) {
 	host := ocitest.AuthRegistry(t, "ci-bot", "s3cret")

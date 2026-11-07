@@ -89,13 +89,11 @@ func testImageOf(t *testing.T, variant, platform, name string, blockSize int, ed
 	// The contract chalkctl checks a node's config against, and the metadata it reads the image's
 	// root hash from: the upgrade lab's variants cp, w and k8s run Kubernetes.
 	copySchemas(t, filepath.Join(imgDir, "schemas"))
-	k := "null"
 	if variant == "cp" || variant == "w" || variant == "k8s" {
-		writeFile(t, filepath.Join(imgDir, "image.json"), testImageJSON)
-		k = `{"version": "1.37.1", "cni": "flannel"}`
+		writeFile(t, filepath.Join(imgDir, "facts", "kubernetes.json"), testImageJSON)
 	}
-	writeFile(t, filepath.Join(imgDir, "metadata.json"), fmt.Sprintf(`{"schemaVersion": 0, "id": "chalkos", "variant": %q, "platform": %q, "rootHash": %q, "kubernetes": %s, "kinds": []}`,
-		variant, platform, hex.EncodeToString(root), k))
+	writeFile(t, filepath.Join(imgDir, "metadata.json"), fmt.Sprintf(`{"schemaVersion": 0, "id": "chalkos", "variant": %q, "platform": %q, "rootHash": %q, "kinds": []}`,
+		variant, platform, hex.EncodeToString(root)))
 	return imgDir
 }
 
@@ -1632,7 +1630,7 @@ func TestUpgradeNeedsTheImageContract(t *testing.T) {
 func TestUpgradeChecksTheConfigBeforeDraining(t *testing.T) {
 	l := newUpgradeLab(t, 1)
 	img := testUpgradeImage(t, "w", "0.2.0")
-	for _, f := range []string{"image.json", filepath.Join("schemas", "kubernetes.chalkos.dev_v1alpha1_Node.json")} {
+	for _, f := range []string{filepath.Join("facts", "kubernetes.json"), filepath.Join("schemas", "kubernetes.chalkos.dev_v1alpha1_Node.json")} {
 		if err := os.Remove(filepath.Join(img, f)); err != nil {
 			t.Fatal(err)
 		}
@@ -1665,19 +1663,22 @@ func TestUpgradeChecksEveryNodesConfigFirst(t *testing.T) {
 	}
 }
 
-// TestImageContractRefusesAnOlderImageDirectory: a directory with the cluster file older
-// chalkos images carried, and no image.json, is refused rather than read as an image without
-// Kubernetes.
-func TestImageContractRefusesAnOlderImageDirectory(t *testing.T) {
+// TestImageContractReadsLayerFacts reads the Kubernetes layer's facts from the image directory's
+// facts/kubernetes.json alone: a directory without it is an image without Kubernetes.
+func TestImageContractReadsLayerFacts(t *testing.T) {
 	dir := t.TempDir()
 	copySchemas(t, filepath.Join(dir, "schemas"))
-	writeFile(t, filepath.Join(dir, "kubernetes.json"), clusterFile("worker"))
-	if _, err := imageContract(dir); err == nil || !strings.Contains(err.Error(), "built by an older chalkos") {
-		t.Fatalf("err = %v", err)
-	}
 	writeFile(t, filepath.Join(dir, "image.json"), testImageJSON)
+	if c, err := imageContract(dir); err != nil || len(c.target.Translators) != 0 {
+		t.Fatalf("without facts/: contract = %+v, %v", c, err)
+	}
+	writeFile(t, filepath.Join(dir, "facts", "kubernetes.json"), testImageJSON)
 	if c, err := imageContract(dir); err != nil || len(c.target.Translators) == 0 {
 		t.Fatalf("contract = %+v, %v", c, err)
+	}
+	writeFile(t, filepath.Join(dir, "facts", "kubernetes.json"), `{"version": ""}`)
+	if _, err := imageContract(dir); err == nil || !strings.Contains(err.Error(), "facts/kubernetes.json") {
+		t.Fatalf("broken facts: err = %v", err)
 	}
 }
 

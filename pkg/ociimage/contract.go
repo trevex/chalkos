@@ -12,26 +12,27 @@ import (
 	"path"
 	"path/filepath"
 	"slices"
+	"strings"
 	"time"
 
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 )
 
 // Contract is what an image accepts as config and how it lays out a disk: its metadata.json, the
-// JSON Schemas of its kinds and its repart definitions of the system region by file name, and its
-// image.json, empty on an image without Kubernetes.
+// JSON Schemas of its kinds and its repart definitions of the system region by file name, and the
+// facts of its layers by layer name, from facts/<layer>.json; none for a layer without facts.
 type Contract struct {
 	Metadata    []byte
 	Schemas     map[string][]byte
 	Definitions map[string][]byte
-	ImageJSON   []byte
+	Facts       map[string][]byte
 }
 
 // maxContract is the largest contract layer ReadContract reads; a real one is a few hundred KiB.
 const maxContract = 16 << 20
 
 // ReadContractDir reads the contract of an image directory, as nix build makes it: metadata.json,
-// schemas/*.json, repart.d/*.conf and image.json, when it exists.
+// schemas/*.json, repart.d/*.conf and facts/*.json.
 func ReadContractDir(dir string) (Contract, error) {
 	var c Contract
 	var err error
@@ -44,9 +45,12 @@ func ReadContractDir(dir string) (Contract, error) {
 	if c.Definitions, err = readFiles(filepath.Join(dir, "repart.d"), "*.conf"); err != nil {
 		return Contract{}, err
 	}
-	c.ImageJSON, err = os.ReadFile(filepath.Join(dir, "image.json"))
-	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+	files, err := readFiles(filepath.Join(dir, "facts"), "*.json")
+	if err != nil {
 		return Contract{}, err
+	}
+	for name, data := range files {
+		c.setFact(strings.TrimSuffix(name, ".json"), data)
 	}
 	if err := c.check(); err != nil {
 		return Contract{}, fmt.Errorf("%s: %w", dir, err)
@@ -54,13 +58,24 @@ func ReadContractDir(dir string) (Contract, error) {
 	return c, nil
 }
 
-// ReadFile reads a file of the contract by its name in the image's directory: image.json alone,
-// which is fs.ErrNotExist for an image without one.
+// ReadFile reads a file of the contract by its name in the image's directory: a layer's
+// facts/<layer>.json alone, which is fs.ErrNotExist for a layer without facts.
 func (c Contract) ReadFile(name string) ([]byte, error) {
-	if name == "image.json" && len(c.ImageJSON) > 0 {
-		return c.ImageJSON, nil
+	dir, base := path.Split(name)
+	if dir == "facts/" && path.Ext(base) == ".json" {
+		if data, ok := c.Facts[strings.TrimSuffix(base, ".json")]; ok {
+			return data, nil
+		}
 	}
 	return nil, fs.ErrNotExist
+}
+
+// setFact sets the facts of a layer; Facts stays nil for a contract without any.
+func (c *Contract) setFact(layer string, data []byte) {
+	if c.Facts == nil {
+		c.Facts = map[string][]byte{}
+	}
+	c.Facts[layer] = data
 }
 
 // readFiles reads the files of dir whose names match pattern, by name.
@@ -94,12 +109,12 @@ func (c Contract) check() error {
 }
 
 // Tar is the contract as its layer holds it: a tar of metadata.json, schemas/, repart.d/ and
-// image.json in name order, of regular files of mode 0644, owned by 0:0 and modified at the epoch,
+// facts/ in name order, of regular files of mode 0644, owned by 0:0 and modified at the epoch,
 // so that the same contract always makes the same layer.
 func (c Contract) Tar() ([]byte, error) {
 	files := map[string][]byte{"metadata.json": c.Metadata}
-	if len(c.ImageJSON) > 0 {
-		files["image.json"] = c.ImageJSON
+	for layer, data := range c.Facts {
+		files["facts/"+layer+".json"] = data
 	}
 	for name, data := range c.Schemas {
 		files["schemas/"+name] = data
@@ -129,7 +144,7 @@ func (c Contract) Tar() ([]byte, error) {
 // already read.
 func ParseContract(r io.Reader) (Contract, error) {
 	c := Contract{Schemas: map[string][]byte{}, Definitions: map[string][]byte{}}
-	var haveMetadata, haveImageJSON bool
+	var haveMetadata bool
 	tr := tar.NewReader(r)
 	for {
 		h, err := tr.Next()
@@ -158,12 +173,12 @@ func ParseContract(r io.Reader) (Contract, error) {
 			}
 			haveMetadata = true
 			c.Metadata = data
-		case dir == "" && base == "image.json":
-			if haveImageJSON {
-				return Contract{}, fmt.Errorf("the contract layer holds %s twice", base)
+		case dir == "facts/" && path.Ext(base) == ".json":
+			layer := strings.TrimSuffix(base, ".json")
+			if _, dup := c.Facts[layer]; dup {
+				return Contract{}, fmt.Errorf("the contract layer holds %s twice", dir+base)
 			}
-			haveImageJSON = true
-			c.ImageJSON = data
+			c.setFact(layer, data)
 		case dir == "schemas/" && path.Ext(base) == ".json":
 			if _, dup := c.Schemas[base]; dup {
 				return Contract{}, fmt.Errorf("the contract layer holds %s twice", dir+base)

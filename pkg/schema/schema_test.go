@@ -35,9 +35,6 @@ func TestReadMetadataFields(t *testing.T) {
 	if len(md.Kinds) != 1 || md.Kinds[0] != (Kind{APIVersion: "demo.example.org/v1alpha1", Kind: "Demo", Multiple: true}) {
 		t.Errorf("kinds = %+v", md.Kinds)
 	}
-	if k := md.Kubernetes; k == nil || *k != (MetadataKubernetes{Version: "1.37.1", CNI: "flannel"}) {
-		t.Errorf("kubernetes = %+v", md.Kubernetes)
-	}
 }
 
 func TestParseMetadata(t *testing.T) {

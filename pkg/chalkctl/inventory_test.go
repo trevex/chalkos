@@ -67,15 +67,13 @@ func writeInventory(t *testing.T, dir string, docs ...string) string {
 
 // writeImageDir writes what chalkctl reads of an image directory besides the image itself:
 // metadata.json of the variant, platform and root hash, the fixture schemas, and with kubernetes
-// the image.json of an image with Kubernetes.
+// the Kubernetes facts of an image with Kubernetes.
 func writeImageDir(t *testing.T, dir, variant, platform, rootHash string, kubernetes bool) {
 	t.Helper()
-	k := "null"
 	if kubernetes {
-		k = `{"version": "1.37.1", "cni": "flannel"}`
-		writeFile(t, filepath.Join(dir, "image.json"), testImageJSON)
+		writeFile(t, filepath.Join(dir, "facts", "kubernetes.json"), testImageJSON)
 	}
-	writeFile(t, filepath.Join(dir, "metadata.json"), fmt.Sprintf(`{"schemaVersion": 0, "id": "chalkos", "variant": %q, "platform": %q, "rootHash": %q, "kubernetes": %s, "kinds": []}`, variant, platform, rootHash, k))
+	writeFile(t, filepath.Join(dir, "metadata.json"), fmt.Sprintf(`{"schemaVersion": 0, "id": "chalkos", "variant": %q, "platform": %q, "rootHash": %q, "kinds": []}`, variant, platform, rootHash))
 	copySchemas(t, filepath.Join(dir, "schemas"))
 }
 

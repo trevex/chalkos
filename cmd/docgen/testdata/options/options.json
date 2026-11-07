@@ -405,5 +405,25 @@
     ],
     "readOnly": false,
     "type": "attribute set of (submodule)"
+  },
+  "chalkos.imageDirectory.facts": {
+    "declarations": [
+      {
+        "name": "modules/node/base/image-directory.nix",
+        "url": "https://example.org/modules/node/base/image-directory.nix"
+      }
+    ],
+    "default": {
+      "_type": "literalExpression",
+      "text": "{ }"
+    },
+    "description": "Facts.",
+    "loc": [
+      "chalkos",
+      "imageDirectory",
+      "facts"
+    ],
+    "readOnly": false,
+    "type": "attribute set of path"
   }
 }

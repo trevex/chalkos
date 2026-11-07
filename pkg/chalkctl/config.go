@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"slices"
@@ -96,14 +95,6 @@ func imageContract(dir string) (contract, error) {
 			return contract{}, err
 		}
 		files[filepath.Base(p)] = data
-	}
-	// An image directory of an older chalkos carries its cluster file instead of image.json, which
-	// no node translates config with any more: read without image.json, the image would pass for
-	// one without Kubernetes.
-	if _, err := os.Stat(filepath.Join(dir, "image.json")); errors.Is(err, fs.ErrNotExist) {
-		if _, err := os.Stat(filepath.Join(dir, "kubernetes.json")); err == nil {
-			return contract{}, fmt.Errorf("%s has kubernetes.json but no image.json, so it was built by an older chalkos; build the image again with this version", dir)
-		}
 	}
 	facts, err := contractFacts(func(name string) ([]byte, error) { return os.ReadFile(filepath.Join(dir, name)) })
 	if err != nil {

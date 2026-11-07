@@ -405,7 +405,7 @@ func TestPullContract(t *testing.T) {
 	h := ociimage.Header{ImageID: "chalkos", RootHash: strings.Repeat("ab", 32), Architecture: "x86-64", Platform: "metal"}
 	c := ociimage.Contract{
 		Metadata: metadataOf(h.RootHash), Schemas: map[string][]byte{"a.json": []byte("{}")},
-		Definitions: map[string][]byte{"00-esp.conf": []byte("esp")}, ImageJSON: []byte(`{"version": "1.37.1"}`),
+		Definitions: map[string][]byte{"00-esp.conf": []byte("esp")}, Facts: map[string][]byte{"kubernetes": []byte(`{"version": "1.37.1"}`)},
 	}
 	ref := ocitest.Push(t, ocitest.Image(t, h, c), host+"/lab/node-metal:v1")
 	loader := sha256.Sum256([]byte("boot loader"))

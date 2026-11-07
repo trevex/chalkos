@@ -521,7 +521,7 @@ in
           and .platform == "metal"
           and (.rootHash | test("^[0-9a-f]{64}$"))
           and ([.kinds[].kind] | index("Network") != null)
-          and .kubernetes == null
+          and (has("kubernetes") | not)
         ' $dir/metadata.json
         # Slot A's labels name its store by the root hash, in the raw image as in
         # repart-output.json, and the image boots its UKI as the first generation.
@@ -544,14 +544,14 @@ in
         for k in $(jq -r '.kinds[] | "\(.apiVersion | sub("/"; "_"))_\(.kind).json"' $dir/metadata.json); do
           test -f $dir/schemas/$k || { echo "error: metadata.json lists $k, which schemas/ lacks" >&2; exit 1; }
         done
-        if [ -e $dir/image.json ]; then
-          echo "error: the test image runs no Kubernetes, but its directory has image.json" >&2
+        if [ -n "$(ls -A $dir/facts)" ]; then
+          echo "error: the test image runs no Kubernetes, but its directory has facts: $(ls $dir/facts)" >&2
           exit 1
         fi
         k=${chalkPkgs.test-kubernetes-image}
-        jq -e '.cni == "flannel" and (keys == ["cni", "version"])' $k/image.json
-        jq -e --slurpfile img $k/image.json \
-          '.kubernetes == {version: $img[0].version, cni: $img[0].cni}' $k/metadata.json
+        test "$(ls $k/facts)" = kubernetes.json
+        jq -e '.cni == "flannel" and (keys == ["cni", "version"])' $k/facts/kubernetes.json
+        jq -e 'has("kubernetes") | not' $k/metadata.json
         jq -e '.variant == "k8s"' $k/metadata.json
 
         schema=$dir/schemas/networkd.chalkos.dev_v1alpha1_Network.json

@@ -490,18 +490,12 @@ func TestApplyConfigAddresses(t *testing.T) {
 	}
 }
 
-// testImageWithKubelet is a test image of the variant whose image.json names a kubelet of the
-// version.
+// testImageWithKubelet is a test image of the variant whose Kubernetes facts name a kubelet of
+// the version.
 func testImageWithKubelet(t *testing.T, variant, name, version string) string {
 	t.Helper()
 	dir := testUpgradeImage(t, variant, name)
-	k := `{"version": "` + version + `", "cni": "flannel"}`
-	writeFile(t, filepath.Join(dir, "image.json"), k)
-	md, err := os.ReadFile(filepath.Join(dir, "metadata.json"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	writeFile(t, filepath.Join(dir, "metadata.json"), strings.Replace(string(md), `{"version": "1.37.1", "cni": "flannel"}`, k, 1))
+	writeFile(t, filepath.Join(dir, "facts", "kubernetes.json"), `{"version": "`+version+`", "cni": "flannel"}`)
 	return dir
 }
 

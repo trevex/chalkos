@@ -12,10 +12,10 @@ import (
 	"github.com/trevex/chalkos/pkg/kubernetes/translate"
 )
 
-// ContractFacts read the image.json of an image's directory; none when it does not exist or is
-// empty.
+// ContractFacts read the image's Kubernetes facts from its directory's facts/kubernetes.json;
+// none when it does not exist or is empty.
 func (p *Plugin) ContractFacts(read func(name string) ([]byte, error)) (*anypb.Any, error) {
-	data, err := read("image.json")
+	data, err := read(k8s.ContractFactsFile)
 	if errors.Is(err, fs.ErrNotExist) || err == nil && len(data) == 0 {
 		return nil, nil
 	}
@@ -30,7 +30,7 @@ func (p *Plugin) ContractFacts(read func(name string) ([]byte, error)) (*anypb.A
 func (p *Plugin) Target(f *anypb.Any, t *config.Target) (bool, error) {
 	claimed, err := translate.Target(f, t)
 	if err != nil {
-		return true, fmt.Errorf("image.json: %w", err)
+		return true, fmt.Errorf("%s: %w", k8s.ContractFactsFile, err)
 	}
 	return claimed, nil
 }

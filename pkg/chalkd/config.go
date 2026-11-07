@@ -104,7 +104,7 @@ func (s *Server) installConfig(ctx context.Context, h *nodev1.InstallHeader, nam
 	case s.Installer:
 		t, schemas, err = s.headerTarget(h, contract)
 	case contract != nil:
-		err = layer.Errorf(connect.CodeInvalidArgument, "an install in place checks the config against the running image; the header must carry no schemas or image.json")
+		err = layer.Errorf(connect.CodeInvalidArgument, "an install in place checks the config against the running image; the header must carry no schemas or layer facts")
 	default:
 		t, schemas, err = s.runningTarget()
 	}

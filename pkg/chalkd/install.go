@@ -27,7 +27,7 @@ import (
 // follows the header in chunks. An image the header names in a registry is pulled by the digest it
 // names, with the credentials of the delivered config's Registry of its host, and checked against
 // the header as a streamed one; its contract layer gives the repart definitions, schemas and
-// image.json.
+// layers' facts.
 func (s *Server) Install(ctx context.Context, stream *connect.ClientStream[nodev1.InstallRequest]) (*connect.Response[nodev1.InstallResponse], error) {
 	if !s.mu.TryLock() {
 		return nil, layer.Errorf(connect.CodeAborted, "another install is running")

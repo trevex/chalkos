@@ -2148,13 +2148,13 @@ lib.runTests {
     expr = fails (grantOf [ "Nope" ]).systemd.services.bird.serviceConfig.LoadCredential;
     expected = true;
   };
-  testKubernetesImageDirectoryHasImageFacts = {
-    expr = lib.hasInfix "$out/image.json" kubernetesImage.system.build.chalkosImage.buildCommand;
-    expected = true;
+  testKubernetesImageDirectoryHasKubernetesFacts = {
+    expr = builtins.attrNames kubernetesImage.chalkos.imageDirectory.facts;
+    expected = [ "kubernetes" ];
   };
-  testImageDirectoryWithoutKubernetesHasNoImageFacts = {
-    expr = lib.hasInfix "image.json" plainImage.system.build.chalkosImage.buildCommand;
-    expected = false;
+  testImageDirectoryWithoutKubernetesHasNoFacts = {
+    expr = plainImage.chalkos.imageDirectory.facts;
+    expected = { };
   };
   testGetPath = {
     expr = getPeering {

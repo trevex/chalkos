@@ -231,7 +231,7 @@ func TestContractTar(t *testing.T) {
 		Metadata:    []byte(`{"schemaVersion": 0}`),
 		Schemas:     map[string][]byte{"b.json": []byte("b"), "a.json": []byte("a")},
 		Definitions: map[string][]byte{"00-esp.conf": []byte("esp")},
-		ImageJSON:   []byte("{}"),
+		Facts:       map[string][]byte{"kubernetes": []byte("{}")},
 	}
 	data, err := c.Tar()
 	if err != nil {
@@ -252,7 +252,7 @@ func TestContractTar(t *testing.T) {
 			t.Errorf("%s: %+v", h.Name, h)
 		}
 	}
-	if want := []string{"image.json", "metadata.json", "repart.d/00-esp.conf", "schemas/a.json", "schemas/b.json"}; !slices.Equal(names, want) {
+	if want := []string{"facts/kubernetes.json", "metadata.json", "repart.d/00-esp.conf", "schemas/a.json", "schemas/b.json"}; !slices.Equal(names, want) {
 		t.Errorf("names = %v, want %v", names, want)
 	}
 	if got, err := ociimage.ParseContract(bytes.NewReader(data)); err != nil || !reflect.DeepEqual(got, c) {
@@ -260,18 +260,20 @@ func TestContractTar(t *testing.T) {
 	}
 }
 
-// TestContractReadFile reads image.json by its name, and nothing for an image without one or
-// for another name.
+// TestContractReadFile reads a layer's facts by their name in the image's directory, and nothing
+// for a layer without facts or for another name.
 func TestContractReadFile(t *testing.T) {
-	c := ociimage.Contract{Metadata: []byte("{}"), ImageJSON: []byte(`{"version": "1.37.1"}`)}
-	if data, err := c.ReadFile("image.json"); err != nil || string(data) != `{"version": "1.37.1"}` {
-		t.Errorf("image.json = %q, %v", data, err)
+	c := ociimage.Contract{Metadata: []byte("{}"), Facts: map[string][]byte{"kubernetes": []byte(`{"version": "1.37.1"}`)}}
+	if data, err := c.ReadFile("facts/kubernetes.json"); err != nil || string(data) != `{"version": "1.37.1"}` {
+		t.Errorf("facts/kubernetes.json = %q, %v", data, err)
 	}
-	if _, err := c.ReadFile("metadata.json"); !errors.Is(err, fs.ErrNotExist) {
-		t.Errorf("metadata.json: %v, want fs.ErrNotExist", err)
+	for _, name := range []string{"metadata.json", "facts/router.json", "kubernetes.json", "facts/kubernetes"} {
+		if _, err := c.ReadFile(name); !errors.Is(err, fs.ErrNotExist) {
+			t.Errorf("%s: %v, want fs.ErrNotExist", name, err)
+		}
 	}
-	if _, err := (ociimage.Contract{}).ReadFile("image.json"); !errors.Is(err, fs.ErrNotExist) {
-		t.Errorf("image.json of an image without one: %v, want fs.ErrNotExist", err)
+	if _, err := (ociimage.Contract{}).ReadFile("facts/kubernetes.json"); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("the facts of an image without any: %v, want fs.ErrNotExist", err)
 	}
 }
 
@@ -301,6 +303,7 @@ func TestParseContract(t *testing.T) {
 	for name, entries := range map[string][]*tar.Header{
 		"is no regular file":           append(valid, &tar.Header{Typeflag: tar.TypeSymlink, Name: "schemas/b.json", Linkname: "/etc/passwd"}),
 		"the contract has no metadata": valid[1:],
+		"holds facts/test.json twice":  append(valid, reg("facts/test.json"), reg("facts/test.json")),
 	} {
 		if _, err := ociimage.ParseContract(bytes.NewReader(tarOf(entries...))); err == nil || !strings.Contains(err.Error(), name) {
 			t.Errorf("ParseContract = %v, want %q", err, name)

@@ -2020,7 +2020,7 @@ lib.runTests {
           (mkImages {
             variants.node.modules = [ { chalkos.cni.provider = "none"; } ];
           }).nixos.node-metal;
-        facts = builtins.fromJSON n.config.environment.etc."chalkos/kubernetes/image.json".text;
+        facts = builtins.fromJSON (builtins.readFile n.config.chalkos.imageDirectory.facts.kubernetes);
       in
       {
         inherit (facts) cni;
@@ -2542,7 +2542,8 @@ lib.runTests {
         {
           inherit (c.chalkos.kubernetes) version;
           package = c.chalkos.kubernetes.package.drvPath;
-          imageVersion = (builtins.fromJSON c.environment.etc."chalkos/kubernetes/image.json".text).version;
+          imageVersion =
+            (builtins.fromJSON (builtins.readFile c.chalkos.imageDirectory.facts.kubernetes)).version;
           kubelet = lib.hasInfix "-kubelet-${c.chalkos.kubernetes.package.version}/bin/kubelet " c.systemd.services.kubelet.serviceConfig.ExecStart;
         };
     in
@@ -2900,18 +2901,23 @@ lib.runTests {
       };
     };
   # The image's build-time facts, which chalkd reads with the node's config: the kubelet's release
-  # and the pod network.
+  # and the pod network. The node's file is the image directory's facts/kubernetes.json.
   testImageFacts =
     let
-      image = builtins.fromJSON (worker [ ]).environment.etc."chalkos/kubernetes/image.json".text;
-      noFlannel =
-        builtins.fromJSON
-          (worker [ { chalkos.cni.provider = "none"; } ])
-          .environment.etc."chalkos/kubernetes/image.json".text;
+      factsOf = c: builtins.fromJSON (builtins.readFile c.chalkos.imageDirectory.facts.kubernetes);
+      image = factsOf (worker [ ]);
+      noFlannel = factsOf (worker [ { chalkos.cni.provider = "none"; } ]);
+      w = worker [ ];
     in
     {
-      expr = { inherit image noFlannel; };
+      expr = {
+        inherit image noFlannel;
+        sameFile =
+          w.environment.etc."chalkos/kubernetes/image.json".source
+          == w.chalkos.imageDirectory.facts.kubernetes;
+      };
       expected = {
+        sameFile = true;
         image = {
           version = pkgs.kubernetes.version;
           cni = "flannel";

@@ -54,8 +54,8 @@ func TestSignDirectory(t *testing.T) {
 	imagetest.Write(t, in, imagetest.Image{Variant: "node", Platform: "metal", Seed: "1"})
 	store := filepath.Join(dir, "store")
 	write(t, filepath.Join(store, "schemas", "a.json"), "{}")
-	write(t, filepath.Join(store, "image.json"), "{}")
-	for _, name := range []string{"schemas", "image.json"} {
+	write(t, filepath.Join(store, "facts", "kubernetes.json"), "{}")
+	for _, name := range []string{"schemas", "facts"} {
 		if err := os.Symlink(filepath.Join(store, name), filepath.Join(in, name)); err != nil {
 			t.Fatal(err)
 		}
@@ -98,7 +98,7 @@ func TestSignDirectory(t *testing.T) {
 			}
 		}
 	}
-	for _, name := range []string{"repart-output.json", "installer.iso.json", "metadata.json", "image.json", "schemas/a.json"} {
+	for _, name := range []string{"repart-output.json", "installer.iso.json", "metadata.json", "facts/kubernetes.json", "schemas/a.json"} {
 		if info, err := os.Lstat(filepath.Join(out, name)); err != nil || !info.Mode().IsRegular() {
 			t.Errorf("%s is no copied file: %v", name, err)
 		}

@@ -26,9 +26,9 @@ func (p *Plugin) SystemFacts(read func(path string) ([]byte, error)) (*anypb.Any
 	return factsOf(read(k8s.ImageFile))
 }
 
-// ContractFacts read the image.json of an image's directory.
+// ContractFacts read the image's Kubernetes facts from its directory's facts/kubernetes.json.
 func (p *Plugin) ContractFacts(read func(name string) ([]byte, error)) (*anypb.Any, error) {
-	return factsOf(read("image.json"))
+	return factsOf(read(k8s.ContractFactsFile))
 }
 
 // factsOf wraps an image.json that was read; none when it does not exist or is empty.

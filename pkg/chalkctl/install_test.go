@@ -299,7 +299,7 @@ func TestInstallFromPartsSendsTheImageContract(t *testing.T) {
 	withKind(t, ta, kubernetes.KindWorker)
 	imageDir := testUpgradeImage(t, "gpu", "0.1.0")
 	copySchemas(t, filepath.Join(imageDir, "schemas"))
-	writeFile(t, filepath.Join(imageDir, "image.json"), testImageJSON)
+	writeFile(t, filepath.Join(imageDir, "facts", "kubernetes.json"), testImageJSON)
 	writeFile(t, filepath.Join(imageDir, "repart.d", "50-state.conf"), "[Partition]\nLabel=state\n")
 	s := maintenanceNode()
 	s.Installer = true

@@ -233,6 +233,18 @@ The options within each, by their path below `chalkos.diagnostics`:
 | `<name>.role`{ #chalkosdiagnosticsrole } | one of `reader`, `operator`, `admin` | `"operator"` | Least client role that runs the diagnostic, which chalkd checks on top of the reader role that RunDiagnostic needs. |
 | `<name>.timeout`{ #chalkosdiagnosticstimeout } | string matching `[1-9][0-9]*[sm]` | `"30s"` | How long a run may take, in seconds or minutes, from `1s` to `10m`; systemd stops the run then. Example: `"10s"` |
 
+## Image directory { #image-directory }
+
+The files a layer adds to its image's directory, which chalkctl reads with the schemas.
+
+### `chalkos.imageDirectory.facts` { #chalkosimagedirectoryfacts }
+
+Type: map of path · Default: `{ }` · Declared in: [modules/node/base/image-directory.nix](https://github.com/trevex/chalkos/blob/main/modules/node/base/image-directory.nix)
+
+The facts of the image's layers by layer name, each a JSON file the image directory holds as
+`facts/<layer>.json`. chalkctl reads them with the schemas and checks config against both,
+as a node does against those of its image. A layer without facts sets none.
+
 ## lib.chalkos { #lib-chalkos }
 
 Every image's NixOS modules get `lib.chalkos` as part of `lib`. It holds the type and the
