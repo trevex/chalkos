@@ -6,7 +6,6 @@
   chalkosPackages,
   config,
   lib,
-  pkgs,
   ...
 }:
 let
@@ -68,7 +67,6 @@ in
 
   config = {
     warnings = lib.concatLists (lib.mapAttrsToList orphan granted);
-    system.build.chalkosServices = pkgs.writeText "chalkos-services.json" servicesJSON;
     environment.etc."chalkos/services.json".text = servicesJSON;
   };
 }
