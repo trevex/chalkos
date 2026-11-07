@@ -36,7 +36,7 @@ func Within(what string, err error) error {
 	if _, ok := errors.AsType[*refusals.Error](err); ok {
 		return err
 	}
-	if e, ok := errors.AsType[*internalError](err); ok {
+	if e, ok := err.(*internalError); ok {
 		return &internalError{what + ": " + e.text}
 	}
 	return fmt.Errorf("%s: %w", what, err)
