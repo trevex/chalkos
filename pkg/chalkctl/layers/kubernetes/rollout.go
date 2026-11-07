@@ -53,7 +53,7 @@ type versions struct {
 func (p *Plugin) Versions(ctx context.Context, conn *client.Conn) (any, error) {
 	k, err := Status(ctx, conn)
 	if err != nil {
-		return nil, layer.ServiceError(err, p.Name())
+		return nil, err
 	}
 	return versionsOf(k)
 }
@@ -350,7 +350,7 @@ func (p *Plugin) BeforeDelivery(ctx context.Context, u layer.Upgrading, name str
 func (p *Plugin) Delivered(ctx context.Context, conn *client.Conn) error {
 	k, err := Status(ctx, conn)
 	if err != nil {
-		return layer.ServiceError(err, p.Name())
+		return err
 	}
 	return deliveredOf(k)
 }

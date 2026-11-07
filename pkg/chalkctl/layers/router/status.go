@@ -20,7 +20,7 @@ import (
 func (p *Plugin) PrintStatus(ctx context.Context, h layer.Host, conn *client.Conn) error {
 	resp, err := Client(conn).Status(ctx, connect.NewRequest(&routerv1.StatusRequest{}))
 	if err != nil {
-		return layer.ServiceError(err, p.Name())
+		return err
 	}
 	return routerStatus(h, resp.Msg)
 }
