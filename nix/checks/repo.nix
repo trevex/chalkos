@@ -36,13 +36,23 @@ let
       exit 1
     }
   '';
+  # A check that builds the Go code of the whole tree, its tests included, in its buildPhase.
+  goCheck =
+    args:
+    pkgs.callPackage ../go-module.nix { } (
+      {
+        paths = import ../go-paths.nix { inherit lib; };
+        withTests = true;
+        installPhase = "touch $out";
+      }
+      // args
+    );
 in
 {
-  go-unit = chalkPkgs.chalkctl.overrideAttrs (
-    old:
+  go-unit = goCheck (
     {
       pname = "chalkos-go-unit";
-      nativeBuildInputs = old.nativeBuildInputs ++ testEnv.tools;
+      nativeBuildInputs = testEnv.tools;
       # With the VM checks running alongside, a package's tests can take longer than go test's
       # default of 10 minutes.
       buildPhase = ''
@@ -50,9 +60,6 @@ in
         ${checkLib.runTests "go test -v -timeout 30m ./pkg/... ./cmd/..."}
         runHook postBuild
       '';
-      doCheck = false;
-      installPhase = "touch $out";
-      postFixup = "";
     }
     // testEnv.vars
   );
@@ -61,9 +68,9 @@ in
   # with the checks staticcheck.conf selects; pkg/imagecheck also with the tag vmtest of its VM
   # test. Each program built from source paths of its own lists the directories of the packages it
   # imports: every one lies below a path, and every path holds one.
-  go-lint = chalkPkgs.chalkctl.overrideAttrs (old: {
+  go-lint = goCheck {
     pname = "chalkos-go-lint";
-    nativeBuildInputs = old.nativeBuildInputs ++ [
+    nativeBuildInputs = [
       pkgs.go-tools
       pkgs.jq
     ];
@@ -134,10 +141,7 @@ in
       [ -z "$failed" ]
       runHook postBuild
     '';
-    doCheck = false;
-    installPhase = "touch $out";
-    postFixup = "";
-  });
+  };
 
   # The generated API code is committed; it must match what buf generates from the proto files.
   api-generated =
