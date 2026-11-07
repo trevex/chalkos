@@ -15,6 +15,8 @@ import (
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/restmapper"
+
+	"github.com/trevex/chalkos/pkg/internal/poll"
 )
 
 // FieldManager owns the fields chalkd applies.
@@ -25,7 +27,8 @@ type Applier struct {
 	dynamic dynamic.Interface
 	mapper  meta.ResettableRESTMapper
 	// NoMatchRetry is how long Apply waits for the API server to serve a kind it does not know
-	// yet, such as a custom resource whose definition was applied just before.
+	// yet, such as a custom resource whose definition was applied just before. Zero waits until
+	// Apply's context ends.
 	NoMatchRetry time.Duration
 }
 
@@ -80,19 +83,19 @@ func (a *Applier) Apply(ctx context.Context, objects []map[string]any) error {
 // not know the kind.
 func (a *Applier) mapping(ctx context.Context, obj *unstructured.Unstructured) (*meta.RESTMapping, error) {
 	gvk := obj.GroupVersionKind()
-	deadline := time.Now().Add(a.NoMatchRetry)
-	for {
-		mapping, err := a.mapper.RESTMapping(gvk.GroupKind(), gvk.Version)
-		if err == nil || !meta.IsNoMatchError(err) || time.Now().After(deadline) {
-			return mapping, err
+	var mapping *meta.RESTMapping
+	err := poll.Until(ctx, "", a.NoMatchRetry, time.Second, func() error {
+		var err error
+		mapping, err = a.mapper.RESTMapping(gvk.GroupKind(), gvk.Version)
+		if err != nil && !meta.IsNoMatchError(err) {
+			return poll.Permanent{Err: err}
 		}
-		a.mapper.Reset()
-		select {
-		case <-ctx.Done():
-			return nil, ctx.Err()
-		case <-time.After(time.Second):
+		if err != nil {
+			a.mapper.Reset()
 		}
-	}
+		return err
+	})
+	return mapping, err
 }
 
 // WaitReady polls the API server's /readyz until it answers ok or ctx ends.
@@ -102,20 +105,11 @@ func WaitReady(ctx context.Context, cfg *rest.Config) error {
 		return err
 	}
 	client := dc.RESTClient()
-	var last error
-	for {
+	return poll.Until(ctx, "the API server to be ready", 0, 2*time.Second, func() error {
 		body, err := client.Get().AbsPath("/readyz").Timeout(5 * time.Second).DoRaw(ctx)
-		if err == nil && string(body) == "ok" {
-			return nil
-		}
-		if err == nil {
+		if err == nil && string(body) != "ok" {
 			err = fmt.Errorf("/readyz answered %q", body)
 		}
-		last = err
-		select {
-		case <-ctx.Done():
-			return fmt.Errorf("the API server is not ready: %w", last)
-		case <-time.After(2 * time.Second):
-		}
-	}
+		return err
+	})
 }

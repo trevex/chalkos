@@ -18,6 +18,7 @@ import (
 	"github.com/trevex/chalkos/pkg/chalkctl/layer"
 	"github.com/trevex/chalkos/pkg/client"
 	"github.com/trevex/chalkos/pkg/internal/cli"
+	"github.com/trevex/chalkos/pkg/internal/poll"
 )
 
 // rebooter reboots nodes of a cluster as chalkctl upgrade and chalkctl node reboot both do,
@@ -207,7 +208,7 @@ func (b *rebooter) waitHealthy(ctx context.Context, n *rebootNode, t bootTarget)
 	// unhealthySince is when the looks since began to find the boot settled and unhealthy; zero
 	// once one found it otherwise. A look that reached no node changes nothing.
 	var unhealthySince time.Time
-	err := layer.WaitFor(ctx, "", b.timeout, b.poll, func() error {
+	err := poll.Until(ctx, "", b.timeout, b.poll, func() error {
 		var st *nodev1.StatusResponse
 		var notReady error
 		err := b.call(n.name, func(conn *client.Conn) error {
@@ -248,7 +249,7 @@ func (b *rebooter) waitHealthy(ctx context.Context, n *rebootNode, t bootTarget)
 			return errors.New("it did not reboot yet")
 		case bytes.Equal(boot.GetFailed().GetRootHash(), t.root):
 			fellBack = b.failed(n, boot)
-			return layer.Permanent{Err: fellBack}
+			return poll.Permanent{Err: fellBack}
 		case !bytes.Equal(boot.GetRunning().GetRootHash(), t.root):
 			return fmt.Errorf("it runs %s", bootImageName(boot.GetRunning()))
 		case !boot.GetBlessed():
@@ -265,7 +266,7 @@ func (b *rebooter) waitHealthy(ctx context.Context, n *rebootNode, t bootTarget)
 			}
 			if t.before != "" && time.Since(unhealthySince) >= b.grace {
 				unhealthy = unhealthyError(n, t, health.GetError())
-				return layer.Permanent{Err: unhealthy}
+				return poll.Permanent{Err: unhealthy}
 			}
 			return fmt.Errorf("its boot settled and is not healthy: %s", health.GetError())
 		case !health.GetHealthy():

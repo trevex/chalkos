@@ -5,6 +5,7 @@ callPackage ./go-module.nix { } {
   paths = [
     ../cmd/chalkos-storage
     ../pkg/atomicfile
+    ../pkg/internal/poll
     ../pkg/storage
     ../pkg/tool
   ];

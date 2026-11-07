@@ -12,6 +12,7 @@ import (
 	"golang.org/x/sys/unix"
 
 	"github.com/trevex/chalkos/pkg/atomicfile"
+	"github.com/trevex/chalkos/pkg/internal/poll"
 	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
 )
 
@@ -20,17 +21,15 @@ import (
 // polls, as flock cannot be interrupted: a preparation waiting for the node's addresses may hold
 // the lock for long.
 func LockPKI(ctx context.Context, p Paths) (unlock func(), err error) {
-	for {
-		unlock, err := lockPKI(p, false)
-		if !errors.Is(err, errPKIBusy) {
-			return unlock, err
+	err = poll.Until(ctx, "the lock on the control plane's certificates", 0, 100*time.Millisecond, func() error {
+		var err error
+		unlock, err = lockPKI(p, false)
+		if err != nil && !errors.Is(err, errPKIBusy) {
+			return poll.Permanent{Err: err}
 		}
-		select {
-		case <-ctx.Done():
-			return nil, fmt.Errorf("wait for the lock on the control plane's certificates, which a preparation holds: %w", context.Cause(ctx))
-		case <-time.After(100 * time.Millisecond):
-		}
-	}
+		return err
+	})
+	return unlock, err
 }
 
 // errPKIBusy means another process writes the control plane's certificates.

@@ -18,6 +18,8 @@ import (
 	"go.etcd.io/etcd/api/v3/v3rpc/rpctypes"
 	clientv3 "go.etcd.io/etcd/client/v3"
 	"go.uber.org/zap"
+
+	"github.com/trevex/chalkos/pkg/internal/poll"
 )
 
 // Member is an etcd member.
@@ -204,7 +206,7 @@ var ErrMemberRemoved = errors.New("the member was removed")
 // interval while etcd says it has not. Each request ends after timeout. A member that is a voter
 // already is left as it is.
 func Promote(ctx context.Context, cli *clientv3.Client, id uint64, interval, timeout time.Duration) error {
-	for {
+	err := poll.Until(ctx, "", 0, interval, func() error {
 		pctx, cancel := context.WithTimeout(ctx, timeout)
 		_, err := cli.MemberPromote(pctx, id)
 		cancel()
@@ -212,16 +214,16 @@ func Promote(ctx context.Context, cli *clientv3.Client, id uint64, interval, tim
 		case err == nil, errors.Is(err, rpctypes.ErrMemberNotLearner):
 			return nil
 		case errors.Is(err, rpctypes.ErrMemberNotFound):
-			return fmt.Errorf("promote the learner %x: %w", id, ErrMemberRemoved)
+			return poll.Permanent{Err: ErrMemberRemoved}
 		case !errors.Is(err, rpctypes.ErrMemberLearnerNotReady):
-			return fmt.Errorf("promote the learner %x: %w", id, err)
+			return poll.Permanent{Err: err}
 		}
-		select {
-		case <-ctx.Done():
-			return fmt.Errorf("promote the learner %x: it did not catch up with the leader: %w", id, ctx.Err())
-		case <-time.After(interval):
-		}
+		return errors.New("it did not catch up with the leader")
+	})
+	if err != nil {
+		return fmt.Errorf("promote the learner %x: %w", id, err)
 	}
+	return nil
 }
 
 // CheckQuorum refuses removing the member with the ID when the voters left would have fewer
@@ -283,20 +285,17 @@ func Remove(ctx context.Context, cli *clientv3.Client, id uint64, force bool) er
 	// as after it started or joined.
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
-	for {
+	err = poll.Until(ctx, "", 0, time.Second, func() error {
 		_, err := cli.MemberRemove(ctx, id)
-		if err == nil {
-			return nil
+		if err != nil && !errors.Is(err, rpctypes.ErrUnhealthy) {
+			return poll.Permanent{Err: err}
 		}
-		if !errors.Is(err, rpctypes.ErrUnhealthy) {
-			return fmt.Errorf("remove the member %x: %w", id, err)
-		}
-		select {
-		case <-ctx.Done():
-			return fmt.Errorf("remove the member %x: %w", id, err)
-		case <-time.After(time.Second):
-		}
+		return err
+	})
+	if err != nil {
+		return fmt.Errorf("remove the member %x: %w", id, err)
 	}
+	return nil
 }
 
 // Find returns the member with the name or, given in hex, the ID.

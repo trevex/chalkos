@@ -21,6 +21,7 @@ import (
 	"k8s.io/client-go/util/retry"
 
 	kubernetesv1 "github.com/trevex/chalkos/pkg/api/kubernetes/v1"
+	"github.com/trevex/chalkos/pkg/internal/poll"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
 	"github.com/trevex/chalkos/pkg/kubernetes/etcd"
 	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
@@ -148,7 +149,7 @@ func (k *side) restartAddons(ctx context.Context, c k8s.Cluster, client kubernet
 			continue
 		}
 		waited[w.namespace] = true
-		if err := k.waitFor(ctx, "kube-root-ca.crt of "+w.namespace+" to hold the Kubernetes CAs", func() error {
+		if err := poll.Until(ctx, "kube-root-ca.crt of "+w.namespace+" to hold the Kubernetes CAs", 0, k.timing.Poll, func() error {
 			return rootCAHolds(ctx, client, w.namespace, want)
 		}); err != nil {
 			return nil, nil, err
@@ -190,26 +191,11 @@ func (k *side) restartAddons(ctx context.Context, c k8s.Cluster, client kubernet
 		}
 	}
 	for _, w := range rollouts {
-		if err := k.waitFor(ctx, w.String()+" to roll out", func() error { return rolledOut(ctx, client, w) }); err != nil {
+		if err := poll.Until(ctx, w.String()+" to roll out", 0, k.timing.Poll, func() error { return rolledOut(ctx, client, w) }); err != nil {
 			return restarted, notWaited, err
 		}
 	}
 	return restarted, notWaited, nil
-}
-
-// waitFor checks until check passes or ctx ends, and then says what it waited for and why.
-func (k *side) waitFor(ctx context.Context, what string, check func() error) error {
-	for {
-		err := check()
-		if err == nil {
-			return nil
-		}
-		select {
-		case <-ctx.Done():
-			return fmt.Errorf("waiting for %s: %v", what, err)
-		case <-time.After(k.timing.Poll):
-		}
-	}
 }
 
 // rootCAHolds checks that a namespace's kube-root-ca.crt holds the CAs of the fingerprints, which

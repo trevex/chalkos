@@ -8,6 +8,8 @@ import (
 	"net"
 	"sync"
 	"time"
+
+	"github.com/trevex/chalkos/pkg/internal/poll"
 )
 
 // QMP is a client for the QEMU Machine Protocol.
@@ -21,26 +23,27 @@ type QMP struct {
 // socket shortly after it starts.
 func dialQMP(ctx context.Context, path string) (*QMP, error) {
 	var d net.Dialer
-	for {
-		conn, err := d.DialContext(ctx, "unix", path)
-		if err == nil {
-			// QEMU serves one client at a time and leaves others waiting for its greeting, so ctx
-			// bounds the wait.
-			stop := context.AfterFunc(ctx, func() { conn.SetDeadline(time.Now()) })
-			q := &QMP{conn: conn, dec: json.NewDecoder(conn)}
-			err := q.handshake()
-			if !stop() || err != nil {
-				conn.Close()
-				return nil, fmt.Errorf("%w; another client may hold the QMP socket %s", errors.Join(err, ctx.Err()), path)
-			}
-			return q, nil
+	var conn net.Conn
+	err := poll.Until(ctx, "", 0, 50*time.Millisecond, func() error {
+		var err error
+		if conn, err = d.DialContext(ctx, "unix", path); err != nil {
+			return fmt.Errorf("dial qmp %s: %w", path, err)
 		}
-		select {
-		case <-ctx.Done():
-			return nil, fmt.Errorf("dial qmp %s: %w", path, err)
-		case <-time.After(50 * time.Millisecond):
-		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
 	}
+	// QEMU serves one client at a time and leaves others waiting for its greeting, so ctx bounds
+	// the wait.
+	stop := context.AfterFunc(ctx, func() { conn.SetDeadline(time.Now()) })
+	q := &QMP{conn: conn, dec: json.NewDecoder(conn)}
+	err = q.handshake()
+	if !stop() || err != nil {
+		conn.Close()
+		return nil, fmt.Errorf("%w; another client may hold the QMP socket %s", errors.Join(err, ctx.Err()), path)
+	}
+	return q, nil
 }
 
 func (q *QMP) handshake() error {

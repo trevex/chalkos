@@ -12,8 +12,8 @@ import (
 	"connectrpc.com/connect"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
-	"github.com/trevex/chalkos/pkg/chalkctl/layer"
 	"github.com/trevex/chalkos/pkg/internal/cli"
+	"github.com/trevex/chalkos/pkg/internal/poll"
 )
 
 // minTrial and maxTrial bound --try. A shorter trial ends before the restarts and the health
@@ -59,7 +59,7 @@ func (a *app) confirmTrial(ctx context.Context, t *target, version, previous str
 		warnings []string
 	)
 	permanent := false
-	err := layer.WaitFor(ctx, "", until.Sub(a.now()), a.poll(), func() error {
+	err := poll.Until(ctx, "", until.Sub(a.now()), a.poll(), func() error {
 		var err error
 		warnings, err = confirmOnce(ctx, t, version, until.Sub(a.now()))
 		// An attempt the deadline cut short says less than the one before it.
@@ -72,7 +72,7 @@ func (a *app) confirmTrial(ctx context.Context, t *target, version, previous str
 		// cannot read, which only a rollback removes, or a failure asking again does not mend.
 		case connect.CodeFailedPrecondition, connect.CodeInvalidArgument, connect.CodePermissionDenied, connect.CodeUnauthenticated, connect.CodeInternal:
 			permanent = true
-			return layer.Permanent{Err: err}
+			return poll.Permanent{Err: err}
 		}
 		return err
 	})
@@ -133,7 +133,7 @@ func (a *app) trialRolledBack(ctx context.Context, t *target, version, previous 
 	until := deadline.Add(trialEnd)
 	var st *nodev1.StatusResponse
 	unreadable := ""
-	err := layer.WaitFor(ctx, "", until.Sub(a.now()), a.poll(), func() error {
+	err := poll.Until(ctx, "", until.Sub(a.now()), a.poll(), func() error {
 		ctx, cancel := context.WithTimeout(ctx, until.Sub(a.now()))
 		defer cancel()
 		conn, err := dialInstalled(t)

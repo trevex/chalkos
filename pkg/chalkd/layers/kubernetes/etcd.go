@@ -14,6 +14,7 @@ import (
 	clientv3 "go.etcd.io/etcd/client/v3"
 
 	kubernetesv1 "github.com/trevex/chalkos/pkg/api/kubernetes/v1"
+	"github.com/trevex/chalkos/pkg/internal/poll"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
 	"github.com/trevex/chalkos/pkg/kubernetes/etcd"
 	knode "github.com/trevex/chalkos/pkg/kubernetes/node"
@@ -347,19 +348,14 @@ func etcdStopped(ctx context.Context, c k8s.Cluster) error {
 		return err
 	}
 	addr := u.Host
-	for {
+	return poll.Until(ctx, "", 0, time.Second, func() error {
 		conn, err := (&net.Dialer{Timeout: time.Second}).DialContext(ctx, "tcp", addr)
 		if err != nil && ctx.Err() == nil {
 			return nil
 		}
-		if err != nil {
-			return fmt.Errorf("etcd still listens on %s: %w", addr, ctx.Err())
+		if err == nil {
+			conn.Close()
 		}
-		conn.Close()
-		select {
-		case <-ctx.Done():
-			return fmt.Errorf("etcd still listens on %s: %w", addr, ctx.Err())
-		case <-time.After(time.Second):
-		}
-	}
+		return fmt.Errorf("etcd still listens on %s", addr)
+	})
 }

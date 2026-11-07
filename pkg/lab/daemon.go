@@ -8,6 +8,8 @@ import (
 	"sync"
 	"syscall"
 	"time"
+
+	"github.com/trevex/chalkos/pkg/internal/poll"
 )
 
 // daemon is a helper process this process started, such as swtpm or the switch.
@@ -29,19 +31,23 @@ func startDaemon(ctx context.Context, cmd *exec.Cmd, ready, hint string) (*daemo
 		cmd.Wait()
 		close(d.exited)
 	}()
-	for {
-		if _, err := os.Stat(ready); err == nil {
-			return d, nil
+	err := poll.Until(ctx, fmt.Sprintf("%s to create %s", name, ready), 0, 20*time.Millisecond, func() error {
+		_, err := os.Stat(ready)
+		if err == nil {
+			return nil
 		}
 		select {
-		case <-ctx.Done():
-			d.Stop()
-			return nil, fmt.Errorf("waiting for %s to create %s: %w", name, ready, ctx.Err())
 		case <-d.exited:
-			return nil, fmt.Errorf("%s exited before creating %s%s", name, ready, hint)
-		case <-time.After(20 * time.Millisecond):
+			return poll.Permanent{Err: fmt.Errorf("%s exited before creating %s%s", name, ready, hint)}
+		default:
+			return err
 		}
+	})
+	if err != nil {
+		d.Stop()
+		return nil, err
 	}
+	return d, nil
 }
 
 // Stop kills the process and waits for it to exit.

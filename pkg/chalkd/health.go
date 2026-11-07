@@ -19,6 +19,7 @@ import (
 	"github.com/trevex/chalkos/pkg/atomicfile"
 	"github.com/trevex/chalkos/pkg/chalkd/layer"
 	"github.com/trevex/chalkos/pkg/esp"
+	"github.com/trevex/chalkos/pkg/internal/poll"
 	"github.com/trevex/chalkos/pkg/tool"
 	"github.com/trevex/chalkos/pkg/tool/systemctl"
 	"github.com/trevex/chalkos/pkg/uki"
@@ -151,32 +152,26 @@ func (h *Health) Wait(ctx context.Context, timeout time.Duration) error {
 	if interval == 0 {
 		interval = 5 * time.Second
 	}
-	deadline := time.Now().Add(timeout)
-	checks, cancel := context.WithDeadline(ctx, deadline)
+	checks, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	var last string
-	for {
+	err := poll.Until(ctx, "", timeout, interval, func() error {
 		err := h.Check(checks)
-		if err == nil {
-			log.Print("the node is healthy")
-			h.forgetFailedBoot()
-			return nil
-		}
-		if err.Error() != last {
+		if err != nil && err.Error() != last {
 			last = err.Error()
 			log.Printf("not healthy yet: %v", err)
 		}
-		if !time.Now().Before(deadline) {
-			break
-		}
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-time.After(min(interval, time.Until(deadline))):
-		}
+		return err
+	})
+	switch {
+	case err == nil:
+		log.Print("the node is healthy")
+		h.forgetFailedBoot()
+		return nil
+	case ctx.Err() != nil:
+		return ctx.Err()
 	}
-	err := fmt.Errorf("the node did not become healthy within %v: %s", timeout, last)
-	return h.unhealthy(ctx, err)
+	return h.unhealthy(ctx, fmt.Errorf("the node did not become healthy within %v: %s", timeout, last))
 }
 
 // Stopped handles the end of a health check that did not decide, as when systemd stopped it at

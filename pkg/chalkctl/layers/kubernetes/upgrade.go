@@ -13,6 +13,7 @@ import (
 	kubernetesv1 "github.com/trevex/chalkos/pkg/api/kubernetes/v1"
 	"github.com/trevex/chalkos/pkg/chalkctl/layer"
 	"github.com/trevex/chalkos/pkg/client"
+	"github.com/trevex/chalkos/pkg/internal/poll"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
 )
 
@@ -113,7 +114,7 @@ func (p *Plugin) After(ctx context.Context, u layer.Upgrading, name string, role
 // --allow-downtime accepts. etcd may need a moment after the control plane before came back, so
 // the check is tried for a while.
 func quorum(ctx context.Context, u layer.Upgrading, allowDowntime bool, name string, reboot bool) error {
-	return layer.WaitFor(ctx, "", u.QuorumWait(), u.Poll(), func() error { return quorumOnce(ctx, u, allowDowntime, name, reboot) })
+	return poll.Until(ctx, "", u.QuorumWait(), u.Poll(), func() error { return quorumOnce(ctx, u, allowDowntime, name, reboot) })
 }
 
 // quorumOnce checks the quorum once. A reboot keeps every voter, so the quorum counts them all,
@@ -149,13 +150,13 @@ func quorumOnce(ctx context.Context, u layer.Upgrading, allowDowntime bool, name
 		// A control plane that is no etcd member takes nothing of etcd down.
 		return nil
 	case voters-1 < quorum && !allowDowntime && reboot:
-		return layer.Permanent{Err: fmt.Errorf("etcd has %s, and without %s fewer than the %d its quorum needs: it and the API server are down while %s reboots; pass --allow-downtime to accept that", layer.Count(voters, "voter"), name, quorum, name)}
+		return poll.Permanent{Err: fmt.Errorf("etcd has %s, and without %s fewer than the %d its quorum needs: it and the API server are down while %s reboots; pass --allow-downtime to accept that", layer.Count(voters, "voter"), name, quorum, name)}
 	case voters-1 < quorum && !allowDowntime:
 		others := "no other control plane"
 		if voters > 1 {
 			others = layer.Count(voters-1, "other control plane")
 		}
-		return layer.Permanent{Err: fmt.Errorf("the API server of %s restarts, and with %s the cluster's API may be unavailable meanwhile; pass --allow-downtime to accept that", name, others)}
+		return poll.Permanent{Err: fmt.Errorf("the API server of %s restarts, and with %s the cluster's API may be unavailable meanwhile; pass --allow-downtime to accept that", name, others)}
 	case voters-1 < quorum:
 		return nil
 	case healthy < quorum:

@@ -15,6 +15,7 @@ import (
 	"github.com/trevex/chalkos/pkg/chalkctl/layer"
 	"github.com/trevex/chalkos/pkg/client"
 	"github.com/trevex/chalkos/pkg/config"
+	"github.com/trevex/chalkos/pkg/internal/poll"
 )
 
 // rolloutTrial is how long an ordered delivery keeps a coordinator's config on trial without
@@ -326,7 +327,7 @@ func (r *upgradeRun) checkImages(ctx context.Context) error {
 func (a *app) waitDelivered(ctx context.Context, t *target, until time.Time) error {
 	said := false
 	var last error
-	err := layer.WaitFor(ctx, "", until.Sub(a.now()), a.poll(), func() error {
+	err := poll.Until(ctx, "", until.Sub(a.now()), a.poll(), func() error {
 		// An attempt ends with the wait, so a layer whose service does not answer holds the trial no
 		// longer than its deadline.
 		ctx, cancel := context.WithDeadline(ctx, until)

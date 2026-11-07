@@ -14,6 +14,7 @@ import (
 	"github.com/trevex/chalkos/pkg/chalkctl/layer"
 	"github.com/trevex/chalkos/pkg/client"
 	"github.com/trevex/chalkos/pkg/clustersecrets"
+	"github.com/trevex/chalkos/pkg/internal/poll"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
 	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
 	"github.com/trevex/chalkos/pkg/pki"
@@ -253,7 +254,7 @@ func controlPlanesInTurn(ctx context.Context, r layer.Rotating, kind clustersecr
 func waitQuorum(ctx context.Context, r layer.Rotating, name string) error {
 	window := min(10*r.Poll(), r.Timeout())
 	var silent time.Time
-	return layer.WaitFor(ctx, "etcd's members to be healthy", r.Timeout(), r.Poll(), func() error {
+	return poll.Until(ctx, "etcd's members to be healthy", r.Timeout(), r.Poll(), func() error {
 		var members []*kubernetesv1.EtcdMember
 		var answer error
 		err := r.Call(name, func(conn *client.Conn) error {
@@ -271,7 +272,7 @@ func waitQuorum(ctx context.Context, r layer.Rotating, name string) error {
 			if silent.IsZero() {
 				silent = time.Now()
 			} else if time.Since(silent) >= window {
-				return layer.Permanent{Err: fmt.Errorf("%s does not answer: %w", name, err)}
+				return poll.Permanent{Err: fmt.Errorf("%s does not answer: %w", name, err)}
 			}
 			return err
 		case err != nil:

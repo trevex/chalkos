@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/trevex/chalkos/pkg/atomicfile"
+	"github.com/trevex/chalkos/pkg/internal/poll"
 	"github.com/trevex/chalkos/pkg/storage"
 )
 
@@ -40,27 +41,24 @@ func openExclusive(ctx context.Context, path string) (Disk, error) {
 	}
 	// udev probes a disk, and rereads its partition table, when it is closed after writing; the
 	// lock keeps udev waiting until the kernel dropped the old partitions, so the two never race.
-	deadline := time.Now().Add(diskLockWait)
-	for {
+	err = poll.Until(ctx, "", diskLockWait, lockRetry, func() error {
 		err := atomicfile.Flock(f, false)
-		if err == nil {
-			return blockDevice{f}, nil
+		if err != nil && !errors.Is(err, atomicfile.ErrLocked) {
+			return poll.Permanent{Err: fmt.Errorf("lock %s: %w", path, err)}
 		}
-		if !errors.Is(err, atomicfile.ErrLocked) {
-			f.Close()
-			return nil, fmt.Errorf("lock %s: %w", path, err)
-		}
-		if !time.Now().Before(deadline) {
-			f.Close()
-			return nil, fmt.Errorf("another program kept the target disk %s locked for %v", path, diskLockWait)
-		}
-		select {
-		case <-ctx.Done():
-			f.Close()
-			return nil, fmt.Errorf("the target disk is locked by another process: %s: %w", path, ctx.Err())
-		case <-time.After(min(lockRetry, time.Until(deadline))):
-		}
+		return err
+	})
+	if err == nil {
+		return blockDevice{f}, nil
 	}
+	f.Close()
+	switch {
+	case !errors.Is(err, atomicfile.ErrLocked):
+		return nil, err
+	case ctx.Err() != nil:
+		return nil, fmt.Errorf("the target disk is locked by another process: %s: %w", path, ctx.Err())
+	}
+	return nil, fmt.Errorf("another program kept the target disk %s locked for %v", path, diskLockWait)
 }
 
 // blkrrpart is the BLKRRPART ioctl. The kernel allows it to the disk's exclusive opener.

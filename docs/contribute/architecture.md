@@ -109,6 +109,7 @@ Each directory of `cmd/` is a main that wires a package up; the logic lives in `
 | `install` | Installs a node in place or from the installer, step by step and repeatable: STATE, the ESP, the UEFI boot entries, wiping the target and the system region's definitions each have a file, and `parts.go` holds the steps of an install from the installer. |
 | `internal/cli` | What the command trees of chalkctl, chalklab, chalkbuild and chalkcfg share: usage errors and their exit status, the root and group commands, positional argument checks and flags that take one of a set of values. |
 | `internal/filecopy` | Copies a disk image without its holes and a plain file to a new one, for chalklab, the lab and image signing. |
+| `internal/poll` | Checks a condition again and again until it passes, a timeout passes or the context ends, keeping the last check's error. |
 | `internal/strs` | Joins values into the lists of messages and flags: by their `String`, or names as prose, such as "a, b and c". |
 | `inventory` | Reads chalkctl's inventory: the cluster's nodes, the address chalkctl reaches each at, the image each runs and the config files each gets. |
 | `jsonfile` | Reads a JSON file an image may leave out, such as `facts.json`, `effects.json` or `outputs.json`, and decodes JSON that must hold one value of known fields. |

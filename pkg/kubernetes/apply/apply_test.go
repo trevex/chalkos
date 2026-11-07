@@ -126,7 +126,7 @@ func TestApplyRefusesUnknownKindAndBrokenObjects(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	a.NoMatchRetry = 0
+	a.NoMatchRetry = time.Millisecond
 	if err := a.Apply(context.Background(), []map[string]any{{"apiVersion": "example.com/v1", "kind": "Gadget", "metadata": map[string]any{"name": "g"}}}); err == nil || !strings.Contains(err.Error(), "Gadget g") {
 		t.Errorf("err = %v, want an error naming Gadget g", err)
 	}

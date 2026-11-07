@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/trevex/chalkos/pkg/internal/poll"
 	"github.com/trevex/chalkos/pkg/tool"
 )
 
@@ -33,21 +34,27 @@ func (s Sfdisk) Exec(ctx context.Context, args ...string) ([]byte, error) {
 	if wait == 0 {
 		wait = DefaultLockWait
 	}
-	deadline := time.Now().Add(wait)
-	for {
-		out, err := tool.Run(ctx, s.Run, "sfdisk", append([]string{"--lock=nonblock"}, args...)...)
-		if err == nil || !strings.Contains(err.Error(), "already locked") {
-			return out, err
+	var out []byte
+	err := poll.Until(ctx, "", wait, lockRetry, func() error {
+		var err error
+		out, err = tool.Run(ctx, s.Run, "sfdisk", append([]string{"--lock=nonblock"}, args...)...)
+		if err != nil && !locked(err) {
+			return poll.Permanent{Err: err}
 		}
-		if !time.Now().Before(deadline) {
-			return nil, fmt.Errorf("another program kept %s locked for %v: %w", s.Disk, wait, err)
-		}
-		select {
-		case <-ctx.Done():
-			return nil, ctx.Err()
-		case <-time.After(min(lockRetry, time.Until(deadline))):
-		}
+		return err
+	})
+	switch {
+	case err == nil || !locked(err):
+		return out, err
+	case ctx.Err() != nil:
+		return nil, ctx.Err()
 	}
+	return nil, fmt.Errorf("another program kept %s locked for %v: %w", s.Disk, wait, err)
+}
+
+// locked tells whether sfdisk failed because another program holds the disk's lock.
+func locked(err error) bool {
+	return strings.Contains(err.Error(), "already locked")
 }
 
 // ReadTable reads the disk's GPT.

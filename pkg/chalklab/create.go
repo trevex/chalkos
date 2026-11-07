@@ -24,6 +24,7 @@ import (
 	"github.com/trevex/chalkos/pkg/image"
 	"github.com/trevex/chalkos/pkg/imagesign"
 	"github.com/trevex/chalkos/pkg/internal/cli"
+	"github.com/trevex/chalkos/pkg/internal/poll"
 	"github.com/trevex/chalkos/pkg/inventory"
 	"github.com/trevex/chalkos/pkg/kubernetes"
 	"github.com/trevex/chalkos/pkg/lab"
@@ -527,23 +528,19 @@ func maintenanceFingerprint(ctx context.Context, l *lab.Lab, n lab.Node) (string
 func chalkdAnswers(ctx context.Context, addr, fingerprint string) error {
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Minute)
 	defer cancel()
-	for {
+	return poll.Until(ctx, "", 0, 2*time.Second, func() error {
 		d := tls.Dialer{NetDialer: &net.Dialer{Timeout: 5 * time.Second}, Config: &tls.Config{InsecureSkipVerify: true, MinVersion: tls.VersionTLS13}}
 		conn, err := d.DialContext(ctx, "tcp", addr)
-		if err == nil {
-			certs := conn.(*tls.Conn).ConnectionState().PeerCertificates
-			conn.Close()
-			if len(certs) > 0 && pki.Fingerprint(certs[0].Raw) == fingerprint {
-				return nil
-			}
-			return fmt.Errorf("chalkd at %s serves another certificate than the one its console names", addr)
-		}
-		select {
-		case <-ctx.Done():
+		if err != nil {
 			return fmt.Errorf("chalkd at %s did not answer: %w", addr, err)
-		case <-time.After(2 * time.Second):
 		}
-	}
+		certs := conn.(*tls.Conn).ConnectionState().PeerCertificates
+		conn.Close()
+		if len(certs) > 0 && pki.Fingerprint(certs[0].Raw) == fingerprint {
+			return nil
+		}
+		return poll.Permanent{Err: fmt.Errorf("chalkd at %s serves another certificate than the one its console names", addr)}
+	})
 }
 
 // waitBootstrap waits until the control plane's status says it waits for its bootstrap, and prints
@@ -552,22 +549,23 @@ func (a *app) waitBootstrap(ctx context.Context, name string, cluster []string) 
 	ctx, cancel := context.WithTimeout(ctx, 15*time.Minute)
 	defer cancel()
 	var last bytes.Buffer
-	for {
+	err := poll.Until(ctx, "", 0, 5*time.Second, func() error {
 		last.Reset()
-		if err := a.chalkctl(ctx, &last, append([]string{"status", name}, cluster...)...); err == nil {
-			for line := range strings.Lines(last.String()) {
-				if strings.Contains(line, "waiting for bootstrap") {
-					fmt.Fprintf(a.stdout, "%s: %s", name, line)
-					return nil
-				}
+		if err := a.chalkctl(ctx, &last, append([]string{"status", name}, cluster...)...); err != nil {
+			return err
+		}
+		for line := range strings.Lines(last.String()) {
+			if strings.Contains(line, "waiting for bootstrap") {
+				fmt.Fprintf(a.stdout, "%s: %s", name, line)
+				return nil
 			}
 		}
-		select {
-		case <-ctx.Done():
-			return fmt.Errorf("%s did not wait for its bootstrap: %w; its last status:\n%s", name, ctx.Err(), last.String())
-		case <-time.After(5 * time.Second):
-		}
+		return errors.New("its status does not say so")
+	})
+	if err != nil {
+		return fmt.Errorf("%s did not wait for its bootstrap: %w; its last status:\n%s", name, err, last.String())
 	}
+	return nil
 }
 
 // kvmDevice is the device the lab's VMs run on.

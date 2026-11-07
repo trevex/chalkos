@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/trevex/chalkos/pkg/atomicfile"
+	"github.com/trevex/chalkos/pkg/internal/poll"
 )
 
 const (
@@ -316,15 +317,18 @@ func StopLab(ctx context.Context, dir string) error {
 		if err := syscall.Kill(pid, syscall.SIGTERM); err != nil && !errors.Is(err, syscall.ESRCH) {
 			return fmt.Errorf("stop the supervisor: %w", err)
 		}
-		for running {
-			select {
-			case <-ctx.Done():
-				return fmt.Errorf("waiting for the supervisor %d to stop the lab: %w", pid, ctx.Err())
-			case <-time.After(100 * time.Millisecond):
+		err := poll.Until(ctx, fmt.Sprintf("the supervisor %d to stop the lab", pid), 0, 100*time.Millisecond, func() error {
+			_, running, err := Supervisor(dir)
+			switch {
+			case err != nil:
+				return poll.Permanent{Err: err}
+			case running:
+				return errors.New("it runs")
 			}
-			if _, running, err = Supervisor(dir); err != nil {
-				return err
-			}
+			return nil
+		})
+		if err != nil {
+			return err
 		}
 	}
 	l, err := ReadLab(dir)
