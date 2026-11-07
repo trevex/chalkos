@@ -118,8 +118,8 @@ func (t Tools) CloseVerity(ctx context.Context, name string) error {
 	return err
 }
 
-// MountPoints holds the mount points of a mountinfo file. The paths chalkos mounts at need no
-// escaping, so they are taken as the file has them.
+// MountPoints holds the mount points of a mountinfo file, with the octal escapes the kernel
+// writes for a space, tab, newline and backslash in a path undone.
 func MountPoints(mountInfo string) (map[string]bool, error) {
 	data, err := os.ReadFile(mountInfo)
 	if err != nil {
@@ -128,11 +128,14 @@ func MountPoints(mountInfo string) (map[string]bool, error) {
 	points := map[string]bool{}
 	for _, line := range strings.Split(string(data), "\n") {
 		if fields := strings.Fields(line); len(fields) > 4 {
-			points[fields[4]] = true
+			points[mountInfoEscapes.Replace(fields[4])] = true
 		}
 	}
 	return points, nil
 }
+
+// mountInfoEscapes undoes the escapes of a path in a mountinfo file.
+var mountInfoEscapes = strings.NewReplacer(`\040`, " ", `\011`, "\t", `\012`, "\n", `\134`, `\`)
 
 // Release unmounts dir, if a file system is mounted there, and then closes the device-mapper
 // volume mapper with closeVolume, if it is open: what a crashed process may have left behind. An

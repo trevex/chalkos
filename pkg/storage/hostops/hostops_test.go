@@ -2,6 +2,7 @@ package hostops_test
 
 import (
 	"context"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -164,5 +165,25 @@ func TestContent(t *testing.T) {
 		if _, err := hostops.Type(ctx, r, "/dev/vda6"); (err != nil) != (c.want == "") {
 			t.Errorf("%s: Type = %v", c.name, err)
 		}
+	}
+}
+
+// The kernel escapes a space, tab, newline and backslash in a mount point.
+func TestMountPointsUnescape(t *testing.T) {
+	mountInfo := filepath.Join(t.TempDir(), "mountinfo")
+	data := `41 30 253:1 / /mnt/a\040b\011c rw - ext4 /dev/vda6 rw
+42 30 253:2 / /mnt/d\012e\134f rw - ext4 /dev/vda7 rw
+43 30 253:3 / /mnt/g\134040h rw - ext4 /dev/vda8 rw
+`
+	if err := os.WriteFile(mountInfo, []byte(data), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	points, err := hostops.MountPoints(mountInfo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]bool{"/mnt/a b\tc": true, "/mnt/d\ne\\f": true, `/mnt/g\040h`: true}
+	if !maps.Equal(points, want) {
+		t.Errorf("MountPoints = %v, want %v", points, want)
 	}
 }
