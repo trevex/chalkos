@@ -222,6 +222,7 @@ let
         specRules
         unique
         description
+        withheld
         ;
     };
 
@@ -2144,6 +2145,63 @@ lib.runTests {
     expr = fails (servicesOf (grantOf [ "Addon" ]));
     expected = true;
   };
+  # A withheld kind says so in its schema and its metadata.json entry, and no unit, output or
+  # effect reads its documents; a kind is not withheld by default.
+  testWithheldKind =
+    let
+      withVault =
+        module:
+        withBird {
+          imports = [ module ];
+          chalkos.kinds.Vault = {
+            group = "vault.example.org";
+            version = "v1";
+            withheld = true;
+          };
+        };
+      config = withVault { };
+      xKind = file: config.system.build.chalkosKindSchemas.${file}."x-chalkos-kind";
+    in
+    {
+      expr = {
+        schema = xKind "vault.example.org_v1_Vault.json";
+        demo = xKind "demo.example.org_v1alpha1_Demo.json" ? withheld;
+        metadata = lib.filter (k: k.kind == "Vault") config.system.build.chalkosKinds;
+        grant = fails (
+          servicesOf (withVault {
+            systemd.services.bird.chalkos.kinds = [ "Vault" ];
+          })
+        );
+        effect = fails (
+          effectsOf (withVault {
+            chalkos.effects.bird = {
+              kinds = [ "Vault" ];
+              restart = [ "bird.service" ];
+            };
+          })
+        );
+      };
+      expected = {
+        schema = {
+          group = "vault.example.org";
+          version = "v1";
+          kind = "Vault";
+          multiple = false;
+          withheld = true;
+        };
+        demo = false;
+        metadata = [
+          {
+            apiVersion = "vault.example.org/v1";
+            kind = "Vault";
+            multiple = false;
+            withheld = true;
+          }
+        ];
+        grant = true;
+        effect = true;
+      };
+    };
   testUnknownKindFailsTheUnits = {
     expr = fails (grantOf [ "Nope" ]).systemd.services.bird.serviceConfig.LoadCredential;
     expected = true;

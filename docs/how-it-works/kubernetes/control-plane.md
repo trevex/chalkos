@@ -207,9 +207,12 @@ every node gets, but chalkctl delivers `Addon` documents only to the nodes whose
 has the type `controlplane`. Workers never hold them. A worker given one anyway applies nothing
 and restarts nothing.
 
-The objects may include Secrets. A control plane keeps its `Addon` documents in its
-stored config on STATE, which only root reads. chalkd never writes them below
-`/run/chalkos/config` for the node's services, and `chalkcfg` does not print them.
+The objects may include Secrets, so the Kubernetes layer declares `Addon` a
+[withheld kind](../node/config.md#withheld-kinds-stay-out-of-run). A control plane keeps its
+`Addon` documents in its stored config on STATE, which only root reads. chalkd never writes them
+below `/run/chalkos/config` for the node's services, and `chalkcfg` does not print them. Every
+view of the config, such as `chalkctl apply-config --diff`, shows the values of those Secrets as
+hashes.
 
 ## The status line names the Kubernetes state
 

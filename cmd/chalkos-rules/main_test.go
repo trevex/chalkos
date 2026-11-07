@@ -197,12 +197,18 @@ func TestCheckOutputs(t *testing.T) {
 			delete(f, "examples.json")
 			return f
 		}(), "effect greeter: an effect does not fire on Secret documents"},
-		"an effect on Addon documents": {func() map[string]string {
-			f := withOutput(t, base(), render, accepts, nil)
-			f["effects.json"] = `{"greeter": {"kinds": ["Addon"], "restart": ["greeter.service"]}}`
+		"an effect on a withheld kind": {func() map[string]string {
+			f := withBundle(withOutput(t, base(), render, accepts, nil))
+			f["effects.json"] = `{"greeter": {"kinds": ["Bundle"], "restart": ["greeter.service"]}}`
 			delete(f, "examples.json")
 			return f
-		}(), "effect greeter: an effect does not fire on Addon documents"},
+		}(), "effect greeter: an effect does not fire on Bundle documents"},
+		"an output of a withheld kind": {func() map[string]string {
+			f := withBundle(withOutput(t, base(), render, accepts, nil))
+			f["outputs.json"] = strings.Replace(f["outputs.json"], `["Greeting"]`, `["Bundle"]`, 1)
+			delete(f, "examples.json")
+			return f
+		}(), "output greeting: a renderer does not read Bundle documents"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			if err := check(image(t, tc.files), &bytes.Buffer{}); err == nil || !strings.Contains(err.Error(), tc.want) {
@@ -210,6 +216,12 @@ func TestCheckOutputs(t *testing.T) {
 			}
 		})
 	}
+}
+
+// withBundle adds to files the schema of Bundle, a kind the image withholds from its services.
+func withBundle(files map[string]string) map[string]string {
+	files["schemas/bundle.example.org_v1alpha1_Bundle.json"] = `{"$schema": "https://json-schema.org/draft/2020-12/schema", "type": "object", "x-chalkos-kind": {"group": "bundle.example.org", "version": "v1alpha1", "kind": "Bundle", "multiple": true, "withheld": true}}`
+	return files
 }
 
 // withValidator adds to files the validator greeting of the Greeting documents, whose program
@@ -259,6 +271,12 @@ func TestCheckValidators(t *testing.T) {
 			delete(f, "validator-examples.json")
 			return f
 		}(), "validator greeting: the image declares no kind Peer"},
+		"a withheld kind": {func() map[string]string {
+			f := withBundle(withValidator(t, base(), validate, nil))
+			f["validators.json"] = strings.Replace(f["validators.json"], `["Greeting"]`, `["Bundle"]`, 1)
+			delete(f, "validator-examples.json")
+			return f
+		}(), "validator greeting: a validator does not read Bundle documents"},
 		"a program outside the store": {func() map[string]string {
 			f := withValidator(t, base(), validate, nil)
 			f["validators.json"] = strings.Replace(f["validators.json"], storeShell(t), "/bin/sh", 1)

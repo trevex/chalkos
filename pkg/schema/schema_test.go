@@ -87,6 +87,36 @@ func TestLoadSchemasRejectsMismatchedFileName(t *testing.T) {
 	}
 }
 
+// A kind's x-chalkos-kind declares it withheld; a kind without the field, and a kind the schemas
+// do not declare, are not.
+func TestLoadSchemasReadsWithheld(t *testing.T) {
+	dir := t.TempDir()
+	writeSchema(t, dir, "a.example.org_v1_Kept.json",
+		`{"group": "a.example.org", "version": "v1", "kind": "Kept", "multiple": true, "withheld": true}`)
+	writeSchema(t, dir, "a.example.org_v1_Thing.json",
+		`{"group": "a.example.org", "version": "v1", "kind": "Thing", "multiple": false}`)
+	ss, err := LoadSchemas(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := ss.Kinds(); len(got) != 2 || got[0] != (Kind{APIVersion: "a.example.org/v1", Kind: "Kept", Multiple: true, Withheld: true}) || got[1].Withheld {
+		t.Errorf("kinds = %+v", got)
+	}
+	for _, c := range []struct {
+		apiVersion, kind string
+		want             bool
+	}{
+		{"a.example.org/v1", "Kept", true},
+		{"a.example.org/v1", "Thing", false},
+		{"b.example.org/v1", "Kept", false},
+		{"a.example.org/v1", "Other", false},
+	} {
+		if got := ss.Withheld(c.apiVersion, c.kind); got != c.want {
+			t.Errorf("Withheld(%s, %s) = %v, want %v", c.apiVersion, c.kind, got, c.want)
+		}
+	}
+}
+
 func TestLoadSchemasRejectsDuplicateKind(t *testing.T) {
 	dir := t.TempDir()
 	writeSchema(t, dir, "a.example.org_v1_Thing.json",

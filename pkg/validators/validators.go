@@ -33,7 +33,6 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/trevex/chalkos/pkg/config/withheld"
 	"github.com/trevex/chalkos/pkg/jsonfile"
 	"github.com/trevex/chalkos/pkg/outputs"
 	"github.com/trevex/chalkos/pkg/refusals"
@@ -74,8 +73,9 @@ func Read(path string) (map[string]Definition, error) {
 }
 
 // check refuses a definition of the validator n chalkd could not run: a name that is not plain, a
-// program that is no absolute path, or inputs that are none or name a kind no program reads. The
-// image's build checks that the program is of its store and that the image declares the kinds.
+// program that is no absolute path, or inputs that are none or name Secret, which no program
+// reads. The image's build checks that the program is of its store, and that the image declares
+// the kinds and withholds none of them.
 func (d Definition) check(n string) error {
 	if !name.MatchString(n) {
 		return errors.New("a validator's name is lower-case letters, digits and dashes")
@@ -87,8 +87,8 @@ func (d Definition) check(n string) error {
 		return errors.New("it reads no kind")
 	}
 	for _, kind := range d.Inputs {
-		if withheld.Kind(kind) {
-			return fmt.Errorf("a validator does not read %s documents", kind)
+		if kind == "Secret" {
+			return errors.New("a validator does not read Secret documents")
 		}
 	}
 	return nil

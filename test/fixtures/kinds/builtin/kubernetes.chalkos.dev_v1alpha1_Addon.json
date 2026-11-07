@@ -70,6 +70,7 @@
     "group": "kubernetes.chalkos.dev",
     "kind": "Addon",
     "multiple": true,
-    "version": "v1alpha1"
+    "version": "v1alpha1",
+    "withheld": true
   }
 }

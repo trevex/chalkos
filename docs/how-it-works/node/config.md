@@ -332,8 +332,10 @@ The line names every removed document, so a document dropped from the files show
 loses it. `chalkctl apply-config --diff` and `chalkctl upgrade --diff` print the whole comparison
 and deliver nothing: each document added (`+`), removed (`-`) or changed (`~`), and for a changed
 one each field by its path, with the old and the new value. A secret field shows only as
-`changed`. The node returns each value of a `Secret`, and each value of a Kubernetes `Secret` in
-an `Addon`, as its SHA-256, and chalkctl compares the inventory's values by the same hashes.
+`changed`. The node returns each value of a `Secret` as its SHA-256, and so each `data` and
+`stringData` value of a Secret object a document embeds, an object of `apiVersion: v1` and `kind:
+Secret` such as the Kubernetes objects of an `Addon`. chalkctl compares the inventory's values by
+the same hashes.
 
 ## A node keeps one config slot per image
 
@@ -342,7 +344,8 @@ the root hash of the image's store. A slot holds the documents as they were deli
 documents with the schemas' defaults filled in, the config's version and the node's identity,
 translated with that image's schemas. chalkd writes a slot to a new directory and renames a
 symbolic link to it over the old one, so a power cut leaves either the old slot or the new one,
-documents and identity together, never a mix.
+documents and identity together, never a mix. Root alone reads a slot: the node's services read
+the copy below `/run/chalkos/config`.
 
 At every boot, `chalkos-config.service` loads the slot of the image the kernel command line's
 `usrhash=` names. The slots follow the images:
@@ -358,8 +361,8 @@ At every boot, `chalkos-config.service` loads the slot of the image the kernel c
   describes. `apply-config --staged` writes the staged image's slot alone. Nothing restarts for the
   staged slot.
 - `apply-config --staged` on a node without a staged image writes the pending slot
-  `/state/config/pending` instead: the documents as delivered and their version, with Secrets
-  readable by root alone, and no defaults or identity. `apply-config` without `--staged` replaces
+  `/state/config/pending` instead: the documents as delivered and their version, readable
+  by root alone, and no defaults or identity. `apply-config` without `--staged` replaces
   a pending slot the node holds, once the running image applied the config. No boot loads the
   pending slot, and nothing checks it until the next upgrade gives it to its image. That image
   checks it, and the upgrade writes it to the image's slot unless the upgrade carries config of its
@@ -535,7 +538,8 @@ starts, as
 [Stage 2 applies the config before the network starts](boot-and-rollback.md#stage-2-applies-the-config-before-the-network-starts)
 describes. chalkd applies a new set the same way after every `apply-config` to the running image,
 through the stages that [The config pipeline](config-pipeline.md) follows. Each document except
-`Secret` and `Addon` documents lands in `/run/chalkos/config/<group>/<Kind>/<name>.json`.
+`Secret` documents and those of withheld kinds lands in
+`/run/chalkos/config/<group>/<Kind>/<name>.json`.
 
 The storage section is machine state: only chalkd writes `storage.json`, when a config that changes
 the storage is delivered, and every boot sets up the volumes it records.
@@ -547,8 +551,23 @@ own config files from the documents instead. An effect restarts or reloads the s
 outputs or the documents of its kinds change, and `apply-config` prints the units it restarted.
 
 chalkcfg runs on the node, from a granted unit or a privileged pod. It prints no `Secret` and no
-`Addon` document: `Addon` documents stay in the stored set, readable by root alone, and only a
-control plane's chalkd applies their objects.
+document of a withheld kind.
+
+## Withheld kinds stay out of /run
+
+A layer of chalkos can declare a kind withheld, for documents that chalkd alone reads. The kind's
+schema says so with `withheld: true` in its `x-chalkos-kind`, and chalkd, chalkcfg and the image's
+build read it there:
+
+- The documents stay in the node's config slot on STATE, which root alone reads, and never reach
+  `/run/chalkos/config`.
+- chalkcfg prints none of them, and `chalkcfg get` lists no withheld kind.
+- The image's build refuses a unit granted the kind, an output or a validator that reads it, and
+  an effect that fires on it. A `when` rule reads the documents, with the values of the Secret
+  objects they embed hashed.
+
+The Kubernetes layer withholds `Addon`. Its objects may include Secrets, and only a control
+plane's chalkd applies them.
 
 ## Secrets reach only the units granted their kind
 

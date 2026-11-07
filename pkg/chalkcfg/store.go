@@ -14,14 +14,13 @@ import (
 	"regexp"
 	"slices"
 	"strings"
-
-	"github.com/trevex/chalkos/pkg/config/withheld"
 )
 
 // store is where a node's documents are: chalkd writes each below config as
 // <group>/<Kind>/<name>.json, and the image names each kind's schema in schemas
-// <group>_<version>_<Kind>.json. chalkcfg reads the schemas' names, not their contents, to tell a
-// kind the image declares but the node has no documents of from a kind the image does not know.
+// <group>_<version>_<Kind>.json. chalkcfg reads the schemas' names to tell a kind the image
+// declares but the node has no documents of from a kind the image does not know, and of their
+// contents whether the kind is withheld.
 type store struct {
 	config, schemas string
 }
@@ -33,10 +32,11 @@ type document struct {
 }
 
 // kindInfo is what the node has of a kind: the groups it is in, one unless /run was tampered
-// with, and its number of documents.
+// with, its number of documents, and whether a schema of the kind declares it withheld.
 type kindInfo struct {
 	groups    []string
 	documents int
+	withheld  bool
 }
 
 // namePattern is the pattern of metadata.name, which every document's file name follows. Other
@@ -45,10 +45,11 @@ var namePattern = regexp.MustCompile(`^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$`)
 
 var errSecret = errors.New("Secrets are never printed: a service gets the values its kinds reference as the systemd credentials secret_<secret>.<key>")
 
-var errAddon = errors.New("Addon documents are never printed: chalkd keeps them in the node's stored config, readable by root alone, and applies their objects on control planes")
+// errWithheld is why chalkcfg prints no document of a kind the image declares withheld.
+var errWithheld = errors.New("the image withholds the kind from the node's services, and chalkd alone reads its documents from the node's stored config, readable by root alone")
 
-// hidden says why chalkcfg prints no document of a withheld kind, by kind.
-var hidden = map[string]error{withheld.Secret: errSecret, withheld.Addon: errAddon}
+// secretKind is the kind of Secrets, which chalkcfg never prints.
+const secretKind = "Secret"
 
 // readDir is os.ReadDir with a directory that does not exist read as empty: a node without config
 // has no /run/chalkos/config, and a test may have no schemas.
@@ -82,7 +83,12 @@ func (s store) kinds() (map[string]*kindInfo, error) {
 	for _, e := range schemas {
 		base, ok := strings.CutSuffix(e.Name(), ".json")
 		if parts := strings.Split(base, "_"); ok && len(parts) == 3 {
-			add(parts[2], parts[0])
+			withheld, err := withheldSchema(filepath.Join(s.schemas, e.Name()))
+			if err != nil {
+				return nil, err
+			}
+			k := add(parts[2], parts[0])
+			k.withheld = k.withheld || withheld
 		}
 	}
 	groups, err := readDir(s.config)
@@ -128,12 +134,15 @@ func (s store) names(group, kind string) ([]string, error) {
 
 // group returns the group of a kind named by its name alone.
 func (s store) group(kind string) (string, error) {
-	if err, ok := hidden[kind]; ok {
-		return "", err
+	if kind == secretKind {
+		return "", errSecret
 	}
 	kinds, err := s.kinds()
 	if err != nil {
 		return "", err
+	}
+	if k, ok := kinds[kind]; ok && k.withheld {
+		return "", fmt.Errorf("%s documents are never printed: %w", kind, errWithheld)
 	}
 	maps.DeleteFunc(kinds, withheldKind)
 	k, ok := kinds[kind]
@@ -207,5 +216,23 @@ func (s store) resolve() (store, error) {
 	return s, nil
 }
 
-// withheldKind tells whether kind is withheld, for maps.DeleteFunc on the kinds by name.
-func withheldKind(kind string, _ *kindInfo) bool { return withheld.Kind(kind) }
+// withheldKind tells whether kind is Secret or withheld, for maps.DeleteFunc on the kinds by name.
+func withheldKind(kind string, k *kindInfo) bool { return kind == secretKind || k.withheld }
+
+// withheldSchema tells whether the kind's schema at path declares the kind withheld, by the
+// withheld field of its x-chalkos-kind.
+func withheldSchema(path string) (bool, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return false, err
+	}
+	var sch struct {
+		Kind struct {
+			Withheld bool `json:"withheld"`
+		} `json:"x-chalkos-kind"`
+	}
+	if err := json.Unmarshal(data, &sch); err != nil {
+		return false, fmt.Errorf("%s: %w", path, err)
+	}
+	return sch.Kind.Withheld, nil
+}

@@ -95,6 +95,7 @@ func TestWriteAndRead(t *testing.T) {
 		t.Errorf("link = %q, %v; want a relative link", target, err)
 	}
 	for path, want := range map[string]os.FileMode{
+		".": 0o700,
 		"documents/chalkos.dev/Host/default.json": 0o644,
 		"delivered/chalkos.dev/Host/default.json": 0o644,
 		"documents/secrets":                       0o700,

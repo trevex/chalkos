@@ -48,6 +48,11 @@ type Kind struct {
 	Kind       string `json:"kind"`
 	// Multiple tells whether a node's config may hold more than one document of the kind.
 	Multiple bool `json:"multiple"`
+	// Withheld tells whether the node withholds the kind's documents from its services: they stay
+	// in the node's stored config for chalkd alone, and no unit, renderer, validator or effect
+	// reads them. A layer declares it for a kind chalkd reads itself, such as one whose documents
+	// carry secrets of their own.
+	Withheld bool `json:"withheld,omitempty"`
 }
 
 // rootHash is a store's dm-verity root hash as metadata.json and an image's header write it.
@@ -91,7 +96,8 @@ func LoadSchemas(dir string) (*Schemas, error) {
 }
 
 // compile compiles the schema files, by name, in the order of their names, and builds the kind
-// list from each file's "x-chalkos-kind": {"group","version","kind","multiple"}. A file's name
+// list from each file's "x-chalkos-kind": {"group","version","kind","multiple"}, with "withheld"
+// for a withheld kind. A file's name
 // must equal "<group>_<version>_<kind>.json" by its own declared identity, and no two files may
 // declare the same kind; either failure names the offending file or kind. Errors name a file by
 // its path below dir, or by its name alone when dir is empty.
@@ -163,15 +169,23 @@ func kindOf(doc any, path string) (Kind, error) {
 	version, _ := xk["version"].(string)
 	k, _ := xk["kind"].(string)
 	multiple, _ := xk["multiple"].(bool)
+	withheld, _ := xk["withheld"].(bool)
 	if group == "" || version == "" || k == "" {
 		return Kind{}, fmt.Errorf("%s: x-chalkos-kind is missing group, version or kind", path)
 	}
-	return Kind{APIVersion: group + "/" + version, Kind: k, Multiple: multiple}, nil
+	return Kind{APIVersion: group + "/" + version, Kind: k, Multiple: multiple, Withheld: withheld}, nil
 }
 
 // Kinds returns the kinds the schemas declare.
 func (s *Schemas) Kinds() []Kind {
 	return append([]Kind(nil), s.kinds...)
+}
+
+// Withheld tells whether the schemas declare the kind of that apiVersion and name withheld from
+// the node's services. A kind they do not declare is not withheld.
+func (s *Schemas) Withheld(apiVersion, kind string) bool {
+	i := slices.IndexFunc(s.kinds, func(k Kind) bool { return k.APIVersion == apiVersion && k.Kind == kind })
+	return i >= 0 && s.kinds[i].Withheld
 }
 
 // Validate checks a document — decoded JSON such as jsonschema.UnmarshalJSON returns, which keeps

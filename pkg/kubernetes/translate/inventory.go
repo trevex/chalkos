@@ -35,7 +35,7 @@ func NodeDocuments(docs []config.Document) []config.Document {
 	}
 	var out []config.Document
 	for _, d := range docs {
-		if !d.IsAddon() {
+		if d.APIVersion != API || d.Kind != "Addon" {
 			out = append(out, d)
 		}
 	}

@@ -503,6 +503,7 @@ rec {
       spec,
       rules ? [ ],
       description ? null,
+      withheld ? false,
     }:
     {
       "$schema" = "https://json-schema.org/draft/2020-12/schema";
@@ -537,7 +538,8 @@ rec {
           multiple
           ;
       }
-      // lib.optionalAttrs (rules != [ ]) { rules = map ruleSchema rules; };
+      // lib.optionalAttrs (rules != [ ]) { rules = map ruleSchema rules; }
+      // lib.optionalAttrs withheld { withheld = true; };
     }
     // lib.optionalAttrs (description != null) { inherit description; };
 
@@ -556,6 +558,7 @@ rec {
       specRules ? [ ],
       unique ? [ ],
       description ? null,
+      withheld ? false,
     }:
     let
       at = "chalkos.kinds.${kind}";
@@ -569,6 +572,7 @@ rec {
         multiple
         rules
         description
+        withheld
         ;
       spec =
         specSchema

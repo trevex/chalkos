@@ -61,6 +61,8 @@ type kindSchema struct {
 	path                 string
 	group, version, kind string
 	multiple             bool
+	// withheld tells that the node keeps the kind's documents from its services.
+	withheld bool
 	// file tells that the kind is one of chalkctl's or chalklab's own files rather than a
 	// document of a node's config.
 	file bool
@@ -171,6 +173,7 @@ func readKindSchema(path string) (kindSchema, error) {
 	k.version, _ = xk["version"].(string)
 	k.kind, _ = xk["kind"].(string)
 	k.multiple, _ = xk["multiple"].(bool)
+	k.withheld, _ = xk["withheld"].(bool)
 	if k.group == "" || k.version == "" || k.kind == "" {
 		return kindSchema{}, fmt.Errorf("%s: has no x-chalkos-kind with a group, version and kind", path)
 	}
@@ -189,6 +192,9 @@ func writeKind(b *strings.Builder, k kindSchema) {
 			counts = append(counts, "A node's config may hold several, each with a name of its own.")
 		} else {
 			counts = append(counts, "A node's config holds at most one.")
+		}
+		if k.withheld {
+			counts = append(counts, "The kind is [withheld](../how-it-works/node/config.md#withheld-kinds-stay-out-of-run): no service reads its documents, and chalkcfg prints none.")
 		}
 	}
 	// The page of built-ins lists the rules of each kind under #rules-<kind>.

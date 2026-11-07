@@ -69,8 +69,8 @@ service reads the value as a credential beside its files. bird's password reache
 [Pass secrets to a service](pass-secrets.md) sets up, so a new password reloads bird although
 `bird.conf` names the same constant.
 
-`kinds` cannot name `Secret` or `Addon`. A `Secret` counts through the kinds whose documents
-reference it, and chalkd applies `Addon` documents itself.
+`kinds` cannot name `Secret` or a withheld kind, such as `Addon`. A `Secret` counts through the
+kinds whose documents reference it, and chalkd reads a withheld kind's documents itself.
 
 ## An effect reloads, restarts or runs a command
 

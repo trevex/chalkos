@@ -44,8 +44,8 @@ The grant does three things for the unit:
 - It loads, as the unit's credentials, the secret values that the `secretRef` fields of its
   kinds' documents name. [Pass secrets to a service](pass-secrets.md) covers them.
 - It checks the kinds when the image is evaluated. A kind the image does not declare fails the
-  evaluation and lists the kinds it does declare. A grant of `Secret` or `Addon` fails too: a unit
-  never reads those documents.
+  evaluation and lists the kinds it does declare. A grant of `Secret` or of a withheld kind, such as
+  `Addon`, fails too: a unit never reads those documents.
 
 bird's grant in `bgp.nix` exists for the second reason alone. bird reads its config from a
 rendered file, and needs the grant only to receive the `Peer` passwords:
@@ -75,7 +75,8 @@ chalkd writes the files at boot, from `chalkos-config.service`, which runs befor
 unit starts. After each `apply-config` to the running image, chalkd replaces the whole directory.
 
 Every process on the node can read the files, granted or not. Secret values never appear below
-`/run/chalkos/config`. `Secret` and `Addon` documents are left out of it.
+`/run/chalkos/config`. `Secret` documents and those of withheld kinds, such
+as `Addon`, are left out of it.
 
 ## chalkcfg prints one field
 

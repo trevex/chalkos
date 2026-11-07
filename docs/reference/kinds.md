@@ -58,7 +58,7 @@ Kubernetes objects that the control planes apply to the cluster.
 
 `apiVersion: kubernetes.chalkos.dev/v1alpha1`
 
-A node's config may hold several, each with a name of its own.
+A node's config may hold several, each with a name of its own. The kind is [withheld](../how-it-works/node/config.md#withheld-kinds-stay-out-of-run): no service reads its documents, and chalkcfg prints none.
 
 | Field | Type | Default | Description |
 | --- | --- | --- | --- |

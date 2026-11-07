@@ -58,7 +58,7 @@ to nodes. See [its commands](cli/chalkbuild.md) and
 The command on every node that prints the node's [config documents](#config-document). It reads
 them from `/run/chalkos/config` and prints them by kind and
 name, as names, JSON, YAML, a jsonpath expression or a Go template. It has no network access and
-never prints `Secret`s or `Addon`s. A variant's NixOS modules build its commands with
+never prints `Secret`s or the documents of withheld kinds, such as `Addon`s. A variant's NixOS modules build its commands with
 [`chalkos.kinds.<Kind>.get`](extension-api.md#chalkoskindsget), which checks a path against the kind's
 options when the image is evaluated. See [its commands](cli/chalkcfg.md).
 
@@ -136,7 +136,7 @@ referencing them. See [Config and the inventory](../how-it-works/node/config.md)
 One object of a node's [config](#config), written in YAML like a Kubernetes object. It has an `apiVersion` of a group and a version, a `kind`, a `metadata.name` and a
 `spec`. The schema of its [kind](#kind) defines the `spec`; [Config kinds](kinds.md) lists the
 fields of the built-in kinds. On the node, chalkd writes each document except `Secret`s and
-`Addon`s to `/run/chalkos/config/<group>/<Kind>/<name>.json`. See
+those of withheld kinds, such as `Addon`s, to `/run/chalkos/config/<group>/<Kind>/<name>.json`. See
 [Config and the inventory](../how-it-works/node/config.md#a-config-document-is-an-object-of-one-kind).
 
 ## Config slot { #config-slot }

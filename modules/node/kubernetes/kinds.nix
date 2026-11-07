@@ -375,6 +375,9 @@ in
       };
       Addon = builtin groups.kubernetes // {
         multiple = true;
+        # chalkd reads Addon documents from the stored config and applies their objects on control
+        # planes; the objects may hold Secrets, so no service reads them.
+        withheld = true;
         description = "Kubernetes objects that the control planes apply to the cluster.";
         spec.objects = mkOption {
           type = types.listOf kubernetesObject;

@@ -21,14 +21,17 @@ let
       "the variant ${config.chalkos.variant.name}";
 
   # Returns kinds, or throws, prefixed with `where`, if kinds names a kind the image does not
-  # declare, Secret or Addon. A Secret's values count for the kinds whose secretRef fields name
-  # them, and Addon documents stay in the node's stored config.
+  # declare, Secret or a withheld kind. A Secret's values count for the kinds whose secretRef
+  # fields name them, and a withheld kind's documents stay in the node's stored config.
   effectKinds =
     where: kinds:
+    let
+      withheld = lib.filter (k: config.chalkos.kinds.${k}.withheld or false) kinds;
+    in
     if lib.elem "Secret" kinds then
       throw "${where}: an effect does not fire on Secret documents; it fires on the kinds whose secretRef fields name them"
-    else if lib.elem "Addon" kinds then
-      throw "${where}: an effect does not fire on Addon documents; chalkd applies them, and a when rule reads them"
+    else if withheld != [ ] then
+      throw "${where}: an effect does not fire on ${lib.head withheld} documents; the kind is withheld, and a when rule reads them"
     else
       checkKinds where kinds kinds;
 

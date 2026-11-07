@@ -66,8 +66,8 @@ func getCommand(s store) *cobra.Command {
 	return cmd
 }
 
-// listKinds writes a table of the kinds the image declares, Secret and Addon excepted, with their
-// groups and the node's number of documents of each.
+// listKinds writes a table of the kinds the image declares, Secret and withheld kinds excepted,
+// with their groups and the node's number of documents of each.
 func (s store) listKinds(w io.Writer) error {
 	kinds, err := s.kinds()
 	if err != nil {

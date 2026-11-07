@@ -131,7 +131,10 @@ Each part of the schema comes from the options:
 - The kind's `description`, and its fields' `description`, `default` and `example`, carry
   over, the example as `examples`.
 - `x-chalkos-rules` holds the field's change rules, and `x-chalkos-kind` holds the kind's group,
-  version and `multiple`.
+  version and `multiple`. A kind of chalkos's own layers can also carry `withheld: true` there:
+  the node keeps its documents from its services, as
+  [Withheld kinds stay out of /run](../how-it-works/node/config.md#withheld-kinds-stay-out-of-run)
+  describes.
 
 chalkctl and chalkd check every document against these schemas:
 

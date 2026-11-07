@@ -325,7 +325,7 @@ another disk carrying the same image or the same labels for its own.
 | `/etc/chalkos/effects.json` | What a delivery does to the node's services, from `chalkos.effects`, with the outputs, the kinds and the rules that fire each effect. |
 | `/run/chalkos/node.json` | The node's identity. Each layer reads its own part below `layers`; the Kubernetes preparation reads `layers.kubernetes`. |
 | `/run/chalkos/kubernetes/cluster.json` | The node's Kubernetes cluster, which chalkd builds from the node's `Node`, `Cluster` and `Flannel` documents and `image.json` at boot and on every apply. It carries the release of the image's kubelet as `version` and the version `images.apiServer` names as `apiServerVersion`; rules read them as `facts.cluster.version` and `facts.cluster.apiServerVersion`. |
-| `/run/chalkos/config/<group>/<Kind>/<name>.json` | The node's config documents, `Secret`s and `Addon`s excepted, which chalkcfg prints. |
+| `/run/chalkos/config/<group>/<Kind>/<name>.json` | The node's config documents, `Secret`s and those of withheld kinds such as `Addon` excepted, which chalkcfg prints. |
 | `/run/chalkos/credentials/<unit>/<secret>.<key>` | The values the `secretRef` fields of a unit's kinds name; the unit loads them as the credentials `secret_<secret>.<key>`. |
 | `/run/chalkos/outputs/<name>` | An output's files, a link to the directory below `/run/chalkos/outputs/.rendered` that holds the last render; an output with another `dir` links from there. |
 | `/run/chalkos/outputs/.staging` | The outputs a delivery renders and checks before it swaps them in. |

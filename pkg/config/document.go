@@ -15,8 +15,6 @@ import (
 	"strings"
 
 	"go.yaml.in/yaml/v3"
-
-	"github.com/trevex/chalkos/pkg/config/withheld"
 )
 
 // Document is one config document.
@@ -202,7 +200,7 @@ func keyText(n *yaml.Node) string {
 }
 
 // DecodeSpec decodes the document's spec into v. Numbers in untyped fields stay json.Number,
-// exact as written, such as those of the Kubernetes objects an Addon carries.
+// exact as written, such as those of a field that holds free-form JSON.
 func (d Document) DecodeSpec(v any) error {
 	b, err := json.Marshal(d.Object["spec"])
 	if err != nil {
@@ -235,15 +233,7 @@ func FromObject(m map[string]any) Document {
 
 // IsSecret tells whether d is a Secret, whose values reach only the units whose kinds reference
 // them.
-func (d Document) IsSecret() bool { return d.APIVersion == CoreAPI && d.Kind == withheld.Secret }
-
-// IsAddon tells whether d is an Addon. An Addon stays in the node's stored set alone and is never
-// written below /run for the node's services: chalkd reads its objects, Secrets among them, from
-// the stored set and applies them on control planes, and no service reads it.
-func (d Document) IsAddon() bool { return d.APIVersion == addonAPI && d.Kind == withheld.Addon }
-
-// addonAPI is the apiVersion of the Addon kind.
-const addonAPI = "kubernetes.chalkos.dev/v1alpha1"
+func (d Document) IsSecret() bool { return d.APIVersion == CoreAPI && d.Kind == "Secret" }
 
 // SortDocuments orders docs by apiVersion, kind and name.
 func SortDocuments(docs []Document) {

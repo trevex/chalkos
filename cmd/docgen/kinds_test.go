@@ -163,3 +163,12 @@ func TestFormatNames(t *testing.T) {
 		}
 	}
 }
+
+// A withheld kind's section says that no service reads its documents.
+func TestWriteKindWithheld(t *testing.T) {
+	var b strings.Builder
+	writeKind(&b, kindSchema{group: "bundle.example.org", version: "v1", kind: "Bundle", multiple: true, withheld: true, root: map[string]any{"description": "Objects."}})
+	if want := "A node's config may hold several, each with a name of its own. The kind is [withheld](../how-it-works/node/config.md#withheld-kinds-stay-out-of-run): no service reads its documents, and chalkcfg prints none."; !strings.Contains(b.String(), want) {
+		t.Errorf("section = %q, want it to hold %q", b.String(), want)
+	}
+}

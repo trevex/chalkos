@@ -19,7 +19,6 @@ import (
 
 	"github.com/trevex/chalkos/pkg/command"
 	"github.com/trevex/chalkos/pkg/config"
-	"github.com/trevex/chalkos/pkg/config/withheld"
 	"github.com/trevex/chalkos/pkg/diagnostics"
 	"github.com/trevex/chalkos/pkg/effects"
 	"github.com/trevex/chalkos/pkg/facts"
@@ -165,15 +164,26 @@ func declared[V any](m map[string]V) string {
 	return strings.Join(names, ", ")
 }
 
+// kindNames are the names of the kinds s declares, and those of the kinds no unit reads: Secret
+// and the kinds s declares withheld.
+func kindNames(s *schema.Schemas) (declared, withheld map[string]bool) {
+	declared, withheld = map[string]bool{}, map[string]bool{"Secret": true}
+	for _, k := range s.Kinds() {
+		declared[k.Kind] = true
+		if k.Withheld {
+			withheld[k.Kind] = true
+		}
+	}
+	return declared, withheld
+}
+
 // checkOutputs refuses:
 //   - an output whose programs are not of the image's store;
-//   - an output whose inputs are kinds the image does not declare, or that a unit cannot read;
-//   - an effect whose outputs name no output, or whose kinds are not the image's.
+//   - an output whose inputs are kinds the image does not declare, or that a unit cannot read:
+//     Secret and the withheld kinds;
+//   - an effect whose outputs name no output, or whose kinds are not the image's or are withheld.
 func checkOutputs(s *schema.Schemas, defs map[string]outputs.Definition, effectDefs map[string]effects.Definition) []error {
-	kinds := map[string]bool{}
-	for _, k := range s.Kinds() {
-		kinds[k.Kind] = true
-	}
+	kinds, withheld := kindNames(s)
 	var errs []error
 	for _, name := range slices.Sorted(maps.Keys(defs)) {
 		d := defs[name]
@@ -188,7 +198,7 @@ func checkOutputs(s *schema.Schemas, defs map[string]outputs.Definition, effectD
 			switch {
 			case !kinds[kind]:
 				errs = append(errs, fmt.Errorf("output %s: the image declares no kind %s", name, kind))
-			case withheld.Kind(kind):
+			case withheld[kind]:
 				errs = append(errs, fmt.Errorf("output %s: a renderer does not read %s documents", name, kind))
 			}
 		}
@@ -201,7 +211,7 @@ func checkOutputs(s *schema.Schemas, defs map[string]outputs.Definition, effectD
 		}
 		for _, kind := range effectDefs[name].Kinds {
 			switch {
-			case withheld.Kind(kind):
+			case withheld[kind]:
 				errs = append(errs, fmt.Errorf("effect %s: an effect does not fire on %s documents", name, kind))
 			case !kinds[kind]:
 				errs = append(errs, fmt.Errorf("effect %s: the image declares no kind %s", name, kind))
@@ -302,8 +312,9 @@ func renderExample(s *schema.Schemas, name string, d outputs.Definition, file st
 }
 
 // checkValidators refuses a validator whose program is not of the image's store, or whose inputs
-// are kinds the image does not declare; validators.Read refused the rest already.
+// are kinds the image does not declare or withholds; validators.Read refused the rest already.
 func checkValidators(s *schema.Schemas, defs map[string]validators.Definition) []error {
+	kinds, withheld := kindNames(s)
 	var errs []error
 	for _, name := range slices.Sorted(maps.Keys(defs)) {
 		d := defs[name]
@@ -312,8 +323,11 @@ func checkValidators(s *schema.Schemas, defs map[string]validators.Definition) [
 			errs = append(errs, fmt.Errorf("validator %s: the program %q is no program of the image's store", name, d.Program))
 		}
 		for _, kind := range d.Inputs {
-			if !slices.ContainsFunc(s.Kinds(), func(k schema.Kind) bool { return k.Kind == kind }) {
+			switch {
+			case !kinds[kind]:
 				errs = append(errs, fmt.Errorf("validator %s: the image declares no kind %s", name, kind))
+			case withheld[kind]:
+				errs = append(errs, fmt.Errorf("validator %s: a validator does not read %s documents", name, kind))
 			}
 		}
 	}

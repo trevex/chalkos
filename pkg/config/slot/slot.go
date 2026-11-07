@@ -285,9 +285,14 @@ func RestorePrevious(dir string) error {
 	return relink(prev, held)
 }
 
-// fill fills a new slot's directory with s.
+// fill fills a new slot's directory with s. The slot is readable by root alone: the node's services
+// read the copy WriteRuntime writes, and a slot holds documents of kinds withheld from them, of an
+// image whose schemas, which name those kinds, the writer may not have.
 func fill(s Stored) func(tmp string) error {
 	return func(tmp string) error {
+		if err := os.Chmod(tmp, 0o700); err != nil {
+			return err
+		}
 		for _, tree := range []struct {
 			dir  string
 			docs []config.Document
@@ -517,13 +522,10 @@ func fillDir(tmp string, fill func(string) error) error {
 }
 
 // writeDocuments writes each document as JSON below root: Secrets to secrets/<name>.json, every
-// other document to <group>/<Kind>/<name>.json, Addons readable by root alone. stored is set for
-// the set the node keeps on STATE; the copy for the node's services leaves out Secrets and Addons.
+// other document to <group>/<Kind>/<name>.json. stored is set for the set the node keeps on STATE;
+// the copy for the node's services leaves out Secrets.
 func writeDocuments(root string, docs []config.Document, stored bool) error {
 	for _, d := range docs {
-		if !stored && d.IsAddon() {
-			continue
-		}
 		group, _, _ := strings.Cut(d.APIVersion, "/")
 		for _, part := range []string{group, d.Kind, d.Name} {
 			if !validName(part) {
@@ -548,18 +550,7 @@ func writeDocuments(root string, docs []config.Document, stored bool) error {
 			}
 			continue
 		}
-		dir, perm := filepath.Join(root, group, d.Kind), fs.FileMode(0o644)
-		// An Addon may hold Kubernetes Secrets, so root alone reads it.
-		if d.IsAddon() {
-			if err := os.MkdirAll(dir, 0o700); err != nil {
-				return err
-			}
-			if err := os.Chmod(dir, 0o700); err != nil {
-				return err
-			}
-			perm = 0o600
-		}
-		if err := atomicfile.Replace(filepath.Join(dir, d.Name+".json"), data, perm); err != nil {
+		if err := atomicfile.Replace(filepath.Join(root, group, d.Kind, d.Name+".json"), data, 0o644); err != nil {
 			return err
 		}
 	}

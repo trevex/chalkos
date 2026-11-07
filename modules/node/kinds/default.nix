@@ -146,6 +146,12 @@ let
           internal = true;
           description = "Whether chalkos declares the kind itself; only such kinds may use the groups chalkos.dev and *.chalkos.dev.";
         };
+        withheld = lib.mkOption {
+          type = lib.types.bool;
+          default = false;
+          internal = true;
+          description = "Whether the node withholds the kind's documents from its services: they stay in the node's stored config, readable by root alone, for a layer's code in chalkd to read, and no unit, output, validator or effect reads them. The kind's schema declares it as `withheld` in its `x-chalkos-kind`.";
+        };
         spec = lib.mkOption {
           type = lib.types.attrsOf lib.types.raw;
           default = { };
@@ -299,6 +305,7 @@ let
           specRules
           unique
           description
+          withheld
           ;
       }) cfg;
 
@@ -338,10 +345,14 @@ in
     system.build.chalkosRulesCheck = rulesCheck;
     system.build.chalkosRulesImage = rulesImage;
     system.checks = [ rulesCheck ];
-    system.build.chalkosKinds = map (k: {
-      apiVersion = "${k.group}/${k.version}";
-      inherit (k) kind multiple;
-    }) (config.system.build.chalkosNetworkdKinds ++ kinds);
+    system.build.chalkosKinds = map (
+      k:
+      {
+        apiVersion = "${k.group}/${k.version}";
+        inherit (k) kind multiple;
+      }
+      // lib.optionalAttrs (k.withheld or false) { withheld = true; }
+    ) (config.system.build.chalkosNetworkdKinds ++ kinds);
     environment.etc."chalkos/schemas".source = schemas;
   };
 }

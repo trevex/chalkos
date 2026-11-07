@@ -86,53 +86,65 @@ func TestWriteRuntimeRefusesAUnitName(t *testing.T) {
 	}
 }
 
-// Addon documents stay in the stored set, readable by root alone: their objects, Secrets among
-// them, are chalkd's to apply, so no file below /run holds them, and one an earlier write left
-// is removed.
-func TestWriteRuntimeLeavesOutAddons(t *testing.T) {
+// withheldSchemas are demoSchemas with Bundle, a kind the image withholds from its services.
+func withheldSchemas(t *testing.T) *schema.Schemas {
+	t.Helper()
+	dir := t.TempDir()
+	if err := os.CopyFS(dir, os.DirFS("../../../test/fixtures/kinds/image/schemas")); err != nil {
+		t.Fatal(err)
+	}
+	bundle := `{"$schema": "https://json-schema.org/draft/2020-12/schema", "type": "object", "x-chalkos-kind": {"group": "bundle.example.org", "version": "v1alpha1", "kind": "Bundle", "multiple": true, "withheld": true}}`
+	if err := os.WriteFile(filepath.Join(dir, "bundle.example.org_v1alpha1_Bundle.json"), []byte(bundle), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	s, err := schema.LoadSchemas(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return s
+}
+
+// The documents of a withheld kind stay in the stored set, which root alone reads: they are
+// chalkd's to read, so no file below /run holds them, and one an earlier write left is removed.
+func TestWriteRuntimeLeavesOutWithheldKinds(t *testing.T) {
 	run := t.TempDir()
 	units := map[string][]string{"demo": {"Demo"}}
-	if err := WriteRuntime(run, parse(t, set), demoSchemas(t), units); err != nil {
+	if err := WriteRuntime(run, parse(t, set), withheldSchemas(t), units); err != nil {
 		t.Fatal(err)
 	}
-	addons := filepath.Join(run, "config", "kubernetes.chalkos.dev", "Addon")
-	if err := os.MkdirAll(addons, 0o755); err != nil {
+	bundles := filepath.Join(run, "config", "bundle.example.org", "Bundle")
+	if err := os.MkdirAll(bundles, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(addons, "old.json"), []byte("{}\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(bundles, "old.json"), []byte("{}\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	withAddon := set + `---
-apiVersion: kubernetes.chalkos.dev/v1alpha1
-kind: Addon
+	withBundle := set + `---
+apiVersion: bundle.example.org/v1alpha1
+kind: Bundle
 metadata: {name: manifests}
 spec: {objects: [{apiVersion: v1, kind: Secret, metadata: {name: s}, data: {k: dg==}}]}
 `
-	if err := WriteRuntime(run, parse(t, withAddon), demoSchemas(t), units); err != nil {
+	if err := WriteRuntime(run, parse(t, withBundle), withheldSchemas(t), units); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := os.Stat(filepath.Join(run, "config", "kubernetes.chalkos.dev")); !os.IsNotExist(err) {
-		t.Errorf("wrote Addon documents below config/: %v", err)
+	if _, err := os.Stat(filepath.Join(run, "config", "bundle.example.org")); !os.IsNotExist(err) {
+		t.Errorf("wrote Bundle documents below config/: %v", err)
 	}
 	if got := readFile(t, filepath.Join(run, "config", "demo.example.org", "Demo", "one.json")); !strings.Contains(got, `"name":"first"`) {
 		t.Errorf("Demo = %s", got)
 	}
 
 	stored := filepath.Join(t.TempDir(), "config")
-	if err := Write(stored, Stored{Delivered: parse(t, withAddon), Documents: parse(t, withAddon), Version: "v1"}); err != nil {
+	if err := Write(stored, Stored{Delivered: parse(t, withBundle), Documents: parse(t, withBundle), Version: "v1"}); err != nil {
 		t.Fatal(err)
 	}
 	got, _, err := Read(stored)
-	if err != nil || !slices.ContainsFunc(got.Documents, func(d config.Document) bool { return d.Kind == "Addon" }) {
-		t.Errorf("the stored set lost its Addon: %v", err)
+	if err != nil || !slices.ContainsFunc(got.Documents, func(d config.Document) bool { return d.Kind == "Bundle" }) {
+		t.Errorf("the stored set lost its Bundle: %v", err)
 	}
-	for _, tree := range []string{"documents", "delivered"} {
-		if m := mode(t, filepath.Join(stored, tree, "kubernetes.chalkos.dev", "Addon")); m != 0o700 {
-			t.Errorf("stored Addon directory mode in %s/ = %v", tree, m)
-		}
-		if m := mode(t, filepath.Join(stored, tree, "kubernetes.chalkos.dev", "Addon", "manifests.json")); m != 0o600 {
-			t.Errorf("stored Addon mode in %s/ = %v", tree, m)
-		}
+	if m := mode(t, stored); m != 0o700 {
+		t.Errorf("stored slot mode = %v, want 0700", m)
 	}
 }
 
