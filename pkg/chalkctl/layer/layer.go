@@ -233,7 +233,8 @@ type Cluster interface {
 	// NodeNames are the inventory's nodes in name order; none on a partial cluster.
 	NodeNames() []string
 	// Documents are the node's config documents as the inventory gives them, after every
-	// Inventory plugin's NodeDocuments; none on a partial cluster. They are the inventory's own, which callers read and never change.
+	// Inventory plugin's NodeDocuments; none on a partial cluster. They are the inventory's own,
+	// which callers read and never change.
 	Documents(name string) ([]config.Document, error)
 }
 
