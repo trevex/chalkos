@@ -149,7 +149,7 @@ func TestStatusReportsWhetherTheBootSettled(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			s, r := installedServer(t, section("", ""), false)
 			writeESP(t, s.Paths.ESP, s.Paths.EFIVars, s.Paths.Cmdline, "chalkos_2.efi", "chalkos_2.efi")
-			r.Rules = append([]tooltest.Rule{{Prefix: "systemctl show --property=SystemState --property=FinishTimestampMonotonic", Out: tc.show, Err: tc.err}}, r.Rules...)
+			r.Rules = append([]tooltest.Rule{{Prefix: "systemctl show --property=SystemState,FinishTimestampMonotonic", Out: tc.show, Err: tc.err}}, r.Rules...)
 			s.HealthTimeout = 300 * time.Second
 			s.Monotonic = func() (time.Duration, error) { return tc.now, nil }
 			s.Healthy = func(context.Context, []string) error { return errors.New("the API server is not ready") }

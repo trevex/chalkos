@@ -24,6 +24,7 @@ import (
 	"github.com/trevex/chalkos/pkg/outputs"
 	"github.com/trevex/chalkos/pkg/storage"
 	"github.com/trevex/chalkos/pkg/tool"
+	"github.com/trevex/chalkos/pkg/tool/systemctl"
 )
 
 func (s *Server) Status(ctx context.Context, req *connect.Request[nodev1.StatusRequest]) (*connect.Response[nodev1.StatusResponse], error) {
@@ -77,14 +78,8 @@ func (s *Server) Status(ctx context.Context, req *connect.Request[nodev1.StatusR
 		})
 	}
 
-	out, err := tool.Run(ctx, s.Run, "systemctl", "list-units", "--state=failed", "--plain", "--no-legend", "--no-pager")
-	if err != nil {
+	if resp.FailedUnits, err = systemctl.FailedUnits(ctx, s.Run); err != nil {
 		return nil, failed(connect.CodeInternal, "list failed units: %v", err)
-	}
-	for _, line := range strings.Split(string(out), "\n") {
-		if fields := strings.Fields(line); len(fields) > 0 {
-			resp.FailedUnits = append(resp.FailedUnits, fields[0])
-		}
 	}
 	if resp.Outputs, err = s.outputStatus(); err != nil {
 		return nil, failed(connect.CodeInternal, "%v", err)
@@ -208,28 +203,21 @@ func (s *Server) bootHealth(ctx context.Context) *nodev1.BootHealth {
 // up after the units that start them, within the time a counted boot has to become healthy. A
 // state that cannot be read counts as not settled, so a client keeps waiting until its timeout.
 func (s *Server) bootSettled(ctx context.Context) bool {
-	out, err := tool.Run(ctx, s.Run, "systemctl", "show", "--property=SystemState", "--property=FinishTimestampMonotonic")
+	shown, err := systemctl.Show(ctx, s.Run, nil, "SystemState", "FinishTimestampMonotonic")
 	if err != nil {
 		log.Printf("read whether the boot settled: %v", err)
 		return false
 	}
-	var state string
-	var finished time.Duration
-	for _, line := range strings.Split(string(out), "\n") {
-		key, value, _ := strings.Cut(strings.TrimSpace(line), "=")
-		switch key {
-		case "SystemState":
-			state = value
-		case "FinishTimestampMonotonic":
-			us, err := strconv.ParseInt(value, 10, 64)
-			if err != nil {
-				log.Printf("read when the boot finished starting: %v", err)
-				return false
-			}
-			finished = time.Duration(us) * time.Microsecond
-		}
+	if len(shown) != 1 || shown[0]["SystemState"] != "running" && shown[0]["SystemState"] != "degraded" {
+		return false
 	}
-	if state != "running" && state != "degraded" || finished == 0 {
+	us, err := strconv.ParseInt(shown[0]["FinishTimestampMonotonic"], 10, 64)
+	if err != nil {
+		log.Printf("read when the boot finished starting: %v", err)
+		return false
+	}
+	finished := time.Duration(us) * time.Microsecond
+	if finished == 0 {
 		return false
 	}
 	monotonic := s.Monotonic

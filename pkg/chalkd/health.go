@@ -20,6 +20,7 @@ import (
 	"github.com/trevex/chalkos/pkg/chalkd/layer"
 	"github.com/trevex/chalkos/pkg/esp"
 	"github.com/trevex/chalkos/pkg/tool"
+	"github.com/trevex/chalkos/pkg/tool/systemctl"
 	"github.com/trevex/chalkos/pkg/uki"
 	"github.com/trevex/chalkos/pkg/upgrade"
 )
@@ -118,22 +119,20 @@ func (h *Health) chalkdServes(ctx context.Context) error {
 // that multi-user.target or sysinit.target pull in, or what those need. Jobs a timer or a socket
 // started, which may fail at any time, do not count, nor the units the image ignores.
 func (h *Health) applied(ctx context.Context) error {
-	if _, err := tool.Run(ctx, h.Run, "systemctl", "is-active", "--quiet", "chalkos-config.service"); err != nil {
+	if _, err := systemctl.IsActive(ctx, h.Run, "chalkos-config.service"); err != nil {
 		return errors.New("the config was not applied")
 	}
-	out, err := tool.Run(ctx, h.Run, "systemctl", "list-units", "--state=failed", "--plain", "--no-legend", "--no-pager")
+	failedUnits, err := systemctl.FailedUnits(ctx, h.Run)
 	if err != nil {
 		return fmt.Errorf("list failed units: %w", err)
 	}
-	failedUnits := unitNames(out)
 	if len(failedUnits) == 0 {
 		return nil
 	}
-	out, err = tool.Run(ctx, h.Run, "systemctl", "list-dependencies", "--all", "--plain", "--no-legend", "--no-pager", "multi-user.target", "sysinit.target")
+	boot, err := systemctl.Dependencies(ctx, h.Run, "multi-user.target", "sysinit.target")
 	if err != nil {
 		return fmt.Errorf("list the units of the boot: %w", err)
 	}
-	boot := unitNames(out)
 	failedUnits = slices.DeleteFunc(failedUnits, func(u string) bool {
 		return !slices.Contains(boot, u) || slices.Contains(h.IgnoreUnits, u)
 	})
@@ -141,21 +140,6 @@ func (h *Health) applied(ctx context.Context) error {
 		return fmt.Errorf("units failed: %s", strings.Join(failedUnits, ", "))
 	}
 	return nil
-}
-
-// unitNames reads the unit names of systemctl's lines: the first word naming a unit, past any
-// mark of its state.
-func unitNames(out []byte) []string {
-	var names []string
-	for _, line := range strings.Split(string(out), "\n") {
-		for _, f := range strings.Fields(line) {
-			if strings.Contains(f, ".") {
-				names = append(names, f)
-				break
-			}
-		}
-	}
-	return names
 }
 
 // Wait checks until the node is healthy or the timeout passed. After an unhealthy boot it reboots

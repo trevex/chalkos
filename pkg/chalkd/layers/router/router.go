@@ -28,6 +28,7 @@ import (
 	"github.com/trevex/chalkos/pkg/pki"
 	routing "github.com/trevex/chalkos/pkg/router"
 	"github.com/trevex/chalkos/pkg/tool"
+	"github.com/trevex/chalkos/pkg/tool/systemctl"
 )
 
 // Options set up the router layer; zero fields mean chalkd's own.
@@ -120,20 +121,41 @@ var askTimeout = 5 * time.Second
 func (r *side) ask(ctx, budget context.Context, program string, args ...string) ([]byte, error) {
 	out, err := r.run.Exec(budget, tool.Cmd{Name: program, Args: args, Quiet: true})
 	if err != nil {
-		// The caller's own end is not the daemon's timeout.
-		if ctx.Err() != nil {
-			return nil, ctx.Err()
+		// nsenter runs the program that did not answer.
+		who := program
+		if program == "nsenter" && len(args) > 1 {
+			who = args[1]
 		}
-		if errors.Is(budget.Err(), context.DeadlineExceeded) {
-			// nsenter runs the program that did not answer.
-			who := program
-			if program == "nsenter" && len(args) > 1 {
-				who = args[1]
-			}
-			return nil, fmt.Errorf("%s did not answer within %v", who, askTimeout)
+		if why := ended(ctx, budget, who); why != nil {
+			return nil, why
 		}
 	}
 	return out, err
+}
+
+// isActive asks systemd whether unit is active, as systemctl.IsActive does, within budget as ask
+// does.
+func (r *side) isActive(ctx, budget context.Context, unit string) (string, error) {
+	state, err := systemctl.IsActive(budget, r.run, unit)
+	if err != nil {
+		if why := ended(ctx, budget, "systemctl"); why != nil {
+			return "", why
+		}
+	}
+	return state, err
+}
+
+// ended is why a question to the daemon who failed when a context ended: the caller's own end,
+// which is not the daemon's timeout, or the daemon's timeout once budget ran out. It is nil while
+// neither ended, when the question failed for a reason of its own.
+func ended(ctx, budget context.Context, who string) error {
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+	if errors.Is(budget.Err(), context.DeadlineExceeded) {
+		return fmt.Errorf("%s did not answer within %v", who, askTimeout)
+	}
+	return nil
 }
 
 // hasBGP reports whether the image runs BGP: whether it carries FRR's config link, which counts
@@ -308,10 +330,9 @@ func (r *side) vrfResolvers(ctx context.Context) []*routerv1.ResolverStatus {
 			continue
 		}
 		unit := resolverUnit(vrf)
-		out, err := r.ask(ctx, budget, "systemctl", "is-active", unit)
+		state, err := r.isActive(ctx, budget, unit)
 		s := &routerv1.ResolverStatus{Vrf: vrf, Running: err == nil}
-		// systemctl prints the state of a unit that is not active, such as failed.
-		switch state := strings.TrimSpace(string(out)); {
+		switch {
 		case err == nil:
 			if stale := r.staleDevice(vrf, filepath.Join(cmp.Or(r.RunDir, "/run"), "unbound-"+vrf, "ifindex")); stale != "" {
 				s.Running, s.Error = false, unit+" is active, but "+stale
@@ -411,9 +432,8 @@ func (r *side) dhcpServers(ctx context.Context) []*routerv1.DHCPServerStatus {
 		}
 		s := &routerv1.DHCPServerStatus{Vrf: f.vrf, Family: family}
 		servers = append(servers, s)
-		out, err := r.ask(ctx, budget, "systemctl", "is-active", f.unit)
-		// systemctl prints the state of a unit that is not active, such as failed.
-		switch state := strings.TrimSpace(string(out)); {
+		state, err := r.isActive(ctx, budget, f.unit)
+		switch {
 		case err != nil && state != "":
 			s.Error = f.unit + " is " + state
 			continue
@@ -478,8 +498,8 @@ func (r *side) dhcpRelays(ctx context.Context) []*routerv1.DHCPRelayStatus {
 		}
 		s := &routerv1.DHCPRelayStatus{Vrf: vrf}
 		relays = append(relays, s)
-		out, err := r.ask(ctx, budget, "systemctl", "is-active", unit)
-		switch state := strings.TrimSpace(string(out)); {
+		state, err := r.isActive(ctx, budget, unit)
+		switch {
 		case err != nil && state != "":
 			s.Error = unit + " is " + state
 		case err != nil:

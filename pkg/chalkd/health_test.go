@@ -49,7 +49,7 @@ func TestHealthWithoutKubernetes(t *testing.T) {
 		{"healthy", addr, []tooltest.Rule{units}, nil, ""},
 		{"chalkd not serving", "127.0.0.1:1", []tooltest.Rule{units}, nil, "chalkd does not serve"},
 		{"another server than chalkd", other, []tooltest.Rule{units}, nil, "does not present the node's certificate"},
-		{"config not applied", addr, []tooltest.Rule{{Prefix: "systemctl is-active --quiet chalkos-config.service", Err: errors.New("inactive")}, units}, nil, "the config was not applied"},
+		{"config not applied", addr, []tooltest.Rule{{Prefix: "systemctl is-active chalkos-config.service", Err: errors.New("inactive")}, units}, nil, "the config was not applied"},
 		{"a failed unit of the boot", addr, []tooltest.Rule{units, failed("broken.service", "cleanup.service")}, nil, "units failed: broken.service"},
 		// A job a timer or a socket started is not part of the boot.
 		{"a failed timer job", addr, []tooltest.Rule{units, failed("cleanup.service")}, nil, ""},
@@ -74,7 +74,7 @@ func (h healthHook) Health(context.Context) (bool, error) { return h.checked, h.
 // The first layer that checked decides; while none did, the common checks decide.
 func TestHealthAsksTheLayers(t *testing.T) {
 	addr, cert := kubernetestest.ChalkdServing(t)
-	notApplied := tooltest.Rule{Prefix: "systemctl is-active --quiet chalkos-config.service", Err: errors.New("inactive")}
+	notApplied := tooltest.Rule{Prefix: "systemctl is-active chalkos-config.service", Err: errors.New("inactive")}
 	for _, tc := range []struct {
 		name   string
 		layers []layer.Health

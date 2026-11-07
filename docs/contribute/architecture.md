@@ -141,6 +141,7 @@ Each directory of `cmd/` is a main that wires a package up; the logic lives in `
 | `storage/node` | Storage on the node: STATE, volumes, VAR and the generator's units; the storage changes chalkd makes and the volumes an install creates and enrols; the blkid probe. |
 | `storeslot` | The store slots of a disk and the writer an upgrade and an install share: retire a slot, write and verify the store, activate the slot. |
 | `tool` | Runs the command-line tools chalkd, the installer and the storage code drive, such as cryptsetup, sfdisk and systemctl. |
+| `tool/systemctl` | Asks systemd about units through the tool runner: their properties, whether they are active, the failed units and the units of a target. |
 | `uki` | Reads a UKI's os-release and command line and an EFI binary's architecture, and refuses an image version systemd-boot would order its entry by. |
 | `upgrade` | Writes an image into the inactive slot and stages it there (`Install`), makes the staged image the next boot (`Activate`), or both (`Upgrade`); the image header and the checks of its UKI and boot loader an install shares; the booted entry and the provenance record. |
 | `validators` | Runs the image's validators in the outputs' sandbox, and the validators chalkctl links in-process on the same JSON, and reads their reports of refusals. |
