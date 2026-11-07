@@ -54,7 +54,7 @@ in
       ip addr add fd00:1::11/64 dev d0 nodad
       ip link set d0 up
       # An interface of the pod network, over which the peer reaches the node too.
-      ip link add cni0 type veth peer name c1 netns "$peer"
+      ip link add cni0 type veth peer name c1 netns "''${pids[peer]}"
       ip addr add 10.0.2.11/24 dev cni0
       ip addr add fd00:2::11/64 dev cni0 nodad
       ip link set cni0 up
@@ -67,11 +67,8 @@ in
       on_peer ip route add 10.0.1.0/24 via 10.0.2.11 dev c1 metric 100
       on_peer ip route add fd00:1::/64 via fd00:2::11 dev c1 metric 2048
       # A pod on the node, whose datagrams the node forwards to the peer.
-      unshare -n sh -c 'touch pod-ready; exec sleep 600' &
-      pod=$!
-      until [ -e pod-ready ]; do sleep 0.1; done
-      on_pod() { nsenter -t "$pod" -n "$@"; }
-      ip link add p0 type veth peer name p1 netns "$pod"
+      netns pod
+      ip link add p0 type veth peer name p1 netns "''${pids[pod]}"
       ip addr add 10.244.0.1/24 dev p0
       ip addr add fd00:10:244::1/64 dev p0 nodad
       ip link set p0 up
@@ -711,15 +708,9 @@ in
         nft list ruleset >&2
       }
       ip link set lo up
-      unshare -n sh -c 'touch lan-ready; exec sleep 600' &
-      lan=$!
-      unshare -n sh -c 'touch wan-ready; exec sleep 600' &
-      wan=$!
-      until [ -e lan-ready ] && [ -e wan-ready ]; do sleep 0.1; done
-      on_lan() { nsenter -t "$lan" -n "$@"; }
-      on_wan() { nsenter -t "$wan" -n "$@"; }
-      ip link add lan0 type veth peer name eth0 netns "$lan"
-      ip link add wan0 type veth peer name eth0 netns "$wan"
+      netns lan wan
+      ip link add lan0 type veth peer name eth0 netns "''${pids[lan]}"
+      ip link add wan0 type veth peer name eth0 netns "''${pids[wan]}"
       ip addr add 192.0.2.1/24 dev lan0
       ip addr add 2001:db8:1::1/64 dev lan0 nodad
       ip addr add 198.51.100.1/24 dev wan0
@@ -727,7 +718,7 @@ in
       ip link set lan0 up
       ip link set wan0 up
       # The LAN peer reaches the node over dmz0 too, an interface of no zone.
-      ip link add dmz0 type veth peer name eth1 netns "$lan"
+      ip link add dmz0 type veth peer name eth1 netns "''${pids[lan]}"
       ip addr add 203.0.113.1/24 dev dmz0
       ip link set dmz0 up
       on_lan ip link set lo up
@@ -866,41 +857,26 @@ in
       vrf internet 100
       vrf tenant 200
       vrf guest 300
-      unshare -n sh -c 'touch mgmt-ready; exec sleep 600' &
-      mgmt=$!
-      unshare -n sh -c 'touch isp-ready; exec sleep 600' &
-      isp=$!
-      unshare -n sh -c 'touch tenant-ready; exec sleep 600' &
-      tenant=$!
-      unshare -n sh -c 'touch guest-ready; exec sleep 600' &
-      guest=$!
-      unshare -n sh -c 'touch gisp-ready; exec sleep 600' &
-      gisp=$!
-      until [ -e mgmt-ready ] && [ -e isp-ready ] && [ -e tenant-ready ] && [ -e guest-ready ] && [ -e gisp-ready ]; do sleep 0.1; done
-      on_mgmt() { nsenter -t "$mgmt" -n "$@"; }
-      on_isp() { nsenter -t "$isp" -n "$@"; }
-      on_tenant() { nsenter -t "$tenant" -n "$@"; }
-      on_guest() { nsenter -t "$guest" -n "$@"; }
-      on_gisp() { nsenter -t "$gisp" -n "$@"; }
-      # vrflink <link> <VRF or -> <peer's PID> <router's address> <peer's address>: a veth pair to
-      # the peer's eth0 in a /24, the peer's default route through the router. Link-local
+      netns mgmt isp tenant guest gisp
+      # vrflink <link> <VRF or -> <peer's namespace> <router's address> <peer's address>: a veth
+      # pair to the peer's eth0 in a /24, the peer's default route through the router. Link-local
       # addresses are usable at once, without duplicate address detection.
       vrflink() {
-        nsenter -t "$3" -n sh -c 'echo 0 >/proc/sys/net/ipv6/conf/default/accept_dad'
-        ip link add "$1" type veth peer name eth0 netns "$3"
+        "on_$3" sh -c 'echo 0 >/proc/sys/net/ipv6/conf/default/accept_dad'
+        ip link add "$1" type veth peer name eth0 netns "''${pids[$3]}"
         if [ "$2" != - ]; then ip link set "$1" master "$2"; fi
         ip addr add "$4/24" dev "$1"
         ip link set "$1" up
-        nsenter -t "$3" -n ip link set lo up
-        nsenter -t "$3" -n ip addr add "$5/24" dev eth0
-        nsenter -t "$3" -n ip link set eth0 up
-        nsenter -t "$3" -n ip route add default via "$4"
+        "on_$3" ip link set lo up
+        "on_$3" ip addr add "$5/24" dev eth0
+        "on_$3" ip link set eth0 up
+        "on_$3" ip route add default via "$4"
       }
-      vrflink eth0 - "$mgmt" 192.0.2.1 192.0.2.10
-      vrflink eth1 internet "$isp" 203.0.113.1 203.0.113.254
-      vrflink eth2 tenant "$tenant" 198.51.100.1 198.51.100.10
-      vrflink eth3 guest "$guest" 192.0.2.1 192.0.2.10
-      vrflink eth4 guest "$gisp" 203.0.113.1 203.0.113.254
+      vrflink eth0 - mgmt 192.0.2.1 192.0.2.10
+      vrflink eth1 internet isp 203.0.113.1 203.0.113.254
+      vrflink eth2 tenant tenant 198.51.100.1 198.51.100.10
+      vrflink eth3 guest guest 192.0.2.1 192.0.2.10
+      vrflink eth4 guest gisp 203.0.113.1 203.0.113.254
       # IPv6 of mgmt, of internet's uplink and of tenant, in the range of the policy from-tenant.
       ip addr add 2001:db8:10::1/64 dev eth0 nodad
       ip addr add 2001:db8:1::1/64 dev eth1 nodad
@@ -1129,15 +1105,11 @@ in
         ip -6 rule show >&2
       }
       ip link set lo up
-      for ns in lan lan1 wana wanb transit; do
-        unshare -n sh -c "touch $ns-ready; exec sleep 600" &
-        eval "$ns=\$!"
-        until [ -e "$ns-ready" ]; do sleep 0.1; done
-      done
+      netns lan lan1 wana wanb transit
       on() {
         local ns=$1
         shift
-        nsenter -t "''${!ns}" -n "$@"
+        nsenter -t "''${pids[$ns]}" -n "$@"
       }
       ip link add transit type vrf table 100
       ip link set transit up
@@ -1145,7 +1117,7 @@ in
       # a veth pair whose peer routes everything through the router and forwards nothing, so a
       # packet the router sends the wrong way does not come back to it.
       link() {
-        ip link add "$2" type veth peer name eth0 netns "''${!1}"
+        ip link add "$2" type veth peer name eth0 netns "''${pids[$1]}"
         if [ "$2" = vt0 ]; then ip link set vt0 master transit; fi
         ip addr add "$3" dev "$2"
         ip addr add "$4" dev "$2" nodad
@@ -1456,15 +1428,9 @@ in
         ip -4 route add unreachable default metric 4278198272 table 300
         ip -6 route add unreachable default metric 4278198272 table 300
         ip -4 route show table all | grep -q "table guest-table" || fail "ip does not name table 300"
-        unshare -n sh -c 'touch lan-ready; exec sleep 600' &
-        lan=$!
-        unshare -n sh -c 'touch wan-ready; exec sleep 600' &
-        wan=$!
-        until [ -e lan-ready ] && [ -e wan-ready ]; do sleep 0.1; done
-        on_lan() { nsenter -t "$lan" -n "$@"; }
-        on_wan() { nsenter -t "$wan" -n "$@"; }
-        ip link add eth3 type veth peer name eth0 netns "$lan"
-        ip link add eth4 type veth peer name eth0 netns "$wan"
+        netns lan wan
+        ip link add eth3 type veth peer name eth0 netns "''${pids[lan]}"
+        ip link add eth4 type veth peer name eth0 netns "''${pids[wan]}"
         ip link set eth3 master guest
         ip link set eth4 master guest
         ip addr add 2001:db8:3::1/64 dev eth3 nodad
@@ -1882,11 +1848,8 @@ in
         cat kea.log >&2
       }
       ip link set lo up
-      unshare -n sh -c 'touch client-ready; exec sleep 600' &
-      client=$!
-      until [ -e client-ready ]; do sleep 0.1; done
-      on_client() { nsenter -t "$client" -n "$@"; }
-      ip link add lan0 type veth peer name eth0 netns "$client"
+      netns client
+      ip link add lan0 type veth peer name eth0 netns "''${pids[client]}"
       ip addr add 192.0.2.1/24 dev lan0
       ip link set lan0 up
       on_client ip link set lo up
@@ -2006,16 +1969,11 @@ in
         }
         ip link set lo up
         # The namespaces of the client on lan0 and of the home router on cust0.
-        unshare -n sh -c 'touch pc-ready; exec sleep 600' &
-        pc=$!
-        unshare -n sh -c 'touch cpe-ready; exec sleep 600' &
-        cpe=$!
-        until [ -e pc-ready ] && [ -e cpe-ready ]; do sleep 0.1; done
-        on() { local pid=$1; shift; nsenter -t "$pid" -n "$@"; }
+        netns pc cpe
         ip link add access type vrf table 500
         ip link set access up
-        ip link add lan0 type veth peer name eth0 netns "$pc"
-        ip link add cust0 type veth peer name eth0 netns "$cpe"
+        ip link add lan0 type veth peer name eth0 netns "''${pids[pc]}"
+        ip link add cust0 type veth peer name eth0 netns "''${pids[cpe]}"
         ip link set cust0 master access
         for l in lan0:2001:db8:1::1 cust0:2001:db8:2::1; do
           link=''${l%%:*}
@@ -2023,12 +1981,12 @@ in
           ip addr add "''${l#*:}/64" dev "$link" nodad
           ip link set "$link" up
         done
-        for pid in "$pc" "$cpe"; do
-          on "$pid" ip link set lo up
-          on "$pid" sh -c 'echo 0 >/proc/sys/net/ipv6/conf/eth0/accept_dad'
-          on "$pid" ip link set eth0 up
+        for ns in pc cpe; do
+          "on_$ns" ip link set lo up
+          "on_$ns" sh -c 'echo 0 >/proc/sys/net/ipv6/conf/eth0/accept_dad'
+          "on_$ns" ip link set eth0 up
         done
-        on "$pc" ip link set eth0 address 52:54:00:12:34:56
+        on_pc ip link set eth0 address 52:54:00:12:34:56
 
         mkdir -p ${dir} ${nftDir} /var/lib /var/run/dhcpcd /var/db/dhcpcd /var/lib/dhcpcd
         mkdir -m 0750 /run/kea /var/lib/kea
@@ -2068,29 +2026,29 @@ in
         echo "dns=\$new_dhcp6_name_servers search=\$new_dhcp6_domain_search" >>"$PWD/got"
         SCRIPT
         chmod +x bound
-        # lease <pid> <ia lines>: asks for the IAs once, as the client of the namespace pid.
+        # lease <namespace> <ia lines>: asks for the IAs once, as the client of the namespace.
         lease() {
-          local pid=$1
+          local ns=$1
           shift
           rm -f /var/lib/dhcpcd/* got
-          printf 'ipv6only\nnoipv6rs\npersistent\nduid ll\noption dhcp6_name_servers, dhcp6_domain_search\ninterface eth0\n%s\n' "$*" >"dhcpcd-$pid.conf"
-          on "$pid" timeout 15 dhcpcd -f "$PWD/dhcpcd-$pid.conf" -c "$PWD/bound" -B -1 -6 eth0 >"dhcpcd-$pid.log" 2>&1 || true
+          printf 'ipv6only\nnoipv6rs\npersistent\nduid ll\noption dhcp6_name_servers, dhcp6_domain_search\ninterface eth0\n%s\n' "$*" >"dhcpcd-$ns.conf"
+          "on_$ns" timeout 15 dhcpcd -f "$PWD/dhcpcd-$ns.conf" -c "$PWD/bound" -B -1 -6 eth0 >"dhcpcd-$ns.log" 2>&1 || true
         }
-        lease "$pc" "  ia_na 1"
-        on "$pc" ip -6 addr show dev eth0 | grep -q 'inet6 2001:db8:1::10/128' ||
-          fail "the printer did not get its reserved address: $(cat "dhcpcd-$pc.log")"
+        lease pc "  ia_na 1"
+        on_pc ip -6 addr show dev eth0 | grep -q 'inet6 2001:db8:1::10/128' ||
+          fail "the printer did not get its reserved address: $(cat dhcpcd-pc.log)"
         [ "$(cat got)" = "dns=2001:db8:1::1 search=lan.example.org" ] || fail "the printer got $(cat got)"
 
         # The home router keeps its prefix, so a second dhcpcd releases it below.
         rm -f /var/lib/dhcpcd/*
         printf 'ipv6only\nnoipv6rs\npersistent\nduid ll\ninterface eth0\n  ia_pd 2 -\n' >cpe.conf
-        on "$cpe" dhcpcd -f "$PWD/cpe.conf" -B -6 eth0 >cpe.log 2>&1 &
+        on_cpe dhcpcd -f "$PWD/cpe.conf" -B -6 eth0 >cpe.log 2>&1 &
         for try in $(seq 100); do
           grep -q 'delegated prefix 2001:db8:100::/56' cpe.log && break
           [ "$try" != 100 ] || fail "the home router got no prefix: $(cat cpe.log)"
           sleep 0.1
         done
-        cpeLL=$(on "$cpe" ip -6 -o addr show dev eth0 scope link | awk '{print $4}' | cut -d/ -f1)
+        cpeLL=$(on_cpe ip -6 -o addr show dev eth0 scope link | awk '{print $4}' | cut -d/ -f1)
         for try in $(seq 50); do
           [ -e ${records}/cust0_2001:db8:100::_56 ] && break
           [ "$try" != 50 ] || fail "chalkos-dhcp6-pd recorded no prefix: $(ls -A ${records} 2>&1)"
@@ -2109,7 +2067,7 @@ in
         [ "$(listed --mac=52:54:00:12:34:56 --subnet=office6)" = "$(printf 'default\toffice6\t2001:db8:1::10\t52:54:00:12:34:56\tprinter')" ] ||
           fail "dhcp-leases lists no lease of the printer: $(listed)"
 
-        on "$cpe" dhcpcd -6 -k eth0 >/dev/null 2>&1 || true
+        on_cpe dhcpcd -6 -k eth0 >/dev/null 2>&1 || true
         for try in $(seq 50); do
           [ ! -e ${records}/cust0_2001:db8:100::_56 ] && break
           [ "$try" != 50 ] || fail "the release left the record"
@@ -2149,9 +2107,9 @@ in
         # Without the opening the client gets nothing.
         install -m 644 ${goldens}/dhcp.nft ${nftDir}/ruleset.nft
         ${firewall} || fail "chalkos-firewall did not load the dhcp example's ruleset"
-        on "$pc" ip -6 addr flush dev eth0 scope global
-        lease "$pc" "  ia_na 1"
-        if on "$pc" ip -6 addr show dev eth0 | grep -q 'inet6 2001:db8:'; then
+        on_pc ip -6 addr flush dev eth0 scope global
+        lease pc "  ia_na 1"
+        if on_pc ip -6 addr show dev eth0 | grep -q 'inet6 2001:db8:'; then
           fail "the client got an address through a firewall without DHCPv6's opening"
         fi
       '';
@@ -2191,24 +2149,15 @@ in
         cat relay*.log kea-*.log >&2
       }
       ip link set lo up
-      unshare -n sh -c 'touch client-ready; exec sleep 600' &
-      client=$!
-      unshare -n sh -c 'touch guest-ready; exec sleep 600' &
-      guest=$!
-      unshare -n sh -c 'touch server-ready; exec sleep 600' &
-      server=$!
-      until [ -e client-ready ] && [ -e guest-ready ] && [ -e server-ready ]; do sleep 0.1; done
-      on_client() { nsenter -t "$client" -n "$@"; }
-      on_guest() { nsenter -t "$guest" -n "$@"; }
-      on_server() { nsenter -t "$server" -n "$@"; }
+      netns client guest server
       echo 1 >/proc/sys/net/ipv4/ip_forward
       echo 1 >/proc/sys/net/ipv6/conf/all/forwarding
       ip link add guest type vrf table 300
       ip link set guest up
-      ip link add lan0 type veth peer name eth0 netns "$client"
-      ip link add vlan20 type veth peer name eth0 netns "$guest"
-      ip link add wan0 type veth peer name s0 netns "$server"
-      ip link add vlan30 type veth peer name s1 netns "$server"
+      ip link add lan0 type veth peer name eth0 netns "''${pids[client]}"
+      ip link add vlan20 type veth peer name eth0 netns "''${pids[guest]}"
+      ip link add wan0 type veth peer name s0 netns "''${pids[server]}"
+      ip link add vlan30 type veth peer name s1 netns "''${pids[server]}"
       ip link set vlan20 master guest
       ip link set vlan30 master guest
       for l in lan0 wan0; do echo 0 >"/proc/sys/net/ipv6/conf/$l/accept_dad"; done

@@ -68,9 +68,11 @@ in
   '';
 
   # A check that runs the test script as on a node, with the tools given on its PATH. The script
-  # is shellchecked, and runs with errexit, nounset and pipefail. It may call fail <message>, which
-  # reports the error, runs the script's debug function, if it defines one, to print what explains
-  # the failure, and fails the check.
+  # is shellchecked, and runs with errexit, nounset and pipefail. It may call:
+  # - fail <message>: reports the error, runs the script's debug function, if it defines
+  #   one, to print what explains the failure, and fails the check;
+  # - netns <name>...: starts a network namespace for each name, holds the PID of its process in
+  #   pids[<name>] and defines on_<name>, which runs a command in it.
   unitCheck =
     name: runtimeInputs: text:
     pkgs.runCommand "chalkos-${name}" { nativeBuildInputs = [ pkgs.bubblewrap ]; } ''
@@ -83,6 +85,18 @@ in
               echo "error: $*" >&2
               if declare -F debug >/dev/null; then debug; fi
               exit 1
+            }
+            declare -A pids=()
+            netns() {
+              local name
+              for name in "$@"; do
+                unshare -n sh -c "touch $name-ready; exec sleep 600" &
+                pids[$name]=$!
+                eval "on_$name() { nsenter -t ''${pids[$name]} -n \"\$@\"; }"
+              done
+              for name in "$@"; do
+                until [ -e "$name-ready" ]; do sleep 0.1; done
+              done
             }
           ''
           + text;
@@ -104,11 +118,8 @@ in
   # fd00::12/64. on_peer runs a command in the peer's namespace.
   peerNamespace = ''
     ip link set lo up
-    unshare -n sh -c 'touch peer-ready; exec sleep 600' &
-    peer=$!
-    until [ -e peer-ready ]; do sleep 0.1; done
-    on_peer() { nsenter -t "$peer" -n "$@"; }
-    ip link add v0 type veth peer name v1 netns "$peer"
+    netns peer
+    ip link add v0 type veth peer name v1 netns "''${pids[peer]}"
     ip addr add 10.0.0.11/24 dev v0
     ip addr add fd00::11/64 dev v0 nodad
     ip link set v0 up
