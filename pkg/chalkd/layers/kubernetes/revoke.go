@@ -79,8 +79,8 @@ func (p *Plugin) UnrevokeNode(ctx context.Context, req *connect.Request[kubernet
 		}
 		return nil
 	})
-	if ce, ok := errors.AsType[layer.Coded](err); ok {
-		return nil, ce
+	if _, ok := errors.AsType[layer.Coded](err); ok {
+		return nil, err
 	}
 	if err != nil {
 		return nil, layer.Errorf(connect.CodeUnavailable, "%w", err)
@@ -140,8 +140,8 @@ func checkNodeName(name string) error {
 // the node may be among them: nothing is renewed until they can be read.
 func (k *side) notRevoked(ctx context.Context, name string) error {
 	list, err := k.revokedNodes(ctx)
-	if ce, ok := errors.AsType[layer.Coded](err); ok {
-		return ce
+	if _, ok := errors.AsType[layer.Coded](err); ok {
+		return err
 	}
 	if err != nil {
 		return layer.Errorf(connect.CodeUnavailable, "%w; no node certificate is renewed until they can be read", err)
