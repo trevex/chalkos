@@ -23,8 +23,10 @@ import (
 
 	"github.com/trevex/chalkos/pkg/esp"
 	"github.com/trevex/chalkos/pkg/storage/gpt"
+	"github.com/trevex/chalkos/pkg/storage/hostops/hostopstest"
 	"github.com/trevex/chalkos/pkg/storeslot"
 	"github.com/trevex/chalkos/pkg/tool"
+	"github.com/trevex/chalkos/pkg/tool/tooltest"
 	"github.com/trevex/chalkos/pkg/uki"
 	"github.com/trevex/chalkos/pkg/uki/ukitest"
 	"github.com/trevex/chalkos/pkg/verity"
@@ -171,6 +173,7 @@ size=1MiB, type=%s, name=state
 	}
 	l.node = &Node{
 		Run:           sectorRunner{tool.ExecRunner{}, sector},
+		Ops:           hostopstest.New(&tooltest.Runner{}),
 		Disk:          l.disk,
 		ESP:           l.esp,
 		EFIVars:       l.efivars,

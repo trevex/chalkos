@@ -13,8 +13,10 @@ import (
 
 	"github.com/trevex/chalkos/pkg/esp"
 	"github.com/trevex/chalkos/pkg/storage/gpt"
+	"github.com/trevex/chalkos/pkg/storage/hostops"
+	"github.com/trevex/chalkos/pkg/storage/hostops/hostopstest"
 	"github.com/trevex/chalkos/pkg/storeslot"
-	"github.com/trevex/chalkos/pkg/tool"
+	"github.com/trevex/chalkos/pkg/tool/tooltest"
 )
 
 // writeStore lays out an image's store as its erofs holds it under root: the system x, whose
@@ -71,36 +73,25 @@ func TestStoreFollowsTheImagesLinks(t *testing.T) {
 	}
 }
 
-// storeRunner runs commands as the runner it wraps, but opens and mounts the store an upgrade
-// checks as writeStore lays it out, recording what it ran.
-type storeRunner struct {
-	tool.Runner
-	calls   *[]string
-	mounted func(dir string)
-	// open, when set, tells whether the store's dm-verity device is open, as veritysetup leaves
-	// it; mountErr fails the mount.
-	open     *bool
-	mountErr error
+// fakeStore has the node open and mount the store an upgrade checks on a fake host, each mount
+// laying the store out anew as writeStore does. Its runner records what the host ran.
+func (l *lab) fakeStore() (*hostopstest.Fake, *tooltest.Runner) {
+	r := &tooltest.Runner{}
+	f := hostopstest.New(r)
+	f.OnMount = func(_, dir, _ string) error {
+		if err := os.RemoveAll(dir); err != nil {
+			return err
+		}
+		writeStore(l.t, dir)
+		return nil
+	}
+	l.node.Ops = f
+	return f, r
 }
 
-func (r storeRunner) Exec(ctx context.Context, c tool.Cmd) ([]byte, error) {
-	name, args := c.Name, c.Args
-	switch name {
-	case "veritysetup", "umount":
-		*r.calls = append(*r.calls, name+" "+strings.Join(args, " "))
-		if r.open != nil && name == "veritysetup" {
-			*r.open = args[0] == "open"
-		}
-		return nil, nil
-	case "mount":
-		*r.calls = append(*r.calls, name+" "+strings.Join(args, " "))
-		if r.mountErr != nil {
-			return nil, r.mountErr
-		}
-		r.mounted(args[len(args)-1])
-		return nil, nil
-	}
-	return r.Runner.Exec(ctx, c)
+// failMounts makes every mount on the fake host fail.
+func failMounts(r *tooltest.Runner) {
+	r.Rules = []tooltest.Rule{{Prefix: "mount ", Err: errors.New("wrong fs type")}}
 }
 
 // TestTheImageIsCheckedBeforeItBoots: the caller checks the written store, opened through
@@ -111,8 +102,7 @@ func TestTheImageIsCheckedBeforeItBoots(t *testing.T) {
 	old, img := newImage(t, "a", 3), newImage(t, "b", 2)
 	l := newLab(t, old)
 	mount := filepath.Join(t.TempDir(), "store")
-	var calls []string
-	l.node.Run = storeRunner{Runner: l.node.Run, calls: &calls, mounted: func(dir string) { writeStore(t, dir) }}
+	_, r := l.fakeStore()
 	l.node.StoreMount = mount
 	var toplevel string
 	l.node.CheckStore = func(s Store) error {
@@ -138,9 +128,9 @@ func TestTheImageIsCheckedBeforeItBoots(t *testing.T) {
 	}
 	parts := l.table()
 	open := "veritysetup open " + parts[5].Node + " " + StoreMapping + " " + parts[4].Node + " " + hex.EncodeToString(img.root)
-	if !slices.Contains(calls, open) || !slices.Contains(calls, "mount -t erofs -o ro /dev/mapper/"+StoreMapping+" "+mount) ||
-		calls[len(calls)-1] != "veritysetup close "+StoreMapping {
-		t.Errorf("ran %q", calls)
+	if !slices.Contains(r.Calls, open) || !slices.Contains(r.Calls, "mount -t erofs -o ro /dev/mapper/"+StoreMapping+" "+mount) ||
+		r.Calls[len(r.Calls)-1] != "veritysetup close "+StoreMapping {
+		t.Errorf("ran %q", r.Calls)
 	}
 	if e, name := l.boot(); name != old.name {
 		t.Errorf("after a refusal the disk boots %s from %s", name, e.File)
@@ -164,14 +154,14 @@ func TestTheImageIsCheckedBeforeItBoots(t *testing.T) {
 func TestALeftOpenStoreIsClosedFirst(t *testing.T) {
 	old, img := newImage(t, "a", 3), newImage(t, "b", 2)
 	l := newLab(t, old)
-	var calls []string
-	open := true
-	l.node.Run = storeRunner{Runner: l.node.Run, calls: &calls, mounted: func(dir string) { writeStore(t, dir) }, open: &open}
+	f, r := l.fakeStore()
 	l.node.StoreMount = filepath.Join(t.TempDir(), "store")
+	f.SetMapped(StoreMapping, l.disk+"5")
+	f.SetMounted(hostops.Mapper(StoreMapping), l.node.StoreMount)
 	l.node.CheckStore = func(Store) error { return nil }
 	partitions := l.node.OpenPartition
 	l.node.OpenPartition = func(p gpt.Partition, write bool) (storeslot.PartitionFile, error) {
-		if write && open {
+		if write && f.Mapped(StoreMapping) {
 			return nil, errors.New("device or resource busy")
 		}
 		return partitions(p, write)
@@ -180,8 +170,8 @@ func TestALeftOpenStoreIsClosedFirst(t *testing.T) {
 		t.Fatal(err)
 	}
 	l.boots(img, 2)
-	if len(calls) < 2 || calls[0] != "umount "+l.node.StoreMount || calls[1] != "veritysetup close "+StoreMapping {
-		t.Errorf("ran %q, want the store closed first", calls)
+	if len(r.Calls) < 2 || r.Calls[0] != "umount "+l.node.StoreMount || r.Calls[1] != "veritysetup close "+StoreMapping {
+		t.Errorf("ran %q, want the store closed first", r.Calls)
 	}
 }
 
@@ -190,16 +180,16 @@ func TestALeftOpenStoreIsClosedFirst(t *testing.T) {
 func TestAStoreThatDoesNotMountIsClosed(t *testing.T) {
 	old, img := newImage(t, "a", 3), newImage(t, "b", 2)
 	l := newLab(t, old)
-	var calls []string
-	l.node.Run = storeRunner{Runner: l.node.Run, calls: &calls, mountErr: errors.New("wrong fs type")}
+	_, r := l.fakeStore()
+	failMounts(r)
 	l.node.StoreMount = filepath.Join(t.TempDir(), "store")
 	l.node.CheckStore = func(Store) error { t.Error("checked a store that did not mount"); return nil }
 	if _, err := l.install(img); err == nil || !strings.Contains(err.Error(), "mount the written store") {
 		t.Fatalf("install = %v", err)
 	}
-	i := slices.IndexFunc(calls, func(c string) bool { return strings.HasPrefix(c, "mount ") })
-	if i < 0 || !slices.Equal(calls[i+1:], []string{"veritysetup close " + StoreMapping}) {
-		t.Errorf("ran %q, want the device closed and nothing unmounted after the mount", calls)
+	i := slices.IndexFunc(r.Calls, func(c string) bool { return strings.HasPrefix(c, "mount ") })
+	if i < 0 || !slices.Equal(r.Calls[i+1:], []string{"veritysetup close " + StoreMapping}) {
+		t.Errorf("ran %q, want the device closed and nothing unmounted after the mount", r.Calls)
 	}
 	if e, name := l.boot(); name != old.name {
 		t.Errorf("the disk boots %s from %s", name, e.File)
@@ -212,19 +202,14 @@ func TestAStoreThatDoesNotMountIsClosed(t *testing.T) {
 func TestAStagedStoreThatDoesNotMountIsNoRefusal(t *testing.T) {
 	old, img := newImage(t, "a", 3), newImage(t, "b", 2)
 	l := newLab(t, old)
-	base := l.node.Run
-	mounted := func(dir string) {
-		os.RemoveAll(dir)
-		writeStore(t, dir)
-	}
-	l.node.Run = storeRunner{Runner: base, calls: &[]string{}, mounted: mounted}
+	_, r := l.fakeStore()
 	l.node.StoreMount = filepath.Join(t.TempDir(), "store")
 	checks := 0
 	l.node.CheckStore = func(Store) error { checks++; return nil }
 	if _, err := l.install(img); err != nil {
 		t.Fatal(err)
 	}
-	l.node.Run = storeRunner{Runner: base, calls: &[]string{}, mounted: mounted, mountErr: errors.New("wrong fs type")}
+	failMounts(r)
 	_, err := l.install(img)
 	var retired *StagedRetiredError
 	var check *CheckError
@@ -259,12 +244,7 @@ func TestToplevel(t *testing.T) {
 func TestAStagedImageIsCheckedAgain(t *testing.T) {
 	old, img := newImage(t, "a", 3), newImage(t, "b", 2)
 	l := newLab(t, old)
-	var calls []string
-	l.node.Run = storeRunner{Runner: l.node.Run, calls: &calls, mounted: func(dir string) {
-		// Each check mounts the store anew.
-		os.RemoveAll(dir)
-		writeStore(t, dir)
-	}}
+	_, r := l.fakeStore()
 	l.node.StoreMount = filepath.Join(t.TempDir(), "store")
 	checks := 0
 	var refusal error
@@ -310,8 +290,8 @@ func TestAStagedImageIsCheckedAgain(t *testing.T) {
 	if parts := l.table(); parts[5].Name != "_empty" {
 		t.Errorf("after a refusal the slot is labelled %q", parts[5].Name)
 	}
-	if calls[len(calls)-1] != "veritysetup close "+StoreMapping {
-		t.Errorf("ran %q, want the store closed", calls)
+	if r.Calls[len(r.Calls)-1] != "veritysetup close "+StoreMapping {
+		t.Errorf("ran %q, want the store closed", r.Calls)
 	}
 }
 
@@ -321,11 +301,7 @@ func TestAStagedImageIsCheckedAgain(t *testing.T) {
 func TestReadImage(t *testing.T) {
 	old, img := newImage(t, "a", 3), newImage(t, "b", 2)
 	l := newLab(t, old)
-	var calls []string
-	l.node.Run = storeRunner{Runner: l.node.Run, calls: &calls, mounted: func(dir string) {
-		os.RemoveAll(dir)
-		writeStore(t, dir)
-	}}
+	_, r := l.fakeStore()
 	l.node.StoreMount = filepath.Join(t.TempDir(), "store")
 	l.node.CheckStore = func(Store) error { return nil }
 	if _, err := l.node.Install(context.Background(), img.header, img.stream()); err != nil {
@@ -338,7 +314,7 @@ func TestReadImage(t *testing.T) {
 				t.Fatal(err)
 			}
 		}
-		calls = nil
+		r.ResetCalls()
 		var toplevel string
 		if err := l.node.ReadImage(context.Background(), img.root, func(s Store) error {
 			toplevel = s.Toplevel
@@ -349,8 +325,8 @@ func TestReadImage(t *testing.T) {
 		}
 		parts := l.table()
 		open := "veritysetup open " + parts[5].Node + " " + StoreMapping + " " + parts[4].Node + " " + hex.EncodeToString(img.root)
-		if toplevel != "/nix/store/x" || !slices.Contains(calls, open) || calls[len(calls)-1] != "veritysetup close "+StoreMapping {
-			t.Errorf("%s: toplevel %q, ran %q", state, toplevel, calls)
+		if toplevel != "/nix/store/x" || !slices.Contains(r.Calls, open) || r.Calls[len(r.Calls)-1] != "veritysetup close "+StoreMapping {
+			t.Errorf("%s: toplevel %q, ran %q", state, toplevel, r.Calls)
 		}
 	}
 	for name, root := range map[string][]byte{"the running image": old.root, "another image": bytes.Repeat([]byte{0xee}, 32)} {
@@ -368,10 +344,7 @@ func TestReadImage(t *testing.T) {
 func TestOnlyARecheckRetiresTheStagedImage(t *testing.T) {
 	old, img := newImage(t, "a", 3), newImage(t, "b", 2)
 	l := newLab(t, old)
-	l.node.Run = storeRunner{Runner: l.node.Run, calls: &[]string{}, mounted: func(dir string) {
-		os.RemoveAll(dir)
-		writeStore(t, dir)
-	}}
+	l.fakeStore()
 	l.node.StoreMount = filepath.Join(t.TempDir(), "store")
 	var refusal error
 	l.node.CheckStore = func(Store) error { return refusal }
@@ -401,10 +374,7 @@ func TestOnlyARecheckRetiresTheStagedImage(t *testing.T) {
 func TestARecheckRetiresAStagedImage(t *testing.T) {
 	old, img := newImage(t, "a", 3), newImage(t, "b", 2)
 	l := newLab(t, old)
-	l.node.Run = storeRunner{Runner: l.node.Run, calls: &[]string{}, mounted: func(dir string) {
-		os.RemoveAll(dir)
-		writeStore(t, dir)
-	}}
+	l.fakeStore()
 	l.node.StoreMount = filepath.Join(t.TempDir(), "store")
 	var refusal error
 	checks := 0

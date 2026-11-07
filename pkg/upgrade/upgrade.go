@@ -63,6 +63,7 @@ import (
 
 	"github.com/trevex/chalkos/pkg/esp"
 	"github.com/trevex/chalkos/pkg/storage/gpt"
+	"github.com/trevex/chalkos/pkg/storage/hostops"
 	"github.com/trevex/chalkos/pkg/storeslot"
 	"github.com/trevex/chalkos/pkg/tool"
 	"github.com/trevex/chalkos/pkg/uki"
@@ -71,6 +72,8 @@ import (
 // Node is the running node an upgrade changes. Tests point it at a disk image and directories.
 type Node struct {
 	Run tool.Runner
+	// Ops opens and mounts the store an upgrade checks.
+	Ops hostops.Ops
 	// Disk is the boot disk's device.
 	Disk string
 	// ESP is where the ESP is mounted, EFIVars where efivarfs is, and Cmdline the running kernel's

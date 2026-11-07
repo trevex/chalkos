@@ -3,7 +3,6 @@ package upgrade
 import (
 	"bytes"
 	"context"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"log"
@@ -15,8 +14,8 @@ import (
 
 	"github.com/trevex/chalkos/pkg/command"
 	"github.com/trevex/chalkos/pkg/esp"
+	"github.com/trevex/chalkos/pkg/storage/hostops"
 	"github.com/trevex/chalkos/pkg/storeslot"
-	"github.com/trevex/chalkos/pkg/tool"
 	"github.com/trevex/chalkos/pkg/uki"
 )
 
@@ -144,7 +143,7 @@ func (n *Node) mountStore(ctx context.Context, rootHash []byte, slot storeslot.S
 	if err != nil {
 		return err
 	}
-	return OpenStore(ctx, n.Run, n.storeDir(), rootHash, slot, system, read)
+	return OpenStore(ctx, n.Ops, n.storeDir(), rootHash, slot, system, read)
 }
 
 // UKISystem is the NixOS system the UKI at path boots: the directory of its command line's init=.
@@ -165,16 +164,16 @@ func UKISystem(path string) (string, error) {
 // it creates, and passes it to read with system, the image's NixOS system in it; then it unmounts
 // the store and closes its dm-verity device. What read finds is what the root hash covers: a
 // block that does not match the hash tree fails to read.
-func OpenStore(ctx context.Context, run tool.Runner, dir string, rootHash []byte, slot storeslot.Slot, system string, read func(Store) error) error {
+func OpenStore(ctx context.Context, ops hostops.Ops, dir string, rootHash []byte, slot storeslot.Slot, system string, read func(Store) error) error {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
 	}
-	if _, err := tool.Run(ctx, run, "veritysetup", "open", slot.Data.Node, StoreMapping, slot.Verity.Node, hex.EncodeToString(rootHash)); err != nil {
+	if err := ops.OpenVerity(ctx, StoreMapping, slot.Data.Node, slot.Verity.Node, rootHash); err != nil {
 		return fmt.Errorf("open the written store through dm-verity: %w", err)
 	}
 	mounted := false
-	defer func() { closeStore(ctx, run, dir, mounted, false) }()
-	if _, err := tool.Run(ctx, run, "mount", "-t", "erofs", "-o", "ro", "/dev/mapper/"+StoreMapping, dir); err != nil {
+	defer func() { closeStore(ctx, ops, dir, mounted, false) }()
+	if err := ops.Mount(ctx, hostops.Mapper(StoreMapping), dir, "erofs", "ro"); err != nil {
 		return fmt.Errorf("mount the written store: %w", err)
 	}
 	mounted = true
@@ -185,16 +184,16 @@ func OpenStore(ctx context.Context, run tool.Runner, dir string, rootHash []byte
 // upgrade changes the disk, where neither is there unless an earlier check was cut short, it
 // says nothing of failing to.
 func (n *Node) closeStore(ctx context.Context, dir string, mounted, quiet bool) {
-	closeStore(ctx, n.Run, dir, mounted, quiet)
+	closeStore(ctx, n.Ops, dir, mounted, quiet)
 }
 
-func closeStore(ctx context.Context, run tool.Runner, dir string, mounted, quiet bool) {
+func closeStore(ctx context.Context, ops hostops.Ops, dir string, mounted, quiet bool) {
 	if mounted {
-		if _, err := tool.Run(ctx, run, "umount", dir); err != nil && !quiet {
+		if err := ops.Unmount(ctx, dir); err != nil && !quiet {
 			log.Printf("unmount the checked store: %v", err)
 		}
 	}
-	if _, err := tool.Run(ctx, run, "veritysetup", "close", StoreMapping); err != nil && !quiet {
+	if err := ops.CloseVerity(ctx, StoreMapping); err != nil && !quiet {
 		log.Printf("close the checked store: %v", err)
 	}
 }

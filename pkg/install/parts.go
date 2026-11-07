@@ -13,6 +13,7 @@ import (
 
 	"github.com/trevex/chalkos/pkg/identity"
 	"github.com/trevex/chalkos/pkg/storage"
+	"github.com/trevex/chalkos/pkg/storage/hostops"
 	"github.com/trevex/chalkos/pkg/storeslot"
 	"github.com/trevex/chalkos/pkg/tool"
 	"github.com/trevex/chalkos/pkg/upgrade"
@@ -163,7 +164,7 @@ func (i *Installer) fromParts(ctx context.Context, target storage.BlockDisk, l l
 func (i *Installer) checkConfig(ctx context.Context, slot storeslot.Slot, system string, req PartsRequest) (Checked, error) {
 	const continues = "the target disk boots nothing, and an install of the image continues on it"
 	var checked Checked
-	err := upgrade.OpenStore(ctx, i.Run, i.storeDir(), req.Image.RootHash, slot, system, func(st upgrade.Store) error {
+	err := upgrade.OpenStore(ctx, hostops.Tools{Run: i.Run, MountInfo: i.MountInfo, DevRoot: i.Host.DevRoot}, i.storeDir(), req.Image.RootHash, slot, system, func(st upgrade.Store) error {
 		var err error
 		checked, err = req.Check(ctx, st, st.Toplevel)
 		return err
