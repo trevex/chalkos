@@ -93,7 +93,7 @@ func TestUpgrade(t *testing.T) {
 				rest = rest[n:]
 			}
 			resp, err := stream.CloseAndReceive()
-			if connect.CodeOf(err) != tc.wantCode && !(err == nil && tc.wantCode == 0) {
+			if codeOf(err) != tc.wantCode && !(err == nil && tc.wantCode == 0) {
 				t.Fatalf("upgrade = %v, want code %v", err, tc.wantCode)
 			}
 			if err != nil {
@@ -185,7 +185,7 @@ func TestUpgradeWhoseActivationFails(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, err := stream.CloseAndReceive()
-	if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "upgrade: the image is staged as .staged-chalkos_2.efi, but its activation failed: Secure Boot would refuse the UKI") {
+	if codeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "upgrade: the image is staged as .staged-chalkos_2.efi, but its activation failed: Secure Boot would refuse the UKI") {
 		t.Errorf("upgrade = %v", err)
 	}
 	if p := upgrade.ReadImages(filepath.Join(s.Paths.StateDir, upgrade.ImagesRecord)).Of([]byte{1, 2}); p != (upgrade.Provenance{Revision: "a1b2c3d4e5f6", Tag: "v1.5.0"}) {
@@ -217,7 +217,7 @@ func TestActivateImage(t *testing.T) {
 		asked = append(asked, rootHash)
 		return result, refusal
 	}
-	if _, err := activateOn(s, nil); connect.CodeOf(err) != connect.CodeInvalidArgument {
+	if _, err := activateOn(s, nil); codeOf(err) != connect.CodeInvalidArgument {
 		t.Errorf("activate no image = %v, want invalid", err)
 	}
 	if len(asked) != 0 {
@@ -235,11 +235,11 @@ func TestActivateImage(t *testing.T) {
 		t.Errorf("activate the running image = %v, %v", resp, err)
 	}
 	refusal = &upgrade.RefusalError{Err: errors.New("the image staged in the inactive slot is 33, not 34")}
-	if _, err := activateOn(s, stagedImage); connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "activate: the image staged") {
+	if _, err := activateOn(s, stagedImage); codeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "activate: the image staged") {
 		t.Errorf("a refused activation = %v", err)
 	}
 	refusal = errors.New("rename the UKI: input/output error")
-	if _, err := activateOn(s, stagedImage); connect.CodeOf(err) != connect.CodeInternal || !strings.Contains(err.Error(), "activate: rename the UKI") {
+	if _, err := activateOn(s, stagedImage); codeOf(err) != connect.CodeInternal || !strings.Contains(err.Error(), "activate: rename the UKI") {
 		t.Errorf("a failed activation = %v, want it internal", err)
 	}
 	if len(asked) != 5 || !bytes.Equal(asked[2], runningImage) {
@@ -283,7 +283,7 @@ func TestActivateImageRefusals(t *testing.T) {
 				tc.prepare(t, s)
 			}
 			r.Calls = nil
-			if _, err := activateOn(s, tc.root); connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), tc.want) {
+			if _, err := activateOn(s, tc.root); codeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), tc.want) {
 				t.Errorf("activate = %v, want %q", err, tc.want)
 			}
 			if len(r.Calls) != 0 {
@@ -300,7 +300,7 @@ func TestActivateImageWaitsForATrial(t *testing.T) {
 	rec := recordTrial(t, s, nextConfig)
 	r.Calls = nil
 	want := "config " + rec.Version + " is on trial until " + rec.Deadline.Format(time.RFC3339) + ": confirm it with chalkctl apply-config --confirm n1, or roll it back with chalkctl apply-config --rollback n1, before an image's activation"
-	if _, err := activateOn(s, stagedImage); connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), want) {
+	if _, err := activateOn(s, stagedImage); codeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), want) {
 		t.Errorf("activate = %v, want %q", err, want)
 	}
 	if _, err := os.Stat(filepath.Join(s.Paths.ESP, "EFI", "Linux", ".staged-chalkos_3.efi")); err != nil {
@@ -334,7 +334,7 @@ func TestUpgradeRefusesMalformedHeaders(t *testing.T) {
 		stream := conn.Upgrade(context.Background())
 		stream.Send(&nodev1.UpgradeRequest{Message: &nodev1.UpgradeRequest_Header{Header: tc.header}})
 		_, err := stream.CloseAndReceive()
-		if connect.CodeOf(err) != connect.CodeInvalidArgument || !strings.Contains(err.Error(), tc.want) {
+		if codeOf(err) != connect.CodeInvalidArgument || !strings.Contains(err.Error(), tc.want) {
 			t.Errorf("%v: %v, want %q", tc.header, err, tc.want)
 		}
 	}
@@ -378,7 +378,7 @@ func TestUpgradeDeliversConfigOnlyForAdmins(t *testing.T) {
 			}
 			_, err := stream.CloseAndReceive()
 			if tc.want == "" {
-				if connect.CodeOf(err) != connect.CodePermissionDenied || !strings.Contains(err.Error(), "needs the admin role") {
+				if codeOf(err) != connect.CodePermissionDenied || !strings.Contains(err.Error(), "needs the admin role") {
 					t.Errorf("upgrade = %v, want it refused for the admin role", err)
 				}
 				if installed {
@@ -690,7 +690,7 @@ func TestUpgradeRetiresConfigSlots(t *testing.T) {
 	if err := stream.Send(&nodev1.UpgradeRequest{Message: &nodev1.UpgradeRequest_Header{Header: header}}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := stream.CloseAndReceive(); connect.CodeOf(err) != connect.CodeFailedPrecondition {
+	if _, err := stream.CloseAndReceive(); codeOf(err) != connect.CodeFailedPrecondition {
 		t.Fatalf("upgrade = %v, want its refusal", err)
 	}
 	slots, err := slot.List(s.Loader.Slots)
@@ -723,7 +723,7 @@ func TestOneUpgradeAtATime(t *testing.T) {
 	first := make(chan error, 1)
 	go func() { first <- send() }()
 	<-started
-	if err := send(); connect.CodeOf(err) != connect.CodeAborted {
+	if err := send(); codeOf(err) != connect.CodeAborted {
 		t.Errorf("a second upgrade: %v, want aborted", err)
 	}
 	close(release)

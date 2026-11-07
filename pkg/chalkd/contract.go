@@ -18,11 +18,11 @@ func (s *Server) Contract(_ context.Context, _ *connect.Request[nodev1.ContractR
 	// The installer runs an image of its own: config is for the image it installs, which comes
 	// with its contract.
 	if s.Installer {
-		return nil, failed(connect.CodeFailedPrecondition, "an installer has no image to configure; take the schemas from the image you install")
+		return nil, layer.Errorf(connect.CodeFailedPrecondition, "an installer has no image to configure; take the schemas from the image you install")
 	}
 	entries, err := os.ReadDir(s.Loader.Schemas)
 	if err != nil {
-		return nil, failed(connect.CodeFailedPrecondition, "read the image's schemas: %v", err)
+		return nil, layer.Errorf(connect.CodeFailedPrecondition, "read the image's schemas: %w", err)
 	}
 	release := readOSRelease(s.Paths.OSRelease)
 	resp := &nodev1.ContractResponse{
@@ -37,12 +37,12 @@ func (s *Server) Contract(_ context.Context, _ *connect.Request[nodev1.ContractR
 		}
 		data, err := os.ReadFile(filepath.Join(s.Loader.Schemas, e.Name()))
 		if err != nil {
-			return nil, failed(connect.CodeInternal, "%v", err)
+			return nil, err
 		}
 		resp.Schemas[e.Name()] = data
 	}
 	if resp.LayerFacts, err = imageFacts(layer.Active[layer.ImageFacts](s.Plugins), layer.ImageFacts.RunningFacts); err != nil {
-		return nil, failed(connect.CodeInternal, "%v", err)
+		return nil, err
 	}
 	return connect.NewResponse(resp), nil
 }

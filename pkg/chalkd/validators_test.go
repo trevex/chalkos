@@ -67,7 +67,7 @@ func TestApplyConfigRefusesByAValidator(t *testing.T) {
 			_, dryErr := dryRun(s, next)
 			_, err := sendConfig(s, next)
 			for _, err := range []error{dryErr, err} {
-				if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.HasSuffix(err.Error(), tc.want) || strings.Contains(err.Error(), "read ") {
+				if codeOf(err) != connect.CodeFailedPrecondition || !strings.HasSuffix(err.Error(), tc.want) || strings.Contains(err.Error(), "read ") {
 					t.Errorf("err = %v, want %q", err, tc.want)
 				}
 			}
@@ -131,7 +131,7 @@ func TestApplyConfigRefusesByAValidatorAsTheChecker(t *testing.T) {
 		t.Fatalf("check.Run: %v", checked)
 	}
 	_, delivered := sendConfig(s, next)
-	if ce, ok := errors.AsType[*connect.Error](delivered); !ok || ce.Message() != r.Message {
+	if ce, ok := rpcErr(delivered); !ok || ce.Message() != r.Message {
 		t.Errorf("the delivery is refused with %v, check.Run with %q", delivered, r.Message)
 	}
 }
@@ -146,7 +146,7 @@ func TestInstallInPlaceRunsTheValidators(t *testing.T) {
 	h := header(t, &nodev1.InstallHeader_InPlace{InPlace: &nodev1.InPlace{}})
 	h.Config = baseConfig
 	err := sendInstall(t, s, h, nil)
-	if installed || connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "validator veto failed (exit 2)") {
+	if installed || codeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "validator veto failed (exit 2)") {
 		t.Errorf("install: %v, installed %v", err, installed)
 	}
 }

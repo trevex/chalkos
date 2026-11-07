@@ -95,7 +95,7 @@ func TestApplyConfigReplacesTheOSCAs(t *testing.T) {
 		"OS CAs with a node certificate":                                      {admin, &nodev1.ApplyConfigRequest{Trust: []byte(both), NodeCertificate: []byte(renewed.Certificate), NodeKey: []byte(renewed.Key)}},
 	} {
 		_, err := s.ApplyConfig(asCaller(tc.caller), connect.NewRequest(tc.req))
-		if connect.CodeOf(err) != connect.CodeInvalidArgument {
+		if codeOf(err) != connect.CodeInvalidArgument {
 			t.Errorf("%s: %v, want invalid_argument", name, err)
 		} else if strings.Contains(err.Error(), "PRIVATE KEY") || strings.Contains(err.Error(), "BEGIN") {
 			t.Errorf("%s: the error holds PEM: %v", name, err)
@@ -163,7 +163,7 @@ func TestTrustKeepsTheControlPlanesNodeCA(t *testing.T) {
 	share, _ := kpki.ControlPlaneShare(k, nextNodeCA).Encode()
 	write(t, kubernetesPaths(s).Share(), string(share))
 	_, admin := adminOf(t, osCA)
-	if _, err := s.ApplyConfig(asCaller(admin), connect.NewRequest(&nodev1.ApplyConfigRequest{Trust: []byte(osCA.Certificate)})); connect.CodeOf(err) != connect.CodeInvalidArgument || !strings.Contains(err.Error(), "node CA") {
+	if _, err := s.ApplyConfig(asCaller(admin), connect.NewRequest(&nodev1.ApplyConfigRequest{Trust: []byte(osCA.Certificate)})); codeOf(err) != connect.CodeInvalidArgument || !strings.Contains(err.Error(), "node CA") {
 		t.Errorf("OS CAs without the node CA's: %v, want a refusal naming the node CA", err)
 	}
 	if _, err := s.ApplyConfig(asCaller(admin), connect.NewRequest(&nodev1.ApplyConfigRequest{Trust: []byte(pki.Bundle(osCA.Certificate, next.Certificate))})); err != nil {
@@ -186,7 +186,7 @@ func TestRefusedTrustLeavesTheBaseline(t *testing.T) {
 	_, admin := adminOf(t, osCA)
 	refuse := func() {
 		t.Helper()
-		if _, err := s.ApplyConfig(asCaller(admin), connect.NewRequest(&nodev1.ApplyConfigRequest{Trust: []byte(osCA.Certificate)})); connect.CodeOf(err) != connect.CodeInvalidArgument {
+		if _, err := s.ApplyConfig(asCaller(admin), connect.NewRequest(&nodev1.ApplyConfigRequest{Trust: []byte(osCA.Certificate)})); codeOf(err) != connect.CodeInvalidArgument {
 			t.Fatalf("OS CAs without the node CA's: %v, want a refusal", err)
 		}
 	}
@@ -220,7 +220,7 @@ func TestTrustRefusedOnCommitLeavesTheBaseline(t *testing.T) {
 		t.Fatal(err)
 	}
 	d.osCA = other.Certificate
-	if _, err := d.commit(ctx); connect.CodeOf(err) != connect.CodeInvalidArgument {
+	if _, err := d.commit(ctx); codeOf(err) != connect.CodeInvalidArgument {
 		t.Fatalf("OS CAs that do not verify the node: %v, want a refusal", err)
 	}
 	if got := readFile(t, s.Paths.EffectsBaseline); got != earlier {
@@ -356,11 +356,11 @@ func TestCallsVerifyAgainstTheCurrentOSCAs(t *testing.T) {
 	}
 	opened := conns.Load()
 
-	if err := info(forInfo); connect.CodeOf(err) != connect.CodeUnauthenticated {
+	if err := info(forInfo); codeOf(err) != connect.CodeUnauthenticated {
 		t.Errorf("Info on a connection of the old root: %v, want unauthenticated", err)
 	}
 	_, err = forApply.ApplyConfig(context.Background(), connect.NewRequest(&nodev1.ApplyConfigRequest{Trust: []byte(both)}))
-	if connect.CodeOf(err) != connect.CodeUnauthenticated {
+	if codeOf(err) != connect.CodeUnauthenticated {
 		t.Errorf("ApplyConfig on a connection of the old root: %v, want unauthenticated", err)
 	}
 	if got := s.Certificate.OSCA(); got != next.Certificate {
@@ -379,7 +379,7 @@ func TestCallsVerifyAgainstTheCurrentOSCAs(t *testing.T) {
 		t.Fatal(err)
 	}
 	skew.Store(int64(2 * time.Hour))
-	if err := info(current); connect.CodeOf(err) != connect.CodeUnauthenticated {
+	if err := info(current); codeOf(err) != connect.CodeUnauthenticated {
 		t.Errorf("Info with an expired certificate: %v, want unauthenticated", err)
 	}
 }
@@ -401,7 +401,7 @@ func TestTrustNotRecordedIsAnInternalError(t *testing.T) {
 	}
 	t.Cleanup(func() { os.Chmod(dir, 0o755) })
 	_, err := s.ApplyConfig(asCaller(admin), connect.NewRequest(&nodev1.ApplyConfigRequest{Trust: []byte(pki.Bundle(osCA.Certificate, next.Certificate))}))
-	if connect.CodeOf(err) != connect.CodeInternal {
+	if codeOf(err) != connect.CodeInternal {
 		t.Errorf("%v, want internal", err)
 	}
 	if s.Certificate.OSCA() != osCA.Certificate {
@@ -462,7 +462,7 @@ func TestApplyConfigRefusesTheFallbackSecretBeforeItTrusts(t *testing.T) {
 			_, admin := adminOf(t, osCA)
 			before := s.Certificate.OSCA()
 			req := &nodev1.ApplyConfigRequest{FallbackSecret: c.secret, Trust: []byte(pki.Bundle(osCA.Certificate, next.Certificate))}
-			if _, err := deliver(asCaller(admin), s, identityWith(section("", "ext4")), req); connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), c.want) {
+			if _, err := deliver(asCaller(admin), s, identityWith(section("", "ext4")), req); codeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), c.want) {
 				t.Fatalf("err = %v, want %q", err, c.want)
 			}
 			if s.Certificate.OSCA() != before {

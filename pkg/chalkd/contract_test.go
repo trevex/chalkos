@@ -35,10 +35,10 @@ func TestContract(t *testing.T) {
 		t.Errorf("image.json = %q, %v", facts.ImageJson, err)
 	}
 	s.Loader.Schemas = filepath.Join(t.TempDir(), "missing")
-	if _, err := s.Contract(context.Background(), connect.NewRequest(&nodev1.ContractRequest{})); connect.CodeOf(err) != connect.CodeFailedPrecondition {
+	if _, err := s.Contract(context.Background(), connect.NewRequest(&nodev1.ContractRequest{})); codeOf(err) != connect.CodeFailedPrecondition {
 		t.Errorf("an image without schemas: %v, want failed_precondition", err)
 	}
-	if _, _, err := s.runningTarget(); connect.CodeOf(err) != connect.CodeFailedPrecondition {
+	if _, _, err := s.runningTarget(); codeOf(err) != connect.CodeFailedPrecondition {
 		t.Errorf("translating for an image without schemas: %v, want failed_precondition", err)
 	}
 }
@@ -49,7 +49,7 @@ func TestContractRefusedOnTheInstaller(t *testing.T) {
 	s, _ := newTestServer(t, maintenance, vda)
 	s.Installer = true
 	_, err := s.Contract(context.Background(), connect.NewRequest(&nodev1.ContractRequest{}))
-	if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "take the schemas from the image you install") {
+	if codeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "take the schemas from the image you install") {
 		t.Errorf("err = %v", err)
 	}
 }

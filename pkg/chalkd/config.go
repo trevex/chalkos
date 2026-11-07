@@ -23,11 +23,11 @@ import (
 func configure(name, text string, schemas *schema.Schemas, t config.Target) (slot.Stored, error) {
 	docs, err := config.Parse(strings.NewReader(text))
 	if err != nil {
-		return slot.Stored{}, failed(connect.CodeInvalidArgument, "parse the config: %v", err)
+		return slot.Stored{}, layer.Errorf(connect.CodeInvalidArgument, "parse the config: %w", err)
 	}
 	c, err := translateSlot(name, docs, schemas, t)
 	if err != nil {
-		return slot.Stored{}, failed(connect.CodeInvalidArgument, "%s", check.ConfigRefusal(err))
+		return slot.Stored{}, layer.Errorf(connect.CodeInvalidArgument, "%s", check.ConfigRefusal(err))
 	}
 	return c, nil
 }
@@ -54,7 +54,7 @@ func translateSlot(name string, docs []config.Document, schemas *schema.Schemas,
 func (s *Server) runningSchemas() (*schema.Schemas, error) {
 	schemas, err := schema.LoadSchemas(s.Loader.Schemas)
 	if err != nil {
-		return nil, failed(connect.CodeFailedPrecondition, "read the image's schemas: %v", err)
+		return nil, layer.Errorf(connect.CodeFailedPrecondition, "read the image's schemas: %w", err)
 	}
 	return schemas, nil
 }
@@ -72,10 +72,10 @@ func (s *Server) runningTarget() (config.Target, *schema.Schemas, error) {
 	// own, so a fault in them is not the client's.
 	facts, err := imageFacts(layer.Active[layer.ImageFacts](s.Plugins), layer.ImageFacts.RunningFacts)
 	if err != nil {
-		return config.Target{}, nil, failed(connect.CodeInternal, "the image's layer facts: %v", err)
+		return config.Target{}, nil, fmt.Errorf("the image's layer facts: %w", err)
 	}
 	if err := s.target(facts, &t); err != nil {
-		return config.Target{}, nil, failed(connect.CodeInternal, "the image's layer facts: %v", plain(err))
+		return config.Target{}, nil, layer.Errorf(connect.CodeInternal, "the image's layer facts: %w", err)
 	}
 	return t, schemas, nil
 }
@@ -104,7 +104,7 @@ func (s *Server) installConfig(ctx context.Context, h *nodev1.InstallHeader, nam
 	case s.Installer:
 		t, schemas, err = s.headerTarget(h, contract)
 	case contract != nil:
-		err = failed(connect.CodeInvalidArgument, "an install in place checks the config against the running image; the header must carry no schemas or image.json")
+		err = layer.Errorf(connect.CodeInvalidArgument, "an install in place checks the config against the running image; the header must carry no schemas or image.json")
 	default:
 		t, schemas, err = s.runningTarget()
 	}
@@ -150,10 +150,10 @@ func (s *Server) installConfig(ctx context.Context, h *nodev1.InstallHeader, nam
 func headerName(h *nodev1.InstallHeader) (string, error) {
 	cert, err := pki.ParseCertificate(h.NodeCertificate)
 	if err != nil {
-		return "", failed(connect.CodeInvalidArgument, "the header's node certificate: %v", err)
+		return "", layer.Errorf(connect.CodeInvalidArgument, "the header's node certificate: %w", err)
 	}
 	if cert.Subject.CommonName == "" {
-		return "", failed(connect.CodeInvalidArgument, "the header's node certificate names no node")
+		return "", layer.Errorf(connect.CodeInvalidArgument, "the header's node certificate names no node")
 	}
 	return cert.Subject.CommonName, nil
 }
@@ -163,14 +163,14 @@ func headerName(h *nodev1.InstallHeader) (string, error) {
 // the target disk out.
 func (s *Server) headerTarget(h *nodev1.InstallHeader, contract *nodev1.ImageContract) (config.Target, *schema.Schemas, error) {
 	if h.Image == nil {
-		return config.Target{}, nil, failed(connect.CodeInvalidArgument, "the installer needs the node's image to write to the target disk")
+		return config.Target{}, nil, layer.Errorf(connect.CodeInvalidArgument, "the installer needs the node's image to write to the target disk")
 	}
 	if len(contract.GetSchemas()) == 0 {
-		return config.Target{}, nil, failed(connect.CodeInvalidArgument, "the header carries config but not the schemas of the image it installs")
+		return config.Target{}, nil, layer.Errorf(connect.CodeInvalidArgument, "the header carries config but not the schemas of the image it installs")
 	}
 	schemas, err := schema.LoadFiles(contract.GetSchemas())
 	if err != nil {
-		return config.Target{}, nil, failed(connect.CodeInvalidArgument, "the image's schemas: %v", err)
+		return config.Target{}, nil, layer.Errorf(connect.CodeInvalidArgument, "the image's schemas: %w", err)
 	}
 	t := config.Target{Platform: h.Image.GetPlatform()}
 	if err := s.target(contract.GetLayerFacts(), &t); err != nil {
@@ -194,19 +194,20 @@ func (s *Server) target(facts []*anypb.Any, t *config.Target) error {
 			}
 		}
 		if !claimed {
-			return failed(connect.CodeInvalidArgument, "the image's contract carries facts of type %s, which this chalkd does not know", f.GetTypeUrl())
+			return layer.Errorf(connect.CodeInvalidArgument, "the image's contract carries facts of type %s, which this chalkd does not know", f.GetTypeUrl())
 		}
 	}
 	return nil
 }
 
-// imageFacts collects the facts each plugin reads, nil ones left out.
+// imageFacts collects the facts each plugin reads, nil ones left out. The facts are the image's own,
+// so a plugin that fails to read them is a failure of the node, whatever code it gives.
 func imageFacts(hooks []layer.ImageFacts, read func(layer.ImageFacts) (*anypb.Any, error)) ([]*anypb.Any, error) {
 	var list []*anypb.Any
 	for _, h := range hooks {
 		f, err := read(h)
 		if err != nil {
-			return nil, err
+			return nil, layer.Errorf(connect.CodeInternal, "%w", err)
 		}
 		if f != nil {
 			list = append(list, f)
@@ -219,10 +220,10 @@ func imageFacts(hooks []layer.ImageFacts, read func(layer.ImageFacts) (*anypb.An
 // it holds nothing.
 func (s *Server) runningSlot() (dir string, stored slot.Stored, found bool, err error) {
 	if dir, err = s.Loader.Slot(); err != nil {
-		return "", slot.Stored{}, false, failed(connect.CodeInternal, "find the running image's config slot: %v", err)
+		return "", slot.Stored{}, false, fmt.Errorf("find the running image's config slot: %w", err)
 	}
 	if stored, found, err = slot.Read(dir); err != nil {
-		return "", slot.Stored{}, false, failed(connect.CodeInternal, "read the running image's config slot: %v", err)
+		return "", slot.Stored{}, false, fmt.Errorf("read the running image's config slot: %w", err)
 	}
 	return dir, stored, found, nil
 }
@@ -237,16 +238,16 @@ func (s *Server) GetConfig(ctx context.Context, req *connect.Request[nodev1.GetC
 	defer s.mu.Unlock()
 	dir, err := s.Loader.Slot()
 	if err != nil {
-		return nil, failed(connect.CodeInternal, "find the running image's config slot: %v", err)
+		return nil, fmt.Errorf("find the running image's config slot: %w", err)
 	}
 	running, pending := dir, false
 	switch {
 	case req.Msg.Staged && req.Msg.Previous:
-		return nil, failed(connect.CodeInvalidArgument, "ask for the staged image's config or the running image's previous one, not both")
+		return nil, layer.Errorf(connect.CodeInvalidArgument, "ask for the staged image's config or the running image's previous one, not both")
 	case req.Msg.Staged:
 		staged, err := s.stagedImage()
 		if err != nil {
-			return nil, failed(connect.CodeInternal, "find the staged image: %v", err)
+			return nil, fmt.Errorf("find the staged image: %w", err)
 		}
 		// Without a staged image, the next image is the one the next upgrade installs, which
 		// boots with the pending config when there is one.
@@ -259,28 +260,28 @@ func (s *Server) GetConfig(ctx context.Context, req *connect.Request[nodev1.GetC
 	}
 	stored, found, err := slot.Read(dir)
 	if err != nil {
-		return nil, failed(connect.CodeInternal, "read the config slot: %v", err)
+		return nil, fmt.Errorf("read the config slot: %w", err)
 	}
 	// A write interrupted between the previous link and the slot's leaves both naming one set,
 	// which is no config to roll back to, as Status and RollbackConfig say.
 	if found && req.Msg.Previous {
 		version, err := slot.Version(running)
 		if err != nil {
-			return nil, failed(connect.CodeInternal, "read the config's version: %v", err)
+			return nil, fmt.Errorf("read the config's version: %w", err)
 		}
 		found = stored.Version != "" && stored.Version != version
 	}
 	switch {
 	case !found && req.Msg.Previous:
-		return nil, failed(connect.CodeNotFound, "the node keeps no previous config of the running image")
+		return nil, layer.Errorf(connect.CodeNotFound, "the node keeps no previous config of the running image")
 	case !found && pending:
-		return nil, failed(connect.CodeNotFound, "no image is staged, and the node holds no pending config")
+		return nil, layer.Errorf(connect.CodeNotFound, "no image is staged, and the node holds no pending config")
 	case !found:
-		return nil, failed(connect.CodeNotFound, "STATE holds no config for the image")
+		return nil, layer.Errorf(connect.CodeNotFound, "STATE holds no config for the image")
 	}
 	e, err := config.Encode(config.Redact(stored.Delivered))
 	if err != nil {
-		return nil, failed(connect.CodeInternal, "encode the config: %v", err)
+		return nil, fmt.Errorf("encode the config: %w", err)
 	}
 	return connect.NewResponse(&nodev1.GetConfigResponse{Documents: e.Text, Version: stored.Version}), nil
 }

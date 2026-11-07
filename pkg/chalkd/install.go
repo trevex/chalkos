@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log"
 	"strings"
@@ -29,40 +30,40 @@ import (
 // image.json.
 func (s *Server) Install(ctx context.Context, stream *connect.ClientStream[nodev1.InstallRequest]) (*connect.Response[nodev1.InstallResponse], error) {
 	if !s.mu.TryLock() {
-		return nil, failed(connect.CodeAborted, "another install is running")
+		return nil, layer.Errorf(connect.CodeAborted, "another install is running")
 	}
 	defer s.mu.Unlock()
 	if s.installed {
-		return nil, failed(connect.CodeFailedPrecondition, "the node is installed and reboots")
+		return nil, layer.Errorf(connect.CodeFailedPrecondition, "the node is installed and reboots")
 	}
 	if !stream.Receive() {
 		if err := stream.Err(); err != nil {
 			return nil, err
 		}
-		return nil, failed(connect.CodeInvalidArgument, "the install request has no header")
+		return nil, layer.Errorf(connect.CodeInvalidArgument, "the install request has no header")
 	}
 	h := stream.Msg().GetHeader()
 	if h == nil {
-		return nil, failed(connect.CodeInvalidArgument, "the first install message must be the header")
+		return nil, layer.Errorf(connect.CodeInvalidArgument, "the first install message must be the header")
 	}
 	// The target must fit the mode before the config is translated for the image it names.
 	switch h.Target.(type) {
 	case *nodev1.InstallHeader_InPlace:
 		if s.Installer {
-			return nil, failed(connect.CodeFailedPrecondition, "the installer installs nodes onto a disk; name the target disk")
+			return nil, layer.Errorf(connect.CodeFailedPrecondition, "the installer installs nodes onto a disk; name the target disk")
 		}
 		if h.Image != nil || h.GetSource() != nil {
-			return nil, failed(connect.CodeInvalidArgument, "an install in place takes no image: the node runs its image already")
+			return nil, layer.Errorf(connect.CodeInvalidArgument, "an install in place takes no image: the node runs its image already")
 		}
 	case *nodev1.InstallHeader_Disk:
 		if !s.Installer {
-			return nil, failed(connect.CodeFailedPrecondition, "the node runs its image already; install it in place")
+			return nil, layer.Errorf(connect.CodeFailedPrecondition, "the node runs its image already; install it in place")
 		}
 		if h.Image == nil {
-			return nil, failed(connect.CodeInvalidArgument, "the installer needs the node's image to write to the target disk")
+			return nil, layer.Errorf(connect.CodeInvalidArgument, "the installer needs the node's image to write to the target disk")
 		}
 	default:
-		return nil, failed(connect.CodeInvalidArgument, "the install header names no target")
+		return nil, layer.Errorf(connect.CodeInvalidArgument, "the install header names no target")
 	}
 	// An image the installer pulls brings the contract the config is translated with.
 	contract := h.GetContract()
@@ -70,13 +71,13 @@ func (s *Server) Install(ctx context.Context, stream *connect.ClientStream[nodev
 	if h.GetSource() != nil {
 		var err error
 		if pull, contract, err = s.pullInstall(ctx, stream, h); err != nil {
-			log.Printf("install failed: %v", plain(err))
+			log.Printf("install failed: %v", err)
 			return nil, err
 		}
 		defer pull.Close()
 	}
 	if h.Config == "" {
-		return nil, failed(connect.CodeInvalidArgument, "the header delivers no config")
+		return nil, layer.Errorf(connect.CodeInvalidArgument, "the header delivers no config")
 	}
 	name, err := headerName(h)
 	if err != nil {
@@ -88,7 +89,7 @@ func (s *Server) Install(ctx context.Context, stream *connect.ClientStream[nodev
 	}
 	var id identity.Identity
 	if err := json.Unmarshal(stored.Identity, &id); err != nil {
-		return nil, failed(connect.CodeInternal, "parse the identity: %v", err)
+		return nil, fmt.Errorf("parse the identity: %w", err)
 	}
 	req := install.Request{
 		Section:         id.Storage,
@@ -101,7 +102,7 @@ func (s *Server) Install(ctx context.Context, stream *connect.ClientStream[nodev
 	case *nodev1.InstallHeader_InPlace:
 		running, rerr := uki.RunningHash(s.Paths.Cmdline)
 		if rerr != nil {
-			return nil, failed(connect.CodeInternal, "%v", rerr)
+			return nil, rerr
 		}
 		req.Config = stored
 		if req.Layers, err = s.installPayloads(ctx, layer.Active[layer.Delivery](s.Plugins), h, stored.Identity); err != nil {
@@ -128,7 +129,7 @@ func (s *Server) Install(ctx context.Context, stream *connect.ClientStream[nodev
 		log.Printf("installing %q with the root hash %x onto %s%s", img.ImageID, img.RootHash, ref, from)
 		// The node starts its record of installed images with this one.
 		if req.Images, err = (upgrade.Images{}).Record(img.RootHash, img.Provenance, nil).Encode(); err != nil {
-			return nil, failed(connect.CodeInternal, "the record of the image's provenance: %v", err)
+			return nil, fmt.Errorf("the record of the image's provenance: %w", err)
 		}
 		err = s.FromParts(ctx, install.PartsRequest{
 			Request:           req,
@@ -144,7 +145,7 @@ func (s *Server) Install(ctx context.Context, stream *connect.ClientStream[nodev
 	}
 	if err != nil {
 		log.Printf("install failed: %v", err)
-		return nil, failed(connect.CodeFailedPrecondition, "install: %v", err)
+		return nil, layer.Errorf(connect.CodeFailedPrecondition, "install: %w", err)
 	}
 	s.installed = true
 	log.Print("installed; rebooting")
@@ -165,7 +166,7 @@ func (s *Server) installCheck(ctx context.Context, st imageStore, system string,
 	root := h.GetImage().GetRootHash()
 	next, warnings, err := s.checkWithImage(ctx, st, system, h.GetImage().GetPlatform(), name, imageCheck{delivered: docs, secret: h.FallbackSecret, image: root, writing: root})
 	if err != nil {
-		return install.Checked{}, plain(err)
+		return install.Checked{}, err
 	}
 	// An install's answer has no warnings; the journal keeps them.
 	for _, w := range warnings {
@@ -173,7 +174,7 @@ func (s *Server) installCheck(ctx context.Context, st imageStore, system string,
 	}
 	payloads, err := s.installPayloads(ctx, layer.Compiled[layer.Delivery](s.Plugins), h, next.Identity)
 	if err != nil {
-		return install.Checked{}, plain(err)
+		return install.Checked{}, err
 	}
 	return install.Checked{Config: next, Layers: payloads}, nil
 }
@@ -204,32 +205,32 @@ func (s *Server) pullInstall(ctx context.Context, stream *connect.ClientStream[n
 	ref := h.GetSource().GetOci().GetReference()
 	img := imageHeader(h.Image)
 	if ref == "" {
-		return nil, nil, failed(connect.CodeInvalidArgument, "the header's source names no image in a registry")
+		return nil, nil, layer.Errorf(connect.CodeInvalidArgument, "the header's source names no image in a registry")
 	}
 	if err := img.Validate(); err != nil {
-		return nil, nil, failed(connect.CodeInvalidArgument, "the image: %v", err)
+		return nil, nil, layer.Errorf(connect.CodeInvalidArgument, "the image: %w", err)
 	}
 	switch {
 	case img.BootLoaderSize == 0:
-		return nil, nil, failed(connect.CodeInvalidArgument, "the image brings no boot loader, which an install writes to the ESP")
+		return nil, nil, layer.Errorf(connect.CodeInvalidArgument, "the image brings no boot loader, which an install writes to the ESP")
 	case h.Config == "":
-		return nil, nil, failed(connect.CodeInvalidArgument, "the header delivers no config")
+		return nil, nil, layer.Errorf(connect.CodeInvalidArgument, "the header delivers no config")
 	}
 	if err := noChunks(stream, "an install"); err != nil {
 		return nil, nil, err
 	}
 	docs, err := config.Parse(strings.NewReader(h.Config))
 	if err != nil {
-		return nil, nil, failed(connect.CodeInvalidArgument, "install: pull %s: parse the config: %v", ref, err)
+		return nil, nil, layer.Errorf(connect.CodeInvalidArgument, "install: pull %s: parse the config: %w", ref, err)
 	}
 	pull, err := newPull(ctx, ref, img, docs)
 	if err != nil {
-		return nil, nil, failed(connect.CodeInvalidArgument, "install: %v", err)
+		return nil, nil, layer.Errorf(connect.CodeInvalidArgument, "install: %w", err)
 	}
 	c, err := pull.Contract()
 	if err != nil {
 		pull.Close()
-		return nil, nil, failed(connect.CodeFailedPrecondition, "install: %v", err)
+		return nil, nil, layer.Errorf(connect.CodeFailedPrecondition, "install: %w", err)
 	}
 	contract := &nodev1.ImageContract{Schemas: c.Schemas, SystemDefinitions: make(map[string]string, len(c.Definitions))}
 	// The pulled image is not the one that runs, so every compiled plugin reads its facts.
@@ -237,7 +238,7 @@ func (s *Server) pullInstall(ctx context.Context, stream *connect.ClientStream[n
 		return h.ContractFacts(c.ReadFile)
 	}); err != nil {
 		pull.Close()
-		return nil, nil, failed(connect.CodeInternal, "install: %v", err)
+		return nil, nil, fmt.Errorf("install: %w", err)
 	}
 	for name, data := range c.Definitions {
 		contract.SystemDefinitions[name] = string(data)
@@ -268,7 +269,7 @@ func chunks[T any, M interface {
 // side.
 func noChunks[T any](stream *connect.ClientStream[T], what string) error {
 	if stream.Receive() {
-		return failed(connect.CodeInvalidArgument, "%s that pulls its image carries no chunks", what)
+		return layer.Errorf(connect.CodeInvalidArgument, "%s that pulls its image carries no chunks", what)
 	}
 	return stream.Err()
 }

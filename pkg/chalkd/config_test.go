@@ -506,7 +506,7 @@ func TestApplyConfigTakesTheNodesNameFromItsCertificate(t *testing.T) {
 		t.Errorf("err = %v, want a refusal naming n1", err)
 	}
 	s.Certificate = nil
-	if _, err := sendConfig(s, doc); connect.CodeOf(err) != connect.CodeInternal || !strings.Contains(err.Error(), "node certificate") {
+	if _, err := sendConfig(s, doc); codeOf(err) != connect.CodeInternal || !strings.Contains(err.Error(), "node certificate") {
 		t.Errorf("err = %v, want an internal error for the missing node certificate", err)
 	}
 }
@@ -514,7 +514,7 @@ func TestApplyConfigTakesTheNodesNameFromItsCertificate(t *testing.T) {
 func TestApplyConfigRefusesAnInvalidSet(t *testing.T) {
 	s, r := configServer(t)
 	_, err := sendConfig(s, strings.Replace(baseConfig, "{disk: {path: /dev/vda}}", "{disk: {path: vda}}", 1))
-	if connect.CodeOf(err) != connect.CodeInvalidArgument || !strings.Contains(err.Error(), `SystemDisk "system"`) {
+	if codeOf(err) != connect.CodeInvalidArgument || !strings.Contains(err.Error(), `SystemDisk "system"`) {
 		t.Fatalf("err = %v, want a refusal naming the SystemDisk", err)
 	}
 	if len(r.Calls) != 0 {
@@ -546,7 +546,7 @@ func TestApplyConfigRefusesMalformedImageFacts(t *testing.T) {
 	kubernetesImage(t, s)
 	write(t, imageFileOf(s), `{"version": "1.37.1"`)
 	_, err := sendConfig(s, workerConfig)
-	if connect.CodeOf(err) != connect.CodeInternal || !strings.Contains(err.Error(), "the image's layer facts") {
+	if codeOf(err) != connect.CodeInternal || !strings.Contains(err.Error(), "the image's layer facts") {
 		t.Fatalf("err = %v, want a failure naming the image's layer facts", err)
 	}
 	if len(r.Calls) != 0 {
@@ -804,7 +804,7 @@ func TestApplyConfigRefusesAnUnknownAction(t *testing.T) {
 	writeEffects(t, s, `{"routes": {"when": "true", "chalkd": "router:reload"}}`)
 	renamed := strings.Replace(baseConfig, "name: first", "name: second", 1)
 	_, err := sendConfig(s, renamed)
-	if connect.CodeOf(err) != connect.CodeInternal || !strings.Contains(err.Error(), "effect routes: no layer of this image has the action router:reload") {
+	if codeOf(err) != connect.CodeInternal || !strings.Contains(err.Error(), "effect routes: no layer of this image has the action router:reload") {
 		t.Fatalf("err = %v, want the unknown action", err)
 	}
 	if v, err := slot.Version(slotOf(t, s)); err != nil || v != hashOf(t, baseConfig) {
@@ -925,10 +925,10 @@ func TestResetVolumeTakesConfig(t *testing.T) {
 		_, err := s.ResetVolume(context.Background(), connect.NewRequest(&nodev1.ResetVolumeRequest{Volume: "data", Config: text, FallbackSecret: "x"}))
 		return err
 	}
-	if err := reset(baseConfig); connect.CodeOf(err) != connect.CodeNotFound || !strings.Contains(err.Error(), "the node has no volume data") {
+	if err := reset(baseConfig); codeOf(err) != connect.CodeNotFound || !strings.Contains(err.Error(), "the node has no volume data") {
 		t.Errorf("a volume the node lacks: %v", err)
 	}
-	if err := reset("kind: Nope\n"); connect.CodeOf(err) != connect.CodeInvalidArgument {
+	if err := reset("kind: Nope\n"); codeOf(err) != connect.CodeInvalidArgument {
 		t.Errorf("invalid config: %v", err)
 	}
 }
@@ -1013,7 +1013,7 @@ func TestGetConfig(t *testing.T) {
 	if strings.Contains(resp.Msg.Documents, "s3cret") || strings.Contains(resp.Msg.Documents, `"replicas"`) {
 		t.Errorf("config = %s, want the secret hidden and no defaults", resp.Msg.Documents)
 	}
-	if _, err := s.GetConfig(context.Background(), connect.NewRequest(&nodev1.GetConfigRequest{Staged: true})); connect.CodeOf(err) != connect.CodeNotFound {
+	if _, err := s.GetConfig(context.Background(), connect.NewRequest(&nodev1.GetConfigRequest{Staged: true})); codeOf(err) != connect.CodeNotFound {
 		t.Errorf("staged: %v, want not found", err)
 	}
 }
@@ -1092,7 +1092,7 @@ func TestApplyConfigRefusesWithoutABaseline(t *testing.T) {
 	t.Cleanup(func() { os.Chmod(dir, 0o755) })
 	renamed := strings.Replace(baseConfig, "name: first", "name: second", 1)
 	_, err := sendConfig(s, renamed)
-	if connect.CodeOf(err) != connect.CodeInternal || !strings.Contains(err.Error(), "record the config, facts, outputs and kinds the effects compare with") {
+	if codeOf(err) != connect.CodeInternal || !strings.Contains(err.Error(), "record the config, facts, outputs and kinds the effects compare with") {
 		t.Fatalf("err = %v, want the baseline's failure", err)
 	}
 	if v, err := slot.Version(slotOf(t, s)); err != nil || v != hashOf(t, baseConfig) {
@@ -1250,7 +1250,7 @@ func TestApplyConfigRefusesAnOutputThatFails(t *testing.T) {
 			t.Cleanup(func() { log.SetOutput(os.Stderr) })
 			before := readFile(t, filepath.Join(s.Loader.Render.Root, "demo", "demo.json"))
 			_, err := sendConfig(s, strings.Replace(baseConfig, "name: first", "name: second", 1))
-			if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), tc.want) || strings.Contains(err.Error(), "second") {
+			if codeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), tc.want) || strings.Contains(err.Error(), "second") {
 				t.Fatalf("err = %v, want %q", err, tc.want)
 			}
 			if !strings.Contains(logged.String(), "second") {
@@ -1309,7 +1309,7 @@ func TestApplyConfigRefusesAsTheChecker(t *testing.T) {
 				t.Fatalf("check.Run: %v", checked)
 			}
 			_, delivered := sendConfig(s, tc.next)
-			ce, ok := errors.AsType[*connect.Error](delivered)
+			ce, ok := rpcErr(delivered)
 			if !ok {
 				t.Fatalf("the delivery: %v", delivered)
 			}
@@ -1445,7 +1445,7 @@ func TestApplyConfigRefusesEffectsThatDoNotCompile(t *testing.T) {
 	s, r := configServer(t)
 	write(t, s.Loader.Effects, `{"demo": {"when": "config ==", "restart": ["demo.service"]}}`)
 	_, err := sendConfig(s, strings.Replace(baseConfig, "name: first", "name: second", 1))
-	if connect.CodeOf(err) != connect.CodeInternal || !strings.Contains(err.Error(), `the running image's effects: effect demo: rule "config =="`) {
+	if codeOf(err) != connect.CodeInternal || !strings.Contains(err.Error(), `the running image's effects: effect demo: rule "config =="`) {
 		t.Fatalf("err = %v", err)
 	}
 	if v, _ := slot.Version(slotOf(t, s)); v != hashOf(t, baseConfig) || len(r.Calls) != 0 {
@@ -1505,7 +1505,7 @@ func TestApplyConfigKeepsThePreviousConfig(t *testing.T) {
 	if v := status().PreviousConfigVersion; v != "" {
 		t.Errorf("previous version before any delivery = %q", v)
 	}
-	if _, err := s.GetConfig(context.Background(), connect.NewRequest(&nodev1.GetConfigRequest{Previous: true})); connect.CodeOf(err) != connect.CodeNotFound {
+	if _, err := s.GetConfig(context.Background(), connect.NewRequest(&nodev1.GetConfigRequest{Previous: true})); codeOf(err) != connect.CodeNotFound {
 		t.Errorf("previous config before any delivery: %v, want not found", err)
 	}
 	next := strings.Replace(baseConfig, "name: first", "name: second", 1)
@@ -1521,7 +1521,7 @@ func TestApplyConfigKeepsThePreviousConfig(t *testing.T) {
 	if err != nil || resp.Msg.Version != hashOf(t, baseConfig) || !strings.Contains(resp.Msg.Documents, `"name":"first"`) || strings.Contains(resp.Msg.Documents, "s3cret") {
 		t.Errorf("previous config = %+v, %v; want baseConfig with its secret hidden", resp, err)
 	}
-	if _, err := s.GetConfig(context.Background(), connect.NewRequest(&nodev1.GetConfigRequest{Previous: true, Staged: true})); connect.CodeOf(err) != connect.CodeInvalidArgument {
+	if _, err := s.GetConfig(context.Background(), connect.NewRequest(&nodev1.GetConfigRequest{Previous: true, Staged: true})); codeOf(err) != connect.CodeInvalidArgument {
 		t.Errorf("staged and previous: %v, want invalid argument", err)
 	}
 }

@@ -21,6 +21,7 @@ import (
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/atomicfile"
+	"github.com/trevex/chalkos/pkg/chalkd/layer"
 	"github.com/trevex/chalkos/pkg/config/slot"
 	"github.com/trevex/chalkos/pkg/uki"
 )
@@ -175,7 +176,7 @@ func (r trialRecord) state(slots string) (string, trialState, error) {
 func (s *Server) ConfirmConfig(ctx context.Context, req *connect.Request[nodev1.ConfirmConfigRequest]) (*connect.Response[nodev1.ConfirmConfigResponse], error) {
 	version := req.Msg.Version
 	if version == "" {
-		return nil, failed(connect.CodeInvalidArgument, "the request names no config version to confirm")
+		return nil, layer.Errorf(connect.CodeInvalidArgument, "the request names no config version to confirm")
 	}
 	// A record that cannot be read here is reported under the lock, and so is a trial that cannot
 	// be confirmed.
@@ -183,7 +184,7 @@ func (s *Server) ConfirmConfig(ctx context.Context, req *connect.Request[nodev1.
 	confirmable := (time.Now().Before(checked.Deadline) || checked.Error != "") && !checked.Changed
 	if err == nil && open && checked.Version == version && confirmable && s.Healthy != nil {
 		if err := s.Healthy(ctx, checked.IgnoreUnits); err != nil {
-			return nil, failed(connect.CodeUnavailable, "the node is not healthy: %v", err)
+			return nil, layer.Errorf(connect.CodeUnavailable, "the node is not healthy: %w", err)
 		}
 	}
 	s.mu.Lock()
@@ -195,11 +196,11 @@ func (s *Server) ConfirmConfig(ctx context.Context, req *connect.Request[nodev1.
 	if !open {
 		dir, err := s.Loader.Slot()
 		if err != nil {
-			return nil, failed(connect.CodeInternal, "find the running image's config slot: %v", err)
+			return nil, fmt.Errorf("find the running image's config slot: %w", err)
 		}
 		running, err := slot.Version(dir)
 		if err != nil {
-			return nil, failed(connect.CodeInternal, "read the config's version: %v", err)
+			return nil, fmt.Errorf("read the config's version: %w", err)
 		}
 		// A confirmation sent again, whose first answer was lost, finds the node on the config. One
 		// whose first attempt crashed after it removed the record finds the copy of the staged slot
@@ -207,33 +208,33 @@ func (s *Server) ConfirmConfig(ctx context.Context, req *connect.Request[nodev1.
 		if running == version {
 			return connect.NewResponse(&nodev1.ConfirmConfigResponse{Warnings: s.unwrittenCopy(version)}), nil
 		}
-		return nil, failed(connect.CodeFailedPrecondition, "no trial is open, and the node runs config %s, not %s", running, version)
+		return nil, layer.Errorf(connect.CodeFailedPrecondition, "no trial is open, and the node runs config %s, not %s", running, version)
 	}
 	if r.Version != version {
-		return nil, failed(connect.CodeFailedPrecondition, "the trial is of config %s, not %s", r.Version, version)
+		return nil, layer.Errorf(connect.CodeFailedPrecondition, "the trial is of config %s, not %s", r.Version, version)
 	}
 	if !r.sameTrial(checked) {
-		return nil, failed(connect.CodeUnavailable, "the trial changed while the node's health was checked")
+		return nil, layer.Errorf(connect.CodeUnavailable, "the trial changed while the node's health was checked")
 	}
 	if !time.Now().Before(r.Deadline) && r.Error == "" {
-		return nil, failed(connect.CodeFailedPrecondition, "the trial of config %s ended at its deadline, %s", r.Version, r.Deadline.UTC().Format(time.RFC3339))
+		return nil, layer.Errorf(connect.CodeFailedPrecondition, "the trial of config %s ended at its deadline, %s", r.Version, r.Deadline.UTC().Format(time.RFC3339))
 	}
 	if r.Changed {
-		return nil, failed(connect.CodeFailedPrecondition, "a rollback of config %s failed after it changed the node: %s; chalkd tries again each minute, or chalkctl apply-config --rollback %s finishes it now", r.Version, r.Error, s.nodeName())
+		return nil, layer.Errorf(connect.CodeFailedPrecondition, "a rollback of config %s failed after it changed the node: %s; chalkd tries again each minute, or chalkctl apply-config --rollback %s finishes it now", r.Version, r.Error, s.nodeName())
 	}
 	_, st, err := r.state(s.Loader.Slots)
 	if err != nil {
-		return nil, failed(connect.CodeInternal, "read the trial's config slot: %v", err)
+		return nil, fmt.Errorf("read the trial's config slot: %w", err)
 	}
 	if st != trialApplied {
-		return nil, failed(connect.CodeFailedPrecondition, "the node does not run config %s on trial with config %s as its previous config", r.Version, r.Previous)
+		return nil, layer.Errorf(connect.CodeFailedPrecondition, "the node does not run config %s on trial with config %s as its previous config", r.Version, r.Previous)
 	}
 	// The record goes to disk first: the staged slot or the pending config is written only for a
 	// trial that no boot, deadline or rollback undoes any more. A crash after the record went
 	// leaves them as they were, which a delivery of the config again writes, as a write that
 	// fails does.
 	if err := s.closeTrial(); err != nil {
-		return nil, failed(connect.CodeInternal, "end the trial: %v", err)
+		return nil, fmt.Errorf("end the trial: %w", err)
 	}
 	log.Printf("config %s was confirmed; its trial ended", version)
 	warnings := s.writeHeldBack(r)
@@ -418,7 +419,7 @@ func (s *Server) trialStatus() (*nodev1.ConfigTrial, string) {
 // record stays until RollbackConfig removes it: every trial may end in a rollback. chalkctl tells
 // this refusal from other internal errors by its message's start, so it stays as it is.
 func (s *Server) unreadableTrial(err error) error {
-	return failed(connect.CodeInternal, "read the record of the config's trial: %v; other changes are refused until chalkctl apply-config --rollback %s restores the previous config, which removes the record", err, s.nodeName())
+	return fmt.Errorf("read the record of the config's trial: %w; other changes are refused until chalkctl apply-config --rollback %s restores the previous config, which removes the record", err, s.nodeName())
 }
 
 // refuseOnTrialLocking is refuseOnTrial under s.mu, for an upgrade and an image rollback, which
@@ -452,19 +453,19 @@ func (s *Server) refuseOnTrial(what string, holdsUpgrading bool) error {
 	} else if st == trialEnded {
 		if !holdsUpgrading {
 			if !s.upgrading.TryLock() {
-				return failed(connect.CodeAborted, "the trial of config %s ended, and its record goes once the node delivered config %s again, which waits for the upgrade, the image rollback or the rollback at a trial's deadline that runs; try again once it ended", r.Version, r.Previous)
+				return layer.Errorf(connect.CodeAborted, "the trial of config %s ended, and its record goes once the node delivered config %s again, which waits for the upgrade, the image rollback or the rollback at a trial's deadline that runs; try again once it ended", r.Version, r.Previous)
 			}
 			defer s.upgrading.Unlock()
 		}
 		return s.finishTrial(r)
 	} else if st == trialLost {
 		if err := s.dropLostTrial(r); err != nil {
-			return failed(connect.CodeInternal, "remove the record of the lost trial of config %s: %v", r.Version, err)
+			return fmt.Errorf("remove the record of the lost trial of config %s: %w", r.Version, err)
 		}
 		return nil
 	}
 	name := s.nodeName()
-	return failed(connect.CodeFailedPrecondition, "config %s is on trial until %s: confirm it with chalkctl apply-config --confirm %s, or roll it back with chalkctl apply-config --rollback %s, before %s",
+	return layer.Errorf(connect.CodeFailedPrecondition, "config %s is on trial until %s: confirm it with chalkctl apply-config --confirm %s, or roll it back with chalkctl apply-config --rollback %s, before %s",
 		r.Version, r.Deadline.UTC().Format(time.RFC3339), name, name, what)
 }
 
@@ -481,22 +482,22 @@ var unitName = regexp.MustCompile(`^[A-Za-z0-9:_.@\\-]+\.(service|socket|device|
 func trialOf(m *nodev1.ApplyConfigRequest) (time.Duration, error) {
 	if m.Try == nil {
 		if len(m.IgnoreUnits) > 0 {
-			return 0, failed(connect.CodeInvalidArgument, "ignore_units goes with try")
+			return 0, layer.Errorf(connect.CodeInvalidArgument, "ignore_units goes with try")
 		}
 		return 0, nil
 	}
 	d := m.Try.AsDuration()
 	switch {
 	case m.Config == "" || m.Staged:
-		return 0, failed(connect.CodeInvalidArgument, "a trial delivers config to the running image")
+		return 0, layer.Errorf(connect.CodeInvalidArgument, "a trial delivers config to the running image")
 	case len(m.Layers) > 0 || len(m.NodeCertificate) > 0 || len(m.Trust) > 0:
-		return 0, failed(connect.CodeInvalidArgument, "a trial delivers config alone: a rollback keeps the OS CAs, the node certificate and the layers' payloads, so deliver them without a trial")
+		return 0, layer.Errorf(connect.CodeInvalidArgument, "a trial delivers config alone: a rollback keeps the OS CAs, the node certificate and the layers' payloads, so deliver them without a trial")
 	case !m.Try.IsValid() || d <= 0 || d > maxTrial:
-		return 0, failed(connect.CodeInvalidArgument, "a trial lasts more than 0s and at most %v, not %v", maxTrial, d)
+		return 0, layer.Errorf(connect.CodeInvalidArgument, "a trial lasts more than 0s and at most %v, not %v", maxTrial, d)
 	}
 	for _, u := range m.IgnoreUnits {
 		if len(u) > 255 || !unitName.MatchString(u) {
-			return 0, failed(connect.CodeInvalidArgument, "%q is no unit name, such as demo.service", u)
+			return 0, layer.Errorf(connect.CodeInvalidArgument, "%q is no unit name, such as demo.service", u)
 		}
 	}
 	return d, nil
@@ -507,12 +508,12 @@ func trialOf(m *nodev1.ApplyConfigRequest) (time.Duration, error) {
 func checkTrial(found bool, running, next string, m machineChange) error {
 	switch {
 	case !found || running == "":
-		return failed(connect.CodeFailedPrecondition, "STATE holds no config of the running image to roll back to; deliver the config without a trial")
+		return layer.Errorf(connect.CodeFailedPrecondition, "STATE holds no config of the running image to roll back to; deliver the config without a trial")
 	case running == next:
-		return failed(connect.CodeFailedPrecondition, "the node runs config %s already; a trial needs a config that changes it", next)
+		return layer.Errorf(connect.CodeFailedPrecondition, "the node runs config %s already; a trial needs a config that changes it", next)
 	case len(m.changes) > 0:
 		c := m.changes[0]
-		return failed(connect.CodeFailedPrecondition, "the config changes the node's storage, volume %s: %s, which a rollback cannot undo; deliver it without a trial", c.Volume, c.Reason)
+		return layer.Errorf(connect.CodeFailedPrecondition, "the config changes the node's storage, volume %s: %s, which a rollback cannot undo; deliver it without a trial", c.Volume, c.Reason)
 	}
 	return nil
 }
@@ -550,7 +551,7 @@ func (s *Server) applyTrial(ctx context.Context, r applyRequest) (*connect.Respo
 	rec.Deadline = time.Now().Add(r.try)
 	if err := writeTrial(s.Paths.StateDir, rec); err != nil {
 		s.refused(d.fx)
-		return nil, failed(connect.CodeInternal, "record the trial: %v", err)
+		return nil, fmt.Errorf("record the trial: %w", err)
 	}
 	resp, err := d.commit(ctx)
 	st, ferr := s.settleTrial(rec)
@@ -561,11 +562,11 @@ func (s *Server) applyTrial(ctx context.Context, r applyRequest) (*connect.Respo
 	}
 	switch {
 	case st == trialApplied:
-		return nil, failed(connect.CodeOf(err), "%v; config %s stays on trial until %s", plain(err), rec.Version, rec.Deadline.UTC().Format(time.RFC3339))
+		return nil, fmt.Errorf("%w; config %s stays on trial until %s", err, rec.Version, rec.Deadline.UTC().Format(time.RFC3339))
 	case st == trialEnded && ferr != nil:
-		return nil, failed(connect.CodeOf(err), "%v; %v", plain(err), plain(ferr))
+		return nil, fmt.Errorf("%w; %v", err, ferr)
 	case st == trialEnded:
-		return nil, failed(connect.CodeOf(err), "%v; config %s is delivered again, and no trial is open", plain(err), rec.Previous)
+		return nil, fmt.Errorf("%w; config %s is delivered again, and no trial is open", err, rec.Previous)
 	}
 	return nil, err
 }
@@ -575,7 +576,7 @@ func (s *Server) applyTrial(ctx context.Context, r applyRequest) (*connect.Respo
 func checkSecondTrial(w secondWrite) error {
 	if len(w.slot.machine.changes) > 0 {
 		c := w.slot.machine.changes[0]
-		return failed(connect.CodeFailedPrecondition, "the config changes the node's storage for the image %x staged in the inactive slot, volume %s: %s, which a rollback cannot undo; deliver it without a trial", w.image[:6], c.Volume, c.Reason)
+		return layer.Errorf(connect.CodeFailedPrecondition, "the config changes the node's storage for the image %x staged in the inactive slot, volume %s: %s, which a rollback cannot undo; deliver it without a trial", w.image[:6], c.Volume, c.Reason)
 	}
 	return nil
 }
@@ -588,10 +589,10 @@ func (s *Server) holdBack(rec *trialRecord, w secondWrite) error {
 	case w.image != nil:
 		dir := filepath.Join(s.Paths.StateDir, trialStagedSlot)
 		if err := os.MkdirAll(filepath.Dir(dir), 0o755); err != nil {
-			return failed(connect.CodeInternal, "keep the staged image's config slot for the trial: %v", err)
+			return fmt.Errorf("keep the staged image's config slot for the trial: %w", err)
 		}
 		if err := slot.Write(dir, w.slot.next); err != nil {
-			return failed(connect.CodeInternal, "keep the staged image's config slot for the trial: %v", err)
+			return fmt.Errorf("keep the staged image's config slot for the trial: %w", err)
 		}
 		rec.Staged = hex.EncodeToString(w.image)
 	case w.pending != "":
@@ -659,12 +660,12 @@ func (s *Server) finishTrial(r trialRecord) error {
 	defer cancel()
 	if _, err := s.redeliver(ctx); err != nil {
 		s.keepTrial(r, err, true)
-		return failed(connect.CodeOf(err), "the node runs config %s from before the trial of config %s, but delivering it again, which ends the trial, failed: %v; the trial stays open, and chalkd tries again each minute", r.Previous, r.Version, plain(err))
+		return fmt.Errorf("the node runs config %s from before the trial of config %s, but delivering it again, which ends the trial, failed: %w; the trial stays open, and chalkd tries again each minute", r.Previous, r.Version, err)
 	}
 	if err := s.endTrial(); err != nil {
 		log.Printf("remove the record of the ended trial of config %s: %v; trying again in %v", r.Version, err, s.retryTrial())
 		s.armTrial(r, s.retryTrial())
-		return failed(connect.CodeInternal, "remove the record of the ended trial of config %s: %v", r.Version, err)
+		return fmt.Errorf("remove the record of the ended trial of config %s: %w", r.Version, err)
 	}
 	log.Printf("the trial of config %s ended: the node runs config %s", r.Version, r.Previous)
 	return nil
@@ -675,7 +676,7 @@ func (s *Server) finishTrial(r trialRecord) error {
 // node, and the deadline is armed again for the retry. The caller holds s.mu.
 func (s *Server) keepTrial(r trialRecord, err error, changed bool) {
 	log.Printf("the rollback of config %s failed: %v; trying again in %v", r.Version, err, s.retryTrial())
-	r.Error, r.Attempts, r.Changed = plain(err).Error(), r.Attempts+1, r.Changed || changed
+	r.Error, r.Attempts, r.Changed = err.Error(), r.Attempts+1, r.Changed || changed
 	if werr := writeTrial(s.Paths.StateDir, r); werr != nil {
 		log.Printf("record the failed rollback: %v", werr)
 	}

@@ -13,6 +13,7 @@ import (
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/atomicfile"
+	"github.com/trevex/chalkos/pkg/chalkd/layer"
 	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/config/slot"
 	"github.com/trevex/chalkos/pkg/esp"
@@ -41,7 +42,7 @@ import (
 // of the config's Registry of its host, and checked against the header as a streamed one.
 func (s *Server) Upgrade(ctx context.Context, stream *connect.ClientStream[nodev1.UpgradeRequest]) (*connect.Response[nodev1.UpgradeResponse], error) {
 	if !s.upgrading.TryLock() {
-		return nil, failed(connect.CodeAborted, "an upgrade, an image rollback, a config delivery or the rollback at a trial's deadline is running")
+		return nil, layer.Errorf(connect.CodeAborted, "an upgrade, an image rollback, a config delivery or the rollback at a trial's deadline is running")
 	}
 	defer s.upgrading.Unlock()
 	if err := s.refuseOnTrialLocking("an upgrade"); err != nil {
@@ -51,23 +52,23 @@ func (s *Server) Upgrade(ctx context.Context, stream *connect.ClientStream[nodev
 		if err := stream.Err(); err != nil {
 			return nil, err
 		}
-		return nil, failed(connect.CodeInvalidArgument, "the upgrade request has no header")
+		return nil, layer.Errorf(connect.CodeInvalidArgument, "the upgrade request has no header")
 	}
 	h := stream.Msg().GetHeader()
 	if h == nil {
-		return nil, failed(connect.CodeInvalidArgument, "the first upgrade message must be the header")
+		return nil, layer.Errorf(connect.CodeInvalidArgument, "the first upgrade message must be the header")
 	}
 	if role, _ := ctx.Value(roleKey{}).(pki.Role); (h.GetConfig() != "" || h.GetFallbackSecret() != "") && !role.Allows(pki.RoleAdmin) {
-		return nil, failed(connect.CodePermissionDenied, "%s with config or a fallback secret needs the %s role; without them the node gives the image its pending config, else carries its own config over", stream.Spec().Procedure, pki.RoleAdmin)
+		return nil, layer.Errorf(connect.CodePermissionDenied, "%s with config or a fallback secret needs the %s role; without them the node gives the image its pending config, else carries its own config over", stream.Spec().Procedure, pki.RoleAdmin)
 	}
 	img := h.GetImage()
 	switch {
 	case img == nil:
-		return nil, failed(connect.CodeInvalidArgument, "the header names no image")
+		return nil, layer.Errorf(connect.CodeInvalidArgument, "the header names no image")
 	case img.GetBootLoader() != nil:
-		return nil, failed(connect.CodeInvalidArgument, "an upgrade carries no boot loader: it leaves the node's as it is")
+		return nil, layer.Errorf(connect.CodeInvalidArgument, "an upgrade carries no boot loader: it leaves the node's as it is")
 	case h.GetStageOnly() && h.GetReboot():
-		return nil, failed(connect.CodeInvalidArgument, "an upgrade that stops once the image is staged does not reboot: the node boots a staged image only once ActivateImage activated it")
+		return nil, layer.Errorf(connect.CodeInvalidArgument, "an upgrade that stops once the image is staged does not reboot: the node boots a staged image only once ActivateImage activated it")
 	}
 	header := imageHeader(img)
 	// The node's known-good image, staged by a rollback, keeps the config it last ran. Only config
@@ -89,7 +90,7 @@ func (s *Server) Upgrade(ctx context.Context, stream *connect.ClientStream[nodev
 	if src := h.GetSource(); src != nil {
 		ref := src.GetOci().GetReference()
 		if ref == "" {
-			return nil, failed(connect.CodeInvalidArgument, "the header's source names no image in a registry")
+			return nil, layer.Errorf(connect.CodeInvalidArgument, "the header's source names no image in a registry")
 		}
 		// The parts come from the registry.
 		if err := noChunks(stream, "an upgrade"); err != nil {
@@ -97,11 +98,7 @@ func (s *Server) Upgrade(ctx context.Context, stream *connect.ClientStream[nodev
 		}
 		pull, err := s.pullParts(ctx, ref, header, h.GetConfig())
 		if err != nil {
-			code := connect.CodeInvalidArgument
-			if ce, ok := errors.AsType[*connect.Error](err); ok {
-				code = ce.Code()
-			}
-			return nil, failed(code, "upgrade: %v", plain(err))
+			return nil, fmt.Errorf("upgrade: %w", err)
 		}
 		defer pull.Close()
 		parts = pull
@@ -122,12 +119,9 @@ func (s *Server) Upgrade(ctx context.Context, stream *connect.ClientStream[nodev
 		s.forgetRollback()
 		s.settlePending(staged, img.GetRootHash())
 		// An activation that refused the staged UKI fails the precondition, and one that failed to
-		// read or change the disk or the ESP is internal, as ActivateImage answers them.
-		code := connect.CodeInternal
-		if _, ok := errors.AsType[*upgrade.RefusalError](err); ok {
-			code = connect.CodeFailedPrecondition
-		}
-		return nil, failed(code, "upgrade: %v", err)
+		// read or change the disk or the ESP is internal, as ActivateImage answers them: see
+		// domainCodes.
+		return nil, fmt.Errorf("upgrade: %w", err)
 	}
 	if err != nil {
 		log.Printf("upgrade to %x failed: %v", img.GetRootHash(), err)
@@ -140,11 +134,11 @@ func (s *Server) Upgrade(ctx context.Context, stream *connect.ClientStream[nodev
 		// of a resend, came before the recheck or wrote the image anew, and name no staged image.
 		if retired, ok := errors.AsType[*upgrade.StagedRetiredError](err); ok {
 			if _, ok := errors.AsType[*upgrade.CheckError](retired.Err); !ok {
-				return nil, failed(connect.CodeFailedPrecondition, "upgrade: %v; the staged image was retired with it", err)
+				return nil, layer.Errorf(connect.CodeFailedPrecondition, "upgrade: %w; the staged image was retired with it", err)
 			}
-			return nil, failed(connect.CodeFailedPrecondition, "upgrade: %v; the staged image was retired with it: chalkctl apply-config --staged %s changes a staged image's config without retiring the image on a refusal", err, s.nodeName())
+			return nil, layer.Errorf(connect.CodeFailedPrecondition, "upgrade: %w; the staged image was retired with it: chalkctl apply-config --staged %s changes a staged image's config without retiring the image on a refusal", err, s.nodeName())
 		}
-		return nil, failed(connect.CodeFailedPrecondition, "upgrade: %v", err)
+		return nil, layer.Errorf(connect.CodeFailedPrecondition, "upgrade: %w", err)
 	}
 	s.recordImages(&header)
 	// The image is staged, or boots next, with the config stageConfig gave it, so the pending config
@@ -279,18 +273,10 @@ func (s *Server) writeSlot(ctx context.Context, st imageStore, system, platform 
 		return nil, err
 	}
 	if err := slot.Write(slot.Dir(s.Loader.Slots, rootHash), w.next); err != nil {
-		return nil, failed(connect.CodeInternal, "store the image's config: %v", err)
+		return nil, fmt.Errorf("store the image's config: %w", err)
 	}
 	log.Printf("the config %s of %x is stored", w.next.Version, rootHash)
 	return w.warnings, nil
-}
-
-// plain is err without the code a connect error carries. An upgrade's error has a code of its own.
-func plain(err error) error {
-	if ce, ok := errors.AsType[*connect.Error](err); ok {
-		return errors.New(ce.Message())
-	}
-	return err
 }
 
 // imageHeader is the image an install or upgrade header describes.
@@ -400,10 +386,10 @@ func (s *Server) installImage(ctx context.Context, h upgrade.Header, text, secre
 func (s *Server) ActivateImage(ctx context.Context, req *connect.Request[nodev1.ActivateImageRequest]) (*connect.Response[nodev1.ActivateImageResponse], error) {
 	root := req.Msg.RootHash
 	if len(root) == 0 {
-		return nil, failed(connect.CodeInvalidArgument, "the request names no image to activate")
+		return nil, layer.Errorf(connect.CodeInvalidArgument, "the request names no image to activate")
 	}
 	if !s.upgrading.TryLock() {
-		return nil, failed(connect.CodeAborted, "an upgrade, an image rollback, a config delivery or the rollback at a trial's deadline is running")
+		return nil, layer.Errorf(connect.CodeAborted, "an upgrade, an image rollback, a config delivery or the rollback at a trial's deadline is running")
 	}
 	defer s.upgrading.Unlock()
 	if err := s.refuseOnTrialLocking("an image's activation"); err != nil {
@@ -412,11 +398,7 @@ func (s *Server) ActivateImage(ctx context.Context, req *connect.Request[nodev1.
 	res, err := s.activateStaged(ctx, root)
 	if err != nil {
 		log.Printf("activation of %x failed: %v", root, err)
-		code := connect.CodeInternal
-		if _, ok := errors.AsType[*upgrade.RefusalError](err); ok {
-			code = connect.CodeFailedPrecondition
-		}
-		return nil, failed(code, "activate: %v", err)
+		return nil, fmt.Errorf("activate: %w", err)
 	}
 	switch {
 	case res.AlreadyInstalled:

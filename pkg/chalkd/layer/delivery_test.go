@@ -2,7 +2,6 @@ package layer
 
 import (
 	"context"
-	"errors"
 	"strings"
 	"testing"
 
@@ -67,7 +66,7 @@ func TestPlanHandsPayloadsToTheirPlugin(t *testing.T) {
 func TestPlanRefusesAnUnclaimedPayload(t *testing.T) {
 	takes := &stringPayloads{accepts: true}
 	_, err := Plan(context.Background(), []Delivery{takes}, []*anypb.Any{payload(t, wrapperspb.Int64(1))}, Planned{})
-	if ce, ok := errors.AsType[*connect.Error](err); !ok || ce.Code() != connect.CodeInvalidArgument {
+	if err == nil || CodeOf(err) != connect.CodeInvalidArgument {
 		t.Fatalf("got %v, want InvalidArgument", err)
 	}
 	if !strings.Contains(err.Error(), "type.googleapis.com/google.protobuf.Int64Value") {

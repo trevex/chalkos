@@ -18,6 +18,7 @@ import (
 	"connectrpc.com/connect"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
+	"github.com/trevex/chalkos/pkg/chalkd/layer"
 	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/config/slot"
 	"github.com/trevex/chalkos/pkg/identity"
@@ -169,7 +170,7 @@ func TestApplyConfigStagedRefuses(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			s, r := stagedServer(t, tc.schemas)
 			_, err := s.ApplyConfig(context.Background(), connect.NewRequest(tc.req))
-			if connect.CodeOf(err) != tc.code || !strings.Contains(err.Error(), tc.want) {
+			if codeOf(err) != tc.code || !strings.Contains(err.Error(), tc.want) {
 				t.Errorf("err = %v, want %v naming %q", err, tc.code, tc.want)
 			}
 			if v := slotVersion(t, s, stagedImage); v != hashOf(t, baseConfig) {
@@ -250,7 +251,7 @@ func TestApplyConfigRefusedByEitherImage(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			s, r := stagedServer(t, tc.schemas)
 			_, err := sendConfig(s, tc.config)
-			if connect.CodeOf(err) != tc.code || !strings.Contains(err.Error(), tc.want) {
+			if codeOf(err) != tc.code || !strings.Contains(err.Error(), tc.want) {
 				t.Fatalf("err = %v, want %v naming %q", err, tc.code, tc.want)
 			}
 			for name, image := range map[string][]byte{"running": runningImage, "staged": stagedImage} {
@@ -273,10 +274,10 @@ func TestApplyConfigRefusedByEitherImage(t *testing.T) {
 // does not carry, apply-config --staged, which sends it for the staged image's storage.
 func TestStagedRefusalNamesTheFallbackSecret(t *testing.T) {
 	s, _ := stagedServer(t, fixtureSchemas(t))
-	refusal := failed(connect.CodeInvalidArgument, "volume extra is encrypted and the node's fallback is recovery-key, but %s", storage.NoFallbackSecret)
+	refusal := layer.Errorf(connect.CodeInvalidArgument, "volume extra is encrypted and the node's fallback is recovery-key, but %s", storage.NoFallbackSecret)
 	err := s.stagedRefusal(stagedImage, refusal, "")
 	want := "the image 333333333333 staged in the inactive slot: volume extra is encrypted and the node's fallback is recovery-key, but no fallback secret was sent; the staged image's storage enrolls the fallback secret on a volume the running image's does not, and chalkctl sends the secret for the running image's storage alone: chalkctl apply-config --staged n1 --secrets FILE delivers the config to the staged image with the secret"
-	if connect.CodeOf(err) != connect.CodeInvalidArgument || !strings.HasSuffix(err.Error(), want) {
+	if codeOf(err) != connect.CodeInvalidArgument || !strings.HasSuffix(err.Error(), want) {
 		t.Errorf("err = %v, want %q", err, want)
 	}
 	for name, tc := range map[string]struct {
@@ -284,10 +285,10 @@ func TestStagedRefusalNamesTheFallbackSecret(t *testing.T) {
 		secret string
 	}{
 		"with a secret": {refusal, secret},
-		"other":         {failed(connect.CodeFailedPrecondition, "the config does not suit the image"), ""},
+		"other":         {layer.Errorf(connect.CodeFailedPrecondition, "the config does not suit the image"), ""},
 	} {
 		err := s.stagedRefusal(stagedImage, tc.err, tc.secret)
-		if connect.CodeOf(err) != connect.CodeOf(tc.err) || strings.Contains(err.Error(), "--staged") || !strings.Contains(err.Error(), "the image 333333333333 staged in the inactive slot: ") {
+		if codeOf(err) != codeOf(tc.err) || strings.Contains(err.Error(), "--staged") || !strings.Contains(err.Error(), "the image 333333333333 staged in the inactive slot: ") {
 			t.Errorf("%s: err = %v", name, err)
 		}
 	}
@@ -326,7 +327,7 @@ func TestApplyConfigNamesAStagedSlotItCouldNotWrite(t *testing.T) {
 	next := strings.Replace(baseConfig, "name: first", "name: second", 1)
 	_, err := sendConfig(s, next)
 	want := "the node runs config " + hashOf(t, next) + " (restarted demo.service), but writing the config slot of the image 333333333333 staged in the inactive slot failed, so it keeps config " + hashOf(t, baseConfig) + ": "
-	if connect.CodeOf(err) != connect.CodeInternal || !strings.Contains(err.Error(), want) || !strings.HasSuffix(err.Error(), "; deliver the config again to write it") {
+	if codeOf(err) != connect.CodeInternal || !strings.Contains(err.Error(), want) || !strings.HasSuffix(err.Error(), "; deliver the config again to write it") {
 		t.Fatalf("err = %v, want %q", err, want)
 	}
 	if v := slotVersion(t, s, runningImage); v != hashOf(t, next) {
@@ -372,7 +373,7 @@ func TestStagedSlotOfItsOwnVolumeIsWrittenAfterIt(t *testing.T) {
 	resp := &nodev1.ApplyConfigResponse{RestartedUnits: []string{"demo.service"}, Warnings: []string{"careful"}}
 	err = w.write(context.Background(), s, "v1", secret, resp)
 	want := "the node runs config v1 (volume extra: new volume on new disk extra; restarted demo.service; warning: careful), but writing the config slot of the image 333333333333 staged in the inactive slot failed, so it keeps config " + hashOf(t, baseConfig) + ": "
-	if connect.CodeOf(err) != connect.CodeInternal || !strings.Contains(err.Error(), want) {
+	if codeOf(err) != connect.CodeInternal || !strings.Contains(err.Error(), want) {
 		t.Fatalf("err = %v, want %q", err, want)
 	}
 	if !contains(r.Calls, "systemctl start systemd-cryptsetup@extra.service srv-extra.mount") {
@@ -467,7 +468,7 @@ func TestDryRunPlansTheStagedSlot(t *testing.T) {
 	withoutDemo := fixtureSchemas(t)
 	delete(withoutDemo, "demo.example.org_v1alpha1_Demo.json")
 	s, _ = stagedServer(t, withoutDemo)
-	if _, err := dryRun(s, baseConfig); connect.CodeOf(err) != connect.CodeInvalidArgument || !strings.Contains(err.Error(), "the image 333333333333 staged in the inactive slot: ") {
+	if _, err := dryRun(s, baseConfig); codeOf(err) != connect.CodeInvalidArgument || !strings.Contains(err.Error(), "the image 333333333333 staged in the inactive slot: ") {
 		t.Errorf("a dry run the staged image refuses = %v", err)
 	}
 }
@@ -567,7 +568,7 @@ func TestConfirmConfigKeepsTheStagedSlotWhileTheTrialStays(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { os.Chmod(dir, 0o755) })
-	if err := sendConfirm(s, hashOf(t, nextConfig)); connect.CodeOf(err) != connect.CodeInternal || !strings.Contains(err.Error(), "end the trial: ") {
+	if err := sendConfirm(s, hashOf(t, nextConfig)); codeOf(err) != connect.CodeInternal || !strings.Contains(err.Error(), "end the trial: ") {
 		t.Fatalf("confirm = %v, want the record's removal failed", err)
 	}
 	if v := slotVersion(t, s, stagedImage); v != hashOf(t, baseConfig) {
@@ -822,7 +823,7 @@ func TestCheckSecondTrial(t *testing.T) {
 		t.Errorf("a staged slot without storage changes = %v", err)
 	}
 	w := secondWrite{image: stagedImage, slot: slotWrite{machine: machineChange{changes: []storage.Change{{Volume: "extra", Reason: "new volume"}}}}}
-	if err := checkSecondTrial(w); connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "for the image 333333333333 staged in the inactive slot, volume extra: new volume, which a rollback cannot undo") {
+	if err := checkSecondTrial(w); codeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "for the image 333333333333 staged in the inactive slot, volume extra: new volume, which a rollback cannot undo") {
 		t.Errorf("err = %v", err)
 	}
 }
@@ -854,7 +855,7 @@ func TestApplyConfigWaitsForAnUpgrade(t *testing.T) {
 	s, _ := configServer(t)
 	s.upgrading.Lock()
 	defer s.upgrading.Unlock()
-	if _, err := sendConfig(s, baseConfig); connect.CodeOf(err) != connect.CodeAborted || !strings.Contains(err.Error(), "an upgrade, an image rollback or the rollback at a trial's deadline is running; apply the config once it ended") {
+	if _, err := sendConfig(s, baseConfig); codeOf(err) != connect.CodeAborted || !strings.Contains(err.Error(), "an upgrade, an image rollback or the rollback at a trial's deadline is running; apply the config once it ended") {
 		t.Errorf("err = %v, want aborted", err)
 	}
 }
@@ -937,7 +938,7 @@ func TestKnownGoodImageKeepsItsConfig(t *testing.T) {
 	next := strings.Replace(baseConfig, "name: first", "name: second", 1)
 	t.Run("apply-config --staged", func(t *testing.T) {
 		s, r := knownGoodServer(t)
-		if err := sendStaged(s, next); connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "is the one the node falls back to while the boot of chalkos_2+1-2.efi is not found healthy; its config stays as it last ran") {
+		if err := sendStaged(s, next); codeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "is the one the node falls back to while the boot of chalkos_2+1-2.efi is not found healthy; its config stays as it last ran") {
 			t.Errorf("other config = %v", err)
 		}
 		if err := sendStaged(s, baseConfig); err != nil {
@@ -974,7 +975,7 @@ func TestKnownGoodImageKeepsItsConfig(t *testing.T) {
 			_, err := stream.CloseAndReceive()
 			return err
 		}
-		if err := send(next); connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "its config stays as it last ran until that boot is found healthy") {
+		if err := send(next); codeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "its config stays as it last ran until that boot is found healthy") {
 			t.Errorf("an upgrade with other config = %v", err)
 		}
 		for _, config := range []string{"", baseConfig} {

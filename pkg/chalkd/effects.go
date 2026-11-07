@@ -3,6 +3,7 @@ package chalkd
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log"
 	"maps"
 	"slices"
@@ -10,6 +11,7 @@ import (
 	"connectrpc.com/connect"
 
 	"github.com/trevex/chalkos/pkg/atomicfile"
+	"github.com/trevex/chalkos/pkg/chalkd/layer"
 	"github.com/trevex/chalkos/pkg/check"
 	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/effects"
@@ -67,13 +69,13 @@ type pendingEffects struct {
 func (s *Server) effectsOf(ctx context.Context, name string, next, old []config.Document, schemas *schema.Schemas, secret string, dry bool) (*pendingEffects, error) {
 	defs, err := effects.Read(s.Loader.Effects)
 	if err != nil {
-		return nil, failed(connect.CodeInternal, "%v", err)
+		return nil, err
 	}
 	// An action no active plugin has would fail only once the delivery changed the node.
 	for _, effect := range slices.Sorted(maps.Keys(defs)) {
 		if a := defs[effect].Chalkd; a != "" {
 			if _, err := s.Plugins.Action(a); err != nil {
-				return nil, failed(connect.CodeInternal, "%s: effect %s: %v", s.Loader.Effects, effect, err)
+				return nil, fmt.Errorf("%s: effect %s: %w", s.Loader.Effects, effect, err)
 			}
 		}
 	}
@@ -92,7 +94,7 @@ func (s *Server) effectsOf(ctx context.Context, name string, next, old []config.
 		e.rules = append(e.rules, p)
 	}
 	if len(errs) > 0 {
-		return nil, failed(connect.CodeInternal, "the running image's effects: %v", errors.Join(errs...))
+		return nil, fmt.Errorf("the running image's effects: %w", errors.Join(errs...))
 	}
 	b, found, err := readBaseline(s.Paths.EffectsBaseline)
 	if err != nil {
@@ -104,10 +106,10 @@ func (s *Server) effectsOf(ctx context.Context, name string, next, old []config.
 		return e, nil
 	}
 	if e.outputs, err = s.Loader.OutputStates(old, schemas); err != nil {
-		return nil, failed(connect.CodeInternal, "the outputs the node serves: %v", err)
+		return nil, fmt.Errorf("the outputs the node serves: %w", err)
 	}
 	if e.kinds, err = config.KindHashes(old, schemas, false); err != nil {
-		return nil, failed(connect.CodeInternal, "the kinds the node runs: %v", err)
+		return nil, fmt.Errorf("the kinds the node runs: %w", err)
 	}
 	before, err := s.factsFor(ctx, next, old, secret)
 	if err != nil {
@@ -121,7 +123,7 @@ func (s *Server) effectsOf(ctx context.Context, name string, next, old []config.
 	// Every fact the rules read loads now, before anything changes. One that cannot be loaded keeps
 	// its error, which makes the rules that read it due.
 	if err := newBaseline(old, e.factNames(), before, e.outputs, e.kinds).write(s.Paths.EffectsBaseline); err != nil {
-		return nil, failed(connect.CodeInternal, "record the config, facts, outputs and kinds the effects compare with: %v", err)
+		return nil, fmt.Errorf("record the config, facts, outputs and kinds the effects compare with: %w", err)
 	}
 	e.recorded = true
 	return e, nil
@@ -186,7 +188,7 @@ func (s *Server) outcome(ctx context.Context, e *pendingEffects, states map[stri
 	}
 	o, warnings, err := check.Due(e.checkEffects(), check.Delivery{Node: e.node, Documents: config.Redact(e.next), Schemas: e.schemas, Outputs: states}, e.comparisons(after))
 	if err != nil {
-		return check.Outcome{}, nil, failed(connect.CodeInternal, "%v", err)
+		return check.Outcome{}, nil, err
 	}
 	for _, w := range warnings {
 		log.Print(w)
@@ -228,7 +230,7 @@ func (s *Server) recordAttempt(e *pendingEffects, states map[string]outputs.Stat
 	a := baselineAttempt{Documents: redacted(e.next), Outputs: states, Kinds: kinds}
 	previous, err := addAttempt(s.Paths.EffectsBaseline, a)
 	if err != nil {
-		return failed(connect.CodeInternal, "record the delivery in the baseline of the effects: %v", err)
+		return fmt.Errorf("record the delivery in the baseline of the effects: %w", err)
 	}
 	e.attempt, e.withoutAttempt = &a, previous
 	return nil
@@ -255,14 +257,14 @@ func (s *Server) consume(ctx context.Context, e *pendingEffects, staged *outputs
 			// What the layer actions read, the slot and the layers' files, is in place.
 			a := effects.ActionsOf(e.defs, due)
 			s.actOnSelf(a.Chalkd)
-			return nil, nil, failed(connect.CodeInternal, "write the config for the granted units: %v%s", err, a.ByHand())
+			return nil, nil, fmt.Errorf("write the config for the granted units: %w%s", err, a.ByHand())
 		}
 	}
 	// The outputs, checked before the delivery changed anything, follow the documents.
 	if err := staged.Swap(); err != nil {
 		a := effects.ActionsOf(e.defs, due)
 		s.actOnSelf(a.Chalkd)
-		return nil, nil, failed(connect.CodeInternal, "%v%s", err, a.ByHand())
+		return nil, nil, fmt.Errorf("%w%s", err, a.ByHand())
 	}
 	restarted, err := s.applyEffects(ctx, effects.ActionsOf(e.defs, due))
 	if err != nil {
@@ -309,10 +311,10 @@ func (s *Server) applyEffects(ctx context.Context, a effects.Actions) ([]string,
 	defer s.actOnSelf(a.Chalkd)
 	restarted, err := effects.Apply(ctx, s.Run, a)
 	if ae, ok := errors.AsType[*effects.ApplyError](err); ok && ae.Why != "" {
-		return nil, failed(connect.CodeFailedPrecondition, "%v", err)
+		return nil, layer.Errorf(connect.CodeFailedPrecondition, "%w", err)
 	}
 	if err != nil {
-		return nil, failed(connect.CodeInternal, "%v", err)
+		return nil, err
 	}
 	return restarted, nil
 }

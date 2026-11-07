@@ -2,6 +2,7 @@ package chalkd
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"strings"
 	"time"
@@ -49,7 +50,7 @@ func (s *Server) ApplyConfig(ctx context.Context, req *connect.Request[nodev1.Ap
 	// either.
 	if req.Msg.Config != "" || req.Msg.DiscardPending {
 		if !s.upgrading.TryLock() {
-			return nil, failed(connect.CodeAborted, "an upgrade, an image rollback or the rollback at a trial's deadline is running; apply the config once it ended")
+			return nil, layer.Errorf(connect.CodeAborted, "an upgrade, an image rollback or the rollback at a trial's deadline is running; apply the config once it ended")
 		}
 		defer s.upgrading.Unlock()
 	}
@@ -184,11 +185,11 @@ func (s *Server) planDelivery(ctx context.Context, r applyRequest) (*delivery, e
 	// Without config the node keeps its own, which the layers' payloads are checked against.
 	d := &delivery{s: s, msg: m, keep: r.identity == ""}
 	if d.keep && len(m.Layers) == 0 && len(m.NodeCertificate) == 0 && len(m.Trust) == 0 {
-		return nil, failed(connect.CodeInvalidArgument, "the request delivers no config, layer payload, node certificate or OS CAs")
+		return nil, layer.Errorf(connect.CodeInvalidArgument, "the request delivers no config, layer payload, node certificate or OS CAs")
 	}
 	// A node certificate is checked against the OS CAs the node trusts when it arrives.
 	if len(m.Trust) > 0 && len(m.NodeCertificate) > 0 {
-		return nil, failed(connect.CodeInvalidArgument, "deliver the OS CAs and a node certificate one after the other")
+		return nil, layer.Errorf(connect.CodeInvalidArgument, "deliver the OS CAs and a node certificate one after the other")
 	}
 	var err error
 	if d.osCA, err = s.trustFor(ctx, m.Trust); err != nil {
@@ -201,7 +202,7 @@ func (s *Server) planDelivery(ctx context.Context, r applyRequest) (*delivery, e
 	data := r.identity
 	if d.keep {
 		if !found {
-			return nil, failed(connect.CodeFailedPrecondition, "STATE holds no config for the running image, so the node has no identity to keep; deliver config with chalkctl apply-config")
+			return nil, layer.Errorf(connect.CodeFailedPrecondition, "STATE holds no config for the running image, so the node has no identity to keep; deliver config with chalkctl apply-config")
 		}
 		data = string(prev.Identity)
 	} else {
@@ -315,9 +316,8 @@ func (d *delivery) commit(ctx context.Context) (*connect.Response[nodev1.ApplyCo
 			if isRefusedTrust(err) {
 				d.started = false
 				s.refused(d.fx)
-				return nil, failed(connect.CodeInvalidArgument, "%v", err)
 			}
-			return nil, failed(connect.CodeInternal, "%v", err)
+			return nil, err
 		}
 		log.Printf("trusting %s from now on", count(strings.Count(d.osCA, "-----BEGIN CERTIFICATE-----"), "OS CA"))
 	}
@@ -327,7 +327,7 @@ func (d *delivery) commit(ctx context.Context) (*connect.Response[nodev1.ApplyCo
 		}
 		// networkd and chrony read the identity's units and time servers again as their effects say.
 		if err := s.Loader.Apply(d.identity.data); err != nil {
-			return nil, failed(connect.CodeInternal, "apply the identity: %v", err)
+			return nil, fmt.Errorf("apply the identity: %w", err)
 		}
 		for _, c := range d.commits {
 			if c.Config == nil {
@@ -335,14 +335,14 @@ func (d *delivery) commit(ctx context.Context) (*connect.Response[nodev1.ApplyCo
 			}
 			if err := c.Config(); err != nil {
 				s.failedPartWay(ctx, d.fx, m.FallbackSecret)
-				return nil, failed(connect.CodeInternal, "%v", err)
+				return nil, layer.Errorf(connect.CodeInternal, "%w", err)
 			}
 		}
 	}
 	if len(m.NodeCertificate) > 0 {
 		if err := s.Certificate.Replace(string(m.NodeCertificate), string(m.NodeKey), time.Now()); err != nil {
 			s.failedPartWay(ctx, d.fx, m.FallbackSecret)
-			return nil, failed(connect.CodeInvalidArgument, "%v", err)
+			return nil, layer.Errorf(connect.CodeInvalidArgument, "%w", err)
 		}
 		log.Printf("serving a delivered node certificate; it expires %s", s.Certificate.Current().Leaf.NotAfter.UTC().Format(time.RFC3339))
 	}
@@ -352,7 +352,7 @@ func (d *delivery) commit(ctx context.Context) (*connect.Response[nodev1.ApplyCo
 		}
 		if err := c.Payloads(s.Paths.StateDir); err != nil {
 			s.failedPartWay(ctx, d.fx, m.FallbackSecret)
-			return nil, failed(connect.CodeInternal, "%v", err)
+			return nil, layer.Errorf(connect.CodeInternal, "%w", err)
 		}
 	}
 	// The documents and the identity are written in one rename.
@@ -360,7 +360,7 @@ func (d *delivery) commit(ctx context.Context) (*connect.Response[nodev1.ApplyCo
 		d.stored.Identity = d.identity.data
 		if err := slot.WriteKeepingPrevious(d.dir, d.stored); err != nil {
 			s.failedPartWay(ctx, d.fx, m.FallbackSecret)
-			return nil, failed(connect.CodeInternal, "store the config: %v", err)
+			return nil, fmt.Errorf("store the config: %w", err)
 		}
 	}
 	restarted, warnings, err := s.consume(ctx, d.fx, d.staged, !d.keep, m.FallbackSecret)

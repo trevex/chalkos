@@ -190,7 +190,7 @@ func TestApplyConfigStagedDryRun(t *testing.T) {
 	}
 	// A refusal is a delivery's.
 	_, err = s.ApplyConfig(context.Background(), connect.NewRequest(&nodev1.ApplyConfigRequest{Config: strings.Replace(baseConfig, "{disk: {path: /dev/vda}}", "{disk: {path: /dev/vda}, var: {size: 1G}}", 1), Staged: true, DryRun: true}))
-	if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "only a reinstall of") {
+	if codeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "only a reinstall of") {
 		t.Errorf("err = %v", err)
 	}
 }

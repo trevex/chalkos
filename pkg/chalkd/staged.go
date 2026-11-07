@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"cmp"
 	"context"
-	"errors"
 	"fmt"
 	"log"
 	"slices"
@@ -13,6 +12,7 @@ import (
 	"connectrpc.com/connect"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
+	"github.com/trevex/chalkos/pkg/chalkd/layer"
 	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/config/slot"
 	"github.com/trevex/chalkos/pkg/esp"
@@ -92,7 +92,7 @@ func (s *Server) stagedEntry() (secondSlot, bool, error) {
 func (s *Server) keepsKnownGood(rootHash []byte, text string) (bool, error) {
 	sl, ok, err := s.stagedEntry()
 	if err != nil {
-		return false, failed(connect.CodeInternal, "find the staged image: %v", err)
+		return false, fmt.Errorf("find the staged image: %w", err)
 	}
 	if !ok || !bytes.Equal(sl.entry.RootHash, rootHash) || !sl.knownGood() {
 		return false, nil
@@ -102,18 +102,18 @@ func (s *Server) keepsKnownGood(rootHash []byte, text string) (bool, error) {
 	}
 	docs, err := config.Parse(strings.NewReader(text))
 	if err != nil {
-		return true, failed(connect.CodeInvalidArgument, "parse the config: %v", err)
+		return true, layer.Errorf(connect.CodeInvalidArgument, "parse the config: %w", err)
 	}
 	version, err := config.Hash(docs)
 	if err != nil {
-		return true, failed(connect.CodeInvalidArgument, "hash the config: %v", err)
+		return true, layer.Errorf(connect.CodeInvalidArgument, "hash the config: %w", err)
 	}
 	held, err := slot.Version(slot.Dir(s.Loader.Slots, rootHash))
 	if err != nil {
-		return true, failed(connect.CodeInternal, "read the staged image's config slot: %v", err)
+		return true, fmt.Errorf("read the staged image's config slot: %w", err)
 	}
 	if version != held {
-		return true, failed(connect.CodeFailedPrecondition, "the image %x staged to boot next is the one the node falls back to while the boot of %s is not found healthy; its config stays as it last ran until that boot is found healthy", rootHash, sl.booted.File)
+		return true, layer.Errorf(connect.CodeFailedPrecondition, "the image %x staged to boot next is the one the node falls back to while the boot of %s is not found healthy; its config stays as it last ran until that boot is found healthy", rootHash, sl.booted.File)
 	}
 	return true, nil
 }
@@ -143,15 +143,15 @@ func (s *Server) readImage(ctx context.Context, rootHash []byte, read func(st im
 // rollback that staged the image before. The caller holds s.mu.
 func (s *Server) applyStaged(ctx context.Context, m *nodev1.ApplyConfigRequest) (*connect.Response[nodev1.ApplyConfigResponse], error) {
 	if m.Config == "" || len(m.Layers) > 0 || len(m.NodeCertificate) > 0 || len(m.NodeKey) > 0 || len(m.Trust) > 0 {
-		return nil, failed(connect.CodeInvalidArgument, "a request for the staged image delivers config alone, with the fallback secret: the share, the certificates and the OS CAs are the node's")
+		return nil, layer.Errorf(connect.CodeInvalidArgument, "a request for the staged image delivers config alone, with the fallback secret: the share, the certificates and the OS CAs are the node's")
 	}
 	docs, err := config.Parse(strings.NewReader(m.Config))
 	if err != nil {
-		return nil, failed(connect.CodeInvalidArgument, "parse the config: %v", err)
+		return nil, layer.Errorf(connect.CodeInvalidArgument, "parse the config: %w", err)
 	}
 	staged, err := s.stagedImage()
 	if err != nil {
-		return nil, failed(connect.CodeInternal, "find the staged image: %v", err)
+		return nil, fmt.Errorf("find the staged image: %w", err)
 	}
 	if staged == nil {
 		return s.holdPending(m, docs)
@@ -164,7 +164,7 @@ func (s *Server) applyStaged(ctx context.Context, m *nodev1.ApplyConfigRequest) 
 	var held string
 	if m.DryRun {
 		if held, err = slot.Version(slot.Dir(s.Loader.Slots, staged)); err != nil {
-			return nil, failed(connect.CodeInternal, "read the staged image's config slot: %v", err)
+			return nil, fmt.Errorf("read the staged image's config slot: %w", err)
 		}
 	}
 	// The known-good image's own config, delivered again, changes nothing.
@@ -255,7 +255,7 @@ func (s *Server) planSecond(ctx context.Context, d *delivery) (secondWrite, erro
 	}
 	sl, ok, err := s.stagedEntry()
 	if err != nil {
-		return secondWrite{}, failed(connect.CodeInternal, "find the staged image: %v", err)
+		return secondWrite{}, fmt.Errorf("find the staged image: %w", err)
 	}
 	if !ok || sl.knownGood() {
 		var w secondWrite
@@ -263,7 +263,7 @@ func (s *Server) planSecond(ctx context.Context, d *delivery) (secondWrite, erro
 			w.warnings = []string{fmt.Sprintf("the image %x staged to boot next is the one the node falls back to while the boot of %s is not found healthy; its config stays as it last ran", sl.entry.RootHash[:6], sl.booted.File)}
 		}
 		if w.pending, err = slot.Version(slot.Pending(s.Loader.Slots)); err != nil {
-			return secondWrite{}, failed(connect.CodeInternal, "read the pending config's version: %v", err)
+			return secondWrite{}, fmt.Errorf("read the pending config's version: %w", err)
 		}
 		if w.pending != "" {
 			w.next = slot.Stored{Delivered: d.stored.Delivered, Version: d.stored.Version}
@@ -273,7 +273,7 @@ func (s *Server) planSecond(ctx context.Context, d *delivery) (secondWrite, erro
 	staged := sl.entry.RootHash
 	held, err := slot.Version(slot.Dir(s.Loader.Slots, staged))
 	if err != nil {
-		return secondWrite{}, failed(connect.CodeInternal, "read the staged image's config slot: %v", err)
+		return secondWrite{}, fmt.Errorf("read the staged image's config slot: %w", err)
 	}
 	recorded := d.machine.recorded
 	if len(d.machine.changes) > 0 {
@@ -302,11 +302,11 @@ func (s *Server) planSecond(ctx context.Context, d *delivery) (secondWrite, erro
 // image's chalkd, whose errors reach this one as text alone. That rule's message ends with
 // storage.NoFallbackSecret, so the text is what tells the refusal apart.
 func (s *Server) stagedRefusal(staged []byte, err error, secret string) error {
-	msg := fmt.Sprintf("the image %x staged in the inactive slot: %v", staged[:6], plain(err))
-	if secret == "" && strings.Contains(msg, storage.NoFallbackSecret) {
-		msg += fmt.Sprintf("; the staged image's storage enrolls the fallback secret on a volume the running image's does not, and chalkctl sends the secret for the running image's storage alone: chalkctl apply-config --staged %s --secrets FILE delivers the config to the staged image with the secret", s.nodeName())
+	var hint string
+	if secret == "" && strings.Contains(err.Error(), storage.NoFallbackSecret) {
+		hint = fmt.Sprintf("; the staged image's storage enrolls the fallback secret on a volume the running image's does not, and chalkctl sends the secret for the running image's storage alone: chalkctl apply-config --staged %s --secrets FILE delivers the config to the staged image with the secret", s.nodeName())
 	}
-	return failed(codeOf(err), "%s", msg)
+	return fmt.Errorf("the image %x staged in the inactive slot: %w%s", staged[:6], err, hint)
 }
 
 // write writes what planSecond planned, once the running image applied version, the delivered
@@ -346,7 +346,7 @@ func (w secondWrite) write(ctx context.Context, s *Server, version, secret strin
 			}
 		}
 		if err != nil {
-			return failed(codeOf(err), "the node runs config %s%s, but writing the config slot of the image %x staged in the inactive slot failed, so it keeps config %s: %v; deliver the config again to write it", version, didOf(resp), w.image[:6], cmp.Or(w.held, "none"), plain(err))
+			return fmt.Errorf("the node runs config %s%s, but writing the config slot of the image %x staged in the inactive slot failed, so it keeps config %s: %w; deliver the config again to write it", version, didOf(resp), w.image[:6], cmp.Or(w.held, "none"), err)
 		}
 		log.Printf("the image %x staged in the inactive slot has config %s too", w.image[:6], w.slot.next.Version)
 		resp.Warnings = append(resp.Warnings, w.stagedWarnings()...)
@@ -354,7 +354,7 @@ func (w secondWrite) write(ctx context.Context, s *Server, version, secret strin
 	case w.pending != "":
 		p, err := s.storePending(w.next)
 		if err != nil {
-			return failed(connect.CodeInternal, "the node runs config %s%s, but replacing the pending config %s with it failed, so it stays: %v; deliver the config again to replace it", version, didOf(resp), w.pending, err)
+			return fmt.Errorf("the node runs config %s%s, but replacing the pending config %s with it failed, so it stays: %w; deliver the config again to replace it", version, didOf(resp), w.pending, err)
 		}
 		resp.Pending = p
 	}
@@ -410,15 +410,6 @@ func (w secondWrite) plan(resp *nodev1.ApplyConfigResponse) {
 	case w.pending != "":
 		resp.Pending = &nodev1.PendingConfig{Version: w.next.Version}
 	}
-}
-
-// codeOf is the code err carries, or internal for an error without one: a failure of the node
-// itself.
-func codeOf(err error) connect.Code {
-	if ce, ok := errors.AsType[*connect.Error](err); ok {
-		return ce.Code()
-	}
-	return connect.CodeInternal
 }
 
 // stagedWarnings are the warnings of the staged image's check, which name that image.

@@ -241,7 +241,7 @@ func TestApplyConfigRefusesDestructiveChange(t *testing.T) {
 	withNodeCertificate(t, s)
 	before, _ := readIdentity(s)
 	_, err := apply(s, identityWith(section("1G", "")), secret)
-	if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "only a reinstall of n1 carries it out") {
+	if codeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "only a reinstall of n1 carries it out") {
 		t.Fatalf("err = %v, want a refusal naming a reinstall, since a reset cannot change VAR", err)
 	}
 	if len(r.Calls) != 0 {
@@ -388,7 +388,7 @@ func TestApplyConfigNamesTheRemedyOfADestructiveChange(t *testing.T) {
 				tc.prepare(t, s)
 			}
 			_, err := apply(s, identityWith(tc.next), secret)
-			if connect.CodeOf(err) != connect.CodeFailedPrecondition {
+			if codeOf(err) != connect.CodeFailedPrecondition {
 				t.Fatalf("err = %v, want a refusal", err)
 			}
 			for _, want := range tc.want {
@@ -411,7 +411,7 @@ func TestApplyConfigNamesTheRemedyOfADestructiveChange(t *testing.T) {
 func TestApplyConfigNeedsFallbackForEncryptedVolume(t *testing.T) {
 	s, r := installedServer(t, section("", ""), false)
 	_, err := apply(s, identityWith(section("", "ext4")), "")
-	if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "Volume extra is encrypted and the node's fallback is recovery-key, but no fallback secret was sent") {
+	if codeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "Volume extra is encrypted and the node's fallback is recovery-key, but no fallback secret was sent") {
 		t.Fatalf("err = %v", err)
 	}
 	if len(r.Calls) != 0 {
@@ -612,7 +612,7 @@ func TestApplyConfigRefusesInvalidSection(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			s, r := installedServer(t, section("", "ext4"), true)
 			_, err := apply(s, identityWith(invalid), secret)
-			if connect.CodeOf(err) != connect.CodeInvalidArgument || !strings.Contains(err.Error(), "invalid storage section") {
+			if codeOf(err) != connect.CodeInvalidArgument || !strings.Contains(err.Error(), "invalid storage section") {
 				t.Fatalf("err = %v", err)
 			}
 			if len(r.Calls) != 0 {
@@ -628,7 +628,7 @@ func TestResetVolumeRefusesInvalidSection(t *testing.T) {
 			s, r := installedServer(t, section("", "ext4"), true)
 			partitionLink(t, s, "vdb", "vdb1", "253:17", "1")
 			err := reset(s, "extra", identityWith(invalid))
-			if connect.CodeOf(err) != connect.CodeInvalidArgument || !strings.Contains(err.Error(), "invalid storage section") {
+			if codeOf(err) != connect.CodeInvalidArgument || !strings.Contains(err.Error(), "invalid storage section") {
 				t.Fatalf("err = %v", err)
 			}
 			if len(r.Calls) != 0 {
@@ -702,7 +702,7 @@ func TestResetVolumeChecksPartUUID(t *testing.T) {
 				volume = "data"
 			}
 			err := reset(s, volume, identity)
-			if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), c.want) {
+			if codeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), c.want) {
 				t.Fatalf("err = %v, want %q", err, c.want)
 			}
 			if changed := withoutChecks(r.Calls); len(changed) != 0 {
@@ -722,7 +722,7 @@ func TestResetVolumeNeedsFallbackForEveryEncryptedVolume(t *testing.T) {
 		s.Volumes["extra"] = v
 	}), storage.EncryptionTPM2)
 	err := resetWith(s, "extra", identityWith(next), "")
-	if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "Volume data is encrypted") || !strings.Contains(err.Error(), "no fallback secret") {
+	if codeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "Volume data is encrypted") || !strings.Contains(err.Error(), "no fallback secret") {
 		t.Fatalf("err = %v", err)
 	}
 	if len(r.Calls) != 0 {
@@ -734,7 +734,7 @@ func TestResetVolumeRefusesRemoval(t *testing.T) {
 	s, r := installedServer(t, section("", "ext4"), true)
 	partitionLink(t, s, "vdb", "vdb1", "253:17", "1")
 	err := reset(s, "extra", identityWith(section("", "")))
-	if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "no longer has volume extra") {
+	if codeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "no longer has volume extra") {
 		t.Fatalf("err = %v", err)
 	}
 	if len(r.Calls) != 0 {
@@ -771,7 +771,7 @@ func TestApplyConfigRefusesMismatchingFallbackSecret(t *testing.T) {
 	before, _ := readIdentity(s)
 	mismatch(r)
 	_, err := apply(s, identityWith(section("", "ext4")), "mistyped")
-	if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "the fallback secret does not match the node's existing fallback keyslot") {
+	if codeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "the fallback secret does not match the node's existing fallback keyslot") {
 		t.Fatalf("err = %v", err)
 	}
 	if !reflect.DeepEqual(r.Calls, []string{dumpState, testState}) {
@@ -789,7 +789,7 @@ func TestApplyConfigRefusesWhenTheCheckFails(t *testing.T) {
 	s, r := installedServer(t, section("", ""), false)
 	r.Rules = append([]tooltest.Rule{{Prefix: "cryptsetup open", Err: &tool.Error{Command: "cryptsetup open", Code: 4, Stderr: "Device does not exist."}}}, r.Rules...)
 	_, err := apply(s, identityWith(section("", "ext4")), secret)
-	if connect.CodeOf(err) != connect.CodeFailedPrecondition || strings.Contains(err.Error(), secret) {
+	if codeOf(err) != connect.CodeFailedPrecondition || strings.Contains(err.Error(), secret) {
 		t.Fatalf("err = %v", err)
 	}
 	if !reflect.DeepEqual(r.Calls, []string{dumpState, testState}) {
@@ -802,7 +802,7 @@ func TestResetVolumeRefusesMismatchingFallbackSecret(t *testing.T) {
 	partitionLink(t, s, "vdb", "vdb1", "253:17", "1")
 	mismatch(r)
 	err := reset(s, "extra", identityWith(section("", "xfs")))
-	if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "does not match") {
+	if codeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "does not match") {
 		t.Fatalf("err = %v", err)
 	}
 	if !reflect.DeepEqual(r.Calls, []string{dumpState, testState}) {
@@ -905,7 +905,7 @@ func TestApplyConfigDeliversNodeCertificateAlone(t *testing.T) {
 		"another node's with config": {identityWith(section("", "")), &nodev1.ApplyConfigRequest{NodeCertificate: []byte(other.Certificate), NodeKey: []byte(other.Key)}},
 	} {
 		_, err := deliver(context.Background(), s, tc.identity, tc.req)
-		if connect.CodeOf(err) != connect.CodeInvalidArgument {
+		if codeOf(err) != connect.CodeInvalidArgument {
 			t.Errorf("%s: %v, want invalid_argument", name, err)
 		} else if strings.Contains(err.Error(), "PRIVATE KEY") {
 			t.Errorf("%s: the error holds a key", name)

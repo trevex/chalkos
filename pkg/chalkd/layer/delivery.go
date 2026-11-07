@@ -2,7 +2,6 @@ package layer
 
 import (
 	"context"
-	"fmt"
 
 	"connectrpc.com/connect"
 	"google.golang.org/protobuf/types/known/anypb"
@@ -55,7 +54,7 @@ func Plan(ctx context.Context, plugins []Delivery, payloads []*anypb.Any, d Plan
 			}
 		}
 		if !claimed {
-			return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("the request carries a payload of type %s, which no layer of this image takes", a.GetTypeUrl()))
+			return nil, Errorf(connect.CodeInvalidArgument, "the request carries a payload of type %s, which no layer of this image takes", a.GetTypeUrl())
 		}
 	}
 	var commits []Commit

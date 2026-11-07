@@ -103,7 +103,7 @@ func TestApplyConfigStagedPendingRefuses(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			s, _ := configServer(t)
 			_, err := s.ApplyConfig(context.Background(), connect.NewRequest(tc.req))
-			if connect.CodeOf(err) != connect.CodeInvalidArgument || !strings.Contains(err.Error(), tc.want) {
+			if codeOf(err) != connect.CodeInvalidArgument || !strings.Contains(err.Error(), tc.want) {
 				t.Errorf("err = %v, want one naming %q", err, tc.want)
 			}
 			if v := pendingVersion(t, s); v != "" {
@@ -133,10 +133,10 @@ func TestApplyConfigDiscardsPending(t *testing.T) {
 		}
 		return resp.Msg.Pending, nil
 	}
-	if _, err := discard(&nodev1.ApplyConfigRequest{Staged: true, DiscardPending: true, Config: baseConfig}); connect.CodeOf(err) != connect.CodeInvalidArgument || !strings.Contains(err.Error(), "discard_pending goes with staged alone") {
+	if _, err := discard(&nodev1.ApplyConfigRequest{Staged: true, DiscardPending: true, Config: baseConfig}); codeOf(err) != connect.CodeInvalidArgument || !strings.Contains(err.Error(), "discard_pending goes with staged alone") {
 		t.Errorf("discard with config = %v", err)
 	}
-	if _, err := discard(&nodev1.ApplyConfigRequest{DiscardPending: true}); connect.CodeOf(err) != connect.CodeInvalidArgument {
+	if _, err := discard(&nodev1.ApplyConfigRequest{DiscardPending: true}); codeOf(err) != connect.CodeInvalidArgument {
 		t.Errorf("discard without staged = %v", err)
 	}
 	if got, err := discard(&nodev1.ApplyConfigRequest{Staged: true, DiscardPending: true}); err != nil || got.GetVersion() != p.Version {
@@ -158,7 +158,7 @@ func TestPendingWaitsForAnUpgrade(t *testing.T) {
 	s.upgrading.Lock()
 	defer s.upgrading.Unlock()
 	for _, req := range []*nodev1.ApplyConfigRequest{{Config: strings.Replace(baseConfig, "name: first", "name: second", 1), Staged: true}, {Staged: true, DiscardPending: true}} {
-		if _, err := s.ApplyConfig(context.Background(), connect.NewRequest(req)); connect.CodeOf(err) != connect.CodeAborted {
+		if _, err := s.ApplyConfig(context.Background(), connect.NewRequest(req)); codeOf(err) != connect.CodeAborted {
 			t.Errorf("%v = %v, want aborted", req, err)
 		}
 	}
@@ -430,7 +430,7 @@ func TestUpgradeSettlesThePendingConfigWhenActivationFails(t *testing.T) {
 	sendPending(t, s, strings.Replace(baseConfig, "name: first", "name: second", 1))
 	unactivated := &upgrade.StagedError{Result: upgrade.Result{Entry: ".staged-chalkos_2.efi", Wrote: true}, Err: errors.New("rename the UKI: input/output error")}
 	_, _, err := upgradePending(t, s, pki.RoleOperator, "", unactivated, nil)
-	if connect.CodeOf(err) != connect.CodeInternal || !strings.Contains(err.Error(), "the image is staged as .staged-chalkos_2.efi, but its activation failed: rename the UKI: input/output error") {
+	if codeOf(err) != connect.CodeInternal || !strings.Contains(err.Error(), "the image is staged as .staged-chalkos_2.efi, but its activation failed: rename the UKI: input/output error") {
 		t.Fatalf("upgrade = %v, want the activation's failure, internal", err)
 	}
 	if v := pendingVersion(t, s); v != "" {
@@ -491,7 +491,7 @@ func TestApplyConfigDiscardPendingTakesStagedAlone(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			req.DiscardPending, req.Staged = true, name != "without staged"
 			_, err := s.ApplyConfig(context.Background(), connect.NewRequest(req))
-			if connect.CodeOf(err) != connect.CodeInvalidArgument {
+			if codeOf(err) != connect.CodeInvalidArgument {
 				t.Errorf("err = %v, want invalid argument", err)
 			}
 			if v := pendingVersion(t, s); v != p.Version {

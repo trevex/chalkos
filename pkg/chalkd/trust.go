@@ -16,7 +16,7 @@ import (
 func (s *Server) trustFor(ctx context.Context, delivered []byte) (string, error) {
 	if s.Certificate == nil {
 		if len(delivered) > 0 {
-			return "", failed(connect.CodeFailedPrecondition, "the node serves no node certificate the OS CAs would verify")
+			return "", layer.Errorf(connect.CodeFailedPrecondition, "the node serves no node certificate the OS CAs would verify")
 		}
 		return string(s.readOSCA()), nil
 	}
@@ -24,7 +24,7 @@ func (s *Server) trustFor(ctx context.Context, delivered []byte) (string, error)
 		return s.Certificate.OSCA(), nil
 	}
 	if err := s.Certificate.CheckTrust(string(delivered), peerOf(ctx)...); err != nil {
-		return "", failed(connect.CodeInvalidArgument, "%v", err)
+		return "", err
 	}
 	return pki.Bundle(string(delivered)), nil
 }
@@ -44,10 +44,10 @@ func (s *Server) checkNodeCertificate(chain, key []byte) error {
 		return nil
 	}
 	if s.Certificate == nil {
-		return failed(connect.CodeFailedPrecondition, "the node serves no node certificate to replace")
+		return layer.Errorf(connect.CodeFailedPrecondition, "the node serves no node certificate to replace")
 	}
 	if err := s.Certificate.Check(string(chain), string(key), time.Now()); err != nil {
-		return failed(connect.CodeInvalidArgument, "%v", err)
+		return layer.Errorf(connect.CodeInvalidArgument, "%w", err)
 	}
 	return nil
 }

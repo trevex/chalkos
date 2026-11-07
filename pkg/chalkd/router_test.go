@@ -86,7 +86,7 @@ func TestRoutes(t *testing.T) {
 	if len(resp.Kernel) != 1 || len(resp.Bgp) != 0 {
 		t.Errorf("the boot routes: %v, %v", resp.Kernel, resp.Bgp)
 	}
-	if _, err := routes("", "", "mine"); connect.CodeOf(err) != connect.CodeInvalidArgument {
+	if _, err := routes("", "", "mine"); codeOf(err) != connect.CodeInvalidArgument {
 		t.Errorf("an unknown table: %v", err)
 	}
 	r.Rules = append([]tooltest.Rule{{Prefix: "vtysh -c show bgp ipv4", Err: &tool.Error{Command: "vtysh", Code: 1, Stderr: "Exiting: failed to connect to any daemons.\n"}}}, r.Rules...)

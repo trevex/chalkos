@@ -2,6 +2,7 @@ package chalkd
 
 import (
 	"context"
+	"fmt"
 	"maps"
 	"os"
 	"path/filepath"
@@ -73,12 +74,12 @@ func readOSRelease(path string) map[string]string {
 func (s *Server) Disks(ctx context.Context, _ *connect.Request[nodev1.DisksRequest]) (*connect.Response[nodev1.DisksResponse], error) {
 	disks, err := s.Host.Disks()
 	if err != nil {
-		return nil, failed(connect.CodeInternal, "list disks: %v", err)
+		return nil, fmt.Errorf("list disks: %w", err)
 	}
 	boot, bootErr := s.Host.ResolvePath(s.Paths.BootDisk)
 	pins, err := storage.ReadPins(s.storage().PinsFile())
 	if err != nil {
-		return nil, failed(connect.CodeInternal, "%v", err)
+		return nil, err
 	}
 	resp := &nodev1.DisksResponse{}
 	for _, d := range disks {
@@ -104,7 +105,7 @@ func (s *Server) Disks(ctx context.Context, _ *connect.Request[nodev1.DisksReque
 		}
 		parts, err := s.Host.Partitions(d)
 		if err != nil {
-			return nil, failed(connect.CodeInternal, "partitions of %s: %v", d.Device, err)
+			return nil, fmt.Errorf("partitions of %s: %w", d.Device, err)
 		}
 		for _, p := range parts {
 			disk.Partitions = append(disk.Partitions, &nodev1.Partition{

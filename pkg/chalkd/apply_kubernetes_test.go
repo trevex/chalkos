@@ -148,7 +148,7 @@ func TestApplyConfigRefusesShare(t *testing.T) {
 		"a node CA of another OS CA": {controlPlane, kubernetesIdentity("n1"), foreignNodeCA, connect.CodeInvalidArgument},
 	} {
 		_, err := deliver(context.Background(), tc.s, tc.identity, &nodev1.ApplyConfigRequest{Layers: shareLayers(t, tc.share)})
-		if connect.CodeOf(err) != tc.code {
+		if codeOf(err) != tc.code {
 			t.Errorf("%s: %v, want %v", name, err, tc.code)
 		}
 	}
@@ -165,7 +165,7 @@ func TestApplyConfigRefusesShareOfAnotherKind(t *testing.T) {
 		s, r := kubernetesServer(t, image, false)
 		before, _ := readIdentity(s)
 		_, err := deliver(context.Background(), s, kubernetesIdentity("n1"), &nodev1.ApplyConfigRequest{Layers: shareLayers(t, kubernetestest.Share(t, share, "n1"))})
-		if connect.CodeOf(err) != connect.CodeInvalidArgument || !strings.Contains(err.Error(), share) {
+		if codeOf(err) != connect.CodeInvalidArgument || !strings.Contains(err.Error(), share) {
 			t.Errorf("%s share on a %s image: %v", share, image, err)
 		}
 		if len(r.Calls) != 0 {
@@ -303,7 +303,7 @@ func TestApplyConfigReportsMissingAddress(t *testing.T) {
 	r.Rules = append([]tooltest.Rule{{Prefix: "systemctl restart chalkos-kubernetes.service kubelet.service", Err: errors.New("exit status 1")}}, r.Rules...)
 	kubernetestest.WithoutAddress(t, kubernetesPaths(s), reason)
 	_, err := sendConfig(s, workerConfig)
-	if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "the node runs no kubelet: preparation failed: "+reason) {
+	if codeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "the node runs no kubelet: preparation failed: "+reason) {
 		t.Errorf("err = %v, want the missing address", err)
 	}
 }
@@ -316,7 +316,7 @@ func TestApplyConfigReportsFailedRestart(t *testing.T) {
 	kubernetestest.WithoutFirewall(t, kubernetesPaths(s))
 	_, err := sendConfig(s, workerConfig)
 	want := "restart chalkos-kubernetes.service kubelet.service: exit status 1; the node runs no kubelet: preparation failed: accept VXLAN to the node's address: exit status 1; the delivery is applied, so restart chalkos-kubernetes.service kubelet.service by hand"
-	if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), want) {
+	if codeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), want) {
 		t.Errorf("a failed preparation: err = %v, want %s", err, want)
 	}
 
@@ -325,7 +325,7 @@ func TestApplyConfigReportsFailedRestart(t *testing.T) {
 	r.Rules = append([]tooltest.Rule{{Prefix: "systemctl restart chalkos-kubernetes.service kubelet.service", Err: errors.New("exit status 1")}}, r.Rules...)
 	_, err = sendConfig(other, workerConfig)
 	want = "restart chalkos-kubernetes.service kubelet.service: exit status 1; the delivery is applied, so restart chalkos-kubernetes.service kubelet.service by hand"
-	if connect.CodeOf(err) != connect.CodeInternal || !strings.Contains(err.Error(), want) || strings.Contains(err.Error(), "preparation") {
+	if codeOf(err) != connect.CodeInternal || !strings.Contains(err.Error(), want) || strings.Contains(err.Error(), "preparation") {
 		t.Errorf("failed restart: err = %v, want %s", err, want)
 	}
 }
@@ -341,7 +341,7 @@ func TestApplyConfigReportsThePreparationForKubernetesUnitsAlone(t *testing.T) {
 	r.Rules = append([]tooltest.Rule{{Prefix: "systemctl try-restart demo.service", Err: errors.New("exit status 1")}}, r.Rules...)
 	_, err := sendConfig(s, strings.Replace(workerConfig, "name: first", "name: second", 1))
 	want := "try-restart demo.service: exit status 1; the delivery is applied, so restart demo.service by hand"
-	if connect.CodeOf(err) != connect.CodeInternal || !strings.Contains(err.Error(), want) || strings.Contains(err.Error(), "kubelet") {
+	if codeOf(err) != connect.CodeInternal || !strings.Contains(err.Error(), want) || strings.Contains(err.Error(), "kubelet") {
 		t.Errorf("err = %v, want %s", err, want)
 	}
 }
@@ -353,7 +353,7 @@ func TestApplyConfigRefusesInvalidAddressSettings(t *testing.T) {
 		"validSubnets": `{"nodeName": "n1", "nodeIPs": [], "validSubnets": ["192.168.100.0"]}`,
 	} {
 		identity := strings.Replace(kubernetesIdentity("n1"), `{"nodeName": "n1", "nodeIPs": ["192.168.100.11"]}`, kubernetes, 1)
-		if _, err := apply(s, identity, ""); connect.CodeOf(err) != connect.CodeInvalidArgument {
+		if _, err := apply(s, identity, ""); codeOf(err) != connect.CodeInvalidArgument {
 			t.Errorf("%s: %v, want invalid argument", name, err)
 		}
 	}
@@ -370,7 +370,7 @@ func TestApplyConfigRefusesInvalidAddressSettingsWithoutTheLayer(t *testing.T) {
 		t.Fatal("the server's image has the Kubernetes layer")
 	}
 	identity := strings.Replace(kubernetesIdentity("n1"), `"nodeIPs": ["192.168.100.11"]`, `"nodeIPs": ["192.168.100"]`, 1)
-	if _, err := apply(s, identity, ""); connect.CodeOf(err) != connect.CodeInvalidArgument || !strings.Contains(err.Error(), "nodeIPs") {
+	if _, err := apply(s, identity, ""); codeOf(err) != connect.CodeInvalidArgument || !strings.Contains(err.Error(), "nodeIPs") {
 		t.Errorf("err = %v, want the node IPs refused", err)
 	}
 	if len(r.Calls) != 0 {
@@ -803,7 +803,7 @@ func TestApplyConfigRefusesChangedFixedSettings(t *testing.T) {
 			}
 			r.Calls = nil
 			_, err := sendConfig(s, withClusterSpec(spec))
-			if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "cluster's "+field+" from") {
+			if codeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "cluster's "+field+" from") {
 				t.Fatalf("err = %v", err)
 			}
 			if len(r.Calls) != 0 {
@@ -854,7 +854,7 @@ func TestApplyConfigRefusesAnotherNodeType(t *testing.T) {
 				}
 				return
 			}
-			if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), tc.want) {
+			if codeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), tc.want) {
 				t.Fatalf("err = %v", err)
 			}
 			if len(r.Calls) != 0 {
@@ -911,7 +911,7 @@ func TestApplyConfigRefusesChangedRegistrationFields(t *testing.T) {
 				}
 				return
 			}
-			if connect.CodeOf(err) != connect.CodeFailedPrecondition {
+			if codeOf(err) != connect.CodeFailedPrecondition {
 				t.Fatalf("err = %v", err)
 			}
 			for _, want := range append(tc.want, "applies when the node registers with the cluster", "or reinstall the node") {
@@ -996,7 +996,7 @@ func TestApplyConfigComparesRangesCanonically(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, err := sendConfig(s, withClusterSpec(`{ipFamilies: [ipv4, ipv6], serviceCIDRs: {ipv4: 10.96.0.0/12, ipv6: "fd00:10:97::/108"}}`))
-	if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "serviceCIDRs") {
+	if codeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "serviceCIDRs") {
 		t.Errorf("another range: err = %v", err)
 	}
 }
@@ -1138,7 +1138,7 @@ func TestApplyConfigRefusesPayloads(t *testing.T) {
 		"two shares":   {append(shareLayers(t, share), shareLayers(t, share)...), "two shares"},
 	} {
 		_, err := deliver(context.Background(), worker, kubernetesIdentity("n1"), &nodev1.ApplyConfigRequest{Layers: tc.layers})
-		if connect.CodeOf(err) != connect.CodeInvalidArgument || !strings.Contains(err.Error(), tc.want) {
+		if codeOf(err) != connect.CodeInvalidArgument || !strings.Contains(err.Error(), tc.want) {
 			t.Errorf("%s: %v, want %q", name, err, tc.want)
 		}
 	}

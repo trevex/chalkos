@@ -4,9 +4,11 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 
 	"connectrpc.com/connect"
 
+	"github.com/trevex/chalkos/pkg/chalkd/layer"
 	"github.com/trevex/chalkos/pkg/check"
 	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/facts"
@@ -21,7 +23,7 @@ import (
 func (s *Server) factsFor(ctx context.Context, next, old []config.Document, secret string) (*facts.Loader, error) {
 	defs, err := facts.Read(s.Paths.Facts)
 	if err != nil {
-		return nil, failed(connect.CodeInternal, "read the image's facts: %v", err)
+		return nil, fmt.Errorf("read the image's facts: %w", err)
 	}
 	run := s.Facts
 	if run == nil {
@@ -43,7 +45,7 @@ func factInput(next, old []config.Document) map[string]any {
 func compileRunningRules(schemas *schema.Schemas) (*rules.Set, error) {
 	set, err := rules.Compile(schemas)
 	if err != nil {
-		return nil, failed(connect.CodeInternal, "the running image's rules: %v", err)
+		return nil, fmt.Errorf("the running image's rules: %w", err)
 	}
 	return set, nil
 }
@@ -57,7 +59,7 @@ func (s *Server) checkRules(set *rules.Set, name string, next, old []config.Docu
 		return err
 	}
 	if len(failures) > 0 {
-		return failed(connect.CodeFailedPrecondition, "%s", rules.Refusal(failures, name))
+		return layer.Errorf(connect.CodeFailedPrecondition, "%s", rules.Refusal(failures, name))
 	}
 	return nil
 }
@@ -67,7 +69,7 @@ func (s *Server) checkRules(set *rules.Set, name string, next, old []config.Docu
 func evaluate(set *rules.Set, name string, next, old []config.Document, f rules.Facts) ([]rules.Failure, error) {
 	failures, err := check.Rules(set, name, config.Redact(next), config.Redact(old), f)
 	if err != nil {
-		return nil, failed(connect.CodeFailedPrecondition, "%v", err)
+		return nil, layer.Errorf(connect.CodeFailedPrecondition, "%w", err)
 	}
 	return failures, nil
 }

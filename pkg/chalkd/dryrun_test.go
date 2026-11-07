@@ -104,7 +104,7 @@ func TestDryRunRefusesAsADelivery(t *testing.T) {
 				t.Errorf("status after the dry run = %+v, %v", st, err)
 			}
 			_, err := sendConfig(s, tc.next)
-			if dryErr == nil || err == nil || dryErr.Error() != err.Error() || connect.CodeOf(dryErr) != connect.CodeOf(err) {
+			if dryErr == nil || err == nil || dryErr.Error() != err.Error() || codeOf(dryErr) != codeOf(err) {
 				t.Errorf("dry run: %v; delivery: %v", dryErr, err)
 			}
 		})
@@ -205,7 +205,7 @@ func TestDryRunWaitsForATrial(t *testing.T) {
 	r.Calls = nil
 	_, err := dryRun(s, baseConfig)
 	want := "config " + rec.Version + " is on trial until " + rec.Deadline.Format(time.RFC3339) + ": confirm it with chalkctl apply-config --confirm n1, or roll it back with chalkctl apply-config --rollback n1, before another delivery"
-	if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), want) {
+	if codeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), want) {
 		t.Errorf("err = %v, want %q", err, want)
 	}
 	if !trialOpenOn(t, s) || len(r.Calls) != 0 {

@@ -21,13 +21,13 @@ type delivered struct {
 func (s *Server) parseIdentity(data string) (delivered, error) {
 	var id identity.Identity
 	if err := json.Unmarshal([]byte(data), &id); err != nil {
-		return delivered{}, failed(connect.CodeInvalidArgument, "parse the identity: %v", err)
+		return delivered{}, layer.Errorf(connect.CodeInvalidArgument, "parse the identity: %w", err)
 	}
 	if _, ok := id.Storage.Disks[storage.SystemDisk]; !ok {
-		return delivered{}, failed(connect.CodeInvalidArgument, "the identity's storage section has no system disk")
+		return delivered{}, layer.Errorf(connect.CodeInvalidArgument, "the identity's storage section has no system disk")
 	}
 	if err := id.Storage.Validate(); err != nil {
-		return delivered{}, failed(connect.CodeInvalidArgument, "%v", err)
+		return delivered{}, layer.Errorf(connect.CodeInvalidArgument, "%w", err)
 	}
 	for _, p := range layer.Compiled[layer.Delivery](s.Plugins) {
 		if err := p.CheckIdentity([]byte(data)); err != nil {

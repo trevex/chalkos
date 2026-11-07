@@ -3,23 +3,25 @@ package chalkd
 import (
 	"bufio"
 	"context"
+	"fmt"
 	"io"
 	"os/exec"
 
 	"connectrpc.com/connect"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
+	"github.com/trevex/chalkos/pkg/chalkd/layer"
 )
 
 func (s *Server) Logs(ctx context.Context, req *connect.Request[nodev1.LogsRequest], stream *connect.ServerStream[nodev1.LogsResponse]) error {
 	if s.logStreams.Add(1) > maxLogStreams {
 		s.logStreams.Add(-1)
-		return failed(connect.CodeResourceExhausted, "%d log streams are open already; close one first", maxLogStreams)
+		return layer.Errorf(connect.CodeResourceExhausted, "%d log streams are open already; close one first", maxLogStreams)
 	}
 	defer s.logStreams.Add(-1)
 	r, err := s.Journal(ctx, req.Msg.Unit, req.Msg.Follow)
 	if err != nil {
-		return failed(connect.CodeInternal, "read the journal: %v", err)
+		return fmt.Errorf("read the journal: %w", err)
 	}
 	defer r.Close()
 	sc := bufio.NewScanner(r)
@@ -30,7 +32,7 @@ func (s *Server) Logs(ctx context.Context, req *connect.Request[nodev1.LogsReque
 		}
 	}
 	if err := sc.Err(); err != nil && ctx.Err() == nil {
-		return failed(connect.CodeInternal, "read the journal: %v", err)
+		return fmt.Errorf("read the journal: %w", err)
 	}
 	return nil
 }

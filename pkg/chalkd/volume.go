@@ -3,7 +3,6 @@ package chalkd
 import (
 	"bytes"
 	"context"
-	"errors"
 	"fmt"
 	"log"
 	"maps"
@@ -13,6 +12,7 @@ import (
 	"connectrpc.com/connect"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
+	"github.com/trevex/chalkos/pkg/chalkd/layer"
 	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/config/slot"
 	"github.com/trevex/chalkos/pkg/rules"
@@ -71,9 +71,9 @@ func storageFailed(err error) error {
 	case err == nil:
 		return nil
 	case node.IsInternal(err):
-		return failed(connect.CodeInternal, "%v", err)
+		return err
 	default:
-		return failed(connect.CodeFailedPrecondition, "%v", err)
+		return layer.Errorf(connect.CodeFailedPrecondition, "%w", err)
 	}
 }
 
@@ -85,7 +85,7 @@ func checkFallback(recorded, section storage.Section, secret string) error {
 		return nil
 	}
 	if name := enrolled(recorded, section); name != "" {
-		return failed(connect.CodeInvalidArgument, "volume %s is encrypted and the node's fallback is %s, but %s", name, section.Fallback, storage.NoFallbackSecret)
+		return layer.Errorf(connect.CodeInvalidArgument, "volume %s is encrypted and the node's fallback is %s, but %s", name, section.Fallback, storage.NoFallbackSecret)
 	}
 	return nil
 }
@@ -109,7 +109,7 @@ func (s *Server) ResetVolume(ctx context.Context, req *connect.Request[nodev1.Re
 	defer s.mu.Unlock()
 	m := req.Msg
 	if m.Config == "" {
-		return nil, failed(connect.CodeInvalidArgument, "the request delivers no config, which defines the volume")
+		return nil, layer.Errorf(connect.CodeInvalidArgument, "the request delivers no config, which defines the volume")
 	}
 	name, err := s.name()
 	if err != nil {
@@ -146,17 +146,17 @@ func (s *Server) resetVolume(ctx context.Context, node, name string, next slot.S
 	}
 	v, ok := recorded.Volumes[name]
 	if !ok {
-		return failed(connect.CodeNotFound, "the node has no volume %s", name)
+		return layer.Errorf(connect.CodeNotFound, "the node has no volume %s", name)
 	}
 	if name == storage.VarVolume {
-		return failed(connect.CodeFailedPrecondition, "VAR holds the running node's data and cannot be reset while it runs")
+		return layer.Errorf(connect.CodeFailedPrecondition, "VAR holds the running node's data and cannot be reset while it runs")
 	}
 	nv, ok := d.section.Volumes[name]
 	if !ok {
-		return failed(connect.CodeFailedPrecondition, "the config no longer has volume %s; a reset recreates a volume, it does not remove one", name)
+		return layer.Errorf(connect.CodeFailedPrecondition, "the config no longer has volume %s; a reset recreates a volume, it does not remove one", name)
 	}
 	if nv.Disk != v.Disk {
-		return failed(connect.CodeFailedPrecondition, "volume %s moves from disk %s to %s; a reset recreates a volume on its own disk only", name, v.Disk, nv.Disk)
+		return layer.Errorf(connect.CodeFailedPrecondition, "volume %s moves from disk %s to %s; a reset recreates a volume on its own disk only", name, v.Disk, nv.Disk)
 	}
 	without := recorded
 	without.Volumes = map[string]storage.Volume{}
@@ -183,7 +183,7 @@ func (s *Server) resetVolume(ctx context.Context, node, name string, next slot.S
 		return err
 	}
 	if len(failures) > 0 {
-		return failed(connect.CodeFailedPrecondition, "a reset of volume %s does not carry out the config: %s", name, rules.Refusal(failures, node))
+		return layer.Errorf(connect.CodeFailedPrecondition, "a reset of volume %s does not carry out the config: %s", name, rules.Refusal(failures, node))
 	}
 
 	if err := storageFailed(s.storage().DeleteVolume(ctx, name, v, pins)); err != nil {
@@ -202,10 +202,6 @@ func (s *Server) resetVolume(ctx context.Context, node, name string, next slot.S
 // it, with an upgrade or apply-config --staged, and naming the volume keeps it. The slot being
 // written, writing, is left out: its config is the one being replaced. The caller holds s.mu.
 func (s *Server) elsewhere(err error, section storage.Section, writing []byte) error {
-	ce, ok := errors.AsType[*connect.Error](err)
-	if !ok {
-		return err
-	}
 	recorded, _, rerr := s.recorded()
 	if rerr != nil {
 		return err
@@ -230,7 +226,7 @@ func (s *Server) elsewhere(err error, section storage.Section, writing []byte) e
 	if len(notes) == 0 {
 		return err
 	}
-	return failed(ce.Code(), "%s; %s", ce.Message(), strings.Join(notes, "; "))
+	return fmt.Errorf("%w; %s", err, strings.Join(notes, "; "))
 }
 
 // slotsNaming lists, by the start of their root hashes, the images other than the running one and

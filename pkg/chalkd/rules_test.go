@@ -22,7 +22,7 @@ func TestApplyConfigRefusesWhenAFactCannotBeLoaded(t *testing.T) {
 	write(t, kubernetesPaths(s).Share(), "{")
 	r.Calls = nil
 	_, err := sendConfig(s, workerConfig)
-	if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "cannot check: fact share: ") || !strings.Contains(err.Error(), "share.json is not JSON") {
+	if codeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "cannot check: fact share: ") || !strings.Contains(err.Error(), "share.json is not JSON") {
 		t.Fatalf("err = %v", err)
 	}
 	if len(r.Calls) != 0 {
@@ -120,7 +120,7 @@ func TestApplyConfigRunningRulesThatDoNotCompile(t *testing.T) {
 	}
 	write(t, path, string(withBrokenRule(t, raw)))
 	_, err = sendConfig(s, baseConfig)
-	if connect.CodeOf(err) != connect.CodeInternal || !strings.Contains(err.Error(), "the running image's rules: SystemDisk: rule ") {
+	if codeOf(err) != connect.CodeInternal || !strings.Contains(err.Error(), "the running image's rules: SystemDisk: rule ") {
 		t.Errorf("err = %v", err)
 	}
 }
@@ -139,7 +139,7 @@ func TestInstallRulesThatDoNotCompile(t *testing.T) {
 	h.Image = &nodev1.ImageHeader{ImageId: "chalkos", Platform: "metal", Architecture: "x86-64", RootHash: newImage}
 	contractOf(h).Schemas = schemas
 	err := sendInstall(t, s, h, nil)
-	if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "the image cannot check config: the image's rules: SystemDisk: rule ") {
+	if codeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "the image cannot check config: the image's rules: SystemDisk: rule ") {
 		t.Errorf("err = %v", err)
 	}
 }

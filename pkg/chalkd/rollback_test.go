@@ -69,10 +69,10 @@ func TestRollbackConfig(t *testing.T) {
 // nothing changes.
 func TestRollbackConfigRefuses(t *testing.T) {
 	s, r := configServer(t)
-	if _, err := sendRollback(s, ""); connect.CodeOf(err) != connect.CodeInvalidArgument || !strings.Contains(err.Error(), "the request names no version to roll back to") {
+	if _, err := sendRollback(s, ""); codeOf(err) != connect.CodeInvalidArgument || !strings.Contains(err.Error(), "the request names no version to roll back to") {
 		t.Errorf("without a version: %v", err)
 	}
-	if _, err := sendRollback(s, hashOf(t, baseConfig)); connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "the node keeps no previous config of the running image") {
+	if _, err := sendRollback(s, hashOf(t, baseConfig)); codeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "the node keeps no previous config of the running image") {
 		t.Errorf("without a previous config: %v", err)
 	}
 	next := strings.Replace(baseConfig, "name: first", "name: second", 1)
@@ -80,11 +80,11 @@ func TestRollbackConfigRefuses(t *testing.T) {
 		t.Fatal(err)
 	}
 	r.Calls = nil
-	if _, err := sendRollback(s, hashOf(t, next)); connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "the node's previous config is "+hashOf(t, baseConfig)+", not "+hashOf(t, next)) {
+	if _, err := sendRollback(s, hashOf(t, next)); codeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "the node's previous config is "+hashOf(t, baseConfig)+", not "+hashOf(t, next)) {
 		t.Errorf("another version: %v", err)
 	}
 	s.upgrading.Lock()
-	if _, err := sendRollback(s, hashOf(t, baseConfig)); connect.CodeOf(err) != connect.CodeAborted || !strings.Contains(err.Error(), "an upgrade, an image rollback or the rollback at a trial's deadline is running; roll back once it ended") {
+	if _, err := sendRollback(s, hashOf(t, baseConfig)); codeOf(err) != connect.CodeAborted || !strings.Contains(err.Error(), "an upgrade, an image rollback or the rollback at a trial's deadline is running; roll back once it ended") {
 		t.Errorf("during an upgrade: %v, want aborted", err)
 	}
 	s.upgrading.Unlock()
@@ -106,7 +106,7 @@ func TestRollbackConfigMeetsTheRules(t *testing.T) {
 	}
 	r.Calls = nil
 	_, err := sendRollback(s, hashOf(t, baseConfig))
-	if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "Volume extra: the config removes it; only a reinstall of n1 removes a volume") {
+	if codeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "Volume extra: the config removes it; only a reinstall of n1 removes a volume") {
 		t.Errorf("rollback = %v, want the storage rule's refusal", err)
 	}
 	if len(r.Calls) != 0 {
@@ -140,11 +140,11 @@ func TestRollbackConfigAfterAnInterruptedWrite(t *testing.T) {
 	if resp.Msg.ConfigVersion != hashOf(t, baseConfig) || resp.Msg.PreviousConfigVersion != "" {
 		t.Errorf("status names config %q and previous %q, want baseConfig and none", resp.Msg.ConfigVersion, resp.Msg.PreviousConfigVersion)
 	}
-	if _, err := s.GetConfig(context.Background(), connect.NewRequest(&nodev1.GetConfigRequest{Previous: true})); connect.CodeOf(err) != connect.CodeNotFound || !strings.Contains(err.Error(), "the node keeps no previous config of the running image") {
+	if _, err := s.GetConfig(context.Background(), connect.NewRequest(&nodev1.GetConfigRequest{Previous: true})); codeOf(err) != connect.CodeNotFound || !strings.Contains(err.Error(), "the node keeps no previous config of the running image") {
 		t.Errorf("previous config = %v, want not found", err)
 	}
 	r.Calls = nil
-	if _, err := sendRollback(s, hashOf(t, baseConfig)); connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "the node keeps no previous config of the running image") {
+	if _, err := sendRollback(s, hashOf(t, baseConfig)); codeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "the node keeps no previous config of the running image") {
 		t.Errorf("rollback = %v, want no previous config", err)
 	}
 	if len(r.Calls) != 0 {
@@ -203,7 +203,7 @@ func TestRollbackImage(t *testing.T) {
 			resp, err := conn.RollbackImage(context.Background(), connect.NewRequest(&nodev1.RollbackImageRequest{RootHash: previous, Reboot: tc.reboot}))
 			switch {
 			case tc.wantCode != 0:
-				if connect.CodeOf(err) != tc.wantCode || !strings.Contains(err.Error(), "roll back: the node keeps no image it ran before") {
+				if codeOf(err) != tc.wantCode || !strings.Contains(err.Error(), "roll back: the node keeps no image it ran before") {
 					t.Fatalf("rollback = %v, want code %v", err, tc.wantCode)
 				}
 			case err != nil:
@@ -238,7 +238,7 @@ func TestRollbackImage(t *testing.T) {
 		}
 		conn := dial(t, serve(t, s, c, c.pool), c.clients[pki.RoleOperator])
 		_, err := conn.RollbackImage(context.Background(), connect.NewRequest(&nodev1.RollbackImageRequest{RootHash: previous}))
-		if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "STATE holds no config for the image") {
+		if codeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "STATE holds no config for the image") {
 			t.Errorf("rollback = %v", err)
 		}
 		if _, err := os.Stat(filepath.Join(s.Paths.StateDir, "chalkd", "rollback")); !errors.Is(err, fs.ErrNotExist) {

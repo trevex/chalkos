@@ -11,6 +11,7 @@ import (
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/name"
 
+	"github.com/trevex/chalkos/pkg/chalkd/layer"
 	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/config/slot"
 	"github.com/trevex/chalkos/pkg/ociimage"
@@ -20,14 +21,18 @@ import (
 // pullParts returns the stream of the store, hash tree and UKI of the image h describes, pulled
 // from ref. newPull pulls it through the Mirror with the Registry documents of the config text
 // delivers, or of the pending or the running config when text is empty, as registryDocuments
-// chooses. A failure to read the pending or the running config is a connect error with its own
-// code.
+// chooses. A pull that cannot start is the request's fault, as is config text that does not parse;
+// a failure to read the pending or the running config is the node's.
 func (s *Server) pullParts(ctx context.Context, ref string, h upgrade.Header, text string) (*ociimage.Pull, error) {
 	docs, err := s.registryDocuments(ref, text)
 	if err != nil {
 		return nil, err
 	}
-	return newPull(ctx, ref, h, docs)
+	pull, err := newPull(ctx, ref, h, docs)
+	if err != nil {
+		return nil, layer.Errorf(connect.CodeInvalidArgument, "%w", err)
+	}
+	return pull, nil
 }
 
 // newPull is the stream of the store, hash tree, UKI and, when h names one, boot loader of the
@@ -62,7 +67,7 @@ func (s *Server) registryDocuments(ref, text string) ([]config.Document, error) 
 	if text != "" {
 		docs, err := config.Parse(strings.NewReader(text))
 		if err != nil {
-			return nil, fmt.Errorf("pull %s: parse the config: %w", ref, err)
+			return nil, layer.Errorf(connect.CodeInvalidArgument, "pull %s: parse the config: %w", ref, err)
 		}
 		return docs, nil
 	}
@@ -70,7 +75,7 @@ func (s *Server) registryDocuments(ref, text string) ([]config.Document, error) 
 	defer s.mu.Unlock()
 	pending, held, err := slot.Read(slot.Pending(s.Loader.Slots))
 	if err != nil {
-		return nil, failed(connect.CodeInternal, "pull %s: read the pending config: %v", ref, err)
+		return nil, fmt.Errorf("pull %s: read the pending config: %w", ref, err)
 	}
 	if held {
 		// chalkd has only parsed the pending config, which an admin stored; the image checks it
@@ -79,7 +84,7 @@ func (s *Server) registryDocuments(ref, text string) ([]config.Document, error) 
 	}
 	_, running, _, err := s.runningSlot()
 	if err != nil {
-		return nil, failed(connect.CodeOf(err), "pull %s: %v", ref, plain(err))
+		return nil, fmt.Errorf("pull %s: %w", ref, err)
 	}
 	return running.Delivered, nil
 }

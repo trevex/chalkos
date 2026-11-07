@@ -117,7 +117,7 @@ func (s *Server) systemImage(system, platform, dir string) (check.Image, error) 
 	}
 	t := config.Target{Platform: platform}
 	if err := s.target(facts, &t); err != nil {
-		return check.Image{}, plain(err)
+		return check.Image{}, err
 	}
 	return check.Image{
 		Schemas: schemas, Target: t, Rules: set, Validators: vals, Outputs: defs,

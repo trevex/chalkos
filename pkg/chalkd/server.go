@@ -397,6 +397,9 @@ var domainCodes = layer.Codes{
 	layer.CodeFor[refusedTrust](connect.CodeInvalidArgument),
 }
 
+// codeOf is the code err answers an RPC with, as errorCodes gives it.
+func codeOf(err error) connect.Code { return domainCodes.Of(err) }
+
 // errorCodes turns the error of a handler, chalkd's or a plugin's, into the *connect.Error it
 // answers with: its whole text, with the code it carries or the code of a domain error it wraps,
 // or else CodeInternal. Handlers decide a code with layer.Errorf and wrap everything else with
@@ -475,11 +478,11 @@ func (s *Server) recorded() (storage.Section, storage.Pins, error) {
 	st := s.storage()
 	section, err := storage.ReadSection(st.SectionFile())
 	if err != nil {
-		return storage.Section{}, storage.Pins{}, failed(connect.CodeInternal, "read the recorded storage section: %v", err)
+		return storage.Section{}, storage.Pins{}, fmt.Errorf("read the recorded storage section: %w", err)
 	}
 	pins, err := storage.ReadPins(st.PinsFile())
 	if err != nil {
-		return storage.Section{}, storage.Pins{}, failed(connect.CodeInternal, "%v", err)
+		return storage.Section{}, storage.Pins{}, err
 	}
 	return section, pins, nil
 }
@@ -504,12 +507,12 @@ func (s *Server) rebootSoon() {
 //   - An install takes the name from the certificate in its header instead.
 func (s *Server) name() (string, error) {
 	if s.Certificate == nil {
-		return "", failed(connect.CodeInternal, "the node serves no node certificate, which names the node")
+		return "", errors.New("the node serves no node certificate, which names the node")
 	}
 	if leaf := s.Certificate.Current().Leaf; leaf != nil && leaf.Subject.CommonName != "" {
 		return leaf.Subject.CommonName, nil
 	}
-	return "", failed(connect.CodeInternal, "the node's node certificate names no node")
+	return "", errors.New("the node's node certificate names no node")
 }
 
 // nodeName is the node's name for the commands its messages advise, as name has it. A node
@@ -538,10 +541,6 @@ func (s *Server) Changes() sync.Locker { return &s.mu }
 func (s *Server) Runner() tool.Runner { return s.Run }
 
 func (s *Server) Slot() (string, error) { return s.Loader.Slot() }
-
-func failed(code connect.Code, format string, args ...any) error {
-	return connect.NewError(code, fmt.Errorf(format, args...))
-}
 
 // count is n and the noun, in the plural unless n is one.
 func count[N ~int | ~uint64](n N, noun string) string {

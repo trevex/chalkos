@@ -3,12 +3,14 @@ package chalkd
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io/fs"
 	"strings"
 
 	"connectrpc.com/connect"
 
 	checkv1 "github.com/trevex/chalkos/pkg/api/check/v1"
+	"github.com/trevex/chalkos/pkg/chalkd/layer"
 	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/config/slot"
 	"github.com/trevex/chalkos/pkg/facts"
@@ -63,15 +65,15 @@ func (s *Server) checkWithImage(ctx context.Context, st imageStore, system, plat
 	}
 	hashed, err := imagecheck.Decode(res.GetDocuments())
 	if err != nil {
-		return slot.Stored{}, nil, failed(connect.CodeInternal, "the image's checker: %v", err)
+		return slot.Stored{}, nil, fmt.Errorf("the image's checker: %w", err)
 	}
 	docs, err := config.Restore(hashed, c.delivered)
 	if err != nil {
-		return slot.Stored{}, nil, failed(connect.CodeInternal, "the image's checker gave back other documents than it got: %v", err)
+		return slot.Stored{}, nil, fmt.Errorf("the image's checker gave back other documents than it got: %w", err)
 	}
 	version, err := config.Hash(c.delivered)
 	if err != nil {
-		return slot.Stored{}, nil, failed(connect.CodeInvalidArgument, "hash the config: %v", err)
+		return slot.Stored{}, nil, layer.Errorf(connect.CodeInvalidArgument, "hash the config: %w", err)
 	}
 	return slot.Stored{Delivered: c.delivered, Documents: docs, Version: version, Identity: []byte(res.GetIdentity())}, res.GetWarnings(), nil
 }
@@ -81,9 +83,9 @@ func (s *Server) checkWithImage(ctx context.Context, st imageStore, system, plat
 func (s *Server) runImageCheck(ctx context.Context, st imageStore, system, platform, name string, c imageCheck) (*checkv1.Result, error) {
 	checker, err := st.Resolve(system + imagecheck.CheckerPath)
 	if errors.Is(err, fs.ErrNotExist) {
-		return nil, failed(connect.CodeFailedPrecondition, "the image %x predates chalkd check; it cannot check its config", c.image[:6])
+		return nil, layer.Errorf(connect.CodeFailedPrecondition, "the image %x predates chalkd check; it cannot check its config", c.image[:6])
 	} else if err != nil {
-		return nil, failed(connect.CodeInternal, "find the image's checker: %v", err)
+		return nil, fmt.Errorf("find the image's checker: %w", err)
 	}
 	f, err := s.stagedFacts(ctx, st, system, c)
 	if err != nil {
@@ -91,10 +93,10 @@ func (s *Server) runImageCheck(ctx context.Context, st imageStore, system, platf
 	}
 	in := &checkv1.Input{Node: name, Platform: platform}
 	if in.Delivered, err = imagecheck.Encode(config.Redact(c.delivered)); err != nil {
-		return nil, failed(connect.CodeInvalidArgument, "encode the config: %v", err)
+		return nil, layer.Errorf(connect.CodeInvalidArgument, "encode the config: %w", err)
 	}
 	if in.Old, err = imagecheck.Encode(config.Redact(c.old)); err != nil {
-		return nil, failed(connect.CodeInternal, "encode the running config: %v", err)
+		return nil, fmt.Errorf("encode the running config: %w", err)
 	}
 	run := s.CheckImage
 	if run == nil {
@@ -102,10 +104,10 @@ func (s *Server) runImageCheck(ctx context.Context, st imageStore, system, platf
 	}
 	res, err := run.Run(ctx, imagecheck.Image{Store: st.Dir(), System: system, Checker: checker}, in, f)
 	if err != nil {
-		return nil, failed(connect.CodeInternal, "run the image's checker: %v", err)
+		return nil, fmt.Errorf("run the image's checker: %w", err)
 	}
 	if e := res.GetError(); e != "" {
-		return nil, failed(connect.CodeFailedPrecondition, "the image cannot check config: %s", e)
+		return nil, layer.Errorf(connect.CodeFailedPrecondition, "the image cannot check config: %s", e)
 	}
 	return res, nil
 }
@@ -117,9 +119,9 @@ func (s *Server) runImageCheck(ctx context.Context, st imageStore, system, platf
 func (s *Server) imageRefusal(r *checkv1.Refusal, identity string, writing []byte) error {
 	switch r.GetStage() {
 	case "config":
-		return failed(connect.CodeInvalidArgument, "the config does not suit the image: %s", strings.TrimPrefix(r.GetMessage(), "the config: "))
+		return layer.Errorf(connect.CodeInvalidArgument, "the config does not suit the image: %s", strings.TrimPrefix(r.GetMessage(), "the config: "))
 	case "rules":
-		err := failed(connect.CodeFailedPrecondition, "%s", r.GetMessage())
+		err := layer.Errorf(connect.CodeFailedPrecondition, "%s", r.GetMessage())
 		if s.Installer {
 			return err
 		}
@@ -128,7 +130,7 @@ func (s *Server) imageRefusal(r *checkv1.Refusal, identity string, writing []byt
 		}
 		return err
 	}
-	return failed(connect.CodeFailedPrecondition, "%s", r.GetMessage())
+	return layer.Errorf(connect.CodeFailedPrecondition, "%s", r.GetMessage())
 }
 
 // stagedFacts are the facts the image whose store is st declares, which chalkd loads for its
@@ -140,10 +142,10 @@ func (s *Server) stagedFacts(ctx context.Context, st imageStore, system string, 
 	switch {
 	case errors.Is(err, fs.ErrNotExist):
 	case err != nil:
-		return nil, failed(connect.CodeInternal, "read the image's facts: %v", err)
+		return nil, fmt.Errorf("read the image's facts: %w", err)
 	default:
 		if defs, err = facts.Parse(data); err != nil {
-			return nil, failed(connect.CodeFailedPrecondition, "the image's facts: %v", err)
+			return nil, layer.Errorf(connect.CodeFailedPrecondition, "the image's facts: %w", err)
 		}
 	}
 	run := s.Facts

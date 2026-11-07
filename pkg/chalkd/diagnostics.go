@@ -3,6 +3,7 @@ package chalkd
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"maps"
 	"slices"
@@ -11,6 +12,7 @@ import (
 	"connectrpc.com/connect"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
+	"github.com/trevex/chalkos/pkg/chalkd/layer"
 	"github.com/trevex/chalkos/pkg/diagnostics"
 	"github.com/trevex/chalkos/pkg/pki"
 )
@@ -18,7 +20,7 @@ import (
 func (s *Server) Diagnostics(ctx context.Context, _ *connect.Request[nodev1.DiagnosticsRequest]) (*connect.Response[nodev1.DiagnosticsResponse], error) {
 	defs, err := diagnostics.Read(s.Paths.Diagnostics)
 	if err != nil {
-		return nil, failed(connect.CodeInternal, "read the image's diagnostics: %v", err)
+		return nil, fmt.Errorf("read the image's diagnostics: %w", err)
 	}
 	resp := &nodev1.DiagnosticsResponse{}
 	for _, name := range slices.Sorted(maps.Keys(defs)) {
@@ -51,22 +53,22 @@ func (s *Server) RunDiagnostic(ctx context.Context, req *connect.Request[nodev1.
 	name := req.Msg.Name
 	defs, err := diagnostics.Read(s.Paths.Diagnostics)
 	if err != nil {
-		return failed(connect.CodeInternal, "read the image's diagnostics: %v", err)
+		return fmt.Errorf("read the image's diagnostics: %w", err)
 	}
 	d, ok := defs[name]
 	if !ok {
-		return failed(connect.CodeNotFound, "the image declares no diagnostic %q; chalkctl node diag lists those it does", name)
+		return layer.Errorf(connect.CodeNotFound, "the image declares no diagnostic %q; chalkctl node diag lists those it does", name)
 	}
 	if role, _ := ctx.Value(roleKey{}).(pki.Role); !role.Allows(pki.Role(d.Role)) {
-		return failed(connect.CodePermissionDenied, "the diagnostic %s needs the %s role", name, d.Role)
+		return layer.Errorf(connect.CodePermissionDenied, "the diagnostic %s needs the %s role", name, d.Role)
 	}
 	argv, ns, err := d.Call(req.Msg.Arguments)
 	if err != nil {
-		return failed(connect.CodeInvalidArgument, "diagnostic %s: %v", name, err)
+		return layer.Errorf(connect.CodeInvalidArgument, "diagnostic %s: %w", name, err)
 	}
 	if s.diagnosticRuns.Add(1) > maxDiagnosticRuns {
 		s.diagnosticRuns.Add(-1)
-		return failed(connect.CodeResourceExhausted, "%d diagnostics run already; wait for one to end", maxDiagnosticRuns)
+		return layer.Errorf(connect.CodeResourceExhausted, "%d diagnostics run already; wait for one to end", maxDiagnosticRuns)
 	}
 	defer s.diagnosticRuns.Add(-1)
 
@@ -144,9 +146,9 @@ func (o *diagnosticOutput) finish(ctx context.Context, name, ns string, exit dia
 	case ctx.Err() != nil:
 		return ctx.Err()
 	case errors.Is(err, diagnostics.ErrNoNamespace):
-		return failed(connect.CodeFailedPrecondition, "diagnostic %s: the network namespace %s does not exist", name, ns)
+		return layer.Errorf(connect.CodeFailedPrecondition, "diagnostic %s: the network namespace %s does not exist", name, ns)
 	case err != nil:
-		return failed(connect.CodeInternal, "run the diagnostic %s: %v", name, err)
+		return fmt.Errorf("run the diagnostic %s: %w", name, err)
 	}
 	return o.stream.Send(&nodev1.RunDiagnosticResponse{Output: &nodev1.RunDiagnosticResponse_Exit{
 		Exit: &nodev1.DiagnosticExit{Code: int32(exit.Code), Stopped: exit.Stopped},

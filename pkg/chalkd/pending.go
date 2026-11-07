@@ -10,6 +10,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
+	"github.com/trevex/chalkos/pkg/chalkd/layer"
 	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/config/slot"
 	"github.com/trevex/chalkos/pkg/storage"
@@ -24,21 +25,21 @@ import (
 // and s.upgrading, so no upgrade reads the pending config while it is replaced.
 func (s *Server) holdPending(m *nodev1.ApplyConfigRequest, docs []config.Document) (*connect.Response[nodev1.ApplyConfigResponse], error) {
 	if m.FallbackSecret != "" {
-		return nil, failed(connect.CodeInvalidArgument, "no image is staged, so the config is held pending for the next upgrade, which is stored without the fallback secret; the upgrade that adds an encrypted volume carries it")
+		return nil, layer.Errorf(connect.CodeInvalidArgument, "no image is staged, so the config is held pending for the next upgrade, which is stored without the fallback secret; the upgrade that adds an encrypted volume carries it")
 	}
 	if len(docs) == 0 {
-		return nil, failed(connect.CodeInvalidArgument, "the config holds no documents")
+		return nil, layer.Errorf(connect.CodeInvalidArgument, "the config holds no documents")
 	}
 	version, err := config.Hash(docs)
 	if err != nil {
-		return nil, failed(connect.CodeInvalidArgument, "hash the config: %v", err)
+		return nil, layer.Errorf(connect.CodeInvalidArgument, "hash the config: %w", err)
 	}
 	if m.DryRun {
 		return connect.NewResponse(&nodev1.ApplyConfigResponse{Pending: &nodev1.PendingConfig{Version: version}}), nil
 	}
 	p, err := s.storePending(slot.Stored{Delivered: docs, Version: version})
 	if err != nil {
-		return nil, failed(connect.CodeInternal, "%v", err)
+		return nil, err
 	}
 	return connect.NewResponse(&nodev1.ApplyConfigResponse{Pending: p}), nil
 }
@@ -57,14 +58,14 @@ func (s *Server) storePending(next slot.Stored) (*nodev1.PendingConfig, error) {
 // without one answers with none. The caller holds s.mu and s.upgrading.
 func (s *Server) discardPending(m *nodev1.ApplyConfigRequest) (*connect.Response[nodev1.ApplyConfigResponse], error) {
 	if !m.Staged || m.Config != "" || m.DryRun || m.FallbackSecret != "" || len(m.Layers) > 0 || len(m.NodeCertificate) > 0 || len(m.NodeKey) > 0 || len(m.Trust) > 0 || m.Try != nil || len(m.IgnoreUnits) > 0 {
-		return nil, failed(connect.CodeInvalidArgument, "discard_pending goes with staged alone")
+		return nil, layer.Errorf(connect.CodeInvalidArgument, "discard_pending goes with staged alone")
 	}
 	p, err := s.pendingConfig()
 	if err != nil {
-		return nil, failed(connect.CodeInternal, "%v", err)
+		return nil, err
 	}
 	if err := slot.Remove(slot.Pending(s.Loader.Slots)); err != nil {
-		return nil, failed(connect.CodeInternal, "remove the pending config: %v", err)
+		return nil, fmt.Errorf("remove the pending config: %w", err)
 	}
 	if p != nil {
 		log.Printf("the pending config %s is dropped", p.Version)
@@ -136,7 +137,7 @@ func (s *Server) upgradeConfig(text string) (imageConfig, error) {
 	}
 	_, running, found, err := s.runningSlot()
 	if err != nil {
-		return imageConfig{}, plain(err)
+		return imageConfig{}, err
 	}
 	if !found || len(running.Delivered) == 0 {
 		return imageConfig{}, errors.New("the node holds no config to carry over to the image; upgrade with the config from an inventory, which needs the admin role")
@@ -150,16 +151,16 @@ func (s *Server) upgradeConfig(text string) (imageConfig, error) {
 func (c imageConfig) refused(err error, name string) error {
 	switch c.from {
 	case fromUpgrade:
-		return plain(err)
+		return err
 	case fromRunning:
-		return fmt.Errorf("the node's config does not suit the image: %w; upgrade with config the image accepts, from an inventory, which needs the admin role", plain(err))
+		return fmt.Errorf("the node's config does not suit the image: %w; upgrade with config the image accepts, from an inventory, which needs the admin role", err)
 	}
 	// A pending config is kept without the fallback secret, so only an upgrade that carries config
 	// of its own can carry the secret too.
 	if strings.Contains(err.Error(), storage.NoFallbackSecret) {
-		return fmt.Errorf("the pending config %s does not suit the image: %w; a pending config is kept without the fallback secret, so upgrade with the config from an inventory, which carries the secret and needs the admin role", c.pending, plain(err))
+		return fmt.Errorf("the pending config %s does not suit the image: %w; a pending config is kept without the fallback secret, so upgrade with the config from an inventory, which carries the secret and needs the admin role", c.pending, err)
 	}
-	return fmt.Errorf("the pending config %s does not suit the image: %w; chalkctl apply-config --staged %s replaces it, and chalkctl apply-config --staged --discard %s drops it", c.pending, plain(err), name, name)
+	return fmt.Errorf("the pending config %s does not suit the image: %w; chalkctl apply-config --staged %s replaces it, and chalkctl apply-config --staged --discard %s drops it", c.pending, err, name, name)
 }
 
 // settlePending removes the pending config that c, the config stageConfig wrote to the image's

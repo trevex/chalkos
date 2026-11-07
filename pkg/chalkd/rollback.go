@@ -16,6 +16,7 @@ import (
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/atomicfile"
+	"github.com/trevex/chalkos/pkg/chalkd/layer"
 	"github.com/trevex/chalkos/pkg/config/slot"
 	"github.com/trevex/chalkos/pkg/uki"
 	"github.com/trevex/chalkos/pkg/upgrade"
@@ -33,12 +34,12 @@ import (
 func (s *Server) RollbackConfig(ctx context.Context, req *connect.Request[nodev1.RollbackConfigRequest]) (*connect.Response[nodev1.RollbackConfigResponse], error) {
 	version := req.Msg.Version
 	if version == "" {
-		return nil, failed(connect.CodeInvalidArgument, "the request names no version to roll back to")
+		return nil, layer.Errorf(connect.CodeInvalidArgument, "the request names no version to roll back to")
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if !s.upgrading.TryLock() {
-		return nil, failed(connect.CodeAborted, "an upgrade, an image rollback or the rollback at a trial's deadline is running; roll back once it ended")
+		return nil, layer.Errorf(connect.CodeAborted, "an upgrade, an image rollback or the rollback at a trial's deadline is running; roll back once it ended")
 	}
 	defer s.upgrading.Unlock()
 	r, open, err := readTrial(s.Paths.StateDir)
@@ -62,7 +63,7 @@ func (s *Server) RollbackConfig(ctx context.Context, req *connect.Request[nodev1
 		return rollbackResponse(resp), nil
 	}
 	if version != r.Previous {
-		return nil, failed(connect.CodeFailedPrecondition, "config %s is on trial, so a rollback delivers config %s from before it, not %s", r.Version, r.Previous, version)
+		return nil, layer.Errorf(connect.CodeFailedPrecondition, "config %s is on trial, so a rollback delivers config %s from before it, not %s", r.Version, r.Previous, version)
 	}
 	var resp *nodev1.ApplyConfigResponse
 	if _, st, serr := r.state(s.Loader.Slots); serr == nil && st == trialEnded {
@@ -82,7 +83,7 @@ func (s *Server) RollbackConfig(ctx context.Context, req *connect.Request[nodev1
 func (s *Server) rollbackOrRedeliver(ctx context.Context, version string) (*nodev1.ApplyConfigResponse, error) {
 	dir, err := s.Loader.Slot()
 	if err != nil {
-		return nil, failed(connect.CodeInternal, "find the running image's config slot: %v", err)
+		return nil, fmt.Errorf("find the running image's config slot: %w", err)
 	}
 	if running, err := slot.Version(dir); err == nil && running == version {
 		log.Printf("the node runs config %s already; delivering it again", version)
@@ -121,22 +122,22 @@ func rollbackResponse(resp *nodev1.ApplyConfigResponse) *connect.Response[nodev1
 func (s *Server) rollbackConfig(ctx context.Context, version string) (resp *nodev1.ApplyConfigResponse, changed bool, err error) {
 	dir, err := s.Loader.Slot()
 	if err != nil {
-		return nil, false, failed(connect.CodeInternal, "find the running image's config slot: %v", err)
+		return nil, false, fmt.Errorf("find the running image's config slot: %w", err)
 	}
 	running, err := slot.Version(dir)
 	if err != nil {
-		return nil, false, failed(connect.CodeInternal, "read the config's version: %v", err)
+		return nil, false, fmt.Errorf("read the config's version: %w", err)
 	}
 	prev, found, err := slot.Read(slot.Previous(dir))
 	switch {
 	case err != nil:
-		return nil, false, failed(connect.CodeInternal, "read the previous config: %v", err)
+		return nil, false, fmt.Errorf("read the previous config: %w", err)
 	// A write interrupted between the previous link and the slot's leaves both naming one set,
 	// which is no config to roll back to.
 	case !found || prev.Version == "" || prev.Version == running:
-		return nil, false, failed(connect.CodeFailedPrecondition, "the node keeps no previous config of the running image: it keeps one once a delivery replaced the config the image was installed or upgraded with")
+		return nil, false, layer.Errorf(connect.CodeFailedPrecondition, "the node keeps no previous config of the running image: it keeps one once a delivery replaced the config the image was installed or upgraded with")
 	case prev.Version != version:
-		return nil, false, failed(connect.CodeFailedPrecondition, "the node's previous config is %s, not %s", prev.Version, version)
+		return nil, false, layer.Errorf(connect.CodeFailedPrecondition, "the node's previous config is %s, not %s", prev.Version, version)
 	}
 	log.Printf("rolling back to the previous config %s", version)
 	return s.deliverStored(ctx, prev, "the previous config")
@@ -152,7 +153,7 @@ func (s *Server) redeliver(ctx context.Context) (*nodev1.ApplyConfigResponse, er
 		return nil, err
 	}
 	if !found {
-		return nil, failed(connect.CodeFailedPrecondition, "STATE holds no config of the running image")
+		return nil, layer.Errorf(connect.CodeFailedPrecondition, "STATE holds no config of the running image")
 	}
 	resp, _, err := s.deliverStored(ctx, running, "the running config")
 	return resp, err
@@ -173,7 +174,7 @@ func (s *Server) deliverStored(ctx context.Context, stored slot.Stored, what str
 	}
 	next, err := translateSlot(name, stored.Delivered, schemas, t)
 	if err != nil {
-		return nil, false, failed(connect.CodeFailedPrecondition, "%s no longer suits the running image: %v", what, err)
+		return nil, false, layer.Errorf(connect.CodeFailedPrecondition, "%s no longer suits the running image: %w", what, err)
 	}
 	d, err := s.planDelivery(ctx, applyRequest{identity: string(next.Identity), next: next, schemas: schemas, msg: &nodev1.ApplyConfigRequest{}})
 	if err != nil {
@@ -195,10 +196,10 @@ func (s *Server) deliverStored(ctx context.Context, stored slot.Stored, what str
 func (s *Server) RollbackImage(ctx context.Context, req *connect.Request[nodev1.RollbackImageRequest]) (*connect.Response[nodev1.RollbackImageResponse], error) {
 	m := req.Msg
 	if len(m.RootHash) == 0 {
-		return nil, failed(connect.CodeInvalidArgument, "the request names no image to roll back to")
+		return nil, layer.Errorf(connect.CodeInvalidArgument, "the request names no image to roll back to")
 	}
 	if !s.upgrading.TryLock() {
-		return nil, failed(connect.CodeAborted, "an upgrade, an image rollback, a config delivery or the rollback at a trial's deadline is running")
+		return nil, layer.Errorf(connect.CodeAborted, "an upgrade, an image rollback, a config delivery or the rollback at a trial's deadline is running")
 	}
 	defer s.upgrading.Unlock()
 	if err := s.refuseOnTrialLocking("an image rollback"); err != nil {
@@ -206,14 +207,14 @@ func (s *Server) RollbackImage(ctx context.Context, req *connect.Request[nodev1.
 	}
 	running, err := uki.RunningHash(s.Paths.Cmdline)
 	if err != nil {
-		return nil, failed(connect.CodeInternal, "%v", err)
+		return nil, err
 	}
 	if !bytes.Equal(running, m.RootHash) {
 		s.mu.Lock()
 		kept := s.keepsSlot(m.RootHash)
 		s.mu.Unlock()
 		if !kept {
-			return nil, failed(connect.CodeFailedPrecondition, "STATE holds no config for the image %x, so it would boot without config", m.RootHash)
+			return nil, layer.Errorf(connect.CodeFailedPrecondition, "STATE holds no config for the image %x, so it would boot without config", m.RootHash)
 		}
 	}
 	// The record is written once the rollback's checks passed, before the rename that stages the
@@ -228,7 +229,7 @@ func (s *Server) RollbackImage(ctx context.Context, req *connect.Request[nodev1.
 	res, err := s.reactivate(ctx, m.RootHash, record)
 	if err != nil {
 		log.Printf("rollback to %x failed: %v", m.RootHash, err)
-		return nil, failed(connect.CodeFailedPrecondition, "roll back: %v", err)
+		return nil, layer.Errorf(connect.CodeFailedPrecondition, "roll back: %w", err)
 	}
 	resp := &nodev1.RollbackImageResponse{AlreadyInstalled: res.AlreadyInstalled, AlreadyStaged: res.AlreadyStaged, Entry: res.Entry}
 	switch {

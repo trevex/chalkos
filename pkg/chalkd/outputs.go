@@ -2,10 +2,12 @@ package chalkd
 
 import (
 	"context"
+	"fmt"
 	"log"
 
 	"connectrpc.com/connect"
 
+	"github.com/trevex/chalkos/pkg/chalkd/layer"
 	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/outputs"
 	"github.com/trevex/chalkos/pkg/schema"
@@ -25,7 +27,7 @@ import (
 func (s *Server) renderOutputs(ctx context.Context, name string, docs []config.Document, schemas *schema.Schemas, refuse, dry bool) (*outputs.Staged, error) {
 	staged, failures, err := s.Loader.RenderOutputs(ctx, name, config.Redact(docs), schemas, true)
 	if err != nil {
-		return nil, failed(connect.CodeInternal, "the running image's outputs: %v", err)
+		return nil, fmt.Errorf("the running image's outputs: %w", err)
 	}
 	if len(failures) == 0 {
 		return staged, nil
@@ -44,5 +46,5 @@ func (s *Server) renderOutputs(ctx context.Context, name string, docs []config.D
 		return staged, nil
 	}
 	staged.Discard()
-	return nil, failed(connect.CodeFailedPrecondition, "%s", outputs.Refusal(failures))
+	return nil, layer.Errorf(connect.CodeFailedPrecondition, "%s", outputs.Refusal(failures))
 }

@@ -32,13 +32,13 @@ func (s *Server) Status(ctx context.Context, req *connect.Request[nodev1.StatusR
 	resp := &nodev1.StatusResponse{Platform: readOSRelease(s.Paths.OSRelease)["CHALKOS_PLATFORM"]}
 	dir, err := s.Loader.Slot()
 	if err != nil {
-		return nil, failed(connect.CodeInternal, "find the running image's config slot: %v", err)
+		return nil, fmt.Errorf("find the running image's config slot: %w", err)
 	}
 	if resp.ConfigVersion, err = slot.Version(dir); err != nil {
-		return nil, failed(connect.CodeInternal, "read the config's version: %v", err)
+		return nil, fmt.Errorf("read the config's version: %w", err)
 	}
 	if resp.PreviousConfigVersion, err = slot.Version(slot.Previous(dir)); err != nil {
-		return nil, failed(connect.CodeInternal, "read the previous config's version: %v", err)
+		return nil, fmt.Errorf("read the previous config's version: %w", err)
 	}
 	// A write interrupted between the previous link and the slot's leaves both naming one set,
 	// which is no config to roll back to.
@@ -50,10 +50,10 @@ func (s *Server) Status(ctx context.Context, req *connect.Request[nodev1.StatusR
 	var status storage.Status
 	if raw, err := os.ReadFile(s.Paths.StorageStatus); err == nil {
 		if err := json.Unmarshal(raw, &status); err != nil {
-			return nil, failed(connect.CodeInternal, "parse %s: %v", s.Paths.StorageStatus, err)
+			return nil, fmt.Errorf("parse %s: %w", s.Paths.StorageStatus, err)
 		}
 	} else if !errors.Is(err, fs.ErrNotExist) {
-		return nil, failed(connect.CodeInternal, "%v", err)
+		return nil, err
 	}
 	for _, name := range slices.Sorted(maps.Keys(status.Disks)) {
 		d := status.Disks[name]
@@ -66,7 +66,7 @@ func (s *Server) Status(ctx context.Context, req *connect.Request[nodev1.StatusR
 	}
 	mounts, err := hostops.MountPoints(s.Paths.MountInfo)
 	if err != nil {
-		return nil, failed(connect.CodeInternal, "%v", err)
+		return nil, err
 	}
 	for _, name := range slices.Sorted(maps.Keys(section.Volumes)) {
 		v := section.Volumes[name]
@@ -80,10 +80,10 @@ func (s *Server) Status(ctx context.Context, req *connect.Request[nodev1.StatusR
 	}
 
 	if resp.FailedUnits, err = systemctl.FailedUnits(ctx, s.Run); err != nil {
-		return nil, failed(connect.CodeInternal, "list failed units: %v", err)
+		return nil, fmt.Errorf("list failed units: %w", err)
 	}
 	if resp.Outputs, err = s.outputStatus(); err != nil {
-		return nil, failed(connect.CodeInternal, "%v", err)
+		return nil, err
 	}
 	now := time.Now()
 	resp.Certificates = s.certificates(now)
@@ -99,10 +99,10 @@ func (s *Server) Status(ctx context.Context, req *connect.Request[nodev1.StatusR
 		resp.Boot.Health = s.bootHealth(ctx)
 	}
 	if resp.StagedConfigVersion, err = s.stagedVersion(resp.Boot); err != nil {
-		return nil, failed(connect.CodeInternal, "%v", err)
+		return nil, err
 	}
 	if resp.PendingConfig, err = s.pendingConfig(); err != nil {
-		return nil, failed(connect.CodeInternal, "%v", err)
+		return nil, err
 	}
 	return connect.NewResponse(resp), nil
 }

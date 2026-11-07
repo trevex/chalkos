@@ -2,9 +2,11 @@ package chalkd
 
 import (
 	"context"
+	"fmt"
 
 	"connectrpc.com/connect"
 
+	"github.com/trevex/chalkos/pkg/chalkd/layer"
 	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/validators"
 )
@@ -17,10 +19,10 @@ import (
 func (s *Server) checkValidators(ctx context.Context, docs []config.Document) error {
 	rs, failures, err := s.Loader.Validate(ctx, config.Redact(docs))
 	if err != nil {
-		return failed(connect.CodeInternal, "the running image's validators: %v", err)
+		return fmt.Errorf("the running image's validators: %w", err)
 	}
 	if len(rs) > 0 || len(failures) > 0 {
-		return failed(connect.CodeFailedPrecondition, "%s", validators.Refusal(rs, failures))
+		return layer.Errorf(connect.CodeFailedPrecondition, "%s", validators.Refusal(rs, failures))
 	}
 	return nil
 }
