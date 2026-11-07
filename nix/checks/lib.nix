@@ -68,14 +68,24 @@ in
   '';
 
   # A check that runs the test script as on a node, with the tools given on its PATH. The script
-  # is shellchecked, and runs with errexit, nounset and pipefail.
+  # is shellchecked, and runs with errexit, nounset and pipefail. It may call fail <message>, which
+  # reports the error, runs the script's debug function, if it defines one, to print what explains
+  # the failure, and fails the check.
   unitCheck =
     name: runtimeInputs: text:
     pkgs.runCommand "chalkos-${name}" { nativeBuildInputs = [ pkgs.bubblewrap ]; } ''
       ${onNode (
         pkgs.writeShellApplication {
           name = "chalkos-${name}-test";
-          inherit runtimeInputs text;
+          inherit runtimeInputs;
+          text = ''
+            fail() {
+              echo "error: $*" >&2
+              if declare -F debug >/dev/null; then debug; fi
+              exit 1
+            }
+          ''
+          + text;
         }
       )}
       touch $out

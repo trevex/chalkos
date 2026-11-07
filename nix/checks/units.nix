@@ -43,11 +43,9 @@ in
       rule = builtins.head worker.config.systemd.services.chalkos-kubernetes.serviceConfig.ExecStartPre;
     in
     unitCheck "vxlan-rule" checkLib.networkTools ''
-      fail() {
-        echo "error: $*" >&2
+      debug() {
         cat errors.log >&2 2>/dev/null || true
         nft list ruleset >&2
-        exit 1
       }
       ${checkLib.peerNamespace}
       # Addresses of the node on another interface.
@@ -362,10 +360,6 @@ in
       script = worker.config.systemd.services.chalkos-registry-mirrors.serviceConfig.ExecStart;
     in
     unitCheck "registry-mirrors" [ ] ''
-      fail() {
-        echo "error: $*" >&2
-        exit 1
-      }
       documents=/run/chalkos/config/oci.chalkos.dev
       certs=/run/containerd/certs.d
       mkdir -p "$documents/Mirror" "$documents/Registry" "$certs/stale"
@@ -425,10 +419,6 @@ in
       dump = "${worker.pkgs.containerd}/bin/containerd --config ${worker.config.virtualisation.containerd.args.config} config dump";
     in
     unitCheck "containerd-config" [ ] ''
-      fail() {
-        echo "error: $*" >&2
-        exit 1
-      }
       sandbox() {
         ${dump} >dump.toml || fail "containerd refused its config"
         sed -n 's/^ *sandbox = //p' dump.toml
@@ -455,10 +445,8 @@ in
       script = worker.config.systemd.services.chalkos-controlplane.serviceConfig.ExecStart;
     in
     unitCheck "controlplane-ports" checkLib.networkTools ''
-      fail() {
-        echo "error: $*" >&2
+      debug() {
         nft list ruleset >&2
-        exit 1
       }
       ${checkLib.peerNamespace}
 
@@ -525,10 +513,6 @@ in
       );
     in
     unitCheck "chrony-dhcp" [ ] ''
-      fail() {
-        echo "error: $*" >&2
-        exit 1
-      }
       # chronyc of the unit's path, which this namespace has no chronyd for.
       mkdir -p stub
       cat >stub/chronyc <<'STUB'
@@ -594,10 +578,8 @@ in
       dir = checkLib.router.config.chalkos.outputs.networkd.dir;
     in
     unitCheck "router-vrf" checkLib.networkTools ''
-      fail() {
-        echo "error: $*" >&2
+      debug() {
         ip -d link show >&2
-        exit 1
       }
       exists() { ip link show "$1" >/dev/null 2>&1; }
       reloaded() {
@@ -725,10 +707,8 @@ in
       ];
     in
     unitCheck "router-firewall" tools ''
-      fail() {
-        echo "error: $*" >&2
+      debug() {
         nft list ruleset >&2
-        exit 1
       }
       ip link set lo up
       unshare -n sh -c 'touch lan-ready; exec sleep 600' &
@@ -1143,12 +1123,10 @@ in
       goldens = ../../cmd/chalkos-render/testdata/router;
     in
     unitCheck "router-policy-routing" checkLib.networkTools ''
-      fail() {
-        echo "error: $*" >&2
+      debug() {
         nft list ruleset >&2
         ip -4 rule show >&2
         ip -6 rule show >&2
-        exit 1
       }
       ip link set lo up
       for ns in lan lan1 wana wanb transit; do
@@ -1368,13 +1346,11 @@ in
         ]
       )
       ''
-        fail() {
-          echo "error: $*" >&2
+        debug() {
           ip -d link show >&2
           ip netns list >&2
           ip route show table all >&2
           cat "$STATE" >&2
-          exit 1
         }
         # iproute2 keeps named network namespaces in /var/run/netns, and a node's /var/run is /run.
         ln -s /run /var/run
@@ -1686,10 +1662,8 @@ in
       dir = checkLib.router.config.chalkos.outputs.unbound.dir;
     in
     unitCheck "router-resolvers" [ pkgs.gnugrep ] ''
-      fail() {
-        echo "error: $*" >&2
+      debug() {
         cat "$SD/log" >&2
-        exit 1
       }
       export SD=$PWD/sd
       mkdir -p stub "$SD" /sys/class/net ${dir}
@@ -1904,10 +1878,8 @@ in
       goldens = ../../cmd/chalkos-render/testdata/router;
     in
     unitCheck "router-dhcp" checkLib.networkTools ''
-      fail() {
-        echo "error: $*" >&2
+      debug() {
         cat kea.log >&2
-        exit 1
       }
       ip link set lo up
       unshare -n sh -c 'touch client-ready; exec sleep 600' &
@@ -2029,10 +2001,8 @@ in
         ]
       )
       ''
-        fail() {
-          echo "error: $*" >&2
+        debug() {
           cat kea-*.log >&2
-          exit 1
         }
         ip link set lo up
         # The namespaces of the client on lan0 and of the home router on cust0.
@@ -2217,10 +2187,8 @@ in
       ];
     in
     unitCheck "router-dhcp-relay" tools ''
-      fail() {
-        echo "error: $*" >&2
+      debug() {
         cat relay*.log kea-*.log >&2
-        exit 1
       }
       ip link set lo up
       unshare -n sh -c 'touch client-ready; exec sleep 600' &
@@ -2351,10 +2319,8 @@ in
       dir = checkLib.router.config.chalkos.outputs.dhcp-relay.dir;
     in
     unitCheck "router-dhcp-relay-instances" [ pkgs.gnugrep ] ''
-      fail() {
-        echo "error: $*" >&2
+      debug() {
         cat "$SD/log" >&2
-        exit 1
       }
       export SD=$PWD/sd
       mkdir -p stub "$SD" /sys/class/net ${dir}
@@ -2500,10 +2466,8 @@ in
       dir = checkLib.router.config.chalkos.outputs.kea.dir;
     in
     unitCheck "router-dhcp-instances" [ pkgs.gnugrep ] ''
-      fail() {
-        echo "error: $*" >&2
+      debug() {
         cat "$SD/log" >&2
-        exit 1
       }
       export SD=$PWD/sd
       mkdir -p stub "$SD" /sys/class/net /run/kea ${dir}
@@ -2769,10 +2733,6 @@ in
       golden = ../../cmd/chalkos-render/testdata/router/edge.frr;
     in
     unitCheck "frr-credentials" [ pkgs.diffutils ] ''
-      fail() {
-        echo "error: $*" >&2
-        exit 1
-      }
       filled=' neighbor peer-fabric password example-password'
       mkdir -p /run/frr ${dir} credentials
       export CREDENTIALS_DIRECTORY=$PWD/credentials
