@@ -793,3 +793,27 @@ func TestSetUpChecksPinnedDiskIsUnchanged(t *testing.T) {
 		})
 	}
 }
+
+// EncryptedVolumes lists VAR first and the others by name, and refuses an uncreated volume
+// unless told to leave it out.
+func TestEncryptedVolumes(t *testing.T) {
+	tpm := storage.EncryptionTPM2
+	section := storage.Section{Volumes: map[string]storage.Volume{
+		"zeta":  {Disk: storage.SystemDisk, Label: "zeta", Encryption: tpm},
+		"plain": {Disk: storage.SystemDisk, Label: "plain"},
+		"alpha": {Disk: "data", Encryption: tpm},
+		"later": {Disk: "data", Encryption: tpm},
+		"var":   {Disk: storage.SystemDisk, Label: "var", Encryption: tpm},
+	}}
+	pins := storage.Pins{Disks: map[string]storage.Pin{"data": {Partitions: map[string]string{"alpha": "a1"}}}}
+	partition := func(label string) (string, error) { return "/boot/" + label, nil }
+	names := []string{"zeta", "plain", "alpha", "later", "var"}
+	got, err := EncryptedVolumes(section, pins, names, partition, true)
+	want := []EncryptedVolume{{"var", "/boot/var"}, {"alpha", storage.PartUUIDPath("a1")}, {"zeta", "/boot/zeta"}}
+	if err != nil || !reflect.DeepEqual(got, want) {
+		t.Errorf("EncryptedVolumes = %v, %v, want %v", got, err, want)
+	}
+	if _, err := EncryptedVolumes(section, pins, names, partition, false); err == nil || err.Error() != "volume later was not created" {
+		t.Errorf("err = %v, want the uncreated volume", err)
+	}
+}

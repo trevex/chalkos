@@ -6,7 +6,9 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"maps"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 
@@ -169,7 +171,17 @@ func (s *Storage) FallbackFacts(ctx context.Context, secret string) (FallbackFac
 	if err != nil {
 		return FallbackFact{}, err
 	}
-	for _, dev := range s.encryptedDevices(kept, pins) {
+	// A volume pins has no partition for is left out: the check needs one keyslot alone, which
+	// STATE or VAR almost always has.
+	volumes, err := EncryptedVolumes(kept, pins, slices.Collect(maps.Keys(kept.Volumes)), s.bootPartition, true)
+	if err != nil {
+		return FallbackFact{}, err
+	}
+	if kept.Encryption == storage.EncryptionTPM2 {
+		volumes = append([]EncryptedVolume{{"state", filepath.Join(s.BootPartitions, "state")}}, volumes...)
+	}
+	for _, v := range volumes {
+		dev := v.Device
 		dump, err := s.Run.Run(ctx, "cryptsetup", "luksDump", "--dump-json-metadata", dev)
 		if err != nil {
 			return FallbackFact{}, fmt.Errorf("read the keyslots of %s to check the fallback secret: %w", dev, err)
@@ -202,35 +214,6 @@ func (s *Storage) FallbackFacts(ctx context.Context, secret string) (FallbackFac
 		return f, nil
 	}
 	return f, nil
-}
-
-// encryptedDevices lists the LUKS devices of kept that carry the fallback keyslot, in the order
-// the fallback secret is checked against them.
-func (s *Storage) encryptedDevices(kept storage.Section, pins storage.Pins) []string {
-	var devices []string
-	if kept.Encryption == storage.EncryptionTPM2 {
-		devices = append(devices, filepath.Join(s.BootPartitions, "state"))
-	}
-	names := []string{storage.VarVolume}
-	var others []string
-	for name := range kept.Volumes {
-		if name != storage.VarVolume {
-			others = append(others, name)
-		}
-	}
-	sort.Strings(others)
-	for _, name := range append(names, others...) {
-		v, ok := kept.Volumes[name]
-		if !ok || v.Encryption != storage.EncryptionTPM2 {
-			continue
-		}
-		if v.Disk == storage.SystemDisk {
-			devices = append(devices, filepath.Join(s.BootPartitions, v.Label))
-		} else if uuid := pins.Disks[v.Disk].Partitions[name]; uuid != "" {
-			devices = append(devices, storage.PartUUIDPath(uuid))
-		}
-	}
-	return devices
 }
 
 // passwordSlots returns the keyslots of a LUKS2 header that no token refers to, in numeric

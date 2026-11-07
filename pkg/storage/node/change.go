@@ -66,11 +66,29 @@ func (s *Storage) RecordSection(section storage.Section) error {
 	return atomicfile.WriteFile(s.SectionFile(), data, 0o600)
 }
 
-// EncryptedVolumes returns the devices of the named volumes that are encrypted, by volume name.
-// partition finds a system disk volume's partition by its label; a volume on another disk is
-// found by the PARTUUID pins record for it.
-func EncryptedVolumes(section storage.Section, pins storage.Pins, names []string, partition func(label string) (string, error)) (map[string]string, error) {
-	devices := map[string]string{}
+// EncryptedVolume is the LUKS device of an encrypted volume.
+type EncryptedVolume struct {
+	Name, Device string
+}
+
+// EncryptedVolumes returns the devices of the named volumes that are encrypted, VAR first and the
+// others in name order. partition finds a system disk volume's partition by its label; a volume on
+// another disk is found by the PARTUUID pins record for it. A volume pins records no PARTUUID for
+// was not created: that is an error, unless skipUncreated leaves the volume out.
+func EncryptedVolumes(section storage.Section, pins storage.Pins, names []string, partition func(label string) (string, error), skipUncreated bool) ([]EncryptedVolume, error) {
+	names = slices.Clone(names)
+	slices.SortFunc(names, func(a, b string) int {
+		switch {
+		case a == b:
+			return 0
+		case a == storage.VarVolume:
+			return -1
+		case b == storage.VarVolume:
+			return 1
+		}
+		return strings.Compare(a, b)
+	})
+	var devices []EncryptedVolume
 	for _, name := range names {
 		v, ok := section.Volumes[name]
 		if !ok || v.Encryption != storage.EncryptionTPM2 {
@@ -81,25 +99,33 @@ func EncryptedVolumes(section storage.Section, pins storage.Pins, names []string
 			if err != nil {
 				return nil, fmt.Errorf("volume %s: %w", name, err)
 			}
-			devices[name] = dev
+			devices = append(devices, EncryptedVolume{name, dev})
 			continue
 		}
 		uuid := pins.Disks[v.Disk].Partitions[name]
 		if uuid == "" {
+			if skipUncreated {
+				continue
+			}
 			return nil, fmt.Errorf("volume %s was not created", name)
 		}
-		devices[name] = storage.PartUUIDPath(uuid)
+		devices = append(devices, EncryptedVolume{name, storage.PartUUIDPath(uuid)})
 	}
 	return devices, nil
 }
 
-// Enroll adds the fallback keyslot to each LUKS device, by volume name, unlocking it with the TPM.
+// bootPartition is the link udev gives the boot disk's partition of the label.
+func (s *Storage) bootPartition(label string) (string, error) {
+	return filepath.Join(s.BootPartitions, label), nil
+}
+
+// Enroll adds the fallback keyslot to each LUKS device, in order, unlocking it with the TPM.
 //   - The secret only travels in the environment.
 //   - Earlier password slots are replaced, so a repeated install does not pile up keyslots.
 //   - TPM2 slots are never wiped.
-func (s *Storage) Enroll(ctx context.Context, devices map[string]string, secret string) error {
-	for _, name := range slices.Sorted(maps.Keys(devices)) {
-		dev := devices[name]
+func (s *Storage) Enroll(ctx context.Context, devices []EncryptedVolume, secret string) error {
+	for _, v := range devices {
+		name, dev := v.Name, v.Device
 		found, err := Content(ctx, s.Run, dev)
 		if err != nil {
 			return err
@@ -149,9 +175,7 @@ func (s *Storage) Change(ctx context.Context, recorded, section storage.Section,
 		return err
 	}
 	if section.Fallback != storage.FallbackNone {
-		devices, err := EncryptedVolumes(section, pins, added, func(label string) (string, error) {
-			return filepath.Join(s.BootPartitions, label), nil
-		})
+		devices, err := EncryptedVolumes(section, pins, added, s.bootPartition, false)
 		if err != nil {
 			return err
 		}

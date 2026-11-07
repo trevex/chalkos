@@ -18,7 +18,7 @@ func runGenerate(args []string) error {
 	if flags.NArg() != 1 && flags.NArg() != 3 {
 		return errors.New("generate: want the generator directories NORMAL [EARLY LATE]")
 	}
-	units, err := (&node.Storage{StateDir: *stateDir}).Generate(*cryptsetup)
+	units, err := (&node.Storage{StateDir: *stateDir, BootPartitions: "/dev/disk/chalk-boot"}).Generate(*cryptsetup)
 	if err != nil {
 		return err
 	}

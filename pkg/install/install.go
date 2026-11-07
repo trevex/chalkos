@@ -177,10 +177,10 @@ func (i *Installer) enrollFallback(ctx context.Context, st *node.Storage, disk s
 }
 
 // encryptedDevices lists the LUKS devices that get the fallback keyslot: STATE and every
-// encrypted volume, by volume name. A volume of the system disk is found in the disk's partition
+// encrypted volume, STATE first and then as EncryptedVolumes orders them. A volume of the system disk is found in the disk's partition
 // table: udev's links to the boot disk's partitions do not lead to an installer's target, and a
 // PARTUUID may also be on another disk the node was installed on before.
-func (i *Installer) encryptedDevices(ctx context.Context, disk storage.BlockDisk, section storage.Section, pins storage.Pins, state string) (map[string]string, error) {
+func (i *Installer) encryptedDevices(ctx context.Context, disk storage.BlockDisk, section storage.Section, pins storage.Pins, state string) ([]node.EncryptedVolume, error) {
 	table, err := i.readTable(ctx, disk.Device)
 	if err != nil {
 		return nil, err
@@ -188,12 +188,12 @@ func (i *Installer) encryptedDevices(ctx context.Context, disk storage.BlockDisk
 	devices, err := node.EncryptedVolumes(section, pins, slices.Collect(maps.Keys(section.Volumes)), func(label string) (string, error) {
 		p, err := table.find(label, storage.PartitionType(label))
 		return p.Node, err
-	})
+	}, false)
 	if err != nil {
 		return nil, err
 	}
 	if section.Encryption == storage.EncryptionTPM2 {
-		devices[stateLabel] = state
+		devices = append([]node.EncryptedVolume{{Name: stateLabel, Device: state}}, devices...)
 	}
 	return devices, nil
 }

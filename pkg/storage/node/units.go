@@ -56,7 +56,7 @@ func (s *Storage) Generate(cryptsetup string) (Units, error) {
 		// Another disk carrying a copy of the system disk has the same PARTUUIDs; only the
 		// boot disk's partitions get these links.
 		if v.Disk == storage.SystemDisk {
-			dev = "/dev/disk/chalk-boot/" + v.Label
+			dev = filepath.Join(s.BootPartitions, v.Label)
 		}
 		source, cryptUnit := dev, ""
 		if v.Encryption == storage.EncryptionTPM2 {
