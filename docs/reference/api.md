@@ -223,7 +223,7 @@ The response of GetConfig: the config one slot keeps.
 
 | Field | Type | Description |
 | ----- | ---- | ----------- |
-| `documents` | string | The slot's documents as delivered, one JSON document each separated by ---, as ApplyConfigRequest.config holds them. The values of Secrets and of the Kubernetes Secrets an Addon applies are replaced by the lower-case hex SHA-256 of the value, as config_version hashes a Secret's. |
+| `documents` | string | The slot's documents as delivered, one JSON document each separated by ---, as ApplyConfigRequest.config holds them. The values of Secrets and of the Secret objects a document embeds, such as a Kubernetes Secret, are replaced by the lower-case hex SHA-256 of the value, as config_version hashes a Secret's. |
 | `version` | string | The slot's version, as StatusResponse.config_version gives it. |
 
 ### ResetVolume { #method-resetvolume }

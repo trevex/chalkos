@@ -199,46 +199,46 @@ spec: {hostname: n1}
 }
 
 // KindHashes of a set whose secret values are hashed already, as Redact gives it, are those of
-// the set with its values, an Addon's too. An Addon is hashed with the values of its Kubernetes
-// Secrets hidden, which Hash keeps, so its kind hash is no Hash of its documents, and a rotated
-// value changes it.
+// the set with its values, also of a document that embeds a Secret object. Such a document is
+// hashed with the values of the Secret object hidden, which Hash keeps, so its kind hash is no Hash
+// of its documents, and a rotated value changes it.
 func TestKindHashesHashed(t *testing.T) {
 	s := imageSchemas(t)
-	const addon = "---\napiVersion: kubernetes.chalkos.dev/v1alpha1\nkind: Addon\nmetadata: {name: apps}\n" +
+	const bundle = "---\napiVersion: bundle.example.org/v1alpha1\nkind: Bundle\nmetadata: {name: apps}\n" +
 		"spec: {objects: [{apiVersion: v1, kind: Secret, metadata: {name: s}, stringData: {p: plain}}]}\n"
-	docs := parseDocs(t, hashed+addon)
+	docs := parseDocs(t, hashed+bundle)
 	want, err := KindHashes(docs, s, false)
 	if err != nil {
 		t.Fatal(err)
 	}
 	got, err := KindHashes(Redact(docs), s, true)
-	if err != nil || !maps.Equal(got, want) || want["Addon"] == "" {
+	if err != nil || !maps.Equal(got, want) || want["Bundle"] == "" {
 		t.Errorf("hashed: %v, %v; with values: %v", got, err, want)
 	}
-	if h, err := Hash(parseDocs(t, addon)); err != nil || h == want["Addon"] {
-		t.Errorf("the Addon's kind hash is its Hash %s: %v", h, err)
+	if h, err := Hash(parseDocs(t, bundle)); err != nil || h == want["Bundle"] {
+		t.Errorf("the Bundle's kind hash is its Hash %s: %v", h, err)
 	}
-	rotated, err := KindHashes(parseDocs(t, hashed+strings.Replace(addon, "plain", "other", 1)), s, false)
-	if err != nil || rotated["Addon"] == want["Addon"] || rotated["Demo"] != want["Demo"] {
+	rotated, err := KindHashes(parseDocs(t, hashed+strings.Replace(bundle, "plain", "other", 1)), s, false)
+	if err != nil || rotated["Bundle"] == want["Bundle"] || rotated["Demo"] != want["Demo"] {
 		t.Errorf("rotated: %v, %v; before: %v", rotated, err, want)
 	}
 }
 
-// The values of an Addon's Kubernetes Secrets are hashed whatever their type, so a change of a
-// number in stringData, which the API server takes as a string, changes the Addon's kind hash.
-func TestKindHashesSeeAnAddonsNumber(t *testing.T) {
+// The values of an embedded Secret object are hashed whatever their type, so a change of a number
+// in stringData, which an API server takes as a string, changes the kind hash.
+func TestKindHashesSeeAnEmbeddedNumber(t *testing.T) {
 	s := imageSchemas(t)
-	const addon = "apiVersion: kubernetes.chalkos.dev/v1alpha1\nkind: Addon\nmetadata: {name: apps}\n" +
+	const bundle = "apiVersion: bundle.example.org/v1alpha1\nkind: Bundle\nmetadata: {name: apps}\n" +
 		"spec: {objects: [{apiVersion: v1, kind: Secret, metadata: {name: s}, stringData: {port: 1}}]}\n"
-	before, err := KindHashes(parseDocs(t, addon), s, false)
+	before, err := KindHashes(parseDocs(t, bundle), s, false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	after, err := KindHashes(parseDocs(t, strings.Replace(addon, "port: 1", "port: 2", 1)), s, false)
-	if err != nil || after["Addon"] == before["Addon"] {
-		t.Errorf("a number's change: %v -> %v, %v; want the Addon's hash to change", before, after, err)
+	after, err := KindHashes(parseDocs(t, strings.Replace(bundle, "port: 1", "port: 2", 1)), s, false)
+	if err != nil || after["Bundle"] == before["Bundle"] {
+		t.Errorf("a number's change: %v -> %v, %v; want the Bundle's hash to change", before, after, err)
 	}
-	if text, _ := json.Marshal(Redact(parseDocs(t, addon))[0].Object); !strings.Contains(string(text), `"port":"`+sum("1")+`"`) {
+	if text, _ := json.Marshal(Redact(parseDocs(t, bundle))[0].Object); !strings.Contains(string(text), `"port":"`+sum("1")+`"`) {
 		t.Errorf("redacted %s, want the number hashed", text)
 	}
 }

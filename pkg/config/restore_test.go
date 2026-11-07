@@ -103,11 +103,11 @@ func TestRestore(t *testing.T) {
 		checked, delivered []Document
 		want               string
 	}{
-		"another value":    {checked, other, `Secret "demo" holds other secret values than were delivered`},
-		"not delivered":    {checked, delivered[1:], `Secret "demo" is no delivered document`},
-		"twice":            {append([]Document{checked[0]}, checked...), delivered, `Secret "demo" is among the checked documents twice`},
-		"missing":          {checked[1:], delivered, "documents are missing: 3 delivered, 2 checked"},
-		"an Addon's value": {checked, parseDocs(t, strings.Replace(withSecrets, "data: {k: dg==}", "data: {k: eA==}", 1)), `Addon "apps" holds other secret values than were delivered`},
+		"another value":     {checked, other, `Secret "demo" holds other secret values than were delivered`},
+		"not delivered":     {checked, delivered[1:], `Secret "demo" is no delivered document`},
+		"twice":             {append([]Document{checked[0]}, checked...), delivered, `Secret "demo" is among the checked documents twice`},
+		"missing":           {checked[1:], delivered, "documents are missing: 3 delivered, 2 checked"},
+		"an embedded value": {checked, parseDocs(t, strings.Replace(withSecrets, "data: {k: dg==}", "data: {k: eA==}", 1)), `Bundle "apps" holds other secret values than were delivered`},
 	} {
 		if _, err := Restore(tc.checked, tc.delivered); err == nil || err.Error() != tc.want {
 			t.Errorf("%s: err = %v, want %q", name, err, tc.want)
@@ -115,17 +115,17 @@ func TestRestore(t *testing.T) {
 	}
 }
 
-// Restore restores the values of a Secret in an Addon's list too, keeps a delivered Secret without
+// Restore restores the values of a Secret object in a list too, keeps a delivered Secret without
 // data without one, and refuses a checked Secret that lost its spec.
 func TestRestoreEdges(t *testing.T) {
 	delivered := parseDocs(t, withSecrets)
 	listed := parseDocs(t, strings.Replace(withSecrets, "data: {k: bGlzdA==}", "data: {k: b3RoZXI=}", 1))
-	if _, err := Restore(Redact(delivered), listed); err == nil || err.Error() != `Addon "apps" holds other secret values than were delivered` {
+	if _, err := Restore(Redact(delivered), listed); err == nil || err.Error() != `Bundle "apps" holds other secret values than were delivered` {
 		t.Errorf("another value in a list: err = %v", err)
 	}
 	got, err := Restore(Redact(delivered), delivered)
 	if err != nil || !reflect.DeepEqual(got[1].Object, delivered[1].Object) {
-		t.Errorf("the Addon with a list = %v, %v", got[1].Object, err)
+		t.Errorf("the Bundle with a list = %v, %v", got[1].Object, err)
 	}
 
 	empty := parseDocs(t, "apiVersion: chalkos.dev/v1alpha1\nkind: Secret\nmetadata: {name: s}\nspec: {}\n")
@@ -140,5 +140,34 @@ func TestRestoreEdges(t *testing.T) {
 	checked[0].Object = obj
 	if _, err := Restore(checked, delivered); err == nil || err.Error() != `Secret "demo" holds other secret values than were delivered` {
 		t.Errorf("a checked Secret without spec: err = %v", err)
+	}
+}
+
+// Restore takes the delivered values of the spec fields that embed a Secret object at any depth,
+// and keeps the defaults a check filled into the other fields of the same spec.
+func TestRestoreEmbeddedKeepsDefaults(t *testing.T) {
+	delivered := parseDocs(t, `
+apiVersion: other.example.org/v1alpha1
+kind: Chart
+metadata: {name: c}
+spec:
+  values: {deep: {secret: {apiVersion: v1, kind: Secret, metadata: {name: s}, data: {k: dg==}}}}
+`)
+	checked := Redact(delivered)
+	obj := maps.Clone(checked[0].Object)
+	spec := maps.Clone(obj["spec"].(map[string]any))
+	spec["replicas"] = json.Number("1")
+	obj["spec"] = spec
+	checked[0].Object = obj
+	got, err := Restore(checked, delivered)
+	if err != nil {
+		t.Fatal(err)
+	}
+	gotSpec := got[0].Object["spec"].(map[string]any)
+	if !reflect.DeepEqual(gotSpec["values"], delivered[0].Object["spec"].(map[string]any)["values"]) || gotSpec["replicas"] != json.Number("1") {
+		t.Errorf("restored %v", gotSpec)
+	}
+	if !Redacted(delivered[0], strings.Split("spec.values.deep.secret.data.k", ".")) || Redacted(delivered[0], strings.Split("spec.values.deep.secret.metadata.name", ".")) {
+		t.Error("Redacted does not tell the embedded Secret's data")
 	}
 }

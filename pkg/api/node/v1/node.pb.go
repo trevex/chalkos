@@ -2022,9 +2022,9 @@ func (x *GetConfigRequest) GetPrevious() bool {
 type GetConfigResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// The slot's documents as delivered, one JSON document each separated by ---, as
-	// ApplyConfigRequest.config holds them. The values of Secrets and of the Kubernetes Secrets an
-	// Addon applies are replaced by the lower-case hex SHA-256 of the value, as config_version
-	// hashes a Secret's.
+	// ApplyConfigRequest.config holds them. The values of Secrets and of the Secret objects a
+	// document embeds, such as a Kubernetes Secret, are replaced by the lower-case hex SHA-256 of
+	// the value, as config_version hashes a Secret's.
 	Documents string `protobuf:"bytes,1,opt,name=documents,proto3" json:"documents,omitempty"`
 	// The slot's version, as StatusResponse.config_version gives it.
 	Version       string `protobuf:"bytes,2,opt,name=version,proto3" json:"version,omitempty"`

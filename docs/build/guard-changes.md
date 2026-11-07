@@ -171,10 +171,11 @@ A rule binds `self` to a path through the properties of objects. It cannot sit o
 list or the values of a map. Declare it on the list or the map, which the rule then compares
 whole. Lists are not matched item by item by a key.
 
-!!! note "Kubernetes: an Addon's Secret values are hashes too"
+!!! note "Embedded Secret objects show as hashes too"
 
-    On images with Kubernetes, each `data` and `stringData` value of a Kubernetes Secret that an
-    `Addon` applies is its SHA-256 in these variables as well.
+    Each `data` and `stringData` value of a Secret object that a document embeds, an object of
+    `apiVersion: v1` and `kind: Secret` such as a Kubernetes Secret in an `Addon`, is its SHA-256
+    in these variables as well.
 
 ## Facts give a rule node state
 

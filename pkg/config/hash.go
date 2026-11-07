@@ -124,9 +124,9 @@ func hideValue(v any) any {
 // they reference, so a kind's hash changes when one of its documents does or a Secret one of them
 // references. Secrets have no entry of their own. schemas tell which fields are key references.
 //
-// It hashes docs as Redact gives them, an Addon's Kubernetes Secrets hidden too, which Hash keeps
-// as they are. hashed tells that docs come from Redact already; they give the same hashes as the
-// documents with their values.
+// It hashes docs as Redact gives them, the Secret objects documents embed hidden too, which Hash
+// keeps as they are. hashed tells that docs come from Redact already; they give the same hashes
+// as the documents with their values.
 func KindHashes(docs []Document, schemas *schema.Schemas, hashed bool) (map[string]string, error) {
 	if !hashed {
 		docs = Redact(docs)
@@ -166,8 +166,8 @@ func KindHashes(docs []Document, schemas *schema.Schemas, hashed bool) (map[stri
 }
 
 // hashRedacted is Hash of documents Redact gave: their Secrets' values are hashed already, so it
-// hashes the objects as they are, which for a set without Addons, whose Secret values are strings,
-// is Hash of the set before Redact.
+// hashes the objects as they are, which for a set that embeds no Secret object, and whose Secret
+// values are strings, is Hash of the set before Redact.
 func hashRedacted(docs []Document) (string, error) {
 	return hashJSON(sortedJSON(docs, func(d Document) map[string]any { return d.Object }))
 }

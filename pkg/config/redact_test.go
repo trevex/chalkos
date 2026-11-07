@@ -14,8 +14,8 @@ kind: Secret
 metadata: {name: demo}
 spec: {data: {token: s3cret}}
 ---
-apiVersion: kubernetes.chalkos.dev/v1alpha1
-kind: Addon
+apiVersion: bundle.example.org/v1alpha1
+kind: Bundle
 metadata: {name: apps}
 spec:
   objects:
@@ -36,9 +36,8 @@ func sum(s string) string {
 	return hex.EncodeToString(b[:])
 }
 
-// TestRedact replaces the values of Secrets and of the Kubernetes Secrets an Addon applies, also in
-// a list's items and of a kind in other casing, by their
-// SHA-256, as Hash hashes a Secret's, keeps everything else and leaves its input as it was.
+// TestRedact replaces the values of Secrets and of the Secret objects a document embeds, also in a
+// list's items and of a kind in other casing, by their SHA-256, as Hash hashes a Secret's, keeps everything else and leaves its input as it was.
 func TestRedact(t *testing.T) {
 	docs := parseDocs(t, withSecrets)
 	before, err := json.Marshal(docs[1].Object)
