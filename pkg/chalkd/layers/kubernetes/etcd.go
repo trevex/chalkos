@@ -60,19 +60,27 @@ func (k *side) etcdMember() (controlPlaneNode, error) {
 	case err != nil:
 		return controlPlaneNode{}, layer.Errorf(connect.CodeInternal, "%w", err)
 	case m != knode.MembershipBootstrapped:
-		return controlPlaneNode{}, errNotEtcdMember()
+		return controlPlaneNode{}, notEtcdMemberError{}
 	}
 	return cp, nil
 }
 
-// errNotEtcdMember refuses a request that needs an etcd member. Its NotEtcdMember detail tells
+// notEtcdMemberError refuses a request that needs an etcd member. Its NotEtcdMember detail tells
 // clients, such as chalkctl, to ask the next control-plane node.
-func errNotEtcdMember() error {
-	err := connect.NewError(connect.CodeFailedPrecondition, errors.New("the node is not an etcd member; ask another control-plane node"))
-	if detail, derr := connect.NewErrorDetail(&kubernetesv1.NotEtcdMember{}); derr == nil {
-		err.AddDetail(detail)
+type notEtcdMemberError struct{}
+
+func (notEtcdMemberError) Error() string {
+	return "the node is not an etcd member; ask another control-plane node"
+}
+
+func (notEtcdMemberError) Code() connect.Code { return connect.CodeFailedPrecondition }
+
+func (notEtcdMemberError) Details() []*connect.ErrorDetail {
+	detail, err := connect.NewErrorDetail(&kubernetesv1.NotEtcdMember{})
+	if err != nil {
+		return nil
 	}
-	return err
+	return []*connect.ErrorDetail{detail}
 }
 
 // mayBeMember reports whether the node is, or may be, an etcd member: it was bootstrapped, or it

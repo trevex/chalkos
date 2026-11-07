@@ -47,7 +47,7 @@ func TestErrorfWraps(t *testing.T) {
 }
 
 // Error answers with the whole text and the code, keeps a connect error as it is and carries the
-// details of one it wraps.
+// details of the error in its tree that has its code.
 func TestCodesError(t *testing.T) {
 	ce := Codes(nil).Error(fmt.Errorf("upgrade: %w", Errorf(connect.CodeInvalidArgument, "no image")))
 	if ce.Code() != connect.CodeInvalidArgument || ce.Message() != "upgrade: no image" {
@@ -57,13 +57,33 @@ func TestCodesError(t *testing.T) {
 	if got := Codes(nil).Error(direct); got != direct {
 		t.Errorf("Error(%v) = %v, want it as it is", direct, got)
 	}
-	detailed := connect.NewError(connect.CodeFailedPrecondition, errors.New("not a member"))
 	detail, err := connect.NewErrorDetail(wrapperspb.String("ask another"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	detailed.AddDetail(detail)
-	if got := Codes(nil).Error(fmt.Errorf("remove: %w", detailed)); len(got.Details()) != 1 || got.Code() != connect.CodeFailedPrecondition {
-		t.Errorf("Error() = %v with %d details, want the wrapped error's code and detail", got, len(got.Details()))
+	notMember := detailedError{detail}
+	for name, tc := range map[string]struct {
+		err     error
+		code    connect.Code
+		details int
+	}{
+		"a detailed error":         {fmt.Errorf("remove: %w", notMember), connect.CodeFailedPrecondition, 1},
+		"the same code outside":    {Errorf(connect.CodeFailedPrecondition, "remove: %w", notMember), connect.CodeFailedPrecondition, 1},
+		"another code outside":     {Errorf(connect.CodeUnavailable, "remove: %w", notMember), connect.CodeUnavailable, 0},
+		"a detailed error in join": {errors.Join(fs.ErrNotExist, notMember), connect.CodeFailedPrecondition, 1},
+	} {
+		got := Codes(nil).Error(tc.err)
+		if got.Code() != tc.code || len(got.Details()) != tc.details || got.Message() != tc.err.Error() {
+			t.Errorf("%s: Error() = %v with %d details, want %v with %d", name, got, len(got.Details()), tc.code, tc.details)
+		}
 	}
 }
+
+// detailedError fails a precondition and tells the client what to do with a detail.
+type detailedError struct{ detail *connect.ErrorDetail }
+
+func (detailedError) Error() string { return "not a member" }
+
+func (detailedError) Code() connect.Code { return connect.CodeFailedPrecondition }
+
+func (e detailedError) Details() []*connect.ErrorDetail { return []*connect.ErrorDetail{e.detail} }

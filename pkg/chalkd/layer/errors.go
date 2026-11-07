@@ -1,7 +1,6 @@
 package layer
 
 import (
-	"errors"
 	"fmt"
 
 	"connectrpc.com/connect"
@@ -83,19 +82,46 @@ func (c Codes) find(err error) (connect.Code, bool) {
 	return 0, false
 }
 
+// Detailed is a coded error with details for the client, such as what to do next.
+type Detailed interface {
+	Coded
+	Details() []*connect.ErrorDetail
+}
+
 // Error is err as connect sends it: a *connect.Error as it is, and any other error with the code
-// Of finds, its whole text and the details of a *connect.Error it wraps.
+// Of finds, its whole text and the details of the first error in its tree with that code.
 func (c Codes) Error(err error) *connect.Error {
 	if ce, ok := err.(*connect.Error); ok {
 		return ce
 	}
-	ce := connect.NewError(c.Of(err), err)
-	if inner, ok := errors.AsType[*connect.Error](err); ok {
-		for _, d := range inner.Details() {
-			ce.AddDetail(d)
-		}
+	code := c.Of(err)
+	ce := connect.NewError(code, err)
+	for _, d := range details(err, code) {
+		ce.AddDetail(d)
 	}
 	return ce
+}
+
+// details are the details of the first Detailed error in err's tree, depth first, whose code is
+// code.
+func details(err error, code connect.Code) []*connect.ErrorDetail {
+	if err == nil {
+		return nil
+	}
+	if d, ok := err.(Detailed); ok && d.Code() == code {
+		return d.Details()
+	}
+	switch u := err.(type) {
+	case interface{ Unwrap() error }:
+		return details(u.Unwrap(), code)
+	case interface{ Unwrap() []error }:
+		for _, e := range u.Unwrap() {
+			if d := details(e, code); d != nil {
+				return d
+			}
+		}
+	}
+	return nil
 }
 
 // CodeOf is the code err answers an RPC with, as Codes.Of finds it without domain errors: 0 for no
