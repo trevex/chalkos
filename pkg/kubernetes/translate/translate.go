@@ -17,7 +17,7 @@ import (
 // API is the apiVersion of the Kubernetes layer's kinds.
 const API = "kubernetes.chalkos.dev/v1alpha1"
 
-// Target adds to t the translation of an image with the Kubernetes facts facts, which it claims;
+// Target claims facts that are Kubernetes facts and adds the translation of their image to t;
 // it leaves the facts of another layer unclaimed. Claimed facts whose image.json does not parse
 // are an error.
 func Target(facts *anypb.Any, t *config.Target) (claimed bool, err error) {

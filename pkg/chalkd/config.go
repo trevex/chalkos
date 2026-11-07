@@ -179,8 +179,8 @@ func (s *Server) headerTarget(h *nodev1.InstallHeader, contract *nodev1.ImageCon
 	return t, schemas, nil
 }
 
-// target sets on t what the facts give config's translation, through the plugin each is of;
-// facts no compiled plugin claims are refused.
+// target adds to t the translators of the layers whose facts these are, through the compiled
+// plugin that claims each; facts no compiled plugin claims are refused.
 func (s *Server) target(facts []*anypb.Any, t *config.Target) error {
 	for _, f := range facts {
 		claimed := false
