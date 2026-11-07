@@ -27,7 +27,7 @@ let
   sandboxImage = c: "${cel.specs c apiVersions.kubernetes "Cluster"}.map(s, s.images.pause)";
   # A share that differs in more than its node CA: the node CA is read from the share whenever a
   # node certificate is issued, and nothing else uses it, so a new one restarts nothing. The share
-  # fact, declared in kinds/builtin/kubernetes.nix, keeps the hashes of its keys.
+  # fact, declared in kinds.nix, keeps the hashes of its keys.
   withoutNodeCA = s: ''${s}.filter(k, k != "nodeCA").map(k, k + "=" + ${s}[k])'';
   shareChanged = "cel.bind(was, oldFacts.share, cel.bind(gets, facts.share, was == null || gets == null ? was != gets : ${withoutNodeCA "was"} != ${withoutNodeCA "gets"}))";
   # A change of what the preparation and the kubelet read: the preparation writes the node's

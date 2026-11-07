@@ -38,10 +38,12 @@ let
 in
 {
   imports = [
+    ./cni.nix
     ./effects.nix
     ./containerd.nix
     ./registries.nix
     ./firewall.nix
+    ./kinds.nix
   ];
 
   options.chalkos.kubernetes = {

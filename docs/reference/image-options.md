@@ -108,7 +108,7 @@ Example: `"1.36"`
 
 ### `chalkos.cni.plugins` { #chalkoscniplugins }
 
-Type: list of one of `dhcp`, `host-local`, `static`, `bridge`, `dummy`, `host-device`, `ipvlan`, `loopback`, `macvlan`, `ptp`, `tap`, `vlan`, `bandwidth`, `firewall`, `portmap`, `sbr`, `tuning`, `vrf` · Default: `[ ]` · Declared in: [modules/node/cni.nix](https://github.com/trevex/chalkos/blob/main/modules/node/cni.nix)
+Type: list of one of `dhcp`, `host-local`, `static`, `bridge`, `dummy`, `host-device`, `ipvlan`, `loopback`, `macvlan`, `ptp`, `tap`, `vlan`, `bandwidth`, `firewall`, `portmap`, `sbr`, `tuning`, `vrf` · Default: `[ ]` · Declared in: [modules/node/kubernetes/cni.nix](https://github.com/trevex/chalkos/blob/main/modules/node/kubernetes/cni.nix)
 
 CNI reference plugins the image ships, in containerd's plugin directory. With
 `flannel` they are bridge, host-local, loopback and portmap, which its network runs,
@@ -120,7 +120,7 @@ Example: `[ "bandwidth" ]`
 
 ### `chalkos.cni.provider` { #chalkoscniprovider }
 
-Type: one of `flannel`, `none` · Default: `"flannel"` · Declared in: [modules/node/cni.nix](https://github.com/trevex/chalkos/blob/main/modules/node/cni.nix)
+Type: one of `flannel`, `none` · Default: `"flannel"` · Declared in: [modules/node/kubernetes/cni.nix](https://github.com/trevex/chalkos/blob/main/modules/node/kubernetes/cni.nix)
 
 Pod network of an image with Kubernetes. `flannel` connects pods across nodes with
 VXLAN, configured by the node's Flannel document; `none` installs no network, for
