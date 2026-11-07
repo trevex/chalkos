@@ -51,7 +51,7 @@ buildGoModule (
     proxyVendor = true;
     # After changing go.mod or go.sum, set this to lib.fakeHash, run `nix build .#chalkctl`, and
     # copy the hash it reports.
-    vendorHash = "sha256-wDc7+u9ue31pott6agQnX6I+AJH6wsQYNG+ZUdu6zzU=";
+    vendorHash = "sha256-kUV1LgJk313pnE6bF7bUyygY+tlH/JMqvwft6vaH8dQ=";
     env.CGO_ENABLED = "0";
     subPackages = [ "cmd/${pname}" ];
     inherit doCheck;
