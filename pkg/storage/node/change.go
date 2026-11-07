@@ -14,6 +14,7 @@ import (
 	"github.com/trevex/chalkos/pkg/atomicfile"
 	"github.com/trevex/chalkos/pkg/storage"
 	"github.com/trevex/chalkos/pkg/storage/gpt"
+	"github.com/trevex/chalkos/pkg/storage/hostops"
 	"github.com/trevex/chalkos/pkg/tool"
 )
 
@@ -126,11 +127,11 @@ func (s *Storage) bootPartition(label string) (string, error) {
 func (s *Storage) Enroll(ctx context.Context, devices []EncryptedVolume, secret string) error {
 	for _, v := range devices {
 		name, dev := v.Name, v.Device
-		found, err := Content(ctx, s.Run, dev)
+		found, err := hostops.Content(ctx, s.Run, dev)
 		if err != nil {
 			return err
 		}
-		if found != ContentLUKS {
+		if found != hostops.ContentLUKS {
 			return fmt.Errorf("volume %s is meant to be encrypted, but %s holds %q instead of LUKS", name, dev, found)
 		}
 		if _, err := s.Run.Exec(ctx, tool.Cmd{Name: "systemd-cryptenroll", Args: []string{"--unlock-tpm2-device=auto", "--password", "--wipe-slot=password", dev}, Env: []string{"NEWPASSWORD=" + secret}}); err != nil {

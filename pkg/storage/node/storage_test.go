@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/trevex/chalkos/pkg/storage"
+	"github.com/trevex/chalkos/pkg/storage/hostops"
 	"github.com/trevex/chalkos/pkg/storage/storagetest"
 	"github.com/trevex/chalkos/pkg/tool"
 	"github.com/trevex/chalkos/pkg/tool/tooltest"
@@ -28,6 +29,7 @@ func newTestBoot(t *testing.T, r *tooltest.Runner, disks ...storagetest.Disk) *S
 	return &Storage{
 		Run:            r,
 		Host:           storagetest.NewHost(t, "vda", disks...),
+		Ops:            hostops.Tools{Run: r},
 		StateDir:       filepath.Join(root, "state"),
 		VarDir:         filepath.Join(root, "var"),
 		BootDisk:       "/dev/disk/chalk-boot-disk",

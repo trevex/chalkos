@@ -12,7 +12,7 @@ import (
 
 	"github.com/trevex/chalkos/pkg/storage"
 	"github.com/trevex/chalkos/pkg/storage/gpt"
-	"github.com/trevex/chalkos/pkg/storage/node"
+	"github.com/trevex/chalkos/pkg/storage/hostops"
 	"github.com/trevex/chalkos/pkg/storeslot"
 )
 
@@ -26,7 +26,7 @@ func (i *Installer) classify(ctx context.Context, target storage.BlockDisk, l la
 	if req.WipeDisk {
 		return true, nil
 	}
-	props, err := node.Probe(ctx, i.Run, target.Device)
+	props, err := hostops.Probe(ctx, i.Run, target.Device)
 	if err != nil {
 		return false, err
 	}

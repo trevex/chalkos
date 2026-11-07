@@ -1,4 +1,4 @@
-package node
+package hostops
 
 import (
 	"context"
@@ -40,10 +40,17 @@ func Content(ctx context.Context, run tool.Runner, dev string) (string, error) {
 	if _, err := tool.Run(ctx, run, "udevadm", "settle", "--timeout=30"); err != nil {
 		return "", err
 	}
-	out, err := tool.Run(ctx, run, "blkid", "-p", "-o", "value", "-s", "TYPE", dev)
+	t, err := Type(ctx, run, dev)
 	if foundNothing(err) {
 		return "", nil
 	}
+	return t, err
+}
+
+// Type returns the TYPE blkid finds on a device now. That blkid finds nothing on it is an error,
+// which Content treats as no content.
+func Type(ctx context.Context, run tool.Runner, dev string) (string, error) {
+	out, err := tool.Run(ctx, run, "blkid", "-p", "-o", "value", "-s", "TYPE", dev)
 	if err != nil {
 		return "", fmt.Errorf("probe %s: %w", dev, err)
 	}

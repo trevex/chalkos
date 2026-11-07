@@ -15,6 +15,7 @@ import (
 	"github.com/trevex/chalkos/pkg/atomicfile"
 	"github.com/trevex/chalkos/pkg/config/slot"
 	"github.com/trevex/chalkos/pkg/storage"
+	"github.com/trevex/chalkos/pkg/storage/hostops"
 	"github.com/trevex/chalkos/pkg/storage/node"
 	"github.com/trevex/chalkos/pkg/tool"
 	"github.com/trevex/chalkos/pkg/upgrade"
@@ -70,12 +71,12 @@ func (i *Installer) prepareState(ctx context.Context, disk storage.BlockDisk, de
 	if err != nil {
 		return err
 	}
-	want := node.ContentExt4
+	want := hostops.ContentExt4
 	if policy == storage.EncryptionTPM2 {
-		want = node.ContentLUKS
+		want = hostops.ContentLUKS
 	}
 	if state, err := table.find(stateLabel, storage.PartitionType(stateLabel)); err == nil {
-		found, err := node.Content(ctx, i.Run, state.Node)
+		found, err := hostops.Content(ctx, i.Run, state.Node)
 		if err != nil {
 			return err
 		}
@@ -109,18 +110,18 @@ func (i *Installer) checkState(ctx context.Context, target storage.BlockDisk, ta
 	if err != nil {
 		return false, err
 	}
-	found, err := node.Content(ctx, i.Run, state.Node)
+	found, err := hostops.Content(ctx, i.Run, state.Node)
 	if err != nil {
 		return false, err
 	}
 	switch found {
 	case "":
 		return false, nil
-	case node.ContentLUKS, node.ContentExt4:
+	case hostops.ContentLUKS, hostops.ContentExt4:
 	default:
 		return false, fmt.Errorf("STATE on the target disk %s holds %q; pass --wipe-disk to replace it", target, found)
 	}
-	if err := i.openStateReadOnly(ctx, state.Node, found == node.ContentLUKS); err != nil {
+	if err := i.openStateReadOnly(ctx, state.Node, found == hostops.ContentLUKS); err != nil {
 		return false, fmt.Errorf("STATE on the target disk %s does not open on this machine, so it belongs to another node: %w; pass --wipe-disk to replace it", target, err)
 	}
 	installed, err := Installed(i.StateDir)

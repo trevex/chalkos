@@ -15,6 +15,7 @@ import (
 
 	"github.com/trevex/chalkos/pkg/storage"
 	"github.com/trevex/chalkos/pkg/storage/gpt"
+	"github.com/trevex/chalkos/pkg/storage/hostops"
 	"github.com/trevex/chalkos/pkg/tool"
 )
 
@@ -22,6 +23,8 @@ import (
 type Storage struct {
 	Run  tool.Runner
 	Host storage.Host
+	// Ops opens and mounts the volumes.
+	Ops hostops.Ops
 	// StateDir is where STATE is mounted.
 	StateDir string
 	// VarDir is where VAR is mounted.
@@ -39,6 +42,7 @@ func Default() *Storage {
 	return &Storage{
 		Run:            tool.ExecRunner{},
 		Host:           storage.DefaultHost(),
+		Ops:            hostops.System(tool.ExecRunner{}),
 		StateDir:       "/sysroot/state",
 		VarDir:         "/sysroot/var",
 		BootDisk:       "/dev/disk/chalk-boot-disk",
@@ -87,21 +91,16 @@ func (s *Storage) Open(ctx context.Context, name, dev, target string, o OpenOpti
 	if _, err := tool.Run(ctx, s.Run, "udevadm", "wait", "--timeout=60", dev); err != nil {
 		return fmt.Errorf("wait for %s: %w", dev, err)
 	}
-	out, err := tool.Run(ctx, s.Run, "blkid", "-p", "-o", "value", "-s", "TYPE", dev)
+	fsType, err := hostops.Type(ctx, s.Run, dev)
 	if err != nil {
-		return fmt.Errorf("probe %s: %w", dev, err)
+		return err
 	}
 	source := dev
-	fsType := strings.TrimSpace(string(out))
-	if o.Encrypted && fsType != ContentLUKS {
+	if o.Encrypted && fsType != hostops.ContentLUKS {
 		return fmt.Errorf("volume %s is meant to be encrypted, but %s holds %q instead of LUKS; refusing to mount it", name, dev, fsType)
 	}
-	if fsType == ContentLUKS {
-		options := "tpm2-device=auto"
-		if !o.Prompt {
-			options += ",headless=true"
-		}
-		if _, err := tool.Run(ctx, s.Run, "systemd-cryptsetup", "attach", name, dev, "-", options); err != nil {
+	if fsType == hostops.ContentLUKS {
+		if err := s.Ops.AttachLUKS(ctx, name, dev, hostops.LUKSOptions{Prompt: o.Prompt}); err != nil {
 			if !o.Prompt && unsealFailed(err) {
 				// Only a reinstall recreates VAR. The installer, which opens STATE without a
 				// prompt, names its own remedy.
@@ -112,7 +111,7 @@ func (s *Storage) Open(ctx context.Context, name, dev, target string, o OpenOpti
 			}
 			return fmt.Errorf("unlock %s: %w", name, err)
 		}
-		source = "/dev/mapper/" + name
+		source = hostops.Mapper(name)
 	}
 	if err := s.checkFileSystem(ctx, name, source); err != nil {
 		return err
@@ -120,7 +119,7 @@ func (s *Storage) Open(ctx context.Context, name, dev, target string, o OpenOpti
 	if err := os.MkdirAll(target, 0o755); err != nil {
 		return err
 	}
-	if _, err := tool.Run(ctx, s.Run, "mount", "-t", "ext4", source, target); err != nil {
+	if err := s.Ops.Mount(ctx, source, target, "ext4", ""); err != nil {
 		return fmt.Errorf("mount %s: %w", name, err)
 	}
 	return nil
@@ -378,7 +377,7 @@ func (s *Storage) resolveNew(ctx context.Context, d storage.Disk, claimed []clai
 // on it, or it carries a GPT whose partitions all have types of this disk's definitions, which
 // repart takes over. repart would otherwise write a new partition table over foreign data.
 func (s *Storage) checkUnused(ctx context.Context, disk storage.BlockDisk, d storage.Disk) error {
-	props, err := Probe(ctx, s.Run, disk.Device)
+	props, err := hostops.Probe(ctx, s.Run, disk.Device)
 	if err != nil || len(props) == 0 {
 		return err
 	}

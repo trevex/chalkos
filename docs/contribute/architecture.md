@@ -139,7 +139,8 @@ Each directory of `cmd/` is a main that wires a package up; the logic lives in `
 | `secureboot` | Checks an EFI binary's Authenticode signature as Secure Boot firmware does, against db and dbx read from the firmware or against given certificates. |
 | `storage` | Storage sections, disk references and pins, repart definitions, and the changes a delivered section makes to the recorded one. |
 | `storage/gpt` | Reads and changes partition tables with sfdisk under the disk's lock, waiting a bounded time for it, and names the partition types of the system region. |
-| `storage/node` | Storage on the node: STATE, volumes, VAR and the generator's units; the storage changes chalkd makes and the volumes an install creates and enrols; the blkid probe. |
+| `storage/hostops` | The host operations the installer, an upgrade and the storage code share: mounts, LUKS and dm-verity volumes, the mount table, and the blkid probe. Its `Ops` interface runs the tools, whose command lines it writes in one place. |
+| `storage/node` | Storage on the node: STATE, volumes, VAR and the generator's units; the storage changes chalkd makes and the volumes an install creates and enrols. |
 | `storeslot` | The store slots of a disk and the writer an upgrade and an install share: retire a slot, write and verify the store, activate the slot. |
 | `tool` | Runs the command-line tools chalkd, the installer and the storage code drive, such as cryptsetup, sfdisk and systemctl. |
 | `tool/systemctl` | Asks systemd about units through the tool runner: their properties, whether they are active, the failed units and the units of a target. |
@@ -159,6 +160,7 @@ Test helpers live in packages of their own:
 - `kubernetes/etcd/etcdtest`: in-process etcd members.
 - `ociimage/ocitest`: in-memory OCI registries and small chalkos images.
 - `pki/pkitest`: node CAs.
+- `storage/hostops/hostopstest`: a fake host that keeps its mounts and device-mapper volumes in maps.
 - `storage/storagetest`: the sysfs, udev and `/dev` trees of a host's disks.
 - `tool/tooltest`: a fake tool runner that records commands and answers them by prefix.
 

@@ -17,6 +17,7 @@ import (
 
 	"github.com/trevex/chalkos/pkg/storage"
 	"github.com/trevex/chalkos/pkg/storage/gpt"
+	"github.com/trevex/chalkos/pkg/storage/hostops"
 	"github.com/trevex/chalkos/pkg/storage/node"
 	"github.com/trevex/chalkos/pkg/storeslot"
 	"github.com/trevex/chalkos/pkg/tool"
@@ -204,6 +205,7 @@ func (i *Installer) storage(disk storage.BlockDisk) *node.Storage {
 	return &node.Storage{
 		Run:        i.Run,
 		Host:       i.Host,
+		Ops:        hostops.Tools{Run: i.Run, MountInfo: i.MountInfo, DevRoot: i.Host.DevRoot},
 		StateDir:   i.StateDir,
 		BootDisk:   disk.Device,
 		StatusFile: filepath.Join(i.WorkDir, "storage-status.json"),

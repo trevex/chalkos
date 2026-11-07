@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/trevex/chalkos/pkg/storage"
+	"github.com/trevex/chalkos/pkg/storage/hostops"
 )
 
 // Units are the generator's output: unit files by name, the volume each unit belongs to, and
@@ -119,10 +120,7 @@ func deviceUnit(path string) string { return escapePath(path) + ".device" }
 // starts once a TPM the firmware reported is usable, but does not pull it in: on a node without
 // a TPM that would wait for a device that never appears.
 func cryptsetupUnit(name, dev, cryptsetup string, prompt bool) string {
-	options := "tpm2-device=auto"
-	if !prompt {
-		options += ",headless=true"
-	}
+	options := hostops.LUKSOptions{Prompt: prompt}.String()
 	return header + fmt.Sprintf(`[Unit]
 Description=Unlock chalkos volume %[1]s
 DefaultDependencies=no
