@@ -4,9 +4,8 @@ package renewal
 
 import (
 	"context"
-	"crypto/rand"
 	"log"
-	"math/big"
+	"math/rand/v2"
 	"sync"
 	"time"
 )
@@ -92,7 +91,7 @@ func (r *Renewal) Run(ctx context.Context) {
 		if err == nil && !forced && !due {
 			retry, logged = 0, false
 			r.setProblem("")
-			wait = r.Check - r.Check/10 + jitter(r.Check/5)
+			wait = r.nextCheck()
 			continue
 		}
 		if err == nil && r.Renew == nil {
@@ -103,7 +102,7 @@ func (r *Renewal) Run(ctx context.Context) {
 			logged = due
 			retry, forced = 0, false
 			r.setProblem("")
-			wait = r.Check - r.Check/10 + jitter(r.Check/5)
+			wait = r.nextCheck()
 			continue
 		}
 		if err == nil {
@@ -130,20 +129,19 @@ func (r *Renewal) Run(ctx context.Context) {
 		retry, forced = 0, false
 		r.setProblem("")
 		log.Printf("%s renewed", r.What)
-		wait = r.Check - r.Check/10 + jitter(r.Check/5)
+		wait = r.nextCheck()
 	}
 }
+
+// nextCheck is how long the renewal waits for its next check: Check give or take a tenth.
+func (r *Renewal) nextCheck() time.Duration { return r.Check - r.Check/10 + jitter(r.Check/5) }
 
 // jitter returns a random duration below d, so nodes that started together spread their checks.
 func jitter(d time.Duration) time.Duration {
 	if d <= 0 {
 		return 0
 	}
-	n, err := rand.Int(rand.Reader, big.NewInt(int64(d)))
-	if err != nil {
-		return 0
-	}
-	return time.Duration(n.Int64())
+	return rand.N(d)
 }
 
 // Force renews at once, whether the renewal is due or not. Only test images use it, after each

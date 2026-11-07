@@ -115,9 +115,9 @@ func (n *NodeCertificate) ClientCAs() *x509.CertPool {
 func (n *NodeCertificate) ReplaceTrust(bundle string, keep ...*x509.Certificate) error {
 	n.mu.Lock()
 	defer n.mu.Unlock()
-	t, err := n.checkTrust(bundle, keep...)
+	t, err := n.verifyTrust(bundle, keep...)
 	if err != nil {
-		return err
+		return refusedTrust{err}
 	}
 	if t.bundle == n.OSCA() {
 		return nil
@@ -131,11 +131,13 @@ func (n *NodeCertificate) ReplaceTrust(bundle string, keep ...*x509.Certificate)
 
 // CheckTrust checks a bundle as ReplaceTrust does, without trusting it.
 func (n *NodeCertificate) CheckTrust(bundle string, keep ...*x509.Certificate) error {
-	_, err := n.checkTrust(bundle, keep...)
-	return err
+	if _, err := n.verifyTrust(bundle, keep...); err != nil {
+		return refusedTrust{err}
+	}
+	return nil
 }
 
-// refusedTrust is OS CAs that checkTrust refused, as opposed to a failure to record them.
+// refusedTrust is OS CAs that verifyTrust refused, as opposed to a failure to record them.
 type refusedTrust struct{ error }
 
 func (r refusedTrust) Unwrap() error { return r.error }
@@ -144,14 +146,6 @@ func (r refusedTrust) Unwrap() error { return r.error }
 func isRefusedTrust(err error) bool {
 	_, ok := errors.AsType[refusedTrust](err)
 	return ok
-}
-
-func (n *NodeCertificate) checkTrust(bundle string, keep ...*x509.Certificate) (*trust, error) {
-	t, err := n.verifyTrust(bundle, keep...)
-	if err != nil {
-		return nil, refusedTrust{err}
-	}
-	return t, nil
 }
 
 func (n *NodeCertificate) verifyTrust(bundle string, keep ...*x509.Certificate) (*trust, error) {
