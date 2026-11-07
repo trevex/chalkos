@@ -74,9 +74,13 @@ func (f *Fake) Holds(dev string) bool {
 	return false
 }
 
+// Mount fails as mount does for a device-mapper volume that is not open.
 func (f *Fake) Mount(ctx context.Context, source, dir, fsType, options string) error {
 	if err := f.Tools.Mount(ctx, source, dir, fsType, options); err != nil {
 		return err
+	}
+	if name, ok := strings.CutPrefix(source, hostops.Mapper("")); ok && !f.Mapped(name) {
+		return &tool.Error{Command: "mount", Code: 32, Stderr: "mount: " + dir + ": special device " + source + " does not exist."}
 	}
 	if f.OnMount != nil {
 		if err := f.OnMount(source, dir, options); err != nil {
@@ -126,14 +130,28 @@ func (f *Fake) AttachLUKS(ctx context.Context, name, dev string, o hostops.LUKSO
 	return nil
 }
 
-// DetachLUKS succeeds for a volume that is not open, as systemd-cryptsetup does.
+// DetachLUKS succeeds for a volume that is not open, as systemd-cryptsetup does, and fails for
+// one that is still mounted.
 func (f *Fake) DetachLUKS(ctx context.Context, name string) error {
 	if err := f.Tools.DetachLUKS(ctx, name); err != nil {
 		return err
 	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if err := f.busy("systemd-cryptsetup", name); err != nil {
+		return err
+	}
 	delete(f.mappers, name)
+	return nil
+}
+
+// busy is the error of command closing the volume name while it is mounted. f.mu is held.
+func (f *Fake) busy(command, name string) error {
+	for dir, src := range f.mounts {
+		if src == hostops.Mapper(name) {
+			return &tool.Error{Command: command, Code: 5, Stderr: "Device " + name + " is still in use (mounted at " + dir + ")."}
+		}
+	}
 	return nil
 }
 
@@ -146,7 +164,7 @@ func (f *Fake) OpenVerity(ctx context.Context, name, data, hash string, rootHash
 	return nil
 }
 
-// CloseVerity fails as veritysetup does for a volume that is not open.
+// CloseVerity fails as veritysetup does for a volume that is not open or still mounted.
 func (f *Fake) CloseVerity(ctx context.Context, name string) error {
 	if err := f.Tools.CloseVerity(ctx, name); err != nil {
 		return err
@@ -155,6 +173,9 @@ func (f *Fake) CloseVerity(ctx context.Context, name string) error {
 	defer f.mu.Unlock()
 	if _, ok := f.mappers[name]; !ok {
 		return &tool.Error{Command: "veritysetup", Code: 4, Stderr: "Device " + name + " is not active."}
+	}
+	if err := f.busy("veritysetup", name); err != nil {
+		return err
 	}
 	delete(f.mappers, name)
 	return nil

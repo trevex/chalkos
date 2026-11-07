@@ -187,3 +187,39 @@ func TestMountPointsUnescape(t *testing.T) {
 		t.Errorf("MountPoints = %v, want %v", points, want)
 	}
 }
+
+// The fake refuses what the host refuses out of order: mounting a volume that is not open, and
+// closing one that is still mounted.
+func TestFakeKeepsTheOrder(t *testing.T) {
+	ctx := context.Background()
+	f := hostopstest.New(&tooltest.Runner{})
+	if err := f.Mount(ctx, hostops.Mapper("state"), "/state", "ext4", ""); err == nil {
+		t.Error("mounted a volume that is not open")
+	}
+	if err := f.AttachLUKS(ctx, "state", "/dev/vda6", hostops.LUKSOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.OpenVerity(ctx, "store", "/dev/vda3", "/dev/vda2", nil); err != nil {
+		t.Fatal(err)
+	}
+	for dir, name := range map[string]string{"/state": "state", "/store": "store"} {
+		if err := f.Mount(ctx, hostops.Mapper(name), dir, "ext4", ""); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := f.DetachLUKS(ctx, "state"); err == nil || !f.Mapped("state") {
+		t.Errorf("DetachLUKS of a mounted volume = %v", err)
+	}
+	if err := f.CloseVerity(ctx, "store"); err == nil || !f.Mapped("store") {
+		t.Errorf("CloseVerity of a mounted volume = %v", err)
+	}
+	if err := hostops.Release(ctx, f, "STATE", "/state", "state", f.DetachLUKS); err != nil {
+		t.Error(err)
+	}
+	if err := hostops.Release(ctx, f, "the store", "/store", "store", f.CloseVerity); err != nil {
+		t.Error(err)
+	}
+	if f.Holds("/dev/vda") {
+		t.Error("the volumes are still held")
+	}
+}
