@@ -173,7 +173,7 @@ func (b *rebooter) heldForActivation(ctx context.Context, n *rebootNode, t bootT
 	}
 	st, serr := b.reach.status(ctx, n.name)
 	if serr != nil {
-		return fmt.Errorf("%w; %s, as its status, which tells whether %s boots next, cannot be read: %w", err, held, t.image, serr)
+		return fmt.Errorf("%w; %s, as its status, which tells whether %s boots next, cannot be read: %s: %w", err, held, t.image, n.name, serr)
 	}
 	if boot := st.GetBoot(); boot.GetStagedState() == nodev1.SlotState_SLOT_STATE_ACTIVE && bytes.Equal(boot.GetStaged().GetRootHash(), t.root) {
 		return fmt.Errorf("%w; %s boots next all the same, so %s: chalkctl node reboot %s boots it and releases the node", err, t.image, held, n.name)
