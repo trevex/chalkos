@@ -19,7 +19,16 @@ let
     };
 in
 {
-  types = { inherit (kindTypes) ref secretRef; };
+  types = {
+    inherit (kindTypes)
+      ref
+      secretRef
+      address
+      prefix
+      portRange
+      imageReference
+      ;
+  };
 
   # lib.mkOption, for a field of a kind, with the field's change rules: each { rule; message or
   # messageExpression; takes ? "refuse"; description ? null; }, as a kind's rules are; and the

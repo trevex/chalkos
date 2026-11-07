@@ -42,10 +42,10 @@ The declaration sets five things:
 A field without a default is required. `password` has the default `null`, so a `Peer` may leave
 it out. A kind's name starts with a capital letter and holds letters and digits alone.
 
-`address` is a `strMatching` string that accepts an IPv4 or IPv6 address alone. A field whose
-value lands in a config file needs a type that accepts valid values alone. Without the pattern,
-a value such as `10.0.0.2; import all` would add a statement of its own to `bird.conf`. With it,
-`chalkctl validate` refuses the document before it reaches a node.
+`address` has the type `lib.chalkos.types.address`, which accepts an IPv4 or IPv6 address alone.
+A field whose value lands in a config file needs a type that accepts valid values alone. Without
+it, a value such as `10.0.0.2; import all` would add a statement of its own to `bird.conf`. With
+it, `chalkctl validate` refuses the document before it reaches a node.
 
 Put the module where the nodes that carry `Peer` documents get it. The homelab has one variant,
 so `bgp.nix` sits in `variants.node.modules`. A module in `modules` reaches every variant. A node
@@ -75,7 +75,7 @@ and the `description` of `password` are left out:
       "properties": {
         "address": {
           "type": "string",
-          "pattern": "^(?:([0-9]{1,3}\\.){3}[0-9]{1,3}|[0-9A-Fa-f]{0,4}(:[0-9A-Fa-f]{0,4}){2,7})$",
+          "format": "ip",
           "description": "IPv4 or IPv6 address of the neighbour."
         },
         "asn": {
@@ -126,7 +126,7 @@ Each part of the schema comes from the options:
 
 - `additionalProperties: false` refuses a field the kind does not declare.
 - `required` lists the fields without a default.
-- `strMatching` becomes a `pattern` anchored at both ends.
+- `lib.chalkos.types.address` becomes `format: ip`, which chalkctl and chalkd check.
 - `ints.between 1 4294967295` becomes `minimum` and `maximum`.
 - The kind's `description`, and its fields' `description`, `default` and `example`, carry
   over, the example as `examples`.
@@ -223,6 +223,10 @@ A field's option type decides its schema. The converter knows these types:
 | `submodule { options = ...; }` | `object` with the submodule's options, refusing others |
 | `lib.chalkos.types.ref "<Kind>"`, `lib.chalkos.types.ref { kind = "<Kind>"; reserved = [ ... ]; }` | `string` with the pattern of a document name, and `x-chalkos-ref` with the kind's `apiVersion`, the `kind` and `reserved` |
 | `lib.chalkos.types.secretRef` | `object` holding `secretRef` with `name` and `key` |
+| `lib.chalkos.types.address` | `string` with `format: ip` |
+| `lib.chalkos.types.prefix` | `string` with `format: cidr` |
+| `lib.chalkos.types.portRange` | `anyOf` an `integer` from 1 to 65535 and a `string` with `format: port-range` |
+| `lib.chalkos.types.imageReference` | `string` with `format: image-reference` |
 
 A pattern of `strMatching` is a POSIX regular expression to Nix and an ECMA-262 one to JSON
 Schema. Keep to their common subset: character classes such as `[[:alpha:]]` differ between the
@@ -234,7 +238,7 @@ like this:
 ```text
 error: chalkos.kinds.Peer.spec.keyFile: the option type absolute path has no JSON Schema mapping. Kinds accept str,
 nonEmptyStr, strMatching, bool, int, ints.*, port, float, enum, nullOr, listOf, attrsOf,
-submodule, lib.chalkos.types.ref and lib.chalkos.types.secretRef.
+submodule and the types of lib.chalkos.types.
 ```
 
 ## Field rules need lib.chalkos.mkOption
@@ -256,8 +260,7 @@ instead, and a rule that compares fields of one document into `chalkos.kinds.<Ki
 reads about the node.
 
 The `rules`, `unique` and `maxItems` arguments exist only on `lib.chalkos`, which every image
-module gets as part of `lib`. `lib.chalkos.types.ref` and `lib.chalkos.types.secretRef` come from
-the same place.
+module gets as part of `lib`. The types of `lib.chalkos.types` come from the same place.
 
 ## A field can name a document of another kind
 

@@ -17,11 +17,8 @@
 let
   inherit (lib) mkOption types;
   inherit (import ./lib.nix) builtin groups;
-  inherit (import ../../../../lib/kinds/types.nix { inherit lib; })
-    peerAS
-    ref
-    secretRef
-    ;
+  inherit (import ../../../../lib/kinds/types.nix { inherit lib; }) peerAS;
+  inherit (lib.chalkos.types) ref secretRef;
   inherit (import ./router-types.nix { inherit lib; })
     interface
     interfaceText

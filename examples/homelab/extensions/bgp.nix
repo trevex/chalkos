@@ -50,10 +50,10 @@ in
     description = "A BGP neighbour that the node's bird connects to.";
     multiple = true;
     spec = {
-      # The address lands in bird.conf, so the pattern accepts an IPv4 or IPv6 address and
-      # nothing that could end bird's statement.
+      # The address lands in bird.conf. chalkctl and chalkd accept only an IPv4 or IPv6 address,
+      # which holds nothing that could end bird's statement.
       address = lib.mkOption {
-        type = lib.types.strMatching "([0-9]{1,3}\\.){3}[0-9]{1,3}|[0-9A-Fa-f]{0,4}(:[0-9A-Fa-f]{0,4}){2,7}";
+        type = lib.chalkos.types.address;
         example = "10.0.0.1";
         description = "IPv4 or IPv6 address of the neighbour.";
       };

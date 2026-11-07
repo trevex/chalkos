@@ -22,7 +22,7 @@ let
   inherit (lib) mkOption types;
   inherit (import ./lib.nix) builtin groups apiVersions;
   cel = import ../../../../lib/cel.nix { inherit lib; };
-  inherit (import ../../../../lib/kinds/types.nix { inherit lib; }) portRange;
+  inherit (lib.chalkos.types) portRange;
   inherit (import ./router-types.nix { inherit lib; })
     prefix
     address

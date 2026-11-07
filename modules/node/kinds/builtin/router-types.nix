@@ -5,7 +5,6 @@ let
   inherit (lib) types;
   inherit (import ./lib.nix) apiVersions;
   cel = import ../../../../lib/cel.nix { inherit lib; };
-  kindTypes = import ../../../../lib/kinds/types.nix { inherit lib; };
   # The documents of a router kind in the delivered config, by name.
   delivered = kind: cel.documents "config" apiVersions.router kind;
 in
@@ -17,14 +16,14 @@ in
   # An interface's name alone.
   interfaceName = types.strMatching "[A-Za-z0-9_.:@-]{1,15}";
   # An address range, which the rules read with cidr(), and an address, which they read with ip().
-  inherit (kindTypes) prefix address;
+  inherit (lib.chalkos.types) prefix address;
   family = types.enum [
     "ipv4"
     "ipv6"
   ];
   # A reference to a VRF document by its name, or default for the default VRF, which holds every
   # link no VRF holds and has no document.
-  vrfRef = kindTypes.ref {
+  vrfRef = lib.chalkos.types.ref {
     kind = "VRF";
     reserved = [ "default" ];
   };

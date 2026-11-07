@@ -14,7 +14,7 @@
 let
   inherit (lib) mkOption types;
   inherit (import ./lib.nix) builtin groups apiVersions;
-  inherit (import ../../../../lib/kinds/types.nix { inherit lib; }) portRange ref;
+  inherit (lib.chalkos.types) portRange ref;
   inherit (import ./router-types.nix { inherit lib; })
     interface
     interfaceText

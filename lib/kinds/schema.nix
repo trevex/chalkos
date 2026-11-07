@@ -237,7 +237,7 @@ let
       throw ''
         ${at}: the option type ${t.description} has no JSON Schema mapping. Kinds accept str,
         nonEmptyStr, strMatching, bool, int, ints.*, port, float, enum, nullOr, listOf, attrsOf,
-        submodule, lib.chalkos.types.ref and lib.chalkos.types.secretRef.
+        submodule and the types of lib.chalkos.types.
       '';
 
   # attrsOf and lazyAttrsOf read a submodule's options by instantiating it once, before any

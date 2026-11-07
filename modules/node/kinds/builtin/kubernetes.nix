@@ -13,11 +13,9 @@ let
   flannel = config.chalkos.cni.provider == "flannel";
   inherit (import ../../../../lib/kinds/types.nix { inherit lib; })
     kubernetesObject
-    address
-    prefix
-    imageReference
     versionedImageReference
     ;
+  inherit (lib.chalkos.types) address prefix imageReference;
   # An image of the cluster, which containerd pulls as written. A Kubernetes component's names its
   # version in its tag, which the image's checker compares with the kubelet's.
   image =
