@@ -397,9 +397,6 @@ var domainCodes = layer.Codes{
 	layer.CodeFor[refusedTrust](connect.CodeInvalidArgument),
 }
 
-// codeOf is the code err answers an RPC with, as errorCodes gives it.
-func codeOf(err error) connect.Code { return domainCodes.Of(err) }
-
 // errorCodes turns the error of a handler, chalkd's or a plugin's, into the *connect.Error it
 // answers with: its whole text, with the code it carries or the code of a domain error it wraps,
 // or else CodeInternal. Handlers decide a code with layer.Errorf and wrap everything else with

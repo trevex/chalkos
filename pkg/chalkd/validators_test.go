@@ -146,7 +146,7 @@ func TestInstallInPlaceRunsTheValidators(t *testing.T) {
 	h := header(t, &nodev1.InstallHeader_InPlace{InPlace: &nodev1.InPlace{}})
 	h.Config = baseConfig
 	err := sendInstall(t, s, h, nil)
-	if installed || codeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "validator veto failed (exit 2)") {
+	if installed || connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "validator veto failed (exit 2)") {
 		t.Errorf("install: %v, installed %v", err, installed)
 	}
 }

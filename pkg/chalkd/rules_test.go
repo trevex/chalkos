@@ -139,7 +139,7 @@ func TestInstallRulesThatDoNotCompile(t *testing.T) {
 	h.Image = &nodev1.ImageHeader{ImageId: "chalkos", Platform: "metal", Architecture: "x86-64", RootHash: newImage}
 	contractOf(h).Schemas = schemas
 	err := sendInstall(t, s, h, nil)
-	if codeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "the image cannot check config: the image's rules: SystemDisk: rule ") {
+	if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "the image cannot check config: the image's rules: SystemDisk: rule ") {
 		t.Errorf("err = %v", err)
 	}
 }

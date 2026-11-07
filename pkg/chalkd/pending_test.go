@@ -430,7 +430,7 @@ func TestUpgradeSettlesThePendingConfigWhenActivationFails(t *testing.T) {
 	sendPending(t, s, strings.Replace(baseConfig, "name: first", "name: second", 1))
 	unactivated := &upgrade.StagedError{Result: upgrade.Result{Entry: ".staged-chalkos_2.efi", Wrote: true}, Err: errors.New("rename the UKI: input/output error")}
 	_, _, err := upgradePending(t, s, pki.RoleOperator, "", unactivated, nil)
-	if codeOf(err) != connect.CodeInternal || !strings.Contains(err.Error(), "the image is staged as .staged-chalkos_2.efi, but its activation failed: rename the UKI: input/output error") {
+	if connect.CodeOf(err) != connect.CodeInternal || !strings.Contains(err.Error(), "the image is staged as .staged-chalkos_2.efi, but its activation failed: rename the UKI: input/output error") {
 		t.Fatalf("upgrade = %v, want the activation's failure, internal", err)
 	}
 	if v := pendingVersion(t, s); v != "" {

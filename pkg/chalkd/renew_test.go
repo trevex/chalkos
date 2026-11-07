@@ -140,7 +140,7 @@ func TestRenewNodeCertificate(t *testing.T) {
 		"a request for an Ed25519 key": {pair(t, w1), notP256[1], connect.CodeInvalidArgument},
 	} {
 		_, err := kubernetesClient(dial(t, addr, tc.cert)).RenewNodeCertificate(context.Background(), connect.NewRequest(&kubernetesv1.RenewNodeCertificateRequest{CertificateRequest: tc.request}))
-		if codeOf(err) != tc.code {
+		if connect.CodeOf(err) != tc.code {
 			t.Errorf("%s: %v, want %v", name, err, tc.code)
 		}
 	}
@@ -161,7 +161,7 @@ func TestRenewNodeCertificateOnControlPlanesOnly(t *testing.T) {
 	} {
 		addr := serve(t, tc.s, c, c.pool)
 		_, err := kubernetesClient(dial(t, addr, c.clients[pki.RoleNode])).RenewNodeCertificate(context.Background(), connect.NewRequest(&kubernetesv1.RenewNodeCertificateRequest{CertificateRequest: request}))
-		if codeOf(err) != tc.code || !strings.Contains(err.Error(), tc.want) {
+		if connect.CodeOf(err) != tc.code || !strings.Contains(err.Error(), tc.want) {
 			t.Errorf("%s: %v, want %v %q", name, err, tc.code, tc.want)
 		}
 	}
@@ -195,7 +195,7 @@ func TestRenewNodeCertificateOfRevokedNode(t *testing.T) {
 		"w1": "node w1 is revoked since 2026-10-23T08:00:00Z; chalkctl node unrevoke w1 lets it renew again",
 		"w3": "node w3 is revoked; chalkctl node unrevoke w3 lets it renew again",
 	} {
-		if err := renewAs(t, c, addr, name); codeOf(err) != connect.CodePermissionDenied || !strings.Contains(err.Error(), want) {
+		if err := renewAs(t, c, addr, name); connect.CodeOf(err) != connect.CodePermissionDenied || !strings.Contains(err.Error(), want) {
 			t.Errorf("renewing %s: %v, want %q", name, err, want)
 		}
 	}
@@ -203,7 +203,7 @@ func TestRenewNodeCertificateOfRevokedNode(t *testing.T) {
 		t.Errorf("renewing w2: %v", err)
 	}
 	loadErr = errors.New("connection refused")
-	if err := renewAs(t, c, addr, "w2"); codeOf(err) != connect.CodeUnavailable || !strings.Contains(err.Error(), "connection refused") {
+	if err := renewAs(t, c, addr, "w2"); connect.CodeOf(err) != connect.CodeUnavailable || !strings.Contains(err.Error(), "connection refused") {
 		t.Errorf("renewing w2 without the revoked nodes: %v, want a refusal", err)
 	}
 }
@@ -222,7 +222,7 @@ func TestRenewNodeCertificateReadsRevokedNodes(t *testing.T) {
 		t.Fatal(err)
 	}
 	addr := serve(t, s, c, c.pool)
-	if err := renewAs(t, c, addr, "w1"); codeOf(err) != connect.CodePermissionDenied {
+	if err := renewAs(t, c, addr, "w1"); connect.CodeOf(err) != connect.CodePermissionDenied {
 		t.Errorf("renewing w1: %v, want PermissionDenied", err)
 	}
 	if err := renewAs(t, c, addr, "w2"); err != nil {
@@ -233,7 +233,7 @@ func TestRenewNodeCertificateReadsRevokedNodes(t *testing.T) {
 		t.Fatal(err)
 	}
 	err := renewAs(t, c, addr, "w2")
-	if codeOf(err) != connect.CodeInternal || strings.Contains(err.Error(), "unavailable") {
+	if connect.CodeOf(err) != connect.CodeInternal || strings.Contains(err.Error(), "unavailable") {
 		t.Errorf("renewing w2 without the node file: %v, want an internal error alone", err)
 	}
 }
@@ -612,7 +612,7 @@ func TestRenewNodeCertificateRefusedOnceLeft(t *testing.T) {
 	addr := serve(t, s, c, c.pool)
 	request, _ := certificateRequest(t, "n2")
 	_, err := kubernetesClient(dial(t, addr, c.clients[pki.RoleNode])).RenewNodeCertificate(context.Background(), connect.NewRequest(&kubernetesv1.RenewNodeCertificateRequest{CertificateRequest: request}))
-	if codeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "left etcd") {
+	if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "left etcd") {
 		t.Errorf("%v, want a refusal naming that the node left etcd", err)
 	}
 }

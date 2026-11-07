@@ -587,7 +587,7 @@ func call(c *client.Conn, procedure string) connect.Code {
 	if err == nil {
 		return 0
 	}
-	return codeOf(err)
+	return connect.CodeOf(err)
 }
 
 func TestAuthorisation(t *testing.T) {
@@ -834,7 +834,7 @@ func TestRequestSizeLimit(t *testing.T) {
 
 	large := strings.Repeat("x", maxMessageBytes+1)
 	_, err := conn.ApplyConfig(ctx, connect.NewRequest(&nodev1.ApplyConfigRequest{Config: large}))
-	if codeOf(err) != connect.CodeResourceExhausted {
+	if connect.CodeOf(err) != connect.CodeResourceExhausted {
 		t.Fatalf("err = %v, want resource exhausted", err)
 	}
 	if len(r.Calls) != 0 {
@@ -842,7 +842,7 @@ func TestRequestSizeLimit(t *testing.T) {
 	}
 	// Below the limit, the request reaches the handler, which refuses what is not config.
 	_, err = conn.ApplyConfig(ctx, connect.NewRequest(&nodev1.ApplyConfigRequest{Config: large[:maxMessageBytes-1024]}))
-	if codeOf(err) != connect.CodeInvalidArgument {
+	if connect.CodeOf(err) != connect.CodeInvalidArgument {
 		t.Fatalf("err = %v, want the handler's refusal", err)
 	}
 	if code := call(conn, "Info"); code != 0 {
@@ -878,7 +878,7 @@ func TestCompressionRefused(t *testing.T) {
 	addr := serve(t, s, c, nil)
 
 	gzip := rawClient(t, addr, connect.WithSendGzip())
-	if _, err := gzip.Info(context.Background(), connect.NewRequest(&nodev1.InfoRequest{})); codeOf(err) != connect.CodeUnimplemented {
+	if _, err := gzip.Info(context.Background(), connect.NewRequest(&nodev1.InfoRequest{})); connect.CodeOf(err) != connect.CodeUnimplemented {
 		t.Fatalf("gzip request: err = %v, want CodeUnimplemented", err)
 	}
 
@@ -945,7 +945,7 @@ func TestLogsLimitsStreams(t *testing.T) {
 	cancels = append(cancels, cancelOver)
 	select {
 	case err := <-follow(over):
-		if codeOf(err) != connect.CodeResourceExhausted {
+		if connect.CodeOf(err) != connect.CodeResourceExhausted {
 			t.Fatalf("err = %v, want resource exhausted", err)
 		}
 	case <-started:
@@ -965,7 +965,7 @@ func TestLogsLimitsStreams(t *testing.T) {
 		case <-started:
 			return
 		case err := <-done:
-			if codeOf(err) != connect.CodeResourceExhausted || time.Now().After(deadline) {
+			if connect.CodeOf(err) != connect.CodeResourceExhausted || time.Now().After(deadline) {
 				t.Fatalf("err = %v after a stream ended", err)
 			}
 			time.Sleep(10 * time.Millisecond)
@@ -1008,6 +1008,9 @@ func exists(path string) bool {
 // testOSCA is the OS CA of every test server's STATE, which the node CAs of the Kubernetes
 // fixtures chain to.
 var testOSCA = kubernetestest.OSCA
+
+// codeOf is the code a handler's err answers an RPC with, as errorCodes gives it.
+func codeOf(err error) connect.Code { return domainCodes.Of(err) }
 
 // rpcErr is err as the node answers it, through errorCodes; false for no error.
 func rpcErr(err error) (*connect.Error, bool) {

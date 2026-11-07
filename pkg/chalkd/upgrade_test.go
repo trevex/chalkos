@@ -93,7 +93,7 @@ func TestUpgrade(t *testing.T) {
 				rest = rest[n:]
 			}
 			resp, err := stream.CloseAndReceive()
-			if codeOf(err) != tc.wantCode && !(err == nil && tc.wantCode == 0) {
+			if connect.CodeOf(err) != tc.wantCode && !(err == nil && tc.wantCode == 0) {
 				t.Fatalf("upgrade = %v, want code %v", err, tc.wantCode)
 			}
 			if err != nil {
@@ -185,7 +185,7 @@ func TestUpgradeWhoseActivationFails(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, err := stream.CloseAndReceive()
-	if codeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "upgrade: the image is staged as .staged-chalkos_2.efi, but its activation failed: Secure Boot would refuse the UKI") {
+	if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "upgrade: the image is staged as .staged-chalkos_2.efi, but its activation failed: Secure Boot would refuse the UKI") {
 		t.Errorf("upgrade = %v", err)
 	}
 	if p := upgrade.ReadImages(filepath.Join(s.Paths.StateDir, upgrade.ImagesRecord)).Of([]byte{1, 2}); p != (upgrade.Provenance{Revision: "a1b2c3d4e5f6", Tag: "v1.5.0"}) {
@@ -334,7 +334,7 @@ func TestUpgradeRefusesMalformedHeaders(t *testing.T) {
 		stream := conn.Upgrade(context.Background())
 		stream.Send(&nodev1.UpgradeRequest{Message: &nodev1.UpgradeRequest_Header{Header: tc.header}})
 		_, err := stream.CloseAndReceive()
-		if codeOf(err) != connect.CodeInvalidArgument || !strings.Contains(err.Error(), tc.want) {
+		if connect.CodeOf(err) != connect.CodeInvalidArgument || !strings.Contains(err.Error(), tc.want) {
 			t.Errorf("%v: %v, want %q", tc.header, err, tc.want)
 		}
 	}
@@ -378,7 +378,7 @@ func TestUpgradeDeliversConfigOnlyForAdmins(t *testing.T) {
 			}
 			_, err := stream.CloseAndReceive()
 			if tc.want == "" {
-				if codeOf(err) != connect.CodePermissionDenied || !strings.Contains(err.Error(), "needs the admin role") {
+				if connect.CodeOf(err) != connect.CodePermissionDenied || !strings.Contains(err.Error(), "needs the admin role") {
 					t.Errorf("upgrade = %v, want it refused for the admin role", err)
 				}
 				if installed {
@@ -690,7 +690,7 @@ func TestUpgradeRetiresConfigSlots(t *testing.T) {
 	if err := stream.Send(&nodev1.UpgradeRequest{Message: &nodev1.UpgradeRequest_Header{Header: header}}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := stream.CloseAndReceive(); codeOf(err) != connect.CodeFailedPrecondition {
+	if _, err := stream.CloseAndReceive(); connect.CodeOf(err) != connect.CodeFailedPrecondition {
 		t.Fatalf("upgrade = %v, want its refusal", err)
 	}
 	slots, err := slot.List(s.Loader.Slots)
@@ -723,7 +723,7 @@ func TestOneUpgradeAtATime(t *testing.T) {
 	first := make(chan error, 1)
 	go func() { first <- send() }()
 	<-started
-	if err := send(); codeOf(err) != connect.CodeAborted {
+	if err := send(); connect.CodeOf(err) != connect.CodeAborted {
 		t.Errorf("a second upgrade: %v, want aborted", err)
 	}
 	close(release)

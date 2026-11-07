@@ -356,11 +356,11 @@ func TestCallsVerifyAgainstTheCurrentOSCAs(t *testing.T) {
 	}
 	opened := conns.Load()
 
-	if err := info(forInfo); codeOf(err) != connect.CodeUnauthenticated {
+	if err := info(forInfo); connect.CodeOf(err) != connect.CodeUnauthenticated {
 		t.Errorf("Info on a connection of the old root: %v, want unauthenticated", err)
 	}
 	_, err = forApply.ApplyConfig(context.Background(), connect.NewRequest(&nodev1.ApplyConfigRequest{Trust: []byte(both)}))
-	if codeOf(err) != connect.CodeUnauthenticated {
+	if connect.CodeOf(err) != connect.CodeUnauthenticated {
 		t.Errorf("ApplyConfig on a connection of the old root: %v, want unauthenticated", err)
 	}
 	if got := s.Certificate.OSCA(); got != next.Certificate {
@@ -379,7 +379,7 @@ func TestCallsVerifyAgainstTheCurrentOSCAs(t *testing.T) {
 		t.Fatal(err)
 	}
 	skew.Store(int64(2 * time.Hour))
-	if err := info(current); codeOf(err) != connect.CodeUnauthenticated {
+	if err := info(current); connect.CodeOf(err) != connect.CodeUnauthenticated {
 		t.Errorf("Info with an expired certificate: %v, want unauthenticated", err)
 	}
 }

@@ -177,7 +177,7 @@ func TestRunDiagnosticInANamespace(t *testing.T) {
 		t.Errorf("runs = %+v, want %+v", got, want)
 	}
 	_, _, _, err := runDiagnostic(conn, "links", map[string]string{"name": "x/../../proc"})
-	if codeOf(err) != connect.CodeInvalidArgument || !strings.Contains(err.Error(), `the network namespace "ns-x/../../proc" is no name below /run/netns`) {
+	if connect.CodeOf(err) != connect.CodeInvalidArgument || !strings.Contains(err.Error(), `the network namespace "ns-x/../../proc" is no name below /run/netns`) {
 		t.Errorf("err = %v, want a refusal of the namespace", err)
 	}
 	if got := f.recorded(); len(got) != 1 {
@@ -194,7 +194,7 @@ func TestRunDiagnosticInAMissingNamespace(t *testing.T) {
 	  "networkNamespace": "ns-{name}", "parameters": {"name": {"type": "pattern", "regex": "^[a-z]+$", "description": "A namespace."}},
 	  "role": "operator", "timeout": "10s"}}`)
 	_, _, _, err := runDiagnostic(conn, "links", map[string]string{"name": "gone"})
-	if codeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "diagnostic links: the network namespace ns-gone does not exist") {
+	if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "diagnostic links: the network namespace ns-gone does not exist") {
 		t.Errorf("err = %v, want a failed precondition naming ns-gone", err)
 	}
 }
@@ -219,7 +219,7 @@ func TestRunDiagnosticRefuses(t *testing.T) {
 			f := &fakeDiagnose{}
 			_, conn := diagnosticsNode(t, f, tc.role)
 			_, _, _, err := runDiagnostic(conn, tc.diagnostic, tc.args)
-			if codeOf(err) != tc.code || !strings.Contains(err.Error(), tc.want) {
+			if connect.CodeOf(err) != tc.code || !strings.Contains(err.Error(), tc.want) {
 				t.Errorf("err = %v, want %v with %q", err, tc.code, tc.want)
 			}
 			if runs := f.recorded(); len(runs) != 0 {
@@ -254,14 +254,14 @@ func TestRunDiagnosticCutsTheOutput(t *testing.T) {
 // A node runs four diagnostics at a time, and a runner that fails is an internal error.
 func TestRunDiagnosticLimitsAndFailures(t *testing.T) {
 	s, conn := diagnosticsNode(t, &fakeDiagnose{err: errors.New("no bus")}, pki.RoleReader)
-	if _, _, _, err := runDiagnostic(conn, "route-get", map[string]string{"address": "192.0.2.1"}); codeOf(err) != connect.CodeInternal || !strings.Contains(err.Error(), "run the diagnostic route-get: no bus") {
+	if _, _, _, err := runDiagnostic(conn, "route-get", map[string]string{"address": "192.0.2.1"}); connect.CodeOf(err) != connect.CodeInternal || !strings.Contains(err.Error(), "run the diagnostic route-get: no bus") {
 		t.Errorf("err = %v", err)
 	}
 	if n := s.diagnosticRuns.Load(); n != 0 {
 		t.Errorf("%d runs counted after the run ended", n)
 	}
 	s.diagnosticRuns.Store(maxDiagnosticRuns)
-	if _, _, _, err := runDiagnostic(conn, "route-get", map[string]string{"address": "192.0.2.1"}); codeOf(err) != connect.CodeResourceExhausted {
+	if _, _, _, err := runDiagnostic(conn, "route-get", map[string]string{"address": "192.0.2.1"}); connect.CodeOf(err) != connect.CodeResourceExhausted {
 		t.Errorf("err = %v, want resource exhausted", err)
 	}
 }

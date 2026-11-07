@@ -233,7 +233,7 @@ func TestUpgradeRefusesChunksOfAPull(t *testing.T) {
 	stream := conn.Upgrade(context.Background())
 	stream.Send(&nodev1.UpgradeRequest{Message: &nodev1.UpgradeRequest_Header{Header: pulledHeader(t, ocitest.Registry(t))}})
 	stream.Send(&nodev1.UpgradeRequest{Message: &nodev1.UpgradeRequest_Chunk{Chunk: &nodev1.ImageChunk{Data: []byte("store")}}})
-	if _, err := stream.CloseAndReceive(); codeOf(err) != connect.CodeInvalidArgument || !strings.Contains(err.Error(), "an upgrade that pulls its image carries no chunks") {
+	if _, err := stream.CloseAndReceive(); connect.CodeOf(err) != connect.CodeInvalidArgument || !strings.Contains(err.Error(), "an upgrade that pulls its image carries no chunks") {
 		t.Errorf("upgrade = %v", err)
 	}
 }
@@ -297,7 +297,7 @@ func TestUpgradePullFailsInternallyWithoutTheRunningConfig(t *testing.T) {
 	conn := dial(t, serve(t, s, c, c.pool), c.clients[pki.RoleOperator])
 	stream := conn.Upgrade(context.Background())
 	stream.Send(&nodev1.UpgradeRequest{Message: &nodev1.UpgradeRequest_Header{Header: pulledHeader(t, ocitest.Registry(t))}})
-	if _, err := stream.CloseAndReceive(); codeOf(err) != connect.CodeInternal || !strings.Contains(err.Error(), "read the running image's config slot") {
+	if _, err := stream.CloseAndReceive(); connect.CodeOf(err) != connect.CodeInternal || !strings.Contains(err.Error(), "read the running image's config slot") {
 		t.Errorf("upgrade = %v", err)
 	}
 }
@@ -455,7 +455,7 @@ func TestInstallRefusesAPull(t *testing.T) {
 			if err == nil {
 				t.Fatalf("install succeeded, want %v and %q", tc.code, tc.want)
 			}
-			if codeOf(err) != tc.code || !strings.Contains(err.Error(), tc.want) {
+			if connect.CodeOf(err) != tc.code || !strings.Contains(err.Error(), tc.want) {
 				t.Errorf("install = %v, want %v and %q", err, tc.code, tc.want)
 			}
 			if tc.code == connect.CodeFailedPrecondition && !strings.Contains(err.Error(), "install: pull "+h.GetSource().GetOci().GetReference()) {

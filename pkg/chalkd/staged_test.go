@@ -975,7 +975,7 @@ func TestKnownGoodImageKeepsItsConfig(t *testing.T) {
 			_, err := stream.CloseAndReceive()
 			return err
 		}
-		if err := send(next); codeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "its config stays as it last ran until that boot is found healthy") {
+		if err := send(next); connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "its config stays as it last ran until that boot is found healthy") {
 			t.Errorf("an upgrade with other config = %v", err)
 		}
 		for _, config := range []string{"", baseConfig} {

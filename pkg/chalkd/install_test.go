@@ -118,7 +118,7 @@ func TestInstallInPlace(t *testing.T) {
 		t.Fatal("the node did not reboot after installing")
 	}
 	err := sendInstall(t, s, header(t, &nodev1.InstallHeader_InPlace{InPlace: &nodev1.InPlace{}}), nil)
-	if codeOf(err) != connect.CodeFailedPrecondition {
+	if connect.CodeOf(err) != connect.CodeFailedPrecondition {
 		t.Errorf("second install: %v", err)
 	}
 }
@@ -154,7 +154,7 @@ func TestInstallTakesTheNodesNameFromTheHeadersCertificate(t *testing.T) {
 			h := header(t, &nodev1.InstallHeader_InPlace{InPlace: &nodev1.InPlace{}})
 			h.NodeCertificate = cert
 			err := sendInstall(t, s, h, nil)
-			if codeOf(err) != connect.CodeInvalidArgument || !strings.Contains(err.Error(), "node certificate") {
+			if connect.CodeOf(err) != connect.CodeInvalidArgument || !strings.Contains(err.Error(), "node certificate") {
 				t.Fatalf("err = %v, want a refusal of the node certificate", err)
 			}
 		})
@@ -243,7 +243,7 @@ func TestInstallImageMatchesTheTarget(t *testing.T) {
 	}
 	in := header(t, &nodev1.InstallHeader_InPlace{InPlace: &nodev1.InPlace{}})
 	in.Image = &nodev1.ImageHeader{ImageId: "chalkos"}
-	if err := sendInstall(t, s, in, nil); codeOf(err) != connect.CodeInvalidArgument {
+	if err := sendInstall(t, s, in, nil); connect.CodeOf(err) != connect.CodeInvalidArgument {
 		t.Errorf("in place with an image: %v", err)
 	}
 	s.Installer = true
@@ -251,7 +251,7 @@ func TestInstallImageMatchesTheTarget(t *testing.T) {
 		t.Error("installed onto the disk")
 		return nil
 	}
-	if err := sendInstall(t, s, header(t, &nodev1.InstallHeader_Disk{Disk: &nodev1.DiskReference{Path: "/dev/vdb"}}), nil); codeOf(err) != connect.CodeInvalidArgument {
+	if err := sendInstall(t, s, header(t, &nodev1.InstallHeader_Disk{Disk: &nodev1.DiskReference{Path: "/dev/vdb"}}), nil); connect.CodeOf(err) != connect.CodeInvalidArgument {
 		t.Errorf("onto a disk without an image: %v", err)
 	}
 }
@@ -269,7 +269,7 @@ func TestInstallTargetMustMatchImage(t *testing.T) {
 			s, _ := newTestServer(t, maintenance, vda)
 			s.Installer = c.installer
 			err := sendInstall(t, s, header(t, c.target), nil)
-			if codeOf(err) != connect.CodeFailedPrecondition {
+			if connect.CodeOf(err) != connect.CodeFailedPrecondition {
 				t.Errorf("err = %v", err)
 			}
 		})
@@ -289,7 +289,7 @@ func TestInstallFailureCanBeRepeated(t *testing.T) {
 	var rebooted atomic.Bool
 	s.RebootNode = func() { rebooted.Store(true) }
 	in := header(t, &nodev1.InstallHeader_InPlace{InPlace: &nodev1.InPlace{}})
-	if err := sendInstall(t, s, in, nil); codeOf(err) != connect.CodeFailedPrecondition {
+	if err := sendInstall(t, s, in, nil); connect.CodeOf(err) != connect.CodeFailedPrecondition {
 		t.Fatalf("err = %v", err)
 	}
 	time.Sleep(1500 * time.Millisecond)
@@ -485,7 +485,7 @@ func TestInstallFromPartsRefusedByTheImage(t *testing.T) {
 	contractOf(h).Schemas = fixtureSchemas(t)
 	h.Image = &nodev1.ImageHeader{ImageId: "chalkos", Platform: "metal", Architecture: "x86-64", RootHash: newImage}
 	err := sendInstall(t, s, h, nil)
-	if codeOf(err) != connect.CodeFailedPrecondition || !strings.HasSuffix(err.Error(), "install: output demo: its renderer failed (exit 5); see the node's journal") {
+	if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.HasSuffix(err.Error(), "install: output demo: its renderer failed (exit 5); see the node's journal") {
 		t.Fatalf("install = %v, want the image's refusal", err)
 	}
 	if s.installed {
@@ -546,7 +546,7 @@ func TestInstallRefusesConfig(t *testing.T) {
 			s.FromParts = func(context.Context, install.PartsRequest) error { t.Error("installed onto the disk"); return nil }
 			h := header(t, &nodev1.InstallHeader_InPlace{InPlace: &nodev1.InPlace{}})
 			c.edit(h)
-			if err := sendInstall(t, s, h, nil); codeOf(err) != connect.CodeInvalidArgument || !strings.Contains(err.Error(), c.want) {
+			if err := sendInstall(t, s, h, nil); connect.CodeOf(err) != connect.CodeInvalidArgument || !strings.Contains(err.Error(), c.want) {
 				t.Errorf("err = %v, want %q", err, c.want)
 			}
 		})
@@ -573,7 +573,7 @@ func TestInstallInPlaceChecksTheOutputs(t *testing.T) {
 			h := header(t, &nodev1.InstallHeader_InPlace{InPlace: &nodev1.InPlace{}})
 			h.Config = baseConfig
 			err := sendInstall(t, s, h, nil)
-			if tc.want == "" && (err != nil || !installed) || tc.want != "" && (installed || codeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), tc.want)) {
+			if tc.want == "" && (err != nil || !installed) || tc.want != "" && (installed || connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), tc.want)) {
 				t.Errorf("install: %v, installed %v; want %q", err, installed, tc.want)
 			}
 			if _, err := os.Lstat(filepath.Join(s.Loader.Render.Root, "demo")); !os.IsNotExist(err) {

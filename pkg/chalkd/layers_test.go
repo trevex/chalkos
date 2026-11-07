@@ -72,7 +72,7 @@ func TestLayerGate(t *testing.T) {
 		}
 		r := routerv1connect.NewRouterServiceClient(conn.HTTPClient(), conn.BaseURL())
 		_, err = r.Routes(context.Background(), connect.NewRequest(&routerv1.RoutesRequest{}))
-		if want := "the router layer is not in this image"; codeOf(err) != connect.CodeUnimplemented || !strings.Contains(err.Error(), want) {
+		if want := "the router layer is not in this image"; connect.CodeOf(err) != connect.CodeUnimplemented || !strings.Contains(err.Error(), want) {
 			t.Errorf("routes in %v without the router layer: %v, want %q", mode, err, want)
 		}
 	}

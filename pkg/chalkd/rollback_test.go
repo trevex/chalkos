@@ -203,7 +203,7 @@ func TestRollbackImage(t *testing.T) {
 			resp, err := conn.RollbackImage(context.Background(), connect.NewRequest(&nodev1.RollbackImageRequest{RootHash: previous, Reboot: tc.reboot}))
 			switch {
 			case tc.wantCode != 0:
-				if codeOf(err) != tc.wantCode || !strings.Contains(err.Error(), "roll back: the node keeps no image it ran before") {
+				if connect.CodeOf(err) != tc.wantCode || !strings.Contains(err.Error(), "roll back: the node keeps no image it ran before") {
 					t.Fatalf("rollback = %v, want code %v", err, tc.wantCode)
 				}
 			case err != nil:
@@ -238,7 +238,7 @@ func TestRollbackImage(t *testing.T) {
 		}
 		conn := dial(t, serve(t, s, c, c.pool), c.clients[pki.RoleOperator])
 		_, err := conn.RollbackImage(context.Background(), connect.NewRequest(&nodev1.RollbackImageRequest{RootHash: previous}))
-		if codeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "STATE holds no config for the image") {
+		if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "STATE holds no config for the image") {
 			t.Errorf("rollback = %v", err)
 		}
 		if _, err := os.Stat(filepath.Join(s.Paths.StateDir, "chalkd", "rollback")); !errors.Is(err, fs.ErrNotExist) {
