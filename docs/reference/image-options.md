@@ -65,10 +65,10 @@ Example: `[ "kvm_amd" ]`
 Type: map of submodule · Default: `{ }` · Declared in: [modules/node/kernel.nix](https://github.com/trevex/chalkos/blob/main/modules/node/kernel.nix)
 
 Groups of kernel modules by name, which `chalkos.kernel.moduleGroups` selects. chalkos
-declares the groups of the hardware an image may run on: `can`, `filesystems`, `gpu`, `industrial`, `infiniband`, `media`, `network`, `platform`, `sound`, `storage`, `virtualisation` and `wireless`.
-The module of a feature declares the group the feature needs, such as the base
-firewall's `firewall`, and adds it to `chalkos.kernel.moduleGroups` while the feature
-is on.
+declares the groups of the hardware an image may run on and of its base software:
+`can`, `filesystems`, `gpu`, `industrial`, `infiniband`, `media`, `network`, `platform`, `sound`, `storage`, `virtualisation` and `wireless`. The module of a feature declares the group the feature
+needs, such as the base firewall's `firewall`, and adds it to
+`chalkos.kernel.moduleGroups` while the feature is on.
 
 The options within each, by their path below `chalkos.kernel.groups`:
 

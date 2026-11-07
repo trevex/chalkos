@@ -200,13 +200,17 @@ let
     "platform"
   ];
 
-  # Group names as the option descriptions list them: `a`, `b` and `c`.
+  # Group names as the option descriptions list them: `a`, `b` and `c`; `a` for one, and none for
+  # an empty list.
   listed =
     list:
     let
       quoted = map (n: "`${n}`") list;
     in
-    lib.concatStringsSep ", " (lib.init quoted) + " and " + lib.last quoted;
+    if lib.length quoted < 2 then
+      lib.concatStrings quoted
+    else
+      lib.concatStringsSep ", " (lib.init quoted) + " and " + lib.last quoted;
 
   # A name chalkos.kernel.groups lacks fails the evaluation of the tree as well as the assertion,
   # since the tree is built without the system's assertions too.
@@ -284,10 +288,10 @@ in
       default = { };
       description = ''
         Groups of kernel modules by name, which `chalkos.kernel.moduleGroups` selects. chalkos
-        declares the groups of the hardware an image may run on: ${listed (lib.attrNames groups)}.
-        The module of a feature declares the group the feature needs, such as the base
-        firewall's `firewall`, and adds it to `chalkos.kernel.moduleGroups` while the feature
-        is on.
+        declares the groups of the hardware an image may run on and of its base software:
+        ${listed (lib.attrNames groups)}. The module of a feature declares the group the feature
+        needs, such as the base firewall's `firewall`, and adds it to
+        `chalkos.kernel.moduleGroups` while the feature is on.
       '';
     };
     moduleGroups = lib.mkOption {
