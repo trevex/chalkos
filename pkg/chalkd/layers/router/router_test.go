@@ -433,7 +433,7 @@ func TestRoutesOfAVRF(t *testing.T) {
 		{&routerv1.RoutesRequest{Vrf: "notable"}, connect.CodeInternal, "read the VRF notable: its document holds no table"},
 		{&routerv1.RoutesRequest{Vrf: "broken"}, connect.CodeInternal, "read the VRF broken: unexpected end of JSON input"},
 	} {
-		if _, err := routes(tc.req); connect.CodeOf(err) != tc.code || !strings.Contains(err.Error(), tc.want) {
+		if _, err := routes(tc.req); layer.CodeOf(err) != tc.code || !strings.Contains(err.Error(), tc.want) {
 			t.Errorf("%v: err = %v, want %v with %q", tc.req, err, tc.code, tc.want)
 		}
 	}

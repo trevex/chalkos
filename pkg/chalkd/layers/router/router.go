@@ -522,7 +522,7 @@ func (p *Plugin) Routes(ctx context.Context, req *connect.Request[routerv1.Route
 	// pattern and names a running VRF document, and vtysh is asked for whole families alone.
 	table, vrf := req.Msg.Table, req.Msg.Vrf
 	if vrf != "" && table != "" {
-		return nil, failed(connect.CodeInvalidArgument, "give a VRF or a table, not both: a VRF's routes are those of its table")
+		return nil, layer.Errorf(connect.CodeInvalidArgument, "give a VRF or a table, not both: a VRF's routes are those of its table")
 	}
 	named := vrf != "" && vrf != routing.DefaultVRF
 	if named {
@@ -534,7 +534,7 @@ func (p *Plugin) Routes(ctx context.Context, req *connect.Request[routerv1.Route
 	}
 	f, err := routing.NewFilter(req.Msg.Prefix, req.Msg.Protocol, table)
 	if err != nil {
-		return nil, failed(connect.CodeInvalidArgument, "%v", err)
+		return nil, layer.Errorf(connect.CodeInvalidArgument, "%w", err)
 	}
 	list := p.r.KernelRoutes
 	if list == nil {
@@ -542,7 +542,7 @@ func (p *Plugin) Routes(ctx context.Context, req *connect.Request[routerv1.Route
 	}
 	kernel, err := list()
 	if err != nil {
-		return nil, failed(connect.CodeInternal, "%v", err)
+		return nil, err
 	}
 	resp := &routerv1.RoutesResponse{Vrf: cmp.Or(vrf, routing.DefaultVRF)}
 	for _, r := range f.Kernel(kernel) {
@@ -578,14 +578,14 @@ const defaultVRFDir = "/run/chalkos/config/router.chalkos.dev/VRF"
 // vrfTable is the table of the node's VRF of the name, as its running VRF document gives it.
 func (r *side) vrfTable(name string) (uint32, error) {
 	if !routing.ShortName.MatchString(name) {
-		return 0, failed(connect.CodeInvalidArgument, "vrf %q is no VRF document's name", name)
+		return 0, layer.Errorf(connect.CodeInvalidArgument, "vrf %q is no VRF document's name", name)
 	}
 	data, err := os.ReadFile(filepath.Join(cmp.Or(r.VRFDir, defaultVRFDir), name+".json"))
 	if errors.Is(err, fs.ErrNotExist) {
-		return 0, failed(connect.CodeNotFound, "the node has no VRF %s", name)
+		return 0, layer.Errorf(connect.CodeNotFound, "the node has no VRF %s", name)
 	}
 	if err != nil {
-		return 0, failed(connect.CodeInternal, "read the VRF %s: %v", name, err)
+		return 0, fmt.Errorf("read the VRF %s: %w", name, err)
 	}
 	var doc struct {
 		Spec struct {
@@ -593,10 +593,10 @@ func (r *side) vrfTable(name string) (uint32, error) {
 		} `json:"spec"`
 	}
 	if err := json.Unmarshal(data, &doc); err != nil {
-		return 0, failed(connect.CodeInternal, "read the VRF %s: %v", name, err)
+		return 0, fmt.Errorf("read the VRF %s: %w", name, err)
 	}
 	if doc.Spec.Table == 0 {
-		return 0, failed(connect.CodeInternal, "read the VRF %s: its document holds no table", name)
+		return 0, fmt.Errorf("read the VRF %s: its document holds no table", name)
 	}
 	return doc.Spec.Table, nil
 }
@@ -620,10 +620,6 @@ func kernelRoute(r *routing.KernelRoute) *routerv1.KernelRoute {
 func bgpRoute(r *routing.BGPRoute) *routerv1.BGPRoute {
 	return &routerv1.BGPRoute{Prefix: r.Prefix, AsPath: r.ASPath, NextHops: r.NextHops, Peer: r.Peer, LocalPref: r.LocalPref,
 		Med: r.MED, Communities: r.Communities, Best: r.Best, ImportedFrom: r.ImportedFrom}
-}
-
-func failed(code connect.Code, format string, args ...any) error {
-	return connect.NewError(code, fmt.Errorf(format, args...))
 }
 
 // keaFailure is the error of a server's status whose question to Kea ended with err, while the
