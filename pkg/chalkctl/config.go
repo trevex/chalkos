@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 
 	"connectrpc.com/connect"
 	"google.golang.org/protobuf/types/known/anypb"
@@ -57,6 +58,9 @@ func newContract(files map[string][]byte, facts []*anypb.Any) (contract, error) 
 			return contract{}, fmt.Errorf("the image's contract carries facts of type %s, which this chalkctl does not know", f.GetTypeUrl())
 		}
 	}
+	// Every node of the image copies the target; clipped, a translator one appends lands in an
+	// array of its own.
+	c.target.Translators = slices.Clip(c.target.Translators)
 	return c, nil
 }
 
