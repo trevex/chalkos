@@ -2814,9 +2814,9 @@ lib.runTests {
     };
   };
   # The groups of kernel modules are declared by the modules that need them: every image carries
-  # the base firewall's, the Kubernetes layer adds its own and the router layer the firewall's,
-  # whose nftables service it turns off. Every image declares the Kubernetes group, so a variant
-  # may add it; a group no module declares is refused.
+  # the base firewall's, a router too, whose rulesets use its modules with the nftables service
+  # off, and the Kubernetes layer adds its own. Every image declares the Kubernetes group, so a
+  # variant may add it; a group no module declares is refused.
   testKernelModuleGroupsByLayer = {
     expr =
       let
