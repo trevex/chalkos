@@ -33,7 +33,9 @@ YAML that Go reads. They meet in these places:
   config documents an inventory gives the node,
   which chalkctl reads (`pkg/inventory`), checks against the schemas of the image the inventory
   names for the node and translates into the identity the
-  node applies (`pkg/config`). chalkctl delivers the documents to
+  node applies (`pkg/config`). `pkg/config` translates what every image gives a node, and each
+  layer of the image adds its part through a translator, such as `pkg/kubernetes/translate` for
+  Kubernetes. chalkctl delivers the documents to
   chalkd, which checks them again against its own image's
   schemas, keeps them on STATE and translates them the same
   way.
@@ -94,7 +96,7 @@ Each directory of `cmd/` is a main that wires a package up; the logic lives in `
 | `client` | Connections to chalkd, each with one way to verify the node: by fingerprint in maintenance mode, by the OS CA otherwise; the names chalkd's status gives the OS's certificates and trusted values. |
 | `clustersecrets` | The secrets file: the OS CA and node CA with their keys, the Kubernetes secrets, the recovery secret, the file's age encryption, the rotation of what it holds, and the lock and in-place replacement of the file, which keeps its previous version. |
 | `command` | Runs a program of the image's store with bounded output, for command facts and outputs; a failure keeps standard error out of its error. It also follows a path's links within an image's store, and stops a transient unit or reads why one failed. |
-| `config` | Config documents: parsing, the rules of a set, defaults, the hash, and the translation into the identity the node applies. |
+| `config` | Config documents: parsing, the rules of a set, defaults, the hash, and the translation into the identity the node applies, which runs the translators of the image's layers after the common part. |
 | `config/slot` | Keeps a node's config on STATE, a slot per image with its identity, and writes it for the node's units: the documents below `/run/chalkos/config` and the secrets the granted units load as credentials. |
 | `config/withheld` | Names the kinds the node withholds from its services, Secret and Addon, without importing anything, so chalkcfg shares the list with chalkos-rules and `config`. |
 | `diagnostics` | Reads the image's `diagnostics.json`, checks a call's arguments against their parameters' types, builds the command line, and runs it as a transient systemd unit with a sandbox of its own. |
@@ -113,7 +115,7 @@ Each directory of `cmd/` is a main that wires a package up; the logic lives in `
 | `internal/strs` | Joins values into the lists of messages and flags: by their `String`, or names as prose, such as "a, b and c". |
 | `inventory` | Reads chalkctl's inventory: the cluster's nodes, the address chalkctl reaches each at, the image each runs and the config files each gets. |
 | `jsonfile` | Reads a JSON file an image may leave out, such as `facts.json`, `effects.json` or `outputs.json`, and decodes JSON that must hold one value of known fields. |
-| `kubernetes` | The node's Kubernetes cluster as `config` builds it from the config and the image's facts, its flags and address ranges, the node as its identity names it, the kinds of Kubernetes nodes (control plane and worker), and the control plane's ports and paths on a node. |
+| `kubernetes` | The node's Kubernetes cluster as `kubernetes/translate` builds it from the config and the image's facts, its flags and address ranges, the node as its identity names it, the kinds of Kubernetes nodes (control plane and worker), and the control plane's ports and paths on a node. |
 | `kubernetes/addons` | Renders the objects chalkos applies to every cluster before its own manifests: RBAC for chalkos's identities, kube-proxy, flannel and CoreDNS. |
 | `kubernetes/apply` | Server-side apply of manifests and approval of kubelet serving certificates. |
 | `kubernetes/credprovider` | The kubelet's image credential provider: writes its config and the node's registry credentials from the Registry documents, and answers the kubelet's requests. |
@@ -123,6 +125,7 @@ Each directory of `cmd/` is a main that wires a package up; the logic lives in `
 | `kubernetes/nodeip` | Picks the node's address of each family. |
 | `kubernetes/pki` | The Kubernetes certificates: the share, the control plane's leaves, admin kubeconfigs, and the names chalkd's status gives them. |
 | `kubernetes/revoked` | The ConfigMap of revoked nodes, which control planes read before they renew a node certificate, and the admission policy that shuts those nodes out. |
+| `kubernetes/translate` | The Kubernetes layer's part of a config's translation: builds the cluster from the Node, Cluster and Flannel documents and the image's facts, adds the node's Kubernetes settings to its identity, and reads the sandbox image and the Addon objects. |
 | `kubernetes/vip` | The etcd election of the control plane that holds the VIPs; adds a VIP to an interface and announces it. |
 | `kubernetes/vxlan` | The nftables table `chalkos-vxlan`: marks VXLAN to the node's addresses for the firewall and drops pods' VXLAN to the source ranges. |
 | `lab` | QEMU VMs, swtpm, the lab switch and console and the lab's supervisor, for chalklab and the end-to-end tests. |
@@ -205,7 +208,7 @@ which chalkd finds by type assertion, add what else the layer does:
 | `Delivery` | The payloads it takes with a delivery and its part of the identity. |
 | `nodeconfig.Layer` | What it writes from the running slot's documents, at boot and after each delivery. |
 | `Issuer` | The issuing of node certificates on renewal; an image has one issuer at most. |
-| `ImageFacts` | The facts of its images that config is translated with. |
+| `ImageFacts` | The facts of its images, from which it adds its translator to the target that config is translated for. |
 | `Commands` | Subcommands, run as `chalkd <layer> <command>`. |
 | `Actions` | Actions on what the running chalkd holds, which effects name as `<layer>:<action>`. |
 
