@@ -10,6 +10,7 @@
 let
   inherit (chalkosPackages) chalkd;
   inherit (config.chalkos.maintenance) osCA;
+  publicVersion = toString (import ../../lib/secrets-version.nix);
 in
 {
   options.chalkos.maintenance.osCA = lib.mkOption {
@@ -113,8 +114,8 @@ in
 
     environment.etc."chalkos/os-ca.crt" = lib.mkIf (osCA != null) {
       source = pkgs.runCommand "os-ca.crt" { nativeBuildInputs = [ pkgs.jq ]; } ''
-        if ! jq -e '.version == 3' ${osCA} > /dev/null; then
-          echo "${osCA} is not version 3; chalkos reads version 3 only, so generate new secrets with chalkctl gen secrets" >&2
+        if ! jq -e '.version == ${publicVersion}' ${osCA} > /dev/null; then
+          echo "${osCA} is not version ${publicVersion}; chalkos reads version ${publicVersion} only, so generate new secrets with chalkctl gen secrets" >&2
           exit 1
         fi
         jq -er .osCA.certificate ${osCA} > $out

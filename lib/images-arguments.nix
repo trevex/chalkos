@@ -3,8 +3,7 @@
 { lib, defaultNixpkgs, ... }:
 let
   inherit (lib) mkOption types;
-  # The version of secrets.pub.json chalkos reads; chalkctl gen secrets writes no other.
-  publicVersion = 3;
+  publicVersion = import ./secrets-version.nix;
   # A file that exists at evaluation, such as a path in the flake, is read and checked then. One a
   # derivation builds would need import from derivation; the image build checks it instead.
   readable =
