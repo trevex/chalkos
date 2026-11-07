@@ -86,12 +86,25 @@ the variant's `kubernetes`; the installer runs none.
 
 ### `chalkos.kubernetes.package` { #chalkoskubernetespackage }
 
-Type: package · Default: `pkgs.kubernetes` · Declared in: [modules/node/kubernetes/default.nix](https://github.com/trevex/chalkos/blob/main/modules/node/kubernetes/default.nix)
+Type: package · Default: the release `chalkos.kubernetes.version` selects · Declared in: [modules/node/kubernetes/default.nix](https://github.com/trevex/chalkos/blob/main/modules/node/kubernetes/default.nix)
 
 Kubernetes release whose kubelet the image runs; image.json names its version. The
 Cluster document names the images of the control plane, kube-proxy, CoreDNS, flannel and
 the pod sandbox, and the image's checker holds their versions to Kubernetes's version
-skew policy against this kubelet's.
+skew policy against this kubelet's. Set it for a release `chalkos.kubernetes.version`
+does not offer, such as another patch release; an image that sets both names one minor
+in both.
+
+### `chalkos.kubernetes.version` { #chalkoskubernetesversion }
+
+Type: one of `1.35`, `1.36`, `1.37` · Default: `lib.versions.majorMinor pkgs.kubernetes.version` · Declared in: [modules/node/kubernetes/default.nix](https://github.com/trevex/chalkos/blob/main/modules/node/kubernetes/default.nix)
+
+Minor release of Kubernetes whose kubelet the image runs, which selects
+`chalkos.kubernetes.package`: nixpkgs's own minor, whose package the binary cache holds,
+or one of the two minors before it. chalkos pins each of those two to a patch release and
+the image's build compiles its kubelet from source.
+
+Example: `"1.36"`
 
 ### `chalkos.cni.plugins` { #chalkoscniplugins }
 

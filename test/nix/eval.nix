@@ -2529,6 +2529,85 @@ lib.runTests {
       flannel = true;
     };
   };
+  # chalkos.kubernetes.version picks the kubelet by its minor, nixpkgs's by default; image.json
+  # names the release's version. Compared by derivation, so no kubelet builds.
+  testKubeletRelease =
+    let
+      releases = import ../../modules/node/kubernetes/releases.nix { inherit lib pkgs; };
+      image =
+        modules:
+        let
+          c = worker modules;
+        in
+        {
+          inherit (c.chalkos.kubernetes) version;
+          package = c.chalkos.kubernetes.package.drvPath;
+          imageVersion = (builtins.fromJSON c.environment.etc."chalkos/kubernetes/image.json".text).version;
+          kubelet = lib.hasInfix "-kubelet-${c.chalkos.kubernetes.package.version}/bin/kubelet " c.systemd.services.kubelet.serviceConfig.ExecStart;
+        };
+    in
+    {
+      expr = {
+        default = image [ ];
+        older = image [ { chalkos.kubernetes.version = "1.36"; } ];
+        releases = lib.attrNames releases;
+        unknown = fails (worker [ { chalkos.kubernetes.version = "1.30"; } ]).chalkos.kubernetes.version;
+      };
+      expected = {
+        default = {
+          version = lib.versions.majorMinor pkgs.kubernetes.version;
+          package = pkgs.kubernetes.drvPath;
+          imageVersion = pkgs.kubernetes.version;
+          kubelet = true;
+        };
+        older = {
+          version = "1.36";
+          package = releases."1.36".drvPath;
+          imageVersion = "1.36.6";
+          kubelet = true;
+        };
+        releases = [
+          "1.35"
+          "1.36"
+          (lib.versions.majorMinor pkgs.kubernetes.version)
+        ];
+        unknown = true;
+      };
+    };
+  # A package of its own stands for a release the table lacks; an image that sets both the
+  # version and the package names one minor in both.
+  testKubeletPackageAndVersionAgree =
+    let
+      message = "chalkos.kubernetes.package is Kubernetes ${pkgs.kubernetes.version} and chalkos.kubernetes.version is 1.36; set one of them, or both to one minor";
+      releases = import ../../modules/node/kubernetes/releases.nix { inherit lib pkgs; };
+      refused = modules: lib.any (a: !a.assertion && a.message == message) (worker modules).assertions;
+    in
+    {
+      expr = {
+        disagree = refused [
+          {
+            chalkos.kubernetes.version = "1.36";
+            chalkos.kubernetes.package = pkgs.kubernetes;
+          }
+        ];
+        packageAlone =
+          lib.all (a: a.assertion)
+            (worker [ { chalkos.kubernetes.package = releases."1.36"; } ]).assertions;
+        agree =
+          lib.all (a: a.assertion)
+            (worker [
+              {
+                chalkos.kubernetes.version = lib.versions.majorMinor pkgs.kubernetes.version;
+                chalkos.kubernetes.package = pkgs.kubernetes;
+              }
+            ]).assertions;
+      };
+      expected = {
+        disagree = true;
+        packageAlone = true;
+        agree = true;
+      };
+    };
   testKubernetesOnlyInKubernetesVariants = {
     expr =
       let

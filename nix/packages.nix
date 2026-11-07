@@ -100,6 +100,12 @@ in
   # The router test's routers run the router image on KVM.
   test-router-image = testing.images.router-kvm;
 
+  # The kubelet of every Kubernetes release an image can run, by minor, to build by hand after a
+  # change of the table. No check builds it: each release but nixpkgs's own compiles from source.
+  kubelet-releases = pkgs.linkFarm "kubelet-releases" (
+    import ../modules/node/kubernetes/releases.nix { inherit lib pkgs; }
+  );
+
   # The installer without an OS CA: it accepts any client until it installs a node.
   installer = (self.lib.mkImages { variants = { }; }).installer;
 

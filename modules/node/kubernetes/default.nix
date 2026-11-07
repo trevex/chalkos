@@ -6,12 +6,16 @@
 {
   chalkosPackages,
   config,
+  options,
   lib,
   pkgs,
   ...
 }:
 let
   k = config.chalkos.kubernetes;
+  releases = import ./releases.nix { inherit lib pkgs; };
+  # Whether the image's modules define an option, so that its default does not stand.
+  defined = o: o.highestPrio < (lib.mkOptionDefault null).priority;
   inherit (k) enable;
   inherit (chalkosPackages) chalkd;
   # The kubelet alone: the package holds every component, which control planes run from images.
@@ -48,20 +52,43 @@ in
         the variant's `kubernetes`; the installer runs none.
       '';
     };
+    version = lib.mkOption {
+      type = lib.types.enum (lib.attrNames releases);
+      default = lib.versions.majorMinor pkgs.kubernetes.version;
+      defaultText = lib.literalExpression "lib.versions.majorMinor pkgs.kubernetes.version";
+      example = "1.36";
+      description = ''
+        Minor release of Kubernetes whose kubelet the image runs, which selects
+        `chalkos.kubernetes.package`: nixpkgs's own minor, whose package the binary cache holds,
+        or one of the two minors before it. chalkos pins each of those two to a patch release and
+        the image's build compiles its kubelet from source.
+      '';
+    };
     package = lib.mkOption {
       type = lib.types.package;
-      default = pkgs.kubernetes;
-      defaultText = lib.literalExpression "pkgs.kubernetes";
+      default = releases.${k.version};
+      defaultText = lib.literalMD "the release `chalkos.kubernetes.version` selects";
       description = ''
         Kubernetes release whose kubelet the image runs; image.json names its version. The
         Cluster document names the images of the control plane, kube-proxy, CoreDNS, flannel and
         the pod sandbox, and the image's checker holds their versions to Kubernetes's version
-        skew policy against this kubelet's.
+        skew policy against this kubelet's. Set it for a release `chalkos.kubernetes.version`
+        does not offer, such as another patch release; an image that sets both names one minor
+        in both.
       '';
     };
   };
 
   config = lib.mkIf enable {
+    assertions = [
+      {
+        assertion =
+          !(defined options.chalkos.kubernetes.version && defined options.chalkos.kubernetes.package)
+          || lib.versions.majorMinor k.package.version == k.version;
+        message = "chalkos.kubernetes.package is Kubernetes ${k.package.version} and chalkos.kubernetes.version is ${k.version}; set one of them, or both to one minor";
+      }
+    ];
+
     chalkos.layers.kubernetes = "";
     chalkos.forwarding.enable = true;
     # The cluster file chalkd writes, which the kubelet's rules compare.
