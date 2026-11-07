@@ -9,7 +9,6 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/trevex/chalkos/pkg/atomicfile"
@@ -46,22 +45,7 @@ func Installed(stateDir string) (bool, error) {
 // with, so it can be recreated, or the target's, so the target disk is free again. A STATE that
 // is not mounted or not open is fine.
 func (i *Installer) closeState(ctx context.Context) error {
-	mounted, err := isMounted(i.MountInfo, i.StateDir)
-	if err != nil {
-		return err
-	}
-	if mounted {
-		_, err := tool.Run(ctx, i.Run, "umount", i.StateDir)
-		if te, ok := errors.AsType[*tool.Error](err); err != nil && !(ok && strings.Contains(te.Stderr, "not mounted")) {
-			return fmt.Errorf("unmount STATE: %w", err)
-		}
-	}
-	if _, err := os.Stat(filepath.Join(i.Host.DevRoot, "mapper", stateMapperName)); err == nil {
-		if _, err := tool.Run(ctx, i.Run, "systemd-cryptsetup", "detach", stateMapperName); err != nil {
-			return fmt.Errorf("close STATE: %w", err)
-		}
-	}
-	return nil
+	return hostops.Release(ctx, i.Ops, "STATE", i.StateDir, stateMapperName, i.Ops.DetachLUKS)
 }
 
 // prepareState makes the disk's STATE match the node's encryption policy. A STATE that does
@@ -150,16 +134,15 @@ func (i *Installer) checkState(ctx context.Context, target storage.BlockDisk, ta
 func (i *Installer) openStateReadOnly(ctx context.Context, dev string, luks bool) error {
 	source := dev
 	if luks {
-		if _, err := tool.Run(ctx, i.Run, "systemd-cryptsetup", "attach", stateMapperName, dev, "-", "tpm2-device=auto,headless=true,read-only"); err != nil {
+		if err := i.Ops.AttachLUKS(ctx, stateMapperName, dev, hostops.LUKSOptions{ReadOnly: true}); err != nil {
 			return err
 		}
-		source = "/dev/mapper/" + stateMapperName
+		source = hostops.Mapper(stateMapperName)
 	}
 	if err := os.MkdirAll(i.StateDir, 0o755); err != nil {
 		return err
 	}
-	_, err := tool.Run(ctx, i.Run, "mount", "-t", "ext4", "-o", "ro,noload", source, i.StateDir)
-	return err
+	return i.Ops.Mount(ctx, source, i.StateDir, "ext4", "ro,noload")
 }
 
 // markInstalled writes the installed marker to STATE, last: until it is there, the node is not
@@ -169,21 +152,6 @@ func (i *Installer) markInstalled() error {
 		return err
 	}
 	return atomicfile.WriteFile(filepath.Join(i.StateDir, installedMarker), []byte(i.Now().UTC().Format(time.RFC3339)+"\n"), 0o644)
-}
-
-// isMounted reports whether a file system is mounted at path, per a mountinfo file.
-func isMounted(mountInfo, path string) (bool, error) {
-	data, err := os.ReadFile(mountInfo)
-	if err != nil {
-		return false, err
-	}
-	for _, line := range strings.Split(string(data), "\n") {
-		fields := strings.Fields(line)
-		if len(fields) > 4 && fields[4] == path {
-			return true, nil
-		}
-	}
-	return false, nil
 }
 
 // openState makes the disk's STATE match the encryption policy, opens it and mounts it at

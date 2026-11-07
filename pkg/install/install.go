@@ -29,6 +29,8 @@ import (
 type Installer struct {
 	Run  tool.Runner
 	Host storage.Host
+	// Ops mounts the target's file systems and opens its volumes.
+	Ops hostops.Ops
 	// StateDir is where the target's STATE is mounted while installing.
 	StateDir string
 	// BootDisk is udev's link to the disk the running image booted from.
@@ -37,8 +39,6 @@ type Installer struct {
 	Definitions string
 	// WorkDir holds definitions and status while installing.
 	WorkDir string
-	// MountInfo is the mount table of chalkd's mount namespace.
-	MountInfo string
 	// OpenDisk opens a disk for wiping, waiting for its lock a bounded time or until ctx is done.
 	OpenDisk func(ctx context.Context, path string) (Disk, error)
 	// Architecture is the machine's, as images name theirs: x86-64 or arm64.
@@ -71,12 +71,12 @@ func ForInstaller() *Installer { return defaults("/run/chalkd/target") }
 func defaults(stateDir string) *Installer {
 	return &Installer{
 		Run:           tool.ExecRunner{},
+		Ops:           hostops.System(tool.ExecRunner{}),
 		Host:          storage.DefaultHost(),
 		StateDir:      stateDir,
 		BootDisk:      "/dev/disk/chalk-boot-disk",
 		Definitions:   "/etc/chalkos/repart.d",
 		WorkDir:       "/run/chalkd/install",
-		MountInfo:     "/proc/self/mountinfo",
 		OpenDisk:      openExclusive,
 		Architecture:  uki.GoArchitecture(runtime.GOARCH),
 		EFIVars:       "/sys/firmware/efi/efivars",
@@ -205,7 +205,7 @@ func (i *Installer) storage(disk storage.BlockDisk) *node.Storage {
 	return &node.Storage{
 		Run:        i.Run,
 		Host:       i.Host,
-		Ops:        hostops.Tools{Run: i.Run, MountInfo: i.MountInfo, DevRoot: i.Host.DevRoot},
+		Ops:        i.Ops,
 		StateDir:   i.StateDir,
 		BootDisk:   disk.Device,
 		StatusFile: filepath.Join(i.WorkDir, "storage-status.json"),

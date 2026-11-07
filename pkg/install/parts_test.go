@@ -30,6 +30,8 @@ import (
 	"github.com/trevex/chalkos/pkg/image/imagetest"
 	"github.com/trevex/chalkos/pkg/storage"
 	"github.com/trevex/chalkos/pkg/storage/gpt"
+	"github.com/trevex/chalkos/pkg/storage/hostops"
+	"github.com/trevex/chalkos/pkg/storage/hostops/hostopstest"
 	"github.com/trevex/chalkos/pkg/storage/storagetest"
 	"github.com/trevex/chalkos/pkg/storeslot"
 	"github.com/trevex/chalkos/pkg/tool"
@@ -162,10 +164,6 @@ func newPartsLabOf(t *testing.T, sector int64, size uint64) *partsLab {
 	target := labTarget
 	target.Size = size
 	i := newTestInstaller(t, r, vda, target)
-	write(t, i.MountInfo, "30 1 0:27 / / rw - tmpfs tmpfs rw\n")
-	if err := os.Remove(filepath.Join(i.Host.DevRoot, "mapper", "state")); err != nil {
-		t.Fatal(err)
-	}
 	r.efi = &fakeEFI{entries: []efiEntry{{"0001", "UEFI Misc Device", ""}}, next: 2}
 	dir := t.TempDir()
 	l := &partsLab{t: t, i: i, r: r, disk: filepath.Join(dir, "vdb"), fs: filepath.Join(dir, "fs"), repart: repart, efivars: filepath.Join(dir, "efivars"), diskLog: &diskLog{}, sector: sector, defs: labDefinitions}
@@ -179,6 +177,11 @@ func newPartsLabOf(t *testing.T, sector int64, size uint64) *partsLab {
 		t.Fatal(err)
 	}
 	i.Run = l
+	// Nothing is mounted or open yet; the mounts and volumes run their commands on the lab.
+	r.host = hostopstest.New(l)
+	r.host.OnMount = l.mount
+	r.host.OnUnmount = l.umount
+	i.Ops = r.host
 	i.EFIVars = l.efivars
 	i.OpenPartition = l.openPartition
 	i.OpenDisk = func(_ context.Context, dev string) (Disk, error) {
@@ -201,19 +204,6 @@ func (l *partsLab) Exec(ctx context.Context, c tool.Cmd) ([]byte, error) {
 	case name == "sfdisk" || name == "systemd-repart" || name == "blkid":
 		l.record(c)
 		return l.real(ctx, name, args)
-	case name == "mount":
-		l.record(c)
-		source, target := args[len(args)-2], args[len(args)-1]
-		if err := l.mount(source, target); err != nil {
-			return nil, err
-		}
-		if slices.Contains(args, "-o") && slices.Contains(strings.Split(args[slices.Index(args, "-o")+1], ","), "ro") {
-			return nil, nil
-		}
-		return nil, l.countMount(source)
-	case name == "umount":
-		l.record(c)
-		return nil, l.umount(args[0])
 	case name == "systemd-cryptsetup" && args[0] == "attach" && l.tpmFails:
 		l.record(c)
 		return nil, &tool.Error{Command: name, Code: 1, Stderr: "Failed to unseal secret using TPM2: State not recoverable"}
@@ -303,14 +293,15 @@ func (l *partsLab) table() map[int]gpt.Partition {
 }
 
 // mount puts the file system of the partition, or of the LUKS device opened on it, at target.
-func (l *partsLab) mount(source, target string) error {
+// A file system mounted read-write counts a mount, as ext4 does.
+func (l *partsLab) mount(source, target, options string) error {
 	dev := source
 	if name, ok := strings.CutPrefix(source, "/dev/mapper/"); ok {
-		backing, err := os.ReadFile(filepath.Join(l.i.Host.DevRoot, "mapper", name))
-		if err != nil {
+		backing, ok := l.r.host.Backing(name)
+		if !ok {
 			return &tool.Error{Command: "mount", Code: 32, Stderr: source + " does not exist"}
 		}
-		dev = string(backing)
+		dev = backing
 	}
 	n, _ := strconv.Atoi(strings.TrimPrefix(dev, labDev))
 	p, ok := l.table()[n]
@@ -327,37 +318,27 @@ func (l *partsLab) mount(source, target string) error {
 	if err := os.Symlink(dir, target); err != nil {
 		return err
 	}
-	data, err := os.ReadFile(l.i.MountInfo)
-	if err != nil {
-		return err
+	if slices.Contains(strings.Split(options, ","), "ro") {
+		return nil
 	}
-	return os.WriteFile(l.i.MountInfo, fmt.Appendf(data, "50 30 253:9 / %s rw,relatime - fs %s rw\n", target, source), 0o644)
+	return l.countMount(source)
 }
 
+// leaveMounted mounts source at target read-only as a crashed chalkd may have left it.
+func (l *partsLab) leaveMounted(source, target string) {
+	l.t.Helper()
+	if err := l.mount(source, target, "ro"); err != nil {
+		l.t.Fatal(err)
+	}
+	l.r.host.SetMounted(source, target)
+}
+
+// umount leaves an empty directory at target.
 func (l *partsLab) umount(target string) error {
-	data, err := os.ReadFile(l.i.MountInfo)
-	if err != nil {
-		return err
-	}
-	var kept []string
-	found := false
-	for _, line := range strings.SplitAfter(string(data), "\n") {
-		if fields := strings.Fields(line); len(fields) > 4 && fields[4] == target {
-			found = true
-			continue
-		}
-		kept = append(kept, line)
-	}
-	if !found {
-		return &tool.Error{Command: "umount", Code: 32, Stderr: "umount: " + target + ": not mounted."}
-	}
 	if err := os.Remove(target); err != nil {
 		return err
 	}
-	if err := os.Mkdir(target, 0o755); err != nil {
-		return err
-	}
-	return os.WriteFile(l.i.MountInfo, []byte(strings.Join(kept, "")), 0o644)
+	return os.Mkdir(target, 0o755)
 }
 
 // labPartition is a partition of the disk image.
@@ -543,7 +524,7 @@ func TestFromPartsInstallsOntoEmptyDisk(t *testing.T) {
 	if l.writes != 2 {
 		t.Errorf("slot A's partitions were opened for writing %d times, want twice", l.writes)
 	}
-	if mounted, _ := isMounted(l.i.MountInfo, filepath.Join(l.i.WorkDir, "esp")); mounted {
+	if mounted, _ := l.r.host.Mounted(filepath.Join(l.i.WorkDir, "esp")); mounted {
 		t.Error("the ESP is still mounted")
 	}
 }
@@ -1088,10 +1069,8 @@ func TestFromPartsReleasesTheTarget(t *testing.T) {
 	}
 	for _, p := range l.table() {
 		if p.Name == stateLabel {
-			write(t, filepath.Join(l.i.Host.DevRoot, "mapper", "state"), p.Node)
-			if err := l.mount("/dev/mapper/state", l.i.StateDir); err != nil {
-				t.Fatal(err)
-			}
+			l.r.host.SetMapped("state", p.Node)
+			l.leaveMounted(hostops.Mapper("state"), l.i.StateDir)
 		}
 	}
 	l.r.Calls = nil
@@ -1194,16 +1173,14 @@ func TestFromPartsUnmountsALeftoverESP(t *testing.T) {
 	l := newPartsLab(t)
 	l.stopAt(img, "write the identity")
 	espPart := filepath.Join(l.i.WorkDir, "esp")
-	if err := l.mount(labDev+"1", espPart); err != nil {
-		t.Fatal(err)
-	}
+	l.leaveMounted(labDev+"1", espPart)
 	req := l.request(img)
 	req.WipeDisk = true
 	if err := l.i.FromParts(context.Background(), req); err != nil {
 		t.Fatal(err)
 	}
 	l.checkInstalled(img)
-	if mounted, _ := isMounted(l.i.MountInfo, espPart); mounted {
+	if mounted, _ := l.r.host.Mounted(espPart); mounted {
 		t.Error("the ESP is still mounted")
 	}
 }
@@ -1372,7 +1349,7 @@ func TestFromPartsChecksTheConfigWithTheImage(t *testing.T) {
 		if l.bootable() || l.r.efi.bootNext != "" {
 			t.Error("the target boots before the check")
 		}
-		if mounted, _ := isMounted(l.i.MountInfo, l.i.StateDir); mounted {
+		if mounted, _ := l.r.host.Mounted(l.i.StateDir); mounted {
 			t.Error("STATE is open at the check")
 		}
 		return passed, nil
@@ -1389,10 +1366,10 @@ func TestFromPartsChecksTheConfigWithTheImage(t *testing.T) {
 	if !slices.Contains(l.r.Calls, open) || !slices.Contains(l.r.Calls, "veritysetup close "+upgrade.StoreMapping) {
 		t.Errorf("the store was not opened through dm-verity with the root hash and closed: %q", l.r.Calls)
 	}
-	if mounted, _ := isMounted(l.i.MountInfo, filepath.Join(l.i.WorkDir, "store")); mounted {
+	if mounted, _ := l.r.host.Mounted(filepath.Join(l.i.WorkDir, "store")); mounted {
 		t.Error("the install left the store mounted")
 	}
-	if _, err := os.Stat(filepath.Join(l.i.Host.DevRoot, "mapper", upgrade.StoreMapping)); err == nil {
+	if l.r.host.Mapped(upgrade.StoreMapping) {
 		t.Error("the install left the store's dm-verity device open")
 	}
 	if s, _, err := slot.Read(slot.Dir(filepath.Join(l.state(), "config"), img.root)); err != nil || s.Version != "checked" {
@@ -1556,10 +1533,8 @@ func TestFromPartsReleasesALeftoverStore(t *testing.T) {
 	if err := l.i.FromParts(context.Background(), req); !errors.Is(err, errStop) {
 		t.Fatalf("install = %v, want the stop", err)
 	}
-	write(t, filepath.Join(l.i.Host.DevRoot, "mapper", upgrade.StoreMapping), labDev+"3")
-	if err := l.mount("/dev/mapper/"+upgrade.StoreMapping, filepath.Join(l.i.WorkDir, "store")); err != nil {
-		t.Fatal(err)
-	}
+	l.r.host.SetMapped(upgrade.StoreMapping, labDev+"3")
+	l.leaveMounted(hostops.Mapper(upgrade.StoreMapping), filepath.Join(l.i.WorkDir, "store"))
 	l.r.Calls = nil
 	if err := l.install(img); err != nil {
 		t.Fatal(err)

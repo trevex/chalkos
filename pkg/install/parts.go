@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"maps"
-	"os"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -15,7 +14,6 @@ import (
 	"github.com/trevex/chalkos/pkg/storage"
 	"github.com/trevex/chalkos/pkg/storage/hostops"
 	"github.com/trevex/chalkos/pkg/storeslot"
-	"github.com/trevex/chalkos/pkg/tool"
 	"github.com/trevex/chalkos/pkg/upgrade"
 )
 
@@ -164,7 +162,7 @@ func (i *Installer) fromParts(ctx context.Context, target storage.BlockDisk, l l
 func (i *Installer) checkConfig(ctx context.Context, slot storeslot.Slot, system string, req PartsRequest) (Checked, error) {
 	const continues = "the target disk boots nothing, and an install of the image continues on it"
 	var checked Checked
-	err := upgrade.OpenStore(ctx, hostops.Tools{Run: i.Run, MountInfo: i.MountInfo, DevRoot: i.Host.DevRoot}, i.storeDir(), req.Image.RootHash, slot, system, func(st upgrade.Store) error {
+	err := upgrade.OpenStore(ctx, i.Ops, i.storeDir(), req.Image.RootHash, slot, system, func(st upgrade.Store) error {
 		var err error
 		checked, err = req.Check(ctx, st, st.Toplevel)
 		return err
@@ -231,19 +229,5 @@ func (i *Installer) storeDir() string { return filepath.Join(i.WorkDir, "store")
 // releaseStore unmounts the store of slot A and closes its dm-verity device where a crashed chalkd
 // left them during a check, which keep the target in use.
 func (i *Installer) releaseStore(ctx context.Context) error {
-	mounted, err := isMounted(i.MountInfo, i.storeDir())
-	if err != nil {
-		return err
-	}
-	if mounted {
-		if _, err := tool.Run(ctx, i.Run, "umount", i.storeDir()); err != nil {
-			return fmt.Errorf("unmount the checked store: %w", err)
-		}
-	}
-	if _, err := os.Stat(filepath.Join(i.Host.DevRoot, "mapper", upgrade.StoreMapping)); err == nil {
-		if _, err := tool.Run(ctx, i.Run, "veritysetup", "close", upgrade.StoreMapping); err != nil {
-			return fmt.Errorf("close the checked store: %w", err)
-		}
-	}
-	return nil
+	return hostops.Release(ctx, i.Ops, "the checked store", i.storeDir(), upgrade.StoreMapping, i.Ops.CloseVerity)
 }

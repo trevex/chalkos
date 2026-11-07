@@ -21,6 +21,8 @@ import (
 	"github.com/trevex/chalkos/pkg/pki"
 	"github.com/trevex/chalkos/pkg/storage"
 	"github.com/trevex/chalkos/pkg/storage/gpt"
+	"github.com/trevex/chalkos/pkg/storage/hostops"
+	"github.com/trevex/chalkos/pkg/storage/hostops/hostopstest"
 	"github.com/trevex/chalkos/pkg/storage/node"
 	"github.com/trevex/chalkos/pkg/storage/storagetest"
 	"github.com/trevex/chalkos/pkg/tool"
@@ -30,13 +32,13 @@ import (
 
 // fakeRunner records commands and answers them as tooltest.Runner does.
 //
-// Commands that succeed also change the host as the real tools would: mount and umount edit
-// the mount table, systemd-cryptsetup creates and removes /dev/mapper entries, sfdisk
-// --part-uuid changes what sfdisk --json reports later, and efibootmgr edits efi when set.
+// Commands that succeed also change the host as the real tools would: sfdisk --part-uuid
+// changes what sfdisk --json reports later, and efibootmgr edits efi when set. host keeps the
+// mounts and device-mapper volumes, running their commands on the runner.
 type fakeRunner struct {
 	tooltest.Runner
 
-	mountInfo, devRoot string
+	host *hostopstest.Fake
 	// partUUIDs holds the partition UUIDs sfdisk --part-uuid set, by "<device> <number>".
 	partUUIDs map[string]string
 	efi       *fakeEFI
@@ -53,45 +55,6 @@ func (f *fakeRunner) Exec(ctx context.Context, c tool.Cmd) ([]byte, error) {
 // apply makes the host reflect a command that succeeded.
 func (f *fakeRunner) apply(name string, args []string, out []byte) ([]byte, error) {
 	switch {
-	case f.mountInfo != "" && name == "mount" && len(args) == 4:
-		data, err := os.ReadFile(f.mountInfo)
-		if err != nil {
-			return nil, err
-		}
-		data = append(data, fmt.Sprintf("50 30 253:9 / %s rw,relatime - ext4 %s rw\n", args[3], args[2])...)
-		return out, os.WriteFile(f.mountInfo, data, 0o644)
-	case f.mountInfo != "" && name == "umount" && len(args) == 1:
-		data, err := os.ReadFile(f.mountInfo)
-		if err != nil {
-			return nil, err
-		}
-		var kept []string
-		for _, l := range strings.SplitAfter(string(data), "\n") {
-			if fields := strings.Fields(l); len(fields) > 4 && fields[4] == args[0] {
-				continue
-			}
-			kept = append(kept, l)
-		}
-		if len(kept) == len(strings.SplitAfter(string(data), "\n")) {
-			return nil, &tool.Error{Command: "umount", Code: 32, Stderr: "umount: " + args[0] + ": not mounted."}
-		}
-		return out, os.WriteFile(f.mountInfo, []byte(strings.Join(kept, "")), 0o644)
-	case f.devRoot != "" && name == "systemd-cryptsetup" && len(args) >= 3 && args[0] == "attach":
-		return out, os.WriteFile(filepath.Join(f.devRoot, "mapper", args[1]), []byte(args[2]), 0o644)
-	case f.devRoot != "" && name == "systemd-cryptsetup" && len(args) == 2 && args[0] == "detach":
-		// systemd-cryptsetup reports an inactive volume and succeeds.
-		if err := os.Remove(filepath.Join(f.devRoot, "mapper", args[1])); err != nil && !errors.Is(err, fs.ErrNotExist) {
-			return nil, err
-		}
-		return out, nil
-	case f.devRoot != "" && name == "veritysetup" && len(args) == 5 && args[0] == "open":
-		// The mapping stands for the store's data partition.
-		return out, os.WriteFile(filepath.Join(f.devRoot, "mapper", args[2]), []byte(args[1]), 0o644)
-	case f.devRoot != "" && name == "veritysetup" && len(args) == 2 && args[0] == "close":
-		if err := os.Remove(filepath.Join(f.devRoot, "mapper", args[1])); err != nil {
-			return nil, &tool.Error{Command: name, Code: 4, Stderr: "Device " + args[1] + " is not active."}
-		}
-		return out, nil
 	case name == "sfdisk" && len(args) == 5 && args[1] == "--part-uuid":
 		if f.partUUIDs == nil {
 			f.partUUIDs = map[string]string{}
@@ -125,19 +88,7 @@ func (f *fakeRunner) withPartUUIDs(dev string, out []byte) ([]byte, error) {
 
 // holds reports whether a partition of dev is mounted or opened by the device mapper.
 func (f *fakeRunner) holds(dev string) bool {
-	data, _ := os.ReadFile(f.mountInfo)
-	for _, l := range strings.Split(string(data), "\n") {
-		if fields := strings.Fields(l); len(fields) > 8 && strings.HasPrefix(fields[8], dev) {
-			return true
-		}
-	}
-	mappers, _ := os.ReadDir(filepath.Join(f.devRoot, "mapper"))
-	for _, m := range mappers {
-		if backing, _ := os.ReadFile(filepath.Join(f.devRoot, "mapper", m.Name())); strings.HasPrefix(string(backing), dev) {
-			return true
-		}
-	}
-	return false
+	return f.host.Holds(dev)
 }
 
 // fakeEFI holds UEFI boot entries the way efibootmgr shows and changes them.
@@ -243,22 +194,21 @@ func newTestInstaller(t *testing.T, r *fakeRunner, disks ...storagetest.Disk) *I
 	t.Helper()
 	root := t.TempDir()
 	h := storagetest.NewHost(t, "vda", disks...)
-	write(t, filepath.Join(h.DevRoot, "mapper", "state"), "")
 	state := filepath.Join(root, "state")
-	write(t, filepath.Join(root, "mountinfo"), "30 1 0:27 / / rw - tmpfs tmpfs rw\n41 30 253:1 / "+state+" rw,relatime - ext4 /dev/mapper/state rw\n")
+	r.host = hostopstest.New(r)
+	r.host.SetMapped("state", "")
+	r.host.SetMounted(hostops.Mapper("state"), state)
 	for name, text := range systemDefinitions {
 		write(t, filepath.Join(root, "repart.d", name), text)
 	}
-	r.mountInfo = filepath.Join(root, "mountinfo")
-	r.devRoot = h.DevRoot
 	return &Installer{
 		Run:          r,
 		Host:         h,
+		Ops:          r.host,
 		StateDir:     state,
 		BootDisk:     "/dev/disk/chalk-boot-disk",
 		Definitions:  filepath.Join(root, "repart.d"),
 		WorkDir:      filepath.Join(root, "work"),
-		MountInfo:    filepath.Join(root, "mountinfo"),
 		OpenDisk:     func(context.Context, string) (Disk, error) { return nil, fmt.Errorf("unexpected open") },
 		Architecture: "x86-64",
 		Now:          func() time.Time { return time.Date(2026, 10, 6, 12, 0, 0, 0, time.UTC) },

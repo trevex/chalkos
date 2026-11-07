@@ -16,7 +16,7 @@ import (
 	"github.com/trevex/chalkos/pkg/esp"
 	"github.com/trevex/chalkos/pkg/storage"
 	"github.com/trevex/chalkos/pkg/storage/gpt"
-	"github.com/trevex/chalkos/pkg/tool"
+	"github.com/trevex/chalkos/pkg/storage/hostops"
 	"github.com/trevex/chalkos/pkg/uki"
 	"github.com/trevex/chalkos/pkg/upgrade"
 )
@@ -171,12 +171,12 @@ func (i *Installer) withESP(ctx context.Context, espPart gpt.Partition, use func
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
 	}
-	if _, err := tool.Run(ctx, i.Run, "mount", "-t", "vfat", "-o", "umask=0077", espPart.Node, dir); err != nil {
+	if err := i.Ops.Mount(ctx, espPart.Node, dir, "vfat", "umask=0077"); err != nil {
 		return fmt.Errorf("mount the ESP: %w", err)
 	}
 	defer func() {
 		serr := esp.Sync(dir)
-		if _, uerr := tool.Run(ctx, i.Run, "umount", dir); uerr != nil && serr == nil {
+		if uerr := i.Ops.Unmount(ctx, dir); uerr != nil && serr == nil {
 			serr = fmt.Errorf("unmount the ESP: %w", uerr)
 		}
 		if err == nil {
@@ -189,15 +189,7 @@ func (i *Installer) withESP(ctx context.Context, espPart gpt.Partition, use func
 // releaseESP unmounts the target's ESP where a crashed chalkd may have left it mounted, which
 // keeps the target in use.
 func (i *Installer) releaseESP(ctx context.Context) error {
-	dir := filepath.Join(i.WorkDir, "esp")
-	mounted, err := isMounted(i.MountInfo, dir)
-	if err != nil || !mounted {
-		return err
-	}
-	if _, err := tool.Run(ctx, i.Run, "umount", dir); err != nil {
-		return fmt.Errorf("unmount the ESP: %w", err)
-	}
-	return nil
+	return hostops.Release(ctx, i.Ops, "the ESP", filepath.Join(i.WorkDir, "esp"), "", nil)
 }
 
 // removeBootLoader removes the boot loader from the ESP.

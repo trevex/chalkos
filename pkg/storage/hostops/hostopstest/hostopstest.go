@@ -3,8 +3,6 @@ package hostopstest
 
 import (
 	"context"
-	"maps"
-	"slices"
 	"strings"
 	"sync"
 
@@ -26,6 +24,9 @@ type Fake struct {
 	// OnMount, when set, sees each mount whose command succeeded and may fail it, before the
 	// mount is recorded.
 	OnMount func(source, dir, options string) error
+	// OnUnmount, when set, sees each unmount of a mounted directory whose command succeeded and
+	// may fail it, before the mount is forgotten.
+	OnUnmount func(dir string) error
 }
 
 // New is a fake with nothing mounted and no volume open, which runs its commands on run.
@@ -53,13 +54,6 @@ func (f *Fake) Backing(name string) (string, bool) {
 	defer f.mu.Unlock()
 	dev, ok := f.mappers[name]
 	return dev, ok
-}
-
-// MountedDirs holds the directories something is mounted at, sorted.
-func (f *Fake) MountedDirs() []string {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	return slices.Sorted(maps.Keys(f.mounts))
 }
 
 // Holds reports whether a device whose name starts with dev, such as a partition of the disk
@@ -98,11 +92,16 @@ func (f *Fake) Unmount(ctx context.Context, dir string) error {
 	if err := f.Tools.Unmount(ctx, dir); err != nil {
 		return err
 	}
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	if _, ok := f.mounts[dir]; !ok {
+	if ok, _ := f.Mounted(dir); !ok {
 		return &tool.Error{Command: "umount", Code: 32, Stderr: "umount: " + dir + ": not mounted."}
 	}
+	if f.OnUnmount != nil {
+		if err := f.OnUnmount(dir); err != nil {
+			return err
+		}
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	delete(f.mounts, dir)
 	return nil
 }
