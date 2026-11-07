@@ -1,8 +1,13 @@
 # chalkd, the node agent. It takes only the packages it imports, so other Go changes do not
-# rebuild the images.
-{ callPackage }:
+# rebuild the images. withTests keeps the tests in its source, for the image-checker check, which
+# builds those of pkg/imagecheck.
+{
+  callPackage,
+  withTests ? false,
+}:
 callPackage ./go-module.nix { } {
   pname = "chalkd";
+  inherit withTests;
   paths = [
     ../cmd/chalkd
     ../pkg/api

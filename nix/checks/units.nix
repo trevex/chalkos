@@ -2736,7 +2736,7 @@ in
     let
       inherit (checkLib.chalkPkgs) chalkd;
       # pkg/imagecheck's tests as one binary.
-      tests = chalkd.overrideAttrs {
+      tests = (chalkd.override { withTests = true; }).overrideAttrs {
         pname = "chalkos-imagecheck-tests";
         buildPhase = ''
           runHook preBuild

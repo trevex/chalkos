@@ -106,6 +106,8 @@ in
   chalklab-e2e = goModule {
     pname = "chalklab-e2e";
     paths = goPaths;
+    # The e2e tests are its program.
+    withTests = true;
     subPackages = null;
     buildPhase = ''
       runHook preBuild
