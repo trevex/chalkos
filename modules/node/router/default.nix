@@ -3,6 +3,17 @@
 # NAT64 with Jool, the resolver with Unbound, VRFs, policy routing, DHCP with Kea, DHCP relays
 # with dnsmasq, the router's diagnostics and the validator router.
 { config, lib, ... }:
+let
+  # The option chalkos.router.<feature>.enable of a feature of the layer, which images carry
+  # unless a variant leaves it out.
+  feature =
+    description:
+    lib.mkOption {
+      type = lib.types.bool;
+      default = true;
+      inherit description;
+    };
+in
 {
   imports = [
     ./firewall.nix
@@ -29,55 +40,35 @@
     '';
   };
 
-  options.chalkos.router.bgp.enable = lib.mkOption {
-    type = lib.types.bool;
-    default = true;
-    description = ''
-      Whether router images carry FRR, which runs BGP and BFD, and accept the kinds BGP, BGPPeer,
-      PrefixList, CommunityList and RoutingPolicy; only with the router layer. Set it false in a
-      variant's modules to leave FRR and the Python of frr-reload.py out of its images.
-    '';
-  };
+  options.chalkos.router.bgp.enable = feature ''
+    Whether router images carry FRR, which runs BGP and BFD, and accept the kinds BGP, BGPPeer,
+    PrefixList, CommunityList and RoutingPolicy; only with the router layer. Set it false in a
+    variant's modules to leave FRR and the Python of frr-reload.py out of its images.
+  '';
 
-  options.chalkos.router.nat64.enable = lib.mkOption {
-    type = lib.types.bool;
-    default = true;
-    description = ''
-      Whether router images carry Jool, the kernel module and tool of the NAT64 instances, and
-      accept the kind NAT64; only with the router layer. Set it false in a variant's modules to
-      leave Jool out of its images.
-    '';
-  };
+  options.chalkos.router.nat64.enable = feature ''
+    Whether router images carry Jool, the kernel module and tool of the NAT64 instances, and
+    accept the kind NAT64; only with the router layer. Set it false in a variant's modules to
+    leave Jool out of its images.
+  '';
 
-  options.chalkos.router.resolver.enable = lib.mkOption {
-    type = lib.types.bool;
-    default = true;
-    description = ''
-      Whether router images carry Unbound, the DNS resolvers of the router's VRFs, and accept the
-      kind Resolver; only with the router layer. Set it false in a variant's modules to leave
-      Unbound out of its images.
-    '';
-  };
+  options.chalkos.router.resolver.enable = feature ''
+    Whether router images carry Unbound, the DNS resolvers of the router's VRFs, and accept the
+    kind Resolver; only with the router layer. Set it false in a variant's modules to leave
+    Unbound out of its images.
+  '';
 
-  options.chalkos.router.dhcp.enable = lib.mkOption {
-    type = lib.types.bool;
-    default = true;
-    description = ''
-      Whether router images carry the DHCP server, Kea, and accept the kind DHCPSubnet; only
-      with the router layer. Set it false in a variant's modules to leave Kea out of its images,
-      whose build then needs no local build of Kea.
-    '';
-  };
+  options.chalkos.router.dhcp.enable = feature ''
+    Whether router images carry the DHCP server, Kea, and accept the kind DHCPSubnet; only
+    with the router layer. Set it false in a variant's modules to leave Kea out of its images,
+    whose build then needs no local build of Kea.
+  '';
 
-  options.chalkos.router.dhcpRelay.enable = lib.mkOption {
-    type = lib.types.bool;
-    default = true;
-    description = ''
-      Whether router images carry the DHCP relay, dnsmasq, and accept the kind DHCPRelay; only
-      with the router layer. Set it false in a variant's modules to leave dnsmasq out of its
-      images.
-    '';
-  };
+  options.chalkos.router.dhcpRelay.enable = feature ''
+    Whether router images carry the DHCP relay, dnsmasq, and accept the kind DHCPRelay; only
+    with the router layer. Set it false in a variant's modules to leave dnsmasq out of its
+    images.
+  '';
 
   options.chalkos.router.examples = lib.mkOption {
     type = lib.types.path;
