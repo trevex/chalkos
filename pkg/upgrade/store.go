@@ -132,7 +132,9 @@ func (n *Node) ReadImage(ctx context.Context, rootHash []byte, read func(Store) 
 		return fmt.Errorf("no UKI on the ESP boots the image %x", rootHash)
 	}
 	ctx = context.WithoutCancel(ctx)
-	n.closeStore(ctx, n.storeDir(), true, true)
+	if err := n.releaseStore(ctx); err != nil {
+		return err
+	}
 	return n.mountStore(ctx, rootHash, inactive, filepath.Join(n.ESP, esp.LinuxDir, entries[i].File), read)
 }
 
@@ -172,7 +174,7 @@ func OpenStore(ctx context.Context, ops hostops.Ops, dir string, rootHash []byte
 		return fmt.Errorf("open the written store through dm-verity: %w", err)
 	}
 	mounted := false
-	defer func() { closeStore(ctx, ops, dir, mounted, false) }()
+	defer func() { closeStore(ctx, ops, dir, mounted) }()
 	if err := ops.Mount(ctx, hostops.Mapper(StoreMapping), dir, "erofs", "ro"); err != nil {
 		return fmt.Errorf("mount the written store: %w", err)
 	}
@@ -180,20 +182,21 @@ func OpenStore(ctx context.Context, ops hostops.Ops, dir string, rootHash []byte
 	return read(Store{root: dir, Toplevel: system})
 }
 
-// closeStore unmounts the checked store, when mounted, and closes its dm-verity device. Before an
-// upgrade changes the disk, where neither is there unless an earlier check was cut short, it
-// says nothing of failing to.
-func (n *Node) closeStore(ctx context.Context, dir string, mounted, quiet bool) {
-	closeStore(ctx, n.Ops, dir, mounted, quiet)
+// releaseStore unmounts and closes the checked store when a check that did not finish, as when
+// chalkd was stopped during it, left it mounted or open. Where there is none, nothing runs.
+func (n *Node) releaseStore(ctx context.Context) error {
+	return hostops.Release(ctx, n.Ops, "the checked store", n.storeDir(), StoreMapping, n.Ops.CloseVerity)
 }
 
-func closeStore(ctx context.Context, ops hostops.Ops, dir string, mounted, quiet bool) {
+// closeStore unmounts the checked store, when mounted, and closes its dm-verity device, and logs
+// what fails.
+func closeStore(ctx context.Context, ops hostops.Ops, dir string, mounted bool) {
 	if mounted {
-		if err := ops.Unmount(ctx, dir); err != nil && !quiet {
+		if err := ops.Unmount(ctx, dir); err != nil {
 			log.Printf("unmount the checked store: %v", err)
 		}
 	}
-	if err := ops.CloseVerity(ctx, StoreMapping); err != nil && !quiet {
+	if err := ops.CloseVerity(ctx, StoreMapping); err != nil {
 		log.Printf("close the checked store: %v", err)
 	}
 }

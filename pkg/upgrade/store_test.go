@@ -175,7 +175,40 @@ func TestALeftOpenStoreIsClosedFirst(t *testing.T) {
 	}
 }
 
-// TestAStoreThatDoesNotMountIsClosed: when the opened store does not mount, its dm-verity device
+// TestALeftOpenStoreThatStaysBusyStopsTheUpgrade: a left-open store that does not unmount stops
+// the upgrade before it writes the slot, with the unmount's error; the next upgrade releases it
+// and goes on.
+func TestALeftOpenStoreThatStaysBusyStopsTheUpgrade(t *testing.T) {
+	old, img := newImage(t, "a", 3), newImage(t, "b", 2)
+	l := newLab(t, old)
+	f, r := l.fakeStore()
+	l.node.StoreMount = filepath.Join(t.TempDir(), "store")
+	f.SetMapped(StoreMapping, l.disk+"5")
+	f.SetMounted(hostops.Mapper(StoreMapping), l.node.StoreMount)
+	l.node.CheckStore = func(Store) error { return nil }
+	r.Rules = []tooltest.Rule{{Prefix: "umount", Err: errors.New("target is busy"), Times: 1}}
+	if _, err := l.install(img); err == nil || !strings.Contains(err.Error(), "unmount the checked store: target is busy") {
+		t.Fatalf("install = %v, want the unmount's error", err)
+	}
+	if !slices.Equal(r.Calls, []string{"umount " + l.node.StoreMount}) {
+		t.Errorf("ran %q, want only the unmount", r.Calls)
+	}
+	if e, name := l.boot(); name != old.name {
+		t.Errorf("the disk boots %s from %s", name, e.File)
+	}
+
+	r.ResetCalls()
+	if _, err := l.install(img); err != nil {
+		t.Fatal(err)
+	}
+	l.boots(img, 2)
+	if len(r.Calls) < 3 || r.Calls[0] != "umount "+l.node.StoreMount || r.Calls[1] != "veritysetup close "+StoreMapping ||
+		!strings.HasPrefix(r.Calls[2], "veritysetup open ") {
+		t.Errorf("ran %q, want the store released once and then opened for the check", r.Calls)
+	}
+}
+
+// TestAStoreThatDoesNotMountIsClosed:when the opened store does not mount, its dm-verity device
 // is closed, and nothing is unmounted.
 func TestAStoreThatDoesNotMountIsClosed(t *testing.T) {
 	old, img := newImage(t, "a", 3), newImage(t, "b", 2)

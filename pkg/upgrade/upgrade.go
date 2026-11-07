@@ -305,7 +305,9 @@ func (n *Node) Install(ctx context.Context, h Header, stream io.Reader) (Result,
 	if n.CheckStore != nil {
 		// A check an earlier upgrade did not finish, as when chalkd was stopped during it, may have
 		// left the store it checked open, which keeps the slot's partitions busy for the write.
-		n.closeStore(ctx, n.storeDir(), true, true)
+		if err := n.releaseStore(ctx); err != nil {
+			return Result{}, err
+		}
 	}
 	if err := n.retire(ctx, all, h.ImageID, booted, running, inactive); err != nil {
 		return Result{}, err
@@ -478,7 +480,9 @@ func (n *Node) recheck(ctx context.Context, h Header, slot storeslot.Slot, stage
 		return nil
 	}
 	ctx = context.WithoutCancel(ctx)
-	n.closeStore(ctx, n.storeDir(), true, true)
+	if err := n.releaseStore(ctx); err != nil {
+		return err
+	}
 	err := n.checkStore(ctx, h, slot, filepath.Join(n.ESP, esp.LinuxDir, staged.File))
 	if err == nil {
 		return nil
