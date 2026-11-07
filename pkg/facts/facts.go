@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"io/fs"
 	"log"
+	"maps"
 	"os"
 	"slices"
 	"strings"
@@ -236,9 +237,7 @@ func hashOf(v any) string {
 // stdin is what a command fact reads: the config, and the inputs it declares.
 func (l *Loader) stdin(def Definition) ([]byte, error) {
 	input := map[string]any{}
-	for k, v := range l.Input {
-		input[k] = v
-	}
+	maps.Copy(input, l.Input)
 	for _, name := range def.Inputs {
 		if v, ok := l.Inputs[name]; ok {
 			input[name] = v

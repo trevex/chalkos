@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"maps"
 	"slices"
-	"sort"
 	"strings"
 
 	"github.com/trevex/chalkos/pkg/storage"
@@ -16,9 +15,7 @@ var reservedRepartKeys = []string{"Type", "Label", "Encrypt", "Format", "SizeMin
 // order, the typed ones replacing the passthrough, and = in a key escaped.
 func definition(label, format string, size *string, mode string, repart map[string]string) string {
 	keys := map[string]string{}
-	for k, v := range repart {
-		keys[k] = v
-	}
+	maps.Copy(keys, repart)
 	keys["Type"] = storage.PartitionType(label)
 	keys["Label"] = label
 	if format != "" {
@@ -32,14 +29,9 @@ func definition(label, format string, size *string, mode string, repart map[stri
 		keys["Encrypt"] = "tpm2"
 		keys["TPM2PCRs"] = "7"
 	}
-	names := make([]string, 0, len(keys))
-	for k := range keys {
-		names = append(names, k)
-	}
-	sort.Strings(names)
 	var b strings.Builder
 	b.WriteString("[Partition]\n")
-	for _, k := range names {
+	for _, k := range slices.Sorted(maps.Keys(keys)) {
 		fmt.Fprintf(&b, "%s=%s\n", strings.ReplaceAll(k, "=", `\=`), keys[k])
 	}
 	return b.String()

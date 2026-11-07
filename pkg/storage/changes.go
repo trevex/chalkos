@@ -2,7 +2,8 @@ package storage
 
 import (
 	"fmt"
-	"sort"
+	"maps"
+	"slices"
 	"strings"
 )
 
@@ -23,12 +24,7 @@ func (c Change) String() string {
 // change the node makes; the rules refuse them before.
 func Changes(recorded, delivered Section) []Change {
 	var changes []Change
-	names := make([]string, 0, len(delivered.Volumes))
-	for name := range delivered.Volumes {
-		names = append(names, name)
-	}
-	sort.Strings(names)
-	for _, name := range names {
+	for _, name := range slices.Sorted(maps.Keys(delivered.Volumes)) {
 		cur := delivered.Volumes[name]
 		old, hadOld := recorded.Volumes[name]
 		if !hadOld {

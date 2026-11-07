@@ -3,8 +3,9 @@ package install
 import (
 	"errors"
 	"fmt"
+	"maps"
 	"math"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -52,13 +53,8 @@ type layout []definedPartition
 // two store slots for arch, and STATE formatted as ext4, each with no keys but those
 // definitionKeys allows.
 func parseLayout(defs map[string]string, arch string) (layout, error) {
-	names := make([]string, 0, len(defs))
-	for name := range defs {
-		names = append(names, name)
-	}
-	sort.Strings(names)
 	var l layout
-	for _, name := range names {
+	for _, name := range slices.Sorted(maps.Keys(defs)) {
 		d, err := parseDefinition(name, defs[name])
 		if err != nil {
 			return nil, err

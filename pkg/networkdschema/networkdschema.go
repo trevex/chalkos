@@ -9,8 +9,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"regexp"
-	"sort"
+	"slices"
 	"strings"
 	"unicode"
 )
@@ -134,16 +135,10 @@ func SpecSchema(entries []Entry) (map[string]any, error) {
 		}
 		keys[e.Section][e.Key] = true
 	}
-	sections := make([]string, 0, len(keys))
-	for s := range keys {
-		sections = append(sections, s)
-	}
-	sort.Strings(sections)
-
 	defs := map[string]any{}
 	specProps := map[string]any{}
 	sectionOf := map[string]string{}
-	for _, section := range sections {
+	for _, section := range slices.Sorted(maps.Keys(keys)) {
 		yamlSection := CamelCase(section)
 		if other, ok := sectionOf[yamlSection]; ok {
 			return nil, fmt.Errorf("sections %s and %s are both %s in YAML", other, section, yamlSection)
@@ -152,12 +147,7 @@ func SpecSchema(entries []Entry) (map[string]any, error) {
 
 		props := map[string]any{}
 		keyOf := map[string]string{}
-		names := make([]string, 0, len(keys[section]))
-		for k := range keys[section] {
-			names = append(names, k)
-		}
-		sort.Strings(names)
-		for _, key := range names {
+		for _, key := range slices.Sorted(maps.Keys(keys[section])) {
 			yamlKey := CamelCase(key)
 			if other, ok := keyOf[yamlKey]; ok {
 				return nil, fmt.Errorf("section %s: keys %s and %s are both %s in YAML", section, other, key, yamlKey)

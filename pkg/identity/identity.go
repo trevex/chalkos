@@ -6,8 +6,9 @@ package identity
 
 import (
 	"fmt"
+	"maps"
 	"net/netip"
-	"sort"
+	"slices"
 	"strings"
 
 	"github.com/trevex/chalkos/pkg/storage"
@@ -53,13 +54,8 @@ func (k Kubernetes) CheckNodeIPs() error {
 // without prefix lengths.
 func (id Identity) StaticAddresses() []string {
 	networks, _ := id.Network["networks"].(map[string]any)
-	names := make([]string, 0, len(networks))
-	for name := range networks {
-		names = append(names, name)
-	}
-	sort.Strings(names)
 	var addrs []string
-	for _, name := range names {
+	for _, name := range slices.Sorted(maps.Keys(networks)) {
 		network, _ := networks[name].(map[string]any)
 		list, _ := network["address"].([]any)
 		for _, a := range list {
