@@ -114,7 +114,7 @@ Each directory of `cmd/` is a main that wires a package up; the logic lives in `
 | `internal/filecopy` | Copies a disk image without its holes and a plain file to a new one, for chalklab, the lab and image signing. |
 | `internal/poll` | Checks a condition again and again until it passes, a timeout passes or the context ends, keeping the last check's error. |
 | `internal/strs` | Joins values into the lists of messages and flags: by their `String`, or names as prose, such as "a, b and c". |
-| `inventory` | Reads chalkctl's inventory: the cluster's nodes, the address chalkctl reaches each at, the image each runs and the config files each gets. |
+| `inventory` | Reads chalkctl's inventory: the cluster's nodes, the address chalkctl reaches each at, the image each runs and the config files each gets. It passes each node's documents through the filters its caller gives, which chalkctl takes from its layers, and names no layer. |
 | `jsonfile` | Reads a JSON file an image may leave out, such as `facts.json`, `effects.json` or `outputs.json`, and decodes JSON that must hold one value of known fields. |
 | `kubernetes` | The node's Kubernetes cluster as `kubernetes/translate` builds it from the config and the image's facts, its flags and address ranges, the node as the Kubernetes part of its identity (`NodeIdentity`) names it, the kinds of Kubernetes nodes (control plane and worker), and the control plane's ports and paths on a node. |
 | `kubernetes/addons` | Renders the objects chalkos applies to every cluster before its own manifests: RBAC for chalkos's identities, kube-proxy, flannel and CoreDNS. |
@@ -126,7 +126,7 @@ Each directory of `cmd/` is a main that wires a package up; the logic lives in `
 | `kubernetes/nodeip` | Picks the node's address of each family. |
 | `kubernetes/pki` | The Kubernetes certificates: the share, the control plane's leaves, admin kubeconfigs, and the names chalkd's status gives them. |
 | `kubernetes/revoked` | The ConfigMap of revoked nodes, which control planes read before they renew a node certificate, and the admission policy that shuts those nodes out. |
-| `kubernetes/translate` | The Kubernetes layer's part of a config's translation: builds the cluster from the Node, Cluster and Flannel documents and the image's facts, adds the node's Kubernetes settings to its identity, and reads the sandbox image and the Addon objects. |
+| `kubernetes/translate` | The Kubernetes layer's part of a config's translation: builds the cluster from the Node, Cluster and Flannel documents and the image's facts, adds the node's Kubernetes settings to its identity, and reads the sandbox image and the Addon objects. For chalkctl and chalklab it reads a node's type, leaves the Addon documents to control planes, and checks that an inventory's nodes hold the same Cluster and Flannel specs, whose endpoint it returns. |
 | `kubernetes/vip` | The etcd election of the control plane that holds the VIPs; adds a VIP to an interface and announces it. |
 | `kubernetes/vxlan` | The nftables table `chalkos-vxlan`: marks VXLAN to the node's addresses for the firewall and drops pods' VXLAN to the source ranges. |
 | `lab` | QEMU VMs, swtpm, the lab switch and console and the lab's supervisor, for chalklab and the end-to-end tests. |
@@ -225,12 +225,14 @@ live in `pkg/chalkd/layers/kubernetes` and `pkg/chalkd/layers/router`.
 `pkg/chalkctl/layer` declares chalkctl's side in the same way: a `Plugin` with hooks for commands,
 a node's status section, image facts, the payloads of a delivery and their admission, the
 coordinators that upgrade and rotate take first, an upgrade's checks, the rotation kinds a layer
-runs and the validators it links. `UpgradeFlags` adds a layer's flags to `chalkctl upgrade` and
-`chalkctl node reboot`, such as the Kubernetes plugin's `--allow-downtime`, and the layer's hooks
-of the reboot step read them back. A
-plugin also names the nodes every rotation leaves out and those that hold the node CA. chalkctl
-runs the rotations of the OS CA and the node CA itself, in `pkg/chalkctl/rotate_ca.go`, since
-every node takes part in them, and asks the plugins for their kinds. For what the inventory and
+runs and the validators it links. `Inventory` filters the documents each node of an inventory
+gets and checks the inventory's nodes together; chalkctl passes the filters to `inventory.Load`
+and runs the checks on every inventory it loads. `UpgradeFlags` adds a layer's flags to
+`chalkctl upgrade` and `chalkctl node reboot`, such as the Kubernetes plugin's
+`--allow-downtime`, and the layer's hooks of the reboot step read them back. A plugin also names
+the nodes every rotation leaves out and those that hold the node CA. chalkctl runs the rotations
+of the OS CA and the node CA itself, in `pkg/chalkctl/rotate_ca.go`, since every node takes part
+in them, and asks the plugins for their kinds. For what the inventory and
 the secrets file drive, such as commands, payloads and rotations, it asks every compiled plugin,
 and it asks each for the validators that an image of the node's schemas runs. For what it reads
 from a node's layer services, such as the node's status section and its part in an upgrade, it

@@ -143,7 +143,11 @@ values:
 chalkos.yaml: the nodes hold different Flannel specs: spec.mtu is 1400 on cp1 and cp2, 1450 on w1; every node of the cluster holds the same Cluster and Flannel specs
 ```
 
-A node without the `Flannel` document is named as holding none, as in `none on w1`.
+A node without the `Flannel` document is named as holding none, as in `none on w1`. A node whose
+files chalkctl cannot read, such as one whose files hold a document twice, is left out of the
+comparison, and every command that reads its config refuses it. `chalkctl kubeconfig` points
+clients at the endpoint of the nodes' `Cluster` documents, so it refuses an inventory without
+nodes.
 
 So the cluster's documents belong in the files every node gets. What differs from node to
 node goes into each node's `Node` document instead, which chalkctl does not compare:
