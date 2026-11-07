@@ -24,12 +24,11 @@ func decode(t *testing.T, doc string) map[string]any {
 	return m
 }
 
-func TestLoadReadsMetadata(t *testing.T) {
-	img, err := Load(fixture)
+func TestReadMetadataFields(t *testing.T) {
+	md, err := ReadMetadata(fixture)
 	if err != nil {
 		t.Fatal(err)
 	}
-	md := img.Metadata
 	if md.ID != "chalkos" || md.Variant != "worker" || md.Platform != "metal" || len(md.RootHash) != 64 || md.Revision != "a1b2c3d4e5f60718293a4b5c6d7e8f9012345678" || md.Tag != "v1.5.0" {
 		t.Errorf("metadata = %+v", md)
 	}
@@ -41,36 +40,12 @@ func TestLoadReadsMetadata(t *testing.T) {
 	}
 }
 
-func TestLoadRejectsUnknownMetadataVersion(t *testing.T) {
-	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, "metadata.json"), []byte(`{"schemaVersion": 1}`), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := Load(dir); err == nil || !strings.Contains(err.Error(), "schemaVersion 1") {
-		t.Fatalf("err = %v", err)
-	}
-}
-
 func TestParseMetadata(t *testing.T) {
 	if _, err := ParseMetadata([]byte(`{"schemaVersion": 7}`)); err == nil || !strings.Contains(err.Error(), "schemaVersion 7") {
 		t.Errorf("err = %v", err)
 	}
 	if _, err := ParseMetadata([]byte("{")); err == nil || !strings.Contains(err.Error(), "parse metadata.json") {
 		t.Errorf("err = %v", err)
-	}
-}
-
-func TestLoadFailsOnMissingSchema(t *testing.T) {
-	dir := t.TempDir()
-	md := `{"schemaVersion": 0, "kinds": [{"apiVersion": "a.example.org/v1", "kind": "Gone"}]}`
-	if err := os.WriteFile(filepath.Join(dir, "metadata.json"), []byte(md), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Mkdir(filepath.Join(dir, "schemas"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := Load(dir); err == nil || !strings.Contains(err.Error(), "a.example.org/v1 Gone") {
-		t.Fatalf("err = %v", err)
 	}
 }
 
@@ -127,28 +102,14 @@ func TestLoadSchemasRejectsDuplicateKind(t *testing.T) {
 	}
 }
 
-// A kind present in schemas/ but not listed by metadata is as much a mismatch as the reverse.
-func TestLoadFailsOnUndeclaredSchema(t *testing.T) {
-	dir := t.TempDir()
-	if err := os.CopyFS(dir, os.DirFS(fixture)); err != nil {
-		t.Fatal(err)
-	}
-	writeSchema(t, filepath.Join(dir, "schemas"), "b.example.org_v1_Extra.json",
-		`{"group": "b.example.org", "version": "v1", "kind": "Extra", "multiple": false}`)
-	_, err := Load(dir)
-	if err == nil || !strings.Contains(err.Error(), "b.example.org/v1 Extra") {
-		t.Fatalf("err = %v, want it to name b.example.org/v1 Extra", err)
-	}
-}
-
 // A mount or an image's build directory may contain characters, such as '%', '#' and '?', that
-// are meaningful in a URL. Load must not mistake the directory for one.
-func TestLoadFromDirWithURLMetacharacters(t *testing.T) {
+// are meaningful in a URL. LoadSchemas must not mistake the directory for one.
+func TestLoadSchemasFromDirWithURLMetacharacters(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "d #1 100%?")
 	if err := os.CopyFS(dir, os.DirFS(fixture)); err != nil {
 		t.Fatal(err)
 	}
-	img, err := Load(dir)
+	ss, err := LoadSchemas(filepath.Join(dir, "schemas"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -156,13 +117,13 @@ func TestLoadFromDirWithURLMetacharacters(t *testing.T) {
 		"apiVersion": "demo.example.org/v1alpha1", "kind": "Demo", "metadata": {"name": "a"},
 		"spec": {"name": "x"}
 	}`)
-	if err := img.Validate(doc); err != nil {
+	if err := ss.Validate(doc); err != nil {
 		t.Fatal(err)
 	}
 }
 
 func TestValidateAcceptsDocument(t *testing.T) {
-	img, err := Load(fixture)
+	ss, err := LoadSchemas(filepath.Join(fixture, "schemas"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -170,13 +131,13 @@ func TestValidateAcceptsDocument(t *testing.T) {
 		"apiVersion": "demo.example.org/v1alpha1", "kind": "Demo", "metadata": {"name": "a"},
 		"spec": {"name": "x", "replicas": 3, "token": {"secretRef": {"name": "s", "key": "k"}}}
 	}`)
-	if err := img.Validate(doc); err != nil {
+	if err := ss.Validate(doc); err != nil {
 		t.Fatal(err)
 	}
 }
 
 func TestValidateRejects(t *testing.T) {
-	img, err := Load(fixture)
+	ss, err := LoadSchemas(filepath.Join(fixture, "schemas"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -211,7 +172,7 @@ func TestValidateRejects(t *testing.T) {
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
-			err := img.Validate(decode(t, tc.doc))
+			err := ss.Validate(decode(t, tc.doc))
 			if err == nil || !strings.Contains(err.Error(), tc.want) {
 				t.Fatalf("err = %v, want one mentioning %q", err, tc.want)
 			}

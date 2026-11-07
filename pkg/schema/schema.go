@@ -10,7 +10,6 @@ package schema
 import (
 	"bytes"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"maps"
 	"os"
@@ -204,12 +203,6 @@ func (s *Schemas) Validate(doc map[string]any) error {
 	return nil
 }
 
-// Image is the config contract of one image build directory.
-type Image struct {
-	Metadata Metadata
-	*Schemas
-}
-
 // ReadMetadata reads an image directory's metadata.json alone, refusing a version this package
 // does not read.
 func ReadMetadata(dir string) (Metadata, error) {
@@ -234,51 +227,6 @@ func ParseMetadata(data []byte) (Metadata, error) {
 		return Metadata{}, fmt.Errorf("metadata schemaVersion %d is not supported; this chalkos reads version %d", md.SchemaVersion, metadataVersion)
 	}
 	return md, nil
-}
-
-// Load reads metadata.json and the schemas it lists. It fails when metadata's kind list and the
-// kinds found in dir/schemas differ, naming every kind present on only one side.
-func Load(dir string) (*Image, error) {
-	md, err := ReadMetadata(dir)
-	if err != nil {
-		return nil, err
-	}
-	schemas, err := LoadSchemas(filepath.Join(dir, "schemas"))
-	if err != nil {
-		return nil, err
-	}
-	if err := checkKindsMatch(md.Kinds, schemas.Kinds()); err != nil {
-		return nil, fmt.Errorf("%s: %w", dir, err)
-	}
-	return &Image{Metadata: md, Schemas: schemas}, nil
-}
-
-// checkKindsMatch fails when metadataKinds and schemaKinds are not the same set of kinds, naming
-// every kind that is on one side but not the other.
-func checkKindsMatch(metadataKinds, schemaKinds []Kind) error {
-	inSchemas := map[Kind]bool{}
-	for _, k := range schemaKinds {
-		inSchemas[key(k.APIVersion, k.Kind)] = true
-	}
-	inMetadata := map[Kind]bool{}
-	for _, k := range metadataKinds {
-		inMetadata[key(k.APIVersion, k.Kind)] = true
-	}
-	var diffs []string
-	for _, k := range metadataKinds {
-		if !inSchemas[key(k.APIVersion, k.Kind)] {
-			diffs = append(diffs, fmt.Sprintf("metadata lists %s %s, which schemas/ has no schema for", k.APIVersion, k.Kind))
-		}
-	}
-	for _, k := range schemaKinds {
-		if !inMetadata[key(k.APIVersion, k.Kind)] {
-			diffs = append(diffs, fmt.Sprintf("schemas/ has a schema for %s %s, which metadata does not list", k.APIVersion, k.Kind))
-		}
-	}
-	if len(diffs) == 0 {
-		return nil
-	}
-	return errors.New(strings.Join(diffs, "; "))
 }
 
 // compileSchema compiles a schema document already read by readDoc. Its identity inside the
