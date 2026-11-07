@@ -1,6 +1,7 @@
 // Package effects reads what an image declares about its services: services.json, the units
 // granted config kinds, and effects.json, what a delivery does to those units and to chalkd.
-// chalkd reads both on the node; chalkos-rules checks effects.json when the image is built.
+// chalkd reads both on the node and carries out the effects a delivery makes due with Apply;
+// chalkos-rules checks effects.json when the image is built.
 package effects
 
 import (

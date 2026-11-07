@@ -1,15 +1,11 @@
 package chalkd
 
 import (
-	"cmp"
 	"context"
 	"errors"
-	"fmt"
 	"log"
 	"maps"
-	"os"
 	"slices"
-	"strings"
 
 	"connectrpc.com/connect"
 
@@ -21,7 +17,6 @@ import (
 	"github.com/trevex/chalkos/pkg/outputs"
 	"github.com/trevex/chalkos/pkg/rules"
 	"github.com/trevex/chalkos/pkg/schema"
-	"github.com/trevex/chalkos/pkg/tool"
 )
 
 // pendingEffects are the running image's effects, and what a delivery compares their rules with:
@@ -258,18 +253,18 @@ func (s *Server) consume(ctx context.Context, e *pendingEffects, staged *outputs
 	if stored || e.oldHashed {
 		if err := s.Loader.LoadConfig(); err != nil {
 			// What the layer actions read, the slot and the layers' files, is in place.
-			a := actionsOf(e.defs, due)
-			s.actOnSelf(a.chalkd)
-			return nil, nil, failed(connect.CodeInternal, "write the config for the granted units: %v%s", err, a.byHand())
+			a := effects.ActionsOf(e.defs, due)
+			s.actOnSelf(a.Chalkd)
+			return nil, nil, failed(connect.CodeInternal, "write the config for the granted units: %v%s", err, a.ByHand())
 		}
 	}
 	// The outputs, checked before the delivery changed anything, follow the documents.
 	if err := staged.Swap(); err != nil {
-		a := actionsOf(e.defs, due)
-		s.actOnSelf(a.chalkd)
-		return nil, nil, failed(connect.CodeInternal, "%v%s", err, a.byHand())
+		a := effects.ActionsOf(e.defs, due)
+		s.actOnSelf(a.Chalkd)
+		return nil, nil, failed(connect.CodeInternal, "%v%s", err, a.ByHand())
 	}
-	restarted, err := s.applyEffects(ctx, actionsOf(e.defs, due))
+	restarted, err := s.applyEffects(ctx, effects.ActionsOf(e.defs, due))
 	if err != nil {
 		return nil, nil, err
 	}
@@ -302,261 +297,24 @@ func (s *Server) failedPartWay(ctx context.Context, e *pendingEffects, secret st
 		log.Printf("the effects on chalkd's loops: %v", err)
 		return
 	}
-	a := actionsOf(e.defs, due)
-	s.actOnSelf(a.chalkd)
+	a := effects.ActionsOf(e.defs, due)
+	s.actOnSelf(a.Chalkd)
 }
 
-// actions are what the due effects ask for together:
-//   - reload and restart: the units to reload and to restart, each sorted;
-//   - start: the units of restart to start too;
-//   - run: the commands to run, in the order of their effects' names;
-//   - chalkd: the layer actions to run, sorted;
-//   - hints: the hint of each unit in the restart of any effect of the image, due or not.
-type actions struct {
-	reload, restart []string
-	start           map[string]bool
-	run             []string
-	chalkd          []string
-	hints           map[string]effects.Hint
-}
-
-func actionsOf(defs map[string]effects.Definition, due []string) actions {
-	a := actions{start: map[string]bool{}, hints: map[string]effects.Hint{}}
-	for _, name := range slices.Sorted(maps.Keys(defs)) {
-		if d := defs[name]; d.Hint != nil {
-			for _, unit := range d.Restart {
-				a.hints[unit] = *d.Hint
-			}
-		}
-	}
-	for _, name := range due {
-		d := defs[name]
-		a.reload = append(a.reload, d.Reload...)
-		a.restart = append(a.restart, d.Restart...)
-		for _, unit := range d.Restart {
-			a.start[unit] = a.start[unit] || d.Start
-		}
-		if d.Run != "" && !slices.Contains(a.run, d.Run) {
-			a.run = append(a.run, d.Run)
-		}
-		if d.Chalkd != "" {
-			a.chalkd = append(a.chalkd, d.Chalkd)
-		}
-	}
-	slices.Sort(a.reload)
-	slices.Sort(a.restart)
-	slices.Sort(a.chalkd)
-	a.reload, a.restart, a.chalkd = slices.Compact(a.reload), slices.Compact(a.restart), slices.Compact(a.chalkd)
-	return a
-}
-
-// applyEffects reloads the units of a.reload that run, runs a.run, then restarts the units of
-// a.restart, and returns the restarted units. chalkd runs the layer actions last. A unit it
-// restarts is not reloaded, because the restart reads all a reload would. A unit of a.reload that
-// failed is restarted as a failed unit of a.restart is: systemctl reloads no failed unit, and its
-// start, such as a firewall's that loads the new ruleset, is what the new config needs. It
-// restarts after the reloads, so after units that are ordered after it: a unit whose reload
-// depends on such a unit's work has that unit ask for it, as chalkos-vrf asks chalkos-resolvers.
-//
-// The restarts take one systemctl call for each way of restarting, each in the units' order:
-//   - try-restart for a unit that runs, or ran and stays active, so a unit that never started,
-//     or was stopped, stays so;
-//   - restart for a unit whose effect starts it too;
-//   - reset-failed and restart for a unit that failed, such as one that found no document of its
-//     kind at boot. The new config may be what it lacked, and try-restart leaves a failed unit
-//     alone.
-func (s *Server) applyEffects(ctx context.Context, a actions) ([]string, error) {
+// applyEffects carries out the effects' actions on the units, as effects.Apply does, and runs their
+// layer actions last.
+func (s *Server) applyEffects(ctx context.Context, a effects.Actions) ([]string, error) {
 	// Once the units it restarts read the new config, and whether or not they could: the files
 	// the layer actions read are in place.
-	defer s.actOnSelf(a.chalkd)
-	states := map[string]string{}
-	for _, unit := range append(slices.Clone(a.reload), a.restart...) {
-		if _, ok := states[unit]; ok {
-			continue
-		}
-		out, err := tool.Run(ctx, s.Run, "systemctl", "show", "--property=ActiveState", "--value", unit)
-		if err != nil {
-			log.Printf("the state of %s: %v; acting on it as if it ran", unit, err)
-		}
-		states[unit] = strings.TrimSpace(string(out))
-	}
-	var errs []error
-	var reload, failedUnits []string
-	for _, unit := range a.reload {
-		if slices.Contains(a.restart, unit) {
-			continue
-		}
-		// A unit that does not run reads its config when it starts; a failed one is restarted.
-		if states[unit] == "failed" {
-			failedUnits = append(failedUnits, unit)
-			continue
-		}
-		if states[unit] == "inactive" {
-			continue
-		}
-		reload = append(reload, unit)
-	}
-	var start, try []string
-	for _, unit := range a.restart {
-		switch {
-		case states[unit] == "failed":
-			failedUnits = append(failedUnits, unit)
-		case a.start[unit]:
-			start = append(start, unit)
-		default:
-			try = append(try, unit)
-		}
-	}
-	slices.Sort(failedUnits)
-	slices.Sort(start)
-	inOrder := s.unitOrder(ctx, reload, append(slices.Clone(failedUnits), start...), try)
-	byHand := actions{}
-	reload = inOrder(reload)
-	if len(reload) > 0 {
-		if _, err := tool.Run(ctx, s.Run, "systemctl", append([]string{"reload"}, reload...)...); err != nil {
-			byHand.reload = reload
-			errs = append(errs, fmt.Errorf("reload %s: %w", strings.Join(reload, " "), err))
-		}
-	}
-	for _, command := range a.run {
-		argv := strings.Fields(command)
-		if _, err := tool.Run(ctx, s.Run, argv[0], argv[1:]...); err != nil {
-			byHand.run = append(byHand.run, command)
-			errs = append(errs, fmt.Errorf("run %s: %w", command, err))
-		}
-	}
-	var restarted []string
-	run := func(verb string, units []string) {
-		if len(units) == 0 {
-			return
-		}
-		if _, err := tool.Run(ctx, s.Run, "systemctl", append([]string{verb}, units...)...); err != nil {
-			byHand.restart = append(byHand.restart, units...)
-			errs = append(errs, fmt.Errorf("%s %s: %w", verb, strings.Join(units, " "), err))
-			return
-		}
-		restarted = append(restarted, units...)
-	}
-	if len(failedUnits) > 0 {
-		// The failures that put them in their state count against their start limit, which would
-		// refuse the restart.
-		if _, err := tool.Run(ctx, s.Run, "systemctl", append([]string{"reset-failed"}, failedUnits...)...); err != nil {
-			byHand.restart = append(byHand.restart, failedUnits...)
-			errs = append(errs, fmt.Errorf("reset-failed %s: %w", strings.Join(failedUnits, " "), err))
-			failedUnits = nil
-		}
-	}
-	start = append(failedUnits, start...)
-	slices.Sort(start)
-	run("restart", inOrder(start))
-	run("try-restart", inOrder(try))
-	if len(errs) > 0 {
-		slices.Sort(byHand.restart)
-		hand := byHand.byHand()
-		// A unit whose effect says why it may fail to start, which tells more than systemctl's
-		// error, says so.
-		for _, unit := range byHand.restart {
-			if h, ok := a.hints[unit]; ok {
-				if why := hintText(h); why != "" {
-					return nil, failed(connect.CodeFailedPrecondition, "%v; %s%s", errors.Join(errs...), why, hand)
-				}
-			}
-		}
-		return nil, failed(connect.CodeInternal, "%v%s", errors.Join(errs...), hand)
-	}
-	slices.Sort(restarted)
-	return restarted, nil
-}
-
-// unitOrder returns what sorts a list of the units of lists so that each unit follows the units
-// of the list it is ordered after, by its After= or their Before=, which systemd shows as its
-// After. systemctl queues the job of each unit it is given in a transaction of its own, one after
-// the other, and systemd holds a job back only for the jobs already queued: a job queued first
-// runs at once, whatever its unit's order. The order holds within one systemctl call alone, so
-// the reloads run before any restart, whatever the units' order.
-//
-// systemctl names the units of After by their main names, which a unit given by an alias matches
-// through its Names. Each step of the sort takes the first unit that follows none of the units
-// left, so units ordered against none of the others keep their place. Once only units that follow
-// one another in a cycle, or follow such units, are left, they all keep their order, after the
-// others. Every list keeps the order given when systemctl does not answer, or answers for other
-// units than those asked for, as for a glob.
-func (s *Server) unitOrder(ctx context.Context, lists ...[]string) func([]string) []string {
-	keep := func(units []string) []string { return units }
-	var units []string
-	ask := false
-	for _, l := range lists {
-		ask = ask || len(l) > 1
-		for _, u := range l {
-			if !slices.Contains(units, u) {
-				units = append(units, u)
-			}
-		}
-	}
-	if !ask {
-		return keep
-	}
-	out, err := tool.Run(ctx, s.Run, "systemctl", append([]string{"show", "--property=Names,After"}, units...)...)
-	// systemctl shows each unit's properties as lines of name=value, the units in the order
-	// given, a blank line between them.
-	blocks := strings.Split(strings.TrimSpace(string(out)), "\n\n")
-	if err == nil && len(blocks) != len(units) {
-		err = fmt.Errorf("systemctl showed %d units", len(blocks))
-	}
-	names := map[string][]string{}
-	after := map[string][]string{}
-	if err == nil {
-		for i, block := range blocks {
-			for line := range strings.SplitSeq(block, "\n") {
-				if v, ok := strings.CutPrefix(line, "Names="); ok {
-					names[units[i]] = strings.Fields(v)
-				} else if v, ok := strings.CutPrefix(line, "After="); ok {
-					after[units[i]] = strings.Fields(v)
-				}
-			}
-			// A glob, which an effect may name, shows the units it matches instead.
-			if !slices.Contains(names[units[i]], units[i]) {
-				err = fmt.Errorf("systemctl showed %s where %s was asked for", cmp.Or(strings.Join(names[units[i]], " "), "no unit"), units[i])
-				break
-			}
-		}
+	defer s.actOnSelf(a.Chalkd)
+	restarted, err := effects.Apply(ctx, s.Run, a)
+	if ae, ok := errors.AsType[*effects.ApplyError](err); ok && ae.Why != "" {
+		return nil, failed(connect.CodeFailedPrecondition, "%v", err)
 	}
 	if err != nil {
-		log.Printf("the order of %s: %v; acting on them in the order given", strings.Join(units, " "), err)
-		return keep
+		return nil, failed(connect.CodeInternal, "%v", err)
 	}
-	// follows tells whether the unit u is ordered after the unit v.
-	follows := func(u, v string) bool {
-		return u != v && slices.ContainsFunc(after[u], func(d string) bool { return d == v || slices.Contains(names[v], d) })
-	}
-	return func(list []string) []string {
-		rest := slices.Clone(list)
-		sorted := make([]string, 0, len(list))
-		for len(rest) > 0 {
-			i := slices.IndexFunc(rest, func(u string) bool {
-				return !slices.ContainsFunc(rest, func(v string) bool { return follows(u, v) })
-			})
-			if i < 0 {
-				return append(sorted, rest...)
-			}
-			sorted = append(sorted, rest[i])
-			rest = slices.Delete(rest, i, i+1)
-		}
-		return sorted
-	}
-}
-
-// hintText is a hint's text, followed by its file's while the file holds text; "" when its file
-// holds none.
-func hintText(h effects.Hint) string {
-	if h.File == "" {
-		return h.Text
-	}
-	data, err := os.ReadFile(h.File)
-	if why := strings.TrimSpace(string(data)); err == nil && why != "" {
-		return h.Text + ": " + why
-	}
-	return ""
+	return restarted, nil
 }
 
 // actOnSelf runs the layer actions the delivery's effects name, on what only the running chalkd
@@ -574,22 +332,4 @@ func (s *Server) actOnSelf(names []string) {
 			log.Printf("%s: %v", name, err)
 		}
 	}
-}
-
-// byHand tells the operator what the delivery still has to do to the units.
-func (a actions) byHand() string {
-	var todo []string
-	if len(a.reload) > 0 {
-		todo = append(todo, "reload "+strings.Join(a.reload, " "))
-	}
-	for _, command := range a.run {
-		todo = append(todo, "run "+command)
-	}
-	if len(a.restart) > 0 {
-		todo = append(todo, "restart "+strings.Join(a.restart, " "))
-	}
-	if len(todo) == 0 {
-		return ""
-	}
-	return "; the delivery is applied, so " + strings.Join(todo, " and ") + " by hand once that is fixed, or deliver it again"
 }

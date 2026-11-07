@@ -99,7 +99,7 @@ Each directory of `cmd/` is a main that wires a package up; the logic lives in `
 | `config/withheld` | Names the kinds the node withholds from its services, Secret and Addon, without importing anything, so chalkcfg shares the list with chalkos-rules and `config`. |
 | `diagnostics` | Reads the image's `diagnostics.json`, checks a call's arguments against their parameters' types, builds the command line, and runs it as a transient systemd unit with a sandbox of its own. |
 | `dns` | The syntax of the DNS names and record data of a `Resolver`'s local zones, which the rules' `isDNSName()` and `isRecordData()` check and the output `unbound` guards with, so the two cannot drift apart. |
-| `effects` | Reads the image's `services.json`, the units granted config kinds, and `effects.json`, what a delivery does to those units and to chalkd, and refuses an effect chalkd could not carry out. |
+| `effects` | Reads the image's `services.json`, the units granted config kinds, and `effects.json`, what a delivery does to those units and to chalkd, and refuses an effect chalkd could not carry out. Carries out the due effects on the units: the reloads, the commands and the restarts, in the units' order. |
 | `esp` | Lists the UKIs on an ESP with the image and generation each boots, writes a UKI under a temporary name, reads the UKI of an image staged in the inactive slot, and removes and names UKIs, for an install and an upgrade. |
 | `facts` | Loads the facts change rules read: files, and commands of the image's store run in a sandbox. |
 | `identity` | The node's identity, the form its config translates to, which the node applies at boot and its Kubernetes side reads. |

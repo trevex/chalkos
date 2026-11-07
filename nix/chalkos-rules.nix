@@ -23,6 +23,7 @@ callPackage ./go-module.nix { } {
     ../pkg/schema
     ../pkg/imageref
     ../pkg/storage
+    ../pkg/tool
     ../pkg/validators
   ];
 }
