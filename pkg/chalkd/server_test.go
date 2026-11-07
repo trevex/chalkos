@@ -51,6 +51,7 @@ import (
 	"github.com/trevex/chalkos/pkg/pki"
 	"github.com/trevex/chalkos/pkg/storage/storagetest"
 	"github.com/trevex/chalkos/pkg/tool/tooltest"
+	"github.com/trevex/chalkos/pkg/upgrade"
 )
 
 func write(t *testing.T, path, content string) {
@@ -1007,3 +1008,27 @@ func exists(path string) bool {
 // testOSCA is the OS CA of every test server's STATE, which the node CAs of the Kubernetes
 // fixtures chain to.
 var testOSCA = kubernetestest.OSCA
+// errorCodes answers a handler's error with its code, the code of a domain error it wraps, or
+// CodeInternal, and with its whole text; unary and streaming alike.
+func TestErrorCodes(t *testing.T) {
+	for name, tc := range map[string]struct {
+		err  error
+		want connect.Code
+	}{
+		"plain":   {fmt.Errorf("read the slot: %w", fs.ErrNotExist), connect.CodeInternal},
+		"coded":   {fmt.Errorf("upgrade: %w", layer.Errorf(connect.CodeInvalidArgument, "no image")), connect.CodeInvalidArgument},
+		"refusal": {fmt.Errorf("activate: %w", &upgrade.RefusalError{Err: errors.New("no staged UKI")}), connect.CodeFailedPrecondition},
+		"trust":   {refusedTrust{errors.New("the OS CAs do not verify the node's certificate")}, connect.CodeInvalidArgument},
+	} {
+		unary := errorCodes{}.WrapUnary(func(context.Context, connect.AnyRequest) (connect.AnyResponse, error) { return nil, tc.err })
+		_, uerr := unary(context.Background(), nil)
+		streaming := errorCodes{}.WrapStreamingHandler(func(context.Context, connect.StreamingHandlerConn) error { return tc.err })
+		serr := streaming(context.Background(), nil)
+		for kind, err := range map[string]error{"unary": uerr, "streaming": serr} {
+			ce, ok := err.(*connect.Error)
+			if !ok || ce.Code() != tc.want || ce.Message() != tc.err.Error() {
+				t.Errorf("%s, %s: %v, want %v with %q", name, kind, err, tc.want, tc.err.Error())
+			}
+		}
+	}
+}

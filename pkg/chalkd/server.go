@@ -272,7 +272,7 @@ type unverifiedKey struct{}
 // keeps the connection open.
 func (s *Server) Handler() http.Handler {
 	opts := []connect.HandlerOption{
-		connect.WithInterceptors(authorizer{s: s, gates: s.gates()}),
+		connect.WithInterceptors(authorizer{s: s, gates: s.gates()}, errorCodes{}),
 		connect.WithReadMaxBytes(maxMessageBytes),
 		// An oversized compressed request would otherwise be decompressed in full before being
 		// discarded; refusing compression up front keeps that cost off chalkd.
@@ -384,6 +384,45 @@ func (a authorizer) WrapStreamingHandler(next connect.StreamingHandlerFunc) conn
 			return err
 		}
 		return next(ctx, conn)
+	}
+}
+
+// domainCodes are the codes of the domain errors chalkd's handlers return without one of their
+// own: the refusals of an image or of its activation fail the precondition, and OS CAs the node
+// refuses to trust are the client's to fix.
+var domainCodes = layer.Codes{
+	layer.CodeFor[*upgrade.RefusalError](connect.CodeFailedPrecondition),
+	layer.CodeFor[*upgrade.CheckError](connect.CodeFailedPrecondition),
+	layer.CodeFor[*upgrade.StagedRetiredError](connect.CodeFailedPrecondition),
+	layer.CodeFor[refusedTrust](connect.CodeInvalidArgument),
+}
+
+// errorCodes turns the error of a handler, chalkd's or a plugin's, into the *connect.Error it
+// answers with: its whole text, with the code it carries or the code of a domain error it wraps,
+// or else CodeInternal. Handlers decide a code with layer.Errorf and wrap everything else with
+// fmt.Errorf, which keeps the error chain.
+type errorCodes struct{}
+
+func (errorCodes) WrapUnary(next connect.UnaryFunc) connect.UnaryFunc {
+	return func(ctx context.Context, req connect.AnyRequest) (connect.AnyResponse, error) {
+		resp, err := next(ctx, req)
+		if err != nil {
+			return nil, domainCodes.Error(err)
+		}
+		return resp, nil
+	}
+}
+
+func (errorCodes) WrapStreamingClient(next connect.StreamingClientFunc) connect.StreamingClientFunc {
+	return next
+}
+
+func (errorCodes) WrapStreamingHandler(next connect.StreamingHandlerFunc) connect.StreamingHandlerFunc {
+	return func(ctx context.Context, conn connect.StreamingHandlerConn) error {
+		if err := next(ctx, conn); err != nil {
+			return domainCodes.Error(err)
+		}
+		return nil
 	}
 }
 
