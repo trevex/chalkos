@@ -139,7 +139,7 @@ Each directory of `cmd/` is a main that wires a package up; the logic lives in `
 | `secureboot` | Checks an EFI binary's Authenticode signature as Secure Boot firmware does, against db and dbx read from the firmware or against given certificates. |
 | `storage` | Storage sections, disk references and pins, repart definitions, and the changes a delivered section makes to the recorded one. |
 | `storage/gpt` | Reads and changes partition tables with sfdisk under the disk's lock, waiting a bounded time for it, and names the partition types of the system region. |
-| `storage/hostops` | The host operations the installer, an upgrade and the storage code share: mounts, LUKS and dm-verity volumes, the mount table, and the blkid probe. Its `Ops` interface runs the tools, whose command lines it writes in one place. |
+| `storage/hostops` | The host operations the installer, an upgrade and the storage code share: mounts, LUKS and dm-verity volumes, the mount table, and the blkid probe. `Ops` is the interface the installer, an upgrade and the storage setup call, and that tests replace with a fake. `Tools` implements it and runs mount, umount, systemd-cryptsetup and veritysetup; it is the one place their command lines are written. `Probe`, `Content` and `Type` run blkid on a `tool.Runner`. |
 | `storage/node` | Storage on the node: STATE, volumes, VAR and the generator's units; the storage changes chalkd makes and the volumes an install creates and enrols. |
 | `storeslot` | The store slots of a disk and the writer an upgrade and an install share: retire a slot, write and verify the store, activate the slot. |
 | `tool` | Runs the command-line tools chalkd, the installer and the storage code drive, such as cryptsetup, sfdisk and systemctl. |
