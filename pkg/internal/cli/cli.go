@@ -1,14 +1,17 @@
 // Package cli holds what chalkctl, chalklab, chalkbuild and chalkcfg share around their cobra
-// command trees: usage errors, the root and group commands, positional argument checks and
-// Execute, which prints a command's error and returns its exit status.
+// command trees: usage errors, the root and group commands, positional argument checks, enum
+// flags and Execute, which prints a command's error and returns its exit status.
 package cli
 
 import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
+	"strings"
 
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 )
 
 // ErrUsage is the error of a command line the command tree does not take. Execute prints the
@@ -70,6 +73,11 @@ func RangeArgs(min, max int) cobra.PositionalArgs {
 	return wrap(cobra.RangeArgs(min, max))
 }
 
+// MinimumNArgs refuses fewer than n positional arguments with a usage error.
+func MinimumNArgs(n int) cobra.PositionalArgs {
+	return wrap(cobra.MinimumNArgs(n))
+}
+
 func wrap(check cobra.PositionalArgs) cobra.PositionalArgs {
 	return func(cmd *cobra.Command, args []string) error { return usage(check(cmd, args)) }
 }
@@ -120,4 +128,34 @@ func isUsage(cmd *cobra.Command, err error) bool {
 		return false
 	}
 	return cmd.HasSubCommands() || cmd.ValidateRequiredFlags() != nil || cmd.ValidateFlagGroups() != nil
+}
+
+// Enum is the value of a flag that takes one of allowed, which its usage calls a typ.
+func Enum[T ~string](p *T, typ string, allowed ...T) pflag.Value {
+	return &enum[T]{p, typ, allowed}
+}
+
+type enum[T ~string] struct {
+	p       *T
+	typ     string
+	allowed []T
+}
+
+func (e *enum[T]) String() string { return string(*e.p) }
+func (e *enum[T]) Type() string   { return e.typ }
+
+func (e *enum[T]) Set(v string) error {
+	if !slices.Contains(e.allowed, T(v)) {
+		names := make([]string, len(e.allowed))
+		for i, a := range e.allowed {
+			names[i] = string(a)
+		}
+		want := names[len(names)-1]
+		if len(names) > 1 {
+			want = strings.Join(names[:len(names)-1], ", ") + " or " + want
+		}
+		return errors.New("want " + want)
+	}
+	*e.p = T(v)
+	return nil
 }

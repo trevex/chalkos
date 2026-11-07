@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"math"
 	"slices"
 	"strings"
 	"time"
@@ -111,7 +110,7 @@ func (a *app) applyConfigCommand() *cobra.Command {
 		Short:   "Deliver a node's config from the inventory",
 		Long:    applyConfigLong,
 		Example: applyConfigExample,
-		Args:    cli.RangeArgs(1, math.MaxInt),
+		Args:    cli.MinimumNArgs(1),
 	}, func(a *app, ctx context.Context, pos []string) error { return a.applyConfig(ctx, f, pos) })
 	fs := cmd.Flags()
 	f.node.cluster.register(fs)
@@ -137,7 +136,7 @@ func (a *app) applyConfigCommand() *cobra.Command {
 	fs.BoolVar(&f.noConfirm, "no-confirm", false, "with --try, leave the trial open for apply-config --confirm")
 	fs.BoolVar(&f.confirm, "confirm", false, "confirm the node's open trial once the node is healthy, so it keeps the config on trial")
 	fs.StringArrayVar(&f.ignoreUnits, "ignore-unit", nil, "with --try, leave the unit out of the health check the confirmation waits for, as the image's check leaves out the units it ignores")
-	fs.Var(&f.until, "until", "how far the delivery goes: deliver delivers to the first node that does not run the config, on trial, and leaves the trial open for apply-config --confirm; confirm delivers to every node")
+	fs.Var(cli.Enum(&f.until, "step", untilDeliver, untilConfirm), "until", "how far the delivery goes: deliver delivers to the first node that does not run the config, on trial, and leaves the trial open for apply-config --confirm; confirm delivers to every node")
 	for _, p := range plugins {
 		if l, ok := p.(layer.Rollout); ok {
 			f.rollout[p.Name()] = l.RolloutFlags(fs)
@@ -445,12 +444,7 @@ func (a *app) deliverConfig(ctx context.Context, f applyConfigFlags, t *target) 
 		a.warnDelivery(t.name, resp.Msg)
 		return nil
 	}
-	for _, c := range resp.Msg.Changes {
-		fmt.Fprintf(a.stdout, "volume %s: %s\n", c.Volume, c.Reason)
-	}
-	for _, u := range resp.Msg.RestartedUnits {
-		fmt.Fprintf(a.stdout, "restarted %s\n", u)
-	}
+	printApplied(a.stdout, resp.Msg.Changes, resp.Msg.RestartedUnits)
 	a.warnDelivery(t.name, resp.Msg)
 	switch {
 	case f.staged:
@@ -629,7 +623,7 @@ func (a *app) rollbackConfig(ctx context.Context, f applyConfigFlags, name strin
 	}
 	previous := running
 	if version != st.Msg.ConfigVersion {
-		if previous, err = previousConfig(ctx, conn); err != nil {
+		if previous, err = getConfig(ctx, conn, &nodev1.GetConfigRequest{Previous: true}); err != nil {
 			return fmt.Errorf("%s: %w", t.name, err)
 		}
 	}
@@ -643,12 +637,7 @@ func (a *app) rollbackConfig(ctx context.Context, f applyConfigFlags, name strin
 	if err != nil {
 		return nodeError(err, t.name)
 	}
-	for _, c := range resp.Msg.Changes {
-		fmt.Fprintf(a.stdout, "volume %s: %s\n", c.Volume, c.Reason)
-	}
-	for _, u := range resp.Msg.RestartedUnits {
-		fmt.Fprintf(a.stdout, "restarted %s\n", u)
-	}
+	printApplied(a.stdout, resp.Msg.Changes, resp.Msg.RestartedUnits)
 	a.warnDelivery(t.name, &nodev1.ApplyConfigResponse{Warnings: resp.Msg.Warnings})
 	if version == replaced {
 		fmt.Fprintf(a.stdout, "%s runs config %s, delivered again\n", t.name, version)
@@ -659,6 +648,16 @@ func (a *app) rollbackConfig(ctx context.Context, f applyConfigFlags, name strin
 		fmt.Fprintf(a.stdout, "%s: the trial of config %s ended\n", t.name, tr.Version)
 	}
 	return nil
+}
+
+// printApplied prints the storage changes and the restarted units of a delivery.
+func printApplied(w io.Writer, changes []*nodev1.StorageChange, units []string) {
+	for _, c := range changes {
+		fmt.Fprintf(w, "volume %s: %s\n", c.Volume, c.Reason)
+	}
+	for _, u := range units {
+		fmt.Fprintf(w, "restarted %s\n", u)
+	}
 }
 
 // warnDelivery prints why the rule of one of the node's effects could not be evaluated, whose

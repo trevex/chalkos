@@ -3,7 +3,6 @@ package chalkctl
 import (
 	"cmp"
 	"context"
-	"errors"
 	"fmt"
 	"maps"
 	"slices"
@@ -36,18 +35,6 @@ const (
 	// untilConfirm delivers the config to every node and confirms each trial.
 	untilConfirm applyStep = "confirm"
 )
-
-func (s *applyStep) Set(v string) error {
-	switch applyStep(v) {
-	case untilDeliver, untilConfirm:
-		*s = applyStep(v)
-		return nil
-	}
-	return errors.New("want deliver or confirm")
-}
-
-func (s *applyStep) String() string { return string(*s) }
-func (s *applyStep) Type() string   { return "step" }
 
 // configRollout delivers the inventory's config to several nodes, one after the other, and stops
 // at the first that fails. When the config changes the versions a layer's cluster bounds, such as

@@ -8,7 +8,6 @@ import (
 	"io"
 	"maps"
 	"slices"
-	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -63,18 +62,6 @@ const (
 	untilReboot upgradeStep = "reboot"
 )
 
-func (s *upgradeStep) Set(v string) error {
-	switch upgradeStep(v) {
-	case untilStage, untilActivate, untilReboot:
-		*s = upgradeStep(v)
-		return nil
-	}
-	return errors.New("want stage, activate or reboot")
-}
-
-func (s *upgradeStep) String() string { return string(*s) }
-func (s *upgradeStep) Type() string   { return "step" }
-
 // upgradeOptions are how a run upgrades, as its flags give it.
 type upgradeOptions struct {
 	until upgradeStep
@@ -93,7 +80,7 @@ type upgradeFlags struct {
 	config, image, nodes string
 	passwordFile         string
 	addresses            addressList
-	maxUnavailable       positiveInt
+	maxUnavailable       int
 	until                upgradeStep
 	retryFailed          bool
 	diff, rollback       bool
@@ -101,26 +88,8 @@ type upgradeFlags struct {
 	timeout              time.Duration
 }
 
-// positiveInt is the value of an integer flag that is at least 1.
-type positiveInt int
-
-func (n *positiveInt) Set(s string) error {
-	v, err := strconv.Atoi(s)
-	if err != nil {
-		return err
-	}
-	if v < 1 {
-		return errors.New("must be at least 1")
-	}
-	*n = positiveInt(v)
-	return nil
-}
-
-func (n *positiveInt) String() string { return strconv.Itoa(int(*n)) }
-func (n *positiveInt) Type() string   { return "int" }
-
 func (a *app) upgradeCommand() *cobra.Command {
-	f := upgradeFlags{addresses: addressList{}, maxUnavailable: 1, until: untilReboot, layers: map[string]any{}}
+	f := upgradeFlags{addresses: addressList{}, until: untilReboot, layers: map[string]any{}}
 	cmd := a.command(&cobra.Command{
 		Use:     "upgrade",
 		Short:   "Install new images on the cluster's nodes, or boot their previous ones again",
@@ -135,13 +104,13 @@ func (a *app) upgradeCommand() *cobra.Command {
 	registerAddresses(fs, f.addresses)
 	fs.StringVar(&f.image, "image", "", "image to install on the nodes that run its variant, or on the nodes --nodes names whatever they run: a raw image with repart-output.json next to it, or an image directory (default the directory of each node's image in the inventory)")
 	fs.StringVar(&f.nodes, "nodes", "", "comma-separated nodes to upgrade (default every node of the cluster, or with --image every node that runs the image's variant)")
-	fs.Var(&f.maxUnavailable, "max-unavailable", "how many nodes upgrade at once after the nodes that act for the others, such as Kubernetes control planes, which upgrade one at a time")
+	fs.IntVar(&f.maxUnavailable, "max-unavailable", 1, "how many nodes upgrade at once after the nodes that act for the others, such as Kubernetes control planes, which upgrade one at a time")
 	for _, p := range plugins {
 		if u, ok := p.(layer.UpgradeFlags); ok {
 			f.layers[p.Name()] = u.UpgradeFlags(fs)
 		}
 	}
-	fs.Var(&f.until, "until", "how far each node gets: stage installs its image and leaves it staged, which chalkctl node activate makes boot next, with the same --image when the run had one; activate makes it boot next, which chalkctl node reboot boots; reboot drains and reboots the node and waits until it is healthy")
+	fs.Var(cli.Enum(&f.until, "step", untilStage, untilActivate, untilReboot), "until", "how far each node gets: stage installs its image and leaves it staged, which chalkctl node activate makes boot next, with the same --image when the run had one; activate makes it boot next, which chalkctl node reboot boots; reboot drains and reboots the node and waits until it is healthy")
 	fs.BoolVar(&f.retryFailed, "retry-failed", false, "install an image again, once, on nodes that fell back from it")
 	fs.BoolVar(&f.rollback, "rollback", false, "boot the image the nodes ran before their last upgrade again, which their inactive slots still hold, instead of installing an image")
 	fs.DurationVar(&f.timeout, "timeout", 30*time.Minute, "how long to wait for each node to come back healthy and for its drain")
@@ -151,6 +120,9 @@ func (a *app) upgradeCommand() *cobra.Command {
 }
 
 func (a *app) upgrade(ctx context.Context, f upgradeFlags) error {
+	if f.maxUnavailable < 1 {
+		return cli.Usagef("--max-unavailable must be at least 1")
+	}
 	if f.rollback {
 		switch {
 		case f.image != "":
@@ -234,7 +206,7 @@ func (a *app) upgrade(ctx context.Context, f upgradeFlags) error {
 
 // options are the run's options as the flags give them.
 func (f upgradeFlags) options() upgradeOptions {
-	return upgradeOptions{until: f.until, maxUnavailable: int(f.maxUnavailable), retryFailed: f.retryFailed, passwordFile: f.passwordFile}
+	return upgradeOptions{until: f.until, maxUnavailable: f.maxUnavailable, retryFailed: f.retryFailed, passwordFile: f.passwordFile}
 }
 
 // chooseConfig decides whether the run delivers the inventory's config with the images, which
@@ -248,7 +220,7 @@ func (r *upgradeRun) chooseConfig(diff bool) error {
 		// A partial cluster has no inventory, so there is no config to withhold, and each node
 		// says what it gives the image.
 		if !r.cluster.partial() {
-			r.withhold("config not delivered: the %s role cannot deliver config; each node gives the image its pending config, else carries its own over", r.roleName())
+			r.withhold("config not delivered: the %s role cannot deliver config; each node gives the image its pending config, else carries its own over", roleLabel(r.role))
 		}
 		return nil
 	}
@@ -314,11 +286,6 @@ func (r *upgradeRun) showsConfig(ctx context.Context) error {
 	return nil
 }
 
-// roleName names the credentials' role in messages.
-func (r *upgradeRun) roleName() string {
-	return roleLabel(r.role)
-}
-
 // roleLabel names a role in messages, as "the ... role".
 func roleLabel(role pki.Role) string {
 	if role == "" {
@@ -330,7 +297,7 @@ func roleLabel(role pki.Role) string {
 // diffNeedsAdmin is the error of upgrade --diff with credentials below admin, which may neither
 // read a node's config nor deliver one.
 func (r *upgradeRun) diffNeedsAdmin() error {
-	return fmt.Errorf("upgrade --diff compares the config an upgrade delivers, which needs the admin role; the %s role cannot deliver config, so each node gives the image its pending config, else carries its own over", r.roleName())
+	return fmt.Errorf("upgrade --diff compares the config an upgrade delivers, which needs the admin role; the %s role cannot deliver config, so each node gives the image its pending config, else carries its own over", roleLabel(r.role))
 }
 
 // deliveryOf is the config the node gets with its image; nil when the run withholds config or has
@@ -443,11 +410,7 @@ func (r *upgradeRun) run(ctx context.Context) error {
 		errs := make([]error, len(batch))
 		var wg sync.WaitGroup
 		for i, name := range batch {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
-				errs[i] = r.node(ctx, r.nodes[name])
-			}()
+			wg.Go(func() { errs[i] = r.node(ctx, r.nodes[name]) })
 		}
 		wg.Wait()
 		if err := errors.Join(errs...); err != nil {

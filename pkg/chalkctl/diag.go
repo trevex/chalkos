@@ -3,7 +3,6 @@ package chalkctl
 import (
 	"context"
 	"fmt"
-	"math"
 	"strings"
 
 	"connectrpc.com/connect"
@@ -22,7 +21,7 @@ func (a *app) nodeDiagCommand() *cobra.Command {
 		Short:   "List or run a node's diagnostics",
 		Long:    nodeDiagLong,
 		Example: nodeDiagExample,
-		Args:    cli.RangeArgs(1, math.MaxInt),
+		Args:    cli.MinimumNArgs(1),
 	}, func(a *app, ctx context.Context, pos []string) error { return a.nodeDiag(ctx, f, pos) })
 	f.node.registerClient(cmd.Flags())
 	f.pin.register(cmd.Flags())

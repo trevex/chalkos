@@ -25,22 +25,15 @@ import (
 	"github.com/trevex/chalkos/pkg/pki"
 )
 
-// stringList is a flag that may be given several times.
-type stringList []string
-
-func (l *stringList) String() string     { return strings.Join(*l, ",") }
-func (l *stringList) Set(v string) error { *l = append(*l, v); return nil }
-func (l *stringList) Type() string       { return "strings" }
-
 // secretFlags say where the secrets file is and how to decrypt it.
 type secretFlags struct {
 	path       string
-	identities stringList
+	identities []string
 }
 
 func (s *secretFlags) register(fs *pflag.FlagSet) {
 	fs.StringVar(&s.path, "secrets", "", "secrets file, encrypted with age or not, or - to read it from standard input")
-	fs.Var(&s.identities, "identity", "file holding an age identity to decrypt the secrets with; may be repeated (default ~/.config/chalkos/age.key, ~/.ssh/id_ed25519, ~/.ssh/id_rsa)")
+	fs.StringArrayVar(&s.identities, "identity", nil, "file holding an age identity to decrypt the secrets with; may be repeated (default ~/.config/chalkos/age.key, ~/.ssh/id_ed25519, ~/.ssh/id_rsa)")
 }
 
 // loadSecrets reads the secrets file in whatever format it has. Age identities are read only when
@@ -235,7 +228,7 @@ func (a *app) recoveryKey(ctx context.Context, f recoveryKeyFlags, pos []string)
 }
 
 type genSecretsFlags struct {
-	recipients     stringList
+	recipients     []string
 	plaintext      bool
 	out, publicOut string
 }
@@ -250,7 +243,7 @@ func (a *app) genSecretsCommand() *cobra.Command {
 		Args:    cli.NoArgs,
 	}, func(a *app, ctx context.Context, pos []string) error { return a.genSecrets(f) })
 	fs := cmd.Flags()
-	fs.Var(&f.recipients, "recipient", "age recipient to encrypt secrets.age to: an age public key, an SSH public key, or an age plugin recipient; may be repeated")
+	fs.StringArrayVar(&f.recipients, "recipient", nil, "age recipient to encrypt secrets.age to: an age public key, an SSH public key, or an age plugin recipient; may be repeated")
 	fs.BoolVar(&f.plaintext, "plaintext", false, "write secrets.json unencrypted, for files protected by other means")
 	fs.StringVar(&f.out, "out", ".", "directory to write the files to, or - to write the secrets file alone to standard output")
 	fs.StringVar(&f.publicOut, "public-out", "", "new file to write the public half to (default secrets.pub.json in --out; required with --out -)")
@@ -411,13 +404,13 @@ func encodePublic(secrets clustersecrets.Secrets) ([]byte, error) {
 // changeFlags are the flags of commands that change the secrets file.
 type changeFlags struct {
 	out, publicOut string
-	recipients     stringList
+	recipients     []string
 }
 
 func (c *changeFlags) register(fs *pflag.FlagSet) {
 	fs.StringVar(&c.out, "out", "", "new file to write the changed secrets file to, instead of updating the secrets file in place")
 	fs.StringVar(&c.publicOut, "public-out", "", "new file to write the public half to, instead of updating secrets.pub.json beside the secrets file in place")
-	fs.Var(&c.recipients, "recipient", "age recipient to encrypt the changed secrets file to instead of those it records; may be repeated. A plaintext secrets file is encrypted only to a new .age file given with --out")
+	fs.StringArrayVar(&c.recipients, "recipient", nil, "age recipient to encrypt the changed secrets file to instead of those it records; may be repeated. A plaintext secrets file is encrypted only to a new .age file given with --out")
 }
 
 // secretsFile is a secrets file a command changes, with where and how the changes are written:

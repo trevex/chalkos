@@ -43,10 +43,10 @@ func (caRotation) PausesAfter(kind clustersecrets.RotationKind, phase clustersec
 func (c caRotation) Paused(_ context.Context, _ layer.Rotating, rot clustersecrets.Rotation) error {
 	r := c.r
 	if rot.Phase == clustersecrets.PhaseAccept {
-		r.say("Every node trusts the old and the new OS CA. Issue new client files now with chalkctl config new: they carry both OS CAs and work throughout the rotation and after it. Client files from before the rotation stop verifying the nodes from the switch on and are refused at the finish. Then continue with chalkctl rotate %s --resume, which makes the new OS CA issue.", rot.Kind)
+		r.Say("Every node trusts the old and the new OS CA. Issue new client files now with chalkctl config new: they carry both OS CAs and work throughout the rotation and after it. Client files from before the rotation stop verifying the nodes from the switch on and are refused at the finish. Then continue with chalkctl rotate %s --resume, which makes the new OS CA issue.", rot.Kind)
 		return nil
 	}
-	r.say("Every node serves a certificate of the new node CA and trusts the old and the new OS CA. Client files from before the rotation cannot verify the nodes any more and are refused after the finish: issue new ones with chalkctl config new. Build images and installer media again from %s; older ones trust the old OS CA alone, and installing from them fails. Then remove the old OS CA with chalkctl rotate %s --finish.", r.publicFile(), rot.Kind)
+	r.Say("Every node serves a certificate of the new node CA and trusts the old and the new OS CA. Client files from before the rotation cannot verify the nodes any more and are refused after the finish: issue new ones with chalkctl config new. Build images and installer media again from %s; older ones trust the old OS CA alone, and installing from them fails. Then remove the old OS CA with chalkctl rotate %s --finish.", r.publicFile(), rot.Kind)
 	return nil
 }
 
@@ -73,7 +73,7 @@ func (r *rotation) applyNodeCA(ctx context.Context, phase clustersecrets.Phase) 
 	case clustersecrets.PhaseRefresh:
 		return r.refreshNodeCertificates(ctx)
 	}
-	r.say("  every node trusts the OS CA the new node CA chains to; nothing to deliver")
+	r.Say("  every node trusts the OS CA the new node CA chains to; nothing to deliver")
 	return nil
 }
 
@@ -97,7 +97,7 @@ func (r *rotation) applyOSCA(ctx context.Context, phase clustersecrets.Phase) er
 			}); err != nil {
 				return err
 			}
-			r.say("  %s trusts the %s of the secrets file", name, layer.Count(len(want), "OS CA"))
+			r.Say("  %s trusts the %s of the secrets file", name, layer.Count(len(want), "OS CA"))
 			return nil
 		})
 	case clustersecrets.PhaseSwitch:
@@ -121,11 +121,11 @@ func (r *rotation) switchNodeCA(ctx context.Context) error {
 	}
 	holders = slices.DeleteFunc(holders, func(name string) bool { return r.revoked[name] })
 	if len(holders) == 0 {
-		r.say("  no node renews node certificates itself; chalkctl node renew issues them from the new node CA")
+		r.Say("  no node renews node certificates itself; chalkctl node renew issues them from the new node CA")
 		return nil
 	}
 	return layer.EachNode(holders, func(name string) error {
-		if err := r.deliverPayloads(ctx, name); err != nil {
+		if err := r.DeliverPayloads(ctx, name); err != nil {
 			return err
 		}
 		if err := layer.WaitStatus(ctx, r, name, "to hold the new node CA", func(st *nodev1.StatusResponse) error {
@@ -136,7 +136,7 @@ func (r *rotation) switchNodeCA(ctx context.Context) error {
 		}); err != nil {
 			return err
 		}
-		r.say("  %s renews node certificates with the new node CA", name)
+		r.Say("  %s renews node certificates with the new node CA", name)
 		return nil
 	})
 }
@@ -151,8 +151,8 @@ func (r *rotation) refreshNodeCertificates(ctx context.Context) error {
 	}
 	return layer.EachNode(r.allNodes(), func(name string) error {
 		// A node renewed since, or in an earlier run, keeps its certificate.
-		if st, err := r.status(ctx, name); err == nil && layer.IssuedBy(st, client.NameNode, nodeCA) == nil {
-			r.say("  %s serves a certificate of the new node CA already", name)
+		if st, err := r.Status(ctx, name); err == nil && layer.IssuedBy(st, client.NameNode, nodeCA) == nil {
+			r.Say("  %s serves a certificate of the new node CA already", name)
 			return nil
 		}
 		names, err := r.cluster.certNames(name)
@@ -171,7 +171,7 @@ func (r *rotation) refreshNodeCertificates(ctx context.Context) error {
 		}); err != nil {
 			return err
 		}
-		r.say("  %s serves a certificate of the new node CA", name)
+		r.Say("  %s serves a certificate of the new node CA", name)
 		return nil
 	})
 }

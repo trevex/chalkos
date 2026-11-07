@@ -119,8 +119,8 @@ type rotation struct {
 	ignoreRevoked bool
 }
 
-// say prints a line of the rotation's progress.
-func (r *rotation) say(format string, args ...any) {
+// Say prints a line of the rotation's progress.
+func (r *rotation) Say(format string, args ...any) {
 	fmt.Fprintf(r.a.stdout, format+"\n", args...)
 }
 
@@ -145,7 +145,7 @@ func (r *rotation) start(ctx context.Context, kind clustersecrets.RotationKind) 
 	if err := r.save(func(s *clustersecrets.Secrets) error { return s.BeginRotation(kind, r.a.now()) }); err != nil {
 		return err
 	}
-	r.say("%s records the rotation of the %s; %s", r.file.out, kind.Name(), r.file.written())
+	r.Say("%s records the rotation of the %s; %s", r.file.out, kind.Name(), r.file.written())
 	return r.run(ctx)
 }
 
@@ -201,14 +201,14 @@ func (r *rotation) run(ctx context.Context) error {
 				}
 			}
 			first = false
-			r.say("%s: the %s phase", rot.Kind, rot.Phase)
+			r.Say("%s: the %s phase", rot.Kind, rot.Phase)
 			if err := rotatorOf(r, rot.Kind).ApplyRotation(ctx, r, rot.Kind, rot.Phase); err != nil {
 				return fmt.Errorf("the %s phase of the rotation of the %s stopped: %w; once that is fixed, continue with chalkctl rotate %s --resume", rot.Phase, rot.Kind.Name(), err, rot.Kind)
 			}
 			if err := r.save(func(s *clustersecrets.Secrets) error { return s.RecordApplied(r.a.now()) }); err != nil {
 				return err
 			}
-			r.say("%s: every node applied the %s phase", rot.Kind, rot.Phase)
+			r.Say("%s: every node applied the %s phase", rot.Kind, rot.Phase)
 			if rotatorOf(r, rot.Kind).PausesAfter(rot.Kind, rot.Phase) {
 				return rotatorOf(r, rot.Kind).Paused(ctx, r, rot)
 			}
@@ -233,9 +233,9 @@ func (r *rotation) run(ctx context.Context) error {
 				return err
 			}
 			state, advice := rotatorOf(r, rot.Kind).Finished(rot.Kind)
-			r.say("the rotation of the %s is finished: %s; %s", rot.Kind.Name(), state, r.file.written())
+			r.Say("the rotation of the %s is finished: %s; %s", rot.Kind.Name(), state, r.file.written())
 			if advice != "" {
-				r.say("%s", advice)
+				r.Say("%s", advice)
 			}
 			return nil
 		}
@@ -312,21 +312,21 @@ func (r *rotation) skipRevoked(ctx context.Context) error {
 	for _, name := range slices.Sorted(maps.Keys(list)) {
 		if slices.Contains(nodes, name) && !r.revoked[name] {
 			r.revoked[name] = true
-			r.say("skipping %s: revoked %s", name, list[name])
+			r.Say("skipping %s: revoked %s", name, list[name])
 		}
 	}
 	return nil
 }
 
-// nodeNames lists the cluster's nodes in name order, but the revoked ones.
-func (r *rotation) nodeNames() []string {
+// NodeNames lists the cluster's nodes in name order, but the revoked ones.
+func (r *rotation) NodeNames() []string {
 	return slices.DeleteFunc(slices.Clone(r.cluster.nodeNames()), func(name string) bool { return r.revoked[name] })
 }
 
 // allNodes lists the nodes that take part, the coordinators first, each group in name order.
 func (r *rotation) allNodes() []string {
 	var coordinators, others []string
-	for _, name := range r.nodeNames() {
+	for _, name := range r.NodeNames() {
 		// rotate read every node's config before it started, so no error is left to report.
 		if ok, _ := listedCoordinator(r.cluster, name); ok {
 			coordinators = append(coordinators, name)
@@ -356,8 +356,8 @@ func (r *rotation) target(name string) (*target, error) {
 	return nodes.target(name)
 }
 
-// call runs fn against a node.
-func (r *rotation) call(name string, fn func(conn *client.Conn) error) error {
+// Call runs fn against a node.
+func (r *rotation) Call(name string, fn func(conn *client.Conn) error) error {
 	nodes, err := r.nodes()
 	if err != nil {
 		return err
@@ -367,7 +367,7 @@ func (r *rotation) call(name string, fn func(conn *client.Conn) error) error {
 
 // deliver sends a node what req carries.
 func (r *rotation) deliver(ctx context.Context, name string, req *nodev1.ApplyConfigRequest) error {
-	return r.call(name, func(conn *client.Conn) error {
+	return r.Call(name, func(conn *client.Conn) error {
 		resp, err := conn.ApplyConfig(ctx, connect.NewRequest(req))
 		if err != nil {
 			return err
@@ -377,8 +377,8 @@ func (r *rotation) deliver(ctx context.Context, name string, req *nodev1.ApplyCo
 	})
 }
 
-// deliverPayloads sends a node the payloads its layers issue it as the secrets file has them now.
-func (r *rotation) deliverPayloads(ctx context.Context, name string) error {
+// DeliverPayloads sends a node the payloads its layers issue it as the secrets file has them now.
+func (r *rotation) DeliverPayloads(ctx context.Context, name string) error {
 	t, err := r.target(name)
 	if err != nil {
 		return err
@@ -390,8 +390,8 @@ func (r *rotation) deliverPayloads(ctx context.Context, name string) error {
 	return r.deliver(ctx, name, &nodev1.ApplyConfigRequest{Layers: payloads})
 }
 
-// status reads a node's status.
-func (r *rotation) status(ctx context.Context, name string) (*nodev1.StatusResponse, error) {
+// Status reads a node's status.
+func (r *rotation) Status(ctx context.Context, name string) (*nodev1.StatusResponse, error) {
 	nodes, err := r.nodes()
 	if err != nil {
 		return nil, err
@@ -401,25 +401,11 @@ func (r *rotation) status(ctx context.Context, name string) (*nodev1.StatusRespo
 
 var _ layer.Rotating = (*rotation)(nil)
 
-func (r *rotation) Say(format string, args ...any)  { r.say(format, args...) }
 func (r *rotation) Secrets() clustersecrets.Secrets { return r.file.secrets }
 func (r *rotation) Now() time.Time                  { return r.a.now() }
 func (r *rotation) Timeout() time.Duration          { return r.timeout }
 func (r *rotation) Poll() time.Duration             { return r.poll }
 func (r *rotation) Cluster() layer.Cluster          { return pluginCluster{r.cluster} }
-func (r *rotation) NodeNames() []string             { return r.nodeNames() }
-
-func (r *rotation) Call(name string, fn func(conn *client.Conn) error) error {
-	return r.call(name, fn)
-}
-
-func (r *rotation) Status(ctx context.Context, name string) (*nodev1.StatusResponse, error) {
-	return r.status(ctx, name)
-}
-
-func (r *rotation) DeliverPayloads(ctx context.Context, name string) error {
-	return r.deliverPayloads(ctx, name)
-}
 
 func (r *rotation) Nodes() (layer.Nodes, error) {
 	nodes, err := r.nodes()

@@ -78,7 +78,7 @@ func TestSecretsEncryptedToTheRecipientsInside(t *testing.T) {
 	}
 
 	// --recipient replaces the recipients, inside the file too.
-	f, err = ta.openUnlocked(context.Background(), secretFlags{path: path}, changeFlags{recipients: stringList{other.Recipient().String()}})
+	f, err = ta.openUnlocked(context.Background(), secretFlags{path: path}, changeFlags{recipients: []string{other.Recipient().String()}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -142,7 +142,7 @@ func TestChangedSecretsNeedTheirRecipients(t *testing.T) {
 	if _, err := ta.openUnlocked(context.Background(), secretFlags{path: "-"}, changeFlags{}); err == nil || !strings.Contains(err.Error(), "--out") {
 		t.Errorf("err = %v, want a refusal naming --out", err)
 	}
-	if _, err := ta.openUnlocked(context.Background(), secretFlags{path: path}, changeFlags{recipients: stringList{"AGE-SECRET-KEY-1QQQ"}}); err == nil || strings.Contains(err.Error(), "AGE-SECRET") {
+	if _, err := ta.openUnlocked(context.Background(), secretFlags{path: path}, changeFlags{recipients: []string{"AGE-SECRET-KEY-1QQQ"}}); err == nil || strings.Contains(err.Error(), "AGE-SECRET") {
 		t.Errorf("err = %v, want a refusal that does not echo the key", err)
 	}
 }
@@ -154,7 +154,7 @@ func TestPlaintextSecretsEncryptedOnlyOnRequest(t *testing.T) {
 	ta := newTestApp(t)
 	id, _ := age.GenerateX25519Identity()
 	path := filepath.Join(ta.dir, "secrets.json")
-	recipient := stringList{id.Recipient().String()}
+	recipient := []string{id.Recipient().String()}
 	if _, err := ta.openUnlocked(context.Background(), secretFlags{path: path}, changeFlags{recipients: recipient}); err == nil || !strings.Contains(err.Error(), ".age") {
 		t.Errorf("--recipient on a plaintext file in place: %v, want a refusal naming .age", err)
 	}

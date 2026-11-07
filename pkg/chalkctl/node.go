@@ -39,12 +39,7 @@ func (a *app) disks(ctx context.Context, f nodePinFlags, pos []string) error {
 		if err != nil {
 			return err
 		}
-		if p.set() {
-			conn, err = p.dial(t.addr, t.source, t.creds.cert)
-		} else {
-			conn, err = dialInstalled(t)
-		}
-		if err != nil {
+		if conn, err = a.dialEither(t, p); err != nil {
 			return err
 		}
 	case len(pos) == 0 && n.address != "":

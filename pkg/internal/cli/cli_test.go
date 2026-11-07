@@ -90,3 +90,18 @@ func TestUsagef(t *testing.T) {
 		t.Errorf("Usagef = %v", err)
 	}
 }
+
+func TestEnum(t *testing.T) {
+	type step string
+	s := step("b")
+	v := Enum(&s, "step", "a", "b", "c")
+	if v.String() != "b" || v.Type() != "step" {
+		t.Errorf("Enum = %q of type %q", v.String(), v.Type())
+	}
+	if err := v.Set("c"); err != nil || s != "c" {
+		t.Errorf("Set(c) = %v, leaves %q", err, s)
+	}
+	if err := v.Set("d"); err == nil || err.Error() != "want a, b or c" || s != "c" {
+		t.Errorf("Set(d) = %v, leaves %q", err, s)
+	}
+}

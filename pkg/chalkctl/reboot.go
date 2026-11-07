@@ -171,14 +171,8 @@ func (b *rebooter) heldForActivation(ctx context.Context, n *rebootNode, t bootT
 	if n.roles.member() {
 		held = "it stays cordoned"
 	}
-	var st *nodev1.StatusResponse
-	if serr := b.call(n.name, func(conn *client.Conn) error {
-		s, err := conn.Status(ctx, connect.NewRequest(&nodev1.StatusRequest{}))
-		if err == nil {
-			st = s.Msg
-		}
-		return err
-	}); serr != nil {
+	st, serr := b.reach.status(ctx, n.name)
+	if serr != nil {
 		return fmt.Errorf("%w; %s, as its status, which tells whether %s boots next, cannot be read: %w", err, held, t.image, serr)
 	}
 	if boot := st.GetBoot(); boot.GetStagedState() == nodev1.SlotState_SLOT_STATE_ACTIVE && bytes.Equal(boot.GetStaged().GetRootHash(), t.root) {

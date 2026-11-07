@@ -40,16 +40,9 @@ const (
 	clientFile     = "chalkctl.json"
 )
 
-// listFlag is a flag that may be repeated.
-type listFlag []string
-
-func (l *listFlag) String() string     { return strings.Join(*l, ",") }
-func (l *listFlag) Set(v string) error { *l = append(*l, v); return nil }
-func (l *listFlag) Type() string       { return "strings" }
-
 type createFlags struct {
 	lab, secrets  string
-	guestForwards listFlag
+	guestForwards []string
 }
 
 func (a *app) createCommand() *cobra.Command {
@@ -65,7 +58,7 @@ func (a *app) createCommand() *cobra.Command {
 	fs.StringVar(&f.lab, "lab", "", "lab file naming the inventory and the nodes the lab runs (default "+defaultLabFile+" in the current directory)")
 	fs.StringVar(&f.secrets, "secrets", "", "the cluster's secrets file, which chalkctl reads to install the nodes")
 	cmd.MarkFlagRequired("secrets")
-	fs.Var(&f.guestForwards, "guest-forward", "GUEST=HOST: make a host address (a local registry, for example) reachable at a guest address of the VMs' user-mode network; may be repeated")
+	fs.StringArrayVar(&f.guestForwards, "guest-forward", nil, "GUEST=HOST: make a host address (a local registry, for example) reachable at a guest address of the VMs' user-mode network; may be repeated")
 	return cmd
 }
 
