@@ -31,10 +31,7 @@ in
           )
         ];
       };
-      v4l2loopbackCheck =
-        lib.findFirst (d: d.name == "kernel-modules-check")
-          (throw "the image with v4l2loopback runs no kernel-modules-check")
-          v4l2loopback.config.system.checks;
+      v4l2loopbackCheck = v4l2loopback.config.system.build.chalkosKernelModulesCheck;
       tool = lib.getExe (pkgs.callPackage ../kernel-modules.nix { });
       full = lib.getOutput "modules" worker.config.boot.kernelPackages.kernel;
       version = worker.config.boot.kernelPackages.kernel.modDirVersion;
@@ -289,9 +286,7 @@ in
         }).config.system.build.chalkosRulesCheck;
       # The router image loads nf_conntrack, the modules of its firewall and Jool, which its module
       # tree must hold with what they depend on.
-      routerModules = lib.findFirst (
-        d: d.name == "kernel-modules-check"
-      ) (throw "the router image runs no kernel-modules-check") checkLib.router.config.system.checks;
+      routerModules = checkLib.router.config.system.build.chalkosKernelModulesCheck;
       demo = rule: {
         chalkos.kinds.Demo = {
           group = "demo.example.org";

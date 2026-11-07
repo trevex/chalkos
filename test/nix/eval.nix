@@ -2775,7 +2775,7 @@ lib.runTests {
         all = image [ { chalkos.kernel.allModules = true; } ];
         tree = c: c.system.build.chalkosKernelModules;
         kernelModules = c: "${lib.getOutput "modules" c.boot.kernelPackages.kernel}";
-        check = lib.findFirst (d: d.name == "kernel-modules-check") null c.system.checks;
+        check = c.system.build.chalkosKernelModulesCheck;
         loaded = lib.splitString "\n" check.loaded;
       in
       {
