@@ -108,3 +108,16 @@ func (v Version) Release() string { return strings.TrimPrefix(v.String(), "v") }
 
 // Minors is how many minors v is newer than o, of the same major; negative when it is older.
 func (v Version) Minors(o Version) int { return v.Minor - o.Minor }
+
+// RegistryHost is the registry an image reference's host names, as go-containerregistry names
+// registries: in lower case, and DockerHub for docker.io.
+func RegistryHost(host string) (string, error) {
+	r, err := name.NewRegistry(strings.ToLower(host), name.StrictValidation)
+	if err != nil {
+		return "", err
+	}
+	return r.RegistryStr(), nil
+}
+
+// DockerHub is Docker Hub's registry as RegistryHost names it.
+const DockerHub = "index.docker.io"

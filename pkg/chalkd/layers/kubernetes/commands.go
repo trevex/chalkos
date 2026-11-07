@@ -152,5 +152,9 @@ func registryCredentials(runDir, credentials, dir string) error {
 	if err != nil {
 		return err
 	}
-	return credprovider.Write(dir, filepath.Dir(exe), r.Logins)
+	logins := make([]credprovider.Login, len(r.Logins))
+	for i, l := range r.Logins {
+		logins[i] = credprovider.Login{Host: l.Host, Username: l.Username, Password: l.Password}
+	}
+	return credprovider.Write(dir, filepath.Dir(exe), logins)
 }

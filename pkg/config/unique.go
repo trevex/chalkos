@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/trevex/chalkos/pkg/imageref"
 	"github.com/trevex/chalkos/pkg/schema"
 )
 
@@ -44,7 +45,7 @@ var normalisers = map[string]func(string) (string, bool){
 		return p.Masked().String(), err == nil
 	},
 	"host": func(s string) (string, bool) {
-		h, err := RegistryHost(s)
+		h, err := imageref.RegistryHost(s)
 		return h, err == nil
 	},
 	"lower": func(s string) (string, bool) { return strings.ToLower(s), true },

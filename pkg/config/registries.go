@@ -5,7 +5,7 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/google/go-containerregistry/pkg/name"
+	"github.com/trevex/chalkos/pkg/imageref"
 )
 
 // RegistryCredentials are what a Registry document gives a node for its host: Username and
@@ -15,19 +15,6 @@ type RegistryCredentials struct {
 	Host, Username, Password string
 	Insecure                 bool
 }
-
-// RegistryHost is the registry an image reference's host names, as go-containerregistry names
-// registries: in lower case, and index.docker.io for docker.io.
-func RegistryHost(host string) (string, error) {
-	r, err := name.NewRegistry(strings.ToLower(host), name.StrictValidation)
-	if err != nil {
-		return "", err
-	}
-	return r.RegistryStr(), nil
-}
-
-// dockerHub is Docker Hub's registry as RegistryHost names it.
-const dockerHub = "index.docker.io"
 
 // RegistryMirror is what a Mirror document says of its registry: the endpoints chalkd and
 // containerd try in order before the registry itself.
@@ -60,7 +47,7 @@ func RegistriesOf(docs Documents, secret func(SecretRef) (string, bool)) (Regist
 		if err := d.decodeSpec(&spec); err != nil {
 			return Registries{}, err
 		}
-		reg, err := RegistryHost(spec.Host)
+		reg, err := imageref.RegistryHost(spec.Host)
 		if err != nil {
 			return Registries{}, fmt.Errorf("%s: host %q: %w", d, spec.Host, err)
 		}
@@ -91,7 +78,7 @@ func RegistriesOf(docs Documents, secret func(SecretRef) (string, bool)) (Regist
 		if err := d.decodeSpec(&spec); err != nil {
 			return Registries{}, err
 		}
-		reg, err := RegistryHost(spec.Registry)
+		reg, err := imageref.RegistryHost(spec.Registry)
 		if err != nil {
 			return Registries{}, fmt.Errorf("%s: registry %q: %w", d, spec.Registry, err)
 		}
@@ -110,7 +97,7 @@ func RegistriesOf(docs Documents, secret func(SecretRef) (string, bool)) (Regist
 			if u.User != nil {
 				return Registries{}, fmt.Errorf("%s: the endpoint %q holds a user; give the credentials of %s in its Registry instead", d, u.Redacted(), u.Host)
 			}
-			if _, err := RegistryHost(u.Host); err != nil {
+			if _, err := imageref.RegistryHost(u.Host); err != nil {
 				return Registries{}, fmt.Errorf("%s: the endpoint %s: %w", d, e, err)
 			}
 			if l, ok := r.Login(u.Host); u.Scheme == "http" && (!ok || !l.Insecure) {
@@ -124,12 +111,12 @@ func RegistriesOf(docs Documents, secret func(SecretRef) (string, bool)) (Regist
 
 // Login returns the Registry of host, by any of its names, and whether there is one.
 func (r Registries) Login(host string) (RegistryCredentials, bool) {
-	reg, err := RegistryHost(host)
+	reg, err := imageref.RegistryHost(host)
 	if err != nil {
 		return RegistryCredentials{}, false
 	}
 	for _, l := range r.Logins {
-		if h, _ := RegistryHost(l.Host); h == reg {
+		if h, _ := imageref.RegistryHost(l.Host); h == reg {
 			return l, true
 		}
 	}
@@ -138,12 +125,12 @@ func (r Registries) Login(host string) (RegistryCredentials, bool) {
 
 // Endpoints returns the endpoints of the Mirror of host, by any of its names; none without one.
 func (r Registries) Endpoints(host string) []string {
-	reg, err := RegistryHost(host)
+	reg, err := imageref.RegistryHost(host)
 	if err != nil {
 		return nil
 	}
 	for _, m := range r.Mirrors {
-		if h, _ := RegistryHost(m.Registry); h == reg {
+		if h, _ := imageref.RegistryHost(m.Registry); h == reg {
 			return m.Endpoints
 		}
 	}
@@ -159,9 +146,9 @@ func (r Registries) HostsTOML() map[string]string {
 	out := map[string]string{}
 	add := func(host string, endpoints []string) {
 		// RegistriesOf checked the host.
-		reg, _ := RegistryHost(host)
+		reg, _ := imageref.RegistryHost(host)
 		dir, server := reg, reg
-		if reg == dockerHub {
+		if reg == imageref.DockerHub {
 			dir, server = "docker.io", "registry-1.docker.io"
 		}
 		if _, ok := out[dir]; ok {

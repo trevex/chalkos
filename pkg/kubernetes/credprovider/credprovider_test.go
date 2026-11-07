@@ -8,13 +8,11 @@ import (
 	"reflect"
 	"strings"
 	"testing"
-
-	"github.com/trevex/chalkos/pkg/config"
 )
 
-var logins = []config.RegistryCredentials{
+var logins = []Login{
 	{Host: "Index.Docker.io", Username: "hub-bot", Password: "hub-s3cret"},
-	{Host: "10.0.0.5:5000", Insecure: true},
+	{Host: "10.0.0.5:5000"},
 	{Host: "[fd00::1]:5000", Username: "lan", Password: "lan-s3cret"},
 	{Host: "quay.io", Username: "robot"},
 }
@@ -139,14 +137,14 @@ func TestProvideWithoutCredentials(t *testing.T) {
 
 // TestWriteRefusesIPv6WithoutPort refuses an IPv6 host the kubelet could not match.
 func TestWriteRefusesIPv6WithoutPort(t *testing.T) {
-	err := Write(t.TempDir(), "/bin", []config.RegistryCredentials{{Host: "[fd00::1]", Username: "lan", Password: "p"}})
+	err := Write(t.TempDir(), "/bin", []Login{{Host: "[fd00::1]", Username: "lan", Password: "p"}})
 	if err == nil || !strings.Contains(err.Error(), "only with its port") {
 		t.Errorf("err = %v", err)
 	}
-	if err := Write(t.TempDir(), "/bin", []config.RegistryCredentials{{Host: "[fd00::1]"}}); err != nil {
+	if err := Write(t.TempDir(), "/bin", []Login{{Host: "[fd00::1]"}}); err != nil {
 		t.Errorf("an IPv6 host without a user: %v", err)
 	}
-	if err := Write(t.TempDir(), "/bin", []config.RegistryCredentials{{Host: "[fd00::1]:443", Username: "lan", Password: "p"}}); err != nil {
+	if err := Write(t.TempDir(), "/bin", []Login{{Host: "[fd00::1]:443", Username: "lan", Password: "p"}}); err != nil {
 		t.Errorf("an IPv6 host with port 443: %v", err)
 	}
 }

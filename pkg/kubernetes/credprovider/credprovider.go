@@ -7,10 +7,8 @@ package credprovider
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
-	"io/fs"
 	"maps"
 	"os"
 	"path/filepath"
@@ -20,7 +18,8 @@ import (
 	"github.com/google/go-containerregistry/pkg/name"
 
 	"github.com/trevex/chalkos/pkg/atomicfile"
-	"github.com/trevex/chalkos/pkg/config"
+	"github.com/trevex/chalkos/pkg/imageref"
+	"github.com/trevex/chalkos/pkg/jsonfile"
 )
 
 const apiVersion = "credentialprovider.kubelet.k8s.io/v1"
@@ -31,7 +30,14 @@ const apiVersion = "credentialprovider.kubelet.k8s.io/v1"
 // short at the price of one run of chalkd per registry with credentials every five minutes.
 const cacheDuration = "5m"
 
-type login struct {
+// Login is a registry's user and password, as a Registry document gives them to a node; an
+// empty Username stands for an anonymous registry.
+type Login struct {
+	Host, Username, Password string
+}
+
+// auth is a registry's credentials in credentials.json and the kubelet's response.
+type auth struct {
 	Username string `json:"username"`
 	Password string `json:"password"`
 }
@@ -60,17 +66,17 @@ type request struct {
 
 // response is the CredentialProviderResponse the kubelet reads.
 type response struct {
-	APIVersion   string           `json:"apiVersion"`
-	Kind         string           `json:"kind"`
-	CacheKeyType string           `json:"cacheKeyType"`
-	Auth         map[string]login `json:"auth,omitempty"`
+	APIVersion   string          `json:"apiVersion"`
+	Kind         string          `json:"kind"`
+	CacheKeyType string          `json:"cacheKeyType"`
+	Auth         map[string]auth `json:"auth,omitempty"`
 }
 
 // kubeletHost is the host an image's registry is as the kubelet names it: as RegistryHost names
 // it, but docker.io for Docker Hub, as the kubelet normalises image names.
 func kubeletHost(host string) (string, error) {
-	reg, err := config.RegistryHost(host)
-	if reg == "index.docker.io" {
+	reg, err := imageref.RegistryHost(host)
+	if reg == imageref.DockerHub {
 		reg = "docker.io"
 	}
 	return reg, err
@@ -84,8 +90,8 @@ func kubeletHost(host string) (string, error) {
 // kubelet refuses a config without providers. The kubelet reads the config when it starts. Write
 // refuses an IPv6 host without a port: the kubelet strips the brackets of an IPv6 address only
 // together with a port, and otherwise reads them as a character class of its glob.
-func Write(dir, bin string, logins []config.RegistryCredentials) error {
-	creds := map[string]login{}
+func Write(dir, bin string, logins []Login) error {
+	creds := map[string]auth{}
 	for _, l := range logins {
 		if l.Username == "" {
 			continue
@@ -97,7 +103,7 @@ func Write(dir, bin string, logins []config.RegistryCredentials) error {
 		if strings.HasPrefix(h, "[") && !strings.Contains(h, "]:") {
 			return fmt.Errorf("registry %q: the kubelet matches an IPv6 host only with its port; give the port, such as %s:443", l.Host, h)
 		}
-		creds[h] = login{l.Username, l.Password}
+		creds[h] = auth{l.Username, l.Password}
 	}
 	if err := os.MkdirAll(filepath.Dir(dir), 0o755); err != nil {
 		return err
@@ -159,7 +165,7 @@ func Provide(dir string, in io.Reader, out io.Writer) error {
 	if ref, err := name.ParseReference(req.Image); err == nil {
 		if host, err := kubeletHost(ref.Context().RegistryStr()); err == nil {
 			if l, ok := creds[host]; ok {
-				resp.Auth = map[string]login{host: l}
+				resp.Auth = map[string]auth{host: l}
 			}
 		}
 	}
@@ -168,17 +174,7 @@ func Provide(dir string, in io.Reader, out io.Writer) error {
 
 // readCredentials returns the credentials Write wrote into dir, by registry; none before it wrote
 // any.
-func readCredentials(dir string) (map[string]login, error) {
-	data, err := os.ReadFile(filepath.Join(dir, "credentials.json"))
-	if errors.Is(err, fs.ErrNotExist) {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, err
-	}
-	var creds map[string]login
-	if err := json.Unmarshal(data, &creds); err != nil {
-		return nil, fmt.Errorf("credentials.json: %w", err)
-	}
-	return creds, nil
+func readCredentials(dir string) (map[string]auth, error) {
+	var creds map[string]auth
+	return creds, jsonfile.Read(filepath.Join(dir, "credentials.json"), &creds)
 }
