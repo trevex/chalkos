@@ -112,8 +112,6 @@ func startNodeWith(t *testing.T, ca pki.CertKey, url, name string, ttl int, h *h
 		Addresses: node.addrs,
 		TTL:       ttl,
 		Interval:  50 * time.Millisecond,
-		Margin:    2 * time.Second,
-		Failures:  3,
 		Holding:   &atomic.Bool{},
 	}
 	t.Cleanup(node.election.Close)
@@ -478,14 +476,10 @@ func eventually(t *testing.T, what string, check func() bool) {
 	}
 }
 
-// An election's zero fields take the defaults, and a nil Holding still tracks the holder.
+// An election's zero fields take the defaults.
 func TestElectionDefaults(t *testing.T) {
 	e := &Election{}
-	if e.ttl() != DefaultTTL || e.interval() != DefaultInterval || e.margin() != DefaultMargin || e.failures() != DefaultFailures {
-		t.Errorf("defaults %d, %v, %v, %d", e.ttl(), e.interval(), e.margin(), e.failures())
-	}
-	e.holding().Store(true)
-	if !e.held.Load() {
-		t.Error("a nil Holding does not track the holder")
+	if e.ttl() != DefaultTTL || e.interval() != DefaultInterval {
+		t.Errorf("defaults %d, %v", e.ttl(), e.interval())
 	}
 }
