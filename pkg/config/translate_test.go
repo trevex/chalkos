@@ -2,12 +2,14 @@ package config
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
 
+	"github.com/trevex/chalkos/pkg/identity"
 	"github.com/trevex/chalkos/pkg/schema"
 )
 
@@ -132,5 +134,63 @@ func TestIdentityHostname(t *testing.T) {
 				t.Errorf("hostname = %q, want %q", id.Hostname, tc.want)
 			}
 		})
+	}
+}
+
+// TestTranslateRunsTheTranslatorsInOrder runs the image's translators in their order on the
+// identity every image gives, and stops at the first that fails with its error as it is.
+func TestTranslateRunsTheTranslatorsInOrder(t *testing.T) {
+	var ran []string
+	translator := func(name string, err error) Translator {
+		return func(s *Set, node string, id *identity.Identity) error {
+			if id.Hostname != "n1" || id.Platform != "kvm" || node != "n1" {
+				t.Errorf("translator %s: node %q, identity %+v, want n1 on kvm with the common identity", name, node, id)
+			}
+			ran = append(ran, name)
+			if err != nil {
+				return err
+			}
+			return id.SetLayer(name, name)
+		}
+	}
+	docs := mustParse(t, minimal)
+
+	target := Target{Platform: "kvm", Translators: []Translator{translator("a", nil), translator("b", nil)}}
+	set, id, err := Translate("n1", docs, allSchemas(t), target)
+	if err != nil || set == nil {
+		t.Fatalf("Translate = %v, %v", set, err)
+	}
+	if strings.Join(ran, ",") != "a,b" || string(id.Layers["a"]) != `"a"` || string(id.Layers["b"]) != `"b"` {
+		t.Errorf("ran %v, layers %s, want a then b and the part of each", ran, id.Layers)
+	}
+
+	ran = nil
+	refused := errors.New("refused")
+	target.Translators = []Translator{translator("a", nil), translator("b", refused), translator("c", nil)}
+	set, id, err = Translate("n1", docs, allSchemas(t), target)
+	if err != refused {
+		t.Errorf("err = %v, want the translator's error unwrapped", err)
+	}
+	if set != nil || !reflect.DeepEqual(id, identity.Identity{}) {
+		t.Errorf("set = %v, identity = %+v, want neither on an error", set, id)
+	}
+	if strings.Join(ran, ",") != "a,b" {
+		t.Errorf("ran %v, want a and b, stopping at b", ran)
+	}
+}
+
+// TestIdentityOfAnImageWithoutTranslators gives a node whose image's layers translate nothing
+// an empty layers section.
+func TestIdentityOfAnImageWithoutTranslators(t *testing.T) {
+	_, id, err := Translate("n1", mustParse(t, minimal), allSchemas(t), Target{Platform: "kvm"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := json.Marshal(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), `"layers":{}`) {
+		t.Errorf("identity = %s, want empty layers", data)
 	}
 }
