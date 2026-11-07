@@ -3,7 +3,6 @@ package router
 import (
 	"slices"
 
-	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/router/derive"
 	"github.com/trevex/chalkos/pkg/schema"
 	"github.com/trevex/chalkos/pkg/validators"
@@ -16,7 +15,7 @@ import (
 // would. An image without the router layer runs none.
 func (*Plugin) Validators(s *schema.Schemas) []validators.Linked {
 	kinds := s.Kinds()
-	if !slices.ContainsFunc(kinds, func(k schema.Kind) bool { return k.APIVersion == config.RouterAPI && k.Kind == "Router" }) {
+	if !slices.ContainsFunc(kinds, func(k schema.Kind) bool { return k.APIVersion == derive.API && k.Kind == "Router" }) {
 		return nil
 	}
 	read := derive.Kinds()

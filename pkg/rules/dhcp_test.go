@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/trevex/chalkos/pkg/config"
+	"github.com/trevex/chalkos/pkg/router/derive"
 	"github.com/trevex/chalkos/pkg/schema"
 )
 
@@ -225,7 +226,7 @@ func TestDHCPSubnetSchema(t *testing.T) {
 		{`["*"]`, false},
 		{`["lan0x123456789ab"]`, false},
 	} {
-		d := builtinDoc(t, config.RouterAPI, "DHCPSubnet", "office", `{"interfaces": `+tc.interfaces+`, "subnet": "192.0.2.0/24"}`)
+		d := builtinDoc(t, derive.API, "DHCPSubnet", "office", `{"interfaces": `+tc.interfaces+`, "subnet": "192.0.2.0/24"}`)
 		if err := s.Validate(d.Object); (err == nil) != tc.ok {
 			t.Errorf("interfaces %s: err = %v, want accepted %v", tc.interfaces, err, tc.ok)
 		}

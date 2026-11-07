@@ -5,6 +5,8 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/trevex/chalkos/pkg/router/derive"
 )
 
 // A number of an integer value takes its integer spelling wherever it is; a fraction, plain
@@ -44,7 +46,7 @@ func TestSetHoldsIntegersInPlainDigits(t *testing.T) {
 		if err != nil {
 			t.Fatalf("table %s: %v", table, err)
 		}
-		vrf := set.Documents().Of(RouterAPI, "VRF")
+		vrf := set.Documents().Of(derive.API, "VRF")
 		if len(vrf) != 1 {
 			t.Fatalf("table %s: %d VRFs", table, len(vrf))
 		}

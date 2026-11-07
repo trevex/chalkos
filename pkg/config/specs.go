@@ -16,7 +16,6 @@ const (
 	KubernetesAPI = "kubernetes.chalkos.dev/v1alpha1"
 	NetworkdAPI   = "networkd.chalkos.dev/v1alpha1"
 	OCIAPI        = "oci.chalkos.dev/v1alpha1"
-	RouterAPI     = "router.chalkos.dev/v1alpha1"
 )
 
 // SecretRef names a key of a Secret document.

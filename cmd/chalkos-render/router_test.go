@@ -71,7 +71,7 @@ func routerInput(t *testing.T, path string) string {
 			byKind[d.Kind] = append(byKind[d.Kind], d.Object)
 			continue
 		}
-		if d.APIVersion != config.RouterAPI {
+		if d.APIVersion != derive.API {
 			continue
 		}
 		filled, err := s.Default(d.Object)
@@ -494,7 +494,7 @@ func TestRouterRefusals(t *testing.T) {
 		if err := dec.Decode(&s); err != nil {
 			t.Fatal(err)
 		}
-		return map[string]any{"apiVersion": config.RouterAPI, "kind": kind, "metadata": map[string]any{"name": name}, "spec": s}
+		return map[string]any{"apiVersion": derive.API, "kind": kind, "metadata": map[string]any{"name": name}, "spec": s}
 	}
 	zone := doc("FirewallZone", "wan", `{"interfaces": ["eth0"]}`)
 	rule := func(r string) any {
@@ -561,7 +561,7 @@ func TestFRRRefusals(t *testing.T) {
 		if err := dec.Decode(&s); err != nil {
 			t.Fatal(err)
 		}
-		return map[string]any{"apiVersion": config.RouterAPI, "kind": kind, "metadata": map[string]any{"name": name}, "spec": s}
+		return map[string]any{"apiVersion": derive.API, "kind": kind, "metadata": map[string]any{"name": name}, "spec": s}
 	}
 	bgp := func(more string) any {
 		return doc("BGP", "bgp", `{"asn": 64512, "routerID": "192.0.2.1", "multipath": {"ebgp": 1, "ibgp": 1, "asPathRelax": false},
@@ -701,7 +701,7 @@ func routerDoc(t *testing.T, kind, name, spec string) any {
 	if err := dec.Decode(&s); err != nil {
 		t.Fatal(err)
 	}
-	return map[string]any{"apiVersion": config.RouterAPI, "kind": kind, "metadata": map[string]any{"name": name}, "spec": s}
+	return map[string]any{"apiVersion": derive.API, "kind": kind, "metadata": map[string]any{"name": name}, "spec": s}
 }
 
 // refused renders the output of args from docs and wants an error that holds want.

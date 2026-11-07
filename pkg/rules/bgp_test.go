@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/trevex/chalkos/pkg/config"
+	"github.com/trevex/chalkos/pkg/router/derive"
 	"github.com/trevex/chalkos/pkg/schema"
 )
 
@@ -245,7 +246,7 @@ func TestBGPSchemas(t *testing.T) {
 		{"BGPPeer", `{"address": "198.51.100.1", "remoteAS": 64496, "description": "transit "}`, false},
 		{"BGPPeer", `{"address": "198.51.100.1", "remoteAS": 64496, "description": "x password @secret_bgp.fabric@"}`, false},
 	} {
-		d := builtinDoc(t, config.RouterAPI, tc.kind, "a", tc.spec)
+		d := builtinDoc(t, derive.API, tc.kind, "a", tc.spec)
 		if err := s.Validate(d.Object); (err == nil) != tc.ok {
 			t.Errorf("%s %s: err = %v, want accepted %v", tc.kind, tc.spec, err, tc.ok)
 		}
@@ -329,7 +330,7 @@ func TestBGPKeepsTheDefaultInstance(t *testing.T) {
 	inTenant := doc("BGP", "tenant", `{"vrf": "tenant", "asn": 64512, "routerID": "192.0.2.1"}`)
 	moved := doc("BGP", "bgp", `{"vrf": "tenant", "asn": 64512, "routerID": "192.0.2.1"}`)
 	// A running config of an image whose BGP has no vrf holds documents without the field.
-	before := builtinDoc(t, config.RouterAPI, "BGP", "bgp", `{"asn": 64512, "routerID": "192.0.2.1"}`)
+	before := builtinDoc(t, derive.API, "BGP", "bgp", `{"asn": 64512, "routerID": "192.0.2.1"}`)
 	refused := []string{"the config drops the default VRF's BGP document and keeps a running BGP instance of another VRF, which FRR does not allow; drop the other VRFs' BGP documents in the same delivery, or keep the default VRF's"}
 	for _, tc := range []struct {
 		name      string

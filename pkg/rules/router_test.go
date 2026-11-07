@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/trevex/chalkos/pkg/config"
+	"github.com/trevex/chalkos/pkg/router/derive"
 	"github.com/trevex/chalkos/pkg/schema"
 )
 
@@ -23,7 +24,7 @@ func routerRules(t *testing.T) (*Set, func(kind, name, spec string) config.Docum
 	}
 	return set, func(kind, name, spec string) config.Document {
 		t.Helper()
-		d := builtinDoc(t, config.RouterAPI, kind, name, spec)
+		d := builtinDoc(t, derive.API, kind, name, spec)
 		filled, err := s.Default(d.Object)
 		if err != nil {
 			t.Fatal(err)
@@ -63,7 +64,7 @@ func TestRouterSchemaFormats(t *testing.T) {
 		{"FirewallPolicy", `{"from": "wan", "to": "local", "rules": [{"protocol": "tcp", "sourcePorts": ["22"], "action": "accept"}]}`, "a single port is a number, unquoted"},
 		{"NAT64", `{"pool4": [{"prefix": "192.0.2.10/32", "ports": "65535-61001"}]}`, "is not valid port-range"},
 	} {
-		d := builtinDoc(t, config.RouterAPI, tc.kind, "x", tc.spec)
+		d := builtinDoc(t, derive.API, tc.kind, "x", tc.spec)
 		err := s.Validate(d.Object)
 		switch {
 		case tc.want == "" && err != nil:

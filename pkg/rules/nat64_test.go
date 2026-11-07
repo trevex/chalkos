@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/trevex/chalkos/pkg/config"
+	"github.com/trevex/chalkos/pkg/router/derive"
 	"github.com/trevex/chalkos/pkg/schema"
 )
 
@@ -212,7 +213,7 @@ func TestNAT64Schemas(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	filled, err := s.Default(builtinDoc(t, config.RouterAPI, "NAT64", "edge", `{"pool4": [{"prefix": "192.0.2.10/32"}]}`).Object)
+	filled, err := s.Default(builtinDoc(t, derive.API, "NAT64", "edge", `{"pool4": [{"prefix": "192.0.2.10/32"}]}`).Object)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -236,7 +237,7 @@ func TestNAT64Schemas(t *testing.T) {
 		{`{"listen": [], "allow": ["2001:db8::/32"]}`, false},
 		{`{"listen": ["2001:db8::1"], "allow": []}`, false},
 	} {
-		d := builtinDoc(t, config.RouterAPI, "Resolver", "resolver", tc.spec)
+		d := builtinDoc(t, derive.API, "Resolver", "resolver", tc.spec)
 		if err := s.Validate(d.Object); (err == nil) != tc.ok {
 			t.Errorf("Resolver %s: err = %v, want accepted %v", tc.spec, err, tc.ok)
 		}

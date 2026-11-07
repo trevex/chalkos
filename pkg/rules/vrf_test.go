@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/trevex/chalkos/pkg/config"
+	"github.com/trevex/chalkos/pkg/router/derive"
 	"github.com/trevex/chalkos/pkg/schema"
 )
 
@@ -132,7 +133,7 @@ func TestVRFSchema(t *testing.T) {
 		{`{"table": 100, "conntrackZone": 0}`, false},
 		{`{"table": 100, "conntrackZone": 65536}`, false},
 	} {
-		d := builtinDoc(t, config.RouterAPI, "VRF", "tenant", tc.spec)
+		d := builtinDoc(t, derive.API, "VRF", "tenant", tc.spec)
 		if err := s.Validate(d.Object); (err == nil) != tc.ok {
 			t.Errorf("%s: err = %v, want accepted %v", tc.spec, err, tc.ok)
 		}

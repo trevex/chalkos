@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/trevex/chalkos/pkg/router/derive"
 	"github.com/trevex/chalkos/pkg/schema"
 )
 
@@ -19,7 +20,7 @@ func routerSchemas(t *testing.T) *schema.Schemas {
 
 // routerDoc is a router document of the kind with the spec given in YAML flow style.
 func routerDoc(kind, name, spec string) string {
-	return "---\napiVersion: " + RouterAPI + "\nkind: " + kind + "\nmetadata: {name: " + name + "}\nspec: " + spec + "\n"
+	return "---\napiVersion: " + derive.API + "\nkind: " + kind + "\nmetadata: {name: " + name + "}\nspec: " + spec + "\n"
 }
 
 // checkRouterRefs checks the references of router documents, with their schema defaults filled
@@ -78,10 +79,10 @@ func TestRouterVRFRefs(t *testing.T) {
 		t.Fatal(err)
 	}
 	for id, want := range map[ID]int{
-		{APIVersion: RouterAPI, Kind: "BGP", Name: "bgp"}:    0,
-		{APIVersion: RouterAPI, Kind: "BGPPeer", Name: "up"}: 0,
-		{APIVersion: RouterAPI, Kind: "BGP", Name: "tenant"}: 1,
-		{APIVersion: RouterAPI, Kind: "VRF", Name: "tenant"}: 0,
+		{APIVersion: derive.API, Kind: "BGP", Name: "bgp"}:    0,
+		{APIVersion: derive.API, Kind: "BGPPeer", Name: "up"}: 0,
+		{APIVersion: derive.API, Kind: "BGP", Name: "tenant"}: 1,
+		{APIVersion: derive.API, Kind: "VRF", Name: "tenant"}: 0,
 	} {
 		if got := refs[id]; len(got) != want {
 			t.Errorf("%s references %v, want %d", id, got, want)

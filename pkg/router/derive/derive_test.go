@@ -45,7 +45,7 @@ func example(t *testing.T, name string) map[string]any {
 	byKind := map[string][]any{}
 	for _, d := range docs {
 		obj := d.Object
-		if d.APIVersion == config.RouterAPI {
+		if d.APIVersion == API {
 			if obj, err = s.Default(d.Object); err != nil {
 				t.Fatal(err)
 			}
@@ -82,7 +82,7 @@ func document(t *testing.T, kind, name, spec string) any {
 // routerDoc is a document of a router kind called name, with spec in JSON, its numbers exact.
 func routerDoc(t *testing.T, kind, name, spec string) any {
 	t.Helper()
-	return withSpec(t, config.RouterAPI, kind, name, spec)
+	return withSpec(t, API, kind, name, spec)
 }
 
 func withSpec(t *testing.T, apiVersion, kind, name, spec string) any {
@@ -188,7 +188,7 @@ func TestDefaultRouterMatchesTheSchema(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	filled, err := s.Default(map[string]any{"apiVersion": config.RouterAPI, "kind": "Router", "metadata": map[string]any{"name": "router"}, "spec": map[string]any{}})
+	filled, err := s.Default(map[string]any{"apiVersion": API, "kind": "Router", "metadata": map[string]any{"name": "router"}, "spec": map[string]any{}})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -25,6 +25,9 @@ import (
 	"strings"
 )
 
+// API is the apiVersion of the router layer's kinds.
+const API = "router.chalkos.dev/v1alpha1"
+
 // Kinds are the kinds whose documents Build reads, a copy of kinds for the caller to keep.
 func Kinds() []string { return slices.Clone(kinds) }
 
