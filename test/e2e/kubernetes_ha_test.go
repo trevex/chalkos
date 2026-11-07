@@ -579,6 +579,20 @@ func (c *haCluster) rolloutControlPlane(ctx context.Context, cs kubernetes.Inter
 		return nil
 	})
 	waitFor(t, 5*time.Minute, "the three nodes Ready", func() error { return nodesReady(ctx, cs, "cp1", "cp2", "cp3") })
+	// A renewal still failing would render the static pods again on its retry, restarting etcd
+	// while the next phase reboots another control plane.
+	waitFor(t, 5*time.Minute, "no renewal failing", func() error {
+		for _, hn := range haNodes {
+			out, err := c.chalkctl(hn.name, "status", hn.name)
+			if err != nil {
+				return err
+			}
+			if strings.Contains(out, "renewal failing") {
+				return fmt.Errorf("a renewal of %s fails:\n%s", hn.name, out)
+			}
+		}
+		return nil
+	})
 	// Status reports the API server of the config next to the image's kubelet, a patch behind it.
 	want := "kubernetes versions: API server 1.37.2, kubelet 1.37.1, control-plane pods current\n"
 	if out, err := c.chalkctl("cp1", "status", "cp1"); err != nil || !strings.Contains(out, want) {
