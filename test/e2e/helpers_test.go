@@ -16,11 +16,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
-	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -87,8 +85,19 @@ func copyFixtures() (dir string, err error) {
 			dir = ""
 		}
 	}()
-	if err := copyTree(src, dir); err != nil {
+	if err := os.CopyFS(dir, os.DirFS(src)); err != nil {
 		return "", err
+	}
+	// The copy leaves out the images directories, such as image directories linked there to
+	// validate the fixtures by hand: the environment names the images.
+	stale, err := filepath.Glob(filepath.Join(dir, "*", "images"))
+	if err != nil {
+		return "", err
+	}
+	for _, d := range stale {
+		if err := os.RemoveAll(d); err != nil {
+			return "", err
+		}
 	}
 	for link, env := range images {
 		target := os.Getenv(env)
@@ -104,44 +113,6 @@ func copyFixtures() (dir string, err error) {
 		}
 	}
 	return dir, nil
-}
-
-// copyTree copies the directories, regular files and links below src into dst, which exists. It
-// leaves out what lies below an images directory, such as image directories linked there to
-// validate the fixtures by hand: the environment names the images.
-func copyTree(src, dst string) error {
-	return filepath.WalkDir(src, func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		rel, err := filepath.Rel(src, path)
-		if err != nil {
-			return err
-		}
-		target := filepath.Join(dst, rel)
-		switch {
-		case d.IsDir() && d.Name() == "images":
-			return fs.SkipDir
-		case d.IsDir():
-			return os.MkdirAll(target, 0o755)
-		case d.Type()&fs.ModeSymlink != 0:
-			if slices.Contains(strings.Split(rel, string(filepath.Separator)), "images") {
-				return nil
-			}
-			link, err := os.Readlink(path)
-			if err != nil {
-				return err
-			}
-			return os.Symlink(link, target)
-		case !d.Type().IsRegular():
-			return nil
-		}
-		data, err := os.ReadFile(path)
-		if err != nil {
-			return err
-		}
-		return os.WriteFile(target, data, 0o644)
-	})
 }
 
 // inventories are the fixtures' inventories by the names the tests give them: the main cluster,
