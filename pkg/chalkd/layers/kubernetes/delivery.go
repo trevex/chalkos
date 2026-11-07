@@ -20,7 +20,6 @@ import (
 	"github.com/trevex/chalkos/pkg/identity"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
 	knode "github.com/trevex/chalkos/pkg/kubernetes/node"
-	"github.com/trevex/chalkos/pkg/kubernetes/nodeip"
 	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
 	"github.com/trevex/chalkos/pkg/nodeconfig"
 	"github.com/trevex/chalkos/pkg/pki"
@@ -34,20 +33,18 @@ var (
 // Accepts takes the node's share.
 func (p *Plugin) Accepts(payload *anypb.Any) bool { return kpki.IsPayload(payload) }
 
-// CheckIdentity refuses an identity whose Kubernetes part a node could not pick its addresses
-// by: it would run no kubelet.
+// CheckIdentity refuses an identity whose Kubernetes part a node could not read, such as one
+// whose addresses it could not pick by: it would run no kubelet.
 func (p *Plugin) CheckIdentity(data []byte) error {
 	var id identity.Identity
 	if err := json.Unmarshal(data, &id); err != nil {
 		return failed(connect.CodeInvalidArgument, "parse the identity: %v", err)
 	}
-	if k := id.Kubernetes; k != nil {
-		if err := k.CheckNodeIPs(); err != nil {
-			return failed(connect.CodeInvalidArgument, "the identity's %v", err)
-		}
-		if _, err := nodeip.ParseFilter(k.ValidSubnets); err != nil {
-			return failed(connect.CodeInvalidArgument, "%v", err)
-		}
+	if id.Kubernetes == nil {
+		return nil
+	}
+	if _, err := k8s.ParseNode(data); err != nil {
+		return failed(connect.CodeInvalidArgument, "%v", err)
 	}
 	return nil
 }

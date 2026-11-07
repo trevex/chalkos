@@ -5,9 +5,7 @@
 package identity
 
 import (
-	"fmt"
 	"maps"
-	"net/netip"
 	"slices"
 	"strings"
 
@@ -38,16 +36,6 @@ type Kubernetes struct {
 	// ValidSubnets are the subnets the node picks its addresses from instead of its cluster's;
 	// nil uses the cluster's.
 	ValidSubnets []string `json:"validSubnets"`
-}
-
-// CheckNodeIPs checks that the fixed addresses are addresses.
-func (k Kubernetes) CheckNodeIPs() error {
-	for _, ip := range k.NodeIPs {
-		if _, err := netip.ParseAddr(ip); err != nil {
-			return fmt.Errorf("nodeIPs: %q is not an address", ip)
-		}
-	}
-	return nil
 }
 
 // StaticAddresses returns the addresses of the node's networkd networks, in network name order,

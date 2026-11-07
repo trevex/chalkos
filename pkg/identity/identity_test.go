@@ -17,13 +17,3 @@ func TestStaticAddresses(t *testing.T) {
 		t.Errorf("StaticAddresses() = %v, want %v", got, want)
 	}
 }
-
-// A node's fixed addresses must be addresses, without prefix lengths.
-func TestKubernetesCheckNodeIPs(t *testing.T) {
-	if err := (Kubernetes{NodeIPs: []string{"10.0.0.11", "fd00::11"}}).CheckNodeIPs(); err != nil {
-		t.Errorf("addresses: %v", err)
-	}
-	if err := (Kubernetes{NodeIPs: []string{"10.0.0.11/24"}}).CheckNodeIPs(); err == nil || !strings.Contains(err.Error(), "10.0.0.11/24") {
-		t.Errorf("a prefix: %v", err)
-	}
-}
