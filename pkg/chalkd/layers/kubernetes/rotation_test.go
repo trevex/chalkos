@@ -24,6 +24,7 @@ import (
 	k8stesting "k8s.io/client-go/testing"
 
 	kubernetesv1 "github.com/trevex/chalkos/pkg/api/kubernetes/v1"
+	"github.com/trevex/chalkos/pkg/chalkd/layer"
 	"github.com/trevex/chalkos/pkg/chalkd/layers/kubernetes/kubernetestest"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
 	knode "github.com/trevex/chalkos/pkg/kubernetes/node"
@@ -242,7 +243,7 @@ func TestRenewKubeletServing(t *testing.T) {
 		t.Errorf("calls %v, want the kubelet restarted", r.Calls)
 	}
 	// A worker runs none of the control plane's steps.
-	if _, err := rotationStep(context.Background(), s, kubernetesv1.RotationStep_ROTATION_STEP_COUNT_ENCRYPTED); connect.CodeOf(err) != connect.CodeFailedPrecondition {
+	if _, err := rotationStep(context.Background(), s, kubernetesv1.RotationStep_ROTATION_STEP_COUNT_ENCRYPTED); layer.CodeOf(err) != connect.CodeFailedPrecondition {
 		t.Errorf("a worker counted encrypted objects: %v", err)
 	}
 }
@@ -373,7 +374,7 @@ func TestUnknownRotationStepMintsNothing(t *testing.T) {
 		minted = true
 		return fake.NewClientset(), nil
 	}
-	if _, err := rotationStep(context.Background(), s, kubernetesv1.RotationStep(99)); connect.CodeOf(err) != connect.CodeInvalidArgument {
+	if _, err := rotationStep(context.Background(), s, kubernetesv1.RotationStep(99)); layer.CodeOf(err) != connect.CodeInvalidArgument {
 		t.Errorf("err = %v, want invalid_argument", err)
 	}
 	if minted {

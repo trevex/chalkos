@@ -187,7 +187,7 @@ func TestPlanInstallChecksTheShareAlone(t *testing.T) {
 
 	// A worker share for another node is refused: ParseShare alone cannot catch this, since the
 	// share is internally consistent and only wrong for this node.
-	if _, err := planInstall(t, p, kubernetestest.Share(t, k8s.KindWorker, "other"), osCAPEM(t)); connect.CodeOf(err) != connect.CodeInvalidArgument || !strings.Contains(err.Error(), "Kubernetes share") {
+	if _, err := planInstall(t, p, kubernetestest.Share(t, k8s.KindWorker, "other"), osCAPEM(t)); layer.CodeOf(err) != connect.CodeInvalidArgument || !strings.Contains(err.Error(), "Kubernetes share") {
 		t.Errorf("a share for another node: %v", err)
 	}
 }
@@ -237,7 +237,7 @@ func TestPlanInstallRefusesShares(t *testing.T) {
 		"a foreign CA":   {foreign, "the share's node CA"},
 	} {
 		t.Run(name, func(t *testing.T) {
-			if _, err := planInstall(t, deliveryLayer(t), tc.share, osCAPEM(t)); connect.CodeOf(err) != connect.CodeInvalidArgument || !strings.Contains(err.Error(), tc.want) {
+			if _, err := planInstall(t, deliveryLayer(t), tc.share, osCAPEM(t)); layer.CodeOf(err) != connect.CodeInvalidArgument || !strings.Contains(err.Error(), tc.want) {
 				t.Errorf("err = %v, want %q", err, tc.want)
 			}
 		})
@@ -282,7 +282,7 @@ func TestPlanChecksTheKeptNodeCAOnlyWithoutAShare(t *testing.T) {
 		t.Fatal(err)
 	}
 	trust := layer.Planned{Identity: []byte(installIdentity), OSCA: other.Certificate, Trust: true}
-	if _, err := p.Plan(context.Background(), trust); connect.CodeOf(err) != connect.CodeInvalidArgument || !strings.Contains(err.Error(), "do not verify the node's node CA") {
+	if _, err := p.Plan(context.Background(), trust); layer.CodeOf(err) != connect.CodeInvalidArgument || !strings.Contains(err.Error(), "do not verify the node's node CA") {
 		t.Errorf("trust without a share: %v, want the kept node CA refused", err)
 	}
 

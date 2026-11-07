@@ -20,6 +20,7 @@ import (
 	"k8s.io/client-go/util/retry"
 
 	kubernetesv1 "github.com/trevex/chalkos/pkg/api/kubernetes/v1"
+	"github.com/trevex/chalkos/pkg/chalkd/layer"
 )
 
 // UpgradeCordon marks a Node an upgrade cordoned, so the upgrade makes schedulable again only the
@@ -48,9 +49,9 @@ func (p *Plugin) DrainNode(ctx context.Context, req *connect.Request[kubernetesv
 	d, err := p.k.evictPods(ctx, cs, name, req.Msg.DeleteEmptydirData)
 	if err != nil {
 		if de, ok := errors.AsType[*drainError](err); ok {
-			return nil, failed(de.code, "drain %s: %v; it stays cordoned", name, de.err)
+			return nil, layer.Errorf(de.code, "drain %s: %w; it stays cordoned", name, de.err)
 		}
-		return nil, failed(connect.CodeUnavailable, "drain %s: %v; it stays cordoned", name, err)
+		return nil, layer.Errorf(connect.CodeUnavailable, "drain %s: %w; it stays cordoned", name, err)
 	}
 	return connect.NewResponse(&kubernetesv1.DrainNodeResponse{Marked: marked, Evicted: d.evicted, Kept: d.kept, Unmanaged: d.unmanaged}), nil
 }
@@ -99,9 +100,9 @@ func setCordon(ctx context.Context, cs kubernetes.Interface, name string, cordon
 	})
 	switch {
 	case apierrors.IsNotFound(err):
-		return false, failed(connect.CodeNotFound, "the cluster has no Node %s", name)
+		return false, layer.Errorf(connect.CodeNotFound, "the cluster has no Node %s", name)
 	case err != nil:
-		return false, failed(connect.CodeUnavailable, "cordon %s: %v", name, err)
+		return false, layer.Errorf(connect.CodeUnavailable, "cordon %s: %w", name, err)
 	}
 	return marked, nil
 }

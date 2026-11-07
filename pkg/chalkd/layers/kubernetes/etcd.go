@@ -14,6 +14,7 @@ import (
 	clientv3 "go.etcd.io/etcd/client/v3"
 
 	kubernetesv1 "github.com/trevex/chalkos/pkg/api/kubernetes/v1"
+	"github.com/trevex/chalkos/pkg/chalkd/layer"
 	"github.com/trevex/chalkos/pkg/internal/poll"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
 	"github.com/trevex/chalkos/pkg/kubernetes/etcd"
@@ -28,22 +29,23 @@ type controlPlaneNode struct {
 	share   kpki.Share
 }
 
-// controlPlane checks that the node is a control plane and reads its cluster, name and share.
+// controlPlane checks that the node is a control plane and reads its cluster, name and share. Its
+// errors carry their codes, which callers such as notRevoked keep rather than give one of their own.
 func (k *side) controlPlane() (controlPlaneNode, error) {
 	c, err := k8s.ReadCluster(k.paths.Cluster)
 	if err != nil {
-		return controlPlaneNode{}, failed(connect.CodeInternal, "%v", err)
+		return controlPlaneNode{}, layer.Errorf(connect.CodeInternal, "%w", err)
 	}
 	if c.Kind != k8s.KindControlPlane {
-		return controlPlaneNode{}, failed(connect.CodeFailedPrecondition, "the node is a worker; ask a control-plane node")
+		return controlPlaneNode{}, layer.Errorf(connect.CodeFailedPrecondition, "the node is a worker; ask a control-plane node")
 	}
 	n, err := k8s.ReadNode(k.paths.NodeFile)
 	if err != nil {
-		return controlPlaneNode{}, failed(connect.CodeInternal, "%v", err)
+		return controlPlaneNode{}, layer.Errorf(connect.CodeInternal, "%w", err)
 	}
 	share, err := knode.ReadShare(k.paths)
 	if err != nil {
-		return controlPlaneNode{}, failed(connect.CodeFailedPrecondition, "%v", err)
+		return controlPlaneNode{}, layer.Errorf(connect.CodeFailedPrecondition, "%w", err)
 	}
 	return controlPlaneNode{cluster: c, name: n.Name, share: share}, nil
 }
@@ -56,7 +58,7 @@ func (k *side) etcdMember() (controlPlaneNode, error) {
 	}
 	switch m, _, err := knode.ReadMembership(k.paths); {
 	case err != nil:
-		return controlPlaneNode{}, failed(connect.CodeInternal, "%v", err)
+		return controlPlaneNode{}, layer.Errorf(connect.CodeInternal, "%w", err)
 	case m != knode.MembershipBootstrapped:
 		return controlPlaneNode{}, errNotEtcdMember()
 	}
@@ -112,14 +114,14 @@ func (p *Plugin) EtcdMembers(ctx context.Context, _ *connect.Request[kubernetesv
 	}
 	cli, err := k.dialEtcd(cp.cluster, cp.share)
 	if err != nil {
-		return nil, failed(connect.CodeInternal, "%v", err)
+		return nil, err
 	}
 	defer cli.Close()
 	ctx, cancel := k.etcdRequest(ctx)
 	defer cancel()
 	members, err := etcd.Members(ctx, cli)
 	if err != nil {
-		return nil, failed(connect.CodeUnavailable, "%v", err)
+		return nil, layer.Errorf(connect.CodeUnavailable, "%w", err)
 	}
 	unhealthy := etcd.Health(ctx, cli, members)
 	resp := &kubernetesv1.EtcdMembersResponse{}
@@ -140,32 +142,32 @@ func (p *Plugin) EtcdRemoveMember(ctx context.Context, req *connect.Request[kube
 	name := cp.name
 	cli, err := k.dialEtcd(cp.cluster, cp.share)
 	if err != nil {
-		return nil, failed(connect.CodeInternal, "%v", err)
+		return nil, err
 	}
 	defer cli.Close()
 	rctx, cancel := k.etcdRequest(ctx)
 	members, err := etcd.Members(rctx, cli)
 	cancel()
 	if err != nil {
-		return nil, failed(connect.CodeUnavailable, "%v", err)
+		return nil, layer.Errorf(connect.CodeUnavailable, "%w", err)
 	}
 	m, err := etcd.Find(members, req.Msg.Member)
 	if err != nil {
-		return nil, failed(connect.CodeNotFound, "%v", err)
+		return nil, layer.Errorf(connect.CodeNotFound, "%w", err)
 	}
 	if self, ok, err := k.ownMember(members, name); err != nil {
-		return nil, failed(connect.CodeInternal, "%v", err)
+		return nil, err
 	} else if ok && self.ID == m.ID {
-		return nil, failed(connect.CodeFailedPrecondition, "%s is this node's own member; chalkctl etcd leave %s takes the node out of etcd", name, name)
+		return nil, layer.Errorf(connect.CodeFailedPrecondition, "%s is this node's own member; chalkctl etcd leave %s takes the node out of etcd", name, name)
 	}
 	rctx, cancel = k.etcdRequest(ctx)
 	err = etcd.Remove(rctx, cli, m.ID, req.Msg.Force)
 	cancel()
 	if _, ok := errors.AsType[*etcd.QuorumError](err); ok {
-		return nil, failed(connect.CodeFailedPrecondition, "%v; pass --force to remove it anyway", err)
+		return nil, layer.Errorf(connect.CodeFailedPrecondition, "%w; pass --force to remove it anyway", err)
 	}
 	if err != nil {
-		return nil, failed(connect.CodeFailedPrecondition, "%v", err)
+		return nil, layer.Errorf(connect.CodeFailedPrecondition, "%w", err)
 	}
 	log.Printf("kubernetes: removed the etcd member %s", m)
 	return connect.NewResponse(&kubernetesv1.EtcdRemoveMemberResponse{Removed: memberMessage(m, nil)}), nil
@@ -215,12 +217,12 @@ func (p *Plugin) EtcdLeave(ctx context.Context, req *connect.Request[kubernetesv
 	m, leftovers, err := knode.ReadMembership(paths)
 	switch {
 	case err != nil:
-		return nil, failed(connect.CodeInternal, "%v", err)
+		return nil, err
 	case mayBeMember(m, leftovers):
 	case m == knode.MembershipLeft:
-		return nil, failed(connect.CodeFailedPrecondition, "the node left etcd already; reinstall it to join the cluster again")
+		return nil, layer.Errorf(connect.CodeFailedPrecondition, "the node left etcd already; reinstall it to join the cluster again")
 	default:
-		return nil, failed(connect.CodeFailedPrecondition, "the node is not an etcd member")
+		return nil, layer.Errorf(connect.CodeFailedPrecondition, "the node is not an etcd member")
 	}
 	bootstrapped := m == knode.MembershipBootstrapped
 	// A refused leave starts the loops it stopped again.
@@ -245,40 +247,40 @@ func (p *Plugin) EtcdLeave(ctx context.Context, req *connect.Request[kubernetesv
 	endpoints := k.leaveEndpoints(ctx, c, share)
 	cli, err := k.dialEtcd(c, share, endpoints...)
 	if err != nil {
-		return nil, failed(connect.CodeInternal, "%v", err)
+		return nil, err
 	}
 	defer cli.Close()
 	rctx, cancel := k.etcdRequest(ctx)
 	answered, err := etcd.OneCluster(rctx, cli, endpoints)
 	cancel()
 	if _, ok := errors.AsType[*etcd.SplitError](err); ok {
-		return nil, failed(connect.CodeFailedPrecondition, "%v", err)
+		return nil, layer.Errorf(connect.CodeFailedPrecondition, "%w", err)
 	}
 	if err != nil {
-		return nil, failed(connect.CodeUnavailable, "%v", err)
+		return nil, layer.Errorf(connect.CodeUnavailable, "%w", err)
 	}
 	cli.SetEndpoints(answered...)
 	rctx, cancel = k.etcdRequest(ctx)
 	members, err := etcd.Members(rctx, cli)
 	cancel()
 	if err != nil {
-		return nil, failed(connect.CodeUnavailable, "%v", err)
+		return nil, layer.Errorf(connect.CodeUnavailable, "%w", err)
 	}
 	self, ok, err := k.ownMember(members, name)
 	if err != nil {
-		return nil, failed(connect.CodeInternal, "%v", err)
+		return nil, err
 	}
 	if ok {
 		// A bootstrapped node leaves through the other members alone only when forced: its own
 		// member may be healthy but cut off, or unable to run, as without its pinned address.
 		if bootstrapped && !req.Msg.Force && !slices.Contains(answered, k.localEtcd(c)) {
-			return nil, failed(connect.CodeFailedPrecondition, "this node's etcd member %s does not answer at %s; pass --force to remove it through the other members, as when the node lost its pinned address", self, k.localEtcd(c))
+			return nil, layer.Errorf(connect.CodeFailedPrecondition, "this node's etcd member %s does not answer at %s; pass --force to remove it through the other members, as when the node lost its pinned address", self, k.localEtcd(c))
 		}
 		rctx, cancel := k.etcdRequest(ctx)
 		err := etcd.CheckQuorum(members, etcd.Health(rctx, cli, members), self.ID)
 		cancel()
 		if err != nil {
-			return nil, failed(connect.CodeFailedPrecondition, "%v", err)
+			return nil, layer.Errorf(connect.CodeFailedPrecondition, "%w", err)
 		}
 		// The other voters remove the member: this one stops once it is removed.
 		var others []string
@@ -288,11 +290,11 @@ func (p *Plugin) EtcdLeave(ctx context.Context, req *connect.Request[kubernetesv
 			}
 		}
 		if len(others) == 0 {
-			return nil, failed(connect.CodeFailedPrecondition, "etcd has no other voter to remove %s through", self)
+			return nil, layer.Errorf(connect.CodeFailedPrecondition, "etcd has no other voter to remove %s through", self)
 		}
 		remover, err := k.dialEtcd(c, share, others...)
 		if err != nil {
-			return nil, failed(connect.CodeInternal, "%v", err)
+			return nil, err
 		}
 		defer remover.Close()
 		// The VIPs go first, while the node is still a healthy member.
@@ -301,7 +303,7 @@ func (p *Plugin) EtcdLeave(ctx context.Context, req *connect.Request[kubernetesv
 		err = etcd.Remove(rctx, remover, self.ID, false)
 		cancel()
 		if err != nil {
-			return nil, failed(connect.CodeFailedPrecondition, "%v", err)
+			return nil, layer.Errorf(connect.CodeFailedPrecondition, "%w", err)
 		}
 		log.Printf("kubernetes: removed this node's etcd member %s", self)
 	} else {
@@ -315,24 +317,24 @@ func (p *Plugin) EtcdLeave(ctx context.Context, req *connect.Request[kubernetesv
 	// lock: it ends first, and none renders them once the node is marked as left.
 	unlock, err := knode.LockPKI(ctx, paths)
 	if err != nil {
-		return nil, failed(connect.CodeInternal, "the node left etcd, but stopping its control plane failed: %v", err)
+		return nil, fmt.Errorf("the node left etcd, but stopping its control plane failed: %w", err)
 	}
 	defer unlock()
 	// The marker comes first: from here on the node is no member, whatever it still holds.
 	if err := knode.MarkLeft(paths, time.Now()); err != nil {
-		return nil, failed(connect.CodeInternal, "the node left etcd, but recording it failed: %v", err)
+		return nil, fmt.Errorf("the node left etcd, but recording it failed: %w", err)
 	}
 	if err := knode.RemoveStaticPods(paths); err != nil {
-		return nil, failed(connect.CodeInternal, "the node left etcd, but stopping its control plane failed: %v", err)
+		return nil, fmt.Errorf("the node left etcd, but stopping its control plane failed: %w", err)
 	}
 	if err := k.hooks.EtcdStopped(ctx, c); err != nil {
-		return nil, failed(connect.CodeInternal, "the node left etcd, but its etcd did not stop: %v; its data stays in %s until chalkctl etcd leave runs again", err, paths.EtcdData)
+		return nil, fmt.Errorf("the node left etcd, but its etcd did not stop: %w; its data stays in %s until chalkctl etcd leave runs again", err, paths.EtcdData)
 	}
 	if err := knode.RemoveEtcdData(paths); err != nil {
-		return nil, failed(connect.CodeInternal, "the node left etcd, but deleting its etcd data failed: %v", err)
+		return nil, fmt.Errorf("the node left etcd, but deleting its etcd data failed: %w", err)
 	}
 	if err := knode.ClearMembership(paths); err != nil {
-		return nil, failed(connect.CodeInternal, "the node left etcd: %v", err)
+		return nil, fmt.Errorf("the node left etcd: %w", err)
 	}
 	log.Print("kubernetes: the node left etcd; reinstall it to join the cluster again")
 	return connect.NewResponse(&kubernetesv1.EtcdLeaveResponse{}), nil

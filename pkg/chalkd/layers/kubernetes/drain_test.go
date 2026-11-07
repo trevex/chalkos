@@ -21,6 +21,7 @@ import (
 	k8stesting "k8s.io/client-go/testing"
 
 	kubernetesv1 "github.com/trevex/chalkos/pkg/api/kubernetes/v1"
+	"github.com/trevex/chalkos/pkg/chalkd/layer"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
 	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
 )
@@ -186,7 +187,7 @@ func TestDrainKeepsAnOperatorsCordon(t *testing.T) {
 func TestDrainWaitsForTheBudget(t *testing.T) {
 	l := newDrainLab(t, 1000, w1(false))
 	_, err := l.drain(1)
-	if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "pods default/guarded still run") || !strings.Contains(err.Error(), "disruption budget") {
+	if layer.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "pods default/guarded still run") || !strings.Contains(err.Error(), "disruption budget") {
 		t.Errorf("drain = %v", err)
 	}
 	if !l.node(t).Spec.Unschedulable {
@@ -201,11 +202,11 @@ func TestDrainWaitsForTheBudget(t *testing.T) {
 
 func TestDrainRefusals(t *testing.T) {
 	l := newDrainLab(t, 0)
-	if _, err := l.drain(0); connect.CodeOf(err) != connect.CodeNotFound {
+	if _, err := l.drain(0); layer.CodeOf(err) != connect.CodeNotFound {
 		t.Errorf("draining an unknown node: %v", err)
 	}
 	s, _ := kubernetesNode(t, k8s.KindWorker, true)
-	if _, err := s.DrainNode(context.Background(), connect.NewRequest(&kubernetesv1.DrainNodeRequest{Node: "w1"})); connect.CodeOf(err) != connect.CodeFailedPrecondition {
+	if _, err := s.DrainNode(context.Background(), connect.NewRequest(&kubernetesv1.DrainNodeRequest{Node: "w1"})); layer.CodeOf(err) != connect.CodeFailedPrecondition {
 		t.Errorf("draining through a worker: %v", err)
 	}
 }
@@ -228,7 +229,7 @@ func TestDrainRefused(t *testing.T) {
 	})
 	start := time.Now()
 	_, err := l.drain(30)
-	if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "default/web-1: ") || !strings.Contains(err.Error(), "not allowed") ||
+	if layer.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "default/web-1: ") || !strings.Contains(err.Error(), "not allowed") ||
 		!strings.Contains(err.Error(), "default/guarded: ") || !strings.Contains(err.Error(), "malformed") || !strings.Contains(err.Error(), "stays cordoned") {
 		t.Errorf("drain = %v", err)
 	}
@@ -268,7 +269,7 @@ func TestDrainServerErrorsTimeOut(t *testing.T) {
 		return true, nil, apierrors.NewInternalError(errors.New("This pod has more than one PodDisruptionBudget, which the eviction subresource does not support."))
 	})
 	_, err := l.drain(1)
-	if connect.CodeOf(err) != connect.CodeDeadlineExceeded || !strings.Contains(err.Error(), "pods default/guarded still run") || !strings.Contains(err.Error(), "more than one PodDisruptionBudget") {
+	if layer.CodeOf(err) != connect.CodeDeadlineExceeded || !strings.Contains(err.Error(), "pods default/guarded still run") || !strings.Contains(err.Error(), "more than one PodDisruptionBudget") {
 		t.Errorf("drain = %v", err)
 	}
 }
@@ -282,7 +283,7 @@ func TestDrainTimesOut(t *testing.T) {
 		return action.GetSubresource() == "eviction", nil, nil
 	})
 	_, err := l.drain(1)
-	if connect.CodeOf(err) != connect.CodeDeadlineExceeded || !strings.Contains(err.Error(), "pods default/guarded, default/web-1 still run: they did not stop") {
+	if layer.CodeOf(err) != connect.CodeDeadlineExceeded || !strings.Contains(err.Error(), "pods default/guarded, default/web-1 still run: they did not stop") {
 		t.Errorf("drain = %v", err)
 	}
 }
@@ -324,7 +325,7 @@ func TestDrainEmptyDir(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, err := l.drain(0)
-	if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "default/cache") || !strings.Contains(err.Error(), "--delete-emptydir-data") {
+	if layer.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "default/cache") || !strings.Contains(err.Error(), "--delete-emptydir-data") {
 		t.Errorf("drain = %v", err)
 	}
 	if len(l.evicted) != 0 || !l.node(t).Spec.Unschedulable {
@@ -369,7 +370,7 @@ func TestDrainWaitsForStoppingPods(t *testing.T) {
 	})
 	stopping := "pods default/guarded, default/web-1, kube-flannel/leaving still run"
 	for i := range 2 {
-		if _, err := l.drain(1); connect.CodeOf(err) != connect.CodeDeadlineExceeded || !strings.Contains(err.Error(), stopping) {
+		if _, err := l.drain(1); layer.CodeOf(err) != connect.CodeDeadlineExceeded || !strings.Contains(err.Error(), stopping) {
 			t.Fatalf("drain %d = %v", i, err)
 		}
 	}

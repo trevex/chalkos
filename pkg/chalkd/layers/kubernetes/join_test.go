@@ -16,6 +16,7 @@ import (
 	"connectrpc.com/connect"
 	clientv3 "go.etcd.io/etcd/client/v3"
 
+	"github.com/trevex/chalkos/pkg/chalkd/layer"
 	"github.com/trevex/chalkos/pkg/chalkd/layers/kubernetes/kubernetestest"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
 	"github.com/trevex/chalkos/pkg/kubernetes/etcd"
@@ -145,7 +146,7 @@ func TestJoin(t *testing.T) {
 	}
 	// The node is a member now; it is never bootstrapped.
 	_, err = kubernetestest.Bootstrap(context.Background(), s)
-	if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "bootstrapped already") {
+	if layer.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "bootstrapped already") {
 		t.Errorf("bootstrap after the join: %v", err)
 	}
 }
@@ -237,7 +238,7 @@ func TestBootstrapRefusedWhileClusterAnswers(t *testing.T) {
 	k := s.k
 	k.hooks.ClusterAnswers = func(context.Context, k8s.Cluster, kpki.Share) bool { return true }
 	_, err := kubernetestest.Bootstrap(context.Background(), s)
-	if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "the cluster's API server answers at https://192.168.100.11:6443") {
+	if layer.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "the cluster's API server answers at https://192.168.100.11:6443") {
 		t.Errorf("bootstrap: %v", err)
 	}
 	if exists(k.paths.Pin()) || exists(k.paths.Bootstrapped()) {
@@ -250,7 +251,7 @@ func TestBootstrapRefusedWhileJoining(t *testing.T) {
 	k := s.k
 	write(t, k.paths.EtcdInitialCluster(), "cp0=https://192.168.100.10:2380,n1=https://192.168.100.11:2380\n")
 	_, err := kubernetestest.Bootstrap(context.Background(), s)
-	if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "joining the cluster") {
+	if layer.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "joining the cluster") {
 		t.Errorf("bootstrap of a joining node: %v", err)
 	}
 	if err := os.Remove(k.paths.EtcdInitialCluster()); err != nil {
@@ -259,7 +260,7 @@ func TestBootstrapRefusedWhileJoining(t *testing.T) {
 	k.membership.Lock()
 	_, err = kubernetestest.Bootstrap(context.Background(), s)
 	k.membership.Unlock()
-	if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "joining the cluster") {
+	if layer.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "joining the cluster") {
 		t.Errorf("bootstrap during a join: %v", err)
 	}
 }
@@ -308,7 +309,7 @@ func TestBootstrapRefusedAfterJoinStarted(t *testing.T) {
 	k.hooks.ClusterAnswers = func(context.Context, k8s.Cluster, kpki.Share) bool { return false }
 	_, err := kubernetestest.Bootstrap(context.Background(), s)
 	want := "the node started joining the cluster at https://192.168.100.11:6443; finish the join or remove its member and reinstall"
-	if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), want) {
+	if layer.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), want) {
 		t.Errorf("bootstrap: %v, want %q", err, want)
 	}
 	if exists(p.Bootstrapped()) || exists(p.EtcdInitialCluster()) || exists(p.EtcdInitialised()) {

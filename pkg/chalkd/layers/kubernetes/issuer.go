@@ -27,7 +27,7 @@ var _ layer.Issuer = (*Plugin)(nil)
 func (p *Plugin) RenewNodeCertificate(ctx context.Context, req *connect.Request[kubernetesv1.RenewNodeCertificateRequest]) (*connect.Response[kubernetesv1.RenewNodeCertificateResponse], error) {
 	peer := layer.Peer(ctx)
 	if peer == nil {
-		return nil, failed(connect.CodeUnauthenticated, "renewing a node certificate needs the node's current one")
+		return nil, layer.Errorf(connect.CodeUnauthenticated, "renewing a node certificate needs the node's current one")
 	}
 	nodeCA, err := p.k.nodeCA()
 	if err != nil {
@@ -47,10 +47,10 @@ func (p *Plugin) RenewNodeCertificate(ctx context.Context, req *connect.Request[
 
 // nodeCA returns the node CA of a control-plane node's share; only control planes hold it.
 func (k *side) nodeCA() (pki.CertKey, error) {
-	notControlPlane := failed(connect.CodeFailedPrecondition, "the node is not a control plane; control-plane nodes renew node certificates")
+	notControlPlane := layer.Errorf(connect.CodeFailedPrecondition, "the node is not a control plane; control-plane nodes renew node certificates")
 	c, err := k8s.ReadCluster(k.paths.Cluster)
 	if err != nil {
-		return pki.CertKey{}, failed(connect.CodeInternal, "%v", err)
+		return pki.CertKey{}, err
 	}
 	if c.Kind != k8s.KindControlPlane {
 		return pki.CertKey{}, notControlPlane
@@ -58,16 +58,16 @@ func (k *side) nodeCA() (pki.CertKey, error) {
 	// A node that left etcd is no control plane of the cluster any more, though its share still
 	// holds the node CA until it is reinstalled.
 	if m, _, err := knode.ReadMembership(k.paths); err != nil {
-		return pki.CertKey{}, failed(connect.CodeInternal, "%v", err)
+		return pki.CertKey{}, err
 	} else if m == knode.MembershipLeft {
-		return pki.CertKey{}, failed(connect.CodeFailedPrecondition, "the node left etcd and signs no node certificates; reinstall it to join the cluster again")
+		return pki.CertKey{}, layer.Errorf(connect.CodeFailedPrecondition, "the node left etcd and signs no node certificates; reinstall it to join the cluster again")
 	}
 	share, err := knode.ReadShare(k.paths)
 	if err != nil {
-		return pki.CertKey{}, failed(connect.CodeFailedPrecondition, "%v", err)
+		return pki.CertKey{}, layer.Errorf(connect.CodeFailedPrecondition, "%w", err)
 	}
 	if share.NodeCA == nil {
-		return pki.CertKey{}, failed(connect.CodeFailedPrecondition, "the node's share holds no node CA")
+		return pki.CertKey{}, layer.Errorf(connect.CodeFailedPrecondition, "the node's share holds no node CA")
 	}
 	return *share.NodeCA, nil
 }
@@ -77,18 +77,18 @@ func (k *side) nodeCA() (pki.CertKey, error) {
 func signRequest(nodeCA pki.CertKey, names pki.NodeNames, request []byte, now time.Time) (string, error) {
 	csr, err := x509.ParseCertificateRequest(request)
 	if err != nil {
-		return "", failed(connect.CodeInvalidArgument, "parse the certificate request: %v", err)
+		return "", layer.Errorf(connect.CodeInvalidArgument, "parse the certificate request: %w", err)
 	}
 	if err := csr.CheckSignature(); err != nil {
-		return "", failed(connect.CodeInvalidArgument, "the certificate request is not signed with its key: %v", err)
+		return "", layer.Errorf(connect.CodeInvalidArgument, "the certificate request is not signed with its key: %w", err)
 	}
 	pub, ok := csr.PublicKey.(*ecdsa.PublicKey)
 	if !ok || pub.Curve != elliptic.P256() {
-		return "", failed(connect.CodeInvalidArgument, "the certificate request's key is not ECDSA P-256")
+		return "", layer.Errorf(connect.CodeInvalidArgument, "the certificate request's key is not ECDSA P-256")
 	}
 	chain, err := pki.SignNode(nodeCA, names, pub, now)
 	if err != nil {
-		return "", failed(connect.CodeInternal, "issue the node certificate: %v", err)
+		return "", fmt.Errorf("issue the node certificate: %w", err)
 	}
 	return chain, nil
 }

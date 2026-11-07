@@ -38,13 +38,13 @@ func (p *Plugin) Accepts(payload *anypb.Any) bool { return kpki.IsPayload(payloa
 func (p *Plugin) CheckIdentity(data []byte) error {
 	var id identity.Identity
 	if err := json.Unmarshal(data, &id); err != nil {
-		return failed(connect.CodeInvalidArgument, "parse the identity: %v", err)
+		return layer.Errorf(connect.CodeInvalidArgument, "parse the identity: %w", err)
 	}
 	if id.Kubernetes == nil {
 		return nil
 	}
 	if _, err := k8s.ParseNode(data); err != nil {
-		return failed(connect.CodeInvalidArgument, "%v", err)
+		return layer.Errorf(connect.CodeInvalidArgument, "%w", err)
 	}
 	return nil
 }
@@ -58,7 +58,7 @@ func (p *Plugin) Plan(_ context.Context, d layer.Planned) (layer.Commit, error) 
 	if d.Documents != nil && !d.Install {
 		var err error
 		if cluster, err = p.cluster(d.Documents); err != nil {
-			return c, failed(connect.CodeInvalidArgument, "the config: %v", err)
+			return c, layer.Errorf(connect.CodeInvalidArgument, "the config: %w", err)
 		}
 		// An image without image.json gives no cluster, and the delivery writes none.
 		if cluster != nil {
@@ -162,11 +162,11 @@ func (p *Plugin) share(d layer.Planned, cluster *k8s.Cluster) ([]byte, error) {
 	var data []byte
 	for i, payload := range d.Payloads {
 		if i > 0 {
-			return nil, failed(connect.CodeInvalidArgument, "the request carries two shares; deliver one")
+			return nil, layer.Errorf(connect.CodeInvalidArgument, "the request carries two shares; deliver one")
 		}
 		var err error
 		if data, err = kpki.SharePayload(payload); err != nil {
-			return nil, failed(connect.CodeInvalidArgument, "%v", err)
+			return nil, layer.Errorf(connect.CodeInvalidArgument, "%w", err)
 		}
 	}
 	if len(data) == 0 {
@@ -174,23 +174,23 @@ func (p *Plugin) share(d layer.Planned, cluster *k8s.Cluster) ([]byte, error) {
 	}
 	share, err := kpki.ParseShare(data)
 	if err != nil {
-		return nil, failed(connect.CodeInvalidArgument, "%v", err)
+		return nil, layer.Errorf(connect.CodeInvalidArgument, "%w", err)
 	}
 	if !d.Install {
 		if cluster == nil {
 			c, err := k8s.ReadCluster(p.k.paths.Cluster)
 			if err != nil {
-				return nil, failed(connect.CodeInvalidArgument, "the node has no Kubernetes cluster: %v", err)
+				return nil, layer.Errorf(connect.CodeInvalidArgument, "the node has no Kubernetes cluster: %w", err)
 			}
 			cluster = &c
 		}
 		if share.Kind != cluster.Kind {
-			return nil, failed(connect.CodeInvalidArgument, "the share is for a %s node, but the node's Node document gives it the type %s", share.Kind, cluster.Kind)
+			return nil, layer.Errorf(connect.CodeInvalidArgument, "the share is for a %s node, but the node's Node document gives it the type %s", share.Kind, cluster.Kind)
 		}
 	}
 	var id identity.Identity
 	if err := json.Unmarshal(d.Identity, &id); err != nil {
-		return nil, failed(connect.CodeInvalidArgument, "parse the identity: %v", err)
+		return nil, layer.Errorf(connect.CodeInvalidArgument, "parse the identity: %w", err)
 	}
 	var nodeName string
 	if id.Kubernetes != nil {
@@ -198,17 +198,17 @@ func (p *Plugin) share(d layer.Planned, cluster *k8s.Cluster) ([]byte, error) {
 	}
 	// A node must never run its kubelet with a certificate issued for another node.
 	if err := share.ValidateFor(nodeName); err != nil {
-		return nil, failed(connect.CodeInvalidArgument, "%v", err)
+		return nil, layer.Errorf(connect.CodeInvalidArgument, "%w", err)
 	}
 	// Certificates of another node CA would never verify against the node's OS CA.
 	if share.NodeCA != nil {
 		if err := pki.ValidateNodeCA(*share.NodeCA, d.OSCA); err != nil {
-			return nil, failed(connect.CodeInvalidArgument, "the share's node CA: %v", err)
+			return nil, layer.Errorf(connect.CodeInvalidArgument, "the share's node CA: %w", err)
 		}
 	}
 	canonical, err := share.Encode()
 	if err != nil {
-		return nil, failed(connect.CodeInternal, "encode the Kubernetes share: %v", err)
+		return nil, fmt.Errorf("encode the Kubernetes share: %w", err)
 	}
 	return canonical, nil
 }
@@ -232,11 +232,11 @@ func (k *side) checkKeptNodeCA(osCA string) error {
 		return nil
 	}
 	if err != nil {
-		return failed(connect.CodeInternal, "%v", err)
+		return err
 	}
 	if share.NodeCA != nil {
 		if err := pki.ValidateNodeCA(*share.NodeCA, osCA); err != nil {
-			return failed(connect.CodeInvalidArgument, "the OS CAs do not verify the node's node CA, which it renews node certificates with: %v", err)
+			return layer.Errorf(connect.CodeInvalidArgument, "the OS CAs do not verify the node's node CA, which it renews node certificates with: %w", err)
 		}
 	}
 	return nil

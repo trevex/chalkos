@@ -19,6 +19,7 @@ import (
 	"k8s.io/client-go/kubernetes"
 
 	kubernetesv1 "github.com/trevex/chalkos/pkg/api/kubernetes/v1"
+	"github.com/trevex/chalkos/pkg/chalkd/layer"
 	"github.com/trevex/chalkos/pkg/clustersecrets"
 	kapply "github.com/trevex/chalkos/pkg/kubernetes/apply"
 	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
@@ -40,17 +41,17 @@ func (p *Plugin) RevokeNode(ctx context.Context, req *connect.Request[kubernetes
 	}
 	at, err := revoked.Revoke(ctx, cs, name, time.Now())
 	if err != nil {
-		return nil, failed(connect.CodeUnavailable, "%v", err)
+		return nil, layer.Errorf(connect.CodeUnavailable, "%w", err)
 	}
 	if err := kapply.EnforceRevoked(ctx, cs); err != nil {
-		return nil, failed(connect.CodeUnavailable, "%s is revoked, but the API server's admission policy was not updated: %v; revoking it again applies it", name, err)
+		return nil, layer.Errorf(connect.CodeUnavailable, "%s is revoked, but the API server's admission policy was not updated: %w; revoking it again applies it", name, err)
 	}
 	deleted := true
 	switch err := cs.CoreV1().Nodes().Delete(ctx, name, metav1.DeleteOptions{}); {
 	case apierrors.IsNotFound(err):
 		deleted = false
 	case err != nil:
-		return nil, failed(connect.CodeUnavailable, "%s is revoked, but deleting its Node failed: %v; revoking it again deletes it", name, err)
+		return nil, layer.Errorf(connect.CodeUnavailable, "%s is revoked, but deleting its Node failed: %w; revoking it again deletes it", name, err)
 	}
 	log.Printf("kubernetes: revoked node %s", name)
 	return connect.NewResponse(&kubernetesv1.RevokeNodeResponse{RevokedAt: timestamppb.New(at), NodeDeleted: deleted}), nil
@@ -71,28 +72,28 @@ func (p *Plugin) UnrevokeNode(ctx context.Context, req *connect.Request[kubernet
 	at, listed, err := revoked.Unrevoke(ctx, cs, name, func(at time.Time) error {
 		var err error
 		if stale, err = p.staleCAs(share, at); err != nil {
-			return failed(connect.CodeInternal, "%v", err)
+			return layer.Errorf(connect.CodeInternal, "%w", err)
 		}
 		if len(stale) > 0 && !req.Msg.Force {
-			return failed(connect.CodeFailedPrecondition, "%s; rotate them first, or pass --force to unrevoke %s anyway", staleWarning(name, at, stale), name)
+			return layer.Errorf(connect.CodeFailedPrecondition, "%s; rotate them first, or pass --force to unrevoke %s anyway", staleWarning(name, at, stale), name)
 		}
 		return nil
 	})
-	if connectErr, ok := errors.AsType[*connect.Error](err); ok {
-		return nil, connectErr
+	if ce, ok := errors.AsType[layer.Coded](err); ok {
+		return nil, ce
 	}
 	if err != nil {
-		return nil, failed(connect.CodeUnavailable, "%v", err)
+		return nil, layer.Errorf(connect.CodeUnavailable, "%w", err)
 	}
 	// A node unlisted already may be unrevoked again because the policy was not updated then.
 	if err := kapply.EnforceRevoked(ctx, cs); err != nil {
 		if !listed {
-			return nil, failed(connect.CodeUnavailable, "node %s is not revoked, but the API server's admission policy was not updated: %v", name, err)
+			return nil, layer.Errorf(connect.CodeUnavailable, "node %s is not revoked, but the API server's admission policy was not updated: %w", name, err)
 		}
-		return nil, failed(connect.CodeUnavailable, "%s is unrevoked, but the API server's admission policy was not updated and still denies its writes: %v; unrevoking it again applies it", name, err)
+		return nil, layer.Errorf(connect.CodeUnavailable, "%s is unrevoked, but the API server's admission policy was not updated and still denies its writes: %w; unrevoking it again applies it", name, err)
 	}
 	if !listed {
-		return nil, failed(connect.CodeNotFound, "node %s is not revoked", name)
+		return nil, layer.Errorf(connect.CodeNotFound, "node %s is not revoked", name)
 	}
 	if len(stale) > 0 {
 		log.Printf("kubernetes: unrevoked node %s, forced: %s", name, staleWarning(name, at, stale))
@@ -111,14 +112,14 @@ func (p *Plugin) UnrevokeNode(ctx context.Context, req *connect.Request[kubernet
 func policyRoom(ctx context.Context, cs kubernetes.Interface, name string) error {
 	list, err := revoked.Load(ctx, cs)
 	if err != nil {
-		return failed(connect.CodeUnavailable, "%v", err)
+		return layer.Errorf(connect.CodeUnavailable, "%w", err)
 	}
 	if _, ok := list[name]; ok {
 		return nil
 	}
 	list[name] = time.Now()
 	if n := revoked.LiteralLength(list); n > revoked.MaxLiteralLength {
-		return failed(connect.CodeFailedPrecondition, "revoking %s would make the admission policy's map of the %d revoked nodes %d characters long, "+
+		return layer.Errorf(connect.CodeFailedPrecondition, "revoking %s would make the admission policy's map of the %d revoked nodes %d characters long, "+
 			"past the %d chalkos allows below the API server's limit on an expression; make room first: rotate the CAs with chalkctl rotate os-ca "+
 			"and chalkctl rotate kubernetes-ca, each to its finish, then unrevoke the nodes revoked before them with chalkctl node unrevoke",
 			name, len(list), n, revoked.MaxLiteralLength)
@@ -130,7 +131,7 @@ func policyRoom(ctx context.Context, cs kubernetes.Interface, name string) error
 // match, such as W1 for w1.
 func checkNodeName(name string) error {
 	if errs := validation.IsDNS1123Subdomain(name); len(errs) > 0 {
-		return failed(connect.CodeInvalidArgument, "the node name %q is invalid: %s", name, strings.Join(errs, "; "))
+		return layer.Errorf(connect.CodeInvalidArgument, "the node name %q is invalid: %s", name, strings.Join(errs, "; "))
 	}
 	return nil
 }
@@ -139,11 +140,11 @@ func checkNodeName(name string) error {
 // the node may be among them: nothing is renewed until they can be read.
 func (k *side) notRevoked(ctx context.Context, name string) error {
 	list, err := k.revokedNodes(ctx)
-	if connectErr, ok := errors.AsType[*connect.Error](err); ok {
-		return connectErr
+	if ce, ok := errors.AsType[layer.Coded](err); ok {
+		return ce
 	}
 	if err != nil {
-		return failed(connect.CodeUnavailable, "%v; no node certificate is renewed until they can be read", err)
+		return layer.Errorf(connect.CodeUnavailable, "%w; no node certificate is renewed until they can be read", err)
 	}
 	at, ok := list[name]
 	if !ok {
@@ -153,7 +154,7 @@ func (k *side) notRevoked(ctx context.Context, name string) error {
 	if !at.IsZero() {
 		since = " since " + at.UTC().Format(time.RFC3339)
 	}
-	return failed(connect.CodePermissionDenied, "node %s is revoked%s; chalkctl node unrevoke %s lets it renew again", name, since, name)
+	return layer.Errorf(connect.CodePermissionDenied, "node %s is revoked%s; chalkctl node unrevoke %s lets it renew again", name, since, name)
 }
 
 // revokedClient reaches the API server of a bootstrapped control-plane node, which keeps the

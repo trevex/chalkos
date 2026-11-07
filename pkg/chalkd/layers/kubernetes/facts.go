@@ -48,7 +48,7 @@ func (p *Plugin) Target(f *anypb.Any, t *config.Target) (bool, error) {
 		return false, nil
 	}
 	if err != nil {
-		return true, failed(connect.CodeInvalidArgument, "the image's image.json: %v", err)
+		return true, layer.Errorf(connect.CodeInvalidArgument, "the image's image.json: %w", err)
 	}
 	if t.Image == nil {
 		t.Image = &img

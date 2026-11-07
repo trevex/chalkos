@@ -7,6 +7,7 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 
+	"github.com/trevex/chalkos/pkg/chalkd/layer"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
 	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
 )
@@ -27,7 +28,7 @@ func apiKey(c k8s.Cluster, share kpki.Share) string {
 }
 
 // apiClient checks the node with need, such as k.etcdMember, and returns a client for the node's
-// own API server and what need read.
+// own API server and what need read. Its errors carry their codes, as need's do.
 func (k *side) apiClient(need func() (controlPlaneNode, error)) (kubernetes.Interface, controlPlaneNode, error) {
 	cp, err := need()
 	if err != nil {
@@ -35,7 +36,7 @@ func (k *side) apiClient(need func() (controlPlaneNode, error)) (kubernetes.Inte
 	}
 	client, err := k.hooks.APIClient(cp.cluster, cp.share)
 	if err != nil {
-		return nil, controlPlaneNode{}, failed(connect.CodeInternal, "reach the API server: %v", err)
+		return nil, controlPlaneNode{}, layer.Errorf(connect.CodeInternal, "reach the API server: %w", err)
 	}
 	return client, cp, nil
 }

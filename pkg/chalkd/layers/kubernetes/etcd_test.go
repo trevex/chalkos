@@ -16,6 +16,7 @@ import (
 	clientv3 "go.etcd.io/etcd/client/v3"
 
 	kubernetesv1 "github.com/trevex/chalkos/pkg/api/kubernetes/v1"
+	"github.com/trevex/chalkos/pkg/chalkd/layer"
 	"github.com/trevex/chalkos/pkg/chalkd/layers/kubernetes/kubernetestest"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
 	"github.com/trevex/chalkos/pkg/kubernetes/etcd"
@@ -139,10 +140,10 @@ func checkLeft(t *testing.T, s *Plugin) {
 	if joining {
 		t.Error("a node that left joins again")
 	}
-	if _, err := kubernetestest.Bootstrap(context.Background(), s); connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "left etcd") {
+	if _, err := kubernetestest.Bootstrap(context.Background(), s); layer.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "left etcd") {
 		t.Errorf("bootstrap after leaving: %v", err)
 	}
-	if err := leave(s, false); connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "left etcd") {
+	if err := leave(s, false); layer.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "left etcd") {
 		t.Errorf("leaving again: %v", err)
 	}
 }
@@ -162,15 +163,15 @@ func TestEtcdMembers(t *testing.T) {
 
 func TestEtcdRemoveMember(t *testing.T) {
 	s, cli, members := memberNode(t, "cp2", "cp3")
-	if err := removeMember(s, "n1", false); connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "chalkctl etcd leave n1") {
+	if err := removeMember(s, "n1", false); layer.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "chalkctl etcd leave n1") {
 		t.Errorf("removing the node's own member: %v", err)
 	}
-	if err := removeMember(s, "cp9", false); connect.CodeOf(err) != connect.CodeNotFound {
+	if err := removeMember(s, "cp9", false); layer.CodeOf(err) != connect.CodeNotFound {
 		t.Errorf("removing an unknown member: %v", err)
 	}
 	members["cp3"].Stop()
 	// Without cp2, n1 and the stopped cp3 would be left.
-	if err := removeMember(s, "cp2", false); connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "pass --force") {
+	if err := removeMember(s, "cp2", false); layer.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "pass --force") {
 		t.Errorf("removing cp2 while cp3 is down: %v", err)
 	}
 	list, err := etcd.Members(context.Background(), cli)
@@ -232,7 +233,7 @@ func TestEtcdLeaveRetriedAfterEtcdKeptRunning(t *testing.T) {
 		_ = stopped(ctx, c)
 		return errors.New("etcd still listens")
 	}
-	if err := leave(s, false); connect.CodeOf(err) != connect.CodeInternal || !strings.Contains(err.Error(), "its etcd did not stop") {
+	if err := leave(s, false); layer.CodeOf(err) != connect.CodeInternal || !strings.Contains(err.Error(), "its etcd did not stop") {
 		t.Fatalf("first leave: %v, want its etcd named", err)
 	}
 	if m, l, err := knode.ReadMembership(k.paths); err != nil || m != knode.MembershipLeft || !l.Pinned || !l.EtcdData {
@@ -271,7 +272,7 @@ func TestEtcdLeaveAfterLeftWithJoiningMarker(t *testing.T) {
 	}
 	write(t, p.Joining(), "https://192.168.100.11:6443\n")
 	err := leave(s, false)
-	if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "the node left etcd already") {
+	if layer.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "the node left etcd already") {
 		t.Fatalf("leave again: %v, want a refusal saying it left already", err)
 	}
 }
@@ -341,7 +342,7 @@ func TestEtcdLeaveNeedsLocalMemberOrForce(t *testing.T) {
 	s, cli, others := memberNode(t, "cp2", "cp3")
 	otherMembersOnly(t, s, others["cp2"], others["cp3"])
 	err := leave(s, false)
-	if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "does not answer") || !strings.Contains(err.Error(), "--force") {
+	if layer.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "does not answer") || !strings.Contains(err.Error(), "--force") {
 		t.Errorf("leaving while the node's member does not answer: %v", err)
 	}
 	p := s.k.paths
@@ -398,7 +399,7 @@ func TestEtcdLeaveRefusedWithoutQuorum(t *testing.T) {
 	s, _, members := memberNode(t, "cp2", "cp3")
 	members["cp3"].Stop()
 	err := leave(s, false)
-	if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "quorum") {
+	if layer.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "quorum") {
 		t.Errorf("leaving while cp3 is down: %v", err)
 	}
 	p := s.k.paths
@@ -415,10 +416,10 @@ func TestEtcdNeedsMember(t *testing.T) {
 	waiting, _ := kubernetesNode(t, k8s.KindControlPlane, true)
 	for name, s := range map[string]*Plugin{"worker": worker, "not bootstrapped": waiting} {
 		_, err := s.EtcdMembers(context.Background(), connect.NewRequest(&kubernetesv1.EtcdMembersRequest{}))
-		if connect.CodeOf(err) != connect.CodeFailedPrecondition {
+		if layer.CodeOf(err) != connect.CodeFailedPrecondition {
 			t.Errorf("members on %s: %v", name, err)
 		}
-		if err := leave(s, false); connect.CodeOf(err) != connect.CodeFailedPrecondition {
+		if err := leave(s, false); layer.CodeOf(err) != connect.CodeFailedPrecondition {
 			t.Errorf("leaving on %s: %v", name, err)
 		}
 	}
@@ -434,10 +435,8 @@ func TestNotEtcdMemberDetail(t *testing.T) {
 		want bool
 	}{"worker": {worker, false}, "not bootstrapped": {waiting, true}} {
 		_, err := tc.s.EtcdMembers(context.Background(), connect.NewRequest(&kubernetesv1.EtcdMembersRequest{}))
-		ce := new(connect.Error)
-		if !errors.As(err, &ce) {
-			t.Fatalf("%s: %v", name, err)
-		}
+		// The error as the interceptor answers it.
+		ce := layer.Codes(nil).Error(err)
 		got := false
 		for _, d := range ce.Details() {
 			if v, err := d.Value(); err == nil {

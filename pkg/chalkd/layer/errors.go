@@ -26,9 +26,9 @@ func (e *codedError) Unwrap() error { return e.err }
 
 func (e *codedError) Code() connect.Code { return e.code }
 
-// coded is an error that carries its code: a *connect.Error, an error of Errorf, or a domain error
+// Coded is an error that carries its code: a *connect.Error, an error of Errorf, or a domain error
 // of a layer with a Code method.
-type coded interface {
+type Coded interface {
 	error
 	Code() connect.Code
 }
@@ -59,7 +59,7 @@ func (c Codes) find(err error) (connect.Code, bool) {
 	if err == nil {
 		return 0, false
 	}
-	if e, ok := err.(coded); ok {
+	if e, ok := err.(Coded); ok {
 		return e.Code(), true
 	}
 	for _, f := range c {

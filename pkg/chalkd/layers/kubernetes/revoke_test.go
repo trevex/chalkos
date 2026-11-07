@@ -18,6 +18,7 @@ import (
 	k8stesting "k8s.io/client-go/testing"
 
 	kubernetesv1 "github.com/trevex/chalkos/pkg/api/kubernetes/v1"
+	"github.com/trevex/chalkos/pkg/chalkd/layer"
 	"github.com/trevex/chalkos/pkg/chalkd/layers/kubernetes/kubernetestest"
 	"github.com/trevex/chalkos/pkg/clustersecrets"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
@@ -128,10 +129,10 @@ func TestRevokeNode(t *testing.T) {
 		t.Errorf("revoking again: at %v, Node deleted %v; want %v and nothing deleted", again.RevokedAt.AsTime(), again.NodeDeleted, at)
 	}
 	for _, name := range []string{"", "W1", "w_1", "w1/x"} {
-		if _, err := l.revoke(name); connect.CodeOf(err) != connect.CodeInvalidArgument {
+		if _, err := l.revoke(name); layer.CodeOf(err) != connect.CodeInvalidArgument {
 			t.Errorf("revoking %q: %v, want InvalidArgument", name, err)
 		}
-		if _, err := l.unrevoke(name, true); connect.CodeOf(err) != connect.CodeInvalidArgument {
+		if _, err := l.unrevoke(name, true); layer.CodeOf(err) != connect.CodeInvalidArgument {
 			t.Errorf("unrevoking %q: %v, want InvalidArgument", name, err)
 		}
 	}
@@ -149,11 +150,11 @@ func TestRevokeNodeOnControlPlanesOnly(t *testing.T) {
 		"an unbootstrapped control": {unbootstrapped, "not an etcd member"},
 	} {
 		_, err := tc.s.RevokeNode(context.Background(), connect.NewRequest(&kubernetesv1.RevokeNodeRequest{Node: "w1"}))
-		if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), tc.want) {
+		if layer.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), tc.want) {
 			t.Errorf("revoke on %s: %v, want a refusal naming %q", name, err, tc.want)
 		}
 		_, err = tc.s.UnrevokeNode(context.Background(), connect.NewRequest(&kubernetesv1.UnrevokeNodeRequest{Node: "w1"}))
-		if connect.CodeOf(err) != connect.CodeFailedPrecondition {
+		if layer.CodeOf(err) != connect.CodeFailedPrecondition {
 			t.Errorf("unrevoke on %s: %v, want FailedPrecondition", name, err)
 		}
 	}
@@ -197,7 +198,7 @@ func TestUnrevokeNode(t *testing.T) {
 			at := tc.revokedAt.UTC().Truncate(time.Second)
 			if len(tc.stale) > 0 {
 				_, err := l.unrevoke("w1", false)
-				if connect.CodeOf(err) != connect.CodeFailedPrecondition {
+				if layer.CodeOf(err) != connect.CodeFailedPrecondition {
 					t.Fatalf("unrevoke: %v, want FailedPrecondition", err)
 				}
 				for _, ca := range []string{"os-ca", "kubernetes-ca"} {
@@ -225,7 +226,7 @@ func TestUnrevokeNode(t *testing.T) {
 
 func TestUnrevokeNodeNotRevoked(t *testing.T) {
 	l := newRevokeLab(t)
-	if _, err := l.unrevoke("w1", true); connect.CodeOf(err) != connect.CodeNotFound {
+	if _, err := l.unrevoke("w1", true); layer.CodeOf(err) != connect.CodeNotFound {
 		t.Errorf("unrevoking w1: %v, want NotFound", err)
 	}
 }
@@ -239,7 +240,7 @@ func TestUnrevokeNodeRevokedAtAnUnknownTime(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, err := l.unrevoke("w1", false)
-	if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "chalkctl rotate os-ca") || !strings.Contains(err.Error(), "chalkctl rotate kubernetes-ca") {
+	if layer.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "chalkctl rotate os-ca") || !strings.Contains(err.Error(), "chalkctl rotate kubernetes-ca") {
 		t.Fatalf("unrevoke: %v, want a refusal naming both CAs", err)
 	}
 	got, err := l.unrevoke("w1", true)
@@ -348,7 +349,7 @@ func TestRevokeNodeAppliesThePolicy(t *testing.T) {
 		t.Errorf("unrevoke with the policy failing: %v", err)
 	}
 	failing = false
-	if _, err := l.unrevoke("w2", true); connect.CodeOf(err) != connect.CodeNotFound {
+	if _, err := l.unrevoke("w2", true); layer.CodeOf(err) != connect.CodeNotFound {
 		t.Errorf("unrevoking again: %v, want NotFound", err)
 	}
 	if got := l.policyNames(t); got != "{}" {
@@ -399,7 +400,7 @@ func TestRevokeNodeRefusesPastThePolicysLimit(t *testing.T) {
 	// A name of 246 characters, whose entry alone takes the room left.
 	long := "w1." + strings.Repeat(strings.Repeat("x", 59)+".", 4) + "end"
 	_, err := l.revoke(long)
-	if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "chalkctl rotate os-ca") || !strings.Contains(err.Error(), "chalkctl node unrevoke") {
+	if layer.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "chalkctl rotate os-ca") || !strings.Contains(err.Error(), "chalkctl node unrevoke") {
 		t.Errorf("revoking %s: %v, want refused naming the rotations and unrevoke", long, err)
 	}
 	if _, ok := l.list(t)[long]; ok {

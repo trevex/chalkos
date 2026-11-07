@@ -24,6 +24,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/rest"
 
+	"github.com/trevex/chalkos/pkg/chalkd/layer"
 	"github.com/trevex/chalkos/pkg/chalkd/layers/kubernetes/kubernetestest"
 	"github.com/trevex/chalkos/pkg/chalkd/renewal"
 	"github.com/trevex/chalkos/pkg/chalkd/renewal/renewaltest"
@@ -57,7 +58,7 @@ func TestBootstrap(t *testing.T) {
 		t.Errorf("pin = %v, %v, want the node's address", pin, err)
 	}
 	_, err = kubernetestest.Bootstrap(context.Background(), s)
-	if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "bootstrapped already") {
+	if layer.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "bootstrapped already") {
 		t.Errorf("second bootstrap: %v", err)
 	}
 }
@@ -95,7 +96,7 @@ func TestBootstrapRefusals(t *testing.T) {
 			before = files(t, k.paths.State, k.paths.Run, k.paths.EtcdData)
 		}
 		_, err := kubernetestest.Bootstrap(context.Background(), tc.s)
-		if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), tc.want) {
+		if layer.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), tc.want) {
 			t.Errorf("%s: %v, want %q", name, err, tc.want)
 		}
 		if k := tc.s.k; k != nil {
@@ -147,7 +148,7 @@ func TestBootstrapReturnsBeforeManifestsApplied(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 	defer cancel()
 	_, err := kubernetestest.Bootstrap(ctx, s)
-	if connect.CodeOf(err) != connect.CodeDeadlineExceeded {
+	if layer.CodeOf(err) != connect.CodeDeadlineExceeded {
 		t.Fatalf("err = %v, want deadline exceeded", err)
 	}
 	// The node stays committed: it never initialises a second cluster.

@@ -21,6 +21,7 @@ import (
 	"k8s.io/client-go/util/retry"
 
 	kubernetesv1 "github.com/trevex/chalkos/pkg/api/kubernetes/v1"
+	"github.com/trevex/chalkos/pkg/chalkd/layer"
 	"github.com/trevex/chalkos/pkg/internal/poll"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
 	"github.com/trevex/chalkos/pkg/kubernetes/etcd"
@@ -49,7 +50,7 @@ func (p *Plugin) RotationStep(ctx context.Context, req *connect.Request[kubernet
 	case kubernetesv1.RotationStep_ROTATION_STEP_REWRITE_ENCRYPTED:
 		step = k.rewriteEncryptedStep
 	default:
-		return nil, failed(connect.CodeInvalidArgument, "unknown rotation step %v", req.Msg.Step)
+		return nil, layer.Errorf(connect.CodeInvalidArgument, "unknown rotation step %v", req.Msg.Step)
 	}
 	resp := &kubernetesv1.RotationStepResponse{}
 	if err := step(ctx, resp); err != nil {
@@ -60,10 +61,10 @@ func (p *Plugin) RotationStep(ctx context.Context, req *connect.Request[kubernet
 
 // stepFailed refuses a rotation step that failed, unless err already says how.
 func stepFailed(err error) error {
-	if _, ok := errors.AsType[*connect.Error](err); err == nil || ok {
+	if _, ok := errors.AsType[layer.Coded](err); err == nil || ok {
 		return err
 	}
-	return failed(connect.CodeFailedPrecondition, "%v", err)
+	return layer.Errorf(connect.CodeFailedPrecondition, "%w", err)
 }
 
 // countEncryptedStep counts the encrypted objects the node's etcd member holds by key.
@@ -397,15 +398,15 @@ func (p *Plugin) renewKubeletServing(ctx context.Context, _ *kubernetesv1.Rotati
 	k := p.k
 	files, err := filepath.Glob(filepath.Join(k.paths.KubeletPKI, "kubelet-server-*.pem"))
 	if err != nil {
-		return failed(connect.CodeInternal, "%v", err)
+		return err
 	}
 	for _, f := range files {
 		if err := os.Remove(f); err != nil {
-			return failed(connect.CodeInternal, "%v", err)
+			return err
 		}
 	}
 	if _, err := tool.Run(ctx, p.node.Runner(), "systemctl", "restart", "kubelet.service"); err != nil {
-		return failed(connect.CodeInternal, "restart the kubelet: %v", err)
+		return fmt.Errorf("restart the kubelet: %w", err)
 	}
 	log.Print("rotation: the kubelet requests a new serving certificate")
 	return nil

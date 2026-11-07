@@ -72,7 +72,7 @@ func (p *Plugin) Start(ctx context.Context) error {
 func (p *Plugin) Status(ctx context.Context, _ *connect.Request[kubernetesv1.StatusRequest]) (*connect.Response[kubernetesv1.StatusResponse], error) {
 	st, err := p.k.status(ctx)
 	if err != nil {
-		return nil, failed(connect.CodeInternal, "kubernetes: %v", err)
+		return nil, fmt.Errorf("kubernetes: %w", err)
 	}
 	return connect.NewResponse(st), nil
 }
@@ -87,10 +87,6 @@ func (p *Plugin) Actions() map[string]func(context.Context) error {
 		"restart": func(context.Context) error { p.k.restart(); return nil },
 		"reload":  func(context.Context) error { p.k.reloadControlPlane(); return nil },
 	}
-}
-
-func failed(code connect.Code, format string, args ...any) error {
-	return connect.NewError(code, fmt.Errorf(format, args...))
 }
 
 // count is n and the noun, in the plural unless n is one.
