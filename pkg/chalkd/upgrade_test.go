@@ -738,11 +738,11 @@ type lockWatcher struct {
 	check func(args []string)
 }
 
-func (w lockWatcher) Run(ctx context.Context, name string, args ...string) ([]byte, error) {
-	if name == "sfdisk" {
-		w.check(args)
+func (w lockWatcher) Exec(ctx context.Context, c tool.Cmd) ([]byte, error) {
+	if c.Name == "sfdisk" {
+		w.check(c.Args)
 	}
-	return w.Runner.Run(ctx, name, args...)
+	return w.Runner.Exec(ctx, c)
 }
 
 // TestUpgradeSharesTheStorageLock reads the boot disk's partition table only while holding the

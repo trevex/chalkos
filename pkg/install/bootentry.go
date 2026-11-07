@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/trevex/chalkos/pkg/storage"
+	"github.com/trevex/chalkos/pkg/tool"
 )
 
 var (
@@ -62,7 +63,7 @@ func (i *Installer) addBootEntry(ctx context.Context, disk storage.BlockDisk) er
 	}
 	// The ESP's partition UUID is random, so it names the target's entries alone.
 	find := func() (*bootEntry, []bootEntry, error) {
-		out, err := i.Run.Run(ctx, "efibootmgr", "--verbose")
+		out, err := tool.Run(ctx, i.Run, "efibootmgr", "--verbose")
 		if err != nil {
 			return nil, nil, fmt.Errorf("list UEFI boot entries: %w", err)
 		}
@@ -82,7 +83,7 @@ func (i *Installer) addBootEntry(ctx context.Context, disk storage.BlockDisk) er
 		if err := i.change("add the UEFI boot entry"); err != nil {
 			return err
 		}
-		if _, err := i.Run.Run(ctx, "efibootmgr", "--create", "--disk", disk.Device, "--part", strconv.Itoa(espPart.Number), "--label", bootLabel, "--loader", i.loader()); err != nil {
+		if _, err := tool.Run(ctx, i.Run, "efibootmgr", "--create", "--disk", disk.Device, "--part", strconv.Itoa(espPart.Number), "--label", bootLabel, "--loader", i.loader()); err != nil {
 			return fmt.Errorf("add a UEFI boot entry: %w", err)
 		}
 		if created, entries, err = find(); err != nil {
@@ -95,7 +96,7 @@ func (i *Installer) addBootEntry(ctx context.Context, disk storage.BlockDisk) er
 	if err := i.change("boot the target next"); err != nil {
 		return err
 	}
-	if _, err := i.Run.Run(ctx, "efibootmgr", "--bootnext", created.num); err != nil {
+	if _, err := tool.Run(ctx, i.Run, "efibootmgr", "--bootnext", created.num); err != nil {
 		return fmt.Errorf("boot the target next: %w", err)
 	}
 	i.deleteStaleBootEntries(ctx, entries, created.num)
@@ -114,7 +115,7 @@ func (i *Installer) deleteStaleBootEntries(ctx context.Context, entries []bootEn
 		if !errors.Is(err, fs.ErrNotExist) {
 			continue
 		}
-		if _, err := i.Run.Run(ctx, "efibootmgr", "--delete-bootnum", "--bootnum", e.num); err != nil {
+		if _, err := tool.Run(ctx, i.Run, "efibootmgr", "--delete-bootnum", "--bootnum", e.num); err != nil {
 			log.Printf("delete the stale UEFI boot entry Boot%s: %v", e.num, err)
 		}
 	}
@@ -131,7 +132,7 @@ func (i *Installer) unboot(ctx context.Context, target storage.BlockDisk) error 
 	if err := i.removeBootLoader(ctx, espPart); err != nil {
 		return err
 	}
-	out, err := i.Run.Run(ctx, "efibootmgr", "--verbose")
+	out, err := tool.Run(ctx, i.Run, "efibootmgr", "--verbose")
 	if err != nil {
 		return fmt.Errorf("list UEFI boot entries: %w", err)
 	}
@@ -144,7 +145,7 @@ func (i *Installer) unboot(ctx context.Context, target storage.BlockDisk) error 
 			if err := i.change("stop booting the target next"); err != nil {
 				return err
 			}
-			if _, err := i.Run.Run(ctx, "efibootmgr", "--delete-bootnext"); err != nil {
+			if _, err := tool.Run(ctx, i.Run, "efibootmgr", "--delete-bootnext"); err != nil {
 				return fmt.Errorf("stop booting the target next: %w", err)
 			}
 			return nil

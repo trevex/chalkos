@@ -77,7 +77,7 @@ func (s *Server) Status(ctx context.Context, req *connect.Request[nodev1.StatusR
 		})
 	}
 
-	out, err := s.Run.Run(ctx, "systemctl", "list-units", "--state=failed", "--plain", "--no-legend", "--no-pager")
+	out, err := tool.Run(ctx, s.Run, "systemctl", "list-units", "--state=failed", "--plain", "--no-legend", "--no-pager")
 	if err != nil {
 		return nil, failed(connect.CodeInternal, "list failed units: %v", err)
 	}
@@ -150,11 +150,7 @@ func (s *Server) timeStatus(ctx context.Context) *nodev1.TimeStatus {
 	defer cancel()
 	// chronyc fails on every request while chronyd is down: its error goes into the status, not
 	// once more into chalkd's log.
-	run := s.Run.Run
-	if quiet, ok := s.Run.(tool.QuietRunner); ok {
-		run = quiet.RunQuiet
-	}
-	out, err := run(ctx, "chronyc", "-n", "-c", "tracking")
+	out, err := s.Run.Exec(ctx, tool.Cmd{Name: "chronyc", Args: []string{"-n", "-c", "tracking"}, Quiet: true})
 	if err != nil {
 		return &nodev1.TimeStatus{Error: err.Error()}
 	}
@@ -212,7 +208,7 @@ func (s *Server) bootHealth(ctx context.Context) *nodev1.BootHealth {
 // up after the units that start them, within the time a counted boot has to become healthy. A
 // state that cannot be read counts as not settled, so a client keeps waiting until its timeout.
 func (s *Server) bootSettled(ctx context.Context) bool {
-	out, err := s.Run.Run(ctx, "systemctl", "show", "--property=SystemState", "--property=FinishTimestampMonotonic")
+	out, err := tool.Run(ctx, s.Run, "systemctl", "show", "--property=SystemState", "--property=FinishTimestampMonotonic")
 	if err != nil {
 		log.Printf("read whether the boot settled: %v", err)
 		return false

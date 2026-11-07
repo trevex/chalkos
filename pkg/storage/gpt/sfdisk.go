@@ -35,7 +35,7 @@ func (s Sfdisk) Exec(ctx context.Context, args ...string) ([]byte, error) {
 	}
 	deadline := time.Now().Add(wait)
 	for {
-		out, err := s.Run.Run(ctx, "sfdisk", append([]string{"--lock=nonblock"}, args...)...)
+		out, err := tool.Run(ctx, s.Run, "sfdisk", append([]string{"--lock=nonblock"}, args...)...)
 		if err == nil || !strings.Contains(err.Error(), "already locked") {
 			return out, err
 		}

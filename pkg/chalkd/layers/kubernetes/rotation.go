@@ -25,6 +25,7 @@ import (
 	"github.com/trevex/chalkos/pkg/kubernetes/etcd"
 	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
 	"github.com/trevex/chalkos/pkg/pki"
+	"github.com/trevex/chalkos/pkg/tool"
 )
 
 // RestartedAnnotation is the annotation of a workload's pod template that restarting it for a
@@ -417,7 +418,7 @@ func (p *Plugin) renewKubeletServing(ctx context.Context, _ *kubernetesv1.Rotati
 			return failed(connect.CodeInternal, "%v", err)
 		}
 	}
-	if _, err := p.node.Runner().Run(ctx, "systemctl", "restart", "kubelet.service"); err != nil {
+	if _, err := tool.Run(ctx, p.node.Runner(), "systemctl", "restart", "kubelet.service"); err != nil {
 		return failed(connect.CodeInternal, "restart the kubelet: %v", err)
 	}
 	log.Print("rotation: the kubelet requests a new serving certificate")

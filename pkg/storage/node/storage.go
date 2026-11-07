@@ -84,10 +84,10 @@ type OpenOptions struct {
 
 // Open unlocks dev as /dev/mapper/<name> if it holds LUKS and mounts the file system at target.
 func (s *Storage) Open(ctx context.Context, name, dev, target string, o OpenOptions) error {
-	if _, err := s.Run.Run(ctx, "udevadm", "wait", "--timeout=60", dev); err != nil {
+	if _, err := tool.Run(ctx, s.Run, "udevadm", "wait", "--timeout=60", dev); err != nil {
 		return fmt.Errorf("wait for %s: %w", dev, err)
 	}
-	out, err := s.Run.Run(ctx, "blkid", "-p", "-o", "value", "-s", "TYPE", dev)
+	out, err := tool.Run(ctx, s.Run, "blkid", "-p", "-o", "value", "-s", "TYPE", dev)
 	if err != nil {
 		return fmt.Errorf("probe %s: %w", dev, err)
 	}
@@ -101,7 +101,7 @@ func (s *Storage) Open(ctx context.Context, name, dev, target string, o OpenOpti
 		if !o.Prompt {
 			options += ",headless=true"
 		}
-		if _, err := s.Run.Run(ctx, "systemd-cryptsetup", "attach", name, dev, "-", options); err != nil {
+		if _, err := tool.Run(ctx, s.Run, "systemd-cryptsetup", "attach", name, dev, "-", options); err != nil {
 			if !o.Prompt && unsealFailed(err) {
 				// Only a reinstall recreates VAR. The installer, which opens STATE without a
 				// prompt, names its own remedy.
@@ -120,7 +120,7 @@ func (s *Storage) Open(ctx context.Context, name, dev, target string, o OpenOpti
 	if err := os.MkdirAll(target, 0o755); err != nil {
 		return err
 	}
-	if _, err := s.Run.Run(ctx, "mount", "-t", "ext4", source, target); err != nil {
+	if _, err := tool.Run(ctx, s.Run, "mount", "-t", "ext4", source, target); err != nil {
 		return fmt.Errorf("mount %s: %w", name, err)
 	}
 	return nil
@@ -130,7 +130,7 @@ func (s *Storage) Open(ctx context.Context, name, dev, target string, o OpenOpti
 // dev is mounted; nothing else checks it, as it is mounted outside fstab. e2fsck exits with 1
 // when it corrected errors.
 func (s *Storage) checkFileSystem(ctx context.Context, name, dev string) error {
-	_, err := s.Run.Run(ctx, "e2fsck", "-p", dev)
+	_, err := tool.Run(ctx, s.Run, "e2fsck", "-p", dev)
 	var te *tool.Error
 	switch {
 	case err == nil, errors.As(err, &te) && te.Code == 1:
@@ -181,7 +181,7 @@ func (s *Storage) setUpVolumes(ctx context.Context, status *storage.Status) erro
 		return err
 	}
 	// repart grows the partition when its size grows; the file system follows here.
-	if _, err := s.Run.Run(ctx, "systemd-growfs", s.VarDir); err != nil {
+	if _, err := tool.Run(ctx, s.Run, "systemd-growfs", s.VarDir); err != nil {
 		log.Printf("grow /var: %v", err)
 	}
 	return nil
@@ -312,7 +312,7 @@ func (s *Storage) locateDisks(ctx context.Context, section storage.Section, pins
 	}
 	// Identities come from the udev database, which udev fills in as it processes each disk; a
 	// disk pinned before that would be pinned by a weaker identity than it has.
-	if _, err := s.Run.Run(ctx, "udevadm", "settle", "--timeout=30"); err != nil {
+	if _, err := tool.Run(ctx, s.Run, "udevadm", "settle", "--timeout=30"); err != nil {
 		for _, name := range unpinned {
 			fail(name, fmt.Errorf("udev has not processed every disk, so the reference is resolved on a later boot: %w", err))
 		}
@@ -416,7 +416,7 @@ func (s *Storage) repart(ctx context.Context, name, dev string, d storage.Disk) 
 		// The disk was checked to be unused before it was pinned.
 		args = append(args, "--empty=allow")
 	}
-	out, err := s.Run.Run(ctx, "systemd-repart", append(args, dev)...)
+	out, err := tool.Run(ctx, s.Run, "systemd-repart", append(args, dev)...)
 	if err != nil {
 		return nil, err
 	}

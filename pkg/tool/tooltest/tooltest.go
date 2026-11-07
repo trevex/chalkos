@@ -5,6 +5,8 @@ import (
 	"context"
 	"strings"
 	"sync"
+
+	"github.com/trevex/chalkos/pkg/tool"
 )
 
 // Rule answers the commands whose line, the name and arguments joined by spaces, starts with
@@ -24,53 +26,20 @@ type Runner struct {
 	Rules []Rule
 	// Calls holds the command lines run, in order.
 	Calls []string
-	// Envs holds the environment variables commands received, by command line.
-	Envs map[string][]string
-	// Inputs holds what commands received on standard input, by command line.
-	Inputs map[string]string
-	// Quiet holds the command lines run without their standard error reaching the console.
-	Quiet map[string]bool
+	// Cmds holds the commands run, in order, with their environment, input and quietness.
+	Cmds []tool.Cmd
 	// Before, when set, sees each command line before the command is answered.
 	Before func(line string)
 }
 
-func (f *Runner) Run(ctx context.Context, name string, args ...string) ([]byte, error) {
-	return f.RunWithEnv(ctx, nil, name, args...)
-}
-
-func (f *Runner) RunQuiet(ctx context.Context, name string, args ...string) ([]byte, error) {
-	f.mu.Lock()
-	if f.Quiet == nil {
-		f.Quiet = map[string]bool{}
-	}
-	f.Quiet[line(name, args)] = true
-	f.mu.Unlock()
-	return f.RunWithEnv(ctx, nil, name, args...)
-}
-
-func (f *Runner) RunWithInput(ctx context.Context, input []byte, name string, args ...string) ([]byte, error) {
-	f.mu.Lock()
-	if f.Inputs == nil {
-		f.Inputs = map[string]string{}
-	}
-	f.Inputs[line(name, args)] = string(input)
-	f.mu.Unlock()
-	return f.RunWithEnv(ctx, nil, name, args...)
-}
-
-func (f *Runner) RunWithEnv(_ context.Context, env []string, name string, args ...string) ([]byte, error) {
+func (f *Runner) Exec(_ context.Context, c tool.Cmd) ([]byte, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	l := line(name, args)
+	l := c.String()
 	f.Calls = append(f.Calls, l)
+	f.Cmds = append(f.Cmds, c)
 	if f.Before != nil {
 		f.Before(l)
-	}
-	if env != nil {
-		if f.Envs == nil {
-			f.Envs = map[string][]string{}
-		}
-		f.Envs[l] = env
 	}
 	for i := range f.Rules {
 		r := &f.Rules[i]
@@ -88,8 +57,16 @@ func (f *Runner) RunWithEnv(_ context.Context, env []string, name string, args .
 	return nil, nil
 }
 
-func line(name string, args []string) string {
-	return strings.Join(append([]string{name}, args...), " ")
+// Cmd is the last command run whose line is line, and whether one was.
+func (f *Runner) Cmd(line string) (tool.Cmd, bool) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for i := len(f.Cmds) - 1; i >= 0; i-- {
+		if f.Cmds[i].String() == line {
+			return f.Cmds[i], true
+		}
+	}
+	return tool.Cmd{}, false
 }
 
 // ResetCalls forgets the commands run so far, while code under test may still run some.
@@ -97,4 +74,5 @@ func (f *Runner) ResetCalls() {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.Calls = nil
+	f.Cmds = nil
 }

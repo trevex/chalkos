@@ -194,22 +194,15 @@ func newPartsLabOf(t *testing.T, sector int64, size uint64) *partsLab {
 	return l
 }
 
-func (l *partsLab) Run(ctx context.Context, name string, args ...string) ([]byte, error) {
-	return l.RunWithEnv(ctx, nil, name, args...)
-}
-
-func (l *partsLab) RunWithInput(ctx context.Context, _ []byte, name string, args ...string) ([]byte, error) {
-	return l.RunWithEnv(ctx, nil, name, args...)
-}
-
-// RunWithEnv runs the disk tools on the disk image and emulates the others.
-func (l *partsLab) RunWithEnv(ctx context.Context, env []string, name string, args ...string) ([]byte, error) {
+// Exec runs the disk tools on the disk image and emulates the others.
+func (l *partsLab) Exec(ctx context.Context, c tool.Cmd) ([]byte, error) {
+	name, args := c.Name, c.Args
 	switch {
 	case name == "sfdisk" || name == "systemd-repart" || name == "blkid":
-		l.r.Calls = append(l.r.Calls, strings.Join(append([]string{name}, args...), " "))
+		l.record(c)
 		return l.real(ctx, name, args)
 	case name == "mount":
-		l.r.Calls = append(l.r.Calls, strings.Join(append([]string{name}, args...), " "))
+		l.record(c)
 		source, target := args[len(args)-2], args[len(args)-1]
 		if err := l.mount(source, target); err != nil {
 			return nil, err
@@ -219,10 +212,10 @@ func (l *partsLab) RunWithEnv(ctx context.Context, env []string, name string, ar
 		}
 		return nil, l.countMount(source)
 	case name == "umount":
-		l.r.Calls = append(l.r.Calls, strings.Join(append([]string{name}, args...), " "))
+		l.record(c)
 		return nil, l.umount(args[0])
 	case name == "systemd-cryptsetup" && args[0] == "attach" && l.tpmFails:
-		l.r.Calls = append(l.r.Calls, strings.Join(append([]string{name}, args...), " "))
+		l.record(c)
 		return nil, &tool.Error{Command: name, Code: 1, Stderr: "Failed to unseal secret using TPM2: State not recoverable"}
 	case name == "efibootmgr":
 		// The emulated firmware finds the ESP's partition UUID on the disk.
@@ -231,7 +224,13 @@ func (l *partsLab) RunWithEnv(ctx context.Context, env []string, name string, ar
 			l.r.partUUIDs[labDev+" "+strconv.Itoa(p.Number)] = p.UUID
 		}
 	}
-	return l.r.RunWithEnv(ctx, env, name, args...)
+	return l.r.Exec(ctx, c)
+}
+
+// record records a command the lab answers itself as the fake runner does.
+func (l *partsLab) record(c tool.Cmd) {
+	l.r.Calls = append(l.r.Calls, c.String())
+	l.r.Cmds = append(l.r.Cmds, c)
 }
 
 // real runs a disk tool on the disk image, with blkid probing a partition at its offset.
@@ -265,7 +264,7 @@ func (l *partsLab) real(ctx context.Context, name string, args []string) ([]byte
 			argv = append([]string{"--sector-size=" + strconv.FormatInt(l.sector, 10)}, argv...)
 		}
 	}
-	out, err := tool.ExecRunner{}.RunQuiet(ctx, name, argv...)
+	out, err := tool.ExecRunner{}.Exec(ctx, tool.Cmd{Name: name, Args: argv, Quiet: true})
 	if name == "blkid" && l.sector != 512 {
 		// blkid reads a file as a disk of 512-byte sectors, and so finds only a 4Kn disk's
 		// protective MBR, where it finds the GPT on the disk itself.

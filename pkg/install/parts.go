@@ -14,6 +14,7 @@ import (
 	"github.com/trevex/chalkos/pkg/identity"
 	"github.com/trevex/chalkos/pkg/storage"
 	"github.com/trevex/chalkos/pkg/storeslot"
+	"github.com/trevex/chalkos/pkg/tool"
 	"github.com/trevex/chalkos/pkg/upgrade"
 )
 
@@ -234,12 +235,12 @@ func (i *Installer) releaseStore(ctx context.Context) error {
 		return err
 	}
 	if mounted {
-		if _, err := i.Run.Run(ctx, "umount", i.storeDir()); err != nil {
+		if _, err := tool.Run(ctx, i.Run, "umount", i.storeDir()); err != nil {
 			return fmt.Errorf("unmount the checked store: %w", err)
 		}
 	}
 	if _, err := os.Stat(filepath.Join(i.Host.DevRoot, "mapper", upgrade.StoreMapping)); err == nil {
-		if _, err := i.Run.Run(ctx, "veritysetup", "close", upgrade.StoreMapping); err != nil {
+		if _, err := tool.Run(ctx, i.Run, "veritysetup", "close", upgrade.StoreMapping); err != nil {
 			return fmt.Errorf("close the checked store: %w", err)
 		}
 	}

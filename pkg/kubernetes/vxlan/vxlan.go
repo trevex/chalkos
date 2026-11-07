@@ -9,7 +9,7 @@
 package vxlan
 
 import (
-	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -17,7 +17,6 @@ import (
 	"log"
 	"net/netip"
 	"os"
-	"os/exec"
 	"slices"
 	"strings"
 
@@ -25,6 +24,7 @@ import (
 	"github.com/trevex/chalkos/pkg/internal/strs"
 	"github.com/trevex/chalkos/pkg/kubernetes"
 	"github.com/trevex/chalkos/pkg/kubernetes/nodeip"
+	"github.com/trevex/chalkos/pkg/tool"
 )
 
 const (
@@ -265,17 +265,9 @@ func Default() Rule {
 }
 
 func runNFT(input string, args ...string) error {
-	cmd := exec.Command("nft", args...)
-	cmd.Stdin = strings.NewReader(input)
-	var stderr bytes.Buffer
-	cmd.Stdout, cmd.Stderr = os.Stdout, &stderr
-	if err := cmd.Run(); err != nil {
-		if msg := strings.TrimSpace(stderr.String()); msg != "" {
-			return fmt.Errorf("nft: %w: %s", err, msg)
-		}
-		return fmt.Errorf("nft: %w", err)
-	}
-	return nil
+	out, err := tool.ExecRunner{}.Exec(context.Background(), tool.Cmd{Name: "nft", Args: args, Stdin: []byte(input), Quiet: true})
+	os.Stdout.Write(out)
+	return err
 }
 
 // Apply fills the table from file, which holds what Accept.Marshal writes, and empties its input

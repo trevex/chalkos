@@ -98,7 +98,7 @@ func TestRouterStatus(t *testing.T) {
 	if st == nil || st.BgpError != "" || len(st.Peers) != 4 || st.Peers[0].Name != "fabric" || st.Peers[0].State != "Established" || st.Peers[0].Vrf != "default" || st.Peers[3].Vrf != "tenant" {
 		t.Fatalf("router status = %v", st)
 	}
-	if !r.Quiet["vtysh -c "+routing.NeighborsCommand] {
+	if c, _ := r.Cmd("vtysh -c " + routing.NeighborsCommand); !c.Quiet {
 		t.Error("vtysh's standard error reaches the console")
 	}
 	// Without NAT64 documents, Jool is not asked.
@@ -134,9 +134,9 @@ func TestRouterWithoutBGP(t *testing.T) {
 }
 
 // hangingRunner is a vtysh that never answers before its context ends.
-type hangingRunner struct{ tool.Runner }
+type hangingRunner struct{}
 
-func (hangingRunner) Run(ctx context.Context, name string, args ...string) ([]byte, error) {
+func (hangingRunner) Exec(ctx context.Context, _ tool.Cmd) ([]byte, error) {
 	<-ctx.Done()
 	return nil, ctx.Err()
 }
@@ -144,8 +144,8 @@ func (hangingRunner) Run(ctx context.Context, name string, args ...string) ([]by
 // Daemons that hang, systemd too, cost Status one timeout altogether, as chalkd asks them side by
 // side, and the router's part says which hang.
 func TestRouterStatusWhileDaemonsHang(t *testing.T) {
-	s, r := routerNode(t)
-	s.r.run = hangingRunner{r}
+	s, _ := routerNode(t)
+	s.r.run = hangingRunner{}
 	defer func(d time.Duration) { askTimeout = d }(askTimeout)
 	askTimeout = 200 * time.Millisecond
 	for _, file := range []string{s.r.ResolverConfig, filepath.Join(s.r.NAT64Dir, "edge.json"), filepath.Join(s.r.ResolverDir, "unbound-guest.conf")} {
@@ -175,11 +175,11 @@ func TestRouterStatusWhileDaemonsHang(t *testing.T) {
 // slowJool is a jool that lists one instance and its statistics at once and takes a while for each
 // of its pools.
 type slowJool struct {
-	tool.Runner
 	delay time.Duration
 }
 
-func (j slowJool) Run(ctx context.Context, name string, args ...string) ([]byte, error) {
+func (j slowJool) Exec(ctx context.Context, c tool.Cmd) ([]byte, error) {
+	name, args := c.Name, c.Args
 	if name == "jool" && args[0] == "instance" {
 		return []byte("8fb43ac0,edge,netfilter\n"), nil
 	}
@@ -197,8 +197,8 @@ func (j slowJool) Run(ctx context.Context, name string, args ...string) ([]byte,
 // jool's questions share one timeout: pools that each answer in time but together take longer
 // leave the NAT64 part unknown.
 func TestRouterStatusWhileJoolIsSlow(t *testing.T) {
-	s, r := routerNode(t)
-	s.r.run = slowJool{r, 40 * time.Millisecond}
+	s, _ := routerNode(t)
+	s.r.run = slowJool{40 * time.Millisecond}
 	if err := os.WriteFile(filepath.Join(s.r.NAT64Dir, "edge.json"), []byte("{}\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -216,8 +216,8 @@ func TestRouterStatusWhileJoolIsSlow(t *testing.T) {
 
 // A request that ends before vtysh answers is no timeout of vtysh's.
 func TestVtyshCancelled(t *testing.T) {
-	s, r := routerNode(t)
-	s.r.run = hangingRunner{r}
+	s, _ := routerNode(t)
+	s.r.run = hangingRunner{}
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	if _, err := s.r.vtysh(ctx, routing.NeighborsCommand); err == nil || strings.Contains(err.Error(), "did not answer") {
@@ -227,8 +227,8 @@ func TestVtyshCancelled(t *testing.T) {
 
 // A caller's deadline shorter than vtysh's timeout is the caller's, not vtysh's.
 func TestVtyshCallerDeadline(t *testing.T) {
-	s, r := routerNode(t)
-	s.r.run = hangingRunner{r}
+	s, _ := routerNode(t)
+	s.r.run = hangingRunner{}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
 	defer cancel()
 	if _, err := s.r.vtysh(ctx, routing.NeighborsCommand); !errors.Is(err, context.DeadlineExceeded) || strings.Contains(err.Error(), "did not answer") {
@@ -266,7 +266,7 @@ func TestRouterNAT64Status(t *testing.T) {
 	if want := []string{"tcp 41837", "udp 0", "icmp 0"}; !slices.Equal(got, want) {
 		t.Errorf("pools = %v, want %v", got, want)
 	}
-	if !r.Quiet["jool instance display --csv --no-headers"] {
+	if c, _ := r.Cmd("jool instance display --csv --no-headers"); !c.Quiet {
 		t.Error("jool's standard error reaches the console")
 	}
 	for _, call := range r.Calls {
@@ -331,7 +331,7 @@ func TestRouterVRFResolverStatus(t *testing.T) {
 	if !slices.Contains(r.Calls, `systemctl is-active unbound@dmz\x2da.service`) {
 		t.Errorf("dmz-a's unit was not asked by its escaped name: %q", r.Calls)
 	}
-	if !r.Quiet["systemctl is-active unbound@tenant.service"] {
+	if c, _ := r.Cmd("systemctl is-active unbound@tenant.service"); !c.Quiet {
 		t.Error("systemctl's standard error reaches the console")
 	}
 	if slices.ContainsFunc(r.Calls, func(c string) bool { return strings.Contains(c, "Bad_Name") || strings.Contains(c, "x;y") }) {

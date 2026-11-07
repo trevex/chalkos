@@ -42,20 +42,12 @@ type fakeRunner struct {
 	efi       *fakeEFI
 }
 
-func (f *fakeRunner) Run(ctx context.Context, name string, args ...string) ([]byte, error) {
-	return f.RunWithEnv(ctx, nil, name, args...)
-}
-
-func (f *fakeRunner) RunWithEnv(ctx context.Context, env []string, name string, args ...string) ([]byte, error) {
-	out, err := f.Runner.RunWithEnv(ctx, env, name, args...)
+func (f *fakeRunner) Exec(ctx context.Context, c tool.Cmd) ([]byte, error) {
+	out, err := f.Runner.Exec(ctx, c)
 	if err != nil {
 		return out, err
 	}
-	return f.apply(name, args, out)
-}
-
-func (f *fakeRunner) RunWithInput(ctx context.Context, _ []byte, name string, args ...string) ([]byte, error) {
-	return f.RunWithEnv(ctx, nil, name, args...)
+	return f.apply(c.Name, c.Args, out)
 }
 
 // apply makes the host reflect a command that succeeded.
@@ -421,13 +413,18 @@ func TestInPlaceInstallsOnBootDisk(t *testing.T) {
 	if espUUID == "00000001-0000-4000-8000-000000000000" {
 		t.Error("the ESP kept the image's partition UUID")
 	}
-	for line, env := range r.Envs {
-		if !reflect.DeepEqual(env, []string{"NEWPASSWORD=" + secret}) {
-			t.Errorf("%s ran with environment %v", line, env)
+	passed := 0
+	for _, c := range r.Cmds {
+		if c.Env == nil {
+			continue
+		}
+		passed++
+		if !reflect.DeepEqual(c.Env, []string{"NEWPASSWORD=" + secret}) {
+			t.Errorf("%s ran with environment %v", c, c.Env)
 		}
 	}
-	if len(r.Envs) != 2 {
-		t.Errorf("the fallback secret was passed %d times, want twice", len(r.Envs))
+	if passed != 2 {
+		t.Errorf("the fallback secret was passed %d times, want twice", passed)
 	}
 	for _, c := range r.Calls {
 		if strings.Contains(c, secret) {

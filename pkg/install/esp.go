@@ -16,6 +16,7 @@ import (
 	"github.com/trevex/chalkos/pkg/esp"
 	"github.com/trevex/chalkos/pkg/storage"
 	"github.com/trevex/chalkos/pkg/storage/gpt"
+	"github.com/trevex/chalkos/pkg/tool"
 	"github.com/trevex/chalkos/pkg/uki"
 	"github.com/trevex/chalkos/pkg/upgrade"
 )
@@ -170,12 +171,12 @@ func (i *Installer) withESP(ctx context.Context, espPart gpt.Partition, use func
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
 	}
-	if _, err := i.Run.Run(ctx, "mount", "-t", "vfat", "-o", "umask=0077", espPart.Node, dir); err != nil {
+	if _, err := tool.Run(ctx, i.Run, "mount", "-t", "vfat", "-o", "umask=0077", espPart.Node, dir); err != nil {
 		return fmt.Errorf("mount the ESP: %w", err)
 	}
 	defer func() {
 		serr := esp.Sync(dir)
-		if _, uerr := i.Run.Run(ctx, "umount", dir); uerr != nil && serr == nil {
+		if _, uerr := tool.Run(ctx, i.Run, "umount", dir); uerr != nil && serr == nil {
 			serr = fmt.Errorf("unmount the ESP: %w", uerr)
 		}
 		if err == nil {
@@ -193,7 +194,7 @@ func (i *Installer) releaseESP(ctx context.Context) error {
 	if err != nil || !mounted {
 		return err
 	}
-	if _, err := i.Run.Run(ctx, "umount", dir); err != nil {
+	if _, err := tool.Run(ctx, i.Run, "umount", dir); err != nil {
 		return fmt.Errorf("unmount the ESP: %w", err)
 	}
 	return nil

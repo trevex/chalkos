@@ -50,13 +50,13 @@ func (i *Installer) closeState(ctx context.Context) error {
 		return err
 	}
 	if mounted {
-		_, err := i.Run.Run(ctx, "umount", i.StateDir)
+		_, err := tool.Run(ctx, i.Run, "umount", i.StateDir)
 		if te, ok := errors.AsType[*tool.Error](err); err != nil && !(ok && strings.Contains(te.Stderr, "not mounted")) {
 			return fmt.Errorf("unmount STATE: %w", err)
 		}
 	}
 	if _, err := os.Stat(filepath.Join(i.Host.DevRoot, "mapper", stateMapperName)); err == nil {
-		if _, err := i.Run.Run(ctx, "systemd-cryptsetup", "detach", stateMapperName); err != nil {
+		if _, err := tool.Run(ctx, i.Run, "systemd-cryptsetup", "detach", stateMapperName); err != nil {
 			return fmt.Errorf("close STATE: %w", err)
 		}
 	}
@@ -94,7 +94,7 @@ func (i *Installer) prepareState(ctx context.Context, disk storage.BlockDisk, de
 	if err := writeDefinitions(dir, defs, policy); err != nil {
 		return err
 	}
-	if _, err := i.Run.Run(ctx, "systemd-repart", "--dry-run=no", "--seed=random", "--definitions="+dir, "--tpm2-pcrs=7", disk.Device); err != nil {
+	if _, err := tool.Run(ctx, i.Run, "systemd-repart", "--dry-run=no", "--seed=random", "--definitions="+dir, "--tpm2-pcrs=7", disk.Device); err != nil {
 		return fmt.Errorf("create the system region on %s: %w", disk.Device, err)
 	}
 	return nil
@@ -149,7 +149,7 @@ func (i *Installer) checkState(ctx context.Context, target storage.BlockDisk, ta
 func (i *Installer) openStateReadOnly(ctx context.Context, dev string, luks bool) error {
 	source := dev
 	if luks {
-		if _, err := i.Run.Run(ctx, "systemd-cryptsetup", "attach", stateMapperName, dev, "-", "tpm2-device=auto,headless=true,read-only"); err != nil {
+		if _, err := tool.Run(ctx, i.Run, "systemd-cryptsetup", "attach", stateMapperName, dev, "-", "tpm2-device=auto,headless=true,read-only"); err != nil {
 			return err
 		}
 		source = "/dev/mapper/" + stateMapperName
@@ -157,7 +157,7 @@ func (i *Installer) openStateReadOnly(ctx context.Context, dev string, luks bool
 	if err := os.MkdirAll(i.StateDir, 0o755); err != nil {
 		return err
 	}
-	_, err := i.Run.Run(ctx, "mount", "-t", "ext4", "-o", "ro,noload", source, i.StateDir)
+	_, err := tool.Run(ctx, i.Run, "mount", "-t", "ext4", "-o", "ro,noload", source, i.StateDir)
 	return err
 }
 

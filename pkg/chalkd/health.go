@@ -118,10 +118,10 @@ func (h *Health) chalkdServes(ctx context.Context) error {
 // that multi-user.target or sysinit.target pull in, or what those need. Jobs a timer or a socket
 // started, which may fail at any time, do not count, nor the units the image ignores.
 func (h *Health) applied(ctx context.Context) error {
-	if _, err := h.Run.Run(ctx, "systemctl", "is-active", "--quiet", "chalkos-config.service"); err != nil {
+	if _, err := tool.Run(ctx, h.Run, "systemctl", "is-active", "--quiet", "chalkos-config.service"); err != nil {
 		return errors.New("the config was not applied")
 	}
-	out, err := h.Run.Run(ctx, "systemctl", "list-units", "--state=failed", "--plain", "--no-legend", "--no-pager")
+	out, err := tool.Run(ctx, h.Run, "systemctl", "list-units", "--state=failed", "--plain", "--no-legend", "--no-pager")
 	if err != nil {
 		return fmt.Errorf("list failed units: %w", err)
 	}
@@ -129,7 +129,7 @@ func (h *Health) applied(ctx context.Context) error {
 	if len(failedUnits) == 0 {
 		return nil
 	}
-	out, err = h.Run.Run(ctx, "systemctl", "list-dependencies", "--all", "--plain", "--no-legend", "--no-pager", "multi-user.target", "sysinit.target")
+	out, err = tool.Run(ctx, h.Run, "systemctl", "list-dependencies", "--all", "--plain", "--no-legend", "--no-pager", "multi-user.target", "sysinit.target")
 	if err != nil {
 		return fmt.Errorf("list the units of the boot: %w", err)
 	}
@@ -218,7 +218,7 @@ func (h *Health) unhealthy(ctx context.Context, err error) error {
 		return err
 	}
 	log.Printf("%v; rebooting: %s", err, why)
-	if _, rerr := h.Run.Run(ctx, "systemctl", "reboot", "--no-block"); rerr != nil {
+	if _, rerr := tool.Run(ctx, h.Run, "systemctl", "reboot", "--no-block"); rerr != nil {
 		return fmt.Errorf("%w; the reboot failed: %v", err, rerr)
 	}
 	return err
@@ -274,7 +274,7 @@ const recordLines = 30
 // of its entry, which stays the same while the boot loader counts it.
 func (h *Health) record(ctx context.Context, failure error) {
 	booted, running, _ := h.booted()
-	out, err := h.Run.Run(ctx, "journalctl", "--boot", "--no-pager", "--output=short-iso", "--lines="+strconv.Itoa(recordLines), "--unit=chalkd.service", "--unit=chalkos-health.service")
+	out, err := tool.Run(ctx, h.Run, "journalctl", "--boot", "--no-pager", "--output=short-iso", "--lines="+strconv.Itoa(recordLines), "--unit=chalkd.service", "--unit=chalkos-health.service")
 	text := recordHeader(running, booted.Generation) + "\n" + string(out)
 	if err != nil {
 		text += fmt.Sprintf("the journal could not be read: %v\n", err)

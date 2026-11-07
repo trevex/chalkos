@@ -850,9 +850,9 @@ type watchedRunner struct {
 	check func(ctx context.Context, name string, args []string)
 }
 
-func (r watchedRunner) Run(ctx context.Context, name string, args ...string) ([]byte, error) {
-	r.check(ctx, name, args)
-	return r.Runner.Run(ctx, name, args...)
+func (r watchedRunner) Exec(ctx context.Context, c tool.Cmd) ([]byte, error) {
+	r.check(ctx, c.Name, c.Args)
+	return r.Runner.Exec(ctx, c)
 }
 
 // TestPartitionTableLocks checks that every read and change of the partition table runs while

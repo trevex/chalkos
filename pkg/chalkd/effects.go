@@ -21,6 +21,7 @@ import (
 	"github.com/trevex/chalkos/pkg/outputs"
 	"github.com/trevex/chalkos/pkg/rules"
 	"github.com/trevex/chalkos/pkg/schema"
+	"github.com/trevex/chalkos/pkg/tool"
 )
 
 // pendingEffects are the running image's effects, and what a delivery compares their rules with:
@@ -373,7 +374,7 @@ func (s *Server) applyEffects(ctx context.Context, a actions) ([]string, error) 
 		if _, ok := states[unit]; ok {
 			continue
 		}
-		out, err := s.Run.Run(ctx, "systemctl", "show", "--property=ActiveState", "--value", unit)
+		out, err := tool.Run(ctx, s.Run, "systemctl", "show", "--property=ActiveState", "--value", unit)
 		if err != nil {
 			log.Printf("the state of %s: %v; acting on it as if it ran", unit, err)
 		}
@@ -412,14 +413,14 @@ func (s *Server) applyEffects(ctx context.Context, a actions) ([]string, error) 
 	byHand := actions{}
 	reload = inOrder(reload)
 	if len(reload) > 0 {
-		if _, err := s.Run.Run(ctx, "systemctl", append([]string{"reload"}, reload...)...); err != nil {
+		if _, err := tool.Run(ctx, s.Run, "systemctl", append([]string{"reload"}, reload...)...); err != nil {
 			byHand.reload = reload
 			errs = append(errs, fmt.Errorf("reload %s: %w", strings.Join(reload, " "), err))
 		}
 	}
 	for _, command := range a.run {
 		argv := strings.Fields(command)
-		if _, err := s.Run.Run(ctx, argv[0], argv[1:]...); err != nil {
+		if _, err := tool.Run(ctx, s.Run, argv[0], argv[1:]...); err != nil {
 			byHand.run = append(byHand.run, command)
 			errs = append(errs, fmt.Errorf("run %s: %w", command, err))
 		}
@@ -429,7 +430,7 @@ func (s *Server) applyEffects(ctx context.Context, a actions) ([]string, error) 
 		if len(units) == 0 {
 			return
 		}
-		if _, err := s.Run.Run(ctx, "systemctl", append([]string{verb}, units...)...); err != nil {
+		if _, err := tool.Run(ctx, s.Run, "systemctl", append([]string{verb}, units...)...); err != nil {
 			byHand.restart = append(byHand.restart, units...)
 			errs = append(errs, fmt.Errorf("%s %s: %w", verb, strings.Join(units, " "), err))
 			return
@@ -439,7 +440,7 @@ func (s *Server) applyEffects(ctx context.Context, a actions) ([]string, error) 
 	if len(failedUnits) > 0 {
 		// The failures that put them in their state count against their start limit, which would
 		// refuse the restart.
-		if _, err := s.Run.Run(ctx, "systemctl", append([]string{"reset-failed"}, failedUnits...)...); err != nil {
+		if _, err := tool.Run(ctx, s.Run, "systemctl", append([]string{"reset-failed"}, failedUnits...)...); err != nil {
 			byHand.restart = append(byHand.restart, failedUnits...)
 			errs = append(errs, fmt.Errorf("reset-failed %s: %w", strings.Join(failedUnits, " "), err))
 			failedUnits = nil
@@ -495,7 +496,7 @@ func (s *Server) unitOrder(ctx context.Context, lists ...[]string) func([]string
 	if !ask {
 		return keep
 	}
-	out, err := s.Run.Run(ctx, "systemctl", append([]string{"show", "--property=Names,After"}, units...)...)
+	out, err := tool.Run(ctx, s.Run, "systemctl", append([]string{"show", "--property=Names,After"}, units...)...)
 	// systemctl shows each unit's properties as lines of name=value, the units in the order
 	// given, a blank line between them.
 	blocks := strings.Split(strings.TrimSpace(string(out)), "\n\n")

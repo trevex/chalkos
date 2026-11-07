@@ -13,21 +13,34 @@ import (
 	"strings"
 )
 
-// Runner runs a tool and returns its standard output. Tests replace it with a recording fake.
-type Runner interface {
-	Run(ctx context.Context, name string, args ...string) ([]byte, error)
-	// RunWithEnv also sets environment variables. Secrets travel this way, never as arguments,
-	// which other processes can read and errors repeat.
-	RunWithEnv(ctx context.Context, env []string, name string, args ...string) ([]byte, error)
-	// RunWithInput writes input to the tool's standard input, so a secret reaches only that
-	// short-lived process. Implementations never log the input.
-	RunWithInput(ctx context.Context, input []byte, name string, args ...string) ([]byte, error)
+// Cmd is a tool to run: its name, looked up in PATH, and its arguments.
+type Cmd struct {
+	Name string
+	Args []string
+	// Env adds environment variables. Secrets travel this way, never as arguments, which other
+	// processes can read and errors repeat.
+	Env []string
+	// Stdin is written to the tool's standard input, so a secret reaches only that short-lived
+	// process. Runners never log it.
+	Stdin []byte
+	// Quiet keeps the tool's standard error off the console, so its error carries it alone: for a
+	// tool that runs often and whose failure the caller reports, such as on each status request.
+	Quiet bool
 }
 
-// QuietRunner runs a tool whose standard error its error carries alone, for a tool that runs often
-// and whose failure the caller reports, such as on each status request.
-type QuietRunner interface {
-	RunQuiet(ctx context.Context, name string, args ...string) ([]byte, error)
+// String is the command line: the name and arguments joined by spaces.
+func (c Cmd) String() string {
+	return strings.Join(append([]string{c.Name}, c.Args...), " ")
+}
+
+// Runner runs a tool and returns its standard output. Tests replace it with a recording fake.
+type Runner interface {
+	Exec(ctx context.Context, c Cmd) ([]byte, error)
+}
+
+// Run runs the tool name with args on r.
+func Run(ctx context.Context, r Runner, name string, args ...string) ([]byte, error) {
+	return r.Exec(ctx, Cmd{Name: name, Args: args})
 }
 
 // Error is a tool that ran and exited with a non-zero status.
@@ -42,44 +55,27 @@ func (e *Error) Error() string {
 }
 
 // ExecRunner runs tools from PATH. Their standard error also reaches the console, which shows
-// the unit's output during boot.
+// the unit's output during boot, unless the Cmd is Quiet.
 type ExecRunner struct{}
 
-func (ExecRunner) Run(ctx context.Context, name string, args ...string) ([]byte, error) {
-	return run(ctx, nil, nil, name, args...)
-}
-
-func (ExecRunner) RunQuiet(ctx context.Context, name string, args ...string) ([]byte, error) {
-	return runTo(ctx, nil, nil, io.Discard, name, args...)
-}
-
-func (ExecRunner) RunWithEnv(ctx context.Context, env []string, name string, args ...string) ([]byte, error) {
-	return run(ctx, env, nil, name, args...)
-}
-
-func (ExecRunner) RunWithInput(ctx context.Context, input []byte, name string, args ...string) ([]byte, error) {
-	return run(ctx, nil, input, name, args...)
-}
-
-func run(ctx context.Context, env []string, input []byte, name string, args ...string) ([]byte, error) {
-	return runTo(ctx, env, input, os.Stderr, name, args...)
-}
-
-// runTo runs a tool, copying its standard error to console as well as into its error.
-func runTo(ctx context.Context, env []string, input []byte, console io.Writer, name string, args ...string) ([]byte, error) {
-	cmd := exec.CommandContext(ctx, name, args...)
-	if env != nil {
-		cmd.Env = append(os.Environ(), env...)
+func (ExecRunner) Exec(ctx context.Context, c Cmd) ([]byte, error) {
+	cmd := exec.CommandContext(ctx, c.Name, c.Args...)
+	if c.Env != nil {
+		cmd.Env = append(os.Environ(), c.Env...)
 	}
-	if input != nil {
-		cmd.Stdin = bytes.NewReader(input)
+	if c.Stdin != nil {
+		cmd.Stdin = bytes.NewReader(c.Stdin)
+	}
+	var console io.Writer = os.Stderr
+	if c.Quiet {
+		console = io.Discard
 	}
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = io.MultiWriter(console, &stderr)
 	err := cmd.Run()
 	if ee, ok := errors.AsType[*exec.ExitError](err); ok {
-		return stdout.Bytes(), &Error{Command: name + " " + strings.Join(args, " "), Code: ee.ExitCode(), Stderr: stderr.String()}
+		return stdout.Bytes(), &Error{Command: c.String(), Code: ee.ExitCode(), Stderr: stderr.String()}
 	}
 	return stdout.Bytes(), err
 }

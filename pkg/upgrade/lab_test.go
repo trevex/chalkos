@@ -242,11 +242,11 @@ type sectorRunner struct {
 	sector int64
 }
 
-func (r sectorRunner) Run(ctx context.Context, name string, args ...string) ([]byte, error) {
-	if name == "sfdisk" {
-		args = append([]string{"--sector-size", strconv.FormatInt(r.sector, 10)}, args...)
+func (r sectorRunner) Exec(ctx context.Context, c tool.Cmd) ([]byte, error) {
+	if c.Name == "sfdisk" {
+		c.Args = append([]string{"--sector-size", strconv.FormatInt(r.sector, 10)}, c.Args...)
 	}
-	return r.Runner.Run(ctx, name, args...)
+	return r.Runner.Exec(ctx, c)
 }
 
 func (l *lab) table() map[int]gpt.Partition {

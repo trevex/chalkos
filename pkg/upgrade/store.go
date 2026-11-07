@@ -169,12 +169,12 @@ func OpenStore(ctx context.Context, run tool.Runner, dir string, rootHash []byte
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
 	}
-	if _, err := run.Run(ctx, "veritysetup", "open", slot.Data.Node, StoreMapping, slot.Verity.Node, hex.EncodeToString(rootHash)); err != nil {
+	if _, err := tool.Run(ctx, run, "veritysetup", "open", slot.Data.Node, StoreMapping, slot.Verity.Node, hex.EncodeToString(rootHash)); err != nil {
 		return fmt.Errorf("open the written store through dm-verity: %w", err)
 	}
 	mounted := false
 	defer func() { closeStore(ctx, run, dir, mounted, false) }()
-	if _, err := run.Run(ctx, "mount", "-t", "erofs", "-o", "ro", "/dev/mapper/"+StoreMapping, dir); err != nil {
+	if _, err := tool.Run(ctx, run, "mount", "-t", "erofs", "-o", "ro", "/dev/mapper/"+StoreMapping, dir); err != nil {
 		return fmt.Errorf("mount the written store: %w", err)
 	}
 	mounted = true
@@ -190,11 +190,11 @@ func (n *Node) closeStore(ctx context.Context, dir string, mounted, quiet bool) 
 
 func closeStore(ctx context.Context, run tool.Runner, dir string, mounted, quiet bool) {
 	if mounted {
-		if _, err := run.Run(ctx, "umount", dir); err != nil && !quiet {
+		if _, err := tool.Run(ctx, run, "umount", dir); err != nil && !quiet {
 			log.Printf("unmount the checked store: %v", err)
 		}
 	}
-	if _, err := run.Run(ctx, "veritysetup", "close", StoreMapping); err != nil && !quiet {
+	if _, err := tool.Run(ctx, run, "veritysetup", "close", StoreMapping); err != nil && !quiet {
 		log.Printf("close the checked store: %v", err)
 	}
 }

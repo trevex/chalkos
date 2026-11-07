@@ -251,7 +251,7 @@ func TestStatusTimeWhileChronydIsDown(t *testing.T) {
 	if strings.Count(st.Error, "506 Cannot talk to daemon") != 1 {
 		t.Errorf("time error %q, want chronyc's message once", st.Error)
 	}
-	if !r.Quiet["chronyc -n -c tracking"] {
+	if c, _ := r.Cmd("chronyc -n -c tracking"); !c.Quiet {
 		t.Error("chronyc's standard error went to chalkd's log")
 	}
 }

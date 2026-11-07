@@ -14,6 +14,7 @@ import (
 	"github.com/trevex/chalkos/pkg/atomicfile"
 	"github.com/trevex/chalkos/pkg/storage"
 	"github.com/trevex/chalkos/pkg/storage/gpt"
+	"github.com/trevex/chalkos/pkg/tool"
 )
 
 // unitNames is what Change and DeleteVolume pass Generate for systemd-cryptsetup: they read only
@@ -132,7 +133,7 @@ func (s *Storage) Enroll(ctx context.Context, devices []EncryptedVolume, secret 
 		if found != ContentLUKS {
 			return fmt.Errorf("volume %s is meant to be encrypted, but %s holds %q instead of LUKS", name, dev, found)
 		}
-		if _, err := s.Run.RunWithEnv(ctx, []string{"NEWPASSWORD=" + secret}, "systemd-cryptenroll", "--unlock-tpm2-device=auto", "--password", "--wipe-slot=password", dev); err != nil {
+		if _, err := s.Run.Exec(ctx, tool.Cmd{Name: "systemd-cryptenroll", Args: []string{"--unlock-tpm2-device=auto", "--password", "--wipe-slot=password", dev}, Env: []string{"NEWPASSWORD=" + secret}}); err != nil {
 			return fmt.Errorf("enroll the fallback key on %s: %w", name, err)
 		}
 	}
@@ -185,7 +186,7 @@ func (s *Storage) Change(ctx context.Context, recorded, section storage.Section,
 	if err := s.RecordSection(section); err != nil {
 		return internalError{fmt.Errorf("record the storage section: %w", err)}
 	}
-	if _, err := s.Run.Run(ctx, "systemctl", "daemon-reload"); err != nil {
+	if _, err := tool.Run(ctx, s.Run, "systemctl", "daemon-reload"); err != nil {
 		return internalError{err}
 	}
 	units, err := s.Generate(unitNames)
@@ -197,7 +198,7 @@ func (s *Storage) Change(ctx context.Context, recorded, section storage.Section,
 		start = append(start, units.Of(name)...)
 	}
 	if len(start) > 0 {
-		if _, err := s.Run.Run(ctx, "systemctl", append([]string{"start"}, start...)...); err != nil {
+		if _, err := tool.Run(ctx, s.Run, "systemctl", append([]string{"start"}, start...)...); err != nil {
 			return fmt.Errorf("start the units of new volumes: %w", err)
 		}
 	}
@@ -208,7 +209,7 @@ func (s *Storage) stopUnits(ctx context.Context, units []string) error {
 	if len(units) == 0 {
 		return nil
 	}
-	if _, err := s.Run.Run(ctx, "systemctl", append([]string{"stop"}, units...)...); err != nil {
+	if _, err := tool.Run(ctx, s.Run, "systemctl", append([]string{"stop"}, units...)...); err != nil {
 		return fmt.Errorf("stop %s: %w", strings.Join(units, ", "), err)
 	}
 	return nil
@@ -260,7 +261,7 @@ func (s *Storage) DeleteVolume(ctx context.Context, name string, v storage.Volum
 	if err := s.stopUnits(ctx, stop); err != nil {
 		return err
 	}
-	if _, err := s.Run.Run(ctx, "wipefs", "--all", part.Device); err != nil {
+	if _, err := tool.Run(ctx, s.Run, "wipefs", "--all", part.Device); err != nil {
 		return internalError{fmt.Errorf("wipe volume %s: %w", name, err)}
 	}
 	sfdisk := gpt.Sfdisk{Run: s.Run, Disk: "/dev/" + disk}

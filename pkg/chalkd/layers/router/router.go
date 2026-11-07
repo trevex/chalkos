@@ -118,11 +118,7 @@ var askTimeout = 5 * time.Second
 // daemon is down, goes into the error alone rather than into chalkd's log as well. budget is ctx
 // bounded by askTimeout, which the questions to one daemon share.
 func (r *side) ask(ctx, budget context.Context, program string, args ...string) ([]byte, error) {
-	run := r.run.Run
-	if quiet, ok := r.run.(tool.QuietRunner); ok {
-		run = quiet.RunQuiet
-	}
-	out, err := run(budget, program, args...)
+	out, err := r.run.Exec(budget, tool.Cmd{Name: program, Args: args, Quiet: true})
 	if err != nil {
 		// The caller's own end is not the daemon's timeout.
 		if ctx.Err() != nil {

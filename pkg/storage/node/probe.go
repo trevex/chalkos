@@ -18,7 +18,7 @@ const (
 // Probe returns what blkid finds on a device, such as PTTYPE and TYPE; empty when it finds
 // nothing.
 func Probe(ctx context.Context, run tool.Runner, dev string) (map[string]string, error) {
-	out, err := run.Run(ctx, "blkid", "-p", "-o", "export", dev)
+	out, err := tool.Run(ctx, run, "blkid", "-p", "-o", "export", dev)
 	if foundNothing(err) {
 		return map[string]string{}, nil
 	}
@@ -37,10 +37,10 @@ func Probe(ctx context.Context, run tool.Runner, dev string) (map[string]string,
 // Content returns the TYPE blkid finds on a device once udev processed it, such as crypto_LUKS
 // or ext4; empty when it finds nothing.
 func Content(ctx context.Context, run tool.Runner, dev string) (string, error) {
-	if _, err := run.Run(ctx, "udevadm", "settle", "--timeout=30"); err != nil {
+	if _, err := tool.Run(ctx, run, "udevadm", "settle", "--timeout=30"); err != nil {
 		return "", err
 	}
-	out, err := run.Run(ctx, "blkid", "-p", "-o", "value", "-s", "TYPE", dev)
+	out, err := tool.Run(ctx, run, "blkid", "-p", "-o", "value", "-s", "TYPE", dev)
 	if foundNothing(err) {
 		return "", nil
 	}

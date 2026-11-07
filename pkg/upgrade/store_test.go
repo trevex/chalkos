@@ -83,7 +83,8 @@ type storeRunner struct {
 	mountErr error
 }
 
-func (r storeRunner) Run(ctx context.Context, name string, args ...string) ([]byte, error) {
+func (r storeRunner) Exec(ctx context.Context, c tool.Cmd) ([]byte, error) {
+	name, args := c.Name, c.Args
 	switch name {
 	case "veritysetup", "umount":
 		*r.calls = append(*r.calls, name+" "+strings.Join(args, " "))
@@ -99,7 +100,7 @@ func (r storeRunner) Run(ctx context.Context, name string, args ...string) ([]by
 		r.mounted(args[len(args)-1])
 		return nil, nil
 	}
-	return r.Runner.Run(ctx, name, args...)
+	return r.Runner.Exec(ctx, c)
 }
 
 // TestTheImageIsCheckedBeforeItBoots: the caller checks the written store, opened through

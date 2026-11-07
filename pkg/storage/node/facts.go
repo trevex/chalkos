@@ -181,7 +181,7 @@ func (s *Storage) FallbackFacts(ctx context.Context, secret string) (FallbackFac
 	}
 	for _, v := range volumes {
 		dev := v.Device
-		dump, err := s.Run.Run(ctx, "cryptsetup", "luksDump", "--dump-json-metadata", dev)
+		dump, err := tool.Run(ctx, s.Run, "cryptsetup", "luksDump", "--dump-json-metadata", dev)
 		if err != nil {
 			return FallbackFact{}, fmt.Errorf("read the keyslots of %s to check the fallback secret: %w", dev, err)
 		}
@@ -197,7 +197,7 @@ func (s *Storage) FallbackFacts(ctx context.Context, secret string) (FallbackFac
 		for _, slot := range slots {
 			// The secret goes on standard input: arguments are visible to every process, and
 			// cryptsetup takes a key file from stdin as it is, without trimming a newline.
-			_, err := s.Run.RunWithInput(ctx, []byte(secret), "cryptsetup", "open", "--test-passphrase", "--key-slot="+slot, "--key-file=-", dev)
+			_, err := s.Run.Exec(ctx, tool.Cmd{Name: "cryptsetup", Args: []string{"open", "--test-passphrase", "--key-slot=" + slot, "--key-file=-", dev}, Stdin: []byte(secret)})
 			var te *tool.Error
 			switch {
 			case err == nil:

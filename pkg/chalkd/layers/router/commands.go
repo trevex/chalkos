@@ -15,6 +15,7 @@ import (
 	"github.com/trevex/chalkos/pkg/chalkd/layer"
 	"github.com/trevex/chalkos/pkg/outputs"
 	routing "github.com/trevex/chalkos/pkg/router"
+	"github.com/trevex/chalkos/pkg/tool"
 )
 
 // Commands are the router layer's subcommands of chalkd.
@@ -97,7 +98,7 @@ func (r *side) dhcp6Routes(ctx context.Context, now time.Time) error {
 		if kept {
 			continue
 		}
-		if _, err := r.run.Run(ctx, "ip", "-6", "route", "del", k.Destination, "table", strconv.FormatUint(uint64(k.Table), 10), "proto", strconv.Itoa(routing.PDProtocol)); err != nil {
+		if _, err := tool.Run(ctx, r.run, "ip", "-6", "route", "del", k.Destination, "table", strconv.FormatUint(uint64(k.Table), 10), "proto", strconv.Itoa(routing.PDProtocol)); err != nil {
 			fmt.Fprintf(os.Stderr, "chalkd router dhcp6-routes: remove the route of %s: %v\n", k.Destination, err)
 		}
 	}
@@ -108,7 +109,7 @@ func (r *side) dhcp6Routes(ctx context.Context, now time.Time) error {
 		}
 		// The kernel removes the route when the lease ends, should no renewal come.
 		args = append(args, "expires", strconv.FormatInt(int64(max(rt.Ends.Sub(now)/time.Second, 1)), 10))
-		if _, err := r.run.Run(ctx, "ip", args...); err != nil {
+		if _, err := tool.Run(ctx, r.run, "ip", args...); err != nil {
 			fmt.Fprintf(os.Stderr, "chalkd router dhcp6-routes: route %s to %s on %s: %v\n", rt.Prefix, rt.Via, rt.Link, err)
 		}
 	}

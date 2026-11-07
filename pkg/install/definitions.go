@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/trevex/chalkos/pkg/storage"
+	"github.com/trevex/chalkos/pkg/tool"
 )
 
 // readDefinitions reads the *.conf files of a repart.d directory.
@@ -93,7 +94,7 @@ func (i *Installer) layOut(ctx context.Context, target storage.BlockDisk, defs m
 	if err := i.change("lay out the target disk"); err != nil {
 		return err
 	}
-	if _, err := i.Run.Run(ctx, "systemd-repart", "--dry-run=no", "--empty=require", "--seed=random", "--definitions="+dir, "--tpm2-pcrs=7", target.Device); err != nil {
+	if _, err := tool.Run(ctx, i.Run, "systemd-repart", "--dry-run=no", "--empty=require", "--seed=random", "--definitions="+dir, "--tpm2-pcrs=7", target.Device); err != nil {
 		return fmt.Errorf("lay out the target disk %s: %w", target, err)
 	}
 	return nil

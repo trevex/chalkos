@@ -16,7 +16,6 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"slices"
@@ -411,11 +410,11 @@ func serve() error {
 		InPlace:     install.ForNode().InPlace,
 		FromParts:   install.ForInstaller().FromParts,
 		Journal:     chalkd.Journal,
-		RebootNode: func() {
-			if out, err := exec.Command("systemctl", "reboot").CombinedOutput(); err != nil {
-				log.Printf("reboot: %v: %s", err, out)
-			}
-		},
+	}
+	srv.RebootNode = func() {
+		if _, err := tool.Run(context.Background(), srv.Run, "systemctl", "reboot"); err != nil {
+			log.Printf("reboot: %v", err)
+		}
 	}
 
 	srv.RenewOnApplyConfig = renewOnApplyConfig(os.Getenv)

@@ -9,27 +9,34 @@ import (
 	"testing"
 )
 
-func TestExecRunnerPassesInputOnStdin(t *testing.T) {
+func TestExecRunnerPassesStdin(t *testing.T) {
 	const input = "not-on-the-command-line"
-	out, err := ExecRunner{}.RunWithInput(context.Background(), []byte(input), "cat")
+	out, err := ExecRunner{}.Exec(context.Background(), Cmd{Name: "cat", Stdin: []byte(input)})
 	if err != nil || string(out) != input {
 		t.Fatalf("out = %q, %v, want the input back", out, err)
 	}
-	_, err = ExecRunner{}.RunWithInput(context.Background(), []byte(input), "sh", "-c", "exit 2")
+	_, err = ExecRunner{}.Exec(context.Background(), Cmd{Name: "sh", Args: []string{"-c", "exit 2"}, Stdin: []byte(input)})
 	if te, ok := errors.AsType[*Error](err); !ok || te.Code != 2 || strings.Contains(err.Error(), input) {
 		t.Errorf("err = %v, want an Error with status 2 that does not repeat the input", err)
 	}
 }
 
-// RunQuiet keeps a tool's standard error out of the console; its error carries it.
-func TestExecRunnerRunQuiet(t *testing.T) {
+func TestExecRunnerSetsEnv(t *testing.T) {
+	out, err := ExecRunner{}.Exec(context.Background(), Cmd{Name: "sh", Args: []string{"-c", "printf %s \"$SECRET\""}, Env: []string{"SECRET=s3cret"}})
+	if err != nil || string(out) != "s3cret" {
+		t.Errorf("out = %q, %v, want the variable's value", out, err)
+	}
+}
+
+// A quiet tool's standard error stays off the console; its error carries it.
+func TestExecRunnerQuiet(t *testing.T) {
 	r, w, err := os.Pipe()
 	if err != nil {
 		t.Fatal(err)
 	}
 	stderr := os.Stderr
 	os.Stderr = w
-	_, runErr := ExecRunner{}.RunQuiet(context.Background(), "sh", "-c", "echo cannot talk to daemon >&2; exit 1")
+	_, runErr := ExecRunner{}.Exec(context.Background(), Cmd{Name: "sh", Args: []string{"-c", "echo cannot talk to daemon >&2; exit 1"}, Quiet: true})
 	os.Stderr = stderr
 	w.Close()
 	logged, _ := io.ReadAll(r)

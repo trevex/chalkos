@@ -33,6 +33,7 @@ import (
 	"github.com/trevex/chalkos/pkg/nodeconfig"
 	"github.com/trevex/chalkos/pkg/pki"
 	"github.com/trevex/chalkos/pkg/storage"
+	"github.com/trevex/chalkos/pkg/tool"
 	"github.com/trevex/chalkos/pkg/uki/ukitest"
 )
 
@@ -407,26 +408,18 @@ func (f *fakeRunner) setFail(arg string) {
 	f.fail = arg
 }
 
-func (f *fakeRunner) Run(ctx context.Context, name string, args ...string) ([]byte, error) {
-	return f.RunWithEnv(ctx, nil, name, args...)
-}
-
-func (f *fakeRunner) RunWithEnv(_ context.Context, _ []string, name string, args ...string) ([]byte, error) {
+func (f *fakeRunner) Exec(_ context.Context, c tool.Cmd) ([]byte, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	cmd := strings.Join(append([]string{name}, args...), " ")
+	cmd := c.String()
 	f.calls = append(f.calls, cmd)
 	switch {
-	case f.fail != "" && slices.Contains(args, f.fail):
+	case f.fail != "" && slices.Contains(c.Args, f.fail):
 		return nil, errors.New(cmd + " failed")
 	case strings.HasPrefix(cmd, "systemctl list-units --state=failed"):
 		return []byte(f.failedUnits), nil
 	}
 	return nil, nil
-}
-
-func (f *fakeRunner) RunWithInput(ctx context.Context, _ []byte, name string, args ...string) ([]byte, error) {
-	return f.RunWithEnv(ctx, nil, name, args...)
 }
 
 // run runs chalkctl's command tree with args, with the test's streams, and returns the error of

@@ -207,11 +207,11 @@ func TestApplyConfigAddsVolume(t *testing.T) {
 	if !reflect.DeepEqual(r.Calls, want) {
 		t.Errorf("commands:\n got: %s\nwant: %s", strings.Join(r.Calls, "\n      "), strings.Join(want, "\n      "))
 	}
-	if env := r.Envs[enroll]; !reflect.DeepEqual(env, []string{"NEWPASSWORD=" + secret}) {
-		t.Errorf("enrollment environment = %v", env)
+	if c, _ := r.Cmd(enroll); !reflect.DeepEqual(c.Env, []string{"NEWPASSWORD=" + secret}) {
+		t.Errorf("enrollment environment = %v", c.Env)
 	}
-	if r.Inputs[testState] != secret {
-		t.Errorf("the secret was not checked against STATE's password keyslot on standard input: %v", r.Inputs)
+	if c, _ := r.Cmd(testState); string(c.Stdin) != secret {
+		t.Errorf("the secret was not checked against STATE's password keyslot on standard input: %q", c.Stdin)
 	}
 	if len(resp.Changes) != 1 || resp.Changes[0].Volume != "extra" ||
 		len(resp.RestartedUnits) != 0 {
@@ -777,8 +777,8 @@ func TestApplyConfigRefusesMismatchingFallbackSecret(t *testing.T) {
 	if !reflect.DeepEqual(r.Calls, []string{dumpState, testState}) {
 		t.Errorf("commands = %v, want only the check", r.Calls)
 	}
-	if r.Inputs[testState] != "mistyped" {
-		t.Errorf("inputs = %v", r.Inputs)
+	if c, _ := r.Cmd(testState); string(c.Stdin) != "mistyped" {
+		t.Errorf("input = %q", c.Stdin)
 	}
 	if after, _ := readIdentity(s); string(after) != string(before) {
 		t.Error("recorded a refused identity")
