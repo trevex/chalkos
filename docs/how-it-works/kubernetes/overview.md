@@ -40,8 +40,8 @@ the static pods, the bootstrap, the joins and the add-ons.
 ## The image fixes the kubelet, the config names the other images
 
 Each image fixes the parts of Kubernetes that run on the host: containerd, the CNI plugins and
-the kubelet of
-[`chalkos.kubernetes.package`](../../reference/image-options.md#chalkoskubernetespackage), which is
+the kubelet of the release
+[`chalkos.kubernetes.version`](../../reference/image-options.md#chalkoskubernetesversion) selects,
 nixpkgs's `kubernetes` by default. The `images` block of the
 [`Cluster`](../../reference/kinds.md#cluster) document names every other image: the API server,
 the controller-manager, the scheduler, kube-proxy, etcd, CoreDNS, the pod sandbox and, on an image

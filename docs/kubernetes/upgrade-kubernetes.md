@@ -58,7 +58,7 @@ The output comes from a lab cluster. `...` stands for cp2's and cp3's lines, whi
 ## A new Kubernetes release takes two steps
 
 The image fixes the kubelet's release. The image author sets it in the image's modules, as
-[`chalkos.kubernetes.package`](../reference/image-options.md#chalkoskubernetespackage) describes,
+[Choose the kubelet's release](../build/variants-and-platforms.md#choose-the-kubelets-release) describes,
 and every variant with Kubernetes gets a new image. The control plane, kube-proxy, CoreDNS and the
 pod sandbox run the images the `Cluster` document names, as
 [Images name every component but the kubelet](configure.md#images-name-every-component-but-the-kubelet)

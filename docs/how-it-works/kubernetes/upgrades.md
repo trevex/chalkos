@@ -22,8 +22,8 @@ flowchart LR
 ## A kubelet upgrade is an image upgrade
 
 A new kubelet release is a new image built with a new
-[`chalkos.kubernetes.package`](../../reference/image-options.md#chalkoskubernetespackage), installed like
-any other, because the image fixes the kubelet's release, as
+[`chalkos.kubernetes.version`](../../reference/image-options.md#chalkoskubernetesversion) or
+nixpkgs release, installed like any other, because the image fixes the kubelet's release, as
 [The image fixes the kubelet, the config names the other images](overview.md#the-image-fixes-the-kubelet-the-config-names-the-other-images)
 describes. The control plane, kube-proxy and the add-ons run the images the `Cluster` document
 names, so their versions change with the config. The image's checker refuses a config whose API

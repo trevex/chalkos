@@ -134,14 +134,45 @@ is in the image, a cluster of fifty nodes on one platform builds one image.
 
 !!! note "Kubernetes: what the image fixes and what config sets"
 
-    An image with Kubernetes also fixes the Kubernetes release, the images of etcd, the pod
-    sandbox and CoreDNS, and the pod network from `chalkos.cni.provider`: flannel or none, and
-    the CNI plugins. The node's config sets whether the node is a control plane or a worker,
-    its labels, taints and addresses, and the cluster's endpoint and Kubernetes settings:
-    ranges, VIP, extra flags, flannel's MTU, registry mirrors and addons.
+    An image with Kubernetes also fixes the kubelet's release, which the next section chooses,
+    and the pod network from `chalkos.cni.provider`: flannel or none, and the CNI plugins. The
+    node's config sets whether the node is a control plane or a worker, its labels, taints and
+    addresses, and the cluster's endpoint and Kubernetes settings: the images of every other
+    component, ranges, VIP, extra flags, flannel's MTU, registry mirrors and addons.
 
     So one image of a variant with Kubernetes serves control planes and workers. Each node's
     [`Node`](../reference/kinds.md#node) document makes it one or the other.
+
+## Choose the kubelet's release
+
+An image with Kubernetes runs the kubelet of one Kubernetes release. By default it is the release
+nixpkgs packages, whose kubelet the binary cache holds.
+[`chalkos.kubernetes.version`](../reference/image-options.md#chalkoskubernetesversion) picks
+another of the three newest minor releases, the ones Kubernetes supports. Set it in a variant's
+modules:
+
+```nix
+variants.node = {
+  modules = [ { chalkos.kubernetes.version = "1.36"; } ];
+};
+```
+
+chalkos pins each of the two older minors to one patch release, 1.36.6 and 1.35.10. The binary
+cache holds neither, so the image's build compiles the kubelet from source, about two minutes on
+16 cores. The image directory's `image.json` names the kubelet's version, here `1.36.6`.
+
+The `Cluster` document names the images of the control plane and kube-proxy apart from the
+kubelet. They may stay at a newer minor than the kubelet, within Kubernetes's
+[version skew policy](https://kubernetes.io/releases/version-skew-policy/), or follow the kubelet's
+minor. The image's checker holds them to that policy against its own kubelet, so
+`chalkctl validate` refuses an API server older than the kubelet or more than three minors newer.
+The lab template's `cluster/cluster.yaml` names the images of nixpkgs's release, which a kubelet
+two minors older accepts.
+
+A release the option does not offer, such as another patch release, needs
+[`chalkos.kubernetes.package`](../reference/image-options.md#chalkoskubernetespackage): a
+Kubernetes package whose `bin/kubelet` the image runs. Set one of the two options. An image that
+sets both to different minors fails to build and names both.
 
 ## The inventory gives each node its image
 
