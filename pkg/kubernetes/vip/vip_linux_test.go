@@ -5,47 +5,17 @@ import (
 	"encoding/binary"
 	"net"
 	"net/netip"
-	"os"
 	"os/exec"
 	"slices"
-	"syscall"
 	"testing"
 	"time"
 
+	"github.com/vishvananda/netlink"
 	"golang.org/x/sys/unix"
 
+	"github.com/trevex/chalkos/pkg/internal/netnstest"
 	"github.com/trevex/chalkos/pkg/kubernetes/nodeip"
 )
-
-// inNamespace reports whether the test runs in its own user and network namespace, where it may
-// add addresses and send raw frames. Called outside one, it runs the test again in a new one and
-// returns false.
-func inNamespace(t *testing.T) bool {
-	t.Helper()
-	if os.Getenv("CHALKOS_TEST_NETNS") == "1" {
-		return true
-	}
-	cmd := exec.Command(os.Args[0], "-test.run", "^"+t.Name()+"$", "-test.v")
-	cmd.Env = append(os.Environ(), "CHALKOS_TEST_NETNS=1")
-	cmd.SysProcAttr = &syscall.SysProcAttr{
-		Cloneflags:  syscall.CLONE_NEWUSER | syscall.CLONE_NEWNET,
-		UidMappings: []syscall.SysProcIDMap{{ContainerID: 0, HostID: os.Getuid(), Size: 1}},
-		GidMappings: []syscall.SysProcIDMap{{ContainerID: 0, HostID: os.Getgid(), Size: 1}},
-	}
-	out, err := cmd.CombinedOutput()
-	t.Logf("in a new network namespace:\n%s", out)
-	if err != nil {
-		t.Fatalf("%v", err)
-	}
-	return false
-}
-
-func ip(t *testing.T, args ...string) {
-	t.Helper()
-	if out, err := exec.Command("ip", args...).CombinedOutput(); err != nil {
-		t.Fatalf("ip %v: %v\n%s", args, err, out)
-	}
-}
 
 // capture receives the frames that reach the interface.
 func capture(t *testing.T, iface string) int {
@@ -95,14 +65,14 @@ func holds(t *testing.T, iface string, addr netip.Addr) bool {
 
 // The address is added as a host address, announced to the neighbours and removed again.
 func TestAddAnnounceRemove(t *testing.T) {
-	if !inNamespace(t) {
+	if !netnstest.InNamespace(t) {
 		return
 	}
-	ip(t, "link", "add", "v0", "type", "veth", "peer", "name", "v1")
-	ip(t, "link", "set", "v0", "up")
-	ip(t, "link", "set", "v1", "up")
+	netnstest.IP(t, "link", "add", "v0", "type", "veth", "peer", "name", "v1")
+	netnstest.IP(t, "link", "set", "v0", "up")
+	netnstest.IP(t, "link", "set", "v1", "up")
 	// The neighbour advertisement goes out from a link-local address.
-	ip(t, "-6", "addr", "add", "fe80::1/64", "dev", "v0", "nodad")
+	netnstest.IP(t, "-6", "addr", "add", "fe80::1/64", "dev", "v0", "nodad")
 	v0, err := net.InterfaceByName("v0")
 	if err != nil {
 		t.Fatal(err)
@@ -127,16 +97,17 @@ func TestAddAnnounceRemove(t *testing.T) {
 		}
 		// Usable at once, without waiting for duplicate address detection, and deprecated, so the
 		// holder's own connections never pick it as their source address.
-		flags, cache, found := addrInfo(t, "v0", a.IP)
+		info, found := addrInfo(t, "v0", a.IP)
+		flags := uint32(info.Flags)
 		if !found {
 			t.Fatalf("v0 does not hold %s", a.IP)
 		}
 		if flags&unix.IFA_F_TENTATIVE != 0 || flags&unix.IFA_F_NODAD == 0 {
 			t.Errorf("%s has flags %#x, want it without duplicate address detection", a.IP, flags)
 		}
-		if flags&unix.IFA_F_DEPRECATED == 0 || cache.Prefered != 0 || cache.Valid != infiniteLifetime {
+		if flags&unix.IFA_F_DEPRECATED == 0 || info.PreferedLft != 0 || info.ValidLft != infiniteLifetime {
 			t.Errorf("%s has flags %#x, preferred lifetime %d and valid lifetime %d; want it deprecated and valid forever",
-				a.IP, flags, cache.Prefered, cache.Valid)
+				a.IP, flags, info.PreferedLft, info.ValidLft)
 		}
 	}
 	out, err := exec.Command("ip", "-o", "addr", "show", "dev", "v0").CombinedOutput()
@@ -176,7 +147,7 @@ func TestAddAnnounceRemove(t *testing.T) {
 		if err := Remove(a); err != nil {
 			t.Fatal(err)
 		}
-		if _, _, found := addrInfo(t, "v0", a.IP); found {
+		if _, found := addrInfo(t, "v0", a.IP); found {
 			t.Errorf("v0 still holds %s", a.IP)
 		}
 		// Removing it again, or from an interface that is gone, is no error.
@@ -194,46 +165,20 @@ func TestAddAnnounceRemove(t *testing.T) {
 
 // addrInfo reads the flags and lifetimes of the address on the interface; found is false when
 // the interface does not have it.
-func addrInfo(t *testing.T, iface string, addr netip.Addr) (flags uint32, cache unix.IfaCacheinfo, found bool) {
+func addrInfo(t *testing.T, iface string, addr netip.Addr) (a netlink.Addr, found bool) {
 	t.Helper()
-	ifi, err := net.InterfaceByName(iface)
+	link, err := netlink.LinkByName(iface)
 	if err != nil {
 		t.Fatal(err)
 	}
-	rib, err := syscall.NetlinkRIB(syscall.RTM_GETADDR, syscall.AF_UNSPEC)
+	addrs, err := netlink.AddrList(link, netlink.FAMILY_ALL)
 	if err != nil {
 		t.Fatal(err)
 	}
-	msgs, err := syscall.ParseNetlinkMessage(rib)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, m := range msgs {
-		if m.Header.Type != syscall.RTM_NEWADDR || len(m.Data) < syscall.SizeofIfAddrmsg ||
-			binary.NativeEndian.Uint32(m.Data[4:8]) != uint32(ifi.Index) {
-			continue
-		}
-		attrs, err := syscall.ParseNetlinkRouteAttr(&m)
-		if err != nil {
-			t.Fatal(err)
-		}
-		flags, cache, found = uint32(m.Data[2]), unix.IfaCacheinfo{}, false
-		for _, a := range attrs {
-			switch a.Attr.Type {
-			case unix.IFA_LOCAL, unix.IFA_ADDRESS:
-				if ip, ok := netip.AddrFromSlice(a.Value); ok && ip == addr {
-					found = true
-				}
-			case unix.IFA_FLAGS:
-				flags = binary.NativeEndian.Uint32(a.Value)
-			case unix.IFA_CACHEINFO:
-				cache.Prefered = binary.NativeEndian.Uint32(a.Value[0:])
-				cache.Valid = binary.NativeEndian.Uint32(a.Value[4:])
-			}
-		}
-		if found {
-			return flags, cache, true
+	for _, a := range addrs {
+		if ip, ok := netip.AddrFromSlice(a.IP); ok && ip.Unmap() == addr {
+			return a, true
 		}
 	}
-	return 0, unix.IfaCacheinfo{}, false
+	return netlink.Addr{}, false
 }
