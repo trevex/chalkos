@@ -23,6 +23,7 @@ import (
 	"github.com/trevex/chalkos/pkg/config/slot"
 	"github.com/trevex/chalkos/pkg/outputs"
 	"github.com/trevex/chalkos/pkg/storage"
+	"github.com/trevex/chalkos/pkg/storage/hostops"
 	"github.com/trevex/chalkos/pkg/tool"
 	"github.com/trevex/chalkos/pkg/tool/systemctl"
 )
@@ -63,7 +64,7 @@ func (s *Server) Status(ctx context.Context, req *connect.Request[nodev1.StatusR
 	if err != nil {
 		return nil, err
 	}
-	mounts, err := mountPoints(s.Paths.MountInfo)
+	mounts, err := hostops.MountPoints(s.Paths.MountInfo)
 	if err != nil {
 		return nil, failed(connect.CodeInternal, "%v", err)
 	}
@@ -104,20 +105,6 @@ func (s *Server) Status(ctx context.Context, req *connect.Request[nodev1.StatusR
 		return nil, failed(connect.CodeInternal, "%v", err)
 	}
 	return connect.NewResponse(resp), nil
-}
-
-func mountPoints(mountInfo string) (map[string]bool, error) {
-	data, err := os.ReadFile(mountInfo)
-	if err != nil {
-		return nil, err
-	}
-	points := map[string]bool{}
-	for _, line := range strings.Split(string(data), "\n") {
-		if fields := strings.Fields(line); len(fields) > 4 {
-			points[fields[4]] = true
-		}
-	}
-	return points, nil
 }
 
 // outputStatus is each output of the running image with the hash of the files the node serves
