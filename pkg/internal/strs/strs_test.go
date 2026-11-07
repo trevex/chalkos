@@ -30,3 +30,9 @@ func TestAnd(t *testing.T) {
 		}
 	}
 }
+
+func TestOr(t *testing.T) {
+	if got := Or([]string{"a", "b", "c"}); got != "a, b or c" {
+		t.Errorf("Or = %q", got)
+	}
+}

@@ -16,9 +16,15 @@ func Join[T fmt.Stringer](xs []T, sep string) string {
 }
 
 // And lists names as prose, such as "a, b and c"; it is empty for no names.
-func And(names []string) string {
+func And(names []string) string { return list(names, "and") }
+
+// Or lists names as prose, such as "a, b or c"; it is empty for no names.
+func Or(names []string) string { return list(names, "or") }
+
+// list lists names as prose, with conj between the last two.
+func list(names []string, conj string) string {
 	if len(names) < 2 {
 		return strings.Join(names, "")
 	}
-	return strings.Join(names[:len(names)-1], ", ") + " and " + names[len(names)-1]
+	return strings.Join(names[:len(names)-1], ", ") + " " + conj + " " + names[len(names)-1]
 }

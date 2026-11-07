@@ -8,6 +8,7 @@ callPackage ./go-module.nix { } {
     ../pkg/chalkcfg
     ../pkg/config/withheld
     ../pkg/internal/cli
+    ../pkg/internal/strs
   ];
   ldflags = [
     "-s"

@@ -8,10 +8,11 @@ import (
 	"errors"
 	"fmt"
 	"slices"
-	"strings"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
+
+	"github.com/trevex/chalkos/pkg/internal/strs"
 )
 
 // ErrUsage is the error of a command line the command tree does not take. Execute prints the
@@ -150,11 +151,7 @@ func (e *enum[T]) Set(v string) error {
 		for i, a := range e.allowed {
 			names[i] = string(a)
 		}
-		want := names[len(names)-1]
-		if len(names) > 1 {
-			want = strings.Join(names[:len(names)-1], ", ") + " or " + want
-		}
-		return errors.New("want " + want)
+		return errors.New("want " + strs.Or(names))
 	}
 	*e.p = T(v)
 	return nil
