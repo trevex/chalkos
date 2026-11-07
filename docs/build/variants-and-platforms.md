@@ -159,7 +159,7 @@ variants.node = {
 
 chalkos pins each of the two older minors to one patch release, 1.36.6 and 1.35.10. The binary
 cache holds neither, so the image's build compiles the kubelet from source, about two minutes on
-16 cores. The image directory's `image.json` names the kubelet's version, here `1.36.6`.
+16 cores. The image directory's `facts/kubernetes.json` names the kubelet's version, here `1.36.6`.
 
 The `Cluster` document names the images of the control plane and kube-proxy apart from the
 kubelet. They may stay at a newer minor than the kubelet, within Kubernetes's

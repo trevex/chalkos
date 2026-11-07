@@ -18,12 +18,13 @@ YAML that Go reads. They meet in these places:
 - The image directory. `chalkos.lib.mkImages` builds one per
   variant and platform
   from the node modules (`lib/images.nix`, `modules/node`): the raw image with its partitions,
-  `metadata.json` (variant, platform, root hash, revision and tag), `image.json` (what the image
-  fixes about Kubernetes) and `schemas/`, the JSON Schemas of the
-  config kinds the image accepts. chalkctl and chalklab read
+  `metadata.json` (variant, platform, root hash, revision and tag), `facts/`, a
+  `<layer>.json` for each layer that sets `chalkos.imageDirectory.facts` (the Kubernetes layer's
+  `kubernetes.json` says what the image fixes about Kubernetes), and `schemas/`, the JSON Schemas
+  of the config kinds the image accepts. chalkctl and chalklab read
   them from there, or from a running node through the Contract method.
 - Files the image carries in `/etc/chalkos`, written by the node modules: the same
-  `kubernetes/image.json` and `schemas`, the units granted each kind in `services.json`, the
+  Kubernetes facts as `kubernetes/image.json`, `schemas`, the units granted each kind in `services.json`, the
   outputs a node renders in `outputs.json`, the validators it runs in `validators.json`, what a
   delivery restarts or reloads in `effects.json`, the system region's repart definitions in
   `repart.d`
@@ -41,7 +42,7 @@ YAML that Go reads. They meet in these places:
   schemas, keeps them on STATE and translates them the same
   way.
 - The node's Kubernetes cluster, which chalkd writes from the `Cluster` and `Flannel`
-  documents and the image's `image.json` into `/run/chalkos/kubernetes/cluster.json`. chalkd renders
+  documents and the image's `kubernetes/image.json` into `/run/chalkos/kubernetes/cluster.json`. chalkd renders
   chalkos's add-ons (RBAC, kube-proxy, flannel, CoreDNS) and the kubelet's configuration from it
   in Go (`pkg/kubernetes/addons`, `pkg/kubernetes/node`) and applies the objects of the
   `Addon` documents after the add-ons.
@@ -50,9 +51,9 @@ The diagram follows an image and a node's YAML to a running node.
 
 ```mermaid
 flowchart LR
-    modules["node modules<br/>modules/node"] -->|mkImages, nix build| image["image directory<br/>schemas/, image.json, metadata.json"]
+    modules["node modules<br/>modules/node"] -->|mkImages, nix build| image["image directory<br/>schemas/, facts/, metadata.json"]
     yaml["inventory and YAML documents"] -->|reads| chalkctl["chalkctl<br/>pkg/inventory, pkg/config"]
-    image -->|schemas, image.json| chalkctl
+    image -->|schemas, facts| chalkctl
     chalkctl -->|install, config over the node API| chalkd["chalkd<br/>pkg/chalkd, pkg/chalkd/layers"]
     image -->|/etc/chalkos, os-release| chalkd
     chalkd -->|config| state["STATE"]
@@ -281,7 +282,7 @@ On a node that runs the installer (`Installer.FromParts`), chalkctl also sends t
 inventory names for the node, or the one `--image` gives, in the same parts an upgrade sends,
 plus the boot loader. The sequence shows what the installer does with them. When the inventory
 names the image in a registry, the header carries the image's reference by digest in place of the
-schemas, `image.json` and repart definitions, and no parts follow it. The installer then reads
+schemas, layer facts and repart definitions, and no parts follow it. The installer then reads
 those from the artifact's contract layer before it touches the disk. It pulls the store, hash
 tree, UKI and boot loader from the registry in the steps where the sequence receives them from
 chalkctl.
@@ -293,7 +294,7 @@ sequenceDiagram
     participant disk as Target disk and TPM
     participant fw as Firmware
     chalkd-->>chalkd: console shows fingerprint and addresses
-    chalkctl->>chalkd: Install header: config, the image's schemas and image.json, node certificate, OS CA, fallback secret, Kubernetes share, image header, repart definitions
+    chalkctl->>chalkd: Install header: config, the image's schemas and layer facts, node certificate, OS CA, fallback secret, Kubernetes share, image header, repart definitions
     chalkd->>disk: check the disk is empty or an unfinished install
     chalkd->>disk: lay out ESP, slot A, slot B and STATE with systemd-repart, STATE sealed to PCR 7
     chalkctl->>chalkd: store and hash tree

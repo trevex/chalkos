@@ -145,7 +145,7 @@ installing cp1 onto serial "<serial>": chalkos <root-hash> (<revision>), which t
 ```
 
 The installer pulls the store, the hash tree, the UKI and the boot loader, and takes the image's
-schemas, `image.json` and partition definitions from the artifact's contract layer. The machine
+schemas, layer facts and partition definitions from the artifact's contract layer. The machine
 that runs the installer therefore needs a route and DNS to the registry or to an endpoint of its
 `Mirror`, as [Ports and firewall](../reference/ports-and-firewall.md#connections-a-node-makes)
 lists.

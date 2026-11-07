@@ -90,7 +90,7 @@ Before it sends anything, chalkctl checks each image against the nodes:
 - the UKI's os-release sets `IMAGE_VERSION` empty, so systemd-boot orders the node's entries by
   generation, and names a variant and platform;
 - the config the inventory gives each node that gets the image suits the `schemas/` and
-  `image.json` in the image's directory, as an install checks the config it delivers.
+  `facts/` in the image's directory, as an install checks the config it delivers.
 
 chalkctl checks every node's config before it changes the first node. It needs the inventory for
 that, whatever it authenticates with. Without one, the node's own check is all there is. For an

@@ -93,7 +93,7 @@ Build the package and link the result where the inventory looks for it:
 $ nix build .#node-metal -o images/node-metal
 $ ls images/node-metal
 chalkos.raw
-image.json
+facts
 metadata.json
 repart.d
 repart-output.json
@@ -132,10 +132,11 @@ The build writes six entries:
 - `metadata.json` names the image's root hash, variant and platform, the revision and tag it was
   built from, and the kinds it accepts.
 - `schemas` holds the JSON Schema of each kind the image accepts.
-- `image.json` records what the image fixes about Kubernetes: the release of its kubelet and its
-  pod network. It exists only on an image with Kubernetes.
+- `facts` holds a `<layer>.json` for each of the image's layers that has facts. On an image with
+  Kubernetes, `facts/kubernetes.json` records what the image fixes about Kubernetes: the release of
+  its kubelet and its pod network. On an image without such layers, `facts` is empty.
 
-chalkctl reads `metadata.json`, `schemas` and `image.json` when it validates, installs or upgrades
+chalkctl reads `metadata.json`, `schemas` and `facts` when it validates, installs or upgrades
 a node whose image in the inventory is this directory.
 [Image and partition layout](../reference/image-layout.md#outputs-of-an-image-build) lists the
 files in detail.

@@ -157,8 +157,8 @@ What an image accepts as [config](#config): its variant, platform, kind schemas 
 about Kubernetes. The variant and platform are the ones the image was built for, and the schemas
 are the JSON Schemas of its [kinds](#kind). The image carries the schemas in
 `/etc/chalkos/schemas` and the Kubernetes facts in `/etc/chalkos/kubernetes/image.json`, and its
-[image directory](#image-directory) has them as `schemas/` and `image.json`. chalkctl reads the
-contract from the image directory when it validates config, installs from the
+[image directory](#image-directory) has them as `schemas/` and `facts/kubernetes.json`. chalkctl
+reads the contract from the image directory when it validates config, installs from the
 [installer](#installer) or upgrades a node, and from the running node with the
 [Contract](api.md#method-contract) method when it applies config. On an upgrade, the node reads
 it from the image it wrote. See [Image and partition layout](image-layout.md).

@@ -208,17 +208,16 @@ maintenance mode.
 
 An image directory is what
 [`mkImages`](mkimages.md) builds as `images.<variant>-<platform>`, such as `nix build .#node-kvm`
-in the lab template, whose flake exposes `images.node-kvm`. It holds five entries, six for an
-image with Kubernetes:
+in the lab template, whose flake exposes `images.node-kvm`. It holds six entries:
 
 | Entry | What it is |
 | --- | --- |
 | `chalkos.raw` | The raw disk image: the ESP, with the UKI as `/EFI/Linux/chalkos_1.efi`, and slot A labelled with its root hash, with no slot B and no STATE. |
 | `repart-output.json` | systemd-repart's description of the raw image's partitions: type, label, UUID, offset, size and the store's root hash, with slot A's labels as the raw image carries them. `chalkbuild sign` and `chalkctl install` find the partitions with it. |
 | `repart.d` | The system region's definitions, `00-esp.conf` to `50-state.conf`, as the image carries them in `/etc/chalkos/repart.d`. |
-| `metadata.json` | What the image is: `schemaVersion` of this file (0), the image ID, variant, platform and the store's root hash (`rootHash`), the `revision` and `tag` mkImages was given, null without them, `kubernetes`, the Kubernetes release and CNI provider (`{"version": "1.37.1", "cni": "flannel"}`), null on an image without Kubernetes, and `kinds`, the config kinds the image accepts, each with its `apiVersion`, `kind` and whether a node may hold several documents of it (`multiple`). chalkctl reads the root hash and the platform from it, and sends the revision and tag with the image when the file names its root hash; chalkctl warns of a file it ignores. |
+| `metadata.json` | What the image is: `schemaVersion` of this file (0), the image ID, variant, platform and the store's root hash (`rootHash`), the `revision` and `tag` mkImages was given, null without them, and `kinds`, the config kinds the image accepts, each with its `apiVersion`, `kind` and whether a node may hold several documents of it (`multiple`). chalkctl reads the root hash and the platform from it, and sends the revision and tag with the image when the file names its root hash; chalkctl warns of a file it ignores. |
 | `schemas` | One JSON Schema (draft 2020-12, the schema dialect of OpenAPI 3.1) per kind, named `<group>_<version>_<kind>.json`, as the image carries them in `/etc/chalkos/schemas`. |
-| `image.json` | What the image fixes about Kubernetes, as it carries it in `/etc/chalkos/kubernetes/image.json`; only on an image with Kubernetes. An install from the installer sends it with `schemas`, or the installer reads both from the contract layer of an image it pulls, so the installer translates the node's config for the image it writes to lay out the target disk; an upgrade checks each node's config from the inventory against both before it drains a node, and chalkd checks the config it carries against those of the image it wrote. |
+| `facts` | The facts of the image's layers, one `<layer>.json` for each layer that sets [`chalkos.imageDirectory.facts`](extension-api.md#chalkosimagedirectoryfacts); empty on an image without such layers. On an image with Kubernetes, `facts/kubernetes.json` is what the image fixes about Kubernetes, the file the image carries as `/etc/chalkos/kubernetes/image.json`: the release of its kubelet and its pod network (`{"version": "1.37.1", "cni": "flannel"}`). An install from the installer sends the facts with `schemas`, or the installer reads both from the contract layer of an image it pulls, so the installer translates the node's config for the image it writes to lay out the target disk; an upgrade checks each node's config from the inventory against both before it drains a node, and chalkd checks the config it carries against those of the image it wrote. |
 
 [Config kinds](kinds.md) lists the fields of the kinds in the default variant's `schemas`.
 
@@ -270,7 +269,7 @@ manifest, and the blobs below `blobs/sha256/`. The manifest has the artifact typ
 | layer | `application/vnd.chalkos.image.hash-tree.v1` | The store's dm-verity hash tree. |
 | layer | `application/vnd.chalkos.image.uki.v1` | The UKI. |
 | layer | `application/vnd.chalkos.image.boot-loader.v1` | systemd-boot. |
-| layer | `application/vnd.chalkos.image.contract.v1.tar` | The contract: `metadata.json`, `schemas/`, `repart.d/` and `image.json`. |
+| layer | `application/vnd.chalkos.image.contract.v1.tar` | The contract: `metadata.json`, `schemas/`, `repart.d/` and `facts/`. |
 
 The header of the image `node-metal` reads:
 
@@ -293,7 +292,7 @@ store layer holds exactly the store data the root hash covers, and the hash tree
 hash tree's size, so each layer's digest is the hash of the image part an install or upgrade sends.
 
 The contract layer is a tar of `metadata.json`, `schemas/*.json`, `repart.d/*.conf` and
-`image.json`, which an image without Kubernetes lacks. Its entries are in name order, with the
+`facts/*.json`, which an image without layer facts lacks. Its entries are in name order, with the
 modification time 0 and owner 0:0, so the same image directory always makes the same layer and
 the same manifest. [`chalkbuild sign`](cli/chalkbuild_sign.md) replaces the UKI and boot-loader
 layers and the manifest, and keeps the other layers.
