@@ -22,7 +22,6 @@ import (
 	knode "github.com/trevex/chalkos/pkg/kubernetes/node"
 	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
 	"github.com/trevex/chalkos/pkg/kubernetes/translate"
-	"github.com/trevex/chalkos/pkg/layers"
 	"github.com/trevex/chalkos/pkg/nodeconfig"
 	"github.com/trevex/chalkos/pkg/pki"
 )
@@ -42,7 +41,8 @@ func (p *Plugin) CheckIdentity(data []byte) error {
 	if err := json.Unmarshal(data, &id); err != nil {
 		return layer.Errorf(connect.CodeInvalidArgument, "parse the identity: %w", err)
 	}
-	if _, ok := id.Layers[layers.Kubernetes]; !ok {
+	// ParseNode reports a part that does not decode.
+	if _, ok, _ := k8s.NodeIdentityOf(id); !ok {
 		return nil
 	}
 	if _, err := k8s.ParseNode(data); err != nil {

@@ -29,11 +29,15 @@ type Identity struct {
 	Layers map[string]json.RawMessage `json:"layers"`
 }
 
-// SetLayer stores v as the part of the layer called name, replacing what the layer had.
+// SetLayer stores v as the part of the layer called name, replacing what the layer had. It
+// refuses a v that encodes as null, such as a nil pointer: a layer without a part has no entry.
 func (id *Identity) SetLayer(name string, v any) error {
 	data, err := json.Marshal(v)
 	if err != nil {
 		return fmt.Errorf("the identity's %s part: %w", name, err)
+	}
+	if string(data) == "null" {
+		return fmt.Errorf("the identity's %s part is null; a layer without a part sets none", name)
 	}
 	if id.Layers == nil {
 		id.Layers = map[string]json.RawMessage{}

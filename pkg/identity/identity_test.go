@@ -39,6 +39,9 @@ func TestLayer(t *testing.T) {
 	if ok, err := id.Layer("b", &got); ok || err != nil {
 		t.Errorf("Layer(b) = %v, %v; want false, nil", ok, err)
 	}
+	if err := id.SetLayer("n", (*part)(nil)); err == nil || id.Layers["n"] != nil {
+		t.Errorf("SetLayer of a nil pointer = %v, part %s; want an error and no part", err, id.Layers["n"])
+	}
 	id.Layers["c"] = []byte(`[]`)
 	if ok, err := id.Layer("c", &got); !ok || err == nil {
 		t.Errorf("Layer(c) of a part that does not decode = %v, %v; want true and an error", ok, err)
