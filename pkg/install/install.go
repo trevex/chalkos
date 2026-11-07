@@ -69,9 +69,10 @@ func ForNode() *Installer { return defaults("/state") }
 func ForInstaller() *Installer { return defaults("/run/chalkd/target") }
 
 func defaults(stateDir string) *Installer {
+	run := tool.ExecRunner{}
 	return &Installer{
-		Run:           tool.ExecRunner{},
-		Ops:           hostops.System(tool.ExecRunner{}),
+		Run:           run,
+		Ops:           hostops.System(run),
 		Host:          storage.DefaultHost(),
 		StateDir:      stateDir,
 		BootDisk:      "/dev/disk/chalk-boot-disk",

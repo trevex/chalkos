@@ -18,7 +18,6 @@ import (
 	"github.com/trevex/chalkos/pkg/esp"
 	"github.com/trevex/chalkos/pkg/pki"
 	"github.com/trevex/chalkos/pkg/storage"
-	"github.com/trevex/chalkos/pkg/storage/hostops"
 	"github.com/trevex/chalkos/pkg/storeslot"
 	"github.com/trevex/chalkos/pkg/uki"
 	"github.com/trevex/chalkos/pkg/upgrade"
@@ -474,7 +473,7 @@ func (s *Server) upgradeNodeLocked() (*upgrade.Node, error) {
 	}
 	return &upgrade.Node{
 		Run:           s.Run,
-		Ops:           hostops.Tools{Run: s.Run, MountInfo: s.Paths.MountInfo, DevRoot: s.Host.DevRoot},
+		Ops:           s.hostOps(),
 		Disk:          boot.Device,
 		ESP:           s.Paths.ESP,
 		EFIVars:       s.Paths.EFIVars,

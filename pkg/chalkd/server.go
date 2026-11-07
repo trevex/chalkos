@@ -30,6 +30,7 @@ import (
 	"github.com/trevex/chalkos/pkg/nodeconfig"
 	"github.com/trevex/chalkos/pkg/pki"
 	"github.com/trevex/chalkos/pkg/storage"
+	"github.com/trevex/chalkos/pkg/storage/hostops"
 	"github.com/trevex/chalkos/pkg/storage/node"
 	"github.com/trevex/chalkos/pkg/tool"
 	"github.com/trevex/chalkos/pkg/upgrade"
@@ -411,11 +412,18 @@ func StaticCAs(pool *x509.CertPool) func() *x509.CertPool {
 	return func() *x509.CertPool { return pool }
 }
 
+// hostOps mounts and opens volumes on the booted system with s.Run, against chalkd's mount table
+// and the host's /dev.
+func (s *Server) hostOps() hostops.Tools {
+	return hostops.Tools{Run: s.Run, MountInfo: s.Paths.MountInfo, DevRoot: s.Host.DevRoot}
+}
+
 // storage is the node's storage setup, as the booted system sees it.
 func (s *Server) storage() *node.Storage {
 	return &node.Storage{
 		Run:            s.Run,
 		Host:           s.Host,
+		Ops:            s.hostOps(),
 		StateDir:       s.Paths.StateDir,
 		BootDisk:       s.Paths.BootDisk,
 		BootPartitions: s.Paths.BootPartitions,

@@ -6,6 +6,7 @@ import (
 	"io"
 
 	"github.com/trevex/chalkos/pkg/storage"
+	"github.com/trevex/chalkos/pkg/storage/hostops"
 	"github.com/trevex/chalkos/pkg/storage/node"
 	"github.com/trevex/chalkos/pkg/tool"
 )
@@ -20,9 +21,11 @@ func runFacts(args []string, stdin io.Reader, stdout io.Writer) error {
 	if err != nil {
 		return err
 	}
+	run := tool.ExecRunner{}
 	s := &node.Storage{
-		Run:            tool.ExecRunner{},
+		Run:            run,
 		Host:           storage.DefaultHost(),
+		Ops:            hostops.System(run),
 		StateDir:       "/state",
 		BootPartitions: "/dev/disk/chalk-boot",
 	}

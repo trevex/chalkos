@@ -119,6 +119,19 @@ func TestOpenStateEncrypted(t *testing.T) {
 	})
 }
 
+// A storage setup without host operations refuses to open a volume, and runs nothing.
+func TestOpenWithoutOps(t *testing.T) {
+	r := &tooltest.Runner{}
+	b := newTestBoot(t, r, bootDisk)
+	b.Ops = nil
+	if err := b.OpenState(context.Background()); err == nil || !strings.Contains(err.Error(), "no host operations") {
+		t.Errorf("OpenState = %v", err)
+	}
+	if len(r.Calls) != 0 {
+		t.Errorf("ran %q", r.Calls)
+	}
+}
+
 func TestOpenStateUnencrypted(t *testing.T) {
 	r := &tooltest.Runner{Rules: []tooltest.Rule{{Prefix: "blkid", Out: "ext4\n"}}}
 	b := newTestBoot(t, r, bootDisk)
