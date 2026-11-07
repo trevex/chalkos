@@ -8,8 +8,6 @@ import (
 	"os"
 	"path/filepath"
 
-	"golang.org/x/sys/unix"
-
 	"github.com/trevex/chalkos/pkg/atomicfile"
 )
 
@@ -63,16 +61,12 @@ func lockFile(path string) (*os.File, error) {
 		name = real
 	}
 	name += ".lock"
-	lock, err := os.OpenFile(name, os.O_RDWR|os.O_CREATE|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0o600)
+	lock, err := atomicfile.Lock(name, 0o600, false)
+	if errors.Is(err, atomicfile.ErrLocked) {
+		return nil, ErrLocked
+	}
 	if err != nil {
 		return nil, fmt.Errorf("lock the secrets file: %w", err)
-	}
-	if err := unix.Flock(int(lock.Fd()), unix.LOCK_EX|unix.LOCK_NB); err != nil {
-		lock.Close()
-		if errors.Is(err, unix.EWOULDBLOCK) {
-			return nil, ErrLocked
-		}
-		return nil, fmt.Errorf("lock the secrets file with %s: %w", name, err)
 	}
 	return lock, nil
 }

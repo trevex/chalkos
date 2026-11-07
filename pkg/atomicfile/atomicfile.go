@@ -1,5 +1,5 @@
 // Package atomicfile replaces files in one step, so a crash leaves the old content or the new,
-// never part of either.
+// never part of either, and locks files against other processes.
 package atomicfile
 
 import (

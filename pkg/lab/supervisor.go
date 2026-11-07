@@ -13,6 +13,8 @@ import (
 	"sync"
 	"syscall"
 	"time"
+
+	"github.com/trevex/chalkos/pkg/atomicfile"
 )
 
 const (
@@ -78,13 +80,12 @@ func (s *supervisor) readyPath() string { return filepath.Join(s.dir, readyFile)
 // lock takes the lab's lock and records this process's PID in it. The lock holds while the
 // returned file is open.
 func (s *supervisor) lock() (*os.File, error) {
-	lock, err := os.OpenFile(filepath.Join(s.dir, supervisorFile), os.O_RDWR|os.O_CREATE, 0o600)
+	lock, err := atomicfile.Lock(filepath.Join(s.dir, supervisorFile), 0o600, false)
+	if errors.Is(err, atomicfile.ErrLocked) {
+		return nil, fmt.Errorf("a supervisor runs the lab in %s already", s.dir)
+	}
 	if err != nil {
 		return nil, err
-	}
-	if err := syscall.Flock(int(lock.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
-		lock.Close()
-		return nil, fmt.Errorf("a supervisor runs the lab in %s already: %w", s.dir, err)
 	}
 	if err := lock.Truncate(0); err != nil {
 		lock.Close()

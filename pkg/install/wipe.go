@@ -9,6 +9,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/trevex/chalkos/pkg/atomicfile"
 	"github.com/trevex/chalkos/pkg/storage"
 )
 
@@ -41,11 +42,11 @@ func openExclusive(ctx context.Context, path string) (Disk, error) {
 	// lock keeps udev waiting until the kernel dropped the old partitions, so the two never race.
 	deadline := time.Now().Add(diskLockWait)
 	for {
-		err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB)
+		err := atomicfile.Flock(f, false)
 		if err == nil {
 			return blockDevice{f}, nil
 		}
-		if !errors.Is(err, syscall.EWOULDBLOCK) {
+		if !errors.Is(err, atomicfile.ErrLocked) {
 			f.Close()
 			return nil, fmt.Errorf("lock %s: %w", path, err)
 		}

@@ -20,8 +20,8 @@ import (
 	"os/exec"
 	"slices"
 	"strings"
-	"syscall"
 
+	"github.com/trevex/chalkos/pkg/atomicfile"
 	"github.com/trevex/chalkos/pkg/internal/strs"
 	"github.com/trevex/chalkos/pkg/kubernetes"
 	"github.com/trevex/chalkos/pkg/kubernetes/nodeip"
@@ -347,12 +347,8 @@ func (r Rule) empty(forward []string) error {
 
 // lock takes the lock file, waiting for other runs.
 func lock(path string) (unlock func(), err error) {
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	f, err := atomicfile.Lock(path, 0o644, true)
 	if err != nil {
-		return nil, err
-	}
-	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX); err != nil {
-		f.Close()
 		return nil, err
 	}
 	return func() { f.Close() }, nil

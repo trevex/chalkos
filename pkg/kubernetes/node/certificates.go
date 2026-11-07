@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"syscall"
 	"time"
 
 	"golang.org/x/sys/unix"
@@ -43,19 +42,11 @@ func lockPKI(p Paths, wait bool) (unlock func(), err error) {
 	if err := os.MkdirAll(p.Run, 0o755); err != nil {
 		return nil, err
 	}
-	f, err := os.OpenFile(p.pkiLock(), os.O_CREATE|os.O_RDWR, 0o600)
+	f, err := atomicfile.Lock(p.pkiLock(), 0o600, wait)
+	if errors.Is(err, atomicfile.ErrLocked) {
+		return nil, errPKIBusy
+	}
 	if err != nil {
-		return nil, err
-	}
-	how := syscall.LOCK_EX
-	if !wait {
-		how |= syscall.LOCK_NB
-	}
-	if err := syscall.Flock(int(f.Fd()), how); err != nil {
-		f.Close()
-		if errors.Is(err, syscall.EWOULDBLOCK) {
-			return nil, errPKIBusy
-		}
 		return nil, err
 	}
 	return func() { f.Close() }, nil
