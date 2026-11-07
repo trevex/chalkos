@@ -314,8 +314,9 @@ in
           *) chalkctl validate --inventory "$inventory" ;;
         esac
       done
-      # The images the clusters name are those the e2e tests' registry serves.
-      for ref in $(grep -rhoE '(registry\.k8s\.io|ghcr\.io)/[^ "]+' --include='*.yaml' . | sort -u); do
+      # The images the clusters name, and every image they name by its digest, are those the e2e
+      # tests' registry serves.
+      for ref in $(grep -rhoE '[^ "]+@sha256:[0-9a-f]{64}|(registry\.k8s\.io|ghcr\.io)/[^ "]+' . | sort -u); do
         ${pkgs.jq}/bin/jq -e --arg r "$ref" 'has($r)' ${chalkPkgs.test-kubernetes-images}/images.json >/dev/null || {
           echo "error: the fixtures name $ref, which nix/testing/kubernetes-images.nix does not serve" >&2
           exit 1

@@ -3,6 +3,7 @@ package e2e
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -497,13 +498,41 @@ func logHAMemory(t *testing.T, ctx context.Context, cs kubernetes.Interface) {
 	}
 }
 
-// haRollout are the references the HA cluster's config names and those its control-plane rollout
-// replaces them with: the next patch release, which nix/testing/kubernetes-images.nix serves.
-var haRollout = []struct{ from, to string }{
-	{"registry.k8s.io/kube-apiserver:v1.37.1@sha256:1f207ab66b1ca6579dd5bf1024396015ca2a0f638157a7741d2d88d7b3c82c51", "registry.k8s.io/kube-apiserver:v1.37.2@sha256:f3916d65eddfe52b6d21ff4a17abdf4c52589c8ef62ec7e0c17204f276cd8db6"},
-	{"registry.k8s.io/kube-controller-manager:v1.37.1@sha256:24366808a9bf9dfefb3aa171f0fadac61a1dde50a43e578c42eb3d8785cb606e", "registry.k8s.io/kube-controller-manager:v1.37.2@sha256:07fccf8e84f4cdc72c8e59f1a50da68f15acf1299e455004a944610aecac60c4"},
-	{"registry.k8s.io/kube-scheduler:v1.37.1@sha256:e4fc6f552722518aaa7d6cddbb8b638df275a5adbc5d1e5d59276af52692fb2c", "registry.k8s.io/kube-scheduler:v1.37.2@sha256:e5438c1bb8c569c41ad556d8a1e8eba44fc5b3cfe4da3adf2a17168102434074"},
-	{"registry.k8s.io/kube-proxy:v1.37.1@sha256:abbadc84931b520750bcda3350819f6a828ee44a4a0cab548a26016aa7e2a3b7", "registry.k8s.io/kube-proxy:v1.37.2@sha256:8c355aac6f4397e98a5462d4bb47b55386df688e6e1e46c67bf374155ac02c45"},
+// haComponents are the components the control-plane rollout moves to their next patch release:
+// the three static pods, then kube-proxy.
+var haComponents = []string{"kube-apiserver", "kube-controller-manager", "kube-scheduler", "kube-proxy"}
+
+// imageRollout is the reference of a component the cluster file names and the one the rollout
+// replaces it with.
+type imageRollout struct{ from, to string }
+
+// haRollout is an imageRollout for each of haComponents. The test registry serves two releases of
+// each, which nix/testing/kubernetes-images.nix pins: the one the cluster file names and the
+// next patch release.
+func haRollout(t *testing.T, served map[string]string, cluster string) []imageRollout {
+	t.Helper()
+	var rollout []imageRollout
+	for _, component := range haComponents {
+		var r imageRollout
+		for ref := range served {
+			if !strings.HasPrefix(ref, "registry.k8s.io/"+component+":") {
+				continue
+			}
+			slot := &r.to
+			if strings.Contains(cluster, ref) {
+				slot = &r.from
+			}
+			if *slot != "" {
+				t.Fatalf("the test registry serves more than two releases of %s", component)
+			}
+			*slot = ref
+		}
+		if r.from == "" || r.to == "" {
+			t.Fatalf("the test registry serves no %s that the cluster file names and another to roll out to", component)
+		}
+		rollout = append(rollout, r)
+	}
+	return rollout
 }
 
 // rolloutControlPlane rolls the control plane out to the next patch release through config: the
@@ -513,20 +542,22 @@ var haRollout = []struct{ from, to string }{
 func (c *haCluster) rolloutControlPlane(ctx context.Context, cs kubernetes.Interface) {
 	t := c.t
 	t.Helper()
-	served, err := os.ReadFile(os.Getenv("CHALKLAB_K8S_IMAGES"))
+	data, err := os.ReadFile(os.Getenv("CHALKLAB_K8S_IMAGES"))
 	if err != nil {
 		t.Fatal(err)
 	}
+	var served map[string]string
+	if err := json.Unmarshal(data, &served); err != nil {
+		t.Fatal(err)
+	}
 	path := filepath.Join(filepath.Dir(inventoryPath("ha")), "cluster", "kubernetes.yaml")
-	data, err := os.ReadFile(path)
+	data, err = os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}
 	text := string(data)
-	for _, r := range haRollout {
-		if !strings.Contains(text, r.from) || !strings.Contains(string(served), `"`+r.to+`"`) {
-			t.Fatalf("the cluster file names no %s, or the test registry serves no %s", r.from, r.to)
-		}
+	rollout := haRollout(t, served, text)
+	for _, r := range rollout {
 		text = strings.ReplaceAll(text, r.from, r.to)
 	}
 	if err := os.WriteFile(path, []byte(text), 0o644); err != nil {
@@ -554,9 +585,8 @@ func (c *haCluster) rolloutControlPlane(ctx context.Context, cs kubernetes.Inter
 		last = i
 	}
 	for _, hn := range haNodes {
-		for _, r := range haRollout[:3] {
-			component := strings.TrimPrefix(strings.Split(r.to, ":")[0], "registry.k8s.io/")
-			p, err := cs.CoreV1().Pods("kube-system").Get(ctx, component+"-"+hn.name, metav1.GetOptions{})
+		for i, r := range rollout[:3] {
+			p, err := cs.CoreV1().Pods("kube-system").Get(ctx, haComponents[i]+"-"+hn.name, metav1.GetOptions{})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -570,7 +600,7 @@ func (c *haCluster) rolloutControlPlane(ctx context.Context, cs kubernetes.Inter
 		if err != nil {
 			return err
 		}
-		if got := ds.Spec.Template.Spec.Containers[0].Image; got != haRollout[3].to {
+		if got := ds.Spec.Template.Spec.Containers[0].Image; got != rollout[3].to {
 			return fmt.Errorf("kube-proxy's DaemonSet names %s", got)
 		}
 		if s := ds.Status; s.UpdatedNumberScheduled != s.DesiredNumberScheduled || s.NumberAvailable != s.DesiredNumberScheduled {
