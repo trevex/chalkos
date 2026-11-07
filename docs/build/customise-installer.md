@@ -158,7 +158,7 @@ from the switch. A VLAN on the bond goes into the bond's file as `vlan = [ "vlan
 ## Add drivers and firmware
 
 The installer carries the base module groups, `storage`, `network`, `virtualisation`,
-`filesystems`, `kubernetes` and `platform`, which hold the in-tree Ethernet, NVMe, SATA, SAS and
+`filesystems`, `firewall` and `platform`, which hold the in-tree Ethernet, NVMe, SATA, SAS and
 virtio drivers. Add a group or single modules, and firmware files, the way an image's modules add
 them:
 

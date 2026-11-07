@@ -110,16 +110,18 @@ drivers. Every image carries the base groups:
 | Group | Holds |
 | --- | --- |
 | `storage` | ATA, NVMe, SCSI and SAS controllers, MD RAID, USB storage, MMC |
-| `network` | wired Ethernet, PHYs, bonding, VLANs, bridges, WireGuard, VXLAN |
+| `network` | wired Ethernet, PHYs, bonding, VLANs, bridges, WireGuard, VXLAN, traffic control |
 | `virtualisation` | virtio, Hyper-V, Xen, VMware, AWS ENA and Google gVNIC |
 | `filesystems` | ext4, xfs, btrfs, FAT, erofs, overlayfs, NFS, CephFS, SMB |
-| `kubernetes` | netfilter, traffic control, SCTP, Open vSwitch |
+| `firewall` | netfilter, which the firewall's nftables rules use |
 | `platform` | TPM, IPMI, watchdogs, sensors, ACPI, CPU frequency, crypto, the console keyboard |
 
 The base groups keep about a third of the kernel's 7,300 modules, about 45 MiB of the full tree's
-145 MiB. The further groups are `gpu`, `sound`, `media`, `wireless`, `infiniband`, `can` and
-`industrial`. Add a group or single modules in the modules of the variant whose nodes need them,
-here a `gpu` variant:
+145 MiB. An image with Kubernetes adds the `kubernetes` group, which holds SCTP and Open vSwitch
+for the cluster's pod network. The further groups are `gpu`, `sound`, `media`, `wireless`,
+`infiniband`, `can` and `industrial`. Your own modules can declare more groups in
+[`chalkos.kernel.groups`](../reference/image-options.md#chalkoskernelgroups). Add a group or
+single modules in the modules of the variant whose nodes need them, here a `gpu` variant:
 
 ```nix
 variants.gpu.modules = [

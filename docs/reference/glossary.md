@@ -371,11 +371,13 @@ reads, reboots and an install. See [Architecture](../how-it-works/node/architect
 ## Module group { #module-group }
 <!-- abbr: module groups, Module groups -->
 
-A named set of kernel modules an [image](#image) carries. An image's groups are listed in
-[`chalkos.kernel.moduleGroups`](image-options.md#chalkoskernelmodulegroups). The base groups
-`storage`, `network`, `virtualisation`, `filesystems`, `kubernetes` and `platform` are on by
-default; `gpu`, `sound`, `media`, `wireless`, `infiniband`, `can` and `industrial` are added in a
-variant's or platform's modules. See [The image](../how-it-works/node/image.md).
+A named set of kernel modules an [image](#image) carries. Modules declare groups in
+[`chalkos.kernel.groups`](image-options.md#chalkoskernelgroups), and an image's groups are listed
+in [`chalkos.kernel.moduleGroups`](image-options.md#chalkoskernelmodulegroups). Every image
+carries the base groups `storage`, `network`, `virtualisation`, `filesystems`, `firewall` and
+`platform`. An image with Kubernetes adds `kubernetes`. `gpu`, `sound`, `media`, `wireless`,
+`infiniband`, `can` and `industrial` are added in a variant's or platform's modules. See
+[The image](../how-it-works/node/image.md).
 
 ## Node { #node }
 <!-- abbr: none -->

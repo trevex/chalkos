@@ -7,13 +7,18 @@
 }:
 let
   inherit (pkgs) lib;
-  inherit (checkLib) chalkPkgs testing worker;
+  inherit (checkLib)
+    chalkPkgs
+    router
+    testing
+    worker
+    ;
 in
 {
-  # The worker's kernel module tree, and one with the gpu group: a module outside an image's groups
-  # is not in its tree, and neither a name the kernel does not know, a directory without modules,
-  # a module the image loads but its tree lacks, nor one whose dependency the tree lacks gets past
-  # the build. Out-of-tree modules bring the in-tree modules they depend on.
+  # The worker's and the router's kernel module trees, and one with the gpu group: a module outside
+  # an image's groups is not in its tree, and neither a name the kernel does not know, a directory
+  # without modules, a module the image loads but its tree lacks, nor one whose dependency the tree
+  # lacks gets past the build. Out-of-tree modules bring the in-tree modules they depend on.
   kernel-modules =
     let
       treeOf = nixos: nixos.config.system.build.chalkosKernelModules;
@@ -69,6 +74,15 @@ in
         done
         if has ${tree} amdgpu; then fail "the worker's tree holds amdgpu"; fi
         has ${gpu} amdgpu || fail "the gpu group's tree lacks amdgpu"
+        # The Kubernetes layer's group holds what pod networks load, such as Open vSwitch and SCTP;
+        # a router image carries the netfilter and queueing modules every image does, without it.
+        for module in openvswitch sctp; do
+          has ${tree} $module || fail "the worker's tree lacks $module"
+          if has ${treeOf router} $module; then fail "the router's tree holds $module"; fi
+        done
+        for module in nf_tables nft_nat sch_cake act_mirred ifb; do
+          has ${treeOf router} $module || fail "the router's tree lacks $module"
+        done
 
         echo drivers/nvme >directories
         echo chalkos_no_such_module >names

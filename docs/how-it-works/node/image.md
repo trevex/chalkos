@@ -206,12 +206,14 @@ lists both sides.
 
 The kernel is nixpkgs's prebuilt kernel, from its binary cache. The image carries a filtered copy
 of its module tree, and module groups pick what the tree keeps. Most groups name directories of
-the tree, so a kernel update brings a subsystem's new drivers along. The base groups (`storage`,
-`network`, `virtualisation`, `filesystems`, `kubernetes` and `platform`) keep about a third of the
-kernel's 7,300 modules, about 45 MiB of the full tree's 145 MiB. A missing module fails the build,
-not the boot. The build checks that every module the image loads by name, and every dependency of
-a module in the tree, is in the tree. Out-of-tree modules from NixOS's `boot.extraModulePackages`
-are always included whole.
+the tree, so a kernel update brings a subsystem's new drivers along. The module of a feature
+declares the group the feature needs and adds it while the feature is on. The base groups
+(`storage`, `network`, `virtualisation`, `filesystems`, `firewall` and `platform`) keep about a
+third of the kernel's 7,300 modules, about 45 MiB of the full tree's 145 MiB, and an image with
+Kubernetes adds the `kubernetes` group. A missing module fails the build, not the boot. The build
+checks that every module the image loads by name, and every dependency of a module in the tree,
+is in the tree. Out-of-tree modules from NixOS's `boot.extraModulePackages` are always included
+whole.
 
 The system path holds none of NixOS's default packages, because nodes have no logins. It holds
 what the image's own modules put there, such as systemd, bash, less, nftables, kmod and the mount

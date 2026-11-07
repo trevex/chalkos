@@ -60,16 +60,35 @@ the kernel does not know fails the build.
 
 Example: `[ "kvm_amd" ]`
 
+### `chalkos.kernel.groups` { #chalkoskernelgroups }
+
+Type: map of submodule · Default: `{ }` · Declared in: [modules/node/kernel.nix](https://github.com/trevex/chalkos/blob/main/modules/node/kernel.nix)
+
+Groups of kernel modules by name, which `chalkos.kernel.moduleGroups` selects. chalkos
+declares the groups of the hardware an image may run on: `can`, `filesystems`, `gpu`, `industrial`, `infiniband`, `media`, `network`, `platform`, `sound`, `storage`, `virtualisation` and `wireless`.
+The module of a feature declares the group the feature needs, such as the base
+firewall's `firewall`, and adds it to `chalkos.kernel.moduleGroups` while the feature
+is on.
+
+The options within each, by their path below `chalkos.kernel.groups`:
+
+| Option | Type | Default | Description |
+| --- | --- | --- | --- |
+| `<name>.directories`{ #chalkoskernelgroupsdirectories } | list of string | `[ ]` | Directories of the kernel's module tree, relative to its `kernel/` directory, whose modules the group holds, with those of their subdirectories. A directory without modules fails the build. Example: `[ "drivers/net/ethernet" ]` |
+| `<name>.modules`{ #chalkoskernelgroupsmodules } | list of string | `[ ]` | Kernel modules the group holds besides those of its directories. A name the kernel does not know fails the build. Example: `[ "tun" ]` |
+
 ### `chalkos.kernel.moduleGroups` { #chalkoskernelmodulegroups }
 
-Type: list of one of `can`, `filesystems`, `gpu`, `industrial`, `infiniband`, `kubernetes`, `media`, `network`, `platform`, `sound`, `storage`, `virtualisation`, `wireless` · Default: `[ ]` · Declared in: [modules/node/kernel.nix](https://github.com/trevex/chalkos/blob/main/modules/node/kernel.nix)
+Type: list of string · Default: `[ ]` · Declared in: [modules/node/kernel.nix](https://github.com/trevex/chalkos/blob/main/modules/node/kernel.nix)
 
-Groups of kernel modules the image carries. The base groups are set by default and
-a variant's modules add to them, for example `[ "gpu" ]`; `lib.mkForce` replaces
-them. Base: storage, network, virtualisation, filesystems, kubernetes, platform. Further:
-can, gpu, industrial, infiniband, media, sound, wireless.
-Modules from `boot.extraModulePackages` are always included whole, with the modules
-of the kernel they depend on.
+Groups of `chalkos.kernel.groups` whose modules the image carries. Every image carries
+`storage`, `network`, `virtualisation`, `filesystems`, `platform` and `firewall`; the layer an image runs adds the groups it
+needs, and a variant's modules add to them, for example `[ "gpu" ]`; `lib.mkForce`
+replaces them. A name that `chalkos.kernel.groups` does not declare fails the
+evaluation. Modules from `boot.extraModulePackages` are always included whole, with the
+modules of the kernel they depend on.
+
+Example: `[ "gpu" ]`
 
 ## Kubernetes and CNI { #kubernetes-and-cni }
 

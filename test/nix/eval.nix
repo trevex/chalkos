@@ -2780,7 +2780,7 @@ lib.runTests {
         loaded = lib.splitString "\n" check.loaded;
       in
       {
-        groups = c.chalkos.kernel.moduleGroups;
+        groups = lib.sort lib.lessThan (lib.unique c.chalkos.kernel.moduleGroups);
         gpuDirectory = map (c: lib.elem "drivers/gpu" (tree c).directories) [
           c
           gpu
@@ -2795,12 +2795,13 @@ lib.runTests {
       };
     expected = {
       groups = [
-        "storage"
-        "network"
-        "virtualisation"
         "filesystems"
+        "firewall"
         "kubernetes"
+        "network"
         "platform"
+        "storage"
+        "virtualisation"
       ];
       gpuDirectory = [
         false
@@ -2811,6 +2812,59 @@ lib.runTests {
       all = true;
       loadsChecked = true;
     };
+  };
+  # The groups of kernel modules are declared by the modules that need them: every image carries
+  # the base firewall's, the Kubernetes layer adds its own and the router layer the firewall's,
+  # whose nftables service it turns off. Every image declares the Kubernetes group, so a variant
+  # may add it; a group no module declares is refused.
+  testKernelModuleGroupsByLayer = {
+    expr =
+      let
+        groupsOf = c: lib.sort lib.lessThan (lib.unique c.chalkos.kernel.moduleGroups);
+        message = "chalkos.kernel.moduleGroups names chalkos-nothing, which chalkos.kernel.groups does not declare; it declares ${
+          lib.concatStringsSep ", " (lib.attrNames (worker [ ]).chalkos.kernel.groups)
+        }";
+        refused = modules: lib.any (a: !a.assertion && a.message == message) (worker modules).assertions;
+      in
+      {
+        node = groupsOf layered.node-metal.config;
+        plain = groupsOf layered.plain-metal.config;
+        edge = groupsOf layered.edge-metal.config;
+        declared = layered.plain-metal.config.chalkos.kernel.groups ? kubernetes;
+        firewall = layered.plain-metal.config.chalkos.kernel.groups.firewall.directories;
+        unknown = refused [ { chalkos.kernel.moduleGroups = [ "chalkos-nothing" ]; } ];
+        known = refused [ ];
+        unknownTree =
+          (builtins.tryEval
+            (worker [ { chalkos.kernel.moduleGroups = [ "chalkos-nothing" ]; } ])
+            .system.build.chalkosKernelModules.drvPath
+          ).success;
+      };
+    expected =
+      let
+        base = [
+          "filesystems"
+          "firewall"
+          "network"
+          "platform"
+          "storage"
+          "virtualisation"
+        ];
+      in
+      {
+        node = lib.sort lib.lessThan (base ++ [ "kubernetes" ]);
+        plain = base;
+        edge = base;
+        declared = true;
+        firewall = [
+          "net/netfilter"
+          "net/ipv4/netfilter"
+          "net/ipv6/netfilter"
+        ];
+        unknown = true;
+        known = false;
+        unknownTree = false;
+      };
   };
   # The tools nodes run, without what they never do: xfs_scrub, ctr and containerd-stress.
   testTrimmedTools = {

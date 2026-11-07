@@ -43,6 +43,7 @@ in
     ./containerd.nix
     ./registries.nix
     ./firewall.nix
+    ./kernel.nix
     ./kinds.nix
   ];
 

@@ -2,7 +2,9 @@
 # kernel and the binary cache stay as they are. Groups name directories of the tree where they
 # can, so a kernel update brings a subsystem's new drivers along; module names fill the gaps.
 # Modules need no signatures: they live in the dm-verity store, whose root hash the signed UKI
-# pins. The initrd's modules come from the same tree.
+# pins. The initrd's modules come from the same tree. The groups of the hardware an image may run
+# on are declared here; the modules of a feature, such as the base firewall or a layer, declare
+# theirs and add them while the feature is on.
 {
   chalkosPackages,
   config,
@@ -49,6 +51,8 @@ let
         "net/xfrm"
         "net/key"
         "net/tls"
+        # The queueing disciplines and filters of networkd's Network documents, such as CAKE.
+        "net/sched"
       ];
       modules = [
         # networkd's DHCP client and chalkd's address announcements use packet sockets.
@@ -124,25 +128,6 @@ let
         "rpcsec_gss_krb5"
       ];
     };
-    kubernetes = {
-      directories = [
-        "net/netfilter"
-        "net/ipv4/netfilter"
-        "net/ipv6/netfilter"
-        "net/bridge"
-        "net/sched"
-        "net/sctp"
-        "net/openvswitch"
-      ];
-      modules = [
-        "overlay"
-        "veth"
-        "vxlan"
-        "geneve"
-        "ipip"
-        "dummy"
-      ];
-    };
     platform = {
       directories = [
         "drivers/char/tpm"
@@ -212,11 +197,26 @@ let
     "network"
     "virtualisation"
     "filesystems"
-    "kubernetes"
     "platform"
   ];
 
-  selected = map (name: groups.${name}) (lib.unique cfg.moduleGroups);
+  # Group names as the option descriptions list them: `a`, `b` and `c`.
+  listed =
+    list:
+    let
+      quoted = map (n: "`${n}`") list;
+    in
+    lib.concatStringsSep ", " (lib.init quoted) + " and " + lib.last quoted;
+
+  # A name chalkos.kernel.groups lacks fails the evaluation of the tree as well as the assertion,
+  # since the tree is built without the system's assertions too.
+  unknown = lib.filter (name: !cfg.groups ? ${name}) (lib.unique cfg.moduleGroups);
+  unknownMessage = "chalkos.kernel.moduleGroups names ${lib.concatStringsSep ", " unknown}, which chalkos.kernel.groups does not declare; it declares ${lib.concatStringsSep ", " (lib.attrNames cfg.groups)}";
+  selected =
+    if unknown != [ ] then
+      throw unknownMessage
+    else
+      map (name: cfg.groups.${name}) (lib.unique cfg.moduleGroups);
   directories = lib.unique (lib.concatMap (g: g.directories or [ ]) selected);
   names = lib.unique (lib.concatMap (g: g.modules or [ ]) selected ++ cfg.extraModules);
 
@@ -255,15 +255,51 @@ let
 in
 {
   options.chalkos.kernel = {
-    moduleGroups = lib.mkOption {
-      type = lib.types.listOf (lib.types.enum (lib.attrNames groups));
+    groups = lib.mkOption {
+      type = lib.types.attrsOf (
+        lib.types.submodule {
+          options = {
+            directories = lib.mkOption {
+              type = lib.types.listOf lib.types.str;
+              default = [ ];
+              example = [ "drivers/net/ethernet" ];
+              description = ''
+                Directories of the kernel's module tree, relative to its `kernel/` directory,
+                whose modules the group holds, with those of their subdirectories. A directory
+                without modules fails the build.
+              '';
+            };
+            modules = lib.mkOption {
+              type = lib.types.listOf lib.types.str;
+              default = [ ];
+              example = [ "tun" ];
+              description = ''
+                Kernel modules the group holds besides those of its directories. A name the
+                kernel does not know fails the build.
+              '';
+            };
+          };
+        }
+      );
+      default = { };
       description = ''
-        Groups of kernel modules the image carries. The base groups are set by default and
-        a variant's modules add to them, for example `[ "gpu" ]`; `lib.mkForce` replaces
-        them. Base: ${lib.concatStringsSep ", " baseGroups}. Further:
-        ${lib.concatStringsSep ", " (lib.subtractLists baseGroups (lib.attrNames groups))}.
-        Modules from `boot.extraModulePackages` are always included whole, with the modules
-        of the kernel they depend on.
+        Groups of kernel modules by name, which `chalkos.kernel.moduleGroups` selects. chalkos
+        declares the groups of the hardware an image may run on: ${listed (lib.attrNames groups)}.
+        The module of a feature declares the group the feature needs, such as the base
+        firewall's `firewall`, and adds it to `chalkos.kernel.moduleGroups` while the feature
+        is on.
+      '';
+    };
+    moduleGroups = lib.mkOption {
+      type = lib.types.listOf lib.types.str;
+      example = [ "gpu" ];
+      description = ''
+        Groups of `chalkos.kernel.groups` whose modules the image carries. Every image carries
+        ${listed (baseGroups ++ [ "firewall" ])}; the layer an image runs adds the groups it
+        needs, and a variant's modules add to them, for example `[ "gpu" ]`; `lib.mkForce`
+        replaces them. A name that `chalkos.kernel.groups` does not declare fails the
+        evaluation. Modules from `boot.extraModulePackages` are always included whole, with the
+        modules of the kernel they depend on.
       '';
     };
     extraModules = lib.mkOption {
@@ -283,7 +319,14 @@ in
   };
 
   config = {
+    chalkos.kernel.groups = groups;
     chalkos.kernel.moduleGroups = baseGroups;
+    assertions = [
+      {
+        assertion = unknown == [ ];
+        message = unknownMessage;
+      }
+    ];
     system.modulesTree = lib.mkIf (!cfg.allModules) (
       lib.mkForce ([ filtered ] ++ config.boot.extraModulePackages)
     );

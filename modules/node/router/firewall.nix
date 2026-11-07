@@ -67,6 +67,8 @@ in
         "the router layer filters with the table its router documents render and ignores ${
           lib.concatMapStringsSep ", " (o: "networking.firewall.${o}") ignored
         }; accept a port with a FirewallPolicy to local";
+    # The rulesets filter with the base firewall's modules, whose nftables service is off here.
+    chalkos.kernel.moduleGroups = [ "firewall" ];
     # The modules of what the rulesets use: conntrack, fib, NAT, reject and log. The kernel would
     # load them on demand too; naming them makes the image's module check prove it holds them.
     boot.kernelModules = [

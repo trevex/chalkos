@@ -27,6 +27,13 @@
     enable = true;
     flushRuleset = false;
   };
+  # The netfilter modules the firewall's rules use, which every image carries.
+  chalkos.kernel.groups.firewall.directories = [
+    "net/netfilter"
+    "net/ipv4/netfilter"
+    "net/ipv6/netfilter"
+  ];
+  chalkos.kernel.moduleGroups = [ "firewall" ];
 
   # Nodes resolve names through DNS alone. LLMNR, on by default, has systemd-resolved answer
   # queries for the node's name on every link on port 5355; multicast DNS stays off as well.
