@@ -56,6 +56,9 @@ buildGoModule (
     subPackages = [ "cmd/${pname}" ];
     inherit doCheck;
     meta.mainProgram = pname;
+    # The source paths, relative to the repository, which the go-lint check compares with the
+    # packages the program imports.
+    passthru.goPaths = map (p: lib.path.removePrefix ../. p) (lib.filter lib.isPath paths);
   }
   // removeAttrs args [
     "paths"

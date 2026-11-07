@@ -59,10 +59,37 @@ in
 
   # The Go code, the e2e tests included, is gofmt-formatted and passes go vet and staticcheck,
   # with the checks staticcheck.conf selects; pkg/imagecheck also with the tag vmtest of its VM
-  # test.
+  # test. Each program built from source paths of its own lists the directories of the packages it
+  # imports: every one lies below a path, and every path holds one.
   go-lint = chalkPkgs.chalkctl.overrideAttrs (old: {
     pname = "chalkos-go-lint";
-    nativeBuildInputs = old.nativeBuildInputs ++ [ pkgs.go-tools ];
+    nativeBuildInputs = old.nativeBuildInputs ++ [
+      pkgs.go-tools
+      pkgs.jq
+    ];
+    goPrograms = builtins.toJSON (
+      map
+        (
+          name:
+          let
+            program = pkgs.callPackage (../. + "/${name}.nix") { };
+          in
+          {
+            inherit name;
+            inherit (program) subPackages;
+            paths = map (lib.removePrefix "./") program.goPaths;
+          }
+        )
+        [
+          "chalkbuild"
+          "chalkcfg"
+          "chalkd"
+          "chalkos-networkd-schema"
+          "chalkos-render"
+          "chalkos-rules"
+          "chalkos-storage"
+        ]
+    );
     buildPhase = ''
       runHook preBuild
       cp ${../../staticcheck.conf} staticcheck.conf
@@ -76,6 +103,35 @@ in
       go vet -tags vmtest ./pkg/imagecheck
       XDG_CACHE_HOME=$TMPDIR/cache staticcheck ./pkg/... ./cmd/... ./test/...
       XDG_CACHE_HOME=$TMPDIR/cache staticcheck -tags vmtest ./pkg/imagecheck
+
+      failed=
+      for name in $(jq -r '.[].name' <<<"$goPrograms"); do
+        program=$(jq -c --arg name "$name" '.[] | select(.name == $name)' <<<"$goPrograms")
+        listed=$(jq -r '.paths[]' <<<"$program")
+        imported=$(go list -deps -f '{{.Dir}}' $(jq -r '.subPackages[] | "./" + .' <<<"$program") \
+          | sed -n "s|^$PWD/||p" | sort -u)
+        for dir in $imported; do
+          covered=
+          for path in $listed; do
+            case "$dir/" in "$path"/*) covered=1 ;; esac
+          done
+          if [ -z "$covered" ]; then
+            echo "error: $name imports ./$dir, which nix/$name.nix does not list" >&2
+            failed=1
+          fi
+        done
+        for path in $listed; do
+          used=
+          for dir in $imported; do
+            case "$dir/" in "$path"/*) used=1 ;; esac
+          done
+          if [ -z "$used" ]; then
+            echo "error: nix/$name.nix lists ./$path, of which $name imports no package" >&2
+            failed=1
+          fi
+        done
+      done
+      [ -z "$failed" ]
       runHook postBuild
     '';
     doCheck = false;
