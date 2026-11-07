@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/trevex/chalkos/pkg/identity"
+	"github.com/trevex/chalkos/pkg/internal/strs"
 	"github.com/trevex/chalkos/pkg/kubernetes"
 	"github.com/trevex/chalkos/pkg/kubernetes/nodeip"
 	"github.com/trevex/chalkos/pkg/schema"
@@ -214,7 +215,7 @@ func nodeIPs(spec nodeSpec, c kubernetes.Cluster, static []string) ([]string, []
 	}
 	for _, f := range unique {
 		if !slices.Contains(families, f) {
-			add("Node: nodeIP.addresses: an %s address, but the cluster's ipFamilies are [ %s ]", f, joinFamilies(families))
+			add("Node: nodeIP.addresses: an %s address, but the cluster's ipFamilies are [ %s ]", f, strs.Join(families, " "))
 		}
 	}
 	// The other nodes take VXLAN only from vxlanSourceSubnets, so every address the node has or
@@ -282,12 +283,4 @@ func count(families []nodeip.Family, f nodeip.Family) int {
 		}
 	}
 	return n
-}
-
-func joinFamilies(families []nodeip.Family) string {
-	out := make([]string, len(families))
-	for i, f := range families {
-		out[i] = string(f)
-	}
-	return strings.Join(out, " ")
 }

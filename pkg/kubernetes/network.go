@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"net/netip"
 	"slices"
-	"strings"
 
+	"github.com/trevex/chalkos/pkg/internal/strs"
 	"github.com/trevex/chalkos/pkg/kubernetes/nodeip"
 )
 
@@ -124,7 +124,7 @@ func (c Cluster) VXLANSources() []netip.Prefix {
 func CheckVXLANSources(sources []netip.Prefix, addrs []netip.Addr) error {
 	for _, a := range addrs {
 		if !InVXLANSources(sources, netip.PrefixFrom(a, a.BitLen())) {
-			return fmt.Errorf("the node's address %s is outside vxlanSourceSubnets %s, from which alone the other nodes take VXLAN", a, joinPrefixes(sources))
+			return fmt.Errorf("the node's address %s is outside vxlanSourceSubnets %s, from which alone the other nodes take VXLAN", a, strs.Join(sources, ", "))
 		}
 	}
 	return nil
@@ -136,15 +136,6 @@ func InVXLANSources(sources []netip.Prefix, p netip.Prefix) bool {
 	return len(sources) == 0 || slices.ContainsFunc(sources, func(s netip.Prefix) bool {
 		return s.Bits() <= p.Bits() && s.Contains(p.Masked().Addr())
 	})
-}
-
-// joinPrefixes lists the ranges, separated by commas.
-func joinPrefixes(prefixes []netip.Prefix) string {
-	list := make([]string, len(prefixes))
-	for i, p := range prefixes {
-		list[i] = p.String()
-	}
-	return strings.Join(list, ", ")
 }
 
 // PodCIDRList returns the pod ranges of the cluster's families, the primary family's first.

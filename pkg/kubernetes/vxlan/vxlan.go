@@ -22,6 +22,7 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/trevex/chalkos/pkg/internal/strs"
 	"github.com/trevex/chalkos/pkg/kubernetes"
 	"github.com/trevex/chalkos/pkg/kubernetes/nodeip"
 )
@@ -166,7 +167,7 @@ func forwardRules(c kubernetes.Cluster) ([]string, error) {
 		}
 		if len(sources) > 0 {
 			rules = append(rules, fmt.Sprintf("%s saddr { %s } %s daddr { %s } udp dport %d drop",
-				fam, pods.Masked(), fam, join(sources), vxlanPort))
+				fam, pods.Masked(), fam, strs.Join(sources, ", "), vxlanPort))
 		}
 	}
 	return rules, nil
@@ -240,7 +241,7 @@ func inputRules(accept Accept) []string {
 			if len(sources) == 0 {
 				continue
 			}
-			rule = fmt.Sprintf("%s saddr { %s } %s", fam, join(sources), rule)
+			rule = fmt.Sprintf("%s saddr { %s } %s", fam, strs.Join(sources, ", "), rule)
 		}
 		if d.AnyInterface {
 			// Not on the interfaces of the pod network and kube-proxy, where pods could send it.
@@ -251,14 +252,6 @@ func inputRules(accept Accept) []string {
 		rules = append(rules, rule+" meta mark set meta mark | "+Mark)
 	}
 	return rules
-}
-
-func join(prefixes []netip.Prefix) string {
-	list := make([]string, len(prefixes))
-	for i, p := range prefixes {
-		list[i] = p.String()
-	}
-	return strings.Join(list, ", ")
 }
 
 // Rule fills the table on a node.

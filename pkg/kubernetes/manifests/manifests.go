@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"maps"
 	"net"
-	"net/netip"
 	"path"
 	"slices"
 	"sort"
@@ -23,6 +22,7 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/util/intstr"
 
+	"github.com/trevex/chalkos/pkg/internal/strs"
 	"github.com/trevex/chalkos/pkg/kubernetes"
 	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
 )
@@ -116,7 +116,7 @@ func StaticPods(c kubernetes.Cluster, n kubernetes.Node, pkiDir string, files ma
 		"service-account-issuer":             "https://kubernetes.default.svc." + c.Domain,
 		"service-account-key-file":           pki(kpki.FileServiceAccountPub),
 		"service-account-signing-key-file":   pki(kpki.FileServiceAccountKey),
-		"service-cluster-ip-range":           joinRanges(c.ServiceCIDRList()),
+		"service-cluster-ip-range":           strs.Join(c.ServiceCIDRList(), ","),
 		"tls-cert-file":                      pki(kpki.FileAPIServer),
 		"tls-min-version":                    "VersionTLS12",
 		"tls-private-key-file":               pki(kpki.FileAPIServerKey),
@@ -135,7 +135,7 @@ func StaticPods(c kubernetes.Cluster, n kubernetes.Node, pkiDir string, files ma
 		"authorization-kubeconfig":         pki(kpki.FileControllerManagerConfig),
 		"bind-address":                     "127.0.0.1",
 		"client-ca-file":                   pki(kpki.FileCA),
-		"cluster-cidr":                     joinRanges(c.PodCIDRList()),
+		"cluster-cidr":                     strs.Join(c.PodCIDRList(), ","),
 		"cluster-name":                     "kubernetes",
 		"cluster-signing-cert-file":        pki(kpki.FileCASigning),
 		"cluster-signing-key-file":         pki(kpki.FileCAKey),
@@ -146,7 +146,7 @@ func StaticPods(c kubernetes.Cluster, n kubernetes.Node, pkiDir string, files ma
 		"requestheader-client-ca-file":     pki(kpki.FileFrontProxyCA),
 		"root-ca-file":                     pki(kpki.FileCA),
 		"service-account-private-key-file": pki(kpki.FileServiceAccountKey),
-		"service-cluster-ip-range":         joinRanges(c.ServiceCIDRList()),
+		"service-cluster-ip-range":         strs.Join(c.ServiceCIDRList(), ","),
 		"use-service-account-credentials":  "true",
 	}
 	for _, f := range c.Families() {
@@ -189,15 +189,6 @@ func StaticPods(c kubernetes.Cluster, n kubernetes.Node, pkiDir string, files ma
 		out[p.Name+".json"] = append(data, '\n')
 	}
 	return out, nil
-}
-
-// joinRanges lists address ranges as Kubernetes's flags take them, separated by commas.
-func joinRanges(ranges []netip.Prefix) string {
-	list := make([]string, len(ranges))
-	for i, r := range ranges {
-		list[i] = r.String()
-	}
-	return strings.Join(list, ",")
 }
 
 // flags turns the component's flags, with the cluster's extra flags for it on top, into

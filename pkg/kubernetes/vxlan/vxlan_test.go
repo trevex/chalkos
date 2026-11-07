@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/trevex/chalkos/pkg/internal/strs"
 	"github.com/trevex/chalkos/pkg/kubernetes"
 	"github.com/trevex/chalkos/pkg/kubernetes/nodeip"
 )
@@ -380,4 +381,4 @@ func writeFile(t *testing.T, path, content string) {
 	}
 }
 
-func fmtPrefixes(ps []netip.Prefix) string { return join(ps) }
+func fmtPrefixes(ps []netip.Prefix) string { return strs.Join(ps, ", ") }

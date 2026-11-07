@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/trevex/chalkos/pkg/config"
+	"github.com/trevex/chalkos/pkg/internal/strs"
 	"github.com/trevex/chalkos/pkg/kubernetes"
 	"github.com/trevex/chalkos/pkg/ociimage"
 	"github.com/trevex/chalkos/pkg/schema"
@@ -267,7 +268,7 @@ func alike(kind string, nodes []string, spec func(string) map[string]any) error 
 			case !seen:
 				which, seen = "one", true
 			}
-			parts = append(parts, which+" on "+joinNames(g.nodes))
+			parts = append(parts, which+" on "+strs.And(g.nodes))
 		}
 	} else {
 		path, ok := firstDifference(specs, nil)
@@ -279,7 +280,7 @@ func alike(kind string, nodes []string, spec func(string) map[string]any) error 
 			values[i] = at(s, path)
 		}
 		for i, g := range groupNodes(nodes, values) {
-			part := show(g.value) + " on " + joinNames(g.nodes)
+			part := show(g.value) + " on " + strs.And(g.nodes)
 			if i == 0 {
 				part = showPath(path) + " is " + part
 			}
@@ -427,12 +428,4 @@ func show(v any) string {
 		return fmt.Sprint(v)
 	}
 	return strings.TrimSuffix(b.String(), "\n")
-}
-
-// joinNames lists names as prose: a, b and c.
-func joinNames(names []string) string {
-	if len(names) == 1 {
-		return names[0]
-	}
-	return strings.Join(names[:len(names)-1], ", ") + " and " + names[len(names)-1]
 }

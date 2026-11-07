@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"net/netip"
 	"slices"
 	"strings"
 
@@ -21,6 +22,7 @@ import (
 	metav1ac "k8s.io/client-go/applyconfigurations/meta/v1"
 	rbacv1ac "k8s.io/client-go/applyconfigurations/rbac/v1"
 
+	"github.com/trevex/chalkos/pkg/internal/strs"
 	"github.com/trevex/chalkos/pkg/kubernetes"
 	"github.com/trevex/chalkos/pkg/kubernetes/nodeip"
 )
@@ -172,9 +174,9 @@ type (
 )
 
 func kubeProxy(c kubernetes.Cluster, families []nodeip.Family) ([]any, error) {
-	cidrs := make([]string, len(families))
+	cidrs := make([]netip.Prefix, len(families))
 	for i, f := range families {
-		cidrs[i] = c.PodCIDRs.Of(f).String()
+		cidrs[i] = c.PodCIDRs.Of(f)
 	}
 	// kube-proxy serves every family the node has addresses of; it binds as kubeadm's does, by
 	// the primary family.
@@ -187,7 +189,7 @@ func kubeProxy(c kubernetes.Cluster, families []nodeip.Family) ([]any, error) {
 		Kind:       "KubeProxyConfiguration",
 		// The node's firewall and flannel run on nftables too.
 		Mode:        "nftables",
-		ClusterCIDR: strings.Join(cidrs, ","),
+		ClusterCIDR: strs.Join(cidrs, ","),
 		BindAddress: bind,
 		// NodePorts answer on the node's own addresses, one per family, as the kubelet registered
 		// them.

@@ -8,7 +8,6 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
-	"strings"
 	"text/tabwriter"
 	"time"
 
@@ -16,6 +15,7 @@ import (
 
 	"github.com/trevex/chalkos/pkg/imagesign"
 	"github.com/trevex/chalkos/pkg/internal/cli"
+	"github.com/trevex/chalkos/pkg/internal/strs"
 	"github.com/trevex/chalkos/pkg/lab"
 )
 
@@ -123,7 +123,7 @@ func (a *app) status(name string) error {
 		if len(stopped) > 1 {
 			verb = "do"
 		}
-		fmt.Fprintf(a.stdout, "%s %s not run; chalklab start starts the lab again\n", joinNames(stopped), verb)
+		fmt.Fprintf(a.stdout, "%s %s not run; chalklab start starts the lab again\n", strs.And(stopped), verb)
 	}
 	for _, f := range []struct{ what, file string }{
 		{"kubeconfig", kubeconfigFile}, {"inventory", inventoryFile}, {"client file", clientFile},
@@ -275,14 +275,6 @@ func (a *app) destroy(ctx context.Context, name string) error {
 	return nil
 }
 
-// joinNames lists names as in "cp1, cp2 and w1".
-func joinNames(names []string) string {
-	if len(names) < 2 {
-		return strings.Join(names, "")
-	}
-	return strings.Join(names[:len(names)-1], ", ") + " and " + names[len(names)-1]
-}
-
 // start starts the VMs of a lab again from its state, with their disks, firmware variables, TPM
 // state and ports: through its supervisor the VMs that exited, or a lab that no supervisor runs,
 // as after a host's reboot or a supervisor that was killed.
@@ -320,16 +312,16 @@ func (a *app) start(ctx context.Context, name string) error {
 			}
 		}
 		if len(stopped) == 0 {
-			fmt.Fprintf(a.stdout, "the lab %s runs %s already\n", l.Name, joinNames(nodeNames(l)))
+			fmt.Fprintf(a.stdout, "the lab %s runs %s already\n", l.Name, strs.And(nodeNames(l)))
 			return nil
 		}
-		fmt.Fprintf(a.stdout, "starting %s\n", joinNames(stopped))
+		fmt.Fprintf(a.stdout, "starting %s\n", strs.And(stopped))
 		startCtx, cancel := context.WithTimeout(ctx, 2*time.Minute)
 		defer cancel()
 		if err := lab.StartStopped(startCtx, dir); err != nil {
 			return err
 		}
-		fmt.Fprintf(a.stdout, "the lab %s runs %s\n", l.Name, joinNames(nodeNames(l)))
+		fmt.Fprintf(a.stdout, "the lab %s runs %s\n", l.Name, strs.And(nodeNames(l)))
 		return nil
 	}
 	stopCtx, cancel := context.WithTimeout(ctx, 2*time.Minute)
@@ -337,11 +329,11 @@ func (a *app) start(ctx context.Context, name string) error {
 	if err := lab.PrepareStart(stopCtx, dir); err != nil {
 		return err
 	}
-	fmt.Fprintf(a.stdout, "starting %s\n", joinNames(nodeNames(l)))
+	fmt.Fprintf(a.stdout, "starting %s\n", strs.And(nodeNames(l)))
 	if err := a.startSupervisor(ctx, dir); err != nil {
 		return fmt.Errorf("%w; chalklab status shows the lab", err)
 	}
-	fmt.Fprintf(a.stdout, "the lab %s runs %s\n", l.Name, joinNames(nodeNames(l)))
+	fmt.Fprintf(a.stdout, "the lab %s runs %s\n", l.Name, strs.And(nodeNames(l)))
 	return nil
 }
 

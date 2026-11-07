@@ -14,6 +14,7 @@ callPackage ./go-module.nix { } {
     ../pkg/effects
     ../pkg/facts
     ../pkg/identity
+    ../pkg/internal/strs
     ../pkg/jsonfile
     ../pkg/kubernetes
     ../pkg/outputs

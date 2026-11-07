@@ -9,6 +9,8 @@ import (
 	"slices"
 	"strings"
 	"time"
+
+	"github.com/trevex/chalkos/pkg/internal/strs"
 )
 
 // Address is an address an interface of the node holds.
@@ -95,6 +97,8 @@ func (f Filter) String() string {
 
 // Family is an IP address family.
 type Family string
+
+func (f Family) String() string { return string(f) }
 
 // The address families a node has addresses of.
 const (
@@ -319,11 +323,7 @@ type NoMatchError struct {
 func (e *NoMatchError) Error() string {
 	have := "the node has no " + string(e.Family) + " addresses"
 	if len(e.Addresses) > 0 {
-		list := make([]string, len(e.Addresses))
-		for i, a := range e.Addresses {
-			list[i] = a.String()
-		}
-		have = "the node has " + strings.Join(list, ", ")
+		have = "the node has " + strs.Join(e.Addresses, ", ")
 	}
 	return fmt.Sprintf("no %s node address matches %s (%s)", e.Family, e.Selector, have)
 }

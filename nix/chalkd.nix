@@ -27,6 +27,7 @@ callPackage ./go-module.nix { } {
     ../pkg/image
     ../pkg/imagecheck
     ../pkg/install
+    ../pkg/internal/strs
     ../pkg/jsonfile
     ../pkg/kubernetes
     ../pkg/layers

@@ -9,7 +9,6 @@ import (
 	"io/fs"
 	"log"
 	"maps"
-	"net/netip"
 	"os"
 	"path/filepath"
 	"slices"
@@ -19,6 +18,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 
 	"github.com/trevex/chalkos/pkg/atomicfile"
+	"github.com/trevex/chalkos/pkg/internal/strs"
 	"github.com/trevex/chalkos/pkg/kubernetes"
 	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
 	"github.com/trevex/chalkos/pkg/pki"
@@ -117,7 +117,7 @@ func kubeletConfig(p Paths, c kubernetes.Cluster) kubeletConfiguration {
 func kubeletFlags(c kubernetes.Cluster, n kubernetes.Node) []string {
 	flags := []string{"--hostname-override=" + n.Name}
 	if len(n.IPs) > 0 {
-		flags = append(flags, "--node-ip="+joinAddrs(n.IPs))
+		flags = append(flags, "--node-ip="+strs.Join(n.IPs, ","))
 	}
 	var labels []string
 	for k, v := range n.Labels {
@@ -142,15 +142,6 @@ func kubeletFlags(c kubernetes.Cluster, n kubernetes.Node) []string {
 		flags = append(flags, "--"+name+"="+extra[name])
 	}
 	return flags
-}
-
-// joinAddrs lists the addresses, separated by commas.
-func joinAddrs(addrs []netip.Addr) string {
-	list := make([]string, len(addrs))
-	for i, a := range addrs {
-		list[i] = a.String()
-	}
-	return strings.Join(list, ",")
 }
 
 // installKubeletClient puts the certificate into the kubelet's certificate store unless the
