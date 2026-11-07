@@ -49,7 +49,7 @@ func RemoveStaticPods(p Paths) error {
 // change are not written, so no pod starts again. A preparation that runs renders them itself.
 func RefreshStaticPods(p Paths) error {
 	unlock, err := lockPKI(p, false)
-	if errors.Is(err, ErrPKIBusy) {
+	if errors.Is(err, errPKIBusy) {
 		return nil
 	}
 	if err != nil {

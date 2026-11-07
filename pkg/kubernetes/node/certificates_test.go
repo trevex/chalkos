@@ -176,18 +176,45 @@ func TestRenewControlPlaneWaitsForThePreparation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := RenewControlPlane(context.Background(), p, time.Now()); !errors.Is(err, ErrPKIBusy) {
-		t.Errorf("while a preparation runs: %v, want ErrPKIBusy", err)
+	// A renewal whose time ends while the preparation runs leaves the certificates.
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+	if err := RenewControlPlane(ctx, p, time.Now()); !errors.Is(err, context.DeadlineExceeded) {
+		t.Errorf("while a preparation runs: %v, want the context's error", err)
+	}
+	if readFile(t, filepath.Join(p.PKI, kpki.FileAPIServer)) != before {
+		t.Error("a renewal that did not get the lock changed the certificates")
+	}
+	// One that started while the preparation runs renews once it is done.
+	result := make(chan error, 1)
+	go func() { result <- RenewControlPlane(context.Background(), p, time.Now()) }()
+	time.Sleep(200 * time.Millisecond)
+	select {
+	case err := <-result:
+		t.Fatalf("the renewal ended while a preparation runs: %v", err)
+	default:
 	}
 	unlock()
+	select {
+	case err := <-result:
+		if err != nil {
+			t.Fatalf("after the preparation: %v", err)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("the renewal did not take the released lock")
+	}
+	if readFile(t, filepath.Join(p.PKI, kpki.FileAPIServer)) == before {
+		t.Error("the renewal did not renew the certificates")
+	}
+	renewed := readFile(t, filepath.Join(p.PKI, kpki.FileAPIServer))
 	if err := os.Remove(p.Prepared()); err != nil {
 		t.Fatal(err)
 	}
 	// Status shows the error: a node whose preparation failed is not being prepared.
-	if err := RenewControlPlane(context.Background(), p, time.Now()); !errors.Is(err, ErrNotPrepared) || errors.Is(err, ErrPKIBusy) {
+	if err := RenewControlPlane(context.Background(), p, time.Now()); !errors.Is(err, ErrNotPrepared) {
 		t.Errorf("before the preparation finished: %v, want ErrNotPrepared", err)
 	}
-	if readFile(t, filepath.Join(p.PKI, kpki.FileAPIServer)) != before {
+	if readFile(t, filepath.Join(p.PKI, kpki.FileAPIServer)) != renewed {
 		t.Error("a refused renewal changed the certificates")
 	}
 }

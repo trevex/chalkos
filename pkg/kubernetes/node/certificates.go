@@ -23,7 +23,7 @@ import (
 func LockPKI(ctx context.Context, p Paths) (unlock func(), err error) {
 	for {
 		unlock, err := lockPKI(p, false)
-		if !errors.Is(err, ErrPKIBusy) {
+		if !errors.Is(err, errPKIBusy) {
 			return unlock, err
 		}
 		select {
@@ -34,11 +34,11 @@ func LockPKI(ctx context.Context, p Paths) (unlock func(), err error) {
 	}
 }
 
-// ErrPKIBusy means another process writes the control plane's certificates.
-var ErrPKIBusy = errors.New("the node's Kubernetes files are being prepared")
+// errPKIBusy means another process writes the control plane's certificates.
+var errPKIBusy = errors.New("the node's Kubernetes files are being prepared")
 
 // lockPKI takes the lock on the control plane's certificates; with wait unset it fails with
-// ErrPKIBusy while another holds it. The lock ends with the process, so a crash leaves none.
+// errPKIBusy while another holds it. The lock ends with the process, so a crash leaves none.
 func lockPKI(p Paths, wait bool) (unlock func(), err error) {
 	if err := os.MkdirAll(p.Run, 0o755); err != nil {
 		return nil, err
@@ -54,7 +54,7 @@ func lockPKI(p Paths, wait bool) (unlock func(), err error) {
 	if err := syscall.Flock(int(f.Fd()), how); err != nil {
 		f.Close()
 		if errors.Is(err, syscall.EWOULDBLOCK) {
-			return nil, ErrPKIBusy
+			return nil, errPKIBusy
 		}
 		return nil, err
 	}
@@ -124,15 +124,15 @@ func ControlPlaneRenewAt(p Paths) (time.Time, *x509.Certificate, error) {
 
 // RenewControlPlane issues the control plane's certificates and kubeconfigs again, for the
 // addresses the preparation picked, and replaces them at once; a bootstrapped node renders its
-// static pods again, whose certificate hash makes the kubelet start each one again. It fails
-// with ErrPKIBusy while a preparation runs, which writes them itself, and leaves the current
+// static pods again, whose certificate hash makes the kubelet start each one again. It waits
+// until ctx ends for a preparation that runs, which writes them itself, and leaves the current
 // ones on any failure.
 //
 // Static pods that still run on the certificates before the current ones, as after a renewal
 // interrupted before it rendered them, are only rendered: issuing again would remove the
 // certificates they run on.
 func RenewControlPlane(ctx context.Context, p Paths, now time.Time) error {
-	unlock, err := lockPKI(p, false)
+	unlock, err := LockPKI(ctx, p)
 	if err != nil {
 		return err
 	}
