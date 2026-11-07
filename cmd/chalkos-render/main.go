@@ -299,7 +299,7 @@ func printNilEmpty(n parse.Node) {
 
 // writeDocuments writes each document of kinds in in as out/<Kind>/<name>.json.
 func writeDocuments(kinds []string, in map[string]any, out string) error {
-	byKind, _ := in["documents"].(map[string]any)
+	byKind := documents(in)
 	for _, kind := range kinds {
 		docs, ok := byKind[kind].([]any)
 		if !ok {

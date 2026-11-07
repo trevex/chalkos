@@ -1,6 +1,7 @@
 package derive
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/trevex/chalkos/pkg/refusals"
@@ -28,13 +29,14 @@ func isInternal(err error) bool {
 }
 
 // Within is err of what, such as a document or a rule of it: an internal error keeps its
-// "internal error:" in front, as "internal error: <what>: ...", a refusal, which names its
-// document and field already, stays as it is, and any other error reads "<what>: ...".
+// "internal error:" in front, as "internal error: <what>: ...", an error that holds a refusal,
+// which names its document and field already, stays as it is, and any other error reads
+// "<what>: ...".
 func Within(what string, err error) error {
-	if r, ok := err.(*refusals.Error); ok {
-		return r
+	if _, ok := errors.AsType[*refusals.Error](err); ok {
+		return err
 	}
-	if e, ok := err.(*internalError); ok {
+	if e, ok := errors.AsType[*internalError](err); ok {
 		return &internalError{what + ": " + e.text}
 	}
 	return fmt.Errorf("%s: %w", what, err)

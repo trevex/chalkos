@@ -21,7 +21,7 @@ var unitSuffix = []struct{ kind, suffix string }{{"Link", ".link"}, {"NetDev", "
 // would. [Match] comes first and other sections follow by name; keys are in name order, and a
 // repeated section or key keeps the order of its list.
 func renderNetworkd(schemas string, in map[string]any, out string) error {
-	byKind, _ := in["documents"].(map[string]any)
+	byKind := documents(in)
 	for _, k := range unitSuffix {
 		docs, _ := byKind[k.kind].([]any)
 		if len(docs) == 0 {

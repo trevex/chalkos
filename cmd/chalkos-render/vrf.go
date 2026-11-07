@@ -23,11 +23,11 @@ import (
 // that leaves its link n64-<name> to chalkos-nat64, and the kernel's rules of the PolicyRoute
 // documents and the NextHop documents' tables in the Networks of lo and of the next hops' links.
 func renderRouterNetworkd(schemas string, in map[string]any, out string) error {
-	d, err := derive.Build(documents(in))
+	byKind := documents(in)
+	d, err := derive.Build(byKind)
 	if err != nil {
 		return err
 	}
-	byKind, _ := in["documents"].(map[string]any)
 	docs, err := withVRFUnits(d.VRFs, d.Membership.Networks, byKind)
 	if err != nil {
 		return err
