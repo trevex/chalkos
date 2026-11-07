@@ -35,17 +35,8 @@ in
       '';
     };
     plugins = lib.mkOption {
-      type = lib.types.listOf lib.types.str;
+      type = lib.types.listOf (lib.types.enum referencePlugins);
       example = [ "bandwidth" ];
-      apply =
-        plugins:
-        let
-          unknown = lib.subtractLists referencePlugins plugins;
-        in
-        if unknown != [ ] then
-          throw "chalkos.cni.plugins: no CNI reference plugin is named ${lib.concatStringsSep " or " unknown}; nixpkgs's cni-plugins has ${lib.concatStringsSep ", " referencePlugins}"
-        else
-          plugins;
       description = ''
         CNI reference plugins the image ships, in containerd's plugin directory. With
         `flannel` they are bridge, host-local, loopback and portmap, which its network runs,
