@@ -302,11 +302,11 @@ The build output of an [image](#image): the raw disk image with its metadata and
 It is `images.<variant>-<platform>` of `chalkos.lib.mkImages` and holds the raw image,
 systemd-repart's report of its partitions, the definitions of the system region,
 `metadata.json`, which names the image's variant, platform, [root hash](#root-hash),
-[provenance](#provenance) and kinds, the kinds' JSON Schemas in `schemas/` and, on an image with
-Kubernetes, what it fixes about Kubernetes in `image.json`: the release of its kubelet and its pod
-network. The [inventory](#inventory) names it in an image's `source.directory`,
-[chalkbuild](#chalkbuild) signs a copy of it, and chalkctl reads it to validate config, install and
-upgrade.
+[provenance](#provenance) and kinds, the kinds' JSON Schemas in `schemas/` and the facts of its
+layers in `facts/`. An image with Kubernetes has `facts/kubernetes.json`, which names the release
+of its kubelet and its pod network. The [inventory](#inventory) names the image directory in an
+image's `source.directory`, [chalkbuild](#chalkbuild) signs a copy of it, and chalkctl reads it to
+validate config, install and upgrade.
 See [Image and partition layout](image-layout.md#outputs-of-an-image-build).
 
 ## Installer { #installer }

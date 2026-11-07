@@ -391,6 +391,6 @@ message Share {
 
 // The Kubernetes facts of an image, as its contract carries them in its layer facts.
 message ImageFacts {
-  // The image's image.json: the release of the image's kubelet and the pod network it ships.
+  // The image's Kubernetes facts: the release of the image's kubelet and the pod network it ships.
   bytes image_json = 1;
 }

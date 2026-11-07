@@ -1365,7 +1365,7 @@ The Kubernetes facts of an image, as its contract carries them in its layer fact
 
 | Field | Type | Description |
 | ----- | ---- | ----------- |
-| `image_json` | bytes | The image's image.json: the release of the image's kubelet and the pod network it ships. |
+| `image_json` | bytes | The image's Kubernetes facts: the release of the image's kubelet and the pod network it ships. |
 
 ### NotEtcdMember { #kubernetes-message-notetcdmember }
 

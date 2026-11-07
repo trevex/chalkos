@@ -75,12 +75,12 @@ in
       default = releases.${k.version};
       defaultText = lib.literalMD "the release `chalkos.kubernetes.version` selects";
       description = ''
-        Kubernetes release whose kubelet the image runs; image.json names its version. The
-        Cluster document names the images of the control plane, kube-proxy, CoreDNS, flannel and
-        the pod sandbox, and the image's checker holds their versions to Kubernetes's version
-        skew policy against this kubelet's. Set it for a release `chalkos.kubernetes.version`
-        does not offer, such as another patch release; an image that sets both names one minor
-        in both.
+        Kubernetes release whose kubelet the image runs, whose version the image's Kubernetes
+        facts name. The Cluster document names the images of the control plane, kube-proxy,
+        CoreDNS, flannel and the pod sandbox, and the image's checker holds their versions to
+        Kubernetes's version skew policy against this kubelet's. Set it for a release
+        `chalkos.kubernetes.version` does not offer, such as another patch release; an image
+        that sets both names one minor in both.
       '';
     };
   };

@@ -1732,7 +1732,7 @@ func (x *Share) GetShare() []byte {
 // The Kubernetes facts of an image, as its contract carries them in its layer facts.
 type ImageFacts struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// The image's image.json: the release of the image's kubelet and the pod network it ships.
+	// The image's Kubernetes facts: the release of the image's kubelet and the pod network it ships.
 	ImageJson     []byte `protobuf:"bytes,1,opt,name=image_json,json=imageJson,proto3" json:"image_json,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
