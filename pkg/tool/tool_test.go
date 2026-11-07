@@ -16,8 +16,7 @@ func TestExecRunnerPassesInputOnStdin(t *testing.T) {
 		t.Fatalf("out = %q, %v, want the input back", out, err)
 	}
 	_, err = ExecRunner{}.RunWithInput(context.Background(), []byte(input), "sh", "-c", "exit 2")
-	var te *Error
-	if !errors.As(err, &te) || te.Code != 2 || strings.Contains(err.Error(), input) {
+	if te, ok := errors.AsType[*Error](err); !ok || te.Code != 2 || strings.Contains(err.Error(), input) {
 		t.Errorf("err = %v, want an Error with status 2 that does not repeat the input", err)
 	}
 }
@@ -37,8 +36,7 @@ func TestExecRunnerRunQuiet(t *testing.T) {
 	if len(logged) != 0 {
 		t.Errorf("wrote %q to the console", logged)
 	}
-	var te *Error
-	if !errors.As(runErr, &te) || !strings.Contains(te.Stderr, "cannot talk to daemon") {
+	if te, ok := errors.AsType[*Error](runErr); !ok || !strings.Contains(te.Stderr, "cannot talk to daemon") {
 		t.Errorf("err = %v, want an Error with the standard error", runErr)
 	}
 }

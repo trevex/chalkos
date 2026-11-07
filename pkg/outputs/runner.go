@@ -186,8 +186,8 @@ func (Sandbox) Run(ctx context.Context, p Program) ([]byte, error) {
 			return nil, rerr
 		}
 	}
-	var exit *command.Error
-	if !errors.As(err, &exit) {
+	exit, ok := errors.AsType[*command.Error](err)
+	if !ok {
 		return printed, err
 	}
 	// A unit that failed stays loaded, with its result, until it is reset.
@@ -237,8 +237,7 @@ func (Direct) Run(ctx context.Context, p Program) ([]byte, error) {
 	if ctx.Err() != nil {
 		return nil, ctx.Err()
 	}
-	var failed *command.Error
-	if errors.As(err, &failed) {
+	if failed, ok := errors.AsType[*command.Error](err); ok {
 		return printed, &ProgramError{Status: failed.Status, Stderr: failed.Stderr}
 	}
 	return printed, err

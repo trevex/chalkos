@@ -102,8 +102,8 @@ func (a *app) confirmTrial(ctx context.Context, t *target, version, previous str
 // unreadableTrial reports whether err is the node's refusal of a trial whose record it cannot
 // read.
 func unreadableTrial(err error) bool {
-	var ce *connect.Error
-	return errors.As(err, &ce) && ce.Code() == connect.CodeInternal && strings.HasPrefix(ce.Message(), "read the record of the config's trial: ")
+	ce, ok := errors.AsType[*connect.Error](err)
+	return ok && ce.Code() == connect.CodeInternal && strings.HasPrefix(ce.Message(), "read the record of the config's trial: ")
 }
 
 // confirmOnce asks the node to confirm the trial over a new connection, for at most timeout, and

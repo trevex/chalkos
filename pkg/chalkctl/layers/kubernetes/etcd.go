@@ -58,8 +58,8 @@ func tryNextControlPlane(err error) bool {
 // notEtcdMember reports whether chalkd refused a request because the node is no etcd member, by
 // the NotEtcdMember detail of its error.
 func notEtcdMember(err error) bool {
-	var ce *connect.Error
-	if !errors.As(err, &ce) {
+	ce, ok := errors.AsType[*connect.Error](err)
+	if !ok {
 		return false
 	}
 	for _, d := range ce.Details() {

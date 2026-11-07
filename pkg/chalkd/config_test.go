@@ -1304,13 +1304,13 @@ func TestApplyConfigRefusesAsTheChecker(t *testing.T) {
 				t.Fatal(err)
 			}
 			_, checked := check.Run(context.Background(), img, check.Input{Node: "n1", Delivered: config.Redact(docs), Facts: func(_, _ []config.Document) rules.Facts { return nil }})
-			var r *check.Refusal
-			if !errors.As(checked, &r) || r.Stage != tc.stage {
+			r, ok := errors.AsType[*check.Refusal](checked)
+			if !ok || r.Stage != tc.stage {
 				t.Fatalf("check.Run: %v", checked)
 			}
 			_, delivered := sendConfig(s, tc.next)
-			var ce *connect.Error
-			if !errors.As(delivered, &ce) {
+			ce, ok := errors.AsType[*connect.Error](delivered)
+			if !ok {
 				t.Fatalf("the delivery: %v", delivered)
 			}
 			if ce.Message() != r.Message {

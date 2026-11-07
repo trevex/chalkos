@@ -75,8 +75,7 @@ func main() {
 	args := os.Args[1:]
 	if err := run(args, os.Stdin, os.Stdout, os.Getenv("OUT")); err != nil {
 		// A validator's error is its failure, whose standard output chalkd reads no report from.
-		var r *refusals.Error
-		if errors.As(err, &r) && args[0] != "validate" {
+		if r, ok := errors.AsType[*refusals.Error](err); ok && args[0] != "validate" {
 			printRefusal(os.Stdout, r)
 		}
 		fmt.Fprintln(os.Stderr, "chalkos-render: "+err.Error())

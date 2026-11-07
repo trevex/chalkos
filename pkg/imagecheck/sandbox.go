@@ -195,8 +195,8 @@ func failed(waitCtx context.Context, err error) error {
 		command.StopUnit(Unit)
 		return fmt.Errorf("the image's checker did not finish: %w", waitCtx.Err())
 	}
-	var exit *command.Error
-	if err == nil || !errors.As(err, &exit) {
+	exit, ok := errors.AsType[*command.Error](err)
+	if err == nil || !ok {
 		return err
 	}
 	status := exit.Status

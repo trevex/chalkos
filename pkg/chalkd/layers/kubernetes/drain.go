@@ -47,8 +47,7 @@ func (p *Plugin) DrainNode(ctx context.Context, req *connect.Request[kubernetesv
 	defer cancel()
 	d, err := p.k.evictPods(ctx, cs, name, req.Msg.DeleteEmptydirData)
 	if err != nil {
-		var de *drainError
-		if errors.As(err, &de) {
+		if de, ok := errors.AsType[*drainError](err); ok {
 			return nil, failed(de.code, "drain %s: %v; it stays cordoned", name, de.err)
 		}
 		return nil, failed(connect.CodeUnavailable, "drain %s: %v; it stays cordoned", name, err)

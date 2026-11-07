@@ -269,8 +269,7 @@ func (l *Loader) command(name string, def Definition, stdin []byte) (any, error)
 	case ctx.Err() == context.DeadlineExceeded:
 		return nil, fmt.Errorf("%s did not finish within %s", argv[0], timeout)
 	case err != nil:
-		var failed *command.Error
-		if errors.As(err, &failed) {
+		if failed, ok := errors.AsType[*command.Error](err); ok {
 			log.Printf("fact %s: %s failed (%s): %q", name, argv[0], failed.Status, failed.Stderr)
 		}
 		return nil, err

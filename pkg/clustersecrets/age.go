@@ -91,8 +91,7 @@ func ParseIdentities(data []byte, ui *plugin.ClientUI, passphrase SSHPassphrase,
 
 func parseSSHIdentity(pemBytes []byte, passphrase SSHPassphrase, publicKey func() ([]byte, error)) ([]age.Identity, error) {
 	id, err := agessh.ParseIdentity(pemBytes)
-	var missing *ssh.PassphraseMissingError
-	if errors.As(err, &missing) {
+	if missing, ok := errors.AsType[*ssh.PassphraseMissingError](err); ok {
 		if passphrase == nil {
 			return nil, errors.New("the SSH key is encrypted and a passphrase callback is required")
 		}

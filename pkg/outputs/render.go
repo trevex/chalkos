@@ -226,8 +226,8 @@ func (r Renderer) run(ctx context.Context, name string, what role, command strin
 	timeout := cmp.Or(r.Timeout, DefaultTimeout)
 	argv := strings.Fields(command)
 	printed, err := r.Run.Run(ctx, Program{Argv: argv, Stdin: stdin, Out: out, Write: what == roleRenderer, Report: what == roleRenderer, Netlink: what == roleCheck, Timeout: timeout})
-	var failed *ProgramError
-	if errors.As(err, &failed) {
+	failed, _ := errors.AsType[*ProgramError](err)
+	if failed != nil {
 		if failed.Unit != "" {
 			log.Printf("output %s: its %s %s failed (%s); what it wrote to standard error is in the journal of %s", name, what, argv[0], failed.Status, failed.Unit)
 		} else {

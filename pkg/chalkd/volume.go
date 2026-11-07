@@ -202,8 +202,8 @@ func (s *Server) resetVolume(ctx context.Context, node, name string, next slot.S
 // it, with an upgrade or apply-config --staged, and naming the volume keeps it. The slot being
 // written, writing, is left out: its config is the one being replaced. The caller holds s.mu.
 func (s *Server) elsewhere(err error, section storage.Section, writing []byte) error {
-	var ce *connect.Error
-	if !errors.As(err, &ce) {
+	ce, ok := errors.AsType[*connect.Error](err)
+	if !ok {
 		return err
 	}
 	recorded, _, rerr := s.recorded()

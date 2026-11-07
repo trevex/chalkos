@@ -78,7 +78,7 @@ func (p *Plugin) UnrevokeNode(ctx context.Context, req *connect.Request[kubernet
 		}
 		return nil
 	})
-	if connectErr := (*connect.Error)(nil); errors.As(err, &connectErr) {
+	if connectErr, ok := errors.AsType[*connect.Error](err); ok {
 		return nil, connectErr
 	}
 	if err != nil {
@@ -139,7 +139,7 @@ func checkNodeName(name string) error {
 // the node may be among them: nothing is renewed until they can be read.
 func (k *side) notRevoked(ctx context.Context, name string) error {
 	list, err := k.revokedNodes(ctx)
-	if connectErr := (*connect.Error)(nil); errors.As(err, &connectErr) {
+	if connectErr, ok := errors.AsType[*connect.Error](err); ok {
 		return connectErr
 	}
 	if err != nil {

@@ -78,8 +78,7 @@ func runTo(ctx context.Context, env []string, input []byte, console io.Writer, n
 	cmd.Stdout = &stdout
 	cmd.Stderr = io.MultiWriter(console, &stderr)
 	err := cmd.Run()
-	var ee *exec.ExitError
-	if errors.As(err, &ee) {
+	if ee, ok := errors.AsType[*exec.ExitError](err); ok {
 		return stdout.Bytes(), &Error{Command: name + " " + strings.Join(args, " "), Code: ee.ExitCode(), Stderr: stderr.String()}
 	}
 	return stdout.Bytes(), err

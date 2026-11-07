@@ -272,8 +272,7 @@ func (l *partsLab) real(ctx context.Context, name string, args []string) ([]byte
 		out = bytes.ReplaceAll(out, []byte("PTTYPE=PMBR"), []byte("PTTYPE=gpt"))
 	}
 	out = bytes.ReplaceAll(out, []byte(l.disk), []byte(labDev))
-	var te *tool.Error
-	if errors.As(err, &te) {
+	if te, ok := errors.AsType[*tool.Error](err); ok {
 		te.Stderr = strings.ReplaceAll(te.Stderr, l.disk, labDev)
 	}
 	return out, err

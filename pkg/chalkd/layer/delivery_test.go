@@ -67,8 +67,7 @@ func TestPlanHandsPayloadsToTheirPlugin(t *testing.T) {
 func TestPlanRefusesAnUnclaimedPayload(t *testing.T) {
 	takes := &stringPayloads{accepts: true}
 	_, err := Plan(context.Background(), []Delivery{takes}, []*anypb.Any{payload(t, wrapperspb.Int64(1))}, Planned{})
-	var ce *connect.Error
-	if !errors.As(err, &ce) || ce.Code() != connect.CodeInvalidArgument {
+	if ce, ok := errors.AsType[*connect.Error](err); !ok || ce.Code() != connect.CodeInvalidArgument {
 		t.Fatalf("got %v, want InvalidArgument", err)
 	}
 	if !strings.Contains(err.Error(), "type.googleapis.com/google.protobuf.Int64Value") {

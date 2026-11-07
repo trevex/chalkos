@@ -98,8 +98,7 @@ func (s *Server) Upgrade(ctx context.Context, stream *connect.ClientStream[nodev
 		pull, err := s.pullParts(ctx, ref, header, h.GetConfig())
 		if err != nil {
 			code := connect.CodeInvalidArgument
-			var ce *connect.Error
-			if errors.As(err, &ce) {
+			if ce, ok := errors.AsType[*connect.Error](err); ok {
 				code = ce.Code()
 			}
 			return nil, failed(code, "upgrade: %v", plain(err))
@@ -111,7 +110,7 @@ func (s *Server) Upgrade(ctx context.Context, stream *connect.ClientStream[nodev
 		log.Printf("upgrading to %q with the root hash %x", img.GetImageId(), img.GetRootHash())
 	}
 	res, staged, err := s.installImage(ctx, header, h.GetConfig(), h.GetFallbackSecret(), h.GetStageOnly(), parts)
-	if unactivated := (*upgrade.StagedError)(nil); errors.As(err, &unactivated) {
+	if _, ok := errors.AsType[*upgrade.StagedError](err); ok {
 		log.Printf("upgrade to %x failed: %v", img.GetRootHash(), err)
 		// The image is staged with the config stageConfig wrote, as after an upgrade that stops
 		// there, and ActivateImage may activate it later: the node records its provenance, how the
@@ -125,7 +124,7 @@ func (s *Server) Upgrade(ctx context.Context, stream *connect.ClientStream[nodev
 		// An activation that refused the staged UKI fails the precondition, and one that failed to
 		// read or change the disk or the ESP is internal, as ActivateImage answers them.
 		code := connect.CodeInternal
-		if refusal := (*upgrade.RefusalError)(nil); errors.As(err, &refusal) {
+		if _, ok := errors.AsType[*upgrade.RefusalError](err); ok {
 			code = connect.CodeFailedPrecondition
 		}
 		return nil, failed(code, "upgrade: %v", err)
@@ -139,10 +138,8 @@ func (s *Server) Upgrade(ctx context.Context, stream *connect.ClientStream[nodev
 		// kept the image. A recheck that failed to mount or read the store retired the image too,
 		// but refused no config, so the answer names no apply-config --staged. Other failures, also
 		// of a resend, came before the recheck or wrote the image anew, and name no staged image.
-		var retired *upgrade.StagedRetiredError
-		if errors.As(err, &retired) {
-			var check *upgrade.CheckError
-			if !errors.As(retired.Err, &check) {
+		if retired, ok := errors.AsType[*upgrade.StagedRetiredError](err); ok {
+			if _, ok := errors.AsType[*upgrade.CheckError](retired.Err); !ok {
 				return nil, failed(connect.CodeFailedPrecondition, "upgrade: %v; the staged image was retired with it", err)
 			}
 			return nil, failed(connect.CodeFailedPrecondition, "upgrade: %v; the staged image was retired with it: chalkctl apply-config --staged %s changes a staged image's config without retiring the image on a refusal", err, s.nodeName())
@@ -290,8 +287,7 @@ func (s *Server) writeSlot(ctx context.Context, st imageStore, system, platform 
 
 // plain is err without the code a connect error carries. An upgrade's error has a code of its own.
 func plain(err error) error {
-	var ce *connect.Error
-	if errors.As(err, &ce) {
+	if ce, ok := errors.AsType[*connect.Error](err); ok {
 		return errors.New(ce.Message())
 	}
 	return err
@@ -417,7 +413,7 @@ func (s *Server) ActivateImage(ctx context.Context, req *connect.Request[nodev1.
 	if err != nil {
 		log.Printf("activation of %x failed: %v", root, err)
 		code := connect.CodeInternal
-		if refusal := (*upgrade.RefusalError)(nil); errors.As(err, &refusal) {
+		if _, ok := errors.AsType[*upgrade.RefusalError](err); ok {
 			code = connect.CodeFailedPrecondition
 		}
 		return nil, failed(code, "activate: %v", err)

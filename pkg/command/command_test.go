@@ -32,8 +32,7 @@ func TestRun(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			_, err := Run(ctx, []string{"sh", "-c", tc.script}, []byte(`{"config": "s3cret"}`), 100)
-			var failed *Error
-			if !errors.As(err, &failed) || failed.Status != tc.status || failed.Stderr != tc.stderr {
+			if failed, ok := errors.AsType[*Error](err); !ok || failed.Status != tc.status || failed.Stderr != tc.stderr {
 				t.Fatalf("err = %#v", err)
 			}
 			if want := "the command failed (" + tc.status + "); see the node's journal"; err.Error() != want {

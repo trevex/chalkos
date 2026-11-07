@@ -682,8 +682,7 @@ func (a *app) writeOrReplace(path string, data []byte, perm fs.FileMode, create 
 		return clustersecrets.Replace(path, data, perm)
 	}
 	err := clustersecrets.Create(path, data, perm)
-	var unsynced *clustersecrets.UnsyncedError
-	if err == nil || errors.As(err, &unsynced) {
+	if _, ok := errors.AsType[*clustersecrets.UnsyncedError](err); err == nil || ok {
 		*create = false
 	}
 	return err
@@ -692,8 +691,7 @@ func (a *app) writeOrReplace(path string, data []byte, perm fs.FileMode, create 
 // warnUnsynced turns a file written in place whose directory could not be synced into a warning:
 // the command did what it was asked, and the next write retries the sync.
 func (a *app) warnUnsynced(err error) error {
-	var unsynced *clustersecrets.UnsyncedError
-	if errors.As(err, &unsynced) {
+	if _, ok := errors.AsType[*clustersecrets.UnsyncedError](err); ok {
 		fmt.Fprintf(a.stderr, "chalkctl: warning: %v\n", err)
 		return nil
 	}

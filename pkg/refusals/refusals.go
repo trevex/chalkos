@@ -108,8 +108,8 @@ func Split(err error) ([]Refusal, []error) {
 
 // holdsError reports whether err's tree holds an Error.
 func holdsError(err error) bool {
-	var e *Error
-	return errors.As(err, &e)
+	_, ok := errors.AsType[*Error](err)
+	return ok
 }
 
 var (

@@ -156,8 +156,8 @@ func (s Sandbox) Run(ctx context.Context, r Run, stdout, stderr io.Writer) (Exit
 	if err == nil {
 		return Exit{}, nil
 	}
-	var exit *exec.ExitError
-	if !errors.As(err, &exit) {
+	exit, ok := errors.AsType[*exec.ExitError](err)
+	if !ok {
 		return Exit{}, err
 	}
 	show, serr := systemctl("show", "--property=Result", "--property=ExecMainStatus", unit)

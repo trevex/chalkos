@@ -171,7 +171,7 @@ func (n *Node) checkKeptUKI(path, imageID string, rootHash []byte) (int, error) 
 	}
 	h := Header{ImageID: imageID, Platform: n.OSRelease["CHALKOS_PLATFORM"], Architecture: n.Architecture, RootHash: rootHash, UKISize: info.Size()}
 	tries, err := CheckUKI(f, h, n.EFIVars)
-	if check := (*UKIError)(nil); errors.As(err, &check) {
+	if _, ok := errors.AsType[*UKIError](err); ok {
 		return 0, refused(err)
 	}
 	return tries, err

@@ -48,7 +48,7 @@ func pickAddresses(p Paths, c kubernetes.Cluster, n kubernetes.Node, resolve Res
 		// its deadline passed (nodeip.Waiter.Wait), so the whole timeout went by.
 		err = fmt.Errorf("%w, %v after %s", err, timeout, addressesTarget)
 	}
-	if pinned := (*nodeip.PinnedError)(nil); errors.As(err, &pinned) {
+	if _, ok := errors.AsType[*nodeip.PinnedError](err); ok {
 		return nil, fmt.Errorf("%w; restore it, or remove the node's etcd member with chalkctl etcd remove-member %s and reinstall the node", err, n.Name)
 	}
 	if err != nil {

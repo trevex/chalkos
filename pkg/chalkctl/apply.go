@@ -245,7 +245,7 @@ func (a *app) dryRunConfig(ctx context.Context, f applyConfigFlags, names []stri
 			return err
 		case err != nil:
 			fmt.Fprintf(a.stderr, "chalkctl: %s\n", namedOnce(name, err))
-			if errors.As(err, new(refusal)) {
+			if _, ok := errors.AsType[refusal](err); ok {
 				refused = append(refused, name)
 			} else {
 				failed = append(failed, name)
@@ -294,7 +294,7 @@ func (e namedErr) Unwrap() error { return e.error }
 // namedOnce is err as a line of several nodes' output names the node called name: prefixed with
 // the name unless err, or an error it wraps, is a namedErr.
 func namedOnce(name string, err error) string {
-	if errors.As(err, new(namedErr)) {
+	if _, ok := errors.AsType[namedErr](err); ok {
 		return err.Error()
 	}
 	return name + ": " + err.Error()

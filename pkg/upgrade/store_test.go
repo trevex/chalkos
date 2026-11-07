@@ -126,12 +126,10 @@ func TestTheImageIsCheckedBeforeItBoots(t *testing.T) {
 		t.Fatalf("install = %v, want the check's refusal", err)
 	}
 	// The image was written, not found staged.
-	var retired *StagedRetiredError
-	if errors.As(err, &retired) {
+	if _, ok := errors.AsType[*StagedRetiredError](err); ok {
 		t.Errorf("install = %v, a StagedRetiredError", err)
 	}
-	var check *CheckError
-	if !errors.As(err, &check) {
+	if _, ok := errors.AsType[*CheckError](err); !ok {
 		t.Errorf("install = %v, want a CheckError", err)
 	}
 	if toplevel != "/nix/store/x" {

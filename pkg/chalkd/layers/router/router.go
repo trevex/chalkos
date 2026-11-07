@@ -237,7 +237,7 @@ func (r *side) nat64Instance(ctx, budget context.Context, name string) (*routerv
 	// Each instance runs in a network namespace of its own, and jool asks the namespace it runs in.
 	jool := func(args []string) ([]byte, error) {
 		out, err := r.ask(ctx, budget, "nsenter", routing.InNamespace(name, args)...)
-		if te := (*tool.Error)(nil); errors.As(err, &te) && (strings.Contains(te.Stderr, routing.JoolMissingInstance) || strings.Contains(te.Stderr, routing.NamespaceMissing)) {
+		if te, ok := errors.AsType[*tool.Error](err); ok && (strings.Contains(te.Stderr, routing.JoolMissingInstance) || strings.Contains(te.Stderr, routing.NamespaceMissing)) {
 			return nil, errInstanceGone
 		}
 		return out, err

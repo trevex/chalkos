@@ -45,8 +45,7 @@ func Run(ctx context.Context, argv []string, stdin []byte, limit int, env ...str
 	if out.over {
 		return nil, fmt.Errorf("it printed more than %d bytes", limit)
 	}
-	var exit *exec.ExitError
-	if errors.As(err, &exit) {
+	if exit, ok := errors.AsType[*exec.ExitError](err); ok {
 		status := fmt.Sprintf("exit %d", exit.ExitCode())
 		if exit.ExitCode() < 0 {
 			status = exit.String()

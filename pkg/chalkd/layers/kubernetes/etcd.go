@@ -160,7 +160,7 @@ func (p *Plugin) EtcdRemoveMember(ctx context.Context, req *connect.Request[kube
 	rctx, cancel = k.etcdRequest(ctx)
 	err = etcd.Remove(rctx, cli, m.ID, req.Msg.Force)
 	cancel()
-	if quorum := (*etcd.QuorumError)(nil); errors.As(err, &quorum) {
+	if _, ok := errors.AsType[*etcd.QuorumError](err); ok {
 		return nil, failed(connect.CodeFailedPrecondition, "%v; pass --force to remove it anyway", err)
 	}
 	if err != nil {
@@ -250,7 +250,7 @@ func (p *Plugin) EtcdLeave(ctx context.Context, req *connect.Request[kubernetesv
 	rctx, cancel := k.etcdRequest(ctx)
 	answered, err := etcd.OneCluster(rctx, cli, endpoints)
 	cancel()
-	if split := (*etcd.SplitError)(nil); errors.As(err, &split) {
+	if _, ok := errors.AsType[*etcd.SplitError](err); ok {
 		return nil, failed(connect.CodeFailedPrecondition, "%v", err)
 	}
 	if err != nil {

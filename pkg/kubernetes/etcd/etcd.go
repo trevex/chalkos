@@ -280,7 +280,7 @@ func Remove(ctx context.Context, cli *clientv3.Client, id uint64, force bool) er
 		return err
 	}
 	err = CheckQuorum(members, Health(ctx, cli, members), id)
-	if quorum := (*QuorumError)(nil); err != nil && !(force && errors.As(err, &quorum)) {
+	if _, ok := errors.AsType[*QuorumError](err); err != nil && !(force && ok) {
 		return err
 	}
 	// etcd refuses to change its members while one it counts on has been in touch only briefly,

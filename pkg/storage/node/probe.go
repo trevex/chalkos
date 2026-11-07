@@ -53,6 +53,6 @@ func Content(ctx context.Context, run tool.Runner, dev string) (string, error) {
 // foundNothing reports whether blkid failed because it found no signature: it exits with 2 and
 // says nothing. It also exits with 2 when it cannot read the device, but then it complains.
 func foundNothing(err error) bool {
-	var te *tool.Error
-	return errors.As(err, &te) && te.Code == 2 && strings.TrimSpace(te.Stderr) == ""
+	te, ok := errors.AsType[*tool.Error](err)
+	return ok && te.Code == 2 && strings.TrimSpace(te.Stderr) == ""
 }

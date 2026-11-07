@@ -142,8 +142,8 @@ func (r refusedTrust) Unwrap() error { return r.error }
 
 // isRefusedTrust reports whether ReplaceTrust or CheckTrust refused the OS CAs themselves.
 func isRefusedTrust(err error) bool {
-	var r refusedTrust
-	return errors.As(err, &r)
+	_, ok := errors.AsType[refusedTrust](err)
+	return ok
 }
 
 func (n *NodeCertificate) checkTrust(bundle string, keep ...*x509.Certificate) (*trust, error) {

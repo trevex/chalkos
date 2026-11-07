@@ -190,7 +190,7 @@ func (k *side) joinOnce(ctx context.Context) error {
 	rctx, cancel := k.etcdRequest(ctx)
 	answered, err := etcd.OneCluster(rctx, cli, endpoints)
 	cancel()
-	if split := (*etcd.SplitError)(nil); errors.As(err, &split) {
+	if _, ok := errors.AsType[*etcd.SplitError](err); ok {
 		k.setJoinStep(err.Error())
 		return err
 	}
@@ -217,8 +217,7 @@ func (k *side) joinOnce(ctx context.Context) error {
 		return err
 	}
 	own, ok, err := etcd.Own(members, n.Name, peerURL, pin != nil)
-	var stale *etcd.StaleMemberError
-	if errors.As(err, &stale) {
+	if stale, ok := errors.AsType[*etcd.StaleMemberError](err); ok {
 		name := stale.Member.Name
 		if name == "" {
 			name = fmt.Sprintf("%x", stale.Member.ID)

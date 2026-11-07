@@ -142,8 +142,7 @@ func Run(ctx context.Context, r outputs.Renderer, defs map[string]Definition, in
 	defer os.RemoveAll(dir)
 	for _, n := range slices.Sorted(maps.Keys(defs)) {
 		got, err := run(ctx, r, n, defs[n], in, dir)
-		var f *Failure
-		if errors.As(err, &f) {
+		if f, ok := errors.AsType[*Failure](err); ok {
 			failures = append(failures, *f)
 			continue
 		}

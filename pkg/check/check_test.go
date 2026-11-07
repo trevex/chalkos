@@ -228,7 +228,7 @@ func TestRunValidators(t *testing.T) {
 			in := running(t, testImage(t, `cat > "$OUT/demo.json"`), &facts{})
 			in.Delivered = config.Redact(parse(t, base))
 			_, err := Run(context.Background(), img, in)
-			if r := new(Refusal); !errors.As(err, &r) || r.Stage != tc.stage || r.Message != tc.want {
+			if r, ok := errors.AsType[*Refusal](err); !ok || r.Stage != tc.stage || r.Message != tc.want {
 				t.Errorf("err = %#v, want %s: %s", err, tc.stage, tc.want)
 			}
 		})
@@ -265,7 +265,7 @@ func TestRunGivesTheTranslationWithARefusal(t *testing.T) {
 	in := running(t, testImage(t, `cat > "$OUT/demo.json"`), &facts{})
 	in.Delivered = config.Redact(parse(t, base))
 	res, err := Run(context.Background(), img, in)
-	if r := new(Refusal); !errors.As(err, &r) || r.Stage != StageOutputs || len(res.Identity) == 0 {
+	if r, ok := errors.AsType[*Refusal](err); !ok || r.Stage != StageOutputs || len(res.Identity) == 0 {
 		t.Errorf("Run = %+v, %v; want an outputs refusal with the identity", res, err)
 	}
 	in.Delivered = config.Redact(parse(t, base+"---\napiVersion: demo.example.org/v1alpha1\nkind: Demo\nmetadata: {name: one}\nspec: {name: twice}\n"))
@@ -288,7 +288,7 @@ func TestRunChecksStorageRules(t *testing.T) {
 	in.Facts = fixed(&facts{values: map[string]any{"recorded": recorded}})
 	in.Delivered = config.Redact(parse(t, base))
 	res, err := Run(context.Background(), img, in)
-	if r := new(Refusal); !errors.As(err, &r) || r.Stage != StageRules || !strings.Contains(r.Message, "format ext4 instead of xfs") || len(res.Identity) == 0 {
+	if r, ok := errors.AsType[*Refusal](err); !ok || r.Stage != StageRules || !strings.Contains(r.Message, "format ext4 instead of xfs") || len(res.Identity) == 0 {
 		t.Errorf("Run = %+v, %v; want a refusal of the system disk by its rules", res, err)
 	}
 }

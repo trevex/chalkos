@@ -103,8 +103,7 @@ func (t prefixed) RoundTrip(r *http.Request) (*http.Response, error) {
 // source: it could not be reached, the connection failed before a response, or it answered 401,
 // 403, 404, 429 or a 5xx status, as containerd passes over a host.
 func passable(err error) bool {
-	var te *transport.Error
-	if errors.As(err, &te) {
+	if te, ok := errors.AsType[*transport.Error](err); ok {
 		c := te.StatusCode
 		return c == http.StatusUnauthorized || c == http.StatusForbidden || c == http.StatusNotFound ||
 			c == http.StatusTooManyRequests || c >= http.StatusInternalServerError
@@ -112,8 +111,7 @@ func passable(err error) bool {
 	// The HTTP client wraps the errors of a request that got no response in a url.Error: a
 	// connection closed before or during the TLS handshake, a timeout, or a plain HTTP answer to
 	// HTTPS. A body cut short is no url.Error and fails the pull.
-	var ue *url.Error
-	if errors.As(err, &ue) && (ue.Timeout() || errors.Is(ue.Err, io.EOF) || errors.Is(ue.Err, io.ErrUnexpectedEOF)) {
+	if ue, ok := errors.AsType[*url.Error](err); ok && (ue.Timeout() || errors.Is(ue.Err, io.EOF) || errors.Is(ue.Err, io.ErrUnexpectedEOF)) {
 		return true
 	}
 	var op *net.OpError

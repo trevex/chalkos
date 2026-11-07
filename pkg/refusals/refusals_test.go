@@ -106,8 +106,8 @@ func TestStringWithoutPath(t *testing.T) {
 // through a wrapping error.
 func TestErrorf(t *testing.T) {
 	err := fmt.Errorf("render: %w", Errorf("VRF", "tenant", "spec.interfaces[0]", "%s covers the device of VRF %s", "t*", "tenant"))
-	var e *Error
-	if !errors.As(err, &e) || e.Refusal != (Refusal{Kind: "VRF", Name: "tenant", Path: "spec.interfaces[0]", Message: "t* covers the device of VRF tenant"}) {
+	e, ok := errors.AsType[*Error](err)
+	if !ok || e.Refusal != (Refusal{Kind: "VRF", Name: "tenant", Path: "spec.interfaces[0]", Message: "t* covers the device of VRF tenant"}) {
 		t.Fatalf("errors.As(%v) = %+v", err, e)
 	}
 	if want := "VRF/tenant: spec.interfaces[0]: t* covers the device of VRF tenant"; e.Error() != want {

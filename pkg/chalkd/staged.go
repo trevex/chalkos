@@ -415,7 +415,7 @@ func (w secondWrite) plan(resp *nodev1.ApplyConfigResponse) {
 // codeOf is the code err carries, or internal for an error without one: a failure of the node
 // itself.
 func codeOf(err error) connect.Code {
-	if ce := new(connect.Error); errors.As(err, &ce) {
+	if ce, ok := errors.AsType[*connect.Error](err); ok {
 		return ce.Code()
 	}
 	return connect.CodeInternal

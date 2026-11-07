@@ -326,7 +326,7 @@ func (k *side) checkSplit(ctx context.Context, share kpki.Share) (*etcd.SplitErr
 	rctx, cancel := k.etcdRequest(ctx)
 	defer cancel()
 	answered, err := etcd.OneCluster(rctx, cli, append([]string{k.localEtcd(c)}, others...))
-	if split := (*etcd.SplitError)(nil); errors.As(err, &split) {
+	if split, ok := errors.AsType[*etcd.SplitError](err); ok {
 		return split, nil
 	}
 	if err != nil {

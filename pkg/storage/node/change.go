@@ -30,8 +30,8 @@ func (e internalError) Unwrap() error { return e.error }
 // IsInternal reports whether an error of Change or DeleteVolume is a failure of the node itself
 // rather than a refusal its disks or units cause.
 func IsInternal(err error) bool {
-	var ie internalError
-	return errors.As(err, &ie)
+	_, ok := errors.AsType[internalError](err)
+	return ok
 }
 
 // ApplyAll applies the section as Apply does, but fails when any disk could not take its

@@ -427,8 +427,8 @@ func (s *Storage) repart(ctx context.Context, name, dev string, d storage.Disk) 
 // did not unseal one and headless mode forbade asking for another. Other failures, such as an
 // unreadable device, are no reason to reset the volume.
 func unsealFailed(err error) bool {
-	var te *tool.Error
-	if !errors.As(err, &te) {
+	te, ok := errors.AsType[*tool.Error](err)
+	if !ok {
 		return false
 	}
 	stderr := strings.ToLower(te.Stderr)

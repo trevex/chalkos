@@ -89,8 +89,7 @@ func (f *File) replace(data []byte, write func(string, []byte, fs.FileMode) erro
 		return ErrChanged
 	}
 	err = write(f.path, data, 0o600)
-	var unsynced *UnsyncedError
-	if err == nil || errors.As(err, &unsynced) {
+	if _, ok := errors.AsType[*UnsyncedError](err); err == nil || ok {
 		f.sum = sha256.Sum256(data)
 	}
 	return err

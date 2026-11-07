@@ -151,8 +151,7 @@ func TestSelect(t *testing.T) {
 	} {
 		got, err := tc.sel.Select(node)
 		if tc.want == nil {
-			var nomatch *NoMatchError
-			if !errors.As(err, &nomatch) {
+			if _, ok := errors.AsType[*NoMatchError](err); !ok {
 				t.Errorf("%s: Select() = %v, %v, want no match", name, got, err)
 			}
 			continue
@@ -214,8 +213,7 @@ func TestSelectSameInterface(t *testing.T) {
 
 	sel := Selector{Families: []Family{IPv4, IPv6}, Filter: filter(t, "10.0.0.0/24", "fd00:1::/64"), SameInterface: true}
 	_, err := sel.Select(addresses(t, "eth0 10.0.0.11", "eth1 fd00:1::11", "eth0 fd00::11"))
-	var iface *InterfaceError
-	if !errors.As(err, &iface) || err.Error() != "flannel needs the node's IPv4 and IPv6 addresses on one interface; 10.0.0.11 is on eth0, fd00:1::11 on eth1" {
+	if _, ok := errors.AsType[*InterfaceError](err); !ok || err.Error() != "flannel needs the node's IPv4 and IPv6 addresses on one interface; 10.0.0.11 is on eth0, fd00:1::11 on eth1" {
 		t.Errorf("no pair: Select() = %v", err)
 	}
 }
@@ -224,8 +222,7 @@ func TestSelectSameInterface(t *testing.T) {
 func TestSelectSkipsFlannelIPv6(t *testing.T) {
 	sel := Selector{Families: []Family{IPv6}, Filter: filter(t, "fd00:10:244::/56")}
 	_, err := sel.Select(addresses(t, "eth0 2001:db8::15", "flannel-v6.1 fd00:10:244:1::"))
-	var none *NoMatchError
-	if !errors.As(err, &none) {
+	if _, ok := errors.AsType[*NoMatchError](err); !ok {
 		t.Errorf("Select() = %v, want no match", err)
 	}
 }
@@ -294,8 +291,7 @@ func TestNoMatchError(t *testing.T) {
 func TestPinnedError(t *testing.T) {
 	sel := Selector{Families: []Family{IPv4}, Fixed: ips("192.168.100.13"), Pinned: true}
 	_, err := sel.Select(addresses(t, "eth0 192.168.100.23"))
-	var pinned *PinnedError
-	if !errors.As(err, &pinned) || pinned.Address != netip.MustParseAddr("192.168.100.13") {
+	if pinned, ok := errors.AsType[*PinnedError](err); !ok || pinned.Address != netip.MustParseAddr("192.168.100.13") {
 		t.Fatalf("err = %v, want the pinned address missing", err)
 	}
 	if err.Error() != "pinned address 192.168.100.13 is not present" {
@@ -367,8 +363,7 @@ func TestWaitTimesOut(t *testing.T) {
 		Interval:  2 * time.Second,
 	}
 	_, err := w.Wait(Selector{Filter: filter(t, "192.168.100.0/24")}, 5*time.Second)
-	var nomatch *NoMatchError
-	if !errors.As(err, &nomatch) {
+	if _, ok := errors.AsType[*NoMatchError](err); !ok {
 		t.Fatalf("err = %v, want no match", err)
 	}
 	// Looks at 0s, 2s, 4s and, once more, at the timeout.

@@ -51,8 +51,7 @@ func (i *Installer) closeState(ctx context.Context) error {
 	}
 	if mounted {
 		_, err := i.Run.Run(ctx, "umount", i.StateDir)
-		var te *tool.Error
-		if err != nil && !(errors.As(err, &te) && strings.Contains(te.Stderr, "not mounted")) {
+		if te, ok := errors.AsType[*tool.Error](err); err != nil && !(ok && strings.Contains(te.Stderr, "not mounted")) {
 			return fmt.Errorf("unmount STATE: %w", err)
 		}
 	}

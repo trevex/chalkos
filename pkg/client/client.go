@@ -228,8 +228,7 @@ func (u *untrusted) RoundTrip(req *http.Request) (*http.Response, error) {
 // request takes a stream, http2 returns an unexported sentinel that wraps nothing, so only its
 // text identifies it.
 func alertShaped(err error) bool {
-	var op *net.OpError
-	if errors.As(err, &op) && op.Op == "remote error" {
+	if op, ok := errors.AsType[*net.OpError](err); ok && op.Op == "remote error" {
 		return true
 	}
 	if strings.Contains(err.Error(), "http2: client conn could not be established") {
@@ -308,8 +307,7 @@ func distrusted(err error) (bad, refused bool) {
 	if err == nil {
 		return false, false
 	}
-	var unknown x509.UnknownAuthorityError
-	if errors.As(err, &unknown) {
+	if _, ok := errors.AsType[x509.UnknownAuthorityError](err); ok {
 		return true, false
 	}
 	msg := err.Error()

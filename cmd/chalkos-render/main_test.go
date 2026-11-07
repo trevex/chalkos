@@ -56,8 +56,7 @@ func TestTemplateRefuse(t *testing.T) {
 	tmpl := filepath.Join(t.TempDir(), "bird.conf.tmpl")
 	os.WriteFile(tmpl, []byte(`{{ range .documents.Peer }}{{ if .spec.description }}{{ refuse "Peer" .metadata.name "spec.description" "bird takes no description" }}{{ end }}{{ end }}`), 0o644)
 	_, err := render(t, []string{"template", tmpl, "bird.conf"}, peers)
-	var r *refusals.Error
-	if !errors.As(err, &r) || r.Error() != "Peer/b: spec.description: bird takes no description" {
+	if r, ok := errors.AsType[*refusals.Error](err); !ok || r.Error() != "Peer/b: spec.description: bird takes no description" {
 		t.Fatalf("refused with %v", err)
 	}
 }

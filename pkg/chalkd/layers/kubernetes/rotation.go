@@ -59,8 +59,7 @@ func (p *Plugin) RotationStep(ctx context.Context, req *connect.Request[kubernet
 
 // stepFailed refuses a rotation step that failed, unless err already says how.
 func stepFailed(err error) error {
-	var ce *connect.Error
-	if err == nil || errors.As(err, &ce) {
+	if _, ok := errors.AsType[*connect.Error](err); err == nil || ok {
 		return err
 	}
 	return failed(connect.CodeFailedPrecondition, "%v", err)

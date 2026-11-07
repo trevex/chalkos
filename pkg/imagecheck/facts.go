@@ -126,7 +126,7 @@ func (ri *remoteInput) ask(name string) (any, error) {
 	}
 	resp, err := ri.r.client.Fact(ri.r.ctx, connect.NewRequest(&checkv1.FactRequest{Name: name, Input: string(input)}))
 	if err != nil {
-		if ce := new(connect.Error); errors.As(err, &ce) {
+		if ce, ok := errors.AsType[*connect.Error](err); ok {
 			return nil, errors.New(ce.Message())
 		}
 		return nil, err

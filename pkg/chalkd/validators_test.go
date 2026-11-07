@@ -126,13 +126,12 @@ func TestApplyConfigRefusesByAValidatorAsTheChecker(t *testing.T) {
 	}
 	img := check.Image{Schemas: schemas, Target: config.Target{Platform: "metal"}, Rules: set, Validators: defs, Render: s.Loader.Render}
 	_, checked := check.Run(context.Background(), img, check.Input{Node: "n1", Delivered: config.Redact(docs), Facts: func(_, _ []config.Document) rules.Facts { return nil }})
-	var r *check.Refusal
-	if !errors.As(checked, &r) || r.Stage != check.StageValidators {
+	r, ok := errors.AsType[*check.Refusal](checked)
+	if !ok || r.Stage != check.StageValidators {
 		t.Fatalf("check.Run: %v", checked)
 	}
 	_, delivered := sendConfig(s, next)
-	var ce *connect.Error
-	if !errors.As(delivered, &ce) || ce.Message() != r.Message {
+	if ce, ok := errors.AsType[*connect.Error](delivered); !ok || ce.Message() != r.Message {
 		t.Errorf("the delivery is refused with %v, check.Run with %q", delivered, r.Message)
 	}
 }
