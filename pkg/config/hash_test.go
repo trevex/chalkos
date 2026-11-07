@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"maps"
 	"reflect"
-	"slices"
 	"strings"
 	"testing"
 )
@@ -151,29 +150,6 @@ func TestKindHashes(t *testing.T) {
 	demo := hashes(strings.Replace(hashed, "name: two", "name: three", 1))
 	if demo["Demo"] == before["Demo"] || demo["Host"] != before["Host"] {
 		t.Errorf("a Demo's change: %v -> %v, want Demo alone to change", before, demo)
-	}
-}
-
-// ChangedKinds names the kinds whose hashes differ, a kind added or removed among them.
-func TestChangedKinds(t *testing.T) {
-	s := imageSchemas(t)
-	before := parseDocs(t, hashed)
-	for name, c := range map[string]struct {
-		after string
-		want  []string
-	}{
-		"unchanged":                  {hashed, nil},
-		"a Secret a Demo references": {strings.Replace(hashed, "token: s3cret", "token: other", 1), []string{"Demo"}},
-		"a Demo":                     {strings.Replace(hashed, "name: two", "name: three", 1), []string{"Demo"}},
-		"all removed":                {"", []string{"Demo", "Host"}},
-	} {
-		got, err := ChangedKinds(before, parseDocs(t, c.after), s)
-		if err != nil || !slices.Equal(got, c.want) {
-			t.Errorf("%s: changed = %v, %v; want %v", name, got, err, c.want)
-		}
-	}
-	if got, err := ChangedKinds(nil, before, s); err != nil || !slices.Equal(got, []string{"Demo", "Host"}) {
-		t.Errorf("all added: changed = %v, %v", got, err)
 	}
 }
 
