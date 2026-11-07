@@ -35,7 +35,8 @@ YAML that Go reads. They meet in these places:
   names for the node and translates into the identity the
   node applies (`pkg/config`). `pkg/config` translates what every image gives a node, and each
   layer of the image adds its part through a translator, such as `pkg/kubernetes/translate` for
-  Kubernetes. chalkctl delivers the documents to
+  Kubernetes, which stores it in the identity's `layers` by the layer's name.
+  chalkctl delivers the documents to
   chalkd, which checks them again against its own image's
   schemas, keeps them on STATE and translates them the same
   way.
@@ -104,7 +105,7 @@ Each directory of `cmd/` is a main that wires a package up; the logic lives in `
 | `effects` | Reads the image's `services.json`, the units granted config kinds, and `effects.json`, what a delivery does to those units and to chalkd, and refuses an effect chalkd could not carry out. Carries out the due effects on the units: the reloads, the commands and the restarts, in the units' order. |
 | `esp` | Lists the UKIs on an ESP with the image and generation each boots, writes a UKI under a temporary name, reads the UKI of an image staged in the inactive slot, and removes and names UKIs, for an install and an upgrade. |
 | `facts` | Loads the facts change rules read: files, and commands of the image's store run in a sandbox. |
-| `identity` | The node's identity, the form its config translates to, which the node applies at boot and its Kubernetes side reads. |
+| `identity` | The node's identity, the form its config translates to, which the node applies at boot: the hostname, platform, network and storage every image has, and a part for each layer that adds one, by the layer's name. The package does not interpret the layers' parts. |
 | `image` | Reads a disk image: its partitions from `repart-output.json`, its store and hash tree, the UKI and boot loader off its ESP, and the provenance `metadata.json` names. |
 | `imagecheck` | Runs an image's `chalkd check` from the image's own store in a sandboxed transient unit, with the image's store over `/nix/store`, and serves it the node's facts over a Unix socket. |
 | `imagesign` | Signs an image's boot loader and UKIs, in place or in a signed copy of an image directory. |
@@ -115,7 +116,7 @@ Each directory of `cmd/` is a main that wires a package up; the logic lives in `
 | `internal/strs` | Joins values into the lists of messages and flags: by their `String`, or names as prose, such as "a, b and c". |
 | `inventory` | Reads chalkctl's inventory: the cluster's nodes, the address chalkctl reaches each at, the image each runs and the config files each gets. |
 | `jsonfile` | Reads a JSON file an image may leave out, such as `facts.json`, `effects.json` or `outputs.json`, and decodes JSON that must hold one value of known fields. |
-| `kubernetes` | The node's Kubernetes cluster as `kubernetes/translate` builds it from the config and the image's facts, its flags and address ranges, the node as its identity names it, the kinds of Kubernetes nodes (control plane and worker), and the control plane's ports and paths on a node. |
+| `kubernetes` | The node's Kubernetes cluster as `kubernetes/translate` builds it from the config and the image's facts, its flags and address ranges, the node as the Kubernetes part of its identity (`NodeIdentity`) names it, the kinds of Kubernetes nodes (control plane and worker), and the control plane's ports and paths on a node. |
 | `kubernetes/addons` | Renders the objects chalkos applies to every cluster before its own manifests: RBAC for chalkos's identities, kube-proxy, flannel and CoreDNS. |
 | `kubernetes/apply` | Server-side apply of manifests and approval of kubelet serving certificates. |
 | `kubernetes/credprovider` | The kubelet's image credential provider: writes its config and the node's registry credentials from the Registry documents, and answers the kubelet's requests. |

@@ -22,6 +22,7 @@ import (
 	knode "github.com/trevex/chalkos/pkg/kubernetes/node"
 	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
 	"github.com/trevex/chalkos/pkg/kubernetes/translate"
+	"github.com/trevex/chalkos/pkg/layers"
 	"github.com/trevex/chalkos/pkg/nodeconfig"
 	"github.com/trevex/chalkos/pkg/pki"
 )
@@ -41,7 +42,7 @@ func (p *Plugin) CheckIdentity(data []byte) error {
 	if err := json.Unmarshal(data, &id); err != nil {
 		return layer.Errorf(connect.CodeInvalidArgument, "parse the identity: %w", err)
 	}
-	if id.Kubernetes == nil {
+	if _, ok := id.Layers[layers.Kubernetes]; !ok {
 		return nil
 	}
 	if _, err := k8s.ParseNode(data); err != nil {
@@ -193,10 +194,11 @@ func (p *Plugin) share(d layer.Planned, cluster *k8s.Cluster) ([]byte, error) {
 	if err := json.Unmarshal(d.Identity, &id); err != nil {
 		return nil, layer.Errorf(connect.CodeInvalidArgument, "parse the identity: %w", err)
 	}
-	var nodeName string
-	if id.Kubernetes != nil {
-		nodeName = id.Kubernetes.NodeName
+	k, _, err := k8s.NodeIdentityOf(id)
+	if err != nil {
+		return nil, layer.Errorf(connect.CodeInvalidArgument, "%w", err)
 	}
+	nodeName := k.NodeName
 	// A node must never run its kubelet with a certificate issued for another node.
 	if err := share.ValidateFor(nodeName); err != nil {
 		return nil, layer.Errorf(connect.CodeInvalidArgument, "%w", err)

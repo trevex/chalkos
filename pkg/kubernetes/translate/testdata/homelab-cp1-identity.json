@@ -16,8 +16,6 @@
       }
     }
   },
-  "labels": {},
-  "taints": [],
   "storage": {
     "disks": {
       "system": {
@@ -41,11 +39,15 @@
     "fallback": "recovery-key",
     "encryption": "tpm2"
   },
-  "kubernetes": {
-    "nodeName": "cp1",
-    "nodeIPs": [
-      "10.0.0.11"
-    ],
-    "validSubnets": null
+  "layers": {
+    "kubernetes": {
+      "nodeName": "cp1",
+      "nodeIPs": [
+        "10.0.0.11"
+      ],
+      "validSubnets": null,
+      "labels": {},
+      "taints": []
+    }
   }
 }

@@ -321,8 +321,8 @@ func TestInstallFromPartsSendsTheImageContract(t *testing.T) {
 	if err := json.Unmarshal(checked.Config.Identity, &id); err != nil {
 		t.Fatal(err)
 	}
-	if checked.Config.Version == "" || id.Kubernetes == nil || id.Kubernetes.NodeName != "n1" {
-		t.Errorf("checked config = %+v, kubernetes = %+v; want both translated for the image sent", checked.Config, id.Kubernetes)
+	if k, _, _ := kubernetes.NodeIdentityOf(id); checked.Config.Version == "" || k.NodeName != "n1" {
+		t.Errorf("checked config = %+v, kubernetes = %+v; want both translated for the image sent", checked.Config, k)
 	}
 	// The installer's compiled Kubernetes layer writes the share for the node.
 	share, err := kpki.ParseShare(shareOf(t, install.Request{Layers: checked.Layers}))

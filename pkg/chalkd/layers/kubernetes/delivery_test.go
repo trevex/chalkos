@@ -135,7 +135,7 @@ func TestWriteConfigWithoutSetOrImageRemovesTheCluster(t *testing.T) {
 }
 
 // installIdentity is the identity of the node n1 on a Kubernetes image.
-const installIdentity = `{"hostname": "n1", "kubernetes": {"nodeName": "n1"}}`
+const installIdentity = `{"hostname": "n1", "layers": {"kubernetes": {"nodeName": "n1"}}}`
 
 // planInstall plans an install of the share for the node with the identity, trusting osCA.
 func planInstall(t *testing.T, p *Plugin, share []byte, osCA string) (layer.Commit, error) {

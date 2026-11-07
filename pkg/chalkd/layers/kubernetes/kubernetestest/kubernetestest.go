@@ -115,7 +115,7 @@ func WriteNode(t *testing.T, p knode.Paths, kind string, share bool) {
 	  "podCIDRs": {"ipv4": "10.244.0.0/16"}, "serviceCIDRs": {"ipv4": "10.96.0.0/12"},
 	  "dnsIPs": {"ipv4": "10.96.0.10"}, "nodeCIDRMaskSizes": {"ipv4": 24}, "domain": "cluster.local",
 	  "extraArgs": {}, "images": `+ClusterImages+`}`)
-	write(t, p.NodeFile, `{"hostname": "n1", "kubernetes": {"nodeName": "n1", "nodeIPs": ["192.168.100.11"]}}`)
+	write(t, p.NodeFile, `{"hostname": "n1", "layers": {"kubernetes": {"nodeName": "n1", "nodeIPs": ["192.168.100.11"]}}}`)
 	if share {
 		write(t, p.Share(), string(Share(t, kind, "n1")))
 		if err := knode.Prepare(p, time.Now(), NodeIP("192.168.100.11"), nil); err != nil {

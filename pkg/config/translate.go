@@ -1,6 +1,7 @@
 package config
 
 import (
+	"encoding/json"
 	"fmt"
 
 	"github.com/trevex/chalkos/pkg/identity"
@@ -69,9 +70,8 @@ func (s *Set) Identity(name, platform string) (identity.Identity, error) {
 		Hostname: name,
 		Platform: platform,
 		Network:  NetworkMap(networkDocs),
-		Labels:   map[string]string{},
-		Taints:   []identity.Taint{},
 		Storage:  sec,
+		Layers:   map[string]json.RawMessage{},
 	}
 	if hostDoc, ok := s.One("Host"); ok {
 		var host hostSpec

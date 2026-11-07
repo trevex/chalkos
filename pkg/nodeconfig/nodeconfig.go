@@ -1,7 +1,7 @@
 // Package nodeconfig applies the running image's config slot on the node, at boot in
 // chalkos-config.service and after every ApplyConfig. It:
 //   - writes the identity the config translates to as /run/chalkos/node.json, which the node's
-//     Kubernetes side reads, and sets the hostname;
+//     layers read, and sets the hostname;
 //   - writes the config's documents for the units granted config kinds;
 //   - has the image's layers write what they derive from the documents, such as the Kubernetes
 //     cluster file;

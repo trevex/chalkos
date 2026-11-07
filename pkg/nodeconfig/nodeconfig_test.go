@@ -19,9 +19,8 @@ import (
 const nodeIdentity = `{
   "hostname": "w1",
   "network": {},
-  "labels": {"zone": "a"},
-  "taints": [],
-  "storage": {}
+  "storage": {},
+  "layers": {"kubernetes": {"nodeName": "w1", "labels": {"zone": "a"}, "taints": []}}
 }`
 
 func newTestLoader(t *testing.T) (Loader, *string) {

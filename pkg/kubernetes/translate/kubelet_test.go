@@ -10,6 +10,7 @@ import (
 
 	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/identity"
+	"github.com/trevex/chalkos/pkg/kubernetes"
 	"github.com/trevex/chalkos/pkg/schema"
 	"github.com/trevex/chalkos/pkg/storage"
 )
@@ -109,9 +110,18 @@ func TestIdentityMatchesTheGoldenIdentity(t *testing.T) {
 			if g, w := macsOf(got), macsOf(want); !reflect.DeepEqual(g, w) {
 				t.Errorf("matched MAC addresses = %v, want %v", g, w)
 			}
+			// The layers' parts compare as JSON, which json.Marshal compacts.
 			got.Network, want.Network = nil, nil
-			if !reflect.DeepEqual(got, want) {
-				t.Errorf("identity =\n%+v\nwant\n%+v", got, want)
+			g, err := json.Marshal(got)
+			if err != nil {
+				t.Fatal(err)
+			}
+			w, err := json.Marshal(want)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if string(g) != string(w) {
+				t.Errorf("identity =\n%s\nwant\n%s", g, w)
 			}
 		})
 	}
@@ -204,16 +214,16 @@ spec:
 	if err != nil {
 		t.Fatal(err)
 	}
-	if want := []string{"fd00::1", "10.0.0.1"}; !reflect.DeepEqual(id.Kubernetes.NodeIPs, want) {
-		t.Errorf("nodeIPs = %v, want %v", id.Kubernetes.NodeIPs, want)
+	if got, want := nodeOf(t, id).NodeIPs, []string{"fd00::1", "10.0.0.1"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("nodeIPs = %v, want %v", got, want)
 	}
 	// Subnets that apply leave every family to be picked at boot.
 	s = kubernetesSet(t, `{nodeIP: {validSubnets: ["10.0.0.0/8"]}}`, networks)
 	if id, err = identityOn(s, "n1", ""); err != nil {
 		t.Fatal(err)
 	}
-	if id.Kubernetes.NodeIPs == nil || len(id.Kubernetes.NodeIPs) != 0 {
-		t.Errorf("nodeIPs = %#v, want []", id.Kubernetes.NodeIPs)
+	if got := nodeOf(t, id).NodeIPs; got == nil || len(got) != 0 {
+		t.Errorf("nodeIPs = %#v, want []", got)
 	}
 }
 
@@ -230,7 +240,7 @@ func TestIdentityWithAnEmptyNodeUsesDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if id.Hostname != "n1" || id.Kubernetes.NodeName != "n1" || id.Labels == nil || id.Taints == nil {
+	if k := nodeOf(t, id); id.Hostname != "n1" || k.NodeName != "n1" || k.Labels == nil || k.Taints == nil {
 		t.Errorf("identity = %+v", id)
 	}
 }
@@ -306,8 +316,8 @@ func TestNodeValidSubnets(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if !reflect.DeepEqual(id.Kubernetes.NodeIPs, tc.nodeIPs) || !reflect.DeepEqual(id.Kubernetes.ValidSubnets, tc.subnets) {
-				t.Errorf("nodeIPs = %#v, validSubnets = %#v, want %#v and %#v", id.Kubernetes.NodeIPs, id.Kubernetes.ValidSubnets, tc.nodeIPs, tc.subnets)
+			if k := nodeOf(t, id); !reflect.DeepEqual(k.NodeIPs, tc.nodeIPs) || !reflect.DeepEqual(k.ValidSubnets, tc.subnets) {
+				t.Errorf("nodeIPs = %#v, validSubnets = %#v, want %#v and %#v", k.NodeIPs, k.ValidSubnets, tc.nodeIPs, tc.subnets)
 			}
 		})
 	}
@@ -344,8 +354,8 @@ func TestVXLANSourcesHoldTheNodesAddresses(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if !reflect.DeepEqual(id.Kubernetes.NodeIPs, tc.nodeIPs) {
-				t.Errorf("nodeIPs = %#v, want %#v", id.Kubernetes.NodeIPs, tc.nodeIPs)
+			if got := nodeOf(t, id).NodeIPs; !reflect.DeepEqual(got, tc.nodeIPs) {
+				t.Errorf("nodeIPs = %#v, want %#v", got, tc.nodeIPs)
 			}
 		})
 	}
@@ -366,8 +376,8 @@ func TestIdentityTakesTheNodesName(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if id.Hostname != "n1" || id.Kubernetes == nil || id.Kubernetes.NodeName != "n1" {
-		t.Errorf("hostname = %q, kubernetes = %+v, want n1 for both", id.Hostname, id.Kubernetes)
+	if id.Hostname != "n1" || nodeOf(t, id).NodeName != "n1" {
+		t.Errorf("hostname = %q, node name = %q, want n1 for both", id.Hostname, nodeOf(t, id).NodeName)
 	}
 	if got, want := id.Storage.Disks["fast"].Seed, storage.UUIDOf("chalkos-seed:n1/fast"); got != want {
 		t.Errorf("seed = %s, want %s, the seed of n1", got, want)
@@ -380,8 +390,8 @@ func TestIdentityTakesTheNodesName(t *testing.T) {
 	if id, err = identityOn(s, "n1", ""); err != nil {
 		t.Fatal(err)
 	}
-	if id.Hostname != "host1" || id.Kubernetes.NodeName != "n1" {
-		t.Errorf("hostname = %q, node name = %q, want host1 and n1", id.Hostname, id.Kubernetes.NodeName)
+	if k := nodeOf(t, id); id.Hostname != "host1" || k.NodeName != "n1" {
+		t.Errorf("hostname = %q, node name = %q, want host1 and n1", id.Hostname, k.NodeName)
 	}
 	if _, err := identityOn(s, "", ""); err == nil || !strings.Contains(err.Error(), "no name") {
 		t.Errorf("err = %v, want a refusal of a node without a name", err)
@@ -391,4 +401,14 @@ func TestIdentityTakesTheNodesName(t *testing.T) {
 // hostDoc is a Host document of the hostname, given as YAML.
 func hostDoc(hostname string) string {
 	return "---\napiVersion: chalkos.dev/v1alpha1\nkind: Host\nmetadata: {name: default}\nspec: {hostname: " + hostname + "}\n"
+}
+
+// nodeOf is the Kubernetes part of the identity id, which the test fails without.
+func nodeOf(t *testing.T, id identity.Identity) kubernetes.NodeIdentity {
+	t.Helper()
+	k, ok, err := kubernetes.NodeIdentityOf(id)
+	if !ok || err != nil {
+		t.Fatalf("the identity's Kubernetes part: %v, %v", ok, err)
+	}
+	return k
 }

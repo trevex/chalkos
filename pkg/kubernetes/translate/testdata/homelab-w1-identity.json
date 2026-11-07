@@ -2,16 +2,6 @@
   "hostname": "w1",
   "platform": "metal",
   "network": {},
-  "labels": {
-    "node.kubernetes.io/storage": "ssd"
-  },
-  "taints": [
-    {
-      "key": "dedicated",
-      "value": "storage",
-      "effect": "NoSchedule"
-    }
-  ],
   "storage": {
     "disks": {
       "system": {
@@ -53,9 +43,21 @@
     "fallback": "recovery-key",
     "encryption": "tpm2"
   },
-  "kubernetes": {
-    "nodeName": "w1",
-    "nodeIPs": [],
-    "validSubnets": null
+  "layers": {
+    "kubernetes": {
+      "nodeName": "w1",
+      "nodeIPs": [],
+      "validSubnets": null,
+      "labels": {
+        "node.kubernetes.io/storage": "ssd"
+      },
+      "taints": [
+        {
+          "key": "dedicated",
+          "value": "storage",
+          "effect": "NoSchedule"
+        }
+      ]
+    }
   }
 }

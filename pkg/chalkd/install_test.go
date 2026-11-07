@@ -408,8 +408,8 @@ func TestInstallFromPartsWithConfig(t *testing.T) {
 	if err := json.Unmarshal(checked.Config.Identity, &id); err != nil || id.Platform != "metal" {
 		t.Errorf("identity = %s, %v", checked.Config.Identity, err)
 	}
-	if k := id.Kubernetes; k == nil || k.NodeName != "n1" || !slices.Equal(k.NodeIPs, []string{"192.168.100.21"}) {
-		t.Errorf("Kubernetes identity = %+v", id.Kubernetes)
+	if k, ok, err := k8s.NodeIdentityOf(id); !ok || err != nil || k.NodeName != "n1" || !slices.Equal(k.NodeIPs, []string{"192.168.100.21"}) {
+		t.Errorf("Kubernetes identity = %+v, %v, %v", k, ok, err)
 	}
 	if checked.Config.Version != hashOf(t, workerConfig) || len(checked.Config.Documents) == 0 {
 		t.Errorf("config = %+v", checked.Config)

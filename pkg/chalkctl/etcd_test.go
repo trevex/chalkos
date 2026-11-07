@@ -42,7 +42,7 @@ func etcdNode(t *testing.T, ta *testApp, adjust func(*kubernetesplugin.Options))
 	}
 	writeFile(t, p.Share(), string(data))
 	writeFile(t, p.Cluster, clusterFile("controlplane"))
-	writeFile(t, p.NodeFile, `{"kubernetes": {"nodeName": "n1"}}`)
+	writeFile(t, p.NodeFile, `{"layers": {"kubernetes": {"nodeName": "n1"}}}`)
 	writeFile(t, p.Bootstrapped(), "")
 	return s
 }

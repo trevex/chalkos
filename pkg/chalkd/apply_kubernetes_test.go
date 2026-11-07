@@ -36,7 +36,7 @@ import (
 
 // kubernetesIdentity is identityWith for the Kubernetes node nodeName.
 func kubernetesIdentity(nodeName string) string {
-	return `{"hostname": "n1", "platform": "metal", "kubernetes": {"nodeName": "` + nodeName + `", "nodeIPs": ["192.168.100.11"]}, "storage": ` + section("", "") + `}`
+	return `{"hostname": "n1", "platform": "metal", "layers": {"kubernetes": {"nodeName": "` + nodeName + `", "nodeIPs": ["192.168.100.11"]}}, "storage": ` + section("", "") + `}`
 }
 
 // hostConfig is a Host document of the name and hostname.

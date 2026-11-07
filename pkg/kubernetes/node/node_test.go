@@ -16,7 +16,6 @@ import (
 	"time"
 
 	"github.com/trevex/chalkos/pkg/clustersecrets"
-	"github.com/trevex/chalkos/pkg/identity"
 	"github.com/trevex/chalkos/pkg/kubernetes"
 	"github.com/trevex/chalkos/pkg/kubernetes/nodeip"
 	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
@@ -105,7 +104,7 @@ func testNode(t *testing.T, kind, name string, k *clustersecrets.KubernetesSecre
 	}
 	writeCluster(t, p, testCluster(kind))
 	write(t, p.NodeFile, `{"hostname": "`+name+`", "network": {"networks": {"10-lan": {"address": ["192.168.100.11/24"]}}},
-	  "labels": {"zone": "a", "disk": "ssd"}, "taints": [], "kubernetes": {"nodeName": "`+name+`", "nodeIPs": ["192.168.100.11"]}}`)
+	  "layers": {"kubernetes": {"nodeName": "`+name+`", "nodeIPs": ["192.168.100.11"], "labels": {"zone": "a", "disk": "ssd"}, "taints": []}}}`)
 	if k != nil {
 		share, err := kpki.ShareFor(&clustersecrets.Secrets{Kubernetes: *k, NodeCA: pkitest.NodeCA(t, time.Now())}, kind, name, now)
 		if err != nil {
@@ -210,8 +209,8 @@ func TestPrepareWorker(t *testing.T) {
 // pickingIdentity is the identity of a node without a fixed address that picks one from
 // 192.168.100.0/24.
 func pickingIdentity(name string) string {
-	return `{"hostname": "` + name + `", "labels": {}, "taints": [],
-	  "kubernetes": {"nodeName": "` + name + `", "nodeIPs": [], "validSubnets": ["192.168.100.0/24"]}}`
+	return `{"hostname": "` + name + `",
+	  "layers": {"kubernetes": {"nodeName": "` + name + `", "nodeIPs": [], "validSubnets": ["192.168.100.0/24"], "labels": {}, "taints": []}}}`
 }
 
 func TestPreparePicksNodeIP(t *testing.T) {
@@ -374,7 +373,7 @@ func TestPrepareFlannelInterfaces(t *testing.T) {
 					c.Images.Flannel = flannelImage
 				}
 			})
-			write(t, p.NodeFile, `{"hostname": "w1", "kubernetes": {"nodeName": "w1", "validSubnets": ["192.168.100.0/24", "fd00::/64"]}}`)
+			write(t, p.NodeFile, `{"hostname": "w1", "layers": {"kubernetes": {"nodeName": "w1", "validSubnets": ["192.168.100.0/24", "fd00::/64"]}}}`)
 			err := Prepare(p, now, on(links, tc.addrs...), nil)
 			if tc.want == "" && err != nil || tc.want != "" && (err == nil || err.Error() != tc.want) {
 				t.Fatalf("err = %v, want %q", err, tc.want)
@@ -390,8 +389,8 @@ func TestPrepareDualStack(t *testing.T) {
 	p := testNode(t, kubernetes.KindControlPlane, "cp1", secrets(t))
 	write(t, p.Bootstrapped(), "")
 	withCluster(t, p, func(c *kubernetes.Cluster) { c.IPFamilies = []nodeip.Family{nodeip.IPv6, nodeip.IPv4} })
-	write(t, p.NodeFile, `{"hostname": "cp1", "labels": {}, "taints": [],
-	  "kubernetes": {"nodeName": "cp1", "nodeIPs": ["192.168.100.11"], "validSubnets": ["fd00::/64"]}}`)
+	write(t, p.NodeFile, `{"hostname": "cp1",
+	  "layers": {"kubernetes": {"nodeName": "cp1", "nodeIPs": ["192.168.100.11"], "validSubnets": ["fd00::/64"], "labels": {}, "taints": []}}}`)
 	if err := Prepare(p, now, onNode("10.0.2.15", "192.168.100.11", "2001:db8::11", "fd00::11"), nil); err != nil {
 		t.Fatal(err)
 	}
@@ -881,7 +880,7 @@ func TestPrepareRefusesMismatchedShare(t *testing.T) {
 
 func TestKubeletFlags(t *testing.T) {
 	c := kubernetes.Cluster{Kind: kubernetes.KindControlPlane, AllowSchedulingOnControlPlanes: true}
-	n := kubernetes.Node{Name: "cp1", Taints: []identity.Taint{{Key: "dedicated", Value: "db", Effect: "NoSchedule"}, {Key: "spot", Effect: "PreferNoSchedule"}}}
+	n := kubernetes.Node{Name: "cp1", Taints: []kubernetes.Taint{{Key: "dedicated", Value: "db", Effect: "NoSchedule"}, {Key: "spot", Effect: "PreferNoSchedule"}}}
 	got := strings.Join(kubeletFlags(c, n), " ")
 	if got != "--hostname-override=cp1 --register-with-taints=dedicated=db:NoSchedule,spot:PreferNoSchedule" {
 		t.Errorf("flags = %s", got)
@@ -1013,7 +1012,7 @@ func TestPreparationError(t *testing.T) {
 	}
 
 	// A share for another kind of node than the image's.
-	write(t, p.NodeFile, `{"hostname": "w1", "kubernetes": {"nodeName": "w1", "nodeIPs": ["192.168.100.11"]}}`)
+	write(t, p.NodeFile, `{"hostname": "w1", "layers": {"kubernetes": {"nodeName": "w1", "nodeIPs": ["192.168.100.11"]}}}`)
 	cluster, err := os.ReadFile(p.Cluster)
 	if err != nil {
 		t.Fatal(err)
@@ -1117,7 +1116,7 @@ func TestPrepareWritesVXLANDestinations(t *testing.T) {
 			c.IPFamilies = []nodeip.Family{nodeip.IPv4, nodeip.IPv6}
 			c.Flannel, c.Images.Flannel = &kubernetes.Flannel{MTU: 1430}, flannelImage
 		})
-		write(t, p.NodeFile, `{"hostname": "w1", "kubernetes": {"nodeName": "w1", "validSubnets": ["192.168.100.0/24", "fd00::/64"]}}`)
+		write(t, p.NodeFile, `{"hostname": "w1", "layers": {"kubernetes": {"nodeName": "w1", "validSubnets": ["192.168.100.0/24", "fd00::/64"]}}}`)
 		if err := Prepare(p, now, on(links, tc.addrs...), nil); err != nil {
 			t.Fatal(err)
 		}
@@ -1134,7 +1133,7 @@ func TestPrepareWritesVXLANDestinations(t *testing.T) {
 			netip.MustParsePrefix("192.168.100.0/24"), netip.MustParsePrefix("fd00::/64"), netip.MustParsePrefix("10.1.0.0/16"),
 		}}
 	})
-	write(t, p.NodeFile, `{"hostname": "w1", "kubernetes": {"nodeName": "w1", "validSubnets": ["192.168.0.0/16", "fd00::/48"]}}`)
+	write(t, p.NodeFile, `{"hostname": "w1", "layers": {"kubernetes": {"nodeName": "w1", "validSubnets": ["192.168.0.0/16", "fd00::/48"]}}}`)
 	if err := Prepare(p, now, on(links, "bgp0 192.168.100.11", "bgp0 fd00::11"), nil); err != nil {
 		t.Fatal(err)
 	}

@@ -536,8 +536,8 @@ func TestApplyConfigOnAKubernetesImage(t *testing.T) {
 	if err := json.Unmarshal([]byte(identityOf(t, s)), &id); err != nil {
 		t.Fatal(err)
 	}
-	if k := id.Kubernetes; k == nil || k.NodeName != "n1" || !slices.Equal(k.NodeIPs, []string{"192.168.100.21"}) {
-		t.Errorf("Kubernetes identity = %+v", id.Kubernetes)
+	if k, ok, err := k8s.NodeIdentityOf(id); !ok || err != nil || k.NodeName != "n1" || !slices.Equal(k.NodeIPs, []string{"192.168.100.21"}) {
+		t.Errorf("Kubernetes identity = %+v, %v, %v", k, ok, err)
 	}
 }
 

@@ -51,17 +51,20 @@ func kubelet(s *config.Set, id *identity.Identity, name string, c kubernetes.Clu
 			return err
 		}
 	}
-	maps.Copy(id.Labels, spec.Labels)
+	labels := map[string]string{}
+	maps.Copy(labels, spec.Labels)
+	taints := []kubernetes.Taint{}
 	for _, t := range spec.Taints {
-		id.Taints = append(id.Taints, identity.Taint{Key: t.Key, Value: deref(t.Value), Effect: t.Effect})
+		taints = append(taints, kubernetes.Taint{Key: t.Key, Value: deref(t.Value), Effect: t.Effect})
 	}
 	ips, ipErrs := nodeIPs(spec, c, id.StaticAddresses())
 	errs := slices.Concat(checkLabels(spec.Labels), checkSwap(id.Storage.Volumes), ipErrs)
 	if len(errs) > 0 {
 		return fmt.Errorf("invalid Kubernetes settings:\n- %s", strings.Join(errs, "\n- "))
 	}
-	id.Kubernetes = &identity.Kubernetes{NodeName: name, NodeIPs: ips, ValidSubnets: spec.NodeIP.ValidSubnets}
-	return nil
+	return kubernetes.SetNodeIdentity(id, kubernetes.NodeIdentity{
+		NodeName: name, NodeIPs: ips, ValidSubnets: spec.NodeIP.ValidSubnets, Labels: labels, Taints: taints,
+	})
 }
 
 // checkLabels refuses the labels a kubelet may not set on its own Node, by key.

@@ -10,6 +10,7 @@ import (
 
 	"github.com/trevex/chalkos/pkg/identity"
 	"github.com/trevex/chalkos/pkg/kubernetes/nodeip"
+	"github.com/trevex/chalkos/pkg/layers"
 )
 
 // Node is this node as its identity describes it.
@@ -30,7 +31,43 @@ type Node struct {
 	// Addresses are the node's static addresses.
 	Addresses []netip.Addr
 	Labels    map[string]string
-	Taints    []identity.Taint
+	Taints    []Taint
+}
+
+// NodeIdentity is what the node is in Kubernetes: the Kubernetes layer's part of its identity.
+type NodeIdentity struct {
+	// NodeName is the node's name in the cluster, which its Node object and kubelet
+	// certificates carry.
+	NodeName string `json:"nodeName"`
+	// NodeIPs are the node's fixed addresses, at most one per address family; the node picks
+	// the addresses of the other families at boot.
+	NodeIPs []string `json:"nodeIPs"`
+	// ValidSubnets are the subnets the node picks its addresses from instead of its cluster's;
+	// nil uses the cluster's.
+	ValidSubnets []string          `json:"validSubnets"`
+	Labels       map[string]string `json:"labels"`
+	Taints       []Taint           `json:"taints"`
+}
+
+// Taint is a Kubernetes taint applied to the node.
+type Taint struct {
+	Key string `json:"key"`
+	// Value is empty for a taint without a value.
+	Value  string `json:"value"`
+	Effect string `json:"effect"`
+}
+
+// SetNodeIdentity stores n as the Kubernetes layer's part of the identity id.
+func SetNodeIdentity(id *identity.Identity, n NodeIdentity) error {
+	return id.SetLayer(layers.Kubernetes, n)
+}
+
+// NodeIdentityOf reads the Kubernetes layer's part of the identity id and tells whether it has
+// one, which an identity on an image without Kubernetes does not.
+func NodeIdentityOf(id identity.Identity) (NodeIdentity, bool, error) {
+	var n NodeIdentity
+	ok, err := id.Layer(layers.Kubernetes, &n)
+	return n, ok, err
 }
 
 // ReadNode reads the node from its identity without secrets (node.json).
@@ -53,11 +90,15 @@ func ParseNode(data []byte) (Node, error) {
 	if err := json.Unmarshal(data, &id); err != nil {
 		return Node{}, fmt.Errorf("parse the identity: %w", err)
 	}
-	if id.Kubernetes == nil || id.Kubernetes.NodeName == "" {
+	k, ok, err := NodeIdentityOf(id)
+	if err != nil {
+		return Node{}, err
+	}
+	if !ok || k.NodeName == "" {
 		return Node{}, errors.New("the identity names no Kubernetes node")
 	}
-	n := Node{Name: id.Kubernetes.NodeName, Hostname: id.Hostname, ValidSubnets: id.Kubernetes.ValidSubnets, Labels: id.Labels, Taints: id.Taints}
-	for _, s := range id.Kubernetes.NodeIPs {
+	n := Node{Name: k.NodeName, Hostname: id.Hostname, ValidSubnets: k.ValidSubnets, Labels: k.Labels, Taints: k.Taints}
+	for _, s := range k.NodeIPs {
 		ip, err := netip.ParseAddr(s)
 		if err != nil || ip.Zone() != "" {
 			return Node{}, fmt.Errorf("nodeIPs: %q is not an address", s)

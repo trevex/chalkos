@@ -183,7 +183,7 @@ readable by root alone.
 | Path | Written by | What it holds |
 | --- | --- | --- |
 | `config/<root-hash>/` | install, Upgrade, ApplyConfig | The config slot of the image whose store has the root hash, which its boot loads: a symbolic link to a directory beside it, which a new set replaces as a whole. An Upgrade forgets the slots of the images no UKI on the ESP boots, and with them a slot an upgrade wrote before a crash kept its image from being activated. |
-| `config/<root-hash>/identity.json` | install, Upgrade, ApplyConfig | The node's identity on that image, which its config translates to and the boot applies: hostname, static addresses, storage and Kubernetes settings. |
+| `config/<root-hash>/identity.json` | install, Upgrade, ApplyConfig | The node's identity on that image, which its config translates to and the boot applies: hostname, static addresses and storage, and below `layers` the part of each layer that adds one, such as the Kubernetes node name, addresses, labels and taints. |
 | `config/<root-hash>/delivered/<group>/<Kind>/<name>.json` | install, Upgrade, ApplyConfig | The slot's config documents as delivered, which GetConfig returns with secrets hashed; `Secret` documents in `delivered/secrets/<name>.json`. |
 | `config/<root-hash>/documents/<group>/<Kind>/<name>.json` | install, Upgrade, ApplyConfig | The same documents with their schemas' defaults filled in, which the node's services read; `Secret` documents in `documents/secrets/<name>.json`. |
 | `config/<root-hash>/version` | install, Upgrade, ApplyConfig | The SHA-256 of the slot's config as delivered, which Status reports. |
@@ -324,7 +324,7 @@ another disk carrying the same image or the same labels for its own.
 | `/etc/chalkos/outputs.json` | The image's outputs, from `chalkos.outputs`: each one's input kinds, renderer, check, directory, owner and mode. |
 | `/etc/chalkos/validators.json` | The image's validators, from `chalkos.validators`: each one's input kinds and program. |
 | `/etc/chalkos/effects.json` | What a delivery does to the node's services, from `chalkos.effects`, with the outputs, the kinds and the rules that fire each effect. |
-| `/run/chalkos/node.json` | The node's identity, which the node's Kubernetes preparation reads. |
+| `/run/chalkos/node.json` | The node's identity. Each layer reads its own part below `layers`; the Kubernetes preparation reads `layers.kubernetes`. |
 | `/run/chalkos/kubernetes/cluster.json` | The node's Kubernetes cluster, which chalkd builds from the node's `Node`, `Cluster` and `Flannel` documents and `image.json` at boot and on every apply. It carries the release of the image's kubelet as `version` and the version `images.apiServer` names as `apiServerVersion`; rules read them as `facts.cluster.version` and `facts.cluster.apiServerVersion`. |
 | `/run/chalkos/config/<group>/<Kind>/<name>.json` | The node's config documents, `Secret`s and `Addon`s excepted, which chalkcfg prints. |
 | `/run/chalkos/credentials/<unit>/<secret>.<key>` | The values the `secretRef` fields of a unit's kinds name; the unit loads them as the credentials `secret_<secret>.<key>`. |
