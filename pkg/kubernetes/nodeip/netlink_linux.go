@@ -26,8 +26,10 @@ func SystemAddresses() ([]Address, error) {
 		if a.Flags&net.FlagUp == 0 {
 			continue
 		}
-		// The kind is IFLA_INFO_KIND, which netlink names Type but for two cases: an interface
-		// without one, a physical one or the loopback, is a Device, and a tun is a Tuntap.
+		// The kind is the link's type as netlink names it, which is IFLA_INFO_KIND for most links;
+		// netlink derives some, such as the gre and vti kinds, from a tunnel's local address
+		// instead. A link without a kind, a physical one or the loopback, is a Device, and a tun is a
+		// Tuntap.
 		kind := l.Type()
 		switch l.(type) {
 		case *netlink.Device:

@@ -50,6 +50,10 @@ func KernelRoutes() ([]*KernelRoute, error) {
 // kernelRoute converts a route of netlink, naming interfaces by index.
 func kernelRoute(r netlink.Route, names map[int]string) (*KernelRoute, error) {
 	k := &KernelRoute{Table: uint32(r.Table), Metric: uint32(r.Priority), Protocol: protocolName(uint8(r.Protocol)), Type: typeName(uint8(r.Type))}
+	// netlink gives a route without RTA_DST, a default route, the destination of all addresses of
+	// its family, as iproute2 does, for IPv4 and IPv6 alike; a route without one would be of
+	// another family, which Routes does not list. The check keeps a change of netlink from
+	// panicking.
 	if r.Dst == nil {
 		return nil, errors.New("list the node's routes: a route without a destination")
 	}

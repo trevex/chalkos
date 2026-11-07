@@ -151,5 +151,7 @@ func sendNA(ifi *net.Interface, ip netip.Addr) error {
 	return unix.Sendto(fd, neighbourAdvertisement(ifi.HardwareAddr, ip), 0, allNodes)
 }
 
-// infiniteLifetime is the lifetime of an address that never expires.
+// infiniteLifetime is the lifetime of an address that never expires: INFINITY_LIFE_TIME, all ones in
+// the kernel's 32 bits. netlink holds lifetimes in an int, which holds it on the 64-bit platforms
+// chalkos is built for; on a 32-bit one the constant would overflow int and not compile.
 const infiniteLifetime = 0xffffffff
