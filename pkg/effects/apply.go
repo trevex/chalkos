@@ -102,7 +102,7 @@ func (e *ApplyError) Unwrap() error { return e.Err }
 // failed is restarted as a failed unit of a.Restart is: systemctl reloads no failed unit, and its
 // start, such as a firewall's that loads the new ruleset, is what the new config needs. It
 // restarts after the reloads, so after units that are ordered after it: a unit whose reload
-// depends on such a unit's work has that unit ask for it, as chalkos-vrf asks chalkos-resolvers.
+// depends on such a unit's work asks for that work itself, such as by restarting the unit.
 //
 // The restarts take one systemctl call for each way of restarting, each in the units' order:
 //   - try-restart for a unit that runs, or ran and stays active, so a unit that never started,
