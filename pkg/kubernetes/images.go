@@ -103,16 +103,14 @@ func checkSkew(kubelet imageref.Version, v map[string]imageref.Version) error {
 			return fmt.Errorf("images.%s: %s is of Kubernetes %d, the image's kubelet %s of Kubernetes %d", field, version, version.Major, kubelet, kubelet.Major)
 		}
 	}
-	// minors is how many minors a is newer than b; negative when it is older.
-	minors := func(a, b imageref.Version) int { return a.Minor - b.Minor }
-	switch d := minors(api, kubelet); {
+	switch d := api.Minors(kubelet); {
 	case d < 0:
 		return fmt.Errorf("images.apiServer: %s is older than the image's kubelet %s; a kubelet must not be newer than the API server, so upgrade the control plane first", api, kubelet.MinorString())
 	case d > 3:
 		return fmt.Errorf("images.apiServer: %s is %d minors newer than the image's kubelet %s; a kubelet may be at most three minors older than the API server, so upgrade the nodes' images first", api, d, kubelet.MinorString())
 	}
 	for _, field := range []string{"controllerManager", "scheduler"} {
-		switch d := minors(v[field], api); {
+		switch d := v[field].Minors(api); {
 		case d > 0:
 			return fmt.Errorf("images.%s: %s is newer than images.apiServer %s; it must not be newer than the API server", field, v[field], api)
 		case d < -1:
@@ -120,7 +118,7 @@ func checkSkew(kubelet imageref.Version, v map[string]imageref.Version) error {
 		}
 	}
 	proxy := v["proxy"]
-	switch d := minors(proxy, api); {
+	switch d := proxy.Minors(api); {
 	case d > 0:
 		return fmt.Errorf("images.proxy: %s is newer than images.apiServer %s; kube-proxy must not be newer than the API server", proxy, api)
 	case d < -3:

@@ -96,10 +96,11 @@ func parseAccept(data []byte) (Accept, error) {
 			if err != nil || ip.Zone() != "" {
 				return Accept{}, fmt.Errorf("%q is not an address", fields[1])
 			}
-			if families[family(ip)] {
-				return Accept{}, fmt.Errorf("a second %s destination %s", family(ip), ip)
+			fam := nftFamily(nodeip.FamilyOf(ip))
+			if families[fam] {
+				return Accept{}, fmt.Errorf("a second %s destination %s", fam, ip)
 			}
-			families[family(ip)] = true
+			families[fam] = true
 			if fields[2] != "interface" && fields[2] != "any" {
 				return Accept{}, fmt.Errorf("%q is neither interface nor any", fields[2])
 			}
@@ -118,14 +119,6 @@ func parseAccept(data []byte) (Accept, error) {
 		return Accept{}, errors.New("no destination")
 	}
 	return a, nil
-}
-
-// family is the nft family of an address: ip or ip6.
-func family(ip netip.Addr) string {
-	if ip.Is4() {
-		return "ip"
-	}
-	return "ip6"
 }
 
 // nftFamily is the nft family of an address family: ip or ip6.
@@ -156,12 +149,12 @@ func forwardRules(c kubernetes.Cluster) ([]string, error) {
 	for _, f := range c.Families() {
 		fam := nftFamily(f)
 		pods := c.PodCIDRs.Of(f)
-		if !pods.IsValid() || family(pods.Addr()) != fam {
+		if !pods.IsValid() || nodeip.FamilyOf(pods.Addr()) != f {
 			return nil, fmt.Errorf("no %s pod range", f)
 		}
 		var sources []netip.Prefix
 		for _, s := range c.VXLANSources() {
-			if family(s.Addr()) == fam {
+			if nodeip.FamilyOf(s.Addr()) == f {
 				sources = append(sources, s.Masked())
 			}
 		}
@@ -229,12 +222,13 @@ func inputRules(accept Accept) []string {
 	slices.Sort(interfaces)
 	var rules []string
 	for _, d := range accept.Destinations {
-		fam := family(d.IP)
+		f := nodeip.FamilyOf(d.IP)
+		fam := nftFamily(f)
 		rule := fmt.Sprintf("%s daddr %s udp dport %d", fam, d.IP, vxlanPort)
 		if len(accept.Sources) > 0 {
 			var sources []netip.Prefix
 			for _, s := range accept.Sources {
-				if family(s.Addr()) == fam {
+				if nodeip.FamilyOf(s.Addr()) == f {
 					sources = append(sources, s)
 				}
 			}

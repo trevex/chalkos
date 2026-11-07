@@ -87,16 +87,13 @@ func Health(ctx context.Context, cli *clientv3.Client, members []Member) map[uin
 	unhealthy := map[uint64]error{}
 	var wg sync.WaitGroup
 	for _, m := range members {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			err := status(ctx, cli, m)
-			if err != nil {
+		wg.Go(func() {
+			if err := status(ctx, cli, m); err != nil {
 				mu.Lock()
 				unhealthy[m.ID] = err
 				mu.Unlock()
 			}
-		}()
+		})
 	}
 	wg.Wait()
 	return unhealthy

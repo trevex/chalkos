@@ -11,6 +11,7 @@ import (
 	"cel.dev/cel-go/checker"
 	celast "cel.dev/cel-go/common/ast"
 
+	"github.com/trevex/chalkos/pkg/jsonfile"
 	"github.com/trevex/chalkos/pkg/schema"
 )
 
@@ -191,10 +192,8 @@ func decodeRules(v any) ([]Rule, error) {
 	if err != nil {
 		return nil, err
 	}
-	dec := json.NewDecoder(strings.NewReader(string(data)))
-	dec.DisallowUnknownFields()
 	var rules []Rule
-	if err := dec.Decode(&rules); err != nil {
+	if err := jsonfile.DecodeStrict(data, &rules); err != nil {
 		return nil, err
 	}
 	for i := range rules {

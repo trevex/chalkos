@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/trevex/chalkos/pkg/imageref"
+	"github.com/trevex/chalkos/pkg/jsonfile"
 	"github.com/trevex/chalkos/pkg/schema"
 )
 
@@ -58,10 +59,8 @@ func decodeUnique(v any) ([]uniqueDecl, error) {
 	if err != nil {
 		return nil, err
 	}
-	dec := json.NewDecoder(strings.NewReader(string(data)))
-	dec.DisallowUnknownFields()
 	var decls []uniqueDecl
-	if err := dec.Decode(&decls); err != nil {
+	if err := jsonfile.DecodeStrict(data, &decls); err != nil {
 		return nil, err
 	}
 	for _, d := range decls {

@@ -4,12 +4,10 @@
 package pki
 
 import (
-	"bytes"
 	"crypto/x509"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"slices"
 	"strings"
 	"time"
@@ -17,6 +15,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/validation"
 
 	"github.com/trevex/chalkos/pkg/clustersecrets"
+	"github.com/trevex/chalkos/pkg/jsonfile"
 	"github.com/trevex/chalkos/pkg/kubernetes"
 	"github.com/trevex/chalkos/pkg/pki"
 )
@@ -161,13 +160,11 @@ func IssueKubeletClient(ca pki.CertKey, node string, now time.Time) (pki.CertKey
 // a share is only ever what Encode wrote.
 func ParseShare(data []byte) (Share, error) {
 	var s Share
-	dec := json.NewDecoder(bytes.NewReader(data))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&s); err != nil {
-		return Share{}, fmt.Errorf("parse the Kubernetes share: %w", err)
-	}
-	if _, err := dec.Token(); err != io.EOF {
+	switch err := jsonfile.DecodeStrict(data, &s); {
+	case errors.Is(err, jsonfile.ErrTrailingData):
 		return Share{}, errors.New("parse the Kubernetes share: data after the share")
+	case err != nil:
+		return Share{}, fmt.Errorf("parse the Kubernetes share: %w", err)
 	}
 	if err := s.Validate(); err != nil {
 		return Share{}, err

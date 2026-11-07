@@ -1,16 +1,15 @@
 package client
 
 import (
-	"bytes"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"time"
 
+	"github.com/trevex/chalkos/pkg/jsonfile"
 	"github.com/trevex/chalkos/pkg/pki"
 )
 
@@ -65,13 +64,11 @@ func ReadConfig(path string) (Config, error) {
 		return Config{}, fmt.Errorf("%s: %w", path, versionError(version.Version))
 	}
 	var c Config
-	dec := json.NewDecoder(bytes.NewReader(data))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&c); err != nil {
-		return Config{}, fmt.Errorf("parse %s: %w", path, err)
-	}
-	if _, err := dec.Token(); err != io.EOF {
+	switch err := jsonfile.DecodeStrict(data, &c); {
+	case errors.Is(err, jsonfile.ErrTrailingData):
 		return Config{}, fmt.Errorf("parse %s: data after the client file", path)
+	case err != nil:
+		return Config{}, fmt.Errorf("parse %s: %w", path, err)
 	}
 	if err := c.Validate(); err != nil {
 		return Config{}, fmt.Errorf("%s: %w", path, err)

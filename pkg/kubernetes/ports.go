@@ -1,9 +1,7 @@
 package kubernetes
 
 import (
-	"net"
 	"net/netip"
-	"strconv"
 )
 
 // Ports the control plane's components listen on.
@@ -25,5 +23,5 @@ func EtcdClientURL(ip netip.Addr) string { return httpsURL(ip, EtcdClientPort) }
 func EtcdPeerURL(ip netip.Addr) string { return httpsURL(ip, EtcdPeerPort) }
 
 func httpsURL(ip netip.Addr, port int) string {
-	return "https://" + net.JoinHostPort(ip.String(), strconv.Itoa(port))
+	return "https://" + netip.AddrPortFrom(ip, uint16(port)).String()
 }

@@ -9,7 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"maps"
-	"net"
+	"net/netip"
 	"path"
 	"slices"
 	"strconv"
@@ -66,7 +66,7 @@ func StaticPods(c kubernetes.Cluster, n kubernetes.Node, pkiDir string, files ma
 			"initial-cluster-state": state,
 			"listen-client-urls":    c.LocalEtcd() + "," + kubernetes.EtcdClientURL(ip),
 			"listen-peer-urls":      kubernetes.EtcdPeerURL(ip),
-			"listen-metrics-urls":   "http://" + net.JoinHostPort(loopback.String(), strconv.Itoa(kubernetes.EtcdMetricsPort)),
+			"listen-metrics-urls":   "http://" + netip.AddrPortFrom(loopback, kubernetes.EtcdMetricsPort).String(),
 			"cert-file":             pki(kpki.FileEtcdServer),
 			"key-file":              pki(kpki.FileEtcdServerKey),
 			"trusted-ca-file":       pki(kpki.FileEtcdCA),
