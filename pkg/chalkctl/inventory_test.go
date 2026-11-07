@@ -114,6 +114,40 @@ func TestValidate(t *testing.T) {
 	}
 }
 
+// TestValidateUnparsableNodeFile: a node whose own file does not parse passes the layers' check
+// of the inventory, which skips it, and validate names it as that node's failure, checks the
+// other node all the same and exits nonzero.
+func TestValidateUnparsableNodeFile(t *testing.T) {
+	ta := newTestApp(t)
+	ta.withoutSecrets(t)
+	path := writeInventory(t, ta.dir)
+	writeFile(t, path, testInventoryYAML+"    n2: {address: 10.0.0.12, files: [nodes/n2.yaml]}\n")
+	writeFile(t, filepath.Join(ta.dir, "nodes", "n2.yaml"), "kind: [\n")
+	if got := ta.execute(context.Background(), "validate", "--inventory", path); got != 1 {
+		t.Errorf("validate exits with %d, want 1", got)
+	}
+	if want := "the config of 1 node is invalid:\nnode n2: nodes/n2.yaml: "; !strings.Contains(ta.stderr.String(), want) {
+		t.Errorf("stderr = %q, want %q", ta.stderr, want)
+	}
+	if !strings.Contains(ta.stdout.String(), "n1: valid") {
+		t.Errorf("stdout = %q, want n1 valid all the same", ta.stdout)
+	}
+}
+
+// TestValidateNamesASharedErrorOnce: a broken file the nodes share is the same error for each,
+// which validate prints once with the nodes it is the error of.
+func TestValidateNamesASharedErrorOnce(t *testing.T) {
+	ta := newTestApp(t)
+	ta.withoutSecrets(t)
+	path := writeInventory(t, ta.dir)
+	writeFile(t, path, testInventoryYAML+"    n2: {address: 10.0.0.12, files: [nodes/n1.yaml]}\n")
+	writeFile(t, filepath.Join(ta.dir, "cluster.yaml"), "kind: [\n")
+	err := ta.run(context.Background(), []string{"validate", "--inventory", path})
+	if err == nil || !strings.HasPrefix(err.Error(), "the config of 2 nodes is invalid:\nnodes n1, n2: cluster.yaml: ") || strings.Count(err.Error(), "\n") != 1 {
+		t.Errorf("validate = %v, want the broken cluster.yaml named once for n1 and n2", err)
+	}
+}
+
 // TestValidateWarnsOfUnencryptedState warns of a node whose SystemDisk leaves STATE, which
 // holds the node's keys and secrets, unencrypted, and of no other.
 func TestValidateWarnsOfUnencryptedState(t *testing.T) {

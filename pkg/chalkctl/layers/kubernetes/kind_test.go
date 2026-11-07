@@ -1,6 +1,7 @@
 package kubernetes
 
 import (
+	"errors"
 	"slices"
 	"testing"
 
@@ -19,6 +20,8 @@ type fakeCluster struct {
 	apiServer map[string]string
 	// partial is set for a cluster without an inventory.
 	partial bool
+	// broken names the nodes whose config the inventory cannot read.
+	broken map[string]bool
 }
 
 func (c fakeCluster) Partial() bool { return c.partial }
@@ -33,6 +36,9 @@ func (c fakeCluster) NodeNames() []string {
 }
 
 func (c fakeCluster) Documents(name string) ([]config.Document, error) {
+	if c.broken[name] {
+		return nil, errors.New("node " + name + ": nodes/" + name + ".yaml: unparsable")
+	}
 	docs := []config.Document{{APIVersion: config.CoreAPI, Kind: "Host", Object: map[string]any{"spec": map[string]any{}}}}
 	if kind := c.types[name]; kind != "" {
 		docs = append(docs, config.Document{APIVersion: translate.API, Kind: "Node", Name: "default", Object: map[string]any{"spec": map[string]any{"type": kind}}})

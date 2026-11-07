@@ -32,8 +32,8 @@ func (a *app) validateCommand() *cobra.Command {
 
 // validate checks the config of the nodes named, or of every node of the inventory, and names
 // every node whose config is invalid. The compiled layers check the nodes together first, as
-// every other command does when it loads the inventory. A valid config that
-// leaves the node's secrets unencrypted draws a warning.
+// every other command does when it loads the inventory. A valid config that leaves the node's
+// secrets unencrypted draws a warning.
 func (a *app) validate(ctx context.Context, f validateFlags, names []string) error {
 	path := f.inventory
 	if path == "" {
@@ -63,11 +63,11 @@ func (a *app) validate(ctx context.Context, f validateFlags, names []string) err
 	if err := c.check(); err != nil {
 		return fmt.Errorf("%s: %w", path, err)
 	}
-	var failed []string
+	var failed failures
 	for _, name := range nodes {
 		line, warnings, err := validateNode(c, name)
 		if err != nil {
-			failed = append(failed, err.Error())
+			failed.add(name, err)
 			continue
 		}
 		fmt.Fprintln(a.stdout, line)
@@ -75,10 +75,55 @@ func (a *app) validate(ctx context.Context, f validateFlags, names []string) err
 			fmt.Fprintln(a.stderr, "warning: "+w)
 		}
 	}
-	if len(failed) > 0 {
-		return errors.New("the config of " + layer.Count(len(failed), "node") + " is invalid:\n" + strings.Join(failed, "\n"))
+	if failed.nodes > 0 {
+		return errors.New("the config of " + layer.Count(failed.nodes, "node") + " is invalid:\n" + failed.String())
 	}
 	return nil
+}
+
+// failures are the errors of the nodes whose config is invalid, each once with the nodes it is
+// the error of, in the order they first failed: a broken file the nodes share is named once.
+type failures struct {
+	nodes  int
+	errors []*failure
+}
+
+// failure is an error and the nodes it is the error of. prefixed tells whether one of the errors
+// named its node first, as "node <name>: ", which the error's line names the nodes by instead.
+type failure struct {
+	msg      string
+	nodes    []string
+	prefixed bool
+}
+
+// add records the error of a node's config.
+func (f *failures) add(name string, err error) {
+	f.nodes++
+	msg, prefixed := strings.CutPrefix(err.Error(), "node "+name+": ")
+	i := slices.IndexFunc(f.errors, func(e *failure) bool { return e.msg == msg })
+	if i < 0 {
+		i = len(f.errors)
+		f.errors = append(f.errors, &failure{msg: msg})
+	}
+	f.errors[i].nodes = append(f.errors[i].nodes, name)
+	f.errors[i].prefixed = f.errors[i].prefixed || prefixed
+}
+
+// String is an error per line, after the nodes it is the error of: "node n1: " for one node and
+// "nodes n1, n2: " for more; an error that names its node itself stands alone.
+func (f failures) String() string {
+	lines := make([]string, len(f.errors))
+	for i, e := range f.errors {
+		switch {
+		case len(e.nodes) > 1:
+			lines[i] = "nodes " + strings.Join(e.nodes, ", ") + ": " + e.msg
+		case e.prefixed:
+			lines[i] = "node " + e.nodes[0] + ": " + e.msg
+		default:
+			lines[i] = e.msg
+		}
+	}
+	return strings.Join(lines, "\n")
 }
 
 // validateNode checks a node's config against the image the inventory names for it, as the node
