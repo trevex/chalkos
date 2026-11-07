@@ -266,7 +266,9 @@ func Default() Rule {
 
 func runNFT(input string, args ...string) error {
 	out, err := tool.ExecRunner{}.Exec(context.Background(), tool.Cmd{Name: "nft", Args: args, Stdin: []byte(input), Quiet: true})
-	os.Stdout.Write(out)
+	if len(out) > 0 {
+		_, _ = os.Stdout.Write(out)
+	}
 	return err
 }
 
