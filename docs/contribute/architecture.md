@@ -417,7 +417,8 @@ it has no `completion` command.
 
 | Directory | What it holds |
 | --- | --- |
-| `modules/node/` | The NixOS modules of every image: `packages.nix` (chalkos's programs, as the module argument `chalkosPackages`), `base/` (appliance, closure, disk, image directory, storage), `kinds/` (`chalkos.kinds`, `chalkos.facts`, networkd's kinds and the built-in kinds), `runtime/` (grants, `chalkos.outputs`, `chalkos.effects`, chalkcfg on the system path), kernel, chalkd, time, the CNI, `kubernetes/` (the kubelet, effects, containerd, registries, firewall), upgrade. |
+| `modules/node/` | The NixOS modules of every image: `packages.nix` (chalkos's programs, as the module argument `chalkosPackages`), `base/` (appliance, closure, disk, image directory, storage), `kinds/` (`chalkos.kinds`, `chalkos.facts`, networkd's kinds and the kinds every image accepts), `runtime/` (grants, `chalkos.outputs`, `chalkos.effects`, chalkcfg on the system path), kernel, chalkd, time, the CNI, `kubernetes/` (the kubelet, its kinds, effects, containerd, registries, firewall), `router/` (the router layer), upgrade. |
+| `modules/node/router/` | The router layer: `default.nix` (its option, marker and forwarding), the Router kind (`kinds.nix`) and its output `router-sysctl` (`sysctl.nix`), the types the router kinds share (`types.nix`), what the router's parts share (`lib.nix`: the enable option of a feature, the kinds the image declares and the sandbox of the units), traceroute (`diagnostics.nix`) and the validator router (`validator.nix`). Each part of the router has a directory: `kinds.nix` holds its kinds, `diagnostics.nix` its diagnostics and `default.nix` the rest. Every router image carries `firewall/`, `vrf/` and `policy-routing/`; a variant can leave out `bgp/`, `nat64/`, `resolver/`, `dhcp/` and `dhcp-relay/` with `chalkos.router.<feature>.enable`. |
 | `modules/platforms/` | `metal` and `kvm`. |
 | `modules/installer/` | The installer image and its ISO. |
 | `modules/testing/` | The test probe, the test image's partition sizes and the test-only config kind `Greeting` with its output and effect. |
@@ -429,6 +430,11 @@ The layout follows these rules, so each change has one place to go:
 
 - An extension is a NixOS module in a variant's
   `modules`: its kinds, its units, their outputs and their effects, together.
+- A part of the router layer is a directory of `modules/node/router`. `kinds.nix` returns its
+  kinds, and `default.nix` sets them under one condition with the part's outputs, effects, units
+  and diagnostics. A feature that a variant can leave out declares its option
+  `chalkos.router.<feature>.enable` in `default.nix`. An output that reads another feature's
+  kinds filters them by the kinds the image declares.
 - The node modules declare the image options; `lib/images-arguments.nix` declares the
   arguments of `mkImages`. Everything about a cluster or a node is a config kind, not an option.
 - Go code reads a node's config documents and the image's files alone.

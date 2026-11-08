@@ -799,6 +799,7 @@ The nodes of an inventory that chalklab runs as virtual machines, and their mach
 
 Sources: the JSON Schemas in the `schemas` directory of an image
 [build](image-layout.md#outputs-of-an-image-build) of the default variant and of a router
-image, from `modules/node/kinds/builtin/` and the tables of the image's systemd-networkd, and
+image, from `modules/node/kinds/builtin/`, `modules/node/kubernetes/kinds.nix`, the
+`kinds.nix` files of `modules/node/router/` and the tables of the image's systemd-networkd, and
 `pkg/inventory/chalkctl.chalkos.dev_v1alpha1_Inventory.json` and
 `pkg/chalklab/chalklab.chalkos.dev_v1alpha1_Lab.json`.

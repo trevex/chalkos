@@ -34,7 +34,8 @@ const kindsIntro = "# Config kinds\n\n" +
 // kindsSources closes the page of config kinds.
 const kindsSources = "\nSources: the JSON Schemas in the `schemas` directory of an image\n" +
 	"[build](image-layout.md#outputs-of-an-image-build) of the default variant and of a router\n" +
-	"image, from `modules/node/kinds/builtin/` and the tables of the image's systemd-networkd, and\n" +
+	"image, from `modules/node/kinds/builtin/`, `modules/node/kubernetes/kinds.nix`, the\n" +
+	"`kinds.nix` files of `modules/node/router/` and the tables of the image's systemd-networkd, and\n" +
 	"`pkg/inventory/chalkctl.chalkos.dev_v1alpha1_Inventory.json` and\n" +
 	"`pkg/chalklab/chalklab.chalkos.dev_v1alpha1_Lab.json`.\n"
 
