@@ -6,7 +6,6 @@ import (
 	"crypto/rsa"
 	"crypto/x509"
 	"crypto/x509/pkix"
-	"encoding/pem"
 	"fmt"
 	"math/big"
 	"os"
@@ -53,7 +52,7 @@ func (a *app) createKeys(ctx context.Context, dir, labName, templateVars string)
 		if err := atomicfile.WriteNew(filepath.Join(dir, name+".key"), []byte(keyPEM), 0o600); err != nil {
 			return err
 		}
-		if err := atomicfile.WriteNew(filepath.Join(dir, name+".crt"), pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}), 0o644); err != nil {
+		if err := atomicfile.WriteNew(filepath.Join(dir, name+".crt"), []byte(pki.EncodeCertificate(der)), 0o644); err != nil {
 			return err
 		}
 	}

@@ -3,8 +3,6 @@ package pki
 import (
 	"crypto"
 	"crypto/ecdsa"
-	"crypto/elliptic"
-	"crypto/rand"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/pem"
@@ -65,19 +63,9 @@ func (n NodeNames) Equal(o NodeNames) bool {
 // clients: chalkd serves it, and presents it to renew it. Certificate holds the chain chalkd
 // presents, the node certificate followed by the node CA's.
 func IssueNode(nodeCA CertKey, names NodeNames, now time.Time) (CertKey, error) {
-	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
-	if err != nil {
-		return CertKey{}, err
-	}
-	chain, err := SignNode(nodeCA, names, &key.PublicKey, now)
-	if err != nil {
-		return CertKey{}, err
-	}
-	keyPEM, err := EncodeKey(key)
-	if err != nil {
-		return CertKey{}, err
-	}
-	return CertKey{Certificate: chain, Key: keyPEM}, nil
+	return withNewKey(func(key *ecdsa.PrivateKey) (string, error) {
+		return SignNode(nodeCA, names, &key.PublicKey, now)
+	})
 }
 
 // SignNode issues a node certificate for pub, whose key the node keeps, and returns the chain
@@ -106,7 +94,7 @@ func SignNode(nodeCA CertKey, names NodeNames, pub crypto.PublicKey, now time.Ti
 	if err != nil {
 		return "", err
 	}
-	return string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})) + nodeCA.Certificate, nil
+	return EncodeCertificate(der) + nodeCA.Certificate, nil
 }
 
 // NodeCredential is a node certificate whose chain verified.
@@ -178,7 +166,7 @@ func VerifyNode(chain, key, osCA string, at time.Time) (NodeCredential, error) {
 func NodeFile(cred NodeCredential, osCA string) ([]byte, error) {
 	var file []byte
 	for _, der := range cred.TLS.Certificate {
-		file = append(file, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})...)
+		file = append(file, EncodeCertificate(der)...)
 	}
 	der, err := x509.MarshalPKCS8PrivateKey(cred.TLS.PrivateKey)
 	if err != nil {

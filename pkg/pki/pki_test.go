@@ -216,11 +216,15 @@ func TestParseRefusesOtherCurves(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ck, err := sign(template, template, key, key)
+	der, err := x509.CreateCertificate(rand.Reader, template, template, &key.PublicKey, key)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := ck.Parse(); err == nil {
+	keyPEM, err := EncodeKey(key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := (CertKey{Certificate: EncodeCertificate(der), Key: keyPEM}).Parse(); err == nil {
 		t.Error("accepted a P-384 key; chalkos keys are P-256")
 	}
 }
@@ -340,10 +344,6 @@ func TestValidateCARequiresCertSign(t *testing.T) {
 // caWithoutCertSign is a CA certificate that lacks the certificate signing key usage.
 func caWithoutCertSign(t *testing.T) CertKey {
 	t.Helper()
-	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
-	if err != nil {
-		t.Fatal(err)
-	}
 	template, err := newTemplate("no cert sign", nil, now, CAValidity)
 	if err != nil {
 		t.Fatal(err)
@@ -351,7 +351,7 @@ func caWithoutCertSign(t *testing.T) CertKey {
 	template.IsCA = true
 	template.BasicConstraintsValid = true
 	template.KeyUsage = x509.KeyUsageCRLSign
-	ca, err := sign(template, template, key, key)
+	ca, err := selfSign(template)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -317,3 +317,8 @@ func ValidateOSCABundle(bundle string) ([]*x509.Certificate, error) {
 	}
 	return certs, nil
 }
+
+// EncodeCertificate encodes a DER certificate as PEM.
+func EncodeCertificate(der []byte) string {
+	return string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}))
+}

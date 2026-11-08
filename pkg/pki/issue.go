@@ -9,7 +9,6 @@ import (
 	"crypto/rand"
 	"crypto/x509"
 	"crypto/x509/pkix"
-	"encoding/pem"
 	"errors"
 	"fmt"
 	"math/big"
@@ -81,10 +80,6 @@ func NewOSCA(now time.Time) (CertKey, error) {
 }
 
 func newRootCA(commonName string, maxPathLen int, now time.Time) (CertKey, error) {
-	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
-	if err != nil {
-		return CertKey{}, err
-	}
 	template, err := newTemplate(commonName, nil, now, CAValidity)
 	if err != nil {
 		return CertKey{}, err
@@ -94,7 +89,7 @@ func newRootCA(commonName string, maxPathLen int, now time.Time) (CertKey, error
 	template.MaxPathLen = maxPathLen
 	template.MaxPathLenZero = maxPathLen == 0
 	template.KeyUsage = x509.KeyUsageCertSign | x509.KeyUsageCRLSign
-	return sign(template, template, key, key)
+	return selfSign(template)
 }
 
 // RenewAt is when a certificate is renewed: once two thirds of its lifetime have passed.
@@ -147,17 +142,13 @@ func IssueLeaf(ca CertKey, l Leaf, now time.Time) (CertKey, error) {
 // SelfSigned creates the certificate chalkd serves in maintenance mode, before the node has one
 // from the OS CA. Clients pin it by its fingerprint.
 func SelfSigned(name string, now time.Time) (CertKey, error) {
-	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
-	if err != nil {
-		return CertKey{}, err
-	}
 	template, err := newTemplate(name, nil, now, LeafValidity)
 	if err != nil {
 		return CertKey{}, err
 	}
 	template.KeyUsage = x509.KeyUsageDigitalSignature
 	template.ExtKeyUsage = []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}
-	return sign(template, template, key, key)
+	return selfSign(template)
 }
 
 func newTemplate(commonName string, organization []string, now time.Time, validity time.Duration) (*x509.Certificate, error) {
@@ -173,12 +164,14 @@ func newTemplate(commonName string, organization []string, now time.Time, validi
 	}, nil
 }
 
-func issue(ca CertKey, template *x509.Certificate, now time.Time) (CertKey, error) {
+// withNewKey creates an ECDSA P-256 key, has certify return the PEM certificate for it, and
+// returns both.
+func withNewKey(certify func(key *ecdsa.PrivateKey) (string, error)) (CertKey, error) {
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
 		return CertKey{}, err
 	}
-	der, err := issueFor(ca, template, &key.PublicKey, now)
+	cert, err := certify(key)
 	if err != nil {
 		return CertKey{}, err
 	}
@@ -186,7 +179,17 @@ func issue(ca CertKey, template *x509.Certificate, now time.Time) (CertKey, erro
 	if err != nil {
 		return CertKey{}, err
 	}
-	return CertKey{Certificate: string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})), Key: keyPEM}, nil
+	return CertKey{Certificate: cert, Key: keyPEM}, nil
+}
+
+func issue(ca CertKey, template *x509.Certificate, now time.Time) (CertKey, error) {
+	return withNewKey(func(key *ecdsa.PrivateKey) (string, error) {
+		der, err := issueFor(ca, template, &key.PublicKey, now)
+		if err != nil {
+			return "", err
+		}
+		return EncodeCertificate(der), nil
+	})
 }
 
 // issueFor signs a certificate for pub with ca, never beyond the CA's validity, and returns it
@@ -215,14 +218,13 @@ func issueFor(ca CertKey, template *x509.Certificate, pub crypto.PublicKey, now 
 	return x509.CreateCertificate(rand.Reader, template, caCert, pub, caKey)
 }
 
-func sign(template, parent *x509.Certificate, key, parentKey *ecdsa.PrivateKey) (CertKey, error) {
-	der, err := x509.CreateCertificate(rand.Reader, template, parent, &key.PublicKey, parentKey)
-	if err != nil {
-		return CertKey{}, err
-	}
-	keyPEM, err := EncodeKey(key)
-	if err != nil {
-		return CertKey{}, err
-	}
-	return CertKey{Certificate: string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})), Key: keyPEM}, nil
+// selfSign signs template with a new key of its own.
+func selfSign(template *x509.Certificate) (CertKey, error) {
+	return withNewKey(func(key *ecdsa.PrivateKey) (string, error) {
+		der, err := x509.CreateCertificate(rand.Reader, template, template, &key.PublicKey, key)
+		if err != nil {
+			return "", err
+		}
+		return EncodeCertificate(der), nil
+	})
 }
