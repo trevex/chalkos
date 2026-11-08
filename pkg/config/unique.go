@@ -11,30 +11,11 @@ import (
 	"strings"
 
 	"github.com/trevex/chalkos/pkg/imageref"
-	"github.com/trevex/chalkos/pkg/jsonfile"
 	"github.com/trevex/chalkos/pkg/schema"
 )
 
-// uniqueDecl is one declaration of a field's or a kind's x-chalkos-unique, as the converter writes
-// it from lib.chalkos.mkOption's or chalkos.kinds.<Kind>'s unique: the values that must not repeat
-// within one list (across "list") or among all documents of the kind (across "kind"). Without By
-// the key is the value itself, or each item of a list, normalised with As; with By it is the tuple
-// of those fields of the object, or of each object of a list, each normalised with its own As.
-type uniqueDecl struct {
-	Across string     `json:"across"`
-	By     []keyField `json:"by"`
-	As     string     `json:"as"`
-	Hint   string     `json:"hint"`
-}
-
-// keyField is a member of a declaration's tuple: a field of the object and its normaliser.
-type keyField struct {
-	Field string `json:"field"`
-	As    string `json:"as"`
-}
-
-// normalisers turn a string into the form it compares in, and refuse a string they cannot read.
-// ip and cidr compare as the rules' ip() and cidr() do, and host as RegistriesOf compares
+// normalisers turn a string into the form it compares in, and refuse a string they cannot read,
+// one for each of schema.Normalisers. ip and cidr compare as the rules' ip() and cidr() do, and host as RegistriesOf compares
 // registry hosts.
 var normalisers = map[string]func(string) (string, bool){
 	"ip": func(s string) (string, bool) {
@@ -50,34 +31,6 @@ var normalisers = map[string]func(string) (string, bool){
 		return h, err == nil
 	},
 	"lower": func(s string) (string, bool) { return strings.ToLower(s), true },
-}
-
-// decodeUnique reads a schema node's x-chalkos-unique, refusing keys a declaration does not have,
-// a scope other than kind and list, and a normaliser chalkd does not know.
-func decodeUnique(v any) ([]uniqueDecl, error) {
-	data, err := json.Marshal(v)
-	if err != nil {
-		return nil, err
-	}
-	var decls []uniqueDecl
-	if err := jsonfile.DecodeStrict(data, &decls); err != nil {
-		return nil, err
-	}
-	for _, d := range decls {
-		if d.Across != "kind" && d.Across != "list" {
-			return nil, fmt.Errorf("across %q is neither kind nor list", d.Across)
-		}
-		as := []string{d.As}
-		for _, f := range d.By {
-			as = append(as, f.As)
-		}
-		for _, a := range as {
-			if _, ok := normalisers[a]; a != "" && !ok {
-				return nil, fmt.Errorf("the normaliser %q is none of cidr, host, ip and lower", a)
-			}
-		}
-	}
-	return decls, nil
 }
 
 // keyOf is the form v compares in, tagged so that no two kinds of value share an encoding:
@@ -145,18 +98,18 @@ func (o occurrence) shown() string {
 // the node's value, or each item of a list. A key whose members are all null or left out takes
 // no part, nor does one with a value its normaliser cannot read, which the field's type or a rule
 // has to refuse; a null member of a tuple compares equal to another null.
-func occurrences(doc ID, n node, decl uniqueDecl) (keys []string, occs []occurrence) {
+func occurrences(doc ID, n schema.Node, decl schema.Unique) (keys []string, occs []occurrence) {
 	type at struct {
 		v    any
 		path string
 	}
 	var values []at
-	if items, ok := n.v.([]any); ok {
+	if items, ok := n.Value.([]any); ok {
 		for i, item := range items {
-			values = append(values, at{item, n.path + "[" + strconv.Itoa(i) + "]"})
+			values = append(values, at{item, n.Path + "[" + strconv.Itoa(i) + "]"})
 		}
 	} else {
-		values = append(values, at{n.v, n.path})
+		values = append(values, at{n.Value, n.Path})
 	}
 	for _, x := range values {
 		o := occurrence{doc: doc}
@@ -172,7 +125,7 @@ func occurrences(doc ID, n node, decl uniqueDecl) (keys []string, occs []occurre
 				v := obj[f.Field]
 				k, ok := keyOf(v, f.As)
 				usable, given = usable && ok, given || v != nil
-				o.paths = append(o.paths, fieldPath(x.path, f.Field))
+				o.paths = append(o.paths, schema.PropertyPath(x.path, f.Field))
 				o.values, key = append(o.values, v), append(key, k)
 			}
 		}
@@ -195,7 +148,7 @@ func occurrences(doc ID, n node, decl uniqueDecl) (keys []string, occs []occurre
 // paths that hold it, the value as its first occurrence writes it, and the declaration's hint.
 func checkUnique(docs Documents, s *schema.Schemas) error {
 	type group struct {
-		decl uniqueDecl
+		decl schema.Unique
 		occs []occurrence
 	}
 	// A group is a key among the values the i-th declaration of a schema node compares: the node's
@@ -209,20 +162,11 @@ func checkUnique(docs Documents, s *schema.Schemas) error {
 	groups := map[groupID]*group{}
 	var lines []string
 	for _, d := range docs {
-		walkDocument(d, s, func(n node) bool {
-			raw, ok := n.sch["x-chalkos-unique"]
-			if !ok {
-				return true
-			}
-			decls, err := decodeUnique(raw)
-			if err != nil {
-				lines = append(lines, fmt.Sprintf("%s: %s: x-chalkos-unique of the image's schema: %v", d.ID(), n.path, err))
-				return true
-			}
-			for i, decl := range decls {
-				scope := groupID{apiVersion: d.APIVersion, kind: d.Kind, field: n.field, i: i}
+		walk(d, s, func(n schema.Node) bool {
+			for i, decl := range n.Annotations().Unique {
+				scope := groupID{apiVersion: d.APIVersion, kind: d.Kind, field: schema.FieldPath(n.Field), i: i}
 				if decl.Across == "list" {
-					scope.name, scope.path = d.Name, n.path
+					scope.name, scope.path = d.Name, n.Path
 				}
 				keys, occs := occurrences(d.ID(), n, decl)
 				for j, k := range keys {

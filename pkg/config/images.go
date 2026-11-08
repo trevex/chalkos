@@ -15,17 +15,16 @@ import (
 func (docs Documents) UnpinnedImages(schemas *schema.Schemas) []string {
 	var lines []string
 	for _, d := range docs {
-		walkDocument(d, schemas, func(n node) bool {
-			format, _ := n.sch["format"].(string)
-			if format != "image-reference" && format != "versioned-image-reference" {
+		walk(d, schemas, func(n schema.Node) bool {
+			if f := n.Schema.Format; f == nil || f.Name != "image-reference" && f.Name != "versioned-image-reference" {
 				return true
 			}
-			s, ok := n.v.(string)
+			s, ok := n.Value.(string)
 			if !ok {
 				return true
 			}
 			if r, err := imageref.Parse(s); err == nil && !r.Pinned() {
-				field := strings.TrimPrefix(n.path, "spec.")
+				field := strings.TrimPrefix(n.Path, "spec.")
 				lines = append(lines, fmt.Sprintf("%s: %s: %s names a tag but no digest, so nodes pull whatever the tag points to when they pull; pin it as %s@sha256:<digest>", d, field, s, s))
 			}
 			return true

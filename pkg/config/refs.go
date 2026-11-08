@@ -42,57 +42,31 @@ func (r Ref) Secret() (SecretRef, bool) {
 // default, references nothing.
 func Refs(d Document, schemas *schema.Schemas) []Ref {
 	var refs []Ref
-	walkDocument(d, schemas, func(n node) bool {
-		m, ok := markerOf(n.sch)
-		if !ok {
+	walk(d, schemas, func(n schema.Node) bool {
+		m := n.Annotations().Ref
+		if m == nil {
 			return true
 		}
-		target := ID{APIVersion: m.apiVersion, Kind: m.kind}
-		if m.key {
+		target := ID{APIVersion: m.APIVersion, Kind: m.Kind}
+		if m.Key {
 			// A key reference is {secretRef: {name, key}}.
-			obj, _ := n.v.(map[string]any)
+			obj, _ := n.Value.(map[string]any)
 			ref, _ := obj["secretRef"].(map[string]any)
 			name, okName := ref["name"].(string)
 			key, okKey := ref["key"].(string)
 			if okName && okKey {
 				target.Name = name
-				refs = append(refs, Ref{Path: n.path, Target: target, Key: key})
+				refs = append(refs, Ref{Path: n.Path, Target: target, Key: key})
 			}
 			return false
 		}
-		if name, ok := n.v.(string); ok && !slices.Contains(m.reserved, name) {
+		if name, ok := n.Value.(string); ok && !slices.Contains(m.Reserved, name) {
 			target.Name = name
-			refs = append(refs, Ref{Path: n.path, Target: target})
+			refs = append(refs, Ref{Path: n.Path, Target: target})
 		}
 		return false
 	})
 	return refs
-}
-
-// refMarker is a field's x-chalkos-ref: the apiVersion and kind of the documents it names, the
-// names it reserves, and whether it names a key of a Secret.
-type refMarker struct {
-	apiVersion, kind string
-	reserved         []string
-	key              bool
-}
-
-func markerOf(sch map[string]any) (refMarker, bool) {
-	m, ok := sch["x-chalkos-ref"].(map[string]any)
-	if !ok {
-		return refMarker{}, false
-	}
-	var r refMarker
-	r.apiVersion, _ = m["apiVersion"].(string)
-	r.kind, _ = m["kind"].(string)
-	r.key, _ = m["key"].(bool)
-	reserved, _ := m["reserved"].([]any)
-	for _, n := range reserved {
-		if s, ok := n.(string); ok {
-			r.reserved = append(r.reserved, s)
-		}
-	}
-	return r, true
 }
 
 // checkRefs returns the references of each of docs, by the document's ID, and refuses those that
