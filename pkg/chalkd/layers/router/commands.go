@@ -33,7 +33,7 @@ func (p *Plugin) Commands() map[string]layer.Command {
 			Help: "start the instances of the rendered configs of a per-VRF service once their\ndevices exist, reload or restart those that run and stop the others; with\nstop, stop them all",
 			Run: func(args []string) error {
 				if len(args) == 0 || len(args) > 2 || len(args) == 2 && args[1] != "stop" {
-					return layer.UsageError{Err: errors.New("takes kea, unbound or relay, and stop")}
+					return layer.UsageError{Err: errors.New("takes kea, unbound or relay, and optionally stop")}
 				}
 				s, ok := p.r.perVRFServices()[args[0]]
 				if !ok {

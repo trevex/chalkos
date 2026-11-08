@@ -22,12 +22,13 @@ import (
 // substate it keeps. A unit started or restarted takes the state of next, active (running)
 // without, and a VRF's instance records the index of its VRF's device in its runtime directory,
 // as its ExecStartPre= does. A stopped unit that had not failed is inactive, and reset-failed
-// forgets a failed or inactive unit.
+// forgets a failed or inactive unit. A call that fail holds, its arguments joined by spaces, fails.
 type fakeSystemd struct {
 	mu    sync.Mutex
 	r     *side
 	state map[string][2]string
 	next  map[string][2]string
+	fail  map[string]bool
 	calls []string
 	index int
 }
@@ -35,7 +36,7 @@ type fakeSystemd struct {
 func newFakeSystemd(t *testing.T) (*fakeSystemd, *side) {
 	t.Helper()
 	p, _ := routerNode(t)
-	f := &fakeSystemd{r: p.r, state: map[string][2]string{}, next: map[string][2]string{}}
+	f := &fakeSystemd{r: p.r, state: map[string][2]string{}, next: map[string][2]string{}, fail: map[string]bool{}}
 	p.r.run = f
 	deviceWait, startWait, pollInterval = time.Second, 500*time.Millisecond, 10*time.Millisecond
 	t.Cleanup(func() { deviceWait, startWait, pollInterval = 30*time.Second, 30*time.Second, 200*time.Millisecond })
@@ -48,7 +49,11 @@ func (f *fakeSystemd) Exec(_ context.Context, c tool.Cmd) ([]byte, error) {
 	if c.Name != "systemctl" {
 		return nil, errors.New("no program " + c.Name)
 	}
-	f.calls = append(f.calls, strings.Join(c.Args, " "))
+	call := strings.Join(c.Args, " ")
+	f.calls = append(f.calls, call)
+	if f.fail[call] {
+		return nil, errors.New("exit status 1")
+	}
 	args := slices.DeleteFunc(slices.Clone(c.Args), func(a string) bool { return strings.HasPrefix(a, "--") && !strings.HasPrefix(a, "--property") })
 	verb, unit := args[0], args[len(args)-1]
 	st, ok := f.state[unit]
@@ -526,5 +531,52 @@ func TestServicesCommand(t *testing.T) {
 		if _, ok := errors.AsType[layer.UsageError](run(args)); !ok {
 			t.Errorf("services %q is no usage error", args)
 		}
+	}
+}
+
+// A config of a VRF's DHCP server alone starts no server of the default VRF.
+func TestServicesKeaVRFAlone(t *testing.T) {
+	f, r := newFakeSystemd(t)
+	f.device(t, "guest")
+	f.device(t, "vlan20")
+	writeKea4(t, r, "guest", "vlan20")
+	if err := f.run("kea", false); err != nil {
+		t.Fatal(err)
+	}
+	f.called(t, "start --no-block kea-dhcp4@guest.service")
+	f.notCalled(t, "start --no-block kea-dhcp4.service")
+	f.notCalled(t, "reload kea-dhcp4.service")
+}
+
+// A systemctl call that fails fails the run, naming what failed, and the run goes on with the
+// others.
+func TestServicesCallsFail(t *testing.T) {
+	for _, tc := range []struct {
+		call, want string
+		running    bool
+	}{
+		{"list-units --all --plain --no-legend --no-pager kea-dhcp4.service kea-dhcp4@*.service kea-dhcp6.service kea-dhcp6@*.service", "failed to list the units: exit status 1", false},
+		{"stop kea-dhcp4@old.service", "failed to stop kea-dhcp4@old.service", false},
+		{"reload kea-dhcp4@guest.service", "failed to reload kea-dhcp4@guest.service", true},
+		{"start --no-block kea-dhcp4@guest.service", "failed to start kea-dhcp4@guest.service", false},
+		{"start --no-block chalkos-dhcp6-routes.service", "failed to start chalkos-dhcp6-routes.service", false},
+	} {
+		t.Run(tc.call, func(t *testing.T) {
+			f, r := newFakeSystemd(t)
+			f.device(t, "guest")
+			f.device(t, "vlan20")
+			writeKea4(t, r, "guest", "vlan20")
+			f.state["kea-dhcp4@old.service"] = [2]string{"active", "running"}
+			if tc.running {
+				f.state["kea-dhcp4@guest.service"] = [2]string{"active", "running"}
+				f.record("kea-dhcp4@guest.service")
+			}
+			f.fail[tc.call] = true
+			err := f.run("kea", false)
+			if err == nil || err.Error() != tc.want {
+				t.Errorf("run = %v, want %s", err, tc.want)
+			}
+			f.called(t, "start --no-block chalkos-dhcp6-routes.service")
+		})
 	}
 }

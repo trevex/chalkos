@@ -336,7 +336,8 @@ func (r *side) resolver(ctx context.Context) *routerv1.ResolverStatus {
 
 // renderedVRFs are the VRFs of the configs of the service svc that an output rendered into dir,
 // the default VRF first, then by name. A file of no VRF's name is left out: only a VRF's name
-// reaches a command line.
+// reaches a command line. Every VRF's name matches routing.ShortName: a document's name matches
+// the pattern of metadata.name, and the kind VRF refuses a name of more than 15 characters.
 func renderedVRFs(dir string, svc services.Service) []string {
 	entries, _ := os.ReadDir(dir)
 	var vrfs []string
