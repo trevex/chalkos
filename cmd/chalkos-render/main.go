@@ -70,11 +70,13 @@ accepts, and succeeds; it fails on input it cannot read.`
 // and for a run by hand; any other error, an internal one or one of its command line, goes to
 // standard error alone, where chalkd shows it to no one but the node's journal, since it can echo
 // the documents. Either fails the renderer, so that a build that runs it, as the router's fallback
-// ruleset's does, fails too. A validator prints its report itself and fails on an error alone.
+// ruleset's does, fails too. A validator prints its report itself; on an error it prints none and
+// fails, so chalkd reports the failure by its exit status.
 func main() {
 	args := os.Args[1:]
 	if err := run(args, os.Stdin, os.Stdout, os.Getenv("OUT")); err != nil {
-		// A validator's error is its failure, whose standard output chalkd reads no report from.
+		// A validator's error is its failure: it prints no report, so chalkd reports the failure by
+		// its exit status.
 		if r, ok := errors.AsType[*refusals.Error](err); ok && args[0] != "validate" {
 			printRefusal(os.Stdout, r)
 		}
