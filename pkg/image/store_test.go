@@ -33,7 +33,7 @@ func TestReadStore(t *testing.T) {
 		}
 		gotData, _ := io.ReadAll(s.Data)
 		gotTree, _ := io.ReadAll(s.HashTree)
-		if !bytes.Equal(gotData, data) || !bytes.Equal(gotTree, tree) || !bytes.Equal(s.RootHash, root) {
+		if !bytes.Equal(gotData, data) || !bytes.Equal(gotTree, tree) || !bytes.Equal(s.RootHash, root) || s.Architecture != "x86-64" {
 			t.Errorf("blocks of %d bytes: read %d bytes of store and %d of hash tree, want %d and %d", blockSize, len(gotData), len(gotTree), len(data), len(tree))
 		}
 
@@ -43,6 +43,8 @@ func TestReadStore(t *testing.T) {
 			"two root hashes":   func(p []Partition) { p[2].RootHash = other },
 			"no verity":         func(p []Partition) { p[1].Type = "linux-generic" },
 			"a short partition": func(p []Partition) { p[2].RawSize = 4096 },
+			"two architectures": func(p []Partition) { p[1].Type = "usr-arm64-verity" },
+			"an unknown one":    func(p []Partition) { p[1].Type, p[2].Type = "usr-riscv64-verity", "usr-riscv64" },
 		} {
 			p := append([]Partition(nil), parts...)
 			change(p)

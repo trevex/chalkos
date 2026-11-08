@@ -87,6 +87,27 @@ func TestOpenPartsRefusesABootLoaderOfAnotherArchitecture(t *testing.T) {
 	}
 }
 
+// TestOpenPartsRefusesAStoreOfAnotherArchitecture refuses an image whose store partitions are of
+// another architecture than its UKI is built for.
+func TestOpenPartsRefusesAStoreOfAnotherArchitecture(t *testing.T) {
+	dir := t.TempDir()
+	imagetest.Write(t, dir, imagetest.Image{Variant: "w", Platform: "metal", Seed: "1"})
+	parts, err := image.ReadPartitions(filepath.Join(dir, "repart-output.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := range parts {
+		parts[i].Type = strings.Replace(parts[i].Type, "usr-x86-64", "usr-arm64", 1)
+	}
+	p, err := image.OpenParts(context.Background(), filepath.Join(dir, "chalkos.raw"), parts, false)
+	if p != nil {
+		p.Close()
+	}
+	if err == nil || !strings.Contains(err.Error(), "the image's store is of arm64, its UKI is built for x86-64") {
+		t.Fatalf("OpenParts = %v, want the store refused", err)
+	}
+}
+
 // TestOpenPartsRefusesAUKIOfAnotherStore refuses an image whose UKI's usrhash names another store.
 func TestOpenPartsRefusesAUKIOfAnotherStore(t *testing.T) {
 	dir, other := t.TempDir(), t.TempDir()

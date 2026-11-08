@@ -48,6 +48,9 @@ func OpenParts(ctx context.Context, raw string, parts []Partition, bootLoader bo
 	if p.Binaries, err = ExtractBinaries(ctx, raw, esp.Offset, p.dir, bootLoader); err != nil {
 		return nil, err
 	}
+	if p.Store.Architecture != p.Architecture {
+		return nil, fmt.Errorf("the image's store is of %s, its UKI is built for %s", p.Store.Architecture, p.Architecture)
+	}
 	u, err := os.Open(p.UKI)
 	if err != nil {
 		return nil, err
