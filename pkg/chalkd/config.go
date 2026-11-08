@@ -2,6 +2,7 @@ package chalkd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"strings"
@@ -14,7 +15,9 @@ import (
 	"github.com/trevex/chalkos/pkg/check"
 	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/config/slot"
+	"github.com/trevex/chalkos/pkg/outputs"
 	"github.com/trevex/chalkos/pkg/pki"
+	"github.com/trevex/chalkos/pkg/rules"
 	"github.com/trevex/chalkos/pkg/schema"
 )
 
@@ -27,7 +30,7 @@ func configure(name, text string, schemas *schema.Schemas, t config.Target) (slo
 	}
 	c, err := translateSlot(name, docs, schemas, t)
 	if err != nil {
-		return slot.Stored{}, layer.Errorf(connect.CodeInvalidArgument, "the config does not suit the image: %w", err)
+		return slot.Stored{}, refusal(err)
 	}
 	return c, nil
 }
@@ -41,7 +44,7 @@ func configure(name, text string, schemas *schema.Schemas, t config.Target) (slo
 func translateSlot(name string, docs []config.Document, schemas *schema.Schemas, t config.Target) (slot.Stored, error) {
 	version, err := config.Hash(docs)
 	if err != nil {
-		return slot.Stored{}, fmt.Errorf("hash the config: %w", err)
+		return slot.Stored{}, layer.Errorf(connect.CodeInvalidArgument, "hash the config: %w", err)
 	}
 	tr, err := check.Image{Schemas: schemas, Target: t}.Translate(name, docs)
 	if err != nil {
@@ -71,15 +74,66 @@ func (s *Server) runningTarget() (config.Target, *schema.Schemas, error) {
 	return t, s.Loader.Contract.Schemas, nil
 }
 
+// runningImage is the running image as it checks config: its contract's schemas, change rules,
+// validators and outputs, whose programs the loader's renderer runs. It has no target: a check
+// that translates config adds the one runningTarget gives.
+func (s *Server) runningImage() (check.Image, error) {
+	set, err := s.runningRules()
+	if err != nil {
+		return check.Image{}, err
+	}
+	c, render := s.Loader.Contract, s.Loader.Render
+	return check.Image{
+		Schemas: c.Schemas, ChangeRules: set, Outputs: c.Outputs, Renderer: render,
+		Validators: check.Programs{Defs: c.Validators, Render: render},
+	}, nil
+}
+
+// refusal is err as chalkd answers with it when it is an image's refusal of config: a set the
+// image does not accept as "the config does not suit the image: ...", whichever image refused it,
+// and every other refusal as its stage says it. domainCodes gives each its code.
+func refusal(err error) error {
+	if r, ok := errors.AsType[*check.Refusal](err); ok && r.Stage == check.StageConfig {
+		return fmt.Errorf("the config does not suit the image: %w", err)
+	}
+	return err
+}
+
+// refusalCode is the code of an image's refusal of config: a set the image does not accept is an
+// invalid argument, and config its rules, validators or outputs refuse fails the precondition.
+func refusalCode(err error) (connect.Code, bool) {
+	r, ok := err.(*check.Refusal)
+	switch {
+	case !ok:
+		return 0, false
+	case r.Stage == check.StageConfig:
+		return connect.CodeInvalidArgument, true
+	}
+	return connect.CodeFailedPrecondition, true
+}
+
+// recordRefused records in the status the outputs that refused a config, when err is their
+// refusal, as a delivery that is not a dry run records them.
+func (s *Server) recordRefused(err error) {
+	r, ok := errors.AsType[*check.Refusal](err)
+	if !ok || r.Stage != check.StageOutputs {
+		return
+	}
+	if err := outputs.RecordFailures(s.Loader.Render.Root, r.Failed); err != nil {
+		log.Printf("record the outputs' failures: %v", err)
+	}
+}
+
 // installConfig translates the config an install header delivers, for the node name, into the
 // identity of the node for the image installed, and returns the config slot of that image,
 // identity included.
 //
 // In place, that image is the running one, which boots once the node is installed, so it checks
-// the config as it checks a delivery, before the install changes anything: its rules, with no
-// running config to compare with, so rules of a field that read oldSelf do not run, the rules of a
-// kind see no oldDocuments, and every fact is null, as an install in place that is tried again
-// must not read what the attempt before it left on STATE; then its validators and its renderers.
+// the config with check.Run, as its checker would, before the install changes anything: its
+// rules, with no running config to compare with, so rules of a field that read oldSelf do not run,
+// the rules of a kind see no oldDocuments, and every fact is null, as an install in place that is
+// tried again must not read what the attempt before it left on STATE; then its validators and its
+// renderers. It plans no effects: nothing runs yet to take them.
 //
 // From the installer, the header and contract describe the image, and the installer translates
 // the config with its own code alone: the storage section of that translation is what it lays the
@@ -106,28 +160,25 @@ func (s *Server) installConfig(ctx context.Context, h *nodev1.InstallHeader, nam
 	if err != nil || s.Installer {
 		return stored, err
 	}
-	set, err := s.runningRules()
+	img, err := s.runningImage()
 	if err != nil {
 		return slot.Stored{}, err
 	}
-	docs := config.Redact(stored.Documents)
-	f := s.factsFor(ctx, docs, config.Redacted{}, h.FallbackSecret)
-	f.Install = true
-	if err := s.checkRules(set, name, docs, config.Redacted{}, f); err != nil {
-		return slot.Stored{}, err
+	img.Target = t
+	res, err := check.Run(ctx, img, check.Input{Node: name, Delivered: config.Redact(stored.Delivered), Facts: func(next, old config.Redacted) rules.Facts {
+		f := s.factsFor(ctx, next, old, h.FallbackSecret)
+		f.Install = true
+		return f
+	}})
+	if err != nil {
+		s.recordRefused(err)
+		return slot.Stored{}, refusal(err)
 	}
 	// The node renders the outputs again at the boot that follows.
-	if err := s.checkValidators(ctx, name, docs); err != nil {
-		return slot.Stored{}, err
-	}
-	staged, err := s.renderOutputs(ctx, name, docs, schemas, true, false)
-	if err != nil {
-		return slot.Stored{}, err
-	}
-	if err := staged.ClearFailures(); err != nil {
+	if err := res.Staged.ClearFailures(); err != nil {
 		log.Printf("clear the outputs' failures: %v", err)
 	}
-	staged.Discard()
+	res.Staged.Discard()
 	return stored, nil
 }
 

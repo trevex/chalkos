@@ -11,6 +11,7 @@ import (
 
 	checkv1 "github.com/trevex/chalkos/pkg/api/check/v1"
 	"github.com/trevex/chalkos/pkg/chalkd/layer"
+	"github.com/trevex/chalkos/pkg/check"
 	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/config/slot"
 	"github.com/trevex/chalkos/pkg/contract"
@@ -114,24 +115,19 @@ func (s *Server) runImageCheck(ctx context.Context, st imageStore, system, platf
 }
 
 // imageRefusal is the error of a config the image refused, as a delivery to the running image
-// refuses one: a translation as invalid, a rule or an output as failing its precondition. A
-// refusal by the rules names the volumes of the identity the image gave that other images' slots
-// name, as elsewhere does, on a node: the installer has neither volumes nor slots.
+// refuses one: the checker's *check.Refusal, as refusal gives it. A refusal by the rules names the
+// volumes of the identity the image gave that other images' slots name, as elsewhere does, on a
+// node: the installer has neither volumes nor slots.
 func (s *Server) imageRefusal(r *checkv1.Refusal, identity string, writing []byte) error {
-	switch r.GetStage() {
-	case "config":
-		return layer.Errorf(connect.CodeInvalidArgument, "the config does not suit the image: %s", r.GetMessage())
-	case "rules":
-		err := layer.Errorf(connect.CodeFailedPrecondition, "%s", r.GetMessage())
-		if s.Installer {
-			return err
-		}
-		if d, perr := s.parseIdentity(identity); perr == nil {
-			return s.elsewhere(err, d.section, writing)
-		}
+	stage := check.Stage(r.GetStage())
+	err := refusal(&check.Refusal{Stage: stage, Message: r.GetMessage()})
+	if stage != check.StageRules || s.Installer {
 		return err
 	}
-	return layer.Errorf(connect.CodeFailedPrecondition, "%s", r.GetMessage())
+	if d, perr := s.parseIdentity(identity); perr == nil {
+		return s.elsewhere(err, d.section, writing)
+	}
+	return err
 }
 
 // stagedFacts are the facts the image whose store is st declares, which chalkd loads for its

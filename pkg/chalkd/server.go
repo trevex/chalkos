@@ -382,13 +382,14 @@ func (a authorizer) WrapStreamingHandler(next connect.StreamingHandlerFunc) conn
 }
 
 // domainCodes are the codes of the domain errors chalkd's handlers return without one of their
-// own: the refusals of an image or of its activation fail the precondition, and OS CAs the node
-// refuses to trust are the client's to fix.
+// own: the refusals of an image or of its activation fail the precondition, those of config by an
+// image's check as refusalCode says, and OS CAs the node refuses to trust are the client's to fix.
 var domainCodes = layer.Codes{
 	layer.CodeFor[*upgrade.RefusalError](connect.CodeFailedPrecondition),
 	layer.CodeFor[*upgrade.CheckError](connect.CodeFailedPrecondition),
 	layer.CodeFor[*upgrade.StagedRetiredError](connect.CodeFailedPrecondition),
 	layer.CodeFor[refusedTrust](connect.CodeInvalidArgument),
+	refusalCode,
 }
 
 // errorCodes turns the error of a handler, chalkd's or a plugin's, into the *connect.Error it
