@@ -8,6 +8,8 @@ import (
 	"testing"
 
 	"github.com/spf13/cobra"
+
+	"github.com/trevex/chalkos/pkg/config"
 )
 
 // run runs chalkcfg with args on s and returns its stdout, stderr and exit status.
@@ -157,7 +159,7 @@ func TestYAMLNumbers(t *testing.T) {
 		t.Fatal(err)
 	}
 	var buf bytes.Buffer
-	if err := (output{format: "yaml"}).write(&buf, []document{{kind: "X", name: "x", object: obj}}, true); err != nil {
+	if err := (output{format: "yaml"}).write(&buf, []config.Document{{Kind: "X", Name: "x", Object: obj}}, true); err != nil {
 		t.Fatal(err)
 	}
 	if want := "a: 1000.0\nb: 2.5\nc: 1.0e-07\nd: 12345678901234567890\ne: -5.0e+09\n"; buf.String() != want {

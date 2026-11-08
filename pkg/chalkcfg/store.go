@@ -3,7 +3,6 @@
 package chalkcfg
 
 import (
-	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -11,24 +10,26 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
-	"regexp"
 	"slices"
 	"strings"
+
+	"github.com/trevex/chalkos/pkg/config"
+	"github.com/trevex/chalkos/pkg/config/slot"
+	"github.com/trevex/chalkos/pkg/schema"
 )
 
-// store is where a node's documents are: chalkd writes each below config as
-// <group>/<Kind>/<name>.json, and the image names each kind's schema in schemas
-// <group>_<version>_<Kind>.json. chalkcfg reads the schemas' names to tell a kind the image
-// declares but the node has no documents of from a kind the image does not know, and of their
-// contents whether the kind is withheld.
+// store is where a node's documents are: chalkd writes them below run, as slot.WriteRuntime
+// does, and the image keeps each kind's schema in schemas. chalkcfg reads the schemas' names to
+// tell a kind the image declares but the node has no documents of from a kind the image does not
+// know, and of their contents whether the kind is withheld.
 type store struct {
-	config, schemas string
+	run, schemas string
 }
 
-// document is a document of the node, by the name of its file.
-type document struct {
-	kind, name string
-	object     map[string]any
+// node is what chalkcfg read of a store at once: the kinds by name and the documents.
+type node struct {
+	kinds map[string]*kindInfo
+	docs  config.Documents
 }
 
 // kindInfo is what the node has of a kind: the groups it is in, one unless /run was tampered
@@ -39,10 +40,6 @@ type kindInfo struct {
 	withheld  bool
 }
 
-// namePattern is the pattern of metadata.name, which every document's file name follows. Other
-// names are no document's, and could reach outside the kind's directory.
-var namePattern = regexp.MustCompile(`^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$`)
-
 var errSecret = errors.New("Secrets are never printed: a service gets the values its kinds reference as the systemd credentials secret_<secret>.<key>")
 
 // errWithheld is why chalkcfg prints no document of a kind the image declares withheld.
@@ -51,99 +48,61 @@ var errWithheld = errors.New("the image withholds the kind from the node's servi
 // secretKind is the kind of Secrets, which chalkcfg never prints.
 const secretKind = "Secret"
 
-// readDir is os.ReadDir with a directory that does not exist read as empty: a node without config
-// has no /run/chalkos/config, and a test may have no schemas.
-func readDir(dir string) ([]os.DirEntry, error) {
-	entries, err := os.ReadDir(dir)
-	if errors.Is(err, fs.ErrNotExist) {
-		return nil, nil
+// read reads the kinds the image declares and the node's documents. chalkd replaces the config
+// by pointing /run/chalkos/config at a new directory and removing the old one; slot.ReadRuntime
+// resolves the link once, so the documents read are those of one config.
+func (s store) read() (node, error) {
+	docs, err := slot.ReadRuntime(s.run)
+	if err != nil {
+		return node{}, err
 	}
-	return entries, err
-}
-
-// kinds returns the kinds the image declares or the node has documents of, by name.
-func (s store) kinds() (map[string]*kindInfo, error) {
-	kinds := map[string]*kindInfo{}
-	add := func(kind, group string) *kindInfo {
-		k := kinds[kind]
+	n := node{kinds: map[string]*kindInfo{}, docs: docs}
+	add := func(apiVersion, kind string) *kindInfo {
+		k := n.kinds[kind]
 		if k == nil {
 			k = &kindInfo{}
-			kinds[kind] = k
+			n.kinds[kind] = k
 		}
-		if !slices.Contains(k.groups, group) {
-			k.groups = append(k.groups, group)
+		if g := group(apiVersion); !slices.Contains(k.groups, g) {
+			k.groups = append(k.groups, g)
 			slices.Sort(k.groups)
 		}
 		return k
 	}
-	schemas, err := readDir(s.schemas)
-	if err != nil {
-		return nil, err
+	// A test may have no schemas.
+	declared, err := schema.KindsInDir(s.schemas)
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return node{}, err
 	}
-	for _, e := range schemas {
-		base, ok := strings.CutSuffix(e.Name(), ".json")
-		if parts := strings.Split(base, "_"); ok && len(parts) == 3 {
-			withheld, err := withheldSchema(filepath.Join(s.schemas, e.Name()))
-			if err != nil {
-				return nil, err
-			}
-			k := add(parts[2], parts[0])
-			k.withheld = k.withheld || withheld
-		}
-	}
-	groups, err := readDir(s.config)
-	if err != nil {
-		return nil, err
-	}
-	for _, g := range groups {
-		if !g.IsDir() {
-			continue
-		}
-		entries, err := readDir(filepath.Join(s.config, g.Name()))
+	for _, d := range declared {
+		withheld, err := withheldSchema(filepath.Join(s.schemas, schema.FileName(d)))
 		if err != nil {
-			return nil, err
+			return node{}, err
 		}
-		for _, k := range entries {
-			if !k.IsDir() {
-				continue
-			}
-			names, err := s.names(g.Name(), k.Name())
-			if err != nil {
-				return nil, err
-			}
-			add(k.Name(), g.Name()).documents += len(names)
-		}
+		k := add(d.APIVersion, d.Kind)
+		k.withheld = k.withheld || withheld
 	}
-	return kinds, nil
+	for _, d := range docs {
+		add(d.APIVersion, d.Kind).documents++
+	}
+	return n, nil
 }
 
-// names returns the names of the node's documents of a kind, sorted.
-func (s store) names(group, kind string) ([]string, error) {
-	entries, err := readDir(filepath.Join(s.config, group, kind))
-	if err != nil {
-		return nil, err
-	}
-	var names []string
-	for _, e := range entries {
-		if name, ok := strings.CutSuffix(e.Name(), ".json"); ok && !e.IsDir() {
-			names = append(names, name)
-		}
-	}
-	return names, nil
+// group is the group of apiVersion.
+func group(apiVersion string) string {
+	g, _, _ := strings.Cut(apiVersion, "/")
+	return g
 }
 
 // group returns the group of a kind named by its name alone.
-func (s store) group(kind string) (string, error) {
+func (n node) group(kind string) (string, error) {
 	if kind == secretKind {
 		return "", errSecret
 	}
-	kinds, err := s.kinds()
-	if err != nil {
-		return "", err
-	}
-	if k, ok := kinds[kind]; ok && k.withheld {
+	if k, ok := n.kinds[kind]; ok && k.withheld {
 		return "", fmt.Errorf("%s documents are never printed: %w", kind, errWithheld)
 	}
+	kinds := maps.Clone(n.kinds)
 	maps.DeleteFunc(kinds, withheldKind)
 	k, ok := kinds[kind]
 	if !ok {
@@ -158,62 +117,21 @@ func (s store) group(kind string) (string, error) {
 // documents returns the node's document of a kind with the given name, or, for an empty name, all
 // its documents of the kind in name order. A declared kind of which the node has no documents
 // gives none and no error.
-func (s store) documents(kind, name string) ([]document, error) {
-	group, err := s.group(kind)
+func (n node) documents(kind, name string) ([]config.Document, error) {
+	g, err := n.group(kind)
 	if err != nil {
 		return nil, err
 	}
-	names := []string{name}
-	if name == "" {
-		if names, err = s.names(group, kind); err != nil {
-			return nil, err
+	var docs []config.Document
+	for _, d := range n.docs {
+		if d.Kind == kind && group(d.APIVersion) == g && (name == "" || d.Name == name) {
+			docs = append(docs, d)
 		}
-	} else if !namePattern.MatchString(name) {
+	}
+	if name != "" && len(docs) == 0 {
 		return nil, fmt.Errorf("the node has no %s named %q", kind, name)
 	}
-	docs := make([]document, 0, len(names))
-	for _, n := range names {
-		obj, err := readObject(filepath.Join(s.config, group, kind, n+".json"))
-		if errors.Is(err, fs.ErrNotExist) {
-			return nil, fmt.Errorf("the node has no %s named %q", kind, n)
-		}
-		if err != nil {
-			return nil, err
-		}
-		docs = append(docs, document{kind: kind, name: n, object: obj})
-	}
 	return docs, nil
-}
-
-func readObject(path string) (map[string]any, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil, err
-	}
-	dec := json.NewDecoder(bytes.NewReader(data))
-	// Numbers keep their digits, so a large integer prints as it was written.
-	dec.UseNumber()
-	var obj map[string]any
-	if err := dec.Decode(&obj); err != nil {
-		return nil, fmt.Errorf("%s: %w", path, err)
-	}
-	return obj, nil
-}
-
-// resolve returns s with its config directory resolved to the directory it links to. chalkd
-// replaces the config by pointing /run/chalkos/config at a new directory and removing the old
-// one, so a command that resolved the link once reads the kinds and documents of one config, and
-// not the kinds of one and the documents of the next. A missing config directory stays as it is.
-func (s store) resolve() (store, error) {
-	dir, err := filepath.EvalSymlinks(s.config)
-	if errors.Is(err, fs.ErrNotExist) {
-		return s, nil
-	}
-	if err != nil {
-		return store{}, err
-	}
-	s.config = dir
-	return s, nil
 }
 
 // withheldKind tells whether kind is Secret or withheld, for maps.DeleteFunc on the kinds by name.

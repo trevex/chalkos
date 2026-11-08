@@ -12,6 +12,7 @@ import (
 	"go.yaml.in/yaml/v3"
 	"k8s.io/client-go/util/jsonpath"
 
+	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/internal/cli"
 )
 
@@ -60,11 +61,11 @@ func parseJSONPath(expr string) (*jsonpath.JSONPath, error) {
 // write writes docs to w: the document itself as JSON or YAML when one was asked for by name, a
 // list of them otherwise; names alone without a format; and each document's jsonpath or template
 // result on a line of its own.
-func (o output) write(w io.Writer, docs []document, named bool) error {
+func (o output) write(w io.Writer, docs []config.Document, named bool) error {
 	switch o.format {
 	case "":
 		for _, d := range docs {
-			if _, err := fmt.Fprintln(w, d.name); err != nil {
+			if _, err := fmt.Fprintln(w, d.Name); err != nil {
 				return err
 			}
 		}
@@ -72,11 +73,11 @@ func (o output) write(w io.Writer, docs []document, named bool) error {
 	case "json", "yaml":
 		var v any
 		if named {
-			v = docs[0].object
+			v = docs[0].Object
 		} else {
 			items := make([]any, len(docs))
 			for i, d := range docs {
-				items[i] = d.object
+				items[i] = d.Object
 			}
 			// As kubectl lists objects, so jq '.items[]' reads both. It has no apiVersion: v1 is
 			// Kubernetes's core group.
@@ -99,7 +100,7 @@ func (o output) write(w io.Writer, docs []document, named bool) error {
 	}
 	for _, d := range docs {
 		// Filters and templates compare numbers, which a json.Number, a string type, is not.
-		obj := numbers(d.object)
+		obj := numbers(d.Object)
 		var err error
 		if o.format == "jsonpath" {
 			var jp *jsonpath.JSONPath
@@ -110,7 +111,7 @@ func (o output) write(w io.Writer, docs []document, named bool) error {
 			err = o.template.Execute(w, obj)
 		}
 		if err != nil {
-			return fmt.Errorf("%s %s: %w", d.kind, d.name, err)
+			return fmt.Errorf("%s %s: %w", d.Kind, d.Name, err)
 		}
 		if _, err := fmt.Fprintln(w); err != nil {
 			return err

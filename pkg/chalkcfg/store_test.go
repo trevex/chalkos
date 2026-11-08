@@ -8,6 +8,8 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/trevex/chalkos/pkg/config"
 )
 
 // writeFile writes data to path, creating its directories.
@@ -27,7 +29,8 @@ func writeFile(t *testing.T, path, data string) {
 func testNode(t *testing.T) store {
 	t.Helper()
 	dir := t.TempDir()
-	s := store{config: filepath.Join(dir, "config"), schemas: filepath.Join(dir, "schemas")}
+	s := store{run: dir, schemas: filepath.Join(dir, "schemas")}
+	cfg := filepath.Join(dir, "config")
 	for _, name := range []string{
 		"bgp.example.org_v1alpha1_Peer.json",
 		"rack.example.org_v1alpha1_Rack.json",
@@ -39,30 +42,41 @@ func testNode(t *testing.T) store {
 	writeFile(t, filepath.Join(s.schemas, "bundle.example.org_v1alpha1_Bundle.json"),
 		`{"x-chalkos-kind":{"group":"bundle.example.org","version":"v1alpha1","kind":"Bundle","multiple":true,"withheld":true}}`+"\n")
 	// A Bundle file below /run: chalkcfg never prints one, wherever it came from.
-	writeFile(t, filepath.Join(s.config, "bundle.example.org", "Bundle", "manifests.json"),
+	writeFile(t, filepath.Join(cfg, "bundle.example.org", "Bundle", "manifests.json"),
 		`{"apiVersion":"bundle.example.org/v1alpha1","kind":"Bundle","metadata":{"name":"manifests"},"spec":{"objects":[]}}`+"\n")
-	writeFile(t, filepath.Join(s.config, "rack.example.org", "Rack", "rack.json"),
+	writeFile(t, filepath.Join(cfg, "rack.example.org", "Rack", "rack.json"),
 		`{"apiVersion":"rack.example.org/v1alpha1","kind":"Rack","metadata":{"name":"rack"},"spec":{"location":"rack-a/u12"}}`+"\n")
-	writeFile(t, filepath.Join(s.config, "bgp.example.org", "Peer", "uplink.json"),
+	writeFile(t, filepath.Join(cfg, "bgp.example.org", "Peer", "uplink.json"),
 		`{"apiVersion":"bgp.example.org/v1alpha1","kind":"Peer","metadata":{"name":"uplink"},"spec":{"asn":4200000001,"port":179,"tags":["a","b"],"labels":{"zone-a":"z1"}}}`+"\n")
-	writeFile(t, filepath.Join(s.config, "bgp.example.org", "Peer", "backup.json"),
+	writeFile(t, filepath.Join(cfg, "bgp.example.org", "Peer", "backup.json"),
 		`{"apiVersion":"bgp.example.org/v1alpha1","kind":"Peer","metadata":{"name":"backup"},"spec":{"asn":4200000002,"port":1790,"tags":[],"labels":{},"neighbors":[{"ip":"10.0.0.1","asn":65001},{"ip":"10.0.0.2","asn":65002}]}}`+"\n")
 	return s
 }
 
-func names(docs []document) []string {
+func names(docs []config.Document) []string {
 	var out []string
 	for _, d := range docs {
-		out = append(out, d.name)
+		out = append(out, d.Name)
 	}
 	return out
 }
 
-func TestKinds(t *testing.T) {
-	kinds, err := testNode(t).kinds()
+// documents reads s and returns its documents of a kind, as get does.
+func documents(t *testing.T, s store, kind, name string) ([]config.Document, error) {
+	t.Helper()
+	n, err := s.read()
 	if err != nil {
 		t.Fatal(err)
 	}
+	return n.documents(kind, name)
+}
+
+func TestKinds(t *testing.T) {
+	n, err := testNode(t).read()
+	if err != nil {
+		t.Fatal(err)
+	}
+	kinds := n.kinds
 	want := map[string]kindInfo{
 		"Peer":   {groups: []string{"bgp.example.org"}, documents: 2},
 		"Rack":   {groups: []string{"rack.example.org"}, documents: 1},
@@ -81,27 +95,27 @@ func TestKinds(t *testing.T) {
 
 func TestDocuments(t *testing.T) {
 	s := testNode(t)
-	docs, err := s.documents("Peer", "")
+	docs, err := documents(t, s, "Peer", "")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if got := names(docs); !reflect.DeepEqual(got, []string{"backup", "uplink"}) {
 		t.Errorf("Peers = %v, want backup and uplink in name order", got)
 	}
-	spec := docs[1].object["spec"].(map[string]any)
+	spec := docs[1].Object["spec"].(map[string]any)
 	if asn := spec["asn"]; asn != json.Number("4200000001") {
 		t.Errorf("asn = %#v, want the number with its digits", asn)
 	}
 
-	docs, err = s.documents("Rack", "rack")
+	docs, err = documents(t, s, "Rack", "rack")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(docs) != 1 || docs[0].kind != "Rack" || docs[0].object["spec"].(map[string]any)["location"] != "rack-a/u12" {
+	if len(docs) != 1 || docs[0].Kind != "Rack" || docs[0].Object["spec"].(map[string]any)["location"] != "rack-a/u12" {
 		t.Errorf("Rack rack = %+v", docs)
 	}
 
-	docs, err = s.documents("Site", "")
+	docs, err = documents(t, s, "Site", "")
 	if err != nil || len(docs) != 0 {
 		t.Errorf("Site = %v, %v; want no documents and no error", docs, err)
 	}
@@ -117,23 +131,24 @@ func TestDocumentsRefused(t *testing.T) {
 		{"Secret", "", "Secrets are never printed"},
 		{"Bundle", "", "Bundle documents are never printed: the image withholds the kind"},
 	} {
-		_, err := s.documents(c.kind, c.name)
+		_, err := documents(t, s, c.kind, c.name)
 		if err == nil || !strings.Contains(err.Error(), c.want) {
 			t.Errorf("%s %q: err = %v, want %q", c.kind, c.name, err, c.want)
 		}
 	}
-	if _, err := s.documents("Secret", ""); !errors.Is(err, errSecret) {
+	if _, err := documents(t, s, "Secret", ""); !errors.Is(err, errSecret) {
 		t.Errorf("Secret: err = %v, want errSecret", err)
 	}
-	if _, err := s.documents("Bundle", "manifests"); !errors.Is(err, errWithheld) {
+	if _, err := documents(t, s, "Bundle", "manifests"); !errors.Is(err, errWithheld) {
 		t.Errorf("Bundle: err = %v, want errWithheld", err)
 	}
 }
 
 func TestKindInTwoGroups(t *testing.T) {
 	s := testNode(t)
-	writeFile(t, filepath.Join(s.config, "other.example.org", "Rack", "x.json"), `{"kind":"Rack"}`+"\n")
-	_, err := s.documents("Rack", "")
+	writeFile(t, filepath.Join(s.run, "config", "other.example.org", "Rack", "x.json"),
+		`{"apiVersion":"other.example.org/v1alpha1","kind":"Rack","metadata":{"name":"x"}}`+"\n")
+	_, err := documents(t, s, "Rack", "")
 	if err == nil || !strings.Contains(err.Error(), "the kind Rack is in more than one group (other.example.org, rack.example.org)") {
 		t.Errorf("err = %v", err)
 	}
@@ -143,10 +158,10 @@ func TestKindInTwoGroups(t *testing.T) {
 func TestWithoutSchemas(t *testing.T) {
 	s := testNode(t)
 	s.schemas = filepath.Join(t.TempDir(), "none")
-	if docs, err := s.documents("Rack", "rack"); err != nil || len(docs) != 1 {
+	if docs, err := documents(t, s, "Rack", "rack"); err != nil || len(docs) != 1 {
 		t.Errorf("Rack rack = %v, %v", docs, err)
 	}
-	if _, err := s.documents("Site", ""); err == nil || !strings.Contains(err.Error(), "declares no kind Site") {
+	if _, err := documents(t, s, "Site", ""); err == nil || !strings.Contains(err.Error(), "declares no kind Site") {
 		t.Errorf("Site: err = %v", err)
 	}
 }
@@ -154,41 +169,8 @@ func TestWithoutSchemas(t *testing.T) {
 // A node without config has no /run/chalkos/config.
 func TestWithoutConfig(t *testing.T) {
 	s := testNode(t)
-	s.config = filepath.Join(t.TempDir(), "none")
-	if docs, err := s.documents("Rack", ""); err != nil || len(docs) != 0 {
+	s.run = filepath.Join(t.TempDir(), "none")
+	if docs, err := documents(t, s, "Rack", ""); err != nil || len(docs) != 0 {
 		t.Errorf("Rack = %v, %v; want no documents", docs, err)
-	}
-}
-
-// A store resolved once keeps reading the config it resolved while chalkd replaces the config.
-func TestResolve(t *testing.T) {
-	s := testNode(t)
-	first, second := s.config+"-a", s.config+"-b"
-	if err := os.Rename(s.config, first); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Symlink(filepath.Base(first), s.config); err != nil {
-		t.Fatal(err)
-	}
-	r, err := s.resolve()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Mkdir(second, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Remove(s.config); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Symlink(filepath.Base(second), s.config); err != nil {
-		t.Fatal(err)
-	}
-	if docs, err := r.documents("Rack", "rack"); err != nil || len(docs) != 1 {
-		t.Errorf("Rack rack = %v, %v; want the document of the config resolved", docs, err)
-	}
-
-	s.config = filepath.Join(t.TempDir(), "none")
-	if r, err := s.resolve(); err != nil || r.config != s.config {
-		t.Errorf("resolve without config = %+v, %v", r, err)
 	}
 }

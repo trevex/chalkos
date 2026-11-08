@@ -8,15 +8,16 @@ import (
 	"github.com/trevex/chalkos/pkg/internal/cli"
 )
 
-// Where chalkd writes the node's documents, and where the image keeps its kinds' schemas.
+// Where chalkd writes the node's documents, below config, and where the image keeps its kinds'
+// schemas.
 const (
-	configDir  = "/run/chalkos/config"
+	runDir     = "/run/chalkos"
 	schemasDir = "/etc/chalkos/schemas"
 )
 
 // NewCommand returns chalkcfg's root command, which reads the documents of the node it runs on.
 func NewCommand() *cobra.Command {
-	return newCommand(store{config: configDir, schemas: schemasDir})
+	return newCommand(store{run: runDir, schemas: schemasDir})
 }
 
 func newCommand(s store) *cobra.Command {

@@ -131,7 +131,7 @@ func compile(files map[string][]byte, dir string) (*Schemas, error) {
 		if _, dup := ss.schemas[key(k.APIVersion, k.Kind)]; dup {
 			return nil, fmt.Errorf("%s: duplicate kind %s %s", path, k.APIVersion, k.Kind)
 		}
-		if want := fileName(k); want != name {
+		if want := FileName(k); want != name {
 			return nil, fmt.Errorf("%s: should be named %s for its kind %s %s", path, want, k.APIVersion, k.Kind)
 		}
 		roots[mapID(doc.(map[string]any))] = true
@@ -146,10 +146,30 @@ func compile(files map[string][]byte, dir string) (*Schemas, error) {
 	return ss, nil
 }
 
-// fileName is the name a schema of k must have, as lib/kinds/schema.nix also builds it.
-func fileName(k Kind) string {
+// FileName is the name a schema of k must have, as lib/kinds/schema.nix also builds it.
+func FileName(k Kind) string {
 	group, version, _ := strings.Cut(k.APIVersion, "/")
 	return group + "_" + version + "_" + k.Kind + ".json"
+}
+
+// KindsInDir returns the kinds the names of the schema files in dir give, as FileName builds the
+// names, in the order of the names. It reads no file, so a kind has its apiVersion and kind
+// alone, and it skips directories and the names FileName builds for no kind.
+func KindsInDir(dir string) ([]Kind, error) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil, err
+	}
+	var kinds []Kind
+	for _, e := range entries {
+		base, ok := strings.CutSuffix(e.Name(), ".json")
+		parts := strings.Split(base, "_")
+		if !ok || e.IsDir() || len(parts) != 3 {
+			continue
+		}
+		kinds = append(kinds, Kind{APIVersion: parts[0] + "/" + parts[1], Kind: parts[2]})
+	}
+	return kinds, nil
 }
 
 // decodeDoc decodes the JSON document of the file at path with jsonschema.UnmarshalJSON, which

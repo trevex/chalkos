@@ -28,15 +28,15 @@ func getCommand(s store) *cobra.Command {
 			return nil
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
-			s, err := s.resolve()
+			if len(args) == 0 && format != "" {
+				return cli.Usagef("--output needs a kind")
+			}
+			n, err := s.read()
 			if err != nil {
 				return err
 			}
 			if len(args) == 0 {
-				if format != "" {
-					return cli.Usagef("--output needs a kind")
-				}
-				return s.listKinds(cmd.OutOrStdout())
+				return n.listKinds(cmd.OutOrStdout())
 			}
 			out, err := parseOutput(format)
 			if err != nil {
@@ -46,7 +46,7 @@ func getCommand(s store) *cobra.Command {
 			if len(args) == 2 {
 				name = args[1]
 			}
-			docs, err := s.documents(kind, name)
+			docs, err := n.documents(kind, name)
 			if err != nil {
 				return err
 			}
@@ -68,11 +68,8 @@ func getCommand(s store) *cobra.Command {
 
 // listKinds writes a table of the kinds the image declares, Secret and withheld kinds excepted,
 // with their groups and the node's number of documents of each.
-func (s store) listKinds(w io.Writer) error {
-	kinds, err := s.kinds()
-	if err != nil {
-		return err
-	}
+func (n node) listKinds(w io.Writer) error {
+	kinds := maps.Clone(n.kinds)
 	maps.DeleteFunc(kinds, withheldKind)
 	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
 	fmt.Fprintln(tw, "KIND\tGROUP\tDOCUMENTS")

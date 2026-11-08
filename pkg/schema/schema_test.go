@@ -1,8 +1,11 @@
 package schema
 
 import (
+	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -62,6 +65,32 @@ func TestLoadSchemasOnFixture(t *testing.T) {
 	}`)
 	if err := ss.Validate(doc); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// KindsInDir names the kinds of the files FileName names, and of no other file or directory.
+func TestKindsInDir(t *testing.T) {
+	dir := t.TempDir()
+	want := []Kind{{APIVersion: "a.example.org/v1", Kind: "Thing"}, {APIVersion: "b.example.org/v1alpha1", Kind: "Other"}}
+	for _, k := range want {
+		if err := os.WriteFile(filepath.Join(dir, FileName(k)), []byte("{}"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, name := range []string{"wrong_name.json", "a_b_C.txt"} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("{}"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.Mkdir(filepath.Join(dir, "c.example.org_v1_Dir.json"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	got, err := KindsInDir(dir)
+	if err != nil || !slices.Equal(got, want) {
+		t.Errorf("KindsInDir = %+v, %v; want %+v", got, err, want)
+	}
+	if _, err := KindsInDir(filepath.Join(dir, "none")); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("KindsInDir without the directory: err = %v, want fs.ErrNotExist", err)
 	}
 }
 

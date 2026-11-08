@@ -5,9 +5,16 @@ callPackage ./go-module.nix { } {
   pname = "chalkcfg";
   paths = [
     ../cmd/chalkcfg
+    ../pkg/atomicfile
     ../pkg/chalkcfg
+    ../pkg/config
+    ../pkg/identity
+    ../pkg/imageref
     ../pkg/internal/cli
     ../pkg/internal/strs
+    ../pkg/jsonfile
+    ../pkg/schema
+    ../pkg/storage
   ];
   ldflags = [
     "-s"
