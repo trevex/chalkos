@@ -89,6 +89,8 @@ func (k Kubeconfig) Encode() ([]byte, error) {
 	}
 	var user kubeconfigUser
 	switch {
+	case k.TokenFile != "" && (k.ClientFile != "" || k.Client != pki.CertKey{}):
+		return nil, errors.New("a kubeconfig authenticates with a client certificate or a token file, not both")
 	case k.TokenFile != "":
 		user.TokenFile = k.TokenFile
 	case k.ClientFile != "":

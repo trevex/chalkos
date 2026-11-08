@@ -231,6 +231,14 @@ func TestKubeconfig(t *testing.T) {
 	if _, err := (Kubeconfig{Name: "lab", Server: "https://x"}).Encode(); err == nil {
 		t.Error("encoded a kubeconfig without credentials")
 	}
+	for name, kc := range map[string]Kubeconfig{
+		"client file": {Name: "lab", Server: "https://x", CAFile: "/ca.crt", ClientFile: "/client.pem", TokenFile: "/token"},
+		"client":      {Name: "lab", Server: "https://x", CAFile: "/ca.crt", Client: admin, TokenFile: "/token"},
+	} {
+		if _, err := kc.Encode(); err == nil {
+			t.Errorf("encoded a kubeconfig with a token file and a %s", name)
+		}
+	}
 	if _, err := IssueAdmin(k.CA, "admin", 0, now); err == nil {
 		t.Error("issued an admin certificate without validity")
 	}
