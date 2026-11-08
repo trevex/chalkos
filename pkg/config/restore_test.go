@@ -9,8 +9,8 @@ import (
 )
 
 // A Secret value that is no string keeps its JSON type in Redact's form, with no content of its
-// own, so a schema of strings refuses it as it refuses the value; Hash still hashes it, so the
-// version of a set tells two such values apart.
+// own, so a schema of strings refuses it as it refuses the value. Hash hashes the redacted form,
+// so two such values hash alike; no schema accepts either, so no delivery is named by them.
 func TestRedactKeepsTheTypeOfOtherValues(t *testing.T) {
 	for value, want := range map[string]string{
 		"12345":  `0`,
@@ -31,8 +31,8 @@ func TestRedactKeepsTheTypeOfOtherValues(t *testing.T) {
 	}
 	a := parseDocs(t, strings.Replace(withSecrets, "token: s3cret", "token: 1", 1))
 	b := parseDocs(t, strings.Replace(withSecrets, "token: s3cret", "token: 2", 1))
-	if mustHash(t, a) == mustHash(t, b) {
-		t.Error("two numbers hash the same")
+	if mustHash(t, a) != mustHash(t, b) {
+		t.Error("two numbers hash apart")
 	}
 }
 

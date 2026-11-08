@@ -103,7 +103,7 @@ func TestHashChangesWithAValue(t *testing.T) {
 }
 
 func TestHashHidesSecretValues(t *testing.T) {
-	c, err := canonical(parseDocs(t, hashed))
+	c, err := json.Marshal(Redact(parseDocs(t, hashed)).Objects())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -200,8 +200,8 @@ spec: {hostname: n1}
 
 // KindHashes of redacted documents read back as written, as a baseline reads them, are those of
 // the documents Redact gave, also of a document that embeds a Secret object: reading them back
-// redacts nothing again. Such a document is hashed with the values of the Secret object hidden,
-// which Hash keeps, so its kind hash is no Hash of its documents, and a rotated value changes it.
+// redacts nothing again. A kind that references no Secret hashes as Hash hashes its documents,
+// the embedded Secret object's values hidden alike, and a rotated value changes it.
 func TestKindHashesReadBack(t *testing.T) {
 	s := imageSchemas(t)
 	const bundle = "---\napiVersion: bundle.example.org/v1alpha1\nkind: Bundle\nmetadata: {name: apps}\n" +
@@ -215,8 +215,8 @@ func TestKindHashesReadBack(t *testing.T) {
 	if err != nil || !maps.Equal(got, want) || want["Bundle"] == "" {
 		t.Errorf("read back: %v, %v; redacted: %v", got, err, want)
 	}
-	if h, err := Hash(parseDocs(t, bundle)); err != nil || h == want["Bundle"] {
-		t.Errorf("the Bundle's kind hash is its Hash %s: %v", h, err)
+	if h, err := Hash(parseDocs(t, bundle)); err != nil || h != want["Bundle"] {
+		t.Errorf("the Bundle's kind hash %s is not its Hash %s: %v", want["Bundle"], h, err)
 	}
 	rotated, err := KindHashes(Redact(parseDocs(t, hashed+strings.Replace(bundle, "plain", "other", 1))), s)
 	if err != nil || rotated["Bundle"] == want["Bundle"] || rotated["Demo"] != want["Demo"] {

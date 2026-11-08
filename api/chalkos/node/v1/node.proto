@@ -527,7 +527,7 @@ message GetConfigResponse {
   // The slot's documents as delivered, one JSON document each separated by ---, as
   // ApplyConfigRequest.config holds them. The values of Secrets and of the Secret objects a
   // document embeds, such as a Kubernetes Secret, are replaced by the lower-case hex SHA-256 of
-  // the value, as config_version hashes a Secret's.
+  // the value. config_version is the hash of these documents.
   string documents = 1;
   // The slot's version, as StatusResponse.config_version gives it.
   string version = 2;
@@ -729,8 +729,8 @@ message StatusResponse {
   // The platform the running image was built for.
   string platform = 8;
   // SHA-256 of the config the node runs, as it was delivered, in lower-case hex: of its documents
-  // in canonical JSON, ordered by apiVersion, kind and name, with each Secret value replaced by
-  // its own SHA-256. Empty on a node that runs no config.
+  // as GetConfigResponse.documents holds them, with their secret values replaced by their SHA-256,
+  // in canonical JSON, ordered by apiVersion, kind and name. Empty on a node that runs no config.
   string config_version = 9;
   // The version of the config kept for the image in the inactive slot, BootStatus.staged, as
   // config_version gives the running one's; empty without a staged image or config for it.

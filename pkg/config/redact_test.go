@@ -129,7 +129,7 @@ func TestRedactedIsNoSliceOfDocuments(t *testing.T) {
 
 // Redacted documents read back as they were written, by RedactedObjects or ParseRedacted, are
 // those Redact gave: reading them hides nothing again, so their hashes and their Secret values
-// stay those Redact gave.
+// stay those of the documents with their values.
 func TestRedactedReadBack(t *testing.T) {
 	docs := parseDocs(t, withSecrets)
 	want := Redact(docs)
@@ -146,9 +146,21 @@ func TestRedactedReadBack(t *testing.T) {
 			t.Errorf("%s: %v, want %v", name, got.Objects(), want.Objects())
 		}
 		h, err := got.hash()
-		if w, _ := want.hash(); err != nil || h != w {
-			t.Errorf("%s: hash %s, %v; want %s", name, h, err, w)
+		if err != nil || h != mustHash(t, docs) {
+			t.Errorf("%s: hash %s, %v; want Hash of the documents %s", name, h, err, mustHash(t, docs))
 		}
 	}
 }
 
+// Hash is the hash of the documents Redact gives, so it hides every value Redact hides, an
+// embedded Secret object's among them.
+func TestHashIsOfRedact(t *testing.T) {
+	docs := parseDocs(t, withSecrets)
+	rotated := parseDocs(t, strings.Replace(withSecrets, "stringData: {p: plain}", "stringData: {p: other}", 1))
+	if want, err := Redact(docs).hash(); err != nil || mustHash(t, docs) != want {
+		t.Errorf("Hash %s, want %s: %v", mustHash(t, docs), want, err)
+	}
+	if mustHash(t, docs) == mustHash(t, rotated) {
+		t.Error("an embedded Secret object's rotated value hashes alike")
+	}
+}

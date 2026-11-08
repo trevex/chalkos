@@ -186,8 +186,9 @@ Only these functions return a `config.Redacted`:
 - `Redacted.Defaulted` and `config.TranslateRedacted` fill in the defaults of an image's schemas.
 
 `Redact` takes plain documents, and a `config.Redacted` does not convert to them, so no value is
-hashed twice. `config.KindHashes`, which the effects compare, hashes each kind's redacted
-documents.
+hashed twice. The config's version, `config.Hash`, is the SHA-256 of the redacted documents in
+canonical JSON, and `config.KindHashes`, which the effects compare, hashes each kind's redacted
+documents the same way.
 
 ## The node API
 

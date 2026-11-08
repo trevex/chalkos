@@ -278,8 +278,8 @@ func hideValues(data map[string]any) map[string]any {
 // also one Go built as an int or a float64 rather than parsed as a json.Number. A value that is no
 // string keeps its type, so a schema that refuses it refuses the hidden document with the same
 // message, as a schema's message of a value of the wrong type names the type alone. Secret values
-// are strings, so a document that holds another passes no check, and nothing compares the zero
-// values.
+// are strings, so a document that holds another passes no check, and no delivery is named by
+// the zero values its hash then holds.
 func hideValue(v any) any {
 	switch v := v.(type) {
 	case string:
