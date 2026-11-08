@@ -13,6 +13,7 @@ import (
 
 	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/refusals"
+	"github.com/trevex/chalkos/pkg/schema"
 )
 
 // Facts gives the node's facts by name; nil when it has none, as on a node that does not declare
@@ -41,7 +42,7 @@ type Input struct {
 // names neither, and its message says what it is about.
 type Failure struct {
 	refusals.Refusal
-	Takes Takes
+	Takes schema.Takes
 }
 
 // FactError is a fact a rule reads that could not be loaded; it refuses the delivery.
@@ -302,14 +303,14 @@ func celValue(v any) any {
 // refusal, whose message says what to do instead, a reinstall of the node, or chalkctl storage
 // reset. Each rule's message names the change and its remedy.
 func Refusal(failures []Failure, node string) string {
-	takes := func(t Takes) bool {
+	takes := func(t schema.Takes) bool {
 		return slices.ContainsFunc(failures, func(f Failure) bool { return f.Takes == t })
 	}
 	head := "the config takes chalkctl storage reset"
 	switch {
-	case takes(Refuse):
+	case takes(schema.Refuse):
 		head = "the config is refused"
-	case takes(Reinstall):
+	case takes(schema.Reinstall):
 		head = "the config takes a reinstall of " + node
 	}
 	msgs := make([]string, len(failures))

@@ -9,12 +9,7 @@
           "type": "string",
           "x-chalkos-rules": [{ "rule": "self == oldSelf || facts.recorded == null", "message": "the size | stays", "takes": "refuse", "description": "A volume keeps its size, <size>." }]
         },
-        "taints": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/taint"
-          }
-        }
+        "taint": { "$ref": "#/$defs/taint" }
       }
     }
   },

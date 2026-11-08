@@ -1,8 +1,6 @@
 package main
 
 import (
-	"cmp"
-	"encoding/json"
 	"fmt"
 	"maps"
 	"os"
@@ -19,6 +17,7 @@ import (
 	"github.com/trevex/chalkos/pkg/facts"
 	"github.com/trevex/chalkos/pkg/outputs"
 	"github.com/trevex/chalkos/pkg/rules"
+	"github.com/trevex/chalkos/pkg/schema"
 )
 
 // builtinsDescription is the description of the page of built-ins.
@@ -73,13 +72,13 @@ const (
 // builtinRule is a change rule of a kind: of the kind itself, whose field is empty, or of one of
 // its fields.
 type builtinRule struct {
-	rules.Rule
+	schema.Rule
 	field string
 }
 
 // kindRules are the change rules of a kind.
 type kindRules struct {
-	kind  kindSchema
+	kind  schema.Kind
 	rules []builtinRule
 }
 
@@ -208,34 +207,10 @@ func writeBuiltins(page, def, plain, router string) error {
 }
 
 // readBuiltinImage reads the schemas, facts.json, validators.json, outputs.json, effects.json and
-// diagnostics.json of a rules image.
+// diagnostics.json of a rules image, and the change rules of its kinds as the evaluator compiles
+// them.
 func readBuiltinImage(dir string) (builtinImage, error) {
 	var img builtinImage
-	entries, err := os.ReadDir(filepath.Join(dir, "schemas"))
-	if err != nil {
-		return img, err
-	}
-	var kinds []kindSchema
-	for _, e := range entries {
-		if e.IsDir() || filepath.Ext(e.Name()) != ".json" {
-			continue
-		}
-		k, err := readKindSchema(filepath.Join(dir, "schemas", e.Name()))
-		if err != nil {
-			return img, err
-		}
-		kinds = append(kinds, k)
-	}
-	slices.SortFunc(kinds, compareKinds)
-	for _, k := range kinds {
-		ruled, err := schemaRules(k)
-		if err != nil {
-			return img, err
-		}
-		if len(ruled) > 0 {
-			img.kinds = append(img.kinds, kindRules{k, ruled})
-		}
-	}
 	// contract.Load takes a missing file for an image that declares none, but a rules image holds
 	// all five.
 	for _, name := range []string{contract.FactsFile, contract.ValidatorsFile, contract.OutputsFile, contract.EffectsFile, contract.DiagnosticsFile} {
@@ -247,100 +222,42 @@ func readBuiltinImage(dir string) (builtinImage, error) {
 	if err != nil {
 		return img, err
 	}
+	set, err := c.Rules()
+	if err != nil {
+		return img, fmt.Errorf("%s: %w", dir, err)
+	}
+	img.kinds = kindsRules(set)
 	img.facts, img.validators, img.outputs, img.effects, img.diagnostics = c.Facts, c.Validators, c.Outputs, c.Effects, c.Diagnostics
 	return img, nil
 }
 
-// schemaRules returns a kind's rules: its own, in x-chalkos-kind, then its fields', in the order of
-// their paths.
-func schemaRules(k kindSchema) ([]builtinRule, error) {
-	own, err := decodeRules(asMap(k.root["x-chalkos-kind"])["rules"], "")
-	if err != nil {
-		return nil, fmt.Errorf("%s: %w", k.path, err)
+// kindsRules are the rules of set by kind, in the order of the page of config kinds, each kind's
+// in the set's order: its own, then its fields' by path, each field written as on the page of
+// config kinds.
+func kindsRules(set *rules.Set) []kindRules {
+	byKind := map[schema.Kind][]builtinRule{}
+	for _, p := range set.Programs {
+		byKind[p.Kind] = append(byKind[p.Kind], builtinRule{Rule: p.Rule, field: schema.FieldPath(p.Path)})
 	}
-	fieldRules, err := ruledFields(k.root, "spec", resolve(k.root, asMap(props(k.root)["spec"])))
-	if err != nil {
-		return nil, fmt.Errorf("%s: %w", k.path, err)
+	var kinds []kindRules
+	for _, k := range slices.SortedFunc(maps.Keys(byKind), compareKinds) {
+		kinds = append(kinds, kindRules{k, byKind[k]})
 	}
-	return append(own, fieldRules...), nil
-}
-
-// ruledFields returns the rules of the schema s, of the field at path, and of the fields within it,
-// written as on the page of config kinds.
-func ruledFields(root map[string]any, path string, s map[string]any) ([]builtinRule, error) {
-	s = resolve(root, s)
-	rules, err := decodeRules(s["x-chalkos-rules"], path)
-	if err != nil {
-		return nil, err
-	}
-	if isKeyRef(s) || s["x-chalkos-kubernetes-object"] == true {
-		return rules, nil
-	}
-	var inner [][]builtinRule
-	p := props(s)
-	for _, name := range slices.Sorted(maps.Keys(p)) {
-		r, err := ruledFields(root, path+"."+name, asMap(p[name]))
-		if err != nil {
-			return nil, err
-		}
-		inner = append(inner, r)
-	}
-	if v, ok := s["additionalProperties"].(map[string]any); ok {
-		r, err := ruledFields(root, path+".<name>", v)
-		if err != nil {
-			return nil, err
-		}
-		inner = append(inner, r)
-	}
-	if items, ok := s["items"].(map[string]any); ok {
-		r, err := ruledFields(root, path+"[]", items)
-		if err != nil {
-			return nil, err
-		}
-		inner = append(inner, r)
-	}
-	for _, branch := range asSlice(s["anyOf"]) {
-		r, err := ruledFields(root, path, asMap(branch))
-		if err != nil {
-			return nil, err
-		}
-		inner = append(inner, r)
-	}
-	return slices.Concat(append([][]builtinRule{rules}, inner...)...), nil
-}
-
-// decodeRules decodes the rules of an x-chalkos-rules, or of x-chalkos-kind's rules, of the field
-// at field.
-func decodeRules(v any, field string) ([]builtinRule, error) {
-	if v == nil {
-		return nil, nil
-	}
-	data, err := json.Marshal(v)
-	if err != nil {
-		return nil, err
-	}
-	var decoded []rules.Rule
-	if err := json.Unmarshal(data, &decoded); err != nil {
-		return nil, fmt.Errorf("the rules of %s: %w", cmp.Or(field, "the kind"), err)
-	}
-	out := make([]builtinRule, len(decoded))
-	for i, r := range decoded {
-		r.Takes = cmp.Or(r.Takes, rules.Refuse)
-		out[i] = builtinRule{Rule: r, field: field}
-	}
-	return out, nil
+	return kinds
 }
 
 // compareKinds orders kinds as the page of config kinds does: chalkos.dev's first, then by group
 // and kind.
-func compareKinds(a, b kindSchema) int {
-	if (a.group == "chalkos.dev") != (b.group == "chalkos.dev") {
-		if a.group == "chalkos.dev" {
+func compareKinds(a, b schema.Kind) int {
+	ga, _, _ := strings.Cut(a.APIVersion, "/")
+	gb, _, _ := strings.Cut(b.APIVersion, "/")
+	if (ga == "chalkos.dev") != (gb == "chalkos.dev") {
+		if ga == "chalkos.dev" {
 			return -1
 		}
 		return 1
 	}
-	return strings.Compare(a.group+"\x00"+a.kind, b.group+"\x00"+b.kind)
+	return strings.Compare(ga+"\x00"+a.Kind, gb+"\x00"+b.Kind)
 }
 
 // splitRules splits the rules of the kinds of def, the image named image, into those of every
@@ -349,21 +266,21 @@ func compareKinds(a, b kindSchema) int {
 func splitRules(def, plain []kindRules, image string) (every, added []kindRules, err error) {
 	inDefault := map[string][]builtinRule{}
 	for _, k := range def {
-		inDefault[k.kind.kind] = k.rules
+		inDefault[k.kind.Kind] = k.rules
 	}
 	inPlain := map[string][]builtinRule{}
 	for _, k := range plain {
-		inPlain[k.kind.kind] = k.rules
+		inPlain[k.kind.Kind] = k.rules
 		for _, r := range k.rules {
-			if !slices.Contains(inDefault[k.kind.kind], r) {
-				return nil, nil, fmt.Errorf("the image without Kubernetes has a rule of %s that %s lacks: %s", k.kind.kind, image, r.Rule.Rule)
+			if !slices.Contains(inDefault[k.kind.Kind], r) {
+				return nil, nil, fmt.Errorf("the image without Kubernetes has a rule of %s that %s lacks: %s", k.kind.Kind, image, r.Rule.Rule)
 			}
 		}
 	}
 	for _, k := range def {
 		var shared, more []builtinRule
 		for _, r := range k.rules {
-			if slices.Contains(inPlain[k.kind.kind], r) {
+			if slices.Contains(inPlain[k.kind.Kind], r) {
 				shared = append(shared, r)
 			} else {
 				more = append(more, r)
@@ -467,12 +384,12 @@ func writeRulesSection(b *strings.Builder, anchor, intro string, kinds []kindRul
 	}
 	b.WriteString(intro + "\n")
 	for _, k := range kinds {
-		id := "rules-" + strings.ToLower(k.kind.kind)
+		id := "rules-" + strings.ToLower(k.kind.Kind)
 		if taken[id] {
-			id = anchor + "-" + strings.ToLower(k.kind.kind)
+			id = anchor + "-" + strings.ToLower(k.kind.Kind)
 		}
 		taken[id] = true
-		fmt.Fprintf(b, "\n#### %s { #%s }\n\n", k.kind.kind, id)
+		fmt.Fprintf(b, "\n#### %s { #%s }\n\n", k.kind.Kind, id)
 		b.WriteString("| Rule | Field | Guards | Takes | Expression | Message |\n| --- | --- | --- | --- | --- | --- |\n")
 		var after []string
 		for i, r := range k.rules {
@@ -597,7 +514,7 @@ func writeFacts(b *strings.Builder, anchor, intro string, names, changed []strin
 		for _, k := range img.kinds {
 			for _, r := range k.rules {
 				if slices.Contains(matches(readFact, r.Rule.Rule, r.MessageExpression), name) {
-					kinds = append(kinds, k.kind.kind)
+					kinds = append(kinds, k.kind.Kind)
 					break
 				}
 			}

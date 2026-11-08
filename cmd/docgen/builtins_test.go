@@ -82,7 +82,7 @@ func TestWriteBuiltins(t *testing.T) {
 		"| Rule | Field | Guards | Takes | Expression | Message |\n| --- | --- | --- | --- | --- | --- |\n" +
 			"| 1 | — | A volume keeps its recorded size, and its disk is plugged in. | `reset` | after the table | after the table |\n" +
 			"| 2 | `spec.size` | A volume keeps its size, &lt;size>. | `refuse` | `self == oldSelf || facts.recorded == null` | the size \\| stays |\n" +
-			"| 3 | `spec.taints[].key` | — | `refuse` | `self != ''` | a key |\n",
+			"| 3 | `spec.taint.key` | — | `refuse` | `self != ''` | a key |\n",
 		"\nExpression of rule 1:\n\n```text\nfacts.recorded == null || documents.all(n, documents[n].spec.size == facts.recorded.volumes[n].size && facts.disks[n].present)\n```\n",
 		"\nMessage of rule 1:\n\n```text\ndocuments.filter(n, true)\n  .join(\"; \")\n```\n",
 		"| 1 | — | The node keeps the type of its share. | `refuse` | `facts.share == null || documents.all(n, documents[n].spec.type == facts.share.kind)` | `\"the type is \" + facts.share.kind` |\n" +

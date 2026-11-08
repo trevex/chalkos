@@ -1,7 +1,6 @@
 package rules
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"slices"
@@ -11,37 +10,8 @@ import (
 	"cel.dev/cel-go/checker"
 	celast "cel.dev/cel-go/common/ast"
 
-	"github.com/trevex/chalkos/pkg/jsonfile"
 	"github.com/trevex/chalkos/pkg/schema"
 )
-
-// Takes is what a change a rule refuses needs instead.
-type Takes string
-
-const (
-	// Refuse: the change cannot be made; the message says what to do instead.
-	Refuse Takes = "refuse"
-	// Reset: chalkctl storage reset carries the change out.
-	Reset Takes = "reset"
-	// Reinstall: only a reinstall of the node carries the change out.
-	Reinstall Takes = "reinstall"
-)
-
-// Rule is a rule as a schema declares it: in a field's x-chalkos-rules, or in the rules of its
-// kind's x-chalkos-kind.
-type Rule struct {
-	// Rule is a CEL expression that is true for every change the image accepts.
-	Rule string `json:"rule"`
-	// Message says why a change is refused and what to do instead; MessageExpression is CEL that
-	// yields it, and the message is used when the expression fails.
-	Message           string `json:"message,omitempty"`
-	MessageExpression string `json:"messageExpression,omitempty"`
-	// Takes defaults to Refuse.
-	Takes Takes `json:"takes,omitempty"`
-	// Description says what the rule guards, for the reference pages; the rule never reads or
-	// says it.
-	Description string `json:"description,omitempty"`
-}
 
 // Cost limits. A rule's estimated cost assumes every list, map and string holds sizeHint
 // elements or characters, so a loop over the documents of a kind costs about sizeHint times its
@@ -55,7 +25,7 @@ const (
 
 // Program is a rule compiled for the kind or field that declares it.
 type Program struct {
-	Rule
+	schema.Rule
 	// Kind is the kind that declares the rule.
 	Kind schema.Kind
 	// Path is the field's path below the document, such as spec.ipFamilies; nil for a rule of
@@ -84,48 +54,48 @@ type Set struct {
 	Programs []*Program
 }
 
-// Compile compiles the rules every schema of s declares. It reports every rule that does not
-// compile, each naming the kind or field that declares it.
+// Compile compiles the rules every schema of s declares: a kind's own, then those of its fields
+// in the order schema.WalkSchema reaches them, which is by path. It reports every rule that does
+// not compile, each naming the kind or field that declares it. A rule binds self to the value at
+// its path, which a list item or a map value has none of, so rules below a list's items or a map's
+// values are refused: they are declared on the list or the map instead. Without s it compiles
+// none.
 func Compile(s *schema.Schemas) (*Set, error) {
 	set := &Set{}
+	if s == nil {
+		return set, nil
+	}
 	var errs []error
 	// Kind names are unique within an image, so document() names a kind by its name alone.
 	apiVersions := map[string]string{}
 	for _, k := range s.Kinds() {
 		apiVersions[k.Kind] = k.APIVersion
 	}
-	for _, k := range s.Kinds() {
-		raw, _ := s.Raw(k.APIVersion, k.Kind)
-		doc, _ := raw.(map[string]any)
-		xk, _ := doc["x-chalkos-kind"].(map[string]any)
-		if declared, ok := xk["rules"]; ok {
-			rules, err := decodeRules(declared)
+	add := func(k schema.Kind, path []string, rules []schema.Rule) {
+		for _, r := range rules {
+			p, err := compile(apiVersions, k, path, r)
 			if err != nil {
-				errs = append(errs, fmt.Errorf("%s: rules: %w", k.Kind, err))
+				errs = append(errs, err)
+				continue
 			}
-			for _, r := range rules {
-				p, err := compile(apiVersions, k, nil, r)
-				if err != nil {
-					errs = append(errs, err)
-					continue
-				}
-				set.Programs = append(set.Programs, p)
-			}
+			set.Programs = append(set.Programs, p)
 		}
-		props, _ := doc["properties"].(map[string]any)
-		spec, _ := props["spec"].(map[string]any)
-		fields, err := fieldRules(spec, []string{"spec"}, false)
-		errs = append(errs, err...)
-		for _, f := range fields {
-			for _, r := range f.rules {
-				p, err := compile(apiVersions, k, f.path, r)
-				if err != nil {
-					errs = append(errs, err)
-					continue
-				}
-				set.Programs = append(set.Programs, p)
+	}
+	for _, k := range s.Kinds() {
+		s.WalkSchema(k.APIVersion, k.Kind, func(n schema.Node) bool {
+			a := n.Annotations()
+			add(k, nil, a.KindRules)
+			switch {
+			case len(a.Rules) == 0:
+			case len(n.Field) == 0:
+				errs = append(errs, fmt.Errorf("%s: x-chalkos-rules at the schema's root; a kind declares its own rules in x-chalkos-kind", k.Kind))
+			case slices.Contains(n.Field, schema.ItemStep) || slices.Contains(n.Field, schema.ValueStep):
+				errs = append(errs, fmt.Errorf("%s %s: a rule below a list item or a map value has no path to bind self to; declare it on the list or the map", k.Kind, n.Path))
+			default:
+				add(k, slices.Clone(n.Field), a.Rules)
 			}
-		}
+			return true
+		})
 	}
 	if len(errs) > 0 {
 		return nil, errors.Join(errs...)
@@ -133,85 +103,10 @@ func Compile(s *schema.Schemas) (*Set, error) {
 	return set, nil
 }
 
-type field struct {
-	path  []string
-	rules []Rule
-}
-
-// fieldRules finds the x-chalkos-rules of a property schema and of the properties below it, by
-// path: through the properties of objects and the branches of anyOf, as of a nullable group. A
-// rule binds self to the value at its path, which a list item or a map value has none of, so
-// rules below items or additionalProperties are refused: they are declared on the list or the
-// map instead.
-func fieldRules(sch map[string]any, path []string, inItems bool) ([]field, []error) {
-	if sch == nil {
-		return nil, nil
-	}
-	var out []field
-	var errs []error
-	where := strings.Join(path, ".")
-	if declared, ok := sch["x-chalkos-rules"]; ok {
-		if inItems {
-			errs = append(errs, fmt.Errorf("%s: a rule below a list item or a map value has no path to bind self to; declare it on the list or the map", where))
-		} else if rules, err := decodeRules(declared); err != nil {
-			errs = append(errs, fmt.Errorf("%s: x-chalkos-rules: %w", where, err))
-		} else {
-			out = append(out, field{path: slices.Clone(path), rules: rules})
-		}
-	}
-	props, _ := sch["properties"].(map[string]any)
-	names := make([]string, 0, len(props))
-	for name := range props {
-		names = append(names, name)
-	}
-	slices.Sort(names)
-	for _, name := range names {
-		sub, _ := props[name].(map[string]any)
-		f, e := fieldRules(sub, append(slices.Clone(path), name), inItems)
-		out, errs = append(out, f...), append(errs, e...)
-	}
-	if branches, ok := sch["anyOf"].([]any); ok {
-		for _, b := range branches {
-			sub, _ := b.(map[string]any)
-			f, e := fieldRules(sub, path, inItems)
-			out, errs = append(out, f...), append(errs, e...)
-		}
-	}
-	for _, key := range []string{"items", "additionalProperties"} {
-		if sub, ok := sch[key].(map[string]any); ok {
-			_, e := fieldRules(sub, append(slices.Clone(path), "*"), true)
-			errs = append(errs, e...)
-		}
-	}
-	return out, errs
-}
-
-// decodeRules reads a schema's list of rules, refusing keys a rule does not have.
-func decodeRules(v any) ([]Rule, error) {
-	data, err := json.Marshal(v)
-	if err != nil {
-		return nil, err
-	}
-	var rules []Rule
-	if err := jsonfile.DecodeStrict(data, &rules); err != nil {
-		return nil, err
-	}
-	for i := range rules {
-		switch rules[i].Takes {
-		case "":
-			rules[i].Takes = Refuse
-		case Refuse, Reset, Reinstall:
-		default:
-			return nil, fmt.Errorf("takes %q is none of refuse, reset and reinstall", rules[i].Takes)
-		}
-	}
-	return rules, nil
-}
-
 // compile compiles a rule of the kind k, of its field at path or, with a nil path, of the kind.
 // Every rule sees config, oldConfig and node, and document(kind, name) over config; a kind's rules
 // documents and oldDocuments, a field's self and oldSelf; and each fact it names as facts.<name>.
-func compile(apiVersions map[string]string, k schema.Kind, path []string, r Rule) (*Program, error) {
+func compile(apiVersions map[string]string, k schema.Kind, path []string, r schema.Rule) (*Program, error) {
 	p := &Program{Rule: r, Kind: k, Path: path}
 	fail := func(format string, args ...any) error {
 		return fmt.Errorf("%s: rule %q: %s", p.Where(), r.Rule, fmt.Sprintf(format, args...))

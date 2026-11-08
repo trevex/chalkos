@@ -158,7 +158,7 @@ func TestFieldRules(t *testing.T) {
 	if got := messages(failures); !slices.Equal(got, want) {
 		t.Errorf("failures:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
 	}
-	if failures[2].Takes != Reset || failures[0].Takes != Refuse {
+	if failures[2].Takes != schema.Reset || failures[0].Takes != schema.Refuse {
 		t.Errorf("takes = %s and %s, want reset and the default refuse", failures[2].Takes, failures[0].Takes)
 	}
 	// Without a running config, as at an install, only the rules that read no oldSelf run.
@@ -196,7 +196,7 @@ func TestSpecRules(t *testing.T) {
 	if got := messages(failures); !slices.Equal(got, want) {
 		t.Errorf("failures:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
 	}
-	if failures[1].Takes != Reset || failures[1].Path != "spec" {
+	if failures[1].Takes != schema.Reset || failures[1].Path != "spec" {
 		t.Errorf("failure = %+v, want spec's rule that takes a reset", failures[1])
 	}
 	overDocuments := `documents.all(n, cel.bind(s, documents[n].spec, ` + strings.ReplaceAll(ranges, "self.", "s.") + `))`
@@ -232,7 +232,7 @@ func TestKindRulesAndConfig(t *testing.T) {
 	if got := messages(failures); !slices.Equal(got, want) {
 		t.Errorf("failures = %q, want %q", got, want)
 	}
-	if failures[0].Takes != Reinstall {
+	if failures[0].Takes != schema.Reinstall {
 		t.Errorf("takes = %s", failures[0].Takes)
 	}
 }
@@ -434,7 +434,7 @@ func TestCompileErrors(t *testing.T) {
 		"costly": {object(nil), []any{rule(
 			"documents.all(a, documents.all(b, documents.all(c, a + b + c != \"\")))", "")}, "more than the limit"},
 		"below items": {object(map[string]any{"list": map[string]any{"type": "array",
-			"items": withRules(map[string]any{"type": "string"}, rule("self != \"\"", ""))}}), nil, "spec.list.*: a rule below a list item"},
+			"items": withRules(map[string]any{"type": "string"}, rule("self != \"\"", ""))}}), nil, "Demo spec.list[]: a rule below a list item"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			// A rule that does not decode fails the schema's load; one that does not compile, Compile.
@@ -455,9 +455,9 @@ func TestCompileErrors(t *testing.T) {
 
 // A refusal names the most a change takes first, and each rule's message.
 func TestRefusal(t *testing.T) {
-	reset := Failure{Refusal: refusals.Refusal{Kind: "Volume", Message: "Volume extra: format xfs instead of ext4; reset it"}, Takes: Reset}
-	reinstall := Failure{Refusal: refusals.Refusal{Kind: "Volume", Message: "Volume data: removed; only a reinstall removes it"}, Takes: Reinstall}
-	refuse := Failure{Refusal: refusals.Refusal{Kind: "Cluster", Name: "default", Path: "spec.ipFamilies", Message: "fixed"}, Takes: Refuse}
+	reset := Failure{Refusal: refusals.Refusal{Kind: "Volume", Message: "Volume extra: format xfs instead of ext4; reset it"}, Takes: schema.Reset}
+	reinstall := Failure{Refusal: refusals.Refusal{Kind: "Volume", Message: "Volume data: removed; only a reinstall removes it"}, Takes: schema.Reinstall}
+	refuse := Failure{Refusal: refusals.Refusal{Kind: "Cluster", Name: "default", Path: "spec.ipFamilies", Message: "fixed"}, Takes: schema.Refuse}
 	for _, tc := range []struct {
 		failures []Failure
 		want     string
