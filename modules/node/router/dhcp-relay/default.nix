@@ -19,87 +19,12 @@ let
   kinds = import ./kinds.nix { inherit lib; };
   inherit (pkgs) dnsmasq;
   dir = config.chalkos.outputs.dhcp-relay.dir;
-  # Stops the relays without a config, then starts the relay of each rendered config that does
-  # not run, once its VRF's device exists, and restarts those that run; with the argument stop, it
-  # stops all of them. A VRF's relay keeps the index of the device its sockets are bound to in
-  # /run/dnsmasq-relay/dnsmasq-relay-<vrf>.ifindex. The script waits 30 seconds at most for the
-  # devices and 30 more for the relays it started, and fails naming those that are not running
-  # then. systemctl and systemd-escape come from the unit's PATH.
-  reconcile = pkgs.writeShellApplication {
-    name = "chalkos-dhcp-relays";
-    runtimeInputs = [ pkgs.coreutils ];
-    text = ''
-      dir=${dir}
-      declare -A want=()
-      failed=()
-      started=()
-      if [[ ''${1:-} != stop ]]; then
-        shopt -s nullglob
-        for file in "$dir"/dnsmasq-relay.conf "$dir"/dnsmasq-relay-*.conf; do
-          [[ -e $file ]] || continue
-          base=''${file#"$dir"/dnsmasq-relay}
-          base=''${base%.conf}
-          if [[ -z $base ]]; then
-            want[dnsmasq-relay.service]=
-          else
-            want[$(systemd-escape --template=dnsmasq-relay@.service "''${base#-}")]=''${base#-}
-          fi
-        done
-        shopt -u nullglob
-      fi
-      while read -r unit _; do
-        [[ -n $unit ]] || continue
-        if [[ -z ''${want[$unit]+x} ]]; then
-          if systemctl stop "$unit"; then
-            systemctl reset-failed "$unit" 2>/dev/null || true
-          else
-            failed+=("stop $unit")
-          fi
-        fi
-      done < <(systemctl list-units --plain --no-legend --all dnsmasq-relay.service 'dnsmasq-relay@*.service')
-      deadline=$((SECONDS + 30))
-      for unit in "''${!want[@]}"; do
-        vrf=''${want[$unit]}
-        if [[ -n $vrf ]]; then
-          until [[ -e /sys/class/net/$vrf ]] || ((SECONDS >= deadline)); do
-            sleep 0.2
-          done
-          if [[ ! -e /sys/class/net/$vrf ]]; then
-            failed+=("start $unit, whose VRF has no device")
-            continue
-          fi
-        fi
-        verb=start
-        systemctl is-active --quiet "$unit" && verb=restart
-        systemctl reset-failed "$unit" 2>/dev/null || true
-        if systemctl "$verb" --no-block "$unit"; then
-          started+=("$unit")
-        else
-          failed+=("$verb $unit")
-        fi
-      done
-      deadline=$((SECONDS + 30))
-      for unit in "''${started[@]}"; do
-        state=$(systemctl is-active "$unit") || true
-        until [[ $state == active || $state == failed ]] || ((SECONDS >= deadline)); do
-          sleep 0.2
-          state=$(systemctl is-active "$unit") || true
-        done
-        [[ $state == active ]] || failed+=("start $unit, which is $state ($(systemctl show --value --property=SubState "$unit"))")
-      done
-      if ((''${#failed[@]} > 0)); then
-        printf 'chalkos-dhcp-relays: failed to %s\n' "''${failed[@]}" >&2
-        exit 1
-      fi
-    '';
-  };
-  # Keeps the index of the device of the VRF $1 in /run/dnsmasq-relay/dnsmasq-relay-$1.ifindex,
-  # and fails while the VRF has no device, as unbound@ does.
-  recordDevice = pkgs.writeShellScript "dnsmasq-relay-vrf-device" ''
-    set -e
-    read -r ifindex <"/sys/class/net/$1/ifindex"
-    echo "$ifindex" >"$RUNTIME_DIRECTORY/dnsmasq-relay-$1.ifindex"
-  '';
+  # chalkd router services relay stops the relays without a config, then starts the relay of each
+  # rendered config that does not run, once its VRF's device exists, and restarts those that run;
+  # with the argument stop, it stops all of them. A VRF's relay keeps the index of the device its
+  # sockets are bound to in /run/dnsmasq-relay/dnsmasq-relay-<vrf>.ifindex. systemctl comes from
+  # the unit's PATH.
+  reconcile = "${lib.getExe chalkosPackages.chalkd} router services relay";
   # A relay's hardening: the user dnsmasq, which dnsmasq stays as, with the capabilities it
   # demands of a relay: port 67 and 547, the ICMPv6 socket of DHCPv6 and the ARP entries of
   # DHCPv4 clients without an address. It writes no lease file and no pid file.
@@ -207,7 +132,7 @@ in
         ConditionPathExists = "${dir}/dnsmasq-relay-%I.conf";
       };
       serviceConfig = relay // {
-        ExecStartPre = "${recordDevice} %I";
+        ExecStartPre = "${routerLib.recordDevice pkgs} dnsmasq-relay %I";
         ExecStart = start "${dir}/dnsmasq-relay-%I.conf";
         BindNetworkInterface = "%I";
       };
@@ -225,9 +150,9 @@ in
       serviceConfig = hardened // {
         Type = "oneshot";
         RemainAfterExit = true;
-        ExecStart = lib.getExe reconcile;
-        ExecReload = lib.getExe reconcile;
-        ExecStop = "${lib.getExe reconcile} stop";
+        ExecStart = reconcile;
+        ExecReload = reconcile;
+        ExecStop = "${reconcile} stop";
         CapabilityBoundingSet = [ "" ];
         RestrictAddressFamilies = [ "AF_UNIX" ];
       };

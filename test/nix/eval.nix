@@ -421,11 +421,14 @@ lib.runTests {
           start = lib.hasSuffix "--conf-file=/run/chalkos/outputs/dhcp-relay/dnsmasq-relay-%I.conf" vrf.serviceConfig.ExecStart;
           inherit (vrf.serviceConfig) BindNetworkInterface;
           inherit (vrf.unitConfig) Requires;
-          records = lib.hasInfix "dnsmasq-relay-vrf-device" vrf.serviceConfig.ExecStartPre;
+          records =
+            builtins.match "/nix/store/[^ ]*-chalkos-vrf-device dnsmasq-relay %I" vrf.serviceConfig.ExecStartPre
+            != null;
         };
         reconciler = {
           inherit (relays) wantedBy;
           inherit (relays.serviceConfig) Type CapabilityBoundingSet;
+          runs = lib.hasSuffix "/bin/chalkd router services relay" relays.serviceConfig.ExecStart;
           reloads = relays.serviceConfig.ExecReload == relays.serviceConfig.ExecStart;
           stops = lib.hasSuffix " stop" relays.serviceConfig.ExecStop;
           effect = {
@@ -475,6 +478,7 @@ lib.runTests {
         wantedBy = [ "multi-user.target" ];
         Type = "oneshot";
         CapabilityBoundingSet = [ "" ];
+        runs = true;
         reloads = true;
         stops = true;
         effect = {
@@ -1395,8 +1399,8 @@ lib.runTests {
           inherit (vrf.unitConfig) Requires ConditionPathExists;
           bound = vrf.unitConfig ? BindsTo;
           records =
-            lib.hasInfix "kea-vrf-device" vrf.serviceConfig.ExecStartPre
-            && lib.hasSuffix " dhcp4 %I" vrf.serviceConfig.ExecStartPre;
+            builtins.match "/nix/store/[^ ]*-chalkos-vrf-device kea-dhcp4 %I" vrf.serviceConfig.ExecStartPre
+            != null;
         };
         server6 = {
           start = lib.hasSuffix "/bin/kea-dhcp6 -c /run/chalkos/outputs/kea/kea-dhcp6.json" server6.serviceConfig.ExecStart;
@@ -1414,7 +1418,9 @@ lib.runTests {
           inherit (server6.unitConfig) ConditionPathExists;
           vrf = {
             inherit (vrf6.serviceConfig) BindNetworkInterface;
-            records = lib.hasSuffix " dhcp6 %I" vrf6.serviceConfig.ExecStartPre;
+            records =
+              builtins.match "/nix/store/[^ ]*-chalkos-vrf-device kea-dhcp6 %I" vrf6.serviceConfig.ExecStartPre
+              != null;
             inherit (vrf6.unitConfig) ConditionPathExists;
           };
         };
@@ -1449,6 +1455,7 @@ lib.runTests {
           ];
           inherit (dhcp) wantedBy;
           inherit (dhcp.serviceConfig) Type CapabilityBoundingSet SupplementaryGroups;
+          runs = lib.hasSuffix "/bin/chalkd router services kea" dhcp.serviceConfig.ExecStart;
           reloads = dhcp.serviceConfig.ExecReload == dhcp.serviceConfig.ExecStart;
           stops = lib.hasSuffix " stop" dhcp.serviceConfig.ExecStop;
           effect = {
@@ -1568,6 +1575,7 @@ lib.runTests {
         Type = "oneshot";
         CapabilityBoundingSet = [ "" ];
         SupplementaryGroups = [ "kea" ];
+        runs = true;
         reloads = true;
         stops = true;
         effect = {
@@ -1701,8 +1709,8 @@ lib.runTests {
             inherit (u.unitConfig) Requires ConditionPathExists;
             bound = u.unitConfig ? BindsTo;
             records =
-              lib.hasInfix "unbound-vrf-device" u.serviceConfig.ExecStartPre
-              && lib.hasSuffix " %I" u.serviceConfig.ExecStartPre;
+              builtins.match "/nix/store/[^ ]*-chalkos-vrf-device unbound %I" u.serviceConfig.ExecStartPre
+              != null;
             after = lib.all (x: lib.elem x u.after) [
               "sys-subsystem-net-devices-%i.device"
               "chalkos-firewall.service"
@@ -1727,6 +1735,7 @@ lib.runTests {
               PrivateDevices
               ProtectControlGroups
               ;
+            runs = lib.hasSuffix "/bin/chalkd router services unbound" r.serviceConfig.ExecStart;
             reloads = r.serviceConfig.ExecReload == r.serviceConfig.ExecStart;
             stops = lib.hasSuffix " stop" r.serviceConfig.ExecStop;
             effect = {
@@ -1821,6 +1830,7 @@ lib.runTests {
         SupplementaryGroups = [ "unbound" ];
         PrivateDevices = true;
         ProtectControlGroups = true;
+        runs = true;
         reloads = true;
         stops = true;
         effect = {

@@ -81,134 +81,15 @@ let
       esac
     '';
   };
-  # Stops the servers without a config, then starts the server of each rendered config that does
-  # not run, once its links and its VRF's device exist, and reloads those that run; with the
-  # argument stop, it stops all of them. systemd binds a VRF's server's sockets to the index its
-  # VRF's device had when the server started, which the server keeps in
+  # chalkd router services kea stops the servers without a config, then starts the server of each
+  # rendered config that does not run, once its links and its VRF's device exist, and reloads
+  # those that run; with the argument stop, it stops all of them. systemd binds a VRF's server's
+  # sockets to the index its VRF's device had when the server started, which the server keeps in
   # /run/kea/kea-<family>-<vrf>.ifindex: a VRF that chalkos-vrf removed and networkd created anew
-  # has a new index, so its server restarts on the new device. The script waits 30 seconds at most
-  # for the links and 30 more for the servers it started, and fails naming those that are not
-  # running then. It then starts chalkos-dhcp6-routes, which routes the delegated prefixes of the
-  # configs. systemctl and systemd-escape come from the unit's PATH.
-  reconcile = pkgs.writeShellApplication {
-    name = "chalkos-dhcp";
-    runtimeInputs = [
-      pkgs.coreutils
-      pkgs.jq
-    ];
-    text = ''
-      dir=${dir}
-      declare -A want=()
-      failed=()
-      started=()
-      if [[ ''${1:-} != stop ]]; then
-        shopt -s nullglob
-        for family in dhcp4 dhcp6; do
-          for file in "$dir/kea-$family.json" "$dir/kea-$family"-*.json; do
-            # kea-<family>.json is no pattern, so nullglob keeps it whether it exists or not.
-            [[ -e $file ]] || continue
-            base=''${file#"$dir/kea-$family"}
-            base=''${base%.json}
-            if [[ -z $base ]]; then
-              want[kea-$family.service]=$file
-            else
-              want[$(systemd-escape --template="kea-$family@.service" "''${base#-}")]=$file
-            fi
-          done
-        done
-        shopt -u nullglob
-      fi
-      deadline=$((SECONDS + 30))
-      # The VRF of the unit $1, empty for the default VRF's.
-      vrfOf() {
-        [[ $1 == kea-dhcp[46]@* ]] || return 0
-        systemd-escape --unescape --instance "$1"
-      }
-      # Waits for the links of the config $2 of the unit $1 and its VRF's device, and fails naming
-      # those that do not exist, or the config when it cannot be read.
-      links() {
-        local unit=$1 vrf names missing=() devices=()
-        vrf=$(vrfOf "$unit")
-        if ! names=$(jq -r '(.Dhcp4 // .Dhcp6)["interfaces-config"].interfaces[]' "$2"); then
-          failed+=("run $unit, whose config $2 cannot be read")
-          return 1
-        fi
-        [[ -z $names ]] || mapfile -t devices <<<"$names"
-        [[ -z $vrf ]] || devices+=("$vrf")
-        for d in "''${devices[@]}"; do
-          until [[ -e /sys/class/net/$d ]] || ((SECONDS >= deadline)); do
-            sleep 0.2
-          done
-          [[ -e /sys/class/net/$d ]] || missing+=("$d")
-        done
-        if ((''${#missing[@]} > 0)); then
-          failed+=("run $unit, whose links ''${missing[*]} have no device")
-          return 1
-        fi
-      }
-      # Stops the servers without a config first, so that a subnet that moved to another VRF
-      # leaves its links before the other VRF's server starts on them.
-      while read -r unit _; do
-        [[ -n $unit ]] || continue
-        if [[ -z ''${want[$unit]+x} ]]; then
-          if systemctl stop "$unit"; then
-            systemctl reset-failed "$unit" 2>/dev/null || true
-          else
-            failed+=("stop $unit")
-          fi
-        fi
-      done < <(systemctl list-units --plain --no-legend --all kea-dhcp4.service 'kea-dhcp4@*.service' kea-dhcp6.service 'kea-dhcp6@*.service')
-      for unit in "''${!want[@]}"; do
-        links "$unit" "''${want[$unit]}" || continue
-        verb=reload
-        if ! systemctl is-active --quiet "$unit"; then
-          verb=start
-        elif vrf=$(vrfOf "$unit") && [[ -n $vrf ]]; then
-          family=''${unit%%@*}
-          family=''${family#kea-}
-          ifindex=$(cat "/sys/class/net/$vrf/ifindex" 2>/dev/null) || ifindex=
-          if [[ -z $ifindex || $ifindex != "$(cat "/run/kea/kea-$family-$vrf.ifindex" 2>/dev/null)" ]]; then
-            verb=restart
-          fi
-        fi
-        if [[ $verb == reload ]]; then
-          systemctl reload "$unit" || failed+=("reload $unit")
-          continue
-        fi
-        systemctl reset-failed "$unit" 2>/dev/null || true
-        if systemctl "$verb" --no-block "$unit"; then
-          started+=("$unit")
-        else
-          failed+=("$verb $unit")
-        fi
-      done
-      deadline=$((SECONDS + 30))
-      for unit in "''${started[@]}"; do
-        # Each unit is asked at least once, also after the wait for another used up the deadline.
-        state=$(systemctl is-active "$unit") || true
-        until [[ $state == active || $state == failed ]] || ((SECONDS >= deadline)); do
-          sleep 0.2
-          state=$(systemctl is-active "$unit") || true
-        done
-        [[ $state == active ]] || failed+=("start $unit, which is $state ($(systemctl show --value --property=SubState "$unit"))")
-      done
-      # The routes of the delegated prefixes follow the configs, which may delegate others now.
-      if [[ ''${1:-} != stop ]]; then
-        systemctl start --no-block chalkos-dhcp6-routes.service || failed+=("start chalkos-dhcp6-routes.service")
-      fi
-      if ((''${#failed[@]} > 0)); then
-        printf 'chalkos-dhcp: failed to %s\n' "''${failed[@]}" >&2
-        exit 1
-      fi
-    '';
-  };
-  # Keeps the index of the device of the VRF $2 in /run/kea/kea-$1-$2.ifindex, $1 the server's
-  # family, and fails while the VRF has no device, as unbound@ does.
-  recordDevice = pkgs.writeShellScript "kea-vrf-device" ''
-    set -e
-    read -r ifindex <"/sys/class/net/$2/ifindex"
-    echo "$ifindex" >"$RUNTIME_DIRECTORY/kea-$1-$2.ifindex"
-  '';
+  # has a new index, so its server restarts on the new device. It then starts
+  # chalkos-dhcp6-routes, which routes the delegated prefixes of the configs. systemctl comes from
+  # the unit's PATH.
+  reconcile = "${lib.getExe chalkosPackages.chalkd} router services kea";
   # A server's hardening: the user kea, port 67 or 547, its sockets in /run/kea and its leases in
   # /var/lib/kea, which the servers share and which outlive them. The DHCPv4 servers read and
   # answer on raw sockets; the DHCPv6 servers on UDP sockets, and run chalkos-dhcp6-pd, which
@@ -288,7 +169,7 @@ let
           ConditionPathExists = "${dir}/kea-${family}-%I.json";
         };
         serviceConfig = server family // {
-          ExecStartPre = "${recordDevice} ${family} %I";
+          ExecStartPre = "${routerLib.recordDevice pkgs} kea-${family} %I";
           ExecStart = "${kea}/bin/kea-${family} -c ${dir}/kea-${family}-%I.json";
           BindNetworkInterface = "%I";
         };
@@ -376,9 +257,9 @@ in
           serviceConfig = hardened // {
             Type = "oneshot";
             RemainAfterExit = true;
-            ExecStart = lib.getExe reconcile;
-            ExecReload = lib.getExe reconcile;
-            ExecStop = "${lib.getExe reconcile} stop";
+            ExecStart = reconcile;
+            ExecReload = reconcile;
+            ExecStop = "${reconcile} stop";
             # systemctl reaches systemd over its socket, for which root needs no capability.
             CapabilityBoundingSet = [ "" ];
             SupplementaryGroups = [ "kea" ];
