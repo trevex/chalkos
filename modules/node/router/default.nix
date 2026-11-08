@@ -5,9 +5,14 @@
 # the features a variant may leave out, each with its option chalkos.router.<feature>.enable:
 # BGP with FRR, NAT64 with Jool, the resolver with Unbound, DHCP with Kea and DHCP relays with
 # dnsmasq.
-{ config, lib, ... }:
+{
+  config,
+  lib,
+  pkgs,
+  ...
+}:
 let
-  inherit (import ./lib.nix { inherit config lib; }) accepted;
+  inherit (import ./lib.nix { inherit config lib pkgs; }) accepted;
 in
 {
   imports = [

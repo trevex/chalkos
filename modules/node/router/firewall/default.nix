@@ -10,7 +10,7 @@
   ...
 }:
 let
-  inherit (import ../lib.nix { inherit config lib; }) declared;
+  inherit (import ../lib.nix { inherit config lib pkgs; }) declared;
   kinds = import ./kinds.nix { inherit lib; };
   render = lib.getExe chalkosPackages.chalkos-render;
   nft = "${pkgs.nftables}/bin/nft";

@@ -21,7 +21,7 @@
 }:
 let
   cfg = config.chalkos.router.dhcp;
-  routerLib = import ../lib.nix { inherit config lib; };
+  routerLib = import ../lib.nix { inherit config lib pkgs; };
   inherit (routerLib) hardened;
   kinds = import ./kinds.nix { inherit lib; };
   inherit (chalkosPackages) kea;
@@ -169,7 +169,7 @@ let
           ConditionPathExists = "${dir}/kea-${family}-%I.json";
         };
         serviceConfig = server family // {
-          ExecStartPre = "${routerLib.recordDevice pkgs} kea-${family} %I";
+          ExecStartPre = "${routerLib.recordDevice} kea-${family} %I";
           ExecStart = "${kea}/bin/kea-${family} -c ${dir}/kea-${family}-%I.json";
           BindNetworkInterface = "%I";
         };

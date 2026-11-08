@@ -11,7 +11,7 @@
 }:
 let
   cfg = config.chalkos.router.nat64;
-  routerLib = import ../lib.nix { inherit config lib; };
+  routerLib = import ../lib.nix { inherit config lib pkgs; };
   inherit (routerLib) hardened;
   kinds = import ./kinds.nix { inherit lib; };
   jool = pkgs.jool-cli;

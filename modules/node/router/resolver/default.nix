@@ -13,7 +13,7 @@
 }:
 let
   cfg = config.chalkos.router.resolver;
-  routerLib = import ../lib.nix { inherit config lib; };
+  routerLib = import ../lib.nix { inherit config lib pkgs; };
   inherit (routerLib) hardened;
   kinds = import ./kinds.nix { inherit lib; };
   unbound = config.services.unbound.package;
@@ -147,11 +147,12 @@ in
         ExecReload = "${unbound}/bin/unbound-control -c ${dir}/unbound-%I.conf reload_keep_cache";
         # systemd starts a unit whose interface it cannot find without binding its sockets: this
         # unit fails instead.
-        ExecStartPre = "${routerLib.recordDevice pkgs} unbound %I";
+        ExecStartPre = "${routerLib.recordDevice} unbound %I";
         BindNetworkInterface = "%I";
         # unbound-control reaches it through the socket the rendered config names in
         # /run/unbound-<vrf>, which root, and so chalkd, may enter, as may the group unbound, and
-        # so chalkos-resolvers, which reads the device's index there.
+        # so chalkd router services, which chalkos-resolvers runs and which reads the device's
+        # index there.
         RuntimeDirectory = "unbound-%I";
         RuntimeDirectoryMode = "0750";
       };

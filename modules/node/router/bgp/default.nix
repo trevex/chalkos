@@ -12,7 +12,7 @@
 }:
 let
   cfg = config.chalkos.router.bgp;
-  routerLib = import ../lib.nix { inherit config lib; };
+  routerLib = import ../lib.nix { inherit config lib pkgs; };
   kinds = import ./kinds.nix { inherit lib; };
   render = lib.getExe chalkosPackages.chalkos-render;
   frr = pkgs.frr;

@@ -1,7 +1,11 @@
 # What the router's features share: their enable option, the kinds the image declares, which an
 # output of one feature reads of another's, the record of a VRF's device and the sandbox of their
 # units.
-{ config, lib }:
+{
+  config,
+  lib,
+  pkgs,
+}:
 let
   # The kinds the image accepts: its own and networkd's.
   accepted = lib.attrNames config.chalkos.kinds ++ (import ../../../lib/kinds/api.nix).networkdKinds;
@@ -30,13 +34,11 @@ in
   # when it set the unit's cgroup up, a moment before: a VRF removed and created anew within that
   # moment leaves a record of the new index for sockets bound to the old one. Only chalkos-vrf
   # removes a VRF, and the units that run chalkd router services run after it.
-  recordDevice =
-    pkgs:
-    pkgs.writeShellScript "chalkos-vrf-device" ''
-      set -e
-      read -r ifindex <"/sys/class/net/$2/ifindex"
-      echo "$ifindex" >"$RUNTIME_DIRECTORY/$1-$2.ifindex"
-    '';
+  recordDevice = pkgs.writeShellScript "chalkos-vrf-device" ''
+    set -e
+    read -r ifindex <"/sys/class/net/$2/ifindex"
+    echo "$ifindex" >"$RUNTIME_DIRECTORY/$1-$2.ifindex"
+  '';
 
   # The sandbox of a unit of the router: no new privileges, a read-only system, no devices, no
   # home and a private /tmp, kernel settings, modules, logs, cgroups, clock and host name out of

@@ -14,7 +14,7 @@
 }:
 let
   cfg = config.chalkos.router.dhcpRelay;
-  routerLib = import ../lib.nix { inherit config lib; };
+  routerLib = import ../lib.nix { inherit config lib pkgs; };
   inherit (routerLib) hardened;
   kinds = import ./kinds.nix { inherit lib; };
   inherit (pkgs) dnsmasq;
@@ -132,7 +132,7 @@ in
         ConditionPathExists = "${dir}/dnsmasq-relay-%I.conf";
       };
       serviceConfig = relay // {
-        ExecStartPre = "${routerLib.recordDevice pkgs} dnsmasq-relay %I";
+        ExecStartPre = "${routerLib.recordDevice} dnsmasq-relay %I";
         ExecStart = start "${dir}/dnsmasq-relay-%I.conf";
         BindNetworkInterface = "%I";
       };
