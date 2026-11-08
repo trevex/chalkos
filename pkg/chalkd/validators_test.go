@@ -21,7 +21,6 @@ import (
 	"github.com/trevex/chalkos/pkg/outputs"
 	"github.com/trevex/chalkos/pkg/rules"
 	"github.com/trevex/chalkos/pkg/schema"
-	"github.com/trevex/chalkos/pkg/validators"
 )
 
 // vetoes is a validator's program that refuses a Demo named second, and writes the names it read
@@ -36,9 +35,9 @@ esac`
 // commands given as its program, reading the Demo documents.
 func writeValidators(t *testing.T, s *Server, programs map[string]string) {
 	t.Helper()
-	defs := map[string]validators.Definition{}
+	defs := map[string]outputs.Validator{}
 	for name, commands := range programs {
-		defs[name] = validators.Definition{Inputs: []string{"Demo"}, Program: shellScript(t, commands)}
+		defs[name] = outputs.Validator{Inputs: []string{"Demo"}, Program: shellScript(t, commands)}
 	}
 	data, err := json.Marshal(defs)
 	if err != nil {
@@ -53,7 +52,7 @@ func writeValidators(t *testing.T, s *Server, programs map[string]string) {
 func TestApplyConfigRefusesByAValidator(t *testing.T) {
 	for name, tc := range map[string]struct{ program, want string }{
 		"a refusal": {vetoes, "the config is refused: Demo/one: spec.name: the name is vetoed"},
-		"a failure": {`echo "read $(cat)" >&2; exit 2`, "validator veto failed (exit 2); see the node's journal"},
+		"a failure": {`echo "read $(cat)" >&2; exit 2`, "validator veto: its program failed (exit 2); see the node's journal"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			s, r := configServer(t)
@@ -115,7 +114,7 @@ func TestApplyConfigRefusesByAValidatorAsTheChecker(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defs, err := validators.Read(s.Loader.Validators)
+	defs, err := outputs.ReadValidators(s.Loader.Validators)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -146,7 +145,7 @@ func TestInstallInPlaceRunsTheValidators(t *testing.T) {
 	h := header(t, &nodev1.InstallHeader_InPlace{InPlace: &nodev1.InPlace{}})
 	h.Config = baseConfig
 	err := sendInstall(t, s, h, nil)
-	if installed || connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "validator veto failed (exit 2)") {
+	if installed || connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "validator veto: its program failed (exit 2)") {
 		t.Errorf("install: %v, installed %v", err, installed)
 	}
 }

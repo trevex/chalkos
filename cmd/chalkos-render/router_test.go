@@ -175,41 +175,29 @@ func TestRouterGolden(t *testing.T) {
 	}
 }
 
-// chalkos-render validate router reads the documents as a validator does, one JSON array, needs no
-// $OUT, and prints the report of the validator router, which refuses none of the examples. Input
-// it cannot read fails the validator, which then prints no report.
+// chalkos-render validate router reads the input a renderer reads, needs no $OUT, and prints the
+// report of the validator router, which refuses none of the examples. Input it cannot read fails
+// the validator, which then prints no report.
 func TestValidateRouter(t *testing.T) {
 	examples, err := filepath.Glob(filepath.Join(routerExamples, "*.yaml"))
 	if err != nil || len(examples) == 0 {
 		t.Fatalf("examples = %v, %v", examples, err)
 	}
 	for _, path := range examples {
-		var in struct{ Documents map[string][]json.RawMessage }
-		if err := json.Unmarshal([]byte(routerInput(t, path)), &in); err != nil {
-			t.Fatal(err)
-		}
-		var docs []json.RawMessage
-		for _, kind := range slices.Sorted(maps.Keys(in.Documents)) {
-			docs = append(docs, in.Documents[kind]...)
-		}
-		data, err := json.Marshal(docs)
-		if err != nil {
-			t.Fatal(err)
-		}
 		var out strings.Builder
-		if err := run([]string{"validate", "router"}, strings.NewReader(string(data)), &out, ""); err != nil || out.String() != "{\"refusals\":[]}\n" {
+		if err := run([]string{"validate", "router"}, strings.NewReader(routerInput(t, path)), &out, ""); err != nil || out.String() != "{\"refusals\":[]}\n" {
 			t.Errorf("%s: validate router = %v, printed %q", filepath.Base(path), err, out.String())
 		}
 	}
 	var out strings.Builder
-	err = run([]string{"validate", "router"}, strings.NewReader(`{"node": {"name": "r1"}, "documents": {}}`), &out, "")
-	if err == nil || !strings.Contains(err.Error(), "validator router: the documents are no JSON array of documents") || out.Len() != 0 {
-		t.Errorf("validate router of an output's input = %v, printed %q", err, out.String())
+	err = run([]string{"validate", "router"}, strings.NewReader(`[]`), &out, "")
+	if err == nil || !strings.Contains(err.Error(), "validator router: the input is no object of documents by kind") || out.Len() != 0 {
+		t.Errorf("validate router of an array = %v, printed %q", err, out.String())
 	}
 	// A config it refuses is a report of its refusals, and the validator succeeds.
 	out.Reset()
-	refused := `[{"kind": "Network", "metadata": {"name": "20-tenant"}, "spec": {"match": {"name": "tenant"}}},
-		{"kind": "VRF", "metadata": {"name": "tenant"}, "spec": {"table": 100}}]`
+	refused := `{"node": {"name": "r1"}, "documents": {"Network": [{"kind": "Network", "metadata": {"name": "20-tenant"}, "spec": {"match": {"name": "tenant"}}}],
+		"VRF": [{"kind": "VRF", "metadata": {"name": "tenant"}, "spec": {"table": 100}}]}}`
 	want := `{"refusals":[{"kind":"VRF","name":"tenant","path":"metadata.name","message":"a Network document names the link tenant, the VRF's device"}]}` + "\n"
 	if err := run([]string{"validate", "router"}, strings.NewReader(refused), &out, ""); err != nil || out.String() != want {
 		t.Errorf("validate router of a refused config = %v, printed %q, want %q", err, out.String(), want)
@@ -221,7 +209,7 @@ func TestValidateRouter(t *testing.T) {
 	}
 	t.Cleanup(func() { delete(validators, "test") })
 	out.Reset()
-	if err := run([]string{"validate", "test"}, strings.NewReader("[]"), &out, ""); err != nil || out.String() != `{"refusals":[{"kind":"VRF","name":"a","path":"spec","message":"two lines "}]}`+"\n" {
+	if err := run([]string{"validate", "test"}, strings.NewReader(`{"documents": {}}`), &out, ""); err != nil || out.String() != `{"refusals":[{"kind":"VRF","name":"a","path":"spec","message":"two lines "}]}`+"\n" {
 		t.Errorf("validate test = %v, printed %q", err, out.String())
 	}
 }

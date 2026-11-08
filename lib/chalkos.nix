@@ -65,7 +65,7 @@ in
   };
 
   validate = {
-    # A jq program that reads the array of documents and makes the report of refusals.
+    # A jq program that reads the input of the documents by kind and makes the report of refusals.
     jq = path: { jq = path; };
   };
 

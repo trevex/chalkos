@@ -18,7 +18,6 @@ import (
 	"github.com/trevex/chalkos/pkg/facts"
 	"github.com/trevex/chalkos/pkg/outputs"
 	"github.com/trevex/chalkos/pkg/rules"
-	"github.com/trevex/chalkos/pkg/validators"
 )
 
 // builtinsDescription is the description of the page of built-ins.
@@ -89,7 +88,7 @@ type kindRules struct {
 type builtinImage struct {
 	kinds       []kindRules
 	facts       map[string]facts.Definition
-	validators  map[string]validators.Definition
+	validators  map[string]outputs.Validator
 	outputs     map[string]outputs.Definition
 	effects     map[string]effects.Definition
 	diagnostics map[string]diagnostics.Definition
@@ -246,7 +245,7 @@ func readBuiltinImage(dir string) (builtinImage, error) {
 	if img.facts, err = facts.Read(filepath.Join(dir, "facts.json")); err != nil {
 		return img, err
 	}
-	if img.validators, err = validators.Read(filepath.Join(dir, "validators.json")); err != nil {
+	if img.validators, err = outputs.ReadValidators(filepath.Join(dir, "validators.json")); err != nil {
 		return img, err
 	}
 	if img.outputs, err = outputs.Read(filepath.Join(dir, "outputs.json"), outputs.DefaultRoot); err != nil {
@@ -652,7 +651,7 @@ func writeOutputs(b *strings.Builder, anchor, intro string, names, changed []str
 
 // writeValidators writes a section of validators, each with the kinds it reads and the command
 // chalkd runs it as: its program with validate and its name.
-func writeValidators(b *strings.Builder, anchor, intro string, names, changed []string, defs map[string]validators.Definition) {
+func writeValidators(b *strings.Builder, anchor, intro string, names, changed []string, defs map[string]outputs.Validator) {
 	writeSubsection(b, anchor, intro, len(names))
 	if len(names) == 0 {
 		return

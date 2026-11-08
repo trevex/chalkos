@@ -1,25 +1,16 @@
 package derive
 
 import (
-	"encoding/json"
 	"slices"
 	"strings"
 	"testing"
 )
 
-// validated runs the validator on docs, by kind, as one JSON array in the order of Kinds, and
-// returns its refusals as chalkd reports them.
+// validated runs the validator on docs, by kind, as a validator reads them, and returns its
+// refusals as chalkd reports them.
 func validated(t *testing.T, docs map[string][]any) ([]string, error) {
 	t.Helper()
-	all := []any{}
-	for _, kind := range Kinds() {
-		all = append(all, docs[kind]...)
-	}
-	data, err := json.Marshal(all)
-	if err != nil {
-		t.Fatal(err)
-	}
-	rs, err := Validate(data)
+	rs, err := Validate(stdin(t, docs))
 	var lines []string
 	for _, r := range rs {
 		lines = append(lines, r.String())

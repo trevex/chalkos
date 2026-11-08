@@ -12,9 +12,9 @@ import (
 
 	"github.com/trevex/chalkos/pkg/chalkctl/layer"
 	routerlayer "github.com/trevex/chalkos/pkg/chalkctl/layers/router"
+	"github.com/trevex/chalkos/pkg/outputs"
 	"github.com/trevex/chalkos/pkg/refusals"
 	"github.com/trevex/chalkos/pkg/schema"
-	"github.com/trevex/chalkos/pkg/validators"
 )
 
 // reservedPlugin is a layer that links the validator reserved, which an image with Network
@@ -23,23 +23,27 @@ type reservedPlugin struct{ read *[]byte }
 
 func (reservedPlugin) Name() string { return "reserved" }
 
-func (p reservedPlugin) Validators(s *schema.Schemas) []validators.Linked {
+func (p reservedPlugin) Validators(s *schema.Schemas) []outputs.LinkedValidator {
 	if !slices.ContainsFunc(s.Kinds(), func(k schema.Kind) bool { return k.Kind == "Network" }) {
 		return nil
 	}
-	return []validators.Linked{{Name: "reserved", Inputs: []string{"Network"}, Validate: func(docs []byte) ([]refusals.Refusal, error) {
-		*p.read = docs
-		var networks []struct {
-			Metadata struct{ Name string }
-			Spec     struct {
-				Network struct{ Address []string }
+	return []outputs.LinkedValidator{{Name: "reserved", Inputs: []string{"Network"}, Validate: func(stdin []byte) ([]refusals.Refusal, error) {
+		*p.read = stdin
+		var in struct {
+			Documents struct {
+				Network []struct {
+					Metadata struct{ Name string }
+					Spec     struct {
+						Network struct{ Address []string }
+					}
+				}
 			}
 		}
-		if err := json.Unmarshal(docs, &networks); err != nil {
+		if err := json.Unmarshal(stdin, &in); err != nil {
 			return nil, err
 		}
 		var rs []refusals.Refusal
-		for _, n := range networks {
+		for _, n := range in.Documents.Network {
 			if i := slices.Index(n.Spec.Network.Address, "10.0.0.99/24"); i >= 0 {
 				rs = append(rs, refusals.Refusal{Kind: "Network", Name: n.Metadata.Name, Path: "spec.network.address[" + strconv.Itoa(i) + "]", Message: "10.0.0.99 is the lab's reserved address"})
 			}
@@ -56,7 +60,7 @@ func withPlugin(t *testing.T, p layer.Plugin) {
 }
 
 // chalkctl validate runs the validators its layers link on each node's config, in-process, on the
-// JSON array the image's validator programs read, and refuses a config one of them refuses as
+// input the image's validator programs read, and refuses a config one of them refuses as
 // the node would, naming the document and its field.
 func TestValidateRunsLinkedValidators(t *testing.T) {
 	var read []byte
@@ -67,8 +71,11 @@ func TestValidateRunsLinkedValidators(t *testing.T) {
 	if err := ta.run(context.Background(), []string{"validate", "--inventory", path}); err != nil {
 		t.Fatal(err)
 	}
-	var docs []map[string]any
-	if err := json.Unmarshal(read, &docs); err != nil || len(docs) != 1 || docs[0]["kind"] != "Network" {
+	var in struct {
+		Node      struct{ Name string }
+		Documents map[string][]map[string]any
+	}
+	if err := json.Unmarshal(read, &in); err != nil || in.Node.Name != "n1" || len(in.Documents) != 1 || len(in.Documents["Network"]) != 1 {
 		t.Errorf("the validator read %s: %v", read, err)
 	}
 	reserved := strings.Replace(n1Network, "10.0.0.11/24", "10.0.0.99/24", 1)
@@ -86,12 +93,12 @@ type recordingRouter struct {
 	read *[][]byte
 }
 
-func (p recordingRouter) Validators(s *schema.Schemas) []validators.Linked {
+func (p recordingRouter) Validators(s *schema.Schemas) []outputs.LinkedValidator {
 	linked := p.Plugin.Validators(s)
 	for i, l := range linked {
-		linked[i].Validate = func(docs []byte) ([]refusals.Refusal, error) {
-			*p.read = append(*p.read, docs)
-			return l.Validate(docs)
+		linked[i].Validate = func(stdin []byte) ([]refusals.Refusal, error) {
+			*p.read = append(*p.read, stdin)
+			return l.Validate(stdin)
 		}
 	}
 	return linked
@@ -126,8 +133,10 @@ func TestValidateRunsTheRouterValidator(t *testing.T) {
 	if len(read) != 1 {
 		t.Fatalf("the validator ran %d times", len(read))
 	}
-	var docs []struct{ Kind string }
-	if err := json.Unmarshal(read[0], &docs); err != nil || len(docs) != 2 || docs[0].Kind != "Network" || docs[1].Kind != "VRF" {
+	var in struct {
+		Documents map[string][]struct{ Kind string }
+	}
+	if err := json.Unmarshal(read[0], &in); err != nil || len(in.Documents["Network"]) != 1 || len(in.Documents["VRF"]) != 1 || len(in.Documents["Router"]) != 0 {
 		t.Errorf("the validator read %s: %v", read[0], err)
 	}
 }

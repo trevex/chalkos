@@ -1,9 +1,32 @@
-// Package outputs renders a service's config files from the node's config documents: each output
-// of /etc/chalkos/outputs.json is a store program that reads the documents of its input kinds as
-// JSON and writes files into a directory, and an optional check of those files. chalkd renders
-// and checks every output into a staging directory before a delivery changes the node, and swaps
-// each one in by a symlink rename once the delivery is stored, so a service never reads half an
-// output; chalkos-config renders them at boot, since /run is a tmpfs.
+// Package outputs runs the programs of an image's store that read a node's config documents:
+// renderers and validators, which read the same input and report refusals in the same form.
+//
+// Each output of /etc/chalkos/outputs.json is a renderer that reads the documents of its input
+// kinds as JSON and writes a service's config files into a directory, and an optional check of
+// those files. chalkd renders and checks every output into a staging directory before a delivery
+// changes the node, and swaps each one in by a symlink rename once the delivery is stored, so a
+// service never reads half an output; chalkos-config renders them at boot, since /run is a tmpfs.
+//
+// Each validator of /etc/chalkos/validators.json is a renderer without files: a program that
+// checks the documents of its input kinds for what no schema or change rule of the image sees,
+// such as what several documents mean together, or what takes a parser or a tool to tell. chalkd
+// runs it as
+//
+//	<program> validate <name>
+//
+// in the sandbox renderers run in, after the change rules and before the renderers, in a
+// delivery, its dry run, an install in place and the image's check of its own config. A boot runs
+// none, as every slot was written only once the checker of its image passed the documents.
+// chalkctl runs the validators it links, LinkedValidators that read the same JSON, in-process
+// when it checks a node's config.
+//
+// Every program reads one JSON object on standard input, {"node": {"name": …}, "documents":
+// {"<Kind>": [<document>, …]}}: the documents of each of its input kinds, sorted by name, with
+// their schema defaults, without the Secrets and with every other secret value hashed. A renderer
+// or a validator refuses a config by printing a report of refusals on standard output, as
+// pkg/refusals describes it, whatever its exit status; otherwise exit status 0 means that it ran,
+// and any other status is a failure of the program, which refuses the config too. What a program
+// writes to standard error goes to the node's journal alone.
 package outputs
 
 import (
@@ -15,8 +38,6 @@ import (
 	"slices"
 	"strconv"
 	"strings"
-
-	"github.com/trevex/chalkos/pkg/jsonfile"
 )
 
 const (
@@ -47,16 +68,13 @@ type Definition struct {
 // Read reads the outputs an image declares for a node that renders them below root, DefaultRoot
 // on a node; a missing file declares none.
 func Read(path, root string) (map[string]Definition, error) {
-	defs := map[string]Definition{}
-	if err := jsonfile.Read(path, &defs); err != nil {
+	defs, err := readDefinitions(path, RoleOutput, func(name string, d Definition) error { return d.check(name, root) })
+	if err != nil {
 		return nil, err
 	}
 	var errs []error
 	names := slices.Sorted(maps.Keys(defs))
 	for _, name := range names {
-		if err := defs[name].check(name, root); err != nil {
-			errs = append(errs, fmt.Errorf("%s: output %s: %w", path, name, err))
-		}
 		for _, other := range names {
 			dir, in := defs[name].Dir, defs[other].Dir
 			switch {
@@ -73,20 +91,15 @@ func Read(path, root string) (map[string]Definition, error) {
 	return defs, nil
 }
 
-// check refuses a definition of the output name chalkd could not carry out: a program that is no
-// absolute path, a dir it must not replace or a mode that is no octal number. The image's build
-// checks that the programs are of its store.
+// check refuses a definition of the output name chalkd could not carry out: one checkDefinition
+// refuses, a dir it must not replace or a mode that is no octal number.
 func (d Definition) check(name, root string) error {
-	for _, p := range []struct {
-		role    role
-		command string
-	}{{roleRenderer, d.Render}, {roleCheck, d.Check}} {
-		if p.role == roleCheck && p.command == "" {
-			continue
-		}
-		if argv := strings.Fields(p.command); len(argv) == 0 || !filepath.IsAbs(argv[0]) {
-			return fmt.Errorf("the %s %q names no program by its absolute path", p.role, p.command)
-		}
+	programs := map[string]string{partRenderer: d.Render}
+	if d.Check != "" {
+		programs[partCheck] = d.Check
+	}
+	if err := checkDefinition(name, d.Inputs, programs); err != nil {
+		return err
 	}
 	if err := checkDir(name, d.Dir, root); err != nil {
 		return err

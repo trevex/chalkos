@@ -245,7 +245,7 @@ in
         peer='{"kind": "Peer", "metadata": {"name": "router-c"}, "spec": {"address": "10.0.1.1"}}'
         network() { echo "{\"kind\": \"Network\", \"metadata\": {\"name\": \"10-uplink\"}, \"spec\": $1}"; }
         expect() {
-          got=$(echo "[$(network "$1"), $peer]" | jq -c -f $validator)
+          got=$(echo "{\"node\": {\"name\": \"cp1\"}, \"documents\": {\"Network\": [$(network "$1")], \"Peer\": [$peer]}}" | jq -c -f $validator)
           if [ "$got" != "$2" ]; then
             echo "error: with the Network spec $1, bgp-peers printed $got, not $2" >&2
             exit 1

@@ -55,8 +55,8 @@ func TestValidators(t *testing.T) {
 	if inputs := slices.Sorted(slices.Values(got[0].Inputs)); !slices.Equal(inputs, slices.Sorted(slices.Values(derive.Kinds()))) {
 		t.Errorf("inputs = %v, want %v", inputs, derive.Kinds())
 	}
-	if rs, err := got[0].Validate([]byte("[]")); err != nil || len(rs) != 0 {
-		t.Errorf("Validate([]) = %v, %v", rs, err)
+	if rs, err := got[0].Validate([]byte(`{"node": {"name": "r1"}, "documents": {}}`)); err != nil || len(rs) != 0 {
+		t.Errorf("Validate of no documents = %v, %v", rs, err)
 	}
 	// A variant without BGP declares none of its kinds, and the validator reads none of them.
 	noBGP := t.TempDir()

@@ -23,10 +23,8 @@ import (
 	"github.com/trevex/chalkos/pkg/effects"
 	"github.com/trevex/chalkos/pkg/outputs"
 	"github.com/trevex/chalkos/pkg/pki"
-	"github.com/trevex/chalkos/pkg/refusals"
 	"github.com/trevex/chalkos/pkg/schema"
 	"github.com/trevex/chalkos/pkg/uki"
-	"github.com/trevex/chalkos/pkg/validators"
 )
 
 // Layer writes what an image layer derives from the running slot's documents, such as the
@@ -74,7 +72,7 @@ func Default() Loader {
 		Schemas:         "/etc/chalkos/schemas",
 		SetHostname:     func(name string) error { return syscall.Sethostname([]byte(name)) },
 		Outputs:         outputs.DefaultPath,
-		Validators:      validators.DefaultPath,
+		Validators:      outputs.ValidatorsPath,
 		Render:          outputs.Default(),
 		NodeCertificate: "/state/chalkd/node.pem",
 	}
@@ -217,14 +215,15 @@ func (l Loader) RenderOutputs(ctx context.Context, name string, docs config.Reda
 	return staged, failures, nil
 }
 
-// Validate runs every validator of the image on docs, a config set with its defaults, and
-// returns the refusals they reported and the failures of those that did not run to their end. It changes nothing a service reads.
-func (l Loader) Validate(ctx context.Context, docs config.Redacted) ([]refusals.Refusal, []validators.Failure, error) {
-	defs, err := validators.Read(l.Validators)
+// Validate runs every validator of the image on docs, a config set with its defaults, for the
+// node called name, and returns the failures of those that refused it or did not run to their
+// end, as RenderOutputs returns the outputs'. It changes nothing a service reads.
+func (l Loader) Validate(ctx context.Context, name string, docs config.Redacted) ([]outputs.Failure, error) {
+	defs, err := outputs.ReadValidators(l.Validators)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
-	return validators.Run(ctx, l.Render, defs, outputs.Input{Documents: docs})
+	return l.Render.Validate(ctx, defs, outputs.Input{Node: name, Documents: docs})
 }
 
 // OutputStates are the states of the outputs the node serves now, which docs, the config they

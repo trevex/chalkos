@@ -20,8 +20,8 @@ import (
 	"github.com/trevex/chalkos/pkg/client"
 	"github.com/trevex/chalkos/pkg/clustersecrets"
 	"github.com/trevex/chalkos/pkg/config"
+	"github.com/trevex/chalkos/pkg/outputs"
 	"github.com/trevex/chalkos/pkg/schema"
-	"github.com/trevex/chalkos/pkg/validators"
 )
 
 // Plugin is a layer of chalkctl.
@@ -53,7 +53,7 @@ type Status interface {
 type Validators interface {
 	// Validators are the layer's validators that an image of the schemas runs, by the names the
 	// image gives them; none for an image without the layer's kinds.
-	Validators(s *schema.Schemas) []validators.Linked
+	Validators(s *schema.Schemas) []outputs.LinkedValidator
 }
 
 // ImageFacts is a plugin whose layer's images carry facts config is translated with. chalkctl

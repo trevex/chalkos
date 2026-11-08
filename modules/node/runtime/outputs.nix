@@ -224,10 +224,6 @@ let
       throw (lib.head clashes)
     else
       builtins.toJSON (lib.mapAttrs outputJSON outputs);
-  # The examples of each output that has them, which the image's build renders.
-  examplesJSON = builtins.toJSON (
-    lib.mapAttrs (_: o: o.examples) (lib.filterAttrs (_: o: o.examples != null) outputs)
-  );
 
 in
 {
@@ -246,7 +242,6 @@ in
 
   config = {
     system.build.chalkosOutputs = pkgs.writeText "chalkos-outputs.json" outputsJSON;
-    system.build.chalkosOutputExamples = pkgs.writeText "chalkos-output-examples.json" examplesJSON;
     environment.etc."chalkos/outputs.json".text = outputsJSON;
 
     # The unprivileged user chalkd runs renderers, checks and validators as. Users are fixed when

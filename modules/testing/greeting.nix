@@ -68,7 +68,7 @@
       set -e
       [ "$(${pkgs.coreutils}/bin/id -u)" -ne 0 ]
       [ ! -e /state/chalkd ]
-      exec ${lib.getExe pkgs.jq} -c '{refusals: [.[] | select(.spec.message | test("^[A-Z !]+$")) | {kind, name: .metadata.name, path: "spec.message", message: "the message shouts; write it in lower case"}]}'
+      exec ${lib.getExe pkgs.jq} -c '{refusals: [.documents.Greeting[] | select(.spec.message | test("^[A-Z !]+$")) | {kind, name: .metadata.name, path: "spec.message", message: "the message shouts; write it in lower case"}]}'
     '';
     examples = ./greeting-examples;
   };

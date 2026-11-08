@@ -38,12 +38,12 @@ func (s *Server) renderOutputs(ctx context.Context, name string, docs config.Red
 	}
 	if !refuse {
 		if dry {
-			log.Printf("%s; a dry run of a delivery that keeps the node's documents plans it all the same", outputs.Refusal(failures))
+			log.Printf("%s; a dry run of a delivery that keeps the node's documents plans it all the same", outputs.Message(failures))
 		} else {
-			log.Printf("%s; the delivery keeps the node's documents, so it goes ahead", outputs.Refusal(failures))
+			log.Printf("%s; the delivery keeps the node's documents, so it goes ahead", outputs.Message(failures))
 		}
 		return staged, nil
 	}
 	staged.Discard()
-	return nil, layer.Errorf(connect.CodeFailedPrecondition, "%s", outputs.Refusal(failures))
+	return nil, layer.Errorf(connect.CodeFailedPrecondition, "%s", outputs.Message(failures))
 }

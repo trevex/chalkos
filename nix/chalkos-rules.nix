@@ -21,6 +21,5 @@ callPackage ./go-module.nix { } {
     ../pkg/imageref
     ../pkg/storage
     ../pkg/tool
-    ../pkg/validators
   ];
 }

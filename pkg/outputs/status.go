@@ -38,14 +38,17 @@ func ReadStatus(root string) (map[string]Status, error) {
 	return st, nil
 }
 
-// RecordFailures records the failures in the status below root; the hash each output serves
-// stays.
+// RecordFailures records the failures of outputs in the status below root; the hash each output
+// serves stays.
 func RecordFailures(root string, failures []Failure) error {
 	return updateStatus(root, func(st map[string]Status) {
 		for _, f := range failures {
-			s := st[f.Output]
+			if f.Role != RoleOutput {
+				continue
+			}
+			s := st[f.Name]
 			s.Error = f.Problem
-			st[f.Output] = s
+			st[f.Name] = s
 		}
 	})
 }

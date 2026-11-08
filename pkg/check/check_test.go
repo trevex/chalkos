@@ -17,7 +17,6 @@ import (
 	"github.com/trevex/chalkos/pkg/effects"
 	"github.com/trevex/chalkos/pkg/outputs"
 	"github.com/trevex/chalkos/pkg/rules"
-	"github.com/trevex/chalkos/pkg/validators"
 )
 
 // script writes an executable shell script of the commands and returns its path.
@@ -220,12 +219,12 @@ func TestRunValidators(t *testing.T) {
 		want     string
 	}{
 		"refuses": {refuse, StageValidators, "the config is refused: Demo/one: spec.name: is taken"},
-		"fails":   {`exit 4`, StageValidators, "validator demo failed (exit 4); see the node's journal"},
+		"fails":   {`exit 4`, StageValidators, "validator demo: its program failed (exit 4); see the node's journal"},
 		"passes":  {`cat >/dev/null`, StageOutputs, "output demo: its renderer failed (exit 3); see the node's journal"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			img := testImage(t, `exit 3`)
-			img.Validators = map[string]validators.Definition{"demo": {Inputs: []string{"Demo"}, Program: script(t, tc.validate)}}
+			img.Validators = map[string]outputs.Validator{"demo": {Inputs: []string{"Demo"}, Program: script(t, tc.validate)}}
 			in := running(t, testImage(t, `cat > "$OUT/demo.json"`), &facts{})
 			in.Delivered = config.Redact(parse(t, base))
 			_, err := Run(context.Background(), img, in)

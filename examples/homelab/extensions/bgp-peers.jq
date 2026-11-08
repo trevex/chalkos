@@ -1,4 +1,4 @@
-# The validator bgp-peers: it reads the node's Peer and Network documents, as one array, and
+# The validator bgp-peers: it reads the node's Peer and Network documents, by kind, and
 # refuses a Peer whose IPv4 address lies on none of the subnets of the node's static IPv4
 # addresses. bird.conf sets no multihop, so bird talks to a neighbour on a link of its own alone,
 # and a session with a neighbour elsewhere would never come up. The subnet of a link that takes
@@ -33,11 +33,11 @@ def addresses:
 def dhcpv4:
   [.spec.network? // [] | each | .dhcp? | select(. == "yes" or . == "ipv4" or . == true)] != [];
 
-[ .[] | select(.kind == "Network") ] as $networks
+.documents.Network as $networks
 | [ $networks[] | addresses[] ] as $subnets
 | { refusals: [
     if $networks == [] or ($networks | any(addresses == [] or dhcpv4)) then empty else
-      .[] | select(.kind == "Peer" and (.spec.address | ipv4))
+      .documents.Peer[] | select(.spec.address | ipv4)
       | select(.spec.address as $peer | [$subnets[] | . as $s | $peer | within($s)] | any | not)
       | { kind: "Peer", name: .metadata.name, path: "spec.address",
           message: "\(.spec.address) lies on no subnet of the node's addresses, \($subnets | join(", ")); bird reaches a neighbour on a link of its own alone" }

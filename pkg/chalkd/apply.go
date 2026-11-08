@@ -252,7 +252,7 @@ func (s *Server) planDelivery(ctx context.Context, r applyRequest) (*delivery, e
 		}
 		// The image's validators check what its rules do not; a delivery without config changes no
 		// document, so it runs none.
-		if err := s.checkValidators(ctx, next); err != nil {
+		if err := s.checkValidators(ctx, name, next); err != nil {
 			return nil, err
 		}
 	}

@@ -12,15 +12,16 @@ import (
 
 // Validate is the validator router: chalkd runs it as chalkos-render validate router on the
 // documents of the kinds of Kinds that the image declares, and chalkctl links it and runs it
-// in-process on the same documents, so both refuse a config alike. documents is what a validator
-// reads on standard input, a JSON array of documents with their schema defaults and their secret
-// values hashed. Validate reads them as Build takes them and returns every refusal of the checks
-// that check runs, each once; chalkos-render and chalkctl replace the runes of their messages that
-// refusals.Unprintable reports by spaces. An input that is no array of documents, and a guard's
-// internal error, are its error, the validator's failure: chalkd and chalkctl run the validator after the schemas, the
+// in-process on the same documents, so both refuse a config alike. stdin is what a validator
+// reads on standard input, the input a renderer reads too: the node's name and the documents of
+// each kind, with their schema defaults and their secret values hashed. Validate builds the model
+// of the documents as Build does and returns every refusal of the checks that check runs, each
+// once; chalkos-render and chalkctl replace the runes of their messages that refusals.Unprintable
+// reports by spaces. An input that is no such object, and a guard's internal error, are its error,
+// the validator's failure: chalkd and chalkctl run the validator after the schemas, the
 // references and the rules have checked the documents, which keeps every guard from firing.
-func Validate(documents []byte) ([]refusals.Refusal, error) {
-	byKind, err := readDocuments(documents)
+func Validate(stdin []byte) ([]refusals.Refusal, error) {
+	byKind, err := readDocuments(stdin)
 	if err != nil {
 		return nil, err
 	}
@@ -53,26 +54,22 @@ func check(byKind map[string]any) error {
 	return errors.Join(nerr, d.checkFirewall(nat64), serr, d.checkResolvers(), derr, rerr)
 }
 
-// readDocuments is data, a JSON array of documents, as Build takes it: by kind, each kind's
-// documents in the array's order, which sorts them by name, and the numbers exact.
+// readDocuments is the documents of data, a validator's input, by kind, as Build takes them: each
+// kind's documents a list sorted by name, with the numbers exact.
 func readDocuments(data []byte) (map[string]any, error) {
 	dec := json.NewDecoder(bytes.NewReader(data))
 	dec.UseNumber()
-	var docs []map[string]any
-	if err := dec.Decode(&docs); err != nil {
-		return nil, fmt.Errorf("the documents are no JSON array of documents: %w", err)
+	var in struct {
+		Documents map[string]any `json:"documents"`
+	}
+	if err := dec.Decode(&in); err != nil {
+		return nil, fmt.Errorf("the input is no object of documents by kind: %w", err)
 	}
 	if err := dec.Decode(new(json.RawMessage)); !errors.Is(err, io.EOF) {
-		return nil, errors.New("the documents are no JSON array of documents: more follows the array")
+		return nil, errors.New("the input is no object of documents by kind: more follows the object")
 	}
-	out := map[string]any{}
-	for i, doc := range docs {
-		kind, _ := doc["kind"].(string)
-		if kind == "" {
-			return nil, fmt.Errorf("document %d names no kind", i+1)
-		}
-		list, _ := out[kind].([]any)
-		out[kind] = append(list, any(doc))
+	if in.Documents == nil {
+		return nil, errors.New("the input holds no documents")
 	}
-	return out, nil
+	return in.Documents, nil
 }

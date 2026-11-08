@@ -24,22 +24,22 @@ import (
 	"github.com/trevex/chalkos/pkg/facts"
 	"github.com/trevex/chalkos/pkg/jsonfile"
 	"github.com/trevex/chalkos/pkg/outputs"
+	"github.com/trevex/chalkos/pkg/refusals"
 	"github.com/trevex/chalkos/pkg/rules"
 	"github.com/trevex/chalkos/pkg/schema"
-	"github.com/trevex/chalkos/pkg/validators"
 )
 
 const usage = `usage: chalkos-rules check IMAGE
 
 Checks the files of the directory IMAGE, as an image's build lays them out: schemas/, the
 directory of its schemas; facts.json, effects.json, outputs.json, validators.json and
-diagnostics.json, the image's own; examples.json and validator-examples.json, the examples
-directory of each output and of each validator by name; and units/, its systemd units. Every
-rule of the schemas and of the effects compiles and reads only facts facts.json declares, every
-unit an effect restarts or reloads is one of units/, every effect's outputs and kinds name an
-output or a kind that exists, every output and validator reads kinds the schemas declare, each
-output renders each of its examples and passes its check, each validator accepts each of its
-examples, and every diagnostic is one chalkd can run.`
+diagnostics.json, the image's own; examples.json, {"outputs": {...}, "validators": {...}}, the
+examples directory of each output and of each validator by name; and units/, its systemd units.
+Every rule of the schemas and of the effects compiles and reads only facts facts.json declares,
+every unit an effect restarts or reloads is one of units/, every effect's outputs and kinds name
+an output or a kind that exists, every output and validator reads kinds the schemas declare,
+each output renders each of its examples and passes its check, each validator accepts each of
+its examples, and every diagnostic is one chalkd can run.`
 
 func main() {
 	if len(os.Args) != 3 || os.Args[1] != "check" {
@@ -72,16 +72,12 @@ func check(image string, out io.Writer) error {
 	if _, err := diagnostics.Read(filepath.Join(image, "diagnostics.json")); err != nil {
 		return err
 	}
-	examples := map[string]string{}
-	if err := jsonfile.Read(filepath.Join(image, "examples.json"), &examples); err != nil {
-		return err
-	}
-	vals, err := validators.Read(filepath.Join(image, "validators.json"))
+	vals, err := outputs.ReadValidators(filepath.Join(image, "validators.json"))
 	if err != nil {
 		return err
 	}
-	valExamples := map[string]string{}
-	if err := jsonfile.Read(filepath.Join(image, "validator-examples.json"), &valExamples); err != nil {
+	var ex examples
+	if err := jsonfile.Read(filepath.Join(image, "examples.json"), &ex); err != nil {
 		return err
 	}
 	var errs []error
@@ -127,19 +123,22 @@ func check(image string, out io.Writer) error {
 		reads(p.Where(), p.When, p.Facts)
 		compiled++
 	}
-	errs = append(errs, checkOutputs(s, outs, effectDefs)...)
-	errs = append(errs, checkValidators(s, vals)...)
+	for _, name := range slices.Sorted(maps.Keys(outs)) {
+		errs = append(errs, checkPrograms(s, outputs.RoleOutput, name, outs[name].Inputs, map[string]string{"renderer": outs[name].Render, "check": outs[name].Check})...)
+	}
+	for _, name := range slices.Sorted(maps.Keys(vals)) {
+		errs = append(errs, checkPrograms(s, outputs.RoleValidator, name, vals[name].Inputs, map[string]string{"program": vals[name].Program})...)
+	}
+	errs = append(errs, checkEffects(s, outs, effectDefs)...)
 	if len(errs) > 0 {
 		return errors.Join(errs...)
 	}
-	// The examples render, and the validators run on theirs, once the outputs and the validators
-	// are sound.
-	rendered, exampleErrs := checkExamples(s, outs, examples)
-	validated, validatorErrs := checkValidatorExamples(s, vals, valExamples)
-	if exampleErrs = append(exampleErrs, validatorErrs...); len(exampleErrs) > 0 {
+	// The outputs and the validators run on their examples once they are sound.
+	ran, exampleErrs := checkExamples(s, outs, vals, ex)
+	if len(exampleErrs) > 0 {
 		return errors.Join(exampleErrs...)
 	}
-	fmt.Fprintf(out, "%d rules and %d effect rules compile, reading the facts %s; %d outputs render %d examples; %d validators accept %d examples\n", len(set.Programs), compiled, declared(read), len(outs), rendered, len(vals), validated)
+	fmt.Fprintf(out, "%d rules and %d effect rules compile, reading the facts %s; %d outputs render %d examples; %d validators accept %d examples\n", len(set.Programs), compiled, declared(read), len(outs), ran[outputs.RoleOutput], len(vals), ran[outputs.RoleValidator])
 	return nil
 }
 
@@ -177,36 +176,39 @@ func kindNames(s *schema.Schemas) (declared, withheld map[string]bool) {
 	return declared, withheld
 }
 
-// checkOutputs refuses:
-//   - an output whose programs are not of the image's store;
-//   - an output whose inputs are kinds the image does not declare, or that a unit cannot read:
-//     Secret and the withheld kinds;
-//   - an effect whose outputs name no output, or whose kinds are not the image's or are withheld.
-func checkOutputs(s *schema.Schemas, defs map[string]outputs.Definition, effectDefs map[string]effects.Definition) []error {
+// checkPrograms refuses a definition of the role whose programs, by part, are not of the image's
+// store, or whose inputs are kinds the image does not declare or withholds from its programs;
+// outputs.Read and outputs.ReadValidators refused the rest already.
+func checkPrograms(s *schema.Schemas, role outputs.Role, name string, inputs []string, programs map[string]string) []error {
 	kinds, withheld := kindNames(s)
 	var errs []error
-	for _, name := range slices.Sorted(maps.Keys(defs)) {
-		d := defs[name]
-		for _, p := range []struct{ what, command string }{{"renderer", d.Render}, {"check", d.Check}} {
-			// InStore judges the program, the first word, alone: an argument such as /var/lib/
-			// need not be a clean path.
-			if argv := strings.Fields(p.command); p.command != "" && (len(argv) == 0 || !command.InStore(argv[0])) {
-				errs = append(errs, fmt.Errorf("output %s: the %s %q is no program of the image's store", name, p.what, p.command))
-			}
-		}
-		for _, kind := range d.Inputs {
-			switch {
-			case !kinds[kind]:
-				errs = append(errs, fmt.Errorf("output %s: the image declares no kind %s", name, kind))
-			case withheld[kind]:
-				errs = append(errs, fmt.Errorf("output %s: a renderer does not read %s documents", name, kind))
-			}
+	for _, part := range slices.Sorted(maps.Keys(programs)) {
+		// InStore judges the program, the first word, alone: an argument such as /var/lib/ need
+		// not be a clean path.
+		if argv := strings.Fields(programs[part]); programs[part] != "" && (len(argv) == 0 || !command.InStore(argv[0])) {
+			errs = append(errs, fmt.Errorf("%s %s: the %s %q is no program of the image's store", role, name, part, programs[part]))
 		}
 	}
+	for _, kind := range inputs {
+		switch {
+		case !kinds[kind]:
+			errs = append(errs, fmt.Errorf("%s %s: the image declares no kind %s", role, name, kind))
+		case withheld[kind]:
+			errs = append(errs, fmt.Errorf("%s %s: the image withholds %s documents from its programs", role, name, kind))
+		}
+	}
+	return errs
+}
+
+// checkEffects refuses an effect whose outputs name no output, or whose kinds are not the image's
+// or are withheld.
+func checkEffects(s *schema.Schemas, outs map[string]outputs.Definition, effectDefs map[string]effects.Definition) []error {
+	kinds, withheld := kindNames(s)
+	var errs []error
 	for _, name := range slices.Sorted(maps.Keys(effectDefs)) {
 		for _, o := range effectDefs[name].Outputs {
-			if _, ok := defs[o]; !ok {
-				errs = append(errs, fmt.Errorf("effect %s: outputs names %s, which is no output of the image; its outputs are %s", name, o, declared(defs)))
+			if _, ok := outs[o]; !ok {
+				errs = append(errs, fmt.Errorf("effect %s: outputs names %s, which is no output of the image; its outputs are %s", name, o, declared(outs)))
 			}
 		}
 		for _, kind := range effectDefs[name].Kinds {
@@ -221,30 +223,43 @@ func checkOutputs(s *schema.Schemas, defs map[string]outputs.Definition, effectD
 	return errs
 }
 
-// checkExamples renders each output from each file of its examples directory, a config set of
-// its own, as the node example, and runs its check, as a node would; it returns the number of
-// examples rendered. The build runs the programs as they are, and leaves the files' owner.
-func checkExamples(s *schema.Schemas, defs map[string]outputs.Definition, examples map[string]string) (int, []error) {
+// examples are the examples directories of the image's outputs and validators, by name, as
+// examples.json holds them.
+type examples struct {
+	Outputs    map[string]string `json:"outputs"`
+	Validators map[string]string `json:"validators"`
+}
+
+// checkExamples runs each output and each validator on each file of its examples directory, a
+// config set of its own, as the node example, as a node would: an output renders it and passes its
+// check, and a validator accepts it. It returns the number of examples run, by role. The build
+// runs the programs as they are, and leaves the files' owner.
+func checkExamples(s *schema.Schemas, outs map[string]outputs.Definition, vals map[string]outputs.Validator, ex examples) (map[outputs.Role]int, []error) {
+	n := map[outputs.Role]int{}
 	var errs []error
-	n := 0
-	for _, name := range slices.Sorted(maps.Keys(examples)) {
-		d, ok := defs[name]
-		if !ok {
-			errs = append(errs, fmt.Errorf("output %s: it has examples but is no output", name))
-			continue
-		}
-		files, err := exampleFiles(examples[name])
-		if err != nil {
-			errs = append(errs, fmt.Errorf("output %s: its examples: %w", name, err))
-			continue
-		}
-		for _, file := range files {
-			if err := renderExample(s, name, d, file); err != nil {
-				errs = append(errs, fmt.Errorf("output %s: example %s: %w", name, filepath.Base(file), err))
+	for role, dirs := range map[outputs.Role]map[string]string{outputs.RoleOutput: ex.Outputs, outputs.RoleValidator: ex.Validators} {
+		for _, name := range slices.Sorted(maps.Keys(dirs)) {
+			_, isOutput := outs[name]
+			_, isValidator := vals[name]
+			if role == outputs.RoleOutput && !isOutput || role == outputs.RoleValidator && !isValidator {
+				errs = append(errs, fmt.Errorf("%s %s: it has examples but is no %s", role, name, role))
+				continue
 			}
-			n++
+			files, err := exampleFiles(dirs[name])
+			if err != nil {
+				errs = append(errs, fmt.Errorf("%s %s: its examples: %w", role, name, err))
+				continue
+			}
+			for _, file := range files {
+				if err := runExample(s, role, name, outs, vals, file); err != nil {
+					errs = append(errs, fmt.Errorf("%s %s: example %s: %w", role, name, filepath.Base(file), err))
+				}
+				n[role]++
+			}
 		}
 	}
+	// The map's order is random; the errors are not.
+	slices.SortFunc(errs, func(a, b error) int { return strings.Compare(a.Error(), b.Error()) })
 	return n, errs
 }
 
@@ -292,7 +307,8 @@ func exampleDocuments(s *schema.Schemas, file string) (config.Redacted, error) {
 	return config.Redact(docs), nil
 }
 
-func renderExample(s *schema.Schemas, name string, d outputs.Definition, file string) error {
+// runExample runs the output or the validator name, as role says, on the example file.
+func runExample(s *schema.Schemas, role outputs.Role, name string, outs map[string]outputs.Definition, vals map[string]outputs.Validator, file string) error {
 	docs, err := exampleDocuments(s, file)
 	if err != nil {
 		return err
@@ -303,82 +319,19 @@ func renderExample(s *schema.Schemas, name string, d outputs.Definition, file st
 	}
 	defer os.RemoveAll(root)
 	r := outputs.Renderer{Root: root, Run: outputs.Direct{}, KeepOwner: true}
-	_, failures := r.Render(context.Background(), map[string]outputs.Definition{name: d}, outputs.Input{Node: "example", Documents: docs, Schemas: s})
-	if len(failures) > 0 {
-		// What the program wrote to standard error is in the build's log, above.
-		return errors.New(strings.TrimSuffix(failures[0].Problem, "; see the node's journal"))
-	}
-	return nil
-}
-
-// checkValidators refuses a validator whose program is not of the image's store, or whose inputs
-// are kinds the image does not declare or withholds; validators.Read refused the rest already.
-func checkValidators(s *schema.Schemas, defs map[string]validators.Definition) []error {
-	kinds, withheld := kindNames(s)
-	var errs []error
-	for _, name := range slices.Sorted(maps.Keys(defs)) {
-		d := defs[name]
-		// InStore judges the program, the first word, alone, as for an output's.
-		if argv := strings.Fields(d.Program); !command.InStore(argv[0]) {
-			errs = append(errs, fmt.Errorf("validator %s: the program %q is no program of the image's store", name, d.Program))
-		}
-		for _, kind := range d.Inputs {
-			switch {
-			case !kinds[kind]:
-				errs = append(errs, fmt.Errorf("validator %s: the image declares no kind %s", name, kind))
-			case withheld[kind]:
-				errs = append(errs, fmt.Errorf("validator %s: a validator does not read %s documents", name, kind))
-			}
-		}
-	}
-	return errs
-}
-
-// checkValidatorExamples runs each validator on each file of its examples directory, a config
-// set of its own, as a node would, and refuses an example the validator refuses or fails on; it
-// returns the number of examples run. The build runs the programs as they are.
-func checkValidatorExamples(s *schema.Schemas, defs map[string]validators.Definition, examples map[string]string) (int, []error) {
-	var errs []error
-	n := 0
-	for _, name := range slices.Sorted(maps.Keys(examples)) {
-		d, ok := defs[name]
-		if !ok {
-			errs = append(errs, fmt.Errorf("validator %s: it has examples but is no validator", name))
-			continue
-		}
-		files, err := exampleFiles(examples[name])
-		if err != nil {
-			errs = append(errs, fmt.Errorf("validator %s: its examples: %w", name, err))
-			continue
-		}
-		for _, file := range files {
-			if err := validateExample(s, name, d, file); err != nil {
-				errs = append(errs, fmt.Errorf("validator %s: example %s: %w", name, filepath.Base(file), err))
-			}
-			n++
-		}
-	}
-	return n, errs
-}
-
-func validateExample(s *schema.Schemas, name string, d validators.Definition, file string) error {
-	docs, err := exampleDocuments(s, file)
-	if err != nil {
+	in := outputs.Input{Node: "example", Documents: docs, Schemas: s}
+	var failures []outputs.Failure
+	if role == outputs.RoleOutput {
+		_, failures = r.Render(context.Background(), map[string]outputs.Definition{name: outs[name]}, in)
+	} else if failures, err = r.Validate(context.Background(), map[string]outputs.Validator{name: vals[name]}, in); err != nil {
 		return err
 	}
-	root, err := os.MkdirTemp("", "chalkos-example-")
-	if err != nil {
-		return err
+	if len(failures) == 0 {
+		return nil
 	}
-	defer os.RemoveAll(root)
-	r := outputs.Renderer{Root: root, Run: outputs.Direct{}}
-	rs, failures, err := validators.Run(context.Background(), r, map[string]validators.Definition{name: d}, outputs.Input{Node: "example", Documents: docs, Schemas: s})
-	if err != nil {
-		return err
+	// What the program wrote to standard error is in the build's log, above.
+	if f := failures[0]; len(f.Refusals) > 0 {
+		return errors.New(refusals.Message(f.Refusals))
 	}
-	if len(rs) > 0 || len(failures) > 0 {
-		// What the program wrote to standard error is in the build's log, above.
-		return errors.New(strings.TrimSuffix(validators.Refusal(rs, failures), "; see the node's journal"))
-	}
-	return nil
+	return errors.New(strings.TrimSuffix(failures[0].Problem, "; see the node's journal"))
 }

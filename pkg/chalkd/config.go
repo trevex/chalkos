@@ -129,7 +129,7 @@ func (s *Server) installConfig(ctx context.Context, h *nodev1.InstallHeader, nam
 		return slot.Stored{}, err
 	}
 	// The node renders the outputs again at the boot that follows.
-	if err := s.checkValidators(ctx, docs); err != nil {
+	if err := s.checkValidators(ctx, name, docs); err != nil {
 		return slot.Stored{}, err
 	}
 	staged, err := s.renderOutputs(ctx, name, docs, schemas, true, false)

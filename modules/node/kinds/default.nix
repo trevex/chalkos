@@ -93,6 +93,16 @@ let
     };
   };
 
+  # The examples directory of each output and validator that has one, which the image's build
+  # runs it on.
+  examplesOf =
+    defs: lib.mapAttrs (_: d: d.examples) (lib.filterAttrs (_: d: d.examples != null) defs);
+  examplesJSON = pkgs.writeText "chalkos-examples.json" (
+    builtins.toJSON {
+      outputs = examplesOf config.chalkos.outputs;
+      validators = examplesOf config.chalkos.validators;
+    }
+  );
   # The files of the image chalkos-rules checks, laid out as it reads them; units holds every
   # systemd unit of the image, the upstream ones among them.
   rulesImage = pkgs.linkFarm "chalkos-rules-image" {
@@ -100,16 +110,15 @@ let
     "facts.json" = config.system.build.chalkosFacts;
     "effects.json" = config.system.build.chalkosEffects;
     "outputs.json" = config.system.build.chalkosOutputs;
-    "examples.json" = config.system.build.chalkosOutputExamples;
+    "examples.json" = examplesJSON;
     "validators.json" = config.system.build.chalkosValidators;
-    "validator-examples.json" = config.system.build.chalkosValidatorExamples;
     "diagnostics.json" = config.system.build.chalkosDiagnostics;
     units = config.environment.etc."systemd/system".source;
   };
   # The image builds only when every rule of its schemas and of its effects compiles, within the
   # cost limit, and reads facts the image declares, its effects act on units and outputs it
-  # defines, each output renders its examples and passes its check, and chalkd can run each of
-  # its diagnostics.
+  # defines, each output renders its examples and passes its check, each validator accepts its
+  # examples, and chalkd can run each of its diagnostics.
   rulesCheck = pkgs.runCommand "chalkos-rules-check" { nativeBuildInputs = [ chalkos-rules ]; } ''
     chalkos-rules check ${rulesImage}
     touch $out

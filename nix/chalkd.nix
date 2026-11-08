@@ -47,7 +47,6 @@ callPackage ./go-module.nix { } {
     ../pkg/tool
     ../pkg/uki
     ../pkg/upgrade
-    ../pkg/validators
     ../pkg/verity
   ];
   ldflags = [

@@ -566,7 +566,7 @@ func TestInstallInPlaceChecksTheOutputs(t *testing.T) {
 			writeSchemas(t, s.Loader.Schemas)
 			writeOutputs(t, s, map[string]outputs.Definition{"demo": demoOutput(t, s, `cat > "$OUT/demo.json"`, tc.check)})
 			installed := false
-			if err := outputs.RecordFailures(s.Loader.Render.Root, []outputs.Failure{{Output: "demo", Problem: "an earlier failure"}}); err != nil {
+			if err := outputs.RecordFailures(s.Loader.Render.Root, []outputs.Failure{{Name: "demo", Role: outputs.RoleOutput, Problem: "an earlier failure"}}); err != nil {
 				t.Fatal(err)
 			}
 			s.InPlace = func(context.Context, install.Request, []byte) error { installed = true; return nil }

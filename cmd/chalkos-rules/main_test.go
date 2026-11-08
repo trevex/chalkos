@@ -124,7 +124,7 @@ func withOutput(t *testing.T, files map[string]string, render, check string, exa
 	files["outputs.json"] = `{"greeting": {"inputs": ["Greeting"], "render": "` + sh + " " + filepath.Join(scripts, "render") + `",
 	  "check": "` + sh + " " + filepath.Join(scripts, "check") + `", "dir": "/run/chalkos/outputs/greeting", "user": "nobody", "group": "nobody", "mode": "0644"}}`
 	files["effects.json"] = `{"greeter": {"outputs": ["greeting"], "restart": ["greeter.service"]}}`
-	files["examples.json"] = `{"greeting": "` + filepath.Join(scripts, "examples") + `"}`
+	files["examples.json"] = `{"outputs": {"greeting": "` + filepath.Join(scripts, "examples") + `"}}`
 	for name, text := range examples {
 		path := filepath.Join(scripts, "examples", name)
 		os.MkdirAll(filepath.Dir(path), 0o755)
@@ -208,7 +208,7 @@ func TestCheckOutputs(t *testing.T) {
 			f["outputs.json"] = strings.Replace(f["outputs.json"], `["Greeting"]`, `["Bundle"]`, 1)
 			delete(f, "examples.json")
 			return f
-		}(), "output greeting: a renderer does not read Bundle documents"},
+		}(), "output greeting: the image withholds Bundle documents from its programs"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			if err := check(image(t, tc.files), &bytes.Buffer{}); err == nil || !strings.Contains(err.Error(), tc.want) {
@@ -232,7 +232,7 @@ func withValidator(t *testing.T, files map[string]string, commands string, examp
 	scripts := t.TempDir()
 	os.WriteFile(filepath.Join(scripts, "validate"), []byte("set -e\n"+commands+"\n"), 0o644)
 	files["validators.json"] = `{"greeting": {"inputs": ["Greeting"], "program": "` + sh + " " + filepath.Join(scripts, "validate") + `"}}`
-	files["validator-examples.json"] = `{"greeting": "` + filepath.Join(scripts, "examples") + `"}`
+	files["examples.json"] = `{"validators": {"greeting": "` + filepath.Join(scripts, "examples") + `"}}`
 	for name, text := range examples {
 		path := filepath.Join(scripts, "examples", name)
 		os.MkdirAll(filepath.Dir(path), 0o755)
@@ -257,30 +257,30 @@ func TestCheckValidators(t *testing.T) {
 		want  string
 	}{
 		"an example it refuses": {withValidator(t, base(), validate, map[string]string{"hello.yaml": hello, "other.yaml": other}), "validator greeting: example other.yaml: the config is refused: Greeting/g: spec.message: say hello"},
-		"an example it fails":   {withValidator(t, base(), "exit 4", map[string]string{"hello.yaml": hello}), "validator greeting: example hello.yaml: validator greeting failed (exit 4)"},
+		"an example it fails":   {withValidator(t, base(), "exit 4", map[string]string{"hello.yaml": hello}), "validator greeting: example hello.yaml: its program failed (exit 4)"},
 		"an invalid example":    {withValidator(t, base(), validate, map[string]string{"bad.yaml": strings.Replace(hello, "kind: Greeting", "kind: Greting", 1)}), "validator greeting: example bad.yaml: "},
 		"no examples":           {withValidator(t, base(), validate, map[string]string{"README": "none"}), "validator greeting: its examples: "},
 		"examples of no validator": {func() map[string]string {
 			f := withValidator(t, base(), validate, nil)
-			f["validator-examples.json"] = `{"greting": "/nowhere"}`
+			f["examples.json"] = `{"validators": {"greting": "/nowhere"}}`
 			return f
 		}(), "validator greting: it has examples but is no validator"},
 		"an undeclared kind": {func() map[string]string {
 			f := withValidator(t, base(), validate, nil)
 			f["validators.json"] = strings.Replace(f["validators.json"], `["Greeting"]`, `["Peer"]`, 1)
-			delete(f, "validator-examples.json")
+			delete(f, "examples.json")
 			return f
 		}(), "validator greeting: the image declares no kind Peer"},
 		"a withheld kind": {func() map[string]string {
 			f := withBundle(withValidator(t, base(), validate, nil))
 			f["validators.json"] = strings.Replace(f["validators.json"], `["Greeting"]`, `["Bundle"]`, 1)
-			delete(f, "validator-examples.json")
+			delete(f, "examples.json")
 			return f
-		}(), "validator greeting: a validator does not read Bundle documents"},
+		}(), "validator greeting: the image withholds Bundle documents from its programs"},
 		"a program outside the store": {func() map[string]string {
 			f := withValidator(t, base(), validate, nil)
 			f["validators.json"] = strings.Replace(f["validators.json"], storeShell(t), "/bin/sh", 1)
-			delete(f, "validator-examples.json")
+			delete(f, "examples.json")
 			return f
 		}(), `validator greeting: the program "/bin/sh `},
 	} {

@@ -17,7 +17,6 @@ import (
 	"github.com/trevex/chalkos/pkg/outputs"
 	"github.com/trevex/chalkos/pkg/rules"
 	"github.com/trevex/chalkos/pkg/schema"
-	"github.com/trevex/chalkos/pkg/validators"
 )
 
 // Image is what an image checks config with, all of it its own: its schemas and the target its
@@ -28,7 +27,7 @@ type Image struct {
 	Target     config.Target
 	Rules      *rules.Set
 	Effects    Effects
-	Validators map[string]validators.Definition
+	Validators map[string]outputs.Validator
 	Outputs    map[string]outputs.Definition
 	Render     outputs.Renderer
 }
@@ -112,17 +111,17 @@ func Run(ctx context.Context, img Image, in Input) (Result, error) {
 		return res, &Refusal{Stage: StageRules, Message: rules.Refusal(failures, in.Node), Failures: failures}
 	}
 	input := outputs.Input{Node: in.Node, Documents: docs, Schemas: img.Schemas}
-	rs, failed, err := validators.Run(ctx, img.Render, img.Validators, input)
+	failed, err := img.Render.Validate(ctx, img.Validators, input)
 	if err != nil {
 		return Result{}, err
 	}
-	if len(rs) > 0 || len(failed) > 0 {
-		return res, &Refusal{Stage: StageValidators, Message: validators.Refusal(rs, failed)}
+	if len(failed) > 0 {
+		return res, &Refusal{Stage: StageValidators, Message: outputs.Message(failed)}
 	}
 	staged, refused := img.Render.Render(ctx, img.Outputs, input)
 	if len(refused) > 0 {
 		staged.Discard()
-		return res, &Refusal{Stage: StageOutputs, Message: outputs.Refusal(refused)}
+		return res, &Refusal{Stage: StageOutputs, Message: outputs.Message(refused)}
 	}
 	o, warnings, err := Due(img.Effects, Delivery{Node: in.Node, Documents: docs, Schemas: img.Schemas, Outputs: staged.States()}, in.Compare)
 	if err != nil {

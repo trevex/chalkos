@@ -15,21 +15,6 @@ import (
 	"github.com/trevex/chalkos/pkg/refusals"
 )
 
-// A role is what an output's program does: render its files or check them.
-type role int
-
-const (
-	roleRenderer role = iota
-	roleCheck
-)
-
-func (r role) String() string {
-	if r == roleCheck {
-		return "check"
-	}
-	return "renderer"
-}
-
 // A Program is a renderer, a check or a validator to run: its argv, the input it reads on
 // standard input, and $OUT, the directory of the output's files, which a renderer may write and a
 // check may only read; a validator gets an empty directory of its own. The sandbox keeps the

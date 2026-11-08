@@ -52,14 +52,16 @@ let
         example = lib.literalExpression "lib.chalkos.validate.jq ./peers.jq";
         description = ''
           Program of the image's store, with its arguments, that checks the documents. chalkd
-          runs it as `<program> validate <name>`. It reads one JSON array on standard input: the
-          documents of the kinds of `inputs`, sorted by kind and name, with their schema defaults
-          and without any Secret's values. It refuses a config by printing
+          runs it as `<program> validate <name>`. It reads what a renderer reads on standard
+          input: `{"node": {"name": …}, "documents": {"<Kind>": [<document>, …]}}`, the documents
+          of each kind of `inputs`, sorted by name, with their schema defaults and without any
+          Secret's values. It refuses a config by printing
           `{"refusals": [{"kind": …, "name": …, "path": …, "message": …}]}` on standard output,
-          which chalkd reports as it reports a rule's refusal; it prints nothing, or no refusal,
-          for a config it accepts. Exit status 0 means it ran; any other status, or anything else
-          printed on standard output, fails it, which refuses the config too. It runs in the
-          renderers' sandbox, may write no path but `/tmp`, and must finish within 30 seconds.
+          whatever its exit status, which chalkd reports as it reports a rule's refusal; it prints
+          nothing, or no refusal, for a config it accepts. Otherwise exit status 0 means it ran;
+          any other status, or anything else printed on standard output, fails it, which refuses
+          the config too. It runs in the renderers' sandbox, may write no path but `/tmp`, and
+          must finish within 30 seconds.
           `lib.chalkos.validate.jq` builds a validator from a jq program, whose output is the
           report.
         '';
@@ -89,10 +91,6 @@ let
         program = programCommand "chalkos.validators.${name}.program" name v.program;
       };
   validatorsJSON = builtins.toJSON (lib.mapAttrs validatorJSON validators);
-  # The examples of each validator that has them, which the image's build runs it on.
-  examplesJSON = builtins.toJSON (
-    lib.mapAttrs (_: v: v.examples) (lib.filterAttrs (_: v: v.examples != null) validators)
-  );
 in
 {
   options.chalkos.validators = lib.mkOption {
@@ -111,7 +109,6 @@ in
 
   config = {
     system.build.chalkosValidators = pkgs.writeText "chalkos-validators.json" validatorsJSON;
-    system.build.chalkosValidatorExamples = pkgs.writeText "chalkos-validator-examples.json" examplesJSON;
     environment.etc."chalkos/validators.json".text = validatorsJSON;
   };
 }

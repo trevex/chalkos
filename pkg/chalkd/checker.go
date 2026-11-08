@@ -19,7 +19,6 @@ import (
 	"github.com/trevex/chalkos/pkg/outputs"
 	"github.com/trevex/chalkos/pkg/rules"
 	"github.com/trevex/chalkos/pkg/schema"
-	"github.com/trevex/chalkos/pkg/validators"
 )
 
 // Check is chalkd check: the image checks config for itself, as the chalkd of a running image
@@ -105,7 +104,7 @@ func (s *Server) systemImage(system, platform, dir string) (check.Image, error) 
 	if err != nil {
 		return check.Image{}, fmt.Errorf("the image's outputs: %w", err)
 	}
-	vals, err := validators.Read(filepath.Join(etc, "chalkos", "validators.json"))
+	vals, err := outputs.ReadValidators(filepath.Join(etc, "chalkos", "validators.json"))
 	if err != nil {
 		return check.Image{}, fmt.Errorf("the image's validators: %w", err)
 	}

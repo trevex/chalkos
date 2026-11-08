@@ -43,7 +43,7 @@ func TestRenderRefusals(t *testing.T) {
 	staged, failures := r.Render(context.Background(), defs, input(t, demos))
 	byName := map[string]Failure{}
 	for _, f := range failures {
-		byName[f.Output] = f
+		byName[f.Name] = f
 	}
 	if f := byName["failed"]; !slices.Equal(f.Refusals, []refusals.Refusal{taken, too}) ||
 		f.Problem != "its renderer refused the config: Demo/one: spec.name: is taken; Demo/two: spec.name: is taken too" {
@@ -63,7 +63,7 @@ func TestRenderRefusals(t *testing.T) {
 	want := "the config is refused: Demo/one: spec.name: is taken; Demo/two: spec.name: is taken too; " +
 		"output broken: its renderer failed (exit 2); see the node's journal; " +
 		"output checked: its check refused the rendered files (exit 1); see the node's journal"
-	if got := Refusal(failures); got != want {
+	if got := Message(failures); got != want {
 		t.Errorf("Refusal = %q\nwant      %q", got, want)
 	}
 	staged.Discard()
@@ -103,7 +103,7 @@ func TestRefusalsCarryNoSecret(t *testing.T) {
 	if len(failures) != 1 || len(failures[0].Refusals) != 1 {
 		t.Fatalf("failures = %#v", failures)
 	}
-	if msg := Refusal(failures); !strings.Contains(msg, `"secretRef":{"key":"token","name":"demo"}`) || strings.Contains(msg, "s3cret") {
+	if msg := Message(failures); !strings.Contains(msg, `"secretRef":{"key":"token","name":"demo"}`) || strings.Contains(msg, "s3cret") {
 		t.Errorf("the refusal = %s", msg)
 	}
 }

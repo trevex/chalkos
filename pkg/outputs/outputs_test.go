@@ -284,6 +284,8 @@ func TestLive(t *testing.T) {
 func TestRead(t *testing.T) {
 	for name, tc := range map[string]struct{ json, want string }{
 		"fine":     {`{"a": {"inputs": [], "render": "/nix/store/x/bin/r a", "dir": "/run/a", "user": "root", "group": "root", "mode": "0644"}}`, ""},
+		"name":     {`{"A": {"render": "/nix/store/x", "dir": "/run/a", "mode": "0644"}}`, `output A: the name is not lower-case letters, digits and dashes`},
+		"secret":   {`{"a": {"inputs": ["Secret"], "render": "/nix/store/x", "dir": "/run/a", "mode": "0644"}}`, `output a: it reads Secret documents, whose values no program reads`},
 		"renderer": {`{"a": {"render": "r", "dir": "/run/a", "mode": "0644"}}`, `output a: the renderer "r" names no program by its absolute path`},
 		"check":    {`{"a": {"render": "/nix/store/x", "check": "true", "dir": "/run/a", "mode": "0644"}}`, `output a: the check "true" names no program`},
 		"dir":      {`{"a": {"render": "/nix/store/x", "dir": "run/a", "mode": "0644"}}`, `the dir "run/a" must be a clean path below /run`},

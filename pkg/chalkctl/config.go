@@ -20,7 +20,6 @@ import (
 	"github.com/trevex/chalkos/pkg/outputs"
 	"github.com/trevex/chalkos/pkg/rules"
 	"github.com/trevex/chalkos/pkg/schema"
-	"github.com/trevex/chalkos/pkg/validators"
 )
 
 // contract is what an image accepts as config: the platform it was built for, the schemas of its
@@ -167,7 +166,7 @@ func checkNodeConfig(nc *inventory.NodeConfig, c contract) (delivery, error) {
 	if err := checkRules(c, set.Documents(), config.Redacted{}, nc.Name); err != nil {
 		return delivery{}, err
 	}
-	if err := checkValidators(c, set.Documents()); err != nil {
+	if err := checkValidators(c, nc.Name, set.Documents()); err != nil {
 		return delivery{}, err
 	}
 	e, err := config.Encode(nc.Documents)
@@ -198,19 +197,19 @@ func checkRules(c contract, next []config.Document, old config.Redacted, node st
 	return nil
 }
 
-// checkValidators refuses docs, a node's config with its defaults, when a validator of a compiled
-// layer that the image the contract describes runs refuses it or fails, as the node would refuse
-// it. The validators run in-process on the JSON the image's programs read, redacted. A validator
-// an extension declares is a program of the image alone, which chalkctl cannot run, so the node
-// checks it at the delivery.
-func checkValidators(c contract, docs []config.Document) error {
-	var linked []validators.Linked
+// checkValidators refuses docs, the config of the node called node with its defaults, when a
+// validator of a compiled layer that the image the contract describes runs refuses it or fails, as
+// the node would refuse it. The validators run in-process on the input the image's programs read,
+// redacted. A validator an extension declares is a program of the image alone, which chalkctl
+// cannot run, so the node checks it at the delivery.
+func checkValidators(c contract, node string, docs []config.Document) error {
+	var linked []outputs.LinkedValidator
 	for _, p := range compiled[layer.Validators]() {
 		linked = append(linked, p.Validators(c.schemas)...)
 	}
-	rs, failures := validators.RunLinked(linked, outputs.Input{Documents: config.Redact(docs)})
-	if len(rs) > 0 || len(failures) > 0 {
-		return errors.New(validators.Refusal(rs, failures))
+	failures := outputs.RunLinked(linked, outputs.Input{Node: node, Documents: config.Redact(docs)})
+	if len(failures) > 0 {
+		return errors.New(outputs.Message(failures))
 	}
 	return nil
 }
