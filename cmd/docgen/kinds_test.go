@@ -6,12 +6,14 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/santhosh-tekuri/jsonschema/v6"
+
 	"github.com/trevex/chalkos/pkg/schema"
 )
 
 func TestWriteKinds(t *testing.T) {
 	page := filepath.Join(t.TempDir(), "kinds.md")
-	if err := writeKinds(page, "testdata/kinds/schemas", []string{"testdata/kinds/inventory.json"}); err != nil {
+	if err := writeKinds(page, "testdata/kinds/schemas", []string{"testdata/kinds/chalkctl.chalkos.dev_v1alpha1_Inventory.json"}); err != nil {
 		t.Fatal(err)
 	}
 	data, err := os.ReadFile(page)
@@ -82,22 +84,42 @@ func TestWriteKinds(t *testing.T) {
 	}
 }
 
+// fieldSchema compiles a kind whose spec has the field x of the JSON schema field, and returns
+// x's node.
+func fieldSchema(t *testing.T, field string) *jsonschema.Schema {
+	t.Helper()
+	s, err := schema.LoadFiles(map[string][]byte{"a.example.org_v1_A.json": []byte(`{
+		"x-chalkos-kind": {"group": "a.example.org", "version": "v1", "kind": "A"},
+		"properties": {"spec": {"properties": {"x": ` + field + `}}}}`)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var x *jsonschema.Schema
+	s.WalkSchema("a.example.org/v1", "A", func(n schema.Node) bool {
+		if n.Path == "spec.x" && x == nil {
+			x = n.Schema
+		}
+		return true
+	})
+	return x
+}
+
 // A string of a format the kinds' schemas assert is named by what it holds; another format reads
 // as a string.
 func TestTypeOfFormats(t *testing.T) {
 	for _, c := range []struct {
-		schema map[string]any
+		schema string
 		want   string
 	}{
-		{map[string]any{"type": "string", "format": "ip"}, "IP address"},
-		{map[string]any{"type": "string", "format": "cidr"}, "address range"},
-		{map[string]any{"type": "array", "items": map[string]any{"type": "string", "format": "cidr"}}, "list of address range"},
-		{map[string]any{"anyOf": []any{map[string]any{"type": "integer", "minimum": 1, "maximum": 65535}, map[string]any{"type": "string", "format": "port-range"}}}, "integer from 1 to 65535 or range of ports"},
-		{map[string]any{"anyOf": []any{map[string]any{"type": "string", "format": "ip"}, map[string]any{"type": "null"}}}, "IP address or null"},
-		{map[string]any{"type": "string", "format": "email"}, "string"},
+		{`{"type": "string", "format": "ip"}`, "IP address"},
+		{`{"type": "string", "format": "cidr"}`, "address range"},
+		{`{"type": "array", "items": {"type": "string", "format": "cidr"}}`, "list of address range"},
+		{`{"anyOf": [{"type": "integer", "minimum": 1, "maximum": 65535}, {"type": "string", "format": "port-range"}]}`, "integer from 1 to 65535 or range of ports"},
+		{`{"anyOf": [{"type": "string", "format": "ip"}, {"type": "null"}]}`, "IP address or null"},
+		{`{"type": "string", "format": "email"}`, "string"},
 	} {
-		if got := typeOf(nil, c.schema); got != c.want {
-			t.Errorf("typeOf(%v) = %q, want %q", c.schema, got, c.want)
+		if got := typeOf(schema.KeywordsOf(fieldSchema(t, c.schema)), fieldSchema(t, c.schema)); got != c.want {
+			t.Errorf("typeOf(%s) = %q, want %q", c.schema, got, c.want)
 		}
 	}
 }
@@ -106,13 +128,13 @@ func TestTypeOfFormats(t *testing.T) {
 // reserves.
 func TestRefType(t *testing.T) {
 	for _, c := range []struct {
-		ref  map[string]any
+		ref  schema.Ref
 		want string
 	}{
-		{map[string]any{"kind": "VRF", "reserved": []any{"default"}}, "name of a VRF, or `default`"},
-		{map[string]any{"kind": "AddressSet"}, "name of an AddressSet"},
+		{schema.Ref{Kind: "VRF", Reserved: []string{"default"}}, "name of a VRF, or `default`"},
+		{schema.Ref{Kind: "AddressSet"}, "name of an AddressSet"},
 	} {
-		if got := refType(c.ref); got != c.want {
+		if got := refType(&c.ref); got != c.want {
 			t.Errorf("refType(%v) = %q, want %q", c.ref, got, c.want)
 		}
 	}
@@ -166,8 +188,18 @@ func TestFormatNames(t *testing.T) {
 
 // A withheld kind's section says that no service reads its documents.
 func TestWriteKindWithheld(t *testing.T) {
+	s, err := schema.LoadFiles(map[string][]byte{"bundle.example.org_v1_Bundle.json": []byte(`{
+		"description": "Objects.",
+		"x-chalkos-kind": {"group": "bundle.example.org", "version": "v1", "kind": "Bundle", "multiple": true, "withheld": true}}`)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	kinds, err := kindSchemas(s, "")
+	if err != nil {
+		t.Fatal(err)
+	}
 	var b strings.Builder
-	writeKind(&b, kindSchema{group: "bundle.example.org", version: "v1", kind: "Bundle", multiple: true, withheld: true, root: map[string]any{"description": "Objects."}})
+	writeKind(&b, kinds[0])
 	if want := "A node's config may hold several, each with a name of its own. The kind is [withheld](../how-it-works/node/config.md#withheld-kinds-stay-out-of-run): no service reads its documents, and chalkcfg prints none."; !strings.Contains(b.String(), want) {
 		t.Errorf("section = %q, want it to hold %q", b.String(), want)
 	}

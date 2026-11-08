@@ -212,7 +212,7 @@ rec {
         mkdir -p $out/docs/reference $out/includes
         install -m 644 ${../zensical.toml} $out/zensical.toml
         docgen cli $out/docs/reference/cli $out/zensical.toml ${helpLinkPages}
-        docgen kinds $out/docs/reference/kinds.md ${kindSchemas} ${inventorySchema} ${labSchema}
+        docgen kinds $out/docs/reference/kinds.md ${kindSchemas} ${snippetSchemas}/chalkctl.chalkos.dev_v1alpha1_Inventory.json ${snippetSchemas}/chalklab.chalkos.dev_v1alpha1_Lab.json
         docgen options $out/docs/reference ${optionsTemplates} ${argumentOptions}/share/doc/nixos/options.json ${imageOptions}/share/doc/nixos/options.json
         docgen builtins $out/docs/reference/builtins.md ${builtinsImage "docs" imageSystem} ${builtinsImage "plain" docsImages.nixos.plain-metal} ${builtinsImage "edge" docsImages.nixos.edge-metal}
         cp -r $api proto

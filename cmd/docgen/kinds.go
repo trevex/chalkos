@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"cmp"
 	"encoding/json"
 	"fmt"
@@ -10,6 +9,11 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+
+	"github.com/santhosh-tekuri/jsonschema/v6"
+
+	"github.com/trevex/chalkos/pkg/rules"
+	"github.com/trevex/chalkos/pkg/schema"
 )
 
 // kindsDescription is the description of the page of config kinds.
@@ -57,17 +61,20 @@ const (
 	filesIntro   = "chalkctl reads an inventory and chalklab a lab file. Neither is part of a node's config."
 )
 
-// kindSchema is the JSON Schema of a kind, as its file holds it, and the kind it declares.
+// kindSchema is a kind, the compiled schemas that declare it, and how many change rules it has.
 type kindSchema struct {
-	path                 string
-	group, version, kind string
-	multiple             bool
-	// withheld tells that the node keeps the kind's documents from its services.
-	withheld bool
+	path string
+	// decl is the kind as its schema declares it.
+	decl           schema.Kind
+	group, version string
 	// file tells that the kind is one of chalkctl's or chalklab's own files rather than a
 	// document of a node's config.
 	file bool
-	root map[string]any
+	// description is the root's, the sentence that opens the kind's section.
+	description string
+	schemas     *schema.Schemas
+	// rules is the number of rules the kind has, as rules.Compile compiles them.
+	rules int
 }
 
 // row is a field in a kind's table.
@@ -80,20 +87,13 @@ type row struct {
 // with the kinds of each by name, then a section of the kinds of the schema files given,
 // chalkctl's and chalklab's own, in their order.
 func writeKinds(page, dir string, files []string) error {
-	entries, err := os.ReadDir(dir)
+	s, err := schema.LoadSchemas(dir)
 	if err != nil {
 		return err
 	}
-	var kinds []kindSchema
-	for _, e := range entries {
-		if e.IsDir() || filepath.Ext(e.Name()) != ".json" {
-			continue
-		}
-		k, err := readKindSchema(filepath.Join(dir, e.Name()))
-		if err != nil {
-			return err
-		}
-		kinds = append(kinds, k)
+	kinds, err := kindSchemas(s, dir)
+	if err != nil {
+		return err
 	}
 	slices.SortFunc(kinds, func(a, b kindSchema) int {
 		if (a.group == "chalkos.dev") != (b.group == "chalkos.dev") {
@@ -102,30 +102,40 @@ func writeKinds(page, dir string, files []string) error {
 			}
 			return 1
 		}
-		return cmp.Or(strings.Compare(a.group, b.group), strings.Compare(a.kind, b.kind))
+		return cmp.Or(strings.Compare(a.group, b.group), strings.Compare(a.decl.Kind, b.decl.Kind))
 	})
 	for _, f := range files {
-		k, err := readKindSchema(f)
+		data, err := os.ReadFile(f)
 		if err != nil {
 			return err
 		}
-		k.file = true
-		kinds = append(kinds, k)
+		s, err := schema.LoadFiles(map[string][]byte{filepath.Base(f): data})
+		if err != nil {
+			return fmt.Errorf("%s: %w", f, err)
+		}
+		ks, err := kindSchemas(s, filepath.Dir(f))
+		if err != nil {
+			return err
+		}
+		for _, k := range ks {
+			k.file = true
+			kinds = append(kinds, k)
+		}
 	}
 	anchors := map[string]bool{filesAnchor: true}
 	for _, k := range kinds {
 		anchors[groupAnchor(k.group)] = true
 	}
 	for _, k := range kinds {
-		anchor := strings.ToLower(k.kind)
+		anchor := strings.ToLower(k.decl.Kind)
 		if anchors[anchor] {
-			return fmt.Errorf("two kinds named %s would share the anchor #%s", k.kind, anchor)
+			return fmt.Errorf("two kinds named %s would share the anchor #%s", k.decl.Kind, anchor)
 		}
 		anchors[anchor] = true
 	}
 	for _, k := range kinds {
-		if text(k.root["description"]) == "" {
-			return fmt.Errorf("%s: the kind %s has no description, which its section opens with", k.path, k.kind)
+		if k.description == "" {
+			return fmt.Errorf("%s: the kind %s has no description, which its section opens with", k.path, k.decl.Kind)
 		}
 	}
 	var b strings.Builder
@@ -155,30 +165,35 @@ func writeKinds(page, dir string, files []string) error {
 // no kind's anchor can be, as kind names have neither.
 func groupAnchor(group string) string { return strings.ReplaceAll(group, ".", "-") }
 
-// readKindSchema reads a kind's JSON Schema, keeping numbers as their text, and the kind its
-// "x-chalkos-kind" declares.
-func readKindSchema(path string) (kindSchema, error) {
-	data, err := os.ReadFile(path)
+// kindSchemas are the kinds s declares, those of the schema files in dir, each with the number of
+// rules the evaluator compiles for it.
+func kindSchemas(s *schema.Schemas, dir string) ([]kindSchema, error) {
+	set, err := rules.Compile(s)
 	if err != nil {
-		return kindSchema{}, err
+		return nil, err
 	}
-	dec := json.NewDecoder(bytes.NewReader(data))
-	dec.UseNumber()
-	var root map[string]any
-	if err := dec.Decode(&root); err != nil {
-		return kindSchema{}, fmt.Errorf("%s: %w", path, err)
+	var kinds []kindSchema
+	for _, k := range s.Kinds() {
+		ks := kindSchema{decl: k, schemas: s, path: filepath.Join(dir, schemaFileName(k))}
+		ks.group, ks.version, _ = strings.Cut(k.APIVersion, "/")
+		s.WalkSchema(k.APIVersion, k.Kind, func(n schema.Node) bool {
+			ks.description = text(schema.KeywordsOf(n.Schema)["description"])
+			return false
+		})
+		for _, p := range set.Programs {
+			if p.Kind == k {
+				ks.rules++
+			}
+		}
+		kinds = append(kinds, ks)
 	}
-	xk := asMap(root["x-chalkos-kind"])
-	k := kindSchema{path: path, root: root}
-	k.group, _ = xk["group"].(string)
-	k.version, _ = xk["version"].(string)
-	k.kind, _ = xk["kind"].(string)
-	k.multiple, _ = xk["multiple"].(bool)
-	k.withheld, _ = xk["withheld"].(bool)
-	if k.group == "" || k.version == "" || k.kind == "" {
-		return kindSchema{}, fmt.Errorf("%s: has no x-chalkos-kind with a group, version and kind", path)
-	}
-	return k, nil
+	return kinds, nil
+}
+
+// schemaFileName is the name of k's schema file, as pkg/schema requires it.
+func schemaFileName(k schema.Kind) string {
+	group, version, _ := strings.Cut(k.APIVersion, "/")
+	return group + "_" + version + "_" + k.Kind + ".json"
 }
 
 // writeKind writes a kind's section: its purpose, its apiVersion, how many documents of it a
@@ -186,146 +201,148 @@ func readKindSchema(path string) (kindSchema, error) {
 // sections.
 func writeKind(b *strings.Builder, k kindSchema) {
 	fmt.Fprintf(b, "\n### %s { #%s }\n\n%s\n\n`apiVersion: %s/%s`\n\n",
-		k.kind, strings.ToLower(k.kind), text(k.root["description"]), k.group, k.version)
+		k.decl.Kind, strings.ToLower(k.decl.Kind), k.description, k.group, k.version)
 	var counts []string
 	if !k.file {
-		if k.multiple {
+		if k.decl.Multiple {
 			counts = append(counts, "A node's config may hold several, each with a name of its own.")
 		} else {
 			counts = append(counts, "A node's config holds at most one.")
 		}
-		if k.withheld {
+		if k.decl.Withheld {
 			counts = append(counts, "The kind is [withheld](../how-it-works/node/config.md#withheld-kinds-stay-out-of-run): no service reads its documents, and chalkcfg prints none.")
 		}
 	}
 	// The page of built-ins lists the rules of each kind under #rules-<kind>.
-	if n := countRules(k.root); n == 1 {
-		counts = append(counts, fmt.Sprintf("It has a [change rule](builtins.md#rules-%s).", strings.ToLower(k.kind)))
-	} else if n > 1 {
-		counts = append(counts, fmt.Sprintf("It has %d [change rules](builtins.md#rules-%s).", n, strings.ToLower(k.kind)))
+	if k.rules == 1 {
+		counts = append(counts, fmt.Sprintf("It has a [change rule](builtins.md#rules-%s).", strings.ToLower(k.decl.Kind)))
+	} else if k.rules > 1 {
+		counts = append(counts, fmt.Sprintf("It has %d [change rules](builtins.md#rules-%s).", k.rules, strings.ToLower(k.decl.Kind)))
 	}
-	spec := resolve(k.root, asMap(props(k.root)["spec"]))
+	s := walkSpec(k)
 	// A kind's own declarations mark its spec, each a tuple of the spec's fields.
-	for _, d := range asSlice(spec["x-chalkos-unique"]) {
-		counts = append(counts, "No two documents share "+keyFields(asMap(d))+".")
+	for _, d := range s.unique {
+		counts = append(counts, "No two documents share "+keyFields(d)+".")
 	}
 	if len(counts) > 0 {
 		b.WriteString(strings.Join(counts, " ") + "\n\n")
 	}
-	if isNetworkd(spec) {
-		writeSections(b, k.root, spec)
+	if len(s.sections) > 0 {
+		writeSections(b, s)
 		return
 	}
-	rows := fields(k.root, "spec", spec)
-	if len(rows) == 0 {
+	if len(s.rows) == 0 {
 		b.WriteString("Its `spec` has no fields.\n")
 		return
 	}
 	b.WriteString("| Field | Type | Default | Description |\n| --- | --- | --- | --- |\n")
-	for _, r := range rows {
+	for _, r := range s.rows {
 		fmt.Fprintf(b, "| `%s` | %s | %s | %s |\n", r.path, r.typ, r.def, r.desc)
 	}
 }
 
-// countRules counts the change rules of a kind's schema: its own, in x-chalkos-kind, and its
-// fields', in their x-chalkos-rules.
-func countRules(v any) int {
-	n := 0
-	switch v := v.(type) {
-	case map[string]any:
-		for key, val := range v {
-			switch key {
-			case "x-chalkos-rules":
-				n += len(asSlice(val))
-			case "x-chalkos-kind":
-				n += len(asSlice(asMap(val)["rules"]))
-			default:
-				n += countRules(val)
+// spec is what a kind's section shows of its spec: the spec's own uniqueness declarations, a row
+// for each field, and, for a networkd kind, whose fields are the sections of its unit, the
+// systemd spelling of each section and of each section's keys.
+type spec struct {
+	unique   []schema.Unique
+	rows     []row
+	sections []section
+}
+
+// section is a networkd section: its field of the spec, its systemd spelling, and its keys, each
+// with its spelling, by field.
+type section struct {
+	field, name string
+	keys        map[string]string
+}
+
+// walkSpec walks the spec of k's schema. A field has a row of its own, in the order of the walk,
+// which is by path, and the fields within it follow it: an object's fields, the fields of a
+// map's values at <name> and those of a list's items at []. An object that only groups its
+// fields has their rows alone; the fields of a secret reference or a Kubernetes object have none.
+func walkSpec(k kindSchema) spec {
+	var s spec
+	// required are the required fields of each object, by its path, which an anyOf and each of
+	// its branches share.
+	required := map[string]map[string]bool{}
+	seen := map[string]bool{}
+	sections := map[string]*section{}
+	k.schemas.WalkSchema(k.decl.APIVersion, k.decl.Kind, func(n schema.Node) bool {
+		switch {
+		case len(n.Field) == 0:
+			return true
+		case n.Field[0] != "spec":
+			return false
+		}
+		kw, a := n.Keywords(), n.Annotations()
+		for _, r := range asSlice(kw["required"]) {
+			if name, ok := r.(string); ok {
+				if required[n.Path] == nil {
+					required[n.Path] = map[string]bool{}
+				}
+				required[n.Path][name] = true
 			}
 		}
-	case []any:
-		for _, val := range v {
-			n += countRules(val)
+		if len(n.Field) == 1 {
+			s.unique = append(s.unique, a.Unique...)
+			return true
 		}
+		if a.NetworkdSection != "" && len(n.Field) == 2 {
+			if sections[n.Field[1]] == nil {
+				sections[n.Field[1]] = &section{field: n.Field[1], name: a.NetworkdSection, keys: map[string]string{}}
+			}
+			return true
+		}
+		if sec := sections[n.Field[1]]; sec != nil {
+			if a.NetworkdKey != "" {
+				sec.keys[n.Field[len(n.Field)-1]] = a.NetworkdKey
+				return false
+			}
+			return true
+		}
+		last := n.Field[len(n.Field)-1]
+		if last != schema.ItemStep && last != schema.ValueStep && !seen[n.Path] {
+			seen[n.Path] = true
+			if r, ok := fieldRow(k, n, required[schema.FieldPath(n.Field[:len(n.Field)-1])][last]); ok {
+				s.rows = append(s.rows, r)
+			}
+		}
+		return !(a.Ref != nil && a.Ref.Key) && !a.KubernetesObject
+	})
+	for _, name := range slices.Sorted(maps.Keys(sections)) {
+		s.sections = append(s.sections, *sections[name])
 	}
-	return n
+	return s
 }
 
-// fields returns a row for each field of the object schema s, whose path is path, in name order,
-// each followed by the rows of the fields within it; an object that only groups its fields has
-// their rows alone.
-func fields(root map[string]any, path string, s map[string]any) []row {
-	s = resolve(root, s)
-	required := map[string]bool{}
-	for _, r := range asSlice(s["required"]) {
-		if name, ok := r.(string); ok {
-			required[name] = true
-		}
+// fieldRow is the row of the field n, or none for an object that only groups its fields: one that
+// may be left out and has no description of its own would add nothing to the rows of its fields.
+func fieldRow(k kindSchema, n schema.Node, required bool) (row, bool) {
+	kw := n.Keywords()
+	def := defaultOf(kw, required)
+	desc := text(kw["description"])
+	if _, isObject := kw["properties"]; isObject && def == "—" && desc == "" {
+		return row{}, false
 	}
-	p := props(s)
-	var rows []row
-	for _, name := range slices.Sorted(maps.Keys(p)) {
-		child := resolve(root, asMap(p[name]))
-		fieldPath := path + "." + name
-		inner := nested(root, fieldPath, child)
-		def := defaultOf(child, required[name])
-		// An object that only groups its fields, which may be left out and has no description of
-		// its own, would add nothing to the rows of its fields.
-		if _, isObject := child["properties"]; isObject && def == "—" && text(child["description"]) == "" {
-			rows = append(rows, inner...)
-			continue
-		}
-		desc := text(child["description"])
-		if n, ok := child["maxItems"]; ok {
-			desc = strings.TrimSpace(desc + " Holds " + display(n) + " items at most.")
-		}
-		if note := uniqueNote(root, child); note != "" {
-			desc = strings.TrimSpace(desc + " " + note)
-		}
-		rows = append(rows, row{
-			path: fieldPath,
-			typ:  tableCell(typeOf(root, child)),
-			def:  tableCell(def),
-			desc: desc,
-		})
-		rows = append(rows, inner...)
+	if max, ok := kw["maxItems"]; ok {
+		desc = strings.TrimSpace(desc + " Holds " + display(max) + " items at most.")
 	}
-	return rows
+	if note := uniqueNote(k.decl.Kind, kw, n.Schema); note != "" {
+		desc = strings.TrimSpace(desc + " " + note)
+	}
+	return row{path: n.Path, typ: tableCell(typeOf(kw, n.Schema)), def: tableCell(def), desc: desc}, true
 }
 
-// nested returns the rows of the fields within a field: an object's fields, the fields of a map's
-// values at <name> and those of a list's items at [].
-func nested(root map[string]any, path string, s map[string]any) []row {
-	s = resolve(root, s)
-	if isKeyRef(s) || s["x-chalkos-kubernetes-object"] == true {
-		return nil
-	}
-	if _, ok := s["properties"]; ok {
-		return fields(root, path, s)
-	}
-	if v, ok := s["additionalProperties"].(map[string]any); ok {
-		return nested(root, path+".<name>", v)
-	}
-	if items, ok := s["items"].(map[string]any); ok {
-		return nested(root, path+"[]", items)
-	}
-	for _, branch := range asSlice(s["anyOf"]) {
-		if rows := nested(root, path, asMap(branch)); len(rows) > 0 {
-			return rows
-		}
-	}
-	return nil
-}
-
-// typeOf describes the values a schema accepts.
-func typeOf(root, s map[string]any) string {
-	s = resolve(root, s)
+// typeOf describes the values a schema accepts: sch, $ref followed, of the keywords s.
+func typeOf(s map[string]any, sch *jsonschema.Schema) string {
+	a := schema.AnnotationsOf(sch)
 	switch {
-	case isKeyRef(s):
+	case a.Ref != nil && a.Ref.Key:
 		return "secret reference"
-	case s["x-chalkos-ref"] != nil:
-		return refType(asMap(s["x-chalkos-ref"]))
-	case s["x-chalkos-kubernetes-object"] == true:
+	case a.Ref != nil:
+		return refType(a.Ref)
+	case a.KubernetesObject:
 		return "Kubernetes object"
 	case s["const"] != nil:
 		return "`" + display(s["const"]) + "`"
@@ -337,15 +354,15 @@ func typeOf(root, s map[string]any) string {
 			values = append(values, "`"+display(v)+"`")
 		}
 		return "one of " + strings.Join(values, ", ")
-	case s["anyOf"] != nil:
+	case len(sch.AnyOf) > 0:
 		var types []string
 		nullable := false
-		for _, branch := range asSlice(s["anyOf"]) {
-			if asMap(branch)["type"] == "null" {
+		for _, branch := range sch.AnyOf {
+			if schema.KeywordsOf(branch)["type"] == "null" {
 				nullable = true
 				continue
 			}
-			types = append(types, typeOf(root, asMap(branch)))
+			types = append(types, typeOf(schema.KeywordsOf(branch), schema.Resolve(branch)))
 		}
 		if nullable {
 			types = append(types, "null")
@@ -365,10 +382,13 @@ func typeOf(root, s map[string]any) string {
 	case "integer":
 		return "integer" + rangeOf(s)
 	case "array":
-		return "list of " + typeOf(root, asMap(s["items"]))
+		if sch.Items2020 == nil {
+			return "list of any"
+		}
+		return "list of " + typeOf(schema.KeywordsOf(sch.Items2020), schema.Resolve(sch.Items2020))
 	case "object":
-		if v, ok := s["additionalProperties"].(map[string]any); ok {
-			return "map of " + typeOf(root, v)
+		if v, ok := sch.AdditionalProperties.(*jsonschema.Schema); ok {
+			return "map of " + typeOf(schema.KeywordsOf(v), schema.Resolve(v))
 		}
 		if s["additionalProperties"] != false {
 			return "object, any fields"
@@ -431,66 +451,21 @@ func display(v any) string {
 	return string(data)
 }
 
-// resolve returns the schema that a "$ref" to the root's "$defs" names, with the other keywords of
-// the referring schema, such as its description, laid over it.
-func resolve(root, s map[string]any) map[string]any {
-	ref, ok := s["$ref"].(string)
-	if !ok {
-		return s
-	}
-	merged := maps.Clone(asMap(asMap(root["$defs"])[strings.TrimPrefix(ref, "#/$defs/")]))
-	if merged == nil {
-		merged = map[string]any{}
-	}
-	for k, v := range s {
-		if k != "$ref" {
-			merged[k] = v
-		}
-	}
-	return merged
-}
-
-// isNetworkd tells whether a spec is a networkd unit's, whose fields are its sections.
-func isNetworkd(spec map[string]any) bool {
-	for _, v := range props(spec) {
-		if _, ok := asMap(v)["x-chalkos-networkd-section"]; ok {
-			return true
-		}
-	}
-	return false
-}
-
 // writeSections writes the sections of a networkd kind: each field of its spec is a section of
 // the unit, whose keys are networkd's in camelCase, with the spelling networkd reads.
-func writeSections(b *strings.Builder, root, spec map[string]any) {
+func writeSections(b *strings.Builder, s spec) {
 	b.WriteString("Each field of `spec` is a section of the unit: an object, or a list of objects for a\n" +
 		"section written more than once. Each key of a section is networkd's key in camelCase and takes\n" +
 		"a value, or a list for a key written more than once. The table gives each section and key as\n" +
 		"networkd spells it.\n\n")
 	b.WriteString("| Field | networkd section | Keys |\n| --- | --- | --- |\n")
-	p := props(spec)
-	for _, name := range slices.Sorted(maps.Keys(p)) {
-		section := asMap(p[name])
-		kp := props(sectionObject(root, section))
+	for _, sec := range s.sections {
 		var keys []string
-		for _, key := range slices.Sorted(maps.Keys(kp)) {
-			spelling, _ := asMap(kp[key])["x-chalkos-networkd-key"].(string)
-			keys = append(keys, fmt.Sprintf("`%s` (%s)", key, spelling))
+		for _, key := range slices.Sorted(maps.Keys(sec.keys)) {
+			keys = append(keys, fmt.Sprintf("`%s` (%s)", key, sec.keys[key]))
 		}
-		spelling, _ := section["x-chalkos-networkd-section"].(string)
-		fmt.Fprintf(b, "| `spec.%s` | %s | %s |\n", name, spelling, strings.Join(keys, ", "))
+		fmt.Fprintf(b, "| `spec.%s` | %s | %s |\n", sec.field, sec.name, strings.Join(keys, ", "))
 	}
-}
-
-// sectionObject returns the object schema of a networkd section, which a document gives alone or
-// in a list.
-func sectionObject(root, section map[string]any) map[string]any {
-	for _, branch := range append([]any{section}, asSlice(section["anyOf"])...) {
-		if s := resolve(root, asMap(branch)); s["properties"] != nil {
-			return s
-		}
-	}
-	return nil
 }
 
 // text is a description as one line of a table cell.
@@ -498,12 +473,6 @@ func text(v any) string {
 	s, _ := v.(string)
 	return tableCell(strings.Join(strings.Fields(s), " "))
 }
-
-func props(s map[string]any) map[string]any { return asMap(s["properties"]) }
-
-// isKeyRef tells whether s is a secretRef: an object x-chalkos-ref marks as naming a key of a
-// Secret.
-func isKeyRef(s map[string]any) bool { return asMap(s["x-chalkos-ref"])["key"] == true }
 
 // normaliserText is how a field's values compare under each normaliser.
 var normaliserText = map[string]string{
@@ -516,30 +485,28 @@ var normaliserText = map[string]string{
 // uniqueNote says what a field's x-chalkos-unique declares, a sentence for each declaration: the
 // values or list items that must not repeat, among all documents of the kind or within one list,
 // and the fields of the key and how they compare.
-func uniqueNote(root, s map[string]any) string {
-	kind, _ := asMap(root["x-chalkos-kind"])["kind"].(string)
-	t := s
-	for _, branch := range asSlice(s["anyOf"]) {
-		if b := resolve(root, asMap(branch)); b["type"] != "null" {
+func uniqueNote(kind string, kw map[string]any, sch *jsonschema.Schema) string {
+	t := kw
+	for _, branch := range sch.AnyOf {
+		if b := schema.KeywordsOf(branch); b["type"] != "null" {
 			t = b
 		}
 	}
 	var notes []string
-	for _, d := range asSlice(s["x-chalkos-unique"]) {
-		d := asMap(d)
+	for _, d := range schema.AnnotationsOf(sch).Unique {
 		note := "Unique"
 		if t["type"] == "array" {
 			note = "Each item is unique"
 		}
-		if d["across"] == "list" {
+		if d.Across == "list" {
 			note += " within the list"
 		} else {
 			note += " among the " + kind + " documents"
 		}
-		if d["by"] != nil {
+		if d.By != nil {
 			note += " by " + keyFields(d)
-		} else if as, ok := d["as"].(string); ok {
-			note += ", compared " + normaliserText[as]
+		} else if d.As != "" {
+			note += ", compared " + normaliserText[d.As]
 		}
 		notes = append(notes, note+".")
 	}
@@ -547,13 +514,12 @@ func uniqueNote(root, s map[string]any) string {
 }
 
 // keyFields lists the fields of a declaration's key, each with how it compares.
-func keyFields(d map[string]any) string {
+func keyFields(d schema.Unique) string {
 	var fields []string
-	for _, f := range asSlice(d["by"]) {
-		f := asMap(f)
-		text := "`" + display(f["field"]) + "`"
-		if as, ok := f["as"].(string); ok {
-			text += " " + normaliserText[as]
+	for _, f := range d.By {
+		text := "`" + f.Field + "`"
+		if f.As != "" {
+			text += " " + normaliserText[f.As]
 		}
 		fields = append(fields, text)
 	}
@@ -568,8 +534,8 @@ func keyFields(d map[string]any) string {
 
 // refType describes a reference to a document: the kind it names, after an before a vowel as
 // AddressSet takes it, and the names it reserves, which the field takes as they are.
-func refType(ref map[string]any) string {
-	kind := display(ref["kind"])
+func refType(ref *schema.Ref) string {
+	kind := ref.Kind
 	// The first letter alone picks the article, which suits the kinds there are; a kind spoken
 	// otherwise, such as one starting with a U said as "you", would take the wrong one.
 	article := "a "
@@ -578,18 +544,13 @@ func refType(ref map[string]any) string {
 	}
 	out := "name of " + article + kind
 	var reserved []string
-	for _, n := range asSlice(ref["reserved"]) {
-		reserved = append(reserved, "`"+display(n)+"`")
+	for _, n := range ref.Reserved {
+		reserved = append(reserved, "`"+n+"`")
 	}
 	if len(reserved) > 0 {
 		out += ", or " + strings.Join(reserved, ", ")
 	}
 	return out
-}
-
-func asMap(v any) map[string]any {
-	m, _ := v.(map[string]any)
-	return m
 }
 
 func asSlice(v any) []any {

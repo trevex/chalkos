@@ -111,12 +111,3 @@ func DeepCopy(v any) any {
 		return v
 	}
 }
-
-// Raw returns the schema document of a kind as its file holds it.
-func (s *Schemas) Raw(apiVersion, kind string) (any, bool) {
-	sch, ok := s.schemas[key(apiVersion, kind)]
-	if !ok {
-		return nil, false
-	}
-	return KeywordsOf(sch), true
-}
