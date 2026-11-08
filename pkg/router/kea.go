@@ -12,6 +12,7 @@ import (
 	"strconv"
 
 	"github.com/trevex/chalkos/pkg/router/derive"
+	"github.com/trevex/chalkos/pkg/router/keaconf"
 )
 
 // KeaSocket is the control socket of the server of family, dhcp4 or dhcp6, of the VRF vrf, a name
@@ -70,26 +71,23 @@ type KeaSubnet struct {
 
 // ParseKeaSubnets reads the subnets of a DHCPv4 or DHCPv6 config of the output kea, in its order.
 func ParseKeaSubnets(data []byte) ([]KeaSubnet, error) {
-	type subnet struct {
-		ID          uint32 `json:"id"`
-		Subnet      string `json:"subnet"`
-		UserContext struct {
-			Name string `json:"name"`
-		} `json:"user-context"`
-	}
-	var c struct {
-		Dhcp4 struct {
-			Subnet4 []subnet `json:"subnet4"`
-		} `json:"Dhcp4"`
-		Dhcp6 struct {
-			Subnet6 []subnet `json:"subnet6"`
-		} `json:"Dhcp6"`
-	}
+	var c keaconf.Config
 	if err := json.Unmarshal(data, &c); err != nil {
 		return nil, fmt.Errorf("read Kea's config: %w", err)
 	}
+	var subnets []keaconf.Subnet
+	if c.Dhcp4 != nil {
+		for _, s := range c.Dhcp4.Subnet4 {
+			subnets = append(subnets, s.Subnet)
+		}
+	}
+	if c.Dhcp6 != nil {
+		for _, s := range c.Dhcp6.Subnet6 {
+			subnets = append(subnets, s.Subnet)
+		}
+	}
 	var out []KeaSubnet
-	for _, s := range append(c.Dhcp4.Subnet4, c.Dhcp6.Subnet6...) {
+	for _, s := range subnets {
 		out = append(out, KeaSubnet{ID: s.ID, Name: s.UserContext.Name, Subnet: s.Subnet})
 	}
 	return out, nil
@@ -100,26 +98,20 @@ func ParseKeaSubnets(data []byte) ([]KeaSubnet, error) {
 // one. A config whose section lists no interfaces, not even an empty list, is no config of the
 // output.
 func ParseKeaInterfaces(data []byte) ([]string, error) {
-	type section struct {
-		Config *struct {
-			Interfaces *[]string `json:"interfaces"`
-		} `json:"interfaces-config"`
-	}
-	var c struct {
-		Dhcp4 *section `json:"Dhcp4"`
-		Dhcp6 *section `json:"Dhcp6"`
-	}
+	var c keaconf.Config
 	if err := json.Unmarshal(data, &c); err != nil {
 		return nil, fmt.Errorf("read Kea's config: %w", err)
 	}
-	s := c.Dhcp4
-	if s == nil {
-		s = c.Dhcp6
+	var s *keaconf.Server
+	if c.Dhcp4 != nil {
+		s = &c.Dhcp4.Server
+	} else if c.Dhcp6 != nil {
+		s = &c.Dhcp6.Server
 	}
-	if s == nil || s.Config == nil || s.Config.Interfaces == nil {
+	if s == nil || s.InterfacesConfig.Interfaces == nil {
 		return nil, errors.New("read Kea's config: it lists no interfaces")
 	}
-	return *s.Config.Interfaces, nil
+	return s.InterfacesConfig.Interfaces, nil
 }
 
 // KeaLeases are a subnet's counts of Kea's statistics: the addresses it leased, reserved ones

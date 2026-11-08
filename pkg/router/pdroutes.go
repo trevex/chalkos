@@ -7,6 +7,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/trevex/chalkos/pkg/router/keaconf"
 )
 
 // The routes of the prefixes Kea's DHCPv6 servers delegate. Kea routes none of them: its
@@ -46,34 +48,21 @@ type PDPool struct {
 // ParseKea6Pools reads the ranges of delegated prefixes of a DHCPv6 config of the output kea,
 // that of the server of vrf.
 func ParseKea6Pools(vrf string, data []byte) ([]PDPool, error) {
-	var c struct {
-		Dhcp6 struct {
-			Subnet6 []struct {
-				Interface string `json:"interface"`
-				Valid     uint32 `json:"valid-lifetime"`
-				PDPools   []struct {
-					Prefix    string `json:"prefix"`
-					Length    int    `json:"prefix-len"`
-					Delegated int    `json:"delegated-len"`
-				} `json:"pd-pools"`
-			} `json:"subnet6"`
-		} `json:"Dhcp6"`
-	}
+	var c keaconf.Config
 	if err := json.Unmarshal(data, &c); err != nil {
 		return nil, fmt.Errorf("read Kea's config: %w", err)
+	}
+	if c.Dhcp6 == nil {
+		return nil, nil
 	}
 	var out []PDPool
 	for _, s := range c.Dhcp6.Subnet6 {
 		for _, p := range s.PDPools {
-			a, err := netip.ParseAddr(p.Prefix)
+			r, err := p.Prefix.Prefix(p.PrefixLen)
 			if err != nil {
 				return nil, fmt.Errorf("read Kea's config: %w", err)
 			}
-			r, err := a.Prefix(p.Length)
-			if err != nil {
-				return nil, fmt.Errorf("read Kea's config: %w", err)
-			}
-			out = append(out, PDPool{VRF: vrf, Link: s.Interface, Range: r, Length: p.Delegated, Valid: time.Duration(s.Valid) * time.Second})
+			out = append(out, PDPool{VRF: vrf, Link: s.Interface, Range: r, Length: p.DelegatedLen, Valid: time.Duration(s.ValidLifetime) * time.Second})
 		}
 	}
 	return out, nil
