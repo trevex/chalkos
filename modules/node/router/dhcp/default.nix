@@ -85,11 +85,11 @@ let
   # not run, once its links and its VRF's device exist, and reloads those that run; with the
   # argument stop, it stops all of them. systemd binds a VRF's server's sockets to the index its
   # VRF's device had when the server started, which the server keeps in
-  # /run/kea/<family>-<vrf>.ifindex: a VRF that chalkos-vrf removed and networkd created anew has
-  # a new index, so its server restarts on the new device. The script waits 30 seconds at most for
-  # the links and 30 more for the servers it started, and fails naming those that are not running
-  # then. It then starts chalkos-dhcp6-routes, which routes the delegated prefixes of the configs.
-  # systemctl and systemd-escape come from the unit's PATH.
+  # /run/kea/kea-<family>-<vrf>.ifindex: a VRF that chalkos-vrf removed and networkd created anew
+  # has a new index, so its server restarts on the new device. The script waits 30 seconds at most
+  # for the links and 30 more for the servers it started, and fails naming those that are not
+  # running then. It then starts chalkos-dhcp6-routes, which routes the delegated prefixes of the
+  # configs. systemctl and systemd-escape come from the unit's PATH.
   reconcile = pkgs.writeShellApplication {
     name = "chalkos-dhcp";
     runtimeInputs = [
@@ -167,7 +167,7 @@ let
           family=''${unit%%@*}
           family=''${family#kea-}
           ifindex=$(cat "/sys/class/net/$vrf/ifindex" 2>/dev/null) || ifindex=
-          if [[ -z $ifindex || $ifindex != "$(cat "/run/kea/$family-$vrf.ifindex" 2>/dev/null)" ]]; then
+          if [[ -z $ifindex || $ifindex != "$(cat "/run/kea/kea-$family-$vrf.ifindex" 2>/dev/null)" ]]; then
             verb=restart
           fi
         fi
@@ -202,12 +202,12 @@ let
       fi
     '';
   };
-  # Keeps the index of the device of the VRF $2 in /run/kea/$1-$2.ifindex, $1 the server's family,
-  # and fails while the VRF has no device, as unbound@ does.
+  # Keeps the index of the device of the VRF $2 in /run/kea/kea-$1-$2.ifindex, $1 the server's
+  # family, and fails while the VRF has no device, as unbound@ does.
   recordDevice = pkgs.writeShellScript "kea-vrf-device" ''
     set -e
     read -r ifindex <"/sys/class/net/$2/ifindex"
-    echo "$ifindex" >"$RUNTIME_DIRECTORY/$1-$2.ifindex"
+    echo "$ifindex" >"$RUNTIME_DIRECTORY/kea-$1-$2.ifindex"
   '';
   # A server's hardening: the user kea, port 67 or 547, its sockets in /run/kea and its leases in
   # /var/lib/kea, which the servers share and which outlive them. The DHCPv4 servers read and

@@ -367,10 +367,11 @@ hardening and `CAP_NET_BIND_SERVICE` alone. It reads `unbound-<vrf>.conf` and ke
 socket in `/run/unbound-<vrf>`. `BindNetworkInterface=<vrf>` has systemd bind every socket of the
 unit to the VRF's device, as `ip vrf exec` would, so Unbound answers on the VRF's links and sends
 its queries through the VRF's table. systemd binds the sockets to the device's index, which it
-looks up when the unit starts. The unit writes that index to `/run/unbound-<vrf>/ifindex` before
-Unbound starts, and fails if the VRF has no device, since systemd would otherwise start Unbound
-with its sockets in the default VRF. The unit requires the VRF's device unit, so a start waits for
-the device to appear, but the device going away does not stop the resolver.
+looks up when the unit starts. The unit writes that index to
+`/run/unbound-<vrf>/unbound-<vrf>.ifindex` before Unbound starts, and fails if the VRF has no
+device, since systemd would otherwise start Unbound with its sockets in the default VRF. The unit
+requires the VRF's device unit, so a start waits for the device to appear, but the device going
+away does not stop the resolver.
 
 `chalkos-resolvers.service` runs these units. It is a oneshot unit that starts at boot after
 `chalkos-vrf.service` and networkd, which create the VRFs. It starts the resolver of each rendered
@@ -429,9 +430,9 @@ Unbound side by side, and the questions to each have 5 seconds together.
 - The VRFs' resolvers: for each rendered `unbound-<vrf>.conf`, chalkd asks
   `systemctl is-active unbound@<vrf>.service`. A unit that is not active is reported with its
   state, such as `unbound@guest.service is failed`. An active unit counts as running only when
-  the index in `/run/unbound-<vrf>/ifindex` is that of the VRF's device. Otherwise the status
-  says why, such as `unbound@guest.service is active, but it is bound to a removed device of
-  the VRF`.
+  the index in `/run/unbound-<vrf>/unbound-<vrf>.ifindex` is that of the VRF's device. Otherwise
+  the status says why, such as `unbound@guest.service is active, but it is bound to a removed
+  device of the VRF`.
 
 When a question fails, the status gives its error, and the status's other parts stand.
 

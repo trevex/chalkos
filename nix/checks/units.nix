@@ -1673,7 +1673,7 @@ in
         echo "''${next% *}" >"$SD/$unit.state"
         echo "''${next#* }" >"$SD/$unit.sub"
         mkdir -p "/run/unbound-$vrf"
-        cp "/sys/class/net/$vrf/ifindex" "/run/unbound-$vrf/ifindex"
+        cp "/sys/class/net/$vrf/ifindex" "/run/unbound-$vrf/unbound-$vrf.ifindex"
         ;;
       reload) [ "$(state "$unit")" = active ] ;;
       stop)
@@ -1730,8 +1730,8 @@ in
       not_called() { if grep -qxF -- "$1" "$SD/log"; then fail "$2: called systemctl $1"; fi; }
       running() { [ "$(state "$(unit "$1")")" = active ] || fail "$2: $(unit "$1") is $(state "$(unit "$1")")"; }
       on_device() {
-        [ "$(cat "/run/unbound-$1/ifindex")" = "$(cat "/sys/class/net/$1/ifindex")" ] ||
-          fail "$2: $(unit "$1") runs on the device of index $(cat "/run/unbound-$1/ifindex")"
+        [ "$(cat "/run/unbound-$1/unbound-$1.ifindex")" = "$(cat "/sys/class/net/$1/ifindex")" ] ||
+          fail "$2: $(unit "$1") runs on the device of index $(cat "/run/unbound-$1/unbound-$1.ifindex")"
       }
       for vrf in guest tenant dmz-a; do
         device "$vrf"
@@ -1775,7 +1775,7 @@ in
 
       # A resolver that runs without the index of its device restarts.
       : >"$SD/log"
-      rm /run/unbound-guest/ifindex
+      rm /run/unbound-guest/unbound-guest.ifindex
       ${ExecReload} || fail "reloading a resolver without its device's index failed"
       called "restart --no-block $(unit guest)" "no index"
       on_device guest "no index"
@@ -2465,12 +2465,12 @@ in
         next=$(cat "$SD/$unit.next" 2>/dev/null || echo active running)
         echo "''${next% *}" >"$SD/$unit.state"
         echo "''${next#* }" >"$SD/$unit.sub"
-        [ -z "$vrf" ] || cp "/sys/class/net/$vrf/ifindex" "/run/kea/$family-$vrf.ifindex"
+        [ -z "$vrf" ] || cp "/sys/class/net/$vrf/ifindex" "/run/kea/kea-$family-$vrf.ifindex"
         ;;
       reload) [ "$(state "$unit")" = active ] ;;
       stop)
         [ "$(state "$unit")" = failed ] || echo inactive >"$SD/$unit.state"
-        [ -z "$vrf" ] || rm -f "/run/kea/$family-$vrf.ifindex"
+        [ -z "$vrf" ] || rm -f "/run/kea/kea-$family-$vrf.ifindex"
         ;;
       reset-failed)
         case $(state "$unit") in
@@ -2531,8 +2531,8 @@ in
       not_called() { if grep -qxF -- "$1" "$SD/log"; then fail "$2: called systemctl $1"; fi; }
       running() { [ "$(state "$(unit "$1")")" = active ] || fail "$2: $(unit "$1") is $(state "$(unit "$1")")"; }
       on_device() {
-        [ "$(cat "/run/kea/dhcp4-$1.ifindex")" = "$(cat "/sys/class/net/$1/ifindex")" ] ||
-          fail "$2: $(unit "$1") runs on the device of index $(cat "/run/kea/dhcp4-$1.ifindex")"
+        [ "$(cat "/run/kea/kea-dhcp4-$1.ifindex")" = "$(cat "/sys/class/net/$1/ifindex")" ] ||
+          fail "$2: $(unit "$1") runs on the device of index $(cat "/run/kea/kea-dhcp4-$1.ifindex")"
       }
       for link in lan0 vlan20 vlan30; do
         device "$link"
@@ -2549,7 +2549,7 @@ in
       ${ExecReload} || fail "a run with a VRF's config alone failed"
       not_called "start --no-block kea-dhcp4.service" "a VRF's config alone"
       running guest "a VRF's config alone"
-      rm -f "$SD/$(unit guest).state" "$SD/$(unit guest).sub" /run/kea/dhcp4-guest.ifindex
+      rm -f "$SD/$(unit guest).state" "$SD/$(unit guest).sub" /run/kea/kea-dhcp4-guest.ifindex
       : >"$SD/log"
 
       config default lan0
@@ -2588,7 +2588,7 @@ in
 
       # A server that runs without the index of its device restarts.
       : >"$SD/log"
-      rm /run/kea/dhcp4-dmz-a.ifindex
+      rm /run/kea/kea-dhcp4-dmz-a.ifindex
       ${ExecReload} || fail "reloading a server without its device's index failed"
       called "restart --no-block $(unit dmz-a)" "no index"
       on_device dmz-a "no index"
@@ -2601,7 +2601,7 @@ in
       ${ExecReload} || fail "starting a DHCPv6 server failed"
       called 'start --no-block kea-dhcp6@dmz\x2da.service' "a DHCPv6 config"
       called "reload $(unit dmz-a)" "a DHCPv6 config"
-      [ "$(cat /run/kea/dhcp6-dmz-a.ifindex)" = "$(cat /sys/class/net/dmz-a/ifindex)" ] ||
+      [ "$(cat /run/kea/kea-dhcp6-dmz-a.ifindex)" = "$(cat /sys/class/net/dmz-a/ifindex)" ] ||
         fail "the DHCPv6 server of dmz-a recorded no index of its device"
       [ "$(grep -nxF 'start --no-block chalkos-dhcp6-routes.service' "$SD/log" | cut -d: -f1)" -gt "$(grep -nxF 'start --no-block kea-dhcp6@dmz\x2da.service' "$SD/log" | cut -d: -f1)" ] ||
         fail "chalkos-dhcp6-routes started before the servers"

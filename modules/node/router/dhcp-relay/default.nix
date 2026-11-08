@@ -22,9 +22,9 @@ let
   # Stops the relays without a config, then starts the relay of each rendered config that does
   # not run, once its VRF's device exists, and restarts those that run; with the argument stop, it
   # stops all of them. A VRF's relay keeps the index of the device its sockets are bound to in
-  # /run/dnsmasq-relay/<vrf>.ifindex. The script waits 30 seconds at most for the devices and 30
-  # more for the relays it started, and fails naming those that are not running then. systemctl
-  # and systemd-escape come from the unit's PATH.
+  # /run/dnsmasq-relay/dnsmasq-relay-<vrf>.ifindex. The script waits 30 seconds at most for the
+  # devices and 30 more for the relays it started, and fails naming those that are not running
+  # then. systemctl and systemd-escape come from the unit's PATH.
   reconcile = pkgs.writeShellApplication {
     name = "chalkos-dhcp-relays";
     runtimeInputs = [ pkgs.coreutils ];
@@ -93,12 +93,12 @@ let
       fi
     '';
   };
-  # Keeps the index of the device of the VRF $1 in /run/dnsmasq-relay/$1.ifindex, and fails while
-  # the VRF has no device, as unbound@ does.
+  # Keeps the index of the device of the VRF $1 in /run/dnsmasq-relay/dnsmasq-relay-$1.ifindex,
+  # and fails while the VRF has no device, as unbound@ does.
   recordDevice = pkgs.writeShellScript "dnsmasq-relay-vrf-device" ''
     set -e
     read -r ifindex <"/sys/class/net/$1/ifindex"
-    echo "$ifindex" >"$RUNTIME_DIRECTORY/$1.ifindex"
+    echo "$ifindex" >"$RUNTIME_DIRECTORY/dnsmasq-relay-$1.ifindex"
   '';
   # A relay's hardening: the user dnsmasq, which dnsmasq stays as, with the capabilities it
   # demands of a relay: port 67 and 547, the ICMPv6 socket of DHCPv6 and the ARP entries of

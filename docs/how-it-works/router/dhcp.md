@@ -259,7 +259,7 @@ iifname { "lan0" } ip6 saddr { fe80::/10 } udp dport { 547 } accept comment "DHC
 The servers answer the address the relay sent from, so their answers pass as replies to the
 relay's requests. A VRF's relay, `dnsmasq-relay@<vrf>.service`, is bound to the VRF's device with
 `BindNetworkInterface=`, as Kea's servers of a VRF are, and records the device's index in
-`/run/dnsmasq-relay/<vrf>.ifindex`.
+`/run/dnsmasq-relay/dnsmasq-relay-<vrf>.ifindex`.
 
 Each relay runs as the user `dnsmasq` with `CAP_NET_BIND_SERVICE`, `CAP_NET_RAW` and
 `CAP_NET_ADMIN`, which dnsmasq demands of a relay: a DHCPv6 relay opens the ICMPv6 socket of
@@ -315,9 +315,10 @@ escaped as `systemd-escape` does. A DHCPv4 server's raw sockets read and send on
 but its UDP socket binds the links' addresses, which the kernel finds in the VRF's table alone.
 systemd binds the unit's IP sockets to the VRF's device with `BindNetworkInterface=`, as
 `unbound@` does for a VRF's resolver; without it, Kea cannot bind the address and fails. The
-unit requires the device's unit and records the device's index in `/run/kea/dhcp4-<vrf>.ifindex`
-or `/run/kea/dhcp6-<vrf>.ifindex` before Kea starts. A VRF that networkd made anew has a new
-index, so chalkos-dhcp restarts its server instead of reloading it.
+unit requires the device's unit and records the device's index in
+`/run/kea/kea-dhcp4-<vrf>.ifindex` or `/run/kea/kea-dhcp6-<vrf>.ifindex` before Kea starts. A VRF
+that networkd made anew has a new index, so chalkos-dhcp restarts its server instead of reloading
+it.
 
 Every server runs as the user `kea` with NixOS's usual sandbox: a read-only system, private
 devices and temporary files, and no other address families than Unix, netlink, IPv4 and IPv6. A

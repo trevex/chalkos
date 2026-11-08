@@ -62,10 +62,10 @@ type Options struct {
 	// VRFDir holds the node's running VRF documents, <name>.json each; empty is
 	// /run/chalkos/config/router.chalkos.dev/VRF.
 	VRFDir string
-	// RunDir holds each VRF's resolver's runtime directory, unbound-<vrf>, with the index of the
-	// device the resolver's sockets are bound to, and the DHCP servers' kea, with their control
-	// sockets and each VRF's server's index in dhcp4-<vrf>.ifindex or dhcp6-<vrf>.ifindex, and the
-	// DHCP relays' dnsmasq-relay, with each VRF's relay's index in <vrf>.ifindex; empty is /run.
+	// RunDir holds the runtime directories of the per-VRF services: each VRF's resolver's
+	// unbound-<vrf>, the DHCP servers' kea, with their control sockets, and the DHCP relays'
+	// dnsmasq-relay. A VRF's service keeps the index of the device its sockets are bound to in
+	// its runtime directory, as <service>-<vrf>.ifindex; empty is /run.
 	RunDir string
 	// NetDir holds a directory per network device, with its index; empty is /sys/class/net.
 	NetDir string
@@ -352,7 +352,7 @@ func (r *side) vrfResolvers(ctx context.Context) []*routerv1.ResolverStatus {
 		s := &routerv1.ResolverStatus{Vrf: vrf, Running: err == nil}
 		switch {
 		case err == nil:
-			if stale := r.staleDevice(vrf, filepath.Join(r.RunDir, "unbound-"+vrf, "ifindex")); stale != "" {
+			if stale := r.staleDevice(vrf, filepath.Join(r.RunDir, "unbound-"+vrf, "unbound-"+vrf+".ifindex")); stale != "" {
 				s.Running, s.Error = false, unit+" is active, but "+stale
 			}
 		case state != "":
@@ -460,7 +460,7 @@ func (r *side) dhcpServers(ctx context.Context) []*routerv1.DHCPServerStatus {
 			continue
 		}
 		if f.vrf != routing.DefaultVRF {
-			if stale := r.staleDevice(f.vrf, filepath.Join(runDir, f.family+"-"+f.vrf+".ifindex")); stale != "" {
+			if stale := r.staleDevice(f.vrf, filepath.Join(runDir, "kea-"+f.family+"-"+f.vrf+".ifindex")); stale != "" {
 				s.Error = f.unit + " is active, but " + stale
 				continue
 			}
@@ -523,7 +523,7 @@ func (r *side) dhcpRelays(ctx context.Context) []*routerv1.DHCPRelayStatus {
 		case err != nil:
 			s.Error = err.Error()
 		case vrf != routing.DefaultVRF:
-			if stale := r.staleDevice(vrf, filepath.Join(r.RunDir, "dnsmasq-relay", vrf+".ifindex")); stale != "" {
+			if stale := r.staleDevice(vrf, filepath.Join(r.RunDir, "dnsmasq-relay", "dnsmasq-relay-"+vrf+".ifindex")); stale != "" {
 				s.Error = unit + " is active, but " + stale
 				continue
 			}

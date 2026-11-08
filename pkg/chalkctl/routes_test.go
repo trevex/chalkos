@@ -19,6 +19,7 @@ import (
 	routerplugin "github.com/trevex/chalkos/pkg/chalkd/layers/router"
 	"github.com/trevex/chalkos/pkg/layers"
 	"github.com/trevex/chalkos/pkg/router"
+	"github.com/trevex/chalkos/pkg/router/units"
 	"github.com/trevex/chalkos/pkg/tool"
 	"github.com/trevex/chalkos/pkg/tool/tooltest"
 )
@@ -55,13 +56,13 @@ func routerNode(t *testing.T, ta *testApp, documents bool, rules ...tooltest.Rul
 	if err := os.Symlink(filepath.Join(t.TempDir(), "frr.conf"), frrConf); err != nil {
 		t.Fatal(err)
 	}
-	// guest's resolver is bound to its VRF's device, of index 7.
+	// guest's resolver, DHCPv4 server and relay are bound to its VRF's device, of index 7.
 	run, devices := t.TempDir(), t.TempDir()
-	for _, dir := range []string{filepath.Join(run, "unbound-guest"), filepath.Join(devices, "guest")} {
-		if err := os.MkdirAll(dir, 0o755); err != nil {
+	for _, file := range []string{filepath.Join(devices, "guest", "ifindex"), filepath.Join(run, units.Unbound.IndexRecord("guest")), filepath.Join(run, units.Kea4.IndexRecord("guest")), filepath.Join(run, units.Relay.IndexRecord("guest"))} {
+		if err := os.MkdirAll(filepath.Dir(file), 0o755); err != nil {
 			t.Fatal(err)
 		}
-		if err := os.WriteFile(filepath.Join(dir, "ifindex"), []byte("7\n"), 0o644); err != nil {
+		if err := os.WriteFile(file, []byte("7\n"), 0o644); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -80,27 +81,15 @@ func routerNode(t *testing.T, ta *testApp, documents bool, rules ...tooltest.Rul
 				t.Fatal(err)
 			}
 		}
-		if err := os.MkdirAll(filepath.Join(run, "kea"), 0o750); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(filepath.Join(run, "kea", "dhcp4-guest.ifindex"), []byte("7\n"), 0o644); err != nil {
-			t.Fatal(err)
-		}
 		subnets6 := `{"Dhcp6": {"subnet6": [{"id": 2387838497, "subnet": "2001:db8:1::/64", "user-context": {"name": "office6"}}]}}`
 		if err := os.WriteFile(filepath.Join(kea, "kea-dhcp6.json"), []byte(subnets6+"\n"), 0o644); err != nil {
 			t.Fatal(err)
 		}
-		// The relays of the default VRF and of guest, bound to guest's device.
+		// The relays of the default VRF and of guest.
 		for _, file := range []string{"dnsmasq-relay.conf", "dnsmasq-relay-guest.conf"} {
 			if err := os.WriteFile(filepath.Join(relays, file), []byte("port=0\n"), 0o644); err != nil {
 				t.Fatal(err)
 			}
-		}
-		if err := os.MkdirAll(filepath.Join(run, "dnsmasq-relay"), 0o755); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(filepath.Join(run, "dnsmasq-relay", "guest.ifindex"), []byte("7\n"), 0o644); err != nil {
-			t.Fatal(err)
 		}
 		for socket, answer := range map[string]string{
 			"dhcp4.sock": `{"result": 0, "arguments": {"subnet[3221225984].assigned-addresses": [[2, "2026-11-01 10:00:00.000000"]], "subnet[3221225984].total-addresses": [[100, "2026-11-01 09:00:00.000000"]]}}`,

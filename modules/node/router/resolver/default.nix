@@ -31,12 +31,12 @@ let
   # Starts the resolver of each VRF with a rendered config that does not run, reloads those that
   # run and stops those without a config; with the argument stop, it stops all of them. systemd
   # binds a resolver's sockets to the index its VRF's device had when the resolver started, which
-  # the resolver keeps in /run/unbound-<vrf>/ifindex. A VRF that chalkos-vrf removed and networkd
-  # created anew has a new index, or no device yet, so its resolver restarts on the new device. A
-  # unit that requires a device that never comes waits for it until the device's job times out, so
-  # the script waits 30 seconds at most for the devices and 30 more for the resolvers it started,
-  # and fails naming those that are not running then; a start still queued goes on once the device
-  # appears. systemctl and systemd-escape come from the unit's PATH.
+  # the resolver keeps in /run/unbound-<vrf>/unbound-<vrf>.ifindex. A VRF that chalkos-vrf removed
+  # and networkd created anew has a new index, or no device yet, so its resolver restarts on the
+  # new device. A unit that requires a device that never comes waits for it until the device's job
+  # times out, so the script waits 30 seconds at most for the devices and 30 more for the
+  # resolvers it started, and fails naming those that are not running then; a start still queued
+  # goes on once the device appears. systemctl and systemd-escape come from the unit's PATH.
   reconcile = pkgs.writeShellApplication {
     name = "chalkos-resolvers";
     runtimeInputs = [ pkgs.coreutils ];
@@ -79,7 +79,7 @@ let
           continue
         fi
         ifindex=$(cat "/sys/class/net/$vrf/ifindex" 2>/dev/null) || ifindex=
-        if [[ -z $ifindex || $ifindex != "$(cat "/run/unbound-$vrf/ifindex" 2>/dev/null)" ]]; then
+        if [[ -z $ifindex || $ifindex != "$(cat "/run/unbound-$vrf/unbound-$vrf.ifindex" 2>/dev/null)" ]]; then
           launch "$vrf" "$unit" restart
           continue
         fi
@@ -112,7 +112,7 @@ let
       fi
     '';
   };
-  # Keeps the index of the device of the VRF $1 in the resolver's runtime directory, and fails
+  # Keeps the index of the device of the VRF $1 in /run/unbound-$1/unbound-$1.ifindex, and fails
   # while the VRF has no device. systemd looked the index up when it set the unit's cgroup up, a
   # moment before: a VRF removed and created anew within that moment leaves a record of the new
   # index for sockets bound to the old one. Only chalkos-vrf removes a VRF, and chalkos-resolvers,
@@ -120,7 +120,7 @@ let
   recordDevice = pkgs.writeShellScript "unbound-vrf-device" ''
     set -e
     read -r ifindex <"/sys/class/net/$1/ifindex"
-    echo "$ifindex" >"$RUNTIME_DIRECTORY/ifindex"
+    echo "$ifindex" >"$RUNTIME_DIRECTORY/unbound-$1.ifindex"
   '';
   # RFC 8880's answer for ipv4only.arpa, which a DNS64 resolver gives itself; the dns64 module
   # synthesizes its AAAA records from these A records.
