@@ -209,18 +209,18 @@ func parseHealthArgs(args []string) (healthArgs, error) {
 func loadConfig() error {
 	// Only the layers' config is asked for, so the server they are bound to serves nothing.
 	node := &chalkd.Server{Paths: chalkd.DefaultPaths(), Run: tool.ExecRunner{}}
+	loader := nodeconfig.Default()
+	if err := chalkd.RestoreTrialAtBoot(node.Paths.StateDir, loader.Slots); err != nil {
+		log.Printf("end the open trial of a config: %v", err)
+	}
 	reg, err := registry(node)
 	if err != nil {
 		return err
 	}
-	loader := nodeconfig.Default()
-	if loader.Contract, err = contract.Load(contract.DefaultDir); err != nil {
+	if loader.Contract, err = contract.Load(contract.DefaultDir, contract.RenderRoot(loader.Render.Root)); err != nil {
 		return err
 	}
 	loader.Layers = layer.Active[nodeconfig.Layer](reg)
-	if err := chalkd.RestoreTrialAtBoot(node.Paths.StateDir, loader.Slots); err != nil {
-		log.Printf("end the open trial of a config: %v", err)
-	}
 	return loader.Load()
 }
 
@@ -422,7 +422,7 @@ func serve() error {
 	}
 
 	// The running image's contract does not change while it runs.
-	if srv.Loader.Contract, err = contract.Load(contract.DefaultDir); err != nil {
+	if srv.Loader.Contract, err = contract.Load(contract.DefaultDir, contract.RenderRoot(srv.Loader.Render.Root)); err != nil {
 		return err
 	}
 	srv.RenewOnApplyConfig = renewOnApplyConfig(os.Getenv)
