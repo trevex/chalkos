@@ -309,7 +309,7 @@ func TestRelayRefusals(t *testing.T) {
 			`internal error: DHCPRelay office: interfaces: "lan*" is no interface name; chalkd checks the config against the schemas, the rules and the validators before it renders`},
 		"a link that adds an option": {[]any{relayDoc(t, "office", `["lan0\ndhcp-range=lan0"]`, `["198.51.100.53"]`)}, nil, `internal error: DHCPRelay office: interfaces: "lan0\ndhcp-range=lan0" is no interface name`},
 		"a server that adds an option": {[]any{relayDoc(t, "office", `["lan0"]`, `["fe80::53%x\ndhcp-range=lan0"]`)}, nil,
-			`internal error: DHCPRelay office: "fe80::53%x\ndhcp-range=lan0" is no address without a zone; chalkd checks the config against the schemas, the rules and the validators before it renders`},
+			`internal error: DHCPRelay office: spec.servers[0]: "fe80::53%x\ndhcp-range=lan0" has a zone; chalkd checks the config against the schemas, the rules and the validators before it renders`},
 		"a server of no address": {[]any{relayDoc(t, "office", `["lan0"]`, `["dhcp.example.org"]`)}, nil, `internal error: DHCPRelay office: ParseAddr("dhcp.example.org"): unexpected character`},
 	} {
 		t.Run(name, func(t *testing.T) { refusedOrGuarded(t, relayDocs(t, c.relays, c.subnets...), c.want) })

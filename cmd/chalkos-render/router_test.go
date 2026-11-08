@@ -315,7 +315,7 @@ func TestResolverOpenings(t *testing.T) {
 		t.Errorf("err = %v", err)
 	}
 	for spec, want := range map[string]string{
-		`{"listen": ["fe80::1%eth0\" } accept"], "allow": ["2001:db8::/32"]}`:                         `internal error: Resolver resolver: "fe80::1%eth0\" } accept" is no address without a zone`,
+		`{"listen": ["fe80::1%eth0\" } accept"], "allow": ["2001:db8::/32"]}`:                         `internal error: Resolver resolver: spec.listen[0]: "fe80::1%eth0\" } accept" has a zone`,
 		`{"listen": ["2001:db8:ffff::1"], "allow": ["2001:db8::/32\" } accept\n\t\tip6 saddr ::/0"]}`: `internal error: Resolver resolver: netip.ParsePrefix("2001:db8::/32\" } accept\n\t\tip6 saddr ::/0"): ParseAddr("2001:db8::/32\" } accept\n\t\tip6 saddr ::"): each colon-separated field must have at least one digit (at "/32\" } accept\n\t\tip6 saddr ::")`,
 		`{"listen": [], "allow": ["2001:db8::/32"]}`:                                                  "internal error: Resolver resolver: listen names no address, so the firewall would accept DNS on every address of the router",
 		`{"listen": ["2001:db8:ffff::1"], "allow": []}`:                                               "internal error: Resolver resolver: allow names no range, so the firewall would accept DNS from every client",
@@ -517,14 +517,14 @@ func TestRouterRefusals(t *testing.T) {
 		"a NAT rule of no place": {[]string{"router-nftables", "50000"}, map[string][]any{"NATRule": {doc("NATRule", "n", `{"type": "masquerade", "family": "ipv4", "out": null, "in": null, "match": {"source": [], "destination": [], "protocol": null, "destinationPorts": []}, "to": null}`)}}, "internal error: NATRule n: a masquerade rule names no place"},
 		"snat without to":        {[]string{"router-nftables", "50000"}, map[string][]any{"FirewallZone": {zone}, "NATRule": {doc("NATRule", "n", `{"type": "snat", "family": "ipv4", "out": {"zone": "wan", "interface": null}, "in": null, "match": {"source": [], "destination": [], "protocol": null, "destinationPorts": []}, "to": null}`)}}, "internal error: NATRule n: snat has no to"},
 		// A BGPPeer's ports open on its interfaces or from its address alone.
-		"a peer's interface that ends a set": {[]string{"router-nftables", "50000"}, map[string][]any{"BGPPeer": {doc("BGPPeer", "a", `{"interface": "eth1\" } accept; iifname { \"eth2"}`)}}, `internal error: BGPPeer a: "eth1\" } accept; iifname { \"eth2" is no interface name or glob`},
-		"a peer's address with a zone":       {[]string{"router-nftables", "50000"}, map[string][]any{"BGPPeer": {doc("BGPPeer", "a", `{"address": "fe80::1%eth1"}`)}}, `internal error: BGPPeer a: "fe80::1%eth1" is no address without a zone`},
+		"a peer's interface that ends a set": {[]string{"router-nftables", "50000"}, map[string][]any{"BGPPeer": {doc("BGPPeer", "a", `{"remoteAS": "external", "interface": "eth1\" } accept; iifname { \"eth2"}`)}}, `internal error: BGPPeer a: "eth1\" } accept; iifname { \"eth2" is no interface name or glob`},
+		"a peer's address with a zone":       {[]string{"router-nftables", "50000"}, map[string][]any{"BGPPeer": {doc("BGPPeer", "a", `{"address": "fe80::1%eth1"}`)}}, `internal error: BGPPeer a: spec.address: "fe80::1%eth1" has a zone`},
 		"a peer's address range":             {[]string{"router-nftables", "50000"}, map[string][]any{"BGPPeer": {doc("BGPPeer", "a", `{"address": "0.0.0.0/0"}`)}}, `internal error: BGPPeer a: ParseAddr("0.0.0.0/0"): unexpected character (at "/0")`},
-		"a peer of no interface":             {[]string{"router-nftables", "50000"}, map[string][]any{"BGPPeer": {doc("BGPPeer", "a", `{"interfaces": []}`)}}, "internal error: BGPPeer a names no interface"},
+		"a peer of no interface":             {[]string{"router-nftables", "50000"}, map[string][]any{"BGPPeer": {doc("BGPPeer", "a", `{"remoteAS": "external", "interfaces": []}`)}}, "internal error: BGPPeer a names no interface"},
 		// Without address and interface, the opening is of the interfaces, which would open the
 		// port on every link.
-		"a peer of nothing":            {[]string{"router-nftables", "50000"}, map[string][]any{"BGPPeer": {doc("BGPPeer", "a", `{}`)}}, "internal error: BGPPeer a names no interface"},
-		"a peer's VRF that ends a set": {[]string{"router-nftables", "50000"}, map[string][]any{"BGPPeer": {doc("BGPPeer", "a", `{"vrf": "x\" accept", "interface": "eth1"}`)}}, `internal error: BGPPeer a: the VRF "x\" accept" is no VRF's name`},
+		"a peer of nothing":            {[]string{"router-nftables", "50000"}, map[string][]any{"BGPPeer": {doc("BGPPeer", "a", `{"remoteAS": "external"}`)}}, "internal error: BGPPeer a names no interface"},
+		"a peer's VRF that ends a set": {[]string{"router-nftables", "50000"}, map[string][]any{"BGPPeer": {doc("BGPPeer", "a", `{"remoteAS": "external", "vrf": "x\" accept", "interface": "eth1"}`)}}, `internal error: BGPPeer a: the VRF "x\" accept" is no VRF's name`},
 	} {
 		t.Run(name, func(t *testing.T) {
 			input, err := json.Marshal(map[string]any{"node": map[string]any{"name": "r1"}, "documents": c.docs})
@@ -879,7 +879,7 @@ func TestUnboundRefusals(t *testing.T) {
 			"internal error: Resolver resolver: allow names no range, so the firewall would accept DNS from every client"},
 		// Values Unbound's config would read as syntax, and a zone type it writes unquoted.
 		"an address with a zone": {args, []any{routerDoc(t, "Resolver", "resolver", `{"listen": ["fe80::1%eth0"], "allow": ["2001:db8::/32"]}`)},
-			`internal error: Resolver resolver: "fe80::1%eth0" is no address without a zone`},
+			`internal error: Resolver resolver: spec.listen[0]: "fe80::1%eth0" has a zone`},
 		"an address that adds an option": {args, []any{routerDoc(t, "Resolver", "resolver", `{"listen": ["2001:db8:ffff::1\n  interface: 0.0.0.0"], "allow": ["2001:db8::/32"]}`)}, `internal error: Resolver resolver: ParseAddr("2001:db8:ffff::1\n  interface: 0.0.0.0"): unexpected character, want colon (at "\n  interface: 0.0.0.0")`},
 		"a client that adds an option":   {args, []any{routerDoc(t, "Resolver", "resolver", `{"listen": ["2001:db8:ffff::1"], "allow": ["2001:db8::/32 allow\naccess-control: ::/0"]}`)}, `internal error: Resolver resolver: netip.ParsePrefix("2001:db8::/32 allow\naccess-control: ::/0"): ParseAddr("2001:db8::/32 allow\naccess-control: ::"): each colon-separated field must have at least one digit (at "/32 allow\naccess-control: ::")`},
 		"a client of a hash":             {args, []any{routerDoc(t, "Resolver", "resolver", `{"listen": ["2001:db8:ffff::1"], "allow": ["2001:db8::/32#x"]}`)}, `internal error: Resolver resolver: netip.ParsePrefix("2001:db8::/32#x"): bad bits after slash: "32#x"`},

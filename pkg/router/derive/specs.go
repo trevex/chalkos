@@ -1,6 +1,8 @@
 package derive
 
 import (
+	"cmp"
+	"encoding"
 	"encoding/json"
 	"fmt"
 	"net/netip"
@@ -375,8 +377,8 @@ type NextHopSpec struct {
 	Table     uint32     `json:"table"`
 }
 
-// The enums of the specs, each a string type whose UnmarshalJSON refuses a value its schema's enum
-// lacks, so that the model and the outputs, which write some of them unquoted, read none other.
+// Each enum's UnmarshalJSON refuses a value its schema lacks; the outputs write some enums
+// unquoted.
 
 // Family is an address family.
 type Family string
@@ -475,8 +477,8 @@ func decodeEnum[T ~string](data []byte, v *T, values ...T) error {
 
 // Community is a BGP community as FRR writes it: a standard one, <AS>:<value> of numbers of 16
 // bits, or a large one, <AS>:<value>:<value> of numbers of 32 bits, in decimal without leading
-// zeros. A value of another form fails to decode rather than add syntax to frr.conf, which writes
-// it unquoted.
+// zeros. A value of another form fails to decode, so frr.conf, which writes it unquoted, never
+// holds it.
 type Community struct {
 	Value string
 	Large bool
@@ -506,45 +508,68 @@ func (c Community) MarshalText() ([]byte, error) { return []byte(c.Value), nil }
 
 func (c Community) String() string { return c.Value }
 
-// The types of the specs' addresses and address ranges, which checkAddresses finds.
+// The types checkDecoded reads: the decoders of a value, and the addresses and address ranges.
 var (
-	addrType   = reflect.TypeFor[netip.Addr]()
-	prefixType = reflect.TypeFor[netip.Prefix]()
+	jsonUnmarshaler = reflect.TypeFor[json.Unmarshaler]()
+	textUnmarshaler = reflect.TypeFor[encoding.TextUnmarshaler]()
+	addrType        = reflect.TypeFor[netip.Addr]()
+	prefixType      = reflect.TypeFor[netip.Prefix]()
 )
 
-// checkAddresses refuses an address or address range of v, a decoded spec, that is missing, as
-// netip decodes an empty string or JSON's null into one that is not valid, and an address with a
-// zone, which netip takes of any characters and the outputs would write. The schemas' formats ip
-// and cidr refuse both.
-func checkAddresses(v reflect.Value) error {
-	switch v.Type() {
-	case addrType:
-		if a := v.Interface().(netip.Addr); !a.IsValid() || a.Zone() != "" {
-			return fmt.Errorf("%q is no address without a zone", a)
-		}
-		return nil
-	case prefixType:
-		if p := v.Interface().(netip.Prefix); !p.IsValid() {
-			return fmt.Errorf("%q is no address range", p)
+// decodes reports whether a field of type t decodes itself: an enum, a Community, a PeerAS, a
+// PortRange, an address or an address range.
+func decodes(t reflect.Type) bool {
+	p := reflect.PointerTo(t)
+	return t.Kind() != reflect.Pointer && (p.Implements(jsonUnmarshaler) || p.Implements(textUnmarshaler))
+}
+
+// checkDecoded refuses a value of v, a decoded spec at the JSON path path, that decodes itself and
+// is missing, and an address with a zone. JSON leaves a field the input lacks at its zero value,
+// which no such type decodes into, and netip decodes an empty string or null into an address or
+// range that is not valid and takes a zone of any characters, which the outputs would write. The
+// schemas' required fields, defaults and formats refuse each of them; a nil pointer is an
+// optional field the input leaves out. The walk takes structs, pointers and slices, which the
+// specs are made of, and refuses any other kind that holds a value.
+func checkDecoded(path string, v reflect.Value) error {
+	if t := v.Type(); decodes(t) {
+		switch {
+		case v.IsZero() && t == addrType:
+			return fmt.Errorf("%s: missing address", path)
+		case v.IsZero() && t == prefixType:
+			return fmt.Errorf("%s: missing address range", path)
+		case v.IsZero():
+			return fmt.Errorf("%s: missing value", path)
+		case t == addrType && v.Interface().(netip.Addr).Zone() != "":
+			return fmt.Errorf("%s: %q has a zone", path, v.Interface().(netip.Addr))
 		}
 		return nil
 	}
 	switch v.Kind() {
 	case reflect.Pointer:
 		if !v.IsNil() {
-			return checkAddresses(v.Elem())
+			return checkDecoded(path, v.Elem())
 		}
 	case reflect.Slice:
 		for i := range v.Len() {
-			if err := checkAddresses(v.Index(i)); err != nil {
+			if err := checkDecoded(fmt.Sprintf("%s[%d]", path, i), v.Index(i)); err != nil {
 				return err
 			}
 		}
 	case reflect.Struct:
+		t := v.Type()
 		for i := range v.NumField() {
-			if err := checkAddresses(v.Field(i)); err != nil {
+			f := t.Field(i)
+			if !f.IsExported() {
+				continue
+			}
+			name, _, _ := strings.Cut(f.Tag.Get("json"), ",")
+			if err := checkDecoded(path+"."+cmp.Or(name, f.Name), v.Field(i)); err != nil {
 				return err
 			}
+		}
+	case reflect.Map, reflect.Array, reflect.Interface:
+		if !v.IsZero() {
+			return fmt.Errorf("%s: the specs hold no %s, which checkDecoded does not read", path, v.Kind())
 		}
 	}
 	return nil

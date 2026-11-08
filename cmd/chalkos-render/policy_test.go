@@ -77,7 +77,7 @@ func TestPolicyRouteRefusals(t *testing.T) {
 			d := policyDocs(t, "a", nextHopRoute("b4"))
 			d["NextHop"] = []any{hopDoc(t, "b4", "fe80::1%wanb0", "wanb0", 200)}
 			return d
-		}(), `internal error: NextHop b4: "fe80::1%wanb0" is no address without a zone`},
+		}(), `internal error: NextHop b4: spec.address: "fe80::1%wanb0" has a zone`},
 		"a NextHop's table 0": {func() map[string][]any {
 			d := policyDocs(t, "a", nextHopRoute("b4"))
 			d["NextHop"] = []any{hopDoc(t, "b4", "198.51.100.130", "wanb0", 0)}

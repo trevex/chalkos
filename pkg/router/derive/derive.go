@@ -172,12 +172,12 @@ func decodeKind[T any](byKind map[string]any, kind string) ([]Named[T], error) {
 			return nil, err
 		}
 		// The schemas give each field the type of its Go field, and the values its enums, formats
-		// and patterns take, so a spec that does not decode, or holds an address checkAddresses
+		// and patterns take, so a spec that does not decode, or holds a value checkDecoded
 		// refuses, is one chalkd did not check.
 		var spec T
 		err = json.Unmarshal(data, &spec)
 		if err == nil {
-			err = checkAddresses(reflect.ValueOf(spec))
+			err = checkDecoded("spec", reflect.ValueOf(spec))
 		}
 		if err != nil {
 			return nil, InternalErrorf("%s %s: %w", kind, name, err)
