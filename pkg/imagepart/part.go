@@ -19,8 +19,12 @@ type Part struct {
 const chunk = 4 << 20
 
 // Receive reads the part, exactly its size, from r and writes it to w, then checks its SHA-256.
-// The part's name, what, names it in errors. Whatever follows the part in r is left unread.
+// The part's name, what, names it in errors. Whatever follows the part in r is left unread. w
+// receives the bytes before their sum is checked; on an error, what w holds is unverified.
 func (p Part) Receive(w io.Writer, r io.Reader, what string) error {
+	if p.Size < 0 {
+		return fmt.Errorf("the %s has a negative size %d", what, p.Size)
+	}
 	sum := sha256.New()
 	buf := make([]byte, min(chunk, p.Size))
 	for left := p.Size; left > 0; {
