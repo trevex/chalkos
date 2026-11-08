@@ -131,8 +131,8 @@ func (s *Server) ResetVolume(ctx context.Context, req *connect.Request[nodev1.Re
 // resetVolume wipes the volume name and creates it again as next, the config translated for the
 // node called node on the running image, defines it; the caller holds s.mu. The image's storage
 // rules decide what a reset carries out: once deleted, the volume is created again like a new one,
-// so they are checked against the recorded section without it, which they must then accept whole. They check the disk the volume lives on and the fallback secret it
-// is enrolled with too.
+// so they are checked against the recorded section without it, which they must then accept
+// whole. They check the disk the volume lives on and the fallback secret it is enrolled with too.
 func (s *Server) resetVolume(ctx context.Context, node, name string, next slot.Stored, fallback string) error {
 	d, err := s.parseIdentity(string(next.Identity))
 	if err != nil {
