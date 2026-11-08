@@ -223,7 +223,7 @@ func (k KubernetesSecrets) ServiceAccountPublicKeys() ([]string, error) {
 // encryption keys of the right size under names of their own that the API server can tell apart.
 func (s Secrets) validateAccepted() error {
 	for i, c := range s.Accepted.OSCA {
-		if _, err := pki.ValidateRoot(c); err != nil {
+		if err := pki.ValidateRoot(c); err != nil {
 			return fmt.Errorf("accepted.osCA[%d]: %w", i, err)
 		}
 	}
@@ -237,7 +237,7 @@ func (s Secrets) validateAccepted() error {
 func (k KubernetesSecrets) ValidateAccepted() error {
 	for _, slot := range k.caSlots() {
 		for i, c := range *slot.accepted {
-			if _, err := pki.ValidateRoot(c); err != nil {
+			if err := pki.ValidateRoot(c); err != nil {
 				return fmt.Errorf("kubernetes.accepted.%s[%d]: %w", slot.field, i, err)
 			}
 		}

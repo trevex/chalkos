@@ -341,6 +341,21 @@ func TestValidateCARequiresCertSign(t *testing.T) {
 	}
 }
 
+// TestValidateCARequiresOneCertificate checks that a CA's certificate field holds one PEM
+// certificate and nothing else.
+func TestValidateCARequiresOneCertificate(t *testing.T) {
+	ca, other := newTestCA(t), newTestCA(t)
+	for name, certificate := range map[string]string{
+		"leading text":     "issued by hand\n" + ca.Certificate,
+		"trailing text":    ca.Certificate + "issued by hand\n",
+		"two certificates": ca.Certificate + other.Certificate,
+	} {
+		if err := ValidateCA(CertKey{Certificate: certificate, Key: ca.Key}); err == nil {
+			t.Errorf("%s: accepted", name)
+		}
+	}
+}
+
 // caWithoutCertSign is a CA certificate that lacks the certificate signing key usage.
 func caWithoutCertSign(t *testing.T) CertKey {
 	t.Helper()

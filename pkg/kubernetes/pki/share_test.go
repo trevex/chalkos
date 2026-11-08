@@ -125,6 +125,12 @@ func TestShareValidateRefuses(t *testing.T) {
 		"worker, foreign kubelet":                            func() Share { s := w; s.Kubelet = foreign.Kubelet; return s },
 		"worker, admin as kubelet":                           func() Share { s := w; s.Kubelet = &admin; return s },
 		"worker with an SA key":                              func() Share { s := w; s.ServiceAccountKey = k.ServiceAccountKey; return s },
+		"worker, text before the CA":                         func() Share { s := w; s.CA.Certificate = "note\n" + s.CA.Certificate; return s },
+		"worker, text after the CA":                          func() Share { s := w; s.CA.Certificate += "note\n"; return s },
+		"worker, two CAs":                                    func() Share { s := w; s.CA.Certificate += other.CA.Certificate; return s },
+		"control plane, text before the CA":                  func() Share { s := cp; s.CA.Certificate = "note\n" + s.CA.Certificate; return s },
+		"control plane, text after the CA":                   func() Share { s := cp; s.CA.Certificate += "note\n"; return s },
+		"control plane, two CAs":                             func() Share { s := cp; s.CA.Certificate += other.CA.Certificate; return s },
 		"control plane, a key name with a colon":             func() Share { s := cp; s.EncryptionKeyName = "a:b"; return s },
 		"control plane, a key name with a control character": func() Share { s := cp; s.EncryptionKeyName = "a\x1bb"; return s },
 		"worker accepting a service-account key": func() Share {

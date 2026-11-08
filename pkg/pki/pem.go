@@ -120,8 +120,12 @@ func PublicKeyFingerprint(data string) (string, error) {
 	return Fingerprint(der), nil
 }
 
-// ValidateCA checks that a certificate and key form a CA that may sign certificates.
+// ValidateCA checks that a certificate and key form a CA that may sign certificates. The
+// certificate must be one PEM certificate and nothing else.
 func ValidateCA(ca CertKey) error {
+	if _, err := ParseOneCertificate(ca.Certificate); err != nil {
+		return err
+	}
 	cert, _, err := ca.Parse()
 	if err != nil {
 		return err
@@ -129,7 +133,7 @@ func ValidateCA(ca CertKey) error {
 	return checkSigningCA(cert)
 }
 
-// checkSigningCA checks that cert is a CA's that may sign certificates.
+// checkSigningCA checks that cert is a CA certificate that may sign certificates.
 func checkSigningCA(cert *x509.Certificate) error {
 	if !cert.IsCA || !cert.BasicConstraintsValid {
 		return errors.New("not a CA certificate")
@@ -140,7 +144,8 @@ func checkSigningCA(cert *x509.Certificate) error {
 	return nil
 }
 
-// checkRoot checks that cert is a self-signed CA's that may sign certificates and no node CA's.
+// checkRoot checks that cert is a self-signed CA certificate that may sign certificates and is no
+// node CA.
 // A node CA trusted as a root would make what control planes issue verify as the OS CA's own
 // client certificates.
 func checkRoot(cert *x509.Certificate) error {
@@ -153,9 +158,8 @@ func checkRoot(cert *x509.Certificate) error {
 	return nil
 }
 
-// ValidateRoot checks that a PEM certificate, without its key, is a single self-signed CA's that
-// may sign certificates and no node CA's, and returns it.
-func ValidateRoot(certificate string) (*x509.Certificate, error) {
+// ParseOneCertificate decodes PEM data that holds one certificate and nothing else.
+func ParseOneCertificate(certificate string) (*x509.Certificate, error) {
 	certs, err := ParseBundle(certificate)
 	if err != nil {
 		return nil, err
@@ -163,10 +167,17 @@ func ValidateRoot(certificate string) (*x509.Certificate, error) {
 	if len(certs) != 1 {
 		return nil, errors.New("not one certificate")
 	}
-	if err := checkRoot(certs[0]); err != nil {
-		return nil, err
-	}
 	return certs[0], nil
+}
+
+// ValidateRoot checks that a PEM certificate, without its key, is one self-signed CA certificate
+// that may sign certificates and is no node CA.
+func ValidateRoot(certificate string) error {
+	cert, err := ParseOneCertificate(certificate)
+	if err != nil {
+		return err
+	}
+	return checkRoot(cert)
 }
 
 // NamedCA is a CA with the name errors call it by.

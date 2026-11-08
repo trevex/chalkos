@@ -210,7 +210,7 @@ func (s Share) Validate() error {
 		if err := s.validateAccepted(); err != nil {
 			return err
 		}
-		ca, err := pki.ParseCertificate([]byte(s.CA.Certificate))
+		ca, err := pki.ParseOneCertificate(s.CA.Certificate)
 		if err != nil {
 			return fmt.Errorf("Kubernetes share: ca: %w", err)
 		}
