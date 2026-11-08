@@ -192,7 +192,9 @@ type Refusal struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// The check that refused it: config, rules, validators or outputs.
 	Stage string `protobuf:"bytes,1,opt,name=stage,proto3" json:"stage,omitempty"`
-	// The refusal as a delivery to the image would give it.
+	// Why the check refused it: for the stage config, what the image does not accept of the set,
+	// which chalkd puts in its own words; for the others, the refusal as a delivery to the image
+	// would give it.
 	Message string `protobuf:"bytes,2,opt,name=message,proto3" json:"message,omitempty"`
 	// The change rules the config does not meet, each as a refusal names it, for the stage rules.
 	Failures      []string `protobuf:"bytes,3,rep,name=failures,proto3" json:"failures,omitempty"`

@@ -52,7 +52,9 @@ message Result {
 message Refusal {
   // The check that refused it: config, rules, validators or outputs.
   string stage = 1;
-  // The refusal as a delivery to the image would give it.
+  // Why the check refused it: for the stage config, what the image does not accept of the set,
+  // which chalkd puts in its own words; for the others, the refusal as a delivery to the image
+  // would give it.
   string message = 2;
   // The change rules the config does not meet, each as a refusal names it, for the stage rules.
   repeated string failures = 3;

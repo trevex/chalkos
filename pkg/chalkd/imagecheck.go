@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io/fs"
 	"path/filepath"
-	"strings"
 
 	"connectrpc.com/connect"
 
@@ -121,7 +120,7 @@ func (s *Server) runImageCheck(ctx context.Context, st imageStore, system, platf
 func (s *Server) imageRefusal(r *checkv1.Refusal, identity string, writing []byte) error {
 	switch r.GetStage() {
 	case "config":
-		return layer.Errorf(connect.CodeInvalidArgument, "the config does not suit the image: %s", strings.TrimPrefix(r.GetMessage(), "the config: "))
+		return layer.Errorf(connect.CodeInvalidArgument, "the config does not suit the image: %s", r.GetMessage())
 	case "rules":
 		err := layer.Errorf(connect.CodeFailedPrecondition, "%s", r.GetMessage())
 		if s.Installer {

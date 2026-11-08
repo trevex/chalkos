@@ -40,9 +40,9 @@ func testImage(t *testing.T, render string) Image {
 	}
 	root := t.TempDir()
 	return Image{
-		Schemas: s,
-		Target:  config.Target{Platform: "metal"},
-		Rules:   set,
+		Schemas:     s,
+		Target:      config.Target{Platform: "metal"},
+		ChangeRules: set,
 		Effects: Effects{Defs: map[string]effects.Definition{
 			"demo":  {Outputs: []string{"demo"}, Restart: []string{"demo.service"}},
 			"names": {Kinds: []string{"Demo"}, Reload: []string{"names.service"}},
@@ -51,7 +51,7 @@ func testImage(t *testing.T, render string) Image {
 			Inputs: []string{"Demo"}, Render: script(t, render), Dir: filepath.Join(root, "demo"),
 			User: strconv.Itoa(os.Getuid()), Group: strconv.Itoa(os.Getgid()), Mode: "0644",
 		}},
-		Render: outputs.Renderer{Root: root, Run: outputs.Direct{}},
+		Renderer: outputs.Renderer{Root: root, Run: outputs.Direct{}},
 	}
 }
 
@@ -177,7 +177,7 @@ func TestRunRefuses(t *testing.T) {
 		stage          Stage
 		want           string
 	}{
-		"the set":      {`cat > "$OUT/demo.json"`, base + "---\napiVersion: demo.example.org/v1alpha1\nkind: Demo\nmetadata: {name: one}\nspec: {name: twice}\n", false, false, StageConfig, `the config: two Demo documents named "one"`},
+		"the set":      {`cat > "$OUT/demo.json"`, base + "---\napiVersion: demo.example.org/v1alpha1\nkind: Demo\nmetadata: {name: one}\nspec: {name: twice}\n", false, false, StageConfig, `two Demo documents named "one"`},
 		"a rule":       {`cat > "$OUT/demo.json"`, strings.Replace(base, "name: first", "name: second", 1), true, false, StageRules, `the config is refused: Demo/one: spec.name: the name stays while the demo is frozen`},
 		"a renderer":   {`exit 3`, base, false, false, StageOutputs, "output demo: its renderer failed (exit 3); see the node's journal"},
 		"an unchanged": {`cat > "$OUT/demo.json"`, base, true, false, "", ""},
@@ -224,7 +224,7 @@ func TestRunValidators(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			img := testImage(t, `exit 3`)
-			img.Validators = map[string]outputs.Validator{"demo": {Inputs: []string{"Demo"}, Program: script(t, tc.validate)}}
+			img.Validators = Programs{Defs: map[string]outputs.Validator{"demo": {Inputs: []string{"Demo"}, Program: script(t, tc.validate)}}, Render: img.Renderer}
 			in := running(t, testImage(t, `cat > "$OUT/demo.json"`), &facts{})
 			in.Delivered = config.Redact(parse(t, base))
 			_, err := Run(context.Background(), img, in)
@@ -304,7 +304,7 @@ func TestRunFillsInTheImagesDefaultsOfTheOldConfig(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	img.Rules = set
+	img.ChangeRules = set
 	old := config.Redact(parse(t, base+"---\napiVersion: gone.example.org/v1\nkind: Gone\nmetadata: {name: x}\nspec: {}\n"))
 	var seen config.Redacted
 	in := Input{Node: "n1", Old: old, Facts: func(_, old config.Redacted) rules.Facts { seen = old; return &facts{} }}

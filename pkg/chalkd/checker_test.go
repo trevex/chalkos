@@ -79,7 +79,7 @@ func TestCheckRefuses(t *testing.T) {
 	withoutDemo := fixtureSchemas(t)
 	delete(withoutDemo, "demo.example.org_v1alpha1_Demo.json")
 	res := checkWith(t, s, imageWith(t, s, withoutDemo, ""), baseConfig)
-	if r := res.GetRefusal(); r.GetStage() != "config" || !strings.HasPrefix(r.GetMessage(), "the config: ") || !strings.Contains(r.GetMessage(), `does not accept kind "Demo"`) {
+	if r := res.GetRefusal(); r.GetStage() != "config" || strings.HasPrefix(r.GetMessage(), "the config") || !strings.Contains(r.GetMessage(), `does not accept kind "Demo"`) {
 		t.Errorf("refusal = %v", r)
 	}
 	broken := imageWith(t, s, nil, "")

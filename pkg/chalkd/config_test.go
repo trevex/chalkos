@@ -17,6 +17,7 @@ import (
 
 	"connectrpc.com/connect"
 
+	checkv1 "github.com/trevex/chalkos/pkg/api/check/v1"
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/check"
 	"github.com/trevex/chalkos/pkg/config"
@@ -1272,7 +1273,8 @@ func TestApplyConfigRefusesAnOutputThatFails(t *testing.T) {
 }
 
 // TestApplyConfigRefusesAsTheChecker: a set the translation refuses and an output whose renderer
-// fails refuse a delivery with the message check.Run gives the same config on the same image.
+// fails refuse a delivery as chalkd reads check.Run's refusal of the same config on the same image
+// from the image's checker.
 func TestApplyConfigRefusesAsTheChecker(t *testing.T) {
 	for name, tc := range map[string]struct {
 		next  string
@@ -1285,7 +1287,7 @@ func TestApplyConfigRefusesAsTheChecker(t *testing.T) {
 			s, _ := configServer(t)
 			writeOutputs(t, s, map[string]outputs.Definition{"demo": demoOutput(t, s, `exit 3`, "")})
 			c := s.Loader.Contract
-			img := check.Image{Schemas: c.Schemas, Target: config.Target{Platform: "metal"}, Rules: mustRules(t, c), Outputs: c.Outputs, Render: s.Loader.Render}
+			img := check.Image{Schemas: c.Schemas, Target: config.Target{Platform: "metal"}, ChangeRules: mustRules(t, c), Outputs: c.Outputs, Renderer: s.Loader.Render}
 			docs, err := config.Parse(strings.NewReader(tc.next))
 			if err != nil {
 				t.Fatal(err)
@@ -1300,8 +1302,10 @@ func TestApplyConfigRefusesAsTheChecker(t *testing.T) {
 			if !ok {
 				t.Fatalf("the delivery: %v", delivered)
 			}
-			if ce.Message() != r.Message {
-				t.Errorf("the delivery is refused with %q, check.Run with %q", ce.Message(), r.Message)
+			// The checker's refusal reads as the running image's refusal of the same config.
+			want := s.imageRefusal(&checkv1.Refusal{Stage: string(r.Stage), Message: r.Message}, "", nil)
+			if ce.Message() != want.Error() || ce.Code() != codeOf(want) {
+				t.Errorf("the delivery is refused with %v, the checker's refusal reads %v", ce, want)
 			}
 		})
 	}

@@ -108,8 +108,9 @@ func (s *Server) systemImage(system, platform, dir string) (check.Image, error) 
 	if err := s.target(facts, &t); err != nil {
 		return check.Image{}, err
 	}
+	render := outputs.Renderer{Root: dir, Run: outputs.Direct{}, KeepOwner: true}
 	return check.Image{
-		Schemas: c.Schemas, Target: t, Rules: set, Validators: c.Validators, Outputs: c.Outputs,
-		Render: outputs.Renderer{Root: dir, Run: outputs.Direct{}, KeepOwner: true},
+		Schemas: c.Schemas, Target: t, ChangeRules: set, Outputs: c.Outputs, Renderer: render,
+		Validators: check.Programs{Defs: c.Validators, Render: render},
 	}, nil
 }

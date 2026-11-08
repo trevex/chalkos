@@ -1,6 +1,7 @@
 package check
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -94,38 +95,35 @@ func parse(t *testing.T, text string) []config.Document {
 	return docs
 }
 
-// config.TranslateRedacted gives a redacted set the documents and identity of the set with its
-// values, redacted: the defaults it fills in hide nothing again.
+// TranslateRedacted gives a redacted set the documents and identity of the set with its values,
+// redacted: the defaults it fills in hide nothing again.
 func TestTranslateRedacted(t *testing.T) {
-	s := testSchemas(t)
+	img := Image{Schemas: testSchemas(t), Target: config.Target{Platform: "metal"}}
 	docs := parse(t, base)
-	raw, err := Translate("n1", docs, s, config.Target{Platform: "metal"})
+	raw, err := img.Translate("n1", docs)
 	if err != nil {
 		t.Fatal(err)
 	}
-	redacted, id, err := config.TranslateRedacted("n1", config.Redact(docs), s, config.Target{Platform: "metal"})
+	redacted, id, err := img.TranslateRedacted("n1", config.Redact(docs))
 	if err != nil {
 		t.Fatal(err)
 	}
-	data, err := encodeIdentity(id)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !reflect.DeepEqual(redacted.Objects(), config.Redact(raw.Documents).Objects()) || string(data) != string(raw.Identity) {
-		t.Errorf("redacted %v, %s; values %v, %s", redacted.Objects(), data, raw.Documents, raw.Identity)
+	if !reflect.DeepEqual(redacted.Objects(), config.Redact(raw.Documents).Objects()) || !reflect.DeepEqual(id, raw.Identity) {
+		t.Errorf("redacted %v, %+v; values %v, %+v", redacted.Objects(), id, raw.Documents, raw.Identity)
 	}
 }
 
 // A Secret value that is no string fails the schema in its redacted form as it does with its
-// value, with the same message, so the image's checker, which sees redacted documents alone,
+// value, with the same refusal, so the image's checker, which sees redacted documents alone,
 // refuses it.
 func TestTranslateRedactedRefusesAMistypedSecret(t *testing.T) {
-	s := testSchemas(t)
+	img := Image{Schemas: testSchemas(t), Target: config.Target{Platform: "metal"}}
 	for _, v := range []string{"12345", "true", "[a]", "{a: b}", "null"} {
 		docs := parse(t, strings.Replace(base, "token: s3cret", "token: "+v, 1))
-		_, raw := Translate("n1", docs, s, config.Target{Platform: "metal"})
-		_, _, redacted := config.TranslateRedacted("n1", config.Redact(docs), s, config.Target{Platform: "metal"})
-		if raw == nil || redacted == nil || raw.Error() != redacted.Error() {
+		_, raw := img.Translate("n1", docs)
+		_, _, redacted := img.TranslateRedacted("n1", config.Redact(docs))
+		r, ok := errors.AsType[*Refusal](raw)
+		if !ok || r.Stage != StageConfig || redacted == nil || raw.Error() != redacted.Error() {
 			t.Errorf("%s: with its value %v, redacted %v", v, raw, redacted)
 		}
 	}

@@ -27,7 +27,7 @@ func configure(name, text string, schemas *schema.Schemas, t config.Target) (slo
 	}
 	c, err := translateSlot(name, docs, schemas, t)
 	if err != nil {
-		return slot.Stored{}, layer.Errorf(connect.CodeInvalidArgument, "%s", check.ConfigRefusal(err))
+		return slot.Stored{}, layer.Errorf(connect.CodeInvalidArgument, "the config does not suit the image: %w", err)
 	}
 	return c, nil
 }
@@ -43,11 +43,15 @@ func translateSlot(name string, docs []config.Document, schemas *schema.Schemas,
 	if err != nil {
 		return slot.Stored{}, fmt.Errorf("hash the config: %w", err)
 	}
-	tr, err := check.Translate(name, docs, schemas, t)
+	tr, err := check.Image{Schemas: schemas, Target: t}.Translate(name, docs)
 	if err != nil {
 		return slot.Stored{}, err
 	}
-	return slot.Stored{Delivered: docs, Documents: tr.Documents, Version: version, Identity: tr.Identity}, nil
+	id, err := tr.IdentityJSON()
+	if err != nil {
+		return slot.Stored{}, err
+	}
+	return slot.Stored{Delivered: docs, Documents: tr.Documents, Version: version, Identity: id}, nil
 }
 
 // runningTarget is the running image, as config for it is translated, and its schemas.

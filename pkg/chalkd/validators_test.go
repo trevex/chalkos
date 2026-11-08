@@ -112,7 +112,7 @@ func TestApplyConfigRefusesByAValidatorAsTheChecker(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	img := check.Image{Schemas: c.Schemas, Target: config.Target{Platform: "metal"}, Rules: mustRules(t, c), Validators: c.Validators, Render: s.Loader.Render}
+	img := check.Image{Schemas: c.Schemas, Target: config.Target{Platform: "metal"}, ChangeRules: mustRules(t, c), Validators: check.Programs{Defs: c.Validators, Render: s.Loader.Render}, Renderer: s.Loader.Render}
 	_, checked := check.Run(context.Background(), img, check.Input{Node: "n1", Delivered: config.Redact(docs), Facts: func(_, _ config.Redacted) rules.Facts { return nil }})
 	r, ok := errors.AsType[*check.Refusal](checked)
 	if !ok || r.Stage != check.StageValidators {
