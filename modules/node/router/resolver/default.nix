@@ -14,6 +14,7 @@
 let
   cfg = config.chalkos.router.resolver;
   routerLib = import ../lib.nix { inherit config lib; };
+  inherit (routerLib) hardened;
   kinds = import ./kinds.nix { inherit lib; };
   unbound = config.services.unbound.package;
   dir = config.chalkos.outputs.unbound.dir;
@@ -254,7 +255,7 @@ in
       ];
       wantedBy = [ "multi-user.target" ];
       path = [ config.systemd.package ];
-      serviceConfig = {
+      serviceConfig = hardened // {
         Type = "oneshot";
         RemainAfterExit = true;
         ExecStart = lib.getExe reconcile;
@@ -264,24 +265,6 @@ in
         CapabilityBoundingSet = [ "" ];
         SupplementaryGroups = [ "unbound" ];
         RestrictAddressFamilies = [ "AF_UNIX" ];
-        NoNewPrivileges = true;
-        PrivateDevices = true;
-        ProtectControlGroups = true;
-        ProtectSystem = "strict";
-        ProtectHome = true;
-        PrivateTmp = true;
-        ProtectKernelTunables = true;
-        ProtectKernelModules = true;
-        ProtectKernelLogs = true;
-        ProtectClock = true;
-        ProtectHostname = true;
-        RestrictNamespaces = true;
-        RestrictRealtime = true;
-        RestrictSUIDSGID = true;
-        LockPersonality = true;
-        MemoryDenyWriteExecute = true;
-        SystemCallArchitectures = "native";
-        SystemCallFilter = [ "@system-service" ];
       };
     };
     # chalkd asks unbound-control whether the default VRF's resolver runs, and systemctl whether

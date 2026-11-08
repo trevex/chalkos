@@ -15,6 +15,7 @@
 let
   cfg = config.chalkos.router.dhcpRelay;
   routerLib = import ../lib.nix { inherit config lib; };
+  inherit (routerLib) hardened;
   kinds = import ./kinds.nix { inherit lib; };
   inherit (pkgs) dnsmasq;
   dir = config.chalkos.outputs.dhcp-relay.dir;
@@ -102,7 +103,7 @@ let
   # A relay's hardening: the user dnsmasq, which dnsmasq stays as, with the capabilities it
   # demands of a relay: port 67 and 547, the ICMPv6 socket of DHCPv6 and the ARP entries of
   # DHCPv4 clients without an address. It writes no lease file and no pid file.
-  relay = {
+  relay = hardened // {
     Restart = "on-failure";
     RestartSec = 5;
     User = "dnsmasq";
@@ -119,30 +120,12 @@ let
     ];
     RuntimeDirectory = "dnsmasq-relay";
     RuntimeDirectoryPreserve = true;
-    NoNewPrivileges = true;
-    ProtectSystem = "strict";
-    ProtectHome = true;
-    PrivateTmp = true;
-    PrivateDevices = true;
-    ProtectKernelTunables = true;
-    ProtectKernelModules = true;
-    ProtectKernelLogs = true;
-    ProtectControlGroups = true;
-    ProtectClock = true;
-    ProtectHostname = true;
     RestrictAddressFamilies = [
       "AF_UNIX"
       "AF_NETLINK"
       "AF_INET"
       "AF_INET6"
     ];
-    RestrictNamespaces = true;
-    RestrictRealtime = true;
-    RestrictSUIDSGID = true;
-    LockPersonality = true;
-    MemoryDenyWriteExecute = true;
-    SystemCallArchitectures = "native";
-    SystemCallFilter = [ "@system-service" ];
   };
   start =
     conf:
@@ -239,7 +222,7 @@ in
       ];
       wantedBy = [ "multi-user.target" ];
       path = [ config.systemd.package ];
-      serviceConfig = {
+      serviceConfig = hardened // {
         Type = "oneshot";
         RemainAfterExit = true;
         ExecStart = lib.getExe reconcile;
@@ -247,24 +230,6 @@ in
         ExecStop = "${lib.getExe reconcile} stop";
         CapabilityBoundingSet = [ "" ];
         RestrictAddressFamilies = [ "AF_UNIX" ];
-        NoNewPrivileges = true;
-        PrivateDevices = true;
-        ProtectControlGroups = true;
-        ProtectSystem = "strict";
-        ProtectHome = true;
-        PrivateTmp = true;
-        ProtectKernelTunables = true;
-        ProtectKernelModules = true;
-        ProtectKernelLogs = true;
-        ProtectClock = true;
-        ProtectHostname = true;
-        RestrictNamespaces = true;
-        RestrictRealtime = true;
-        RestrictSUIDSGID = true;
-        LockPersonality = true;
-        MemoryDenyWriteExecute = true;
-        SystemCallArchitectures = "native";
-        SystemCallFilter = [ "@system-service" ];
       };
     };
   };

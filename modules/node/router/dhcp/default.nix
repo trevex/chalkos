@@ -22,6 +22,7 @@
 let
   cfg = config.chalkos.router.dhcp;
   routerLib = import ../lib.nix { inherit config lib; };
+  inherit (routerLib) hardened;
   kinds = import ./kinds.nix { inherit lib; };
   inherit (chalkosPackages) kea;
   dir = config.chalkos.outputs.kea.dir;
@@ -219,7 +220,8 @@ let
       v4 = family == "dhcp4";
       capabilities = [ "CAP_NET_BIND_SERVICE" ] ++ lib.optional v4 "CAP_NET_RAW";
     in
-    {
+    hardened
+    // {
       ExecReload = "${pkgs.coreutils}/bin/kill -HUP $MAINPID";
       Restart = "on-failure";
       RestartSec = 5;
@@ -242,17 +244,6 @@ let
         "-${pdRecordsNew}"
       ];
       UMask = "0027";
-      NoNewPrivileges = true;
-      ProtectSystem = "strict";
-      ProtectHome = true;
-      PrivateTmp = true;
-      PrivateDevices = true;
-      ProtectKernelTunables = true;
-      ProtectKernelModules = true;
-      ProtectKernelLogs = true;
-      ProtectControlGroups = true;
-      ProtectClock = true;
-      ProtectHostname = true;
       RestrictAddressFamilies = [
         "AF_UNIX"
         "AF_NETLINK"
@@ -260,13 +251,6 @@ let
         "AF_INET6"
       ]
       ++ lib.optional v4 "AF_PACKET";
-      RestrictNamespaces = true;
-      RestrictRealtime = true;
-      RestrictSUIDSGID = true;
-      LockPersonality = true;
-      MemoryDenyWriteExecute = true;
-      SystemCallArchitectures = "native";
-      SystemCallFilter = [ "@system-service" ];
     };
   # The units of the servers of a family: the default VRF's and the template of a VRF's, whose
   # sockets systemd binds to the VRF's device, as unbound@ does. Kea's DHCPv4 raw sockets read and
@@ -389,7 +373,7 @@ in
           ];
           wantedBy = [ "multi-user.target" ];
           path = [ config.systemd.package ];
-          serviceConfig = {
+          serviceConfig = hardened // {
             Type = "oneshot";
             RemainAfterExit = true;
             ExecStart = lib.getExe reconcile;
@@ -399,24 +383,6 @@ in
             CapabilityBoundingSet = [ "" ];
             SupplementaryGroups = [ "kea" ];
             RestrictAddressFamilies = [ "AF_UNIX" ];
-            NoNewPrivileges = true;
-            PrivateDevices = true;
-            ProtectControlGroups = true;
-            ProtectSystem = "strict";
-            ProtectHome = true;
-            PrivateTmp = true;
-            ProtectKernelTunables = true;
-            ProtectKernelModules = true;
-            ProtectKernelLogs = true;
-            ProtectClock = true;
-            ProtectHostname = true;
-            RestrictNamespaces = true;
-            RestrictRealtime = true;
-            RestrictSUIDSGID = true;
-            LockPersonality = true;
-            MemoryDenyWriteExecute = true;
-            SystemCallArchitectures = "native";
-            SystemCallFilter = [ "@system-service" ];
           };
         };
         # Routes the prefixes the DHCPv6 servers delegate, at boot, after chalkos-dhcp, which also
@@ -430,7 +396,7 @@ in
           unitConfig.StartLimitIntervalSec = 0;
           wantedBy = [ "multi-user.target" ];
           path = [ pkgs.iproute2 ];
-          serviceConfig = {
+          serviceConfig = hardened // {
             Type = "oneshot";
             ExecStart = "${lib.getExe chalkosPackages.chalkd} router dhcp6-routes";
             CapabilityBoundingSet = [ "CAP_NET_ADMIN" ];
@@ -439,24 +405,6 @@ in
               "AF_NETLINK"
             ];
             TimeoutStartSec = "30s";
-            NoNewPrivileges = true;
-            PrivateDevices = true;
-            ProtectControlGroups = true;
-            ProtectSystem = "strict";
-            ProtectHome = true;
-            PrivateTmp = true;
-            ProtectKernelTunables = true;
-            ProtectKernelModules = true;
-            ProtectKernelLogs = true;
-            ProtectClock = true;
-            ProtectHostname = true;
-            RestrictNamespaces = true;
-            RestrictRealtime = true;
-            RestrictSUIDSGID = true;
-            LockPersonality = true;
-            MemoryDenyWriteExecute = true;
-            SystemCallArchitectures = "native";
-            SystemCallFilter = [ "@system-service" ];
           };
         };
       };

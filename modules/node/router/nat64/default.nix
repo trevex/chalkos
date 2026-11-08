@@ -12,6 +12,7 @@
 let
   cfg = config.chalkos.router.nat64;
   routerLib = import ../lib.nix { inherit config lib; };
+  inherit (routerLib) hardened;
   kinds = import ./kinds.nix { inherit lib; };
   jool = pkgs.jool-cli;
   # Brings Jool's instances, their namespaces and links and the routes to them to the files of the
@@ -314,40 +315,43 @@ in
       ];
       before = [ "frr.service" ];
       wantedBy = [ "multi-user.target" ];
-      serviceConfig = {
-        Type = "oneshot";
-        RemainAfterExit = true;
-        ExecStart = lib.getExe apply;
-        ExecReload = lib.getExe apply;
-        ExecStop = "${lib.getExe apply} stop";
+      serviceConfig =
         # ip netns add mounts a namespace on /run/netns, which the host must see, so the unit has no
         # mount namespace of its own: no ProtectSystem, PrivateTmp, PrivateDevices, ProtectHome,
         # ProtectKernelLogs, ProtectKernelModules, ProtectControlGroups or ProtectKernelTunables,
         # each of which gives it one and keeps the namespaces from the host. Mounting a namespace and
         # entering it take CAP_SYS_ADMIN and the mount system calls, and RestrictNamespaces lets
         # network namespaces alone through; jool, ip and the namespaces' sysctls take CAP_NET_ADMIN.
-        CapabilityBoundingSet = [
-          "CAP_NET_ADMIN"
-          "CAP_SYS_ADMIN"
-        ];
-        RestrictAddressFamilies = [
-          "AF_NETLINK"
-          "AF_UNIX"
-        ];
-        RestrictNamespaces = "net";
-        SystemCallFilter = [
-          "@system-service"
-          "@mount"
-        ];
-        NoNewPrivileges = true;
-        MemoryDenyWriteExecute = true;
-        RestrictSUIDSGID = true;
-        ProtectClock = true;
-        ProtectHostname = true;
-        RestrictRealtime = true;
-        LockPersonality = true;
-        SystemCallArchitectures = "native";
-      };
+        removeAttrs hardened [
+          "ProtectSystem"
+          "PrivateTmp"
+          "PrivateDevices"
+          "ProtectHome"
+          "ProtectKernelLogs"
+          "ProtectKernelModules"
+          "ProtectControlGroups"
+          "ProtectKernelTunables"
+        ]
+        // {
+          Type = "oneshot";
+          RemainAfterExit = true;
+          ExecStart = lib.getExe apply;
+          ExecReload = lib.getExe apply;
+          ExecStop = "${lib.getExe apply} stop";
+          CapabilityBoundingSet = [
+            "CAP_NET_ADMIN"
+            "CAP_SYS_ADMIN"
+          ];
+          RestrictAddressFamilies = [
+            "AF_NETLINK"
+            "AF_UNIX"
+          ];
+          RestrictNamespaces = "net";
+          SystemCallFilter = [
+            "@system-service"
+            "@mount"
+          ];
+        };
     };
     # chalkd reads Jool's sessions, bindings and pools for the node's status, with nsenter in each
     # instance's namespace.
