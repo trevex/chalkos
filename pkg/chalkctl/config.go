@@ -2,7 +2,6 @@ package chalkctl
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -13,12 +12,12 @@ import (
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/chalkctl/layer"
+	"github.com/trevex/chalkos/pkg/check"
 	"github.com/trevex/chalkos/pkg/client"
 	"github.com/trevex/chalkos/pkg/config"
 	imagecontract "github.com/trevex/chalkos/pkg/contract"
 	"github.com/trevex/chalkos/pkg/identity"
 	"github.com/trevex/chalkos/pkg/inventory"
-	"github.com/trevex/chalkos/pkg/outputs"
 	"github.com/trevex/chalkos/pkg/rules"
 	"github.com/trevex/chalkos/pkg/schema"
 )
@@ -118,12 +117,12 @@ func nodeContract(ctx context.Context, conn *client.Conn, name string) (contract
 }
 
 // delivery is a node's config as chalkctl delivers it, checked against the image it is for, with
-// the identity it translates to there and its documents with their defaults, as the image's rules
-// see them.
+// the identity it translates to there and its documents with their defaults, redacted, as the
+// image's rules see them.
 type delivery struct {
 	config.Encoded
 	identity  identity.Identity
-	documents []config.Document
+	documents config.Redacted
 	// unpinned names the image references that have a tag but no digest, which chalkctl warns
 	// about.
 	unpinned []string
@@ -150,66 +149,67 @@ func (c *cluster) deliveryFor(name string, ct contract) (delivery, error) {
 	return d, nil
 }
 
-// checkNodeConfig checks a node's config on the image the contract describes as the node does,
-// with config.Translate, against the image's change rules that chalkctl can check without the
-// node's config, and with the validators chalkctl links. It returns the config as chalkctl
-// delivers it.
-func checkNodeConfig(nc *inventory.NodeConfig, c contract) (delivery, error) {
+// checker is the image the contract describes as chalkctl checks config with it, in the stages
+// the node checks it in: its schemas, the target its facts give on the contract's platform, its
+// change rules, and the validators of the compiled layers, which run in-process on the input the
+// image's programs read. It renders nothing and plans no effects. A validator an extension
+// declares is a program of the image alone, which chalkctl cannot run, so the node checks it at
+// the delivery, as it checks the rules that read facts, which the node alone has.
+func (c contract) checker() (check.Image, error) {
+	set, err := c.image.Rules()
+	if err != nil {
+		return check.Image{}, fmt.Errorf("the image's rules: %w", err)
+	}
 	t := c.target
 	t.Platform = c.platform
-	set, id, err := config.Translate(nc.Name, nc.Documents, c.image.Schemas, t)
+	var linked check.Linked
+	for _, p := range compiled[layer.Validators]() {
+		linked = append(linked, p.Validators(c.image.Schemas)...)
+	}
+	return check.Image{Schemas: c.image.Schemas, Target: t, ChangeRules: set, Validators: linked}, nil
+}
+
+// checkNodeConfig checks a node's config on the image the contract describes as the node does,
+// in the stages of the contract's checker: its translation, the change rules without the node's
+// config, so the rules of fields that read oldSelf do not run and the rules of kinds see no
+// oldDocuments, and the validators chalkctl links. It returns the config as chalkctl delivers
+// it; a config the checker refuses is a *check.Refusal.
+func checkNodeConfig(nc *inventory.NodeConfig, c contract) (delivery, error) {
+	img, err := c.checker()
 	if err != nil {
 		return delivery{}, err
 	}
-	if err := checkRules(c, set.Documents(), config.Redacted{}, nc.Name); err != nil {
+	tr, err := img.Translate(nc.Name, nc.Documents)
+	if err != nil {
 		return delivery{}, err
 	}
-	if err := checkValidators(c, nc.Name, set.Documents()); err != nil {
+	docs := config.Redact(tr.Documents)
+	if err := img.Rules(rules.Input{Documents: docs, Node: nc.Name}); err != nil {
+		return delivery{}, err
+	}
+	if err := img.Validate(context.Background(), nc.Name, docs); err != nil {
 		return delivery{}, err
 	}
 	e, err := config.Encode(nc.Documents)
 	if err != nil {
 		return delivery{}, err
 	}
-	return delivery{Encoded: e, identity: id, documents: set.Documents(), unpinned: set.Documents().UnpinnedImages(c.image.Schemas)}, nil
+	return delivery{Encoded: e, identity: tr.Identity, documents: docs, unpinned: tr.Documents.UnpinnedImages(c.image.Schemas)}, nil
 }
 
-// checkRules refuses next, a node's config with its defaults, when the change rules of the image
-// the contract describes refuse it, as the node would: those that read no facts, which the node
-// alone has. old is the node's config as it serves it, or empty where chalkctl does not have it,
-// as for validate; without it, the rules of fields that read oldSelf do not run and the rules of
-// kinds see no oldDocuments. Documents of old that the image does not accept compare with
-// nothing. node is the inventory's name of the node, which the rules read as node.name.
-func checkRules(c contract, next []config.Document, old config.Redacted, node string) error {
-	set, err := c.image.Rules()
-	if err != nil {
-		return fmt.Errorf("the image's rules: %w", err)
-	}
-	failures, err := set.Evaluate(rules.Input{Documents: config.Redact(next), Old: old.Defaulted(c.image.Schemas), Node: node})
+// checkRules runs the Rules stage of the contract's checker on next, a node's config with its
+// defaults, as the node would: the rules that read no facts, which the node alone has. old is the
+// node's config as it serves it, or empty where chalkctl does not have it, as for validate;
+// without it, the rules of fields that read oldSelf do not run and the rules of kinds see no
+// oldDocuments. old gets the image's defaults, and its documents the image does not accept
+// compare with nothing. node is the inventory's name of the node, which the rules read as
+// node.name.
+func checkRules(c contract, next, old config.Redacted, node string) error {
+	img, err := c.checker()
 	if err != nil {
 		return err
 	}
-	if len(failures) > 0 {
-		return errors.New(rules.Refusal(failures, node))
-	}
-	return nil
-}
-
-// checkValidators refuses docs, the config of the node called node with its defaults, when a
-// validator of a compiled layer that the image the contract describes runs refuses it or fails, as
-// the node would refuse it. The validators run in-process on the input the image's programs read,
-// redacted. A validator an extension declares is a program of the image alone, which chalkctl
-// cannot run, so the node checks it at the delivery.
-func checkValidators(c contract, node string, docs []config.Document) error {
-	var linked []outputs.LinkedValidator
-	for _, p := range compiled[layer.Validators]() {
-		linked = append(linked, p.Validators(c.image.Schemas)...)
-	}
-	failures := outputs.RunLinked(linked, outputs.Input{Node: node, Documents: config.Redact(docs)})
-	if len(failures) > 0 {
-		return errors.New(outputs.Message(failures))
-	}
-	return nil
+	return img.Rules(rules.Input{Documents: next, Old: old.Defaulted(img.Schemas), Node: node})
 }
 
 // imageContractOf is the contract of the node's image in the inventory.

@@ -96,7 +96,7 @@ func TestCheckRules(t *testing.T) {
 				t.Fatal(err)
 			}
 			next[0].Object = filled
-			err = checkRules(c, next, old, "n1")
+			err = checkRules(c, config.Redact(next), old, "n1")
 			if tc.want == "" && err != nil || tc.want != "" && (err == nil || err.Error() != tc.want) {
 				t.Errorf("err = %v, want %q", err, tc.want)
 			}
@@ -140,7 +140,7 @@ func TestCheckRulesHashesAddonSecrets(t *testing.T) {
 		{"other", `the config is refused: Addon/a: spec.objects: the objects are fixed`},
 	} {
 		served := config.Redact(greetings(t, addon(tc.node)))
-		err := checkRules(c, greetings(t, addon("test")), served, "n1")
+		err := checkRules(c, config.Redact(greetings(t, addon("test"))), served, "n1")
 		if tc.want == "" && err != nil || tc.want != "" && (err == nil || err.Error() != tc.want) {
 			t.Errorf("node token %s: err = %v, want %q", tc.node, err, tc.want)
 		}
