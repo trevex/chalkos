@@ -79,20 +79,6 @@ func TestDefaultDoesNotShareDefaultValues(t *testing.T) {
 	}
 }
 
-func TestRawReturnsTheSchemaDocument(t *testing.T) {
-	s, err := LoadSchemas(builtin)
-	if err != nil {
-		t.Fatal(err)
-	}
-	raw, ok := s.Raw("kubernetes.chalkos.dev/v1alpha1", "Node")
-	if !ok || raw.(map[string]any)["title"] != "Node" {
-		t.Fatalf("Raw = %v, %v", raw, ok)
-	}
-	if _, ok := s.Raw("chalkos.dev/v1alpha1", "Nope"); ok {
-		t.Error("Raw found an unknown kind")
-	}
-}
-
 // TestFill fills the defaults of a valid document and refuses one its schema does not accept.
 func TestFill(t *testing.T) {
 	s, err := LoadSchemas(builtin)

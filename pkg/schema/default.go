@@ -3,17 +3,9 @@ package schema
 import (
 	"fmt"
 	"maps"
-	"slices"
 
 	"github.com/santhosh-tekuri/jsonschema/v6"
 )
-
-// Raw returns the schema document of a kind as its file holds it, for readers of annotations
-// such as x-chalkos-networkd-key.
-func (s *Schemas) Raw(apiVersion, kind string) (any, bool) {
-	raw, ok := s.raw[key(apiVersion, kind)]
-	return raw, ok
-}
 
 // Fill checks doc against the schema of its kind, as Validate does, and returns it with the
 // defaults that schema gives, as Default does.
@@ -40,9 +32,7 @@ func (s *Schemas) Default(doc map[string]any) (map[string]any, error) {
 
 func fill(sch *jsonschema.Schema, v any) any {
 	// A schema with $ref carries no other keyword of its own: the generators never emit both.
-	for sch.Ref != nil {
-		sch = sch.Ref
-	}
+	sch = Resolve(sch)
 	switch v := v.(type) {
 	case map[string]any:
 		if len(sch.AnyOf) > 0 {
@@ -90,9 +80,7 @@ func fill(sch *jsonschema.Schema, v any) any {
 // isGroup tells whether a schema is a plain object of declared properties, as a group of options
 // converts to, and not a map or a nullable value.
 func isGroup(sch *jsonschema.Schema) bool {
-	for sch.Ref != nil {
-		sch = sch.Ref
-	}
+	sch = Resolve(sch)
 	return len(sch.AnyOf) == 0 && len(sch.Properties) > 0
 }
 
@@ -102,34 +90,6 @@ func defaultOf(sch *jsonschema.Schema) *any {
 		sch = sch.Ref
 	}
 	return sch.Default
-}
-
-// branchFor picks the anyOf branch whose type matches v's, such as the object branch of a
-// nullable object or of networkd's object-or-list sections, so defaults fill in through it.
-func branchFor(branches []*jsonschema.Schema, v any) *jsonschema.Schema {
-	want := "object"
-	if _, ok := v.([]any); ok {
-		want = "array"
-	}
-	for _, b := range branches {
-		r := b
-		for r.Ref != nil && r.Types == nil {
-			r = r.Ref
-		}
-		if hasType(r.Types, want) {
-			return b
-		}
-	}
-	return branches[0]
-}
-
-// hasType tells whether t declares jsonType among its types. t.String() renders as e.g.
-// "[object]", but ToStrings is the library's accessor for the type names themselves.
-func hasType(t *jsonschema.Types, jsonType string) bool {
-	if t == nil {
-		return false
-	}
-	return slices.Contains(t.ToStrings(), jsonType)
 }
 
 // DeepCopy copies a decoded JSON value, its objects and arrays included.
@@ -150,4 +110,13 @@ func DeepCopy(v any) any {
 	default:
 		return v
 	}
+}
+
+// Raw returns the schema document of a kind as its file holds it.
+func (s *Schemas) Raw(apiVersion, kind string) (any, bool) {
+	sch, ok := s.schemas[key(apiVersion, kind)]
+	if !ok {
+		return nil, false
+	}
+	return KeywordsOf(sch), true
 }

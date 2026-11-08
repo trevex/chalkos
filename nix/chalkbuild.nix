@@ -19,6 +19,7 @@ callPackage ./go-module.nix { } {
     ../pkg/internal/cli
     ../pkg/internal/filecopy
     ../pkg/internal/strs
+    ../pkg/jsonfile
     ../pkg/ociimage
     ../pkg/pki
     ../pkg/schema

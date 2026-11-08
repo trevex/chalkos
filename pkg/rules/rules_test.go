@@ -437,7 +437,15 @@ func TestCompileErrors(t *testing.T) {
 			"items": withRules(map[string]any{"type": "string"}, rule("self != \"\"", ""))}}), nil, "spec.list.*: a rule below a list item"},
 	} {
 		t.Run(name, func(t *testing.T) {
-			_, err := Compile(schemasOf(t, kindSchema("Demo", true, tc.spec, tc.rules)))
+			// A rule that does not decode fails the schema's load; one that does not compile, Compile.
+			data, err := json.Marshal(kindSchema("Demo", true, tc.spec, tc.rules))
+			if err != nil {
+				t.Fatal(err)
+			}
+			s, err := schema.LoadFiles(map[string][]byte{"t.example.org_v1_Demo.json": data})
+			if err == nil {
+				_, err = Compile(s)
+			}
 			if err == nil || !strings.Contains(err.Error(), tc.want) {
 				t.Errorf("err = %v, want %q", err, tc.want)
 			}

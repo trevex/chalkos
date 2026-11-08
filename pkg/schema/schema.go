@@ -4,7 +4,8 @@
 // /etc/chalkos/schemas, with no metadata.json alongside it — metadata's rootHash is computed over
 // the image itself — so chalkd reads the running image's contract with LoadSchemas instead, which
 // finds each schema's kind from the schema's own "x-chalkos-kind". The package validates config
-// documents against those schemas.
+// documents against those schemas, and decodes the x-chalkos-* annotations of the schemas' nodes as
+// it compiles them, for the readers of Walk and WalkSchema.
 package schema
 
 import (
@@ -70,8 +71,6 @@ type Schemas struct {
 	// kinds is in the order of the files' names.
 	kinds   []Kind
 	schemas map[Kind]*jsonschema.Schema
-	// raw holds each kind's schema document as its file holds it, for readers of annotations.
-	raw map[Kind]any
 	// files are the schema files by name, as they were read.
 	files map[string][]byte
 }
@@ -99,10 +98,11 @@ func LoadSchemas(dir string) (*Schemas, error) {
 
 // compile compiles the schema files, by name, in the order of their names, and builds the kind
 // list from each file's "x-chalkos-kind": {"group","version","kind","multiple"}, with "withheld"
-// for a withheld kind. A file's name
-// must equal "<group>_<version>_<kind>.json" by its own declared identity, and no two files may
-// declare the same kind; either failure names the offending file or kind. Errors name a file by
-// its path below dir, or by its name alone when dir is empty.
+// for a withheld kind and "rules" for the kind's rules. A file's name must equal
+// "<group>_<version>_<kind>.json" by its own declared identity, and no two files may declare the
+// same kind; either failure names the offending file or kind. Every x-chalkos-* keyword is decoded
+// as the file compiles, into the Annotations of its node, and a malformed one fails the file.
+// Errors name a file by its path below dir, or by its name alone when dir is empty.
 func compile(files map[string][]byte, dir string) (*Schemas, error) {
 	c := jsonschema.NewCompiler()
 	c.DefaultDraft(jsonschema.Draft2020)
@@ -112,14 +112,19 @@ func compile(files map[string][]byte, dir string) (*Schemas, error) {
 	for _, f := range formats {
 		c.RegisterFormat(f)
 	}
-	ss := &Schemas{schemas: map[Kind]*jsonschema.Schema{}, raw: map[Kind]any{}, files: files}
+	// Draft 2020-12 compiles a vocabulary only where a metaschema lists it, which the kinds'
+	// schemas, of the standard metaschema, do not.
+	roots := map[uintptr]bool{}
+	c.RegisterVocabulary(vocabulary(roots))
+	c.AssertVocabs()
+	ss := &Schemas{schemas: map[Kind]*jsonschema.Schema{}, files: files}
 	for _, name := range slices.Sorted(maps.Keys(files)) {
 		path := filepath.Join(dir, name)
 		doc, err := decodeDoc(files[name], path)
 		if err != nil {
 			return nil, err
 		}
-		k, err := kindOf(doc, path)
+		k, kindRules, err := kindOf(doc, path)
 		if err != nil {
 			return nil, err
 		}
@@ -129,12 +134,13 @@ func compile(files map[string][]byte, dir string) (*Schemas, error) {
 		if want := fileName(k); want != name {
 			return nil, fmt.Errorf("%s: should be named %s for its kind %s %s", path, want, k.APIVersion, k.Kind)
 		}
+		roots[mapID(doc.(map[string]any))] = true
 		s, err := compileSchema(c, doc, path, name)
 		if err != nil {
 			return nil, fmt.Errorf("schema of %s %s: %w", k.APIVersion, k.Kind, err)
 		}
+		extOf(s).ann.KindRules = kindRules
 		ss.schemas[key(k.APIVersion, k.Kind)] = s
-		ss.raw[key(k.APIVersion, k.Kind)] = doc
 		ss.kinds = append(ss.kinds, k)
 	}
 	return ss, nil
@@ -157,25 +163,27 @@ func decodeDoc(data []byte, path string) (any, error) {
 }
 
 // kindOf reads a schema document's "x-chalkos-kind" object, every schema's own record of the
-// kind it validates.
-func kindOf(doc any, path string) (Kind, error) {
+// kind it validates, and the rules of the kind it declares, refusing keys it does not have.
+func kindOf(doc any, path string) (Kind, []Rule, error) {
 	m, ok := doc.(map[string]any)
 	if !ok {
-		return Kind{}, fmt.Errorf("%s: not a JSON object", path)
+		return Kind{}, nil, fmt.Errorf("%s: not a JSON object", path)
 	}
-	xk, ok := m["x-chalkos-kind"].(map[string]any)
+	xk, ok := m[kindKeyword].(map[string]any)
 	if !ok {
-		return Kind{}, fmt.Errorf("%s: has no x-chalkos-kind object", path)
+		return Kind{}, nil, fmt.Errorf("%s: has no %s object", path, kindKeyword)
 	}
-	group, _ := xk["group"].(string)
-	version, _ := xk["version"].(string)
-	k, _ := xk["kind"].(string)
-	multiple, _ := xk["multiple"].(bool)
-	withheld, _ := xk["withheld"].(bool)
-	if group == "" || version == "" || k == "" {
-		return Kind{}, fmt.Errorf("%s: x-chalkos-kind is missing group, version or kind", path)
+	var d kindDecl
+	if err := decodeStrict(xk, &d); err != nil {
+		return Kind{}, nil, fmt.Errorf("%s: %s: %w", path, kindKeyword, err)
 	}
-	return Kind{APIVersion: group + "/" + version, Kind: k, Multiple: multiple, Withheld: withheld}, nil
+	if d.Group == "" || d.Version == "" || d.Kind == "" {
+		return Kind{}, nil, fmt.Errorf("%s: %s is missing group, version or kind", path, kindKeyword)
+	}
+	if err := takesOf(d.Rules); err != nil {
+		return Kind{}, nil, fmt.Errorf("%s: %s: rules: %w", path, kindKeyword, err)
+	}
+	return Kind{APIVersion: d.Group + "/" + d.Version, Kind: d.Kind, Multiple: d.Multiple, Withheld: d.Withheld}, d.Rules, nil
 }
 
 // Kinds returns the kinds the schemas declare.
@@ -257,7 +265,7 @@ func compileSchema(c *jsonschema.Compiler, doc any, path, name string) (s *jsons
 	}
 	s, err = c.Compile(id)
 	if err != nil {
-		return nil, fmt.Errorf("%s: %w", path, err)
+		return nil, fmt.Errorf("%s: %w", path, locate(err, doc))
 	}
 	return s, nil
 }

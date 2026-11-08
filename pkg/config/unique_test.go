@@ -1,8 +1,10 @@
 package config
 
 import (
+	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -164,24 +166,27 @@ func TestCheckUnique(t *testing.T) {
 	}
 }
 
-// A declaration of a scope or normaliser chalkd does not know refuses the documents it covers, so
-// a value it was meant to check never passes unchecked.
-func TestCheckUniqueRefusesAnUnknownDeclaration(t *testing.T) {
+// A declaration of a scope or normaliser chalkd does not know fails the schema's load, so a value
+// it was meant to check never passes unchecked and no delivery is refused for the image's fault.
+func TestUnknownDeclarationFailsTheSchema(t *testing.T) {
 	for _, bad := range []string{
 		`{"across": "node"}`,
 		`{"across": "list", "as": "mac"}`,
 		`{"across": "list", "by": [{"field": "a", "as": "upper"}]}`,
 		`{"across": "list", "within": "x"}`,
 	} {
-		s, err := schema.LoadFiles(map[string][]byte{"pool.example.org_v1_Pool.json": []byte(
+		_, err := schema.LoadFiles(map[string][]byte{"pool.example.org_v1_Pool.json": []byte(
 			strings.Replace(poolSchema, `"x-chalkos-unique": [{"across": "list", "as": "lower"}]`, `"x-chalkos-unique": [`+bad+`]`, 1))})
-		if err != nil {
-			t.Fatal(err)
-		}
-		d := parseOne(t, poolOf("a", "names: [a]"))
-		if err := checkUnique([]Document{d}, s); err == nil || !strings.HasPrefix(err.Error(), "Pool/a: spec.names: x-chalkos-unique of the image's schema: ") {
+		if err == nil || !strings.Contains(err.Error(), "x-chalkos-unique: ") {
 			t.Errorf("%s: err = %v", bad, err)
 		}
+	}
+}
+
+// Every normaliser a declaration may name has an implementation.
+func TestNormalisers(t *testing.T) {
+	if got := slices.Sorted(maps.Keys(normalisers)); !slices.Equal(got, schema.Normalisers) {
+		t.Errorf("normalisers = %v, want %v", got, schema.Normalisers)
 	}
 }
 
