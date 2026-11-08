@@ -59,6 +59,17 @@ func TestFailedUnits(t *testing.T) {
 	}
 }
 
+func TestUnits(t *testing.T) {
+	r := &tooltest.Runner{Rules: []tooltest.Rule{{
+		Prefix: "systemctl list-units --all --plain --no-legend --no-pager a.service a@*.service",
+		Out:    "a.service loaded active running A\n● a@x\\x2dy.service loaded failed failed A\n",
+	}}}
+	got, err := Units(context.Background(), r, "a.service", "a@*.service")
+	if want := []string{"a.service", `a@x\x2dy.service`}; err != nil || !reflect.DeepEqual(got, want) {
+		t.Errorf("Units = %v, %v, want %v", got, err, want)
+	}
+}
+
 func TestDependencies(t *testing.T) {
 	r := &tooltest.Runner{Rules: []tooltest.Rule{{
 		Prefix: "systemctl list-dependencies --all --plain --no-legend --no-pager multi-user.target",
