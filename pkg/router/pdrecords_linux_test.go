@@ -28,8 +28,10 @@ func TestParseKea6Pools(t *testing.T) {
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("pools = %v, want %v", got, want)
 	}
-	if _, err := ParseKea6Pools("default", []byte(`{"Dhcp6": {"subnet6": [{"pd-pools": [{"prefix": "x", "prefix-len": 40}]}]}}`)); err == nil {
-		t.Error("a pool of no address parsed")
+	for _, pool := range []string{`{"prefix": "x", "prefix-len": 40}`, `{"prefix-len": 40}`} {
+		if _, err := ParseKea6Pools("default", []byte(`{"Dhcp6": {"subnet6": [{"pd-pools": [`+pool+`]}]}}`)); err == nil {
+			t.Errorf("the pool %s of no address parsed", pool)
+		}
 	}
 }
 

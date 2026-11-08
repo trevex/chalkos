@@ -2,6 +2,7 @@ package router
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/netip"
 	"strconv"
@@ -58,6 +59,9 @@ func ParseKea6Pools(vrf string, data []byte) ([]PDPool, error) {
 	var out []PDPool
 	for _, s := range c.Dhcp6.Subnet6 {
 		for _, p := range s.PDPools {
+			if !p.Prefix.IsValid() {
+				return nil, errors.New("read Kea's config: a pd-pool names no prefix")
+			}
 			r, err := p.Prefix.Prefix(p.PrefixLen)
 			if err != nil {
 				return nil, fmt.Errorf("read Kea's config: %w", err)
