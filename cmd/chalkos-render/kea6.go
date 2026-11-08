@@ -54,7 +54,7 @@ func kea6Config(srv keaServer, subnets []servedSubnet, pdHook string) keaconf.Co
 // options and reservations. Clients prefer their addresses for the lease's whole time, and renew
 // at half of it.
 func kea6Subnet(s servedSubnet) keaconf.Subnet6 {
-	options := dnsOption("dns-servers", s)
+	options := dnsOptions("dns-servers", s)
 	if s.Spec.Domain != nil {
 		options = append(options, keaconf.Option{Name: "domain-search", Data: *s.Spec.Domain})
 	}

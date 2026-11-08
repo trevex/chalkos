@@ -259,7 +259,7 @@ func keaSubnet4(s servedSubnet) keaconf.Subnet4 {
 	if s.Spec.Gateway != nil {
 		options = append(options, keaconf.Option{Name: "routers", Data: s.Spec.Gateway.String()})
 	}
-	options = append(options, dnsOption("domain-name-servers", s)...)
+	options = append(options, dnsOptions("domain-name-servers", s)...)
 	if s.Spec.Domain != nil {
 		options = append(options,
 			keaconf.Option{Name: "domain-name", Data: *s.Spec.Domain},
@@ -294,8 +294,8 @@ func keaSubnet(s servedSubnet, options []keaconf.Option) keaconf.Subnet {
 	return sub
 }
 
-// dnsOption is the option name of the subnet's DNS servers, none without servers.
-func dnsOption(name string, s servedSubnet) []keaconf.Option {
+// dnsOptions is the option name with the subnet's DNS servers, or none when the subnet has none.
+func dnsOptions(name string, s servedSubnet) []keaconf.Option {
 	if len(s.Spec.DNS) == 0 {
 		return nil
 	}

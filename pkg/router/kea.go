@@ -75,20 +75,19 @@ func ParseKeaSubnets(data []byte) ([]KeaSubnet, error) {
 	if err := json.Unmarshal(data, &c); err != nil {
 		return nil, fmt.Errorf("read Kea's config: %w", err)
 	}
-	var subnets []keaconf.Subnet
+	var out []KeaSubnet
+	add := func(s keaconf.Subnet) {
+		out = append(out, KeaSubnet{ID: s.ID, Name: s.UserContext.Name, Subnet: s.Subnet})
+	}
 	if c.Dhcp4 != nil {
 		for _, s := range c.Dhcp4.Subnet4 {
-			subnets = append(subnets, s.Subnet)
+			add(s.Subnet)
 		}
 	}
 	if c.Dhcp6 != nil {
 		for _, s := range c.Dhcp6.Subnet6 {
-			subnets = append(subnets, s.Subnet)
+			add(s.Subnet)
 		}
-	}
-	var out []KeaSubnet
-	for _, s := range subnets {
-		out = append(out, KeaSubnet{ID: s.ID, Name: s.UserContext.Name, Subnet: s.Subnet})
 	}
 	return out, nil
 }
