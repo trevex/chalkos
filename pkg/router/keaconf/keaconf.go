@@ -49,16 +49,16 @@ type InterfacesConfig struct {
 
 // ControlSocket is a socket that takes Kea's commands.
 type ControlSocket struct {
-	SocketName string `json:"socket-name"`
 	SocketType string `json:"socket-type"`
+	SocketName string `json:"socket-name"`
 }
 
 // LeaseDatabase is where the server keeps its leases.
 type LeaseDatabase struct {
-	LFCInterval int    `json:"lfc-interval"`
-	Name        string `json:"name"`
-	Persist     bool   `json:"persist"`
 	Type        string `json:"type"`
+	Persist     bool   `json:"persist"`
+	Name        string `json:"name"`
+	LFCInterval int    `json:"lfc-interval"`
 }
 
 // Hook is a hook library the server loads.
@@ -75,8 +75,8 @@ type HookParameters struct {
 // Logger sends the messages of a logger from Severity up to its outputs.
 type Logger struct {
 	Name          string         `json:"name"`
-	OutputOptions []OutputOption `json:"output-options"`
 	Severity      string         `json:"severity"`
+	OutputOptions []OutputOption `json:"output-options"`
 }
 
 // OutputOption is an output of a logger and the pattern of its lines.
@@ -88,23 +88,23 @@ type OutputOption struct {
 // ClientClass is a client class of the DHCPv4 server: the clients Test matches, and the boot
 // file and next server they get.
 type ClientClass struct {
-	BootFileName         string `json:"boot-file-name"`
 	Name                 string `json:"name"`
-	NextServer           string `json:"next-server,omitempty"`
 	OnlyInAdditionalList bool   `json:"only-in-additional-list"`
 	Test                 string `json:"test"`
+	BootFileName         string `json:"boot-file-name"`
+	NextServer           string `json:"next-server,omitempty"`
 }
 
-// Subnet is what the subnets of both servers hold: Kea's number for it, its range, its pools,
-// options and reservations, its lease time, and the name of its DHCPSubnet document.
+// Subnet is what the subnets of both servers hold: Kea's number for it, its range, its lease
+// time, its pools, options and reservations, and the name of its DHCPSubnet document.
 type Subnet struct {
 	ID            uint32        `json:"id"`
-	OptionData    []Option      `json:"option-data,omitempty"`
-	Pools         []Pool        `json:"pools,omitempty"`
-	Reservations  []Reservation `json:"reservations,omitempty"`
 	Subnet        string        `json:"subnet"`
-	UserContext   UserContext   `json:"user-context"`
 	ValidLifetime uint64        `json:"valid-lifetime"`
+	Pools         []Pool        `json:"pools,omitempty"`
+	OptionData    []Option      `json:"option-data,omitempty"`
+	Reservations  []Reservation `json:"reservations,omitempty"`
+	UserContext   UserContext   `json:"user-context"`
 }
 
 // Subnet4 is a subnet of the DHCPv4 server, with the client classes Kea evaluates once it chose
@@ -114,13 +114,13 @@ type Subnet4 struct {
 	EvaluateAdditionalClasses []string `json:"evaluate-additional-classes,omitempty"`
 }
 
-// Subnet6 is a subnet of the DHCPv6 server: its link, the prefixes it delegates and how long
-// clients prefer their addresses.
+// Subnet6 is a subnet of the DHCPv6 server: its link, how long clients prefer their addresses and
+// the prefixes it delegates.
 type Subnet6 struct {
 	Subnet
-	Interface         string   `json:"interface,omitempty"`
+	Interface         string   `json:"interface"`
+	PreferredLifetime uint64   `json:"preferred-lifetime"`
 	PDPools           []PDPool `json:"pd-pools,omitempty"`
-	PreferredLifetime uint64   `json:"preferred-lifetime,omitempty"`
 }
 
 // UserContext is what Kea keeps of a subnet for others to read: the name of its document.
@@ -136,22 +136,22 @@ type Pool struct {
 // PDPool is a range of prefixes the DHCPv6 server delegates, Prefix/PrefixLen, in prefixes of
 // DelegatedLen.
 type PDPool struct {
-	DelegatedLen int        `json:"delegated-len"`
 	Prefix       netip.Addr `json:"prefix"`
 	PrefixLen    int        `json:"prefix-len"`
+	DelegatedLen int        `json:"delegated-len"`
 }
 
 // Option is an option the server sends, by name, with its values as Kea's text.
 type Option struct {
-	Data string `json:"data"`
 	Name string `json:"name"`
+	Data string `json:"data"`
 }
 
 // Reservation is an address of the client with the hardware address: IPAddress of the DHCPv4
 // server, IPAddresses of the DHCPv6 server.
 type Reservation struct {
-	Hostname    *string  `json:"hostname,omitempty"`
 	HWAddress   string   `json:"hw-address"`
 	IPAddress   string   `json:"ip-address,omitempty"`
 	IPAddresses []string `json:"ip-addresses,omitempty"`
+	Hostname    *string  `json:"hostname,omitempty"`
 }

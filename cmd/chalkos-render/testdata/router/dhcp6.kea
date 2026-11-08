@@ -10,15 +10,15 @@
     },
     "control-sockets": [
       {
-        "socket-name": "/run/kea/dhcp6-access.sock",
-        "socket-type": "unix"
+        "socket-type": "unix",
+        "socket-name": "/run/kea/dhcp6-access.sock"
       }
     ],
     "lease-database": {
-      "lfc-interval": 3600,
-      "name": "/var/lib/kea/dhcp6-access.leases",
+      "type": "memfile",
       "persist": true,
-      "type": "memfile"
+      "name": "/var/lib/kea/dhcp6-access.leases",
+      "lfc-interval": 3600
     },
     "hooks-libraries": [
       {
@@ -34,58 +34,58 @@
     "loggers": [
       {
         "name": "kea-dhcp6",
+        "severity": "INFO",
         "output-options": [
           {
             "output": "stdout",
             "pattern": "%-5p [%c] %m\n"
           }
-        ],
-        "severity": "INFO"
+        ]
       },
       {
         "name": "kea-dhcp6.dhcp",
+        "severity": "ERROR",
         "output-options": [
           {
             "output": "stdout",
             "pattern": "%-5p [%c] %m\n"
           }
-        ],
-        "severity": "ERROR"
+        ]
       },
       {
         "name": "kea-dhcp6.commands",
+        "severity": "WARN",
         "output-options": [
           {
             "output": "stdout",
             "pattern": "%-5p [%c] %m\n"
           }
-        ],
-        "severity": "WARN"
+        ]
       }
     ],
     "subnet6": [
       {
         "id": 979616295,
+        "subnet": "2001:db8:2::/64",
+        "valid-lifetime": 86400,
         "option-data": [
           {
-            "data": "2001:db8:2::1",
-            "name": "dns-servers"
+            "name": "dns-servers",
+            "data": "2001:db8:2::1"
           }
         ],
-        "subnet": "2001:db8:2::/64",
         "user-context": {
           "name": "customers"
         },
-        "valid-lifetime": 86400,
         "interface": "cust0",
+        "preferred-lifetime": 86400,
         "pd-pools": [
           {
-            "delegated-len": 56,
             "prefix": "2001:db8:100::",
-            "prefix-len": 40
+            "prefix-len": 40,
+            "delegated-len": 56
           }
-        ],
-        "preferred-lifetime": 86400
+        ]
       }
     ]
   }
@@ -102,15 +102,15 @@
     },
     "control-sockets": [
       {
-        "socket-name": "/run/kea/dhcp6.sock",
-        "socket-type": "unix"
+        "socket-type": "unix",
+        "socket-name": "/run/kea/dhcp6.sock"
       }
     ],
     "lease-database": {
-      "lfc-interval": 3600,
-      "name": "/var/lib/kea/dhcp6.leases",
+      "type": "memfile",
       "persist": true,
-      "type": "memfile"
+      "name": "/var/lib/kea/dhcp6.leases",
+      "lfc-interval": 3600
     },
     "hooks-libraries": [
       {
@@ -120,67 +120,67 @@
     "loggers": [
       {
         "name": "kea-dhcp6",
+        "severity": "INFO",
         "output-options": [
           {
             "output": "stdout",
             "pattern": "%-5p [%c] %m\n"
           }
-        ],
-        "severity": "INFO"
+        ]
       },
       {
         "name": "kea-dhcp6.dhcp",
+        "severity": "ERROR",
         "output-options": [
           {
             "output": "stdout",
             "pattern": "%-5p [%c] %m\n"
           }
-        ],
-        "severity": "ERROR"
+        ]
       },
       {
         "name": "kea-dhcp6.commands",
+        "severity": "WARN",
         "output-options": [
           {
             "output": "stdout",
             "pattern": "%-5p [%c] %m\n"
           }
-        ],
-        "severity": "WARN"
+        ]
       }
     ],
     "subnet6": [
       {
         "id": 3216929172,
-        "option-data": [
-          {
-            "data": "2001:db8:1::1",
-            "name": "dns-servers"
-          },
-          {
-            "data": "lan.example.org",
-            "name": "domain-search"
-          }
-        ],
+        "subnet": "2001:db8:1::/64",
+        "valid-lifetime": 43200,
         "pools": [
           {
             "pool": "2001:db8:1::100 - 2001:db8:1::1ff"
           }
         ],
+        "option-data": [
+          {
+            "name": "dns-servers",
+            "data": "2001:db8:1::1"
+          },
+          {
+            "name": "domain-search",
+            "data": "lan.example.org"
+          }
+        ],
         "reservations": [
           {
-            "hostname": "printer",
             "hw-address": "52:54:00:12:34:56",
             "ip-addresses": [
               "2001:db8:1::10"
-            ]
+            ],
+            "hostname": "printer"
           }
         ],
-        "subnet": "2001:db8:1::/64",
         "user-context": {
           "name": "office6"
         },
-        "valid-lifetime": 43200,
         "interface": "lan0",
         "preferred-lifetime": 43200
       }
