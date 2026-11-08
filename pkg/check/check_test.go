@@ -169,7 +169,7 @@ func TestRunReadsNoSecretValue(t *testing.T) {
 }
 
 // Run refuses a config at the stage that refuses it, with the message a delivery's refusal gives;
-// a fact a rule reads that cannot be loaded refuses it at the rules, as chalkd's evaluate does.
+// a fact a rule reads that cannot be loaded refuses it at the rules, as a delivery refuses it.
 func TestRunRefuses(t *testing.T) {
 	for name, tc := range map[string]struct {
 		render, next   string

@@ -194,13 +194,6 @@ func (l Loader) RenderOutputs(ctx context.Context, name string, docs config.Reda
 	return l.Render.Render(ctx, l.Contract.Outputs, outputs.Input{Node: name, Documents: docs, Schemas: schemas})
 }
 
-// Validate runs every validator of the image on docs, a config set with its defaults, for the
-// node called name, and returns the failures of those that refused it or did not run to their
-// end, as RenderOutputs returns the outputs'. It changes nothing a service reads.
-func (l Loader) Validate(ctx context.Context, name string, docs config.Redacted) ([]outputs.Failure, error) {
-	return l.Render.Validate(ctx, l.Contract.Validators, outputs.Input{Node: name, Documents: docs})
-}
-
 // OutputStates are the states of the outputs the node serves now, which docs, the config they
 // were rendered from, references Secrets of; schemas are as for RenderOutputs.
 func (l Loader) OutputStates(docs config.Redacted, schemas *schema.Schemas) (map[string]outputs.State, error) {

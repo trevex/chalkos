@@ -6,9 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"connectrpc.com/connect"
-
-	"github.com/trevex/chalkos/pkg/chalkd/layer"
 	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/facts"
 	"github.com/trevex/chalkos/pkg/rules"
@@ -42,30 +39,6 @@ func (s *Server) runningRules() (*rules.Set, error) {
 		return nil, fmt.Errorf("the running image's rules: %w", err)
 	}
 	return set, nil
-}
-
-// checkRules refuses next, config about to be stored for the image whose rules set holds, when
-// it does not meet them; name is the node's, old is the running slot's config, empty at an install,
-// and f the delivery's facts. Nothing has changed yet when it refuses.
-func (s *Server) checkRules(set *rules.Set, name string, next, old config.Redacted, f rules.Facts) error {
-	failures, err := evaluate(set, name, next, old, f)
-	if err != nil {
-		return err
-	}
-	if len(failures) > 0 {
-		return layer.Errorf(connect.CodeFailedPrecondition, "%s", rules.Refusal(failures, name))
-	}
-	return nil
-}
-
-// evaluate returns the rules of set next does not meet, which see the node called name; an error
-// is a rule that could not be checked, which refuses the delivery too.
-func evaluate(set *rules.Set, name string, next, old config.Redacted, f rules.Facts) ([]rules.Failure, error) {
-	failures, err := set.Evaluate(rules.Input{Documents: next, Old: old, Node: name, Facts: f})
-	if err != nil {
-		return nil, layer.Errorf(connect.CodeFailedPrecondition, "%w", err)
-	}
-	return failures, nil
 }
 
 // jsonValue is v as a fact read from JSON holds it, for a fact that stands in for a file, such as

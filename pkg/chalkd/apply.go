@@ -14,8 +14,8 @@ import (
 	"github.com/trevex/chalkos/pkg/check"
 	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/config/slot"
-	"github.com/trevex/chalkos/pkg/facts"
 	"github.com/trevex/chalkos/pkg/outputs"
+	"github.com/trevex/chalkos/pkg/rules"
 )
 
 // applyRequest is an ApplyConfig request once its config is translated: the identity the node
@@ -232,23 +232,23 @@ func (s *Server) planDelivery(ctx context.Context, r applyRequest) (*delivery, e
 	if !d.keep {
 		next = config.Redact(r.next.Documents)
 	}
-	// The delivery's facts, loaded once for the running slot's rules.
-	var loaded *facts.Loader
+	// The running image checks the delivery in the stages of its checker, between the checks of
+	// the machine: its rules and validators here, its renderers last.
+	img, err := s.runningImage()
+	if err != nil {
+		return nil, err
+	}
 	if !d.keep {
 		// The image's rules compare the config with the running slot's and the storage STATE
 		// records, and read the node's facts. A missing or mistyped fallback secret is refused
 		// before the node trusts the delivered OS CAs.
-		set, err := s.runningRules()
-		if err != nil {
-			return nil, err
-		}
-		loaded = s.factsFor(ctx, next, old, m.FallbackSecret)
-		if err := s.checkRules(set, name, next, old, loaded); err != nil {
+		f := s.factsFor(ctx, next, old, m.FallbackSecret)
+		if err := img.Rules(rules.Input{Documents: next, Old: old, Node: name, Facts: f}); err != nil {
 			return nil, s.elsewhere(err, d.identity.section, nil)
 		}
 		// The image's validators check what its rules do not; a delivery without config changes no
 		// document, so it runs none.
-		if err := s.checkValidators(ctx, name, next); err != nil {
+		if err := img.Validate(ctx, name, next); err != nil {
 			return nil, err
 		}
 	}
@@ -269,14 +269,13 @@ func (s *Server) planDelivery(ctx context.Context, r applyRequest) (*delivery, e
 	// The effects compare the delivery with the running slot, the facts once it is applied with
 	// the facts loaded now, and the outputs rendered from it with those the node serves. Both read
 	// the documents with the schemas of the image whose slot holds them, the running image's.
-	schemas := s.Loader.Contract.Schemas
-	if d.fx, err = s.effectsOf(ctx, name, next, old, schemas, m.FallbackSecret, m.DryRun); err != nil {
+	if d.fx, err = s.effectsOf(ctx, name, next, old, img.Schemas, m.FallbackSecret, m.DryRun); err != nil {
 		return nil, err
 	}
 	// Every output renders from the delivered documents and passes its check, so a delivery a
 	// service would reject is refused whole. A delivery without config changes no document, so an
 	// output that fails does not refuse it.
-	if d.staged, err = s.renderOutputs(ctx, name, next, schemas, !d.keep, m.DryRun); err != nil {
+	if d.staged, err = s.renderOutputs(ctx, img, name, next, !d.keep, m.DryRun); err != nil {
 		s.refused(d.fx)
 		return nil, err
 	}

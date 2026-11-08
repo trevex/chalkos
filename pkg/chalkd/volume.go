@@ -3,6 +3,7 @@ package chalkd
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"maps"
@@ -13,6 +14,7 @@ import (
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/chalkd/layer"
+	"github.com/trevex/chalkos/pkg/check"
 	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/config/slot"
 	"github.com/trevex/chalkos/pkg/rules"
@@ -174,12 +176,12 @@ func (s *Server) resetVolume(ctx context.Context, node, name string, next slot.S
 	nextDocs, runningDocs := config.Redact(next.Documents), config.Redact(running.Documents)
 	f := s.factsFor(ctx, nextDocs, runningDocs, fallback)
 	f.Override("recorded", jsonValue(without))
-	failures, err := evaluate(set.Of(config.StorageAPI), node, nextDocs, runningDocs, f)
-	if err != nil {
+	storageRules := check.Image{ChangeRules: set.Of(config.StorageAPI)}
+	if err := storageRules.Rules(rules.Input{Documents: nextDocs, Old: runningDocs, Node: node, Facts: f}); err != nil {
+		if r, ok := errors.AsType[*check.Refusal](err); ok && len(r.Failures) > 0 {
+			return fmt.Errorf("a reset of volume %s does not carry out the config: %w", name, err)
+		}
 		return err
-	}
-	if len(failures) > 0 {
-		return layer.Errorf(connect.CodeFailedPrecondition, "a reset of volume %s does not carry out the config: %s", name, rules.Refusal(failures, node))
 	}
 
 	if err := storageFailed(s.storage().DeleteVolume(ctx, name, v, pins)); err != nil {
