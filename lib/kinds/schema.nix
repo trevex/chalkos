@@ -564,23 +564,29 @@ rec {
       at = "chalkos.kinds.${kind}";
       specSchema = groupSchema "${at}.spec" spec;
     in
-    envelope {
-      inherit
-        kind
-        group
-        version
-        multiple
-        rules
-        description
-        withheld
-        ;
-      spec =
-        specSchema
-        // lib.optionalAttrs (unique != [ ]) {
-          "x-chalkos-unique" = uniqueSchema "${at}.unique" "${at}.spec" specSchema unique;
-        }
-        // lib.optionalAttrs (specRules != [ ]) { "x-chalkos-rules" = map ruleSchema specRules; };
-    };
+    # The services see the documents of a kind that is not withheld with Secret objects in them
+    # hidden only as redaction hides them, by content; a kind that embeds Kubernetes objects keeps
+    # them away from the services altogether.
+    if !withheld && embedsKubernetesObjects specSchema then
+      throw "${at}: its spec embeds Kubernetes objects, which may hold Secrets, so the kind sets withheld = true"
+    else
+      envelope {
+        inherit
+          kind
+          group
+          version
+          multiple
+          rules
+          description
+          withheld
+          ;
+        spec =
+          specSchema
+          // lib.optionalAttrs (unique != [ ]) {
+            "x-chalkos-unique" = uniqueSchema "${at}.unique" "${at}.spec" specSchema unique;
+          }
+          // lib.optionalAttrs (specRules != [ ]) { "x-chalkos-rules" = map ruleSchema specRules; };
+      };
 
   fileName =
     {
@@ -601,6 +607,16 @@ rec {
       lib.concatMap refsOf v
     else
       [ ];
+
+  # Whether a schema, a JSON value, holds a Kubernetes object anywhere below it.
+  embedsKubernetesObjects =
+    v:
+    if lib.isAttrs v then
+      v ? "x-chalkos-kubernetes-object" || lib.any embedsKubernetesObjects (lib.attrValues v)
+    else if lib.isList v then
+      lib.any embedsKubernetesObjects v
+    else
+      false;
 
   # The schemas of chalkos.kinds, by file name, as the image ships them: each reference with the
   # apiVersion of the kind it names, and each kind's metadata.name refusing the names that

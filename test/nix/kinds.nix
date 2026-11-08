@@ -236,6 +236,17 @@ let
       multiple = false;
       inherit spec;
     }).properties.spec;
+  # The schema of a kind, withheld or not, whose field x is a Kubernetes object.
+  objectsKind =
+    withheld:
+    schema.kindSchema {
+      kind = "T";
+      group = "t.example.org";
+      version = "v1";
+      multiple = false;
+      inherit withheld;
+      spec.x = mkOption { type = kindTypes.kubernetesObject; };
+    };
   # The schema of a single option of the given type.
   propOf = type: (specOf { x = mkOption { inherit type; }; }).properties.x;
   # The x-chalkos-unique of a field of the type given, declared with unique.
@@ -1408,7 +1419,7 @@ lib.runTests {
   };
   # A Kubernetes object: an object with apiVersion, kind and metadata, and any other field.
   testKubernetesObjectSchema = {
-    expr = propOf kindTypes.kubernetesObject;
+    expr = (objectsKind true).properties.spec.properties.x;
     expected = {
       type = "object";
       properties = {
@@ -1428,6 +1439,28 @@ lib.runTests {
         "metadata"
       ];
       "x-chalkos-kubernetes-object" = true;
+    };
+  };
+  # A kind whose spec embeds Kubernetes objects, at any depth, is withheld: the services would see
+  # the Secrets among them hidden by content alone.
+  testKubernetesObjectsWithheld = {
+    expr = {
+      withheld = fails (objectsKind true);
+      notWithheld = fails (objectsKind false);
+      nested = fails (
+        schema.kindSchema {
+          kind = "T";
+          group = "t.example.org";
+          version = "v1";
+          multiple = false;
+          spec.a.b = mkOption { type = types.listOf kindTypes.kubernetesObject; };
+        }
+      );
+    };
+    expected = {
+      withheld = false;
+      notWithheld = true;
+      nested = true;
     };
   };
   # Extensions declare no raw objects.
