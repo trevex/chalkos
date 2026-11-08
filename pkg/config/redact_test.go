@@ -24,6 +24,7 @@ spec:
     - {apiVersion: v1, kind: List, items: [{apiVersion: v1, kind: Secret, metadata: {name: l}, data: {k: bGlzdA==}}, {apiVersion: v1, kind: ConfigMap, metadata: {name: lc}, data: {k: shown}}]}
     - {apiVersion: v1, kind: secret, metadata: {name: lower}, stringData: {p: hidden}}
     - {apiVersion: v1, kind: SecretList, items: [{apiVersion: v1, kind: SECRET, metadata: {name: up}, data: {k: deep}}]}
+    - {apiVersion: /v1, kind: Secret, metadata: {name: slash}, data: {k: c2xhc2g=}}
 ---
 apiVersion: chalkos.dev/v1alpha1
 kind: Host
@@ -37,8 +38,8 @@ func sum(s string) string {
 }
 
 // TestRedact replaces the values of Secrets and of the Secret objects a document embeds, also in a
-// list's items and of a kind in other casing, by their SHA-256, as Hash hashes a Secret's, keeps
-// everything else and leaves its input as it was.
+// list's items, of a kind in other casing and of apiVersion /v1, by their SHA-256, as Hash hashes a
+// Secret's, keeps everything else and leaves its input as it was.
 func TestRedact(t *testing.T) {
 	docs := parseDocs(t, withSecrets)
 	before, err := json.Marshal(docs[1].Object)
@@ -50,12 +51,12 @@ func TestRedact(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{`"token":"` + sum("s3cret") + `"`, `"k":"` + sum("dg==") + `"`, `"p":"` + sum("plain") + `"`, `"k":"visible"`, `"k":"shown"`, `"k":"` + sum("bGlzdA==") + `"`, `"p":"` + sum("hidden") + `"`, `"k":"` + sum("deep") + `"`, `"hostname":"h1"`} {
+	for _, want := range []string{`"token":"` + sum("s3cret") + `"`, `"k":"` + sum("dg==") + `"`, `"p":"` + sum("plain") + `"`, `"k":"visible"`, `"k":"shown"`, `"k":"` + sum("bGlzdA==") + `"`, `"p":"` + sum("hidden") + `"`, `"k":"` + sum("deep") + `"`, `"k":"` + sum("c2xhc2g=") + `"`, `"hostname":"h1"`} {
 		if !strings.Contains(string(text), want) {
 			t.Errorf("redacted %s, want it to hold %s", text, want)
 		}
 	}
-	for _, secret := range []string{"s3cret", "dg==", "plain", "bGlzdA==", "hidden", "deep"} {
+	for _, secret := range []string{"s3cret", "dg==", "plain", "bGlzdA==", "hidden", "deep", "c2xhc2g="} {
 		if strings.Contains(string(text), `"`+secret+`"`) {
 			t.Errorf("redacted %s holds %s", text, secret)
 		}
@@ -90,6 +91,7 @@ func TestRedacted(t *testing.T) {
 		{1, "spec.objects.3.stringData.p", true},
 		{1, "spec.objects.4.items.0.data.k", true},
 		{1, "spec.objects.4.items.0.metadata.name", false},
+		{1, "spec.objects.5.data.k", true},
 		{2, "spec.hostname", false},
 	} {
 		if got := Redacted(docs[tc.doc], strings.Split(tc.path, ".")); got != tc.want {

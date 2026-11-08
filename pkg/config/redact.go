@@ -14,8 +14,8 @@ import (
 //     spec, that is no object, which no schema accepts, the same way as a whole;
 //   - each data and stringData value of a Secret object another document embeds, at any depth, by
 //     the hex SHA-256 of the value, of its JSON where it is no string, which Hash keeps as they
-//     are. An embedded Secret object is an object of apiVersion v1 and kind Secret in any casing,
-//     such as a document carries for another API to apply.
+//     are. An embedded Secret object is an object of apiVersion v1, or /v1, and kind Secret in
+//     any casing, such as a document carries for another API to apply.
 //
 // Redact needs no schemas: it hides the same values whichever image's documents it is given, also
 // those of an image the node does not run. Two sets redact to the same documents where they hold
@@ -121,12 +121,14 @@ func hideEmbedded(v any) (any, bool) {
 	return v, false
 }
 
-// embeddedSecret tells whether obj is a Secret object a document embeds: of apiVersion v1 and kind
-// Secret. The kind is compared in any casing: what an API server would refuse is still not to be
-// shown.
+// embeddedSecret tells whether obj is a Secret object a document embeds: of the core group's
+// version v1 and kind Secret. The apiVersion is v1 or /v1, both of which Kubernetes parses as the
+// core group's v1. The kind is compared in any casing: what an API server would refuse is still
+// not to be shown.
 func embeddedSecret(obj map[string]any) bool {
+	apiVersion, _ := obj["apiVersion"].(string)
 	kind, _ := obj["kind"].(string)
-	return obj["apiVersion"] == "v1" && strings.EqualFold(kind, "Secret")
+	return strings.TrimPrefix(apiVersion, "/") == "v1" && strings.EqualFold(kind, "Secret")
 }
 
 // Redacted tells whether the field of d at path, keys and list indexes in decimal, holds values
