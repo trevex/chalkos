@@ -37,7 +37,8 @@ func sum(s string) string {
 }
 
 // TestRedact replaces the values of Secrets and of the Secret objects a document embeds, also in a
-// list's items and of a kind in other casing, by their SHA-256, as Hash hashes a Secret's, keeps everything else and leaves its input as it was.
+// list's items and of a kind in other casing, by their SHA-256, as Hash hashes a Secret's, keeps
+// everything else and leaves its input as it was.
 func TestRedact(t *testing.T) {
 	docs := parseDocs(t, withSecrets)
 	before, err := json.Marshal(docs[1].Object)
