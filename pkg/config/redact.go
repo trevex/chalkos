@@ -90,9 +90,9 @@ func (r Redacted) Objects() []map[string]any {
 // Defaulted is r with the defaults schemas give filled in, as the rules of the image whose
 // schemas they are compare a config with it. The documents another image delivered or translated
 // mean to this image what its own defaults make of them: a field the delivery left out takes
-// this image's default, whatever default the other image gave it. A document of a kind schemas does not accept is
-// left out, as no rule of this image reads its kind. Documents with defaults already keep them.
-// The defaults are the schemas' own, so the documents stay redacted.
+// this image's default, whatever default the other image gave it. A document of a kind schemas
+// does not accept is left out, as no rule of this image reads its kind. Documents with defaults
+// already keep them. The defaults are the schemas' own, so the documents stay redacted.
 func (r Redacted) Defaulted(schemas *schema.Schemas) Redacted {
 	var out Documents
 	for _, d := range r.docs {
