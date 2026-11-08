@@ -55,11 +55,14 @@ type Set struct {
 }
 
 // Compile compiles the rules every schema of s declares: a kind's own, then those of its fields
-// in the order schema.WalkSchema reaches them, which is by path. It reports every rule that does
-// not compile, each naming the kind or field that declares it. A rule binds self to the value at
-// its path, which a list item or a map value has none of, so rules below a list's items or a map's
-// values are refused: they are declared on the list or the map instead. Without s it compiles
-// none.
+// in the order schema.WalkSchema reaches them, which is by path. A field's rule applies wherever
+// the schema declares it, outside spec too, as on metadata.name; lib/kinds/schema.nix declares
+// rules on spec and its fields alone. It reports every rule that does not compile, each naming the
+// kind or field that declares it. A rule binds self to the value at its path, which a list item or
+// a map value has none of, so rules below a list's items or a map's values are refused: they are
+// declared on the list or the map instead. That includes a definition a field takes either alone
+// or in a list, as networkd's sections are, since WalkSchema reaches it below the list's items
+// too. Without s it compiles none.
 func Compile(s *schema.Schemas) (*Set, error) {
 	set := &Set{}
 	if s == nil {

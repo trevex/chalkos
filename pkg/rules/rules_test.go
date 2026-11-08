@@ -453,6 +453,22 @@ func TestCompileErrors(t *testing.T) {
 	}
 }
 
+// A field of a definition that a field takes either alone or in a list, as networkd's sections
+// are, is reached below the list's items too, so a rule on it is refused.
+func TestCompileRefusesRuleOfOneOrMany(t *testing.T) {
+	section := map[string]any{"$ref": "#/$defs/Section"}
+	sch := kindSchema("Demo", true, object(map[string]any{"section": map[string]any{"anyOf": []any{
+		section, map[string]any{"type": "array", "items": section},
+	}}}), nil)
+	sch["$defs"] = map[string]any{"Section": object(map[string]any{
+		"key": withRules(map[string]any{"type": "string"}, rule("self != \"\"", "")),
+	})}
+	_, err := Compile(schemasOf(t, sch))
+	if want := "Demo spec.section[].key: a rule below a list item"; err == nil || !strings.Contains(err.Error(), want) {
+		t.Errorf("err = %v, want %q", err, want)
+	}
+}
+
 // A refusal names the most a change takes first, and each rule's message.
 func TestRefusal(t *testing.T) {
 	reset := Failure{Refusal: refusals.Refusal{Kind: "Volume", Message: "Volume extra: format xfs instead of ext4; reset it"}, Takes: schema.Reset}
