@@ -148,7 +148,11 @@ func networkdSchema(kind string, sections map[string]map[string]string) map[stri
 			}
 		}
 		defs[name] = map[string]any{"type": "object", "properties": props, "x-chalkos-networkd-section": name}
-		specProps[section] = map[string]any{"$ref": "#/$defs/" + name, "x-chalkos-networkd-section": name}
+		ref := map[string]any{"$ref": "#/$defs/" + name}
+		specProps[section] = map[string]any{
+			"anyOf":                      []any{ref, map[string]any{"type": "array", "items": ref}},
+			"x-chalkos-networkd-section": name,
+		}
 	}
 	return map[string]any{
 		"$defs":      defs,
@@ -186,25 +190,5 @@ func TestNetworkdNetDevAndLinkUnits(t *testing.T) {
 	}
 	if !reflect.DeepEqual(units, want) {
 		t.Errorf("units = %q, want %q", units, want)
-	}
-}
-
-// sectionDef follows the property's $ref, its own or that of a branch of its anyOf, whatever the
-// definition is named.
-func TestSectionDefFollowsTheRef(t *testing.T) {
-	def := map[string]any{"type": "object"}
-	defs := map[string]any{"section0": def}
-	ref := map[string]any{"$ref": "#/$defs/section0"}
-	for name, prop := range map[string]map[string]any{
-		"own":       {"$ref": "#/$defs/section0", "x-chalkos-networkd-section": "Network"},
-		"one":       {"anyOf": []any{ref}, "x-chalkos-networkd-section": "Network"},
-		"many only": {"anyOf": []any{map[string]any{"type": "array", "items": ref}}, "x-chalkos-networkd-section": "Network"},
-	} {
-		if got := sectionDef(defs, prop); got["type"] != "object" {
-			t.Errorf("%s: sectionDef = %v", name, got)
-		}
-	}
-	if got := sectionDef(defs, map[string]any{"x-chalkos-networkd-section": "section0"}); got != nil {
-		t.Errorf("sectionDef of a property without $ref = %v", got)
 	}
 }

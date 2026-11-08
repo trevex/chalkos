@@ -179,3 +179,45 @@ func SpecSchema(entries []Entry) (map[string]any, error) {
 		"$defs": defs,
 	}, nil
 }
+
+// Section is a networkd section as a kind's schema spells it: its systemd name and each of its
+// keys' systemd names, by the key's field.
+type Section struct {
+	Name string
+	Keys map[string]string
+}
+
+// Names reads the systemd names of the sections and keys of a networkd kind's schema, a whole
+// kind's around a spec that SpecSchema wrote, by each section's field of the spec: the
+// x-chalkos-networkd-section of the spec's fields, and the x-chalkos-networkd-key of the fields of
+// the section's definition, which SpecSchema names by the section. pkg/schema decodes and walks the
+// same annotations; this reads only the layout SpecSchema writes, with the standard library
+// alone, for chalkos-render.
+func Names(kindSchema map[string]any) map[string]Section {
+	spec, _ := field(kindSchema, "properties", "spec", "properties").(map[string]any)
+	names := map[string]Section{}
+	for name, prop := range spec {
+		section, _ := field(prop, "x-chalkos-networkd-section").(string)
+		if section == "" {
+			continue
+		}
+		keys := map[string]string{}
+		props, _ := field(kindSchema, "$defs", section, "properties").(map[string]any)
+		for key, p := range props {
+			if spelling, _ := field(p, "x-chalkos-networkd-key").(string); spelling != "" {
+				keys[key] = spelling
+			}
+		}
+		names[name] = Section{Name: section, Keys: keys}
+	}
+	return names
+}
+
+// field is the value at the keys below v, nil where an object lacks one.
+func field(v any, keys ...string) any {
+	for _, k := range keys {
+		m, _ := v.(map[string]any)
+		v = m[k]
+	}
+	return v
+}

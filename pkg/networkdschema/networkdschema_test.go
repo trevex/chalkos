@@ -148,3 +148,20 @@ func TestSpecSchemaRejectsCollisions(t *testing.T) {
 		t.Fatalf("err = %v, want a collision on dns", err)
 	}
 }
+
+// Names reads back the names SpecSchema writes, of a section given alone or in a list, from the
+// schema of a whole kind around the spec.
+func TestNamesReadsWhatSpecSchemaWrites(t *testing.T) {
+	spec, err := SpecSchema([]Entry{{"Match", "Name"}, {"Match", "MACAddress"}, {"SR-IOV", "VLANId"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	kind := map[string]any{"properties": map[string]any{"spec": spec["spec"]}, "$defs": spec["$defs"]}
+	want := map[string]Section{
+		"match": {Name: "Match", Keys: map[string]string{"name": "Name", "macAddress": "MACAddress"}},
+		"sriov": {Name: "SR-IOV", Keys: map[string]string{"vlanId": "VLANId"}},
+	}
+	if got := Names(kind); !reflect.DeepEqual(got, want) {
+		t.Errorf("Names = %v, want %v", got, want)
+	}
+}

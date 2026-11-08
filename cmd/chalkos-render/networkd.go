@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/trevex/chalkos/pkg/networkdschema"
 	"github.com/trevex/chalkos/pkg/router/derive"
 )
 
@@ -27,7 +28,7 @@ func renderNetworkd(schemas string, in map[string]any, out string) error {
 		if len(docs) == 0 {
 			continue
 		}
-		raw, err := readSchema(filepath.Join(schemas, "networkd.chalkos.dev_v1alpha1_"+k.kind+".json"))
+		names, err := readNames(schemas, k.kind)
 		if err != nil {
 			return err
 		}
@@ -37,7 +38,7 @@ func renderNetworkd(schemas string, in map[string]any, out string) error {
 			if err != nil {
 				return err
 			}
-			unit, err := renderUnit(k.kind+" "+name, doc, raw)
+			unit, err := renderUnit(k.kind+" "+name, doc, names)
 			if err != nil {
 				return err
 			}
@@ -49,7 +50,10 @@ func renderNetworkd(schemas string, in map[string]any, out string) error {
 	return nil
 }
 
-func readSchema(path string) (map[string]any, error) {
+// readNames reads the systemd names of the sections and keys of the networkd kind's schema in the
+// directory dir, by their fields.
+func readNames(dir, kind string) (map[string]networkdschema.Section, error) {
+	path := filepath.Join(dir, "networkd.chalkos.dev_v1alpha1_"+kind+".json")
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("the image's networkd schema: %w", err)
@@ -58,31 +62,27 @@ func readSchema(path string) (map[string]any, error) {
 	if err := json.Unmarshal(data, &raw); err != nil {
 		return nil, fmt.Errorf("the image's networkd schema %s: %w", path, err)
 	}
-	return raw, nil
+	return networkdschema.Names(raw), nil
 }
 
-func renderUnit(what string, doc, raw map[string]any) (string, error) {
-	specProps := dig(raw, "properties", "spec", "properties")
-	defs, _ := raw["$defs"].(map[string]any)
+func renderUnit(what string, doc map[string]any, names map[string]networkdschema.Section) (string, error) {
 	spec, _ := doc["spec"].(map[string]any)
 	type section struct {
 		name string
+		keys map[string]string
 		body map[string]any
-		def  map[string]any
 	}
 	var sections []section
 	for yamlName, v := range spec {
-		prop, _ := specProps[yamlName].(map[string]any)
-		name, _ := prop["x-chalkos-networkd-section"].(string)
+		name := names[yamlName].Name
 		// The schema refuses a spec property that lacks this annotation; a document that bypassed
 		// it must not render as an empty systemd section name.
 		if name == "" {
 			return "", derive.InternalErrorf("%s: spec.%s has no x-chalkos-networkd-section annotation", what, yamlName)
 		}
-		def := sectionDef(defs, prop)
 		for _, body := range derive.OneOrMany(v) {
 			m, _ := body.(map[string]any)
-			sections = append(sections, section{name: name, body: m, def: def})
+			sections = append(sections, section{name: name, keys: names[yamlName].Keys, body: m})
 		}
 	}
 	slices.SortStableFunc(sections, func(x, y section) int {
@@ -97,11 +97,9 @@ func renderUnit(what string, doc, raw map[string]any) (string, error) {
 	})
 	var b strings.Builder
 	for _, sec := range sections {
-		keyProps := dig(sec.def, "properties")
 		lines := make([][2]string, 0, len(sec.body))
 		for yamlKey, v := range sec.body {
-			prop, _ := keyProps[yamlKey].(map[string]any)
-			key, _ := prop["x-chalkos-networkd-key"].(string)
+			key := sec.keys[yamlKey]
 			// As for the section name: a key with no annotation fails rather than render as an
 			// empty systemd key.
 			if key == "" {
@@ -123,31 +121,4 @@ func renderUnit(what string, doc, raw map[string]any) (string, error) {
 		b.WriteString("\n")
 	}
 	return b.String(), nil
-}
-
-// sectionDef is the definition a spec property refers to, by its own $ref or by that of a branch
-// of its anyOf: one section, or a list of them. It is nil when the property refers to none.
-func sectionDef(defs, prop map[string]any) map[string]any {
-	candidates := []map[string]any{prop}
-	branches, _ := prop["anyOf"].([]any)
-	for _, b := range branches {
-		branch, _ := b.(map[string]any)
-		candidates = append(candidates, branch, dig(branch, "items"))
-	}
-	for _, c := range candidates {
-		ref, _ := c["$ref"].(string)
-		if name, ok := strings.CutPrefix(ref, "#/$defs/"); ok {
-			def, _ := defs[name].(map[string]any)
-			return def
-		}
-	}
-	return nil
-}
-
-func dig(m map[string]any, path ...string) map[string]any {
-	for _, p := range path {
-		next, _ := m[p].(map[string]any)
-		m = next
-	}
-	return m
 }
