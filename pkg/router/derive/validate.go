@@ -55,12 +55,13 @@ func check(byKind map[string]any) error {
 }
 
 // readDocuments is the documents of data, a validator's input, by kind, as Build takes them: each
-// kind's documents a list sorted by name, with the numbers exact.
+// kind's documents a list sorted by name, with the numbers exact. A kind whose value is no list is
+// an error.
 func readDocuments(data []byte) (map[string]any, error) {
 	dec := json.NewDecoder(bytes.NewReader(data))
 	dec.UseNumber()
 	var in struct {
-		Documents map[string]any `json:"documents"`
+		Documents map[string][]any `json:"documents"`
 	}
 	if err := dec.Decode(&in); err != nil {
 		return nil, fmt.Errorf("the input is no object of documents by kind: %w", err)
@@ -71,5 +72,9 @@ func readDocuments(data []byte) (map[string]any, error) {
 	if in.Documents == nil {
 		return nil, errors.New("the input holds no documents")
 	}
-	return in.Documents, nil
+	byKind := make(map[string]any, len(in.Documents))
+	for kind, docs := range in.Documents {
+		byKind[kind] = docs
+	}
+	return byKind, nil
 }

@@ -47,9 +47,10 @@ func TestValidate(t *testing.T) {
 		t.Errorf("Validate of no documents = %v, %v", rs, err)
 	}
 	for input, want := range map[string]string{
-		`[{"kind": "VRF"}]`:        "the input is no object of documents by kind",
-		`{"documents": {}} {}`:     "more follows the object",
-		`{"node": {"name": "r1"}}`: "the input holds no documents",
+		`[{"kind": "VRF"}]`:                        "the input is no object of documents by kind",
+		`{"documents": {}} {}`:                     "more follows the object",
+		`{"node": {"name": "r1"}}`:                 "the input holds no documents",
+		`{"documents": {"VRF": {"name": "blue"}}}`: "the input is no object of documents by kind",
 	} {
 		if _, err := Validate([]byte(input)); err == nil || !strings.Contains(err.Error(), want) {
 			t.Errorf("Validate(%s) = %v, want %q", input, err, want)
