@@ -25,7 +25,7 @@ type Arch struct {
 	Usr, UsrVerity string
 }
 
-// All are the architectures chalkos builds images for.
+// All are the architectures chalkos builds images for. Callers must not modify it.
 var All = []Arch{
 	{
 		Name: "x86-64", GOARCH: "amd64", PEMachine: pe.IMAGE_FILE_MACHINE_AMD64, BootLoader: "BOOTX64.EFI",

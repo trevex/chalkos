@@ -91,6 +91,7 @@ func (i *Installer) receiveUKI(tmp string, h upgrade.Header, parts io.Reader) ([
 // that it is built for the image's architecture, and with Secure Boot enforced, its signature.
 func (i *Installer) receiveBootLoader(h upgrade.Header, parts io.Reader) ([]byte, error) {
 	var buf bytes.Buffer
+	buf.Grow(int(h.BootLoader.Size))
 	if err := h.BootLoader.Receive(&buf, parts, "boot loader"); err != nil {
 		return nil, err
 	}
