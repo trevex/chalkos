@@ -309,6 +309,11 @@ let
     };
 in
 {
+  imports = [
+    ./kinds.nix
+    ./diagnostics.nix
+  ];
+
   config = lib.mkIf (config.chalkos.router.enable && config.chalkos.router.dhcp.enable) {
     # The images allocate the IDs of users without one statically, from 999 down, so a user
     # of an unpinned ID would move the IDs of the users after it, and the owners of their files

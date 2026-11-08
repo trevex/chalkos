@@ -146,6 +146,8 @@ let
     "${dnsmasq}/bin/dnsmasq --keep-in-foreground --log-facility=- --pid-file= --conf-file=${conf}";
 in
 {
+  imports = [ ./kinds.nix ];
+
   config = lib.mkIf (config.chalkos.router.enable && config.chalkos.router.dhcpRelay.enable) {
     # Pinned, as kea's: 332 is free in NixOS's ids.nix.
     users.users.dnsmasq = {

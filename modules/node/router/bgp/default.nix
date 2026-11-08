@@ -64,6 +64,11 @@ let
   };
 in
 {
+  imports = [
+    ./kinds.nix
+    ./diagnostics.nix
+  ];
+
   config = lib.mkIf (config.chalkos.router.enable && config.chalkos.router.bgp.enable) {
     # The images allocate the IDs of users and groups without one statically, from 999 down, so
     # FRR's would move the IDs of those after them whenever an image adds or drops BGP. 329 and

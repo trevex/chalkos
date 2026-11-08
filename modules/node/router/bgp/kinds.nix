@@ -1,6 +1,6 @@
 # BGP on router images whose chalkos.router.bgp.enable is true: a BGP instance per VRF, its peers,
 # and the prefix lists, community lists and routing policies peers, networks and imports name,
-# which the output frr renders into FRR's config (modules/node/router/bgp.nix).
+# which the output frr renders into FRR's config (default.nix).
 #
 # chalkd refuses a rule that may cost more than two nested loops over a config's lists. So the
 # rules over a peer's families sit on spec.families and those over an instance's networks and
@@ -16,10 +16,10 @@
 }:
 let
   inherit (lib) mkOption types;
-  inherit (import ./lib.nix) builtin groups;
+  inherit (import ../../kinds/builtin/lib.nix) builtin groups;
   inherit (import ../../../../lib/kinds/types.nix { inherit lib; }) peerAS;
   inherit (lib.chalkos.types) ref secretRef;
-  inherit (import ./router-types.nix { inherit lib; })
+  inherit (import ../types.nix { inherit lib; })
     interface
     interfaceText
     interfaceName

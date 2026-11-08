@@ -89,6 +89,8 @@ let
   };
 in
 {
+  imports = [ ./kinds.nix ];
+
   config = lib.mkIf config.chalkos.router.enable {
     # The output is networkd's, whose directory networkd reads; the router layer renders it with
     # the VRF documents.

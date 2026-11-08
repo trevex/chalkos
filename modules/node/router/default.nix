@@ -16,16 +16,17 @@ let
 in
 {
   imports = [
-    ./firewall.nix
+    ./kinds.nix
+    ./firewall
     ./sysctl.nix
     ./diagnostics.nix
-    ./bgp.nix
-    ./nat64.nix
-    ./resolver.nix
-    ./vrf.nix
-    ./policy-routing.nix
-    ./dhcp.nix
-    ./dhcp-relay.nix
+    ./bgp
+    ./nat64
+    ./resolver
+    ./vrf
+    ./policy-routing
+    ./dhcp
+    ./dhcp-relay
     ./validator.nix
   ];
 

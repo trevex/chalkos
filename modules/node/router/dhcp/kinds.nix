@@ -1,8 +1,8 @@
 # DHCP on router images whose chalkos.router.dhcp.enable is true: the subnets the router leases
 # addresses of, one document each, which the output kea renders for Kea's DHCPv4 or DHCPv6 server
-# of the VRF the subnet's links are in (modules/node/router/dhcp.nix). Kea reads and answers
-# DHCPv4 on raw sockets that the firewall does not see, so a subnet names each of its links: no
-# glob serves a link by chance.
+# of the VRF the subnet's links are in (default.nix). Kea reads and answers DHCPv4 on raw sockets
+# that the firewall does not see, so a subnet names each of its links: no glob serves a link by
+# chance.
 #
 # chalkd refuses a rule that may cost more than two nested loops over a config's lists, and costs
 # every string as one of 256 characters. A subnet's rules are rules of its spec, which see one
@@ -22,8 +22,8 @@
 }:
 let
   inherit (lib) mkOption types;
-  inherit (import ./lib.nix) builtin groups;
-  inherit (import ./router-types.nix { inherit lib; })
+  inherit (import ../../kinds/builtin/lib.nix) builtin groups;
+  inherit (import ../types.nix { inherit lib; })
     interfaceName
     prefix
     address

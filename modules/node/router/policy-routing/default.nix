@@ -7,6 +7,8 @@
 # networkd; networkd adds a next hop's route again each time its link comes up.
 { config, lib, ... }:
 {
+  imports = [ ./kinds.nix ];
+
   config = lib.mkIf config.chalkos.router.enable {
     chalkos.outputs.router-nftables.inputs = [
       "PolicyRoute"

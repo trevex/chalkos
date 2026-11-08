@@ -1,7 +1,7 @@
 # VRFs on images with the router layer: each VRF document declares a kernel VRF, its routing table
-# and the links it holds, which the output networkd renders on router images
-# (modules/node/router/vrf.nix). Other router kinds name a VRF by its document's name; the default
-# VRF, of every link no VRF holds, has no document.
+# and the links it holds, which the output networkd renders on router images (default.nix). Other
+# router kinds name a VRF by its document's name; the default VRF, of every link no VRF holds, has
+# no document.
 #
 # chalkd refuses a rule that may cost more than two nested loops over a config's lists, so the
 # rules bind the members of every VRF as a flat list before they loop over them, and match the
@@ -16,8 +16,8 @@
 }:
 let
   inherit (lib) mkOption types;
-  inherit (import ./lib.nix) builtin groups apiVersions;
-  inherit (import ./router-types.nix { inherit lib; }) interface interfaceText matchNames;
+  inherit (import ../../kinds/builtin/lib.nix) builtin groups apiVersions;
+  inherit (import ../types.nix { inherit lib; }) interface interfaceText matchNames;
   cel = import ../../../../lib/cel.nix { inherit lib; };
 
   # The documents of a router kind in the delivered config, by name.

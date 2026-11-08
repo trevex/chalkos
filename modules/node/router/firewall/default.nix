@@ -37,6 +37,8 @@ let
   '';
 in
 {
+  imports = [ ./kinds.nix ];
+
   config = lib.mkIf config.chalkos.router.enable {
     # chalkos-firewall loads the one table the router filters with; NixOS's nftables service
     # would load nothing.

@@ -1,7 +1,7 @@
 # DHCP relays on router images whose chalkos.router.dhcpRelay.enable is true: the links whose
 # clients' DHCP requests the router forwards to DHCP servers elsewhere, one document each, which
-# the output dhcp-relay renders for dnsmasq's relay of the VRF the links are in
-# (modules/node/router/dhcp-relay.nix). A relay names each of its links, as a DHCPSubnet does.
+# the output dhcp-relay renders for dnsmasq's relay of the VRF the links are in (default.nix). A
+# relay names each of its links, as a DHCPSubnet does.
 {
   config,
   lib,
@@ -9,8 +9,8 @@
 }:
 let
   inherit (lib) mkOption types;
-  inherit (import ./lib.nix) builtin groups;
-  inherit (import ./router-types.nix { inherit lib; }) interfaceName address;
+  inherit (import ../../kinds/builtin/lib.nix) builtin groups;
+  inherit (import ../types.nix { inherit lib; }) interfaceName address;
 in
 {
   config = lib.mkIf (config.chalkos.router.enable && config.chalkos.router.dhcpRelay.enable) {

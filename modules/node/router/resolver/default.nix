@@ -15,8 +15,8 @@ let
   unbound = config.services.unbound.package;
   dir = config.chalkos.outputs.unbound.dir;
   rendered = "${dir}/unbound.conf";
-  cel = import ../../../lib/cel.nix { inherit lib; };
-  inherit (import ../../../lib/kinds/api.nix) apiVersions;
+  cel = import ../../../../lib/cel.nix { inherit lib; };
+  inherit (import ../../../../lib/kinds/api.nix) apiVersions;
   # The number of the default VRF's resolvers in the config c: a running config of an image whose
   # Resolver had no vrf lacks the field.
   defaultResolvers =
@@ -128,6 +128,8 @@ let
   '';
 in
 {
+  imports = [ ./kinds.nix ];
+
   config = lib.mkIf (config.chalkos.router.enable && config.chalkos.router.resolver.enable) {
     # The images allocate the IDs of users and groups without one statically, from 999 down, so
     # Unbound's would move the IDs of those after them whenever an image adds or drops the

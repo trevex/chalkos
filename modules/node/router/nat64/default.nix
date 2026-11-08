@@ -265,6 +265,11 @@ let
   };
 in
 {
+  imports = [
+    ./kinds.nix
+    ./diagnostics.nix
+  ];
+
   config = lib.mkIf (config.chalkos.router.enable && config.chalkos.router.nat64.enable) {
     boot.extraModulePackages = [ config.boot.kernelPackages.jool ];
     # Loaded at boot, so the image's module check proves the tree holds it and what it depends on.
