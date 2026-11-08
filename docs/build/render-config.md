@@ -277,8 +277,8 @@ A check refuses the rendered files by failing, as [The check refuses a bad
 file](#the-check-refuses-a-bad-file) shows. Its standard output goes nowhere.
 
 A check of the documents that needs no rendered file fits a validator better, which
-[Validate config with a program](validate-config.md) declares: it runs before every renderer and
-reports its refusals in the same form.
+[Validate config with a program](validate-config.md) declares: it runs before every renderer,
+reads the same input and reports its refusals in the same form.
 
 ## The renderer must be pure
 

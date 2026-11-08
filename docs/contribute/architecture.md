@@ -134,7 +134,7 @@ Each directory of `cmd/` is a main that wires a package up; the logic lives in `
 | `networkdschema` | Generates the spec schemas of the networkd kinds from systemd's gperf tables. |
 | `nodeconfig` | Applies the running image's config slot, chosen by `usrhash=`, at boot (`chalkd load-config`) and after every apply: the hostname and `/run/chalkos/node.json`; writes the config's documents and secrets for the granted units, and renders the outputs at boot, networkd's units and chrony's servers among them. |
 | `ociimage` | Reads, writes, pulls and pushes chalkos images as OCI artifacts: one manifest whose config is the image header and whose layers are the store, hash tree, UKI, boot loader and contract. |
-| `outputs` | Renders and checks the image's outputs in a sandbox of their own, as an unprivileged user, swaps them in by a symlink rename, and records their hashes and failures. |
+| `outputs` | Runs the programs of an image that read a node's config, renderers and validators, on one input and with one runner: in a sandbox of their own, as an unprivileged user, with their reports of refusals read alike. It swaps rendered outputs in by a symlink rename and records their hashes and failures, and runs the validators chalkctl links in-process on the same input. |
 | `pki` | The OS CA and node CA, client and node certificates and their checks, client roles, PEM keys and certificate bundles. |
 | `router` | Reads a router's state: its BGP sessions and paths of each VRF from vtysh's JSON, its NAT64 instances, counters and pools from jool's CSV, the kernel's routes from netlink, and the filter of a `Routes` call. |
 | `router/derive` | The router's model of a node's config: the router kinds' documents and what the Network and VRF documents say together, such as each link's VRF, the .network units in networkd's order, the NAT64 instances and the tables of policy routing. The router's outputs render from it. It holds the checks of the validator router, `Validate`, which refuses what the outputs would apply otherwise than the documents say and reports every fault it finds, each once, the VRFs' links first and what reads them once those pass. `chalkos-render validate router` runs it, and chalkctl links it. It takes the standard library and the package `refusals` alone. |
@@ -150,7 +150,6 @@ Each directory of `cmd/` is a main that wires a package up; the logic lives in `
 | `tool/systemctl` | Asks systemd about units through the tool runner: their properties, whether they are active, the failed units and the units of a target. |
 | `uki` | Reads a UKI's os-release and command line and an EFI binary's architecture, and refuses an image version systemd-boot would order its entry by. |
 | `upgrade` | Writes an image into the inactive slot and stages it there (`Install`), makes the staged image the next boot (`Activate`), or both (`Upgrade`); the image header and the checks of its UKI and boot loader an install shares; the booted entry and the provenance record. |
-| `validators` | Runs the image's validators in the outputs' sandbox, and the validators chalkctl links in-process on the same JSON, and reads their reports of refusals. |
 | `verity` | Reads and checks dm-verity hash trees. |
 
 Test helpers live in packages of their own:
@@ -173,9 +172,9 @@ Test helpers live in packages of their own:
 Rules, renderers, validators, command facts and an image's checker read a node's config as
 `config.Redacted`: the documents with each value of a `Secret`, and of each Secret object a
 document embeds, such as a Kubernetes Secret in an `Addon`, replaced by its SHA-256. The
-packages that hand documents to programs, `rules`, `outputs`, `validators`, `check` and
-`imagecheck`, take `config.Redacted` and no plain documents, so the compiler refuses a call that
-would pass secret values to a program.
+packages that hand documents to programs, `rules`, `outputs`, `check` and `imagecheck`, take
+`config.Redacted` and no plain documents, so the compiler refuses a call that would pass secret
+values to a program.
 
 Only these functions return a `config.Redacted`:
 

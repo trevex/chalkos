@@ -41,22 +41,31 @@ The declaration sets three things:
 
 The name is lower-case letters, digits and dashes, as an output's.
 
-## The validator reads one JSON array
+## The validator reads the documents by kind
 
-chalkd runs the program as `<program> validate <name>`, here `validate bgp-peers`, and writes one
-JSON array to its standard input. The array holds the documents of the kinds of `inputs`, sorted
-by kind and then by name, with their schema defaults filled in. It holds no `Secret`, and a
-`secretRef` field holds the reference, never the value. For cp1 of the homelab the array reads:
+chalkd runs the program as `<program> validate <name>`, here `validate bgp-peers`, and writes
+one JSON object to its standard input: the input a renderer reads, as [The renderer reads one
+JSON object](render-config.md#the-renderer-reads-one-json-object) describes. `documents` holds one
+list per kind of `inputs`, each sorted by name, with the schema defaults filled in, and `node.name`
+is the node's name. The object holds no `Secret`, and a `secretRef` field holds the reference,
+never the value. For cp1 of the homelab the object reads, indented here:
 
 ```json
-[
-  {"apiVersion": "networkd.chalkos.dev/v1alpha1", "kind": "Network", "metadata": {"name": "10-uplink"},
-   "spec": {"match": {"name": "enp1s0"}, "network": {"address": ["10.0.0.11/24"], "gateway": "10.0.0.1"}}},
-  {"apiVersion": "bgp.example.org/v1alpha1", "kind": "Peer", "metadata": {"name": "router-a"},
-   "spec": {"address": "10.0.0.1", "asn": 64513, "password": {"secretRef": {"name": "bgp", "key": "password"}}}},
-  {"apiVersion": "bgp.example.org/v1alpha1", "kind": "Peer", "metadata": {"name": "router-b"},
-   "spec": {"address": "10.0.0.2", "asn": 64514, "password": null}}
-]
+{
+  "documents": {
+    "Network": [
+      {"apiVersion": "networkd.chalkos.dev/v1alpha1", "kind": "Network", "metadata": {"name": "10-uplink"},
+       "spec": {"match": {"name": "enp1s0"}, "network": {"address": ["10.0.0.11/24"], "gateway": "10.0.0.1"}}}
+    ],
+    "Peer": [
+      {"apiVersion": "bgp.example.org/v1alpha1", "kind": "Peer", "metadata": {"name": "router-a"},
+       "spec": {"address": "10.0.0.1", "asn": 64513, "password": {"secretRef": {"name": "bgp", "key": "password"}}}},
+      {"apiVersion": "bgp.example.org/v1alpha1", "kind": "Peer", "metadata": {"name": "router-b"},
+       "spec": {"address": "10.0.0.2", "asn": 64514, "password": null}}
+    ]
+  },
+  "node": {"name": "cp1"}
+}
 ```
 
 ## The validator prints a report of refusals
@@ -72,13 +81,13 @@ Each refusal names the document by `kind` and `name`, the field by its `path`, a
 `message` what is wrong and how to fix it, on one line. [A renderer refuses a
 config](render-config.md#a-renderer-refuses-a-config) lists the rules of each field.
 
-The exit status tells whether the validator ran:
+A validator reads its input and reports refusals as a renderer does, so the same rules decide:
 
-- Exit status 0 means it ran. A report without refusals, `{"refusals": []}`, or no output at all,
-  accepts the config.
+- Any refusal refuses the delivery, whether the validator then exits with 0 or not.
+- A report without refusals, `{"refusals": []}`, or no output at all, refuses nothing. The
+  validator then passes when it exits with 0.
 - Any other exit status fails the validator. The delivery is refused with
-  `validator <name> failed (exit <n>); see the node's journal`, and any report it printed is
-  ignored.
+  `validator <name>: its program failed (exit <n>); see the node's journal`.
 - Output that is not a report, or more than 64 KiB of it, fails the validator too.
 
 A validator never sees a secret's value, so its messages cannot carry one. What it writes to
@@ -86,7 +95,7 @@ standard error goes to the node's journal alone, because it can echo the documen
 
 ## A jq program validates
 
-`lib.chalkos.validate.jq` turns a jq program into a validator: jq reads the array, and what the
+`lib.chalkos.validate.jq` turns a jq program into a validator: jq reads the input, and what the
 program outputs is the report. `bgp-peers.jq` collects the subnets of the node's static IPv4
 addresses and refuses each IPv4 `Peer` outside them:
 
@@ -107,7 +116,7 @@ cases and on `router-c` below.
 
 `program` also takes a package or a command line of the store. chalkd appends `validate` and the
 validator's name to it, which a program that serves several validators reads to tell them apart.
-A script made by `pkgs.writeShellScript` reads the array from standard input and prints the
+A script made by `pkgs.writeShellScript` reads the input from standard input and prints the
 report with `echo` or `jq`:
 
 ```nix
@@ -116,8 +125,8 @@ chalkos.validators.bgp-peers.program = pkgs.writeShellScript "bgp-peers" ''
 '';
 ```
 
-A Go program, or one in any other language, works the same way: read the array, print the report,
-exit 0.
+A Go program, or one in any other language, works the same way: read the input, print the report,
+exit 0. A program that serves as a renderer too reads the same input in both roles.
 
 ## Examples run when the image is built
 
