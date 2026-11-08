@@ -10,6 +10,9 @@
   ...
 }:
 let
+  cfg = config.chalkos.router.nat64;
+  routerLib = import ../lib.nix { inherit config lib; };
+  kinds = import ./kinds.nix { inherit lib; };
   jool = pkgs.jool-cli;
   # Brings Jool's instances, their namespaces and links and the routes to them to the files of the
   # output jool: <name>.json is Jool's, <name>.veth the link's. It checks every file before it
@@ -265,12 +268,15 @@ let
   };
 in
 {
-  imports = [
-    ./kinds.nix
-    ./diagnostics.nix
-  ];
+  options.chalkos.router.nat64.enable = routerLib.feature ''
+    Whether router images carry Jool, the kernel module and tool of the NAT64 instances, and
+    accept the kind NAT64; only with the router layer. Set it false in a variant's modules to
+    leave Jool out of its images.
+  '';
 
-  config = lib.mkIf (config.chalkos.router.enable && config.chalkos.router.nat64.enable) {
+  config = lib.mkIf (config.chalkos.router.enable && cfg.enable) {
+    chalkos.kinds = kinds;
+    chalkos.diagnostics = import ./diagnostics.nix { inherit pkgs; };
     boot.extraModulePackages = [ config.boot.kernelPackages.jool ];
     # Loaded at boot, so the image's module check proves the tree holds it and what it depends on.
     boot.kernelModules = [ "jool" ];
@@ -278,8 +284,7 @@ in
     chalkos.outputs.jool = {
       # The VRFs' tables and the links' membership, and the Networks' static addresses, which a
       # pool must not hold.
-      inputs = [
-        "NAT64"
+      inputs = lib.attrNames kinds ++ [
         "VRF"
         "Network"
       ];
@@ -294,8 +299,8 @@ in
     };
     # The firewall forwards, translates and tracks the NAT64s' links, and networkd leaves them
     # alone.
-    chalkos.outputs.router-nftables.inputs = [ "NAT64" ];
-    chalkos.outputs.networkd.inputs = [ "NAT64" ];
+    chalkos.outputs.router-nftables.inputs = lib.attrNames kinds;
+    chalkos.outputs.networkd.inputs = lib.attrNames kinds;
 
     systemd.services.chalkos-nat64 = {
       description = "Run the router's NAT64 instances";

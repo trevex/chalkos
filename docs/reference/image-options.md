@@ -152,7 +152,7 @@ Whether an image carries the router layer, and whether its node forwards packets
 
 ### `chalkos.router.bgp.enable` { #chalkosrouterbgpenable }
 
-Type: boolean · Default: `true` · Declared in: [modules/node/router/default.nix](https://github.com/trevex/chalkos/blob/main/modules/node/router/default.nix)
+Type: boolean · Default: `true` · Declared in: [modules/node/router/bgp/default.nix](https://github.com/trevex/chalkos/blob/main/modules/node/router/bgp/default.nix)
 
 Whether router images carry FRR, which runs BGP and BFD, and accept the kinds BGP, BGPPeer,
 PrefixList, CommunityList and RoutingPolicy; only with the router layer. Set it false in a
@@ -160,7 +160,7 @@ variant's modules to leave FRR and the Python of frr-reload.py out of its images
 
 ### `chalkos.router.dhcp.enable` { #chalkosrouterdhcpenable }
 
-Type: boolean · Default: `true` · Declared in: [modules/node/router/default.nix](https://github.com/trevex/chalkos/blob/main/modules/node/router/default.nix)
+Type: boolean · Default: `true` · Declared in: [modules/node/router/dhcp/default.nix](https://github.com/trevex/chalkos/blob/main/modules/node/router/dhcp/default.nix)
 
 Whether router images carry the DHCP server, Kea, and accept the kind DHCPSubnet; only
 with the router layer. Set it false in a variant's modules to leave Kea out of its images,
@@ -168,7 +168,7 @@ whose build then needs no local build of Kea.
 
 ### `chalkos.router.dhcpRelay.enable` { #chalkosrouterdhcprelayenable }
 
-Type: boolean · Default: `true` · Declared in: [modules/node/router/default.nix](https://github.com/trevex/chalkos/blob/main/modules/node/router/default.nix)
+Type: boolean · Default: `true` · Declared in: [modules/node/router/dhcp-relay/default.nix](https://github.com/trevex/chalkos/blob/main/modules/node/router/dhcp-relay/default.nix)
 
 Whether router images carry the DHCP relay, dnsmasq, and accept the kind DHCPRelay; only
 with the router layer. Set it false in a variant's modules to leave dnsmasq out of its
@@ -185,7 +185,7 @@ Kubernetes layer or the router layer, not both. mkImages sets it from the varian
 
 ### `chalkos.router.nat64.enable` { #chalkosrouternat64enable }
 
-Type: boolean · Default: `true` · Declared in: [modules/node/router/default.nix](https://github.com/trevex/chalkos/blob/main/modules/node/router/default.nix)
+Type: boolean · Default: `true` · Declared in: [modules/node/router/nat64/default.nix](https://github.com/trevex/chalkos/blob/main/modules/node/router/nat64/default.nix)
 
 Whether router images carry Jool, the kernel module and tool of the NAT64 instances, and
 accept the kind NAT64; only with the router layer. Set it false in a variant's modules to
@@ -193,7 +193,7 @@ leave Jool out of its images.
 
 ### `chalkos.router.resolver.enable` { #chalkosrouterresolverenable }
 
-Type: boolean · Default: `true` · Declared in: [modules/node/router/default.nix](https://github.com/trevex/chalkos/blob/main/modules/node/router/default.nix)
+Type: boolean · Default: `true` · Declared in: [modules/node/router/resolver/default.nix](https://github.com/trevex/chalkos/blob/main/modules/node/router/resolver/default.nix)
 
 Whether router images carry Unbound, the DNS resolvers of the router's VRFs, and accept the
 kind Resolver; only with the router layer. Set it false in a variant's modules to leave

@@ -6,17 +6,13 @@
 # hop, networkd for every next hop's routes. The outputs' effects reload the firewall and
 # networkd; networkd adds a next hop's route again each time its link comes up.
 { config, lib, ... }:
+let
+  kinds = import ./kinds.nix { inherit lib; };
+in
 {
-  imports = [ ./kinds.nix ];
-
   config = lib.mkIf config.chalkos.router.enable {
-    chalkos.outputs.router-nftables.inputs = [
-      "PolicyRoute"
-      "NextHop"
-    ];
-    chalkos.outputs.networkd.inputs = [
-      "PolicyRoute"
-      "NextHop"
-    ];
+    chalkos.kinds = kinds;
+    chalkos.outputs.router-nftables.inputs = lib.attrNames kinds;
+    chalkos.outputs.networkd.inputs = lib.attrNames kinds;
   };
 }

@@ -13,6 +13,9 @@
   ...
 }:
 let
+  cfg = config.chalkos.router.dhcpRelay;
+  routerLib = import ../lib.nix { inherit config lib; };
+  kinds = import ./kinds.nix { inherit lib; };
   inherit (pkgs) dnsmasq;
   dir = config.chalkos.outputs.dhcp-relay.dir;
   # Stops the relays without a config, then starts the relay of each rendered config that does
@@ -146,9 +149,15 @@ let
     "${dnsmasq}/bin/dnsmasq --keep-in-foreground --log-facility=- --pid-file= --conf-file=${conf}";
 in
 {
-  imports = [ ./kinds.nix ];
+  options.chalkos.router.dhcpRelay.enable = routerLib.feature ''
+    Whether router images carry the DHCP relay, dnsmasq, and accept the kind DHCPRelay; only
+    with the router layer. Set it false in a variant's modules to leave dnsmasq out of its
+    images.
+  '';
 
-  config = lib.mkIf (config.chalkos.router.enable && config.chalkos.router.dhcpRelay.enable) {
+  config = lib.mkIf (config.chalkos.router.enable && cfg.enable) {
+    chalkos.kinds = kinds;
+
     # Pinned, as kea's: 332 is free in NixOS's ids.nix.
     users.users.dnsmasq = {
       isSystemUser = true;
@@ -162,13 +171,16 @@ in
       # The VRFs and the Networks tell each link's VRF and its addresses, the DHCPSubnets, on
       # images with DHCP, the VRFs whose families Kea serves, and the NAT64s, on images with
       # NAT64, the links no relay may name.
-      inputs = [
-        "DHCPRelay"
-        "VRF"
-        "Network"
-      ]
-      ++ lib.optional config.chalkos.router.dhcp.enable "DHCPSubnet"
-      ++ lib.optional config.chalkos.router.nat64.enable "NAT64";
+      inputs =
+        lib.attrNames kinds
+        ++ [
+          "VRF"
+          "Network"
+        ]
+        ++ routerLib.declared [
+          "DHCPSubnet"
+          "NAT64"
+        ];
       render = "${lib.getExe chalkosPackages.chalkos-render} dhcp-relay";
       check = ''
         for f in "$OUT"/*.conf; do

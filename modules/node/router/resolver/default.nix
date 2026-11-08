@@ -12,6 +12,9 @@
   ...
 }:
 let
+  cfg = config.chalkos.router.resolver;
+  routerLib = import ../lib.nix { inherit config lib; };
+  kinds = import ./kinds.nix { inherit lib; };
   unbound = config.services.unbound.package;
   dir = config.chalkos.outputs.unbound.dir;
   rendered = "${dir}/unbound.conf";
@@ -128,9 +131,15 @@ let
   '';
 in
 {
-  imports = [ ./kinds.nix ];
+  options.chalkos.router.resolver.enable = routerLib.feature ''
+    Whether router images carry Unbound, the DNS resolvers of the router's VRFs, and accept the
+    kind Resolver; only with the router layer. Set it false in a variant's modules to leave
+    Unbound out of its images.
+  '';
 
-  config = lib.mkIf (config.chalkos.router.enable && config.chalkos.router.resolver.enable) {
+  config = lib.mkIf (config.chalkos.router.enable && cfg.enable) {
+    chalkos.kinds = kinds;
+
     # The images allocate the IDs of users and groups without one statically, from 999 down, so
     # Unbound's would move the IDs of those after them whenever an image adds or drops the
     # resolver. 331 is free in NixOS's ids.nix.
@@ -151,8 +160,7 @@ in
 
     chalkos.outputs.unbound = {
       # The VRFs and the Networks tell which VRF holds each listen address.
-      inputs = [
-        "Resolver"
+      inputs = lib.attrNames kinds ++ [
         "VRF"
         "Network"
       ];

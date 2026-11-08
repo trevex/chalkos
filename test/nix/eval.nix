@@ -1179,8 +1179,8 @@ lib.runTests {
       inputs = [
         "BGP"
         "BGPPeer"
-        "PrefixList"
         "CommunityList"
+        "PrefixList"
         "RoutingPolicy"
         "Network"
         "VRF"
@@ -1264,8 +1264,8 @@ lib.runTests {
         "Network"
         "NAT64"
         "VRF"
-        "PolicyRoute"
         "NextHop"
+        "PolicyRoute"
       ];
       render = true;
       plainRender = true;

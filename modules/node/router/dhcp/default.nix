@@ -20,6 +20,9 @@
   ...
 }:
 let
+  cfg = config.chalkos.router.dhcp;
+  routerLib = import ../lib.nix { inherit config lib; };
+  kinds = import ./kinds.nix { inherit lib; };
   inherit (chalkosPackages) kea;
   dir = config.chalkos.outputs.kea.dir;
   pdRecords = "/var/lib/chalkos-dhcp6-pd";
@@ -309,12 +312,16 @@ let
     };
 in
 {
-  imports = [
-    ./kinds.nix
-    ./diagnostics.nix
-  ];
+  options.chalkos.router.dhcp.enable = routerLib.feature ''
+    Whether router images carry the DHCP server, Kea, and accept the kind DHCPSubnet; only
+    with the router layer. Set it false in a variant's modules to leave Kea out of its images,
+    whose build then needs no local build of Kea.
+  '';
 
-  config = lib.mkIf (config.chalkos.router.enable && config.chalkos.router.dhcp.enable) {
+  config = lib.mkIf (config.chalkos.router.enable && cfg.enable) {
+    chalkos.kinds = kinds;
+    chalkos.diagnostics = import ./diagnostics.nix { inherit lib pkgs; };
+
     # The images allocate the IDs of users without one statically, from 999 down, so a user
     # of an unpinned ID would move the IDs of the users after it, and the owners of their files
     # on /var, whenever an image adds or drops it. 328 is free in NixOS's ids.nix.
@@ -329,12 +336,13 @@ in
     chalkos.outputs.kea = {
       # The VRFs and the Networks tell each link's VRF, its addresses and its router
       # advertisements, and the NAT64s, on images with NAT64, the links no subnet may name.
-      inputs = [
-        "DHCPSubnet"
-        "VRF"
-        "Network"
-      ]
-      ++ lib.optional config.chalkos.router.nat64.enable "NAT64";
+      inputs =
+        lib.attrNames kinds
+        ++ [
+          "VRF"
+          "Network"
+        ]
+        ++ routerLib.declared [ "NAT64" ];
       render = "${lib.getExe chalkosPackages.chalkos-render} kea ${lib.getExe pdHook}";
       # kea-dhcp4 -t and kea-dhcp6 -t refuse a config of links the check's network namespace
       # lacks, so it checks each config without them.

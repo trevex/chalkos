@@ -11,6 +11,7 @@
   ...
 }:
 let
+  kinds = import ./kinds.nix { inherit lib; };
   networkd = config.chalkos.outputs.networkd.dir;
   # Removes each kernel VRF that no .netdev of Kind=vrf declares with its table, after flushing the
   # unreachable defaults that networkd put into its table, and reloads a running networkd when it
@@ -89,13 +90,13 @@ let
   };
 in
 {
-  imports = [ ./kinds.nix ];
-
   config = lib.mkIf config.chalkos.router.enable {
+    chalkos.kinds = kinds;
+
     # The output is networkd's, whose directory networkd reads; the router layer renders it with
     # the VRF documents.
     chalkos.outputs.networkd = {
-      inputs = [ "VRF" ];
+      inputs = lib.attrNames kinds;
       render = "${lib.getExe chalkosPackages.chalkos-render} router-networkd ${config.system.build.chalkosNetworkdSchemas}";
     };
     chalkos.effects.vrf = {

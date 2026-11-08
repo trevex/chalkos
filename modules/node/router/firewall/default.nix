@@ -10,6 +10,8 @@
   ...
 }:
 let
+  inherit (import ../lib.nix { inherit config lib; }) declared;
+  kinds = import ./kinds.nix { inherit lib; };
   render = lib.getExe chalkosPackages.chalkos-render;
   nft = "${pkgs.nftables}/bin/nft";
   unshare = "${pkgs.util-linux}/bin/unshare";
@@ -37,9 +39,9 @@ let
   '';
 in
 {
-  imports = [ ./kinds.nix ];
-
   config = lib.mkIf config.chalkos.router.enable {
+    chalkos.kinds = kinds;
+
     # chalkos-firewall loads the one table the router filters with; NixOS's nftables service
     # would load nothing.
     networking.firewall.enable = false;
@@ -85,19 +87,19 @@ in
     ];
 
     chalkos.outputs.router-nftables = {
-      # An output reads the kinds the image declares alone: the ports of BGPPeer, Resolver,
-      # DHCPSubnet and DHCPRelay documents on images with BGP, the resolver, DHCP and the relay.
+      # The Router, the firewall's kinds, and the ports of the BGPPeer, Resolver, DHCPSubnet
+      # and DHCPRelay documents on images whose features declare them: an output reads the kinds
+      # the image declares alone.
       inputs = [
         "Router"
-        "FirewallZone"
-        "FirewallPolicy"
-        "AddressSet"
-        "NATRule"
       ]
-      ++ lib.optional config.chalkos.router.bgp.enable "BGPPeer"
-      ++ lib.optional config.chalkos.router.resolver.enable "Resolver"
-      ++ lib.optional config.chalkos.router.dhcp.enable "DHCPSubnet"
-      ++ lib.optional config.chalkos.router.dhcpRelay.enable "DHCPRelay"
+      ++ lib.attrNames kinds
+      ++ declared [
+        "BGPPeer"
+        "Resolver"
+        "DHCPSubnet"
+        "DHCPRelay"
+      ]
       ++ [
         # The links of each VRF, which the zones and conntrack zones match.
         "VRF"
