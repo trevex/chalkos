@@ -242,3 +242,22 @@ func TestKindHashesSeeAnEmbeddedNumber(t *testing.T) {
 		t.Errorf("redacted %s, want the number hashed", text)
 	}
 }
+
+// A Secret object a document embeds is hashed by its values too, so a change of one, of any
+// type, changes the config's version.
+func TestHashChangesWithAnEmbeddedSecretValue(t *testing.T) {
+	embedded := hashed + `---
+apiVersion: demo.example.org/v1alpha1
+kind: Demo
+metadata: {name: c}
+spec: {objects: [{apiVersion: v1, kind: Secret, metadata: {name: k}, data: {token: one}, stringData: {count: 1}}]}
+`
+	for _, edit := range []struct{ from, to string }{
+		{"token: one", "token: two"},
+		{"count: 1", "count: 2"},
+	} {
+		if hashOf(t, embedded) == hashOf(t, strings.Replace(embedded, edit.from, edit.to, 1)) {
+			t.Errorf("%s -> %s in an embedded Secret left the hash unchanged", edit.from, edit.to)
+		}
+	}
+}
