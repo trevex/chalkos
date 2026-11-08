@@ -18,7 +18,7 @@ Start at the top of the table and go down only when the level above cannot show 
 | Kind | Where | Proves | Cost |
 | --- | --- | --- | --- |
 | Go unit test | next to the code, `*_test.go` in `pkg/` and `cmd/` | logic, parsing, error paths, command output | seconds |
-| Namespace or disk-image test | `pkg/kubernetes/vip`, `pkg/install/parts_test.go`, `pkg/upgrade/lab_test.go`, the `vxlan-rule`, `router-firewall`, `router-policy-routing`, `router-nat64` and `router-resolvers` checks | network rules, partition tables and file systems written by the real tools | seconds |
+| Namespace or disk-image test | `pkg/kubernetes/vip`, `pkg/install/parts_test.go`, `pkg/upgrade/lab_test.go`, the `vxlan-rule`, `router-firewall`, `router-policy-routing` and `router-nat64` checks | network rules, partition tables and file systems written by the real tools | seconds |
 | Evaluation test | `test/nix/eval.nix`, `test/nix/kinds.nix` | the arguments of `mkImages`, option defaults, assertions, what a module sets in an image, config kinds | one evaluation |
 | Build check | `nix/checks/` | what an image build produces: kernel modules, sizes, the bootspec | one image build |
 | End-to-end test | `test/e2e/` | behaviour that needs a booted node: firmware, Secure Boot, the TPM, the initrd, a cluster | minutes and 2 GiB or more per VM |
@@ -78,21 +78,12 @@ run them in isolation:
   that changes nothing, and `stop`. A run fails without changing anything when a link holds an
   address of an explicit pool, and leaves a device of another kind under a link's name alone. With the VRF example's ruleset, it sends a guest's packet into the NAT64's namespace and
   a connection out of it, masqueraded to the uplink's address.
-- The `router-resolvers` check runs `chalkos-resolvers.service` with stubs of `systemctl` and
-  `systemd-escape`, which keep each unit's state in files. It proves that the resolvers of VRFs
-  start, reload, restart when their VRF is made anew and stop, and that a VRF without a device or
-  a resolver that does not come up fails the run within its 30-second waits.
 - The `router-dhcp` check runs a router image's `kea-dhcp4.service` over the DHCP example's
   server of the default VRF, behind the example's ruleset, with busybox's `udhcpc` as a client in
   a peer namespace. It proves a lease of the pool with the subnet's options, a reservation by MAC
   address, the boot files of BIOS, UEFI and iPXE clients, the diagnostic `dhcp-leases` by subnet
   and MAC address, the lease file, and leases kept across a reload. Kea's raw sockets need no port
   of the ruleset.
-- The `router-dhcp-instances` check runs `chalkos-dhcp.service` with stubs of `systemctl` and
-  `systemd-escape`, as `router-resolvers` does. It proves that the DHCP servers of both families
-  start once their links exist, reload, restart when their VRF is made anew and stop, that a link
-  that does not appear within 30 seconds or a server that does not come up fails the run without
-  touching the others and that a run starts `chalkos-dhcp6-routes` after the servers.
 - The `router-dhcp6` check runs a router image's `kea-dhcp6` over the DHCPv6 example's servers of
   the default VRF and of a VRF, the latter bound to its VRF's device, with their units'
   capabilities, behind the example's ruleset, with dhcpcd as clients in peer namespaces. It proves
@@ -110,8 +101,6 @@ run them in isolation:
   ruleset without the relay's openings keeps the client from both. dnsmasq runs as the
   namespace's root, its only user, with the units' capabilities alone, so the check does not run
   it as the user `dnsmasq`; `router-dhcp6` runs Kea and `chalkd router dhcp6-routes` the same way.
-- The `router-dhcp-relay-instances` check runs `chalkos-dhcp-relays.service` with stubs of
-  `systemctl` and `systemd-escape`, as `router-dhcp-instances` does.
 
 Prefer this level for anything about partitions, firewall rules or interfaces.
 
@@ -147,12 +136,9 @@ checks, `eval.nix` the evaluation tests, and `lib.nix` what they share. The test
 | `router-firewall` | A router's firewall unit and rulesets, in network namespaces. |
 | `router-policy-routing` | A router's policy routing: the example's ruleset with the kernel's rules and next-hop tables, in network namespaces. |
 | `router-nat64` | A router's `chalkos-nat64.service`, with a stub of `jool`, in network namespaces. |
-| `router-resolvers` | A router's `chalkos-resolvers.service`, with stubs of `systemctl` and `systemd-escape`. |
 | `router-dhcp` | A router's `kea-dhcp4.service` and the diagnostic `dhcp-leases`, in network namespaces. |
 | `router-dhcp6` | A router's `kea-dhcp6` servers, the records and routes of delegated prefixes and the firewall's DHCPv6 opening, in network namespaces. |
-| `router-dhcp-instances` | A router's `chalkos-dhcp.service`, with stubs of `systemctl` and `systemd-escape`. |
 | `router-dhcp-relay` | A router's `dnsmasq-relay.service` and `dnsmasq-relay@<vrf>.service` and the firewall's openings of the relays, in network namespaces. |
-| `router-dhcp-relay-instances` | A router's `chalkos-dhcp-relays.service`, with stubs of `systemctl` and `systemd-escape`. |
 | `frr-credentials` | A router's `frr.service` fills its config's passwords in from its credentials, and refuses those FRR would not take. |
 | `image-checker` | An image's `chalkd check` in its sandbox on a NixOS VM, with a second store: the image's renderer and command fact run from it, a renderer's refusal comes back, the sandbox hides `/run/chalkos`, and another user reaches neither the facts socket nor the result. |
 | `rules` | The images' rules compile, their outputs render their examples and pass their checks, and a broken rule, effect, output or diagnostic fails its image. |
@@ -223,10 +209,10 @@ Every check builds with `nix build`, and a change runs the checks of the parts i
 | The firewall or VXLAN rule | `vxlan-rule`, `go-unit`, `e2e-kubernetes` |
 | The router's kinds, outputs or firewall | `router-firewall`, `rules`, `eval`, `eval-kinds`, `go-unit` |
 | The router's BGP: its kinds, `frr` output, FRR's unit, `pkg/router` | `rules`, `frr-credentials`, `eval`, `eval-kinds`, `go-unit`, `e2e-router` |
-| The router's NAT64 and resolvers: their kinds, the `jool` and `unbound` outputs, their units, `pkg/router` | `router-nat64`, `router-resolvers`, `router-firewall`, `rules`, `eval`, `eval-kinds`, `go-unit`, `image-size`, `e2e-router` |
+| The router's NAT64 and resolvers: their kinds, the `jool` and `unbound` outputs, their units, `pkg/router` | `router-nat64`, `router-firewall`, `rules`, `eval`, `eval-kinds`, `go-unit`, `image-size`, `e2e-router` |
 | The router's VRFs: the `VRF` kind, `router-networkd`, `chalkos-vrf` | `rules`, `eval`, `eval-kinds`, `go-unit`, `router-vrf`, `router-firewall`, `e2e-router` |
 | The router's policy routing: the `PolicyRoute` and `NextHop` kinds, their chain and units | `router-policy-routing`, `router-firewall`, `rules`, `eval`, `eval-kinds`, `go-unit`, `e2e-router` |
-| The router's DHCP and relays: the `DHCPSubnet` and `DHCPRelay` kinds, the `kea` and `dhcp-relay` outputs, their units, `pkg/router` | `router-dhcp`, `router-dhcp6`, `router-dhcp-instances`, `router-dhcp-relay`, `router-dhcp-relay-instances`, `router-firewall`, `rules`, `eval`, `eval-kinds`, `go-unit`, `e2e-router` |
+| The router's DHCP and relays: the `DHCPSubnet` and `DHCPRelay` kinds, the `kea` and `dhcp-relay` outputs, their units, `pkg/router` | `router-dhcp`, `router-dhcp6`, `router-dhcp-relay`, `router-firewall`, `rules`, `eval`, `eval-kinds`, `go-unit`, `e2e-router` |
 | An image's checker: `pkg/imagecheck`, `chalkd check` | `image-checker`, `go-unit`, `go-lint`, `e2e-upgrade` |
 | `templates/lab` | `template-lab` |
 | `.github/workflows` | `workflows` |

@@ -373,13 +373,14 @@ device, since systemd would otherwise start Unbound with its sockets in the defa
 requires the VRF's device unit, so a start waits for the device to appear, but the device going
 away does not stop the resolver.
 
-`chalkos-resolvers.service` runs these units. It is a oneshot unit that starts at boot after
-`chalkos-vrf.service` and networkd, which create the VRFs. It starts the resolver of each rendered
-`unbound-<vrf>.conf` that does not run, once the VRF's device exists, and reloads those that run.
+`chalkos-resolvers.service` runs these units with `chalkd router services unbound`. It is a
+oneshot unit that starts at boot after `chalkos-vrf.service` and networkd, which create the VRFs.
+It starts the resolver of each rendered `unbound-<vrf>.conf` that does not run, once the VRF's
+device exists, and reloads those that run.
 When a delivery changes a VRF's table, `chalkos-vrf.service` deletes the VRF and networkd creates
 it again with a new index. A running resolver whose recorded index differs from the device's, or
 whose VRF has no device yet, is restarted once the device exists, so its sockets bind to the new
-device. The unit stops the resolvers that have no config. It waits 30 seconds at most for the
+device. The unit then stops the resolvers that have no config. It waits 30 seconds at most for the
 VRFs' devices and 30 more for the resolvers it started, and then fails, naming each that does not
 run. The effect `resolvers` reloads it when the output `unbound` or `networkd` changes, and
 `chalkos-vrf.service` reloads it, without waiting, after removing a VRF. That covers a failed

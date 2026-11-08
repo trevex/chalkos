@@ -241,10 +241,10 @@ dhcp-relay=2001:db8:1::1,2001:db8:ff::53
 nothing. Each `dhcp-relay` line relays the requests of the link that holds the first address to
 the server, and the server tells the client's subnet by that address. dnsmasq reads the lines at
 start alone. The effect `dhcp-relay` reloads `chalkos-dhcp-relays.service` when `dhcp-relay` or
-`networkd` changes, and that unit restarts the relays that run, starts those that do not and
-stops those without a config. A relay keeps no state and finds its links' addresses as requests
-come, so it starts before its links exist. A VRF's relay waits up to 30 seconds for the VRF's
-device.
+`networkd` changes, and that unit, with `chalkd router services relay`, stops the relays without
+a config, then restarts those that run and starts those that do not. A relay keeps no state and
+finds its links' addresses as requests come, so it starts before its links exist. A VRF's relay
+waits up to 30 seconds for the VRF's device.
 
 dnsmasq binds `0.0.0.0:67` and `[::]:547`. `bind-dynamic` gives the sockets `SO_REUSEADDR`, so
 the relays of one family in the default VRF and in another VRF bind beside each other, and each
@@ -285,9 +285,9 @@ Different families never collide.
 Kea refuses a config that names a link the system lacks, at start and at a reload, and stops in
 the second case. So no server starts by itself at boot.
 `chalkos-dhcp.service`, a oneshot unit after `chalkos-config.service`, `chalkos-vrf.service`,
-`systemd-networkd.service` and `chalkos-firewall.service`, runs the servers of both families, and
-the effect `dhcp` reloads it whenever the output `kea` or `networkd` changes. A start and a reload
-do the same:
+`systemd-networkd.service` and `chalkos-firewall.service`, runs the servers of both families with
+`chalkd router services kea`, and the effect `dhcp` reloads it whenever the output `kea` or
+`networkd` changes. A start and a reload do the same:
 
 1. It stops and resets the servers that have no config, so that a subnet moved to another VRF
    leaves its links before that VRF's server starts on them. A router that serves no subnet has
@@ -295,7 +295,7 @@ do the same:
 2. For each rendered config, it waits up to 30 seconds altogether for the config's links and its
    VRF's device to exist, as networkd creates VLANs and VRFs without waiting. A server whose links
    do not appear is neither started nor reloaded, and the unit fails naming it:
-   `chalkos-dhcp: failed to run kea-dhcp4@guest.service, whose links vlan20 have no device`.
+   `chalkd: failed to run kea-dhcp4@guest.service, whose devices vlan20 do not exist`.
 3. It starts a server that does not run and reloads one that does. A reload sends Kea `SIGHUP`,
    and Kea reads its config again and keeps its leases. A VRF's server whose VRF chalkos-vrf
    removed and networkd created anew restarts instead, as described below.
@@ -317,8 +317,8 @@ systemd binds the unit's IP sockets to the VRF's device with `BindNetworkInterfa
 `unbound@` does for a VRF's resolver; without it, Kea cannot bind the address and fails. The
 unit requires the device's unit and records the device's index in
 `/run/kea/kea-dhcp4-<vrf>.ifindex` or `/run/kea/kea-dhcp6-<vrf>.ifindex` before Kea starts. A VRF
-that networkd made anew has a new index, so chalkos-dhcp restarts its server instead of reloading
-it.
+that networkd made anew has a new index, so `chalkos-dhcp.service` restarts its server instead of
+reloading it.
 
 Every server runs as the user `kea` with NixOS's usual sandbox: a read-only system, private
 devices and temporary files, and no other address families than Unix, netlink, IPv4 and IPv6. A
