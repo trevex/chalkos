@@ -25,6 +25,7 @@ import (
 	"github.com/trevex/chalkos/pkg/internal/strs"
 	"github.com/trevex/chalkos/pkg/kubernetes"
 	"github.com/trevex/chalkos/pkg/kubernetes/nodeip"
+	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
 )
 
 // Render returns the objects in the order the control plane applies them: RBAC, kube-proxy, the
@@ -140,39 +141,6 @@ type kubeProxyConfiguration struct {
 	NodePortAddresses []string `json:"nodePortAddresses"`
 }
 
-// The kubeconfig of a pod's service account, its fields in key order.
-type (
-	serviceAccountKubeconfig struct {
-		APIVersion     string      `json:"apiVersion"`
-		Clusters       []saCluster `json:"clusters"`
-		Contexts       []saContext `json:"contexts"`
-		CurrentContext string      `json:"current-context"`
-		Kind           string      `json:"kind"`
-		Users          []saUser    `json:"users"`
-	}
-	saCluster struct {
-		Cluster struct {
-			CertificateAuthority string `json:"certificate-authority"`
-			Server               string `json:"server"`
-		} `json:"cluster"`
-		Name string `json:"name"`
-	}
-	saContext struct {
-		Context struct {
-			Cluster   string `json:"cluster"`
-			Namespace string `json:"namespace"`
-			User      string `json:"user"`
-		} `json:"context"`
-		Name string `json:"name"`
-	}
-	saUser struct {
-		Name string `json:"name"`
-		User struct {
-			TokenFile string `json:"tokenFile"`
-		} `json:"user"`
-	}
-)
-
 func kubeProxy(c kubernetes.Cluster, families []nodeip.Family) ([]any, error) {
 	cidrs := make([]netip.Prefix, len(families))
 	for i, f := range families {
@@ -201,24 +169,18 @@ func kubeProxy(c kubernetes.Cluster, families []nodeip.Family) ([]any, error) {
 		return nil, err
 	}
 	// Pods reach the API server at the cluster endpoint: the service address needs kube-proxy.
-	cluster := saCluster{Name: "default"}
-	cluster.Cluster.CertificateAuthority = "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
-	cluster.Cluster.Server = c.Endpoint
-	context := saContext{Name: "default"}
-	context.Context.Cluster = "default"
-	context.Context.Namespace = "default"
-	context.Context.User = "default"
-	user := saUser{Name: "default"}
-	user.User.TokenFile = "/var/run/secrets/kubernetes.io/serviceaccount/token"
-	kubeconfig, err := compact(serviceAccountKubeconfig{
-		APIVersion:     "v1",
-		Kind:           "Config",
-		Clusters:       []saCluster{cluster},
-		Contexts:       []saContext{context},
-		CurrentContext: "default",
-		Users:          []saUser{user},
-	})
+	encoded, err := kpki.Kubeconfig{
+		Name:      "default",
+		Server:    c.Endpoint,
+		CAFile:    "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt",
+		TokenFile: "/var/run/secrets/kubernetes.io/serviceaccount/token",
+		Namespace: "default",
+	}.Encode()
 	if err != nil {
+		return nil, err
+	}
+	var kubeconfig bytes.Buffer
+	if err := json.Compact(&kubeconfig, encoded); err != nil {
 		return nil, err
 	}
 	labels := map[string]string{"k8s-app": "kube-proxy"}
@@ -227,7 +189,7 @@ func kubeProxy(c kubernetes.Cluster, families []nodeip.Family) ([]any, error) {
 		clusterRoleBinding("chalkos:node-proxier", "system:node-proxier", serviceAccountSubject("kube-proxy", metav1.NamespaceSystem)),
 		corev1ac.ConfigMap("kube-proxy", metav1.NamespaceSystem).
 			WithLabels(map[string]string{"app": "kube-proxy"}).
-			WithData(map[string]string{"kubeconfig.conf": kubeconfig, "config.conf": config}),
+			WithData(map[string]string{"kubeconfig.conf": kubeconfig.String(), "config.conf": config}),
 		appsv1ac.DaemonSet("kube-proxy", metav1.NamespaceSystem).
 			WithLabels(labels).
 			WithSpec(appsv1ac.DaemonSetSpec().

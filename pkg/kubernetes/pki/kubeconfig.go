@@ -23,6 +23,11 @@ type Kubeconfig struct {
 	// Client is the user's PEM certificate and key; ClientFile names a file holding both.
 	Client     pki.CertKey
 	ClientFile string
+	// TokenFile names a file holding the user's bearer token, which a pod's service account
+	// authenticates with, in place of a client certificate.
+	TokenFile string
+	// Namespace is the context's default namespace.
+	Namespace string
 }
 
 // A kubeconfig file as Encode writes it and kubeconfigCertificate reads it, its fields in key
@@ -51,8 +56,9 @@ type (
 		Name    string            `json:"name"`
 	}
 	kubeconfigContext struct {
-		Cluster string `json:"cluster"`
-		User    string `json:"user"`
+		Cluster   string `json:"cluster"`
+		Namespace string `json:"namespace,omitempty"`
+		User      string `json:"user"`
 	}
 	namedUser struct {
 		Name string         `json:"name"`
@@ -63,6 +69,7 @@ type (
 		ClientCertificateData []byte `json:"client-certificate-data,omitempty"`
 		ClientKey             string `json:"client-key,omitempty"`
 		ClientKeyData         []byte `json:"client-key-data,omitempty"`
+		TokenFile             string `json:"tokenFile,omitempty"`
 	}
 )
 
@@ -82,6 +89,8 @@ func (k Kubeconfig) Encode() ([]byte, error) {
 	}
 	var user kubeconfigUser
 	switch {
+	case k.TokenFile != "":
+		user.TokenFile = k.TokenFile
 	case k.ClientFile != "":
 		user.ClientCertificate = k.ClientFile
 		user.ClientKey = k.ClientFile
@@ -89,14 +98,14 @@ func (k Kubeconfig) Encode() ([]byte, error) {
 		user.ClientCertificateData = []byte(k.Client.Certificate)
 		user.ClientKeyData = []byte(k.Client.Key)
 	default:
-		return nil, errors.New("a kubeconfig needs a client certificate and key")
+		return nil, errors.New("a kubeconfig needs a client certificate and key or a token file")
 	}
 	data, err := json.MarshalIndent(kubeconfigFile{
 		APIVersion:     "v1",
 		Kind:           "Config",
 		Clusters:       []namedCluster{{Name: k.Name, Cluster: cluster}},
 		Users:          []namedUser{{Name: k.Name, User: user}},
-		Contexts:       []namedContext{{Name: k.Name, Context: kubeconfigContext{Cluster: k.Name, User: k.Name}}},
+		Contexts:       []namedContext{{Name: k.Name, Context: kubeconfigContext{Cluster: k.Name, Namespace: k.Namespace, User: k.Name}}},
 		CurrentContext: k.Name,
 	}, "", "  ")
 	if err != nil {
