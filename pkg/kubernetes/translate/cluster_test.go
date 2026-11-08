@@ -265,6 +265,27 @@ func TestClusterNamesTheDocument(t *testing.T) {
 	}
 }
 
+// An Addon object's apiVersion is written as Kubernetes writes it: /v1, which Kubernetes reads as
+// v1, would reach the API server in a spelling other code does not expect.
+func TestAddonObjectsRefuseOddAPIVersions(t *testing.T) {
+	addon := func(apiVersion string) *config.Set {
+		return kubernetesSet(t, "{}", "---\napiVersion: kubernetes.chalkos.dev/v1alpha1\nkind: Addon\nmetadata: {name: m}\n"+
+			`spec: {objects: [{apiVersion: "`+apiVersion+`", kind: Secret, metadata: {name: s}, data: {k: dg==}}]}`+"\n")
+	}
+	for apiVersion, want := range map[string]string{
+		"/v1":       `Addon "m": objects[0].apiVersion: write "/v1" as "v1"`,
+		"a/b/v1":    `Addon "m": objects[0].apiVersion: unexpected GroupVersion string: a/b/v1`,
+		"apps/v1":   "",
+		"v1":        "",
+		"x.io/v1b1": "",
+	} {
+		_, err := AddonObjects(addon(apiVersion).Documents())
+		if (want == "" && err != nil) || (want != "" && (err == nil || err.Error() != want)) {
+			t.Errorf("apiVersion %s: err = %v, want %q", apiVersion, err, want)
+		}
+	}
+}
+
 // Addon objects keep their numbers as written, so applying them sends the same digits.
 func TestAddonObjectsKeepNumbers(t *testing.T) {
 	s := kubernetesSet(t, "{}", "---\napiVersion: kubernetes.chalkos.dev/v1alpha1\nkind: Addon\nmetadata: {name: m}\n"+

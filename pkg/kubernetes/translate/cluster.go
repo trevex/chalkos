@@ -8,6 +8,8 @@ import (
 	"net/netip"
 	"slices"
 
+	"k8s.io/apimachinery/pkg/runtime/schema"
+
 	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/kubernetes"
 	"github.com/trevex/chalkos/pkg/kubernetes/nodeip"
@@ -138,7 +140,9 @@ func SandboxImage(docs config.Documents) (string, error) {
 }
 
 // AddonObjects returns the objects of the Addon documents, in the order of the documents' names
-// and each document's own order: the objects the control planes apply after chalkos's.
+// and each document's own order: the objects the control planes apply after chalkos's. It refuses
+// an object whose apiVersion is not written as Kubernetes writes it, such as /v1 for v1, so an
+// object reaches the API server in the spelling redaction and readers expect.
 func AddonObjects(docs config.Documents) ([]map[string]any, error) {
 	addons := docs.Of(API, "Addon")
 	slices.SortStableFunc(addons, func(a, b config.Document) int { return cmp.Compare(a.Name, b.Name) })
@@ -147,6 +151,16 @@ func AddonObjects(docs config.Documents) ([]map[string]any, error) {
 		var spec addonSpec
 		if err := d.DecodeSpec(&spec); err != nil {
 			return nil, err
+		}
+		for i, o := range spec.Objects {
+			apiVersion, _ := o["apiVersion"].(string)
+			gv, err := schema.ParseGroupVersion(apiVersion)
+			if err != nil {
+				return nil, fmt.Errorf("%s: objects[%d].apiVersion: %w", d, i, err)
+			}
+			if gv.String() != apiVersion {
+				return nil, fmt.Errorf("%s: objects[%d].apiVersion: write %q as %q", d, i, apiVersion, gv.String())
+			}
 		}
 		out = append(out, spec.Objects...)
 	}
