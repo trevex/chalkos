@@ -45,14 +45,10 @@ type KubernetesPublic struct {
 func NewKubernetesSecrets(now time.Time) (*KubernetesSecrets, error) {
 	k := &KubernetesSecrets{}
 	var err error
-	if k.CA, err = pki.NewCA("chalkos Kubernetes CA", now); err != nil {
-		return nil, err
-	}
-	if k.FrontProxyCA, err = pki.NewCA("chalkos front-proxy CA", now); err != nil {
-		return nil, err
-	}
-	if k.EtcdCA, err = pki.NewCA("chalkos etcd CA", now); err != nil {
-		return nil, err
+	for _, slot := range k.caSlots() {
+		if *slot.ca, err = pki.NewCA(slot.commonName, now); err != nil {
+			return nil, err
+		}
 	}
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
@@ -89,9 +85,33 @@ func (k KubernetesSecrets) GoString() string {
 	return k.String()
 }
 
+// caSlot is one Kubernetes CA: the field the secrets file holds it in, the common name it is
+// created with, and where the CA, the certificates accepted besides it and its replacement during
+// a rotation are kept.
+type caSlot struct {
+	field      string
+	commonName string
+	ca         *pki.CertKey
+	accepted   *[]string
+	new        func(*NewValues) **pki.CertKey
+}
+
+// caSlots lists the Kubernetes CAs in the order the secrets file holds them.
+func (k *KubernetesSecrets) caSlots() []caSlot {
+	return []caSlot{
+		{"ca", "chalkos Kubernetes CA", &k.CA, &k.Accepted.CA, func(n *NewValues) **pki.CertKey { return &n.CA }},
+		{"frontProxyCA", "chalkos front-proxy CA", &k.FrontProxyCA, &k.Accepted.FrontProxyCA, func(n *NewValues) **pki.CertKey { return &n.FrontProxyCA }},
+		{"etcdCA", "chalkos etcd CA", &k.EtcdCA, &k.Accepted.EtcdCA, func(n *NewValues) **pki.CertKey { return &n.EtcdCA }},
+	}
+}
+
 // cas names the Kubernetes CAs as the secrets file does.
 func (k *KubernetesSecrets) cas() []pki.NamedCA {
-	return []pki.NamedCA{{Name: "kubernetes.ca", CA: k.CA}, {Name: "kubernetes.frontProxyCA", CA: k.FrontProxyCA}, {Name: "kubernetes.etcdCA", CA: k.EtcdCA}}
+	var cas []pki.NamedCA
+	for _, slot := range k.caSlots() {
+		cas = append(cas, pki.NamedCA{Name: "kubernetes." + slot.field, CA: *slot.ca})
+	}
+	return cas
 }
 
 // Validate checks that every CA is a CA certificate with its key and a key of its own, and the

@@ -174,21 +174,27 @@ func (n NewValues) onlyOf(kind RotationKind) bool {
 
 // OSCABundle is the OS CAs nodes and chalkctl trust: the one that issues, then those accepted.
 func (s Secrets) OSCABundle() string {
-	return pki.Bundle(append([]string{s.OSCA.Certificate}, s.Accepted.OSCA...)...)
+	return trustBundle(s.OSCA, s.Accepted.OSCA)
 }
 
 // CABundle is the Kubernetes CAs trusted, the one that issues first; FrontProxyCABundle and
 // EtcdCABundle are those of the front-proxy and etcd CAs.
 func (k KubernetesSecrets) CABundle() string {
-	return pki.Bundle(append([]string{k.CA.Certificate}, k.Accepted.CA...)...)
+	return trustBundle(k.CA, k.Accepted.CA)
 }
 
 func (k KubernetesSecrets) FrontProxyCABundle() string {
-	return pki.Bundle(append([]string{k.FrontProxyCA.Certificate}, k.Accepted.FrontProxyCA...)...)
+	return trustBundle(k.FrontProxyCA, k.Accepted.FrontProxyCA)
 }
 
 func (k KubernetesSecrets) EtcdCABundle() string {
-	return pki.Bundle(append([]string{k.EtcdCA.Certificate}, k.Accepted.EtcdCA...)...)
+	return trustBundle(k.EtcdCA, k.Accepted.EtcdCA)
+}
+
+// trustBundle is the bundle of a CA that issues and the certificates accepted besides it, the
+// issuing one first.
+func trustBundle(ca pki.CertKey, accepted []string) string {
+	return pki.Bundle(append([]string{ca.Certificate}, accepted...)...)
 }
 
 // KeyName is the name of the encryption key that encrypts.
@@ -230,13 +236,10 @@ func (s Secrets) validateAccepted() error {
 // their own that the API server can tell apart. A worker's share holds CA certificates alone and
 // no service-account or encryption key, which ValidateAccepted does not ask for.
 func (k KubernetesSecrets) ValidateAccepted() error {
-	for _, list := range []struct {
-		name  string
-		certs []string
-	}{{"kubernetes.accepted.ca", k.Accepted.CA}, {"kubernetes.accepted.frontProxyCA", k.Accepted.FrontProxyCA}, {"kubernetes.accepted.etcdCA", k.Accepted.EtcdCA}} {
-		for i, c := range list.certs {
+	for _, slot := range k.caSlots() {
+		for i, c := range *slot.accepted {
 			if err := validateRoot(c); err != nil {
-				return fmt.Errorf("%s[%d]: %w", list.name, i, err)
+				return fmt.Errorf("kubernetes.accepted.%s[%d]: %w", slot.field, i, err)
 			}
 		}
 	}
@@ -328,9 +331,9 @@ func (s Secrets) cas() []pki.NamedCA {
 		}
 	}
 	add("accepted.osCA", s.Accepted.OSCA)
-	add("kubernetes.accepted.ca", s.Kubernetes.Accepted.CA)
-	add("kubernetes.accepted.frontProxyCA", s.Kubernetes.Accepted.FrontProxyCA)
-	add("kubernetes.accepted.etcdCA", s.Kubernetes.Accepted.EtcdCA)
+	for _, slot := range s.Kubernetes.caSlots() {
+		add("kubernetes.accepted."+slot.field, *slot.accepted)
+	}
 	if r := s.Rotation; r != nil && r.New != nil && r.New.NodeCA != nil {
 		cas = append(cas, pki.NamedCA{Name: "rotation.new.nodeCA", CA: *r.New.NodeCA})
 	}
@@ -407,18 +410,15 @@ func (s Secrets) validateRotation() error {
 			return fmt.Errorf("rotation.new.nodeCA: %w", err)
 		}
 	case RotateKubernetesCA:
-		for _, ca := range []struct {
-			name     string
-			ca       *pki.CertKey
-			accepted []string
-		}{{"ca", n.CA, s.Kubernetes.Accepted.CA}, {"frontProxyCA", n.FrontProxyCA, s.Kubernetes.Accepted.FrontProxyCA}, {"etcdCA", n.EtcdCA, s.Kubernetes.Accepted.EtcdCA}} {
-			if ca.ca == nil {
-				return fmt.Errorf("rotation.new.%s is missing", ca.name)
+		for _, slot := range s.Kubernetes.caSlots() {
+			ca := *slot.new(n)
+			if ca == nil {
+				return fmt.Errorf("rotation.new.%s is missing", slot.field)
 			}
-			if err := pki.ValidateCA(*ca.ca); err != nil {
-				return fmt.Errorf("rotation.new.%s: %w", ca.name, err)
+			if err := pki.ValidateCA(*ca); err != nil {
+				return fmt.Errorf("rotation.new.%s: %w", slot.field, err)
 			}
-			if err := requireAccepted("rotation.new."+ca.name, ca.ca.Certificate, ca.accepted); err != nil {
+			if err := requireAccepted("rotation.new."+slot.field, ca.Certificate, *slot.accepted); err != nil {
 				return err
 			}
 		}
@@ -457,7 +457,11 @@ func (s Secrets) acceptedCounts(kind RotationKind) []int {
 	case RotateOSCA:
 		return []int{len(s.Accepted.OSCA)}
 	case RotateKubernetesCA:
-		return []int{len(a.CA), len(a.FrontProxyCA), len(a.EtcdCA)}
+		var counts []int
+		for _, slot := range s.Kubernetes.caSlots() {
+			counts = append(counts, len(*slot.accepted))
+		}
+		return counts
 	case RotateServiceAccountKey:
 		return []int{len(a.ServiceAccountKeys)}
 	case RotateEncryptionKey:
@@ -517,17 +521,13 @@ func (s *Secrets) BeginRotation(kind RotationKind, now time.Time) error {
 		}
 		n.NodeCA = &nodeCA
 	case RotateKubernetesCA:
-		for _, ca := range []struct {
-			name     string
-			new      **pki.CertKey
-			accepted *[]string
-		}{{"chalkos Kubernetes CA", &n.CA, &k.Accepted.CA}, {"chalkos front-proxy CA", &n.FrontProxyCA, &k.Accepted.FrontProxyCA}, {"chalkos etcd CA", &n.EtcdCA, &k.Accepted.EtcdCA}} {
-			created, err := pki.NewCA(ca.name, now)
+		for _, slot := range k.caSlots() {
+			created, err := pki.NewCA(slot.commonName, now)
 			if err != nil {
 				return err
 			}
-			*ca.new = &created
-			*ca.accepted = append(*ca.accepted, created.Certificate)
+			*slot.new(n) = &created
+			*slot.accepted = append(*slot.accepted, created.Certificate)
 		}
 	case RotateServiceAccountKey:
 		key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
@@ -626,8 +626,10 @@ func (s *Secrets) SwitchRotation() error {
 	case RotateNodeCA:
 		s.NodeCA = *r.New.NodeCA
 	case RotateKubernetesCA:
-		k.Accepted.CA, k.Accepted.FrontProxyCA, k.Accepted.EtcdCA = []string{k.CA.Certificate}, []string{k.FrontProxyCA.Certificate}, []string{k.EtcdCA.Certificate}
-		k.CA, k.FrontProxyCA, k.EtcdCA = *r.New.CA, *r.New.FrontProxyCA, *r.New.EtcdCA
+		for _, slot := range k.caSlots() {
+			*slot.accepted = []string{slot.ca.Certificate}
+			*slot.ca = **slot.new(r.New)
+		}
 	case RotateServiceAccountKey:
 		old, err := pki.ServiceAccountPublicKey(k.ServiceAccountKey)
 		if err != nil {
@@ -665,7 +667,9 @@ func (s *Secrets) FinishRotation() error {
 	case RotateOSCA:
 		s.Accepted.OSCA = nil
 	case RotateKubernetesCA:
-		k.Accepted.CA, k.Accepted.FrontProxyCA, k.Accepted.EtcdCA = nil, nil, nil
+		for _, slot := range k.caSlots() {
+			*slot.accepted = nil
+		}
 	case RotateServiceAccountKey:
 		k.Accepted.ServiceAccountKeys = nil
 	case RotateEncryptionKey:
