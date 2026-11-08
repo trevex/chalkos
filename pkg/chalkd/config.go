@@ -52,7 +52,7 @@ func translateSlot(name string, docs []config.Document, schemas *schema.Schemas,
 	}
 	id, err := tr.IdentityJSON()
 	if err != nil {
-		return slot.Stored{}, err
+		return slot.Stored{}, layer.Errorf(connect.CodeInvalidArgument, "encode the config's identity: %w", err)
 	}
 	return slot.Stored{Delivered: docs, Documents: tr.Documents, Version: version, Identity: id}, nil
 }
