@@ -3,7 +3,6 @@ package kubernetes
 import (
 	"context"
 	"crypto/tls"
-	"crypto/x509"
 	"errors"
 	"fmt"
 	"log"
@@ -19,6 +18,7 @@ import (
 	"github.com/trevex/chalkos/pkg/kubernetes/etcd"
 	knode "github.com/trevex/chalkos/pkg/kubernetes/node"
 	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
+	"github.com/trevex/chalkos/pkg/pki"
 )
 
 // errBootstrapped ends the join: the node was bootstrapped, or joined, meanwhile.
@@ -307,8 +307,8 @@ func clusterAnswers(ctx context.Context, c k8s.Cluster, share kpki.Share) bool {
 	if err != nil {
 		return false
 	}
-	roots := x509.NewCertPool()
-	if !roots.AppendCertsFromPEM([]byte(share.CABundle())) {
+	roots, err := pki.BundlePool(share.CABundle())
+	if err != nil {
 		return false
 	}
 	port := u.Port()

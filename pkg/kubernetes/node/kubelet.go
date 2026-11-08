@@ -192,12 +192,10 @@ func checkRenewedClient(path string, ca pki.CertKey, want *x509.Certificate, nod
 	if err != nil {
 		return err
 	}
-	caCert, err := pki.ParseCertificate([]byte(ca.Certificate))
+	roots, err := pki.BundlePool(ca.Certificate)
 	if err != nil {
 		return fmt.Errorf("the cluster CA: %w", err)
 	}
-	roots := x509.NewCertPool()
-	roots.AddCert(caCert)
 	if _, err := cert.Verify(x509.VerifyOptions{Roots: roots, KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth}, CurrentTime: now}); err != nil {
 		return err
 	}

@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"errors"
+	"fmt"
 	"log"
 	"net"
 	"net/http"
@@ -131,9 +132,9 @@ func (c *credential) renew(ctx context.Context) {
 
 // tlsConfig trusts the CA and authenticates with the credential.
 func (c *credential) tlsConfig() (*tls.Config, error) {
-	roots := x509.NewCertPool()
-	if !roots.AppendCertsFromPEM([]byte(c.ca)) {
-		return nil, errors.New("the share's CA holds no certificate")
+	roots, err := pki.BundlePool(c.ca)
+	if err != nil {
+		return nil, fmt.Errorf("the share's CA: %w", err)
 	}
 	return &tls.Config{RootCAs: roots, MinVersion: tls.VersionTLS12, GetClientCertificate: c.GetClientCertificate}, nil
 }

@@ -3,7 +3,6 @@ package kubernetes
 import (
 	"context"
 	"crypto/tls"
-	"crypto/x509"
 	"errors"
 	"log"
 	"net/http"
@@ -13,6 +12,7 @@ import (
 	knode "github.com/trevex/chalkos/pkg/kubernetes/node"
 	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
 	"github.com/trevex/chalkos/pkg/kubernetes/vip"
+	"github.com/trevex/chalkos/pkg/pki"
 )
 
 // superviseVIP takes part in the VIP election until ctx ends.
@@ -127,8 +127,8 @@ func etcdTrust(s kpki.Share) string {
 
 // apiServerReady reports whether the node's API server answers ready.
 func apiServerReady(ctx context.Context, c k8s.Cluster, share kpki.Share) bool {
-	roots := x509.NewCertPool()
-	if !roots.AppendCertsFromPEM([]byte(share.CABundle())) {
+	roots, err := pki.BundlePool(share.CABundle())
+	if err != nil {
 		return false
 	}
 	client := &http.Client{

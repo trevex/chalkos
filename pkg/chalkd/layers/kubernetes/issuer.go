@@ -5,7 +5,6 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/x509"
-	"errors"
 	"fmt"
 	"log"
 	"net"
@@ -121,9 +120,9 @@ func (p *Plugin) IssueNodeCertificate(ctx context.Context, request []byte) (stri
 // endpoint may be a VIP or a name no node certificate carries. Whatever the peer returns is
 // checked like a delivered certificate before it is used.
 func RenewThrough(ctx context.Context, cert layer.Certificate, addr string, request []byte) (string, error) {
-	roots := x509.NewCertPool()
-	if !roots.AppendCertsFromPEM([]byte(cert.OSCA())) {
-		return "", errors.New("the node's OS CA holds no certificate")
+	roots, err := pki.BundlePool(cert.OSCA())
+	if err != nil {
+		return "", fmt.Errorf("the node's OS CA: %w", err)
 	}
 	conn, err := client.Dial(addr, client.Options{Verify: client.AnyNodeOf(roots), GetClientCertificate: cert.GetClientCertificate})
 	if err != nil {
