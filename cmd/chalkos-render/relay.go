@@ -53,7 +53,7 @@ func renderDHCPRelay(in map[string]any, out string) error {
 		}
 	}
 	vrfs := slices.Collect(maps.Keys(byVRF))
-	slices.SortFunc(vrfs, func(a, b string) int { return strings.Compare(vrfOrder(a), vrfOrder(b)) })
+	slices.SortFunc(vrfs, func(a, b string) int { return strings.Compare(derive.VRFDevice(a), derive.VRFDevice(b)) })
 	for _, vrf := range vrfs {
 		v := byVRF[vrf]
 		var b strings.Builder

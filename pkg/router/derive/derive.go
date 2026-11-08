@@ -233,6 +233,17 @@ func VRFOf(v *string) string {
 	return *v
 }
 
+// VRFName is the VRF a document's vrf names, as VRFOf reads it, for an output that writes it in
+// a file's or a socket's name or unquoted in its config. It guards, with an internal error, a
+// name that is no interface's: a VRF document's name holds the characters Build takes alone.
+func VRFName(v *string) (string, error) {
+	vrf := VRFOf(v)
+	if !PlainInterface.MatchString(vrf) {
+		return "", InternalErrorf("the VRF %q is no VRF's name", vrf)
+	}
+	return vrf, nil
+}
+
 // VRFOfNetwork is the VRF of the links of the Network document named n.
 func (d Model) VRFOfNetwork(n string) string {
 	if vrf, ok := d.Membership.Networks[n]; ok {

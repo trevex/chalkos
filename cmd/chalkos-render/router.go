@@ -2,14 +2,6 @@ package main
 
 import "github.com/trevex/chalkos/pkg/router/derive"
 
-// vrfOrder sorts the default VRF before the others, which follow by name.
-func vrfOrder(vrf string) string {
-	if vrf == derive.DefaultVRF {
-		return ""
-	}
-	return vrf
-}
-
 // checkInterfaces guards the interfaces a ruleset matches: an empty list, which would match no
 // interface or, in an opening, leave the port open on every one, and a name or glob the schemas
 // refuse, which strconv.Quote alone does not keep out of nftables's syntax.

@@ -12,7 +12,7 @@ var ShortName = regexp.MustCompile(`^[a-z0-9]([-a-z0-9.]{0,13}[a-z0-9])?$`)
 // Peer is one BGP session of the router: a BGPPeer's address, or one of its interfaces, as FRR
 // reports it.
 type Peer struct {
-	// VRF is the VRF the session runs in: a VRF document's name, or DefaultVRF.
+	// VRF is the VRF the session runs in: a VRF document's name, or derive.DefaultVRF.
 	VRF string
 	// Name is the BGPPeer document's, and Neighbor the session's interface or address.
 	Name, Neighbor string

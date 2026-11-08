@@ -27,6 +27,7 @@ import (
 	"github.com/trevex/chalkos/pkg/outputs"
 	"github.com/trevex/chalkos/pkg/pki"
 	routing "github.com/trevex/chalkos/pkg/router"
+	"github.com/trevex/chalkos/pkg/router/derive"
 	"github.com/trevex/chalkos/pkg/router/services"
 	"github.com/trevex/chalkos/pkg/tool"
 	"github.com/trevex/chalkos/pkg/tool/systemctl"
@@ -352,15 +353,7 @@ func renderedVRFs(dir string, svc services.Service) []string {
 
 // compareVRFs orders the default VRF first, then the VRFs by name.
 func compareVRFs(a, b string) int {
-	switch {
-	case a == b:
-		return 0
-	case a == routing.DefaultVRF:
-		return -1
-	case b == routing.DefaultVRF:
-		return 1
-	}
-	return strings.Compare(a, b)
+	return strings.Compare(derive.VRFDevice(a), derive.VRFDevice(b))
 }
 
 // unitRunning reports whether the unit of the instance of the service svc of the VRF vrf is
@@ -392,7 +385,7 @@ func (r *side) vrfResolvers(ctx context.Context) []*routerv1.ResolverStatus {
 	var resolvers []*routerv1.ResolverStatus
 	for _, vrf := range renderedVRFs(r.ResolverDir, services.Unbound) {
 		// resolver asks the default VRF's.
-		if vrf == routing.DefaultVRF {
+		if vrf == derive.DefaultVRF {
 			continue
 		}
 		s := &routerv1.ResolverStatus{Vrf: vrf}
@@ -516,7 +509,7 @@ func (p *Plugin) Routes(ctx context.Context, req *connect.Request[routerv1.Route
 	if vrf != "" && table != "" {
 		return nil, layer.Errorf(connect.CodeInvalidArgument, "give a VRF or a table, not both: a VRF's routes are those of its table")
 	}
-	named := vrf != "" && vrf != routing.DefaultVRF
+	named := vrf != "" && vrf != derive.DefaultVRF
 	if named {
 		t, err := p.r.vrfTable(vrf)
 		if err != nil {
@@ -532,7 +525,7 @@ func (p *Plugin) Routes(ctx context.Context, req *connect.Request[routerv1.Route
 	if err != nil {
 		return nil, err
 	}
-	resp := &routerv1.RoutesResponse{Vrf: cmp.Or(vrf, routing.DefaultVRF)}
+	resp := &routerv1.RoutesResponse{Vrf: cmp.Or(vrf, derive.DefaultVRF)}
 	for _, r := range f.Kernel(kernel) {
 		resp.Kernel = append(resp.Kernel, kernelRoute(r))
 	}

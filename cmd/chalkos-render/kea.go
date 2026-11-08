@@ -133,7 +133,7 @@ func renderKea(pdHook string, in map[string]any, out string) error {
 	}
 	servers := slices.Collect(maps.Keys(byServer))
 	slices.SortFunc(servers, func(a, b keaServer) int {
-		return strings.Compare(vrfOrder(a.vrf)+" "+a.family(), vrfOrder(b.vrf)+" "+b.family())
+		return strings.Compare(derive.VRFDevice(a.vrf)+" "+a.family(), derive.VRFDevice(b.vrf)+" "+b.family())
 	})
 	for _, srv := range servers {
 		var config map[string]any

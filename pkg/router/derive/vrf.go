@@ -21,6 +21,15 @@ import (
 // DefaultVRF names the VRF of every link no VRF holds, as FRR and the router kinds name it.
 const DefaultVRF = "default"
 
+// VRFDevice is the device of vrf: its name, or "" for the default VRF, which has none. Sorted by
+// their devices, the default VRF comes first and the others follow by name.
+func VRFDevice(vrf string) string {
+	if vrf == DefaultVRF {
+		return ""
+	}
+	return vrf
+}
+
 // VRFUnitPrefix starts the names of a VRF device's units, so that their .network sorts before
 // most of the node's own. A Network whose name sorts before it may still match the device first,
 // and vrfLinks refuses one that does.

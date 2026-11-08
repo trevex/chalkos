@@ -13,6 +13,7 @@ import (
 
 	"github.com/trevex/chalkos/pkg/chalkd/layer"
 	routing "github.com/trevex/chalkos/pkg/router"
+	"github.com/trevex/chalkos/pkg/router/derive"
 	"github.com/trevex/chalkos/pkg/router/services"
 	"github.com/trevex/chalkos/pkg/tool"
 )
@@ -106,7 +107,7 @@ func (r *side) dhcp6Routes(ctx context.Context, now time.Time) error {
 	}
 	for _, rt := range routes {
 		args := []string{"-6", "route", "replace", rt.Prefix.String(), "via", rt.Via.String(), "dev", rt.Link, "proto", strconv.Itoa(routing.PDProtocol)}
-		if rt.VRF != routing.DefaultVRF {
+		if rt.VRF != derive.DefaultVRF {
 			args = append(args, "vrf", rt.VRF)
 		}
 		// The kernel removes the route when the lease ends, should no renewal come.

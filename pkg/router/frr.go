@@ -11,13 +11,9 @@ import (
 	"net/netip"
 	"slices"
 	"strings"
+
+	"github.com/trevex/chalkos/pkg/router/derive"
 )
-
-// PeerGroupPrefix starts the name of the peer group frr.conf gives each BGPPeer document.
-const PeerGroupPrefix = "peer-"
-
-// DefaultVRF is the name FRR and the router kinds give the VRF of every link no VRF holds.
-const DefaultVRF = "default"
 
 // The vtysh commands whose JSON the parsers read.
 const (
@@ -67,7 +63,7 @@ func ParsePeers(data []byte) ([]*Peer, error) {
 			if err := json.Unmarshal(raw, &n); err != nil {
 				return nil, fmt.Errorf("read FRR's BGP neighbour %s of the VRF %s: %w", key, vrf, err)
 			}
-			name, ok := strings.CutPrefix(n.PeerGroup, PeerGroupPrefix)
+			name, ok := strings.CutPrefix(n.PeerGroup, derive.PeerGroupPrefix)
 			if !ok {
 				continue
 			}
@@ -85,13 +81,8 @@ func ParsePeers(data []byte) ([]*Peer, error) {
 			peers = append(peers, p)
 		}
 	}
-	// The default VRF sorts first, as no VRF document is named "".
 	order := func(p *Peer) string {
-		vrf := p.VRF
-		if vrf == DefaultVRF {
-			vrf = ""
-		}
-		return vrf + "\x00" + p.Name + "\x00" + p.Neighbor
+		return derive.VRFDevice(p.VRF) + "\x00" + p.Name + "\x00" + p.Neighbor
 	}
 	slices.SortFunc(peers, func(a, b *Peer) int { return strings.Compare(order(a), order(b)) })
 	return peers, nil

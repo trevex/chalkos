@@ -13,6 +13,7 @@ import (
 
 	"github.com/trevex/chalkos/pkg/internal/poll"
 	routing "github.com/trevex/chalkos/pkg/router"
+	"github.com/trevex/chalkos/pkg/router/derive"
 	"github.com/trevex/chalkos/pkg/router/services"
 	"github.com/trevex/chalkos/pkg/tool"
 	"github.com/trevex/chalkos/pkg/tool/systemctl"
@@ -131,7 +132,7 @@ func wanted(s perVRF) []instance {
 	var want []instance
 	for _, svc := range s.units {
 		for _, vrf := range renderedVRFs(s.dir, svc) {
-			if s.vrfsOnly && vrf == routing.DefaultVRF {
+			if s.vrfsOnly && vrf == derive.DefaultVRF {
 				continue
 			}
 			want = append(want, instance{svc: svc, vrf: vrf, unit: svc.Unit(vrf)})
@@ -146,7 +147,7 @@ func (r *side) stopUnwanted(ctx context.Context, s perVRF, want []instance) []er
 	var patterns []string
 	for _, svc := range s.units {
 		if !s.vrfsOnly {
-			patterns = append(patterns, svc.Unit(routing.DefaultVRF))
+			patterns = append(patterns, svc.Unit(derive.DefaultVRF))
 		}
 		patterns = append(patterns, svc.Name+"@*.service")
 	}
@@ -244,7 +245,7 @@ func (r *side) awaitDevices(ctx context.Context, s perVRF, in instance, deadline
 			return fmt.Sprintf("whose config %s cannot be read: %v", file, err)
 		}
 	}
-	if in.vrf != routing.DefaultVRF {
+	if in.vrf != derive.DefaultVRF {
 		devices = append(devices, in.vrf)
 	}
 	var missing []string

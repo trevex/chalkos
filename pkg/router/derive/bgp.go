@@ -9,6 +9,10 @@ import (
 	"github.com/trevex/chalkos/pkg/refusals"
 )
 
+// PeerGroupPrefix starts the name of the peer group frr.conf gives each BGPPeer document, by
+// which chalkd finds the document of a session FRR reports.
+const PeerGroupPrefix = "peer-"
+
 // Session is a BGP session of a BGPPeer document: its neighbour as bgpd names it, the peer's
 // address or, for a session on a link, the link's name.
 type Session struct {

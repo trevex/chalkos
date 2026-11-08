@@ -568,11 +568,7 @@ func (d Model) relaysBesideServers(devices []string, relays []Relay) error {
 	}
 	// The default VRF first, then the VRFs by name, IPv4 before IPv6.
 	key := func(s server) string {
-		vrf := s.vrf
-		if vrf == DefaultVRF {
-			vrf = ""
-		}
-		return fmt.Sprintf("%s %t", vrf, s.v6)
+		return fmt.Sprintf("%s %t", VRFDevice(s.vrf), s.v6)
 	}
 	order := slices.SortedFunc(maps.Keys(families), func(a, b server) int { return strings.Compare(key(a), key(b)) })
 	var errs []error

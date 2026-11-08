@@ -51,12 +51,12 @@ func renderUnbound(trustAnchor, zoneFile string, in map[string]any, out string) 
 	for _, r := range d.Resolvers {
 		// The VRF names a file and a control socket. A VRF document's name holds the characters
 		// Build takes alone.
-		vrf := derive.VRFOf(r.Spec.VRF)
-		if _, err := derive.MustGet(declared, "VRF", vrf); err != nil {
+		vrf, err := derive.VRFName(r.Spec.VRF)
+		if err != nil {
 			return derive.Within("Resolver "+r.Name, err)
 		}
-		if !derive.PlainInterface.MatchString(vrf) {
-			return derive.InternalErrorf("Resolver %s: the VRF %q is no VRF's name", r.Name, vrf)
+		if _, err := derive.MustGet(declared, "VRF", vrf); err != nil {
+			return derive.Within("Resolver "+r.Name, err)
 		}
 		text, err := unboundConfig(r.Name, r.Spec, vrf, trustAnchor, zoneFile)
 		if err != nil {

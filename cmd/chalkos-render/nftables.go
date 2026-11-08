@@ -85,12 +85,11 @@ func bgpOpenings(peers []derive.Named[derive.PeerSpec]) ([]opening, error) {
 		default:
 			o.interfaces = s.Interfaces
 		}
-		if vrf := derive.VRFOf(s.VRF); vrf != derive.DefaultVRF {
-			if !derive.PlainInterface.MatchString(vrf) {
-				return nil, derive.InternalErrorf("%s: the VRF %q is no VRF's name", what, vrf)
-			}
-			o.vrf = vrf
+		vrf, err := derive.VRFName(s.VRF)
+		if err != nil {
+			return nil, derive.Within(what, err)
 		}
+		o.vrf = derive.VRFDevice(vrf)
 		// An opening without interfaces and sources would accept the port from anywhere.
 		if s.Address == nil {
 			if err := checkInterfaces(what, o.interfaces); err != nil {
@@ -124,12 +123,11 @@ func resolverOpenings(resolvers []derive.Named[derive.ResolverSpec]) ([]opening,
 		}
 		o := opening{comment: what, ports: []derive.PortRange{"53"}}
 		// The input hook sees a packet from a VRF's link with the VRF's device as iifname.
-		if vrf := derive.VRFOf(r.Spec.VRF); vrf != derive.DefaultVRF {
-			if !derive.PlainInterface.MatchString(vrf) {
-				return nil, derive.InternalErrorf("%s: the VRF %q is no VRF's name", what, vrf)
-			}
-			o.vrf = vrf
+		vrf, err := derive.VRFName(r.Spec.VRF)
+		if err != nil {
+			return nil, derive.Within(what, err)
 		}
+		o.vrf = derive.VRFDevice(vrf)
 		for _, a := range listen {
 			o.destinations = append(o.destinations, netip.PrefixFrom(a, a.BitLen()))
 		}
@@ -975,14 +973,14 @@ func dhcpOpenings(d derive.Model) ([]opening, error) {
 			continue
 		}
 		out = append(out, opening{comment: "DHCPSubnet " + s.Name, protocol: "udp", ports: []derive.PortRange{"547"},
-			interfaces: s.Links, vrf: vrfOpening(s.VRF), sources: []netip.Prefix{linkLocal}})
+			interfaces: s.Links, vrf: derive.VRFDevice(s.VRF), sources: []netip.Prefix{linkLocal}})
 	}
 	for _, r := range relays {
 		var links []string
 		for _, l := range r.Links {
 			links = append(links, l.Link)
 		}
-		o := opening{comment: "DHCPRelay " + r.Name, protocol: "udp", interfaces: links, vrf: vrfOpening(r.VRF)}
+		o := opening{comment: "DHCPRelay " + r.Name, protocol: "udp", interfaces: links, vrf: derive.VRFDevice(r.VRF)}
 		if len(r.Servers[false]) > 0 {
 			v4 := o
 			v4.ports, v4.sources = []derive.PortRange{"67"}, []netip.Prefix{anyIPv4}
@@ -995,14 +993,6 @@ func dhcpOpenings(d derive.Model) ([]opening, error) {
 		}
 	}
 	return out, nil
-}
-
-// vrfOpening is the VRF of an opening: "" for the default VRF.
-func vrfOpening(vrf string) string {
-	if vrf == derive.DefaultVRF {
-		return ""
-	}
-	return vrf
 }
 
 // poolSet is the anonymous nftables set of the prefixes of a NAT64's explicit pool.

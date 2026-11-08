@@ -15,10 +15,10 @@ import (
 // frrFile is the file renderFRR writes.
 const frrFile = "frr.conf"
 
-// The names frr.conf gives what the documents declare, each kind with a prefix of its own, so a
-// peer group named after a BGPPeer never takes the name of an interface or of another list.
+// The names frr.conf gives what the documents declare, each kind with a prefix of its own, as
+// derive.PeerGroupPrefix starts a BGPPeer's peer group, so a peer group named after a BGPPeer
+// never takes the name of an interface or of another list.
 const (
-	peerGroupPrefix  = "peer-"
 	prefixListPrefix = "pl-"
 	communityPrefix  = "cl-"
 	policyPrefix     = "rp-"
@@ -249,7 +249,7 @@ func newFRR(d derive.Model) (*frr, error) {
 		c.instances = append(c.instances, in)
 	}
 	// FRR takes the default VRF's instance first.
-	slices.SortStableFunc(c.instances, func(a, b *instance) int { return strings.Compare(vrfOrder(a.vrf), vrfOrder(b.vrf)) })
+	slices.SortStableFunc(c.instances, func(a, b *instance) int { return strings.Compare(derive.VRFDevice(a.vrf), derive.VRFDevice(b.vrf)) })
 	for _, l := range d.Prefixes {
 		c.families[l.Name] = l.Spec.Family
 		c.entries[l.Name] = prefixEntries(l.Spec)
@@ -302,8 +302,8 @@ func newFRR(d derive.Model) (*frr, error) {
 		}
 	}
 	for _, p := range d.Peers {
-		if peer, ok := sessions[peerGroupPrefix+p.Name]; ok {
-			return nil, refusals.Errorf("BGPPeer", p.Name, "metadata.name", "BGPPeer %s names %s%s, the peer group of BGPPeer %s; rename the document or the interface", peer, peerGroupPrefix, p.Name, p.Name)
+		if peer, ok := sessions[derive.PeerGroupPrefix+p.Name]; ok {
+			return nil, refusals.Errorf("BGPPeer", p.Name, "metadata.name", "BGPPeer %s names %s%s, the peer group of BGPPeer %s; rename the document or the interface", peer, derive.PeerGroupPrefix, p.Name, p.Name)
 		}
 	}
 	if err := c.prepends(); err != nil {
@@ -782,7 +782,7 @@ func (c *frr) router(b *strings.Builder, in *instance) {
 		b.WriteString(" bgp graceful-restart\n")
 	}
 	for _, p := range in.peers {
-		group := peerGroupPrefix + p.Name
+		group := derive.PeerGroupPrefix + p.Name
 		s := p.Spec
 		fmt.Fprintf(b, " neighbor %s peer-group\n neighbor %s remote-as %s\n", group, group, s.RemoteAS)
 		if s.Description != nil {
@@ -834,7 +834,7 @@ func (c *frr) router(b *strings.Builder, in *instance) {
 			if f == nil {
 				continue
 			}
-			group := peerGroupPrefix + p.Name
+			group := derive.PeerGroupPrefix + p.Name
 			fmt.Fprintf(b, "  neighbor %s activate\n", group)
 			switch {
 			case f.DefaultOriginate && f.DefaultOriginateWhen != nil:
