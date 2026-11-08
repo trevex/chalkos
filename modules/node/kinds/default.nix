@@ -109,6 +109,7 @@ let
     schemas = schemas;
     "facts.json" = config.system.build.chalkosFacts;
     "effects.json" = config.system.build.chalkosEffects;
+    "services.json" = config.system.build.chalkosServices;
     "outputs.json" = config.system.build.chalkosOutputs;
     "examples.json" = examplesJSON;
     "validators.json" = config.system.build.chalkosValidators;

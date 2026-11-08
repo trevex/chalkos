@@ -99,6 +99,16 @@ func TestCheckRefusesADiagnostic(t *testing.T) {
 	}
 }
 
+// A services.json chalkd could not read fails the check, as it would stop chalkd from starting.
+func TestCheckRefusesServices(t *testing.T) {
+	f := files(greeting(fieldRule, kindRule), lock, effect(`false`, `false`))
+	f["services.json"] = `{"greeter.service": {"kinds": "Greeting"}}`
+	err := check(image(t, f), &bytes.Buffer{})
+	if err == nil || !strings.Contains(err.Error(), "services.json") {
+		t.Errorf("err = %v, want one naming services.json", err)
+	}
+}
+
 // storeShell is the shell of the image's store that runs the test's scripts, as the renderer of
 // an image runs from its store.
 func storeShell(t *testing.T) string {

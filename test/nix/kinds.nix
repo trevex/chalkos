@@ -2136,6 +2136,33 @@ lib.runTests {
     expr = lib.hasInfix "chalkos-rules-image" withGrant.system.build.chalkosRulesCheck.buildCommand;
     expected = true;
   };
+  # The rules check reads each file of the contract a node loads from /etc/chalkos, as the node
+  # reads it.
+  testRulesImageHoldsTheContract = {
+    expr =
+      let
+        build = withGrant.system.build;
+        inherit (build.chalkosRulesImage) entries;
+      in
+      {
+        files = lib.attrNames entries;
+        services = entries."services.json".text == withGrant.environment.etc."chalkos/services.json".text;
+      };
+    expected = {
+      files = [
+        "diagnostics.json"
+        "effects.json"
+        "examples.json"
+        "facts.json"
+        "outputs.json"
+        "schemas"
+        "services.json"
+        "units"
+        "validators.json"
+      ];
+      services = true;
+    };
+  };
   testGrantWithServiceDoesNotWarn = {
     expr = withGrant.warnings;
     expected = [ ];
