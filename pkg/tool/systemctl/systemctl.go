@@ -69,7 +69,7 @@ func FailedUnits(ctx context.Context, r tool.Runner) ([]string, error) {
 }
 
 // Units returns the names of the units systemd holds whose names match one of patterns, such as
-// "unbound@*.service", whether they are active or not.
+// "getty@*.service", whether they are active or not.
 func Units(ctx context.Context, r tool.Runner, patterns ...string) ([]string, error) {
 	out, err := tool.Run(ctx, r, "systemctl", append([]string{"list-units", "--all", "--plain", "--no-legend", "--no-pager"}, patterns...)...)
 	if err != nil {
