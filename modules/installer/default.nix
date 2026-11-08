@@ -16,14 +16,9 @@ let
   image = config.system.build.image;
   losetup = "${config.boot.initrd.systemd.package.util-linux}/bin/losetup";
   raw = "${image}/${config.image.fileName}";
-  # GPT partition types of the image's partitions, by the names repart reports.
-  gptTypes = {
-    esp = "C12A7328-F81F-11D2-BA4B-00A0C93EC93B";
-    usr-x86-64 = "8484680C-9521-48C6-9C11-B0720656F69E";
-    usr-x86-64-verity = "77FF5F63-E7B6-4633-ACF4-1565B864C0E6";
-    usr-arm64 = "B0E01050-EE5F-4390-949A-9101B17104E9";
-    usr-arm64-verity = "6E11A4E7-FBCA-4DED-B9E9-E1A512BB664E";
-  };
+  # GPT partition types of the image's partitions, by the names repart reports, in upper case as
+  # sfdisk prints them. pkg/arch tests the file against its table of architectures.
+  gptTypes = lib.importJSON ../../pkg/arch/gpt-types.json;
   iso =
     pkgs.runCommand "${config.image.repart.name}-iso"
       {

@@ -2,6 +2,10 @@ package arch
 
 import (
 	"debug/pe"
+	"encoding/json"
+	"maps"
+	"os"
+	"strings"
 	"testing"
 )
 
@@ -45,5 +49,30 @@ func TestLookups(t *testing.T) {
 		if _, _, ok := ByStoreType(typ); ok {
 			t.Errorf("ByStoreType found %s", typ)
 		}
+	}
+}
+
+// TestGPTTypesFile checks that gpt-types.json, which the installer's Nix module reads, names the
+// ESP and the store partition types of every architecture in All, as repart names them, with the
+// table's GUIDs, and nothing else.
+func TestGPTTypesFile(t *testing.T) {
+	data, err := os.ReadFile("gpt-types.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got map[string]string
+	if err := json.Unmarshal(data, &got); err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]string{"esp": "c12a7328-f81f-11d2-ba4b-00a0c93ec93b"}
+	for _, a := range All {
+		want["usr-"+a.Name] = a.Usr
+		want["usr-"+a.Name+"-verity"] = a.UsrVerity
+	}
+	for name, guid := range got {
+		got[name] = strings.ToLower(guid)
+	}
+	if !maps.Equal(got, want) {
+		t.Errorf("gpt-types.json = %v, want %v", got, want)
 	}
 }
