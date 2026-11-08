@@ -11,6 +11,7 @@ import (
 
 	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/kubernetes/translate"
+	"github.com/trevex/chalkos/pkg/refusals"
 	"github.com/trevex/chalkos/pkg/schema"
 )
 
@@ -195,7 +196,7 @@ func TestSpecRules(t *testing.T) {
 	if got := messages(failures); !slices.Equal(got, want) {
 		t.Errorf("failures:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
 	}
-	if failures[1].Takes != Reset || !slices.Equal(failures[1].Path, []string{"spec"}) {
+	if failures[1].Takes != Reset || failures[1].Path != "spec" {
 		t.Errorf("failure = %+v, want spec's rule that takes a reset", failures[1])
 	}
 	overDocuments := `documents.all(n, cel.bind(s, documents[n].spec, ` + strings.ReplaceAll(ranges, "self.", "s.") + `))`
@@ -446,9 +447,9 @@ func TestCompileErrors(t *testing.T) {
 
 // A refusal names the most a change takes first, and each rule's message.
 func TestRefusal(t *testing.T) {
-	reset := Failure{Kind: "Volume", Takes: Reset, Message: "Volume extra: format xfs instead of ext4; reset it"}
-	reinstall := Failure{Kind: "Volume", Takes: Reinstall, Message: "Volume data: removed; only a reinstall removes it"}
-	refuse := Failure{Kind: "Cluster", Document: "default", Path: []string{"spec", "ipFamilies"}, Takes: Refuse, Message: "fixed"}
+	reset := Failure{Refusal: refusals.Refusal{Kind: "Volume", Message: "Volume extra: format xfs instead of ext4; reset it"}, Takes: Reset}
+	reinstall := Failure{Refusal: refusals.Refusal{Kind: "Volume", Message: "Volume data: removed; only a reinstall removes it"}, Takes: Reinstall}
+	refuse := Failure{Refusal: refusals.Refusal{Kind: "Cluster", Name: "default", Path: "spec.ipFamilies", Message: "fixed"}, Takes: Refuse}
 	for _, tc := range []struct {
 		failures []Failure
 		want     string

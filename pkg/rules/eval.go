@@ -36,20 +36,12 @@ type Input struct {
 	Facts Facts
 }
 
-// Failure is a rule the delivered config does not meet.
+// Failure is a rule the delivered config does not meet: the refusal it makes and what the change
+// takes. A field's rule refuses its field, by its document's Name and its Path; a kind's rule
+// names neither, and its message says what it is about.
 type Failure struct {
-	Kind  string
+	refusals.Refusal
 	Takes Takes
-	// Document and Path name the field of a field's rule; both are empty for a kind's rule.
-	Document string
-	Path     []string
-	Message  string
-}
-
-// String is the failure as a refusal of the field a field's rule is about says it, as
-// refusals.Refusal does; a kind's rule names what it is about in its message alone.
-func (f Failure) String() string {
-	return refusals.Refusal{Kind: f.Kind, Name: f.Document, Path: strings.Join(f.Path, "."), Message: f.Message}.String()
 }
 
 // FactError is a fact a rule reads that could not be loaded; it refuses the delivery.
@@ -161,9 +153,9 @@ func (p *Program) evaluate(vars map[string]any, cfg, oldCfg, node map[string]any
 	if ok {
 		return nil, nil
 	}
-	f := Failure{Kind: p.Kind.Kind, Takes: p.Takes, Message: p.Rule.Message}
+	f := Failure{Refusal: refusals.Refusal{Kind: p.Kind.Kind, Message: p.Rule.Message}, Takes: p.Takes}
 	if doc != "" {
-		f.Document, f.Path = doc, p.Path
+		f.Name, f.Path = doc, strings.Join(p.Path, ".")
 	}
 	if p.message != nil {
 		msg, _, err := p.message.Eval(vars)
