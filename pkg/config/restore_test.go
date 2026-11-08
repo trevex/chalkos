@@ -83,6 +83,61 @@ func TestFromJSON(t *testing.T) {
 	}
 }
 
+// Restore takes only the data and stringData of an embedded Secret object from the delivered
+// document, so the defaults a check filled in next to the object, in the same spec field, stay; it
+// refuses a document that lost the place of a delivered Secret object.
+func TestRestoreEmbeddedKeepsSiblingDefaults(t *testing.T) {
+	delivered := parseDocs(t, `
+apiVersion: other.example.org/v1alpha1
+kind: Chart
+metadata: {name: c}
+spec:
+  values:
+    deep: {secret: {apiVersion: v1, kind: Secret, metadata: {name: s}, data: {k: dg==}, stringData: {p: plain}}}
+    list: [{apiVersion: v1, kind: Secret, metadata: {name: l}, data: {k: bA==}}]
+`)
+	hashed := Redact(delivered)[0].Object
+	checked := Redact(delivered)
+	values := maps.Clone(hashed["spec"].(map[string]any)["values"].(map[string]any))
+	values["replicas"] = json.Number("1")
+	deep := maps.Clone(values["deep"].(map[string]any))
+	deep["mode"] = "default"
+	values["deep"] = deep
+	checked[0].Object = map[string]any{"apiVersion": hashed["apiVersion"], "kind": hashed["kind"], "metadata": hashed["metadata"],
+		"spec": map[string]any{"values": values}}
+	got, err := Restore(checked, delivered)
+	if err != nil {
+		t.Fatal(err)
+	}
+	gotValues := got[0].Object["spec"].(map[string]any)["values"].(map[string]any)
+	wantValues := delivered[0].Object["spec"].(map[string]any)["values"].(map[string]any)
+	gotDeep := gotValues["deep"].(map[string]any)
+	if !reflect.DeepEqual(gotDeep["secret"], wantValues["deep"].(map[string]any)["secret"]) || !reflect.DeepEqual(gotValues["list"], wantValues["list"]) ||
+		gotValues["replicas"] != json.Number("1") || gotDeep["mode"] != "default" {
+		t.Errorf("restored %v", gotValues)
+	}
+
+	for name, change := range map[string]func(v map[string]any){
+		"the object gone":    func(v map[string]any) { delete(v["deep"].(map[string]any), "secret") },
+		"the list shortened": func(v map[string]any) { v["list"] = []any{} },
+		"no Secret anymore": func(v map[string]any) {
+			s := maps.Clone(v["deep"].(map[string]any)["secret"].(map[string]any))
+			s["kind"] = "ConfigMap"
+			v["deep"].(map[string]any)["secret"] = s
+		},
+	} {
+		v := maps.Clone(values)
+		v["deep"] = maps.Clone(deep)
+		change(v)
+		lost := []Document{checked[0]}
+		lost[0].Object = maps.Clone(checked[0].Object)
+		lost[0].Object["spec"] = map[string]any{"values": v}
+		if _, err := Restore(lost, delivered); err == nil || err.Error() != `Chart "c" holds other secret values than were delivered` {
+			t.Errorf("%s: err = %v", name, err)
+		}
+	}
+}
+
 // Restore puts the delivered secret values in place of the hashes of documents a check gave back
 // with their defaults, and refuses documents that are not the delivered ones: another secret
 // value, a document that was not delivered, one twice and one missing.
