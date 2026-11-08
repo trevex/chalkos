@@ -1,7 +1,6 @@
 package router
 
 import (
-	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -14,6 +13,7 @@ import (
 
 	"github.com/trevex/chalkos/pkg/chalkd/layer"
 	routing "github.com/trevex/chalkos/pkg/router"
+	"github.com/trevex/chalkos/pkg/router/units"
 	"github.com/trevex/chalkos/pkg/tool"
 )
 
@@ -41,21 +41,14 @@ func (p *Plugin) Commands() map[string]layer.Command {
 // standard error and left to the next run, as the next record or renewal starts one: a unit that
 // failed for a link that is down at boot would fail the boot's health check.
 func (r *side) dhcp6Routes(ctx context.Context, now time.Time) error {
-	dir := r.KeaDir
 	var pools []routing.PDPool
 	// Without the output kea, as in maintenance mode, the run changes nothing: the routes end
 	// with their leases.
-	if _, err := os.Stat(dir); errors.Is(err, fs.ErrNotExist) {
+	if _, err := os.Stat(r.KeaDir); errors.Is(err, fs.ErrNotExist) {
 		return nil
 	}
-	files, _ := filepath.Glob(filepath.Join(dir, "kea-dhcp6*.json"))
-	for _, f := range files {
-		vrf := strings.TrimPrefix(strings.TrimSuffix(filepath.Base(f), ".json"), "kea-dhcp6")
-		vrf = cmp.Or(strings.TrimPrefix(vrf, "-"), routing.DefaultVRF)
-		// Only a VRF's name reaches ip's command line.
-		if vrf != routing.DefaultVRF && !routing.ShortName.MatchString(vrf) {
-			continue
-		}
+	for _, vrf := range renderedVRFs(r.KeaDir, units.Kea6) {
+		f := filepath.Join(r.KeaDir, units.Kea6.File(vrf))
 		data, err := os.ReadFile(f)
 		if errors.Is(err, fs.ErrNotExist) {
 			continue

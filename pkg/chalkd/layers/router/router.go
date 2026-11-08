@@ -27,6 +27,7 @@ import (
 	"github.com/trevex/chalkos/pkg/outputs"
 	"github.com/trevex/chalkos/pkg/pki"
 	routing "github.com/trevex/chalkos/pkg/router"
+	"github.com/trevex/chalkos/pkg/router/units"
 	"github.com/trevex/chalkos/pkg/tool"
 	"github.com/trevex/chalkos/pkg/tool/systemctl"
 )
@@ -333,43 +334,78 @@ func (r *side) resolver(ctx context.Context) *routerv1.ResolverStatus {
 	return &routerv1.ResolverStatus{Running: true}
 }
 
+// renderedVRFs are the VRFs of the configs of the service svc that an output rendered into dir,
+// the default VRF first, then by name. A file of no VRF's name is left out: only a VRF's name
+// reaches a command line.
+func renderedVRFs(dir string, svc units.Service) []string {
+	entries, _ := os.ReadDir(dir)
+	var vrfs []string
+	for _, e := range entries {
+		if vrf, ok := svc.VRFOfFile(e.Name()); ok && routing.ShortName.MatchString(vrf) {
+			vrfs = append(vrfs, vrf)
+		}
+	}
+	slices.SortFunc(vrfs, compareVRFs)
+	return vrfs
+}
+
+// compareVRFs orders the default VRF first, then the VRFs by name.
+func compareVRFs(a, b string) int {
+	switch {
+	case a == b:
+		return 0
+	case a == routing.DefaultVRF:
+		return -1
+	case b == routing.DefaultVRF:
+		return 1
+	}
+	return strings.Compare(a, b)
+}
+
+// unitRunning reports whether the unit of the instance of the service svc of the VRF vrf is
+// active and, for a VRF's, bound to the VRF's device, or says why not, asked within budget as ask
+// asks.
+func (r *side) unitRunning(ctx, budget context.Context, svc units.Service, vrf string) (running bool, problem string) {
+	unit := svc.Unit(vrf)
+	state, err := r.isActive(ctx, budget, unit)
+	switch {
+	case err != nil && state != "":
+		return false, unit + " is " + state
+	case err != nil:
+		return false, err.Error()
+	}
+	if record := svc.IndexRecord(vrf); record != "" {
+		if stale := r.staleDevice(vrf, filepath.Join(r.RunDir, record)); stale != "" {
+			return false, unit + " is active, but " + stale
+		}
+	}
+	return true, ""
+}
+
 // vrfResolvers are the state of the unit unbound@<vrf> of each VRF whose config the output unbound
 // rendered, sorted by VRF, all asked within one timeout. An active unit whose sockets are bound to
 // no device of its VRF does not count as running.
 func (r *side) vrfResolvers(ctx context.Context) []*routerv1.ResolverStatus {
-	files, _ := filepath.Glob(filepath.Join(r.ResolverDir, "unbound-*.conf"))
 	budget, cancel := context.WithTimeout(ctx, askTimeout)
 	defer cancel()
 	var resolvers []*routerv1.ResolverStatus
-	for _, f := range files {
-		vrf := strings.TrimSuffix(strings.TrimPrefix(filepath.Base(f), "unbound-"), ".conf")
-		// Only a VRF's name reaches systemctl's command line.
-		if !routing.ShortName.MatchString(vrf) {
+	for _, vrf := range renderedVRFs(r.ResolverDir, units.Unbound) {
+		// resolver asks the default VRF's.
+		if vrf == routing.DefaultVRF {
 			continue
 		}
-		unit := resolverUnit(vrf)
-		state, err := r.isActive(ctx, budget, unit)
-		s := &routerv1.ResolverStatus{Vrf: vrf, Running: err == nil}
-		switch {
-		case err == nil:
-			if stale := r.staleDevice(vrf, filepath.Join(r.RunDir, "unbound-"+vrf, "unbound-"+vrf+".ifindex")); stale != "" {
-				s.Running, s.Error = false, unit+" is active, but "+stale
-			}
-		case state != "":
-			s.Error = unit + " is " + state
-		default:
-			s.Error = err.Error()
-		}
+		s := &routerv1.ResolverStatus{Vrf: vrf}
+		s.Running, s.Error = r.unitRunning(ctx, budget, units.Unbound, vrf)
 		resolvers = append(resolvers, s)
 	}
 	return resolvers
 }
 
-// staleDevice says why a running service of the VRF vrf, a resolver or a DHCP server, serves no
-// device of the VRF, or is "" when its sockets are bound to the VRF's device: systemd binds them
-// to the index the device had when the service started, which the service records in the file
-// record, and a VRF made anew has a new one. chalkos-resolvers and chalkos-dhcp restart such a
-// service, after a delivery that made the VRF anew.
+// staleDevice says why a running service of the VRF vrf, a resolver, a DHCP server or a relay,
+// serves no device of the VRF, or is "" when its sockets are bound to the VRF's device: systemd
+// binds them to the index the device had when the service started, which the service records in
+// the file record, and a VRF made anew has a new one. chalkos-resolvers, chalkos-dhcp and
+// chalkos-dhcp-relays restart such a service, after a delivery that made the VRF anew.
 func (r *side) staleDevice(vrf, record string) string {
 	index := func(path string) string {
 		data, err := os.ReadFile(path)
@@ -391,47 +427,24 @@ func (r *side) staleDevice(vrf, record string) string {
 	return ""
 }
 
-// resolverUnit is the unit of the resolver of the VRF vrf, a name that matched router.ShortName,
-// whose dashes systemd-escape escapes.
-func resolverUnit(vrf string) string {
-	return "unbound@" + strings.ReplaceAll(vrf, "-", `\x2d`) + ".service"
-}
-
-// keaServerFile is a rendered config of the output kea: its server's VRF and family, dhcp4 or
-// dhcp6, and its unit.
-type keaServerFile struct {
-	path, vrf, family, unit string
+// keaServer is a DHCP server whose config the output kea rendered: its VRF, its family, dhcp4 or
+// dhcp6, and its family's service.
+type keaServer struct {
+	vrf, family string
+	svc         units.Service
 }
 
 // keaServers are the servers whose configs the output kea rendered into dir, the default VRF's
-// first, then by VRF, DHCPv4's before DHCPv6's; a file of no VRF's name is left out.
-func keaServers(dir string) []keaServerFile {
-	var out []keaServerFile
-	for _, family := range []string{"dhcp4", "dhcp6"} {
-		files, _ := filepath.Glob(filepath.Join(dir, "kea-"+family+"*.json"))
-		for _, f := range files {
-			vrf := strings.TrimPrefix(strings.TrimSuffix(filepath.Base(f), ".json"), "kea-"+family)
-			unit := "kea-" + family + ".service"
-			switch {
-			case vrf == "":
-				vrf = routing.DefaultVRF
-			case strings.HasPrefix(vrf, "-") && routing.ShortName.MatchString(vrf[1:]):
-				// Only a VRF's name reaches systemctl's command line.
-				vrf = vrf[1:]
-				unit = "kea-" + family + "@" + strings.ReplaceAll(vrf, "-", `\x2d`) + ".service"
-			default:
-				continue
-			}
-			out = append(out, keaServerFile{path: f, vrf: vrf, family: family, unit: unit})
+// first, then by VRF, DHCPv4's before DHCPv6's.
+func keaServers(dir string) []keaServer {
+	var out []keaServer
+	for _, s := range []keaServer{{family: "dhcp4", svc: units.Kea4}, {family: "dhcp6", svc: units.Kea6}} {
+		for _, vrf := range renderedVRFs(dir, s.svc) {
+			s.vrf = vrf
+			out = append(out, s)
 		}
 	}
-	key := func(f keaServerFile) string {
-		if f.vrf == routing.DefaultVRF {
-			return "0 " + f.family
-		}
-		return "1 " + f.vrf + " " + f.family
-	}
-	slices.SortFunc(out, func(a, b keaServerFile) int { return cmp.Compare(key(a), key(b)) })
+	slices.SortStableFunc(out, func(a, b keaServer) int { return compareVRFs(a.vrf, b.vrf) })
 	return out
 }
 
@@ -439,7 +452,6 @@ func keaServers(dir string) []keaServerFile {
 // VRF's first, then by VRF, DHCPv4's before DHCPv6's, all asked within one timeout: whether its
 // unit is active, bound to its VRF's device, and its subnets' leases, which Kea counts.
 func (r *side) dhcpServers(ctx context.Context) []*routerv1.DHCPServerStatus {
-	runDir := filepath.Join(r.RunDir, "kea")
 	budget, cancel := context.WithTimeout(ctx, askTimeout)
 	defer cancel()
 	var servers []*routerv1.DHCPServerStatus
@@ -450,22 +462,11 @@ func (r *side) dhcpServers(ctx context.Context) []*routerv1.DHCPServerStatus {
 		}
 		s := &routerv1.DHCPServerStatus{Vrf: f.vrf, Family: family}
 		servers = append(servers, s)
-		state, err := r.isActive(ctx, budget, f.unit)
-		switch {
-		case err != nil && state != "":
-			s.Error = f.unit + " is " + state
-			continue
-		case err != nil:
-			s.Error = err.Error()
+		if running, problem := r.unitRunning(ctx, budget, f.svc, f.vrf); !running {
+			s.Error = problem
 			continue
 		}
-		if f.vrf != routing.DefaultVRF {
-			if stale := r.staleDevice(f.vrf, filepath.Join(runDir, "kea-"+f.family+"-"+f.vrf+".ifindex")); stale != "" {
-				s.Error = f.unit + " is active, but " + stale
-				continue
-			}
-		}
-		data, err := os.ReadFile(f.path)
+		data, err := os.ReadFile(filepath.Join(r.KeaDir, f.svc.File(f.vrf)))
 		var subnets []routing.KeaSubnet
 		if err == nil {
 			subnets, err = routing.ParseKeaSubnets(data)
@@ -474,7 +475,7 @@ func (r *side) dhcpServers(ctx context.Context) []*routerv1.DHCPServerStatus {
 			s.Error = err.Error()
 			continue
 		}
-		args, err := routing.KeaAsk(budget, routing.KeaSocket(runDir, f.family, f.vrf), "statistic-get-all")
+		args, err := routing.KeaAsk(budget, routing.KeaSocket(filepath.Join(r.RunDir, f.svc.RuntimeDir(f.vrf)), f.family, f.vrf), "statistic-get-all")
 		var leases map[uint32]routing.KeaLeases
 		if err == nil {
 			leases, err = routing.ParseKeaStatistics(args)
@@ -496,41 +497,13 @@ func (r *side) dhcpServers(ctx context.Context) []*routerv1.DHCPServerStatus {
 // rendered, the default VRF's first, then by VRF: whether its unit is active and bound to its
 // VRF's device.
 func (r *side) dhcpRelays(ctx context.Context) []*routerv1.DHCPRelayStatus {
-	dir := r.RelayDir
-	files, _ := filepath.Glob(filepath.Join(dir, "dnsmasq-relay-*.conf"))
-	if _, err := os.Stat(filepath.Join(dir, "dnsmasq-relay.conf")); err == nil {
-		files = append([]string{filepath.Join(dir, "dnsmasq-relay.conf")}, files...)
-	}
 	budget, cancel := context.WithTimeout(ctx, askTimeout)
 	defer cancel()
 	var relays []*routerv1.DHCPRelayStatus
-	for _, f := range files {
-		vrf, unit := routing.DefaultVRF, "dnsmasq-relay.service"
-		if base := filepath.Base(f); base != "dnsmasq-relay.conf" {
-			vrf = strings.TrimSuffix(strings.TrimPrefix(base, "dnsmasq-relay-"), ".conf")
-			// Only a VRF's name reaches systemctl's command line.
-			if !routing.ShortName.MatchString(vrf) {
-				continue
-			}
-			unit = "dnsmasq-relay@" + strings.ReplaceAll(vrf, "-", `\x2d`) + ".service"
-		}
+	for _, vrf := range renderedVRFs(r.RelayDir, units.Relay) {
 		s := &routerv1.DHCPRelayStatus{Vrf: vrf}
+		s.Running, s.Error = r.unitRunning(ctx, budget, units.Relay, vrf)
 		relays = append(relays, s)
-		state, err := r.isActive(ctx, budget, unit)
-		switch {
-		case err != nil && state != "":
-			s.Error = unit + " is " + state
-		case err != nil:
-			s.Error = err.Error()
-		case vrf != routing.DefaultVRF:
-			if stale := r.staleDevice(vrf, filepath.Join(r.RunDir, "dnsmasq-relay", "dnsmasq-relay-"+vrf+".ifindex")); stale != "" {
-				s.Error = unit + " is active, but " + stale
-				continue
-			}
-			s.Running = true
-		default:
-			s.Running = true
-		}
 	}
 	return relays
 }

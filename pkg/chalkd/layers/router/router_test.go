@@ -715,3 +715,17 @@ func TestRouterDHCPRelayStatus(t *testing.T) {
 		t.Errorf("calls = %q", r.Calls)
 	}
 }
+
+// The VRFs of a service's rendered configs are the default VRF's first, then by name, and leave
+// out the files of no VRF's name and those of other services.
+func TestRenderedVRFs(t *testing.T) {
+	dir := t.TempDir()
+	for _, f := range []string{"dnsmasq-relay-a-b.conf", "dnsmasq-relay.conf", "dnsmasq-relay-a.conf", "dnsmasq-relay-Bad_Name.conf", "dnsmasq-relay-default.conf", "dnsmasq-relayx.conf", "unbound-c.conf"} {
+		if err := os.WriteFile(filepath.Join(dir, f), nil, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got := renderedVRFs(dir, units.Relay); !slices.Equal(got, []string{"default", "a", "a-b"}) {
+		t.Errorf("renderedVRFs = %q", got)
+	}
+}
