@@ -135,12 +135,8 @@ func apart(a, b Subnet) error {
 // no pool or reservation holds, and checks an IPv6 subnet's delegated prefixes and router
 // advertisements.
 func (d Model) serveSubnet(units []Unit, devices []string, s Named[DHCPSubnetSpec]) (Subnet, error) {
-	sub := Subnet{Name: s.Name, Spec: s.Spec}
-	p, err := netip.ParsePrefix(s.Spec.Subnet)
-	if err != nil {
-		return sub, InternalErrorf("the subnet %q is no address range", s.Spec.Subnet)
-	}
-	sub.Prefix = p.Masked()
+	sub := Subnet{Name: s.Name, Spec: s.Spec, Prefix: s.Spec.Subnet.Masked()}
+	var err error
 	if sub.Links, sub.VRF, err = d.servedLinks(devices, "DHCPSubnet", s.Name, s.Spec.Interfaces, "a subnet is served in one VRF"); err != nil {
 		return sub, err
 	}
@@ -158,11 +154,10 @@ func (d Model) serveSubnet(units []Unit, devices []string, s Named[DHCPSubnetSpe
 	if pd := s.Spec.PrefixDelegation; pd != nil {
 		// delegableWithin shifts by the bits a delegated prefix has beyond the range's, which a
 		// length no longer than the range's makes negative, a shift Go panics on.
-		r, err := netip.ParsePrefix(pd.Prefix)
-		if err != nil || pd.Length <= r.Bits() {
-			return sub, InternalErrorf("prefixDelegation's prefix %q is no range shorter than its length %d", pd.Prefix, pd.Length)
+		if pd.Length <= pd.Prefix.Bits() {
+			return sub, InternalErrorf("prefixDelegation's prefix %s is no range shorter than its length %d", pd.Prefix, pd.Length)
 		}
-		sub.Delegated, sub.Length = r.Masked(), pd.Length
+		sub.Delegated, sub.Length = pd.Prefix.Masked(), pd.Length
 		// A route of a delegated prefix would take the router's own address on a link of the VRF
 		// away from the link.
 		for _, a := range d.Addresses {
@@ -273,15 +268,11 @@ func (d Model) ownAddresses(units []Unit, sub Subnet, why string) ([]netip.Addr,
 // reservation that holds one of the router's own addresses own on the subnet's links, which Kea
 // would lease to a client; what says what they are. The rules have kept the pools and
 // reservations inside the subnet and apart from each other and from the gateway and the DNS and
-// boot servers. It guards, with an internal error, an address that does not parse.
+// boot servers.
 func ownApart(s Named[DHCPSubnetSpec], own []netip.Addr, what string) ([][2]netip.Addr, error) {
 	var pools [][2]netip.Addr
 	for i, p := range s.Spec.Pools {
-		first, err1 := netip.ParseAddr(p.First)
-		last, err2 := netip.ParseAddr(p.Last)
-		if err1 != nil || err2 != nil {
-			return nil, InternalErrorf("the pool %q-%q is no range of addresses", p.First, p.Last)
-		}
+		first, last := p.First, p.Last
 		for _, o := range own {
 			if !o.Less(first) && !last.Less(o) {
 				return nil, refusals.Errorf("DHCPSubnet", s.Name, fmt.Sprintf("spec.pools[%d]", i), "the pool %s-%s holds %s, %s", first, last, o, what)
@@ -290,11 +281,7 @@ func ownApart(s Named[DHCPSubnetSpec], own []netip.Addr, what string) ([][2]neti
 		pools = append(pools, [2]netip.Addr{first, last})
 	}
 	for i, r := range s.Spec.Reservations {
-		a, err := netip.ParseAddr(r.Address)
-		if err != nil {
-			return nil, InternalErrorf("the reservation of %s, %q, is no address", r.MAC, r.Address)
-		}
-		if slices.Contains(own, a) {
+		if a := r.Address; slices.Contains(own, a) {
 			return nil, refusals.Errorf("DHCPSubnet", s.Name, fmt.Sprintf("spec.reservations[%d].address", i), "the reservation of %s, %s, is %s", r.MAC, a, what)
 		}
 	}
@@ -331,9 +318,8 @@ func (d Model) delegatesNoRoute(sub Subnet) error {
 		}
 	}
 	for _, n := range d.NAT64 {
-		vrf := VRFOf(n.Spec.VRF)
-		p, err := netip.ParsePrefix(n.Spec.Prefix)
-		if err != nil || vrf != sub.VRF {
+		vrf, p := VRFOf(n.Spec.VRF), n.Spec.Prefix
+		if vrf != sub.VRF {
 			continue
 		}
 		if p.Bits() >= sub.Delegated.Bits() && p.Overlaps(sub.Delegated) {
@@ -463,9 +449,7 @@ type RelayLink struct {
 // matches by Name= alone, and a link whose Network gives it no static address of a family the
 // relay has servers of. It then refuses a family that relays and subnets serve in one VRF, or in
 // two VRFs one of which is the default: dnsmasq's and Kea's sockets of a family bind beside each
-// other only when each is bound to its own VRF's device. It guards, with an internal error, a
-// server that is no address without a zone: netip takes a zone of any characters, a line break
-// among them, which dnsmasq's config would read as another option.
+// other only when each is bound to its own VRF's device.
 func (d Model) Relays() ([]Relay, error) {
 	if len(d.DHCPRelays) == 0 {
 		return nil, nil
@@ -498,11 +482,7 @@ func (d Model) Relays() ([]Relay, error) {
 // relay is the DHCPRelay r as dnsmasq relays it.
 func (d Model) relay(units []Unit, devices []string, r Named[DHCPRelaySpec]) (Relay, error) {
 	relay := Relay{Name: r.Name, Servers: map[bool][]netip.Addr{}}
-	for _, s := range r.Spec.Servers {
-		a, err := netip.ParseAddr(s)
-		if err != nil || a.Zone() != "" {
-			return relay, InternalErrorf("the server %q is no address without a zone", s)
-		}
+	for _, a := range r.Spec.Servers {
 		relay.Servers[a.Is6()] = append(relay.Servers[a.Is6()], a)
 	}
 	links, vrf, err := d.servedLinks(devices, "DHCPRelay", r.Name, r.Spec.Interfaces, "a relay relays in one VRF")
@@ -597,15 +577,11 @@ func (d Model) relaysBesideServers(devices []string, relays []Relay) error {
 	order := slices.SortedFunc(maps.Keys(families), func(a, b server) int { return strings.Compare(key(a), key(b)) })
 	var errs []error
 	for _, s := range d.DHCPSubnets {
-		p, err := netip.ParsePrefix(s.Spec.Subnet)
-		if err != nil {
-			continue
-		}
 		_, vrf, err := d.servedLinks(devices, "DHCPSubnet", s.Name, s.Spec.Interfaces, "")
 		if err != nil {
 			continue
 		}
-		v6 := p.Addr().Is6()
+		v6 := s.Spec.Subnet.Addr().Is6()
 		for _, k := range order {
 			if k.v6 != v6 || (k.vrf != vrf && k.vrf != DefaultVRF && vrf != DefaultVRF) {
 				continue

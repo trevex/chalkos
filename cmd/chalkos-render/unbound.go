@@ -5,7 +5,6 @@ import (
 	"net/netip"
 	"path/filepath"
 	"regexp"
-	"slices"
 	"strings"
 
 	"github.com/trevex/chalkos/pkg/dns"
@@ -27,10 +26,6 @@ const ipv4OnlyZone = "ipv4only.arpa."
 // storeFile is a path the renderer writes into Unbound's config between quotes: absolute, clean,
 // and of characters that need no quoting.
 var storeFile = regexp.MustCompile(`^(/[A-Za-z0-9+._-]+)+$`)
-
-// localZoneTypes are the local zone types the schema takes, which Unbound names alike and its
-// config holds unquoted.
-var localZoneTypes = []string{"static", "transparent", "typetransparent", "redirect", "refuse", "deny", "always_nxdomain"}
 
 // renderUnbound writes Unbound's config of each Resolver, out/unbound.conf for the default VRF's
 // and out/unbound-<vrf>.conf for a VRF's: the addresses it answers on and the clients it answers,
@@ -145,11 +140,7 @@ func unboundConfig(name string, r derive.ResolverSpec, vrf, trustAnchor, zoneFil
 	if len(r.Forwarders) > 0 {
 		b.WriteString("forward-zone:\n  name: \".\"\n")
 		for _, a := range r.Forwarders {
-			addr, err := resolverAddress(a)
-			if err != nil {
-				return "", derive.Within("forwarders", err)
-			}
-			fmt.Fprintf(&b, "  forward-addr: %s\n", addr)
+			fmt.Fprintf(&b, "  forward-addr: %s\n", a)
 		}
 	}
 	fmt.Fprintf(&b, "remote-control:\n  control-enable: yes\n  control-interface: %s\n", unboundControlOf(vrf))
@@ -168,34 +159,11 @@ func resolverAddresses(r derive.ResolverSpec) ([]netip.Addr, []netip.Prefix, err
 	if len(r.Allow) == 0 {
 		return nil, nil, derive.InternalErrorf("allow names no range, so the firewall would accept DNS from every client")
 	}
-	var listen []netip.Addr
-	for _, a := range r.Listen {
-		addr, err := resolverAddress(a)
-		if err != nil {
-			return nil, nil, derive.Within("listen", err)
-		}
-		listen = append(listen, addr)
+	allow := make([]netip.Prefix, len(r.Allow))
+	for i, p := range r.Allow {
+		allow[i] = p.Masked()
 	}
-	var allow []netip.Prefix
-	for _, a := range r.Allow {
-		p, err := netip.ParsePrefix(a)
-		if err != nil {
-			return nil, nil, derive.InternalErrorf("allow: %q is no address range", a)
-		}
-		allow = append(allow, p.Masked())
-	}
-	return listen, allow, nil
-}
-
-// resolverAddress is the address a of a resolver's listen or forwarders. It guards, with an
-// internal error, a value that is no address without a zone: netip takes a zone of any
-// characters, which the config would then hold.
-func resolverAddress(a string) (netip.Addr, error) {
-	addr, err := netip.ParseAddr(a)
-	if err != nil || addr.Zone() != "" {
-		return netip.Addr{}, derive.InternalErrorf("%q is no address without a zone", a)
-	}
-	return addr, nil
+	return r.Listen, allow, nil
 }
 
 // renderedRecords are the records of the local zones rendered so far: each as "<name>. <type>
@@ -211,13 +179,10 @@ type renderedRecords struct {
 // which the rules leave to the renderer, as they would compare the records in pairs. A zone's name
 // stands between double quotes, and a record between single quotes with a TXT record's text
 // between double quotes; it guards, with an internal error, names and data that would end those
-// quotes, start a comment or add a line, and a type the config would hold unquoted.
+// quotes, start a comment or add a line.
 func localZoneLines(resolver string, zone int, z derive.LocalZone, seen renderedRecords) ([]string, error) {
 	if !dns.IsName(z.Name) {
 		return nil, derive.InternalErrorf("%q is no DNS name in lower case without the root's dot", z.Name)
-	}
-	if !slices.Contains(localZoneTypes, z.Type) {
-		return nil, derive.InternalErrorf("%s: type %q is none of %s", z.Name, z.Type, strings.Join(localZoneTypes, ", "))
 	}
 	lines := []string{fmt.Sprintf("local-zone: \"%s.\" %s", z.Name, z.Type)}
 	for i, r := range z.Records {

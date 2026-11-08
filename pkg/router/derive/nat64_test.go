@@ -11,7 +11,7 @@ import (
 // A NAT64 takes its prefix and its pool entries with their host bits cleared, as the rules
 // compare them.
 func TestNAT64Masks(t *testing.T) {
-	got, err := nat64Pools([]Named[NAT64Spec]{{Name: "edge", Spec: NAT64Spec{Prefix: "64:ff9b::1/96", Pool4: []PoolEntry{{Prefix: "192.0.2.9/30", Ports: "61001-65535", Protocols: []string{"tcp"}}}}}})
+	got, err := nat64Pools([]Named[NAT64Spec]{{Name: "edge", Spec: NAT64Spec{Prefix: netip.MustParsePrefix("64:ff9b::1/96"), Pool4: []PoolEntry{{Prefix: netip.MustParsePrefix("192.0.2.9/30"), Ports: "61001-65535", Protocols: []string{"tcp"}}}}}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -24,7 +24,7 @@ func TestNAT64Masks(t *testing.T) {
 // names; an entry of none of them is an internal error, not an entry the pool drops.
 func TestNAT64Protocols(t *testing.T) {
 	pools := func(protocols ...string) ([]NAT64Instance, error) {
-		return nat64Pools([]Named[NAT64Spec]{{Name: "edge", Spec: NAT64Spec{Prefix: "64:ff9b::/96", Pool4: []PoolEntry{{Prefix: "192.0.2.8/30", Ports: "61001-65535", Protocols: protocols}}}}})
+		return nat64Pools([]Named[NAT64Spec]{{Name: "edge", Spec: NAT64Spec{Prefix: netip.MustParsePrefix("64:ff9b::/96"), Pool4: []PoolEntry{{Prefix: netip.MustParsePrefix("192.0.2.8/30"), Ports: "61001-65535", Protocols: protocols}}}}})
 	}
 	got, err := pools("icmp", "tcp\", \"mark\": \"1", "tcp")
 	if err != nil {

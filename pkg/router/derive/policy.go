@@ -22,24 +22,18 @@ type PolicyTables struct {
 	Hops     []NextHop
 }
 
-// PolicyTables reads the tables of the VRF and NextHop documents. Its guards refuse a NextHop's
-// address that does not parse or carries a zone, which networkd's Gateway= would take, and table 0,
-// which networkd refuses; the format ip and the schema's minimum refuse both before chalkd
-// renders.
+// PolicyTables reads the tables of the VRF and NextHop documents. Its guard refuses table 0, which
+// networkd refuses and the schema's minimum refuses before chalkd renders.
 func (d Model) PolicyTables() (PolicyTables, error) {
 	t := PolicyTables{VRFs: map[string]uint32{}, NextHops: map[string]NextHop{}}
 	for _, v := range d.VRFs {
 		t.VRFs[v.Name] = v.Spec.Table
 	}
 	for _, h := range d.NextHops {
-		a, err := netip.ParseAddr(h.Spec.Address)
-		if err != nil || a.Zone() != "" {
-			return t, InternalErrorf("NextHop %s: %q is no address without a zone", h.Name, h.Spec.Address)
-		}
 		if h.Spec.Table == 0 {
 			return t, InternalErrorf("NextHop %s: table 0 is no table", h.Name)
 		}
-		hop := NextHop{Name: h.Name, Address: a, Link: h.Spec.Interface, Table: h.Spec.Table}
+		hop := NextHop{Name: h.Name, Address: h.Spec.Address, Link: h.Spec.Interface, Table: h.Spec.Table}
 		t.NextHops[h.Name] = hop
 		t.Hops = append(t.Hops, hop)
 	}

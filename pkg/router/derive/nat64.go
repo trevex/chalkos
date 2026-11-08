@@ -193,9 +193,9 @@ func nat64Pools(docs []Named[NAT64Spec]) ([]NAT64Instance, error) {
 // an entry per address, and ports of the kernel's ephemeral range, 32768 to 60999, which the
 // module refuses in a namespace that keeps that range.
 func poolEntryRange(e PoolEntry) (netip.Prefix, int, int, error) {
-	p, err := netip.ParsePrefix(e.Prefix)
-	if err != nil || !p.Addr().Is4() || p.Bits() < 16 {
-		return netip.Prefix{}, 0, 0, InternalErrorf("%q is no IPv4 range of 16 bits or more", e.Prefix)
+	p := e.Prefix
+	if !p.Addr().Is4() || p.Bits() < 16 {
+		return netip.Prefix{}, 0, 0, InternalErrorf("%s is no IPv4 range of 16 bits or more", p)
 	}
 	first, last := e.Ports.bounds()
 	if last >= ephemeralFirst && first <= ephemeralLast {
@@ -204,14 +204,13 @@ func poolEntryRange(e PoolEntry) (netip.Prefix, int, int, error) {
 	return p.Masked(), first, last, nil
 }
 
-// NAT64Prefix is the NAT64 or DNS64 prefix s, masked. It guards, with an internal error, a prefix
-// that Jool's kernel module or Unbound refuses, and that Unbound's config would read as syntax: no
-// IPv6 range, a length other than RFC 6052's, and bits 64 to 71 set. The rules refuse those, and
-// prefixes of IPv4-mapped, link-local, multicast or unspecified addresses, first.
-func NAT64Prefix(s string) (netip.Prefix, error) {
-	p, err := netip.ParsePrefix(s)
-	if err != nil || !p.Addr().Is6() || !slices.Contains(nat64Lengths, p.Bits()) || p.Masked().Addr().As16()[8] != 0 {
-		return netip.Prefix{}, InternalErrorf("the prefix %q is no IPv6 range of 32, 40, 48, 56, 64 or 96 bits whose bits 64 to 71 are zero", s)
+// NAT64Prefix is the NAT64 or DNS64 prefix p, masked. It guards, with an internal error, a prefix
+// that Jool's kernel module or Unbound refuses: no IPv6 range, a length other than RFC 6052's, and
+// bits 64 to 71 set. The rules refuse those, and prefixes of IPv4-mapped, link-local, multicast or
+// unspecified addresses, first.
+func NAT64Prefix(p netip.Prefix) (netip.Prefix, error) {
+	if !p.Addr().Is6() || !slices.Contains(nat64Lengths, p.Bits()) || p.Masked().Addr().As16()[8] != 0 {
+		return netip.Prefix{}, InternalErrorf("the prefix %s is no IPv6 range of 32, 40, 48, 56, 64 or 96 bits whose bits 64 to 71 are zero", p)
 	}
 	return p.Masked(), nil
 }

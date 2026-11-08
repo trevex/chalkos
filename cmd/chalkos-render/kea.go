@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"maps"
 	"math"
-	"net/netip"
 	"regexp"
 	"slices"
 	"strconv"
@@ -163,12 +162,13 @@ func numberedApart(a, b servedSubnet) error {
 	return nil
 }
 
-// keaSubnetOf is the subnet s with Kea's number for it and its lease time in seconds, once
-// keaValues has guarded the values Kea's config takes as they are.
+// keaSubnetOf is the subnet s with Kea's number for it and its lease time in seconds. It guards,
+// with an internal error, a domain that is no DNS name, which Kea's config takes as it is, Kea's
+// check passes and Kea's option data splits at a comma into more values. The schema refuses it.
 func keaSubnetOf(s derive.Subnet) (servedSubnet, error) {
 	sub := servedSubnet{Subnet: s}
-	if err := keaValues(s.Spec); err != nil {
-		return sub, err
+	if dom := s.Spec.Domain; dom != nil && !dhcpName.MatchString(*dom) {
+		return sub, derive.InternalErrorf("%q is no domain", *dom)
 	}
 	// Kea's check refuses the number 0, of a subnet at 0.0.0.0, which the rules refuse first.
 	if s.Is6() {
@@ -179,37 +179,6 @@ func keaSubnetOf(s derive.Subnet) (servedSubnet, error) {
 	var err error
 	sub.seconds, err = leaseSeconds(s.Spec.LeaseTime)
 	return sub, err
-}
-
-// keaValues guards, with an internal error, the values of the subnet s that Kea's config takes as
-// they are and Kea's check passes: an address that does not parse, which netip.MustParseAddr
-// panics on, or that has a zone, which netip takes of any characters and Kea's option data splits
-// at a comma into more values, and a domain that is no DNS name, which Kea's option data splits
-// as well. The schema refuses each of them.
-func keaValues(s derive.DHCPSubnetSpec) error {
-	var addresses []string
-	if s.Gateway != nil {
-		addresses = append(addresses, *s.Gateway)
-	}
-	addresses = append(addresses, s.DNS...)
-	for _, p := range s.Pools {
-		addresses = append(addresses, p.First, p.Last)
-	}
-	for _, r := range s.Reservations {
-		addresses = append(addresses, r.Address)
-	}
-	if s.Boot != nil && s.Boot.Server != nil {
-		addresses = append(addresses, *s.Boot.Server)
-	}
-	for _, a := range addresses {
-		if addr, err := netip.ParseAddr(a); err != nil || addr.Zone() != "" {
-			return derive.InternalErrorf("%q is no address without a zone", a)
-		}
-	}
-	if dom := s.Domain; dom != nil && !dhcpName.MatchString(*dom) {
-		return derive.InternalErrorf("%q is no domain", *dom)
-	}
-	return nil
 }
 
 // leaseSeconds is a lease time of the schema in seconds. It guards, with an internal error, a
@@ -292,12 +261,12 @@ func keaSubnet(s servedSubnet) map[string]any {
 		options = append(options, map[string]any{"name": name, "data": data})
 	}
 	if s.Spec.Gateway != nil {
-		option("routers", netip.MustParseAddr(*s.Spec.Gateway).String())
+		option("routers", s.Spec.Gateway.String())
 	}
 	if len(s.Spec.DNS) > 0 {
 		var dns []string
 		for _, a := range s.Spec.DNS {
-			dns = append(dns, netip.MustParseAddr(a).String())
+			dns = append(dns, a.String())
 		}
 		option("domain-name-servers", strings.Join(dns, ", "))
 	}
@@ -307,7 +276,7 @@ func keaSubnet(s servedSubnet) map[string]any {
 	}
 	var reservations []any
 	for _, r := range s.Spec.Reservations {
-		h := map[string]any{"hw-address": r.MAC, "ip-address": netip.MustParseAddr(r.Address).String()}
+		h := map[string]any{"hw-address": r.MAC, "ip-address": r.Address.String()}
 		if r.Hostname != nil {
 			h["hostname"] = *r.Hostname
 		}
@@ -386,7 +355,7 @@ func bootClasses(s servedSubnet) []any {
 			"boot-file-name":          *c.file,
 		}
 		if b.Server != nil {
-			class["next-server"] = netip.MustParseAddr(*b.Server).String()
+			class["next-server"] = b.Server.String()
 		}
 		classes = append(classes, class)
 	}

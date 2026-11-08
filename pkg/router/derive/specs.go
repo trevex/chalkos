@@ -3,6 +3,9 @@ package derive
 import (
 	"encoding/json"
 	"fmt"
+	"net/netip"
+	"reflect"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -16,9 +19,9 @@ type RouterSpec struct {
 		IPv4 bool `json:"ipv4"`
 		IPv6 bool `json:"ipv6"`
 	} `json:"forwarding"`
-	RPFilter     string `json:"rpFilter"`
-	ECMPHash     string `json:"ecmpHash"`
-	ConntrackMax *int64 `json:"conntrackMax"`
+	RPFilter     RPFilter `json:"rpFilter"`
+	ECMPHash     ECMPHash `json:"ecmpHash"`
+	ConntrackMax *int64   `json:"conntrackMax"`
 	Management   struct {
 		// Interfaces is nil for every interface.
 		Interfaces []string `json:"interfaces"`
@@ -36,51 +39,51 @@ type ZoneSpec struct {
 type PolicySpec struct {
 	From    string         `json:"from"`
 	To      string         `json:"to"`
-	Default string         `json:"default"`
+	Default Verdict        `json:"default"`
 	Rules   []FirewallRule `json:"rules"`
 }
 
 // FirewallRule is a rule of a FirewallPolicy.
 type FirewallRule struct {
-	Family           *string     `json:"family"`
-	Protocol         *string     `json:"protocol"`
+	Family           *Family     `json:"family"`
+	Protocol         *Protocol   `json:"protocol"`
 	SourcePorts      []PortRange `json:"sourcePorts"`
 	DestinationPorts []PortRange `json:"destinationPorts"`
 	Source           *Addresses  `json:"source"`
 	Destination      *Addresses  `json:"destination"`
-	ICMPTypes        []string    `json:"icmpTypes"`
-	Action           string      `json:"action"`
+	ICMPTypes        []ICMPType  `json:"icmpTypes"`
+	Action           Verdict     `json:"action"`
 	Log              bool        `json:"log"`
 }
 
 // Addresses are a rule's source or destination: an AddressSet or address ranges, one of them; nil
 // matches every address.
 type Addresses struct {
-	Set   *string  `json:"set"`
-	CIDRs []string `json:"cidrs"`
+	Set   *string        `json:"set"`
+	CIDRs []netip.Prefix `json:"cidrs"`
 }
 
 // AddressSetSpec is an AddressSet document's spec.
 type AddressSetSpec struct {
-	Family   string   `json:"family"`
-	Prefixes []string `json:"prefixes"`
+	Family   Family         `json:"family"`
+	Prefixes []netip.Prefix `json:"prefixes"`
 }
 
 // NATSpec is a NATRule document's spec.
 type NATSpec struct {
-	Type   string    `json:"type"`
-	Family string    `json:"family"`
+	Type   NATType   `json:"type"`
+	Family Family    `json:"family"`
 	Out    *NATPlace `json:"out"`
 	In     *NATPlace `json:"in"`
 	Match  struct {
-		Source           []string    `json:"source"`
-		Destination      []string    `json:"destination"`
-		Protocol         *string     `json:"protocol"`
-		DestinationPorts []PortRange `json:"destinationPorts"`
+		Source           []netip.Prefix `json:"source"`
+		Destination      []netip.Prefix `json:"destination"`
+		Protocol         *Protocol      `json:"protocol"`
+		DestinationPorts []PortRange    `json:"destinationPorts"`
 	} `json:"match"`
 	To *struct {
-		Address string `json:"address"`
-		Port    *int   `json:"port"`
+		Address netip.Addr `json:"address"`
+		Port    *int       `json:"port"`
 	} `json:"to"`
 }
 
@@ -131,9 +134,9 @@ func (p PortRange) bounds() (first, last int) {
 // BGPSpec is a BGP document's spec.
 type BGPSpec struct {
 	// VRF names the instance's VRF document, or is default; VRFOf reads it.
-	VRF       *string `json:"vrf"`
-	ASN       uint32  `json:"asn"`
-	RouterID  string  `json:"routerID"`
+	VRF       *string    `json:"vrf"`
+	ASN       uint32     `json:"asn"`
+	RouterID  netip.Addr `json:"routerID"`
 	Multipath struct {
 		EBGP        int  `json:"ebgp"`
 		IBGP        int  `json:"ibgp"`
@@ -146,8 +149,8 @@ type BGPSpec struct {
 	} `json:"bfd"`
 	GracefulRestart bool `json:"gracefulRestart"`
 	Networks        []struct {
-		Prefix string  `json:"prefix"`
-		Policy *string `json:"policy"`
+		Prefix netip.Prefix `json:"prefix"`
+		Policy *string      `json:"policy"`
 	} `json:"networks"`
 	Import struct {
 		IPv4 *LeakSpec `json:"ipv4"`
@@ -164,9 +167,9 @@ type LeakSpec struct {
 // PeerSpec is a BGPPeer document's spec.
 type PeerSpec struct {
 	// VRF names the peer's VRF document, or is default; VRFOf reads it.
-	VRF       *string `json:"vrf"`
-	Address   *string `json:"address"`
-	Interface *string `json:"interface"`
+	VRF       *string     `json:"vrf"`
+	Address   *netip.Addr `json:"address"`
+	Interface *string     `json:"interface"`
 	// Interfaces is nil when the peer names an address or an interface.
 	Interfaces []string `json:"interfaces"`
 	RemoteAS   PeerAS   `json:"remoteAS"`
@@ -216,18 +219,18 @@ func (a *PeerAS) UnmarshalJSON(data []byte) error {
 
 // PrefixListSpec is a PrefixList document's spec.
 type PrefixListSpec struct {
-	Family  string `json:"family"`
+	Family  Family `json:"family"`
 	Entries []struct {
-		Prefix string `json:"prefix"`
-		GE     *int   `json:"ge"`
-		LE     *int   `json:"le"`
-		Action string `json:"action"`
+		Prefix netip.Prefix `json:"prefix"`
+		GE     *int         `json:"ge"`
+		LE     *int         `json:"le"`
+		Action ListAction   `json:"action"`
 	} `json:"entries"`
 }
 
 // CommunityListSpec is a CommunityList document's spec.
 type CommunityListSpec struct {
-	Communities []string `json:"communities"`
+	Communities []Community `json:"communities"`
 }
 
 // RoutingPolicySpec is a RoutingPolicy document's spec.
@@ -239,50 +242,50 @@ type RoutingPolicySpec struct {
 			ASPath        *string `json:"asPath"`
 		} `json:"match"`
 		Then struct {
-			Action            string   `json:"action"`
-			LocalPref         *uint32  `json:"localPref"`
-			MED               *uint32  `json:"med"`
-			AddCommunities    []string `json:"addCommunities"`
-			RemoveCommunities []string `json:"removeCommunities"`
-			Prepend           *int     `json:"prepend"`
+			Action            RouteAction `json:"action"`
+			LocalPref         *uint32     `json:"localPref"`
+			MED               *uint32     `json:"med"`
+			AddCommunities    []Community `json:"addCommunities"`
+			RemoveCommunities []Community `json:"removeCommunities"`
+			Prepend           *int        `json:"prepend"`
 		} `json:"then"`
 	} `json:"terms"`
-	Default string `json:"default"`
+	Default RouteAction `json:"default"`
 }
 
 // NAT64Spec is a NAT64 document's spec.
 type NAT64Spec struct {
 	// VRF names the NAT64's VRF document, or is default; VRFOf reads it.
-	VRF    *string     `json:"vrf"`
-	Prefix string      `json:"prefix"`
-	Pool4  []PoolEntry `json:"pool4"`
+	VRF    *string      `json:"vrf"`
+	Prefix netip.Prefix `json:"prefix"`
+	Pool4  []PoolEntry  `json:"pool4"`
 }
 
 // PoolEntry is an entry of a NAT64's pool4.
 type PoolEntry struct {
-	Prefix    string    `json:"prefix"`
-	Ports     PortRange `json:"ports"`
-	Protocols []string  `json:"protocols"`
+	Prefix    netip.Prefix `json:"prefix"`
+	Ports     PortRange    `json:"ports"`
+	Protocols []string     `json:"protocols"`
 }
 
 // ResolverSpec is a Resolver document's spec.
 type ResolverSpec struct {
 	// VRF names the resolver's VRF document, or is default; VRFOf reads it.
-	VRF        *string  `json:"vrf"`
-	Listen     []string `json:"listen"`
-	Allow      []string `json:"allow"`
-	Forwarders []string `json:"forwarders"`
-	DNSSEC     bool     `json:"dnssec"`
+	VRF        *string        `json:"vrf"`
+	Listen     []netip.Addr   `json:"listen"`
+	Allow      []netip.Prefix `json:"allow"`
+	Forwarders []netip.Addr   `json:"forwarders"`
+	DNSSEC     bool           `json:"dnssec"`
 	DNS64      *struct {
-		Prefix string `json:"prefix"`
+		Prefix netip.Prefix `json:"prefix"`
 	} `json:"dns64"`
 	LocalZones []LocalZone `json:"localZones"`
 }
 
 // LocalZone is a local zone of a Resolver.
 type LocalZone struct {
-	Name    string `json:"name"`
-	Type    string `json:"type"`
+	Name    string        `json:"name"`
+	Type    LocalZoneType `json:"type"`
 	Records []struct {
 		Name  string `json:"name"`
 		Type  string `json:"type"`
@@ -301,39 +304,39 @@ type VRFSpec struct {
 
 // DHCPSubnetSpec is a DHCPSubnet document's spec.
 type DHCPSubnetSpec struct {
-	Interfaces []string `json:"interfaces"`
-	Subnet     string   `json:"subnet"`
+	Interfaces []string     `json:"interfaces"`
+	Subnet     netip.Prefix `json:"subnet"`
 	Pools      []struct {
-		First string `json:"first"`
-		Last  string `json:"last"`
+		First netip.Addr `json:"first"`
+		Last  netip.Addr `json:"last"`
 	} `json:"pools"`
 	// Gateway, Domain and Boot are nil when the document leaves them out.
-	Gateway      *string  `json:"gateway"`
-	DNS          []string `json:"dns"`
-	Domain       *string  `json:"domain"`
-	LeaseTime    string   `json:"leaseTime"`
+	Gateway      *netip.Addr  `json:"gateway"`
+	DNS          []netip.Addr `json:"dns"`
+	Domain       *string      `json:"domain"`
+	LeaseTime    string       `json:"leaseTime"`
 	Reservations []struct {
-		MAC      string  `json:"mac"`
-		Address  string  `json:"address"`
-		Hostname *string `json:"hostname"`
+		MAC      string     `json:"mac"`
+		Address  netip.Addr `json:"address"`
+		Hostname *string    `json:"hostname"`
 	} `json:"reservations"`
 	Boot *struct {
-		Server *string `json:"server"`
-		BIOS   *string `json:"bios"`
-		UEFI   *string `json:"uefi"`
-		IPXE   *string `json:"ipxe"`
+		Server *netip.Addr `json:"server"`
+		BIOS   *string     `json:"bios"`
+		UEFI   *string     `json:"uefi"`
+		IPXE   *string     `json:"ipxe"`
 	} `json:"boot"`
 	// PrefixDelegation is nil for a subnet that delegates no prefixes, as an IPv4 one.
 	PrefixDelegation *struct {
-		Prefix string `json:"prefix"`
-		Length int    `json:"length"`
+		Prefix netip.Prefix `json:"prefix"`
+		Length int          `json:"length"`
 	} `json:"prefixDelegation"`
 }
 
 // DHCPRelaySpec is a DHCPRelay document's spec.
 type DHCPRelaySpec struct {
-	Interfaces []string `json:"interfaces"`
-	Servers    []string `json:"servers"`
+	Interfaces []string     `json:"interfaces"`
+	Servers    []netip.Addr `json:"servers"`
 }
 
 // PolicyRouteSpec is a PolicyRoute document's spec.
@@ -349,8 +352,8 @@ type PolicyRouteSpec struct {
 // PolicyRule is a rule of a PolicyRoute.
 type PolicyRule struct {
 	Match struct {
-		Family           *string     `json:"family"`
-		Protocol         *string     `json:"protocol"`
+		Family           *Family     `json:"family"`
+		Protocol         *Protocol   `json:"protocol"`
 		SourcePorts      []PortRange `json:"sourcePorts"`
 		DestinationPorts []PortRange `json:"destinationPorts"`
 		Source           *Addresses  `json:"source"`
@@ -367,7 +370,182 @@ type PolicyRule struct {
 
 // NextHopSpec is a NextHop document's spec.
 type NextHopSpec struct {
-	Address   string `json:"address"`
-	Interface string `json:"interface"`
-	Table     uint32 `json:"table"`
+	Address   netip.Addr `json:"address"`
+	Interface string     `json:"interface"`
+	Table     uint32     `json:"table"`
+}
+
+// The enums of the specs, each a string type whose UnmarshalJSON refuses a value its schema's enum
+// lacks, so that the model and the outputs, which write some of them unquoted, read none other.
+
+// Family is an address family.
+type Family string
+
+// The address families.
+const (
+	IPv4 Family = "ipv4"
+	IPv6 Family = "ipv6"
+)
+
+func (f *Family) UnmarshalJSON(data []byte) error { return decodeEnum(data, f, IPv4, IPv6) }
+
+// FamilyOf is the family of the address a.
+func FamilyOf(a netip.Addr) Family {
+	if a.Is4() {
+		return IPv4
+	}
+	return IPv6
+}
+
+// RPFilter is a Router's reverse-path filter: off, loose or strict.
+type RPFilter string
+
+func (r *RPFilter) UnmarshalJSON(data []byte) error {
+	return decodeEnum(data, r, "off", "loose", "strict")
+}
+
+// ECMPHash is what a Router hashes to pick an equal-cost route: l3 or l4.
+type ECMPHash string
+
+func (h *ECMPHash) UnmarshalJSON(data []byte) error { return decodeEnum(data, h, "l3", "l4") }
+
+// Verdict is what a FirewallPolicy or one of its rules does with a connection: accept, drop or
+// reject.
+type Verdict string
+
+func (v *Verdict) UnmarshalJSON(data []byte) error {
+	return decodeEnum(data, v, "accept", "drop", "reject")
+}
+
+// Protocol is a protocol a firewall, NAT or policy routing rule matches.
+type Protocol string
+
+func (p *Protocol) UnmarshalJSON(data []byte) error {
+	return decodeEnum(data, p, "tcp", "udp", "sctp", "icmp", "icmpv6", "gre", "esp", "ah")
+}
+
+// ICMPType is an ICMP or ICMPv6 type a firewall rule matches, which nftables names alike for both
+// protocols; packet-too-big is ICMPv6's alone.
+type ICMPType string
+
+func (t *ICMPType) UnmarshalJSON(data []byte) error {
+	return decodeEnum(data, t, "echo-request", "echo-reply", "destination-unreachable", "time-exceeded", "parameter-problem", "packet-too-big")
+}
+
+// NATType is how a NATRule translates: masquerade, snat or dnat.
+type NATType string
+
+func (t *NATType) UnmarshalJSON(data []byte) error {
+	return decodeEnum(data, t, "masquerade", "snat", "dnat")
+}
+
+// ListAction is whether a route a PrefixList entry matches matches the list: permit or deny.
+type ListAction string
+
+func (a *ListAction) UnmarshalJSON(data []byte) error { return decodeEnum(data, a, "permit", "deny") }
+
+// RouteAction is what a RoutingPolicy does with a route: accept or reject.
+type RouteAction string
+
+func (a *RouteAction) UnmarshalJSON(data []byte) error {
+	return decodeEnum(data, a, "accept", "reject")
+}
+
+// LocalZoneType is how a Resolver answers the names of a local zone, as Unbound's local-zone
+// types name it.
+type LocalZoneType string
+
+func (t *LocalZoneType) UnmarshalJSON(data []byte) error {
+	return decodeEnum(data, t, "static", "transparent", "typetransparent", "redirect", "refuse", "deny", "always_nxdomain")
+}
+
+// decodeEnum decodes data, a JSON string, into v when it is one of values.
+func decodeEnum[T ~string](data []byte, v *T, values ...T) error {
+	var s string
+	if err := json.Unmarshal(data, &s); err != nil || !slices.Contains(values, T(s)) {
+		words := make([]string, len(values))
+		for i, w := range values {
+			words[i] = string(w)
+		}
+		return fmt.Errorf("%s is none of %s", data, strings.Join(words, ", "))
+	}
+	*v = T(s)
+	return nil
+}
+
+// Community is a BGP community as FRR writes it: a standard one, <AS>:<value> of numbers of 16
+// bits, or a large one, <AS>:<value>:<value> of numbers of 32 bits, in decimal without leading
+// zeros. A value of another form fails to decode rather than add syntax to frr.conf, which writes
+// it unquoted.
+type Community struct {
+	Value string
+	Large bool
+}
+
+func (c *Community) UnmarshalText(text []byte) error {
+	parts := strings.Split(string(text), ":")
+	if len(parts) < 2 || len(parts) > 3 {
+		return fmt.Errorf("%q is no community <AS>:<value> or large community <AS>:<value>:<value>", text)
+	}
+	bits := 16
+	if len(parts) == 3 {
+		bits = 32
+	}
+	for i, p := range parts {
+		n, err := strconv.ParseUint(p, 10, bits)
+		if err != nil {
+			return fmt.Errorf("%q is no community: its parts are numbers of %d bits", text, bits)
+		}
+		parts[i] = strconv.FormatUint(n, 10)
+	}
+	*c = Community{Value: strings.Join(parts, ":"), Large: len(parts) == 3}
+	return nil
+}
+
+func (c Community) MarshalText() ([]byte, error) { return []byte(c.Value), nil }
+
+func (c Community) String() string { return c.Value }
+
+// The types of the specs' addresses and address ranges, which checkAddresses finds.
+var (
+	addrType   = reflect.TypeFor[netip.Addr]()
+	prefixType = reflect.TypeFor[netip.Prefix]()
+)
+
+// checkAddresses refuses an address or address range of v, a decoded spec, that is missing, as
+// netip decodes an empty string or JSON's null into one that is not valid, and an address with a
+// zone, which netip takes of any characters and the outputs would write. The schemas' formats ip
+// and cidr refuse both.
+func checkAddresses(v reflect.Value) error {
+	switch v.Type() {
+	case addrType:
+		if a := v.Interface().(netip.Addr); !a.IsValid() || a.Zone() != "" {
+			return fmt.Errorf("%q is no address without a zone", a)
+		}
+		return nil
+	case prefixType:
+		if p := v.Interface().(netip.Prefix); !p.IsValid() {
+			return fmt.Errorf("%q is no address range", p)
+		}
+		return nil
+	}
+	switch v.Kind() {
+	case reflect.Pointer:
+		if !v.IsNil() {
+			return checkAddresses(v.Elem())
+		}
+	case reflect.Slice:
+		for i := range v.Len() {
+			if err := checkAddresses(v.Index(i)); err != nil {
+				return err
+			}
+		}
+	case reflect.Struct:
+		for i := range v.NumField() {
+			if err := checkAddresses(v.Field(i)); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }

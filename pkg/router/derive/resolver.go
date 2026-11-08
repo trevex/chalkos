@@ -3,7 +3,6 @@ package derive
 import (
 	"errors"
 	"fmt"
-	"net/netip"
 	"slices"
 	"strings"
 
@@ -18,11 +17,7 @@ func (d Model) checkResolvers() error {
 	var errs []error
 	for _, r := range d.Resolvers {
 		vrf := VRFOf(r.Spec.VRF)
-		for i, l := range r.Spec.Listen {
-			a, err := netip.ParseAddr(l)
-			if err != nil {
-				continue
-			}
+		for i, a := range r.Spec.Listen {
 			var others []string
 			mine := false
 			for _, n := range d.Addresses {

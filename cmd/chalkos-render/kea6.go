@@ -92,7 +92,7 @@ func kea6Subnet(s servedSubnet) map[string]any {
 	if len(s.Spec.DNS) > 0 {
 		var dns []string
 		for _, a := range s.Spec.DNS {
-			dns = append(dns, netip.MustParseAddr(a).String())
+			dns = append(dns, a.String())
 		}
 		options = append(options, map[string]any{"name": "dns-servers", "data": strings.Join(dns, ", ")})
 	}
@@ -104,7 +104,7 @@ func kea6Subnet(s servedSubnet) map[string]any {
 	}
 	var reservations []any
 	for _, r := range s.Spec.Reservations {
-		h := map[string]any{"hw-address": r.MAC, "ip-addresses": []string{netip.MustParseAddr(r.Address).String()}}
+		h := map[string]any{"hw-address": r.MAC, "ip-addresses": []string{r.Address.String()}}
 		if r.Hostname != nil {
 			h["hostname"] = *r.Hostname
 		}

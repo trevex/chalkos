@@ -96,9 +96,9 @@ func TestSessionRefusals(t *testing.T) {
 			"BGPPeer/x: spec.interfaces[1]: eth2* matches no link of VRF default, only links of other VRFs"},
 		// Guards of what frr.conf and the firewall write unquoted.
 		"an address that adds an argument": {map[string][]any{"BGPPeer": {peerDoc(t, "a", `"address": "192.0.2.9 remote-as 64999"`)}},
-			`internal error: BGPPeer a: address "192.0.2.9 remote-as 64999" is no address without a zone`},
+			`internal error: BGPPeer a: ParseAddr("192.0.2.9 remote-as 64999"): unexpected character`},
 		"an address with a zone": {map[string][]any{"BGPPeer": {peerDoc(t, "a", `"address": "fe80::1%eth1"`)}},
-			`internal error: BGPPeer a: address "fe80::1%eth1" is no address without a zone`},
+			`internal error: BGPPeer a: "fe80::1%eth1" is no address without a zone`},
 		"an interface that adds a command": {map[string][]any{"BGPPeer": {peerDoc(t, "a", `"interface": "eth1\n neighbor 192.0.2.9 remote-as 64999"`)}},
 			`internal error: BGPPeer a: interface "eth1\n neighbor 192.0.2.9 remote-as 64999" is no interface name`},
 		"interfaces that add a command": {map[string][]any{"BGPPeer": {peerDoc(t, "a", `"interfaces": ["eth1 remote-as 64999"]`)}},

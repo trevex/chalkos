@@ -20,6 +20,7 @@ package derive
 import (
 	"encoding/json"
 	"maps"
+	"reflect"
 	"slices"
 	"strings"
 
@@ -170,10 +171,15 @@ func decodeKind[T any](byKind map[string]any, kind string) ([]Named[T], error) {
 		if err != nil {
 			return nil, err
 		}
-		// The schemas give each field the type of its Go field, so a spec that does not decode is
-		// one chalkd did not check.
+		// The schemas give each field the type of its Go field, and the values its enums, formats
+		// and patterns take, so a spec that does not decode, or holds an address checkAddresses
+		// refuses, is one chalkd did not check.
 		var spec T
-		if err := json.Unmarshal(data, &spec); err != nil {
+		err = json.Unmarshal(data, &spec)
+		if err == nil {
+			err = checkAddresses(reflect.ValueOf(spec))
+		}
+		if err != nil {
 			return nil, InternalErrorf("%s %s: %w", kind, name, err)
 		}
 		out = append(out, Named[T]{name, spec})

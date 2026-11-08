@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"maps"
-	"net/netip"
 	"regexp"
 	"slices"
 	"strconv"
@@ -36,11 +35,13 @@ const (
 	// leak-<vrf>-<family> of an import from a VRF that tracks routes of the family.
 	trackPrefix = "track-"
 	leakPrefix  = "leak-"
-	// trackedCommunity marks the routes an instance redistributes to track them, a large
-	// community of a private-use AS, and trackedList is the large-community list that matches it.
-	trackedCommunity = "4200000000:0:1"
-	trackedList      = "chalkos-tracked"
+	// trackedList is the large-community list that matches trackedCommunity.
+	trackedList = "chalkos-tracked"
 )
+
+// trackedCommunity marks the routes an instance redistributes to track them, a large community of
+// a private-use AS.
+var trackedCommunity = derive.Community{Value: "4200000000:0:1", Large: true}
 
 // renderFRR writes FRR's whole config to out/frr.conf: a BGP instance per BGP document, of the
 // default VRF or of another, with a peer group per BGPPeer of its VRF, the PrefixList,
@@ -109,7 +110,7 @@ type frr struct {
 	policies    []derive.Named[derive.RoutingPolicySpec]
 	// families are the PrefixList documents' families, and large whether a CommunityList holds
 	// large communities, by name.
-	families map[string]string
+	families map[string]derive.Family
 	large    map[string]bool
 	// entries are each PrefixList's entries as frr.conf writes them, by name.
 	entries map[string][]string
@@ -120,7 +121,7 @@ type frr struct {
 	// prependAS is the AS number the prepends of each RoutingPolicy with one repeat, by name.
 	prependAS map[string]uint32
 	// tracked are the PrefixLists the peers' defaults track, by VRF and family, sorted.
-	tracked map[string]map[string][]string
+	tracked map[string]map[derive.Family][]string
 }
 
 // An instance is a BGP document: the BGP instance of one VRF, and the peers in that VRF.
@@ -141,8 +142,8 @@ func (c *frr) served(vrf string) *instance {
 }
 
 // leak is what the instance imports of the family, nil for nothing.
-func (in *instance) leak(family string) *derive.LeakSpec {
-	if family == "ipv4" {
+func (in *instance) leak(family derive.Family) *derive.LeakSpec {
+	if family == derive.IPv4 {
 		return in.spec.Import.IPv4
 	}
 	return in.spec.Import.IPv6
@@ -155,28 +156,6 @@ func (in *instance) profile() string {
 		return bfdProfile
 	}
 	return bfdProfile + "-" + in.vrf
-}
-
-// community is a community as FRR writes it, and whether it is a large one. The schema's pattern
-// takes communities alone; a value it would refuse, which frr.conf would write unquoted, fails as
-// an internal error.
-func community(c string) (string, bool, error) {
-	parts := strings.Split(c, ":")
-	bits := 16
-	if len(parts) == 3 {
-		bits = 32
-	}
-	if len(parts) < 2 || len(parts) > 3 {
-		return "", false, derive.InternalErrorf("%q is no community <AS>:<value> or large community <AS>:<value>:<value>", c)
-	}
-	for i, p := range parts {
-		n, err := strconv.ParseUint(p, 10, bits)
-		if err != nil {
-			return "", false, derive.InternalErrorf("%q is no community: its parts are numbers of %d bits", c, bits)
-		}
-		parts[i] = strconv.FormatUint(n, 10)
-	}
-	return strings.Join(parts, ":"), len(parts) == 3, nil
 }
 
 // asPathRegex is a RoutingPolicy term's asPath as the schema takes it, without the spaces at its
@@ -254,13 +233,13 @@ func newFRR(d derive.Model) (*frr, error) {
 		prefixes:    d.Prefixes,
 		communities: d.Communities,
 		policies:    d.RoutingPolicies,
-		families:    map[string]string{},
+		families:    map[string]derive.Family{},
 		large:       map[string]bool{},
 		entries:     map[string][]string{},
 		policyNames: derive.ByName(d.RoutingPolicies),
 		neighbours:  map[string][]derive.Session{},
 		prependAS:   map[string]uint32{},
-		tracked:     map[string]map[string][]string{},
+		tracked:     map[string]map[derive.Family][]string{},
 	}
 	for _, g := range d.BGP {
 		in, err := newInstance(g, d.VRFs)
@@ -272,26 +251,13 @@ func newFRR(d derive.Model) (*frr, error) {
 	// FRR takes the default VRF's instance first.
 	slices.SortStableFunc(c.instances, func(a, b *instance) int { return strings.Compare(vrfOrder(a.vrf), vrfOrder(b.vrf)) })
 	for _, l := range d.Prefixes {
-		entries, err := prefixEntries(l.Spec)
-		if err != nil {
-			return nil, derive.Within("PrefixList "+l.Name, err)
-		}
 		c.families[l.Name] = l.Spec.Family
-		c.entries[l.Name] = entries
+		c.entries[l.Name] = prefixEntries(l.Spec)
 	}
 	// The CommunityList's rules make a list's communities all standard or all large ones, so the
 	// first tells which.
 	for _, l := range d.Communities {
-		c.large[l.Name] = false
-		for i, v := range l.Spec.Communities {
-			_, large, err := community(v)
-			if err != nil {
-				return nil, derive.Within("CommunityList "+l.Name, err)
-			}
-			if i == 0 {
-				c.large[l.Name] = large
-			}
-		}
+		c.large[l.Name] = len(l.Spec.Communities) > 0 && l.Spec.Communities[0].Large
 	}
 	for _, p := range d.RoutingPolicies {
 		if err := c.checkPolicy(p); err != nil {
@@ -329,7 +295,7 @@ func newFRR(d derive.Model) (*frr, error) {
 		}
 		c.neighbours[p.Name] = peerSessions[p.Name]
 		in.peers = append(in.peers, p)
-		for fam, f := range map[string]*derive.PeerFamily{"ipv4": p.Spec.Families.IPv4, "ipv6": p.Spec.Families.IPv6} {
+		for fam, f := range map[derive.Family]*derive.PeerFamily{derive.IPv4: p.Spec.Families.IPv4, derive.IPv6: p.Spec.Families.IPv6} {
 			if f != nil && f.DefaultOriginateWhen != nil {
 				c.track(vrf, fam, *f.DefaultOriginateWhen)
 			}
@@ -349,7 +315,7 @@ func newFRR(d derive.Model) (*frr, error) {
 // newInstance takes a BGP document. The schemas and the BGP kind's rules check its AS number, its
 // router ID, counts and timers; frr.conf writes the VRF's name and the router ID unquoted, so it
 // guards both: the VRF is a VRF document's, whose name Build checked, unless it is the
-// default one, and the router ID is an IPv4 address, which a zone cannot follow.
+// default one, and the router ID is an IPv4 address, which FRR takes.
 func newInstance(g derive.Named[derive.BGPSpec], vrfs []derive.Named[derive.VRFSpec]) (*instance, error) {
 	b := g.Spec
 	in := &instance{name: g.Name, vrf: derive.VRFOf(b.VRF), spec: b}
@@ -359,21 +325,17 @@ func newInstance(g derive.Named[derive.BGPSpec], vrfs []derive.Named[derive.VRFS
 			return nil, derive.Within(what, err)
 		}
 	}
-	if a, err := netip.ParseAddr(b.RouterID); err != nil || !a.Is4() {
-		return nil, derive.InternalErrorf("%s: routerID %q is no IPv4 address", what, b.RouterID)
+	if !b.RouterID.Is4() {
+		return nil, derive.InternalErrorf("%s: routerID %s is no IPv4 address", what, b.RouterID)
 	}
 	return in, nil
 }
 
-// checkNetworks guards an instance's networks: a prefix that is no address range, which frr.conf
-// would write as invalid, and a policy that names no RoutingPolicy, whose name frr.conf writes
-// unquoted. The BGP kind's rules refuse a default route among the networks of a VRF other than
-// the default one and a policy of another family.
+// checkNetworks guards an instance's networks: a policy that names no RoutingPolicy, whose name
+// frr.conf writes unquoted. The BGP kind's rules refuse a default route among the networks of a
+// VRF other than the default one and a policy of another family.
 func (c *frr) checkNetworks(in *instance) error {
 	for _, n := range in.spec.Networks {
-		if _, err := netip.ParsePrefix(n.Prefix); err != nil {
-			return derive.InternalErrorf("BGP %s: network %q is no address range", in.name, n.Prefix)
-		}
 		if n.Policy != nil {
 			if err := c.policy(*n.Policy); err != nil {
 				return derive.Within(fmt.Sprintf("BGP %s: network %s", in.name, n.Prefix), err)
@@ -412,9 +374,9 @@ func (c *frr) checkImports(in *instance) error {
 }
 
 // track notes a PrefixList that a family of a peer in the VRF tracks, once.
-func (c *frr) track(vrf, family, list string) {
+func (c *frr) track(vrf string, family derive.Family, list string) {
 	if c.tracked[vrf] == nil {
-		c.tracked[vrf] = map[string][]string{}
+		c.tracked[vrf] = map[derive.Family][]string{}
 	}
 	if !slices.Contains(c.tracked[vrf][family], list) {
 		c.tracked[vrf][family] = append(c.tracked[vrf][family], list)
@@ -425,14 +387,18 @@ func (c *frr) track(vrf, family, list string) {
 // leaksTracked reports whether the instance imports routes of the family from a VRF whose
 // instance tracks routes of that family, which the import keeps out: the kernel would install
 // them in the importing VRF's table.
-func (c *frr) leaksTracked(in *instance, family string) bool {
+func (c *frr) leaksTracked(in *instance, family derive.Family) bool {
 	l := in.leak(family)
 	return l != nil && slices.ContainsFunc(l.VRFs, func(v string) bool { return len(c.tracked[v][family]) > 0 })
 }
 
 // trackMap and leakMap name an instance's route-maps of a family.
-func trackMap(vrf, family string) string { return trackPrefix + vrf + "-" + family }
-func leakMap(vrf, family string) string  { return leakPrefix + vrf + "-" + family }
+func trackMap(vrf string, family derive.Family) string {
+	return trackPrefix + vrf + "-" + string(family)
+}
+func leakMap(vrf string, family derive.Family) string {
+	return leakPrefix + vrf + "-" + string(family)
+}
 
 // prepends finds the AS number each RoutingPolicy's prepend repeats: that of the BGP instances
 // whose networks, peers or imports use the policy. A route-map serves every instance, so a policy
@@ -454,7 +420,7 @@ func (c *frr) prepends() error {
 		for _, n := range in.spec.Networks {
 			use(n.Policy, asn)
 		}
-		for _, fam := range []string{"ipv4", "ipv6"} {
+		for _, fam := range []derive.Family{derive.IPv4, derive.IPv6} {
 			if l := in.leak(fam); l != nil {
 				use(l.Policy, asn)
 			}
@@ -491,18 +457,11 @@ func (c *frr) prepends() error {
 	return nil
 }
 
-func familyOf(a netip.Addr) string {
-	if a.Is4() {
-		return "ipv4"
-	}
-	return "ipv6"
-}
-
 // checkPolicy checks a RoutingPolicy's AS paths as bgpd compiles them, which no rule can, and
-// guards what frr.conf writes unquoted: the lists a term names, its AS path and its communities.
-// It guards the prepend's count too, which sizes a list. The RoutingPolicy's rules check the
-// number of terms, the PrefixLists' family, a rejecting term that sets nothing and an AS path's
-// length; the schema checks the actions and the communities.
+// guards what frr.conf writes unquoted: the lists a term names and its AS path. It guards the
+// prepend's count too, which sizes a list. The RoutingPolicy's rules check the number of terms,
+// the PrefixLists' family, a rejecting term that sets nothing and an AS path's length; the
+// schema checks the actions and the communities, and derive decodes no others.
 func (c *frr) checkPolicy(p derive.Named[derive.RoutingPolicySpec]) error {
 	for i, t := range p.Spec.Terms {
 		term := fmt.Sprintf("term %d", i+1)
@@ -525,11 +484,6 @@ func (c *frr) checkPolicy(p derive.Named[derive.RoutingPolicySpec]) error {
 			}
 		}
 		th := t.Then
-		for _, v := range append(slices.Clone(th.AddCommunities), th.RemoveCommunities...) {
-			if _, _, err := community(v); err != nil {
-				return derive.Within(term, err)
-			}
-		}
 		// The count sizes the list of AS numbers routeMaps writes: one below 0 would panic, and a
 		// large one would take the memory.
 		if th.Prepend != nil && (*th.Prepend < 1 || *th.Prepend > 10) {
@@ -580,9 +534,12 @@ func (c *frr) checkPeer(p derive.Named[derive.PeerSpec]) error {
 	return nil
 }
 
+// routeMapAction is the action of a route-map entry that takes or refuses a route.
+var routeMapAction = map[derive.RouteAction]string{"accept": "permit", "reject": "deny"}
+
 // ipWord is the word of FRR's IPv4 or IPv6 commands for a family.
-func ipWord(family string) string {
-	if family == "ipv4" {
+func ipWord(family derive.Family) string {
+	if family == derive.IPv4 {
 		return "ip"
 	}
 	return "ipv6"
@@ -593,28 +550,20 @@ func ipWord(family string) string {
 // entries of one prefix, ge and le, which FRR's prefix-list commands would take one for the
 // other, and the PrefixList's rules entries of another family and a ge or le outside the
 // prefix's length and the family's longest prefix, which mgmtd would refuse with every list and
-// route-map of the config. It guards the action, which frr.conf writes unquoted, and a prefix
-// that is no address range, which it would write as invalid.
-func prefixEntries(l derive.PrefixListSpec) ([]string, error) {
+// route-map of the config.
+func prefixEntries(l derive.PrefixListSpec) []string {
 	var entries []string
 	for _, e := range l.Entries {
-		p, err := netip.ParsePrefix(e.Prefix)
-		if err != nil {
-			return nil, derive.InternalErrorf("%q is no address range", e.Prefix)
-		}
-		if e.Action != "permit" && e.Action != "deny" {
-			return nil, derive.InternalErrorf("action %q is neither permit nor deny", e.Action)
-		}
-		match := p.Masked().String()
+		match := e.Prefix.Masked().String()
 		if e.GE != nil {
 			match += fmt.Sprintf(" ge %d", *e.GE)
 		}
 		if e.LE != nil {
 			match += fmt.Sprintf(" le %d", *e.LE)
 		}
-		entries = append(entries, e.Action+" "+match)
+		entries = append(entries, string(e.Action)+" "+match)
 	}
-	return entries, nil
+	return entries
 }
 
 // prefixLists renders each PrefixList as a prefix-list of its family, an entry a sequence number.
@@ -632,10 +581,9 @@ func (c *frr) prefixLists(b *strings.Builder) {
 }
 
 // communityList is the community-list line of a community, standard or large, as FRR writes it.
-func communityList(name string, seq int, value string) string {
-	value, large, _ := community(value)
+func communityList(name string, seq int, value derive.Community) string {
 	kind := "community-list"
-	if large {
+	if value.Large {
 		kind = "large-community-list"
 	}
 	return fmt.Sprintf("bgp %s standard %s seq %d permit %s\n", kind, name, seq, value)
@@ -687,7 +635,7 @@ func termSeq(i int) int { return 10 * (i + 1) }
 func (c *frr) routeMaps(b *strings.Builder) {
 	for _, p := range c.policies {
 		for i, t := range p.Spec.Terms {
-			action := map[string]string{"accept": "permit", "reject": "deny"}[t.Then.Action]
+			action := routeMapAction[t.Then.Action]
 			fmt.Fprintf(b, "route-map %s%s %s %d\n", policyPrefix, p.Name, action, termSeq(i))
 			if l := t.Match.PrefixList; l != nil {
 				fmt.Fprintf(b, " match %s address prefix-list %s%s\n", ipWord(c.families[*l]), prefixListPrefix, *l)
@@ -711,10 +659,10 @@ func (c *frr) routeMaps(b *strings.Builder) {
 			}
 			var standard, large []string
 			for _, v := range th.AddCommunities {
-				if v, l, _ := community(v); l {
-					large = append(large, v)
+				if v.Large {
+					large = append(large, v.Value)
 				} else {
-					standard = append(standard, v)
+					standard = append(standard, v.Value)
 				}
 			}
 			if len(standard) > 0 {
@@ -725,7 +673,7 @@ func (c *frr) routeMaps(b *strings.Builder) {
 			}
 			var removeStandard, removeLarge bool
 			for _, v := range th.RemoveCommunities {
-				if _, l, _ := community(v); l {
+				if v.Large {
 					removeLarge = true
 				} else {
 					removeStandard = true
@@ -746,7 +694,7 @@ func (c *frr) routeMaps(b *strings.Builder) {
 			}
 			b.WriteString("exit\n")
 		}
-		fmt.Fprintf(b, "route-map %s%s %s 65535\nexit\n", policyPrefix, p.Name, map[string]string{"accept": "permit", "reject": "deny"}[p.Spec.Default])
+		fmt.Fprintf(b, "route-map %s%s %s 65535\nexit\n", policyPrefix, p.Name, routeMapAction[p.Spec.Default])
 	}
 	if c.needsAcceptAll() {
 		fmt.Fprintf(b, "route-map %s permit 10\nexit\n", acceptAll)
@@ -781,7 +729,7 @@ func (c *frr) trackingMaps(b *strings.Builder) bool {
 	}
 	written := len(lists) > 0
 	for _, in := range c.instances {
-		for _, fam := range []string{"ipv4", "ipv6"} {
+		for _, fam := range []derive.Family{derive.IPv4, derive.IPv6} {
 			if ls := c.tracked[in.vrf][fam]; len(ls) > 0 {
 				name := trackMap(in.vrf, fam)
 				fmt.Fprintf(b, "route-map %s deny 5\n match %s next-hop type blackhole\nexit\n", name, ipWord(fam))
@@ -860,11 +808,11 @@ func (c *frr) router(b *strings.Builder, in *instance) {
 			}
 		}
 	}
-	for _, fam := range []string{"ipv4", "ipv6"} {
+	for _, fam := range []derive.Family{derive.IPv4, derive.IPv6} {
 		fmt.Fprintf(b, " !\n address-family %s unicast\n", fam)
 		for _, n := range g.Networks {
-			p, _ := netip.ParsePrefix(n.Prefix)
-			if familyOf(p.Addr()) != fam {
+			p := n.Prefix
+			if derive.FamilyOf(p.Addr()) != fam {
 				continue
 			}
 			line := "  network " + p.Masked().String()

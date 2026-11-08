@@ -23,8 +23,8 @@ type Session struct {
 // first fault, an interface or glob of a VRF's device, an interface of a link of another VRF, a
 // glob that matches links of other VRFs alone and a link a glob expands to that is named like an
 // address. Of the peers it accepts, it then refuses a session that two peers of a VRF name. It
-// guards, with an internal error, what frr.conf and the firewall write unquoted: an address
-// PeerAddress guards and an interface or glob that is none.
+// guards, with an internal error, an interface or glob that is none, which frr.conf and the
+// firewall write unquoted.
 func (d Model) Sessions() (map[string][]Session, error) {
 	out := map[string][]Session{}
 	devices := d.Devices()
@@ -66,11 +66,7 @@ func (d Model) sessions(p Named[PeerSpec], devices []string) ([]Session, error) 
 	s, vrf := p.Spec, VRFOf(p.Spec.VRF)
 	switch {
 	case s.Address != nil:
-		a, err := PeerAddress(*s.Address)
-		if err != nil {
-			return nil, err
-		}
-		return []Session{{Neighbour: a.String()}}, nil
+		return []Session{{Neighbour: s.Address.String()}}, nil
 	case s.Interface != nil:
 		if !PlainInterface.MatchString(*s.Interface) {
 			return nil, InternalErrorf("interface %q is no interface name", *s.Interface)
@@ -153,15 +149,4 @@ func peerField(s PeerSpec) string {
 		return "spec.interface"
 	}
 	return "spec.interfaces"
-}
-
-// PeerAddress parses a peer's address, which the BGPPeer's rule makes a unicast address beyond
-// the router. frr.conf and the ruleset write it unquoted, so it guards a value that is no address,
-// and one with a zone, which netip takes with any characters and the schema's format refuses.
-func PeerAddress(s string) (netip.Addr, error) {
-	a, err := netip.ParseAddr(s)
-	if err != nil || a.Zone() != "" {
-		return netip.Addr{}, InternalErrorf("address %q is no address without a zone", s)
-	}
-	return a, nil
 }

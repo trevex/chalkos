@@ -3,7 +3,6 @@ package derive
 import (
 	"errors"
 	"fmt"
-	"net/netip"
 	"slices"
 	"strings"
 
@@ -208,11 +207,7 @@ func (d Model) checkNATRule(r Named[NATSpec], devices []string, zones map[string
 	}
 	if n.Type == "dnat" {
 		for i, s := range n.Match.Destination {
-			dst, err := netip.ParsePrefix(s)
-			if err != nil {
-				continue
-			}
-			dst = dst.Masked()
+			dst := s.Masked()
 			for _, x := range nat64 {
 				for _, p := range append(slices.Clone(x.Pools), x.Prefix) {
 					if p.Bits() <= dst.Bits() && p.Contains(dst.Addr()) {
@@ -223,12 +218,11 @@ func (d Model) checkNATRule(r Named[NATSpec], devices []string, zones map[string
 		}
 	}
 	if (n.Type == "snat" || n.Type == "dnat") && n.To != nil {
-		if a, err := netip.ParseAddr(n.To.Address); err == nil {
-			for _, x := range nat64 {
-				for _, p := range x.Pools {
-					if p.Contains(a) {
-						return refusals.Errorf("NATRule", r.Name, "spec.to.address", "to.address %s lies in %s, the pool of NAT64 %s, whose addresses belong to the NAT64 whole; translate to an address outside the pool", a, p, x.Name)
-					}
+		a := n.To.Address
+		for _, x := range nat64 {
+			for _, p := range x.Pools {
+				if p.Contains(a) {
+					return refusals.Errorf("NATRule", r.Name, "spec.to.address", "to.address %s lies in %s, the pool of NAT64 %s, whose addresses belong to the NAT64 whole; translate to an address outside the pool", a, p, x.Name)
 				}
 			}
 		}

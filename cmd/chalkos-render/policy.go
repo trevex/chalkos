@@ -164,10 +164,7 @@ func (f *firewall) policyMatches(r derive.PolicyRule) ([]string, error) {
 		if err != nil {
 			return nil, err
 		}
-		fam := "ipv6"
-		if h.Address.Is4() {
-			fam = "ipv4"
-		}
+		fam := derive.FamilyOf(h.Address)
 		fr.Family = &fam
 	}
 	dscp := make([]string, len(m.DSCP))
@@ -184,12 +181,12 @@ func (f *firewall) policyMatches(r derive.PolicyRule) ([]string, error) {
 			out = append(out, fm.match)
 			continue
 		}
-		families := []string{fm.family}
+		families := []derive.Family{fm.family}
 		if fm.family == "" {
-			families = []string{"ipv4", "ipv6"}
+			families = []derive.Family{derive.IPv4, derive.IPv6}
 		}
 		for _, fam := range families {
-			rest := strings.TrimPrefix(fm.match, "meta nfproto "+fam)
+			rest := strings.TrimPrefix(fm.match, "meta nfproto "+string(fam))
 			out = append(out, joinWords(fmt.Sprintf("%s dscp { %s }", familyWords[fam], strings.Join(dscp, ", ")), strings.TrimSpace(rest)))
 		}
 	}

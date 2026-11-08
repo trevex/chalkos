@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"maps"
+	"net/netip"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -246,8 +247,8 @@ func TestRouterOpenings(t *testing.T) {
 	}
 	fw.openings = []opening{
 		{comment: "BGPPeer fabric", protocol: "tcp", ports: []derive.PortRange{"179"}, interfaces: []string{"eth1", "eth2"}},
-		{comment: "BGPPeer far", protocol: "tcp", ports: []derive.PortRange{"179"}, sources: []string{"192.0.2.9/32", "2001:db8::9/128"}},
-		{comment: "Resolver resolver", protocol: "udp", ports: []derive.PortRange{"53"}, sources: []string{"192.0.2.0/24", "2001:db8::/32"}, destinations: []string{"2001:db8:ffff::1/128"}},
+		{comment: "BGPPeer far", protocol: "tcp", ports: []derive.PortRange{"179"}, sources: ranges("192.0.2.9/32", "2001:db8::9/128")},
+		{comment: "Resolver resolver", protocol: "udp", ports: []derive.PortRange{"53"}, sources: ranges("192.0.2.0/24", "2001:db8::/32"), destinations: ranges("2001:db8:ffff::1/128")},
 	}
 	text, err := fw.ruleset()
 	if err != nil {
@@ -267,7 +268,7 @@ func TestRouterOpenings(t *testing.T) {
 // A BGPPeer opens BGP's port, and with bfd BFD's single-hop ports, on its links or from its
 // address, and BFD's multi-hop port from its address alone.
 func TestBGPOpenings(t *testing.T) {
-	addr, link := "192.0.2.9", "eth1"
+	addr, link := netip.MustParseAddr("192.0.2.9"), "eth1"
 	got, err := bgpOpenings([]derive.Named[derive.PeerSpec]{
 		{Name: "far", Spec: derive.PeerSpec{Address: &addr, BFD: true}},
 		{Name: "near", Spec: derive.PeerSpec{Interface: &link, BFD: true}},
@@ -277,8 +278,8 @@ func TestBGPOpenings(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := []opening{
-		{comment: "BGPPeer far", protocol: "tcp", ports: []derive.PortRange{"179"}, sources: []string{"192.0.2.9/32"}},
-		{comment: "BGPPeer far", protocol: "udp", ports: []derive.PortRange{"3784", "3785", "4784"}, sources: []string{"192.0.2.9/32"}},
+		{comment: "BGPPeer far", protocol: "tcp", ports: []derive.PortRange{"179"}, sources: ranges("192.0.2.9/32")},
+		{comment: "BGPPeer far", protocol: "udp", ports: []derive.PortRange{"3784", "3785", "4784"}, sources: ranges("192.0.2.9/32")},
 		{comment: "BGPPeer near", protocol: "tcp", ports: []derive.PortRange{"179"}, interfaces: []string{"eth1"}},
 		{comment: "BGPPeer near", protocol: "udp", ports: []derive.PortRange{"3784", "3785"}, interfaces: []string{"eth1"}},
 		{comment: "BGPPeer plain", protocol: "tcp", ports: []derive.PortRange{"179"}, interfaces: []string{"swp*"}},
@@ -293,12 +294,12 @@ func TestBGPOpenings(t *testing.T) {
 // allow, which would open the port wider.
 func TestResolverOpenings(t *testing.T) {
 	got, err := resolverOpenings([]derive.Named[derive.ResolverSpec]{
-		{Name: "resolver", Spec: derive.ResolverSpec{Listen: []string{"2001:db8:ffff::1", "192.0.2.1"}, Allow: []string{"2001:db8::1/32", "192.0.2.0/24"}}},
+		{Name: "resolver", Spec: derive.ResolverSpec{Listen: addrs("2001:db8:ffff::1", "192.0.2.1"), Allow: ranges("2001:db8::1/32", "192.0.2.0/24")}},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	dns := opening{comment: "Resolver resolver", ports: []derive.PortRange{"53"}, sources: []string{"2001:db8::/32", "192.0.2.0/24"}, destinations: []string{"2001:db8:ffff::1/128", "192.0.2.1/32"}}
+	dns := opening{comment: "Resolver resolver", ports: []derive.PortRange{"53"}, sources: ranges("2001:db8::/32", "192.0.2.0/24"), destinations: ranges("2001:db8:ffff::1/128", "192.0.2.1/32")}
 	udp, tcp := dns, dns
 	udp.protocol, tcp.protocol = "udp", "tcp"
 	if want := []opening{udp, tcp}; !reflect.DeepEqual(got, want) {
@@ -306,16 +307,16 @@ func TestResolverOpenings(t *testing.T) {
 	}
 	// A VRF's resolver opens its port on the VRF's device; resolverOpenings checks the VRF's name,
 	// and the output unbound that a VRF document declares it.
-	got, err = resolverOpenings([]derive.Named[derive.ResolverSpec]{{Name: "guest", Spec: derive.ResolverSpec{VRF: ptr("guest"), Listen: []string{"2001:db8:3::1"}, Allow: []string{"2001:db8:3::/64"}}}})
+	got, err = resolverOpenings([]derive.Named[derive.ResolverSpec]{{Name: "guest", Spec: derive.ResolverSpec{VRF: ptr("guest"), Listen: addrs("2001:db8:3::1"), Allow: ranges("2001:db8:3::/64")}}})
 	if err != nil || len(got) != 2 || got[0].vrf != "guest" || got[1].vrf != "guest" {
 		t.Errorf("resolverOpenings of a VRF's resolver = %+v, %v", got, err)
 	}
-	if _, err := resolverOpenings([]derive.Named[derive.ResolverSpec]{{Name: "bad", Spec: derive.ResolverSpec{VRF: ptr("a b"), Listen: []string{"2001:db8:3::1"}, Allow: []string{"2001:db8:3::/64"}}}}); err == nil || !strings.Contains(err.Error(), `internal error: Resolver bad: the VRF "a b" is no VRF's name`) {
+	if _, err := resolverOpenings([]derive.Named[derive.ResolverSpec]{{Name: "bad", Spec: derive.ResolverSpec{VRF: ptr("a b"), Listen: addrs("2001:db8:3::1"), Allow: ranges("2001:db8:3::/64")}}}); err == nil || !strings.Contains(err.Error(), `internal error: Resolver bad: the VRF "a b" is no VRF's name`) {
 		t.Errorf("err = %v", err)
 	}
 	for spec, want := range map[string]string{
-		`{"listen": ["fe80::1%eth0\" } accept"], "allow": ["2001:db8::/32"]}`:                         `internal error: Resolver resolver: listen: "fe80::1%eth0\" } accept" is no address without a zone`,
-		`{"listen": ["2001:db8:ffff::1"], "allow": ["2001:db8::/32\" } accept\n\t\tip6 saddr ::/0"]}`: `internal error: Resolver resolver: allow: "2001:db8::/32\" } accept\n\t\tip6 saddr ::/0" is no address range`,
+		`{"listen": ["fe80::1%eth0\" } accept"], "allow": ["2001:db8::/32"]}`:                         `internal error: Resolver resolver: "fe80::1%eth0\" } accept" is no address without a zone`,
+		`{"listen": ["2001:db8:ffff::1"], "allow": ["2001:db8::/32\" } accept\n\t\tip6 saddr ::/0"]}`: `internal error: Resolver resolver: netip.ParsePrefix("2001:db8::/32\" } accept\n\t\tip6 saddr ::/0"): ParseAddr("2001:db8::/32\" } accept\n\t\tip6 saddr ::"): each colon-separated field must have at least one digit (at "/32\" } accept\n\t\tip6 saddr ::")`,
 		`{"listen": [], "allow": ["2001:db8::/32"]}`:                                                  "internal error: Resolver resolver: listen names no address, so the firewall would accept DNS on every address of the router",
 		`{"listen": ["2001:db8:ffff::1"], "allow": []}`:                                               "internal error: Resolver resolver: allow names no range, so the firewall would accept DNS from every client",
 	} {
@@ -494,17 +495,17 @@ func TestRouterRefusals(t *testing.T) {
 		want string
 	}{
 		"a port that is no number":       {[]string{"router-nftables", "chalkd"}, nil, `"chalkd" is no TCP port of chalkd`},
-		"an unknown hash":                {[]string{"router-sysctl"}, map[string][]any{"Router": {doc("Router", "r", `{"forwarding": {"ipv4": true, "ipv6": true}, "rpFilter": "loose", "ecmpHash": "l5", "conntrackMax": null, "management": {"interfaces": null}}`)}}, `internal error: Router: ecmpHash "l5" is neither l3 nor l4`},
-		"an unknown reverse-path filter": {[]string{"router-nftables", "50000"}, map[string][]any{"Router": {doc("Router", "r", `{"forwarding": {"ipv4": true, "ipv6": true}, "rpFilter": "any", "ecmpHash": "l4", "conntrackMax": null, "management": {"interfaces": null}}`)}}, `internal error: Router: rpFilter "any" is none of off, loose and strict`},
+		"an unknown hash":                {[]string{"router-sysctl"}, map[string][]any{"Router": {doc("Router", "r", `{"forwarding": {"ipv4": true, "ipv6": true}, "rpFilter": "loose", "ecmpHash": "l5", "conntrackMax": null, "management": {"interfaces": null}}`)}}, `internal error: Router r: "l5" is none of l3, l4`},
+		"an unknown reverse-path filter": {[]string{"router-nftables", "50000"}, map[string][]any{"Router": {doc("Router", "r", `{"forwarding": {"ipv4": true, "ipv6": true}, "rpFilter": "any", "ecmpHash": "l4", "conntrackMax": null, "management": {"interfaces": null}}`)}}, `internal error: Router r: "any" is none of off, loose, strict`},
 		// Ports, which the ruleset writes unquoted.
 		"an inverted range":       {[]string{"router-nftables", "50000"}, map[string][]any{"FirewallZone": {zone}, "FirewallPolicy": {rule(`{"protocol": "tcp", "destinationPorts": ["90-80"], "action": "accept"}`)}}, `internal error: FirewallPolicy wan-local: "90-80" is no range of ports`},
 		"port zero":               {[]string{"router-nftables", "50000"}, map[string][]any{"FirewallZone": {zone}, "FirewallPolicy": {rule(`{"protocol": "tcp", "destinationPorts": [0], "action": "accept"}`)}}, "internal error: FirewallPolicy wan-local: a port is a number from 1 to 65535"},
 		"a range from port zero":  {[]string{"router-nftables", "50000"}, map[string][]any{"FirewallZone": {zone}, "FirewallPolicy": {rule(`{"protocol": "tcp", "destinationPorts": ["0-80"], "action": "accept"}`)}}, `internal error: FirewallPolicy wan-local: "0-80" is no range of ports`},
 		"a port that adds a rule": {[]string{"router-nftables", "50000"}, map[string][]any{"FirewallZone": {zone}, "FirewallPolicy": {rule(`{"protocol": "tcp", "destinationPorts": ["22 } accept; tcp dport { 23"], "action": "accept"}`)}}, `internal error: FirewallPolicy wan-local: "22 } accept; tcp dport { 23" is no range of ports`},
 		// Values nftables would read as syntax of the ruleset.
-		"an ICMP type that adds a rule": {[]string{"router-nftables", "50000"}, map[string][]any{"FirewallZone": {zone}, "FirewallPolicy": {rule(`{"protocol": "icmp", "icmpTypes": ["echo-request } ip saddr 0.0.0.0/0 accept; icmp type { echo-reply"], "action": "drop"}`)}}, `internal error: FirewallPolicy wan-local rule 1: "echo-request } ip saddr 0.0.0.0/0 accept; icmp type { echo-reply" is no ICMP type the firewall matches`},
-		"a family that adds a match":    {[]string{"router-nftables", "50000"}, map[string][]any{"FirewallZone": {zone}, "FirewallPolicy": {rule(`{"family": "ipv4 ip saddr 0.0.0.0/0", "action": "accept"}`)}}, `internal error: FirewallPolicy wan-local rule 1: family "ipv4 ip saddr 0.0.0.0/0" is neither ipv4 nor ipv6`},
-		"a set's family":                {[]string{"router-nftables", "50000"}, map[string][]any{"AddressSet": {doc("AddressSet", "office", `{"family": "ipv4_addr; flags interval", "prefixes": ["192.0.2.0/24"]}`)}}, `internal error: AddressSet office: family "ipv4_addr; flags interval" is neither ipv4 nor ipv6`},
+		"an ICMP type that adds a rule": {[]string{"router-nftables", "50000"}, map[string][]any{"FirewallZone": {zone}, "FirewallPolicy": {rule(`{"protocol": "icmp", "icmpTypes": ["echo-request } ip saddr 0.0.0.0/0 accept; icmp type { echo-reply"], "action": "drop"}`)}}, `internal error: FirewallPolicy wan-local: "echo-request } ip saddr 0.0.0.0/0 accept; icmp type { echo-reply" is none of echo-request, echo-reply, destination-unreachable, time-exceeded, parameter-problem, packet-too-big`},
+		"a family that adds a match":    {[]string{"router-nftables", "50000"}, map[string][]any{"FirewallZone": {zone}, "FirewallPolicy": {rule(`{"family": "ipv4 ip saddr 0.0.0.0/0", "action": "accept"}`)}}, `internal error: FirewallPolicy wan-local: "ipv4 ip saddr 0.0.0.0/0" is none of ipv4, ipv6`},
+		"a set's family":                {[]string{"router-nftables", "50000"}, map[string][]any{"AddressSet": {doc("AddressSet", "office", `{"family": "ipv4_addr; flags interval", "prefixes": ["192.0.2.0/24"]}`)}}, `internal error: AddressSet office: "ipv4_addr; flags interval" is none of ipv4, ipv6`},
 		"a policy name that adds rules": {[]string{"router-nftables", "50000"}, map[string][]any{"FirewallZone": {zone}, "FirewallPolicy": {doc("FirewallPolicy", "x { accept; }; chain y", `{"from": "wan", "to": "local", "default": "drop", "rules": []}`)}}, `internal error: a FirewallPolicy document: "x { accept; }; chain y" is no document name`},
 		"a set name in capitals":        {[]string{"router-nftables", "50000"}, map[string][]any{"AddressSet": {doc("AddressSet", "Office", `{"family": "ipv4", "prefixes": ["192.0.2.0/24"]}`)}}, `internal error: a AddressSet document: "Office" is no document name`},
 		"an interface that ends a set":  {[]string{"router-nftables", "50000"}, map[string][]any{"FirewallZone": {doc("FirewallZone", "wan", `{"interfaces": ["eth0\" } accept; iifname { \"eth1"]}`)}}, `internal error: FirewallZone wan: "eth0\" } accept; iifname { \"eth1" is no interface name or glob`},
@@ -517,8 +518,8 @@ func TestRouterRefusals(t *testing.T) {
 		"snat without to":        {[]string{"router-nftables", "50000"}, map[string][]any{"FirewallZone": {zone}, "NATRule": {doc("NATRule", "n", `{"type": "snat", "family": "ipv4", "out": {"zone": "wan", "interface": null}, "in": null, "match": {"source": [], "destination": [], "protocol": null, "destinationPorts": []}, "to": null}`)}}, "internal error: NATRule n: snat has no to"},
 		// A BGPPeer's ports open on its interfaces or from its address alone.
 		"a peer's interface that ends a set": {[]string{"router-nftables", "50000"}, map[string][]any{"BGPPeer": {doc("BGPPeer", "a", `{"interface": "eth1\" } accept; iifname { \"eth2"}`)}}, `internal error: BGPPeer a: "eth1\" } accept; iifname { \"eth2" is no interface name or glob`},
-		"a peer's address with a zone":       {[]string{"router-nftables", "50000"}, map[string][]any{"BGPPeer": {doc("BGPPeer", "a", `{"address": "fe80::1%eth1"}`)}}, `internal error: BGPPeer a: address "fe80::1%eth1" is no address without a zone`},
-		"a peer's address range":             {[]string{"router-nftables", "50000"}, map[string][]any{"BGPPeer": {doc("BGPPeer", "a", `{"address": "0.0.0.0/0"}`)}}, `internal error: BGPPeer a: address "0.0.0.0/0" is no address without a zone`},
+		"a peer's address with a zone":       {[]string{"router-nftables", "50000"}, map[string][]any{"BGPPeer": {doc("BGPPeer", "a", `{"address": "fe80::1%eth1"}`)}}, `internal error: BGPPeer a: "fe80::1%eth1" is no address without a zone`},
+		"a peer's address range":             {[]string{"router-nftables", "50000"}, map[string][]any{"BGPPeer": {doc("BGPPeer", "a", `{"address": "0.0.0.0/0"}`)}}, `internal error: BGPPeer a: ParseAddr("0.0.0.0/0"): unexpected character (at "/0")`},
 		"a peer of no interface":             {[]string{"router-nftables", "50000"}, map[string][]any{"BGPPeer": {doc("BGPPeer", "a", `{"interfaces": []}`)}}, "internal error: BGPPeer a names no interface"},
 		// Without address and interface, the opening is of the interfaces, which would open the
 		// port on every link.
@@ -587,9 +588,9 @@ func TestFRRRefusals(t *testing.T) {
 		"a peer without a BGP document": {map[string][]any{"BGPPeer": {peer("a", `{"interface": "eth1", "remoteAS": "external", "families": {"ipv6": {}}}`)}},
 			"internal error: the config holds BGPPeer documents but no BGP document"},
 		// Guards of values FRR would read as further commands or arguments of the config.
-		"an IPv6 router ID":               {map[string][]any{"BGP": {doc("BGP", "bgp", `{"asn": 64512, "routerID": "2001:db8::1"}`)}}, `internal error: BGP bgp: routerID "2001:db8::1" is no IPv4 address`},
-		"a router ID of five parts":       {map[string][]any{"BGP": {doc("BGP", "bgp", `{"asn": 64512, "routerID": "192.0.2.1.1"}`)}}, `internal error: BGP bgp: routerID "192.0.2.1.1" is no IPv4 address`},
-		"a router ID that adds a command": {map[string][]any{"BGP": {doc("BGP", "bgp", `{"asn": 64512, "routerID": "192.0.2.1\n neighbor 192.0.2.9 remote-as 64999"}`)}}, `internal error: BGP bgp: routerID "192.0.2.1\n neighbor 192.0.2.9 remote-as 64999" is no IPv4 address`},
+		"an IPv6 router ID":               {map[string][]any{"BGP": {doc("BGP", "bgp", `{"asn": 64512, "routerID": "2001:db8::1"}`)}}, `internal error: BGP bgp: routerID 2001:db8::1 is no IPv4 address`},
+		"a router ID of five parts":       {map[string][]any{"BGP": {doc("BGP", "bgp", `{"asn": 64512, "routerID": "192.0.2.1.1"}`)}}, `internal error: BGP bgp: ParseAddr("192.0.2.1.1"): IPv4 address too long`},
+		"a router ID that adds a command": {map[string][]any{"BGP": {doc("BGP", "bgp", `{"asn": 64512, "routerID": "192.0.2.1\n neighbor 192.0.2.9 remote-as 64999"}`)}}, `internal error: BGP bgp: ParseAddr("192.0.2.1\n neighbor 192.0.2.9 remote-as 64999"): unexpected character (at "\n neighbor 192.0.2.9 remote-as 64999")`},
 		"an unknown remote AS":            {map[string][]any{"BGP": {bgp("")}, "BGPPeer": {peer("a", `{"interface": "eth1", "remoteAS": "anyone", "families": {"ipv6": {}}}`)}}, `internal error: BGPPeer a: remoteAS is external, internal or an AS number from 1 to 4294967295, not "anyone"`},
 		"a remote AS that adds a neighbour": {map[string][]any{"BGP": {bgp("")}, "BGPPeer": {peer("a", `{"interface": "eth1", "remoteAS": "external\n neighbor 192.0.2.9 remote-as 64999", "families": {"ipv6": {}}}`)}},
 			"internal error: BGPPeer a: remoteAS is external, internal or an AS number"},
@@ -598,7 +599,7 @@ func TestFRRRefusals(t *testing.T) {
 		"a large community of 33 bits": {map[string][]any{"BGP": {bgp("")}, "CommunityList": {doc("CommunityList", "c", `{"communities": ["1:4294967296:1"]}`)}}, `internal error: CommunityList c: "1:4294967296:1" is no community: its parts are numbers of 32 bits`},
 		"a community with a sign":      {map[string][]any{"BGP": {bgp("")}, "CommunityList": {doc("CommunityList", "c", `{"communities": ["+1:1"]}`)}}, `internal error: CommunityList c: "+1:1" is no community`},
 		"a community that adds an argument": {map[string][]any{"BGP": {bgp("")}, "RoutingPolicy": {policy("p", `{"then": {"action": "accept", "addCommunities": ["64512:1 no-export"]}}`)}},
-			`internal error: RoutingPolicy p: term 1: "64512:1 no-export" is no community`},
+			`internal error: RoutingPolicy p: "64512:1 no-export" is no community: its parts are numbers of 16 bits`},
 		"an AS path that adds a command": {map[string][]any{"BGP": {bgp("")}, "RoutingPolicy": {policy("p", `{"match": {"asPath": "^1$\n neighbor x shutdown"}, "then": {"action": "accept"}}`)}},
 			`internal error: RoutingPolicy p: term 1: asPath "^1$\n neighbor x shutdown" holds more than digits, single spaces and _^$.*+?()|{},-`},
 		"a description of two lines":           {description("a\nb"), notDescription},
@@ -617,11 +618,11 @@ func TestFRRRefusals(t *testing.T) {
 		"a password's key with an @": {map[string][]any{"BGP": {bgp("")}, "BGPPeer": {peer("a", `{"interface": "eth1", "remoteAS": "external", "password": {"secretRef": {"name": "bgp", "key": "a@b"}}, "families": {"ipv6": {}}}`)}},
 			`internal error: BGPPeer a: the password's Secret "bgp" and key "a@b"`},
 		"a network that adds an argument": {map[string][]any{"BGP": {bgp(`{"prefix": "192.0.2.0/24 route-map x"}`)}},
-			`internal error: BGP bgp: network "192.0.2.0/24 route-map x" is no address range`},
+			`internal error: BGP bgp: netip.ParsePrefix("192.0.2.0/24 route-map x"): bad bits after slash: "24 route-map x"`},
 		"a prefix that adds an argument": {map[string][]any{"BGP": {bgp("")}, "PrefixList": {list("l", "ipv4", `{"prefix": "192.0.2.0/24 le 32", "action": "permit"}`)}},
-			`internal error: PrefixList l: "192.0.2.0/24 le 32" is no address range`},
+			`internal error: PrefixList l: netip.ParsePrefix("192.0.2.0/24 le 32"): bad bits after slash: "24 le 32"`},
 		"a prefix list action that adds a prefix": {map[string][]any{"BGP": {bgp("")}, "PrefixList": {list("l", "ipv4", `{"prefix": "192.0.2.0/24", "action": "permit 0.0.0.0/0\nip prefix-list pl-l seq 1 permit"}`)}},
-			`internal error: PrefixList l: action "permit 0.0.0.0/0\nip prefix-list pl-l seq 1 permit" is neither permit nor deny`},
+			`internal error: PrefixList l: "permit 0.0.0.0/0\nip prefix-list pl-l seq 1 permit" is none of permit, deny`},
 		"a policy name that adds a command": {map[string][]any{"BGP": {bgp("")}, "RoutingPolicy": {doc("RoutingPolicy", "p 10\nexit\nrouter bgp 64999", `{"terms": [], "default": "reject"}`)}},
 			`internal error: a RoutingPolicy document: "p 10\nexit\nrouter bgp 64999" is no document name`},
 		"a peer name that adds a command": {map[string][]any{"BGP": {bgp("")}, "BGPPeer": {peer("a remote-as 64999", `{"interface": "eth1", "remoteAS": "external", "families": {"ipv6": {}}}`)}},
@@ -719,22 +720,22 @@ func TestJoolRefusals(t *testing.T) {
 		// What jool file check passes and the kernel refuses once chalkos-nat64 loads the instance.
 		"a name of 12 characters": {[]any{nat64("abcdefghijkl", `{"prefix": "64:ff9b::/96", "pool4": []}`)},
 			"internal error: NAT64 abcdefghijkl: its link n64-abcdefghijkl is longer than an interface name's 15 characters; chalkd checks the config against the schemas, the rules and the validators before it renders"},
-		"a prefix of 95 bits": {[]any{nat64("edge", `{"prefix": "64:ff9b::/95", "pool4": []}`)}, `internal error: NAT64 edge: the prefix "64:ff9b::/95" ` + notPrefix},
-		"an IPv4 prefix":      {[]any{nat64("edge", `{"prefix": "192.0.2.0/24", "pool4": []}`)}, `internal error: NAT64 edge: the prefix "192.0.2.0/24" ` + notPrefix},
-		"bits 64 to 71 set":   {[]any{nat64("edge", `{"prefix": "2001:db8:0:0:ff00::/96", "pool4": []}`)}, `internal error: NAT64 edge: the prefix "2001:db8:0:0:ff00::/96" ` + notPrefix},
-		"an IPv6 pool":        {[]any{pool(`{"prefix": "2001:db8::/64", "ports": "61001-65535", "protocols": ["tcp"]}`)}, `internal error: NAT64 edge: pool entry 1: "2001:db8::/64" is no IPv4 range of 16 bits or more`},
-		"a pool of a /15":     {[]any{pool(`{"prefix": "198.18.0.0/15", "ports": "61001-65535", "protocols": ["tcp"]}`)}, `internal error: NAT64 edge: pool entry 1: "198.18.0.0/15" is no IPv4 range of 16 bits or more`},
+		"a prefix of 95 bits": {[]any{nat64("edge", `{"prefix": "64:ff9b::/95", "pool4": []}`)}, `internal error: NAT64 edge: the prefix 64:ff9b::/95 ` + notPrefix},
+		"an IPv4 prefix":      {[]any{nat64("edge", `{"prefix": "192.0.2.0/24", "pool4": []}`)}, `internal error: NAT64 edge: the prefix 192.0.2.0/24 ` + notPrefix},
+		"bits 64 to 71 set":   {[]any{nat64("edge", `{"prefix": "2001:db8:0:0:ff00::/96", "pool4": []}`)}, `internal error: NAT64 edge: the prefix 2001:db8:0:0:ff00::/96 ` + notPrefix},
+		"an IPv6 pool":        {[]any{pool(`{"prefix": "2001:db8::/64", "ports": "61001-65535", "protocols": ["tcp"]}`)}, `internal error: NAT64 edge: pool entry 1: 2001:db8::/64 is no IPv4 range of 16 bits or more`},
+		"a pool of a /15":     {[]any{pool(`{"prefix": "198.18.0.0/15", "ports": "61001-65535", "protocols": ["tcp"]}`)}, `internal error: NAT64 edge: pool entry 1: 198.18.0.0/15 is no IPv4 range of 16 bits or more`},
 		"ephemeral ports":     {[]any{pool(`{"prefix": "192.0.2.8/30", "ports": "1-65535", "protocols": ["tcp"]}`)}, "internal error: NAT64 edge: pool entry 1: the ports 1-65535 take the kernel's ephemeral ports, 32768 to 60999, which Jool refuses"},
 		"one ephemeral port":  {[]any{pool(`{"prefix": "192.0.2.8/30", "ports": 40000, "protocols": ["icmp"]}`)}, "internal error: NAT64 edge: pool entry 1: the ports 40000 take the kernel's ephemeral ports"},
 		"port zero":           {[]any{pool(`{"prefix": "192.0.2.8/30", "ports": "0-100", "protocols": ["tcp"]}`)}, `internal error: NAT64 edge: "0-100" is no range of ports`},
 		"an inverted range":   {[]any{pool(`{"prefix": "192.0.2.8/30", "ports": "65535-61001", "protocols": ["tcp"]}`)}, `internal error: NAT64 edge: "65535-61001" is no range of ports`},
 		// Values that would add to the JSON Jool reads, were it written by hand.
-		"a prefix that adds a key":  {[]any{nat64("edge", `{"prefix": "64:ff9b::/96\", \"framework\": \"iptables", "pool4": []}`)}, "internal error: NAT64 edge: the prefix"},
-		"a pool that adds an entry": {[]any{pool(`{"prefix": "192.0.2.8/30\"}, {\"prefix\": \"198.51.100.0/24", "ports": "61001-65535", "protocols": ["tcp"]}`)}, "is no IPv4 range"},
+		"a prefix that adds a key":  {[]any{nat64("edge", `{"prefix": "64:ff9b::/96\", \"framework\": \"iptables", "pool4": []}`)}, "internal error: NAT64 edge: netip.ParsePrefix"},
+		"a pool that adds an entry": {[]any{pool(`{"prefix": "192.0.2.8/30\"}, {\"prefix\": \"198.51.100.0/24", "ports": "61001-65535", "protocols": ["tcp"]}`)}, "internal error: NAT64 edge: netip.ParsePrefix"},
 		"ports that add a key":      {[]any{pool(`{"prefix": "192.0.2.8/30", "ports": "61001-65535\", \"mark\": \"1", "protocols": ["tcp"]}`)}, "is no range of ports"},
 		"a name that adds a key":    {[]any{nat64("e\", \"x", `{"prefix": "64:ff9b::/96", "pool4": []}`)}, "internal error: a NAT64 document: \"e\\\", \\\"x\" is no document name"},
-		"a prefix of a line break":  {[]any{nat64("edge", `{"prefix": "64:ff9b::/96\n", "pool4": []}`)}, "internal error: NAT64 edge: the prefix"},
-		"a pool that ends the list": {[]any{pool(`{"prefix": "192.0.2.8/30\"}]}", "ports": "61001-65535", "protocols": ["tcp"]}`)}, "is no IPv4 range"},
+		"a prefix of a line break":  {[]any{nat64("edge", `{"prefix": "64:ff9b::/96\n", "pool4": []}`)}, "internal error: NAT64 edge: netip.ParsePrefix"},
+		"a pool that ends the list": {[]any{pool(`{"prefix": "192.0.2.8/30\"}]}", "ports": "61001-65535", "protocols": ["tcp"]}`)}, "internal error: NAT64 edge: netip.ParsePrefix"},
 		"ports of a backslash":      {[]any{pool(`{"prefix": "192.0.2.8/30", "ports": "61001-65535\\", "protocols": ["tcp"]}`)}, "is no range of ports"},
 	} {
 		t.Run(name, func(t *testing.T) { refused(t, []string{"jool"}, map[string][]any{"NAT64": c.docs}, c.want) })
@@ -878,21 +879,21 @@ func TestUnboundRefusals(t *testing.T) {
 			"internal error: Resolver resolver: allow names no range, so the firewall would accept DNS from every client"},
 		// Values Unbound's config would read as syntax, and a zone type it writes unquoted.
 		"an address with a zone": {args, []any{routerDoc(t, "Resolver", "resolver", `{"listen": ["fe80::1%eth0"], "allow": ["2001:db8::/32"]}`)},
-			`internal error: Resolver resolver: listen: "fe80::1%eth0" is no address without a zone`},
-		"an address that adds an option": {args, []any{routerDoc(t, "Resolver", "resolver", `{"listen": ["2001:db8:ffff::1\n  interface: 0.0.0.0"], "allow": ["2001:db8::/32"]}`)}, "is no address without a zone"},
-		"a client that adds an option":   {args, []any{routerDoc(t, "Resolver", "resolver", `{"listen": ["2001:db8:ffff::1"], "allow": ["2001:db8::/32 allow\naccess-control: ::/0"]}`)}, "internal error: Resolver resolver: allow:"},
-		"a client of a hash":             {args, []any{routerDoc(t, "Resolver", "resolver", `{"listen": ["2001:db8:ffff::1"], "allow": ["2001:db8::/32#x"]}`)}, "is no address range"},
-		"a forwarder that adds a server": {args, []any{resolver(`, "forwarders": ["192.0.2.53\nserver:\n  do-not-query-localhost: no"]`)}, "internal error: Resolver resolver: forwarders:"},
+			`internal error: Resolver resolver: "fe80::1%eth0" is no address without a zone`},
+		"an address that adds an option": {args, []any{routerDoc(t, "Resolver", "resolver", `{"listen": ["2001:db8:ffff::1\n  interface: 0.0.0.0"], "allow": ["2001:db8::/32"]}`)}, `internal error: Resolver resolver: ParseAddr("2001:db8:ffff::1\n  interface: 0.0.0.0"): unexpected character, want colon (at "\n  interface: 0.0.0.0")`},
+		"a client that adds an option":   {args, []any{routerDoc(t, "Resolver", "resolver", `{"listen": ["2001:db8:ffff::1"], "allow": ["2001:db8::/32 allow\naccess-control: ::/0"]}`)}, `internal error: Resolver resolver: netip.ParsePrefix("2001:db8::/32 allow\naccess-control: ::/0"): ParseAddr("2001:db8::/32 allow\naccess-control: ::"): each colon-separated field must have at least one digit (at "/32 allow\naccess-control: ::")`},
+		"a client of a hash":             {args, []any{routerDoc(t, "Resolver", "resolver", `{"listen": ["2001:db8:ffff::1"], "allow": ["2001:db8::/32#x"]}`)}, `internal error: Resolver resolver: netip.ParsePrefix("2001:db8::/32#x"): bad bits after slash: "32#x"`},
+		"a forwarder that adds a server": {args, []any{resolver(`, "forwarders": ["192.0.2.53\nserver:\n  do-not-query-localhost: no"]`)}, `internal error: Resolver resolver: ParseAddr("192.0.2.53\nserver:\n  do-not-query-localhost: no"): unexpected character (at "\nserver:\n  do-not-query-localhost: no")`},
 		"a DNS64 prefix of 95 bits": {args, []any{resolver(`, "dns64": {"prefix": "64:ff9b::/95"}`)},
-			`internal error: Resolver resolver: dns64: the prefix "64:ff9b::/95" is no IPv6 range of 32, 40, 48, 56, 64 or 96 bits whose bits 64 to 71 are zero`},
-		"a DNS64 prefix that adds an option": {args, []any{resolver(`, "dns64": {"prefix": "64:ff9b::/96\nserver:\n  do-not-query-localhost: no"}`)}, "internal error: Resolver resolver: dns64: the prefix"},
+			`internal error: Resolver resolver: dns64: the prefix 64:ff9b::/95 is no IPv6 range of 32, 40, 48, 56, 64 or 96 bits whose bits 64 to 71 are zero`},
+		"a DNS64 prefix that adds an option": {args, []any{resolver(`, "dns64": {"prefix": "64:ff9b::/96\nserver:\n  do-not-query-localhost: no"}`)}, `internal error: Resolver resolver: netip.ParsePrefix("64:ff9b::/96\nserver:\n  do-not-query-localhost: no"): bad bits after slash: "96\nserver:\n  do-not-query-localhost: no"`},
 		"a zone in capitals": {args, []any{zone(`{"name": "Lan.example.org", "type": "static", "records": []}`)},
 			`internal error: Resolver resolver: local zone 1: "Lan.example.org" is no DNS name in lower case without the root's dot`},
 		"a zone that adds an option":       {args, []any{zone(`{"name": "lan.example.org.\" static\n  local-zone: \"x", "type": "static", "records": []}`)}, "is no DNS name"},
 		"a zone that adds a server option": {args, []any{zone(`{"name": "lan.example.org\nserver:\n  do-not-query-localhost: no", "type": "static", "records": []}`)}, "is no DNS name"},
 		"a zone of a hash":                 {args, []any{zone(`{"name": "lan.example.org#x", "type": "static", "records": []}`)}, "is no DNS name"},
 		"an unknown zone type": {args, []any{zone(`{"name": "lan.example.org", "type": "inform", "records": []}`)},
-			`internal error: Resolver resolver: local zone 1: lan.example.org: type "inform" is none of static`},
+			`internal error: Resolver resolver: "inform" is none of static, transparent, typetransparent, redirect, refuse, deny, always_nxdomain`},
 		"a zone type that adds an option": {args, []any{zone(`{"name": "lan.example.org", "type": "static\n  verbosity: 5", "records": []}`)}, "is none of static"},
 		"a record's name that adds data": {args, []any{zone(`{"name": "lan.example.org", "type": "static", "records": [{"name": "a.lan.example.org. 1 IN A 192.0.2.9'\n  local-data: 'b.lan.example.org", "type": "A", "value": "192.0.2.1", "ttl": 3600}]}`)},
 			"internal error: Resolver resolver: local zone 1: lan.example.org: record 1: \"a.lan.example.org. 1 IN A 192.0.2.9'\\n  local-data: 'b.lan.example.org\" is no DNS name"},
@@ -967,7 +968,7 @@ func TestUnboundPerVRF(t *testing.T) {
 // in a VRF is opened by the VRF's device and its address, and a peer of the VRF named default by
 // iifname as one of no VRF.
 func TestVRFPeerOpenings(t *testing.T) {
-	tenant, def, addr := "tenant", derive.DefaultVRF, "192.0.2.9"
+	tenant, def, addr := "tenant", derive.DefaultVRF, netip.MustParseAddr("192.0.2.9")
 	openings, err := bgpOpenings([]derive.Named[derive.PeerSpec]{
 		{Name: "leaves", Spec: derive.PeerSpec{Interfaces: []string{"swp*"}, VRF: &tenant}},
 		{Name: "spines", Spec: derive.PeerSpec{Interfaces: []string{"eth*"}, VRF: &def}},
@@ -978,11 +979,7 @@ func TestVRFPeerOpenings(t *testing.T) {
 	}
 	var got []string
 	for _, o := range openings {
-		lines, err := o.lines()
-		if err != nil {
-			t.Fatal(err)
-		}
-		got = append(got, lines...)
+		got = append(got, o.lines()...)
 	}
 	want := []string{
 		`iifname "tenant" meta sdifname { "swp*" } tcp dport { 179 } accept comment "BGPPeer leaves"`,
@@ -1426,3 +1423,21 @@ func TestConntrackZonesOfSeveralVRFs(t *testing.T) {
 
 // ptr is a pointer to s.
 func ptr(s string) *string { return &s }
+
+// addrs are the addresses l.
+func addrs(l ...string) []netip.Addr {
+	out := make([]netip.Addr, len(l))
+	for i, s := range l {
+		out[i] = netip.MustParseAddr(s)
+	}
+	return out
+}
+
+// ranges are the address ranges l.
+func ranges(l ...string) []netip.Prefix {
+	out := make([]netip.Prefix, len(l))
+	for i, s := range l {
+		out[i] = netip.MustParsePrefix(s)
+	}
+	return out
+}

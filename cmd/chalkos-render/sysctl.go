@@ -22,11 +22,7 @@ func renderRouterSysctl(in map[string]any, out string) error {
 		return err
 	}
 	r := d.Router()
-	// The schema takes l3 and l4 alone; another value would set the hash policy of neither.
-	hash, ok := map[string]int{"l3": 0, "l4": 1}[r.ECMPHash]
-	if !ok {
-		return derive.InternalErrorf("Router: ecmpHash %q is neither l3 nor l4", r.ECMPHash)
-	}
+	hash := map[derive.ECMPHash]int{"l3": 0, "l4": 1}[r.ECMPHash]
 	var b strings.Builder
 	b.WriteString("# The kernel settings of the node's Router, rendered by chalkos-render router-sysctl.\n")
 	fmt.Fprintf(&b, "net.ipv4.ip_forward = %d\n", boolInt(r.Forwarding.IPv4))
