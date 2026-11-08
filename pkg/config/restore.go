@@ -29,7 +29,9 @@ func FromJSON(data []byte) (Document, error) {
 // fills defaults into. It refuses documents that are not those of delivered with defaults: one
 // that delivered lacks, two of one name, a delivered document that is missing, one that lacks the
 // place of a Secret object delivered embeds, or one whose hashed form differs from Redact of the
-// result, as when a check filled defaults into the values it got hashed.
+// result, as when a check filled defaults into the values it got hashed or added a Secret object
+// with values to a document. A Secret object delivered embeds keeps its apiVersion and kind as
+// they were delivered.
 func Restore(hashed, delivered []Document) ([]Document, error) {
 	type key struct{ apiVersion, kind, name string }
 	of := func(d Document) key { return key{d.APIVersion, d.Kind, d.Name} }
@@ -55,9 +57,8 @@ func Restore(hashed, delivered []Document) ([]Document, error) {
 		case d.IsSecret():
 			out[i].Object = restoreSecret(h.Object, d.Object)
 		default:
-			if _, hides := hideEmbedded(d.Object); !hides {
-				continue
-			}
+			// A document without secret values is compared too: its hashed form is itself only
+			// while the check added no Secret object with values to it.
 			obj, ok := restoreEmbedded(h.Object, d.Object)
 			if !ok {
 				return nil, mismatch
@@ -102,8 +103,9 @@ func restoreSecret(h, d map[string]any) map[string]any {
 
 // restoreEmbedded returns h, a check's hashed form of d, with the data and stringData of each
 // Secret object d embeds taken from d, at the same place in h, and the rest of h, its defaults
-// among it, as it is. It returns false where h lacks the place of such an object, or holds a list
-// of another length on the way to it. h itself is left as it is.
+// among it, as it is. It returns false where h lacks the place of such an object, holds there one
+// whose apiVersion or kind is spelled otherwise than in d, or holds a list of another length on
+// the way to it. h itself is left as it is.
 func restoreEmbedded(h, d any) (any, bool) {
 	switch d := d.(type) {
 	case map[string]any:
@@ -114,6 +116,9 @@ func restoreEmbedded(h, d any) (any, bool) {
 		out := maps.Clone(hm)
 		secret := embeddedSecret(d)
 		if secret {
+			if hm["apiVersion"] != d["apiVersion"] || hm["kind"] != d["kind"] {
+				return nil, false
+			}
 			for _, f := range secretFields {
 				if v, ok := d[f]; ok {
 					out[f] = v

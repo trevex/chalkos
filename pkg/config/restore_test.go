@@ -226,3 +226,66 @@ spec:
 		t.Error("Redacted does not tell the embedded Secret's data")
 	}
 }
+
+// Restore compares a document without secret values too: it keeps the defaults a check filled
+// into it and refuses one into which the check put a Secret object with values.
+func TestRestoreRefusesASecretAddedToADocumentWithoutOne(t *testing.T) {
+	delivered := parseDocs(t, `
+apiVersion: other.example.org/v1alpha1
+kind: Addon
+metadata: {name: a}
+spec: {objects: []}
+`)
+	withDefault := func(objects any) []Document {
+		checked := Redact(delivered)
+		obj := maps.Clone(checked[0].Object)
+		obj["spec"] = map[string]any{"objects": objects, "replicas": json.Number("1")}
+		checked[0].Object = obj
+		return checked
+	}
+	checked := withDefault([]any{})
+	got, err := Restore(checked, delivered)
+	if err != nil || !reflect.DeepEqual(got[0].Object, checked[0].Object) {
+		t.Errorf("a default = %v, %v", got, err)
+	}
+	injected := withDefault([]any{map[string]any{"apiVersion": "v1", "kind": "Secret", "metadata": map[string]any{"name": "x"},
+		"data": map[string]any{"k": "INJECTED"}}})
+	if _, err := Restore(injected, delivered); err == nil || err.Error() != `Addon "a" holds other secret values than were delivered` {
+		t.Errorf("an injected Secret: err = %v", err)
+	}
+}
+
+// Restore puts values back only into an embedded Secret object whose apiVersion and kind the check
+// gave back as they were delivered, not into one it spelled otherwise.
+func TestRestoreRefusesARespelledSecret(t *testing.T) {
+	delivered := parseDocs(t, `
+apiVersion: other.example.org/v1alpha1
+kind: Chart
+metadata: {name: c}
+spec:
+  objects: [{apiVersion: v1, kind: Secret, metadata: {name: s}, data: {k: dg==}}]
+`)
+	for name, field := range map[string][2]string{
+		"kind SECRET":     {"kind", "SECRET"},
+		"kind secret":     {"kind", "secret"},
+		"apiVersion /v1":  {"apiVersion", "/v1"},
+		"apiVersion gone": {"apiVersion", ""},
+	} {
+		checked := Redact(delivered)
+		obj := maps.Clone(checked[0].Object)
+		secret := maps.Clone(obj["spec"].(map[string]any)["objects"].([]any)[0].(map[string]any))
+		if field[1] == "" {
+			delete(secret, field[0])
+		} else {
+			secret[field[0]] = field[1]
+		}
+		obj["spec"] = map[string]any{"objects": []any{secret}}
+		checked[0].Object = obj
+		if _, err := Restore(checked, delivered); err == nil || err.Error() != `Chart "c" holds other secret values than were delivered` {
+			t.Errorf("%s: err = %v", name, err)
+		}
+	}
+	if _, err := Restore(Redact(delivered), delivered); err != nil {
+		t.Errorf("as delivered: err = %v", err)
+	}
+}
