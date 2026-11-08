@@ -79,7 +79,14 @@ in
             # in would wait for a TPM on nodes that have none.
             "tpm2.target"
           ];
-          before = [ "initrd-fs.target" ];
+          before = [
+            "initrd-fs.target"
+            # initrd-parse-etc.service reloads systemd and restarts initrd-fs.target; once it ends,
+            # initrd-cleanup.service stops udevd for the switch to the booted system. STATE opens
+            # before either: systemd-cryptsetup waits for udevd, and a reload during the open has
+            # let the initrd reach initrd.target without STATE, leaving the unlock waiting forever.
+            "initrd-parse-etc.service"
+          ];
           requiredBy = [ "initrd-fs.target" ];
           serviceConfig.ExecStart = "${exe} state";
         }
@@ -94,7 +101,11 @@ in
             "chalkos-state.service"
             "tpm2.target"
           ];
-          before = [ "initrd-fs.target" ];
+          before = [
+            "initrd-fs.target"
+            # Unlocks volumes too; see chalkos-state.
+            "initrd-parse-etc.service"
+          ];
           requiredBy = [ "initrd-fs.target" ];
           # repart keeps large temporary files in /var/tmp by default, which is not there yet.
           environment.TMPDIR = "/tmp";
