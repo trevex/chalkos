@@ -1,31 +1,31 @@
 # kea-dhcp4-guest.json
 {
   "Dhcp4": {
+    "interfaces-config": {
+      "interfaces": [
+        "vlan20"
+      ],
+      "dhcp-socket-type": "raw",
+      "service-sockets-retry-wait-time": 5000,
+      "service-sockets-max-retries": 4294967295
+    },
     "control-sockets": [
       {
         "socket-name": "/run/kea/dhcp4-guest.sock",
         "socket-type": "unix"
       }
     ],
-    "hooks-libraries": [
-      {
-        "library": "libdhcp_lease_cmds.so"
-      }
-    ],
-    "interfaces-config": {
-      "dhcp-socket-type": "raw",
-      "interfaces": [
-        "vlan20"
-      ],
-      "service-sockets-max-retries": 4294967295,
-      "service-sockets-retry-wait-time": 5000
-    },
     "lease-database": {
       "lfc-interval": 3600,
       "name": "/var/lib/kea/dhcp4-guest.leases",
       "persist": true,
       "type": "memfile"
     },
+    "hooks-libraries": [
+      {
+        "library": "libdhcp_lease_cmds.so"
+      }
+    ],
     "loggers": [
       {
         "name": "kea-dhcp4",
@@ -88,54 +88,31 @@
 # kea-dhcp4.json
 {
   "Dhcp4": {
-    "client-classes": [
-      {
-        "boot-file-name": "http://192.0.2.5/boot.ipxe",
-        "name": "office-ipxe",
-        "next-server": "192.0.2.5",
-        "only-in-additional-list": true,
-        "test": "substring(option[77].hex, 0, 4) == 'iPXE'"
-      },
-      {
-        "boot-file-name": "ipxe.efi",
-        "name": "office-uefi",
-        "next-server": "192.0.2.5",
-        "only-in-additional-list": true,
-        "test": "not member('office-ipxe') and (option[93].hex == 0x0007 or option[93].hex == 0x0009)"
-      },
-      {
-        "boot-file-name": "undionly.kpxe",
-        "name": "office-bios",
-        "next-server": "192.0.2.5",
-        "only-in-additional-list": true,
-        "test": "not member('office-ipxe') and option[93].hex == 0x0000"
-      }
-    ],
+    "interfaces-config": {
+      "interfaces": [
+        "lan0"
+      ],
+      "dhcp-socket-type": "raw",
+      "service-sockets-retry-wait-time": 5000,
+      "service-sockets-max-retries": 4294967295
+    },
     "control-sockets": [
       {
         "socket-name": "/run/kea/dhcp4.sock",
         "socket-type": "unix"
       }
     ],
-    "hooks-libraries": [
-      {
-        "library": "libdhcp_lease_cmds.so"
-      }
-    ],
-    "interfaces-config": {
-      "dhcp-socket-type": "raw",
-      "interfaces": [
-        "lan0"
-      ],
-      "service-sockets-max-retries": 4294967295,
-      "service-sockets-retry-wait-time": 5000
-    },
     "lease-database": {
       "lfc-interval": 3600,
       "name": "/var/lib/kea/dhcp4.leases",
       "persist": true,
       "type": "memfile"
     },
+    "hooks-libraries": [
+      {
+        "library": "libdhcp_lease_cmds.so"
+      }
+    ],
     "loggers": [
       {
         "name": "kea-dhcp4",
@@ -168,13 +145,31 @@
         "severity": "WARN"
       }
     ],
+    "client-classes": [
+      {
+        "boot-file-name": "http://192.0.2.5/boot.ipxe",
+        "name": "office-ipxe",
+        "next-server": "192.0.2.5",
+        "only-in-additional-list": true,
+        "test": "substring(option[77].hex, 0, 4) == 'iPXE'"
+      },
+      {
+        "boot-file-name": "ipxe.efi",
+        "name": "office-uefi",
+        "next-server": "192.0.2.5",
+        "only-in-additional-list": true,
+        "test": "not member('office-ipxe') and (option[93].hex == 0x0007 or option[93].hex == 0x0009)"
+      },
+      {
+        "boot-file-name": "undionly.kpxe",
+        "name": "office-bios",
+        "next-server": "192.0.2.5",
+        "only-in-additional-list": true,
+        "test": "not member('office-ipxe') and option[93].hex == 0x0000"
+      }
+    ],
     "subnet4": [
       {
-        "evaluate-additional-classes": [
-          "office-ipxe",
-          "office-uefi",
-          "office-bios"
-        ],
         "id": 3221225984,
         "option-data": [
           {
@@ -210,7 +205,12 @@
         "user-context": {
           "name": "office"
         },
-        "valid-lifetime": 43200
+        "valid-lifetime": 43200,
+        "evaluate-additional-classes": [
+          "office-ipxe",
+          "office-uefi",
+          "office-bios"
+        ]
       }
     ]
   }

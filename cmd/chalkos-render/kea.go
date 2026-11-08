@@ -13,6 +13,7 @@ import (
 
 	"github.com/trevex/chalkos/pkg/refusals"
 	"github.com/trevex/chalkos/pkg/router/derive"
+	"github.com/trevex/chalkos/pkg/router/keaconf"
 	"github.com/trevex/chalkos/pkg/router/services"
 )
 
@@ -136,7 +137,7 @@ func renderKea(pdHook string, in map[string]any, out string) error {
 		return strings.Compare(derive.VRFDevice(a.vrf)+" "+a.family(), derive.VRFDevice(b.vrf)+" "+b.family())
 	})
 	for _, srv := range servers {
-		var config map[string]any
+		var config keaconf.Config
 		if srv.v6 {
 			config = kea6Config(srv, byServer[srv], pdHook)
 		} else {
@@ -196,45 +197,47 @@ func leaseSeconds(t string) (uint64, error) {
 // keaConfig is the config of the DHCPv4 server srv: raw sockets on the subnets' links, its
 // control socket with the lease commands, its leases in a file, a client class of each subnet's
 // boot file and the subnets.
-func keaConfig(srv keaServer, subnets []servedSubnet) map[string]any {
-	instance := srv.instance()
+func keaConfig(srv keaServer, subnets []servedSubnet) keaconf.Config {
 	var links []string
-	var classes, subnet4 []any
+	var classes []keaconf.ClientClass
+	var subnet4 []keaconf.Subnet4
 	for _, s := range subnets {
 		for _, l := range s.Links {
 			links = appendNew(links, l)
 		}
 		classes = append(classes, bootClasses(s)...)
-		subnet4 = append(subnet4, keaSubnet(s))
+		subnet4 = append(subnet4, keaSubnet4(s))
 	}
 	slices.Sort(links)
-	dhcp4 := map[string]any{
-		// Raw sockets take the requests of clients without an address, and send the replies
-		// through the link, ahead of the firewall.
-		"interfaces-config": map[string]any{
-			"interfaces":                      links,
-			"dhcp-socket-type":                "raw",
-			"service-sockets-retry-wait-time": keaRetryWait,
-			"service-sockets-max-retries":     keaRetries,
+	server := keaServerConfig(srv, links, nil)
+	// Raw sockets take the requests of clients without an address, and send the replies through
+	// the link, ahead of the firewall.
+	server.InterfacesConfig.DHCPSocketType = "raw"
+	return keaconf.Config{Dhcp4: &keaconf.Dhcp4{Server: server, ClientClasses: classes, Subnet4: subnet4}}
+}
+
+// keaServerConfig is what the configs of both families of the server srv share: its links, its
+// control socket, its leases in a file, the lease commands before the hooks, and its loggers.
+func keaServerConfig(srv keaServer, links []string, hooks []keaconf.Hook) keaconf.Server {
+	return keaconf.Server{
+		InterfacesConfig: keaconf.InterfacesConfig{
+			Interfaces:    links,
+			RetryWaitTime: keaRetryWait,
+			MaxRetries:    keaRetries,
 		},
-		"control-sockets": []any{map[string]any{"socket-type": "unix", "socket-name": srv.socket()}},
-		"lease-database":  map[string]any{"type": "memfile", "persist": true, "name": "/var/lib/kea/" + instance + ".leases", "lfc-interval": 3600},
-		"hooks-libraries": []any{map[string]any{"library": "libdhcp_lease_cmds.so"}},
-		"subnet4":         subnet4,
-		"loggers":         keaLoggers(srv),
+		ControlSockets: []keaconf.ControlSocket{{SocketType: "unix", SocketName: srv.socket()}},
+		LeaseDatabase:  &keaconf.LeaseDatabase{Type: "memfile", Persist: true, Name: "/var/lib/kea/" + srv.instance() + ".leases", LFCInterval: 3600},
+		HooksLibraries: append([]keaconf.Hook{{Library: "libdhcp_lease_cmds.so"}}, hooks...),
+		Loggers:        keaLoggers(srv),
 	}
-	if len(classes) > 0 {
-		dhcp4["client-classes"] = classes
-	}
-	return map[string]any{"Dhcp4": dhcp4}
 }
 
 // keaLoggers are the loggers of the server srv: Kea's messages go to the journal, which stamps
 // them. Each command on the control socket logs a warning of the dhcp logger, and the commands
 // logger names each, which chalkd's questions would fill the journal with.
-func keaLoggers(srv keaServer) []any {
+func keaLoggers(srv keaServer) []keaconf.Logger {
 	name := srv.svc().Name
-	return []any{
+	return []keaconf.Logger{
 		keaLogger(name, "INFO"),
 		keaLogger(name+".dhcp", "ERROR"),
 		keaLogger(name+".commands", "WARN"),
@@ -242,66 +245,65 @@ func keaLoggers(srv keaServer) []any {
 }
 
 // keaLogger logs the messages of the logger name from severity up to the journal.
-func keaLogger(name, severity string) map[string]any {
-	return map[string]any{
-		"name":           name,
-		"severity":       severity,
-		"output-options": []any{map[string]any{"output": "stdout", "pattern": "%-5p [%c] %m\n"}},
+func keaLogger(name, severity string) keaconf.Logger {
+	return keaconf.Logger{
+		Name:          name,
+		Severity:      severity,
+		OutputOptions: []keaconf.OutputOption{{Output: "stdout", Pattern: "%-5p [%c] %m\n"}},
 	}
 }
 
-// keaSubnet is the subnet s as Kea's subnet4 takes it.
-func keaSubnet(s servedSubnet) map[string]any {
-	var pools []any
-	for _, p := range s.Pools {
-		pools = append(pools, map[string]any{"pool": p[0].String() + " - " + p[1].String()})
-	}
-	var options []any
-	option := func(name, data string) {
-		options = append(options, map[string]any{"name": name, "data": data})
-	}
+// keaSubnet4 is the subnet s as Kea's subnet4 takes it, with the client classes of its boot files.
+func keaSubnet4(s servedSubnet) keaconf.Subnet4 {
+	var options []keaconf.Option
 	if s.Spec.Gateway != nil {
-		option("routers", s.Spec.Gateway.String())
+		options = append(options, keaconf.Option{Name: "routers", Data: s.Spec.Gateway.String()})
 	}
-	if len(s.Spec.DNS) > 0 {
-		var dns []string
-		for _, a := range s.Spec.DNS {
-			dns = append(dns, a.String())
-		}
-		option("domain-name-servers", strings.Join(dns, ", "))
-	}
+	options = append(options, dnsOption("domain-name-servers", s)...)
 	if s.Spec.Domain != nil {
-		option("domain-name", *s.Spec.Domain)
-		option("domain-search", *s.Spec.Domain)
+		options = append(options,
+			keaconf.Option{Name: "domain-name", Data: *s.Spec.Domain},
+			keaconf.Option{Name: "domain-search", Data: *s.Spec.Domain})
 	}
-	var reservations []any
+	return keaconf.Subnet4{Subnet: keaSubnet(s, options), EvaluateAdditionalClasses: bootClassNames(s)}
+}
+
+// keaSubnet is what Kea's subnet4 and subnet6 take alike of the subnet s: its number, range,
+// lease time, pools, options and reservations. chalkd and the diagnostic dhcp-leases name a
+// subnet by its document.
+func keaSubnet(s servedSubnet, options []keaconf.Option) keaconf.Subnet {
+	sub := keaconf.Subnet{
+		ID:            s.id,
+		Subnet:        s.Prefix.String(),
+		ValidLifetime: s.seconds,
+		UserContext:   keaconf.UserContext{Name: s.Name},
+		OptionData:    options,
+	}
+	for _, p := range s.Pools {
+		sub.Pools = append(sub.Pools, keaconf.Pool{Pool: p[0].String() + " - " + p[1].String()})
+	}
 	for _, r := range s.Spec.Reservations {
-		h := map[string]any{"hw-address": r.MAC, "ip-address": r.Address.String()}
-		if r.Hostname != nil {
-			h["hostname"] = *r.Hostname
+		h := keaconf.Reservation{HWAddress: r.MAC, Hostname: r.Hostname}
+		if s.Is6() {
+			h.IPAddresses = []string{r.Address.String()}
+		} else {
+			h.IPAddress = r.Address.String()
 		}
-		reservations = append(reservations, h)
+		sub.Reservations = append(sub.Reservations, h)
 	}
-	subnet := map[string]any{
-		"id":             s.id,
-		"subnet":         s.Prefix.String(),
-		"valid-lifetime": s.seconds,
-		// chalkd and the diagnostic dhcp-leases name a subnet by its document.
-		"user-context": map[string]any{"name": s.Name},
+	return sub
+}
+
+// dnsOption is the option name of the subnet's DNS servers, none without servers.
+func dnsOption(name string, s servedSubnet) []keaconf.Option {
+	if len(s.Spec.DNS) == 0 {
+		return nil
 	}
-	if pools != nil {
-		subnet["pools"] = pools
+	var dns []string
+	for _, a := range s.Spec.DNS {
+		dns = append(dns, a.String())
 	}
-	if options != nil {
-		subnet["option-data"] = options
-	}
-	if reservations != nil {
-		subnet["reservations"] = reservations
-	}
-	if names := bootClassNames(s); names != nil {
-		subnet["evaluate-additional-classes"] = names
-	}
-	return subnet
+	return []keaconf.Option{{Name: name, Data: strings.Join(dns, ", ")}}
 }
 
 // bootClassNames are the names of the client classes of the subnet's boot files, which Kea
@@ -327,7 +329,7 @@ func bootClassNames(s servedSubnet) []string {
 // iPXE gets the iPXE file, one of architecture 7 or 9 the UEFI file and one of architecture 0 the
 // BIOS file, each with the server as next server. A client that runs iPXE gets the iPXE file
 // alone, so that iPXE does not load itself again.
-func bootClasses(s servedSubnet) []any {
+func bootClasses(s servedSubnet) []keaconf.ClientClass {
 	b := s.Spec.Boot
 	if b == nil {
 		return nil
@@ -336,7 +338,7 @@ func bootClasses(s servedSubnet) []any {
 	if b.IPXE != nil {
 		notIPXE = "not member('" + s.Name + "-ipxe') and "
 	}
-	var classes []any
+	var classes []keaconf.ClientClass
 	for _, c := range []struct {
 		file       *string
 		name, test string
@@ -348,14 +350,14 @@ func bootClasses(s servedSubnet) []any {
 		if c.file == nil {
 			continue
 		}
-		class := map[string]any{
-			"name":                    s.Name + "-" + c.name,
-			"only-in-additional-list": true,
-			"test":                    c.test,
-			"boot-file-name":          *c.file,
+		class := keaconf.ClientClass{
+			Name:                 s.Name + "-" + c.name,
+			OnlyInAdditionalList: true,
+			Test:                 c.test,
+			BootFileName:         *c.file,
 		}
 		if b.Server != nil {
-			class["next-server"] = b.Server.String()
+			class.NextServer = b.Server.String()
 		}
 		classes = append(classes, class)
 	}

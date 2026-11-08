@@ -1,12 +1,25 @@
 # kea-dhcp6-access.json
 {
   "Dhcp6": {
+    "interfaces-config": {
+      "interfaces": [
+        "cust0"
+      ],
+      "service-sockets-retry-wait-time": 5000,
+      "service-sockets-max-retries": 4294967295
+    },
     "control-sockets": [
       {
         "socket-name": "/run/kea/dhcp6-access.sock",
         "socket-type": "unix"
       }
     ],
+    "lease-database": {
+      "lfc-interval": 3600,
+      "name": "/var/lib/kea/dhcp6-access.leases",
+      "persist": true,
+      "type": "memfile"
+    },
     "hooks-libraries": [
       {
         "library": "libdhcp_lease_cmds.so"
@@ -18,19 +31,6 @@
         }
       }
     ],
-    "interfaces-config": {
-      "interfaces": [
-        "cust0"
-      ],
-      "service-sockets-max-retries": 4294967295,
-      "service-sockets-retry-wait-time": 5000
-    },
-    "lease-database": {
-      "lfc-interval": 3600,
-      "name": "/var/lib/kea/dhcp6-access.leases",
-      "persist": true,
-      "type": "memfile"
-    },
     "loggers": [
       {
         "name": "kea-dhcp6",
@@ -66,13 +66,18 @@
     "subnet6": [
       {
         "id": 979616295,
-        "interface": "cust0",
         "option-data": [
           {
             "data": "2001:db8:2::1",
             "name": "dns-servers"
           }
         ],
+        "subnet": "2001:db8:2::/64",
+        "user-context": {
+          "name": "customers"
+        },
+        "valid-lifetime": 86400,
+        "interface": "cust0",
         "pd-pools": [
           {
             "delegated-len": 56,
@@ -80,12 +85,7 @@
             "prefix-len": 40
           }
         ],
-        "preferred-lifetime": 86400,
-        "subnet": "2001:db8:2::/64",
-        "user-context": {
-          "name": "customers"
-        },
-        "valid-lifetime": 86400
+        "preferred-lifetime": 86400
       }
     ]
   }
@@ -93,30 +93,30 @@
 # kea-dhcp6.json
 {
   "Dhcp6": {
+    "interfaces-config": {
+      "interfaces": [
+        "lan0"
+      ],
+      "service-sockets-retry-wait-time": 5000,
+      "service-sockets-max-retries": 4294967295
+    },
     "control-sockets": [
       {
         "socket-name": "/run/kea/dhcp6.sock",
         "socket-type": "unix"
       }
     ],
-    "hooks-libraries": [
-      {
-        "library": "libdhcp_lease_cmds.so"
-      }
-    ],
-    "interfaces-config": {
-      "interfaces": [
-        "lan0"
-      ],
-      "service-sockets-max-retries": 4294967295,
-      "service-sockets-retry-wait-time": 5000
-    },
     "lease-database": {
       "lfc-interval": 3600,
       "name": "/var/lib/kea/dhcp6.leases",
       "persist": true,
       "type": "memfile"
     },
+    "hooks-libraries": [
+      {
+        "library": "libdhcp_lease_cmds.so"
+      }
+    ],
     "loggers": [
       {
         "name": "kea-dhcp6",
@@ -152,7 +152,6 @@
     "subnet6": [
       {
         "id": 3216929172,
-        "interface": "lan0",
         "option-data": [
           {
             "data": "2001:db8:1::1",
@@ -168,7 +167,6 @@
             "pool": "2001:db8:1::100 - 2001:db8:1::1ff"
           }
         ],
-        "preferred-lifetime": 43200,
         "reservations": [
           {
             "hostname": "printer",
@@ -182,7 +180,9 @@
         "user-context": {
           "name": "office6"
         },
-        "valid-lifetime": 43200
+        "valid-lifetime": 43200,
+        "interface": "lan0",
+        "preferred-lifetime": 43200
       }
     ]
   }
