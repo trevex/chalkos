@@ -43,13 +43,23 @@ func (s keaServer) family() string {
 	return "dhcp4"
 }
 
+// svc is the service of the server's family, whose name is its program's and its logger's.
+func (s keaServer) svc() services.Service {
+	if s.v6 {
+		return services.Kea6
+	}
+	return services.Kea4
+}
+
 // file is the server's config file: kea-dhcp4.json for the default VRF's DHCPv4 server,
 // kea-dhcp6-<vrf>.json for a VRF's DHCPv6 server.
 func (s keaServer) file() string {
-	if s.v6 {
-		return services.Kea6.File(s.vrf)
-	}
-	return services.Kea4.File(s.vrf)
+	return s.svc().File(s.vrf)
+}
+
+// socket is the server's control socket, <instance>.sock in its runtime directory.
+func (s keaServer) socket() string {
+	return "/run/" + s.svc().RuntimeDir(s.vrf) + "/" + s.instance() + ".sock"
 }
 
 // instance is the part of the server's control socket's and lease file's names: dhcp4 for the
@@ -238,7 +248,7 @@ func keaConfig(srv keaServer, subnets []servedSubnet) map[string]any {
 			"service-sockets-retry-wait-time": keaRetryWait,
 			"service-sockets-max-retries":     keaRetries,
 		},
-		"control-sockets": []any{map[string]any{"socket-type": "unix", "socket-name": "/run/kea/" + instance + ".sock"}},
+		"control-sockets": []any{map[string]any{"socket-type": "unix", "socket-name": srv.socket()}},
 		"lease-database":  map[string]any{"type": "memfile", "persist": true, "name": "/var/lib/kea/" + instance + ".leases", "lfc-interval": 3600},
 		"hooks-libraries": []any{map[string]any{"library": "libdhcp_lease_cmds.so"}},
 		"subnet4":         subnet4,
@@ -254,7 +264,7 @@ func keaConfig(srv keaServer, subnets []servedSubnet) map[string]any {
 // them. Each command on the control socket logs a warning of the dhcp logger, and the commands
 // logger names each, which chalkd's questions would fill the journal with.
 func keaLoggers(srv keaServer) []any {
-	name := "kea-" + srv.family()
+	name := srv.svc().Name
 	return []any{
 		keaLogger(name, "INFO"),
 		keaLogger(name+".dhcp", "ERROR"),

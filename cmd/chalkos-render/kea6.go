@@ -53,7 +53,7 @@ func kea6Config(srv keaServer, subnets []servedSubnet, pdHook string) map[string
 			"service-sockets-retry-wait-time": keaRetryWait,
 			"service-sockets-max-retries":     keaRetries,
 		},
-		"control-sockets": []any{map[string]any{"socket-type": "unix", "socket-name": "/run/kea/" + instance + ".sock"}},
+		"control-sockets": []any{map[string]any{"socket-type": "unix", "socket-name": srv.socket()}},
 		"lease-database":  map[string]any{"type": "memfile", "persist": true, "name": "/var/lib/kea/" + instance + ".leases", "lfc-interval": 3600},
 		"hooks-libraries": hooks,
 		"subnet6":         subnet6,
