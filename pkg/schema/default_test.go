@@ -92,3 +92,27 @@ func TestRawReturnsTheSchemaDocument(t *testing.T) {
 		t.Error("Raw found an unknown kind")
 	}
 }
+
+// TestFill fills the defaults of a valid document and refuses one its schema does not accept.
+func TestFill(t *testing.T) {
+	s, err := LoadSchemas(builtin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.Fill(decode(t, `{
+		"apiVersion": "time.chalkos.dev/v1alpha1", "kind": "TimeSync", "metadata": {"name": "time"},
+		"spec": {"servers": [{"host": "ntp.lan", "nts": false}]}
+	}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if b, _ := json.Marshal(got["spec"]); string(b) != `{"dhcp":false,"servers":[{"host":"ntp.lan","nts":false,"port":null}]}` {
+		t.Errorf("spec = %s", b)
+	}
+	if _, err := s.Fill(decode(t, `{
+		"apiVersion": "time.chalkos.dev/v1alpha1", "kind": "TimeSync", "metadata": {"name": "time"},
+		"spec": {"servers": "ntp.lan"}
+	}`)); err == nil {
+		t.Error("Fill of an invalid document: no error")
+	}
+}

@@ -35,10 +35,7 @@ func NewSet(docs []Document, s *schema.Schemas) (*Set, error) {
 	count := map[string]int{}
 	names := map[string]bool{}
 	for _, d := range docs {
-		if err := s.Validate(d.Object); err != nil {
-			return nil, err
-		}
-		filled, err := s.Default(d.Object)
+		filled, err := s.Fill(d.Object)
 		if err != nil {
 			return nil, err
 		}

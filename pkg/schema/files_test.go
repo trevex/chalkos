@@ -3,6 +3,7 @@ package schema
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -26,6 +27,9 @@ func TestLoadFiles(t *testing.T) {
 	}
 	if len(s.Kinds()) != len(files) {
 		t.Errorf("kinds = %v, want one per file of %d", s.Kinds(), len(files))
+	}
+	if !reflect.DeepEqual(s.Files(), files) {
+		t.Error("Files are not the files the schemas were compiled from")
 	}
 	for _, name := range []string{"../x.json", ".x.json", "x.yaml", "a/x.json"} {
 		_, err := LoadFiles(map[string][]byte{name: []byte("{}")})

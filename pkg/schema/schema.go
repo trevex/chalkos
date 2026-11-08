@@ -72,6 +72,8 @@ type Schemas struct {
 	schemas map[Kind]*jsonschema.Schema
 	// raw holds each kind's schema document as its file holds it, for readers of annotations.
 	raw map[Kind]any
+	// files are the schema files by name, as they were read.
+	files map[string][]byte
 }
 
 // LoadSchemas compiles every *.json file in dir, as compile does, naming each by its path in
@@ -110,7 +112,7 @@ func compile(files map[string][]byte, dir string) (*Schemas, error) {
 	for _, f := range formats {
 		c.RegisterFormat(f)
 	}
-	ss := &Schemas{schemas: map[Kind]*jsonschema.Schema{}, raw: map[Kind]any{}}
+	ss := &Schemas{schemas: map[Kind]*jsonschema.Schema{}, raw: map[Kind]any{}, files: files}
 	for _, name := range slices.Sorted(maps.Keys(files)) {
 		path := filepath.Join(dir, name)
 		doc, err := decodeDoc(files[name], path)
@@ -180,6 +182,10 @@ func kindOf(doc any, path string) (Kind, error) {
 func (s *Schemas) Kinds() []Kind {
 	return append([]Kind(nil), s.kinds...)
 }
+
+// Files are the schema files the schemas were compiled from, by name, as a request carries them.
+// The caller must not change them.
+func (s *Schemas) Files() map[string][]byte { return s.files }
 
 // Withheld tells whether the schemas declare the kind of that apiVersion and name withheld from
 // the node's services. A kind they do not declare is not withheld.

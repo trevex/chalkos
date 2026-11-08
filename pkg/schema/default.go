@@ -15,6 +15,15 @@ func (s *Schemas) Raw(apiVersion, kind string) (any, bool) {
 	return raw, ok
 }
 
+// Fill checks doc against the schema of its kind, as Validate does, and returns it with the
+// defaults that schema gives, as Default does.
+func (s *Schemas) Fill(doc map[string]any) (map[string]any, error) {
+	if err := s.Validate(doc); err != nil {
+		return nil, err
+	}
+	return s.Default(doc)
+}
+
 // Default returns doc with every field its kind's schema gives a default for and doc leaves out
 // set to that default, at every level: in the fields of objects doc holds, in list items and in
 // the values of maps. doc must be valid. Defaults are copied, so no two documents share them.
