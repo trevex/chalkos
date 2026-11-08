@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/trevex/chalkos/pkg/chalkd/layer"
-	"github.com/trevex/chalkos/pkg/outputs"
 	routing "github.com/trevex/chalkos/pkg/router"
 	"github.com/trevex/chalkos/pkg/tool"
 )
@@ -42,7 +41,7 @@ func (p *Plugin) Commands() map[string]layer.Command {
 // standard error and left to the next run, as the next record or renewal starts one: a unit that
 // failed for a link that is down at boot would fail the boot's health check.
 func (r *side) dhcp6Routes(ctx context.Context, now time.Time) error {
-	dir := cmp.Or(r.KeaDir, filepath.Join(outputs.DefaultRoot, "kea"))
+	dir := r.KeaDir
 	var pools []routing.PDPool
 	// Without the output kea, as in maintenance mode, the run changes nothing: the routes end
 	// with their leases.
@@ -70,18 +69,14 @@ func (r *side) dhcp6Routes(ctx context.Context, now time.Time) error {
 		}
 		pools = append(pools, p...)
 	}
-	routes, err := routing.ReadPDRecords(cmp.Or(r.PDDir, routing.PDRecordDir), pools, now)
+	routes, err := routing.ReadPDRecords(r.PDDir, pools, now)
 	truncated := errors.Is(err, routing.ErrTooManyPDRecords)
 	if truncated {
 		fmt.Fprintf(os.Stderr, "chalkd router dhcp6-routes: %v; routing the first %d and removing no route\n", err, routing.MaxPDRecords)
 	} else if err != nil {
 		return err
 	}
-	list := r.KernelRoutes
-	if list == nil {
-		list = routing.KernelRoutes
-	}
-	kernel, err := list()
+	kernel, err := r.KernelRoutes()
 	if err != nil {
 		return err
 	}

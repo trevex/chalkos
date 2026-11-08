@@ -71,6 +71,24 @@ type Options struct {
 	NetDir string
 }
 
+// withDefaults returns o with each zero field set to chalkd's own.
+func (o Options) withDefaults() Options {
+	if o.KernelRoutes == nil {
+		o.KernelRoutes = routing.KernelRoutes
+	}
+	o.FRRConfig = cmp.Or(o.FRRConfig, "/etc/frr/frr.conf")
+	o.ResolverConfig = cmp.Or(o.ResolverConfig, "/etc/unbound/unbound.conf")
+	o.ResolverDir = cmp.Or(o.ResolverDir, filepath.Join(outputs.DefaultRoot, "unbound"))
+	o.KeaDir = cmp.Or(o.KeaDir, filepath.Join(outputs.DefaultRoot, "kea"))
+	o.PDDir = cmp.Or(o.PDDir, routing.PDRecordDir)
+	o.RelayDir = cmp.Or(o.RelayDir, filepath.Join(outputs.DefaultRoot, "dhcp-relay"))
+	o.NAT64Dir = cmp.Or(o.NAT64Dir, filepath.Join(outputs.DefaultRoot, "jool"))
+	o.VRFDir = cmp.Or(o.VRFDir, defaultVRFDir)
+	o.RunDir = cmp.Or(o.RunDir, "/run")
+	o.NetDir = cmp.Or(o.NetDir, "/sys/class/net")
+	return o
+}
+
 // side is the node's router side: the state of its FRR, Jool, Unbound and Kea and the kernel's
 // routes.
 type side struct {
@@ -88,7 +106,7 @@ var _ layer.Plugin = (*Plugin)(nil)
 // New is the router layer of the node, which runs vtysh, nsenter and jool, and unbound-control
 // through the node's runner, and asks Kea on its control sockets.
 func New(node layer.Node, o Options) *Plugin {
-	return &Plugin{r: &side{run: node.Runner(), Options: o}}
+	return &Plugin{r: &side{run: node.Runner(), Options: o.withDefaults()}}
 }
 
 func (p *Plugin) Name() string { return layers.Router }
@@ -162,7 +180,7 @@ func ended(ctx, budget context.Context, who string) error {
 // while FRR has not filled the config in. An error other than the link's absence counts as BGP,
 // whose questions then say what is wrong.
 func (r *side) hasBGP() bool {
-	_, err := os.Lstat(cmp.Or(r.FRRConfig, "/etc/frr/frr.conf"))
+	_, err := os.Lstat(r.FRRConfig)
 	return !errors.Is(err, fs.ErrNotExist)
 }
 
@@ -285,7 +303,7 @@ func (r *side) nat64Instance(ctx, budget context.Context, name string) (*routerv
 // renderedNAT64 are the names of the node's NAT64 documents, whose instances the output jool
 // renders as <name>.json.
 func (r *side) renderedNAT64() ([]string, error) {
-	entries, err := os.ReadDir(cmp.Or(r.NAT64Dir, filepath.Join(outputs.DefaultRoot, "jool")))
+	entries, err := os.ReadDir(r.NAT64Dir)
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil, nil
 	}
@@ -304,7 +322,7 @@ func (r *side) renderedNAT64() ([]string, error) {
 // resolver is the state of Unbound on a node whose Resolver document rendered its config, and nil
 // on another.
 func (r *side) resolver(ctx context.Context) *routerv1.ResolverStatus {
-	if _, err := os.Stat(cmp.Or(r.ResolverConfig, "/etc/unbound/unbound.conf")); errors.Is(err, fs.ErrNotExist) {
+	if _, err := os.Stat(r.ResolverConfig); errors.Is(err, fs.ErrNotExist) {
 		return nil
 	}
 	budget, cancel := context.WithTimeout(ctx, askTimeout)
@@ -319,7 +337,7 @@ func (r *side) resolver(ctx context.Context) *routerv1.ResolverStatus {
 // rendered, sorted by VRF, all asked within one timeout. An active unit whose sockets are bound to
 // no device of its VRF does not count as running.
 func (r *side) vrfResolvers(ctx context.Context) []*routerv1.ResolverStatus {
-	files, _ := filepath.Glob(filepath.Join(cmp.Or(r.ResolverDir, filepath.Join(outputs.DefaultRoot, "unbound")), "unbound-*.conf"))
+	files, _ := filepath.Glob(filepath.Join(r.ResolverDir, "unbound-*.conf"))
 	budget, cancel := context.WithTimeout(ctx, askTimeout)
 	defer cancel()
 	var resolvers []*routerv1.ResolverStatus
@@ -334,7 +352,7 @@ func (r *side) vrfResolvers(ctx context.Context) []*routerv1.ResolverStatus {
 		s := &routerv1.ResolverStatus{Vrf: vrf, Running: err == nil}
 		switch {
 		case err == nil:
-			if stale := r.staleDevice(vrf, filepath.Join(cmp.Or(r.RunDir, "/run"), "unbound-"+vrf, "ifindex")); stale != "" {
+			if stale := r.staleDevice(vrf, filepath.Join(r.RunDir, "unbound-"+vrf, "ifindex")); stale != "" {
 				s.Running, s.Error = false, unit+" is active, but "+stale
 			}
 		case state != "":
@@ -361,7 +379,7 @@ func (r *side) staleDevice(vrf, record string) string {
 		return strings.TrimSpace(string(data))
 	}
 	bound := index(record)
-	device := index(filepath.Join(cmp.Or(r.NetDir, "/sys/class/net"), vrf, "ifindex"))
+	device := index(filepath.Join(r.NetDir, vrf, "ifindex"))
 	switch {
 	case bound == "":
 		return "it recorded no device"
@@ -421,11 +439,11 @@ func keaServers(dir string) []keaServerFile {
 // VRF's first, then by VRF, DHCPv4's before DHCPv6's, all asked within one timeout: whether its
 // unit is active, bound to its VRF's device, and its subnets' leases, which Kea counts.
 func (r *side) dhcpServers(ctx context.Context) []*routerv1.DHCPServerStatus {
-	runDir := filepath.Join(cmp.Or(r.RunDir, "/run"), "kea")
+	runDir := filepath.Join(r.RunDir, "kea")
 	budget, cancel := context.WithTimeout(ctx, askTimeout)
 	defer cancel()
 	var servers []*routerv1.DHCPServerStatus
-	for _, f := range keaServers(cmp.Or(r.KeaDir, filepath.Join(outputs.DefaultRoot, "kea"))) {
+	for _, f := range keaServers(r.KeaDir) {
 		family := "ipv4"
 		if f.family == "dhcp6" {
 			family = "ipv6"
@@ -478,7 +496,7 @@ func (r *side) dhcpServers(ctx context.Context) []*routerv1.DHCPServerStatus {
 // rendered, the default VRF's first, then by VRF: whether its unit is active and bound to its
 // VRF's device.
 func (r *side) dhcpRelays(ctx context.Context) []*routerv1.DHCPRelayStatus {
-	dir := cmp.Or(r.RelayDir, filepath.Join(outputs.DefaultRoot, "dhcp-relay"))
+	dir := r.RelayDir
 	files, _ := filepath.Glob(filepath.Join(dir, "dnsmasq-relay-*.conf"))
 	if _, err := os.Stat(filepath.Join(dir, "dnsmasq-relay.conf")); err == nil {
 		files = append([]string{filepath.Join(dir, "dnsmasq-relay.conf")}, files...)
@@ -505,7 +523,7 @@ func (r *side) dhcpRelays(ctx context.Context) []*routerv1.DHCPRelayStatus {
 		case err != nil:
 			s.Error = err.Error()
 		case vrf != routing.DefaultVRF:
-			if stale := r.staleDevice(vrf, filepath.Join(cmp.Or(r.RunDir, "/run"), "dnsmasq-relay", vrf+".ifindex")); stale != "" {
+			if stale := r.staleDevice(vrf, filepath.Join(r.RunDir, "dnsmasq-relay", vrf+".ifindex")); stale != "" {
 				s.Error = unit + " is active, but " + stale
 				continue
 			}
@@ -536,11 +554,7 @@ func (p *Plugin) Routes(ctx context.Context, req *connect.Request[routerv1.Route
 	if err != nil {
 		return nil, layer.Errorf(connect.CodeInvalidArgument, "%w", err)
 	}
-	list := p.r.KernelRoutes
-	if list == nil {
-		list = routing.KernelRoutes
-	}
-	kernel, err := list()
+	kernel, err := p.r.KernelRoutes()
 	if err != nil {
 		return nil, err
 	}
@@ -580,7 +594,7 @@ func (r *side) vrfTable(name string) (uint32, error) {
 	if !routing.ShortName.MatchString(name) {
 		return 0, layer.Errorf(connect.CodeInvalidArgument, "vrf %q is no VRF document's name", name)
 	}
-	data, err := os.ReadFile(filepath.Join(cmp.Or(r.VRFDir, defaultVRFDir), name+".json"))
+	data, err := os.ReadFile(filepath.Join(r.VRFDir, name+".json"))
 	if errors.Is(err, fs.ErrNotExist) {
 		return 0, layer.Errorf(connect.CodeNotFound, "the node has no VRF %s", name)
 	}
