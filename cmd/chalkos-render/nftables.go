@@ -415,8 +415,8 @@ func (f *firewall) ruleset() (string, error) {
 	return b.String(), nil
 }
 
-// writeChain writes the chain name: the header of a base chain, its type, hook and policy, none
-// for a regular chain, and the lines.
+// writeChain writes the chain name with its lines. A base chain's header gives its type, hook and
+// policy; a regular chain has the empty header.
 func writeChain(b *strings.Builder, name, header string, lines []string) {
 	b.WriteString("\tchain " + name + " {\n")
 	if header != "" {
@@ -823,7 +823,12 @@ func (f *firewall) addressMatch(fam derive.Family, dir string, a *derive.Address
 // rangeMatch is the match of the address ranges of the family fam among ranges on the side dir,
 // saddr or daddr. ok is false when ranges hold none of fam.
 func rangeMatch(fam derive.Family, dir string, ranges []netip.Prefix) (match string, ok bool) {
-	mine := slices.DeleteFunc(slices.Clone(ranges), func(p netip.Prefix) bool { return p.Addr().Is4() != (fam == derive.IPv4) })
+	var mine []netip.Prefix
+	for _, p := range ranges {
+		if p.Addr().Is4() == (fam == derive.IPv4) {
+			mine = append(mine, p)
+		}
+	}
 	if len(mine) == 0 {
 		return "", false
 	}
