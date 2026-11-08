@@ -96,7 +96,7 @@ Each directory of `cmd/` is a main that wires a package up; the logic lives in `
 | `chalkd/layers/router` | chalkd's router layer: RouterService, with the state of the node's FRR, Jool and Unbound and the kernel's routes. |
 | `chalkd/renewal` | Renews a certificate, or a set of them, once it is due, for the node certificate and a layer's own; without anything to renew it with, it logs once that the certificate is due. |
 | `chalklab` | The chalklab command tree. |
-| `check` | The pure checks of a delivery: translation, change rules, the plan of effects, and `Run`, which `chalkd check` runs for an image that checks its own config. |
+| `check` | Checks a node's config as an image does, in four stages, the methods of `check.Image`: `Translate`, `Rules`, `Validate` and `Render`. Each returns a `*check.Refusal` for a config it refuses. `Run` runs them in order and plans the effects, for `chalkd check` and an install in place. A delivery runs them between chalkd's checks of the machine, and chalkctl runs the first three without the node's facts and with the validators it links. |
 | `client` | Connections to chalkd, each with one way to verify the node: by fingerprint in maintenance mode, by the OS CA otherwise; the names chalkd's status gives the OS's certificates and trusted values. |
 | `clustersecrets` | The secrets file: the OS CA and node CA with their keys, the Kubernetes secrets, the recovery secret, the file's age encryption, the rotation of what it holds, and the lock and in-place replacement of the file, which keeps its previous version. |
 | `command` | Runs a program of the image's store with bounded output, for command facts and outputs; a failure keeps standard error out of its error. It also follows a path's links within an image's store, and stops a transient unit or reads why one failed. |
@@ -399,7 +399,7 @@ a node without a staged image it replaces the pending config instead. A trial ho
 and `ConfirmConfig` writes it once it removed the record; every other end of the trial removes the
 copy with the record. An
 image's checker compares with the running slot's delivered documents and fills in its own
-defaults (`check.Defaulted`), as chalkctl's `checkRules` does.
+defaults (`config.Redacted.Defaulted`), as chalkctl's `checkRules` does.
 
 chalkctl runs the steps through the same calls. `pkg/chalkctl/upgrade.go` stages each node's
 image with `stage_only`, then hands the node to the reboot step in `pkg/chalkctl/reboot.go`, which
