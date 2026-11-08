@@ -115,9 +115,19 @@ func main() {
 		os.Exit(2)
 	}
 	if err != nil {
-		log.Print(err)
+		for _, e := range failures(err) {
+			log.Print(e)
+		}
 		os.Exit(1)
 	}
+}
+
+// failures are the errors that err joins, each logged on a line of its own, or err alone.
+func failures(err error) []error {
+	if j, ok := err.(interface{ Unwrap() []error }); ok {
+		return j.Unwrap()
+	}
+	return []error{err}
 }
 
 // lookup finds the command args name: one of chalkd's, or a layer's as <layer> <command>, which

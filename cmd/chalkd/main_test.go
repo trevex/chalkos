@@ -317,3 +317,14 @@ func TestHealthTimeout(t *testing.T) {
 		}
 	}
 }
+
+// A command's joined errors are logged one per line, and another error alone.
+func TestFailures(t *testing.T) {
+	a, b := errors.New("failed to stop a.service"), errors.New("failed to reload b.service")
+	if got := failures(errors.Join(a, b)); !slices.Equal(got, []error{a, b}) {
+		t.Errorf("failures of a joined error = %v", got)
+	}
+	if got := failures(a); !slices.Equal(got, []error{a}) {
+		t.Errorf("failures of an error = %v", got)
+	}
+}
