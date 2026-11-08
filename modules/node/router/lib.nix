@@ -18,7 +18,7 @@ in
       inherit description;
     };
 
-  # The kinds of the list the image accepts, in the list's order: an output reads the kinds of
+  # Keeps the kinds of a list that the image accepts, in order, so an output reads the kinds of
   # another feature only on images that carry it.
   declared = lib.filter (k: lib.elem k accepted);
 
