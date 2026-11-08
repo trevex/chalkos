@@ -185,8 +185,10 @@ Only these functions return a `config.Redacted`:
   the config GetConfig serves.
 - `Redacted.Defaulted` and `config.TranslateRedacted` fill in the defaults of an image's schemas.
 
-`Redact` takes plain documents, and a `config.Redacted` does not convert to them, so no value is
-hashed twice. The config's version, `config.Hash`, is the SHA-256 of the redacted documents in
+The type makes every source of redacted documents explicit: each is one of these calls.
+`RedactedObjects` and `ParseRedacted` check nothing; they trust their callers to pass documents
+that were redacted when they were written. `Redact` takes plain documents, and a
+`config.Redacted` does not convert to them, so no value is hashed twice. The config's version, `config.Hash`, is the SHA-256 of the redacted documents in
 canonical JSON, and `config.KindHashes`, which the effects compare, hashes each kind's redacted
 documents the same way.
 

@@ -50,8 +50,9 @@ type Input struct {
 }
 
 // Result is a config that passed: its documents with their defaults, redacted, the identity they
-// translate to (JSON), its outputs, rendered and checked, and the plan of a delivery of it. Warnings name the effect rules that could not be evaluated, whose effects the
-// plan takes all the same, as Due gives them. The caller discards or swaps in Staged.
+// translate to (JSON), its outputs, rendered and checked, and the plan of a delivery of it.
+// Warnings name the effect rules that could not be evaluated, whose effects the plan takes all
+// the same, as Due gives them. The caller discards or swaps in Staged.
 type Result struct {
 	Documents config.Redacted
 	Identity  []byte

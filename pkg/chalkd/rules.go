@@ -51,7 +51,7 @@ func compileRunningRules(schemas *schema.Schemas) (*rules.Set, error) {
 }
 
 // checkRules refuses next, config about to be stored for the image whose rules set holds, when
-// it does not meet them; name is the node's, old is the running slot's config, nil at an install,
+// it does not meet them; name is the node's, old is the running slot's config, empty at an install,
 // and f the delivery's facts. Nothing has changed yet when it refuses.
 func (s *Server) checkRules(set *rules.Set, name string, next, old config.Redacted, f rules.Facts) error {
 	failures, err := evaluate(set, name, next, old, f)

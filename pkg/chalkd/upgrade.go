@@ -34,8 +34,8 @@ import (
 //
 // An operator may upgrade, but only an admin may deliver config with the upgrade, as ApplyConfig
 // needs: config names the node's networks, volumes and layers' settings, and what an operator
-// may not deliver to the running image it must not deliver to the next one either. Without config the
-// node gives the image its pending config, which an admin's apply-config --staged held, or else
+// may not deliver to the running image it must not deliver to the next one either. Without config
+// the node gives the image its pending config, which an admin's apply-config --staged held, or else
 // carries the running image's over.
 //
 // An image the header names in a registry is pulled by the digest it names, with the credentials

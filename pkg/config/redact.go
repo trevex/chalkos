@@ -48,7 +48,8 @@ func Redact(docs []Document) Redacted {
 }
 
 // RedactedObjects are the documents of objects that Redact gave where they were written, such as
-// a baseline chalkd records or the input chalkd gives an image's checker. They stay as they are.
+// a baseline chalkd records or the input chalkd gives an image's checker. They stay as they are:
+// RedactedObjects trusts its caller to pass objects that were redacted when they were written.
 func RedactedObjects(objects []map[string]any) Redacted {
 	docs := make(Documents, len(objects))
 	for i, obj := range objects {
@@ -58,7 +59,8 @@ func RedactedObjects(objects []map[string]any) Redacted {
 }
 
 // ParseRedacted reads a stream of documents that Redact gave where they were written, as a node
-// serves its config, as Parse reads one. They stay as they are.
+// serves its config, as Parse reads one. They stay as they are: ParseRedacted trusts its caller
+// to pass documents that were redacted when they were written.
 func ParseRedacted(r io.Reader) (Redacted, error) {
 	docs, err := Parse(r)
 	if err != nil {
@@ -87,8 +89,8 @@ func (r Redacted) Objects() []map[string]any {
 
 // Defaulted is r with the defaults schemas give filled in, as the rules of the image whose
 // schemas they are compare a config with it. The documents another image delivered or translated
-// mean to this image what its own defaults make of them: a field the delivery left out has this
-// image's default, not one another image gave it. A document of a kind schemas does not accept is
+// mean to this image what its own defaults make of them: a field the delivery left out takes
+// this image's default, whatever default the other image gave it. A document of a kind schemas does not accept is
 // left out, as no rule of this image reads its kind. Documents with defaults already keep them.
 // The defaults are the schemas' own, so the documents stay redacted.
 func (r Redacted) Defaulted(schemas *schema.Schemas) Redacted {
@@ -274,8 +276,9 @@ func hideValues(data map[string]any) map[string]any {
 	return hidden
 }
 
-// hideValue hides a value of a Secret as Redact does: a string by its hex SHA-256, and any other value by the zero value of its JSON type, such as 0 for a number,
-// also one Go built as an int or a float64 rather than parsed as a json.Number. A value that is no
+// hideValue hides a value of a Secret as Redact does: a string by its hex SHA-256, and any other
+// value by the zero value of its JSON type, such as 0 for a number, also one Go built as an int
+// or a float64 rather than parsed as a json.Number. A value that is no
 // string keeps its type, so a schema that refuses it refuses the hidden document with the same
 // message, as a schema's message of a value of the wrong type names the type alone. Secret values
 // are strings, so a document that holds another passes no check, and no delivery is named by

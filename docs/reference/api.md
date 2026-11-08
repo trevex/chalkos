@@ -280,7 +280,7 @@ The response of Status: the state of an installed node.
 | `trust` | list of TrustStatus | What the node trusts and issues with, by fingerprint. |
 | `boot` | BootStatus | The image the node booted, and what upgrades installed beside it. |
 | `platform` | string | The platform the running image was built for. |
-| `config_version` | string | SHA-256 of the config the node runs, as it was delivered, in lower-case hex: of its documents as GetConfigResponse.documents holds them, with their secret values replaced by their SHA-256, in canonical JSON, ordered by apiVersion, kind and name. Empty on a node that runs no config. |
+| `config_version` | string | The version of the config the node runs: SHA-256, in lower-case hex, of the documents GetConfigResponse.documents holds, in canonical JSON, ordered by apiVersion, kind and name. Empty on a node that runs no config. |
 | `staged_config_version` | string | The version of the config kept for the image in the inactive slot, BootStatus.staged, as config_version gives the running one's; empty without a staged image or config for it. |
 | `outputs` | list of OutputStatus | The image's outputs, by name. |
 | `previous_config_version` | string | The version of the running image's previous config, which RollbackConfig delivers again, as config_version gives the running one's; empty while the node keeps none, as after an install or an upgrade. |

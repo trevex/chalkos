@@ -3107,9 +3107,9 @@ type StatusResponse struct {
 	Boot *BootStatus `protobuf:"bytes,7,opt,name=boot,proto3" json:"boot,omitempty"`
 	// The platform the running image was built for.
 	Platform string `protobuf:"bytes,8,opt,name=platform,proto3" json:"platform,omitempty"`
-	// SHA-256 of the config the node runs, as it was delivered, in lower-case hex: of its documents
-	// as GetConfigResponse.documents holds them, with their secret values replaced by their SHA-256,
-	// in canonical JSON, ordered by apiVersion, kind and name. Empty on a node that runs no config.
+	// The version of the config the node runs: SHA-256, in lower-case hex, of the documents
+	// GetConfigResponse.documents holds, in canonical JSON, ordered by apiVersion, kind and name.
+	// Empty on a node that runs no config.
 	ConfigVersion string `protobuf:"bytes,9,opt,name=config_version,json=configVersion,proto3" json:"config_version,omitempty"`
 	// The version of the config kept for the image in the inactive slot, BootStatus.staged, as
 	// config_version gives the running one's; empty without a staged image or config for it.

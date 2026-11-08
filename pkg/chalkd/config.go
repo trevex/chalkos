@@ -201,8 +201,8 @@ func (s *Server) target(facts []*anypb.Any, t *config.Target) error {
 	return nil
 }
 
-// imageFacts collects the facts each plugin reads, nil ones left out. The facts are the image's own,
-// so a plugin that fails to read them is a failure of the node, whatever code it gives.
+// imageFacts collects the facts each plugin reads, nil ones left out. The facts are the image's
+// own, so a plugin that fails to read them is a failure of the node, whatever code it gives.
 func imageFacts(hooks []layer.ImageFacts, read func(layer.ImageFacts) (*anypb.Any, error)) ([]*anypb.Any, error) {
 	var list []*anypb.Any
 	for _, h := range hooks {
