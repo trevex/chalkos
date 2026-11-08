@@ -92,7 +92,8 @@ func (s Service) IndexRecord(vrf string) string {
 }
 
 // escape is s as systemd-escape escapes a unit's instance: ASCII letters, digits, ':', '_' and
-// '.' but a leading one stay, '/' becomes '-', and every other byte \x and its hex code.
+// every '.' after the first byte stay as they are, '/' becomes '-', and every other byte becomes
+// \x and its two hex digits.
 func escape(s string) string {
 	var b strings.Builder
 	for i := range len(s) {
