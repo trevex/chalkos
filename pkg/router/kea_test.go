@@ -52,19 +52,22 @@ func TestParseKeaSubnets(t *testing.T) {
 	}
 }
 
-// The links of a DHCPv4 and of a DHCPv6 config, and none of a config without them.
+// The links of a DHCPv4 and of a DHCPv6 config and of one that lists none, and no links of a
+// config of no JSON or without its list of interfaces.
 func TestParseKeaInterfaces(t *testing.T) {
 	for data, want := range map[string][]string{
 		`{"Dhcp4": {"interfaces-config": {"interfaces": ["lan0", "vlan20"]}}}`: {"lan0", "vlan20"},
 		`{"Dhcp6": {"interfaces-config": {"interfaces": ["vlan31"]}}}`:         {"vlan31"},
-		`{"Dhcp4": {}}`: nil,
+		`{"Dhcp4": {"interfaces-config": {"interfaces": []}}}`:                 {},
 	} {
 		if got, err := ParseKeaInterfaces([]byte(data)); err != nil || !reflect.DeepEqual(got, want) {
 			t.Errorf("ParseKeaInterfaces(%s) = %v, %v, want %v", data, got, err, want)
 		}
 	}
-	if _, err := ParseKeaInterfaces([]byte("{")); err == nil {
-		t.Error("a config of no JSON parsed")
+	for _, data := range []string{"{", `{}`, `{"Dhcp4": {}}`, `{"Dhcp4": {"interfaces-config": {}}}`, `{"Dhcp6": {"interfaces-config": {"interfaces": null}}}`} {
+		if got, err := ParseKeaInterfaces([]byte(data)); err == nil {
+			t.Errorf("ParseKeaInterfaces(%s) = %v, want an error", data, got)
+		}
 	}
 }
 

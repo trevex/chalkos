@@ -94,21 +94,30 @@ func ParseKeaSubnets(data []byte) ([]KeaSubnet, error) {
 }
 
 // ParseKeaInterfaces reads the links a DHCPv4 or DHCPv6 config of the output kea serves, which Kea
-// refuses to start or reload without.
+// refuses to start or reload without: those of its Dhcp4 section, or of its Dhcp6 section without
+// one. A config whose section lists no interfaces, not even an empty list, is no config of the
+// output.
 func ParseKeaInterfaces(data []byte) ([]string, error) {
-	type interfaces struct {
-		Config struct {
-			Interfaces []string `json:"interfaces"`
+	type section struct {
+		Config *struct {
+			Interfaces *[]string `json:"interfaces"`
 		} `json:"interfaces-config"`
 	}
 	var c struct {
-		Dhcp4 interfaces `json:"Dhcp4"`
-		Dhcp6 interfaces `json:"Dhcp6"`
+		Dhcp4 *section `json:"Dhcp4"`
+		Dhcp6 *section `json:"Dhcp6"`
 	}
 	if err := json.Unmarshal(data, &c); err != nil {
 		return nil, fmt.Errorf("read Kea's config: %w", err)
 	}
-	return append(c.Dhcp4.Config.Interfaces, c.Dhcp6.Config.Interfaces...), nil
+	s := c.Dhcp4
+	if s == nil {
+		s = c.Dhcp6
+	}
+	if s == nil || s.Config == nil || s.Config.Interfaces == nil {
+		return nil, errors.New("read Kea's config: it lists no interfaces")
+	}
+	return *s.Config.Interfaces, nil
 }
 
 // KeaLeases are a subnet's counts of Kea's statistics: the addresses it leased, reserved ones
