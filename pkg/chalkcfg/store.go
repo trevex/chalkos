@@ -50,7 +50,9 @@ const secretKind = "Secret"
 
 // read reads the kinds the image declares and the node's documents. chalkd replaces the config
 // by pointing /run/chalkos/config at a new directory and removing the old one; slot.ReadRuntime
-// resolves the link once, so the documents read are those of one config.
+// resolves the link once, so the documents read are those of one config. Every command reads
+// every document below the directory, whichever kind it prints, so a file chalkd wrote that does
+// not decode fails every command.
 func (s store) read() (node, error) {
 	docs, err := slot.ReadRuntime(s.run)
 	if err != nil {
@@ -63,7 +65,7 @@ func (s store) read() (node, error) {
 			k = &kindInfo{}
 			n.kinds[kind] = k
 		}
-		if g := group(apiVersion); !slices.Contains(k.groups, g) {
+		if g := groupOf(apiVersion); !slices.Contains(k.groups, g) {
 			k.groups = append(k.groups, g)
 			slices.Sort(k.groups)
 		}
@@ -88,8 +90,8 @@ func (s store) read() (node, error) {
 	return n, nil
 }
 
-// group is the group of apiVersion.
-func group(apiVersion string) string {
+// groupOf is the group of apiVersion.
+func groupOf(apiVersion string) string {
 	g, _, _ := strings.Cut(apiVersion, "/")
 	return g
 }
@@ -124,7 +126,7 @@ func (n node) documents(kind, name string) ([]config.Document, error) {
 	}
 	var docs []config.Document
 	for _, d := range n.docs {
-		if d.Kind == kind && group(d.APIVersion) == g && (name == "" || d.Name == name) {
+		if d.Kind == kind && groupOf(d.APIVersion) == g && (name == "" || d.Name == name) {
 			docs = append(docs, d)
 		}
 	}
