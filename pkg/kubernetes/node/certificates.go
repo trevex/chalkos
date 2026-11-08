@@ -14,6 +14,7 @@ import (
 	"github.com/trevex/chalkos/pkg/atomicfile"
 	"github.com/trevex/chalkos/pkg/internal/poll"
 	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
+	"github.com/trevex/chalkos/pkg/pki"
 )
 
 // LockPKI waits for the lock on the control plane's certificates until ctx ends. A node leaving
@@ -109,7 +110,7 @@ func ControlPlaneRenewAt(p Paths) (time.Time, *x509.Certificate, error) {
 			first = cert
 		}
 	}
-	return first.NotBefore.Add(first.NotAfter.Sub(first.NotBefore) * 2 / 3), first, nil
+	return pki.RenewAt(first), first, nil
 }
 
 // RenewControlPlane issues the control plane's certificates and kubeconfigs again, for the
