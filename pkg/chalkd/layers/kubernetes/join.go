@@ -301,15 +301,16 @@ func (k *side) etcdEndpoints(ctx context.Context, c k8s.Cluster, share kpki.Shar
 }
 
 // clusterAnswers reports whether the API server at the endpoint presents a certificate of the
-// share's CA, as the cluster's API servers do.
-func clusterAnswers(ctx context.Context, c k8s.Cluster, share kpki.Share) bool {
+// share's CA, as the cluster's API servers do. It fails when it cannot tell: an endpoint or a CA
+// bundle it cannot use would otherwise read as no cluster.
+func clusterAnswers(ctx context.Context, c k8s.Cluster, share kpki.Share) (bool, error) {
 	u, err := url.Parse(c.Endpoint)
 	if err != nil {
-		return false
+		return false, fmt.Errorf("the cluster endpoint: %w", err)
 	}
 	roots, err := pki.BundlePool(share.CABundle())
 	if err != nil {
-		return false
+		return false, fmt.Errorf("the share's CA: %w", err)
 	}
 	port := u.Port()
 	if port == "" {
@@ -321,10 +322,10 @@ func clusterAnswers(ctx context.Context, c k8s.Cluster, share kpki.Share) bool {
 	}
 	conn, err := d.DialContext(ctx, "tcp", net.JoinHostPort(u.Hostname(), port))
 	if err != nil {
-		return false
+		return false, nil
 	}
 	conn.Close()
-	return true
+	return true, nil
 }
 
 // mayJoin refuses joining a node that is bootstrapped or left etcd.

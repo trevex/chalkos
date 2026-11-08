@@ -46,7 +46,7 @@ func joiningNode(t *testing.T) (*Plugin, *etcdtest.Member, *clientv3.Client) {
 	k.hooks.EtcdEndpoints = func(context.Context, k8s.Cluster, kpki.Share, []netip.Addr) ([]string, error) {
 		return []string{cp0.ClientURL}, nil
 	}
-	k.hooks.ClusterAnswers = func(context.Context, k8s.Cluster, kpki.Share) bool { return true }
+	k.hooks.ClusterAnswers = func(context.Context, k8s.Cluster, kpki.Share) (bool, error) { return true, nil }
 	k.timing.JoinRetry = 50 * time.Millisecond
 	cli, err := etcd.Dial([]string{cp0.ClientURL}, etcdtest.ClientTLS(t, *share.EtcdCA))
 	if err != nil {
@@ -236,13 +236,30 @@ func TestJoinWaitsForCluster(t *testing.T) {
 func TestBootstrapRefusedWhileClusterAnswers(t *testing.T) {
 	s, _ := kubernetesNode(t, k8s.KindControlPlane, true)
 	k := s.k
-	k.hooks.ClusterAnswers = func(context.Context, k8s.Cluster, kpki.Share) bool { return true }
+	k.hooks.ClusterAnswers = func(context.Context, k8s.Cluster, kpki.Share) (bool, error) { return true, nil }
 	_, err := kubernetestest.Bootstrap(context.Background(), s)
 	if layer.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "the cluster's API server answers at https://192.168.100.11:6443") {
 		t.Errorf("bootstrap: %v", err)
 	}
 	if exists(k.paths.Pin()) || exists(k.paths.Bootstrapped()) {
 		t.Error("a refused bootstrap pinned or marked the node")
+	}
+}
+
+// TestBootstrapFailsWhenClusterUnknown checks that a bootstrap stops when it cannot tell whether
+// the cluster's API server answers.
+func TestBootstrapFailsWhenClusterUnknown(t *testing.T) {
+	s, _ := kubernetesNode(t, k8s.KindControlPlane, true)
+	k := s.k
+	k.hooks.ClusterAnswers = func(context.Context, k8s.Cluster, kpki.Share) (bool, error) {
+		return false, errors.New("the share's CA: no PEM certificate")
+	}
+	_, err := kubernetestest.Bootstrap(context.Background(), s)
+	if err == nil || !strings.Contains(err.Error(), "no PEM certificate") {
+		t.Errorf("bootstrap: %v", err)
+	}
+	if exists(k.paths.Pin()) || exists(k.paths.Bootstrapped()) {
+		t.Error("a failed bootstrap pinned or marked the node")
 	}
 }
 
@@ -306,7 +323,7 @@ func TestBootstrapRefusedAfterJoinStarted(t *testing.T) {
 	if _, _, err := etcd.AddLearner(context.Background(), cli, "", joinPeerURL); err != nil {
 		t.Fatal(err)
 	}
-	k.hooks.ClusterAnswers = func(context.Context, k8s.Cluster, kpki.Share) bool { return false }
+	k.hooks.ClusterAnswers = func(context.Context, k8s.Cluster, kpki.Share) (bool, error) { return false, nil }
 	_, err := kubernetestest.Bootstrap(context.Background(), s)
 	want := "the node started joining the cluster at https://192.168.100.11:6443; finish the join or remove its member and reinstall"
 	if layer.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), want) {

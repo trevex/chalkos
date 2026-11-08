@@ -253,7 +253,7 @@ func NoEtcdEndpoints(context.Context, k8s.Cluster, kpki.Share, []netip.Addr) ([]
 }
 
 // NoClusterAnswers is a cluster endpoint at which no API server answers.
-func NoClusterAnswers(context.Context, k8s.Cluster, kpki.Share) bool { return false }
+func NoClusterAnswers(context.Context, k8s.Cluster, kpki.Share) (bool, error) { return false, nil }
 
 // ControlPlaneCurrent is a control plane that runs with the certificates the node holds.
 func ControlPlaneCurrent(context.Context, k8s.Cluster, kpki.Share) error { return nil }

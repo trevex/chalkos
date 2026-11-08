@@ -129,6 +129,7 @@ func etcdTrust(s kpki.Share) string {
 func apiServerReady(ctx context.Context, c k8s.Cluster, share kpki.Share) bool {
 	roots, err := pki.BundlePool(share.CABundle())
 	if err != nil {
+		log.Printf("the API server's readiness is unknown: the share's CA: %v", err)
 		return false
 	}
 	client := &http.Client{

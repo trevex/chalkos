@@ -104,8 +104,8 @@ type Hooks struct {
 	// as the API server at the cluster's endpoint lists them. It fails while there is none.
 	EtcdEndpoints func(ctx context.Context, c k8s.Cluster, share kpki.Share, self []netip.Addr) ([]string, error)
 	// ClusterAnswers reports whether the API server at the cluster's endpoint answers with the
-	// share's CA.
-	ClusterAnswers func(ctx context.Context, c k8s.Cluster, share kpki.Share) bool
+	// share's CA, and fails when it cannot tell.
+	ClusterAnswers func(ctx context.Context, c k8s.Cluster, share kpki.Share) (bool, error)
 	// VIPAddresses are the cluster's VIPs on this node's interfaces.
 	VIPAddresses func(c k8s.Cluster, p knode.Paths) (vip.Holder, error)
 	// APIServerReady reports whether the node's API server answers ready.

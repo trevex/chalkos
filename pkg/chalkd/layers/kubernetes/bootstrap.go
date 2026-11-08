@@ -94,7 +94,11 @@ func (p *Plugin) bootstrap(ctx context.Context, c k8s.Cluster) (chan struct{}, e
 		return nil, layer.Errorf(connect.CodeFailedPrecondition, "the node is joining the cluster at %s; chalkctl status shows its progress", c.Endpoint)
 	}
 	// A second bootstrap would start a second cluster.
-	if k.hooks.ClusterAnswers(ctx, c, share) {
+	answers, err := k.hooks.ClusterAnswers(ctx, c, share)
+	if err != nil {
+		return nil, fmt.Errorf("check for an API server at %s before bootstrapping: %w", c.Endpoint, err)
+	}
+	if answers {
 		return nil, layer.Errorf(connect.CodeFailedPrecondition, "the cluster's API server answers at %s; this node joins it on its own", c.Endpoint)
 	}
 	// etcd's peers and the certificates know the node by its addresses from now on.
