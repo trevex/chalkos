@@ -117,27 +117,15 @@ type Parameter struct {
 // Read reads the image's diagnostics.json, refusing a diagnostic chalkd could not run; an image
 // without one declares none.
 func Read(path string) (map[string]Definition, error) {
-	defs := map[string]Definition{}
-	if err := jsonfile.Read(path, &defs); err != nil {
-		return nil, err
-	}
-	var errs []error
-	for _, name := range slices.Sorted(maps.Keys(defs)) {
-		err := defs[name].Check()
+	return jsonfile.ReadDefs(path, "diagnostic", func(name string, d Definition) error {
 		switch {
 		case !namePattern.MatchString(name):
-			err = fmt.Errorf("the name is not of the form %s", nameForm)
+			return fmt.Errorf("the name is not of the form %s", nameForm)
 		case len(name) > MaxName:
-			err = fmt.Errorf("the name is longer than %d characters", MaxName)
+			return fmt.Errorf("the name is longer than %d characters", MaxName)
 		}
-		if err != nil {
-			errs = append(errs, fmt.Errorf("%s: diagnostic %s: %w", path, name, err))
-		}
-	}
-	if len(errs) > 0 {
-		return nil, errors.Join(errs...)
-	}
-	return defs, nil
+		return d.Check()
+	})
 }
 
 // Check refuses a diagnostic chalkd could not run as declared: a command that runs no program

@@ -10,6 +10,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/trevex/chalkos/pkg/jsonfile"
 	"github.com/trevex/chalkos/pkg/refusals"
 )
 
@@ -27,7 +28,7 @@ type Validator struct {
 
 // ReadValidators reads the validators an image declares; a missing file declares none.
 func ReadValidators(path string) (map[string]Validator, error) {
-	return readDefinitions(path, RoleValidator, func(name string, v Validator) error { return v.check(name) })
+	return jsonfile.ReadDefs(path, string(RoleValidator), func(name string, v Validator) error { return v.check(name) })
 }
 
 // check refuses a definition of the validator name chalkd could not run: one checkDefinition

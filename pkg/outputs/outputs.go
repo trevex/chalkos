@@ -38,6 +38,8 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+
+	"github.com/trevex/chalkos/pkg/jsonfile"
 )
 
 const (
@@ -68,7 +70,7 @@ type Definition struct {
 // Read reads the outputs an image declares for a node that renders them below root, DefaultRoot
 // on a node; a missing file declares none.
 func Read(path, root string) (map[string]Definition, error) {
-	defs, err := readDefinitions(path, RoleOutput, func(name string, d Definition) error { return d.check(name, root) })
+	defs, err := jsonfile.ReadDefs(path, string(RoleOutput), func(name string, d Definition) error { return d.check(name, root) })
 	if err != nil {
 		return nil, err
 	}

@@ -2,14 +2,11 @@ package outputs
 
 import (
 	"encoding/json"
-	"errors"
-	"fmt"
-	"io/fs"
 	"log"
-	"os"
 	"path/filepath"
 
 	"github.com/trevex/chalkos/pkg/atomicfile"
+	"github.com/trevex/chalkos/pkg/jsonfile"
 )
 
 // Status is what a node reports of an output: the hash of the files it serves, and why its last
@@ -24,16 +21,9 @@ func statusPath(root string) string { return filepath.Join(root, ".status.json")
 // ReadStatus reads the outputs' status below root; none was recorded on a node that rendered
 // none.
 func ReadStatus(root string) (map[string]Status, error) {
-	data, err := os.ReadFile(statusPath(root))
-	if errors.Is(err, fs.ErrNotExist) {
-		return map[string]Status{}, nil
-	}
-	if err != nil {
-		return nil, err
-	}
 	st := map[string]Status{}
-	if err := json.Unmarshal(data, &st); err != nil {
-		return nil, fmt.Errorf("%s: %w", statusPath(root), err)
+	if err := jsonfile.Read(statusPath(root), &st); err != nil {
+		return nil, err
 	}
 	return st, nil
 }

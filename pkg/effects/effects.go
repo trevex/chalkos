@@ -62,8 +62,8 @@ func ReadServices(path string) (map[string]Service, error) {
 // effects that give one unit different hints, since chalkd looks a hint up by its unit; an image
 // without one has no effects.
 func Read(path string) (map[string]Definition, error) {
-	effects := map[string]Definition{}
-	if err := jsonfile.Read(path, &effects); err != nil {
+	effects, err := jsonfile.ReadDefs(path, "effect", func(_ string, d Definition) error { return d.Check() })
+	if err != nil {
 		return nil, err
 	}
 	var errs []error
@@ -71,10 +71,6 @@ func Read(path string) (map[string]Definition, error) {
 	hinted := map[string]string{}
 	for _, name := range slices.Sorted(maps.Keys(effects)) {
 		d := effects[name]
-		if err := d.Check(); err != nil {
-			errs = append(errs, fmt.Errorf("%s: effect %s: %w", path, name, err))
-			continue
-		}
 		if d.Hint == nil {
 			continue
 		}

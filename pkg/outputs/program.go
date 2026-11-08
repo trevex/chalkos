@@ -15,7 +15,6 @@ import (
 	"strings"
 
 	"github.com/trevex/chalkos/pkg/config"
-	"github.com/trevex/chalkos/pkg/jsonfile"
 	"github.com/trevex/chalkos/pkg/refusals"
 	"github.com/trevex/chalkos/pkg/schema"
 )
@@ -222,23 +221,4 @@ func checkDefinition(n string, inputs []string, programs map[string]string) erro
 		}
 	}
 	return nil
-}
-
-// readDefinitions reads the definitions of the role a file of the image declares, a missing file
-// none, and refuses them with every definition check refuses, in the order of their names.
-func readDefinitions[D any](path string, role Role, check func(name string, d D) error) (map[string]D, error) {
-	defs := map[string]D{}
-	if err := jsonfile.Read(path, &defs); err != nil {
-		return nil, err
-	}
-	var errs []error
-	for _, n := range slices.Sorted(maps.Keys(defs)) {
-		if err := check(n, defs[n]); err != nil {
-			errs = append(errs, fmt.Errorf("%s: %s %s: %w", path, role, n, err))
-		}
-	}
-	if len(errs) > 0 {
-		return nil, errors.Join(errs...)
-	}
-	return defs, nil
 }
