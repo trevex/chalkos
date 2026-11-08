@@ -392,17 +392,15 @@ func (f *firewall) ruleset() (string, error) {
 			name, s.Family, strings.Join(elements, ", "))
 	}
 	for _, p := range f.policies {
-		fmt.Fprintf(&b, "\tchain policy-%s {\n", p.Name)
+		var lines []string
 		for i, r := range p.Spec.Rules {
-			lines, err := f.ruleLines(p.Name, i+1, r)
+			rule, err := f.ruleLines(p.Name, i+1, r)
 			if err != nil {
 				return "", derive.Within(fmt.Sprintf("FirewallPolicy %s rule %d", p.Name, i+1), err)
 			}
-			for _, l := range lines {
-				b.WriteString("\t\t" + l + "\n")
-			}
+			lines = append(lines, rule...)
 		}
-		b.WriteString("\t\t" + verdictOf(p.Spec.Default) + "\n\t}\n")
+		writeChain(&b, "policy-"+p.Name, "", append(lines, verdictOf(p.Spec.Default)))
 	}
 	f.conntrackZones(&b)
 	f.prerouting(&b)
@@ -418,6 +416,19 @@ func (f *firewall) ruleset() (string, error) {
 	return b.String(), nil
 }
 
+// writeChain writes the chain name: the header of a base chain, its type, hook and policy, none
+// for a regular chain, and the lines.
+func writeChain(b *strings.Builder, name, header string, lines []string) {
+	b.WriteString("\tchain " + name + " {\n")
+	if header != "" {
+		b.WriteString("\t\t" + header + "\n")
+	}
+	for _, l := range lines {
+		b.WriteString("\t\t" + l + "\n")
+	}
+	b.WriteString("\t}\n")
+}
+
 // conntrackZones puts the connections through the links of each VRF with a conntrack zone in its
 // zone, at the raw priority before conntrack sees them. Prerouting sees a packet from a VRF's
 // link first with the link as iifname, which decides its zone, and output a packet the router
@@ -428,11 +439,11 @@ func (f *firewall) conntrackZones(b *strings.Builder) {
 		return
 	}
 	for _, c := range []struct{ name, hook, dir string }{{"ct-prerouting", "prerouting", "iifname"}, {"ct-output", "output", "oifname"}} {
-		fmt.Fprintf(b, "\tchain %s {\n\t\ttype filter hook %s priority raw; policy accept;\n", c.name, c.hook)
+		var lines []string
 		for _, z := range f.ctZones {
-			fmt.Fprintf(b, "\t\t%s %s ct zone set %d comment %q\n", c.dir, interfaceSet(z.links), z.zone, "VRF "+z.vrf)
+			lines = append(lines, fmt.Sprintf("%s %s ct zone set %d comment %q", c.dir, interfaceSet(z.links), z.zone, "VRF "+z.vrf))
 		}
-		b.WriteString("\t}\n")
+		writeChain(b, c.name, "type filter hook "+c.hook+" priority raw; policy accept;", lines)
 	}
 }
 
@@ -453,20 +464,19 @@ func (f *firewall) prerouting(b *strings.Builder) {
 	case "strict":
 		fib = "fib saddr . mark . iif oif exists accept"
 	}
-	b.WriteString("\tchain prerouting {\n" +
-		"\t\ttype filter hook prerouting priority mangle + 10; policy drop;\n")
+	var lines []string
 	// A packet from a VRF's link passes prerouting a second time with the VRF's device. The
 	// chain policy-routing marked it after the first pass, which the filter judged; judged again,
 	// it would be judged by its policy's table.
 	if len(f.policy) > 0 && len(f.vrfDevices) > 0 {
-		fmt.Fprintf(b, "\t\tiifname %s meta mark & 0x%08x != 0 accept\n", interfaceSet(f.vrfDevices), policyMarkMask)
+		lines = append(lines, fmt.Sprintf("iifname %s meta mark & 0x%08x != 0 accept", interfaceSet(f.vrfDevices), policyMarkMask))
 	}
-	b.WriteString("\t\tmeta nfproto ipv4 udp sport . udp dport { 67 . 68, 68 . 67 } accept\n")
+	lines = append(lines, "meta nfproto ipv4 udp sport . udp dport { 67 . 68, 68 . 67 } accept")
 	if f.router.RPFilter == "strict" && len(f.vrfDevices) > 0 {
-		b.WriteString("\t\tiifname " + interfaceSet(f.vrfDevices) + " ip6 saddr fe80::/10 ip6 hoplimit 255 " +
-			"icmpv6 type { nd-router-solicit, nd-router-advert, nd-neighbor-solicit, nd-neighbor-advert } accept\n")
+		lines = append(lines, "iifname "+interfaceSet(f.vrfDevices)+" ip6 saddr fe80::/10 ip6 hoplimit 255 "+
+			"icmpv6 type { nd-router-solicit, nd-router-advert, nd-neighbor-solicit, nd-neighbor-advert } accept")
 	}
-	b.WriteString("\t\t" + fib + "\n\t}\n")
+	writeChain(b, "prerouting", "type filter hook prerouting priority mangle + 10; policy drop;", append(lines, fib))
 }
 
 // policyRouting is the chain policy-routing, after the reverse-path filter, which judges a packet
@@ -477,42 +487,36 @@ func (f *firewall) policyRouting(b *strings.Builder) {
 	if len(f.policy) == 0 {
 		return
 	}
-	b.WriteString("\tchain policy-routing {\n\t\ttype filter hook prerouting priority mangle + 20; policy accept;\n")
-	for _, l := range f.policy {
-		b.WriteString("\t\t" + l + "\n")
-	}
-	b.WriteString("\t}\n")
+	writeChain(b, "policy-routing", "type filter hook prerouting priority mangle + 20; policy accept;", f.policy)
 }
 
 // input accepts the protected traffic, chalkd's port on the management interfaces, the openings,
 // then hands each connection from a zone to the policy to local of that zone, and drops the rest.
 func (f *firewall) input(b *strings.Builder) error {
-	b.WriteString("\tchain input {\n" +
-		"\t\ttype filter hook input priority filter; policy drop;\n" +
-		"\t\tiifname \"lo\" accept\n" +
-		"\t\tct state established,related accept\n" +
-		"\t\tct state invalid drop\n" +
-		"\t\ticmpv6 type { " + icmpv6Local + " } accept\n" +
-		"\t\ticmp type { " + icmpErrors + ", echo-request } accept\n" +
-		"\t\tip6 daddr fe80::/64 udp sport 547 udp dport 546 accept\n")
 	api := fmt.Sprintf("tcp dport %d accept", f.port)
 	if f.router.Management.Interfaces != nil {
 		api = "iifname " + interfaceSet(f.router.Management.Interfaces) + " " + api
 	}
-	b.WriteString("\t\t" + api + "\n")
+	lines := []string{
+		`iifname "lo" accept`,
+		"ct state established,related accept",
+		"ct state invalid drop",
+		"icmpv6 type { " + icmpv6Local + " } accept",
+		"icmp type { " + icmpErrors + ", echo-request } accept",
+		"ip6 daddr fe80::/64 udp sport 547 udp dport 546 accept",
+		api,
+	}
 	for _, o := range f.openings {
-		for _, l := range o.lines() {
-			b.WriteString("\t\t" + l + "\n")
-		}
+		lines = append(lines, o.lines()...)
 	}
 	for _, p := range f.policies {
 		if p.Spec.To == "local" {
 			for _, from := range f.zones[p.Spec.From].entries() {
-				fmt.Fprintf(b, "\t\t%s jump policy-%s\n", from, p.Name)
+				lines = append(lines, from+" jump policy-"+p.Name)
 			}
 		}
 	}
-	b.WriteString("\t}\n")
+	writeChain(b, "input", "type filter hook input priority filter; policy drop;", lines)
 	return nil
 }
 
@@ -529,15 +533,15 @@ func (f *firewall) forward(b *strings.Builder) {
 		}
 	}
 	if len(between) == 0 && !f.closed {
-		b.WriteString("\tchain forward {\n\t\ttype filter hook forward priority filter; policy accept;\n\t}\n")
+		writeChain(b, "forward", "type filter hook forward priority filter; policy accept;", nil)
 		return
 	}
-	b.WriteString("\tchain forward {\n" +
-		"\t\ttype filter hook forward priority filter; policy drop;\n" +
-		"\t\tct state established,related accept\n" +
-		"\t\tct state invalid drop\n" +
-		"\t\ticmpv6 type { " + icmpv6Errors + " } accept\n" +
-		"\t\ticmp type { " + icmpErrors + " } accept\n")
+	lines := []string{
+		"ct state established,related accept",
+		"ct state invalid drop",
+		"icmpv6 type { " + icmpv6Errors + " } accept",
+		"icmp type { " + icmpErrors + " } accept",
+	}
 	// A NAT64's link carries what Jool translated: out of it IPv6 from the prefix and IPv4 from
 	// the pool or, for an own pool, the inner address; into it IPv6 to the prefix and IPv4 to an
 	// explicit pool. An own pool's IPv4 comes back to the masqueraded connections alone. Anything
@@ -554,15 +558,16 @@ func (f *firewall) forward(b *strings.Builder) {
 		if len(n.Pools) > 0 {
 			source = poolSet(n.Pools)
 		}
-		fmt.Fprintf(b, "\t\t%s ip6 saddr %s accept comment %s\n", from, prefix, c)
-		fmt.Fprintf(b, "\t\t%s ip saddr %s accept comment %s\n", from, source, c)
-		fmt.Fprintf(b, "\t\toifname %s ip6 daddr %s accept comment %s\n", link, prefix, c)
+		lines = append(lines,
+			fmt.Sprintf("%s ip6 saddr %s accept comment %s", from, prefix, c),
+			fmt.Sprintf("%s ip saddr %s accept comment %s", from, source, c),
+			fmt.Sprintf("oifname %s ip6 daddr %s accept comment %s", link, prefix, c))
 		if len(n.Pools) > 0 {
-			fmt.Fprintf(b, "\t\toifname %s ip daddr %s accept comment %s\n", link, poolSet(n.Pools), c)
+			lines = append(lines, fmt.Sprintf("oifname %s ip daddr %s accept comment %s", link, poolSet(n.Pools), c))
 		}
 	}
 	if slices.ContainsFunc(f.nat, func(n derive.Named[derive.NATSpec]) bool { return n.Spec.Type == "dnat" }) {
-		b.WriteString("\t\tct status dnat accept\n")
+		lines = append(lines, "ct status dnat accept")
 	}
 	for _, p := range between {
 		to := f.zones[p.Spec.To].links
@@ -570,10 +575,10 @@ func (f *firewall) forward(b *strings.Builder) {
 			continue
 		}
 		for _, from := range f.zones[p.Spec.From].entries() {
-			fmt.Fprintf(b, "\t\t%s oifname %s jump policy-%s\n", from, interfaceSet(to), p.Name)
+			lines = append(lines, fmt.Sprintf("%s oifname %s jump policy-%s", from, interfaceSet(to), p.Name))
 		}
 	}
-	b.WriteString("\t}\n")
+	writeChain(b, "forward", "type filter hook forward priority filter; policy drop;", lines)
 }
 
 // translation renders the NATRule documents, in the order of their names: dnat in dstnat after the
@@ -618,11 +623,7 @@ func (f *firewall) translation(b *strings.Builder) error {
 		if len(c.lines) == 0 {
 			continue
 		}
-		fmt.Fprintf(b, "\tchain %s {\n\t\ttype nat hook %s priority %s; policy accept;\n", c.name, c.hook, c.priority)
-		for _, l := range c.lines {
-			b.WriteString("\t\t" + l + "\n")
-		}
-		b.WriteString("\t}\n")
+		writeChain(b, c.name, "type nat hook "+c.hook+" priority "+c.priority+"; policy accept;", c.lines)
 	}
 	return nil
 }
