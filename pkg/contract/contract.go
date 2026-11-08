@@ -57,26 +57,28 @@ type Contract struct {
 	Validators  map[string]outputs.Validator
 	Diagnostics map[string]diagnostics.Definition
 
-	rules       func() (*rules.Set, error)
-	effectRules func() ([]*rules.EffectRule, error)
+	// The rules are compiled when first asked for, so a Contract built as a literal compiles them
+	// as one Load returns does.
+	rulesOnce   sync.Once
+	ruleSet     *rules.Set
+	rulesErr    error
+	effectsOnce sync.Once
+	effectRules []*rules.EffectRule
+	effectsErr  error
 }
 
 // Rules are the change rules of the schemas, compiled once, when first asked for; the error is
-// every rule that does not compile.
-func (c *Contract) Rules() (*rules.Set, error) { return c.rules() }
+// every rule that does not compile. A contract without schemas has none.
+func (c *Contract) Rules() (*rules.Set, error) {
+	c.rulesOnce.Do(func() { c.ruleSet, c.rulesErr = rules.Compile(c.Schemas) })
+	return c.ruleSet, c.rulesErr
+}
 
 // EffectRules are the rules of the effects that have one, in the order of the effects' names,
 // compiled once, when first asked for; the error is every rule that does not compile.
-func (c *Contract) EffectRules() ([]*rules.EffectRule, error) { return c.effectRules() }
-
-// compileLater has c compile its rules when they are first asked for.
-func (c *Contract) compileLater() {
-	c.rules = sync.OnceValues(func() (*rules.Set, error) { return rules.Compile(c.Schemas) })
-	c.effectRules = sync.OnceValues(func() ([]*rules.EffectRule, error) {
-		var (
-			compiled []*rules.EffectRule
-			errs     []error
-		)
+func (c *Contract) EffectRules() ([]*rules.EffectRule, error) {
+	c.effectsOnce.Do(func() {
+		var errs []error
 		for _, name := range slices.Sorted(maps.Keys(c.Effects)) {
 			// An effect without a rule fires on its outputs or kinds alone.
 			if when := c.Effects[name].When; when != "" {
@@ -85,14 +87,14 @@ func (c *Contract) compileLater() {
 					errs = append(errs, err)
 					continue
 				}
-				compiled = append(compiled, r)
+				c.effectRules = append(c.effectRules, r)
 			}
 		}
-		if len(errs) > 0 {
-			return nil, errors.Join(errs...)
+		if c.effectsErr = errors.Join(errs...); c.effectsErr != nil {
+			c.effectRules = nil
 		}
-		return compiled, nil
 	})
+	return c.effectRules, c.effectsErr
 }
 
 // An Option changes how Load reads a contract.
@@ -137,7 +139,6 @@ func Load(dir string, opts ...Option) (*Contract, error) {
 	if err := errors.Join(errs...); err != nil {
 		return nil, err
 	}
-	c.compileLater()
 	return c, nil
 }
 
@@ -150,6 +151,5 @@ func FromSchemas(files map[string][]byte) (*Contract, error) {
 		return nil, err
 	}
 	c := &Contract{Schemas: s}
-	c.compileLater()
 	return c, nil
 }

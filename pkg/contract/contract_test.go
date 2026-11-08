@@ -165,3 +165,17 @@ func TestFromSchemas(t *testing.T) {
 		t.Error("a file that is no schema: no error")
 	}
 }
+
+// A contract built as a literal, without Load, has its rules compiled as a loaded one does: none
+// without schemas, and no panic.
+func TestZeroContractHasNoRules(t *testing.T) {
+	var c Contract
+	set, err := c.Rules()
+	if err != nil || set == nil || len(set.Programs) != 0 {
+		t.Errorf("Rules = %v, %v", set, err)
+	}
+	effects, err := c.EffectRules()
+	if err != nil || len(effects) != 0 {
+		t.Errorf("EffectRules = %v, %v", effects, err)
+	}
+}
