@@ -27,7 +27,7 @@ import (
 	"github.com/trevex/chalkos/pkg/outputs"
 	"github.com/trevex/chalkos/pkg/pki"
 	routing "github.com/trevex/chalkos/pkg/router"
-	"github.com/trevex/chalkos/pkg/router/units"
+	"github.com/trevex/chalkos/pkg/router/services"
 	"github.com/trevex/chalkos/pkg/tool"
 	"github.com/trevex/chalkos/pkg/tool/systemctl"
 )
@@ -337,7 +337,7 @@ func (r *side) resolver(ctx context.Context) *routerv1.ResolverStatus {
 // renderedVRFs are the VRFs of the configs of the service svc that an output rendered into dir,
 // the default VRF first, then by name. A file of no VRF's name is left out: only a VRF's name
 // reaches a command line.
-func renderedVRFs(dir string, svc units.Service) []string {
+func renderedVRFs(dir string, svc services.Service) []string {
 	entries, _ := os.ReadDir(dir)
 	var vrfs []string
 	for _, e := range entries {
@@ -365,7 +365,7 @@ func compareVRFs(a, b string) int {
 // unitRunning reports whether the unit of the instance of the service svc of the VRF vrf is
 // active and, for a VRF's, bound to the VRF's device, or says why not, asked within budget as ask
 // asks.
-func (r *side) unitRunning(ctx, budget context.Context, svc units.Service, vrf string) (running bool, problem string) {
+func (r *side) unitRunning(ctx, budget context.Context, svc services.Service, vrf string) (running bool, problem string) {
 	unit := svc.Unit(vrf)
 	state, err := r.isActive(ctx, budget, unit)
 	switch {
@@ -389,13 +389,13 @@ func (r *side) vrfResolvers(ctx context.Context) []*routerv1.ResolverStatus {
 	budget, cancel := context.WithTimeout(ctx, askTimeout)
 	defer cancel()
 	var resolvers []*routerv1.ResolverStatus
-	for _, vrf := range renderedVRFs(r.ResolverDir, units.Unbound) {
+	for _, vrf := range renderedVRFs(r.ResolverDir, services.Unbound) {
 		// resolver asks the default VRF's.
 		if vrf == routing.DefaultVRF {
 			continue
 		}
 		s := &routerv1.ResolverStatus{Vrf: vrf}
-		s.Running, s.Error = r.unitRunning(ctx, budget, units.Unbound, vrf)
+		s.Running, s.Error = r.unitRunning(ctx, budget, services.Unbound, vrf)
 		resolvers = append(resolvers, s)
 	}
 	return resolvers
@@ -431,14 +431,14 @@ func (r *side) staleDevice(vrf, record string) string {
 // dhcp6, and its family's service.
 type keaServer struct {
 	vrf, family string
-	svc         units.Service
+	svc         services.Service
 }
 
 // keaServers are the servers whose configs the output kea rendered into dir, the default VRF's
 // first, then by VRF, DHCPv4's before DHCPv6's.
 func keaServers(dir string) []keaServer {
 	var out []keaServer
-	for _, s := range []keaServer{{family: "dhcp4", svc: units.Kea4}, {family: "dhcp6", svc: units.Kea6}} {
+	for _, s := range []keaServer{{family: "dhcp4", svc: services.Kea4}, {family: "dhcp6", svc: services.Kea6}} {
 		for _, vrf := range renderedVRFs(dir, s.svc) {
 			s.vrf = vrf
 			out = append(out, s)
@@ -500,9 +500,9 @@ func (r *side) dhcpRelays(ctx context.Context) []*routerv1.DHCPRelayStatus {
 	budget, cancel := context.WithTimeout(ctx, askTimeout)
 	defer cancel()
 	var relays []*routerv1.DHCPRelayStatus
-	for _, vrf := range renderedVRFs(r.RelayDir, units.Relay) {
+	for _, vrf := range renderedVRFs(r.RelayDir, services.Relay) {
 		s := &routerv1.DHCPRelayStatus{Vrf: vrf}
-		s.Running, s.Error = r.unitRunning(ctx, budget, units.Relay, vrf)
+		s.Running, s.Error = r.unitRunning(ctx, budget, services.Relay, vrf)
 		relays = append(relays, s)
 	}
 	return relays

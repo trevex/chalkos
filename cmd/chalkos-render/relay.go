@@ -7,7 +7,7 @@ import (
 	"strings"
 
 	"github.com/trevex/chalkos/pkg/router/derive"
-	"github.com/trevex/chalkos/pkg/router/units"
+	"github.com/trevex/chalkos/pkg/router/services"
 )
 
 // The output dhcp-relay: the config of dnsmasq's DHCP relay of each VRF whose links DHCPRelay
@@ -71,7 +71,7 @@ func renderDHCPRelay(in map[string]any, out string) error {
 		for _, l := range v.lines {
 			b.WriteString(l + "\n")
 		}
-		if err := writeFile(out, units.Relay.File(vrf), []byte(b.String())); err != nil {
+		if err := writeFile(out, services.Relay.File(vrf), []byte(b.String())); err != nil {
 			return err
 		}
 	}

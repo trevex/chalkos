@@ -11,14 +11,14 @@ import (
 	"github.com/trevex/chalkos/pkg/dns"
 	"github.com/trevex/chalkos/pkg/refusals"
 	"github.com/trevex/chalkos/pkg/router/derive"
-	"github.com/trevex/chalkos/pkg/router/units"
+	"github.com/trevex/chalkos/pkg/router/services"
 )
 
 // unboundControlOf is the socket on which unbound-control, and chalkd through it, reach the
 // resolver of vrf: unbound.ctl in its runtime directory, /run/unbound for the default VRF's and
 // /run/unbound-<vrf> for a VRF's.
 func unboundControlOf(vrf string) string {
-	return "/run/" + units.Unbound.RuntimeDir(vrf) + "/unbound.ctl"
+	return "/run/" + services.Unbound.RuntimeDir(vrf) + "/unbound.ctl"
 }
 
 // ipv4OnlyZone is the zone RFC 8880 has a DNS64 resolver answer itself.
@@ -67,7 +67,7 @@ func renderUnbound(trustAnchor, zoneFile string, in map[string]any, out string) 
 		if err != nil {
 			return derive.Within("Resolver "+r.Name, err)
 		}
-		if err := writeFile(out, units.Unbound.File(vrf), []byte(text)); err != nil {
+		if err := writeFile(out, services.Unbound.File(vrf), []byte(text)); err != nil {
 			return err
 		}
 	}

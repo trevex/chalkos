@@ -13,7 +13,7 @@ import (
 
 	"github.com/trevex/chalkos/pkg/chalkd/layer"
 	routing "github.com/trevex/chalkos/pkg/router"
-	"github.com/trevex/chalkos/pkg/router/units"
+	"github.com/trevex/chalkos/pkg/router/services"
 	"github.com/trevex/chalkos/pkg/tool"
 )
 
@@ -47,8 +47,8 @@ func (r *side) dhcp6Routes(ctx context.Context, now time.Time) error {
 	if _, err := os.Stat(r.KeaDir); errors.Is(err, fs.ErrNotExist) {
 		return nil
 	}
-	for _, vrf := range renderedVRFs(r.KeaDir, units.Kea6) {
-		f := filepath.Join(r.KeaDir, units.Kea6.File(vrf))
+	for _, vrf := range renderedVRFs(r.KeaDir, services.Kea6) {
+		f := filepath.Join(r.KeaDir, services.Kea6.File(vrf))
 		data, err := os.ReadFile(f)
 		if errors.Is(err, fs.ErrNotExist) {
 			continue

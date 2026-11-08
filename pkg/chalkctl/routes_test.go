@@ -19,7 +19,7 @@ import (
 	routerplugin "github.com/trevex/chalkos/pkg/chalkd/layers/router"
 	"github.com/trevex/chalkos/pkg/layers"
 	"github.com/trevex/chalkos/pkg/router"
-	"github.com/trevex/chalkos/pkg/router/units"
+	"github.com/trevex/chalkos/pkg/router/services"
 	"github.com/trevex/chalkos/pkg/tool"
 	"github.com/trevex/chalkos/pkg/tool/tooltest"
 )
@@ -58,7 +58,7 @@ func routerNode(t *testing.T, ta *testApp, documents bool, rules ...tooltest.Rul
 	}
 	// guest's resolver, DHCPv4 server and relay are bound to its VRF's device, of index 7.
 	run, devices := t.TempDir(), t.TempDir()
-	for _, file := range []string{filepath.Join(devices, "guest", "ifindex"), filepath.Join(run, units.Unbound.IndexRecord("guest")), filepath.Join(run, units.Kea4.IndexRecord("guest")), filepath.Join(run, units.Relay.IndexRecord("guest"))} {
+	for _, file := range []string{filepath.Join(devices, "guest", "ifindex"), filepath.Join(run, services.Unbound.IndexRecord("guest")), filepath.Join(run, services.Kea4.IndexRecord("guest")), filepath.Join(run, services.Relay.IndexRecord("guest"))} {
 		if err := os.MkdirAll(filepath.Dir(file), 0o755); err != nil {
 			t.Fatal(err)
 		}

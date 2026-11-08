@@ -20,7 +20,7 @@ import (
 	routerv1 "github.com/trevex/chalkos/pkg/api/router/v1"
 	"github.com/trevex/chalkos/pkg/chalkd/layer"
 	routing "github.com/trevex/chalkos/pkg/router"
-	"github.com/trevex/chalkos/pkg/router/units"
+	"github.com/trevex/chalkos/pkg/router/services"
 	"github.com/trevex/chalkos/pkg/tool"
 	"github.com/trevex/chalkos/pkg/tool/tooltest"
 )
@@ -71,7 +71,7 @@ func writeIndex(t *testing.T, dir, index string) {
 
 // writeRecord writes the device index index into the record of the instance of the service svc of
 // the VRF vrf in runDir, as the instance records the device its sockets are bound to.
-func writeRecord(t *testing.T, runDir string, svc units.Service, vrf, index string) {
+func writeRecord(t *testing.T, runDir string, svc services.Service, vrf, index string) {
 	t.Helper()
 	record := filepath.Join(runDir, svc.IndexRecord(vrf))
 	if err := os.MkdirAll(filepath.Dir(record), 0o755); err != nil {
@@ -328,7 +328,7 @@ func TestRouterVRFResolverStatus(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(s.r.ResolverDir, "unbound.conf"), []byte("server:\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	writeRecord(t, s.r.RunDir, units.Unbound, "dmz-a", "7")
+	writeRecord(t, s.r.RunDir, services.Unbound, "dmz-a", "7")
 	writeIndex(t, filepath.Join(s.r.NetDir, "dmz-a"), "7")
 	r.Rules = append(r.Rules, tooltest.Rule{Prefix: "systemctl is-active unbound@tenant.service", Out: "failed\n", Err: &tool.Error{Command: "systemctl is-active unbound@tenant.service", Code: 3}})
 	st := routerStatus(t, s)
@@ -364,7 +364,7 @@ func TestRouterVRFResolverStale(t *testing.T) {
 		}
 	}
 	for vrf, index := range map[string]string{"current": "5", "moved": "6", "gone": "8"} {
-		writeRecord(t, s.r.RunDir, units.Unbound, vrf, index)
+		writeRecord(t, s.r.RunDir, services.Unbound, vrf, index)
 	}
 	for vrf, index := range map[string]string{"current": "5", "moved": "9", "unrecorded": "10"} {
 		writeIndex(t, filepath.Join(s.r.NetDir, vrf), index)
@@ -538,7 +538,7 @@ func TestRouterDHCPStatus(t *testing.T) {
 		"subnet[3325256704].total-addresses": [[241, "2026-11-01 09:00:00.000000"]]}}`})
 	fakeKea(t, filepath.Join(run, "dhcp4-refusing.sock"), false, nil)
 	for vrf, index := range map[string][2]string{"dmz-a": {"7", "7"}, "moved": {"6", "9"}, "silent": {"4", "4"}, "refusing": {"5", "5"}} {
-		writeRecord(t, s.r.RunDir, units.Kea4, vrf, index[0])
+		writeRecord(t, s.r.RunDir, services.Kea4, vrf, index[0])
 		writeIndex(t, filepath.Join(s.r.NetDir, vrf), index[1])
 	}
 	r.Rules = append(r.Rules, tooltest.Rule{Prefix: "systemctl is-active kea-dhcp4@guest.service", Out: "failed\n", Err: &tool.Error{Command: "systemctl is-active kea-dhcp4@guest.service", Code: 3}})
@@ -653,7 +653,7 @@ func TestRouterDHCP6Status(t *testing.T) {
 		"subnet[2387838497].total-nas": [[18446744073709551616, "2026-11-01 09:00:00.000000"]],
 		"subnet[2387838497].assigned-pds": [[2, "2026-11-01 10:00:00.000000"]],
 		"subnet[2387838497].total-pds": [[256, "2026-11-01 09:00:00.000000"]]}}`})
-	writeRecord(t, s.r.RunDir, units.Kea6, "access", "6")
+	writeRecord(t, s.r.RunDir, services.Kea6, "access", "6")
 	writeIndex(t, filepath.Join(s.r.NetDir, "access"), "9")
 	st := routerStatus(t, s)
 	var order []string
@@ -687,7 +687,7 @@ func TestRouterDHCPRelayStatus(t *testing.T) {
 		}
 	}
 	for vrf, index := range map[string][2]string{"dmz-a": {"7", "7"}, "moved": {"6", "9"}} {
-		writeRecord(t, s.r.RunDir, units.Relay, vrf, index[0])
+		writeRecord(t, s.r.RunDir, services.Relay, vrf, index[0])
 		writeIndex(t, filepath.Join(s.r.NetDir, vrf), index[1])
 	}
 	r.Rules = append(r.Rules, tooltest.Rule{Prefix: "systemctl is-active dnsmasq-relay@guest.service", Out: "failed\n", Err: &tool.Error{Command: "systemctl is-active dnsmasq-relay@guest.service", Code: 3}})
@@ -725,7 +725,7 @@ func TestRenderedVRFs(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if got := renderedVRFs(dir, units.Relay); !slices.Equal(got, []string{"default", "a", "a-b"}) {
+	if got := renderedVRFs(dir, services.Relay); !slices.Equal(got, []string{"default", "a", "a-b"}) {
 		t.Errorf("renderedVRFs = %q", got)
 	}
 }

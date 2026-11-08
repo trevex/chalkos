@@ -1,8 +1,8 @@
-// Package units names the files, systemd units and runtime directories of the router's services
+// Package services names the files, systemd units and runtime directories of the router's services
 // that run once per VRF: Kea's DHCPv4 and DHCPv6 servers, Unbound and dnsmasq's DHCP relay. The
 // renderer writes the configs by these names, the modules in modules/node/router run the units by
 // them, and chalkd reads them back. It takes the standard library alone, as chalkos-render does.
-package units
+package services
 
 import (
 	"fmt"

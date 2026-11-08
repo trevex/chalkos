@@ -14,7 +14,7 @@ import (
 
 	"github.com/trevex/chalkos/pkg/refusals"
 	"github.com/trevex/chalkos/pkg/router/derive"
-	"github.com/trevex/chalkos/pkg/router/units"
+	"github.com/trevex/chalkos/pkg/router/services"
 )
 
 // The output kea: the config of Kea's DHCPv4 and DHCPv6 servers of each VRF whose links
@@ -47,9 +47,9 @@ func (s keaServer) family() string {
 // kea-dhcp6-<vrf>.json for a VRF's DHCPv6 server.
 func (s keaServer) file() string {
 	if s.v6 {
-		return units.Kea6.File(s.vrf)
+		return services.Kea6.File(s.vrf)
 	}
-	return units.Kea4.File(s.vrf)
+	return services.Kea4.File(s.vrf)
 }
 
 // instance is the part of the server's control socket's and lease file's names: dhcp4 for the
