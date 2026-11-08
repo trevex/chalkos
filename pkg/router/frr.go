@@ -81,10 +81,9 @@ func ParsePeers(data []byte) ([]*Peer, error) {
 			peers = append(peers, p)
 		}
 	}
-	order := func(p *Peer) string {
-		return derive.VRFDevice(p.VRF) + "\x00" + p.Name + "\x00" + p.Neighbor
-	}
-	slices.SortFunc(peers, func(a, b *Peer) int { return strings.Compare(order(a), order(b)) })
+	slices.SortFunc(peers, func(a, b *Peer) int {
+		return cmp.Or(derive.CompareVRFs(a.VRF, b.VRF), strings.Compare(a.Name, b.Name), strings.Compare(a.Neighbor, b.Neighbor))
+	})
 	return peers, nil
 }
 

@@ -249,7 +249,7 @@ func newFRR(d derive.Model) (*frr, error) {
 		c.instances = append(c.instances, in)
 	}
 	// FRR takes the default VRF's instance first.
-	slices.SortStableFunc(c.instances, func(a, b *instance) int { return strings.Compare(derive.VRFDevice(a.vrf), derive.VRFDevice(b.vrf)) })
+	slices.SortStableFunc(c.instances, func(a, b *instance) int { return derive.CompareVRFs(a.vrf, b.vrf) })
 	for _, l := range d.Prefixes {
 		c.families[l.Name] = l.Spec.Family
 		c.entries[l.Name] = prefixEntries(l.Spec)

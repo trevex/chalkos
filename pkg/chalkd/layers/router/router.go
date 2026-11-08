@@ -347,13 +347,8 @@ func renderedVRFs(dir string, svc services.Service) []string {
 			vrfs = append(vrfs, vrf)
 		}
 	}
-	slices.SortFunc(vrfs, compareVRFs)
+	slices.SortFunc(vrfs, derive.CompareVRFs)
 	return vrfs
-}
-
-// compareVRFs orders the default VRF first, then the VRFs by name.
-func compareVRFs(a, b string) int {
-	return strings.Compare(derive.VRFDevice(a), derive.VRFDevice(b))
 }
 
 // unitRunning reports whether the unit of the instance of the service svc of the VRF vrf is
@@ -438,7 +433,7 @@ func keaServers(dir string) []keaServer {
 			out = append(out, s)
 		}
 	}
-	slices.SortStableFunc(out, func(a, b keaServer) int { return compareVRFs(a.vrf, b.vrf) })
+	slices.SortStableFunc(out, func(a, b keaServer) int { return derive.CompareVRFs(a.vrf, b.vrf) })
 	return out
 }
 

@@ -30,6 +30,9 @@ func VRFDevice(vrf string) string {
 	return vrf
 }
 
+// CompareVRFs orders the default VRF first, then the VRFs by name.
+func CompareVRFs(a, b string) int { return strings.Compare(VRFDevice(a), VRFDevice(b)) }
+
 // VRFUnitPrefix starts the names of a VRF device's units, so that their .network sorts before
 // most of the node's own. A Network whose name sorts before it may still match the device first,
 // and vrfLinks refuses one that does.
