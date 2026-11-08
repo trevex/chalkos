@@ -52,6 +52,22 @@ func TestParseKeaSubnets(t *testing.T) {
 	}
 }
 
+// The links of a DHCPv4 and of a DHCPv6 config, and none of a config without them.
+func TestParseKeaInterfaces(t *testing.T) {
+	for data, want := range map[string][]string{
+		`{"Dhcp4": {"interfaces-config": {"interfaces": ["lan0", "vlan20"]}}}`: {"lan0", "vlan20"},
+		`{"Dhcp6": {"interfaces-config": {"interfaces": ["vlan31"]}}}`:         {"vlan31"},
+		`{"Dhcp4": {}}`: nil,
+	} {
+		if got, err := ParseKeaInterfaces([]byte(data)); err != nil || !reflect.DeepEqual(got, want) {
+			t.Errorf("ParseKeaInterfaces(%s) = %v, %v, want %v", data, got, err, want)
+		}
+	}
+	if _, err := ParseKeaInterfaces([]byte("{")); err == nil {
+		t.Error("a config of no JSON parsed")
+	}
+}
+
 // The control sockets of the default VRF's server and of a VRF's, as the output kea renders them.
 func TestKeaSocket(t *testing.T) {
 	for _, c := range [][3]string{

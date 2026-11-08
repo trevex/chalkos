@@ -93,6 +93,24 @@ func ParseKeaSubnets(data []byte) ([]KeaSubnet, error) {
 	return out, nil
 }
 
+// ParseKeaInterfaces reads the links a DHCPv4 or DHCPv6 config of the output kea serves, which Kea
+// refuses to start or reload without.
+func ParseKeaInterfaces(data []byte) ([]string, error) {
+	type interfaces struct {
+		Config struct {
+			Interfaces []string `json:"interfaces"`
+		} `json:"interfaces-config"`
+	}
+	var c struct {
+		Dhcp4 interfaces `json:"Dhcp4"`
+		Dhcp6 interfaces `json:"Dhcp6"`
+	}
+	if err := json.Unmarshal(data, &c); err != nil {
+		return nil, fmt.Errorf("read Kea's config: %w", err)
+	}
+	return append(c.Dhcp4.Config.Interfaces, c.Dhcp6.Config.Interfaces...), nil
+}
+
 // KeaLeases are a subnet's counts of Kea's statistics: the addresses it leased, reserved ones
 // included, and those of its pools, and the prefixes it delegated and those it may delegate.
 // Kea counts an IPv6 pool's addresses in 128 bits; a count past 64 bits is the largest of 64.
