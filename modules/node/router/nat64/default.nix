@@ -67,7 +67,7 @@ let
       fi
       # The form of a link's file as chalkos-render writes it; a VRF's name is an interface's.
       valid='(.table | type == "number")
-        and (.vrf == null or ((.vrf | type == "string") and (.vrf | test("^[a-z0-9][-a-z0-9.]{0,14}$"))))
+        and (.vrf == null or ((.vrf | type == "string") and (.vrf | test("^[a-z0-9]([-a-z0-9.]{0,13}[a-z0-9])?$"))))
         and (.outer | type == "string") and (.inner | type == "string")
         and (.routes | type == "array" and all(type == "string" and test("^[0-9]{1,3}([.][0-9]{1,3}){3}/[0-9]{1,2}$")))'
       for file in "''${files[@]}"; do
