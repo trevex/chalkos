@@ -1,6 +1,10 @@
 package services
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/trevex/chalkos/pkg/router/derive"
+)
 
 // Each service names its instance of a VRF, and of the default VRF, by its config file, its unit
 // and its device's index record, and reads the VRF back from the config file's name. A VRF's
@@ -70,9 +74,18 @@ func TestEscape(t *testing.T) {
 		"a/b":     "a-b",
 		"a b":     `a\x20b`,
 		"a:b_c.d": "a:b_c.d",
+		"\\":      `\x5c`,
+		"é":       `\xc3\xa9`,
 	} {
 		if got := escape(in); got != want {
 			t.Errorf("escape(%q) = %q, want %q", in, got, want)
 		}
+	}
+}
+
+// The default VRF is the model's.
+func TestDefaultVRF(t *testing.T) {
+	if defaultVRF != derive.DefaultVRF {
+		t.Errorf("defaultVRF = %q, want derive.DefaultVRF %q", defaultVRF, derive.DefaultVRF)
 	}
 }
