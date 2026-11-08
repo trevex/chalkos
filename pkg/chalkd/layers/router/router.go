@@ -404,8 +404,8 @@ func (r *side) vrfResolvers(ctx context.Context) []*routerv1.ResolverStatus {
 // staleDevice says why a running service of the VRF vrf, a resolver, a DHCP server or a relay,
 // serves no device of the VRF, or is "" when its sockets are bound to the VRF's device: systemd
 // binds them to the index the device had when the service started, which the service records in
-// the file record, and a VRF made anew has a new one. chalkos-resolvers, chalkos-dhcp and
-// chalkos-dhcp-relays restart such a service, after a delivery that made the VRF anew.
+// the file record, and a VRF made anew has a new one. chalkd router services restarts such a
+// service, after a delivery that made the VRF anew.
 func (r *side) staleDevice(vrf, record string) string {
 	index := func(path string) string {
 		data, err := os.ReadFile(path)

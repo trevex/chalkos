@@ -28,6 +28,20 @@ func (p *Plugin) Commands() map[string]layer.Command {
 				return p.r.dhcp6Routes(ctx, time.Now())
 			}),
 		},
+		"services": {
+			Args: "kea|unbound|relay [stop]",
+			Help: "start the instances of the rendered configs of a per-VRF service once their\ndevices exist, reload or restart those that run and stop the others; with\nstop, stop them all",
+			Run: func(args []string) error {
+				if len(args) == 0 || len(args) > 2 || len(args) == 2 && args[1] != "stop" {
+					return layer.UsageError{Err: errors.New("takes kea, unbound or relay, and stop")}
+				}
+				s, ok := p.r.perVRFServices()[args[0]]
+				if !ok {
+					return layer.UsageError{Err: fmt.Errorf("runs no service %q", args[0])}
+				}
+				return p.r.runServices(context.Background(), s, len(args) == 2)
+			},
+		},
 	}
 }
 
