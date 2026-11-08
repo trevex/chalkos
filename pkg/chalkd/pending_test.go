@@ -97,8 +97,9 @@ func TestApplyConfigStagedPendingRefuses(t *testing.T) {
 		req  *nodev1.ApplyConfigRequest
 		want string
 	}{
-		"a fallback secret": {&nodev1.ApplyConfigRequest{Config: baseConfig, Staged: true, FallbackSecret: secret}, "stored without the fallback secret; the upgrade that adds an encrypted volume carries it"},
-		"unparsable config": {&nodev1.ApplyConfigRequest{Config: "kind: [", Staged: true}, "parse the config"},
+		"a fallback secret":                {&nodev1.ApplyConfigRequest{Config: baseConfig, Staged: true, FallbackSecret: secret}, "stored without the fallback secret; the upgrade that adds an encrypted volume carries it"},
+		"unparsable config":                {&nodev1.ApplyConfigRequest{Config: "kind: [", Staged: true}, "parse the config"},
+		"a Secret value that is no string": {&nodev1.ApplyConfigRequest{Config: strings.Replace(baseConfig, "token: s3cret", "token: 7", 1), Staged: true}, `Secret "demo": spec.data.token: a Secret's value is a string`},
 	} {
 		t.Run(name, func(t *testing.T) {
 			s, _ := configServer(t)

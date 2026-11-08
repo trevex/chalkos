@@ -4,6 +4,8 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"maps"
+	"slices"
 	"strings"
 
 	"connectrpc.com/connect"
@@ -30,6 +32,9 @@ func (s *Server) holdPending(m *nodev1.ApplyConfigRequest, docs []config.Documen
 	if len(docs) == 0 {
 		return nil, layer.Errorf(connect.CodeInvalidArgument, "the config holds no documents")
 	}
+	if err := secretValues(docs); err != nil {
+		return nil, layer.Errorf(connect.CodeInvalidArgument, "%w", err)
+	}
 	version, err := config.Hash(docs)
 	if err != nil {
 		return nil, layer.Errorf(connect.CodeInvalidArgument, "hash the config: %w", err)
@@ -42,6 +47,31 @@ func (s *Server) holdPending(m *nodev1.ApplyConfigRequest, docs []config.Documen
 		return nil, err
 	}
 	return connect.NewResponse(&nodev1.ApplyConfigResponse{Pending: p}), nil
+}
+
+// secretValues refuses a Secret whose spec.data is no object of strings. No schema checks a
+// pending config, and Redact hides a value of another type by the zero value of its JSON type,
+// so two such configs that differ in that value alone would share a version.
+func secretValues(docs []config.Document) error {
+	for _, d := range docs {
+		if !d.IsSecret() {
+			continue
+		}
+		spec, ok := d.Object["spec"].(map[string]any)
+		if !ok {
+			return fmt.Errorf("%s: spec: a Secret's spec is an object", d)
+		}
+		data, ok := spec["data"].(map[string]any)
+		if !ok && spec["data"] != nil {
+			return fmt.Errorf("%s: spec.data: a Secret's data is an object of strings", d)
+		}
+		for _, k := range slices.Sorted(maps.Keys(data)) {
+			if _, ok := data[k].(string); !ok {
+				return fmt.Errorf("%s: spec.data.%s: a Secret's value is a string", d, k)
+			}
+		}
+	}
+	return nil
 }
 
 // storePending keeps next, config as delivered and its version, as the node's pending config, in
@@ -170,10 +200,11 @@ func (c imageConfig) refused(err error, name string) error {
 // upgrade that fails after the image's slot was written but before the image was staged, as when
 // writing its UKI fails, retires the slot and keeps the pending config for the upgrade after, and
 // one whose activation fails once the image is staged settles it too. The image is staged
-// already, so a failure to remove it does not fail the upgrade: the journal says so, Status keeps naming the pending config, and apply-config
-// --staged --discard drops it. It returns what became of the pending config for the upgrade's
-// answer, as chalkd knows it, since chalkd reboots soon after; nil when the node held none, or
-// when reading one it keeps failed, which the journal records. The caller holds s.upgrading.
+// already, so a failure to remove it does not fail the upgrade: the journal says so, Status keeps
+// naming the pending config, and apply-config --staged --discard drops it. It returns what became
+// of the pending config for the upgrade's answer, as chalkd knows it, since chalkd reboots soon
+// after; nil when the node held none, or when reading one it keeps failed, which the journal
+// records. The caller holds s.upgrading.
 func (s *Server) settlePending(c imageConfig, rootHash []byte) *nodev1.PendingOutcome {
 	s.mu.Lock()
 	defer s.mu.Unlock()
