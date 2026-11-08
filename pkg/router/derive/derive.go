@@ -20,9 +20,10 @@ package derive
 import (
 	"encoding/json"
 	"maps"
-	"regexp"
 	"slices"
 	"strings"
+
+	"github.com/trevex/chalkos/pkg/refusals"
 )
 
 // API is the apiVersion of the router layer's kinds.
@@ -161,7 +162,8 @@ func decodeKind[T any](byKind map[string]any, kind string) ([]Named[T], error) {
 		if err != nil {
 			return nil, err
 		}
-		if !routerName.MatchString(name) {
+		// The ruleset writes the name unquoted in the names of its sets and chains.
+		if !refusals.DocumentName.MatchString(name) {
 			return nil, InternalErrorf("a %s document: %q is no document name, which nftables takes in the names of sets and chains", kind, name)
 		}
 		data, err := json.Marshal(obj["spec"])
@@ -190,10 +192,6 @@ func DocumentName(kind string, doc map[string]any) (string, error) {
 	}
 	return name, nil
 }
-
-// routerName is a document's name as the schemas take it, which the ruleset writes unquoted in
-// the names of its sets and chains.
-var routerName = regexp.MustCompile(`^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$`)
 
 // ByName are the specs of docs by their documents' names.
 func ByName[T any](docs []Named[T]) map[string]T {

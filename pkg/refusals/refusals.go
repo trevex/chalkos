@@ -112,11 +112,12 @@ func holdsError(err error) bool {
 	return ok
 }
 
+// DocumentName is a document's name, as every kind's schema holds metadata.name to it.
+var DocumentName = regexp.MustCompile(`^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$`)
+
 var (
 	// kind is a kind's name, as a kind's schema declares it.
 	kind = regexp.MustCompile(`^[A-Z][A-Za-z0-9]*$`)
-	// name is a document's name, as every kind's schema holds metadata.name to it.
-	name = regexp.MustCompile(`^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$`)
 	// path is a field's path: names, dots and list indices, without spaces or colons, so that the
 	// reported line reads unambiguously.
 	path = regexp.MustCompile(`^[A-Za-z0-9_-]+(\.[A-Za-z0-9_-]+|\[[0-9]+\])*$`)
@@ -145,7 +146,7 @@ func (r Refusal) Check() error {
 	switch {
 	case !kind.MatchString(r.Kind):
 		return fmt.Errorf("kind %q is no kind", r.Kind)
-	case !name.MatchString(r.Name):
+	case !DocumentName.MatchString(r.Name):
 		return fmt.Errorf("name %q is no document name", r.Name)
 	case !path.MatchString(r.Path):
 		return fmt.Errorf("path %q is no field's path", r.Path)
