@@ -197,7 +197,7 @@ func (n *Node) Install(ctx context.Context, h Header, stream io.Reader) (Result,
 	if err := h.Validate(); err != nil {
 		return Result{}, err
 	}
-	if h.BootLoaderSize != 0 {
+	if h.BootLoader.Size != 0 {
 		return Result{}, errors.New("an upgrade leaves the boot loader as it is; the image must not bring one")
 	}
 	if h.Architecture != n.Architecture {
@@ -295,7 +295,7 @@ func (n *Node) Install(ctx context.Context, h Header, stream io.Reader) (Result,
 			}
 		}
 	}
-	if err := inactive.Fits(h.Store()); err != nil {
+	if err := inactive.Fits(h.Image); err != nil {
 		return Result{}, err
 	}
 
@@ -312,7 +312,7 @@ func (n *Node) Install(ctx context.Context, h Header, stream io.Reader) (Result,
 	if err := n.retire(ctx, all, h.ImageID, booted, running, inactive); err != nil {
 		return Result{}, err
 	}
-	wrote, err := w.Write(h.Store(), inactive, stream)
+	wrote, err := w.Write(h.Image, inactive, stream)
 	if err != nil {
 		return Result{}, err
 	}
@@ -563,7 +563,7 @@ func ExpectEnd(stream io.Reader, last string) error {
 // stage makes the slot hold the image as systemd finds it and gives the UKI its staged name, which
 // systemd-boot ignores: nothing boots the slot until Activate renames the UKI.
 func (n *Node) stage(ctx context.Context, h Header, slot storeslot.Slot, tmp string, generation uint64) (string, error) {
-	if err := n.slots().Activate(ctx, slot, h.Store()); err != nil {
+	if err := n.slots().Activate(ctx, slot, h.Image); err != nil {
 		return "", err
 	}
 	name := esp.StagedName(h.ImageID, generation)

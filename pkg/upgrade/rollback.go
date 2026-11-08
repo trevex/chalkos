@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 
 	"github.com/trevex/chalkos/pkg/esp"
+	"github.com/trevex/chalkos/pkg/imagepart"
+	"github.com/trevex/chalkos/pkg/storeslot"
 	"github.com/trevex/chalkos/pkg/uki"
 )
 
@@ -169,7 +171,7 @@ func (n *Node) checkKeptUKI(path, imageID string, rootHash []byte) (int, error) 
 	if err != nil {
 		return 0, err
 	}
-	h := Header{ImageID: imageID, Platform: n.OSRelease["CHALKOS_PLATFORM"], Architecture: n.Architecture, RootHash: rootHash, UKISize: info.Size()}
+	h := Header{ImageID: imageID, Platform: n.OSRelease["CHALKOS_PLATFORM"], Architecture: n.Architecture, Image: storeslot.Image{RootHash: rootHash}, UKI: imagepart.Part{Size: info.Size()}}
 	tries, err := CheckUKI(f, h, n.EFIVars)
 	if _, ok := errors.AsType[*UKIError](err); ok {
 		return 0, refused(err)

@@ -81,7 +81,7 @@ func TestInstallPullsTheImageFromTheRegistry(t *testing.T) {
 	if err := ta.run(context.Background(), ta.args([]string{"install", "n1", "--fingerprint", s.Fingerprint}, addr)); err != nil {
 		t.Fatal(err)
 	}
-	if string(pulled) != "storehash treeukiboot loader" || got.Image.BootLoaderSize != int64(len("boot loader")) {
+	if string(pulled) != "storehash treeukiboot loader" || got.Image.BootLoader.Size != int64(len("boot loader")) {
 		t.Errorf("pulled %q for %+v", pulled, got.Image)
 	}
 	if !reflect.DeepEqual(got.SystemDefinitions, map[string]string{"00-esp.conf": "[Partition]\nType=esp\n"}) {

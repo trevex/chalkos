@@ -28,6 +28,7 @@ import (
 	"github.com/trevex/chalkos/pkg/config/slot"
 	"github.com/trevex/chalkos/pkg/esp"
 	"github.com/trevex/chalkos/pkg/image/imagetest"
+	"github.com/trevex/chalkos/pkg/imagepart"
 	"github.com/trevex/chalkos/pkg/storage"
 	"github.com/trevex/chalkos/pkg/storage/gpt"
 	"github.com/trevex/chalkos/pkg/storage/hostops"
@@ -88,15 +89,20 @@ func newPartsImageOf(t *testing.T, seed string, blocks uint64, imageID string) p
 // headerFor describes the image as it is.
 func (img partsImage) headerFor() upgrade.Header {
 	return upgrade.Header{
-		ImageID: img.imageID, Platform: "metal", Architecture: "x86-64", RootHash: img.root,
-		StoreSize: int64(len(img.store)), VeritySize: int64(len(img.hash)), UKISize: int64(len(img.uki)), BootLoaderSize: int64(len(img.loader)),
-		StoreSHA256: sha(img.store), VeritySHA256: sha(img.hash), UKISHA256: sha(img.uki), BootLoaderSHA256: sha(img.loader),
+		ImageID: img.imageID, Platform: "metal", Architecture: "x86-64",
+		Image: storeslot.Image{RootHash: img.root, Store: imagePart(img.store), Verity: imagePart(img.hash)},
+		UKI:   imagePart(img.uki), BootLoader: imagePart(img.loader),
 	}
 }
 
 func sha(b []byte) []byte {
 	s := sha256.Sum256(b)
 	return s[:]
+}
+
+// imagePart describes data as a part of an image.
+func imagePart(data []byte) imagepart.Part {
+	return imagepart.Part{Size: int64(len(data)), SHA256: sha(data)}
 }
 
 func (img partsImage) parts() io.Reader {
@@ -476,7 +482,7 @@ func (l *partsLab) checkInstalled(img partsImage) {
 		}
 	}
 	w := &storeslot.Writer{OpenPartition: l.openPartition}
-	if !w.Holds(storeslot.Slot{Verity: parts[2], Data: parts[3]}, img.header.Store()) {
+	if !w.Holds(storeslot.Slot{Verity: parts[2], Data: parts[3]}, img.header.Image) {
 		l.t.Error("slot A does not hold the image's store")
 	}
 	if !bytes.Equal(l.file("EFI/Linux/chalkos_1.efi"), img.uki) {
@@ -761,7 +767,7 @@ func TestFromPartsRefuses(t *testing.T) {
 		}, "the store's SHA-256"},
 		{"another root hash", nil, img, func(r *PartsRequest) { r.Image.RootHash = sha([]byte("other")) }, "the written store"},
 		{"a UKI booting another store", nil, otherStore, nil, "the UKI boots another store"},
-		{"a corrupt boot loader", nil, img, func(r *PartsRequest) { r.Image.BootLoaderSHA256 = sha(nil) }, "the boot loader's SHA-256"},
+		{"a corrupt boot loader", nil, img, func(r *PartsRequest) { r.Image.BootLoader.SHA256 = sha(nil) }, "the boot loader's SHA-256"},
 		{"a boot loader for another machine", nil, armLoader, nil, "the boot loader is built for arm64, but the image names x86-64"},
 		{"a UKI for another machine", nil, armUKI, nil, "the UKI is built for arm64, but the image names x86-64"},
 		{"an unsigned UKI", func(l *partsLab) { l.enforceSecureBoot(ukitest.SignatureList(der)) }, img, nil, "Secure Boot would refuse the UKI"},
@@ -771,9 +777,9 @@ func TestFromPartsRefuses(t *testing.T) {
 			l.enforceSecureBoot(append(ukitest.SignatureList(der), ukitest.SignatureList(revokedDER)...), revokedDER)
 		}, revokedLoader, nil, "Secure Boot would refuse the boot loader"},
 		{"a UKI without boot tries", nil, noTries, nil, "boot tries \"0\" are not a positive number"},
-		{"a wrong store SHA-256 on a resumed install", func(l *partsLab) { l.stopAt(img, "write the UKI") }, img, func(r *PartsRequest) { r.Image.StoreSHA256 = sha(nil) }, "the store's SHA-256"},
-		{"a wrong hash tree SHA-256 on a resumed install", func(l *partsLab) { l.stopAt(img, "write the UKI") }, img, func(r *PartsRequest) { r.Image.VeritySHA256 = sha(nil) }, "the hash tree's SHA-256"},
-		{"a header without a boot loader", nil, img, func(r *PartsRequest) { r.Image.BootLoaderSize, r.Image.BootLoaderSHA256 = 0, nil }, "brings no boot loader"},
+		{"a wrong store SHA-256 on a resumed install", func(l *partsLab) { l.stopAt(img, "write the UKI") }, img, func(r *PartsRequest) { r.Image.Store.SHA256 = sha(nil) }, "the store's SHA-256"},
+		{"a wrong hash tree SHA-256 on a resumed install", func(l *partsLab) { l.stopAt(img, "write the UKI") }, img, func(r *PartsRequest) { r.Image.Verity.SHA256 = sha(nil) }, "the hash tree's SHA-256"},
+		{"a header without a boot loader", nil, img, func(r *PartsRequest) { r.Image.BootLoader = imagepart.Part{} }, "brings no boot loader"},
 		{"more than the header names", nil, img, func(r *PartsRequest) { r.Parts = io.MultiReader(img.parts(), strings.NewReader("x")) }, "the stream goes on after the boot loader"},
 		{"parts failing at their end", nil, img, func(r *PartsRequest) {
 			r.Parts = io.MultiReader(img.parts(), iotest.ErrReader(errors.New("connection reset")))

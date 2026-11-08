@@ -29,6 +29,7 @@ import (
 	"github.com/google/go-containerregistry/pkg/v1/remote/transport"
 	"github.com/google/go-containerregistry/pkg/v1/types"
 
+	"github.com/trevex/chalkos/pkg/imagepart"
 	"github.com/trevex/chalkos/pkg/ociimage"
 	"github.com/trevex/chalkos/pkg/ociimage/ocitest"
 )
@@ -74,7 +75,7 @@ func testParts() []ociimage.Part {
 		data      string
 	}{{ociimage.StoreType, "store"}, {ociimage.HashTreeType, "hash tree"}, {ociimage.UKIType, "uki"}} {
 		sum := sha256.Sum256([]byte(p.data))
-		parts = append(parts, ociimage.Part{MediaType: p.mediaType, Size: int64(len(p.data)), SHA256: sum[:]})
+		parts = append(parts, ociimage.Part{MediaType: p.mediaType, Part: imagepart.Part{Size: int64(len(p.data)), SHA256: sum[:]}})
 	}
 	return parts
 }
@@ -137,7 +138,7 @@ func TestPullRefuses(t *testing.T) {
 		want  string
 	}{
 		{"another header", ref, kvm, parts, "its header describes"},
-		{"another hash tree", ref, h, []ociimage.Part{parts[0], {MediaType: ociimage.HashTreeType, Size: 9, SHA256: other[:]}, parts[2]}, "its application/vnd.chalkos.image.hash-tree.v1 layer is sha256:"},
+		{"another hash tree", ref, h, []ociimage.Part{parts[0], {MediaType: ociimage.HashTreeType, Part: imagepart.Part{Size: 9, SHA256: other[:]}}, parts[2]}, "its application/vnd.chalkos.image.hash-tree.v1 layer is sha256:"},
 		{"an unknown digest", host + "/lab/node-metal@sha256:" + strings.Repeat("0", 64), h, parts, "MANIFEST_UNKNOWN"},
 	} {
 		p, err := ociimage.NewPull(context.Background(), tc.ref, direct(authn.Anonymous, true), tc.h, tc.parts)
@@ -409,7 +410,7 @@ func TestPullContract(t *testing.T) {
 	}
 	ref := ocitest.Push(t, ocitest.Image(t, h, c), host+"/lab/node-metal:v1")
 	loader := sha256.Sum256([]byte("boot loader"))
-	parts := append(testParts(), ociimage.Part{MediaType: ociimage.BootLoaderType, Size: int64(len("boot loader")), SHA256: loader[:]})
+	parts := append(testParts(), ociimage.Part{MediaType: ociimage.BootLoaderType, Part: imagepart.Part{Size: int64(len("boot loader")), SHA256: loader[:]}})
 	before := manifests.Load()
 	p, err := ociimage.NewPull(context.Background(), ref, direct(authn.Anonymous, true), h, parts)
 	if err != nil {

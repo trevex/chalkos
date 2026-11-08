@@ -3,7 +3,6 @@ package storeslot
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
 	"errors"
 	"fmt"
 	"io"
@@ -13,6 +12,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/trevex/chalkos/pkg/imagepart"
 	"github.com/trevex/chalkos/pkg/storage/gpt"
 	"github.com/trevex/chalkos/pkg/tool"
 	"github.com/trevex/chalkos/pkg/verity"
@@ -90,16 +90,15 @@ func (w *Writer) Write(h Image, slot Slot, stream io.Reader) (bool, error) {
 	for _, part := range []struct {
 		what string
 		p    gpt.Partition
-		size int64
-		sum  []byte
+		part imagepart.Part
 	}{
-		{"store", slot.Data, h.StoreSize, h.StoreSHA256},
-		{"hash tree", slot.Verity, h.VeritySize, h.VeritySHA256},
+		{"store", slot.Data, h.Store},
+		{"hash tree", slot.Verity, h.Verity},
 	} {
 		if err := w.change("write the " + part.what); err != nil {
 			return false, err
 		}
-		if err := w.copyInto(part.p, stream, part.size, part.sum, part.what); err != nil {
+		if err := w.copyInto(part.p, stream, part.part, part.what); err != nil {
 			return false, err
 		}
 	}
@@ -107,8 +106,8 @@ func (w *Writer) Write(h Image, slot Slot, stream io.Reader) (bool, error) {
 	if err != nil {
 		return false, fmt.Errorf("the written store: %w", err)
 	}
-	if sb.DataSize() != h.StoreSize || sb.HashSize() != h.VeritySize {
-		return false, fmt.Errorf("the hash tree covers %d bytes of store in %d bytes, but the image has %d and %d", sb.DataSize(), sb.HashSize(), h.StoreSize, h.VeritySize)
+	if sb.DataSize() != h.Store.Size || sb.HashSize() != h.Verity.Size {
+		return false, fmt.Errorf("the hash tree covers %d bytes of store in %d bytes, but the image has %d and %d", sb.DataSize(), sb.HashSize(), h.Store.Size, h.Verity.Size)
 	}
 	return true, nil
 }
@@ -122,7 +121,7 @@ func (w *Writer) Holds(slot Slot, h Image) bool {
 	}
 	sb, root, err := verity.Root(hash)
 	hash.Close()
-	if err != nil || !bytes.Equal(root, h.RootHash) || sb.DataSize() != h.StoreSize || sb.HashSize() != h.VeritySize {
+	if err != nil || !bytes.Equal(root, h.RootHash) || sb.DataSize() != h.Store.Size || sb.HashSize() != h.Verity.Size {
 		return false
 	}
 	_, err = w.verify(slot, h.RootHash)
@@ -143,12 +142,9 @@ func (w *Writer) verify(slot Slot, root []byte) (verity.Superblock, error) {
 	return verity.Verify(data, hash, root)
 }
 
-// chunk is how much of the stream is written at once.
-const chunk = 4 << 20
-
-// copyInto writes size bytes of the stream to the start of the partition and checks their
+// copyInto writes the part that the stream holds to the start of the partition and checks its
 // SHA-256.
-func (w *Writer) copyInto(p gpt.Partition, stream io.Reader, size int64, sum []byte, what string) error {
+func (w *Writer) copyInto(p gpt.Partition, stream io.Reader, part imagepart.Part, what string) error {
 	f, err := w.OpenPartition(p, true)
 	if errors.Is(err, syscall.EBUSY) {
 		return fmt.Errorf("partition %d is in use; it must not be written", p.Number)
@@ -157,24 +153,11 @@ func (w *Writer) copyInto(p gpt.Partition, stream io.Reader, size int64, sum []b
 		return fmt.Errorf("open partition %d: %w", p.Number, err)
 	}
 	defer f.Close()
-	h := sha256.New()
-	buf := make([]byte, min(chunk, size))
-	for off := int64(0); off < size; {
-		b := buf[:min(int64(len(buf)), size-off)]
-		if _, err := io.ReadFull(stream, b); err != nil {
-			return fmt.Errorf("receive the %s: %w", what, err)
-		}
-		h.Write(b)
-		if _, err := f.WriteAt(b, off); err != nil {
-			return fmt.Errorf("write the %s: %w", what, err)
-		}
-		off += int64(len(b))
+	if err := part.Receive(io.NewOffsetWriter(f, 0), stream, what); err != nil {
+		return err
 	}
 	if err := f.Sync(); err != nil {
 		return fmt.Errorf("write the %s: %w", what, err)
-	}
-	if got := h.Sum(nil); !bytes.Equal(got, sum) {
-		return fmt.Errorf("the %s's SHA-256 is %x, want %x", what, got, sum)
 	}
 	return f.Close()
 }
@@ -273,23 +256,13 @@ func Skip(h Image, stream io.Reader) error {
 	// What the stream would carry need not be read: Holds verified the slot's store and hash tree
 	// against the header's root hash and sizes, and the slot keeps them.
 	if s, ok := stream.(Skipper); ok {
-		if err := s.Skip(h.StoreSize + h.VeritySize); err != nil {
+		if err := s.Skip(h.Store.Size + h.Verity.Size); err != nil {
 			return fmt.Errorf("pass over the store and hash tree: %w", err)
 		}
 		return nil
 	}
-	for _, part := range []struct {
-		what string
-		size int64
-		sum  []byte
-	}{{"store", h.StoreSize, h.StoreSHA256}, {"hash tree", h.VeritySize, h.VeritySHA256}} {
-		sum := sha256.New()
-		if _, err := io.CopyN(sum, stream, part.size); err != nil {
-			return fmt.Errorf("receive the %s: %w", part.what, err)
-		}
-		if got := sum.Sum(nil); !bytes.Equal(got, part.sum) {
-			return fmt.Errorf("the %s's SHA-256 is %x, want %x", part.what, got, part.sum)
-		}
+	if err := h.Store.Receive(io.Discard, stream, "store"); err != nil {
+		return err
 	}
-	return nil
+	return h.Verity.Receive(io.Discard, stream, "hash tree")
 }

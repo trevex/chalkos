@@ -27,6 +27,7 @@ import (
 
 	"github.com/trevex/chalkos/pkg/esp"
 	"github.com/trevex/chalkos/pkg/image/imagetest"
+	"github.com/trevex/chalkos/pkg/imagepart"
 	"github.com/trevex/chalkos/pkg/ociimage"
 	"github.com/trevex/chalkos/pkg/ociimage/ocitest"
 	"github.com/trevex/chalkos/pkg/secureboot"
@@ -600,7 +601,7 @@ func TestRefusesBeforeChanging(t *testing.T) {
 		{"another platform", func(h *Header) { h.Platform = "kvm" }, nil, "platform is kvm, the node's metal"},
 		{"no platform", func(h *Header) { h.Platform = "" }, nil, "platform are required"},
 		{"another architecture", func(h *Header) { h.Architecture = "arm64" }, nil, "the image is built for arm64, this machine for x86-64"},
-		{"a store larger than the slot", func(h *Header) { h.StoreSize = 2 << 20 }, nil, "do not fit"},
+		{"a store larger than the slot", func(h *Header) { h.Store.Size = 2 << 20 }, nil, "do not fit"},
 		// The node booted generation 2, which is counted, and falls back to generation 1.
 		{"a running boot not found healthy", nil, func(l *lab) {
 			os.Rename(filepath.Join(l.esp, esp.LinuxDir, "chalkos_1.efi"), filepath.Join(l.esp, esp.LinuxDir, "chalkos_2+2-1.efi"))
@@ -1035,7 +1036,7 @@ func TestRefusesABootLoader(t *testing.T) {
 		t.Errorf("changed: %s", what)
 		return nil
 	}
-	img.header.BootLoaderSize, img.header.BootLoaderSHA256 = 1, sum([]byte{1})
+	img.header.BootLoader = imagepart.Part{Size: 1, SHA256: sum([]byte{1})}
 	stream := io.MultiReader(img.stream(), bytes.NewReader([]byte{1}))
 	if _, err := l.node.Install(context.Background(), img.header, stream); err == nil || !strings.Contains(err.Error(), "boot loader") {
 		t.Fatalf("install = %v, want the boot loader refused", err)
@@ -1060,7 +1061,7 @@ func TestHeaderValidate(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			h := img.header
-			h.BootLoaderSize, h.BootLoaderSHA256 = tc.size, tc.sha256
+			h.BootLoader = imagepart.Part{Size: tc.size, SHA256: tc.sha256}
 			err := h.Validate()
 			if tc.want == "" && err != nil || tc.want != "" && (err == nil || !strings.Contains(err.Error(), tc.want)) {
 				t.Errorf("Validate = %v, want %q", err, tc.want)
@@ -1090,8 +1091,8 @@ func TestSkippedStoreIsChecked(t *testing.T) {
 		name string
 		edit func(h *Header)
 	}{
-		{"store", func(h *Header) { h.StoreSHA256 = sum(nil) }},
-		{"hash tree", func(h *Header) { h.VeritySHA256 = sum(nil) }},
+		{"store", func(h *Header) { h.Store.SHA256 = sum(nil) }},
+		{"hash tree", func(h *Header) { h.Verity.SHA256 = sum(nil) }},
 	} {
 		l := newLab(t, old)
 		if _, err := l.install(img); err != nil {
@@ -1164,9 +1165,9 @@ func TestInstallPassesOverAHeldStoreOfAPull(t *testing.T) {
 	served.Clear()
 	h := img.header
 	pull, err := ociimage.NewPull(context.Background(), ref, []ociimage.Source{{Auth: authn.Anonymous, Insecure: true}}, oh, []ociimage.Part{
-		{MediaType: ociimage.StoreType, Size: h.StoreSize, SHA256: h.StoreSHA256},
-		{MediaType: ociimage.HashTreeType, Size: h.VeritySize, SHA256: h.VeritySHA256},
-		{MediaType: ociimage.UKIType, Size: h.UKISize, SHA256: h.UKISHA256},
+		{MediaType: ociimage.StoreType, Part: h.Store},
+		{MediaType: ociimage.HashTreeType, Part: h.Verity},
+		{MediaType: ociimage.UKIType, Part: h.UKI},
 	})
 	if err != nil {
 		t.Fatal(err)

@@ -12,6 +12,7 @@ import (
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/types"
 
+	"github.com/trevex/chalkos/pkg/imagepart"
 	"github.com/trevex/chalkos/pkg/schema"
 )
 
@@ -28,11 +29,10 @@ var stallTimeout = 2 * time.Minute
 // sources together.
 var sourceTimeout = 30 * time.Second
 
-// Part is a layer an image is pulled for: its media type, and the size and SHA-256 of its content.
+// Part is a layer an image is pulled for: its media type, and the part of the image it holds.
 type Part struct {
 	MediaType types.MediaType
-	Size      int64
-	SHA256    []byte
+	imagepart.Part
 }
 
 // Pull reads the parts of the chalkos image a reference names by digest as one stream, one part

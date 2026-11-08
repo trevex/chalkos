@@ -31,6 +31,7 @@ import (
 	"github.com/trevex/chalkos/pkg/chalkd/layers/kubernetes/kubernetestest"
 	"github.com/trevex/chalkos/pkg/identity"
 	"github.com/trevex/chalkos/pkg/imagecheck"
+	"github.com/trevex/chalkos/pkg/imagepart"
 	"github.com/trevex/chalkos/pkg/install"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
 	knode "github.com/trevex/chalkos/pkg/kubernetes/node"
@@ -39,6 +40,7 @@ import (
 	"github.com/trevex/chalkos/pkg/outputs"
 	"github.com/trevex/chalkos/pkg/pki"
 	"github.com/trevex/chalkos/pkg/storage"
+	"github.com/trevex/chalkos/pkg/storeslot"
 	"github.com/trevex/chalkos/pkg/upgrade"
 )
 
@@ -218,9 +220,10 @@ func TestInstallFromParts(t *testing.T) {
 		t.Errorf("streamed %d bytes, want the %d of the image's parts", len(streamed), len(parts))
 	}
 	want := upgrade.Header{
-		ImageID: "chalkos", Platform: "metal", Architecture: "x86-64", RootHash: []byte{1},
-		StoreSize: 1, StoreSHA256: []byte{2}, VeritySize: 3, VeritySHA256: []byte{4},
-		UKISize: 5, UKISHA256: []byte{6}, BootLoaderSize: 7, BootLoaderSHA256: []byte{8},
+		ImageID: "chalkos", Platform: "metal", Architecture: "x86-64",
+		Image:      storeslot.Image{RootHash: []byte{1}, Store: imagepart.Part{Size: 1, SHA256: []byte{2}}, Verity: imagepart.Part{Size: 3, SHA256: []byte{4}}},
+		UKI:        imagepart.Part{Size: 5, SHA256: []byte{6}},
+		BootLoader: imagepart.Part{Size: 7, SHA256: []byte{8}},
 		Provenance: upgrade.Provenance{Revision: "a1b2c3d4e5f6", Tag: "v1.5.0"},
 	}
 	if got.Target != (storage.Ref{Selector: storage.Selector{Serial: "chalk-target"}}) || !reflect.DeepEqual(got.Image, want) ||

@@ -211,7 +211,7 @@ func (s *Server) pullInstall(ctx context.Context, stream *connect.ClientStream[n
 		return nil, nil, layer.Errorf(connect.CodeInvalidArgument, "the image: %w", err)
 	}
 	switch {
-	case img.BootLoaderSize == 0:
+	case img.BootLoader.Size == 0:
 		return nil, nil, layer.Errorf(connect.CodeInvalidArgument, "the image brings no boot loader, which an install writes to the ESP")
 	case h.Config == "":
 		return nil, nil, layer.Errorf(connect.CodeInvalidArgument, "the header delivers no config")

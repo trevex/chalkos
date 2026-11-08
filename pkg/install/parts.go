@@ -52,7 +52,7 @@ func (i *Installer) FromParts(ctx context.Context, req PartsRequest) error {
 	if err := h.Validate(); err != nil {
 		return fmt.Errorf("the image: %w", err)
 	}
-	if h.BootLoaderSize == 0 {
+	if h.BootLoader.Size == 0 {
 		return errors.New("the image brings no boot loader, which an install writes to the ESP")
 	}
 	if i.loader() == "" {
@@ -124,7 +124,7 @@ func (i *Installer) fromParts(ctx context.Context, target storage.BlockDisk, l l
 	if err != nil {
 		return err
 	}
-	if err := slots.WriteActive(ctx, pairs[0], h.Store(), req.Parts); err != nil {
+	if err := slots.WriteActive(ctx, pairs[0], h.Image, req.Parts); err != nil {
 		return err
 	}
 	espPart, err := i.findESP(ctx, target)

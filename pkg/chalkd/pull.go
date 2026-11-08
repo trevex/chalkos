@@ -49,12 +49,12 @@ func newPull(ctx context.Context, ref string, h upgrade.Header, docs []config.Do
 		Revision: h.Provenance.Revision, Tag: h.Provenance.Tag,
 	}
 	parts := []ociimage.Part{
-		{MediaType: ociimage.StoreType, Size: h.StoreSize, SHA256: h.StoreSHA256},
-		{MediaType: ociimage.HashTreeType, Size: h.VeritySize, SHA256: h.VeritySHA256},
-		{MediaType: ociimage.UKIType, Size: h.UKISize, SHA256: h.UKISHA256},
+		{MediaType: ociimage.StoreType, Part: h.Store},
+		{MediaType: ociimage.HashTreeType, Part: h.Verity},
+		{MediaType: ociimage.UKIType, Part: h.UKI},
 	}
-	if h.BootLoaderSize > 0 {
-		parts = append(parts, ociimage.Part{MediaType: ociimage.BootLoaderType, Size: h.BootLoaderSize, SHA256: h.BootLoaderSHA256})
+	if h.BootLoader.Size > 0 {
+		parts = append(parts, ociimage.Part{MediaType: ociimage.BootLoaderType, Part: h.BootLoader})
 	}
 	return ociimage.NewPull(ctx, ref, sources, want, parts)
 }

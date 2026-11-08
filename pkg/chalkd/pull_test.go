@@ -347,7 +347,7 @@ func TestInstallPullsTheImage(t *testing.T) {
 	if err := sendInstall(t, s, pulledInstall(t, host, registryConfig(host)), nil); err != nil {
 		t.Fatal(err)
 	}
-	if string(pulled) != "storehash treeukiboot loader" || got.Image.BootLoaderSize != int64(len("boot loader")) {
+	if string(pulled) != "storehash treeukiboot loader" || got.Image.BootLoader.Size != int64(len("boot loader")) {
 		t.Errorf("pulled %q for %+v", pulled, got.Image)
 	}
 	if !reflect.DeepEqual(got.SystemDefinitions, map[string]string{"50-state.conf": "[Partition]\nLabel=state\n"}) {
@@ -381,7 +381,7 @@ func TestInstallPassesOverAStoreItHolds(t *testing.T) {
 		if _, ok := req.Parts.(storeslot.Skipper); !ok {
 			return errors.New("the pulled parts cannot be passed over")
 		}
-		if err := storeslot.Skip(req.Image.Store(), req.Parts); err != nil {
+		if err := storeslot.Skip(req.Image.Image, req.Parts); err != nil {
 			return err
 		}
 		var err error

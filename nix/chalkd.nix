@@ -26,6 +26,7 @@ callPackage ./go-module.nix { } {
     ../pkg/facts
     ../pkg/identity
     ../pkg/image
+    ../pkg/imagepart
     ../pkg/imagecheck
     ../pkg/install
     ../pkg/internal/poll

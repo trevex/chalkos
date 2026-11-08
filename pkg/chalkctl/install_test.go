@@ -141,16 +141,16 @@ func TestInstallFromPartsStreamsTheImage(t *testing.T) {
 		t.Fatal(err)
 	}
 	h := got.Image
-	if h.ImageID != "chalkos" || len(h.RootHash) != 32 || h.Platform != "metal" || h.BootLoaderSize == 0 ||
+	if h.ImageID != "chalkos" || len(h.RootHash) != 32 || h.Platform != "metal" || h.BootLoader.Size == 0 ||
 		h.Provenance != (upgrade.Provenance{Revision: "a1b2c3d4e5f60718293a4b5c6d7e8f9012345678", Tag: "v1.5.0"}) {
 		t.Errorf("image = %+v", h)
 	}
 	if want := "chalkos " + imageName(h.RootHash, h.Provenance.Revision, h.Provenance.Tag) + ", sending"; !strings.Contains(ta.stdout.String(), want) || !strings.Contains(want, "(v1.5.0, a1b2c3d4e5f6)") {
 		t.Errorf("output lacks %q:\n%s", want, ta.stdout)
 	}
-	size := h.StoreSize + h.VeritySize + h.UKISize + h.BootLoaderSize
-	loader := sha256.Sum256(streamed[max(len(streamed)-int(h.BootLoaderSize), 0):])
-	if int64(len(streamed)) != size || !bytes.Equal(loader[:], h.BootLoaderSHA256) {
+	size := h.Store.Size + h.Verity.Size + h.UKI.Size + h.BootLoader.Size
+	loader := sha256.Sum256(streamed[max(len(streamed)-int(h.BootLoader.Size), 0):])
+	if int64(len(streamed)) != size || !bytes.Equal(loader[:], h.BootLoader.SHA256) {
 		t.Errorf("streamed %d bytes, want %d ending in the boot loader", len(streamed), size)
 	}
 	if !strings.Contains(ta.stdout.String(), fmt.Sprintf("sending %d bytes", size)) {

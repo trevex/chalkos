@@ -9,6 +9,7 @@ import (
 	"os"
 	"strconv"
 
+	"github.com/trevex/chalkos/pkg/imagepart"
 	"github.com/trevex/chalkos/pkg/secureboot"
 	"github.com/trevex/chalkos/pkg/storeslot"
 	"github.com/trevex/chalkos/pkg/uki"
@@ -21,22 +22,15 @@ type Header struct {
 	// Platform is the platform the image is built for, such as metal or kvm.
 	Platform string
 	// Architecture is what the image runs on, as systemd names it: x86-64 or arm64.
-	Architecture                   string
-	RootHash                       []byte
-	StoreSize, VeritySize, UKISize int64
-	StoreSHA256, VeritySHA256      []byte
-	UKISHA256                      []byte
-	// BootLoaderSize and BootLoaderSHA256 describe the boot loader; zero and nil when the image
-	// brings none.
-	BootLoaderSize   int64
-	BootLoaderSHA256 []byte
+	Architecture string
+	// Image is the image's store as a slot is written from it: its root hash, the store and its
+	// hash tree.
+	storeslot.Image
+	UKI imagepart.Part
+	// BootLoader is zero when the image brings none.
+	BootLoader imagepart.Part
 	// Provenance is what the build says of where it came from, which the node records and shows.
 	Provenance Provenance
-}
-
-// Store is the image's store as a slot is written from it.
-func (h Header) Store() storeslot.Image {
-	return storeslot.Image{RootHash: h.RootHash, StoreSize: h.StoreSize, VeritySize: h.VeritySize, StoreSHA256: h.StoreSHA256, VeritySHA256: h.VeritySHA256}
 }
 
 // maxUKI bounds the UKI an image brings; it must fit the ESP beside another.
@@ -54,13 +48,13 @@ func (h Header) Validate() error {
 		return fmt.Errorf("the image's architecture %q is none chalkos builds images for", h.Architecture)
 	case len(h.RootHash) != sha256.Size:
 		return errors.New("the root hash is not a SHA-256")
-	case len(h.StoreSHA256) != sha256.Size || len(h.VeritySHA256) != sha256.Size || len(h.UKISHA256) != sha256.Size:
+	case len(h.Store.SHA256) != sha256.Size || len(h.Verity.SHA256) != sha256.Size || len(h.UKI.SHA256) != sha256.Size:
 		return errors.New("the SHA-256 sums of the store, the hash tree and the UKI are required")
-	case h.StoreSize <= 0 || h.VeritySize <= 0 || h.UKISize <= 0 || h.UKISize > maxUKI:
+	case h.Store.Size <= 0 || h.Verity.Size <= 0 || h.UKI.Size <= 0 || h.UKI.Size > maxUKI:
 		return errors.New("the sizes of the store, the hash tree and the UKI are required")
-	case h.BootLoaderSize < 0 || h.BootLoaderSize > maxBootLoader:
-		return fmt.Errorf("the boot loader of %d bytes is larger than %d", h.BootLoaderSize, maxBootLoader)
-	case h.BootLoaderSize > 0 && len(h.BootLoaderSHA256) != sha256.Size, h.BootLoaderSize == 0 && h.BootLoaderSHA256 != nil:
+	case h.BootLoader.Size < 0 || h.BootLoader.Size > maxBootLoader:
+		return fmt.Errorf("the boot loader of %d bytes is larger than %d", h.BootLoader.Size, maxBootLoader)
+	case h.BootLoader.Size > 0 && len(h.BootLoader.SHA256) != sha256.Size, h.BootLoader.Size == 0 && h.BootLoader.SHA256 != nil:
 		return errors.New("the boot loader's size and SHA-256 are required together")
 	}
 	return nil
@@ -74,15 +68,11 @@ func ReceiveUKI(path string, h Header, stream io.Reader, efivars string) (int, e
 		return 0, fmt.Errorf("write the UKI to the ESP: %w", err)
 	}
 	defer f.Close()
-	sum := sha256.New()
-	if _, err := io.CopyN(io.MultiWriter(f, sum), stream, h.UKISize); err != nil {
-		return 0, fmt.Errorf("receive the UKI: %w", err)
+	if err := h.UKI.Receive(f, stream, "UKI"); err != nil {
+		return 0, err
 	}
 	if err := f.Sync(); err != nil {
 		return 0, fmt.Errorf("write the UKI to the ESP: %w", err)
-	}
-	if got := sum.Sum(nil); !bytes.Equal(got, h.UKISHA256) {
-		return 0, fmt.Errorf("the UKI's SHA-256 is %x, want %x", got, h.UKISHA256)
 	}
 	tries, err := CheckUKI(f, h, efivars)
 	if err != nil {
@@ -112,7 +102,7 @@ func CheckUKI(r io.ReaderAt, h Header, efivars string) (int, error) {
 	read := &readErrors{ReaderAt: r}
 	tries, err := checkUKI(read, h)
 	if err == nil && enforced {
-		err = verifySignature(read, h.UKISize, db, dbx, "UKI")
+		err = verifySignature(read, h.UKI.Size, db, dbx, "UKI")
 	}
 	switch {
 	case err == nil:

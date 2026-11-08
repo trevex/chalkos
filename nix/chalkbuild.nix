@@ -15,6 +15,7 @@ callPackage ./go-module.nix { } {
     ../cmd/chalkbuild
     ../pkg/chalkbuild
     ../pkg/image
+    ../pkg/imagepart
     ../pkg/imagesign
     ../pkg/internal/cli
     ../pkg/internal/filecopy

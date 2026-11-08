@@ -14,18 +14,18 @@ import (
 
 	"golang.org/x/sys/unix"
 
+	"github.com/trevex/chalkos/pkg/imagepart"
 	"github.com/trevex/chalkos/pkg/storage/gpt"
 )
 
 // EmptyLabel marks a slot that holds no image, as the image's first boot creates slot B.
 const EmptyLabel = "_empty"
 
-// Image is the store an image brings: its root hash, and the sizes and SHA-256 of the store and
-// of its hash tree, which follow each other in the stream a slot is written from.
+// Image is the store an image brings: its root hash, and the store and its hash tree, which follow
+// each other in the stream a slot is written from.
 type Image struct {
-	RootHash                  []byte
-	StoreSize, VeritySize     int64
-	StoreSHA256, VeritySHA256 []byte
+	RootHash      []byte
+	Store, Verity imagepart.Part
 }
 
 // Slot is a store slot: its verity and data partitions.
@@ -112,8 +112,8 @@ func StoreSlots(disk string, parts []gpt.Partition) ([]Slot, error) {
 
 // Fits refuses an image whose store or hash tree is larger than the slot's partitions.
 func (s Slot) Fits(h Image) error {
-	if h.StoreSize > s.Data.Bytes() || h.VeritySize > s.Verity.Bytes() {
-		return fmt.Errorf("the image's store of %d bytes and hash tree of %d bytes do not fit the slot's partitions of %d and %d bytes", h.StoreSize, h.VeritySize, s.Data.Bytes(), s.Verity.Bytes())
+	if h.Store.Size > s.Data.Bytes() || h.Verity.Size > s.Verity.Bytes() {
+		return fmt.Errorf("the image's store of %d bytes and hash tree of %d bytes do not fit the slot's partitions of %d and %d bytes", h.Store.Size, h.Verity.Size, s.Data.Bytes(), s.Verity.Bytes())
 	}
 	return nil
 }

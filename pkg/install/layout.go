@@ -302,7 +302,7 @@ func (l layout) fits(h upgrade.Header) error {
 		what string
 		d    *definedPartition
 		size int64
-	}{{"store", data, h.StoreSize}, {"hash tree", verity, h.VeritySize}} {
+	}{{"store", data, h.Store.Size}, {"hash tree", verity, h.Verity.Size}} {
 		if part.d.maxSize > 0 && part.size > part.d.maxSize {
 			return fmt.Errorf("the image's %s of %d bytes does not fit slot A's partition of %d bytes, which %s defines", part.what, part.size, part.d.maxSize, part.d.file)
 		}

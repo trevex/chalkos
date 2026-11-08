@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/trevex/chalkos/pkg/imagepart"
 	"github.com/trevex/chalkos/pkg/storage/gpt"
 )
 
@@ -43,7 +44,7 @@ func (s *skipStream) Skip(n int64) error { s.skipped += n; return nil }
 // bytes without reading them, as a pull does over layers it has not fetched.
 func TestSkipPassesOverASkipper(t *testing.T) {
 	s := &skipStream{Reader: strings.NewReader("uki")}
-	if err := Skip(Image{StoreSize: 3, VeritySize: 2}, s); err != nil || s.skipped != 5 {
+	if err := Skip(Image{Store: imagepart.Part{Size: 3}, Verity: imagepart.Part{Size: 2}}, s); err != nil || s.skipped != 5 {
 		t.Fatalf("Skip = %v, skipped %d", err, s.skipped)
 	}
 	if rest, _ := io.ReadAll(s); string(rest) != "uki" {

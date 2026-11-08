@@ -23,9 +23,11 @@ import (
 	"github.com/trevex/chalkos/pkg/config/slot"
 	"github.com/trevex/chalkos/pkg/contract"
 	"github.com/trevex/chalkos/pkg/identity"
+	"github.com/trevex/chalkos/pkg/imagepart"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
 	"github.com/trevex/chalkos/pkg/pki"
 	"github.com/trevex/chalkos/pkg/storage"
+	"github.com/trevex/chalkos/pkg/storeslot"
 	"github.com/trevex/chalkos/pkg/tool"
 	"github.com/trevex/chalkos/pkg/tool/tooltest"
 	"github.com/trevex/chalkos/pkg/uki"
@@ -64,11 +66,10 @@ func TestUpgrade(t *testing.T) {
 			s.RebootNode = func() { close(rebooted) }
 			var got []byte
 			s.InstallImage = func(_ context.Context, h upgrade.Header, _, _ string, _ bool, r io.Reader) (upgrade.Result, imageConfig, error) {
-				want := upgrade.Header{ImageID: "chalkos", RootHash: []byte{1, 2},
-					StoreSize: 1, VeritySize: 2, UKISize: 3, StoreSHA256: []byte{4}, VeritySHA256: []byte{5}, UKISHA256: []byte{6}}
-				if h.ImageID != want.ImageID || h.Platform != "metal" || h.Architecture != "x86-64" || h.Provenance != (upgrade.Provenance{Revision: "a1b2c3d4e5f6", Tag: "v1.5.0"}) ||
-					!bytes.Equal(h.RootHash, want.RootHash) || h.StoreSize != 1 || h.VeritySize != 2 || h.UKISize != 3 ||
-					!bytes.Equal(h.StoreSHA256, want.StoreSHA256) || !bytes.Equal(h.VeritySHA256, want.VeritySHA256) || !bytes.Equal(h.UKISHA256, want.UKISHA256) {
+				want := upgrade.Header{ImageID: "chalkos", Platform: "metal", Architecture: "x86-64",
+					Image: storeslot.Image{RootHash: []byte{1, 2}, Store: imagepart.Part{Size: 1, SHA256: []byte{4}}, Verity: imagepart.Part{Size: 2, SHA256: []byte{5}}},
+					UKI:   imagepart.Part{Size: 3, SHA256: []byte{6}}, Provenance: upgrade.Provenance{Revision: "a1b2c3d4e5f6", Tag: "v1.5.0"}}
+				if !reflect.DeepEqual(h, want) {
 					t.Errorf("header %+v", h)
 				}
 				var err error
@@ -760,9 +761,9 @@ func TestUpgradeSharesTheStorageLock(t *testing.T) {
 			t.Errorf("sfdisk %v ran without the storage lock", args)
 		}
 	}}
-	sum := bytes.Repeat([]byte{1}, 32)
-	h := upgrade.Header{ImageID: "chalkos", Platform: "metal", Architecture: "x86-64", RootHash: bytes.Repeat([]byte{2}, 32),
-		StoreSize: 1, VeritySize: 1, UKISize: 1, StoreSHA256: sum, VeritySHA256: sum, UKISHA256: sum}
+	part := imagepart.Part{Size: 1, SHA256: bytes.Repeat([]byte{1}, 32)}
+	h := upgrade.Header{ImageID: "chalkos", Platform: "metal", Architecture: "x86-64",
+		Image: storeslot.Image{RootHash: bytes.Repeat([]byte{2}, 32), Store: part, Verity: part}, UKI: part}
 	// The fake sfdisk prints no table, which ends the upgrade.
 	if _, _, err := s.installImage(context.Background(), h, "", "", false, bytes.NewReader(nil)); err == nil {
 		t.Fatal("the upgrade went on without a partition table")

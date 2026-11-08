@@ -3,7 +3,6 @@ package install
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
 	"errors"
 	"fmt"
 	"io"
@@ -91,20 +90,18 @@ func (i *Installer) receiveUKI(tmp string, h upgrade.Header, parts io.Reader) ([
 // receiveBootLoader receives the boot loader, the image's last part, and checks it: its SHA-256,
 // that it is built for the image's architecture, and with Secure Boot enforced, its signature.
 func (i *Installer) receiveBootLoader(h upgrade.Header, parts io.Reader) ([]byte, error) {
-	loader := make([]byte, h.BootLoaderSize)
-	if _, err := io.ReadFull(parts, loader); err != nil {
-		return nil, fmt.Errorf("receive the boot loader: %w", err)
+	var buf bytes.Buffer
+	if err := h.BootLoader.Receive(&buf, parts, "boot loader"); err != nil {
+		return nil, err
 	}
 	if err := upgrade.ExpectEnd(parts, "boot loader"); err != nil {
 		return nil, err
 	}
-	if sum := sha256.Sum256(loader); !bytes.Equal(sum[:], h.BootLoaderSHA256) {
-		return nil, fmt.Errorf("the boot loader's SHA-256 is %x, want %x", sum, h.BootLoaderSHA256)
-	}
+	loader := buf.Bytes()
 	if err := upgrade.CheckArchitecture(bytes.NewReader(loader), h, "boot loader"); err != nil {
 		return nil, err
 	}
-	if err := upgrade.CheckSecureBoot(bytes.NewReader(loader), h.BootLoaderSize, i.EFIVars, "boot loader"); err != nil {
+	if err := upgrade.CheckSecureBoot(bytes.NewReader(loader), h.BootLoader.Size, i.EFIVars, "boot loader"); err != nil {
 		return nil, err
 	}
 	return loader, nil

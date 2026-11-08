@@ -22,6 +22,7 @@ import (
 	"unicode/utf16"
 
 	"github.com/trevex/chalkos/pkg/esp"
+	"github.com/trevex/chalkos/pkg/imagepart"
 	"github.com/trevex/chalkos/pkg/storage/gpt"
 	"github.com/trevex/chalkos/pkg/storage/hostops/hostopstest"
 	"github.com/trevex/chalkos/pkg/storeslot"
@@ -98,12 +99,17 @@ func sum(b []byte) []byte {
 	return s[:]
 }
 
+// part describes data as a part of an image.
+func part(data []byte) imagepart.Part {
+	return imagepart.Part{Size: int64(len(data)), SHA256: sum(data)}
+}
+
 // headerFor describes the image with the UKI given.
 func (img image) headerFor(uki []byte) Header {
 	return Header{
-		ImageID: "chalkos", Platform: "metal", Architecture: "x86-64", RootHash: img.root,
-		StoreSize: int64(len(img.store)), VeritySize: int64(len(img.hash)), UKISize: int64(len(uki)),
-		StoreSHA256: sum(img.store), VeritySHA256: sum(img.hash), UKISHA256: sum(uki),
+		ImageID: "chalkos", Platform: "metal", Architecture: "x86-64",
+		Image: storeslot.Image{RootHash: img.root, Store: part(img.store), Verity: part(img.hash)},
+		UKI:   part(uki),
 	}
 }
 

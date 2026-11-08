@@ -17,6 +17,7 @@ import (
 	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/config/slot"
 	"github.com/trevex/chalkos/pkg/esp"
+	"github.com/trevex/chalkos/pkg/imagepart"
 	"github.com/trevex/chalkos/pkg/pki"
 	"github.com/trevex/chalkos/pkg/storage"
 	"github.com/trevex/chalkos/pkg/storeslot"
@@ -282,12 +283,16 @@ func (s *Server) writeSlot(ctx context.Context, st imageStore, system, platform 
 // imageHeader is the image an install or upgrade header describes.
 func imageHeader(h *nodev1.ImageHeader) upgrade.Header {
 	return upgrade.Header{
-		ImageID: h.GetImageId(), Platform: h.GetPlatform(), Architecture: h.GetArchitecture(), RootHash: h.GetRootHash(),
-		StoreSize: int64(h.GetStore().GetSize()), VeritySize: int64(h.GetHashTree().GetSize()), UKISize: int64(h.GetUki().GetSize()),
-		StoreSHA256: h.GetStore().GetSha256(), VeritySHA256: h.GetHashTree().GetSha256(), UKISHA256: h.GetUki().GetSha256(),
-		BootLoaderSize: int64(h.GetBootLoader().GetSize()), BootLoaderSHA256: h.GetBootLoader().GetSha256(),
+		ImageID: h.GetImageId(), Platform: h.GetPlatform(), Architecture: h.GetArchitecture(),
+		Image: storeslot.Image{RootHash: h.GetRootHash(), Store: headerPart(h.GetStore()), Verity: headerPart(h.GetHashTree())},
+		UKI:   headerPart(h.GetUki()), BootLoader: headerPart(h.GetBootLoader()),
 		Provenance: upgrade.Provenance{Revision: h.GetRevision(), Tag: h.GetTag()},
 	}
+}
+
+// headerPart is the part of an image a header's part describes.
+func headerPart(p *nodev1.ImagePart) imagepart.Part {
+	return imagepart.Part{Size: int64(p.GetSize()), SHA256: p.GetSha256()}
 }
 
 // recordImages forgets every image no UKI on the ESP boots any more, an entry's or the staged
