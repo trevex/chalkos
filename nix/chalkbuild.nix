@@ -22,6 +22,7 @@ callPackage ./go-module.nix { } {
     ../pkg/jsonfile
     ../pkg/ociimage
     ../pkg/pki
+    ../pkg/networkdschema
     ../pkg/schema
     ../pkg/imageref
     ../pkg/secureboot

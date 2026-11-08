@@ -150,9 +150,14 @@ func TestSpecSchemaRejectsCollisions(t *testing.T) {
 }
 
 // Names reads back the names SpecSchema writes, of a section given alone or in a list, from the
-// schema of a whole kind around the spec.
+// schema of a whole kind around the spec. The fields of SR-IOV, DHCPv6PrefixDelegation and
+// MACsecReceiveAssociation differ from their systemd names by more than the first letter's case,
+// and Names finds each section's definition by its systemd name all the same.
 func TestNamesReadsWhatSpecSchemaWrites(t *testing.T) {
-	spec, err := SpecSchema([]Entry{{"Match", "Name"}, {"Match", "MACAddress"}, {"SR-IOV", "VLANId"}})
+	spec, err := SpecSchema([]Entry{
+		{"Match", "Name"}, {"Match", "MACAddress"}, {"SR-IOV", "VLANId"},
+		{"DHCPv6PrefixDelegation", "UplinkInterface"}, {"MACsecReceiveAssociation", "KeyFile"},
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -160,6 +165,12 @@ func TestNamesReadsWhatSpecSchemaWrites(t *testing.T) {
 	want := map[string]Section{
 		"match": {Name: "Match", Keys: map[string]string{"name": "Name", "macAddress": "MACAddress"}},
 		"sriov": {Name: "SR-IOV", Keys: map[string]string{"vlanId": "VLANId"}},
+		"dhcpv6PrefixDelegation": {
+			Name: "DHCPv6PrefixDelegation", Keys: map[string]string{"uplinkInterface": "UplinkInterface"},
+		},
+		"macsecReceiveAssociation": {
+			Name: "MACsecReceiveAssociation", Keys: map[string]string{"keyFile": "KeyFile"},
+		},
 	}
 	if got := Names(kind); !reflect.DeepEqual(got, want) {
 		t.Errorf("Names = %v, want %v", got, want)

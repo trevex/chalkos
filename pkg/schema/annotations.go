@@ -14,6 +14,7 @@ import (
 	"github.com/santhosh-tekuri/jsonschema/v6"
 
 	"github.com/trevex/chalkos/pkg/jsonfile"
+	"github.com/trevex/chalkos/pkg/networkdschema"
 )
 
 // The x-chalkos-* keywords a kind's schema may hold, which lib/kinds/schema.nix and
@@ -35,8 +36,8 @@ const (
 	kubernetesObjectKeyword = "x-chalkos-kubernetes-object"
 	// networkdSectionKeyword and networkdKeyKeyword are a networkd unit's section and key as
 	// systemd spells them, on the spec field of the section and on the section's field of the key.
-	networkdSectionKeyword = "x-chalkos-networkd-section"
-	networkdKeyKeyword     = "x-chalkos-networkd-key"
+	networkdSectionKeyword = networkdschema.SectionKeyword
+	networkdKeyKeyword     = networkdschema.KeyKeyword
 )
 
 // Annotations are the x-chalkos-* keywords of a schema node, decoded. The zero value is a node

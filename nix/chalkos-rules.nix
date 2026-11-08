@@ -18,6 +18,7 @@ callPackage ./go-module.nix { } {
     ../pkg/outputs
     ../pkg/refusals
     ../pkg/rules
+    ../pkg/networkdschema
     ../pkg/schema
     ../pkg/imageref
     ../pkg/storage

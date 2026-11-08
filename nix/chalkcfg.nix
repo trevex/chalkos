@@ -13,6 +13,7 @@ callPackage ./go-module.nix { } {
     ../pkg/internal/cli
     ../pkg/internal/strs
     ../pkg/jsonfile
+    ../pkg/networkdschema
     ../pkg/schema
     ../pkg/storage
   ];

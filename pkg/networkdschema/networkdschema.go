@@ -16,6 +16,14 @@ import (
 	"unicode"
 )
 
+// SectionKeyword and KeyKeyword hold the systemd names of a section and a key in a kind's schema:
+// SectionKeyword on the spec field of a section and on the section's definition, KeyKeyword on
+// the section's field of a key.
+const (
+	SectionKeyword = "x-chalkos-networkd-section"
+	KeyKeyword     = "x-chalkos-networkd-key"
+)
+
 // Entry is one Section.Key a gperf table accepts.
 type Entry struct {
 	Section string
@@ -154,20 +162,20 @@ func SpecSchema(entries []Entry) (map[string]any, error) {
 			}
 			keyOf[yamlKey] = key
 			prop := oneOrMany(scalarSchema())
-			prop["x-chalkos-networkd-key"] = key
+			prop[KeyKeyword] = key
 			props[yamlKey] = prop
 		}
 		defs[section] = map[string]any{
-			"type":                       "object",
-			"properties":                 props,
-			"additionalProperties":       false,
-			"x-chalkos-networkd-section": section,
+			"type":                 "object",
+			"properties":           props,
+			"additionalProperties": false,
+			SectionKeyword:         section,
 		}
 		sectionProp := oneOrMany(map[string]any{"$ref": "#/$defs/" + section})
 		// The section name also sits next to this property's own anyOf, the way a key's
 		// x-chalkos-networkd-key sits next to its anyOf, so a renderer reads the systemd section
 		// name from the property itself.
-		sectionProp["x-chalkos-networkd-section"] = section
+		sectionProp[SectionKeyword] = section
 		specProps[yamlSection] = sectionProp
 	}
 	return map[string]any{
@@ -197,14 +205,14 @@ func Names(kindSchema map[string]any) map[string]Section {
 	spec, _ := field(kindSchema, "properties", "spec", "properties").(map[string]any)
 	names := map[string]Section{}
 	for name, prop := range spec {
-		section, _ := field(prop, "x-chalkos-networkd-section").(string)
+		section, _ := field(prop, SectionKeyword).(string)
 		if section == "" {
 			continue
 		}
 		keys := map[string]string{}
 		props, _ := field(kindSchema, "$defs", section, "properties").(map[string]any)
 		for key, p := range props {
-			if spelling, _ := field(p, "x-chalkos-networkd-key").(string); spelling != "" {
+			if spelling, _ := field(p, KeyKeyword).(string); spelling != "" {
 				keys[key] = spelling
 			}
 		}

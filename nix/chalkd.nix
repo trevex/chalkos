@@ -40,6 +40,7 @@ callPackage ./go-module.nix { } {
     ../pkg/refusals
     ../pkg/router
     ../pkg/rules
+    ../pkg/networkdschema
     ../pkg/schema
     ../pkg/imageref
     ../pkg/secureboot
