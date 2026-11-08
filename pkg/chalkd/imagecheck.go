@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"path/filepath"
 	"strings"
 
 	"connectrpc.com/connect"
@@ -13,6 +14,7 @@ import (
 	"github.com/trevex/chalkos/pkg/chalkd/layer"
 	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/config/slot"
+	"github.com/trevex/chalkos/pkg/contract"
 	"github.com/trevex/chalkos/pkg/facts"
 	"github.com/trevex/chalkos/pkg/imagecheck"
 	"github.com/trevex/chalkos/pkg/storage"
@@ -138,13 +140,14 @@ func (s *Server) imageRefusal(r *checkv1.Refusal, identity string, writing []byt
 // that store as its /nix/store. A missing facts.json declares none.
 func (s *Server) stagedFacts(ctx context.Context, st imageStore, system string, c imageCheck) (imagecheck.Facts, error) {
 	defs := map[string]facts.Definition{}
-	data, err := st.ReadFile(system + facts.DefaultPath)
+	path := filepath.Join(system, contract.DefaultDir, contract.FactsFile)
+	data, err := st.ReadFile(path)
 	switch {
 	case errors.Is(err, fs.ErrNotExist):
 	case err != nil:
 		return nil, fmt.Errorf("read the image's facts: %w", err)
 	default:
-		if defs, err = facts.Parse(data); err != nil {
+		if defs, err = facts.Parse(path, data); err != nil {
 			return nil, layer.Errorf(connect.CodeFailedPrecondition, "the image's facts: %w", err)
 		}
 	}

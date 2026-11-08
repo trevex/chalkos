@@ -50,21 +50,8 @@ func translateSlot(name string, docs []config.Document, schemas *schema.Schemas,
 	return slot.Stored{Delivered: docs, Documents: tr.Documents, Version: version, Identity: tr.Identity}, nil
 }
 
-// runningSchemas are the running image's schemas.
-func (s *Server) runningSchemas() (*schema.Schemas, error) {
-	schemas, err := schema.LoadSchemas(s.Loader.Schemas)
-	if err != nil {
-		return nil, layer.Errorf(connect.CodeFailedPrecondition, "read the image's schemas: %w", err)
-	}
-	return schemas, nil
-}
-
 // runningTarget is the running image, as config for it is translated, and its schemas.
 func (s *Server) runningTarget() (config.Target, *schema.Schemas, error) {
-	schemas, err := s.runningSchemas()
-	if err != nil {
-		return config.Target{}, nil, err
-	}
 	release := readOSRelease(s.Paths.OSRelease)
 	t := config.Target{Platform: release["CHALKOS_PLATFORM"]}
 	// The facts the image's layers build their config from at boot, so the config is checked
@@ -77,7 +64,7 @@ func (s *Server) runningTarget() (config.Target, *schema.Schemas, error) {
 	if err := s.target(facts, &t); err != nil {
 		return config.Target{}, nil, layer.Errorf(connect.CodeInternal, "the image's layer facts: %w", err)
 	}
-	return t, schemas, nil
+	return t, s.Loader.Contract.Schemas, nil
 }
 
 // installConfig translates the config an install header delivers, for the node name, into the
@@ -115,15 +102,12 @@ func (s *Server) installConfig(ctx context.Context, h *nodev1.InstallHeader, nam
 	if err != nil || s.Installer {
 		return stored, err
 	}
-	set, err := compileRunningRules(schemas)
+	set, err := s.runningRules()
 	if err != nil {
 		return slot.Stored{}, err
 	}
 	docs := config.Redact(stored.Documents)
-	f, err := s.factsFor(ctx, docs, config.Redacted{}, h.FallbackSecret)
-	if err != nil {
-		return slot.Stored{}, err
-	}
+	f := s.factsFor(ctx, docs, config.Redacted{}, h.FallbackSecret)
 	f.Install = true
 	if err := s.checkRules(set, name, docs, config.Redacted{}, f); err != nil {
 		return slot.Stored{}, err

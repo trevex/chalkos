@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"maps"
+	"path/filepath"
 	"slices"
 
 	"connectrpc.com/connect"
@@ -14,6 +15,7 @@ import (
 	"github.com/trevex/chalkos/pkg/chalkd/layer"
 	"github.com/trevex/chalkos/pkg/check"
 	"github.com/trevex/chalkos/pkg/config"
+	"github.com/trevex/chalkos/pkg/contract"
 	"github.com/trevex/chalkos/pkg/effects"
 	"github.com/trevex/chalkos/pkg/facts"
 	"github.com/trevex/chalkos/pkg/outputs"
@@ -50,7 +52,7 @@ type pendingEffects struct {
 	withoutAttempt []byte
 }
 
-// effectsOf compiles the rules of the running image's effects and loads every fact they read.
+// effectsOf takes the running image's effects and loads every fact their rules read.
 // The caller calls it before the delivery changes anything.
 //   - The delivery goes to the node called name and makes next the running slot's config in place
 //     of old. A delivery without config keeps old. schemas are the running image's, whose slot
@@ -67,35 +69,21 @@ type pendingEffects struct {
 // before it changed anything. Until then a retry, or another delivery, takes the effects of what
 // the failed delivery changed too, even one that delivers the baseline's config again.
 func (s *Server) effectsOf(ctx context.Context, name string, next, old config.Redacted, schemas *schema.Schemas, secret string, dry bool) (*pendingEffects, error) {
-	defs, err := effects.Read(s.Loader.Effects)
-	if err != nil {
-		return nil, err
-	}
+	c := s.Loader.Contract
+	defs := c.Effects
 	// An action no active plugin has would fail only once the delivery changed the node.
 	for _, effect := range slices.Sorted(maps.Keys(defs)) {
 		if a := defs[effect].Chalkd; a != "" {
 			if _, err := s.Plugins.Action(a); err != nil {
-				return nil, fmt.Errorf("%s: effect %s: %w", s.Loader.Effects, effect, err)
+				return nil, fmt.Errorf("%s: effect %s: %w", filepath.Join(c.Dir, contract.EffectsFile), effect, err)
 			}
 		}
 	}
-	e := &pendingEffects{defs: defs, node: name, next: next, old: old, schemas: schemas}
-	var errs []error
-	for _, effect := range slices.Sorted(maps.Keys(defs)) {
-		// An effect without a rule fires on its outputs or kinds alone.
-		if defs[effect].When == "" {
-			continue
-		}
-		p, err := rules.CompileEffect(effect, defs[effect].When)
-		if err != nil {
-			errs = append(errs, err)
-			continue
-		}
-		e.rules = append(e.rules, p)
+	compiled, err := c.EffectRules()
+	if err != nil {
+		return nil, fmt.Errorf("the running image's effects: %w", err)
 	}
-	if len(errs) > 0 {
-		return nil, fmt.Errorf("the running image's effects: %w", errors.Join(errs...))
-	}
+	e := &pendingEffects{defs: defs, rules: compiled, node: name, next: next, old: old, schemas: schemas}
 	b, found, err := readBaseline(s.Paths.EffectsBaseline)
 	if err != nil {
 		// Replaced below: the next delivery compares with the state as it is now.
@@ -111,10 +99,7 @@ func (s *Server) effectsOf(ctx context.Context, name string, next, old config.Re
 	if e.kinds, err = config.KindHashes(e.old, schemas); err != nil {
 		return nil, fmt.Errorf("the kinds the node runs: %w", err)
 	}
-	before, err := s.factsFor(ctx, e.next, e.old, secret)
-	if err != nil {
-		return nil, err
-	}
+	before := s.factsFor(ctx, e.next, e.old, secret)
 	e.before = before
 	// A dry run compares with the state as it is now and records nothing.
 	if dry {
@@ -165,10 +150,7 @@ func (s *Server) due(ctx context.Context, e *pendingEffects, states map[string]o
 // outcome is what due finds, with the outputs that changed and what fired each effect, as a dry
 // run's plan names them.
 func (s *Server) outcome(ctx context.Context, e *pendingEffects, states map[string]outputs.State, secret string) (check.Outcome, []string, error) {
-	after, err := s.factsFor(ctx, e.next, config.Redacted{}, secret)
-	if err != nil {
-		return check.Outcome{}, nil, err
-	}
+	after := s.factsFor(ctx, e.next, config.Redacted{}, secret)
 	// Command facts read the old config as the rules do.
 	after.Input = map[string]any{"config": rules.ConfigOf(e.next), "oldConfig": rules.ConfigOf(e.old)}
 	if e.attempt != nil {

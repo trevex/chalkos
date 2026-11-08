@@ -76,10 +76,6 @@ type Paths struct {
 	// FailedBoot, on VAR, keeps what chalkd and the health check logged during the last boot that
 	// was not found healthy.
 	FailedBoot string
-	// Facts is where the image declares the facts its rules read.
-	Facts string
-	// Diagnostics is where the image declares its diagnostics.
-	Diagnostics string
 	// EffectsBaseline, below /run, is what the effects of a delivery that failed part way
 	// compare with until a delivery is applied whole: the config, the facts and the outputs as they
 	// were before the first delivery that failed.
@@ -101,8 +97,6 @@ func DefaultPaths() Paths {
 		Cmdline:         "/proc/cmdline",
 		BootID:          "/proc/sys/kernel/random/boot_id",
 		FailedBoot:      "/var/lib/chalkd/failed-boot",
-		Facts:           facts.DefaultPath,
-		Diagnostics:     diagnostics.DefaultPath,
 		EffectsBaseline: "/run/chalkd/effects-baseline.json",
 	}
 }

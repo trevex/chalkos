@@ -18,6 +18,7 @@ import (
 
 	"github.com/trevex/chalkos/pkg/chalkd"
 	"github.com/trevex/chalkos/pkg/clustersecrets"
+	imagecontract "github.com/trevex/chalkos/pkg/contract"
 	"github.com/trevex/chalkos/pkg/identity"
 	"github.com/trevex/chalkos/pkg/imagecheck"
 	"github.com/trevex/chalkos/pkg/install"
@@ -306,7 +307,11 @@ func TestInstallFromPartsSendsTheImageContract(t *testing.T) {
 	// The installer's image carries no layer; its compiled plugins read the sent image's facts.
 	withPlugins(t, s, layers.Of())
 	// The installer's own image has no schemas: the config checks against those sent alone.
-	s.Loader.Schemas = filepath.Join(t.TempDir(), "none")
+	none := t.TempDir()
+	if err := os.Mkdir(filepath.Join(none, imagecontract.SchemasDir), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	loadContract(t, s, none)
 	var got install.PartsRequest
 	var checked install.Checked
 	checkingFromParts(s, newCheckerStore(t, testImageJSON), &got, new([]byte), &checked)

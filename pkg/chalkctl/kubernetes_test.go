@@ -20,6 +20,7 @@ import (
 	"github.com/trevex/chalkos/pkg/chalkd/layer"
 	kubernetesplugin "github.com/trevex/chalkos/pkg/chalkd/layers/kubernetes"
 	"github.com/trevex/chalkos/pkg/clustersecrets"
+	imagecontract "github.com/trevex/chalkos/pkg/contract"
 	"github.com/trevex/chalkos/pkg/install"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
 	knode "github.com/trevex/chalkos/pkg/kubernetes/node"
@@ -146,7 +147,7 @@ func kubernetesNodeWith(t *testing.T, ta *testApp, o kubernetesplugin.Options) (
 	// The cluster file chalkd writes from the node's config.
 	writeFile(t, kubernetesPaths(s).Cluster, clusterFile("worker"))
 	// The facts the kubelet's restart rules read, as the image declares them.
-	writeFile(t, s.Paths.Facts, `{"recorded": {"file": "`+filepath.Join(s.Paths.StateDir, "storage", "storage.json")+`"},
+	writeContract(t, s, imagecontract.FactsFile, `{"recorded": {"file": "`+filepath.Join(s.Paths.StateDir, "storage", "storage.json")+`"},
 	  "share": {"file": "`+kubernetesPaths(s).Share()+`", "fields": ["kind"], "hashOthers": true},
 	  "cluster": {"file": "`+kubernetesPaths(s).Cluster+`"}}`)
 	return s, r

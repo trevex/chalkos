@@ -15,10 +15,9 @@ import (
 	"github.com/trevex/chalkos/pkg/chalkd/layer"
 	"github.com/trevex/chalkos/pkg/check"
 	"github.com/trevex/chalkos/pkg/config"
+	"github.com/trevex/chalkos/pkg/contract"
 	"github.com/trevex/chalkos/pkg/imagecheck"
 	"github.com/trevex/chalkos/pkg/outputs"
-	"github.com/trevex/chalkos/pkg/rules"
-	"github.com/trevex/chalkos/pkg/schema"
 )
 
 // Check is chalkd check: the image checks config for itself, as the chalkd of a running image
@@ -91,22 +90,13 @@ func (s *Server) checkInput(ctx context.Context, system, dir string, in *checkv1
 // the target its layers' facts give, on platform. It plans no effects: an image that does not
 // run has none to take.
 func (s *Server) systemImage(system, platform, dir string) (check.Image, error) {
-	etc := filepath.Join(system, "etc")
-	schemas, err := schema.LoadSchemas(filepath.Join(etc, "chalkos", "schemas"))
+	c, err := contract.Load(filepath.Join(system, contract.DefaultDir))
 	if err != nil {
-		return check.Image{}, fmt.Errorf("the image's schemas: %w", err)
+		return check.Image{}, err
 	}
-	set, err := rules.Compile(schemas)
+	set, err := c.Rules()
 	if err != nil {
 		return check.Image{}, fmt.Errorf("the image's rules: %w", err)
-	}
-	defs, err := outputs.Read(filepath.Join(etc, "chalkos", "outputs.json"), outputs.DefaultRoot)
-	if err != nil {
-		return check.Image{}, fmt.Errorf("the image's outputs: %w", err)
-	}
-	vals, err := outputs.ReadValidators(filepath.Join(etc, "chalkos", "validators.json"))
-	if err != nil {
-		return check.Image{}, fmt.Errorf("the image's validators: %w", err)
 	}
 	facts, err := imageFacts(layer.Compiled[layer.ImageFacts](s.Plugins), func(h layer.ImageFacts) (*anypb.Any, error) {
 		return h.SystemFacts(func(path string) ([]byte, error) { return os.ReadFile(filepath.Join(system, path)) })
@@ -119,7 +109,7 @@ func (s *Server) systemImage(system, platform, dir string) (check.Image, error) 
 		return check.Image{}, err
 	}
 	return check.Image{
-		Schemas: schemas, Target: t, Rules: set, Validators: vals, Outputs: defs,
+		Schemas: c.Schemas, Target: t, Rules: set, Validators: c.Validators, Outputs: c.Outputs,
 		Render: outputs.Renderer{Root: dir, Run: outputs.Direct{}, KeepOwner: true},
 	}, nil
 }

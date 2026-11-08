@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
-	"path/filepath"
 	"reflect"
 	"slices"
 	"strings"
@@ -15,6 +14,7 @@ import (
 
 	"connectrpc.com/connect"
 
+	imagecontract "github.com/trevex/chalkos/pkg/contract"
 	"github.com/trevex/chalkos/pkg/diagnostics"
 	"github.com/trevex/chalkos/pkg/pki"
 )
@@ -64,8 +64,7 @@ func diagNode(t *testing.T, ta *testApp, f *fakeDiagnose) string {
 	t.Helper()
 	current, _ := json.Marshal(ta.identity(t))
 	s, _ := installedNode(t, ta, current)
-	s.Paths.Diagnostics = filepath.Join(t.TempDir(), "diagnostics.json")
-	writeFile(t, s.Paths.Diagnostics, testDiagnostics)
+	writeContract(t, s, imagecontract.DiagnosticsFile, testDiagnostics)
 	s.Diagnose = f
 	return ta.startNode(t, s)
 }

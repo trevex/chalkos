@@ -331,7 +331,7 @@ spec: {endpoint: "https://192.168.100.11:6443", images: ` + kubernetestest.Image
 
 func TestInstallInPlaceWithConfig(t *testing.T) {
 	s, _ := newTestServer(t, maintenance, vda)
-	writeSchemas(t, s.Loader.Schemas)
+	writeSchemas(t, s)
 	var got install.Request
 	s.InPlace = func(_ context.Context, req install.Request, _ []byte) error { got = req; return nil }
 	h := header(t, &nodev1.InstallHeader_InPlace{InPlace: &nodev1.InPlace{}})
@@ -541,7 +541,7 @@ func TestInstallRefusesConfig(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			s, _ := newTestServer(t, maintenance, vda)
 			s.Installer = c.installer
-			writeSchemas(t, s.Loader.Schemas)
+			writeSchemas(t, s)
 			s.InPlace = func(context.Context, install.Request, []byte) error { t.Error("installed in place"); return nil }
 			s.FromParts = func(context.Context, install.PartsRequest) error { t.Error("installed onto the disk"); return nil }
 			h := header(t, &nodev1.InstallHeader_InPlace{InPlace: &nodev1.InPlace{}})
@@ -563,7 +563,7 @@ func TestInstallInPlaceChecksTheOutputs(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			s, _ := newTestServer(t, maintenance, vda)
-			writeSchemas(t, s.Loader.Schemas)
+			writeSchemas(t, s)
 			writeOutputs(t, s, map[string]outputs.Definition{"demo": demoOutput(t, s, `cat > "$OUT/demo.json"`, tc.check)})
 			installed := false
 			if err := outputs.RecordFailures(s.Loader.Render.Root, []outputs.Failure{{Name: "demo", Role: outputs.RoleOutput, Problem: "an earlier failure"}}); err != nil {

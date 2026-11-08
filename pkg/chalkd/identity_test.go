@@ -19,7 +19,6 @@ import (
 	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/config/slot"
 	"github.com/trevex/chalkos/pkg/pki"
-	"github.com/trevex/chalkos/pkg/schema"
 	"github.com/trevex/chalkos/pkg/storage"
 	"github.com/trevex/chalkos/pkg/storage/storagetest"
 	"github.com/trevex/chalkos/pkg/tool"
@@ -169,11 +168,7 @@ func apply(s *Server, identity, fallback string) (*nodev1.ApplyConfigResponse, e
 func deliver(ctx context.Context, s *Server, identity string, req *nodev1.ApplyConfigRequest) (*connect.Response[nodev1.ApplyConfigResponse], error) {
 	r := applyRequest{identity: identity, msg: req}
 	if identity != "" {
-		schemas, err := schema.LoadSchemas(s.Loader.Schemas)
-		if err != nil {
-			return nil, err
-		}
-		r.next, r.schemas = slot.Stored{Version: "empty", Documents: documentsOf(identity)}, schemas
+		r.next = slot.Stored{Version: "empty", Documents: documentsOf(identity)}
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -451,13 +446,9 @@ func reset(s *Server, volume, identity string) error {
 // resetWith resets the volume to what identity defines, with the documents of its storage section
 // checked against the image's schemas, as ResetVolume translates them, and the fallback secret.
 func resetWith(s *Server, volume, identity, fallback string) error {
-	schemas, err := schema.LoadSchemas(s.Loader.Schemas)
-	if err != nil {
-		return err
-	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.resetVolume(context.Background(), "n1", volume, slot.Stored{Documents: documentsOf(identity), Identity: []byte(identity)}, schemas, fallback)
+	return s.resetVolume(context.Background(), "n1", volume, slot.Stored{Documents: documentsOf(identity), Identity: []byte(identity)}, fallback)
 }
 
 // A reset recreates a volume on its disk, also when the config references the disk anew.

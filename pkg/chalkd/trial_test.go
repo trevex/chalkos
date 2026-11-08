@@ -19,6 +19,7 @@ import (
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/client"
 	"github.com/trevex/chalkos/pkg/config/slot"
+	"github.com/trevex/chalkos/pkg/contract"
 	"github.com/trevex/chalkos/pkg/outputs"
 	"github.com/trevex/chalkos/pkg/pki"
 	"github.com/trevex/chalkos/pkg/tool/tooltest"
@@ -1335,7 +1336,7 @@ func TestTrialExpiryFinishesAFailedRestart(t *testing.T) {
 func TestTrialExpiryUndoesAFailedTrialDelivery(t *testing.T) {
 	s := trialServer(t)
 	s.trialRetry = time.Hour
-	write(t, s.Loader.Effects, lateHookEffects)
+	writeContract(t, s, contract.EffectsFile, lateHookEffects)
 	r := s.Run.(*tooltest.Runner)
 	r.Rules = append([]tooltest.Rule{{Prefix: "hook", Err: errors.New("exit status 1"), Times: 1}}, r.Rules...)
 	if _, err := sendTrial(s, nextConfig, time.Hour); err == nil || !strings.Contains(err.Error(), "stays on trial") {

@@ -16,16 +16,14 @@ import (
 	"github.com/trevex/chalkos/pkg/config/slot"
 	"github.com/trevex/chalkos/pkg/facts"
 	"github.com/trevex/chalkos/pkg/outputs"
-	"github.com/trevex/chalkos/pkg/schema"
 )
 
 // applyRequest is an ApplyConfig request once its config is translated: the identity the node
-// runs from now on, empty to keep its own; the config set it keeps and the schemas that set was
-// checked against, the running image's; and the rest of the request.
+// runs from now on, empty to keep its own; the config set it keeps, checked against the running
+// image's schemas; and the rest of the request.
 type applyRequest struct {
 	identity string
 	next     slot.Stored
-	schemas  *schema.Schemas
 	msg      *nodev1.ApplyConfigRequest
 	// try is how long the config is on trial; zero applies it for good.
 	try time.Duration
@@ -74,7 +72,7 @@ func (s *Server) ApplyConfig(ctx context.Context, req *connect.Request[nodev1.Ap
 		if err != nil {
 			return nil, err
 		}
-		r.identity, r.next, r.schemas = string(c.Identity), c, schemas
+		r.identity, r.next = string(c.Identity), c
 	}
 	if req.Msg.DryRun {
 		return s.dryRun(ctx, r)
@@ -240,13 +238,11 @@ func (s *Server) planDelivery(ctx context.Context, r applyRequest) (*delivery, e
 		// The image's rules compare the config with the running slot's and the storage STATE
 		// records, and read the node's facts. A missing or mistyped fallback secret is refused
 		// before the node trusts the delivered OS CAs.
-		set, err := compileRunningRules(r.schemas)
+		set, err := s.runningRules()
 		if err != nil {
 			return nil, err
 		}
-		if loaded, err = s.factsFor(ctx, next, old, m.FallbackSecret); err != nil {
-			return nil, err
-		}
+		loaded = s.factsFor(ctx, next, old, m.FallbackSecret)
 		if err := s.checkRules(set, name, next, old, loaded); err != nil {
 			return nil, s.elsewhere(err, d.identity.section, nil)
 		}
@@ -272,15 +268,8 @@ func (s *Server) planDelivery(ctx context.Context, r applyRequest) (*delivery, e
 	}
 	// The effects compare the delivery with the running slot, the facts once it is applied with
 	// the facts loaded now, and the outputs rendered from it with those the node serves. Both read
-	// the documents with the schemas of the image whose slot holds them, the running image's: a
-	// delivery without config translated none, so they are read here, unless the slot holds no
-	// documents to read them for.
-	schemas := r.schemas
-	if d.keep && next.Len() > 0 {
-		if schemas, err = s.runningSchemas(); err != nil {
-			return nil, err
-		}
-	}
+	// the documents with the schemas of the image whose slot holds them, the running image's.
+	schemas := s.Loader.Contract.Schemas
 	if d.fx, err = s.effectsOf(ctx, name, next, old, schemas, m.FallbackSecret, m.DryRun); err != nil {
 		return nil, err
 	}

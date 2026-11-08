@@ -17,9 +17,6 @@ import (
 	"github.com/trevex/chalkos/pkg/jsonfile"
 )
 
-// DefaultPath is where an image declares its diagnostics.
-const DefaultPath = "/etc/chalkos/diagnostics.json"
-
 // MaxOutput is the most chalkd sends of what a run prints, on standard output and error together.
 const MaxOutput = 1 << 20
 

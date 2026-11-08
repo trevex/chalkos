@@ -17,10 +17,10 @@ import (
 	"github.com/trevex/chalkos/pkg/check"
 	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/config/slot"
+	"github.com/trevex/chalkos/pkg/contract"
 	"github.com/trevex/chalkos/pkg/install"
 	"github.com/trevex/chalkos/pkg/outputs"
 	"github.com/trevex/chalkos/pkg/rules"
-	"github.com/trevex/chalkos/pkg/schema"
 )
 
 // vetoes is a validator's program that refuses a Demo named second, and writes the names it read
@@ -43,7 +43,7 @@ func writeValidators(t *testing.T, s *Server, programs map[string]string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	write(t, s.Loader.Validators, string(data))
+	writeContract(t, s, contract.ValidatorsFile, string(data))
 }
 
 // A validator that refuses or fails refuses a delivery after the rules and before the renderers,
@@ -106,24 +106,13 @@ func TestApplyConfigPassesAValidator(t *testing.T) {
 func TestApplyConfigRefusesByAValidatorAsTheChecker(t *testing.T) {
 	s, _ := configServer(t)
 	writeValidators(t, s, map[string]string{"veto": vetoes})
-	schemas, err := schema.LoadSchemas(s.Loader.Schemas)
-	if err != nil {
-		t.Fatal(err)
-	}
-	set, err := rules.Compile(schemas)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defs, err := outputs.ReadValidators(s.Loader.Validators)
-	if err != nil {
-		t.Fatal(err)
-	}
+	c := s.Loader.Contract
 	next := strings.Replace(baseConfig, "name: first", "name: second", 1)
 	docs, err := config.Parse(strings.NewReader(next))
 	if err != nil {
 		t.Fatal(err)
 	}
-	img := check.Image{Schemas: schemas, Target: config.Target{Platform: "metal"}, Rules: set, Validators: defs, Render: s.Loader.Render}
+	img := check.Image{Schemas: c.Schemas, Target: config.Target{Platform: "metal"}, Rules: mustRules(t, c), Validators: c.Validators, Render: s.Loader.Render}
 	_, checked := check.Run(context.Background(), img, check.Input{Node: "n1", Delivered: config.Redact(docs), Facts: func(_, _ config.Redacted) rules.Facts { return nil }})
 	r, ok := errors.AsType[*check.Refusal](checked)
 	if !ok || r.Stage != check.StageValidators {
@@ -138,7 +127,7 @@ func TestApplyConfigRefusesByAValidatorAsTheChecker(t *testing.T) {
 // An install in place runs the running image's validators before it installs anything.
 func TestInstallInPlaceRunsTheValidators(t *testing.T) {
 	s, _ := newTestServer(t, maintenance, vda)
-	writeSchemas(t, s.Loader.Schemas)
+	writeSchemas(t, s)
 	writeValidators(t, s, map[string]string{"veto": `exit 2`})
 	installed := false
 	s.InPlace = func(context.Context, install.Request, []byte) error { installed = true; return nil }

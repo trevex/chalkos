@@ -12,6 +12,7 @@ import (
 
 	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/config/slot"
+	"github.com/trevex/chalkos/pkg/contract"
 	"github.com/trevex/chalkos/pkg/outputs"
 	"github.com/trevex/chalkos/pkg/pki"
 )
@@ -29,16 +30,32 @@ func newTestLoader(t *testing.T) (Loader, *string) {
 	hostname := ""
 	l := Loader{
 		RunDir:      filepath.Join(root, "run", "chalkos"),
-		Services:    filepath.Join(root, "etc", "services.json"),
-		Effects:     filepath.Join(root, "etc", "effects.json"),
 		Slots:       filepath.Join(root, "state", "config"),
 		Cmdline:     filepath.Join(root, "cmdline"),
-		Schemas:     filepath.Join(root, "etc", "schemas"),
 		SetHostname: func(name string) error { hostname = name; return nil },
 	}
-	write(t, l.Services, "{}")
+	copySchemas(t, filepath.Join(contractDir(l), contract.SchemasDir))
+	writeContract(t, &l, contract.ServicesFile, "{}")
 	write(t, l.Cmdline, "init=/x usrhash="+running+"\n")
 	return l, &hostname
+}
+
+// contractDir is the directory of the test loader's contract.
+func contractDir(l Loader) string {
+	return filepath.Join(filepath.Dir(filepath.Dir(l.RunDir)), "etc")
+}
+
+// writeContract writes the file name of the test loader's contract and loads the contract again,
+// its outputs rendered below RunDir/outputs.
+func writeContract(t *testing.T, l *Loader, name, content string) {
+	t.Helper()
+	dir := contractDir(*l)
+	write(t, filepath.Join(dir, name), content)
+	c, err := contract.Load(dir, contract.RenderRoot(filepath.Join(l.RunDir, "outputs")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	l.Contract = c
 }
 
 // running is the root hash of the image the test loader runs, as its kernel command line names it.
@@ -164,8 +181,7 @@ func copySchemas(t *testing.T, dir string) {
 
 func TestLoadWritesConfig(t *testing.T) {
 	l, _ := newTestLoader(t)
-	copySchemas(t, l.Schemas)
-	write(t, l.Services, `{
+	writeContract(t, &l, contract.ServicesFile, `{
 	  "demo": {"kinds": ["Demo"]},
 	  "idle": {"kinds": ["Host"]},
 	  "reloaded": {"kinds": []}
@@ -199,7 +215,7 @@ func TestLoadWritesConfig(t *testing.T) {
 func TestLoadWithoutConfigMakesCredentialDirectories(t *testing.T) {
 	l, _ := newTestLoader(t)
 	writeSlot(t, l, running, nodeIdentity, "")
-	write(t, l.Services, `{"demo": {"kinds": ["Demo"]}}`)
+	writeContract(t, &l, contract.ServicesFile, `{"demo": {"kinds": ["Demo"]}}`)
 	if err := l.Load(); err != nil {
 		t.Fatal(err)
 	}
@@ -210,7 +226,7 @@ func TestLoadWithoutConfigMakesCredentialDirectories(t *testing.T) {
 
 func TestApplyWritesNoKeyCredentials(t *testing.T) {
 	l, _ := newTestLoader(t)
-	write(t, l.Services, `{"report": {"keys": ["hostname"]}}`)
+	writeContract(t, &l, contract.ServicesFile, `{"report": {"keys": ["hostname"]}}`)
 	if err := l.Apply([]byte(nodeIdentity)); err != nil {
 		t.Fatal(err)
 	}
@@ -236,7 +252,6 @@ func (r *recordingLayer) WriteConfig(docs config.Documents) error {
 // error fails the load.
 func TestLoadHasTheLayersWriteTheirConfig(t *testing.T) {
 	l, _ := newTestLoader(t)
-	copySchemas(t, l.Schemas)
 	writeSlot(t, l, running, nodeIdentity, loaderConfig)
 	r := &recordingLayer{}
 	l.Layers = []Layer{r}
@@ -262,10 +277,8 @@ func TestLoadHasTheLayersWriteTheirConfig(t *testing.T) {
 func outputLoader(t *testing.T, render string) Loader {
 	t.Helper()
 	l, _ := newTestLoader(t)
-	copySchemas(t, l.Schemas)
-	root := filepath.Dir(filepath.Dir(l.Services))
+	root := filepath.Dir(filepath.Dir(l.RunDir))
 	l.Render = outputs.Renderer{Root: filepath.Join(l.RunDir, "outputs"), Run: outputs.Direct{}}
-	l.Outputs = filepath.Join(root, "etc", "outputs.json")
 	l.NodeCertificate = filepath.Join(root, "state", "chalkd", "node.pem")
 	cert, err := pki.NewCA("w1", time.Now())
 	if err != nil {
@@ -281,7 +294,7 @@ func outputLoader(t *testing.T, render string) Loader {
 		Inputs: []string{"Demo"}, Render: script, Dir: filepath.Join(l.RunDir, "outputs", "demo"),
 		User: strconv.Itoa(os.Getuid()), Group: strconv.Itoa(os.Getgid()), Mode: "0644",
 	}})
-	write(t, l.Outputs, string(defs))
+	writeContract(t, &l, contract.OutputsFile, string(defs))
 	writeSlot(t, l, running, nodeIdentity, loaderConfig)
 	return l
 }
@@ -347,8 +360,7 @@ echo '{"refusals": [{"kind": "Demo", "name": "one", "path": "spec.name", "messag
 	if err := os.Chmod(script, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	l.Validators = filepath.Join(filepath.Dir(l.Outputs), "validators.json")
-	write(t, l.Validators, `{"demo": {"inputs": ["Demo"], "program": "`+script+`"}}`)
+	writeContract(t, &l, contract.ValidatorsFile, `{"demo": {"inputs": ["Demo"], "program": "`+script+`"}}`)
 	if err := l.Load(); err != nil {
 		t.Fatal(err)
 	}

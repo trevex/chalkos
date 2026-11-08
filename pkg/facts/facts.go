@@ -24,8 +24,6 @@ import (
 )
 
 const (
-	// DefaultPath is where an image declares its facts.
-	DefaultPath = "/etc/chalkos/facts.json"
 	// FallbackSecret is the input that gives a command the fallback secret delivered with the
 	// config, the only input there is.
 	FallbackSecret = "fallbackSecret"
@@ -47,24 +45,19 @@ type Definition struct {
 	Inputs     []string `json:"inputs,omitempty"`
 }
 
-// Read reads the facts an image declares; a missing file declares none.
+// Read reads the facts an image declares, refusing a fact chalkd could not load; a missing file
+// declares none.
 func Read(path string) (map[string]Definition, error) {
-	defs := map[string]Definition{}
-	if err := jsonfile.Read(path, &defs); err != nil {
-		return nil, err
-	}
-	return defs, nil
+	return jsonfile.ReadDefs(path, "fact", check)
 }
 
-// Parse reads the facts an image declares from the content of its facts.json, as an image that
-// does not run holds it.
-func Parse(data []byte) (map[string]Definition, error) {
-	defs := map[string]Definition{}
-	if err := json.Unmarshal(data, &defs); err != nil {
-		return nil, err
-	}
-	return defs, nil
+// Parse is Read of data, the content of the facts.json at path, as an image that does not run
+// holds it.
+func Parse(path string, data []byte) (map[string]Definition, error) {
+	return jsonfile.ParseDefs(path, data, "fact", check)
 }
+
+func check(_ string, d Definition) error { return d.Check() }
 
 // Check refuses a fact that is neither a file nor a program of the image's store with arguments,
 // that takes inputs a file does not, or keeps or hashes fields a command does not.

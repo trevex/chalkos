@@ -41,6 +41,7 @@ import (
 	routerplugin "github.com/trevex/chalkos/pkg/chalkd/layers/router"
 	"github.com/trevex/chalkos/pkg/client"
 	"github.com/trevex/chalkos/pkg/config/slot"
+	"github.com/trevex/chalkos/pkg/contract"
 	"github.com/trevex/chalkos/pkg/effects"
 	"github.com/trevex/chalkos/pkg/facts"
 	"github.com/trevex/chalkos/pkg/imagecheck"
@@ -49,6 +50,7 @@ import (
 	"github.com/trevex/chalkos/pkg/nodeconfig"
 	"github.com/trevex/chalkos/pkg/outputs"
 	"github.com/trevex/chalkos/pkg/pki"
+	"github.com/trevex/chalkos/pkg/rules"
 	"github.com/trevex/chalkos/pkg/storage/storagetest"
 	"github.com/trevex/chalkos/pkg/tool/tooltest"
 	"github.com/trevex/chalkos/pkg/upgrade"
@@ -120,24 +122,18 @@ func newTestServer(t *testing.T, mode nodev1.Mode, disks ...storagetest.Disk) (*
 			ESP:             filepath.Join(root, "esp"),
 			Cmdline:         filepath.Join(root, "cmdline"),
 			FailedBoot:      filepath.Join(root, "var", "failed-boot"),
-			Facts:           filepath.Join(root, "facts.json"),
-			Diagnostics:     filepath.Join(root, "diagnostics.json"),
 			EffectsBaseline: filepath.Join(root, "run", "chalkd", "effects-baseline.json"),
 		},
 		Run:  r,
 		Host: h,
 		Loader: nodeconfig.Loader{
 			RunDir:          filepath.Join(root, "run", "chalkos"),
-			Services:        filepath.Join(root, "services.json"),
-			Effects:         filepath.Join(root, "effects.json"),
-			Outputs:         filepath.Join(root, "outputs.json"),
-			Validators:      filepath.Join(root, "validators.json"),
 			Render:          outputs.Renderer{Root: filepath.Join(root, "run", "chalkos", "outputs"), Run: outputs.Direct{}},
 			NodeCertificate: filepath.Join(root, "state", "chalkd", NodeCertificateFile),
 			Slots:           filepath.Join(root, "state", "config"),
 			Cmdline:         filepath.Join(root, "cmdline"),
-			Schemas:         filepath.Join(root, "schemas"),
 			SetHostname:     func(string) error { return nil },
+			Contract:        &contract.Contract{Dir: filepath.Join(root, "etc")},
 		},
 		InPlace:   func(context.Context, install.Request, []byte) error { return errors.New("no install expected") },
 		FromParts: func(context.Context, install.PartsRequest) error { return errors.New("no install expected") },
@@ -154,7 +150,7 @@ func newTestServer(t *testing.T, mode nodev1.Mode, disks ...storagetest.Disk) (*
 	write(t, s.Paths.MountInfo, "30 1 0:27 / / rw - tmpfs tmpfs rw\n")
 	write(t, s.Paths.Cmdline, "init=/x usrhash="+runningRoot+"\n")
 	write(t, s.Paths.OSRelease, "IMAGE_ID=chalkos\nIMAGE_VERSION=\"\"\nCHALKOS_VARIANT=worker\nCHALKOS_PLATFORM=metal\n")
-	writeSchemas(t, s.Loader.Schemas)
+	writeSchemas(t, s)
 	s.Facts = storageFacts{s}
 	// An image that does not run checks its config with s's own code, in the test's process.
 	s.CheckImage = imagecheck.Local{Check: s.Check}
@@ -191,7 +187,7 @@ func withPlugins(t *testing.T, s *Server, l layers.Set, plugins ...layer.Plugin)
 // the layer has none; addLayerEffects adds it once s has the layer.
 func writeEffects(t *testing.T, s *Server, extra string) {
 	t.Helper()
-	writeMerged(t, s.Loader.Effects, "../../test/fixtures/kinds/effects.json", extra, func(raw json.RawMessage) bool {
+	writeMerged(t, s, contract.EffectsFile, "../../test/fixtures/kinds/effects.json", extra, func(raw json.RawMessage) bool {
 		return ofActiveLayer(t, s, raw)
 	})
 }
@@ -204,7 +200,7 @@ func addLayerEffects(t *testing.T, s *Server) {
 	if err := json.Unmarshal([]byte(readFile(t, "../../test/fixtures/kinds/effects.json")), &fixture); err != nil {
 		t.Fatal(err)
 	}
-	if err := json.Unmarshal([]byte(readFile(t, s.Loader.Effects)), &declared); err != nil {
+	if err := json.Unmarshal([]byte(readFile(t, contractFile(s, contract.EffectsFile))), &declared); err != nil {
 		t.Fatal(err)
 	}
 	for name, raw := range fixture {
@@ -216,7 +212,7 @@ func addLayerEffects(t *testing.T, s *Server) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	write(t, s.Loader.Effects, string(data))
+	writeContract(t, s, contract.EffectsFile, string(data))
 }
 
 // ofActiveLayer tells whether the effect raw runs no layer action or one of a layer s's image
@@ -238,12 +234,12 @@ func ofActiveLayer(t *testing.T, s *Server, raw json.RawMessage) bool {
 // of grants by unit, at the test server's path.
 func writeServices(t *testing.T, s *Server, extra string) {
 	t.Helper()
-	writeMerged(t, s.Loader.Services, "../../test/fixtures/kinds/services.json", extra, nil)
+	writeMerged(t, s, contract.ServicesFile, "../../test/fixtures/kinds/services.json", extra, nil)
 }
 
-// writeMerged writes the JSON object of the fixture with the keys of extra added to path; with
-// keep, only the fixture's values keep holds for.
-func writeMerged(t *testing.T, path, fixture, extra string, keep func(json.RawMessage) bool) {
+// writeMerged writes the JSON object of the fixture with the keys of extra added as the file name
+// of s's contract; with keep, only the fixture's values keep holds for.
+func writeMerged(t *testing.T, s *Server, name, fixture, extra string, keep func(json.RawMessage) bool) {
 	t.Helper()
 	var base, more map[string]json.RawMessage
 	if err := json.Unmarshal([]byte(readFile(t, fixture)), &base); err != nil {
@@ -260,15 +256,41 @@ func writeMerged(t *testing.T, path, fixture, extra string, keep func(json.RawMe
 	if err != nil {
 		t.Fatal(err)
 	}
-	write(t, path, string(data))
+	writeContract(t, s, name, string(data))
 }
+
+// contractFile is the path of the file name of the test server's contract.
+func contractFile(s *Server, name string) string {
+	return filepath.Join(s.Loader.Contract.Dir, name)
+}
+
+// writeContract writes the file name of the test server's contract and loads the contract again,
+// as chalkd loads the running image's as it starts.
+func writeContract(t *testing.T, s *Server, name, content string) {
+	t.Helper()
+	write(t, contractFile(s, name), content)
+	reloadContract(t, s)
+}
+
+// reloadContract loads the test server's contract again from its directory.
+func reloadContract(t *testing.T, s *Server) {
+	t.Helper()
+	c, err := contract.Load(s.Loader.Contract.Dir, contract.RenderRoot(s.Loader.Render.Root))
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.Loader.Contract = c
+}
+
+// storageCommand is chalkos-storage as the test image's facts run it, from the image's store.
+const storageCommand = "/nix/store/x-chalkos-storage/bin/chalkos-storage"
 
 // storageFacts runs the commands of the storage facts in the test, as chalkos-storage facts would,
 // against the test server's disks and with its runner.
 type storageFacts struct{ s *Server }
 
 func (f storageFacts) Run(ctx context.Context, argv []string, stdin []byte, _ int) ([]byte, error) {
-	if len(argv) != 3 || argv[0] != "chalkos-storage" || argv[1] != "facts" {
+	if len(argv) != 3 || argv[0] != storageCommand || argv[1] != "facts" {
 		return nil, fmt.Errorf("the test runs no command %v", argv)
 	}
 	return f.s.storage().Facts(ctx, argv[2], stdin)
@@ -282,8 +304,8 @@ func writeFacts(t *testing.T, s *Server, cluster string) {
 	defined := map[string]facts.Definition{
 		"share":    {File: filepath.Join(s.Paths.StateDir, "kubernetes", "share.json"), Fields: []string{"kind"}, HashOthers: true},
 		"recorded": {File: filepath.Join(s.Paths.StateDir, "storage", "storage.json")},
-		"disks":    {Command: "chalkos-storage facts disks"},
-		"fallback": {Command: "chalkos-storage facts fallback", Inputs: []string{facts.FallbackSecret}},
+		"disks":    {Command: storageCommand + " facts disks"},
+		"fallback": {Command: storageCommand + " facts fallback", Inputs: []string{facts.FallbackSecret}},
 	}
 	if cluster != "" {
 		defined["cluster"] = facts.Definition{File: cluster}
@@ -292,7 +314,7 @@ func writeFacts(t *testing.T, s *Server, cluster string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	write(t, s.Paths.Facts, string(defs))
+	writeContract(t, s, contract.FactsFile, string(defs))
 }
 
 // runningRoot is the root hash of the store the test server's node runs, as its kernel command
@@ -1043,4 +1065,14 @@ func TestErrorCodes(t *testing.T) {
 			}
 		}
 	}
+}
+
+// mustRules are the compiled change rules of c.
+func mustRules(t *testing.T, c *contract.Contract) *rules.Set {
+	t.Helper()
+	set, err := c.Rules()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return set
 }

@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/trevex/chalkos/pkg/config/slot"
+	imagecontract "github.com/trevex/chalkos/pkg/contract"
 	"github.com/trevex/chalkos/pkg/storage"
 )
 
@@ -71,7 +72,7 @@ func TestApplyConfigWarnsOfRulesThatFail(t *testing.T) {
 	ta := newTestApp(t)
 	s, r := installedNode(t, ta, []byte(`{}`))
 	var effects map[string]any
-	raw, err := os.ReadFile(s.Loader.Effects)
+	raw, err := os.ReadFile(filepath.Join(contractDir(t, s), imagecontract.EffectsFile))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -80,7 +81,7 @@ func TestApplyConfigWarnsOfRulesThatFail(t *testing.T) {
 	}
 	effects["report"] = map[string]any{"when": `config["chalkos.dev/v1alpha1"].Cluster.missing.spec.endpoint == ""`, "restart": []string{"report.service"}}
 	data, _ := json.Marshal(effects)
-	writeFile(t, s.Loader.Effects, string(data))
+	writeContract(t, s, imagecontract.EffectsFile, string(data))
 	addr := ta.startNode(t, s)
 	if err := ta.run(context.Background(), ta.args([]string{"apply-config", "n1"}, addr)); err != nil {
 		t.Fatal(err)
@@ -209,15 +210,17 @@ func TestApplyConfigToAnImageOfAnotherVariant(t *testing.T) {
 func TestApplyConfigStopsOnAFailingCheck(t *testing.T) {
 	ta := newTestApp(t)
 	s, r := installedNode(t, ta, []byte(`{"hostname": "old"}`))
-	s.Loader.Schemas = filepath.Join(t.TempDir(), "schemas")
-	entries, err := os.ReadDir(fixtureSchemas[0])
+	entries, err := os.ReadDir(fixtureSchemas[1])
 	if err != nil {
 		t.Fatal(err)
 	}
+	dir := contractDir(t, s)
 	for _, e := range entries {
-		data, _ := os.ReadFile(filepath.Join(fixtureSchemas[0], e.Name()))
-		writeFile(t, filepath.Join(s.Loader.Schemas, e.Name()), string(data))
+		if err := os.Remove(filepath.Join(dir, imagecontract.SchemasDir, e.Name())); err != nil {
+			t.Fatal(err)
+		}
 	}
+	loadContract(t, s, dir)
 	addr := ta.startNode(t, s)
 	err = ta.run(context.Background(), ta.args([]string{"apply-config", "n1"}, addr))
 	if err == nil || !strings.Contains(err.Error(), "the config of n1") {

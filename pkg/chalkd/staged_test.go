@@ -23,7 +23,6 @@ import (
 	"github.com/trevex/chalkos/pkg/config/slot"
 	"github.com/trevex/chalkos/pkg/identity"
 	"github.com/trevex/chalkos/pkg/pki"
-	"github.com/trevex/chalkos/pkg/schema"
 	"github.com/trevex/chalkos/pkg/storage"
 	"github.com/trevex/chalkos/pkg/tool/tooltest"
 	"github.com/trevex/chalkos/pkg/upgrade"
@@ -355,10 +354,7 @@ func TestApplyConfigNamesAStagedSlotItCouldNotWrite(t *testing.T) {
 func TestStagedSlotOfItsOwnVolumeIsWrittenAfterIt(t *testing.T) {
 	s, r := stagedServer(t, fixtureSchemas(t))
 	r.Rules = volumeRules(s)
-	schemas, err := schema.LoadSchemas(s.Loader.Schemas)
-	if err != nil {
-		t.Fatal(err)
-	}
+	schemas := s.Loader.Contract.Schemas
 	next, err := configure("n1", extraConfig("ext4"), schemas, config.Target{Platform: "metal"})
 	if err != nil {
 		t.Fatal(err)
@@ -418,10 +414,7 @@ func TestStagedStorageChangeFailingPartWay(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			s, r := stagedServer(t, fixtureSchemas(t))
 			r.Rules = append([]tooltest.Rule{{Prefix: tc.fail, Err: errors.New("exit status 1")}}, volumeRules(s)...)
-			schemas, err := schema.LoadSchemas(s.Loader.Schemas)
-			if err != nil {
-				t.Fatal(err)
-			}
+			schemas := s.Loader.Contract.Schemas
 			next, err := configure("n1", extraConfig("ext4"), schemas, config.Target{Platform: "metal"})
 			if err != nil {
 				t.Fatal(err)

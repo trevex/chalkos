@@ -2,7 +2,6 @@ package chalkd
 
 import (
 	"context"
-	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -33,13 +32,6 @@ func TestContract(t *testing.T) {
 	var facts kubernetesv1.ImageFacts
 	if err := resp.Msg.LayerFacts[0].UnmarshalTo(&facts); err != nil || string(facts.ImageJson) != kubernetestest.Image {
 		t.Errorf("image.json = %q, %v", facts.ImageJson, err)
-	}
-	s.Loader.Schemas = filepath.Join(t.TempDir(), "missing")
-	if _, err := s.Contract(context.Background(), connect.NewRequest(&nodev1.ContractRequest{})); codeOf(err) != connect.CodeFailedPrecondition {
-		t.Errorf("an image without schemas: %v, want failed_precondition", err)
-	}
-	if _, _, err := s.runningTarget(); codeOf(err) != connect.CodeFailedPrecondition {
-		t.Errorf("translating for an image without schemas: %v, want failed_precondition", err)
 	}
 }
 

@@ -25,6 +25,7 @@ import (
 	routerplugin "github.com/trevex/chalkos/pkg/chalkd/layers/router"
 	"github.com/trevex/chalkos/pkg/clustersecrets"
 	"github.com/trevex/chalkos/pkg/config/slot"
+	imagecontract "github.com/trevex/chalkos/pkg/contract"
 	"github.com/trevex/chalkos/pkg/effects"
 	"github.com/trevex/chalkos/pkg/identity"
 	"github.com/trevex/chalkos/pkg/install"
@@ -192,10 +193,7 @@ func (ta *testApp) startNode(t *testing.T, s *chalkd.Server) string {
 		s.Paths.OSRelease = filepath.Join(t.TempDir(), "os-release")
 		writeFile(t, s.Paths.OSRelease, "IMAGE_ID=chalkos\nIMAGE_VERSION=\"\"\nCHALKOS_VARIANT=test\nCHALKOS_PLATFORM=metal\n")
 	}
-	if s.Loader.Schemas == "" {
-		s.Loader.Schemas = filepath.Join(t.TempDir(), "schemas")
-		copySchemas(t, s.Loader.Schemas)
-	}
+	contractDir(t, s)
 	// It boots the store of the root hash abab…, whose config slot an install in place writes.
 	if s.Paths.Cmdline == "" {
 		s.Paths.Cmdline = filepath.Join(t.TempDir(), "cmdline")
@@ -268,6 +266,40 @@ func copySchemas(t *testing.T, dir string) {
 	}
 }
 
+// contractDir is the directory of s's contract; a server without one gets the fixture schemas.
+func contractDir(t *testing.T, s *chalkd.Server) string {
+	t.Helper()
+	if s.Loader.Contract == nil {
+		dir := t.TempDir()
+		copySchemas(t, filepath.Join(dir, imagecontract.SchemasDir))
+		loadContract(t, s, dir)
+	}
+	return s.Loader.Contract.Dir
+}
+
+// writeContract writes the file name of s's contract and loads the contract again, as chalkd loads
+// the running image's as it starts.
+func writeContract(t *testing.T, s *chalkd.Server, name, content string) {
+	t.Helper()
+	dir := contractDir(t, s)
+	writeFile(t, filepath.Join(dir, name), content)
+	loadContract(t, s, dir)
+}
+
+// loadContract makes the contract of dir s's.
+func loadContract(t *testing.T, s *chalkd.Server, dir string) {
+	t.Helper()
+	var opts []imagecontract.Option
+	if s.Loader.Render.Root != "" {
+		opts = append(opts, imagecontract.RenderRoot(s.Loader.Render.Root))
+	}
+	c, err := imagecontract.Load(dir, opts...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.Loader.Contract = c
+}
+
 // clusterFile is the cluster file chalkd writes for a node of the kind.
 func clusterFile(kind string) string {
 	return `{"kind": "` + kind + `", "endpoint": "https://10.0.0.10:6443", "version": "1.37.1", "apiServerVersion": "1.37.1",
@@ -299,7 +331,6 @@ func installedNode(t *testing.T, ta *testApp, recorded []byte) (*chalkd.Server, 
 		RebootNode: func() {},
 	}
 	s.Loader.RunDir = filepath.Join(root, "run")
-	s.Loader.Effects = filepath.Join(root, "effects.json")
 	s.Loader.SetHostname = func(string) error { return nil }
 	// The node runs the image of the root hash abab…, whose slot holds the identity alone.
 	s.Loader.Slots = filepath.Join(root, "state", "config")
@@ -316,9 +347,8 @@ func installedNode(t *testing.T, ta *testApp, recorded []byte) (*chalkd.Server, 
 	section, _ := json.Marshal(ta.identity(t).Storage)
 	writeFile(t, filepath.Join(s.Paths.StateDir, "storage", "storage.json"), string(section))
 	// The storage rules compare the config with the section STATE records.
-	s.Paths.Facts = filepath.Join(root, "facts.json")
 	s.Paths.EffectsBaseline = filepath.Join(root, "run", "effects-baseline.json")
-	writeFile(t, s.Paths.Facts, `{"recorded": {"file": "`+filepath.Join(s.Paths.StateDir, "storage", "storage.json")+`"}}`)
+	writeContract(t, s, imagecontract.FactsFile, `{"recorded": {"file": "`+filepath.Join(s.Paths.StateDir, "storage", "storage.json")+`"}}`)
 	writeFile(t, s.Paths.MountInfo, "41 30 253:1 / /var rw - ext4 /dev/mapper/var rw\n")
 	withPlugins(t, s, layers.Of())
 	writeEffects(t, s)
@@ -348,7 +378,7 @@ func writeEffects(t *testing.T, s *chalkd.Server) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	writeFile(t, s.Loader.Effects, string(data))
+	writeContract(t, s, imagecontract.EffectsFile, string(data))
 }
 
 // withPlugins compiles the Kubernetes and router layers into s, on an image of the layers l: the

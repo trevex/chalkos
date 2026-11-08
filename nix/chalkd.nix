@@ -18,6 +18,7 @@ callPackage ./go-module.nix { } {
     ../pkg/clustersecrets
     ../pkg/command
     ../pkg/config
+    ../pkg/contract
     ../pkg/diagnostics
     ../pkg/dns
     ../pkg/effects

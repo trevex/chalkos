@@ -20,7 +20,7 @@ import (
 	"github.com/trevex/chalkos/pkg/atomicfile"
 	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/config/slot"
-	"github.com/trevex/chalkos/pkg/effects"
+	"github.com/trevex/chalkos/pkg/contract"
 	"github.com/trevex/chalkos/pkg/outputs"
 	"github.com/trevex/chalkos/pkg/pki"
 	"github.com/trevex/chalkos/pkg/schema"
@@ -34,8 +34,8 @@ type Layer interface {
 	WriteConfig(docs config.Documents) error
 }
 
-// Loader applies config slots. It holds where it reads the slots and the image's contracts, and
-// where it writes the identity, documents, credentials and outputs. Tests point the paths at
+// Loader applies config slots. It holds where it reads the slots, the running image's contract,
+// and where it writes the identity, documents, credentials and outputs. Tests point the paths at
 // temporary directories.
 type Loader struct {
 	// Slots is the directory of the node's config slots on STATE, one per image, and Cmdline the
@@ -43,36 +43,28 @@ type Loader struct {
 	Slots, Cmdline string
 	// RunDir receives node.json, config/ and credentials/.
 	RunDir string
-	// Services is the image's map of units to the config kinds they are granted, and Effects
-	// what its deliveries do to them.
-	Services, Effects string
-	// Schemas are the image's schemas, which tell the secretRef fields of its documents.
-	Schemas     string
+	// Contract is the running image's: its schemas, which tell the secretRef fields of its
+	// documents, the units it grants config kinds, its outputs, which Render renders below its
+	// root, and its validators, whose programs Render runs too.
+	Contract    *contract.Contract
 	SetHostname func(string) error
 	// Layers are the image's layers, each of which writes what it derives from the documents
 	// after them.
 	Layers []Layer
-	// Outputs is the image's outputs, which Render renders below its root, and Validators the
-	// image's validators, whose programs Render runs too. NodeCertificate is the node certificate
-	// on STATE, whose subject is the node's name, which renderers read.
-	Outputs         string
-	Validators      string
+	// Render runs the programs of the outputs and of the validators. NodeCertificate is the node
+	// certificate on STATE, whose subject is the node's name, which renderers read.
 	Render          outputs.Renderer
 	NodeCertificate string
 }
 
-// Default returns the Loader of the running node, with its real paths.
+// Default returns the Loader of the running node, with its real paths and without its contract,
+// which the caller loads from contract.DefaultDir.
 func Default() Loader {
 	return Loader{
 		RunDir:          "/run/chalkos",
-		Services:        "/etc/chalkos/services.json",
-		Effects:         "/etc/chalkos/effects.json",
 		Slots:           "/state/config",
 		Cmdline:         "/proc/cmdline",
-		Schemas:         "/etc/chalkos/schemas",
 		SetHostname:     func(name string) error { return syscall.Sethostname([]byte(name)) },
-		Outputs:         outputs.DefaultPath,
-		Validators:      outputs.ValidatorsPath,
 		Render:          outputs.Default(),
 		NodeCertificate: "/state/chalkd/node.pem",
 	}
@@ -154,29 +146,18 @@ func (l Loader) LoadConfig() error {
 // documents, an identity alone, gets empty directories, so its units load their credentials all
 // the same.
 func (l Loader) writeConfig(stored slot.Stored) error {
-	services, err := effects.ReadServices(l.Services)
-	if err != nil {
-		return err
-	}
 	// A unit of no kinds loads no credentials, so it gets no directory.
 	kinds := map[string][]string{}
-	for unit, c := range services {
+	for unit, c := range l.Contract.Services {
 		if len(c.Kinds) > 0 {
 			kinds[unit] = c.Kinds
 		}
 	}
-	found := len(stored.Documents) > 0
-	var schemas *schema.Schemas
-	if found {
-		if schemas, err = schema.LoadSchemas(l.Schemas); err != nil {
-			return fmt.Errorf("read the image's schemas: %w", err)
-		}
-	}
-	if err := slot.WriteRuntime(l.RunDir, stored.Documents, schemas, kinds); err != nil {
+	if err := slot.WriteRuntime(l.RunDir, stored.Documents, l.Contract.Schemas, kinds); err != nil {
 		return err
 	}
 	var docs config.Documents
-	if found {
+	if len(stored.Documents) > 0 {
 		docs = stored.Documents
 	}
 	var errs []error
@@ -206,55 +187,34 @@ func (l Loader) Apply(data []byte) error {
 // RenderOutputs renders and checks every output of the image from docs, a config set with its
 // defaults, for the node called name, and stages those that pass; schemas tell the secretRef
 // fields of docs, the image's own when nil. It changes nothing a service reads.
-func (l Loader) RenderOutputs(ctx context.Context, name string, docs config.Redacted, schemas *schema.Schemas) (*outputs.Staged, []outputs.Failure, error) {
-	defs, schemas, err := l.outputs(docs, schemas)
-	if err != nil {
-		return nil, nil, err
+func (l Loader) RenderOutputs(ctx context.Context, name string, docs config.Redacted, schemas *schema.Schemas) (*outputs.Staged, []outputs.Failure) {
+	if schemas == nil {
+		schemas = l.Contract.Schemas
 	}
-	staged, failures := l.Render.Render(ctx, defs, outputs.Input{Node: name, Documents: docs, Schemas: schemas})
-	return staged, failures, nil
+	return l.Render.Render(ctx, l.Contract.Outputs, outputs.Input{Node: name, Documents: docs, Schemas: schemas})
 }
 
 // Validate runs every validator of the image on docs, a config set with its defaults, for the
 // node called name, and returns the failures of those that refused it or did not run to their
 // end, as RenderOutputs returns the outputs'. It changes nothing a service reads.
 func (l Loader) Validate(ctx context.Context, name string, docs config.Redacted) ([]outputs.Failure, error) {
-	defs, err := outputs.ReadValidators(l.Validators)
-	if err != nil {
-		return nil, err
-	}
-	return l.Render.Validate(ctx, defs, outputs.Input{Node: name, Documents: docs})
+	return l.Render.Validate(ctx, l.Contract.Validators, outputs.Input{Node: name, Documents: docs})
 }
 
 // OutputStates are the states of the outputs the node serves now, which docs, the config they
 // were rendered from, references Secrets of; schemas are as for RenderOutputs.
 func (l Loader) OutputStates(docs config.Redacted, schemas *schema.Schemas) (map[string]outputs.State, error) {
-	defs, schemas, err := l.outputs(docs, schemas)
-	if err != nil {
-		return nil, err
+	if schemas == nil {
+		schemas = l.Contract.Schemas
 	}
 	states := map[string]outputs.State{}
-	for name, d := range defs {
+	for name, d := range l.Contract.Outputs {
+		var err error
 		if states[name], err = outputs.Live(d, outputs.Input{Documents: docs, Schemas: schemas}); err != nil {
 			return nil, fmt.Errorf("output %s: %w", name, err)
 		}
 	}
 	return states, nil
-}
-
-// outputs reads the image's outputs, and the image's schemas in place of nil ones when there are
-// outputs and documents to render them from.
-func (l Loader) outputs(docs config.Redacted, schemas *schema.Schemas) (map[string]outputs.Definition, *schema.Schemas, error) {
-	defs, err := outputs.Read(l.Outputs, l.Render.Root)
-	if err != nil {
-		return nil, nil, err
-	}
-	if schemas == nil && len(defs) > 0 && docs.Len() > 0 {
-		if schemas, err = schema.LoadSchemas(l.Schemas); err != nil {
-			return nil, nil, fmt.Errorf("read the image's schemas: %w", err)
-		}
-	}
-	return defs, schemas, nil
 }
 
 // renderAtBoot renders the outputs of the slot's documents and swaps in every one that passes,
@@ -264,21 +224,14 @@ func (l Loader) outputs(docs config.Redacted, schemas *schema.Schemas) (map[stri
 // fails its health check; the status names it. On an image with outputs, a node certificate that
 // cannot be read fails it as well, since the outputs render for the node it names.
 func (l Loader) renderAtBoot(docs []config.Document) error {
-	if l.Outputs == "" {
+	if len(l.Contract.Outputs) == 0 {
 		return nil
-	}
-	defs, err := outputs.Read(l.Outputs, l.Render.Root)
-	if err != nil || len(defs) == 0 {
-		return err
 	}
 	name, err := l.nodeName()
 	if err != nil {
 		return fmt.Errorf("the node's name for its outputs: %w", err)
 	}
-	staged, failures, err := l.RenderOutputs(context.Background(), name, config.Redact(docs), nil)
-	if err != nil {
-		return err
-	}
+	staged, failures := l.RenderOutputs(context.Background(), name, config.Redact(docs), nil)
 	defer staged.Discard()
 	errs := []error{staged.Swap()}
 	if len(failures) > 0 {

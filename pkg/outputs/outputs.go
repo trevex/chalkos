@@ -43,9 +43,8 @@ import (
 )
 
 const (
-	// DefaultPath is where an image declares its outputs, and DefaultRoot where a node renders
-	// them: each output's files below DefaultRoot/.rendered, linked from the output's dir.
-	DefaultPath = "/etc/chalkos/outputs.json"
+	// DefaultRoot is where a node renders the outputs: each output's files below
+	// DefaultRoot/.rendered, linked from the output's dir.
 	DefaultRoot = "/run/chalkos/outputs"
 	// MaxSize bounds the bytes of an output's files, which land on /run, a tmpfs.
 	MaxSize = 16 << 20

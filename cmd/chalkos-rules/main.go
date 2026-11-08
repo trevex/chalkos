@@ -19,13 +19,11 @@ import (
 
 	"github.com/trevex/chalkos/pkg/command"
 	"github.com/trevex/chalkos/pkg/config"
-	"github.com/trevex/chalkos/pkg/diagnostics"
+	"github.com/trevex/chalkos/pkg/contract"
 	"github.com/trevex/chalkos/pkg/effects"
-	"github.com/trevex/chalkos/pkg/facts"
 	"github.com/trevex/chalkos/pkg/jsonfile"
 	"github.com/trevex/chalkos/pkg/outputs"
 	"github.com/trevex/chalkos/pkg/refusals"
-	"github.com/trevex/chalkos/pkg/rules"
 	"github.com/trevex/chalkos/pkg/schema"
 )
 
@@ -53,26 +51,7 @@ func main() {
 }
 
 func check(image string, out io.Writer) error {
-	s, err := schema.LoadSchemas(filepath.Join(image, "schemas"))
-	if err != nil {
-		return err
-	}
-	defs, err := facts.Read(filepath.Join(image, "facts.json"))
-	if err != nil {
-		return err
-	}
-	effectDefs, err := effects.Read(filepath.Join(image, "effects.json"))
-	if err != nil {
-		return err
-	}
-	outs, err := outputs.Read(filepath.Join(image, "outputs.json"), outputs.DefaultRoot)
-	if err != nil {
-		return err
-	}
-	if _, err := diagnostics.Read(filepath.Join(image, "diagnostics.json")); err != nil {
-		return err
-	}
-	vals, err := outputs.ReadValidators(filepath.Join(image, "validators.json"))
+	c, err := contract.Load(image)
 	if err != nil {
 		return err
 	}
@@ -80,16 +59,8 @@ func check(image string, out io.Writer) error {
 	if err := jsonfile.Read(filepath.Join(image, "examples.json"), &ex); err != nil {
 		return err
 	}
+	s, defs := c.Schemas, c.Facts
 	var errs []error
-	for _, name := range slices.Sorted(maps.Keys(defs)) {
-		if err := defs[name].Check(); err != nil {
-			errs = append(errs, fmt.Errorf("fact %s: %w", name, err))
-		}
-	}
-	set, err := rules.Compile(s)
-	if err != nil {
-		errs = append(errs, err)
-	}
 	read := map[string]bool{}
 	reads := func(where, rule string, names []string) {
 		for _, f := range names {
@@ -99,37 +70,38 @@ func check(image string, out io.Writer) error {
 			read[f] = true
 		}
 	}
-	if set != nil {
+	set, err := c.Rules()
+	if err != nil {
+		errs = append(errs, err)
+	} else {
 		for _, p := range set.Programs {
 			reads(p.Where(), p.Rule.Rule, p.Facts)
 		}
 	}
-	compiled := 0
-	for _, name := range slices.Sorted(maps.Keys(effectDefs)) {
-		e := effectDefs[name]
+	for _, name := range slices.Sorted(maps.Keys(c.Effects)) {
+		e := c.Effects[name]
 		for _, unit := range slices.Concat(e.Restart, e.Reload) {
 			if err := checkUnit(image, unit); err != nil {
 				errs = append(errs, fmt.Errorf("effect %s: %w", name, err))
 			}
 		}
-		if e.When == "" {
-			continue
-		}
-		p, err := rules.CompileEffect(name, e.When)
-		if err != nil {
-			errs = append(errs, err)
-			continue
-		}
-		reads(p.Where(), p.When, p.Facts)
-		compiled++
 	}
+	effectRules, err := c.EffectRules()
+	if err != nil {
+		errs = append(errs, err)
+	}
+	for _, p := range effectRules {
+		reads(p.Where(), p.When, p.Facts)
+	}
+	kinds := kindNamesOf(s)
+	outs, vals := c.Outputs, c.Validators
 	for _, name := range slices.Sorted(maps.Keys(outs)) {
-		errs = append(errs, checkPrograms(s, outputs.RoleOutput, name, outs[name].Inputs, map[string]string{"renderer": outs[name].Render, "check": outs[name].Check})...)
+		errs = append(errs, checkPrograms(kinds, outputs.RoleOutput, name, outs[name].Inputs, map[string]string{"renderer": outs[name].Render, "check": outs[name].Check})...)
 	}
 	for _, name := range slices.Sorted(maps.Keys(vals)) {
-		errs = append(errs, checkPrograms(s, outputs.RoleValidator, name, vals[name].Inputs, map[string]string{"program": vals[name].Program})...)
+		errs = append(errs, checkPrograms(kinds, outputs.RoleValidator, name, vals[name].Inputs, map[string]string{"program": vals[name].Program})...)
 	}
-	errs = append(errs, checkEffects(s, outs, effectDefs)...)
+	errs = append(errs, checkEffects(kinds, outs, c.Effects)...)
 	if len(errs) > 0 {
 		return errors.Join(errs...)
 	}
@@ -138,7 +110,7 @@ func check(image string, out io.Writer) error {
 	if len(exampleErrs) > 0 {
 		return errors.Join(exampleErrs...)
 	}
-	fmt.Fprintf(out, "%d rules and %d effect rules compile, reading the facts %s; %d outputs render %d examples; %d validators accept %d examples\n", len(set.Programs), compiled, declared(read), len(outs), ran[outputs.RoleOutput], len(vals), ran[outputs.RoleValidator])
+	fmt.Fprintf(out, "%d rules and %d effect rules compile, reading the facts %s; %d outputs render %d examples; %d validators accept %d examples\n", len(set.Programs), len(effectRules), declared(read), len(outs), ran[outputs.RoleOutput], len(vals), ran[outputs.RoleValidator])
 	return nil
 }
 
@@ -163,24 +135,27 @@ func declared[V any](m map[string]V) string {
 	return strings.Join(names, ", ")
 }
 
-// kindNames are the names of the kinds s declares, and those of the kinds no unit reads: Secret
-// and the kinds s declares withheld.
-func kindNames(s *schema.Schemas) (declared, withheld map[string]bool) {
-	declared, withheld = map[string]bool{}, map[string]bool{"Secret": true}
-	for _, k := range s.Kinds() {
-		declared[k.Kind] = true
-		if k.Withheld {
-			withheld[k.Kind] = true
+// kindNames are the names of the kinds an image's schemas declare, and those of the kinds no unit
+// reads: Secret and the kinds the schemas declare withheld.
+type kindNames struct {
+	declared, withheld map[string]bool
+}
+
+func kindNamesOf(s *schema.Schemas) kindNames {
+	k := kindNames{declared: map[string]bool{}, withheld: map[string]bool{"Secret": true}}
+	for _, kind := range s.Kinds() {
+		k.declared[kind.Kind] = true
+		if kind.Withheld {
+			k.withheld[kind.Kind] = true
 		}
 	}
-	return declared, withheld
+	return k
 }
 
 // checkPrograms refuses a definition of the role whose programs, by part, are not of the image's
 // store, or whose inputs are kinds the image does not declare or withholds from its programs;
-// outputs.Read and outputs.ReadValidators refused the rest already.
-func checkPrograms(s *schema.Schemas, role outputs.Role, name string, inputs []string, programs map[string]string) []error {
-	kinds, withheld := kindNames(s)
+// contract.Load refused the rest already.
+func checkPrograms(kinds kindNames, role outputs.Role, name string, inputs []string, programs map[string]string) []error {
 	var errs []error
 	for _, part := range slices.Sorted(maps.Keys(programs)) {
 		// InStore judges the program, the first word, alone: an argument such as /var/lib/ need
@@ -191,9 +166,9 @@ func checkPrograms(s *schema.Schemas, role outputs.Role, name string, inputs []s
 	}
 	for _, kind := range inputs {
 		switch {
-		case !kinds[kind]:
+		case !kinds.declared[kind]:
 			errs = append(errs, fmt.Errorf("%s %s: the image declares no kind %s", role, name, kind))
-		case withheld[kind]:
+		case kinds.withheld[kind]:
 			errs = append(errs, fmt.Errorf("%s %s: the image withholds %s documents from its programs", role, name, kind))
 		}
 	}
@@ -202,8 +177,7 @@ func checkPrograms(s *schema.Schemas, role outputs.Role, name string, inputs []s
 
 // checkEffects refuses an effect whose outputs name no output, or whose kinds are not the image's
 // or are withheld.
-func checkEffects(s *schema.Schemas, outs map[string]outputs.Definition, effectDefs map[string]effects.Definition) []error {
-	kinds, withheld := kindNames(s)
+func checkEffects(kinds kindNames, outs map[string]outputs.Definition, effectDefs map[string]effects.Definition) []error {
 	var errs []error
 	for _, name := range slices.Sorted(maps.Keys(effectDefs)) {
 		for _, o := range effectDefs[name].Outputs {
@@ -213,9 +187,9 @@ func checkEffects(s *schema.Schemas, outs map[string]outputs.Definition, effectD
 		}
 		for _, kind := range effectDefs[name].Kinds {
 			switch {
-			case withheld[kind]:
+			case kinds.withheld[kind]:
 				errs = append(errs, fmt.Errorf("effect %s: an effect does not fire on %s documents", name, kind))
-			case !kinds[kind]:
+			case !kinds.declared[kind]:
 				errs = append(errs, fmt.Errorf("effect %s: the image declares no kind %s", name, kind))
 			}
 		}
@@ -295,10 +269,7 @@ func exampleDocuments(s *schema.Schemas, file string) (config.Redacted, error) {
 		return config.Redacted{}, err
 	}
 	for i, doc := range docs {
-		if err := s.Validate(doc.Object); err != nil {
-			return config.Redacted{}, err
-		}
-		filled, err := s.Default(doc.Object)
+		filled, err := s.Fill(doc.Object)
 		if err != nil {
 			return config.Redacted{}, err
 		}

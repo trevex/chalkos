@@ -15,6 +15,7 @@ import (
 	"github.com/trevex/chalkos/pkg/chalkctl/layer"
 	"github.com/trevex/chalkos/pkg/client"
 	"github.com/trevex/chalkos/pkg/config"
+	imagecontract "github.com/trevex/chalkos/pkg/contract"
 	"github.com/trevex/chalkos/pkg/identity"
 	"github.com/trevex/chalkos/pkg/inventory"
 	"github.com/trevex/chalkos/pkg/outputs"
@@ -23,26 +24,23 @@ import (
 )
 
 // contract is what an image accepts as config: the platform it was built for, the schemas of its
-// kinds and its layers' facts, as files and payloads to send a node, and loaded.
+// kinds and their rules, and its layers' facts, as payloads to send a node, and loaded.
 type contract struct {
 	platform string
-	files    map[string][]byte
+	// image holds the schemas, whose files a node is sent, and their rules.
+	image *imagecontract.Contract
 	// facts are the image's layers' facts as the image holds them; none on an image whose layers
 	// have none.
-	facts   []*anypb.Any
-	schemas *schema.Schemas
+	facts []*anypb.Any
 	// target is what the facts give config's translation, without the platform.
 	target config.Target
 }
 
-func newContract(files map[string][]byte, facts []*anypb.Any) (contract, error) {
-	s, err := schema.LoadFiles(files)
-	if err != nil {
-		return contract{}, err
-	}
-	c := contract{files: files, facts: facts, schemas: s}
+func newContract(image *imagecontract.Contract, facts []*anypb.Any) (contract, error) {
+	c := contract{image: image, facts: facts}
 	for _, f := range facts {
 		claimed := false
+		var err error
 		for _, p := range compiled[layer.ImageFacts]() {
 			if claimed, err = p.Target(f, &c.target); claimed || err != nil {
 				break
@@ -79,26 +77,22 @@ func contractFacts(read func(name string) ([]byte, error)) ([]*anypb.Any, error)
 
 // imageContract reads the contract of an image directory: its schemas/ and its layers' facts.
 func imageContract(dir string) (contract, error) {
-	paths, err := filepath.Glob(filepath.Join(dir, "schemas", "*.json"))
+	paths, err := filepath.Glob(filepath.Join(dir, imagecontract.SchemasDir, "*.json"))
 	if err != nil {
 		return contract{}, err
 	}
 	if len(paths) == 0 {
 		return contract{}, fmt.Errorf("%s has no schemas/; build the image with this version of chalkos", dir)
 	}
-	files := map[string][]byte{}
-	for _, p := range paths {
-		data, err := os.ReadFile(p)
-		if err != nil {
-			return contract{}, err
-		}
-		files[filepath.Base(p)] = data
+	image, err := imagecontract.Load(dir)
+	if err != nil {
+		return contract{}, fmt.Errorf("%s: %w", dir, err)
 	}
 	facts, err := contractFacts(func(name string) ([]byte, error) { return os.ReadFile(filepath.Join(dir, name)) })
 	if err != nil {
 		return contract{}, err
 	}
-	c, err := newContract(files, facts)
+	c, err := newContract(image, facts)
 	if err != nil {
 		return contract{}, fmt.Errorf("%s: %w", dir, err)
 	}
@@ -111,7 +105,11 @@ func nodeContract(ctx context.Context, conn *client.Conn, name string) (contract
 	if err != nil {
 		return contract{}, fmt.Errorf("ask %s for the schemas of its image: %w", name, err)
 	}
-	c, err := newContract(resp.Msg.Schemas, resp.Msg.LayerFacts)
+	image, err := imagecontract.FromSchemas(resp.Msg.Schemas)
+	if err != nil {
+		return contract{}, fmt.Errorf("the schemas of the image %s runs: %w", name, err)
+	}
+	c, err := newContract(image, resp.Msg.LayerFacts)
 	if err != nil {
 		return contract{}, fmt.Errorf("the schemas of the image %s runs: %w", name, err)
 	}
@@ -159,7 +157,7 @@ func (c *cluster) deliveryFor(name string, ct contract) (delivery, error) {
 func checkNodeConfig(nc *inventory.NodeConfig, c contract) (delivery, error) {
 	t := c.target
 	t.Platform = c.platform
-	set, id, err := config.Translate(nc.Name, nc.Documents, c.schemas, t)
+	set, id, err := config.Translate(nc.Name, nc.Documents, c.image.Schemas, t)
 	if err != nil {
 		return delivery{}, err
 	}
@@ -173,7 +171,7 @@ func checkNodeConfig(nc *inventory.NodeConfig, c contract) (delivery, error) {
 	if err != nil {
 		return delivery{}, err
 	}
-	return delivery{Encoded: e, identity: id, documents: set.Documents(), unpinned: set.Documents().UnpinnedImages(c.schemas)}, nil
+	return delivery{Encoded: e, identity: id, documents: set.Documents(), unpinned: set.Documents().UnpinnedImages(c.image.Schemas)}, nil
 }
 
 // checkRules refuses next, a node's config with its defaults, when the change rules of the image
@@ -183,11 +181,11 @@ func checkNodeConfig(nc *inventory.NodeConfig, c contract) (delivery, error) {
 // kinds see no oldDocuments. Documents of old that the image does not accept compare with
 // nothing. node is the inventory's name of the node, which the rules read as node.name.
 func checkRules(c contract, next []config.Document, old config.Redacted, node string) error {
-	set, err := rules.Compile(c.schemas)
+	set, err := c.image.Rules()
 	if err != nil {
 		return fmt.Errorf("the image's rules: %w", err)
 	}
-	failures, err := set.Evaluate(rules.Input{Documents: config.Redact(next), Old: old.Defaulted(c.schemas), Node: node})
+	failures, err := set.Evaluate(rules.Input{Documents: config.Redact(next), Old: old.Defaulted(c.image.Schemas), Node: node})
 	if err != nil {
 		return err
 	}
@@ -205,7 +203,7 @@ func checkRules(c contract, next []config.Document, old config.Redacted, node st
 func checkValidators(c contract, node string, docs []config.Document) error {
 	var linked []outputs.LinkedValidator
 	for _, p := range compiled[layer.Validators]() {
-		linked = append(linked, p.Validators(c.schemas)...)
+		linked = append(linked, p.Validators(c.image.Schemas)...)
 	}
 	failures := outputs.RunLinked(linked, outputs.Input{Node: node, Documents: config.Redact(docs)})
 	if len(failures) > 0 {
@@ -252,7 +250,11 @@ func inventoryContract(nc *inventory.NodeConfig) (contract, error) {
 	if err != nil {
 		return contract{}, err
 	}
-	c, err := newContract(a.Contract.Schemas, facts)
+	image, err := imagecontract.FromSchemas(a.Contract.Schemas)
+	if err != nil {
+		return contract{}, fmt.Errorf("%s: %w", a.Reference, err)
+	}
+	c, err := newContract(image, facts)
 	if err != nil {
 		return contract{}, fmt.Errorf("%s: %w", a.Reference, err)
 	}

@@ -176,7 +176,7 @@ func (s *Server) deliverStored(ctx context.Context, stored slot.Stored, what str
 	if err != nil {
 		return nil, false, layer.Errorf(connect.CodeFailedPrecondition, "%s no longer suits the running image: %w", what, err)
 	}
-	d, err := s.planDelivery(ctx, applyRequest{identity: string(next.Identity), next: next, schemas: schemas, msg: &nodev1.ApplyConfigRequest{}})
+	d, err := s.planDelivery(ctx, applyRequest{identity: string(next.Identity), next: next, msg: &nodev1.ApplyConfigRequest{}})
 	if err != nil {
 		return nil, false, err
 	}

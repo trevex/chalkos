@@ -120,11 +120,7 @@ func TestSandboxOnANode(t *testing.T) {
 	if store == "" || system == "" {
 		t.Fatal("CHALKOS_IMAGECHECK_STORE and CHALKOS_IMAGECHECK_SYSTEM name an image's store and system")
 	}
-	data, err := os.ReadFile(filepath.Join(store, strings.TrimPrefix(system, "/nix/store/"), "etc/chalkos/facts.json"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defs, err := facts.Parse(data)
+	defs, err := facts.Read(filepath.Join(store, strings.TrimPrefix(system, "/nix/store/"), "etc/chalkos/facts.json"))
 	if err != nil {
 		t.Fatal(err)
 	}

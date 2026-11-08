@@ -21,11 +21,11 @@ import (
 	"github.com/trevex/chalkos/pkg/check"
 	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/config/slot"
+	"github.com/trevex/chalkos/pkg/contract"
 	"github.com/trevex/chalkos/pkg/identity"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
 	"github.com/trevex/chalkos/pkg/outputs"
 	"github.com/trevex/chalkos/pkg/rules"
-	"github.com/trevex/chalkos/pkg/schema"
 	"github.com/trevex/chalkos/pkg/storage"
 	"github.com/trevex/chalkos/pkg/tool"
 	"github.com/trevex/chalkos/pkg/tool/tooltest"
@@ -88,11 +88,13 @@ func fixtureSchemas(t *testing.T) map[string][]byte {
 	return files
 }
 
-func writeSchemas(t *testing.T, dir string) {
+// writeSchemas writes the fixture schemas into the test server's contract and loads it again.
+func writeSchemas(t *testing.T, s *Server) {
 	t.Helper()
 	for name, b := range fixtureSchemas(t) {
-		write(t, filepath.Join(dir, name), string(b))
+		write(t, filepath.Join(contractFile(s, contract.SchemasDir), name), string(b))
 	}
+	reloadContract(t, s)
 }
 
 func readFile(t *testing.T, path string) string {
@@ -125,7 +127,7 @@ func configServer(t *testing.T) (*Server, *tooltest.Runner) {
 	t.Helper()
 	s, r := newTestServer(t, normal, vda, vdb)
 	withNodeCertificate(t, s)
-	writeSchemas(t, s.Loader.Schemas)
+	writeSchemas(t, s)
 	writeServices(t, s, `{"demo": {"kinds": ["Demo"]}}`)
 	writeOutputs(t, s, map[string]outputs.Definition{
 		"demo":     demoOutput(t, s, `cat > "$OUT/demo.json"`, ""),
@@ -133,10 +135,7 @@ func configServer(t *testing.T) (*Server, *tooltest.Runner) {
 		"chrony":   chronyOutput(t, s),
 	})
 	writeEffects(t, s, `{"demo": {"outputs": ["demo"], "restart": ["demo.service"]}}`)
-	schemas, err := schema.LoadSchemas(s.Loader.Schemas)
-	if err != nil {
-		t.Fatal(err)
-	}
+	schemas := s.Loader.Contract.Schemas
 	c, err := configure("n1", baseConfig, schemas, config.Target{Platform: "metal"})
 	if err != nil {
 		t.Fatal(err)
@@ -295,7 +294,7 @@ const lateHookEffects = `{"demo": {"outputs": ["demo"], "restart": ["demo.servic
 // failed before it wrote the slot, whose outputs were rendered.
 func TestApplyConfigUndoesAFailedDelivery(t *testing.T) {
 	s, r := configServer(t)
-	write(t, s.Loader.Effects, lateHookEffects)
+	writeContract(t, s, contract.EffectsFile, lateHookEffects)
 	r.Rules = append([]tooltest.Rule{{Prefix: "hook", Err: errors.New("exit status 1"), Times: 1}}, r.Rules...)
 	if _, err := sendConfig(s, nextConfig); err == nil || !strings.Contains(err.Error(), "run hook") {
 		t.Fatalf("err = %v, want the hook's failure", err)
@@ -357,8 +356,8 @@ func TestApplyConfigUndoesADeliveryThatStoppedPartWay(t *testing.T) {
 // facts with that delivery's as well, and restarts namer.service again.
 func TestApplyConfigUndoesAFailedDeliveryOnItsFacts(t *testing.T) {
 	s, r := configServer(t)
-	write(t, s.Paths.Facts, `{"node": {"file": "`+filepath.Join(s.Loader.RunDir, "node.json")+`", "fields": ["hostname"]}}`)
-	write(t, s.Loader.Effects, `{"namer": {"when": "facts.node != oldFacts.node", "restart": ["namer.service"]},
+	writeContract(t, s, contract.FactsFile, `{"node": {"file": "`+filepath.Join(s.Loader.RunDir, "node.json")+`", "fields": ["hostname"]}}`)
+	writeContract(t, s, contract.EffectsFile, `{"namer": {"when": "facts.node != oldFacts.node", "restart": ["namer.service"]},
 	  "late": {"when": "facts.node != oldFacts.node", "run": "hook"}}`)
 	r.Rules = append([]tooltest.Rule{{Prefix: "hook", Err: errors.New("exit status 1"), Times: 1}}, r.Rules...)
 	if _, err := sendConfig(s, baseConfig+hostConfig("default", "h2")); err == nil || !strings.Contains(err.Error(), "run hook") {
@@ -405,8 +404,8 @@ func TestApplyConfigUndoesAFailedDeliveryOfTheSameConfig(t *testing.T) {
 	s, r := configServer(t)
 	lock := &factSequence{values: []string{`"a"`, `"b"`}}
 	s.Facts = lock
-	write(t, s.Paths.Facts, `{"lock": {"command": "lock"}}`)
-	write(t, s.Loader.Effects, `{"namer": {"when": "facts.lock != oldFacts.lock", "restart": ["namer.service"]},
+	writeContract(t, s, contract.FactsFile, `{"lock": {"command": "/nix/store/x-lock/bin/lock"}}`)
+	writeContract(t, s, contract.EffectsFile, `{"namer": {"when": "facts.lock != oldFacts.lock", "restart": ["namer.service"]},
 	  "late": {"when": "facts.lock != oldFacts.lock", "run": "hook"}}`)
 	r.Rules = append([]tooltest.Rule{{Prefix: "hook", Err: errors.New("exit status 1"), Times: 1}}, r.Rules...)
 	if _, err := sendConfig(s, baseConfig); err == nil || !strings.Contains(err.Error(), "run hook") {
@@ -434,7 +433,7 @@ func TestApplyConfigUndoesADeliveryFailedBeforeItsSlot(t *testing.T) {
 	}
 	s, _ := configServer(t)
 	addKubernetes(t, s, k8s.KindWorker, true)
-	write(t, s.Loader.Effects, `{"named": {"when": "config[\"demo.example.org/v1alpha1\"].Demo.one.spec.name != oldConfig[\"demo.example.org/v1alpha1\"].Demo.one.spec.name", "chalkd": "kubernetes:reload"}}`)
+	writeContract(t, s, contract.EffectsFile, `{"named": {"when": "config[\"demo.example.org/v1alpha1\"].Demo.one.spec.name != oldConfig[\"demo.example.org/v1alpha1\"].Demo.one.spec.name", "chalkd": "kubernetes:reload"}}`)
 	var acted []string
 	s.actedOnSelf = func(names []string) { acted = append(acted, names...) }
 	slots := filepath.Dir(slotOf(t, s))
@@ -580,7 +579,7 @@ func TestApplyConfigFailingRestartNamesTheUnits(t *testing.T) {
 // the restarted units. An effect fires on a changed output or on its rule.
 func TestApplyConfigReloadsThenRestarts(t *testing.T) {
 	s, r := configServer(t)
-	write(t, s.Loader.Effects, `{
+	writeContract(t, s, contract.EffectsFile, `{
 	  "demo": {"outputs": ["demo"], "restart": ["demo.service"]},
 	  "demo-reload": {"outputs": ["demo"], "reload": ["demo.service"], "run": "democtl reload"},
 	  "logger": {"outputs": ["demo"], "reload": ["logger.service"]},
@@ -676,7 +675,7 @@ func TestApplyConfigActsInUnitOrder(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			s, r := configServer(t)
-			write(t, s.Loader.Effects, effects)
+			writeContract(t, s, contract.EffectsFile, effects)
 			r.Rules = append(r.Rules, tooltest.Rule{Prefix: show, Out: tc.out, Err: tc.err})
 			if _, err := sendConfig(s, strings.Replace(baseConfig, "name: first", "name: second", 1)); err != nil {
 				t.Fatal(err)
@@ -694,7 +693,7 @@ func TestApplyConfigActsInUnitOrder(t *testing.T) {
 // start, after the reloads, in their order.
 func TestApplyConfigRestartsFailedInUnitOrder(t *testing.T) {
 	s, r := configServer(t)
-	write(t, s.Loader.Effects, `{
+	writeContract(t, s, contract.EffectsFile, `{
 	  "a": {"outputs": ["demo"], "reload": ["vrf.service", "resolvers.service"]},
 	  "b": {"outputs": ["demo"], "restart": ["late.service"], "start": true}
 	}`)
@@ -782,7 +781,7 @@ func TestApplyConfigReloadsTimeServers(t *testing.T) {
 func TestApplyConfigActsOnItselfInProcess(t *testing.T) {
 	s, r := configServer(t)
 	addKubernetes(t, s, k8s.KindWorker, true)
-	write(t, s.Loader.Effects, `{"cluster": {"when": "true", "chalkd": "kubernetes:restart"}, "share": {"when": "true", "chalkd": "kubernetes:reload"},
+	writeContract(t, s, contract.EffectsFile, `{"cluster": {"when": "true", "chalkd": "kubernetes:restart"}, "share": {"when": "true", "chalkd": "kubernetes:reload"},
 	  "again": {"when": "true", "chalkd": "kubernetes:reload"}}`)
 	var acted []string
 	s.actedOnSelf = func(names []string) { acted = append(acted, names...) }
@@ -839,7 +838,7 @@ func TestApplyConfigFailingReloadNamesTheUnit(t *testing.T) {
 // response says why as a warning, without the values the rule read.
 func TestApplyConfigRestartsOnARuleThatFails(t *testing.T) {
 	s, r := configServer(t)
-	write(t, s.Loader.Effects, `{"demo": {"when": "config[\"demo.example.org/v1alpha1\"].Demo.one.spec.token.missing == \"s3cret\"", "restart": ["demo.service"]}}`)
+	writeContract(t, s, contract.EffectsFile, `{"demo": {"when": "config[\"demo.example.org/v1alpha1\"].Demo.one.spec.token.missing == \"s3cret\"", "restart": ["demo.service"]}}`)
 	resp, err := sendConfig(s, baseConfig)
 	if err != nil {
 		t.Fatal(err)
@@ -862,8 +861,8 @@ func TestApplyConfigComparesFactsBeforeAndAfter(t *testing.T) {
 	if err := os.Remove(filepath.Join(s.Loader.RunDir, "node.json")); err != nil {
 		t.Fatal(err)
 	}
-	write(t, s.Paths.Facts, `{"node": {"file": "`+filepath.Join(s.Loader.RunDir, "node.json")+`", "fields": ["hostname"]}}`)
-	write(t, s.Loader.Effects, `{"namer": {"when": "facts.node != oldFacts.node", "restart": ["namer.service"]}}`)
+	writeContract(t, s, contract.FactsFile, `{"node": {"file": "`+filepath.Join(s.Loader.RunDir, "node.json")+`", "fields": ["hostname"]}}`)
+	writeContract(t, s, contract.EffectsFile, `{"namer": {"when": "facts.node != oldFacts.node", "restart": ["namer.service"]}}`)
 	for _, step := range []struct {
 		name, config string
 		restarts     bool
@@ -948,10 +947,7 @@ spec: {disk: {serial: chalk-extra}, format: ` + format + `, mountPoint: /srv/ext
 // defines it.
 func TestResetVolumeThroughConfig(t *testing.T) {
 	s, r := configServer(t)
-	schemas, err := schema.LoadSchemas(s.Loader.Schemas)
-	if err != nil {
-		t.Fatal(err)
-	}
+	schemas := s.Loader.Contract.Schemas
 	c, err := configure("n1", extraConfig("ext4"), schemas, config.Target{Platform: "metal"})
 	if err != nil {
 		t.Fatal(err)
@@ -1205,7 +1201,7 @@ func writeOutputs(t *testing.T, s *Server, defs map[string]outputs.Definition) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	write(t, s.Loader.Outputs, string(data))
+	writeContract(t, s, contract.OutputsFile, string(data))
 }
 
 // TestApplyConfigRestartsOnChangedOutputs restarts the units of the effects whose outputs
@@ -1288,19 +1284,8 @@ func TestApplyConfigRefusesAsTheChecker(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			s, _ := configServer(t)
 			writeOutputs(t, s, map[string]outputs.Definition{"demo": demoOutput(t, s, `exit 3`, "")})
-			schemas, err := schema.LoadSchemas(s.Loader.Schemas)
-			if err != nil {
-				t.Fatal(err)
-			}
-			set, err := rules.Compile(schemas)
-			if err != nil {
-				t.Fatal(err)
-			}
-			defs, err := outputs.Read(s.Loader.Outputs, s.Loader.Render.Root)
-			if err != nil {
-				t.Fatal(err)
-			}
-			img := check.Image{Schemas: schemas, Target: config.Target{Platform: "metal"}, Rules: set, Outputs: defs, Render: s.Loader.Render}
+			c := s.Loader.Contract
+			img := check.Image{Schemas: c.Schemas, Target: config.Target{Platform: "metal"}, Rules: mustRules(t, c), Outputs: c.Outputs, Render: s.Loader.Render}
 			docs, err := config.Parse(strings.NewReader(tc.next))
 			if err != nil {
 				t.Fatal(err)
@@ -1419,7 +1404,7 @@ func TestApplyConfigStartsFailedUnitsItReloads(t *testing.T) {
 	} {
 		t.Run(state, func(t *testing.T) {
 			s, r := configServer(t)
-			write(t, s.Loader.Effects, `{"demo": {"outputs": ["demo"], "reload": ["demo.service"]}}`)
+			writeContract(t, s, contract.EffectsFile, `{"demo": {"outputs": ["demo"], "reload": ["demo.service"]}}`)
 			r.Rules = append(r.Rules, tooltest.Rule{Prefix: "systemctl show --property=ActiveState --value demo.service", Out: state + "\n"})
 			resp, err := sendConfig(s, strings.Replace(baseConfig, "name: first", "name: second", 1))
 			if err != nil {
@@ -1445,7 +1430,7 @@ func TestApplyConfigStartsFailedUnitsItReloads(t *testing.T) {
 // whose rule does not compile fails the delivery before it changes anything.
 func TestApplyConfigRefusesEffectsThatDoNotCompile(t *testing.T) {
 	s, r := configServer(t)
-	write(t, s.Loader.Effects, `{"demo": {"when": "config ==", "restart": ["demo.service"]}}`)
+	writeContract(t, s, contract.EffectsFile, `{"demo": {"when": "config ==", "restart": ["demo.service"]}}`)
 	_, err := sendConfig(s, strings.Replace(baseConfig, "name: first", "name: second", 1))
 	if codeOf(err) != connect.CodeInternal || !strings.Contains(err.Error(), `the running image's effects: effect demo: rule "config =="`) {
 		t.Fatalf("err = %v", err)

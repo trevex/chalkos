@@ -17,6 +17,7 @@ import (
 	kubernetesplugin "github.com/trevex/chalkos/pkg/chalkd/layers/kubernetes"
 	"github.com/trevex/chalkos/pkg/chalkd/layers/kubernetes/kubernetestest"
 	"github.com/trevex/chalkos/pkg/client"
+	"github.com/trevex/chalkos/pkg/contract"
 	"github.com/trevex/chalkos/pkg/effects"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
 	knode "github.com/trevex/chalkos/pkg/kubernetes/node"
@@ -180,7 +181,7 @@ func TestStatusKubernetes(t *testing.T) {
 func prepareErrorHint(t *testing.T, s *Server) {
 	t.Helper()
 	var declared map[string]effects.Definition
-	if err := json.Unmarshal([]byte(readFile(t, s.Loader.Effects)), &declared); err != nil {
+	if err := json.Unmarshal([]byte(readFile(t, contractFile(s, contract.EffectsFile))), &declared); err != nil {
 		t.Fatal(err)
 	}
 	e, ok := declared["kubernetes"]
@@ -193,7 +194,7 @@ func prepareErrorHint(t *testing.T, s *Server) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	write(t, s.Loader.Effects, string(data))
+	writeContract(t, s, contract.EffectsFile, string(data))
 }
 
 // startKubernetes runs the loops of the Kubernetes layer of s, as chalkd starts them in normal

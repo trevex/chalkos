@@ -21,6 +21,7 @@ import (
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/chalkd/layers/kubernetes/kubernetestest"
 	"github.com/trevex/chalkos/pkg/config/slot"
+	"github.com/trevex/chalkos/pkg/contract"
 	"github.com/trevex/chalkos/pkg/identity"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
 	"github.com/trevex/chalkos/pkg/pki"
@@ -422,7 +423,7 @@ func imageWith(t *testing.T, s *Server, files map[string][]byte, facts string) d
 	for name, data := range files {
 		write(t, filepath.Join(system, "etc/chalkos/schemas", name), string(data))
 	}
-	declared, err := os.ReadFile(s.Paths.Facts)
+	declared, err := os.ReadFile(contractFile(s, contract.FactsFile))
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -14,9 +14,6 @@ import (
 	"github.com/trevex/chalkos/pkg/refusals"
 )
 
-// ValidatorsPath is where an image declares its validators.
-const ValidatorsPath = "/etc/chalkos/validators.json"
-
 // Validator is a validator as validators.json declares it.
 type Validator struct {
 	// Inputs are the kinds, by name, whose documents the program reads.

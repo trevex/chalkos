@@ -13,6 +13,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/trevex/chalkos/pkg/contract"
 	"github.com/trevex/chalkos/pkg/diagnostics"
 	"github.com/trevex/chalkos/pkg/effects"
 	"github.com/trevex/chalkos/pkg/facts"
@@ -235,28 +236,18 @@ func readBuiltinImage(dir string) (builtinImage, error) {
 			img.kinds = append(img.kinds, kindRules{k, ruled})
 		}
 	}
-	// The readers take a missing file for an image that declares none, but a rules image holds all
-	// five.
-	for _, name := range []string{"facts.json", "validators.json", "outputs.json", "effects.json", "diagnostics.json"} {
+	// contract.Load takes a missing file for an image that declares none, but a rules image holds
+	// all five.
+	for _, name := range []string{contract.FactsFile, contract.ValidatorsFile, contract.OutputsFile, contract.EffectsFile, contract.DiagnosticsFile} {
 		if _, err := os.Stat(filepath.Join(dir, name)); err != nil {
 			return img, err
 		}
 	}
-	if img.facts, err = facts.Read(filepath.Join(dir, "facts.json")); err != nil {
+	c, err := contract.Load(dir)
+	if err != nil {
 		return img, err
 	}
-	if img.validators, err = outputs.ReadValidators(filepath.Join(dir, "validators.json")); err != nil {
-		return img, err
-	}
-	if img.outputs, err = outputs.Read(filepath.Join(dir, "outputs.json"), outputs.DefaultRoot); err != nil {
-		return img, err
-	}
-	if img.effects, err = effects.Read(filepath.Join(dir, "effects.json")); err != nil {
-		return img, err
-	}
-	if img.diagnostics, err = diagnostics.Read(filepath.Join(dir, "diagnostics.json")); err != nil {
-		return img, err
-	}
+	img.facts, img.validators, img.outputs, img.effects, img.diagnostics = c.Facts, c.Validators, c.Outputs, c.Effects, c.Diagnostics
 	return img, nil
 }
 

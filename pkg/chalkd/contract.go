@@ -2,9 +2,6 @@ package chalkd
 
 import (
 	"context"
-	"os"
-	"path/filepath"
-	"strings"
 
 	"connectrpc.com/connect"
 
@@ -20,27 +17,14 @@ func (s *Server) Contract(_ context.Context, _ *connect.Request[nodev1.ContractR
 	if s.Installer {
 		return nil, layer.Errorf(connect.CodeFailedPrecondition, "an installer has no image to configure; take the schemas from the image you install")
 	}
-	entries, err := os.ReadDir(s.Loader.Schemas)
-	if err != nil {
-		return nil, layer.Errorf(connect.CodeFailedPrecondition, "read the image's schemas: %w", err)
-	}
 	release := readOSRelease(s.Paths.OSRelease)
 	resp := &nodev1.ContractResponse{
-		Schemas:  map[string][]byte{},
+		Schemas:  s.Loader.Contract.Schemas.Files(),
 		Variant:  release["CHALKOS_VARIANT"],
 		Platform: release["CHALKOS_PLATFORM"],
 		Layers:   s.Plugins.Layers().Names(),
 	}
-	for _, e := range entries {
-		if e.IsDir() || !strings.HasSuffix(e.Name(), ".json") {
-			continue
-		}
-		data, err := os.ReadFile(filepath.Join(s.Loader.Schemas, e.Name()))
-		if err != nil {
-			return nil, err
-		}
-		resp.Schemas[e.Name()] = data
-	}
+	var err error
 	if resp.LayerFacts, err = imageFacts(layer.Active[layer.ImageFacts](s.Plugins), layer.ImageFacts.RunningFacts); err != nil {
 		return nil, err
 	}

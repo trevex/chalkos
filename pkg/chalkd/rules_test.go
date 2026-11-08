@@ -12,6 +12,7 @@ import (
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/config"
+	"github.com/trevex/chalkos/pkg/contract"
 	"github.com/trevex/chalkos/pkg/install"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
 )
@@ -44,7 +45,7 @@ func TestCommandFactsReadSecretsHashed(t *testing.T) {
 	s, _ := configServer(t)
 	rec := &stdinRecorder{}
 	s.Facts = rec
-	write(t, s.Paths.Facts, `{"probe": {"command": "probe"}}`)
+	writeContract(t, s, contract.FactsFile, `{"probe": {"command": "/nix/store/x-probe/bin/probe"}}`)
 	docs, err := config.Parse(strings.NewReader(`apiVersion: kubernetes.chalkos.dev/v1alpha1
 kind: Addon
 metadata: {name: a}
@@ -60,10 +61,7 @@ spec: {data: {token: plain-secret}}
 	if err != nil {
 		t.Fatal(err)
 	}
-	f, err := s.factsFor(context.Background(), config.Redact(docs), config.Redact(docs), "")
-	if err != nil {
-		t.Fatal(err)
-	}
+	f := s.factsFor(context.Background(), config.Redact(docs), config.Redact(docs), "")
 	if _, err := f.Fact("probe"); err != nil {
 		t.Fatal(err)
 	}
@@ -76,10 +74,7 @@ spec: {data: {token: plain-secret}}
 // certificates and keys.
 func TestShareFactHoldsNoKeys(t *testing.T) {
 	s, _ := clusterServer(t, k8s.KindControlPlane)
-	f, err := s.factsFor(context.Background(), config.Redacted{}, config.Redacted{}, "")
-	if err != nil {
-		t.Fatal(err)
-	}
+	f := s.factsFor(context.Background(), config.Redacted{}, config.Redacted{}, "")
 	v, err := f.Fact("share")
 	if err != nil {
 		t.Fatal(err)
@@ -113,12 +108,12 @@ func withBrokenRule(t *testing.T, raw []byte) []byte {
 // Rules of the running image that do not compile are the node's failure, not the request's.
 func TestApplyConfigRunningRulesThatDoNotCompile(t *testing.T) {
 	s, _ := configServer(t)
-	path := filepath.Join(s.Loader.Schemas, "storage.chalkos.dev_v1alpha1_SystemDisk.json")
-	raw, err := os.ReadFile(path)
+	name := filepath.Join(contract.SchemasDir, "storage.chalkos.dev_v1alpha1_SystemDisk.json")
+	raw, err := os.ReadFile(contractFile(s, name))
 	if err != nil {
 		t.Fatal(err)
 	}
-	write(t, path, string(withBrokenRule(t, raw)))
+	writeContract(t, s, name, string(withBrokenRule(t, raw)))
 	_, err = sendConfig(s, baseConfig)
 	if codeOf(err) != connect.CodeInternal || !strings.Contains(err.Error(), "the running image's rules: SystemDisk: rule ") {
 		t.Errorf("err = %v", err)

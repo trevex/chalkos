@@ -29,7 +29,9 @@ YAML that Go reads. They meet in these places:
   delivery restarts or reloads in `effects.json`, the system region's repart definitions in
   `repart.d`
   and the OS CA certificate in `os-ca.crt` when `mkImages` has
-  an `osCA`; and the image's own description in `/etc/os-release`. chalkd reads them on the node.
+  an `osCA`; and the image's own description in `/etc/os-release`. `pkg/contract` loads the
+  schemas and the definition files as one contract: chalkd loads the running image's once as it
+  starts, and that of an image it checks config for from the image's own `/etc/chalkos`.
 - A node's config: the YAML
   config documents an inventory gives the node,
   which chalkctl reads (`pkg/inventory`), checks against the schemas of the image the inventory
@@ -100,6 +102,7 @@ Each directory of `cmd/` is a main that wires a package up; the logic lives in `
 | `command` | Runs a program of the image's store with bounded output, for command facts and outputs; a failure keeps standard error out of its error. It also follows a path's links within an image's store, and stops a transient unit or reads why one failed. |
 | `config` | Config documents: parsing, the rules of a set, defaults, the redacted form that programs read, the hash, and the translation into the identity the node applies, which runs the translators of the image's layers after the common part. |
 | `config/slot` | Keeps a node's config on STATE, a slot per image with its identity, and writes it for the node's units: the documents below `/run/chalkos/config` and the secrets the granted units load as credentials. |
+| `contract` | Loads an image's contract from one directory, `/etc/chalkos` on a node or the directory `chalkos-rules` checks: the schemas, the facts, effects, services, outputs, validators and diagnostics they declare, each definition checked as chalkd needs it. It compiles the change rules and the effects' rules once, when they are first asked for. |
 | `diagnostics` | Reads the image's `diagnostics.json`, checks a call's arguments against their parameters' types, builds the command line, and runs it as a transient systemd unit with a sandbox of its own. |
 | `dns` | The syntax of the DNS names and record data of a `Resolver`'s local zones, which the rules' `isDNSName()` and `isRecordData()` check and the output `unbound` guards with, so the two cannot drift apart. |
 | `effects` | Reads the image's `services.json`, the units granted config kinds, and `effects.json`, what a delivery does to those units and to chalkd, and refuses an effect chalkd could not carry out. Carries out the due effects on the units: the reloads, the commands and the restarts, in the units' order. |
@@ -115,7 +118,7 @@ Each directory of `cmd/` is a main that wires a package up; the logic lives in `
 | `internal/poll` | Checks a condition again and again until it passes, a timeout passes or the context ends, keeping the last check's error. |
 | `internal/strs` | Joins values into the lists of messages and flags: by their `String`, or names as prose, such as "a, b and c". |
 | `inventory` | Reads chalkctl's inventory: the cluster's nodes, the address chalkctl reaches each at, the image each runs and the config files each gets. It passes each node's documents through the filters its caller gives, which chalkctl takes from its layers, and names no layer. |
-| `jsonfile` | Reads a JSON file an image may leave out, such as `facts.json`, `effects.json` or `outputs.json`, and decodes JSON that must hold one value of known fields. |
+| `jsonfile` | Reads a JSON file an image may leave out, such as `facts.json`, `effects.json` or `outputs.json`, with each definition by name checked, and decodes JSON that must hold one value of known fields. |
 | `kubernetes` | The node's Kubernetes cluster as `kubernetes/translate` builds it from the config and the image's facts, its flags and address ranges, the node as the Kubernetes part of its identity (`NodeIdentity`) names it, the kinds of Kubernetes nodes (control plane and worker), and the control plane's ports and paths on a node. |
 | `kubernetes/addons` | Renders the objects chalkos applies to every cluster before its own manifests: RBAC for chalkos's identities, kube-proxy, flannel and CoreDNS. |
 | `kubernetes/apply` | Server-side apply of manifests and approval of kubelet serving certificates. |
@@ -139,7 +142,7 @@ Each directory of `cmd/` is a main that wires a package up; the logic lives in `
 | `router` | Reads a router's state: its BGP sessions and paths of each VRF from vtysh's JSON, its NAT64 instances, counters and pools from jool's CSV, the kernel's routes from netlink, and the filter of a `Routes` call. |
 | `router/derive` | The router's model of a node's config: the router kinds' documents and what the Network and VRF documents say together, such as each link's VRF, the .network units in networkd's order, the NAT64 instances and the tables of policy routing. The router's outputs render from it. It holds the checks of the validator router, `Validate`, which refuses what the outputs would apply otherwise than the documents say and reports every fault it finds, each once, the VRFs' links first and what reads them once those pass. `chalkos-render validate router` runs it, and chalkctl links it. It takes the standard library and the package `refusals` alone. |
 | `rules` | Compiles the change rules of an image's schemas, with chalkos's CEL functions, and evaluates them against a config, the config it replaces and the node's facts. |
-| `schema` | Reads an image's config contract: `metadata.json` and the JSON Schemas of its kinds, and validates documents against them. |
+| `schema` | Reads an image's `metadata.json` and the JSON Schemas of its kinds, checks documents against them and fills in their defaults. |
 | `secureboot` | Checks an EFI binary's Authenticode signature as Secure Boot firmware does, against db and dbx read from the firmware or against given certificates. |
 | `storage` | Storage sections, disk references and pins, repart definitions, and the changes a delivered section makes to the recorded one. |
 | `storage/gpt` | Reads and changes partition tables with sfdisk under the disk's lock, waiting a bounded time for it, and names the partition types of the system region. |

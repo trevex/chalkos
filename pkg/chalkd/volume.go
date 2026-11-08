@@ -16,7 +16,6 @@ import (
 	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/config/slot"
 	"github.com/trevex/chalkos/pkg/rules"
-	"github.com/trevex/chalkos/pkg/schema"
 	"github.com/trevex/chalkos/pkg/storage"
 	"github.com/trevex/chalkos/pkg/storage/node"
 	"github.com/trevex/chalkos/pkg/uki"
@@ -123,19 +122,18 @@ func (s *Server) ResetVolume(ctx context.Context, req *connect.Request[nodev1.Re
 	if err != nil {
 		return nil, err
 	}
-	if err := s.resetVolume(ctx, name, m.Volume, c, schemas, m.FallbackSecret); err != nil {
+	if err := s.resetVolume(ctx, name, m.Volume, c, m.FallbackSecret); err != nil {
 		return nil, err
 	}
 	return connect.NewResponse(&nodev1.ResetVolumeResponse{}), nil
 }
 
 // resetVolume wipes the volume name and creates it again as next, the config translated for the
-// node called node on the running image, whose schemas are given, defines it; the caller holds
-// s.mu. The image's storage rules decide what a reset carries out: once deleted, the volume is
-// created again like a new one, so they are checked against the recorded section without it, which
-// they must then accept whole. They check the disk the volume lives on and the fallback secret it
+// node called node on the running image, defines it; the caller holds s.mu. The image's storage
+// rules decide what a reset carries out: once deleted, the volume is created again like a new one,
+// so they are checked against the recorded section without it, which they must then accept whole. They check the disk the volume lives on and the fallback secret it
 // is enrolled with too.
-func (s *Server) resetVolume(ctx context.Context, node, name string, next slot.Stored, schemas *schema.Schemas, fallback string) error {
+func (s *Server) resetVolume(ctx context.Context, node, name string, next slot.Stored, fallback string) error {
 	d, err := s.parseIdentity(string(next.Identity))
 	if err != nil {
 		return err
@@ -165,7 +163,7 @@ func (s *Server) resetVolume(ctx context.Context, node, name string, next slot.S
 			without.Volumes[n] = vol
 		}
 	}
-	set, err := compileRunningRules(schemas)
+	set, err := s.runningRules()
 	if err != nil {
 		return err
 	}
@@ -174,10 +172,7 @@ func (s *Server) resetVolume(ctx context.Context, node, name string, next slot.S
 		return err
 	}
 	nextDocs, runningDocs := config.Redact(next.Documents), config.Redact(running.Documents)
-	f, err := s.factsFor(ctx, nextDocs, runningDocs, fallback)
-	if err != nil {
-		return err
-	}
+	f := s.factsFor(ctx, nextDocs, runningDocs, fallback)
 	f.Override("recorded", jsonValue(without))
 	failures, err := evaluate(set.Of(config.StorageAPI), node, nextDocs, runningDocs, f)
 	if err != nil {

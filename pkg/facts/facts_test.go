@@ -69,11 +69,16 @@ func TestRead(t *testing.T) {
 		t.Errorf("a missing file: %v, %v; want no facts", defs, err)
 	}
 	// The content of an image's facts.json reads the same, as from an image that does not run.
-	if parsed, err := Parse([]byte(`{"share": {"file": "/state/kubernetes/share.json"}, "disks": {"command": "/nix/store/x/bin/chalkos-storage facts disks", "inputs": ["fallbackSecret"]}}`)); err != nil || !reflect.DeepEqual(parsed, want) {
+	if parsed, err := Parse(path, []byte(`{"share": {"file": "/state/kubernetes/share.json"}, "disks": {"command": "/nix/store/x/bin/chalkos-storage facts disks", "inputs": ["fallbackSecret"]}}`)); err != nil || !reflect.DeepEqual(parsed, want) {
 		t.Errorf("Parse = %+v, %v", parsed, err)
 	}
-	if _, err := Parse([]byte(`[]`)); err == nil {
+	if _, err := Parse(path, []byte(`[]`)); err == nil {
 		t.Error("Parse of no object: no error")
+	}
+	// Each definition is checked as it is read.
+	write(t, path, `{"a": {"command": "probe"}, "b": {"file": "/x", "inputs": ["fallbackSecret"]}}`)
+	if _, err := Read(path); err == nil || !strings.Contains(err.Error(), path+": fact a: ") || !strings.Contains(err.Error(), path+": fact b: ") {
+		t.Errorf("Read of facts chalkd could not load: %v", err)
 	}
 }
 

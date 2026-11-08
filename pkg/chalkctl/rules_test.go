@@ -8,6 +8,7 @@ import (
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/config"
+	imagecontract "github.com/trevex/chalkos/pkg/contract"
 )
 
 // greetingSchema is a Greeting kind whose message is refused when longer than 12 characters, or
@@ -44,13 +45,23 @@ func greeting(message string) string {
 	return "apiVersion: greeting.example.org/v1alpha1\nkind: Greeting\nmetadata: {name: hello}\nspec: {message: " + message + "}\n"
 }
 
+// schemasContract is the contract of an image of the schema files and the layers' facts given.
+func schemasContract(t *testing.T, files map[string][]byte, facts []*anypb.Any) (contract, error) {
+	t.Helper()
+	image, err := imagecontract.FromSchemas(files)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return newContract(image, facts)
+}
+
 // A contract whose facts no layer chalkctl knows claims is refused.
 func TestNewContractRefusesUnknownFacts(t *testing.T) {
 	other, err := anypb.New(&nodev1.InfoRequest{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = newContract(map[string][]byte{"greeting.example.org_v1alpha1_Greeting.json": []byte(greetingSchema)}, []*anypb.Any{other})
+	_, err = schemasContract(t, map[string][]byte{"greeting.example.org_v1alpha1_Greeting.json": []byte(greetingSchema)}, []*anypb.Any{other})
 	if err == nil || !strings.Contains(err.Error(), "carries facts of type type.googleapis.com/chalkos.node.v1.InfoRequest, which this chalkctl does not know") {
 		t.Errorf("newContract = %v, want a refusal", err)
 	}
@@ -59,7 +70,7 @@ func TestNewContractRefusesUnknownFacts(t *testing.T) {
 // chalkctl checks the image's rules that read no facts: without the node's config the kind's,
 // and with it, as the node serves it, the field's that compare with it too.
 func TestCheckRules(t *testing.T) {
-	c, err := newContract(map[string][]byte{"greeting.example.org_v1alpha1_Greeting.json": []byte(greetingSchema)}, nil)
+	c, err := schemasContract(t, map[string][]byte{"greeting.example.org_v1alpha1_Greeting.json": []byte(greetingSchema)}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -80,7 +91,7 @@ func TestCheckRules(t *testing.T) {
 				old = config.Redact(greetings(t, tc.old))
 			}
 			next := greetings(t, tc.next)
-			filled, err := c.schemas.Default(next[0].Object)
+			filled, err := c.image.Schemas.Default(next[0].Object)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -118,7 +129,7 @@ func addon(token string) string {
 // A rule comparing an Addon with the node's, whose Kubernetes Secrets the node serves hashed,
 // sees both alike, as the node does.
 func TestCheckRulesHashesAddonSecrets(t *testing.T) {
-	c, err := newContract(map[string][]byte{"kubernetes.chalkos.dev_v1alpha1_Addon.json": []byte(addonSchema)}, nil)
+	c, err := schemasContract(t, map[string][]byte{"kubernetes.chalkos.dev_v1alpha1_Addon.json": []byte(addonSchema)}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

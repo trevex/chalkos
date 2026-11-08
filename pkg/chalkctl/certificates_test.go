@@ -15,6 +15,7 @@ import (
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/chalkd"
 	"github.com/trevex/chalkos/pkg/clustersecrets"
+	imagecontract "github.com/trevex/chalkos/pkg/contract"
 	"github.com/trevex/chalkos/pkg/kubernetes"
 	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
 	"github.com/trevex/chalkos/pkg/pki"
@@ -89,7 +90,7 @@ func TestNodeRenewWarnsOfRulesThatFail(t *testing.T) {
 	current, _ := json.Marshal(ta.identity(t))
 	s, _ := installedNode(t, ta, current)
 	var effects map[string]any
-	raw, err := os.ReadFile(s.Loader.Effects)
+	raw, err := os.ReadFile(filepath.Join(contractDir(t, s), imagecontract.EffectsFile))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -98,7 +99,7 @@ func TestNodeRenewWarnsOfRulesThatFail(t *testing.T) {
 	}
 	effects["report"] = map[string]any{"when": `config["chalkos.dev/v1alpha1"].Node.missing.spec.type == "worker"`, "restart": []string{"report.service"}}
 	data, _ := json.Marshal(effects)
-	writeFile(t, s.Loader.Effects, string(data))
+	writeContract(t, s, imagecontract.EffectsFile, string(data))
 	addr := ta.nodeWithCertificate(t, s, cert)
 	if err := ta.run(context.Background(), ta.args([]string{"node", "renew", "n1"}, addr)); err != nil {
 		t.Fatal(err)

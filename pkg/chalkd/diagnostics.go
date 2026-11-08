@@ -18,10 +18,7 @@ import (
 )
 
 func (s *Server) Diagnostics(ctx context.Context, _ *connect.Request[nodev1.DiagnosticsRequest]) (*connect.Response[nodev1.DiagnosticsResponse], error) {
-	defs, err := diagnostics.Read(s.Paths.Diagnostics)
-	if err != nil {
-		return nil, fmt.Errorf("read the image's diagnostics: %w", err)
-	}
+	defs := s.Loader.Contract.Diagnostics
 	resp := &nodev1.DiagnosticsResponse{}
 	for _, name := range slices.Sorted(maps.Keys(defs)) {
 		resp.Diagnostics = append(resp.Diagnostics, diagnosticOf(name, defs[name]))
@@ -51,11 +48,7 @@ func diagnosticOf(name string, d diagnostics.Definition) *nodev1.Diagnostic {
 
 func (s *Server) RunDiagnostic(ctx context.Context, req *connect.Request[nodev1.RunDiagnosticRequest], stream *connect.ServerStream[nodev1.RunDiagnosticResponse]) error {
 	name := req.Msg.Name
-	defs, err := diagnostics.Read(s.Paths.Diagnostics)
-	if err != nil {
-		return fmt.Errorf("read the image's diagnostics: %w", err)
-	}
-	d, ok := defs[name]
+	d, ok := s.Loader.Contract.Diagnostics[name]
 	if !ok {
 		return layer.Errorf(connect.CodeNotFound, "the image declares no diagnostic %q; chalkctl node diag lists those it does", name)
 	}

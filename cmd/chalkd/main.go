@@ -29,6 +29,7 @@ import (
 	"github.com/trevex/chalkos/pkg/atomicfile"
 	"github.com/trevex/chalkos/pkg/chalkd"
 	"github.com/trevex/chalkos/pkg/chalkd/layer"
+	"github.com/trevex/chalkos/pkg/contract"
 	"github.com/trevex/chalkos/pkg/install"
 	"github.com/trevex/chalkos/pkg/layers"
 	"github.com/trevex/chalkos/pkg/nodeconfig"
@@ -213,6 +214,9 @@ func loadConfig() error {
 		return err
 	}
 	loader := nodeconfig.Default()
+	if loader.Contract, err = contract.Load(contract.DefaultDir); err != nil {
+		return err
+	}
 	loader.Layers = layer.Active[nodeconfig.Layer](reg)
 	if err := chalkd.RestoreTrialAtBoot(node.Paths.StateDir, loader.Slots); err != nil {
 		log.Printf("end the open trial of a config: %v", err)
@@ -417,6 +421,10 @@ func serve() error {
 		}
 	}
 
+	// The running image's contract does not change while it runs.
+	if srv.Loader.Contract, err = contract.Load(contract.DefaultDir); err != nil {
+		return err
+	}
 	srv.RenewOnApplyConfig = renewOnApplyConfig(os.Getenv)
 	if srv.Plugins, err = registry(srv); err != nil {
 		return err
