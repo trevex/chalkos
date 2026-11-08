@@ -3,8 +3,9 @@
 # validator router. Every image carries it, so it is stripped and takes the standard library alone,
 # besides pkg/dns, which shares the resolver's DNS syntax with the rules, pkg/networkdschema, which
 # writes the networkd kinds' schemas whose names it reads, pkg/refusals, the format of the refusals
-# chalkd reads, and pkg/router/derive, the router's model of a node's config, which chalkctl links
-# for the validator router.
+# chalkd reads, pkg/router/derive, the router's model of a node's config, which chalkctl links
+# for the validator router, and pkg/router/units, the names of the per-VRF services' files, which
+# chalkd reads back.
 { callPackage }:
 callPackage ./go-module.nix { } {
   pname = "chalkos-render";
@@ -14,6 +15,7 @@ callPackage ./go-module.nix { } {
     ../pkg/networkdschema
     ../pkg/refusals
     ../pkg/router/derive
+    ../pkg/router/units
   ];
   ldflags = [
     "-s"

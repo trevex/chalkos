@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/trevex/chalkos/pkg/router/derive"
+	"github.com/trevex/chalkos/pkg/router/units"
 )
 
 // The output dhcp-relay: the config of dnsmasq's DHCP relay of each VRF whose links DHCPRelay
@@ -15,18 +16,6 @@ import (
 // cannot, with derive.Model.Relays: one VRF per relay, the router's address of each family the
 // servers have on each link, which the servers tell the link by, and that dnsmasq's sockets bind
 // beside Kea's. The set check has refused a link that two relays name.
-
-// relayFile is the file renderDHCPRelay writes for the default VRF's relay; a VRF's gets
-// dnsmasq-relay-<vrf>.conf.
-const relayFile = "dnsmasq-relay.conf"
-
-// relayFileOf is the config file of the relay of vrf.
-func relayFileOf(vrf string) string {
-	if vrf == derive.DefaultVRF {
-		return relayFile
-	}
-	return "dnsmasq-relay-" + vrf + ".conf"
-}
 
 // relayVRF is the part of a relay's config of one VRF: the links it relays on and its dhcp-relay
 // lines, each the router's address on a link and a server.
@@ -82,7 +71,7 @@ func renderDHCPRelay(in map[string]any, out string) error {
 		for _, l := range v.lines {
 			b.WriteString(l + "\n")
 		}
-		if err := writeFile(out, relayFileOf(vrf), []byte(b.String())); err != nil {
+		if err := writeFile(out, units.Relay.File(vrf), []byte(b.String())); err != nil {
 			return err
 		}
 	}
