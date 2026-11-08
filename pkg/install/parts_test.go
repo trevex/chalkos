@@ -465,10 +465,10 @@ func (l *partsLab) checkInstalled(img partsImage) {
 	data, verityUUID := storeslot.PartitionUUIDs(img.root)
 	want := []struct{ typ, label, uuid string }{
 		{gpt.TypeESP, "", ""},
-		{gpt.TypeUsrX86Verity, "store-verity_" + storeslot.LabelID(img.root), verityUUID},
-		{gpt.TypeUsrX86, "store_" + storeslot.LabelID(img.root), data},
-		{gpt.TypeUsrX86Verity, "_empty", ""},
-		{gpt.TypeUsrX86, "_empty", ""},
+		{x86.UsrVerity, "store-verity_" + storeslot.LabelID(img.root), verityUUID},
+		{x86.Usr, "store_" + storeslot.LabelID(img.root), data},
+		{x86.UsrVerity, "_empty", ""},
+		{x86.Usr, "_empty", ""},
 		{stateType, "state", ""},
 		{varType, "var", ""},
 	}

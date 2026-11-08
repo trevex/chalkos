@@ -12,11 +12,11 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/trevex/chalkos/pkg/arch"
 	"github.com/trevex/chalkos/pkg/esp"
 	"github.com/trevex/chalkos/pkg/storage"
 	"github.com/trevex/chalkos/pkg/storage/gpt"
 	"github.com/trevex/chalkos/pkg/storage/hostops"
-	"github.com/trevex/chalkos/pkg/uki"
 	"github.com/trevex/chalkos/pkg/upgrade"
 )
 
@@ -227,9 +227,9 @@ func (i *Installer) randomizeESP(ctx context.Context, disk storage.BlockDisk) er
 // architecture, as the UEFI boot entry names it; empty for an architecture chalkos builds no
 // images for.
 func (i *Installer) loader() string {
-	name := uki.BootLoaderName(i.Architecture)
-	if name == "" {
+	a, ok := arch.ByName(i.Architecture)
+	if !ok {
 		return ""
 	}
-	return `\EFI\BOOT\` + name
+	return `\EFI\BOOT\` + a.BootLoader
 }

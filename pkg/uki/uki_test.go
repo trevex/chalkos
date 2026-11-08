@@ -64,16 +64,6 @@ func TestArchitecture(t *testing.T) {
 	if _, err := Architecture(strings.NewReader("MZ")); err == nil {
 		t.Error("took a file that is no PE image")
 	}
-	for goarch, want := range map[string]string{"amd64": "x86-64", "arm64": "arm64", "riscv64": ""} {
-		if got := GoArchitecture(goarch); got != want {
-			t.Errorf("GoArchitecture(%s) = %q, want %q", goarch, got, want)
-		}
-	}
-	for arch, want := range map[string]string{"x86-64": "BOOTX64.EFI", "arm64": "BOOTAA64.EFI", "amd64": ""} {
-		if got := BootLoaderName(arch); got != want {
-			t.Errorf("BootLoaderName(%s) = %q, want %q", arch, got, want)
-		}
-	}
 }
 
 func TestCheckImageVersion(t *testing.T) {

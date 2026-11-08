@@ -1,5 +1,5 @@
 // Package gpt reads and changes GUID partition tables with sfdisk, under the disk's lock, and
-// names the partition types of chalkos's system region.
+// names the ESP's partition type.
 package gpt
 
 import (
@@ -10,28 +10,9 @@ import (
 	"strings"
 )
 
-// GPT partition types of the system region: the ESP, and the data and hash tree partitions of a
-// store slot, by architecture.
-const (
-	TypeESP          = "c12a7328-f81f-11d2-ba4b-00a0c93ec93b"
-	TypeUsrX86       = "8484680c-9521-48c6-9c11-b0720656f69e"
-	TypeUsrX86Verity = "77ff5f63-e7b6-4633-acf4-1565b864c0e6"
-	TypeUsrArm       = "b0e01050-ee5f-4390-949a-9101b17104e9"
-	TypeUsrArmVerity = "6e11a4e7-fbca-4ded-b9e9-e1a512bb664e"
-)
-
-// StoreTypes are the GPT partition types of a store slot's data and hash tree partitions, by the
-// architecture an image is built for.
-var StoreTypes = map[string]struct{ Data, Verity string }{
-	"x86-64": {TypeUsrX86, TypeUsrX86Verity},
-	"arm64":  {TypeUsrArm, TypeUsrArmVerity},
-}
-
-// IsStoreData reports whether a partition type is that of a store slot's data partition.
-func IsStoreData(typ string) bool { return typ == TypeUsrX86 || typ == TypeUsrArm }
-
-// IsStoreVerity reports whether a partition type is that of a store slot's hash tree partition.
-func IsStoreVerity(typ string) bool { return typ == TypeUsrX86Verity || typ == TypeUsrArmVerity }
+// TypeESP is the GPT partition type of the ESP. The types of a store slot's partitions depend on
+// the architecture, as package arch lists them.
+const TypeESP = "c12a7328-f81f-11d2-ba4b-00a0c93ec93b"
 
 // Partition is a partition of a disk as sfdisk --json lists it.
 type Partition struct {

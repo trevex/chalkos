@@ -9,19 +9,11 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/trevex/chalkos/pkg/arch"
 	"github.com/trevex/chalkos/pkg/storage"
 	"github.com/trevex/chalkos/pkg/storage/gpt"
 	"github.com/trevex/chalkos/pkg/upgrade"
 )
-
-// GPT partition types of the names repart's Type= takes that the system region uses.
-var partitionTypes = map[string]string{
-	"esp":               gpt.TypeESP,
-	"usr-x86-64":        gpt.TypeUsrX86,
-	"usr-x86-64-verity": gpt.TypeUsrX86Verity,
-	"usr-arm64":         gpt.TypeUsrArm,
-	"usr-arm64-verity":  gpt.TypeUsrArmVerity,
-}
 
 // definitionKeys are the keys of repart's [Partition] section a definition of the system region
 // may set, by the kind of partition it defines: what chalkos's own definitions set, and
@@ -52,7 +44,7 @@ type layout []definedPartition
 // exactly what an install writes: an ESP formatted as vfat, the data and hash tree partitions of
 // two store slots for arch, and STATE formatted as ext4, each with no keys but those
 // definitionKeys allows.
-func parseLayout(defs map[string]string, arch string) (layout, error) {
+func parseLayout(defs map[string]string, archName string) (layout, error) {
 	var l layout
 	for _, name := range slices.Sorted(maps.Keys(defs)) {
 		d, err := parseDefinition(name, defs[name])
@@ -61,23 +53,39 @@ func parseLayout(defs map[string]string, arch string) (layout, error) {
 		}
 		l = append(l, d)
 	}
-	store, ok := gpt.StoreTypes[arch]
+	a, ok := arch.ByName(archName)
 	if !ok {
-		return nil, fmt.Errorf("chalkos builds no images for the architecture %q", arch)
+		return nil, fmt.Errorf("chalkos builds no images for the architecture %q", archName)
 	}
 	count := map[string]int{}
 	for _, d := range l {
 		switch d.typ {
-		case gpt.TypeESP, store.Data, store.Verity, storage.PartitionType(stateLabel):
+		case gpt.TypeESP, a.Usr, a.UsrVerity, storage.PartitionType(stateLabel):
 			count[d.typ]++
 		default:
-			return nil, fmt.Errorf("%s defines a partition of the type %s, which is none of the system region of an image for %s", d.file, d.typ, arch)
+			return nil, fmt.Errorf("%s defines a partition of the type %s, which is none of the system region of an image for %s", d.file, d.typ, archName)
 		}
 	}
-	if len(l) != 6 || count[gpt.TypeESP] != 1 || count[store.Data] != 2 || count[store.Verity] != 2 || count[storage.PartitionType(stateLabel)] != 1 {
+	if len(l) != 6 || count[gpt.TypeESP] != 1 || count[a.Usr] != 2 || count[a.UsrVerity] != 2 || count[storage.PartitionType(stateLabel)] != 1 {
 		return nil, errors.New("the image's definitions do not lay out an ESP, two store slots and STATE, and nothing else")
 	}
 	return l, nil
+}
+
+// repartType is the GPT partition type of a name repart's Type= takes that the system region
+// uses, the ESP's or a store slot's partition's, and typ itself for any other.
+func repartType(typ string) string {
+	if typ == "esp" {
+		return gpt.TypeESP
+	}
+	a, verity, ok := arch.ByRepartType(typ)
+	switch {
+	case ok && verity:
+		return a.UsrVerity
+	case ok:
+		return a.Usr
+	}
+	return typ
 }
 
 // parseDefinition reads one definition of the system region, which must hold a [Partition]
@@ -118,22 +126,20 @@ func parseDefinition(name, text string) (definedPartition, error) {
 		values[k] = v
 		keys = append(keys, k)
 	}
-	typ := strings.ToLower(values["Type"])
-	if t, ok := partitionTypes[typ]; ok {
-		typ = t
-	}
+	typ := repartType(strings.ToLower(values["Type"]))
 	var kind string
 	switch typ {
 	case "":
 		return definedPartition{}, fmt.Errorf("%s defines no partition type", name)
 	case gpt.TypeESP:
 		kind = "esp"
-	case gpt.TypeUsrX86, gpt.TypeUsrX86Verity, gpt.TypeUsrArm, gpt.TypeUsrArmVerity:
-		kind = "store"
 	case storage.PartitionType(stateLabel):
 		kind = "state"
 	default:
-		return definedPartition{}, fmt.Errorf("%s: the partition type %q is none of the system region", name, values["Type"])
+		if _, _, ok := arch.ByStoreType(typ); !ok {
+			return definedPartition{}, fmt.Errorf("%s: the partition type %q is none of the system region", name, values["Type"])
+		}
+		kind = "store"
 	}
 	for _, k := range keys {
 		if !definitionKeys[kind][k] {
@@ -291,10 +297,10 @@ func describeAll(parts []gpt.Partition) string {
 func (l layout) fits(h upgrade.Header) error {
 	var verity, data *definedPartition
 	for n, d := range l {
-		switch {
-		case verity == nil && gpt.IsStoreVerity(d.typ):
+		switch _, isVerity, ok := arch.ByStoreType(d.typ); {
+		case ok && isVerity && verity == nil:
 			verity = &l[n]
-		case data == nil && gpt.IsStoreData(d.typ):
+		case ok && !isVerity && data == nil:
 			data = &l[n]
 		}
 	}

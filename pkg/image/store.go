@@ -5,8 +5,8 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
-	"strings"
 
+	"github.com/trevex/chalkos/pkg/arch"
 	"github.com/trevex/chalkos/pkg/verity"
 )
 
@@ -22,10 +22,10 @@ type Store struct {
 func ReadStore(raw io.ReaderAt, parts []Partition) (Store, error) {
 	var data, hash []Partition
 	for _, p := range parts {
-		switch {
-		case strings.HasPrefix(p.Type, "usr-") && strings.HasSuffix(p.Type, "-verity"):
+		switch _, verity, ok := arch.ByRepartType(p.Type); {
+		case ok && verity:
 			hash = append(hash, p)
-		case strings.HasPrefix(p.Type, "usr-"):
+		case ok:
 			data = append(data, p)
 		}
 	}

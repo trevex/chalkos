@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/trevex/chalkos/pkg/arch"
 	"github.com/trevex/chalkos/pkg/storage"
 	"github.com/trevex/chalkos/pkg/storage/gpt"
 	"github.com/trevex/chalkos/pkg/storage/hostops"
@@ -83,13 +84,14 @@ func (i *Installer) refuseBootDisk(target storage.BlockDisk) error {
 
 // describe names a partition found on the target.
 func describe(p gpt.Partition) string {
-	switch p.Type {
-	case gpt.TypeESP:
+	if p.Type == gpt.TypeESP {
 		return "ESP"
-	case gpt.TypeUsrX86, gpt.TypeUsrArm:
+	}
+	if _, verity, ok := arch.ByStoreType(p.Type); ok {
+		if verity {
+			return "chalkos store verity"
+		}
 		return "chalkos store"
-	case gpt.TypeUsrX86Verity, gpt.TypeUsrArmVerity:
-		return "chalkos store verity"
 	}
 	if p.Type != storage.PartitionType(p.Name) {
 		return fmt.Sprintf("type %s, label %q", p.Type, p.Name)

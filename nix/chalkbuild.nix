@@ -13,6 +13,7 @@ callPackage ./go-module.nix { } {
   pname = "chalkbuild";
   paths = [
     ../cmd/chalkbuild
+    ../pkg/arch
     ../pkg/chalkbuild
     ../pkg/image
     ../pkg/imagepart

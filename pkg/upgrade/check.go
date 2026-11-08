@@ -9,6 +9,7 @@ import (
 	"os"
 	"strconv"
 
+	"github.com/trevex/chalkos/pkg/arch"
 	"github.com/trevex/chalkos/pkg/imagepart"
 	"github.com/trevex/chalkos/pkg/secureboot"
 	"github.com/trevex/chalkos/pkg/storeslot"
@@ -41,10 +42,11 @@ const maxBootLoader = 16 << 20
 
 // Validate checks that the header describes an image whose parts can be received.
 func (h Header) Validate() error {
+	_, known := arch.ByName(h.Architecture)
 	switch {
 	case h.ImageID == "" || h.Platform == "":
 		return errors.New("the image's ID and platform are required")
-	case uki.BootLoaderName(h.Architecture) == "":
+	case !known:
 		return fmt.Errorf("the image's architecture %q is none chalkos builds images for", h.Architecture)
 	case len(h.RootHash) != sha256.Size:
 		return errors.New("the root hash is not a SHA-256")

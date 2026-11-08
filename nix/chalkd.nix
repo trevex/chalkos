@@ -11,6 +11,7 @@ callPackage ./go-module.nix { } {
   paths = [
     ../cmd/chalkd
     ../pkg/api
+    ../pkg/arch
     ../pkg/atomicfile
     ../pkg/chalkd
     ../pkg/check

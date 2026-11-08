@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/trevex/chalkos/pkg/arch"
 	"github.com/trevex/chalkos/pkg/uki"
 )
 
@@ -62,11 +63,12 @@ func extractUKI(ctx context.Context, raw string, espOffset int64, dir string) (s
 
 // extractBootLoader copies the boot loader of the architecture off the image's ESP,
 // /EFI/BOOT/BOOTX64.EFI or /EFI/BOOT/BOOTAA64.EFI, into dir and returns the copy's path.
-func extractBootLoader(ctx context.Context, raw string, espOffset int64, dir, arch string) (string, error) {
-	name := uki.BootLoaderName(arch)
-	if name == "" {
-		return "", fmt.Errorf("chalkos builds no images for the architecture %q", arch)
+func extractBootLoader(ctx context.Context, raw string, espOffset int64, dir, archName string) (string, error) {
+	a, ok := arch.ByName(archName)
+	if !ok {
+		return "", fmt.Errorf("chalkos builds no images for the architecture %q", archName)
 	}
+	name := a.BootLoader
 	found, err := list(ctx, raw, espOffset, "::/EFI/BOOT", name)
 	if err != nil {
 		return "", err

@@ -11,17 +11,16 @@ import (
 	"fmt"
 	"maps"
 	"path/filepath"
-	"runtime"
 	"slices"
 	"time"
 
+	"github.com/trevex/chalkos/pkg/arch"
 	"github.com/trevex/chalkos/pkg/storage"
 	"github.com/trevex/chalkos/pkg/storage/gpt"
 	"github.com/trevex/chalkos/pkg/storage/hostops"
 	"github.com/trevex/chalkos/pkg/storage/node"
 	"github.com/trevex/chalkos/pkg/storeslot"
 	"github.com/trevex/chalkos/pkg/tool"
-	"github.com/trevex/chalkos/pkg/uki"
 )
 
 // Installer holds what installing works on; tests point it at temporary directories and a
@@ -79,7 +78,7 @@ func defaults(stateDir string) *Installer {
 		Definitions:   "/etc/chalkos/repart.d",
 		WorkDir:       "/run/chalkd/install",
 		OpenDisk:      openExclusive,
-		Architecture:  uki.GoArchitecture(runtime.GOARCH),
+		Architecture:  arch.Native().Name,
 		EFIVars:       "/sys/firmware/efi/efivars",
 		OpenPartition: storeslot.OpenPartition,
 		Now:           time.Now,

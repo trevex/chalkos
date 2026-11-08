@@ -7,11 +7,11 @@ import (
 	"io"
 	"log"
 	"path/filepath"
-	"runtime"
 
 	"connectrpc.com/connect"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
+	"github.com/trevex/chalkos/pkg/arch"
 	"github.com/trevex/chalkos/pkg/atomicfile"
 	"github.com/trevex/chalkos/pkg/chalkd/layer"
 	"github.com/trevex/chalkos/pkg/config"
@@ -466,7 +466,7 @@ func (s *Server) upgradeNodeLocked() (*upgrade.Node, error) {
 		EFIVars:       s.Paths.EFIVars,
 		Cmdline:       s.Paths.Cmdline,
 		OSRelease:     readOSRelease(s.Paths.OSRelease),
-		Architecture:  uki.GoArchitecture(runtime.GOARCH),
+		Architecture:  arch.Native().Name,
 		OpenPartition: storeslot.OpenPartition,
 	}, nil
 }

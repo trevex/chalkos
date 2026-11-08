@@ -14,6 +14,7 @@ import (
 
 	"golang.org/x/sys/unix"
 
+	"github.com/trevex/chalkos/pkg/arch"
 	"github.com/trevex/chalkos/pkg/imagepart"
 	"github.com/trevex/chalkos/pkg/storage/gpt"
 )
@@ -97,10 +98,10 @@ func OpenPartition(p gpt.Partition, write bool) (PartitionFile, error) {
 func StoreSlots(disk string, parts []gpt.Partition) ([]Slot, error) {
 	var verity, data []gpt.Partition
 	for _, p := range parts {
-		switch {
-		case gpt.IsStoreVerity(p.Type):
+		switch _, isVerity, ok := arch.ByStoreType(p.Type); {
+		case ok && isVerity:
 			verity = append(verity, p)
-		case gpt.IsStoreData(p.Type):
+		case ok:
 			data = append(data, p)
 		}
 	}

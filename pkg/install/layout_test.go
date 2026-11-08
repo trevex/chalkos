@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/trevex/chalkos/pkg/arch"
 	"github.com/trevex/chalkos/pkg/storage"
 	"github.com/trevex/chalkos/pkg/storage/gpt"
 )
@@ -61,6 +62,9 @@ func TestParseLayoutRounds(t *testing.T) {
 	}
 }
 
+// x86 is the architecture of the lab's images.
+var x86, _ = arch.ByName("x86-64")
+
 // TestLayoutCheck compares tables against the lab's definitions: the image's partitions in order,
 // counted in the disk's sectors, then only volumes of the system disk.
 func TestLayoutCheck(t *testing.T) {
@@ -72,10 +76,10 @@ func TestLayoutCheck(t *testing.T) {
 	region := func(sector int64) []gpt.Partition {
 		return []gpt.Partition{
 			{Number: 1, Type: gpt.TypeESP, Size: 260 << 20 / sector},
-			{Number: 2, Type: gpt.TypeUsrX86Verity, Name: "store-verity_3fa93fa93fa93fa9", Size: 256 << 10 / sector},
-			{Number: 3, Type: gpt.TypeUsrX86, Name: "store_3fa93fa93fa93fa9", Size: 2 << 20 / sector},
-			{Number: 4, Type: gpt.TypeUsrX86Verity, Name: "_empty", Size: 256 << 10 / sector},
-			{Number: 5, Type: gpt.TypeUsrX86, Name: "_empty", Size: 2 << 20 / sector},
+			{Number: 2, Type: x86.UsrVerity, Name: "store-verity_3fa93fa93fa93fa9", Size: 256 << 10 / sector},
+			{Number: 3, Type: x86.Usr, Name: "store_3fa93fa93fa93fa9", Size: 2 << 20 / sector},
+			{Number: 4, Type: x86.UsrVerity, Name: "_empty", Size: 256 << 10 / sector},
+			{Number: 5, Type: x86.Usr, Name: "_empty", Size: 2 << 20 / sector},
 			{Number: 6, Type: stateType, Name: "state", Size: 32 << 20 / sector},
 		}
 	}

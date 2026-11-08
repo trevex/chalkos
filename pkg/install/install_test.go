@@ -16,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/trevex/chalkos/pkg/arch"
 	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/config/slot"
 	"github.com/trevex/chalkos/pkg/pki"
@@ -27,7 +28,6 @@ import (
 	"github.com/trevex/chalkos/pkg/storage/storagetest"
 	"github.com/trevex/chalkos/pkg/tool"
 	"github.com/trevex/chalkos/pkg/tool/tooltest"
-	"github.com/trevex/chalkos/pkg/uki"
 )
 
 // fakeRunner records commands and answers them as tooltest.Runner does.
@@ -611,8 +611,8 @@ func TestBootLoader(t *testing.T) {
 			t.Errorf("the boot loader of %q = %q, want %q", arch, got, want)
 		}
 	}
-	if arch := ForInstaller().Architecture; arch != uki.GoArchitecture(runtime.GOARCH) {
-		t.Errorf("Default installs %q on %s", arch, runtime.GOARCH)
+	if got := ForInstaller().Architecture; got != arch.Native().Name {
+		t.Errorf("Default installs %q on %s", got, runtime.GOARCH)
 	}
 }
 
