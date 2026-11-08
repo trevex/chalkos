@@ -187,7 +187,7 @@ func (f *firewall) policyMatches(r derive.PolicyRule) ([]string, error) {
 		}
 		for _, fam := range families {
 			rest := strings.TrimPrefix(fm.match, "meta nfproto "+string(fam))
-			out = append(out, joinWords(fmt.Sprintf("%s dscp { %s }", familyWords[fam], strings.Join(dscp, ", ")), strings.TrimSpace(rest)))
+			out = append(out, joinWords(familyWords[fam]+" dscp "+set(dscp), strings.TrimSpace(rest)))
 		}
 	}
 	return out, nil

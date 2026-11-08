@@ -387,9 +387,8 @@ func (f *firewall) ruleset() (string, error) {
 		"table inet chalkos {\n")
 	for _, name := range f.setNames {
 		s := f.sets[name]
-		elements := prefixes(s.Prefixes)
-		fmt.Fprintf(&b, "\tset addresses-%s {\n\t\ttype %s_addr\n\t\tflags interval\n\t\tauto-merge\n\t\telements = { %s }\n\t}\n",
-			name, s.Family, strings.Join(elements, ", "))
+		fmt.Fprintf(&b, "\tset addresses-%s {\n\t\ttype %s_addr\n\t\tflags interval\n\t\tauto-merge\n\t\telements = %s\n\t}\n",
+			name, s.Family, set(prefixes(s.Prefixes)))
 	}
 	for _, p := range f.policies {
 		var lines []string
@@ -686,7 +685,7 @@ func (f *firewall) natLine(doc derive.Named[derive.NATSpec]) (string, error) {
 		if len(side.ranges) == 0 {
 			continue
 		}
-		parts = append(parts, fmt.Sprintf("%s %s { %s }", family, side.dir, strings.Join(prefixes(side.ranges), ", ")))
+		parts = append(parts, family+" "+side.dir+" "+set(prefixes(side.ranges)))
 	}
 	if n.Match.Protocol != nil {
 		parts = append(parts, protocolMatch(*n.Match.Protocol, nil, n.Match.DestinationPorts, nil))
@@ -817,16 +816,18 @@ func (f *firewall) addressMatch(fam derive.Family, dir string, a *derive.Address
 		}
 		return fmt.Sprintf("%s %s @addresses-%s", familyWords[fam], dir, *a.Set), true, nil
 	}
-	var mine []string
-	for _, p := range a.CIDRs {
-		if p.Addr().Is4() == (fam == derive.IPv4) {
-			mine = append(mine, p.Masked().String())
-		}
-	}
+	match, ok = rangeMatch(fam, dir, a.CIDRs)
+	return match, ok, nil
+}
+
+// rangeMatch is the match of the address ranges of the family fam among ranges on the side dir,
+// saddr or daddr. ok is false when ranges hold none of fam.
+func rangeMatch(fam derive.Family, dir string, ranges []netip.Prefix) (match string, ok bool) {
+	mine := slices.DeleteFunc(slices.Clone(ranges), func(p netip.Prefix) bool { return p.Addr().Is4() != (fam == derive.IPv4) })
 	if len(mine) == 0 {
-		return "", false, nil
+		return "", false
 	}
-	return fmt.Sprintf("%s %s { %s }", familyWords[fam], dir, strings.Join(mine, ", ")), true, nil
+	return familyWords[fam] + " " + dir + " " + set(prefixes(mine)), true
 }
 
 // prefixes are the address ranges l masked as nftables takes them. The rules of AddressSet and
@@ -855,7 +856,7 @@ func protocolMatch(protocol derive.Protocol, sourcePorts, destinationPorts []der
 			ports []derive.PortRange
 		}{{"sport", sourcePorts}, {"dport", destinationPorts}} {
 			if len(side.ports) > 0 {
-				parts = append(parts, fmt.Sprintf("%s %s { %s }", protocol, side.dir, joinPorts(side.ports)))
+				parts = append(parts, string(protocol)+" "+side.dir+" "+set(texts(side.ports)))
 			}
 		}
 		if len(parts) == 0 {
@@ -866,21 +867,18 @@ func protocolMatch(protocol derive.Protocol, sourcePorts, destinationPorts []der
 		if len(icmpTypes) == 0 {
 			return "meta l4proto " + string(protocol)
 		}
-		types := make([]string, len(icmpTypes))
-		for i, t := range icmpTypes {
-			types[i] = string(t)
-		}
-		return fmt.Sprintf("%s type { %s }", protocol, strings.Join(types, ", "))
+		return string(protocol) + " type " + set(texts(icmpTypes))
 	}
 	return "meta l4proto " + protocolNumbers[protocol]
 }
 
-func joinPorts(ports []derive.PortRange) string {
-	s := make([]string, len(ports))
-	for i, p := range ports {
-		s[i] = string(p)
+// texts are the values of a string type as strings.
+func texts[T ~string](l []T) []string {
+	out := make([]string, len(l))
+	for i, v := range l {
+		out[i] = string(v)
 	}
-	return strings.Join(s, ", ")
+	return out
 }
 
 // verdictOf is nftables's statement of an action: reject answers with an administratively
@@ -898,7 +896,12 @@ func interfaceSet(names []string) string {
 	for i, n := range names {
 		quoted[i] = strconv.Quote(n)
 	}
-	return "{ " + strings.Join(quoted, ", ") + " }"
+	return set(quoted)
+}
+
+// set is the anonymous nftables set of the items.
+func set(items []string) string {
+	return "{ " + strings.Join(items, ", ") + " }"
 }
 
 // lines renders the opening: a line per family of its sources and destinations, or one without
@@ -928,17 +931,12 @@ func (o opening) lines() []string {
 			if len(side.ranges) == 0 {
 				continue
 			}
-			var mine []string
-			for _, p := range side.ranges {
-				if p.Addr().Is4() == (fam == derive.IPv4) {
-					mine = append(mine, p.Masked().String())
-				}
-			}
-			if len(mine) == 0 {
+			match, ok := rangeMatch(fam, side.dir, side.ranges)
+			if !ok {
 				parts = nil
 				break
 			}
-			parts = append(parts, fmt.Sprintf("%s %s { %s }", familyWords[fam], side.dir, strings.Join(mine, ", ")))
+			parts = append(parts, match)
 		}
 		if len(parts) > 0 {
 			lines = append(lines, head+strings.Join(parts, " ")+" "+tail)
@@ -1002,5 +1000,5 @@ func poolSet(pools []netip.Prefix) string {
 	for i, p := range pools {
 		l[i] = p.String()
 	}
-	return "{ " + strings.Join(l, ", ") + " }"
+	return set(l)
 }
