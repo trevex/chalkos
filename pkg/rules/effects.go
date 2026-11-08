@@ -37,7 +37,7 @@ func CompileEffect(name, when string) (*EffectRule, error) {
 	if err != nil {
 		return nil, err
 	}
-	env, parsed, facts, err := parse(base, []string{"facts", "oldFacts"}, when)
+	env, parsed, facts, err := parseRule(base, []string{"facts", "oldFacts"}, when)
 	if err != nil {
 		return nil, fail("%v", err)
 	}

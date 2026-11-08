@@ -161,6 +161,7 @@ func (p *Program) evaluate(vars map[string]any, cfg, oldCfg, node map[string]any
 		where = refusals.Refusal{Kind: p.Kind.Kind, Name: doc, Path: strings.Join(p.Path, ".")}.Where()
 	}
 	ok, err := evalBool(p.check, vars, &factErr)
+	// A fact that could not be loaded is returned as it is, outside the cannot-check wrap.
 	if factErr != nil {
 		return nil, factErr
 	}

@@ -454,7 +454,8 @@ func TestCompileErrors(t *testing.T) {
 }
 
 // A field of a definition that a field takes either alone or in a list, as networkd's sections
-// are, is reached below the list's items too, so a rule on it is refused.
+// are, is refused a rule: schema.WalkSchema reaches the definition below the list's items too,
+// where self has no path to bind to.
 func TestCompileRefusesRuleOfOneOrMany(t *testing.T) {
 	section := map[string]any{"$ref": "#/$defs/Section"}
 	sch := kindSchema("Demo", true, object(map[string]any{"section": map[string]any{"anyOf": []any{

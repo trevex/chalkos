@@ -56,13 +56,11 @@ type Set struct {
 
 // Compile compiles the rules every schema of s declares: a kind's own, then those of its fields
 // in the order schema.WalkSchema reaches them, which is by path. A field's rule applies wherever
-// the schema declares it, outside spec too, as on metadata.name; lib/kinds/schema.nix declares
-// rules on spec and its fields alone. It reports every rule that does not compile, each naming the
-// kind or field that declares it. A rule binds self to the value at its path, which a list item or
-// a map value has none of, so rules below a list's items or a map's values are refused: they are
-// declared on the list or the map instead. That includes a definition a field takes either alone
-// or in a list, as networkd's sections are, since WalkSchema reaches it below the list's items
-// too. Without s it compiles none.
+// the schema declares it, outside spec too; lib/kinds/schema.nix declares rules on spec and its
+// fields alone. It reports every rule that does not compile, each naming the kind or field that
+// declares it. A rule binds self to the value at its path, which a list item or a map value has
+// none of, so rules below a list's items or a map's values are refused: they are declared on the
+// list or the map instead. Without s it compiles none.
 func Compile(s *schema.Schemas) (*Set, error) {
 	set := &Set{}
 	if s == nil {
@@ -127,7 +125,7 @@ func compile(apiVersions map[string]string, k schema.Kind, path []string, r sche
 	if err != nil {
 		return nil, err
 	}
-	e, parsed, facts, err := parse(base, []string{"facts"}, r.Rule, r.MessageExpression)
+	e, parsed, facts, err := parseRule(base, []string{"facts"}, r.Rule, r.MessageExpression)
 	if err != nil {
 		return nil, fail("%v", err)
 	}
@@ -145,14 +143,16 @@ func compile(apiVersions map[string]string, k schema.Kind, path []string, r sche
 	return p, nil
 }
 
-// parse parses rule and the further expressions of srcs in base, and extends base with each fact
-// they read as <ident>.<name> for every one of idents. The rule must not be empty; an empty
-// further expression is not parsed and its AST is nil. facts are the facts' names, sorted.
-func parse(base *cel.Env, idents []string, rule string, srcs ...string) (e *cel.Env, parsed []*cel.Ast, facts []string, err error) {
+// parseRule parses rule and the further expressions of srcs in base, and extends base with each
+// fact they read as <ident>.<name> for every one of idents. The rule must not be empty; an empty
+// further expression is not parsed and its AST is nil. It returns the extended environment, the
+// ASTs in the order of the sources, and the facts' names, sorted.
+func parseRule(base *cel.Env, idents []string, rule string, srcs ...string) (*cel.Env, []*cel.Ast, []string, error) {
 	if strings.TrimSpace(rule) == "" {
 		return nil, nil, nil, errors.New("the rule is empty")
 	}
-	parsed = make([]*cel.Ast, 1+len(srcs))
+	parsed := make([]*cel.Ast, 1+len(srcs))
+	var facts []string
 	for i, src := range append([]string{rule}, srcs...) {
 		if src == "" {
 			continue
@@ -179,7 +179,8 @@ func parse(base *cel.Env, idents []string, rule string, srcs ...string) (e *cel.
 			opts = append(opts, cel.Variable(ident+"."+n, cel.DynType))
 		}
 	}
-	if e, err = base.Extend(opts...); err != nil {
+	e, err := base.Extend(opts...)
+	if err != nil {
 		return nil, nil, nil, err
 	}
 	return e, parsed, facts, nil
