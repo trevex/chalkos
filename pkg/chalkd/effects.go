@@ -29,9 +29,9 @@ type pendingEffects struct {
 	rules []*rules.EffectRule
 	// node is the node's name, which the rules read as node.name.
 	node      string
-	next, old []config.Document
-	// oldHashed tells that the secret values of old, a baseline's, are hashed already.
-	oldHashed bool
+	next, old config.Redacted
+	// baselined tells that old and what goes with it are a baseline's.
+	baselined bool
 	// recorded tells that effectsOf wrote the baseline for this delivery, which no earlier one left.
 	recorded bool
 	before   rules.Facts
@@ -66,7 +66,7 @@ type pendingEffects struct {
 // consume removes the baseline once the delivery is applied whole, and refused once it is refused
 // before it changed anything. Until then a retry, or another delivery, takes the effects of what
 // the failed delivery changed too, even one that delivers the baseline's config again.
-func (s *Server) effectsOf(ctx context.Context, name string, next, old []config.Document, schemas *schema.Schemas, secret string, dry bool) (*pendingEffects, error) {
+func (s *Server) effectsOf(ctx context.Context, name string, next, old config.Redacted, schemas *schema.Schemas, secret string, dry bool) (*pendingEffects, error) {
 	defs, err := effects.Read(s.Loader.Effects)
 	if err != nil {
 		return nil, err
@@ -102,16 +102,16 @@ func (s *Server) effectsOf(ctx context.Context, name string, next, old []config.
 		log.Printf("the baseline of the effects: %v; comparing with the running slot", err)
 	}
 	if found {
-		e.old, e.oldHashed, e.before, e.outputs, e.kinds, e.attempts = b.documents(), true, b.Facts, b.Outputs, b.Kinds, b.Attempts
+		e.old, e.baselined, e.before, e.outputs, e.kinds, e.attempts = b.documents(), true, b.Facts, b.Outputs, b.Kinds, b.Attempts
 		return e, nil
 	}
-	if e.outputs, err = s.Loader.OutputStates(old, schemas); err != nil {
+	if e.outputs, err = s.Loader.OutputStates(e.old, schemas); err != nil {
 		return nil, fmt.Errorf("the outputs the node serves: %w", err)
 	}
-	if e.kinds, err = config.KindHashes(old, schemas, false); err != nil {
+	if e.kinds, err = config.KindHashes(e.old, schemas); err != nil {
 		return nil, fmt.Errorf("the kinds the node runs: %w", err)
 	}
-	before, err := s.factsFor(ctx, next, old, secret)
+	before, err := s.factsFor(ctx, e.next, e.old, secret)
 	if err != nil {
 		return nil, err
 	}
@@ -122,7 +122,7 @@ func (s *Server) effectsOf(ctx context.Context, name string, next, old []config.
 	}
 	// Every fact the rules read loads now, before anything changes. One that cannot be loaded keeps
 	// its error, which makes the rules that read it due.
-	if err := newBaseline(old, e.factNames(), before, e.outputs, e.kinds).write(s.Paths.EffectsBaseline); err != nil {
+	if err := newBaseline(e.old, e.factNames(), before, e.outputs, e.kinds).write(s.Paths.EffectsBaseline); err != nil {
 		return nil, fmt.Errorf("record the config, facts, outputs and kinds the effects compare with: %w", err)
 	}
 	e.recorded = true
@@ -141,14 +141,6 @@ func (e *pendingEffects) factNames() []string {
 	}
 	slices.Sort(names)
 	return names
-}
-
-// oldConfig is the old config as rules see it.
-func (e *pendingEffects) oldConfig() map[string]any {
-	if e.oldHashed {
-		return rules.HashedConfigOf(e.old)
-	}
-	return rules.ConfigOf(e.old)
 }
 
 // due returns the sorted names of the effects due once the delivery is applied. An effect is due
@@ -173,12 +165,12 @@ func (s *Server) due(ctx context.Context, e *pendingEffects, states map[string]o
 // outcome is what due finds, with the outputs that changed and what fired each effect, as a dry
 // run's plan names them.
 func (s *Server) outcome(ctx context.Context, e *pendingEffects, states map[string]outputs.State, secret string) (check.Outcome, []string, error) {
-	after, err := s.factsFor(ctx, e.next, nil, secret)
+	after, err := s.factsFor(ctx, e.next, config.Redacted{}, secret)
 	if err != nil {
 		return check.Outcome{}, nil, err
 	}
 	// Command facts read the old config as the rules do.
-	after.Input = map[string]any{"config": rules.ConfigOf(e.next), "oldConfig": e.oldConfig()}
+	after.Input = map[string]any{"config": rules.ConfigOf(e.next), "oldConfig": rules.ConfigOf(e.old)}
 	if e.attempt != nil {
 		// The delivery changed the node by now, so the facts are those its units read.
 		if err := setAttemptFacts(s.Paths.EffectsBaseline, *e.attempt, recordFacts(e.factNames(), after)); err != nil {
@@ -186,7 +178,7 @@ func (s *Server) outcome(ctx context.Context, e *pendingEffects, states map[stri
 			log.Printf("record the facts of the delivery in the baseline of the effects: %v", err)
 		}
 	}
-	o, warnings, err := check.Due(e.checkEffects(), check.Delivery{Node: e.node, Documents: config.Redact(e.next), Schemas: e.schemas, Outputs: states}, e.comparisons(after))
+	o, warnings, err := check.Due(e.checkEffects(), check.Delivery{Node: e.node, Documents: e.next, Schemas: e.schemas, Outputs: states}, e.comparisons(after))
 	if err != nil {
 		return check.Outcome{}, nil, err
 	}
@@ -205,12 +197,12 @@ func (e *pendingEffects) checkEffects() check.Effects {
 // it, and what each delivery that failed since the baseline applied, all with after, the facts as
 // they are now.
 func (e *pendingEffects) comparisons(after *facts.Loader) []check.Comparison {
-	olds := []check.Comparison{{Documents: e.old, Hashed: e.oldHashed, Facts: after, OldFacts: e.before, Outputs: e.outputs, Kinds: e.kinds}}
+	olds := []check.Comparison{{Documents: e.old, Facts: after, OldFacts: e.before, Outputs: e.outputs, Kinds: e.kinds}}
 	for _, a := range e.attempts {
 		docs := a.documents()
 		// Command facts read the attempt's config as the old one.
-		facts := after.For(map[string]any{"config": rules.ConfigOf(e.next), "oldConfig": rules.HashedConfigOf(docs)})
-		olds = append(olds, check.Comparison{Documents: docs, Hashed: true, Facts: facts, OldFacts: a.Facts, Outputs: a.Outputs, Kinds: a.Kinds})
+		facts := after.For(map[string]any{"config": rules.ConfigOf(e.next), "oldConfig": rules.ConfigOf(docs)})
+		olds = append(olds, check.Comparison{Documents: docs, Facts: facts, OldFacts: a.Facts, Outputs: a.Outputs, Kinds: a.Kinds})
 	}
 	return olds
 }
@@ -222,12 +214,12 @@ func (e *pendingEffects) comparisons(after *facts.Loader) []check.Comparison {
 // that compare with it too, even one of the config from before it. The attempts go with the
 // baseline once a delivery is applied whole.
 func (s *Server) recordAttempt(e *pendingEffects, states map[string]outputs.State) error {
-	kinds, err := config.KindHashes(e.next, e.schemas, false)
+	kinds, err := config.KindHashes(e.next, e.schemas)
 	if err != nil {
 		// Without them every effect on a kind the delivery holds is due.
 		log.Printf("the kinds of the delivery: %v", err)
 	}
-	a := baselineAttempt{Documents: redacted(e.next), Outputs: states, Kinds: kinds}
+	a := baselineAttempt{Documents: e.next.Objects(), Outputs: states, Kinds: kinds}
 	previous, err := addAttempt(s.Paths.EffectsBaseline, a)
 	if err != nil {
 		return fmt.Errorf("record the delivery in the baseline of the effects: %w", err)
@@ -252,7 +244,7 @@ func (s *Server) consume(ctx context.Context, e *pendingEffects, staged *outputs
 	if err != nil {
 		return nil, nil, err
 	}
-	if stored || e.oldHashed {
+	if stored || e.baselined {
 		if err := s.Loader.LoadConfig(); err != nil {
 			// What the layer actions read, the slot and the layers' files, is in place.
 			a := effects.ActionsOf(e.defs, due)

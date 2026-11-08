@@ -179,7 +179,7 @@ func TestNAT64Rules(t *testing.T) {
 			[]string{"Resolver resolver listens on no address of a family its clients' ranges are of, so it would answer no one; give listen and allow a family in common"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			failures, err := set.Evaluate(Input{Documents: tc.docs, Node: "r1"})
+			failures, err := set.Evaluate(Input{Documents: config.Redact(tc.docs), Node: "r1"})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -198,7 +198,7 @@ func TestPoolPortOfAnIntegerSpelling(t *testing.T) {
 		n := doc("NAT64", "lab", `{"prefix": "2001:db8:64::/96", "pool4": [{"prefix": "203.0.113.1/32", "ports": 61001}]}`)
 		n.Object["spec"].(map[string]any)["pool4"].([]any)[0].(map[string]any)["ports"] = json.Number(port)
 		n = config.FromObject(n.Object)
-		failures, err := set.Evaluate(Input{Documents: []config.Document{n}, Node: "r1"})
+		failures, err := set.Evaluate(Input{Documents: config.Redact([]config.Document{n}), Node: "r1"})
 		if err != nil || len(failures) > 0 {
 			t.Errorf("ports %s: failures %v, err %v", port, messages(failures), err)
 		}
@@ -285,7 +285,7 @@ func TestNAT64StaticAddresses(t *testing.T) {
 		{"many Networks", append(many(60), nat64, doc("NAT64", "lab", `{"prefix": "2001:db8:64::/96", "pool4": [{"prefix": "203.0.113.0/28"}, {"prefix": "203.0.113.16/28"}, {"prefix": "203.0.113.32/28"}, {"prefix": "203.0.113.48/28"}]}`)), pool("192.0.2.11")},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			failures, err := set.Evaluate(Input{Documents: tc.docs, Node: "r1"})
+			failures, err := set.Evaluate(Input{Documents: config.Redact(tc.docs), Node: "r1"})
 			if err != nil {
 				t.Fatal(err)
 			}

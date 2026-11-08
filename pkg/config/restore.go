@@ -65,7 +65,7 @@ func Restore(hashed, delivered []Document) ([]Document, error) {
 			}
 			out[i].Object = obj.(map[string]any)
 		}
-		got, err := json.Marshal(out[i].Hashed())
+		got, err := json.Marshal(out[i].hidden())
 		if err != nil {
 			return nil, err
 		}

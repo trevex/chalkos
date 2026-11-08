@@ -20,21 +20,20 @@ type Effects struct {
 }
 
 // Delivery is what a delivery gives the node, as the effects compare it: the config it runs once
-// the delivery is applied, with its defaults and its secret values hashed, the schemas that tell
-// its secretRef fields, and the states of the outputs rendered from it, by name.
+// the delivery is applied, with its defaults, the schemas that tell its secretRef fields, and the
+// states of the outputs rendered from it, by name.
 type Delivery struct {
 	Node      string
-	Documents []config.Document
+	Documents config.Redacted
 	Schemas   *schema.Schemas
 	Outputs   map[string]outputs.State
 }
 
-// Comparison is a state the effects compare a delivery with: the documents the node ran, hashed
-// already or not, the facts as they are once the delivery is applied and as they were, the
-// states of the outputs and the hashes of the kinds.
+// Comparison is a state the effects compare a delivery with: the documents the node ran, the facts
+// as they are once the delivery is applied and as they were, the states of the outputs and the
+// hashes of the kinds.
 type Comparison struct {
-	Documents       []config.Document
-	Hashed          bool
+	Documents       config.Redacted
 	Facts, OldFacts rules.Facts
 	Outputs         map[string]outputs.State
 	Kinds           map[string]string
@@ -63,7 +62,7 @@ type Fired struct {
 // A rule that cannot be evaluated counts as true; warnings say why, without the values it read,
 // one for each such rule.
 func Due(fx Effects, d Delivery, olds []Comparison) (o Outcome, warnings []string, err error) {
-	kinds, err := config.KindHashes(d.Documents, d.Schemas, true)
+	kinds, err := config.KindHashes(d.Documents, d.Schemas)
 	if err != nil {
 		return Outcome{}, nil, fmt.Errorf("the kinds of the delivery: %w", err)
 	}
@@ -79,7 +78,7 @@ func Due(fx Effects, d Delivery, olds []Comparison) (o Outcome, warnings []strin
 	ruled := map[string]bool{}
 	for _, old := range olds {
 		due, errs := rules.Due(fx.Rules, rules.EffectInput{
-			Documents: d.Documents, Hashed: true, Old: old.Documents, OldHashed: old.Hashed, Node: d.Node, Facts: old.Facts, OldFacts: old.OldFacts,
+			Documents: d.Documents, Old: old.Documents, Node: d.Node, Facts: old.Facts, OldFacts: old.OldFacts,
 		})
 		for _, err := range errs {
 			if w := fmt.Sprintf("the rule of %v; taking the effect all the same", err); !slices.Contains(warnings, w) {

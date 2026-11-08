@@ -22,10 +22,9 @@ import (
 //
 // The status records the failures either way, unless dry, as for a dry run, which changes
 // nothing. What renderers and checks write to standard error goes to the journal alone. The
-// renderers read docs with their secret values hashed, as they would read them in the image's
-// checker.
-func (s *Server) renderOutputs(ctx context.Context, name string, docs []config.Document, schemas *schema.Schemas, refuse, dry bool) (*outputs.Staged, error) {
-	staged, failures, err := s.Loader.RenderOutputs(ctx, name, config.Redact(docs), schemas, true)
+// renderers read docs redacted, as they would read them in the image's checker.
+func (s *Server) renderOutputs(ctx context.Context, name string, docs config.Redacted, schemas *schema.Schemas, refuse, dry bool) (*outputs.Staged, error) {
+	staged, failures, err := s.Loader.RenderOutputs(ctx, name, docs, schemas)
 	if err != nil {
 		return nil, fmt.Errorf("the running image's outputs: %w", err)
 	}

@@ -16,12 +16,12 @@ func TestRules(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	translate := func(text string) config.Documents {
-		tr, err := Translate("n1", config.Redact(parse(t, text)), s, config.Target{Platform: "metal"})
+	translate := func(text string) config.Redacted {
+		docs, _, err := config.TranslateRedacted("n1", config.Redact(parse(t, text)), s, config.Target{Platform: "metal"})
 		if err != nil {
 			t.Fatal(err)
 		}
-		return tr.Documents
+		return docs
 	}
 	old, next := translate(base), translate(strings.Replace(base, "name: first", "name: second", 1))
 	for _, frozen := range []bool{false, true} {

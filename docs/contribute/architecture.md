@@ -98,7 +98,7 @@ Each directory of `cmd/` is a main that wires a package up; the logic lives in `
 | `client` | Connections to chalkd, each with one way to verify the node: by fingerprint in maintenance mode, by the OS CA otherwise; the names chalkd's status gives the OS's certificates and trusted values. |
 | `clustersecrets` | The secrets file: the OS CA and node CA with their keys, the Kubernetes secrets, the recovery secret, the file's age encryption, the rotation of what it holds, and the lock and in-place replacement of the file, which keeps its previous version. |
 | `command` | Runs a program of the image's store with bounded output, for command facts and outputs; a failure keeps standard error out of its error. It also follows a path's links within an image's store, and stops a transient unit or reads why one failed. |
-| `config` | Config documents: parsing, the rules of a set, defaults, the hash, and the translation into the identity the node applies, which runs the translators of the image's layers after the common part. |
+| `config` | Config documents: parsing, the rules of a set, defaults, the redacted form that programs read, the hash, and the translation into the identity the node applies, which runs the translators of the image's layers after the common part. |
 | `config/slot` | Keeps a node's config on STATE, a slot per image with its identity, and writes it for the node's units: the documents below `/run/chalkos/config` and the secrets the granted units load as credentials. |
 | `diagnostics` | Reads the image's `diagnostics.json`, checks a call's arguments against their parameters' types, builds the command line, and runs it as a transient systemd unit with a sandbox of its own. |
 | `dns` | The syntax of the DNS names and record data of a `Resolver`'s local zones, which the rules' `isDNSName()` and `isRecordData()` check and the output `unbound` guards with, so the two cannot drift apart. |
@@ -167,6 +167,27 @@ Test helpers live in packages of their own:
 - `storage/hostops/hostopstest`: a fake host that keeps its mounts and device-mapper volumes in maps.
 - `storage/storagetest`: the sysfs, udev and `/dev` trees of a host's disks.
 - `tool/tooltest`: a fake tool runner that records commands and answers them by prefix.
+
+## Programs read config redacted
+
+Rules, renderers, validators, command facts and an image's checker read a node's config as
+`config.Redacted`: the documents with each value of a `Secret`, and of each Secret object a
+document embeds, such as a Kubernetes Secret in an `Addon`, replaced by its SHA-256. The
+packages that hand documents to programs, `rules`, `outputs`, `validators`, `check` and
+`imagecheck`, take `config.Redacted` and no plain documents, so the compiler refuses a call that
+would pass secret values to a program.
+
+Only these functions return a `config.Redacted`:
+
+- `config.Redact` hides the values of documents that hold them.
+- `config.RedactedObjects` and `config.ParseRedacted` read documents that `Redact` hid where they
+  were written: chalkd's baseline of the effects, the input chalkd gives an image's checker, and
+  the config GetConfig serves.
+- `Redacted.Defaulted` and `config.TranslateRedacted` fill in the defaults of an image's schemas.
+
+`Redact` takes plain documents, and a `config.Redacted` does not convert to them, so no value is
+hashed twice. `config.KindHashes`, which the effects compare, hashes each kind's redacted
+documents.
 
 ## The node API
 

@@ -51,7 +51,7 @@ func input(t *testing.T, text string) Input {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return Input{Node: "cp1", Documents: docs, Schemas: s}
+	return Input{Node: "cp1", Documents: config.Redact(docs), Schemas: s}
 }
 
 const demos = `apiVersion: demo.example.org/v1alpha1
@@ -386,14 +386,14 @@ func TestSandboxArgs(t *testing.T) {
 	}
 }
 
-// An input whose secret values are hashed already renders the files and states of the input with
-// its values: the renderer reads the hashes either way, and the state takes them as they are.
-func TestRenderHashed(t *testing.T) {
+// An input read back redacted, as a check receives it, renders the files and states of the input
+// Redact gave: reading it back hides nothing again, and the state takes the hashes as they are.
+func TestRenderReadBack(t *testing.T) {
 	r := renderer(t)
 	d := def(t, r.Root, script(t, `cat > "$OUT/stdin.json"`), "")
 	in := input(t, demos)
 	hashed := in
-	hashed.Documents, hashed.Hashed = config.Redact(in.Documents), true
+	hashed.Documents = config.RedactedObjects(in.Documents.Objects())
 	want, failures := r.Render(context.Background(), map[string]Definition{"demo": d}, in)
 	if len(failures) > 0 {
 		t.Fatal(failures)

@@ -173,12 +173,13 @@ func (s *Server) resetVolume(ctx context.Context, node, name string, next slot.S
 	if err != nil {
 		return err
 	}
-	f, err := s.factsFor(ctx, next.Documents, running.Documents, fallback)
+	nextDocs, runningDocs := config.Redact(next.Documents), config.Redact(running.Documents)
+	f, err := s.factsFor(ctx, nextDocs, runningDocs, fallback)
 	if err != nil {
 		return err
 	}
 	f.Override("recorded", jsonValue(without))
-	failures, err := evaluate(set.Of(config.StorageAPI), node, next.Documents, running.Documents, f)
+	failures, err := evaluate(set.Of(config.StorageAPI), node, nextDocs, runningDocs, f)
 	if err != nil {
 		return err
 	}

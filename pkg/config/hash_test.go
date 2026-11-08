@@ -133,7 +133,7 @@ func TestKindHashes(t *testing.T) {
 	s := imageSchemas(t)
 	hashes := func(yaml string) map[string]string {
 		t.Helper()
-		h, err := KindHashes(parseDocs(t, yaml), s, false)
+		h, err := KindHashes(Redact(parseDocs(t, yaml)), s)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -161,11 +161,11 @@ kind: Secret
 metadata: {name: spare}
 spec: {data: {token: unused}}
 `
-	before, err := KindHashes(parseDocs(t, unreferenced), s, false)
+	before, err := KindHashes(Redact(parseDocs(t, unreferenced)), s)
 	if err != nil {
 		t.Fatal(err)
 	}
-	after, err := KindHashes(parseDocs(t, strings.Replace(unreferenced, "token: unused", "token: changed", 1)), s, false)
+	after, err := KindHashes(Redact(parseDocs(t, strings.Replace(unreferenced, "token: unused", "token: changed", 1))), s)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -187,38 +187,38 @@ metadata: {name: default}
 spec: {hostname: n1}
 `)
 	sum := sha256.Sum256([]byte("test"))
-	if got := docs[0].Hashed()["spec"].(map[string]any)["data"].(map[string]any)["token"]; got != hex.EncodeToString(sum[:]) {
+	if got := docs[0].hidden()["spec"].(map[string]any)["data"].(map[string]any)["token"]; got != hex.EncodeToString(sum[:]) {
 		t.Errorf("the Secret's token = %v", got)
 	}
 	if got := docs[0].Object["spec"].(map[string]any)["data"].(map[string]any)["token"]; got != "test" {
-		t.Errorf("Hashed changed the Secret itself: %v", got)
+		t.Errorf("hidden changed the Secret itself: %v", got)
 	}
-	if !reflect.DeepEqual(docs[1].Hashed(), docs[1].Object) {
-		t.Errorf("the Host = %v", docs[1].Hashed())
+	if !reflect.DeepEqual(docs[1].hidden(), docs[1].Object) {
+		t.Errorf("the Host = %v", docs[1].hidden())
 	}
 }
 
-// KindHashes of a set whose secret values are hashed already, as Redact gives it, are those of
-// the set with its values, also of a document that embeds a Secret object. Such a document is
-// hashed with the values of the Secret object hidden, which Hash keeps, so its kind hash is no Hash
-// of its documents, and a rotated value changes it.
-func TestKindHashesHashed(t *testing.T) {
+// KindHashes of redacted documents read back as written, as a baseline reads them, are those of
+// the documents Redact gave, also of a document that embeds a Secret object: reading them back
+// redacts nothing again. Such a document is hashed with the values of the Secret object hidden,
+// which Hash keeps, so its kind hash is no Hash of its documents, and a rotated value changes it.
+func TestKindHashesReadBack(t *testing.T) {
 	s := imageSchemas(t)
 	const bundle = "---\napiVersion: bundle.example.org/v1alpha1\nkind: Bundle\nmetadata: {name: apps}\n" +
 		"spec: {objects: [{apiVersion: v1, kind: Secret, metadata: {name: s}, stringData: {p: plain}}]}\n"
 	docs := parseDocs(t, hashed+bundle)
-	want, err := KindHashes(docs, s, false)
+	want, err := KindHashes(Redact(docs), s)
 	if err != nil {
 		t.Fatal(err)
 	}
-	got, err := KindHashes(Redact(docs), s, true)
+	got, err := KindHashes(RedactedObjects(Redact(docs).Objects()), s)
 	if err != nil || !maps.Equal(got, want) || want["Bundle"] == "" {
-		t.Errorf("hashed: %v, %v; with values: %v", got, err, want)
+		t.Errorf("read back: %v, %v; redacted: %v", got, err, want)
 	}
 	if h, err := Hash(parseDocs(t, bundle)); err != nil || h == want["Bundle"] {
 		t.Errorf("the Bundle's kind hash is its Hash %s: %v", h, err)
 	}
-	rotated, err := KindHashes(parseDocs(t, hashed+strings.Replace(bundle, "plain", "other", 1)), s, false)
+	rotated, err := KindHashes(Redact(parseDocs(t, hashed+strings.Replace(bundle, "plain", "other", 1))), s)
 	if err != nil || rotated["Bundle"] == want["Bundle"] || rotated["Demo"] != want["Demo"] {
 		t.Errorf("rotated: %v, %v; before: %v", rotated, err, want)
 	}
@@ -230,15 +230,15 @@ func TestKindHashesSeeAnEmbeddedNumber(t *testing.T) {
 	s := imageSchemas(t)
 	const bundle = "apiVersion: bundle.example.org/v1alpha1\nkind: Bundle\nmetadata: {name: apps}\n" +
 		"spec: {objects: [{apiVersion: v1, kind: Secret, metadata: {name: s}, stringData: {port: 1}}]}\n"
-	before, err := KindHashes(parseDocs(t, bundle), s, false)
+	before, err := KindHashes(Redact(parseDocs(t, bundle)), s)
 	if err != nil {
 		t.Fatal(err)
 	}
-	after, err := KindHashes(parseDocs(t, strings.Replace(bundle, "port: 1", "port: 2", 1)), s, false)
+	after, err := KindHashes(Redact(parseDocs(t, strings.Replace(bundle, "port: 1", "port: 2", 1))), s)
 	if err != nil || after["Bundle"] == before["Bundle"] {
 		t.Errorf("a number's change: %v -> %v, %v; want the Bundle's hash to change", before, after, err)
 	}
-	if text, _ := json.Marshal(Redact(parseDocs(t, bundle))[0].Object); !strings.Contains(string(text), `"port":"`+sum("1")+`"`) {
+	if text, _ := json.Marshal(Redact(parseDocs(t, bundle)).docs[0].Object); !strings.Contains(string(text), `"port":"`+sum("1")+`"`) {
 		t.Errorf("redacted %s, want the number hashed", text)
 	}
 }

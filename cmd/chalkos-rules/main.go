@@ -268,28 +268,28 @@ func exampleFiles(dir string) ([]string, error) {
 }
 
 // exampleDocuments are the documents of an example file, each valid against the schemas and with
-// its defaults, as a node's renderers and validators read them.
-func exampleDocuments(s *schema.Schemas, file string) ([]config.Document, error) {
+// its defaults and redacted, as a node's renderers and validators read them.
+func exampleDocuments(s *schema.Schemas, file string) (config.Redacted, error) {
 	f, err := os.Open(file)
 	if err != nil {
-		return nil, err
+		return config.Redacted{}, err
 	}
 	docs, err := config.Parse(f)
 	f.Close()
 	if err != nil {
-		return nil, err
+		return config.Redacted{}, err
 	}
 	for i, doc := range docs {
 		if err := s.Validate(doc.Object); err != nil {
-			return nil, err
+			return config.Redacted{}, err
 		}
 		filled, err := s.Default(doc.Object)
 		if err != nil {
-			return nil, err
+			return config.Redacted{}, err
 		}
 		docs[i].Object = filled
 	}
-	return docs, nil
+	return config.Redact(docs), nil
 }
 
 func renderExample(s *schema.Schemas, name string, d outputs.Definition, file string) error {

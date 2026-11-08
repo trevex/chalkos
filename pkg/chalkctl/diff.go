@@ -38,17 +38,17 @@ type fieldChange struct {
 type configDiff []docChange
 
 // diffConfig compares node, a slot's documents as GetConfig returns them, with inventory, the
-// inventory's for the node, both as delivered: no defaults are filled in, so a field one spells out
-// and the other leaves to its default differs. The inventory's documents are redacted as the
-// node's are, so secret values compare by their hashes and show as changed alone.
-func diffConfig(node, inventory []config.Document) configDiff {
+// inventory's for the node or another slot's, both as delivered: no defaults are filled in, so a
+// field one spells out and the other leaves to its default differs. Both are redacted, so secret
+// values compare by their hashes and show as changed alone.
+func diffConfig(node, inventory config.Redacted) configDiff {
 	key := func(d config.Document) string { return d.APIVersion + " " + d.Kind + " " + d.Name }
 	was := map[string]config.Document{}
-	for _, d := range node {
+	for _, d := range node.Documents() {
 		was[key(d)] = d
 	}
 	var changes configDiff
-	for _, d := range config.Redact(inventory) {
+	for _, d := range inventory.Documents() {
 		old, ok := was[key(d)]
 		delete(was, key(d))
 		if !ok {
@@ -80,12 +80,12 @@ func diffFields(old, new config.Document) []fieldChange {
 			continue
 		}
 		f := fieldChange{path: la.path, name: showPath(old, la.path), old: la.value, new: lb.value}
-		f.secret = config.Redacted(old, f.path) || config.Redacted(new, f.path)
+		f.secret = config.SecretField(old, f.path) || config.SecretField(new, f.path)
 		fields = append(fields, f)
 	}
 	for k, lb := range b {
 		if _, ok := a[k]; !ok {
-			fields = append(fields, fieldChange{path: lb.path, name: showPath(new, lb.path), new: lb.value, secret: config.Redacted(new, lb.path)})
+			fields = append(fields, fieldChange{path: lb.path, name: showPath(new, lb.path), new: lb.value, secret: config.SecretField(new, lb.path)})
 		}
 	}
 	slices.SortFunc(fields, func(x, y fieldChange) int { return comparePaths(x.path, y.path) })
@@ -222,18 +222,19 @@ func (c configDiff) writeRemoved(w io.Writer, removed string) {
 
 // slotConfig asks a node for the documents of a slot, the running image's or with staged the
 // staged image's; none when the node holds none for the image.
-func slotConfig(ctx context.Context, conn *client.Conn, staged bool) ([]config.Document, error) {
+func slotConfig(ctx context.Context, conn *client.Conn, staged bool) (config.Redacted, error) {
 	return getConfig(ctx, conn, &nodev1.GetConfigRequest{Staged: staged})
 }
 
-// getConfig asks a node for the documents the request names; none when the node holds none.
-func getConfig(ctx context.Context, conn *client.Conn, req *nodev1.GetConfigRequest) ([]config.Document, error) {
+// getConfig asks a node for the documents the request names, which it serves redacted; none when
+// the node holds none.
+func getConfig(ctx context.Context, conn *client.Conn, req *nodev1.GetConfigRequest) (config.Redacted, error) {
 	resp, err := conn.GetConfig(ctx, connect.NewRequest(req))
 	if connect.CodeOf(err) == connect.CodeNotFound {
-		return nil, nil
+		return config.Redacted{}, nil
 	}
 	if err != nil {
-		return nil, fmt.Errorf("ask for the config it holds: %w", err)
+		return config.Redacted{}, fmt.Errorf("ask for the config it holds: %w", err)
 	}
-	return config.Parse(strings.NewReader(resp.Msg.Documents))
+	return config.ParseRedacted(strings.NewReader(resp.Msg.Documents))
 }

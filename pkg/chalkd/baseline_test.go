@@ -1,17 +1,21 @@
 package chalkd
 
 import (
+	"encoding/json"
 	"path/filepath"
 	"reflect"
 	"strconv"
+	"strings"
 	"testing"
+
+	"github.com/trevex/chalkos/pkg/config"
 )
 
 // The baseline records the hashes of the kinds the node ran, which a retry compares with.
 func TestBaselineRecordsKinds(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "baseline.json")
 	kinds := map[string]string{"Demo": "abc"}
-	if err := newBaseline(nil, nil, nil, nil, kinds).write(path); err != nil {
+	if err := newBaseline(config.Redacted{}, nil, nil, nil, kinds).write(path); err != nil {
 		t.Fatal(err)
 	}
 	b, found, err := readBaseline(path)
@@ -69,7 +73,7 @@ func TestBaselineAddsAttempts(t *testing.T) {
 // refused and recorded nowhere.
 func TestBaselineSetsTheFactsOfTheNewestAttempt(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "baseline.json")
-	if err := newBaseline(nil, nil, nil, nil, nil).write(path); err != nil {
+	if err := newBaseline(config.Redacted{}, nil, nil, nil, nil).write(path); err != nil {
 		t.Fatal(err)
 	}
 	a := baselineAttempt{Documents: []map[string]any{{"kind": "Demo", "spec": map[string]any{"ratio": 0.1, "count": 3}}}}
@@ -100,7 +104,7 @@ func TestBaselineSetsTheFactsOfTheNewestAttempt(t *testing.T) {
 func TestBaselineKeepsTheNewestAttempts(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "baseline.json")
 	kinds := map[string]string{"Demo": "abc"}
-	if err := newBaseline(nil, nil, nil, nil, kinds).write(path); err != nil {
+	if err := newBaseline(config.Redacted{}, nil, nil, nil, kinds).write(path); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := addAttempt(path, baselineAttempt{Kinds: kinds}); err != nil {
@@ -140,5 +144,27 @@ func TestBaselineKeepsTheNewestAttempts(t *testing.T) {
 	want := []string{"3", "4", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15", "16", "17", "5", "6"}
 	if !reflect.DeepEqual(order, want) {
 		t.Errorf("attempts = %v, want %v", order, want)
+	}
+}
+
+// The baseline records the documents redacted and reads them back as they were recorded: their
+// secret values stay the hashes Redact gave, hashed no further.
+func TestBaselineReadsBackRedacted(t *testing.T) {
+	docs, err := config.Parse(strings.NewReader("apiVersion: chalkos.dev/v1alpha1\nkind: Secret\nmetadata: {name: s}\nspec: {data: {token: s3cret}}\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), "baseline.json")
+	if err := newBaseline(config.Redact(docs), nil, nil, nil, nil).write(path); err != nil {
+		t.Fatal(err)
+	}
+	b, found, err := readBaseline(path)
+	if err != nil || !found {
+		t.Fatalf("baseline: %v, %v", found, err)
+	}
+	got, _ := json.Marshal(b.documents().Objects())
+	want, _ := json.Marshal(config.Redact(docs).Objects())
+	if string(got) != string(want) || strings.Contains(string(got), "s3cret") {
+		t.Errorf("read back %s, want %s", got, want)
 	}
 }

@@ -56,11 +56,11 @@ func (s *Server) checkInput(ctx context.Context, system, dir string, in *checkv1
 	if err != nil {
 		return &checkv1.Result{Error: err.Error()}
 	}
-	delivered, err := imagecheck.Decode(in.GetDelivered())
+	delivered, err := imagecheck.DecodeRedacted(in.GetDelivered())
 	if err != nil {
 		return &checkv1.Result{Error: fmt.Sprintf("the delivered documents: %v", err)}
 	}
-	old, err := imagecheck.Decode(in.GetOld())
+	old, err := imagecheck.DecodeRedacted(in.GetOld())
 	if err != nil {
 		return &checkv1.Result{Error: fmt.Sprintf("the old documents: %v", err)}
 	}

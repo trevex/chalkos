@@ -68,72 +68,15 @@ func hashSecretData(obj map[string]any) map[string]any {
 	return out
 }
 
-// hashValues returns data with each value replaced by hashValue of it, as Hash names a set.
-func hashValues(data map[string]any) map[string]any {
-	hidden := make(map[string]any, len(data))
-	for k, v := range data {
-		hidden[k] = hashValue(v)
-	}
-	return hidden
-}
-
-// hashValue is the hex SHA-256 of v: of a string as it is, of any other value as its JSON.
-func hashValue(v any) string {
-	s, isString := v.(string)
-	if !isString {
-		b, _ := json.Marshal(v)
-		s = string(b)
-	}
-	sum := sha256.Sum256([]byte(s))
-	return hex.EncodeToString(sum[:])
-}
-
-// hideValues returns data with each value hidden by hideValue, as Redact hides a Secret's.
-func hideValues(data map[string]any) map[string]any {
-	hidden := make(map[string]any, len(data))
-	for k, v := range data {
-		hidden[k] = hideValue(v)
-	}
-	return hidden
-}
-
-// hideValue hides a value of a Secret as Redact does: a string by its hex SHA-256, as Hash
-// replaces it, and any other value by the zero value of its JSON type, such as 0 for a number,
-// also one Go built as an int or a float64 rather than parsed as a json.Number. A value that is no
-// string keeps its type, so a schema that refuses it refuses the hidden document with the same
-// message, as a schema's message of a value of the wrong type names the type alone. Secret values
-// are strings, so a document that holds another passes no check, and nothing compares the zero
-// values.
-func hideValue(v any) any {
-	switch v := v.(type) {
-	case string:
-		return hashValue(v)
-	case bool:
-		return false
-	case json.Number, float64, float32, int, int64, int32, uint, uint64, uint32:
-		return json.Number("0")
-	case []any:
-		return []any{}
-	case map[string]any:
-		return map[string]any{}
-	}
-	return nil
-}
-
 // KindHashes hashes the documents of each kind in docs, by kind name, together with the Secrets
 // they reference, so a kind's hash changes when one of its documents does or a Secret one of them
 // references. Secrets have no entry of their own. schemas tell which fields are key references.
-//
-// It hashes docs as Redact gives them, the Secret objects documents embed hidden too, which Hash
-// keeps as they are. hashed tells that docs come from Redact already; they give the same hashes
-// as the documents with their values.
-func KindHashes(docs []Document, schemas *schema.Schemas, hashed bool) (map[string]string, error) {
-	if !hashed {
-		docs = Redact(docs)
-	}
+// It hashes the documents as Redact gave them, the Secret objects documents embed hidden too,
+// which Hash keeps as they are.
+func KindHashes(docs Redacted, schemas *schema.Schemas) (map[string]string, error) {
 	secrets := map[string]Document{}
-	byKind := map[string][]Document{}
-	for _, d := range docs {
+	byKind := map[string]Documents{}
+	for _, d := range docs.docs {
 		if d.IsSecret() {
 			secrets[d.Name] = d
 			continue
@@ -156,7 +99,7 @@ func KindHashes(docs []Document, schemas *schema.Schemas, hashed bool) (map[stri
 				}
 			}
 		}
-		h, err := hashRedacted(input)
+		h, err := Redacted{docs: input}.hash()
 		if err != nil {
 			return nil, err
 		}
@@ -165,9 +108,9 @@ func KindHashes(docs []Document, schemas *schema.Schemas, hashed bool) (map[stri
 	return out, nil
 }
 
-// hashRedacted is Hash of documents Redact gave: their Secrets' values are hashed already, so it
-// hashes the objects as they are, which for a set that embeds no Secret object, and whose Secret
-// values are strings, is Hash of the set before Redact.
-func hashRedacted(docs []Document) (string, error) {
-	return hashJSON(sortedJSON(docs, func(d Document) map[string]any { return d.Object }))
+// hash is the SHA-256, in lower-case hex, of the documents ordered by apiVersion, kind and name,
+// as one JSON array, which for a set that embeds no Secret object, and whose Secret values are
+// strings, is Hash of the set before Redact.
+func (r Redacted) hash() (string, error) {
+	return hashJSON(sortedJSON(r.docs, func(d Document) map[string]any { return d.Object }))
 }

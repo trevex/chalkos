@@ -113,7 +113,7 @@ func TestDHCPSubnetRules(t *testing.T) {
 			[]string{`DHCPSubnet/office: spec.boot: boot's bios and uefi files load over TFTP from boot's server; give server`}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			failures, err := set.Evaluate(Input{Documents: tc.docs, Node: "r1"})
+			failures, err := set.Evaluate(Input{Documents: config.Redact(tc.docs), Node: "r1"})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -169,7 +169,7 @@ func TestDHCPSubnetManyRanges(t *testing.T) {
 			if err := s.Validate(tc.doc.Object); err != nil {
 				t.Fatal(err)
 			}
-			failures, err := set.Evaluate(Input{Documents: []config.Document{tc.doc}, Node: "r1"})
+			failures, err := set.Evaluate(Input{Documents: config.Redact([]config.Document{tc.doc}), Node: "r1"})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -198,7 +198,7 @@ func TestDHCPSubnetLeaseTime(t *testing.T) {
 		"999999d": {`DHCPSubnet/office: spec.leaseTime: a lease of 999999d is longer than 4294967295 seconds, the longest Kea takes`},
 	} {
 		d := doc("DHCPSubnet", "office", `{"interfaces": ["lan0"], "subnet": "192.0.2.0/24", "leaseTime": "`+leaseTime+`"}`)
-		failures, err := set.Evaluate(Input{Documents: []config.Document{d}, Node: "r1"})
+		failures, err := set.Evaluate(Input{Documents: config.Redact([]config.Document{d}), Node: "r1"})
 		if err != nil {
 			t.Fatal(err)
 		}

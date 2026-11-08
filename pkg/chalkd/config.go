@@ -119,19 +119,20 @@ func (s *Server) installConfig(ctx context.Context, h *nodev1.InstallHeader, nam
 	if err != nil {
 		return slot.Stored{}, err
 	}
-	f, err := s.factsFor(ctx, stored.Documents, nil, h.FallbackSecret)
+	docs := config.Redact(stored.Documents)
+	f, err := s.factsFor(ctx, docs, config.Redacted{}, h.FallbackSecret)
 	if err != nil {
 		return slot.Stored{}, err
 	}
 	f.Install = true
-	if err := s.checkRules(set, name, stored.Documents, nil, f); err != nil {
+	if err := s.checkRules(set, name, docs, config.Redacted{}, f); err != nil {
 		return slot.Stored{}, err
 	}
 	// The node renders the outputs again at the boot that follows.
-	if err := s.checkValidators(ctx, stored.Documents); err != nil {
+	if err := s.checkValidators(ctx, docs); err != nil {
 		return slot.Stored{}, err
 	}
-	staged, err := s.renderOutputs(ctx, name, stored.Documents, schemas, true, false)
+	staged, err := s.renderOutputs(ctx, name, docs, schemas, true, false)
 	if err != nil {
 		return slot.Stored{}, err
 	}
@@ -279,7 +280,7 @@ func (s *Server) GetConfig(ctx context.Context, req *connect.Request[nodev1.GetC
 	case !found:
 		return nil, layer.Errorf(connect.CodeNotFound, "STATE holds no config for the image")
 	}
-	e, err := config.Encode(config.Redact(stored.Delivered))
+	e, err := config.Encode(config.Redact(stored.Delivered).Documents())
 	if err != nil {
 		return nil, fmt.Errorf("encode the config: %w", err)
 	}

@@ -53,7 +53,7 @@ func input(t *testing.T) outputs.Input {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return outputs.Input{Node: "cp1", Documents: docs, Schemas: s}
+	return outputs.Input{Node: "cp1", Documents: config.Redact(docs), Schemas: s}
 }
 
 func runner(t *testing.T) outputs.Renderer {

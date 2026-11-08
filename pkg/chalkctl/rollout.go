@@ -407,7 +407,7 @@ func (r *upgradeRun) checkChanges(ctx context.Context) error {
 		if r.deliveryOf(r.nodes[name]) == nil {
 			continue
 		}
-		var running []config.Document
+		var running config.Redacted
 		denied := false
 		if err := r.call(name, func(conn *client.Conn) error {
 			var err error

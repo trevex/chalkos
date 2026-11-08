@@ -165,7 +165,7 @@ func TestRouterRules(t *testing.T) {
 		{"a NAT interface of a VRF's device", replace(edge, doc("VRF", "tenant", `{"table": 100}`), doc("NATRule", "out", `{"type": "masquerade", "out": {"interface": "tenant"}}`)), nil},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			failures, err := set.Evaluate(Input{Documents: tc.docs, Node: "r1"})
+			failures, err := set.Evaluate(Input{Documents: config.Redact(tc.docs), Node: "r1"})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -242,7 +242,7 @@ func TestManagementGuard(t *testing.T) {
 			[]config.Document{router(`["*"]`), network(t, "10-eth2", `{"name": "eth2"}`)}, nil},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			failures, err := set.Evaluate(Input{Documents: tc.docs, Old: tc.old, Node: "r1"})
+			failures, err := set.Evaluate(Input{Documents: config.Redact(tc.docs), Old: config.Redact(tc.old), Node: "r1"})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -253,7 +253,7 @@ func TestManagementGuard(t *testing.T) {
 	}
 	// A router whose node API answered on every interface had nothing to keep.
 	open := []config.Document{router(`null`), running[1]}
-	if failures, err := set.Evaluate(Input{Documents: []config.Document{router(`null`)}, Old: open, Node: "r1"}); err != nil || len(failures) != 0 {
+	if failures, err := set.Evaluate(Input{Documents: config.Redact([]config.Document{router(`null`)}), Old: config.Redact(open), Node: "r1"}); err != nil || len(failures) != 0 {
 		t.Errorf("without management interfaces: %v, %v", messages(failures), err)
 	}
 }

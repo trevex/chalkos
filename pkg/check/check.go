@@ -1,9 +1,9 @@
 // Package check checks a node's config as the image the config is for checks it, from what that
 // image holds and what the node gives it, and changes nothing: it translates the documents, runs
 // the image's change rules, validators and renderers, and plans the effects a delivery of the
-// config takes. It never sees a Secret's value. The documents arrive with their secret values
-// hashed, as config.Redact hashes them, which is all rules, validators and renderers read of
-// them, and the checks of secret references need the Secrets' keys alone.
+// config takes. It never sees a Secret's value: it takes the documents as config.Redacted, which
+// is all rules, validators and renderers read of them, and the checks of secret references need
+// the Secrets' keys alone.
 //
 // chalkd runs these steps for a delivery to the running image, with its own checks of the machine
 // between them; Run runs them in a row for an image that checks its own config.
@@ -35,8 +35,7 @@ type Image struct {
 
 // Input is a config to check for the node called Node:
 //   - Delivered are the documents as delivered, and Old the documents of the config they replace,
-//     as delivered too, or with the defaults of the image that checks; nil at an install. The
-//     secret values of both are hashed.
+//     as delivered too, or with the defaults of the image that checks; empty at an install.
 //   - Facts gives the node's facts for a check of the translated documents against Old, with its
 //     defaults, which command facts read; it loads a fact when a rule first reads it. Run requires
 //     it.
@@ -44,21 +43,21 @@ type Image struct {
 //     baseline and what the deliveries that failed since applied.
 type Input struct {
 	Node      string
-	Delivered []config.Document
-	Old       []config.Document
-	Facts     func(next, old []config.Document) rules.Facts
+	Delivered config.Redacted
+	Old       config.Redacted
+	Facts     func(next, old config.Redacted) rules.Facts
 	Compare   []Comparison
 }
 
-// Result is a config that passed: its documents with their defaults and their secret values
-// hashed, the identity they translate to, its outputs, rendered and checked, and the plan of a
-// delivery of it. Warnings name the effect rules that could not be evaluated, whose effects the
+// Result is a config that passed: its documents with their defaults, redacted, the identity they
+// translate to (JSON), its outputs, rendered and checked, and the plan of a delivery of it. Warnings name the effect rules that could not be evaluated, whose effects the
 // plan takes all the same, as Due gives them. The caller discards or swaps in Staged.
 type Result struct {
-	Translated
-	Staged   *outputs.Staged
-	Plan     Plan
-	Warnings []string
+	Documents config.Redacted
+	Identity  []byte
+	Staged    *outputs.Staged
+	Plan      Plan
+	Warnings  []string
 }
 
 // Stage is the step of a check that refused a config.
@@ -95,35 +94,40 @@ func Run(ctx context.Context, img Image, in Input) (Result, error) {
 	if in.Facts == nil {
 		return Result{}, errors.New("the check has no facts to give the rules")
 	}
-	tr, err := Translate(in.Node, in.Delivered, img.Schemas, img.Target)
+	docs, id, err := config.TranslateRedacted(in.Node, in.Delivered, img.Schemas, img.Target)
 	if err != nil {
 		return Result{}, &Refusal{Stage: StageConfig, Message: ConfigRefusal(err)}
 	}
-	old := Defaulted(img.Schemas, in.Old)
-	failures, err := Rules(img.Rules, in.Node, tr.Documents, old, in.Facts(tr.Documents, old))
+	res := Result{Documents: docs}
+	if res.Identity, err = encodeIdentity(id); err != nil {
+		return Result{}, err
+	}
+	old := in.Old.Defaulted(img.Schemas)
+	failures, err := Rules(img.Rules, in.Node, docs, old, in.Facts(docs, old))
 	if err != nil {
-		return Result{Translated: tr}, &Refusal{Stage: StageRules, Message: err.Error()}
+		return res, &Refusal{Stage: StageRules, Message: err.Error()}
 	}
 	if len(failures) > 0 {
-		return Result{Translated: tr}, &Refusal{Stage: StageRules, Message: rules.Refusal(failures, in.Node), Failures: failures}
+		return res, &Refusal{Stage: StageRules, Message: rules.Refusal(failures, in.Node), Failures: failures}
 	}
-	input := outputs.Input{Node: in.Node, Documents: tr.Documents, Schemas: img.Schemas, Hashed: true}
+	input := outputs.Input{Node: in.Node, Documents: docs, Schemas: img.Schemas}
 	rs, failed, err := validators.Run(ctx, img.Render, img.Validators, input)
 	if err != nil {
 		return Result{}, err
 	}
 	if len(rs) > 0 || len(failed) > 0 {
-		return Result{Translated: tr}, &Refusal{Stage: StageValidators, Message: validators.Refusal(rs, failed)}
+		return res, &Refusal{Stage: StageValidators, Message: validators.Refusal(rs, failed)}
 	}
 	staged, refused := img.Render.Render(ctx, img.Outputs, input)
 	if len(refused) > 0 {
 		staged.Discard()
-		return Result{Translated: tr}, &Refusal{Stage: StageOutputs, Message: outputs.Refusal(refused)}
+		return res, &Refusal{Stage: StageOutputs, Message: outputs.Refusal(refused)}
 	}
-	o, warnings, err := Due(img.Effects, Delivery{Node: in.Node, Documents: tr.Documents, Schemas: img.Schemas, Outputs: staged.States()}, in.Compare)
+	o, warnings, err := Due(img.Effects, Delivery{Node: in.Node, Documents: docs, Schemas: img.Schemas, Outputs: staged.States()}, in.Compare)
 	if err != nil {
 		staged.Discard()
 		return Result{}, err
 	}
-	return Result{Translated: tr, Staged: staged, Plan: PlanOf(img.Effects, o), Warnings: warnings}, nil
+	res.Staged, res.Plan, res.Warnings = staged, PlanOf(img.Effects, o), warnings
+	return res, nil
 }

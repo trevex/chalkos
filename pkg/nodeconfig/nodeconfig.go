@@ -207,31 +207,29 @@ func (l Loader) Apply(data []byte) error {
 
 // RenderOutputs renders and checks every output of the image from docs, a config set with its
 // defaults, for the node called name, and stages those that pass; schemas tell the secretRef
-// fields of docs, the image's own when nil, and hashed that the secret values of docs are hashed
-// already. It changes nothing a service reads.
-func (l Loader) RenderOutputs(ctx context.Context, name string, docs []config.Document, schemas *schema.Schemas, hashed bool) (*outputs.Staged, []outputs.Failure, error) {
+// fields of docs, the image's own when nil. It changes nothing a service reads.
+func (l Loader) RenderOutputs(ctx context.Context, name string, docs config.Redacted, schemas *schema.Schemas) (*outputs.Staged, []outputs.Failure, error) {
 	defs, schemas, err := l.outputs(docs, schemas)
 	if err != nil {
 		return nil, nil, err
 	}
-	staged, failures := l.Render.Render(ctx, defs, outputs.Input{Node: name, Documents: docs, Schemas: schemas, Hashed: hashed})
+	staged, failures := l.Render.Render(ctx, defs, outputs.Input{Node: name, Documents: docs, Schemas: schemas})
 	return staged, failures, nil
 }
 
-// Validate runs every validator of the image on docs, a config set with its defaults and its
-// secret values hashed, and returns the refusals they reported and the failures of those that did
-// not run to their end. It changes nothing a service reads.
-func (l Loader) Validate(ctx context.Context, docs []config.Document) ([]refusals.Refusal, []validators.Failure, error) {
+// Validate runs every validator of the image on docs, a config set with its defaults, and
+// returns the refusals they reported and the failures of those that did not run to their end. It changes nothing a service reads.
+func (l Loader) Validate(ctx context.Context, docs config.Redacted) ([]refusals.Refusal, []validators.Failure, error) {
 	defs, err := validators.Read(l.Validators)
 	if err != nil {
 		return nil, nil, err
 	}
-	return validators.Run(ctx, l.Render, defs, outputs.Input{Documents: docs, Hashed: true})
+	return validators.Run(ctx, l.Render, defs, outputs.Input{Documents: docs})
 }
 
 // OutputStates are the states of the outputs the node serves now, which docs, the config they
 // were rendered from, references Secrets of; schemas are as for RenderOutputs.
-func (l Loader) OutputStates(docs []config.Document, schemas *schema.Schemas) (map[string]outputs.State, error) {
+func (l Loader) OutputStates(docs config.Redacted, schemas *schema.Schemas) (map[string]outputs.State, error) {
 	defs, schemas, err := l.outputs(docs, schemas)
 	if err != nil {
 		return nil, err
@@ -247,12 +245,12 @@ func (l Loader) OutputStates(docs []config.Document, schemas *schema.Schemas) (m
 
 // outputs reads the image's outputs, and the image's schemas in place of nil ones when there are
 // outputs and documents to render them from.
-func (l Loader) outputs(docs []config.Document, schemas *schema.Schemas) (map[string]outputs.Definition, *schema.Schemas, error) {
+func (l Loader) outputs(docs config.Redacted, schemas *schema.Schemas) (map[string]outputs.Definition, *schema.Schemas, error) {
 	defs, err := outputs.Read(l.Outputs, l.Render.Root)
 	if err != nil {
 		return nil, nil, err
 	}
-	if schemas == nil && len(defs) > 0 && len(docs) > 0 {
+	if schemas == nil && len(defs) > 0 && docs.Len() > 0 {
 		if schemas, err = schema.LoadSchemas(l.Schemas); err != nil {
 			return nil, nil, fmt.Errorf("read the image's schemas: %w", err)
 		}
@@ -278,7 +276,7 @@ func (l Loader) renderAtBoot(docs []config.Document) error {
 	if err != nil {
 		return fmt.Errorf("the node's name for its outputs: %w", err)
 	}
-	staged, failures, err := l.RenderOutputs(context.Background(), name, docs, nil, false)
+	staged, failures, err := l.RenderOutputs(context.Background(), name, config.Redact(docs), nil)
 	if err != nil {
 		return err
 	}

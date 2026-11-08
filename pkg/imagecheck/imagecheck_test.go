@@ -55,7 +55,7 @@ const doc = `{"apiVersion":"demo.example.org/v1alpha1","kind":"Demo","metadata":
 
 // The documents pass as JSON objects, their numbers exact.
 func TestEncodeDecode(t *testing.T) {
-	docs, err := Decode([]string{doc})
+	docs, err := DecodeRedacted([]string{doc})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -72,11 +72,11 @@ func TestEncodeDecode(t *testing.T) {
 // command facts read, each fact asked once for one input, and an error as its message alone.
 func TestFactsOverTheSocket(t *testing.T) {
 	f := &fakeFacts{values: map[string]any{"recorded": map[string]any{"size": json.Number("12345678901234567890")}}}
-	docs, err := Decode([]string{doc})
+	docs, err := DecodeRedacted([]string{doc})
 	if err != nil {
 		t.Fatal(err)
 	}
-	facts := serve(t, f).For(docs, nil)
+	facts := serve(t, f).For(docs, config.Redacted{})
 	for range 2 {
 		v, err := facts.Fact("recorded")
 		if err != nil || !reflect.DeepEqual(v, f.values["recorded"]) {
@@ -88,12 +88,12 @@ func TestFactsOverTheSocket(t *testing.T) {
 	}
 	// The input is what chalkd's own loader gives a command of a delivery to the running image.
 	got, _ := json.Marshal(f.inputs[0])
-	want, _ := json.Marshal(map[string]any{"config": rules.HashedConfigOf(docs), "oldConfig": rules.HashedConfigOf(nil)})
+	want, _ := json.Marshal(map[string]any{"config": rules.ConfigOf(docs), "oldConfig": rules.ConfigOf(config.Redacted{})})
 	if string(got) != string(want) {
 		t.Errorf("input = %s\nwant %s", got, want)
 	}
 	f.err = errors.New("share.json is not JSON")
-	if _, err := serve(t, f).For(docs, nil).Fact("share"); err == nil || err.Error() != "share.json is not JSON" {
+	if _, err := serve(t, f).For(docs, config.Redacted{}).Fact("share"); err == nil || err.Error() != "share.json is not JSON" {
 		t.Errorf("err = %v, want the fact's error alone", err)
 	}
 }
@@ -113,7 +113,7 @@ func TestLocal(t *testing.T) {
 		if err := protojson.Unmarshal(data, in); err != nil {
 			return err
 		}
-		v, err := DialFacts(ctx, socket).For(nil, nil).Fact("disks")
+		v, err := DialFacts(ctx, socket).For(config.Redacted{}, config.Redacted{}).Fact("disks")
 		if err != nil {
 			return err
 		}
@@ -188,7 +188,7 @@ func TestFactsOneAtATime(t *testing.T) {
 	errs := make(chan error, 16)
 	for range 16 {
 		wg.Go(func() {
-			if _, err := r.For(nil, nil).Fact("disks"); err != nil {
+			if _, err := r.For(config.Redacted{}, config.Redacted{}).Fact("disks"); err != nil {
 				errs <- err
 			}
 		})

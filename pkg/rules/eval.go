@@ -24,15 +24,11 @@ type Facts interface {
 // Input is what rules are evaluated against: the config delivered and the config it replaces,
 // each with its schema defaults, the node's name and the node's facts.
 type Input struct {
-	// Documents are the config delivered. Hashed tells that their secret values are hashed
-	// already, as config.Redact hashes them and as a check receives them.
-	Documents []config.Document
-	Hashed    bool
-	// Old is the running image's config; nil without one, as at an install, where field rules
-	// that read oldSelf do not run and the rules of kinds see no oldDocuments. OldHashed tells
-	// that its secret values are hashed already, as a node serves its config.
-	Old       []config.Document
-	OldHashed bool
+	// Documents are the config delivered.
+	Documents config.Redacted
+	// Old is the running image's config; empty without one, as at an install, where field rules
+	// that read oldSelf do not run and the rules of kinds see no oldDocuments.
+	Old config.Redacted
 	// Node is the node's name, which rules read as node.name: the inventory's name of the node,
 	// which its node certificate carries.
 	Node string
@@ -72,7 +68,7 @@ func (e *FactError) Unwrap() error { return e.Err }
 // oldDocuments, a field's self and oldSelf. An error is a rule that could not be evaluated, or a
 // fact that could not be loaded, which refuses the delivery as well.
 func (s *Set) Evaluate(in Input) ([]Failure, error) {
-	next, old := objectsOf(in.Documents, !in.Hashed), objectsOf(in.Old, !in.OldHashed)
+	next, old := in.Documents.Documents(), in.Old.Documents()
 	cfg, oldCfg := configMap(next), configMap(old)
 	node := nodeOf(in.Node)
 	var failures []Failure
@@ -93,13 +89,13 @@ func (s *Set) Evaluate(in Input) ([]Failure, error) {
 			continue
 		}
 		for _, d := range kindDocuments(next, p) {
-			self, ok := valueAt(d.object, p.Path)
+			self, ok := valueAt(d.Object, p.Path)
 			if !ok {
 				continue
 			}
 			oldSelf, hasOld := any(nil), false
 			if o, ok := oldDocument(old, p, d.Name); ok {
-				oldSelf, hasOld = valueAt(o.object, p.Path)
+				oldSelf, hasOld = valueAt(o.Object, p.Path)
 			}
 			if p.Transition && !hasOld {
 				continue
@@ -201,38 +197,13 @@ func messageError(msg ref.Val, err error) string {
 	return fmt.Sprintf("it yields %s, not a string", msg.Type().TypeName())
 }
 
-// docView is a document with its object as rules see it.
-type docView struct {
-	config.Document
-	object map[string]any
-}
-
-// objectsOf is docs as rules see them, with secret values replaced by their hashes unless
-// hashed is false, as for documents whose values are hashed already.
-func objectsOf(docs []config.Document, hash bool) []docView {
-	out := make([]docView, len(docs))
-	for i, d := range docs {
-		out[i] = docView{Document: d, object: d.Object}
-		if hash {
-			out[i].object = d.Hashed()
-		}
-	}
-	return out
-}
-
 // ConfigOf is a config set as rules see it and command facts read it: objects by apiVersion, kind
-// and name, secret values replaced by their hashes as config.Redact replaces them.
-func ConfigOf(docs []config.Document) map[string]any {
-	return configMap(objectsOf(docs, true))
+// and name, with their secret values hidden.
+func ConfigOf(docs config.Redacted) map[string]any {
+	return configMap(docs.Documents())
 }
 
-// HashedConfigOf is ConfigOf of documents whose secret values are hashed already, as
-// config.Redact gives them.
-func HashedConfigOf(docs []config.Document) map[string]any {
-	return configMap(objectsOf(docs, false))
-}
-
-func configMap(docs []docView) map[string]any {
+func configMap(docs []config.Document) map[string]any {
 	out := map[string]any{}
 	for _, d := range docs {
 		kinds, ok := out[d.APIVersion].(map[string]any)
@@ -245,48 +216,48 @@ func configMap(docs []docView) map[string]any {
 			names = map[string]any{}
 			kinds[d.Kind] = names
 		}
-		names[d.Name] = celValue(d.object)
+		names[d.Name] = celValue(d.Object)
 	}
 	return out
 }
 
 // documentsOf is the documents of the program's kind by name.
-func documentsOf(docs []docView, p *Program) map[string]any {
+func documentsOf(docs []config.Document, p *Program) map[string]any {
 	out := map[string]any{}
 	for _, d := range kindDocuments(docs, p) {
-		out[d.Name] = celValue(d.object)
+		out[d.Name] = celValue(d.Object)
 	}
 	return out
 }
 
-func kindDocuments(docs []docView, p *Program) []docView {
-	var out []docView
+func kindDocuments(docs []config.Document, p *Program) []config.Document {
+	var out []config.Document
 	for _, d := range docs {
 		if d.APIVersion == p.Kind.APIVersion && d.Kind == p.Kind.Kind {
 			out = append(out, d)
 		}
 	}
-	slices.SortFunc(out, func(a, b docView) int { return strings.Compare(a.Name, b.Name) })
+	slices.SortFunc(out, func(a, b config.Document) int { return strings.Compare(a.Name, b.Name) })
 	return out
 }
 
 // oldDocument is the running config's document a field's rule compares with: the one of the same
 // name, or for a kind a node has once, that one whatever its name, so renaming the document does
 // not escape the rule.
-func oldDocument(old []docView, p *Program, name string) (docView, bool) {
+func oldDocument(old []config.Document, p *Program, name string) (config.Document, bool) {
 	docs := kindDocuments(old, p)
 	if !p.Kind.Multiple {
 		if len(docs) == 1 {
 			return docs[0], true
 		}
-		return docView{}, false
+		return config.Document{}, false
 	}
 	for _, d := range docs {
 		if d.Name == name {
 			return d, true
 		}
 	}
-	return docView{}, false
+	return config.Document{}, false
 }
 
 // valueAt is the value at path in obj, which must exist.

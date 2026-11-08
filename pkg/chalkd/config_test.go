@@ -9,6 +9,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strconv"
 	"strings"
@@ -997,7 +998,7 @@ func TestGetConfig(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	docs, err := config.Parse(strings.NewReader(resp.Msg.Documents))
+	docs, err := config.ParseRedacted(strings.NewReader(resp.Msg.Documents))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1005,9 +1006,10 @@ func TestGetConfig(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	got, _ := config.Hash(docs)
-	redacted, _ := config.Hash(config.Redact(want))
-	if resp.Msg.Version != hashOf(t, baseConfig) || got != redacted {
+	got, redacted := docs.Documents(), config.Redact(want).Documents()
+	config.SortDocuments(got)
+	config.SortDocuments(redacted)
+	if resp.Msg.Version != hashOf(t, baseConfig) || !reflect.DeepEqual(got, redacted) {
 		t.Errorf("config %q of version %s, want baseConfig as delivered", resp.Msg.Documents, resp.Msg.Version)
 	}
 	if strings.Contains(resp.Msg.Documents, "s3cret") || strings.Contains(resp.Msg.Documents, `"replicas"`) {
@@ -1303,7 +1305,7 @@ func TestApplyConfigRefusesAsTheChecker(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			_, checked := check.Run(context.Background(), img, check.Input{Node: "n1", Delivered: config.Redact(docs), Facts: func(_, _ []config.Document) rules.Facts { return nil }})
+			_, checked := check.Run(context.Background(), img, check.Input{Node: "n1", Delivered: config.Redact(docs), Facts: func(_, _ config.Redacted) rules.Facts { return nil }})
 			r, ok := errors.AsType[*check.Refusal](checked)
 			if !ok || r.Stage != tc.stage {
 				t.Fatalf("check.Run: %v", checked)

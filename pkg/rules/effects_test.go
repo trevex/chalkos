@@ -54,7 +54,7 @@ func TestEffectVariables(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			in := EffectInput{
-				Documents: next, Old: old,
+				Documents: config.Redact(next), Old: config.Redact(old),
 				Facts:    &fakeFacts{values: map[string]any{"share": map[string]any{"kind": "worker"}}},
 				OldFacts: &fakeFacts{},
 			}
@@ -108,7 +108,7 @@ func TestEffectThatFailsIsDue(t *testing.T) {
 		effect(t, `false`),
 	}
 	in := EffectInput{
-		Documents: []config.Document{doc(t, "Demo", "a", `{"name": "s3cret"}`)},
+		Documents: config.Redact([]config.Document{doc(t, "Demo", "a", `{"name": "s3cret"}`)}),
 		Facts:     &fakeFacts{errs: map[string]error{"share": errors.New("not JSON")}},
 	}
 	got, errs := dueUnits(effects, in)
@@ -153,34 +153,22 @@ func TestCompileEffectErrors(t *testing.T) {
 	}
 }
 
-// An effect compares the config with an old one whose secret values are hashed already, as a
-// delivery that failed part way recorded it, as with the old config as delivered, and a delivery
-// whose secret values are hashed already as one with its values. Hashed documents that are not
-// said to be are hashed again, on either side, and compare as another Secret.
-func TestEffectOldHashed(t *testing.T) {
+// An effect compares the config with an old one read back as a delivery that failed part way
+// recorded it, redacted, as with the old config redacted from its values: reading it back hides
+// nothing again.
+func TestEffectOldReadBack(t *testing.T) {
 	secret := config.FromObject(map[string]any{
 		"apiVersion": "chalkos.dev/v1alpha1", "kind": "Secret",
 		"metadata": map[string]any{"name": "s"}, "spec": map[string]any{"data": map[string]any{"token": "s3cret"}},
 	})
 	e := effect(t, `config["chalkos.dev/v1alpha1"].Secret == oldConfig["chalkos.dev/v1alpha1"].Secret`)
-	for name, in := range map[string]EffectInput{
-		"as delivered": {Documents: []config.Document{secret}, Old: []config.Document{secret}},
-		"hashed":       {Documents: []config.Document{secret}, Old: config.Redact([]config.Document{secret}), OldHashed: true},
+	next := config.Redact([]config.Document{secret})
+	for name, old := range map[string]config.Redacted{
+		"redacted":  config.Redact([]config.Document{secret}),
+		"read back": config.RedactedObjects(config.Redact([]config.Document{secret}).Objects()),
 	} {
-		if got, errs := dueUnits([]*EffectRule{e}, in); len(errs) > 0 || len(got) != 1 {
+		if got, errs := dueUnits([]*EffectRule{e}, EffectInput{Documents: next, Old: old}); len(errs) > 0 || len(got) != 1 {
 			t.Errorf("%s: due = %v, %v; want the same Secret", name, got, errs)
 		}
-	}
-	in := EffectInput{Documents: []config.Document{secret}, Old: config.Redact([]config.Document{secret})}
-	if got, errs := dueUnits([]*EffectRule{e}, in); len(errs) > 0 || len(got) != 0 {
-		t.Errorf("hashed twice: due = %v, %v; want another Secret", got, errs)
-	}
-	in = EffectInput{Documents: config.Redact([]config.Document{secret}), Hashed: true, Old: []config.Document{secret}}
-	if got, errs := dueUnits([]*EffectRule{e}, in); len(errs) > 0 || len(got) != 1 {
-		t.Errorf("a hashed delivery: due = %v, %v; want the same Secret", got, errs)
-	}
-	in = EffectInput{Documents: config.Redact([]config.Document{secret}), Old: []config.Document{secret}}
-	if got, errs := dueUnits([]*EffectRule{e}, in); len(errs) > 0 || len(got) != 0 {
-		t.Errorf("a delivery hashed twice: due = %v, %v; want another Secret", got, errs)
 	}
 }

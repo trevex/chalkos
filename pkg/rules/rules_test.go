@@ -144,7 +144,7 @@ func TestFieldRules(t *testing.T) {
 		doc(t, "Demo", "b", `{"size": 1, "label": "b"}`),
 		doc(t, "Solo", "after", `{"size": 1}`),
 	}
-	failures, err := set.Evaluate(Input{Documents: next, Old: old})
+	failures, err := set.Evaluate(Input{Documents: config.Redact(next), Old: config.Redact(old)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -161,7 +161,7 @@ func TestFieldRules(t *testing.T) {
 		t.Errorf("takes = %s and %s, want reset and the default refuse", failures[2].Takes, failures[0].Takes)
 	}
 	// Without a running config, as at an install, only the rules that read no oldSelf run.
-	failures, err = set.Evaluate(Input{Documents: next})
+	failures, err = set.Evaluate(Input{Documents: config.Redact(next)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -187,7 +187,7 @@ func TestSpecRules(t *testing.T) {
 		doc(t, "Demo", "a", `{"pools": [{"first": 1, "last": 9}], "reserved": [5]}`),
 		doc(t, "Demo", "b", `{"pools": [{"first": 1, "last": 9}], "reserved": [10]}`),
 	}
-	failures, err := set.Evaluate(Input{Documents: next, Old: old})
+	failures, err := set.Evaluate(Input{Documents: config.Redact(next), Old: config.Redact(old)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -223,7 +223,7 @@ func TestKindRulesAndConfig(t *testing.T) {
 		doc(t, "Demo", "x", `{}`), doc(t, "Demo", "y", `{}`), doc(t, "Demo", "z", `{}`),
 		doc(t, "Solo", "one", `{"allowed": ["x", "y"]}`), secret,
 	}
-	failures, err := set.Evaluate(Input{Documents: docs, Old: docs[:1]})
+	failures, err := set.Evaluate(Input{Documents: config.Redact(docs), Old: config.Redact(docs[:1])})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -243,7 +243,7 @@ func TestNodeName(t *testing.T) {
 		object(map[string]any{"label": withRules(map[string]any{"type": "string"}, rule(`self != node.name`, "a label is not the node's name"))}),
 		[]any{rule(`node.name != "n1"`, "", "messageExpression", `"node " + node.name`)}))
 	docs := []config.Document{doc(t, "Demo", "a", `{"label": "n1"}`)}
-	failures, err := set.Evaluate(Input{Documents: docs, Node: "n1"})
+	failures, err := set.Evaluate(Input{Documents: config.Redact(docs), Node: "n1"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -252,7 +252,7 @@ func TestNodeName(t *testing.T) {
 		t.Errorf("failures = %q, want %q", got, want)
 	}
 	set = compiled(t, kindSchema("Demo", true, object(nil), []any{rule(`node.name == ""`, "the node has a name")}))
-	if failures, err := set.Evaluate(Input{Documents: docs}); err != nil || len(failures) != 0 {
+	if failures, err := set.Evaluate(Input{Documents: config.Redact(docs)}); err != nil || len(failures) != 0 {
 		t.Errorf("without a name: %v, %v", messages(failures), err)
 	}
 }
@@ -263,7 +263,7 @@ func TestMessageExpressionPrintable(t *testing.T) {
 	set := compiled(t, kindSchema("Demo", true, object(nil),
 		[]any{rule(`size(documents) == 0`, "", "messageExpression", `"a\nb\x1b[2J" + documents.a.spec.label`)}))
 	docs := []config.Document{doc(t, "Demo", "a", `{"label": "\u009b\u202ec"}`)}
-	failures, err := set.Evaluate(Input{Documents: docs})
+	failures, err := set.Evaluate(Input{Documents: config.Redact(docs)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -286,7 +286,7 @@ func TestFacts(t *testing.T) {
 	}
 	docs := []config.Document{doc(t, "Demo", "a", `{}`), doc(t, "Demo", "b", `{}`)}
 	f := &fakeFacts{values: map[string]any{"limit": json.Number("1")}}
-	failures, err := set.Evaluate(Input{Documents: docs, Facts: f})
+	failures, err := set.Evaluate(Input{Documents: config.Redact(docs), Facts: f})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -297,12 +297,12 @@ func TestFacts(t *testing.T) {
 	if f.loads["big"] != 0 {
 		t.Errorf("loads = %v, want big unread", f.loads)
 	}
-	failures, err = set.Evaluate(Input{Documents: docs})
+	failures, err = set.Evaluate(Input{Documents: config.Redact(docs)})
 	if err != nil || len(failures) != 0 {
 		t.Errorf("without facts: %v, %v", failures, err)
 	}
 	f = &fakeFacts{errs: map[string]error{"limit": errors.New("timed out after 30s")}}
-	if _, err := set.Evaluate(Input{Documents: docs, Facts: f}); err == nil || err.Error() != "cannot check: fact limit: timed out after 30s" {
+	if _, err := set.Evaluate(Input{Documents: config.Redact(docs), Facts: f}); err == nil || err.Error() != "cannot check: fact limit: timed out after 30s" {
 		t.Errorf("err = %v", err)
 	}
 }
@@ -322,7 +322,7 @@ func TestMessageExpressionFallsBack(t *testing.T) {
 		rule(`size(documents) == 0 || documents.a.spec.x.secret == "`+long+`"`, "", "messageExpression",
 			`string(documents.a.spec.x.m[documents.a.spec.x.secret])`),
 	}))
-	failures, err := set.Evaluate(Input{Documents: []config.Document{doc(t, "Demo", "a", `{"x": {"secret": "s3cret", "m": {}, "n": 7777}}`)}})
+	failures, err := set.Evaluate(Input{Documents: config.Redact([]config.Document{doc(t, "Demo", "a", `{"x": {"secret": "s3cret", "m": {}, "n": 7777}}`)})})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -379,7 +379,7 @@ func TestEvaluateErrors(t *testing.T) {
 			set := compiled(t, kindSchema("Demo", true, object(map[string]any{
 				"x": withRules(map[string]any{"type": "object"}, rule(tc.rule, "")),
 			}), nil))
-			_, err := set.Evaluate(Input{Documents: []config.Document{doc(t, "Demo", "a", `{"x": `+tc.spec+`}`)}})
+			_, err := set.Evaluate(Input{Documents: config.Redact([]config.Document{doc(t, "Demo", "a", `{"x": `+tc.spec+`}`)})})
 			if err == nil || err.Error() != `cannot check: Demo/a: spec.x: `+tc.want {
 				t.Fatalf("err = %v, want %q", err, tc.want)
 			}
@@ -395,7 +395,7 @@ func TestEvaluateErrors(t *testing.T) {
 // A kind's rule that cannot be evaluated names the kind.
 func TestEvaluateKindRuleError(t *testing.T) {
 	set := compiled(t, kindSchema("Demo", true, object(nil), []any{rule(`documents.a.spec.missing == 1`, "")}))
-	_, err := set.Evaluate(Input{Documents: []config.Document{doc(t, "Demo", "a", `{}`)}})
+	_, err := set.Evaluate(Input{Documents: config.Redact([]config.Document{doc(t, "Demo", "a", `{}`)})})
 	if err == nil || err.Error() != "cannot check: Demo: a rule cannot be evaluated: no such key" {
 		t.Errorf("err = %v", err)
 	}
@@ -406,7 +406,7 @@ func TestDescriptionIgnored(t *testing.T) {
 	set := compiled(t, kindSchema("Demo", true, object(nil), []any{
 		rule("size(documents) <= 1", "", "description", "A node holds one Demo at most."),
 	}))
-	failures, err := set.Evaluate(Input{Documents: []config.Document{doc(t, "Demo", "a", `{}`), doc(t, "Demo", "b", `{}`)}})
+	failures, err := set.Evaluate(Input{Documents: config.Redact([]config.Document{doc(t, "Demo", "a", `{}`), doc(t, "Demo", "b", `{}`)})})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -463,9 +463,9 @@ func TestRefusal(t *testing.T) {
 	}
 }
 
-// The running config as a node serves it holds its Secret values hashed already, which rules
-// see as they see the delivered config's.
-func TestOldHashed(t *testing.T) {
+// The running config as a node serves it, redacted and read back, meets the rules as the config
+// redacted from its values does: reading it back hides nothing again.
+func TestServedOld(t *testing.T) {
 	set := compiled(t, kindSchema("Solo", false, object(nil), []any{
 		rule(`config["chalkos.dev/v1alpha1"].Secret.s.spec.data.token == oldConfig["chalkos.dev/v1alpha1"].Secret.s.spec.data.token`, "the token changes"),
 	}))
@@ -473,46 +473,26 @@ func TestOldHashed(t *testing.T) {
 		return config.FromObject(map[string]any{"apiVersion": config.CoreAPI, "kind": "Secret",
 			"metadata": map[string]any{"name": "s"}, "spec": map[string]any{"data": map[string]any{"token": token}}})
 	}
-	served := config.Redact([]config.Document{secret("test")})
-	for name, tc := range map[string]struct {
-		old    []config.Document
-		hashed bool
-		want   int
-	}{
-		"served hashed":     {served, true, 0},
-		"as stored":         {[]config.Document{secret("test")}, false, 0},
-		"another token":     {config.Redact([]config.Document{secret("other")}), true, 1},
-		"hashed twice over": {served, false, 1},
-	} {
-		failures, err := set.Evaluate(Input{Documents: []config.Document{secret("test")}, Old: tc.old, OldHashed: tc.hashed})
-		if err != nil || len(failures) != tc.want {
-			t.Errorf("%s: failures = %v, %v; want %d", name, messages(failures), err, tc.want)
+	served := func(token string) config.Redacted {
+		e, err := config.Encode(config.Redact([]config.Document{secret(token)}).Documents())
+		if err != nil {
+			t.Fatal(err)
 		}
+		r, err := config.ParseRedacted(strings.NewReader(e.Text))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return r
 	}
-}
-
-// A delivered config whose secret values are hashed already, as a check receives it, meets the
-// rules as the config with its values does.
-func TestHashed(t *testing.T) {
-	set := compiled(t, kindSchema("Solo", false, object(nil), []any{
-		rule(`config["chalkos.dev/v1alpha1"].Secret.s.spec.data.token == oldConfig["chalkos.dev/v1alpha1"].Secret.s.spec.data.token`, "the token changes"),
-	}))
-	secret := func(token string) config.Document {
-		return config.FromObject(map[string]any{"apiVersion": config.CoreAPI, "kind": "Secret",
-			"metadata": map[string]any{"name": "s"}, "spec": map[string]any{"data": map[string]any{"token": token}}})
-	}
-	hashed := config.Redact([]config.Document{secret("test")})
 	for name, tc := range map[string]struct {
-		docs   []config.Document
-		hashed bool
-		want   int
+		old  config.Redacted
+		want int
 	}{
-		"hashed":            {hashed, true, 0},
-		"with its values":   {[]config.Document{secret("test")}, false, 0},
-		"another token":     {config.Redact([]config.Document{secret("other")}), true, 1},
-		"hashed twice over": {hashed, false, 1},
+		"served":        {served("test"), 0},
+		"as stored":     {config.Redact([]config.Document{secret("test")}), 0},
+		"another token": {served("other"), 1},
 	} {
-		failures, err := set.Evaluate(Input{Documents: tc.docs, Hashed: tc.hashed, Old: []config.Document{secret("test")}})
+		failures, err := set.Evaluate(Input{Documents: config.Redact([]config.Document{secret("test")}), Old: tc.old})
 		if err != nil || len(failures) != tc.want {
 			t.Errorf("%s: failures = %v, %v; want %d", name, messages(failures), err, tc.want)
 		}
@@ -543,7 +523,7 @@ func addon(token string) config.Document {
 
 // Rules see the Kubernetes Secrets an Addon applies with their values hashed, as a node serves
 // them, so a rule comparing an Addon with the running one agrees whether the running config is
-// the node's own or the one it serves.
+// the node's own, redacted, or the one it serves, read back.
 func TestAddonSecretsHashed(t *testing.T) {
 	data, err := json.Marshal(addonSchema())
 	if err != nil {
@@ -558,16 +538,16 @@ func TestAddonSecretsHashed(t *testing.T) {
 		t.Fatal(err)
 	}
 	next := []config.Document{addon("plain")}
-	if failures, err := set.Evaluate(Input{Documents: next}); err != nil || len(failures) != 0 {
+	if failures, err := set.Evaluate(Input{Documents: config.Redact(next)}); err != nil || len(failures) != 0 {
 		t.Errorf("without a running config: failures = %v, %v", messages(failures), err)
 	}
 	for _, token := range []string{"plain", "other"} {
 		stored := []config.Document{addon(token)}
-		own, err := set.Evaluate(Input{Documents: next, Old: stored})
+		own, err := set.Evaluate(Input{Documents: config.Redact(next), Old: config.Redact(stored)})
 		if err != nil {
 			t.Fatal(err)
 		}
-		served, err := set.Evaluate(Input{Documents: next, Old: config.Redact(stored), OldHashed: true})
+		served, err := set.Evaluate(Input{Documents: config.Redact(next), Old: config.RedactedObjects(config.Redact(stored).Objects())})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -579,7 +559,7 @@ func TestAddonSecretsHashed(t *testing.T) {
 			t.Errorf("running token %s: the node's own config fails %v, the served one %v; want %d", token, messages(own), messages(served), want)
 		}
 	}
-	if got := ConfigOf(next)[translate.API].(map[string]any)["Addon"].(map[string]any)["a"]; strings.Contains(fmt.Sprint(got), "plain") {
+	if got := ConfigOf(config.Redact(next))[translate.API].(map[string]any)["Addon"].(map[string]any)["a"]; strings.Contains(fmt.Sprint(got), "plain") {
 		t.Errorf("ConfigOf shows the token: %v", got)
 	}
 }

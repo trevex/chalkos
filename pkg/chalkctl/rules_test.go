@@ -75,9 +75,9 @@ func TestCheckRules(t *testing.T) {
 		{"unchanged", greeting("hi"), greeting("hi") + "---\napiVersion: gone.example.org/v1\nkind: Gone\nmetadata: {name: x}\nspec: {}\n", ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			var old []config.Document
+			var old config.Redacted
 			if tc.old != "" {
-				old = greetings(t, tc.old)
+				old = config.Redact(greetings(t, tc.old))
 			}
 			next := greetings(t, tc.next)
 			filled, err := c.schemas.Default(next[0].Object)

@@ -21,7 +21,7 @@ func TestRedactKeepsTheTypeOfOtherValues(t *testing.T) {
 		"null":   `null`,
 	} {
 		docs := parseDocs(t, strings.Replace(withSecrets, "token: s3cret", "token: "+value, 1))
-		data, err := json.Marshal(Redact(docs)[0].Object["spec"])
+		data, err := json.Marshal(Redact(docs).docs[0].Object["spec"])
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -57,7 +57,7 @@ func TestRedactHidesDataThatIsNoObject(t *testing.T) {
 		"spec: [s3cret]":         `[]`,
 	} {
 		docs := parseDocs(t, "apiVersion: chalkos.dev/v1alpha1\nkind: Secret\nmetadata: {name: s}\n"+in+"\n")
-		data, err := json.Marshal(Redact(docs)[0].Object["spec"])
+		data, err := json.Marshal(Redact(docs).docs[0].Object["spec"])
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -96,8 +96,8 @@ spec:
     deep: {secret: {apiVersion: v1, kind: Secret, metadata: {name: s}, data: {k: dg==}, stringData: {p: plain}}}
     list: [{apiVersion: v1, kind: Secret, metadata: {name: l}, data: {k: bA==}}]
 `)
-	hashed := Redact(delivered)[0].Object
-	checked := Redact(delivered)
+	hashed := Redact(delivered).docs[0].Object
+	checked := Redact(delivered).docs
 	values := maps.Clone(hashed["spec"].(map[string]any)["values"].(map[string]any))
 	values["replicas"] = json.Number("1")
 	deep := maps.Clone(values["deep"].(map[string]any))
@@ -143,7 +143,7 @@ spec:
 // value, a document that was not delivered, one twice and one missing.
 func TestRestore(t *testing.T) {
 	delivered := parseDocs(t, withSecrets)
-	checked := Redact(delivered)
+	checked := Redact(delivered).docs
 	// A default the check filled in, outside the secret values.
 	checked[2].Object = map[string]any{"apiVersion": CoreAPI, "kind": "Host", "metadata": map[string]any{"name": "default"}, "spec": map[string]any{"hostname": "h1", "extra": "default"}}
 	got, err := Restore(checked, delivered)
@@ -175,21 +175,21 @@ func TestRestore(t *testing.T) {
 func TestRestoreEdges(t *testing.T) {
 	delivered := parseDocs(t, withSecrets)
 	listed := parseDocs(t, strings.Replace(withSecrets, "data: {k: bGlzdA==}", "data: {k: b3RoZXI=}", 1))
-	if _, err := Restore(Redact(delivered), listed); err == nil || err.Error() != `Bundle "apps" holds other secret values than were delivered` {
+	if _, err := Restore(Redact(delivered).docs, listed); err == nil || err.Error() != `Bundle "apps" holds other secret values than were delivered` {
 		t.Errorf("another value in a list: err = %v", err)
 	}
-	got, err := Restore(Redact(delivered), delivered)
+	got, err := Restore(Redact(delivered).docs, delivered)
 	if err != nil || !reflect.DeepEqual(got[1].Object, delivered[1].Object) {
 		t.Errorf("the Bundle with a list = %v, %v", got[1].Object, err)
 	}
 
 	empty := parseDocs(t, "apiVersion: chalkos.dev/v1alpha1\nkind: Secret\nmetadata: {name: s}\nspec: {}\n")
-	got, err = Restore(Redact(empty), empty)
+	got, err = Restore(Redact(empty).docs, empty)
 	if err != nil || !reflect.DeepEqual(got[0].Object, empty[0].Object) {
 		t.Errorf("a Secret without data = %v, %v", got, err)
 	}
 
-	checked := Redact(delivered)
+	checked := Redact(delivered).docs
 	obj := maps.Clone(checked[0].Object)
 	delete(obj, "spec")
 	checked[0].Object = obj
@@ -208,7 +208,7 @@ metadata: {name: c}
 spec:
   values: {deep: {secret: {apiVersion: v1, kind: Secret, metadata: {name: s}, data: {k: dg==}}}}
 `)
-	checked := Redact(delivered)
+	checked := Redact(delivered).docs
 	obj := maps.Clone(checked[0].Object)
 	spec := maps.Clone(obj["spec"].(map[string]any))
 	spec["replicas"] = json.Number("1")
@@ -222,7 +222,7 @@ spec:
 	if !reflect.DeepEqual(gotSpec["values"], delivered[0].Object["spec"].(map[string]any)["values"]) || gotSpec["replicas"] != json.Number("1") {
 		t.Errorf("restored %v", gotSpec)
 	}
-	if !Redacted(delivered[0], strings.Split("spec.values.deep.secret.data.k", ".")) || Redacted(delivered[0], strings.Split("spec.values.deep.secret.metadata.name", ".")) {
+	if !SecretField(delivered[0], strings.Split("spec.values.deep.secret.data.k", ".")) || SecretField(delivered[0], strings.Split("spec.values.deep.secret.metadata.name", ".")) {
 		t.Error("Redacted does not tell the embedded Secret's data")
 	}
 }
@@ -237,7 +237,7 @@ metadata: {name: a}
 spec: {objects: []}
 `)
 	withDefault := func(objects any) []Document {
-		checked := Redact(delivered)
+		checked := Redact(delivered).docs
 		obj := maps.Clone(checked[0].Object)
 		obj["spec"] = map[string]any{"objects": objects, "replicas": json.Number("1")}
 		checked[0].Object = obj
@@ -271,7 +271,7 @@ spec:
 		"apiVersion /v1":  {"apiVersion", "/v1"},
 		"apiVersion gone": {"apiVersion", ""},
 	} {
-		checked := Redact(delivered)
+		checked := Redact(delivered).docs
 		obj := maps.Clone(checked[0].Object)
 		secret := maps.Clone(obj["spec"].(map[string]any)["objects"].([]any)[0].(map[string]any))
 		if field[1] == "" {
@@ -285,7 +285,7 @@ spec:
 			t.Errorf("%s: err = %v", name, err)
 		}
 	}
-	if _, err := Restore(Redact(delivered), delivered); err != nil {
+	if _, err := Restore(Redact(delivered).docs, delivered); err != nil {
 		t.Errorf("as delivered: err = %v", err)
 	}
 }

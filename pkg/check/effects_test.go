@@ -16,12 +16,12 @@ import (
 // is left out. PlanOf adds each effect's actions.
 func TestDue(t *testing.T) {
 	s := testSchemas(t)
-	translate := func(text string) config.Documents {
-		tr, err := Translate("n1", config.Redact(parse(t, text)), s, config.Target{Platform: "metal"})
+	translate := func(text string) config.Redacted {
+		docs, _, err := config.TranslateRedacted("n1", config.Redact(parse(t, text)), s, config.Target{Platform: "metal"})
 		if err != nil {
 			t.Fatal(err)
 		}
-		return tr.Documents
+		return docs
 	}
 	when, err := rules.CompileEffect("named", `config["demo.example.org/v1alpha1"].Demo.one.spec.name != oldConfig["demo.example.org/v1alpha1"].Demo.one.spec.name`)
 	if err != nil {
@@ -34,12 +34,12 @@ func TestDue(t *testing.T) {
 		"named": {When: when.When, Restart: []string{"a.service", "b.service"}},
 	}, Rules: []*rules.EffectRule{when}}
 	old := translate(base)
-	kinds, err := config.KindHashes(old, s, true)
+	kinds, err := config.KindHashes(old, s)
 	if err != nil {
 		t.Fatal(err)
 	}
 	f := &facts{}
-	olds := []Comparison{{Documents: old, Hashed: true, Facts: f, OldFacts: f, Outputs: map[string]outputs.State{"demo": {Files: "a"}}, Kinds: kinds}}
+	olds := []Comparison{{Documents: old, Facts: f, OldFacts: f, Outputs: map[string]outputs.State{"demo": {Files: "a"}}, Kinds: kinds}}
 	d := Delivery{Node: "n1", Documents: translate(strings.Replace(base, "name: first", "name: second", 1)), Schemas: s, Outputs: map[string]outputs.State{"demo": {Files: "b"}}}
 	o, warnings, err := Due(fx, d, olds)
 	if err != nil || len(warnings) > 0 {

@@ -23,14 +23,12 @@ import (
 )
 
 // Input is what outputs render from: a node's config set, with its defaults, the schemas that
-// tell its secretRef fields, and the node's name. Hashed tells that the set's secret values are
-// hashed already, as config.Redact hashes them and as a check receives them: the renderers read
-// the hashes either way, and the states take a hashed value as its hash.
+// tell its secretRef fields, and the node's name. The set is redacted, so no program that reads
+// it sees a secret value, and the states take a hidden value, the hash of the value, as it is.
 type Input struct {
 	Node      string
-	Documents []config.Document
+	Documents config.Redacted
 	Schemas   *schema.Schemas
-	Hashed    bool
 }
 
 // stdin is what a renderer reads: the node's name and the documents of each input kind, sorted by
@@ -41,7 +39,7 @@ func (d Definition) stdin(in Input) ([]byte, error) {
 		docs[kind] = []any{}
 	}
 	for _, doc := range in.of(d.Inputs) {
-		docs[doc.Kind] = append(docs[doc.Kind], in.object(doc))
+		docs[doc.Kind] = append(docs[doc.Kind], doc.Object)
 	}
 	return json.Marshal(map[string]any{
 		"node":      map[string]any{"name": in.Node},
@@ -52,7 +50,7 @@ func (d Definition) stdin(in Input) ([]byte, error) {
 // of are the documents of the kinds, sorted by kind and name, without the Secrets.
 func (in Input) of(kinds []string) []config.Document {
 	var out []config.Document
-	for _, doc := range in.Documents {
+	for _, doc := range in.Documents.Documents() {
 		if !doc.IsSecret() && slices.Contains(kinds, doc.Kind) {
 			out = append(out, doc)
 		}
@@ -63,14 +61,6 @@ func (in Input) of(kinds []string) []config.Document {
 	return out
 }
 
-// object is a document of in as a program reads it: with its secret values hashed.
-func (in Input) object(doc config.Document) map[string]any {
-	if in.Hashed {
-		return doc.Object
-	}
-	return doc.Hashed()
-}
-
 // Objects are the documents of the kinds as the programs that read them get them, renderers and
 // validators: sorted by kind and name, with their schema defaults and their secret values hashed,
 // and without the Secrets, whose values no program sees.
@@ -78,7 +68,7 @@ func (in Input) Objects(kinds []string) []map[string]any {
 	docs := in.of(kinds)
 	out := make([]map[string]any, len(docs))
 	for i, doc := range docs {
-		out[i] = in.object(doc)
+		out[i] = doc.Object
 	}
 	return out
 }

@@ -38,7 +38,7 @@ func TestDocument(t *testing.T) {
 		doc(t, "Zone", "missing", `{"lane": "c", "lanes": ["c"], "same": "a"}`),
 		doc(t, "Zone", "v6", `{"lane": "b", "lanes": [], "same": "a"}`),
 	}
-	failures, err := set.Evaluate(Input{Documents: docs})
+	failures, err := set.Evaluate(Input{Documents: config.Redact(docs)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -98,7 +98,7 @@ func TestDocumentIgnoresShadowedConfig(t *testing.T) {
 		doc(t, "Zone", "ok", `{"lanes": ["a"]}`),
 		doc(t, "Zone", "missing", `{"lanes": ["c"]}`),
 	}
-	failures, err := set.Evaluate(Input{Documents: docs})
+	failures, err := set.Evaluate(Input{Documents: config.Redact(docs)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -128,7 +128,7 @@ func TestDocumentHashesSecrets(t *testing.T) {
 			"metadata": map[string]any{"name": "s"}, "spec": map[string]any{"data": map[string]any{"token": "test"}}}),
 		doc(t, "Zone", "z", `{"secret": "s"}`),
 	}
-	failures, err := set.Evaluate(Input{Documents: docs})
+	failures, err := set.Evaluate(Input{Documents: config.Redact(docs)})
 	if err != nil {
 		t.Fatal(err)
 	}

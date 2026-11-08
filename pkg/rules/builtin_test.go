@@ -64,7 +64,7 @@ func TestRegistryRules(t *testing.T) {
 		{"a user alone", []config.Document{registry("a", `{"host": "ghcr.io", "username": "u", "password": null}`)},
 			[]string{"Registry a: give username and password together, or neither to pull anonymously"}},
 	} {
-		failures, err := set.Evaluate(Input{Documents: tc.docs, Node: "n1"})
+		failures, err := set.Evaluate(Input{Documents: config.Redact(tc.docs), Node: "n1"})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -114,7 +114,7 @@ func TestRegistrationRules(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			share := storageFacts{"share": map[string]any{"kind": "controlplane"}}
-			failures, err := set.Evaluate(Input{Documents: docs(tc.node, tc.cluster), Old: old, Facts: share, Node: "n1"})
+			failures, err := set.Evaluate(Input{Documents: config.Redact(docs(tc.node, tc.cluster)), Old: config.Redact(old), Facts: share, Node: "n1"})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -122,7 +122,7 @@ func TestRegistrationRules(t *testing.T) {
 				t.Errorf("failures:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(tc.want, "\n"))
 			}
 			// A node without a share has not registered.
-			if failures, err := set.Evaluate(Input{Documents: docs(tc.node, tc.cluster), Old: old, Facts: storageFacts{"share": nil}, Node: "n1"}); err != nil || len(failures) != 0 {
+			if failures, err := set.Evaluate(Input{Documents: config.Redact(docs(tc.node, tc.cluster)), Old: config.Redact(old), Facts: storageFacts{"share": nil}, Node: "n1"}); err != nil || len(failures) != 0 {
 				t.Errorf("without a share: %v, %v", messages(failures), err)
 			}
 		})
@@ -320,7 +320,7 @@ func TestStorageRules(t *testing.T) {
 				"fallback": fallback,
 			}
 			old := storageConfig(t, systemDisk, map[string]string{"data": dataVolume})
-			failures, err := set.Evaluate(Input{Documents: storageConfig(t, sd, tc.volumes), Old: old, Facts: facts, Node: "n1"})
+			failures, err := set.Evaluate(Input{Documents: config.Redact(storageConfig(t, sd, tc.volumes)), Old: config.Redact(old), Facts: facts, Node: "n1"})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -332,7 +332,7 @@ func TestStorageRules(t *testing.T) {
 			}
 			// At an install there is nothing to compare with.
 			facts["recorded"] = nil
-			if failures, err := set.Evaluate(Input{Documents: storageConfig(t, sd, tc.volumes), Facts: facts, Node: "n1"}); err != nil || len(failures) != 0 {
+			if failures, err := set.Evaluate(Input{Documents: config.Redact(storageConfig(t, sd, tc.volumes)), Facts: facts, Node: "n1"}); err != nil || len(failures) != 0 {
 				t.Errorf("without a recorded section: %v, %v", messages(failures), err)
 			}
 		})
@@ -366,7 +366,7 @@ func TestStorageRulesNameTheNode(t *testing.T) {
 		{"reinstall", nil, "Volume data: the config removes it; only a reinstall of w1 removes a volume"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			failures, err := set.Evaluate(Input{Documents: storageConfig(t, systemDisk, tc.volumes), Old: old, Facts: facts, Node: "w1"})
+			failures, err := set.Evaluate(Input{Documents: config.Redact(storageConfig(t, systemDisk, tc.volumes)), Old: config.Redact(old), Facts: facts, Node: "w1"})
 			if err != nil {
 				t.Fatal(err)
 			}

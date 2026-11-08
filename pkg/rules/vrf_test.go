@@ -101,7 +101,7 @@ func TestVRFRules(t *testing.T) {
 		{"a zoned VRF that the default VRF imports", with(zoned(`, "conntrackZone": 1`, ""), bgp("bgp", "null", `, "import": {"ipv6": {"vrfs": ["tenant"]}}`), bgp("tenant", `"tenant"`, "")), zoneMessage("tenant")},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			failures, err := set.Evaluate(Input{Documents: tc.docs, Node: "r1"})
+			failures, err := set.Evaluate(Input{Documents: config.Redact(tc.docs), Node: "r1"})
 			if err != nil {
 				t.Fatal(err)
 			}

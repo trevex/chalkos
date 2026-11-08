@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -46,7 +47,7 @@ func TestRedact(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	got := Redact(docs)
+	got := Redact(docs).docs
 	text, err := json.Marshal([]any{got[0].Object, got[1].Object, got[2].Object})
 	if err != nil {
 		t.Fatal(err)
@@ -65,13 +66,13 @@ func TestRedact(t *testing.T) {
 		t.Errorf("the input changed: %s", after)
 	}
 	// The same documents redact the same, so two redacted sets compare as the sets do.
-	if a, b := mustHash(t, Redact(docs)), mustHash(t, got); a != b {
-		t.Error("redacting twice differs")
+	if !reflect.DeepEqual(Redact(docs).docs, got) {
+		t.Error("redacting the same documents again differs")
 	}
 }
 
-// TestRedacted tells the fields whose values Redact replaces.
-func TestRedacted(t *testing.T) {
+// TestSecretField tells the fields whose values Redact replaces.
+func TestSecretField(t *testing.T) {
 	docs := parseDocs(t, withSecrets)
 	for _, tc := range []struct {
 		doc  int
@@ -94,8 +95,8 @@ func TestRedacted(t *testing.T) {
 		{1, "spec.objects.5.data.k", true},
 		{2, "spec.hostname", false},
 	} {
-		if got := Redacted(docs[tc.doc], strings.Split(tc.path, ".")); got != tc.want {
-			t.Errorf("Redacted(%s, %s) = %v, want %v", docs[tc.doc], tc.path, got, tc.want)
+		if got := SecretField(docs[tc.doc], strings.Split(tc.path, ".")); got != tc.want {
+			t.Errorf("SecretField(%s, %s) = %v, want %v", docs[tc.doc], tc.path, got, tc.want)
 		}
 	}
 }
@@ -108,3 +109,46 @@ func mustHash(t *testing.T, docs []Document) string {
 	}
 	return h
 }
+
+// Redacted holds documents with their values hidden once: it converts to no slice of documents,
+// so Redact cannot take it, and has no field another package can set, so only Redact and the
+// readers of redacted documents produce it.
+func TestRedactedIsNoSliceOfDocuments(t *testing.T) {
+	r := reflect.TypeFor[Redacted]()
+	for _, raw := range []reflect.Type{reflect.TypeFor[[]Document](), reflect.TypeFor[Documents]()} {
+		if r.ConvertibleTo(raw) || r.AssignableTo(raw) || raw.ConvertibleTo(r) {
+			t.Errorf("Redacted converts to or from %s", raw)
+		}
+	}
+	for f := range r.Fields() {
+		if f.IsExported() {
+			t.Errorf("Redacted has the exported field %s", f.Name)
+		}
+	}
+}
+
+// Redacted documents read back as they were written, by RedactedObjects or ParseRedacted, are
+// those Redact gave: reading them hides nothing again, so their hashes and their Secret values
+// stay those Redact gave.
+func TestRedactedReadBack(t *testing.T) {
+	docs := parseDocs(t, withSecrets)
+	want := Redact(docs)
+	text, err := Encode(want.Documents())
+	if err != nil {
+		t.Fatal(err)
+	}
+	parsed, err := ParseRedacted(strings.NewReader(text.Text))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, got := range map[string]Redacted{"RedactedObjects": RedactedObjects(want.Objects()), "ParseRedacted": parsed} {
+		if !reflect.DeepEqual(got.Objects(), want.Objects()) {
+			t.Errorf("%s: %v, want %v", name, got.Objects(), want.Objects())
+		}
+		h, err := got.hash()
+		if w, _ := want.hash(); err != nil || h != w {
+			t.Errorf("%s: hash %s, %v; want %s", name, h, err, w)
+		}
+	}
+}
+

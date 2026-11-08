@@ -2293,7 +2293,7 @@ func (n *upgradeFake) GetConfig(ctx context.Context, req *connect.Request[nodev1
 	if err != nil {
 		return nil, err
 	}
-	e, err := config.Encode(config.Redact(docs))
+	e, err := config.Encode(config.Redact(docs).Documents())
 	if err != nil {
 		return nil, err
 	}

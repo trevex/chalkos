@@ -106,7 +106,7 @@ func apiServerIn(docs []config.Document) (imageref.Version, bool, error) {
 // running config names, patch releases included. A node without a Node document is no part of
 // the cluster, and a node whose running config names no API server, as one that joins the
 // cluster, runs none the delivery changes.
-func (p *Plugin) Changes(c layer.Cluster, name string, running []config.Document) (string, error) {
+func (p *Plugin) Changes(c layer.Cluster, name string, running config.Redacted) (string, error) {
 	if kind, err := kindOf(c, name); err != nil || kind == "" {
 		return "", err
 	}
@@ -114,7 +114,7 @@ func (p *Plugin) Changes(c layer.Cluster, name string, running []config.Document
 	if err != nil || !ok {
 		return "", err
 	}
-	now, ok, err := apiServerIn(running)
+	now, ok, err := apiServerIn(running.Documents())
 	switch {
 	case err != nil:
 		return "", fmt.Errorf("the config %s runs: %w", name, err)

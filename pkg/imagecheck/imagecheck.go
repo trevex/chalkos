@@ -42,10 +42,11 @@ type Runner interface {
 	Run(ctx context.Context, img Image, in *checkv1.Input, f Facts) (*checkv1.Result, error)
 }
 
-// Encode is docs as the input and the result carry them: each document one JSON object.
-func Encode(docs []config.Document) ([]string, error) {
-	out := make([]string, len(docs))
-	for i, d := range docs {
+// Encode is docs as the input and the result carry them: each document one JSON object. Only
+// redacted documents leave chalkd for a checker, and only those come back.
+func Encode(docs config.Redacted) ([]string, error) {
+	out := make([]string, docs.Len())
+	for i, d := range docs.Documents() {
 		data, err := json.Marshal(d.Object)
 		if err != nil {
 			return nil, fmt.Errorf("%s: %w", d, err)
@@ -55,7 +56,8 @@ func Encode(docs []config.Document) ([]string, error) {
 	return out, nil
 }
 
-// Decode is the documents the input or the result carries, their numbers kept exact.
+// Decode is the documents the input or the result carries, their numbers kept exact. The result
+// chalkd decodes is the checker's word, which config.Restore compares with what was delivered.
 func Decode(objects []string) ([]config.Document, error) {
 	docs := make([]config.Document, len(objects))
 	for i, o := range objects {
@@ -66,4 +68,18 @@ func Decode(objects []string) ([]config.Document, error) {
 		docs[i] = d
 	}
 	return docs, nil
+}
+
+// DecodeRedacted is Decode of the input a checker reads, whose documents chalkd redacted before it
+// encoded them.
+func DecodeRedacted(objects []string) (config.Redacted, error) {
+	docs, err := Decode(objects)
+	if err != nil {
+		return config.Redacted{}, err
+	}
+	out := make([]map[string]any, len(docs))
+	for i, d := range docs {
+		out[i] = d.Object
+	}
+	return config.RedactedObjects(out), nil
 }

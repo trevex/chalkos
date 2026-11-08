@@ -94,34 +94,39 @@ func parse(t *testing.T, text string) []config.Document {
 	return docs
 }
 
-// Translate gives a set whose secret values are hashed the documents and identity of the set with
-// its values, with the hashes in place of the values.
-func TestTranslateHashed(t *testing.T) {
+// config.TranslateRedacted gives a redacted set the documents and identity of the set with its
+// values, redacted: the defaults it fills in hide nothing again.
+func TestTranslateRedacted(t *testing.T) {
 	s := testSchemas(t)
 	docs := parse(t, base)
 	raw, err := Translate("n1", docs, s, config.Target{Platform: "metal"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	hashed, err := Translate("n1", config.Redact(docs), s, config.Target{Platform: "metal"})
+	redacted, id, err := config.TranslateRedacted("n1", config.Redact(docs), s, config.Target{Platform: "metal"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !reflect.DeepEqual(hashed.Documents, config.Documents(config.Redact(raw.Documents))) || string(hashed.Identity) != string(raw.Identity) {
-		t.Errorf("hashed %v, %s; values %v, %s", hashed.Documents, hashed.Identity, raw.Documents, raw.Identity)
+	data, err := encodeIdentity(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(redacted.Objects(), config.Redact(raw.Documents).Objects()) || string(data) != string(raw.Identity) {
+		t.Errorf("redacted %v, %s; values %v, %s", redacted.Objects(), data, raw.Documents, raw.Identity)
 	}
 }
 
-// A Secret value that is no string fails the schema in its hashed form as it does with its value,
-// with the same message, so the image's checker, which sees hashed documents alone, refuses it.
-func TestTranslateHashedRefusesAMistypedSecret(t *testing.T) {
+// A Secret value that is no string fails the schema in its redacted form as it does with its
+// value, with the same message, so the image's checker, which sees redacted documents alone,
+// refuses it.
+func TestTranslateRedactedRefusesAMistypedSecret(t *testing.T) {
 	s := testSchemas(t)
 	for _, v := range []string{"12345", "true", "[a]", "{a: b}", "null"} {
 		docs := parse(t, strings.Replace(base, "token: s3cret", "token: "+v, 1))
 		_, raw := Translate("n1", docs, s, config.Target{Platform: "metal"})
-		_, hashed := Translate("n1", config.Redact(docs), s, config.Target{Platform: "metal"})
-		if raw == nil || hashed == nil || raw.Error() != hashed.Error() {
-			t.Errorf("%s: with its value %v, hashed %v", v, raw, hashed)
+		_, _, redacted := config.TranslateRedacted("n1", config.Redact(docs), s, config.Target{Platform: "metal"})
+		if raw == nil || redacted == nil || raw.Error() != redacted.Error() {
+			t.Errorf("%s: with its value %v, redacted %v", v, raw, redacted)
 		}
 	}
 }

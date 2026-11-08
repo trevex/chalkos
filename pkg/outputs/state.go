@@ -23,10 +23,11 @@ type State struct {
 }
 
 // secrets hashes the values the secretRefs of the output's input documents name, by Secret and
-// key; empty for documents that reference none. The values of a hashed input are their hashes
-// already, which the state takes as they are, so both give an output one state.
+// key; empty for documents that reference none. The values of the redacted input are their hashes
+// already, which the state takes as they are; a key the Secret lacks counts as the hash of the
+// empty value.
 func (d Definition) secrets(in Input) string {
-	secrets := config.Documents(in.Documents).Secrets()
+	secrets := in.Documents.Documents().Secrets()
 	var lines []string
 	for _, doc := range in.of(d.Inputs) {
 		for _, r := range config.Refs(doc, in.Schemas) {
@@ -35,7 +36,7 @@ func (d Definition) secrets(in Input) string {
 				continue
 			}
 			v, ok := secrets.Lookup(ref)
-			if !in.Hashed || !ok {
+			if !ok {
 				sum := sha256.Sum256([]byte(v))
 				v = hex.EncodeToString(sum[:])
 			}

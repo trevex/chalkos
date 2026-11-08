@@ -60,7 +60,7 @@ spec: {data: {token: plain-secret}}
 	if err != nil {
 		t.Fatal(err)
 	}
-	f, err := s.factsFor(context.Background(), docs, docs, "")
+	f, err := s.factsFor(context.Background(), config.Redact(docs), config.Redact(docs), "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -76,7 +76,7 @@ spec: {data: {token: plain-secret}}
 // certificates and keys.
 func TestShareFactHoldsNoKeys(t *testing.T) {
 	s, _ := clusterServer(t, k8s.KindControlPlane)
-	f, err := s.factsFor(context.Background(), nil, nil, "")
+	f, err := s.factsFor(context.Background(), config.Redacted{}, config.Redacted{}, "")
 	if err != nil {
 		t.Fatal(err)
 	}

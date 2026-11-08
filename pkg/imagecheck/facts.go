@@ -91,10 +91,10 @@ func DialFacts(ctx context.Context, path string) *RemoteFacts {
 	return &RemoteFacts{ctx: ctx, client: checkv1connect.NewFactsServiceClient(hc, "http://facts")}
 }
 
-// For is the facts of a check of next against old, both with their defaults and their secret
-// values hashed, which command facts read as rules see them. It asks chalkd for each fact once.
-func (r *RemoteFacts) For(next, old []config.Document) rules.Facts {
-	return &remoteInput{r: r, input: map[string]any{"config": rules.HashedConfigOf(next), "oldConfig": rules.HashedConfigOf(old)}, loaded: map[string]loaded{}}
+// For is the facts of a check of next against old, both with their defaults, which command facts
+// read as rules see them. It asks chalkd for each fact once.
+func (r *RemoteFacts) For(next, old config.Redacted) rules.Facts {
+	return &remoteInput{r: r, input: map[string]any{"config": rules.ConfigOf(next), "oldConfig": rules.ConfigOf(old)}, loaded: map[string]loaded{}}
 }
 
 type remoteInput struct {

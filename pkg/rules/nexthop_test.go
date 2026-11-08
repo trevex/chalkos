@@ -25,7 +25,7 @@ func replaced(docs []config.Document, with ...config.Document) []config.Document
 // wantFailures evaluates the rules over docs and wants the failures' messages want, in order.
 func wantFailures(t *testing.T, set *Set, docs []config.Document, want []string) {
 	t.Helper()
-	failures, err := set.Evaluate(Input{Documents: docs, Node: "r1"})
+	failures, err := set.Evaluate(Input{Documents: config.Redact(docs), Node: "r1"})
 	if err != nil {
 		t.Fatal(err)
 	}

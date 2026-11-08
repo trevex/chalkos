@@ -18,6 +18,7 @@ import (
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/chalkctl/layer"
 	"github.com/trevex/chalkos/pkg/client"
+	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/internal/cli"
 )
 
@@ -344,13 +345,13 @@ func (a *app) deliverConfig(ctx context.Context, f applyConfigFlags, t *target) 
 	// the running one.
 	pending := f.staged && st.Msg.Boot.GetStaged() == nil
 	nodeDocs, err := slotConfig(ctx, conn, f.staged)
-	if err == nil && pending && nodeDocs == nil {
+	if err == nil && pending && nodeDocs.Len() == 0 {
 		nodeDocs, err = slotConfig(ctx, conn, false)
 	}
 	if err != nil {
 		return layer.Named(t.name, err)
 	}
-	changes := diffConfig(nodeDocs, d.Documents)
+	changes := diffConfig(nodeDocs, config.Redact(d.Documents))
 	fmt.Fprintf(a.stdout, "%s: %s\n", t.name, changes.summary())
 	if f.diff || f.dryRun {
 		changes.write(a.stdout)

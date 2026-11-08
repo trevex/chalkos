@@ -72,7 +72,7 @@ func TestDHCPSubnetIPv6Rules(t *testing.T) {
 		{"delegation within the subnet", delegate("2001:db8:1:0:8000::/65", 72), []string{at + "prefixDelegation's prefix 2001:db8:1:0:8000::/65 overlaps the subnet 2001:db8:1::/64"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			failures, err := set.Evaluate(Input{Documents: tc.docs, Node: "r1"})
+			failures, err := set.Evaluate(Input{Documents: config.Redact(tc.docs), Node: "r1"})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -106,7 +106,7 @@ func TestDHCPRelayRules(t *testing.T) {
 		{"an IPv4-mapped server", `["::ffff:198.51.100.53"]`, []string{`DHCPRelay/guests: spec.servers: the server ::ffff:198.51.100.53 is no unicast address a relay forwards to`}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			failures, err := set.Evaluate(Input{Documents: []config.Document{relay(tc.servers)}, Node: "r1"})
+			failures, err := set.Evaluate(Input{Documents: config.Redact([]config.Document{relay(tc.servers)}), Node: "r1"})
 			if err != nil {
 				t.Fatal(err)
 			}

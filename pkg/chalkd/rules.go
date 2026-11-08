@@ -20,7 +20,7 @@ import (
 // the facts the running image declares. Commands read next and old as rules see them, and the
 // fallback secret when they declare it. An image that does not run gets the facts it declares
 // itself, from stagedFacts.
-func (s *Server) factsFor(ctx context.Context, next, old []config.Document, secret string) (*facts.Loader, error) {
+func (s *Server) factsFor(ctx context.Context, next, old config.Redacted, secret string) (*facts.Loader, error) {
 	defs, err := facts.Read(s.Paths.Facts)
 	if err != nil {
 		return nil, fmt.Errorf("read the image's facts: %w", err)
@@ -36,7 +36,7 @@ func (s *Server) factsFor(ctx context.Context, next, old []config.Document, secr
 }
 
 // factInput is what command facts read of a check of next against old: both as rules see them.
-func factInput(next, old []config.Document) map[string]any {
+func factInput(next, old config.Redacted) map[string]any {
 	return map[string]any{"config": rules.ConfigOf(next), "oldConfig": rules.ConfigOf(old)}
 }
 
@@ -53,7 +53,7 @@ func compileRunningRules(schemas *schema.Schemas) (*rules.Set, error) {
 // checkRules refuses next, config about to be stored for the image whose rules set holds, when
 // it does not meet them; name is the node's, old is the running slot's config, nil at an install,
 // and f the delivery's facts. Nothing has changed yet when it refuses.
-func (s *Server) checkRules(set *rules.Set, name string, next, old []config.Document, f rules.Facts) error {
+func (s *Server) checkRules(set *rules.Set, name string, next, old config.Redacted, f rules.Facts) error {
 	failures, err := evaluate(set, name, next, old, f)
 	if err != nil {
 		return err
@@ -66,8 +66,8 @@ func (s *Server) checkRules(set *rules.Set, name string, next, old []config.Docu
 
 // evaluate returns the rules of set next does not meet, which see the node called name; an error
 // is a rule that could not be checked, which refuses the delivery too.
-func evaluate(set *rules.Set, name string, next, old []config.Document, f rules.Facts) ([]rules.Failure, error) {
-	failures, err := check.Rules(set, name, config.Redact(next), config.Redact(old), f)
+func evaluate(set *rules.Set, name string, next, old config.Redacted, f rules.Facts) ([]rules.Failure, error) {
+	failures, err := check.Rules(set, name, next, old, f)
 	if err != nil {
 		return nil, layer.Errorf(connect.CodeFailedPrecondition, "%w", err)
 	}

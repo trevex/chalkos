@@ -65,12 +65,12 @@ func running(t *testing.T, img Image, f rules.Facts) Input {
 		t.Fatal(err)
 	}
 	res.Staged.Discard()
-	kinds, err := config.KindHashes(res.Documents, img.Schemas, true)
+	kinds, err := config.KindHashes(res.Documents, img.Schemas)
 	if err != nil {
 		t.Fatal(err)
 	}
 	return Input{Node: "n1", Old: res.Documents, Facts: fixed(f), Compare: []Comparison{{
-		Documents: res.Documents, Hashed: true, Facts: f, OldFacts: f, Outputs: res.Staged.States(), Kinds: kinds,
+		Documents: res.Documents, Facts: f, OldFacts: f, Outputs: res.Staged.States(), Kinds: kinds,
 	}}}
 }
 
@@ -139,7 +139,7 @@ func TestRunPlansARotatedSecret(t *testing.T) {
 	if !slices.Equal(res.Plan.Outputs, []string{"demo"}) || len(res.Plan.Effects) != 2 {
 		t.Errorf("plan = %+v", res.Plan)
 	}
-	live, err := outputs.Live(outputs.Definition{Inputs: []string{"Demo"}, Dir: t.TempDir()}, outputs.Input{Documents: parse(t, rotated), Schemas: img.Schemas})
+	live, err := outputs.Live(outputs.Definition{Inputs: []string{"Demo"}, Dir: t.TempDir()}, outputs.Input{Documents: config.Redact(parse(t, rotated)), Schemas: img.Schemas})
 	if err != nil || live.Secrets != res.Staged.States()["demo"].Secrets {
 		t.Errorf("the hashed input's Secrets state %q differs from the values' %q: %v", res.Staged.States()["demo"].Secrets, live.Secrets, err)
 	}
@@ -155,8 +155,9 @@ func TestRunReadsNoSecretValue(t *testing.T) {
 	}
 	defer res.Staged.Discard()
 	sum := sha256.Sum256([]byte("s3cret"))
-	i := slices.IndexFunc(res.Documents, func(d config.Document) bool { return d.IsSecret() })
-	if i < 0 || res.Documents[i].Object["spec"].(map[string]any)["data"].(map[string]any)["token"] != hex.EncodeToString(sum[:]) {
+	docs := res.Documents.Documents()
+	i := slices.IndexFunc(docs, func(d config.Document) bool { return d.IsSecret() })
+	if i < 0 || docs[i].Object["spec"].(map[string]any)["data"].(map[string]any)["token"] != hex.EncodeToString(sum[:]) {
 		t.Errorf("documents = %v", res.Documents)
 	}
 	if err := res.Staged.Swap(); err != nil {
@@ -253,7 +254,7 @@ func TestRunAsksForTheFactsRulesRead(t *testing.T) {
 		}
 		res.Staged.Discard()
 		if slices.Contains(f.asked, "frozen") != tc.asked {
-			t.Errorf("a config of %d documents asked for %v", len(in.Delivered), f.asked)
+			t.Errorf("a config of %d documents asked for %v", in.Delivered.Len(), f.asked)
 		}
 	}
 }
@@ -275,8 +276,8 @@ func TestRunGivesTheTranslationWithARefusal(t *testing.T) {
 }
 
 // fixed gives f whatever config the check is of.
-func fixed(f rules.Facts) func(next, old []config.Document) rules.Facts {
-	return func([]config.Document, []config.Document) rules.Facts { return f }
+func fixed(f rules.Facts) func(next, old config.Redacted) rules.Facts {
+	return func(config.Redacted, config.Redacted) rules.Facts { return f }
 }
 
 // A storage kind's rule refuses the system disk's var volume against the one STATE records, as the
@@ -306,16 +307,16 @@ func TestRunFillsInTheImagesDefaultsOfTheOldConfig(t *testing.T) {
 	}
 	img.Rules = set
 	old := config.Redact(parse(t, base+"---\napiVersion: gone.example.org/v1\nkind: Gone\nmetadata: {name: x}\nspec: {}\n"))
-	var seen []config.Document
-	in := Input{Node: "n1", Old: old, Facts: func(_, old []config.Document) rules.Facts { seen = old; return &facts{} }}
+	var seen config.Redacted
+	in := Input{Node: "n1", Old: old, Facts: func(_, old config.Redacted) rules.Facts { seen = old; return &facts{} }}
 	in.Delivered = config.Redact(parse(t, strings.Replace(base, "name: first,", "name: first, mode: fast,", 1)))
 	if _, err := Run(context.Background(), img, in); err == nil || !strings.Contains(err.Error(), "the mode stays") {
 		t.Errorf("a Demo that leaves its default mode = %v, want the rule's refusal", err)
 	}
-	if len(seen) != 3 {
-		t.Fatalf("the facts saw %d old documents, want the 3 the image accepts", len(seen))
+	if seen.Len() != 3 {
+		t.Fatalf("the facts saw %d old documents, want the 3 the image accepts", seen.Len())
 	}
-	for _, d := range seen {
+	for _, d := range seen.Documents() {
 		if d.Kind == "Demo" && d.Object["spec"].(map[string]any)["mode"] != "safe" {
 			t.Errorf("the facts saw the old Demo %v, want its default mode", d.Object)
 		}

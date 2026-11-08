@@ -96,8 +96,8 @@ func decode(data []byte, v any) error {
 
 // newBaseline records old, the running slot's config, the facts the rules read, names, as f
 // loads them, the states of the outputs the node serves and the hashes of old's kinds.
-func newBaseline(old []config.Document, names []string, f rules.Facts, states map[string]outputs.State, kinds map[string]string) baseline {
-	return baseline{Documents: redacted(old), Facts: recordFacts(names, f), Outputs: states, Kinds: kinds}
+func newBaseline(old config.Redacted, names []string, f rules.Facts, states map[string]outputs.State, kinds map[string]string) baseline {
+	return baseline{Documents: old.Objects(), Facts: recordFacts(names, f), Outputs: states, Kinds: kinds}
 }
 
 // write records the baseline at path, readable by root alone.
@@ -192,32 +192,14 @@ func setAttemptFacts(path string, a baselineAttempt, facts recordedFacts) error 
 	return b.write(path)
 }
 
-// documents are the baseline's documents, with their secret values hashed.
-func (b baseline) documents() []config.Document {
-	return fromObjects(b.Documents)
+// documents are the baseline's documents, which newBaseline recorded redacted.
+func (b baseline) documents() config.Redacted {
+	return config.RedactedObjects(b.Documents)
 }
 
-// documents are the attempt's documents, with their secret values hashed.
-func (a baselineAttempt) documents() []config.Document {
-	return fromObjects(a.Documents)
-}
-
-// fromObjects are the documents of a baseline's objects.
-func fromObjects(objects []map[string]any) []config.Document {
-	docs := make([]config.Document, len(objects))
-	for i, obj := range objects {
-		docs[i] = config.FromObject(obj)
-	}
-	return docs
-}
-
-// redacted are docs as a baseline records them, with their secret values hashed.
-func redacted(docs []config.Document) []map[string]any {
-	var objects []map[string]any
-	for _, d := range config.Redact(docs) {
-		objects = append(objects, d.Object)
-	}
-	return objects
+// documents are the attempt's documents, which recordAttempt recorded redacted.
+func (a baselineAttempt) documents() config.Redacted {
+	return config.RedactedObjects(a.Documents)
 }
 
 // Fact is the fact name as it was; a fact the rules did not read then, which the running image's

@@ -27,12 +27,12 @@ type Rollout interface {
 	// compare. chalkctl passes them back to the layer's other hooks unread.
 	Versions(ctx context.Context, conn *client.Conn) (any, error)
 	// Changes says how delivering the inventory's config to the node called name changes the
-	// versions the bounds compare, against running, the config the node runs, such as "the API
+	// versions the bounds compare, against running, the config the node runs as it serves it, such as "the API
 	// server from 1.37.1 to 1.37.2"; "" when it changes none, as for a node outside the layer's
 	// cluster. It reads the configs alone, so a delivery that changes none asks the layer's
 	// service nothing. When a node's delivery changes them, apply-config has CheckConfig check the
 	// versions the nodes run and orders the delivery, and chalkctl upgrade refuses the config.
-	Changes(c Cluster, name string, running []config.Document) (string, error)
+	Changes(c Cluster, name string, running config.Redacted) (string, error)
 	// CheckConfig refuses to deliver the inventory's config to the nodes named, which changes the
 	// versions the bounds compare, when it would break them against what the cluster's nodes run,
 	// as read reads it, or deliver it in an order the bounds do not allow.

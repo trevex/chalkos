@@ -13,7 +13,6 @@ import (
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/chalkctl/layer"
-	"github.com/trevex/chalkos/pkg/check"
 	"github.com/trevex/chalkos/pkg/client"
 	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/identity"
@@ -165,7 +164,7 @@ func checkNodeConfig(nc *inventory.NodeConfig, c contract) (delivery, error) {
 	if err != nil {
 		return delivery{}, err
 	}
-	if err := checkRules(c, set.Documents(), nil, nc.Name); err != nil {
+	if err := checkRules(c, set.Documents(), config.Redacted{}, nc.Name); err != nil {
 		return delivery{}, err
 	}
 	if err := checkValidators(c, set.Documents()); err != nil {
@@ -180,17 +179,16 @@ func checkNodeConfig(nc *inventory.NodeConfig, c contract) (delivery, error) {
 
 // checkRules refuses next, a node's config with its defaults, when the change rules of the image
 // the contract describes refuse it, as the node would: those that read no facts, which the node
-// alone has. old is the node's config as it serves it, its secret values hashed, or nil where
-// chalkctl does not have it, as for validate; without it, the rules of fields that read oldSelf
-// do not run and the rules of kinds see no oldDocuments. Documents of old that the image does not
-// accept compare with nothing. node is the inventory's name of the node, which the rules read as
-// node.name.
-func checkRules(c contract, next, old []config.Document, node string) error {
+// alone has. old is the node's config as it serves it, or empty where chalkctl does not have it,
+// as for validate; without it, the rules of fields that read oldSelf do not run and the rules of
+// kinds see no oldDocuments. Documents of old that the image does not accept compare with
+// nothing. node is the inventory's name of the node, which the rules read as node.name.
+func checkRules(c contract, next []config.Document, old config.Redacted, node string) error {
 	set, err := rules.Compile(c.schemas)
 	if err != nil {
 		return fmt.Errorf("the image's rules: %w", err)
 	}
-	failures, err := set.Evaluate(rules.Input{Documents: next, Old: check.Defaulted(c.schemas, old), OldHashed: true, Node: node})
+	failures, err := set.Evaluate(rules.Input{Documents: config.Redact(next), Old: old.Defaulted(c.schemas), Node: node})
 	if err != nil {
 		return err
 	}
@@ -202,15 +200,15 @@ func checkRules(c contract, next, old []config.Document, node string) error {
 
 // checkValidators refuses docs, a node's config with its defaults, when a validator of a compiled
 // layer that the image the contract describes runs refuses it or fails, as the node would refuse
-// it. The validators run in-process on the JSON the image's programs read, with the secret values
-// hashed. A validator an extension declares is a program of the image alone, which chalkctl
-// cannot run, so the node checks it at the delivery.
+// it. The validators run in-process on the JSON the image's programs read, redacted. A validator
+// an extension declares is a program of the image alone, which chalkctl cannot run, so the node
+// checks it at the delivery.
 func checkValidators(c contract, docs []config.Document) error {
 	var linked []validators.Linked
 	for _, p := range compiled[layer.Validators]() {
 		linked = append(linked, p.Validators(c.schemas)...)
 	}
-	rs, failures := validators.RunLinked(linked, outputs.Input{Documents: docs})
+	rs, failures := validators.RunLinked(linked, outputs.Input{Documents: config.Redact(docs)})
 	if len(rs) > 0 || len(failures) > 0 {
 		return errors.New(validators.Refusal(rs, failures))
 	}

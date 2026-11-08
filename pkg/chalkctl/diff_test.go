@@ -56,7 +56,7 @@ spec: {data: {token: n3w, kept: same}}
 // a Secret's field shows only that it changed.
 func TestDiffConfig(t *testing.T) {
 	node := config.Redact(parseDocs(t, diffNode))
-	changes := diffConfig(node, parseDocs(t, diffInventory))
+	changes := diffConfig(node, config.Redact(parseDocs(t, diffInventory)))
 	if got, want := changes.summary(), `config 1 added, 1 removed (Volume "old"), 2 changed`; got != want {
 		t.Errorf("summary = %q, want %q", got, want)
 	}
@@ -77,8 +77,13 @@ func TestDiffConfig(t *testing.T) {
 	if strings.Contains(b.String(), "s3cret") || strings.Contains(b.String(), "n3w") {
 		t.Error("the diff shows a secret")
 	}
-	if got := diffConfig(node, parseDocs(t, diffNode)).summary(); got != "config unchanged" {
+	if got := diffConfig(node, config.Redact(parseDocs(t, diffNode))).summary(); got != "config unchanged" {
 		t.Errorf("summary of the same config = %q", got)
+	}
+	// Two slots' documents, as a rollback compares them, are both redacted already: a Secret
+	// compares by its hashes, which are hashed no further.
+	if got := diffConfig(node, node).summary(); got != "config unchanged" {
+		t.Errorf("summary of the same served config = %q", got)
 	}
 }
 
@@ -87,7 +92,7 @@ func TestDiffConfigOfLists(t *testing.T) {
 	node := parseDocs(t, "apiVersion: a.example.org/v1\nkind: X\nmetadata: {name: x}\nspec: {list: [1, 2], obj: {a: 1}, empty: {}}\n")
 	inv := parseDocs(t, "apiVersion: a.example.org/v1\nkind: X\nmetadata: {name: x}\nspec: {list: [1, 3, 4], obj: 5, empty: []}\n")
 	var b bytes.Buffer
-	diffConfig(node, inv).write(&b)
+	diffConfig(config.Redact(node), config.Redact(inv)).write(&b)
 	want := `~ X "x"
     spec.empty: {} → []
     spec.list[1]: 2 → 3

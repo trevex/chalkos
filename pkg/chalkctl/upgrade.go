@@ -19,6 +19,7 @@ import (
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/chalkctl/layer"
 	"github.com/trevex/chalkos/pkg/client"
+	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/esp"
 	"github.com/trevex/chalkos/pkg/internal/cli"
 	"github.com/trevex/chalkos/pkg/pki"
@@ -362,7 +363,7 @@ func (r *upgradeRun) configChanges(ctx context.Context, conn *client.Conn, n *up
 	if err != nil {
 		return nil, err
 	}
-	changes := diffConfig(nodeDocs, n.delivery.Documents)
+	changes := diffConfig(nodeDocs, config.Redact(n.delivery.Documents))
 	r.say("%s: %s", n.name, changes.summary())
 	return changes, nil
 }

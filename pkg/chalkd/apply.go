@@ -227,6 +227,13 @@ func (s *Server) planDelivery(ctx context.Context, r applyRequest) (*delivery, e
 	}); err != nil {
 		return nil, err
 	}
+	// What the rules, validators, effects and outputs read of the delivery and of the running slot.
+	// A delivery without config keeps the running slot's documents.
+	old := config.Redact(prev.Documents)
+	next := old
+	if !d.keep {
+		next = config.Redact(r.next.Documents)
+	}
 	// The delivery's facts, loaded once for the running slot's rules.
 	var loaded *facts.Loader
 	if !d.keep {
@@ -237,15 +244,15 @@ func (s *Server) planDelivery(ctx context.Context, r applyRequest) (*delivery, e
 		if err != nil {
 			return nil, err
 		}
-		if loaded, err = s.factsFor(ctx, r.next.Documents, prev.Documents, m.FallbackSecret); err != nil {
+		if loaded, err = s.factsFor(ctx, next, old, m.FallbackSecret); err != nil {
 			return nil, err
 		}
-		if err := s.checkRules(set, name, r.next.Documents, prev.Documents, loaded); err != nil {
+		if err := s.checkRules(set, name, next, old, loaded); err != nil {
 			return nil, s.elsewhere(err, d.identity.section, nil)
 		}
 		// The image's validators check what its rules do not; a delivery without config changes no
 		// document, so it runs none.
-		if err := s.checkValidators(ctx, r.next.Documents); err != nil {
+		if err := s.checkValidators(ctx, next); err != nil {
 			return nil, err
 		}
 	}
@@ -268,15 +275,13 @@ func (s *Server) planDelivery(ctx context.Context, r applyRequest) (*delivery, e
 	// the documents with the schemas of the image whose slot holds them, the running image's: a
 	// delivery without config translated none, so they are read here, unless the slot holds no
 	// documents to read them for.
-	next, schemas := prev.Documents, r.schemas
-	if !d.keep {
-		next = r.next.Documents
-	} else if len(next) > 0 {
+	schemas := r.schemas
+	if d.keep && next.Len() > 0 {
 		if schemas, err = s.runningSchemas(); err != nil {
 			return nil, err
 		}
 	}
-	if d.fx, err = s.effectsOf(ctx, name, next, prev.Documents, schemas, m.FallbackSecret, m.DryRun); err != nil {
+	if d.fx, err = s.effectsOf(ctx, name, next, old, schemas, m.FallbackSecret, m.DryRun); err != nil {
 		return nil, err
 	}
 	// Every output renders from the delivered documents and passes its check, so a delivery a

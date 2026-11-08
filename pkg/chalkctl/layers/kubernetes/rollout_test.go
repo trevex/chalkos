@@ -109,7 +109,7 @@ func TestRolloutChanges(t *testing.T) {
 			if _, ok := tc.config["n1"]; ok {
 				name = "n1"
 			}
-			got, err := p.Changes(c, name, tc.running)
+			got, err := p.Changes(c, name, config.Redact(tc.running))
 			if tc.err != "" {
 				if err == nil || !strings.Contains(err.Error(), tc.err) {
 					t.Fatalf("err = %v, want one mentioning %q", err, tc.err)

@@ -114,7 +114,7 @@ func TestBGPRules(t *testing.T) {
 			[]string{`BGPPeer/upstream: spec.families: the ipv4 family's defaultOriginateWhen names the PrefixList fabric of ipv6; it tracks routes of the family whose default route it sends`}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			failures, err := set.Evaluate(Input{Documents: tc.docs, Node: "r1"})
+			failures, err := set.Evaluate(Input{Documents: config.Redact(tc.docs), Node: "r1"})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -127,7 +127,7 @@ func TestBGPRules(t *testing.T) {
 	// address, which the schema's pattern takes.
 	for _, id := range []string{"0.0.0.0", "224.0.0.5", "239.255.255.255", "255.255.255.255"} {
 		t.Run("a router ID of "+id, func(t *testing.T) {
-			failures, err := set.Evaluate(Input{Documents: replace(edge, doc("BGP", "bgp", `{"asn": 64512, "routerID": "`+id+`"}`)), Node: "r1"})
+			failures, err := set.Evaluate(Input{Documents: config.Redact(replace(edge, doc("BGP", "bgp", `{"asn": 64512, "routerID": "`+id+`"}`))), Node: "r1"})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -143,7 +143,7 @@ func TestBGPRules(t *testing.T) {
 	// extended next hops passes.
 	for _, address := range []string{"0.0.0.0", "::", "127.0.0.1", "::1", "169.254.0.1", "fe80::1", "224.0.0.1", "ff02::1", "255.255.255.255", "::ffff:198.51.100.1", "::ffff:127.0.0.1"} {
 		t.Run("a neighbour at "+address, func(t *testing.T) {
-			failures, err := set.Evaluate(Input{Documents: replace(edge, doc("BGPPeer", "upstream", `{"address": "`+address+`", "remoteAS": 64496, "families": {"ipv6": {}}}`)), Node: "r1"})
+			failures, err := set.Evaluate(Input{Documents: config.Redact(replace(edge, doc("BGPPeer", "upstream", `{"address": "`+address+`", "remoteAS": 64496, "families": {"ipv6": {}}}`))), Node: "r1"})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -157,14 +157,14 @@ func TestBGPRules(t *testing.T) {
 	// NAT64's well-known prefix and an IPv6 address next to the IPv4-mapped range.
 	for _, id := range []string{"0.0.0.1", "223.255.255.255", "240.0.0.1", "255.255.255.254"} {
 		t.Run("a router ID of "+id, func(t *testing.T) {
-			if failures, err := set.Evaluate(Input{Documents: replace(edge, doc("BGP", "bgp", `{"asn": 64512, "routerID": "`+id+`"}`)), Node: "r1"}); err != nil || len(failures) != 0 {
+			if failures, err := set.Evaluate(Input{Documents: config.Redact(replace(edge, doc("BGP", "bgp", `{"asn": 64512, "routerID": "`+id+`"}`))), Node: "r1"}); err != nil || len(failures) != 0 {
 				t.Errorf("%v, %v", messages(failures), err)
 			}
 		})
 	}
 	for _, address := range []string{"0.0.0.1", "126.255.255.255", "128.0.0.1", "169.255.0.1", "223.255.255.255", "255.255.255.254", "::2", "fec0::1", "64:ff9b::1", "::fffe:c633:6401", "::1:0:c633:6401"} {
 		t.Run("a neighbour at "+address, func(t *testing.T) {
-			if failures, err := set.Evaluate(Input{Documents: replace(edge, doc("BGPPeer", "upstream", `{"address": "`+address+`", "remoteAS": 64496, "families": {"ipv6": {}}}`)), Node: "r1"}); err != nil || len(failures) != 0 {
+			if failures, err := set.Evaluate(Input{Documents: config.Redact(replace(edge, doc("BGPPeer", "upstream", `{"address": "`+address+`", "remoteAS": 64496, "families": {"ipv6": {}}}`))), Node: "r1"}); err != nil || len(failures) != 0 {
 				t.Errorf("%v, %v", messages(failures), err)
 			}
 		})
@@ -176,7 +176,7 @@ func TestBGPKeepsItsAS(t *testing.T) {
 	set, doc := routerRules(t)
 	running := []config.Document{doc("BGP", "bgp", `{"asn": 64512, "routerID": "192.0.2.1"}`)}
 	changed := []config.Document{doc("BGP", "bgp", `{"asn": 64513, "routerID": "192.0.2.1"}`)}
-	failures, err := set.Evaluate(Input{Documents: changed, Old: running, Node: "r1"})
+	failures, err := set.Evaluate(Input{Documents: config.Redact(changed), Old: config.Redact(running), Node: "r1"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -185,7 +185,7 @@ func TestBGPKeepsItsAS(t *testing.T) {
 		t.Errorf("failures %q, want %q", got, want)
 	}
 	for _, old := range [][]config.Document{nil, changed} {
-		if failures, err := set.Evaluate(Input{Documents: changed, Old: old, Node: "r1"}); err != nil || len(failures) != 0 {
+		if failures, err := set.Evaluate(Input{Documents: config.Redact(changed), Old: config.Redact(old), Node: "r1"}); err != nil || len(failures) != 0 {
 			t.Errorf("from %v: %v, %v", old, messages(failures), err)
 		}
 	}
@@ -205,7 +205,7 @@ func TestBGPRulesReadAddresses(t *testing.T) {
 			`cannot check: BGPPeer/upstream: spec.address: a rule cannot be evaluated: ` + errNotIP},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			_, err := set.Evaluate(Input{Documents: tc.docs, Node: "r1"})
+			_, err := set.Evaluate(Input{Documents: config.Redact(tc.docs), Node: "r1"})
 			if err == nil || err.Error() != tc.want {
 				t.Errorf("err = %v, want %q", err, tc.want)
 			}
@@ -308,7 +308,7 @@ func TestBGPPerVRF(t *testing.T) {
 		{"a default-route network in the default VRF", replace(base, doc("BGP", "bgp", `{"asn": 64512, "routerID": "192.0.2.1", "networks": [{"prefix": "0.0.0.0/0"}, {"prefix": "::/0"}]}`)), nil},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			failures, err := set.Evaluate(Input{Documents: tc.docs, Node: "r1"})
+			failures, err := set.Evaluate(Input{Documents: config.Redact(tc.docs), Node: "r1"})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -346,7 +346,7 @@ func TestBGPKeepsTheDefaultInstance(t *testing.T) {
 		{"a running config without vrf, its instance dropped", []config.Document{eth0, before}, []config.Document{eth0, tenant, inTenant}, nil},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			failures, err := set.Evaluate(Input{Documents: tc.docs, Old: tc.old, Node: "r1"})
+			failures, err := set.Evaluate(Input{Documents: config.Redact(tc.docs), Old: config.Redact(tc.old), Node: "r1"})
 			if err != nil {
 				t.Fatal(err)
 			}
