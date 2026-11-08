@@ -2,11 +2,8 @@ package rules
 
 import (
 	"fmt"
-	"slices"
-	"strings"
 
 	"cel.dev/cel-go/cel"
-	"cel.dev/cel-go/common/types"
 
 	"github.com/trevex/chalkos/pkg/config"
 )
@@ -36,30 +33,16 @@ func CompileEffect(name, when string) (*EffectRule, error) {
 	fail := func(format string, args ...any) error {
 		return fmt.Errorf("%s: rule %q: %s", e.Where(), when, fmt.Sprintf(format, args...))
 	}
-	if strings.TrimSpace(when) == "" {
-		return nil, fail("the rule is empty")
-	}
 	base, err := newEnv("config", "oldConfig", "node")
 	if err != nil {
 		return nil, err
 	}
-	parsed, iss := base.Parse(when)
-	if iss.Err() != nil {
-		return nil, fail("%v", iss.Err())
-	}
-	if e.Facts, err = factNames(parsed, "facts", "oldFacts"); err != nil {
+	env, parsed, facts, err := parse(base, []string{"facts", "oldFacts"}, when)
+	if err != nil {
 		return nil, fail("%v", err)
 	}
-	slices.Sort(e.Facts)
-	opts := make([]cel.EnvOption, 0, 2*len(e.Facts))
-	for _, n := range e.Facts {
-		opts = append(opts, cel.Variable("facts."+n, cel.DynType), cel.Variable("oldFacts."+n, cel.DynType))
-	}
-	env, err := base.Extend(opts...)
-	if err != nil {
-		return nil, err
-	}
-	if e.program, err = program(env, parsed, cel.BoolType); err != nil {
+	e.Facts = facts
+	if e.program, err = program(env, parsed[0], cel.BoolType); err != nil {
 		return nil, fail("%v", err)
 	}
 	return e, nil
@@ -100,16 +83,5 @@ func (e *EffectRule) evaluate(cfg, oldCfg, node map[string]any, facts, oldFacts 
 	var factErr error
 	bindFacts(vars, "facts", e.Facts, facts, &factErr)
 	bindFacts(vars, "oldFacts", e.Facts, oldFacts, &factErr)
-	out, _, err := e.program.Eval(vars)
-	if factErr != nil {
-		return false, factErr
-	}
-	if err != nil {
-		return false, fmt.Errorf("%s", cannotEvaluate(err))
-	}
-	ok, isBool := out.(types.Bool)
-	if !isBool {
-		return false, fmt.Errorf("a rule yields %s, not a bool", out.Type().TypeName())
-	}
-	return bool(ok), nil
+	return evalBool(e.program, vars, &factErr)
 }

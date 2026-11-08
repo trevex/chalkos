@@ -2,12 +2,14 @@ package rules
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"regexp"
 	"slices"
 	"strings"
 	"unicode/utf8"
 
+	"cel.dev/cel-go/cel"
 	"cel.dev/cel-go/common/types"
 	"cel.dev/cel-go/common/types/ref"
 
@@ -125,6 +127,24 @@ func bindFacts(vars map[string]any, ident string, names []string, facts Facts, f
 	}
 }
 
+// evalBool evaluates prg, the check of a rule, with vars. A fact the rule reads that could not be
+// loaded, which bindFacts keeps in factErr, is the error then, whatever the rule yields without
+// it; else the error says why the rule yields no bool.
+func evalBool(prg cel.Program, vars map[string]any, factErr *error) (bool, error) {
+	out, _, err := prg.Eval(vars)
+	if *factErr != nil {
+		return false, *factErr
+	}
+	if err != nil {
+		return false, errors.New(cannotEvaluate(err))
+	}
+	ok, isBool := out.(types.Bool)
+	if !isBool {
+		return false, fmt.Errorf("a rule yields %s, not a bool", out.Type().TypeName())
+	}
+	return bool(ok), nil
+}
+
 // nodeOf is the node variable of a node named name.
 func nodeOf(name string) map[string]any {
 	return map[string]any{"name": name}
@@ -140,16 +160,12 @@ func (p *Program) evaluate(vars map[string]any, cfg, oldCfg, node map[string]any
 	if doc != "" {
 		where = refusals.Refusal{Kind: p.Kind.Kind, Name: doc, Path: strings.Join(p.Path, ".")}.Where()
 	}
-	out, _, err := p.check.Eval(vars)
+	ok, err := evalBool(p.check, vars, &factErr)
 	if factErr != nil {
 		return nil, factErr
 	}
 	if err != nil {
-		return nil, fmt.Errorf("cannot check: %s: %s", where, cannotEvaluate(err))
-	}
-	ok, isBool := out.(types.Bool)
-	if !isBool {
-		return nil, fmt.Errorf("cannot check: %s: a rule yields %s, not a bool", where, out.Type().TypeName())
+		return nil, fmt.Errorf("cannot check: %s: %w", where, err)
 	}
 	if ok {
 		return nil, nil

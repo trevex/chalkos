@@ -111,9 +111,6 @@ func compile(apiVersions map[string]string, k schema.Kind, path []string, r sche
 	fail := func(format string, args ...any) error {
 		return fmt.Errorf("%s: rule %q: %s", p.Where(), r.Rule, fmt.Sprintf(format, args...))
 	}
-	if strings.TrimSpace(r.Rule) == "" {
-		return nil, fail("the rule is empty")
-	}
 	vars := []string{"config", "oldConfig", "node"}
 	if path == nil {
 		vars = append(vars, "documents", "oldDocuments")
@@ -127,40 +124,12 @@ func compile(apiVersions map[string]string, k schema.Kind, path []string, r sche
 	if err != nil {
 		return nil, err
 	}
-	facts := map[string]bool{}
-	var check, message *cel.Ast
-	for _, src := range []struct {
-		text string
-		ast  **cel.Ast
-	}{{r.Rule, &check}, {r.MessageExpression, &message}} {
-		if src.text == "" {
-			continue
-		}
-		parsed, iss := base.Parse(src.text)
-		if iss.Err() != nil {
-			return nil, fail("%v", iss.Err())
-		}
-		names, err := factNames(parsed, "facts")
-		if err != nil {
-			return nil, fail("%v", err)
-		}
-		for _, n := range names {
-			facts[n] = true
-		}
-		*src.ast = parsed
-	}
-	for n := range facts {
-		p.Facts = append(p.Facts, n)
-	}
-	slices.Sort(p.Facts)
-	opts := make([]cel.EnvOption, 0, len(p.Facts))
-	for _, n := range p.Facts {
-		opts = append(opts, cel.Variable("facts."+n, cel.DynType))
-	}
-	e, err := base.Extend(opts...)
+	e, parsed, facts, err := parse(base, []string{"facts"}, r.Rule, r.MessageExpression)
 	if err != nil {
-		return nil, err
+		return nil, fail("%v", err)
 	}
+	check, message := parsed[0], parsed[1]
+	p.Facts = facts
 	if p.check, err = program(e, check, cel.BoolType); err != nil {
 		return nil, fail("%v", err)
 	}
@@ -171,6 +140,46 @@ func compile(apiVersions map[string]string, k schema.Kind, path []string, r sche
 	}
 	p.Transition = path != nil && reads(check, "oldSelf")
 	return p, nil
+}
+
+// parse parses rule and the further expressions of srcs in base, and extends base with each fact
+// they read as <ident>.<name> for every one of idents. The rule must not be empty; an empty
+// further expression is not parsed and its AST is nil. facts are the facts' names, sorted.
+func parse(base *cel.Env, idents []string, rule string, srcs ...string) (e *cel.Env, parsed []*cel.Ast, facts []string, err error) {
+	if strings.TrimSpace(rule) == "" {
+		return nil, nil, nil, errors.New("the rule is empty")
+	}
+	parsed = make([]*cel.Ast, 1+len(srcs))
+	for i, src := range append([]string{rule}, srcs...) {
+		if src == "" {
+			continue
+		}
+		a, iss := base.Parse(src)
+		if iss.Err() != nil {
+			return nil, nil, nil, iss.Err()
+		}
+		names, err := factNames(a, idents...)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		for _, n := range names {
+			if !slices.Contains(facts, n) {
+				facts = append(facts, n)
+			}
+		}
+		parsed[i] = a
+	}
+	slices.Sort(facts)
+	opts := make([]cel.EnvOption, 0, len(idents)*len(facts))
+	for _, n := range facts {
+		for _, ident := range idents {
+			opts = append(opts, cel.Variable(ident+"."+n, cel.DynType))
+		}
+	}
+	if e, err = base.Extend(opts...); err != nil {
+		return nil, nil, nil, err
+	}
+	return e, parsed, facts, nil
 }
 
 // program checks a parsed expression, which must yield want or dyn, and limits its cost.
