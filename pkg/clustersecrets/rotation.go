@@ -5,7 +5,6 @@ import (
 	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/sha256"
-	"crypto/x509"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -224,7 +223,7 @@ func (k KubernetesSecrets) ServiceAccountPublicKeys() ([]string, error) {
 // encryption keys of the right size under names of their own that the API server can tell apart.
 func (s Secrets) validateAccepted() error {
 	for i, c := range s.Accepted.OSCA {
-		if err := validateRoot(c); err != nil {
+		if _, err := pki.ValidateRoot(c); err != nil {
 			return fmt.Errorf("accepted.osCA[%d]: %w", i, err)
 		}
 	}
@@ -238,7 +237,7 @@ func (s Secrets) validateAccepted() error {
 func (k KubernetesSecrets) ValidateAccepted() error {
 	for _, slot := range k.caSlots() {
 		for i, c := range *slot.accepted {
-			if err := validateRoot(c); err != nil {
+			if _, err := pki.ValidateRoot(c); err != nil {
 				return fmt.Errorf("kubernetes.accepted.%s[%d]: %w", slot.field, i, err)
 			}
 		}
@@ -285,39 +284,6 @@ func (k KubernetesSecrets) ValidateAccepted() error {
 func validKeyName(name string) error {
 	if name == "" || strings.ContainsFunc(name, func(r rune) bool { return r == ':' || unicode.IsSpace(r) || unicode.IsControl(r) }) {
 		return fmt.Errorf("the name %q is empty or holds a colon, space or control character", name)
-	}
-	return nil
-}
-
-// validateRoot checks one certificate of an OS CA without its key: a self-signed CA that no node
-// CA is. A node CA trusted as a root would make what control planes issue verify as the OS CA's
-// own client certificates.
-func validateRoot(certificate string) error {
-	if err := validateCACertificate(certificate); err != nil {
-		return err
-	}
-	cert, err := pki.ParseCertificate([]byte(certificate))
-	if err != nil {
-		return err
-	}
-	if pki.IsNodeCA(cert) || cert.CheckSignatureFrom(cert) != nil {
-		return errors.New("not a self-signed root CA")
-	}
-	return nil
-}
-
-// validateCACertificate checks one CA certificate without its key.
-func validateCACertificate(certificate string) error {
-	certs, err := pki.ParseBundle(certificate)
-	if err != nil {
-		return err
-	}
-	if len(certs) != 1 {
-		return errors.New("not one certificate")
-	}
-	cert := certs[0]
-	if !cert.IsCA || !cert.BasicConstraintsValid || cert.KeyUsage&x509.KeyUsageCertSign == 0 {
-		return errors.New("not a CA certificate")
 	}
 	return nil
 }
