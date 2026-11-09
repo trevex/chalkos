@@ -837,8 +837,8 @@ func stopTrials(t *testing.T, s *Server) {
 	t.Cleanup(func() {
 		s.mu.Lock()
 		defer s.mu.Unlock()
-		if s.trialTimer != nil {
-			s.trialTimer.Stop()
+		if s.trial.timer != nil {
+			s.trial.timer.Stop()
 		}
 	})
 }

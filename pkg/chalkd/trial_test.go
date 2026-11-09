@@ -414,7 +414,7 @@ func TestRollbackConfigKeepsATrialItCannotRemove(t *testing.T) {
 	rec := recordTrial(t, s, nextConfig)
 	timer := time.AfterFunc(time.Hour, func() {})
 	defer timer.Stop()
-	s.trialTimer = timer
+	s.trial.timer = timer
 	dir := filepath.Dir(filepath.Join(s.Paths.StateDir, trialFile))
 	if err := os.Chmod(dir, 0o555); err != nil {
 		t.Fatal(err)
@@ -435,7 +435,7 @@ func TestRollbackConfigKeepsATrialItCannotRemove(t *testing.T) {
 		t.Error("the record is gone")
 	}
 	s.mu.Lock()
-	armed := s.trialTimer == timer
+	armed := s.trial.timer == timer
 	s.mu.Unlock()
 	if !armed {
 		t.Error("the deadline was stopped although the record stays")
@@ -450,7 +450,7 @@ func TestRollbackConfigKeepsATrialItCannotRemove(t *testing.T) {
 		t.Error("the delivery kept the ended trial's record")
 	}
 	s.mu.Lock()
-	stopped := s.trialTimer == nil
+	stopped := s.trial.timer == nil
 	s.mu.Unlock()
 	if !stopped {
 		t.Error("the delivery kept the ended trial's deadline")
@@ -532,7 +532,7 @@ func TestLostTrialKeepsARecordItCannotRemove(t *testing.T) {
 		t.Skip("root writes to read-only directories")
 	}
 	s := trialServer(t)
-	s.trialRetry = time.Hour
+	s.trial.retryAfter = time.Hour
 	rec := lostTrial(t, s)
 	dir := filepath.Dir(filepath.Join(s.Paths.StateDir, trialFile))
 	if err := os.Chmod(dir, 0o555); err != nil {
@@ -545,7 +545,7 @@ func TestLostTrialKeepsARecordItCannotRemove(t *testing.T) {
 	s.upgrading.Lock()
 	s.mu.Lock()
 	_, _ = s.settleTrial(rec)
-	armed := s.trialTimer != nil
+	armed := s.trial.timer != nil
 	s.mu.Unlock()
 	s.upgrading.Unlock()
 	if !trialOpenOn(t, s) || !armed {
@@ -653,7 +653,7 @@ func TestConfirmConfigTrialRecordedMeanwhile(t *testing.T) {
 // expire runs the deadline of the trial r as the timer armed last would.
 func expire(s *Server, r trialRecord) {
 	s.mu.Lock()
-	armed := s.trialArmed
+	armed := s.trial.armed
 	s.mu.Unlock()
 	s.expireTrial(r.Version, r.Deadline, armed)
 }
@@ -697,7 +697,7 @@ func TestApplyConfigOnTrial(t *testing.T) {
 		t.Errorf("record %+v", r)
 	}
 	s.mu.Lock()
-	armed := s.trialTimer != nil
+	armed := s.trial.timer != nil
 	s.mu.Unlock()
 	if !armed {
 		t.Error("the deadline is not armed")
@@ -837,7 +837,7 @@ func TestTrialExpiryOfAnEarlierTrial(t *testing.T) {
 // A rollback refused before it changed the node leaves the trial to a confirmation.
 func TestTrialExpiryRetries(t *testing.T) {
 	s := trialServer(t)
-	s.trialRetry = time.Hour
+	s.trial.retryAfter = time.Hour
 	if _, err := sendTrial(s, nextConfig, time.Hour); err != nil {
 		t.Fatal(err)
 	}
@@ -878,7 +878,7 @@ func TestTrialExpiryFailingPartWay(t *testing.T) {
 		t.Skip("root writes to read-only directories")
 	}
 	s := trialServer(t)
-	s.trialRetry = time.Hour
+	s.trial.retryAfter = time.Hour
 	if _, err := sendTrial(s, nextConfig, time.Hour); err != nil {
 		t.Fatal(err)
 	}
@@ -919,7 +919,7 @@ func TestTrialExpiryFailingBeforeItChanges(t *testing.T) {
 		t.Skip("root writes to read-only directories")
 	}
 	s := trialServer(t)
-	s.trialRetry = time.Hour
+	s.trial.retryAfter = time.Hour
 	if _, err := sendTrial(s, nextConfig, time.Hour); err != nil {
 		t.Fatal(err)
 	}
@@ -973,7 +973,7 @@ func TestResumeTrial(t *testing.T) {
 	}
 	s.ResumeTrial(context.Background())
 	s.mu.Lock()
-	armed := s.trialTimer != nil
+	armed := s.trial.timer != nil
 	s.mu.Unlock()
 	if trialOpenOn(t, s) || armed {
 		t.Error("a trial whose slot was never written stays")
@@ -1002,7 +1002,7 @@ func TestResumeTrialStopsWithChalkd(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			s := trialServer(t)
-			s.trialTimeout, s.trialRetry = time.Hour, time.Hour
+			s.trial.timeout, s.trial.retryAfter = time.Hour, time.Hour
 			rec := recordTrial(t, s, nextConfig)
 			prepare(t, s, &rec)
 			if err := writeTrial(s.Paths.StateDir, rec); err != nil {
@@ -1041,7 +1041,7 @@ func TestResumeTrialAfterChalkdStopped(t *testing.T) {
 	cancel()
 	s.ResumeTrial(ctx)
 	s.mu.Lock()
-	armed := s.trialTimer != nil
+	armed := s.trial.timer != nil
 	s.mu.Unlock()
 	if armed {
 		t.Error("the trial's deadline is armed after chalkd stopped")
@@ -1059,7 +1059,7 @@ func TestTrialExpiryAfterChalkdStopped(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	s.mu.Lock()
-	s.trialCtx = ctx
+	s.trial.ctx = ctx
 	s.mu.Unlock()
 	expire(s, rec)
 	got, open, err := readTrial(s.Paths.StateDir)
@@ -1078,7 +1078,7 @@ func TestTrialExpiryKeepsARecordItCannotRemove(t *testing.T) {
 		t.Skip("root writes to read-only directories")
 	}
 	s := trialServer(t)
-	s.trialRetry = time.Hour
+	s.trial.retryAfter = time.Hour
 	rec := recordTrial(t, s, nextConfig)
 	if err := slot.RestorePrevious(slotOf(t, s)); err != nil {
 		t.Fatal(err)
@@ -1090,7 +1090,7 @@ func TestTrialExpiryKeepsARecordItCannotRemove(t *testing.T) {
 	t.Cleanup(func() { os.Chmod(dir, 0o755) })
 	expire(s, rec)
 	s.mu.Lock()
-	armed := s.trialTimer != nil
+	armed := s.trial.timer != nil
 	s.mu.Unlock()
 	if !trialOpenOn(t, s) || !armed {
 		t.Errorf("the record stays %v and the deadline is armed %v, want both", trialOpenOn(t, s), armed)
@@ -1273,7 +1273,7 @@ func failRestartOnce(s *Server) *tooltest.Runner {
 // openTrialOf sends next on trial for an hour, with retries an hour apart, and returns its record.
 func openTrialOf(t *testing.T, s *Server, next string) trialRecord {
 	t.Helper()
-	s.trialRetry = time.Hour
+	s.trial.retryAfter = time.Hour
 	if _, err := sendTrial(s, next, time.Hour); err != nil {
 		t.Fatal(err)
 	}
@@ -1335,7 +1335,7 @@ func TestTrialExpiryFinishesAFailedRestart(t *testing.T) {
 // demo.service on the config from before the trial again.
 func TestTrialExpiryUndoesAFailedTrialDelivery(t *testing.T) {
 	s := trialServer(t)
-	s.trialRetry = time.Hour
+	s.trial.retryAfter = time.Hour
 	writeContract(t, s, contract.EffectsFile, lateHookEffects)
 	r := s.Run.(*tooltest.Runner)
 	r.Rules = append([]tooltest.Rule{{Prefix: "hook", Err: errors.New("exit status 1"), Times: 1}}, r.Rules...)
@@ -1430,7 +1430,7 @@ func TestTrialFailingBeforeItsSlotIsFinished(t *testing.T) {
 		t.Error("the effects' baseline stays, so the delivery was not applied whole")
 	}
 	s.mu.Lock()
-	armed := s.trialTimer != nil
+	armed := s.trial.timer != nil
 	s.mu.Unlock()
 	if armed {
 		t.Error("a deadline is armed")
@@ -1447,9 +1447,9 @@ func TestTrialExpiryStaleDeadline(t *testing.T) {
 	rec := recordTrial(t, s, nextConfig)
 	s.mu.Lock()
 	s.armTrial(rec, time.Hour)
-	stale := s.trialArmed
+	stale := s.trial.armed
 	s.armTrial(rec, time.Hour)
-	timer := s.trialTimer
+	timer := s.trial.timer
 	s.mu.Unlock()
 	s.expireTrial(rec.Version, rec.Deadline, stale)
 	if !trialOpenOn(t, s) {
@@ -1459,7 +1459,7 @@ func TestTrialExpiryStaleDeadline(t *testing.T) {
 		t.Errorf("the node runs %s, want the config on trial", v)
 	}
 	s.mu.Lock()
-	kept := s.trialTimer == timer
+	kept := s.trial.timer == timer
 	s.mu.Unlock()
 	if !kept {
 		t.Error("a stale deadline replaced the one armed after it")
@@ -1470,7 +1470,7 @@ func TestTrialExpiryStaleDeadline(t *testing.T) {
 // attempt, and tries it again.
 func TestTrialExpiryTimesOut(t *testing.T) {
 	s := trialServer(t)
-	s.trialTimeout = time.Second
+	s.trial.timeout = time.Second
 	first := openTrialOf(t, s, nextConfig)
 	writeOutputs(t, s, map[string]outputs.Definition{
 		"demo": demoOutput(t, s, `exec sleep 10`, ""), "networkd": networkdOutput(t, s), "chrony": chronyOutput(t, s),
@@ -1481,7 +1481,7 @@ func TestTrialExpiryTimesOut(t *testing.T) {
 		t.Fatalf("after a rollback that timed out the record is %+v, open %v, %v; want it open with one attempt", rec, open, err)
 	}
 	s.mu.Lock()
-	armed := s.trialTimer != nil
+	armed := s.trial.timer != nil
 	s.mu.Unlock()
 	if !armed {
 		t.Error("the retry is not armed")
