@@ -35,8 +35,8 @@ func WaitForAddresses(sel nodeip.Selector, timeout time.Duration) ([]nodeip.Addr
 }
 
 // pickAddresses waits for the node's addresses and checks that flannel's VXLAN can use them.
-func pickAddresses(p Paths, c kubernetes.Cluster, n kubernetes.Node, resolve Resolver) ([]nodeip.Address, error) {
-	sel, err := nodeSelector(p, c, n)
+func (s State) pickAddresses(c kubernetes.Cluster, n kubernetes.Node, resolve Resolver) ([]nodeip.Address, error) {
+	sel, err := s.nodeSelector(c, n)
 	if err != nil {
 		return nil, err
 	}
@@ -93,21 +93,21 @@ func checkFlannelLinks(c kubernetes.Cluster, picked []nodeip.Address) error {
 }
 
 // ReadNodeIPs reads the addresses Prepare picked, the primary family's first.
-func ReadNodeIPs(p Paths) ([]netip.Addr, error) {
-	return readAddresses(p.NodeIP())
+func (s State) ReadNodeIPs() ([]netip.Addr, error) {
+	return readAddresses(s.NodeIP())
 }
 
 // WritePin pins the node to the addresses, the ones the preparation picked and etcd advertises.
-func WritePin(p Paths, ips []netip.Addr) error {
+func (s State) WritePin(ips []netip.Addr) error {
 	if len(ips) == 0 {
 		return errors.New("pin the node's addresses: there are none")
 	}
-	return atomicfile.WriteFile(p.Pin(), nodeIPFile(ips), 0o644)
+	return atomicfile.WriteFile(s.Pin(), nodeIPFile(ips), 0o644)
 }
 
 // ReadPin returns the addresses the node is pinned to, nil when it is not pinned.
-func ReadPin(p Paths) ([]netip.Addr, error) {
-	pin, err := readAddresses(p.Pin())
+func (s State) ReadPin() ([]netip.Addr, error) {
+	pin, err := readAddresses(s.Pin())
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil, nil
 	}
@@ -146,9 +146,9 @@ func nodeIPFile(ips []netip.Addr) []byte {
 
 // nodeSelector is how the node picks its addresses: a control-plane node that is pinned waits
 // for exactly its pinned addresses, any other node selects them as its cluster and identity say.
-func nodeSelector(p Paths, c kubernetes.Cluster, n kubernetes.Node) (nodeip.Selector, error) {
+func (s State) nodeSelector(c kubernetes.Cluster, n kubernetes.Node) (nodeip.Selector, error) {
 	if c.Kind == kubernetes.KindControlPlane {
-		pin, err := ReadPin(p)
+		pin, err := s.ReadPin()
 		if err != nil {
 			return nodeip.Selector{}, err
 		}

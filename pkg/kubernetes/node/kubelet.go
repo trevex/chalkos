@@ -27,23 +27,23 @@ import (
 // writeKubeletFiles installs the kubelet's client certificate cert and writes the cluster's CA,
 // the kubelet's flags and its configuration. The kubeconfig, which starts the kubelet, is not
 // among them.
-func writeKubeletFiles(p Paths, c kubernetes.Cluster, n kubernetes.Node, share kpki.Share, cert pki.CertKey, now time.Time) error {
-	if err := installKubeletClient(p, share.CA, cert, n.Name, now); err != nil {
+func (s State) writeKubeletFiles(in inputs, cert pki.CertKey, now time.Time) error {
+	if err := s.installKubeletClient(in.share.CA, cert, in.node.Name, now); err != nil {
 		return err
 	}
-	if err := os.MkdirAll(p.KubeletDir(), 0o755); err != nil {
+	if err := os.MkdirAll(s.KubeletDir(), 0o755); err != nil {
 		return err
 	}
-	config, err := json.Marshal(kubeletConfig(p, c))
+	config, err := json.Marshal(kubeletConfig(s.Paths, in.cluster))
 	if err != nil {
 		return err
 	}
 	for name, data := range map[string][]byte{
-		"ca.crt":      []byte(share.CABundle()),
-		"flags":       []byte("KUBELET_ARGS=" + strings.Join(kubeletFlags(c, n), " ") + "\n"),
+		"ca.crt":      []byte(in.share.CABundle()),
+		"flags":       []byte("KUBELET_ARGS=" + strings.Join(kubeletFlags(in.cluster, in.node), " ") + "\n"),
 		"config.json": config,
 	} {
-		if err := atomicfile.WriteFile(filepath.Join(p.KubeletDir(), name), data, 0o644); err != nil {
+		if err := atomicfile.WriteFile(filepath.Join(s.KubeletDir(), name), data, 0o644); err != nil {
 			return err
 		}
 	}
@@ -146,32 +146,32 @@ func kubeletFlags(c kubernetes.Cluster, n kubernetes.Node) []string {
 
 // installKubeletClient puts the certificate into the kubelet's certificate store unless the
 // store holds one the kubelet renewed itself that is trusted and expires later.
-func installKubeletClient(p Paths, ca pki.CertKey, ck pki.CertKey, node string, now time.Time) error {
+func (s State) installKubeletClient(ca pki.CertKey, ck pki.CertKey, node string, now time.Time) error {
 	cert, _, err := ck.Parse()
 	if err != nil {
 		return fmt.Errorf("kubelet client certificate: %w", err)
 	}
-	switch err := checkRenewedClient(p.KubeletClient(), ca, cert, node, now); {
+	switch err := checkRenewedClient(s.KubeletClient(), ca, cert, node, now); {
 	case err == nil:
 		return nil
 	case !errors.Is(err, fs.ErrNotExist):
-		log.Printf("kubelet: installing the share's client certificate instead of %s: %v", p.KubeletClient(), err)
+		log.Printf("kubelet: installing the share's client certificate instead of %s: %v", s.KubeletClient(), err)
 	}
-	if err := os.MkdirAll(p.KubeletPKI, 0o700); err != nil {
+	if err := os.MkdirAll(s.KubeletPKI, 0o700); err != nil {
 		return err
 	}
 	// One file, replaced atomically; the kubelet writes renewed certificates next to it.
 	name := "kubelet-client-chalkos.pem"
-	if err := atomicfile.WriteFile(filepath.Join(p.KubeletPKI, name), []byte(ck.Certificate+ck.Key), 0o600); err != nil {
+	if err := atomicfile.WriteFile(filepath.Join(s.KubeletPKI, name), []byte(ck.Certificate+ck.Key), 0o600); err != nil {
 		return err
 	}
 	// The kubelet's store follows the link and refuses to replace a file that is not one.
-	tmp := p.KubeletClient() + ".chalkos"
+	tmp := s.KubeletClient() + ".chalkos"
 	os.Remove(tmp)
 	if err := os.Symlink(name, tmp); err != nil {
 		return err
 	}
-	return os.Rename(tmp, p.KubeletClient())
+	return os.Rename(tmp, s.KubeletClient())
 }
 
 // checkRenewedClient returns nil if the kubelet's current client certificate in path should be

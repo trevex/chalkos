@@ -36,22 +36,22 @@ func (k *side) superviseVIP(ctx context.Context) {
 }
 
 func (k *side) runVIP(ctx context.Context) error {
-	if err := knode.CheckPrepared(k.paths); err != nil {
+	if err := k.state.CheckPrepared(); err != nil {
 		return err
 	}
-	share, err := knode.ReadShare(k.paths)
+	share, err := k.state.ReadShare()
 	if err != nil {
 		return err
 	}
-	c, err := k8s.ReadCluster(k.paths.Cluster)
+	c, err := k8s.ReadCluster(k.state.Cluster)
 	if err != nil {
 		return err
 	}
-	n, err := k8s.ReadNode(k.paths.NodeFile)
+	n, err := k8s.ReadNode(k.state.NodeFile)
 	if err != nil {
 		return err
 	}
-	addrs, err := k.hooks.VIPAddresses(c, k.paths)
+	addrs, err := k.hooks.VIPAddresses(c, k.state)
 	if err != nil {
 		return err
 	}
@@ -62,7 +62,7 @@ func (k *side) runVIP(ctx context.Context) error {
 	// The share is read for each check: while the Kubernetes CAs rotate, the API server may serve
 	// a certificate of a CA the share this election started with does not hold.
 	healthy := func(ctx context.Context) bool {
-		current, err := knode.ReadShare(k.paths)
+		current, err := k.state.ReadShare()
 		if err != nil {
 			current = share
 		}
@@ -85,7 +85,7 @@ func (k *side) runVIP(ctx context.Context) error {
 	// and resigning, and starts again with the new share.
 	ectx, restart := context.WithCancelCause(ctx)
 	defer restart(nil)
-	go watchEtcdTrust(ectx, k.paths, share, k.timing.VIPInterval, restart)
+	go watchEtcdTrust(ectx, k.state, share, k.timing.VIPInterval, restart)
 	err = election.Run(ectx)
 	if ctx.Err() == nil && errors.Is(context.Cause(ectx), errEtcdTrustChanged) {
 		return errEtcdTrustChanged
@@ -100,7 +100,7 @@ var errEtcdTrustChanged = errors.New("the node's share changed the etcd CAs")
 // watchEtcdTrust calls restart with errEtcdTrustChanged once the share in STATE differs from
 // started in its etcd CAs or the issuing one, looking every interval until ctx ends. A share that
 // cannot be read changes nothing: the election keeps what it has.
-func watchEtcdTrust(ctx context.Context, p knode.Paths, started kpki.Share, interval time.Duration, restart context.CancelCauseFunc) {
+func watchEtcdTrust(ctx context.Context, p knode.State, started kpki.Share, interval time.Duration, restart context.CancelCauseFunc) {
 	want := etcdTrust(started)
 	for {
 		select {
@@ -108,7 +108,7 @@ func watchEtcdTrust(ctx context.Context, p knode.Paths, started kpki.Share, inte
 			return
 		case <-time.After(interval):
 		}
-		if current, err := knode.ReadShare(p); err == nil && etcdTrust(current) != want {
+		if current, err := p.ReadShare(); err == nil && etcdTrust(current) != want {
 			restart(errEtcdTrustChanged)
 			return
 		}

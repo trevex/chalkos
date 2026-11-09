@@ -95,7 +95,7 @@ func (a *addresses) Release() error {
 }
 
 // NodeAddresses finds the interfaces of the cluster's VIPs on this node.
-func NodeAddresses(c k8s.Cluster, p knode.Paths) (Holder, error) {
+func NodeAddresses(c k8s.Cluster, s knode.State) (Holder, error) {
 	vips := c.VIPAddresses()
 	var held []Address
 	if c.VIP.Interface != "" {
@@ -104,7 +104,7 @@ func NodeAddresses(c k8s.Cluster, p knode.Paths) (Holder, error) {
 		}
 		return newAddresses(held), nil
 	}
-	ips, err := knode.ReadNodeIPs(p)
+	ips, err := s.ReadNodeIPs()
 	if err != nil {
 		return nil, err
 	}

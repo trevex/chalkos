@@ -16,28 +16,54 @@ import (
 	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
 )
 
+// inputs are what the node's Kubernetes files are made from.
+type inputs struct {
+	share   kpki.Share
+	cluster kubernetes.Cluster
+	// node is the node's identity, with the addresses the preparation picked once they are known.
+	node kubernetes.Node
+}
+
 // load reads the node's share, its cluster file and its identity, and checks they belong
 // together.
-func load(p Paths) (kpki.Share, kubernetes.Cluster, kubernetes.Node, error) {
-	share, err := ReadShare(p)
+func (s State) load() (inputs, error) {
+	share, err := s.ReadShare()
 	if err != nil {
-		return kpki.Share{}, kubernetes.Cluster{}, kubernetes.Node{}, err
+		return inputs{}, err
 	}
-	c, err := kubernetes.ReadCluster(p.Cluster)
+	in, err := s.readNode()
 	if err != nil {
-		return kpki.Share{}, kubernetes.Cluster{}, kubernetes.Node{}, err
+		return inputs{}, err
 	}
-	n, err := kubernetes.ReadNode(p.NodeFile)
+	in.share = share
+	if err := in.check(); err != nil {
+		return inputs{}, err
+	}
+	return in, nil
+}
+
+// readNode reads the node's cluster file and its identity, without the share.
+func (s State) readNode() (inputs, error) {
+	c, err := kubernetes.ReadCluster(s.Cluster)
 	if err != nil {
-		return kpki.Share{}, kubernetes.Cluster{}, kubernetes.Node{}, err
+		return inputs{}, err
 	}
-	if share.Kind != c.Kind {
-		return kpki.Share{}, kubernetes.Cluster{}, kubernetes.Node{}, fmt.Errorf("the node's share is for a %s node, but its config gives it the type %s", share.Kind, c.Kind)
+	n, err := kubernetes.ReadNode(s.NodeFile)
+	if err != nil {
+		return inputs{}, err
 	}
-	if share.Kind == kubernetes.KindWorker && share.Node() != n.Name {
-		return kpki.Share{}, kubernetes.Cluster{}, kubernetes.Node{}, fmt.Errorf("the node's kubelet certificate is for node %s, not %s", share.Node(), n.Name)
+	return inputs{cluster: c, node: n}, nil
+}
+
+// check checks that the share belongs to the cluster file and the node's identity.
+func (in inputs) check() error {
+	if in.share.Kind != in.cluster.Kind {
+		return fmt.Errorf("the node's share is for a %s node, but its config gives it the type %s", in.share.Kind, in.cluster.Kind)
 	}
-	return share, c, n, nil
+	if in.share.Kind == kubernetes.KindWorker && in.share.Node() != in.node.Name {
+		return fmt.Errorf("the node's kubelet certificate is for node %s, not %s", in.share.Node(), in.node.Name)
+	}
+	return nil
 }
 
 // Prepare picks the node's address and writes the kubelet's files and, on a control-plane node,
@@ -46,115 +72,119 @@ func load(p Paths) (kpki.Share, kubernetes.Cluster, kubernetes.Node, error) {
 // and one whose preparation fails, keeps none of them, so its kubelet does not start, and
 // accepts no VXLAN. The node is marked prepared only once all of this is done; otherwise
 // PrepareError says why.
-func Prepare(p Paths, now time.Time, resolve Resolver, firewall Firewall) error {
+func (s State) Prepare(now time.Time, resolve Resolver, firewall Firewall) error {
 	// chalkd renews the control plane's certificates only between preparations.
-	unlock, err := lockPKI(p, true)
+	unlock, err := s.lockPKI(true)
 	if err != nil {
 		return err
 	}
 	defer unlock()
-	for _, f := range []string{p.Prepared(), p.PrepareError()} {
+	for _, f := range []string{s.PreparedMarker(), s.PrepareError()} {
 		if err := removeIfExists(f); err != nil {
 			return err
 		}
 	}
-	err = prepare(p, now, resolve)
+	err = s.prepare(now, resolve)
 	if err == nil && firewall != nil {
-		err = firewall(p)
+		err = firewall(s.Paths)
 	}
 	if err == nil {
-		if err = markAt(p.Prepared(), now); err == nil {
+		if err = markAt(s.PreparedMarker(), now); err == nil {
 			return nil
 		}
 	}
 	// The kubelet must not start with what an earlier attempt wrote, nor the control plane with
 	// certificates naming the address picked then, nor VXLAN reach that address.
-	for _, path := range []string{p.KubeletDir(), p.Manifests(), p.PKI, p.OldPKI(), p.PKI + ".new", p.NodeIP(), p.VXLAN()} {
+	for _, path := range []string{s.KubeletDir(), s.Manifests(), s.PKI, s.OldPKI(), s.PKI + ".new", s.NodeIP(), s.VXLAN()} {
 		if rerr := os.RemoveAll(path); rerr != nil {
 			log.Print(rerr)
 		}
 	}
 	if firewall != nil {
-		if ferr := firewall(p); ferr != nil {
+		if ferr := firewall(s.Paths); ferr != nil {
 			log.Print(ferr)
 		}
 	}
 	// chalkd reports the reason in the node's status. Errors never hold key material.
-	if werr := atomicfile.WriteFile(p.PrepareError(), []byte(err.Error()+"\n"), 0o644); werr != nil {
+	if werr := atomicfile.WriteFile(s.PrepareError(), []byte(err.Error()+"\n"), 0o644); werr != nil {
 		log.Print(werr)
 	}
 	return err
 }
 
-func prepare(p Paths, now time.Time, resolve Resolver) error {
+func (s State) prepare(now time.Time, resolve Resolver) error {
 	// An address picked before must not outlive an attempt that fails.
-	for _, f := range []string{p.NodeIP(), p.VXLAN()} {
+	for _, f := range []string{s.NodeIP(), s.VXLAN()} {
 		if err := removeIfExists(f); err != nil {
 			return err
 		}
 	}
-	share, c, n, err := load(p)
+	in, err := s.load()
 	if errors.Is(err, ErrNoShare) {
 		log.Print(err)
-		return os.RemoveAll(p.KubeletDir())
+		return os.RemoveAll(s.KubeletDir())
 	}
 	if err != nil {
 		return err
 	}
-	picked, err := pickAddresses(p, c, n, resolve)
+	picked, err := s.pickAddresses(in.cluster, in.node, resolve)
 	if err != nil {
 		return err
 	}
 	for _, a := range picked {
-		n.IPs = append(n.IPs, a.IP)
+		in.node.IPs = append(in.node.IPs, a.IP)
 	}
-	kubeletCert := share.Kubelet
-	if c.Kind == kubernetes.KindControlPlane {
-		files, err := kpki.ControlPlane(share, c, n, now)
+	kubeletCert := in.share.Kubelet
+	if in.cluster.Kind == kubernetes.KindControlPlane {
+		files, err := kpki.ControlPlane(in.share, in.cluster, in.node, now)
 		if err != nil {
 			return err
 		}
-		if err := replaceDir(p.PKI, files); err != nil {
+		if err := replaceDir(s.PKI, files); err != nil {
 			return err
 		}
-		issued, err := kpki.IssueKubeletClient(share.CA, n.Name, now)
+		issued, err := kpki.IssueKubeletClient(in.share.CA, in.node.Name, now)
 		if err != nil {
 			return err
 		}
 		kubeletCert = &issued
 	}
-	if err := writeKubeletFiles(p, c, n, share, *kubeletCert, now); err != nil {
+	if err := s.writeKubeletFiles(in, *kubeletCert, now); err != nil {
 		return err
 	}
 	// Written once the certificates naming it are, which Bootstrap relies on.
-	if err := atomicfile.WriteFile(p.NodeIP(), nodeIPFile(n.IPs), 0o644); err != nil {
+	if err := atomicfile.WriteFile(s.NodeIP(), nodeIPFile(in.node.IPs), 0o644); err != nil {
 		return err
 	}
-	if err := atomicfile.WriteFile(p.VXLAN(), vxlanAccept(picked, c.VXLANSources()).Marshal(), 0o644); err != nil {
+	if err := atomicfile.WriteFile(s.VXLAN(), vxlanAccept(picked, in.cluster.VXLANSources()).Marshal(), 0o644); err != nil {
 		return err
 	}
 	// The kubelet starts once its kubeconfig exists, so it is written last.
 	kubeconfig, err := kpki.Kubeconfig{
 		Name:       "chalkos",
-		Server:     c.Endpoint,
-		CAFile:     filepath.Join(p.KubeletDir(), "ca.crt"),
-		ClientFile: p.KubeletClient(),
+		Server:     in.cluster.Endpoint,
+		CAFile:     filepath.Join(s.KubeletDir(), "ca.crt"),
+		ClientFile: s.KubeletClient(),
 	}.Encode()
 	if err != nil {
 		return err
 	}
-	if err := atomicfile.WriteFile(p.Kubeconfig(), kubeconfig, 0o644); err != nil {
+	if err := atomicfile.WriteFile(s.Kubeconfig(), kubeconfig, 0o644); err != nil {
 		return err
 	}
-	if c.Kind != kubernetes.KindControlPlane {
+	if in.cluster.Kind != kubernetes.KindControlPlane {
 		return nil
 	}
-	if err := os.MkdirAll(p.Manifests(), 0o755); err != nil {
+	if err := os.MkdirAll(s.Manifests(), 0o755); err != nil {
 		return err
 	}
 	// A leave that was interrupted keeps the bootstrapped marker, but the node's member is gone.
-	if renders, err := rendersStaticPods(p); err != nil || !renders {
+	if renders, err := s.rendersStaticPods(); err != nil || !renders {
 		return err
 	}
-	return RenderStaticPods(p)
+	// The addresses and certificates are read back as the static pods see them.
+	if in.node.IPs, err = s.ReadNodeIPs(); err != nil {
+		return fmt.Errorf("the node's addresses: %w", err)
+	}
+	return s.renderFrom(in)
 }

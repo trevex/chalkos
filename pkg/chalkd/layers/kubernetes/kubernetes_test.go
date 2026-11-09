@@ -46,15 +46,15 @@ func TestBootstrap(t *testing.T) {
 	if resp.Applied != 19 {
 		t.Errorf("applied %d objects", resp.Applied)
 	}
-	p := s.k.paths
-	if m, _, err := knode.ReadMembership(p); err != nil || m != knode.MembershipBootstrapped {
+	p := s.k.state
+	if m, _, err := p.ReadMembership(); err != nil || m != knode.MembershipBootstrapped {
 		t.Errorf("membership = %v, %v", m, err)
 	}
 	entries, _ := os.ReadDir(p.Manifests())
 	if len(entries) != 4 {
 		t.Errorf("static pods %v", entries)
 	}
-	if pin, err := knode.ReadPin(p); err != nil || len(pin) != 1 || pin[0].String() != "192.168.100.11" {
+	if pin, err := p.ReadPin(); err != nil || len(pin) != 1 || pin[0].String() != "192.168.100.11" {
 		t.Errorf("pin = %v, %v, want the node's address", pin, err)
 	}
 	_, err = kubernetestest.Bootstrap(context.Background(), s)
@@ -67,18 +67,18 @@ func TestBootstrapRefusals(t *testing.T) {
 	worker, _ := kubernetesNode(t, k8s.KindWorker, true)
 	noShare, _ := kubernetesNode(t, k8s.KindControlPlane, false)
 	etcdData, _ := kubernetesNode(t, k8s.KindControlPlane, true)
-	write(t, filepath.Join(etcdData.k.paths.EtcdData, "member", "snap", "db"), "")
+	write(t, filepath.Join(etcdData.k.state.EtcdData, "member", "snap", "db"), "")
 	noAddress, _ := kubernetesNode(t, k8s.KindControlPlane, true)
-	kubernetestest.WithoutAddress(t, noAddress.k.paths, "no node address matches validSubnets 192.168.100.0/24 (the node has 10.0.2.15 on eth0)")
+	kubernetestest.WithoutAddress(t, noAddress.k.state.Paths, "no node address matches validSubnets 192.168.100.0/24 (the node has 10.0.2.15 on eth0)")
 	// A preparation that picked the address and still writes the certificates.
 	preparing, _ := kubernetesNode(t, k8s.KindControlPlane, true)
-	if err := os.Remove(preparing.k.paths.Prepared()); err != nil {
+	if err := os.Remove(preparing.k.state.PreparedMarker()); err != nil {
 		t.Fatal(err)
 	}
 	otherKind, _ := kubernetesNode(t, k8s.KindControlPlane, false)
-	kubernetestest.OtherKindsShare(t, otherKind.k.paths)
+	kubernetestest.OtherKindsShare(t, otherKind.k.state.Paths)
 	noFirewall, _ := kubernetesNode(t, k8s.KindControlPlane, true)
-	kubernetestest.WithoutFirewall(t, noFirewall.k.paths)
+	kubernetestest.WithoutFirewall(t, noFirewall.k.state.Paths)
 	for name, tc := range map[string]struct {
 		s    *Plugin
 		want string
@@ -93,14 +93,14 @@ func TestBootstrapRefusals(t *testing.T) {
 	} {
 		var before map[string]string
 		if k := tc.s.k; k != nil {
-			before = files(t, k.paths.State, k.paths.Run, k.paths.EtcdData)
+			before = files(t, k.state.State, k.state.Run, k.state.EtcdData)
 		}
 		_, err := kubernetestest.Bootstrap(context.Background(), tc.s)
 		if layer.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), tc.want) {
 			t.Errorf("%s: %v, want %q", name, err, tc.want)
 		}
 		if k := tc.s.k; k != nil {
-			after := files(t, k.paths.State, k.paths.Run, k.paths.EtcdData)
+			after := files(t, k.state.State, k.state.Run, k.state.EtcdData)
 			var changed []string
 			for path := range maps.Keys(before) {
 				if after[path] != before[path] {
@@ -152,7 +152,7 @@ func TestBootstrapReturnsBeforeManifestsApplied(t *testing.T) {
 		t.Fatalf("err = %v, want deadline exceeded", err)
 	}
 	// The node stays committed: it never initialises a second cluster.
-	if m, _, _ := knode.ReadMembership(s.k.paths); m != knode.MembershipBootstrapped {
+	if m, _, _ := s.k.state.ReadMembership(); m != knode.MembershipBootstrapped {
 		t.Error("the node lost its bootstrap marker")
 	}
 }
@@ -177,7 +177,7 @@ func TestEtcdInitialisedAfterReadiness(t *testing.T) {
 	k := s.k
 	var ready atomic.Bool
 	cfg := readyServer(t, &ready)
-	c, err := k8s.ReadCluster(k.paths.Cluster)
+	c, err := k8s.ReadCluster(k.state.Cluster)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -187,7 +187,7 @@ func TestEtcdInitialisedAfterReadiness(t *testing.T) {
 	if _, err := k.applyOnce(ctx, c, cfg); err == nil {
 		t.Fatal("applied without a ready API server")
 	}
-	if initialised, err := knode.EtcdInitialised(k.paths); err != nil || initialised {
+	if initialised, err := k.state.EtcdInitialised(); err != nil || initialised {
 		t.Fatalf("before readiness: initialised = %v, %v", initialised, err)
 	}
 
@@ -196,16 +196,16 @@ func TestEtcdInitialisedAfterReadiness(t *testing.T) {
 	if _, err := k.applyOnce(context.Background(), c, cfg); err == nil {
 		t.Fatal("applied objects that fail")
 	}
-	if initialised, err := knode.EtcdInitialised(k.paths); err != nil || !initialised {
+	if initialised, err := k.state.EtcdInitialised(); err != nil || !initialised {
 		t.Errorf("after readiness: initialised = %v, %v", initialised, err)
 	}
 }
 
 func TestStatusEtcdDataMissing(t *testing.T) {
 	s, _ := kubernetesNode(t, k8s.KindControlPlane, true)
-	p := s.k.paths
-	write(t, p.Bootstrapped(), "")
-	write(t, p.EtcdInitialised(), "")
+	p := s.k.state
+	write(t, p.BootstrappedMarker(), "")
+	write(t, p.EtcdInitialisedMarker(), "")
 	if got := kubernetestest.Status(t, s).State; got != "etcd data missing: restore etcd or reinstall the node" {
 		t.Errorf("state %q", got)
 	}
@@ -225,7 +225,7 @@ func TestControlPlaneLoopRestarts(t *testing.T) {
 	var second kpki.Share
 	k.hooks.ControlPlane = func(_ context.Context, share kpki.Share, applied func(int)) error {
 		if runs.Add(1) == 1 {
-			if err := os.WriteFile(k.paths.Share(), replaced, 0o600); err != nil {
+			if err := os.WriteFile(k.state.Share(), replaced, 0o600); err != nil {
 				return err
 			}
 			return errors.New("the API server went away")
@@ -252,10 +252,10 @@ func TestControlPlaneLoopRestarts(t *testing.T) {
 func TestControlPlaneLoopWaitsForPreparation(t *testing.T) {
 	s, _ := kubernetesNode(t, k8s.KindControlPlane, true)
 	k := s.k
-	p := k.paths
-	write(t, p.Bootstrapped(), "")
+	p := k.state
+	write(t, p.BootstrappedMarker(), "")
 	write(t, p.Pin(), "192.168.100.11\n")
-	if err := os.Remove(p.Prepared()); err != nil {
+	if err := os.Remove(p.PreparedMarker()); err != nil {
 		t.Fatal(err)
 	}
 	k.timing.RestartBackoff, k.timing.MaxRestartBackoff = 10*time.Millisecond, 20*time.Millisecond
@@ -274,7 +274,7 @@ func TestControlPlaneLoopWaitsForPreparation(t *testing.T) {
 		t.Fatal("the control plane's loop ran before the node's files were prepared")
 	case <-time.After(200 * time.Millisecond):
 	}
-	if err := knode.Prepare(p, time.Now(), kubernetestest.NodeIP("192.168.100.11"), nil); err != nil {
+	if err := p.Prepare(time.Now(), kubernetestest.NodeIP("192.168.100.11"), nil); err != nil {
 		t.Fatal(err)
 	}
 	select {
@@ -289,8 +289,8 @@ func TestControlPlaneLoopWaitsForPreparation(t *testing.T) {
 func TestControlPlaneLoopPins(t *testing.T) {
 	s, _ := kubernetesNode(t, k8s.KindControlPlane, true)
 	k := s.k
-	write(t, k.paths.Bootstrapped(), "")
-	share, _ := knode.ReadShare(k.paths)
+	write(t, k.state.BootstrappedMarker(), "")
+	share, _ := k.state.ReadShare()
 	k.etcdURL = etcdtest.StartAdvertising(t, *share.EtcdCA, "n1", "https://192.168.100.11:2380").ClientURL
 	ran := make(chan struct{})
 	k.hooks.ControlPlane = func(ctx context.Context, _ kpki.Share, _ func(int)) error {
@@ -304,7 +304,7 @@ func TestControlPlaneLoopPins(t *testing.T) {
 	case <-time.After(time.Minute):
 		t.Fatal("the control plane's loop did not run")
 	}
-	if pin, err := knode.ReadPin(k.paths); err != nil || len(pin) != 1 || pin[0].String() != "192.168.100.11" {
+	if pin, err := k.state.ReadPin(); err != nil || len(pin) != 1 || pin[0].String() != "192.168.100.11" {
 		t.Errorf("pin = %v, %v, want the node's address", pin, err)
 	}
 }
@@ -314,8 +314,8 @@ func TestControlPlaneLoopPins(t *testing.T) {
 func TestControlPlaneLoopRefusesMismatchedPin(t *testing.T) {
 	s, _ := kubernetesNode(t, k8s.KindControlPlane, true)
 	k := s.k
-	write(t, k.paths.Bootstrapped(), "")
-	share, _ := knode.ReadShare(k.paths)
+	write(t, k.state.BootstrappedMarker(), "")
+	share, _ := k.state.ReadShare()
 	k.etcdURL = etcdtest.StartAdvertising(t, *share.EtcdCA, "n1", "https://192.168.100.12:2380").ClientURL
 	k.timing.RestartBackoff, k.timing.MaxRestartBackoff = 10*time.Millisecond, 20*time.Millisecond
 	var ran atomic.Bool
@@ -330,7 +330,7 @@ func TestControlPlaneLoopRefusesMismatchedPin(t *testing.T) {
 		st, err := k.status(context.Background())
 		return err == nil && st.State == want
 	})
-	if exists(k.paths.Pin()) {
+	if exists(k.state.Pin()) {
 		t.Error("the node was pinned to an address its etcd member does not have")
 	}
 	if ran.Load() {
@@ -378,7 +378,7 @@ func TestCredentialIsShortLived(t *testing.T) {
 func TestStartAfterStopDoesNothing(t *testing.T) {
 	s, _ := kubernetesNode(t, k8s.KindControlPlane, true)
 	k := s.k
-	p := k.paths
+	p := k.state
 	var runs atomic.Int32
 	k.hooks.ControlPlane = func(ctx context.Context, _ kpki.Share, _ func(int)) error {
 		runs.Add(1)
@@ -389,7 +389,7 @@ func TestStartAfterStopDoesNothing(t *testing.T) {
 	// Not bootstrapped, the node would join.
 	k.startLoops()
 	k.reloadControlPlane()
-	write(t, p.Bootstrapped(), "")
+	write(t, p.BootstrappedMarker(), "")
 	write(t, p.Pin(), "192.168.100.11\n")
 	k.startLoops()
 	k.reloadControlPlane()
@@ -425,7 +425,7 @@ func TestControlPlaneRenewsItsCertificates(t *testing.T) {
 	if due, _, _ := leaves.Due(expires.Add(-100 * 24 * time.Hour)); !due {
 		t.Error("not due with 100 days left")
 	}
-	apiServer := filepath.Join(k.paths.PKI, kpki.FileAPIServer)
+	apiServer := filepath.Join(k.state.PKI, kpki.FileAPIServer)
 	before, _ := os.ReadFile(apiServer)
 	if err := leaves.Renew(context.Background(), time.Now()); err != nil {
 		t.Fatal(err)
@@ -440,7 +440,7 @@ func TestControlPlaneRenewsItsCertificates(t *testing.T) {
 
 // staleStaticPod makes the API server's static pod name other certificates than the current
 // ones, as a renewal interrupted before it rendered the pods leaves it, and returns the manifest.
-func staleStaticPod(t *testing.T, p knode.Paths) string {
+func staleStaticPod(t *testing.T, p knode.State) string {
 	t.Helper()
 	path := filepath.Join(p.Manifests(), "kube-apiserver.json")
 	data, err := os.ReadFile(path)
@@ -466,7 +466,7 @@ func TestControlPlaneRendersStaleStaticPods(t *testing.T) {
 		t.Fatal(err)
 	}
 	k := s.k
-	p := k.paths
+	p := k.state
 	k.mu.Lock()
 	leaves := k.leaves
 	k.mu.Unlock()
@@ -511,8 +511,8 @@ func TestStopLoopsWaitsForTheCertificateRenewal(t *testing.T) {
 		<-release
 		return nil
 	})
-	write(t, k.paths.Bootstrapped(), "")
-	write(t, k.paths.Pin(), "192.168.100.11\n")
+	write(t, k.state.BootstrappedMarker(), "")
+	write(t, k.state.Pin(), "192.168.100.11\n")
 	k.startLoops()
 	k.leaves.Force()
 	select {
@@ -540,7 +540,7 @@ func TestStopLoopsWaitsForTheCertificateRenewal(t *testing.T) {
 func TestObjectsAreTheAddOnsThenTheAddonDocuments(t *testing.T) {
 	s, _ := kubernetesNode(t, k8s.KindControlPlane, false)
 	k := newSide(Options{Hooks: Hooks{Slot: s.node.Slot}})
-	c, err := k8s.ReadCluster(s.k.paths.Cluster)
+	c, err := k8s.ReadCluster(s.k.state.Cluster)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -572,7 +572,7 @@ func TestApproverRunsWhileObjectsFail(t *testing.T) {
 	var ready atomic.Bool
 	ready.Store(true)
 	cfg := readyServer(t, &ready)
-	c, err := k8s.ReadCluster(k.paths.Cluster)
+	c, err := k8s.ReadCluster(k.state.Cluster)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -607,7 +607,7 @@ func TestApplyOnceLeavesTheRevokedNodesToTheApprover(t *testing.T) {
 	var ready atomic.Bool
 	ready.Store(true)
 	cfg := readyServer(t, &ready)
-	c, err := k8s.ReadCluster(k.paths.Cluster)
+	c, err := k8s.ReadCluster(k.state.Cluster)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -621,7 +621,7 @@ func TestApplyOnceLeavesTheRevokedNodesToTheApprover(t *testing.T) {
 // certificates: the renewal waits for them and issues none of its own.
 func TestControlPlaneRenewalWaitsForThePreparation(t *testing.T) {
 	s, _ := kubernetesNode(t, k8s.KindControlPlane, true)
-	p := s.k.paths
+	p := s.k.state
 	// RUN is empty after a reboot.
 	if err := os.RemoveAll(p.Run); err != nil {
 		t.Fatal(err)
@@ -657,7 +657,7 @@ func TestControlPlaneRenewalWaitsForThePreparation(t *testing.T) {
 	}
 	// The certificates the preparation writes are new: none are renewed, so no static pod
 	// starts again.
-	if err := knode.Prepare(p, now, kubernetestest.NodeIP("192.168.100.11"), nil); err != nil {
+	if err := p.Prepare(now, kubernetestest.NodeIP("192.168.100.11"), nil); err != nil {
 		t.Fatal(err)
 	}
 	apiServer := filepath.Join(p.PKI, kpki.FileAPIServer)

@@ -24,7 +24,7 @@ import (
 
 // side is the node's Kubernetes side: its loops and what they hold.
 type side struct {
-	paths  knode.Paths
+	state  knode.State
 	hooks  Hooks
 	timing Timing
 	// etcdURL is where chalkd reaches the node's own etcd member; empty means the cluster's
@@ -98,7 +98,7 @@ type Hooks struct {
 	// share's CA, and fails when it cannot tell.
 	ClusterAnswers func(ctx context.Context, c k8s.Cluster, share kpki.Share) (bool, error)
 	// VIPAddresses are the cluster's VIPs on this node's interfaces.
-	VIPAddresses func(c k8s.Cluster, p knode.Paths) (vip.Holder, error)
+	VIPAddresses func(c k8s.Cluster, s knode.State) (vip.Holder, error)
 	// APIServerReady reports whether the node's API server answers ready.
 	APIServerReady func(ctx context.Context, c k8s.Cluster, share kpki.Share) bool
 	// EtcdStopped waits until the node's etcd stopped once its static pod is gone.
@@ -190,9 +190,9 @@ func (k *side) leavesProblem() string {
 
 // newSide returns the Kubernetes side of a node.
 func newSide(o Options) *side {
-	k := &side{paths: o.Paths, hooks: o.Hooks, timing: o.Timing.withDefaults(), etcdURL: o.LocalEtcd, revokedNodesHook: o.RevokedNodes, kubelet: o.Kubelet, imageFile: o.ImageFile, clusterFile: o.ClusterFile}
-	if k.paths == (knode.Paths{}) {
-		k.paths = knode.DefaultPaths()
+	k := &side{state: knode.State{Paths: o.Paths}, hooks: o.Hooks, timing: o.Timing.withDefaults(), etcdURL: o.LocalEtcd, revokedNodesHook: o.RevokedNodes, kubelet: o.Kubelet, imageFile: o.ImageFile, clusterFile: o.ClusterFile}
+	if k.state.Paths == (knode.Paths{}) {
+		k.state.Paths = knode.DefaultPaths()
 	}
 	if k.kubelet == "" {
 		k.kubelet = "http://127.0.0.1:10248/healthz"
@@ -283,12 +283,12 @@ func (k *side) stopLoops() {
 // control plane that is neither bootstrapped nor left etcd. A loop that runs already is not
 // started again.
 func (k *side) startLoops() {
-	c, err := k8s.ReadCluster(k.paths.Cluster)
+	c, err := k8s.ReadCluster(k.state.Cluster)
 	if err != nil {
 		log.Printf("kubernetes: %v", err)
 		return
 	}
-	m, leftovers, err := knode.ReadMembership(k.paths)
+	m, leftovers, err := k.state.ReadMembership()
 	if err != nil {
 		log.Printf("kubernetes: %v", err)
 		return
@@ -330,7 +330,7 @@ func (k *side) startLocked() chan struct{} {
 	k.reload = make(chan struct{}, 1)
 	done := k.done
 	g := k.loops()
-	if c, err := k8s.ReadCluster(k.paths.Cluster); err != nil {
+	if c, err := k8s.ReadCluster(k.state.Cluster); err != nil {
 		log.Printf("kubernetes: %v", err)
 	} else if len(c.VIP.Addresses) > 0 {
 		g.Go("the VIP election", k.superviseVIP)

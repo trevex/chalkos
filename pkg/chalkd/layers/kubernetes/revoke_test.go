@@ -36,7 +36,7 @@ type revokeLab struct {
 func newRevokeLab(t *testing.T) *revokeLab {
 	t.Helper()
 	s, _ := kubernetesNode(t, k8s.KindControlPlane, true)
-	write(t, s.k.paths.Bootstrapped(), "")
+	write(t, s.k.state.BootstrappedMarker(), "")
 	l := &revokeLab{s: s, cs: fake.NewClientset(&corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "w1"}})}
 	s.k.hooks.APIClient = func(k8s.Cluster, kpki.Share) (kubernetes.Interface, error) { return l.cs, nil }
 	return l
@@ -75,7 +75,7 @@ func (l *revokeLab) kubernetesCAs(t *testing.T, at time.Time, accepted ...time.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	write(t, l.s.k.paths.Share(), string(data))
+	write(t, l.s.k.state.Share(), string(data))
 }
 
 func (l *revokeLab) list(t *testing.T) revoked.List {

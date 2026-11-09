@@ -132,7 +132,7 @@ func controlPlaneNode(t *testing.T, ta *testApp) (*chalkd.Server, *fakeRunner, s
 	t.Helper()
 	withKind(t, ta, kubernetes.KindControlPlane)
 	s, r := kubernetesNode(t, ta)
-	p := kubernetesPaths(s)
+	p := kubernetesState(s)
 	writeFile(t, p.Cluster, clusterFile("controlplane"))
 	share, err := kpki.ControlPlaneShare(&ta.secrets.Kubernetes, ta.secrets.NodeCA).Encode()
 	if err != nil {
@@ -149,7 +149,7 @@ func controlPlaneNode(t *testing.T, ta *testApp) (*chalkd.Server, *fakeRunner, s
 func TestRotateNodeCAOnAControlPlane(t *testing.T) {
 	ta := newTestApp(t)
 	s, r, addr := controlPlaneNode(t, ta)
-	p := kubernetesPaths(s)
+	p := kubernetesState(s)
 
 	// The secrets file is updated in place, its previous version kept beside it, and
 	// secrets.pub.json written beside it.

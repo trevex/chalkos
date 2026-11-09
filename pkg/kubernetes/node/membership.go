@@ -46,30 +46,30 @@ type Leftovers struct {
 //   - The left marker wins: a leave records it before it clears the other markers.
 //   - The bootstrapped marker wins over the joining one: a join sets it before it removes the
 //     joining marker.
-func ReadMembership(p Paths) (Membership, Leftovers, error) {
+func (s State) ReadMembership() (Membership, Leftovers, error) {
 	var l Leftovers
-	left, err := marked(p.Left())
+	left, err := marked(s.LeftMarker())
 	if err != nil {
 		return MembershipNone, l, err
 	}
-	bootstrapped, err := marked(p.Bootstrapped())
+	bootstrapped, err := marked(s.BootstrappedMarker())
 	if err != nil {
 		return MembershipNone, l, err
 	}
-	joining, err := marked(p.Joining())
+	joining, err := marked(s.JoiningMarker())
 	if err != nil {
 		return MembershipNone, l, err
 	}
-	if l.InitialCluster, err = marked(p.EtcdInitialCluster()); err != nil {
+	if l.InitialCluster, err = marked(s.EtcdInitialCluster()); err != nil {
 		return MembershipNone, l, err
 	}
-	if l.Pinned, err = marked(p.Pin()); err != nil {
+	if l.Pinned, err = marked(s.Pin()); err != nil {
 		return MembershipNone, l, err
 	}
-	if l.EtcdData, err = EtcdHasData(p); err != nil {
+	if l.EtcdData, err = s.EtcdHasData(); err != nil {
 		return MembershipNone, l, err
 	}
-	initialised, err := EtcdInitialised(p)
+	initialised, err := s.EtcdInitialised()
 	if err != nil {
 		return MembershipNone, l, err
 	}

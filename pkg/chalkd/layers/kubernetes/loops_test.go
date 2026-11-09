@@ -37,7 +37,7 @@ func TestLeftoverJoinLeavesTheNextGeneration(t *testing.T) {
 	s, _ := kubernetesNode(t, k8s.KindControlPlane, true)
 	k := s.k
 	// The join ends at once: the node is bootstrapped.
-	write(t, k.paths.Bootstrapped(), "")
+	write(t, k.state.BootstrappedMarker(), "")
 	k.mu.Lock()
 	old := k.loops()
 	k.joining = true

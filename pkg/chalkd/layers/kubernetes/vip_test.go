@@ -50,13 +50,13 @@ func (f *fakeAddresses) Release() error {
 func TestStatusVIP(t *testing.T) {
 	s, _ := kubernetesNode(t, k8s.KindControlPlane, true)
 	k := s.k
-	write(t, k.paths.Bootstrapped(), "")
-	data, err := os.ReadFile(k.paths.Cluster)
+	write(t, k.state.BootstrappedMarker(), "")
+	data, err := os.ReadFile(k.state.Cluster)
 	if err != nil {
 		t.Fatal(err)
 	}
 	cluster := strings.Replace(string(data), `"extraArgs"`, `"vip": {"addresses": ["192.168.100.11"], "mode": "l2"}, "extraArgs"`, 1)
-	write(t, k.paths.Cluster, cluster)
+	write(t, k.state.Cluster, cluster)
 	if st, err := k.status(context.Background()); err != nil || st.Vip != "standby" {
 		t.Errorf("status %v, %v, want a standby", st, err)
 	}
@@ -72,13 +72,13 @@ func vipControlPlane(t *testing.T) (*side, *fakeAddresses) {
 	t.Helper()
 	s, _, _ := memberNode(t)
 	k := s.k
-	data, err := os.ReadFile(k.paths.Cluster)
+	data, err := os.ReadFile(k.state.Cluster)
 	if err != nil {
 		t.Fatal(err)
 	}
-	write(t, k.paths.Cluster, strings.Replace(string(data), `"extraArgs"`, `"vip": {"addresses": ["192.168.100.11"], "mode": "l2"}, "extraArgs"`, 1))
+	write(t, k.state.Cluster, strings.Replace(string(data), `"extraArgs"`, `"vip": {"addresses": ["192.168.100.11"], "mode": "l2"}, "extraArgs"`, 1))
 	addrs := &fakeAddresses{}
-	k.hooks.VIPAddresses = func(k8s.Cluster, knode.Paths) (vip.Holder, error) { return addrs, nil }
+	k.hooks.VIPAddresses = func(k8s.Cluster, knode.State) (vip.Holder, error) { return addrs, nil }
 	k.hooks.APIServerReady = func(context.Context, k8s.Cluster, kpki.Share) bool { return true }
 	// A lease of seconds keeps a busy machine's delays within its renewals.
 	k.timing.VIPTTL, k.timing.VIPInterval = 6, 50*time.Millisecond
@@ -90,9 +90,9 @@ func vipControlPlane(t *testing.T) (*side, *fakeAddresses) {
 }
 
 // changeShare writes the node's share as change leaves it.
-func changeShare(t *testing.T, p knode.Paths, change func(*kpki.Share)) {
+func changeShare(t *testing.T, p knode.State, change func(*kpki.Share)) {
 	t.Helper()
-	share, err := knode.ReadShare(p)
+	share, err := p.ReadShare()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -118,7 +118,7 @@ func TestVIPRestartsWhenEtcdTrustChanges(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	changeShare(t, k.paths, func(s *kpki.Share) {
+	changeShare(t, k.state, func(s *kpki.Share) {
 		s.Accepted = &clustersecrets.KubernetesAccepted{CA: []string{kubernetesCA.Certificate}}
 	})
 	time.Sleep(20 * k.timing.VIPInterval)
@@ -130,7 +130,7 @@ func TestVIPRestartsWhenEtcdTrustChanges(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	changeShare(t, k.paths, func(s *kpki.Share) { s.Accepted.EtcdCA = []string{etcdCA.Certificate} })
+	changeShare(t, k.state, func(s *kpki.Share) { s.Accepted.EtcdCA = []string{etcdCA.Certificate} })
 	eventually(t, "the VIPs released and held again", func() bool { return addrs.released.Load() > released && held() })
 	addrs.mu.Lock()
 	most := addrs.most

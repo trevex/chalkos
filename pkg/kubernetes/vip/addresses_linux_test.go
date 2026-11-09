@@ -14,7 +14,7 @@ import (
 // The VIPs go on the interface the cluster names, or else on the one with the node's address of
 // their family.
 func TestNodeAddresses(t *testing.T) {
-	p := knode.Paths{Run: t.TempDir()}
+	p := knode.State{Paths: knode.Paths{Run: t.TempDir()}}
 	if err := os.WriteFile(p.NodeIP(), []byte("127.0.0.1\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}

@@ -31,18 +31,18 @@ type controlPlaneNode struct {
 // controlPlane checks that the node is a control plane and reads its cluster, name and share. Its
 // errors carry their codes, which callers such as notRevoked keep rather than give one of their own.
 func (k *side) controlPlane() (controlPlaneNode, error) {
-	c, err := k8s.ReadCluster(k.paths.Cluster)
+	c, err := k8s.ReadCluster(k.state.Cluster)
 	if err != nil {
 		return controlPlaneNode{}, layer.Errorf(connect.CodeInternal, "%w", err)
 	}
 	if c.Kind != k8s.KindControlPlane {
 		return controlPlaneNode{}, layer.Errorf(connect.CodeFailedPrecondition, "the node is a worker; ask a control-plane node")
 	}
-	n, err := k8s.ReadNode(k.paths.NodeFile)
+	n, err := k8s.ReadNode(k.state.NodeFile)
 	if err != nil {
 		return controlPlaneNode{}, layer.Errorf(connect.CodeInternal, "%w", err)
 	}
-	share, err := knode.ReadShare(k.paths)
+	share, err := k.state.ReadShare()
 	if err != nil {
 		return controlPlaneNode{}, layer.Errorf(connect.CodeFailedPrecondition, "%w", err)
 	}
@@ -55,7 +55,7 @@ func (k *side) etcdMember() (controlPlaneNode, error) {
 	if err != nil {
 		return controlPlaneNode{}, err
 	}
-	switch m, _, err := knode.ReadMembership(k.paths); {
+	switch m, _, err := k.state.ReadMembership(); {
 	case err != nil:
 		return controlPlaneNode{}, layer.Errorf(connect.CodeInternal, "%w", err)
 	case m != knode.MembershipBootstrapped:
@@ -188,7 +188,7 @@ func (p *Plugin) EtcdRemoveMember(ctx context.Context, req *connect.Request[kube
 // ownMember finds the node's member among the members with etcd.Self, at the peer URL of the
 // node's pinned address.
 func (k *side) ownMember(members []etcd.Member, name string) (etcd.Member, bool, error) {
-	pin, err := knode.ReadPin(k.paths)
+	pin, err := k.state.ReadPin()
 	if err != nil {
 		return etcd.Member{}, false, err
 	}
@@ -205,7 +205,7 @@ func (k *side) ownMember(members []etcd.Member, name string) (etcd.Member, bool,
 func (k *side) leaveEndpoints(ctx context.Context, c k8s.Cluster, share kpki.Share) []string {
 	endpoints := []string{k.localEtcd(c)}
 	// Without its addresses the node's own member is listed too, which only repeats it.
-	ips, _ := knode.ReadNodeIPs(k.paths)
+	ips, _ := k.state.ReadNodeIPs()
 	rctx, cancel := k.etcdRequest(ctx)
 	defer cancel()
 	others, err := k.hooks.EtcdEndpoints(rctx, c, share, ips)
@@ -225,8 +225,7 @@ func (p *Plugin) EtcdLeave(ctx context.Context, req *connect.Request[kubernetesv
 		return nil, err
 	}
 	c, name, share := cp.cluster, cp.name, cp.share
-	paths := k.paths
-	m, leftovers, err := knode.ReadMembership(paths)
+	m, leftovers, err := k.state.ReadMembership()
 	switch {
 	case err != nil:
 		return nil, err
@@ -327,25 +326,25 @@ func (p *Plugin) EtcdLeave(ctx context.Context, req *connect.Request[kubernetesv
 
 	// A renewal of the control plane's certificates renders the static pods while it holds this
 	// lock: it ends first, and none renders them once the node is marked as left.
-	unlock, err := knode.LockPKI(ctx, paths)
+	unlock, err := k.state.LockPKI(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("the node left etcd, but stopping its control plane failed: %w", err)
 	}
 	defer unlock()
 	// The marker comes first: from here on the node is no member, whatever it still holds.
-	if err := knode.MarkLeft(paths, time.Now()); err != nil {
+	if err := k.state.MarkLeft(time.Now()); err != nil {
 		return nil, fmt.Errorf("the node left etcd, but recording it failed: %w", err)
 	}
-	if err := knode.RemoveStaticPods(paths); err != nil {
+	if err := k.state.RemoveStaticPods(); err != nil {
 		return nil, fmt.Errorf("the node left etcd, but stopping its control plane failed: %w", err)
 	}
 	if err := k.hooks.EtcdStopped(ctx, c); err != nil {
-		return nil, fmt.Errorf("the node left etcd, but its etcd did not stop: %w; its data stays in %s until chalkctl etcd leave runs again", err, paths.EtcdData)
+		return nil, fmt.Errorf("the node left etcd, but its etcd did not stop: %w; its data stays in %s until chalkctl etcd leave runs again", err, k.state.EtcdData)
 	}
-	if err := knode.RemoveEtcdData(paths); err != nil {
+	if err := k.state.RemoveEtcdData(); err != nil {
 		return nil, fmt.Errorf("the node left etcd, but deleting its etcd data failed: %w", err)
 	}
-	if err := knode.ClearMembership(paths); err != nil {
+	if err := k.state.ClearMembership(); err != nil {
 		return nil, fmt.Errorf("the node left etcd: %w", err)
 	}
 	log.Print("kubernetes: the node left etcd; reinstall it to join the cluster again")

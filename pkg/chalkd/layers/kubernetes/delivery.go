@@ -180,7 +180,7 @@ func (p *Plugin) share(d layer.Planned, cluster *k8s.Cluster) ([]byte, error) {
 	}
 	if !d.Install {
 		if cluster == nil {
-			c, err := k8s.ReadCluster(p.k.paths.Cluster)
+			c, err := k8s.ReadCluster(p.k.state.Cluster)
 			if err != nil {
 				return nil, layer.Errorf(connect.CodeInvalidArgument, "the node has no Kubernetes cluster: %w", err)
 			}
@@ -230,7 +230,7 @@ func writeShare(stateDir string, share []byte) error {
 
 // checkKeptNodeCA refuses OS CAs that the node CA a control plane holds does not chain to.
 func (k *side) checkKeptNodeCA(osCA string) error {
-	share, err := knode.ReadShare(k.paths)
+	share, err := k.state.ReadShare()
 	if errors.Is(err, knode.ErrNoShare) {
 		return nil
 	}

@@ -90,8 +90,8 @@ func TestStatusCertificatesOfAWorker(t *testing.T) {
 		t.Fatal(err)
 	}
 	data, _ := share.Encode()
-	write(t, kubernetesPaths(s).Share(), string(data))
-	if err := os.Remove(kubernetesPaths(s).KubeletClient()); err != nil {
+	write(t, kubernetesState(s).Share(), string(data))
+	if err := os.Remove(kubernetesState(s).KubeletClient()); err != nil {
 		t.Fatal(err)
 	}
 	var kubelet *nodev1.CertificateStatus
@@ -198,7 +198,7 @@ func TestStatusKubeletCertificatesWarnLate(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		write(t, kubernetesPaths(s).KubeletClient(), ck.Certificate+ck.Key)
+		write(t, kubernetesState(s).KubeletClient(), ck.Certificate+ck.Key)
 		if got := kubeletStatus(t, s).Problem; (got != "") != tc.warn {
 			t.Errorf("issued %v ago: problem %q, want a warning %v", -tc.issued, got, tc.warn)
 		}
@@ -230,7 +230,7 @@ func TestStatusNamesTheOSCA(t *testing.T) {
 // A share chalkd cannot read leaves the Kubernetes certificates unknown, which status says.
 func TestStatusReportsAnUnreadableShare(t *testing.T) {
 	s, _ := kubernetesServer(t, k8s.KindControlPlane, true)
-	write(t, kubernetesPaths(s).Share(), "not a share")
+	write(t, kubernetesState(s).Share(), "not a share")
 	var found bool
 	for _, c := range status(t, s).Certificates {
 		if strings.Contains(c.Problem, "share") {

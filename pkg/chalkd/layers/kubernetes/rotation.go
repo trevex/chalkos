@@ -396,7 +396,7 @@ func (p *Plugin) renewKubeletServing(ctx context.Context, _ *kubernetesv1.Rotati
 	p.node.Changes().Lock()
 	defer p.node.Changes().Unlock()
 	k := p.k
-	files, err := filepath.Glob(filepath.Join(k.paths.KubeletPKI, "kubelet-server-*.pem"))
+	files, err := filepath.Glob(filepath.Join(k.state.KubeletPKI, "kubelet-server-*.pem"))
 	if err != nil {
 		return err
 	}

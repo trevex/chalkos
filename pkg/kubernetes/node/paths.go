@@ -7,7 +7,8 @@ import (
 	"github.com/trevex/chalkos/pkg/storage"
 )
 
-// Paths are the files Prepare reads and writes; tests point them at temporary directories.
+// Paths are where the node keeps the files of its Kubernetes State; tests point them at temporary
+// directories.
 type Paths struct {
 	// State is the Kubernetes directory on STATE, holding the share and the bootstrap and etcd
 	// markers.
@@ -42,10 +43,13 @@ func DefaultPaths() Paths {
 	}
 }
 
-func (p Paths) Share() string        { return filepath.Join(p.State, "share.json") }
-func (p Paths) Bootstrapped() string { return filepath.Join(p.State, "bootstrapped") }
-func (p Paths) Manifests() string    { return filepath.Join(p.Run, "manifests") }
-func (p Paths) KubeletDir() string   { return filepath.Join(p.Run, "kubelet") }
+func (p Paths) Share() string      { return filepath.Join(p.State, "share.json") }
+func (p Paths) Manifests() string  { return filepath.Join(p.Run, "manifests") }
+func (p Paths) KubeletDir() string { return filepath.Join(p.Run, "kubelet") }
+
+// BootstrappedMarker marks that the node is a bootstrapped control plane, which renders its static
+// pods at boot.
+func (p Paths) BootstrappedMarker() string { return filepath.Join(p.State, "bootstrapped") }
 
 // NodeIP holds the addresses the node picked, one per line, the primary family's first.
 func (p Paths) NodeIP() string { return filepath.Join(p.Run, "node-ip") }
@@ -61,22 +65,22 @@ func (p Paths) Pin() string { return filepath.Join(p.State, "node-ip") }
 // matched.
 func (p Paths) PrepareError() string { return filepath.Join(p.Run, "prepare.error") }
 
-// Prepared marks that Prepare finished: chalkd starts before it at boot and must not read the
+// PreparedMarker marks that Prepare finished: chalkd starts before it at boot and must not read the
 // files it is still writing.
-func (p Paths) Prepared() string { return filepath.Join(p.Run, "prepared") }
+func (p Paths) PreparedMarker() string { return filepath.Join(p.Run, "prepared") }
 
-// Left marks that the node left etcd: it joins the cluster again only once reinstalled.
-func (p Paths) Left() string { return filepath.Join(p.State, "left") }
+// LeftMarker marks that the node left etcd: it joins the cluster again only once reinstalled.
+func (p Paths) LeftMarker() string { return filepath.Join(p.State, "left") }
 
 // EtcdInitialCluster holds etcd's initial cluster when the node joined an existing cluster.
 func (p Paths) EtcdInitialCluster() string { return filepath.Join(p.State, "etcd-initial-cluster") }
 
-// EtcdInitialised marks that etcd answered ready after the bootstrap, so its data exists.
-func (p Paths) EtcdInitialised() string { return filepath.Join(p.State, "etcd-initialised") }
+// EtcdInitialisedMarker marks that etcd answered ready after the bootstrap, so its data exists.
+func (p Paths) EtcdInitialisedMarker() string { return filepath.Join(p.State, "etcd-initialised") }
 
-// Joining marks that the node started joining the cluster at the endpoint it holds: it may be an
-// etcd member from then on, so it never bootstraps a cluster of its own.
-func (p Paths) Joining() string { return filepath.Join(p.State, "joining") }
+// JoiningMarker marks that the node started joining the cluster at the endpoint it holds: it may
+// be an etcd member from then on, so it never bootstraps a cluster of its own.
+func (p Paths) JoiningMarker() string { return filepath.Join(p.State, "joining") }
 
 // Kubeconfig is the kubelet's kubeconfig, which chalkd also reads the Node with.
 func (p Paths) Kubeconfig() string { return filepath.Join(p.KubeletDir(), "kubeconfig") }

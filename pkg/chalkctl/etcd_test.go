@@ -35,7 +35,7 @@ func etcdNode(t *testing.T, ta *testApp, adjust func(*kubernetesplugin.Options))
 		adjust(&o)
 	}
 	s, _ := kubernetesNodeWith(t, ta, o)
-	p := kubernetesPaths(s)
+	p := kubernetesState(s)
 	data, err := share.Encode()
 	if err != nil {
 		t.Fatal(err)
@@ -43,7 +43,7 @@ func etcdNode(t *testing.T, ta *testApp, adjust func(*kubernetesplugin.Options))
 	writeFile(t, p.Share(), string(data))
 	writeFile(t, p.Cluster, clusterFile("controlplane"))
 	writeFile(t, p.NodeFile, `{"layers": {"kubernetes": {"nodeName": "n1"}}}`)
-	writeFile(t, p.Bootstrapped(), "")
+	writeFile(t, p.BootstrappedMarker(), "")
 	return s
 }
 
@@ -83,7 +83,7 @@ func TestEtcdLeaveRefusesLastVoter(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "etcd's last voter") {
 		t.Errorf("err = %v, want a refusal for the last voter", err)
 	}
-	if m, _, _ := knode.ReadMembership(kubernetesPaths(s)); m != knode.MembershipBootstrapped {
+	if m, _, _ := kubernetesState(s).ReadMembership(); m != knode.MembershipBootstrapped {
 		t.Error("a refused leave changed the node")
 	}
 }

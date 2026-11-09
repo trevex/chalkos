@@ -47,7 +47,7 @@ func (p *Plugin) RenewNodeCertificate(ctx context.Context, req *connect.Request[
 // nodeCA returns the node CA of a control-plane node's share; only control planes hold it.
 func (k *side) nodeCA() (pki.CertKey, error) {
 	notControlPlane := layer.Errorf(connect.CodeFailedPrecondition, "the node is not a control plane; control-plane nodes renew node certificates")
-	c, err := k8s.ReadCluster(k.paths.Cluster)
+	c, err := k8s.ReadCluster(k.state.Cluster)
 	if err != nil {
 		return pki.CertKey{}, err
 	}
@@ -56,12 +56,12 @@ func (k *side) nodeCA() (pki.CertKey, error) {
 	}
 	// A node that left etcd is no control plane of the cluster any more, though its share still
 	// holds the node CA until it is reinstalled.
-	if m, _, err := knode.ReadMembership(k.paths); err != nil {
+	if m, _, err := k.state.ReadMembership(); err != nil {
 		return pki.CertKey{}, err
 	} else if m == knode.MembershipLeft {
 		return pki.CertKey{}, layer.Errorf(connect.CodeFailedPrecondition, "the node left etcd and signs no node certificates; reinstall it to join the cluster again")
 	}
-	share, err := knode.ReadShare(k.paths)
+	share, err := k.state.ReadShare()
 	if err != nil {
 		return pki.CertKey{}, layer.Errorf(connect.CodeFailedPrecondition, "%w", err)
 	}
@@ -95,7 +95,7 @@ func signRequest(nodeCA pki.CertKey, names pki.NodeNames, request []byte, now ti
 // IssueNodeCertificate obtains a node certificate for the certificate request: from the node's own
 // node CA on a control plane, from the control plane at the cluster's endpoint on a worker.
 func (p *Plugin) IssueNodeCertificate(ctx context.Context, request []byte) (string, error) {
-	c, err := k8s.ReadCluster(p.k.paths.Cluster)
+	c, err := k8s.ReadCluster(p.k.state.Cluster)
 	if err != nil {
 		return "", err
 	}

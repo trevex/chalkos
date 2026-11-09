@@ -34,7 +34,7 @@ func revokeNode(t *testing.T, ta *testApp) (string, *fake.Clientset) {
 		o.Hooks.APIClient = func(k8s.Cluster, kpki.Share) (kubernetes.Interface, error) { return cs, nil }
 	})
 	// Its status reports it bootstrapped once its Kubernetes files are prepared.
-	writeFile(t, kubernetesPaths(s).Prepared(), "")
+	writeFile(t, kubernetesState(s).PreparedMarker(), "")
 	return ta.startNode(t, s), cs
 }
 

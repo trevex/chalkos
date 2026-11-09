@@ -19,7 +19,6 @@ import (
 	"github.com/trevex/chalkos/pkg/kubernetes/addons"
 	kapply "github.com/trevex/chalkos/pkg/kubernetes/apply"
 	"github.com/trevex/chalkos/pkg/kubernetes/etcd"
-	knode "github.com/trevex/chalkos/pkg/kubernetes/node"
 	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
 	"github.com/trevex/chalkos/pkg/kubernetes/translate"
 )
@@ -29,10 +28,10 @@ func (k *side) controlPlaneRenewal() *renewal.Renewal {
 	return renewal.New("Kubernetes control-plane certificates", func(now time.Time) (bool, time.Time, error) {
 		// Until the preparation wrote the certificates, as right after boot, there are none to
 		// renew; those it writes are new.
-		if prepared, err := knode.Prepared(k.paths); err != nil || !prepared {
+		if prepared, err := k.state.Prepared(); err != nil || !prepared {
 			return false, time.Time{}, err
 		}
-		renewAt, first, err := knode.ControlPlaneRenewAt(k.paths)
+		renewAt, first, err := k.state.ControlPlaneRenewAt()
 		if errors.Is(err, fs.ErrNotExist) {
 			return false, time.Time{}, nil
 		}
@@ -40,13 +39,13 @@ func (k *side) controlPlaneRenewal() *renewal.Renewal {
 			return false, time.Time{}, err
 		}
 		// Static pods left on the certificates before the current ones are rendered at once.
-		stale, err := knode.StaticPodsStale(k.paths)
+		stale, err := k.state.StaticPodsStale()
 		if err != nil {
 			return false, first.NotAfter, err
 		}
 		return stale || !now.Before(renewAt), first.NotAfter, nil
 	}, func(ctx context.Context, now time.Time) error {
-		return knode.RenewControlPlane(ctx, k.paths, now)
+		return k.state.RenewControlPlane(ctx, now)
 	})
 }
 
@@ -100,23 +99,23 @@ func (k *side) superviseControlPlane(ctx context.Context, applied func(n int), r
 }
 
 func (k *side) runControlPlaneOnce(ctx context.Context, applied func(n int)) error {
-	if err := knode.CheckPrepared(k.paths); err != nil {
+	if err := k.state.CheckPrepared(); err != nil {
 		return err
 	}
 	// A renewal interrupted after it replaced the certificates left the static pods on the ones
 	// before; unchanged manifests are not written, so nothing starts again.
-	if err := knode.RefreshStaticPods(k.paths); err != nil {
+	if err := k.state.RefreshStaticPods(); err != nil {
 		log.Printf("kubernetes: render the static pods: %v", err)
 	}
-	share, err := knode.ReadShare(k.paths)
+	share, err := k.state.ReadShare()
 	if err != nil {
 		return err
 	}
-	c, err := k8s.ReadCluster(k.paths.Cluster)
+	c, err := k8s.ReadCluster(k.state.Cluster)
 	if err != nil {
 		return err
 	}
-	if pin, err := knode.ReadPin(k.paths); err != nil {
+	if pin, err := k.state.ReadPin(); err != nil {
 		return err
 	} else if pin == nil {
 		if err := k.pinFromEtcd(ctx, c, share); err != nil {
@@ -131,7 +130,7 @@ func (k *side) runControlPlaneOnce(ctx context.Context, applied func(n int)) err
 // addresses. It does so once its etcd member's peer URL confirms them, since etcd's peers know
 // the member by that URL. A node whose address differs is not pinned, and its status says so.
 func (k *side) pinFromEtcd(ctx context.Context, c k8s.Cluster, share kpki.Share) error {
-	ips, err := knode.ReadNodeIPs(k.paths)
+	ips, err := k.state.ReadNodeIPs()
 	if err != nil {
 		return err
 	}
@@ -152,7 +151,7 @@ func (k *side) pinFromEtcd(ctx context.Context, c k8s.Cluster, share kpki.Share)
 		return errors.New(problem)
 	}
 	k.setPinProblem("")
-	return knode.WritePin(k.paths, ips)
+	return k.state.WritePin(ips)
 }
 
 func (k *side) setPinProblem(problem string) {
@@ -167,7 +166,7 @@ func (k *side) setPinProblem(problem string) {
 func (k *side) runControlPlane(ctx context.Context, share kpki.Share, applied func(n int)) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	c, err := k8s.ReadCluster(k.paths.Cluster)
+	c, err := k8s.ReadCluster(k.state.Cluster)
 	if err != nil {
 		return err
 	}
@@ -232,7 +231,7 @@ func (k *side) applyOnce(ctx context.Context, c k8s.Cluster, cfg *rest.Config) (
 		return 0, err
 	}
 	// etcd holds the cluster's data now; from here on an empty data directory is a loss.
-	if err := knode.MarkEtcdInitialised(k.paths, time.Now()); err != nil {
+	if err := k.state.MarkEtcdInitialised(time.Now()); err != nil {
 		return 0, fmt.Errorf("record that etcd is initialised: %w", err)
 	}
 	objects, err := k.hooks.Objects(c)
@@ -307,11 +306,11 @@ func (k *side) watchSplit(ctx context.Context, share kpki.Share) {
 // checkSplit asks the node's etcd member and the other control planes' which cluster they belong
 // to; the split is nil when they agree.
 func (k *side) checkSplit(ctx context.Context, share kpki.Share) (*etcd.SplitError, error) {
-	c, err := k8s.ReadCluster(k.paths.Cluster)
+	c, err := k8s.ReadCluster(k.state.Cluster)
 	if err != nil {
 		return nil, err
 	}
-	ips, err := knode.ReadNodeIPs(k.paths)
+	ips, err := k.state.ReadNodeIPs()
 	if err != nil {
 		return nil, err
 	}

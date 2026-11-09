@@ -98,7 +98,7 @@ func prepareKubernetes(withRule bool) error {
 	if withRule {
 		firewall = knode.VXLANRule(vxlan.Default())
 	}
-	return knode.Prepare(knode.DefaultPaths(), time.Now(), knode.WaitForAddresses, firewall)
+	return knode.State{Paths: knode.DefaultPaths()}.Prepare(time.Now(), knode.WaitForAddresses, firewall)
 }
 
 // containerdHosts prints containerd's hosts.toml of each registry the node's Mirror and Registry

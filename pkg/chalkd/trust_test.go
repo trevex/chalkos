@@ -24,7 +24,6 @@ import (
 	"github.com/trevex/chalkos/pkg/client"
 	"github.com/trevex/chalkos/pkg/clustersecrets"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
-	knode "github.com/trevex/chalkos/pkg/kubernetes/node"
 	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
 	"github.com/trevex/chalkos/pkg/pki"
 )
@@ -161,7 +160,7 @@ func TestTrustKeepsTheControlPlanesNodeCA(t *testing.T) {
 	nextNodeCA, _ := pki.NewNodeCA(next, time.Now())
 	k, _ := clustersecrets.NewKubernetesSecrets(time.Now())
 	share, _ := kpki.ControlPlaneShare(k, nextNodeCA).Encode()
-	write(t, kubernetesPaths(s).Share(), string(share))
+	write(t, kubernetesState(s).Share(), string(share))
 	_, admin := adminOf(t, osCA)
 	if _, err := s.ApplyConfig(asCaller(admin), connect.NewRequest(&nodev1.ApplyConfigRequest{Trust: []byte(osCA.Certificate)})); codeOf(err) != connect.CodeInvalidArgument || !strings.Contains(err.Error(), "node CA") {
 		t.Errorf("OS CAs without the node CA's: %v, want a refusal naming the node CA", err)
@@ -182,7 +181,7 @@ func TestRefusedTrustLeavesTheBaseline(t *testing.T) {
 	nextNodeCA, _ := pki.NewNodeCA(next, time.Now())
 	k, _ := clustersecrets.NewKubernetesSecrets(time.Now())
 	share, _ := kpki.ControlPlaneShare(k, nextNodeCA).Encode()
-	write(t, kubernetesPaths(s).Share(), string(share))
+	write(t, kubernetesState(s).Share(), string(share))
 	_, admin := adminOf(t, osCA)
 	refuse := func() {
 		t.Helper()
@@ -255,8 +254,8 @@ func TestStatusReportsKubernetesTrust(t *testing.T) {
 		t.Fatal(err)
 	}
 	data, _ := share.Encode()
-	write(t, kubernetesPaths(s).Share(), string(data))
-	if err := knode.Prepare(kubernetesPaths(s), time.Now(), kubernetestest.NodeIP("192.168.100.11"), nil); err != nil {
+	write(t, kubernetesState(s).Share(), string(data))
+	if err := kubernetesState(s).Prepare(time.Now(), kubernetestest.NodeIP("192.168.100.11"), nil); err != nil {
 		t.Fatal(err)
 	}
 	trust := trustOf(t, s)
@@ -284,7 +283,7 @@ func TestStatusReportsKubernetesTrust(t *testing.T) {
 	}
 
 	w, _ := kubernetesServer(t, k8s.KindWorker, true)
-	workerShare, _ := knode.ReadShare(kubernetesPaths(w))
+	workerShare, _ := kubernetesState(w).ReadShare()
 	want, _ := pki.Fingerprints(workerShare.CABundle())
 	if tr := trustOf(t, w)["Kubernetes CA"]; tr == nil || !slices.Equal(tr.Fingerprints, want) || tr.Issuing != "" {
 		t.Errorf("worker: Kubernetes CA %v, want %v and nothing issuing", tr, want)

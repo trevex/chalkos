@@ -21,10 +21,10 @@ import (
 // etcd holds it while it removes the static pods, so no renewal renders them again. The wait
 // polls, as flock cannot be interrupted: a preparation waiting for the node's addresses may hold
 // the lock for long.
-func LockPKI(ctx context.Context, p Paths) (unlock func(), err error) {
+func (s State) LockPKI(ctx context.Context) (unlock func(), err error) {
 	err = poll.UntilDone(ctx, "the lock on the control plane's certificates", 100*time.Millisecond, func() error {
 		var err error
-		unlock, err = lockPKI(p, false)
+		unlock, err = s.lockPKI(false)
 		if err != nil && !errors.Is(err, errPKIBusy) {
 			return poll.Permanent{Err: err}
 		}
@@ -38,11 +38,11 @@ var errPKIBusy = errors.New("the node's Kubernetes files are being prepared")
 
 // lockPKI takes the lock on the control plane's certificates; with wait unset it fails with
 // errPKIBusy while another holds it. The lock ends with the process, so a crash leaves none.
-func lockPKI(p Paths, wait bool) (unlock func(), err error) {
-	if err := os.MkdirAll(p.Run, 0o755); err != nil {
+func (s State) lockPKI(wait bool) (unlock func(), err error) {
+	if err := os.MkdirAll(s.Run, 0o755); err != nil {
 		return nil, err
 	}
-	f, err := atomicfile.Lock(p.pkiLock(), 0o600, wait)
+	f, err := atomicfile.Lock(s.pkiLock(), 0o600, wait)
 	if errors.Is(err, atomicfile.ErrLocked) {
 		return nil, errPKIBusy
 	}
@@ -95,8 +95,8 @@ func writeDir(dir string, files map[string][]byte) error {
 
 // ControlPlaneRenewAt is when the control plane's certificates are renewed: once two thirds of
 // the lifetime of the one that expires first have passed. It returns that certificate too.
-func ControlPlaneRenewAt(p Paths) (time.Time, *x509.Certificate, error) {
-	files, err := readDir(p.PKI)
+func (s State) ControlPlaneRenewAt() (time.Time, *x509.Certificate, error) {
+	files, err := readDir(s.PKI)
 	if err != nil {
 		return time.Time{}, nil, err
 	}
@@ -122,39 +122,60 @@ func ControlPlaneRenewAt(p Paths) (time.Time, *x509.Certificate, error) {
 // Static pods that still run on the certificates before the current ones, as after a renewal
 // interrupted before it rendered them, are only rendered: issuing again would remove the
 // certificates they run on.
-func RenewControlPlane(ctx context.Context, p Paths, now time.Time) error {
-	unlock, err := LockPKI(ctx, p)
+func (s State) RenewControlPlane(ctx context.Context, now time.Time) error {
+	unlock, err := s.LockPKI(ctx)
 	if err != nil {
 		return err
 	}
 	defer unlock()
-	if err := CheckPrepared(p); err != nil {
+	if err := s.CheckPrepared(); err != nil {
 		return err
 	}
-	if stale, err := StaticPodsStale(p); err != nil {
+	renders, err := s.rendersStaticPods()
+	if err != nil {
 		return err
-	} else if stale {
-		return RenderStaticPods(p)
+	}
+	in, err := s.podInputs()
+	if err != nil {
+		return err
+	}
+	if renders {
+		files, err := s.readPKI()
+		if err != nil {
+			return err
+		}
+		pods, err := s.renderPods(in, files)
+		if err != nil {
+			return err
+		}
+		if stale, err := s.stale(pods); err != nil {
+			return err
+		} else if stale {
+			if err := s.CheckEtcdData(); err != nil {
+				return err
+			}
+			return s.writePods(pods, "")
+		}
 	}
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	share, c, n, err := load(p)
+	if in.share, err = s.ReadShare(); err != nil {
+		return err
+	}
+	if err := in.check(); err != nil {
+		return err
+	}
+	files, err := kpki.ControlPlane(in.share, in.cluster, in.node, now)
 	if err != nil {
 		return err
 	}
-	if n.IPs, err = ReadNodeIPs(p); err != nil {
+	if err := replaceDir(s.PKI, files); err != nil {
 		return err
 	}
-	files, err := kpki.ControlPlane(share, c, n, now)
-	if err != nil {
-		return err
+	if !renders {
+		return nil
 	}
-	if err := replaceDir(p.PKI, files); err != nil {
-		return err
-	}
-	if renders, err := rendersStaticPods(p); err != nil || !renders {
-		return err
-	}
-	return RenderStaticPods(p)
+	// The static pods are rendered from the certificates as they are now in PKI.
+	return s.renderFrom(in)
 }

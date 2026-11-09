@@ -27,7 +27,6 @@ import (
 	"github.com/trevex/chalkos/pkg/chalkd/layer"
 	"github.com/trevex/chalkos/pkg/chalkd/layers/kubernetes/kubernetestest"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
-	knode "github.com/trevex/chalkos/pkg/kubernetes/node"
 	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
 )
 
@@ -149,7 +148,7 @@ func TestListTokenSecrets(t *testing.T) {
 // kube-root-ca.crt holds every Kubernetes CA, and that the step waits until they rolled out.
 func TestRestartAddons(t *testing.T) {
 	s, _, _ := memberNode(t)
-	share, err := knode.ReadShare(s.k.paths)
+	share, err := s.k.state.ReadShare()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -223,7 +222,7 @@ func secretsCA(t *testing.T) string {
 // kubelet restarted, on workers too.
 func TestRenewKubeletServing(t *testing.T) {
 	s, r := kubernetesNode(t, k8s.KindWorker, true)
-	p := s.k.paths
+	p := s.k.state
 	for _, name := range []string{"kubelet-server-2026-10-08.pem", "kubelet-client-current.pem"} {
 		write(t, filepath.Join(p.KubeletPKI, name), "pem")
 	}
@@ -386,7 +385,7 @@ func TestUnknownRotationStepMintsNothing(t *testing.T) {
 // not replace are restarted and reported, but not waited for.
 func TestRestartAddonsDoesNotWaitForWhatNeverRollsOut(t *testing.T) {
 	s, _, _ := memberNode(t)
-	share, err := knode.ReadShare(s.k.paths)
+	share, err := s.k.state.ReadShare()
 	if err != nil {
 		t.Fatal(err)
 	}

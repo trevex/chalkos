@@ -15,7 +15,7 @@ func apiClientLab(t *testing.T) *side {
 	t.Helper()
 	s, _ := kubernetesNode(t, k8s.KindControlPlane, true)
 	k := s.k
-	write(t, k.paths.Bootstrapped(), "")
+	write(t, k.state.BootstrappedMarker(), "")
 	k.hooks.APIClient = k.ownAPIClient
 	k.timing.StatusTimeout = time.Second
 	return k
@@ -46,7 +46,7 @@ func TestStatusReusesTheAPIClient(t *testing.T) {
 		t.Errorf("issued %d certificates, want 1", first.cred.issued)
 	}
 
-	write(t, k.paths.Share(), string(kubernetestest.Share(t, k8s.KindControlPlane, "n1")))
+	write(t, k.state.Share(), string(kubernetestest.Share(t, k8s.KindControlPlane, "n1")))
 	if got := status(); got == first || got.cred == first.cred {
 		t.Error("a new share reused the client of the one before")
 	}

@@ -309,7 +309,7 @@ func TestInstallFailureCanBeRepeated(t *testing.T) {
 // layer with files in a directory of the test.
 func kubernetesImage(t *testing.T, s *Server) {
 	t.Helper()
-	if kubernetesPaths(s) == knode.DefaultPaths() {
+	if kubernetesState(s).Paths == knode.DefaultPaths() {
 		root := t.TempDir()
 		paths := kubernetestest.Paths(root, root)
 		k := kubernetesplugin.New(s, kubernetesplugin.Options{Paths: paths, ImageFile: kubernetestest.ImageFile(paths), ClusterFile: paths.Cluster})

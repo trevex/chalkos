@@ -87,11 +87,11 @@ func kubernetesOf(s *Server) *kubernetesplugin.Plugin {
 	return nil
 }
 
-// kubernetesPaths are the files the Kubernetes layer of s reads and writes.
-func kubernetesPaths(s *Server) knode.Paths { return kubernetesOf(s).Paths() }
+// kubernetesState is the state the Kubernetes layer of s reads and writes.
+func kubernetesState(s *Server) knode.State { return knode.State{Paths: kubernetesOf(s).Paths()} }
 
 // imageFileOf is the image.json the Kubernetes layer of s reads.
-func imageFileOf(s *Server) string { return kubernetestest.ImageFile(kubernetesPaths(s)) }
+func imageFileOf(s *Server) string { return kubernetestest.ImageFile(kubernetesState(s).Paths) }
 
 // kubernetesClient is the client of the Kubernetes layer over c.
 func kubernetesClient(c *client.Conn) kubernetesv1connect.KubernetesServiceClient {
@@ -111,22 +111,22 @@ func kubernetesStatus(t *testing.T, s *Server) *kubernetesv1.StatusResponse {
 func TestStatusKubernetes(t *testing.T) {
 	waiting, _ := kubernetesServer(t, k8s.KindControlPlane, true)
 	bootstrapped, _ := kubernetesServer(t, k8s.KindControlPlane, true)
-	write(t, kubernetesPaths(bootstrapped).Bootstrapped(), "")
+	write(t, kubernetesState(bootstrapped).BootstrappedMarker(), "")
 	noShare, _ := kubernetesServer(t, k8s.KindWorker, false)
 	worker, _ := kubernetesServer(t, k8s.KindWorker, true, func(o *kubernetesplugin.Options) {
 		o.Hooks.Node = func(context.Context) (*corev1.Node, error) { return nil, errors.New("connection refused") }
 	})
 	noAddress, _ := kubernetesServer(t, k8s.KindWorker, true)
-	kubernetestest.WithoutAddress(t, kubernetesPaths(noAddress), "no node address matches the default filter (the node has no addresses)")
+	kubernetestest.WithoutAddress(t, kubernetesState(noAddress).Paths, "no node address matches the default filter (the node has no addresses)")
 	preparing, _ := kubernetesServer(t, k8s.KindControlPlane, true)
-	kubernetestest.WithoutAddress(t, kubernetesPaths(preparing), "")
+	kubernetestest.WithoutAddress(t, kubernetesState(preparing).Paths, "")
 	otherKind, _ := kubernetesServer(t, k8s.KindWorker, false)
-	kubernetestest.OtherKindsShare(t, kubernetesPaths(otherKind))
+	kubernetestest.OtherKindsShare(t, kubernetesState(otherKind).Paths)
 	noFirewall, _ := kubernetesServer(t, k8s.KindWorker, true)
-	kubernetestest.WithoutFirewall(t, kubernetesPaths(noFirewall))
+	kubernetestest.WithoutFirewall(t, kubernetesState(noFirewall).Paths)
 	// The preparation picked the address and still writes the certificates.
 	writing, _ := kubernetesServer(t, k8s.KindWorker, true)
-	if err := os.Remove(kubernetesPaths(writing).Prepared()); err != nil {
+	if err := os.Remove(kubernetesState(writing).PreparedMarker()); err != nil {
 		t.Fatal(err)
 	}
 	// A dual-stack worker whose Node has a pod range of one family only, as when the control plane
@@ -135,7 +135,7 @@ func TestStatusKubernetes(t *testing.T) {
 		s, _ := kubernetesServer(t, k8s.KindWorker, true, func(o *kubernetesplugin.Options) {
 			o.Hooks.Node = func(context.Context) (*corev1.Node, error) { return kubernetestest.ReadyNode(podCIDRs...), nil }
 		})
-		p := kubernetesPaths(s)
+		p := kubernetesState(s)
 		data, err := os.ReadFile(p.Cluster)
 		if err != nil {
 			t.Fatal(err)
@@ -188,7 +188,7 @@ func prepareErrorHint(t *testing.T, s *Server) {
 	if !ok || e.Hint == nil {
 		t.Fatal("the default image's kubernetes effect has no hint")
 	}
-	e.Hint.File = kubernetesPaths(s).PrepareError()
+	e.Hint.File = kubernetesState(s).PrepareError()
 	declared["kubernetes"] = e
 	data, err := json.Marshal(declared)
 	if err != nil {

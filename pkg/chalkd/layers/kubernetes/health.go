@@ -24,16 +24,16 @@ var _ layer.Health = (*Plugin)(nil)
 // etcd member yet, leave the decision to the common checks.
 func (p *Plugin) Health(ctx context.Context) (bool, error) {
 	k := p.k
-	if _, err := os.Stat(k.paths.Share()); errors.Is(err, fs.ErrNotExist) {
+	if _, err := os.Stat(k.state.Share()); errors.Is(err, fs.ErrNotExist) {
 		return false, nil
 	}
-	switch prep, err := readPreparation(k.paths); {
+	switch prep, err := readPreparation(k.state); {
 	case err != nil:
 		return true, err
 	case prep.problem() != "":
 		return true, errors.New(prep.problem())
 	}
-	c, err := k8s.ReadCluster(k.paths.Cluster)
+	c, err := k8s.ReadCluster(k.state.Cluster)
 	if err != nil {
 		return true, err
 	}
@@ -47,12 +47,12 @@ func (p *Plugin) Health(ctx context.Context) (bool, error) {
 		return true, nil
 	}
 	// A control plane that is no etcd member yet waits for a bootstrap or a cluster to join.
-	if m, _, err := knode.ReadMembership(k.paths); err != nil {
+	if m, _, err := k.state.ReadMembership(); err != nil {
 		return true, err
 	} else if m != knode.MembershipBootstrapped {
 		return false, nil
 	}
-	share, err := knode.ReadShare(k.paths)
+	share, err := k.state.ReadShare()
 	if err != nil {
 		return true, err
 	}

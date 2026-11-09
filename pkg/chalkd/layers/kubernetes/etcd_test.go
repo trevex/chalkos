@@ -57,8 +57,8 @@ func memberNode(t *testing.T, others ...string) (*Plugin, *etcd.Client, map[stri
 	t.Helper()
 	s, _ := kubernetesNode(t, k8s.KindControlPlane, true)
 	k := s.k
-	p := k.paths
-	share, err := knode.ReadShare(p)
+	p := k.state
+	share, err := p.ReadShare()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -74,17 +74,17 @@ func memberNode(t *testing.T, others ...string) (*Plugin, *etcd.Client, map[stri
 	}
 	k.etcdURL = n1.ClientURL
 	k.hooks.EtcdStopped = func(context.Context, k8s.Cluster) error { return nil }
-	ips, err := knode.ReadNodeIPs(p)
+	ips, err := p.ReadNodeIPs()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := knode.WritePin(p, ips); err != nil {
+	if err := p.WritePin(ips); err != nil {
 		t.Fatal(err)
 	}
-	write(t, p.Bootstrapped(), "")
-	write(t, p.EtcdInitialised(), "")
+	write(t, p.BootstrappedMarker(), "")
+	write(t, p.EtcdInitialisedMarker(), "")
 	write(t, filepath.Join(p.EtcdData, "member", "snap", "db"), "")
-	if err := knode.RenderStaticPods(p); err != nil {
+	if err := p.RenderStaticPods(); err != nil {
 		t.Fatal(err)
 	}
 	return s, cli, members
@@ -113,19 +113,19 @@ func leave(s *Plugin, force bool) error {
 func checkLeft(t *testing.T, s *Plugin) {
 	t.Helper()
 	k := s.k
-	p := k.paths
+	p := k.state
 	if pods, err := os.ReadDir(p.Manifests()); err != nil || len(pods) != 0 {
 		t.Errorf("static pods %v, %v after leaving", pods, err)
 	}
-	for _, f := range []string{p.Pin(), p.Bootstrapped(), p.EtcdInitialised(), p.EtcdInitialCluster(), p.Joining()} {
+	for _, f := range []string{p.Pin(), p.BootstrappedMarker(), p.EtcdInitialisedMarker(), p.EtcdInitialCluster(), p.JoiningMarker()} {
 		if exists(f) {
 			t.Errorf("%s outlived leaving", f)
 		}
 	}
-	if hasData, _ := knode.EtcdHasData(p); hasData {
+	if hasData, _ := p.EtcdHasData(); hasData {
 		t.Error("etcd's data outlived leaving")
 	}
-	if m, _, err := knode.ReadMembership(p); err != nil || m != knode.MembershipLeft {
+	if m, _, err := p.ReadMembership(); err != nil || m != knode.MembershipLeft {
 		t.Errorf("membership = %v, %v after leaving", m, err)
 	}
 	if got := kubernetesState(t, s); got != "left etcd; reinstall the node to join the cluster again" {
@@ -189,7 +189,7 @@ func TestEtcdRemoveMember(t *testing.T) {
 
 func TestEtcdLeave(t *testing.T) {
 	s, _, members := memberNode(t, "cp2")
-	share, err := knode.ReadShare(s.k.paths)
+	share, err := s.k.state.ReadShare()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -235,7 +235,7 @@ func TestEtcdLeaveRetriedAfterEtcdKeptRunning(t *testing.T) {
 	if err := leave(s, false); layer.CodeOf(err) != connect.CodeInternal || !strings.Contains(err.Error(), "its etcd did not stop") {
 		t.Fatalf("first leave: %v, want its etcd named", err)
 	}
-	if m, l, err := knode.ReadMembership(k.paths); err != nil || m != knode.MembershipLeft || !l.Pinned || !l.EtcdData {
+	if m, l, err := k.state.ReadMembership(); err != nil || m != knode.MembershipLeft || !l.Pinned || !l.EtcdData {
 		t.Fatalf("after the first leave: %v %+v, %v; want left with the pin and etcd's data", m, l, err)
 	}
 	k.hooks.EtcdStopped = stopped
@@ -249,11 +249,11 @@ func TestEtcdLeaveRetriedAfterEtcdKeptRunning(t *testing.T) {
 // the pin it had not removed yet go too.
 func TestEtcdLeaveRetriedAfterPartialClear(t *testing.T) {
 	s := leavingNode(t)
-	p := s.k.paths
+	p := s.k.state
 	if err := leave(s, false); err != nil {
 		t.Fatal(err)
 	}
-	write(t, p.Bootstrapped(), "")
+	write(t, p.BootstrappedMarker(), "")
 	write(t, p.Pin(), "192.168.100.11\n")
 	if err := leave(s, false); err != nil {
 		t.Fatalf("retried leave: %v", err)
@@ -265,11 +265,11 @@ func TestEtcdLeaveRetriedAfterPartialClear(t *testing.T) {
 // leave again is refused as such.
 func TestEtcdLeaveAfterLeftWithJoiningMarker(t *testing.T) {
 	s := leavingNode(t)
-	p := s.k.paths
+	p := s.k.state
 	if err := leave(s, false); err != nil {
 		t.Fatal(err)
 	}
-	write(t, p.Joining(), "https://192.168.100.11:6443\n")
+	write(t, p.JoiningMarker(), "https://192.168.100.11:6443\n")
 	err := leave(s, false)
 	if layer.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "the node left etcd already") {
 		t.Fatalf("leave again: %v, want a refusal saying it left already", err)
@@ -297,7 +297,7 @@ func TestEtcdLeaveAfterMemberRemoved(t *testing.T) {
 		return strings.Contains(kubernetesState(t, s), "run chalkctl etcd leave and reinstall the node")
 	})
 	// The learner's etcd wrote its data.
-	write(t, filepath.Join(k.paths.EtcdData, "member", "snap", "db"), "")
+	write(t, filepath.Join(k.state.EtcdData, "member", "snap", "db"), "")
 
 	if err := leave(s, false); err != nil {
 		t.Fatal(err)
@@ -344,8 +344,8 @@ func TestEtcdLeaveNeedsLocalMemberOrForce(t *testing.T) {
 	if layer.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "does not answer") || !strings.Contains(err.Error(), "--force") {
 		t.Errorf("leaving while the node's member does not answer: %v", err)
 	}
-	p := s.k.paths
-	if !exists(p.Pin()) || !exists(p.Bootstrapped()) || exists(p.Left()) || len(members(t, cli)) != 3 {
+	p := s.k.state
+	if !exists(p.Pin()) || !exists(p.BootstrappedMarker()) || exists(p.LeftMarker()) || len(members(t, cli)) != 3 {
 		t.Error("a refused leave changed the node")
 	}
 	if pods, _ := os.ReadDir(p.Manifests()); len(pods) != 4 {
@@ -366,7 +366,7 @@ func TestEtcdLeaveNeedsLocalMemberOrForce(t *testing.T) {
 // stopped answering.
 func TestEtcdLeaveAfterOwnMemberRemoved(t *testing.T) {
 	s, _, members := memberNode(t, "cp2", "cp3")
-	share, err := knode.ReadShare(s.k.paths)
+	share, err := s.k.state.ReadShare()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -401,8 +401,8 @@ func TestEtcdLeaveRefusedWithoutQuorum(t *testing.T) {
 	if layer.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "quorum") {
 		t.Errorf("leaving while cp3 is down: %v", err)
 	}
-	p := s.k.paths
-	if !exists(p.Pin()) || !exists(p.Bootstrapped()) || exists(p.Left()) || len(etcdMembers(t, s)) != 3 {
+	p := s.k.state
+	if !exists(p.Pin()) || !exists(p.BootstrappedMarker()) || exists(p.LeftMarker()) || len(etcdMembers(t, s)) != 3 {
 		t.Error("a refused leave changed the node")
 	}
 	if pods, _ := os.ReadDir(p.Manifests()); len(pods) != 4 {
@@ -452,8 +452,8 @@ func TestNotEtcdMemberDetail(t *testing.T) {
 // renders the static pods, so no renewal renders them once the node removed them.
 func TestEtcdLeaveWaitsForTheCertificateLock(t *testing.T) {
 	s, _, members := memberNode(t, "cp2")
-	p := s.k.paths
-	share, err := knode.ReadShare(p)
+	p := s.k.state
+	share, err := p.ReadShare()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -462,7 +462,7 @@ func TestEtcdLeaveWaitsForTheCertificateLock(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer cp2.Close()
-	unlock, err := knode.LockPKI(context.Background(), p)
+	unlock, err := p.LockPKI(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -474,7 +474,7 @@ func TestEtcdLeaveWaitsForTheCertificateLock(t *testing.T) {
 		return err == nil && len(list) == 1
 	})
 	time.Sleep(time.Second)
-	if exists(p.Left()) {
+	if exists(p.LeftMarker()) {
 		t.Error("the node left while a renewal held the certificates' lock")
 	}
 	if pods, _ := os.ReadDir(p.Manifests()); len(pods) != 4 {

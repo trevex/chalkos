@@ -31,7 +31,7 @@ var _ layer.Plugin = (*Plugin)(nil)
 func New(node layer.Node, o Options) *Plugin { return &Plugin{node: node, k: newSide(o)} }
 
 // Paths are the files the node's Kubernetes side reads and writes; tests write them.
-func (p *Plugin) Paths() knode.Paths { return p.k.paths }
+func (p *Plugin) Paths() knode.Paths { return p.k.state.Paths }
 
 // Stop ends the loops for good, as Start does once its context ends. Tests that ran the loops
 // through deliveries stop them so.

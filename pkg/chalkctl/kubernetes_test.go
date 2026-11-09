@@ -145,11 +145,11 @@ func kubernetesNodeWith(t *testing.T, ta *testApp, o kubernetesplugin.Options) (
 	// The loader has the Kubernetes layer write the cluster file.
 	s.Loader.Layers = layer.Active[nodeconfig.Layer](s.Plugins)
 	// The cluster file chalkd writes from the node's config.
-	writeFile(t, kubernetesPaths(s).Cluster, clusterFile("worker"))
+	writeFile(t, kubernetesState(s).Cluster, clusterFile("worker"))
 	// The facts the kubelet's restart rules read, as the image declares them.
 	writeContract(t, s, imagecontract.FactsFile, `{"recorded": {"file": "`+filepath.Join(s.Paths.StateDir, "storage", "storage.json")+`"},
-	  "share": {"file": "`+kubernetesPaths(s).Share()+`", "fields": ["kind"], "hashOthers": true},
-	  "cluster": {"file": "`+kubernetesPaths(s).Cluster+`"}}`)
+	  "share": {"file": "`+kubernetesState(s).Share()+`", "fields": ["kind"], "hashOthers": true},
+	  "cluster": {"file": "`+kubernetesState(s).Cluster+`"}}`)
 	return s, r
 }
 
@@ -162,7 +162,7 @@ func TestApplyConfigDeliversShare(t *testing.T) {
 	if err := ta.run(context.Background(), ta.args([]string{"apply-config", "n1", "--kubernetes-share"}, addr)); err != nil {
 		t.Fatal(err)
 	}
-	data, err := os.ReadFile(kubernetesPaths(s).Share())
+	data, err := os.ReadFile(kubernetesState(s).Share())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -330,8 +330,8 @@ func TestStatusShowsKubernetes(t *testing.T) {
 	}
 	ta.stdout.Reset()
 	// The address the node's preparation picks once it has a share, and its marker.
-	writeFile(t, kubernetesPaths(s).NodeIP(), "10.0.0.11\n")
-	writeFile(t, kubernetesPaths(s).Prepared(), "")
+	writeFile(t, kubernetesState(s).NodeIP(), "10.0.0.11\n")
+	writeFile(t, kubernetesState(s).PreparedMarker(), "")
 	if err := ta.run(context.Background(), ta.args([]string{"status", "n1"}, addr)); err != nil {
 		t.Fatal(err)
 	}

@@ -55,7 +55,7 @@ type drainLab struct {
 func newDrainLab(t *testing.T, refusals int, nodes ...*corev1.Node) *drainLab {
 	t.Helper()
 	s, _ := kubernetesNode(t, k8s.KindControlPlane, true)
-	write(t, s.k.paths.Bootstrapped(), "")
+	write(t, s.k.state.BootstrappedMarker(), "")
 	objects := []runtime.Object{
 		pod("default", "web-1", "w1", "ReplicaSet"),
 		pod("default", "guarded", "w1", "StatefulSet"),

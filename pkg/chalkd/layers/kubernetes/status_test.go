@@ -17,7 +17,6 @@ import (
 
 	"github.com/trevex/chalkos/pkg/chalkd/layers/kubernetes/kubernetestest"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
-	knode "github.com/trevex/chalkos/pkg/kubernetes/node"
 	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
 	"github.com/trevex/chalkos/pkg/pki"
 )
@@ -26,7 +25,7 @@ import (
 // it runs on its current certificates.
 func TestStatusReportsTheControlPlanesState(t *testing.T) {
 	s, _ := kubernetesNode(t, k8s.KindControlPlane, true)
-	if err := knode.MarkBootstrapped(s.k.paths, time.Now()); err != nil {
+	if err := s.k.state.MarkBootstrapped(time.Now()); err != nil {
 		t.Fatal(err)
 	}
 	s.k.hooks.CheckControlPlane = func(context.Context, k8s.Cluster, kpki.Share) error { return nil }
@@ -62,8 +61,8 @@ func TestServesFile(t *testing.T) {
 // status tells it apart from the API server's 1.37.1.
 func withKubelet(t *testing.T, p *Plugin, version string) {
 	t.Helper()
-	data := readFile(t, p.k.paths.Cluster)
-	write(t, p.k.paths.Cluster, strings.Replace(data, `"version": "1.37.1"`, `"version": "`+version+`"`, 1))
+	data := readFile(t, p.k.state.Cluster)
+	write(t, p.k.state.Cluster, strings.Replace(data, `"version": "1.37.1"`, `"version": "`+version+`"`, 1))
 }
 
 // TestStatusReportsTheVersions checks that every node reports its config's API server and its
@@ -125,7 +124,7 @@ func TestStatusReportsTheStaticPods(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			s, _ := kubernetesNode(t, k8s.KindControlPlane, true)
-			if err := knode.MarkBootstrapped(s.k.paths, time.Now()); err != nil {
+			if err := s.k.state.MarkBootstrapped(time.Now()); err != nil {
 				t.Fatal(err)
 			}
 			s.k.hooks.Node = func(context.Context) (*corev1.Node, error) {

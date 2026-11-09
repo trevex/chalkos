@@ -155,22 +155,22 @@ func (k *side) joinOnce(ctx context.Context) error {
 	if err := k.mayJoin(); err != nil {
 		return err
 	}
-	if err := knode.CheckPrepared(k.paths); err != nil {
+	if err := k.state.CheckPrepared(); err != nil {
 		return err
 	}
-	share, err := knode.ReadShare(k.paths)
+	share, err := k.state.ReadShare()
 	if err != nil {
 		return err
 	}
-	c, err := k8s.ReadCluster(k.paths.Cluster)
+	c, err := k8s.ReadCluster(k.state.Cluster)
 	if err != nil {
 		return err
 	}
-	n, err := k8s.ReadNode(k.paths.NodeFile)
+	n, err := k8s.ReadNode(k.state.NodeFile)
 	if err != nil {
 		return err
 	}
-	ips, err := knode.ReadNodeIPs(k.paths)
+	ips, err := k.state.ReadNodeIPs()
 	if err != nil {
 		return err
 	}
@@ -204,7 +204,7 @@ func (k *side) joinOnce(ctx context.Context) error {
 	if err := k.mayJoin(); err != nil {
 		return err
 	}
-	pin, err := knode.ReadPin(k.paths)
+	pin, err := k.state.ReadPin()
 	if err != nil {
 		return err
 	}
@@ -235,7 +235,7 @@ func (k *side) joinOnce(ctx context.Context) error {
 	}
 	// The marker comes first: from here on the node may be a member, even when the reply to its
 	// addition is lost, so it must never bootstrap a cluster of its own.
-	if err := knode.MarkJoining(k.paths, c.Endpoint); err != nil {
+	if err := k.state.MarkJoining(c.Endpoint); err != nil {
 		return err
 	}
 	var initialCluster string
@@ -244,7 +244,7 @@ func (k *side) joinOnce(ctx context.Context) error {
 	} else {
 		// The peers know the member by the addresses it is added with.
 		if pin == nil {
-			if err := knode.WritePin(k.paths, ips); err != nil {
+			if err := k.state.WritePin(ips); err != nil {
 				return err
 			}
 		}
@@ -255,10 +255,10 @@ func (k *side) joinOnce(ctx context.Context) error {
 			return err
 		}
 	}
-	if err := knode.WriteInitialCluster(k.paths, initialCluster); err != nil {
+	if err := k.state.WriteInitialCluster(initialCluster); err != nil {
 		return err
 	}
-	if err := knode.RenderEtcd(k.paths); err != nil {
+	if err := k.state.RenderEtcd(); err != nil {
 		return fmt.Errorf("render etcd: %w", err)
 	}
 	k.setJoinStep(fmt.Sprintf("etcd member %x catches up", own.ID))
@@ -273,14 +273,14 @@ func (k *side) joinOnce(ctx context.Context) error {
 	case err != nil:
 		return err
 	}
-	if err := knode.MarkEtcdInitialised(k.paths, time.Now()); err != nil {
+	if err := k.state.MarkEtcdInitialised(time.Now()); err != nil {
 		return err
 	}
-	if err := knode.RenderStaticPods(k.paths); err != nil {
+	if err := k.state.RenderStaticPods(); err != nil {
 		return fmt.Errorf("render the static pods: %w", err)
 	}
 	// Last: a node marked bootstrapped renders its static pods at boot and joins no more.
-	return knode.MarkJoined(k.paths, time.Now())
+	return k.state.MarkJoined(time.Now())
 }
 
 // etcdEndpoints lists the client URLs of the etcd members other than the node's own, from the
@@ -329,7 +329,7 @@ func clusterAnswers(ctx context.Context, c k8s.Cluster, share kpki.Share) (bool,
 
 // mayJoin refuses joining a node that is bootstrapped or left etcd.
 func (k *side) mayJoin() error {
-	m, _, err := knode.ReadMembership(k.paths)
+	m, _, err := k.state.ReadMembership()
 	switch {
 	case err != nil:
 		return err
@@ -345,7 +345,7 @@ func (k *side) mayJoin() error {
 // on it already: the member it started etcd with was removed, or its data is from an earlier
 // membership. It deletes nothing.
 func (k *side) checkFreshJoin() error {
-	_, leftovers, err := knode.ReadMembership(k.paths)
+	_, leftovers, err := k.state.ReadMembership()
 	switch {
 	case err != nil:
 		return err

@@ -109,11 +109,11 @@ func TestReplaceDirUnderMounts(t *testing.T) {
 }
 
 // bootstrappedControlPlane prepares a bootstrapped control-plane node with its static pods.
-func bootstrappedControlPlane(t *testing.T) Paths {
+func bootstrappedControlPlane(t *testing.T) State {
 	t.Helper()
 	p := testNode(t, kubernetes.KindControlPlane, "cp1", secrets(t))
-	write(t, p.Bootstrapped(), "")
-	if err := Prepare(p, time.Now().Add(-time.Hour), picked, nil); err != nil {
+	write(t, p.BootstrappedMarker(), "")
+	if err := p.Prepare(time.Now().Add(-time.Hour), picked, nil); err != nil {
 		t.Fatal(err)
 	}
 	return p
@@ -123,7 +123,7 @@ func TestRenewControlPlane(t *testing.T) {
 	p := bootstrappedControlPlane(t)
 	before := readFile(t, filepath.Join(p.PKI, kpki.FileAPIServer))
 	pod := readFile(t, filepath.Join(p.Manifests(), "kube-apiserver.json"))
-	renewAt, first, err := ControlPlaneRenewAt(p)
+	renewAt, first, err := p.ControlPlaneRenewAt()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -131,7 +131,7 @@ func TestRenewControlPlane(t *testing.T) {
 		t.Errorf("renewal at %v for a certificate of %v to %v", renewAt, first.NotBefore, first.NotAfter)
 	}
 
-	if err := RenewControlPlane(context.Background(), p, time.Now()); err != nil {
+	if err := p.RenewControlPlane(context.Background(), time.Now()); err != nil {
 		t.Fatal(err)
 	}
 	after := readFile(t, filepath.Join(p.PKI, kpki.FileAPIServer))
@@ -159,7 +159,7 @@ func TestRenewControlPlane(t *testing.T) {
 		t.Error("the API server's static pod did not change")
 	}
 	// The pods name the same addresses as before.
-	ips, err := ReadNodeIPs(p)
+	ips, err := p.ReadNodeIPs()
 	if err != nil || len(ips) != 1 || ips[0].String() != "192.168.100.11" {
 		t.Errorf("node addresses %v, %v", ips, err)
 	}
@@ -172,14 +172,14 @@ func TestRenewControlPlane(t *testing.T) {
 func TestRenewControlPlaneWaitsForThePreparation(t *testing.T) {
 	p := bootstrappedControlPlane(t)
 	before := readFile(t, filepath.Join(p.PKI, kpki.FileAPIServer))
-	unlock, err := lockPKI(p, true)
+	unlock, err := p.lockPKI(true)
 	if err != nil {
 		t.Fatal(err)
 	}
 	// A renewal whose time ends while the preparation runs leaves the certificates.
 	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
 	defer cancel()
-	if err := RenewControlPlane(ctx, p, time.Now()); !errors.Is(err, context.DeadlineExceeded) {
+	if err := p.RenewControlPlane(ctx, time.Now()); !errors.Is(err, context.DeadlineExceeded) {
 		t.Errorf("while a preparation runs: %v, want the context's error", err)
 	}
 	if readFile(t, filepath.Join(p.PKI, kpki.FileAPIServer)) != before {
@@ -187,7 +187,7 @@ func TestRenewControlPlaneWaitsForThePreparation(t *testing.T) {
 	}
 	// One that started while the preparation runs renews once it is done.
 	result := make(chan error, 1)
-	go func() { result <- RenewControlPlane(context.Background(), p, time.Now()) }()
+	go func() { result <- p.RenewControlPlane(context.Background(), time.Now()) }()
 	time.Sleep(200 * time.Millisecond)
 	select {
 	case err := <-result:
@@ -207,11 +207,11 @@ func TestRenewControlPlaneWaitsForThePreparation(t *testing.T) {
 		t.Error("the renewal did not renew the certificates")
 	}
 	renewed := readFile(t, filepath.Join(p.PKI, kpki.FileAPIServer))
-	if err := os.Remove(p.Prepared()); err != nil {
+	if err := os.Remove(p.PreparedMarker()); err != nil {
 		t.Fatal(err)
 	}
 	// Status shows the error: a node whose preparation failed is not being prepared.
-	if err := RenewControlPlane(context.Background(), p, time.Now()); !errors.Is(err, ErrNotPrepared) {
+	if err := p.RenewControlPlane(context.Background(), time.Now()); !errors.Is(err, ErrNotPrepared) {
 		t.Errorf("before the preparation finished: %v, want ErrNotPrepared", err)
 	}
 	if readFile(t, filepath.Join(p.PKI, kpki.FileAPIServer)) != renewed {
@@ -221,12 +221,12 @@ func TestRenewControlPlaneWaitsForThePreparation(t *testing.T) {
 
 func TestPrepareFailureRemovesOldCertificates(t *testing.T) {
 	p := bootstrappedControlPlane(t)
-	if err := RenewControlPlane(context.Background(), p, time.Now()); err != nil {
+	if err := p.RenewControlPlane(context.Background(), time.Now()); err != nil {
 		t.Fatal(err)
 	}
 	// A preparation that failed while it wrote the certificates left their sibling directory.
 	write(t, filepath.Join(p.PKI+".new", kpki.FileAPIServer), "partial")
-	if err := Prepare(p, time.Now(), func(sel nodeip.Selector, _ time.Duration) ([]nodeip.Address, error) {
+	if err := p.Prepare(time.Now(), func(sel nodeip.Selector, _ time.Duration) ([]nodeip.Address, error) {
 		return nil, errors.New("no address")
 	}, nil); err == nil {
 		t.Fatal("prepared without an address")
@@ -239,7 +239,7 @@ func TestPrepareFailureRemovesOldCertificates(t *testing.T) {
 }
 
 // certificatesAnnotation returns the certificate hash of the static pod in the file.
-func certificatesAnnotation(t *testing.T, p Paths, file string) string {
+func certificatesAnnotation(t *testing.T, p State, file string) string {
 	t.Helper()
 	hash, err := certificatesHash([]byte(readFile(t, filepath.Join(p.Manifests(), file))))
 	if err != nil {
@@ -254,25 +254,25 @@ func certificatesAnnotation(t *testing.T, p Paths, file string) string {
 func TestRenewControlPlaneRendersAfterAnInterruptedSwap(t *testing.T) {
 	p := bootstrappedControlPlane(t)
 	pod := certificatesAnnotation(t, p, "kube-apiserver.json")
-	share, c, n, err := load(p)
+	in, err := p.load()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if n.IPs, err = ReadNodeIPs(p); err != nil {
+	if in.node.IPs, err = p.ReadNodeIPs(); err != nil {
 		t.Fatal(err)
 	}
-	files, err := kpki.ControlPlane(share, c, n, time.Now())
+	files, err := kpki.ControlPlane(in.share, in.cluster, in.node, time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}
 	if err := replaceDir(p.PKI, files); err != nil {
 		t.Fatal(err)
 	}
-	if stale, err := StaticPodsStale(p); err != nil || !stale {
+	if stale, err := p.StaticPodsStale(); err != nil || !stale {
 		t.Fatalf("stale = %v, %v after a swap without rendering", stale, err)
 	}
 	swapped := readFile(t, filepath.Join(p.PKI, kpki.FileAPIServer))
-	if err := RenewControlPlane(context.Background(), p, time.Now()); err != nil {
+	if err := p.RenewControlPlane(context.Background(), time.Now()); err != nil {
 		t.Fatal(err)
 	}
 	if certificatesAnnotation(t, p, "kube-apiserver.json") == pod {
@@ -281,19 +281,19 @@ func TestRenewControlPlaneRendersAfterAnInterruptedSwap(t *testing.T) {
 	if readFile(t, filepath.Join(p.PKI, kpki.FileAPIServer)) != swapped {
 		t.Error("the certificates were issued again while the pods ran on the previous set")
 	}
-	if stale, err := StaticPodsStale(p); err != nil || stale {
+	if stale, err := p.StaticPodsStale(); err != nil || stale {
 		t.Errorf("stale = %v, %v after rendering", stale, err)
 	}
 
 	// The control-plane loop renders them as it starts; unchanged, the manifests stay as they are.
-	if files, err = kpki.ControlPlane(share, c, n, time.Now()); err != nil {
+	if files, err = kpki.ControlPlane(in.share, in.cluster, in.node, time.Now()); err != nil {
 		t.Fatal(err)
 	}
 	if err := replaceDir(p.PKI, files); err != nil {
 		t.Fatal(err)
 	}
 	before := certificatesAnnotation(t, p, "kube-apiserver.json")
-	if err := RefreshStaticPods(p); err != nil {
+	if err := p.RefreshStaticPods(); err != nil {
 		t.Fatal(err)
 	}
 	refreshed := certificatesAnnotation(t, p, "kube-apiserver.json")
@@ -304,7 +304,7 @@ func TestRenewControlPlaneRendersAfterAnInterruptedSwap(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := RefreshStaticPods(p); err != nil {
+	if err := p.RefreshStaticPods(); err != nil {
 		t.Fatal(err)
 	}
 	if again, err := os.Stat(filepath.Join(p.Manifests(), "kube-apiserver.json")); err != nil || !again.ModTime().Equal(info.ModTime()) || !os.SameFile(info, again) {
@@ -315,11 +315,11 @@ func TestRenewControlPlaneRendersAfterAnInterruptedSwap(t *testing.T) {
 // A node that left etcd renders no static pods, whatever its certificates.
 func TestStaticPodsNotStaleOnceLeft(t *testing.T) {
 	p := bootstrappedControlPlane(t)
-	if err := MarkLeft(p, time.Now()); err != nil {
+	if err := p.MarkLeft(time.Now()); err != nil {
 		t.Fatal(err)
 	}
 	write(t, filepath.Join(p.PKI, kpki.FileAPIServer), "replaced")
-	if stale, err := StaticPodsStale(p); err != nil || stale {
+	if stale, err := p.StaticPodsStale(); err != nil || stale {
 		t.Errorf("stale = %v, %v on a node that left", stale, err)
 	}
 }
@@ -328,7 +328,7 @@ func TestStaticPodsNotStaleOnceLeft(t *testing.T) {
 // a preparation that waits for its addresses.
 func TestLockPKIEndsWithItsContext(t *testing.T) {
 	p := bootstrappedControlPlane(t)
-	unlock, err := lockPKI(p, true)
+	unlock, err := p.lockPKI(true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -336,7 +336,7 @@ func TestLockPKIEndsWithItsContext(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	result := make(chan error, 1)
 	go func() {
-		unlock, err := LockPKI(ctx, p)
+		unlock, err := p.LockPKI(ctx)
 		if err == nil {
 			unlock()
 		}
@@ -354,7 +354,7 @@ func TestLockPKIEndsWithItsContext(t *testing.T) {
 	}
 	unlock()
 	// Once released, the lock is taken.
-	again, err := LockPKI(context.Background(), p)
+	again, err := p.LockPKI(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -34,7 +34,6 @@ import (
 	"github.com/trevex/chalkos/pkg/chalkd/renewal/renewaltest"
 	"github.com/trevex/chalkos/pkg/clustersecrets"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
-	knode "github.com/trevex/chalkos/pkg/kubernetes/node"
 	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
 	"github.com/trevex/chalkos/pkg/kubernetes/revoked"
 	"github.com/trevex/chalkos/pkg/pki"
@@ -56,7 +55,7 @@ func controlPlaneOf(t *testing.T, c creds, adjust ...func(*kubernetesplugin.Opti
 	if err != nil {
 		t.Fatal(err)
 	}
-	write(t, kubernetesPaths(s).Share(), string(data))
+	write(t, kubernetesState(s).Share(), string(data))
 	return s
 }
 
@@ -217,7 +216,7 @@ func TestRenewNodeCertificateReadsRevokedNodes(t *testing.T) {
 		o.RevokedNodes = nil
 		o.Hooks.APIClient = func(k8s.Cluster, kpki.Share) (kubernetes.Interface, error) { return cs, nil }
 	})
-	write(t, kubernetesPaths(s).Bootstrapped(), "")
+	write(t, kubernetesState(s).BootstrappedMarker(), "")
 	if _, err := kubernetesOf(s).RevokeNode(context.Background(), connect.NewRequest(&kubernetesv1.RevokeNodeRequest{Node: "w1"})); err != nil {
 		t.Fatal(err)
 	}
@@ -229,7 +228,7 @@ func TestRenewNodeCertificateReadsRevokedNodes(t *testing.T) {
 		t.Errorf("renewing w2: %v", err)
 	}
 	// Without its node file, the node cannot reach its API server; the refusal keeps its own code.
-	if err := os.Remove(kubernetesPaths(s).NodeFile); err != nil {
+	if err := os.Remove(kubernetesState(s).NodeFile); err != nil {
 		t.Fatal(err)
 	}
 	err := renewAs(t, c, addr, "w2")
@@ -550,7 +549,7 @@ func TestRenewOnApplyConfigRenewsTheControlPlane(t *testing.T) {
 		t.Fatal(err)
 	}
 	s.RenewOnApplyConfig = true
-	apiServer := filepath.Join(kubernetesPaths(s).PKI, kpki.FileAPIServer)
+	apiServer := filepath.Join(kubernetesState(s).PKI, kpki.FileAPIServer)
 	before, err := os.ReadFile(apiServer)
 	if err != nil {
 		t.Fatal(err)
@@ -606,7 +605,7 @@ func TestRenewalKeepsACertificateDeliveredMeanwhile(t *testing.T) {
 func TestRenewNodeCertificateRefusedOnceLeft(t *testing.T) {
 	c := newCreds(t)
 	s := controlPlaneOf(t, c)
-	if err := knode.MarkLeft(kubernetesPaths(s), time.Now()); err != nil {
+	if err := kubernetesState(s).MarkLeft(time.Now()); err != nil {
 		t.Fatal(err)
 	}
 	addr := serve(t, s, c, c.pool)

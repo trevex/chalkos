@@ -16,7 +16,7 @@ import (
 
 func (p *Plugin) Bootstrap(ctx context.Context, _ *connect.Request[kubernetesv1.BootstrapRequest]) (*connect.Response[kubernetesv1.BootstrapResponse], error) {
 	k := p.k
-	c, err := k8s.ReadCluster(k.paths.Cluster)
+	c, err := k8s.ReadCluster(k.state.Cluster)
 	if err != nil {
 		return nil, err
 	}
@@ -44,7 +44,7 @@ func (p *Plugin) Bootstrap(ctx context.Context, _ *connect.Request[kubernetesv1.
 // it is retried by the next boot and never initialises a second cluster.
 func (p *Plugin) bootstrap(ctx context.Context, c k8s.Cluster) (chan struct{}, error) {
 	k := p.k
-	m, leftovers, err := knode.ReadMembership(k.paths)
+	m, leftovers, err := k.state.ReadMembership()
 	if err != nil {
 		return nil, err
 	}
@@ -54,15 +54,15 @@ func (p *Plugin) bootstrap(ctx context.Context, c k8s.Cluster) (chan struct{}, e
 	case m == knode.MembershipLeft:
 		return nil, layer.Errorf(connect.CodeFailedPrecondition, "the node left etcd; reinstall it to join the cluster again")
 	case leftovers.EtcdData:
-		return nil, layer.Errorf(connect.CodeFailedPrecondition, "%s holds etcd data; reset VAR before bootstrapping a new cluster on this node", k.paths.EtcdData)
+		return nil, layer.Errorf(connect.CodeFailedPrecondition, "%s holds etcd data; reset VAR before bootstrapping a new cluster on this node", k.state.EtcdData)
 	}
-	share, err := knode.ReadShare(k.paths)
+	share, err := k.state.ReadShare()
 	if err != nil {
 		return nil, layer.Errorf(connect.CodeFailedPrecondition, "%w", err)
 	}
 	// The static pods advertise the node's address and read the certificates the preparation
 	// writes, which runs at boot while chalkd answers already.
-	switch prep, err := readPreparation(k.paths); {
+	switch prep, err := readPreparation(k.state); {
 	case err != nil:
 		return nil, err
 	case prep.failure != "":
@@ -70,7 +70,7 @@ func (p *Plugin) bootstrap(ctx context.Context, c k8s.Cluster) (chan struct{}, e
 	case !prep.done:
 		return nil, layer.Errorf(connect.CodeFailedPrecondition, "%w; see chalkctl logs %s --unit chalkos-kubernetes", knode.ErrNotPrepared, p.node.NodeName())
 	}
-	ips, err := knode.ReadNodeIPs(k.paths)
+	ips, err := k.state.ReadNodeIPs()
 	if err != nil {
 		return nil, err
 	}
@@ -79,7 +79,7 @@ func (p *Plugin) bootstrap(ctx context.Context, c k8s.Cluster) (chan struct{}, e
 	}
 	defer k.membership.Unlock()
 	// A join may have run while the node waited for the lock.
-	if m, leftovers, err = knode.ReadMembership(k.paths); err != nil {
+	if m, leftovers, err = k.state.ReadMembership(); err != nil {
 		return nil, err
 	}
 	switch {
@@ -102,13 +102,13 @@ func (p *Plugin) bootstrap(ctx context.Context, c k8s.Cluster) (chan struct{}, e
 		return nil, layer.Errorf(connect.CodeFailedPrecondition, "the cluster's API server answers at %s; this node joins it on its own", c.Endpoint)
 	}
 	// etcd's peers and the certificates know the node by its addresses from now on.
-	if err := knode.WritePin(k.paths, ips); err != nil {
+	if err := k.state.WritePin(ips); err != nil {
 		return nil, err
 	}
-	if err := knode.MarkBootstrapped(k.paths, time.Now()); err != nil {
+	if err := k.state.MarkBootstrapped(time.Now()); err != nil {
 		return nil, fmt.Errorf("record the bootstrap: %w", err)
 	}
-	if err := knode.RenderStaticPods(k.paths); err != nil {
+	if err := k.state.RenderStaticPods(); err != nil {
 		return nil, fmt.Errorf("render the static pods: %w", err)
 	}
 	log.Print("bootstrapped: the control plane starts")

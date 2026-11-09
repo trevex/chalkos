@@ -118,10 +118,15 @@ func WriteNode(t *testing.T, p knode.Paths, kind string, share bool) {
 	write(t, p.NodeFile, `{"hostname": "n1", "layers": {"kubernetes": {"nodeName": "n1", "nodeIPs": ["192.168.100.11"]}}}`)
 	if share {
 		write(t, p.Share(), string(Share(t, kind, "n1")))
-		if err := knode.Prepare(p, time.Now(), NodeIP("192.168.100.11"), nil); err != nil {
+		if err := prepare(p, nil); err != nil {
 			t.Fatal(err)
 		}
 	}
+}
+
+// prepare runs the preparation of the node at 192.168.100.11 with the firewall.
+func prepare(p knode.Paths, firewall knode.Firewall) error {
+	return knode.State{Paths: p}.Prepare(time.Now(), NodeIP("192.168.100.11"), firewall)
 }
 
 // ReadyNode is a Ready Node with the pod ranges.
@@ -143,7 +148,7 @@ func NodeIP(ip string) knode.Resolver {
 // the reason given; "" stands for a preparation still waiting. Neither marks the node prepared.
 func WithoutAddress(t *testing.T, p knode.Paths, reason string) {
 	t.Helper()
-	for _, f := range []string{p.Prepared(), p.NodeIP()} {
+	for _, f := range []string{p.PreparedMarker(), p.NodeIP()} {
 		if err := os.Remove(f); err != nil {
 			t.Fatal(err)
 		}
@@ -166,7 +171,7 @@ func OtherKindsShare(t *testing.T, p knode.Paths) {
 		other = k8s.KindControlPlane
 	}
 	write(t, p.Share(), string(Share(t, other, "n1")))
-	if err := knode.Prepare(p, time.Now(), NodeIP("192.168.100.11"), nil); err == nil {
+	if err := prepare(p, nil); err == nil {
 		t.Fatal("prepared a share of another kind")
 	}
 }
@@ -176,7 +181,7 @@ func OtherKindsShare(t *testing.T, p knode.Paths) {
 func WithoutFirewall(t *testing.T, p knode.Paths) {
 	t.Helper()
 	fail := func(knode.Paths) error { return errors.New("accept VXLAN to the node's address: exit status 1") }
-	if err := knode.Prepare(p, time.Now(), NodeIP("192.168.100.11"), fail); err == nil {
+	if err := prepare(p, fail); err == nil {
 		t.Fatal("prepared without the firewall's VXLAN rule")
 	}
 }

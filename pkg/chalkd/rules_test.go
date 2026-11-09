@@ -20,7 +20,7 @@ import (
 // A fact a rule reads that cannot be loaded refuses the config, and changes nothing.
 func TestApplyConfigRefusesWhenAFactCannotBeLoaded(t *testing.T) {
 	s, r := clusterServer(t, k8s.KindWorker)
-	write(t, kubernetesPaths(s).Share(), "{")
+	write(t, kubernetesState(s).Share(), "{")
 	r.Calls = nil
 	_, err := sendConfig(s, workerConfig)
 	if codeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "cannot check: fact share: ") || !strings.Contains(err.Error(), "share.json is not JSON") {

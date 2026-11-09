@@ -35,12 +35,12 @@ type preparation struct {
 }
 
 // readPreparation reads how far the preparation of the node's Kubernetes files got.
-func readPreparation(p knode.Paths) (preparation, error) {
-	reason, err := knode.PreparationError(p)
+func readPreparation(p knode.State) (preparation, error) {
+	reason, err := p.PreparationError()
 	if err != nil || reason != "" {
 		return preparation{failure: reason}, err
 	}
-	done, err := knode.Prepared(p)
+	done, err := p.Prepared()
 	return preparation{done: done}, err
 }
 
@@ -57,22 +57,22 @@ func (p preparation) problem() string {
 
 // status describes the node's Kubernetes state.
 func (k *side) status(ctx context.Context) (*kubernetesv1.StatusResponse, error) {
-	c, err := k8s.ReadCluster(k.paths.Cluster)
+	c, err := k8s.ReadCluster(k.state.Cluster)
 	if err != nil {
 		return nil, err
 	}
 	st := &kubernetesv1.StatusResponse{Kind: c.Kind, Phase: kubernetesv1.Phase_PHASE_PREPARING, ApiServerVersion: c.APIServerVersion, KubeletVersion: c.Version}
-	if _, err := os.Stat(k.paths.Share()); errors.Is(err, os.ErrNotExist) {
+	if _, err := os.Stat(k.state.Share()); errors.Is(err, os.ErrNotExist) {
 		st.State = "no share"
 		return st, nil
 	}
-	if prep, err := readPreparation(k.paths); err != nil {
+	if prep, err := readPreparation(k.state); err != nil {
 		return nil, err
 	} else if problem := prep.problem(); problem != "" {
 		st.State = problem
 		return st, nil
 	}
-	m, leftovers, err := knode.ReadMembership(k.paths)
+	m, leftovers, err := k.state.ReadMembership()
 	if err != nil {
 		return nil, err
 	}
@@ -102,7 +102,7 @@ func (k *side) status(ctx context.Context) (*kubernetesv1.StatusResponse, error)
 				st.Vip = "holder"
 			}
 		}
-		if s, err := knode.ReadShare(k.paths); err == nil {
+		if s, err := k.state.ReadShare(); err == nil {
 			share = &s
 			st.ControlPlane, st.ControlPlaneCurrent = controlPlaneCurrent, true
 			if err := k.hooks.CheckControlPlane(ctx, c, s); err != nil {
@@ -167,7 +167,7 @@ func (k *side) checkControlPlane(ctx context.Context, c k8s.Cluster, share kpki.
 		if err != nil {
 			return fmt.Errorf("%s: %v", server.name, err)
 		}
-		if err := servesFile(ctx, u.Host, filepath.Join(k.paths.PKI, server.file)); err != nil {
+		if err := servesFile(ctx, u.Host, filepath.Join(k.state.PKI, server.file)); err != nil {
 			return fmt.Errorf("%s %v", server.name, err)
 		}
 	}
@@ -199,11 +199,11 @@ func servesFile(ctx context.Context, addr, file string) error {
 // node reads the node's Node object with the kubelet's credentials, which may read their own
 // node.
 func (k *side) node(ctx context.Context) (*corev1.Node, error) {
-	n, err := k8s.ReadNode(k.paths.NodeFile)
+	n, err := k8s.ReadNode(k.state.NodeFile)
 	if err != nil {
 		return nil, err
 	}
-	cfg, err := clientcmd.BuildConfigFromFlags("", k.paths.Kubeconfig())
+	cfg, err := clientcmd.BuildConfigFromFlags("", k.state.Kubeconfig())
 	if err != nil {
 		return nil, err
 	}

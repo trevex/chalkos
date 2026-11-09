@@ -34,15 +34,15 @@ func (p *Plugin) Certificates(_ context.Context, now time.Time) ([]*nodev1.Certi
 // preparation wrote: the kubelet's CAs on every node, the control plane's CAs and keys on a
 // control plane. A CA issues if it issued the control plane's certificate of its kind.
 func (k *side) trust() []*nodev1.TrustStatus {
-	c, err := k8s.ReadCluster(k.paths.Cluster)
+	c, err := k8s.ReadCluster(k.state.Cluster)
 	if err != nil {
 		return nil
 	}
-	if prepared, err := knode.Prepared(k.paths); err != nil || !prepared {
+	if prepared, err := k.state.Prepared(); err != nil || !prepared {
 		return nil
 	}
 	if c.Kind != k8s.KindControlPlane {
-		data, err := os.ReadFile(filepath.Join(k.paths.KubeletDir(), "ca.crt"))
+		data, err := os.ReadFile(filepath.Join(k.state.KubeletDir(), "ca.crt"))
 		if err != nil {
 			return nil
 		}
@@ -52,7 +52,7 @@ func (k *side) trust() []*nodev1.TrustStatus {
 		}
 		return []*nodev1.TrustStatus{{Name: kpki.NameKubernetesCA, Fingerprints: fps}}
 	}
-	file := func(name string) string { return filepath.Join(k.paths.PKI, name) }
+	file := func(name string) string { return filepath.Join(k.state.PKI, name) }
 	var list []*nodev1.TrustStatus
 	for _, ca := range []struct{ name, bundle, leaf string }{
 		{kpki.NameKubernetesCA, kpki.FileCA, kpki.FileAPIServer},
@@ -113,7 +113,7 @@ func (k *side) trust() []*nodev1.TrustStatus {
 // control plane's leaf certificates and the kubelet's.
 func (k *side) certificates(now time.Time) []*nodev1.CertificateStatus {
 	var list []*nodev1.CertificateStatus
-	share, err := knode.ReadShare(k.paths)
+	share, err := k.state.ReadShare()
 	if errors.Is(err, knode.ErrNoShare) {
 		return nil
 	}
@@ -155,7 +155,7 @@ func (k *side) certificates(now time.Time) []*nodev1.CertificateStatus {
 		}
 	}
 	if share.Kind == k8s.KindControlPlane {
-		if _, first, err := knode.ControlPlaneRenewAt(k.paths); err == nil {
+		if _, first, err := k.state.ControlPlaneRenewAt(); err == nil {
 			problem := layer.LeafProblem(first, now)
 			if p := k.leavesProblem(); p != "" {
 				problem = p
@@ -163,7 +163,7 @@ func (k *side) certificates(now time.Time) []*nodev1.CertificateStatus {
 			add(kpki.NameControlPlane, first, problem)
 		}
 	}
-	kubelet, clientErr := layer.ReadPEMCertificate(k.paths.KubeletClient())
+	kubelet, clientErr := layer.ReadPEMCertificate(k.state.KubeletClient())
 	if clientErr == nil {
 		add(kpki.NameKubeletClient, kubelet, kubeletProblem(kubelet, now))
 	}
@@ -172,13 +172,13 @@ func (k *side) certificates(now time.Time) []*nodev1.CertificateStatus {
 	if share.Kubelet != nil && (clientErr != nil || !now.Before(kubelet.NotAfter)) {
 		if cert, err := pki.ParseCertificate([]byte(share.Kubelet.Certificate)); err == nil && !now.Before(cert.NotAfter) {
 			name := "<node>"
-			if n, err := k8s.ReadNode(k.paths.NodeFile); err == nil {
+			if n, err := k8s.ReadNode(k.state.NodeFile); err == nil {
 				name = n.Name
 			}
 			add(kpki.NameKubeletClient, cert, "expired; deliver a new one with chalkctl apply-config "+name+" --kubernetes-share")
 		}
 	}
-	if serving, err := layer.ReadPEMCertificate(k.paths.KubeletServing()); err == nil {
+	if serving, err := layer.ReadPEMCertificate(k.state.KubeletServing()); err == nil {
 		add(kpki.NameKubeletServing, serving, kubeletProblem(serving, now))
 	}
 	return list

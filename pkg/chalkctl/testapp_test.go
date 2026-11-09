@@ -393,14 +393,14 @@ func withPlugins(t *testing.T, s *chalkd.Server, l layers.Set, plugins ...layer.
 	s.Plugins = reg
 }
 
-// kubernetesPaths are the files the Kubernetes layer of s reads and writes.
-func kubernetesPaths(s *chalkd.Server) knode.Paths {
+// kubernetesState is the state the Kubernetes layer of s reads and writes.
+func kubernetesState(s *chalkd.Server) knode.State {
 	for _, p := range s.Plugins.Compiled() {
 		if k, ok := p.(*kubernetesplugin.Plugin); ok {
-			return k.Paths()
+			return knode.State{Paths: k.Paths()}
 		}
 	}
-	return knode.Paths{}
+	return knode.State{}
 }
 
 // slotOf is the running image's config slot of a node installedNode made.
