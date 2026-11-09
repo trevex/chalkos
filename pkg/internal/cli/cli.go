@@ -38,6 +38,8 @@ func usage(err error) error {
 //   - root only holds subcommands, as a Group does.
 //   - A flag given before a subcommand's name that a command before it takes is a usage error:
 //     with TraverseChildren, cobra parses it as that command's, and the subcommand never sees it.
+//     The check is root's PersistentPreRunE, which cobra runs for the nearest one alone: a
+//     command that sets its own shadows it for itself and its subcommands.
 func Root(root *cobra.Command) *cobra.Command {
 	root.SilenceErrors = true
 	root.SilenceUsage = true
