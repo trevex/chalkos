@@ -49,6 +49,9 @@ type Client struct {
 	// StatusTimeout is how long Health, also Remove's, waits for each member's status. Zero or
 	// less means three seconds.
 	StatusTimeout time.Duration
+	// RetryInterval is how long Remove waits before it asks again while etcd refuses to change its
+	// members for now. Zero or less means a second.
+	RetryInterval time.Duration
 }
 
 // Dial connects to etcd at the endpoints with the TLS configuration. While requests or streams
@@ -287,7 +290,11 @@ func (cli *Client) Remove(ctx context.Context, id uint64, force bool) error {
 	// as after it started or joined.
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
-	err = poll.UntilDone(ctx, "", time.Second, func() error {
+	retry := time.Second
+	if cli.RetryInterval > 0 {
+		retry = cli.RetryInterval
+	}
+	err = poll.UntilDone(ctx, "", retry, func() error {
 		_, err := cli.MemberRemove(ctx, id)
 		if err != nil && !errors.Is(err, rpctypes.ErrUnhealthy) {
 			return poll.Permanent{Err: err}

@@ -37,6 +37,8 @@ func dial(t *testing.T, ca pki.CertKey, members ...*etcdtest.Member) *Client {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// etcd refuses to change its members for seconds after one joined; Remove asks again soon.
+	cli.RetryInterval = 50 * time.Millisecond
 	t.Cleanup(func() { cli.Close() })
 	return cli
 }
