@@ -252,8 +252,7 @@ func controlPlanesInTurn(ctx context.Context, r layer.Rotating, kind clustersecr
 // but a node whose chalkd does not answer at all is named after a few polls: it is down or
 // addressed wrongly, which waiting does not fix.
 func waitQuorum(ctx context.Context, r layer.Rotating, name string) error {
-	window := min(10*r.Poll(), r.Timeout())
-	var silent time.Time
+	silent := poll.Sustained{Window: min(10*r.Poll(), r.Timeout())}
 	return poll.Until(ctx, "etcd's members to be healthy", r.Timeout(), r.Poll(), func() error {
 		var members []*kubernetesv1.EtcdMember
 		var answer error
@@ -269,9 +268,7 @@ func waitQuorum(ctx context.Context, r layer.Rotating, name string) error {
 		case connect.IsWireError(answer) && notEtcdMember(answer):
 			return nil
 		case err != nil && (answer == nil || !connect.IsWireError(answer)):
-			if silent.IsZero() {
-				silent = time.Now()
-			} else if time.Since(silent) >= window {
+			if silent.Holds() {
 				// The sentence names the node, so the error goes without its name.
 				if e, ok := errors.AsType[*layer.NodeError](err); ok {
 					err = e.Err
@@ -280,10 +277,10 @@ func waitQuorum(ctx context.Context, r layer.Rotating, name string) error {
 			}
 			return err
 		case err != nil:
-			silent = time.Time{}
+			silent.Reset()
 			return err
 		}
-		silent = time.Time{}
+		silent.Reset()
 		for _, m := range members {
 			switch {
 			case m.Unhealthy != "":

@@ -205,9 +205,9 @@ func (b *rebooter) waitHealthy(ctx context.Context, n *rebootNode, t bootTarget)
 	// checkHealth is set once a look found the boot the wait is for; only then is the node asked
 	// to check its health, which runs the checks of its layers.
 	var checkHealth bool
-	// unhealthySince is when the looks since began to find the boot settled and unhealthy; zero
-	// once one found it otherwise. A look that reached no node changes nothing.
-	var unhealthySince time.Time
+	// unhealthyFor is the boot found settled and unhealthy for the grace period. A look that
+	// reached no node changes nothing.
+	unhealthyFor := poll.Sustained{Window: b.grace}
 	err := poll.Until(ctx, "", b.timeout, b.poll, func() error {
 		var st *nodev1.StatusResponse
 		var notReady error
@@ -242,7 +242,7 @@ func (b *rebooter) waitHealthy(ctx context.Context, n *rebootNode, t bootTarget)
 		boot := st.GetBoot()
 		health := boot.GetHealth()
 		if settledUnhealthy := health.GetSettled() && !health.GetHealthy(); !settledUnhealthy {
-			unhealthySince = time.Time{}
+			unhealthyFor.Reset()
 		}
 		switch {
 		case t.before != "" && boot.GetBootId() == t.before:
@@ -261,10 +261,7 @@ func (b *rebooter) waitHealthy(ctx context.Context, n *rebootNode, t bootTarget)
 			// time a counted boot has, so waiting changes little. A check of a layer may still fail
 			// once, as when etcd answers late, so the boot must stay unhealthy for the grace
 			// period. A boot that may be the one before ends no wait.
-			if unhealthySince.IsZero() {
-				unhealthySince = time.Now()
-			}
-			if t.before != "" && time.Since(unhealthySince) >= b.grace {
+			if unhealthyFor.Holds() && t.before != "" {
 				unhealthy = unhealthyError(n, t, health.GetError())
 				return poll.Permanent{Err: unhealthy}
 			}

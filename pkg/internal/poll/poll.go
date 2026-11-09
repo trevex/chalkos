@@ -64,3 +64,23 @@ type Permanent struct{ Err error }
 func (p Permanent) Error() string { return p.Err.Error() }
 
 func (p Permanent) Unwrap() error { return p.Err }
+
+// Sustained is a condition a wait finds again and again, which counts once it has held for
+// Window without a look finding it otherwise.
+type Sustained struct {
+	Window time.Duration
+	since  time.Time
+}
+
+// Holds records that a look found the condition, and reports whether it has held for the window
+// since the first look that found it.
+func (s *Sustained) Holds() bool {
+	now := time.Now()
+	if s.since.IsZero() {
+		s.since = now
+	}
+	return now.Sub(s.since) >= s.Window
+}
+
+// Reset records that a look found the condition no longer holds.
+func (s *Sustained) Reset() { s.since = time.Time{} }

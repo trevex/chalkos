@@ -116,3 +116,22 @@ func TestUntilDonePermanent(t *testing.T) {
 		t.Errorf("err = %v, want the wrapped error", err)
 	}
 }
+
+// A sustained condition counts once it held for the window, and a reset starts the window again.
+func TestSustained(t *testing.T) {
+	if s := (&Sustained{}); !s.Holds() {
+		t.Error("a condition without a window does not count at once")
+	}
+	s := &Sustained{Window: 20 * time.Millisecond}
+	if s.Holds() {
+		t.Error("the condition counts at its first look")
+	}
+	time.Sleep(30 * time.Millisecond)
+	if !s.Holds() {
+		t.Error("the condition does not count after the window")
+	}
+	s.Reset()
+	if s.Holds() {
+		t.Error("the condition counts at once after a reset")
+	}
+}
