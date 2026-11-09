@@ -16,8 +16,7 @@ import (
 )
 
 // superviseVIP takes part in the VIP election until ctx ends.
-func (k *side) superviseVIP(ctx context.Context, done chan struct{}) {
-	defer close(done)
+func (k *side) superviseVIP(ctx context.Context) {
 	for {
 		err := k.runVIP(ctx)
 		if ctx.Err() != nil {

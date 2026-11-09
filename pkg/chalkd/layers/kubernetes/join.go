@@ -54,8 +54,8 @@ func (k *side) startJoin() {
 		return
 	}
 	k.joining = true
-	k.joinDone = make(chan struct{})
-	go k.superviseJoin(k.loops(), k.joinDone)
+	g := k.loops()
+	g.Go("the join", func(ctx context.Context) { k.superviseJoin(ctx, g) })
 }
 
 // setJoinStep records what the join does or why its last attempt failed, for the node's status.
@@ -89,18 +89,17 @@ func (k *side) joinStatus(c k8s.Cluster, joining bool) string {
 }
 
 // superviseJoin tries to join the cluster until the node is an etcd voter, then starts the
-// control plane's loop. It stops when the node was bootstrapped instead, and closes done once it
-// ended.
-func (k *side) superviseJoin(ctx context.Context, done chan struct{}) {
+// control plane's loop in g, the group it runs in. It stops when the node was bootstrapped
+// instead.
+func (k *side) superviseJoin(ctx context.Context, g *loopGroup) {
 	retry := k.timing.JoinRetry
 	defer func() {
 		k.mu.Lock()
 		// stop forgot this loop already, and startLoops may have run another.
-		if k.joinDone == done {
-			k.joining, k.joinDone = false, nil
+		if k.group == g {
+			k.joining = false
 		}
 		k.mu.Unlock()
-		close(done)
 	}()
 	// A join that keeps failing the same way logs it once.
 	var logged string
@@ -121,7 +120,7 @@ func (k *side) superviseJoin(ctx context.Context, done chan struct{}) {
 			k.setJoinStep("")
 			k.mu.Lock()
 			// Unless stop ended the loops meanwhile.
-			if k.ctx == ctx {
+			if k.group == g {
 				k.startLocked()
 			}
 			k.mu.Unlock()

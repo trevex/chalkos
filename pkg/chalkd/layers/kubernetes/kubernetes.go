@@ -48,18 +48,10 @@ type side struct {
 	vipHolder atomic.Bool
 
 	mu sync.Mutex
-	// ctx ends the loops, and cancel ends ctx when chalkd stops. Each done channel is closed once
-	// its loop ended:
-	//   - vipDone: the VIP election, which released the VIPs by then;
-	//   - joinDone: the join;
-	//   - leavesDone: the renewal of the control plane's certificates;
-	//   - controlPlaneDone: the control plane's loop.
-	ctx              context.Context
-	cancel           context.CancelFunc
-	vipDone          chan struct{}
-	joinDone         chan struct{}
-	leavesDone       chan struct{}
-	controlPlaneDone chan struct{}
+	// group runs the loops until stopLoops ends them: the VIP election, which released the VIPs
+	// once it ended, the join, the renewal of the control plane's certificates and the control
+	// plane's loop. It is nil while none runs.
+	group *loopGroup
 	// joining is set while the join's loop runs; joinStep is what it does or why it failed last,
 	// and joinWaiting is set while it finds no cluster.
 	joining     bool
@@ -252,12 +244,12 @@ func newSide(o Options) *side {
 	return k
 }
 
-// loops returns the context the loops run in; k.mu is held.
-func (k *side) loops() context.Context {
-	if k.ctx == nil {
-		k.ctx, k.cancel = context.WithCancel(context.Background())
+// loops returns the group the loops run in; k.mu is held.
+func (k *side) loops() *loopGroup {
+	if k.group == nil {
+		k.group = newLoopGroup()
 	}
-	return k.ctx
+	return k.group
 }
 
 // stop ends the loops for good, as chalkd stops. A startLoops or reloadControlPlane after it
@@ -277,24 +269,14 @@ func (k *side) stop() {
 // startLoops starts the loops again.
 func (k *side) stopLoops() {
 	k.mu.Lock()
-	cancel, vipDone, joinDone, leavesDone, controlPlaneDone := k.cancel, k.vipDone, k.joinDone, k.leavesDone, k.controlPlaneDone
-	k.ctx, k.cancel, k.vipDone, k.joinDone, k.leavesDone, k.controlPlaneDone = nil, nil, nil, nil, nil, nil
+	g := k.group
+	k.group = nil
 	// The next start runs the loops afresh and closes a channel of its own once they applied the
 	// manifests.
 	k.started, k.joining, k.done = false, false, nil
 	k.mu.Unlock()
-	if cancel != nil {
-		cancel()
-	}
-	for what, done := range map[string]chan struct{}{"the VIP election": vipDone, "the join": joinDone, "the certificate renewal": leavesDone, "the control plane's loop": controlPlaneDone} {
-		if done == nil {
-			continue
-		}
-		select {
-		case <-done:
-		case <-time.After(15 * time.Second):
-			log.Printf("kubernetes: %s did not end in time", what)
-		}
+	if g != nil {
+		g.Stop(15 * time.Second)
 	}
 }
 
@@ -348,25 +330,19 @@ func (k *side) startLocked() chan struct{} {
 	k.started = true
 	k.reload = make(chan struct{}, 1)
 	done := k.done
-	ctx := k.loops()
+	g := k.loops()
 	if c, err := k8s.ReadCluster(k.paths.Cluster); err != nil {
 		log.Printf("kubernetes: %v", err)
 	} else if len(c.VIP.Addresses) > 0 {
-		k.vipDone = make(chan struct{})
-		go k.superviseVIP(ctx, k.vipDone)
+		g.Go("the VIP election", k.superviseVIP)
 	}
 	if k.leaves == nil {
 		k.leaves = k.controlPlaneRenewal()
 	}
-	k.leavesDone = make(chan struct{})
-	go func(leaves *renewal.Renewal, done chan struct{}) {
-		leaves.Run(ctx)
-		close(done)
-	}(k.leaves, k.leavesDone)
+	g.Go("the certificate renewal", k.leaves.Run)
 	var once sync.Once
-	k.controlPlaneDone = make(chan struct{})
-	go func(supervised chan struct{}) {
-		defer close(supervised)
+	reload := k.reload
+	g.Go("the control plane's loop", func(ctx context.Context) {
 		k.superviseControlPlane(ctx, func(n int) {
 			once.Do(func() {
 				k.mu.Lock()
@@ -374,8 +350,8 @@ func (k *side) startLocked() chan struct{} {
 				k.mu.Unlock()
 				close(done)
 			})
-		}, k.reload)
-	}(k.controlPlaneDone)
+		}, reload)
+	})
 	return done
 }
 

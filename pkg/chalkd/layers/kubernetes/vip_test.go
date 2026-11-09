@@ -84,7 +84,7 @@ func vipControlPlane(t *testing.T) (*side, *fakeAddresses) {
 	k.timing.VIPTTL, k.timing.VIPInterval = 6, 50*time.Millisecond
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
-	go k.superviseVIP(ctx, done)
+	go func() { k.superviseVIP(ctx); close(done) }()
 	t.Cleanup(func() { cancel(); <-done })
 	return k, addrs
 }
