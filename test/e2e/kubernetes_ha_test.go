@@ -36,8 +36,8 @@ const haMemoryMB = 1536
 
 // haCluster is the VMs of the HA test.
 type haCluster struct {
-	// t is the running phase, which the helpers fail; owner is the whole test, which stops the VMs
-	// when it ends.
+	// phased holds the running phase's T, which the helpers fail; owner is the whole test, which
+	// stops the VMs when it ends.
 	phased
 	owner    *testing.T
 	dir      string

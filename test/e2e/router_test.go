@@ -32,7 +32,7 @@ import (
 
 // routerLab is the routers of TestRouterLab.
 type routerLab struct {
-	// t is the running phase, which the helpers fail.
+	// phased holds the running phase's T, which the helpers fail.
 	phased
 	nodes map[string]*node
 	// admin and reader are the test's client certificates of those roles.
