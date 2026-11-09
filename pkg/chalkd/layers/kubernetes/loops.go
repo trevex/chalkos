@@ -27,7 +27,8 @@ func newLoopGroup() *loopGroup {
 	return &loopGroup{ctx: ctx, cancel: cancel}
 }
 
-// Go runs f in the group's context, as the loop name.
+// Go runs f in the group's context, as the loop name. Go after Stop runs f in the ended context,
+// and Stop does not wait for it.
 func (g *loopGroup) Go(name string, f func(ctx context.Context)) {
 	done := make(chan struct{})
 	g.mu.Lock()

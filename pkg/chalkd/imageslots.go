@@ -28,8 +28,8 @@ type imageSlots interface {
 	// staged, as upgrade.Node.Rollback does.
 	Reactivate(ctx context.Context, rootHash []byte, record func() error) (upgrade.Result, error)
 	// Read reads the store of an image the inactive slot holds, as an upgrade checks one, and
-	// passes it to read with the image's NixOS system in it. The caller holds s.mu, which the boot
-	// disk's partition table is read under.
+	// passes it to read with the image's NixOS system in it. The caller holds the Server's lock
+	// (s.mu), which bootDisk reads the partition table under.
 	Read(ctx context.Context, rootHash []byte, read func(st imageStore, system string) error) error
 }
 

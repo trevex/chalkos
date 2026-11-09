@@ -167,7 +167,7 @@ func (s *seconds) Set(v string) error {
 // before it again. A trial that cannot be ended is logged, and its record takes a deadline that
 // passed, so chalkd rolls it back at once as it starts.
 func loadConfig() error {
-	// Only the layers' config is asked for, so the server they are bound to serves nothing.
+	// Only the layers' config is asked for.
 	node := chalkd.Offline(chalkd.DefaultPaths())
 	loader := nodeconfig.Default()
 	if err := chalkd.RestoreTrialAtBoot(node.Paths.StateDir, loader.Slots); err != nil {
@@ -188,7 +188,7 @@ func loadConfig() error {
 // a.stopped it handles the end of a wait that did not decide, which systemd describes in
 // $SERVICE_RESULT and $EXIT_STATUS.
 func health(a healthArgs) error {
-	// Only the layers' hooks are asked, so the server they are bound to serves nothing.
+	// Only the layers' health hooks are asked.
 	node := chalkd.Offline(chalkd.DefaultPaths())
 	reg, err := registry(node)
 	if err != nil {
