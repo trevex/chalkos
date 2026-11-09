@@ -57,7 +57,8 @@ func addMember(t *testing.T, cli *etcd.Client, ca pki.CertKey, name string) *etc
 }
 
 // memberNode is the bootstrapped control-plane node n1, whose etcd member runs with the
-// members named in others.
+// members named in others. The members listen on free ports, so the tests that use it run in
+// parallel; their health checks wait as long as the members on a busy machine take.
 func memberNode(t *testing.T, others ...string) (*Plugin, *etcd.Client, map[string]*etcdtest.Member) {
 	t.Helper()
 	s, _ := kubernetesNode(t, k8s.KindControlPlane, true)
@@ -80,6 +81,7 @@ func memberNode(t *testing.T, others ...string) (*Plugin, *etcd.Client, map[stri
 	}
 	k.etcdURL = n1.ClientURL
 	k.timing.EtcdRetry = etcdRetry
+	k.timing.EtcdStatusTimeout = liveEtcdTimeout
 	k.hooks.EtcdStopped = func(context.Context, k8s.Cluster) error { return nil }
 	ips, err := p.ReadNodeIPs()
 	if err != nil {
@@ -155,6 +157,7 @@ func checkLeft(t *testing.T, s *Plugin) {
 }
 
 func TestEtcdMembers(t *testing.T) {
+	t.Parallel()
 	s, _, _ := memberNode(t, "cp2")
 	list := etcdMembers(t, s)
 	if len(list) != 2 || list[0].Name != "cp2" || list[1].Name != "n1" {
@@ -168,6 +171,7 @@ func TestEtcdMembers(t *testing.T) {
 }
 
 func TestEtcdRemoveMember(t *testing.T) {
+	t.Parallel()
 	s, cli, members := memberNode(t, "cp2", "cp3")
 	if err := removeMember(s, "n1", false); layer.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "chalkctl etcd leave n1") {
 		t.Errorf("removing the node's own member: %v", err)
@@ -195,6 +199,7 @@ func TestEtcdRemoveMember(t *testing.T) {
 }
 
 func TestEtcdLeave(t *testing.T) {
+	t.Parallel()
 	s, _, members := memberNode(t, "cp2")
 	share, err := s.k.state.ReadShare()
 	if err != nil {
@@ -232,6 +237,7 @@ func leavingNode(t *testing.T) *Plugin {
 // A leave whose etcd did not stop is retried: the node's member is gone and its markers say it
 // left, and the retry deletes what the first leave kept.
 func TestEtcdLeaveRetriedAfterEtcdKeptRunning(t *testing.T) {
+	t.Parallel()
 	s := leavingNode(t)
 	k := s.k
 	stopped := k.hooks.EtcdStopped
@@ -255,6 +261,7 @@ func TestEtcdLeaveRetriedAfterEtcdKeptRunning(t *testing.T) {
 // A leave interrupted while it cleared the membership is retried: the bootstrapped marker and
 // the pin it had not removed yet go too.
 func TestEtcdLeaveRetriedAfterPartialClear(t *testing.T) {
+	t.Parallel()
 	s := leavingNode(t)
 	p := s.k.state
 	if err := leave(s, false); err != nil {
@@ -271,6 +278,7 @@ func TestEtcdLeaveRetriedAfterPartialClear(t *testing.T) {
 // A node that left and holds nothing of its membership but the joining marker left already: a
 // leave again is refused as such.
 func TestEtcdLeaveAfterLeftWithJoiningMarker(t *testing.T) {
+	t.Parallel()
 	s := leavingNode(t)
 	p := s.k.state
 	if err := leave(s, false); err != nil {
@@ -286,6 +294,7 @@ func TestEtcdLeaveAfterLeftWithJoiningMarker(t *testing.T) {
 // A node whose member an operator removed while it joined still leaves: etcd has nothing left to
 // remove, and the node deletes what the join left behind.
 func TestEtcdLeaveAfterMemberRemoved(t *testing.T) {
+	t.Parallel()
 	s, _, cli := joiningNode(t)
 	k := s.k
 	k.hooks.EtcdStopped = func(context.Context, k8s.Cluster) error { return nil }
@@ -315,9 +324,10 @@ func TestEtcdLeaveAfterMemberRemoved(t *testing.T) {
 	checkLeft(t, s)
 }
 
-// liveEtcdTimeout is how long a health check waits for each etcd member where all of them are up.
-// The members run in the test's process, beside the other packages' tests, and on a busy machine
-// one may take more than the three seconds of a node to answer the check's new connection.
+// liveEtcdTimeout is how long a health check waits for each etcd member; a check of a stopped
+// member waits it out. The members run in the test's process, beside the other tests, and on a
+// busy machine one may take more than the three seconds of a node to answer the check's new
+// connection.
 const liveEtcdTimeout = 10 * time.Second
 
 // silentEtcdTimeout bounds the requests to etcd where the node's own member does not answer.
@@ -332,7 +342,6 @@ func otherMembersOnly(t *testing.T, s *Plugin, others ...*etcdtest.Member) {
 	k := s.k
 	k.etcdURL = etcdtest.Silent(t)
 	k.timing.EtcdTimeout = silentEtcdTimeout
-	k.timing.EtcdStatusTimeout = liveEtcdTimeout
 	k.hooks.EtcdEndpoints = func(context.Context, k8s.Cluster, kpki.Share, []netip.Addr) ([]string, error) {
 		var urls []string
 		for _, m := range others {
@@ -345,6 +354,7 @@ func otherMembersOnly(t *testing.T, s *Plugin, others ...*etcdtest.Member) {
 // A bootstrapped node whose own etcd member does not answer leaves through the other members only
 // when forced, as when it lost its pinned address and its etcd cannot run.
 func TestEtcdLeaveNeedsLocalMemberOrForce(t *testing.T) {
+	t.Parallel()
 	s, cli, others := memberNode(t, "cp2", "cp3")
 	otherMembersOnly(t, s, others["cp2"], others["cp3"])
 	err := leave(s, false)
@@ -372,6 +382,7 @@ func TestEtcdLeaveNeedsLocalMemberOrForce(t *testing.T) {
 // A bootstrapped node whose member an operator removed leaves without --force, although its etcd
 // stopped answering.
 func TestEtcdLeaveAfterOwnMemberRemoved(t *testing.T) {
+	t.Parallel()
 	s, _, members := memberNode(t, "cp2", "cp3")
 	share, err := s.k.state.ReadShare()
 	if err != nil {
@@ -403,6 +414,7 @@ func TestEtcdLeaveAfterOwnMemberRemoved(t *testing.T) {
 
 // A node leaves only while the voters left keep a healthy quorum, and changes nothing otherwise.
 func TestEtcdLeaveRefusedWithoutQuorum(t *testing.T) {
+	t.Parallel()
 	s, _, members := memberNode(t, "cp2", "cp3")
 	members["cp3"].Stop()
 	err := leave(s, false)
@@ -459,6 +471,7 @@ func TestNotEtcdMemberDetail(t *testing.T) {
 // Leaving waits for the lock on the control plane's certificates, which a renewal holds while it
 // renders the static pods, so no renewal renders them once the node removed them.
 func TestEtcdLeaveWaitsForTheCertificateLock(t *testing.T) {
+	t.Parallel()
 	s, _, members := memberNode(t, "cp2")
 	p := s.k.state
 	share, err := p.ReadShare()
