@@ -63,7 +63,7 @@ func newCommand() (*cobra.Command, error) {
 		&cobra.Command{
 			Use:   "serve",
 			Short: "Serve the node API",
-			Args:  cobra.NoArgs,
+			Args:  chalkd.NoArgs,
 			RunE:  func(*cobra.Command, []string) error { return serve() },
 		},
 		&cobra.Command{
@@ -71,7 +71,7 @@ func newCommand() (*cobra.Command, error) {
 			Short: "Apply the config recorded on STATE",
 			Long: "Apply the config recorded on STATE: its identity and documents, after ending a config's trial\n" +
 				"that is still open.",
-			Args: cobra.NoArgs,
+			Args: chalkd.NoArgs,
 			RunE: func(*cobra.Command, []string) error { return loadConfig() },
 		},
 		healthCommand(health),
@@ -87,8 +87,11 @@ func checkCommand() *cobra.Command {
 		Short: "Check the config on standard input as an image checks it",
 		Long: "Check the config on standard input as the image whose NixOS system is --system checks it, with\n" +
 			"the facts the socket --facts serves, and write the result to standard output.",
-		Args: cobra.NoArgs,
+		Args: chalkd.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			if system == "" || socket == "" {
+				return chalkd.Usagef("%s takes --system and --facts", cmd.CommandPath())
+			}
 			return checkConfig(system, socket, cmd.InOrStdin(), cmd.OutOrStdout())
 		},
 	}
@@ -135,7 +138,7 @@ func healthCommand(run func(healthArgs) error) *cobra.Command {
 			"unhealthy boot of an image the boot loader counts. With --stopped, after a wait ended before it\n" +
 			"decided, do as it would have: record the boot, and reboot when that leads on. The failure of a\n" +
 			"unit --ignore-unit names does not count.",
-		Args: cobra.NoArgs,
+		Args: chalkd.NoArgs,
 		RunE: func(*cobra.Command, []string) error { return run(a) },
 	}
 	cmd.Flags().Var((*seconds)(&a.wait), "wait", "check until the boot is healthy, for this many seconds at most")

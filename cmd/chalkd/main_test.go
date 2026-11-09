@@ -257,6 +257,7 @@ func TestCommandsRefuseArguments(t *testing.T) {
 		{"health", "--wait", "300", "--stopped"},
 		{"check"},
 		{"check", "--system", "/nix/store/x"},
+		{"check", "--system", "", "--facts", ""},
 		{"check", "--system", "/nix/store/x", "--facts", "/run/f.sock", "now"},
 		{"prepare-kubernetes"},
 		{"prepare"},

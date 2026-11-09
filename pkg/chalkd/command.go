@@ -39,3 +39,10 @@ func NewCommand(reg *layer.Registry, cmds ...*cobra.Command) *cobra.Command {
 func Execute(root *cobra.Command) int {
 	return cli.Execute(context.Background(), root, cli.Options{SplitJoined: true})
 }
+
+// NoArgs and Usagef are cli's positional argument check and usage error, for chalkd's own
+// commands in cmd/chalkd, which cannot import pkg/internal/cli.
+var (
+	NoArgs = cli.NoArgs
+	Usagef = cli.Usagef
+)
