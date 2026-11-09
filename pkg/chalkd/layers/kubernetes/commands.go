@@ -15,6 +15,7 @@ import (
 	"github.com/trevex/chalkos/pkg/chalkd/layer"
 	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/config/slot"
+	"github.com/trevex/chalkos/pkg/internal/cli"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
 	"github.com/trevex/chalkos/pkg/kubernetes/credprovider"
 	knode "github.com/trevex/chalkos/pkg/kubernetes/node"
@@ -32,7 +33,7 @@ func (p *Plugin) Commands() []*cobra.Command {
 		Short: "Pick the node's addresses and write its Kubernetes certificates and configuration",
 		Long: "Pick the node's addresses and write its Kubernetes certificates and configuration. With\n" +
 			"--vxlan-rule, then fill the firewall's VXLAN table from them.",
-		Args: cobra.NoArgs,
+		Args: cli.NoArgs,
 		RunE: func(*cobra.Command, []string) error { return prepareKubernetes(withRule) },
 	}
 	prepare.Flags().BoolVar(&withRule, "vxlan-rule", false, "fill the firewall's VXLAN table once the node is prepared")
@@ -42,7 +43,7 @@ func (p *Plugin) Commands() []*cobra.Command {
 			Use:   "vxlan-rule [FILE]",
 			Short: "Fill the firewall's VXLAN table from FILE, or empty it",
 			Long:  "Fill the firewall's VXLAN table from FILE, as the preparation writes it, or empty it without FILE.",
-			Args:  cobra.MaximumNArgs(1),
+			Args:  cli.RangeArgs(0, 1),
 			RunE: func(_ *cobra.Command, args []string) error {
 				var file string
 				if len(args) == 1 {
@@ -56,7 +57,7 @@ func (p *Plugin) Commands() []*cobra.Command {
 			Short: "Print containerd's hosts.toml of each registry the node's documents name",
 			Long: "Print containerd's hosts.toml of each registry the node's Mirror and Registry documents\n" +
 				"name, each after a line \"=== <directory>\".",
-			Args: cobra.NoArgs,
+			Args: cli.NoArgs,
 			RunE: func(cmd *cobra.Command, _ []string) error { return containerdHosts(cmd.OutOrStdout(), "/run/chalkos") },
 		},
 		{
@@ -64,7 +65,7 @@ func (p *Plugin) Commands() []*cobra.Command {
 			Short: "Write containerd's settings from the node's Cluster document to FILE",
 			Long: "Write containerd's settings from the node's Cluster document, the pod sandbox's image, to\n" +
 				"FILE, which containerd imports.",
-			Args: cobra.ExactArgs(1),
+			Args: cli.ExactArgs(1),
 			RunE: func(_ *cobra.Command, args []string) error { return containerdConfig("/run/chalkos", args[0]) },
 		},
 		{
@@ -72,7 +73,7 @@ func (p *Plugin) Commands() []*cobra.Command {
 			Short: "Write the kubelet's credential provider files from the node's Registry documents",
 			Long: "Write the kubelet's credential provider config and the node's registry credentials from its\n" +
 				"Registry documents.",
-			Args: cobra.NoArgs,
+			Args: cli.NoArgs,
 			RunE: func(*cobra.Command, []string) error {
 				return registryCredentials("/run/chalkos", os.Getenv("CREDENTIALS_DIRECTORY"), k8s.CredentialProviderDir)
 			},
@@ -80,7 +81,9 @@ func (p *Plugin) Commands() []*cobra.Command {
 		{
 			Use:   "credential-provider",
 			Short: "Answer the kubelet's request for an image's credentials",
-			Args:  cobra.NoArgs,
+			Long: "Answer the kubelet's request for an image's credentials: read a CredentialProviderRequest\n" +
+				"on standard input and write the CredentialProviderResponse to standard output.",
+			Args: cli.NoArgs,
 			RunE: func(cmd *cobra.Command, _ []string) error {
 				return credprovider.Provide(k8s.CredentialProviderDir, cmd.InOrStdin(), cmd.OutOrStdout())
 			},
