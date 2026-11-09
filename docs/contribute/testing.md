@@ -121,11 +121,12 @@ testVariantSetsDiskOptions = {
 ```
 
 Build checks test what an image build produces, without booting it. They live in `nix/checks/`:
-`image.nix` checks an image's files, `units.nix` runs an image's unit scripts in namespaces, and
-`repo.nix` validates the lab template and the examples. `units.nix` also holds `image-checker`,
-which boots one NixOS VM, as an image's checker needs systemd. `e2e.nix` holds the end-to-end
-checks, `eval.nix` the evaluation tests, and `lib.nix` what they share. The test scripts of
-`units.nix` are `writeShellApplication` scripts, so shellcheck runs on them when they build.
+`image.nix` checks an image's files, `units/` runs an image's unit scripts in namespaces, one file
+a check, and `repo.nix` validates the lab template and the examples. `units/` also holds
+`image-checker`, which boots one NixOS VM, as an image's checker needs systemd. `e2e.nix` holds
+the end-to-end checks, `eval.nix` the evaluation tests, and `lib.nix` what they share, with the
+shell functions `fail`, `retry` and `refuses` the check scripts call. The test scripts of
+`units/` are `writeShellApplication` scripts, so shellcheck runs on them when they build.
 
 | Check | What it checks |
 | --- | --- |
