@@ -451,7 +451,7 @@ it has no `completion` command.
 | `modules/platforms/` | `metal` and `kvm`. |
 | `modules/installer/` | The installer image and its ISO. |
 | `modules/testing/` | The test probe, the test image's partition sizes and the test-only config kind `Greeting` with its output and effect. |
-| `lib/` | `mkImages` (`images.nix`), its arguments as module options (`images-arguments.nix`), `chalkos.nix`, the `lib.chalkos` of every image's modules, and the functions the modules share: `kinds/` (the JSON Schema converter, the chalkcfg commands of `get`, the option types both recognise, the API groups of chalkos's own kinds, and the check of the kinds a grant, output or effect names) and `cel.nix` (CEL that effect rules share). |
+| `lib/` | `mkImages` (`images.nix`), its arguments as module options (`images-arguments.nix`), `chalkos.nix`, the `lib.chalkos` of every image's modules, and the functions the modules share, which they reach through `lib.chalkos.internal` alone: `kinds/` (the JSON Schema converter, the chalkcfg commands of `get`, the option types both recognise, the API groups of chalkos's own kinds, and the check of the kinds a grant, an output, a validator or an effect names, which lists every kind the image does not declare, Secret and withheld kinds), `cel.nix` (CEL that effect rules share) and `refuse.nix` (`refuse`, which throws every problem a module finds in one message, and the phrases the messages share). |
 
 ## Layout rules
 

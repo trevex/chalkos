@@ -4,6 +4,8 @@
 Every image's NixOS modules get `lib.chalkos` as part of `lib`. It holds the type and the
 `mkOption` of an extension kind's fields, the renderers of `chalkos.outputs.<name>.render`, the
 validators of `chalkos.validators.<name>.program` and the common effects.
+`lib.chalkos.internal` holds chalkos's own helpers; it is not part of the extension API and
+changes without notice.
 
 | Helper | Arguments | Result |
 | --- | --- | --- |
