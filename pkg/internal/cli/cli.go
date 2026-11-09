@@ -36,10 +36,26 @@ func usage(err error) error {
 //   - Execute prints errors and the usage, so cobra prints neither.
 //   - Every flag error of the tree is a usage error.
 //   - root only holds subcommands, as a Group does.
+//   - A flag given before a subcommand's name that a command before it takes is a usage error:
+//     with TraverseChildren, cobra parses it as that command's, and the subcommand never sees it.
 func Root(root *cobra.Command) *cobra.Command {
 	root.SilenceErrors = true
 	root.SilenceUsage = true
 	root.SetFlagErrorFunc(func(_ *cobra.Command, err error) error { return usage(err) })
+	root.PersistentPreRunE = func(cmd *cobra.Command, _ []string) error {
+		for p := cmd.Parent(); p != nil; p = p.Parent() {
+			var err error
+			p.Flags().Visit(func(f *pflag.Flag) {
+				if err == nil && p.LocalNonPersistentFlags().Lookup(f.Name) != nil {
+					err = Usagef("--%s goes after %s", f.Name, cmd.CommandPath())
+				}
+			})
+			if err != nil {
+				return err
+			}
+		}
+		return nil
+	}
 	return Group(root)
 }
 
@@ -126,15 +142,16 @@ func Execute(ctx context.Context, root *cobra.Command, opts Options) int {
 
 // isUsage reports whether cobra failed cmd before running it, with an error it returns without
 // the flag error function:
-//   - A command with subcommands fails only with usage errors. Another error of its own is a flag
-//     before a subcommand's name, which cobra parses as this command's.
-//   - A leaf with a required flag not set, or with flags of a group set wrongly, never runs.
-//   - A leaf whose Args refuses its positional arguments never runs.
+//   - The root fails only with usage errors. Another error of its own is a flag before a
+//     subcommand's name that the command before it does not take, which cobra returns with the
+//     root.
+//   - A command with a required flag not set, or with flags of a group set wrongly, never runs.
+//   - A command whose Args refuses its positional arguments never runs.
 func isUsage(cmd *cobra.Command, err error) bool {
 	if errors.Is(err, ErrUsage) {
 		return false
 	}
-	return cmd.HasSubCommands() || cmd.ValidateRequiredFlags() != nil || cmd.ValidateFlagGroups() != nil ||
+	return !cmd.HasParent() || cmd.ValidateRequiredFlags() != nil || cmd.ValidateFlagGroups() != nil ||
 		cmd.ValidateArgs(cmd.Flags().Args()) != nil
 }
 
