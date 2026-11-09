@@ -81,9 +81,13 @@ func TestExecuteErrors(t *testing.T) {
 	if got := ta.execute(context.Background(), "status", "n1", "--inventory", filepath.Join(ta.dir, "missing.yaml")); got != 1 {
 		t.Errorf("a failing command exits with %d, want 1", got)
 	}
-	// apply-config has subcommands and runs too.
-	if got := ta.execute(context.Background(), "apply-config", "n1", "--inventory", filepath.Join(ta.dir, "missing.yaml")); got != 1 {
-		t.Errorf("a failing apply-config exits with %d, want 1", got)
+	// apply-config has subcommands and runs too; after --, a subcommand's name is a node's.
+	missing := filepath.Join(ta.dir, "missing.yaml")
+	for _, args := range [][]string{{"apply-config", "n1", "--inventory", missing}, {"apply-config", "--inventory", missing, "--", "confirm"}} {
+		ta.stderr.Reset()
+		if got := ta.execute(context.Background(), args...); got != 1 || !strings.Contains(ta.stderr.String(), "missing.yaml") {
+			t.Errorf("chalkctl %v exits with %d, want 1 for the missing inventory:\n%s", args, got, ta.stderr)
+		}
 	}
 	if !strings.HasPrefix(ta.stderr.String(), "chalkctl: ") {
 		t.Errorf("stderr = %q, want the error after chalkctl:", ta.stderr.String())

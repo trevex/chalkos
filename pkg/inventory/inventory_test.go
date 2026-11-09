@@ -77,6 +77,7 @@ func TestLoadRefuses(t *testing.T) {
 		"an unknown group":    {strings.Replace(homelab, "groups: [gpu]", "groups: [gpus]", 1), "the group gpus, which the inventory does not define"},
 		"two documents":       {homelab + "---\n" + homelab, "holds 2 documents"},
 		"a secrets file":      {strings.Replace(homelab, "spec:\n", "spec:\n  secrets: ./secrets.age\n", 1), "secrets"},
+		"a reserved name":     {strings.Replace(homelab, "    cp1:", "    rollback:", 1), "node rollback: confirm, discard, rollback are chalkctl apply-config's subcommands"},
 		"a top-level image":   {strings.Replace(homelab, "spec:\n", "spec:\n  image: node-metal\n", 1), "image"},
 	} {
 		t.Run(name, func(t *testing.T) {

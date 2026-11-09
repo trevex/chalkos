@@ -169,6 +169,10 @@ func parse(path string, data []byte) (*Inventory, error) {
 	if err := oneSource(docs[0].Object); err != nil {
 		return nil, err
 	}
+	// The schema refuses a reserved node name too, but without saying why.
+	if err := reservedNames(docs[0].Object); err != nil {
+		return nil, err
+	}
 	if err := s.Validate(docs[0].Object); err != nil {
 		return nil, err
 	}
@@ -428,6 +432,22 @@ func (inv *Inventory) rel(p string) string {
 		}
 	}
 	return p
+}
+
+// ReservedNodeNames are the names of chalkctl apply-config's subcommands, which apply-config
+// would take for the subcommand where a node of that name is meant.
+var ReservedNodeNames = []string{"confirm", "discard", "rollback"}
+
+// reservedNames refuses a node named as one of ReservedNodeNames.
+func reservedNames(doc map[string]any) error {
+	spec, _ := doc["spec"].(map[string]any)
+	nodes, _ := spec["nodes"].(map[string]any)
+	for _, name := range slices.Sorted(maps.Keys(nodes)) {
+		if slices.Contains(ReservedNodeNames, name) {
+			return fmt.Errorf("node %s: %s are chalkctl apply-config's subcommands, which no node may be named", name, strings.Join(ReservedNodeNames, ", "))
+		}
+	}
+	return nil
 }
 
 // oneSource refuses an image of the inventory doc that names both a directory and an OCI

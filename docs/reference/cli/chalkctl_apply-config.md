@@ -19,7 +19,8 @@ fails; a node named twice gets the config once. --address gives each node's addr
 where it is not the inventory's. chalkctl reads each node's status and checks its config against
 its image before the first node gets anything, and leaves a node that runs the config already
 alone, so the same command run again continues a run that stopped. --staged, --diff and
---no-confirm take one node.
+--no-confirm take one node. The inventory refuses nodes named as apply-config's subcommands;
+nodes named after --, as in apply-config -- w1 w2, are nodes whatever their names.
 
 When the config changes a version that a layer of the nodes' images bounds across the cluster,
 such as the Kubernetes API server's, against the config a node runs, the run is ordered, with one
