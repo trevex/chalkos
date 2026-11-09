@@ -2,6 +2,7 @@ package e2e
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"net"
@@ -28,6 +29,167 @@ import (
 	"github.com/trevex/chalkos/pkg/pki"
 	"github.com/trevex/chalkos/pkg/router"
 )
+
+// routerLab is the routers of TestRouterLab.
+type routerLab struct {
+	nodes map[string]*node
+	// admin and reader are the test's client certificates of those roles.
+	admin, reader *tls.Certificate
+	// The routers' connections for an admin and for a reader.
+	conns, readers map[string]*client.Conn
+}
+
+// routerOf is the client of the router layer of c.
+func routerOf(c *client.Conn) routerv1connect.RouterServiceClient {
+	return routerv1connect.NewRouterServiceClient(c.HTTPClient(), c.BaseURL())
+}
+
+// session is the router's session of the BGPPeer on enp0s3, as its status reports it.
+func (rl *routerLab) session(name, peer string) (*routerv1.BGPPeerStatus, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	resp, err := routerOf(rl.conns[name]).Status(ctx, connect.NewRequest(&routerv1.StatusRequest{}))
+	if err != nil {
+		return nil, err
+	}
+	r := resp.Msg
+	switch {
+	case r.BgpError != "":
+		return nil, fmt.Errorf("its BGP state is unknown: %s", r.BgpError)
+	}
+	for _, p := range r.Peers {
+		if p.Name == peer && p.Neighbor == "enp0s3" {
+			return p, nil
+		}
+	}
+	return nil, fmt.Errorf("%s has no session of %s on enp0s3: %v", name, peer, r.Peers)
+}
+
+// established is nil once the router's session of the peer is up in the default VRF.
+func (rl *routerLab) established(name, peer string) error {
+	p, err := rl.session(name, peer)
+	if err != nil {
+		return err
+	}
+	if p.State != "Established" || p.Bfd != "up" || p.Vrf != "default" {
+		return fmt.Errorf("the session of %s on %s is %s in the VRF %q, its BFD %q", peer, name, p.State, p.Vrf, p.Bfd)
+	}
+	return nil
+}
+
+// inFabric is nil once the router's session of the peer is up in the VRF fabric and has been for
+// at most the time since start.
+func (rl *routerLab) inFabric(name, peer string, start time.Time) error {
+	p, err := rl.session(name, peer)
+	if err != nil {
+		return err
+	}
+	if p.State != "Established" || p.Bfd != "up" || p.Vrf != "fabric" {
+		return fmt.Errorf("the session of %s on %s is %s in the VRF %q, its BFD %q", peer, name, p.State, p.Vrf, p.Bfd)
+	}
+	if elapsed := time.Since(start); time.Duration(p.UptimeSeconds)*time.Second > elapsed+2*time.Second {
+		return fmt.Errorf("the session of %s on %s is up for %ds, since before the delivery %v ago", peer, name, p.UptimeSeconds, elapsed.Round(time.Second))
+	}
+	return nil
+}
+
+// learnedFrom is nil once the router name routes the prefix in the VRF through its peer of the AS
+// as: zebra installed it over enp0s3 to an IPv6 link-local next hop, and BGP's best path came from
+// as on enp0s3. An empty VRF is the default one.
+func (rl *routerLab) learnedFrom(name, vrf, prefix, as string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	resp, err := routerOf(rl.conns[name]).Routes(ctx, connect.NewRequest(&routerv1.RoutesRequest{Prefix: prefix, Protocol: "bgp", Vrf: vrf}))
+	if err != nil {
+		return err
+	}
+	kernel := slices.ContainsFunc(resp.Msg.Kernel, func(k *routerv1.KernelRoute) bool {
+		return k.Destination == prefix && slices.ContainsFunc(k.NextHops, func(h *routerv1.NextHop) bool {
+			return h.Interface == "enp0s3" && strings.HasPrefix(h.Gateway, "fe80:")
+		})
+	})
+	bgp := slices.ContainsFunc(resp.Msg.Bgp, func(b *routerv1.BGPRoute) bool {
+		return b.Prefix == prefix && b.Best && b.AsPath == as && b.Peer == "enp0s3"
+	})
+	if !kernel || !bgp {
+		return fmt.Errorf("%s's routes to %s in the VRF %q: kernel %v, BGP %v, BGP's error %q", name, prefix, vrf, resp.Msg.Kernel, resp.Msg.Bgp, resp.Msg.BgpError)
+	}
+	return nil
+}
+
+// learned is nil once r2 routes the prefix through r1.
+func (rl *routerLab) learned(prefix string) error { return rl.learnedFrom("r2", "", prefix, "64512") }
+
+// leaked is nil once r1's default VRF routes the prefix over enp0s3, a link of the VRF from, and
+// its BGP instance holds the best path imported from that VRF.
+func (rl *routerLab) leaked(prefix, from string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	resp, err := routerOf(rl.conns["r1"]).Routes(ctx, connect.NewRequest(&routerv1.RoutesRequest{Prefix: prefix, Protocol: "bgp"}))
+	if err != nil {
+		return err
+	}
+	kernel := slices.ContainsFunc(resp.Msg.Kernel, func(k *routerv1.KernelRoute) bool {
+		return k.Destination == prefix && k.Table == 254 && slices.ContainsFunc(k.NextHops, func(h *routerv1.NextHop) bool { return h.Interface == "enp0s3" })
+	})
+	bgp := slices.ContainsFunc(resp.Msg.Bgp, func(b *routerv1.BGPRoute) bool {
+		return b.Prefix == prefix && b.Best && b.ImportedFrom == from
+	})
+	if !kernel || !bgp {
+		return fmt.Errorf("r1's default VRF's routes to %s: kernel %v, BGP %v, BGP's error %q", prefix, resp.Msg.Kernel, resp.Msg.Bgp, resp.Msg.BgpError)
+	}
+	return nil
+}
+
+// inTable is nil once the router's VRF fabric routes the prefix over the link in the table.
+func (rl *routerLab) inTable(name, prefix, link string, table uint32) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	resp, err := routerOf(rl.conns[name]).Routes(ctx, connect.NewRequest(&routerv1.RoutesRequest{Prefix: prefix, Vrf: "fabric"}))
+	if err != nil {
+		return err
+	}
+	if !slices.ContainsFunc(resp.Msg.Kernel, func(k *routerv1.KernelRoute) bool {
+		return k.Destination == prefix && k.Table == table && slices.ContainsFunc(k.NextHops, func(h *routerv1.NextHop) bool { return h.Interface == link })
+	}) {
+		return fmt.Errorf("%s's VRF fabric routes %s over %s in no table %d: %v", name, prefix, link, table, resp.Msg.Kernel)
+	}
+	return nil
+}
+
+// rootsConfig checks that r1's filled frr.conf, which holds the password, is root's alone, as the
+// test image's chalktest-frr-conf diagnostic shows it.
+func (rl *routerLab) rootsConfig(t *testing.T) {
+	t.Helper()
+	out, err := chalkctl(t, rl.nodes["r1"], "base", "node", "diag", "r1", "chalktest-frr-conf")
+	if err != nil || strings.TrimSpace(out) != "root root 600" {
+		t.Errorf("/run/frr/frr.conf on r1 is not root's with mode 0600: %v\n%s", err, out)
+	}
+}
+
+// failedUnit tells whether the router's status out shows a failed unit, and logs the journal of
+// each one it shows.
+func (rl *routerLab) failedUnit(t *testing.T, name, inventory, out string) bool {
+	t.Helper()
+	units := regexp.MustCompile(`(?m)^failed unit (\S+)$`).FindAllStringSubmatch(out, -1)
+	for _, u := range units {
+		_, _ = chalkctl(t, rl.nodes[name], inventory, "logs", name, "--unit", u[1])
+	}
+	return len(units) > 0
+}
+
+// failedJobs logs the journal of each unit whose job failed, as systemctl names it in the output
+// out of a delivery that failed, which may repeat it.
+func (rl *routerLab) failedJobs(t *testing.T, name, inventory, out string) {
+	t.Helper()
+	logged := map[string]bool{}
+	for _, u := range regexp.MustCompile(`Job for (\S+) failed`).FindAllStringSubmatch(out, -1) {
+		if !logged[u[1]] {
+			logged[u[1]] = true
+			_, _ = chalkctl(t, rl.nodes[name], inventory, "logs", name, "--unit", u[1])
+		}
+	}
+}
 
 // routerLabName is the metadata.name of chalklab/lab-router.yaml, by which chalklab keys the
 // lab's state directory.
@@ -112,185 +274,45 @@ func TestRouterLab(t *testing.T) {
 	dir := vmDir(t)
 	startNTP(t)
 	nodes, _, _, _ := startLab(t, dir, routerLabName, "lab-router.yaml")
-	admin := clientCertificate(t, pki.RoleAdmin)
-	reader := clientCertificate(t, pki.RoleReader)
-	// The routers' connections for an admin and for a reader.
-	conns := map[string]*client.Conn{}
-	readers := map[string]*client.Conn{}
+	rl := &routerLab{
+		nodes:   nodes,
+		admin:   clientCertificate(t, pki.RoleAdmin),
+		reader:  clientCertificate(t, pki.RoleReader),
+		conns:   map[string]*client.Conn{},
+		readers: map[string]*client.Conn{},
+	}
 	for _, name := range []string{"r1", "r2"} {
-		conns[name] = dialNode(t, nodes[name], name, admin)
-		t.Cleanup(func() { conns[name].Close() })
-		readers[name] = dialNode(t, nodes[name], name, reader)
-		t.Cleanup(func() { readers[name].Close() })
-	}
-	// routerOf is the client of the router layer of c.
-	routerOf := func(c *client.Conn) routerv1connect.RouterServiceClient {
-		return routerv1connect.NewRouterServiceClient(c.HTTPClient(), c.BaseURL())
-	}
-	// session is the router's session of the BGPPeer on enp0s3, as its status reports it.
-	session := func(name, peer string) (*routerv1.BGPPeerStatus, error) {
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-		defer cancel()
-		resp, err := routerOf(conns[name]).Status(ctx, connect.NewRequest(&routerv1.StatusRequest{}))
-		if err != nil {
-			return nil, err
-		}
-		r := resp.Msg
-		switch {
-		case r.BgpError != "":
-			return nil, fmt.Errorf("its BGP state is unknown: %s", r.BgpError)
-		}
-		for _, p := range r.Peers {
-			if p.Name == peer && p.Neighbor == "enp0s3" {
-				return p, nil
-			}
-		}
-		return nil, fmt.Errorf("%s has no session of %s on enp0s3: %v", name, peer, r.Peers)
-	}
-	established := func(name, peer string) error {
-		p, err := session(name, peer)
-		if err != nil {
-			return err
-		}
-		if p.State != "Established" || p.Bfd != "up" || p.Vrf != "default" {
-			return fmt.Errorf("the session of %s on %s is %s in the VRF %q, its BFD %q", peer, name, p.State, p.Vrf, p.Bfd)
-		}
-		return nil
-	}
-	// inFabric is nil once the router's session of the peer is up in the VRF fabric and has been
-	// for at most the time since start.
-	inFabric := func(name, peer string, start time.Time) error {
-		p, err := session(name, peer)
-		if err != nil {
-			return err
-		}
-		if p.State != "Established" || p.Bfd != "up" || p.Vrf != "fabric" {
-			return fmt.Errorf("the session of %s on %s is %s in the VRF %q, its BFD %q", peer, name, p.State, p.Vrf, p.Bfd)
-		}
-		if elapsed := time.Since(start); time.Duration(p.UptimeSeconds)*time.Second > elapsed+2*time.Second {
-			return fmt.Errorf("the session of %s on %s is up for %ds, since before the delivery %v ago", peer, name, p.UptimeSeconds, elapsed.Round(time.Second))
-		}
-		return nil
-	}
-	// learnedFrom is nil once the router name routes the prefix in the VRF through its peer of the
-	// AS as: zebra installed it over enp0s3 to an IPv6 link-local next hop, and BGP's best path came
-	// from as on enp0s3. An empty VRF is the default one.
-	learnedFrom := func(name, vrf, prefix, as string) error {
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-		defer cancel()
-		resp, err := routerOf(conns[name]).Routes(ctx, connect.NewRequest(&routerv1.RoutesRequest{Prefix: prefix, Protocol: "bgp", Vrf: vrf}))
-		if err != nil {
-			return err
-		}
-		kernel := slices.ContainsFunc(resp.Msg.Kernel, func(k *routerv1.KernelRoute) bool {
-			return k.Destination == prefix && slices.ContainsFunc(k.NextHops, func(h *routerv1.NextHop) bool {
-				return h.Interface == "enp0s3" && strings.HasPrefix(h.Gateway, "fe80:")
-			})
-		})
-		bgp := slices.ContainsFunc(resp.Msg.Bgp, func(b *routerv1.BGPRoute) bool {
-			return b.Prefix == prefix && b.Best && b.AsPath == as && b.Peer == "enp0s3"
-		})
-		if !kernel || !bgp {
-			return fmt.Errorf("%s's routes to %s in the VRF %q: kernel %v, BGP %v, BGP's error %q", name, prefix, vrf, resp.Msg.Kernel, resp.Msg.Bgp, resp.Msg.BgpError)
-		}
-		return nil
-	}
-	// learned is nil once r2 routes the prefix through r1.
-	learned := func(prefix string) error { return learnedFrom("r2", "", prefix, "64512") }
-	// leaked is nil once r1's default VRF routes the prefix over enp0s3, a link of the VRF from,
-	// and its BGP instance holds the best path imported from that VRF.
-	leaked := func(prefix, from string) error {
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-		defer cancel()
-		resp, err := routerOf(conns["r1"]).Routes(ctx, connect.NewRequest(&routerv1.RoutesRequest{Prefix: prefix, Protocol: "bgp"}))
-		if err != nil {
-			return err
-		}
-		kernel := slices.ContainsFunc(resp.Msg.Kernel, func(k *routerv1.KernelRoute) bool {
-			return k.Destination == prefix && k.Table == 254 && slices.ContainsFunc(k.NextHops, func(h *routerv1.NextHop) bool { return h.Interface == "enp0s3" })
-		})
-		bgp := slices.ContainsFunc(resp.Msg.Bgp, func(b *routerv1.BGPRoute) bool {
-			return b.Prefix == prefix && b.Best && b.ImportedFrom == from
-		})
-		if !kernel || !bgp {
-			return fmt.Errorf("r1's default VRF's routes to %s: kernel %v, BGP %v, BGP's error %q", prefix, resp.Msg.Kernel, resp.Msg.Bgp, resp.Msg.BgpError)
-		}
-		return nil
-	}
-	// inTable is nil once the router's VRF fabric routes the prefix over the link in the table.
-	inTable := func(name, prefix, link string, table uint32) error {
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-		defer cancel()
-		resp, err := routerOf(conns[name]).Routes(ctx, connect.NewRequest(&routerv1.RoutesRequest{Prefix: prefix, Vrf: "fabric"}))
-		if err != nil {
-			return err
-		}
-		if !slices.ContainsFunc(resp.Msg.Kernel, func(k *routerv1.KernelRoute) bool {
-			return k.Destination == prefix && k.Table == table && slices.ContainsFunc(k.NextHops, func(h *routerv1.NextHop) bool { return h.Interface == link })
-		}) {
-			return fmt.Errorf("%s's VRF fabric routes %s over %s in no table %d: %v", name, prefix, link, table, resp.Msg.Kernel)
-		}
-		return nil
-	}
-	// rootsConfig checks that r1's filled frr.conf, which holds the password, is root's alone, as
-	// the test image's chalktest-frr-conf diagnostic shows it.
-	rootsConfig := func(t *testing.T) {
-		t.Helper()
-		out, err := chalkctl(t, nodes["r1"], "base", "node", "diag", "r1", "chalktest-frr-conf")
-		if err != nil || strings.TrimSpace(out) != "root root 600" {
-			t.Errorf("/run/frr/frr.conf on r1 is not root's with mode 0600: %v\n%s", err, out)
-		}
-	}
-
-	// failedUnit tells whether the router's status out shows a failed unit, and logs the journal
-	// of each one it shows.
-	failedUnit := func(t *testing.T, name, inventory, out string) bool {
-		t.Helper()
-		units := regexp.MustCompile(`(?m)^failed unit (\S+)$`).FindAllStringSubmatch(out, -1)
-		for _, u := range units {
-			_, _ = chalkctl(t, nodes[name], inventory, "logs", name, "--unit", u[1])
-		}
-		return len(units) > 0
-	}
-
-	// failedJobs logs the journal of each unit whose job failed, as systemctl names it in the
-	// output out of a delivery that failed, which may repeat it.
-	failedJobs := func(t *testing.T, name, inventory, out string) {
-		t.Helper()
-		logged := map[string]bool{}
-		for _, u := range regexp.MustCompile(`Job for (\S+) failed`).FindAllStringSubmatch(out, -1) {
-			if !logged[u[1]] {
-				logged[u[1]] = true
-				_, _ = chalkctl(t, nodes[name], inventory, "logs", name, "--unit", u[1])
-			}
-		}
+		rl.conns[name] = dialNode(t, nodes[name], name, rl.admin)
+		t.Cleanup(func() { rl.conns[name].Close() })
+		rl.readers[name] = dialNode(t, nodes[name], name, rl.reader)
+		t.Cleanup(func() { rl.readers[name].Close() })
 	}
 
 	if !t.Run("bgp", func(t *testing.T) {
-		waitFor(t, 10*time.Minute, "r1's session with r2", func() error { return established("r1", "fabric") })
-		waitFor(t, 2*time.Minute, "r2's session with r1", func() error { return established("r2", "edge") })
-		waitFor(t, 2*time.Minute, "r2's default route from r1", func() error { return learned("::/0") })
-		waitFor(t, 2*time.Minute, "r2's route to r1's NAT64 prefix", func() error { return learned("64:ff9b::/96") })
+		waitFor(t, 10*time.Minute, "r1's session with r2", func() error { return rl.established("r1", "fabric") })
+		waitFor(t, 2*time.Minute, "r2's session with r1", func() error { return rl.established("r2", "edge") })
+		waitFor(t, 2*time.Minute, "r2's default route from r1", func() error { return rl.learned("::/0") })
+		waitFor(t, 2*time.Minute, "r2's route to r1's NAT64 prefix", func() error { return rl.learned("64:ff9b::/96") })
 		sessionLine := regexp.MustCompile(`(?m)^  default\s+fabric\s+enp0s3\s+Established\s+\S+\s+\d+\s+[1-9]\d*\s+up$`)
-		if out, err := chalkctl(t, nodes["r1"], "base", "status", "r1"); err != nil || !sessionLine.MatchString(out) {
+		if out, err := chalkctl(t, rl.nodes["r1"], "base", "status", "r1"); err != nil || !sessionLine.MatchString(out) {
 			t.Errorf("status of r1 shows no established session sending routes: %v\n%s", err, out)
 		}
 		defaultLine := regexp.MustCompile(`(?m)^::/0\s+\*\s+64512\s+enp0s3\s`)
-		if out, err := chalkctl(t, nodes["r2"], "base", "node", "routes", "r2", "::/0"); err != nil || !defaultLine.MatchString(out) {
+		if out, err := chalkctl(t, rl.nodes["r2"], "base", "node", "routes", "r2", "::/0"); err != nil || !defaultLine.MatchString(out) {
 			t.Errorf("node routes of r2 shows no default route from r1: %v\n%s", err, out)
 		}
-		if out, err := chalkctl(t, nodes["r1"], "base", "node", "diag", "r1", "bgp-summary"); err != nil || !strings.Contains(out, "enp0s3") {
+		if out, err := chalkctl(t, rl.nodes["r1"], "base", "node", "diag", "r1", "bgp-summary"); err != nil || !strings.Contains(out, "enp0s3") {
 			t.Errorf("bgp-summary of r1 lists no session on enp0s3: %v\n%s", err, out)
 		}
-		rootsConfig(t)
+		rl.rootsConfig(t)
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 		for _, name := range []string{"r1", "r2"} {
-			if out, err := chalkctl(t, nodes[name], "base", "status", name); err != nil || failedUnit(t, name, "base", out) {
+			if out, err := chalkctl(t, rl.nodes[name], "base", "status", name); err != nil || rl.failedUnit(t, name, "base", out) {
 				t.Errorf("status of %s shows a failed unit: %v\n%s", name, err, out)
 			}
 			// A reader sees the sessions, and the password nowhere.
-			resp, err := routerOf(readers[name]).Status(ctx, connect.NewRequest(&routerv1.StatusRequest{}))
+			resp, err := routerOf(rl.readers[name]).Status(ctx, connect.NewRequest(&routerv1.StatusRequest{}))
 			if err != nil {
 				t.Errorf("router status of %s for a reader: %v", name, err)
 				continue
@@ -301,7 +323,7 @@ func TestRouterLab(t *testing.T) {
 			if b, err := protojson.Marshal(resp.Msg); err != nil || strings.Contains(string(b), bgpPassword) {
 				t.Errorf("router status of %s for a reader holds the BGP password: %v\n%s", name, err, b)
 			}
-			node, err := readers[name].Status(ctx, connect.NewRequest(&nodev1.StatusRequest{}))
+			node, err := rl.readers[name].Status(ctx, connect.NewRequest(&nodev1.StatusRequest{}))
 			if err != nil {
 				t.Errorf("status of %s for a reader: %v", name, err)
 				continue
@@ -310,7 +332,7 @@ func TestRouterLab(t *testing.T) {
 				t.Errorf("status of %s for a reader holds the BGP password: %v\n%s", name, err, b)
 			}
 		}
-		k := kubernetesv1connect.NewKubernetesServiceClient(conns["r1"].HTTPClient(), conns["r1"].BaseURL())
+		k := kubernetesv1connect.NewKubernetesServiceClient(rl.conns["r1"].HTTPClient(), rl.conns["r1"].BaseURL())
 		if _, err := k.Bootstrap(ctx, connect.NewRequest(&kubernetesv1.BootstrapRequest{})); connect.CodeOf(err) != connect.CodeUnimplemented {
 			t.Errorf("Bootstrap on r1: %v, want unimplemented", err)
 		}
@@ -321,7 +343,7 @@ func TestRouterLab(t *testing.T) {
 	if !t.Run("reload", func(t *testing.T) {
 		// A dry run of the delivery plans FRR's reload on its output, and changes nothing.
 		plan := regexp.MustCompile(`(?m)^  (?:effects:  | {10})frr: reload frr\.service \(output frr\)$`)
-		if out, err := chalkctl(t, nodes["r1"], "announce", "apply-config", "--dry-run", "r1"); err != nil || !plan.MatchString(out) {
+		if out, err := chalkctl(t, rl.nodes["r1"], "announce", "apply-config", "--dry-run", "r1"); err != nil || !plan.MatchString(out) {
 			t.Fatalf("apply-config --dry-run plans no reload of FRR: %v\n%s", err, out)
 		}
 		// The validator router refuses two peers of one session: chalkctl validate runs its linked
@@ -330,26 +352,26 @@ func TestRouterLab(t *testing.T) {
 		if out, err := exec.Command(os.Getenv("CHALKLAB_CHALKCTL"), "validate", "r1", "--inventory", inventoryPath("twice")).CombinedOutput(); err == nil || !strings.Contains(string(out), twice) {
 			t.Fatalf("chalkctl validate of two peers of one session: %v\n%s", err, out)
 		}
-		if out, err := chalkctl(t, nodes["r1"], "twice", "apply-config", "--dry-run", "r1"); err == nil || !strings.Contains(out, twice) {
+		if out, err := chalkctl(t, rl.nodes["r1"], "twice", "apply-config", "--dry-run", "r1"); err == nil || !strings.Contains(out, twice) {
 			t.Fatalf("apply-config --dry-run of two peers of one session: %v\n%s", err, out)
 		}
 		// A FirewallPolicy that names a zone and an AddressSet the config lacks is refused with a
 		// line for each reference, at its field.
-		if out, err := chalkctl(t, nodes["r1"], "", "apply-config", "r1", "--inventory", danglingInventory(t)); err == nil ||
+		if out, err := chalkctl(t, rl.nodes["r1"], "", "apply-config", "r1", "--inventory", danglingInventory(t)); err == nil ||
 			!strings.Contains(out, `FirewallPolicy/dangling: spec.from: FirewallZone "nowhere" does not exist`) ||
 			!strings.Contains(out, `FirewallPolicy/dangling: spec.rules[0].source.set: AddressSet "nosuch" does not exist`) {
 			t.Fatalf("apply-config of dangling references: %v\n%s", err, out)
 		}
-		before, err := session("r1", "fabric")
+		before, err := rl.session("r1", "fabric")
 		if err != nil {
 			t.Fatal(err)
 		}
 		start := time.Now()
-		if _, err := chalkctl(t, nodes["r1"], "announce", "apply-config", "r1"); err != nil {
+		if _, err := chalkctl(t, rl.nodes["r1"], "announce", "apply-config", "r1"); err != nil {
 			t.Fatal(err)
 		}
-		waitFor(t, 2*time.Minute, "r2's route to r1's edge0", func() error { return learned("2001:db8:ffff::1/128") })
-		after, err := session("r1", "fabric")
+		waitFor(t, 2*time.Minute, "r2's route to r1's edge0", func() error { return rl.learned("2001:db8:ffff::1/128") })
+		after, err := rl.session("r1", "fabric")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -358,15 +380,15 @@ func TestRouterLab(t *testing.T) {
 		if elapsed := time.Since(start); after.State != "Established" || after.UptimeSeconds+2 < before.UptimeSeconds+uint64(elapsed.Seconds()) {
 			t.Errorf("the session restarted: up %ds before the delivery, %s and up %ds %v later", before.UptimeSeconds, after.State, after.UptimeSeconds, elapsed.Round(time.Second))
 		}
-		rootsConfig(t)
+		rl.rootsConfig(t)
 	}) {
 		return
 	}
 
 	if !t.Run("nat64", func(t *testing.T) {
 		// r1 answers r2's edge0, the source of r2's connections and queries, through BGP.
-		waitFor(t, 2*time.Minute, "r1's route to r2's edge0", func() error { return learnedFrom("r1", "", "2001:db8:ffff::2/128", "64513") })
-		out, err := chalkctl(t, nodes["r2"], "base", "node", "diag", "r2", "dns-query", "name=ipv4only.arpa", "type=AAAA", "server=2001:db8:ffff::1")
+		waitFor(t, 2*time.Minute, "r1's route to r2's edge0", func() error { return rl.learnedFrom("r1", "", "2001:db8:ffff::2/128", "64513") })
+		out, err := chalkctl(t, rl.nodes["r2"], "base", "node", "diag", "r2", "dns-query", "name=ipv4only.arpa", "type=AAAA", "server=2001:db8:ffff::1")
 		if err != nil || !strings.Contains(out, "64:ff9b::c000:aa") || !strings.Contains(out, "64:ff9b::c000:ab") {
 			t.Errorf("r2 got no synthesized AAAA records of ipv4only.arpa from r1's resolver: %v\n%s", err, out)
 		}
@@ -386,7 +408,7 @@ func TestRouterLab(t *testing.T) {
 			accepted <- err
 		}()
 		port := strconv.Itoa(l.Addr().(*net.TCPAddr).Port)
-		out, err = chalkctl(t, nodes["r2"], "base", "node", "diag", "r2", "tcp-connect", "address=64:ff9b::a00:202", "port="+port)
+		out, err = chalkctl(t, rl.nodes["r2"], "base", "node", "diag", "r2", "tcp-connect", "address=64:ff9b::a00:202", "port="+port)
 		if err != nil || !strings.Contains(out, "connected to 64:ff9b::a00:202 port "+port) {
 			t.Fatalf("r2 did not connect through r1's NAT64: %v\n%s", err, out)
 		}
@@ -403,7 +425,7 @@ func TestRouterLab(t *testing.T) {
 		// r1 masquerades to enp0s2's address.
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
-		for role, c := range map[string]*client.Conn{"an admin": conns["r1"], "a reader": readers["r1"]} {
+		for role, c := range map[string]*client.Conn{"an admin": rl.conns["r1"], "a reader": rl.readers["r1"]} {
 			resp, err := routerOf(c).Status(ctx, connect.NewRequest(&routerv1.StatusRequest{}))
 			if err != nil {
 				t.Errorf("router status of r1 for %s: %v", role, err)
@@ -420,10 +442,10 @@ func TestRouterLab(t *testing.T) {
 			}
 		}
 		statusLines := regexp.MustCompile(`(?m)^  edge\s+[1-9]\d*\s+[1-9]\d*\s+4535\s+4535\s+4535$[\s\S]*^resolver: running$`)
-		if out, err := chalkctl(t, nodes["r1"], "base", "status", "r1"); err != nil || !statusLines.MatchString(out) || failedUnit(t, "r1", "base", out) {
+		if out, err := chalkctl(t, rl.nodes["r1"], "base", "status", "r1"); err != nil || !statusLines.MatchString(out) || rl.failedUnit(t, "r1", "base", out) {
 			t.Errorf("status of r1 shows no session of its NAT64, no running resolver or a failed unit: %v\n%s", err, out)
 		}
-		if out, err := chalkctl(t, nodes["r1"], "base", "node", "diag", "r1", "nat64-sessions", "instance=edge"); err != nil || !strings.Contains(out, "10.0.2.2#"+port) {
+		if out, err := chalkctl(t, rl.nodes["r1"], "base", "node", "diag", "r1", "nat64-sessions", "instance=edge"); err != nil || !strings.Contains(out, "10.0.2.2#"+port) {
 			t.Errorf("nat64-sessions of r1 lists no session to the host's listener: %v\n%s", err, out)
 		}
 	}) {
@@ -466,7 +488,7 @@ func TestRouterLab(t *testing.T) {
 		defer cancel()
 		for _, name := range []string{"r1", "r2"} {
 			// A new connection verifies the chain through the new node CA.
-			c := dialNode(t, nodes[name], name, reader)
+			c := dialNode(t, rl.nodes[name], name, rl.reader)
 			defer c.Close()
 			st, err := c.Status(ctx, connect.NewRequest(&nodev1.StatusRequest{}))
 			if err != nil {
@@ -491,7 +513,7 @@ func TestRouterLab(t *testing.T) {
 			t.Helper()
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
-			st, err := conns["r1"].Status(ctx, connect.NewRequest(&nodev1.StatusRequest{}))
+			st, err := rl.conns["r1"].Status(ctx, connect.NewRequest(&nodev1.StatusRequest{}))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -503,12 +525,12 @@ func TestRouterLab(t *testing.T) {
 			t.Fatalf("r1 runs config %s and keeps %q as its previous one, want the config from before the reload", announced, previous)
 		}
 		// The node keeps the config it rolls back to, so no inventory gives it.
-		out, err := chalkctl(t, nodes["r1"], "", "apply-config", "rollback", "r1")
+		out, err := chalkctl(t, rl.nodes["r1"], "", "apply-config", "rollback", "r1")
 		if err != nil || !strings.Contains(out, "r1 runs config "+previous+" again; config "+announced+" is its previous one now") {
 			t.Fatalf("apply-config rollback: %v", err)
 		}
 		waitFor(t, 2*time.Minute, "r2 to lose r1's edge0", func() error {
-			if learned("2001:db8:ffff::1/128") == nil {
+			if rl.learned("2001:db8:ffff::1/128") == nil {
 				return errors.New("r2 still routes it through r1")
 			}
 			return nil
@@ -517,12 +539,12 @@ func TestRouterLab(t *testing.T) {
 			t.Errorf("after the rollback r1 runs %s and keeps %s, want %s and %s", after.ConfigVersion, after.PreviousConfigVersion, previous, announced)
 		}
 		// A second rollback undoes the first.
-		out, err = chalkctl(t, nodes["r1"], "", "apply-config", "rollback", "r1")
+		out, err = chalkctl(t, rl.nodes["r1"], "", "apply-config", "rollback", "r1")
 		if err != nil || !strings.Contains(out, "r1 runs config "+announced+" again; config "+previous+" is its previous one now") {
 			t.Fatalf("a second apply-config rollback: %v", err)
 		}
-		waitFor(t, 2*time.Minute, "r2's route to r1's edge0", func() error { return learned("2001:db8:ffff::1/128") })
-		rootsConfig(t)
+		waitFor(t, 2*time.Minute, "r2's route to r1's edge0", func() error { return rl.learned("2001:db8:ffff::1/128") })
+		rl.rootsConfig(t)
 	}) {
 		return
 	}
@@ -531,7 +553,7 @@ func TestRouterLab(t *testing.T) {
 		// fresh is r1's status over a new connection, which proves that a client reaches r1: the
 		// test's own connections stay up through a firewall change, as established ones do.
 		fresh := func() (*nodev1.StatusResponse, error) {
-			c, err := dialInstalled(nodes["r1"], "r1", admin)
+			c, err := dialInstalled(rl.nodes["r1"], "r1", rl.admin)
 			if err != nil {
 				return nil, err
 			}
@@ -551,7 +573,7 @@ func TestRouterLab(t *testing.T) {
 		announced := before.ConfigVersion
 		// A trial that leaves r1 reachable is confirmed: r1 runs the base inventory's config again,
 		// without the address of edge0.
-		out, err := chalkctl(t, nodes["r1"], "base", "apply-config", "--try", "1m", "r1")
+		out, err := chalkctl(t, rl.nodes["r1"], "base", "apply-config", "--try", "1m", "r1")
 		if err != nil || !regexp.MustCompile(`(?m)^r1 keeps config \S+: the trial is confirmed$`).MatchString(out) {
 			t.Fatalf("apply-config --try: %v\n%s", err, out)
 		}
@@ -564,7 +586,7 @@ func TestRouterLab(t *testing.T) {
 		// connections through enp0s2 fail, r1 rolls the config back at the deadline and answers new
 		// connections again. The answer to the delivery may be lost as well, which ends the same.
 		start := time.Now()
-		out, err = chalkctl(t, nodes["r1"], "lockout", "apply-config", "--try", "30s", "r1")
+		out, err = chalkctl(t, rl.nodes["r1"], "lockout", "apply-config", "--try", "30s", "r1")
 		if err == nil || !strings.Contains(out, "r1: config ") || !strings.Contains(out, " was not confirmed within its trial: ") ||
 			!strings.Contains(out, "r1 rolled back to config "+base+" at the trial's deadline\n") {
 			t.Fatalf("a trial that cuts chalkctl off: %v\n%s", err, out)
@@ -576,7 +598,7 @@ func TestRouterLab(t *testing.T) {
 		if err != nil || st.ConfigVersion != base || st.Trial != nil || st.TrialError != "" || st.PreviousConfigVersion == base || st.PreviousConfigVersion == "" {
 			t.Fatalf("after the trial's rollback r1's status is %v, %v; want config %s, no trial and the config that cut chalkctl off as the previous one", st, err, base)
 		}
-		rootsConfig(t)
+		rl.rootsConfig(t)
 	}) {
 		return
 	}
@@ -587,28 +609,28 @@ func TestRouterLab(t *testing.T) {
 		// default VRF into fabric, and r2's only one with it.
 		start := time.Now()
 		for _, name := range []string{"r1", "r2"} {
-			out, err := chalkctl(t, nodes[name], "vrf", "apply-config", "--try", "2m", name)
+			out, err := chalkctl(t, rl.nodes[name], "vrf", "apply-config", "--try", "2m", name)
 			if err != nil || !regexp.MustCompile(`(?m)^`+name+` keeps config \S+: the trial is confirmed$`).MatchString(out) {
 				t.Fatalf("apply-config --try of %s's VRF: %v\n%s", name, err, out)
 			}
 		}
-		waitFor(t, 2*time.Minute, "r1's session with r2 in fabric", func() error { return inFabric("r1", "fabric", start) })
-		waitFor(t, 2*time.Minute, "r2's session with r1 in fabric", func() error { return inFabric("r2", "edge", start) })
-		waitFor(t, 2*time.Minute, "r1's route to r2's edge0 in fabric", func() error { return learnedFrom("r1", "fabric", "2001:db8:ffff::2/128", "64513") })
-		waitFor(t, 2*time.Minute, "r1's leaked route to r2's edge0", func() error { return leaked("2001:db8:ffff::2/128", "fabric") })
+		waitFor(t, 2*time.Minute, "r1's session with r2 in fabric", func() error { return rl.inFabric("r1", "fabric", start) })
+		waitFor(t, 2*time.Minute, "r2's session with r1 in fabric", func() error { return rl.inFabric("r2", "edge", start) })
+		waitFor(t, 2*time.Minute, "r1's route to r2's edge0 in fabric", func() error { return rl.learnedFrom("r1", "fabric", "2001:db8:ffff::2/128", "64513") })
+		waitFor(t, 2*time.Minute, "r1's leaked route to r2's edge0", func() error { return rl.leaked("2001:db8:ffff::2/128", "fabric") })
 		// fabric's resolver runs bound to the VRF's device, which chalkos-resolvers started, and
 		// answers a query from within fabric, which the test image's chalktest-fabric-dns sends
 		// with the ID 0x1234.
 		resolverRunning := func(inventory string) func() error {
 			return func() error {
-				out, err := chalkctl(t, nodes["r2"], inventory, "status", "r2")
+				out, err := chalkctl(t, rl.nodes["r2"], inventory, "status", "r2")
 				if err != nil {
 					return err
 				}
 				if !regexp.MustCompile(`(?m)^resolver fabric: running$`).MatchString(out) {
 					return fmt.Errorf("status of r2 shows no running resolver of fabric:\n%s", out)
 				}
-				out, err = chalkctl(t, nodes["r2"], inventory, "node", "diag", "r2", "chalktest-fabric-dns")
+				out, err = chalkctl(t, rl.nodes["r2"], inventory, "node", "diag", "r2", "chalktest-fabric-dns")
 				if err != nil || !regexp.MustCompile(`^\s*12 34 8`).MatchString(out) {
 					return fmt.Errorf("r2's resolver of fabric did not answer from within fabric: %v\n%s", err, out)
 				}
@@ -617,14 +639,14 @@ func TestRouterLab(t *testing.T) {
 		}
 		waitFor(t, time.Minute, "r2's resolver of fabric", resolverRunning("vrf"))
 		statusLine := regexp.MustCompile(`(?m)^  fabric\s+fabric\s+enp0s3\s+Established\s+\S+\s+\d+\s+[1-9]\d*\s+up$`)
-		if out, err := chalkctl(t, nodes["r1"], "vrf", "status", "r1"); err != nil || !statusLine.MatchString(out) || failedUnit(t, "r1", "vrf", out) {
+		if out, err := chalkctl(t, rl.nodes["r1"], "vrf", "status", "r1"); err != nil || !statusLine.MatchString(out) || rl.failedUnit(t, "r1", "vrf", out) {
 			t.Errorf("status of r1 shows no session in fabric, or a failed unit: %v\n%s", err, out)
 		}
-		if out, err := chalkctl(t, nodes["r2"], "vrf", "status", "r2"); err != nil || failedUnit(t, "r2", "vrf", out) {
+		if out, err := chalkctl(t, rl.nodes["r2"], "vrf", "status", "r2"); err != nil || rl.failedUnit(t, "r2", "vrf", out) {
 			t.Errorf("status of r2 shows a failed unit: %v\n%s", err, out)
 		}
 		tableLine := regexp.MustCompile(`(?m)^2001:db8:ffff::2/128\s+unicast\s+bgp\s+100\s`)
-		if out, err := chalkctl(t, nodes["r1"], "vrf", "node", "routes", "r1", "2001:db8:ffff::2/128", "--vrf", "fabric"); err != nil || !tableLine.MatchString(out) {
+		if out, err := chalkctl(t, rl.nodes["r1"], "vrf", "node", "routes", "r1", "2001:db8:ffff::2/128", "--vrf", "fabric"); err != nil || !tableLine.MatchString(out) {
 			t.Errorf("node routes --vrf fabric of r1 shows no route in table 100: %v\n%s", err, out)
 		}
 		// unreachable matches the unreachable default routes of both families that end a table.
@@ -634,7 +656,7 @@ func TestRouterLab(t *testing.T) {
 				regexp.MustCompile(`(?m)^::/0\s+unreachable\s+static\s+` + table + `\s`),
 			}
 		}
-		if out, err := chalkctl(t, nodes["r1"], "vrf", "node", "routes", "r1", "--vrf", "fabric", "--protocol", "static"); err != nil {
+		if out, err := chalkctl(t, rl.nodes["r1"], "vrf", "node", "routes", "r1", "--vrf", "fabric", "--protocol", "static"); err != nil {
 			t.Errorf("node routes --vrf fabric of r1: %v\n%s", err, out)
 		} else {
 			for _, re := range unreachable("100") {
@@ -644,20 +666,20 @@ func TestRouterLab(t *testing.T) {
 			}
 		}
 		importedLine := regexp.MustCompile(`(?m)^2001:db8:ffff::2/128\s+\*\s+64513\s+vrf fabric\s`)
-		if out, err := chalkctl(t, nodes["r1"], "vrf", "node", "routes", "r1", "2001:db8:ffff::2/128"); err != nil || !importedLine.MatchString(out) {
+		if out, err := chalkctl(t, rl.nodes["r1"], "vrf", "node", "routes", "r1", "2001:db8:ffff::2/128"); err != nil || !importedLine.MatchString(out) {
 			t.Errorf("node routes of r1 shows no path imported from fabric: %v\n%s", err, out)
 		}
-		if out, err := chalkctl(t, nodes["r1"], "vrf", "node", "diag", "r1", "bgp-summary", "vrf=fabric"); err != nil || !strings.Contains(out, "enp0s3") {
+		if out, err := chalkctl(t, rl.nodes["r1"], "vrf", "node", "diag", "r1", "bgp-summary", "vrf=fabric"); err != nil || !strings.Contains(out, "enp0s3") {
 			t.Errorf("bgp-summary vrf=fabric of r1 lists no session on enp0s3: %v\n%s", err, out)
 		}
-		rootsConfig(t)
+		rl.rootsConfig(t)
 
 		// policyHeld is nil once r1 holds what its PolicyRoute edge renders: networkd's rule per
 		// target table, fabric's 100 and the next hop's 300, the next hop's table, and the
 		// firewall's chain.
 		policyHeld := func() error {
 			diag := func(args ...string) (string, error) {
-				return chalkctl(t, nodes["r1"], "vrf", append([]string{"node", "diag", "r1"}, args...)...)
+				return chalkctl(t, rl.nodes["r1"], "vrf", append([]string{"node", "diag", "r1"}, args...)...)
 			}
 			out, err := diag("ip-rules", "family=inet6")
 			if err != nil {
@@ -689,12 +711,12 @@ func TestRouterLab(t *testing.T) {
 		waitFor(t, time.Minute, "r1's policy routing", policyHeld)
 		// A boot of r1 brings them back, with the session in fabric and no failed unit.
 		start = time.Now()
-		if out, err := chalkctl(t, nodes["r1"], "vrf", "node", "reboot", "r1", "--no-drain"); err != nil {
+		if out, err := chalkctl(t, rl.nodes["r1"], "vrf", "node", "reboot", "r1", "--no-drain"); err != nil {
 			t.Fatalf("reboot of r1: %v\n%s", err, out)
 		}
-		waitFor(t, 5*time.Minute, "r1's session with r2 in fabric after its boot", func() error { return inFabric("r1", "fabric", start) })
+		waitFor(t, 5*time.Minute, "r1's session with r2 in fabric after its boot", func() error { return rl.inFabric("r1", "fabric", start) })
 		waitFor(t, time.Minute, "r1's policy routing after its boot", policyHeld)
-		if out, err := chalkctl(t, nodes["r1"], "vrf", "status", "r1"); err != nil || failedUnit(t, "r1", "vrf", out) {
+		if out, err := chalkctl(t, rl.nodes["r1"], "vrf", "status", "r1"); err != nil || rl.failedUnit(t, "r1", "vrf", out) {
 			t.Errorf("status of r1 after its boot shows a failed unit: %v\n%s", err, out)
 		}
 
@@ -702,23 +724,23 @@ func TestRouterLab(t *testing.T) {
 		// releases enp0s3 and edge0, and reloads networkd, which creates fabric in table 200 and
 		// puts them back. The session restarts in fabric, and edge0's static address comes back.
 		start = time.Now()
-		if out, err := chalkctl(t, nodes["r2"], "vrf-table", "apply-config", "r2"); err != nil {
-			failedJobs(t, "r2", "vrf-table", out)
+		if out, err := chalkctl(t, rl.nodes["r2"], "vrf-table", "apply-config", "r2"); err != nil {
+			rl.failedJobs(t, "r2", "vrf-table", out)
 			t.Fatalf("apply-config of r2's VRF in table 200: %v\n%s", err, out)
 		}
-		waitFor(t, 2*time.Minute, "r2's session with r1 in fabric of table 200", func() error { return inFabric("r2", "edge", start) })
-		waitFor(t, 2*time.Minute, "r2's default route from r1 in fabric", func() error { return learnedFrom("r2", "fabric", "::/0", "64512") })
-		waitFor(t, 2*time.Minute, "r2's route to edge0's address in table 200", func() error { return inTable("r2", "2001:db8:ffff::2/128", "edge0", 200) })
-		waitFor(t, 2*time.Minute, "r1's route to r2's edge0 in fabric", func() error { return learnedFrom("r1", "fabric", "2001:db8:ffff::2/128", "64513") })
+		waitFor(t, 2*time.Minute, "r2's session with r1 in fabric of table 200", func() error { return rl.inFabric("r2", "edge", start) })
+		waitFor(t, 2*time.Minute, "r2's default route from r1 in fabric", func() error { return rl.learnedFrom("r2", "fabric", "::/0", "64512") })
+		waitFor(t, 2*time.Minute, "r2's route to edge0's address in table 200", func() error { return rl.inTable("r2", "2001:db8:ffff::2/128", "edge0", 200) })
+		waitFor(t, 2*time.Minute, "r1's route to r2's edge0 in fabric", func() error { return rl.learnedFrom("r1", "fabric", "2001:db8:ffff::2/128", "64513") })
 		// chalkos-resolvers, which runs after chalkos-vrf and networkd, restarted the resolver on
 		// the device networkd created.
 		waitFor(t, time.Minute, "r2's resolver of fabric in table 200", resolverRunning("vrf-table"))
 		defaultLine := regexp.MustCompile(`(?m)^::/0\s+unicast\s+bgp\s+200\s`)
-		if out, err := chalkctl(t, nodes["r2"], "vrf-table", "node", "routes", "r2", "::/0", "--vrf", "fabric"); err != nil || !defaultLine.MatchString(out) {
+		if out, err := chalkctl(t, rl.nodes["r2"], "vrf-table", "node", "routes", "r2", "::/0", "--vrf", "fabric"); err != nil || !defaultLine.MatchString(out) {
 			t.Errorf("node routes --vrf fabric of r2 shows no default route in table 200: %v\n%s", err, out)
 		}
 		// chalkos-vrf flushes the old table's unreachable defaults before it removes the VRF.
-		if out, err := chalkctl(t, nodes["r2"], "vrf-table", "node", "routes", "r2", "--table", "all", "--protocol", "static"); err != nil {
+		if out, err := chalkctl(t, rl.nodes["r2"], "vrf-table", "node", "routes", "r2", "--table", "all", "--protocol", "static"); err != nil {
 			t.Errorf("node routes --table all of r2: %v\n%s", err, out)
 		} else {
 			for _, re := range unreachable("200") {
@@ -732,7 +754,7 @@ func TestRouterLab(t *testing.T) {
 				}
 			}
 		}
-		if out, err := chalkctl(t, nodes["r2"], "vrf-table", "status", "r2"); err != nil || failedUnit(t, "r2", "vrf-table", out) {
+		if out, err := chalkctl(t, rl.nodes["r2"], "vrf-table", "status", "r2"); err != nil || rl.failedUnit(t, "r2", "vrf-table", out) {
 			t.Errorf("status of r2 shows a failed unit: %v\n%s", err, out)
 		}
 
@@ -740,33 +762,33 @@ func TestRouterLab(t *testing.T) {
 		// instance with them. r1's policy routing goes: its rules, table 300's routes and the
 		// chain. The dummy link policy0 stays, as networkd never deletes a netdev.
 		for _, name := range []string{"r1", "r2"} {
-			if out, err := chalkctl(t, nodes[name], "base", "apply-config", name); err != nil {
+			if out, err := chalkctl(t, rl.nodes[name], "base", "apply-config", name); err != nil {
 				t.Fatalf("apply-config of %s's base config: %v\n%s", name, err, out)
 			}
 		}
-		waitFor(t, 2*time.Minute, "r1's session with r2 in the default VRF", func() error { return established("r1", "fabric") })
-		waitFor(t, 2*time.Minute, "r2's session with r1 in the default VRF", func() error { return established("r2", "edge") })
-		waitFor(t, 2*time.Minute, "r1's route to r2's edge0 in the default VRF", func() error { return learnedFrom("r1", "", "2001:db8:ffff::2/128", "64513") })
-		waitFor(t, 2*time.Minute, "r2's default route from r1 in the default VRF", func() error { return learned("::/0") })
+		waitFor(t, 2*time.Minute, "r1's session with r2 in the default VRF", func() error { return rl.established("r1", "fabric") })
+		waitFor(t, 2*time.Minute, "r2's session with r1 in the default VRF", func() error { return rl.established("r2", "edge") })
+		waitFor(t, 2*time.Minute, "r1's route to r2's edge0 in the default VRF", func() error { return rl.learnedFrom("r1", "", "2001:db8:ffff::2/128", "64513") })
+		waitFor(t, 2*time.Minute, "r2's default route from r1 in the default VRF", func() error { return rl.learned("::/0") })
 		waitFor(t, time.Minute, "r1's policy routing to go", func() error {
-			out, err := chalkctl(t, nodes["r1"], "base", "node", "diag", "r1", "ip-rules", "family=inet6")
+			out, err := chalkctl(t, rl.nodes["r1"], "base", "node", "diag", "r1", "ip-rules", "family=inet6")
 			if err != nil || strings.Contains(out, `"priority":900`) {
 				return fmt.Errorf("ip-rules of r1 after the base config: %v\n%s", err, out)
 			}
 			for _, family := range []string{"inet", "inet6"} {
-				out, err = chalkctl(t, nodes["r1"], "base", "node", "diag", "r1", "routes", "family="+family, "table=300")
+				out, err = chalkctl(t, rl.nodes["r1"], "base", "node", "diag", "r1", "routes", "family="+family, "table=300")
 				if err != nil || strings.Contains(out, `"dst":`) {
 					return fmt.Errorf("routes of r1's table 300 after the base config: %v\n%s", err, out)
 				}
 			}
-			out, err = chalkctl(t, nodes["r1"], "base", "node", "diag", "r1", "nft-ruleset")
+			out, err = chalkctl(t, rl.nodes["r1"], "base", "node", "diag", "r1", "nft-ruleset")
 			if err != nil || strings.Contains(out, "policy-routing") {
 				return fmt.Errorf("r1's ruleset after the base config: %v\n%s", err, out)
 			}
 			return nil
 		})
 		for _, name := range []string{"r1", "r2"} {
-			if out, err := chalkctl(t, nodes[name], "base", "status", name); err != nil || failedUnit(t, name, "base", out) {
+			if out, err := chalkctl(t, rl.nodes[name], "base", "status", name); err != nil || rl.failedUnit(t, name, "base", out) {
 				t.Errorf("status of %s shows a failed unit: %v\n%s", name, err, out)
 			}
 		}
@@ -781,7 +803,7 @@ func TestRouterLab(t *testing.T) {
 		trackedInBGP := func() error {
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
-			resp, err := routerOf(conns["r1"]).Routes(ctx, connect.NewRequest(&routerv1.RoutesRequest{Prefix: tracked}))
+			resp, err := routerOf(rl.conns["r1"]).Routes(ctx, connect.NewRequest(&routerv1.RoutesRequest{Prefix: tracked}))
 			if err != nil {
 				return err
 			}
@@ -797,7 +819,7 @@ func TestRouterLab(t *testing.T) {
 		r2LacksTracked := func() error {
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
-			resp, err := routerOf(conns["r2"]).Routes(ctx, connect.NewRequest(&routerv1.RoutesRequest{Prefix: tracked}))
+			resp, err := routerOf(rl.conns["r2"]).Routes(ctx, connect.NewRequest(&routerv1.RoutesRequest{Prefix: tracked}))
 			if err != nil {
 				return err
 			}
@@ -811,7 +833,7 @@ func TestRouterLab(t *testing.T) {
 		r1Tracked := func() string {
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
-			resp, err := routerOf(conns["r1"]).Routes(ctx, connect.NewRequest(&routerv1.RoutesRequest{Prefix: tracked}))
+			resp, err := routerOf(rl.conns["r1"]).Routes(ctx, connect.NewRequest(&routerv1.RoutesRequest{Prefix: tracked}))
 			if err != nil {
 				return fmt.Sprintf("r1's routes to %s: %v", tracked, err)
 			}
@@ -824,7 +846,7 @@ func TestRouterLab(t *testing.T) {
 		r2Default := func() error {
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
-			resp, err := routerOf(conns["r2"]).Routes(ctx, connect.NewRequest(&routerv1.RoutesRequest{Prefix: "::/0", Protocol: "bgp"}))
+			resp, err := routerOf(rl.conns["r2"]).Routes(ctx, connect.NewRequest(&routerv1.RoutesRequest{Prefix: "::/0", Protocol: "bgp"}))
 			if err != nil {
 				return err
 			}
@@ -838,7 +860,7 @@ func TestRouterLab(t *testing.T) {
 		// r2 holds the unconditional default from the base config when the phase starts. It
 		// loses it at once when r1's family gains defaultOriginateWhen, and FRR's scan, every
 		// 5 s, must not send it again while r1 lacks the tracked route.
-		if out, err := chalkctl(t, nodes["r1"], "default-gone", "apply-config", "r1"); err != nil {
+		if out, err := chalkctl(t, rl.nodes["r1"], "default-gone", "apply-config", "r1"); err != nil {
 			t.Fatalf("apply-config of r1's conditional default without the tracked route: %v\n%s", err, out)
 		}
 		waitFor(t, 2*time.Minute, "r2 to lose the default route", r2Default)
@@ -854,16 +876,16 @@ func TestRouterLab(t *testing.T) {
 		if err := r2LacksTracked(); err != nil {
 			t.Error(err)
 		}
-		if out, err := chalkctl(t, nodes["r1"], "default-gone", "status", "r1"); err != nil || failedUnit(t, "r1", "default-gone", out) {
+		if out, err := chalkctl(t, rl.nodes["r1"], "default-gone", "status", "r1"); err != nil || rl.failedUnit(t, "r1", "default-gone", out) {
 			t.Errorf("status of r1 shows a failed unit: %v\n%s", err, out)
 		}
 
-		if out, err := chalkctl(t, nodes["r1"], "default", "apply-config", "r1"); err != nil {
+		if out, err := chalkctl(t, rl.nodes["r1"], "default", "apply-config", "r1"); err != nil {
 			t.Fatalf("apply-config of r1's conditional default with the tracked route: %v\n%s", err, out)
 		}
 		waitFor(t, 2*time.Minute, "r1's tracked route in BGP", trackedInBGP)
 		waitFor(t, 2*time.Minute, "r2's default route from r1 once the route exists", func() error {
-			if err := learned("::/0"); err != nil {
+			if err := rl.learned("::/0"); err != nil {
 				return fmt.Errorf("%w; %s", err, r1Tracked())
 			}
 			return nil
@@ -873,11 +895,11 @@ func TestRouterLab(t *testing.T) {
 		}
 
 		// The base inventory sends the default route whatever r1's table holds.
-		if out, err := chalkctl(t, nodes["r1"], "base", "apply-config", "r1"); err != nil {
+		if out, err := chalkctl(t, rl.nodes["r1"], "base", "apply-config", "r1"); err != nil {
 			t.Fatalf("apply-config of r1's base config: %v\n%s", err, out)
 		}
-		waitFor(t, 2*time.Minute, "r2's default route from r1 again", func() error { return learned("::/0") })
-		rootsConfig(t)
+		waitFor(t, 2*time.Minute, "r2's default route from r1 again", func() error { return rl.learned("::/0") })
+		rl.rootsConfig(t)
 	}) {
 		return
 	}
@@ -886,24 +908,24 @@ func TestRouterLab(t *testing.T) {
 		// A failed phase logs the journals of r1's server and r2's client.
 		defer func() {
 			if t.Failed() {
-				_, _ = chalkctl(t, nodes["r1"], "dhcp", "logs", "r1", "--unit", "kea-dhcp4@lan.service")
-				_, _ = chalkctl(t, nodes["r1"], "dhcp", "logs", "r1", "--unit", "kea-dhcp6@lan.service")
-				_, _ = chalkctl(t, nodes["r1"], "dhcp", "logs", "r1", "--unit", "chalkos-dhcp6-routes.service")
-				_, _ = chalkctl(t, nodes["r1"], "dhcp", "logs", "r1", "--unit", "chalkos-dhcp.service")
-				_, _ = chalkctl(t, nodes["r2"], "dhcp", "logs", "r2", "--unit", "systemd-networkd.service")
+				_, _ = chalkctl(t, rl.nodes["r1"], "dhcp", "logs", "r1", "--unit", "kea-dhcp4@lan.service")
+				_, _ = chalkctl(t, rl.nodes["r1"], "dhcp", "logs", "r1", "--unit", "kea-dhcp6@lan.service")
+				_, _ = chalkctl(t, rl.nodes["r1"], "dhcp", "logs", "r1", "--unit", "chalkos-dhcp6-routes.service")
+				_, _ = chalkctl(t, rl.nodes["r1"], "dhcp", "logs", "r1", "--unit", "chalkos-dhcp.service")
+				_, _ = chalkctl(t, rl.nodes["r2"], "dhcp", "logs", "r2", "--unit", "systemd-networkd.service")
 			}
 		}()
 		// r1 first, so its server answers r2's first request.
 		for _, name := range []string{"r1", "r2"} {
-			if out, err := chalkctl(t, nodes[name], "dhcp", "apply-config", name); err != nil {
-				failedJobs(t, name, "dhcp", out)
+			if out, err := chalkctl(t, rl.nodes[name], "dhcp", "apply-config", name); err != nil {
+				rl.failedJobs(t, name, "dhcp", out)
 				t.Fatalf("apply-config of %s's DHCP: %v\n%s", name, err, out)
 			}
 		}
 		// serving is nil once r1's status shows the server of lan running, with one lease of
 		// lab's 100 pool addresses: r2's reserved one.
 		serving := func() error {
-			out, err := chalkctl(t, nodes["r1"], "dhcp", "status", "r1")
+			out, err := chalkctl(t, rl.nodes["r1"], "dhcp", "status", "r1")
 			if err != nil {
 				return err
 			}
@@ -915,7 +937,7 @@ func TestRouterLab(t *testing.T) {
 		// leased is nil once r2's dhcp0 holds 192.0.2.10/24, the address its MAC address reserves,
 		// with the lifetime of a DHCP lease.
 		leased := func() error {
-			out, err := chalkctl(t, nodes["r2"], "dhcp", "node", "diag", "r2", "addresses")
+			out, err := chalkctl(t, rl.nodes["r2"], "dhcp", "node", "diag", "r2", "addresses")
 			if err != nil {
 				return err
 			}
@@ -927,7 +949,7 @@ func TestRouterLab(t *testing.T) {
 		// serving6 is nil once r1's status shows the DHCPv6 server of lan running, with one lease of
 		// lab6's 256 pool addresses and one of its 256 prefixes, r2's.
 		serving6 := func() error {
-			out, err := chalkctl(t, nodes["r1"], "dhcp", "status", "r1")
+			out, err := chalkctl(t, rl.nodes["r1"], "dhcp", "status", "r1")
 			if err != nil {
 				return err
 			}
@@ -938,7 +960,7 @@ func TestRouterLab(t *testing.T) {
 		}
 		// leased6 is nil once r2's dhcp0 holds an address of lab6's pool.
 		leased6 := func() error {
-			out, err := chalkctl(t, nodes["r2"], "dhcp", "node", "diag", "r2", "addresses")
+			out, err := chalkctl(t, rl.nodes["r2"], "dhcp", "node", "diag", "r2", "addresses")
 			if err != nil {
 				return err
 			}
@@ -950,7 +972,7 @@ func TestRouterLab(t *testing.T) {
 		// delegated is nil once r1 routes a /64 of lab6's delegated prefixes in lan's table to a
 		// link-local address on dhcp0, r2's.
 		delegated := func() error {
-			out, err := chalkctl(t, nodes["r1"], "dhcp", "node", "routes", "r1", "--vrf", "lan", "--protocol", "dhcp-pd")
+			out, err := chalkctl(t, rl.nodes["r1"], "dhcp", "node", "routes", "r1", "--vrf", "lan", "--protocol", "dhcp-pd")
 			if err != nil {
 				return err
 			}
@@ -961,7 +983,7 @@ func TestRouterLab(t *testing.T) {
 		}
 		// leaseEnd is when r1's lease of r2's address ends, as the diagnostic dhcp-leases lists it.
 		leaseEnd := func() (time.Time, error) {
-			out, err := chalkctl(t, nodes["r1"], "dhcp", "node", "diag", "r1", "dhcp-leases", "mac=52:54:00:00:02:32")
+			out, err := chalkctl(t, rl.nodes["r1"], "dhcp", "node", "diag", "r1", "dhcp-leases", "mac=52:54:00:00:02:32")
 			if err != nil {
 				return time.Time{}, err
 			}
@@ -979,7 +1001,7 @@ func TestRouterLab(t *testing.T) {
 		if _, err := leaseEnd(); err != nil {
 			t.Fatal(err)
 		}
-		if out, err := chalkctl(t, nodes["r1"], "dhcp", "status", "r1"); err != nil || failedUnit(t, "r1", "dhcp", out) {
+		if out, err := chalkctl(t, rl.nodes["r1"], "dhcp", "status", "r1"); err != nil || rl.failedUnit(t, "r1", "dhcp", out) {
 			t.Errorf("status of r1 shows a failed unit: %v\n%s", err, out)
 		}
 
@@ -988,7 +1010,7 @@ func TestRouterLab(t *testing.T) {
 		// the server. A renewal before the boot ends at most two minutes after start; one after the
 		// boot, which takes half a minute at least, ends later than 140 s after it.
 		start := time.Now()
-		if out, err := chalkctl(t, nodes["r1"], "dhcp", "node", "reboot", "r1", "--no-drain"); err != nil {
+		if out, err := chalkctl(t, rl.nodes["r1"], "dhcp", "node", "reboot", "r1", "--no-drain"); err != nil {
 			t.Fatalf("reboot of r1: %v\n%s", err, out)
 		}
 		waitFor(t, 5*time.Minute, "r1's DHCP server of lan after its boot", serving)
@@ -1006,33 +1028,33 @@ func TestRouterLab(t *testing.T) {
 			return nil
 		})
 		waitFor(t, time.Minute, "r2's address from r1 after r1's boot", leased)
-		if out, err := chalkctl(t, nodes["r1"], "dhcp", "status", "r1"); err != nil || failedUnit(t, "r1", "dhcp", out) {
+		if out, err := chalkctl(t, rl.nodes["r1"], "dhcp", "status", "r1"); err != nil || rl.failedUnit(t, "r1", "dhcp", out) {
 			t.Errorf("status of r1 after its boot shows a failed unit: %v\n%s", err, out)
 		}
 
 		// The base inventory stops the server; r2 first, so its client does not ask a server that
 		// is gone.
 		for _, name := range []string{"r2", "r1"} {
-			if out, err := chalkctl(t, nodes[name], "base", "apply-config", name); err != nil {
+			if out, err := chalkctl(t, rl.nodes[name], "base", "apply-config", name); err != nil {
 				t.Fatalf("apply-config of %s's base config: %v\n%s", name, err, out)
 			}
 		}
 		waitFor(t, time.Minute, "r1's DHCP servers to stop", func() error {
-			out, err := chalkctl(t, nodes["r1"], "base", "status", "r1")
+			out, err := chalkctl(t, rl.nodes["r1"], "base", "status", "r1")
 			if err != nil || strings.Contains(out, "dhcp4 ") || strings.Contains(out, "dhcp6 ") {
 				return fmt.Errorf("status of r1 after the base config: %v\n%s", err, out)
 			}
 			return nil
 		})
 		waitFor(t, 2*time.Minute, "r1's route of r2's prefix to go", func() error {
-			out, err := chalkctl(t, nodes["r1"], "base", "node", "routes", "r1", "--table", "all", "--protocol", "dhcp-pd")
+			out, err := chalkctl(t, rl.nodes["r1"], "base", "node", "routes", "r1", "--table", "all", "--protocol", "dhcp-pd")
 			if err != nil || strings.Contains(out, "dhcp-pd") {
 				return fmt.Errorf("routes of r1 after the base config: %v\n%s", err, out)
 			}
 			return nil
 		})
 		for _, name := range []string{"r1", "r2"} {
-			if out, err := chalkctl(t, nodes[name], "base", "status", name); err != nil || failedUnit(t, name, "base", out) {
+			if out, err := chalkctl(t, rl.nodes[name], "base", "status", name); err != nil || rl.failedUnit(t, name, "base", out) {
 				t.Errorf("status of %s shows a failed unit: %v\n%s", name, err, out)
 			}
 		}
