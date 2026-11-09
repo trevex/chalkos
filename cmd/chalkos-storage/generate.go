@@ -4,13 +4,14 @@ import (
 	"errors"
 	"flag"
 
+	"github.com/trevex/chalkos/pkg/storage"
 	"github.com/trevex/chalkos/pkg/storage/node"
 )
 
 // runGenerate is the systemd generator: it writes units into the generator's normal directory.
 func runGenerate(args []string) error {
 	flags := flag.NewFlagSet("generate", flag.ContinueOnError)
-	stateDir := flags.String("state", "/state", "where STATE is mounted")
+	stateDir := flags.String("state", storage.StateDir, "where STATE is mounted")
 	cryptsetup := flags.String("cryptsetup", "systemd-cryptsetup", "absolute path of systemd-cryptsetup")
 	if err := flags.Parse(args); err != nil {
 		return err

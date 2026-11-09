@@ -19,6 +19,8 @@ const (
 	SystemDisk = "system"
 	// VarVolume names the volume mounted at /var.
 	VarVolume = "var"
+	// StateDir is where a node mounts STATE.
+	StateDir = "/state"
 	// EncryptionTPM2 seals the volume's LUKS2 key to the TPM; EncryptionNone leaves it unencrypted.
 	EncryptionTPM2 = "tpm2"
 	EncryptionNone = "none"
@@ -248,7 +250,7 @@ var reservedNames = []string{"esp", "store", "store-verity", "state", VarVolume,
 
 // forbiddenMountPoints hold the root, the store, STATE and VAR; nothing else is mounted on them
 // or below /nix and /state.
-var forbiddenMountPoints = []string{"/", "/nix", "/state", "/var"}
+var forbiddenMountPoints = []string{"/", "/nix", StateDir, "/var"}
 
 // ValidName tells whether name may name a volume, its partition's label and its own disk: at most
 // 32 lower-case letters, digits and dashes, starting and ending with a letter or digit.
@@ -263,7 +265,7 @@ func Reserved(name string) bool { return slices.Contains(reservedNames, name) }
 // and not below /nix or /state. The path goes verbatim into the volume's mount unit.
 func SafeMountPoint(p string) bool {
 	if !mountPointPattern.MatchString(p) || slices.Contains(forbiddenMountPoints, p) ||
-		strings.HasPrefix(p, "/nix/") || strings.HasPrefix(p, "/state/") {
+		strings.HasPrefix(p, "/nix/") || strings.HasPrefix(p, StateDir+"/") {
 		return false
 	}
 	for _, part := range strings.Split(p, "/") {

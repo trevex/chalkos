@@ -4,6 +4,7 @@ import (
 	"path/filepath"
 
 	"github.com/trevex/chalkos/pkg/kubernetes"
+	"github.com/trevex/chalkos/pkg/storage"
 )
 
 // Paths are the files Prepare reads and writes; tests point them at temporary directories.
@@ -30,7 +31,7 @@ type Paths struct {
 // DefaultPaths are the paths on a node.
 func DefaultPaths() Paths {
 	return Paths{
-		State:      "/state/kubernetes",
+		State:      filepath.Join(storage.StateDir, "kubernetes"),
 		Cluster:    kubernetes.ClusterFile,
 		Image:      kubernetes.ImageFile,
 		NodeFile:   "/run/chalkos/node.json",

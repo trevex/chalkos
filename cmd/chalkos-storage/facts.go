@@ -26,7 +26,7 @@ func runFacts(args []string, stdin io.Reader, stdout io.Writer) error {
 		Run:            run,
 		Host:           storage.DefaultHost(),
 		Ops:            hostops.System(run),
-		StateDir:       "/state",
+		StateDir:       storage.StateDir,
 		BootPartitions: "/dev/disk/chalk-boot",
 	}
 	out, err := s.Facts(context.Background(), args[0], input)
