@@ -5,7 +5,6 @@
 package etcd
 
 import (
-	"cmp"
 	"context"
 	"crypto/tls"
 	"errors"
@@ -44,11 +43,11 @@ func member(m *etcdserverpb.Member) Member {
 	return Member{ID: m.ID, Name: m.Name, PeerURLs: m.PeerURLs, ClientURLs: m.ClientURLs, Learner: m.IsLearner}
 }
 
-// Client reaches etcd.
+// Client is an etcd client with the timeouts of chalkos's membership calls.
 type Client struct {
 	*clientv3.Client
-	// StatusTimeout is how long Health, also Remove's, waits for each member's status. Zero means
-	// three seconds.
+	// StatusTimeout is how long Health, also Remove's, waits for each member's status. Zero or
+	// less means three seconds.
 	StatusTimeout time.Duration
 }
 
@@ -108,7 +107,10 @@ func (cli *Client) status(ctx context.Context, m Member) error {
 	if len(m.ClientURLs) == 0 {
 		return errors.New("not started")
 	}
-	timeout := cmp.Or(cli.StatusTimeout, 3*time.Second)
+	timeout := 3 * time.Second
+	if cli.StatusTimeout > 0 {
+		timeout = cli.StatusTimeout
+	}
 	var err error
 	for _, url := range m.ClientURLs {
 		sctx, cancel := context.WithTimeout(ctx, timeout)

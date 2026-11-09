@@ -130,8 +130,8 @@ type Timing struct {
 	// EtcdTimeout bounds each request to etcd, so an etcd member that does not answer never holds
 	// up a loop or the membership lock; 30 seconds by default.
 	EtcdTimeout time.Duration
-	// EtcdStatusTimeout is how long a health check waits for each etcd member. Zero leaves etcd's
-	// own three seconds. Tests raise it: their members share one busy process.
+	// EtcdStatusTimeout is how long a health check waits for each etcd member. Zero means three
+	// seconds. Tests raise it: their members share one busy process.
 	EtcdStatusTimeout time.Duration
 	// Poll is the time between two looks at what a rotation step or a drain waits for; two
 	// seconds by default.
