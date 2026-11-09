@@ -11,6 +11,7 @@ import (
 
 	routerv1 "github.com/trevex/chalkos/pkg/api/router/v1"
 	"github.com/trevex/chalkos/pkg/api/router/v1/routerv1connect"
+	"github.com/trevex/chalkos/pkg/chalkd/chalkdtest"
 	routerplugin "github.com/trevex/chalkos/pkg/chalkd/layers/router"
 	"github.com/trevex/chalkos/pkg/layers"
 	"github.com/trevex/chalkos/pkg/pki"
@@ -29,7 +30,7 @@ func routerServer(t *testing.T, kernel ...*router.KernelRoute) (*Server, *toolte
 	if err := os.Symlink(filepath.Join(t.TempDir(), "frr.conf"), frr); err != nil {
 		t.Fatal(err)
 	}
-	withPlugins(t, s, layers.Of(layers.Router), routerplugin.New(s, routerplugin.Options{KernelRoutes: func() ([]*router.KernelRoute, error) { return kernel, nil }, FRRConfig: frr, ResolverConfig: filepath.Join(t.TempDir(), "unbound.conf"), NAT64Dir: t.TempDir()}))
+	s.Plugins = chalkdtest.Plugins(t, s, layers.Of(layers.Router), routerplugin.New(s, routerplugin.Options{KernelRoutes: func() ([]*router.KernelRoute, error) { return kernel, nil }, FRRConfig: frr, ResolverConfig: filepath.Join(t.TempDir(), "unbound.conf"), NAT64Dir: t.TempDir()}))
 	return s, r
 }
 

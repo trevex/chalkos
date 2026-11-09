@@ -13,6 +13,7 @@ import (
 	kubernetesv1 "github.com/trevex/chalkos/pkg/api/kubernetes/v1"
 	"github.com/trevex/chalkos/pkg/api/kubernetes/v1/kubernetesv1connect"
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
+	"github.com/trevex/chalkos/pkg/chalkd/chalkdtest"
 	kubernetesplugin "github.com/trevex/chalkos/pkg/chalkd/layers/kubernetes"
 	"github.com/trevex/chalkos/pkg/chalkd/layers/kubernetes/kubernetestest"
 	"github.com/trevex/chalkos/pkg/client"
@@ -70,7 +71,7 @@ func addKubernetes(t *testing.T, s *Server, kind string, share bool, adjust ...f
 	// The loops a test started would run on against its removed files, and load the tests after
 	// it, until the test binary ends.
 	t.Cleanup(k.Stop)
-	withPlugins(t, s, layers.Of(layers.Kubernetes), k)
+	s.Plugins = chalkdtest.Plugins(t, s, layers.Of(layers.Kubernetes), k)
 	addLayerEffects(t, s)
 	prepareErrorHint(t, s)
 	s.Loader.Layers = []nodeconfig.Layer{k}

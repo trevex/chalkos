@@ -17,6 +17,7 @@ import (
 	"k8s.io/client-go/kubernetes/fake"
 
 	"github.com/trevex/chalkos/pkg/chalkd"
+	"github.com/trevex/chalkos/pkg/chalkd/chalkdtest"
 	"github.com/trevex/chalkos/pkg/chalkd/layer"
 	kubernetesplugin "github.com/trevex/chalkos/pkg/chalkd/layers/kubernetes"
 	"github.com/trevex/chalkos/pkg/clustersecrets"
@@ -138,7 +139,7 @@ func kubernetesNodeWith(t *testing.T, ta *testApp, o kubernetesplugin.Options) (
 	o.ImageFile = imageJSON(t)
 	o.ClusterFile = o.Paths.Cluster
 	k := kubernetesplugin.New(s, o)
-	withPlugins(t, s, layers.Of(layers.Kubernetes), k)
+	s.Plugins = chalkdtest.Plugins(t, s, layers.Of(layers.Kubernetes), k)
 	writeEffects(t, s)
 	// The loops a test started would run on against its removed files until the test binary ends.
 	t.Cleanup(k.Stop)

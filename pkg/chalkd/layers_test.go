@@ -13,6 +13,7 @@ import (
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	routerv1 "github.com/trevex/chalkos/pkg/api/router/v1"
 	"github.com/trevex/chalkos/pkg/api/router/v1/routerv1connect"
+	"github.com/trevex/chalkos/pkg/chalkd/chalkdtest"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
 	"github.com/trevex/chalkos/pkg/layers"
 	"github.com/trevex/chalkos/pkg/pki"
@@ -28,7 +29,7 @@ func TestInfoAndContractNameTheLayers(t *testing.T) {
 		{layers.Of(layers.Kubernetes), []string{"kubernetes"}},
 	} {
 		s, _ := newTestServer(t, normal, vda)
-		withPlugins(t, s, c.layers)
+		s.Plugins = chalkdtest.Plugins(t, s, c.layers)
 		if c.layers.Has(layers.Kubernetes) {
 			// The Kubernetes layer reads its image.json.
 			kubernetesImage(t, s)

@@ -27,6 +27,7 @@ import (
 
 	checkv1 "github.com/trevex/chalkos/pkg/api/check/v1"
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
+	"github.com/trevex/chalkos/pkg/chalkd/chalkdtest"
 	kubernetesplugin "github.com/trevex/chalkos/pkg/chalkd/layers/kubernetes"
 	"github.com/trevex/chalkos/pkg/chalkd/layers/kubernetes/kubernetestest"
 	"github.com/trevex/chalkos/pkg/identity"
@@ -313,7 +314,7 @@ func kubernetesImage(t *testing.T, s *Server) {
 		root := t.TempDir()
 		paths := kubernetestest.Paths(root, root)
 		k := kubernetesplugin.New(s, kubernetesplugin.Options{Paths: paths, ImageFile: kubernetestest.ImageFile(paths), ClusterFile: paths.Cluster})
-		withPlugins(t, s, layers.Of(layers.Kubernetes), k)
+		s.Plugins = chalkdtest.Plugins(t, s, layers.Of(layers.Kubernetes), k)
 		s.Loader.Layers = []nodeconfig.Layer{k}
 	}
 	write(t, imageFileOf(s), kubernetestest.Image)

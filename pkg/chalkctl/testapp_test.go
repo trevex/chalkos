@@ -20,14 +20,13 @@ import (
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/chalkd"
+	"github.com/trevex/chalkos/pkg/chalkd/chalkdtest"
 	"github.com/trevex/chalkos/pkg/chalkd/layer"
 	kubernetesplugin "github.com/trevex/chalkos/pkg/chalkd/layers/kubernetes"
 	"github.com/trevex/chalkos/pkg/chalkd/layers/kubernetes/kubernetestest"
-	routerplugin "github.com/trevex/chalkos/pkg/chalkd/layers/router"
 	"github.com/trevex/chalkos/pkg/clustersecrets"
 	"github.com/trevex/chalkos/pkg/config/slot"
 	imagecontract "github.com/trevex/chalkos/pkg/contract"
-	"github.com/trevex/chalkos/pkg/effects"
 	"github.com/trevex/chalkos/pkg/identity"
 	"github.com/trevex/chalkos/pkg/install"
 	"github.com/trevex/chalkos/pkg/kubernetes"
@@ -347,55 +346,20 @@ func installedNode(t *testing.T, ta *testApp, recorded []byte) (*chalkd.Server, 
 	// The storage rules compare the config with the section STATE records.
 	writeContract(t, s, imagecontract.FactsFile, `{"recorded": {"file": "`+filepath.Join(s.Paths.StateDir, "storage", "storage.json")+`"}}`)
 	writeFile(t, s.Paths.MountInfo, "41 30 253:1 / /var rw - ext4 /dev/mapper/var rw\n")
-	withPlugins(t, s, layers.Of())
+	s.Plugins = chalkdtest.Plugins(t, s, layers.Of())
 	writeEffects(t, s)
 	return s, r
 }
 
-// writeEffects declares the effects of the default image, which the node carries out, without
-// those that run an action of a layer s's image does not carry, as an image without the layer
-// has none.
+// writeEffects declares the effects of the default image, which the node carries out, as
+// chalkdtest.Effects gives them for the layers of s's image.
 func writeEffects(t *testing.T, s *chalkd.Server) {
 	t.Helper()
-	raw, err := os.ReadFile("../../test/fixtures/kinds/effects.json")
-	if err != nil {
-		t.Fatal(err)
-	}
-	var defs map[string]effects.Definition
-	if err := json.Unmarshal(raw, &defs); err != nil {
-		t.Fatal(err)
-	}
-	for name, d := range defs {
-		// An action its layer lacks stays, so the delivery refuses it.
-		if l, _, _ := strings.Cut(d.Chalkd, ":"); d.Chalkd != "" && !s.Plugins.Layers().Has(l) {
-			delete(defs, name)
-		}
-	}
-	data, err := json.Marshal(defs)
+	data, err := json.Marshal(chalkdtest.Effects(t, s.Plugins.Layers()))
 	if err != nil {
 		t.Fatal(err)
 	}
 	writeContract(t, s, imagecontract.EffectsFile, string(data))
-}
-
-// withPlugins compiles the Kubernetes and router layers into s, on an image of the layers l: the
-// plugins given, and for a layer none of them is, one built with chalkd's own options.
-func withPlugins(t *testing.T, s *chalkd.Server, l layers.Set, plugins ...layer.Plugin) {
-	t.Helper()
-	given := func(name string) bool {
-		return slices.ContainsFunc(plugins, func(p layer.Plugin) bool { return p.Name() == name })
-	}
-	if !given(layers.Kubernetes) {
-		plugins = append(plugins, kubernetesplugin.New(s, kubernetesplugin.Options{}))
-	}
-	if !given(layers.Router) {
-		plugins = append(plugins, routerplugin.New(s, routerplugin.Options{}))
-	}
-	reg, err := layer.NewRegistry(l, plugins...)
-	if err != nil {
-		t.Fatal(err)
-	}
-	s.Plugins = reg
 }
 
 // kubernetesState is the state the Kubernetes layer of s reads and writes.
@@ -513,6 +477,6 @@ func kubernetesImage(t *testing.T, s *chalkd.Server) {
 		ImageFile:   file,
 		ClusterFile: filepath.Join(root, "cluster.json"),
 	})
-	withPlugins(t, s, layers.Of(layers.Kubernetes), k)
+	s.Plugins = chalkdtest.Plugins(t, s, layers.Of(layers.Kubernetes), k)
 	s.Loader.Layers = layer.Active[nodeconfig.Layer](s.Plugins)
 }

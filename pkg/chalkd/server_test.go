@@ -21,7 +21,6 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
-	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -34,15 +33,13 @@ import (
 	"github.com/trevex/chalkos/pkg/api/node/v1/nodev1connect"
 	routerv1 "github.com/trevex/chalkos/pkg/api/router/v1"
 	"github.com/trevex/chalkos/pkg/api/router/v1/routerv1connect"
+	"github.com/trevex/chalkos/pkg/chalkd/chalkdtest"
 	"github.com/trevex/chalkos/pkg/chalkd/layer"
 	"github.com/trevex/chalkos/pkg/chalkd/layer/layertest"
-	kubernetesplugin "github.com/trevex/chalkos/pkg/chalkd/layers/kubernetes"
 	"github.com/trevex/chalkos/pkg/chalkd/layers/kubernetes/kubernetestest"
-	routerplugin "github.com/trevex/chalkos/pkg/chalkd/layers/router"
 	"github.com/trevex/chalkos/pkg/client"
 	"github.com/trevex/chalkos/pkg/config/slot"
 	"github.com/trevex/chalkos/pkg/contract"
-	"github.com/trevex/chalkos/pkg/effects"
 	"github.com/trevex/chalkos/pkg/facts"
 	"github.com/trevex/chalkos/pkg/imagecheck"
 	"github.com/trevex/chalkos/pkg/install"
@@ -139,28 +136,8 @@ func newTestServer(t *testing.T, mode nodev1.Mode, disks ...storagetest.Disk) (*
 	writeFacts(t, s, "")
 	writeServices(t, s, "{}")
 	writeEffects(t, s, "{}")
-	withPlugins(t, s, layers.Of())
+	s.Plugins = chalkdtest.Plugins(t, s, layers.Of())
 	return s, r
-}
-
-// withPlugins compiles the Kubernetes and router layers into s, on an image of the layers l: the
-// plugins given, and for a layer none of them is, one built with chalkd's own options.
-func withPlugins(t *testing.T, s *Server, l layers.Set, plugins ...layer.Plugin) {
-	t.Helper()
-	given := func(name string) bool {
-		return slices.ContainsFunc(plugins, func(p layer.Plugin) bool { return p.Name() == name })
-	}
-	if !given(layers.Kubernetes) {
-		plugins = append(plugins, kubernetesplugin.New(s, kubernetesplugin.Options{}))
-	}
-	if !given(layers.Router) {
-		plugins = append(plugins, routerplugin.New(s, routerplugin.Options{}))
-	}
-	reg, err := layer.NewRegistry(l, plugins...)
-	if err != nil {
-		t.Fatal(err)
-	}
-	s.Plugins = reg
 }
 
 // writeEffects declares the effects of the default image, which the tests carry out, and those
@@ -169,24 +146,19 @@ func withPlugins(t *testing.T, s *Server, l layers.Set, plugins ...layer.Plugin)
 // the layer has none; addLayerEffects adds it once s has the layer.
 func writeEffects(t *testing.T, s *Server, extra string) {
 	t.Helper()
-	writeMerged(t, s, contract.EffectsFile, "../../test/fixtures/kinds/effects.json", extra, func(raw json.RawMessage) bool {
-		return ofActiveLayer(t, s, raw)
-	})
+	writeMerged(t, s, contract.EffectsFile, chalkdtest.Effects(t, s.Plugins.Layers()), extra)
 }
 
 // addLayerEffects adds the default image's effects that run an action of a layer s's image
 // carries, which writeEffects left out before s had the layer, to the effects s declares.
 func addLayerEffects(t *testing.T, s *Server) {
 	t.Helper()
-	var fixture, declared map[string]json.RawMessage
-	if err := json.Unmarshal([]byte(readFile(t, "../../test/fixtures/kinds/effects.json")), &fixture); err != nil {
-		t.Fatal(err)
-	}
+	var declared map[string]json.RawMessage
 	if err := json.Unmarshal([]byte(readFile(t, contractFile(s, contract.EffectsFile))), &declared); err != nil {
 		t.Fatal(err)
 	}
-	for name, raw := range fixture {
-		if _, ok := declared[name]; !ok && ofActiveLayer(t, s, raw) {
+	for name, raw := range chalkdtest.Effects(t, s.Plugins.Layers()) {
+		if _, ok := declared[name]; !ok {
 			declared[name] = raw
 		}
 	}
@@ -197,39 +169,22 @@ func addLayerEffects(t *testing.T, s *Server) {
 	writeContract(t, s, contract.EffectsFile, string(data))
 }
 
-// ofActiveLayer tells whether the effect raw runs no layer action or one of a layer s's image
-// carries. An action that layer lacks stays, so the delivery refuses it.
-func ofActiveLayer(t *testing.T, s *Server, raw json.RawMessage) bool {
-	t.Helper()
-	var e effects.Definition
-	if err := json.Unmarshal(raw, &e); err != nil {
-		t.Fatal(err)
-	}
-	if e.Chalkd == "" {
-		return true
-	}
-	name, _, _ := strings.Cut(e.Chalkd, ":")
-	return s.Plugins.Layers().Has(name)
-}
-
 // writeServices grants the kinds the default image's units read, and those of extra, a JSON object
 // of grants by unit, at the test server's path.
 func writeServices(t *testing.T, s *Server, extra string) {
 	t.Helper()
-	writeMerged(t, s, contract.ServicesFile, "../../test/fixtures/kinds/services.json", extra, nil)
-}
-
-// writeMerged writes the JSON object of the fixture with the keys of extra added as the file name
-// of s's contract; with keep, only the fixture's values keep holds for.
-func writeMerged(t *testing.T, s *Server, name, fixture, extra string, keep func(json.RawMessage) bool) {
-	t.Helper()
-	var base, more map[string]json.RawMessage
-	if err := json.Unmarshal([]byte(readFile(t, fixture)), &base); err != nil {
+	var services map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(readFile(t, "../../test/fixtures/kinds/services.json")), &services); err != nil {
 		t.Fatal(err)
 	}
-	if keep != nil {
-		maps.DeleteFunc(base, func(_ string, v json.RawMessage) bool { return !keep(v) })
-	}
+	writeMerged(t, s, contract.ServicesFile, services, extra)
+}
+
+// writeMerged writes the JSON object base with the keys of extra added as the file name of s's
+// contract.
+func writeMerged(t *testing.T, s *Server, name string, base map[string]json.RawMessage, extra string) {
+	t.Helper()
+	var more map[string]json.RawMessage
 	if err := json.Unmarshal([]byte(extra), &more); err != nil {
 		t.Fatal(err)
 	}

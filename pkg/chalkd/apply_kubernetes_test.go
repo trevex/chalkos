@@ -19,6 +19,7 @@ import (
 	"google.golang.org/protobuf/types/known/anypb"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
+	"github.com/trevex/chalkos/pkg/chalkd/chalkdtest"
 	kubernetesplugin "github.com/trevex/chalkos/pkg/chalkd/layers/kubernetes"
 	"github.com/trevex/chalkos/pkg/chalkd/layers/kubernetes/kubernetestest"
 	"github.com/trevex/chalkos/pkg/clustersecrets"
@@ -76,7 +77,7 @@ func TestFixtureEffectsActionsResolve(t *testing.T) {
 		t.Fatal(err)
 	}
 	s, _ := newTestServer(t, normal, vda)
-	withPlugins(t, s, layers.Of(layers.Kubernetes))
+	s.Plugins = chalkdtest.Plugins(t, s, layers.Of(layers.Kubernetes))
 	for name, d := range defs {
 		if d.Chalkd == "" {
 			continue

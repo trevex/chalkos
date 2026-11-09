@@ -16,6 +16,7 @@ import (
 	routerv1 "github.com/trevex/chalkos/pkg/api/router/v1"
 	"github.com/trevex/chalkos/pkg/api/router/v1/routerv1connect"
 	"github.com/trevex/chalkos/pkg/chalkd"
+	"github.com/trevex/chalkos/pkg/chalkd/chalkdtest"
 	routerplugin "github.com/trevex/chalkos/pkg/chalkd/layers/router"
 	"github.com/trevex/chalkos/pkg/layers"
 	"github.com/trevex/chalkos/pkg/router"
@@ -118,7 +119,7 @@ func routerNode(t *testing.T, ta *testApp, documents bool, rules ...tooltest.Rul
 			}()
 		}
 	}
-	withPlugins(t, s, layers.Of(layers.Router), routerplugin.New(runsWith{s, r}, routerplugin.Options{FRRConfig: frrConf, ResolverConfig: conf, ResolverDir: resolvers, KeaDir: kea, RelayDir: relays, RunDir: run, NetDir: devices, NAT64Dir: nat64, VRFDir: vrfs, KernelRoutes: func() ([]*router.KernelRoute, error) {
+	s.Plugins = chalkdtest.Plugins(t, s, layers.Of(layers.Router), routerplugin.New(runsWith{s, r}, routerplugin.Options{FRRConfig: frrConf, ResolverConfig: conf, ResolverDir: resolvers, KeaDir: kea, RelayDir: relays, RunDir: run, NetDir: devices, NAT64Dir: nat64, VRFDir: vrfs, KernelRoutes: func() ([]*router.KernelRoute, error) {
 		hops := func() []*router.NextHop {
 			return []*router.NextHop{
 				{Gateway: "fe80::e06b:dcff:fe54:f465", Interface: "eth2", Weight: 1}, {Gateway: "fe80::b817:4cff:fe8b:9cf", Interface: "eth1", Weight: 1}}
@@ -194,7 +195,7 @@ func TestRouterWithoutBGP(t *testing.T) {
 	current, _ := json.Marshal(ta.identity(t))
 	s, _ := installedNode(t, ta, current)
 	r := &tooltest.Runner{}
-	withPlugins(t, s, layers.Of(layers.Router), routerplugin.New(runsWith{s, r}, routerplugin.Options{
+	s.Plugins = chalkdtest.Plugins(t, s, layers.Of(layers.Router), routerplugin.New(runsWith{s, r}, routerplugin.Options{
 		FRRConfig:      filepath.Join(t.TempDir(), "frr.conf"),
 		ResolverConfig: filepath.Join(t.TempDir(), "unbound.conf"),
 		ResolverDir:    t.TempDir(),
@@ -310,7 +311,7 @@ func TestNodeRoutesOfAVRFWithoutVRFs(t *testing.T) {
 	current, _ := json.Marshal(ta.identity(t))
 	s, _ := installedNode(t, ta, current)
 	r := &tooltest.Runner{Rules: []tooltest.Rule{{Prefix: "vtysh", Out: "{}"}}}
-	withPlugins(t, s, layers.Of(layers.Router), withoutVRFs{routerplugin.New(runsWith{s, r}, routerplugin.Options{
+	s.Plugins = chalkdtest.Plugins(t, s, layers.Of(layers.Router), withoutVRFs{routerplugin.New(runsWith{s, r}, routerplugin.Options{
 		KernelRoutes: func() ([]*router.KernelRoute, error) { return nil, nil },
 	})})
 	addr := ta.startNode(t, s)
