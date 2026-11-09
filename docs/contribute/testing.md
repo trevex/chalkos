@@ -111,7 +111,7 @@ attribute has an `expr` and an `expected` value. They evaluate images with `mkIm
 its arguments, the images' options and assertions, and what the images set; a test that an
 evaluation fails uses `builtins.tryEval`. The `eval` check fails with the list of failures, and
 `eval-kinds` does the same for `test/nix/kinds.nix`, the tests of config kinds. Both take
-`fails` and `worker` from `test/nix/lib.nix`.
+`fails`, `worker`, `router` and `routerWithout` from `test/nix/lib.nix`.
 
 ```nix
 testVariantSetsDiskOptions = {
