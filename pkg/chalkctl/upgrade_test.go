@@ -230,6 +230,9 @@ type upgradeLab struct {
 	// kubernetesFails holds the nodes whose Kubernetes status fails, as while their API server does
 	// not answer.
 	kubernetesFails map[string]bool
+	// uncordonAfter holds the uncordon of a node until the node it names was drained, a minute at
+	// most, so the nodes of a batch upgrade together however late one of them starts.
+	uncordonAfter map[string]string
 }
 
 // asked returns how often each node was asked for its config.
@@ -243,6 +246,19 @@ func (l *upgradeLab) record(format string, args ...any) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	l.events = append(l.events, fmt.Sprintf(format, args...))
+}
+
+// awaitDrained waits a minute at most until the node uncordonAfter names for node was drained.
+func (l *upgradeLab) awaitDrained(node string) {
+	for deadline := time.Now().Add(time.Minute); time.Now().Before(deadline); time.Sleep(5 * time.Millisecond) {
+		l.mu.Lock()
+		other := l.uncordonAfter[node]
+		drained := other == "" || slices.Contains(l.events, other+" drain")
+		l.mu.Unlock()
+		if drained {
+			return
+		}
+	}
 }
 
 func (l *upgradeLab) takeEvents() []string {
@@ -622,6 +638,7 @@ func (n upgradeKubernetes) UncordonNode(_ context.Context, req *connect.Request[
 	if err := n.down(); err != nil {
 		return nil, err
 	}
+	n.lab.awaitDrained(req.Msg.Node)
 	n.lab.mu.Lock()
 	defer n.lab.mu.Unlock()
 	if !n.lab.cordoned[req.Msg.Node] {
@@ -950,6 +967,8 @@ func TestUpgradeKeepsQuorum(t *testing.T) {
 // back.
 func TestUpgradeWorkersInBatches(t *testing.T) {
 	l := newUpgradeLab(t, 3)
+	// w1 and w2 form the first batch: each comes back only once the other was drained.
+	l.uncordonAfter = map[string]string{"w1": "w2", "w2": "w1"}
 	if err := l.upgrade(testUpgradeImage(t, "w", "0.2.0"), "--max-unavailable", "2"); err != nil {
 		t.Fatalf("%v\n%s", err, l.ta.stdout)
 	}
