@@ -57,6 +57,7 @@ func members(t *testing.T, cli *Client) []Member {
 // A write over a connection that stays open but no longer answers fails once the client's
 // unanswered ping dropped the connection, also without a deadline of its own.
 func TestDialDropsStalledConnection(t *testing.T) {
+	t.Parallel()
 	ca := etcdtest.NewCA(t)
 	m := etcdtest.StartNew(t, ca, "cp0")
 	proxy := etcdtest.NewProxy(t, m.ClientURL, 0)
@@ -279,6 +280,7 @@ func join(t *testing.T, ctx context.Context, cli *Client, ca pki.CertKey, name s
 }
 
 func TestRemove(t *testing.T) {
+	t.Parallel()
 	ca := etcdtest.NewCA(t)
 	m1 := etcdtest.StartNew(t, ca, "m1")
 	cli := dial(t, ca, m1)
@@ -344,6 +346,7 @@ func TestFind(t *testing.T) {
 // Endpoints of one cluster agree; endpoints of two clusters, as after two separate bootstraps,
 // are refused; endpoints that do not answer are left out.
 func TestOneCluster(t *testing.T) {
+	t.Parallel()
 	ca := etcdtest.NewCA(t)
 	m1 := etcdtest.StartNew(t, ca, "m1")
 	cli := dial(t, ca, m1)
