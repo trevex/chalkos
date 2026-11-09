@@ -76,11 +76,11 @@ deadline. The nodes done before it keep the new API server, which the skew polic
 chalkctl prints which nodes run which version. etcd's image is not part of the check: its version
 is not one the rollout compares, and the API server answers only while etcd serves.
 
-Run again, the same command continues. A node that runs the delivery's config already gets
-nothing, and a control plane among them is checked with the same wait before the run goes on. A
-node with an open trial stops the run until `chalkctl apply-config confirm` or `rollback` ends
-the trial. `--try` and `chalkctl apply-config confirm` wait for the same check on every trial, so a trial that
-`--until deliver` left open is confirmed only once the node's static pods run the new images.
+Run again, the same command continues. A node that runs the delivery's config already gets nothing,
+and a control plane among them is checked with the same wait before the run goes on. A node with an
+open trial stops the run until `chalkctl apply-config confirm` or `rollback` ends the trial. `--try`
+and `chalkctl apply-config confirm` wait for the same check on every trial, so a trial
+that `--until deliver` left open is confirmed only once the node's static pods run the new images.
 
 ## Control planes roll first, one at a time
 

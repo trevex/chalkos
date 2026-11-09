@@ -222,18 +222,18 @@ deliver delivers on trial to the first node that does not run the config and lea
 for apply-config confirm. An ordered run goes without the layers' payload flags. See
 https://trevex.github.io/chalkos/kubernetes/upgrade-kubernetes/.
 
---diff prints what the config changes in the node's config, document by document, and checks
-nothing on the node. --dry-run has the node check the config as it checks a delivery, with its
-facts, the image's renderers and their checks, and changes nothing. It prints the diff, then the
-config the node would run, the outputs that would change, the effects the delivery would take with
-what fires each, and the storage changes. A refusal is the delivery's, and the command exits 1.
---dry-run takes several nodes and checks them one after the other; its error names the nodes whose
-config is refused apart from those it could not check, such as a node on trial. It goes without
---diff, --try, --no-confirm, --ignore-unit, --force and the layers' payload flags. An effect whose rule compares the node's facts before and after the delivery is
-planned with the facts as they are. The plan ends with the staged image's config or the pending
-config, when the delivery writes either. With --staged, the staged image checks the config with
-its own chalkd and renderers, and the plan has no outputs and no effects: that image renders its
-outputs and takes its effects when it boots.
+--diff prints what the config changes in the node's config, document by document, and checks nothing
+on the node. --dry-run has the node check the config as it checks a delivery, with its facts, the
+image's renderers and their checks, and changes nothing. It prints the diff, then the config the
+node would run, the outputs that would change, the effects the delivery would take with what fires
+each, and the storage changes. A refusal is the delivery's, and the command exits 1. --dry-run takes
+several nodes and checks them one after the other; its error names the nodes whose config is refused
+apart from those it could not check, such as a node on trial. It goes without --diff, --try,
+--no-confirm, --ignore-unit, --force and the layers' payload flags. An effect whose rule compares
+the node's facts before and after the delivery is planned with the facts as they are. The plan ends
+with the staged image's config or the pending config, when the delivery writes either. With
+--staged, the staged image checks the config with its own chalkd and renderers, and the plan has no
+outputs and no effects: that image renders its outputs and takes its effects when it boots.
 
 Each image on a node keeps its own config. The image in the node's inactive slot, staged by
 upgrade --until stage or active after upgrade --until activate, boots with the config it checked
@@ -259,28 +259,28 @@ held pending and keeps nothing. apply-config discard drops the pending config.
 
 apply-config rollback delivers the node's previous config again instead of the inventory's.
 
---try applies the config on trial for the duration given, from 10s to 24h. Unless chalkctl
-confirms the config within it, the node rolls the config back by itself through the same steps as
-apply-config rollback. chalkctl confirms it over a new connection, which proves that the config left the node
-reachable, once the node is healthy as an upgrade's boot must be: chalkd serves, no unit of the
-boot failed, and the image's layers find their services healthy. The check leaves out the units the
-image ignores and those --ignore-unit names, one unit per flag. Before it confirms, chalkctl also
-waits for the image's layers to find the node serving with the config, as Kubernetes finds its Node
-Ready and a control plane's static pods on the images its config names; when they do not by the
+--try applies the config on trial for the duration given, from 10s to 24h. Unless chalkctl confirms
+the config within it, the node rolls the config back by itself through the same steps as
+apply-config rollback. chalkctl confirms it over a new connection, which proves that the config left
+the node reachable, once the node is healthy as an upgrade's boot must be: chalkd serves, no unit of
+the boot failed, and the image's layers find their services healthy. The check leaves out the units
+the image ignores and those --ignore-unit names, one unit per flag. Before it confirms, chalkctl
+also waits for the image's layers to find the node serving with the config, as Kubernetes finds its
+Node Ready and a control plane's static pods on the images its config names; when they do not by the
 deadline, chalkctl rolls the config back at once. chalkctl warns of units that failed before the
-trial, which keep the check from passing unless they recover. When the config is not
-confirmed, or the answer to its delivery is lost, as when the config cuts chalkctl off, chalkctl
-waits up to two minutes after the deadline for the node's rollback, reports it and exits non-zero.
-Interrupting chalkctl leaves the trial open. A trial delivers config alone and is refused for a
-config that changes the node's storage. While it is open, the node refuses other deliveries,
-upgrades and image rollbacks; apply-config rollback rolls the config back at once and ends the
-trial, and a reboot boots the config from before it. --no-confirm leaves the trial open, and
-apply-config confirm confirms it later. A delivery on trial that fails after it changed the config
-leaves the trial open, and chalkctl does not confirm it. When an attempt to roll the config back
-fails, the node tries again each minute and apply-config confirm still keeps the config, unless
-the failed attempt changed the node; apply-config rollback then finishes the rollback. The staged
-image checks config on trial as any delivery, but its config, or the
-pending config, is written only once the trial is confirmed, so a rollback leaves it as it was.
+trial, which keep the check from passing unless they recover. When the config is not confirmed, or
+the answer to its delivery is lost, as when the config cuts chalkctl off, chalkctl waits up to two
+minutes after the deadline for the node's rollback, reports it and exits non-zero. Interrupting
+chalkctl leaves the trial open. A trial delivers config alone and is refused for a config that
+changes the node's storage. While it is open, the node refuses other deliveries, upgrades and image
+rollbacks; apply-config rollback rolls the config back at once and ends the trial, and a reboot
+boots the config from before it. --no-confirm leaves the trial open, and apply-config confirm
+confirms it later. A delivery on trial that fails after it changed the config leaves the trial open,
+and chalkctl does not confirm it. When an attempt to roll the config back fails, the node tries
+again each minute and apply-config confirm still keeps the config, unless the failed attempt changed
+the node; apply-config rollback then finishes the rollback. The staged image checks config on trial
+as any delivery, but its config, or the pending config, is written only once the trial is confirmed,
+so a rollback leaves it as it was.
 
 --kubernetes-share also delivers a new Kubernetes share, such as a worker's new kubelet
 certificate. It is refused to a node revoked with chalkctl node revoke, and while no control plane

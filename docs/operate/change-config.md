@@ -393,8 +393,8 @@ A node without a previous config refuses the rollback with
 `w1 keeps no previous config of the image it runs; it keeps one once apply-config replaced the
 config the image was installed or upgraded with`.
 
-During a trial, `chalkctl apply-config rollback` delivers the config from before the trial and ends the trial, as
-[End a trial early](#end-a-trial-early) describes.
+During a trial, `chalkctl apply-config rollback` delivers the config from before the trial and ends
+the trial, as [End a trial early](#end-a-trial-early) describes.
 
 ## Try a config change
 
@@ -473,8 +473,9 @@ leave them out too. `chalkctl status` lists them on the trial's line.
 ### A config that is not confirmed rolls back
 
 When chalkctl cannot confirm the config by the deadline, the node rolls it back through the same
-steps as `chalkctl apply-config rollback`. chalkctl waits up to two minutes after the deadline, over new connections,
-for the node to report that the trial ended. It prints how the trial ended and exits non-zero:
+steps as `chalkctl apply-config rollback`. chalkctl waits up to two minutes after the deadline, over
+new connections, for the node to report that the trial ended. It prints how the trial ended and
+exits non-zero:
 
 ```text
 w1 rolled back to config <previous-version> at the trial's deadline
@@ -516,8 +517,8 @@ chalkctl apply-config w1 --secrets secrets.age --try 30m --no-confirm
 chalkctl apply-config confirm w1 --secrets secrets.age
 ```
 
-The node keeps the config on trial, so the command needs no inventory. A node without a trial refuses with
-`w1 has no open trial to confirm; it runs config <version>`.
+The node keeps the config on trial, so the command needs no inventory. A node without a trial
+refuses with `w1 has no open trial to confirm; it runs config <version>`.
 
 ### A trial holds back other changes
 
@@ -540,8 +541,8 @@ w1 runs config <version> on trial until <deadline>; confirm it with chalkctl app
 
 ### End a trial early
 
-`chalkctl apply-config rollback` during a trial delivers the config from before the trial at once and ends the trial.
-Its output ends with `w1: the trial of config <version> ended`.
+`chalkctl apply-config rollback` during a trial delivers the config from before the trial at once
+and ends the trial. Its output ends with `w1: the trial of config <version> ended`.
 
 A reboot ends an open trial as well. The boot restores the config from before the trial before
 networkd, the firewall and every other service start. Resetting the node therefore undoes a config
@@ -562,12 +563,12 @@ of the trial's line:
 ; an attempt to roll the config back failed and is tried again each minute: <error>
 ```
 
-`chalkctl apply-config confirm` still keeps the config on trial and stops the retries. Past the deadline it tries for
-two minutes. When a failed attempt changed the node, as when it wrote the config and a restart
-failed, the line reads `an attempt to roll the config back failed after it changed the node and
-is tried again each minute: <error>; apply-config confirm no longer keeps the config, and
-apply-config rollback finishes the rollback now`. `chalkctl apply-config rollback` then finishes
-the rollback at once.
+`chalkctl apply-config confirm` still keeps the config on trial and stops the retries. Past the
+deadline it tries for two minutes. When a failed attempt changed the node, as when it wrote the
+config and a restart failed, the line reads `an attempt to roll the config back failed after it
+changed the node and is tried again each minute: <error>; apply-config confirm no longer keeps the
+config, and apply-config rollback finishes the rollback now`. `chalkctl apply-config rollback` then
+finishes the rollback at once.
 
 ### The record of a trial cannot be read
 
