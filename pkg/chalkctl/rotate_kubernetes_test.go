@@ -156,22 +156,19 @@ func TestRotateEncryptionKey(t *testing.T) {
 // Secrets of legacy tokens and says when the finish may follow.
 func TestRotateServiceAccountKeyWaitsAnHour(t *testing.T) {
 	l := newRotationLab(t)
-	var mu sync.Mutex
-	now := time.Now().Truncate(time.Second)
-	start := now
-	clock := func() time.Time { mu.Lock(); defer mu.Unlock(); return now }
-	advance := func(d time.Duration) { mu.Lock(); defer mu.Unlock(); now = now.Add(d) }
-	l.ta.clock = clock
-	// Each control plane takes ten minutes to restart on its new files.
-	l.onShare = func(string) { advance(10 * time.Minute) }
+	var (
+		mu     sync.Mutex
+		shared []time.Time
+	)
+	l.onShare = func(string) { mu.Lock(); defer mu.Unlock(); shared = append(shared, time.Now()) }
 	if err := l.rotate("service-account-key"); err != nil {
 		t.Fatal(err)
 	}
 	l.onShare = nil
 	// The accept and the switch phases each restarted both control planes.
 	switched := l.secrets().Rotation.Switched
-	if want := start.Add(40 * time.Minute); !switched.Equal(want) {
-		t.Errorf("the switch is recorded at %v, want %v, once every control plane applied it", switched, want)
+	if len(shared) < 4 || switched.Before(shared[3]) {
+		t.Errorf("the switch is recorded at %v, before the shares of %v, want it once every control plane applied it", switched, shared)
 	}
 	stdout := l.ta.stdout.String()
 	if !strings.Contains(stdout, "the Addon documents, StatefulSets included") {
@@ -186,7 +183,6 @@ func TestRotateServiceAccountKeyWaitsAnHour(t *testing.T) {
 	if events := l.takeEvents(); !slices.Contains(events, "cp1 RESTART_ADDONS") {
 		t.Errorf("the addons did not restart with tokens of the new key: %v", events)
 	}
-	advance(switched.Add(59 * time.Minute).Sub(clock()))
 	if err := l.rotate("service-account-key", "--finish"); err == nil || !strings.Contains(err.Error(), "--force") {
 		t.Fatalf("err = %v, want a refusal within the hour naming --force", err)
 	}

@@ -24,9 +24,8 @@ type app struct {
 	home string
 	// readSecret asks for a secret on the terminal without echoing it.
 	readSecret func(ctx context.Context, prompt string) ([]byte, error)
-	// clock is the time; nil is the system's. pollInterval is the time between two looks at a
-	// node waited for; zero is three seconds. Tests set both.
-	clock        func() time.Time
+	// pollInterval is the time between two looks at a node waited for; zero is three seconds.
+	// Tests set it.
 	pollInterval time.Duration
 	// unhealthyGrace is how long a node's boot may be found unhealthy after it settled before a
 	// reboot's wait for it stops; zero is a minute. Tests set it.
@@ -108,14 +107,6 @@ func (a *app) poll() time.Duration {
 		return a.pollInterval
 	}
 	return 3 * time.Second
-}
-
-// now is chalkctl's clock.
-func (a *app) now() time.Time {
-	if a.clock != nil {
-		return a.clock()
-	}
-	return time.Now()
 }
 
 // table writes aligned columns, separated by tabs, to standard output once flushed.

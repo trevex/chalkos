@@ -323,7 +323,7 @@ func (a *app) deliverConfig(ctx context.Context, f applyConfigFlags, t *target) 
 	req := &nodev1.ApplyConfigRequest{Config: d.Text, FallbackSecret: fallback, Layers: payloads, Staged: f.staged, DryRun: f.dryRun}
 	// chalkctl's deadline starts before the node's, so it falls before it. An answer that comes
 	// after it is of no use: the node may have rolled the config back by then.
-	deadline := a.now().Add(f.try)
+	deadline := time.Now().Add(f.try)
 	applyCtx := ctx
 	if f.try > 0 {
 		req.Try, req.IgnoreUnits = durationpb.New(f.try), f.ignoreUnits

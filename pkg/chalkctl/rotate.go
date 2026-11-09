@@ -139,7 +139,7 @@ func (r *rotation) start(ctx context.Context, kind clustersecrets.RotationKind) 
 	if err := rotatorOf(r, kind).CheckStart(ctx, r, kind); err != nil {
 		return err
 	}
-	if err := r.save(func(s *clustersecrets.Secrets) error { return s.BeginRotation(kind, r.a.now()) }); err != nil {
+	if err := r.save(func(s *clustersecrets.Secrets) error { return s.BeginRotation(kind, time.Now()) }); err != nil {
 		return err
 	}
 	r.Say("%s records the rotation of the %s; %s", r.file.out, kind.Name(), r.file.written())
@@ -202,7 +202,7 @@ func (r *rotation) run(ctx context.Context) error {
 			if err := rotatorOf(r, rot.Kind).ApplyRotation(ctx, r, rot.Kind, rot.Phase); err != nil {
 				return fmt.Errorf("the %s phase of the rotation of the %s stopped: %w; once that is fixed, continue with chalkctl rotate %s --resume", rot.Phase, rot.Kind.Name(), err, rot.Kind)
 			}
-			if err := r.save(func(s *clustersecrets.Secrets) error { return s.RecordApplied(r.a.now()) }); err != nil {
+			if err := r.save(func(s *clustersecrets.Secrets) error { return s.RecordApplied(time.Now()) }); err != nil {
 				return err
 			}
 			r.Say("%s: every node applied the %s phase", rot.Kind, rot.Phase)
@@ -380,7 +380,7 @@ func (r *rotation) DeliverPayloads(ctx context.Context, name string) error {
 	if err != nil {
 		return err
 	}
-	payloads, err := payloadsOf(t, r.a.now())
+	payloads, err := payloadsOf(t, time.Now())
 	if err != nil {
 		return err
 	}
@@ -399,7 +399,6 @@ func (r *rotation) Status(ctx context.Context, name string) (*nodev1.StatusRespo
 var _ layer.Rotating = (*rotation)(nil)
 
 func (r *rotation) Secrets() clustersecrets.Secrets { return r.file.secrets }
-func (r *rotation) Now() time.Time                  { return r.a.now() }
 func (r *rotation) Timeout() time.Duration          { return r.timeout }
 func (r *rotation) Poll() time.Duration             { return r.poll }
 func (r *rotation) Cluster() layer.Cluster          { return r.cluster }

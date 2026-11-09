@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"slices"
+	"time"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/chalkctl/layer"
@@ -159,7 +160,7 @@ func (r *rotation) refreshNodeCertificates(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-		cert, err := pki.IssueNode(s.NodeCA, names, r.a.now())
+		cert, err := pki.IssueNode(s.NodeCA, names, time.Now())
 		if err != nil {
 			return err
 		}

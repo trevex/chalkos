@@ -40,7 +40,7 @@ var trialEnd = 2 * time.Minute
 func (a *app) confirmTrial(ctx context.Context, t *target, version, previous string, deadline time.Time, late bool) error {
 	until := deadline
 	if late {
-		until = a.now().Add(trialEnd)
+		until = time.Now().Add(trialEnd)
 	}
 	// The layers find first that the node serves their clusters with the config, as a control
 	// plane's components run the images it names. A config they do not find so is rolled back now,
@@ -61,9 +61,9 @@ func (a *app) confirmTrial(ctx context.Context, t *target, version, previous str
 		warnings []string
 	)
 	permanent := false
-	err := poll.Until(ctx, "", until.Sub(a.now()), a.poll(), func() error {
+	err := poll.Until(ctx, "", time.Until(until), a.poll(), func() error {
 		var err error
-		warnings, err = confirmOnce(ctx, t, version, until.Sub(a.now()))
+		warnings, err = confirmOnce(ctx, t, version, time.Until(until))
 		// An attempt the deadline cut short says less than the one before it.
 		if err != nil && (last == nil || connect.CodeOf(err) != connect.CodeDeadlineExceeded) {
 			last = err
@@ -135,8 +135,8 @@ func (a *app) trialRolledBack(ctx context.Context, t *target, version, previous 
 	until := deadline.Add(trialEnd)
 	var st *nodev1.StatusResponse
 	unreadable := ""
-	err := poll.Until(ctx, "", until.Sub(a.now()), a.poll(), func() error {
-		ctx, cancel := context.WithTimeout(ctx, until.Sub(a.now()))
+	err := poll.Until(ctx, "", time.Until(until), a.poll(), func() error {
+		ctx, cancel := context.WithDeadline(ctx, until)
 		defer cancel()
 		conn, err := dialInstalled(t)
 		if err != nil {
@@ -173,7 +173,7 @@ func (a *app) trialRolledBack(ctx context.Context, t *target, version, previous 
 	case st.ConfigVersion == version:
 		fmt.Fprintf(a.stdout, "%s keeps config %s: the trial is confirmed\n", t.name, version)
 		return nil
-	case st.ConfigVersion == previous && a.now().Before(deadline):
+	case st.ConfigVersion == previous && time.Now().Before(deadline):
 		fmt.Fprintf(a.stdout, "%s runs config %s from before the trial\n", t.name, previous)
 	case st.ConfigVersion == previous:
 		fmt.Fprintf(a.stdout, "%s rolled back to config %s at the trial's deadline\n", t.name, previous)
@@ -220,7 +220,7 @@ func (a *app) confirmConfig(ctx context.Context, n nodeFlags, name string) error
 		return fmt.Errorf("%s has no open trial to confirm; it runs config %s", t.name, cmp.Or(resp.Msg.ConfigVersion, "none"))
 	}
 	deadline := tr.Deadline.AsTime()
-	return a.confirmTrial(ctx, t, tr.Version, tr.PreviousVersion, deadline, !a.now().Before(deadline))
+	return a.confirmTrial(ctx, t, tr.Version, tr.PreviousVersion, deadline, !time.Now().Before(deadline))
 }
 
 // trialOpen refuses a change to a node whose status shows a config on trial, which the node

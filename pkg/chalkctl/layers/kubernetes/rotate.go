@@ -388,7 +388,7 @@ func (p *Plugin) FinishGuard(ctx context.Context, r layer.Rotating, kind cluster
 	switch kind {
 	case clustersecrets.RotateServiceAccountKey:
 		at := r.Secrets().Rotation.Switched.Add(tokenRefresh)
-		if r.Now().Before(at) && !force {
+		if time.Now().Before(at) && !force {
 			return fmt.Errorf("tokens signed with the old service-account key are renewed until %s, an hour after every control plane applied the switch; finish then, or pass --force to refuse the tokens not renewed yet", at.Local().Format(time.RFC3339))
 		}
 	case clustersecrets.RotateEncryptionKey:

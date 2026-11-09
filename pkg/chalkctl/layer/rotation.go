@@ -53,8 +53,6 @@ type Rotating interface {
 	Say(format string, args ...any)
 	// Secrets are the secrets file's as the rotation has them now.
 	Secrets() clustersecrets.Secrets
-	// Now is the time the run issues at.
-	Now() time.Time
 	// Timeout bounds each wait for a node.
 	Timeout() time.Duration
 	// Poll is the time between two looks at what the run waits for.

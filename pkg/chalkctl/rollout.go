@@ -227,7 +227,7 @@ func (r *configRollout) node(ctx context.Context, n *rolloutNode) (bool, error) 
 	if n.runs != "" && n.runs == n.version {
 		r.say("%s runs config %s already", n.name, n.version)
 		if coordinator {
-			return false, r.a.waitDelivered(ctx, t, r.a.now().Add(rolloutTrial))
+			return false, r.a.waitDelivered(ctx, t, time.Now().Add(rolloutTrial))
 		}
 		return false, nil
 	}
@@ -320,7 +320,7 @@ func (r *upgradeRun) checkImages(ctx context.Context) error {
 func (a *app) waitDelivered(ctx context.Context, t *target, until time.Time) error {
 	said := false
 	var last error
-	err := poll.Until(ctx, "", until.Sub(a.now()), a.poll(), func() error {
+	err := poll.Until(ctx, "", time.Until(until), a.poll(), func() error {
 		// An attempt ends with the wait, so a layer whose service does not answer holds the trial no
 		// longer than its deadline.
 		ctx, cancel := context.WithDeadline(ctx, until)
