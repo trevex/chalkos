@@ -6,7 +6,12 @@
   mkImages,
 }:
 let
-  inherit (import ./lib.nix { inherit mkImages; }) fails worker;
+  inherit (import ./lib.nix { inherit lib mkImages; })
+    fails
+    worker
+    router
+    routerWithout
+    ;
   # A variant of each set of layers on metal: node has the Kubernetes layer, plain none, edge the
   # router layer.
   layered =
@@ -21,24 +26,6 @@ let
         };
       };
     }).nixos;
-  # A router image on metal without the router features named, whose modules set their
-  # chalkos.router.<feature>.enable to false.
-  routerWithout =
-    features:
-    (mkImages {
-      platforms = [ "metal" ];
-      variants.edge = {
-        kubernetes = false;
-        router = true;
-        modules = [
-          {
-            chalkos.router = lib.genAttrs features (_: {
-              enable = false;
-            });
-          }
-        ];
-      };
-    }).nixos.edge-metal.config;
   # The example files a router image's outputs render at its build.
   examplesOf = c: lib.attrNames (builtins.readDir c.chalkos.router.examples);
   # The users and groups of an image whose IDs its build allocates from 999 down, in the order of
@@ -252,15 +239,7 @@ lib.runTests {
           referenced = lib.any (u: lib.hasInfix "-kea-dhcp-" (u.text or "")) (lib.attrValues c.systemd.units);
           diagnostic = c.chalkos.diagnostics ? dhcp-leases;
         };
-        without =
-          (mkImages {
-            platforms = [ "metal" ];
-            variants.edge = {
-              kubernetes = false;
-              router = true;
-              modules = [ { chalkos.router.dhcp.enable = false; } ];
-            };
-          }).nixos.edge-metal.config;
+        without = routerWithout [ "dhcp" ];
       in
       {
         edge = kinds layered.edge-metal.config;
@@ -1070,18 +1049,7 @@ lib.runTests {
   testRouterWarnsOfNixosFirewall = {
     expr =
       let
-        warned =
-          modules:
-          lib.filter (lib.hasInfix "networking.firewall") (
-            (mkImages {
-              platforms = [ "metal" ];
-              variants.edge = {
-                kubernetes = false;
-                router = true;
-                inherit modules;
-              };
-            }).nixos.edge-metal.config.warnings
-          );
+        warned = modules: lib.filter (lib.hasInfix "networking.firewall") (router modules).warnings;
       in
       {
         edge = warned [ ];

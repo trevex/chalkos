@@ -9,7 +9,7 @@ let
   libChalkos = import ../../lib/chalkos.nix { inherit lib; };
   inherit (libChalkos.internal) schema kindTypes;
   getLib = libChalkos.internal.get;
-  inherit (import ./lib.nix { inherit mkImages; }) fails worker;
+  inherit (import ./lib.nix { inherit lib mkImages; }) fails worker router;
 
   demoModule =
     { lib, ... }:
@@ -111,13 +111,7 @@ let
   # The metal image of a variant without Kubernetes.
   plainImage = (mkImages { variants.worker.kubernetes = false; }).nixos.worker-metal.config;
   # A router image, and the kinds it adds.
-  routerImage =
-    (mkImages {
-      variants.edge = {
-        kubernetes = false;
-        router = true;
-      };
-    }).nixos.edge-metal.config;
+  routerImage = router [ ];
   routerKinds = [
     "AddressSet"
     "BGP"

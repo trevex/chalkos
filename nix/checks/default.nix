@@ -4,13 +4,21 @@
   pkgs,
   self,
   testing,
+  fixtures,
   docs,
 }:
 let
   inherit (pkgs) lib;
   arguments = {
     inherit pkgs self docs;
-    checkLib = import ./lib.nix { inherit pkgs self testing; };
+    checkLib = import ./lib.nix {
+      inherit
+        pkgs
+        self
+        testing
+        fixtures
+        ;
+    };
   };
 in
 lib.foldl'

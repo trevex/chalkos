@@ -1,7 +1,11 @@
 # The documentation site, built with Zensical from zensical.toml and docs/, and the reference
 # pages generated from the code. The flake's source holds tracked files alone, so
 # docs/superpowers, which git ignores, never reaches the site.
-{ pkgs, self }:
+{
+  pkgs,
+  self,
+  fixtures,
+}:
 let
   inherit (pkgs) lib;
   # The homelab's flake, extensions, inventory and config files, which the pages include as
@@ -88,38 +92,22 @@ let
       transformOptions = linkDeclarations;
     }).optionsJSON;
 
-  # The images the documentation is generated and checked against: the default variant, whose
-  # options the reference lists, one without Kubernetes, whose built-ins are those of every image,
-  # a router image, whose kinds and built-ins router images add, and one with the homelab's
-  # extensions, whose documents the pages show as an extension's.
-  docsImages = self.lib.mkImages {
-    platforms = [ "metal" ];
-    variants = {
-      docs = { };
-      plain.kubernetes = false;
-      edge = {
-        kubernetes = false;
-        router = true;
-      };
-      rack.modules = [
-        ../examples/homelab/extensions/rack.nix
-        ../examples/homelab/extensions/hardware.nix
-        ../examples/homelab/extensions/bgp.nix
-      ];
-    };
-  };
-  # An image's own options, those the node modules declare.
-  imageSystem = docsImages.nixos.docs-metal;
+  # The documentation is generated and checked against the images of testing/fixtures.nix: the
+  # default variant, whose options the reference lists, one without Kubernetes, whose built-ins are
+  # those of every image, a router image, whose kinds and built-ins router images add, and one with
+  # the homelab's extensions, whose documents the pages show as an extension's. An image's own
+  # options are those the node modules declare.
+  imageSystem = fixtures.nixos.docs-metal;
   # The schemas of chalkctl's inventory and chalklab's lab file, which they are built with.
   inventorySchema = ../pkg/inventory/chalkctl.chalkos.dev_v1alpha1_Inventory.json;
   labSchema = ../pkg/chalklab/chalklab.chalkos.dev_v1alpha1_Lab.json;
   # The schemas of the kinds router images add.
-  routerSchemas = "${docsImages.nixos.edge-metal.config.system.build.chalkosSchemas}/router.chalkos.dev_*.json";
+  routerSchemas = "${fixtures.nixos.edge-metal.config.system.build.chalkosSchemas}/router.chalkos.dev_*.json";
   # The schemas the pages' config documents are checked against: the kinds of the image with the
   # Rack, Hardware and BGP extensions, those router images add, the inventory and the lab file.
   snippetSchemas = pkgs.runCommand "chalkos-docs-schemas" { } ''
     mkdir $out
-    ln -s ${docsImages.nixos.rack-metal.config.system.build.chalkosSchemas}/*.json $out/
+    ln -s ${fixtures.nixos.homelab-metal.config.system.build.chalkosSchemas}/*.json $out/
     ln -s ${routerSchemas} $out/
     ln -s ${inventorySchema} $out/chalkctl.chalkos.dev_v1alpha1_Inventory.json
     ln -s ${labSchema} $out/chalklab.chalkos.dev_v1alpha1_Lab.json
@@ -214,7 +202,7 @@ rec {
         docgen cli $out/docs/reference/cli $out/zensical.toml ${helpLinkPages}
         docgen kinds $out/docs/reference/kinds.md ${kindSchemas} ${snippetSchemas}/chalkctl.chalkos.dev_v1alpha1_Inventory.json ${snippetSchemas}/chalklab.chalkos.dev_v1alpha1_Lab.json
         docgen options $out/docs/reference ${optionsTemplates} ${argumentOptions}/share/doc/nixos/options.json ${imageOptions}/share/doc/nixos/options.json
-        docgen builtins $out/docs/reference/builtins.md ${builtinsImage "docs" imageSystem} ${builtinsImage "plain" docsImages.nixos.plain-metal} ${builtinsImage "edge" docsImages.nixos.edge-metal}
+        docgen builtins $out/docs/reference/builtins.md ${builtinsImage "docs" imageSystem} ${builtinsImage "plain" fixtures.nixos.plain-metal} ${builtinsImage "edge" fixtures.nixos.edge-metal}
         cp -r $api proto
         chmod -R u+w proto
         (cd proto && buf generate)

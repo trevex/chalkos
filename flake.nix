@@ -9,15 +9,17 @@
       system = "x86_64-linux";
       pkgs = nixpkgs.legacyPackages.${system};
       chalkos = import ./lib { inherit nixpkgs; };
-      # The images the e2e tests boot, and the documentation with the images it is generated from,
-      # which the packages, checks and apps share.
+      # The images the e2e tests boot, those the checks and the documentation evaluate, and the
+      # documentation, which the packages, checks and apps share.
       testing = import ./nix/testing/images.nix { inherit self pkgs; };
-      docs = import ./nix/docs.nix { inherit pkgs self; };
+      fixtures = import ./nix/testing/fixtures.nix { inherit self; };
+      docs = import ./nix/docs.nix { inherit pkgs self fixtures; };
       arguments = {
         inherit
           pkgs
           self
           testing
+          fixtures
           docs
           ;
       };

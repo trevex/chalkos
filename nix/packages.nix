@@ -3,6 +3,7 @@
   self,
   testing,
   docs,
+  ...
 }:
 let
   inherit (pkgs) lib;

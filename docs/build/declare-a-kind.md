@@ -48,8 +48,9 @@ it, a value such as `10.0.0.2; import all` would add a statement of its own to `
 it, `chalkctl validate` refuses the document before it reaches a node.
 
 Put the module where the nodes that carry `Peer` documents get it. The homelab has one variant,
-so `bgp.nix` sits in `variants.node.modules`. A module in `modules` reaches every variant. A node
-whose image lacks the kind refuses a config that holds a document of it.
+so `extensions/default.nix`, which imports `bgp.nix`, sits in `variants.node.modules`. A module
+in `modules` reaches every variant. A node whose image lacks the kind refuses a config that holds
+a document of it.
 
 ## The build writes the kind's JSON Schema
 

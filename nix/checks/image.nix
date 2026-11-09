@@ -280,11 +280,7 @@ in
       build =
         modules:
         (self.lib.mkImages { variants.worker.modules = modules; }).nixos.worker-metal.config.system.build;
-      homelab = build [
-        ../../examples/homelab/extensions/rack.nix
-        ../../examples/homelab/extensions/hardware.nix
-        ../../examples/homelab/extensions/bgp.nix
-      ];
+      homelab = checkLib.fixtures.nixos.homelab-metal.config.system.build;
       router = checkLib.router.config.system.build;
       # The rules check of the router image without the router features named.
       routerWithout =
