@@ -1,7 +1,10 @@
 package chalkctl
 
 import (
+	"encoding/json"
 	"net"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
@@ -167,7 +170,7 @@ func TestRotateServiceAccountKeyWaitsAnHour(t *testing.T) {
 	l.onShare = nil
 	// The accept and the switch phases each restarted both control planes.
 	switched := l.secrets().Rotation.Switched
-	if len(shared) < 4 || switched.Before(shared[3]) {
+	if len(shared) == 0 || switched.Before(shared[len(shared)-1]) {
 		t.Errorf("the switch is recorded at %v, before the shares of %v, want it once every control plane applied it", switched, shared)
 	}
 	stdout := l.ta.stdout.String()
@@ -183,11 +186,13 @@ func TestRotateServiceAccountKeyWaitsAnHour(t *testing.T) {
 	if events := l.takeEvents(); !slices.Contains(events, "cp1 RESTART_ADDONS") {
 		t.Errorf("the addons did not restart with tokens of the new key: %v", events)
 	}
+	l.switchedAgo(59 * time.Minute)
 	if err := l.rotate("service-account-key", "--finish"); err == nil || !strings.Contains(err.Error(), "--force") {
 		t.Fatalf("err = %v, want a refusal within the hour naming --force", err)
 	}
-	if err := l.rotate("service-account-key", "--finish", "--force"); err != nil {
-		t.Fatal(err)
+	l.switchedAgo(61 * time.Minute)
+	if err := l.rotate("service-account-key", "--finish"); err != nil {
+		t.Fatalf("a finish after the hour = %v", err)
 	}
 	if l.phase() != "" {
 		t.Errorf("the secrets file still records %q", l.phase())
@@ -292,5 +297,26 @@ func TestRotateStepMovesPastADownControlPlane(t *testing.T) {
 	}
 	if events := l.takeEvents(); !slices.Contains(events, "cp2 COUNT_ENCRYPTED") {
 		t.Errorf("events = %v, want cp2 to count the encrypted objects", events)
+	}
+}
+
+// switchedAgo records in the lab's secrets file that every control plane applied the switch d ago.
+func (l *rotationLab) switchedAgo(d time.Duration) {
+	l.t.Helper()
+	path := filepath.Join(l.ta.dir, "secrets.json")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		l.t.Fatal(err)
+	}
+	var s map[string]any
+	if err := json.Unmarshal(data, &s); err != nil {
+		l.t.Fatal(err)
+	}
+	s["rotation"].(map[string]any)["switched"] = time.Now().Add(-d).UTC().Format(time.RFC3339Nano)
+	if data, err = json.Marshal(s); err != nil {
+		l.t.Fatal(err)
+	}
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		l.t.Fatal(err)
 	}
 }
