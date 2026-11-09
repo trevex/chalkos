@@ -73,14 +73,6 @@ func toplevel(cmdline string) (string, error) {
 	return path.Dir(path.Clean(init)), nil
 }
 
-// storeDir is where the store an upgrade checks is mounted.
-func (n *Node) storeDir() string {
-	if n.StoreMount != "" {
-		return n.StoreMount
-	}
-	return "/run/chalkd/upgrade-store"
-}
-
 // checkStore mounts the slot's store read-only through dm-verity with the image's root hash and
 // passes it to n.CheckStore with the system the UKI at uki boots, then unmounts it. A refusal of
 // n.CheckStore is a CheckError.
@@ -145,7 +137,7 @@ func (n *Node) mountStore(ctx context.Context, rootHash []byte, slot storeslot.S
 	if err != nil {
 		return err
 	}
-	return OpenStore(ctx, n.Ops, n.storeDir(), rootHash, slot, system, read)
+	return OpenStore(ctx, n.Ops, n.StoreMount, rootHash, slot, system, read)
 }
 
 // UKISystem is the NixOS system the UKI at path boots: the directory of its command line's init=.
@@ -185,7 +177,7 @@ func OpenStore(ctx context.Context, ops hostops.Ops, dir string, rootHash []byte
 // releaseStore unmounts and closes the checked store when a check that did not finish, as when
 // chalkd was stopped during it, left it mounted or open. Where there is none, nothing runs.
 func (n *Node) releaseStore(ctx context.Context) error {
-	return hostops.Release(ctx, n.Ops, "the checked store", n.storeDir(), StoreMapping, n.Ops.CloseVerity)
+	return hostops.Release(ctx, n.Ops, "the checked store", n.StoreMount, StoreMapping, n.Ops.CloseVerity)
 }
 
 // closeStore unmounts the checked store, when mounted, and closes its dm-verity device, and logs

@@ -611,7 +611,7 @@ func TestBootLoader(t *testing.T) {
 			t.Errorf("the boot loader of %q = %q, want %q", arch, got, want)
 		}
 	}
-	if got := ForInstaller().Architecture; got != arch.Native().Name {
+	if got := ForInstaller("/run/chalkd").Architecture; got != arch.Native().Name {
 		t.Errorf("Default installs %q on %s", got, runtime.GOARCH)
 	}
 }

@@ -465,6 +465,7 @@ func (s *Server) upgradeNodeLocked() (*upgrade.Node, error) {
 		ESP:           s.Paths.ESP,
 		EFIVars:       s.Paths.EFIVars,
 		Cmdline:       s.Paths.Cmdline,
+		StoreMount:    filepath.Join(s.Paths.RunDir, "upgrade-store"),
 		OSRelease:     readOSRelease(s.Paths.OSRelease),
 		Architecture:  arch.Native().Name,
 		OpenPartition: storeslot.OpenPartition,

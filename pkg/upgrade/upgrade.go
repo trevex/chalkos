@@ -95,9 +95,8 @@ type Node struct {
 	// variables; tests make it fail to stop an upgrade at each of them.
 	Change func(what string) error
 	// CheckStore, when set, checks the image before it becomes the next boot: Install mounts the
-	// written store read-only through dm-verity at StoreMount, /run/chalkd/upgrade-store when
-	// empty, and passes it. When the check fails, the slot stays retired and the running image
-	// stays the next boot.
+	// written store read-only through dm-verity at StoreMount and passes it. When the check fails,
+	// the slot stays retired and the running image stays the next boot.
 	CheckStore func(Store) error
 	StoreMount string
 	// CheckStaged, when set, checks the image Activate makes the next boot once the image staged

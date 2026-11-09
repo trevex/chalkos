@@ -130,7 +130,7 @@ func TestSandboxOnANode(t *testing.T) {
 		checker = filepath.Join(store, strings.TrimPrefix(target, "/nix/store/"))
 	}
 	img := Image{Store: store, System: system, Checker: checker}
-	s := DefaultSandbox()
+	s := DefaultSandbox("/run/chalkd/check")
 	for _, tc := range []struct {
 		message, refusal string
 	}{

@@ -60,14 +60,17 @@ func (i *Installer) change(what string) error {
 	return i.Change(what)
 }
 
-// ForNode installs the running node in place, on the STATE it booted with.
-func ForNode() *Installer { return defaults("/state") }
+// ForNode installs the running node in place, on the STATE it booted with, mounted at stateDir,
+// with chalkd's runtime directory runDir to work in.
+func ForNode(stateDir, runDir string) *Installer { return defaults(stateDir, runDir) }
 
 // ForInstaller installs a node from the installer onto a target disk, whose STATE it mounts in
-// chalkd's runtime directory.
-func ForInstaller() *Installer { return defaults("/run/chalkd/target") }
+// chalkd's runtime directory runDir, where it works too.
+func ForInstaller(runDir string) *Installer {
+	return defaults(filepath.Join(runDir, "target"), runDir)
+}
 
-func defaults(stateDir string) *Installer {
+func defaults(stateDir, runDir string) *Installer {
 	run := tool.ExecRunner{}
 	return &Installer{
 		Run:           run,
@@ -76,7 +79,7 @@ func defaults(stateDir string) *Installer {
 		StateDir:      stateDir,
 		BootDisk:      "/dev/disk/chalk-boot-disk",
 		Definitions:   "/etc/chalkos/repart.d",
-		WorkDir:       "/run/chalkd/install",
+		WorkDir:       filepath.Join(runDir, "install"),
 		OpenDisk:      openExclusive,
 		Architecture:  arch.Native().Name,
 		EFIVars:       "/sys/firmware/efi/efivars",

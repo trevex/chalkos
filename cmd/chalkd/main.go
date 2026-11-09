@@ -346,7 +346,7 @@ func healthTimeout(getenv func(string) string) (time.Duration, error) {
 
 func serve() error {
 	paths := chalkd.DefaultPaths()
-	creds, err := loadCredentials(paths.StateDir, "/etc/chalkos/os-ca.crt", "/run/chalkd", time.Now())
+	creds, err := loadCredentials(paths.StateDir, "/etc/chalkos/os-ca.crt", paths.RunDir, time.Now())
 	if err != nil {
 		return err
 	}
@@ -365,8 +365,8 @@ func serve() error {
 		Run:         tool.ExecRunner{},
 		Host:        storage.DefaultHost(),
 		Loader:      nodeconfig.Default(),
-		InPlace:     install.ForNode().InPlace,
-		FromParts:   install.ForInstaller().FromParts,
+		InPlace:     install.ForNode(paths.StateDir, paths.RunDir).InPlace,
+		FromParts:   install.ForInstaller(paths.RunDir).FromParts,
 		Journal:     chalkd.Journal,
 	}
 	srv.RebootNode = func() {

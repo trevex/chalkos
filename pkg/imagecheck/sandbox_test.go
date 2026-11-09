@@ -16,7 +16,7 @@ import (
 // public directory, with the image's store bound over /nix/store and the facts socket bound from
 // chalkd's own directory, in the sandbox.
 func TestUnitArgs(t *testing.T) {
-	got := DefaultSandbox().unitArgs(Image{Store: "/run/chalkd/upgrade-store/nix/store", System: "/nix/store/s-system", Checker: "/run/chalkd/upgrade-store/nix/store/c-chalkd/bin/chalkd"})
+	got := DefaultSandbox("/run/chalkd/check").unitArgs(Image{Store: "/run/chalkd/upgrade-store/nix/store", System: "/nix/store/s-system", Checker: "/run/chalkd/upgrade-store/nix/store/c-chalkd/bin/chalkd"})
 	want := []string{
 		"systemd-run", "--quiet", "--service-type=oneshot", "--unit=chalkos-check.service",
 		"--property=DynamicUser=yes",

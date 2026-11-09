@@ -102,7 +102,7 @@ func (s *Server) runImageCheck(ctx context.Context, st imageStore, system, platf
 	}
 	run := s.CheckImage
 	if run == nil {
-		run = imagecheck.DefaultSandbox()
+		run = imagecheck.DefaultSandbox(filepath.Join(s.Paths.RunDir, "check"))
 	}
 	res, err := run.Run(ctx, imagecheck.Image{Store: st.Dir(), System: system, Checker: checker}, in, f)
 	if err != nil {

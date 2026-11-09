@@ -53,9 +53,9 @@ const MaxResult = 32 << 20
 // stopMargin is how much longer than the unit's timeout chalkd waits for systemd-run.
 const stopMargin = 10 * time.Second
 
-// DefaultSandbox is the sandbox of a node: 512 MiB and two minutes.
-func DefaultSandbox() Sandbox {
-	return Sandbox{Dir: "/run/chalkd/check", Public: "/run/chalkos-check", Memory: "512M", Timeout: 2 * time.Minute}
+// DefaultSandbox is the sandbox of a node, which chalkd prepares in dir: 512 MiB and two minutes.
+func DefaultSandbox(dir string) Sandbox {
+	return Sandbox{Dir: dir, Public: "/run/chalkos-check", Memory: "512M", Timeout: 2 * time.Minute}
 }
 
 // properties are the unit's sandbox, as systemd-run's options.
