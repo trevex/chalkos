@@ -118,20 +118,6 @@ func (s *Server) keepsKnownGood(rootHash []byte, text string) (bool, error) {
 	return true, nil
 }
 
-// readImage reads the store of an image the inactive slot holds, as an upgrade checks one, and
-// passes it to read with the image's NixOS system in it. The caller holds s.mu, which the boot
-// disk's partition table is read under.
-func (s *Server) readImage(ctx context.Context, rootHash []byte, read func(st imageStore, system string) error) error {
-	if s.ReadImage != nil {
-		return s.ReadImage(ctx, rootHash, read)
-	}
-	n, err := s.upgradeNodeLocked()
-	if err != nil {
-		return err
-	}
-	return n.ReadImage(ctx, rootHash, func(st upgrade.Store) error { return read(st, st.Toplevel) })
-}
-
 // applyStaged checks the config of a request against the image in the inactive slot, staged or
 // active, and keeps it in that image's slot, as an upgrade that finds the image staged already
 // does: checked by that image's own checker against the running slot's config, and against the
@@ -180,7 +166,7 @@ func (s *Server) applyStaged(ctx context.Context, m *nodev1.ApplyConfigRequest) 
 	// or the slot changes.
 	if m.DryRun {
 		var w slotWrite
-		if err := s.readImage(ctx, staged, func(st imageStore, system string) error {
+		if err := s.imageSlots().Read(ctx, staged, func(st imageStore, system string) error {
 			var err error
 			w, err = s.planSlot(ctx, st, system, platform, staged, docs, m.FallbackSecret, nil)
 			return err
@@ -198,7 +184,7 @@ func (s *Server) applyStaged(ctx context.Context, m *nodev1.ApplyConfigRequest) 
 		return nil, err
 	}
 	var warnings []string
-	if err := s.readImage(ctx, staged, func(st imageStore, system string) error {
+	if err := s.imageSlots().Read(ctx, staged, func(st imageStore, system string) error {
 		var err error
 		warnings, err = s.writeSlot(ctx, st, system, platform, staged, docs, m.FallbackSecret)
 		return err
@@ -281,7 +267,7 @@ func (s *Server) planSecond(ctx context.Context, d *delivery) (secondWrite, erro
 	}
 	platform := readOSRelease(s.Paths.OSRelease)["CHALKOS_PLATFORM"]
 	var w slotWrite
-	if err := s.readImage(ctx, staged, func(st imageStore, system string) error {
+	if err := s.imageSlots().Read(ctx, staged, func(st imageStore, system string) error {
 		var err error
 		w, err = s.planSlot(ctx, st, system, platform, staged, d.stored.Delivered, d.msg.FallbackSecret, &recorded)
 		return err

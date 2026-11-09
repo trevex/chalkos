@@ -130,7 +130,7 @@ func upgradeWith(t *testing.T, c creds, header *nodev1.UpgradeHeader, running, p
 		}
 	}
 	var got []byte
-	s.InstallImage = func(_ context.Context, _ upgrade.Header, _, _ string, _ bool, r io.Reader) (upgrade.Result, imageConfig, error) {
+	fakeImageSlots(t, s).install = func(_ context.Context, _ upgrade.Header, _, _ string, _ bool, r io.Reader) (upgrade.Result, imageConfig, error) {
 		var err error
 		got, err = io.ReadAll(r)
 		return upgrade.Result{Entry: "chalkos_2+3.efi"}, imageConfig{}, err
@@ -203,7 +203,7 @@ func TestUpgradePullsNothingForAnImageItHolds(t *testing.T) {
 	header := pulledHeader(t, host)
 	before := manifests.Load()
 	s, _ := newTestServer(t, normal, vda)
-	s.InstallImage = func(context.Context, upgrade.Header, string, string, bool, io.Reader) (upgrade.Result, imageConfig, error) {
+	fakeImageSlots(t, s).install = func(context.Context, upgrade.Header, string, string, bool, io.Reader) (upgrade.Result, imageConfig, error) {
 		return upgrade.Result{AlreadyInstalled: true}, imageConfig{}, nil
 	}
 	conn := dial(t, serve(t, s, c, c.pool), c.clients[pki.RoleOperator])
@@ -225,10 +225,7 @@ func TestUpgradePullsNothingForAnImageItHolds(t *testing.T) {
 func TestUpgradeRefusesChunksOfAPull(t *testing.T) {
 	c := newCreds(t)
 	s, _ := newTestServer(t, normal, vda)
-	s.InstallImage = func(context.Context, upgrade.Header, string, string, bool, io.Reader) (upgrade.Result, imageConfig, error) {
-		t.Error("installed the image")
-		return upgrade.Result{}, imageConfig{}, nil
-	}
+	fakeImageSlots(t, s).forbidChanges()
 	conn := dial(t, serve(t, s, c, c.pool), c.clients[pki.RoleOperator])
 	stream := conn.Upgrade(context.Background())
 	stream.Send(&nodev1.UpgradeRequest{Message: &nodev1.UpgradeRequest_Header{Header: pulledHeader(t, ocitest.Registry(t))}})
@@ -290,10 +287,7 @@ func TestUpgradePullFailsInternallyWithoutTheRunningConfig(t *testing.T) {
 	if err := os.WriteFile(slot, []byte("x"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	s.InstallImage = func(context.Context, upgrade.Header, string, string, bool, io.Reader) (upgrade.Result, imageConfig, error) {
-		t.Error("installed the image")
-		return upgrade.Result{}, imageConfig{}, nil
-	}
+	fakeImageSlots(t, s).forbidChanges()
 	conn := dial(t, serve(t, s, c, c.pool), c.clients[pki.RoleOperator])
 	stream := conn.Upgrade(context.Background())
 	stream.Send(&nodev1.UpgradeRequest{Message: &nodev1.UpgradeRequest_Header{Header: pulledHeader(t, ocitest.Registry(t))}})

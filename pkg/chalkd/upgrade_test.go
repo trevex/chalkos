@@ -65,7 +65,7 @@ func TestUpgrade(t *testing.T) {
 			rebooted := make(chan struct{})
 			s.RebootNode = func() { close(rebooted) }
 			var got []byte
-			s.InstallImage = func(_ context.Context, h upgrade.Header, _, _ string, _ bool, r io.Reader) (upgrade.Result, imageConfig, error) {
+			fakeImageSlots(t, s).install = func(_ context.Context, h upgrade.Header, _, _ string, _ bool, r io.Reader) (upgrade.Result, imageConfig, error) {
 				want := upgrade.Header{ImageID: "chalkos", Platform: "metal", Architecture: "x86-64",
 					Image: storeslot.Image{RootHash: []byte{1, 2}, Store: imagepart.Part{Size: 1, SHA256: []byte{4}}, Verity: imagepart.Part{Size: 2, SHA256: []byte{5}}},
 					UKI:   imagepart.Part{Size: 3, SHA256: []byte{6}}, Provenance: upgrade.Provenance{Revision: "a1b2c3d4e5f6", Tag: "v1.5.0"}}
@@ -135,7 +135,7 @@ func TestUpgrade(t *testing.T) {
 func TestUpgradeStageOnly(t *testing.T) {
 	c := newCreds(t)
 	s, _ := newTestServer(t, normal, vda)
-	s.InstallImage = func(_ context.Context, _ upgrade.Header, _, _ string, stageOnly bool, r io.Reader) (upgrade.Result, imageConfig, error) {
+	fakeImageSlots(t, s).install = func(_ context.Context, _ upgrade.Header, _, _ string, stageOnly bool, r io.Reader) (upgrade.Result, imageConfig, error) {
 		if _, err := io.Copy(io.Discard, r); err != nil {
 			t.Error(err)
 		}
@@ -176,10 +176,7 @@ func TestUpgradeWhoseActivationFails(t *testing.T) {
 	s, _ := newTestServer(t, normal, vda)
 	record := filepath.Join(s.Paths.StateDir, "chalkd", "rollback")
 	write(t, record, strings.Repeat("31", 32)+"\n")
-	s.InstallImage = func(_ context.Context, _ upgrade.Header, _, _ string, _ bool, r io.Reader) (upgrade.Result, imageConfig, error) {
-		io.Copy(io.Discard, r)
-		return upgrade.Result{}, imageConfig{}, &upgrade.StagedError{Result: upgrade.Result{Entry: ".staged-chalkos_2.efi", Wrote: true}, Err: &upgrade.RefusalError{Err: errors.New("Secure Boot would refuse the UKI")}}
-	}
+	fakeImageSlots(t, s).installs(upgrade.Result{}, &upgrade.StagedError{Result: upgrade.Result{Entry: ".staged-chalkos_2.efi", Wrote: true}, Err: &upgrade.RefusalError{Err: errors.New("Secure Boot would refuse the UKI")}})
 	conn := dial(t, serve(t, s, c, c.pool), c.clients[pki.RoleOperator])
 	stream := conn.Upgrade(context.Background())
 	h := &nodev1.UpgradeHeader{Reboot: true, Image: &nodev1.ImageHeader{ImageId: "chalkos", RootHash: []byte{1, 2}, Revision: "a1b2c3d4e5f6", Tag: "v1.5.0"}}
@@ -215,7 +212,7 @@ func TestActivateImage(t *testing.T) {
 	s, _ := stagedServerOf(t, fixtureSchemas(t), "chalkos_2.efi", ".staged-chalkos_3.efi")
 	var asked [][]byte
 	result, refusal := upgrade.Result{Entry: "chalkos_3+3.efi", Active: true}, error(nil)
-	s.ActivateStaged = func(_ context.Context, rootHash []byte) (upgrade.Result, error) {
+	fakeImageSlots(t, s).activate = func(_ context.Context, rootHash []byte) (upgrade.Result, error) {
 		asked = append(asked, rootHash)
 		return result, refusal
 	}
@@ -318,10 +315,7 @@ func TestActivateImageWaitsForATrial(t *testing.T) {
 func TestUpgradeRefusesMalformedHeaders(t *testing.T) {
 	c := newCreds(t)
 	s, _ := newTestServer(t, normal, vda)
-	s.InstallImage = func(context.Context, upgrade.Header, string, string, bool, io.Reader) (upgrade.Result, imageConfig, error) {
-		t.Error("installed the image")
-		return upgrade.Result{}, imageConfig{}, nil
-	}
+	fakeImageSlots(t, s).forbidChanges()
 	addr := serve(t, s, c, c.pool)
 	conn := dial(t, addr, c.clients[pki.RoleOperator])
 	for _, tc := range []struct {
@@ -364,7 +358,7 @@ func TestUpgradeDeliversConfigOnlyForAdmins(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			s, _ := configServer(t)
 			installed, version := false, ""
-			s.InstallImage = func(ctx context.Context, _ upgrade.Header, config, secret string, _ bool, r io.Reader) (upgrade.Result, imageConfig, error) {
+			fakeImageSlots(t, s).install = func(ctx context.Context, _ upgrade.Header, config, secret string, _ bool, r io.Reader) (upgrade.Result, imageConfig, error) {
 				installed = true
 				io.Copy(io.Discard, r)
 				wrote, err := s.stageConfig(ctx, imageWith(t, s, fixtureSchemas(t), ""), "/nix/store/x", "metal", newImage, config, secret)
@@ -678,7 +672,7 @@ func TestUpgradeRetiresConfigSlots(t *testing.T) {
 		t.Fatal(err)
 	}
 	write(t, filepath.Join(s.Paths.StateDir, upgrade.ImagesRecord), string(data))
-	s.InstallImage = func(_ context.Context, h upgrade.Header, _, _ string, _ bool, r io.Reader) (upgrade.Result, imageConfig, error) {
+	fakeImageSlots(t, s).install = func(_ context.Context, h upgrade.Header, _, _ string, _ bool, r io.Reader) (upgrade.Result, imageConfig, error) {
 		io.Copy(io.Discard, r)
 		// The refusal retires the image chalkos_3 boots.
 		if err := os.Remove(filepath.Join(s.Paths.ESP, "EFI", "Linux", "chalkos_3+3.efi")); err != nil {
@@ -709,7 +703,7 @@ func TestOneUpgradeAtATime(t *testing.T) {
 	c := newCreds(t)
 	s, _ := newTestServer(t, normal, vda)
 	started, release := make(chan struct{}), make(chan struct{})
-	s.InstallImage = func(context.Context, upgrade.Header, string, string, bool, io.Reader) (upgrade.Result, imageConfig, error) {
+	fakeImageSlots(t, s).install = func(context.Context, upgrade.Header, string, string, bool, io.Reader) (upgrade.Result, imageConfig, error) {
 		close(started)
 		<-release
 		return upgrade.Result{}, imageConfig{}, nil
@@ -765,7 +759,7 @@ func TestUpgradeSharesTheStorageLock(t *testing.T) {
 	h := upgrade.Header{ImageID: "chalkos", Platform: "metal", Architecture: "x86-64",
 		Image: storeslot.Image{RootHash: bytes.Repeat([]byte{2}, 32), Store: part, Verity: part}, UKI: part}
 	// The fake sfdisk prints no table, which ends the upgrade.
-	if _, _, err := s.installImage(context.Background(), h, "", "", false, bytes.NewReader(nil)); err == nil {
+	if _, _, err := s.imageSlots().Install(context.Background(), h, "", "", false, bytes.NewReader(nil)); err == nil {
 		t.Fatal("the upgrade went on without a partition table")
 	}
 	if calls == 0 {

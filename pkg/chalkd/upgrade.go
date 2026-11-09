@@ -4,14 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"log"
 	"path/filepath"
 
 	"connectrpc.com/connect"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
-	"github.com/trevex/chalkos/pkg/arch"
 	"github.com/trevex/chalkos/pkg/atomicfile"
 	"github.com/trevex/chalkos/pkg/chalkd/layer"
 	"github.com/trevex/chalkos/pkg/config"
@@ -107,7 +105,7 @@ func (s *Server) Upgrade(ctx context.Context, stream *connect.ClientStream[nodev
 	} else {
 		log.Printf("upgrading to %q with the root hash %x", img.GetImageId(), img.GetRootHash())
 	}
-	res, staged, err := s.installImage(ctx, header, h.GetConfig(), h.GetFallbackSecret(), h.GetStageOnly(), parts)
+	res, staged, err := s.imageSlots().Install(ctx, header, h.GetConfig(), h.GetFallbackSecret(), h.GetStageOnly(), parts)
 	if _, ok := errors.AsType[*upgrade.StagedError](err); ok {
 		log.Printf("upgrade to %x failed: %v", img.GetRootHash(), err)
 		// The image is staged with the config stageConfig wrote, as after an upgrade that stops
@@ -352,36 +350,6 @@ func (s *Server) recordImages(installed *upgrade.Header) {
 	}
 }
 
-// installImage installs an upgrade's image on the node's boot disk, with the config text delivers
-// for it and the fallback secret new encrypted volumes are enrolled with, and stages it there.
-// Unless stageOnly is set it then activates the image, as ActivateImage does. Next to the result
-// it returns the config stageConfig wrote to the image's slot; none when no slot was written, as
-// for an image the node runs already or the known-good image kept with its config.
-func (s *Server) installImage(ctx context.Context, h upgrade.Header, text, secret string, stageOnly bool, image io.Reader) (upgrade.Result, imageConfig, error) {
-	if s.InstallImage != nil {
-		return s.InstallImage(ctx, h, text, secret, stageOnly, image)
-	}
-	n, err := s.upgradeNode()
-	if err != nil {
-		return upgrade.Result{}, imageConfig{}, err
-	}
-	var staged imageConfig
-	n.CheckStore = func(st upgrade.Store) error {
-		c, err := s.stageConfig(ctx, st, st.Toplevel, h.Platform, h.RootHash, text, secret)
-		if err != nil {
-			return err
-		}
-		staged = c
-		return nil
-	}
-	install := n.Upgrade
-	if stageOnly {
-		install = n.Install
-	}
-	res, err := install(ctx, h, image)
-	return res, staged, err
-}
-
 // ActivateImage makes the image staged in the inactive slot boot next, as upgrade.Node.Activate
 // does, under the lock an upgrade and a rollback hold, so none of them writes the ESP while
 // another does. It runs no check of the config: the image's own checker passed its slot before
@@ -400,7 +368,7 @@ func (s *Server) ActivateImage(ctx context.Context, req *connect.Request[nodev1.
 	if err := s.refuseOnTrialLocking("an image's activation"); err != nil {
 		return nil, err
 	}
-	res, err := s.activateStaged(ctx, root)
+	res, err := s.imageSlots().Activate(ctx, root)
 	if err != nil {
 		log.Printf("activation of %x failed: %v", root, err)
 		return nil, fmt.Errorf("activate: %w", err)
@@ -416,20 +384,6 @@ func (s *Server) ActivateImage(ctx context.Context, req *connect.Request[nodev1.
 	return connect.NewResponse(&nodev1.ActivateImageResponse{Entry: res.Entry, AlreadyActive: res.AlreadyStaged, AlreadyInstalled: res.AlreadyInstalled}), nil
 }
 
-// activateStaged activates the image staged in the inactive slot, by its root hash, on the boot
-// disk.
-func (s *Server) activateStaged(ctx context.Context, rootHash []byte) (upgrade.Result, error) {
-	if s.ActivateStaged != nil {
-		return s.ActivateStaged(ctx, rootHash)
-	}
-	n, err := s.upgradeNode()
-	if err != nil {
-		return upgrade.Result{}, err
-	}
-	n.CheckStaged = s.checkStagedSlot
-	return n.Activate(ctx, rootHash)
-}
-
 // checkStagedSlot refuses to activate the staged image, by its root hash, while STATE keeps no
 // config slot for it: the image would boot without config, fail its health check and fall back.
 func (s *Server) checkStagedSlot(rootHash []byte) error {
@@ -439,35 +393,4 @@ func (s *Server) checkStagedSlot(rootHash []byte) error {
 		return fmt.Errorf("STATE holds no config for the image %x, which an upgrade stages with its config; it would boot without config", rootHash)
 	}
 	return nil
-}
-
-// upgradeNode is the node an upgrade changes. It reads and changes the boot disk's partition
-// table under s.mu, which ApplyConfig and ResetVolume change the boot disk's partitions under.
-func (s *Server) upgradeNode() (*upgrade.Node, error) {
-	n, err := s.upgradeNodeLocked()
-	if err != nil {
-		return nil, err
-	}
-	n.TableLock = &s.mu
-	return n, nil
-}
-
-// upgradeNodeLocked is upgradeNode for a caller that holds s.mu.
-func (s *Server) upgradeNodeLocked() (*upgrade.Node, error) {
-	boot, err := s.Host.ResolvePath(s.Paths.BootDisk)
-	if err != nil {
-		return nil, fmt.Errorf("find the disk the node booted from: %w", err)
-	}
-	return &upgrade.Node{
-		Run:           s.Run,
-		Ops:           s.hostOps(),
-		Disk:          boot.Device,
-		ESP:           s.Paths.ESP,
-		EFIVars:       s.Paths.EFIVars,
-		Cmdline:       s.Paths.Cmdline,
-		StoreMount:    filepath.Join(s.Paths.RunDir, "upgrade-store"),
-		OSRelease:     readOSRelease(s.Paths.OSRelease),
-		Architecture:  arch.Native().Name,
-		OpenPartition: storeslot.OpenPartition,
-	}, nil
 }

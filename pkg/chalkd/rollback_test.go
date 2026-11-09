@@ -188,7 +188,7 @@ func TestRollbackImage(t *testing.T) {
 			}
 			rebooted := make(chan struct{})
 			s.RebootNode = func() { close(rebooted) }
-			s.ReactivateImage = func(_ context.Context, rootHash []byte, record func() error) (upgrade.Result, error) {
+			fakeImageSlots(t, s).reactivate = func(_ context.Context, rootHash []byte, record func() error) (upgrade.Result, error) {
 				if !bytes.Equal(rootHash, previous) {
 					t.Errorf("re-activates %x", rootHash)
 				}
@@ -232,10 +232,7 @@ func TestRollbackImage(t *testing.T) {
 	}
 	t.Run("without a config slot", func(t *testing.T) {
 		s, _ := newTestServer(t, normal, vda)
-		s.ReactivateImage = func(context.Context, []byte, func() error) (upgrade.Result, error) {
-			t.Error("re-activated an image without a config slot")
-			return upgrade.Result{}, nil
-		}
+		fakeImageSlots(t, s).forbidChanges()
 		conn := dial(t, serve(t, s, c, c.pool), c.clients[pki.RoleOperator])
 		_, err := conn.RollbackImage(context.Background(), connect.NewRequest(&nodev1.RollbackImageRequest{RootHash: previous}))
 		if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "STATE holds no config for the image") {

@@ -136,24 +136,9 @@ type Server struct {
 	// InPlace and FromParts install the node; tests replace them.
 	InPlace   func(ctx context.Context, req install.Request, rootHash []byte) error
 	FromParts func(context.Context, install.PartsRequest) error
-	// InstallImage installs an upgrade's image with the config and the fallback secret the upgrade
-	// delivers, stages it and, unless stageOnly is set, activates it, and returns the config it
-	// wrote to the image's slot, as installImage does; nil installs it on the boot disk. Tests
-	// replace it.
-	InstallImage func(ctx context.Context, h upgrade.Header, config, secret string, stageOnly bool, image io.Reader) (upgrade.Result, imageConfig, error)
-	// ActivateStaged makes the image staged in the inactive slot, by its root hash, boot next, as
-	// upgrade.Node.Activate does; nil activates it on the boot disk. Tests replace it.
-	ActivateStaged func(ctx context.Context, rootHash []byte) (upgrade.Result, error)
-	// ReadImage reads the store of an image in the inactive slot, as apply-config --staged checks
-	// config against it; nil mounts it from the boot disk. Tests replace it.
-	ReadImage func(ctx context.Context, rootHash []byte, read func(st imageStore, system string) error) error
 	// CheckImage runs the checker of an image that does not run; nil runs it in the sandbox of
 	// imagecheck. Tests run it in their own process.
 	CheckImage imagecheck.Runner
-	// ReactivateImage makes the image the inactive slot holds, by its root hash, boot next again,
-	// as a rollback does, calling record as upgrade.Node.Rollback does; nil re-activates it on the
-	// boot disk. Tests replace it.
-	ReactivateImage func(ctx context.Context, rootHash []byte, record func() error) (upgrade.Result, error)
 	// Healthy checks the node as the health check of a boot does, the image's layers included,
 	// which ConfirmConfig waits for before it ends a config's trial and Status reports of the boot
 	// when asked. ignore names the units the trial leaves out besides those the image ignores. nil
@@ -189,6 +174,9 @@ type Server struct {
 	clock func() time.Time
 	// actedOnSelf, when set, is told the layer actions each delivery runs; tests set it.
 	actedOnSelf func([]string)
+	// slots are the image slots upgrades, activations and image rollbacks change; nil is the boot
+	// disk's. Tests supply their own.
+	slots imageSlots
 
 	// mu serialises calls that change the node.
 	mu        sync.Mutex

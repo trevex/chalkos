@@ -65,7 +65,7 @@ func stagedServerOf(t *testing.T, schemas map[string][]byte, booted, staged stri
 		t.Fatal(err)
 	}
 	img := imageWith(t, s, schemas, "")
-	s.ReadImage = func(_ context.Context, rootHash []byte, read func(imageStore, string) error) error {
+	fakeImageSlots(t, s).read = func(_ context.Context, rootHash []byte, read func(imageStore, string) error) error {
 		if !bytes.Equal(rootHash, stagedImage) {
 			return errors.New("the inactive slot does not hold the image")
 		}
@@ -788,9 +788,10 @@ func TestEveryEndOfATrialDropsItsCopy(t *testing.T) {
 func TestTrialDeadlineStartsAfterTheStagedCheck(t *testing.T) {
 	s, _ := stagedServer(t, fixtureSchemas(t))
 	stopTrials(t, s)
-	read := s.ReadImage
+	slots := fakeImageSlots(t, s)
+	read := slots.read
 	var checked time.Time
-	s.ReadImage = func(ctx context.Context, rootHash []byte, f func(imageStore, string) error) error {
+	slots.read = func(ctx context.Context, rootHash []byte, f func(imageStore, string) error) error {
 		err := read(ctx, rootHash, f)
 		time.Sleep(10 * time.Millisecond)
 		checked = time.Now()
@@ -876,7 +877,7 @@ func TestUpgradeOfAStagedImageNamesApplyConfigStaged(t *testing.T) {
 	s, _ := stagedServer(t, fixtureSchemas(t))
 	refusal := errors.New("the config does not suit the image")
 	installErr := error(refusal)
-	s.InstallImage = func(_ context.Context, _ upgrade.Header, _, _ string, _ bool, r io.Reader) (upgrade.Result, imageConfig, error) {
+	fakeImageSlots(t, s).install = func(_ context.Context, _ upgrade.Header, _, _ string, _ bool, r io.Reader) (upgrade.Result, imageConfig, error) {
 		io.Copy(io.Discard, r)
 		return upgrade.Result{}, imageConfig{}, installErr
 	}
@@ -954,10 +955,7 @@ func TestKnownGoodImageKeepsItsConfig(t *testing.T) {
 		if err := os.WriteFile(record, []byte(hex.EncodeToString(stagedImage)+"\n"), 0o644); err != nil {
 			t.Fatal(err)
 		}
-		s.InstallImage = func(_ context.Context, _ upgrade.Header, _, _ string, _ bool, r io.Reader) (upgrade.Result, imageConfig, error) {
-			io.Copy(io.Discard, r)
-			return upgrade.Result{AlreadyStaged: true, Entry: "chalkos_3.efi"}, imageConfig{}, nil
-		}
+		fakeImageSlots(t, s).installs(upgrade.Result{AlreadyStaged: true, Entry: "chalkos_3.efi"}, nil)
 		conn := dial(t, serve(t, s, c, c.pool), c.clients[pki.RoleAdmin])
 		send := func(config string) error {
 			stream := conn.Upgrade(context.Background())

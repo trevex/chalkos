@@ -19,7 +19,6 @@ import (
 	"github.com/trevex/chalkos/pkg/chalkd/layer"
 	"github.com/trevex/chalkos/pkg/config/slot"
 	"github.com/trevex/chalkos/pkg/uki"
-	"github.com/trevex/chalkos/pkg/upgrade"
 )
 
 // RollbackConfig delivers the running image's previous config again, as rollbackConfig does. Like
@@ -226,7 +225,7 @@ func (s *Server) RollbackImage(ctx context.Context, req *connect.Request[nodev1.
 		}
 		return nil
 	}
-	res, err := s.reactivate(ctx, m.RootHash, record)
+	res, err := s.imageSlots().Reactivate(ctx, m.RootHash, record)
 	if err != nil {
 		log.Printf("rollback to %x failed: %v", m.RootHash, err)
 		return nil, layer.Errorf(connect.CodeFailedPrecondition, "roll back: %w", err)
@@ -277,19 +276,6 @@ func (s *Server) forgetRollback() {
 	if err := os.Remove(filepath.Join(s.Paths.StateDir, rollbackRecord)); err != nil && !errors.Is(err, fs.ErrNotExist) {
 		log.Printf("remove the record of the last rollback: %v", err)
 	}
-}
-
-// reactivate makes the image the inactive slot holds, by its root hash, boot next again; record
-// is called once the rollback's checks passed, before the image is staged.
-func (s *Server) reactivate(ctx context.Context, rootHash []byte, record func() error) (upgrade.Result, error) {
-	if s.ReactivateImage != nil {
-		return s.ReactivateImage(ctx, rootHash, record)
-	}
-	n, err := s.upgradeNode()
-	if err != nil {
-		return upgrade.Result{}, err
-	}
-	return n.Rollback(ctx, rootHash, s.rolledBackTo(), record)
 }
 
 // keepsSlot reports whether STATE keeps a config slot of the image whose store has the root hash,
