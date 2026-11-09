@@ -19,6 +19,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/trevex/chalkos/pkg/clustersecrets"
+	"github.com/trevex/chalkos/pkg/internal/testwait"
 	"github.com/trevex/chalkos/pkg/pki"
 )
 
@@ -120,6 +121,9 @@ func start(t testing.TB, ca pki.CertKey, name, listenPeerURL, peerURL, initialCl
 	case <-time.After(time.Minute):
 		t.Fatalf("etcd member %s did not become ready", name)
 	}
+	// A member that joins refuses a cluster whose version is not decided yet, which a ready member
+	// may not have done on a busy machine.
+	testwait.Eventually(t, "the cluster version of etcd member "+name, func() bool { return e.Server.ClusterVersion() != nil })
 	return m
 }
 
