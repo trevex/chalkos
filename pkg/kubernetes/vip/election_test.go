@@ -77,6 +77,7 @@ type electionNode struct {
 // electionTTL is the lifetime in seconds of the leases in the election tests. Each renewal gets a
 // sixth of it, and the holder releases the VIPs a quarter of it before etcd may let the lease
 // expire: a lifetime of seconds keeps a busy machine's delays well within both.
+// The tests run in parallel, each with an etcd member of its own, as they mostly wait for leases.
 const electionTTL = 6
 
 // startElection runs the election of n nodes on the etcd cluster of m.
@@ -159,6 +160,7 @@ func holder(t *testing.T, nodes []*electionNode) *electionNode {
 }
 
 func TestVIPOneHolder(t *testing.T) {
+	t.Parallel()
 	ca := etcdtest.NewCA(t)
 	m := etcdtest.StartNew(t, ca, "cp0")
 	nodes, h := startElection(t, ca, m, 3)
@@ -183,6 +185,7 @@ func TestVIPOneHolder(t *testing.T) {
 // A holder whose API server turns unhealthy releases the VIPs and resigns; another healthy node
 // takes them.
 func TestVIPMovesWhenUnhealthy(t *testing.T) {
+	t.Parallel()
 	ca := etcdtest.NewCA(t)
 	m := etcdtest.StartNew(t, ca, "cp0")
 	nodes, h := startElection(t, ca, m, 2)
@@ -206,6 +209,7 @@ func TestVIPMovesWhenUnhealthy(t *testing.T) {
 
 // A holder whose lease etcd revoked, as when it lost touch with etcd, releases the VIPs.
 func TestVIPReleasedOnLeaseLoss(t *testing.T) {
+	t.Parallel()
 	ca := etcdtest.NewCA(t)
 	m := etcdtest.StartNew(t, ca, "cp0")
 	nodes, _ := startElection(t, ca, m, 1)
@@ -226,6 +230,7 @@ func TestVIPReleasedOnLeaseLoss(t *testing.T) {
 
 // A stopping chalkd releases the VIPs.
 func TestVIPReleasedOnStop(t *testing.T) {
+	t.Parallel()
 	ca := etcdtest.NewCA(t)
 	m := etcdtest.StartNew(t, ca, "cp0")
 	nodes, h := startElection(t, ca, m, 1)
@@ -240,6 +245,7 @@ func TestVIPReleasedOnStop(t *testing.T) {
 // A stopping holder resigns, so the next candidate takes the VIPs without waiting for its lease
 // to expire.
 func TestVIPResignedOnStop(t *testing.T) {
+	t.Parallel()
 	ca := etcdtest.NewCA(t)
 	m := etcdtest.StartNew(t, ca, "cp0")
 	h := &holders{}
@@ -265,6 +271,7 @@ func TestVIPResignedOnStop(t *testing.T) {
 // A holder cut off from etcd releases the VIPs before etcd lets its lease expire, and so before
 // another node takes them, also when etcd's replies reached it late.
 func TestVIPReleasedBeforeLeaseExpires(t *testing.T) {
+	t.Parallel()
 	ca := etcdtest.NewCA(t)
 	m := etcdtest.StartNew(t, ca, "cp0")
 	h := &holders{}
@@ -362,6 +369,7 @@ func waitStalled(t *testing.T, first, standby *electionNode, want error) {
 // A stopping standby whose connection to etcd stays open but no longer answers stops in time:
 // the resignation the cancelled campaign starts on its own would wait for an answer forever.
 func TestVIPStandbyStopsWhenEtcdStalls(t *testing.T) {
+	t.Parallel()
 	first, standby := stalledStandby(t)
 	standby.stop()
 	waitStalled(t, first, standby, context.Canceled)
@@ -370,6 +378,7 @@ func TestVIPStandbyStopsWhenEtcdStalls(t *testing.T) {
 // A standby whose API server turned unhealthy while its connection to etcd stalled leaves the
 // election, which starts again with a new connection.
 func TestVIPUnhealthyStandbyLeavesWhenEtcdStalls(t *testing.T) {
+	t.Parallel()
 	first, standby := stalledStandby(t)
 	standby.healthy.Store(false)
 	waitStalled(t, first, standby, ErrEtcdStalled)
@@ -377,6 +386,7 @@ func TestVIPUnhealthyStandbyLeavesWhenEtcdStalls(t *testing.T) {
 
 // A healthy holder whose lease is renewed keeps the VIPs, also over a slow network.
 func TestVIPKeptWhileRenewed(t *testing.T) {
+	t.Parallel()
 	ca := etcdtest.NewCA(t)
 	m := etcdtest.StartNew(t, ca, "cp0")
 	h := &holders{}
@@ -395,6 +405,7 @@ func TestVIPKeptWhileRenewed(t *testing.T) {
 // A healthy holder keeps the VIPs when one renewal of its lease stalls: the next one is tried
 // once the stalled one timed out, in time before the holder would have to release them.
 func TestVIPKeptWhenOneRenewalStalls(t *testing.T) {
+	t.Parallel()
 	ca := etcdtest.NewCA(t)
 	m := etcdtest.StartNew(t, ca, "cp0")
 	h := &holders{}
@@ -420,6 +431,7 @@ func TestVIPKeptWhenOneRenewalStalls(t *testing.T) {
 // A holder whose renewals keep failing releases the VIPs before etcd could let the lease expire
 // after the last renewal that succeeded.
 func TestVIPReleasedWhenRenewalsFail(t *testing.T) {
+	t.Parallel()
 	ca := etcdtest.NewCA(t)
 	m := etcdtest.StartNew(t, ca, "cp0")
 	h := &holders{}
