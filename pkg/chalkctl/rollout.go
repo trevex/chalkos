@@ -151,7 +151,7 @@ func (r *configRollout) plan(ctx context.Context, names []string) error {
 	probed := map[string]bool{}
 	for _, name := range names {
 		n := r.nodes[name]
-		if err := r.call(name, func(conn *client.Conn) error {
+		if err := r.reach.Call(name, func(conn *client.Conn) error {
 			for _, u := range pluginsOf[layer.Upgrade](n.layers) {
 				role, err := u.UpgradeRole(ctx, conn)
 				if err != nil {
@@ -257,7 +257,7 @@ func (b *rebooter) readVersions(ctx context.Context, l layer.Rollout) layer.Read
 		var all []layer.NodeVersions
 		for _, name := range names {
 			var v *layer.NodeVersions
-			err := b.call(name, func(conn *client.Conn) error {
+			err := b.reach.Call(name, func(conn *client.Conn) error {
 				info, err := conn.Info(ctx, connect.NewRequest(&nodev1.InfoRequest{}))
 				if err != nil {
 					return err
@@ -402,7 +402,7 @@ func (r *upgradeRun) checkChanges(ctx context.Context) error {
 		}
 		var running config.Redacted
 		denied := false
-		if err := r.call(name, func(conn *client.Conn) error {
+		if err := r.reach.Call(name, func(conn *client.Conn) error {
 			var err error
 			running, err = slotConfig(ctx, conn, false)
 			if connect.CodeOf(err) == connect.CodePermissionDenied {

@@ -153,7 +153,7 @@ func (b *rebooter) reboot(ctx context.Context, n *rebootNode, t bootTarget, hold
 			return err
 		}
 	}
-	if err := b.call(n.name, func(conn *client.Conn) error {
+	if err := b.reach.Call(n.name, func(conn *client.Conn) error {
 		_, err := conn.Reboot(ctx, connect.NewRequest(&nodev1.RebootRequest{}))
 		return err
 	}); err != nil {
@@ -211,7 +211,7 @@ func (b *rebooter) waitHealthy(ctx context.Context, n *rebootNode, t bootTarget)
 	err := poll.Until(ctx, "", b.timeout, b.poll, func() error {
 		var st *nodev1.StatusResponse
 		var notReady error
-		err := b.call(n.name, func(conn *client.Conn) error {
+		err := b.reach.Call(n.name, func(conn *client.Conn) error {
 			status := func() error {
 				s, err := conn.Status(ctx, connect.NewRequest(&nodev1.StatusRequest{CheckHealth: checkHealth}))
 				if err == nil {
@@ -361,17 +361,12 @@ func (b *rebooter) say(format string, args ...any) {
 	fmt.Fprintf(b.a.stdout, format+"\n", args...)
 }
 
-// call runs fn against a node; its error names the node.
-func (b *rebooter) call(name string, fn func(conn *client.Conn) error) error {
-	return b.reach.Call(name, fn)
-}
-
 // probe reads what a node runs, its status and its roles in the clusters of its layers.
 func (b *rebooter) probe(ctx context.Context, name string) (*nodev1.InfoResponse, *nodev1.StatusResponse, upgradeRoles, error) {
 	var info *nodev1.InfoResponse
 	var st *nodev1.StatusResponse
 	var roles upgradeRoles
-	err := b.call(name, func(conn *client.Conn) error {
+	err := b.reach.Call(name, func(conn *client.Conn) error {
 		i, err := conn.Info(ctx, connect.NewRequest(&nodev1.InfoRequest{}))
 		if err != nil {
 			return err

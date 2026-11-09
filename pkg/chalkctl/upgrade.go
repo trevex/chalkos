@@ -252,7 +252,7 @@ func (r *upgradeRun) showsConfig(ctx context.Context) error {
 			continue
 		}
 		var asked, denied bool
-		if err := r.call(name, func(conn *client.Conn) error {
+		if err := r.reach.Call(name, func(conn *client.Conn) error {
 			st, err := conn.Status(ctx, connect.NewRequest(&nodev1.StatusRequest{}))
 			if err != nil {
 				return err
@@ -309,7 +309,7 @@ func (r *upgradeRun) diff(ctx context.Context) error {
 	r.diffing = true
 	for _, name := range slices.Sorted(maps.Keys(r.nodes)) {
 		var denied bool
-		if err := r.call(name, func(conn *client.Conn) error {
+		if err := r.reach.Call(name, func(conn *client.Conn) error {
 			changes, err := r.configChanges(ctx, conn, r.nodes[name])
 			if connect.CodeOf(err) == connect.CodePermissionDenied {
 				denied = true
@@ -508,7 +508,7 @@ func (r *upgradeRun) activate(ctx context.Context, n *upgradeNode, st *nodev1.St
 	}
 	if n.rollbackTo == nil {
 		var resp *nodev1.ActivateImageResponse
-		if err := r.call(n.name, func(conn *client.Conn) error {
+		if err := r.reach.Call(n.name, func(conn *client.Conn) error {
 			res, err := conn.ActivateImage(ctx, connect.NewRequest(&nodev1.ActivateImageRequest{RootHash: target}))
 			if err == nil {
 				resp = res.Msg
@@ -574,7 +574,7 @@ func (r *upgradeRun) fallbacks(ctx context.Context) error {
 		if d == nil || d.identity.Storage.Fallback == storage.FallbackNone {
 			continue
 		}
-		if err := r.call(name, func(conn *client.Conn) error {
+		if err := r.reach.Call(name, func(conn *client.Conn) error {
 			st, err := conn.Status(ctx, connect.NewRequest(&nodev1.StatusRequest{}))
 			if err != nil {
 				return err
@@ -613,7 +613,7 @@ func (r *upgradeRun) install(ctx context.Context, n *upgradeNode) error {
 		parts = stream
 	}
 	var resp *nodev1.UpgradeResponse
-	err := r.call(name, func(conn *client.Conn) error {
+	err := r.reach.Call(name, func(conn *client.Conn) error {
 		if _, err := r.configChanges(ctx, conn, n); err != nil {
 			return err
 		}
@@ -678,7 +678,7 @@ func (r *upgradeRun) reactivate(ctx context.Context, n *upgradeNode) error {
 	image, root := n.target()
 	r.say("%s: rolling back to %s", n.name, image)
 	var resp *nodev1.RollbackImageResponse
-	if err := r.call(n.name, func(conn *client.Conn) error {
+	if err := r.reach.Call(n.name, func(conn *client.Conn) error {
 		res, err := conn.RollbackImage(ctx, connect.NewRequest(&nodev1.RollbackImageRequest{RootHash: root}))
 		if err == nil {
 			resp = res.Msg
