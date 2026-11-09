@@ -19,8 +19,8 @@ let
   unbound = config.services.unbound.package;
   dir = config.chalkos.outputs.unbound.dir;
   rendered = "${dir}/unbound.conf";
-  cel = import ../../../../lib/cel.nix { inherit lib; };
-  inherit (import ../../../../lib/kinds/api.nix) apiVersions;
+  inherit (lib.chalkos.internal) cel;
+  inherit (lib.chalkos.internal.api) apiVersions;
   # The number of the default VRF's resolvers in the config c: a running config of an image whose
   # Resolver had no vrf lacks the field.
   defaultResolvers =

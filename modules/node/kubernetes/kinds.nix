@@ -8,10 +8,11 @@
 }:
 let
   inherit (lib) mkOption types;
-  inherit (import ../kinds/builtin/lib.nix) builtin groups;
+  inherit (lib.chalkos.internal) builtin;
+  inherit (lib.chalkos.internal.api) groups;
   kubernetes = config.chalkos.kubernetes.enable;
   flannel = config.chalkos.cni.provider == "flannel";
-  inherit (import ../../../lib/kinds/types.nix { inherit lib; })
+  inherit (lib.chalkos.internal.kindTypes)
     kubernetesObject
     versionedImageReference
     ;

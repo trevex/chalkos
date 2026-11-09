@@ -3,12 +3,10 @@
 # throws, prefixed with `where`, if names holds a kind the image does not declare, Secret or a
 # withheld kind. A unit must not start without the documents it expects, so a misspelled kind
 # fails the evaluation.
-{ lib, kinds }:
+{ lib, declaredKinds }:
+kinds: where: names: value:
 let
-  declared = lib.attrNames kinds ++ (import ./api.nix).networkdKinds;
-in
-where: names: value:
-let
+  declared = declaredKinds kinds;
   unknown = lib.filter (k: !lib.elem k declared) names;
   withheld = lib.filter (k: kinds.${k}.withheld or false) names;
 in

@@ -11,10 +11,7 @@
 }:
 let
   inherit (chalkosPackages) chalkcfg;
-  checkKinds = import ../../../lib/kinds/check.nix {
-    inherit lib;
-    inherit (config.chalkos) kinds;
-  };
+  checkKinds = lib.chalkos.internal.checkKinds config.chalkos.kinds;
 
   grant =
     { name, config, ... }:

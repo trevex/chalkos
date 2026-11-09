@@ -4,7 +4,8 @@
 { lib, ... }:
 let
   inherit (lib) mkOption types;
-  inherit (import ./lib.nix) builtin groups apiVersions;
+  inherit (lib.chalkos.internal) builtin;
+  inherit (lib.chalkos.internal.api) groups apiVersions;
   # A size as repart reads it, in powers of 1024: at most 18 digits without a suffix and 15, 12, 9,
   # 6 or 3 with K, M, G, T or P, so it stays below 2^63 bytes, which a rule reads as an int.
   sizePattern = "[0-9]{1,18}|[0-9]{1,15}K|[0-9]{1,12}M|[0-9]{1,9}G|[0-9]{1,6}T|[0-9]{1,3}P";

@@ -8,10 +8,7 @@
   ...
 }:
 let
-  checkKinds = import ../../../lib/kinds/check.nix {
-    inherit lib;
-    inherit (config.chalkos) kinds;
-  };
+  checkKinds = lib.chalkos.internal.checkKinds config.chalkos.kinds;
 
   # The command of a validator's program: a command as it is, or the wrapper of a jq program of
   # lib.chalkos.validate.jq, which prints what the program makes of the documents. jq takes no

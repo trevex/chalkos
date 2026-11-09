@@ -8,10 +8,7 @@
   ...
 }:
 let
-  checkKinds = import ../../../lib/kinds/check.nix {
-    inherit lib;
-    inherit (config.chalkos) kinds;
-  };
+  checkKinds = lib.chalkos.internal.checkKinds config.chalkos.kinds;
   outputs = config.chalkos.outputs;
   layerNames = lib.attrNames config.chalkos.layers;
   image =

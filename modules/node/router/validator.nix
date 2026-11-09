@@ -9,7 +9,7 @@
   ...
 }:
 let
-  inherit (import ../../../lib/kinds/api.nix) groups;
+  inherit (lib.chalkos.internal.api) groups;
   # The router kinds the image declares, and Network. A variant that leaves a router feature out
   # declares none of its kinds, and chalkctl's copy reads only the kinds the image declares too.
   kinds = lib.attrNames (lib.filterAttrs (_: k: k.group == groups.router) config.chalkos.kinds) ++ [

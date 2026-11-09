@@ -3,8 +3,8 @@
 # Kubernetes loops, through the Kubernetes layer's actions.
 { config, lib, ... }:
 let
-  cel = import ../../../lib/cel.nix { inherit lib; };
-  inherit (import ../../../lib/kinds/api.nix) apiVersions;
+  inherit (lib.chalkos.internal) cel;
+  inherit (lib.chalkos.internal.api) apiVersions;
   # Where chalkd writes the node's Kubernetes files, as default.nix names it.
   run = "/run/chalkos/kubernetes";
   # The Address= values of each Network's [Network] sections, as written and in the order of the

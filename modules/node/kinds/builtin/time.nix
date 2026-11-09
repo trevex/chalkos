@@ -2,7 +2,8 @@
 { lib, ... }:
 let
   inherit (lib) mkOption types;
-  inherit (import ./lib.nix) builtin groups;
+  inherit (lib.chalkos.internal) builtin;
+  inherit (lib.chalkos.internal.api) groups;
   timeServer = types.submodule {
     options = {
       host = mkOption {

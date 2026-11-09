@@ -10,8 +10,9 @@
 { lib }:
 let
   inherit (lib) mkOption types;
-  inherit (import ../../kinds/builtin/lib.nix) builtin groups apiVersions;
-  cel = import ../../../../lib/cel.nix { inherit lib; };
+  inherit (lib.chalkos.internal) builtin;
+  inherit (lib.chalkos.internal.api) groups apiVersions;
+  inherit (lib.chalkos.internal) cel;
   inherit (lib.chalkos.types) portRange;
   inherit (import ../types.nix { inherit lib; })
     prefix

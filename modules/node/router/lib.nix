@@ -8,7 +8,7 @@
 }:
 let
   # The kinds the image accepts: its own and networkd's.
-  accepted = lib.attrNames config.chalkos.kinds ++ (import ../../../lib/kinds/api.nix).networkdKinds;
+  accepted = lib.chalkos.internal.declaredKinds config.chalkos.kinds;
 in
 {
   inherit accepted;

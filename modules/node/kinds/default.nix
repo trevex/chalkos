@@ -13,9 +13,8 @@
   ...
 }:
 let
-  schema = import ../../../lib/kinds/schema.nix { inherit lib; };
-  getLib = import ../../../lib/kinds/get.nix { inherit lib; };
-  api = import ../../../lib/kinds/api.nix;
+  inherit (lib.chalkos.internal) schema api;
+  getLib = lib.chalkos.internal.get;
   inherit (chalkosPackages) chalkcfg chalkos-rules;
   cfg = config.chalkos.kinds;
 

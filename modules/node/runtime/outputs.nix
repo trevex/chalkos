@@ -9,10 +9,7 @@
 }:
 let
   inherit (chalkosPackages) chalkos-render;
-  checkKinds = import ../../../lib/kinds/check.nix {
-    inherit lib;
-    inherit (config.chalkos) kinds;
-  };
+  checkKinds = lib.chalkos.internal.checkKinds config.chalkos.kinds;
 
   # The name of the file a renderer of path writes: the path's own, less suffix, and less the hash
   # a file the store holds by itself starts with.

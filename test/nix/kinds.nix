@@ -6,10 +6,9 @@
 }:
 let
   inherit (lib) mkOption types;
-  schema = import ../../lib/kinds/schema.nix { inherit lib; };
-  kindTypes = import ../../lib/kinds/types.nix { inherit lib; };
-  getLib = import ../../lib/kinds/get.nix { inherit lib; };
   libChalkos = import ../../lib/chalkos.nix { inherit lib; };
+  inherit (libChalkos.internal) schema kindTypes;
+  getLib = libChalkos.internal.get;
   inherit (import ./lib.nix { inherit mkImages; }) fails worker;
 
   demoModule =
@@ -2556,7 +2555,8 @@ lib.runTests {
             ) set
           );
       in
-      lib.sort lib.lessThan (leaves "" libChalkos);
+      # lib.chalkos.internal is chalkos's own, which the page does not list.
+      lib.sort lib.lessThan (leaves "" (removeAttrs libChalkos [ "internal" ]));
   };
   # An option without rules is lib.mkOption's.
   testMkOptionWithoutRules = {

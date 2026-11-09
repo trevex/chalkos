@@ -12,9 +12,10 @@
 { lib }:
 let
   inherit (lib) mkOption types;
-  inherit (import ../../kinds/builtin/lib.nix) builtin groups apiVersions;
+  inherit (lib.chalkos.internal) builtin;
+  inherit (lib.chalkos.internal.api) groups apiVersions;
   inherit (import ../types.nix { inherit lib; }) interface interfaceText matchNames;
-  cel = import ../../../../lib/cel.nix { inherit lib; };
+  inherit (lib.chalkos.internal) cel;
 
   # The documents of a router kind in the delivered config, by name.
   delivered = kind: cel.documents "config" apiVersions.router kind;

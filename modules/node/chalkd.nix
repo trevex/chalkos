@@ -10,7 +10,7 @@
 let
   inherit (chalkosPackages) chalkd;
   inherit (config.chalkos.maintenance) osCA;
-  publicVersion = toString (import ../../lib/secrets-version.nix);
+  publicVersion = toString lib.chalkos.internal.secretsVersion;
 in
 {
   options.chalkos.maintenance.osCA = lib.mkOption {

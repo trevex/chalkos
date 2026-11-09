@@ -2,7 +2,8 @@
 { lib, ... }:
 let
   inherit (lib) mkOption types;
-  inherit (import ./lib.nix) builtin dnsName groups;
+  inherit (lib.chalkos.internal) builtin dnsName;
+  inherit (lib.chalkos.internal.api) groups;
   # A host as registries are named: a DNS name, an IPv4 address or an IPv6 address in brackets.
   # The closing bracket stays unescaped: POSIX ERE has no \], and a lone ] is literal in ERE,
   # ECMA-262 and Go alike.

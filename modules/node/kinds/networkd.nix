@@ -11,8 +11,7 @@
   ...
 }:
 let
-  schema = import ../../../lib/kinds/schema.nix { inherit lib; };
-  api = import ../../../lib/kinds/api.nix;
+  inherit (lib.chalkos.internal) schema api;
 
   # What a document of each kind is, which its schema carries.
   descriptions = {

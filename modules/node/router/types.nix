@@ -5,8 +5,8 @@
 let
   inherit (lib) mkOption types;
   inherit (lib.chalkos.types) portRange prefix ref;
-  inherit (import ../kinds/builtin/lib.nix) apiVersions;
-  cel = import ../../../lib/cel.nix { inherit lib; };
+  inherit (lib.chalkos.internal.api) apiVersions;
+  inherit (lib.chalkos.internal) cel;
   # The documents of a router kind in the delivered config, by name.
   delivered = kind: cel.documents "config" apiVersions.router kind;
   family = types.enum [

@@ -15,8 +15,8 @@ let
   dhcpSources = "/run/chalkos/chrony-dhcp";
   inherit (config.services.chrony) package;
   dhcpEnabled = config.chalkos.kinds.TimeSync.get { path = "spec.dhcp"; };
-  cel = import ../../lib/cel.nix { inherit lib; };
-  inherit (import ../../lib/kinds/api.nix) apiVersions;
+  inherit (lib.chalkos.internal) cel;
+  inherit (lib.chalkos.internal.api) apiVersions;
   # A server as a line of chrony's sources file.
   server =
     s:

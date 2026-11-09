@@ -10,7 +10,8 @@
 { lib }:
 let
   inherit (lib) mkOption types;
-  inherit (import ../../kinds/builtin/lib.nix) builtin groups;
+  inherit (lib.chalkos.internal) builtin;
+  inherit (lib.chalkos.internal.api) groups;
   inherit (import ../types.nix { inherit lib; })
     prefix
     address

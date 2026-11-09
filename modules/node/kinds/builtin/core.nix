@@ -2,7 +2,8 @@
 { lib, ... }:
 let
   inherit (lib) mkOption types;
-  inherit (import ./lib.nix) builtin dnsName groups;
+  inherit (lib.chalkos.internal) builtin dnsName;
+  inherit (lib.chalkos.internal.api) groups;
 in
 {
   chalkos.kinds = {
