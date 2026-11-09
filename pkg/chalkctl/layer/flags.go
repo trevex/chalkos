@@ -1,8 +1,13 @@
 package layer
 
 import (
+	"errors"
+	"slices"
+	"strings"
+
 	"github.com/spf13/pflag"
 
+	"github.com/trevex/chalkos/pkg/internal/cli"
 	"github.com/trevex/chalkos/pkg/inventory"
 )
 
@@ -36,7 +41,7 @@ type NodeFlags struct {
 	ClusterFlags
 	Secrets SecretsFlags
 	// Address is --address.
-	Address string
+	Address Addresses
 	// Config is --config, the client file of a command that a client file may run.
 	Config string
 }
@@ -46,7 +51,7 @@ type NodeFlags struct {
 func (f *NodeFlags) Register(fs *pflag.FlagSet) {
 	f.ClusterFlags.Register(fs)
 	f.Secrets.Register(fs)
-	fs.StringVar(&f.Address, "address", "", "address of the node's chalkd, host or host:port (default the node's address in the inventory)")
+	fs.Var(&f.Address, "address", "address of the node's chalkd, host or host:port (default the node's address in the inventory)")
 }
 
 // RegisterClient registers the flags of a command that a client file may run: those of Register
@@ -54,4 +59,53 @@ func (f *NodeFlags) Register(fs *pflag.FlagSet) {
 func (f *NodeFlags) RegisterClient(fs *pflag.FlagSet) {
 	f.Register(fs)
 	fs.StringVar(&f.Config, "config", "", "client file to authenticate with instead of the secrets file (default $CHALKOSCONFIG, else ~/.config/chalkos/config, unless --secrets is given)")
+}
+
+// Addresses are the values of --address, which may be repeated: ADDR, host or host:port, is the
+// address of the one node the command reaches, and NODE=ADDR that of any node of the cluster. No
+// host or host:port holds "=". Of two values for one node, the later counts.
+type Addresses struct{ values []string }
+
+func (a *Addresses) String() string { return strings.Join(a.values, ",") }
+
+// Type names the value for pflag; help names it NODE=ADDR where the flag's usage does.
+func (a *Addresses) Type() string { return "nodeAddresses" }
+
+func (a *Addresses) Set(v string) error {
+	node, addr, named := strings.Cut(v, "=")
+	if !named {
+		addr = v
+	}
+	if addr == "" || named && node == "" {
+		return errors.New("want ADDR or NODE=ADDR")
+	}
+	a.values = append(a.values, v)
+	return nil
+}
+
+// Bare is the last ADDR given without a node; empty when there is none.
+func (a Addresses) Bare() string {
+	for _, v := range slices.Backward(a.values) {
+		if !strings.Contains(v, "=") {
+			return v
+		}
+	}
+	return ""
+}
+
+// Resolve gives the addresses by node. A bare ADDR is the address of one, the node the command
+// reaches; one is empty for a command that reaches several nodes, which refuses a bare ADDR.
+func (a Addresses) Resolve(one string) (map[string]string, error) {
+	addresses := map[string]string{}
+	for _, v := range a.values {
+		node, addr, named := strings.Cut(v, "=")
+		if !named {
+			if one == "" {
+				return nil, cli.Usagef("--address %q: with several nodes, give each node's address as NODE=ADDR", v)
+			}
+			node, addr = one, v
+		}
+		addresses[node] = addr
+	}
+	return addresses, nil
 }

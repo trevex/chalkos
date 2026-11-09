@@ -35,7 +35,7 @@ tag but no digest. The command needs the secrets file.
 
 | Flag | Type | Default | Description |
 | --- | --- | --- | --- |
-| `--address`{ #flag-address } | string | the node's address in the inventory | Address of the node's chalkd, host or host:port. |
+| `--address`{ #flag-address } | list of string | the node's address in the inventory | Address of the node's chalkd, host or host:port. |
 | `--fingerprint`{ #flag-fingerprint } | string | — | SHA-256 fingerprint the node prints on its console in maintenance mode. |
 | `--force`{ #flag-force } | boolean | `false` | Install the node without asking whether its name is revoked. |
 | `--identity`{ #flag-identity } | list of string | ~/.config/chalkos/age.key, ~/.ssh/id_ed25519, ~/.ssh/id_rsa | File holding an age identity to decrypt the secrets with; may be repeated. |

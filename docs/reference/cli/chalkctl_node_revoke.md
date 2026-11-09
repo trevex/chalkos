@@ -31,7 +31,7 @@ needs an admin client file or the secrets file.
 
 | Flag | Type | Default | Description |
 | --- | --- | --- | --- |
-| `--address`{ #flag-address } | string | the node's address in the inventory | Address of the node's chalkd, host or host:port. |
+| `--address`{ #flag-address } | list of string | the node's address in the inventory | Address of the node's chalkd, host or host:port. |
 | `--config`{ #flag-config } | string | $CHALKOSCONFIG, else ~/.config/chalkos/config, unless --secrets is given | Client file to authenticate with instead of the secrets file. |
 | `--force`{ #flag-force } | boolean | `false` | Revoke the node although it is a control plane, an etcd member or the one --via names, or although a control plane does not say it reads the revoked nodes. |
 | `--identity`{ #flag-identity } | list of string | ~/.config/chalkos/age.key, ~/.ssh/id_ed25519, ~/.ssh/id_rsa | File holding an age identity to decrypt the secrets with; may be repeated. |

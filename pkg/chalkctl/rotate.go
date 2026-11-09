@@ -19,17 +19,15 @@ import (
 )
 
 type rotateFlags struct {
-	cluster               layer.ClusterFlags
-	secrets               layer.SecretsFlags
+	node                  nodeFlags
 	change                changeFlags
-	addresses             addressList
 	resume, finish, force bool
 	ignoreRevoked         bool
 	timeout               time.Duration
 }
 
 func (a *app) rotateCommand() *cobra.Command {
-	f := rotateFlags{addresses: addressList{}}
+	f := rotateFlags{node: nodeFlags{needs: "rotate"}}
 	cmd := a.command(&cobra.Command{
 		Use:     "rotate <kind>",
 		Short:   "Rotate " + kindList(rotationKinds(), " or "),
@@ -38,10 +36,9 @@ func (a *app) rotateCommand() *cobra.Command {
 		Args:    cli.ExactArgs(1),
 	}, func(a *app, ctx context.Context, pos []string) error { return a.rotate(ctx, f, pos) })
 	fs := cmd.Flags()
-	f.cluster.Register(fs)
-	f.secrets.Register(fs)
+	f.node.Register(fs)
 	f.change.register(fs)
-	registerAddresses(fs, f.addresses)
+	setAddressUsage(fs, "address of a node's chalkd, `NODE=ADDR`, host or host:port; may be repeated (default each node's address in the inventory)")
 	fs.BoolVar(&f.resume, "resume", false, "continue the rotation the secrets file records")
 	fs.BoolVar(&f.finish, "finish", false, "remove the old value from every node and the secrets file")
 	fs.BoolVar(&f.force, "force", false, "with --finish, finish although the kind asks to wait, as the service-account key does within the hour after its switch")
@@ -51,7 +48,7 @@ func (a *app) rotateCommand() *cobra.Command {
 }
 
 func (a *app) rotate(ctx context.Context, f rotateFlags, pos []string) error {
-	cf, sf, change, addresses := f.cluster, f.secrets, f.change, f.addresses
+	sf, change := f.node.Secrets, f.change
 	switch {
 	case f.resume && f.finish:
 		return cli.Usagef("pass --resume or --finish, not both")
@@ -67,14 +64,12 @@ func (a *app) rotate(ctx context.Context, f rotateFlags, pos []string) error {
 	if rotatorOf(nil, kind) == nil {
 		return cli.Usagef("no layer of chalkctl rotates the %s", kind.Name())
 	}
-	c, err := loadCluster(ctx, cf)
+	c, err := f.node.loadCluster(ctx)
 	if err != nil {
 		return err
 	}
-	if err := c.RequireNodes("rotate"); err != nil {
-		return err
-	}
-	if err := c.checkAddresses(addresses); err != nil {
+	addresses, err := f.node.addresses(c, "")
+	if err != nil {
 		return err
 	}
 	// Every node's config is read before any node is sent anything.

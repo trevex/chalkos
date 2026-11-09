@@ -23,10 +23,7 @@ import (
 )
 
 type applyConfigFlags struct {
-	node nodeFlags
-	// addresses are the values of --address: the address of the one node named, or NODE=ADDR of
-	// any node of the cluster.
-	addresses    []string
+	node         nodeFlags
 	passwordFile string
 	staged, diff bool
 	// dryRun has the node check the config and print the delivery's plan in place of applying it.
@@ -49,26 +46,6 @@ type applyConfigFlags struct {
 	until applyStep
 	// rollout are the values of the Rollout layers' flags, by layer.
 	rollout map[string]any
-}
-
-// addressesOf are the addresses --address gives, by node: a value without "=" is the address of
-// the one node named.
-func (f applyConfigFlags) addressesOf(names []string) (map[string]string, error) {
-	addresses := map[string]string{}
-	for _, v := range f.addresses {
-		node, addr, ok := strings.Cut(v, "=")
-		if !ok {
-			if len(names) != 1 {
-				return nil, cli.Usagef("--address %q: with several nodes, give each node's address as NODE=ADDR", v)
-			}
-			node, addr = names[0], v
-		}
-		if node == "" || addr == "" {
-			return nil, cli.Usagef("--address %q: want ADDR or NODE=ADDR", v)
-		}
-		addresses[node] = addr
-	}
-	return addresses, nil
 }
 
 // payloads reports whether a layer's flag asks for payloads.
@@ -114,9 +91,8 @@ func (a *app) applyConfigCommand() *cobra.Command {
 		Args:    cli.MinimumNArgs(1),
 	}, func(a *app, ctx context.Context, pos []string) error { return a.applyConfig(ctx, f, pos) })
 	fs := cmd.Flags()
-	f.node.ClusterFlags.Register(fs)
-	f.node.Secrets.Register(fs)
-	fs.StringArrayVar(&f.addresses, "address", nil, "address of the node's chalkd, host or host:port, or NODE=ADDR of any node of the cluster; repeat it for several (default each node's address in the inventory)")
+	f.node.Register(fs)
+	setAddressUsage(fs, "address of the node's chalkd, host or host:port, or NODE=ADDR of any node of the cluster; repeat it for several (default each node's address in the inventory)")
 	registerPasswordFile(fs, &f.passwordFile)
 	var payloadFlags []string
 	for _, d := range compiled[layer.Delivery]() {
@@ -155,11 +131,6 @@ func (a *app) applyConfig(ctx context.Context, f applyConfigFlags, pos []string)
 		}
 	}
 	pos = names
-	addresses, err := f.addressesOf(pos)
-	if err != nil {
-		return err
-	}
-	f.node.Address = addresses[pos[0]]
 	several := len(pos) > 1
 	switch {
 	case several && (f.discard || f.confirm || f.rollback || f.staged || f.diff):
@@ -194,7 +165,7 @@ func (a *app) applyConfig(ctx context.Context, f applyConfigFlags, pos []string)
 	}
 	switch {
 	case f.dryRun:
-		return a.dryRunConfig(ctx, f, pos, addresses)
+		return a.dryRunConfig(ctx, f, pos)
 	case f.staged || f.diff:
 		t, err := a.target(ctx, f.node, pos[0])
 		if err != nil {
@@ -202,7 +173,7 @@ func (a *app) applyConfig(ctx context.Context, f applyConfigFlags, pos []string)
 		}
 		return a.deliverConfig(ctx, f, t)
 	}
-	return a.deliverToNodes(ctx, f, pos, addresses)
+	return a.deliverToNodes(ctx, f, pos)
 }
 
 // checkDryRun refuses what --dry-run does not go with: it checks the inventory's config, for the
@@ -225,18 +196,14 @@ func (f applyConfigFlags) checkDryRun() error {
 // dryRunConfig has each node of names check the inventory's config as its delivery, one after
 // the other, and prints what each delivery would change. A node that refuses its config does not
 // stop the others.
-func (a *app) dryRunConfig(ctx context.Context, f applyConfigFlags, names []string, addresses map[string]string) error {
-	c, err := f.node.loadCluster(ctx)
-	if err != nil {
-		return err
-	}
-	creds, err := a.loadSecretCredentials(ctx, f.node.Secrets)
+func (a *app) dryRunConfig(ctx context.Context, f applyConfigFlags, names []string) error {
+	s, err := a.reach(ctx, f.node, soleNode(names), false)
 	if err != nil {
 		return err
 	}
 	var refused, failed []string
 	for _, name := range names {
-		t, err := targetIn(c, addresses[name], name, creds)
+		t, err := s.target(name)
 		if err == nil {
 			err = a.deliverConfig(ctx, f, t)
 		}

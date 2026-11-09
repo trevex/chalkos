@@ -185,8 +185,9 @@ type Host interface {
 	// Target addresses the node with the flags' credentials: the client file or the secrets file,
 	// at --address or else at the inventory's address.
 	Target(ctx context.Context, f NodeFlags, name string) (Target, error)
-	// Nodes reaches the cluster's nodes with the flags' credentials: the node via at --address,
-	// the others at the inventory's addresses.
+	// Nodes reaches the cluster's nodes with the flags' credentials, each at the address --address
+	// gives for it or else at the inventory's. A bare --address ADDR is via's; without via, Nodes
+	// refuses one.
 	Nodes(ctx context.Context, f NodeFlags, via string) (Nodes, error)
 	// Secrets reads the secrets file the flags name.
 	Secrets(ctx context.Context, f SecretsFlags) (clustersecrets.Secrets, error)

@@ -19,15 +19,15 @@ import (
 // throughControlPlane calls call on the control-plane node via, or else on the cluster's
 // control-plane nodes but skip in name order, moving on past nodes that are down or no etcd member.
 func throughControlPlane(h layer.Host, ctx context.Context, f viaFlags, skip string, call func(conn *client.Conn) error) error {
+	if f.via == "" && f.node.Address.Bare() != "" {
+		return errors.New("--address reaches one node; name it with --via")
+	}
 	nodes, err := h.Nodes(ctx, f.node, f.via)
 	if err != nil {
 		return err
 	}
 	if f.via != "" {
 		return nodes.ViaFirst([]string{f.via}, func(error) bool { return false }, call)
-	}
-	if f.node.Address != "" {
-		return errors.New("--address reaches one node; name it with --via")
 	}
 	c := nodes.Cluster()
 	if c.Partial() {

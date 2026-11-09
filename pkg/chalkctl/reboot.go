@@ -457,31 +457,11 @@ func (b *rebooter) ViaCoordinators(prefer string, next func(error) bool, fn func
 }
 
 type nodeRebootFlags struct {
-	node nodeFlags
-	// addresses are the values of --address: the node's own address, or NODE=ADDR of any node of
-	// the cluster, such as a control plane its drain goes through.
-	addresses []string
-	pin       pinFlags
-	noDrain   bool
-	layers    map[string]any
-	timeout   time.Duration
-}
-
-// addressesOf are the addresses of the nodes of the cluster --address gives, by name: a value
-// without "=", which no host or host:port holds, is the address of the node rebooted.
-func (f nodeRebootFlags) addressesOf(name string) (map[string]string, error) {
-	addresses := map[string]string{}
-	for _, v := range f.addresses {
-		node, addr, ok := strings.Cut(v, "=")
-		if !ok {
-			node, addr = name, v
-		}
-		if node == "" || addr == "" {
-			return nil, cli.Usagef("--address %q: want ADDR or NODE=ADDR", v)
-		}
-		addresses[node] = addr
-	}
-	return addresses, nil
+	node    nodeFlags
+	pin     pinFlags
+	noDrain bool
+	layers  map[string]any
+	timeout time.Duration
 }
 
 func (a *app) nodeRebootCommand() *cobra.Command {
@@ -494,10 +474,8 @@ func (a *app) nodeRebootCommand() *cobra.Command {
 		Args:    cli.ExactArgs(1),
 	}, func(a *app, ctx context.Context, pos []string) error { return a.nodeReboot(ctx, f, pos[0]) })
 	fs := cmd.Flags()
-	f.node.ClusterFlags.Register(fs)
-	f.node.Secrets.Register(fs)
-	registerConfig(fs, &f.node.Config)
-	fs.StringArrayVar(&f.addresses, "address", nil, "address of the node's chalkd, host or host:port, or NODE=ADDR of another node of the cluster, such as a control plane the drain goes through; repeat it for several (default each node's address in the inventory)")
+	f.node.RegisterClient(fs)
+	setAddressUsage(fs, "address of the node's chalkd, host or host:port, or NODE=ADDR of another node of the cluster, such as a control plane the drain goes through; repeat it for several (default each node's address in the inventory)")
 	f.pin.register(fs)
 	fs.BoolVar(&f.noDrain, "no-drain", false, "reboot the node without its layers holding it before and releasing it after, such as without draining a Kubernetes node")
 	fs.DurationVar(&f.timeout, "timeout", 30*time.Minute, "how long to wait for the node to come back healthy and for its drain")
@@ -516,13 +494,12 @@ func (a *app) nodeReboot(ctx context.Context, f nodeRebootFlags, name string) er
 	if f.timeout <= 0 {
 		return cli.Usagef("--timeout must be positive")
 	}
-	addresses, err := f.addressesOf(name)
+	s, err := a.reach(ctx, f.node, name, true)
 	if err != nil {
 		return err
 	}
-	f.node.Address = addresses[name]
 	if f.pin.set() {
-		t, err := a.clientTarget(ctx, f.node, name)
+		t, err := s.target(name)
 		if err != nil {
 			return err
 		}
@@ -537,16 +514,9 @@ func (a *app) nodeReboot(ctx context.Context, f nodeRebootFlags, name string) er
 		fmt.Fprintf(a.stdout, "%s reboots\n", t.name)
 		return nil
 	}
-	c, err := f.node.loadCluster(ctx)
-	if err != nil {
-		return err
-	}
-	creds, err := a.loadCredentials(ctx, f.node.Secrets, f.node.Config)
-	if err != nil {
-		return err
-	}
+	c := s.cluster
 	// Below the operator role the node refuses the drain or the reboot, naming the role.
-	b := &rebooter{a: a, cluster: c, reach: nodeSet{cluster: c, creds: creds, addresses: addresses}, rebootOptions: a.rebootOptions(f.layers, f.timeout)}
+	b := &rebooter{a: a, cluster: c, reach: s, rebootOptions: a.rebootOptions(f.layers, f.timeout)}
 	if err := c.node(name); err != nil {
 		return err
 	}

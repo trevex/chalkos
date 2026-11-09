@@ -44,19 +44,7 @@ func (h host) Target(ctx context.Context, f layer.NodeFlags, name string) (layer
 
 // Nodes reaches the nodes with the secrets file or a client file.
 func (h host) Nodes(ctx context.Context, f layer.NodeFlags, via string) (layer.Nodes, error) {
-	c, err := loadCluster(ctx, f.ClusterFlags)
-	if err != nil {
-		return nil, err
-	}
-	creds, err := h.a.loadCredentials(ctx, f.Secrets, f.Config)
-	if err != nil {
-		return nil, err
-	}
-	s := nodeSet{cluster: c, creds: creds}
-	if via != "" {
-		s.addresses = map[string]string{via: f.Address}
-	}
-	return s, nil
+	return h.a.reach(ctx, nodeFlags{NodeFlags: f}, via, true)
 }
 
 func (h host) Secrets(ctx context.Context, f layer.SecretsFlags) (clustersecrets.Secrets, error) {

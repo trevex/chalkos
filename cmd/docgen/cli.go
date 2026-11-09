@@ -185,7 +185,7 @@ func flagTable(heading string, flags *pflag.FlagSet) string {
 var describedDefault = regexp.MustCompile(`\s*\(default ([^()]*)\)$`)
 
 // flagTypes are the types of flags in the words of the page of config kinds, by pflag's names and
-// those of the programs' own values: nodeAddresses is chalkctl rotate's --address NODE=ADDR.
+// those of the programs' own values: nodeAddresses is chalkctl's --address ADDR or NODE=ADDR.
 var flagTypes = map[string]string{
 	"bool":           "boolean",
 	"duration":       "duration",
@@ -195,7 +195,7 @@ var flagTypes = map[string]string{
 	"stringArray":    "list of string",
 	"stringSlice":    "list of string",
 	"stringToString": "map of string",
-	"nodeAddresses":  "map of string",
+	"nodeAddresses":  "list of string",
 }
 
 func flagType(f *pflag.Flag) string {

@@ -23,7 +23,7 @@ needs an operator client file or the secrets file.
 
 | Flag | Type | Default | Description |
 | --- | --- | --- | --- |
-| `--address`{ #flag-address } | string | the node's address in the inventory | Address of the node's chalkd, host or host:port. |
+| `--address`{ #flag-address } | list of string | the node's address in the inventory | Address of the node's chalkd, host or host:port. |
 | `--config`{ #flag-config } | string | $CHALKOSCONFIG, else ~/.config/chalkos/config, unless --secrets is given | Client file to authenticate with instead of the secrets file. |
 | `--identity`{ #flag-identity } | list of string | ~/.config/chalkos/age.key, ~/.ssh/id_ed25519, ~/.ssh/id_rsa | File holding an age identity to decrypt the secrets with; may be repeated. |
 | `--image`{ #flag-image } | string | the node's image in the inventory | Image to activate, as upgrade --image staged it: a raw image with repart-output.json next to it, or an image directory. |

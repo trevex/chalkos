@@ -76,21 +76,19 @@ type upgradeOptions struct {
 }
 
 type upgradeFlags struct {
-	cluster              layer.ClusterFlags
-	secrets              layer.SecretsFlags
-	config, image, nodes string
-	passwordFile         string
-	addresses            addressList
-	maxUnavailable       int
-	until                upgradeStep
-	retryFailed          bool
-	diff, rollback       bool
-	layers               map[string]any
-	timeout              time.Duration
+	node           nodeFlags
+	image, nodes   string
+	passwordFile   string
+	maxUnavailable int
+	until          upgradeStep
+	retryFailed    bool
+	diff, rollback bool
+	layers         map[string]any
+	timeout        time.Duration
 }
 
 func (a *app) upgradeCommand() *cobra.Command {
-	f := upgradeFlags{addresses: addressList{}, until: untilReboot, layers: map[string]any{}}
+	f := upgradeFlags{until: untilReboot, layers: map[string]any{}}
 	cmd := a.command(&cobra.Command{
 		Use:     "upgrade",
 		Short:   "Install new images on the cluster's nodes, or boot their previous ones again",
@@ -99,10 +97,8 @@ func (a *app) upgradeCommand() *cobra.Command {
 		Args:    cli.NoArgs,
 	}, func(a *app, ctx context.Context, pos []string) error { return a.upgrade(ctx, f) })
 	fs := cmd.Flags()
-	f.cluster.Register(fs)
-	f.secrets.Register(fs)
-	registerConfig(fs, &f.config)
-	registerAddresses(fs, f.addresses)
+	f.node.RegisterClient(fs)
+	setAddressUsage(fs, "address of a node's chalkd, `NODE=ADDR`, host or host:port; may be repeated (default each node's address in the inventory)")
 	fs.StringVar(&f.image, "image", "", "image to install on the nodes that run its variant, or on the nodes --nodes names whatever they run: a raw image with repart-output.json next to it, or an image directory (default the directory of each node's image in the inventory)")
 	fs.StringVar(&f.nodes, "nodes", "", "comma-separated nodes to upgrade (default every node of the cluster, or with --image every node that runs the image's variant)")
 	fs.IntVar(&f.maxUnavailable, "max-unavailable", 1, "how many nodes upgrade at once after the nodes that act for the others, such as Kubernetes control planes, which upgrade one at a time")
@@ -139,20 +135,18 @@ func (a *app) upgrade(ctx context.Context, f upgradeFlags) error {
 			return cli.Usagef("--rollback stages no image: it makes the image the nodes ran before boot next; --until activate stops there")
 		}
 	}
-	c, err := loadCluster(ctx, f.cluster)
+	var named []string
+	if f.nodes != "" {
+		named = strings.Split(f.nodes, ",")
+	}
+	s, err := a.reach(ctx, f.node, soleNode(named), true)
 	if err != nil {
 		return err
 	}
-	creds, err := a.loadCredentials(ctx, f.secrets, f.config)
-	if err != nil {
-		return err
-	}
+	c, creds := s.cluster, s.creds
 	// The nodes refuse an upgrade below the operator role, but only once a node is drained.
 	if role := creds.role(); !role.Allows(pki.RoleOperator) {
 		return fmt.Errorf("upgrade needs the %s role; the %s role may not upgrade nodes", pki.RoleOperator, roleLabel(role))
-	}
-	if err := c.checkAddresses(f.addresses); err != nil {
-		return err
 	}
 	var img *diskImage
 	if f.image != "" {
@@ -165,17 +159,13 @@ func (a *app) upgrade(ctx context.Context, f upgradeFlags) error {
 	}
 	r := &upgradeRun{
 		rebooter: &rebooter{
-			a: a, cluster: c, reach: nodeSet{cluster: c, creds: creds, addresses: f.addresses},
+			a: a, cluster: c, reach: s,
 			rebootOptions: a.rebootOptions(f.layers, f.timeout),
 		},
 		upgradeOptions: f.options(), role: creds.role(),
 		rollback: f.rollback,
 	}
 	r.fellBack = r.rolledBack
-	var named []string
-	if f.nodes != "" {
-		named = strings.Split(f.nodes, ",")
-	}
 	if f.rollback {
 		if err := r.planRollback(ctx, named); err != nil {
 			return err

@@ -378,3 +378,18 @@ func TestAdminCertificateLastsOneRun(t *testing.T) {
 		t.Errorf("the admin certificate lasts another %v, want an hour", got)
 	}
 }
+
+// A command that reaches one node takes its address as NODE=ADDR too, and refuses a NODE=ADDR
+// of a node the cluster does not have.
+func TestNamedAddressOfOneNode(t *testing.T) {
+	ta := newTestApp(t)
+	s, _ := installedNode(t, ta, []byte(`{}`))
+	addr := ta.startNode(t, s)
+	if err := ta.run(context.Background(), []string{"status", "n1", "--inventory", ta.inventory, "--address", "n1=" + addr}); err != nil {
+		t.Errorf("--address n1=ADDR: %v", err)
+	}
+	err := ta.run(context.Background(), []string{"status", "n1", "--inventory", ta.inventory, "--address", "n9=" + addr})
+	if err == nil || !strings.Contains(err.Error(), "has no node n9") {
+		t.Errorf("--address n9=ADDR: %v, want the node refused", err)
+	}
+}

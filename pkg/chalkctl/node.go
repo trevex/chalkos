@@ -42,7 +42,7 @@ func (a *app) disks(ctx context.Context, f nodePinFlags, pos []string) error {
 		if conn, err = a.dialEither(t, p); err != nil {
 			return err
 		}
-	case len(pos) == 0 && n.Address != "":
+	case len(pos) == 0 && n.Address.Bare() != "":
 		// A node not in the inventory yet: only maintenance mode, with a certificate when a secrets
 		// file or a client file is given, for an image with an OS CA.
 		var cert *tls.Certificate
@@ -53,11 +53,11 @@ func (a *app) disks(ctx context.Context, f nodePinFlags, pos []string) error {
 			}
 			cert = creds.cert
 		}
-		if conn, err = p.dial(n.Address, "--address", cert); err != nil {
+		if conn, err = p.dial(n.Address.Bare(), "--address", cert); err != nil {
 			return err
 		}
 	default:
-		return cli.Usagef("disks needs a node or --address")
+		return cli.Usagef("disks needs a node or --address ADDR")
 	}
 	defer conn.Close()
 	resp, err := conn.Disks(ctx, connect.NewRequest(&nodev1.DisksRequest{}))

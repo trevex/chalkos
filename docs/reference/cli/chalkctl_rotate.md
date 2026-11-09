@@ -29,7 +29,7 @@ takes part, so remove revoked nodes from the inventory first. The command needs 
 
 | Flag | Type | Default | Description |
 | --- | --- | --- | --- |
-| `--address`{ #flag-address } | map of string | each node's address in the inventory | Address of a node's chalkd, NODE=ADDR, host or host:port; may be repeated. |
+| `--address`{ #flag-address } | list of string | each node's address in the inventory | Address of a node's chalkd, NODE=ADDR, host or host:port; may be repeated. |
 | `--finish`{ #flag-finish } | boolean | `false` | Remove the old value from every node and the secrets file. |
 | `--force`{ #flag-force } | boolean | `false` | With --finish, finish although the kind asks to wait, as the service-account key does within the hour after its switch. |
 | `--identity`{ #flag-identity } | list of string | ~/.config/chalkos/age.key, ~/.ssh/id_ed25519, ~/.ssh/id_rsa | File holding an age identity to decrypt the secrets with; may be repeated. |

@@ -64,20 +64,13 @@ type rolloutNode struct {
 }
 
 // deliverToNodes delivers the inventory's config to the nodes named, as configRollout does.
-func (a *app) deliverToNodes(ctx context.Context, f applyConfigFlags, names []string, addresses map[string]string) error {
-	c, err := f.node.loadCluster(ctx)
+func (a *app) deliverToNodes(ctx context.Context, f applyConfigFlags, names []string) error {
+	s, err := a.reach(ctx, f.node, soleNode(names), false)
 	if err != nil {
-		return err
-	}
-	creds, err := a.loadSecretCredentials(ctx, f.node.Secrets)
-	if err != nil {
-		return err
-	}
-	if err := c.checkAddresses(addresses); err != nil {
 		return err
 	}
 	r := &configRollout{
-		rebooter: &rebooter{a: a, cluster: c, reach: nodeSet{cluster: c, creds: creds, addresses: addresses}, rebootOptions: a.rebootOptions(f.rollout, rolloutQuorumWait)},
+		rebooter: &rebooter{a: a, cluster: s.cluster, reach: s, rebootOptions: a.rebootOptions(f.rollout, rolloutQuorumWait)},
 		f:        f,
 		nodes:    map[string]*rolloutNode{},
 	}

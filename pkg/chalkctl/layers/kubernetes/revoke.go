@@ -83,7 +83,7 @@ func controlPlanesRead(h layer.Host, ctx context.Context, f viaFlags, name strin
 	if err != nil {
 		return err
 	}
-	if f.via == "" && (c.Partial() || f.node.Address != "") {
+	if f.via == "" && (c.Partial() || f.node.Address.Bare() != "") {
 		// node revoke asks for --via, which names the node --address reaches and the control
 		// plane to ask without an inventory.
 		return nil

@@ -239,8 +239,8 @@ func TestSiteLinks(t *testing.T) {
 	}
 }
 
-// addresses is a flag value of a type pflag does not know, as chalkctl rotate's --address.
-type addresses map[string]string
+// addresses is a flag value of a type pflag does not know, as chalkctl's --address.
+type addresses []string
 
 func (addresses) String() string   { return "" }
 func (addresses) Set(string) error { return nil }
@@ -266,7 +266,7 @@ func TestFlagType(t *testing.T) {
 		"bool":    "boolean",
 		"map":     "map of string",
 		"list":    "list of string",
-		"address": "map of string",
+		"address": "list of string",
 		"net":     "ipNet",
 	} {
 		if got := flagType(fs.Lookup(name)); got != want {
