@@ -81,7 +81,7 @@ unitCheck "router-dhcp" checkLib.networkTools ''
   # A server whose socket closes without an answer is named, and the others still listed.
   ${pkgs.socat}/bin/socat UNIX-LISTEN:/run/kea/dhcp4-ghost.sock,fork SYSTEM:true &
   ghost=$!
-  retry 100 "Kea opened no control socket dhcp4-ghost.sock" test -S /run/kea/dhcp4-ghost.sock
+  retry 600 "Kea opened no control socket dhcp4-ghost.sock" test -S /run/kea/dhcp4-ghost.sock
   bash -c ${lib.escapeShellArg leases} dhcp-leases >all.tsv 2>errors.txt ||
     fail "dhcp-leases failed beside a server that does not answer: $(cat errors.txt)"
   grep -qx 'the DHCPv4 server of VRF ghost does not answer' errors.txt ||

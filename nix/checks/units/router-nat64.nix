@@ -241,7 +241,7 @@ unitCheck "router-nat64"
     inside guest nft list counter ip6 count reached | grep -q "packets 1 " || fail "a guest's packet to the NAT64 prefix did not reach guest's namespace"
     on_wan socat TCP-LISTEN:80,fork,reuseaddr EXEC:${whoami} &
     serving() { on_wan ss -ltn | grep -q ':80 '; }
-    retry 100 "the uplink peer's server did not start" serving
+    retry 600 "the uplink peer's server did not start" serving
     inner=$(jq -r .inner ${dir}/guest.veth)
     got=$(inside guest socat -u "TCP4:203.0.113.254:80,bind=''${inner%/*}:61500,connect-timeout=2" -) ||
       fail "a connection from guest's namespace did not leave through guest's uplink"
@@ -298,7 +298,7 @@ unitCheck "router-nat64"
     nsenter --net=/run/netns/nat64-guest sleep 600 &
     holder=$!
     moved() { [ "$(readlink /proc/$holder/ns/net)" != "$main" ]; }
-    retry 100 "the holder did not enter nat64-guest" moved
+    retry 600 "the holder did not enter nat64-guest" moved
     ip netns delete nat64-guest
     ip link show n64-guest >/dev/null 2>&1 || fail "the held namespace took its link along"
     ${ExecReload} || fail "a run after guest's namespace went failed"

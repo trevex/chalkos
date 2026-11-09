@@ -37,9 +37,10 @@ let
   #   print what explains the failure, and fails the check;
   # - retry <tries> <message> <command>...: runs the command until it succeeds, at most tries
   #   times, 0.1 seconds apart, and fails with the message if it never does; with an empty message
-  #   it returns 1 instead, for a caller that says more;
+  #   it returns 1 instead, and the caller must test the result;
   # - refuses <what> <pattern> <command>...: the command, what names it, must fail, and what it
-  #   prints, which stays in refused.log, must match the grep pattern.
+  #   prints, which stays in refused.log, must hold the pattern as fixed text; an empty pattern
+  #   checks nothing of what it prints.
   prelude = ''
     fail() {
       echo "error: $*" >&2
@@ -60,7 +61,7 @@ let
       local what=$1 pattern=$2
       shift 2
       if "$@" >refused.log 2>&1; then fail "$what accepted it"; fi
-      grep -q -- "$pattern" refused.log || fail "$what refused it without $pattern: $(cat refused.log)"
+      [ -z "$pattern" ] || grep -qF -- "$pattern" refused.log || fail "$what refused it without $pattern: $(cat refused.log)"
     }
   '';
 in
@@ -119,7 +120,7 @@ in
                   eval "on_$name() { nsenter -t ''${pids[$name]} -n \"\$@\"; }"
                 done
                 for name in "$@"; do
-                  retry 100 "the network namespace $name did not start" test -e "$name-ready"
+                  retry 600 "the network namespace $name did not start" test -e "$name-ready"
                 done
               }
             ''

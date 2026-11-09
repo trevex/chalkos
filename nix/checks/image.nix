@@ -430,7 +430,8 @@ in
         install -m 644 ${../../cmd/chalkos-render/testdata/router/edge.frr} frr/frr.conf
         OUT=$PWD/frr $check </dev/null
         sed -i 's/^ neighbor peer-fabric bfd$/ neighbor peer-fabric bfd sometimes/' frr/frr.conf
-        refuses "the router's FRR check" 'Unknown command.*neighbor peer-fabric bfd sometimes' env OUT=$PWD/frr "$check" </dev/null
+        refuses "the router's FRR check" 'Unknown command' env OUT=$PWD/frr "$check" </dev/null
+        grep -qF 'neighbor peer-fabric bfd sometimes' refused.log || fail "the router's FRR check refused another command: $(cat refused.log)"
         # The check of Jool's instances passes the edge example's and refuses a port past 65535,
         # with jool alone. A golden holds its files, each after a line that names it; the check
         # takes Jool's file of the edge example alone.

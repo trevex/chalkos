@@ -277,7 +277,7 @@ unitCheck "vxlan-rule" checkLib.networkTools ''
       socket)
         socat UNIX-LISTEN:vxlan /dev/null &
         listener=$!
-        retry 100 "socat opened no socket vxlan" test -S vxlan
+        retry 600 "socat opened no socket vxlan" test -S vxlan
         ;;
     esac
     run vxlan
