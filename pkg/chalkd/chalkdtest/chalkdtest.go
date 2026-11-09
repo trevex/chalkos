@@ -18,9 +18,12 @@ import (
 	"github.com/trevex/chalkos/pkg/layers"
 )
 
-// EffectsFixture is the default image's effects.json, from a package two directories below the
-// repository root, such as pkg/chalkd.
-const EffectsFixture = "../../test/fixtures/kinds/effects.json"
+// effectsFixture is the default image's effects.json, relative to the directory go test runs a
+// package's tests in, the package's own. Effects reads it from there, so only the tests of a
+// package two directories below the repository root, such as pkg/chalkd or pkg/chalkctl, call
+// it. The path is not resolved from this file's, which a build with -trimpath, as Nix's, does
+// not record.
+const effectsFixture = "../../test/fixtures/kinds/effects.json"
 
 // Plugins compiles the Kubernetes and router layers into node, on an image of the layers l: the
 // plugins given, and for a layer none of them is, one built with chalkd's own options.
@@ -47,7 +50,7 @@ func Plugins(t testing.TB, node layer.Node, l layers.Set, plugins ...layer.Plugi
 // that one of l lacks stays, so the delivery refuses it.
 func Effects(t testing.TB, l layers.Set) map[string]json.RawMessage {
 	t.Helper()
-	data, err := os.ReadFile(EffectsFixture)
+	data, err := os.ReadFile(effectsFixture)
 	if err != nil {
 		t.Fatal(err)
 	}

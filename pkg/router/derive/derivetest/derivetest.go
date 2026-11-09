@@ -7,18 +7,18 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+
+	"github.com/trevex/chalkos/pkg/config"
 )
 
-// The API versions of the router kinds and of networkd's kinds.
-const (
-	routerAPI   = "router.chalkos.dev/v1alpha1"
-	networkdAPI = "networkd.chalkos.dev/v1alpha1"
-)
+// routerAPI is the API version of the router kinds. It mirrors derive.API, which derivetest does
+// not import, so that derive's own tests share it.
+const routerAPI = "router.chalkos.dev/v1alpha1"
 
 // Doc is a networkd document of kind called name, with spec in JSON, its numbers exact.
 func Doc(t testing.TB, kind, name, spec string) any {
 	t.Helper()
-	return withSpec(t, networkdAPI, kind, name, spec)
+	return withSpec(t, config.NetworkdAPI, kind, name, spec)
 }
 
 // RouterDoc is a document of a router kind called name, with spec in JSON, its numbers exact.

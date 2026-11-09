@@ -34,8 +34,8 @@ var (
 )
 
 // Cluster is a cluster of the kind at https://10.0.0.10:6443 on Kubernetes 1.37.1, with the
-// default ranges of both families, the domain cluster.local and Images, changed by the edits in
-// order.
+// ranges of both families, IPFamilies unset (ipv4), the domain cluster.local and Images, changed
+// by the edits in order.
 func Cluster(kind string, edits ...func(c *kubernetes.Cluster)) kubernetes.Cluster {
 	c := kubernetes.Cluster{
 		Kind:              kind,
@@ -85,13 +85,13 @@ func Node(name string, ips ...string) kubernetes.Node {
 // DocumentImages are the images ClusterDoc names, by the fields of a Cluster document: those of
 // a flannel image, as the test schemas are.
 var DocumentImages = map[string]string{
-	"apiServer":         "registry.k8s.io/kube-apiserver:v1.37.1",
-	"controllerManager": "registry.k8s.io/kube-controller-manager:v1.37.1",
-	"scheduler":         "registry.k8s.io/kube-scheduler:v1.37.1",
-	"proxy":             "registry.k8s.io/kube-proxy:v1.37.1",
-	"etcd":              "registry.k8s.io/etcd:3.7.0-0",
-	"coredns":           "registry.k8s.io/coredns/coredns:v1.14.6",
-	"pause":             "registry.k8s.io/pause:3.10.2",
+	"apiServer":         Images.KubeAPIServer,
+	"controllerManager": Images.KubeControllerManager,
+	"scheduler":         Images.KubeScheduler,
+	"proxy":             Images.KubeProxy,
+	"etcd":              Images.Etcd,
+	"coredns":           Images.CoreDNS,
+	"pause":             Images.Pause,
 	"flannel":           FlannelImage,
 }
 
@@ -106,6 +106,7 @@ func NodeDoc(name, spec string) string {
 func ClusterDoc(name, spec string) string {
 	fields := strings.TrimSpace(strings.TrimSuffix(strings.TrimPrefix(strings.TrimSpace(spec), "{"), "}"))
 	if !strings.Contains(fields, "images:") {
+		// A map of strings always marshals.
 		b, _ := json.Marshal(DocumentImages)
 		fields = strings.TrimSuffix("images: "+string(b)+", "+fields, ", ")
 	}

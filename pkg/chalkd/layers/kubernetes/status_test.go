@@ -3,7 +3,6 @@ package kubernetes
 import (
 	"context"
 	"crypto/tls"
-	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -63,8 +62,8 @@ func TestServesFile(t *testing.T) {
 // status tells it apart from the API server's 1.37.1.
 func withKubelet(t *testing.T, p *Plugin, version string) {
 	t.Helper()
-	var c k8s.Cluster
-	if err := json.Unmarshal([]byte(readFile(t, p.k.state.Cluster)), &c); err != nil {
+	c, err := k8s.ReadCluster(p.k.state.Cluster)
+	if err != nil {
 		t.Fatal(err)
 	}
 	c.Version = version
@@ -100,7 +99,11 @@ func TestStatusReportsTheVersions(t *testing.T) {
 // TestStatusReportsTheStaticPods checks that a bootstrapped control plane reports whether its
 // static pods run its config's images, through its own API server.
 func TestStatusReportsTheStaticPods(t *testing.T) {
-	images := kubetest.Images
+	images := k8s.Images{
+		KubeAPIServer:         "registry.k8s.io/kube-apiserver:v1.37.1",
+		KubeControllerManager: "registry.k8s.io/kube-controller-manager:v1.37.1",
+		KubeScheduler:         "registry.k8s.io/kube-scheduler:v1.37.1",
+	}
 	for name, tc := range map[string]struct {
 		client  func(k8s.Cluster, kpki.Share) (kubernetes.Interface, error)
 		want    string
