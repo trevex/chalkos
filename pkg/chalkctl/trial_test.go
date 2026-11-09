@@ -52,7 +52,7 @@ func rewriteTrial(t *testing.T, s *chalkd.Server, fields map[string]any) {
 
 // TestApplyConfigOnTrial applies a config on trial and confirms it over a new connection once the
 // node is healthy; a trial left open with --no-confirm shows in status, holds back other
-// deliveries, ends with --confirm or with --rollback.
+// deliveries, ends with apply-config confirm or with apply-config rollback.
 func TestApplyConfigOnTrial(t *testing.T) {
 	ta := newTestApp(t)
 	ta.pollInterval = 20 * time.Millisecond
@@ -97,24 +97,24 @@ func TestApplyConfigOnTrial(t *testing.T) {
 	if err := run("apply-config", "n1", "--try", "1m", "--no-confirm"); err != nil {
 		t.Fatal(err)
 	}
-	contains("chalkctl apply-config --confirm n1 keeps it; chalkctl apply-config --rollback n1 rolls it back now")
+	contains("chalkctl apply-config confirm n1 keeps it; chalkctl apply-config rollback n1 rolls it back now")
 	if err := run("status", "n1"); err != nil {
 		t.Fatal(err)
 	}
 	contains("config " + third + " on trial until ")
-	contains(": it rolls back to config " + second + " unless apply-config --confirm confirms it")
-	if err := run("apply-config", "n1"); err == nil || !strings.Contains(err.Error(), "n1 runs config "+third+" on trial until ") || !strings.Contains(err.Error(), "confirm it with chalkctl apply-config --confirm n1, or roll it back with chalkctl apply-config --rollback n1, first") {
+	contains(": it rolls back to config " + second + " unless apply-config confirm confirms it")
+	if err := run("apply-config", "n1"); err == nil || !strings.Contains(err.Error(), "n1 runs config "+third+" on trial until ") || !strings.Contains(err.Error(), "confirm it with chalkctl apply-config confirm n1, or roll it back with chalkctl apply-config rollback n1, first") {
 		t.Errorf("a delivery during the trial: %v", err)
 	}
 	if err := run("apply-config", "n1", "--diff"); err != nil {
 		t.Errorf("--diff during the trial: %v", err)
 	}
-	if err := run("apply-config", "n1", "--confirm"); err != nil {
+	if err := run("apply-config", "confirm", "n1"); err != nil {
 		t.Fatal(err)
 	}
 	contains("n1 keeps config " + third + ": the trial is confirmed")
-	if err := run("apply-config", "n1", "--confirm"); err == nil || !strings.Contains(err.Error(), "n1 has no open trial to confirm; it runs config "+third) {
-		t.Errorf("--confirm without a trial: %v", err)
+	if err := run("apply-config", "confirm", "n1"); err == nil || !strings.Contains(err.Error(), "n1 has no open trial to confirm; it runs config "+third) {
+		t.Errorf("confirm without a trial: %v", err)
 	}
 
 	ta.writeNode(t, n1SystemDisk, n1Network, timeSync("ntp3.lan"))
@@ -122,7 +122,7 @@ func TestApplyConfigOnTrial(t *testing.T) {
 	if err := run("apply-config", "n1", "--try", "1m", "--no-confirm"); err != nil {
 		t.Fatal(err)
 	}
-	if err := run("apply-config", "n1", "--rollback"); err != nil {
+	if err := run("apply-config", "rollback", "n1"); err != nil {
 		t.Fatal(err)
 	}
 	contains("n1 runs config "+third+" again; config "+fourth+" is its previous one now", "n1: the trial of config "+fourth+" ended")
@@ -288,7 +288,7 @@ func TestConfirmInterrupted(t *testing.T) {
 		})
 	})
 	err := run(ctx, "apply-config", "n1", "--try", "1m")
-	if err == nil || !strings.Contains(err.Error(), "; n1 runs config "+second+" on trial until ") || !strings.Contains(err.Error(), "; chalkctl apply-config --confirm n1 keeps it; chalkctl apply-config --rollback n1 rolls it back now") {
+	if err == nil || !strings.Contains(err.Error(), "; n1 runs config "+second+" on trial until ") || !strings.Contains(err.Error(), "; chalkctl apply-config confirm n1 keeps it; chalkctl apply-config rollback n1 rolls it back now") {
 		t.Errorf("an interrupted confirmation = %v\n%s", err, ta.stdout)
 	}
 }
@@ -300,7 +300,7 @@ func TestConfirmRefused(t *testing.T) {
 	_, run, _, _ := trialNode(t, ta)
 	ta.setWrap(refuse("ConfirmConfig", connect.NewError(connect.CodeFailedPrecondition, errors.New("the trial is of config x, not y"))))
 	err := run(context.Background(), "apply-config", "n1", "--try", "1m")
-	if err == nil || !strings.Contains(err.Error(), "the trial is of config x, not y; it rolls back at ") || !strings.Contains(err.Error(), " unless confirmed; chalkctl apply-config --confirm n1 keeps it; chalkctl apply-config --rollback n1 rolls it back now") {
+	if err == nil || !strings.Contains(err.Error(), "the trial is of config x, not y; it rolls back at ") || !strings.Contains(err.Error(), " unless confirmed; chalkctl apply-config confirm n1 keeps it; chalkctl apply-config rollback n1 rolls it back now") {
 		t.Errorf("a refused confirmation = %v\n%s", err, ta.stdout)
 	}
 }
@@ -313,7 +313,7 @@ func TestConfirmFailingToEndTheTrial(t *testing.T) {
 	_, run, _, _ := trialNode(t, ta)
 	ta.setWrap(refuse("ConfirmConfig", connect.NewError(connect.CodeInternal, errors.New("end the trial: remove chalkd/trial: read-only file system"))))
 	err := run(context.Background(), "apply-config", "n1", "--try", "1m")
-	if err == nil || !strings.Contains(err.Error(), "end the trial: remove chalkd/trial: read-only file system; it rolls back at ") || !strings.Contains(err.Error(), " unless confirmed; chalkctl apply-config --confirm n1 keeps it; chalkctl apply-config --rollback n1 rolls it back now") {
+	if err == nil || !strings.Contains(err.Error(), "end the trial: remove chalkd/trial: read-only file system; it rolls back at ") || !strings.Contains(err.Error(), " unless confirmed; chalkctl apply-config confirm n1 keeps it; chalkctl apply-config rollback n1 rolls it back now") {
 		t.Errorf("a confirmation that failed to end the trial = %v\n%s", err, ta.stdout)
 	}
 }
@@ -348,7 +348,7 @@ func TestUnreadableTrialAfterDelivery(t *testing.T) {
 	s, run, _, second := trialNode(t, ta)
 	ta.setWrap(spoilTrial(s, "ApplyConfig", true))
 	err := run(context.Background(), "apply-config", "n1", "--try", "1m")
-	if err == nil || !strings.Contains(err.Error(), "n1: config "+second+" was not confirmed within its trial: ") || !strings.Contains(err.Error(), "; the record of its trial cannot be read: parse the trial record: unexpected end of JSON input; chalkctl apply-config --rollback n1 restores the previous config") {
+	if err == nil || !strings.Contains(err.Error(), "n1: config "+second+" was not confirmed within its trial: ") || !strings.Contains(err.Error(), "; the record of its trial cannot be read: parse the trial record: unexpected end of JSON input; chalkctl apply-config rollback n1 restores the previous config") {
 		t.Errorf("a delivery whose trial record cannot be read = %v\n%s", err, ta.stdout)
 	}
 	if strings.Contains(ta.stdout.String(), "the trial is confirmed") {
@@ -357,17 +357,17 @@ func TestUnreadableTrialAfterDelivery(t *testing.T) {
 }
 
 // TestConfirmUnreadableTrial: a confirmation the node refuses because it cannot read the record of
-// the trial names the rollback that ends it, and no deadline or --confirm.
+// the trial names the rollback that ends it, and no deadline or apply-config confirm.
 func TestConfirmUnreadableTrial(t *testing.T) {
 	ta := newTestApp(t)
 	s, run, _, second := trialNode(t, ta)
 	ta.setWrap(spoilTrial(s, "ConfirmConfig", false))
 	err := run(context.Background(), "apply-config", "n1", "--try", "1m")
-	if err == nil || !strings.Contains(err.Error(), "n1: config "+second+" was not confirmed within its trial: ") || !strings.Contains(err.Error(), "chalkctl apply-config --rollback n1 restores the previous config") {
+	if err == nil || !strings.Contains(err.Error(), "n1: config "+second+" was not confirmed within its trial: ") || !strings.Contains(err.Error(), "chalkctl apply-config rollback n1 restores the previous config") {
 		t.Fatalf("a confirmation of a trial whose record cannot be read = %v\n%s", err, ta.stdout)
 	}
-	if strings.Contains(err.Error(), "it rolls back at") || strings.Contains(err.Error(), "--confirm n1 keeps it") {
-		t.Errorf("chalkctl names a deadline or --confirm: %v", err)
+	if strings.Contains(err.Error(), "it rolls back at") || strings.Contains(err.Error(), "confirm n1 keeps it") {
+		t.Errorf("chalkctl names a deadline or apply-config confirm: %v", err)
 	}
 }
 
@@ -393,13 +393,13 @@ func TestTrialRollbackWaitInterrupted(t *testing.T) {
 		})
 	})
 	err := run(ctx, "apply-config", "n1", "--try", "1m")
-	if err == nil || !strings.Contains(err.Error(), "the answer to its delivery did not come: ") || !strings.Contains(err.Error(), "; n1 may run config "+second+" on trial until ") || !strings.Contains(err.Error(), "; chalkctl apply-config --confirm n1 keeps it; chalkctl apply-config --rollback n1 rolls it back now") {
+	if err == nil || !strings.Contains(err.Error(), "the answer to its delivery did not come: ") || !strings.Contains(err.Error(), "; n1 may run config "+second+" on trial until ") || !strings.Contains(err.Error(), "; chalkctl apply-config confirm n1 keeps it; chalkctl apply-config rollback n1 rolls it back now") {
 		t.Errorf("an interrupted wait for the rollback = %v\n%s", err, ta.stdout)
 	}
 }
 
 // TestUnreadableTrialRecord: a trial whose record the node cannot read shows in status, holds back
-// deliveries, and --rollback warns which config it delivers, which ends it.
+// deliveries, and apply-config rollback warns which config it delivers, which ends it.
 func TestUnreadableTrialRecord(t *testing.T) {
 	ta := newTestApp(t)
 	s, run, first, _ := trialNode(t, ta)
@@ -407,21 +407,21 @@ func TestUnreadableTrialRecord(t *testing.T) {
 		t.Fatal(err)
 	}
 	writeFile(t, filepath.Join(s.Paths.StateDir, "chalkd", "trial"), "{")
-	if err := run(context.Background(), "status", "n1"); err != nil || !strings.Contains(ta.stdout.String(), "\nthe record of a config's trial cannot be read: parse the trial record: unexpected end of JSON input; other changes are refused until apply-config --rollback restores the previous config\n") {
+	if err := run(context.Background(), "status", "n1"); err != nil || !strings.Contains(ta.stdout.String(), "\nthe record of a config's trial cannot be read: parse the trial record: unexpected end of JSON input; other changes are refused until apply-config rollback restores the previous config\n") {
 		t.Errorf("status = %v:\n%s", err, ta.stdout)
 	}
 	ta.writeNode(t, n1SystemDisk, n1Network, timeSync("ntp2.lan"))
-	if err := run(context.Background(), "apply-config", "n1"); err == nil || !strings.Contains(err.Error(), "n1: the record of a config's trial cannot be read: parse the trial record: unexpected end of JSON input; other changes are refused until chalkctl apply-config --rollback n1 restores the previous config") {
+	if err := run(context.Background(), "apply-config", "n1"); err == nil || !strings.Contains(err.Error(), "n1: the record of a config's trial cannot be read: parse the trial record: unexpected end of JSON input; other changes are refused until chalkctl apply-config rollback n1 restores the previous config") {
 		t.Errorf("a delivery past a record that cannot be read: %v", err)
 	}
-	if err := run(context.Background(), "apply-config", "n1", "--confirm"); err == nil || !strings.Contains(err.Error(), "n1: the record of a config's trial cannot be read: parse the trial record: unexpected end of JSON input; other changes are refused until chalkctl apply-config --rollback n1 restores the previous config") {
-		t.Errorf("--confirm past a record that cannot be read: %v", err)
+	if err := run(context.Background(), "apply-config", "confirm", "n1"); err == nil || !strings.Contains(err.Error(), "n1: the record of a config's trial cannot be read: parse the trial record: unexpected end of JSON input; other changes are refused until chalkctl apply-config rollback n1 restores the previous config") {
+		t.Errorf("confirm past a record that cannot be read: %v", err)
 	}
 	ta.stderr.Reset()
-	if err := run(context.Background(), "apply-config", "n1", "--rollback"); err != nil {
+	if err := run(context.Background(), "apply-config", "rollback", "n1"); err != nil {
 		t.Fatal(err)
 	}
-	if want := "chalkctl: warning: n1: the record of a config's trial cannot be read: parse the trial record: unexpected end of JSON input; the rollback delivers config " + first + ", the node's previous config, which is the config on trial if a rollback at the trial's deadline replaced it already; if it is, a second apply-config --rollback undoes it"; !strings.Contains(ta.stderr.String(), want) {
+	if want := "chalkctl: warning: n1: the record of a config's trial cannot be read: parse the trial record: unexpected end of JSON input; the rollback delivers config " + first + ", the node's previous config, which is the config on trial if a rollback at the trial's deadline replaced it already; if it is, a second apply-config rollback undoes it"; !strings.Contains(ta.stderr.String(), want) {
 		t.Errorf("stderr lacks %q:\n%s", want, ta.stderr)
 	}
 	if v, _ := slot.Version(slotOf(t, s)); v != first {
@@ -446,16 +446,16 @@ func TestUnreadableTrialAfterDeadlineRollback(t *testing.T) {
 	}
 	writeFile(t, filepath.Join(s.Paths.StateDir, "chalkd", "trial"), "{")
 	ta.stderr.Reset()
-	if err := run(context.Background(), "apply-config", "n1", "--rollback"); err != nil {
+	if err := run(context.Background(), "apply-config", "rollback", "n1"); err != nil {
 		t.Fatal(err)
 	}
-	if want := "the rollback delivers config " + second + ", the node's previous config, which is the config on trial if a rollback at the trial's deadline replaced it already; if it is, a second apply-config --rollback undoes it"; !strings.Contains(ta.stderr.String(), want) {
+	if want := "the rollback delivers config " + second + ", the node's previous config, which is the config on trial if a rollback at the trial's deadline replaced it already; if it is, a second apply-config rollback undoes it"; !strings.Contains(ta.stderr.String(), want) {
 		t.Errorf("stderr lacks %q:\n%s", want, ta.stderr)
 	}
 	if v, _ := slot.Version(slotOf(t, s)); v != second {
 		t.Fatalf("the node runs %s, want %s", v, second)
 	}
-	if err := run(context.Background(), "apply-config", "n1", "--rollback"); err != nil {
+	if err := run(context.Background(), "apply-config", "rollback", "n1"); err != nil {
 		t.Fatal(err)
 	}
 	if v, _ := slot.Version(slotOf(t, s)); v != first {
@@ -481,7 +481,7 @@ func TestUnreadableTrialWithoutPreviousConfig(t *testing.T) {
 	}
 	writeFile(t, filepath.Join(s.Paths.StateDir, "chalkd", "trial"), "{")
 	ta.stderr.Reset()
-	if err := run(context.Background(), "apply-config", "n1", "--rollback"); err != nil {
+	if err := run(context.Background(), "apply-config", "rollback", "n1"); err != nil {
 		t.Fatal(err)
 	}
 	if want := "chalkctl: warning: n1: the record of a config's trial cannot be read: parse the trial record: unexpected end of JSON input; the node keeps no previous config, so the rollback delivers config " + first + ", the config it runs, again"; !strings.Contains(ta.stderr.String(), want) {
@@ -524,8 +524,8 @@ func TestConfirmAfterAFailedRollback(t *testing.T) {
 	if err := run("status", "n1"); err != nil || !strings.Contains(ta.stdout.String(), "; an attempt to roll the config back failed and is tried again each minute: output demo failed") {
 		t.Errorf("status = %v:\n%s", err, ta.stdout)
 	}
-	if err := run("apply-config", "n1", "--confirm"); err != nil {
-		t.Fatalf("--confirm after a failed rollback = %v\n%s", err, ta.stdout)
+	if err := run("apply-config", "confirm", "n1"); err != nil {
+		t.Fatalf("confirm after a failed rollback = %v\n%s", err, ta.stdout)
 	}
 	if want := "n1 keeps config " + second + ": the trial is confirmed"; !strings.Contains(ta.stdout.String(), want) {
 		t.Errorf("output lacks %q:\n%s", want, ta.stdout)
@@ -536,12 +536,12 @@ func TestConfirmAfterAFailedRollback(t *testing.T) {
 		t.Fatal(err)
 	}
 	rewriteTrial(t, s, map[string]any{"deadline": past, "error": "restart demo.service failed", "attempts": 1, "changed": true})
-	if err := run("status", "n1"); err != nil || !strings.Contains(ta.stdout.String(), "; an attempt to roll the config back failed after it changed the node and is tried again each minute: restart demo.service failed; apply-config --confirm no longer keeps the config, and apply-config --rollback finishes the rollback now") {
+	if err := run("status", "n1"); err != nil || !strings.Contains(ta.stdout.String(), "; an attempt to roll the config back failed after it changed the node and is tried again each minute: restart demo.service failed; apply-config confirm no longer keeps the config, and apply-config rollback finishes the rollback now") {
 		t.Errorf("status = %v:\n%s", err, ta.stdout)
 	}
-	err := run("apply-config", "n1", "--confirm")
-	if err == nil || !strings.Contains(err.Error(), "chalkctl apply-config --rollback n1 finishes it now") {
-		t.Errorf("--confirm after a rollback that changed the node = %v", err)
+	err := run("apply-config", "confirm", "n1")
+	if err == nil || !strings.Contains(err.Error(), "chalkctl apply-config rollback n1 finishes it now") {
+		t.Errorf("confirm after a rollback that changed the node = %v", err)
 	}
 	if strings.Contains(ta.stdout.String(), "rolled back") {
 		t.Errorf("chalkctl reports a rollback:\n%s", ta.stdout)
@@ -549,7 +549,7 @@ func TestConfirmAfterAFailedRollback(t *testing.T) {
 }
 
 // TestTrialThatEnded: a trial whose slot runs the config from before it, as a rollback at the
-// deadline that failed after it wrote the slot leaves it, holds back no delivery, and --rollback
+// deadline that failed after it wrote the slot leaves it, holds back no delivery, and a rollback
 // delivers the running config again, which the node keeps.
 func TestTrialThatEnded(t *testing.T) {
 	ta := newTestApp(t)
@@ -571,7 +571,7 @@ func TestTrialThatEnded(t *testing.T) {
 	// The slot runs second with first as its previous config: the trial of first ended.
 	ended := map[string]any{"slot": filepath.Base(slotOf(t, s)), "version": first, "previous": second, "deadline": time.Now().Add(time.Hour).UTC().Format(time.RFC3339Nano), "error": "restart demo.service failed", "changed": true}
 	rewriteTrial(t, s, ended)
-	if err := run("apply-config", "n1", "--rollback"); err != nil {
+	if err := run("apply-config", "rollback", "n1"); err != nil {
 		t.Fatal(err)
 	}
 	if want := "n1 runs config " + second + " again; config " + first + " is its previous one now"; !strings.Contains(ta.stdout.String(), want) {
@@ -605,14 +605,14 @@ func TestApplyConfigOnTrialPartlyFailed(t *testing.T) {
 	second := ta.configVersion(t)
 	r.setFail("chalkos-chrony-dhcp.service")
 	err := run("apply-config", "n1", "--try", "1m")
-	if err == nil || !strings.Contains(err.Error(), "config "+second+" stays on trial until ") || !strings.Contains(err.Error(), "chalkctl apply-config --confirm n1 keeps it; chalkctl apply-config --rollback n1 rolls it back now") {
+	if err == nil || !strings.Contains(err.Error(), "config "+second+" stays on trial until ") || !strings.Contains(err.Error(), "chalkctl apply-config confirm n1 keeps it; chalkctl apply-config rollback n1 rolls it back now") {
 		t.Fatalf("a delivery on trial that failed = %v\n%s", err, ta.stdout)
 	}
 	if strings.Contains(ta.stdout.String(), "waiting") {
 		t.Errorf("chalkctl waited to confirm:\n%s", ta.stdout)
 	}
 	r.setFail("")
-	if err := run("apply-config", "n1", "--rollback"); err != nil {
+	if err := run("apply-config", "rollback", "n1"); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -627,16 +627,10 @@ func TestApplyConfigTrialUsage(t *testing.T) {
 		{[]string{"--no-confirm"}, "--no-confirm goes with --try"},
 		{[]string{"--try", "5s"}, "--try takes from 10s to 24h0m0s, not 5s"},
 		{[]string{"--try", "25h"}, "--try takes from 10s to 24h0m0s, not 25h0m0s"},
-		{[]string{"--try", "1m", "--staged"}, "--try applies config to the running image; --staged goes without it"},
-		{[]string{"--try", "1m", "--diff"}, "--diff changes nothing, so it tries nothing; drop --try"},
-		{[]string{"--try", "1m", "--kubernetes-share"}, "--try delivers config alone, which a rollback undoes"},
-		{[]string{"--rollback", "--try", "1m"}, "--rollback goes without --try, --no-confirm and --ignore-unit"},
-		{[]string{"--rollback", "--no-confirm"}, "--rollback goes without --try, --no-confirm and --ignore-unit"},
-		{[]string{"--rollback", "--ignore-unit", "late.service"}, "--rollback goes without --try, --no-confirm and --ignore-unit"},
+		{[]string{"--try", "1m", "--staged"}, "[staged try] were all set"},
+		{[]string{"--try", "1m", "--diff"}, "[diff try] were all set"},
+		{[]string{"--try", "1m", "--kubernetes-share"}, "[kubernetes-share try] were all set"},
 		{[]string{"--ignore-unit", "late.service"}, "--ignore-unit goes with --try"},
-		{[]string{"--confirm", "--ignore-unit", "late.service"}, "--confirm confirms the node's open trial"},
-		{[]string{"--confirm", "--rollback"}, "--confirm confirms the node's open trial and takes no other apply-config flag but the node's"},
-		{[]string{"--confirm", "--try", "1m"}, "--confirm confirms the node's open trial"},
 	} {
 		err := ta.run(context.Background(), ta.args(append([]string{"apply-config", "n1"}, tc.args...), "127.0.0.1:1"))
 		if err == nil || !strings.Contains(err.Error(), tc.want) {
@@ -647,7 +641,7 @@ func TestApplyConfigTrialUsage(t *testing.T) {
 
 func TestTrialLine(t *testing.T) {
 	tr := &nodev1.ConfigTrial{Version: "v2", PreviousVersion: "v1", Deadline: timestamppb.New(time.Date(2026, 10, 29, 12, 0, 0, 0, time.UTC))}
-	if got, want := trialLine(tr), "config v2 on trial until 2026-10-29T12:00:00Z: it rolls back to config v1 unless apply-config --confirm confirms it"; got != want {
+	if got, want := trialLine(tr), "config v2 on trial until 2026-10-29T12:00:00Z: it rolls back to config v1 unless apply-config confirm confirms it"; got != want {
 		t.Errorf("%q, want %q", got, want)
 	}
 	tr.IgnoreUnits = []string{"late.service", "sync.timer"}
@@ -659,7 +653,7 @@ func TestTrialLine(t *testing.T) {
 		t.Errorf("with an error: %q", got)
 	}
 	tr.RollbackChanged = true
-	if got := trialLine(tr); !strings.HasSuffix(got, "; an attempt to roll the config back failed after it changed the node and is tried again each minute: output demo failed; apply-config --confirm no longer keeps the config, and apply-config --rollback finishes the rollback now") {
+	if got := trialLine(tr); !strings.HasSuffix(got, "; an attempt to roll the config back failed after it changed the node and is tried again each minute: output demo failed; apply-config confirm no longer keeps the config, and apply-config rollback finishes the rollback now") {
 		t.Errorf("with a rollback that changed the node: %q", got)
 	}
 }
@@ -709,8 +703,8 @@ func TestApplyConfigOnTrialIgnoresUnits(t *testing.T) {
 	if err := run("status", "n1"); err != nil || !strings.Contains(ta.stdout.String(), "; its health check leaves out late.service") {
 		t.Errorf("status = %v:\n%s", err, ta.stdout)
 	}
-	if err := run("apply-config", "n1", "--confirm"); err != nil || !strings.Contains(ta.stdout.String(), "n1 keeps config "+second+": the trial is confirmed") {
-		t.Fatalf("--confirm = %v:\n%s", err, ta.stdout)
+	if err := run("apply-config", "confirm", "n1"); err != nil || !strings.Contains(ta.stdout.String(), "n1 keeps config "+second+": the trial is confirmed") {
+		t.Fatalf("confirm = %v:\n%s", err, ta.stdout)
 	}
 	ta.writeNode(t, n1SystemDisk, n1Network, timeSync("ntp2.lan"))
 	if err := run("apply-config", "n1", "--try", "1m", "--no-confirm"); err != nil {
@@ -720,7 +714,7 @@ func TestApplyConfigOnTrialIgnoresUnits(t *testing.T) {
 		t.Errorf("stderr lacks %q:\n%s", warning, ta.stderr)
 	}
 	// The trial's health check cannot pass: it ends with a rollback on request.
-	if err := run("apply-config", "n1", "--rollback"); err != nil {
+	if err := run("apply-config", "rollback", "n1"); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -734,9 +728,9 @@ func TestTrialOpen(t *testing.T) {
 		want string
 	}{
 		{&nodev1.StatusResponse{ConfigVersion: "v1"}, ""},
-		{&nodev1.StatusResponse{ConfigVersion: "v2", Trial: tr}, "n1 runs config v2 on trial until 2026-10-29T12:00:00Z; confirm it with chalkctl apply-config --confirm n1, or roll it back with chalkctl apply-config --rollback n1, first"},
+		{&nodev1.StatusResponse{ConfigVersion: "v2", Trial: tr}, "n1 runs config v2 on trial until 2026-10-29T12:00:00Z; confirm it with chalkctl apply-config confirm n1, or roll it back with chalkctl apply-config rollback n1, first"},
 		{&nodev1.StatusResponse{ConfigVersion: "v1", Trial: tr}, ""},
-		{&nodev1.StatusResponse{ConfigVersion: "v2", TrialError: "parse the trial record: unexpected EOF"}, "n1: the record of a config's trial cannot be read: parse the trial record: unexpected EOF; other changes are refused until chalkctl apply-config --rollback n1 restores the previous config"},
+		{&nodev1.StatusResponse{ConfigVersion: "v2", TrialError: "parse the trial record: unexpected EOF"}, "n1: the record of a config's trial cannot be read: parse the trial record: unexpected EOF; other changes are refused until chalkctl apply-config rollback n1 restores the previous config"},
 	} {
 		err := trialOpen("n1", tc.st)
 		if got := fmt.Sprint(err); tc.want == "" && err != nil || tc.want != "" && got != tc.want {

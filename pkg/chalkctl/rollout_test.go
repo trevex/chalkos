@@ -365,7 +365,7 @@ func TestApplyConfigRefusesSkew(t *testing.T) {
 	}
 }
 
-// --until deliver leaves the first trial open, which apply-config --confirm confirms; the same
+// --until deliver leaves the first trial open, which apply-config confirm confirms; the same
 // command again goes on with the next node.
 func TestApplyConfigUntilDeliver(t *testing.T) {
 	l := newRolloutLab(t)
@@ -383,7 +383,7 @@ func TestApplyConfigUntilDeliver(t *testing.T) {
 	if err := l.applyConfigTo(all, "--until", "deliver"); err == nil || !strings.Contains(err.Error(), "cp1 runs config ") || !strings.Contains(err.Error(), " on trial until ") {
 		t.Errorf("a run during the trial: %v", err)
 	}
-	if err := l.applyConfigTo([]string{"cp1"}, "--confirm"); err != nil {
+	if err := l.applyConfigTo([]string{"confirm", "cp1"}); err != nil {
 		t.Fatalf("%v\n%s", err, l.ta.stdout)
 	}
 	if got := deliveries(l.takeEvents()); !slices.Equal(got, []string{"cp1 confirm"}) {
@@ -400,7 +400,7 @@ func TestApplyConfigUntilDeliver(t *testing.T) {
 	}
 }
 
-// --confirm waits for the node's layers before it confirms, and rolls the trial back at once when
+// apply-config confirm waits for the node's layers before it confirms, and rolls the trial back at once when
 // they do not find the node serving with the config.
 func TestApplyConfigConfirmWaitsForTheLayers(t *testing.T) {
 	defer func(m time.Duration) { minTrial = m }(minTrial)
@@ -410,7 +410,7 @@ func TestApplyConfigConfirmWaitsForTheLayers(t *testing.T) {
 	if err := l.applyConfigTo([]string{"cp1"}, "--try", "2s", "--no-confirm"); err != nil {
 		t.Fatalf("%v\n%s", err, l.ta.stdout)
 	}
-	err := l.applyConfigTo([]string{"cp1"}, "--confirm")
+	err := l.applyConfigTo([]string{"confirm", "cp1"})
 	if err == nil || !strings.HasPrefix(err.Error(), "cp1: config ") || !strings.Contains(err.Error(), " was not confirmed within its trial: its control plane: kube-apiserver is not Ready") {
 		t.Fatalf("err = %v\n%s", err, l.ta.stdout)
 	}

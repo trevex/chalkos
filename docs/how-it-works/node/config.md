@@ -369,7 +369,7 @@ At every boot, `chalkos-config.service` loads the slot of the image the kernel c
   own. The upgrade removes the pending slot either way, once it staged the image. The pending
   slot's name is no root hash, so an upgrade's removal of other images' slots leaves it.
 - `apply-config` keeps the config it replaces as the slot's previous config,
-  `/state/config/.<root-hash>.previous`, one level deep. `apply-config --rollback` delivers that
+  `/state/config/.<root-hash>.previous`, one level deep. `apply-config rollback` delivers that
   config again through the same checks, storage changes and effects as any delivery, and the config
   it replaces becomes the previous one. Status reports the previous config's version for the running
   image alone.
@@ -456,15 +456,15 @@ confirms, so a client cannot confirm a later trial that another client started. 
 sent again after its answer was lost succeeds when the node runs that version and no trial is open.
 
 At the deadline, chalkd rolls the config back through the same steps as
-`apply-config --rollback`, then removes the record. A rollback that fails, as when the image's
+`apply-config rollback`, then removes the record. A rollback that fails, as when the image's
 rules refuse it or an output does not render, leaves the record with the reason and whether the
 attempt changed the node. chalkd tries the rollback again each minute. ConfirmConfig still ends
 the trial, unless the failed attempt changed the node. Status reports the trial, with the reason
 of the last failure.
 
 While the record exists, chalkd refuses every delivery, upgrade and image rollback with
-`config <version> is on trial until <deadline>: confirm it with chalkctl apply-config --confirm
-<node>, or roll it back with chalkctl apply-config --rollback <node>, before ...`. A rollback to
+`config <version> is on trial until <deadline>: confirm it with chalkctl apply-config confirm
+<node>, or roll it back with chalkctl apply-config rollback <node>, before ...`. A rollback to
 the config from before the trial ends the trial. A volume reset, a reboot and the requests of the
 image's layers go ahead. A record that chalkd cannot read refuses every change and every
 confirmation until a rollback removes it.
@@ -612,7 +612,7 @@ gives it, in two ways:
   `chalkctl apply-config --staged <node>` when the running slot holds the inventory's config
   already. A rollback image that keeps the config it last ran gets no advice. The node tells
   that image in its boot status by the same test its deliveries take. During a trial, which holds
-  every delivery back, the advice is `chalkctl apply-config --confirm <node>` when the inventory's
+  every delivery back, the advice is `chalkctl apply-config confirm <node>` when the inventory's
   config is on trial, as the confirmation writes the staged slot, and the end of the trial
   otherwise.
 - The image: chalkctl compares the root hash of the store the node booted with the root hash in

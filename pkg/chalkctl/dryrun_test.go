@@ -113,14 +113,13 @@ func TestApplyConfigDryRunUsage(t *testing.T) {
 		args []string
 		want string
 	}{
-		{[]string{"n1", "n2", "--staged"}, "--discard, --confirm, --rollback, --staged and --diff take one node"},
+		{[]string{"n1", "n2", "--staged"}, "--staged and --diff take one node"},
 		{[]string{"n1", "n2", "--try", "1m", "--no-confirm"}, "--no-confirm leaves one node's trial open; with several nodes, --until deliver does"},
 		{[]string{"n1", "--until", "deliver", "--dry-run"}, "--until deliver delivers the config on trial"},
-		{[]string{"n1", "--dry-run", "--diff"}, "--dry-run prints the diff too; drop --diff"},
-		{[]string{"n1", "--dry-run", "--rollback"}, "--dry-run checks the inventory's config; --rollback and --confirm go without it"},
-		{[]string{"n1", "--dry-run", "--confirm"}, "--dry-run checks the inventory's config; --rollback and --confirm go without it"},
-		{[]string{"n1", "--dry-run", "--try", "1m"}, "--dry-run tries nothing; drop --try, --no-confirm and --ignore-unit"},
-		{[]string{"n1", "--dry-run", "--kubernetes-share"}, "--dry-run checks config alone; deliver --kubernetes-share without it"},
+		{[]string{"n1", "--dry-run", "--diff"}, "[diff dry-run] were all set"},
+		{[]string{"n1", "--dry-run", "--try", "1m"}, "[dry-run try] were all set"},
+		{[]string{"n1", "--dry-run", "--no-confirm"}, "--no-confirm goes with --try"},
+		{[]string{"n1", "--dry-run", "--kubernetes-share"}, "[dry-run kubernetes-share] were all set"},
 		{[]string{"n1", "n2", "--dry-run", "--address", "127.0.0.1:1"}, "with several nodes, give each node's address as NODE=ADDR"},
 	} {
 		err := ta.run(context.Background(), append(append([]string{"apply-config"}, tc.args...), "--inventory", ta.inventory))

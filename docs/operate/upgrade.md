@@ -30,8 +30,9 @@ You also need the new image. The image author builds it into an image directory,
 `db.key` and `db.crt`, and chalkbuild, as [Install a node](install.md#before-you-begin) describes.
 
 No node of the run may run a config on trial. An upgrade and `upgrade --rollback` stop before
-they change any node while one does. Confirm the config with `chalkctl apply-config --confirm <node>` or roll it back with
-`chalkctl apply-config --rollback <node>` first, as
+they change any node while one does. Confirm the config with
+`chalkctl apply-config confirm <node>` or roll it back with
+`chalkctl apply-config rollback <node>` first, as
 [Try a config change](change-config.md#try-a-config-change) describes.
 
 ## Each node takes the new image in three steps

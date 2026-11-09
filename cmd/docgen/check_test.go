@@ -154,3 +154,15 @@ func TestCheckChalkcfg(t *testing.T) {
 		t.Errorf("program = %v, want chalkcfg's command", got)
 	}
 }
+
+// A command that takes arguments and has subcommands takes either.
+func TestCheckCommandWithSubcommands(t *testing.T) {
+	for _, args := range [][]string{{"chalkctl", "apply-config", "w1", "--try", "1m"}, {"chalkctl", "apply-config", "confirm", "w1"}} {
+		if err := checkInvocation(programs(), args); err != nil {
+			t.Errorf("%v: %v", args, err)
+		}
+	}
+	if err := checkInvocation(programs(), []string{"chalkctl", "apply-config", "confirm", "w1", "--try", "1m"}); err == nil || !strings.Contains(err.Error(), "has no flag --try") {
+		t.Errorf("err = %v", err)
+	}
+}

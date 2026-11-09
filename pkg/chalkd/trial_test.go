@@ -204,7 +204,7 @@ func TestChangesWaitForATrial(t *testing.T) {
 			return err
 		}},
 	} {
-		want := "config " + rec.Version + " is on trial until " + rec.Deadline.Format(time.RFC3339) + ": confirm it with chalkctl apply-config --confirm n1, or roll it back with chalkctl apply-config --rollback n1, before " + tc.what
+		want := "config " + rec.Version + " is on trial until " + rec.Deadline.Format(time.RFC3339) + ": confirm it with chalkctl apply-config confirm n1, or roll it back with chalkctl apply-config rollback n1, before " + tc.what
 		if err := tc.call(); codeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), want) {
 			t.Errorf("%s: %v, want %q", tc.name, err, want)
 		}
@@ -354,7 +354,7 @@ func TestConfirmConfigCorruptRecord(t *testing.T) {
 	}
 	err := sendConfirm(s, r.Version)
 	if codeOf(err) != connect.CodeInternal || !strings.Contains(err.Error(), "read the record of the config's trial: ") ||
-		!strings.Contains(err.Error(), "; other changes are refused until chalkctl apply-config --rollback ") ||
+		!strings.Contains(err.Error(), "; other changes are refused until chalkctl apply-config rollback ") ||
 		!strings.Contains(err.Error(), " restores the previous config, which removes the record") {
 		t.Errorf("a corrupt record: %v", err)
 	}
@@ -900,7 +900,7 @@ func TestTrialExpiryFailingPartWay(t *testing.T) {
 	if err := os.Chmod(slots, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := sendConfirm(s, rec.Version); codeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "chalkctl apply-config --rollback n1") {
+	if err := sendConfirm(s, rec.Version); codeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "chalkctl apply-config rollback n1") {
 		t.Errorf("a confirmation: %v, want the rollback on request", err)
 	}
 	if _, err := sendRollback(s, rec.Previous); err != nil {
@@ -1191,7 +1191,7 @@ func TestRollbackConfigRemovesAnUnreadableTrial(t *testing.T) {
 	rec := recordTrial(t, s, nextConfig)
 	write(t, filepath.Join(s.Paths.StateDir, trialFile), "{")
 	want := "read the record of the config's trial: parse the trial record: "
-	hint := "; other changes are refused until chalkctl apply-config --rollback n1 restores the previous config, which removes the record"
+	hint := "; other changes are refused until chalkctl apply-config rollback n1 restores the previous config, which removes the record"
 	if _, err := sendConfig(s, baseConfig); codeOf(err) != connect.CodeInternal || !strings.Contains(err.Error(), want) || !strings.Contains(err.Error(), hint) {
 		t.Errorf("a delivery: %v, want %q and %q", err, want, hint)
 	}
@@ -1314,7 +1314,7 @@ func TestTrialExpiryFinishesAFailedRestart(t *testing.T) {
 		t.Errorf("status trial = %+v, want the failure that changed the node", tr)
 	}
 	err = sendConfirm(s, rec.Version)
-	for _, want := range []string{"chalkd tries again each minute", "chalkctl apply-config --rollback n1 finishes it now"} {
+	for _, want := range []string{"chalkd tries again each minute", "chalkctl apply-config rollback n1 finishes it now"} {
 		if codeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), want) {
 			t.Errorf("a confirmation: %v, want %q", err, want)
 		}

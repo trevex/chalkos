@@ -110,7 +110,12 @@ nav = [
       "reference/cli/index.md",
       { "chalkctl" = [
         { "Overview" = "reference/cli/chalkctl.md" },
-        { "apply-config" = "reference/cli/chalkctl_apply-config.md" },
+        { "apply-config" = [
+          { "Overview" = "reference/cli/chalkctl_apply-config.md" },
+          { "confirm" = "reference/cli/chalkctl_apply-config_confirm.md" },
+          { "discard" = "reference/cli/chalkctl_apply-config_discard.md" },
+          { "rollback" = "reference/cli/chalkctl_apply-config_rollback.md" },
+        ] },
         { "bootstrap" = "reference/cli/chalkctl_bootstrap.md" },
         { "completion" = "reference/cli/chalkctl_completion.md" },
         { "config" = [

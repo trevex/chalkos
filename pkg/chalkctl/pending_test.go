@@ -15,7 +15,7 @@ var pendingSince = time.Date(2026, 11, 1, 12, 0, 0, 0, time.UTC)
 // apply-config --staged on a node without a staged image has it hold the inventory's config
 // pending, compared with the running config and sent without a fallback secret; status shows it,
 // another --staged replaces it, a delivery to the running image replaces it too, as its dry run
-// says first, and --staged --discard drops it, needing no inventory.
+// says first, and apply-config discard drops it, needing no inventory.
 func TestApplyConfigStagedHoldsPending(t *testing.T) {
 	l := newUpgradeLab(t, 1)
 	l.useInventory(t, map[string]string{"w": testUpgradeImage(t, "w", "0.2.0")})
@@ -54,17 +54,15 @@ func TestApplyConfigStagedHoldsPending(t *testing.T) {
 	if out := l.ta.stdout.String(); !strings.HasSuffix(out, "w1 runs config "+want+"\nw1 holds config "+want+" pending, unchecked, in place of its pending config; the next upgrade checks it against its image\n") || n.pending != l.inventoryConfig("w1") {
 		t.Errorf("stdout = %q, pending %q", out, n.pending)
 	}
-	if err := l.applyConfig("w1", "--discard"); err == nil || !strings.Contains(err.Error(), "pass --staged") {
-		t.Errorf("--discard without --staged = %v", err)
-	}
 	l.ta.stdout.Reset()
-	if err := l.ta.run(context.Background(), []string{"apply-config", "w1", "--staged", "--discard", "--address", l.addrs["w1"]}); err != nil {
+	if err := l.ta.run(context.Background(), []string{"apply-config", "discard", "w1", "--address", l.addrs["w1"]}); err != nil {
 		t.Fatal(err)
 	}
 	if out := l.ta.stdout.String(); out != "w1 dropped its pending config "+want+"\n" || n.pending != "" {
 		t.Errorf("stdout = %q, pending %q", out, n.pending)
 	}
-	if err := l.applyConfig("w1", "--staged", "--discard"); err != nil || l.ta.stdout.String() != "w1 holds no pending config\n" {
+	l.ta.stdout.Reset()
+	if err := l.ta.run(context.Background(), []string{"apply-config", "discard", "w1", "--inventory", l.inventory, "--address", l.addrs["w1"]}); err != nil || l.ta.stdout.String() != "w1 holds no pending config\n" {
 		t.Errorf("a second discard = %v, stdout %q", err, l.ta.stdout)
 	}
 }

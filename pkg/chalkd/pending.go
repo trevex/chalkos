@@ -190,7 +190,7 @@ func (c imageConfig) refused(err error, name string) error {
 	if strings.Contains(err.Error(), storage.NoFallbackSecret) {
 		return fmt.Errorf("the pending config %s does not suit the image: %w; a pending config is kept without the fallback secret, so upgrade with the config from an inventory, which carries the secret and needs the admin role", c.pending, err)
 	}
-	return fmt.Errorf("the pending config %s does not suit the image: %w; chalkctl apply-config --staged %s replaces it, and chalkctl apply-config --staged --discard %s drops it", c.pending, err, name, name)
+	return fmt.Errorf("the pending config %s does not suit the image: %w; chalkctl apply-config --staged %s replaces it, and chalkctl apply-config discard %s drops it", c.pending, err, name, name)
 }
 
 // settlePending removes the pending config that c, the config stageConfig wrote to the image's
@@ -201,7 +201,7 @@ func (c imageConfig) refused(err error, name string) error {
 // writing its UKI fails, retires the slot and keeps the pending config for the upgrade after, and
 // one whose activation fails once the image is staged settles it too. The image is staged
 // already, so a failure to remove it does not fail the upgrade: the journal says so, Status keeps
-// naming the pending config, and apply-config --staged --discard drops it. It returns what became
+// naming the pending config, and apply-config discard drops it. It returns what became
 // of the pending config for the upgrade's answer, as chalkd knows it, since chalkd reboots soon
 // after; nil when the node held none, or when reading one it keeps failed, which the journal
 // records. The caller holds s.upgrading.

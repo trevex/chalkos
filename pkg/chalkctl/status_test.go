@@ -99,7 +99,7 @@ func TestStagedAdvice(t *testing.T) {
 		"running is the same":         {status("want", false, ""), "chalkctl apply-config --staged w1 delivers it"},
 		"known-good":                  {status("want", true, ""), knownGood},
 		"known-good, running differs": {status("old", true, ""), knownGood},
-		"on trial":                    {status("want", false, "want"), "the confirmation of its trial writes it: chalkctl apply-config --confirm w1"},
+		"on trial":                    {status("want", false, "want"), "the confirmation of its trial writes it: chalkctl apply-config confirm w1"},
 		"another on trial":            {status("other", false, "other"), "the node takes no delivery until the trial of config other ends"},
 	} {
 		if got := stagedAdvice("w1", "want", tc.s); got != tc.want {

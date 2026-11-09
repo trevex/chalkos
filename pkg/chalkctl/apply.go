@@ -28,19 +28,15 @@ type applyConfigFlags struct {
 	staged, diff bool
 	// dryRun has the node check the config and print the delivery's plan in place of applying it.
 	dryRun bool
-	// discard has the node drop its pending config, which --staged keeps without a staged image.
-	discard  bool
-	rollback bool
-	force    bool
-	layers   []layerFlags
+	force  bool
+	layers []layerFlags
 	// payloadFlags names the layers' flags that ask for payloads, which --force goes with.
 	payloadFlags string
 	// try is how long the config is on trial; zero applies it for good. noConfirm leaves the
-	// trial open; confirm confirms an open one. ignoreUnits are the units the trial's health
-	// check leaves out.
-	try                time.Duration
-	noConfirm, confirm bool
-	ignoreUnits        []string
+	// trial open. ignoreUnits are the units the trial's health check leaves out.
+	try         time.Duration
+	noConfirm   bool
+	ignoreUnits []string
 	// until is how far a delivery takes the nodes: untilDeliver leaves the first node it delivers
 	// to on trial.
 	until applyStep
@@ -51,28 +47,6 @@ type applyConfigFlags struct {
 // payloads reports whether a layer's flag asks for payloads.
 func (f applyConfigFlags) payloads() bool {
 	return slices.ContainsFunc(f.layers, func(l layerFlags) bool { return l.f.Requested() })
-}
-
-// checkTrial refuses what --try, --no-confirm and --ignore-unit do not go with. The node checks
-// the units' names.
-func (f applyConfigFlags) checkTrial() error {
-	switch {
-	case f.noConfirm && f.try == 0:
-		return cli.Usagef("--no-confirm goes with --try")
-	case len(f.ignoreUnits) > 0 && f.try == 0:
-		return cli.Usagef("--ignore-unit goes with --try")
-	case f.try == 0:
-		return nil
-	case f.try < minTrial || f.try > maxTrial:
-		return cli.Usagef("--try takes from %v to %v, not %v", minTrial, maxTrial, f.try)
-	case f.staged:
-		return cli.Usagef("--try applies config to the running image; --staged goes without it")
-	case f.diff:
-		return cli.Usagef("--diff changes nothing, so it tries nothing; drop --try")
-	case f.force || f.payloads():
-		return cli.Usagef("--try delivers config alone, which a rollback undoes; deliver %s without it", f.payloadFlags)
-	}
-	return nil
 }
 
 // layerFlags are a layer's apply-config flags with the layer that registered them.
@@ -94,31 +68,40 @@ func (a *app) applyConfigCommand() *cobra.Command {
 	f.node.Register(fs)
 	setAddressUsage(fs, "address of the node's chalkd, host or host:port, or NODE=ADDR of any node of the cluster; repeat it for several (default each node's address in the inventory)")
 	registerPasswordFile(fs, &f.passwordFile)
-	var payloadFlags []string
+	var payloadFlags, payloadNames []string
 	for _, d := range compiled[layer.Delivery]() {
 		lf := d.ApplyFlags(fs)
 		f.layers = append(f.layers, layerFlags{d, lf})
 		payloadFlags = append(payloadFlags, lf.Flag())
+		payloadNames = append(payloadNames, strings.TrimPrefix(lf.Flag(), "--"))
 	}
 	if len(payloadFlags) > 0 {
 		f.payloadFlags = strings.Join(payloadFlags, " or ")
 		fs.BoolVar(&f.force, "force", false, "with "+f.payloadFlags+", deliver without asking whether the node is revoked")
 	}
 	fs.BoolVar(&f.staged, "staged", false, "deliver the config for the image staged in the inactive slot instead, active or not, which checks it with its own chalkd after chalkctl checks it against the node's image in the inventory; without a staged image, the node holds it pending, unchecked, for the next upgrade, which checks it against its image; with --dry-run, the staged image checks it and nothing is kept; without one, --dry-run says what the node would hold pending")
-	fs.BoolVar(&f.discard, "discard", false, "with --staged, drop the config the node holds pending for its next upgrade; needs no inventory")
 	fs.BoolVar(&f.diff, "diff", false, "print what the config changes in the node's config, document by document and field by field, and change nothing; the node checks nothing, which --dry-run has it do")
 	fs.BoolVar(&f.dryRun, "dry-run", false, "have the node check the config as it checks a delivery, its renderers and facts included, print the diff and what the delivery would change, and change nothing; with --staged, the staged image checks it; takes several nodes")
-	fs.BoolVar(&f.rollback, "rollback", false, "deliver the node's previous config again, the one its image ran before the last delivery, instead of the inventory's")
 	fs.DurationVar(&f.try, "try", 0, "apply the config on trial for the duration, from 10s to 24h: the node rolls it back by itself unless chalkctl confirms it over a new connection once the node is healthy")
-	fs.BoolVar(&f.noConfirm, "no-confirm", false, "with --try, leave the trial open for apply-config --confirm")
-	fs.BoolVar(&f.confirm, "confirm", false, "confirm the node's open trial once the node is healthy, so it keeps the config on trial")
+	fs.BoolVar(&f.noConfirm, "no-confirm", false, "with --try, leave the trial open for apply-config confirm")
 	fs.StringArrayVar(&f.ignoreUnits, "ignore-unit", nil, "with --try, leave the unit out of the health check the confirmation waits for, as the image's check leaves out the units it ignores")
-	fs.Var(cli.Enum(&f.until, "step", untilDeliver, untilConfirm), "until", "how far the delivery goes: deliver delivers to the first node that does not run the config, on trial, and leaves the trial open for apply-config --confirm; confirm delivers to every node")
+	fs.Var(cli.Enum(&f.until, "step", untilDeliver, untilConfirm), "until", "how far the delivery goes: deliver delivers to the first node that does not run the config, on trial, and leaves the trial open for apply-config confirm; confirm delivers to every node")
 	for _, p := range plugins {
 		if l, ok := p.(layer.Rollout); ok {
 			f.rollout[p.Name()] = l.RolloutFlags(fs)
 		}
 	}
+	// A trial applies config alone to the running image and changes it; a dry run checks config
+	// alone and prints the diff. --no-confirm and --ignore-unit go with --try, and --force with a
+	// payload flag, but not the other way round, which applyConfig checks.
+	cmd.MarkFlagsMutuallyExclusive("dry-run", "diff")
+	for _, other := range append([]string{"staged", "diff", "dry-run"}, payloadNames...) {
+		cmd.MarkFlagsMutuallyExclusive("try", other)
+	}
+	for _, name := range payloadNames {
+		cmd.MarkFlagsMutuallyExclusive("dry-run", name)
+	}
+	cmd.AddCommand(a.confirmConfigCommand(), a.rollbackConfigCommand(), a.discardPendingCommand())
 	return cmd
 }
 
@@ -132,36 +115,27 @@ func (a *app) applyConfig(ctx context.Context, f applyConfigFlags, pos []string)
 	}
 	pos = names
 	several := len(pos) > 1
+	// The node checks the names of the units --ignore-unit leaves out.
 	switch {
-	case several && (f.discard || f.confirm || f.rollback || f.staged || f.diff):
-		return cli.Usagef("--discard, --confirm, --rollback, --staged and --diff take one node")
+	case several && (f.staged || f.diff):
+		return cli.Usagef("--staged and --diff take one node")
 	case several && f.noConfirm:
 		return cli.Usagef("--no-confirm leaves one node's trial open; with several nodes, --until deliver does")
-	case f.until == untilDeliver && (f.dryRun || f.discard || f.confirm || f.rollback || f.staged || f.diff || f.noConfirm):
-		return cli.Usagef("--until deliver delivers the config on trial; it goes without --dry-run, --discard, --confirm, --rollback, --staged, --diff and --no-confirm")
-	}
-	switch {
-	case f.discard:
-		return a.discardPending(ctx, f, pos[0])
-	case f.dryRun:
-		if err := f.checkDryRun(); err != nil {
-			return err
-		}
-	case f.confirm:
-		return a.confirmConfig(ctx, f, pos[0])
-	case f.rollback:
-		return a.rollbackConfig(ctx, f, pos[0])
-	}
-	if err := f.checkTrial(); err != nil {
-		return err
+	case f.until == untilDeliver && (f.dryRun || f.staged || f.diff || f.noConfirm):
+		return cli.Usagef("--until deliver delivers the config on trial; it goes without --dry-run, --staged, --diff and --no-confirm")
+	case f.noConfirm && f.try == 0:
+		return cli.Usagef("--no-confirm goes with --try")
+	case len(f.ignoreUnits) > 0 && f.try == 0:
+		return cli.Usagef("--ignore-unit goes with --try")
+	case f.try != 0 && (f.try < minTrial || f.try > maxTrial):
+		return cli.Usagef("--try takes from %v to %v, not %v", minTrial, maxTrial, f.try)
+	case f.force && !f.payloads():
+		return cli.Usagef("--force goes with %s", f.payloadFlags)
 	}
 	for _, l := range f.layers {
 		if err := l.f.Check(f.staged); err != nil {
 			return err
 		}
-	}
-	if f.force && !f.payloads() {
-		return cli.Usagef("--force goes with %s", f.payloadFlags)
 	}
 	switch {
 	case f.dryRun:
@@ -174,23 +148,6 @@ func (a *app) applyConfig(ctx context.Context, f applyConfigFlags, pos []string)
 		return a.deliverConfig(ctx, f, t)
 	}
 	return a.deliverToNodes(ctx, f, pos)
-}
-
-// checkDryRun refuses what --dry-run does not go with: it checks the inventory's config, for the
-// running image or with --staged for the staged one, as a delivery without a trial would deliver
-// it.
-func (f applyConfigFlags) checkDryRun() error {
-	switch {
-	case f.diff:
-		return cli.Usagef("--dry-run prints the diff too; drop --diff")
-	case f.rollback || f.confirm:
-		return cli.Usagef("--dry-run checks the inventory's config; --rollback and --confirm go without it")
-	case f.try != 0 || f.noConfirm || len(f.ignoreUnits) > 0:
-		return cli.Usagef("--dry-run tries nothing; drop --try, --no-confirm and --ignore-unit")
-	case f.force || f.payloads():
-		return cli.Usagef("--dry-run checks config alone; deliver %s without it", f.payloadFlags)
-	}
-	return nil
 }
 
 // dryRunConfig has each node of names check the inventory's config as its delivery, one after
@@ -301,7 +258,7 @@ func (a *app) deliverConfig(ctx context.Context, f applyConfigFlags, t *target) 
 		return &layer.NodeError{Node: t.name, Err: fmt.Errorf("%s runs config %s already; --try needs a config that changes it", t.name, d.Version), Named: true}
 	}
 	// A unit that failed before the trial keeps its confirmation from passing, also later with
-	// --confirm, unless it recovers or is left out.
+	// apply-config confirm, unless it recovers or is left out.
 	if f.try > 0 {
 		if w := failedUnitsWarning(st.Msg.FailedUnits, f.ignoreUnits); w != "" {
 			fmt.Fprintf(a.stderr, "chalkctl: warning: %s: %s\n", t.name, w)
@@ -516,26 +473,33 @@ func writePlan(w io.Writer, name string, resp *nodev1.ApplyConfigResponse, stage
 
 // endTrialHint names the commands that end the node's open trial.
 func endTrialHint(name string) string {
-	return fmt.Sprintf("chalkctl apply-config --confirm %s keeps it; chalkctl apply-config --rollback %s rolls it back now", name, name)
+	return fmt.Sprintf("chalkctl apply-config confirm %s keeps it; chalkctl apply-config rollback %s rolls it back now", name, name)
+}
+
+type rollbackConfigFlags struct {
+	// node needs no inventory: the node keeps the config it rolls back to.
+	node nodeFlags
+	diff bool
+}
+
+func (a *app) rollbackConfigCommand() *cobra.Command {
+	var f rollbackConfigFlags
+	cmd := a.command(&cobra.Command{
+		Use:     "rollback <node>",
+		Short:   "Deliver a node's previous config again",
+		Long:    rollbackConfigLong,
+		Example: rollbackConfigExample,
+		Args:    cli.ExactArgs(1),
+	}, func(a *app, ctx context.Context, pos []string) error { return a.rollbackConfig(ctx, f, pos[0]) })
+	f.node.Register(cmd.Flags())
+	cmd.Flags().BoolVar(&f.diff, "diff", false, "print what the rollback changes in the node's config, document by document and field by field, and change nothing")
+	return cmd
 }
 
 // rollbackConfig delivers the node's previous config again, as the node keeps it, and prints what
 // it changes in the node's config; with --diff it prints the whole diff and changes nothing.
-func (a *app) rollbackConfig(ctx context.Context, f applyConfigFlags, name string) error {
-	switch {
-	case f.staged:
-		return cli.Usagef("--rollback restores the running image's previous config; --staged goes without it")
-	case f.force || f.payloads():
-		return cli.Usagef("--rollback restores config alone; deliver %s without it", f.payloadFlags)
-	case f.try != 0 || f.noConfirm || len(f.ignoreUnits) > 0:
-		return cli.Usagef("--rollback goes without --try, --no-confirm and --ignore-unit")
-	case f.passwordFile != "":
-		return cli.Usagef("--rollback adds no volume, so it takes no --password-file")
-	}
-	// The node keeps the config it rolls back to, so no inventory needs to give it.
-	n := f.node
-	n.needs = ""
-	t, err := a.target(ctx, n, name)
+func (a *app) rollbackConfig(ctx context.Context, f rollbackConfigFlags, name string) error {
+	t, err := a.target(ctx, f.node, name)
 	if err != nil {
 		return err
 	}
@@ -565,7 +529,7 @@ func (a *app) rollbackConfig(ctx context.Context, f applyConfigFlags, name strin
 	// config it runs again, which removes the record as well.
 	if e := st.Msg.TrialError; e != "" {
 		if version != "" {
-			fmt.Fprintf(a.stderr, "chalkctl: warning: %s: the record of a config's trial cannot be read: %s; the rollback delivers config %s, the node's previous config, which is the config on trial if a rollback at the trial's deadline replaced it already; if it is, a second apply-config --rollback undoes it\n", t.name, e, version)
+			fmt.Fprintf(a.stderr, "chalkctl: warning: %s: the record of a config's trial cannot be read: %s; the rollback delivers config %s, the node's previous config, which is the config on trial if a rollback at the trial's deadline replaced it already; if it is, a second apply-config rollback undoes it\n", t.name, e, version)
 		} else if version = st.Msg.ConfigVersion; version != "" {
 			fmt.Fprintf(a.stderr, "chalkctl: warning: %s: the record of a config's trial cannot be read: %s; the node keeps no previous config, so the rollback delivers config %s, the config it runs, again\n", t.name, e, version)
 		}
@@ -672,23 +636,22 @@ func (a *app) resetVolume(ctx context.Context, f resetVolumeFlags, pos []string)
 	return nil
 }
 
-// discardPending has the node drop the config it holds pending and says which it dropped.
-func (a *app) discardPending(ctx context.Context, f applyConfigFlags, name string) error {
-	switch {
-	case !f.staged:
-		return cli.Usagef("--discard drops the config held pending for the next image; pass --staged")
-	case f.dryRun || f.diff || f.rollback || f.confirm:
-		return cli.Usagef("--discard changes nothing but the pending config; drop --dry-run, --diff, --rollback and --confirm")
-	case f.try != 0 || f.noConfirm || len(f.ignoreUnits) > 0:
-		return cli.Usagef("--discard goes without --try, --no-confirm and --ignore-unit")
-	case f.force || f.payloads():
-		return cli.Usagef("--discard delivers nothing; drop %s", f.payloadFlags)
-	case f.passwordFile != "":
-		return cli.Usagef("--discard adds no volume, so it takes no --password-file")
-	}
+func (a *app) discardPendingCommand() *cobra.Command {
 	// The node holds the config it drops, so no inventory needs to give it.
-	n := f.node
-	n.needs = ""
+	var n nodeFlags
+	cmd := a.command(&cobra.Command{
+		Use:     "discard <node>",
+		Short:   "Drop the config a node holds pending for its next upgrade",
+		Long:    discardPendingLong,
+		Example: discardPendingExample,
+		Args:    cli.ExactArgs(1),
+	}, func(a *app, ctx context.Context, pos []string) error { return a.discardPending(ctx, n, pos[0]) })
+	n.Register(cmd.Flags())
+	return cmd
+}
+
+// discardPending has the node drop the config it holds pending and says which it dropped.
+func (a *app) discardPending(ctx context.Context, n nodeFlags, name string) error {
 	t, err := a.target(ctx, n, name)
 	if err != nil {
 		return err

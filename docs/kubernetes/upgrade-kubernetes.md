@@ -190,17 +190,17 @@ cp2: config 0 added, 0 removed, 1 changed
 ### Walk the control planes by hand
 
 `--until deliver` delivers the config on trial to the first node that does not run it yet, and
-leaves the trial open. `--confirm` confirms it once its static pods run the new images, and the
-same `--until deliver` command then goes on with the next control plane:
+leaves the trial open. `chalkctl apply-config confirm` confirms it once its static pods run the
+new images, and the same `--until deliver` command then goes on with the next control plane:
 
 ```sh
 chalkctl apply-config cp1 cp2 cp3 w1 --secrets secrets.age --until deliver
 kubectl get pods -n kube-system -o wide
-chalkctl apply-config cp1 --secrets secrets.age --confirm
+chalkctl apply-config confirm cp1 --secrets secrets.age
 chalkctl apply-config cp1 cp2 cp3 w1 --secrets secrets.age --until deliver
 ```
 
-While a trial is open, the run refuses to go on, and `chalkctl apply-config --rollback cp1` rolls
+While a trial is open, the run refuses to go on, and `chalkctl apply-config rollback cp1` rolls
 the open trial back. Once every control plane runs the config, the last command delivers it to the
 other nodes and finishes.
 
@@ -362,7 +362,7 @@ These flags of `chalkctl apply-config` change how it rolls the control plane out
 | `--allow-downtime` | off | Lets a cluster of one or two control planes take a new API server, although the cluster's API may be unavailable while a control plane's API server restarts. |
 | `--allow-downgrade` | off | Lets the config name an API server one minor older than the newest the control planes run. |
 | `--try=<duration>` | 10 minutes for control planes | How long each node's trial lasts. Its static pods must run the new images within it. |
-| `--until=deliver` | `confirm` | Leaves the first node's trial open, for `--confirm`. |
+| `--until=deliver` | `confirm` | Leaves the first node's trial open, for `chalkctl apply-config confirm`. |
 
 ## Run the same command again to continue
 

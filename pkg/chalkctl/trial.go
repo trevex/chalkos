@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
+	"github.com/spf13/cobra"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/chalkctl/layer"
@@ -168,7 +169,7 @@ func (a *app) trialRolledBack(ctx context.Context, t *target, version, previous 
 	case err != nil:
 		return fmt.Errorf("%w; the node did not answer after the deadline either: %v; chalkctl status %s shows where it stands", failure, err, t.name)
 	case unreadable != "":
-		return fmt.Errorf("%w; the record of its trial cannot be read: %s; chalkctl apply-config --rollback %s restores the previous config", failure, unreadable, t.name)
+		return fmt.Errorf("%w; the record of its trial cannot be read: %s; chalkctl apply-config rollback %s restores the previous config", failure, unreadable, t.name)
 	case st.ConfigVersion == version:
 		fmt.Fprintf(a.stdout, "%s keeps config %s: the trial is confirmed\n", t.name, version)
 		return nil
@@ -182,14 +183,22 @@ func (a *app) trialRolledBack(ctx context.Context, t *target, version, previous 
 	return failure
 }
 
+func (a *app) confirmConfigCommand() *cobra.Command {
+	// The node keeps the config on trial, so no inventory needs to give it.
+	var n nodeFlags
+	cmd := a.command(&cobra.Command{
+		Use:     "confirm <node>",
+		Short:   "Confirm a node's config on trial",
+		Long:    confirmConfigLong,
+		Example: confirmConfigExample,
+		Args:    cli.ExactArgs(1),
+	}, func(a *app, ctx context.Context, pos []string) error { return a.confirmConfig(ctx, n, pos[0]) })
+	n.Register(cmd.Flags())
+	return cmd
+}
+
 // confirmConfig confirms the node's open trial, as apply-config --try does without --no-confirm.
-// The node keeps the config on trial, so no inventory needs to give it.
-func (a *app) confirmConfig(ctx context.Context, f applyConfigFlags, name string) error {
-	if f.rollback || f.staged || f.diff || f.try != 0 || f.noConfirm || len(f.ignoreUnits) > 0 || f.force || f.payloads() || f.passwordFile != "" {
-		return cli.Usagef("--confirm confirms the node's open trial and takes no other apply-config flag but the node's")
-	}
-	n := f.node
-	n.needs = ""
+func (a *app) confirmConfig(ctx context.Context, n nodeFlags, name string) error {
 	t, err := a.target(ctx, n, name)
 	if err != nil {
 		return err
@@ -221,26 +230,26 @@ func (a *app) confirmConfig(ctx context.Context, f applyConfigFlags, name string
 // holds back every change but a rollback.
 func trialOpen(name string, st *nodev1.StatusResponse) error {
 	if e := st.GetTrialError(); e != "" {
-		return &layer.NodeError{Node: name, Err: fmt.Errorf("%s: the record of a config's trial cannot be read: %s; other changes are refused until chalkctl apply-config --rollback %s restores the previous config", name, e, name), Named: true}
+		return &layer.NodeError{Node: name, Err: fmt.Errorf("%s: the record of a config's trial cannot be read: %s; other changes are refused until chalkctl apply-config rollback %s restores the previous config", name, e, name), Named: true}
 	}
 	tr := st.GetTrial()
 	if tr == nil || st.GetConfigVersion() == tr.PreviousVersion {
 		return nil
 	}
-	return &layer.NodeError{Node: name, Err: fmt.Errorf("%s runs config %s on trial until %s; confirm it with chalkctl apply-config --confirm %s, or roll it back with chalkctl apply-config --rollback %s, first",
+	return &layer.NodeError{Node: name, Err: fmt.Errorf("%s runs config %s on trial until %s; confirm it with chalkctl apply-config confirm %s, or roll it back with chalkctl apply-config rollback %s, first",
 		name, tr.Version, deadlineOf(tr), name, name), Named: true}
 }
 
 // trialLine is the status line of a config on trial.
 func trialLine(tr *nodev1.ConfigTrial) string {
-	line := fmt.Sprintf("config %s on trial until %s: it rolls back to config %s unless apply-config --confirm confirms it", tr.Version, deadlineOf(tr), tr.PreviousVersion)
+	line := fmt.Sprintf("config %s on trial until %s: it rolls back to config %s unless apply-config confirm confirms it", tr.Version, deadlineOf(tr), tr.PreviousVersion)
 	if len(tr.IgnoreUnits) > 0 {
 		line += "; its health check leaves out " + strings.Join(tr.IgnoreUnits, ", ")
 	}
 	switch {
 	case tr.Error != "" && tr.RollbackChanged:
 		line += "; an attempt to roll the config back failed after it changed the node and is tried again each minute: " + tr.Error +
-			"; apply-config --confirm no longer keeps the config, and apply-config --rollback finishes the rollback now"
+			"; apply-config confirm no longer keeps the config, and apply-config rollback finishes the rollback now"
 	case tr.Error != "":
 		line += "; an attempt to roll the config back failed and is tried again each minute: " + tr.Error
 	}

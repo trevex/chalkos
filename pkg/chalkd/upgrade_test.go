@@ -301,7 +301,7 @@ func TestActivateImageWaitsForATrial(t *testing.T) {
 	s, r := stagedServerOf(t, fixtureSchemas(t), "chalkos_2.efi", ".staged-chalkos_3.efi")
 	rec := recordTrial(t, s, nextConfig)
 	r.Calls = nil
-	want := "config " + rec.Version + " is on trial until " + rec.Deadline.Format(time.RFC3339) + ": confirm it with chalkctl apply-config --confirm n1, or roll it back with chalkctl apply-config --rollback n1, before an image's activation"
+	want := "config " + rec.Version + " is on trial until " + rec.Deadline.Format(time.RFC3339) + ": confirm it with chalkctl apply-config confirm n1, or roll it back with chalkctl apply-config rollback n1, before an image's activation"
 	if _, err := activateOn(s, stagedImage); codeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), want) {
 		t.Errorf("activate = %v, want %q", err, want)
 	}

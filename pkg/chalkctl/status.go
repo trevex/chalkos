@@ -53,10 +53,10 @@ func (a *app) printStatus(ctx context.Context, t *target, conn *client.Conn) err
 		fmt.Fprintln(a.stdout, trialLine(s.Trial))
 	}
 	if s.TrialError != "" {
-		fmt.Fprintf(a.stdout, "the record of a config's trial cannot be read: %s; other changes are refused until apply-config --rollback restores the previous config\n", s.TrialError)
+		fmt.Fprintf(a.stdout, "the record of a config's trial cannot be read: %s; other changes are refused until apply-config rollback restores the previous config\n", s.TrialError)
 	}
 	if s.PreviousConfigVersion != "" {
-		fmt.Fprintf(a.stdout, "previous config %s (apply-config --rollback restores it)\n", s.PreviousConfigVersion)
+		fmt.Fprintf(a.stdout, "previous config %s (apply-config rollback restores it)\n", s.PreviousConfigVersion)
 	}
 	if s.Boot.GetStaged() != nil {
 		fmt.Fprintf(a.stdout, "staged config %s (%s)\n", cmp.Or(s.StagedConfigVersion, "none"), t.cluster.stagedConfigState(t.name, s))
@@ -294,7 +294,7 @@ func stagedAdvice(name, want string, s *nodev1.StatusResponse) string {
 	case b.GetStagedKnownGood():
 		return "the rollback image keeps the config it last ran while the boot of " + b.GetEntry() + " is not found healthy"
 	case s.Trial != nil && s.Trial.Version == want:
-		return "the confirmation of its trial writes it: chalkctl apply-config --confirm " + name
+		return "the confirmation of its trial writes it: chalkctl apply-config confirm " + name
 	case s.Trial != nil:
 		return "the node takes no delivery until the trial of config " + s.Trial.Version + " ends"
 	case s.ConfigVersion == want:

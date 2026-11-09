@@ -31,7 +31,7 @@ type applyStep string
 
 const (
 	// untilDeliver delivers the config to the first node that does not run it, on trial, and leaves
-	// the trial open for apply-config --confirm.
+	// the trial open for apply-config confirm.
 	untilDeliver applyStep = "deliver"
 	// untilConfirm delivers the config to every node and confirms each trial.
 	untilConfirm applyStep = "confirm"

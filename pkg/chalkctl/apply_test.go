@@ -255,7 +255,7 @@ func TestApplyConfigForceIsChalkctls(t *testing.T) {
 	}
 }
 
-// apply-config --rollback delivers the node's previous config again and prints what it changes;
+// apply-config rollback delivers the node's previous config again and prints what it changes;
 // status names the previous config; a second rollback undoes the first, --diff changes nothing,
 // and the secrets file and the node's address do without an inventory.
 func TestApplyConfigRollback(t *testing.T) {
@@ -266,7 +266,7 @@ func TestApplyConfigRollback(t *testing.T) {
 		ta.stdout.Reset()
 		return ta.run(context.Background(), ta.args(args, addr))
 	}
-	if err := run("apply-config", "n1", "--rollback"); err == nil || !strings.Contains(err.Error(), "n1 keeps no previous config of the image it runs") {
+	if err := run("apply-config", "rollback", "n1"); err == nil || !strings.Contains(err.Error(), "n1 keeps no previous config of the image it runs") {
 		t.Errorf("without a previous config: %v", err)
 	}
 	if err := run("apply-config", "n1"); err != nil {
@@ -278,10 +278,10 @@ func TestApplyConfigRollback(t *testing.T) {
 		t.Fatal(err)
 	}
 	second := ta.configVersion(t)
-	if err := run("status", "n1"); err != nil || !strings.Contains(ta.stdout.String(), "previous config "+first+" (apply-config --rollback restores it)") {
+	if err := run("status", "n1"); err != nil || !strings.Contains(ta.stdout.String(), "previous config "+first+" (apply-config rollback restores it)") {
 		t.Errorf("status = %v:\n%s", err, ta.stdout)
 	}
-	if err := run("apply-config", "n1", "--rollback", "--diff"); err != nil || !strings.Contains(ta.stdout.String(), "n1: config 0 added, 1 removed (TimeSync \"default\"), 0 changed") {
+	if err := run("apply-config", "rollback", "n1", "--diff"); err != nil || !strings.Contains(ta.stdout.String(), "n1: config 0 added, 1 removed (TimeSync \"default\"), 0 changed") {
 		t.Errorf("--diff = %v:\n%s", err, ta.stdout)
 	}
 	if want := "- TimeSync \"default\" (in the running config, not in the previous one)\n"; !strings.Contains(ta.stdout.String(), want) {
@@ -290,13 +290,13 @@ func TestApplyConfigRollback(t *testing.T) {
 	if v, _ := slot.Version(slotOf(t, s)); v != second {
 		t.Errorf("--diff changed the node's config to %s", v)
 	}
-	if err := run("apply-config", "n1", "--rollback"); err != nil {
+	if err := run("apply-config", "rollback", "n1"); err != nil {
 		t.Fatal(err)
 	}
 	if want := "n1 runs config " + first + " again; config " + second + " is its previous one now"; !strings.Contains(ta.stdout.String(), want) {
 		t.Errorf("stdout lacks %q:\n%s", want, ta.stdout)
 	}
-	if err := run("apply-config", "n1", "--rollback"); err != nil {
+	if err := run("apply-config", "rollback", "n1"); err != nil {
 		t.Fatal(err)
 	}
 	if v, _ := slot.Version(slotOf(t, s)); v != second {
@@ -305,18 +305,10 @@ func TestApplyConfigRollback(t *testing.T) {
 	// The node keeps the config it rolls back to, so the secrets file and the address do without an
 	// inventory.
 	ta.stdout.Reset()
-	if err := ta.run(context.Background(), []string{"apply-config", "n1", "--rollback", "--address", addr}); err != nil {
+	if err := ta.run(context.Background(), []string{"apply-config", "rollback", "n1", "--address", addr}); err != nil {
 		t.Fatalf("without an inventory: %v", err)
 	}
 	if v, _ := slot.Version(slotOf(t, s)); v != first {
 		t.Errorf("after a rollback without an inventory the node runs %s, want %s", v, first)
-	}
-	for _, args := range [][]string{{"--staged"}, {"--kubernetes-share"}, {"--force"}, {"--password-file", filepath.Join(ta.dir, "pw")}} {
-		if err := run(append([]string{"apply-config", "n1", "--rollback"}, args...)...); err == nil || !strings.Contains(err.Error(), "--rollback") {
-			t.Errorf("--rollback %s = %v, want a usage error", args[0], err)
-		}
-	}
-	if err := run("apply-config", "n1", "--rollback", "--password-file", filepath.Join(ta.dir, "pw")); err == nil || !strings.Contains(err.Error(), "--rollback adds no volume, so it takes no --password-file") {
-		t.Errorf("--rollback --password-file = %v", err)
 	}
 }

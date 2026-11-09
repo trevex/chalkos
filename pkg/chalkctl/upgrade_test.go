@@ -2611,7 +2611,7 @@ func TestUpgradeRollbackOfAControlPlane(t *testing.T) {
 func TestUpgradeRefusesANodeOnTrial(t *testing.T) {
 	l := newUpgradeLab(t, 3)
 	l.nodes["w2"].trial = &nodev1.ConfigTrial{Version: "v2", PreviousVersion: "v1", Deadline: timestamppb.New(time.Date(2026, 10, 29, 12, 0, 0, 0, time.UTC))}
-	want := "w2 runs config v2 on trial until 2026-10-29T12:00:00Z; confirm it with chalkctl apply-config --confirm w2, or roll it back with chalkctl apply-config --rollback w2, first"
+	want := "w2 runs config v2 on trial until 2026-10-29T12:00:00Z; confirm it with chalkctl apply-config confirm w2, or roll it back with chalkctl apply-config rollback w2, first"
 	if err := l.upgrade(testUpgradeImage(t, "w", "0.2.0")); err == nil || !strings.Contains(err.Error(), want) {
 		t.Errorf("upgrade = %v, want %q", err, want)
 	}

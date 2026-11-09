@@ -32,6 +32,9 @@ func TestExecuteUsageErrors(t *testing.T) {
 		{"config", "new"}, {"config", "new", "--name", "ada"},
 		{"upgrade", "--max-unavailable", "0"}, {"rotate", "os-ca", "--resume", "--finish"},
 		{"upgrade", "--timeout", "0"}, {"rotate", "os-ca", "--timeout", "0"}, {"node", "reboot", "n1", "--timeout", "-1s"},
+		{"apply-config", "n1", "--dry-run", "--diff"}, {"apply-config", "confirm"}, {"apply-config", "confirm", "n1", "--try", "1m"},
+		// A flag of apply-config before the name of its subcommand.
+		{"apply-config", "--address", "127.0.0.1", "confirm", "n1"},
 	} {
 		ta := newTestApp(t)
 		if got := ta.execute(context.Background(), args...); got != 2 {
@@ -77,6 +80,10 @@ func TestExecuteErrors(t *testing.T) {
 	ta := newTestApp(t)
 	if got := ta.execute(context.Background(), "status", "n1", "--inventory", filepath.Join(ta.dir, "missing.yaml")); got != 1 {
 		t.Errorf("a failing command exits with %d, want 1", got)
+	}
+	// apply-config has subcommands and runs too.
+	if got := ta.execute(context.Background(), "apply-config", "n1", "--inventory", filepath.Join(ta.dir, "missing.yaml")); got != 1 {
+		t.Errorf("a failing apply-config exits with %d, want 1", got)
 	}
 	if !strings.HasPrefix(ta.stderr.String(), "chalkctl: ") {
 		t.Errorf("stderr = %q, want the error after chalkctl:", ta.stderr.String())

@@ -102,8 +102,8 @@ describes.
 A boot that was found healthy is kept, so a problem that shows only later needs a rollback on
 request. Each one undoes one kind of change:
 
-- A config delivery that broke a service: `chalkctl apply-config w1 --secrets secrets.age
-  --rollback` delivers the config the image ran before.
+- A config delivery that broke a service: `chalkctl apply-config rollback w1 --secrets
+  secrets.age` delivers the config the image ran before.
   [Roll back a config change](change-config.md#roll-back-a-config-change) describes it.
 - An image that misbehaves after its boot was found healthy: `chalkctl upgrade --rollback --nodes
   w1` boots the image the node ran before, which its inactive slot still holds.
