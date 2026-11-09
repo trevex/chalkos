@@ -4,16 +4,18 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/trevex/chalkos/pkg/router/derive/derivetest"
 )
 
 // The links of the Network documents are in the VRF whose document or whose Network's own VRF=
 // holds them; the Networks are in the VRF of the links they are first to match.
 func TestVRFLinks(t *testing.T) {
 	byKind := map[string]any{"Network": []any{
-		document(t, "Network", "10-swp", `{"match": {"name": "swp1 swp2"}}`),
-		document(t, "Network", "20-swp", `{"match": {"name": "swp*"}}`),
-		document(t, "Network", "30-eth1", `{"match": {"name": "eth1"}, "network": {"vrf": "blue"}}`),
-		document(t, "Network", "40-eth0", `{"match": {"name": "eth0"}}`),
+		derivetest.Doc(t, "Network", "10-swp", `{"match": {"name": "swp1 swp2"}}`),
+		derivetest.Doc(t, "Network", "20-swp", `{"match": {"name": "swp*"}}`),
+		derivetest.Doc(t, "Network", "30-eth1", `{"match": {"name": "eth1"}, "network": {"vrf": "blue"}}`),
+		derivetest.Doc(t, "Network", "40-eth0", `{"match": {"name": "eth0"}}`),
 	}}
 	got, err := vrfLinks([]Named[VRFSpec]{{"tenant", VRFSpec{Table: 100, Interfaces: []string{"swp*"}}}}, networkLinks(byKind), byKind)
 	if err != nil {
@@ -34,9 +36,9 @@ func TestVRFLinks(t *testing.T) {
 func TestLinkVRFNarrowed(t *testing.T) {
 	mac := `, "macAddress": "02:00:00:00:00:01"`
 	byKind := map[string]any{"Network": []any{
-		document(t, "Network", "10-swp", `{"match": {"name": "swp1 swp2"`+mac+`}}`),
-		document(t, "Network", "20-swp2", `{"match": {"name": "swp2"}}`),
-		document(t, "Network", "30-eth", `{"match": {"name": "eth0"`+mac+`}}`),
+		derivetest.Doc(t, "Network", "10-swp", `{"match": {"name": "swp1 swp2"`+mac+`}}`),
+		derivetest.Doc(t, "Network", "20-swp2", `{"match": {"name": "swp2"}}`),
+		derivetest.Doc(t, "Network", "30-eth", `{"match": {"name": "eth0"`+mac+`}}`),
 	}}
 	m, err := vrfLinks([]Named[VRFSpec]{{"tenant", VRFSpec{Table: 100, Interfaces: []string{"swp*"}}}}, networkLinks(byKind), byKind)
 	if err != nil {
@@ -81,8 +83,8 @@ func TestOtherMatchKeys(t *testing.T) {
 // links, a VRF device a Network matches first and a VRF named as a link. They guard, with an
 // internal error, names and tables networkd would not load and values that would add to a unit.
 func TestVRFLinkRefusals(t *testing.T) {
-	vrf := func(name, spec string) any { return routerDoc(t, "VRF", name, spec) }
-	net := func(name, spec string) any { return document(t, "Network", name, spec) }
+	vrf := func(name, spec string) any { return derivetest.RouterDoc(t, "VRF", name, spec) }
+	net := func(name, spec string) any { return derivetest.Doc(t, "Network", name, spec) }
 	link := func(name string) any { return net("20-"+name, `{"match": {"name": "`+name+`"}}`) }
 	for name, c := range map[string]struct {
 		docs map[string][]any

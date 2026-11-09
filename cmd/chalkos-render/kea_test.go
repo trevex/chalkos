@@ -5,44 +5,9 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/trevex/chalkos/pkg/router/derive/derivetest"
 )
-
-// keaDocs are a LAN router's documents with the DHCPSubnet documents given: lan0 holds
-// 192.0.2.1/24 and 192.0.2.30/24, lan1 198.51.100.1/24 and 192.0.2.65/26, vlan20 in the VRF guest
-// 192.0.2.1/24 as well and lan2, in the VRF ghost of no VRF document, 203.0.113.1/24; the NAT64
-// edge has the link n64-edge.
-func keaDocs(t *testing.T, subnets ...any) map[string][]any {
-	t.Helper()
-	return map[string][]any{
-		"VRF":   {routerDoc(t, "VRF", "guest", `{"table": 300, "interfaces": ["vlan20"]}`)},
-		"NAT64": {routerDoc(t, "NAT64", "edge", `{"vrf": null, "prefix": "64:ff9b::/96", "pool4": []}`)},
-		"Network": {
-			document(t, "Network", "10-lan0", `{"match": {"name": "lan0"}, "network": {"address": ["192.0.2.1/24", "192.0.2.30/24"]}}`),
-			document(t, "Network", "11-lan1", `{"match": {"name": "lan1"}, "network": {"address": ["198.51.100.1/24", "192.0.2.65/26"]}}`),
-			document(t, "Network", "12-lan2", `{"match": {"name": "lan2"}, "network": {"vrf": ["ghost"], "address": ["203.0.113.1/24"]}}`),
-			document(t, "Network", "20-vlan20", `{"match": {"name": "vlan20"}, "network": {"address": ["192.0.2.1/24"]}}`),
-		},
-		"DHCPSubnet": subnets,
-	}
-}
-
-// subnetDoc is a DHCPSubnet document of the spec given, which the schema's defaults complete.
-func subnetDoc(t *testing.T, name, spec string) any {
-	t.Helper()
-	var s map[string]any
-	if err := json.Unmarshal([]byte(spec), &s); err != nil {
-		t.Fatal(err)
-	}
-	full := map[string]any{"pools": []any{}, "gateway": nil, "dns": []any{}, "domain": nil, "leaseTime": "12h", "reservations": []any{}, "boot": nil, "prefixDelegation": nil}
-	for k, v := range s {
-		full[k] = v
-	}
-	data, err := json.Marshal(full)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return routerDoc(t, "DHCPSubnet", name, string(data))
-}
 
 // The renderer guards, with an internal error, values that Kea's check passes and that would
 // panic the renderer or that Kea's option data would read as more values. The validator router
@@ -50,7 +15,7 @@ func subnetDoc(t *testing.T, name, spec string) any {
 // what it cannot load.
 func TestKeaRefusals(t *testing.T) {
 	office := func(more string) any {
-		return subnetDoc(t, "office", `{"interfaces": ["lan0"], "subnet": "192.0.2.0/24"`+more+`}`)
+		return derivetest.SubnetDoc(t, "office", `{"interfaces": ["lan0"], "subnet": "192.0.2.0/24"`+more+`}`)
 	}
 	const checked = "; chalkd checks the config against the schemas, the rules and the validators before it renders"
 	for name, c := range map[string]struct {
@@ -63,7 +28,9 @@ func TestKeaRefusals(t *testing.T) {
 		"a domain of a comma":         {[]any{office(`, "domain": "lan.example.org,evil.example.org"`)}, `internal error: DHCPSubnet office: "lan.example.org,evil.example.org" is no domain` + checked},
 		"a lease with a space":        {[]any{office(`, "leaseTime": "12 h"`)}, `internal error: DHCPSubnet office: leaseTime "12 h" is no number and s, m, h or d` + checked},
 	} {
-		t.Run(name, func(t *testing.T) { refused(t, []string{"kea", testPDHook}, keaDocs(t, c.subnets...), c.want) })
+		t.Run(name, func(t *testing.T) {
+			refused(t, []string{"kea", testPDHook}, derivetest.KeaDocs(t, c.subnets...), c.want)
+		})
 	}
 }
 
@@ -72,9 +39,9 @@ func TestKeaRefusals(t *testing.T) {
 // A server answers on the links its subnets name, and a subnet is Kea's number of its first
 // address.
 func TestKeaPerVRF(t *testing.T) {
-	files, err := unitFiles(t, []string{"kea", testPDHook}, keaDocs(t,
-		subnetDoc(t, "office", `{"interfaces": ["lan1", "lan0"], "subnet": "192.0.2.0/24", "pools": [{"first": "192.0.2.100", "last": "192.0.2.199"}]}`),
-		subnetDoc(t, "guests", `{"interfaces": ["vlan20"], "subnet": "192.0.2.0/24", "leaseTime": "1h"}`),
+	files, err := unitFiles(t, []string{"kea", testPDHook}, derivetest.KeaDocs(t,
+		derivetest.SubnetDoc(t, "office", `{"interfaces": ["lan1", "lan0"], "subnet": "192.0.2.0/24", "pools": [{"first": "192.0.2.100", "last": "192.0.2.199"}]}`),
+		derivetest.SubnetDoc(t, "guests", `{"interfaces": ["vlan20"], "subnet": "192.0.2.0/24", "leaseTime": "1h"}`),
 	))
 	if err != nil {
 		t.Fatal(err)
@@ -136,8 +103,8 @@ func slicesSorted(files map[string]string) []string {
 func TestKeaBootClasses(t *testing.T) {
 	render := func(boot string) string {
 		t.Helper()
-		files, err := unitFiles(t, []string{"kea", testPDHook}, keaDocs(t,
-			subnetDoc(t, "office", `{"interfaces": ["lan0"], "subnet": "192.0.2.0/24", "boot": `+boot+`}`),
+		files, err := unitFiles(t, []string{"kea", testPDHook}, derivetest.KeaDocs(t,
+			derivetest.SubnetDoc(t, "office", `{"interfaces": ["lan0"], "subnet": "192.0.2.0/24", "boot": `+boot+`}`),
 		))
 		if err != nil {
 			t.Fatal(err)

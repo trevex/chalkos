@@ -7,6 +7,8 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/trevex/chalkos/pkg/router/derive/derivetest"
 )
 
 // networkFixture holds the schemas of networkd's Network and NetDev kinds, as an image generates
@@ -47,21 +49,9 @@ func unitFiles(t *testing.T, args []string, documents map[string][]any) (map[str
 	return units, nil
 }
 
-// document is a networkd document of kind called name, with spec in JSON.
-func document(t *testing.T, kind, name, spec string) any {
-	t.Helper()
-	var s any
-	dec := json.NewDecoder(strings.NewReader(spec))
-	dec.UseNumber()
-	if err := dec.Decode(&s); err != nil {
-		t.Fatal(err)
-	}
-	return map[string]any{"apiVersion": "networkd.chalkos.dev/v1alpha1", "kind": kind, "metadata": map[string]any{"name": name}, "spec": s}
-}
-
 func TestNetworkdUnitMatchesNixOS(t *testing.T) {
 	units, err := networkd(t, networkFixture, map[string][]any{"Network": {
-		document(t, "Network", "10-uplink", `{"match": {"name": "enp1s0"}, "network": {"address": ["10.0.0.11/24"], "gateway": "10.0.0.1"}}`),
+		derivetest.Doc(t, "Network", "10-uplink", `{"match": {"name": "enp1s0"}, "network": {"address": ["10.0.0.11/24"], "gateway": "10.0.0.1"}}`),
 	}})
 	if err != nil {
 		t.Fatal(err)
@@ -74,7 +64,7 @@ func TestNetworkdUnitMatchesNixOS(t *testing.T) {
 
 func TestNetworkdRepeatedSectionsAndValues(t *testing.T) {
 	units, err := networkd(t, networkFixture, map[string][]any{"Network": {
-		document(t, "Network", "20-lan", `{"network": {"dhcp": "no", "ipv6AcceptRA": false, "dns": ["1.1.1.1", "9.9.9.9"]},
+		derivetest.Doc(t, "Network", "20-lan", `{"network": {"dhcp": "no", "ipv6AcceptRA": false, "dns": ["1.1.1.1", "9.9.9.9"]},
 		  "route": [{"destination": "10.1.0.0/16", "gateway": "10.0.0.254"}, {"destination": "10.2.0.0/16", "gateway": "10.0.0.253"}]}`),
 	}})
 	if err != nil {
@@ -90,7 +80,7 @@ func TestNetworkdRepeatedSectionsAndValues(t *testing.T) {
 
 func TestNetworkdBoolsAsNixOSRendersThem(t *testing.T) {
 	units, err := networkd(t, networkFixture, map[string][]any{"Network": {
-		document(t, "Network", "a", `{"network": {"ipv6AcceptRA": true}}`),
+		derivetest.Doc(t, "Network", "a", `{"network": {"ipv6AcceptRA": true}}`),
 	}})
 	if err != nil {
 		t.Fatal(err)
@@ -122,13 +112,13 @@ func TestNetworkdRefusesWhatTheSchemasRefuse(t *testing.T) {
 		"an unannotated key":       {"Network", `{"match": {"bogus": "x"}}`, "internal error: Network a: Match.bogus has no x-chalkos-networkd-key annotation" + checked},
 	} {
 		t.Run(name, func(t *testing.T) {
-			_, err := networkd(t, networkFixture, map[string][]any{c.kind: {document(t, c.kind, "a", c.spec)}})
+			_, err := networkd(t, networkFixture, map[string][]any{c.kind: {derivetest.Doc(t, c.kind, "a", c.spec)}})
 			if err == nil || err.Error() != c.want {
 				t.Errorf("err = %v, want %q", err, c.want)
 			}
 		})
 	}
-	_, err := networkd(t, networkFixture, map[string][]any{"Link": {document(t, "Link", "a", `{"link": {"name": "x"}}`)}})
+	_, err := networkd(t, networkFixture, map[string][]any{"Link": {derivetest.Doc(t, "Link", "a", `{"link": {"name": "x"}}`)}})
 	if err == nil || !strings.HasPrefix(err.Error(), "the image's networkd schema: ") {
 		t.Errorf("err = %v, want the image's networkd schema", err)
 	}
@@ -177,8 +167,8 @@ func TestNetworkdNetDevAndLinkUnits(t *testing.T) {
 		}
 	}
 	units, err := networkd(t, dir, map[string][]any{
-		"NetDev":  {document(t, "NetDev", "30-vlan", `{"netDev": {"name": "vlan10", "kind": "vlan"}, "vlan": {"id": 4094}}`)},
-		"Link":    {document(t, "Link", "40-nic", `{"match": {"macAddress": "aa:bb:cc:dd:ee:01"}, "link": {"name": "uplink"}}`)},
+		"NetDev":  {derivetest.Doc(t, "NetDev", "30-vlan", `{"netDev": {"name": "vlan10", "kind": "vlan"}, "vlan": {"id": 4094}}`)},
+		"Link":    {derivetest.Doc(t, "Link", "40-nic", `{"match": {"macAddress": "aa:bb:cc:dd:ee:01"}, "link": {"name": "uplink"}}`)},
 		"Network": {},
 	})
 	if err != nil {

@@ -6,6 +6,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/trevex/chalkos/pkg/router/derive/derivetest"
 )
 
 // A NAT64 takes its prefix and its pool entries with their host bits cleared, as the rules
@@ -43,14 +45,14 @@ func TestNAT64Protocols(t *testing.T) {
 // other NAT64s come and go, and the table of its VRF; an explicit pool's prefixes are its pools,
 // each once, and an empty pool4 has none.
 func TestNAT64Instances(t *testing.T) {
-	edge := routerDoc(t, "NAT64", "edge", `{"prefix": "64:ff9b::/96", "pool4": [{"prefix": "192.0.2.8/30", "ports": "61001-65535", "protocols": ["tcp", "udp"]}, {"prefix": "192.0.2.8/30", "ports": "1-1000", "protocols": ["icmp"]}]}`)
-	guest := routerDoc(t, "NAT64", "guest", `{"vrf": "guest", "prefix": "64:ff9b::/96", "pool4": []}`)
+	edge := derivetest.RouterDoc(t, "NAT64", "edge", `{"prefix": "64:ff9b::/96", "pool4": [{"prefix": "192.0.2.8/30", "ports": "61001-65535", "protocols": ["tcp", "udp"]}, {"prefix": "192.0.2.8/30", "ports": "1-1000", "protocols": ["icmp"]}]}`)
+	guest := derivetest.RouterDoc(t, "NAT64", "guest", `{"vrf": "guest", "prefix": "64:ff9b::/96", "pool4": []}`)
 	instances := func(nat64 ...any) []NAT64Instance {
 		t.Helper()
 		m, err := Build(map[string]any{
 			"NAT64":   nat64,
-			"VRF":     []any{routerDoc(t, "VRF", "guest", `{"table": 300, "interfaces": ["eth3"]}`)},
-			"Network": []any{document(t, "Network", "40-guest", `{"match": {"name": "eth3"}}`)},
+			"VRF":     []any{derivetest.RouterDoc(t, "VRF", "guest", `{"table": 300, "interfaces": ["eth3"]}`)},
+			"Network": []any{derivetest.Doc(t, "Network", "40-guest", `{"match": {"name": "eth3"}}`)},
 		})
 		if err != nil {
 			t.Fatal(err)
@@ -79,7 +81,7 @@ func TestNAT64Instances(t *testing.T) {
 // in pairs: two NAT64s of one VRF whose prefixes overlap, two NAT64s whose pools share an address
 // and two names whose hashes pick one link.
 func TestNAT64Refusals(t *testing.T) {
-	nat64 := func(name, spec string) any { return routerDoc(t, "NAT64", name, spec) }
+	nat64 := func(name, spec string) any { return derivetest.RouterDoc(t, "NAT64", name, spec) }
 	pool := func(entries string) any { return nat64("edge", `{"prefix": "64:ff9b::/96", "pool4": [`+entries+`]}`) }
 	tenant := func(name, prefix string) any {
 		return nat64(name, `{"vrf": "tenant", "prefix": "`+prefix+`", "pool4": []}`)
@@ -101,7 +103,7 @@ func TestNAT64Refusals(t *testing.T) {
 			"NAT64/lab: spec.pool4[0]: the entry shares addresses with the pool of NAT64 edge; give each NAT64 a pool of its own"},
 	} {
 		t.Run(name, func(t *testing.T) {
-			refused(t, map[string][]any{"NAT64": c.docs, "VRF": {routerDoc(t, "VRF", "tenant", `{"table": 100}`)}}, c.want)
+			refused(t, map[string][]any{"NAT64": c.docs, "VRF": {derivetest.RouterDoc(t, "VRF", "tenant", `{"table": 100}`)}}, c.want)
 		})
 	}
 }

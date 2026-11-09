@@ -4,30 +4,9 @@ import (
 	"slices"
 	"strings"
 	"testing"
-)
 
-// relayDocs are a router's documents with the DHCPRelay and DHCPSubnet documents given: lan0
-// holds 192.0.2.1/24, fe80::1/64 and 2001:db8:1::1/64, lan1 198.51.100.1/24 alone, lan2
-// 2001:db8:2::1/64 and 203.0.113.1/24 in the VRF guest, lan3 203.0.113.65/26 in the VRF dmz,
-// and lan4 2001:db8:4::1/64 in the VRF dmz with router advertisements of the Managed flag.
-func relayDocs(t *testing.T, relays []any, subnets ...any) map[string][]any {
-	t.Helper()
-	return map[string][]any{
-		"VRF": {
-			routerDoc(t, "VRF", "guest", `{"table": 300, "interfaces": ["lan2"]}`),
-			routerDoc(t, "VRF", "dmz", `{"table": 400, "interfaces": ["lan3", "lan4"]}`),
-		},
-		"Network": {
-			document(t, "Network", "10-lan0", `{"match": {"name": "lan0"}, "network": {"address": ["192.0.2.1/24", "fe80::1/64", "2001:db8:1::1/64"]}}`),
-			document(t, "Network", "11-lan1", `{"match": {"name": "lan1"}, "network": {"address": ["198.51.100.1/24"]}}`),
-			document(t, "Network", "12-lan2", `{"match": {"name": "lan2"}, "network": {"address": ["2001:db8:2::1/64", "203.0.113.1/24"]}}`),
-			document(t, "Network", "13-lan3", `{"match": {"name": "lan3"}, "network": {"address": ["203.0.113.65/26"]}}`),
-			document(t, "Network", "14-lan4", `{"match": {"name": "lan4"}, "network": {"address": ["2001:db8:4::1/64"], "ipv6SendRA": true}, "ipv6SendRA": {"managed": true}}`),
-		},
-		"DHCPRelay":  relays,
-		"DHCPSubnet": subnets,
-	}
-}
+	"github.com/trevex/chalkos/pkg/router/derive/derivetest"
+)
 
 // Each VRF's relays render a dnsmasq relay of their own, dnsmasq-relay-<vrf>.conf apart from the
 // default VRF's dnsmasq-relay.conf, which relays on its links alone, each family to its servers
@@ -37,14 +16,14 @@ func relayDocs(t *testing.T, relays []any, subnets ...any) map[string][]any {
 // of the other family in any VRF.
 func TestRelayPerVRF(t *testing.T) {
 	relay := func(name, links, servers string) any {
-		return routerDoc(t, "DHCPRelay", name, `{"interfaces": `+links+`, "servers": `+servers+`}`)
+		return derivetest.RouterDoc(t, "DHCPRelay", name, `{"interfaces": `+links+`, "servers": `+servers+`}`)
 	}
-	files, err := unitFiles(t, []string{"dhcp-relay"}, relayDocs(t,
+	files, err := unitFiles(t, []string{"dhcp-relay"}, derivetest.RelayDocs(t,
 		[]any{
 			relay("office", `["lan1", "lan0"]`, `["198.51.100.53"]`),
 			relay("guests", `["lan2"]`, `["198.51.100.53", "2001:db8:ff::53", "2001:db8:ff::54"]`),
 		},
-		subnetDoc(t, "dmz6", `{"interfaces": ["lan4"], "subnet": "2001:db8:4::/64", "pools": [{"first": "2001:db8:4::100", "last": "2001:db8:4::1ff"}]}`),
+		derivetest.SubnetDoc(t, "dmz6", `{"interfaces": ["lan4"], "subnet": "2001:db8:4::/64", "pools": [{"first": "2001:db8:4::100", "last": "2001:db8:4::1ff"}]}`),
 	))
 	if err != nil {
 		t.Fatal(err)
@@ -73,7 +52,7 @@ func TestRelayPerVRF(t *testing.T) {
 // IPv4 subnet, whose server reads ahead of the firewall.
 func TestDHCPOpenings(t *testing.T) {
 	relay := func(name, links, servers string) any {
-		return routerDoc(t, "DHCPRelay", name, `{"interfaces": `+links+`, "servers": `+servers+`}`)
+		return derivetest.RouterDoc(t, "DHCPRelay", name, `{"interfaces": `+links+`, "servers": `+servers+`}`)
 	}
 	// openings are the lines of the ruleset of docs that open DHCP.
 	openings := func(docs map[string][]any) []string {
@@ -89,10 +68,10 @@ func TestDHCPOpenings(t *testing.T) {
 		}
 		return got
 	}
-	got := openings(relayDocs(t,
+	got := openings(derivetest.RelayDocs(t,
 		// As chalkd gives documents, by name.
 		[]any{relay("guests", `["lan2"]`, `["198.51.100.53", "2001:db8:ff::53"]`), relay("office", `["lan1"]`, `["198.51.100.53"]`)},
-		subnetDoc(t, "dmz6", `{"interfaces": ["lan4"], "subnet": "2001:db8:4::/64"}`),
+		derivetest.SubnetDoc(t, "dmz6", `{"interfaces": ["lan4"], "subnet": "2001:db8:4::/64"}`),
 	))
 	want := []string{
 		`iifname "dmz" meta sdifname { "lan4" } ip6 saddr { fe80::/10 } udp dport { 547 } accept comment "DHCPSubnet dmz6"`,
@@ -103,10 +82,10 @@ func TestDHCPOpenings(t *testing.T) {
 	if !slices.Equal(got, want) {
 		t.Errorf("openings:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
 	}
-	if got := openings(keaDocs(t, subnetDoc(t, "office", `{"interfaces": ["lan0"], "subnet": "192.0.2.0/24"}`))); len(got) > 0 {
+	if got := openings(derivetest.KeaDocs(t, derivetest.SubnetDoc(t, "office", `{"interfaces": ["lan0"], "subnet": "192.0.2.0/24"}`))); len(got) > 0 {
 		t.Errorf("an IPv4 subnet opens %q", got)
 	}
 	// The schema takes no glob, which the opening would write into the ruleset.
-	refused(t, []string{"router-nftables", "50000"}, relayDocs(t, []any{relay("office", `["lan*"]`, `["198.51.100.53"]`)}),
+	refused(t, []string{"router-nftables", "50000"}, derivetest.RelayDocs(t, []any{relay("office", `["lan*"]`, `["198.51.100.53"]`)}),
 		`internal error: DHCPRelay office: interfaces: "lan*" is no interface name; chalkd checks the config against the schemas, the rules and the validators before it renders`)
 }

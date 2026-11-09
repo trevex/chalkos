@@ -19,6 +19,7 @@ import (
 	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/refusals"
 	"github.com/trevex/chalkos/pkg/router/derive"
+	"github.com/trevex/chalkos/pkg/router/derive/derivetest"
 	"github.com/trevex/chalkos/pkg/schema"
 )
 
@@ -320,7 +321,7 @@ func TestResolverOpenings(t *testing.T) {
 		`{"listen": [], "allow": ["2001:db8::/32"]}`:                                                  "internal error: Resolver resolver: listen names no address, so the firewall would accept DNS on every address of the router",
 		`{"listen": ["2001:db8:ffff::1"], "allow": []}`:                                               "internal error: Resolver resolver: allow names no range, so the firewall would accept DNS from every client",
 	} {
-		refused(t, []string{"router-nftables", "50000"}, map[string][]any{"Resolver": {routerDoc(t, "Resolver", "resolver", spec)}}, want)
+		refused(t, []string{"router-nftables", "50000"}, map[string][]any{"Resolver": {derivetest.RouterDoc(t, "Resolver", "resolver", spec)}}, want)
 	}
 }
 
@@ -334,17 +335,17 @@ func TestResolverOpenings(t *testing.T) {
 // without NATRules an explicit pool needs no source NAT chain.
 func TestNAT64Firewall(t *testing.T) {
 	docs := map[string][]any{
-		"VRF":            {routerDoc(t, "VRF", "guest", `{"table": 300, "interfaces": ["eth3", "eth4"], "conntrackZone": 1}`)},
-		"Network":        {document(t, "Network", "10-eth0", `{"match": {"name": "eth0"}}`), document(t, "Network", "40-guest", `{"match": {"name": "eth3 eth4"}}`)},
-		"FirewallZone":   {routerDoc(t, "FirewallZone", "lan", `{"interfaces": ["eth0"]}`), routerDoc(t, "FirewallZone", "wan", `{"interfaces": ["eth4"]}`)},
-		"FirewallPolicy": {routerDoc(t, "FirewallPolicy", "lan-wan", `{"from": "lan", "to": "wan", "default": "accept", "rules": []}`)},
-		"NATRule": {routerDoc(t, "NATRule", "out", `{"type": "masquerade", "family": "ipv4", "out": {"zone": "wan"}}`),
-			routerDoc(t, "NATRule", "web", `{"type": "dnat", "family": "ipv4", "in": {"interface": "*"}, "match": {"protocol": "tcp", "destinationPorts": [80]}, "to": {"address": "192.0.2.80"}}`)},
+		"VRF":            {derivetest.RouterDoc(t, "VRF", "guest", `{"table": 300, "interfaces": ["eth3", "eth4"], "conntrackZone": 1}`)},
+		"Network":        {derivetest.Doc(t, "Network", "10-eth0", `{"match": {"name": "eth0"}}`), derivetest.Doc(t, "Network", "40-guest", `{"match": {"name": "eth3 eth4"}}`)},
+		"FirewallZone":   {derivetest.RouterDoc(t, "FirewallZone", "lan", `{"interfaces": ["eth0"]}`), derivetest.RouterDoc(t, "FirewallZone", "wan", `{"interfaces": ["eth4"]}`)},
+		"FirewallPolicy": {derivetest.RouterDoc(t, "FirewallPolicy", "lan-wan", `{"from": "lan", "to": "wan", "default": "accept", "rules": []}`)},
+		"NATRule": {derivetest.RouterDoc(t, "NATRule", "out", `{"type": "masquerade", "family": "ipv4", "out": {"zone": "wan"}}`),
+			derivetest.RouterDoc(t, "NATRule", "web", `{"type": "dnat", "family": "ipv4", "in": {"interface": "*"}, "match": {"protocol": "tcp", "destinationPorts": [80]}, "to": {"address": "192.0.2.80"}}`)},
 		"NAT64": {
-			routerDoc(t, "NAT64", "edge", `{"prefix": "64:ff9b::/96", "pool4": [{"prefix": "192.0.2.8/30", "ports": "61001-65535", "protocols": ["tcp", "udp", "icmp"]}]}`),
-			routerDoc(t, "NAT64", "guest", `{"vrf": "guest", "prefix": "64:ff9b::/96", "pool4": []}`),
+			derivetest.RouterDoc(t, "NAT64", "edge", `{"prefix": "64:ff9b::/96", "pool4": [{"prefix": "192.0.2.8/30", "ports": "61001-65535", "protocols": ["tcp", "udp", "icmp"]}]}`),
+			derivetest.RouterDoc(t, "NAT64", "guest", `{"vrf": "guest", "prefix": "64:ff9b::/96", "pool4": []}`),
 		},
-		"Resolver": {routerDoc(t, "Resolver", "guest", `{"vrf": "guest", "listen": ["2001:db8:3::1"], "allow": ["2001:db8:3::/64"]}`)},
+		"Resolver": {derivetest.RouterDoc(t, "Resolver", "guest", `{"vrf": "guest", "listen": ["2001:db8:3::1"], "allow": ["2001:db8:3::/64"]}`)},
 	}
 	ruleset := func(docs map[string][]any) string {
 		t.Helper()
@@ -406,7 +407,7 @@ func TestNAT64Firewall(t *testing.T) {
 	// A VRF without a conntrack zone leaves its NAT64's link out of the zones, and the forward
 	// chain still picks the link by sdifname.
 	zoneless := maps.Clone(docs)
-	zoneless["VRF"] = []any{routerDoc(t, "VRF", "guest", `{"table": 300, "interfaces": ["eth3", "eth4"]}`)}
+	zoneless["VRF"] = []any{derivetest.RouterDoc(t, "VRF", "guest", `{"table": 300, "interfaces": ["eth3", "eth4"]}`)}
 	got = ruleset(zoneless)
 	if strings.Contains(got, "ct zone") {
 		t.Errorf("a ruleset without conntrack zones sets one:\n%s", got)
@@ -419,9 +420,9 @@ func TestNAT64Firewall(t *testing.T) {
 // A dnat rule whose destination is wider than a NAT64's pool translates the connections the NAT64
 // does not take; the validator router refuses a destination inside the pool or the prefix.
 func TestNATRuleWiderThanNAT64Pool(t *testing.T) {
-	nat64 := routerDoc(t, "NAT64", "edge", `{"prefix": "64:ff9b::/96", "pool4": [{"prefix": "192.0.2.8/30", "ports": "61001-65535", "protocols": ["tcp"]}]}`)
-	zone := routerDoc(t, "FirewallZone", "wan", `{"interfaces": ["eth0"]}`)
-	rule := routerDoc(t, "NATRule", "web", `{"type": "dnat", "family": "ipv4", "in": {"zone": "wan"}, "match": {"destination": ["192.0.2.0/24"]}, "to": {"address": "198.51.100.1"}}`)
+	nat64 := derivetest.RouterDoc(t, "NAT64", "edge", `{"prefix": "64:ff9b::/96", "pool4": [{"prefix": "192.0.2.8/30", "ports": "61001-65535", "protocols": ["tcp"]}]}`)
+	zone := derivetest.RouterDoc(t, "FirewallZone", "wan", `{"interfaces": ["eth0"]}`)
+	rule := derivetest.RouterDoc(t, "NATRule", "web", `{"type": "dnat", "family": "ipv4", "in": {"zone": "wan"}, "match": {"destination": ["192.0.2.0/24"]}, "to": {"address": "198.51.100.1"}}`)
 	docs := map[string][]any{"NAT64": {nat64}, "FirewallZone": {zone}, "NATRule": {rule}}
 	input, err := json.Marshal(map[string]any{"node": map[string]any{"name": "r1"}, "documents": docs})
 	if err != nil {
@@ -681,18 +682,6 @@ func TestCheckASPath(t *testing.T) {
 	}
 }
 
-// routerDoc is a document of a router kind with the spec given in JSON, its numbers exact.
-func routerDoc(t *testing.T, kind, name, spec string) any {
-	t.Helper()
-	var s any
-	dec := json.NewDecoder(strings.NewReader(spec))
-	dec.UseNumber()
-	if err := dec.Decode(&s); err != nil {
-		t.Fatal(err)
-	}
-	return map[string]any{"apiVersion": derive.API, "kind": kind, "metadata": map[string]any{"name": name}, "spec": s}
-}
-
 // refused renders the output of args from docs and wants an error that holds want.
 func refused(t *testing.T, args []string, docs map[string][]any, want string) {
 	t.Helper()
@@ -710,7 +699,7 @@ func refused(t *testing.T, args []string, docs map[string][]any, want string) {
 // were it written by hand. The validator router refuses NAT64s that share a prefix, a pool's
 // address or a link.
 func TestJoolRefusals(t *testing.T) {
-	nat64 := func(name, spec string) any { return routerDoc(t, "NAT64", name, spec) }
+	nat64 := func(name, spec string) any { return derivetest.RouterDoc(t, "NAT64", name, spec) }
 	pool := func(entries string) any { return nat64("edge", `{"prefix": "64:ff9b::/96", "pool4": [`+entries+`]}`) }
 	const notPrefix = "is no IPv6 range of 32, 40, 48, 56, 64 or 96 bits whose bits 64 to 71 are zero; chalkd checks the config against the schemas, the rules and the validators before it renders"
 	for name, c := range map[string]struct {
@@ -747,7 +736,7 @@ func TestJoolRefusals(t *testing.T) {
 // an internal error, not an entry the pool drops.
 func TestJoolProtocols(t *testing.T) {
 	nat64 := func(protocols string) map[string][]any {
-		return map[string][]any{"NAT64": {routerDoc(t, "NAT64", "edge", `{"prefix": "64:ff9b::/96", "pool4": [{"prefix": "192.0.2.8/30", "ports": "61001-65535", "protocols": [`+protocols+`]}]}`)}}
+		return map[string][]any{"NAT64": {derivetest.RouterDoc(t, "NAT64", "edge", `{"prefix": "64:ff9b::/96", "pool4": [{"prefix": "192.0.2.8/30", "ports": "61001-65535", "protocols": [`+protocols+`]}]}`)}}
 	}
 	input, err := json.Marshal(map[string]any{"node": map[string]any{"name": "r1"}, "documents": nat64(`"icmp", "tcp\", \"mark\": \"1", "tcp"`)})
 	if err != nil {
@@ -777,11 +766,11 @@ func TestJoolProtocols(t *testing.T) {
 // NAT64's link comes from the hash of its name alone, so a NAT64 keeps it while others come and
 // go; a VRF's NAT64 names the VRF and its table.
 func TestNAT64Links(t *testing.T) {
-	edge := routerDoc(t, "NAT64", "edge", `{"prefix": "64:ff9b::/96", "pool4": [{"prefix": "192.0.2.8/30", "ports": "61001-65535", "protocols": ["tcp", "udp"]}, {"prefix": "192.0.2.8/30", "ports": "1-1000", "protocols": ["icmp"]}]}`)
-	guest := routerDoc(t, "NAT64", "guest", `{"vrf": "guest", "prefix": "64:ff9b::/96", "pool4": []}`)
+	edge := derivetest.RouterDoc(t, "NAT64", "edge", `{"prefix": "64:ff9b::/96", "pool4": [{"prefix": "192.0.2.8/30", "ports": "61001-65535", "protocols": ["tcp", "udp"]}, {"prefix": "192.0.2.8/30", "ports": "1-1000", "protocols": ["icmp"]}]}`)
+	guest := derivetest.RouterDoc(t, "NAT64", "guest", `{"vrf": "guest", "prefix": "64:ff9b::/96", "pool4": []}`)
 	vrf := map[string][]any{
-		"VRF":     {routerDoc(t, "VRF", "guest", `{"table": 300, "interfaces": ["eth3"]}`)},
-		"Network": {document(t, "Network", "40-guest", `{"match": {"name": "eth3"}}`)},
+		"VRF":     {derivetest.RouterDoc(t, "VRF", "guest", `{"table": 300, "interfaces": ["eth3"]}`)},
+		"Network": {derivetest.Doc(t, "Network", "40-guest", `{"match": {"name": "eth3"}}`)},
 	}
 	// rendered renders the output jool of the NAT64 documents nat64 beside the VRF guest.
 	rendered := func(nat64 ...any) string {
@@ -841,7 +830,7 @@ func TestNAT64Links(t *testing.T) {
 // output's unbound-checkconf refuses the rest of what Unbound cannot load.
 func TestUnboundRefusals(t *testing.T) {
 	resolver := func(more string) any {
-		return routerDoc(t, "Resolver", "resolver", `{"listen": ["2001:db8:ffff::1"], "allow": ["2001:db8::/32"], "forwarders": [], "dnssec": true, "dns64": null`+more+`}`)
+		return derivetest.RouterDoc(t, "Resolver", "resolver", `{"listen": ["2001:db8:ffff::1"], "allow": ["2001:db8::/32"], "forwarders": [], "dnssec": true, "dns64": null`+more+`}`)
 	}
 	zone := func(z string) any { return resolver(`, "localZones": [` + z + `]`) }
 	record := func(typ, value string) any {
@@ -873,16 +862,16 @@ func TestUnboundRefusals(t *testing.T) {
 		"a trust anchor that adds an option": {[]string{"unbound", "/etc/root.key\"\n  include: \"/etc/passwd", testZoneFile}, []any{resolver("")}, "is no absolute path"},
 		"a trust anchor of a hash":           {[]string{"unbound", "/etc/root.key#x", testZoneFile}, []any{resolver("")}, "is no absolute path"},
 		// What would open the firewall wider.
-		"no address": {args, []any{routerDoc(t, "Resolver", "resolver", `{"listen": [], "allow": ["2001:db8::/32"]}`)},
+		"no address": {args, []any{derivetest.RouterDoc(t, "Resolver", "resolver", `{"listen": [], "allow": ["2001:db8::/32"]}`)},
 			"internal error: Resolver resolver: listen names no address, so the firewall would accept DNS on every address of the router"},
-		"no client": {args, []any{routerDoc(t, "Resolver", "resolver", `{"listen": ["2001:db8:ffff::1"], "allow": []}`)},
+		"no client": {args, []any{derivetest.RouterDoc(t, "Resolver", "resolver", `{"listen": ["2001:db8:ffff::1"], "allow": []}`)},
 			"internal error: Resolver resolver: allow names no range, so the firewall would accept DNS from every client"},
 		// Values Unbound's config would read as syntax, and a zone type it writes unquoted.
-		"an address with a zone": {args, []any{routerDoc(t, "Resolver", "resolver", `{"listen": ["fe80::1%eth0"], "allow": ["2001:db8::/32"]}`)},
+		"an address with a zone": {args, []any{derivetest.RouterDoc(t, "Resolver", "resolver", `{"listen": ["fe80::1%eth0"], "allow": ["2001:db8::/32"]}`)},
 			`internal error: Resolver resolver: spec.listen[0]: "fe80::1%eth0" has a zone`},
-		"an address that adds an option": {args, []any{routerDoc(t, "Resolver", "resolver", `{"listen": ["2001:db8:ffff::1\n  interface: 0.0.0.0"], "allow": ["2001:db8::/32"]}`)}, `internal error: Resolver resolver: ParseAddr("2001:db8:ffff::1\n  interface: 0.0.0.0"): unexpected character, want colon (at "\n  interface: 0.0.0.0")`},
-		"a client that adds an option":   {args, []any{routerDoc(t, "Resolver", "resolver", `{"listen": ["2001:db8:ffff::1"], "allow": ["2001:db8::/32 allow\naccess-control: ::/0"]}`)}, `internal error: Resolver resolver: netip.ParsePrefix("2001:db8::/32 allow\naccess-control: ::/0"): ParseAddr("2001:db8::/32 allow\naccess-control: ::"): each colon-separated field must have at least one digit (at "/32 allow\naccess-control: ::")`},
-		"a client of a hash":             {args, []any{routerDoc(t, "Resolver", "resolver", `{"listen": ["2001:db8:ffff::1"], "allow": ["2001:db8::/32#x"]}`)}, `internal error: Resolver resolver: netip.ParsePrefix("2001:db8::/32#x"): bad bits after slash: "32#x"`},
+		"an address that adds an option": {args, []any{derivetest.RouterDoc(t, "Resolver", "resolver", `{"listen": ["2001:db8:ffff::1\n  interface: 0.0.0.0"], "allow": ["2001:db8::/32"]}`)}, `internal error: Resolver resolver: ParseAddr("2001:db8:ffff::1\n  interface: 0.0.0.0"): unexpected character, want colon (at "\n  interface: 0.0.0.0")`},
+		"a client that adds an option":   {args, []any{derivetest.RouterDoc(t, "Resolver", "resolver", `{"listen": ["2001:db8:ffff::1"], "allow": ["2001:db8::/32 allow\naccess-control: ::/0"]}`)}, `internal error: Resolver resolver: netip.ParsePrefix("2001:db8::/32 allow\naccess-control: ::/0"): ParseAddr("2001:db8::/32 allow\naccess-control: ::"): each colon-separated field must have at least one digit (at "/32 allow\naccess-control: ::")`},
+		"a client of a hash":             {args, []any{derivetest.RouterDoc(t, "Resolver", "resolver", `{"listen": ["2001:db8:ffff::1"], "allow": ["2001:db8::/32#x"]}`)}, `internal error: Resolver resolver: netip.ParsePrefix("2001:db8::/32#x"): bad bits after slash: "32#x"`},
 		"a forwarder that adds a server": {args, []any{resolver(`, "forwarders": ["192.0.2.53\nserver:\n  do-not-query-localhost: no"]`)}, `internal error: Resolver resolver: ParseAddr("192.0.2.53\nserver:\n  do-not-query-localhost: no"): unexpected character (at "\nserver:\n  do-not-query-localhost: no")`},
 		"a DNS64 prefix of 95 bits": {args, []any{resolver(`, "dns64": {"prefix": "64:ff9b::/95"}`)},
 			`internal error: Resolver resolver: dns64: the prefix 64:ff9b::/95 is no IPv6 range of 32, 40, 48, 56, 64 or 96 bits whose bits 64 to 71 are zero`},
@@ -928,14 +917,14 @@ func TestUnboundRefusals(t *testing.T) {
 func TestUnboundPerVRF(t *testing.T) {
 	docs := func(listen string) map[string][]any {
 		return map[string][]any{
-			"VRF": {routerDoc(t, "VRF", "guest", `{"table": 300, "interfaces": ["eth3"]}`)},
+			"VRF": {derivetest.RouterDoc(t, "VRF", "guest", `{"table": 300, "interfaces": ["eth3"]}`)},
 			"Network": {
-				document(t, "Network", "10-eth0", `{"match": {"name": "eth0"}, "network": {"address": ["2001:db8:ffff::1/128", "2001:db8:3::9/64"]}}`),
-				document(t, "Network", "40-guest", `{"match": {"name": "eth3"}, "network": {"address": ["2001:db8:3::1/64", "2001:db8:3::9/64"]}}`),
+				derivetest.Doc(t, "Network", "10-eth0", `{"match": {"name": "eth0"}, "network": {"address": ["2001:db8:ffff::1/128", "2001:db8:3::9/64"]}}`),
+				derivetest.Doc(t, "Network", "40-guest", `{"match": {"name": "eth3"}, "network": {"address": ["2001:db8:3::1/64", "2001:db8:3::9/64"]}}`),
 			},
 			"Resolver": {
-				routerDoc(t, "Resolver", "guest", `{"vrf": "guest", "listen": ["`+listen+`"], "allow": ["2001:db8:3::/64"], "forwarders": [], "dnssec": false, "dns64": {"prefix": "64:ff9b::/96"}, "localZones": []}`),
-				routerDoc(t, "Resolver", "resolver", `{"listen": ["2001:db8:ffff::1"], "allow": ["2001:db8::/32"], "forwarders": [], "dnssec": false, "dns64": null, "localZones": []}`),
+				derivetest.RouterDoc(t, "Resolver", "guest", `{"vrf": "guest", "listen": ["`+listen+`"], "allow": ["2001:db8:3::/64"], "forwarders": [], "dnssec": false, "dns64": {"prefix": "64:ff9b::/96"}, "localZones": []}`),
+				derivetest.RouterDoc(t, "Resolver", "resolver", `{"listen": ["2001:db8:ffff::1"], "allow": ["2001:db8::/32"], "forwarders": [], "dnssec": false, "dns64": null, "localZones": []}`),
 			},
 		}
 	}
@@ -998,14 +987,14 @@ func TestVRFPeerOpenings(t *testing.T) {
 func TestFRRVRFRefusals(t *testing.T) {
 	timers := `"multipath": {"ebgp": 1, "ibgp": 1, "asPathRelax": false}, "bfd": {"receiveMs": 300, "transmitMs": 300, "multiplier": 3}`
 	bgp := func(name string, asn int, more string) any {
-		return routerDoc(t, "BGP", name, fmt.Sprintf(`{"asn": %d, "routerID": "192.0.2.1", %s%s}`, asn, timers, more))
+		return derivetest.RouterDoc(t, "BGP", name, fmt.Sprintf(`{"asn": %d, "routerID": "192.0.2.1", %s%s}`, asn, timers, more))
 	}
 	peer := func(name, more string) any {
-		return routerDoc(t, "BGPPeer", name, `{"remoteAS": "external", "families": {"ipv6": {}}, `+more+`}`)
+		return derivetest.RouterDoc(t, "BGPPeer", name, `{"remoteAS": "external", "families": {"ipv6": {}}, `+more+`}`)
 	}
-	tenant := routerDoc(t, "VRF", "tenant", `{"table": 100, "interfaces": ["eth2"]}`)
-	eth2 := document(t, "Network", "20-eth2", `{"match": {"name": "eth2"}}`)
-	prepend := routerDoc(t, "RoutingPolicy", "p", `{"terms": [{"then": {"action": "accept", "prepend": 1}}], "default": "reject"}`)
+	tenant := derivetest.RouterDoc(t, "VRF", "tenant", `{"table": 100, "interfaces": ["eth2"]}`)
+	eth2 := derivetest.Doc(t, "Network", "20-eth2", `{"match": {"name": "eth2"}}`)
+	prepend := derivetest.RouterDoc(t, "RoutingPolicy", "p", `{"terms": [{"then": {"action": "accept", "prepend": 1}}], "default": "reject"}`)
 	withTenant := func(docs map[string][]any) map[string][]any {
 		docs["VRF"], docs["Network"] = []any{tenant}, []any{eth2}
 		return docs
@@ -1038,7 +1027,7 @@ func TestFRRVRFRefusals(t *testing.T) {
 func TestFRRDefaultRouteNetwork(t *testing.T) {
 	timers := `"multipath": {"ebgp": 1, "ibgp": 1, "asPathRelax": false}, "bfd": {"receiveMs": 300, "transmitMs": 300, "multiplier": 3}`
 	input, err := json.Marshal(map[string]any{"node": map[string]any{"name": "r1"}, "documents": map[string][]any{
-		"BGP": {routerDoc(t, "BGP", "bgp", `{"asn": 64512, "routerID": "192.0.2.1", `+timers+`, "networks": [{"prefix": "0.0.0.0/0"}, {"prefix": "::/0"}]}`)},
+		"BGP": {derivetest.RouterDoc(t, "BGP", "bgp", `{"asn": 64512, "routerID": "192.0.2.1", `+timers+`, "networks": [{"prefix": "0.0.0.0/0"}, {"prefix": "::/0"}]}`)},
 	}})
 	if err != nil {
 		t.Fatal(err)
@@ -1061,24 +1050,24 @@ func TestFRRDefaultRouteNetwork(t *testing.T) {
 func TestFRRDefaultOriginateWhen(t *testing.T) {
 	timers := `"multipath": {"ebgp": 1, "ibgp": 1, "asPathRelax": false}, "bfd": {"receiveMs": 300, "transmitMs": 300, "multiplier": 3}`
 	list := func(name, prefix string) any {
-		return routerDoc(t, "PrefixList", name, `{"family": "ipv6", "entries": [{"prefix": "`+prefix+`", "action": "permit"}]}`)
+		return derivetest.RouterDoc(t, "PrefixList", name, `{"family": "ipv6", "entries": [{"prefix": "`+prefix+`", "action": "permit"}]}`)
 	}
 	peers := func(leaf, spine, spine2 string) []any {
 		return []any{
-			routerDoc(t, "BGPPeer", "leaf", `{"vrf": "tenant", "interface": "eth2", "remoteAS": "external", "families": {"ipv4": {"defaultOriginate": true}, "ipv6": {"defaultOriginate": true`+leaf+`}}}`),
-			routerDoc(t, "BGPPeer", "spine", `{"address": "2001:db8::9", "remoteAS": "external", "families": {"ipv6": {"defaultOriginate": true`+spine+`}}}`),
-			routerDoc(t, "BGPPeer", "spine2", `{"address": "2001:db8::10", "remoteAS": "external", "families": {"ipv6": {"defaultOriginate": true`+spine2+`}}}`),
+			derivetest.RouterDoc(t, "BGPPeer", "leaf", `{"vrf": "tenant", "interface": "eth2", "remoteAS": "external", "families": {"ipv4": {"defaultOriginate": true}, "ipv6": {"defaultOriginate": true`+leaf+`}}}`),
+			derivetest.RouterDoc(t, "BGPPeer", "spine", `{"address": "2001:db8::9", "remoteAS": "external", "families": {"ipv6": {"defaultOriginate": true`+spine+`}}}`),
+			derivetest.RouterDoc(t, "BGPPeer", "spine2", `{"address": "2001:db8::10", "remoteAS": "external", "families": {"ipv6": {"defaultOriginate": true`+spine2+`}}}`),
 		}
 	}
 	docs := map[string][]any{
 		"BGP": {
-			routerDoc(t, "BGP", "bgp", `{"asn": 64512, "routerID": "192.0.2.1", `+timers+`, "import": {"ipv4": {"vrfs": ["tenant"]}, "ipv6": {"vrfs": ["tenant"], "policy": "from-tenant"}}}`),
-			routerDoc(t, "BGP", "tenant", `{"vrf": "tenant", "asn": 64512, "routerID": "192.0.2.1", `+timers+`, "import": {"ipv6": {"vrfs": ["default"]}}}`),
+			derivetest.RouterDoc(t, "BGP", "bgp", `{"asn": 64512, "routerID": "192.0.2.1", `+timers+`, "import": {"ipv4": {"vrfs": ["tenant"]}, "ipv6": {"vrfs": ["tenant"], "policy": "from-tenant"}}}`),
+			derivetest.RouterDoc(t, "BGP", "tenant", `{"vrf": "tenant", "asn": 64512, "routerID": "192.0.2.1", `+timers+`, "import": {"ipv6": {"vrfs": ["default"]}}}`),
 		},
-		"VRF":           {routerDoc(t, "VRF", "tenant", `{"table": 100, "interfaces": ["eth2"]}`)},
-		"Network":       {document(t, "Network", "20-eth2", `{"match": {"name": "eth2"}}`)},
+		"VRF":           {derivetest.RouterDoc(t, "VRF", "tenant", `{"table": 100, "interfaces": ["eth2"]}`)},
+		"Network":       {derivetest.Doc(t, "Network", "20-eth2", `{"match": {"name": "eth2"}}`)},
 		"PrefixList":    {list("tenant", "2001:db8:100::/40"), list("uplink", "::/0"), list("wan", "2001:db8:fff0::/48")},
-		"RoutingPolicy": {routerDoc(t, "RoutingPolicy", "from-tenant", `{"terms": [{"match": {"prefixList": "tenant"}, "then": {"action": "accept"}}], "default": "reject"}`)},
+		"RoutingPolicy": {derivetest.RouterDoc(t, "RoutingPolicy", "from-tenant", `{"terms": [{"match": {"prefixList": "tenant"}, "then": {"action": "accept"}}], "default": "reject"}`)},
 		"BGPPeer":       peers(`, "defaultOriginateWhen": "uplink"`, `, "defaultOriginateWhen": "wan"`, `, "defaultOriginateWhen": "uplink"`),
 	}
 	conf := func() string {
@@ -1146,8 +1135,8 @@ func TestFRRDefaultOriginateWhen(t *testing.T) {
 	// tenant's IPv4 tracks too: its routes of IPv4 go through track-tenant-ipv4 and the default
 	// VRF's IPv4 import from tenant through leak-default-ipv4. The image's check parses the
 	// config with vtysh, as no example tracks IPv4.
-	docs["PrefixList"] = append(docs["PrefixList"], routerDoc(t, "PrefixList", "uplink4", `{"family": "ipv4", "entries": [{"prefix": "0.0.0.0/0", "action": "permit"}]}`))
-	docs["BGPPeer"] = []any{routerDoc(t, "BGPPeer", "leaf", `{"vrf": "tenant", "interface": "eth2", "remoteAS": "external", "families": {"ipv4": {"defaultOriginate": true, "defaultOriginateWhen": "uplink4"}, "ipv6": {"defaultOriginate": true, "defaultOriginateWhen": "uplink"}}}`)}
+	docs["PrefixList"] = append(docs["PrefixList"], derivetest.RouterDoc(t, "PrefixList", "uplink4", `{"family": "ipv4", "entries": [{"prefix": "0.0.0.0/0", "action": "permit"}]}`))
+	docs["BGPPeer"] = []any{derivetest.RouterDoc(t, "BGPPeer", "leaf", `{"vrf": "tenant", "interface": "eth2", "remoteAS": "external", "families": {"ipv4": {"defaultOriginate": true, "defaultOriginateWhen": "uplink4"}, "ipv6": {"defaultOriginate": true, "defaultOriginateWhen": "uplink"}}}`)}
 	both := conf()
 	for _, want := range []string{
 		"ip prefix-list pl-uplink4 seq 5 permit 0.0.0.0/0\n",
@@ -1172,14 +1161,14 @@ func TestFRRVRFInterfaceByGlob(t *testing.T) {
 	timers := `"multipath": {"ebgp": 1, "ibgp": 1, "asPathRelax": false}, "bfd": {"receiveMs": 300, "transmitMs": 300, "multiplier": 3}`
 	docs := map[string][]any{
 		"BGP": {
-			routerDoc(t, "BGP", "bgp", `{"asn": 64512, "routerID": "192.0.2.1", `+timers+`}`),
-			routerDoc(t, "BGP", "tenant", `{"vrf": "tenant", "asn": 64512, "routerID": "192.0.2.1", `+timers+`}`),
+			derivetest.RouterDoc(t, "BGP", "bgp", `{"asn": 64512, "routerID": "192.0.2.1", `+timers+`}`),
+			derivetest.RouterDoc(t, "BGP", "tenant", `{"vrf": "tenant", "asn": 64512, "routerID": "192.0.2.1", `+timers+`}`),
 		},
-		"VRF":     {routerDoc(t, "VRF", "tenant", `{"table": 100, "interfaces": ["swp*"]}`)},
-		"Network": {document(t, "Network", "30-swp", `{"match": {"name": "swp*"}}`)},
+		"VRF":     {derivetest.RouterDoc(t, "VRF", "tenant", `{"table": 100, "interfaces": ["swp*"]}`)},
+		"Network": {derivetest.Doc(t, "Network", "30-swp", `{"match": {"name": "swp*"}}`)},
 	}
 	peer := func(more string) []any {
-		return []any{routerDoc(t, "BGPPeer", "leaf", `{"interface": "swp1", "remoteAS": "external", "families": {"ipv6": {}}`+more+`}`)}
+		return []any{derivetest.RouterDoc(t, "BGPPeer", "leaf", `{"interface": "swp1", "remoteAS": "external", "families": {"ipv6": {}}`+more+`}`)}
 	}
 	docs["BGPPeer"] = peer(`, "vrf": "tenant"`)
 	input, err := json.Marshal(map[string]any{"node": map[string]any{"name": "r1"}, "documents": docs})
@@ -1192,9 +1181,9 @@ func TestFRRVRFInterfaceByGlob(t *testing.T) {
 	}
 	// A glob of a default-VRF peer expands to the links of no VRF alone.
 	docs["Network"] = append(docs["Network"],
-		document(t, "Network", "20-swp1", `{"match": {"name": "swp1"}}`),
-		document(t, "Network", "40-sw0", `{"match": {"name": "sw0"}}`))
-	docs["BGPPeer"] = []any{routerDoc(t, "BGPPeer", "leaves", `{"interfaces": ["sw*"], "remoteAS": "external", "families": {"ipv6": {}}}`)}
+		derivetest.Doc(t, "Network", "20-swp1", `{"match": {"name": "swp1"}}`),
+		derivetest.Doc(t, "Network", "40-sw0", `{"match": {"name": "sw0"}}`))
+	docs["BGPPeer"] = []any{derivetest.RouterDoc(t, "BGPPeer", "leaves", `{"interfaces": ["sw*"], "remoteAS": "external", "families": {"ipv6": {}}}`)}
 	input, err = json.Marshal(map[string]any{"node": map[string]any{"name": "r1"}, "documents": docs})
 	if err != nil {
 		t.Fatal(err)
@@ -1213,15 +1202,15 @@ func TestFRRVRFPrependAndBFD(t *testing.T) {
 	}
 	docs := map[string][]any{
 		"BGP": {
-			routerDoc(t, "BGP", "bgp", `{"asn": 64512, "routerID": "192.0.2.1", `+timers(300)+`}`),
-			routerDoc(t, "BGP", "tenant", `{"vrf": "tenant", "asn": 64513, "routerID": "192.0.2.1", "networks": [{"prefix": "2001:db8:2::/48", "policy": "p"}], `+timers(500)+`}`),
+			derivetest.RouterDoc(t, "BGP", "bgp", `{"asn": 64512, "routerID": "192.0.2.1", `+timers(300)+`}`),
+			derivetest.RouterDoc(t, "BGP", "tenant", `{"vrf": "tenant", "asn": 64513, "routerID": "192.0.2.1", "networks": [{"prefix": "2001:db8:2::/48", "policy": "p"}], `+timers(500)+`}`),
 		},
-		"VRF":           {routerDoc(t, "VRF", "tenant", `{"table": 100, "interfaces": ["eth2"]}`)},
-		"Network":       {document(t, "Network", "20-eth2", `{"match": {"name": "eth2"}}`)},
-		"RoutingPolicy": {routerDoc(t, "RoutingPolicy", "p", `{"terms": [{"then": {"action": "accept", "prepend": 1}}], "default": "reject"}`)},
+		"VRF":           {derivetest.RouterDoc(t, "VRF", "tenant", `{"table": 100, "interfaces": ["eth2"]}`)},
+		"Network":       {derivetest.Doc(t, "Network", "20-eth2", `{"match": {"name": "eth2"}}`)},
+		"RoutingPolicy": {derivetest.RouterDoc(t, "RoutingPolicy", "p", `{"terms": [{"then": {"action": "accept", "prepend": 1}}], "default": "reject"}`)},
 		"BGPPeer": {
-			routerDoc(t, "BGPPeer", "spine", `{"address": "2001:db8::9", "bfd": true, "remoteAS": "external", "families": {"ipv6": {}}}`),
-			routerDoc(t, "BGPPeer", "leaf", `{"vrf": "tenant", "interface": "eth2", "bfd": true, "remoteAS": "external", "families": {"ipv6": {}}}`),
+			derivetest.RouterDoc(t, "BGPPeer", "spine", `{"address": "2001:db8::9", "bfd": true, "remoteAS": "external", "families": {"ipv6": {}}}`),
+			derivetest.RouterDoc(t, "BGPPeer", "leaf", `{"vrf": "tenant", "interface": "eth2", "bfd": true, "remoteAS": "external", "families": {"ipv6": {}}}`),
 		},
 	}
 	input, err := json.Marshal(map[string]any{"node": map[string]any{"name": "r1"}, "documents": docs})
@@ -1242,46 +1231,27 @@ func TestFRRVRFPrependAndBFD(t *testing.T) {
 	}
 }
 
-// vrfZoneDocs are an edge's documents with three VRFs: internet and tenant, whose zones hold them
-// whole, and guest, whose links are in two zones of their own, and a LAN of links of no VRF.
+// vrfZoneDocs are an edge's documents: derivetest.VRFZoneDocs with the edge's firewall policies and
+// NAT rules.
 func vrfZoneDocs(t *testing.T) map[string][]any {
 	t.Helper()
-	zone := func(name, spec string) any { return routerDoc(t, "FirewallZone", name, spec) }
 	policy := func(name, from, to, verdict string) any {
-		return routerDoc(t, "FirewallPolicy", name, `{"from": "`+from+`", "to": "`+to+`", "default": "`+verdict+`", "rules": []}`)
+		return derivetest.RouterDoc(t, "FirewallPolicy", name, `{"from": "`+from+`", "to": "`+to+`", "default": "`+verdict+`", "rules": []}`)
 	}
-	return map[string][]any{
-		"VRF": {
-			routerDoc(t, "VRF", "guest", `{"table": 300, "interfaces": ["eth3", "eth4"]}`),
-			routerDoc(t, "VRF", "internet", `{"table": 100, "interfaces": ["eth1"]}`),
-			routerDoc(t, "VRF", "tenant", `{"table": 200, "interfaces": ["eth2", "swp*"]}`),
-		},
-		"Network": {
-			document(t, "Network", "10-mgmt", `{"match": {"name": "eth0 eth5"}}`),
-			document(t, "Network", "20-internet", `{"match": {"name": "eth1"}}`),
-			document(t, "Network", "30-tenant", `{"match": {"name": "eth2 swp1 swp2"}}`),
-			document(t, "Network", "40-guest", `{"match": {"name": "eth3 eth4"}}`),
-		},
-		"FirewallZone": {
-			zone("guest-lan", `{"interfaces": ["eth3"], "vrfs": []}`),
-			zone("guest-wan", `{"interfaces": ["eth4"], "vrfs": []}`),
-			zone("internet", `{"interfaces": [], "vrfs": ["internet"]}`),
-			zone("lan", `{"interfaces": ["eth5", "vlan*"], "vrfs": []}`),
-			zone("tenant", `{"interfaces": [], "vrfs": ["tenant"]}`),
-		},
-		"FirewallPolicy": {
-			policy("guest-lan-local", "guest-lan", "local", "accept"),
-			policy("guest-out", "guest-lan", "guest-wan", "accept"),
-			policy("internet-local", "internet", "local", "drop"),
-			policy("lan-local", "lan", "local", "accept"),
-			policy("tenant-internet", "tenant", "internet", "accept"),
-		},
-		"NATRule": {
-			routerDoc(t, "NATRule", "guest-web", `{"type": "dnat", "family": "ipv4", "in": {"zone": "guest-wan", "interface": null}, "out": null, "match": {"source": [], "destination": [], "protocol": "tcp", "destinationPorts": [8080]}, "to": {"address": "192.0.2.10", "port": 80}}`),
-			routerDoc(t, "NATRule", "internet-out", `{"type": "masquerade", "family": "ipv4", "out": {"zone": "internet", "interface": null}, "in": null, "match": {"source": [], "destination": [], "protocol": null, "destinationPorts": []}, "to": null}`),
-			routerDoc(t, "NATRule", "tenant-web", `{"type": "dnat", "family": "ipv4", "in": {"zone": "tenant", "interface": null}, "out": null, "match": {"source": [], "destination": [], "protocol": "tcp", "destinationPorts": [80]}, "to": {"address": "198.51.100.10", "port": null}}`),
-		},
+	docs := derivetest.VRFZoneDocs(t)
+	docs["FirewallPolicy"] = []any{
+		policy("guest-lan-local", "guest-lan", "local", "accept"),
+		policy("guest-out", "guest-lan", "guest-wan", "accept"),
+		policy("internet-local", "internet", "local", "drop"),
+		policy("lan-local", "lan", "local", "accept"),
+		policy("tenant-internet", "tenant", "internet", "accept"),
 	}
+	docs["NATRule"] = []any{
+		derivetest.RouterDoc(t, "NATRule", "guest-web", `{"type": "dnat", "family": "ipv4", "in": {"zone": "guest-wan", "interface": null}, "out": null, "match": {"source": [], "destination": [], "protocol": "tcp", "destinationPorts": [8080]}, "to": {"address": "192.0.2.10", "port": 80}}`),
+		derivetest.RouterDoc(t, "NATRule", "internet-out", `{"type": "masquerade", "family": "ipv4", "out": {"zone": "internet", "interface": null}, "in": null, "match": {"source": [], "destination": [], "protocol": null, "destinationPorts": []}, "to": null}`),
+		derivetest.RouterDoc(t, "NATRule", "tenant-web", `{"type": "dnat", "family": "ipv4", "in": {"zone": "tenant", "interface": null}, "out": null, "match": {"source": [], "destination": [], "protocol": "tcp", "destinationPorts": [80]}, "to": {"address": "198.51.100.10", "port": null}}`),
+	}
+	return docs
 }
 
 // vrfRuleset renders router-nftables from the documents.
@@ -1321,12 +1291,12 @@ func TestVRFZones(t *testing.T) {
 // a link of the zone's own VRF needs no sdifname, as the VRF's device covers it.
 func TestVRFZonesMixed(t *testing.T) {
 	docs := vrfZoneDocs(t)
-	docs["FirewallZone"][2] = routerDoc(t, "FirewallZone", "internet", `{"interfaces": ["eth5", "eth1"], "vrfs": ["internet"]}`)
-	docs["FirewallZone"][3] = routerDoc(t, "FirewallZone", "lan", `{"interfaces": ["vlan*"], "vrfs": []}`)
+	docs["FirewallZone"][2] = derivetest.RouterDoc(t, "FirewallZone", "internet", `{"interfaces": ["eth5", "eth1"], "vrfs": ["internet"]}`)
+	docs["FirewallZone"][3] = derivetest.RouterDoc(t, "FirewallZone", "lan", `{"interfaces": ["vlan*"], "vrfs": []}`)
 	docs["FirewallPolicy"] = append(docs["FirewallPolicy"],
-		routerDoc(t, "FirewallPolicy", "lan-internet", `{"from": "lan", "to": "internet", "default": "accept", "rules": []}`))
+		derivetest.RouterDoc(t, "FirewallPolicy", "lan-internet", `{"from": "lan", "to": "internet", "default": "accept", "rules": []}`))
 	docs["NATRule"] = []any{
-		routerDoc(t, "NATRule", "internet-out", `{"type": "snat", "family": "ipv4", "out": {"zone": "internet", "interface": null}, "in": null, "match": {"source": [], "destination": [], "protocol": null, "destinationPorts": []}, "to": {"address": "203.0.113.1", "port": null}}`),
+		derivetest.RouterDoc(t, "NATRule", "internet-out", `{"type": "snat", "family": "ipv4", "out": {"zone": "internet", "interface": null}, "in": null, "match": {"source": [], "destination": [], "protocol": null, "destinationPorts": []}, "to": {"address": "203.0.113.1", "port": null}}`),
 	}
 	text := vrfRuleset(t, docs)
 	for _, want := range []string{
@@ -1347,8 +1317,8 @@ func TestVRFZonesMixed(t *testing.T) {
 // A glob that may match links of VRFs and links of no VRF comes in by iifname and by sdifname.
 func TestVRFZoneOfAGlob(t *testing.T) {
 	docs := vrfZoneDocs(t)
-	docs["FirewallZone"] = []any{routerDoc(t, "FirewallZone", "all", `{"interfaces": ["eth*"], "vrfs": []}`)}
-	docs["FirewallPolicy"] = []any{routerDoc(t, "FirewallPolicy", "all-local", `{"from": "all", "to": "local", "default": "accept", "rules": []}`)}
+	docs["FirewallZone"] = []any{derivetest.RouterDoc(t, "FirewallZone", "all", `{"interfaces": ["eth*"], "vrfs": []}`)}
+	docs["FirewallPolicy"] = []any{derivetest.RouterDoc(t, "FirewallPolicy", "all-local", `{"from": "all", "to": "local", "default": "accept", "rules": []}`)}
 	docs["NATRule"] = nil
 	want := "\t\tiifname { \"eth*\" } jump policy-all-local\n\t\tmeta sdifname { \"eth*\" } jump policy-all-local\n\t}\n"
 	if text := vrfRuleset(t, docs); !strings.Contains(text, want) {
@@ -1360,9 +1330,9 @@ func TestVRFZoneOfAGlob(t *testing.T) {
 // documents name as well as a VRF's device, such as *, translates on those links.
 func TestVRFNATOfEveryInterface(t *testing.T) {
 	docs := vrfZoneDocs(t)
-	docs["Network"] = append(docs["Network"], document(t, "Network", "50-transit", `{"match": {"name": "transit0"}}`))
+	docs["Network"] = append(docs["Network"], derivetest.Doc(t, "Network", "50-transit", `{"match": {"name": "transit0"}}`))
 	for _, i := range []string{"*", "t*"} {
-		docs["NATRule"] = []any{routerDoc(t, "NATRule", "n", `{"type": "masquerade", "family": "ipv4", "out": {"zone": null, "interface": "`+i+`"}, "in": null, "match": {"source": [], "destination": [], "protocol": null, "destinationPorts": []}, "to": null}`)}
+		docs["NATRule"] = []any{derivetest.RouterDoc(t, "NATRule", "n", `{"type": "masquerade", "family": "ipv4", "out": {"zone": null, "interface": "`+i+`"}, "in": null, "match": {"source": [], "destination": [], "protocol": null, "destinationPorts": []}, "to": null}`)}
 		want := "\t\tmeta nfproto ipv4 oifname { \"" + i + "\" } masquerade\n"
 		if text := vrfRuleset(t, docs); !strings.Contains(text, want) {
 			t.Errorf("the ruleset lacks\n%s\nin\n%s", want, text)
@@ -1375,7 +1345,7 @@ func TestVRFNATOfEveryInterface(t *testing.T) {
 // output by the link the router sends it through. Without zones the ruleset has neither chain.
 func TestConntrackZones(t *testing.T) {
 	docs := vrfZoneDocs(t)
-	docs["VRF"][0] = routerDoc(t, "VRF", "guest", `{"table": 300, "interfaces": ["eth3", "eth4"], "conntrackZone": 1}`)
+	docs["VRF"][0] = derivetest.RouterDoc(t, "VRF", "guest", `{"table": 300, "interfaces": ["eth3", "eth4"], "conntrackZone": 1}`)
 	want := "\tchain ct-prerouting {\n" +
 		"\t\ttype filter hook prerouting priority raw; policy accept;\n" +
 		"\t\tiifname { \"eth3\", \"eth4\" } ct zone set 1 comment \"VRF guest\"\n" +
@@ -1398,11 +1368,11 @@ func TestConntrackZones(t *testing.T) {
 // and a ruleset whose zoned VRFs have no links has no conntrack chains.
 func TestConntrackZonesOfSeveralVRFs(t *testing.T) {
 	docs := vrfZoneDocs(t)
-	docs["VRF"][0] = routerDoc(t, "VRF", "guest", `{"table": 300, "interfaces": ["eth3", "eth4"], "conntrackZone": 1}`)
+	docs["VRF"][0] = derivetest.RouterDoc(t, "VRF", "guest", `{"table": 300, "interfaces": ["eth3", "eth4"], "conntrackZone": 1}`)
 	docs["VRF"] = append(docs["VRF"],
-		routerDoc(t, "VRF", "lab", `{"table": 400, "interfaces": [], "conntrackZone": 3}`),
-		routerDoc(t, "VRF", "spare", `{"table": 500, "interfaces": [], "conntrackZone": 2}`))
-	docs["Network"] = append(docs["Network"], document(t, "Network", "50-lab", `{"match": {"name": "dummy*"}, "network": {"vrf": "lab"}}`))
+		derivetest.RouterDoc(t, "VRF", "lab", `{"table": 400, "interfaces": [], "conntrackZone": 3}`),
+		derivetest.RouterDoc(t, "VRF", "spare", `{"table": 500, "interfaces": [], "conntrackZone": 2}`))
+	docs["Network"] = append(docs["Network"], derivetest.Doc(t, "Network", "50-lab", `{"match": {"name": "dummy*"}, "network": {"vrf": "lab"}}`))
 	want := "\t\ttype filter hook prerouting priority raw; policy accept;\n" +
 		"\t\tiifname { \"eth3\", \"eth4\" } ct zone set 1 comment \"VRF guest\"\n" +
 		"\t\tiifname { \"dummy*\" } ct zone set 3 comment \"VRF lab\"\n" +
@@ -1415,7 +1385,7 @@ func TestConntrackZonesOfSeveralVRFs(t *testing.T) {
 		t.Errorf("a zoned VRF of no link sets its zone:\n%s", text)
 	}
 	docs = vrfZoneDocs(t)
-	docs["VRF"] = append(docs["VRF"], routerDoc(t, "VRF", "spare", `{"table": 500, "interfaces": [], "conntrackZone": 2}`))
+	docs["VRF"] = append(docs["VRF"], derivetest.RouterDoc(t, "VRF", "spare", `{"table": 500, "interfaces": [], "conntrackZone": 2}`))
 	if text := vrfRuleset(t, docs); strings.Contains(text, "ct-prerouting") || strings.Contains(text, "ct-output") {
 		t.Errorf("a ruleset whose zoned VRF has no link has conntrack chains:\n%s", text)
 	}

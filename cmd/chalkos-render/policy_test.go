@@ -5,35 +5,23 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/trevex/chalkos/pkg/router/derive/derivetest"
 )
 
-// policyDocs are a router's documents with the PolicyRoute documents given as name and spec: a
-// LAN zone on lan0, a VRF transit of table 100 on vt0, Networks of lan0, wanb0 and vt0, and the
-// NextHop b4 of table 200 on wanb0.
+// policyDocs are derivetest.PolicyDocs with the NextHop b4 of table 200 on wanb0.
 func policyDocs(t *testing.T, routes ...string) map[string][]any {
 	t.Helper()
-	var docs []any
-	for i := 0; i+1 < len(routes); i += 2 {
-		docs = append(docs, routerDoc(t, "PolicyRoute", routes[i], routes[i+1]))
-	}
-	return map[string][]any{
-		"FirewallZone": {routerDoc(t, "FirewallZone", "lan", `{"interfaces": ["lan0"], "vrfs": []}`)},
-		"VRF":          {routerDoc(t, "VRF", "transit", `{"table": 100, "interfaces": ["vt0"]}`)},
-		"Network": {
-			document(t, "Network", "10-lan", `{"match": {"name": "lan0"}}`),
-			document(t, "Network", "21-wanb", `{"match": {"name": "wanb0"}}`),
-			document(t, "Network", "30-transit", `{"match": {"name": "vt0"}}`),
-		},
-		"NextHop":     {hopDoc(t, "b4", "198.51.100.130", "wanb0", 200)},
-		"PolicyRoute": docs,
-	}
+	docs := derivetest.PolicyDocs(t, routes...)
+	docs["NextHop"] = []any{hopDoc(t, "b4", "198.51.100.130", "wanb0", 200)}
+	return docs
 }
 
 // hopDoc is a NextHop document.
 func hopDoc(t *testing.T, name, address, link string, table int) any {
 	t.Helper()
 	b, _ := json.Marshal(map[string]any{"address": address, "interface": link, "table": table})
-	return routerDoc(t, "NextHop", name, string(b))
+	return derivetest.RouterDoc(t, "NextHop", name, string(b))
 }
 
 // policyInput is the input of the router outputs for the documents.
@@ -66,8 +54,8 @@ func TestPolicyRouteRefusals(t *testing.T) {
 		"an interface that ends a set": {policyDocs(t, "a", `{"in": {"zone": null, "interfaces": ["lan0\" } accept; iifname { \"x"]}, `+dscp+`}`), `internal error: PolicyRoute a: "lan0\" } accept; iifname { \"x" is no interface name or glob`},
 		"a zone without links": {func() map[string][]any {
 			d := policyDocs(t, "a", `{"in": {"zone": "core", "interfaces": []}, `+dscp+`}`)
-			d["VRF"] = append(d["VRF"], routerDoc(t, "VRF", "core", `{"table": 400, "interfaces": []}`))
-			d["FirewallZone"] = append(d["FirewallZone"], routerDoc(t, "FirewallZone", "core", `{"interfaces": [], "vrfs": ["core"]}`))
+			d["VRF"] = append(d["VRF"], derivetest.RouterDoc(t, "VRF", "core", `{"table": 400, "interfaces": []}`))
+			d["FirewallZone"] = append(d["FirewallZone"], derivetest.RouterDoc(t, "FirewallZone", "core", `{"interfaces": [], "vrfs": ["core"]}`))
 			return d
 		}(), "internal error: PolicyRoute a: the zone core holds no link"},
 		"no target":         {policyDocs(t, "a", `{"rules": [{"match": {"dscp": [46]}, "to": {}}]}`), "internal error: PolicyRoute a rule 1: to names no target"},
@@ -158,38 +146,38 @@ func TestPolicyRouteUnitRefusals(t *testing.T) {
 		}(), "NextHop/b4: spec.interface: NextHop b4 is on wanc0, which no Network document names"},
 		"a Network of the NextHop's link and others": {func() map[string][]any {
 			d := policyDocs(t, "a", nextHopRoute("b4"))
-			d["Network"][1] = document(t, "Network", "21-wanb", `{"match": {"name": "wan*"}}`)
+			d["Network"][1] = derivetest.Doc(t, "Network", "21-wanb", `{"match": {"name": "wan*"}}`)
 			return d
 		}(), "Network/21-wanb: spec.match.name: Network 21-wanb matches wanb0 and other links, which would take its policy routing too"},
 		"a Network word of the NextHop's link and others": {func() map[string][]any {
 			d := policyDocs(t, "a", nextHopRoute("b4"))
-			d["Network"][1] = document(t, "Network", "21-wanb", `{"match": [{"name": ["wanb0", "wan*"]}]}`)
+			d["Network"][1] = derivetest.Doc(t, "Network", "21-wanb", `{"match": [{"name": ["wanb0", "wan*"]}]}`)
 			return d
 		}(), "Network/21-wanb: spec.match[0].name[1]: Network 21-wanb matches wanb0 and other links, which would take its policy routing too"},
 		"a Network of lo by other keys": {func() map[string][]any {
 			d := withoutHops(policyDocs(t, "a", dscp))
-			d["Network"] = append(d["Network"], document(t, "Network", "05-loopback", `{"match": {"name": "lo", "type": "loopback"}}`))
+			d["Network"] = append(d["Network"], derivetest.Doc(t, "Network", "05-loopback", `{"match": {"name": "lo", "type": "loopback"}}`))
 			return d
 		}(), "Network/05-loopback: spec.match: Network 05-loopback may match lo by other [Match] keys"},
 		"a Network of lo by other keys, PolicyRoutes and a NextHop": {func() map[string][]any {
 			d := policyDocs(t, "a", dscp, "b", `{"rules": []}`, "c", dscp)
-			d["Network"] = append(d["Network"], document(t, "Network", "05-loopback", `{"match": {"name": "lo", "type": "loopback"}}`))
+			d["Network"] = append(d["Network"], derivetest.Doc(t, "Network", "05-loopback", `{"match": {"name": "lo", "type": "loopback"}}`))
 			return d
 		}(), "Network/05-loopback: spec.match: Network 05-loopback may match lo by other [Match] keys"},
 		"a Network of lo by other keys and a NextHop alone": {func() map[string][]any {
 			d := policyDocs(t)
-			d["Network"] = append(d["Network"], document(t, "Network", "05-loopback", `{"match": {"name": "lo", "type": "loopback"}}`))
+			d["Network"] = append(d["Network"], derivetest.Doc(t, "Network", "05-loopback", `{"match": {"name": "lo", "type": "loopback"}}`))
 			return d
 		}(), "Network/05-loopback: spec.match: Network 05-loopback may match lo by other [Match] keys"},
 		"a Network of other keys alone before the unit": {func() map[string][]any {
 			d := withoutHops(policyDocs(t, "a", `{"rules": [{"match": {"dscp": [46]}, "to": {"table": 300}}]}`))
 			delete(d, "VRF")
-			d["Network"] = append(d["Network"], document(t, "Network", "00-nic", `{"match": {"macAddress": "02:00:00:00:00:01"}}`))
+			d["Network"] = append(d["Network"], derivetest.Doc(t, "Network", "00-nic", `{"match": {"macAddress": "02:00:00:00:00:01"}}`))
 			return d
 		}(), "Network/00-nic: spec.match: Network 00-nic may match lo by other [Match] keys"},
 		"a Network of the unit's name": {func() map[string][]any {
 			d := policyDocs(t, "a", dscp)
-			d["Network"] = append(d["Network"], document(t, "Network", "00-policy-routing", `{"match": {"name": "dummy0"}}`))
+			d["Network"] = append(d["Network"], derivetest.Doc(t, "Network", "00-policy-routing", `{"match": {"name": "dummy0"}}`))
 			return d
 		}(), "Network/00-policy-routing: metadata.name: Network 00-policy-routing takes the name of the policy routing's unit"},
 	} {
@@ -220,11 +208,11 @@ func TestPolicyRouteUnits(t *testing.T) {
 	if !strings.Contains(got, "# 00-policy-routing.network\n[Match]\nName=lo\n\n"+unreachable+rules+"#") || !strings.Contains(got, hop+"#") {
 		t.Errorf("the units without a Network of lo:\n%s", got)
 	}
-	docs["Network"] = append(docs["Network"], document(t, "Network", "50-nic", `{"match": {"macAddress": "02:00:00:00:00:01"}}`))
+	docs["Network"] = append(docs["Network"], derivetest.Doc(t, "Network", "50-nic", `{"match": {"macAddress": "02:00:00:00:00:01"}}`))
 	if got := units(); !strings.Contains(got, "# 00-policy-routing.network\n[Match]\nName=lo\n\n"+unreachable+rules) {
 		t.Errorf("the units with a Network of other keys alone after 00-policy-routing:\n%s", got)
 	}
-	docs["Network"] = append(docs["Network"], document(t, "Network", "05-lo", `{"match": {"name": "lo"}, "address": {"address": "192.0.2.255/32"}}`))
+	docs["Network"] = append(docs["Network"], derivetest.Doc(t, "Network", "05-lo", `{"match": {"name": "lo"}, "address": {"address": "192.0.2.255/32"}}`))
 	if got := units(); !strings.Contains(got, "# 05-lo.network\n[Match]\nName=lo\n\n[Address]\nAddress=192.0.2.255/32\n\n"+unreachable+rules) ||
 		!strings.Contains(got, hop) || strings.Contains(got, "00-policy-routing") {
 		t.Errorf("the units with a Network of lo:\n%s", got)

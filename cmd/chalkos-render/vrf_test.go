@@ -3,6 +3,8 @@ package main
 import (
 	"reflect"
 	"testing"
+
+	"github.com/trevex/chalkos/pkg/router/derive/derivetest"
 )
 
 // router-networkd renders a VRF's device, of its table, and the .network that brings it up and
@@ -11,11 +13,11 @@ import (
 // Network without one gains. The other units stay as networkd renders them.
 func TestRouterNetworkd(t *testing.T) {
 	got, err := unitFiles(t, []string{"router-networkd", networkFixture}, map[string][]any{
-		"VRF": {routerDoc(t, "VRF", "tenant", `{"table": 100, "interfaces": ["eth2", "swp*"]}`)},
+		"VRF": {derivetest.RouterDoc(t, "VRF", "tenant", `{"table": 100, "interfaces": ["eth2", "swp*"]}`)},
 		"Network": {
-			document(t, "Network", "10-eth0", `{"match": {"name": "eth0"}, "network": {"dhcp": "yes"}}`),
-			document(t, "Network", "20-eth2", `{"match": {"name": "eth2"}, "network": [{"address": ["192.0.2.1/24"]}, {"dns": "192.0.2.53"}]}`),
-			document(t, "Network", "30-swp", `{"match": {"name": "swp1 swp2"}}`),
+			derivetest.Doc(t, "Network", "10-eth0", `{"match": {"name": "eth0"}, "network": {"dhcp": "yes"}}`),
+			derivetest.Doc(t, "Network", "20-eth2", `{"match": {"name": "eth2"}, "network": [{"address": ["192.0.2.1/24"]}, {"dns": "192.0.2.53"}]}`),
+			derivetest.Doc(t, "Network", "30-swp", `{"match": {"name": "swp1 swp2"}}`),
 		},
 	})
 	if err != nil {
@@ -41,16 +43,16 @@ func TestRouterNetworkd(t *testing.T) {
 func TestRouterNetworkdMembers(t *testing.T) {
 	got, err := unitFiles(t, []string{"router-networkd", networkFixture}, map[string][]any{
 		"VRF": {
-			routerDoc(t, "VRF", "blue", `{"table": 200}`),
-			routerDoc(t, "VRF", "tenant", `{"table": 100, "interfaces": ["swp*", "eth3"]}`),
+			derivetest.RouterDoc(t, "VRF", "blue", `{"table": 200}`),
+			derivetest.RouterDoc(t, "VRF", "tenant", `{"table": 100, "interfaces": ["swp*", "eth3"]}`),
 		},
 		"Network": {
-			document(t, "Network", "10-swp", `{"match": {"name": "swp[0-9]"}}`),
-			document(t, "Network", "20-swp", `{"match": {"name": "swp*"}}`),
-			document(t, "Network", "30-eth1", `{"match": {"name": "eth1"}, "network": {"vrf": "blue"}}`),
-			document(t, "Network", "40-eth3", `{"match": {"name": "eth3"}, "network": {"vrf": ["blue", ""]}}`),
-			document(t, "Network", "90-eth3", `{"match": {"name": "eth3"}}`),
-			document(t, "Network", "99-all", `{"match": {"name": "*"}, "network": {"dhcp": "yes"}}`),
+			derivetest.Doc(t, "Network", "10-swp", `{"match": {"name": "swp[0-9]"}}`),
+			derivetest.Doc(t, "Network", "20-swp", `{"match": {"name": "swp*"}}`),
+			derivetest.Doc(t, "Network", "30-eth1", `{"match": {"name": "eth1"}, "network": {"vrf": "blue"}}`),
+			derivetest.Doc(t, "Network", "40-eth3", `{"match": {"name": "eth3"}, "network": {"vrf": ["blue", ""]}}`),
+			derivetest.Doc(t, "Network", "90-eth3", `{"match": {"name": "eth3"}}`),
+			derivetest.Doc(t, "Network", "99-all", `{"match": {"name": "*"}, "network": {"dhcp": "yes"}}`),
 		},
 	})
 	if err != nil {
@@ -74,8 +76,8 @@ func TestRouterNetworkdMembers(t *testing.T) {
 // included.
 func TestRouterNetworkdWithoutVRFs(t *testing.T) {
 	docs := map[string][]any{"Network": {
-		document(t, "Network", "10-eth0", `{"match": {"name": "eth0"}, "network": {"dhcp": "yes"}}`),
-		document(t, "Network", "20-eth1", `{"match": {"name": "eth1"}, "network": {"vrf": "mgmt"}}`),
+		derivetest.Doc(t, "Network", "10-eth0", `{"match": {"name": "eth0"}, "network": {"dhcp": "yes"}}`),
+		derivetest.Doc(t, "Network", "20-eth1", `{"match": {"name": "eth1"}, "network": {"vrf": "mgmt"}}`),
 	}}
 	plain, err := networkd(t, networkFixture, docs)
 	if err != nil {
@@ -94,8 +96,8 @@ func TestRouterNetworkdWithoutVRFs(t *testing.T) {
 // read, such as one of a backslash or of an unclosed bracket, as router images did before VRFs.
 func TestRouterWithoutVRFsTakesAnyName(t *testing.T) {
 	docs := map[string][]any{"Network": {
-		document(t, "Network", "10-eth1", `{"match": {"name": "eth\\x31"}}`),
-		document(t, "Network", "20-eth", `{"match": {"name": "eth["}}`),
+		derivetest.Doc(t, "Network", "10-eth1", `{"match": {"name": "eth\\x31"}}`),
+		derivetest.Doc(t, "Network", "20-eth", `{"match": {"name": "eth["}}`),
 	}}
 	plain, err := networkd(t, networkFixture, docs)
 	if err != nil {
@@ -117,19 +119,19 @@ func TestRouterWithoutVRFsTakesAnyName(t *testing.T) {
 // [NetDev] section: the names of the units the renderer adds, and NetDev documents, which the
 // validator router does not read. The model refuses the rest, as derive's tests show.
 func TestVRFRefusals(t *testing.T) {
-	vrf := func(name, spec string) any { return routerDoc(t, "VRF", name, spec) }
-	net := func(name, spec string) any { return document(t, "Network", name, spec) }
+	vrf := func(name, spec string) any { return derivetest.RouterDoc(t, "VRF", name, spec) }
+	net := func(name, spec string) any { return derivetest.Doc(t, "Network", name, spec) }
 	link := func(name string) any { return net("20-"+name, `{"match": {"name": "`+name+`"}}`) }
 	args := []string{"router-networkd", networkFixture}
 	for name, c := range map[string]struct {
 		docs map[string][]any
 		want string
 	}{
-		"a NetDev of a VRF's device in a list of names": {map[string][]any{"VRF": {vrf("a", `{"table": 100}`)}, "Network": {link("eth0")}, "NetDev": {document(t, "NetDev", "20-a", `{"netDev": {"kind": "dummy", "name": ["x", "a"]}}`)}},
+		"a NetDev of a VRF's device in a list of names": {map[string][]any{"VRF": {vrf("a", `{"table": 100}`)}, "Network": {link("eth0")}, "NetDev": {derivetest.Doc(t, "NetDev", "20-a", `{"netDev": {"kind": "dummy", "name": ["x", "a"]}}`)}},
 			"NetDev 20-a creates the device a, which VRF a creates; rename the VRF or the NetDev"},
-		"a NetDev of a VRF's device": {map[string][]any{"VRF": {vrf("a", `{"table": 100}`)}, "Network": {link("eth0")}, "NetDev": {document(t, "NetDev", "20-a", `{"netDev": {"kind": "dummy", "name": "a"}}`)}},
+		"a NetDev of a VRF's device": {map[string][]any{"VRF": {vrf("a", `{"table": 100}`)}, "Network": {link("eth0")}, "NetDev": {derivetest.Doc(t, "NetDev", "20-a", `{"netDev": {"kind": "dummy", "name": "a"}}`)}},
 			"NetDev 20-a creates the device a, which VRF a creates; rename the VRF or the NetDev"},
-		"a NetDev of a VRF's device in a second section": {map[string][]any{"VRF": {vrf("a", `{"table": 100}`)}, "Network": {link("eth0")}, "NetDev": {document(t, "NetDev", "20-a", `{"netDev": [{"kind": "dummy", "name": "x"}, {"kind": "dummy", "name": "a"}]}`)}},
+		"a NetDev of a VRF's device in a second section": {map[string][]any{"VRF": {vrf("a", `{"table": 100}`)}, "Network": {link("eth0")}, "NetDev": {derivetest.Doc(t, "NetDev", "20-a", `{"netDev": [{"kind": "dummy", "name": "x"}, {"kind": "dummy", "name": "a"}]}`)}},
 			"NetDev 20-a creates the device a, which VRF a creates; rename the VRF or the NetDev"},
 		"a document of a VRF unit's name": {map[string][]any{"VRF": {vrf("a", `{"table": 100}`)}, "Network": {net("00-vrf-a", `{"match": {"name": "eth0"}}`)}},
 			"Network 00-vrf-a takes the name of VRF a's units"},
@@ -144,13 +146,13 @@ func TestVRFRefusals(t *testing.T) {
 func TestRouterNetworkdNarrowedMatch(t *testing.T) {
 	mac := `, "macAddress": "02:00:00:00:00:01"`
 	got, err := unitFiles(t, []string{"router-networkd", networkFixture}, map[string][]any{
-		"VRF": {routerDoc(t, "VRF", "tenant", `{"table": 100, "interfaces": ["eth1", "swp*"]}`)},
+		"VRF": {derivetest.RouterDoc(t, "VRF", "tenant", `{"table": 100, "interfaces": ["eth1", "swp*"]}`)},
 		"Network": {
-			document(t, "Network", "05-none", `{"match": {"name": "eth1:0"}}`),
-			document(t, "Network", "10-eth1", `{"match": {"name": "eth1"`+mac+`}}`),
-			document(t, "Network", "10-swp1", `{"match": {"name": "swp1"`+mac+`}}`),
-			document(t, "Network", "20-eth1", `{"match": {"name": "eth1"}}`),
-			document(t, "Network", "20-swp1", `{"match": {"name": "swp1"}}`),
+			derivetest.Doc(t, "Network", "05-none", `{"match": {"name": "eth1:0"}}`),
+			derivetest.Doc(t, "Network", "10-eth1", `{"match": {"name": "eth1"`+mac+`}}`),
+			derivetest.Doc(t, "Network", "10-swp1", `{"match": {"name": "swp1"`+mac+`}}`),
+			derivetest.Doc(t, "Network", "20-eth1", `{"match": {"name": "eth1"}}`),
+			derivetest.Doc(t, "Network", "20-swp1", `{"match": {"name": "swp1"}}`),
 		},
 	})
 	if err != nil {
@@ -174,11 +176,11 @@ func TestRouterNetworkdNarrowedMatch(t *testing.T) {
 // a Network of the unit's name and a NetDev that creates a device of the link's name.
 func TestNAT64Units(t *testing.T) {
 	nat64 := func(name string) any {
-		return routerDoc(t, "NAT64", name, `{"prefix": "64:ff9b::/96", "pool4": []}`)
+		return derivetest.RouterDoc(t, "NAT64", name, `{"prefix": "64:ff9b::/96", "pool4": []}`)
 	}
 	got, err := unitFiles(t, []string{"router-networkd", networkFixture}, map[string][]any{
 		"NAT64":   {nat64("edge")},
-		"Network": {document(t, "Network", "10-all", `{"match": {"name": "*"}, "network": {"dhcp": "yes"}}`)},
+		"Network": {derivetest.Doc(t, "Network", "10-all", `{"match": {"name": "*"}, "network": {"dhcp": "yes"}}`)},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -191,19 +193,19 @@ func TestNAT64Units(t *testing.T) {
 		t.Errorf("units:\n%q\nwant:\n%q", got, want)
 	}
 	args := []string{"router-networkd", networkFixture}
-	refused(t, args, map[string][]any{"NAT64": {nat64("edge")}, "Network": {document(t, "Network", "00-a", `{"match": {"name": "n64-*"}}`)}},
+	refused(t, args, map[string][]any{"NAT64": {nat64("edge")}, "Network": {derivetest.Doc(t, "Network", "00-a", `{"match": {"name": "n64-*"}}`)}},
 		"Network 00-a matches the link n64-edge of NAT64 edge before 00-n64-edge; rename it to sort after 00-n64-edge")
-	refused(t, args, map[string][]any{"NAT64": {nat64("edge")}, "Network": {document(t, "Network", "00-a", `{"match": {"name": "n64-*", "macAddress": "02:00:00:00:00:01"}}`)}},
+	refused(t, args, map[string][]any{"NAT64": {nat64("edge")}, "Network": {derivetest.Doc(t, "Network", "00-a", `{"match": {"name": "n64-*", "macAddress": "02:00:00:00:00:01"}}`)}},
 		"Network 00-a may match the link n64-edge of NAT64 edge before 00-n64-edge, should its other [Match] keys match it")
-	refused(t, args, map[string][]any{"NAT64": {nat64("edge")}, "Network": {document(t, "Network", "00-n64-edge", `{"match": {"name": "eth0"}}`)}},
+	refused(t, args, map[string][]any{"NAT64": {nat64("edge")}, "Network": {derivetest.Doc(t, "Network", "00-n64-edge", `{"match": {"name": "eth0"}}`)}},
 		"Network 00-n64-edge takes the name of NAT64 edge's unit; rename the document")
-	refused(t, args, map[string][]any{"NAT64": {nat64("edge")}, "NetDev": {document(t, "NetDev", "10-dummy", `{"netDev": {"kind": "dummy", "name": "n64-edge"}}`)}},
+	refused(t, args, map[string][]any{"NAT64": {nat64("edge")}, "NetDev": {derivetest.Doc(t, "NetDev", "10-dummy", `{"netDev": {"kind": "dummy", "name": "n64-edge"}}`)}},
 		"NetDev 10-dummy creates the device n64-edge, the link of NAT64 edge; give the device another name")
 	// The NAT64's rules refuse a name whose link is longer than an interface's name.
 	refused(t, args, map[string][]any{"NAT64": {nat64("abcdefghijkl")}},
 		"internal error: NAT64 abcdefghijkl: its link n64-abcdefghijkl is no interface name of 15 characters; chalkd checks the config against the schemas, the rules and the validators before it renders")
 	// A .netdev of the unit's name is another file than the unit's .network.
-	if _, err := unitFiles(t, args, map[string][]any{"NAT64": {nat64("edge")}, "NetDev": {document(t, "NetDev", "00-n64-edge", `{"netDev": {"kind": "dummy", "name": "d0"}}`)}}); err != nil {
+	if _, err := unitFiles(t, args, map[string][]any{"NAT64": {nat64("edge")}, "NetDev": {derivetest.Doc(t, "NetDev", "00-n64-edge", `{"netDev": {"kind": "dummy", "name": "d0"}}`)}}); err != nil {
 		t.Errorf("a NetDev of the unit's name: %v", err)
 	}
 }

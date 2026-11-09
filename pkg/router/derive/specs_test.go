@@ -9,6 +9,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/trevex/chalkos/pkg/router/derive/derivetest"
 )
 
 // specTypes are the Go types Build decodes each router kind's spec into.
@@ -127,7 +129,7 @@ func TestDecodeGuards(t *testing.T) {
 		"an absent community": {"RoutingPolicy", `{"default": "reject", "terms": [{"then": {"action": "accept", "addCommunities": [null]}}]}`, `internal error: RoutingPolicy a: spec.terms[0].then.addCommunities[0]: missing value`},
 	} {
 		t.Run(name, func(t *testing.T) {
-			_, err := Build(map[string]any{c.kind: []any{routerDoc(t, c.kind, "a", c.spec)}})
+			_, err := Build(map[string]any{c.kind: []any{derivetest.RouterDoc(t, c.kind, "a", c.spec)}})
 			if err == nil || !strings.HasPrefix(err.Error(), c.want) {
 				t.Errorf("Build = %v, want the error %q", err, c.want)
 			}

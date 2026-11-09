@@ -73,23 +73,6 @@ func decode(t *testing.T, data []byte) any {
 	return v
 }
 
-// document is a networkd document of kind called name, with spec in JSON, its numbers exact.
-func document(t *testing.T, kind, name, spec string) any {
-	t.Helper()
-	return withSpec(t, config.NetworkdAPI, kind, name, spec)
-}
-
-// routerDoc is a document of a router kind called name, with spec in JSON, its numbers exact.
-func routerDoc(t *testing.T, kind, name, spec string) any {
-	t.Helper()
-	return withSpec(t, API, kind, name, spec)
-}
-
-func withSpec(t *testing.T, apiVersion, kind, name, spec string) any {
-	t.Helper()
-	return map[string]any{"apiVersion": apiVersion, "kind": kind, "metadata": map[string]any{"name": name}, "spec": decode(t, []byte(spec))}
-}
-
 // Kinds are the router kinds, those of the router image's schemas, and networkd's Network, as
 // the router module gives the validator router the router kinds the image declares and Network.
 func TestKinds(t *testing.T) {

@@ -7,30 +7,8 @@ import (
 	"testing"
 
 	"github.com/trevex/chalkos/pkg/router/derive"
+	"github.com/trevex/chalkos/pkg/router/derive/derivetest"
 )
-
-// kea6Docs are a LAN router's documents with the DHCPSubnet documents given: lan0 holds
-// 2001:db8:1::1/64 and 2001:db8:5::1/64 and sends router advertisements with the Managed flag, lan1 2001:db8:2::1/64
-// with the OtherInformation flag, lan2 2001:db8:3::1/64 without router advertisements, lan3
-// 2001:db8:4::1/64 with them but without either flag, and vlan30 in the VRF guest
-// 2001:db8:1::1/64 with the Managed flag as well.
-func kea6Docs(t *testing.T, subnets ...any) map[string][]any {
-	t.Helper()
-	ra := func(name, link, addresses, flags string) any {
-		return document(t, "Network", name, `{"match": {"name": "`+link+`"}, "network": {"address": [`+addresses+`], "ipv6SendRA": "yes"}, "ipv6SendRA": `+flags+`}`)
-	}
-	return map[string][]any{
-		"VRF": {routerDoc(t, "VRF", "guest", `{"table": 300, "interfaces": ["vlan30"]}`)},
-		"Network": {
-			ra("10-lan0", "lan0", `"2001:db8:1::1/64", "2001:db8:5::1/64"`, `{"managed": true}`),
-			ra("11-lan1", "lan1", `"2001:db8:2::1/64"`, `[{"managed": "no"}, {"otherInformation": ["off", " 1 "]}]`),
-			document(t, "Network", "12-lan2", `{"match": {"name": "lan2"}, "network": {"address": ["2001:db8:3::1/64"]}, "ipv6SendRA": {"managed": true}}`),
-			ra("13-lan3", "lan3", `"2001:db8:4::1/64"`, `{"managed": "maybe"}`),
-			ra("30-vlan30", "vlan30", `"2001:db8:1::1/64"`, `{"managed": 1}`),
-		},
-		"DHCPSubnet": subnets,
-	}
-}
 
 // An IPv6 subnet renders a DHCPv6 server of its VRF, kea-dhcp6.json or kea-dhcp6-<vrf>.json,
 // beside the DHCPv4 servers: the subnet names its link, which the server answers on, its clients
@@ -38,10 +16,10 @@ func kea6Docs(t *testing.T, subnets ...any) map[string][]any {
 // the hook that records them. The flags of router advertisements read as networkd reads them:
 // the last value that parses as a boolean.
 func TestKea6PerVRF(t *testing.T) {
-	files, err := unitFiles(t, []string{"kea", testPDHook}, kea6Docs(t,
-		subnetDoc(t, "office6", `{"interfaces": ["lan0"], "subnet": "2001:db8:1::/64", "pools": [{"first": "2001:db8:1::100", "last": "2001:db8:1::1ff"}], "leaseTime": "1h"}`),
-		subnetDoc(t, "cpe", `{"interfaces": ["lan1"], "subnet": "2001:db8:2::/64", "prefixDelegation": {"prefix": "2001:db8:100::/40", "length": 56}}`),
-		subnetDoc(t, "guests6", `{"interfaces": ["vlan30"], "subnet": "2001:db8:1::/64", "pools": [{"first": "2001:db8:1::100", "last": "2001:db8:1::1ff"}]}`),
+	files, err := unitFiles(t, []string{"kea", testPDHook}, derivetest.Kea6Docs(t,
+		derivetest.SubnetDoc(t, "office6", `{"interfaces": ["lan0"], "subnet": "2001:db8:1::/64", "pools": [{"first": "2001:db8:1::100", "last": "2001:db8:1::1ff"}], "leaseTime": "1h"}`),
+		derivetest.SubnetDoc(t, "cpe", `{"interfaces": ["lan1"], "subnet": "2001:db8:2::/64", "prefixDelegation": {"prefix": "2001:db8:100::/40", "length": 56}}`),
+		derivetest.SubnetDoc(t, "guests6", `{"interfaces": ["vlan30"], "subnet": "2001:db8:1::/64", "pools": [{"first": "2001:db8:1::100", "last": "2001:db8:1::1ff"}]}`),
 	))
 	if err != nil {
 		t.Fatal(err)
