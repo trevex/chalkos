@@ -93,14 +93,14 @@ func TestBootstrapRefusals(t *testing.T) {
 	} {
 		var before map[string]string
 		if k := tc.s.k; k != nil {
-			before = files(t, k.state.State, k.state.Run, k.state.EtcdData)
+			before = files(t, k.state.StateDir, k.state.RunDir, k.state.EtcdData)
 		}
 		_, err := kubernetestest.Bootstrap(context.Background(), tc.s)
 		if layer.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), tc.want) {
 			t.Errorf("%s: %v, want %q", name, err, tc.want)
 		}
 		if k := tc.s.k; k != nil {
-			after := files(t, k.state.State, k.state.Run, k.state.EtcdData)
+			after := files(t, k.state.StateDir, k.state.RunDir, k.state.EtcdData)
 			var changed []string
 			for path := range maps.Keys(before) {
 				if after[path] != before[path] {
@@ -623,7 +623,7 @@ func TestControlPlaneRenewalWaitsForThePreparation(t *testing.T) {
 	s, _ := kubernetesNode(t, k8s.KindControlPlane, true)
 	p := s.k.state
 	// RUN is empty after a reboot.
-	if err := os.RemoveAll(p.Run); err != nil {
+	if err := os.RemoveAll(p.RunDir); err != nil {
 		t.Fatal(err)
 	}
 	r := s.k.controlPlaneRenewal()

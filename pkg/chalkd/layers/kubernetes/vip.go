@@ -100,7 +100,7 @@ var errEtcdTrustChanged = errors.New("the node's share changed the etcd CAs")
 // watchEtcdTrust calls restart with errEtcdTrustChanged once the share in STATE differs from
 // started in its etcd CAs or the issuing one, looking every interval until ctx ends. A share that
 // cannot be read changes nothing: the election keeps what it has.
-func watchEtcdTrust(ctx context.Context, p knode.State, started kpki.Share, interval time.Duration, restart context.CancelCauseFunc) {
+func watchEtcdTrust(ctx context.Context, s knode.State, started kpki.Share, interval time.Duration, restart context.CancelCauseFunc) {
 	want := etcdTrust(started)
 	for {
 		select {
@@ -108,7 +108,7 @@ func watchEtcdTrust(ctx context.Context, p knode.State, started kpki.Share, inte
 			return
 		case <-time.After(interval):
 		}
-		if current, err := p.ReadShare(); err == nil && etcdTrust(current) != want {
+		if current, err := s.ReadShare(); err == nil && etcdTrust(current) != want {
 			restart(errEtcdTrustChanged)
 			return
 		}

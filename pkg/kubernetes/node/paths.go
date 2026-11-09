@@ -10,17 +10,17 @@ import (
 // Paths are where the node keeps the files of its Kubernetes State; tests point them at temporary
 // directories.
 type Paths struct {
-	// State is the Kubernetes directory on STATE, holding the share and the bootstrap and etcd
+	// StateDir is the Kubernetes directory on STATE, holding the share and the bootstrap and etcd
 	// markers.
-	State string
+	StateDir string
 	// Cluster is the cluster chalkd builds from the node's config and image.
 	Cluster string
 	// Image is the image's Kubernetes facts; it exists exactly on images with Kubernetes.
 	Image string
 	// NodeFile is the node's identity without secrets.
 	NodeFile string
-	// Run receives the kubelet's files, the certificates and the static pods.
-	Run string
+	// RunDir receives the kubelet's files, the certificates and the static pods.
+	RunDir string
 	// PKI is where the static pods find the certificates.
 	PKI string
 	// KubeletPKI is the kubelet's certificate directory on VAR.
@@ -32,55 +32,55 @@ type Paths struct {
 // DefaultPaths are the paths on a node.
 func DefaultPaths() Paths {
 	return Paths{
-		State:      filepath.Join(storage.StateDir, "kubernetes"),
+		StateDir:   filepath.Join(storage.StateDir, "kubernetes"),
 		Cluster:    kubernetes.ClusterFile,
 		Image:      kubernetes.ImageFile,
 		NodeFile:   "/run/chalkos/node.json",
-		Run:        kubernetes.RunDir,
+		RunDir:     kubernetes.RunDir,
 		PKI:        kubernetes.PKIDir,
 		KubeletPKI: "/var/lib/kubelet/pki",
 		EtcdData:   kubernetes.EtcdDataDir,
 	}
 }
 
-func (p Paths) Share() string      { return filepath.Join(p.State, "share.json") }
-func (p Paths) Manifests() string  { return filepath.Join(p.Run, "manifests") }
-func (p Paths) KubeletDir() string { return filepath.Join(p.Run, "kubelet") }
+func (p Paths) Share() string      { return filepath.Join(p.StateDir, "share.json") }
+func (p Paths) Manifests() string  { return filepath.Join(p.RunDir, "manifests") }
+func (p Paths) KubeletDir() string { return filepath.Join(p.RunDir, "kubelet") }
 
 // BootstrappedMarker marks that the node is a bootstrapped control plane, which renders its static
 // pods at boot.
-func (p Paths) BootstrappedMarker() string { return filepath.Join(p.State, "bootstrapped") }
+func (p Paths) BootstrappedMarker() string { return filepath.Join(p.StateDir, "bootstrapped") }
 
 // NodeIP holds the addresses the node picked, one per line, the primary family's first.
-func (p Paths) NodeIP() string { return filepath.Join(p.Run, "node-ip") }
+func (p Paths) NodeIP() string { return filepath.Join(p.RunDir, "node-ip") }
 
 // VXLAN holds what the firewall's VXLAN rule accepts, as vxlan.Accept.Marshal writes it.
-func (p Paths) VXLAN() string { return filepath.Join(p.Run, "vxlan") }
+func (p Paths) VXLAN() string { return filepath.Join(p.RunDir, "vxlan") }
 
 // Pin holds the addresses a control-plane node was pinned to when it became an etcd member: its
 // etcd peers and the certificates know it by them, so every later boot uses exactly these.
-func (p Paths) Pin() string { return filepath.Join(p.State, "node-ip") }
+func (p Paths) Pin() string { return filepath.Join(p.StateDir, "node-ip") }
 
 // PrepareError holds why the last preparation failed, such as that no address of the node
 // matched.
-func (p Paths) PrepareError() string { return filepath.Join(p.Run, "prepare.error") }
+func (p Paths) PrepareError() string { return filepath.Join(p.RunDir, "prepare.error") }
 
 // PreparedMarker marks that Prepare finished: chalkd starts before it at boot and must not read the
 // files it is still writing.
-func (p Paths) PreparedMarker() string { return filepath.Join(p.Run, "prepared") }
+func (p Paths) PreparedMarker() string { return filepath.Join(p.RunDir, "prepared") }
 
 // LeftMarker marks that the node left etcd: it joins the cluster again only once reinstalled.
-func (p Paths) LeftMarker() string { return filepath.Join(p.State, "left") }
+func (p Paths) LeftMarker() string { return filepath.Join(p.StateDir, "left") }
 
 // EtcdInitialCluster holds etcd's initial cluster when the node joined an existing cluster.
-func (p Paths) EtcdInitialCluster() string { return filepath.Join(p.State, "etcd-initial-cluster") }
+func (p Paths) EtcdInitialCluster() string { return filepath.Join(p.StateDir, "etcd-initial-cluster") }
 
 // EtcdInitialisedMarker marks that etcd answered ready after the bootstrap, so its data exists.
-func (p Paths) EtcdInitialisedMarker() string { return filepath.Join(p.State, "etcd-initialised") }
+func (p Paths) EtcdInitialisedMarker() string { return filepath.Join(p.StateDir, "etcd-initialised") }
 
 // JoiningMarker marks that the node started joining the cluster at the endpoint it holds: it may
 // be an etcd member from then on, so it never bootstraps a cluster of its own.
-func (p Paths) JoiningMarker() string { return filepath.Join(p.State, "joining") }
+func (p Paths) JoiningMarker() string { return filepath.Join(p.StateDir, "joining") }
 
 // Kubeconfig is the kubelet's kubeconfig, which chalkd also reads the Node with.
 func (p Paths) Kubeconfig() string { return filepath.Join(p.KubeletDir(), "kubeconfig") }
@@ -105,4 +105,4 @@ func (p Paths) OldPKI() string { return p.PKI + ".old" }
 
 // pkiLock serialises the writers of the control plane's certificates: the preparation, a
 // separate process, and chalkd's renewal.
-func (p Paths) pkiLock() string { return filepath.Join(p.Run, ".pki.lock") }
+func (p Paths) pkiLock() string { return filepath.Join(p.RunDir, ".pki.lock") }

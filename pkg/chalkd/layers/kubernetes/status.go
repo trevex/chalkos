@@ -35,12 +35,12 @@ type preparation struct {
 }
 
 // readPreparation reads how far the preparation of the node's Kubernetes files got.
-func readPreparation(p knode.State) (preparation, error) {
-	reason, err := p.PreparationError()
+func readPreparation(s knode.State) (preparation, error) {
+	reason, err := s.PreparationError()
 	if err != nil || reason != "" {
 		return preparation{failure: reason}, err
 	}
-	done, err := p.Prepared()
+	done, err := s.Prepared()
 	return preparation{done: done}, err
 }
 

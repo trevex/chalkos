@@ -37,20 +37,20 @@ func TestReadMembership(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			root := t.TempDir()
-			p := State{Paths{State: filepath.Join(root, "state"), EtcdData: filepath.Join(root, "etcd")}}
+			s := State{Paths{StateDir: filepath.Join(root, "state"), EtcdData: filepath.Join(root, "etcd")}}
 			files := map[string]string{
-				left:           p.LeftMarker(),
-				bootstrapped:   p.BootstrappedMarker(),
-				joining:        p.JoiningMarker(),
-				initialCluster: p.EtcdInitialCluster(),
-				pin:            p.Pin(),
-				etcdData:       filepath.Join(p.EtcdData, "member", "snap", "db"),
-				initialised:    p.EtcdInitialisedMarker(),
+				left:           s.LeftMarker(),
+				bootstrapped:   s.BootstrappedMarker(),
+				joining:        s.JoiningMarker(),
+				initialCluster: s.EtcdInitialCluster(),
+				pin:            s.Pin(),
+				etcdData:       filepath.Join(s.EtcdData, "member", "snap", "db"),
+				initialised:    s.EtcdInitialisedMarker(),
 			}
 			for _, m := range tc.markers {
 				write(t, files[m], "x\n")
 			}
-			got, leftovers, err := p.ReadMembership()
+			got, leftovers, err := s.ReadMembership()
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -65,25 +65,25 @@ func TestReadMembershipUnreadable(t *testing.T) {
 	root := t.TempDir()
 	// A marker below a file cannot be stat'ed: the error is not that it does not exist.
 	write(t, filepath.Join(root, "state"), "")
-	p := State{Paths{State: filepath.Join(root, "state"), EtcdData: filepath.Join(root, "etcd")}}
-	if _, _, err := p.ReadMembership(); err == nil {
+	s := State{Paths{StateDir: filepath.Join(root, "state"), EtcdData: filepath.Join(root, "etcd")}}
+	if _, _, err := s.ReadMembership(); err == nil {
 		t.Fatal("unreadable markers: no error")
 	}
-	if err := os.Remove(p.State); err != nil {
+	if err := os.Remove(s.StateDir); err != nil {
 		t.Fatal(err)
 	}
-	if m, _, err := p.ReadMembership(); err != nil || m != MembershipNone {
+	if m, _, err := s.ReadMembership(); err != nil || m != MembershipNone {
 		t.Fatalf("no state: %v, %v", m, err)
 	}
 }
 
 func TestPinned(t *testing.T) {
-	p := State{Paths{State: t.TempDir()}}
-	if _, l, err := p.ReadMembership(); err != nil || l.Pinned {
+	s := State{Paths{StateDir: t.TempDir()}}
+	if _, l, err := s.ReadMembership(); err != nil || l.Pinned {
 		t.Errorf("not pinned: %v, %v", l.Pinned, err)
 	}
-	write(t, p.Pin(), "192.168.100.11\n")
-	if _, l, err := p.ReadMembership(); err != nil || !l.Pinned {
+	write(t, s.Pin(), "192.168.100.11\n")
+	if _, l, err := s.ReadMembership(); err != nil || !l.Pinned {
 		t.Errorf("pinned: %v, %v", l.Pinned, err)
 	}
 }

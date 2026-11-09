@@ -39,7 +39,7 @@ var errPKIBusy = errors.New("the node's Kubernetes files are being prepared")
 // lockPKI takes the lock on the control plane's certificates; with wait unset it fails with
 // errPKIBusy while another holds it. The lock ends with the process, so a crash leaves none.
 func (s State) lockPKI(wait bool) (unlock func(), err error) {
-	if err := os.MkdirAll(s.Run, 0o755); err != nil {
+	if err := os.MkdirAll(s.RunDir, 0o755); err != nil {
 		return nil, err
 	}
 	f, err := atomicfile.Lock(s.pkiLock(), 0o600, wait)

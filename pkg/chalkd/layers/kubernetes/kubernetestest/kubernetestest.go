@@ -90,10 +90,10 @@ func Share(t *testing.T, kind, nodeName string) []byte {
 // root.
 func Paths(root, stateDir string) knode.Paths {
 	return knode.Paths{
-		State:      filepath.Join(stateDir, "kubernetes"),
+		StateDir:   filepath.Join(stateDir, "kubernetes"),
 		Cluster:    filepath.Join(root, "etc", "cluster.json"),
 		NodeFile:   filepath.Join(root, "run", "node.json"),
-		Run:        filepath.Join(root, "run", "kubernetes"),
+		RunDir:     filepath.Join(root, "run", "kubernetes"),
 		PKI:        filepath.Join(root, "run", "kubernetes", "pki"),
 		KubeletPKI: filepath.Join(root, "var", "lib", "kubelet", "pki"),
 		EtcdData:   filepath.Join(root, "var", "lib", "etcd"),

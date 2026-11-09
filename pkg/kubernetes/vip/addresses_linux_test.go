@@ -14,12 +14,12 @@ import (
 // The VIPs go on the interface the cluster names, or else on the one with the node's address of
 // their family.
 func TestNodeAddresses(t *testing.T) {
-	p := knode.State{Paths: knode.Paths{Run: t.TempDir()}}
-	if err := os.WriteFile(p.NodeIP(), []byte("127.0.0.1\n"), 0o644); err != nil {
+	s := knode.State{Paths: knode.Paths{RunDir: t.TempDir()}}
+	if err := os.WriteFile(s.NodeIP(), []byte("127.0.0.1\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	c := k8s.Cluster{VIP: k8s.VIP{Addresses: []netip.Addr{netip.MustParseAddr("10.0.0.10")}, Mode: "l2"}}
-	got, err := NodeAddresses(c, p)
+	got, err := NodeAddresses(c, s)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -27,12 +27,12 @@ func TestNodeAddresses(t *testing.T) {
 		t.Errorf("VIPs %v, want 10.0.0.10 on lo", a)
 	}
 	c.VIP.Interface = "bond0"
-	got, err = NodeAddresses(c, p)
+	got, err = NodeAddresses(c, s)
 	if a := got.(*addresses).addrs; err != nil || len(a) != 1 || a[0] != (Address{IP: a[0].IP, Interface: "bond0"}) {
 		t.Errorf("VIPs %v, %v, want them on bond0", got, err)
 	}
 	c.VIP = k8s.VIP{Addresses: []netip.Addr{netip.MustParseAddr("fd00::10")}, Mode: "l2"}
-	if _, err := NodeAddresses(c, p); err == nil {
+	if _, err := NodeAddresses(c, s); err == nil {
 		t.Error("found an interface for an IPv6 VIP on a node without an IPv6 address")
 	}
 }

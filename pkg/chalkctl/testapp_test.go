@@ -502,8 +502,8 @@ func kubernetesImage(t *testing.T, s *chalkd.Server) {
 	root := t.TempDir()
 	k := kubernetesplugin.New(s, kubernetesplugin.Options{
 		Paths: knode.Paths{
-			State: filepath.Join(root, "state"), Cluster: filepath.Join(root, "cluster.json"), NodeFile: filepath.Join(root, "node.json"),
-			Run: filepath.Join(root, "run"), PKI: filepath.Join(root, "pki"), KubeletPKI: filepath.Join(root, "kubelet"), EtcdData: filepath.Join(root, "etcd"),
+			StateDir: filepath.Join(root, "state"), Cluster: filepath.Join(root, "cluster.json"), NodeFile: filepath.Join(root, "node.json"),
+			RunDir: filepath.Join(root, "run"), PKI: filepath.Join(root, "pki"), KubeletPKI: filepath.Join(root, "kubelet"), EtcdData: filepath.Join(root, "etcd"),
 		},
 		ImageFile:   file,
 		ClusterFile: filepath.Join(root, "cluster.json"),

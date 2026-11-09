@@ -65,19 +65,19 @@ var testImages = kubernetes.Images{
 const flannelImage = "ghcr.io/flannel-io/flannel:v0.28.9"
 
 // writeCluster writes c as the node's cluster file.
-func writeCluster(t *testing.T, p State, c kubernetes.Cluster) {
+func writeCluster(t *testing.T, s State, c kubernetes.Cluster) {
 	t.Helper()
 	data, err := json.Marshal(c)
 	if err != nil {
 		t.Fatal(err)
 	}
-	write(t, p.Cluster, string(data))
+	write(t, s.Cluster, string(data))
 }
 
 // withCluster edits the node's cluster file.
-func withCluster(t *testing.T, p State, edit func(c *kubernetes.Cluster)) {
+func withCluster(t *testing.T, s State, edit func(c *kubernetes.Cluster)) {
 	t.Helper()
-	data, err := os.ReadFile(p.Cluster)
+	data, err := os.ReadFile(s.Cluster)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -86,24 +86,24 @@ func withCluster(t *testing.T, p State, edit func(c *kubernetes.Cluster)) {
 		t.Fatal(err)
 	}
 	edit(&c)
-	writeCluster(t, p, c)
+	writeCluster(t, s, c)
 }
 
 // testNode prepares the files of a node of the kind named name, with a share issued from k.
 func testNode(t *testing.T, kind, name string, k *clustersecrets.KubernetesSecrets) State {
 	t.Helper()
 	root := t.TempDir()
-	p := State{Paths{
-		State:      filepath.Join(root, "state", "kubernetes"),
+	s := State{Paths{
+		StateDir:   filepath.Join(root, "state", "kubernetes"),
 		Cluster:    filepath.Join(root, "etc", "cluster.json"),
 		NodeFile:   filepath.Join(root, "run", "node.json"),
-		Run:        filepath.Join(root, "run", "kubernetes"),
+		RunDir:     filepath.Join(root, "run", "kubernetes"),
 		PKI:        filepath.Join(root, "run", "kubernetes", "pki"),
 		KubeletPKI: filepath.Join(root, "var", "lib", "kubelet", "pki"),
 		EtcdData:   filepath.Join(root, "var", "lib", "etcd"),
 	}}
-	writeCluster(t, p, testCluster(kind))
-	write(t, p.NodeFile, `{"hostname": "`+name+`", "network": {"networks": {"10-lan": {"address": ["192.168.100.11/24"]}}},
+	writeCluster(t, s, testCluster(kind))
+	write(t, s.NodeFile, `{"hostname": "`+name+`", "network": {"networks": {"10-lan": {"address": ["192.168.100.11/24"]}}},
 	  "layers": {"kubernetes": {"nodeName": "`+name+`", "nodeIPs": ["192.168.100.11"], "labels": {"zone": "a", "disk": "ssd"}, "taints": []}}}`)
 	if k != nil {
 		share, err := kpki.ShareFor(&clustersecrets.Secrets{Kubernetes: *k, NodeCA: pkitest.NodeCA(t, time.Now())}, kind, name, now)
@@ -111,9 +111,9 @@ func testNode(t *testing.T, kind, name string, k *clustersecrets.KubernetesSecre
 			t.Fatal(err)
 		}
 		data, _ := share.Encode()
-		write(t, p.Share(), string(data))
+		write(t, s.Share(), string(data))
 	}
-	return p
+	return s
 }
 
 // onNode picks the node's addresses among addrs on eth0, as Prepare does on a node whose
@@ -146,9 +146,9 @@ func exists(path string) bool {
 }
 
 // currentClient returns the kubelet's current client certificate.
-func currentClient(t *testing.T, p State) pki.CertKey {
+func currentClient(t *testing.T, s State) pki.CertKey {
 	t.Helper()
-	data, err := os.ReadFile(p.KubeletClient())
+	data, err := os.ReadFile(s.KubeletClient())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -157,51 +157,51 @@ func currentClient(t *testing.T, p State) pki.CertKey {
 }
 
 func TestPrepareWithoutShare(t *testing.T) {
-	p := testNode(t, kubernetes.KindWorker, "w1", nil)
-	write(t, p.Kubeconfig(), "stale")
-	if err := p.Prepare(now, picked, nil); err != nil {
+	s := testNode(t, kubernetes.KindWorker, "w1", nil)
+	write(t, s.Kubeconfig(), "stale")
+	if err := s.Prepare(now, picked, nil); err != nil {
 		t.Fatal(err)
 	}
-	if exists(p.Kubeconfig()) {
+	if exists(s.Kubeconfig()) {
 		t.Error("a node without a share has a kubelet kubeconfig")
 	}
 	// There is nothing more to prepare until a share arrives.
-	if !exists(p.PreparedMarker()) {
+	if !exists(s.PreparedMarker()) {
 		t.Error("a node without a share is not marked prepared")
 	}
 }
 
 func TestPrepareWorker(t *testing.T) {
 	k := secrets(t)
-	p := testNode(t, kubernetes.KindWorker, "w1", k)
-	if err := p.Prepare(now, picked, nil); err != nil {
+	s := testNode(t, kubernetes.KindWorker, "w1", k)
+	if err := s.Prepare(now, picked, nil); err != nil {
 		t.Fatal(err)
 	}
-	share, err := p.ReadShare()
+	share, err := s.ReadShare()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := currentClient(t, p); got != *share.Kubelet {
+	if got := currentClient(t, s); got != *share.Kubelet {
 		t.Error("the kubelet's current client certificate is not the share's")
 	}
-	if link, err := os.Readlink(p.KubeletClient()); err != nil || link != "kubelet-client-chalkos.pem" {
+	if link, err := os.Readlink(s.KubeletClient()); err != nil || link != "kubelet-client-chalkos.pem" {
 		t.Errorf("current client certificate link = %q, %v", link, err)
 	}
-	ca, _ := os.ReadFile(filepath.Join(p.KubeletDir(), "ca.crt"))
+	ca, _ := os.ReadFile(filepath.Join(s.KubeletDir(), "ca.crt"))
 	if string(ca) != k.CA.Certificate {
 		t.Error("the kubelet's CA is not the cluster's")
 	}
-	kubeconfig, _ := os.ReadFile(p.Kubeconfig())
-	for _, want := range []string{`"server": "https://192.168.100.11:6443"`, `"client-certificate": "` + p.KubeletClient() + `"`} {
+	kubeconfig, _ := os.ReadFile(s.Kubeconfig())
+	for _, want := range []string{`"server": "https://192.168.100.11:6443"`, `"client-certificate": "` + s.KubeletClient() + `"`} {
 		if !strings.Contains(string(kubeconfig), want) {
 			t.Errorf("kubeconfig lacks %s:\n%s", want, kubeconfig)
 		}
 	}
-	flags, _ := os.ReadFile(filepath.Join(p.KubeletDir(), "flags"))
+	flags, _ := os.ReadFile(filepath.Join(s.KubeletDir(), "flags"))
 	if string(flags) != "KUBELET_ARGS=--hostname-override=w1 --node-ip=192.168.100.11 --node-labels=disk=ssd,zone=a\n" {
 		t.Errorf("flags = %q", flags)
 	}
-	if exists(p.PKI) || exists(p.Manifests()) {
+	if exists(s.PKI) || exists(s.Manifests()) {
 		t.Error("a worker has control-plane files")
 	}
 }
@@ -214,18 +214,18 @@ func pickingIdentity(name string) string {
 }
 
 func TestPreparePicksNodeIP(t *testing.T) {
-	p := testNode(t, kubernetes.KindWorker, "w1", secrets(t))
-	write(t, p.NodeFile, pickingIdentity("w1"))
-	if err := p.Prepare(now, onNode("10.0.2.15", "192.168.100.12"), nil); err != nil {
+	s := testNode(t, kubernetes.KindWorker, "w1", secrets(t))
+	write(t, s.NodeFile, pickingIdentity("w1"))
+	if err := s.Prepare(now, onNode("10.0.2.15", "192.168.100.12"), nil); err != nil {
 		t.Fatal(err)
 	}
-	if data, err := os.ReadFile(p.NodeIP()); err != nil || string(data) != "192.168.100.12\n" {
+	if data, err := os.ReadFile(s.NodeIP()); err != nil || string(data) != "192.168.100.12\n" {
 		t.Errorf("node-ip = %q, %v", data, err)
 	}
-	if ips, err := p.ReadNodeIPs(); err != nil || !slices.Equal(ips, []netip.Addr{netip.MustParseAddr("192.168.100.12")}) {
+	if ips, err := s.ReadNodeIPs(); err != nil || !slices.Equal(ips, []netip.Addr{netip.MustParseAddr("192.168.100.12")}) {
 		t.Errorf("ReadNodeIPs() = %v, %v", ips, err)
 	}
-	flags, _ := os.ReadFile(filepath.Join(p.KubeletDir(), "flags"))
+	flags, _ := os.ReadFile(filepath.Join(s.KubeletDir(), "flags"))
 	if string(flags) != "KUBELET_ARGS=--hostname-override=w1 --node-ip=192.168.100.12\n" {
 		t.Errorf("flags = %q", flags)
 	}
@@ -234,36 +234,36 @@ func TestPreparePicksNodeIP(t *testing.T) {
 // A node whose address does not show up runs neither the kubelet nor static pods, also when an
 // earlier preparation found one.
 func TestPrepareWithoutNodeIP(t *testing.T) {
-	p := testNode(t, kubernetes.KindControlPlane, "cp1", secrets(t))
-	write(t, p.BootstrappedMarker(), "")
-	write(t, p.NodeFile, pickingIdentity("cp1"))
-	if err := p.Prepare(now, onNode("192.168.100.11"), nil); err != nil {
+	s := testNode(t, kubernetes.KindControlPlane, "cp1", secrets(t))
+	write(t, s.BootstrappedMarker(), "")
+	write(t, s.NodeFile, pickingIdentity("cp1"))
+	if err := s.Prepare(now, onNode("192.168.100.11"), nil); err != nil {
 		t.Fatal(err)
 	}
-	if !exists(p.Kubeconfig()) || len(staticPods(t, p)) != 4 || !exists(p.NodeIP()) {
+	if !exists(s.Kubeconfig()) || len(staticPods(t, s)) != 4 || !exists(s.NodeIP()) {
 		t.Fatal("the first preparation did not prepare the node")
 	}
 
-	err := p.Prepare(now, onNode("10.0.2.15"), nil)
+	err := s.Prepare(now, onNode("10.0.2.15"), nil)
 	want := "no ipv4 node address matches validSubnets 192.168.100.0/24 (the node has 10.0.2.15 on eth0), 5m0s after chalkos-node-addresses.target"
 	if err == nil || err.Error() != want {
 		t.Fatalf("err = %v, want %s", err, want)
 	}
-	if exists(p.Kubeconfig()) || exists(p.Manifests()) || exists(p.PKI) || exists(p.NodeIP()) {
+	if exists(s.Kubeconfig()) || exists(s.Manifests()) || exists(s.PKI) || exists(s.NodeIP()) {
 		t.Error("a node without an address keeps its kubeconfig, static pods, certificates or address")
 	}
-	if data, err := os.ReadFile(p.PrepareError()); err != nil || string(data) != want+"\n" {
+	if data, err := os.ReadFile(s.PrepareError()); err != nil || string(data) != want+"\n" {
 		t.Errorf("prepare.error = %q, %v", data, err)
 	}
-	if err := p.RenderStaticPods(); err == nil {
+	if err := s.RenderStaticPods(); err == nil {
 		t.Error("rendered static pods without the node's address")
 	}
 
 	// The address showing up later is picked by the next preparation.
-	if err := p.Prepare(now, onNode("10.0.2.15", "192.168.100.11"), nil); err != nil {
+	if err := s.Prepare(now, onNode("10.0.2.15", "192.168.100.11"), nil); err != nil {
 		t.Fatal(err)
 	}
-	if exists(p.PrepareError()) || !exists(p.NodeIP()) {
+	if exists(s.PrepareError()) || !exists(s.NodeIP()) {
 		t.Error("the error outlived the address")
 	}
 }
@@ -271,19 +271,19 @@ func TestPrepareWithoutNodeIP(t *testing.T) {
 // Nothing an earlier preparation wrote outlives one that fails for any reason: the kubelet would
 // start with it, and the certificates name the address picked then.
 func TestPrepareFailureRemovesFiles(t *testing.T) {
-	p := testNode(t, kubernetes.KindControlPlane, "cp1", secrets(t))
-	write(t, p.BootstrappedMarker(), "")
-	if err := p.Prepare(now, picked, nil); err != nil {
+	s := testNode(t, kubernetes.KindControlPlane, "cp1", secrets(t))
+	write(t, s.BootstrappedMarker(), "")
+	if err := s.Prepare(now, picked, nil); err != nil {
 		t.Fatal(err)
 	}
-	if !exists(p.Kubeconfig()) || !exists(p.PKI) || len(staticPods(t, p)) != 4 {
+	if !exists(s.Kubeconfig()) || !exists(s.PKI) || len(staticPods(t, s)) != 4 {
 		t.Fatal("the first preparation did not prepare the node")
 	}
-	withCluster(t, p, func(c *kubernetes.Cluster) { c.Kind = kubernetes.KindWorker })
-	if err := p.Prepare(now, picked, nil); err == nil {
+	withCluster(t, s, func(c *kubernetes.Cluster) { c.Kind = kubernetes.KindWorker })
+	if err := s.Prepare(now, picked, nil); err == nil {
 		t.Fatal("prepared a control-plane share on a worker image")
 	}
-	for _, path := range []string{p.KubeletDir(), p.Manifests(), p.PKI, p.NodeIP()} {
+	for _, path := range []string{s.KubeletDir(), s.Manifests(), s.PKI, s.NodeIP()} {
 		if exists(path) {
 			t.Errorf("%s outlived a failed preparation", path)
 		}
@@ -293,14 +293,14 @@ func TestPrepareFailureRemovesFiles(t *testing.T) {
 // The control plane's certificates name and its static pods advertise the address the node
 // picked.
 func TestPrepareControlPlaneWithPickedAddress(t *testing.T) {
-	p := testNode(t, kubernetes.KindControlPlane, "cp1", secrets(t))
-	write(t, p.BootstrappedMarker(), "")
-	write(t, p.NodeFile, pickingIdentity("cp1"))
-	if err := p.Prepare(now, onNode("10.0.2.15", "192.168.100.12"), nil); err != nil {
+	s := testNode(t, kubernetes.KindControlPlane, "cp1", secrets(t))
+	write(t, s.BootstrappedMarker(), "")
+	write(t, s.NodeFile, pickingIdentity("cp1"))
+	if err := s.Prepare(now, onNode("10.0.2.15", "192.168.100.12"), nil); err != nil {
 		t.Fatal(err)
 	}
 	for _, f := range []string{kpki.FileAPIServer, kpki.FileEtcdServer, kpki.FileEtcdPeer} {
-		data, err := os.ReadFile(filepath.Join(p.PKI, f))
+		data, err := os.ReadFile(filepath.Join(s.PKI, f))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -316,7 +316,7 @@ func TestPrepareControlPlaneWithPickedAddress(t *testing.T) {
 		"etcd.json":           "--advertise-client-urls=https://192.168.100.12:2379",
 		"kube-apiserver.json": "--advertise-address=192.168.100.12",
 	} {
-		data, err := os.ReadFile(filepath.Join(p.Manifests(), file))
+		data, err := os.ReadFile(filepath.Join(s.Manifests(), file))
 		if err != nil || !strings.Contains(string(data), flag) {
 			t.Errorf("%s lacks %s: %v", file, flag, err)
 		}
@@ -365,20 +365,20 @@ func TestPrepareFlannelInterfaces(t *testing.T) {
 		"two interfaces without it": {nil, []string{"eth0 192.168.100.11", "eth1 fd00::11"}, ""},
 	} {
 		t.Run(name, func(t *testing.T) {
-			p := testNode(t, kubernetes.KindWorker, "w1", secrets(t))
-			withCluster(t, p, func(c *kubernetes.Cluster) {
+			s := testNode(t, kubernetes.KindWorker, "w1", secrets(t))
+			withCluster(t, s, func(c *kubernetes.Cluster) {
 				c.IPFamilies = []nodeip.Family{nodeip.IPv4, nodeip.IPv6}
 				c.Flannel = tc.flannel
 				if c.Flannel != nil {
 					c.Images.Flannel = flannelImage
 				}
 			})
-			write(t, p.NodeFile, `{"hostname": "w1", "layers": {"kubernetes": {"nodeName": "w1", "validSubnets": ["192.168.100.0/24", "fd00::/64"]}}}`)
-			err := p.Prepare(now, on(links, tc.addrs...), nil)
+			write(t, s.NodeFile, `{"hostname": "w1", "layers": {"kubernetes": {"nodeName": "w1", "validSubnets": ["192.168.100.0/24", "fd00::/64"]}}}`)
+			err := s.Prepare(now, on(links, tc.addrs...), nil)
 			if tc.want == "" && err != nil || tc.want != "" && (err == nil || err.Error() != tc.want) {
 				t.Fatalf("err = %v, want %q", err, tc.want)
 			}
-			if tc.want != "" && (exists(p.Kubeconfig()) || exists(p.NodeIP())) {
+			if tc.want != "" && (exists(s.Kubeconfig()) || exists(s.NodeIP())) {
 				t.Error("a refused node keeps its kubeconfig or addresses")
 			}
 		})
@@ -386,22 +386,22 @@ func TestPrepareFlannelInterfaces(t *testing.T) {
 }
 
 func TestPrepareDualStack(t *testing.T) {
-	p := testNode(t, kubernetes.KindControlPlane, "cp1", secrets(t))
-	write(t, p.BootstrappedMarker(), "")
-	withCluster(t, p, func(c *kubernetes.Cluster) { c.IPFamilies = []nodeip.Family{nodeip.IPv6, nodeip.IPv4} })
-	write(t, p.NodeFile, `{"hostname": "cp1",
+	s := testNode(t, kubernetes.KindControlPlane, "cp1", secrets(t))
+	write(t, s.BootstrappedMarker(), "")
+	withCluster(t, s, func(c *kubernetes.Cluster) { c.IPFamilies = []nodeip.Family{nodeip.IPv6, nodeip.IPv4} })
+	write(t, s.NodeFile, `{"hostname": "cp1",
 	  "layers": {"kubernetes": {"nodeName": "cp1", "nodeIPs": ["192.168.100.11"], "validSubnets": ["fd00::/64"], "labels": {}, "taints": []}}}`)
-	if err := p.Prepare(now, onNode("10.0.2.15", "192.168.100.11", "2001:db8::11", "fd00::11"), nil); err != nil {
+	if err := s.Prepare(now, onNode("10.0.2.15", "192.168.100.11", "2001:db8::11", "fd00::11"), nil); err != nil {
 		t.Fatal(err)
 	}
-	if data, err := os.ReadFile(p.NodeIP()); err != nil || string(data) != "fd00::11\n192.168.100.11\n" {
+	if data, err := os.ReadFile(s.NodeIP()); err != nil || string(data) != "fd00::11\n192.168.100.11\n" {
 		t.Errorf("node-ip = %q, %v", data, err)
 	}
-	flags, _ := os.ReadFile(filepath.Join(p.KubeletDir(), "flags"))
+	flags, _ := os.ReadFile(filepath.Join(s.KubeletDir(), "flags"))
 	if !strings.Contains(string(flags), "--node-ip=fd00::11,192.168.100.11 ") {
 		t.Errorf("flags = %q", flags)
 	}
-	data, err := os.ReadFile(filepath.Join(p.PKI, kpki.FileAPIServer))
+	data, err := os.ReadFile(filepath.Join(s.PKI, kpki.FileAPIServer))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -418,15 +418,15 @@ func TestPrepareDualStack(t *testing.T) {
 		"etcd.json":           "--advertise-client-urls=https://[fd00::11]:2379",
 		"kube-apiserver.json": "--advertise-address=fd00::11",
 	} {
-		data, err := os.ReadFile(filepath.Join(p.Manifests(), file))
+		data, err := os.ReadFile(filepath.Join(s.Manifests(), file))
 		if err != nil || !strings.Contains(string(data), flag) {
 			t.Errorf("%s lacks %s: %v", file, flag, err)
 		}
 	}
 
 	// Without an address of the second family the node has none.
-	err = p.Prepare(now, onNode("192.168.100.11"), nil)
-	if err == nil || !strings.Contains(err.Error(), "no ipv6 node address matches") || exists(p.NodeIP()) {
+	err = s.Prepare(now, onNode("192.168.100.11"), nil)
+	if err == nil || !strings.Contains(err.Error(), "no ipv6 node address matches") || exists(s.NodeIP()) {
 		t.Errorf("err = %v, want the ipv6 address missing", err)
 	}
 }
@@ -434,40 +434,40 @@ func TestPrepareDualStack(t *testing.T) {
 // A pinned control plane waits for exactly its pinned addresses, whatever its identity says now,
 // and runs nothing without them.
 func TestPreparePinned(t *testing.T) {
-	p := testNode(t, kubernetes.KindControlPlane, "cp1", secrets(t))
-	write(t, p.BootstrappedMarker(), "")
-	write(t, p.NodeFile, pickingIdentity("cp1"))
-	if err := p.Prepare(now, onNode("192.168.100.11"), nil); err != nil {
+	s := testNode(t, kubernetes.KindControlPlane, "cp1", secrets(t))
+	write(t, s.BootstrappedMarker(), "")
+	write(t, s.NodeFile, pickingIdentity("cp1"))
+	if err := s.Prepare(now, onNode("192.168.100.11"), nil); err != nil {
 		t.Fatal(err)
 	}
-	ips, err := p.ReadNodeIPs()
+	ips, err := s.ReadNodeIPs()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := p.WritePin(ips); err != nil {
+	if err := s.WritePin(ips); err != nil {
 		t.Fatal(err)
 	}
-	if pin, err := p.ReadPin(); err != nil || len(pin) != 1 || pin[0] != netip.MustParseAddr("192.168.100.11") {
+	if pin, err := s.ReadPin(); err != nil || len(pin) != 1 || pin[0] != netip.MustParseAddr("192.168.100.11") {
 		t.Fatalf("ReadPin() = %v, %v", pin, err)
 	}
 
 	// The subnets would pick 192.168.100.5 first; the pin keeps 192.168.100.11.
-	if err := p.Prepare(now, onNode("192.168.100.5", "192.168.100.11"), nil); err != nil {
+	if err := s.Prepare(now, onNode("192.168.100.5", "192.168.100.11"), nil); err != nil {
 		t.Fatal(err)
 	}
-	if data, err := os.ReadFile(p.NodeIP()); err != nil || string(data) != "192.168.100.11\n" {
+	if data, err := os.ReadFile(s.NodeIP()); err != nil || string(data) != "192.168.100.11\n" {
 		t.Errorf("node-ip = %q, %v", data, err)
 	}
 
-	err = p.Prepare(now, onNode("192.168.100.5"), nil)
+	err = s.Prepare(now, onNode("192.168.100.5"), nil)
 	want := "pinned address 192.168.100.11 is not present, 5m0s after chalkos-node-addresses.target; restore it, or remove the node's etcd member with chalkctl etcd remove-member cp1 and reinstall the node"
 	if err == nil || err.Error() != want {
 		t.Fatalf("err = %v, want %s", err, want)
 	}
-	if exists(p.Kubeconfig()) || exists(p.Manifests()) || exists(p.NodeIP()) {
+	if exists(s.Kubeconfig()) || exists(s.Manifests()) || exists(s.NodeIP()) {
 		t.Error("a node without its pinned address keeps its kubeconfig, static pods or addresses")
 	}
-	if reason, err := p.PreparationError(); err != nil || reason != want {
+	if reason, err := s.PreparationError(); err != nil || reason != want {
 		t.Errorf("PreparationError() = %q, %v", reason, err)
 	}
 
@@ -489,16 +489,16 @@ func TestPreparePinnedFamiliesChanged(t *testing.T) {
 			"the cluster was created with families [ipv4 ipv6]; ipFamilies is [ipv6 ipv4]; changing the families of a running cluster is not supported"},
 	} {
 		t.Run(name, func(t *testing.T) {
-			p := testNode(t, kubernetes.KindControlPlane, "cp1", secrets(t))
-			write(t, p.BootstrappedMarker(), "")
-			write(t, p.NodeFile, pickingIdentity("cp1"))
-			withCluster(t, p, func(c *kubernetes.Cluster) { c.IPFamilies = tc.families })
-			write(t, p.Pin(), tc.pin)
-			err := p.Prepare(now, onNode("192.168.100.11", "fd00::11"), nil)
+			s := testNode(t, kubernetes.KindControlPlane, "cp1", secrets(t))
+			write(t, s.BootstrappedMarker(), "")
+			write(t, s.NodeFile, pickingIdentity("cp1"))
+			withCluster(t, s, func(c *kubernetes.Cluster) { c.IPFamilies = tc.families })
+			write(t, s.Pin(), tc.pin)
+			err := s.Prepare(now, onNode("192.168.100.11", "fd00::11"), nil)
 			if err == nil || err.Error() != tc.want {
 				t.Fatalf("err = %v, want %s", err, tc.want)
 			}
-			if exists(p.Kubeconfig()) || exists(p.Manifests()) || exists(p.NodeIP()) {
+			if exists(s.Kubeconfig()) || exists(s.Manifests()) || exists(s.NodeIP()) {
 				t.Error("a node whose families changed keeps its kubeconfig, static pods or addresses")
 			}
 		})
@@ -507,58 +507,58 @@ func TestPreparePinnedFamiliesChanged(t *testing.T) {
 
 // Workers pick their addresses at every boot.
 func TestPrepareWorkerIgnoresPin(t *testing.T) {
-	p := testNode(t, kubernetes.KindWorker, "w1", secrets(t))
-	write(t, p.NodeFile, pickingIdentity("w1"))
-	write(t, p.Pin(), "192.168.100.11\n")
-	if err := p.Prepare(now, onNode("192.168.100.12"), nil); err != nil {
+	s := testNode(t, kubernetes.KindWorker, "w1", secrets(t))
+	write(t, s.NodeFile, pickingIdentity("w1"))
+	write(t, s.Pin(), "192.168.100.11\n")
+	if err := s.Prepare(now, onNode("192.168.100.12"), nil); err != nil {
 		t.Fatal(err)
 	}
-	if data, _ := os.ReadFile(p.NodeIP()); string(data) != "192.168.100.12\n" {
+	if data, _ := os.ReadFile(s.NodeIP()); string(data) != "192.168.100.12\n" {
 		t.Errorf("node-ip = %q", data)
 	}
 }
 
 func TestReadPin(t *testing.T) {
-	p := testNode(t, kubernetes.KindControlPlane, "cp1", nil)
+	s := testNode(t, kubernetes.KindControlPlane, "cp1", nil)
 	for content, ok := range map[string]bool{
 		"10.0.0.1\n":          true,
 		"fd00::1\n10.0.0.1\n": true,
 		"":                    false,
 		"nope\n":              false,
 	} {
-		write(t, p.Pin(), content)
-		if _, err := p.ReadPin(); (err == nil) != ok {
+		write(t, s.Pin(), content)
+		if _, err := s.ReadPin(); (err == nil) != ok {
 			t.Errorf("ReadPin(%q): %v", content, err)
 		}
 	}
 	// A pin holds at least one address.
-	if err := os.Remove(p.Pin()); err != nil {
+	if err := os.Remove(s.Pin()); err != nil {
 		t.Fatal(err)
 	}
-	if err := p.WritePin(nil); err == nil || exists(p.Pin()) {
+	if err := s.WritePin(nil); err == nil || exists(s.Pin()) {
 		t.Errorf("pinned without addresses: %v", err)
 	}
 }
 
 // A node that started joining stays marked until the join completes.
 func TestMarkJoined(t *testing.T) {
-	p := testNode(t, kubernetes.KindControlPlane, "cp1", nil)
-	if joining, err := marked(p.JoiningMarker()); err != nil || joining {
+	s := testNode(t, kubernetes.KindControlPlane, "cp1", nil)
+	if joining, err := marked(s.JoiningMarker()); err != nil || joining {
 		t.Fatalf("before: %v, %v", joining, err)
 	}
-	if err := p.MarkJoining("https://192.168.100.10:6443"); err != nil {
+	if err := s.MarkJoining("https://192.168.100.10:6443"); err != nil {
 		t.Fatal(err)
 	}
-	if joining, err := marked(p.JoiningMarker()); err != nil || !joining {
+	if joining, err := marked(s.JoiningMarker()); err != nil || !joining {
 		t.Fatalf("after MarkJoining: %v, %v", joining, err)
 	}
-	if err := p.MarkJoined(now); err != nil {
+	if err := s.MarkJoined(now); err != nil {
 		t.Fatal(err)
 	}
-	if joining, err := marked(p.JoiningMarker()); err != nil || joining {
+	if joining, err := marked(s.JoiningMarker()); err != nil || joining {
 		t.Errorf("after MarkJoined: joining %v, %v", joining, err)
 	}
-	if bootstrapped, err := marked(p.BootstrappedMarker()); err != nil || !bootstrapped {
+	if bootstrapped, err := marked(s.BootstrappedMarker()); err != nil || !bootstrapped {
 		t.Errorf("after MarkJoined: bootstrapped %v, %v", bootstrapped, err)
 	}
 }
@@ -566,14 +566,14 @@ func TestMarkJoined(t *testing.T) {
 // ClearMembership removes every file that makes the node an etcd member at boot, and keeps
 // etcd's data.
 func TestClearMembership(t *testing.T) {
-	p := testNode(t, kubernetes.KindControlPlane, "cp1", nil)
-	markers := []string{p.JoiningMarker(), p.BootstrappedMarker(), p.EtcdInitialisedMarker(), p.EtcdInitialCluster(), p.Pin()}
+	s := testNode(t, kubernetes.KindControlPlane, "cp1", nil)
+	markers := []string{s.JoiningMarker(), s.BootstrappedMarker(), s.EtcdInitialisedMarker(), s.EtcdInitialCluster(), s.Pin()}
 	for _, f := range markers {
 		write(t, f, "x\n")
 	}
-	db := filepath.Join(p.EtcdData, "member", "snap", "db")
+	db := filepath.Join(s.EtcdData, "member", "snap", "db")
 	write(t, db, "")
-	if err := p.ClearMembership(); err != nil {
+	if err := s.ClearMembership(); err != nil {
 		t.Fatal(err)
 	}
 	for _, f := range markers {
@@ -584,28 +584,28 @@ func TestClearMembership(t *testing.T) {
 	if !exists(db) {
 		t.Error("ClearMembership deleted etcd's data")
 	}
-	if err := p.ClearMembership(); err != nil {
+	if err := s.ClearMembership(); err != nil {
 		t.Errorf("clearing nothing: %v", err)
 	}
 }
 
 // RemoveEtcdData empties etcd's data directory and keeps the directory.
 func TestRemoveEtcdData(t *testing.T) {
-	p := testNode(t, kubernetes.KindControlPlane, "cp1", nil)
-	write(t, filepath.Join(p.EtcdData, "member", "snap", "db"), "")
-	if err := p.RemoveEtcdData(); err != nil {
+	s := testNode(t, kubernetes.KindControlPlane, "cp1", nil)
+	write(t, filepath.Join(s.EtcdData, "member", "snap", "db"), "")
+	if err := s.RemoveEtcdData(); err != nil {
 		t.Fatal(err)
 	}
-	if hasData, err := p.EtcdHasData(); err != nil || hasData {
+	if hasData, err := s.EtcdHasData(); err != nil || hasData {
 		t.Errorf("etcd data after RemoveEtcdData: %v, %v", hasData, err)
 	}
-	if !exists(p.EtcdData) {
+	if !exists(s.EtcdData) {
 		t.Error("etcd's data directory is gone")
 	}
-	if err := os.Remove(p.EtcdData); err != nil {
+	if err := os.Remove(s.EtcdData); err != nil {
 		t.Fatal(err)
 	}
-	if err := p.RemoveEtcdData(); err != nil {
+	if err := s.RemoveEtcdData(); err != nil {
 		t.Errorf("without a data directory: %v", err)
 	}
 }
@@ -613,21 +613,21 @@ func TestRemoveEtcdData(t *testing.T) {
 // A node that left etcd renders no static pods, even when a leave that was interrupted kept its
 // bootstrapped marker.
 func TestPrepareAfterLeaving(t *testing.T) {
-	p := testNode(t, kubernetes.KindControlPlane, "cp1", secrets(t))
-	write(t, p.BootstrappedMarker(), "")
-	if left, err := marked(p.LeftMarker()); err != nil || left {
+	s := testNode(t, kubernetes.KindControlPlane, "cp1", secrets(t))
+	write(t, s.BootstrappedMarker(), "")
+	if left, err := marked(s.LeftMarker()); err != nil || left {
 		t.Fatalf("left = %v, %v before leaving", left, err)
 	}
-	if err := p.MarkLeft(now); err != nil {
+	if err := s.MarkLeft(now); err != nil {
 		t.Fatal(err)
 	}
-	if left, err := marked(p.LeftMarker()); err != nil || !left {
+	if left, err := marked(s.LeftMarker()); err != nil || !left {
 		t.Errorf("left = %v, %v", left, err)
 	}
-	if err := p.Prepare(now, picked, nil); err != nil {
+	if err := s.Prepare(now, picked, nil); err != nil {
 		t.Fatal(err)
 	}
-	if pods := staticPods(t, p); len(pods) != 0 {
+	if pods := staticPods(t, s); len(pods) != 0 {
 		t.Errorf("static pods %v after leaving", pods)
 	}
 }
@@ -635,27 +635,27 @@ func TestPrepareAfterLeaving(t *testing.T) {
 // A node joining an existing cluster renders etcd alone first, then the whole control plane, both
 // with the cluster it joined.
 func TestRenderJoiningEtcd(t *testing.T) {
-	p := testNode(t, kubernetes.KindControlPlane, "cp1", secrets(t))
-	if err := p.Prepare(now, picked, nil); err != nil {
+	s := testNode(t, kubernetes.KindControlPlane, "cp1", secrets(t))
+	if err := s.Prepare(now, picked, nil); err != nil {
 		t.Fatal(err)
 	}
 	initial := "cp0=https://192.168.100.10:2380,cp1=https://192.168.100.11:2380"
-	if err := p.WriteInitialCluster(initial); err != nil {
+	if err := s.WriteInitialCluster(initial); err != nil {
 		t.Fatal(err)
 	}
-	if err := p.RenderEtcd(); err != nil {
+	if err := s.RenderEtcd(); err != nil {
 		t.Fatal(err)
 	}
-	if pods := staticPods(t, p); !slices.Equal(pods, []string{"etcd.json"}) {
+	if pods := staticPods(t, s); !slices.Equal(pods, []string{"etcd.json"}) {
 		t.Fatalf("static pods %v, want etcd alone", pods)
 	}
-	if err := p.RenderStaticPods(); err != nil {
+	if err := s.RenderStaticPods(); err != nil {
 		t.Fatal(err)
 	}
-	if pods := staticPods(t, p); len(pods) != 4 {
+	if pods := staticPods(t, s); len(pods) != 4 {
 		t.Fatalf("static pods %v", pods)
 	}
-	data, err := os.ReadFile(filepath.Join(p.Manifests(), "etcd.json"))
+	data, err := os.ReadFile(filepath.Join(s.Manifests(), "etcd.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -664,14 +664,14 @@ func TestRenderJoiningEtcd(t *testing.T) {
 			t.Errorf("etcd lacks %s", flag)
 		}
 	}
-	write(t, p.EtcdInitialCluster(), "\n")
-	if err := p.RenderStaticPods(); err == nil {
+	write(t, s.EtcdInitialCluster(), "\n")
+	if err := s.RenderStaticPods(); err == nil {
 		t.Error("rendered etcd with an empty initial cluster")
 	}
 }
 
 func TestReadNodeIPs(t *testing.T) {
-	p := testNode(t, kubernetes.KindWorker, "w1", nil)
+	s := testNode(t, kubernetes.KindWorker, "w1", nil)
 	for content, ok := range map[string]bool{
 		"10.0.0.1\n":          true,
 		"10.0.0.1\nfd00::1\n": true,
@@ -680,14 +680,14 @@ func TestReadNodeIPs(t *testing.T) {
 		"10.0.0.0/8\n":        false,
 		"fe80::1%eth0\n":      false,
 	} {
-		write(t, p.NodeIP(), content)
-		if _, err := p.ReadNodeIPs(); (err == nil) != ok {
+		write(t, s.NodeIP(), content)
+		if _, err := s.ReadNodeIPs(); (err == nil) != ok {
 			t.Errorf("ReadNodeIPs(%q): %v", content, err)
 		}
 	}
 	// An IPv4-mapped address reads as the IPv4 address, as the certificates and flags name it.
-	write(t, p.NodeIP(), "::ffff:10.0.0.1\n")
-	if ips, err := p.ReadNodeIPs(); err != nil || !slices.Equal(ips, []netip.Addr{netip.MustParseAddr("10.0.0.1")}) {
+	write(t, s.NodeIP(), "::ffff:10.0.0.1\n")
+	if ips, err := s.ReadNodeIPs(); err != nil || !slices.Equal(ips, []netip.Addr{netip.MustParseAddr("10.0.0.1")}) {
 		t.Errorf("ReadNodeIPs() = %v, %v, want 10.0.0.1", ips, err)
 	}
 }
@@ -712,26 +712,26 @@ func kubeletKey(t *testing.T, key string) string {
 
 // storeRenewed puts a certificate and key into the kubelet's store as the kubelet does after
 // renewing: a dated file linked from the current one.
-func storeRenewed(t *testing.T, p State, cert, key string) {
+func storeRenewed(t *testing.T, s State, cert, key string) {
 	t.Helper()
-	write(t, filepath.Join(p.KubeletPKI, "kubelet-client-2026-11-05.pem"), cert+kubeletKey(t, key))
-	if err := os.Symlink("kubelet-client-2026-11-05.pem", p.KubeletClient()); err != nil {
+	write(t, filepath.Join(s.KubeletPKI, "kubelet-client-2026-11-05.pem"), cert+kubeletKey(t, key))
+	if err := os.Symlink("kubelet-client-2026-11-05.pem", s.KubeletClient()); err != nil {
 		t.Fatal(err)
 	}
 }
 
 func TestPrepareKeepsRenewedCertificate(t *testing.T) {
 	k := secrets(t)
-	p := testNode(t, kubernetes.KindWorker, "w1", k)
+	s := testNode(t, kubernetes.KindWorker, "w1", k)
 	renewed, err := kpki.IssueKubeletClient(k.CA, "w1", now.Add(30*24*time.Hour))
 	if err != nil {
 		t.Fatal(err)
 	}
-	storeRenewed(t, p, renewed.Certificate, renewed.Key)
-	if err := p.Prepare(now.Add(31*24*time.Hour), picked, nil); err != nil {
+	storeRenewed(t, s, renewed.Certificate, renewed.Key)
+	if err := s.Prepare(now.Add(31*24*time.Hour), picked, nil); err != nil {
 		t.Fatal(err)
 	}
-	if got := currentClient(t, p); got.Certificate != renewed.Certificate {
+	if got := currentClient(t, s); got.Certificate != renewed.Certificate {
 		t.Error("Prepare replaced a certificate the kubelet renewed")
 	}
 
@@ -741,11 +741,11 @@ func TestPrepareKeepsRenewedCertificate(t *testing.T) {
 		t.Fatal(err)
 	}
 	data, _ := newer.Encode()
-	write(t, p.Share(), string(data))
-	if err := p.Prepare(now.Add(61*24*time.Hour), picked, nil); err != nil {
+	write(t, s.Share(), string(data))
+	if err := s.Prepare(now.Add(61*24*time.Hour), picked, nil); err != nil {
 		t.Fatal(err)
 	}
-	if got := currentClient(t, p); got != *newer.Kubelet {
+	if got := currentClient(t, s); got != *newer.Kubelet {
 		t.Error("a newer share's certificate did not replace the current one")
 	}
 }
@@ -797,17 +797,17 @@ func TestPrepareReplacesUntrustedRenewedCertificate(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			k := secrets(t)
-			p := testNode(t, kubernetes.KindWorker, "w1", k)
+			s := testNode(t, kubernetes.KindWorker, "w1", k)
 			cert, key := tc.renewed(t, k)
-			storeRenewed(t, p, cert, key)
-			if err := p.Prepare(tc.at, picked, nil); err != nil {
+			storeRenewed(t, s, cert, key)
+			if err := s.Prepare(tc.at, picked, nil); err != nil {
 				t.Fatal(err)
 			}
-			share, err := p.ReadShare()
+			share, err := s.ReadShare()
 			if err != nil {
 				t.Fatal(err)
 			}
-			if got := currentClient(t, p); got != *share.Kubelet {
+			if got := currentClient(t, s); got != *share.Kubelet {
 				t.Error("Prepare kept an untrusted certificate in the kubelet's store")
 			}
 		})
@@ -816,40 +816,40 @@ func TestPrepareReplacesUntrustedRenewedCertificate(t *testing.T) {
 
 func TestPrepareControlPlane(t *testing.T) {
 	k := secrets(t)
-	p := testNode(t, kubernetes.KindControlPlane, "cp1", k)
-	if err := p.Prepare(now, picked, nil); err != nil {
+	s := testNode(t, kubernetes.KindControlPlane, "cp1", k)
+	if err := s.Prepare(now, picked, nil); err != nil {
 		t.Fatal(err)
 	}
-	if info, err := os.Stat(p.PKI); err != nil || info.Mode().Perm() != 0o700 {
+	if info, err := os.Stat(s.PKI); err != nil || info.Mode().Perm() != 0o700 {
 		t.Fatalf("certificate directory: %v, %v", info, err)
 	}
 	for _, f := range []string{kpki.FileCAKey, kpki.FileAPIServerKey, kpki.FileEtcdServerKey, kpki.FileEncryptionConfig, kpki.FileAuthenticationConfig} {
-		info, err := os.Stat(filepath.Join(p.PKI, f))
+		info, err := os.Stat(filepath.Join(s.PKI, f))
 		if err != nil || info.Mode().Perm() != 0o600 {
 			t.Errorf("%s: %v, %v", f, info, err)
 		}
 	}
-	cert, _, err := currentClient(t, p).Parse()
+	cert, _, err := currentClient(t, s).Parse()
 	if err != nil {
 		t.Fatal(err)
 	}
 	if cert.Subject.CommonName != "system:node:cp1" {
 		t.Errorf("kubelet client certificate for %s", cert.Subject.CommonName)
 	}
-	flags, _ := os.ReadFile(filepath.Join(p.KubeletDir(), "flags"))
+	flags, _ := os.ReadFile(filepath.Join(s.KubeletDir(), "flags"))
 	if !strings.Contains(string(flags), "--register-with-taints=node-role.kubernetes.io/control-plane:NoSchedule") {
 		t.Errorf("flags = %q", flags)
 	}
-	entries, err := os.ReadDir(p.Manifests())
+	entries, err := os.ReadDir(s.Manifests())
 	if err != nil || len(entries) != 0 {
 		t.Errorf("a control plane waiting for bootstrap has static pods: %v, %v", entries, err)
 	}
 
-	write(t, p.BootstrappedMarker(), "")
-	if err := p.Prepare(now, picked, nil); err != nil {
+	write(t, s.BootstrappedMarker(), "")
+	if err := s.Prepare(now, picked, nil); err != nil {
 		t.Fatal(err)
 	}
-	entries, _ = os.ReadDir(p.Manifests())
+	entries, _ = os.ReadDir(s.Manifests())
 	var names []string
 	for _, e := range entries {
 		names = append(names, e.Name())
@@ -861,19 +861,19 @@ func TestPrepareControlPlane(t *testing.T) {
 
 func TestPrepareRefusesMismatchedShare(t *testing.T) {
 	k := secrets(t)
-	p := testNode(t, kubernetes.KindControlPlane, "cp1", nil)
+	s := testNode(t, kubernetes.KindControlPlane, "cp1", nil)
 	worker, _ := kpki.WorkerShare(k, "cp1", now)
 	data, _ := worker.Encode()
-	write(t, p.Share(), string(data))
-	if err := p.Prepare(now, picked, nil); err == nil || !strings.Contains(err.Error(), "worker") {
+	write(t, s.Share(), string(data))
+	if err := s.Prepare(now, picked, nil); err == nil || !strings.Contains(err.Error(), "worker") {
 		t.Errorf("err = %v, want a kind mismatch", err)
 	}
 
-	p = testNode(t, kubernetes.KindWorker, "w1", nil)
+	s = testNode(t, kubernetes.KindWorker, "w1", nil)
 	other, _ := kpki.WorkerShare(k, "w2", now)
 	data, _ = other.Encode()
-	write(t, p.Share(), string(data))
-	if err := p.Prepare(now, picked, nil); err == nil || !strings.Contains(err.Error(), "w2") {
+	write(t, s.Share(), string(data))
+	if err := s.Prepare(now, picked, nil); err == nil || !strings.Contains(err.Error(), "w2") {
 		t.Errorf("err = %v, want a node mismatch", err)
 	}
 }
@@ -901,19 +901,19 @@ func TestKubeletFlags(t *testing.T) {
 }
 
 func TestEtcdHasData(t *testing.T) {
-	p := testNode(t, kubernetes.KindControlPlane, "cp1", nil)
-	if has, err := p.EtcdHasData(); err != nil || has {
+	s := testNode(t, kubernetes.KindControlPlane, "cp1", nil)
+	if has, err := s.EtcdHasData(); err != nil || has {
 		t.Errorf("missing directory: %v, %v", has, err)
 	}
-	write(t, filepath.Join(p.EtcdData, "member", "snap", "db"), "")
-	if has, err := p.EtcdHasData(); err != nil || !has {
+	write(t, filepath.Join(s.EtcdData, "member", "snap", "db"), "")
+	if has, err := s.EtcdHasData(); err != nil || !has {
 		t.Errorf("directory with a member: %v, %v", has, err)
 	}
 }
 
-func staticPods(t *testing.T, p State) []string {
+func staticPods(t *testing.T, s State) []string {
 	t.Helper()
-	entries, err := os.ReadDir(p.Manifests())
+	entries, err := os.ReadDir(s.Manifests())
 	if err != nil && !os.IsNotExist(err) {
 		t.Fatal(err)
 	}
@@ -927,67 +927,67 @@ func staticPods(t *testing.T, p State) []string {
 // Once etcd was initialised, an empty data directory means VAR was reset or lost: a new etcd
 // would start a second, empty cluster.
 func TestPrepareRefusesMissingEtcdData(t *testing.T) {
-	p := testNode(t, kubernetes.KindControlPlane, "cp1", secrets(t))
-	write(t, p.BootstrappedMarker(), "")
-	write(t, p.EtcdInitialisedMarker(), "")
-	err := p.Prepare(now, picked, nil)
+	s := testNode(t, kubernetes.KindControlPlane, "cp1", secrets(t))
+	write(t, s.BootstrappedMarker(), "")
+	write(t, s.EtcdInitialisedMarker(), "")
+	err := s.Prepare(now, picked, nil)
 	if !errors.Is(err, ErrEtcdDataMissing) || !strings.Contains(err.Error(), "etcd data is missing on a node whose cluster was initialised; restore etcd or reinstall the node") {
 		t.Errorf("err = %v, want missing etcd data", err)
 	}
-	if pods := staticPods(t, p); len(pods) != 0 {
+	if pods := staticPods(t, s); len(pods) != 0 {
 		t.Errorf("static pods %v", pods)
 	}
-	if err := p.RenderStaticPods(); !errors.Is(err, ErrEtcdDataMissing) {
+	if err := s.RenderStaticPods(); !errors.Is(err, ErrEtcdDataMissing) {
 		t.Errorf("RenderStaticPods() = %v, want missing etcd data", err)
 	}
 
-	write(t, filepath.Join(p.EtcdData, "member", "snap", "db"), "")
-	if err := p.Prepare(now, picked, nil); err != nil {
+	write(t, filepath.Join(s.EtcdData, "member", "snap", "db"), "")
+	if err := s.Prepare(now, picked, nil); err != nil {
 		t.Fatal(err)
 	}
-	if pods := staticPods(t, p); len(pods) != 4 {
+	if pods := staticPods(t, s); len(pods) != 4 {
 		t.Errorf("restored etcd data: static pods %v", pods)
 	}
 }
 
 // A bootstrap interrupted before etcd became ready is retried.
 func TestPrepareRetriesInterruptedBootstrap(t *testing.T) {
-	p := testNode(t, kubernetes.KindControlPlane, "cp1", secrets(t))
-	write(t, p.BootstrappedMarker(), "")
-	if err := p.Prepare(now, picked, nil); err != nil {
+	s := testNode(t, kubernetes.KindControlPlane, "cp1", secrets(t))
+	write(t, s.BootstrappedMarker(), "")
+	if err := s.Prepare(now, picked, nil); err != nil {
 		t.Fatal(err)
 	}
-	if pods := staticPods(t, p); len(pods) != 4 {
+	if pods := staticPods(t, s); len(pods) != 4 {
 		t.Errorf("static pods %v", pods)
 	}
 }
 
 func TestMarkEtcdInitialised(t *testing.T) {
-	p := testNode(t, kubernetes.KindControlPlane, "cp1", nil)
-	if initialised, err := p.EtcdInitialised(); err != nil || initialised {
+	s := testNode(t, kubernetes.KindControlPlane, "cp1", nil)
+	if initialised, err := s.EtcdInitialised(); err != nil || initialised {
 		t.Fatalf("before: %v, %v", initialised, err)
 	}
-	if err := p.MarkEtcdInitialised(now); err != nil {
+	if err := s.MarkEtcdInitialised(now); err != nil {
 		t.Fatal(err)
 	}
-	if initialised, err := p.EtcdInitialised(); err != nil || !initialised {
+	if initialised, err := s.EtcdInitialised(); err != nil || !initialised {
 		t.Fatalf("after: %v, %v", initialised, err)
 	}
-	first, _ := os.ReadFile(p.EtcdInitialisedMarker())
-	if err := p.MarkEtcdInitialised(now.Add(time.Hour)); err != nil {
+	first, _ := os.ReadFile(s.EtcdInitialisedMarker())
+	if err := s.MarkEtcdInitialised(now.Add(time.Hour)); err != nil {
 		t.Fatal(err)
 	}
-	if again, _ := os.ReadFile(p.EtcdInitialisedMarker()); string(again) != string(first) {
+	if again, _ := os.ReadFile(s.EtcdInitialisedMarker()); string(again) != string(first) {
 		t.Errorf("the marker changed from %q to %q", first, again)
 	}
 }
 
 // Every failed preparation says why, until the next one starts.
 func TestPreparationError(t *testing.T) {
-	p := testNode(t, kubernetes.KindWorker, "w1", secrets(t))
+	s := testNode(t, kubernetes.KindWorker, "w1", secrets(t))
 	reason := func() string {
 		t.Helper()
-		got, err := p.PreparationError()
+		got, err := s.PreparationError()
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -996,15 +996,15 @@ func TestPreparationError(t *testing.T) {
 	if got := reason(); got != "" {
 		t.Errorf("before Prepare: %q", got)
 	}
-	if err := p.Prepare(now, picked, nil); err != nil {
+	if err := s.Prepare(now, picked, nil); err != nil {
 		t.Fatal(err)
 	}
 	if got := reason(); got != "" {
 		t.Errorf("after a preparation: %q", got)
 	}
 
-	write(t, p.NodeFile, pickingIdentity("w1"))
-	if err := p.Prepare(now, onNode("10.0.2.15"), nil); err == nil {
+	write(t, s.NodeFile, pickingIdentity("w1"))
+	if err := s.Prepare(now, onNode("10.0.2.15"), nil); err == nil {
 		t.Fatal("prepared without an address")
 	}
 	if got := reason(); got != "no ipv4 node address matches validSubnets 192.168.100.0/24 (the node has 10.0.2.15 on eth0), 5m0s after chalkos-node-addresses.target" {
@@ -1012,27 +1012,27 @@ func TestPreparationError(t *testing.T) {
 	}
 
 	// A share for another kind of node than the image's.
-	write(t, p.NodeFile, `{"hostname": "w1", "layers": {"kubernetes": {"nodeName": "w1", "nodeIPs": ["192.168.100.11"]}}}`)
-	cluster, err := os.ReadFile(p.Cluster)
+	write(t, s.NodeFile, `{"hostname": "w1", "layers": {"kubernetes": {"nodeName": "w1", "nodeIPs": ["192.168.100.11"]}}}`)
+	cluster, err := os.ReadFile(s.Cluster)
 	if err != nil {
 		t.Fatal(err)
 	}
-	withCluster(t, p, func(c *kubernetes.Cluster) { c.Kind = kubernetes.KindControlPlane })
-	if err := p.Prepare(now, picked, nil); err == nil {
+	withCluster(t, s, func(c *kubernetes.Cluster) { c.Kind = kubernetes.KindControlPlane })
+	if err := s.Prepare(now, picked, nil); err == nil {
 		t.Fatal("prepared a worker's share on a control-plane image")
 	}
 	if got := reason(); got != "the node's share is for a worker node, but its config gives it the type controlplane" {
 		t.Errorf("share of another kind: %q", got)
 	}
-	if exists(p.PreparedMarker()) {
+	if exists(s.PreparedMarker()) {
 		t.Error("a failed preparation is marked prepared")
 	}
 
-	write(t, p.Cluster, string(cluster))
-	if err := p.Prepare(now, picked, nil); err != nil {
+	write(t, s.Cluster, string(cluster))
+	if err := s.Prepare(now, picked, nil); err != nil {
 		t.Fatal(err)
 	}
-	if got := reason(); got != "" || exists(p.PrepareError()) {
+	if got := reason(); got != "" || exists(s.PrepareError()) {
 		t.Errorf("the error outlived a preparation that succeeded: %q", got)
 	}
 }
@@ -1059,22 +1059,22 @@ func (f *recordingFirewall) allow(p Paths) error {
 // The firewall accepts VXLAN once everything else is prepared, and before the node is marked
 // prepared; it empties the chain again when the preparation fails.
 func TestPrepareRunsFirewallLast(t *testing.T) {
-	p := testNode(t, kubernetes.KindWorker, "w1", secrets(t))
+	s := testNode(t, kubernetes.KindWorker, "w1", secrets(t))
 	f := &recordingFirewall{}
-	if err := p.Prepare(now, picked, f.allow); err != nil {
+	if err := s.Prepare(now, picked, f.allow); err != nil {
 		t.Fatal(err)
 	}
 	if !slices.Equal(f.calls, []string{"192.168.100.11, prepared but not marked"}) {
 		t.Errorf("firewall calls %q", f.calls)
 	}
-	if !exists(p.PreparedMarker()) {
+	if !exists(s.PreparedMarker()) {
 		t.Error("not marked prepared")
 	}
 
 	// A preparation that fails before the firewall leaves the chain empty.
 	f.calls = nil
-	write(t, p.NodeFile, pickingIdentity("w1"))
-	if err := p.Prepare(now, onNode("10.0.2.15"), f.allow); err == nil {
+	write(t, s.NodeFile, pickingIdentity("w1"))
+	if err := s.Prepare(now, onNode("10.0.2.15"), f.allow); err == nil {
 		t.Fatal("prepared without an address")
 	}
 	if !slices.Equal(f.calls, []string{"no address"}) {
@@ -1083,18 +1083,18 @@ func TestPrepareRunsFirewallLast(t *testing.T) {
 
 	// A firewall that fails is the preparation's failure.
 	f.calls, f.err = nil, errors.New("accept VXLAN to the node's address: exit status 1")
-	if err := p.Prepare(now, onNode("192.168.100.12"), f.allow); err == nil || err.Error() != f.err.Error() {
+	if err := s.Prepare(now, onNode("192.168.100.12"), f.allow); err == nil || err.Error() != f.err.Error() {
 		t.Fatalf("err = %v, want the firewall's", err)
 	}
 	if !slices.Equal(f.calls, []string{"192.168.100.12, prepared but not marked", "no address"}) {
 		t.Errorf("firewall calls %q", f.calls)
 	}
-	for _, path := range []string{p.PreparedMarker(), p.NodeIP(), p.KubeletDir()} {
+	for _, path := range []string{s.PreparedMarker(), s.NodeIP(), s.KubeletDir()} {
 		if exists(path) {
 			t.Errorf("%s outlived a failed firewall", path)
 		}
 	}
-	if got, err := p.PreparationError(); err != nil || got != f.err.Error() {
+	if got, err := s.PreparationError(); err != nil || got != f.err.Error() {
 		t.Errorf("PreparationError() = %q, %v", got, err)
 	}
 }
@@ -1111,62 +1111,62 @@ func TestPrepareWritesVXLANDestinations(t *testing.T) {
 		{[]string{"bgp0 192.168.100.11", "bgp0 fd00::11"}, "destination 192.168.100.11 any\ndestination fd00::11 any\n"},
 		{[]string{"lo 192.168.100.11", "lo fd00::11"}, "destination 192.168.100.11 any\ndestination fd00::11 any\n"},
 	} {
-		p := testNode(t, kubernetes.KindWorker, "w1", secrets(t))
-		withCluster(t, p, func(c *kubernetes.Cluster) {
+		s := testNode(t, kubernetes.KindWorker, "w1", secrets(t))
+		withCluster(t, s, func(c *kubernetes.Cluster) {
 			c.IPFamilies = []nodeip.Family{nodeip.IPv4, nodeip.IPv6}
 			c.Flannel, c.Images.Flannel = &kubernetes.Flannel{MTU: 1430}, flannelImage
 		})
-		write(t, p.NodeFile, `{"hostname": "w1", "layers": {"kubernetes": {"nodeName": "w1", "validSubnets": ["192.168.100.0/24", "fd00::/64"]}}}`)
-		if err := p.Prepare(now, on(links, tc.addrs...), nil); err != nil {
+		write(t, s.NodeFile, `{"hostname": "w1", "layers": {"kubernetes": {"nodeName": "w1", "validSubnets": ["192.168.100.0/24", "fd00::/64"]}}}`)
+		if err := s.Prepare(now, on(links, tc.addrs...), nil); err != nil {
 			t.Fatal(err)
 		}
-		if data, err := os.ReadFile(p.VXLAN()); err != nil || string(data) != tc.want {
+		if data, err := os.ReadFile(s.VXLAN()); err != nil || string(data) != tc.want {
 			t.Errorf("%v: vxlan = %q, %v, want %q", tc.addrs, data, err, tc.want)
 		}
 	}
 	// The ranges VXLAN must come from follow; the node's addresses must be in them.
-	p := testNode(t, kubernetes.KindWorker, "w1", secrets(t))
-	withCluster(t, p, func(c *kubernetes.Cluster) {
+	s := testNode(t, kubernetes.KindWorker, "w1", secrets(t))
+	withCluster(t, s, func(c *kubernetes.Cluster) {
 		c.IPFamilies = []nodeip.Family{nodeip.IPv4, nodeip.IPv6}
 		c.Images.Flannel = flannelImage
 		c.Flannel = &kubernetes.Flannel{MTU: 1430, VXLANSourceSubnets: []netip.Prefix{
 			netip.MustParsePrefix("192.168.100.0/24"), netip.MustParsePrefix("fd00::/64"), netip.MustParsePrefix("10.1.0.0/16"),
 		}}
 	})
-	write(t, p.NodeFile, `{"hostname": "w1", "layers": {"kubernetes": {"nodeName": "w1", "validSubnets": ["192.168.0.0/16", "fd00::/48"]}}}`)
-	if err := p.Prepare(now, on(links, "bgp0 192.168.100.11", "bgp0 fd00::11"), nil); err != nil {
+	write(t, s.NodeFile, `{"hostname": "w1", "layers": {"kubernetes": {"nodeName": "w1", "validSubnets": ["192.168.0.0/16", "fd00::/48"]}}}`)
+	if err := s.Prepare(now, on(links, "bgp0 192.168.100.11", "bgp0 fd00::11"), nil); err != nil {
 		t.Fatal(err)
 	}
 	want := "destination 192.168.100.11 any\ndestination fd00::11 any\nsource 192.168.100.0/24\nsource fd00::/64\nsource 10.1.0.0/16\n"
-	if data, err := os.ReadFile(p.VXLAN()); err != nil || string(data) != want {
+	if data, err := os.ReadFile(s.VXLAN()); err != nil || string(data) != want {
 		t.Errorf("vxlan = %q, %v, want %q", data, err, want)
 	}
-	err := p.Prepare(now, on(links, "bgp0 192.168.200.11", "bgp0 fd00::11"), nil)
-	if err == nil || err.Error() != "the node's address 192.168.200.11 is outside vxlanSourceSubnets 192.168.100.0/24, fd00::/64, 10.1.0.0/16, from which alone the other nodes take VXLAN" || exists(p.VXLAN()) {
+	err := s.Prepare(now, on(links, "bgp0 192.168.200.11", "bgp0 fd00::11"), nil)
+	if err == nil || err.Error() != "the node's address 192.168.200.11 is outside vxlanSourceSubnets 192.168.100.0/24, fd00::/64, 10.1.0.0/16, from which alone the other nodes take VXLAN" || exists(s.VXLAN()) {
 		t.Errorf("an address outside the sources: %v", err)
 	}
 
 	// A failed preparation leaves none.
-	p = testNode(t, kubernetes.KindWorker, "w1", secrets(t))
-	if err := p.Prepare(now, picked, nil); err != nil || !exists(p.VXLAN()) {
+	s = testNode(t, kubernetes.KindWorker, "w1", secrets(t))
+	if err := s.Prepare(now, picked, nil); err != nil || !exists(s.VXLAN()) {
 		t.Fatalf("Prepare() = %v", err)
 	}
-	write(t, p.NodeFile, pickingIdentity("w1"))
-	if err := p.Prepare(now, onNode("10.0.2.15"), nil); err == nil || exists(p.VXLAN()) {
-		t.Errorf("Prepare() = %v, vxlan kept: %v", err, exists(p.VXLAN()))
+	write(t, s.NodeFile, pickingIdentity("w1"))
+	if err := s.Prepare(now, onNode("10.0.2.15"), nil); err == nil || exists(s.VXLAN()) {
+		t.Errorf("Prepare() = %v, vxlan kept: %v", err, exists(s.VXLAN()))
 	}
 }
 
 // The firewall's VXLAN rule fills the table from the file saying what to accept, and its failure
 // names it.
 func TestVXLANRule(t *testing.T) {
-	p := testNode(t, kubernetes.KindWorker, "w1", nil)
-	write(t, p.VXLAN(), "destination 192.168.100.11 interface\n")
+	s := testNode(t, kubernetes.KindWorker, "w1", nil)
+	write(t, s.VXLAN(), "destination 192.168.100.11 interface\n")
 	var inputs []string
 	refuse := false
 	rule := vxlan.Rule{
 		LockFile:    filepath.Join(t.TempDir(), "lock"),
-		ClusterFile: p.Cluster,
+		ClusterFile: s.Cluster,
 		NFT: func(input string, args ...string) error {
 			if input == "" {
 				return nil
@@ -1178,14 +1178,14 @@ func TestVXLANRule(t *testing.T) {
 			return nil
 		},
 	}
-	if err := VXLANRule(rule)(p.Paths); err != nil {
+	if err := VXLANRule(rule)(s.Paths); err != nil {
 		t.Fatal(err)
 	}
 	if len(inputs) != 1 || !strings.Contains(inputs[0], "ip daddr 192.168.100.11 udp dport 8472 fib daddr . iif type local") {
 		t.Errorf("nft inputs %q", inputs)
 	}
 	refuse = true
-	err := VXLANRule(rule)(p.Paths)
+	err := VXLANRule(rule)(s.Paths)
 	if err == nil || !strings.HasPrefix(err.Error(), "accept VXLAN to the node's address: ") || !strings.HasSuffix(err.Error(), "; see chalkctl logs w1 --unit chalkos-kubernetes") {
 		t.Errorf("err = %v", err)
 	}
@@ -1194,39 +1194,39 @@ func TestVXLANRule(t *testing.T) {
 // chalkd uses the node's Kubernetes files once Prepare marked them complete: the marker goes
 // first and comes back last, after the static pods, and only when Prepare succeeded.
 func TestPrepareMarksPrepared(t *testing.T) {
-	p := testNode(t, kubernetes.KindControlPlane, "cp1", secrets(t))
-	write(t, p.BootstrappedMarker(), "")
-	if err := p.Prepare(now, picked, nil); err != nil {
+	s := testNode(t, kubernetes.KindControlPlane, "cp1", secrets(t))
+	write(t, s.BootstrappedMarker(), "")
+	if err := s.Prepare(now, picked, nil); err != nil {
 		t.Fatal(err)
 	}
-	if prepared, err := p.Prepared(); err != nil || !prepared {
+	if prepared, err := s.Prepared(); err != nil || !prepared {
 		t.Fatalf("after a preparation: prepared = %v, %v", prepared, err)
 	}
 
 	marked := true
 	noAddress := func(nodeip.Selector, time.Duration) ([]nodeip.Address, error) {
-		marked = exists(p.PreparedMarker())
+		marked = exists(s.PreparedMarker())
 		return nil, errors.New("no node address matches the default filter")
 	}
-	if err := p.Prepare(now, noAddress, nil); err == nil {
+	if err := s.Prepare(now, noAddress, nil); err == nil {
 		t.Fatal("prepared without an address")
 	}
 	if marked {
 		t.Error("the marker outlived the start of the preparation")
 	}
-	if exists(p.PreparedMarker()) {
+	if exists(s.PreparedMarker()) {
 		t.Error("a preparation without an address is marked prepared")
 	}
 
 	// Refusing the static pods, the last step, leaves no marker either.
-	if err := p.Prepare(now, picked, nil); err != nil {
+	if err := s.Prepare(now, picked, nil); err != nil {
 		t.Fatal(err)
 	}
-	write(t, p.EtcdInitialisedMarker(), "")
-	if err := p.Prepare(now, picked, nil); !errors.Is(err, ErrEtcdDataMissing) {
+	write(t, s.EtcdInitialisedMarker(), "")
+	if err := s.Prepare(now, picked, nil); !errors.Is(err, ErrEtcdDataMissing) {
 		t.Fatalf("err = %v, want missing etcd data", err)
 	}
-	if exists(p.PreparedMarker()) {
+	if exists(s.PreparedMarker()) {
 		t.Error("a preparation that refused the static pods is marked prepared")
 	}
 }
@@ -1238,11 +1238,11 @@ func TestPrepareGivesTheKubeletEveryCA(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	p := testNode(t, kubernetes.KindWorker, "w1", &s.Kubernetes)
-	if err := p.Prepare(now, picked, nil); err != nil {
+	st := testNode(t, kubernetes.KindWorker, "w1", &s.Kubernetes)
+	if err := st.Prepare(now, picked, nil); err != nil {
 		t.Fatal(err)
 	}
-	old := currentClient(t, p)
+	old := currentClient(t, st)
 	if err := s.BeginRotation(clustersecrets.RotateKubernetesCA, now); err != nil {
 		t.Fatal(err)
 	}
@@ -1255,15 +1255,15 @@ func TestPrepareGivesTheKubeletEveryCA(t *testing.T) {
 		t.Fatal(err)
 	}
 	data, _ := share.Encode()
-	write(t, p.Share(), string(data))
-	if err := p.Prepare(now, picked, nil); err != nil {
+	write(t, st.Share(), string(data))
+	if err := st.Prepare(now, picked, nil); err != nil {
 		t.Fatal(err)
 	}
-	ca, _ := os.ReadFile(filepath.Join(p.KubeletDir(), "ca.crt"))
+	ca, _ := os.ReadFile(filepath.Join(st.KubeletDir(), "ca.crt"))
 	if string(ca) != s.Kubernetes.CABundle() || strings.Count(string(ca), "BEGIN CERTIFICATE") != 2 {
 		t.Error("the kubelet does not trust both Kubernetes CAs")
 	}
-	if got := currentClient(t, p); got == old || got != *share.Kubelet {
+	if got := currentClient(t, st); got == old || got != *share.Kubelet {
 		t.Error("the kubelet kept its client certificate of the CA that no longer issues")
 	}
 }
@@ -1280,8 +1280,8 @@ func TestKubeletFlagsEndWithTheExtraFlags(t *testing.T) {
 }
 
 func TestPrepareWritesTheKubeletConfig(t *testing.T) {
-	p := testNode(t, kubernetes.KindWorker, "w1", secrets(t))
-	if err := p.Prepare(now, picked, nil); err != nil {
+	s := testNode(t, kubernetes.KindWorker, "w1", secrets(t))
+	if err := s.Prepare(now, picked, nil); err != nil {
 		t.Fatal(err)
 	}
 	var config struct {
@@ -1294,7 +1294,7 @@ func TestPrepareWritesTheKubeletConfig(t *testing.T) {
 			} `json:"x509"`
 		} `json:"authentication"`
 	}
-	data, err := os.ReadFile(p.KubeletConfig())
+	data, err := os.ReadFile(s.KubeletConfig())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1307,10 +1307,10 @@ func TestPrepareWritesTheKubeletConfig(t *testing.T) {
 	if !slices.Equal(config.ClusterDNS, []string{"10.96.0.10"}) {
 		t.Errorf("clusterDNS = %v", config.ClusterDNS)
 	}
-	if config.StaticPodPath != p.Manifests() {
-		t.Errorf("staticPodPath = %q, want %q", config.StaticPodPath, p.Manifests())
+	if config.StaticPodPath != s.Manifests() {
+		t.Errorf("staticPodPath = %q, want %q", config.StaticPodPath, s.Manifests())
 	}
-	if want := filepath.Join(p.KubeletDir(), "ca.crt"); config.Authentication.X509.ClientCAFile != want {
+	if want := filepath.Join(s.KubeletDir(), "ca.crt"); config.Authentication.X509.ClientCAFile != want {
 		t.Errorf("clientCAFile = %q, want %q", config.Authentication.X509.ClientCAFile, want)
 	}
 }
@@ -1319,7 +1319,7 @@ func TestPrepareWritesTheKubeletConfig(t *testing.T) {
 // or tokens the API server checks, the kernel's tunables are the image's, and pods resolve
 // through the cluster DNS address of the primary family.
 func TestKubeletConfig(t *testing.T) {
-	p := State{Paths{Run: "/run/chalkos/kubernetes"}}
+	s := State{Paths{RunDir: "/run/chalkos/kubernetes"}}
 	c := kubernetes.Cluster{Domain: "lab.local", IPFamilies: []nodeip.Family{nodeip.IPv6, nodeip.IPv4},
 		DNSIPs: kubernetes.ByFamily[netip.Addr]{IPv4: netip.MustParseAddr("10.100.0.10"), IPv6: netip.MustParseAddr("fd00:10:96::a")}}
 	want := `{"apiVersion":"kubelet.config.k8s.io/v1beta1",` +
@@ -1328,7 +1328,7 @@ func TestKubeletConfig(t *testing.T) {
 		`"containerRuntimeEndpoint":"unix:///run/containerd/containerd.sock","kind":"KubeletConfiguration","protectKernelDefaults":true,` +
 		`"readOnlyPort":0,"resolvConf":"/run/systemd/resolve/resolv.conf","rotateCertificates":true,"serverTLSBootstrap":true,` +
 		`"staticPodPath":"/run/chalkos/kubernetes/manifests","tlsMinVersion":"VersionTLS12"}`
-	got, err := json.Marshal(kubeletConfig(p.Paths, c))
+	got, err := json.Marshal(kubeletConfig(s.Paths, c))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1336,42 +1336,42 @@ func TestKubeletConfig(t *testing.T) {
 		t.Errorf("config =\n%s\nwant\n%s", got, want)
 	}
 	c.IPFamilies = []nodeip.Family{nodeip.IPv4, nodeip.IPv6}
-	if got := kubeletConfig(p.Paths, c).ClusterDNS; !slices.Equal(got, []string{"10.100.0.10"}) {
+	if got := kubeletConfig(s.Paths, c).ClusterDNS; !slices.Equal(got, []string{"10.100.0.10"}) {
 		t.Errorf("clusterDNS with IPv4 primary = %v", got)
 	}
 }
 
 func TestCheckPrepared(t *testing.T) {
-	p := State{Paths{Run: t.TempDir()}}
-	if err := p.CheckPrepared(); !errors.Is(err, ErrNotPrepared) {
+	s := State{Paths{RunDir: t.TempDir()}}
+	if err := s.CheckPrepared(); !errors.Is(err, ErrNotPrepared) {
 		t.Errorf("before the preparation: %v, want ErrNotPrepared", err)
 	}
-	if err := os.WriteFile(p.PreparedMarker(), nil, 0o644); err != nil {
+	if err := os.WriteFile(s.PreparedMarker(), nil, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := p.CheckPrepared(); err != nil {
+	if err := s.CheckPrepared(); err != nil {
 		t.Errorf("after the preparation: %v", err)
 	}
 }
 
 // RemoveStaticPods removes every manifest, and finds nothing to do without the directory.
 func TestRemoveStaticPods(t *testing.T) {
-	p := State{Paths{Run: t.TempDir()}}
-	if err := p.RemoveStaticPods(); err != nil {
+	s := State{Paths{RunDir: t.TempDir()}}
+	if err := s.RemoveStaticPods(); err != nil {
 		t.Fatalf("without manifests: %v", err)
 	}
-	if err := os.MkdirAll(p.Manifests(), 0o755); err != nil {
+	if err := os.MkdirAll(s.Manifests(), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	for _, name := range []string{"etcd.json", "kube-apiserver.json"} {
-		if err := os.WriteFile(filepath.Join(p.Manifests(), name), []byte("{}"), 0o644); err != nil {
+		if err := os.WriteFile(filepath.Join(s.Manifests(), name), []byte("{}"), 0o644); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if err := p.RemoveStaticPods(); err != nil {
+	if err := s.RemoveStaticPods(); err != nil {
 		t.Fatal(err)
 	}
-	if entries, err := os.ReadDir(p.Manifests()); err != nil || len(entries) != 0 {
+	if entries, err := os.ReadDir(s.Manifests()); err != nil || len(entries) != 0 {
 		t.Errorf("manifests left: %v, %v", entries, err)
 	}
 }

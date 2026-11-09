@@ -117,10 +117,10 @@ func kubernetesNodeWith(t *testing.T, ta *testApp, o kubernetesplugin.Options) (
 	s, r := installedNode(t, ta, current)
 	root := t.TempDir()
 	o.Paths = knode.Paths{
-		State:    filepath.Join(s.Paths.StateDir, "kubernetes"),
+		StateDir: filepath.Join(s.Paths.StateDir, "kubernetes"),
 		Cluster:  filepath.Join(root, "cluster.json"),
 		NodeFile: filepath.Join(root, "node.json"),
-		Run:      filepath.Join(root, "run"),
+		RunDir:   filepath.Join(root, "run"),
 	}
 	if o.Hooks.Node == nil {
 		o.Hooks.Node = func(context.Context) (*corev1.Node, error) {
