@@ -30,6 +30,7 @@ callPackage ./go-module.nix { } {
     ../pkg/imagepart
     ../pkg/imagecheck
     ../pkg/install
+    ../pkg/internal/cli
     ../pkg/internal/poll
     ../pkg/internal/strs
     ../pkg/jsonfile

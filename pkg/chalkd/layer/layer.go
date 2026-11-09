@@ -13,12 +13,12 @@ package layer
 import (
 	"context"
 	"crypto/tls"
-	"fmt"
 	"net/http"
 	"sync"
 	"time"
 
 	"connectrpc.com/connect"
+	"github.com/spf13/cobra"
 	"google.golang.org/protobuf/types/known/anypb"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
@@ -139,37 +139,10 @@ type ImageFacts interface {
 	Target(facts *anypb.Any, t *config.Target) (claimed bool, err error)
 }
 
-// Commands is a plugin that adds chalkd subcommands, run as chalkd <layer> <name>. chalkd runs
-// those of every compiled plugin.
+// Commands is a plugin that adds chalkd subcommands, run as chalkd <layer> <name>. chalkd adds
+// those of every compiled plugin below a command named after the layer.
 type Commands interface {
-	Commands() map[string]Command
-}
-
-// Command is a subcommand of a layer.
-type Command struct {
-	// Args are the command's arguments as chalkd's usage shows them, such as "[FILE]".
-	Args string
-	// Help says what the command does; chalkd's usage indents its lines.
-	Help string
-	// Run runs the command with the arguments after its name. It fails with a UsageError when it
-	// does not take them.
-	Run func(args []string) error
-}
-
-// UsageError is what a command fails with when it does not take its arguments.
-type UsageError struct{ Err error }
-
-func (e UsageError) Error() string { return e.Err.Error() }
-func (e UsageError) Unwrap() error { return e.Err }
-
-// NoArgs is a command that takes no arguments.
-func NoArgs(run func() error) func(args []string) error {
-	return func(args []string) error {
-		if len(args) > 0 {
-			return UsageError{fmt.Errorf("takes no argument %q", args[0])}
-		}
-		return run()
-	}
+	Commands() []*cobra.Command
 }
 
 // Actions is a plugin with actions on what only the running chalkd holds, which effects name as

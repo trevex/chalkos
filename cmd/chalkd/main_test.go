@@ -2,7 +2,7 @@ package main
 
 import (
 	"bytes"
-	"errors"
+	"io"
 	"log"
 	"os"
 	"path/filepath"
@@ -13,10 +13,8 @@ import (
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/chalkd"
-	"github.com/trevex/chalkos/pkg/chalkd/layer"
-	"github.com/trevex/chalkos/pkg/layers"
+	"github.com/trevex/chalkos/pkg/chalkd/layer/layertest"
 	"github.com/trevex/chalkos/pkg/pki"
-	"github.com/trevex/chalkos/pkg/tool"
 )
 
 func writeFile(t *testing.T, path, content string) {
@@ -231,64 +229,84 @@ func TestHealthArgs(t *testing.T) {
 		{[]string{"--wait", "300", "--stopped"}, healthArgs{}, false},
 		{[]string{"now"}, healthArgs{}, false},
 	} {
-		got, err := parseHealthArgs(tc.args)
-		if (err == nil) != tc.ok || tc.ok && (got.wait != tc.want.wait || got.stopped != tc.want.stopped || !slices.Equal(got.ignore, tc.want.ignore)) {
-			t.Errorf("parseHealthArgs(%q) = %+v, %v", tc.args, got, err)
+		var got *healthArgs
+		cmd := healthCommand(func(a healthArgs) error {
+			got = &a
+			return nil
+		})
+		cmd.SetArgs(tc.args)
+		cmd.SetErr(io.Discard)
+		cmd.SetOut(io.Discard)
+		err := cmd.Execute()
+		if (err == nil) != tc.ok || tc.ok && (got == nil || got.wait != tc.want.wait || got.stopped != tc.want.stopped || !slices.Equal(got.ignore, tc.want.ignore)) {
+			t.Errorf("health %q ran with %+v, %v", tc.args, got, err)
 		}
 	}
-}
-
-// testRegistry is the registry of the compiled layers, bound to a server that serves nothing.
-func testRegistry(t *testing.T) *layer.Registry {
-	t.Helper()
-	reg, err := layer.NewRegistry(layers.Set{}, plugins(&chalkd.Server{Run: tool.ExecRunner{}})...)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return reg
 }
 
 // TestCommandsRefuseArguments refuses, before running anything, the arguments a command does not
-// take, and knows each command the usage names.
+// take, and a command chalkd does not have, with a usage error.
 func TestCommandsRefuseArguments(t *testing.T) {
-	for _, tc := range []struct {
-		command string
-		args    []string
-	}{
-		{"serve", []string{"now"}},
-		{"load-config", []string{"x"}},
-		{"health", []string{"--wait", "0"}},
-		{"health", []string{"now"}},
-		{"check", nil},
-		{"check", []string{"--system", "/nix/store/x"}},
-		{"check", []string{"--system", "/nix/store/x", "--facts", "/run/f.sock", "now"}},
+	for _, args := range [][]string{
+		nil,
+		{"bogus"},
+		{"serve", "now"},
+		{"load-config", "x"},
+		{"health", "--wait", "0"},
+		{"health", "now"},
+		{"health", "--wait", "300", "--stopped"},
+		{"check"},
+		{"check", "--system", "/nix/store/x"},
+		{"check", "--system", "/nix/store/x", "--facts", "/run/f.sock", "now"},
+		{"prepare-kubernetes"},
+		{"prepare"},
+		{"kubernetes"},
+		{"kubernetes", "prepare", "--vxlan"},
+		{"router", "prepare"},
+		{"router", "services", "bind"},
 	} {
-		if _, ok := errors.AsType[layer.UsageError](commands[tc.command](tc.args)); !ok {
-			t.Errorf("%s %q ran", tc.command, tc.args)
+		root, err := newCommand()
+		if err != nil {
+			t.Fatal(err)
 		}
-	}
-	reg := testRegistry(t)
-	for line := range strings.Lines(usage(reg)) {
-		if !strings.HasPrefix(line, "  ") || strings.HasPrefix(line, "   ") {
-			continue
-		}
-		if _, run, _ := lookup(reg, strings.Fields(line)); run == nil {
-			t.Errorf("the usage names %q, which is no command", strings.TrimSpace(line))
+		var stderr bytes.Buffer
+		root.SetArgs(args)
+		root.SetErr(&stderr)
+		if status := chalkd.Execute(root); status != 2 || !strings.Contains(stderr.String(), "Usage:") {
+			t.Errorf("chalkd %q exits with %d:\n%s", args, status, stderr.String())
 		}
 	}
 }
 
-// TestLookupFindsLayerCommands finds a layer's command after the layer's name, and neither the
-// command alone nor under another layer.
-func TestLookupFindsLayerCommands(t *testing.T) {
-	reg := testRegistry(t)
-	name, run, args := lookup(reg, []string{"kubernetes", "prepare", "--vxlan-rule"})
-	if run == nil || name != "kubernetes prepare" || !slices.Equal(args, []string{"--vxlan-rule"}) {
-		t.Errorf("lookup = %q, %v, %q; want kubernetes prepare with --vxlan-rule", name, run != nil, args)
-	}
-	for _, args := range [][]string{{"prepare-kubernetes"}, {"router", "prepare"}, {"kubernetes"}} {
-		if _, run, _ := lookup(reg, args); run != nil {
-			t.Errorf("lookup(%q) found a command", args)
+// TestCallSites takes each command line the image's units and the kubelet run, as they run it.
+func TestCallSites(t *testing.T) {
+	for _, args := range [][]string{
+		{"serve"},
+		{"load-config"},
+		{"health", "--wait", "30"},
+		{"health", "--wait", "30", "--ignore-unit", "a.service", "--ignore-unit", "b.service"},
+		{"health", "--stopped"},
+		{"check", "--system", "/nix/store/x-system", "--facts", "/run/facts.sock"},
+		{"kubernetes", "prepare"},
+		{"kubernetes", "prepare", "--vxlan-rule"},
+		{"kubernetes", "vxlan-rule"},
+		{"kubernetes", "containerd-hosts"},
+		{"kubernetes", "containerd-config", "/run/chalkos/containerd/cluster.toml"},
+		{"kubernetes", "registry-credentials"},
+		{"kubernetes", "credential-provider"},
+		{"router", "dhcp6-routes"},
+		{"router", "services", "kea"},
+		{"router", "services", "kea", "stop"},
+		{"router", "services", "unbound"},
+		{"router", "services", "relay", "stop"},
+	} {
+		root, err := newCommand()
+		if err != nil {
+			t.Fatal(err)
+		}
+		cmd, rest, err := root.Find(args)
+		if err != nil || cmd.HasSubCommands() || layertest.Refused(cmd, rest) {
+			t.Errorf("chalkd %q is refused as %s, %v", args, cmd.CommandPath(), err)
 		}
 	}
 }
@@ -315,16 +333,5 @@ func TestHealthTimeout(t *testing.T) {
 		if _, err := healthTimeout(func(string) string { return value }); err == nil {
 			t.Errorf("%q: accepted", value)
 		}
-	}
-}
-
-// A command's joined errors are logged one per line, and another error alone.
-func TestFailures(t *testing.T) {
-	a, b := errors.New("failed to stop a.service"), errors.New("failed to reload b.service")
-	if got := failures(errors.Join(a, b)); !slices.Equal(got, []error{a, b}) {
-		t.Errorf("failures of a joined error = %v", got)
-	}
-	if got := failures(a); !slices.Equal(got, []error{a}) {
-		t.Errorf("failures of an error = %v", got)
 	}
 }

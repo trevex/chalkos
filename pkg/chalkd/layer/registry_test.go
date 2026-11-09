@@ -29,13 +29,6 @@ type issuer struct{ fake }
 
 func (issuer) IssueNodeCertificate(context.Context, []byte) (string, error) { return "", nil }
 
-type commander struct {
-	fake
-	commands map[string]Command
-}
-
-func (c commander) Commands() map[string]Command { return c.commands }
-
 func names(plugins []Plugin) []string {
 	var n []string
 	for _, p := range plugins {
@@ -133,22 +126,5 @@ func TestRegistryHooks(t *testing.T) {
 	}
 	if got := hookNames(Active[Issuer](r)); !slices.Equal(got, []string{"c"}) {
 		t.Errorf("active issuers %v", got)
-	}
-}
-
-// A command is found on a compiled plugin whether or not its layer is active; an unknown layer or
-// command is not.
-func TestRegistryCommand(t *testing.T) {
-	r, err := NewRegistry(layers.Of(), commander{fake{name: "router"}, map[string]Command{"show": {Args: "[FILE]"}}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cmd, ok := r.Command("router", "show"); !ok || cmd.Args != "[FILE]" {
-		t.Errorf("router show: %+v, %v", cmd, ok)
-	}
-	for _, c := range [][2]string{{"router", "hide"}, {"kubernetes", "show"}} {
-		if _, ok := r.Command(c[0], c[1]); ok {
-			t.Errorf("%s %s was found", c[0], c[1])
-		}
 	}
 }

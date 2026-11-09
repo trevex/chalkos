@@ -11,6 +11,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/spf13/cobra"
+
 	"github.com/trevex/chalkos/pkg/chalkd/layer"
 	routing "github.com/trevex/chalkos/pkg/router"
 	"github.com/trevex/chalkos/pkg/router/derive"
@@ -18,29 +20,39 @@ import (
 	"github.com/trevex/chalkos/pkg/tool"
 )
 
+var _ layer.Commands = (*Plugin)(nil)
+
 // Commands are the router layer's subcommands of chalkd.
-func (p *Plugin) Commands() map[string]layer.Command {
-	return map[string]layer.Command{
-		"dhcp6-routes": {
-			Help: "route each prefix the DHCPv6 servers delegated to the link-local address\nthat asked for it, until its lease ends, and remove the other routes of\ndelegated prefixes",
-			Run: layer.NoArgs(func() error {
+func (p *Plugin) Commands() []*cobra.Command {
+	return []*cobra.Command{
+		{
+			Use:   "dhcp6-routes",
+			Short: "Route each prefix the DHCPv6 servers delegated to the link-local address that asked for it",
+			Long: "Route each prefix the DHCPv6 servers delegated to the link-local address that asked for it,\n" +
+				"until its lease ends, and remove the other routes of delegated prefixes.",
+			Args: cobra.NoArgs,
+			RunE: func(*cobra.Command, []string) error {
 				ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 				defer cancel()
 				return p.r.dhcp6Routes(ctx, time.Now())
-			}),
+			},
 		},
-		"services": {
-			Args: "kea|unbound|relay [stop]",
-			Help: "start the instances of the rendered configs of a per-VRF service once their\ndevices exist, reload or restart those that run and stop the others; with\nstop, stop them all",
-			Run: func(args []string) error {
-				if len(args) == 0 || len(args) > 2 || len(args) == 2 && args[1] != "stop" {
-					return layer.UsageError{Err: errors.New("takes kea, unbound or relay, and optionally stop")}
+		{
+			Use:   "services kea|unbound|relay [stop]",
+			Short: "Run the instances of a per-VRF service from its rendered configs",
+			Long: "Start the instances of the rendered configs of a per-VRF service once their devices exist,\n" +
+				"reload or restart those that run and stop the others. With stop, stop them all.",
+			Args: cobra.MatchAll(cobra.RangeArgs(1, 2), func(_ *cobra.Command, args []string) error {
+				if _, ok := p.r.perVRFServices()[args[0]]; !ok {
+					return fmt.Errorf("runs no service %q", args[0])
 				}
-				s, ok := p.r.perVRFServices()[args[0]]
-				if !ok {
-					return layer.UsageError{Err: fmt.Errorf("runs no service %q", args[0])}
+				if len(args) == 2 && args[1] != "stop" {
+					return errors.New("takes kea, unbound or relay, and optionally stop")
 				}
-				return p.r.runServices(context.Background(), s, len(args) == 2)
+				return nil
+			}),
+			RunE: func(_ *cobra.Command, args []string) error {
+				return p.r.runServices(context.Background(), p.r.perVRFServices()[args[0]], len(args) == 2)
 			},
 		},
 	}

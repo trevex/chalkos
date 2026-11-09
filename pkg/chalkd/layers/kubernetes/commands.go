@@ -9,6 +9,8 @@ import (
 	"slices"
 	"time"
 
+	"github.com/spf13/cobra"
+
 	"github.com/trevex/chalkos/pkg/atomicfile"
 	"github.com/trevex/chalkos/pkg/chalkd/layer"
 	"github.com/trevex/chalkos/pkg/config"
@@ -23,65 +25,77 @@ import (
 var _ layer.Commands = (*Plugin)(nil)
 
 // Commands are the Kubernetes units' commands, run as chalkd kubernetes <name>.
-func (p *Plugin) Commands() map[string]layer.Command {
-	return map[string]layer.Command{
-		"prepare": {
-			Args: "[--vxlan-rule]",
-			Help: "pick the node's addresses and write its Kubernetes\ncertificates and configuration; with --vxlan-rule, then fill\nthe firewall's VXLAN table from them",
-			Run:  prepareKubernetes,
+func (p *Plugin) Commands() []*cobra.Command {
+	var withRule bool
+	prepare := &cobra.Command{
+		Use:   "prepare",
+		Short: "Pick the node's addresses and write its Kubernetes certificates and configuration",
+		Long: "Pick the node's addresses and write its Kubernetes certificates and configuration. With\n" +
+			"--vxlan-rule, then fill the firewall's VXLAN table from them.",
+		Args: cobra.NoArgs,
+		RunE: func(*cobra.Command, []string) error { return prepareKubernetes(withRule) },
+	}
+	prepare.Flags().BoolVar(&withRule, "vxlan-rule", false, "fill the firewall's VXLAN table once the node is prepared")
+	return []*cobra.Command{
+		prepare,
+		{
+			Use:   "vxlan-rule [FILE]",
+			Short: "Fill the firewall's VXLAN table from FILE, or empty it",
+			Long:  "Fill the firewall's VXLAN table from FILE, as the preparation writes it, or empty it without FILE.",
+			Args:  cobra.MaximumNArgs(1),
+			RunE: func(_ *cobra.Command, args []string) error {
+				var file string
+				if len(args) == 1 {
+					file = args[0]
+				}
+				return vxlan.Default().Apply(file)
+			},
 		},
-		"vxlan-rule": {
-			Args: "[FILE]",
-			Help: "fill the firewall's VXLAN table from FILE, as the preparation\nwrites it, or empty it without FILE",
-			Run:  vxlanRule,
+		{
+			Use:   "containerd-hosts",
+			Short: "Print containerd's hosts.toml of each registry the node's documents name",
+			Long: "Print containerd's hosts.toml of each registry the node's Mirror and Registry documents\n" +
+				"name, each after a line \"=== <directory>\".",
+			Args: cobra.NoArgs,
+			RunE: func(cmd *cobra.Command, _ []string) error { return containerdHosts(cmd.OutOrStdout(), "/run/chalkos") },
 		},
-		"containerd-hosts": {
-			Help: "print containerd's hosts.toml of each registry the node's\nMirror and Registry documents name, each after a line\n\"=== <directory>\"",
-			Run:  layer.NoArgs(func() error { return containerdHosts(os.Stdout, "/run/chalkos") }),
+		{
+			Use:   "containerd-config FILE",
+			Short: "Write containerd's settings from the node's Cluster document to FILE",
+			Long: "Write containerd's settings from the node's Cluster document, the pod sandbox's image, to\n" +
+				"FILE, which containerd imports.",
+			Args: cobra.ExactArgs(1),
+			RunE: func(_ *cobra.Command, args []string) error { return containerdConfig("/run/chalkos", args[0]) },
 		},
-		"containerd-config": {
-			Args: "FILE",
-			Help: "write containerd's settings from the node's Cluster document,\nthe pod sandbox's image, to FILE, which containerd imports",
-			Run:  containerdConfigCommand,
-		},
-		"registry-credentials": {
-			Help: "write the kubelet's credential provider config and the node's\nregistry credentials from its Registry documents",
-			Run: layer.NoArgs(func() error {
+		{
+			Use:   "registry-credentials",
+			Short: "Write the kubelet's credential provider files from the node's Registry documents",
+			Long: "Write the kubelet's credential provider config and the node's registry credentials from its\n" +
+				"Registry documents.",
+			Args: cobra.NoArgs,
+			RunE: func(*cobra.Command, []string) error {
 				return registryCredentials("/run/chalkos", os.Getenv("CREDENTIALS_DIRECTORY"), k8s.CredentialProviderDir)
-			}),
+			},
 		},
-		"credential-provider": {
-			Help: "answer the kubelet's request for an image's credentials",
-			Run: layer.NoArgs(func() error {
-				return credprovider.Provide(k8s.CredentialProviderDir, os.Stdin, os.Stdout)
-			}),
+		{
+			Use:   "credential-provider",
+			Short: "Answer the kubelet's request for an image's credentials",
+			Args:  cobra.NoArgs,
+			RunE: func(cmd *cobra.Command, _ []string) error {
+				return credprovider.Provide(k8s.CredentialProviderDir, cmd.InOrStdin(), cmd.OutOrStdout())
+			},
 		},
 	}
 }
 
-// prepareKubernetes prepares the node for Kubernetes, and with --vxlan-rule then fills the
-// firewall's VXLAN table.
-func prepareKubernetes(args []string) error {
+// prepareKubernetes prepares the node for Kubernetes, and with withRule then fills the firewall's
+// VXLAN table.
+func prepareKubernetes(withRule bool) error {
 	var firewall knode.Firewall
-	switch {
-	case len(args) == 1 && args[0] == "--vxlan-rule":
+	if withRule {
 		firewall = knode.VXLANRule(vxlan.Default())
-	case len(args) > 0:
-		return layer.UsageError{Err: fmt.Errorf("takes --vxlan-rule alone, not %q", args)}
 	}
 	return knode.Prepare(knode.DefaultPaths(), time.Now(), knode.WaitForAddresses, firewall)
-}
-
-// vxlanRule fills the firewall's VXLAN table from the file given, or empties it without one.
-func vxlanRule(args []string) error {
-	if len(args) > 1 {
-		return layer.UsageError{Err: fmt.Errorf("takes one file, not %q", args)}
-	}
-	var file string
-	if len(args) == 1 {
-		file = args[0]
-	}
-	return vxlan.Default().Apply(file)
 }
 
 // containerdHosts prints containerd's hosts.toml of each registry the node's Mirror and Registry
@@ -103,13 +117,6 @@ func containerdHosts(w io.Writer, runDir string) error {
 		}
 	}
 	return nil
-}
-
-func containerdConfigCommand(args []string) error {
-	if len(args) != 1 {
-		return layer.UsageError{Err: fmt.Errorf("takes one file, not %q", args)}
-	}
-	return containerdConfig("/run/chalkos", args[0])
 }
 
 // containerdConfig writes the containerd settings that come from the node's Cluster document

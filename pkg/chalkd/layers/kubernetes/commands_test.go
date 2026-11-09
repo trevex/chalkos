@@ -2,13 +2,14 @@ package kubernetes
 
 import (
 	"bytes"
-	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
-	"github.com/trevex/chalkos/pkg/chalkd/layer"
+	"github.com/spf13/cobra"
+
+	"github.com/trevex/chalkos/pkg/chalkd/layer/layertest"
 	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/config/slot"
 )
@@ -107,7 +108,6 @@ func TestContainerdConfig(t *testing.T) {
 // TestKubernetesCommandsRefuseArguments refuses, before running anything, the arguments a
 // command of the layer does not take.
 func TestKubernetesCommandsRefuseArguments(t *testing.T) {
-	cmds := (&Plugin{}).Commands()
 	for _, tc := range []struct {
 		command string
 		args    []string
@@ -121,8 +121,20 @@ func TestKubernetesCommandsRefuseArguments(t *testing.T) {
 		{"containerd-config", nil},
 		{"containerd-config", []string{"a", "b"}},
 	} {
-		if _, ok := errors.AsType[layer.UsageError](cmds[tc.command].Run(tc.args)); !ok {
+		if !layertest.Refused(command(t, tc.command), tc.args) {
 			t.Errorf("%s %q ran", tc.command, tc.args)
 		}
 	}
+}
+
+// command is the layer's command of the name, made afresh.
+func command(t *testing.T, name string) *cobra.Command {
+	t.Helper()
+	for _, cmd := range (&Plugin{}).Commands() {
+		if cmd.Name() == name {
+			return cmd
+		}
+	}
+	t.Fatalf("no command %s", name)
+	return nil
 }

@@ -1,5 +1,5 @@
-// Package layertest checks a layer's API against the permissions its plugin gives, for the tests
-// of chalkd and of its plugins.
+// Package layertest checks a layer's API against the permissions its plugin gives, and the
+// arguments its commands refuse, for the tests of chalkd and of its plugins.
 package layertest
 
 import (
@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/spf13/cobra"
 	"google.golang.org/protobuf/reflect/protoreflect"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
@@ -72,4 +73,14 @@ func CheckComments(t *testing.T, protoFile string, service protoreflect.ServiceD
 	if rpcs != len(perms) {
 		t.Errorf("%s declares %d RPCs, the permissions have %d", protoFile, rpcs, len(perms))
 	}
+}
+
+// Refused reports whether cmd refuses args before it runs, which chalkd reports as a usage error:
+// a flag it does not take, a required flag missing, or positional arguments its Args refuses.
+// cmd's flags keep what args set.
+func Refused(cmd *cobra.Command, args []string) bool {
+	if err := cmd.ParseFlags(args); err != nil {
+		return true
+	}
+	return cmd.ValidateRequiredFlags() != nil || cmd.ValidateFlagGroups() != nil || cmd.ValidateArgs(cmd.Flags().Args()) != nil
 }

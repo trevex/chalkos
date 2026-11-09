@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/trevex/chalkos/pkg/chalkd/layer"
+	"github.com/trevex/chalkos/pkg/chalkd/layer/layertest"
 	"github.com/trevex/chalkos/pkg/router/services"
 	"github.com/trevex/chalkos/pkg/tool"
 )
@@ -526,10 +526,18 @@ func TestServicesKea(t *testing.T) {
 // chalkd router services takes one of its services and, to stop them, stop.
 func TestServicesCommand(t *testing.T) {
 	p, _ := routerNode(t)
-	run := p.Commands()["services"].Run
+	services := p.Commands()[1]
+	if services.Name() != "services" {
+		t.Fatalf("the second command is %s", services.Name())
+	}
 	for _, args := range [][]string{nil, {"bind"}, {"kea", "start"}, {"kea", "stop", "now"}} {
-		if _, ok := errors.AsType[layer.UsageError](run(args)); !ok {
+		if !layertest.Refused(services, args) {
 			t.Errorf("services %q is no usage error", args)
+		}
+	}
+	for _, args := range [][]string{{"kea"}, {"unbound", "stop"}, {"relay"}} {
+		if layertest.Refused(services, args) {
+			t.Errorf("services %q is refused", args)
 		}
 	}
 }

@@ -7,12 +7,10 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"errors"
-	"flag"
 	"fmt"
 	"io"
 	"io/fs"
 	"log"
-	"maps"
 	"net"
 	"net/http"
 	"os"
@@ -24,6 +22,8 @@ import (
 	"sync"
 	"syscall"
 	"time"
+
+	"github.com/spf13/cobra"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/atomicfile"
@@ -38,50 +38,72 @@ import (
 	"github.com/trevex/chalkos/pkg/tool"
 )
 
-// commonUsage is the usage of chalkd's own commands, which each layer's follow.
-const commonUsage = `usage: chalkd <command>
-
-commands:
-  serve                            serve the node API
-  load-config                      apply the config recorded on STATE: its identity and documents,
-                                   after ending a config's trial that is still open
-  health [--wait SECONDS] [--ignore-unit UNIT]...
-                                   check whether this boot is healthy; with --wait, check until
-                                   it is, and reboot after an unhealthy boot of an image the
-                                   boot loader counts; failed units ignored do not count
-  health --stopped                 after a wait ended before it decided, as it would have:
-                                   record the boot and reboot when that leads on
-  check --system SYSTEM --facts SOCKET
-                                   check the config on standard input as the image whose NixOS
-                                   system is SYSTEM checks it, with the facts the socket serves,
-                                   and write the result to standard output`
-
-// commands are chalkd's own commands by name. Each takes the arguments after its name and fails
-// with a layer.UsageError when it does not take them. modules/node/runtime/effects.nix lists their
-// names, which an effect's run of chalkd may use without naming a layer.
-var commands = map[string]func(args []string) error{
-	"serve":       layer.NoArgs(serve),
-	"load-config": layer.NoArgs(loadConfig),
-	"health":      health,
-	"check":       checkConfig,
+func main() {
+	log.SetFlags(0)
+	log.SetPrefix("chalkd: ")
+	root, err := newCommand()
+	if err != nil {
+		log.Fatal(err)
+	}
+	os.Exit(chalkd.Execute(root))
 }
 
-// checkConfig is chalkd check --system <system> --facts <socket>: the image whose NixOS system is
-// system checks the config on standard input for itself, as the chalkd of another image runs it
-// in a sandbox before the image boots, and writes the result to standard output. Only the
-// compiled layers are asked, for what the image's layer facts give config's translation: the
-// sandbox's /etc is the running system's, not this image's.
-func checkConfig(args []string) error {
-	fs := flag.NewFlagSet("check", flag.ContinueOnError)
-	fs.SetOutput(io.Discard)
-	system := fs.String("system", "", "")
-	socket := fs.String("facts", "", "")
-	if err := fs.Parse(args); err != nil {
-		return layer.UsageError{Err: err}
+// newCommand is chalkd's command tree: its own commands, and those of each compiled layer below
+// the layer's name, as the units of the layer's own module run them. modules/node/runtime/effects.nix
+// lists the names of chalkd's own commands, which an effect's run of chalkd may use without naming
+// a layer.
+func newCommand() (*cobra.Command, error) {
+	// Subcommands need no server: the plugins are bound to one that serves nothing.
+	node := &chalkd.Server{Paths: chalkd.DefaultPaths(), Run: tool.ExecRunner{}}
+	reg, err := layer.NewRegistry(layers.Set{}, plugins(node)...)
+	if err != nil {
+		return nil, err
 	}
-	if fs.NArg() > 0 || *system == "" || *socket == "" {
-		return layer.UsageError{Err: errors.New("check takes --system and --facts")}
+	return chalkd.NewCommand(reg,
+		&cobra.Command{
+			Use:   "serve",
+			Short: "Serve the node API",
+			Args:  cobra.NoArgs,
+			RunE:  func(*cobra.Command, []string) error { return serve() },
+		},
+		&cobra.Command{
+			Use:   "load-config",
+			Short: "Apply the config recorded on STATE",
+			Long: "Apply the config recorded on STATE: its identity and documents, after ending a config's trial\n" +
+				"that is still open.",
+			Args: cobra.NoArgs,
+			RunE: func(*cobra.Command, []string) error { return loadConfig() },
+		},
+		healthCommand(health),
+		checkCommand(),
+	), nil
+}
+
+// checkCommand is chalkd check --system <system> --facts <socket>.
+func checkCommand() *cobra.Command {
+	var system, socket string
+	cmd := &cobra.Command{
+		Use:   "check",
+		Short: "Check the config on standard input as an image checks it",
+		Long: "Check the config on standard input as the image whose NixOS system is --system checks it, with\n" +
+			"the facts the socket --facts serves, and write the result to standard output.",
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return checkConfig(system, socket, cmd.InOrStdin(), cmd.OutOrStdout())
+		},
 	}
+	cmd.Flags().StringVar(&system, "system", "", "NixOS system of the image whose check runs")
+	cmd.Flags().StringVar(&socket, "facts", "", "socket that serves the facts of the node")
+	_ = cmd.MarkFlagRequired("system")
+	_ = cmd.MarkFlagRequired("facts")
+	return cmd
+}
+
+// checkConfig is chalkd check: the image whose NixOS system is system checks the config on stdin
+// for itself, as the chalkd of another image runs it in a sandbox before the image boots, and
+// writes the result to stdout. Only the compiled layers are asked, for what the image's layer
+// facts give config's translation: the sandbox's /etc is the running system's, not this image's.
+func checkConfig(system, socket string, stdin io.Reader, stdout io.Writer) error {
 	dir, err := os.MkdirTemp("", "chalkos-check-")
 	if err != nil {
 		return err
@@ -91,88 +113,7 @@ func checkConfig(args []string) error {
 	if node.Plugins, err = layer.NewRegistry(layers.Set{}, plugins(node)...); err != nil {
 		return err
 	}
-	return node.Check(context.Background(), *system, *socket, dir, os.Stdin, os.Stdout)
-}
-
-func main() {
-	log.SetFlags(0)
-	log.SetPrefix("chalkd: ")
-	// Subcommands need no server: the plugins are bound to one that serves nothing.
-	node := &chalkd.Server{Paths: chalkd.DefaultPaths(), Run: tool.ExecRunner{}}
-	reg, err := layer.NewRegistry(layers.Set{}, plugins(node)...)
-	if err != nil {
-		log.Fatal(err)
-	}
-	name, run, args := lookup(reg, os.Args[1:])
-	if run == nil {
-		fmt.Fprintln(os.Stderr, usage(reg))
-		os.Exit(2)
-	}
-	err = run(args)
-	if _, ok := errors.AsType[layer.UsageError](err); ok {
-		fmt.Fprintf(os.Stderr, "chalkd %s: %v\n", name, err)
-		fmt.Fprintln(os.Stderr, usage(reg))
-		os.Exit(2)
-	}
-	if err != nil {
-		for _, e := range failures(err) {
-			log.Print(e)
-		}
-		os.Exit(1)
-	}
-}
-
-// failures are the errors that err joins, each logged on a line of its own, or err alone.
-func failures(err error) []error {
-	if j, ok := err.(interface{ Unwrap() []error }); ok {
-		return j.Unwrap()
-	}
-	return []error{err}
-}
-
-// lookup finds the command args name: one of chalkd's, or a layer's as <layer> <command>, which
-// any compiled layer serves, as the units of the layer's own module run it. It returns the
-// command's name, its function and its arguments; a nil function for no command.
-func lookup(reg *layer.Registry, args []string) (string, func([]string) error, []string) {
-	if len(args) == 0 {
-		return "", nil, nil
-	}
-	if run := commands[args[0]]; run != nil {
-		return args[0], run, args[1:]
-	}
-	if len(args) >= 2 {
-		if cmd, ok := reg.Command(args[0], args[1]); ok {
-			return args[0] + " " + args[1], cmd.Run, args[2:]
-		}
-	}
-	return "", nil, nil
-}
-
-// usage is chalkd's usage: its own commands, then each layer's.
-func usage(reg *layer.Registry) string {
-	var b strings.Builder
-	b.WriteString(commonUsage)
-	for _, p := range reg.Compiled() {
-		c, ok := p.(layer.Commands)
-		if !ok {
-			continue
-		}
-		cmds := c.Commands()
-		for _, name := range slices.Sorted(maps.Keys(cmds)) {
-			cmd := cmds[name]
-			line := strings.TrimSpace(p.Name() + " " + name + " " + cmd.Args)
-			help := strings.Split(cmd.Help, "\n")
-			if len(line) < 33 {
-				fmt.Fprintf(&b, "\n  %-32s %s", line, help[0])
-			} else {
-				fmt.Fprintf(&b, "\n  %s\n  %-32s %s", line, "", help[0])
-			}
-			for _, more := range help[1:] {
-				fmt.Fprintf(&b, "\n  %-32s %s", "", more)
-			}
-		}
-	}
-	return b.String()
+	return node.Check(context.Background(), system, socket, dir, stdin, stdout)
 }
 
 // healthArgs are what chalkd health takes: how long to wait for the boot to become healthy, or
@@ -183,33 +124,40 @@ type healthArgs struct {
 	ignore  []string
 }
 
-func parseHealthArgs(args []string) (healthArgs, error) {
+// healthCommand is chalkd health [--wait SECONDS | --stopped] [--ignore-unit UNIT]..., which runs
+// run with what it takes.
+func healthCommand(run func(healthArgs) error) *cobra.Command {
 	var a healthArgs
-	fs := flag.NewFlagSet("health", flag.ContinueOnError)
-	fs.SetOutput(io.Discard)
-	wait := fs.String("wait", "", "")
-	fs.BoolVar(&a.stopped, "stopped", false, "")
-	fs.Func("ignore-unit", "", func(unit string) error {
-		a.ignore = append(a.ignore, unit)
-		return nil
-	})
-	if err := fs.Parse(args); err != nil {
-		return healthArgs{}, err
+	cmd := &cobra.Command{
+		Use:   "health",
+		Short: "Check whether this boot is healthy",
+		Long: "Check whether this boot is healthy. With --wait, check until it is, and reboot after an\n" +
+			"unhealthy boot of an image the boot loader counts. With --stopped, after a wait ended before it\n" +
+			"decided, do as it would have: record the boot, and reboot when that leads on. The failure of a\n" +
+			"unit --ignore-unit names does not count.",
+		Args: cobra.NoArgs,
+		RunE: func(*cobra.Command, []string) error { return run(a) },
 	}
-	if fs.NArg() > 0 {
-		return healthArgs{}, fmt.Errorf("health takes no argument %q", fs.Arg(0))
+	cmd.Flags().Var((*seconds)(&a.wait), "wait", "check until the boot is healthy, for this many seconds at most")
+	cmd.Flags().BoolVar(&a.stopped, "stopped", false, "end a wait that systemd stopped before it decided")
+	cmd.Flags().StringArrayVar(&a.ignore, "ignore-unit", nil, "unit whose failure does not count; repeat it for more units")
+	cmd.MarkFlagsMutuallyExclusive("wait", "stopped")
+	return cmd
+}
+
+// seconds is the value of a flag that takes a positive number of seconds.
+type seconds time.Duration
+
+func (s *seconds) String() string { return strconv.Itoa(int(time.Duration(*s) / time.Second)) }
+func (s *seconds) Type() string   { return "seconds" }
+
+func (s *seconds) Set(v string) error {
+	n, err := strconv.Atoi(v)
+	if err != nil || n <= 0 {
+		return fmt.Errorf("takes a number of seconds, not %q", v)
 	}
-	if *wait != "" {
-		seconds, err := strconv.Atoi(*wait)
-		if err != nil || seconds <= 0 {
-			return healthArgs{}, fmt.Errorf("--wait takes a number of seconds, not %q", *wait)
-		}
-		a.wait = time.Duration(seconds) * time.Second
-	}
-	if a.stopped && a.wait > 0 {
-		return healthArgs{}, errors.New("--stopped and --wait exclude each other")
-	}
-	return a, nil
+	*s = seconds(time.Duration(n) * time.Second)
+	return nil
 }
 
 // loadConfig applies the config recorded on STATE, with the image's layers writing what they
@@ -234,14 +182,10 @@ func loadConfig() error {
 	return loader.Load()
 }
 
-// health checks this boot once, or with --wait until it is healthy or the seconds passed. With
-// --stopped it handles the end of a wait that did not decide, which systemd describes in
+// health checks this boot once, or with a.wait until it is healthy or the time passed. With
+// a.stopped it handles the end of a wait that did not decide, which systemd describes in
 // $SERVICE_RESULT and $EXIT_STATUS.
-func health(args []string) error {
-	a, err := parseHealthArgs(args)
-	if err != nil {
-		return layer.UsageError{Err: err}
-	}
+func health(a healthArgs) error {
 	// Only the layers' hooks are asked, so the server they are bound to serves nothing.
 	node := &chalkd.Server{Paths: chalkd.DefaultPaths(), Run: tool.ExecRunner{}}
 	reg, err := registry(node)

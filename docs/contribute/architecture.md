@@ -71,7 +71,7 @@ Each directory of `cmd/` is a main that wires a package up; the logic lives in `
 | `cmd/chalklab` | The same for `chalklab.NewCommand()`. |
 | `cmd/chalkbuild` | The same for `chalkbuild.NewCommand()`. |
 | `cmd/chalkcfg` | Runs `chalkcfg.NewCommand()` on a node. |
-| `cmd/chalkd` | Dispatches the commands the node's units run: `serve` (chalkd.service), `load-config` (chalkos-config.service), `health` (chalkos-health.service), `check` (an image's checker, which another image's chalkd runs) and each layer's commands as `chalkd <layer> <command>`, such as `chalkd kubernetes prepare` (chalkos-kubernetes.service). Lists the layer plugins compiled into chalkd in `plugins.go`, and loads the credentials `serve` starts with. |
+| `cmd/chalkd` | Builds chalkd's cobra command tree with `chalkd.NewCommand` and runs it with `chalkd.Execute`: `serve` (chalkd.service), `load-config` (chalkos-config.service), `health` (chalkos-health.service), `check` (an image's checker, which another image's chalkd runs) and each layer's commands as `chalkd <layer> <command>`, such as `chalkd kubernetes prepare` (chalkos-kubernetes.service). Lists the layer plugins compiled into chalkd in `plugins.go`, and loads the credentials `serve` starts with. |
 | `cmd/chalkos-networkd-schema` | Writes the spec schemas of the networkd kinds from systemd's gperf tables, for the image build. |
 | `cmd/chalkos-render` | Renders the outputs of the `lib.chalkos.render.template` and `.documents` renderers and the built-in outputs `networkd` (with `router-networkd` on router images), `router-sysctl`, `router-nftables`, `frr`, `jool`, `unbound`, `kea` and `dhcp-relay` on a node, in an output's sandbox, and a router image's fallback ruleset and FRR config when the image is built. Runs the validator router as `chalkos-render validate router`. The renderers trust what the schemas, the rules and the validators check, refuse what only they see, such as networkd's unit names, and keep guards, as internal errors, where a bad value would break their output. |
 | `cmd/chalkos-rules` | Checks an image when it is built: every rule compiles within the cost limit and reads facts the image declares, the effects act on units and outputs the image has, and every output renders its examples and passes its check. |
@@ -113,7 +113,7 @@ Each directory of `cmd/` is a main that wires a package up; the logic lives in `
 | `imagecheck` | Runs an image's `chalkd check` from the image's own store in a sandboxed transient unit, with the image's store over `/nix/store`, and serves it the node's facts over a Unix socket. |
 | `imagesign` | Signs an image's boot loader and UKIs, in place or in a signed copy of an image directory. |
 | `install` | Installs a node in place or from the installer, step by step and repeatable: STATE, the ESP, the UEFI boot entries, wiping the target and the system region's definitions each have a file, and `parts.go` holds the steps of an install from the installer. |
-| `internal/cli` | What the command trees of chalkctl, chalklab, chalkbuild and chalkcfg share: usage errors and their exit status, the root and group commands, positional argument checks and flags that take one of a set of values. |
+| `internal/cli` | What the command trees of chalkctl, chalkd, chalklab, chalkbuild and chalkcfg share: usage errors and their exit status, the root and group commands, positional argument checks and flags that take one of a set of values. |
 | `internal/filecopy` | Copies a disk image without its holes and a plain file to a new one, for chalklab, the lab and image signing. |
 | `internal/poll` | Checks a condition again and again until it passes, a timeout passes or the context ends, keeping the last check's error. |
 | `internal/strs` | Joins values into the lists of messages and flags: by their `String`, or names as prose, such as "a, b and c". |
@@ -237,7 +237,7 @@ which chalkd finds by type assertion, add what else the layer does:
 | `nodeconfig.Layer` | What it writes from the running slot's documents, at boot and after each delivery. |
 | `Issuer` | The issuing of node certificates on renewal; an image has one issuer at most. |
 | `ImageFacts` | The facts of its images, from which it adds its translator to the target that config is translated for. |
-| `Commands` | Subcommands, run as `chalkd <layer> <command>`. |
+| `Commands` | Cobra subcommands, run as `chalkd <layer> <command>`. |
 | `Actions` | Actions on what the running chalkd holds, which effects name as `<layer>:<action>`. |
 
 `cmd/chalkd/plugins.go` lists the compiled plugins, and `layer.Registry` sorts them into the
@@ -435,7 +435,9 @@ Another program can add their trees to its own, and tests run commands in-proces
 output captured. The four share `pkg/internal/cli`: its `Execute` prints a command's error and
 exits with 2 and the command's usage after a usage error, such as a wrong number of arguments, an
 unknown flag or a required flag not set, and with 1 after another error. chalkctl also exits with
-130 after an error once Ctrl+C cancelled it. Each package keeps its help texts in `help.go`, and
+130 after an error once Ctrl+C cancelled it. chalkd's tree in `cmd/chalkd` runs through the same
+`Execute`, by way of `chalkd.Execute`, which prints each error a failed command joins on a line of
+its own. Each package keeps its help texts in `help.go`, and
 a test requires a short and a long description and an example on every visible command, because
 they become the [command reference](../reference/cli/index.md). chalkcfg runs on nodes, which have no logins, so
 it has no `completion` command.

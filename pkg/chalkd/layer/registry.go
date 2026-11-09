@@ -116,14 +116,3 @@ func (r *Registry) Action(name string) (func(context.Context) error, error) {
 	}
 	return nil, fmt.Errorf("no layer of this image has the action %s", name)
 }
-
-// Command returns the subcommand chalkd <layer> <name> of a compiled plugin.
-func (r *Registry) Command(layer, name string) (Command, bool) {
-	for _, p := range r.Compiled() {
-		if c, ok := p.(Commands); ok && p.Name() == layer {
-			cmd, ok := c.Commands()[name]
-			return cmd, ok
-		}
-	}
-	return Command{}, false
-}
