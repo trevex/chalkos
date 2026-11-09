@@ -162,6 +162,7 @@ let
             "load-config"
             "health"
             "check"
+            "help"
           ])
         then
           lib.elemAt runWords 1
