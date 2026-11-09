@@ -2,8 +2,7 @@ package kubernetes
 
 import (
 	"context"
-	"os"
-	"strings"
+	"net/netip"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -12,6 +11,7 @@ import (
 	"github.com/trevex/chalkos/pkg/clustersecrets"
 	"github.com/trevex/chalkos/pkg/internal/testwait"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
+	"github.com/trevex/chalkos/pkg/kubernetes/kubetest"
 	knode "github.com/trevex/chalkos/pkg/kubernetes/node"
 	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
 	"github.com/trevex/chalkos/pkg/kubernetes/vip"
@@ -52,12 +52,7 @@ func TestStatusVIP(t *testing.T) {
 	s, _ := kubernetesNode(t, k8s.KindControlPlane, true)
 	k := s.k
 	write(t, k.state.BootstrappedMarker(), "")
-	data, err := os.ReadFile(k.state.Cluster)
-	if err != nil {
-		t.Fatal(err)
-	}
-	cluster := strings.Replace(string(data), `"extraArgs"`, `"vip": {"addresses": ["192.168.100.11"], "mode": "l2"}, "extraArgs"`, 1)
-	write(t, k.state.Cluster, cluster)
+	withVIP(t, k.state.Cluster)
 	if st, err := k.status(context.Background()); err != nil || st.Vip != "standby" {
 		t.Errorf("status %v, %v, want a standby", st, err)
 	}
@@ -67,17 +62,24 @@ func TestStatusVIP(t *testing.T) {
 	}
 }
 
+// withVIP gives the cluster of the cluster file at path the VIP 192.168.100.11, announced on L2.
+func withVIP(t *testing.T, path string) {
+	t.Helper()
+	c, err := k8s.ReadCluster(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.VIP = k8s.VIP{Addresses: []netip.Addr{netip.MustParseAddr("192.168.100.11")}, Mode: "l2"}
+	write(t, path, kubetest.JSON(t, c))
+}
+
 // vipControlPlane runs the VIP election of the bootstrapped control plane n1 on its own etcd
 // member, with addrs standing for its VIPs and an API server that is always ready.
 func vipControlPlane(t *testing.T) (*side, *fakeAddresses) {
 	t.Helper()
 	s, _, _ := memberNode(t)
 	k := s.k
-	data, err := os.ReadFile(k.state.Cluster)
-	if err != nil {
-		t.Fatal(err)
-	}
-	write(t, k.state.Cluster, strings.Replace(string(data), `"extraArgs"`, `"vip": {"addresses": ["192.168.100.11"], "mode": "l2"}, "extraArgs"`, 1))
+	withVIP(t, k.state.Cluster)
 	addrs := &fakeAddresses{}
 	k.hooks.VIPAddresses = func(k8s.Cluster, knode.State) (vip.Holder, error) { return addrs, nil }
 	k.hooks.APIServerReady = func(context.Context, k8s.Cluster, kpki.Share) bool { return true }
