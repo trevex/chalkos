@@ -133,8 +133,11 @@ type Timing struct {
 	// EtcdStatusTimeout is how long a health check waits for each etcd member. Zero means three
 	// seconds. Tests raise it: their members share one busy process.
 	EtcdStatusTimeout time.Duration
-	// Poll is the time between two looks at what a rotation step or a drain waits for; two
-	// seconds by default.
+	// EtcdRetry is the wait between two requests to remove an etcd member while etcd refuses to
+	// change its members for now, as right after one joined; a second by default.
+	EtcdRetry time.Duration
+	// Poll is the time between two looks at what a rotation step, a drain or a joining learner
+	// waits for; two seconds by default.
 	Poll time.Duration
 	// StatusTimeout bounds each read of the status from the API server, the revoked nodes and the
 	// Node apart; five seconds by default.
@@ -150,6 +153,7 @@ func (t Timing) withDefaults() Timing {
 	t.VIPTTL = cmp.Or(t.VIPTTL, vip.DefaultTTL)
 	t.VIPInterval = cmp.Or(t.VIPInterval, vip.DefaultInterval)
 	t.EtcdTimeout = cmp.Or(t.EtcdTimeout, 30*time.Second)
+	t.EtcdRetry = cmp.Or(t.EtcdRetry, time.Second)
 	t.Poll = cmp.Or(t.Poll, 2*time.Second)
 	t.StatusTimeout = cmp.Or(t.StatusTimeout, 5*time.Second)
 	return t

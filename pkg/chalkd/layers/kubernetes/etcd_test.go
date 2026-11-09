@@ -26,6 +26,10 @@ import (
 	"github.com/trevex/chalkos/pkg/pki"
 )
 
+// etcdRetry is how long the tests wait before they ask etcd again to remove a member it refuses
+// to remove for now.
+const etcdRetry = 50 * time.Millisecond
+
 // addMember starts a member of the name and makes it a voter of the cluster cli reaches.
 func addMember(t *testing.T, cli *etcd.Client, ca pki.CertKey, name string) *etcdtest.Member {
 	t.Helper()
@@ -69,11 +73,13 @@ func memberNode(t *testing.T, others ...string) (*Plugin, *etcd.Client, map[stri
 	if err != nil {
 		t.Fatal(err)
 	}
+	cli.RetryInterval = etcdRetry
 	t.Cleanup(func() { cli.Close() })
 	for _, name := range others {
 		members[name] = addMember(t, cli, *share.EtcdCA, name)
 	}
 	k.etcdURL = n1.ClientURL
+	k.timing.EtcdRetry = etcdRetry
 	k.hooks.EtcdStopped = func(context.Context, k8s.Cluster) error { return nil }
 	ips, err := p.ReadNodeIPs()
 	if err != nil {
@@ -375,6 +381,7 @@ func TestEtcdLeaveAfterOwnMemberRemoved(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	cp2.RetryInterval = etcdRetry
 	defer cp2.Close()
 	list, err := cp2.Members(context.Background())
 	if err != nil {

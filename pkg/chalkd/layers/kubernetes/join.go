@@ -265,7 +265,7 @@ func (k *side) joinOnce(ctx context.Context) error {
 	promoteTimeout := k.timing.PromoteTimeout
 	pctx, cancel := context.WithTimeout(ctx, promoteTimeout)
 	defer cancel()
-	switch err := cli.Promote(pctx, own.ID, 2*time.Second, k.timing.EtcdTimeout); {
+	switch err := cli.Promote(pctx, own.ID, k.timing.Poll, k.timing.EtcdTimeout); {
 	case errors.Is(err, etcd.ErrMemberRemoved):
 		return errMemberRemoved
 	case err != nil && ctx.Err() == nil && pctx.Err() != nil:

@@ -48,10 +48,12 @@ func joiningNode(t *testing.T) (*Plugin, *etcdtest.Member, *etcd.Client) {
 	}
 	k.hooks.ClusterAnswers = func(context.Context, k8s.Cluster, kpki.Share) (bool, error) { return true, nil }
 	k.timing.JoinRetry = 50 * time.Millisecond
+	k.timing.Poll, k.timing.EtcdRetry = 50*time.Millisecond, etcdRetry
 	cli, err := etcd.Dial([]string{cp0.ClientURL}, etcdtest.ClientTLS(t, *share.EtcdCA))
 	if err != nil {
 		t.Fatal(err)
 	}
+	cli.RetryInterval = etcdRetry
 	t.Cleanup(func() { cli.Close() })
 	return s, cp0, cli
 }

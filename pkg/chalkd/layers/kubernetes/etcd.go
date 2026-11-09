@@ -107,6 +107,7 @@ func (k *side) dialEtcd(c k8s.Cluster, share kpki.Share, endpoints ...string) (*
 		return nil, err
 	}
 	cli.StatusTimeout = k.timing.EtcdStatusTimeout
+	cli.RetryInterval = k.timing.EtcdRetry
 	return cli, nil
 }
 
