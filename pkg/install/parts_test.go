@@ -3,7 +3,6 @@ package install
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
 	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
@@ -12,7 +11,6 @@ import (
 	"hash/crc32"
 	"io"
 	"maps"
-	mrand "math/rand/v2"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -38,16 +36,14 @@ import (
 	"github.com/trevex/chalkos/pkg/tool"
 	"github.com/trevex/chalkos/pkg/uki/ukitest"
 	"github.com/trevex/chalkos/pkg/upgrade"
-	"github.com/trevex/chalkos/pkg/verity"
+	"github.com/trevex/chalkos/pkg/upgrade/upgradetest"
 )
 
-// partsImage is a test image as an install streams it.
+// partsImage is a test image, as upgradetest makes it with a boot loader, with the header that
+// describes it.
 type partsImage struct {
-	store, hash, uki, loader []byte
-	root                     []byte
-	header                   upgrade.Header
-	// imageID is the image ID the UKI's os-release and the header name.
-	imageID string
+	upgradetest.Image
+	header upgrade.Header
 }
 
 // newPartsImage makes an image whose store is random data of the seed, with a UKI that boots it
@@ -66,22 +62,7 @@ func newPartsImageOfBlocks(t *testing.T, seed string, blocks uint64) partsImage 
 // newPartsImageOf makes an image of the image ID whose store has the number of 4 KiB blocks.
 func newPartsImageOf(t *testing.T, seed string, blocks uint64, imageID string) partsImage {
 	t.Helper()
-	s := sha256.Sum256([]byte(seed))
-	r := mrand.New(mrand.NewPCG(binary.LittleEndian.Uint64(s[:]), binary.LittleEndian.Uint64(s[8:])))
-	const blockSize = 4096
-	store := make([]byte, blocks*blockSize)
-	for i := range store {
-		store[i] = byte(r.Uint32())
-	}
-	hash, root, err := verity.Tree(bytes.NewReader(store), verity.Superblock{DataBlockSize: blockSize, HashBlockSize: blockSize, DataBlocks: blocks, Salt: s[:]})
-	if err != nil {
-		t.Fatal(err)
-	}
-	img := partsImage{store: store, hash: hash, root: root, imageID: imageID}
-	img.uki = ukitest.UKI(map[string]string{
-		"IMAGE_ID": imageID, "IMAGE_VERSION": "", "CHALKOS_VARIANT": "worker", "CHALKOS_PLATFORM": "metal", "CHALKOS_BOOT_TRIES": "3",
-	}, fmt.Sprintf("init=/nix/store/x/init usrhash=%x", root))
-	img.loader = ukitest.Build(map[string][]byte{".text": []byte("systemd-boot " + seed)})
+	img := partsImage{Image: upgradetest.NewImage(t, upgradetest.Options{Name: seed, ImageID: imageID, BlockSize: 4096, Blocks: blocks, Tries: 3, BootLoader: true})}
 	img.header = img.headerFor()
 	return img
 }
@@ -89,24 +70,10 @@ func newPartsImageOf(t *testing.T, seed string, blocks uint64, imageID string) p
 // headerFor describes the image as it is.
 func (img partsImage) headerFor() upgrade.Header {
 	return upgrade.Header{
-		ImageID: img.imageID, Platform: "metal", Architecture: "x86-64",
-		Image: storeslot.Image{RootHash: img.root, Store: imagePart(img.store), Verity: imagePart(img.hash)},
-		UKI:   imagePart(img.uki), BootLoader: imagePart(img.loader),
+		ImageID: img.ImageID, Platform: "metal", Architecture: "x86-64",
+		Image: img.Slot(),
+		UKI:   upgradetest.Part(img.UKI), BootLoader: upgradetest.Part(img.BootLoader),
 	}
-}
-
-func sha(b []byte) []byte {
-	s := sha256.Sum256(b)
-	return s[:]
-}
-
-// imagePart describes data as a part of an image.
-func imagePart(data []byte) imagepart.Part {
-	return imagepart.Part{Size: int64(len(data)), SHA256: sha(data)}
-}
-
-func (img partsImage) parts() io.Reader {
-	return io.MultiReader(bytes.NewReader(img.store), bytes.NewReader(img.hash), bytes.NewReader(img.uki), bytes.NewReader(img.loader))
 }
 
 // labDefinitions are an image's definitions of the system region, as small as repart formats them:
@@ -347,33 +314,6 @@ func (l *partsLab) umount(target string) error {
 	return os.Mkdir(target, 0o755)
 }
 
-// labPartition is a partition of the disk image.
-type labPartition struct {
-	f         *os.File
-	off, size int64
-}
-
-func (p labPartition) ReadAt(b []byte, off int64) (int, error) {
-	if off >= p.size {
-		return 0, io.EOF
-	}
-	n, err := p.f.ReadAt(b[:min(int64(len(b)), p.size-off)], p.off+off)
-	if err == nil && n < len(b) {
-		err = io.EOF
-	}
-	return n, err
-}
-
-func (p labPartition) WriteAt(b []byte, off int64) (int, error) {
-	if off+int64(len(b)) > p.size {
-		return 0, errors.New("write beyond the partition")
-	}
-	return p.f.WriteAt(b, p.off+off)
-}
-
-func (p labPartition) Sync() error  { return p.f.Sync() }
-func (p labPartition) Close() error { return p.f.Close() }
-
 func (l *partsLab) openPartition(p gpt.Partition, write bool) (storeslot.PartitionFile, error) {
 	if !strings.HasPrefix(p.Node, labDev) {
 		l.t.Errorf("opened %s, a partition of another disk", p.Node)
@@ -388,7 +328,7 @@ func (l *partsLab) openPartition(p gpt.Partition, write bool) (storeslot.Partiti
 	if err != nil {
 		return nil, err
 	}
-	return labPartition{f: f, off: p.Start * l.sector, size: p.Size * l.sector}, nil
+	return upgradetest.PartitionFile{F: f, Off: p.Start * l.sector, Size: p.Size * l.sector}, nil
 }
 
 // request installs img onto the lab's target, with STATE and VAR unencrypted: the image tools
@@ -405,7 +345,7 @@ func (l *partsLab) request(img partsImage) PartsRequest {
 		Request:           req,
 		Target:            storage.Ref{Selector: storage.Selector{Serial: "chalk-target"}},
 		Image:             img.header,
-		Parts:             img.parts(),
+		Parts:             img.Stream(),
 		SystemDefinitions: l.defs,
 		Check:             func(context.Context, Store, string) (Checked, error) { return checked, nil },
 	}
@@ -462,11 +402,11 @@ func (l *partsLab) installed() bool {
 func (l *partsLab) checkInstalled(img partsImage) {
 	l.t.Helper()
 	parts := l.table()
-	data, verityUUID := storeslot.PartitionUUIDs(img.root)
+	data, verityUUID := storeslot.PartitionUUIDs(img.Root)
 	want := []struct{ typ, label, uuid string }{
 		{gpt.TypeESP, "", ""},
-		{x86.UsrVerity, "store-verity_" + storeslot.LabelID(img.root), verityUUID},
-		{x86.Usr, "store_" + storeslot.LabelID(img.root), data},
+		{x86.UsrVerity, "store-verity_" + storeslot.LabelID(img.Root), verityUUID},
+		{x86.Usr, "store_" + storeslot.LabelID(img.Root), data},
 		{x86.UsrVerity, "_empty", ""},
 		{x86.Usr, "_empty", ""},
 		{stateType, "state", ""},
@@ -485,10 +425,10 @@ func (l *partsLab) checkInstalled(img partsImage) {
 	if !w.Holds(storeslot.Slot{Verity: parts[2], Data: parts[3]}, img.header.Image) {
 		l.t.Error("slot A does not hold the image's store")
 	}
-	if !bytes.Equal(l.file("EFI/Linux/chalkos_1.efi"), img.uki) {
+	if !bytes.Equal(l.file("EFI/Linux/chalkos_1.efi"), img.UKI) {
 		l.t.Error("the ESP does not hold the image's UKI")
 	}
-	if !bytes.Equal(l.file("EFI/BOOT/BOOTX64.EFI"), img.loader) {
+	if !bytes.Equal(l.file("EFI/BOOT/BOOTX64.EFI"), img.BootLoader) {
 		l.t.Error("the ESP does not hold the image's boot loader")
 	}
 	for _, dir := range []string{"EFI/Linux", "EFI/BOOT"} {
@@ -500,7 +440,7 @@ func (l *partsLab) checkInstalled(img partsImage) {
 	if !l.installed() {
 		l.t.Error("STATE holds no installed marker")
 	}
-	if s, found, err := slot.Read(slot.Dir(filepath.Join(l.state(), "config"), img.root)); err != nil || !found || len(s.Identity) == 0 {
+	if s, found, err := slot.Read(slot.Dir(filepath.Join(l.state(), "config"), img.Root)); err != nil || !found || len(s.Identity) == 0 {
 		l.t.Errorf("STATE holds no config slot of the image: %+v, %v", s, err)
 	}
 	var entry string
@@ -640,11 +580,11 @@ func TestFromPartsInterrupted(t *testing.T) {
 // TestFromPartsInterruptedTransfer cuts the stream within each part of the image.
 func TestFromPartsInterruptedTransfer(t *testing.T) {
 	img := newPartsImage(t, "a")
-	store, hash, uki, loader := int64(len(img.store)), int64(len(img.hash)), int64(len(img.uki)), int64(len(img.loader))
+	store, hash, uki, loader := int64(len(img.Store)), int64(len(img.HashTree)), int64(len(img.UKI)), int64(len(img.BootLoader))
 	for _, cut := range []int64{0, store / 2, store + hash/2, store + hash + uki/2, store + hash + uki + loader/2} {
 		l := newPartsLab(t)
 		req := l.request(img)
-		req.Parts = io.LimitReader(img.parts(), cut)
+		req.Parts = io.LimitReader(img.Stream(), cut)
 		if err := l.i.FromParts(context.Background(), req); err == nil || !strings.Contains(err.Error(), "receive") {
 			t.Errorf("a stream cut after %d bytes: %v", cut, err)
 		}
@@ -700,31 +640,31 @@ func TestFromPartsRefuses(t *testing.T) {
 	keys := t.TempDir()
 	key, cert, der := imagetest.Signer(t, keys, "db")
 	signed := img
-	signed.uki, signed.loader = imagetest.SBSign(t, img.uki, key, cert), imagetest.SBSign(t, img.loader, key, cert)
+	signed.UKI, signed.BootLoader = imagetest.SBSign(t, img.UKI, key, cert), imagetest.SBSign(t, img.BootLoader, key, cert)
 	signed.header = signed.headerFor()
 	unsignedLoader := signed
-	unsignedLoader.loader = img.loader
+	unsignedLoader.BootLoader = img.BootLoader
 	unsignedLoader.header = unsignedLoader.headerFor()
 	// The boot loader signed by another db certificate, which dbx lists.
 	revokedKey, revokedCert, revokedDER := imagetest.Signer(t, keys, "revoked")
 	revokedLoader := signed
-	revokedLoader.loader = imagetest.SBSign(t, img.loader, revokedKey, revokedCert)
+	revokedLoader.BootLoader = imagetest.SBSign(t, img.BootLoader, revokedKey, revokedCert)
 	revokedLoader.header = revokedLoader.headerFor()
 	noTries := img
-	noTries.uki = ukitest.UKI(map[string]string{
+	noTries.UKI = ukitest.UKI(map[string]string{
 		"IMAGE_ID": "chalkos", "IMAGE_VERSION": "", "CHALKOS_VARIANT": "worker", "CHALKOS_PLATFORM": "metal", "CHALKOS_BOOT_TRIES": "0",
-	}, fmt.Sprintf("usrhash=%x", img.root))
+	}, fmt.Sprintf("usrhash=%x", img.Root))
 	noTries.header = noTries.headerFor()
 	otherStore := img
-	otherStore.uki = ukitest.UKI(map[string]string{
+	otherStore.UKI = ukitest.UKI(map[string]string{
 		"IMAGE_ID": "chalkos", "IMAGE_VERSION": "", "CHALKOS_VARIANT": "worker", "CHALKOS_PLATFORM": "metal", "CHALKOS_BOOT_TRIES": "3",
-	}, fmt.Sprintf("usrhash=%x", sha([]byte("another store"))))
+	}, fmt.Sprintf("usrhash=%x", upgradetest.Sum([]byte("another store"))))
 	otherStore.header = otherStore.headerFor()
 	armLoader := img
-	armLoader.loader = ukitest.WithMachine(img.loader, 0xaa64)
+	armLoader.BootLoader = ukitest.WithMachine(img.BootLoader, 0xaa64)
 	armLoader.header = armLoader.headerFor()
 	armUKI := img
-	armUKI.uki = ukitest.WithMachine(img.uki, 0xaa64)
+	armUKI.UKI = ukitest.WithMachine(img.UKI, 0xaa64)
 	armUKI.header = armUKI.headerFor()
 	for _, tc := range []struct {
 		name  string
@@ -761,13 +701,13 @@ func TestFromPartsRefuses(t *testing.T) {
 		{"slot A of another image whose config STATE holds", func(l *partsLab) { l.stopAt(img, "write the boot loader") }, newPartsImage(t, "b"), nil, "of another image, whose config STATE holds"},
 		{"another platform", nil, img, func(r *PartsRequest) { r.Image.Platform = "kvm" }, "the UKI's platform is \"metal\""},
 		{"a corrupt store", nil, img, func(r *PartsRequest) {
-			corrupt := bytes.Clone(img.store)
+			corrupt := bytes.Clone(img.Store)
 			corrupt[100]++
-			r.Parts = io.MultiReader(bytes.NewReader(corrupt), bytes.NewReader(img.hash), bytes.NewReader(img.uki), bytes.NewReader(img.loader))
+			r.Parts = io.MultiReader(bytes.NewReader(corrupt), bytes.NewReader(img.HashTree), bytes.NewReader(img.UKI), bytes.NewReader(img.BootLoader))
 		}, "the store's SHA-256"},
-		{"another root hash", nil, img, func(r *PartsRequest) { r.Image.RootHash = sha([]byte("other")) }, "the written store"},
+		{"another root hash", nil, img, func(r *PartsRequest) { r.Image.RootHash = upgradetest.Sum([]byte("other")) }, "the written store"},
 		{"a UKI booting another store", nil, otherStore, nil, "the UKI boots another store"},
-		{"a corrupt boot loader", nil, img, func(r *PartsRequest) { r.Image.BootLoader.SHA256 = sha(nil) }, "the boot loader's SHA-256"},
+		{"a corrupt boot loader", nil, img, func(r *PartsRequest) { r.Image.BootLoader.SHA256 = upgradetest.Sum(nil) }, "the boot loader's SHA-256"},
 		{"a boot loader for another machine", nil, armLoader, nil, "the boot loader is built for arm64, but the image names x86-64"},
 		{"a UKI for another machine", nil, armUKI, nil, "the UKI is built for arm64, but the image names x86-64"},
 		{"an unsigned UKI", func(l *partsLab) { l.enforceSecureBoot(ukitest.SignatureList(der)) }, img, nil, "Secure Boot would refuse the UKI"},
@@ -777,12 +717,12 @@ func TestFromPartsRefuses(t *testing.T) {
 			l.enforceSecureBoot(append(ukitest.SignatureList(der), ukitest.SignatureList(revokedDER)...), revokedDER)
 		}, revokedLoader, nil, "Secure Boot would refuse the boot loader"},
 		{"a UKI without boot tries", nil, noTries, nil, "boot tries \"0\" are not a positive number"},
-		{"a wrong store SHA-256 on a resumed install", func(l *partsLab) { l.stopAt(img, "write the UKI") }, img, func(r *PartsRequest) { r.Image.Store.SHA256 = sha(nil) }, "the store's SHA-256"},
-		{"a wrong hash tree SHA-256 on a resumed install", func(l *partsLab) { l.stopAt(img, "write the UKI") }, img, func(r *PartsRequest) { r.Image.Verity.SHA256 = sha(nil) }, "the hash tree's SHA-256"},
+		{"a wrong store SHA-256 on a resumed install", func(l *partsLab) { l.stopAt(img, "write the UKI") }, img, func(r *PartsRequest) { r.Image.Store.SHA256 = upgradetest.Sum(nil) }, "the store's SHA-256"},
+		{"a wrong hash tree SHA-256 on a resumed install", func(l *partsLab) { l.stopAt(img, "write the UKI") }, img, func(r *PartsRequest) { r.Image.Verity.SHA256 = upgradetest.Sum(nil) }, "the hash tree's SHA-256"},
 		{"a header without a boot loader", nil, img, func(r *PartsRequest) { r.Image.BootLoader = imagepart.Part{} }, "brings no boot loader"},
-		{"more than the header names", nil, img, func(r *PartsRequest) { r.Parts = io.MultiReader(img.parts(), strings.NewReader("x")) }, "the stream goes on after the boot loader"},
+		{"more than the header names", nil, img, func(r *PartsRequest) { r.Parts = io.MultiReader(img.Stream(), strings.NewReader("x")) }, "the stream goes on after the boot loader"},
 		{"parts failing at their end", nil, img, func(r *PartsRequest) {
-			r.Parts = io.MultiReader(img.parts(), iotest.ErrReader(errors.New("connection reset")))
+			r.Parts = io.MultiReader(img.Stream(), iotest.ErrReader(errors.New("connection reset")))
 		}, "connection reset"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -914,7 +854,7 @@ func TestFromPartsUnderSecureBoot(t *testing.T) {
 	}
 	img := newPartsImage(t, "a")
 	key, cert, der := imagetest.Signer(t, t.TempDir(), "db")
-	img.uki, img.loader = imagetest.SBSign(t, img.uki, key, cert), imagetest.SBSign(t, img.loader, key, cert)
+	img.UKI, img.BootLoader = imagetest.SBSign(t, img.UKI, key, cert), imagetest.SBSign(t, img.BootLoader, key, cert)
 	img.header = img.headerFor()
 	l := newPartsLab(t)
 	l.enforceSecureBoot(ukitest.SignatureList(der))
@@ -1272,8 +1212,8 @@ func TestFromPartsLeavesOneUKI(t *testing.T) {
 	img := newPartsImage(t, "a")
 	l := newPartsLab(t)
 	l.stopAt(img, "name the UKI chalkos_1.efi")
-	other := ukitest.UKI(map[string]string{"IMAGE_ID": "chalkos", "IMAGE_VERSION": "", "CHALKOS_BOOT_TRIES": "3"}, fmt.Sprintf("usrhash=%x", sha([]byte("another store"))))
-	acme := ukitest.UKI(map[string]string{"IMAGE_ID": "acme"}, fmt.Sprintf("usrhash=%x", sha([]byte("acme"))))
+	other := ukitest.UKI(map[string]string{"IMAGE_ID": "chalkos", "IMAGE_VERSION": "", "CHALKOS_BOOT_TRIES": "3"}, fmt.Sprintf("usrhash=%x", upgradetest.Sum([]byte("another store"))))
+	acme := ukitest.UKI(map[string]string{"IMAGE_ID": "acme"}, fmt.Sprintf("usrhash=%x", upgradetest.Sum([]byte("acme"))))
 	for name, data := range map[string][]byte{
 		"chalkos_5+0-3.efi": other,
 		// An image an upgrade staged on the disk before.
@@ -1285,7 +1225,7 @@ func TestFromPartsLeavesOneUKI(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	staged, err := esp.Temporary(l.esp(), sha(nil))
+	staged, err := esp.Temporary(l.esp(), upgradetest.Sum(nil))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1300,7 +1240,7 @@ func TestFromPartsLeavesOneUKI(t *testing.T) {
 	for _, f := range files {
 		names = append(names, f.Name())
 	}
-	if !slices.Equal(names, []string{"chalkos_1.efi"}) || !bytes.Equal(l.file("EFI/Linux/chalkos_1.efi"), img.uki) {
+	if !slices.Equal(names, []string{"chalkos_1.efi"}) || !bytes.Equal(l.file("EFI/Linux/chalkos_1.efi"), img.UKI) {
 		t.Errorf("the ESP holds %q, want the image's UKI as chalkos_1.efi alone", names)
 	}
 }
@@ -1311,7 +1251,7 @@ func TestFromPartsRecordsTheImage(t *testing.T) {
 	img := newPartsImage(t, "a")
 	l := newPartsLab(t)
 	req := l.request(img)
-	record := []byte(`{"` + hex.EncodeToString(img.root) + `": {"revision": "a1b2c3d4e5f6", "tag": "v1.5.0"}}` + "\n")
+	record := []byte(`{"` + hex.EncodeToString(img.Root) + `": {"revision": "a1b2c3d4e5f6", "tag": "v1.5.0"}}` + "\n")
 	req.Images = record
 	if err := l.i.FromParts(context.Background(), req); err != nil {
 		t.Fatal(err)
@@ -1349,7 +1289,7 @@ func TestFromPartsChecksTheConfigWithTheImage(t *testing.T) {
 		if !slices.Contains(l.r.Calls, "mount -t erofs -o ro /dev/mapper/"+upgrade.StoreMapping+" "+filepath.Join(l.i.WorkDir, "store")) {
 			t.Errorf("the store is not mounted for the check: %q", l.r.Calls)
 		}
-		if !bytes.Equal(l.file("EFI/Linux/chalkos_1.efi"), img.uki) {
+		if !bytes.Equal(l.file("EFI/Linux/chalkos_1.efi"), img.UKI) {
 			t.Error("the ESP does not hold the UKI at the check")
 		}
 		if l.bootable() || l.r.efi.bootNext != "" {
@@ -1368,7 +1308,7 @@ func TestFromPartsChecksTheConfigWithTheImage(t *testing.T) {
 		t.Errorf("the image checked the config %d times, want once", checks)
 	}
 	parts := l.table()
-	open := "veritysetup open " + parts[3].Node + " " + upgrade.StoreMapping + " " + parts[2].Node + " " + hex.EncodeToString(img.root)
+	open := "veritysetup open " + parts[3].Node + " " + upgrade.StoreMapping + " " + parts[2].Node + " " + hex.EncodeToString(img.Root)
 	if !slices.Contains(l.r.Calls, open) || !slices.Contains(l.r.Calls, "veritysetup close "+upgrade.StoreMapping) {
 		t.Errorf("the store was not opened through dm-verity with the root hash and closed: %q", l.r.Calls)
 	}
@@ -1378,7 +1318,7 @@ func TestFromPartsChecksTheConfigWithTheImage(t *testing.T) {
 	if l.r.host.Mapped(upgrade.StoreMapping) {
 		t.Error("the install left the store's dm-verity device open")
 	}
-	if s, _, err := slot.Read(slot.Dir(filepath.Join(l.state(), "config"), img.root)); err != nil || s.Version != "checked" {
+	if s, _, err := slot.Read(slot.Dir(filepath.Join(l.state(), "config"), img.Root)); err != nil || s.Version != "checked" {
 		t.Errorf("STATE holds the config %q, want the one the check gave: %v", s.Version, err)
 	}
 	if got, err := os.ReadFile(filepath.Join(l.state(), "payload")); err != nil || string(got) != "checked" {

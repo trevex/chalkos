@@ -70,7 +70,7 @@ func TestRollback(t *testing.T) {
 		recorded++
 		return nil
 	}
-	res, err := l.node.Rollback(ctx, a.root, nil, record)
+	res, err := l.node.Rollback(ctx, a.Root, nil, record)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -79,10 +79,10 @@ func TestRollback(t *testing.T) {
 	}
 	l.boots(a, 3)
 	// The record names the rollback, so asking again finds its counted entry staged.
-	if again, err := l.node.Rollback(ctx, a.root, a.root, record); err != nil || !again.AlreadyStaged || again.Entry != "chalkos_3+3.efi" {
+	if again, err := l.node.Rollback(ctx, a.Root, a.Root, record); err != nil || !again.AlreadyStaged || again.Entry != "chalkos_3+3.efi" {
 		t.Errorf("a second request = %+v, %v; want it staged already", again, err)
 	}
-	if same, err := l.node.Rollback(ctx, b.root, nil, record); err != nil || !same.AlreadyInstalled {
+	if same, err := l.node.Rollback(ctx, b.Root, nil, record); err != nil || !same.AlreadyInstalled {
 		t.Errorf("a rollback to the running image = %+v, %v", same, err)
 	}
 	// The rollback and the request that found its image staged are recorded; one to the running
@@ -92,14 +92,14 @@ func TestRollback(t *testing.T) {
 	}
 	// Boots that are never found healthy use the tries up, and the disk boots b again.
 	for range 3 {
-		if e := l.attempt(); !bytes.Equal(e.RootHash, a.root) {
+		if e := l.attempt(); !bytes.Equal(e.RootHash, a.Root) {
 			t.Fatalf("booted %s", e.File)
 		}
 	}
 	if e, name := l.boot(); name != "b" || e.File != "chalkos_2.efi" {
 		t.Errorf("after the tries the disk boots %s from %s, want b", name, e.File)
 	}
-	if _, err := l.node.Rollback(ctx, a.root, nil, nil); err == nil || !strings.Contains(err.Error(), "keeps no image it ran before") {
+	if _, err := l.node.Rollback(ctx, a.Root, nil, nil); err == nil || !strings.Contains(err.Error(), "keeps no image it ran before") {
 		t.Errorf("after the fallback: %v", err)
 	}
 }
@@ -120,10 +120,10 @@ func TestRollbackStopped(t *testing.T) {
 		changes = append(changes, what)
 		return stop
 	}
-	if _, err := l.node.Rollback(context.Background(), a.root, nil, func() error { return stop }); !errors.Is(err, stop) || len(changes) != 0 {
+	if _, err := l.node.Rollback(context.Background(), a.Root, nil, func() error { return stop }); !errors.Is(err, stop) || len(changes) != 0 {
 		t.Fatalf("rollback = %v with changes %q, want it stopped by the record before any change", err, changes)
 	}
-	if _, err := l.node.Rollback(context.Background(), a.root, nil, nil); !errors.Is(err, stop) {
+	if _, err := l.node.Rollback(context.Background(), a.Root, nil, nil); !errors.Is(err, stop) {
 		t.Fatalf("rollback = %v, want it stopped", err)
 	}
 	if len(changes) != 1 || changes[0] != "name the UKI chalkos_3+3.efi" {
@@ -133,7 +133,7 @@ func TestRollbackStopped(t *testing.T) {
 		t.Errorf("the disk boots %s from %s, want b", name, e.File)
 	}
 	l.node.Change = nil
-	if res, err := l.node.Rollback(context.Background(), a.root, nil, nil); err != nil || res.Entry != "chalkos_3+3.efi" {
+	if res, err := l.node.Rollback(context.Background(), a.Root, nil, nil); err != nil || res.Entry != "chalkos_3+3.efi" {
 		t.Fatalf("rollback again = %+v, %v", res, err)
 	}
 	l.boots(a, 3)
@@ -149,12 +149,12 @@ func TestRollbackTwice(t *testing.T) {
 	}
 	l.bless(l.attempt())
 	l.runFrom(b, "chalkos_2.efi", 4, 5)
-	if _, err := l.node.Rollback(context.Background(), a.root, nil, nil); err != nil {
+	if _, err := l.node.Rollback(context.Background(), a.Root, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	l.bless(l.attempt())
 	l.runFrom(a, "chalkos_3.efi", 2, 3)
-	res, err := l.node.Rollback(context.Background(), b.root, nil, nil)
+	res, err := l.node.Rollback(context.Background(), b.Root, nil, nil)
 	if err != nil || res.Entry != "chalkos_4+2.efi" {
 		t.Fatalf("second rollback = %+v, %v", res, err)
 	}
@@ -174,35 +174,35 @@ func TestRollbackRefuses(t *testing.T) {
 		t.Error("recorded a refused rollback")
 		return nil
 	}
-	if _, err := l.node.Rollback(ctx, b.root, nil, record); err == nil || !strings.Contains(err.Error(), "keeps no image it ran before") {
+	if _, err := l.node.Rollback(ctx, b.Root, nil, record); err == nil || !strings.Contains(err.Error(), "keeps no image it ran before") {
 		t.Errorf("without one: %v", err)
 	}
 	if _, err := l.install(b); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := l.node.Rollback(ctx, c.root, nil, record); err == nil || !strings.Contains(err.Error(), "is staged to boot next from chalkos_2+2.efi") {
+	if _, err := l.node.Rollback(ctx, c.Root, nil, record); err == nil || !strings.Contains(err.Error(), "is staged to boot next from chalkos_2+2.efi") {
 		t.Errorf("a staged upgrade: %v", err)
 	}
 	// The upgrade's own image, staged with tries, is no rollback's unless the record names it.
-	for _, last := range [][]byte{nil, c.root} {
-		if _, err := l.node.Rollback(ctx, b.root, last, record); err == nil || !strings.Contains(err.Error(), "is staged to boot next from chalkos_2+2.efi; its upgrade replaced") {
+	for _, last := range [][]byte{nil, c.Root} {
+		if _, err := l.node.Rollback(ctx, b.Root, last, record); err == nil || !strings.Contains(err.Error(), "is staged to boot next from chalkos_2+2.efi; its upgrade replaced") {
 			t.Errorf("the staged upgrade's image, last %x: %v", last, err)
 		}
 	}
 	l.bless(l.attempt())
 	l.runFrom(b, "chalkos_2.efi", 4, 5)
-	if _, err := l.node.Rollback(ctx, c.root, nil, record); err == nil || !strings.Contains(err.Error(), "the image the node ran before is") {
+	if _, err := l.node.Rollback(ctx, c.Root, nil, record); err == nil || !strings.Contains(err.Error(), "the image the node ran before is") {
 		t.Errorf("another root hash: %v", err)
 	}
 	// The UKI is checked again, as an upgrade checks a new one.
 	platform := l.node.OSRelease["CHALKOS_PLATFORM"]
 	l.node.OSRelease["CHALKOS_PLATFORM"] = "elsewhere"
-	if _, err := l.node.Rollback(ctx, a.root, nil, record); err == nil || !strings.Contains(err.Error(), "the UKI's platform is") {
+	if _, err := l.node.Rollback(ctx, a.Root, nil, record); err == nil || !strings.Contains(err.Error(), "the UKI's platform is") {
 		t.Errorf("a UKI of another platform: %v", err)
 	}
 	l.node.OSRelease["CHALKOS_PLATFORM"] = platform
 	l.setUUID(2, "11111111-2222-3333-4444-555555555555")
-	if _, err := l.node.Rollback(ctx, a.root, nil, record); err == nil || !strings.Contains(err.Error(), "the inactive slot no longer holds the store") {
+	if _, err := l.node.Rollback(ctx, a.Root, nil, record); err == nil || !strings.Contains(err.Error(), "the inactive slot no longer holds the store") {
 		t.Errorf("a changed slot: %v", err)
 	}
 	if e, name := l.boot(); name != "b" || e.File != "chalkos_2.efi" {
@@ -224,7 +224,7 @@ func TestRollbackBeforeTheBootIsHealthy(t *testing.T) {
 	l.runFrom(b, e.File, 4, 5)
 	ctx := context.Background()
 
-	res, err := l.node.Rollback(ctx, a.root, nil, nil)
+	res, err := l.node.Rollback(ctx, a.Root, nil, nil)
 	if err != nil || res.Entry != "chalkos_3.efi" || res.AlreadyStaged {
 		t.Fatalf("rollback = %+v, %v; want a's UKI as generation 3 without tries", res, err)
 	}
@@ -240,10 +240,10 @@ func TestRollbackBeforeTheBootIsHealthy(t *testing.T) {
 	if e, name := l.boot(); name != "a" || e.File != "chalkos_3.efi" || e.TriesLeft != -1 {
 		t.Errorf("the disk boots %s from %s (%d tries left), want a from chalkos_3.efi uncounted", name, e.File, e.TriesLeft)
 	}
-	if again, err := l.node.Rollback(ctx, a.root, nil, nil); err != nil || !again.AlreadyStaged || again.Entry != "chalkos_3.efi" {
+	if again, err := l.node.Rollback(ctx, a.Root, nil, nil); err != nil || !again.AlreadyStaged || again.Entry != "chalkos_3.efi" {
 		t.Errorf("a second request = %+v, %v; want it staged already", again, err)
 	}
-	if _, err := l.node.Rollback(ctx, newImage(t, "c", 1).root, nil, nil); err == nil || !strings.Contains(err.Error(), "is staged to boot next from chalkos_3.efi") {
+	if _, err := l.node.Rollback(ctx, newImage(t, "c", 1).Root, nil, nil); err == nil || !strings.Contains(err.Error(), "is staged to boot next from chalkos_3.efi") {
 		t.Errorf("a rollback to another image: %v", err)
 	}
 	// An upgrade to the image finds it staged, the node's known-good image, which boots with the
@@ -263,7 +263,7 @@ func TestRollbackBeforeTheBootIsHealthy(t *testing.T) {
 		t.Fatalf("booted %s", e.File)
 	}
 	l.runFrom(a, "chalkos_3.efi", 2, 3)
-	res, err = l.node.Rollback(ctx, b.root, nil, nil)
+	res, err = l.node.Rollback(ctx, b.Root, nil, nil)
 	if err != nil || res.Entry != "chalkos_4+2.efi" {
 		t.Fatalf("rollback to b = %+v, %v; want it counted", res, err)
 	}
@@ -278,34 +278,34 @@ func TestCheckKeptUKIRefusesOnlyWhatItChecks(t *testing.T) {
 	l := newLab(t, a)
 	dir := t.TempDir()
 	kept, junk := filepath.Join(dir, "kept.efi"), filepath.Join(dir, "junk.efi")
-	if err := os.WriteFile(kept, a.uki, 0o644); err != nil {
+	if err := os.WriteFile(kept, a.UKI, 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(junk, []byte("not a PE file"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if tries, err := l.node.checkKeptUKI(kept, "chalkos", a.root); err != nil || tries != 3 {
+	if tries, err := l.node.checkKeptUKI(kept, "chalkos", a.Root); err != nil || tries != 3 {
 		t.Fatalf("check = %d, %v", tries, err)
 	}
 	var refusal *RefusalError
-	if _, err := l.node.checkKeptUKI(junk, "chalkos", a.root); !errors.As(err, &refusal) || !strings.Contains(err.Error(), "not a UKI") {
+	if _, err := l.node.checkKeptUKI(junk, "chalkos", a.Root); !errors.As(err, &refusal) || !strings.Contains(err.Error(), "not a UKI") {
 		t.Errorf("a file that is no UKI = %v, want a refusal", err)
 	}
 	platform := l.node.OSRelease["CHALKOS_PLATFORM"]
 	l.node.OSRelease["CHALKOS_PLATFORM"] = "elsewhere"
-	if _, err := l.node.checkKeptUKI(kept, "chalkos", a.root); !errors.As(err, &refusal) || !strings.Contains(err.Error(), "the UKI's platform is") {
+	if _, err := l.node.checkKeptUKI(kept, "chalkos", a.Root); !errors.As(err, &refusal) || !strings.Contains(err.Error(), "the UKI's platform is") {
 		t.Errorf("a UKI of another platform = %v, want a refusal", err)
 	}
 	l.node.OSRelease["CHALKOS_PLATFORM"] = platform
 	// A directory opens, but reading it fails.
-	if _, err := l.node.checkKeptUKI(dir, "chalkos", a.root); err == nil || errors.As(err, &refusal) || !strings.Contains(err.Error(), "read the UKI: ") {
+	if _, err := l.node.checkKeptUKI(dir, "chalkos", a.Root); err == nil || errors.As(err, &refusal) || !strings.Contains(err.Error(), "read the UKI: ") {
 		t.Errorf("a UKI that cannot be read = %v, want a failure that refuses nothing", err)
 	}
 	// The firmware's SecureBoot variable cannot be read, as a directory.
 	if err := os.Mkdir(filepath.Join(l.efivars, "SecureBoot-"+secureboot.GlobalVendor), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := l.node.checkKeptUKI(kept, "chalkos", a.root); err == nil || errors.As(err, &refusal) || !strings.Contains(err.Error(), "read the EFI variable SecureBoot") {
+	if _, err := l.node.checkKeptUKI(kept, "chalkos", a.Root); err == nil || errors.As(err, &refusal) || !strings.Contains(err.Error(), "read the EFI variable SecureBoot") {
 		t.Errorf("firmware variables that cannot be read = %v, want a failure that refuses nothing", err)
 	}
 }

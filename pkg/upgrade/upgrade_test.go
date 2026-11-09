@@ -35,6 +35,7 @@ import (
 	"github.com/trevex/chalkos/pkg/storeslot"
 	"github.com/trevex/chalkos/pkg/tool"
 	"github.com/trevex/chalkos/pkg/uki/ukitest"
+	"github.com/trevex/chalkos/pkg/upgrade/upgradetest"
 )
 
 // TestUpgradeAndFallBack installs an image as the next generation, boots it until its tries are
@@ -44,10 +45,10 @@ func TestUpgradeAndFallBack(t *testing.T) {
 	old, img := newImage(t, "a", 3), newImage(t, "b", 2)
 	l := newLab(t, old)
 	oldUKI := l.file("chalkos_1.efi")
-	rescue := newUKI(map[string]string{"IMAGE_ID": "rescue", "IMAGE_VERSION": "1"}, old.root)
+	rescue := upgradetest.UKI(map[string]string{"IMAGE_ID": "rescue", "IMAGE_VERSION": "1"}, old.Root)
 	os.WriteFile(filepath.Join(l.esp, esp.LinuxDir, "rescue_7.efi"), rescue, 0o644)
 	// A UKI is of the image its os-release names, whatever its file is called.
-	other := newUKI(map[string]string{"IMAGE_ID": "rescue", "IMAGE_VERSION": "2"}, newImage(t, "r", 3).root)
+	other := upgradetest.UKI(map[string]string{"IMAGE_ID": "rescue", "IMAGE_VERSION": "2"}, newImage(t, "r", 3).Root)
 	os.WriteFile(filepath.Join(l.esp, esp.LinuxDir, "chalkos_rescue.efi"), other, 0o644)
 	res, err := l.install(img)
 	if err != nil {
@@ -57,8 +58,8 @@ func TestUpgradeAndFallBack(t *testing.T) {
 		t.Errorf("result %+v", res)
 	}
 	parts := l.table()
-	if parts[4].Name != "store-verity_"+storeslot.LabelID(img.root) || parts[5].Name != "store_"+storeslot.LabelID(img.root) ||
-		parts[2].Name != "store-verity_"+storeslot.LabelID(old.root) || parts[3].Name != "store_"+storeslot.LabelID(old.root) {
+	if parts[4].Name != "store-verity_"+storeslot.LabelID(img.Root) || parts[5].Name != "store_"+storeslot.LabelID(img.Root) ||
+		parts[2].Name != "store-verity_"+storeslot.LabelID(old.Root) || parts[3].Name != "store_"+storeslot.LabelID(old.Root) {
 		t.Errorf("labels %q %q %q %q", parts[2].Name, parts[3].Name, parts[4].Name, parts[5].Name)
 	}
 	if !bytes.Equal(l.file("chalkos_1.efi"), oldUKI) {
@@ -71,7 +72,7 @@ func TestUpgradeAndFallBack(t *testing.T) {
 
 	// Two boots that are never found healthy use the tries up.
 	for range 2 {
-		if e := l.attempt(); !bytes.Equal(e.RootHash, img.root) {
+		if e := l.attempt(); !bytes.Equal(e.RootHash, img.Root) {
 			t.Fatalf("booted %s", e.File)
 		}
 	}
@@ -118,7 +119,7 @@ func TestVerityBlockSizes(t *testing.T) {
 			}
 			l.boots(tc.img, 2)
 			l.bless(l.attempt())
-			if e, name := l.boot(); name != tc.img.name || e.File != "chalkos_2.efi" {
+			if e, name := l.boot(); name != tc.img.Name || e.File != "chalkos_2.efi" {
 				t.Errorf("a blessed boot booted %q from %s", name, e.File)
 			}
 		})
@@ -222,8 +223,8 @@ func TestGenerationsPastNine(t *testing.T) {
 // does one whose os-release names no image ID, which systemd-boot sorts by its ID.
 func TestGenerationsByName(t *testing.T) {
 	old, img := newImage(t, "a", 3), newImage(t, "b", 3)
-	rescue := newUKI(map[string]string{"IMAGE_ID": "rescue", "IMAGE_VERSION": "1"}, old.root)
-	nixos := newUKI(map[string]string{"ID": "nixos", "VERSION_ID": "26.05"}, newImage(t, "c", 3).root)
+	rescue := upgradetest.UKI(map[string]string{"IMAGE_ID": "rescue", "IMAGE_VERSION": "1"}, old.Root)
+	nixos := upgradetest.UKI(map[string]string{"ID": "nixos", "VERSION_ID": "26.05"}, newImage(t, "c", 3).Root)
 	for _, tc := range []struct {
 		name, file string
 		uki        []byte
@@ -339,12 +340,12 @@ func TestStageAndActivate(t *testing.T) {
 	l := newLab(t, a)
 	ctx := context.Background()
 	var refusal *RefusalError
-	if _, err := l.node.Activate(ctx, b.root); !errors.As(err, &refusal) || !strings.Contains(err.Error(), "no image is staged in the inactive slot") {
+	if _, err := l.node.Activate(ctx, b.Root); !errors.As(err, &refusal) || !strings.Contains(err.Error(), "no image is staged in the inactive slot") {
 		t.Errorf("activate without a staged image = %v, want a refusal", err)
 	}
 	stage := func(img image) Result {
 		t.Helper()
-		res, err := l.node.Install(ctx, img.header, img.stream())
+		res, err := l.node.Install(ctx, img.header, img.Stream())
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -356,7 +357,7 @@ func TestStageAndActivate(t *testing.T) {
 	if e, name := l.boot(); name != "a" || e.File != "chalkos_1.efi" {
 		t.Errorf("the disk boots %s from %s, want a", name, e.File)
 	}
-	if staged, ok, err := esp.Staged(l.esp, "chalkos"); !ok || err != nil || !bytes.Equal(staged.RootHash, b.root) || staged.Generation != 2 {
+	if staged, ok, err := esp.Staged(l.esp, "chalkos"); !ok || err != nil || !bytes.Equal(staged.RootHash, b.Root) || staged.Generation != 2 {
 		t.Errorf("staged = %+v, %v, %v", staged, ok, err)
 	}
 	if res := stage(b); res.Active || !res.AlreadyStaged || res.Entry != ".staged-chalkos_2.efi" || res.Wrote {
@@ -368,49 +369,49 @@ func TestStageAndActivate(t *testing.T) {
 		checked = append(checked, rootHash)
 		return errors.New("no config")
 	}
-	if _, err := l.node.Activate(ctx, c.root); !errors.As(err, &refusal) || !strings.Contains(err.Error(), fmt.Sprintf("the image staged in the inactive slot is %x, not %x", b.root, c.root)) {
+	if _, err := l.node.Activate(ctx, c.Root); !errors.As(err, &refusal) || !strings.Contains(err.Error(), fmt.Sprintf("the image staged in the inactive slot is %x, not %x", b.Root, c.Root)) {
 		t.Errorf("activate another image = %v, want a refusal", err)
 	}
-	if _, err := l.node.Activate(ctx, b.root); !errors.As(err, &refusal) || err.Error() != "no config" || l.file(".staged-chalkos_2.efi") == nil {
+	if _, err := l.node.Activate(ctx, b.Root); !errors.As(err, &refusal) || err.Error() != "no config" || l.file(".staged-chalkos_2.efi") == nil {
 		t.Errorf("an activation CheckStaged refuses = %v, want a refusal; the staged UKI kept: %v", err, l.file(".staged-chalkos_2.efi") != nil)
 	}
-	if len(checked) != 1 || !bytes.Equal(checked[0], b.root) {
-		t.Errorf("CheckStaged checked %x, want %x alone", checked, b.root)
+	if len(checked) != 1 || !bytes.Equal(checked[0], b.Root) {
+		t.Errorf("CheckStaged checked %x, want %x alone", checked, b.Root)
 	}
 	l.node.CheckStaged = func([]byte) error { return nil }
 	l.node.Change = func(what string) error { return errCrash }
-	if _, err := l.node.Activate(ctx, b.root); !errors.Is(err, errCrash) || errors.As(err, &refusal) || l.file(".staged-chalkos_2.efi") == nil {
+	if _, err := l.node.Activate(ctx, b.Root); !errors.Is(err, errCrash) || errors.As(err, &refusal) || l.file(".staged-chalkos_2.efi") == nil {
 		t.Errorf("an activation stopped before its rename = %v, want no refusal; the staged UKI kept: %v", err, l.file(".staged-chalkos_2.efi") != nil)
 	}
 	l.node.Change = nil
-	res, err := l.node.Activate(ctx, b.root)
+	res, err := l.node.Activate(ctx, b.Root)
 	if err != nil || !res.Active || res.AlreadyStaged || res.Entry != "chalkos_2+2.efi" {
 		t.Fatalf("activate = %+v, %v", res, err)
 	}
 	l.boots(b, 2)
-	if res, err := l.node.Activate(ctx, b.root); err != nil || !res.Active || !res.AlreadyStaged || res.Entry != "chalkos_2+2.efi" {
+	if res, err := l.node.Activate(ctx, b.Root); err != nil || !res.Active || !res.AlreadyStaged || res.Entry != "chalkos_2+2.efi" {
 		t.Errorf("activate again = %+v, %v", res, err)
 	}
 
 	l.bless(l.attempt())
 	l.runFrom(b, "chalkos_2.efi", 4, 5)
-	if res, err := l.node.Activate(ctx, b.root); err != nil || !res.AlreadyInstalled {
+	if res, err := l.node.Activate(ctx, b.Root); err != nil || !res.AlreadyInstalled {
 		t.Errorf("activate the running image = %+v, %v", res, err)
 	}
 	if res := stage(c); res.Entry != ".staged-chalkos_3.efi" || l.file("chalkos_1.efi") != nil {
 		t.Errorf("stage = %+v; the image before kept: %v", res, l.file("chalkos_1.efi") != nil)
 	}
-	if _, err := l.node.Rollback(ctx, a.root, nil, nil); err == nil || !strings.Contains(err.Error(), fmt.Sprintf("the image %x is staged in the inactive slot", c.root)) {
+	if _, err := l.node.Rollback(ctx, a.Root, nil, nil); err == nil || !strings.Contains(err.Error(), fmt.Sprintf("the image %x is staged in the inactive slot", c.Root)) {
 		t.Errorf("rollback while an image is staged = %v", err)
 	}
 	// The staged UKI's generation counts as an entry's: the image staged next takes the one above.
 	if res := stage(d); res.Entry != ".staged-chalkos_4.efi" || !res.Wrote || l.file(".staged-chalkos_3.efi") != nil {
 		t.Errorf("stage another image = %+v; the staged UKI before kept: %v", res, l.file(".staged-chalkos_3.efi") != nil)
 	}
-	if staged, ok, err := esp.Staged(l.esp, "chalkos"); !ok || err != nil || !bytes.Equal(staged.RootHash, d.root) {
+	if staged, ok, err := esp.Staged(l.esp, "chalkos"); !ok || err != nil || !bytes.Equal(staged.RootHash, d.Root) {
 		t.Errorf("staged = %+v, %v, %v", staged, ok, err)
 	}
-	if res, err := l.node.Activate(ctx, d.root); err != nil || res.Entry != "chalkos_4+3.efi" {
+	if res, err := l.node.Activate(ctx, d.Root); err != nil || res.Entry != "chalkos_4+3.efi" {
 		t.Errorf("activate = %+v, %v", res, err)
 	}
 	l.boots(d, 3)
@@ -426,7 +427,7 @@ func TestStagedGenerationsNeverGoBack(t *testing.T) {
 	ctx := context.Background()
 	stage := func(img image) Result {
 		t.Helper()
-		res, err := l.node.Install(ctx, img.header, img.stream())
+		res, err := l.node.Install(ctx, img.header, img.Stream())
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -435,11 +436,11 @@ func TestStagedGenerationsNeverGoBack(t *testing.T) {
 	if res := stage(b); res.Entry != ".staged-chalkos_2.efi" {
 		t.Fatalf("stage = %+v", res)
 	}
-	if res, err := l.node.Activate(ctx, b.root); err != nil || res.Entry != "chalkos_2+2.efi" {
+	if res, err := l.node.Activate(ctx, b.Root); err != nil || res.Entry != "chalkos_2+2.efi" {
 		t.Fatalf("activate = %+v, %v", res, err)
 	}
 	for range 2 {
-		if e := l.attempt(); !bytes.Equal(e.RootHash, b.root) {
+		if e := l.attempt(); !bytes.Equal(e.RootHash, b.Root) {
 			t.Fatalf("booted %s", e.File)
 		}
 	}
@@ -452,7 +453,7 @@ func TestStagedGenerationsNeverGoBack(t *testing.T) {
 	if res := stage(d); res.Entry != ".staged-chalkos_4.efi" {
 		t.Errorf("stage over the staged image = %+v, want generation 4", res)
 	}
-	if res, err := l.node.Activate(ctx, d.root); err != nil || res.Entry != "chalkos_4+3.efi" {
+	if res, err := l.node.Activate(ctx, d.Root); err != nil || res.Entry != "chalkos_4+3.efi" {
 		t.Errorf("activate = %+v, %v", res, err)
 	}
 	l.boots(d, 3)
@@ -476,7 +477,7 @@ func TestUpgradeWhoseActivationFails(t *testing.T) {
 		t.Fatalf("upgrade = %v, want the image staged", err)
 	}
 	l.node.Change = nil
-	if res, err := l.node.Activate(context.Background(), b.root); err != nil || res.Entry != "chalkos_2+2.efi" {
+	if res, err := l.node.Activate(context.Background(), b.Root); err != nil || res.Entry != "chalkos_2+2.efi" {
 		t.Errorf("activate = %+v, %v", res, err)
 	}
 	l.boots(b, 2)
@@ -515,11 +516,11 @@ func TestInterruptedUpgrade(t *testing.T) {
 			for range 3 {
 				l.attempt()
 			}
-			staged, err := esp.Temporary(l.esp, b.root)
+			staged, err := esp.Temporary(l.esp, b.Root)
 			if err != nil {
 				t.Fatal(err)
 			}
-			if err := os.WriteFile(staged, b.uki[:100], 0o644); err != nil {
+			if err := os.WriteFile(staged, b.UKI[:100], 0o644); err != nil {
 				t.Fatal(err)
 			}
 			return l
@@ -574,10 +575,10 @@ func TestInterruptedUpgrade(t *testing.T) {
 // TestInterruptedTransfer cuts the stream at points within the store, the hash tree and the UKI.
 func TestInterruptedTransfer(t *testing.T) {
 	old, img := newImage(t, "a", 3), newImage(t, "b", 3)
-	store, hash, uki := int64(len(img.store)), int64(len(img.hash)), int64(len(img.uki))
+	store, hash, uki := int64(len(img.Store)), int64(len(img.HashTree)), int64(len(img.UKI))
 	for _, cut := range []int64{0, store / 2, store, store + hash/2, store + hash, store + hash + uki/2, store + hash + uki - 1} {
 		l := newLab(t, old)
-		if _, err := l.node.Install(context.Background(), img.header, io.LimitReader(img.stream(), cut)); err == nil || !strings.Contains(err.Error(), "receive") {
+		if _, err := l.node.Install(context.Background(), img.header, io.LimitReader(img.Stream(), cut)); err == nil || !strings.Contains(err.Error(), "receive") {
 			t.Errorf("a stream cut after %d bytes: %v", cut, err)
 		}
 		l.bootsRunningOr(img, 3)
@@ -605,7 +606,7 @@ func TestRefusesBeforeChanging(t *testing.T) {
 		// The node booted generation 2, which is counted, and falls back to generation 1.
 		{"a running boot not found healthy", nil, func(l *lab) {
 			os.Rename(filepath.Join(l.esp, esp.LinuxDir, "chalkos_1.efi"), filepath.Join(l.esp, esp.LinuxDir, "chalkos_2+2-1.efi"))
-			os.WriteFile(filepath.Join(l.esp, esp.LinuxDir, "chalkos_1.efi"), newImage(t, "z", 3).uki, 0o644)
+			os.WriteFile(filepath.Join(l.esp, esp.LinuxDir, "chalkos_1.efi"), newImage(t, "z", 3).UKI, 0o644)
 			l.setVariable("LoaderEntrySelected", "chalkos_2.efi")
 		}, "not been found healthy"},
 		{"an entry that boots another store", nil, func(l *lab) { l.setVariable("LoaderEntrySelected", "chalkos_9.efi") }, "not on the ESP"},
@@ -615,12 +616,12 @@ func TestRefusesBeforeChanging(t *testing.T) {
 			}
 		}, "needs two slots"},
 		{"both slots carrying the running store's UUIDs", nil, func(l *lab) {
-			data, verity := storeslot.PartitionUUIDs(old.root)
+			data, verity := storeslot.PartitionUUIDs(old.Root)
 			l.setUUID(4, verity)
 			l.setUUID(5, data)
 		}, "both slots"},
 		{"the inactive slot carrying a UUID of the running store", nil, func(l *lab) {
-			data, _ := storeslot.PartitionUUIDs(old.root)
+			data, _ := storeslot.PartitionUUIDs(old.Root)
 			l.setUUID(5, data)
 		}, "the inactive slot carries"},
 		// Names chalkd never writes, placed by hand or corrupted.
@@ -631,13 +632,13 @@ func TestRefusesBeforeChanging(t *testing.T) {
 		// A copy of the running UKI the upgrade keeps, which systemd-boot may sort above the new
 		// entry.
 		{"a kept copy with a leading zero", nil, func(l *lab) {
-			os.WriteFile(filepath.Join(l.esp, esp.LinuxDir, "chalkos_01.efi"), old.uki, 0o644)
+			os.WriteFile(filepath.Join(l.esp, esp.LinuxDir, "chalkos_01.efi"), old.UKI, 0o644)
 		}, "chalkos_01.efi on the ESP is not named chalkos_<generation>.efi"},
 		{"a kept copy with a counter past an int32", nil, func(l *lab) {
-			os.WriteFile(filepath.Join(l.esp, esp.LinuxDir, "chalkos_7+2147483648.efi"), old.uki, 0o644)
+			os.WriteFile(filepath.Join(l.esp, esp.LinuxDir, "chalkos_7+2147483648.efi"), old.UKI, 0o644)
 		}, "chalkos_7+2147483648.efi on the ESP is not named chalkos_<generation>.efi"},
 		{"a kept copy named by no generation", nil, func(l *lab) {
-			os.WriteFile(filepath.Join(l.esp, esp.LinuxDir, "chalkos_5.1.efi"), old.uki, 0o644)
+			os.WriteFile(filepath.Join(l.esp, esp.LinuxDir, "chalkos_5.1.efi"), old.UKI, 0o644)
 		}, "chalkos_5.1.efi on the ESP is not named chalkos_<generation>.efi"},
 		{"a generation past a uint64's range", nil, func(l *lab) {
 			os.WriteFile(filepath.Join(l.esp, esp.LinuxDir, "chalkos_18446744073709551616.efi"), []byte("not a UKI"), 0o644)
@@ -661,7 +662,7 @@ func TestRefusesBeforeChanging(t *testing.T) {
 			if tc.header != nil {
 				tc.header(&h)
 			}
-			_, err := l.node.Install(context.Background(), h, img.stream())
+			_, err := l.node.Install(context.Background(), h, img.Stream())
 			if err == nil || !strings.Contains(err.Error(), tc.want) {
 				t.Errorf("install = %v, want %q", err, tc.want)
 			}
@@ -697,29 +698,29 @@ func TestRefusesBeforeActivating(t *testing.T) {
 	}
 	withOSRelease := func(edit func(map[string]string)) image {
 		c := img
-		osRelease := img.osRelease(3)
+		osRelease := upgradetest.OSRelease("chalkos", 3)
 		edit(osRelease)
-		c.uki = newUKI(osRelease, img.root)
+		c.UKI = upgradetest.UKI(osRelease, img.Root)
 		return withHeader(c)
 	}
 	otherStore := img
-	otherStore.uki = newUKI(img.osRelease(3), old.root)
+	otherStore.UKI = upgradetest.UKI(upgradetest.OSRelease("chalkos", 3), old.Root)
 	noTries := img
-	noTries.uki = newUKI(img.osRelease(0), img.root)
+	noTries.UKI = upgradetest.UKI(upgradetest.OSRelease("chalkos", 0), img.Root)
 	otherArch := img
-	otherArch.uki = ukitest.WithMachine(img.uki, 0xaa64)
+	otherArch.UKI = ukitest.WithMachine(img.UKI, 0xaa64)
 	// Another store than the running one: an upgrade carrying that is refused before it starts.
 	wrongRoot := img
-	wrongRoot.root = newImage(t, "c", 3).root
+	wrongRoot.Root = newImage(t, "c", 3).Root
 	for _, tc := range []struct {
 		name string
 		img  image
 		want string
 	}{
-		{"a corrupted store", func() image { c := img; c.store = flip(img.store, 100); return c }(), "store's SHA-256"},
-		{"a corrupted hash tree", func() image { c := img; c.hash = flip(img.hash, 600); return c }(), "hash tree's SHA-256"},
+		{"a corrupted store", func() image { c := img; c.Store = flip(img.Store, 100); return c }(), "store's SHA-256"},
+		{"a corrupted hash tree", func() image { c := img; c.HashTree = flip(img.HashTree, 600); return c }(), "hash tree's SHA-256"},
 		{"a store that does not match the root hash", withHeader(wrongRoot), "root hash"},
-		{"a corrupted UKI", func() image { c := img; c.uki = flip(img.uki, 700); return c }(), "UKI's SHA-256"},
+		{"a corrupted UKI", func() image { c := img; c.UKI = flip(img.UKI, 700); return c }(), "UKI's SHA-256"},
 		{"a UKI of another platform", withOSRelease(func(o map[string]string) { o["CHALKOS_PLATFORM"] = "kvm" }), "platform is \"kvm\""},
 		// systemd-boot would order the entry by the version before its generation.
 		{"a UKI with an image version", withOSRelease(func(o map[string]string) { o["IMAGE_VERSION"] = "0.3.0" }), "sets IMAGE_VERSION to \"0.3.0\""},
@@ -730,7 +731,7 @@ func TestRefusesBeforeActivating(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			l := newLab(t, old)
-			_, err := l.node.Install(context.Background(), tc.img.header, io.MultiReader(bytes.NewReader(tc.img.store), bytes.NewReader(tc.img.hash), bytes.NewReader(tc.img.uki)))
+			_, err := l.node.Install(context.Background(), tc.img.header, io.MultiReader(bytes.NewReader(tc.img.Store), bytes.NewReader(tc.img.HashTree), bytes.NewReader(tc.img.UKI)))
 			if err == nil || !strings.Contains(err.Error(), tc.want) {
 				t.Fatalf("install = %v, want %q", err, tc.want)
 			}
@@ -746,8 +747,8 @@ func TestRefusesBeforeActivating(t *testing.T) {
 
 // withHeader gives an image the header of its store and UKI as they are.
 func withHeader(img image) image {
-	img.header = img.headerFor(img.uki)
-	img.header.RootHash = img.root
+	img.header = img.headerFor(img.UKI)
+	img.header.RootHash = img.Root
 	return img
 }
 
@@ -761,8 +762,8 @@ func TestSecureBoot(t *testing.T) {
 	key, cert, certDER := imagetest.Signer(t, dir, "db")
 	_, _, otherDER := imagetest.Signer(t, dir, "other")
 	signed := img
-	signed.uki = imagetest.SBSign(t, img.uki, key, cert)
-	signed.header = signed.headerFor(signed.uki)
+	signed.UKI = imagetest.SBSign(t, img.UKI, key, cert)
+	signed.header = signed.headerFor(signed.UKI)
 
 	for _, tc := range []struct {
 		name       string
@@ -819,16 +820,16 @@ func TestRebootHelps(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			l := newLab(t, old)
 			os.Remove(filepath.Join(l.esp, esp.LinuxDir, "chalkos_1.efi"))
-			os.WriteFile(filepath.Join(l.esp, esp.LinuxDir, tc.booted), img.uki, 0o644)
+			os.WriteFile(filepath.Join(l.esp, esp.LinuxDir, tc.booted), img.UKI, 0o644)
 			for name, other := range tc.others {
-				os.WriteFile(filepath.Join(l.esp, esp.LinuxDir, name), other.uki, 0o644)
+				os.WriteFile(filepath.Join(l.esp, esp.LinuxDir, name), other.UKI, 0o644)
 			}
 			l.setVariable("LoaderEntrySelected", "chalkos_2.efi")
 			entries, err := esp.Entries(l.esp)
 			if err != nil {
 				t.Fatal(err)
 			}
-			got, why := RebootHelps(entries, l.efivars, img.root)
+			got, why := RebootHelps(entries, l.efivars, img.Root)
 			if got != tc.want {
 				t.Errorf("RebootHelps = %v (%s), want %v", got, why, tc.want)
 			}
@@ -906,7 +907,7 @@ func TestChangesOutliveTheCaller(t *testing.T) {
 			t.Errorf("sfdisk %v ran with a cancelled context", args)
 		}
 	}}
-	l.node.Install(ctx, img.header, img.stream())
+	l.node.Install(ctx, img.header, img.Stream())
 }
 
 // holdDisk takes the disk's BSD lock, as another program changing its partitions would, until
@@ -1015,9 +1016,9 @@ func TestRemovesTheTemporaryUKI(t *testing.T) {
 	}
 	// A UKI refused once written.
 	otherPlatform := img
-	osRelease := img.osRelease(3)
+	osRelease := upgradetest.OSRelease("chalkos", 3)
 	osRelease["CHALKOS_PLATFORM"] = "kvm"
-	otherPlatform.uki = newUKI(osRelease, img.root)
+	otherPlatform.UKI = upgradetest.UKI(osRelease, img.Root)
 	l = newLab(t, old)
 	if _, err := l.install(withHeader(otherPlatform)); err == nil {
 		t.Fatal("installed a UKI of another platform")
@@ -1036,8 +1037,8 @@ func TestRefusesABootLoader(t *testing.T) {
 		t.Errorf("changed: %s", what)
 		return nil
 	}
-	img.header.BootLoader = imagepart.Part{Size: 1, SHA256: sum([]byte{1})}
-	stream := io.MultiReader(img.stream(), bytes.NewReader([]byte{1}))
+	img.header.BootLoader = imagepart.Part{Size: 1, SHA256: upgradetest.Sum([]byte{1})}
+	stream := io.MultiReader(img.Stream(), bytes.NewReader([]byte{1}))
 	if _, err := l.node.Install(context.Background(), img.header, stream); err == nil || !strings.Contains(err.Error(), "boot loader") {
 		t.Fatalf("install = %v, want the boot loader refused", err)
 	}
@@ -1054,10 +1055,10 @@ func TestHeaderValidate(t *testing.T) {
 		want   string
 	}{
 		{"none", 0, nil, ""},
-		{"one", 100, sum([]byte{1}), ""},
+		{"one", 100, upgradetest.Sum([]byte{1}), ""},
 		{"no SHA-256", 100, nil, "together"},
-		{"a SHA-256 alone", 0, sum([]byte{1}), "together"},
-		{"too large", 64 << 20, sum([]byte{1}), "larger"},
+		{"a SHA-256 alone", 0, upgradetest.Sum([]byte{1}), "together"},
+		{"too large", 64 << 20, upgradetest.Sum([]byte{1}), "larger"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			h := img.header
@@ -1091,8 +1092,8 @@ func TestSkippedStoreIsChecked(t *testing.T) {
 		name string
 		edit func(h *Header)
 	}{
-		{"store", func(h *Header) { h.Store.SHA256 = sum(nil) }},
-		{"hash tree", func(h *Header) { h.Verity.SHA256 = sum(nil) }},
+		{"store", func(h *Header) { h.Store.SHA256 = upgradetest.Sum(nil) }},
+		{"hash tree", func(h *Header) { h.Verity.SHA256 = upgradetest.Sum(nil) }},
 	} {
 		l := newLab(t, old)
 		if _, err := l.install(img); err != nil {
@@ -1102,7 +1103,7 @@ func TestSkippedStoreIsChecked(t *testing.T) {
 		h := img.header
 		tc.edit(&h)
 		clear(l.writes)
-		if _, err := l.node.Install(context.Background(), h, img.stream()); err == nil || !strings.Contains(err.Error(), "the "+tc.name+"'s SHA-256") {
+		if _, err := l.node.Install(context.Background(), h, img.Stream()); err == nil || !strings.Contains(err.Error(), "the "+tc.name+"'s SHA-256") {
 			t.Errorf("install = %v, want the %s's SHA-256 refused", err, tc.name)
 		}
 		if len(l.writes) != 0 {
@@ -1116,9 +1117,9 @@ func TestSkippedStoreIsChecked(t *testing.T) {
 // schemas is what guards that.
 func TestInstallsAnotherVariant(t *testing.T) {
 	old, img := newImage(t, "a", 3), newImage(t, "b", 3)
-	osRelease := img.osRelease(3)
+	osRelease := upgradetest.OSRelease("chalkos", 3)
 	osRelease["CHALKOS_VARIANT"] = "gpu"
-	img.uki = newUKI(osRelease, img.root)
+	img.UKI = upgradetest.UKI(osRelease, img.Root)
 	l := newLab(t, old)
 	res, err := l.install(withHeader(img))
 	if err != nil || res.AlreadyInstalled || res.Entry == "" {
@@ -1146,15 +1147,15 @@ func TestInstallPassesOverAHeldStoreOfAPull(t *testing.T) {
 		reg.ServeHTTP(w, r)
 	}))
 	t.Cleanup(srv.Close)
-	oh := ociimage.Header{ImageID: "chalkos", RootHash: hex.EncodeToString(img.root), Architecture: "x86-64", Platform: "metal"}
+	oh := ociimage.Header{ImageID: "chalkos", RootHash: hex.EncodeToString(img.Root), Architecture: "x86-64", Platform: "metal"}
 	contract, err := ociimage.Contract{Metadata: []byte("{}"), Schemas: map[string][]byte{"a.json": []byte("{}")}, Definitions: map[string][]byte{"00-esp.conf": []byte("esp")}}.Tar()
 	if err != nil {
 		t.Fatal(err)
 	}
 	oci, err := ociimage.Build(oh,
-		ociimage.BytesBlob(ociimage.StoreType, img.store),
-		ociimage.BytesBlob(ociimage.HashTreeType, img.hash),
-		ociimage.BytesBlob(ociimage.UKIType, img.uki),
+		ociimage.BytesBlob(ociimage.StoreType, img.Store),
+		ociimage.BytesBlob(ociimage.HashTreeType, img.HashTree),
+		ociimage.BytesBlob(ociimage.UKIType, img.UKI),
 		ociimage.BytesBlob(ociimage.BootLoaderType, []byte("boot loader")),
 		ociimage.BytesBlob(ociimage.ContractType, contract))
 	if err != nil {
@@ -1179,12 +1180,12 @@ func TestInstallPassesOverAHeldStoreOfAPull(t *testing.T) {
 	if len(l.writes) != 0 {
 		t.Errorf("wrote partitions %v", l.writes)
 	}
-	for what, data := range map[string][]byte{"store": img.store, "hash tree": img.hash} {
-		if _, ok := served.Load("sha256:" + hex.EncodeToString(sum(data))); ok {
+	for what, data := range map[string][]byte{"store": img.Store, "hash tree": img.HashTree} {
+		if _, ok := served.Load("sha256:" + hex.EncodeToString(upgradetest.Sum(data))); ok {
 			t.Errorf("the %s was fetched", what)
 		}
 	}
-	if _, ok := served.Load("sha256:" + hex.EncodeToString(sum(img.uki))); !ok {
+	if _, ok := served.Load("sha256:" + hex.EncodeToString(upgradetest.Sum(img.UKI))); !ok {
 		t.Error("the UKI was not fetched")
 	}
 }
@@ -1193,7 +1194,7 @@ func TestInstallPassesOverAHeldStoreOfAPull(t *testing.T) {
 func TestInstallRefusesAStreamGoingOnAfterTheUKI(t *testing.T) {
 	old, img := newImage(t, "a", 3), newImage(t, "b", 3)
 	l := newLab(t, old)
-	stream := io.MultiReader(img.stream(), strings.NewReader("x"))
+	stream := io.MultiReader(img.Stream(), strings.NewReader("x"))
 	if _, err := l.node.Install(context.Background(), img.header, stream); err == nil || !strings.Contains(err.Error(), "the stream goes on after the UKI") {
 		t.Errorf("install = %v", err)
 	}
@@ -1203,7 +1204,7 @@ func TestInstallRefusesAStreamGoingOnAfterTheUKI(t *testing.T) {
 func TestInstallRefusesAStreamFailingAtItsEnd(t *testing.T) {
 	old, img := newImage(t, "a", 3), newImage(t, "b", 3)
 	l := newLab(t, old)
-	stream := io.MultiReader(img.stream(), iotest.ErrReader(errors.New("connection reset")))
+	stream := io.MultiReader(img.Stream(), iotest.ErrReader(errors.New("connection reset")))
 	if _, err := l.node.Install(context.Background(), img.header, stream); err == nil || !strings.Contains(err.Error(), "receive the UKI: connection reset") {
 		t.Errorf("install = %v", err)
 	}

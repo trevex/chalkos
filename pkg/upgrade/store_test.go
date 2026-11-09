@@ -127,12 +127,12 @@ func TestTheImageIsCheckedBeforeItBoots(t *testing.T) {
 		t.Errorf("toplevel = %q, want the UKI's init= directory", toplevel)
 	}
 	parts := l.table()
-	open := "veritysetup open " + parts[5].Node + " " + StoreMapping + " " + parts[4].Node + " " + hex.EncodeToString(img.root)
+	open := "veritysetup open " + parts[5].Node + " " + StoreMapping + " " + parts[4].Node + " " + hex.EncodeToString(img.Root)
 	if !slices.Contains(r.Calls, open) || !slices.Contains(r.Calls, "mount -t erofs -o ro /dev/mapper/"+StoreMapping+" "+mount) ||
 		r.Calls[len(r.Calls)-1] != "veritysetup close "+StoreMapping {
 		t.Errorf("ran %q", r.Calls)
 	}
-	if e, name := l.boot(); name != old.name {
+	if e, name := l.boot(); name != old.Name {
 		t.Errorf("after a refusal the disk boots %s from %s", name, e.File)
 	}
 	if temp := l.tempUKIs(); len(temp) != 0 || parts[5].Name != "_empty" {
@@ -193,7 +193,7 @@ func TestALeftOpenStoreThatStaysBusyStopsTheUpgrade(t *testing.T) {
 	if !slices.Equal(r.Calls, []string{"umount " + l.node.StoreMount}) {
 		t.Errorf("ran %q, want only the unmount", r.Calls)
 	}
-	if e, name := l.boot(); name != old.name {
+	if e, name := l.boot(); name != old.Name {
 		t.Errorf("the disk boots %s from %s", name, e.File)
 	}
 
@@ -224,7 +224,7 @@ func TestAStoreThatDoesNotMountIsClosed(t *testing.T) {
 	if i < 0 || !slices.Equal(r.Calls[i+1:], []string{"veritysetup close " + StoreMapping}) {
 		t.Errorf("ran %q, want the device closed and nothing unmounted after the mount", r.Calls)
 	}
-	if e, name := l.boot(); name != old.name {
+	if e, name := l.boot(); name != old.Name {
 		t.Errorf("the disk boots %s from %s", name, e.File)
 	}
 }
@@ -249,7 +249,7 @@ func TestAStagedStoreThatDoesNotMountIsNoRefusal(t *testing.T) {
 	if !errors.As(err, &retired) || errors.As(err, &check) || !strings.Contains(err.Error(), "mount the written store") || checks != 1 {
 		t.Fatalf("install = %v after %d checks, want a StagedRetiredError of the mount without a CheckError", err, checks)
 	}
-	if e, name := l.boot(); name != old.name {
+	if e, name := l.boot(); name != old.Name {
 		t.Errorf("the disk boots %s from %s", name, e.File)
 	}
 }
@@ -317,7 +317,7 @@ func TestAStagedImageIsCheckedAgain(t *testing.T) {
 	if _, err := l.install(img); !errors.Is(err, refusal) || !errors.As(err, &retired) || !errors.As(retired.Err, &check) {
 		t.Fatalf("install = %v, want the check's refusal, which retired the staged image", err)
 	}
-	if e, name := l.boot(); name != old.name || l.file(res.Entry) != nil {
+	if e, name := l.boot(); name != old.Name || l.file(res.Entry) != nil {
 		t.Errorf("after a refusal the disk boots %s from %s, and %s stayed: %v", name, e.File, res.Entry, l.file(res.Entry) != nil)
 	}
 	if parts := l.table(); parts[5].Name != "_empty" {
@@ -337,19 +337,19 @@ func TestReadImage(t *testing.T) {
 	_, r := l.fakeStore()
 	l.node.StoreMount = filepath.Join(t.TempDir(), "store")
 	l.node.CheckStore = func(Store) error { return nil }
-	if _, err := l.node.Install(context.Background(), img.header, img.stream()); err != nil {
+	if _, err := l.node.Install(context.Background(), img.header, img.Stream()); err != nil {
 		t.Fatal(err)
 	}
 	// The image is read while it is staged, through its staged UKI, and once it is active.
 	for _, state := range []string{"staged", "active"} {
 		if state == "active" {
-			if _, err := l.node.Activate(context.Background(), img.root); err != nil {
+			if _, err := l.node.Activate(context.Background(), img.Root); err != nil {
 				t.Fatal(err)
 			}
 		}
 		r.ResetCalls()
 		var toplevel string
-		if err := l.node.ReadImage(context.Background(), img.root, func(s Store) error {
+		if err := l.node.ReadImage(context.Background(), img.Root, func(s Store) error {
 			toplevel = s.Toplevel
 			_, err := s.Resolve(s.Toplevel + "/../x/etc/chalkos/schemas")
 			return err
@@ -357,12 +357,12 @@ func TestReadImage(t *testing.T) {
 			t.Fatalf("%s: %v", state, err)
 		}
 		parts := l.table()
-		open := "veritysetup open " + parts[5].Node + " " + StoreMapping + " " + parts[4].Node + " " + hex.EncodeToString(img.root)
+		open := "veritysetup open " + parts[5].Node + " " + StoreMapping + " " + parts[4].Node + " " + hex.EncodeToString(img.Root)
 		if toplevel != "/nix/store/x" || !slices.Contains(r.Calls, open) || r.Calls[len(r.Calls)-1] != "veritysetup close "+StoreMapping {
 			t.Errorf("%s: toplevel %q, ran %q", state, toplevel, r.Calls)
 		}
 	}
-	for name, root := range map[string][]byte{"the running image": old.root, "another image": bytes.Repeat([]byte{0xee}, 32)} {
+	for name, root := range map[string][]byte{"the running image": old.Root, "another image": bytes.Repeat([]byte{0xee}, 32)} {
 		err := l.node.ReadImage(context.Background(), root, func(Store) error { t.Errorf("%s: read", name); return nil })
 		if err == nil {
 			t.Errorf("%s: read without an error", name)
@@ -389,7 +389,7 @@ func TestOnlyARecheckRetiresTheStagedImage(t *testing.T) {
 
 	other := img
 	other.header.Architecture = "arm64"
-	if _, err := l.node.Install(context.Background(), other.header, other.stream()); err == nil || errors.As(err, &retired) {
+	if _, err := l.node.Install(context.Background(), other.header, other.Stream()); err == nil || errors.As(err, &retired) {
 		t.Errorf("install for another architecture = %v, want a refusal that retired nothing", err)
 	}
 	l.boots(img, 2)
@@ -412,7 +412,7 @@ func TestARecheckRetiresAStagedImage(t *testing.T) {
 	var refusal error
 	checks := 0
 	l.node.CheckStore = func(Store) error { checks++; return refusal }
-	stage := func() (Result, error) { return l.node.Install(context.Background(), img.header, img.stream()) }
+	stage := func() (Result, error) { return l.node.Install(context.Background(), img.header, img.Stream()) }
 	if _, err := stage(); err != nil {
 		t.Fatal(err)
 	}
@@ -427,7 +427,7 @@ func TestARecheckRetiresAStagedImage(t *testing.T) {
 	if files, err := esp.StagedFiles(l.esp); err != nil || len(files) != 0 {
 		t.Errorf("staged UKIs after the refusal = %q, %v; want none", files, err)
 	}
-	if e, name := l.boot(); name != old.name {
+	if e, name := l.boot(); name != old.Name {
 		t.Errorf("after a refusal the disk boots %s from %s", name, e.File)
 	}
 	if parts := l.table(); parts[5].Name != "_empty" {

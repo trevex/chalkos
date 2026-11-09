@@ -4,12 +4,8 @@ import (
 	"bytes"
 	"cmp"
 	"context"
-	"crypto/sha256"
 	"encoding/binary"
-	"errors"
 	"fmt"
-	"io"
-	"math/rand/v2"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -22,25 +18,20 @@ import (
 	"unicode/utf16"
 
 	"github.com/trevex/chalkos/pkg/esp"
-	"github.com/trevex/chalkos/pkg/imagepart"
 	"github.com/trevex/chalkos/pkg/storage/gpt"
 	"github.com/trevex/chalkos/pkg/storage/hostops/hostopstest"
 	"github.com/trevex/chalkos/pkg/storeslot"
 	"github.com/trevex/chalkos/pkg/tool"
 	"github.com/trevex/chalkos/pkg/tool/tooltest"
 	"github.com/trevex/chalkos/pkg/uki"
-	"github.com/trevex/chalkos/pkg/uki/ukitest"
+	"github.com/trevex/chalkos/pkg/upgrade/upgradetest"
 	"github.com/trevex/chalkos/pkg/verity"
 )
 
-// image is a test image: a small store, its hash tree and a UKI booting it. Its name seeds the
-// store, so images of different names differ in their root hashes.
+// image is a test image, as upgradetest makes it, with the header that describes it.
 type image struct {
-	name        string
-	store, hash []byte
-	root        []byte
-	uki         []byte
-	header      Header
+	upgradetest.Image
+	header Header
 }
 
 // imageNames names the test images by their root hashes, so the lab says which image an entry
@@ -58,63 +49,19 @@ func newImage(t *testing.T, name string, tries int) image {
 // newImageOfBlocks makes an image whose store has the number of dm-verity blocks of the size.
 func newImageOfBlocks(t *testing.T, name string, tries int, blockSize uint32, blocks uint64) image {
 	t.Helper()
-	seed := sha256.Sum256([]byte(name))
-	r := rand.New(rand.NewPCG(binary.LittleEndian.Uint64(seed[:]), binary.LittleEndian.Uint64(seed[8:])))
-	store := make([]byte, blocks*uint64(blockSize))
-	for i := range store {
-		store[i] = byte(r.Uint32())
-	}
-	salt := make([]byte, 32)
-	for i := range salt {
-		salt[i] = byte(r.Uint32())
-	}
-	hash, root, err := verity.Tree(bytes.NewReader(store), verity.Superblock{DataBlockSize: blockSize, HashBlockSize: blockSize, DataBlocks: blocks, Salt: salt})
-	if err != nil {
-		t.Fatal(err)
-	}
-	img := image{name: name, store: store, hash: hash, root: root}
-	img.uki = newUKI(img.osRelease(tries), root)
-	img.header = img.headerFor(img.uki)
-	imageNames.Store(string(root), name)
+	img := image{Image: upgradetest.NewImage(t, upgradetest.Options{Name: name, BlockSize: blockSize, Blocks: blocks, Tries: tries})}
+	img.header = img.headerFor(img.UKI)
+	imageNames.Store(string(img.Root), name)
 	return img
-}
-
-// newUKI builds a UKI of the os-release booting the store of the root hash.
-func newUKI(osRelease map[string]string, root []byte) []byte {
-	return ukitest.UKI(osRelease, fmt.Sprintf("init=/nix/store/x/init usrhash=%x", root))
-}
-
-func (img image) osRelease(tries int) map[string]string {
-	return map[string]string{
-		"IMAGE_ID":           "chalkos",
-		"IMAGE_VERSION":      "",
-		"CHALKOS_VARIANT":    "worker",
-		"CHALKOS_PLATFORM":   "metal",
-		"CHALKOS_BOOT_TRIES": strconv.Itoa(tries),
-	}
-}
-
-func sum(b []byte) []byte {
-	s := sha256.Sum256(b)
-	return s[:]
-}
-
-// part describes data as a part of an image.
-func part(data []byte) imagepart.Part {
-	return imagepart.Part{Size: int64(len(data)), SHA256: sum(data)}
 }
 
 // headerFor describes the image with the UKI given.
 func (img image) headerFor(uki []byte) Header {
 	return Header{
 		ImageID: "chalkos", Platform: "metal", Architecture: "x86-64",
-		Image: storeslot.Image{RootHash: img.root, Store: part(img.store), Verity: part(img.hash)},
-		UKI:   part(uki),
+		Image: img.Slot(),
+		UKI:   upgradetest.Part(uki),
 	}
-}
-
-func (img image) stream() io.Reader {
-	return io.MultiReader(bytes.NewReader(img.store), bytes.NewReader(img.hash), bytes.NewReader(img.uki))
 }
 
 // GPT partition types of the lab's disk.
@@ -162,8 +109,8 @@ func newLabOf(t *testing.T, running image, sector int64) *lab {
 	if err := os.Truncate(l.disk, 16<<20); err != nil {
 		t.Fatal(err)
 	}
-	data, verityUUID := storeslot.PartitionUUIDs(running.root)
-	id := storeslot.LabelID(running.root)
+	data, verityUUID := storeslot.PartitionUUIDs(running.Root)
+	id := storeslot.LabelID(running.Root)
 	script := fmt.Sprintf(`label: gpt
 size=2MiB, type=%s, name=esp
 size=256KiB, type=%s, name=store-verity_%s, uuid=%s
@@ -193,9 +140,9 @@ size=1MiB, type=%s, name=state
 		}
 	}
 	parts := l.table()
-	l.writePartition(parts[2], running.hash)
-	l.writePartition(parts[3], running.store)
-	if err := os.WriteFile(filepath.Join(l.esp, esp.LinuxDir, "chalkos_1.efi"), running.uki, 0o644); err != nil {
+	l.writePartition(parts[2], running.HashTree)
+	l.writePartition(parts[3], running.Store)
+	if err := os.WriteFile(filepath.Join(l.esp, esp.LinuxDir, "chalkos_1.efi"), running.UKI, 0o644); err != nil {
 		t.Fatal(err)
 	}
 	l.runFrom(running, "chalkos_1.efi", 2, 3)
@@ -208,10 +155,10 @@ size=1MiB, type=%s, name=state
 func (l *lab) runFrom(img image, entry string, verityPart, dataPart int) {
 	l.t.Helper()
 	l.running, l.runningEntry, l.runningV, l.runningData = img, entry, verityPart, dataPart
-	if err := os.WriteFile(l.cmdline, fmt.Appendf(nil, "init=/x usrhash=%x\n", img.root), 0o644); err != nil {
+	if err := os.WriteFile(l.cmdline, fmt.Appendf(nil, "init=/x usrhash=%x\n", img.Root), 0o644); err != nil {
 		l.t.Fatal(err)
 	}
-	l.node.OSRelease = img.osRelease(3)
+	l.node.OSRelease = upgradetest.OSRelease("chalkos", 3)
 	// The entry's ID is its name without the tries counter, as systemd-boot reads it.
 	id := entry
 	if plus := strings.LastIndexByte(entry, '+'); plus >= 0 {
@@ -283,33 +230,6 @@ func (l *lab) writePartition(p gpt.Partition, data []byte) {
 	}
 }
 
-// partitionFile is a partition of the lab's disk image.
-type partitionFile struct {
-	f         *os.File
-	off, size int64
-}
-
-func (p partitionFile) ReadAt(b []byte, off int64) (int, error) {
-	if off >= p.size {
-		return 0, io.EOF
-	}
-	n, err := p.f.ReadAt(b[:min(int64(len(b)), p.size-off)], p.off+off)
-	if err == nil && n < len(b) {
-		err = io.EOF
-	}
-	return n, err
-}
-
-func (p partitionFile) WriteAt(b []byte, off int64) (int, error) {
-	if off+int64(len(b)) > p.size {
-		return 0, errors.New("write beyond the partition")
-	}
-	return p.f.WriteAt(b, p.off+off)
-}
-
-func (p partitionFile) Sync() error  { return p.f.Sync() }
-func (p partitionFile) Close() error { return p.f.Close() }
-
 // open opens a partition of the disk image, refusing writes to the running slot's partitions as
 // the kernel would, and counts writes.
 func (l *lab) open(p gpt.Partition, write bool) (storeslot.PartitionFile, error) {
@@ -330,7 +250,7 @@ func (l *lab) open(p gpt.Partition, write bool) (storeslot.PartitionFile, error)
 	if err != nil {
 		return nil, err
 	}
-	return partitionFile{f: f, off: p.Start * l.sector, size: p.Size * l.sector}, nil
+	return upgradetest.PartitionFile{F: f, Off: p.Start * l.sector, Size: p.Size * l.sector}, nil
 }
 
 // boot is what systemd-boot would boot: the entry it selects, and the name of the image whose
@@ -468,10 +388,10 @@ func (l *lab) bootsRunningOr(img image, tries int) {
 	l.t.Helper()
 	e, name := l.boot()
 	switch {
-	case name == l.running.name && e.File == l.runningEntry:
-	case name == img.name && e.TriesLeft == tries && e.TriesDone <= 0:
+	case name == l.running.Name && e.File == l.runningEntry:
+	case name == img.Name && e.TriesLeft == tries && e.TriesDone <= 0:
 	default:
-		l.t.Errorf("the disk boots %q from %s (%d tries left), want %s from %s or %s with %d tries", name, e.File, e.TriesLeft, l.running.name, l.runningEntry, img.name, tries)
+		l.t.Errorf("the disk boots %q from %s (%d tries left), want %s from %s or %s with %d tries", name, e.File, e.TriesLeft, l.running.Name, l.runningEntry, img.Name, tries)
 	}
 }
 
@@ -479,13 +399,13 @@ func (l *lab) bootsRunningOr(img image, tries int) {
 func (l *lab) boots(img image, tries int) {
 	l.t.Helper()
 	e, name := l.boot()
-	if name != img.name || e.TriesLeft != tries {
-		l.t.Errorf("the disk boots %q from %s (%d tries left), want %s with %d tries", name, e.File, e.TriesLeft, img.name, tries)
+	if name != img.Name || e.TriesLeft != tries {
+		l.t.Errorf("the disk boots %q from %s (%d tries left), want %s with %d tries", name, e.File, e.TriesLeft, img.Name, tries)
 	}
 }
 
 func (l *lab) install(img image) (Result, error) {
-	return l.node.Upgrade(context.Background(), img.header, img.stream())
+	return l.node.Upgrade(context.Background(), img.header, img.Stream())
 }
 
 // file returns a UKI's content, or nil when it is gone.
