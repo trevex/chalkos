@@ -31,7 +31,7 @@ command needs an operator client file or the secrets file.
 
 | Flag | Type | Default | Description |
 | --- | --- | --- | --- |
-| `--address`{ #flag-address } | list of string | each node's address in the inventory | Address of the node's chalkd, host or host:port, or NODE=ADDR of another node of the cluster, such as a control plane the drain goes through; repeat it for several. |
+| `--address`{ #flag-address } | list of [NODE=]ADDR | each node's address in the inventory | Address of the node's chalkd, host or host:port, or NODE=ADDR of another node of the cluster, such as a control plane the drain goes through; repeat it for several. |
 | `--allow-downtime`{ #flag-allow-downtime } | boolean | `false` | Reboot a control plane of a cluster with one or two, whose etcd loses its quorum and API server is down while it reboots. |
 | `--config`{ #flag-config } | string | $CHALKOSCONFIG, else ~/.config/chalkos/config, unless --secrets is given | Client file to authenticate with instead of the secrets file. |
 | `--delete-emptydir-data`{ #flag-delete-emptydir-data } | boolean | `false` | Evict pods with emptyDir volumes too, deleting their data. |

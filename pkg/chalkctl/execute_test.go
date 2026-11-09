@@ -122,15 +122,15 @@ func TestExecuteFlags(t *testing.T) {
 	}
 }
 
-// The help names the value of --address NODE=ADDR.
+// The help names the value of --address [NODE=]ADDR, in every command that takes it.
 func TestAddressValueName(t *testing.T) {
-	for _, name := range []string{"rotate", "upgrade"} {
+	for _, name := range []string{"status", "apply-config", "rotate", "upgrade"} {
 		ta := newTestApp(t)
 		if got := ta.execute(context.Background(), name, "--help"); got != 0 {
 			t.Fatalf("%s --help exits with %d", name, got)
 		}
-		if !strings.Contains(ta.stdout.String(), "--address NODE=ADDR ") {
-			t.Errorf("%s --help does not show --address NODE=ADDR:\n%s", name, ta.stdout.String())
+		if !strings.Contains(ta.stdout.String(), "--address [NODE=]ADDR ") {
+			t.Errorf("%s --help does not show --address [NODE=]ADDR:\n%s", name, ta.stdout.String())
 		}
 	}
 }

@@ -24,7 +24,7 @@ the secrets file.
 
 | Flag | Type | Default | Description |
 | --- | --- | --- | --- |
-| `--address`{ #flag-address } | list of string | the node's address in the inventory | Address of the node's chalkd, host or host:port. |
+| `--address`{ #flag-address } | list of [NODE=]ADDR | each node's address in the inventory | Address of a node's chalkd: host or host:port for the node the command names, or NODE=ADDR for any node; may be repeated. |
 | `--force`{ #flag-force } | boolean | `false` | Renew without asking whether the node is revoked. |
 | `--identity`{ #flag-identity } | list of string | ~/.config/chalkos/age.key, ~/.ssh/id_ed25519, ~/.ssh/id_rsa | File holding an age identity to decrypt the secrets with; may be repeated. |
 | `--inventory`{ #flag-inventory } | string | chalkos.yaml in the current directory, when it exists | Inventory naming the cluster's nodes, their addresses and their config files. |

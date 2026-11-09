@@ -118,7 +118,7 @@ file.
 
 | Flag | Type | Default | Description |
 | --- | --- | --- | --- |
-| `--address`{ #flag-address } | list of string | each node's address in the inventory | Address of the node's chalkd, host or host:port, or NODE=ADDR of any node of the cluster; repeat it for several. |
+| `--address`{ #flag-address } | list of [NODE=]ADDR | each node's address in the inventory | Address of the node's chalkd, host or host:port, or NODE=ADDR of any node of the cluster; repeat it for several. |
 | `--allow-downgrade`{ #flag-allow-downgrade } | boolean | `false` | Deliver an API server one minor release older than the newest the control planes run. |
 | `--allow-downtime`{ #flag-allow-downtime } | boolean | `false` | Deliver a new API server version to a control plane of a cluster with one or two, whose API may be unavailable while that control plane's API server restarts. |
 | `--confirm`{ #flag-confirm } | boolean | `false` | Confirm the node's open trial once the node is healthy, so it keeps the config on trial. |

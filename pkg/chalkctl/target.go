@@ -184,6 +184,10 @@ func (a *app) dialEither(t *target, p pinFlags) (*client.Conn, error) {
 	return dialInstalled(t)
 }
 
+// nodeAddressesUsage is the usage of --address of a command that reaches the cluster's nodes and
+// names none: rotate, and upgrade, which names its nodes with --nodes.
+const nodeAddressesUsage = "address of a node's chalkd, NODE=ADDR, host or host:port; may be repeated (default each node's address in the inventory)"
+
 // setAddressUsage gives --address, which nodeFlags registered, the usage of a command that
 // reaches other nodes than the one it names.
 func setAddressUsage(fs *pflag.FlagSet, usage string) {

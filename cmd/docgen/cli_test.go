@@ -244,7 +244,7 @@ type addresses []string
 
 func (addresses) String() string   { return "" }
 func (addresses) Set(string) error { return nil }
-func (addresses) Type() string     { return "nodeAddresses" }
+func (addresses) Type() string     { return "[NODE=]ADDR" }
 
 // unknownValue is a flag value of a type docgen does not name.
 type unknownValue struct{}
@@ -266,7 +266,7 @@ func TestFlagType(t *testing.T) {
 		"bool":    "boolean",
 		"map":     "map of string",
 		"list":    "list of string",
-		"address": "list of string",
+		"address": "list of [NODE=]ADDR",
 		"net":     "ipNet",
 	} {
 		if got := flagType(fs.Lookup(name)); got != want {
