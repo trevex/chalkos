@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/spf13/cobra"
+	"github.com/trevex/chalkos/pkg/internal/cli/clitest"
 )
 
 // execute runs args as the chalkctl program does and returns its exit status.
@@ -148,14 +148,5 @@ func TestAddressValueName(t *testing.T) {
 
 // Every command is described for its help and the reference pages.
 func TestCommandsDescribed(t *testing.T) {
-	var walk func(cmd *cobra.Command)
-	walk = func(cmd *cobra.Command) {
-		if cmd.Short == "" || cmd.Long == "" || cmd.Example == "" {
-			t.Errorf("%s lacks a short or long description or examples", cmd.CommandPath())
-		}
-		for _, c := range cmd.Commands() {
-			walk(c)
-		}
-	}
-	walk(newCommand(&app{}))
+	clitest.CheckDescribed(t, newCommand(&app{}))
 }

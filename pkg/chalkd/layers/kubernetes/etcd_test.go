@@ -17,6 +17,7 @@ import (
 	kubernetesv1 "github.com/trevex/chalkos/pkg/api/kubernetes/v1"
 	"github.com/trevex/chalkos/pkg/chalkd/layer"
 	"github.com/trevex/chalkos/pkg/chalkd/layers/kubernetes/kubernetestest"
+	"github.com/trevex/chalkos/pkg/internal/testwait"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
 	"github.com/trevex/chalkos/pkg/kubernetes/etcd"
 	"github.com/trevex/chalkos/pkg/kubernetes/etcd/etcdtest"
@@ -285,7 +286,7 @@ func TestEtcdLeaveAfterMemberRemoved(t *testing.T) {
 	// The node's own etcd does not answer; asking it ends after the timeout.
 	k.timing.EtcdTimeout = silentEtcdTimeout
 	k.startLoops()
-	eventually(t, "the learner's state", func() bool { return strings.Contains(kubernetesState(t, s), "catches up") })
+	testwait.Eventually(t, "the learner's state", func() bool { return strings.Contains(kubernetesState(t, s), "catches up") })
 	learner := slices.IndexFunc(members(t, cli), func(m etcd.Member) bool { return m.Learner })
 	if learner < 0 {
 		t.Fatal("no learner")
@@ -293,7 +294,7 @@ func TestEtcdLeaveAfterMemberRemoved(t *testing.T) {
 	if err := cli.Remove(context.Background(), members(t, cli)[learner].ID, false); err != nil {
 		t.Fatal(err)
 	}
-	eventually(t, "the join to stop", func() bool {
+	testwait.Eventually(t, "the join to stop", func() bool {
 		return strings.Contains(kubernetesState(t, s), "run chalkctl etcd leave and reinstall the node")
 	})
 	// The learner's etcd wrote its data.
@@ -469,7 +470,7 @@ func TestEtcdLeaveWaitsForTheCertificateLock(t *testing.T) {
 	left := make(chan error, 1)
 	go func() { left <- leave(s, false) }()
 	// Once etcd removed the member, the leave goes on to stop the control plane.
-	eventually(t, "the member's removal", func() bool {
+	testwait.Eventually(t, "the member's removal", func() bool {
 		list, err := cp2.Members(context.Background())
 		return err == nil && len(list) == 1
 	})

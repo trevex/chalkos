@@ -9,6 +9,7 @@ import (
 
 	clientv3 "go.etcd.io/etcd/client/v3"
 
+	"github.com/trevex/chalkos/pkg/internal/testwait"
 	"github.com/trevex/chalkos/pkg/kubernetes/etcd"
 	"github.com/trevex/chalkos/pkg/kubernetes/etcd/etcdtest"
 	"github.com/trevex/chalkos/pkg/pki"
@@ -143,7 +144,7 @@ func startNodeWith(t *testing.T, ca pki.CertKey, url, name string, ttl int, h *h
 func holder(t *testing.T, nodes []*electionNode) *electionNode {
 	t.Helper()
 	var found *electionNode
-	eventually(t, "one holder of the VIPs", func() bool {
+	testwait.Eventually(t, "one holder of the VIPs", func() bool {
 		found = nil
 		count := 0
 		for _, n := range nodes {
@@ -164,7 +165,7 @@ func TestVIPOneHolder(t *testing.T) {
 	first := holder(t, nodes)
 	// Three renewals span the lease's lifetime.
 	renewed := first.renewals.Load()
-	eventually(t, "renewals of the holder's lease", func() bool { return first.renewals.Load() >= renewed+3 })
+	testwait.Eventually(t, "renewals of the holder's lease", func() bool { return first.renewals.Load() >= renewed+3 })
 	if now, most := h.count(); now != 1 || most != 1 {
 		t.Errorf("%d nodes hold the VIPs, at most %d; want one", now, most)
 	}
@@ -187,7 +188,7 @@ func TestVIPMovesWhenUnhealthy(t *testing.T) {
 	nodes, h := startElection(t, ca, m, 2)
 	first := holder(t, nodes)
 	first.healthy.Store(false)
-	eventually(t, "the unhealthy node to release the VIPs", func() bool { return !first.addrs.held.Load() })
+	testwait.Eventually(t, "the unhealthy node to release the VIPs", func() bool { return !first.addrs.held.Load() })
 	if second := holder(t, nodes); second == first {
 		t.Fatal("the unhealthy node holds the VIPs again")
 	}
@@ -218,7 +219,7 @@ func TestVIPReleasedOnLeaseLoss(t *testing.T) {
 	if _, err := cli.Revoke(context.Background(), clientv3.LeaseID(resp.Kvs[0].Lease)); err != nil {
 		t.Fatal(err)
 	}
-	eventually(t, "the release", func() bool { return first.addrs.released.Load() > released })
+	testwait.Eventually(t, "the release", func() bool { return first.addrs.released.Load() > released })
 	// Healthy, it campaigns with a new lease and holds them again.
 	holder(t, nodes)
 }
@@ -250,7 +251,7 @@ func TestVIPResignedOnStop(t *testing.T) {
 		stopped := time.Now()
 		current.stop()
 		<-current.done
-		eventually(t, "the next candidate to hold the VIPs", func() bool { return next.addrs.held.Load() })
+		testwait.Eventually(t, "the next candidate to hold the VIPs", func() bool { return next.addrs.held.Load() })
 		if d := time.Since(stopped); d > 10*time.Second {
 			t.Fatalf("the next candidate took the VIPs %v after the holder stopped", d)
 		}
@@ -281,7 +282,7 @@ func TestVIPReleasedBeforeLeaseExpires(t *testing.T) {
 	lease := clientv3.LeaseID(resp.Kvs[0].Lease)
 	// Renewals go back and forth a few times.
 	renewed := first.renewals.Load()
-	eventually(t, "renewals of the holder's lease", func() bool { return first.renewals.Load() >= renewed+2 })
+	testwait.Eventually(t, "renewals of the holder's lease", func() bool { return first.renewals.Load() >= renewed+2 })
 	revoked := make(chan time.Time, 1)
 	go func() {
 		for ctx.Err() == nil {
@@ -299,7 +300,7 @@ func TestVIPReleasedBeforeLeaseExpires(t *testing.T) {
 	case <-time.After(time.Minute):
 		t.Fatal("etcd did not revoke the lease of the cut-off holder")
 	}
-	eventually(t, "the second node to hold the VIPs", func() bool { return second.addrs.held.Load() })
+	testwait.Eventually(t, "the second node to hold the VIPs", func() bool { return second.addrs.held.Load() })
 	if first.addrs.held.Load() {
 		t.Fatal("the cut-off holder holds the VIPs")
 	}
@@ -326,14 +327,14 @@ func stalledStandby(t *testing.T) (first, standby *electionNode) {
 	proxy := etcdtest.NewProxy(t, m.ClientURL, 0)
 	standby = startNode(t, ca, proxy.URL, "cp2", electionTTL, h)
 	cli := first.election.Client
-	eventually(t, "the standby's campaign", func() bool {
+	testwait.Eventually(t, "the standby's campaign", func() bool {
 		resp, err := cli.Get(context.Background(), electionPrefix, clientv3.WithPrefix(), clientv3.WithCountOnly())
 		return err == nil && resp.Count == 2
 	})
 	// Renewals sent after its key was written return after the reply to its campaign: it waits
 	// for the holder's key to go.
 	renewed := standby.renewals.Load()
-	eventually(t, "renewals of the standby's lease", func() bool { return standby.renewals.Load() >= renewed+2 })
+	testwait.Eventually(t, "renewals of the standby's lease", func() bool { return standby.renewals.Load() >= renewed+2 })
 	proxy.Pause()
 	return first, standby
 }
@@ -385,7 +386,7 @@ func TestVIPKeptWhileRenewed(t *testing.T) {
 	released := first.addrs.released.Load()
 	// Three renewals span the lease's lifetime.
 	renewed := first.renewals.Load()
-	eventually(t, "renewals of the holder's lease", func() bool { return first.renewals.Load() >= renewed+3 })
+	testwait.Eventually(t, "renewals of the holder's lease", func() bool { return first.renewals.Load() >= renewed+3 })
 	if first.addrs.released.Load() != released || !first.addrs.held.Load() {
 		t.Error("the holder dropped the VIPs while its lease was renewed")
 	}
@@ -410,7 +411,7 @@ func TestVIPKeptWhenOneRenewalStalls(t *testing.T) {
 	holder(t, []*electionNode{first})
 	released := first.addrs.released.Load()
 	// The third renewal starts after the holder would have released the VIPs without the second.
-	eventually(t, "the stalled renewal and later ones", func() bool { return calls.Load() >= 3 })
+	testwait.Eventually(t, "the stalled renewal and later ones", func() bool { return calls.Load() >= 3 })
 	if first.addrs.released.Load() != released || !first.addrs.held.Load() {
 		t.Error("the holder dropped the VIPs after one stalled renewal")
 	}
@@ -443,9 +444,9 @@ func TestVIPReleasedWhenRenewalsFail(t *testing.T) {
 		}
 	})
 	holder(t, []*electionNode{first})
-	eventually(t, "a renewal", func() bool { return first.renewals.Load() > 0 })
+	testwait.Eventually(t, "a renewal", func() bool { return first.renewals.Load() > 0 })
 	failing.Store(true)
-	eventually(t, "the release", func() bool { return !first.addrs.held.Load() })
+	testwait.Eventually(t, "the release", func() bool { return !first.addrs.held.Load() })
 	first.addrs.mu.Lock()
 	releasedAt := first.addrs.releasedAt
 	first.addrs.mu.Unlock()
@@ -461,18 +462,6 @@ func TestVIPReleasedWhenRenewalsFail(t *testing.T) {
 	}
 	if failed.Load() < 2 {
 		t.Errorf("%d failed renewals before the release, want retries", failed.Load())
-	}
-}
-
-// eventually waits until check holds.
-func eventually(t *testing.T, what string, check func() bool) {
-	t.Helper()
-	deadline := time.Now().Add(time.Minute)
-	for !check() {
-		if time.Now().After(deadline) {
-			t.Fatalf("waiting for %s", what)
-		}
-		time.Sleep(20 * time.Millisecond)
 	}
 }
 

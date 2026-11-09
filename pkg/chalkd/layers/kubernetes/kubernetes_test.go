@@ -30,6 +30,7 @@ import (
 	"github.com/trevex/chalkos/pkg/chalkd/renewal/renewaltest"
 	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/config/slot"
+	"github.com/trevex/chalkos/pkg/internal/testwait"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
 	"github.com/trevex/chalkos/pkg/kubernetes/etcd/etcdtest"
 	"github.com/trevex/chalkos/pkg/kubernetes/manifests"
@@ -326,7 +327,7 @@ func TestControlPlaneLoopRefusesMismatchedPin(t *testing.T) {
 	}
 	k.startLoops()
 	want := "bootstrapped: the node's address differs from its etcd peer URL https://192.168.100.12:2380; restore the address"
-	eventually(t, "the mismatch's state", func() bool {
+	testwait.Eventually(t, "the mismatch's state", func() bool {
 		st, err := k.status(context.Background())
 		return err == nil && st.State == want
 	})
@@ -492,7 +493,7 @@ func TestControlPlaneRendersStaleStaticPods(t *testing.T) {
 	k.stopLoops()
 	staleStaticPod(t, p)
 	k.startLoops()
-	eventually(t, "the stale static pod to be rendered", func() bool {
+	testwait.Eventually(t, "the stale static pod to be rendered", func() bool {
 		data, _ := os.ReadFile(filepath.Join(p.Manifests(), "kube-apiserver.json"))
 		return string(data) == rendered
 	})

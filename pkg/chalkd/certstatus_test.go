@@ -16,6 +16,7 @@ import (
 	"github.com/trevex/chalkos/pkg/chalkd/layer"
 	"github.com/trevex/chalkos/pkg/chalkd/renewal"
 	"github.com/trevex/chalkos/pkg/clustersecrets"
+	"github.com/trevex/chalkos/pkg/internal/testwait"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
 	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
 	"github.com/trevex/chalkos/pkg/layers"
@@ -64,7 +65,7 @@ func TestStatusCertificatesOfAControlPlane(t *testing.T) {
 	go func() { s.Renewal.Run(ctx); close(done) }()
 	t.Cleanup(func() { cancel(); <-done })
 	s.Renewal.Force()
-	eventually(t, "the renewal to fail", func() bool { return s.Renewal.Problem() != "" })
+	testwait.Eventually(t, "the renewal to fail", func() bool { return s.Renewal.Problem() != "" })
 	wantProblem := "renewal failing: connection refused; expires " + s.Certificate.Current().Leaf.NotAfter.UTC().Format(time.RFC3339)
 	if got := status(t, s).Certificates[0]; got.Problem != wantProblem {
 		t.Errorf("node certificate problem %q, want %q", got.Problem, wantProblem)

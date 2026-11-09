@@ -25,6 +25,7 @@ import (
 	"github.com/trevex/chalkos/pkg/clustersecrets"
 	"github.com/trevex/chalkos/pkg/config/slot"
 	"github.com/trevex/chalkos/pkg/effects"
+	"github.com/trevex/chalkos/pkg/internal/testwait"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
 	"github.com/trevex/chalkos/pkg/kubernetes/addons"
 	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
@@ -962,17 +963,17 @@ func TestApplyConfigRestartsTheControlPlaneLoop(t *testing.T) {
 	}
 	write(t, p.BootstrappedMarker(), "")
 	startKubernetes(t, s)
-	eventually(t, "the first loop", func() bool { return len(seen()) == 1 })
+	testwait.Eventually(t, "the first loop", func() bool { return len(seen()) == 1 })
 
 	config := strings.Replace(workerConfig, "type: worker", "type: controlplane", 1)
 	if _, err := sendConfig(s, config); err != nil {
 		t.Fatal(err)
 	}
-	eventually(t, "the loop after the first config", func() bool { return len(seen()) == 3 })
+	testwait.Eventually(t, "the loop after the first config", func() bool { return len(seen()) == 3 })
 	if _, err := sendConfig(s, strings.Replace(config, `:6443", `, `:6443", domain: lab.local, `, 1)); err != nil {
 		t.Fatal(err)
 	}
-	eventually(t, "the loop after the changed cluster", func() bool { return len(seen()) == 5 })
+	testwait.Eventually(t, "the loop after the changed cluster", func() bool { return len(seen()) == 5 })
 	if got := seen(); !slices.Equal(got, []string{"start", "end", "start", "end", "start"}) {
 		t.Errorf("events = %v", got)
 	}

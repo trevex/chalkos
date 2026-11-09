@@ -7,9 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/spf13/cobra"
-
 	"github.com/trevex/chalkos/pkg/config"
+	"github.com/trevex/chalkos/pkg/internal/cli/clitest"
 )
 
 // run runs chalkcfg with args on s and returns its stdout, stderr and exit status.
@@ -128,16 +127,7 @@ func TestGetFails(t *testing.T) {
 
 // Every visible command has the descriptions and examples its reference page shows.
 func TestCommandsDescribed(t *testing.T) {
-	var walk func(cmd *cobra.Command)
-	walk = func(cmd *cobra.Command) {
-		if !cmd.Hidden && (cmd.Short == "" || cmd.Long == "" || cmd.Example == "") {
-			t.Errorf("%s lacks a short or long description or examples", cmd.CommandPath())
-		}
-		for _, c := range cmd.Commands() {
-			walk(c)
-		}
-	}
-	walk(NewCommand())
+	clitest.CheckDescribed(t, NewCommand())
 }
 
 // Nodes have no logins to complete commands in.

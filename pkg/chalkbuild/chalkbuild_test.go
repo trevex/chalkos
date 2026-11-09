@@ -9,9 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/spf13/cobra"
-
 	"github.com/trevex/chalkos/pkg/image/imagetest"
+	"github.com/trevex/chalkos/pkg/internal/cli/clitest"
 	"github.com/trevex/chalkos/pkg/ociimage"
 	"github.com/trevex/chalkos/pkg/ociimage/ocitest"
 )
@@ -29,16 +28,7 @@ func run(args ...string) (status int, stdout, stderr string) {
 
 // Every command is described for its help and the reference pages.
 func TestCommandsDescribed(t *testing.T) {
-	var walk func(cmd *cobra.Command)
-	walk = func(cmd *cobra.Command) {
-		if !cmd.Hidden && (cmd.Short == "" || cmd.Long == "" || cmd.Example == "") {
-			t.Errorf("%s lacks a short or long description or examples", cmd.CommandPath())
-		}
-		for _, c := range cmd.Commands() {
-			walk(c)
-		}
-	}
-	walk(NewCommand())
+	clitest.CheckDescribed(t, NewCommand())
 }
 
 // TestSign signs a copy of an image directory and names each disk image it signed.

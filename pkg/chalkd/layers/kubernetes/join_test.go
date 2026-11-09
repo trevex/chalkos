@@ -17,6 +17,7 @@ import (
 
 	"github.com/trevex/chalkos/pkg/chalkd/layer"
 	"github.com/trevex/chalkos/pkg/chalkd/layers/kubernetes/kubernetestest"
+	"github.com/trevex/chalkos/pkg/internal/testwait"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
 	"github.com/trevex/chalkos/pkg/kubernetes/etcd"
 	"github.com/trevex/chalkos/pkg/kubernetes/etcd/etcdtest"
@@ -55,18 +56,6 @@ func joiningNode(t *testing.T) (*Plugin, *etcdtest.Member, *etcd.Client) {
 	return s, cp0, cli
 }
 
-// eventually waits until check holds.
-func eventually(t *testing.T, what string, check func() bool) {
-	t.Helper()
-	deadline := time.Now().Add(time.Minute)
-	for !check() {
-		if time.Now().After(deadline) {
-			t.Fatalf("waiting for %s", what)
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
-}
-
 func kubernetesState(t *testing.T, s *Plugin) string {
 	t.Helper()
 	st, err := s.k.status(context.Background())
@@ -101,8 +90,8 @@ func TestJoin(t *testing.T) {
 		return ctx.Err()
 	}
 	k.startLoops()
-	eventually(t, "etcd's static pod", func() bool { return exists(filepath.Join(p.Manifests(), "etcd.json")) })
-	eventually(t, "the learner's state", func() bool { return strings.Contains(kubernetesState(t, s), "catches up") })
+	testwait.Eventually(t, "etcd's static pod", func() bool { return exists(filepath.Join(p.Manifests(), "etcd.json")) })
+	testwait.Eventually(t, "the learner's state", func() bool { return strings.Contains(kubernetesState(t, s), "catches up") })
 	if pods, _ := os.ReadDir(p.Manifests()); len(pods) != 1 {
 		t.Errorf("static pods %v, want etcd alone while it is a learner", pods)
 	}
@@ -161,14 +150,14 @@ func TestJoinStopsAtStaleMember(t *testing.T) {
 	}
 	k.startLoops()
 	want := "joining the cluster at https://192.168.100.11:6443: etcd has a member " + fmt.Sprintf("%x", stale.ID) + " (not started, " + joinPeerURL + ") already; remove it with chalkctl etcd remove-member " + fmt.Sprintf("%x", stale.ID)
-	eventually(t, "the stale member's state", func() bool { return kubernetesState(t, s) == want })
+	testwait.Eventually(t, "the stale member's state", func() bool { return kubernetesState(t, s) == want })
 	if exists(k.state.Pin()) || exists(k.state.EtcdInitialCluster()) {
 		t.Error("a node that found a stale member pinned itself or prepared etcd")
 	}
 	if err := cli.Remove(context.Background(), stale.ID, false); err != nil {
 		t.Fatal(err)
 	}
-	eventually(t, "the join to go on", func() bool { return strings.Contains(kubernetesState(t, s), "catches up") })
+	testwait.Eventually(t, "the join to go on", func() bool { return strings.Contains(kubernetesState(t, s), "catches up") })
 	list := members(t, cli)
 	if len(list) != 2 || list[1].ID == stale.ID {
 		t.Errorf("members %+v, want cp0 and a new learner", list)
@@ -194,7 +183,7 @@ func TestJoinResumes(t *testing.T) {
 		t.Fatal(err)
 	}
 	k.startLoops()
-	eventually(t, "the learner's state", func() bool { return strings.Contains(kubernetesState(t, s), "catches up") })
+	testwait.Eventually(t, "the learner's state", func() bool { return strings.Contains(kubernetesState(t, s), "catches up") })
 	if list := members(t, cli); len(list) != 2 || !slices.ContainsFunc(list, func(m etcd.Member) bool { return m.ID == added.ID }) {
 		t.Errorf("members %+v, want cp0 and the learner added before", list)
 	}
@@ -214,7 +203,7 @@ func TestJoinWaitsForCluster(t *testing.T) {
 		return nil, errors.New("connection refused")
 	}
 	k.startLoops()
-	eventually(t, "the join to ask for the cluster", func() bool { return asked.Load() > 1 })
+	testwait.Eventually(t, "the join to ask for the cluster", func() bool { return asked.Load() > 1 })
 	if got := kubernetesState(t, s); got != "waiting for bootstrap or for the cluster at https://192.168.100.11:6443" {
 		t.Errorf("state %q", got)
 	}
@@ -225,7 +214,7 @@ func TestJoinWaitsForCluster(t *testing.T) {
 	if _, err := kubernetestest.Bootstrap(context.Background(), s); err != nil {
 		t.Fatal(err)
 	}
-	eventually(t, "the join to stop", func() bool {
+	testwait.Eventually(t, "the join to stop", func() bool {
 		k.mu.Lock()
 		defer k.mu.Unlock()
 		return !k.joining
@@ -291,7 +280,7 @@ func stallJoin(t *testing.T, s *Plugin, cli *etcd.Client) etcd.Member {
 		t.Fatal(err)
 	}
 	k.startLoops()
-	eventually(t, "the join to fail adding its learner", func() bool {
+	testwait.Eventually(t, "the join to fail adding its learner", func() bool {
 		return strings.Contains(kubernetesState(t, s), "add this node to etcd as a learner")
 	})
 	return other
@@ -300,7 +289,7 @@ func stallJoin(t *testing.T, s *Plugin, cli *etcd.Client) etcd.Member {
 func stopJoin(t *testing.T, k *side) {
 	t.Helper()
 	k.stop()
-	eventually(t, "the join to stop", func() bool {
+	testwait.Eventually(t, "the join to stop", func() bool {
 		k.mu.Lock()
 		defer k.mu.Unlock()
 		return !k.joining
@@ -352,12 +341,12 @@ func TestJoinStatusAfterStall(t *testing.T) {
 	const prefix = "joining the cluster at https://192.168.100.11:6443: "
 	// Each attempt starts by checking etcd's members, so the state shows the failure only
 	// between attempts.
-	eventually(t, "the stall's state", func() bool {
+	testwait.Eventually(t, "the stall's state", func() bool {
 		got := kubernetesState(t, s)
 		return strings.HasPrefix(got, prefix+"add this node to etcd as a learner") && strings.HasSuffix(got, "; trying again")
 	})
 	unreachable.Store(true)
-	eventually(t, "the unreachable cluster's state", func() bool { return kubernetesState(t, s) == prefix+"connection refused" })
+	testwait.Eventually(t, "the unreachable cluster's state", func() bool { return kubernetesState(t, s) == prefix+"connection refused" })
 	// chalkd started again remembers the join.
 	fresh := newSide(Options{Paths: k.state.Paths})
 	st, err := fresh.status(context.Background())
@@ -388,8 +377,8 @@ func TestJoinBoundsEtcdRequests(t *testing.T) {
 		return []string{silent}, nil
 	}
 	k.startLoops()
-	eventually(t, "the join to try again", func() bool { return asked.Load() > 2 })
-	eventually(t, "the unanswered request's state", func() bool {
+	testwait.Eventually(t, "the join to try again", func() bool { return asked.Load() > 2 })
+	testwait.Eventually(t, "the unanswered request's state", func() bool {
 		return strings.Contains(kubernetesState(t, s), "no etcd endpoint answered")
 	})
 	if exists(k.state.JoiningMarker()) || exists(k.state.Pin()) {
@@ -414,7 +403,7 @@ func TestJoinRefusesSplitClusters(t *testing.T) {
 	k.startLoops()
 	// Each attempt starts by checking etcd's members, so the state shows the split only between
 	// attempts.
-	eventually(t, "the split's state", func() bool {
+	testwait.Eventually(t, "the split's state", func() bool {
 		got := kubernetesState(t, s)
 		return strings.Contains(got, "the endpoints belong to different etcd clusters (") && strings.Contains(got, "two nodes were bootstrapped separately")
 	})
@@ -454,7 +443,7 @@ func TestControlPlaneReportsSplit(t *testing.T) {
 		return ctx.Err()
 	}
 	k.startLoops()
-	eventually(t, "the split's state", func() bool {
+	testwait.Eventually(t, "the split's state", func() bool {
 		return strings.HasPrefix(kubernetesState(t, s), "bootstrapped: the endpoints belong to different etcd clusters (")
 	})
 	for _, m := range []*etcdtest.Member{local, other} {
@@ -478,7 +467,7 @@ func TestJoinRefusesEarlierEtcdData(t *testing.T) {
 	write(t, db, "")
 	k.startLoops()
 	want := "joining the cluster at https://192.168.100.11:6443: etcd data from an earlier membership is present on VAR; run chalkctl etcd leave and reinstall the node"
-	eventually(t, "the refusal's state", func() bool { return kubernetesState(t, s) == want })
+	testwait.Eventually(t, "the refusal's state", func() bool { return kubernetesState(t, s) == want })
 	stopJoin(t, k)
 	if list := members(t, cli); len(list) != 1 {
 		t.Errorf("members %+v, want cp0 alone", list)
@@ -496,7 +485,7 @@ func TestJoinStopsWhenLearnerRemoved(t *testing.T) {
 	s, _, cli := joiningNode(t)
 	k := s.k
 	k.startLoops()
-	eventually(t, "the learner's state", func() bool { return strings.Contains(kubernetesState(t, s), "catches up") })
+	testwait.Eventually(t, "the learner's state", func() bool { return strings.Contains(kubernetesState(t, s), "catches up") })
 	learner := slices.IndexFunc(members(t, cli), func(m etcd.Member) bool { return m.Learner })
 	if learner < 0 {
 		t.Fatal("no learner")
@@ -505,7 +494,7 @@ func TestJoinStopsWhenLearnerRemoved(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := "joining the cluster at https://192.168.100.11:6443: the node's etcd member was removed while joining; run chalkctl etcd leave and reinstall the node"
-	eventually(t, "the join to stop", func() bool {
+	testwait.Eventually(t, "the join to stop", func() bool {
 		k.mu.Lock()
 		defer k.mu.Unlock()
 		return !k.joining
@@ -525,7 +514,7 @@ func TestJoinStopsWhenLearnerRemoved(t *testing.T) {
 	// A join resumed later stops again rather than adding another learner.
 	k.setJoinStep("")
 	k.startLoops()
-	eventually(t, "the resumed join to stop", func() bool {
+	testwait.Eventually(t, "the resumed join to stop", func() bool {
 		k.mu.Lock()
 		joining := k.joining
 		k.mu.Unlock()
@@ -542,7 +531,7 @@ func TestJoinReportsPromoteTimeout(t *testing.T) {
 	k := s.k
 	k.timing.PromoteTimeout = 300 * time.Millisecond
 	k.startLoops()
-	eventually(t, "the timeout's state", func() bool {
+	testwait.Eventually(t, "the timeout's state", func() bool {
 		return strings.Contains(kubernetesState(t, s), "did not catch up with the leader within 300ms; trying again")
 	})
 }

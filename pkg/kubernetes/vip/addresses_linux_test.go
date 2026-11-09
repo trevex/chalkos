@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/trevex/chalkos/pkg/internal/testwait"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
 	knode "github.com/trevex/chalkos/pkg/kubernetes/node"
 )
@@ -62,7 +63,7 @@ func TestAnnouncesAddedAddressesOnly(t *testing.T) {
 	if err := a.Acquire(); err != nil {
 		t.Fatal(err)
 	}
-	eventually(t, "the announcements", func() bool { return count(missing) >= 3 })
+	testwait.Eventually(t, "the announcements", func() bool { return count(missing) >= 3 })
 	if count(present) != 0 || count(missing) != 3 {
 		t.Errorf("announced the present address %d times and the added one %d times, want 0 and 3", count(present), count(missing))
 	}

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/trevex/chalkos/pkg/clustersecrets"
+	"github.com/trevex/chalkos/pkg/internal/testwait"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
 	knode "github.com/trevex/chalkos/pkg/kubernetes/node"
 	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
@@ -111,7 +112,7 @@ func changeShare(t *testing.T, p knode.State, change func(*kpki.Share)) {
 func TestVIPRestartsWhenEtcdTrustChanges(t *testing.T) {
 	k, addrs := vipControlPlane(t)
 	held := func() bool { return addrs.held.Load() && k.vipHolder.Load() }
-	eventually(t, "the node holds the VIPs", held)
+	testwait.Eventually(t, "the node holds the VIPs", held)
 	released := addrs.released.Load()
 
 	kubernetesCA, err := pki.NewCA("new Kubernetes CA", time.Now())
@@ -131,7 +132,7 @@ func TestVIPRestartsWhenEtcdTrustChanges(t *testing.T) {
 		t.Fatal(err)
 	}
 	changeShare(t, k.state, func(s *kpki.Share) { s.Accepted.EtcdCA = []string{etcdCA.Certificate} })
-	eventually(t, "the VIPs released and held again", func() bool { return addrs.released.Load() > released && held() })
+	testwait.Eventually(t, "the VIPs released and held again", func() bool { return addrs.released.Load() > released && held() })
 	addrs.mu.Lock()
 	most := addrs.most
 	addrs.mu.Unlock()

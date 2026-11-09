@@ -947,18 +947,6 @@ func TestCount(t *testing.T) {
 	}
 }
 
-// eventually waits until check holds.
-func eventually(t *testing.T, what string, check func() bool) {
-	t.Helper()
-	deadline := time.Now().Add(time.Minute)
-	for !check() {
-		if time.Now().After(deadline) {
-			t.Fatalf("waiting for %s", what)
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
-}
-
 func exists(path string) bool {
 	_, err := os.Stat(path)
 	return err == nil

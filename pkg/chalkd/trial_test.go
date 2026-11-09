@@ -20,6 +20,7 @@ import (
 	"github.com/trevex/chalkos/pkg/client"
 	"github.com/trevex/chalkos/pkg/config/slot"
 	"github.com/trevex/chalkos/pkg/contract"
+	"github.com/trevex/chalkos/pkg/internal/testwait"
 	"github.com/trevex/chalkos/pkg/outputs"
 	"github.com/trevex/chalkos/pkg/pki"
 	"github.com/trevex/chalkos/pkg/tool/tooltest"
@@ -614,7 +615,7 @@ func TestConfirmConfigDuringARollbackAttempt(t *testing.T) {
 func waitForLock(t *testing.T, fn string) {
 	t.Helper()
 	buf := make([]byte, 1<<20)
-	eventually(t, fn+" waiting for a lock", func() bool {
+	testwait.Eventually(t, fn+" waiting for a lock", func() bool {
 		for _, g := range strings.Split(string(buf[:runtime.Stack(buf, true)]), "\n\n") {
 			if strings.Contains(g, fn) && strings.Contains(g, "SemacquireMutex") {
 				return true
@@ -712,7 +713,7 @@ func TestTrialRollsBackAtItsDeadline(t *testing.T) {
 	if _, err := sendTrial(s, nextConfig, 100*time.Millisecond); err != nil {
 		t.Fatal(err)
 	}
-	eventually(t, "the rollback", func() bool { return !trialOpenOn(t, s) })
+	testwait.Eventually(t, "the rollback", func() bool { return !trialOpenOn(t, s) })
 	if v, _ := slot.Version(slotOf(t, s)); v != hashOf(t, baseConfig) {
 		t.Errorf("the node runs %s, want baseConfig's", v)
 	}
@@ -962,7 +963,7 @@ func TestResumeTrial(t *testing.T) {
 		t.Fatal(err)
 	}
 	s.ResumeTrial(context.Background())
-	eventually(t, "the rollback", func() bool { return !trialOpenOn(t, s) })
+	testwait.Eventually(t, "the rollback", func() bool { return !trialOpenOn(t, s) })
 	if v, _ := slot.Version(slotOf(t, s)); v != rec.Previous {
 		t.Errorf("the node runs %s, want %s", v, rec.Previous)
 	}
@@ -1015,7 +1016,7 @@ func TestResumeTrialStopsWithChalkd(t *testing.T) {
 			defer cancel()
 			start := time.Now()
 			s.ResumeTrial(ctx)
-			eventually(t, "the failed attempt", func() bool {
+			testwait.Eventually(t, "the failed attempt", func() bool {
 				s.mu.Lock()
 				defer s.mu.Unlock()
 				r, _, _ := readTrial(s.Paths.StateDir)

@@ -21,6 +21,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/trevex/chalkos/pkg/internal/cli/clitest"
 	"github.com/trevex/chalkos/pkg/inventory"
 	"github.com/trevex/chalkos/pkg/lab"
 )
@@ -759,16 +760,7 @@ func TestSuperviseArgsFindTheSupervisor(t *testing.T) {
 // Every command but the supervisor's is described for its help and the reference pages.
 func TestCommandsDescribed(t *testing.T) {
 	a, _ := testApp()
-	var walk func(cmd *cobra.Command)
-	walk = func(cmd *cobra.Command) {
-		if !cmd.Hidden && (cmd.Short == "" || cmd.Long == "" || cmd.Example == "") {
-			t.Errorf("%s lacks a short or long description or examples", cmd.CommandPath())
-		}
-		for _, c := range cmd.Commands() {
-			walk(c)
-		}
-	}
-	walk(newCommand(a))
+	clitest.CheckDescribed(t, newCommand(a))
 }
 
 // TestPrintNext names the lab's client file in an export of CHALKOSCONFIG, so the chalkctl

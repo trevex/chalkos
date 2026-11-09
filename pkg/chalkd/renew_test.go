@@ -33,6 +33,7 @@ import (
 	"github.com/trevex/chalkos/pkg/chalkd/layers/kubernetes/kubernetestest"
 	"github.com/trevex/chalkos/pkg/chalkd/renewal/renewaltest"
 	"github.com/trevex/chalkos/pkg/clustersecrets"
+	"github.com/trevex/chalkos/pkg/internal/testwait"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
 	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
 	"github.com/trevex/chalkos/pkg/kubernetes/revoked"
@@ -558,7 +559,7 @@ func TestRenewOnApplyConfigRenewsTheControlPlane(t *testing.T) {
 	if _, err := deliver(context.Background(), s, string(recorded), &nodev1.ApplyConfigRequest{}); err != nil {
 		t.Fatal(err)
 	}
-	eventually(t, "the control plane's certificates to be renewed", func() bool {
+	testwait.Eventually(t, "the control plane's certificates to be renewed", func() bool {
 		after, _ := os.ReadFile(apiServer)
 		return len(after) > 0 && string(after) != string(before)
 	})
