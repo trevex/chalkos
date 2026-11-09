@@ -53,8 +53,7 @@ func main() {
 // lists the names of chalkd's own commands, which an effect's run of chalkd may use without naming
 // a layer.
 func newCommand() (*cobra.Command, error) {
-	// Subcommands need no server: the plugins are bound to one that serves nothing.
-	node := &chalkd.Server{Paths: chalkd.DefaultPaths(), Run: tool.ExecRunner{}}
+	node := chalkd.Offline(chalkd.DefaultPaths())
 	reg, err := layer.NewRegistry(layers.Set{}, plugins(node)...)
 	if err != nil {
 		return nil, err
@@ -112,7 +111,7 @@ func checkConfig(system, socket string, stdin io.Reader, stdout io.Writer) error
 		return err
 	}
 	defer os.RemoveAll(dir)
-	node := &chalkd.Server{Run: tool.ExecRunner{}}
+	node := chalkd.Offline(chalkd.DefaultPaths())
 	if node.Plugins, err = layer.NewRegistry(layers.Set{}, plugins(node)...); err != nil {
 		return err
 	}
@@ -169,7 +168,7 @@ func (s *seconds) Set(v string) error {
 // passed, so chalkd rolls it back at once as it starts.
 func loadConfig() error {
 	// Only the layers' config is asked for, so the server they are bound to serves nothing.
-	node := &chalkd.Server{Paths: chalkd.DefaultPaths(), Run: tool.ExecRunner{}}
+	node := chalkd.Offline(chalkd.DefaultPaths())
 	loader := nodeconfig.Default()
 	if err := chalkd.RestoreTrialAtBoot(node.Paths.StateDir, loader.Slots); err != nil {
 		log.Printf("end the open trial of a config: %v", err)
@@ -190,7 +189,7 @@ func loadConfig() error {
 // $SERVICE_RESULT and $EXIT_STATUS.
 func health(a healthArgs) error {
 	// Only the layers' hooks are asked, so the server they are bound to serves nothing.
-	node := &chalkd.Server{Paths: chalkd.DefaultPaths(), Run: tool.ExecRunner{}}
+	node := chalkd.Offline(chalkd.DefaultPaths())
 	reg, err := registry(node)
 	if err != nil {
 		return err

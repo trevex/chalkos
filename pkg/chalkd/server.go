@@ -191,6 +191,13 @@ type Server struct {
 	diagnosticRuns atomic.Int32
 }
 
+// Offline is the Server of chalkd's commands that do not serve, such as check, health and the
+// layers' own: their plugins are bound to it, and it runs commands on the node and reads its files
+// at paths, but serves nothing.
+func Offline(paths Paths) *Server {
+	return &Server{Paths: paths, Run: tool.ExecRunner{}}
+}
+
 // permissions are the modes and least role of each procedure of the node API. The authorizer
 // refuses a procedure without an entry.
 var permissions = map[string]layer.Permission{
