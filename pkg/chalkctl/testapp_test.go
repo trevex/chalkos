@@ -9,6 +9,7 @@ import (
 	"errors"
 	"net"
 	"net/http"
+	"net/netip"
 	"os"
 	"path/filepath"
 	"slices"
@@ -29,7 +30,10 @@ import (
 	"github.com/trevex/chalkos/pkg/effects"
 	"github.com/trevex/chalkos/pkg/identity"
 	"github.com/trevex/chalkos/pkg/install"
+	"github.com/trevex/chalkos/pkg/kubernetes"
+	"github.com/trevex/chalkos/pkg/kubernetes/kubetest"
 	knode "github.com/trevex/chalkos/pkg/kubernetes/node"
+	"github.com/trevex/chalkos/pkg/kubernetes/nodeip"
 	"github.com/trevex/chalkos/pkg/layers"
 	"github.com/trevex/chalkos/pkg/nodeconfig"
 	"github.com/trevex/chalkos/pkg/outputs"
@@ -302,12 +306,13 @@ func loadContract(t *testing.T, s *chalkd.Server, dir string) {
 }
 
 // clusterFile is the cluster file chalkd writes for a node of the kind.
-func clusterFile(kind string) string {
-	return `{"kind": "` + kind + `", "endpoint": "https://10.0.0.10:6443", "version": "1.37.1", "apiServerVersion": "1.37.1",
-	  "ipFamilies": ["ipv4"], "podCIDRs": {"ipv4": "10.244.0.0/16"}, "serviceCIDRs": {"ipv4": "10.96.0.0/12"},
-	  "dnsIPs": {"ipv4": "10.96.0.10"}, "nodeCIDRMaskSizes": {"ipv4": 24}, "domain": "cluster.local",
-	  "nodeIP": {"validSubnets": [], "timeout": 300}, "vip": {"addresses": [], "mode": "l2"},
-	  "extraArgs": {}, "images": ` + kubernetestest.ClusterImages + `}`
+func clusterFile(t *testing.T, kind string) string {
+	return kubetest.JSON(t, kubetest.Cluster(kind, kubetest.IPv4Only, func(c *kubernetes.Cluster) {
+		c.IPFamilies = []nodeip.Family{nodeip.IPv4}
+		c.NodeIP = kubernetes.NodeIP{ValidSubnets: []string{}, Timeout: 300}
+		c.VIP = kubernetes.VIP{Addresses: []netip.Addr{}, Mode: "l2"}
+		c.ExtraArgs = map[string]map[string]string{}
+	}))
 }
 
 // testImageJSON is the image.json of a Kubernetes image with flannel, as the fixture schemas are.

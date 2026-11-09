@@ -2,25 +2,22 @@ package addons
 
 import (
 	"encoding/json"
-	"net/netip"
 	"reflect"
 	"strings"
 	"testing"
 
 	"github.com/trevex/chalkos/pkg/kubernetes"
+	"github.com/trevex/chalkos/pkg/kubernetes/kubetest"
 	"github.com/trevex/chalkos/pkg/kubernetes/nodeip"
 )
 
 func testCluster(families ...nodeip.Family) kubernetes.Cluster {
-	return kubernetes.Cluster{
-		Kind: kubernetes.KindControlPlane, Endpoint: "https://10.0.0.10:6443", Version: "1.37.1", APIServerVersion: "1.37.1", Domain: "lab.local",
-		IPFamilies:   families,
-		PodCIDRs:     kubernetes.ByFamily[netip.Prefix]{IPv4: netip.MustParsePrefix("10.244.0.0/16"), IPv6: netip.MustParsePrefix("fd00:10:244::/56")},
-		ServiceCIDRs: kubernetes.ByFamily[netip.Prefix]{IPv4: netip.MustParsePrefix("10.96.0.0/12"), IPv6: netip.MustParsePrefix("fd00:10:96::/112")},
-		DNSIPs:       kubernetes.ByFamily[netip.Addr]{IPv4: netip.MustParseAddr("10.96.0.10"), IPv6: netip.MustParseAddr("fd00:10:96::a")},
-		Images:       kubernetes.Images{KubeProxy: "proxy", CoreDNS: "coredns", Flannel: "flannel"},
-		Flannel:      &kubernetes.Flannel{MTU: 1430},
-	}
+	return kubetest.Cluster(kubernetes.KindControlPlane, func(c *kubernetes.Cluster) {
+		c.Domain, c.IPFamilies = "lab.local", families
+		c.NodeCIDRMaskSizes = kubernetes.ByFamily[int]{}
+		c.Images = kubernetes.Images{KubeProxy: "proxy", CoreDNS: "coredns", Flannel: "flannel"}
+		c.Flannel = &kubernetes.Flannel{MTU: 1430}
+	})
 }
 
 // find returns the object of the kind and name, or fails the test.

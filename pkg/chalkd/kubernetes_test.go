@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
-	"strings"
 	"testing"
 
 	"connectrpc.com/connect"
@@ -20,7 +19,9 @@ import (
 	"github.com/trevex/chalkos/pkg/contract"
 	"github.com/trevex/chalkos/pkg/effects"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
+	"github.com/trevex/chalkos/pkg/kubernetes/kubetest"
 	knode "github.com/trevex/chalkos/pkg/kubernetes/node"
+	"github.com/trevex/chalkos/pkg/kubernetes/nodeip"
 	"github.com/trevex/chalkos/pkg/layers"
 	"github.com/trevex/chalkos/pkg/nodeconfig"
 	"github.com/trevex/chalkos/pkg/tool/tooltest"
@@ -136,14 +137,14 @@ func TestStatusKubernetes(t *testing.T) {
 			o.Hooks.Node = func(context.Context) (*corev1.Node, error) { return kubernetestest.ReadyNode(podCIDRs...), nil }
 		})
 		p := kubernetesState(s)
-		data, err := os.ReadFile(p.Cluster)
+		c, err := k8s.ReadCluster(p.Cluster)
 		if err != nil {
 			t.Fatal(err)
 		}
-		cluster := strings.NewReplacer(`"podCIDRs": {`, `"ipFamilies": ["ipv4", "ipv6"], "podCIDRs": {"ipv6": "fd00:10:244::/56", `,
-			`"serviceCIDRs": {`, `"serviceCIDRs": {"ipv6": "fd00:10:96::/112", `, `"dnsIPs": {`, `"dnsIPs": {"ipv6": "fd00:10:96::a", `,
-			`"nodeCIDRMaskSizes": {`, `"nodeCIDRMaskSizes": {"ipv6": 64, `).Replace(string(data))
-		write(t, p.Cluster, cluster)
+		c.IPFamilies = []nodeip.Family{nodeip.IPv4, nodeip.IPv6}
+		c.PodCIDRs.IPv6, c.ServiceCIDRs.IPv6, c.DNSIPs.IPv6 = kubetest.PodCIDRs.IPv6, kubetest.ServiceCIDRs.IPv6, kubetest.DNSIPs.IPv6
+		c.NodeCIDRMaskSizes.IPv6 = 64
+		write(t, p.Cluster, kubetest.JSON(t, c))
 		return s
 	}
 	plain, _ := installedServer(t, section("", ""), false)

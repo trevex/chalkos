@@ -12,6 +12,7 @@ import (
 
 	"github.com/trevex/chalkos/pkg/internal/strs"
 	"github.com/trevex/chalkos/pkg/kubernetes"
+	"github.com/trevex/chalkos/pkg/kubernetes/kubetest"
 	"github.com/trevex/chalkos/pkg/kubernetes/nodeip"
 )
 
@@ -148,11 +149,8 @@ func TestForward(t *testing.T) {
 	dual := func(sources ...string) kubernetes.Cluster {
 		c := kubernetes.Cluster{
 			IPFamilies: []nodeip.Family{nodeip.IPv4, nodeip.IPv6},
-			PodCIDRs: kubernetes.ByFamily[netip.Prefix]{
-				IPv4: netip.MustParsePrefix("10.244.0.0/16"),
-				IPv6: netip.MustParsePrefix("fd00:10:244::/56"),
-			},
-			Flannel: &kubernetes.Flannel{},
+			PodCIDRs:   kubetest.PodCIDRs,
+			Flannel:    &kubernetes.Flannel{},
 		}
 		for _, s := range sources {
 			c.Flannel.VXLANSourceSubnets = append(c.Flannel.VXLANSourceSubnets, netip.MustParsePrefix(s))

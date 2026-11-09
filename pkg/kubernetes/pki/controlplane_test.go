@@ -11,18 +11,14 @@ import (
 
 	"github.com/trevex/chalkos/pkg/clustersecrets"
 	"github.com/trevex/chalkos/pkg/kubernetes"
+	"github.com/trevex/chalkos/pkg/kubernetes/kubetest"
 	"github.com/trevex/chalkos/pkg/kubernetes/nodeip"
 	"github.com/trevex/chalkos/pkg/pki"
 	"github.com/trevex/chalkos/pkg/pki/pkitest"
 )
 
 func testCluster() kubernetes.Cluster {
-	return kubernetes.Cluster{
-		Kind:         kubernetes.KindControlPlane,
-		Endpoint:     "https://api.lab.example:6443",
-		ServiceCIDRs: kubernetes.ByFamily[netip.Prefix]{IPv4: netip.MustParsePrefix("10.96.0.0/12"), IPv6: netip.MustParsePrefix("fd00:10:96::/112")},
-		Domain:       "cluster.local",
-	}
+	return kubetest.Cluster(kubernetes.KindControlPlane, func(c *kubernetes.Cluster) { c.Endpoint = "https://api.lab.example:6443" })
 }
 
 var testNode = kubernetes.Node{Name: "cp1", IPs: []netip.Addr{netip.MustParseAddr("10.0.0.11")}, Addresses: []netip.Addr{netip.MustParseAddr("10.0.0.11"), netip.MustParseAddr("10.0.1.11")}}
@@ -102,7 +98,7 @@ func TestControlPlaneCertificates(t *testing.T) {
 	// API server are IPv6 ones.
 	v6 := testCluster()
 	v6.IPFamilies = []nodeip.Family{"ipv6", "ipv4"}
-	v6files, err := ControlPlane(ControlPlaneShare(k, pkitest.NodeCA(t, now)), v6, kubernetes.Node{Name: "cp1", IPs: []netip.Addr{netip.MustParseAddr("fd00::11"), netip.MustParseAddr("10.0.0.11")}}, now)
+	v6files, err := ControlPlane(ControlPlaneShare(k, pkitest.NodeCA(t, now)), v6, kubetest.Node("cp1", "fd00::11", "10.0.0.11"), now)
 	if err != nil {
 		t.Fatal(err)
 	}

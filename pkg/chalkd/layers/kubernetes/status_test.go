@@ -3,6 +3,7 @@ package kubernetes
 import (
 	"context"
 	"crypto/tls"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -17,6 +18,7 @@ import (
 
 	"github.com/trevex/chalkos/pkg/chalkd/layers/kubernetes/kubernetestest"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
+	"github.com/trevex/chalkos/pkg/kubernetes/kubetest"
 	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
 	"github.com/trevex/chalkos/pkg/pki"
 )
@@ -61,8 +63,12 @@ func TestServesFile(t *testing.T) {
 // status tells it apart from the API server's 1.37.1.
 func withKubelet(t *testing.T, p *Plugin, version string) {
 	t.Helper()
-	data := readFile(t, p.k.state.Cluster)
-	write(t, p.k.state.Cluster, strings.Replace(data, `"version": "1.37.1"`, `"version": "`+version+`"`, 1))
+	var c k8s.Cluster
+	if err := json.Unmarshal([]byte(readFile(t, p.k.state.Cluster)), &c); err != nil {
+		t.Fatal(err)
+	}
+	c.Version = version
+	write(t, p.k.state.Cluster, kubetest.JSON(t, c))
 }
 
 // TestStatusReportsTheVersions checks that every node reports its config's API server and its
@@ -94,11 +100,7 @@ func TestStatusReportsTheVersions(t *testing.T) {
 // TestStatusReportsTheStaticPods checks that a bootstrapped control plane reports whether its
 // static pods run its config's images, through its own API server.
 func TestStatusReportsTheStaticPods(t *testing.T) {
-	images := k8s.Images{
-		KubeAPIServer:         "registry.k8s.io/kube-apiserver:v1.37.1",
-		KubeControllerManager: "registry.k8s.io/kube-controller-manager:v1.37.1",
-		KubeScheduler:         "registry.k8s.io/kube-scheduler:v1.37.1",
-	}
+	images := kubetest.Images
 	for name, tc := range map[string]struct {
 		client  func(k8s.Cluster, kpki.Share) (kubernetes.Interface, error)
 		want    string

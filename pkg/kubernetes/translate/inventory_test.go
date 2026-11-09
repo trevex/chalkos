@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/trevex/chalkos/pkg/config"
+	"github.com/trevex/chalkos/pkg/kubernetes/kubetest"
 )
 
 // parseDocs parses the YAML documents of a node's files.
@@ -43,8 +44,8 @@ func kindsOf(docs []config.Document) []string {
 // TestNodeType reads the type of the Kubernetes Node document among a node's documents.
 func TestNodeType(t *testing.T) {
 	for name, tc := range map[string]struct{ docs, want string }{
-		"a control plane": {plainHost + nodeDoc("default", "{type: controlplane}"), "controlplane"},
-		"a worker":        {nodeDoc("default", "{type: worker}") + plainHost, "worker"},
+		"a control plane": {plainHost + kubetest.NodeDoc("default", "{type: controlplane}"), "controlplane"},
+		"a worker":        {kubetest.NodeDoc("default", "{type: worker}") + plainHost, "worker"},
 		"a Host alone":    {plainHost, ""},
 		"no documents":    {"", ""},
 	} {
@@ -61,9 +62,9 @@ func TestNodeDocuments(t *testing.T) {
 		docs string
 		want []string
 	}{
-		"a control plane": {endpointDoc("default", "https://10.0.0.11:6443") + addonDoc + nodeDoc("cp2", "{type: controlplane}"),
+		"a control plane": {endpointDoc("default", "https://10.0.0.11:6443") + addonDoc + kubetest.NodeDoc("cp2", "{type: controlplane}"),
 			[]string{"Cluster/default", "Addon/monitoring", "Node/cp2"}},
-		"a worker": {endpointDoc("default", "https://10.0.0.11:6443") + addonDoc + nodeDoc("default", "{type: worker}") + plainHost,
+		"a worker": {endpointDoc("default", "https://10.0.0.11:6443") + addonDoc + kubetest.NodeDoc("default", "{type: worker}") + plainHost,
 			[]string{"Cluster/default", "Node/default", "Host/default"}},
 		"no Node": {addonDoc + plainHost, []string{"Host/default"}},
 	} {

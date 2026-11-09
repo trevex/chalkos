@@ -133,7 +133,7 @@ func controlPlaneNode(t *testing.T, ta *testApp) (*chalkd.Server, *fakeRunner, s
 	withKind(t, ta, kubernetes.KindControlPlane)
 	s, r := kubernetesNode(t, ta)
 	p := kubernetesState(s)
-	writeFile(t, p.Cluster, clusterFile("controlplane"))
+	writeFile(t, p.Cluster, clusterFile(t, "controlplane"))
 	share, err := kpki.ControlPlaneShare(&ta.secrets.Kubernetes, ta.secrets.NodeCA).Encode()
 	if err != nil {
 		t.Fatal(err)

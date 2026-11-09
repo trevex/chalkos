@@ -15,6 +15,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 
 	"github.com/trevex/chalkos/pkg/kubernetes"
+	"github.com/trevex/chalkos/pkg/kubernetes/kubetest"
 	"github.com/trevex/chalkos/pkg/kubernetes/nodeip"
 	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
 )
@@ -22,32 +23,14 @@ import (
 var update = flag.Bool("update", false, "rewrite the golden files")
 
 func testCluster() kubernetes.Cluster {
-	return kubernetes.Cluster{
-		Kind:              kubernetes.KindControlPlane,
-		Endpoint:          "https://10.0.0.10:6443",
-		Version:           "1.37.1",
-		APIServerVersion:  "1.37.1",
-		PodCIDRs:          kubernetes.ByFamily[netip.Prefix]{IPv4: netip.MustParsePrefix("10.244.0.0/16"), IPv6: netip.MustParsePrefix("fd00:10:244::/56")},
-		ServiceCIDRs:      kubernetes.ByFamily[netip.Prefix]{IPv4: netip.MustParsePrefix("10.96.0.0/12"), IPv6: netip.MustParsePrefix("fd00:10:96::/112")},
-		DNSIPs:            kubernetes.ByFamily[netip.Addr]{IPv4: netip.MustParseAddr("10.96.0.10"), IPv6: netip.MustParseAddr("fd00:10:96::a")},
-		NodeCIDRMaskSizes: kubernetes.ByFamily[int]{IPv4: 24, IPv6: 64},
-		Domain:            "cluster.local",
-		ExtraArgs: map[string]map[string]string{
+	return kubetest.Cluster(kubernetes.KindControlPlane, func(c *kubernetes.Cluster) {
+		c.ExtraArgs = map[string]map[string]string{
 			"kube-apiserver": {"audit-log-maxage": "30", "kubelet-preferred-address-types": "InternalIP"},
-		},
-		Images: kubernetes.Images{
-			Etcd:                  "registry.k8s.io/etcd:3.7.0-0",
-			KubeAPIServer:         "registry.k8s.io/kube-apiserver:v1.37.1",
-			KubeControllerManager: "registry.k8s.io/kube-controller-manager:v1.37.1",
-			KubeScheduler:         "registry.k8s.io/kube-scheduler:v1.37.1",
-			KubeProxy:             "registry.k8s.io/kube-proxy:v1.37.1",
-			CoreDNS:               "registry.k8s.io/coredns/coredns:v1.14.6",
-			Pause:                 "registry.k8s.io/pause:3.10.2",
-		},
-	}
+		}
+	})
 }
 
-var testNode = kubernetes.Node{Name: "cp1", IPs: []netip.Addr{netip.MustParseAddr("10.0.0.11")}}
+var testNode = kubetest.Node("cp1", "10.0.0.11")
 
 // testFiles stands for the certificates: their content only feeds the hashes.
 func testFiles() map[string][]byte {
@@ -197,7 +180,7 @@ func decode(t *testing.T, data []byte) corev1.Pod {
 // A member joining an existing cluster starts with the cluster's members.
 func TestEtcdJoiningExistingCluster(t *testing.T) {
 	initial := "cp1=https://10.0.0.11:2380,cp2=https://10.0.0.12:2380"
-	n := kubernetes.Node{Name: "cp2", IPs: []netip.Addr{netip.MustParseAddr("10.0.0.12")}}
+	n := kubetest.Node("cp2", "10.0.0.12")
 	pods, err := StaticPods(testCluster(), n, kubernetes.PKIDir, testFiles(), initial)
 	if err != nil {
 		t.Fatal(err)

@@ -25,6 +25,7 @@ import (
 	"github.com/trevex/chalkos/pkg/api/kubernetes/v1/kubernetesv1connect"
 	"github.com/trevex/chalkos/pkg/clustersecrets"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
+	"github.com/trevex/chalkos/pkg/kubernetes/kubetest"
 	knode "github.com/trevex/chalkos/pkg/kubernetes/node"
 	"github.com/trevex/chalkos/pkg/kubernetes/nodeip"
 	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
@@ -48,11 +49,6 @@ const Images = `{apiServer: "registry.k8s.io/kube-apiserver:v1.37.1@sha256:e190f
 	`coredns: "registry.k8s.io/coredns/coredns:v1.14.6@sha256:900f9c109f7a33545d3c811516e8376df9019147b750f5ce3e254468769176ea", ` +
 	`pause: "registry.k8s.io/pause:3.10.2@sha256:f548e0e8e3dc1896ca956272154dde3314e8cc4fde0a57577ee9fa1c63f5baf4", ` +
 	`flannel: "ghcr.io/flannel-io/flannel:v0.28.9@sha256:708a2c9c1cfbfe529d1dbb249cb7113af117f3ed26b5e3e4c8ee015e10555204"}`
-
-// ClusterImages is the images of a cluster file without flannel, as JSON.
-const ClusterImages = `{"etcd": "registry.k8s.io/etcd:3.7.0-0", "kubeAPIServer": "registry.k8s.io/kube-apiserver:v1.37.1",
-  "kubeControllerManager": "registry.k8s.io/kube-controller-manager:v1.37.1", "kubeScheduler": "registry.k8s.io/kube-scheduler:v1.37.1",
-  "kubeProxy": "registry.k8s.io/kube-proxy:v1.37.1", "coredns": "registry.k8s.io/coredns/coredns:v1.14.6", "pause": "registry.k8s.io/pause:3.10.2"}`
 
 // NodeCA returns a new node CA of the OS CA.
 func NodeCA(t *testing.T) pki.CertKey {
@@ -111,10 +107,10 @@ func ClusterFile(root string) string { return filepath.Join(root, "run", "chalko
 // https://192.168.100.11:6443; with a share, which the preparation took, when share is set.
 func WriteNode(t *testing.T, p knode.Paths, kind string, share bool) {
 	t.Helper()
-	write(t, p.Cluster, `{"kind": "`+kind+`", "endpoint": "https://192.168.100.11:6443", "version": "1.37.1", "apiServerVersion": "1.37.1",
-	  "podCIDRs": {"ipv4": "10.244.0.0/16"}, "serviceCIDRs": {"ipv4": "10.96.0.0/12"},
-	  "dnsIPs": {"ipv4": "10.96.0.10"}, "nodeCIDRMaskSizes": {"ipv4": 24}, "domain": "cluster.local",
-	  "extraArgs": {}, "images": `+ClusterImages+`}`)
+	write(t, p.Cluster, kubetest.JSON(t, kubetest.Cluster(kind, kubetest.IPv4Only, func(c *k8s.Cluster) {
+		c.Endpoint = "https://192.168.100.11:6443"
+		c.ExtraArgs = map[string]map[string]string{}
+	})))
 	write(t, p.NodeFile, `{"hostname": "n1", "layers": {"kubernetes": {"nodeName": "n1", "nodeIPs": ["192.168.100.11"]}}}`)
 	if share {
 		write(t, p.Share(), string(Share(t, kind, "n1")))

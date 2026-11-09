@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/trevex/chalkos/pkg/kubernetes/kubetest"
 	"github.com/trevex/chalkos/pkg/schema"
 )
 
@@ -123,8 +124,8 @@ func TestNewSetRejects(t *testing.T) {
 		"missing SystemDisk": {"apiVersion: chalkos.dev/v1alpha1\nkind: Host\nmetadata: {name: default}\nspec: {}\n", "no SystemDisk"},
 		"a core Cluster": {minimal + "---\napiVersion: chalkos.dev/v1alpha1\nkind: Cluster\nmetadata: {name: lab}\nspec: {}\n",
 			`does not accept kind "Cluster"`},
-		"two Nodes":             {minimal + nodeDoc("a", "{type: worker}") + nodeDoc("b", "{type: worker}"), "more than one Node"},
-		"a Node without a type": {minimal + nodeDoc("default", "{}"), "type"},
+		"two Nodes":             {minimal + kubetest.NodeDoc("a", "{type: worker}") + kubetest.NodeDoc("b", "{type: worker}"), "more than one Node"},
+		"a Node without a type": {minimal + kubetest.NodeDoc("default", "{}"), "type"},
 		"two Hosts": {minimal + "---\napiVersion: chalkos.dev/v1alpha1\nkind: Host\nmetadata: {name: a}\nspec: {}\n---\napiVersion: chalkos.dev/v1alpha1\nkind: Host\nmetadata: {name: b}\nspec: {}\n",
 			"more than one Host"},
 		"unknown kind": {minimal + "---\napiVersion: x.example.org/v1\nkind: Thing\nmetadata: {name: a}\nspec: {}\n",

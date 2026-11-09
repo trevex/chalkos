@@ -17,6 +17,7 @@ import (
 
 	"github.com/trevex/chalkos/pkg/clustersecrets"
 	"github.com/trevex/chalkos/pkg/kubernetes"
+	"github.com/trevex/chalkos/pkg/kubernetes/kubetest"
 	"github.com/trevex/chalkos/pkg/kubernetes/nodeip"
 	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
 	"github.com/trevex/chalkos/pkg/kubernetes/vxlan"
@@ -38,31 +39,12 @@ func write(t *testing.T, path, content string) {
 
 // testCluster is the cluster of the nodes testNode prepares, of the kind given.
 func testCluster(kind string) kubernetes.Cluster {
-	return kubernetes.Cluster{
-		Kind: kind, Endpoint: "https://192.168.100.11:6443", Version: "1.37.1", APIServerVersion: "1.37.1", Domain: "cluster.local",
-		PodCIDRs:          kubernetes.ByFamily[netip.Prefix]{IPv4: netip.MustParsePrefix("10.244.0.0/16"), IPv6: netip.MustParsePrefix("fd00:10:244::/56")},
-		ServiceCIDRs:      kubernetes.ByFamily[netip.Prefix]{IPv4: netip.MustParsePrefix("10.96.0.0/12"), IPv6: netip.MustParsePrefix("fd00:10:96::/112")},
-		DNSIPs:            kubernetes.ByFamily[netip.Addr]{IPv4: netip.MustParseAddr("10.96.0.10"), IPv6: netip.MustParseAddr("fd00:10:96::a")},
-		NodeCIDRMaskSizes: kubernetes.ByFamily[int]{IPv4: 24, IPv6: 64},
-		NodeIP:            kubernetes.NodeIP{Timeout: 300},
-		ExtraArgs:         map[string]map[string]string{},
-		Images:            testImages,
-	}
+	return kubetest.Cluster(kind, func(c *kubernetes.Cluster) {
+		c.Endpoint = "https://192.168.100.11:6443"
+		c.NodeIP = kubernetes.NodeIP{Timeout: 300}
+		c.ExtraArgs = map[string]map[string]string{}
+	})
 }
-
-// testImages are the images of testCluster, which ReadCluster checks.
-var testImages = kubernetes.Images{
-	Etcd:                  "registry.k8s.io/etcd:3.7.0-0",
-	KubeAPIServer:         "registry.k8s.io/kube-apiserver:v1.37.1",
-	KubeControllerManager: "registry.k8s.io/kube-controller-manager:v1.37.1",
-	KubeScheduler:         "registry.k8s.io/kube-scheduler:v1.37.1",
-	KubeProxy:             "registry.k8s.io/kube-proxy:v1.37.1",
-	CoreDNS:               "registry.k8s.io/coredns/coredns:v1.14.6",
-	Pause:                 "registry.k8s.io/pause:3.10.2",
-}
-
-// flannelImage is the image of a cluster with flannel.
-const flannelImage = "ghcr.io/flannel-io/flannel:v0.28.9"
 
 // writeCluster writes c as the node's cluster file.
 func writeCluster(t *testing.T, s State, c kubernetes.Cluster) {
@@ -370,7 +352,7 @@ func TestPrepareFlannelInterfaces(t *testing.T) {
 				c.IPFamilies = []nodeip.Family{nodeip.IPv4, nodeip.IPv6}
 				c.Flannel = tc.flannel
 				if c.Flannel != nil {
-					c.Images.Flannel = flannelImage
+					c.Images.Flannel = kubetest.FlannelImage
 				}
 			})
 			write(t, s.NodeFile, `{"hostname": "w1", "layers": {"kubernetes": {"nodeName": "w1", "validSubnets": ["192.168.100.0/24", "fd00::/64"]}}}`)
@@ -1114,7 +1096,7 @@ func TestPrepareWritesVXLANDestinations(t *testing.T) {
 		s := testNode(t, kubernetes.KindWorker, "w1", secrets(t))
 		withCluster(t, s, func(c *kubernetes.Cluster) {
 			c.IPFamilies = []nodeip.Family{nodeip.IPv4, nodeip.IPv6}
-			c.Flannel, c.Images.Flannel = &kubernetes.Flannel{MTU: 1430}, flannelImage
+			c.Flannel, c.Images.Flannel = &kubernetes.Flannel{MTU: 1430}, kubetest.FlannelImage
 		})
 		write(t, s.NodeFile, `{"hostname": "w1", "layers": {"kubernetes": {"nodeName": "w1", "validSubnets": ["192.168.100.0/24", "fd00::/64"]}}}`)
 		if err := s.Prepare(now, on(links, tc.addrs...), nil); err != nil {
@@ -1128,7 +1110,7 @@ func TestPrepareWritesVXLANDestinations(t *testing.T) {
 	s := testNode(t, kubernetes.KindWorker, "w1", secrets(t))
 	withCluster(t, s, func(c *kubernetes.Cluster) {
 		c.IPFamilies = []nodeip.Family{nodeip.IPv4, nodeip.IPv6}
-		c.Images.Flannel = flannelImage
+		c.Images.Flannel = kubetest.FlannelImage
 		c.Flannel = &kubernetes.Flannel{MTU: 1430, VXLANSourceSubnets: []netip.Prefix{
 			netip.MustParsePrefix("192.168.100.0/24"), netip.MustParsePrefix("fd00::/64"), netip.MustParsePrefix("10.1.0.0/16"),
 		}}

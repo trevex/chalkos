@@ -145,7 +145,7 @@ func kubernetesNodeWith(t *testing.T, ta *testApp, o kubernetesplugin.Options) (
 	// The loader has the Kubernetes layer write the cluster file.
 	s.Loader.Layers = layer.Active[nodeconfig.Layer](s.Plugins)
 	// The cluster file chalkd writes from the node's config.
-	writeFile(t, kubernetesState(s).Cluster, clusterFile("worker"))
+	writeFile(t, kubernetesState(s).Cluster, clusterFile(t, "worker"))
 	// The facts the kubelet's restart rules read, as the image declares them.
 	writeContract(t, s, imagecontract.FactsFile, `{"recorded": {"file": "`+filepath.Join(s.Paths.StateDir, "storage", "storage.json")+`"},
 	  "share": {"file": "`+kubernetesState(s).Share()+`", "fields": ["kind"], "hashOthers": true},

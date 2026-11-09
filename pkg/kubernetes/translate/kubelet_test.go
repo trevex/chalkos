@@ -11,6 +11,7 @@ import (
 	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/identity"
 	"github.com/trevex/chalkos/pkg/kubernetes"
+	"github.com/trevex/chalkos/pkg/kubernetes/kubetest"
 	"github.com/trevex/chalkos/pkg/schema"
 	"github.com/trevex/chalkos/pkg/storage"
 )
@@ -141,8 +142,8 @@ func macsOf(id identity.Identity) map[string]any {
 }
 
 func TestIdentityRejects(t *testing.T) {
-	noCluster := minimal + nodeDoc("default", "{type: worker}")
-	noNode := minimal + clusterDoc("default", "{}")
+	noCluster := minimal + kubetest.NodeDoc("default", "{type: worker}")
+	noNode := minimal + kubetest.ClusterDoc("default", "{}")
 	for name, tc := range map[string]struct{ yaml, want string }{
 		"no Cluster": {noCluster, "no Cluster"},
 		"no Node":    {noNode, "no Node"},
@@ -366,8 +367,8 @@ func TestVXLANSourcesHoldTheNodesAddresses(t *testing.T) {
 // not from the Node document's name.
 func TestIdentityTakesTheNodesName(t *testing.T) {
 	const volume = "---\napiVersion: storage.chalkos.dev/v1alpha1\nkind: Volume\nmetadata: {name: fast}\nspec: {disk: {path: /dev/vdb}}\n"
-	kube := minimal + nodeDoc("doc", "{type: worker}") +
-		clusterDoc("default", "{}") + volume
+	kube := minimal + kubetest.NodeDoc("doc", "{type: worker}") +
+		kubetest.ClusterDoc("default", "{}") + volume
 	s, err := config.NewSet(mustParse(t, kube), allSchemas(t))
 	if err != nil {
 		t.Fatal(err)
