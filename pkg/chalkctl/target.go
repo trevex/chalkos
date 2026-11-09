@@ -35,6 +35,8 @@ type target struct {
 	addr    string
 	// source says where addr comes from, for errors reaching it.
 	source string
+	// nodes are the nodes it was reached among, at the addresses --address gives.
+	nodes nodeSet
 }
 
 // target addresses a node with the secrets file.
@@ -206,7 +208,7 @@ func (s nodeSet) target(name string) (*target, error) {
 	if err != nil {
 		return nil, err
 	}
-	t := &target{cluster: s.cluster, name: name, creds: s.creds, addr: addr, source: source}
+	t := &target{cluster: s.cluster, name: name, creds: s.creds, addr: addr, source: source, nodes: s}
 	if s.creds.secrets != nil {
 		t.secrets = *s.creds.secrets
 	}

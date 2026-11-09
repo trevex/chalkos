@@ -223,8 +223,8 @@ type Target interface {
 	// Secrets are those of the secrets file chalkctl reaches the node with; empty with a client
 	// file.
 	Secrets() clustersecrets.Secrets
-	// Nodes reaches the cluster's nodes at the inventory's addresses with the target's
-	// credentials.
+	// Nodes reaches the cluster's nodes with the target's credentials, each at the address
+	// --address gave for it or else at the inventory's.
 	Nodes() Nodes
 }
 

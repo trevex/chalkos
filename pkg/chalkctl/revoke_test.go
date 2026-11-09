@@ -277,6 +277,18 @@ func (l *rotationLab) install(args ...string) error {
 	return l.ta.run(context.Background(), append([]string{"install", "n1", "--insecure", "--inventory", l.ta.inventory, "--address", addr}, args...))
 }
 
+// install asks the control planes about the name at the addresses --address gives them as
+// NODE=ADDR, ahead of the inventory's.
+func TestInstallAsksControlPlanesAtTheirAddresses(t *testing.T) {
+	l := newRotationLab(t)
+	writeImageDir(t, filepath.Join(l.ta.dir, "images", "plain-metal"), "plain", "metal", testRootHash, false)
+	l.revoked = []*kubernetesv1.RevokedNode{{Name: "n1", RevokedAt: timestamppb.New(time.Date(2026, 10, 23, 12, 0, 0, 0, time.UTC))}}
+	err := l.install("--address", "cp1="+l.addrs["cp1"], "--address", "cp2="+l.addrs["cp2"])
+	if err == nil || !strings.Contains(err.Error(), "n1 is revoked since 2026-10-23T12:00:00Z") {
+		t.Errorf("installing a revoked name with the control planes' addresses given: %v", err)
+	}
+}
+
 // install refuses a name a control plane lists as revoked, and installs while bootstrapped control
 // planes cannot say which are revoked only with --force. A control plane that does not answer
 // counts as one not installed yet, as while a cluster's nodes are installed one by one.
