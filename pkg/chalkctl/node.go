@@ -42,6 +42,8 @@ func (a *app) disks(ctx context.Context, f nodePinFlags, pos []string) error {
 		if conn, err = a.dialEither(t, p); err != nil {
 			return err
 		}
+	case len(pos) == 0 && n.Address.Named():
+		return cli.Usagef("disks without a node reaches the one --address ADDR names; NODE=ADDR goes with a node")
 	case len(pos) == 0 && n.Address.Bare() != "":
 		// A node not in the inventory yet: only maintenance mode, with a certificate when a secrets
 		// file or a client file is given, for an image with an OS CA.

@@ -48,3 +48,14 @@ func TestAddresses(t *testing.T) {
 		t.Errorf("Resolve() = %v, %v, Bare() = %q; want n1's address alone", got, err, named.Bare())
 	}
 }
+
+// Named tells a NODE=ADDR among the values.
+func TestAddressesNamed(t *testing.T) {
+	var a Addresses
+	if err := a.Set("10.0.0.1"); err != nil || a.Named() {
+		t.Errorf("a bare ADDR: Named() = %v, %v", a.Named(), err)
+	}
+	if err := a.Set("n1=10.0.0.2"); err != nil || !a.Named() {
+		t.Errorf("with NODE=ADDR: Named() = %v, %v", a.Named(), err)
+	}
+}

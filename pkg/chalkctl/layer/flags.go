@@ -93,6 +93,11 @@ func (a Addresses) Bare() string {
 	return ""
 }
 
+// Named reports whether a NODE=ADDR is among the values.
+func (a Addresses) Named() bool {
+	return slices.ContainsFunc(a.values, func(v string) bool { return strings.Contains(v, "=") })
+}
+
 // Resolve gives the addresses by node. A bare ADDR is the address of one, the node the command
 // reaches; one is empty for a command that reaches several nodes, which refuses a bare ADDR.
 func (a Addresses) Resolve(one string) (map[string]string, error) {
