@@ -13,7 +13,7 @@
   ...
 }:
 let
-  inherit (lib.chalkos.internal) schema api;
+  inherit (lib.chalkos.internal) schema api refuse;
   getLib = lib.chalkos.internal.get;
   inherit (chalkosPackages) chalkcfg chalkos-rules;
   cfg = config.chalkos.kinds;
@@ -293,30 +293,38 @@ let
     !cfg.${kind}.builtin
     && (cfg.${kind}.group == "chalkos.dev" || lib.hasSuffix ".chalkos.dev" cfg.${kind}.group)
   ) (lib.attrNames cfg);
-  kinds =
-    if badNames != [ ] then
-      throw "chalkos.kinds.${lib.head badNames}: a kind's name must match [A-Z][A-Za-z0-9]*, as Kubernetes kinds do"
-    else if takenNames != [ ] then
-      throw "chalkos.kinds.${lib.head takenNames}: the name is taken by chalkos's networkd kind of the same name"
-    else if reservedGroups != [ ] then
-      throw "chalkos.kinds.${lib.head reservedGroups}: the group ${api.groups.networkd} is reserved for chalkos's networkd kinds"
-    else if chalkosGroups != [ ] then
-      throw "chalkos.kinds.${lib.head chalkosGroups}: the groups chalkos.dev and *.chalkos.dev are reserved for chalkos's own kinds"
-    else
-      lib.mapAttrsToList (kind: k: {
-        inherit kind;
-        inherit (k)
-          group
-          version
-          multiple
-          spec
-          rules
-          specRules
-          unique
-          description
-          withheld
-          ;
-      }) cfg;
+  # What is wrong with the kinds' names and groups.
+  nameProblems =
+    map (
+      kind: "chalkos.kinds.${kind}: a kind's name must match [A-Z][A-Za-z0-9]*, as Kubernetes kinds do"
+    ) badNames
+    ++ map (
+      kind: "chalkos.kinds.${kind}: the name is taken by chalkos's networkd kind of the same name"
+    ) takenNames
+    ++ map (
+      kind:
+      "chalkos.kinds.${kind}: the group ${api.groups.networkd} is reserved for chalkos's networkd kinds"
+    ) reservedGroups
+    ++ map (
+      kind:
+      "chalkos.kinds.${kind}: the groups chalkos.dev and *.chalkos.dev are reserved for chalkos's own kinds"
+    ) chalkosGroups;
+  kinds = refuse nameProblems (
+    lib.mapAttrsToList (kind: k: {
+      inherit kind;
+      inherit (k)
+        group
+        version
+        multiple
+        spec
+        rules
+        specRules
+        unique
+        description
+        withheld
+        ;
+    }) cfg
+  );
 
   # The schema of each kind of chalkos.kinds, by file name.
   kindSchemas = schema.resolveRefs (

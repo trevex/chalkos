@@ -4,6 +4,7 @@
 let
   inherit (lib) mkOption types;
   publicVersion = import ./secrets-version.nix;
+  inherit (import ./refuse.nix { inherit lib; }) refuse;
   # A file that exists at evaluation, such as a path in the flake, is read and checked then. One a
   # derivation builds would need import from derivation; the image build checks it instead.
   readable =
@@ -26,13 +27,10 @@ let
   namePattern = "[a-z0-9][a-z0-9-]*";
   checkNames =
     argument: attrs:
-    let
-      bad = lib.filter (n: builtins.match namePattern n == null) (lib.attrNames attrs);
-    in
-    if bad == [ ] then
-      attrs
-    else
-      throw "mkImages: ${argument}.${lib.head bad}: a name must match ${namePattern}, lower-case letters, digits and dashes not at the start, as it names the images and their os-release";
+    refuse (map (
+      n:
+      "mkImages: ${argument}.${n}: a name must match ${namePattern}, lower-case letters, digits and dashes not at the start, as it names the images and their os-release"
+    ) (lib.filter (n: builtins.match namePattern n == null) (lib.attrNames attrs))) attrs;
   # chalkos's own platforms, whose modules every image of the platform carries first.
   builtinPlatforms = {
     metal = [ ../modules/platforms/metal.nix ];

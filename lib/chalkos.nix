@@ -10,6 +10,11 @@ let
   # The kinds an image declares: the attributes of its chalkos.kinds, given as kinds, and
   # networkd's.
   declaredKinds = kinds: lib.attrNames kinds ++ api.networkdKinds;
+  refuseLib = import ./refuse.nix { inherit lib; };
+  kindCheck = import ./kinds/check.nix {
+    inherit lib declaredKinds;
+    inherit (refuseLib) refuse;
+  };
   # An effect that acts on units when one of outputs or the documents of one of kinds changed.
   effectOn =
     action:
@@ -78,22 +83,25 @@ in
 
   # What chalkos's own modules share, which extensions do not call: the kinds' API groups, the
   # schema converter, the get paths, the CEL of effects' rules, the kinds an image declares and
-  # the check of the kinds a grant, an output, a validator or an effect names.
-  internal = {
-    inherit api kindTypes declaredKinds;
-    # The version of secrets.pub.json chalkos reads.
-    secretsVersion = import ./secrets-version.nix;
-    cel = import ./cel.nix { inherit lib; };
-    schema = import ./kinds/schema.nix { inherit lib; };
-    get = import ./kinds/get.nix { inherit lib; };
-    checkKinds = import ./kinds/check.nix { inherit lib declaredKinds; };
-    # The fields that make a kind of the group a built-in one.
-    builtin = group: {
-      inherit group;
-      inherit (api) version;
-      builtin = true;
+  # the check of the kinds a grant, an output, a validator or an effect names, and how a module
+  # refuses what it is given.
+  internal =
+    refuseLib
+    // kindCheck
+    // {
+      inherit api kindTypes declaredKinds;
+      # The version of secrets.pub.json chalkos reads.
+      secretsVersion = import ./secrets-version.nix;
+      cel = import ./cel.nix { inherit lib; };
+      schema = import ./kinds/schema.nix { inherit lib; };
+      get = import ./kinds/get.nix { inherit lib; };
+      # The fields that make a kind of the group a built-in one.
+      builtin = group: {
+        inherit group;
+        inherit (api) version;
+        builtin = true;
+      };
+      # A DNS name: letters, digits, dots and dashes, starting and ending with a letter or digit.
+      dnsName = "[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?";
     };
-    # A DNS name: letters, digits, dots and dashes, starting and ending with a letter or digit.
-    dnsName = "[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?";
-  };
 }

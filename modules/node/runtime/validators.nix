@@ -8,13 +8,18 @@
   ...
 }:
 let
-  checkKinds = lib.chalkos.internal.checkKinds config.chalkos.kinds;
+  inherit (lib.chalkos.internal)
+    refuse
+    kindProblems
+    plainName
+    attrsetText
+    ;
 
   # The command of a validator's program: a command as it is, or the wrapper of a jq program of
   # lib.chalkos.validate.jq, which prints what the program makes of the documents. jq takes no
-  # arguments, so the wrapper drops "validate <name>".
+  # arguments, so the wrapper drops "validate <name>". null for anything else.
   programCommand =
-    where: name: p:
+    name: p:
     if lib.isString p then
       p
     else if lib.attrNames p == [ "jq" ] then
@@ -24,12 +29,7 @@ let
         ''
       )
     else
-      throw "${where}: a validator's program is a command or lib.chalkos.validate.jq, not ${
-        if lib.attrNames p == [ ] then
-          "an empty attribute set"
-        else
-          "an attribute set of ${lib.concatStringsSep ", " (lib.attrNames p)}"
-      }";
+      null;
 
   validator = {
     options = {
@@ -76,18 +76,28 @@ let
   };
 
   validators = config.chalkos.validators;
-  # A validator as chalkd reads it; its name is an argument of its program and names it in
+  # What is wrong with a validator; its name is an argument of its program and names it in
   # refusals, so it is a plain name.
-  validatorJSON =
+  validatorProblems =
     name: v:
-    if builtins.match "[a-z0-9]([-a-z0-9]*[a-z0-9])?" name == null then
-      throw "chalkos.validators.${name}: a validator's name is lower-case letters, digits and dashes"
-    else
-      {
-        inputs = checkKinds "chalkos.validators.${name}.inputs" v.inputs v.inputs;
-        program = programCommand "chalkos.validators.${name}.program" name v.program;
-      };
-  validatorsJSON = builtins.toJSON (lib.mapAttrs validatorJSON validators);
+    let
+      where = "chalkos.validators.${name}";
+    in
+    lib.optional (
+      builtins.match plainName name == null
+    ) "${where}: a validator's name is lower-case letters, digits and dashes"
+    ++ kindProblems config.chalkos.kinds "${where}.inputs" v.inputs
+    ++
+      lib.optional (programCommand name v.program == null)
+        "${where}.program: a validator's program is a command or lib.chalkos.validate.jq, not ${attrsetText v.program}";
+  # A validator as chalkd reads it.
+  validatorJSON = name: v: {
+    inherit (v) inputs;
+    program = programCommand name v.program;
+  };
+  validatorsJSON = refuse (lib.concatLists (lib.mapAttrsToList validatorProblems validators)) (
+    builtins.toJSON (lib.mapAttrs validatorJSON validators)
+  );
 in
 {
   options.chalkos.validators = lib.mkOption {

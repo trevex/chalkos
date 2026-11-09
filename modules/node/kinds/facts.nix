@@ -64,27 +64,27 @@ let
     name:
     factsCfg.${name}.command != null && (factsCfg.${name}.fields != [ ] || factsCfg.${name}.hashOthers)
   ) (lib.attrNames factsCfg);
-  facts =
-    if badFacts != [ ] then
-      throw "chalkos.facts.${lib.head badFacts}: a fact's name must match [a-z][A-Za-z0-9]*, since rules read it as facts.<name>"
-    else if unsourcedFacts != [ ] then
-      throw "chalkos.facts.${lib.head unsourcedFacts}: a fact has either a file or a command"
-    else if fileInputs != [ ] then
-      throw "chalkos.facts.${lib.head fileInputs}: only a command fact takes inputs"
-    else if commandFields != [ ] then
-      throw "chalkos.facts.${lib.head commandFields}: only a file fact keeps fields or hashes them"
-    else
-      lib.mapAttrs (
-        _: f:
-        if f.file != null then
-          {
-            inherit (f) file;
-          }
-          // lib.optionalAttrs (f.fields != [ ]) { inherit (f) fields; }
-          // lib.optionalAttrs f.hashOthers { inherit (f) hashOthers; }
-        else
-          { inherit (f) command; } // lib.optionalAttrs (f.inputs != [ ]) { inherit (f) inputs; }
-      ) factsCfg;
+  problems =
+    map (
+      name:
+      "chalkos.facts.${name}: a fact's name must match [a-z][A-Za-z0-9]*, since rules read it as facts.<name>"
+    ) badFacts
+    ++ map (name: "chalkos.facts.${name}: a fact has either a file or a command") unsourcedFacts
+    ++ map (name: "chalkos.facts.${name}: only a command fact takes inputs") fileInputs
+    ++ map (name: "chalkos.facts.${name}: only a file fact keeps fields or hashes them") commandFields;
+  facts = lib.chalkos.internal.refuse problems (
+    lib.mapAttrs (
+      _: f:
+      if f.file != null then
+        {
+          inherit (f) file;
+        }
+        // lib.optionalAttrs (f.fields != [ ]) { inherit (f) fields; }
+        // lib.optionalAttrs f.hashOthers { inherit (f) hashOthers; }
+      else
+        { inherit (f) command; } // lib.optionalAttrs (f.inputs != [ ]) { inherit (f) inputs; }
+    ) factsCfg
+  );
   factsFile = pkgs.writeText "chalkos-facts.json" (builtins.toJSON facts);
 in
 {

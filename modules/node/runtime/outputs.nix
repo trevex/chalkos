@@ -9,7 +9,12 @@
 }:
 let
   inherit (chalkosPackages) chalkos-render;
-  checkKinds = lib.chalkos.internal.checkKinds config.chalkos.kinds;
+  inherit (lib.chalkos.internal)
+    refuse
+    kindProblems
+    plainName
+    attrsetText
+    ;
 
   # The name of the file a renderer of path writes: the path's own, less suffix, and less the hash
   # a file the store holds by itself starts with.
@@ -21,9 +26,9 @@ let
     in
     lib.removeSuffix suffix (if hashed == null then name else lib.head hashed);
   # The command of an output's render: a command as it is, or that of a renderer of
-  # lib.chalkos.render.
+  # lib.chalkos.render; null for anything else.
   renderCommand =
-    where: r:
+    r:
     if lib.isString r then
       r
     else if lib.attrNames r == [ "template" ] then
@@ -37,12 +42,7 @@ let
     else if lib.attrNames r == [ "documents" ] then
       "${lib.getExe chalkos-render} documents ${lib.concatStringsSep " " r.documents}"
     else
-      throw "${where}: a renderer is a command or one of lib.chalkos.render.template, .jq and .documents, not ${
-        if lib.attrNames r == [ ] then
-          "an empty attribute set"
-        else
-          "an attribute set of ${lib.concatStringsSep ", " (lib.attrNames r)}"
-      }";
+      null;
 
   output =
     { name, ... }:
@@ -180,47 +180,52 @@ let
       )
     ) outputs
   );
-  # An output as chalkd reads it; its name names its directories on the node, so it is a plain
+  # What is wrong with an output; its name names its directories on the node, so it is a plain
   # name.
-  outputJSON =
+  outputProblems =
     name: o:
-    if builtins.match "[a-z0-9]([-a-z0-9]*[a-z0-9])?" name == null then
-      throw "chalkos.outputs.${name}: an output's name is lower-case letters, digits and dashes"
-    else if dirProblem name o.dir != null then
-      throw "chalkos.outputs.${name}.dir: ${o.dir} ${dirProblem name o.dir}"
-    else
-      {
-        inputs = checkKinds "chalkos.outputs.${name}.inputs" o.inputs o.inputs;
-        render = renderCommand "chalkos.outputs.${name}.render" o.render;
-        inherit (o)
-          dir
-          user
-          group
-          mode
-          ;
-        check =
-          if o.check == null then
-            ""
-          else
-            toString (
-              pkgs.writeShellScript "chalkos-output-${name}-check" ''
-                set -e
-                PATH=${
-                  lib.makeBinPath [
-                    pkgs.coreutils
-                    pkgs.gnugrep
-                    pkgs.gnused
-                  ]
-                }
-                ${o.check}
-              ''
-            );
-      };
-  outputsJSON =
-    if clashes != [ ] then
-      throw (lib.head clashes)
-    else
-      builtins.toJSON (lib.mapAttrs outputJSON outputs);
+    let
+      where = "chalkos.outputs.${name}";
+    in
+    lib.optional (
+      builtins.match plainName name == null
+    ) "${where}: an output's name is lower-case letters, digits and dashes"
+    ++ lib.optional (dirProblem name o.dir != null) "${where}.dir: ${o.dir} ${dirProblem name o.dir}"
+    ++ kindProblems config.chalkos.kinds "${where}.inputs" o.inputs
+    ++
+      lib.optional (renderCommand o.render == null)
+        "${where}.render: a renderer is a command or one of lib.chalkos.render.template, .jq and .documents, not ${attrsetText o.render}";
+  # An output as chalkd reads it.
+  outputJSON = name: o: {
+    inherit (o)
+      inputs
+      dir
+      user
+      group
+      mode
+      ;
+    render = renderCommand o.render;
+    check =
+      if o.check == null then
+        ""
+      else
+        toString (
+          pkgs.writeShellScript "chalkos-output-${name}-check" ''
+            set -e
+            PATH=${
+              lib.makeBinPath [
+                pkgs.coreutils
+                pkgs.gnugrep
+                pkgs.gnused
+              ]
+            }
+            ${o.check}
+          ''
+        );
+  };
+  outputsJSON = refuse (clashes ++ lib.concatLists (lib.mapAttrsToList outputProblems outputs)) (
+    builtins.toJSON (lib.mapAttrs outputJSON outputs)
+  );
 
 in
 {

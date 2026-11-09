@@ -6,11 +6,7 @@
 let
   inherit (config.chalkos) layers;
   names = lib.attrNames layers;
-  image =
-    if config.chalkos.variant.name == null then
-      "the image"
-    else
-      "the variant ${config.chalkos.variant.name}";
+  image = lib.chalkos.internal.imageText config.chalkos.variant.name;
 in
 {
   options.chalkos.layers = lib.mkOption {

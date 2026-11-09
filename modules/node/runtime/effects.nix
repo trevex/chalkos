@@ -8,29 +8,25 @@
   ...
 }:
 let
-  checkKinds = lib.chalkos.internal.checkKinds config.chalkos.kinds;
+  inherit (lib.chalkos.internal) refuse kindProblems;
   outputs = config.chalkos.outputs;
   layerNames = lib.attrNames config.chalkos.layers;
-  image =
-    if config.chalkos.variant.name == null then
-      "the image"
-    else
-      "the variant ${config.chalkos.variant.name}";
+  image = lib.chalkos.internal.imageText config.chalkos.variant.name;
 
-  # Returns kinds, or throws, prefixed with `where`, if kinds names a kind the image does not
-  # declare, Secret or a withheld kind. A Secret's values count for the kinds whose secretRef
+  # What is wrong with the kinds of an effect, each prefixed with `where`: a kind the image does
+  # not declare, Secret or a withheld kind. A Secret's values count for the kinds whose secretRef
   # fields name them, and a withheld kind's documents stay in the node's stored config.
-  effectKinds =
+  effectKindProblems =
     where: kinds:
     let
       withheld = lib.filter (k: config.chalkos.kinds.${k}.withheld or false) kinds;
     in
-    if lib.elem "Secret" kinds then
-      throw "${where}: an effect does not fire on Secret documents; it fires on the kinds whose secretRef fields name them"
-    else if withheld != [ ] then
-      throw "${where}: an effect does not fire on ${lib.head withheld} documents; the kind is withheld, and a when rule reads them"
-    else
-      checkKinds where kinds kinds;
+    lib.optional (lib.elem "Secret" kinds) "${where}: an effect does not fire on Secret documents; it fires on the kinds whose secretRef fields name them"
+    ++ map (
+      k:
+      "${where}: an effect does not fire on ${k} documents; the kind is withheld, and a when rule reads them"
+    ) withheld
+    ++ kindProblems config.chalkos.kinds where (lib.subtractLists ([ "Secret" ] ++ withheld) kinds);
 
   units = lib.types.listOf lib.types.str;
   effect = lib.types.submodule {
@@ -135,12 +131,11 @@ let
     };
   };
 
-  # An effect as chalkd reads it, once it has a trigger and an action.
-  effectJSON =
+  # What is wrong with an effect: an output or a layer the image lacks, no trigger or no action.
+  effectProblems =
     name: e:
     let
       where = "chalkos.effects.${name}";
-      unknown = lib.filter (o: !(outputs ? ${o})) e.outputs;
       # The layer an effect's chalkd action names, or a run of chalkd <layer> <command> does.
       chalkdLayer = if e.chalkd == null then null else lib.head (lib.splitString ":" e.chalkd);
       # Split on whitespace as chalkd splits it, with strings.Fields.
@@ -170,40 +165,49 @@ let
         runLayer
       ];
     in
-    if unknown != [ ] then
-      throw "${where}.outputs: the image has no output ${lib.head unknown}; its outputs are ${
+    map (
+      o:
+      "${where}.outputs: the image has no output ${o}; its outputs are ${
         if outputs == { } then "none" else lib.concatStringsSep ", " (lib.attrNames outputs)
       }"
-    else if missing != [ ] then
-      throw "${where}: it names the ${lib.head missing} layer, which ${image} does not carry; its layers are ${
+    ) (lib.filter (o: !(outputs ? ${o})) e.outputs)
+    ++ map (
+      l:
+      "${where}: it names the ${l} layer, which ${image} does not carry; its layers are ${
         if layerNames == [ ] then "none" else lib.concatStringsSep ", " layerNames
       }"
-    else if e.outputs == [ ] && e.kinds == [ ] && e.when == null then
-      throw "${where}: it has none of outputs, kinds and when, so nothing triggers it"
-    else if e.restart == [ ] && e.reload == [ ] && e.run == null && e.chalkd == null then
-      throw "${where}: it restarts, reloads and runs nothing"
-    else
-      {
-        inherit (e)
-          outputs
-          restart
-          reload
-          start
-          ;
-        kinds = effectKinds "${where}.kinds" e.kinds;
-        when = if e.when == null then "" else e.when;
-        run = if e.run == null then "" else e.run;
-        chalkd = if e.chalkd == null then "" else e.chalkd;
-        hint =
-          if e.hint == null then
-            null
-          else
-            {
-              inherit (e.hint) text;
-              file = if e.hint.file == null then "" else toString e.hint.file;
-            };
-      };
-  effectsJSON = builtins.toJSON (lib.mapAttrs effectJSON config.chalkos.effects);
+    ) missing
+    ++ lib.optional (
+      e.outputs == [ ] && e.kinds == [ ] && e.when == null
+    ) "${where}: it has none of outputs, kinds and when, so nothing triggers it"
+    ++ lib.optional (
+      e.restart == [ ] && e.reload == [ ] && e.run == null && e.chalkd == null
+    ) "${where}: it restarts, reloads and runs nothing"
+    ++ effectKindProblems "${where}.kinds" e.kinds;
+  # An effect as chalkd reads it.
+  effectJSON = _: e: {
+    inherit (e)
+      outputs
+      restart
+      reload
+      start
+      kinds
+      ;
+    when = if e.when == null then "" else e.when;
+    run = if e.run == null then "" else e.run;
+    chalkd = if e.chalkd == null then "" else e.chalkd;
+    hint =
+      if e.hint == null then
+        null
+      else
+        {
+          inherit (e.hint) text;
+          file = if e.hint.file == null then "" else toString e.hint.file;
+        };
+  };
+  effectsJSON = refuse (lib.concatLists (lib.mapAttrsToList effectProblems config.chalkos.effects)) (
+    builtins.toJSON (lib.mapAttrs effectJSON config.chalkos.effects)
+  );
 in
 {
   options.chalkos.effects = lib.mkOption {
