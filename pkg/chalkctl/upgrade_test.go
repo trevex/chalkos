@@ -248,7 +248,8 @@ func (l *upgradeLab) record(format string, args ...any) {
 	l.events = append(l.events, fmt.Sprintf(format, args...))
 }
 
-// awaitDrained waits a minute at most until the node uncordonAfter names for node was drained.
+// awaitDrained waits a minute at most until the node uncordonAfter names for node was drained,
+// and logs a wait that ran out, as when the nodes of a batch did not upgrade together.
 func (l *upgradeLab) awaitDrained(node string) {
 	for deadline := time.Now().Add(time.Minute); time.Now().Before(deadline); time.Sleep(5 * time.Millisecond) {
 		l.mu.Lock()
@@ -259,6 +260,10 @@ func (l *upgradeLab) awaitDrained(node string) {
 			return
 		}
 	}
+	l.mu.Lock()
+	other := l.uncordonAfter[node]
+	l.mu.Unlock()
+	l.t.Logf("uncordoned %s after waiting a minute for %s to be drained, which upgrades in the same batch", node, other)
 }
 
 func (l *upgradeLab) takeEvents() []string {
