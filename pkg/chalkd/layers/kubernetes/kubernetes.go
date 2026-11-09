@@ -15,7 +15,6 @@ import (
 
 	"github.com/trevex/chalkos/pkg/chalkd/renewal"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
-	"github.com/trevex/chalkos/pkg/kubernetes/etcd"
 	knode "github.com/trevex/chalkos/pkg/kubernetes/node"
 	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
 	"github.com/trevex/chalkos/pkg/kubernetes/revoked"
@@ -382,9 +381,6 @@ func (k *side) reloadControlPlane() {
 
 // etcdRequest bounds one request to etcd, and the health checks in it.
 func (k *side) etcdRequest(ctx context.Context) (context.Context, context.CancelFunc) {
-	if k.timing.EtcdStatusTimeout > 0 {
-		ctx = etcd.WithStatusTimeout(ctx, k.timing.EtcdStatusTimeout)
-	}
 	return context.WithTimeout(ctx, k.timing.EtcdTimeout)
 }
 

@@ -9,16 +9,14 @@ import (
 	"testing"
 	"time"
 
-	clientv3 "go.etcd.io/etcd/client/v3"
-
 	"github.com/trevex/chalkos/pkg/kubernetes/etcd/etcdtest"
 	"github.com/trevex/chalkos/pkg/pki"
 )
 
 // joinAsLearner adds the node as a learner unless one of the members is its own, as a control
 // plane joining does.
-func joinAsLearner(ctx context.Context, cli *clientv3.Client, name, peerURL string, resume bool) (Member, string, error) {
-	list, err := Members(ctx, cli)
+func joinAsLearner(ctx context.Context, cli *Client, name, peerURL string, resume bool) (Member, string, error) {
+	list, err := cli.Members(ctx)
 	if err != nil {
 		return Member{}, "", err
 	}
@@ -26,10 +24,10 @@ func joinAsLearner(ctx context.Context, cli *clientv3.Client, name, peerURL stri
 	if err != nil || ok {
 		return own, InitialCluster(list, own.ID, name), err
 	}
-	return AddLearner(ctx, cli, name, peerURL)
+	return cli.AddLearner(ctx, name, peerURL)
 }
 
-func dial(t *testing.T, ca pki.CertKey, members ...*etcdtest.Member) *clientv3.Client {
+func dial(t *testing.T, ca pki.CertKey, members ...*etcdtest.Member) *Client {
 	t.Helper()
 	var endpoints []string
 	for _, m := range members {
@@ -43,11 +41,11 @@ func dial(t *testing.T, ca pki.CertKey, members ...*etcdtest.Member) *clientv3.C
 	return cli
 }
 
-func members(t *testing.T, cli *clientv3.Client) []Member {
+func members(t *testing.T, cli *Client) []Member {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	list, err := Members(ctx, cli)
+	list, err := cli.Members(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -109,29 +107,30 @@ func TestJoinAndPromote(t *testing.T) {
 	if want := strings.Join(slices.Sorted(slices.Values([]string{"m1=" + m1.PeerURL, "m2=" + peerURL})), ","); initial != want {
 		t.Errorf("initial cluster %q, want %q", initial, want)
 	}
-	if unhealthy := Health(ctx, cli, members(t, cli)); unhealthy[added.ID] == nil || len(unhealthy) != 1 {
+	if unhealthy := cli.Health(ctx, members(t, cli)); unhealthy[added.ID] == nil || len(unhealthy) != 1 {
 		t.Errorf("unhealthy = %v, want the learner that has not started", unhealthy)
 	}
 
 	m2 := etcdtest.StartExisting(t, ca, "m2", peerURL, initial)
-	if err := Promote(ctx, cli, added.ID, 100*time.Millisecond, 10*time.Second); err != nil {
+	if err := cli.Promote(ctx, added.ID, 100*time.Millisecond, 10*time.Second); err != nil {
 		t.Fatal(err)
 	}
 	list := members(t, dial(t, ca, m2))
 	if len(list) != 2 || list[0].Name != "m1" || list[1].Name != "m2" || list[0].Learner || list[1].Learner {
 		t.Errorf("members %+v, want voters m1 and m2", list)
 	}
-	if unhealthy := Health(ctx, cli, list); len(unhealthy) != 0 {
+	if unhealthy := cli.Health(ctx, list); len(unhealthy) != 0 {
 		t.Errorf("unhealthy = %v", unhealthy)
 	}
 	// A member that does not answer is unhealthy once its status timeout passed.
 	silent := Member{ID: 7, Name: "silent", ClientURLs: []string{etcdtest.Silent(t)}}
+	short := &Client{Client: cli.Client, StatusTimeout: 500 * time.Millisecond}
 	start := time.Now()
-	if unhealthy := Health(WithStatusTimeout(ctx, 500*time.Millisecond), cli, []Member{silent}); unhealthy[7] == nil || time.Since(start) > 3*time.Second {
+	if unhealthy := short.Health(ctx, []Member{silent}); unhealthy[7] == nil || time.Since(start) > 3*time.Second {
 		t.Errorf("unhealthy = %v after %v, want the silent member after half a second", unhealthy, time.Since(start))
 	}
 	// Promoting a voter changes nothing.
-	if err := Promote(ctx, cli, added.ID, 100*time.Millisecond, 10*time.Second); err != nil {
+	if err := cli.Promote(ctx, added.ID, 100*time.Millisecond, 10*time.Second); err != nil {
 		t.Errorf("promote a voter: %v", err)
 	}
 }
@@ -168,7 +167,7 @@ func TestJoinResumesOrFindsStaleMember(t *testing.T) {
 	if again, _, err := joinAsLearner(ctx, cli, "m2", peerURL, true); err != nil || again.ID != added.ID {
 		t.Errorf("resume after the start: %+v, %v", again, err)
 	}
-	if err := Promote(ctx, cli, added.ID, 100*time.Millisecond, 10*time.Second); err != nil {
+	if err := cli.Promote(ctx, added.ID, 100*time.Millisecond, 10*time.Second); err != nil {
 		t.Fatal(err)
 	}
 	// A reinstalled node, which remembers nothing, finds its old member.
@@ -253,7 +252,7 @@ func TestCheckQuorum(t *testing.T) {
 }
 
 // join adds a voter of the name to the cluster cli reaches.
-func join(t *testing.T, ctx context.Context, cli *clientv3.Client, ca pki.CertKey, name string) *etcdtest.Member {
+func join(t *testing.T, ctx context.Context, cli *Client, ca pki.CertKey, name string) *etcdtest.Member {
 	t.Helper()
 	peerURL := etcdtest.PeerURL(t)
 	var added Member
@@ -271,7 +270,7 @@ func join(t *testing.T, ctx context.Context, cli *clientv3.Client, ca pki.CertKe
 		t.Fatal(err)
 	}
 	m := etcdtest.StartExisting(t, ca, name, peerURL, initial)
-	if err := Promote(ctx, cli, added.ID, 100*time.Millisecond, 10*time.Second); err != nil {
+	if err := cli.Promote(ctx, added.ID, 100*time.Millisecond, 10*time.Second); err != nil {
 		t.Fatal(err)
 	}
 	return m
@@ -293,14 +292,14 @@ func TestRemove(t *testing.T) {
 	down, _ := Find(list, "m3")
 	// Without m2, m1 and the stopped m3 would be left: one healthy voter of two.
 	var quorum *QuorumError
-	if err := Remove(ctx, cli, m2.ID, false); !errors.As(err, &quorum) {
+	if err := cli.Remove(ctx, m2.ID, false); !errors.As(err, &quorum) {
 		t.Errorf("remove m2 while m3 is down: %v, want a quorum error", err)
 	}
 	if len(members(t, cli)) != 3 {
 		t.Error("a refused removal removed a member")
 	}
 	// Removing the stopped member leaves two healthy voters.
-	if err := Remove(ctx, cli, down.ID, false); err != nil {
+	if err := cli.Remove(ctx, down.ID, false); err != nil {
 		t.Fatalf("remove the stopped m3: %v", err)
 	}
 	if list := members(t, cli); len(list) != 2 || slices.ContainsFunc(list, func(m Member) bool { return m.Name == "m3" }) {
@@ -314,7 +313,7 @@ func TestRemove(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := Remove(ctx, cli, fresh.ID, false); err != nil {
+	if err := cli.Remove(ctx, fresh.ID, false); err != nil {
 		t.Errorf("remove the member that just joined: %v", err)
 	}
 
@@ -323,7 +322,7 @@ func TestRemove(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := Remove(ctx, cli, learner.ID, false); err != nil {
+	if err := cli.Remove(ctx, learner.ID, false); err != nil {
 		t.Errorf("remove the learner: %v", err)
 	}
 }
@@ -360,12 +359,12 @@ func TestOneCluster(t *testing.T) {
 	wg.Go(func() {
 		sctx, scancel := context.WithTimeout(ctx, 10*time.Second)
 		defer scancel()
-		answered, err = OneCluster(sctx, cli, []string{m1.ClientURL, m2.ClientURL, silent})
+		answered, err = cli.OneCluster(sctx, []string{m1.ClientURL, m2.ClientURL, silent})
 	})
 	wg.Go(func() {
 		sctx, scancel := context.WithTimeout(ctx, 10*time.Second)
 		defer scancel()
-		_, splitErr = OneCluster(sctx, cli, []string{m1.ClientURL, other.ClientURL, silent})
+		_, splitErr = cli.OneCluster(sctx, []string{m1.ClientURL, other.ClientURL, silent})
 	})
 	wg.Wait()
 	if err != nil {
@@ -386,7 +385,7 @@ func TestOneCluster(t *testing.T) {
 	start := time.Now()
 	sctx, scancel := context.WithTimeout(ctx, 200*time.Millisecond)
 	defer scancel()
-	if _, err := OneCluster(sctx, cli, []string{silent}); err == nil || errors.As(err, &split) {
+	if _, err := cli.OneCluster(sctx, []string{silent}); err == nil || errors.As(err, &split) {
 		t.Errorf("err = %v, want no endpoint answering", err)
 	}
 	if d := time.Since(start); d > 5*time.Second {
@@ -401,14 +400,14 @@ func TestPromoteRemovedLearner(t *testing.T) {
 	cli := dial(t, ca, m1)
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
-	added, _, err := AddLearner(ctx, cli, "m2", etcdtest.PeerURL(t))
+	added, _, err := cli.AddLearner(ctx, "m2", etcdtest.PeerURL(t))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := Remove(ctx, cli, added.ID, false); err != nil {
+	if err := cli.Remove(ctx, added.ID, false); err != nil {
 		t.Fatal(err)
 	}
-	if err := Promote(ctx, cli, added.ID, 100*time.Millisecond, 10*time.Second); !errors.Is(err, ErrMemberRemoved) {
+	if err := cli.Promote(ctx, added.ID, 100*time.Millisecond, 10*time.Second); !errors.Is(err, ErrMemberRemoved) {
 		t.Errorf("err = %v, want ErrMemberRemoved", err)
 	}
 }
@@ -420,7 +419,7 @@ func TestLocal(t *testing.T) {
 	cli := dial(t, ca, m1)
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
-	self, err := Local(ctx, cli, m1.ClientURL)
+	self, err := cli.Local(ctx, m1.ClientURL)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -429,7 +428,7 @@ func TestLocal(t *testing.T) {
 	}
 	sctx, scancel := context.WithTimeout(ctx, 200*time.Millisecond)
 	defer scancel()
-	if _, err := Local(sctx, cli, etcdtest.Silent(t)); err == nil {
+	if _, err := cli.Local(sctx, etcdtest.Silent(t)); err == nil {
 		t.Error("found a member at an endpoint that does not answer")
 	}
 }

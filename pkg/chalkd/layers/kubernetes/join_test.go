@@ -14,7 +14,6 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
-	clientv3 "go.etcd.io/etcd/client/v3"
 
 	"github.com/trevex/chalkos/pkg/chalkd/layer"
 	"github.com/trevex/chalkos/pkg/chalkd/layers/kubernetes/kubernetestest"
@@ -31,7 +30,7 @@ const joinPeerURL = "https://127.0.0.2:2380"
 
 // joiningNode is a control-plane node at 127.0.0.2 that is not bootstrapped, and the running
 // member cp0 of the cluster it finds at its endpoint.
-func joiningNode(t *testing.T) (*Plugin, *etcdtest.Member, *clientv3.Client) {
+func joiningNode(t *testing.T) (*Plugin, *etcdtest.Member, *etcd.Client) {
 	t.Helper()
 	s, _ := kubernetesNode(t, k8s.KindControlPlane, true)
 	k := s.k
@@ -77,9 +76,9 @@ func kubernetesState(t *testing.T, s *Plugin) string {
 	return st.State
 }
 
-func members(t *testing.T, cli *clientv3.Client) []etcd.Member {
+func members(t *testing.T, cli *etcd.Client) []etcd.Member {
 	t.Helper()
-	list, err := etcd.Members(context.Background(), cli)
+	list, err := cli.Members(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -156,7 +155,7 @@ func TestJoin(t *testing.T) {
 func TestJoinStopsAtStaleMember(t *testing.T) {
 	s, _, cli := joiningNode(t)
 	k := s.k
-	stale, _, err := etcd.AddLearner(context.Background(), cli, "n1", joinPeerURL)
+	stale, _, err := cli.AddLearner(context.Background(), "n1", joinPeerURL)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -166,7 +165,7 @@ func TestJoinStopsAtStaleMember(t *testing.T) {
 	if exists(k.paths.Pin()) || exists(k.paths.EtcdInitialCluster()) {
 		t.Error("a node that found a stale member pinned itself or prepared etcd")
 	}
-	if err := etcd.Remove(context.Background(), cli, stale.ID, false); err != nil {
+	if err := cli.Remove(context.Background(), stale.ID, false); err != nil {
 		t.Fatal(err)
 	}
 	eventually(t, "the join to go on", func() bool { return strings.Contains(kubernetesState(t, s), "catches up") })
@@ -190,7 +189,7 @@ func TestJoinResumes(t *testing.T) {
 	if err := knode.WritePin(k.paths, ips); err != nil {
 		t.Fatal(err)
 	}
-	added, _, err := etcd.AddLearner(context.Background(), cli, "n1", joinPeerURL)
+	added, _, err := cli.AddLearner(context.Background(), "n1", joinPeerURL)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -284,10 +283,10 @@ func TestBootstrapRefusedWhileJoining(t *testing.T) {
 
 // stallJoin starts a join that cannot add its learner, as etcd takes one learner at a time and
 // the cluster has another, and waits until it tried.
-func stallJoin(t *testing.T, s *Plugin, cli *clientv3.Client) etcd.Member {
+func stallJoin(t *testing.T, s *Plugin, cli *etcd.Client) etcd.Member {
 	t.Helper()
 	k := s.k
-	other, _, err := etcd.AddLearner(context.Background(), cli, "other", etcdtest.PeerURL(t))
+	other, _, err := cli.AddLearner(context.Background(), "other", etcdtest.PeerURL(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -317,10 +316,10 @@ func TestBootstrapRefusedAfterJoinStarted(t *testing.T) {
 	other := stallJoin(t, s, cli)
 	stopJoin(t, k)
 	// The member was added, but the node never learned of it.
-	if err := etcd.Remove(context.Background(), cli, other.ID, false); err != nil {
+	if err := cli.Remove(context.Background(), other.ID, false); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := etcd.AddLearner(context.Background(), cli, "", joinPeerURL); err != nil {
+	if _, _, err := cli.AddLearner(context.Background(), "", joinPeerURL); err != nil {
 		t.Fatal(err)
 	}
 	k.hooks.ClusterAnswers = func(context.Context, k8s.Cluster, kpki.Share) (bool, error) { return false, nil }
@@ -502,7 +501,7 @@ func TestJoinStopsWhenLearnerRemoved(t *testing.T) {
 	if learner < 0 {
 		t.Fatal("no learner")
 	}
-	if err := etcd.Remove(context.Background(), cli, members(t, cli)[learner].ID, false); err != nil {
+	if err := cli.Remove(context.Background(), members(t, cli)[learner].ID, false); err != nil {
 		t.Fatal(err)
 	}
 	want := "joining the cluster at https://192.168.100.11:6443: the node's etcd member was removed while joining; run chalkctl etcd leave and reinstall the node"

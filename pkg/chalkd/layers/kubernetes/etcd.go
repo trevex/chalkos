@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
-	clientv3 "go.etcd.io/etcd/client/v3"
 
 	kubernetesv1 "github.com/trevex/chalkos/pkg/api/kubernetes/v1"
 	"github.com/trevex/chalkos/pkg/chalkd/layer"
@@ -91,7 +90,7 @@ func mayBeMember(m knode.Membership, l knode.Leftovers) bool {
 
 // dialEtcd connects to the endpoints, the node's own member by default, with chalkd's etcd
 // credential.
-func (k *side) dialEtcd(c k8s.Cluster, share kpki.Share, endpoints ...string) (*clientv3.Client, error) {
+func (k *side) dialEtcd(c k8s.Cluster, share kpki.Share, endpoints ...string) (*etcd.Client, error) {
 	if len(endpoints) == 0 {
 		endpoints = []string{k.localEtcd(c)}
 	}
@@ -103,7 +102,12 @@ func (k *side) dialEtcd(c k8s.Cluster, share kpki.Share, endpoints ...string) (*
 	if err != nil {
 		return nil, err
 	}
-	return etcd.Dial(endpoints, tlsConfig)
+	cli, err := etcd.Dial(endpoints, tlsConfig)
+	if err != nil {
+		return nil, err
+	}
+	cli.StatusTimeout = k.timing.EtcdStatusTimeout
+	return cli, nil
 }
 
 func memberMessage(m etcd.Member, unhealthy error) *kubernetesv1.EtcdMember {
@@ -127,11 +131,11 @@ func (p *Plugin) EtcdMembers(ctx context.Context, _ *connect.Request[kubernetesv
 	defer cli.Close()
 	ctx, cancel := k.etcdRequest(ctx)
 	defer cancel()
-	members, err := etcd.Members(ctx, cli)
+	members, err := cli.Members(ctx)
 	if err != nil {
 		return nil, layer.Errorf(connect.CodeUnavailable, "%w", err)
 	}
-	unhealthy := etcd.Health(ctx, cli, members)
+	unhealthy := cli.Health(ctx, members)
 	resp := &kubernetesv1.EtcdMembersResponse{}
 	for _, m := range members {
 		resp.Members = append(resp.Members, memberMessage(m, unhealthy[m.ID]))
@@ -154,7 +158,7 @@ func (p *Plugin) EtcdRemoveMember(ctx context.Context, req *connect.Request[kube
 	}
 	defer cli.Close()
 	rctx, cancel := k.etcdRequest(ctx)
-	members, err := etcd.Members(rctx, cli)
+	members, err := cli.Members(rctx)
 	cancel()
 	if err != nil {
 		return nil, layer.Errorf(connect.CodeUnavailable, "%w", err)
@@ -169,7 +173,7 @@ func (p *Plugin) EtcdRemoveMember(ctx context.Context, req *connect.Request[kube
 		return nil, layer.Errorf(connect.CodeFailedPrecondition, "%s is this node's own member; chalkctl etcd leave %s takes the node out of etcd", name, name)
 	}
 	rctx, cancel = k.etcdRequest(ctx)
-	err = etcd.Remove(rctx, cli, m.ID, req.Msg.Force)
+	err = cli.Remove(rctx, m.ID, req.Msg.Force)
 	cancel()
 	if _, ok := errors.AsType[*etcd.QuorumError](err); ok {
 		return nil, layer.Errorf(connect.CodeFailedPrecondition, "%w; pass --force to remove it anyway", err)
@@ -259,7 +263,7 @@ func (p *Plugin) EtcdLeave(ctx context.Context, req *connect.Request[kubernetesv
 	}
 	defer cli.Close()
 	rctx, cancel := k.etcdRequest(ctx)
-	answered, err := etcd.OneCluster(rctx, cli, endpoints)
+	answered, err := cli.OneCluster(rctx, endpoints)
 	cancel()
 	if _, ok := errors.AsType[*etcd.SplitError](err); ok {
 		return nil, layer.Errorf(connect.CodeFailedPrecondition, "%w", err)
@@ -269,7 +273,7 @@ func (p *Plugin) EtcdLeave(ctx context.Context, req *connect.Request[kubernetesv
 	}
 	cli.SetEndpoints(answered...)
 	rctx, cancel = k.etcdRequest(ctx)
-	members, err := etcd.Members(rctx, cli)
+	members, err := cli.Members(rctx)
 	cancel()
 	if err != nil {
 		return nil, layer.Errorf(connect.CodeUnavailable, "%w", err)
@@ -285,7 +289,7 @@ func (p *Plugin) EtcdLeave(ctx context.Context, req *connect.Request[kubernetesv
 			return nil, layer.Errorf(connect.CodeFailedPrecondition, "this node's etcd member %s does not answer at %s; pass --force to remove it through the other members, as when the node lost its pinned address", self, k.localEtcd(c))
 		}
 		rctx, cancel := k.etcdRequest(ctx)
-		err := etcd.CheckQuorum(members, etcd.Health(rctx, cli, members), self.ID)
+		err := etcd.CheckQuorum(members, cli.Health(rctx, members), self.ID)
 		cancel()
 		if err != nil {
 			return nil, layer.Errorf(connect.CodeFailedPrecondition, "%w", err)
@@ -308,7 +312,7 @@ func (p *Plugin) EtcdLeave(ctx context.Context, req *connect.Request[kubernetesv
 		// The VIPs go first, while the node is still a healthy member.
 		stop()
 		rctx, cancel = k.etcdRequest(ctx)
-		err = etcd.Remove(rctx, remover, self.ID, false)
+		err = remover.Remove(rctx, self.ID, false)
 		cancel()
 		if err != nil {
 			return nil, layer.Errorf(connect.CodeFailedPrecondition, "%w", err)

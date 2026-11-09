@@ -187,7 +187,7 @@ func (k *side) joinOnce(ctx context.Context) error {
 	defer cli.Close()
 	// The node joins only members of one cluster, and talks only to those that said so.
 	rctx, cancel := k.etcdRequest(ctx)
-	answered, err := etcd.OneCluster(rctx, cli, endpoints)
+	answered, err := cli.OneCluster(rctx, endpoints)
 	cancel()
 	if _, ok := errors.AsType[*etcd.SplitError](err); ok {
 		k.setJoinStep(err.Error())
@@ -210,7 +210,7 @@ func (k *side) joinOnce(ctx context.Context) error {
 	}
 	peerURL := k8s.EtcdPeerURL(ips[0])
 	rctx, cancel = k.etcdRequest(ctx)
-	members, err := etcd.Members(rctx, cli)
+	members, err := cli.Members(rctx)
 	cancel()
 	if err != nil {
 		return err
@@ -249,7 +249,7 @@ func (k *side) joinOnce(ctx context.Context) error {
 			}
 		}
 		rctx, cancel := k.etcdRequest(ctx)
-		own, initialCluster, err = etcd.AddLearner(rctx, cli, n.Name, peerURL)
+		own, initialCluster, err = cli.AddLearner(rctx, n.Name, peerURL)
 		cancel()
 		if err != nil {
 			return err
@@ -265,7 +265,7 @@ func (k *side) joinOnce(ctx context.Context) error {
 	promoteTimeout := k.timing.PromoteTimeout
 	pctx, cancel := context.WithTimeout(ctx, promoteTimeout)
 	defer cancel()
-	switch err := etcd.Promote(pctx, cli, own.ID, 2*time.Second, k.timing.EtcdTimeout); {
+	switch err := cli.Promote(pctx, own.ID, 2*time.Second, k.timing.EtcdTimeout); {
 	case errors.Is(err, etcd.ErrMemberRemoved):
 		return errMemberRemoved
 	case err != nil && ctx.Err() == nil && pctx.Err() != nil:

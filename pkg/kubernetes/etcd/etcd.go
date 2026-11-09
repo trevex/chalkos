@@ -5,6 +5,7 @@
 package etcd
 
 import (
+	"cmp"
 	"context"
 	"crypto/tls"
 	"errors"
@@ -43,13 +44,21 @@ func member(m *etcdserverpb.Member) Member {
 	return Member{ID: m.ID, Name: m.Name, PeerURLs: m.PeerURLs, ClientURLs: m.ClientURLs, Learner: m.IsLearner}
 }
 
+// Client reaches etcd.
+type Client struct {
+	*clientv3.Client
+	// StatusTimeout is how long Health, also Remove's, waits for each member's status. Zero means
+	// three seconds.
+	StatusTimeout time.Duration
+}
+
 // Dial connects to etcd at the endpoints with the TLS configuration. While requests or streams
 // are open, the client pings a connection that has been quiet for 10 seconds and drops it when
 // the ping goes unanswered, so a connection that stays open but no longer answers does not block
 // them until their contexts end. etcd accepts a ping every 5 seconds, and closes connections
 // pinged while nothing is open on them, so idle ones are not pinged.
-func Dial(endpoints []string, tlsConfig *tls.Config) (*clientv3.Client, error) {
-	return clientv3.New(clientv3.Config{
+func Dial(endpoints []string, tlsConfig *tls.Config) (*Client, error) {
+	cli, err := clientv3.New(clientv3.Config{
 		Endpoints:            endpoints,
 		TLS:                  tlsConfig,
 		DialTimeout:          5 * time.Second,
@@ -57,10 +66,14 @@ func Dial(endpoints []string, tlsConfig *tls.Config) (*clientv3.Client, error) {
 		DialKeepAliveTimeout: 5 * time.Second,
 		Logger:               zap.NewNop(),
 	})
+	if err != nil {
+		return nil, err
+	}
+	return &Client{Client: cli}, nil
 }
 
 // Members lists the members as a quorum of the cluster agrees on them.
-func Members(ctx context.Context, cli *clientv3.Client) ([]Member, error) {
+func (cli *Client) Members(ctx context.Context) ([]Member, error) {
 	resp, err := cli.MemberList(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("list etcd's members: %w", err)
@@ -73,42 +86,29 @@ func Members(ctx context.Context, cli *clientv3.Client) ([]Member, error) {
 	return members, nil
 }
 
-// statusTimeoutKey keys the time Health waits for each member in a context.
-type statusTimeoutKey struct{}
-
-// WithStatusTimeout makes Health, also Remove's, wait up to d for each member's status instead of
-// three seconds.
-func WithStatusTimeout(ctx context.Context, d time.Duration) context.Context {
-	return context.WithValue(ctx, statusTimeoutKey{}, d)
-}
-
 // Health asks each member for its status at its client URLs and returns why each one that did
 // not answer is unhealthy. A member that has not started has no client URLs.
-func Health(ctx context.Context, cli *clientv3.Client, members []Member) map[uint64]error {
-	var mu sync.Mutex
-	unhealthy := map[uint64]error{}
+func (cli *Client) Health(ctx context.Context, members []Member) map[uint64]error {
+	errs := make([]error, len(members))
 	var wg sync.WaitGroup
-	for _, m := range members {
-		wg.Go(func() {
-			if err := status(ctx, cli, m); err != nil {
-				mu.Lock()
-				unhealthy[m.ID] = err
-				mu.Unlock()
-			}
-		})
+	for i, m := range members {
+		wg.Go(func() { errs[i] = cli.status(ctx, m) })
 	}
 	wg.Wait()
+	unhealthy := map[uint64]error{}
+	for i, m := range members {
+		if errs[i] != nil {
+			unhealthy[m.ID] = errs[i]
+		}
+	}
 	return unhealthy
 }
 
-func status(ctx context.Context, cli *clientv3.Client, m Member) error {
+func (cli *Client) status(ctx context.Context, m Member) error {
 	if len(m.ClientURLs) == 0 {
 		return errors.New("not started")
 	}
-	timeout := 3 * time.Second
-	if d, ok := ctx.Value(statusTimeoutKey{}).(time.Duration); ok && d > 0 {
-		timeout = d
-	}
+	timeout := cmp.Or(cli.StatusTimeout, 3*time.Second)
 	var err error
 	for _, url := range m.ClientURLs {
 		sctx, cancel := context.WithTimeout(ctx, timeout)
@@ -169,7 +169,7 @@ func Self(members []Member, name, peerURL string) (Member, bool) {
 
 // AddLearner adds the node of the name, reached at peerURL, as a learner. It returns the node's
 // member and the initial cluster its etcd starts with.
-func AddLearner(ctx context.Context, cli *clientv3.Client, name, peerURL string) (Member, string, error) {
+func (cli *Client) AddLearner(ctx context.Context, name, peerURL string) (Member, string, error) {
 	resp, err := cli.MemberAddAsLearner(ctx, []string{peerURL})
 	if err != nil {
 		return Member{}, "", fmt.Errorf("add this node to etcd as a learner: %w", err)
@@ -205,7 +205,7 @@ var ErrMemberRemoved = errors.New("the member was removed")
 // Promote makes the learner a voter once it caught up with the leader, trying again every
 // interval while etcd says it has not. Each request ends after timeout. A member that is a voter
 // already is left as it is.
-func Promote(ctx context.Context, cli *clientv3.Client, id uint64, interval, timeout time.Duration) error {
+func (cli *Client) Promote(ctx context.Context, id uint64, interval, timeout time.Duration) error {
 	err := poll.UntilDone(ctx, "", interval, func() error {
 		pctx, cancel := context.WithTimeout(ctx, timeout)
 		_, err := cli.MemberPromote(pctx, id)
@@ -272,12 +272,12 @@ func (e *QuorumError) Error() string {
 
 // Remove removes the member with the ID, unless the voters left would lose their quorum and
 // force is not set.
-func Remove(ctx context.Context, cli *clientv3.Client, id uint64, force bool) error {
-	members, err := Members(ctx, cli)
+func (cli *Client) Remove(ctx context.Context, id uint64, force bool) error {
+	members, err := cli.Members(ctx)
 	if err != nil {
 		return err
 	}
-	err = CheckQuorum(members, Health(ctx, cli, members), id)
+	err = CheckQuorum(members, cli.Health(ctx, members), id)
 	if _, ok := errors.AsType[*QuorumError](err); err != nil && !(force && ok) {
 		return err
 	}
@@ -327,7 +327,7 @@ func (e *SplitError) Error() string {
 // OneCluster asks each endpoint which cluster it belongs to and returns the ones that answered,
 // in the order given. It fails with a *SplitError when they belong to different clusters, and
 // when none answered before ctx ended.
-func OneCluster(ctx context.Context, cli *clientv3.Client, endpoints []string) ([]string, error) {
+func (cli *Client) OneCluster(ctx context.Context, endpoints []string) ([]string, error) {
 	ids := make([]uint64, len(endpoints))
 	errs := make([]error, len(endpoints))
 	var wg sync.WaitGroup
@@ -362,12 +362,12 @@ func OneCluster(ctx context.Context, cli *clientv3.Client, endpoints []string) (
 }
 
 // Local returns the member that answers at the endpoint, such as a node's own.
-func Local(ctx context.Context, cli *clientv3.Client, endpoint string) (Member, error) {
+func (cli *Client) Local(ctx context.Context, endpoint string) (Member, error) {
 	st, err := cli.Status(ctx, endpoint)
 	if err != nil {
 		return Member{}, fmt.Errorf("ask etcd at %s for its member: %w", endpoint, err)
 	}
-	members, err := Members(ctx, cli)
+	members, err := cli.Members(ctx)
 	if err != nil {
 		return Member{}, err
 	}

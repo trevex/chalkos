@@ -142,7 +142,7 @@ func (k *side) pinFromEtcd(ctx context.Context, c k8s.Cluster, share kpki.Share)
 	defer cli.Close()
 	rctx, cancel := k.etcdRequest(ctx)
 	defer cancel()
-	self, err := etcd.Local(rctx, cli, k.localEtcd(c))
+	self, err := cli.Local(rctx, k.localEtcd(c))
 	if err != nil {
 		return fmt.Errorf("pin the node's addresses: %w", err)
 	}
@@ -326,7 +326,7 @@ func (k *side) checkSplit(ctx context.Context, share kpki.Share) (*etcd.SplitErr
 	defer cli.Close()
 	rctx, cancel := k.etcdRequest(ctx)
 	defer cancel()
-	answered, err := etcd.OneCluster(rctx, cli, append([]string{k.localEtcd(c)}, others...))
+	answered, err := cli.OneCluster(rctx, append([]string{k.localEtcd(c)}, others...))
 	if split, ok := errors.AsType[*etcd.SplitError](err); ok {
 		return split, nil
 	}

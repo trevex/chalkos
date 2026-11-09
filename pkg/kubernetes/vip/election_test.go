@@ -106,7 +106,7 @@ func startNodeWith(t *testing.T, ca pki.CertKey, url, name string, ttl int, h *h
 	node := &electionNode{addrs: &fakeAddresses{holders: h}, done: make(chan struct{})}
 	node.healthy.Store(true)
 	node.election = &Election{
-		Client:    cli,
+		Client:    cli.Client,
 		Name:      name,
 		Healthy:   func(context.Context) bool { return node.healthy.Load() },
 		Addresses: node.addrs,

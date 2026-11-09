@@ -93,11 +93,11 @@ func (p *Plugin) etcdHealthy(ctx context.Context, c k8s.Cluster, share kpki.Shar
 	defer cli.Close()
 	ctx, cancel := k.etcdRequest(ctx)
 	defer cancel()
-	own, err := etcd.Local(ctx, cli, k.localEtcd(c))
+	own, err := cli.Local(ctx, k.localEtcd(c))
 	if err != nil {
 		return fmt.Errorf("the etcd member is not healthy: %w", err)
 	}
-	if err := etcd.Health(ctx, cli, []etcd.Member{own})[own.ID]; err != nil {
+	if err := cli.Health(ctx, []etcd.Member{own})[own.ID]; err != nil {
 		return fmt.Errorf("the etcd member is not healthy: %w", err)
 	}
 	return nil

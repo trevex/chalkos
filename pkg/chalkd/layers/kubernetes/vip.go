@@ -69,7 +69,7 @@ func (k *side) runVIP(ctx context.Context) error {
 		return k.hooks.APIServerReady(ctx, c, current)
 	}
 	election := &vip.Election{
-		Client:    cli,
+		Client:    cli.Client,
 		Name:      n.Name,
 		Healthy:   healthy,
 		Addresses: addrs,

@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
-	clientv3 "go.etcd.io/etcd/client/v3"
 
 	kubernetesv1 "github.com/trevex/chalkos/pkg/api/kubernetes/v1"
 	"github.com/trevex/chalkos/pkg/chalkd/layer"
@@ -27,7 +26,7 @@ import (
 )
 
 // addMember starts a member of the name and makes it a voter of the cluster cli reaches.
-func addMember(t *testing.T, cli *clientv3.Client, ca pki.CertKey, name string) *etcdtest.Member {
+func addMember(t *testing.T, cli *etcd.Client, ca pki.CertKey, name string) *etcdtest.Member {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
@@ -37,7 +36,7 @@ func addMember(t *testing.T, cli *clientv3.Client, ca pki.CertKey, name string) 
 	var err error
 	// etcd adds no member while one it just promoted is not yet in touch with the others.
 	for {
-		if added, initial, err = etcd.AddLearner(ctx, cli, name, peerURL); err == nil || ctx.Err() != nil {
+		if added, initial, err = cli.AddLearner(ctx, name, peerURL); err == nil || ctx.Err() != nil {
 			break
 		}
 		time.Sleep(100 * time.Millisecond)
@@ -46,7 +45,7 @@ func addMember(t *testing.T, cli *clientv3.Client, ca pki.CertKey, name string) 
 		t.Fatal(err)
 	}
 	m := etcdtest.StartExisting(t, ca, name, peerURL, initial)
-	if err := etcd.Promote(ctx, cli, added.ID, 100*time.Millisecond, 10*time.Second); err != nil {
+	if err := cli.Promote(ctx, added.ID, 100*time.Millisecond, 10*time.Second); err != nil {
 		t.Fatal(err)
 	}
 	return m
@@ -54,7 +53,7 @@ func addMember(t *testing.T, cli *clientv3.Client, ca pki.CertKey, name string) 
 
 // memberNode is the bootstrapped control-plane node n1, whose etcd member runs with the
 // members named in others.
-func memberNode(t *testing.T, others ...string) (*Plugin, *clientv3.Client, map[string]*etcdtest.Member) {
+func memberNode(t *testing.T, others ...string) (*Plugin, *etcd.Client, map[string]*etcdtest.Member) {
 	t.Helper()
 	s, _ := kubernetesNode(t, k8s.KindControlPlane, true)
 	k := s.k
@@ -174,7 +173,7 @@ func TestEtcdRemoveMember(t *testing.T) {
 	if err := removeMember(s, "cp2", false); layer.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "pass --force") {
 		t.Errorf("removing cp2 while cp3 is down: %v", err)
 	}
-	list, err := etcd.Members(context.Background(), cli)
+	list, err := cli.Members(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -202,7 +201,7 @@ func TestEtcdLeave(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer cp2.Close()
-	if list, err := etcd.Members(context.Background(), cp2); err != nil || len(list) != 1 || list[0].Name != "cp2" {
+	if list, err := cp2.Members(context.Background()); err != nil || len(list) != 1 || list[0].Name != "cp2" {
 		t.Errorf("members %v, %v after n1 left", list, err)
 	}
 	checkLeft(t, s)
@@ -291,7 +290,7 @@ func TestEtcdLeaveAfterMemberRemoved(t *testing.T) {
 	if learner < 0 {
 		t.Fatal("no learner")
 	}
-	if err := etcd.Remove(context.Background(), cli, members(t, cli)[learner].ID, false); err != nil {
+	if err := cli.Remove(context.Background(), members(t, cli)[learner].ID, false); err != nil {
 		t.Fatal(err)
 	}
 	eventually(t, "the join to stop", func() bool {
@@ -376,7 +375,7 @@ func TestEtcdLeaveAfterOwnMemberRemoved(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer cp2.Close()
-	list, err := etcd.Members(context.Background(), cp2)
+	list, err := cp2.Members(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -384,7 +383,7 @@ func TestEtcdLeaveAfterOwnMemberRemoved(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := etcd.Remove(context.Background(), cp2, n1.ID, false); err != nil {
+	if err := cp2.Remove(context.Background(), n1.ID, false); err != nil {
 		t.Fatal(err)
 	}
 	otherMembersOnly(t, s, members["cp2"], members["cp3"])
@@ -471,7 +470,7 @@ func TestEtcdLeaveWaitsForTheCertificateLock(t *testing.T) {
 	go func() { left <- leave(s, false) }()
 	// Once etcd removed the member, the leave goes on to stop the control plane.
 	eventually(t, "the member's removal", func() bool {
-		list, err := etcd.Members(context.Background(), cp2)
+		list, err := cp2.Members(context.Background())
 		return err == nil && len(list) == 1
 	})
 	time.Sleep(time.Second)
