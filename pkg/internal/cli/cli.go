@@ -1,6 +1,6 @@
-// Package cli holds what chalkctl, chalklab, chalkbuild and chalkcfg share around their cobra
-// command trees: usage errors, the root and group commands, positional argument checks, enum
-// flags and Execute, which prints a command's error and returns its exit status.
+// Package cli holds what chalkctl, chalkd, chalklab, chalkbuild and chalkcfg share around their
+// cobra command trees: usage errors, the root and group commands, positional argument checks,
+// enum flags and Execute, which prints a command's error and returns its exit status.
 package cli
 
 import (
@@ -88,6 +88,9 @@ type Options struct {
 	// Interruptible makes a command whose context ended exit with 130, as after SIGINT, whatever
 	// its error.
 	Interruptible bool
+	// SplitJoined prints each error that an error other than a usage error joins on a line of its
+	// own, after the root's name, as a log prints them.
+	SplitJoined bool
 }
 
 // Execute runs the command tree of root with ctx, prints its error and returns the exit status:
@@ -111,7 +114,9 @@ func Execute(ctx context.Context, root *cobra.Command, opts Options) int {
 		status = 2
 	}
 	if err != ErrUsage {
-		fmt.Fprintf(cmd.ErrOrStderr(), "%s: %v\n", root.Name(), err)
+		for _, e := range lines(err, opts.SplitJoined && status != 2) {
+			fmt.Fprintf(cmd.ErrOrStderr(), "%s: %v\n", root.Name(), e)
+		}
 	}
 	if status == 2 {
 		fmt.Fprint(cmd.ErrOrStderr(), cmd.UsageString())
@@ -124,11 +129,21 @@ func Execute(ctx context.Context, root *cobra.Command, opts Options) int {
 //   - A command with subcommands fails only with usage errors. Another error of its own is a flag
 //     before a subcommand's name, which cobra parses as this command's.
 //   - A leaf with a required flag not set, or with flags of a group set wrongly, never runs.
+//   - A leaf whose Args refuses its positional arguments never runs.
 func isUsage(cmd *cobra.Command, err error) bool {
 	if errors.Is(err, ErrUsage) {
 		return false
 	}
-	return cmd.HasSubCommands() || cmd.ValidateRequiredFlags() != nil || cmd.ValidateFlagGroups() != nil
+	return cmd.HasSubCommands() || cmd.ValidateRequiredFlags() != nil || cmd.ValidateFlagGroups() != nil ||
+		cmd.ValidateArgs(cmd.Flags().Args()) != nil
+}
+
+// lines are the errors err joins with split, or err alone.
+func lines(err error, split bool) []error {
+	if j, ok := err.(interface{ Unwrap() []error }); ok && split {
+		return j.Unwrap()
+	}
+	return []error{err}
 }
 
 // Enum is the value of a flag that takes one of allowed, which its usage calls a typ.

@@ -10,7 +10,8 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// tree is a root with a group and leaves that take one argument, a required flag, and fail.
+// tree is a root with a group and leaves that take one argument, a required flag, and fail, one
+// of them after cobra's own check of its arguments.
 func tree(stderr *bytes.Buffer) *cobra.Command {
 	root := Root(&cobra.Command{Use: "tool", TraverseChildren: true})
 	group := Group(&cobra.Command{Use: "group"})
@@ -20,8 +21,11 @@ func tree(stderr *bytes.Buffer) *cobra.Command {
 	required.Flags().String("name", "", "")
 	required.MarkFlagRequired("name")
 	fail := &cobra.Command{Use: "fail", Args: RangeArgs(0, 1), RunE: func(*cobra.Command, []string) error { return errors.New("failed") }}
+	joined := &cobra.Command{Use: "joined <arg>", Args: cobra.ExactArgs(1), RunE: func(*cobra.Command, []string) error {
+		return errors.Join(errors.New("first"), errors.New("second"))
+	}}
 	group.AddCommand(one)
-	root.AddCommand(group, required, fail)
+	root.AddCommand(group, required, fail, joined)
 	root.SetOut(&bytes.Buffer{})
 	root.SetErr(stderr)
 	return root
@@ -32,7 +36,7 @@ func TestExecute(t *testing.T) {
 		"group one a": 0, "required --name x": 0, "fail": 1, "fail a": 1, "--help": 0,
 		"": 2, "bogus": 2, "group": 2, "group bogus": 2, "--bogus": 2, "group --name x one a": 2,
 		"group one": 2, "group one a b": 2, "group one a --bogus": 2, "required": 2, "required a --name x": 2,
-		"fail a b": 2,
+		"fail a b": 2, "joined a": 1, "joined": 2, "joined a b": 2,
 	} {
 		var stderr bytes.Buffer
 		root := tree(&stderr)
@@ -103,5 +107,27 @@ func TestEnum(t *testing.T) {
 	}
 	if err := v.Set("d"); err == nil || err.Error() != "want a, b or c" || s != "c" {
 		t.Errorf("Set(d) = %v, leaves %q", err, s)
+	}
+}
+
+// With SplitJoined, each error a failed command joins is printed on a line of its own; a usage
+// error stays on one line.
+func TestExecuteSplitJoined(t *testing.T) {
+	for _, c := range []struct {
+		args string
+		opts Options
+		want string
+	}{
+		{"joined a", Options{SplitJoined: true}, "tool: first\ntool: second\n"},
+		{"joined a", Options{}, "tool: first\nsecond\n"},
+		{"joined", Options{SplitJoined: true}, "tool: usage: accepts 1 arg(s), received 0\nUsage:"},
+	} {
+		var stderr bytes.Buffer
+		root := tree(&stderr)
+		root.SetArgs(strings.Fields(c.args))
+		Execute(context.Background(), root, c.opts)
+		if !strings.HasPrefix(stderr.String(), c.want) {
+			t.Errorf("tool %s with %+v prints %q, want it to start with %q", c.args, c.opts, stderr.String(), c.want)
+		}
 	}
 }
