@@ -61,17 +61,33 @@ func (s State) RefreshStaticPods() error {
 	if renders, err := s.rendersStaticPods(); err != nil || !renders {
 		return err
 	}
-	pods, err := s.currentPods()
+	in, err := s.podInputs()
 	if err != nil {
 		return err
 	}
+	_, err = s.refreshFrom(in)
+	return err
+}
+
+// refreshFrom writes the static pods from in and the certificates in PKI when one written names
+// other certificates, by their hash, than it would; wrote reports whether it did. It refuses to
+// write them while etcd's data is missing.
+func (s State) refreshFrom(in inputs) (wrote bool, err error) {
+	files, err := s.readPKI()
+	if err != nil {
+		return false, err
+	}
+	pods, err := s.renderPods(in, files)
+	if err != nil {
+		return false, err
+	}
 	if stale, err := s.stale(pods); err != nil || !stale {
-		return err
+		return false, err
 	}
 	if err := s.CheckEtcdData(); err != nil {
-		return err
+		return false, err
 	}
-	return s.writePods(pods, "")
+	return true, s.writePods(pods, "")
 }
 
 // StaticPodsStale reports whether a static pod of a node that renders them names other
@@ -80,7 +96,15 @@ func (s State) StaticPodsStale() (bool, error) {
 	if renders, err := s.rendersStaticPods(); err != nil || !renders {
 		return false, err
 	}
-	pods, err := s.currentPods()
+	in, err := s.podInputs()
+	if err != nil {
+		return false, err
+	}
+	files, err := s.readPKI()
+	if err != nil {
+		return false, err
+	}
+	pods, err := s.renderPods(in, files)
 	if err != nil {
 		return false, err
 	}
@@ -129,24 +153,22 @@ func certificatesHash(manifest []byte) (string, error) {
 	return pod.Annotations[manifests.CertificatesAnnotation], nil
 }
 
-// render writes the static pods, or only the one in the file only names.
+// render writes the static pods from the files Prepare wrote, or only the one in the file only
+// names.
 func (s State) render(only string) error {
 	if err := s.CheckEtcdData(); err != nil {
 		return err
 	}
-	pods, err := s.currentPods()
+	in, err := s.podInputs()
 	if err != nil {
 		return err
 	}
-	return s.writePods(pods, only)
+	return s.renderFrom(in, only)
 }
 
-// renderFrom writes the static pods from in and the certificates in PKI, unless etcd's data is
-// missing.
-func (s State) renderFrom(in inputs) error {
-	if err := s.CheckEtcdData(); err != nil {
-		return err
-	}
+// renderFrom writes the static pods from in and the certificates in PKI, or only the one in the
+// file only names. The caller checks etcd's data first.
+func (s State) renderFrom(in inputs, only string) error {
 	files, err := s.readPKI()
 	if err != nil {
 		return err
@@ -155,7 +177,7 @@ func (s State) renderFrom(in inputs) error {
 	if err != nil {
 		return err
 	}
-	return s.writePods(pods, "")
+	return s.writePods(pods, only)
 }
 
 // writePods writes the static pods, or only the one in the file only names.
@@ -174,23 +196,10 @@ func (s State) writePods(pods map[string][]byte, only string) error {
 	return nil
 }
 
-// currentPods renders the static pods from the files Prepare wrote.
-func (s State) currentPods() (map[string][]byte, error) {
-	in, err := s.podInputs()
-	if err != nil {
-		return nil, err
-	}
-	files, err := s.readPKI()
-	if err != nil {
-		return nil, err
-	}
-	return s.renderPods(in, files)
-}
-
 // podInputs reads the cluster file and the node's identity with the addresses Prepare picked,
 // which the static pods are rendered from besides the certificates.
 func (s State) podInputs() (inputs, error) {
-	in, err := s.readNode()
+	in, err := s.readClusterNode()
 	if err != nil {
 		return inputs{}, err
 	}

@@ -31,7 +31,7 @@ func (s State) load() (inputs, error) {
 	if err != nil {
 		return inputs{}, err
 	}
-	in, err := s.readNode()
+	in, err := s.readClusterNode()
 	if err != nil {
 		return inputs{}, err
 	}
@@ -42,8 +42,8 @@ func (s State) load() (inputs, error) {
 	return in, nil
 }
 
-// readNode reads the node's cluster file and its identity, without the share.
-func (s State) readNode() (inputs, error) {
+// readClusterNode reads the node's cluster file and its identity, without the share.
+func (s State) readClusterNode() (inputs, error) {
 	c, err := kubernetes.ReadCluster(s.Cluster)
 	if err != nil {
 		return inputs{}, err
@@ -182,9 +182,12 @@ func (s State) prepare(now time.Time, resolve Resolver) error {
 	if renders, err := s.rendersStaticPods(); err != nil || !renders {
 		return err
 	}
+	if err := s.CheckEtcdData(); err != nil {
+		return err
+	}
 	// The addresses and certificates are read back as the static pods see them.
 	if in.node.IPs, err = s.ReadNodeIPs(); err != nil {
 		return fmt.Errorf("the node's addresses: %w", err)
 	}
-	return s.renderFrom(in)
+	return s.renderFrom(in, "")
 }

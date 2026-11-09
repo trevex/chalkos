@@ -140,21 +140,8 @@ func (s State) RenewControlPlane(ctx context.Context, now time.Time) error {
 		return err
 	}
 	if renders {
-		files, err := s.readPKI()
-		if err != nil {
+		if wrote, err := s.refreshFrom(in); err != nil || wrote {
 			return err
-		}
-		pods, err := s.renderPods(in, files)
-		if err != nil {
-			return err
-		}
-		if stale, err := s.stale(pods); err != nil {
-			return err
-		} else if stale {
-			if err := s.CheckEtcdData(); err != nil {
-				return err
-			}
-			return s.writePods(pods, "")
 		}
 	}
 	if err := ctx.Err(); err != nil {
@@ -176,6 +163,9 @@ func (s State) RenewControlPlane(ctx context.Context, now time.Time) error {
 	if !renders {
 		return nil
 	}
+	if err := s.CheckEtcdData(); err != nil {
+		return err
+	}
 	// The static pods are rendered from the certificates as they are now in PKI.
-	return s.renderFrom(in)
+	return s.renderFrom(in, "")
 }
