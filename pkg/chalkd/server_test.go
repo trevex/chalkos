@@ -109,32 +109,10 @@ func newTestServer(t *testing.T, mode nodev1.Mode, disks ...storagetest.Disk) (*
 	}
 	r := &tooltest.Runner{}
 	s := &Server{
-		Mode: mode,
-		Paths: Paths{
-			StateDir:        filepath.Join(root, "state"),
-			BootDisk:        "/dev/disk/chalk-boot-disk",
-			BootPartitions:  "/dev/disk/chalk-boot",
-			OSRelease:       filepath.Join(root, "os-release"),
-			EFIVars:         filepath.Join(root, "efivars"),
-			TPM:             filepath.Join(root, "tpm"),
-			StorageStatus:   filepath.Join(root, "run", "storage-status.json"),
-			MountInfo:       filepath.Join(root, "mountinfo"),
-			ESP:             filepath.Join(root, "esp"),
-			Cmdline:         filepath.Join(root, "cmdline"),
-			FailedBoot:      filepath.Join(root, "var", "failed-boot"),
-			EffectsBaseline: filepath.Join(root, "run", "chalkd", "effects-baseline.json"),
-		},
-		Run:  r,
-		Host: h,
-		Loader: nodeconfig.Loader{
-			RunDir:          filepath.Join(root, "run", "chalkos"),
-			Render:          outputs.Renderer{Root: filepath.Join(root, "run", "chalkos", "outputs"), Run: outputs.Direct{}},
-			NodeCertificate: filepath.Join(root, "state", "chalkd", NodeCertificateFile),
-			Slots:           filepath.Join(root, "state", "config"),
-			Cmdline:         filepath.Join(root, "cmdline"),
-			SetHostname:     func(string) error { return nil },
-			Contract:        &contract.Contract{Dir: filepath.Join(root, "etc")},
-		},
+		Mode:      mode,
+		Paths:     PathsUnder(root),
+		Run:       r,
+		Host:      h,
 		InPlace:   func(context.Context, install.Request, []byte) error { return errors.New("no install expected") },
 		FromParts: func(context.Context, install.PartsRequest) error { return errors.New("no install expected") },
 		Journal: func(context.Context, string, bool) (io.ReadCloser, error) {
@@ -142,6 +120,10 @@ func newTestServer(t *testing.T, mode nodev1.Mode, disks ...storagetest.Disk) (*
 		},
 		RebootNode: func() {},
 	}
+	s.Loader = nodeconfig.LoaderUnder(root)
+	s.Loader.Render.Run = outputs.Direct{}
+	s.Loader.SetHostname = func(string) error { return nil }
+	s.Loader.Contract = &contract.Contract{Dir: filepath.Join(root, "etc")}
 	osCA, err := testOSCA()
 	if err != nil {
 		t.Fatal(err)
@@ -1075,4 +1057,31 @@ func mustRules(t *testing.T, c *contract.Contract) *rules.Set {
 		t.Fatal(err)
 	}
 	return set
+}
+
+// A node's paths are those below /, and those below another root the same paths below it, but
+// for the devices, which storage.Host resolves.
+func TestPathsUnder(t *testing.T) {
+	want := Paths{
+		StateDir:        "/state",
+		BootDisk:        "/dev/disk/chalk-boot-disk",
+		BootPartitions:  "/dev/disk/chalk-boot",
+		OSRelease:       "/etc/os-release",
+		EFIVars:         "/sys/firmware/efi/efivars",
+		TPM:             "/sys/class/tpm",
+		StorageStatus:   "/run/chalkos/storage-status.json",
+		MountInfo:       "/proc/self/mountinfo",
+		ESP:             "/efi",
+		Cmdline:         "/proc/cmdline",
+		BootID:          "/proc/sys/kernel/random/boot_id",
+		FailedBoot:      "/var/lib/chalkd/failed-boot",
+		RunDir:          "/run/chalkd",
+		EffectsBaseline: "/run/chalkd/effects-baseline.json",
+	}
+	if got := DefaultPaths(); got != want {
+		t.Errorf("DefaultPaths() = %+v", got)
+	}
+	if got := PathsUnder("/tmp/n"); got.StateDir != "/tmp/n/state" || got.EffectsBaseline != "/tmp/n/run/chalkd/effects-baseline.json" || got.BootDisk != want.BootDisk {
+		t.Errorf("PathsUnder(/tmp/n) = %+v", got)
+	}
 }

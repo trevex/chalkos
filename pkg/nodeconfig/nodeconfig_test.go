@@ -371,3 +371,16 @@ echo '{"refusals": [{"kind": "Demo", "name": "one", "path": "spec.name", "messag
 		t.Errorf("the output = %s", got)
 	}
 }
+
+// The running node's loader reads and writes the node's own paths, and a loader under a root the
+// same paths below it.
+func TestLoaderUnder(t *testing.T) {
+	l := Default()
+	if l.RunDir != "/run/chalkos" || l.Slots != "/state/config" || l.Cmdline != "/proc/cmdline" ||
+		l.NodeCertificate != "/state/chalkd/node.pem" || l.Render.Root != "/run/chalkos/outputs" {
+		t.Errorf("Default() = %+v", l)
+	}
+	if l := LoaderUnder("/tmp/n"); l.Slots != "/tmp/n/state/config" || l.Render.Root != "/tmp/n/run/chalkos/outputs" {
+		t.Errorf("LoaderUnder(/tmp/n) = %+v", l)
+	}
+}

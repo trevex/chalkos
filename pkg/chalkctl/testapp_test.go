@@ -32,6 +32,7 @@ import (
 	knode "github.com/trevex/chalkos/pkg/kubernetes/node"
 	"github.com/trevex/chalkos/pkg/layers"
 	"github.com/trevex/chalkos/pkg/nodeconfig"
+	"github.com/trevex/chalkos/pkg/outputs"
 	"github.com/trevex/chalkos/pkg/pki"
 	"github.com/trevex/chalkos/pkg/storage"
 	"github.com/trevex/chalkos/pkg/tool"
@@ -318,28 +319,20 @@ func installedNode(t *testing.T, ta *testApp, recorded []byte) (*chalkd.Server, 
 	root := t.TempDir()
 	r := &fakeRunner{}
 	s := &chalkd.Server{
-		Mode: nodev1.Mode_MODE_NORMAL,
-		Paths: chalkd.Paths{
-			StateDir:       filepath.Join(root, "state"),
-			BootDisk:       "/dev/disk/chalk-boot-disk",
-			BootPartitions: "/dev/disk/chalk-boot",
-			StorageStatus:  filepath.Join(root, "storage-status.json"),
-			MountInfo:      filepath.Join(root, "mountinfo"),
-		},
+		Mode:       nodev1.Mode_MODE_NORMAL,
+		Paths:      chalkd.PathsUnder(root),
 		Run:        r,
 		Host:       storage.Host{SysRoot: filepath.Join(root, "sys"), UdevRoot: filepath.Join(root, "udev"), DevRoot: filepath.Join(root, "dev")},
 		RebootNode: func() {},
 	}
-	s.Loader.RunDir = filepath.Join(root, "run")
+	s.Loader = nodeconfig.LoaderUnder(root)
+	s.Loader.Render.Run = outputs.Direct{}
 	s.Loader.SetHostname = func(string) error { return nil }
+	writeFile(t, s.Paths.OSRelease, "IMAGE_ID=chalkos\nIMAGE_VERSION=\"\"\nCHALKOS_VARIANT=test\nCHALKOS_PLATFORM=metal\n")
 	// The node runs the image of the root hash abab…, whose slot holds the identity alone.
-	s.Loader.Slots = filepath.Join(root, "state", "config")
-	s.Loader.Cmdline = filepath.Join(root, "cmdline")
-	s.Paths.Cmdline = s.Loader.Cmdline
-	writeFile(t, s.Loader.Cmdline, "init=/x usrhash="+strings.Repeat("ab", 32)+"\n")
+	writeFile(t, s.Paths.Cmdline, "init=/x usrhash="+strings.Repeat("ab", 32)+"\n")
 	// The ESP holds the UKI the node booted the image from, uncounted, so its boot is found
 	// healthy, as after an install.
-	s.Paths.ESP, s.Paths.EFIVars = filepath.Join(root, "esp"), filepath.Join(root, "efivars")
 	writeFile(t, filepath.Join(s.Paths.ESP, "EFI", "Linux", "chalkos_1.efi"), string(ukitest.UKI(map[string]string{"IMAGE_ID": "chalkos", "IMAGE_VERSION": ""}, "init=/x usrhash="+strings.Repeat("ab", 32))))
 	if err := slot.Write(slotOf(t, s), slot.Stored{Identity: recorded}); err != nil {
 		t.Fatal(err)
@@ -347,7 +340,6 @@ func installedNode(t *testing.T, ta *testApp, recorded []byte) (*chalkd.Server, 
 	section, _ := json.Marshal(ta.identity(t).Storage)
 	writeFile(t, filepath.Join(s.Paths.StateDir, "storage", "storage.json"), string(section))
 	// The storage rules compare the config with the section STATE records.
-	s.Paths.EffectsBaseline = filepath.Join(root, "run", "effects-baseline.json")
 	writeContract(t, s, imagecontract.FactsFile, `{"recorded": {"file": "`+filepath.Join(s.Paths.StateDir, "storage", "storage.json")+`"}}`)
 	writeFile(t, s.Paths.MountInfo, "41 30 253:1 / /var rw - ext4 /dev/mapper/var rw\n")
 	withPlugins(t, s, layers.Of())

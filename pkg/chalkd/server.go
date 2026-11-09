@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"path/filepath"
 	"slices"
 	"sync"
 	"sync/atomic"
@@ -55,7 +56,7 @@ const (
 	maxDiagnosticRuns = 4
 )
 
-// Paths are the files chalkd reads and writes; tests point them at temporary directories.
+// Paths are the files chalkd reads and writes; tests take those PathsUnder a temporary directory.
 type Paths struct {
 	// StateDir is where STATE is mounted.
 	StateDir string
@@ -76,28 +77,38 @@ type Paths struct {
 	// FailedBoot, on VAR, keeps what chalkd and the health check logged during the last boot that
 	// was not found healthy.
 	FailedBoot string
-	// EffectsBaseline, below /run, is what the effects of a delivery that failed part way
+	// RunDir is chalkd's directory on /run, where it mounts what it checks and installs.
+	RunDir string
+	// EffectsBaseline, in RunDir, is what the effects of a delivery that failed part way
 	// compare with until a delivery is applied whole: the config, the facts and the outputs as they
 	// were before the first delivery that failed.
 	EffectsBaseline string
 }
 
 // DefaultPaths are the paths on a node.
-func DefaultPaths() Paths {
+func DefaultPaths() Paths { return PathsUnder("/") }
+
+// PathsUnder are the paths of a node whose file system is below root. BootDisk and BootPartitions
+// name devices, which storage.Host resolves below its own roots, so they are a node's under any
+// root.
+func PathsUnder(root string) Paths {
+	at := func(path string) string { return filepath.Join(root, path) }
+	runDir := at("/run/chalkd")
 	return Paths{
-		StateDir:        "/state",
+		StateDir:        at(storage.StateDir),
 		BootDisk:        "/dev/disk/chalk-boot-disk",
 		BootPartitions:  "/dev/disk/chalk-boot",
-		OSRelease:       "/etc/os-release",
-		EFIVars:         "/sys/firmware/efi/efivars",
-		TPM:             "/sys/class/tpm",
-		StorageStatus:   "/run/chalkos/storage-status.json",
-		MountInfo:       "/proc/self/mountinfo",
-		ESP:             "/efi",
-		Cmdline:         "/proc/cmdline",
-		BootID:          "/proc/sys/kernel/random/boot_id",
-		FailedBoot:      "/var/lib/chalkd/failed-boot",
-		EffectsBaseline: "/run/chalkd/effects-baseline.json",
+		OSRelease:       at("/etc/os-release"),
+		EFIVars:         at("/sys/firmware/efi/efivars"),
+		TPM:             at("/sys/class/tpm"),
+		StorageStatus:   at("/run/chalkos/storage-status.json"),
+		MountInfo:       at("/proc/self/mountinfo"),
+		ESP:             at("/efi"),
+		Cmdline:         at("/proc/cmdline"),
+		BootID:          at("/proc/sys/kernel/random/boot_id"),
+		FailedBoot:      at("/var/lib/chalkd/failed-boot"),
+		RunDir:          runDir,
+		EffectsBaseline: filepath.Join(runDir, "effects-baseline.json"),
 	}
 }
 

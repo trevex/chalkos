@@ -24,6 +24,7 @@ import (
 	"github.com/trevex/chalkos/pkg/outputs"
 	"github.com/trevex/chalkos/pkg/pki"
 	"github.com/trevex/chalkos/pkg/schema"
+	"github.com/trevex/chalkos/pkg/storage"
 	"github.com/trevex/chalkos/pkg/uki"
 )
 
@@ -57,17 +58,28 @@ type Loader struct {
 	NodeCertificate string
 }
 
-// Default returns the Loader of the running node, with its real paths and without its contract,
-// which the caller loads from contract.DefaultDir.
-func Default() Loader {
+// LoaderUnder returns the Loader of a node whose file system is below root, with the outputs
+// rendered below root too. It holds no contract, no way to set the hostname and no way to run
+// the renderers: Default adds those of the running node, and tests their own.
+func LoaderUnder(root string) Loader {
+	at := func(path string) string { return filepath.Join(root, path) }
 	return Loader{
-		RunDir:          "/run/chalkos",
-		Slots:           "/state/config",
-		Cmdline:         "/proc/cmdline",
-		SetHostname:     func(name string) error { return syscall.Sethostname([]byte(name)) },
-		Render:          outputs.Default(),
-		NodeCertificate: "/state/chalkd/node.pem",
+		RunDir:          at("/run/chalkos"),
+		Slots:           at(filepath.Join(storage.StateDir, "config")),
+		Cmdline:         at("/proc/cmdline"),
+		Render:          outputs.Renderer{Root: at(outputs.DefaultRoot)},
+		NodeCertificate: at(filepath.Join(storage.StateDir, "chalkd", "node.pem")),
 	}
+}
+
+// Default returns the Loader of the running node: LoaderUnder("/"), setting the node's hostname and
+// running the renderers in the outputs' sandboxes. It holds no contract, which the caller loads
+// from contract.DefaultDir.
+func Default() Loader {
+	l := LoaderUnder("/")
+	l.SetHostname = func(name string) error { return syscall.Sethostname([]byte(name)) }
+	l.Render = outputs.Default()
+	return l
 }
 
 // identityFields holds the fields of the identity the loader needs.
