@@ -14,6 +14,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/trevex/chalkos/pkg/atomicfile"
+	"github.com/trevex/chalkos/pkg/chalkctl/layer"
 	"github.com/trevex/chalkos/pkg/client"
 	"github.com/trevex/chalkos/pkg/clustersecrets"
 	"github.com/trevex/chalkos/pkg/internal/cli"
@@ -86,7 +87,7 @@ func secretCredentials(s clustersecrets.Secrets) (*credentials, error) {
 }
 
 // loadSecretCredentials reads the secrets file for commands that need it.
-func (a *app) loadSecretCredentials(ctx context.Context, s secretFlags) (*credentials, error) {
+func (a *app) loadSecretCredentials(ctx context.Context, s layer.SecretsFlags) (*credentials, error) {
 	secrets, err := a.loadSecrets(ctx, s)
 	if err != nil {
 		return nil, err
@@ -101,13 +102,13 @@ const configExpiryWarning = 30 * 24 * time.Hour
 // loadCredentials picks the credentials of commands a client file may run: the client file
 // --config names, or the secrets file --secrets names, but not both, which would leave one
 // unread; else the client file $CHALKOSCONFIG names, else ~/.config/chalkos/config.
-func (a *app) loadCredentials(ctx context.Context, s secretFlags, config string) (*credentials, error) {
+func (a *app) loadCredentials(ctx context.Context, s layer.SecretsFlags, config string) (*credentials, error) {
 	switch {
-	case config != "" && s.path != "":
+	case config != "" && s.Path != "":
 		return nil, cli.Usagef("pass --secrets or --config, not both")
 	case config != "":
 		return a.configCredentials(config)
-	case s.path != "":
+	case s.Path != "":
 		return a.loadSecretCredentials(ctx, s)
 	}
 	if path := os.Getenv("CHALKOSCONFIG"); path != "" {
@@ -152,7 +153,7 @@ func (a *app) configCredentials(path string) (*credentials, error) {
 }
 
 type configNewFlags struct {
-	secrets         secretFlags
+	secrets         layer.SecretsFlags
 	name, role, out string
 	ttl             time.Duration
 	force           bool
@@ -168,7 +169,7 @@ func (a *app) configNewCommand() *cobra.Command {
 		Args:    cli.NoArgs,
 	}, func(a *app, ctx context.Context, pos []string) error { return a.configNew(ctx, f) })
 	fs := cmd.Flags()
-	f.secrets.register(fs)
+	f.secrets.Register(fs)
 	fs.StringVar(&f.name, "name", "", "the user's name, which the certificate carries")
 	fs.StringVar(&f.role, "role", "", "the role the certificate grants: admin, operator or reader")
 	cmd.MarkFlagRequired("name")

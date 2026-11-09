@@ -20,25 +20,15 @@ import (
 	"golang.org/x/term"
 
 	"github.com/trevex/chalkos/pkg/atomicfile"
+	"github.com/trevex/chalkos/pkg/chalkctl/layer"
 	"github.com/trevex/chalkos/pkg/clustersecrets"
 	"github.com/trevex/chalkos/pkg/internal/cli"
 	"github.com/trevex/chalkos/pkg/pki"
 )
 
-// secretFlags say where the secrets file is and how to decrypt it.
-type secretFlags struct {
-	path       string
-	identities []string
-}
-
-func (s *secretFlags) register(fs *pflag.FlagSet) {
-	fs.StringVar(&s.path, "secrets", "", "secrets file, encrypted with age or not, or - to read it from standard input")
-	fs.StringArrayVar(&s.identities, "identity", nil, "file holding an age identity to decrypt the secrets with; may be repeated (default ~/.config/chalkos/age.key, ~/.ssh/id_ed25519, ~/.ssh/id_rsa)")
-}
-
 // loadSecrets reads the secrets file in whatever format it has. Age identities are read only when
 // the file is encrypted.
-func (a *app) loadSecrets(ctx context.Context, s secretFlags) (clustersecrets.Secrets, error) {
+func (a *app) loadSecrets(ctx context.Context, s layer.SecretsFlags) (clustersecrets.Secrets, error) {
 	path, err := secretsPath(s)
 	if err != nil {
 		return clustersecrets.Secrets{}, err
@@ -52,7 +42,7 @@ func (a *app) loadSecrets(ctx context.Context, s secretFlags) (clustersecrets.Se
 	if err != nil {
 		return clustersecrets.Secrets{}, fmt.Errorf("read the secrets file: %w", err)
 	}
-	secrets, err := clustersecrets.Read(data, func() ([]age.Identity, error) { return a.ageIdentities(ctx, s.identities) })
+	secrets, err := clustersecrets.Read(data, func() ([]age.Identity, error) { return a.ageIdentities(ctx, s.Identities) })
 	if err != nil {
 		return clustersecrets.Secrets{}, fmt.Errorf("%s: %w", path, err)
 	}
@@ -62,11 +52,11 @@ func (a *app) loadSecrets(ctx context.Context, s secretFlags) (clustersecrets.Se
 // secretsPath is the secrets file --secrets names, - for standard input. chalkctl looks for no
 // secrets file of its own accord: the file holds every key of the cluster, so it is read only
 // where it is named.
-func secretsPath(s secretFlags) (string, error) {
-	if s.path == "" {
+func secretsPath(s layer.SecretsFlags) (string, error) {
+	if s.Path == "" {
 		return "", errors.New("pass the secrets file with --secrets FILE, or --secrets - to read it from standard input")
 	}
-	return s.path, nil
+	return s.Path, nil
 }
 
 // ageIdentities parses the given identity files, which must all load, or the default ones that
@@ -186,8 +176,8 @@ func readInterruptible(ctx context.Context, read func() ([]byte, error), restore
 }
 
 type recoveryKeyFlags struct {
-	cluster clusterFlags
-	secrets secretFlags
+	cluster layer.ClusterFlags
+	secrets layer.SecretsFlags
 }
 
 func (a *app) recoveryKeyCommand() *cobra.Command {
@@ -199,8 +189,8 @@ func (a *app) recoveryKeyCommand() *cobra.Command {
 		Example: recoveryKeyExample,
 		Args:    cli.ExactArgs(1),
 	}, func(a *app, ctx context.Context, pos []string) error { return a.recoveryKey(ctx, f, pos) })
-	f.cluster.register(cmd.Flags())
-	f.secrets.register(cmd.Flags())
+	f.cluster.Register(cmd.Flags())
+	f.secrets.Register(cmd.Flags())
 	return cmd
 }
 
@@ -450,7 +440,7 @@ func (f *secretsFile) inPlace() bool { return f.out == f.path }
 // the changes are written before anything is changed. The recipients come from inside the
 // encrypted file, or from --recipient, never from secrets.pub.json, which anyone who can write
 // beside the secrets file could change.
-func (a *app) openSecrets(ctx context.Context, s secretFlags, change changeFlags) (*secretsFile, error) {
+func (a *app) openSecrets(ctx context.Context, s layer.SecretsFlags, change changeFlags) (*secretsFile, error) {
 	path, err := secretsPath(s)
 	if err != nil {
 		return nil, err
@@ -484,12 +474,12 @@ func (a *app) openSecrets(ctx context.Context, s secretFlags, change changeFlags
 }
 
 // readSecretsFile is openSecrets once the file is read.
-func (a *app) readSecretsFile(ctx context.Context, s secretFlags, path string, data []byte, c changeFlags) (*secretsFile, error) {
+func (a *app) readSecretsFile(ctx context.Context, s layer.SecretsFlags, path string, data []byte, c changeFlags) (*secretsFile, error) {
 	format, err := clustersecrets.DetectFormat(data)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", path, err)
 	}
-	secrets, err := clustersecrets.Read(data, func() ([]age.Identity, error) { return a.ageIdentities(ctx, s.identities) })
+	secrets, err := clustersecrets.Read(data, func() ([]age.Identity, error) { return a.ageIdentities(ctx, s.Identities) })
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", path, err)
 	}

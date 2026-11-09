@@ -69,7 +69,7 @@ func (a *app) deliverToNodes(ctx context.Context, f applyConfigFlags, names []st
 	if err != nil {
 		return err
 	}
-	creds, err := a.loadSecretCredentials(ctx, f.node.secrets)
+	creds, err := a.loadSecretCredentials(ctx, f.node.Secrets)
 	if err != nil {
 		return err
 	}

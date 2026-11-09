@@ -20,26 +20,10 @@ import (
 
 // nodeFlags holds what commands addressing one node share.
 type nodeFlags struct {
-	cluster clusterFlags
-	secrets secretFlags
-	address string
-	// config is the client file of commands that a client file may run.
-	config string
+	layer.NodeFlags
 	// needs names a command that needs the nodes' config. Only an inventory gives that config, so
 	// without one the command is refused before any credentials are read.
 	needs string
-}
-
-func (n *nodeFlags) register(fs *pflag.FlagSet) {
-	n.cluster.register(fs)
-	n.secrets.register(fs)
-	fs.StringVar(&n.address, "address", "", "address of the node's chalkd, host or host:port (default the node's address in the inventory)")
-}
-
-// registerClient registers the flags of a command that a client file may run.
-func (n *nodeFlags) registerClient(fs *pflag.FlagSet) {
-	n.register(fs)
-	registerConfig(fs, &n.config)
 }
 
 // target is a node of the cluster with the credentials chalkctl reaches it with. secrets holds
@@ -60,11 +44,11 @@ func (a *app) target(ctx context.Context, n nodeFlags, name string) (*target, er
 	if err != nil {
 		return nil, err
 	}
-	creds, err := a.loadSecretCredentials(ctx, n.secrets)
+	creds, err := a.loadSecretCredentials(ctx, n.Secrets)
 	if err != nil {
 		return nil, err
 	}
-	return targetIn(c, n.address, name, creds)
+	return targetIn(c, n.Address, name, creds)
 }
 
 // clientTarget addresses a node with the secrets file or a client file.
@@ -73,17 +57,17 @@ func (a *app) clientTarget(ctx context.Context, n nodeFlags, name string) (*targ
 	if err != nil {
 		return nil, err
 	}
-	creds, err := a.loadCredentials(ctx, n.secrets, n.config)
+	creds, err := a.loadCredentials(ctx, n.Secrets, n.Config)
 	if err != nil {
 		return nil, err
 	}
-	return targetIn(c, n.address, name, creds)
+	return targetIn(c, n.Address, name, creds)
 }
 
 // loadCluster loads the cluster the command's flags name, and refuses a partial one when the
 // command needs the nodes' config.
 func (n nodeFlags) loadCluster(ctx context.Context) (*cluster, error) {
-	c, err := loadCluster(ctx, n.cluster)
+	c, err := loadCluster(ctx, n.ClusterFlags)
 	if err != nil {
 		return nil, err
 	}

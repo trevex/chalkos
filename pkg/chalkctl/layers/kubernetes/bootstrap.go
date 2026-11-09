@@ -28,7 +28,7 @@ func bootstrapCommand(h layer.Host) *cobra.Command {
 		Example: bootstrapExample,
 		Args:    cli.ExactArgs(1),
 	}, func(h layer.Host, ctx context.Context, pos []string) error { return bootstrap(h, ctx, f, pos) })
-	f.node = h.NodeFlags(cmd.Flags())
+	f.node.RegisterClient(cmd.Flags())
 	cmd.Flags().DurationVar(&f.timeout, "timeout", 20*time.Minute, "how long to wait for the control plane to apply its add-ons and Addon objects")
 	return cmd
 }

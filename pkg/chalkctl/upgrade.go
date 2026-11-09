@@ -76,8 +76,8 @@ type upgradeOptions struct {
 }
 
 type upgradeFlags struct {
-	cluster              clusterFlags
-	secrets              secretFlags
+	cluster              layer.ClusterFlags
+	secrets              layer.SecretsFlags
 	config, image, nodes string
 	passwordFile         string
 	addresses            addressList
@@ -99,8 +99,8 @@ func (a *app) upgradeCommand() *cobra.Command {
 		Args:    cli.NoArgs,
 	}, func(a *app, ctx context.Context, pos []string) error { return a.upgrade(ctx, f) })
 	fs := cmd.Flags()
-	f.cluster.register(fs)
-	f.secrets.register(fs)
+	f.cluster.Register(fs)
+	f.secrets.Register(fs)
 	registerConfig(fs, &f.config)
 	registerAddresses(fs, f.addresses)
 	fs.StringVar(&f.image, "image", "", "image to install on the nodes that run its variant, or on the nodes --nodes names whatever they run: a raw image with repart-output.json next to it, or an image directory (default the directory of each node's image in the inventory)")

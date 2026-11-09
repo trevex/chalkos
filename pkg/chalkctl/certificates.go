@@ -32,7 +32,7 @@ func (a *app) nodeRenewCommand() *cobra.Command {
 		Example: nodeRenewExample,
 		Args:    cli.ExactArgs(1),
 	}, func(a *app, ctx context.Context, pos []string) error { return a.nodeRenew(ctx, f, pos) })
-	f.node.register(cmd.Flags())
+	f.node.Register(cmd.Flags())
 	cmd.Flags().BoolVar(&f.force, "force", false, "renew without asking whether the node is revoked")
 	return cmd
 }

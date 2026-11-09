@@ -18,6 +18,7 @@ import (
 )
 
 type kubeconfigFlags struct {
+	cluster                    layer.ClusterFlags
 	secrets                    layer.SecretsFlags
 	ttl                        time.Duration
 	out, server, name, context string
@@ -41,7 +42,8 @@ func kubeconfigCommand(h layer.Host) *cobra.Command {
 		return kubeconfig(h, ctx, f)
 	})
 	fs := cmd.Flags()
-	f.secrets = h.SecretsFlags(fs)
+	f.cluster.Register(fs)
+	f.secrets.Register(fs)
 	fs.DurationVar(&f.ttl, "ttl", 8760*time.Hour, "validity of the admin certificate")
 	fs.StringVar(&f.out, "out", "kubeconfig", "file to write, - for standard output")
 	fs.BoolVar(&f.force, "force", false, "replace an existing file")
@@ -52,7 +54,7 @@ func kubeconfigCommand(h layer.Host) *cobra.Command {
 }
 
 func kubeconfig(h layer.Host, ctx context.Context, f kubeconfigFlags) error {
-	c, err := h.Cluster(ctx, f.secrets)
+	c, err := h.Cluster(ctx, f.cluster)
 	if err != nil {
 		return err
 	}

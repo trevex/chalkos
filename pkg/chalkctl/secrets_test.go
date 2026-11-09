@@ -14,6 +14,7 @@ import (
 
 	"filippo.io/age"
 
+	"github.com/trevex/chalkos/pkg/chalkctl/layer"
 	"github.com/trevex/chalkos/pkg/clustersecrets"
 )
 
@@ -51,7 +52,7 @@ func TestSecretsEncryptedToTheRecipientsInside(t *testing.T) {
 	writeFile(t, publicPath, strings.Replace(string(pubData), "{", `{"recipients": ["`+other.Recipient().String()+`"],`, 1))
 
 	ta.stdout.Reset()
-	f, err := ta.openUnlocked(context.Background(), secretFlags{path: path}, changeFlags{})
+	f, err := ta.openUnlocked(context.Background(), layer.SecretsFlags{Path: path}, changeFlags{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -78,7 +79,7 @@ func TestSecretsEncryptedToTheRecipientsInside(t *testing.T) {
 	}
 
 	// --recipient replaces the recipients, inside the file too.
-	f, err = ta.openUnlocked(context.Background(), secretFlags{path: path}, changeFlags{recipients: []string{other.Recipient().String()}})
+	f, err = ta.openUnlocked(context.Background(), layer.SecretsFlags{Path: path}, changeFlags{recipients: []string{other.Recipient().String()}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -110,7 +111,7 @@ func TestSecretsKeepTheirFormat(t *testing.T) {
 	dir := filepath.Join(ta.dir, "armored")
 	writeFile(t, filepath.Join(dir, "secrets.age"), string(armored))
 	for _, path := range []string{filepath.Join(dir, "secrets.age"), filepath.Join(ta.dir, "secrets.json")} {
-		f, err := ta.openUnlocked(context.Background(), secretFlags{path: path}, changeFlags{})
+		f, err := ta.openUnlocked(context.Background(), layer.SecretsFlags{Path: path}, changeFlags{})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -136,13 +137,13 @@ func TestChangedSecretsNeedTheirRecipients(t *testing.T) {
 	writeFile(t, path, string(encrypted))
 	public, _ := json.Marshal(map[string]any{"version": clustersecrets.Version, "osCA": ta.secrets.Public().OSCA, "recipients": []string{id.Recipient().String()}})
 	writeFile(t, filepath.Join(ta.dir, "enc", "secrets.pub.json"), string(public))
-	if _, err := ta.openUnlocked(context.Background(), secretFlags{path: path}, changeFlags{}); err == nil || !strings.Contains(err.Error(), "--recipient") {
+	if _, err := ta.openUnlocked(context.Background(), layer.SecretsFlags{Path: path}, changeFlags{}); err == nil || !strings.Contains(err.Error(), "--recipient") {
 		t.Errorf("err = %v, want a refusal naming --recipient", err)
 	}
-	if _, err := ta.openUnlocked(context.Background(), secretFlags{path: "-"}, changeFlags{}); err == nil || !strings.Contains(err.Error(), "--out") {
+	if _, err := ta.openUnlocked(context.Background(), layer.SecretsFlags{Path: "-"}, changeFlags{}); err == nil || !strings.Contains(err.Error(), "--out") {
 		t.Errorf("err = %v, want a refusal naming --out", err)
 	}
-	if _, err := ta.openUnlocked(context.Background(), secretFlags{path: path}, changeFlags{recipients: []string{"AGE-SECRET-KEY-1QQQ"}}); err == nil || strings.Contains(err.Error(), "AGE-SECRET") {
+	if _, err := ta.openUnlocked(context.Background(), layer.SecretsFlags{Path: path}, changeFlags{recipients: []string{"AGE-SECRET-KEY-1QQQ"}}); err == nil || strings.Contains(err.Error(), "AGE-SECRET") {
 		t.Errorf("err = %v, want a refusal that does not echo the key", err)
 	}
 }
@@ -155,18 +156,18 @@ func TestPlaintextSecretsEncryptedOnlyOnRequest(t *testing.T) {
 	id, _ := age.GenerateX25519Identity()
 	path := filepath.Join(ta.dir, "secrets.json")
 	recipient := []string{id.Recipient().String()}
-	if _, err := ta.openUnlocked(context.Background(), secretFlags{path: path}, changeFlags{recipients: recipient}); err == nil || !strings.Contains(err.Error(), ".age") {
+	if _, err := ta.openUnlocked(context.Background(), layer.SecretsFlags{Path: path}, changeFlags{recipients: recipient}); err == nil || !strings.Contains(err.Error(), ".age") {
 		t.Errorf("--recipient on a plaintext file in place: %v, want a refusal naming .age", err)
 	}
-	if _, err := ta.openUnlocked(context.Background(), secretFlags{path: path}, changeFlags{recipients: recipient, out: filepath.Join(ta.dir, "new.json")}); err == nil {
+	if _, err := ta.openUnlocked(context.Background(), layer.SecretsFlags{Path: path}, changeFlags{recipients: recipient, out: filepath.Join(ta.dir, "new.json")}); err == nil {
 		t.Error("--recipient on a plaintext file written to a .json file is accepted")
 	}
-	if _, err := ta.openUnlocked(context.Background(), secretFlags{path: path}, changeFlags{out: filepath.Join(ta.dir, "plain.age")}); err == nil || !strings.Contains(err.Error(), "--recipient") {
+	if _, err := ta.openUnlocked(context.Background(), layer.SecretsFlags{Path: path}, changeFlags{out: filepath.Join(ta.dir, "plain.age")}); err == nil || !strings.Contains(err.Error(), "--recipient") {
 		t.Errorf("a plaintext file to a .age file without recipients: %v, want a refusal naming --recipient", err)
 	}
 
 	out := filepath.Join(ta.dir, "secrets.age")
-	f, err := ta.openUnlocked(context.Background(), secretFlags{path: path}, changeFlags{recipients: recipient, out: out})
+	f, err := ta.openUnlocked(context.Background(), layer.SecretsFlags{Path: path}, changeFlags{recipients: recipient, out: out})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -194,10 +195,10 @@ func TestSecretsRefuseAnotherPublicFile(t *testing.T) {
 	other, _ := clustersecrets.Generate(time.Now())
 	otherPublic, _ := encodePublic(other)
 	writeFile(t, publicPath, string(otherPublic))
-	if _, err := ta.openUnlocked(context.Background(), secretFlags{path: path}, changeFlags{}); err == nil || !strings.Contains(err.Error(), "secrets.pub.json") {
+	if _, err := ta.openUnlocked(context.Background(), layer.SecretsFlags{Path: path}, changeFlags{}); err == nil || !strings.Contains(err.Error(), "secrets.pub.json") {
 		t.Errorf("another cluster's secrets.pub.json: %v, want a refusal naming it", err)
 	}
-	if _, err := ta.openUnlocked(context.Background(), secretFlags{path: path}, changeFlags{out: filepath.Join(ta.dir, "new.json")}); err != nil {
+	if _, err := ta.openUnlocked(context.Background(), layer.SecretsFlags{Path: path}, changeFlags{out: filepath.Join(ta.dir, "new.json")}); err != nil {
 		t.Errorf("--out leaves secrets.pub.json alone, yet: %v", err)
 	}
 
@@ -215,14 +216,14 @@ func TestSecretsRefuseAnotherPublicFile(t *testing.T) {
 	}
 	data, _ := rotated.Encode()
 	writeFile(t, path, string(data))
-	if _, err := ta.openUnlocked(context.Background(), secretFlags{path: path}, changeFlags{}); err != nil {
+	if _, err := ta.openUnlocked(context.Background(), layer.SecretsFlags{Path: path}, changeFlags{}); err != nil {
 		t.Errorf("a secrets.pub.json of the accepted OS CA: %v", err)
 	}
 }
 
 // openUnlocked is openSecrets with the lock released at once, for tests that open one secrets
 // file several times in turn.
-func (ta *testApp) openUnlocked(ctx context.Context, s secretFlags, c changeFlags) (*secretsFile, error) {
+func (ta *testApp) openUnlocked(ctx context.Context, s layer.SecretsFlags, c changeFlags) (*secretsFile, error) {
 	f, err := ta.openSecrets(ctx, s, c)
 	if err == nil {
 		f.Close()
@@ -469,7 +470,7 @@ func TestDirectorySyncedAfterWrites(t *testing.T) {
 	}
 	outDir := filepath.Join(ta.dir, "out")
 	os.Mkdir(outDir, 0o755)
-	f, err := ta.openUnlocked(context.Background(), secretFlags{path: filepath.Join(ta.dir, "secrets.json")}, changeFlags{out: filepath.Join(outDir, "secrets.json")})
+	f, err := ta.openUnlocked(context.Background(), layer.SecretsFlags{Path: filepath.Join(ta.dir, "secrets.json")}, changeFlags{out: filepath.Join(outDir, "secrets.json")})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -481,7 +482,7 @@ func TestDirectorySyncedAfterWrites(t *testing.T) {
 	}
 
 	failing = true
-	f, err = ta.openUnlocked(context.Background(), secretFlags{path: filepath.Join(ta.dir, "secrets.json")}, changeFlags{})
+	f, err = ta.openUnlocked(context.Background(), layer.SecretsFlags{Path: filepath.Join(ta.dir, "secrets.json")}, changeFlags{})
 	if err != nil {
 		t.Fatal(err)
 	}

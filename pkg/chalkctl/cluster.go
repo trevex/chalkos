@@ -11,20 +11,11 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/spf13/pflag"
-
 	"github.com/trevex/chalkos/pkg/chalkctl/layer"
 	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/inventory"
 	"github.com/trevex/chalkos/pkg/pki"
 )
-
-// clusterFlags say where chalkctl learns the cluster from.
-type clusterFlags struct{ inventory string }
-
-func (c *clusterFlags) register(fs *pflag.FlagSet) {
-	fs.StringVar(&c.inventory, "inventory", "", "inventory naming the cluster's nodes, their addresses and their config files (default "+inventory.DefaultFile+" in the current directory, when it exists)")
-}
 
 // cluster is what chalkctl knows of the cluster it operates: its name, the inventory's, which
 // messages call it by, the endpoint its Cluster document names, its nodes and their config, from
@@ -43,9 +34,9 @@ func (c *cluster) partial() bool { return c.inv == nil }
 // loadCluster reads the inventory --inventory names, or else chalkos.yaml in the current
 // directory, whose images in registries are read under ctx; without either, the cluster is
 // partial.
-func loadCluster(ctx context.Context, f clusterFlags) (*cluster, error) {
-	if f.inventory != "" {
-		return loadInventory(ctx, f.inventory)
+func loadCluster(ctx context.Context, f layer.ClusterFlags) (*cluster, error) {
+	if f.Inventory != "" {
+		return loadInventory(ctx, f.Inventory)
 	}
 	switch _, err := os.Stat(inventory.DefaultFile); {
 	case err == nil:

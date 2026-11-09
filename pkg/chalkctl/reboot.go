@@ -494,9 +494,9 @@ func (a *app) nodeRebootCommand() *cobra.Command {
 		Args:    cli.ExactArgs(1),
 	}, func(a *app, ctx context.Context, pos []string) error { return a.nodeReboot(ctx, f, pos[0]) })
 	fs := cmd.Flags()
-	f.node.cluster.register(fs)
-	f.node.secrets.register(fs)
-	registerConfig(fs, &f.node.config)
+	f.node.ClusterFlags.Register(fs)
+	f.node.Secrets.Register(fs)
+	registerConfig(fs, &f.node.Config)
 	fs.StringArrayVar(&f.addresses, "address", nil, "address of the node's chalkd, host or host:port, or NODE=ADDR of another node of the cluster, such as a control plane the drain goes through; repeat it for several (default each node's address in the inventory)")
 	f.pin.register(fs)
 	fs.BoolVar(&f.noDrain, "no-drain", false, "reboot the node without its layers holding it before and releasing it after, such as without draining a Kubernetes node")
@@ -520,7 +520,7 @@ func (a *app) nodeReboot(ctx context.Context, f nodeRebootFlags, name string) er
 	if err != nil {
 		return err
 	}
-	f.node.address = addresses[name]
+	f.node.Address = addresses[name]
 	if f.pin.set() {
 		t, err := a.clientTarget(ctx, f.node, name)
 		if err != nil {
@@ -541,7 +541,7 @@ func (a *app) nodeReboot(ctx context.Context, f nodeRebootFlags, name string) er
 	if err != nil {
 		return err
 	}
-	creds, err := a.loadCredentials(ctx, f.node.secrets, f.node.config)
+	creds, err := a.loadCredentials(ctx, f.node.Secrets, f.node.Config)
 	if err != nil {
 		return err
 	}

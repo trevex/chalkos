@@ -26,7 +26,7 @@ func throughControlPlane(h layer.Host, ctx context.Context, f viaFlags, skip str
 	if f.via != "" {
 		return nodes.ViaFirst([]string{f.via}, func(error) bool { return false }, call)
 	}
-	if f.node.Address() != "" {
+	if f.node.Address != "" {
 		return errors.New("--address reaches one node; name it with --via")
 	}
 	c := nodes.Cluster()
@@ -96,7 +96,7 @@ func etcdMembersCommand(h layer.Host) *cobra.Command {
 		Example: etcdMembersExample,
 		Args:    cli.NoArgs,
 	}, func(h layer.Host, ctx context.Context, pos []string) error { return etcdMembers(h, ctx, f) })
-	f.node = h.NodeFlags(cmd.Flags())
+	f.node.RegisterClient(cmd.Flags())
 	cmd.Flags().StringVar(&f.via, "via", "", "control plane to ask (default the first one that answers)")
 	return cmd
 }
@@ -141,7 +141,7 @@ func etcdRemoveMemberCommand(h layer.Host) *cobra.Command {
 		Args:    cli.ExactArgs(1),
 	}, func(h layer.Host, ctx context.Context, pos []string) error { return etcdRemoveMember(h, ctx, f, pos) })
 	fs := cmd.Flags()
-	f.node = h.NodeFlags(fs)
+	f.node.RegisterClient(fs)
 	fs.StringVar(&f.via, "via", "", "control plane that removes the member (default the first other one that answers)")
 	fs.BoolVar(&f.force, "force", false, "remove the member even when the voters left would have no healthy quorum")
 	return cmd
@@ -172,7 +172,7 @@ func etcdLeaveCommand(h layer.Host) *cobra.Command {
 		Example: etcdLeaveExample,
 		Args:    cli.ExactArgs(1),
 	}, func(h layer.Host, ctx context.Context, pos []string) error { return etcdLeave(h, ctx, f, pos) })
-	f.node = h.NodeFlags(cmd.Flags())
+	f.node.RegisterClient(cmd.Flags())
 	cmd.Flags().BoolVar(&f.force, "force", false, "leave through the other members also when the node's own etcd member does not answer (for example when it lost its pinned address)")
 	return cmd
 }

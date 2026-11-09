@@ -114,8 +114,8 @@ func (a *app) applyConfigCommand() *cobra.Command {
 		Args:    cli.MinimumNArgs(1),
 	}, func(a *app, ctx context.Context, pos []string) error { return a.applyConfig(ctx, f, pos) })
 	fs := cmd.Flags()
-	f.node.cluster.register(fs)
-	f.node.secrets.register(fs)
+	f.node.ClusterFlags.Register(fs)
+	f.node.Secrets.Register(fs)
 	fs.StringArrayVar(&f.addresses, "address", nil, "address of the node's chalkd, host or host:port, or NODE=ADDR of any node of the cluster; repeat it for several (default each node's address in the inventory)")
 	registerPasswordFile(fs, &f.passwordFile)
 	var payloadFlags []string
@@ -159,7 +159,7 @@ func (a *app) applyConfig(ctx context.Context, f applyConfigFlags, pos []string)
 	if err != nil {
 		return err
 	}
-	f.node.address = addresses[pos[0]]
+	f.node.Address = addresses[pos[0]]
 	several := len(pos) > 1
 	switch {
 	case several && (f.discard || f.confirm || f.rollback || f.staged || f.diff):
@@ -230,7 +230,7 @@ func (a *app) dryRunConfig(ctx context.Context, f applyConfigFlags, names []stri
 	if err != nil {
 		return err
 	}
-	creds, err := a.loadSecretCredentials(ctx, f.node.secrets)
+	creds, err := a.loadSecretCredentials(ctx, f.node.Secrets)
 	if err != nil {
 		return err
 	}
@@ -671,7 +671,7 @@ func (a *app) resetVolumeCommand() *cobra.Command {
 		Example: resetVolumeExample,
 		Args:    cli.ExactArgs(2),
 	}, func(a *app, ctx context.Context, pos []string) error { return a.resetVolume(ctx, f, pos) })
-	f.node.registerClient(cmd.Flags())
+	f.node.RegisterClient(cmd.Flags())
 	registerPasswordFile(cmd.Flags(), &f.passwordFile)
 	return cmd
 }

@@ -27,7 +27,7 @@ func (a *app) statusCommand() *cobra.Command {
 		Example: statusExample,
 		Args:    cli.ExactArgs(1),
 	}, func(a *app, ctx context.Context, pos []string) error { return a.status(ctx, n, pos) })
-	n.registerClient(cmd.Flags())
+	n.RegisterClient(cmd.Flags())
 	return cmd
 }
 

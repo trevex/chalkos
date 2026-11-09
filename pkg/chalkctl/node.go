@@ -24,7 +24,7 @@ func (a *app) disksCommand() *cobra.Command {
 		Example: disksExample,
 		Args:    cli.RangeArgs(0, 1),
 	}, func(a *app, ctx context.Context, pos []string) error { return a.disks(ctx, f, pos) })
-	f.node.registerClient(cmd.Flags())
+	f.node.RegisterClient(cmd.Flags())
 	f.pin.register(cmd.Flags())
 	return cmd
 }
@@ -42,18 +42,18 @@ func (a *app) disks(ctx context.Context, f nodePinFlags, pos []string) error {
 		if conn, err = a.dialEither(t, p); err != nil {
 			return err
 		}
-	case len(pos) == 0 && n.address != "":
+	case len(pos) == 0 && n.Address != "":
 		// A node not in the inventory yet: only maintenance mode, with a certificate when a secrets
 		// file or a client file is given, for an image with an OS CA.
 		var cert *tls.Certificate
-		if n.secrets.path != "" || n.config != "" {
-			creds, err := a.loadCredentials(ctx, n.secrets, n.config)
+		if n.Secrets.Path != "" || n.Config != "" {
+			creds, err := a.loadCredentials(ctx, n.Secrets, n.Config)
 			if err != nil {
 				return err
 			}
 			cert = creds.cert
 		}
-		if conn, err = p.dial(n.address, "--address", cert); err != nil {
+		if conn, err = p.dial(n.Address, "--address", cert); err != nil {
 			return err
 		}
 	default:
@@ -105,7 +105,7 @@ func (a *app) logsCommand() *cobra.Command {
 		Args:    cli.ExactArgs(1),
 	}, func(a *app, ctx context.Context, pos []string) error { return a.logs(ctx, f, pos) })
 	fs := cmd.Flags()
-	f.node.registerClient(fs)
+	f.node.RegisterClient(fs)
 	f.pin.register(fs)
 	fs.BoolVarP(&f.follow, "follow", "f", false, "keep printing new entries")
 	fs.StringVar(&f.unit, "unit", "", "unit whose entries alone are printed")

@@ -19,8 +19,8 @@ import (
 )
 
 type rotateFlags struct {
-	cluster               clusterFlags
-	secrets               secretFlags
+	cluster               layer.ClusterFlags
+	secrets               layer.SecretsFlags
 	change                changeFlags
 	addresses             addressList
 	resume, finish, force bool
@@ -38,8 +38,8 @@ func (a *app) rotateCommand() *cobra.Command {
 		Args:    cli.ExactArgs(1),
 	}, func(a *app, ctx context.Context, pos []string) error { return a.rotate(ctx, f, pos) })
 	fs := cmd.Flags()
-	f.cluster.register(fs)
-	f.secrets.register(fs)
+	f.cluster.Register(fs)
+	f.secrets.Register(fs)
 	f.change.register(fs)
 	registerAddresses(fs, f.addresses)
 	fs.BoolVar(&f.resume, "resume", false, "continue the rotation the secrets file records")

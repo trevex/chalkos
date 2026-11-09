@@ -35,7 +35,7 @@ func nodeRoutesCommand(h layer.Host) *cobra.Command {
 		Example: nodeRoutesExample,
 		Args:    cli.RangeArgs(1, 2),
 	}, func(h layer.Host, ctx context.Context, pos []string) error { return nodeRoutes(h, ctx, f, pos) })
-	f.node = h.NodeFlags(cmd.Flags())
+	f.node.RegisterClient(cmd.Flags())
 	cmd.Flags().StringVar(&f.protocol, "protocol", "", "only the kernel's routes of this protocol, such as kernel, static, ra, dhcp or bgp")
 	cmd.Flags().StringVar(&f.table, "table", "", "the kernel's routing table: main, local, default, all or a number (default main)")
 	cmd.Flags().StringVar(&f.vrf, "vrf", "", "a VRF, by the name of its VRF document, or default: its table and its BGP instance's paths")

@@ -26,7 +26,7 @@ func nodeRevokeCommand(h layer.Host) *cobra.Command {
 		Example: nodeRevokeExample,
 		Args:    cli.ExactArgs(1),
 	}, func(h layer.Host, ctx context.Context, pos []string) error { return nodeRevoke(h, ctx, f, pos) })
-	f.node = h.NodeFlags(cmd.Flags())
+	f.node.RegisterClient(cmd.Flags())
 	fs := cmd.Flags()
 	fs.StringVar(&f.via, "via", "", "control plane that revokes the node (default the first other one that answers)")
 	fs.BoolVar(&f.force, "force", false, "revoke the node although it is a control plane, an etcd member or the one --via names, or although a control plane does not say it reads the revoked nodes")
@@ -79,11 +79,11 @@ func nodeRevoke(h layer.Host, ctx context.Context, f viaFlags, pos []string) err
 // nodes: --via where the command reaches it, the others where the inventory says, or --via alone
 // without an inventory.
 func controlPlanesRead(h layer.Host, ctx context.Context, f viaFlags, name string) error {
-	c, err := h.Cluster(ctx, f.node)
+	c, err := h.Cluster(ctx, f.node.ClusterFlags)
 	if err != nil {
 		return err
 	}
-	if f.via == "" && (c.Partial() || f.node.Address() != "") {
+	if f.via == "" && (c.Partial() || f.node.Address != "") {
 		// node revoke asks for --via, which names the node --address reaches and the control
 		// plane to ask without an inventory.
 		return nil
@@ -155,7 +155,7 @@ func keepsRevokedNodes(h layer.Host, ctx context.Context, f viaFlags) error {
 	if f.via != "" {
 		return nil
 	}
-	c, err := h.Cluster(ctx, f.node)
+	c, err := h.Cluster(ctx, f.node.ClusterFlags)
 	if err != nil || c.Partial() {
 		return err
 	}
@@ -179,7 +179,7 @@ func nodeUnrevokeCommand(h layer.Host) *cobra.Command {
 		Args:    cli.ExactArgs(1),
 	}, func(h layer.Host, ctx context.Context, pos []string) error { return nodeUnrevoke(h, ctx, f, pos) })
 	fs := cmd.Flags()
-	f.node = h.NodeFlags(fs)
+	f.node.RegisterClient(fs)
 	fs.StringVar(&f.via, "via", "", "control plane that unrevokes the node (default the first one that answers)")
 	fs.BoolVar(&f.force, "force", false, "unrevoke the node although the OS CA or the Kubernetes CA predates its revocation, so its old certificates work again")
 	return cmd

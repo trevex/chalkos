@@ -33,7 +33,7 @@ func (a *app) nodeActivateCommand() *cobra.Command {
 		Args:    cli.ExactArgs(1),
 	}, func(a *app, ctx context.Context, pos []string) error { return a.nodeActivate(ctx, f, pos[0]) })
 	fs := cmd.Flags()
-	f.node.registerClient(fs)
+	f.node.RegisterClient(fs)
 	fs.StringVar(&f.image, "image", "", "image to activate, as upgrade --image staged it: a raw image with repart-output.json next to it, or an image directory (default the node's image in the inventory)")
 	return cmd
 }

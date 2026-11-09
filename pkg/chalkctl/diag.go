@@ -23,7 +23,7 @@ func (a *app) nodeDiagCommand() *cobra.Command {
 		Example: nodeDiagExample,
 		Args:    cli.MinimumNArgs(1),
 	}, func(a *app, ctx context.Context, pos []string) error { return a.nodeDiag(ctx, f, pos) })
-	f.node.registerClient(cmd.Flags())
+	f.node.RegisterClient(cmd.Flags())
 	f.pin.register(cmd.Flags())
 	return cmd
 }
