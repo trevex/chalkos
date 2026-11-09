@@ -199,7 +199,7 @@ func (a *app) recoveryKey(ctx context.Context, f recoveryKeyFlags, pos []string)
 	if err != nil {
 		return err
 	}
-	if err := c.requireNodes("recovery-key"); err != nil {
+	if err := c.RequireNodes("recovery-key"); err != nil {
 		return err
 	}
 	if err := c.node(pos[0]); err != nil {

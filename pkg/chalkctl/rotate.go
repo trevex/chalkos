@@ -71,14 +71,14 @@ func (a *app) rotate(ctx context.Context, f rotateFlags, pos []string) error {
 	if err != nil {
 		return err
 	}
-	if err := c.requireNodes("rotate"); err != nil {
+	if err := c.RequireNodes("rotate"); err != nil {
 		return err
 	}
 	if err := c.checkAddresses(addresses); err != nil {
 		return err
 	}
 	// Every node's config is read before any node is sent anything.
-	for _, name := range c.nodeNames() {
+	for _, name := range c.NodeNames() {
 		if _, err := c.config(name); err != nil {
 			return err
 		}
@@ -322,7 +322,7 @@ func (r *rotation) skipRevoked(ctx context.Context) error {
 
 // NodeNames lists the cluster's nodes in name order, but the revoked ones.
 func (r *rotation) NodeNames() []string {
-	return slices.DeleteFunc(slices.Clone(r.cluster.nodeNames()), func(name string) bool { return r.revoked[name] })
+	return slices.DeleteFunc(slices.Clone(r.cluster.NodeNames()), func(name string) bool { return r.revoked[name] })
 }
 
 // allNodes lists the nodes that take part, the coordinators first, each group in name order.
@@ -364,7 +364,7 @@ func (r *rotation) Call(name string, fn func(conn *client.Conn) error) error {
 	if err != nil {
 		return err
 	}
-	return nodes.call(name, fn)
+	return nodes.Call(name, fn)
 }
 
 // deliver sends a node what req carries.
@@ -407,14 +407,14 @@ func (r *rotation) Secrets() clustersecrets.Secrets { return r.file.secrets }
 func (r *rotation) Now() time.Time                  { return r.a.now() }
 func (r *rotation) Timeout() time.Duration          { return r.timeout }
 func (r *rotation) Poll() time.Duration             { return r.poll }
-func (r *rotation) Cluster() layer.Cluster          { return pluginCluster{r.cluster} }
+func (r *rotation) Cluster() layer.Cluster          { return r.cluster }
 
 func (r *rotation) Nodes() (layer.Nodes, error) {
 	nodes, err := r.nodes()
 	if err != nil {
 		return nil, err
 	}
-	return pluginNodes{nodes}, nil
+	return nodes, nil
 }
 
 // publicFile names the public half of the secrets file.

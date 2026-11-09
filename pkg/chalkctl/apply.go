@@ -293,7 +293,7 @@ func refusedByNode(err error) bool {
 func (a *app) deliverConfig(ctx context.Context, f applyConfigFlags, t *target) error {
 	for _, l := range f.layers {
 		if l.f.Requested() && !f.force && !f.diff {
-			if err := l.d.Admit(ctx, pluginTarget{t}, l.f.Does()); err != nil {
+			if err := l.d.Admit(ctx, t, l.f.Does()); err != nil {
 				return err
 			}
 		}
@@ -387,7 +387,7 @@ func (a *app) deliverConfig(ctx context.Context, f applyConfigFlags, t *target) 
 		if !l.f.Requested() {
 			continue
 		}
-		p, err := l.d.Payloads(pluginTarget{t}, time.Now())
+		p, err := l.d.Payloads(t, time.Now())
 		if err != nil {
 			return err
 		}

@@ -160,7 +160,7 @@ func (a *app) upgrade(ctx context.Context, f upgradeFlags) error {
 			return err
 		}
 		defer img.Close()
-	} else if c.partial() && !f.rollback {
+	} else if c.Partial() && !f.rollback {
 		return errors.New("without --image each node gets the image the inventory names for it, which needs an inventory; pass --image, or --inventory")
 	}
 	r := &upgradeRun{
@@ -223,7 +223,7 @@ func (r *upgradeRun) chooseConfig(diff bool) error {
 	case !r.role.Allows(pki.RoleAdmin):
 		// A partial cluster has no inventory, so there is no config to withhold, and each node
 		// says what it gives the image.
-		if !r.cluster.partial() {
+		if !r.cluster.Partial() {
 			r.withhold("config not delivered: the %s role cannot deliver config; each node gives the image its pending config, else carries its own over", roleLabel(r.role))
 		}
 		return nil
@@ -375,7 +375,7 @@ func (r *upgradeRun) configChanges(ctx context.Context, conn *client.Conn, n *up
 // it; on a partial cluster, which has no inventory, that check of the config the node carries over
 // is all there is.
 func (r *upgradeRun) checkConfig() error {
-	if r.cluster.partial() {
+	if r.cluster.Partial() {
 		return nil
 	}
 	for _, name := range slices.Sorted(maps.Keys(r.nodes)) {

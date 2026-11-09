@@ -30,7 +30,7 @@ func (h host) Cluster(ctx context.Context, f layer.ClusterFlags) (layer.Cluster,
 	if err != nil {
 		return nil, err
 	}
-	return pluginCluster{c}, nil
+	return c, nil
 }
 
 // Target addresses the node with the secrets file or a client file.
@@ -39,7 +39,7 @@ func (h host) Target(ctx context.Context, f layer.NodeFlags, name string) (layer
 	if err != nil {
 		return nil, err
 	}
-	return pluginTarget{t}, nil
+	return t, nil
 }
 
 // Nodes reaches the nodes with the secrets file or a client file.
@@ -56,64 +56,47 @@ func (h host) Nodes(ctx context.Context, f layer.NodeFlags, via string) (layer.N
 	if via != "" {
 		s.addresses = map[string]string{via: f.Address}
 	}
-	return pluginNodes{s}, nil
+	return s, nil
 }
 
 func (h host) Secrets(ctx context.Context, f layer.SecretsFlags) (clustersecrets.Secrets, error) {
 	return h.a.loadSecrets(ctx, f)
 }
 
-// pluginCluster is a cluster as a plugin sees it.
-type pluginCluster struct{ c *cluster }
+// The methods below make a cluster, a target and a nodeSet what plugins see of them.
+var (
+	_ layer.Cluster = (*cluster)(nil)
+	_ layer.Target  = (*target)(nil)
+	_ layer.Nodes   = nodeSet{}
+)
 
-func (c pluginCluster) Name() string { return c.c.name }
+func (c *cluster) Name() string { return c.name }
 
-func (c pluginCluster) InventoryName() string {
-	if c.c.partial() {
+func (c *cluster) InventoryName() string {
+	if c.Partial() {
 		return ""
 	}
-	return c.c.inv.Name
+	return c.inv.Name
 }
-
-func (c pluginCluster) Partial() bool                     { return c.c.partial() }
-func (c pluginCluster) RequireNodes(command string) error { return c.c.requireNodes(command) }
-func (c pluginCluster) NodeNames() []string               { return c.c.nodeNames() }
 
 // Documents returns the documents the cluster holds for the node, not a copy: plugins only read
 // them.
-func (c pluginCluster) Documents(name string) ([]config.Document, error) {
-	if c.c.partial() {
+func (c *cluster) Documents(name string) ([]config.Document, error) {
+	if c.Partial() {
 		return nil, nil
 	}
-	nc, err := c.c.config(name)
+	nc, err := c.config(name)
 	if err != nil {
 		return nil, err
 	}
 	return nc.Documents, nil
 }
 
-// pluginTarget is a target as a plugin sees it.
-type pluginTarget struct{ t *target }
+func (t *target) Name() string                                { return t.name }
+func (t *target) Cluster() layer.Cluster                      { return t.cluster }
+func (t *target) Dial() (*client.Conn, error)                 { return dialInstalled(t) }
+func (t *target) Call(fn func(conn *client.Conn) error) error { return callNode(t, fn) }
+func (t *target) Secrets() clustersecrets.Secrets             { return t.secrets }
+func (t *target) Nodes() layer.Nodes                          { return nodeSet{cluster: t.cluster, creds: t.creds} }
 
-func (t pluginTarget) Name() string                                { return t.t.name }
-func (t pluginTarget) Cluster() layer.Cluster                      { return pluginCluster{t.t.cluster} }
-func (t pluginTarget) Dial() (*client.Conn, error)                 { return dialInstalled(t.t) }
-func (t pluginTarget) Call(fn func(conn *client.Conn) error) error { return callNode(t.t, fn) }
-func (t pluginTarget) Secrets() clustersecrets.Secrets             { return t.t.secrets }
-
-func (t pluginTarget) Nodes() layer.Nodes {
-	return pluginNodes{nodeSet{cluster: t.t.cluster, creds: t.t.creds}}
-}
-
-// pluginNodes is a nodeSet as a plugin sees it.
-type pluginNodes struct{ s nodeSet }
-
-func (n pluginNodes) Cluster() layer.Cluster { return pluginCluster{n.s.cluster} }
-
-func (n pluginNodes) Call(name string, fn func(conn *client.Conn) error) error {
-	return n.s.call(name, fn)
-}
-
-func (n pluginNodes) ViaFirst(names []string, next func(error) bool, fn func(conn *client.Conn) error) error {
-	return n.s.viaFirst(names, next, fn)
-}
+func (s nodeSet) Cluster() layer.Cluster { return s.cluster }

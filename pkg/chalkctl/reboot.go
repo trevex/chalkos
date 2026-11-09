@@ -363,7 +363,7 @@ func (b *rebooter) say(format string, args ...any) {
 
 // call runs fn against a node; its error names the node.
 func (b *rebooter) call(name string, fn func(conn *client.Conn) error) error {
-	return b.reach.call(name, fn)
+	return b.reach.Call(name, fn)
 }
 
 // probe reads what a node runs, its status and its roles in the clusters of its layers.
@@ -395,10 +395,10 @@ func (b *rebooter) probe(ctx context.Context, name string) (*nodev1.InfoResponse
 
 // nodeNames are the cluster's nodes: the inventory's, or without one those --address names.
 func (b *rebooter) nodeNames() []string {
-	if b.cluster.partial() {
+	if b.cluster.Partial() {
 		return slices.Sorted(maps.Keys(b.reach.addresses))
 	}
-	return b.cluster.nodeNames()
+	return b.cluster.NodeNames()
 }
 
 // findCoordinators names the cluster's coordinators: the nodes probed, or asked now, that act for
@@ -410,7 +410,7 @@ func (b *rebooter) nodeNames() []string {
 // held that its layers hold through a coordinator stops the run while the cluster has none.
 func (b *rebooter) findCoordinators(ctx context.Context, probed map[string]bool, held []*rebootNode) error {
 	for _, name := range b.nodeNames() {
-		if _, ok := probed[name]; b.cluster.partial() && !ok {
+		if _, ok := probed[name]; b.cluster.Partial() && !ok {
 			_, _, roles, err := b.probe(ctx, name)
 			if err != nil {
 				return err
@@ -453,7 +453,7 @@ func (b *rebooter) ViaCoordinators(prefer string, next func(error) bool, fn func
 	if len(names) == 0 {
 		return layer.ErrNoCoordinator
 	}
-	return b.reach.viaFirst(names, next, fn)
+	return b.reach.ViaFirst(names, next, fn)
 }
 
 type nodeRebootFlags struct {

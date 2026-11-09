@@ -83,7 +83,7 @@ func (a *app) install(ctx context.Context, f installFlags, pos []string) error {
 	}
 	if !f.force {
 		for _, d := range compiled[layer.Delivery]() {
-			if err := d.AdmitInstall(ctx, pluginTarget{t}); err != nil {
+			if err := d.AdmitInstall(ctx, t); err != nil {
 				return err
 			}
 		}

@@ -173,7 +173,7 @@ func (r *configRollout) plan(ctx context.Context, names []string) error {
 		probed[name] = n.roles.coordinator()
 	}
 	for _, l := range r.ordered {
-		if err := l.CheckConfig(r, pluginCluster{r.cluster}, names, r.readVersions(ctx, l)); err != nil {
+		if err := l.CheckConfig(r, r.cluster, names, r.readVersions(ctx, l)); err != nil {
 			return err
 		}
 	}
@@ -193,7 +193,7 @@ func (r *configRollout) changes(ctx context.Context, conn *client.Conn, n *rollo
 		return err
 	}
 	for _, l := range layers {
-		change, err := l.Changes(pluginCluster{r.cluster}, n.name, running)
+		change, err := l.Changes(r.cluster, n.name, running)
 		if err != nil {
 			return err
 		}
@@ -292,7 +292,7 @@ func (r *configRollout) summary(ctx context.Context) {
 		return
 	}
 	for _, l := range r.ordered {
-		for _, line := range l.Summary(pluginCluster{r.cluster}, r.readVersions(ctx, l)) {
+		for _, line := range l.Summary(r.cluster, r.readVersions(ctx, l)) {
 			r.say("%s", line)
 		}
 	}
@@ -313,7 +313,7 @@ func (r *upgradeRun) checkImages(ctx context.Context) error {
 		}
 	}
 	for _, l := range layers {
-		if err := l.CheckImages(pluginCluster{r.cluster}, images, r.readVersions(ctx, l)); err != nil {
+		if err := l.CheckImages(r.cluster, images, r.readVersions(ctx, l)); err != nil {
 			return err
 		}
 	}
@@ -425,7 +425,7 @@ func (r *upgradeRun) checkChanges(ctx context.Context) error {
 			return nil
 		}
 		for _, l := range layers {
-			change, err := l.Changes(pluginCluster{r.cluster}, name, running)
+			change, err := l.Changes(r.cluster, name, running)
 			if err != nil {
 				return err
 			}

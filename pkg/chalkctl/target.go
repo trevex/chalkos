@@ -72,7 +72,7 @@ func (n nodeFlags) loadCluster(ctx context.Context) (*cluster, error) {
 		return nil, err
 	}
 	if n.needs != "" {
-		if err := c.requireNodes(n.needs); err != nil {
+		if err := c.RequireNodes(n.needs); err != nil {
 			return nil, err
 		}
 	}
@@ -224,8 +224,8 @@ func (s nodeSet) target(name string) (*target, error) {
 	return targetIn(s.cluster, s.addresses[name], name, s.creds)
 }
 
-// call runs fn on a connection to an installed node of the set.
-func (s nodeSet) call(name string, fn func(conn *client.Conn) error) error {
+// Call runs fn on a connection to an installed node of the set.
+func (s nodeSet) Call(name string, fn func(conn *client.Conn) error) error {
 	t, err := s.target(name)
 	if err != nil {
 		return err
@@ -266,15 +266,15 @@ func nodeStatus(ctx context.Context, t *target) (*nodev1.StatusResponse, error) 
 	return st, err
 }
 
-// viaFirst calls fn on the first of the nodes named that answers: it moves on past those whose
+// ViaFirst calls fn on the first of the nodes named that answers: it moves on past those whose
 // error next accepts. The error names the node that gave it.
-func (s nodeSet) viaFirst(names []string, next func(error) bool, fn func(conn *client.Conn) error) error {
+func (s nodeSet) ViaFirst(names []string, next func(error) bool, fn func(conn *client.Conn) error) error {
 	if len(names) == 0 {
 		return errors.New("no node to ask")
 	}
 	var last error
 	for _, name := range names {
-		err := s.call(name, fn)
+		err := s.Call(name, fn)
 		if err == nil {
 			return nil
 		}

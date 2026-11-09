@@ -40,7 +40,7 @@ func pluginsOf[T any](names []string) []T {
 func payloadsOf(t *target, now time.Time) ([]*anypb.Any, error) {
 	var payloads []*anypb.Any
 	for _, d := range compiled[layer.Delivery]() {
-		p, err := d.Payloads(pluginTarget{t}, now)
+		p, err := d.Payloads(t, now)
 		if err != nil {
 			return nil, err
 		}
@@ -54,7 +54,7 @@ func payloadsOf(t *target, now time.Time) ([]*anypb.Any, error) {
 func nodeCAHolders(c *cluster) ([]string, error) {
 	var names []string
 	for _, p := range compiled[layer.RotationNodes]() {
-		holders, err := p.NodeCAHolders(pluginCluster{c})
+		holders, err := p.NodeCAHolders(c)
 		if err != nil {
 			return nil, err
 		}
@@ -72,7 +72,7 @@ func nodeCAHolders(c *cluster) ([]string, error) {
 func listedCoordinator(c *cluster, name string) (bool, error) {
 	listed := false
 	for _, co := range compiled[layer.Coordinators]() {
-		ok, err := co.ListedCoordinator(pluginCluster{c}, name)
+		ok, err := co.ListedCoordinator(c, name)
 		if err != nil {
 			return false, err
 		}

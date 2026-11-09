@@ -104,7 +104,7 @@ func (r *upgradeRun) find(ctx context.Context, named []string, img *diskImage) e
 	if len(candidates) == 0 {
 		candidates = r.nodeNames()
 	}
-	if len(candidates) == 0 && c.partial() {
+	if len(candidates) == 0 && c.Partial() {
 		return errors.New("without an inventory, give each node's address with --address NODE=ADDR")
 	}
 	r.nodes = map[string]*upgradeNode{}
@@ -201,7 +201,7 @@ func (r *upgradeRun) planRollback(ctx context.Context, named []string) error {
 	if len(candidates) == 0 {
 		candidates = r.nodeNames()
 	}
-	if len(candidates) == 0 && r.cluster.partial() {
+	if len(candidates) == 0 && r.cluster.Partial() {
 		return errors.New("without an inventory, give each node's address with --address NODE=ADDR")
 	}
 	r.nodes = map[string]*upgradeNode{}

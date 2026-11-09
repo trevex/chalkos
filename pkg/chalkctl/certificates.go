@@ -44,7 +44,7 @@ func (a *app) nodeRenew(ctx context.Context, f nodeRenewFlags, pos []string) err
 	}
 	if !f.force {
 		for _, d := range compiled[layer.Delivery]() {
-			if err := d.Admit(ctx, pluginTarget{t}, "node renew issues it a node certificate"); err != nil {
+			if err := d.Admit(ctx, t, "node renew issues it a node certificate"); err != nil {
 				return err
 			}
 		}

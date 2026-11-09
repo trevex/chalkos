@@ -232,7 +232,7 @@ func outputLine(o *nodev1.OutputStatus) string {
 
 // platformLine is the status line of the platform the node runs on, compared with its config's.
 func (c *cluster) platformLine(name, reported string) string {
-	if c.partial() {
+	if c.Partial() {
 		return "platform " + reported
 	}
 	want, err := c.platform(name)
@@ -266,7 +266,7 @@ func (c *cluster) stagedConfigState(name string, s *nodev1.StatusResponse) strin
 // slotState says whether a slot of a node holds version, the config chalkctl delivers to it, and
 // when it does not, what advice says delivers it, given the inventory's version.
 func (c *cluster) slotState(name, version string, advice func(want string) string) string {
-	if c.partial() {
+	if c.Partial() {
 		return "no inventory to compare it with"
 	}
 	want, err := c.version(name)
@@ -308,7 +308,7 @@ func stagedAdvice(name, want string, s *nodev1.StatusResponse) string {
 // or when the node or its config is unknown, which the config line reports.
 func (c *cluster) imageLine(name string, boot *nodev1.BootStatus) string {
 	running := boot.GetRunning().GetRootHash()
-	if c.partial() || len(running) == 0 {
+	if c.Partial() || len(running) == 0 {
 		return ""
 	}
 	nc, err := c.config(name)
