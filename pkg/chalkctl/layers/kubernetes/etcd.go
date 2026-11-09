@@ -19,6 +19,7 @@ import (
 // throughControlPlane calls call on the control-plane node via, or else on the cluster's
 // control-plane nodes but skip in name order, moving on past nodes that are down or no etcd member.
 func throughControlPlane(h layer.Host, ctx context.Context, f viaFlags, skip string, call func(conn *client.Conn) error) error {
+	// Host.Nodes refuses a bare address without via too; this error names --via.
 	if f.via == "" && f.node.Address.Bare() != "" {
 		return errors.New("--address reaches one node; name it with --via")
 	}
