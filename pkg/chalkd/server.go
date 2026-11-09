@@ -4,7 +4,6 @@
 package chalkd
 
 import (
-	"cmp"
 	"context"
 	"crypto/tls"
 	"crypto/x509"
@@ -156,7 +155,7 @@ type Server struct {
 	// RebootNode reboots the node; it is called once the response has been sent.
 	RebootNode func()
 	// RebootDelay is how long the node waits after a response before it reboots, so the response
-	// reaches the client; zero means a second. Tests shorten it.
+	// reaches the client; zero or less means a second. Tests shorten it.
 	RebootDelay time.Duration
 	// Facts runs the commands of facts; nil runs them with systemd-run. Tests replace it.
 	Facts facts.Runner
@@ -483,7 +482,10 @@ func (s *Server) Reboot(ctx context.Context, _ *connect.Request[nodev1.RebootReq
 
 // rebootSoon reboots once the response has had time to reach the client.
 func (s *Server) rebootSoon() {
-	delay := cmp.Or(s.RebootDelay, time.Second)
+	delay := time.Second
+	if s.RebootDelay > 0 {
+		delay = s.RebootDelay
+	}
 	go func() {
 		time.Sleep(delay)
 		s.RebootNode()
