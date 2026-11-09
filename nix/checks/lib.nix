@@ -31,11 +31,44 @@ let
       --ro-bind "$PWD/etc" /etc --bind "$PWD/run" /run --bind "$PWD/var" /var \
       --bind "$PWD" "$PWD" --chdir "$PWD" ${lib.getExe script}
   '';
+
+  # The functions of a check's script:
+  # - fail <message>: reports the error, runs the script's debug function, if it defines one, to
+  #   print what explains the failure, and fails the check;
+  # - retry <tries> <message> <command>...: runs the command until it succeeds, at most tries
+  #   times, 0.1 seconds apart, and fails with the message if it never does; with an empty message
+  #   it returns 1 instead, for a caller that says more;
+  # - refuses <what> <pattern> <command>...: the command, what names it, must fail, and what it
+  #   prints, which stays in refused.log, must match the grep pattern.
+  prelude = ''
+    fail() {
+      echo "error: $*" >&2
+      if declare -F debug >/dev/null; then debug; fi
+      exit 1
+    }
+    retry() {
+      local tries=$1 message=$2 try
+      shift 2
+      for ((try = 1; try <= tries; try++)); do
+        if "$@"; then return 0; fi
+        if ((try < tries)); then sleep 0.1; fi
+      done
+      if [ -n "$message" ]; then fail "$message"; fi
+      return 1
+    }
+    refuses() {
+      local what=$1 pattern=$2
+      shift 2
+      if "$@" >refused.log 2>&1; then fail "$what accepted it"; fi
+      grep -q -- "$pattern" refused.log || fail "$what refused it without $pattern: $(cat refused.log)"
+    }
+  '';
 in
 {
   inherit
     chalkPkgs
     fixtures
+    prelude
     router
     testing
     worker
@@ -63,9 +96,8 @@ in
   '';
 
   # A check that runs the test script as on a node, with the tools given on its PATH. The script
-  # is shellchecked, and runs with errexit, nounset and pipefail. It may call:
-  # - fail <message>: reports the error, runs the script's debug function, if it defines
-  #   one, to print what explains the failure, and fails the check;
+  # is shellchecked, and runs with errexit, nounset and pipefail. It may call the functions of
+  # prelude and:
   # - netns <name>...: starts a network namespace for each name, holds the PID of its process in
   #   pids[<name>] and defines on_<name>, which runs a command in it.
   unitCheck =
@@ -75,26 +107,23 @@ in
         pkgs.writeShellApplication {
           name = "chalkos-${name}-test";
           inherit runtimeInputs;
-          text = ''
-            fail() {
-              echo "error: $*" >&2
-              if declare -F debug >/dev/null; then debug; fi
-              exit 1
-            }
-            declare -A pids=()
-            netns() {
-              local name
-              for name in "$@"; do
-                unshare -n sh -c "touch $name-ready; exec sleep 600" &
-                pids[$name]=$!
-                eval "on_$name() { nsenter -t ''${pids[$name]} -n \"\$@\"; }"
-              done
-              for name in "$@"; do
-                until [ -e "$name-ready" ]; do sleep 0.1; done
-              done
-            }
-          ''
-          + text;
+          text =
+            prelude
+            + ''
+              declare -A pids=()
+              netns() {
+                local name
+                for name in "$@"; do
+                  unshare -n sh -c "touch $name-ready; exec sleep 600" &
+                  pids[$name]=$!
+                  eval "on_$name() { nsenter -t ''${pids[$name]} -n \"\$@\"; }"
+                done
+                for name in "$@"; do
+                  retry 100 "the network namespace $name did not start" test -e "$name-ready"
+                done
+              }
+            ''
+            + text;
         }
       )}
       touch $out

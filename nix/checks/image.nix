@@ -62,10 +62,7 @@ in
         checked = [ v4l2loopbackCheck ];
       }
       ''
-        fail() {
-          echo "error: $*" >&2
-          exit 1
-        }
+        ${checkLib.prelude}
         has() {
           modprobe --config no-config -d "$1" -S ${version} --show-depends "$2" >/dev/null 2>&1
         }
@@ -86,30 +83,24 @@ in
 
         echo drivers/nvme >directories
         echo chalkos_no_such_module >names
-        if ${tool} filter ${full} unknown directories names 2>errors; then fail "an unknown module was taken"; fi
-        grep -q 'unknown kernel module chalkos_no_such_module' errors || fail "the error names no module: $(cat errors)"
+        refuses "the filter of an unknown module" 'unknown kernel module chalkos_no_such_module' ${tool} filter ${full} unknown directories names
         echo drivers/chalkos_no_such_directory >directories
         : >names
-        if ${tool} filter ${full} empty directories names 2>errors; then fail "a directory without modules was taken"; fi
-        grep -q 'no kernel module below drivers/chalkos_no_such_directory' errors || fail "the error names no directory: $(cat errors)"
+        refuses "the filter of a directory without modules" 'no kernel module below drivers/chalkos_no_such_directory' ${tool} filter ${full} empty directories names
 
         echo amdgpu >loaded
-        if ${tool} check ${tree} loaded 2>errors; then fail "a module outside the tree passed the check"; fi
-        grep -q 'does not hold: amdgpu' errors || fail "the error names no module: $(cat errors)"
+        refuses "the check of a module outside the tree" 'does not hold: amdgpu' ${tool} check ${tree} loaded
 
         has ${treeOf v4l2loopback} videodev || fail "the tree of an image with v4l2loopback lacks videodev"
         echo drivers/nvme >directories
         ${tool} filter ${full} "$PWD/stubbed" directories names ${stubWithDependencies}
         has stubbed videodev || fail "the dependency of an out-of-tree module is missing"
         has stubbed uvcvideo || fail "the soft dependency of an out-of-tree module is missing"
-        if ${tool} filter ${full} missing directories names ${stubWithMissingDependency} 2>errors; then
-          fail "an out-of-tree module whose dependency the kernel lacks was taken"
-        fi
-        grep -q 'chalkos_stub_missing depends on chalkos_no_such_module' errors || fail "the error names no modules: $(cat errors)"
+        refuses "the filter of an out-of-tree module whose dependency the kernel lacks" 'chalkos_stub_missing depends on chalkos_no_such_module' \
+          ${tool} filter ${full} missing directories names ${stubWithMissingDependency}
         : >loaded
-        if ${tool} check ${stubWithDependencies} loaded 2>errors; then fail "a module whose dependency the tree lacks passed the check"; fi
-        grep -q 'chalkos_stub depends on videodev' errors || fail "the error names no modules: $(cat errors)"
-        grep -q 'to chalkos.kernel.extraModules' errors || fail "the error does not say how to fix it: $(cat errors)"
+        refuses "the check of a module whose dependency the tree lacks" 'chalkos_stub depends on videodev' ${tool} check ${stubWithDependencies} loaded
+        grep -q 'to chalkos.kernel.extraModules' refused.log || fail "the error does not say how to fix it: $(cat refused.log)"
         touch $out
       '';
 
@@ -402,19 +393,10 @@ in
         ];
       }
       ''
+        ${checkLib.prelude}
         chalkos-rules check ${homelab.chalkosRulesImage} | grep -q rackSurvey
         # refused <image> <message>: the check of the image's files fails, and says why.
-        refused() {
-          if chalkos-rules check "$1" 2>err; then
-            echo "error: chalkos-rules accepted $1" >&2
-            exit 1
-          fi
-          if ! grep -qF "$2" err; then
-            echo "error: chalkos-rules refused $1 without $2:" >&2
-            cat err >&2
-            exit 1
-          fi
-        }
+        refused() { refuses "chalkos-rules check $1" "$2" chalkos-rules check "$1"; }
         refused ${broken.chalkosRulesImage} 'Demo: rule "documents ==": ERROR: <input>:1:13: Syntax error'
         refused ${undeclared.chalkosRulesImage} 'Demo: rule "facts.missing == null" reads facts.missing, which the image does not declare'
         refused ${brokenEffect.chalkosRulesImage} 'effect bird: rule "config ==": ERROR: <input>:1:10: Syntax error'
@@ -429,10 +411,7 @@ in
         OUT=$PWD/chrony $check </dev/null
         for bad in 'server a.example iburst bogus' 'pool a.example iburst' 'server a.example iburst nts maxpoll'; do
           printf '%s\n' "$bad" >chrony/servers.sources
-          if OUT=$PWD/chrony $check </dev/null 2>err; then
-            echo "error: chrony's check accepted $bad" >&2
-            exit 1
-          fi
+          refuses "chrony's check of $bad" "" env OUT=$PWD/chrony "$check" </dev/null
         done
         # The check of the router's firewall passes the LAN example's ruleset and refuses one the
         # kernel would not load, with nft in a user and network namespace of its own.
@@ -441,15 +420,7 @@ in
         install -m 644 ${../../cmd/chalkos-render/testdata/router/lan.nft} nftables/ruleset.nft
         OUT=$PWD/nftables $check </dev/null
         printf 'table inet chalkos {\n  chain input {\n    iif "nosuchif0" accept\n  }\n}\n' >nftables/ruleset.nft
-        if OUT=$PWD/nftables $check </dev/null 2>err; then
-          echo "error: the router's check accepted a ruleset the kernel refuses" >&2
-          exit 1
-        fi
-        if ! grep -q 'Error: Interface does not exist' err; then
-          echo "error: the router's check refused the ruleset for another reason:" >&2
-          cat err >&2
-          exit 1
-        fi
+        refuses "the router's nftables check" 'Error: Interface does not exist' env OUT=$PWD/nftables "$check" </dev/null
         # The check of FRR's config passes the edge example's and the IPv4 and IPv6 tracking of
         # the renderer's tests, and refuses a command no daemon takes, with vtysh alone.
         check=$(jq -r .frr.check ${router.chalkosOutputs})
@@ -459,15 +430,7 @@ in
         install -m 644 ${../../cmd/chalkos-render/testdata/router/edge.frr} frr/frr.conf
         OUT=$PWD/frr $check </dev/null
         sed -i 's/^ neighbor peer-fabric bfd$/ neighbor peer-fabric bfd sometimes/' frr/frr.conf
-        if OUT=$PWD/frr $check </dev/null >err 2>&1; then
-          echo "error: the router's FRR check accepted a command no daemon takes" >&2
-          exit 1
-        fi
-        if ! grep -q 'Unknown command.*neighbor peer-fabric bfd sometimes' err; then
-          echo "error: the router's FRR check refused the config for another reason:" >&2
-          cat err >&2
-          exit 1
-        fi
+        refuses "the router's FRR check" 'Unknown command.*neighbor peer-fabric bfd sometimes' env OUT=$PWD/frr "$check" </dev/null
         # The check of Jool's instances passes the edge example's and refuses a port past 65535,
         # with jool alone. A golden holds its files, each after a line that names it; the check
         # takes Jool's file of the edge example alone.
@@ -476,15 +439,7 @@ in
         awk 'NR > 1 && /^# /{ exit } NR > 1' ${../../cmd/chalkos-render/testdata/router/edge.jool} >jool/edge.json
         OUT=$PWD/jool $check </dev/null
         sed -i 's/"61001-65535"/"61001-70000"/' jool/edge.json
-        if OUT=$PWD/jool $check </dev/null >err 2>&1; then
-          echo "error: the router's Jool check accepted a port past 65535" >&2
-          exit 1
-        fi
-        if ! grep -q "'70000' is out of bounds" err; then
-          echo "error: the router's Jool check refused the instance for another reason:" >&2
-          cat err >&2
-          exit 1
-        fi
+        refuses "the router's Jool check" "'70000' is out of bounds" env OUT=$PWD/jool "$check" </dev/null
         # The check of Unbound's config passes the LAN example's, with the trust anchor and zone
         # the image renders it with in place of the golden's, and refuses a record Unbound does not
         # take.
@@ -495,15 +450,7 @@ in
           ${../../cmd/chalkos-render/testdata/router/lan.unbound} >unbound/unbound.conf
         OUT=$PWD/unbound $check </dev/null
         sed -i 's/IN A 192.0.2.1/IN A 192.0.2.300/' unbound/unbound.conf
-        if OUT=$PWD/unbound $check </dev/null >err 2>&1; then
-          echo "error: the router's Unbound check accepted a record Unbound refuses" >&2
-          exit 1
-        fi
-        if ! grep -q 'Bad local-data RR' err; then
-          echo "error: the router's Unbound check refused the config for another reason:" >&2
-          cat err >&2
-          exit 1
-        fi
+        refuses "the router's Unbound check" 'Bad local-data RR' env OUT=$PWD/unbound "$check" </dev/null
         touch $out
       '';
 

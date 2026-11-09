@@ -34,7 +34,7 @@ lib.foldl'
   { }
   [
     ./e2e.nix
-    ./units.nix
+    ./units
     ./image.nix
     ./eval.nix
     ./repo.nix
