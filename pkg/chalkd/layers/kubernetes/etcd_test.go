@@ -179,6 +179,7 @@ func TestEtcdRemoveMember(t *testing.T) {
 	if err := removeMember(s, "cp9", false); layer.CodeOf(err) != connect.CodeNotFound {
 		t.Errorf("removing an unknown member: %v", err)
 	}
+	stoppedMember(s)
 	members["cp3"].Stop()
 	// Without cp2, n1 and the stopped cp3 would be left.
 	if err := removeMember(s, "cp2", false); layer.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "pass --force") {
@@ -330,6 +331,12 @@ func TestEtcdLeaveAfterMemberRemoved(t *testing.T) {
 // connection.
 const liveEtcdTimeout = 10 * time.Second
 
+// stoppedMember shortens the health checks of a test that stops a member, as each check waits
+// the timeout out for it; five seconds still leave the members that are up room on a busy machine.
+func stoppedMember(s *Plugin) {
+	s.k.timing.EtcdStatusTimeout = 5 * time.Second
+}
+
 // silentEtcdTimeout bounds the requests to etcd where the node's own member does not answer.
 // Every leave waits it out for that member, but it bounds the requests to the other members too,
 // which on a busy machine take seconds to answer or to commit a member's removal.
@@ -416,6 +423,7 @@ func TestEtcdLeaveAfterOwnMemberRemoved(t *testing.T) {
 func TestEtcdLeaveRefusedWithoutQuorum(t *testing.T) {
 	t.Parallel()
 	s, _, members := memberNode(t, "cp2", "cp3")
+	stoppedMember(s)
 	members["cp3"].Stop()
 	err := leave(s, false)
 	if layer.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "quorum") {
