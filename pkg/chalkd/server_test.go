@@ -95,6 +95,13 @@ var (
 	vdb = storagetest.Disk{Name: "vdb", Devnum: "253:16", Props: map[string]string{"ID_PATH": "pci-0000:00:05.0", "ID_SERIAL": "chalk-extra"}}
 )
 
+// testRebootDelay is how long a test server waits after a response before it reboots, and
+// noReboot how long a test waits to see that it does not: many times that delay.
+const (
+	testRebootDelay = 10 * time.Millisecond
+	noReboot        = 100 * testRebootDelay
+)
+
 // newTestServer returns a server in the mode whose paths point at fixture trees: vda is the
 // boot disk and carries VAR as vda7.
 func newTestServer(t *testing.T, mode nodev1.Mode, disks ...storagetest.Disk) (*Server, *tooltest.Runner) {
@@ -115,7 +122,8 @@ func newTestServer(t *testing.T, mode nodev1.Mode, disks ...storagetest.Disk) (*
 		Journal: func(context.Context, string, bool) (io.ReadCloser, error) {
 			return io.NopCloser(strings.NewReader("")), nil
 		},
-		RebootNode: func() {},
+		RebootNode:  func() {},
+		RebootDelay: testRebootDelay,
 	}
 	s.Loader = nodeconfig.LoaderUnder(root)
 	s.Loader.Render.Run = outputs.Direct{}

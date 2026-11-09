@@ -4,6 +4,7 @@
 package chalkd
 
 import (
+	"cmp"
 	"context"
 	"crypto/tls"
 	"crypto/x509"
@@ -154,6 +155,9 @@ type Server struct {
 	Journal func(ctx context.Context, unit string, follow bool) (io.ReadCloser, error)
 	// RebootNode reboots the node; it is called once the response has been sent.
 	RebootNode func()
+	// RebootDelay is how long the node waits after a response before it reboots, so the response
+	// reaches the client; zero means a second. Tests shorten it.
+	RebootDelay time.Duration
 	// Facts runs the commands of facts; nil runs them with systemd-run. Tests replace it.
 	Facts facts.Runner
 	// Diagnose runs the diagnostics' commands; nil runs them as transient systemd units. Tests
@@ -479,8 +483,9 @@ func (s *Server) Reboot(ctx context.Context, _ *connect.Request[nodev1.RebootReq
 
 // rebootSoon reboots once the response has had time to reach the client.
 func (s *Server) rebootSoon() {
+	delay := cmp.Or(s.RebootDelay, time.Second)
 	go func() {
-		time.Sleep(time.Second)
+		time.Sleep(delay)
 		s.RebootNode()
 	}()
 }

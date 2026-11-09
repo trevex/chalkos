@@ -223,7 +223,7 @@ func TestRollbackImage(t *testing.T) {
 				if !tc.wantReboot {
 					t.Error("the node rebooted")
 				}
-			case <-time.After(3 * time.Second):
+			case <-time.After(noReboot):
 				if tc.wantReboot {
 					t.Error("the node did not reboot")
 				}

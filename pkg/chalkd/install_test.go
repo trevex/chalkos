@@ -296,7 +296,7 @@ func TestInstallFailureCanBeRepeated(t *testing.T) {
 	if err := sendInstall(t, s, in, nil); connect.CodeOf(err) != connect.CodeFailedPrecondition {
 		t.Fatalf("err = %v", err)
 	}
-	time.Sleep(1500 * time.Millisecond)
+	time.Sleep(noReboot)
 	if rebooted.Load() {
 		t.Fatal("rebooted after a failed install")
 	}
