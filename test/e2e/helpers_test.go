@@ -214,6 +214,20 @@ type outliving struct {
 
 func (o outliving) Cleanup(f func()) { o.owner.Cleanup(f) }
 
+// phased holds the T of a test's running phase, which the test's helpers fail.
+type phased struct{ t *testing.T }
+
+// phase runs f as the subtest name, whose failures p's helpers report, and reports whether it
+// passed.
+func (p *phased) phase(name string, f func(t *testing.T)) bool {
+	parent := p.t
+	defer func() { p.t = parent }()
+	return parent.Run(name, func(t *testing.T) {
+		p.t = t
+		f(t)
+	})
+}
+
 func startVM(t *testing.T, dir, vars string, disks ...lab.VMDisk) *lab.VM {
 	t.Helper()
 	return bootVM(t, lab.VMConfig{Dir: dir, FirmwareVars: vars, Disks: disks})

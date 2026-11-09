@@ -38,7 +38,8 @@ const haMemoryMB = 1536
 type haCluster struct {
 	// t is the running phase, which the helpers fail; owner is the whole test, which stops the VMs
 	// when it ends.
-	t, owner *testing.T
+	phased
+	owner    *testing.T
 	dir      string
 	sw       *lab.Switch
 	forwards []lab.GuestForward
@@ -52,17 +53,6 @@ type haNode struct {
 	*node
 	apiPort int
 	dir     string
-}
-
-// phase runs f as the subtest name, whose failures c's helpers report, and reports whether it
-// passed.
-func (c *haCluster) phase(name string, f func(t *testing.T)) bool {
-	parent := c.t
-	defer func() { c.t = parent }()
-	return parent.Run(name, func(t *testing.T) {
-		c.t = t
-		f(t)
-	})
 }
 
 // start boots the node's VM with the MAC on the cluster network. With fresh it gets a new
@@ -213,7 +203,7 @@ func TestKubernetesHA(t *testing.T) {
 	requireEnv(t, append([]string{"CHALKLAB_OVMF_CODE", "CHALKLAB_OVMF_VARS", "CHALKLAB_K8S_HA_IMAGE_DIR", "CHALKLAB_K8S_HA_UPGRADE_IMAGE_DIR", "CHALKLAB_K8S_IMAGES"}, chalkdEnv...)...)
 	ctx := context.Background()
 	start := time.Now()
-	c := &haCluster{t: t, owner: t, dir: vmDir(t), nodes: map[string]*haNode{}, boots: map[string]int{}}
+	c := &haCluster{phased: phased{t}, owner: t, dir: vmDir(t), nodes: map[string]*haNode{}, boots: map[string]int{}}
 	c.forwards = []lab.GuestForward{{Guest: "10.0.2.100:5000", Host: startRegistry(t)}}
 	sw, err := lab.StartSwitch(ctx, filepath.Join(c.dir, "switch"))
 	if err != nil {
