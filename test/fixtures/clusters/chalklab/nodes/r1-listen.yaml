@@ -1,0 +1,20 @@
+# The edge with an address of 2001:db8:100::/64 on its fabric link, from which it accepts a
+# session of every router; it sends each a default route. 05-fabric-listen takes the place of
+# groups/router.yaml's 10-fabric, which networkd no longer picks for enp0s3.
+apiVersion: networkd.chalkos.dev/v1alpha1
+kind: Network
+metadata: {name: 05-fabric-listen}
+spec:
+  match: {name: enp0s3}
+  network: {address: ["2001:db8:100::1/64"], ipv6AcceptRA: false}
+---
+apiVersion: router.chalkos.dev/v1alpha1
+kind: BGPPeer
+metadata: {name: fabric}
+spec:
+  listen: {range: "2001:db8:100::/64"}
+  remoteAS: external
+  bfd: true
+  password: {secretRef: {name: bgp, key: fabric}}
+  families:
+    ipv6: {defaultOriginate: true}

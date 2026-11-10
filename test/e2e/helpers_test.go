@@ -121,8 +121,8 @@ func copyFixtures() (dir string, err error) {
 // config only that image accepts and with config only that image's renderer refuses, its router
 // r1 announcing a network and with chalkd's port on its fabric link alone, its routers with their
 // fabric link in a VRF and r2's VRF in another table, r1 sending its default route while a route
-// exists, with and without that route, r1 leasing r2 an address on a macvlan, r1 with two peers
-// of one session, and the HA cluster.
+// exists, with and without that route, r1 accepting r2 from a listen range, r1 leasing r2 an
+// address on a macvlan, r1 with two peers of one session, and the HA cluster.
 var inventories = map[string]string{
 	"base":         "chalklab/chalkos.yaml",
 	"added":        "chalklab/added.yaml",
@@ -138,6 +138,7 @@ var inventories = map[string]string{
 	"default":      "chalklab/router-default.yaml",
 	"default-gone": "chalklab/router-default-gone.yaml",
 	"twice":        "chalklab/router-twice.yaml",
+	"listen":       "chalklab/router-listen.yaml",
 	"ha":           "chalklab-ha/chalkos.yaml",
 }
 

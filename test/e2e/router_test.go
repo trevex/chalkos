@@ -48,6 +48,12 @@ func routerOf(c *client.Conn) routerv1connect.RouterServiceClient {
 
 // session is the router's session of the BGPPeer on enp0s3, as its status reports it.
 func (rl *routerLab) session(name, peer string) (*routerv1.BGPPeerStatus, error) {
+	return rl.sessionWith(name, peer, "enp0s3")
+}
+
+// sessionWith is the router's session of the BGPPeer with the neighbour, a link or an address, as
+// its status reports it.
+func (rl *routerLab) sessionWith(name, peer, neighbor string) (*routerv1.BGPPeerStatus, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	resp, err := routerOf(rl.conns[name]).Status(ctx, connect.NewRequest(&routerv1.StatusRequest{}))
@@ -60,23 +66,29 @@ func (rl *routerLab) session(name, peer string) (*routerv1.BGPPeerStatus, error)
 		return nil, fmt.Errorf("its BGP state is unknown: %s", r.BgpError)
 	}
 	for _, p := range r.Peers {
-		if p.Name == peer && p.Neighbor == "enp0s3" {
+		if p.Name == peer && p.Neighbor == neighbor {
 			return p, nil
 		}
 	}
-	return nil, fmt.Errorf("%s has no session of %s on enp0s3: %v", name, peer, r.Peers)
+	return nil, fmt.Errorf("%s has no session of %s with %s: %v", name, peer, neighbor, r.Peers)
 }
 
-// established is nil once the router's session of the peer is up in the default VRF.
-func (rl *routerLab) established(name, peer string) error {
-	p, err := rl.session(name, peer)
+// establishedWith is nil once the router's session of the peer with the neighbour is up in the
+// default VRF, with BFD up.
+func (rl *routerLab) establishedWith(name, peer, neighbor string) error {
+	p, err := rl.sessionWith(name, peer, neighbor)
 	if err != nil {
 		return err
 	}
 	if p.State != "Established" || p.Bfd != "up" || p.Vrf != "default" {
-		return fmt.Errorf("the session of %s on %s is %s in the VRF %q, its BFD %q", peer, name, p.State, p.Vrf, p.Bfd)
+		return fmt.Errorf("the session of %s with %s on %s is %s in the VRF %q, its BFD %q", peer, neighbor, name, p.State, p.Vrf, p.Bfd)
 	}
 	return nil
+}
+
+// established is nil once the router's session of the peer is up in the default VRF.
+func (rl *routerLab) established(name, peer string) error {
+	return rl.establishedWith(name, peer, "enp0s3")
 }
 
 // inFabric is nil once the router's session of the peer is up in the VRF fabric and has been for
@@ -254,6 +266,11 @@ const bgpPassword = "lab-s3cret"
 //     the route, r1's BGP holds it, marked no-advertise and with the tracked large community, r2
 //     routes ::/0 through r1 again and never learns the tracked prefix. The base inventory then
 //     brings the unconditional default back.
+//   - listen: a delivery gives both routers an address of 2001:db8:100::/64 on enp0s3; r1's peer
+//     fabric accepts a session from every address of the prefix, and r2's peer edge names r1's
+//     address. Both report the session Established with BFD up, r1 under fabric with r2's
+//     address as neighbour, also in chalkctl status, and r2 learns the default route from r1's
+//     address. The base inventory then brings the unnumbered sessions back.
 //   - dhcp: a delivery gives both routers a macvlan dhcp0 on enp0s3, untagged on the lab's switch,
 //     which drops the frames of VLANs. r1's dhcp0, in the VRF lan, has a DHCPv4 server that
 //     reserves 192.0.2.10 for the MAC address of r2's dhcp0, with leases of two minutes, and a
@@ -268,9 +285,9 @@ const bgpPassword = "lab-s3cret"
 //
 // Two VMs of 768 MiB and 2 CPUs each; about 85 s once chalklab installed both, a few seconds for
 // the node CA, about 10 s for the rollbacks, 45 s for the trials, two minutes for the VRF with
-// r1's boot, half a minute for the default route and a minute and a quarter for DHCP with r1's
-// boot, about 9 minutes with the copies of the images. chalklab destroy removes the lab when the
-// test ends.
+// r1's boot, half a minute for the default route, 20 s for the listen range and a minute and a
+// quarter for DHCP with r1's boot, about 9 minutes with the copies of the images. chalklab destroy
+// removes the lab when the test ends.
 func TestRouterLab(t *testing.T) {
 	requireEnv(t, append([]string{"CHALKLAB_CHALKLAB", "CHALKLAB_ROUTER_IMAGE_DIR"}, chalkdEnv...)...)
 	dir := vmDir(t)
@@ -313,6 +330,9 @@ func TestRouterLab(t *testing.T) {
 		return
 	}
 	if !rl.phase("default", rl.defaultRoute) {
+		return
+	}
+	if !rl.phase("listen", rl.listen) {
 		return
 	}
 	rl.phase("dhcp", rl.dhcp)
@@ -924,6 +944,54 @@ func (rl *routerLab) defaultRoute(t *testing.T) {
 	}
 	waitFor(t, 2*time.Minute, "r2's default route from r1 again", func() error { return rl.learned("::/0") })
 	rl.rootsConfig()
+}
+
+// listen is the phase listen of TestRouterLab.
+func (rl *routerLab) listen(t *testing.T) {
+	// r1 first: it opens no session itself, and accepts r2's once r2 has its address.
+	for _, name := range []string{"r1", "r2"} {
+		if out, err := chalkctl(t, rl.nodes[name], "listen", "config", "apply", name); err != nil {
+			rl.failedJobs(name, "listen", out)
+			t.Fatalf("config apply of %s's listen range: %v\n%s", name, err, out)
+		}
+	}
+	waitFor(t, 3*time.Minute, "r1's session with r2 from its listen range", func() error { return rl.establishedWith("r1", "fabric", "2001:db8:100::2") })
+	waitFor(t, 2*time.Minute, "r2's session with r1's address", func() error { return rl.establishedWith("r2", "edge", "2001:db8:100::1") })
+	// fromAddress is nil once r2 routes ::/0 over enp0s3 with BGP's best path from r1's address.
+	fromAddress := func() error {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		resp, err := routerOf(rl.conns["r2"]).Routes(ctx, connect.NewRequest(&routerv1.RoutesRequest{Prefix: "::/0", Protocol: "bgp"}))
+		if err != nil {
+			return err
+		}
+		kernel := slices.ContainsFunc(resp.Msg.Kernel, func(k *routerv1.KernelRoute) bool {
+			return k.Destination == "::/0" && slices.ContainsFunc(k.NextHops, func(h *routerv1.NextHop) bool { return h.Interface == "enp0s3" })
+		})
+		bgp := slices.ContainsFunc(resp.Msg.Bgp, func(b *routerv1.BGPRoute) bool {
+			return b.Prefix == "::/0" && b.Best && b.AsPath == "64512" && b.Peer == "2001:db8:100::1"
+		})
+		if !kernel || !bgp {
+			return fmt.Errorf("r2's routes to ::/0: kernel %v, BGP %v, BGP's error %q", resp.Msg.Kernel, resp.Msg.Bgp, resp.Msg.BgpError)
+		}
+		return nil
+	}
+	waitFor(t, 2*time.Minute, "r2's default route from r1's address", fromAddress)
+	sessionLine := regexp.MustCompile(`(?m)^  default\s+fabric\s+2001:db8:100::2\s+Established\s`)
+	if out, err := chalkctl(t, rl.nodes["r1"], "listen", "status", "r1"); err != nil || !sessionLine.MatchString(out) || rl.failedUnit("r1", "listen", out) {
+		t.Errorf("status of r1 shows no session of fabric with r2's address, or a failed unit: %v\n%s", err, out)
+	}
+
+	// The base inventory brings back the unnumbered sessions.
+	for _, name := range []string{"r1", "r2"} {
+		if out, err := chalkctl(t, rl.nodes[name], "base", "config", "apply", name); err != nil {
+			rl.failedJobs(name, "base", out)
+			t.Fatalf("config apply of %s's base config: %v\n%s", name, err, out)
+		}
+	}
+	waitFor(t, 3*time.Minute, "r1's session with r2 on enp0s3 again", func() error { return rl.established("r1", "fabric") })
+	waitFor(t, 2*time.Minute, "r2's session with r1 on enp0s3 again", func() error { return rl.established("r2", "edge") })
+	waitFor(t, 2*time.Minute, "r2's default route from r1 on enp0s3 again", func() error { return rl.learned("::/0") })
 }
 
 // dhcp is the phase dhcp of TestRouterLab.
