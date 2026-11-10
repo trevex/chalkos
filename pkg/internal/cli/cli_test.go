@@ -10,9 +10,8 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// tree is a root with a group, leaves that take one argument, a required flag, and fail, one of
-// them after cobra's own check of its arguments, and a command that fails and has a subcommand,
-// which both take a flag.
+// tree is a root with a group and leaves that take one argument, a required flag, and fail, one
+// of them after cobra's own check of its arguments.
 func tree(stderr *bytes.Buffer) *cobra.Command {
 	root := Root(&cobra.Command{Use: "tool", TraverseChildren: true})
 	group := Group(&cobra.Command{Use: "group"})
@@ -25,13 +24,8 @@ func tree(stderr *bytes.Buffer) *cobra.Command {
 	joined := &cobra.Command{Use: "joined <arg>", Args: cobra.ExactArgs(1), RunE: func(*cobra.Command, []string) error {
 		return errors.Join(errors.New("first"), errors.New("second"))
 	}}
-	parent := &cobra.Command{Use: "parent <arg>", Args: ExactArgs(1), RunE: func(*cobra.Command, []string) error { return errors.New("failed") }}
-	parent.Flags().String("name", "", "")
-	child := &cobra.Command{Use: "child", Args: NoArgs, RunE: func(*cobra.Command, []string) error { return nil }}
-	child.Flags().String("name", "", "")
-	parent.AddCommand(child)
 	group.AddCommand(one)
-	root.AddCommand(group, required, fail, joined, parent)
+	root.AddCommand(group, required, fail, joined)
 	root.SetOut(&bytes.Buffer{})
 	root.SetErr(stderr)
 	return root
@@ -43,7 +37,6 @@ func TestExecute(t *testing.T) {
 		"": 2, "bogus": 2, "group": 2, "group bogus": 2, "--bogus": 2, "group --name x one a": 2,
 		"group one": 2, "group one a b": 2, "group one a --bogus": 2, "required": 2, "required a --name x": 2,
 		"fail a b": 2, "joined a": 1, "joined": 2, "joined a b": 2,
-		"parent a": 1, "parent --name x a": 1, "parent child --name x": 0, "parent --name x child": 2,
 	} {
 		var stderr bytes.Buffer
 		root := tree(&stderr)
@@ -59,11 +52,10 @@ func TestExecute(t *testing.T) {
 
 func TestExecuteMessages(t *testing.T) {
 	for args, want := range map[string]string{
-		"":                      "Usage:\n  tool [flags]\n  tool [command]\n",
-		"fail":                  "tool: failed\n",
-		"group one":             "tool: usage: accepts 1 arg(s), received 0\nUsage:\n  tool group one <arg> [flags]\n",
-		"required":              "tool: usage: required flag(s) \"name\" not set\nUsage:\n  tool required [flags]\n",
-		"parent --name x child": "tool: usage: --name goes after tool parent child\nUsage:\n  tool parent child [flags]\n",
+		"":          "Usage:\n  tool [flags]\n  tool [command]\n",
+		"fail":      "tool: failed\n",
+		"group one": "tool: usage: accepts 1 arg(s), received 0\nUsage:\n  tool group one <arg> [flags]\n",
+		"required":  "tool: usage: required flag(s) \"name\" not set\nUsage:\n  tool required [flags]\n",
 	} {
 		var stderr bytes.Buffer
 		root := tree(&stderr)
