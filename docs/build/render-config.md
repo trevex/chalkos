@@ -363,7 +363,7 @@ chalkos.outputs.bird-conf = {
 Build the image. The build renders each example and runs the check, so a broken template fails
 here and names the output and the example file.
 
-After `chalkctl apply-config`, a render or check that fails refuses the delivery, and nothing on
+After `chalkctl config apply`, a render or check that fails refuses the delivery, and nothing on
 the node changes. A renderer's refusal shows as `the config is refused:` and the refusals. Any
 other failure names the output and the exit status:
 
@@ -385,11 +385,11 @@ start of the hash of the files the node serves, `none` while it serves none. `ST
 `rendered`, `failed:` with the last failure, or `not rendered yet`. A refused delivery leaves the
 hash of the files the node still serves.
 
-`chalkctl apply-config --dry-run` renders and checks every output on the node without a delivery.
+`chalkctl config apply --dry-run` renders and checks every output on the node without a delivery.
 It prints the refusal a delivery would print, or the outputs whose files would change, and records
 nothing in the status.
 
-`chalkctl apply-config` while an image is staged, with or without `--staged` and `--dry-run`, and
+`chalkctl config apply` while an image is staged, with or without `--staged` and `--dry-run`, and
 `chalkctl upgrade` run the renderers of the image the config is for, from that image's store, in
 `chalkos-check.service`; its journal holds what they write to standard error.
 

@@ -31,8 +31,8 @@ You also need the new image. The image author builds it into an image directory,
 
 No node of the run may run a config on trial. An upgrade and `upgrade --rollback` stop before
 they change any node while one does. Confirm the config with
-`chalkctl apply-config confirm <node>` or roll it back with
-`chalkctl apply-config rollback <node>` first, as
+`chalkctl config confirm <node>` or roll it back with
+`chalkctl config rollback <node>` first, as
 [Try a config change](change-config.md#try-a-config-change) describes.
 
 ## Each node takes the new image in three steps
@@ -214,9 +214,9 @@ w1: uncordoned
   minute. A check that fails once, such as an etcd health check that answered late, does not
   stop it, and a healthy look starts the minute over.
 
-Staging another image replaces a staged one. Between the steps, `chalkctl apply-config <node>`
+Staging another image replaces a staged one. Between the steps, `chalkctl config apply <node>`
 delivers config to the running image and to the staged one, and both images check it before the
-node changes anything. `apply-config --staged` delivers config to the staged image alone, staged or
+node changes anything. `config apply --staged` delivers config to the staged image alone, staged or
 active, as [Deliver config to a staged image](change-config.md#deliver-config-to-a-staged-image)
 describes.
 
@@ -261,10 +261,10 @@ chalkctl upgrade --nodes=w1 --diff --secrets secrets.age
 ```
 
 `--diff` prints for each node what its config changes against the config of the image it runs,
-in the format of [`apply-config --diff`](change-config.md#preview-the-change), and
+in the format of [`config apply --diff`](change-config.md#preview-the-change), and
 changes nothing.
 
-The config counts against the node's storage as `apply-config` does. A destructive storage change
+The config counts against the node's storage as `config apply` does. A destructive storage change
 stops the node's upgrade, and a new volume is created before the image boots. A new encrypted
 volume needs the fallback secret: the recovery key, which chalkctl derives from the secrets file,
 or the password in the file `--password-file` names. Without `--password-file`, chalkctl asks for
@@ -286,8 +286,8 @@ Without an inventory, chalkctl has no config to send. An upgrade with `--image` 
 `<node>: no inventory to compare the config with; the node gives the image its pending config, else carries its own over`
 for each node.
 
-A node can hold a pending config, which `chalkctl apply-config --staged` stores on a node without
-a staged image and every later `apply-config` to the running image replaces. An upgrade that
+A node can hold a pending config, which `chalkctl config apply --staged` stores on a node without
+a staged image and every later `config apply` to the running image replaces. An upgrade that
 sends no config gives the new image the pending config in place of the running one, and an
 upgrade that delivers config replaces it. The node removes the pending config once it staged the
 new image. The run then prints
@@ -302,7 +302,7 @@ the node runs already. The run then prints
 describes how to hold config pending.
 
 An image the run leaves staged or active, with `--until stage` or `--until activate`, boots with
-the config the upgrade gave it, unless a later `apply-config` changes it, as
+the config the upgrade gave it, unless a later `config apply` changes it, as
 [Deliver config to a staged image](change-config.md#deliver-config-to-a-staged-image) describes.
 
 The new image's checker compares the config with the running image's config as it was delivered,
@@ -358,9 +358,9 @@ it, with the same error, so that an image known to fail does not boot a second t
 gives a cordoned node back to the scheduler.
 
 A volume that the failed image's config added stays on the node. The upgrade created it before the
-image booted, and the previous image mounts it too. The next `chalkctl apply-config` for the
+image booted, and the previous image mounts it too. The next `chalkctl config apply` for the
 previous image must name the volume. Without it, the node refuses the config with
-`an earlier config of this image or another added it, with an upgrade or chalkctl apply-config
+`an earlier config of this image or another added it, with an upgrade or chalkctl config apply
 --staged, and it stays on the node; name it in this config too`. Only a reinstall removes the
 volume.
 
@@ -425,7 +425,7 @@ boot counting. That image was found healthy before, so it is the node's known-go
 and the node never falls back from it. chalkctl says so on the `boots next` line, releases the node
 once its layers report it ready, and ends the node's steps with
 `w1: runs <old> (its boots are not counted)`. Until the running boot is found healthy, the node
-keeps the config that image last ran: `apply-config --staged` and an upgrade to that image with
+keeps the config that image last ran: `config apply --staged` and an upgrade to that image with
 other config are refused.
 
 ### One image for the whole run
@@ -474,7 +474,7 @@ data after a Kubernetes upgrade.
 A new Kubernetes release takes two steps, the control plane first:
 
 1. Change the references of `images` in the `Cluster` document to the new release and deliver the
-   config to the cluster's nodes with `chalkctl apply-config cp1 cp2 cp3 w1 ...`. chalkctl rolls
+   config to the cluster's nodes with `chalkctl config apply cp1 cp2 cp3 w1 ...`. chalkctl rolls
    the new API server, controller-manager and scheduler out to the control planes one at a time,
    then delivers the config to the other nodes. No node reboots.
 2. Build images with the new kubelet and run `chalkctl upgrade`, as the sections above describe.
@@ -485,7 +485,7 @@ The image's checker refuses a config whose API server is older than its kubelet,
 control planes run:
 
 ```text
-chalkctl: w1: the image's kubelet 1.38.0 would be newer than the API server 1.37.2 that cp2 runs, the oldest of the cluster; upgrade the control plane first: name the new release's images in the Cluster document and deliver it with chalkctl apply-config
+chalkctl: w1: the image's kubelet 1.38.0 would be newer than the API server 1.37.2 that cp2 runs, the oldest of the cluster; upgrade the control plane first: name the new release's images in the Cluster document and deliver it with chalkctl config apply
 ```
 
 The [Kubernetes version skew policy](https://kubernetes.io/releases/version-skew-policy/) bounds
@@ -500,9 +500,9 @@ the versions, minor releases compared:
 
 The image's checker holds the config to them against its own kubelet, as
 [The image's checker holds the versions to the skew policy](../kubernetes/configure.md#the-images-checker-holds-the-versions-to-the-skew-policy)
-describes. `chalkctl apply-config` checks the config's API server against the versions every node
+describes. `chalkctl config apply` checks the config's API server against the versions every node
 runs, and `chalkctl upgrade` checks each image's kubelet against the oldest API server. Move one
-minor release at a time; `chalkctl apply-config --allow-downgrade` lets the config name an API
+minor release at a time; `chalkctl config apply --allow-downgrade` lets the config name an API
 server one minor older than the control planes run.
 
 A patch release of the control plane is the first step alone, and a patch release of the kubelet
@@ -510,7 +510,7 @@ is the second step alone.
 
 The two steps run apart. An upgrade delivers each node's config with its image, so
 `chalkctl upgrade` refuses a config whose API server differs from the one a node runs, before it
-sends any image, and names `chalkctl apply-config` to deliver the config first.
+sends any image, and names `chalkctl config apply` to deliver the config first.
 
 kube-proxy moves when the first control plane gets the config, because that control plane applies
 the add-ons. In a minor upgrade, kube-proxy then runs one minor ahead of the API servers not yet

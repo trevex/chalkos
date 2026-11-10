@@ -1,12 +1,12 @@
 ---
-title: "chalkctl apply-config rollback"
+title: "chalkctl config rollback"
 description: "Deliver a node's previous config again"
 ---
 
-# chalkctl apply-config rollback
+# chalkctl config rollback
 
 ```sh
-chalkctl apply-config rollback <node> [flags]
+chalkctl config rollback <node> [flags]
 ```
 
 Delivers a node's previous config again: the config the running image ran before the last
@@ -39,10 +39,10 @@ secrets file.
 
 ```sh
 # Show what undoing w1's last config delivery changes, then undo it.
-chalkctl apply-config rollback w1 --secrets secrets.age --diff
-chalkctl apply-config rollback w1 --secrets secrets.age
+chalkctl config rollback w1 --secrets secrets.age --diff
+chalkctl config rollback w1 --secrets secrets.age
 ```
 
 ## See also
 
-- [chalkctl apply-config](chalkctl_apply-config.md): Deliver a node's config from the inventory
+- [chalkctl config](chalkctl_config.md): Deliver nodes' config and manage client files

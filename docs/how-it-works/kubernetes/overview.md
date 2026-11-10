@@ -76,7 +76,7 @@ The Kubernetes share is the set of Kubernetes secrets a node receives at install
 keeps on STATE. On a control plane, it holds the cluster, front-proxy and etcd CAs with their keys,
 the service-account key, the encryption key and the node CA. On a worker, it holds the cluster CA
 certificate and a kubelet client certificate. A node without a Kubernetes share, which is not
-installed yet, runs no kubelet. `chalkctl apply-config --kubernetes-share` gives an installed node
+installed yet, runs no kubelet. `chalkctl config apply --kubernetes-share` gives an installed node
 a share. [Kubernetes certificates](certificates.md) describes what the control plane issues from
 it.
 
@@ -121,7 +121,7 @@ cluster on IPv4 with the default ranges needs no more than the lab template's do
 ```
 
 chalkctl delivers the documents at install and with
-[`chalkctl apply-config`](../../reference/cli/chalkctl_apply-config.md). At boot and on every
+[`chalkctl config apply`](../../reference/cli/chalkctl_config_apply.md). At boot and on every
 apply, chalkd builds the node's cluster from its `Node`, `Cluster` and `Flannel` documents and
 `image.json`. It writes the result to `/run/chalkos/kubernetes/cluster.json`. The file carries the
 release of the image's kubelet as `version` and the Kubernetes version of `images.apiServer`'s tag
@@ -168,7 +168,7 @@ starts its Kubernetes work again, so the static pods and add-ons follow the new 
 Some settings are fixed once the cluster exists: `ipFamilies`, the pod ranges of `podCIDRs`, the
 service ranges of `serviceCIDRs` and the addresses of `dnsIPs`. The certificates, etcd and the
 ranges the control plane allocated were made for them. On a node that holds a Kubernetes share,
-`chalkctl apply-config` is refused when it changes them:
+`chalkctl config apply` is refused when it changes them:
 
 ```text
 the config changes the cluster's podCIDRs from ipv4 10.244.0.0/16 to ipv4 10.245.0.0/16; they are fixed once the cluster exists, so keep them, or reinstall the node into a new cluster

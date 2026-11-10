@@ -67,7 +67,7 @@ carries a note when something needs doing:
 | `<CA> expires <date>` | A CA in its last year |
 | `node CA expires <date>; run chalkctl rotate node-ca` | The node CA in its last 18 months |
 | `expired`, `<CA> expired <date>` | A certificate or CA past its end |
-| `expired; deliver a new one with chalkctl apply-config <node> --kubernetes-share` | A worker's kubelet client certificate, when the one the kubelet renewed was lost with VAR and the one in its Kubernetes share has expired too |
+| `expired; deliver a new one with chalkctl config apply <node> --kubernetes-share` | A worker's kubelet client certificate, when the one the kubelet renewed was lost with VAR and the one in its Kubernetes share has expired too |
 
 The node CA is reported six months before the other CAs because no node certificate outlives it,
 so the certificates it issues get shorter in its last year.

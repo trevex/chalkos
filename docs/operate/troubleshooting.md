@@ -80,7 +80,7 @@ covers each case.
 
 ## The node refuses a storage change
 
-`chalkctl apply-config` fails with `the config takes chalkctl storage reset: ...` or
+`chalkctl config apply` fails with `the config takes chalkctl storage reset: ...` or
 `the config takes a reinstall of w1: ...`, and the node keeps its previous config. The change
 shrinks, reformats, re-encrypts, moves or removes a volume.
 [A refusal names what the change takes](change-config.md#a-refusal-names-what-the-change-takes)
@@ -99,7 +99,7 @@ quorum, and at a drain that does not finish.
 
 ## The config line says not the inventory's
 
-`not the inventory's; chalkctl apply-config w1 delivers it` means the node's files changed since
+`not the inventory's; chalkctl config apply w1 delivers it` means the node's files changed since
 the last delivery. Preview and deliver the change, as
 [Change a node's config](change-config.md) describes.
 

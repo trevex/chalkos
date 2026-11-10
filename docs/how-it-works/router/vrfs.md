@@ -39,7 +39,7 @@ Two checks guard the node API. The
 as the [membership](#membership-follows-how-networkd-picks-a-network) below finds them. While the
 node API answers on every interface, a rule wants a `Network` document that names at least one
 link that no VRF holds. Neither can tell which link chalkctl reaches the router through, so a
-delivery with `apply-config --try` covers the rest: the router rolls the config back unless
+delivery with `config apply --try` covers the rest: the router rolls the config back unless
 chalkctl confirms it over a new connection.
 
 ## The output networkd renders the VRFs
@@ -126,14 +126,14 @@ refused, with the remedies: give the earlier one the same `VRF=`, rename it to s
 the `VRF=`. It refuses a backslash in `Name=`, which systemd reads as an escape, and a bracket
 expression it cannot match as `fnmatch` does, such as `eth[0` or a class like `[[:digit:]]`. The
 validator runs after the rules and before the renderers, at a delivery, at
-`chalkctl apply-config --dry-run`, in `chalkctl validate` and at boot. It refuses the VRFs' links
+`chalkctl config apply --dry-run`, in `chalkctl validate` and at boot. It refuses the VRFs' links
 first. The checks that read the links run once those pass, and report every fault they find at
 once.
 
 The validator reads no `NetDev` and no unit names. The renderer of the output `networkd` refuses
 a networkd document named as a VRF's units and a `NetDev` that creates a device of a VRF's name,
 in any `[NetDev]` section and any value of its `Name=`. These checks run when the router renders
-its config, at a delivery or at `chalkctl apply-config --dry-run`; `chalkctl validate` does not
+its config, at a delivery or at `chalkctl config apply --dry-run`; `chalkctl validate` does not
 run them.
 
 ## chalkos-vrf removes what networkd keeps

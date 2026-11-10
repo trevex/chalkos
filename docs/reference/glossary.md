@@ -125,7 +125,7 @@ is of a [kind](#kind) its image accepts, such as `Node`,
 `Network`, `SystemDisk`, `Cluster` or an extension's own. The [inventory](#inventory) names the
 YAML files whose documents form a node's set. chalkctl checks the set against the schemas of the
 node's image and delivers it at install and with
-[`chalkctl apply-config`](cli/chalkctl_apply-config.md); chalkd checks it again, keeps it on
+[`chalkctl config apply`](cli/chalkctl_config_apply.md); chalkd checks it again, keeps it on
 [STATE](#state) and applies it at every boot. A new set replaces the node's previous one as a
 whole. Secrets travel as `Secret` documents and reach only the services that read the kinds
 referencing them. See [Config and the inventory](../how-it-works/node/config.md).
@@ -147,7 +147,7 @@ It is `/state/config/<root-hash>` on [STATE](#state), and holds the documents as
 same documents with the schemas' defaults filled in, the config's version and the node's
 [identity](#identity). Each image's boot loads its own slot, so a [rollback](#rollback) boots the
 previous image with the config it ran. An install or an [upgrade](#upgrade) writes the slot of the
-image it writes, and `chalkctl apply-config` that of the running image. An upgrade removes the
+image it writes, and `chalkctl config apply` that of the running image. An upgrade removes the
 slots of images no UKI on the ESP boots any more, so a node holds at most two. See
 [Config and the inventory](../how-it-works/node/config.md#a-node-keeps-one-config-slot-per-image).
 
@@ -471,7 +471,7 @@ runs. See [Variants and platforms](../build/variants-and-platforms.md#a-platform
 
 The config the running [image](#image) ran before the last delivery, which the node keeps beside
 the image's [config slot](#config-slot), one level deep.
-[`chalkctl apply-config rollback`](cli/chalkctl_apply-config_rollback.md) delivers it again, and the
+[`chalkctl config rollback`](cli/chalkctl_config_rollback.md) delivers it again, and the
 config it replaces becomes the previous one. An install or an upgrade writes a slot without one.
 See [Config and the inventory](../how-it-works/node/config.md#a-node-keeps-one-config-slot-per-image).
 
@@ -513,7 +513,7 @@ The return to the previous image after a new one used up its boot tries without 
 [blessed boot](#blessed-boot). chalkd reports it in status
 with the failed boot's last log lines, and `chalkctl upgrade` stops. Two more rollbacks run on
 request: [`chalkctl upgrade --rollback`](cli/chalkctl_upgrade.md) boots the image the inactive
-[slot](#slot) still holds, and [`chalkctl apply-config rollback`](cli/chalkctl_apply-config_rollback.md)
+[slot](#slot) still holds, and [`chalkctl config rollback`](cli/chalkctl_config_rollback.md)
 delivers the [previous config](#previous-config) again, as the node does by itself at the end of an
 unconfirmed [trial](#trial). See
 [Boot, health and rollback](../how-it-works/node/boot-and-rollback.md).
@@ -581,7 +581,7 @@ unlock without a password only under the same Secure Boot state. See
 ## Trial { #trial }
 <!-- abbr: none -->
 
-A config delivered with `chalkctl apply-config --try`, which the node rolls back to its
+A config delivered with `chalkctl config apply --try`, which the node rolls back to its
 [previous config](#previous-config) at a deadline unless chalkctl confirms it. While it is open, the
 node refuses other deliveries, upgrades and image rollbacks, and a reboot ends it with the config
 from before it. See

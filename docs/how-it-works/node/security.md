@@ -152,7 +152,7 @@ handshake fails and chalkctl says `the node does not accept this client file, <p
 cluster's?`. A client file issued before an OS CA rotation fails the same way later in the
 rotation.
 
-Installing nodes, `apply-config`, issuing kubeconfigs and rotations need the secrets file, because
+Installing nodes, `config apply`, issuing kubeconfigs and rotations need the secrets file, because
 they issue certificates or deliver keys. Other commands take either credential, in the order
 [Where chalkctl finds its credentials](../../reference/access.md#where-chalkctl-finds-its-credentials)
 lists.

@@ -58,7 +58,7 @@ Deliver a change of `spec.management.interfaces` on trial, so that the router ro
 chalkctl cannot reach it any more:
 
 ```sh
-chalkctl apply-config r1 --secrets secrets.age --try 2m
+chalkctl config apply r1 --secrets secrets.age --try 2m
 ```
 
 chalkctl confirms the config over a new connection, which the firewall accepts only on a
@@ -83,7 +83,7 @@ Validate the files and deliver them as for any node:
 
 ```sh
 chalkctl validate
-chalkctl apply-config r1 --secrets secrets.age
+chalkctl config apply r1 --secrets secrets.age
 ```
 
 Show the ruleset the router loaded, and the path to an address:

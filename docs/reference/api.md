@@ -624,7 +624,7 @@ The images on the node's ESP and how the running one booted.
 | `staged_state` | SlotState | Whether the image staged boots next; unspecified without one. |
 | `boot_id` | string | The ID of the boot the node runs, as the kernel's random boot_id gives it, another for each boot: a client that rebooted the node tells the new boot from the one before by it, also when both run one image. Empty when it could not be read. |
 | `health` | BootHealth | The health of the boot the node runs, as the health check of a boot finds the node now; unset unless the request asked for it. blessed tells of the boot entry, which stays blessed across boots and is not counted again; this tells of the boot itself, also of an uncounted one. |
-| `staged_known_good` | bool | Whether the image staged is the node's known-good image: active and uncounted, as a rollback from a boot that was not found healthy stages it, while the boot the node runs is counted. Until that boot is found healthy the node falls back to that image, which keeps the config it last ran: a delivery leaves its config slot as it is, and apply-config --staged refuses other config for it. False without an image staged. |
+| `staged_known_good` | bool | Whether the image staged is the node's known-good image: active and uncounted, as a rollback from a boot that was not found healthy stages it, while the boot the node runs is counted. Until that boot is found healthy the node falls back to that image, which keeps the config it last ran: a delivery leaves its config slot as it is, and config apply --staged refuses other config for it. False without an image staged. |
 
 Field types: [BootImage](#message-bootimage), [SlotState](#enum-slotstate), [BootHealth](#message-boothealth).
 

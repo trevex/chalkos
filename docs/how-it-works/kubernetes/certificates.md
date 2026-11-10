@@ -99,11 +99,11 @@ on VAR.
 
 A worker that lost VAR falls back to the kubelet client certificate in its share, which may have
 expired since install. Its status then shows
-`expired; deliver a new one with chalkctl apply-config <node> --kubernetes-share`, and that command
+`expired; deliver a new one with chalkctl config apply <node> --kubernetes-share`, and that command
 delivers a new one:
 
 ```sh
-chalkctl apply-config <node> --kubernetes-share
+chalkctl config apply <node> --kubernetes-share
 ```
 
 ## Admin kubeconfigs carry the group chalkos:cluster-admins
@@ -186,7 +186,7 @@ it. `--force` revokes the node anyway.
 
 chalkctl reads the list as well. `chalkctl rotate` reads it before each phase and skips the listed
 nodes, so no rotation hands a revoked node a certificate. `chalkctl node renew` and
-`chalkctl apply-config --kubernetes-share` refuse a listed node unless `--force` is given, and
+`chalkctl config apply --kubernetes-share` refuse a listed node unless `--force` is given, and
 `chalkctl install` refuses to install a node under a listed name unless `--force` is given. All
 four refuse to run while no control plane says which nodes are revoked. `chalkctl rotate
 --ignore-revoked` rotates without the list, as during an outage of the API server, and every node

@@ -1,24 +1,24 @@
 ---
-title: "chalkctl apply-config confirm"
+title: "chalkctl config confirm"
 description: "Confirm a node's config on trial"
 ---
 
-# chalkctl apply-config confirm
+# chalkctl config confirm
 
 ```sh
-chalkctl apply-config confirm <node> [flags]
+chalkctl config confirm <node> [flags]
 ```
 
-Confirms the open trial of a node's config, as apply-config --try does without --no-confirm, so
-the node keeps the config. A trial stays open after apply-config --try --no-confirm, after
-apply-config --until deliver, and when chalkctl was interrupted.
+Confirms the open trial of a node's config, as config apply --try does without --no-confirm, so
+the node keeps the config. A trial stays open after config apply --try --no-confirm, after
+config apply --until deliver, and when chalkctl was interrupted.
 
 chalkctl first waits for the image's layers to find the node serving with the config, as
 Kubernetes finds its Node Ready and a control plane's static pods on the images its config names;
 when they do not by the deadline, chalkctl rolls the config back at once. It then confirms over a
 new connection once the node is healthy, trying until the trial's deadline while it is not, or for
 two minutes past it after a failed rollback, which the node still lets a confirmation end. A
-rollback that failed after it changed the node can no longer be confirmed: apply-config rollback
+rollback that failed after it changed the node can no longer be confirmed: config rollback
 finishes it.
 
 The node keeps the config on trial, so the command needs no inventory. It needs the secrets file.
@@ -36,10 +36,10 @@ The node keeps the config on trial, so the command needs no inventory. It needs 
 
 ```sh
 # Keep a trial open while you test by hand, then keep the config.
-chalkctl apply-config w1 --secrets secrets.age --try 30m --no-confirm
-chalkctl apply-config confirm w1 --secrets secrets.age
+chalkctl config apply w1 --secrets secrets.age --try 30m --no-confirm
+chalkctl config confirm w1 --secrets secrets.age
 ```
 
 ## See also
 
-- [chalkctl apply-config](chalkctl_apply-config.md): Deliver a node's config from the inventory
+- [chalkctl config](chalkctl_config.md): Deliver nodes' config and manage client files

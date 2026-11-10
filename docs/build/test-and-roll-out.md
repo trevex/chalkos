@@ -13,7 +13,7 @@ the services read them. The page uses the homelab and its BGP extension, `extens
 A change reaches a node in one of two ways. A changed image reaches it with
 [`chalkctl upgrade`](../reference/cli/chalkctl_upgrade.md), which brings the node's config along.
 Changed YAML alone reaches it with
-[`chalkctl apply-config`](../reference/cli/chalkctl_apply-config.md), and needs no new image.
+[`chalkctl config apply`](../reference/cli/chalkctl_config_apply.md), and needs no new image.
 
 ## Before you begin
 
@@ -96,16 +96,16 @@ the run stops there. The image renders its outputs again at its first boot.
 [Upgrade nodes](../operate/upgrade.md) covers the run's order, downtime and
 rollbacks.
 
-## Deliver changed YAML with chalkctl apply-config
+## Deliver changed YAML with chalkctl config apply
 
 A change to the documents alone, such as a new `Peer`, needs no upgrade. `--diff` shows what a
 delivery changes in the documents. `--dry-run` has the node check the delivery, its renderers
 and their checks included, and print the effects it would take. Neither changes anything:
 
 ```sh
-chalkctl apply-config cp1 --secrets=secrets.age --diff
-chalkctl apply-config cp1 --secrets=secrets.age --dry-run
-chalkctl apply-config cp1 --secrets=secrets.age
+chalkctl config apply cp1 --secrets=secrets.age --diff
+chalkctl config apply cp1 --secrets=secrets.age --dry-run
+chalkctl config apply cp1 --secrets=secrets.age
 ```
 
 The node renders and checks every output before it changes anything, so a document that gives
@@ -114,12 +114,12 @@ restarted, as `restarted <unit>`, and then the config the node runs, as `cp1 run
 Reloaded units are not listed.
 
 After an upgrade with `--until stage` or `--until activate`, the image in the node's inactive slot
-keeps a config of its own, staged or active. `chalkctl apply-config` delivers to that image as
-well as to the running one, once both checked the config, and `chalkctl apply-config --staged`
+keeps a config of its own, staged or active. `chalkctl config apply` delivers to that image as
+well as to the running one, once both checked the config, and `chalkctl config apply --staged`
 delivers to that image alone. With `--dry-run`, both check the config and nothing changes.
 
 Config for an image that is not installed yet can wait on the node. Without a staged image,
-`chalkctl apply-config --staged` holds the config pending, and the next upgrade gives it to the
+`chalkctl config apply --staged` holds the config pending, and the next upgrade gives it to the
 new image, which checks it before the node installs anything. An operator can then run that
 upgrade without the secrets file.
 

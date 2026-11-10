@@ -314,7 +314,7 @@ The rules refuse local zones that break one of these:
 
 The output `unbound` refuses a record that appears twice and a CNAME record beside another record
 of its name, in any zone. It checks when the router renders its config, at a delivery or at
-`chalkctl apply-config --dry-run`, and `chalkctl validate` does not:
+`chalkctl config apply --dry-run`, and `chalkctl validate` does not:
 
 ```text
 chalkctl: r1: the config is refused: Resolver/resolver: spec.localZones[0].records[1]: www.lan.example.org holds a CNAME record and another record; a CNAME's name holds it alone
@@ -349,7 +349,7 @@ Validate the files and deliver them:
 
 ```sh
 chalkctl validate
-chalkctl apply-config r1 --secrets secrets.age
+chalkctl config apply r1 --secrets secrets.age
 ```
 
 The delivery applies the NAT64s and reloads the resolvers, which keep their caches. A `Resolver`
@@ -449,7 +449,7 @@ needs a reader.
 The rules check each document and what one document's fields say of another's. The
 [validator `router`](../reference/builtins.md#validator-router) compares the NAT64s in pairs and
 checks the `listen` addresses against the `Network` documents. `chalkctl validate` and
-`chalkctl apply-config` run it before chalkctl sends anything, and the router runs it again at
+`chalkctl config apply` run it before chalkctl sends anything, and the router runs it again at
 the delivery. It checks the VRFs' links first, and the `listen` addresses only once the
 links pass. Within each step it reports every fault it finds at once.
 `chalkctl` prints the refusals after `the config is refused:`, as it prints a rule's, with the
@@ -467,7 +467,7 @@ chalkctl: r1: the config is refused: NAT64/lab: spec.prefix: NAT64 lab and NAT64
 | `Resolver/guest: spec.listen[0]: the address 2001:db8:ffff::1 of listen belongs to links of Network 10-mgmt in VRF default alone, so the resolver of VRF guest never receives its queries; listen on an address of the VRF's links` | Listen on an address of the resolver's VRF. |
 
 The renderer of the output `unbound` compares the records in pairs when the router renders its
-config, at a delivery or at `chalkctl apply-config --dry-run`. `chalkctl validate` does not run
+config, at a delivery or at `chalkctl config apply --dry-run`. `chalkctl validate` does not run
 it. Its refusal fails the delivery, and `chalkctl` prints it in the same form:
 
 | Message | Fix |

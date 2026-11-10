@@ -60,7 +60,7 @@ root hash its `metadata.json` names, which `chalkctl status` compares the nodes 
 whose image does not match stays unusable until the image is rebuilt or the directory is linked
 again. The root hash
 stays on the operator's machine, so a new build changes no node's config, and an upgrade needs no
-`chalkctl apply-config` after it.
+`chalkctl config apply` after it.
 
 With `--image`, chalkctl takes a prebuilt image: a raw image with `repart-output.json` beside it,
 or an image directory. It installs the image on the nodes that run the image's variant, or on the
@@ -112,7 +112,7 @@ with the config it ran. Config that only the new image accepts, such as a docume
 extension declares, therefore goes with the upgrade.
 
 The [Upgrade](../../reference/api.md#method-upgrade) method needs the operator role, and the admin
-role when it carries config or a fallback secret, as `apply-config` does. With an operator client
+role when it carries config or a fallback secret, as `config apply` does. With an operator client
 file, chalkctl sends no config. With an inventory it prints one line for the run, in place of a
 line per node:
 
@@ -124,8 +124,8 @@ Without an inventory, chalkctl sends no config either. In both cases the node gi
 its pending config, when it holds one, or else carries the documents of the running image's slot
 over, checked against the new image the same way.
 
-The pending config is the set that `chalkctl apply-config --staged` stores in
-`/state/config/pending` on a node without a staged image. Every later `apply-config` to the
+The pending config is the set that `chalkctl config apply --staged` stores in
+`/state/config/pending` on a node without a staged image. Every later `config apply` to the
 running image replaces it with the config the running image applied, so the next upgrade boots the
 config delivered last. chalkd only parses it there; the image
 an upgrade installs checks it as it checks any config. chalkd removes the pending config once the
@@ -135,12 +135,12 @@ check or while chalkd stages the image, keeps it. An activation that fails, in a
 activates the image as well, leaves the image staged while the node keeps the pending config.
 Sending that image again without config then rewrites its slot with the pending config. Should
 the removal itself fail, chalkd logs it, the upgrade still succeeds, and status keeps showing the
-pending config until `apply-config discard` removes it. An upgrade that pulls its image
+pending config until `config discard` removes it. An upgrade that pulls its image
 takes the Registry and Mirror documents from the same config: the upgrade's, else the pending
 config, else the running one. A pending config holds no fallback secret, so an upgrade refuses
 one that adds an encrypted volume, and the error says to upgrade with the config from an inventory.
 
-The config meets the new image's [change rules](../../build/guard-changes.md) as `apply-config`'s
+The config meets the new image's [change rules](../../build/guard-changes.md) as `config apply`'s
 config meets the running image's. The rules compare it with the running slot's config and the
 storage STATE records. A storage change that takes a reset or a reinstall is refused, and so is a
 change of a setting the rules fix. A new volume is created before the image

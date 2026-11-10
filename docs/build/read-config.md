@@ -72,7 +72,7 @@ JSON tool reads the files.
 
 chalkd writes the files at boot, from `chalkos-config.service`, which runs before
 `sysinit.target`. Every ordinary service starts after that target, so the files exist when the
-unit starts. After each `apply-config` to the running image, chalkd replaces the whole directory.
+unit starts. After each `config apply` to the running image, chalkd replaces the whole directory.
 
 Every process on the node can read the files, granted or not. Secret values never appear below
 `/run/chalkos/config`. `Secret` documents and those of withheld kinds, such

@@ -48,4 +48,4 @@ chalkctl config new --name alice --role operator --secrets secrets.age
 
 ## See also
 
-- [chalkctl config](chalkctl_config.md): Manage client files
+- [chalkctl config](chalkctl_config.md): Deliver nodes' config and manage client files

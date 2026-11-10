@@ -35,12 +35,12 @@ in the document of the same name that the node runs. `self == oldSelf` holds whe
 the same. A rule that reads `oldSelf` runs only where the node's running config holds the field,
 so a new `Peer` takes any number.
 
-Say `cluster/bgp.yaml` changes `router-b`'s `asn` from 64514 to 64600. `chalkctl apply-config cp1`
+Say `cluster/bgp.yaml` changes `router-b`'s `asn` from 64514 to 64600. `chalkctl config apply cp1`
 fetches the node's config, prints what changed, runs the rule against the node's config, and
 stops before it sends anything:
 
 ```console
-$ chalkctl apply-config cp1
+$ chalkctl config apply cp1
 cp1: config 0 added, 0 removed, 1 changed
 chalkctl: cp1: the config is refused: Peer/router-b: spec.asn: the AS number stays 64514; add a Peer of another name for 64600
 ```
@@ -228,7 +228,7 @@ Facts describe the node, and a rule reads the facts that its own image declares:
 a rule that reads a fact its image does not declare. chalkd loads the facts on the machine the
 node runs on:
 
-- When the running image checks the config, as for `chalkctl apply-config` to its own slot, the
+- When the running image checks the config, as for `chalkctl config apply` to its own slot, the
   facts are the running image's. A command fact runs the running image's program.
 - When an image that does not run checks the config, as for an upgrade, a delivery to a staged
   image or an install from the installer, the facts are those that image's `facts.json` declares.
@@ -252,8 +252,8 @@ rules of kinds see no `oldDocuments`. The `Rack` rule therefore accepts any loca
 chalkd evaluates every rule, with its facts, each time it writes a config slot and before it
 changes anything:
 
-- `chalkctl apply-config` for the running image, with the running image's rules;
-- `chalkctl apply-config` while an image is staged, `chalkctl apply-config --staged` and upgrades,
+- `chalkctl config apply` for the running image, with the running image's rules;
+- `chalkctl config apply` while an image is staged, `chalkctl config apply --staged` and upgrades,
   with the rules of the image the slot is for, which that image's own chalkd evaluates;
 - `chalkctl install`, with the rules of the image it installs: in place the running image's, from
   the installer those that the image's own chalkd evaluates once its store is on the target disk.
@@ -265,7 +265,7 @@ the running image's or the installer's chalkd has.
 
 chalkctl evaluates the rules that read no facts, because the facts are the node's. `chalkctl
 validate` has no running config, so it runs the rules of kinds and the rules of fields that do not
-read `oldSelf`. `chalkctl apply-config` fetches the node's config first and runs those rules
+read `oldSelf`. `chalkctl config apply` fetches the node's config first and runs those rules
 against it too, so a change that the `asn` rule refuses fails without reaching the node. The
 `Rack` rule reads a fact, so it runs on the node alone.
 
@@ -414,8 +414,8 @@ kinds and the field rules that read neither `oldSelf` nor facts:
 chalkctl validate
 ```
 
-The rules that read `oldSelf` run on `chalkctl apply-config`, against the node's config. Rules
-that read facts run on the node alone; `chalkctl apply-config --dry-run` has the node run them
+The rules that read `oldSelf` run on `chalkctl config apply`, against the node's config. Rules
+that read facts run on the node alone; `chalkctl config apply --dry-run` has the node run them
 without delivering the config. A refusal that starts with `cannot check:` comes from a rule that
 cannot be evaluated or a fact that cannot be loaded. The journal of `chalkd.service` holds what a
 failed command fact wrote.

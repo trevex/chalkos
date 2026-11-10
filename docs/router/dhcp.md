@@ -305,7 +305,7 @@ Deliver the documents as any config:
 
 ```sh
 chalkctl validate
-chalkctl apply-config r1 --secrets secrets.age
+chalkctl config apply r1 --secrets secrets.age
 ```
 
 `chalkctl status` shows each VRF's DHCP server and, while it runs, the addresses each subnet
@@ -417,7 +417,7 @@ rule with its expression:
 The [validator `router`](../reference/builtins.md#validator-router) checks what spans documents:
 the links' VRFs and addresses, which `Network` documents give, the router advertisements of an
 IPv6 subnet's link, and the subnets and relays of a VRF together. `chalkctl validate` and
-`chalkctl apply-config` run it before chalkctl sends anything, and the router runs it again at
+`chalkctl config apply` run it before chalkctl sends anything, and the router runs it again at
 the delivery. It checks the VRFs' links first, and the subnets and relays only once the links
 pass. Within each step it reports every fault it finds at once.
 `chalkctl` prints the refusals after `the config is refused:`, as it prints a rule's, each with
@@ -444,7 +444,7 @@ the document and the field it is about:
 | `DHCPSubnet/lab: spec.interfaces: DHCPRelay office relays DHCPv4 in VRF default and DHCPSubnet lab serves DHCPv4 in VRF lab; dnsmasq's and Kea's sockets of one family bind beside each other only in two VRFs other than the default one` | Relay and serve the family in two VRFs other than the default one. |
 
 The renderer of the output `kea` refuses one more config when the router renders it, at a
-delivery or at `chalkctl apply-config --dry-run`, and `chalkctl validate` does not run it:
+delivery or at `chalkctl config apply --dry-run`, and `chalkctl validate` does not run it:
 
 | Message | Fix |
 | --- | --- |

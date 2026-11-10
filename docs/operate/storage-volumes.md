@@ -17,7 +17,7 @@ is a partition on the system disk, behind VAR, or a whole disk of its own.
 ## Before you begin
 
 You need the workstation that [Set up your workstation](workstation.md) describes, with the secrets
-file `secrets.age`. `chalkctl apply-config` needs it. `chalkctl disks` and `chalkctl status` need a
+file `secrets.age`. `chalkctl config apply` needs it. `chalkctl disks` and `chalkctl status` need a
 reader client file or the secrets file.
 
 Decide which nodes get a volume before you install them. Removing a volume from a running node
@@ -198,7 +198,7 @@ chalkctl validate w1
 Then deliver the config:
 
 ```console
-$ chalkctl apply-config w1 --secrets secrets.age
+$ chalkctl config apply w1 --secrets secrets.age
 w1: config 1 added, 0 removed, 0 changed
 volume scratch: new volume
 w1 runs config 45095fb6414e5f6744a8bf134254107d7d943537457d513fc51e7440deace75f
@@ -250,7 +250,7 @@ volume scratch of w1 was wiped and created again
 
 An encrypted volume is sealed to the TPM again and gets its fallback keyslot back. The command
 needs the secrets file for a node whose fallback is its recovery key, and the password for one
-whose fallback is a password. Then run `chalkctl apply-config` for the rest of the config.
+whose fallback is a password. Then run `chalkctl config apply` for the rest of the config.
 
 A reset refuses:
 

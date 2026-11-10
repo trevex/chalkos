@@ -1,15 +1,15 @@
 ---
-title: "chalkctl apply-config discard"
+title: "chalkctl config discard"
 description: "Drop the config a node holds pending for its next upgrade"
 ---
 
-# chalkctl apply-config discard
+# chalkctl config discard
 
 ```sh
-chalkctl apply-config discard <node> [flags]
+chalkctl config discard <node> [flags]
 ```
 
-Drops the config a node holds pending for its next upgrade, which apply-config --staged leaves on
+Drops the config a node holds pending for its next upgrade, which config apply --staged leaves on
 a node without a staged image, and names the config it dropped. The node holds the config, so the
 command needs no inventory. It needs the secrets file.
 
@@ -26,9 +26,9 @@ command needs no inventory. It needs the secrets file.
 
 ```sh
 # Drop the config w1 holds pending.
-chalkctl apply-config discard w1 --secrets secrets.age
+chalkctl config discard w1 --secrets secrets.age
 ```
 
 ## See also
 
-- [chalkctl apply-config](chalkctl_apply-config.md): Deliver a node's config from the inventory
+- [chalkctl config](chalkctl_config.md): Deliver nodes' config and manage client files

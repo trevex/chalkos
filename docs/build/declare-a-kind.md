@@ -203,7 +203,7 @@ node w1: Peer "router-a": - at '/spec': additional properties 'asm' not allowed
 
 Each error names the node, the document and the path in it. `asm` is a field the kind does not
 declare, and `asn` is required, so the one typo gives two errors. `chalkctl install`,
-`apply-config` and `upgrade` run the same check before they deliver.
+`config apply` and `upgrade` run the same check before they deliver.
 
 ## Field types map to JSON Schema
 

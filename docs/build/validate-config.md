@@ -142,16 +142,16 @@ Build the image. The build runs each example, so a broken validator fails here a
 validator and the example file.
 
 Say `cluster/bgp.yaml` gains a `Peer` named `router-c` at 10.0.1.1, a neighbour behind a router.
-`chalkctl apply-config cp1` checks the config as far as chalkctl can, then the node runs the
+`chalkctl config apply cp1` checks the config as far as chalkctl can, then the node runs the
 validator and refuses the delivery:
 
 ```console
-$ chalkctl apply-config cp1
+$ chalkctl config apply cp1
 cp1: config 1 added, 0 removed, 0 changed
 chalkctl: cp1: the config is refused: Peer/router-c: spec.address: 10.0.1.1 lies on no subnet of the node's addresses, 10.0.0.11/24; bird reaches a neighbour on a link of its own alone
 ```
 
-The node changed nothing. `chalkctl apply-config --dry-run cp1` prints the same refusal without
+The node changed nothing. `chalkctl config apply --dry-run cp1` prints the same refusal without
 a delivery. `chalkctl validate` accepts the config: chalkctl runs only the validators it links,
 the router layer's `router` on router images, and an image's own validator runs on the node
 alone.
@@ -165,7 +165,7 @@ chalkctl logs cp1 --unit=chalkd.service
 chalkctl logs cp1 --unit=chalkos-render-<n>.service
 ```
 
-`chalkctl apply-config` while an image is staged, with or without `--staged`, and
+`chalkctl config apply` while an image is staged, with or without `--staged`, and
 `chalkctl upgrade` run the validators of the image the config is for, from that image's store, in
 `chalkos-check.service`. So does `chalkctl install` on a machine that runs the installer, once the
 image's store is on the target disk. A boot runs no validator, since every config slot passed the
@@ -186,7 +186,7 @@ checks what the router kinds' documents and the `Network` documents mean togethe
 networkd puts in which VRF, and those links against the firewall's zones, the NAT rules, the
 management interfaces, the policy routes' `in`, the BGP peers, the NAT64s, the resolvers and the
 DHCP subnets and relays. chalkctl links the same code, so `chalkctl validate` and
-`chalkctl apply-config` run it before they send anything, and the node runs it again as
+`chalkctl config apply` run it before they send anything, and the node runs it again as
 `chalkos-render validate router`. It refuses the VRFs' links first. The checks that read the
 links run once those pass, and report every fault they find at once.
 

@@ -70,7 +70,7 @@ $ chalkctl validate w2
 w2: valid for the image node-metal (node on metal, root hash d871203debfe), config a4bca06aaaed7a77a58ee95c8d576c74331c47feb48ced26acd9c97b15ee0615
 ```
 
-Adding a node changes no other node's config, so the other nodes need no `apply-config`.
+Adding a node changes no other node's config, so the other nodes need no `config apply`.
 
 On the shipped variant, the `Node` document sets the node's type. `type: worker` makes `w2` a
 worker. A node with `type: controlplane` joins etcd and the control plane. Grow the control planes
@@ -191,7 +191,7 @@ From then on:
 - The API server denies every write by its kubelet, so the kubelet can neither register its Node
   again nor renew its kubelet client certificate.
 - `chalkctl rotate` skips the node, and `chalkctl node renew`,
-  `chalkctl apply-config --kubernetes-share` and `chalkctl install` refuse it unless `--force` is
+  `chalkctl config apply --kubernetes-share` and `chalkctl install` refuse it unless `--force` is
   given.
 
 The command needs an admin client file or the secrets file. It goes through a control plane:

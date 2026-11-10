@@ -48,7 +48,7 @@ per variant and platform, so a cluster of three control planes and fifty workers
 builds and signs one image per platform. A change to what the image fixes, such as the kernel or a
 service, is a new image and an [upgrade](upgrades.md). A change to the config, such as the
 hostname or the time servers, is a change to YAML files, delivered with
-[`chalkctl apply-config`](../../reference/cli/chalkctl_apply-config.md) without a reboot. A storage
+[`chalkctl config apply`](../../reference/cli/chalkctl_config_apply.md) without a reboot. A storage
 change that would destroy data is refused there and takes a reset or a reinstall, as
 [Additive changes apply while the node runs](storage.md#additive-changes-apply-while-the-node-runs)
 describes.

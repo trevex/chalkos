@@ -78,7 +78,7 @@ name, such as `ten*` beside the VRF `tenant`:
 chalkctl: r1: the config is refused: Router/router: spec.management.interfaces[0]: the management interface ten* matches tenant, the device of VRF tenant, and chalkd answers in the default VRF alone; name the default VRF's links
 ```
 
-`chalkctl validate` and `chalkctl apply-config` run the validator before chalkctl sends anything,
+`chalkctl validate` and `chalkctl config apply` run the validator before chalkctl sends anything,
 and the router runs it again at the delivery.
 
 A router without management interfaces answers the node API on every interface. The rules then
@@ -87,7 +87,7 @@ link chalkctl reaches the router through, so deliver every change of VRFs as a t
 rolls the trial back when chalkctl cannot reach it over a new connection:
 
 ```sh
-chalkctl apply-config r1 --try 2m --secrets secrets.age
+chalkctl config apply r1 --try 2m --secrets secrets.age
 ```
 
 ## Declare the VRFs
@@ -415,7 +415,7 @@ chalkctl: r1: the config is refused: the config drops the default VRF's BGP docu
 
 The rules read the documents' names and globs without knowing which links networkd matches. The
 [validator `router`](../reference/builtins.md#validator-router) checks the rest against the
-`Network` documents. `chalkctl validate` and `chalkctl apply-config` run it before chalkctl sends
+`Network` documents. `chalkctl validate` and `chalkctl config apply` run it before chalkctl sends
 anything, and the router runs it again at the delivery, after the rules and before the renderers.
 It checks the VRFs' links first, and what reads the links only once they pass. Within each
 step it reports every fault it finds at once, and each fault once. `chalkctl` prints the refusals
@@ -448,7 +448,7 @@ The validator refuses what networkd, FRR or nftables would apply otherwise than 
 
 The renderer of the output `networkd` checks the unit names and the `NetDev` documents,
 which the validator does not read. It checks when the router renders its config, at a delivery
-or at `chalkctl apply-config --dry-run`, and `chalkctl validate` does not run it. A renderer's
+or at `chalkctl config apply --dry-run`, and `chalkctl validate` does not run it. A renderer's
 refusal fails the delivery, and `chalkctl` prints it in the same form:
 
 | Message | Fix |

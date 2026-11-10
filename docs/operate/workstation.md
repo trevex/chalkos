@@ -207,7 +207,7 @@ others take a client file of a high enough role, or the secrets file, which coun
 
 | Command | Secrets file | Admin client file | Operator client file | Reader client file |
 | --- | --- | --- | --- | --- |
-| `install`, `apply-config`, `config new` | yes | no | no | no |
+| `install`, `config apply`, `config new` | yes | no | no | no |
 | `recovery-key`, `node renew`, `rotate` | yes | no | no | no |
 | `storage reset` | yes | yes | no | no |
 | `upgrade` with config, `upgrade --diff` | yes | yes | no | no |

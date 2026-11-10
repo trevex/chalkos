@@ -12,7 +12,7 @@ digest, so nodes pull it themselves on an install or an upgrade.
 The registry holds the image as one OCI artifact, with the same parts as an image directory: the
 store, its hash tree, the UKI, the boot loader and the contract, which describes the config the
 image accepts. [`chalkctl validate`](../reference/cli/chalkctl_validate.md),
-[`chalkctl apply-config`](../reference/cli/chalkctl_apply-config.md) and
+[`chalkctl config apply`](../reference/cli/chalkctl_config_apply.md) and
 [`chalkctl status`](../reference/cli/chalkctl_status.md) read the image's header and contract from
 the registry. [`chalkctl install`](../reference/cli/chalkctl_install.md) on a machine that runs the
 installer and [`chalkctl upgrade`](../reference/cli/chalkctl_upgrade.md) have the node pull the

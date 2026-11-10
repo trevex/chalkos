@@ -54,7 +54,7 @@ Each key records its networkd spelling. From it, the built-in
 `/run/systemd/network`, where they take precedence over the image's. chalkd renders them for every
 delivery before it changes anything, and `chalkos-config.service` renders them at every boot before
 networkd starts. A changed network reaches a running node with
-[`chalkctl apply-config`](../../reference/cli/chalkctl_apply-config.md), which makes networkd reload
+[`chalkctl config apply`](../../reference/cli/chalkctl_config_apply.md), which makes networkd reload
 its units.
 
 ## Ethernet interfaces without a unit get DHCP

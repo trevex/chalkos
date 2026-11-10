@@ -154,7 +154,7 @@ The whole path of the value, from the operator's file to bird:
 
 ```mermaid
 flowchart LR
-    yaml["Secret and Peer in YAML"] -->|chalkctl apply-config| chalkd["chalkd"]
+    yaml["Secret and Peer in YAML"] -->|chalkctl config apply| chalkd["chalkd"]
     chalkd -->|root only| state["STATE: config slot, secrets/"]
     chalkd -->|root only| creds["/run/chalkos/credentials/bird"]
     creds -->|LoadCredential| cd["$CREDENTIALS_DIRECTORY/secret_bgp.password"]
@@ -177,7 +177,7 @@ chalkd keeps each `Secret` in the image's config slot on STATE, `/state/config/<
 
 - GetConfig, which chalkctl calls before it delivers, returns each value of a `Secret` as its
   SHA-256.
-- `chalkctl apply-config --diff` compares the inventory's values by the same hashes and shows a
+- `chalkctl config apply --diff` compares the inventory's values by the same hashes and shows a
   changed value as `changed`.
 - `chalkctl status` and `chalkctl validate` hash the config with each `Secret` value replaced by
   its own SHA-256.
@@ -185,7 +185,7 @@ chalkd keeps each `Secret` in the image's config slot on STATE, `/state/config/<
 
 ## A rotated value fires the effects
 
-A new value in a `Secret` reaches the services on the next `chalkctl apply-config`. The rendered
+A new value in a `Secret` reaches the services on the next `chalkctl config apply`. The rendered
 `bird.conf` does not change, because it names the constant. bird's effect from
 [React to changes](react-to-changes.md) fires all the same, because its `outputs` trigger counts
 a changed value of a `Secret` that the output's input documents reference. A `kinds` trigger
@@ -199,7 +199,7 @@ password and keeps its sessions to the other peers.
 ## Check that it worked
 
 `chalkctl validate` refuses a reference without its `Secret`, so run it before every delivery.
-After `apply-config`, bird's journal shows the reload and no error from `bird-credentials`:
+After `config apply`, bird's journal shows the reload and no error from `bird-credentials`:
 
 ```sh
 chalkctl logs cp1 --unit=bird.service

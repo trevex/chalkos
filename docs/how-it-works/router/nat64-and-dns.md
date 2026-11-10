@@ -103,7 +103,7 @@ The [validator `router`](../../reference/builtins.md#validator-router) refuses w
 NAT64s in pairs, which would cost the rules more than chalkd allows: two NAT64s of one VRF whose
 prefixes overlap, two NAT64s whose pools share an address, and two names whose hashes pick one
 /30. It runs after the rules and before the renderers, at a delivery, at
-`chalkctl apply-config --dry-run` and in `chalkctl validate`. It checks the NAT64s whether or not
+`chalkctl config apply --dry-run` and in `chalkctl validate`. It checks the NAT64s whether or not
 the other documents pass.
 
 `jool file check`, the output's check, reads a file's syntax and bounds alone. The renderer
@@ -334,7 +334,7 @@ package `pkg/dns`.
 The renderer refuses what compares the records in pairs, which would cost the rules more than
 chalkd allows: a duplicate record, which Unbound keeps one copy of, and a CNAME beside another
 record of its name, in any zone. `chalkctl validate` does not run these checks; a delivery and
-`chalkctl apply-config --dry-run` do. The validator `router` refuses a `listen` address that
+`chalkctl config apply --dry-run` do. The validator `router` refuses a `listen` address that
 `Network` documents give only to links of other VRFs, whose queries the resolver would never
 receive, and `chalkctl validate` runs it too. An address from DHCP passes. Two resolvers of one
 VRF never reach the validator or the renderer, because the config's uniqueness check in chalkctl
@@ -471,7 +471,7 @@ sessions show who connects where.
 - A NAT64 whose prefix changes, or which is renamed, loses its sessions.
 - The rules do not compare a resolver's DNS64 prefix with the NAT64s' prefixes.
 - `chalkctl validate` does not report a record twice or a CNAME beside another record. The
-  renderer of `unbound` refuses them at a delivery and at `chalkctl apply-config --dry-run`.
+  renderer of `unbound` refuses them at a delivery and at `chalkctl config apply --dry-run`.
 - `chalkos-nat64.service` and `chalkos-resolvers.service` are units of the boot. When one fails
   on an upgrade's first boot, the health check fails and the node falls back to its previous
   image.

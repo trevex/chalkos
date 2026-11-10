@@ -53,7 +53,7 @@ else that of its groups, else `spec.all.imageName`.
 A node's name in the inventory goes into its node certificate at install and stays its name: its
 Kubernetes node name, its partition UUIDs, its recovery key and by default its hostname derive from
 it. `chalkctl validate` checks every node's documents against its image's schemas without reaching
-a node; chalkctl delivers them at install and with `chalkctl apply-config`, and chalkd applies them
+a node; chalkctl delivers them at install and with `chalkctl config apply`, and chalkd applies them
 at every boot. See [Config and the inventory](../how-it-works/node/config.md).
 
 ## The secrets file stays with the operator

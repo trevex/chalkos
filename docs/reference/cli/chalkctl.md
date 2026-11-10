@@ -31,10 +31,10 @@ chalkctl kubeconfig --secrets secrets.age
 
 ## See also
 
-- [chalkctl apply-config](chalkctl_apply-config.md): Deliver a node's config from the inventory
+- [chalkctl apply](chalkctl_apply.md): Deliver a node's config from the inventory: short for config apply
 - [chalkctl bootstrap](chalkctl_bootstrap.md): Initialise the cluster on a control plane
 - [chalkctl completion](chalkctl_completion.md): Write a shell completion script
-- [chalkctl config](chalkctl_config.md): Manage client files
+- [chalkctl config](chalkctl_config.md): Deliver nodes' config and manage client files
 - [chalkctl disks](chalkctl_disks.md): List a node's disks
 - [chalkctl etcd](chalkctl_etcd.md): Manage the cluster's etcd members
 - [chalkctl gen](chalkctl_gen.md): Generate files of a cluster

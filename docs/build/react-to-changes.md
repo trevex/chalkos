@@ -255,11 +255,11 @@ announces are no output, because they come from the network at runtime.
 
 ## Check that it worked
 
-`chalkctl apply-config` prints each unit it restarted, as `restarted <unit>`, then the config the
+`chalkctl config apply` prints each unit it restarted, as `restarted <unit>`, then the config the
 node runs. Reloaded units are not listed. Check bird's journal for the reload:
 
 ```sh
-chalkctl apply-config cp1
+chalkctl config apply cp1
 chalkctl logs cp1 --unit=bird.service
 ```
 

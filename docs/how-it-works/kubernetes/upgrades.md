@@ -6,7 +6,7 @@ description: "How a new Kubernetes release reaches a cluster: the control plane 
 # Kubernetes upgrades
 
 A new Kubernetes release reaches a cluster in two steps. The control plane moves first, through
-config: `chalkctl apply-config` delivers the new image references to the control planes one at a
+config: `chalkctl config apply` delivers the new image references to the control planes one at a
 time, then to the other nodes. The kubelets follow in a new image, because each image fixes its
 kubelet's release: `chalkctl upgrade` rolls the image through the cluster. The diagram shows the
 order of an upgrade; a rollout of config takes the control planes in the same order, then the other
@@ -45,7 +45,7 @@ names and the release of its image's kubelet. A bootstrapped control plane also 
 its static pods run the images its config names. chalkctl reads these through each node's chalkd,
 so the checks need no access to the Kubernetes API.
 
-`chalkctl apply-config` compares the API server of each named node's new config with the one the
+`chalkctl config apply` compares the API server of each named node's new config with the one the
 config the node runs names, patch releases included. It reads that config from the node's chalkd,
 as `--diff` does. When none changes, it delivers to the nodes one after the other, as for any
 config, and asks no node's Kubernetes side anything, so the delivery also reaches a node whose
@@ -78,8 +78,8 @@ is not one the rollout compares, and the API server answers only while etcd serv
 
 Run again, the same command continues. A node that runs the delivery's config already gets nothing,
 and a control plane among them is checked with the same wait before the run goes on. A node with an
-open trial stops the run until `chalkctl apply-config confirm` or `rollback` ends the trial. `--try`
-and `chalkctl apply-config confirm` wait for the same check on every trial, so a trial
+open trial stops the run until `chalkctl config confirm` or `rollback` ends the trial. `--try`
+and `chalkctl config confirm` wait for the same check on every trial, so a trial
 that `--until deliver` left open is confirmed only once the node's static pods run the new images.
 
 ## Control planes roll first, one at a time

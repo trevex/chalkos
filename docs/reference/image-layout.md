@@ -69,7 +69,7 @@ The "Created by" column names the first writer of each partition:
   writes slot A itself. In place, chalkd recreates STATE when its contents do not match the node's
   encryption policy (an unencrypted STATE for a `SystemDisk` with `encryption: {mode: none}`). In
   both flows it then creates VAR and the volumes.
-- Config: [`chalkctl apply-config`](cli/chalkctl_apply-config.md) creates volumes added
+- Config: [`chalkctl config apply`](cli/chalkctl_config_apply.md) creates volumes added
   to a node's storage and grows those whose size grew. At every boot, `chalkos-storage` in the
   initrd applies the storage section recorded on STATE again.
 

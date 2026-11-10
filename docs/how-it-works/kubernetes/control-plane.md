@@ -190,7 +190,7 @@ time it starts its Kubernetes work:
 
 - at boot;
 - after the node's cluster changed;
-- when [`chalkctl apply-config`](../../reference/cli/chalkctl_apply-config.md) delivers changed
+- when [`chalkctl config apply`](../../reference/cli/chalkctl_config_apply.md) delivers changed
   `Addon` documents, which restarts no unit.
 
 An image upgrade or a changed config therefore rolls out changed add-ons without a separate step.
@@ -211,7 +211,7 @@ The objects may include Secrets, so the Kubernetes layer declares `Addon` a
 [withheld kind](../node/config.md#withheld-kinds-stay-out-of-run). A control plane keeps its
 `Addon` documents in its stored config on STATE, which only root reads. chalkd never writes them
 below `/run/chalkos/config` for the node's services, and `chalkcfg` does not print them. Every
-view of the config, such as `chalkctl apply-config --diff`, shows the values of those Secrets as
+view of the config, such as `chalkctl config apply --diff`, shows the values of those Secrets as
 hashes.
 
 ## The status line names the Kubernetes state
@@ -231,7 +231,7 @@ stateDiagram-v2
     state "left etcd" as Left
     state "etcd data missing" as Missing
     [*] --> NoShare
-    NoShare --> Preparing: share delivered (install or apply-config --kubernetes-share)
+    NoShare --> Preparing: share delivered (install or config apply --kubernetes-share)
     Preparing --> Failed: a step fails
     Preparing --> Joined: worker
     Preparing --> Waiting: control plane

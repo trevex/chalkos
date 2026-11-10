@@ -7,7 +7,7 @@ description: "Move a cluster to a new Kubernetes release: the control plane thro
 
 This page is for an operator who moves a cluster to a new Kubernetes release. The release takes two
 steps. First the control plane moves through config:
-[`chalkctl apply-config`](../reference/cli/chalkctl_apply-config.md) delivers new image references
+[`chalkctl config apply`](../reference/cli/chalkctl_config_apply.md) delivers new image references
 to the control planes one at a time, then to the other nodes. Then the kubelets move through new OS
 images: [`chalkctl upgrade`](../reference/cli/chalkctl_upgrade.md) installs them, keeps etcd's
 quorum and drains each node within its PodDisruptionBudgets. Both commands keep the Kubernetes
@@ -67,7 +67,7 @@ describes.
 A kubelet must not be newer than the API server it talks to, so the control plane moves first:
 
 1. Change the references of `images` in the `Cluster` document to the new release and deliver the
-   config to every node with `chalkctl apply-config`, as
+   config to every node with `chalkctl config apply`, as
    [Roll the control plane out through config](#roll-the-control-plane-out-through-config)
    describes.
 2. Upgrade the nodes to the new image with `chalkctl upgrade`, as the sections from
@@ -82,10 +82,10 @@ The two steps run apart. `chalkctl upgrade` delivers each node's config with its
 refuses a config whose API server differs from the one the node runs, before it sends any image:
 
 ```text
-chalkctl: w1: the inventory's config changes the API server from 1.37.1 to 1.37.2, which an upgrade does not deliver; deliver the config with chalkctl apply-config first, which orders the nodes for it, then upgrade
+chalkctl: w1: the inventory's config changes the API server from 1.37.1 to 1.37.2, which an upgrade does not deliver; deliver the config with chalkctl config apply first, which orders the nodes for it, then upgrade
 ```
 
-Deliver the new `Cluster` document with `chalkctl apply-config` to every node first. The upgrade
+Deliver the new `Cluster` document with `chalkctl config apply` to every node first. The upgrade
 that follows delivers the same config, which changes no API server.
 
 ## Roll the control plane out through config
@@ -107,7 +107,7 @@ images:
 Then deliver the config to every node of the cluster in one command:
 
 ```sh
-chalkctl apply-config cp1 cp2 cp3 w1 --secrets secrets.age
+chalkctl config apply cp1 cp2 cp3 w1 --secrets secrets.age
 ```
 
 The config changes the API server's version, so chalkctl orders the run. It checks the versions
@@ -155,7 +155,7 @@ a pause.
 
 A command that names one node takes the same path when the config changes its API server: the
 version check over every node, etcd's quorum check, the trial and the wait. Without such a change,
-`chalkctl apply-config` delivers node by node, as for any other config.
+`chalkctl config apply` delivers node by node, as for any other config.
 
 ### A failure stops the run and rolls that node back
 
@@ -190,17 +190,17 @@ cp2: config 0 added, 0 removed, 1 changed
 ### Walk the control planes by hand
 
 `--until deliver` delivers the config on trial to the first node that does not run it yet, and
-leaves the trial open. `chalkctl apply-config confirm` confirms it once its static pods run the
+leaves the trial open. `chalkctl config confirm` confirms it once its static pods run the
 new images, and the same `--until deliver` command then goes on with the next control plane:
 
 ```sh
-chalkctl apply-config cp1 cp2 cp3 w1 --secrets secrets.age --until deliver
+chalkctl config apply cp1 cp2 cp3 w1 --secrets secrets.age --until deliver
 kubectl get pods -n kube-system -o wide
-chalkctl apply-config confirm cp1 --secrets secrets.age
-chalkctl apply-config cp1 cp2 cp3 w1 --secrets secrets.age --until deliver
+chalkctl config confirm cp1 --secrets secrets.age
+chalkctl config apply cp1 cp2 cp3 w1 --secrets secrets.age --until deliver
 ```
 
-While a trial is open, the run refuses to go on, and `chalkctl apply-config rollback cp1` rolls
+While a trial is open, the run refuses to go on, and `chalkctl config rollback cp1` rolls
 the open trial back. Once every control plane runs the config, the last command delivers it to the
 other nodes and finishes.
 
@@ -213,15 +213,15 @@ versions compared:
 
 | Rule | Checked by |
 | --- | --- |
-| The API servers of a cluster are at most one minor apart. | `apply-config` |
-| A kubelet is no newer than the API server. | the image's checker, `apply-config`, `upgrade` |
-| A kubelet is at most three minors older than the API server. | the image's checker, `apply-config` |
+| The API servers of a cluster are at most one minor apart. | `config apply` |
+| A kubelet is no newer than the API server. | the image's checker, `config apply`, `upgrade` |
+| A kubelet is at most three minors older than the API server. | the image's checker, `config apply` |
 | The controller-manager and the scheduler are no newer than the API server and at most one minor older. | the image's checker |
 | kube-proxy is no newer than the API server and at most three minors older. | the image's checker |
 
 The image's checker compares the config with the image's own kubelet, as
 [The image's checker holds the versions to the skew policy](configure.md#the-images-checker-holds-the-versions-to-the-skew-policy)
-describes. `chalkctl apply-config` compares the config's API server with every node's API server
+describes. `chalkctl config apply` compares the config's API server with every node's API server
 and kubelet before it delivers anything to a node, and `chalkctl upgrade` compares each new image's
 kubelet with the oldest API server the control planes run before it sends any image. The upgrade
 asks the control planes only when it gives an image with a kubelet to a node with a `Node`
@@ -230,14 +230,14 @@ names the node:
 
 ```text
 chalkctl: images.apiServer: v1.39.0 is 2 minors newer than the API server 1.37 that cp1 runs; a cluster's API servers may be at most one minor apart, so upgrade one minor at a time
-chalkctl: w1: the image's kubelet 1.38.0 would be newer than the API server 1.37.2 that cp2 runs, the oldest of the cluster; upgrade the control plane first: name the new release's images in the Cluster document and deliver it with chalkctl apply-config
+chalkctl: w1: the image's kubelet 1.38.0 would be newer than the API server 1.37.2 that cp2 runs, the oldest of the cluster; upgrade the control plane first: name the new release's images in the Cluster document and deliver it with chalkctl config apply
 ```
 
-`apply-config` also refuses a config that names two API servers for the nodes of one run, and a
+`config apply` also refuses a config that names two API servers for the nodes of one run, and a
 worker's new API server while a control plane outside the run does not run it yet. A config older
 than a minor the control planes run is a downgrade, which `--allow-downgrade` allows by one minor.
 
-The checks need the versions of every node. A node that does not answer stops an `apply-config`
+The checks need the versions of every node. A node that does not answer stops a `config apply`
 that changes the API server, and a control plane that does not answer stops an `upgrade`, with
 `the versions <node> runs are unknown: <error>`. A node whose inventory entry holds no Kubernetes
 `Node` document does not count.
@@ -299,7 +299,7 @@ chalkctl: etcd has 2 voters, and without cp1 fewer than the 2 its quorum needs: 
 Pass `--allow-downtime` when that downtime is acceptable. With three or more control planes, the
 flag changes nothing: chalkctl still waits for the other voters to be healthy.
 
-`chalkctl apply-config` runs the same check before each control plane gets a new API server. The
+`chalkctl config apply` runs the same check before each control plane gets a new API server. The
 delivery restarts that control plane's API server, controller-manager and scheduler, not etcd, so
 with too few other control planes the cluster's API may be unavailable meanwhile. Its message reads
 `the API server of cp1 restarts, and with no other control plane the cluster's API may be
@@ -355,14 +355,14 @@ others.
 Raise `--max-unavailable` only when the other nodes can run the evicted pods. Pods that find no
 room stay pending, and their budgets then stop the next drain.
 
-These flags of `chalkctl apply-config` change how it rolls the control plane out:
+These flags of `chalkctl config apply` change how it rolls the control plane out:
 
 | Flag | Default | Effect |
 | --- | --- | --- |
 | `--allow-downtime` | off | Lets a cluster of one or two control planes take a new API server, although the cluster's API may be unavailable while a control plane's API server restarts. |
 | `--allow-downgrade` | off | Lets the config name an API server one minor older than the newest the control planes run. |
 | `--try=<duration>` | 10 minutes for control planes | How long each node's trial lasts. Its static pods must run the new images within it. |
-| `--until=deliver` | `confirm` | Leaves the first node's trial open, for `chalkctl apply-config confirm`. |
+| `--until=deliver` | `confirm` | Leaves the first node's trial open, for `chalkctl config confirm`. |
 
 ## Run the same command again to continue
 
@@ -481,6 +481,6 @@ kubernetes versions: API server 1.37.2, kubelet 1.37.1, control-plane pods curre
   bring one back.
 - [Upgrade nodes](../operate/upgrade.md) covers the image, the config and rollback.
 - [Troubleshoot Kubernetes](troubleshooting.md) starts from symptoms.
-- [`chalkctl apply-config`](../reference/cli/chalkctl_apply-config.md) and
+- [`chalkctl config apply`](../reference/cli/chalkctl_config_apply.md) and
   [`chalkctl upgrade`](../reference/cli/chalkctl_upgrade.md) list every flag.
 - [Kubernetes upgrades](../how-it-works/kubernetes/upgrades.md) explains the order and the checks.

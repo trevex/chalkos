@@ -67,7 +67,7 @@ its lines out.
 `config <version> (the inventory's)` means the node runs the config the inventory gives it. The
 parentheses say otherwise when they differ:
 
-- `not the inventory's; chalkctl apply-config w1 delivers it`: the node's files changed since the
+- `not the inventory's; chalkctl config apply w1 delivers it`: the node's files changed since the
   last delivery.
 - `cannot read the config the inventory gives it: ...`: chalkctl could not build the node's
   documents from the inventory, for the reason it names.
@@ -76,12 +76,12 @@ parentheses say otherwise when they differ:
 
 `config none` is a node installed before config documents existed. A node with an image staged or
 active in its inactive slot adds `staged config <version> (...)`, the config that image boots
-with. When it differs, its parentheses name `chalkctl apply-config w1`, which writes the config
-slots of both images, or `chalkctl apply-config --staged w1` when the running image runs the
+with. When it differs, its parentheses name `chalkctl config apply w1`, which writes the config
+slots of both images, or `chalkctl config apply --staged w1` when the running image runs the
 inventory's config already. After a rollback from a boot that was not found healthy, the staged
 image is the rollback image, and the parentheses say that it keeps the config it last ran until
 the boot is found healthy. During a trial the node takes no delivery. When the inventory's config
-is on trial, the parentheses name `chalkctl apply-config confirm w1`, because the confirmation
+is on trial, the parentheses name `chalkctl config confirm w1`, because the confirmation
 writes the staged config. Otherwise they say that the trial must end first.
 
 A node that holds config for its next upgrade adds
@@ -90,7 +90,7 @@ The time is when the node stored the config, in RFC 3339.
 [Prepare config for the next upgrade](change-config.md#prepare-config-for-the-next-upgrade)
 explains the pending config.
 
-`previous config <version> (apply-config rollback restores it)` names the config the running
+`previous config <version> (config rollback restores it)` names the config the running
 image ran before the last delivery.
 [Roll back a config change](change-config.md#roll-back-a-config-change) delivers it again. The line
 is missing until a delivery replaced the config the image was installed or upgraded with.
@@ -98,7 +98,7 @@ is missing until a delivery replaced the config the image was installed or upgra
 A node that runs a config on trial adds a line after the `config` line:
 
 ```text
-config <version> on trial until <deadline>: it rolls back to config <previous-version> unless apply-config confirm confirms it
+config <version> on trial until <deadline>: it rolls back to config <previous-version> unless config confirm confirms it
 ```
 
 The line gains an ending when one of these applies:
@@ -106,15 +106,15 @@ The line gains an ending when one of these applies:
 - `; its health check leaves out <unit>, ...`: the units that `--ignore-unit` named for this trial.
   The check leaves them out besides the units the image ignores.
 - `; an attempt to roll the config back failed and is tried again each minute: <error>`: the
-  rollback at the deadline failed, and the node keeps the trial open. `apply-config confirm`
+  rollback at the deadline failed, and the node keeps the trial open. `config confirm`
   still keeps the config.
 - `; an attempt to roll the config back failed after it changed the node and is tried again each
-  minute: <error>; apply-config confirm no longer keeps the config, and apply-config rollback
+  minute: <error>; config confirm no longer keeps the config, and config rollback
   finishes the rollback now`: the failed attempt changed the node, so only a rollback ends the
   trial.
 
 `the record of a config's trial cannot be read: <why>; other changes are refused until
-apply-config rollback restores the previous config` takes the line's place when the node cannot
+config rollback restores the previous config` takes the line's place when the node cannot
 read the record of its trial.
 [Try a config change](change-config.md#try-a-config-change) describes trials.
 

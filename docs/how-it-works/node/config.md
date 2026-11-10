@@ -227,7 +227,7 @@ image accepts.
 An image published to a registry is named by its reference in `source.oci` instead, as
 [`chalkbuild push`](../../reference/cli/chalkbuild_push.md) prints it. Each image sets exactly one of
 `directory` and `oci`. A reference by tag is resolved to a digest once per command, so one command
-reads one image. `chalkctl validate`, `apply-config` and `status` read the image's header and
+reads one image. `chalkctl validate`, `config apply` and `status` read the image's header and
 contract from the registry. `chalkctl install` on a node that runs the installer and
 `chalkctl upgrade` each have the node pull the image by its digest, with the credentials of the
 node's [`Registry`](../../reference/kinds.md#registry) for the registry's host.
@@ -247,7 +247,7 @@ shows an inventory whose GPU workers run an image of their own.
 The image stays out of the node's config. chalkctl reads the root hash from `metadata.json` when it
 needs it and never puts it, or the image's name, into the config it delivers. A new build of an
 image or a node's move to another image changes no node's config, and an upgrade needs
-no `apply-config` after it.
+no `config apply` after it.
 
 ## chalkctl and chalkd both check the config
 
@@ -277,7 +277,7 @@ that deliver config run the same check first, each against the image the config 
 
 - [`chalkctl install`](../../reference/cli/chalkctl_install.md) against the image it installs: the
   directory of the node's image in the inventory, or the one `--image` gives;
-- [`chalkctl apply-config`](../../reference/cli/chalkctl_apply-config.md) against the image the node
+- [`chalkctl config apply`](../../reference/cli/chalkctl_config_apply.md) against the image the node
   runs, whose schemas and contract the node returns through the
   [Contract](../../reference/api.md#method-contract) method, refusing an image of another
   platform than the node's image in the inventory. With `--staged`, against the node's image in
@@ -292,7 +292,7 @@ STATE holds the complete set while the files stay as short as their authors wrot
 
 Both also check the image's [change rules](../../build/guard-changes.md). chalkd runs every rule.
 chalkctl runs those that read no facts about the node, `validate` without the node's config and
-`apply-config` with the config the node serves, so a change a rule refuses fails before it is sent.
+`config apply` with the config the node serves, so a change a rule refuses fails before it is sent.
 Both run the router layer's [validator](../../build/validate-config.md) `router` on a router image:
 chalkd runs the image's program, and chalkctl the same code, which it links, on the same
 documents.
@@ -302,7 +302,7 @@ read facts, so a set chalkctl accepts can still be refused on delivery. A render
 of the schemas, the rules or the validators only where a bad value would break its output, such as
 a line break in a networkd unit's value. Such a check fails with `internal error: ...`, which a
 checked config never causes.
-[`chalkctl apply-config --dry-run`](../../reference/cli/chalkctl_apply-config.md) has chalkd run
+[`chalkctl config apply --dry-run`](../../reference/cli/chalkctl_config_apply.md) has chalkd run
 every check of a delivery and changes nothing. chalkd answers with what the delivery would do: the
 config versions, the outputs that change, the effects with what fires each, and the storage
 changes.
@@ -310,15 +310,15 @@ changes.
 ## chalkctl delivers a whole set at a time
 
 chalkctl delivers a node's config at install, with each [upgrade](upgrades.md) and with
-[`chalkctl apply-config`](../../reference/cli/chalkctl_apply-config.md):
+[`chalkctl config apply`](../../reference/cli/chalkctl_config_apply.md):
 
 ```sh
-chalkctl apply-config w1 --secrets secrets.age
+chalkctl config apply w1 --secrets secrets.age
 ```
 
-Install and `apply-config` need the secrets file, because the node's certificates and secrets
+Install and `config apply` need the secrets file, because the node's certificates and secrets
 travel in the same request. A set replaces the set the node keeps for the image as a whole: a
-document left out of the files is gone from the node after the next `apply-config`.
+document left out of the files is gone from the node after the next `config apply`.
 
 Before it delivers a set, chalkctl asks the node for the set it keeps, through the
 [GetConfig](../../reference/api.md#method-getconfig) method, and prints one line of what the delivery
@@ -329,7 +329,7 @@ w1: config 1 added, 1 removed (Volume "scratch"), 2 changed
 ```
 
 The line names every removed document, so a document dropped from the files shows before the node
-loses it. `chalkctl apply-config --diff` and `chalkctl upgrade --diff` print the whole comparison
+loses it. `chalkctl config apply --diff` and `chalkctl upgrade --diff` print the whole comparison
 and deliver nothing: each document added (`+`), removed (`-`) or changed (`~`), and for a changed
 one each field by its path, with the old and the new value. A secret field shows only as
 `changed`. The node returns each value of a `Secret` as its SHA-256, and so each `data` and
@@ -353,27 +353,27 @@ At every boot, `chalkos-config.service` loads the slot of the image the kernel c
 - An install writes the slot of the image it installs.
 - An upgrade writes the slot of the new image. The image before keeps its own, so a
   [fallback](boot-and-rollback.md) or `upgrade --rollback` boots it with the config it ran.
-- `apply-config` writes the slot of the running image and then the slot of the image in the
+- `config apply` writes the slot of the running image and then the slot of the image in the
   inactive slot, staged by `upgrade --until stage` or active after `upgrade --until activate`,
   unless that image is the known-good image a rollback staged. Both images check the config
   before chalkd writes either slot, as
   [Every slot is checked by the image that boots it](#every-slot-is-checked-by-the-image-that-boots-it)
-  describes. `apply-config --staged` writes the staged image's slot alone. Nothing restarts for the
+  describes. `config apply --staged` writes the staged image's slot alone. Nothing restarts for the
   staged slot.
-- `apply-config --staged` on a node without a staged image writes the pending slot
+- `config apply --staged` on a node without a staged image writes the pending slot
   `/state/config/pending` instead: the documents as delivered and their version, readable
-  by root alone, and no defaults or identity. `apply-config` without `--staged` replaces
+  by root alone, and no defaults or identity. `config apply` without `--staged` replaces
   a pending slot the node holds, once the running image applied the config. No boot loads the
   pending slot, and nothing checks it until the next upgrade gives it to its image. That image
   checks it, and the upgrade writes it to the image's slot unless the upgrade carries config of its
   own. The upgrade removes the pending slot either way, once it staged the image. The pending
   slot's name is no root hash, so an upgrade's removal of other images' slots leaves it.
-- `apply-config` keeps the config it replaces as the slot's previous config,
-  `/state/config/.<root-hash>.previous`, one level deep. `apply-config rollback` delivers that
+- `config apply` keeps the config it replaces as the slot's previous config,
+  `/state/config/.<root-hash>.previous`, one level deep. `config rollback` delivers that
   config again through the same checks, storage changes and effects as any delivery, and the config
   it replaces becomes the previous one. Status reports the previous config's version for the running
   image alone.
-- An install, an upgrade and `apply-config --staged` write a slot without a previous config. An
+- An install, an upgrade and `config apply --staged` write a slot without a previous config. An
   upgraded node therefore has no previous config until its first delivery.
 - An upgrade removes the slot of every image no UKI on the ESP boots any more, together with its
   previous config, so a node holds at most two image slots, one for each of its images, besides
@@ -384,18 +384,18 @@ fails with it, and a counted boot falls back.
 
 ## Every slot is checked by the image that boots it
 
-An install, an upgrade and every `apply-config` write a config slot only after the image that
+An install, an upgrade and every `config apply` write a config slot only after the image that
 boots it checked the config with its own checker: its schemas, its CEL rules, its facts, its
 validators and its renderers with their checks. The running image checks a delivery to its own
 slot in chalkd, and an install in place. An image that does not run checks config with its own
 `chalkd check`, which chalkd runs from that image's store in a sandbox, as
 [An image that does not run checks its own config](config-pipeline.md#an-image-that-does-not-run-checks-its-own-config)
-describes. That is how an upgrade checks the new image's config, how `apply-config --staged`
+describes. That is how an upgrade checks the new image's config, how `config apply --staged`
 checks the staged image's, and how the installer checks the config of the image it writes, once
 the image's store is on the target disk and before STATE holds any of the node. A boot therefore
 renders the outputs of its slot and runs no validators.
 
-`apply-config` without `--staged` on a node with a staged image runs both checks before anything
+`config apply` without `--staged` on a node with a staged image runs both checks before anything
 changes:
 
 1. The running image checks the config against its own slot and the machine, as for any delivery.
@@ -436,9 +436,9 @@ running image's defaults are those of its own schemas, which the other image's r
 
 ## A trial rolls a config back unless it is confirmed
 
-`chalkctl apply-config --try` delivers config on trial, as
+`chalkctl config apply --try` delivers config on trial, as
 [Try a config change](../../operate/change-config.md#try-a-config-change) shows. The trial's
-rollback is the slot's previous config, which every `apply-config` keeps. A trial therefore
+rollback is the slot's previous config, which every `config apply` keeps. A trial therefore
 delivers config documents alone and to the running image. chalkd refuses a trial that changes the
 node's storage, or that carries OS CAs, a node certificate or a layer's payload, because the
 previous config does not restore them.
@@ -456,15 +456,15 @@ confirms, so a client cannot confirm a later trial that another client started. 
 sent again after its answer was lost succeeds when the node runs that version and no trial is open.
 
 At the deadline, chalkd rolls the config back through the same steps as
-`apply-config rollback`, then removes the record. A rollback that fails, as when the image's
+`config rollback`, then removes the record. A rollback that fails, as when the image's
 rules refuse it or an output does not render, leaves the record with the reason and whether the
 attempt changed the node. chalkd tries the rollback again each minute. ConfirmConfig still ends
 the trial, unless the failed attempt changed the node. Status reports the trial, with the reason
 of the last failure.
 
 While the record exists, chalkd refuses every delivery, upgrade and image rollback with
-`config <version> is on trial until <deadline>: confirm it with chalkctl apply-config confirm
-<node>, or roll it back with chalkctl apply-config rollback <node>, before ...`. A rollback to
+`config <version> is on trial until <deadline>: confirm it with chalkctl config confirm
+<node>, or roll it back with chalkctl config rollback <node>, before ...`. A rollback to
 the config from before the trial ends the trial. A volume reset, a reboot and the requests of the
 image's layers go ahead. A record that chalkd cannot read refuses every change and every
 confirmation until a rollback removes it.
@@ -489,7 +489,7 @@ describes.
 The config is the image's; the machine state is the node's. The machine state is what a node keeps
 outside the slots, once for all its images: `storage.json`, the storage as applied, with the disks
 and partitions it is pinned to, and the node certificate and the OS CAs it trusts. Every write of
-an image's slot (install, upgrade, `apply-config` and `apply-config --staged`) checks its config
+an image's slot (install, upgrade, `config apply` and `config apply --staged`) checks its config
 against the [change rules](../../build/guard-changes.md) of the image the slot is for. The rules
 compare it with the running image's config and read the machine state from facts. The built-in
 storage kinds' rules take:
@@ -512,14 +512,14 @@ change needs, as [Guard changes with rules and facts](../../build/guard-changes.
     [The ranges of a cluster are fixed once it exists](../kubernetes/overview.md#the-ranges-of-a-cluster-are-fixed-once-it-exists)
     explains. The cluster file
     `/run/chalkos/kubernetes/cluster.json` is not machine state: `chalkos-config` writes it from the
-    slot of the image that boots, and chalkd writes it again when `apply-config` changes the running
+    slot of the image that boots, and chalkd writes it again when `config apply` changes the running
     image's config. A control plane's addresses are not refused, but they are pinned once it
     becomes an etcd member, as
     [A control plane's addresses are pinned once it joins etcd](../kubernetes/networking.md#a-control-planes-addresses-are-pinned-once-it-joins-etcd)
     explains.
 
 The changes that take nothing are made whichever image the slot is for. An upgrade or
-`apply-config --staged` that adds a volume creates it while the running image runs, enrolled with
+`config apply --staged` that adds a volume creates it while the running image runs, enrolled with
 the fallback secret chalkctl sends, and `storage.json` gains it. Every boot sets up the volumes
 `storage.json` records, so the running image mounts the new volume as well, also after a fallback,
 although its config does not name it. Nothing at boot removes a volume. A slot whose config lacks
@@ -528,15 +528,15 @@ image must name the volume too.
 
 A delivery to the running image while an image is staged writes both slots, so both name the
 volumes it adds. A write of the staged image's slot alone, by an upgrade or
-`apply-config --staged`, does not check the running image's slot: the running image mounts the
-new volume, and the next `apply-config` to it must name the volume.
+`config apply --staged`, does not check the running image's slot: the running image mounts the
+new volume, and the next `config apply` to it must name the volume.
 
 ## chalkos-config applies the slot at every boot
 
 `chalkos-config.service` applies the running image's slot at every boot, before the network
 starts, as
 [Stage 2 applies the config before the network starts](boot-and-rollback.md#stage-2-applies-the-config-before-the-network-starts)
-describes. chalkd applies a new set the same way after every `apply-config` to the running image,
+describes. chalkd applies a new set the same way after every `config apply` to the running image,
 through the stages that [The config pipeline](config-pipeline.md) follows. Each document except
 `Secret` documents and those of withheld kinds lands in
 `/run/chalkos/config/<group>/<Kind>/<name>.json`.
@@ -548,7 +548,7 @@ A service reads the node's config in one of two ways, which its image decides. A
 kind reads the documents of that kind below `/run/chalkos/config` or through chalkcfg, as
 [Read config in a service](../../build/read-config.md) describes. An output renders the service's
 own config files from the documents instead. An effect restarts or reloads the service when its
-outputs or the documents of its kinds change, and `apply-config` prints the units it restarted.
+outputs or the documents of its kinds change, and `config apply` prints the units it restarted.
 
 chalkcfg runs on the node, from a granted unit or a privileged pod. It prints no `Secret` and no
 document of a withheld kind.
@@ -606,13 +606,13 @@ gives it, in two ways:
 - The config: chalkctl hashes the documents it would deliver with SHA-256, in a canonical form in
   which each `Secret` value is replaced by its own hash, and compares the result with the hash the
   node reports. A node that differs shows
-  `not the inventory's; chalkctl apply-config <node> delivers it`. With an image staged, status
+  `not the inventory's; chalkctl config apply <node> delivers it`. With an image staged, status
   compares the staged slot's config the same way. When it differs, the advice names
-  `chalkctl apply-config <node>`, which writes the config slots of both images, or
-  `chalkctl apply-config --staged <node>` when the running slot holds the inventory's config
+  `chalkctl config apply <node>`, which writes the config slots of both images, or
+  `chalkctl config apply --staged <node>` when the running slot holds the inventory's config
   already. A rollback image that keeps the config it last ran gets no advice. The node tells
   that image in its boot status by the same test its deliveries take. During a trial, which holds
-  every delivery back, the advice is `chalkctl apply-config confirm <node>` when the inventory's
+  every delivery back, the advice is `chalkctl config confirm <node>` when the inventory's
   config is on trial, as the confirmation writes the staged slot, and the end of the trial
   otherwise.
 - The image: chalkctl compares the root hash of the store the node booted with the root hash in
@@ -650,7 +650,7 @@ image with other defaults does not change it.
   network kinds do on the node.
 - [Config kinds](../../reference/kinds.md) for every field of every kind, the inventory's included.
 - [`chalkctl validate`](../../reference/cli/chalkctl_validate.md) and
-  [`chalkctl apply-config`](../../reference/cli/chalkctl_apply-config.md) for the commands.
+  [`chalkctl config apply`](../../reference/cli/chalkctl_config_apply.md) for the commands.
 - [Write a node's config](../../operate/node-config.md) for writing the inventory and the
   documents, and [Set up your workstation](../../operate/workstation.md) for the secrets file and
   the client files.

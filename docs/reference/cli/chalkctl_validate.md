@@ -25,7 +25,7 @@ needs no secrets file or client file.
 
 A config validate passes can still be refused on delivery: validate runs no rule that reads the
 node's facts or its running config, none of the image's other validators, and none of its
-renderers or their checks. chalkctl apply-config --dry-run has the node run all of them, and
+renderers or their checks. chalkctl config apply --dry-run has the node run all of them, and
 changes nothing.
 
 ## Flags

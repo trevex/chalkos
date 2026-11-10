@@ -7,7 +7,7 @@ description: "How a delivery passes a node's documents through rules, outputs an
 
 A delivery of config to a node either changes nothing or changes everything it carries. When the
 `Peer` documents of the homelab's BGP extension give bird a config that its own parser rejects,
-`chalkctl apply-config` fails, and its error names the output:
+`chalkctl config apply` fails, and its error names the output:
 
 ```text
 output bird-conf: its check refused the rendered files (exit 1); see the node's journal
@@ -35,7 +35,7 @@ flowchart LR
 
 The diagram shows the two stages that can refuse a delivery before it changes anything, and the
 three that follow once it passes both. In detail, a delivery to the running image, a
-[`chalkctl apply-config`](../../reference/cli/chalkctl_apply-config.md), runs these steps:
+[`chalkctl config apply`](../../reference/cli/chalkctl_config_apply.md), runs these steps:
 
 1. chalkd checks the documents against the image's schemas and its change rules, then runs the
    image's validators in the renderers' sandbox. A rule that fails, or a validator that reports
@@ -51,9 +51,9 @@ three that follow once it passes both. In detail, a delivery to the running imag
 5. chalkd swaps each output's link to its staged files.
 6. chalkd takes the effects whose outputs or kinds changed, or whose `when` holds.
 
-`apply-config` prints the units the effects restarted.
+`config apply` prints the units the effects restarted.
 
-A dry run, `chalkctl apply-config --dry-run`, runs the checks of steps 1 and 3, then works out
+A dry run, `chalkctl config apply --dry-run`, runs the checks of steps 1 and 3, then works out
 step 6 without taking it. It records no baseline and no output failure, discards the staged files
 and answers with the plan: the outputs whose files would change, and the effects step 6 would take
 with what fires each. Effects whose `when`
@@ -107,7 +107,7 @@ output.
 ## An image that does not run checks its own config
 
 A staged image's validators and renderers live in its own store. Before an upgrade writes the
-image's config slot, and for every `chalkctl apply-config` while an image is staged, with or
+image's config slot, and for every `chalkctl config apply` while an image is staged, with or
 without `--staged`, the node mounts that store read-only and runs the image's own `chalkd check`
 in a transient unit, `chalkos-check.service`, with the image's store in place of its own. The
 checker runs every check of a delivery against the image's schemas, rules, validators and
@@ -136,7 +136,7 @@ match the storage the image's checker gets from the config.
 
 - A renderer reads documents and the node's name alone. A service that needs node state reads that
   part itself.
-- chalkctl cannot run an image's renderers, so `chalkctl apply-config --diff` shows the documents
+- chalkctl cannot run an image's renderers, so `chalkctl config apply --diff` shows the documents
   a delivery changes, not the rendered files. It runs only the validators it links, the router
   layer's `router` on router images, so `chalkctl validate` accepts a config that another
   validator of the image refuses on the node.

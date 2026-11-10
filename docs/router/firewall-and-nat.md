@@ -60,7 +60,7 @@ FirewallZone/x: spec.interfaces[0]: ten* matches tenant, the device of VRF tenan
 ```
 
 It refuses an interface of a VRF's own name, such as `tenant`, the same way. `chalkctl validate`
-and `chalkctl apply-config` run the validator before chalkctl sends anything, and the router runs
+and `chalkctl config apply` run the validator before chalkctl sends anything, and the router runs
 it again at the delivery.
 
 Policies and NAT rules name these zones as any other. A policy between the zones of two VRFs
@@ -170,7 +170,7 @@ Validate the files and deliver them as for any config:
 
 ```sh
 chalkctl validate
-chalkctl apply-config r1 --secrets secrets.age
+chalkctl config apply r1 --secrets secrets.age
 ```
 
 The node checks the rendered ruleset with nft before it changes anything, and loads it in one

@@ -201,7 +201,7 @@ STATE itself and cannot be known before it is mounted.
 
 ## Additive changes apply while the node runs
 
-[`chalkctl apply-config`](../../reference/cli/chalkctl_apply-config.md) delivers changed
+[`chalkctl config apply`](../../reference/cli/chalkctl_config_apply.md) delivers changed
 `SystemDisk` and `Volume` documents to the running node. The storage kinds'
 [change rules](../../build/guard-changes.md) compare them with the section STATE records, volume by
 volume. The node translates them into a new storage section and makes its additions. Additive

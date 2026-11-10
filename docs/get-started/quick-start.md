@@ -273,7 +273,7 @@ that address. The lab's inventory, `~/.local/state/chalklab/lab/chalkos.yaml`, i
 names each node at its forwarded port on `127.0.0.1` instead. Its paths are absolute, so it reads
 the image and the YAML files of the lab directory: an edit there reaches both inventories.
 
-Commands that reach a node, such as `chalkctl status`, `apply-config` and `upgrade`, take the lab's
+Commands that reach a node, such as `chalkctl status`, `config apply` and `upgrade`, take the lab's
 inventory with `--inventory`. `chalkctl validate` reaches no node, so it reads `chalkos.yaml` in
 the current directory. On real machines, which chalkctl reaches at their own addresses, one
 inventory serves both.
@@ -400,9 +400,9 @@ $ chalklab console cp1
 ## Change the nodes' config
 
 A node's config is the YAML of its files, which changes without a new image.
-[`chalkctl apply-config`](../reference/cli/chalkctl_apply-config.md) delivers it to a running
-node, which applies it in place. Add a file to `cluster/` that gives every node another time
-server:
+[`chalkctl config apply`](../reference/cli/chalkctl_config_apply.md) delivers it to a running
+node, which applies it in place; [`chalkctl apply`](../reference/cli/chalkctl_apply.md) is its short
+form. Add a file to `cluster/` that gives every node another time server:
 
 ```yaml title="cluster/time.yaml"
 apiVersion: time.chalkos.dev/v1alpha1
@@ -420,18 +420,18 @@ the secrets file, which `--secrets` names; a client file does not suffice:
 $ chalkctl validate
 cp1: valid for the image node-kvm (node on kvm, root hash c118f05709bc), config 536473926d2f73ff319ee4039268c45cc4a560fbed6c66ddea6fb302274bae8d
 w1: valid for the image node-kvm (node on kvm, root hash c118f05709bc), config b487fd854345430128ae7c6638e9397596502d2d2f430996daa528c1803a9615
-$ chalkctl apply-config cp1 --inventory ~/.local/state/chalklab/lab/chalkos.yaml --secrets secrets.json
+$ chalkctl config apply cp1 --inventory ~/.local/state/chalklab/lab/chalkos.yaml --secrets secrets.json
 cp1: config 1 added, 0 removed, 0 changed
 restarted chalkos-chrony-dhcp.service
 cp1 runs config 536473926d2f73ff319ee4039268c45cc4a560fbed6c66ddea6fb302274bae8d
-$ chalkctl apply-config w1 --inventory ~/.local/state/chalklab/lab/chalkos.yaml --secrets secrets.json
+$ chalkctl config apply w1 --inventory ~/.local/state/chalklab/lab/chalkos.yaml --secrets secrets.json
 w1: config 1 added, 0 removed, 0 changed
 restarted chalkos-chrony-dhcp.service
 w1 runs config b487fd854345430128ae7c6638e9397596502d2d2f430996daa528c1803a9615
 ```
 
-`chalkctl validate` read the local `chalkos.yaml`, and `apply-config` the lab's inventory; both
-take `cluster/time.yaml` from this directory. Each `apply-config` first counts the documents the
+`chalkctl validate` read the local `chalkos.yaml`, and `config apply` the lab's inventory; both
+take `cluster/time.yaml` from this directory. Each `config apply` first counts the documents the
 delivery adds, removes and changes against the node's config: here the one `TimeSync`. The node
 then restarts the units the change affects, and the last line names the config version it runs.
 `chalkctl status` now shows that version as the inventory's.
@@ -506,7 +506,7 @@ a cluster of three control planes, the other two keep etcd and the API server ru
 reboots.
 
 An upgrade sends each node its config from the inventory together with the image. The
-`config unchanged` line compares that config with the one the node runs: `apply-config` delivered
+`config unchanged` line compares that config with the one the node runs: `config apply` delivered
 the `TimeSync` already, so nothing changes. chalkctl reads the image's root hash from the image
 directory on this machine, and `chalkctl status` compares it with the root hash each node runs.
 

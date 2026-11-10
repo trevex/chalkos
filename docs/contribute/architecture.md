@@ -385,7 +385,7 @@ say which state the slot is in, so both survive a restart of chalkd and a reboot
 
 Everything in chalkd that reads or writes the image in the inactive slot treats both states
 alike: `stagedEntry` in `pkg/chalkd/staged.go` finds the active entry or else the staged UKI, and
-`apply-config --staged`, `GetConfig`, Status, the recheck of an image sent again and the record
+`config apply --staged`, `GetConfig`, Status, the recheck of an image sent again and the record
 of installed images use it. The known-good image a rollback stages keeps the config it last ran,
 and that image is always active.
 

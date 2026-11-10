@@ -104,9 +104,9 @@ The binary cache does not hold Kea built without its database backends, so the f
 router image with DHCP after a nixpkgs update compiles it, about 5 minutes on 16 cores.
 
 A node whose image leaves a feature out refuses documents of its kinds. `chalkctl validate` and
-`chalkctl apply-config` report that the image `does not accept kind "BGP"`, and chalkd refuses
+`chalkctl config apply` report that the image `does not accept kind "BGP"`, and chalkd refuses
 an upgrade to such an image while the node's config holds them. To drop a feature from running
-nodes, remove its documents from their config with `chalkctl apply-config` first, then upgrade
+nodes, remove its documents from their config with `chalkctl config apply` first, then upgrade
 them to the new image. `chalkctl status` prints no line of a feature the image leaves out.
 
 ## Add a variant only for other software
@@ -124,7 +124,7 @@ cluster, the node or its surroundings:
 | The image's revision and tag, which only `metadata.json` records | |
 
 A change in the left column is a new image and an upgrade. A change in the right column reaches
-the node with `chalkctl apply-config` and needs no reboot; a storage change that would destroy
+the node with `chalkctl config apply` and needs no reboot; a storage change that would destroy
 data is refused there and needs `chalkctl storage reset`.
 
 So a cluster needs a second variant only for nodes that run other software, such as storage nodes

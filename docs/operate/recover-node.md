@@ -102,7 +102,7 @@ describes.
 A boot that was found healthy is kept, so a problem that shows only later needs a rollback on
 request. Each one undoes one kind of change:
 
-- A config delivery that broke a service: `chalkctl apply-config rollback w1 --secrets
+- A config delivery that broke a service: `chalkctl config rollback w1 --secrets
   secrets.age` delivers the config the image ran before.
   [Roll back a config change](change-config.md#roll-back-a-config-change) describes it.
 - An image that misbehaves after its boot was found healthy: `chalkctl upgrade --rollback --nodes
@@ -113,7 +113,7 @@ The node's OS CAs, node certificate, storage and layer payloads stay as they are
 rollback.
 
 A config change that might cut chalkctl off from the node, such as a firewall change, goes on trial
-with `chalkctl apply-config w1 --secrets secrets.age --try 5m`. The node rolls it back by itself
+with `chalkctl config apply w1 --secrets secrets.age --try 5m`. The node rolls it back by itself
 unless chalkctl confirms it over a new connection, and a reboot during the trial boots the config
 from before it. [Try a config change](change-config.md#try-a-config-change) describes it.
 
@@ -198,7 +198,7 @@ certificates until the node CA expires.
 
 These are gone:
 
-- installing or reinstalling a node, and `apply-config`;
+- installing or reinstalling a node, and `config apply`;
 - `chalkctl node renew` and every `rotate`;
 - new client files;
 - recovery keys, so a node whose TPM stops unsealing cannot be unlocked.

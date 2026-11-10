@@ -210,7 +210,7 @@ spaces in a row.
 
 The [validator `router`](../../reference/builtins.md#validator-router) checks the peers' sessions
 against the `Network` and `VRF` documents and against each other. It runs after the rules and
-before the renderers, at a delivery, at `chalkctl apply-config --dry-run` and in
+before the renderers, at a delivery, at `chalkctl config apply --dry-run` and in
 `chalkctl validate`, and refuses:
 
 - a session that two peers name;
@@ -220,7 +220,7 @@ before the renderers, at a delivery, at `chalkctl apply-config --dry-run` and in
 
 The renderer trusts what the schemas, the rules and the validator check. It checks what depends
 on the names FRR gives its objects or on bgpd itself, when the router renders its config, at a
-delivery or at `chalkctl apply-config --dry-run`, and `chalkctl validate` does not run it:
+delivery or at `chalkctl config apply --dry-run`, and `chalkctl validate` does not run it:
 
 - an `asPath` that bgpd cannot compile;
 - an interface named like a peer's group;

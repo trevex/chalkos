@@ -25,7 +25,7 @@ Before any node gets its image, the image's layers check the versions it brings 
 cluster runs and refuse an image that would break their bounds, as Kubernetes refuses a kubelet
 newer than the oldest API server the control planes run. An upgrade also refuses a config that
 changes a version the layers bound against the config a node runs, such as the Kubernetes API
-server's: chalkctl apply-config delivers that change first, in the order the layers need.
+server's: chalkctl config apply delivers that change first, in the order the layers need.
 
 Each node gets its config with the image, checked against it before any node is drained, and
 chalkctl prints a line of what it changes and warns of each image reference in the config that

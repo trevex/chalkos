@@ -1,9 +1,16 @@
 ---
-title: "chalkctl apply-config"
-description: "Deliver a node's config from the inventory"
+title: "chalkctl apply"
+description: "Deliver a node's config from the inventory: short for config apply"
 ---
 
-# chalkctl apply-config
+# chalkctl apply
+
+```sh
+chalkctl apply <node> [<node>...] [flags]
+```
+
+chalkctl apply is the short form of chalkctl config apply: it takes the same nodes and flags and
+does the same.
 
 Delivers a node's config to the installed node: the documents of the files the inventory gives
 it. chalkctl checks them against the contract of the image the node runs, with the image's change
@@ -14,13 +21,12 @@ change, the node refuses the whole config and names the remedy. chalkctl warns o
 reference in the config that names a tag but no digest, and delivers the config all the same. See
 [Change rules decide which changes a node accepts](../../how-it-works/node/config.md#change-rules-decide-which-changes-a-node-accepts).
 
-With several nodes, apply-config delivers to them one after the other and stops at the first that
+With several nodes, config apply delivers to them one after the other and stops at the first that
 fails; a node named twice gets the config once. --address gives each node's address as NODE=ADDR
 where it is not the inventory's. chalkctl reads each node's status and checks its config against
 its image before the first node gets anything, and leaves a node that runs the config already
 alone, so the same command run again continues a run that stopped. --staged, --diff and
---no-confirm take one node. The inventory refuses nodes named as apply-config's subcommands;
-nodes named after --, as in apply-config -- w1 w2, are nodes whatever their names.
+--no-confirm take one node.
 
 When the config changes a version that a layer of the nodes' images bounds across the cluster,
 such as the Kubernetes API server's, against the config a node runs, the run is ordered, with one
@@ -33,7 +39,7 @@ until its layers find it serving with the config, as Kubernetes finds a control 
 pods running the new images. Then the other nodes get the config as in any run. The first failure
 rolls that node's trial back at once, and chalkctl prints which nodes run which version. --until
 deliver delivers on trial to the first node that does not run the config and leaves its trial open
-for apply-config confirm. An ordered run goes without the layers' payload flags. See
+for config confirm. An ordered run goes without the layers' payload flags. See
 [Upgrade Kubernetes](../../kubernetes/upgrade-kubernetes.md).
 
 --diff prints what the config changes in the node's config, document by document, and checks nothing
@@ -69,13 +75,13 @@ that fails keeps it, and an image's refusal names it. A pending config is kept w
 secret, so an upgrade with one that adds an encrypted volume needs the config from the inventory.
 A delivery to the running image replaces a pending config too, once the running image applied it,
 so the next upgrade boots the config delivered last. --staged --dry-run says the config would be
-held pending and keeps nothing. apply-config discard drops the pending config.
+held pending and keeps nothing. config discard drops the pending config.
 
-apply-config rollback delivers the node's previous config again instead of the inventory's.
+config rollback delivers the node's previous config again instead of the inventory's.
 
 --try applies the config on trial for the duration given, from 10s to 24h. Unless chalkctl confirms
 the config within it, the node rolls the config back by itself through the same steps as
-apply-config rollback. chalkctl confirms it over a new connection, which proves that the config left
+config rollback. chalkctl confirms it over a new connection, which proves that the config left
 the node reachable, once the node is healthy as an upgrade's boot must be: chalkd serves, no unit of
 the boot failed, and the image's layers find their services healthy. The check leaves out the units
 the image ignores and those --ignore-unit names, one unit per flag. Before it confirms, chalkctl
@@ -87,12 +93,12 @@ the answer to its delivery is lost, as when the config cuts chalkctl off, chalkc
 minutes after the deadline for the node's rollback, reports it and exits non-zero. Interrupting
 chalkctl leaves the trial open. A trial delivers config alone and is refused for a config that
 changes the node's storage. While it is open, the node refuses other deliveries, upgrades and image
-rollbacks; apply-config rollback rolls the config back at once and ends the trial, and a reboot
-boots the config from before it. --no-confirm leaves the trial open, and apply-config confirm
+rollbacks; config rollback rolls the config back at once and ends the trial, and a reboot
+boots the config from before it. --no-confirm leaves the trial open, and config confirm
 confirms it later. A delivery on trial that fails after it changed the config leaves the trial open,
 and chalkctl does not confirm it. When an attempt to roll the config back fails, the node tries
-again each minute and apply-config confirm still keeps the config, unless the failed attempt changed
-the node; apply-config rollback then finishes the rollback. The staged image checks config on trial
+again each minute and config confirm still keeps the config, unless the failed attempt changed
+the node; config rollback then finishes the rollback. The staged image checks config on trial
 as any delivery, but its config, or the pending config, is written only once the trial is confirmed,
 so a rollback leaves it as it was.
 
@@ -115,58 +121,55 @@ file.
 | `--ignore-unit`{ #flag-ignore-unit } | list of string | — | With --try, leave the unit out of the health check the confirmation waits for, as the image's check leaves out the units it ignores. |
 | `--inventory`{ #flag-inventory } | string | chalkos.yaml in the current directory, when it exists | Inventory naming the cluster's nodes, their addresses and their config files. |
 | `--kubernetes-share`{ #flag-kubernetes-share } | boolean | `false` | Also deliver a new Kubernetes share, such as a new kubelet certificate for a worker. |
-| `--no-confirm`{ #flag-no-confirm } | boolean | `false` | With --try, leave the trial open for apply-config confirm. |
+| `--no-confirm`{ #flag-no-confirm } | boolean | `false` | With --try, leave the trial open for config confirm. |
 | `--password-file`{ #flag-password-file } | string | — | File holding the password of a node whose fallback is a password. |
 | `--secrets`{ #flag-secrets } | string | — | Secrets file, encrypted with age or not, or - to read it from standard input. |
 | `--staged`{ #flag-staged } | boolean | `false` | Deliver the config for the image staged in the inactive slot instead, active or not, which checks it with its own chalkd after chalkctl checks it against the node's image in the inventory; without a staged image, the node holds it pending, unchecked, for the next upgrade, which checks it against its image; with --dry-run, the staged image checks it and nothing is kept; without one, --dry-run says what the node would hold pending. |
 | `--try`{ #flag-try } | duration | `0s` | Apply the config on trial for the duration, from 10s to 24h: the node rolls it back by itself unless chalkctl confirms it over a new connection once the node is healthy. |
-| `--until`{ #flag-until } | step | `confirm` | How far the delivery goes: deliver delivers to the first node that does not run the config, on trial, and leaves the trial open for apply-config confirm; confirm delivers to every node. |
+| `--until`{ #flag-until } | step | `confirm` | How far the delivery goes: deliver delivers to the first node that does not run the config, on trial, and leaves the trial open for config confirm; confirm delivers to every node. |
 
 ## Examples
 
 ```sh
 # Apply w1's changed network and labels.
-chalkctl apply-config w1 --secrets secrets.age
+chalkctl apply w1 --secrets secrets.age
 
 # Give w1 a new kubelet certificate.
-chalkctl apply-config w1 --secrets secrets.age --kubernetes-share
+chalkctl apply w1 --secrets secrets.age --kubernetes-share
 
 # Show what w1's config in the inventory changes on the node, changing nothing.
-chalkctl apply-config w1 --secrets secrets.age --diff
+chalkctl apply w1 --secrets secrets.age --diff
 
 # Have w1 and w2 check their config, renderers included, and show what a delivery would do.
-chalkctl apply-config w1 w2 --secrets secrets.age --dry-run
+chalkctl apply w1 w2 --secrets secrets.age --dry-run
 
 # Deliver w1's config for the image an upgrade staged, or without one hold it pending for w1's
 # next upgrade.
-chalkctl apply-config w1 --secrets secrets.age --staged
+chalkctl apply w1 --secrets secrets.age --staged
 
 # Drop the config w1 holds pending.
-chalkctl apply-config discard w1 --secrets secrets.age
+chalkctl config discard w1 --secrets secrets.age
 
 # Undo w1's last config delivery.
-chalkctl apply-config rollback w1 --secrets secrets.age
+chalkctl config rollback w1 --secrets secrets.age
 
 # Try w1's changed network for five minutes; w1 rolls it back unless chalkctl reaches it again.
-chalkctl apply-config w1 --secrets secrets.age --try 5m
+chalkctl apply w1 --secrets secrets.age --try 5m
 
 # Keep a trial open while you test by hand, then keep the config.
-chalkctl apply-config w1 --secrets secrets.age --try 30m --no-confirm
-chalkctl apply-config confirm w1 --secrets secrets.age
+chalkctl apply w1 --secrets secrets.age --try 30m --no-confirm
+chalkctl config confirm w1 --secrets secrets.age
 
 # Deliver the cluster's config to every node. When it names a new API server, the control
 # planes get it first, one at a time, each on trial until its static pods run the new images.
-chalkctl apply-config cp1 cp2 cp3 w1 w2 --secrets secrets.age
+chalkctl apply cp1 cp2 cp3 w1 w2 --secrets secrets.age
 
 # Walk the control planes by hand: deliver to the first that lacks the config, leave its trial
 # open, check it, confirm it, and run the first command again for the next.
-chalkctl apply-config cp1 cp2 cp3 --secrets secrets.age --until deliver
-chalkctl apply-config confirm cp1 --secrets secrets.age
+chalkctl apply cp1 cp2 cp3 --secrets secrets.age --until deliver
+chalkctl config confirm cp1 --secrets secrets.age
 ```
 
 ## See also
 
 - [chalkctl](chalkctl.md): Install and operate chalkos clusters
-- [chalkctl apply-config confirm](chalkctl_apply-config_confirm.md): Confirm a node's config on trial
-- [chalkctl apply-config discard](chalkctl_apply-config_discard.md): Drop the config a node holds pending for its next upgrade
-- [chalkctl apply-config rollback](chalkctl_apply-config_rollback.md): Deliver a node's previous config again

@@ -100,7 +100,7 @@ subnets, links of two VRFs, and an interface of a VRF's device or a NAT64's link
 a link without a static address in the subnet, from its `Network`, as Kea answers a link's
 clients from that address and serves no link without one, and a pool or reservation that holds
 that address. It runs after the rules and before the renderers, at a delivery, at
-`chalkctl apply-config --dry-run` and in `chalkctl validate`.
+`chalkctl config apply --dry-run` and in `chalkctl validate`.
 
 The output's check runs `kea-dhcp4 -t` or `kea-dhcp6 -t` on each config. Kea refuses a config
 that names a link the system lacks, and the check runs in a network namespace of its own, so it

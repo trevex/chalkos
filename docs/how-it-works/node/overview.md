@@ -124,7 +124,7 @@ from STATE. [Boot, health and rollback](boot-and-rollback.md) follows the boot c
 
 Everything that differs between nodes is config: YAML documents of kinds such as `Host`,
 `Network` and `SystemDisk`. The inventory says which documents each node gets.
-`chalkctl apply-config` delivers them to a running node. chalkd checks them against the schemas
+`chalkctl config apply` delivers them to a running node. chalkd checks them against the schemas
 and change rules of the image the node runs, keeps them on STATE and restarts only the services
 whose config changed. The node refuses a change that the image's rules forbid, such as a
 storage change that would destroy data.

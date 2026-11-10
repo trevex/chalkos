@@ -51,7 +51,7 @@ documents, and [Configure Kubernetes](configure.md) shows `nodeIP`. Deliver the 
 documents, or reboot the node once the network is right:
 
 ```sh
-chalkctl apply-config w1 --secrets=secrets.age
+chalkctl config apply w1 --secrets=secrets.age
 ```
 
 Two other preparation failures name the address too:
@@ -193,7 +193,7 @@ This node's document lists other families, or the same ones in another order, so
 etcd nor the kubelet.
 
 Set `ipFamilies` back to the families after `created with`, in that order, and deliver the config
-with `chalkctl apply-config cp1 --secrets=secrets.age`. A node whose running config holds the
+with `chalkctl config apply cp1 --secrets=secrets.age`. A node whose running config holds the
 changed families already refuses that change too. Then take it out of etcd with
 `chalkctl etcd leave cp1 --force` and reinstall it, as [A control plane lost its pinned
 address](ha-control-plane.md#a-control-plane-lost-its-pinned-address) describes.
@@ -208,13 +208,13 @@ section of `chalkctl status w1` says:
 ```text
 certificates:
   ...
-  kubelet client  expires 2026-09-14  expired; deliver a new one with chalkctl apply-config w1 --kubernetes-share
+  kubelet client  expires 2026-09-14  expired; deliver a new one with chalkctl config apply w1 --kubernetes-share
 ```
 
 Deliver a new share with a new kubelet certificate:
 
 ```sh
-chalkctl apply-config w1 --kubernetes-share --secrets=secrets.age
+chalkctl config apply w1 --kubernetes-share --secrets=secrets.age
 ```
 
 chalkctl issues the certificate from the Kubernetes CA in the secrets file.

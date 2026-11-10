@@ -192,7 +192,7 @@ Deliver the documents as any config:
 
 ```sh
 chalkctl validate
-chalkctl apply-config r1 --secrets secrets.age
+chalkctl config apply r1 --secrets secrets.age
 ```
 
 The diagnostic `ip-rules` lists the kernel's rules of one family. Each target table has a rule of
@@ -275,7 +275,7 @@ expression:
 
 The [validator `router`](../reference/builtins.md#validator-router) checks `in` against the
 VRFs' devices, the NAT64s' links and the links of the zones. `chalkctl validate` and
-`chalkctl apply-config` run it before chalkctl sends anything, and the router runs it again at
+`chalkctl config apply` run it before chalkctl sends anything, and the router runs it again at
 the delivery. It checks the VRFs' links first, and `in` only once the links pass. Within
 each step it reports every fault it finds at once. `chalkctl` prints the refusals after
 `the config is refused:`, as it prints a rule's, with the document and the field each is about:
@@ -290,7 +290,7 @@ each step it reports every fault it finds at once. `chalkctl` prints the refusal
 The renderers of the outputs `router-nftables` and `networkd` check the rest, the number of
 target tables and where the next hops' routes and the kernel's rules go among the `Network`
 documents, when the router renders its config, at a delivery or at
-`chalkctl apply-config --dry-run`. `chalkctl validate` does not run them. A renderer's refusal
+`chalkctl config apply --dry-run`. `chalkctl validate` does not run them. A renderer's refusal
 fails the delivery, and `chalkctl` prints it in the same form:
 
 | Message | Fix |

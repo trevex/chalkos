@@ -22,7 +22,7 @@ field of the four kinds.
 
 You need the workstation that [Set up your workstation](../operate/workstation.md) describes, and
 the decisions of [Plan a cluster](plan.md). Changes reach a running node with
-`chalkctl apply-config`, as [Change a node's config](../operate/change-config.md) describes, which
+`chalkctl config apply`, as [Change a node's config](../operate/change-config.md) describes, which
 needs the secrets file.
 
 ## The Cluster document holds what every node shares
@@ -81,7 +81,7 @@ spec:
 `crane digest <ref>` or `skopeo inspect --format '{{.Digest}}' docker://<ref>` prints the digest of
 a reference. Nothing offline checks that a tag and a digest agree.
 
-A reference with a tag and no digest is valid, but `chalkctl validate`, `apply-config`, `install`
+A reference with a tag and no digest is valid, but `chalkctl validate`, `config apply`, `install`
 and `upgrade` warn of it, because each node pulls whatever the tag points to when it pulls, so two
 nodes may run different images under one reference:
 
@@ -118,7 +118,7 @@ Cluster "default": images.scheduler: v1.38.0 is newer than images.apiServer v1.3
 Cluster "default": images.proxy: v1.36.0 is 4 minors older than images.apiServer v1.40.0; kube-proxy may be at most three minors older
 ```
 
-The checker sees the config and its own image alone. `chalkctl apply-config` also checks the API
+The checker sees the config and its own image alone. `chalkctl config apply` also checks the API
 server against the versions every node of the cluster runs, and `chalkctl upgrade` checks a new
 image's kubelet against the oldest API server, as
 [Upgrade Kubernetes](upgrade-kubernetes.md#chalkctl-checks-the-versions-every-node-runs) describes.
@@ -394,8 +394,8 @@ Check the config of every node, then deliver it to each node whose files changed
 
 ```sh
 chalkctl validate
-chalkctl apply-config cp1 --secrets=secrets.age
-chalkctl apply-config w1 --secrets=secrets.age
+chalkctl config apply cp1 --secrets=secrets.age
+chalkctl config apply w1 --secrets=secrets.age
 ```
 
 A changed `Cluster`, `Flannel` or `Node` document restarts `chalkos-kubernetes.service` and
