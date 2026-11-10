@@ -71,7 +71,7 @@ The config follows these rules:
 | Documents | Config |
 | --- | --- |
 | `BGP` | `router bgp <asn>`, or `router bgp <asn> vrf <name>` for a document with `vrf`, with `frr defaults traditional` and every count and timer of the document written out, so FRR's defaults decide nothing the document sets. Both address families list the document's networks of the family and its `maximum-paths`. |
-| `BGPPeer` | A peer group `peer-<name>` in the block of its VRF's instance, and a neighbour in it for the peer's address, its interface or each link its `interfaces` match. |
+| `BGPPeer` | A peer group `peer-<name>` in the block of its VRF's instance, and a neighbour in it for the peer's address, its interface or each link its `interfaces` match, or a `bgp listen range` line that puts each neighbour of its `listen` range in the group. |
 | A peer's family | `activate`, and a route-map in each direction: the family's policy, or `accept-all` without one. FRR's `ebgp-requires-policy` then always holds. |
 | A peer's family with `defaultOriginateWhen` | `default-originate route-map do-<list>`, and in its instance's address family `redistribute kernel` and `redistribute connected` through `track-<vrf>-<family>`. |
 | `PrefixList` | `ip prefix-list` or `ipv6 prefix-list pl-<name>`, the entries at sequence numbers 5, 10, 15 and on. |
@@ -284,9 +284,10 @@ configure itself each time it configures a link, so router images turn `ManageFo
 
 The input chain of `inet chalkos` accepts BGP, TCP port 179, from each `BGPPeer`, and BFD from
 each with `bfd`. A peer of `interface` or `interfaces` is accepted on those interfaces, globs as
-written, and a peer of `address` from that address alone. BFD takes UDP ports 3784 and 3785 of
-single-hop sessions, and 4784 of multi-hop ones from a peer of `address`. A peer on a link is one
-hop away. The edge renders:
+written, a peer of `address` from that address alone, and a peer of `listen` from its range.
+BFD takes UDP ports 3784 and 3785 of single-hop sessions, and 4784 of multi-hop ones from a peer
+of `address` or `listen`, whose neighbours may lie beyond the link. A peer on a link is one hop
+away. The edge renders:
 
 ```text
 iifname { "eth1", "eth2" } tcp dport { 179 } accept comment "BGPPeer fabric"
@@ -304,7 +305,8 @@ accepted on that VRF's links by `meta sdifname`, as
 `chalkctl status` shows a router's BGP sessions. chalkd asks vtysh for
 `show bgp vrf all neighbors json`, within 5 seconds, and reports each session's VRF, peer,
 neighbour, state, uptime, routes received and sent, and BFD state. It finds a session's `BGPPeer`
-by the name of its peer group. When vtysh fails, the status gives its error, and the status's
+by the name of its peer group. A neighbour of a listen range is in its peer's group too, and the
+status names it by its address. When vtysh fails, the status gives its error, and the status's
 other parts stand.
 
 An image whose variant sets

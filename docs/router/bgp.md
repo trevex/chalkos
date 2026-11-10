@@ -1,6 +1,6 @@
 ---
 title: "Route with BGP"
-description: "Give a router a BGP instance, peer with its neighbours on interfaces or at addresses, filter routes with prefix lists and routing policies, and check its sessions and routes"
+description: "Give a router a BGP instance, peer with its neighbours on interfaces, at addresses or from a prefix, filter routes with prefix lists and routing policies, and check its sessions and routes"
 ---
 
 # Route with BGP
@@ -140,8 +140,8 @@ spec:
 ```
 
 `maxPrefix` ends the session once the neighbour sends more than 1000 routes. A peer names exactly
-one of `address`, `interface` and `interfaces`, and one family at least. A family without
-`import` accepts every route, and one without `export` sends every route the router has.
+one of `address`, `interface`, `interfaces` and `listen`, and one family at least. A family
+without `import` accepts every route, and one without `export` sends every route the router has.
 
 The address is a unicast address beyond the router. The rules refuse a loopback, multicast or
 broadcast address and an IPv4-mapped IPv6 address such as `::ffff:203.0.113.254`; give an IPv4
@@ -149,6 +149,50 @@ neighbour its IPv4 address. A link-local address is refused too, as a neighbour 
 `interface` or `interfaces`. A peer at an IPv6 address that exchanges IPv4 routes needs
 `extendedNextHop: true`. The validator `router` refuses a session that two peers name, as
 [Fix a refused delivery](#fix-a-refused-delivery) describes.
+
+## Accept every neighbour of a prefix
+
+A router that serves many hosts on one LAN, such as servers that announce their own addresses,
+can take a session from each of them with one peer. A `BGPPeer` of `listen` accepts a session from
+every neighbour whose address lies in `range`:
+
+```yaml
+apiVersion: router.chalkos.dev/v1alpha1
+kind: BGPPeer
+metadata: {name: hosts}
+spec:
+  listen: {range: "2001:db8:11::/64"}
+  remoteAS: 65001
+  bfd: true
+  families:
+    ipv6: {defaultOriginate: true}
+```
+
+Every neighbour in the range shares the peer's settings: its AS, password, BFD, families and
+policies. The router opens no session itself. It waits for each host to connect, so each host
+peers with the router's address on the LAN. The firewall accepts BGP from the range, and BFD too
+with `bfd`.
+
+The LAN needs a prefix other than link-local, such as a unique local or a global one, that the
+router and the hosts have addresses of, as FRR takes no link-local range. The rules refuse a range
+that starts in link-local, loopback, multicast or IPv4-mapped space, and a range of length 0, such
+as `::/0`, which would accept a session from every address. A peer with an IPv6 range that
+exchanges IPv4 routes needs `extendedNextHop: true`, as one at an IPv6 address does. The validator
+`router` refuses two ranges of one VRF that overlap, as a neighbour in both would have two peers.
+A BGP instance accepts at most 100 neighbours from its listen ranges together, FRR's default
+limit; a neighbour past it gets no session.
+
+`chalkctl status` lists each host's session under the peer's name, with the host's address as the
+neighbour:
+
+```text
+bgp:
+  VRF      PEER   NEIGHBOR         STATE        UPTIME  RECEIVED  SENT  BFD
+  default  hosts  2001:db8:11::10  Established  5m12s   1         1     up
+  default  hosts  2001:db8:11::11  Established  5m9s    1         1     up
+```
+
+A host that has not connected has no line.
 
 ## Filter routes with policies
 
@@ -427,6 +471,7 @@ chalkctl: r1: the config is refused: BGPPeer/spare: spec.interface: BGPPeer fabr
 | --- | --- |
 | `BGPPeer/spare: spec.interface: BGPPeer fabric and BGPPeer spare both name eth1 in the VRF default; give each session one peer` | Drop the interface or address from one of the peers. |
 | `BGPPeer/fabric: spec.interfaces[0]: interface "192.0.2.10" is an address, which FRR cannot tell from a neighbour's` | Narrow the peer's glob, or rename the link that a `Network` names. |
+| `BGPPeer/servers: spec.listen.range: the listen range 2001:db8:11::/64 of BGPPeer servers overlaps 2001:db8::/32 of BGPPeer hosts in the VRF default; give each neighbour one peer` | Narrow one of the ranges so that they do not overlap, or merge the peers. |
 
 The renderer of the output `frr` checks the rest when the router renders its config, at a
 delivery or at `chalkctl config apply --dry-run`, before the delivery changes anything: the names
