@@ -3,13 +3,16 @@
 package etcdtest
 
 import (
+	"cmp"
 	"crypto/tls"
 	"crypto/x509"
+	"errors"
 	"net"
 	"net/url"
 	"os"
 	"path/filepath"
 	"sync"
+	"syscall"
 	"testing"
 	"time"
 
@@ -49,10 +52,11 @@ func ClientTLS(t testing.TB, ca pki.CertKey) *tls.Config {
 	return &tls.Config{Certificates: []tls.Certificate{cert}, RootCAs: roots, MinVersion: tls.VersionTLS12}
 }
 
-// PeerURL returns a peer URL on a free port, to add a member with before it starts.
+// PeerURL returns a peer URL on a free port, to add a member with before it starts. The port stays
+// taken until a member starts on it or the test ends, so no other test takes it meanwhile.
 func PeerURL(t testing.TB) string {
 	t.Helper()
-	return "https://127.0.0.1:" + freePort(t)
+	return "https://" + reserve(t)
 }
 
 // Member is a running etcd member.
@@ -67,15 +71,14 @@ type Member struct {
 // StartNew starts the only member of a new cluster.
 func StartNew(t testing.TB, ca pki.CertKey, name string) *Member {
 	t.Helper()
-	peerURL := PeerURL(t)
-	return start(t, ca, name, peerURL, peerURL, name+"="+peerURL, embed.ClusterStateFlagNew)
+	return start(t, ca, name, "", "", "", embed.ClusterStateFlagNew)
 }
 
 // StartAdvertising starts the only member of a new cluster that tells its peers to reach it at
 // peerURL, such as a node's address, while it listens on a free local port.
 func StartAdvertising(t testing.TB, ca pki.CertKey, name, peerURL string) *Member {
 	t.Helper()
-	return start(t, ca, name, PeerURL(t), peerURL, name+"="+peerURL, embed.ClusterStateFlagNew)
+	return start(t, ca, name, "", peerURL, "", embed.ClusterStateFlagNew)
 }
 
 // StartExisting starts a member that was added to a cluster at peerURL, as etcd's
@@ -85,12 +88,55 @@ func StartExisting(t testing.TB, ca pki.CertKey, name, peerURL, initialCluster s
 	return start(t, ca, name, peerURL, peerURL, initialCluster, embed.ClusterStateFlagExisting)
 }
 
+// startAttempts is how often start tries a member when etcd finds a port taken: between the
+// port's release and etcd listening on it, a connection of another test may take it. Each attempt
+// takes new free ports, but for a peer URL the caller gave.
+const startAttempts = 5
+
+// start starts the member of the name and waits until it is ready. An empty listenPeerURL listens
+// on a free port, an empty peerURL advertises the URL it listens on, and an empty initialCluster
+// is the member alone.
 func start(t testing.TB, ca pki.CertKey, name, listenPeerURL, peerURL, initialCluster, state string) *Member {
+	t.Helper()
+	var e *embed.Etcd
+	var clientURL, advertise string
+	for attempt := 1; ; attempt++ {
+		listen := listenPeerURL
+		if listen == "" {
+			listen = PeerURL(t)
+		}
+		advertise = cmp.Or(peerURL, listen)
+		clientURL = "https://" + reserve(t)
+		var err error
+		e, err = startEtcd(t, ca, name, listen, advertise, clientURL, cmp.Or(initialCluster, name+"="+advertise), state)
+		if err == nil {
+			break
+		}
+		if !errors.Is(err, syscall.EADDRINUSE) || attempt == startAttempts {
+			t.Fatalf("start etcd member %s: %v", name, err)
+		}
+	}
+	m := &Member{Name: name, ClientURL: clientURL, PeerURL: advertise, etcd: e}
+	t.Cleanup(m.Stop)
+	select {
+	case <-e.Server.ReadyNotify():
+	case err := <-e.Err():
+		t.Fatalf("etcd member %s: %v", name, err)
+	case <-time.After(time.Minute):
+		t.Fatalf("etcd member %s did not become ready", name)
+	}
+	// A member that joins refuses a cluster whose version is not decided yet, which a ready member
+	// may not have done on a busy machine.
+	testwait.Eventually(t, "the cluster version of etcd member "+name, func() bool { return e.Server.ClusterVersion() != nil })
+	return m
+}
+
+// startEtcd starts etcd on the ports of the URLs, which it releases first.
+func startEtcd(t testing.TB, ca pki.CertKey, name, listenPeerURL, peerURL, clientURL, initialCluster, state string) (*embed.Etcd, error) {
 	t.Helper()
 	dir := memDir(t)
 	peer := parse(t, peerURL)
 	tlsInfo := serverTLS(t, ca, name, net.ParseIP(peer.Hostname()), dir)
-	clientURL := "https://127.0.0.1:" + freePort(t)
 	cfg := embed.NewConfig()
 	cfg.Name = name
 	cfg.Dir = filepath.Join(dir, "data")
@@ -108,23 +154,9 @@ func start(t testing.TB, ca pki.CertKey, name, listenPeerURL, peerURL, initialCl
 	// The data is thrown away after the test; syncing it would stall the members, and with them
 	// elections and member changes, whenever the disk is busy.
 	cfg.UnsafeNoFsync = true
-	e, err := embed.StartEtcd(cfg)
-	if err != nil {
-		t.Fatalf("start etcd member %s: %v", name, err)
-	}
-	m := &Member{Name: name, ClientURL: clientURL, PeerURL: peerURL, etcd: e}
-	t.Cleanup(m.Stop)
-	select {
-	case <-e.Server.ReadyNotify():
-	case err := <-e.Err():
-		t.Fatalf("etcd member %s: %v", name, err)
-	case <-time.After(time.Minute):
-		t.Fatalf("etcd member %s did not become ready", name)
-	}
-	// A member that joins refuses a cluster whose version is not decided yet, which a ready member
-	// may not have done on a busy machine.
-	testwait.Eventually(t, "the cluster version of etcd member "+name, func() bool { return e.Server.ClusterVersion() != nil })
-	return m
+	release(listenPeerURL)
+	release(clientURL)
+	return embed.StartEtcd(cfg)
 }
 
 func init() {
@@ -172,15 +204,33 @@ func serverTLS(t testing.TB, ca pki.CertKey, name string, peerIP net.IP, dir str
 	}
 }
 
-func freePort(t testing.TB) string {
+// reserved holds the listeners that keep the ports reserve returned taken, by address.
+var reserved sync.Map
+
+// reserve takes a free port on 127.0.0.1 and returns its address. The port stays taken until
+// release frees it for a member to listen on, or the test ends. A port probed and closed at once
+// would be free for any other test, or an outgoing connection, to take until the member listens.
+func reserve(t testing.TB) string {
 	t.Helper()
 	l, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer l.Close()
-	_, port, _ := net.SplitHostPort(l.Addr().String())
-	return port
+	addr := l.Addr().String()
+	reserved.Store(addr, l)
+	t.Cleanup(func() { release("https://" + addr) })
+	return addr
+}
+
+// release frees the port of the URL that reserve took; a port not reserved stays as it is.
+func release(rawURL string) {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return
+	}
+	if l, ok := reserved.LoadAndDelete(u.Host); ok {
+		l.(net.Listener).Close()
+	}
 }
 
 func parse(t testing.TB, s string) url.URL {
