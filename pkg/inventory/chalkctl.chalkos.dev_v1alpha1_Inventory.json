@@ -69,8 +69,8 @@
         },
         "nodes": {
           "type": "object",
-          "description": "The cluster's nodes by name. A node's name is fixed at install, which writes it into the node's certificate; its hostname defaults to it, and the Kubernetes node name, the storage seeds and the recovery key derive from it, so renaming a node takes a reinstall. confirm, discard and rollback name chalkctl apply-config's subcommands, so no node may take them.",
-          "propertyNames": { "pattern": "^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$", "not": { "enum": ["confirm", "discard", "rollback"] } },
+          "description": "The cluster's nodes by name. A node's name is fixed at install, which writes it into the node's certificate; its hostname defaults to it, and the Kubernetes node name, the storage seeds and the recovery key derive from it, so renaming a node takes a reinstall.",
+          "propertyNames": { "pattern": "^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$" },
           "additionalProperties": {
             "type": "object",
             "additionalProperties": false,
