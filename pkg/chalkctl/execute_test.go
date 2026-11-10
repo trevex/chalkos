@@ -29,7 +29,7 @@ func TestExecuteUsageErrors(t *testing.T) {
 		{"node", "diag", "n1", "ping", "count=1", "count=2"},
 		{"gen", "secrets", "--plaintext", "extra"}, {"gen", "secrets"},
 		{"status", "--bogus"}, {"status", "n1", "--bogus"},
-		{"config", "new"}, {"config", "new", "--name", "ada"},
+		{"client", "new"}, {"client", "new", "--name", "ada"},
 		{"upgrade", "--max-unavailable", "0"}, {"rotate", "os-ca", "--resume", "--finish"},
 		{"upgrade", "--timeout", "0"}, {"rotate", "os-ca", "--timeout", "0"}, {"node", "reboot", "n1", "--timeout", "-1s"},
 		{"config", "apply", "n1", "--dry-run", "--diff"}, {"apply", "n1", "--dry-run", "--diff"}, {"config", "confirm"},

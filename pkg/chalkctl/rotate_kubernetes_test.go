@@ -257,7 +257,7 @@ func TestRotateRewriteTimeoutSuggestsMoreTime(t *testing.T) {
 // files or kubeconfigs issued during it still trust the old CA until they are issued again.
 func TestRotateFinishSaysWhatToReissue(t *testing.T) {
 	for kind, want := range map[clustersecrets.RotationKind][]string{
-		clustersecrets.RotateOSCA:         {"Client files issued during the rotation still trust the old OS CA", "chalkctl config new"},
+		clustersecrets.RotateOSCA:         {"Client files issued during the rotation still trust the old OS CA", "chalkctl client new"},
 		clustersecrets.RotateKubernetesCA: {"Kubeconfigs issued during the rotation still trust the old Kubernetes CA", "chalkctl kubeconfig"},
 	} {
 		t.Run(string(kind), func(t *testing.T) {

@@ -44,10 +44,10 @@ func (caRotation) PausesAfter(kind clustersecrets.RotationKind, phase clustersec
 func (c caRotation) Paused(_ context.Context, _ layer.Rotating, rot clustersecrets.Rotation) error {
 	r := c.r
 	if rot.Phase == clustersecrets.PhaseAccept {
-		r.Say("Every node trusts the old and the new OS CA. Issue new client files now with chalkctl config new: they carry both OS CAs and work throughout the rotation and after it. Client files from before the rotation stop verifying the nodes from the switch on and are refused at the finish. Then continue with chalkctl rotate %s --resume, which makes the new OS CA issue.", rot.Kind)
+		r.Say("Every node trusts the old and the new OS CA. Issue new client files now with chalkctl client new: they carry both OS CAs and work throughout the rotation and after it. Client files from before the rotation stop verifying the nodes from the switch on and are refused at the finish. Then continue with chalkctl rotate %s --resume, which makes the new OS CA issue.", rot.Kind)
 		return nil
 	}
-	r.Say("Every node serves a certificate of the new node CA and trusts the old and the new OS CA. Client files from before the rotation cannot verify the nodes any more and are refused after the finish: issue new ones with chalkctl config new. Build images and installer media again from %s; older ones trust the old OS CA alone, and installing from them fails. Then remove the old OS CA with chalkctl rotate %s --finish.", r.publicFile(), rot.Kind)
+	r.Say("Every node serves a certificate of the new node CA and trusts the old and the new OS CA. Client files from before the rotation cannot verify the nodes any more and are refused after the finish: issue new ones with chalkctl client new. Build images and installer media again from %s; older ones trust the old OS CA alone, and installing from them fails. Then remove the old OS CA with chalkctl rotate %s --finish.", r.publicFile(), rot.Kind)
 	return nil
 }
 
@@ -61,7 +61,7 @@ func (caRotation) Finished(kind clustersecrets.RotationKind) (string, string) {
 	if kind == clustersecrets.RotateNodeCA {
 		return "every node serves a certificate of the new node CA, and certificates of the old one stay valid until they expire, since both chain to the same OS CA", ""
 	}
-	return "every node trusts the new value alone", "Client files issued during the rotation still trust the old OS CA besides the new one when they verify the nodes, so whoever holds the old OS CA's key could pose as a node to them; issue them again with chalkctl config new."
+	return "every node trusts the new value alone", "Client files issued during the rotation still trust the old OS CA besides the new one when they verify the nodes, so whoever holds the old OS CA's key could pose as a node to them; issue them again with chalkctl client new."
 }
 
 // applyNodeCA runs a phase of the node CA's rotation. Nodes trust the new node CA through the OS

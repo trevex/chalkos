@@ -139,7 +139,7 @@ func TestUpgrade(t *testing.T) {
 	// which its schema accepts, so chalkctl's check of the config passes and the node refuses the
 	// upgrade, naming the pending config. Nothing is staged, and the pending config stays.
 	operator := filepath.Join(dir, "operator.json")
-	if _, err := chalkctl(t, nil, "", "config", "new", "--name", "ops", "--role", "operator", "--out", operator); err != nil {
+	if _, err := chalkctl(t, nil, "", "client", "new", "--name", "ops", "--role", "operator", "--out", operator); err != nil {
 		t.Fatal(err)
 	}
 	upgradeAsOperator := []string{"upgrade", "--image", nextImage, "--nodes", "chalklab", "--address", "chalklab=" + n.addr, "--timeout", "10m"}

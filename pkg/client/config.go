@@ -78,7 +78,7 @@ func ReadConfig(path string) (Config, error) {
 
 // versionError says that a client file of another version is not read, and what replaces it.
 func versionError(v int) error {
-	return fmt.Errorf("client file version %d is not supported (want %d); issue a new one with chalkctl config new", v, ConfigVersion)
+	return fmt.Errorf("client file version %d is not supported (want %d); issue a new one with chalkctl client new", v, ConfigVersion)
 }
 
 // Validate checks the version, that the certificate belongs to the key, that an OS CA of the file

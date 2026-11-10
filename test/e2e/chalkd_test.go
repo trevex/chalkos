@@ -114,7 +114,7 @@ func chalkdInfo(n *node, timeout time.Duration) (*nodev1.InfoResponse, error) {
 }
 
 // chalkctl runs the chalkctl binary for the node, or for the cluster when n is nil, against the
-// test cluster, with the named inventory of the fixtures, or none for "", as chalkctl config new
+// test cluster, with the named inventory of the fixtures, or none for "", as chalkctl client new
 // takes none.
 func chalkctl(t *testing.T, n *node, inventory string, args ...string) (string, error) {
 	t.Helper()

@@ -58,7 +58,7 @@ func (ta *testApp) withoutSecrets(t *testing.T) {
 func TestConfigNew(t *testing.T) {
 	ta := newTestApp(t)
 	out := filepath.Join(ta.dir, "alice.json")
-	args := []string{"config", "new", "--name", "alice", "--role", "operator", "--ttl", "720h", "--out", out}
+	args := []string{"client", "new", "--name", "alice", "--role", "operator", "--ttl", "720h", "--out", out}
 	if err := ta.run(context.Background(), args); err != nil {
 		t.Fatal(err)
 	}
@@ -77,7 +77,7 @@ func TestConfigNew(t *testing.T) {
 		t.Errorf("the client file names a cluster: %s", data)
 	}
 	if err := ta.run(context.Background(), append(slices.Clone(args), "--inventory", ta.inventory)); err == nil || !strings.Contains(err.Error(), "unknown flag: --inventory") {
-		t.Errorf("config new --inventory: %v, want the flag unknown", err)
+		t.Errorf("client new --inventory: %v, want the flag unknown", err)
 	}
 	if info, _ := os.Stat(out); info.Mode().Perm() != 0o600 {
 		t.Errorf("mode %v", info.Mode())
@@ -89,16 +89,16 @@ func TestConfigNew(t *testing.T) {
 		t.Errorf("--force: %v", err)
 	}
 	// By default the file goes where chalkctl looks for it.
-	if err := ta.run(context.Background(), []string{"config", "new", "--name", "bob", "--role", "reader"}); err != nil {
+	if err := ta.run(context.Background(), []string{"client", "new", "--name", "bob", "--role", "reader"}); err != nil {
 		t.Fatal(err)
 	}
 	if c, err := client.ReadConfig(defaultConfigPath(ta.home)); err != nil || c.Name != "bob" {
 		t.Errorf("default client file: %v, %v", c, err)
 	}
 	for _, bad := range [][]string{{"--name", "x", "--role", "root"}, {"--role", "reader"}, {"--name", "x", "--role", "node"}} {
-		args := append([]string{"config", "new", "--out", filepath.Join(ta.dir, "bad.json")}, bad...)
+		args := append([]string{"client", "new", "--out", filepath.Join(ta.dir, "bad.json")}, bad...)
 		if err := ta.run(context.Background(), args); err == nil {
-			t.Errorf("config new %v: accepted", bad)
+			t.Errorf("client new %v: accepted", bad)
 		}
 	}
 }
@@ -176,14 +176,14 @@ func TestClientFileExpiry(t *testing.T) {
 	if err := ta.run(context.Background(), ta.args([]string{"status", "n1", "--config", soon}, addr)); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(ta.stderr.String(), "warning: the certificate of "+soon+" expires on") || !strings.Contains(ta.stderr.String(), "chalkctl config new") {
-		t.Errorf("stderr = %q, want a warning naming chalkctl config new", ta.stderr)
+	if !strings.Contains(ta.stderr.String(), "warning: the certificate of "+soon+" expires on") || !strings.Contains(ta.stderr.String(), "chalkctl client new") {
+		t.Errorf("stderr = %q, want a warning naming chalkctl client new", ta.stderr)
 	}
 
 	old := newTestAppAt(t, time.Now().Add(-48*time.Hour))
 	expired := old.writeConfig(t, "carol", pki.RoleReader, time.Hour, time.Now().Add(-47*time.Hour))
 	err := old.run(context.Background(), old.args([]string{"status", "n1", "--config", expired}, addr))
-	if err == nil || !strings.Contains(err.Error(), "the certificate of "+expired+" expired on") || !strings.Contains(err.Error(), "issue a new one with chalkctl config new") {
+	if err == nil || !strings.Contains(err.Error(), "the certificate of "+expired+" expired on") || !strings.Contains(err.Error(), "issue a new one with chalkctl client new") {
 		t.Errorf("err = %v, want the expired client file named", err)
 	}
 }
@@ -271,7 +271,7 @@ func TestConfigNewCreatesItsDirectoryPrivate(t *testing.T) {
 	ta := newTestApp(t)
 	for _, force := range []bool{false, true} {
 		dir := filepath.Join(ta.dir, fmt.Sprintf("new-%v", force), "chalkos")
-		args := []string{"config", "new", "--name", "alice", "--role", "reader", "--out", filepath.Join(dir, "config")}
+		args := []string{"client", "new", "--name", "alice", "--role", "reader", "--out", filepath.Join(dir, "config")}
 		if force {
 			args = append(args, "--force")
 		}

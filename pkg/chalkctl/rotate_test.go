@@ -481,14 +481,14 @@ func TestRotateOSCA(t *testing.T) {
 	if l.phase() != "accept applied" {
 		t.Fatalf("the secrets file records %q, want the accept phase applied and the rotation paused", l.phase())
 	}
-	for _, want := range []string{"Issue new client files now", "chalkctl config new", "--resume"} {
+	for _, want := range []string{"Issue new client files now", "chalkctl client new", "--resume"} {
 		if !strings.Contains(l.ta.stdout.String(), want) {
 			t.Errorf("the pause after the accept phase does not say %q: %s", want, l.ta.stdout)
 		}
 	}
 	// A client file issued at the pause carries both roots and works throughout.
 	carol := filepath.Join(l.ta.dir, "carol.json")
-	if err := l.ta.run(context.Background(), []string{"config", "new", "--name", "carol", "--role", "reader", "--out", carol}); err != nil {
+	if err := l.ta.run(context.Background(), []string{"client", "new", "--name", "carol", "--role", "reader", "--out", carol}); err != nil {
 		t.Fatal(err)
 	}
 	if creds, err := l.ta.configCredentials(carol); err != nil || strings.Count(creds.osCA, "BEGIN CERTIFICATE") != 2 {
@@ -519,7 +519,7 @@ func TestRotateOSCA(t *testing.T) {
 			t.Errorf("%s does not hold the new node CA", name)
 		}
 	}
-	for _, want := range []string{"serves a certificate of the new node CA", "chalkctl config new", "--finish"} {
+	for _, want := range []string{"serves a certificate of the new node CA", "chalkctl client new", "--finish"} {
 		if !strings.Contains(l.ta.stdout.String(), want) {
 			t.Errorf("the pause after the refresh does not say %q: %s", want, l.ta.stdout)
 		}

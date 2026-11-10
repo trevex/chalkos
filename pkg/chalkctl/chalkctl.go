@@ -61,12 +61,14 @@ func newCommand(a *app) *cobra.Command {
 	gen.AddCommand(a.genSecretsCommand())
 	node := cli.Group(&cobra.Command{Use: "node", Short: "Manage a node's access, activate its staged image, reboot it and show its diagnostics and routes", Long: nodeLong, Example: nodeExample})
 	node.AddCommand(a.nodeRenewCommand(), a.nodeDiagCommand(), a.nodeActivateCommand(), a.nodeRebootCommand())
-	config := cli.Group(&cobra.Command{Use: "config", Short: "Deliver nodes' config and manage client files", Long: configLong, Example: configExample})
-	config.AddCommand(a.applyConfigCommand(false), a.confirmConfigCommand(), a.rollbackConfigCommand(), a.discardPendingCommand(), a.configNewCommand())
+	config := cli.Group(&cobra.Command{Use: "config", Short: "Deliver a node's config and act on its trial or pending config", Long: configLong, Example: configExample})
+	config.AddCommand(a.applyConfigCommand(false), a.confirmConfigCommand(), a.rollbackConfigCommand(), a.discardPendingCommand())
+	client := cli.Group(&cobra.Command{Use: "client", Short: "Manage client files", Long: clientLong, Example: clientExample})
+	client.AddCommand(a.clientNewCommand())
 	storage := cli.Group(&cobra.Command{Use: "storage", Short: "Manage a node's volumes", Long: storageLong, Example: storageExample})
 	storage.AddCommand(a.resetVolumeCommand())
 	root.AddCommand(
-		gen, node, config, storage,
+		gen, node, config, client, storage,
 		a.recoveryKeyCommand(),
 		a.installCommand(),
 		a.disksCommand(),

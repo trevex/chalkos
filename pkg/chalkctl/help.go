@@ -10,7 +10,7 @@ address, its image and its config files. It talks to chalkd on each node over mu
 builds or signs images.
 
 Commands authenticate with the cluster's secrets file, which holds every CA key and which only
---secrets names, or with a client file of the admin, operator or reader role, which chalkctl config
+--secrets names, or with a client file of the admin, operator or reader role, which chalkctl client
 new writes. Each command's help says which it needs. A command that accepts both takes --config or
 --secrets, not both, else the client file $CHALKOSCONFIG names, else ~/.config/chalkos/config.
 
@@ -100,25 +100,24 @@ the secrets file.`
 
 const nodeRenewExample = `  chalkctl node renew w1`
 
-const configLong = `Delivers nodes' config from the inventory and manages client files. config apply delivers the
-config, and chalkctl apply is its short form. config confirm keeps a config on trial, config
-rollback delivers a node's previous config again, and config discard drops the config a node holds
-pending for its next upgrade. These commands need the secrets file.
+const configLong = `Delivers a node's config from the inventory and acts on its trial or pending config. config
+apply delivers the config, and chalkctl apply is its short form. config confirm confirms a config
+on trial, config rollback delivers a node's previous config again, and config discard drops the
+config a node holds pending for its next upgrade. The commands need the secrets file.`
 
-config new writes a client file, which lets a person operate the cluster without the secrets file.
-Writing a client file needs the secrets file.`
-
-const configExample = `  # Deliver w1's config on trial for five minutes, then the same with the short form.
+const configExample = `  # Deliver w1's config on trial for five minutes, or, with the short form:
   chalkctl config apply w1 --secrets secrets.age --try 5m
   chalkctl apply w1 --secrets secrets.age --try 5m
 
   # Undo w1's last config delivery.
-  chalkctl config rollback w1 --secrets secrets.age
+  chalkctl config rollback w1 --secrets secrets.age`
 
-  # Write the operator's own client file.
-  chalkctl config new --name alice --role operator --secrets secrets.age`
+const clientLong = `Manages client files, which let a person operate the cluster without the secrets file. Writing
+a client file needs the secrets file.`
 
-const configNewLong = `Writes a client file: a new key with a certificate from the OS CA for --name and --role, and
+const clientExample = `  chalkctl client new --name alice --role operator --secrets secrets.age`
+
+const clientNewLong = `Writes a client file: a new key with a certificate from the OS CA for --name and --role, and
 the OS CA that nodes' certificates chain to. The file goes to ~/.config/chalkos/config unless --out
 names another; commands read it from there, or from the path --config or $CHALKOSCONFIG names. A
 client file names no cluster: its OS CA ties it to one, and a node of another cluster fails the TLS
@@ -133,11 +132,11 @@ https://trevex.github.io/chalkos/how-it-works/node/security/#chalkd-checks-the-r
 
 The command needs the secrets file and no inventory.`
 
-const configNewExample = `  # A reader's client file for a dashboard.
-  chalkctl config new --name grafana --role reader --ttl 720h --out grafana.json --secrets secrets.age
+const clientNewExample = `  # A reader's client file for a dashboard.
+  chalkctl client new --name grafana --role reader --ttl 720h --out grafana.json --secrets secrets.age
 
   # The operator's own client file, at ~/.config/chalkos/config.
-  chalkctl config new --name alice --role operator --secrets secrets.age`
+  chalkctl client new --name alice --role operator --secrets secrets.age`
 
 const storageLong = `Manages the volumes of an installed node. Its command needs an admin client file or the
 secrets file.`

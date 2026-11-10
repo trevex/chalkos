@@ -86,7 +86,7 @@ func TestConfigValidate(t *testing.T) {
 func TestConfigOfVersion1(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config")
 	os.WriteFile(path, []byte(`{"version": 1, "cluster": "lab", "name": "alice", "role": "reader", "certificate": "", "key": "", "osCA": "", "nodes": {"n1": "10.0.0.11"}}`), 0o600)
-	if _, err := ReadConfig(path); err == nil || !strings.Contains(err.Error(), "version 1 is not supported (want 3); issue a new one with chalkctl config new") {
+	if _, err := ReadConfig(path); err == nil || !strings.Contains(err.Error(), "version 1 is not supported (want 3); issue a new one with chalkctl client new") {
 		t.Errorf("a client file of version 1: %v", err)
 	}
 }
@@ -103,7 +103,7 @@ func TestConfigOfVersion2(t *testing.T) {
 	data, _ := json.Marshal(map[string]any{"version": 2, "cluster": "lab", "name": c.Name, "role": c.Role, "certificate": c.Certificate, "key": c.Key, "osCA": c.OSCA})
 	path := filepath.Join(t.TempDir(), "config")
 	os.WriteFile(path, data, 0o600)
-	if _, err := ReadConfig(path); err == nil || !strings.Contains(err.Error(), "version 2 is not supported (want 3); issue a new one with chalkctl config new") {
+	if _, err := ReadConfig(path); err == nil || !strings.Contains(err.Error(), "version 2 is not supported (want 3); issue a new one with chalkctl client new") {
 		t.Errorf("a client file of version 2: %v", err)
 	}
 	if data, _ := c.Encode(); strings.Contains(string(data), "cluster") {

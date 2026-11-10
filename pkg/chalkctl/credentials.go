@@ -121,7 +121,7 @@ func (a *app) loadCredentials(ctx context.Context, s layer.SecretsFlags, config 
 	return a.configCredentials(path)
 }
 
-// defaultConfigPath is where chalkctl looks for a client file and chalkctl config new writes one.
+// defaultConfigPath is where chalkctl looks for a client file and chalkctl client new writes one.
 func defaultConfigPath(home string) string {
 	return filepath.Join(home, ".config", "chalkos", "config")
 }
@@ -141,9 +141,9 @@ func (a *app) configCredentials(path string) (*credentials, error) {
 	expires := leaf.NotAfter.UTC().Format(time.DateOnly)
 	switch {
 	case !now.Before(leaf.NotAfter):
-		return nil, fmt.Errorf("the certificate of %s expired on %s; issue a new one with chalkctl config new", path, expires)
+		return nil, fmt.Errorf("the certificate of %s expired on %s; issue a new one with chalkctl client new", path, expires)
 	case leaf.NotAfter.Sub(now) < configExpiryWarning:
-		fmt.Fprintf(a.stderr, "chalkctl: warning: the certificate of %s expires on %s; issue a new one with chalkctl config new\n", path, expires)
+		fmt.Fprintf(a.stderr, "chalkctl: warning: the certificate of %s expires on %s; issue a new one with chalkctl client new\n", path, expires)
 	}
 	cert, err := c.TLSCertificate()
 	if err != nil {
@@ -152,22 +152,22 @@ func (a *app) configCredentials(path string) (*credentials, error) {
 	return &credentials{config: &c, configPath: path, cert: cert, osCA: c.OSCA}, nil
 }
 
-type configNewFlags struct {
+type clientNewFlags struct {
 	secrets         layer.SecretsFlags
 	name, role, out string
 	ttl             time.Duration
 	force           bool
 }
 
-func (a *app) configNewCommand() *cobra.Command {
-	var f configNewFlags
+func (a *app) clientNewCommand() *cobra.Command {
+	var f clientNewFlags
 	cmd := a.command(&cobra.Command{
 		Use:     "new",
 		Short:   "Write a client file, which operates the cluster without the secrets file",
-		Long:    configNewLong,
-		Example: configNewExample,
+		Long:    clientNewLong,
+		Example: clientNewExample,
 		Args:    cli.NoArgs,
-	}, func(a *app, ctx context.Context, pos []string) error { return a.configNew(ctx, f) })
+	}, func(a *app, ctx context.Context, pos []string) error { return a.clientNew(ctx, f) })
 	fs := cmd.Flags()
 	f.secrets.Register(fs)
 	fs.StringVar(&f.name, "name", "", "the user's name, which the certificate carries")
@@ -180,11 +180,11 @@ func (a *app) configNewCommand() *cobra.Command {
 	return cmd
 }
 
-// configNew issues a client file from the secrets file: a certificate of the role for a new
+// clientNew issues a client file from the secrets file: a certificate of the role for a new
 // key, and the OS CA.
-func (a *app) configNew(ctx context.Context, f configNewFlags) error {
+func (a *app) clientNew(ctx context.Context, f clientNewFlags) error {
 	if f.name == "" || f.role == "" {
-		return cli.Usagef("config new needs a --name and a --role")
+		return cli.Usagef("client new needs a --name and a --role")
 	}
 	secrets, err := a.loadSecrets(ctx, f.secrets)
 	if err != nil {
