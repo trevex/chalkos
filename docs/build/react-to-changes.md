@@ -43,8 +43,9 @@ bird's `ExecReload` runs `birdc configure`, which reads the config again and kee
 that a restart would drop. A delivery that leaves `bird.conf` and its password unchanged reloads
 nothing.
 
-`lib.chalkos.restartOn` builds an effect that restarts its units instead. The homelab's rack unit
-reads its `Rack` when it starts, so a changed `Rack` restarts it:
+`lib.chalkos.restartOn` builds an effect that restarts its units instead. The rack unit of the
+[extensions example](https://github.com/trevex/chalkos/tree/main/examples/extensions) reads its
+`Rack` when it starts, so a changed `Rack` restarts it:
 
 ```nix
 chalkos.effects.rack-location = lib.chalkos.restartOn { kinds = [ "Rack" ]; } [
@@ -209,7 +210,7 @@ The diagram shows the decision for each effect and the order of the actions of a
    chalkd itself holds.
 
 A oneshot unit that should run again on a change sets `RemainAfterExit = true`, so it stays
-active and `try-restart` runs it again. The homelab's rack unit does.
+active and `try-restart` runs it again. The extensions example's rack unit does.
 
 A reload, command or restart that fails fails the delivery. The delivery is applied by then, so
 the error ends with what is still to do: for example `reload bird.service by hand once that is

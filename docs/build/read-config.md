@@ -126,8 +126,9 @@ granted them runs `chalkcfg get Network -o json` directly.
 ## A grant restarts nothing
 
 chalkd writes new documents after a delivery, but a running unit keeps what it read when it
-started. An effect restarts or reloads the unit when its kinds change. The homelab's rack unit
-reads its `Rack` once, so a changed `Rack` restarts it:
+started. An effect restarts or reloads the unit when its kinds change. The rack unit of the
+[extensions example](https://github.com/trevex/chalkos/tree/main/examples/extensions) reads its
+`Rack` once, so a changed `Rack` restarts it:
 
 ```nix
 chalkos.effects.rack-location = lib.chalkos.restartOn { kinds = [ "Rack" ]; } [
@@ -145,7 +146,7 @@ value of a `Secret` one of them references changes.
 Most daemons read a config file of their own format and know nothing of JSON documents. An output
 renders such a file from the documents, and chalkd checks it before a delivery changes anything.
 bird's `bird.conf` is an output of `bgp.nix`, rendered from the `Peer` documents through a
-template. The homelab's `extensions/hardware.nix` renders its `Hardware` documents into an
+template. The extensions example's `hardware.nix` renders its `Hardware` documents into an
 environment file that its unit reads with `EnvironmentFile=`.
 
 A unit that reads only its rendered output needs no grant, unless the output names a secret. A

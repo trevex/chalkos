@@ -427,14 +427,15 @@ a narrower type are among them. Make such a change a new `version`, and change t
 the new image's schemas and delivers them with the image. The image before keeps its own config
 slot with the old documents, so a fallback boots with the config it ran.
 
-## The homelab declares two more kinds
+## The extensions example declares two more kinds
 
-The homelab's other two extensions declare kinds the same way:
+The [extensions example](https://github.com/trevex/chalkos/tree/main/examples/extensions) declares
+two more kinds the same way:
 
-- `extensions/rack.nix` declares `Rack`, a node's rack position, in the group
+- `rack.nix` declares `Rack`, a node's rack position, in the group
   `rack.example.org`. Its one field has a rule that reads a fact, so a surveyed node accepts no
   location other than the one the survey found.
-- `extensions/hardware.nix` declares `Hardware`, the server's vendor, model and asset tag. An
+- `hardware.nix` declares `Hardware`, the server's vendor, model and asset tag. An
   output renders it into an environment file that a unit reads.
 
 ## Check that it worked

@@ -30,14 +30,3 @@ spec:
   type: worker
   labels: {node.kubernetes.io/storage: ssd}
   taints: [{key: dedicated, value: storage, effect: NoSchedule}]
----
-apiVersion: rack.example.org/v1alpha1
-kind: Rack
-metadata: {name: rack}
-spec:
-  location: rack-a/u14
----
-apiVersion: hardware.example.org/v1alpha1
-kind: Hardware
-metadata: {name: hardware}
-spec: {vendor: Supermicro, model: SYS-E300-9D, assetTag: HL-0002}

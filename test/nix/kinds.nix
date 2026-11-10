@@ -192,9 +192,9 @@ let
       args = lib.concatStringsSep " " (lib.tail words);
     };
   resolvePeering = getLib.resolve (peeringSpec kindTypes.secretRef);
-  # The homelab example's image, with its Rack extension.
-  homelab =
-    (mkImages { variants.node.modules = [ ../../examples/homelab/extensions/rack.nix ]; })
+  # The extensions example's image, with its Rack extension.
+  extensions =
+    (mkImages { variants.node.modules = [ ../../examples/extensions/rack.nix ]; })
     .nixos.node-metal.config;
   kindNames = config: map (k: k.kind) config.system.build.chalkosKinds;
   builtinFixture =
@@ -2458,9 +2458,10 @@ lib.runTests {
     });
     expected = true;
   };
-  # The homelab's unit reads the node's Rack with chalkcfg, by a path the evaluation checked.
-  testHomelabRackReadsWithChalkcfg = {
-    expr = lib.hasInfix "/bin/chalkcfg get Rack rack -o 'jsonpath={.spec.location}'" homelab.systemd.services.rack-location.serviceConfig.ExecStart.text;
+  # The extensions example's unit reads the node's Rack with chalkcfg, by a path the evaluation
+  # checked.
+  testExtensionsRackReadsWithChalkcfg = {
+    expr = lib.hasInfix "/bin/chalkcfg get Rack rack -o 'jsonpath={.spec.location}'" extensions.systemd.services.rack-location.serviceConfig.ExecStart.text;
     expected = true;
   };
   testBuiltinKindHasGet = {

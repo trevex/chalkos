@@ -51,6 +51,7 @@ use the same tools and variables from `nix/testing/env.nix`.
 | `nix/` | Tooling: packages, apps, checks, the development shell, the docs build, and the test images and their secrets in `nix/testing/`. |
 | `templates/lab/` | The lab template the quick start uses. |
 | `examples/homelab/` | An example cluster: a flake that builds its image with an extension, an inventory and its YAML, which the `example-homelab` check builds and validates. |
+| `examples/extensions/` | An example of extension kinds: a flake that builds an image with the `Rack` and `Hardware` extensions and Kubernetes off, an inventory and its node's YAML, which the `example-extensions` check builds and validates. |
 | `test/e2e/` | The end-to-end tests, which boot virtual machines. |
 | `test/nix/` | The Nix evaluation tests. |
 | `test/veritysize/` | A helper of the `image-size` check that reads an image's store and hash tree sizes with `pkg/verity`. |

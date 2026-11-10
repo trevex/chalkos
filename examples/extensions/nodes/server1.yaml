@@ -1,0 +1,17 @@
+apiVersion: storage.chalkos.dev/v1alpha1
+kind: SystemDisk
+metadata: {name: system}
+spec:
+  disk: {path: /dev/disk/by-id/nvme-Samsung_SSD_990_PRO_2TB_S7KHNJ0W100001}
+---
+# Where the server is mounted; the rack survey, once it ran, holds the node to this location.
+apiVersion: rack.example.org/v1alpha1
+kind: Rack
+metadata: {name: rack}
+spec:
+  location: rack-a/u12
+---
+apiVersion: hardware.example.org/v1alpha1
+kind: Hardware
+metadata: {name: hardware}
+spec: {vendor: Supermicro, model: SYS-E300-9D, assetTag: HL-0001}

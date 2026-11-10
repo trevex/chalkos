@@ -213,10 +213,9 @@ in
       command = validatePinned;
     };
 
-  # The homelab example: its flake builds the nodes' metal image with the Rack, Hardware and BGP
-  # extensions, and chalkctl validate accepts its nodes' YAML, Rack, Hardware and Peer documents
-  # included, with that image where their Image points, and validatePinned checks its Cluster
-  # document's images.
+  # The homelab example: its flake builds the nodes' metal image with the BGP extension, and
+  # chalkctl validate accepts its nodes' YAML, Peer documents included, with that image where
+  # their Image points, and validatePinned checks its Cluster document's images.
   example-homelab =
     let
       homelab = (import ../../examples/homelab/flake.nix).outputs {
@@ -229,6 +228,22 @@ in
       src = ../../examples/homelab;
       images."images/node-metal" = homelab.packages.${pkgs.stdenv.hostPlatform.system}.node-metal;
       command = validatePinned;
+    };
+
+  # The extensions example: its flake builds a metal image with the Rack and Hardware extensions
+  # and Kubernetes off, and chalkctl validate accepts its node's YAML, Rack and Hardware documents
+  # included, with that image where its Image points.
+  example-extensions =
+    let
+      example = (import ../../examples/extensions/flake.nix).outputs {
+        chalkos = self;
+        self = { };
+      };
+    in
+    checkLib.validateDirectory {
+      name = "example-extensions";
+      src = ../../examples/extensions;
+      images."images/node-metal" = example.packages.${pkgs.stdenv.hostPlatform.system}.node-metal;
     };
 
   # The homelab's validator bgp-peers refuses router-c with the report validate-config.md shows,

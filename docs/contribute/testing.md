@@ -144,7 +144,8 @@ shell functions `fail`, `retry` and `refuses` the check scripts call. The test s
 | `image-checker` | An image's `chalkd check` in its sandbox on a NixOS VM, with a second store: the image's renderer and command fact run from it, a renderer's refusal comes back, the sandbox hides `/run/chalkos`, and another user reaches neither the facts socket nor the result. |
 | `rules` | The images' rules compile, their outputs render their examples and pass their checks, and a broken rule, effect, output or diagnostic fails its image. |
 | `template-lab` | The lab template's image builds, and `chalkctl validate` accepts the template's YAML with it. |
-| `example-homelab` | The homelab example's image builds, and `chalkctl validate` accepts its YAML, `Rack` documents included, with it. |
+| `example-homelab` | The homelab example's image builds, and `chalkctl validate` accepts its YAML, `Peer` documents included, with it. |
+| `example-extensions` | The extensions example's image builds, and `chalkctl validate` accepts its YAML, `Rack` and `Hardware` documents included, with it. |
 
 ## End-to-end tests
 
@@ -206,6 +207,7 @@ Every check builds with `nix build`, and a change runs the checks of the parts i
 | Pages in `docs/` | `docs` |
 | Modules in `modules/` or `lib/` | `eval`, `eval-kinds`, and the build and end-to-end checks of what the module does |
 | `examples/homelab` | `example-homelab` |
+| `examples/extensions` | `example-extensions` |
 | Kernel modules, closure, image size | `kernel-modules`, `image-size`, `bootspec` |
 | The firewall or VXLAN rule | `vxlan-rule`, `go-unit`, `e2e-kubernetes` |
 | The router's kinds, outputs or firewall | `router-firewall`, `rules`, `eval`, `eval-kinds`, `go-unit` |

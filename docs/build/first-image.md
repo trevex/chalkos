@@ -23,7 +23,7 @@ needs that directory and no Nix.
 
 ## The flake calls mkImages
 
-The homelab's flake builds one image, with three extensions that add config kinds:
+The homelab's flake builds one image, with an extension that adds a config kind:
 
 ```nix title="flake.nix"
 --8<-- "examples/homelab/flake.nix"
@@ -36,7 +36,7 @@ The call sets three arguments:
 - `revision` is the commit the image is built from. chalkctl shows it beside the image's root
   hash.
 - `platforms` names the kinds of machine to build for, here `metal` alone.
-- `variants.node.modules` adds the extensions' NixOS modules to the one variant, `node`.
+- `variants.node.modules` adds the extension's NixOS modules to the one variant, `node`.
 
 `mkImages` returns the image as `images.node-metal`, and the flake exposes it as the package
 `node-metal`. One image serves every node of its variant and platform. What differs between

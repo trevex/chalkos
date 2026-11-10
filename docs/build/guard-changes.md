@@ -7,9 +7,9 @@ description: "Refuse a config change a node cannot make, with CEL rules on your 
 
 This page is for an image author whose kind has values that must not change freely once a node
 runs them. At the end the kind carries change rules, chalkctl and chalkd refuse a change that
-breaks one, and the refusal tells the operator what to do instead. The page uses the homelab's
-two extensions: the `Peer` kind of `extensions/bgp.nix` and the `Rack` kind of
-`extensions/rack.nix`.
+breaks one, and the refusal tells the operator what to do instead. The page uses two example
+extensions: the `Peer` kind of the homelab's `extensions/bgp.nix` and the `Rack` kind of
+`rack.nix` in the [extensions example](https://github.com/trevex/chalkos/tree/main/examples/extensions).
 
 A change rule is a CEL expression that every config the node accepts makes true. The rules are
 part of the image's schemas, so what a node accepts changes with an upgrade. A rule that needs
@@ -179,19 +179,19 @@ whole. Lists are not matched item by item by a key.
 
 ## Facts give a rule node state
 
-A fact is node state that a rule reads as `facts.<name>`. The homelab's `Rack` kind refuses a
-location that differs from the one a rack survey wrote to the node:
+A fact is node state that a rule reads as `facts.<name>`. The extensions example's `Rack` kind
+refuses a location that differs from the one a rack survey wrote to the node:
 
-```nix title="extensions/rack.nix"
---8<-- "examples/homelab/extensions/rack.nix"
+```nix title="rack.nix"
+--8<-- "examples/extensions/rack.nix"
 ```
 
 [`chalkos.facts`](../reference/extension-api.md#chalkosfacts) declares the fact `rackSurvey`: the JSON
 of `/var/lib/rack-survey/location.json`, or null while the file is missing. The rule does not
 read `oldSelf`, so it checks every `Rack` a node is delivered, its first one too.
 
-Say the survey file on `cp1` holds `{"location": "rack-b/u3"}`, because the node moved, while
-`nodes/cp1.yaml` still says `rack-a/u12`. The rule reads a fact, so chalkctl cannot check it and
+Say the survey file on `server1` holds `{"location": "rack-b/u3"}`, because the node moved, while
+`nodes/server1.yaml` still says `rack-a/u12`. The rule reads a fact, so chalkctl cannot check it and
 the node refuses the delivery. chalkctl prints the node's error after `chalkctl:` and the error's
 code. The message part of it is:
 

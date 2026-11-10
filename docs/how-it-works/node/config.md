@@ -97,8 +97,9 @@ describes.
 An image declares only the kinds its modules bring. An extension adds kinds of its own in a group
 outside `chalkos.dev`, declared in the NixOS modules of a variant, as
 [Declare a config kind](../../build/declare-a-kind.md) shows. Their documents go into the same files
-as chalkos's. The homelab example's `Rack` kind records where a node is mounted, and each node's
-file holds one:
+as chalkos's. The `Rack` kind of the
+[extensions example](https://github.com/trevex/chalkos/tree/main/examples/extensions) records
+where a node is mounted, and the example's node file holds one:
 
 ```yaml
 apiVersion: rack.example.org/v1alpha1

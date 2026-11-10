@@ -212,12 +212,12 @@ nix develop -c go run ./cmd/docgen check docs
 ```
 
 `docgen yaml` reads every `yaml` block and checks each document whose group is `chalkos.dev`, a
-subdomain of it, or `rack.example.org`, the homelab's extension, as `chalkctl validate` checks a
-node's files: against the schemas of an image of the default variant with the homelab's `Rack`
-kind, and of the inventory and the lab file. A kind the image does not declare, a misspelled field
-or a value of the wrong type fails, and the error names the page's line the document starts on.
-Documents of other groups, such as Kubernetes objects, fragments without an `apiVersion` and
-documents that are not objects are not checked.
+subdomain of it, or the group of a kind the examples declare, such as `rack.example.org` or
+`bgp.example.org`, as `chalkctl validate` checks a node's files: against the schemas of an
+image of the default variant with the examples' kinds, and of the inventory and the lab file. A
+kind the image does not declare, a misspelled field or a value of the wrong type fails, and the
+error names the page's line the document starts on. Documents of other groups, such as Kubernetes
+objects, fragments without an `apiVersion` and documents that are not objects are not checked.
 
 The `docs` check also runs nixfmt's parser over every `nix` block. A block whose `title` names a
 `.nix` file is a whole file and must parse as one. A block without such a title is a fragment and

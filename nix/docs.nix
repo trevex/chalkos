@@ -17,6 +17,8 @@ let
     "nodes"
     "cluster"
   ];
+  # The extensions example's files the pages include as snippets.
+  extensionsSnippets = [ "rack.nix" ];
   # The lab template's files the pages include as snippets.
   templateSnippets = [ "cluster" ];
   src = lib.fileset.toSource {
@@ -28,6 +30,7 @@ let
         ../includes
       ]
       ++ map (path: ../examples/homelab + "/${path}") homelabSnippets
+      ++ map (path: ../examples/extensions + "/${path}") extensionsSnippets
       ++ map (path: ../templates/lab + "/${path}") templateSnippets
     );
   };
@@ -95,7 +98,7 @@ let
   # The documentation is generated and checked against the images of testing/fixtures.nix: the
   # default variant, whose options the reference lists, one without Kubernetes, whose built-ins are
   # those of every image, a router image, whose kinds and built-ins router images add, and one with
-  # the homelab's extensions, whose documents the pages show as an extension's. An image's own
+  # the examples' extensions, whose documents the pages show as an extension's. An image's own
   # options are those the node modules declare.
   imageSystem = fixtures.nixos.docs-metal;
   # The schemas of chalkctl's inventory and chalklab's lab file, which they are built with.
@@ -107,7 +110,7 @@ let
   # Rack, Hardware and BGP extensions, those router images add, the inventory and the lab file.
   snippetSchemas = pkgs.runCommand "chalkos-docs-schemas" { } ''
     mkdir $out
-    ln -s ${fixtures.nixos.homelab-metal.config.system.build.chalkosSchemas}/*.json $out/
+    ln -s ${fixtures.nixos.examples-metal.config.system.build.chalkosSchemas}/*.json $out/
     ln -s ${routerSchemas} $out/
     ln -s ${inventorySchema} $out/chalkctl.chalkos.dev_v1alpha1_Inventory.json
     ln -s ${labSchema} $out/chalklab.chalkos.dev_v1alpha1_Lab.json
@@ -299,6 +302,10 @@ rec {
         mkdir -p "$work/examples/homelab"
         for path in ${lib.escapeShellArgs homelabSnippets}; do
           rsync -a --delete "examples/homelab/$path" "$work/examples/homelab/"
+        done
+        mkdir -p "$work/examples/extensions"
+        for path in ${lib.escapeShellArgs extensionsSnippets}; do
+          rsync -a --delete "examples/extensions/$path" "$work/examples/extensions/"
         done
         mkdir -p "$work/templates/lab"
         for path in ${lib.escapeShellArgs templateSnippets}; do

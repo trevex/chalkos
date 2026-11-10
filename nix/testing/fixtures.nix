@@ -1,6 +1,7 @@
 # The images the checks and the documentation evaluate without booting them, from one call of
 # mkImages so each is evaluated once: docs, the default variant; plain, without Kubernetes; edge,
-# a router image; and homelab, the default variant with the homelab's extensions.
+# a router image; and examples, the default variant with the extensions of the homelab and
+# extensions examples.
 { self }:
 self.lib.mkImages {
   platforms = [ "metal" ];
@@ -11,6 +12,9 @@ self.lib.mkImages {
       kubernetes = false;
       router = true;
     };
-    homelab.modules = [ ../../examples/homelab/extensions ];
+    examples.modules = [
+      ../../examples/homelab/extensions
+      ../../examples/extensions
+    ];
   };
 }

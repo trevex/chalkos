@@ -254,12 +254,12 @@ in
     '';
 
   # An image builds only when its rules compile and read the facts it declares, and its effects
-  # act on units it defines. The test image's Greeting and the homelab example's Rack, Hardware and
-  # Peer bring extension kinds with their own rules, facts, effects and outputs; a rule that does
-  # not compile, one that reads a fact no module declares, an effect's rule that does not compile,
-  # an effect on a unit the image lacks, a diagnostic whose regex does not compile and an output
-  # whose check refuses an example fail the check of their image. The homelab's Hardware output
-  # renders hardware-examples/server.yaml, and its bird-conf output renders
+  # act on units it defines. The test image's Greeting and the examples' Rack, Hardware and Peer
+  # bring extension kinds with their own rules, facts, effects and outputs; a rule that does not
+  # compile, one that reads a fact no module declares, an effect's rule that does not compile, an
+  # effect on a unit the image lacks, a diagnostic whose regex does not compile and an output whose
+  # check refuses an example fail the check of their image. The extensions example's Hardware
+  # output renders hardware-examples/server.yaml, and the homelab's bird-conf output renders
   # bgp-examples/two-peers.yaml, which bird -p parses. A router image checks its rules, renders its
   # router examples and holds the modules of its firewall and Jool, its firewall check refuses what
   # the kernel would, its FRR check what vtysh would, its Jool check what jool would and its
@@ -271,7 +271,7 @@ in
       build =
         modules:
         (self.lib.mkImages { variants.worker.modules = modules; }).nixos.worker-metal.config.system.build;
-      homelab = checkLib.fixtures.nixos.homelab-metal.config.system.build;
+      examples = checkLib.fixtures.nixos.examples-metal.config.system.build;
       router = checkLib.router.config.system.build;
       # The rules check of the router image without the router features named.
       routerWithout =
@@ -375,7 +375,7 @@ in
         ];
         checked = [
           testing.nixos.test-metal.config.system.build.chalkosRulesCheck
-          homelab.chalkosRulesCheck
+          examples.chalkosRulesCheck
           router.chalkosRulesCheck
           routerModules
           (routerWithout [ "bgp" ])
@@ -394,7 +394,7 @@ in
       }
       ''
         ${checkLib.prelude}
-        chalkos-rules check ${homelab.chalkosRulesImage} | grep -q rackSurvey
+        chalkos-rules check ${examples.chalkosRulesImage} | grep -q rackSurvey
         # refused <image> <message>: the check of the image's files fails, and says why.
         refused() { refuses "chalkos-rules check $1" "$2" chalkos-rules check "$1"; }
         refused ${broken.chalkosRulesImage} 'Demo: rule "documents ==": ERROR: <input>:1:13: Syntax error'

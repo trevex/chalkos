@@ -46,7 +46,7 @@ platform's modules and before the variant's own:
 images = chalkos.lib.mkImages {
   platforms = [ "metal" ];
   modules = [ ./modules/disk-report.nix ];
-  variants.node.modules = [ ./extensions/rack.nix ];
+  variants.node.modules = [ ./extensions/bgp.nix ];
 };
 ```
 

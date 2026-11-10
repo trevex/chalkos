@@ -1,0 +1,11 @@
+# One server, the image it runs and its config file.
+apiVersion: chalkctl.chalkos.dev/v1alpha1
+kind: Inventory
+metadata: {name: extensions}
+spec:
+  images:
+    # nix build .#node-metal -o images/node-metal puts the image here.
+    node-metal: {source: {directory: images/node-metal}}
+  all: {imageName: node-metal}
+  nodes:
+    server1: {address: 192.0.2.10, files: [nodes/server1.yaml]}

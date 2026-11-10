@@ -61,9 +61,8 @@ Here is `cp1`'s own file, `nodes/cp1.yaml`:
 ```
 
 Each document has an `apiVersion` with its group and version, a `kind`, a `metadata.name` and a
-`spec`. The `Rack` and `Hardware` kinds come from the homelab's extensions, which the image
-declares. A kind of which a node holds one takes any `metadata.name`; the examples use
-`default` or the kind's own name.
+`spec`. A kind of which a node holds one takes any `metadata.name`; the examples use
+`default` or a short name such as `system`.
 
 ## Documents never merge
 
