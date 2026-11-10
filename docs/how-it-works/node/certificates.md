@@ -69,7 +69,7 @@ with its key and the node CA's certificate in one file on STATE, `/state/chalkd/
 issues the first one at install.
 
 Client certificates come from the OS CA directly. A client file from
-[`chalkctl config new`](../../reference/cli/chalkctl_config_new.md) holds one, valid for one year
+[`chalkctl client new`](../../reference/cli/chalkctl_client_new.md) holds one, valid for one year
 by default (`--ttl`). A command that reads the secrets file issues itself an admin certificate that
 lives one hour and exists only in memory.
 

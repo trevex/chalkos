@@ -95,7 +95,7 @@ or says it takes [`chalkctl storage reset`](cli/chalkctl_storage_reset.md) or a 
 
 A JSON file that lets someone operate nodes without the [secrets file](#secrets-file). It holds a
 client certificate of one [client role](#client-role), its key and the [OS CA](#os-ca)
-certificate, and [`chalkctl config new`](cli/chalkctl_config_new.md) issues it. It names no cluster: its OS CA ties it to one,
+certificate, and [`chalkctl client new`](cli/chalkctl_client_new.md) issues it. It names no cluster: its OS CA ties it to one,
 and a node of another cluster fails the TLS handshake with it. See
 [Set up your workstation](../operate/workstation.md) and
 [Security model](../how-it-works/node/security.md).

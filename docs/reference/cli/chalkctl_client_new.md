@@ -1,12 +1,12 @@
 ---
-title: "chalkctl config new"
+title: "chalkctl client new"
 description: "Write a client file, which operates the cluster without the secrets file"
 ---
 
-# chalkctl config new
+# chalkctl client new
 
 ```sh
-chalkctl config new [flags]
+chalkctl client new [flags]
 ```
 
 Writes a client file: a new key with a certificate from the OS CA for --name and --role, and
@@ -40,12 +40,12 @@ The command needs the secrets file and no inventory.
 
 ```sh
 # A reader's client file for a dashboard.
-chalkctl config new --name grafana --role reader --ttl 720h --out grafana.json --secrets secrets.age
+chalkctl client new --name grafana --role reader --ttl 720h --out grafana.json --secrets secrets.age
 
 # The operator's own client file, at ~/.config/chalkos/config.
-chalkctl config new --name alice --role operator --secrets secrets.age
+chalkctl client new --name alice --role operator --secrets secrets.age
 ```
 
 ## See also
 
-- [chalkctl config](chalkctl_config.md): Deliver nodes' config and manage client files
+- [chalkctl client](chalkctl_client.md): Manage client files

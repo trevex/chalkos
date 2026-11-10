@@ -139,11 +139,11 @@ chalkctl gen secrets --recipient=<age-public-key>
 
 A client file holds one certificate of one role, its key and the OS CA certificates. It lets
 someone operate the cluster without the secrets file, limited to the role.
-[`chalkctl config new`](../../reference/cli/chalkctl_config_new.md) issues it, valid for one year
+[`chalkctl client new`](../../reference/cli/chalkctl_client_new.md) issues it, valid for one year
 unless `--ttl` says otherwise, and writes it to `~/.config/chalkos/config` with mode 0600:
 
 ```sh
-chalkctl config new --name=grafana --role=reader --ttl=720h --out=grafana.json
+chalkctl client new --name=grafana --role=reader --ttl=720h --out=grafana.json
 ```
 
 A client file names no cluster. Its OS CA ties it to one: a node of another cluster serves a
@@ -274,5 +274,5 @@ files, for the host, so the hypervisor's admin gets no shell on the node through
 - [The image](image.md): the store, dm-verity and the UKI.
 - [Sign images for Secure Boot](../../build/sign-images.md).
 - [Manage access and certificates](../../operate/access.md).
-- [Node API](../../reference/api.md), [`chalkctl config new`](../../reference/cli/chalkctl_config_new.md)
+- [Node API](../../reference/api.md), [`chalkctl client new`](../../reference/cli/chalkctl_client_new.md)
   and [`chalkctl gen secrets`](../../reference/cli/chalkctl_gen_secrets.md).

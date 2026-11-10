@@ -24,10 +24,10 @@ and when status warns about them.
 ## A client file gives one person one role
 
 A client file holds a certificate of one role, its key and the OS CA. It lets a person run chalkctl
-without the secrets file. Issue one per person with `chalkctl config new`:
+without the secrets file. Issue one per person with `chalkctl client new`:
 
 ```sh
-chalkctl config new --name alice --role operator --ttl 2160h --out alice.json --secrets secrets.age
+chalkctl client new --name alice --role operator --ttl 2160h --out alice.json --secrets secrets.age
 ```
 
 `--role` is reader, operator or admin. Give each person the least role their work needs.
@@ -234,10 +234,10 @@ os-ca: the accept phase
   cp1 trusts the 2 OS CAs of the secrets file
   w1 trusts the 2 OS CAs of the secrets file
 os-ca: every node applied the accept phase
-Every node trusts the old and the new OS CA. Issue new client files now with chalkctl config new: they carry both OS CAs and work throughout the rotation and after it. Client files from before the rotation stop verifying the nodes from the switch on and are refused at the finish. Then continue with chalkctl rotate os-ca --resume, which makes the new OS CA issue.
+Every node trusts the old and the new OS CA. Issue new client files now with chalkctl client new: they carry both OS CAs and work throughout the rotation and after it. Client files from before the rotation stop verifying the nodes from the switch on and are refused at the finish. Then continue with chalkctl rotate os-ca --resume, which makes the new OS CA issue.
 ```
 
-Issue a new client file for everyone who keeps access, with `chalkctl config new`. Then resume:
+Issue a new client file for everyone who keeps access, with `chalkctl client new`. Then resume:
 
 ```console
 $ chalkctl rotate os-ca --resume --secrets secrets.age
@@ -248,7 +248,7 @@ os-ca: the refresh phase
   cp1 serves a certificate of the new node CA
   w1 serves a certificate of the new node CA
 os-ca: every node applied the refresh phase
-Every node serves a certificate of the new node CA and trusts the old and the new OS CA. Client files from before the rotation cannot verify the nodes any more and are refused after the finish: issue new ones with chalkctl config new. Build images and installer media again from secrets.pub.json; older ones trust the old OS CA alone, and installing from them fails. Then remove the old OS CA with chalkctl rotate os-ca --finish.
+Every node serves a certificate of the new node CA and trusts the old and the new OS CA. Client files from before the rotation cannot verify the nodes any more and are refused after the finish: issue new ones with chalkctl client new. Build images and installer media again from secrets.pub.json; older ones trust the old OS CA alone, and installing from them fails. Then remove the old OS CA with chalkctl rotate os-ca --finish.
 ```
 
 The switch gives the new node CA to the nodes that renew node certificates: on the shipped variant,

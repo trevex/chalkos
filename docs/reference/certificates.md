@@ -36,7 +36,7 @@ The secrets file also holds the recovery secret, from which each node's recovery
 | Certificate | Issued by | Lifetime | Renewed | Kept in |
 | --- | --- | --- | --- | --- |
 | Node certificate | chalkctl at install; a control plane, or chalkctl node renew | 1 year | by chalkd once two thirds of its lifetime have passed, checked about hourly; on a node without Kubernetes, by chalkctl node renew | `/state/chalkd/node.pem` on STATE, with its key and the node CA's certificate |
-| Client certificate of a client file | chalkctl config new | 1 year, or `--ttl` | by issuing a new client file | the client file |
+| Client certificate of a client file | chalkctl client new | 1 year, or `--ttl` | by issuing a new client file | the client file |
 | chalkctl's admin certificate | chalkctl, from the secrets file, for one command | 1 hour | never; each command issues its own | memory |
 | Control plane certificates | the control plane, from its Kubernetes share | 1 year | at every boot, and once two thirds of the lifetime of the first to expire have passed | `/run/chalkos/kubernetes/pki`, a tmpfs |
 | chalkd's clients of the API server and etcd | chalkd on a control plane | 1 hour | at half their lifetime | memory |

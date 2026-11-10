@@ -31,4 +31,4 @@ chalkctl config discard w1 --secrets secrets.age
 
 ## See also
 
-- [chalkctl config](chalkctl_config.md): Deliver nodes' config and manage client files
+- [chalkctl config](chalkctl_config.md): Deliver a node's config and act on its trial or pending config

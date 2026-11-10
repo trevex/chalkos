@@ -11,7 +11,7 @@ address, its image and its config files. It talks to chalkd on each node over mu
 builds or signs images.
 
 Commands authenticate with the cluster's secrets file, which holds every CA key and which only
---secrets names, or with a client file of the admin, operator or reader role, which chalkctl config
+--secrets names, or with a client file of the admin, operator or reader role, which chalkctl client
 new writes. Each command's help says which it needs. A command that accepts both takes --config or
 --secrets, not both, else the client file $CHALKOSCONFIG names, else ~/.config/chalkos/config.
 
@@ -33,8 +33,9 @@ chalkctl kubeconfig --secrets secrets.age
 
 - [chalkctl apply](chalkctl_apply.md): Deliver a node's config from the inventory: short for config apply
 - [chalkctl bootstrap](chalkctl_bootstrap.md): Initialise the cluster on a control plane
+- [chalkctl client](chalkctl_client.md): Manage client files
 - [chalkctl completion](chalkctl_completion.md): Write a shell completion script
-- [chalkctl config](chalkctl_config.md): Deliver nodes' config and manage client files
+- [chalkctl config](chalkctl_config.md): Deliver a node's config and act on its trial or pending config
 - [chalkctl disks](chalkctl_disks.md): List a node's disks
 - [chalkctl etcd](chalkctl_etcd.md): Manage the cluster's etcd members
 - [chalkctl gen](chalkctl_gen.md): Generate files of a cluster

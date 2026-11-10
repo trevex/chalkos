@@ -90,13 +90,13 @@ Commands that accept a client file take the first of:
 1. the client file `--config` names, or the secrets file `--secrets` names. Passing both fails
    with `pass --secrets or --config, not both`;
 2. the client file `$CHALKOSCONFIG` names;
-3. `~/.config/chalkos/config`, where `chalkctl config new` writes a client file without `--out`.
+3. `~/.config/chalkos/config`, where `chalkctl client new` writes a client file without `--out`.
 
 With none of them, the command fails with
 `there is no client file at <path>; pass --config or --secrets`.
 
 chalkctl refuses a client file whose certificate expired, with
-`the certificate of <path> expired on <date>; issue a new one with chalkctl config new`. It warns
+`the certificate of <path> expired on <date>; issue a new one with chalkctl client new`. It warns
 during the certificate's last 30 days.
 
 Sources: `pkg/chalkd/server.go`, `pkg/chalkd/layers/kubernetes/plugin.go`,

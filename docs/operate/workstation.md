@@ -179,11 +179,11 @@ value only to the units that are granted the kind that names it.
 ## A client file grants one role
 
 A client file holds a certificate of one client role, its key and the OS CA. It lets one person
-run the everyday commands without the secrets file. `chalkctl config new` issues one from the
+run the everyday commands without the secrets file. `chalkctl client new` issues one from the
 secrets file:
 
 ```console
-$ chalkctl config new --name alice --role operator --secrets secrets.age
+$ chalkctl client new --name alice --role operator --secrets secrets.age
 wrote /home/alice/.config/chalkos/config for alice with the operator role; its certificate expires on 2027-10-23
 ```
 
@@ -207,7 +207,7 @@ others take a client file of a high enough role, or the secrets file, which coun
 
 | Command | Secrets file | Admin client file | Operator client file | Reader client file |
 | --- | --- | --- | --- | --- |
-| `install`, `config apply`, `config new` | yes | no | no | no |
+| `install`, `config apply`, `client new` | yes | no | no | no |
 | `recovery-key`, `node renew`, `rotate` | yes | no | no | no |
 | `storage reset` | yes | yes | no | no |
 | `upgrade` with config, `upgrade --diff` | yes | yes | no | no |
@@ -267,7 +267,7 @@ flowchart LR
     gen["chalkctl gen secrets"] -->|writes| secrets
     gen -->|writes| pub["secrets.pub.json"]
     pub -->|osCA| images["Images and installer"]
-    secrets -->|chalkctl config new| client["Client file of one role"]
+    secrets -->|chalkctl client new| client["Client file of one role"]
     secrets -->|admin certificate for one run| chalkctl["chalkctl"]
     client -->|certificate of its role| chalkctl
     chalkctl -->|mutual TLS| chalkd["chalkd on each node"]

@@ -112,13 +112,16 @@ nav = [
         { "Overview" = "reference/cli/chalkctl.md" },
         { "apply" = "reference/cli/chalkctl_apply.md" },
         { "bootstrap" = "reference/cli/chalkctl_bootstrap.md" },
+        { "client" = [
+          { "Overview" = "reference/cli/chalkctl_client.md" },
+          { "new" = "reference/cli/chalkctl_client_new.md" },
+        ] },
         { "completion" = "reference/cli/chalkctl_completion.md" },
         { "config" = [
           { "Overview" = "reference/cli/chalkctl_config.md" },
           { "apply" = "reference/cli/chalkctl_config_apply.md" },
           { "confirm" = "reference/cli/chalkctl_config_confirm.md" },
           { "discard" = "reference/cli/chalkctl_config_discard.md" },
-          { "new" = "reference/cli/chalkctl_config_new.md" },
           { "rollback" = "reference/cli/chalkctl_config_rollback.md" },
         ] },
         { "disks" = "reference/cli/chalkctl_disks.md" },
