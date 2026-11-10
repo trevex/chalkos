@@ -74,8 +74,8 @@ func TestBootLines(t *testing.T) {
 }
 
 // TestStagedAdvice advises the delivery that gives the staged image's slot the inventory's config:
-// a plain apply-config, which writes both slots, while the running image's differs too;
-// apply-config --staged while the running image runs the inventory's config already; and none for
+// a plain config apply, which writes both slots, while the running image's differs too;
+// config apply --staged while the running image runs the inventory's config already; and none for
 // the image chalkd names known-good, which keeps the config it last ran, whatever else the boot
 // tells. During a trial, which holds every delivery back, the confirmation writes the slot when
 // the inventory's config is on trial, and the trial's end comes first otherwise.
@@ -95,11 +95,11 @@ func TestStagedAdvice(t *testing.T) {
 		s    *nodev1.StatusResponse
 		want string
 	}{
-		"running differs":             {status("old", false, ""), "chalkctl apply-config w1 delivers it"},
-		"running is the same":         {status("want", false, ""), "chalkctl apply-config --staged w1 delivers it"},
+		"running differs":             {status("old", false, ""), "chalkctl config apply w1 delivers it"},
+		"running is the same":         {status("want", false, ""), "chalkctl config apply --staged w1 delivers it"},
 		"known-good":                  {status("want", true, ""), knownGood},
 		"known-good, running differs": {status("old", true, ""), knownGood},
-		"on trial":                    {status("want", false, "want"), "the confirmation of its trial writes it: chalkctl apply-config confirm w1"},
+		"on trial":                    {status("want", false, "want"), "the confirmation of its trial writes it: chalkctl config confirm w1"},
 		"another on trial":            {status("other", false, "other"), "the node takes no delivery until the trial of config other ends"},
 	} {
 		if got := stagedAdvice("w1", "want", tc.s); got != tc.want {

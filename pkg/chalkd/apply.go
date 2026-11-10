@@ -200,7 +200,7 @@ func (s *Server) planDelivery(ctx context.Context, r applyRequest) (*delivery, e
 	data := r.identity
 	if d.keep {
 		if !found {
-			return nil, layer.Errorf(connect.CodeFailedPrecondition, "STATE holds no config for the running image, so the node has no identity to keep; deliver config with chalkctl apply-config")
+			return nil, layer.Errorf(connect.CodeFailedPrecondition, "STATE holds no config for the running image, so the node has no identity to keep; deliver config with chalkctl config apply")
 		}
 		data = string(prev.Identity)
 	} else {

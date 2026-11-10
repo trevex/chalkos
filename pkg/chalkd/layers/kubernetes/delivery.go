@@ -107,7 +107,7 @@ func (p *Plugin) WriteConfig(docs config.Documents) error {
 			if rerr := p.writeCluster(nil); rerr != nil {
 				return errors.Join(err, rerr)
 			}
-			return fmt.Errorf("the node runs no Kubernetes: its stored config gives no Kubernetes cluster for this image: %w; deliver config that does with chalkctl apply-config", err)
+			return fmt.Errorf("the node runs no Kubernetes: its stored config gives no Kubernetes cluster for this image: %w; deliver config that does with chalkctl config apply", err)
 		}
 	}
 	return p.writeCluster(c)

@@ -160,7 +160,7 @@ func TestApplyConfigDeliversShare(t *testing.T) {
 	s, r := kubernetesNode(t, ta)
 	addr := ta.startNode(t, s)
 
-	if err := ta.run(context.Background(), ta.args([]string{"apply-config", "n1", "--kubernetes-share"}, addr)); err != nil {
+	if err := ta.run(context.Background(), ta.args([]string{"config", "apply", "n1", "--kubernetes-share"}, addr)); err != nil {
 		t.Fatal(err)
 	}
 	data, err := os.ReadFile(kubernetesState(s).Share())
@@ -176,11 +176,11 @@ func TestApplyConfigDeliversShare(t *testing.T) {
 
 	// Without --kubernetes-share the node keeps its share.
 	r.calls = nil
-	if err := ta.run(context.Background(), ta.args([]string{"apply-config", "n1"}, addr)); err != nil {
+	if err := ta.run(context.Background(), ta.args([]string{"config", "apply", "n1"}, addr)); err != nil {
 		t.Fatal(err)
 	}
 	if slices.Contains(r.calls, "systemctl restart chalkos-kubernetes.service kubelet.service") {
-		t.Error("apply-config without --kubernetes-share restarted the kubelet")
+		t.Error("config apply without --kubernetes-share restarted the kubelet")
 	}
 }
 func TestKubeconfig(t *testing.T) {
@@ -319,7 +319,7 @@ func TestStatusShowsKubernetes(t *testing.T) {
 	if !strings.Contains(ta.stdout.String(), "kubernetes worker: no share") {
 		t.Errorf("status without share = %q", ta.stdout)
 	}
-	if err := ta.run(context.Background(), ta.args([]string{"apply-config", "n1", "--kubernetes-share"}, addr)); err != nil {
+	if err := ta.run(context.Background(), ta.args([]string{"config", "apply", "n1", "--kubernetes-share"}, addr)); err != nil {
 		t.Fatal(err)
 	}
 	ta.stdout.Reset()

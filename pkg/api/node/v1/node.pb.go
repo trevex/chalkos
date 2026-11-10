@@ -3479,7 +3479,7 @@ type BootStatus struct {
 	// Whether the image staged is the node's known-good image: active and uncounted, as a rollback
 	// from a boot that was not found healthy stages it, while the boot the node runs is counted.
 	// Until that boot is found healthy the node falls back to that image, which keeps the config it
-	// last ran: a delivery leaves its config slot as it is, and apply-config --staged refuses other
+	// last ran: a delivery leaves its config slot as it is, and config apply --staged refuses other
 	// config for it. False without an image staged.
 	StagedKnownGood bool `protobuf:"varint,13,opt,name=staged_known_good,json=stagedKnownGood,proto3" json:"staged_known_good,omitempty"`
 	unknownFields   protoimpl.UnknownFields

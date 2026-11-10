@@ -49,21 +49,30 @@ func (f applyConfigFlags) payloads() bool {
 	return slices.ContainsFunc(f.layers, func(l layerFlags) bool { return l.f.Requested() })
 }
 
-// layerFlags are a layer's apply-config flags with the layer that registered them.
+// layerFlags are a layer's flags of config apply with the layer that registered them.
 type layerFlags struct {
 	d layer.Delivery
 	f layer.ApplyFlags
 }
 
-func (a *app) applyConfigCommand() *cobra.Command {
-	f := applyConfigFlags{node: nodeFlags{needs: "apply-config"}, until: untilConfirm, rollout: map[string]any{}}
-	cmd := a.command(&cobra.Command{
-		Use:     "apply-config <node> [<node>...]",
+// applyConfigCommand returns config apply, or with short its short form, chalkctl apply. Each call
+// builds a command of its own with its own flags, so both can be in the tree.
+func (a *app) applyConfigCommand(short bool) *cobra.Command {
+	f := applyConfigFlags{node: nodeFlags{needs: "config apply"}, until: untilConfirm, rollout: map[string]any{}}
+	cmd := &cobra.Command{
+		Use:     "apply <node> [<node>...]",
 		Short:   "Deliver a node's config from the inventory",
 		Long:    applyConfigLong,
 		Example: applyConfigExample,
 		Args:    cli.MinimumNArgs(1),
-	}, func(a *app, ctx context.Context, pos []string) error { return a.applyConfig(ctx, f, pos) })
+	}
+	if short {
+		f.node.needs = "apply"
+		cmd.Short = "Deliver a node's config from the inventory: short for config apply"
+		cmd.Long = applyShortLong + "\n\n" + applyConfigLong
+		cmd.Example = strings.ReplaceAll(applyConfigExample, "chalkctl config apply ", "chalkctl apply ")
+	}
+	a.command(cmd, func(a *app, ctx context.Context, pos []string) error { return a.applyConfig(ctx, f, pos) })
 	fs := cmd.Flags()
 	f.node.Register(fs)
 	setAddressUsage(fs, "address of the node's chalkd, host or host:port, or NODE=ADDR of any node of the cluster; repeat it for several (default each node's address in the inventory)")
@@ -83,9 +92,9 @@ func (a *app) applyConfigCommand() *cobra.Command {
 	fs.BoolVar(&f.diff, "diff", false, "print what the config changes in the node's config, document by document and field by field, and change nothing; the node checks nothing, which --dry-run has it do")
 	fs.BoolVar(&f.dryRun, "dry-run", false, "have the node check the config as it checks a delivery, its renderers and facts included, print the diff and what the delivery would change, and change nothing; with --staged, the staged image checks it; takes several nodes")
 	fs.DurationVar(&f.try, "try", 0, "apply the config on trial for the duration, from 10s to 24h: the node rolls it back by itself unless chalkctl confirms it over a new connection once the node is healthy")
-	fs.BoolVar(&f.noConfirm, "no-confirm", false, "with --try, leave the trial open for apply-config confirm")
+	fs.BoolVar(&f.noConfirm, "no-confirm", false, "with --try, leave the trial open for config confirm")
 	fs.StringArrayVar(&f.ignoreUnits, "ignore-unit", nil, "with --try, leave the unit out of the health check the confirmation waits for, as the image's check leaves out the units it ignores")
-	fs.Var(cli.Enum(&f.until, "step", untilDeliver, untilConfirm), "until", "how far the delivery goes: deliver delivers to the first node that does not run the config, on trial, and leaves the trial open for apply-config confirm; confirm delivers to every node")
+	fs.Var(cli.Enum(&f.until, "step", untilDeliver, untilConfirm), "until", "how far the delivery goes: deliver delivers to the first node that does not run the config, on trial, and leaves the trial open for config confirm; confirm delivers to every node")
 	for _, p := range plugins {
 		if l, ok := p.(layer.Rollout); ok {
 			f.rollout[p.Name()] = l.RolloutFlags(fs)
@@ -101,7 +110,6 @@ func (a *app) applyConfigCommand() *cobra.Command {
 	for _, name := range payloadNames {
 		cmd.MarkFlagsMutuallyExclusive("dry-run", name)
 	}
-	cmd.AddCommand(a.confirmConfigCommand(), a.rollbackConfigCommand(), a.discardPendingCommand())
 	return cmd
 }
 
@@ -258,7 +266,7 @@ func (a *app) deliverConfig(ctx context.Context, f applyConfigFlags, t *target) 
 		return &layer.NodeError{Node: t.name, Err: fmt.Errorf("%s runs config %s already; --try needs a config that changes it", t.name, d.Version), Named: true}
 	}
 	// A unit that failed before the trial keeps its confirmation from passing, also later with
-	// apply-config confirm, unless it recovers or is left out.
+	// config confirm, unless it recovers or is left out.
 	if f.try > 0 {
 		if w := failedUnitsWarning(st.Msg.FailedUnits, f.ignoreUnits); w != "" {
 			fmt.Fprintf(a.stderr, "chalkctl: warning: %s: %s\n", t.name, w)
@@ -473,7 +481,7 @@ func writePlan(w io.Writer, name string, resp *nodev1.ApplyConfigResponse, stage
 
 // endTrialHint names the commands that end the node's open trial.
 func endTrialHint(name string) string {
-	return fmt.Sprintf("chalkctl apply-config confirm %s keeps it; chalkctl apply-config rollback %s rolls it back now", name, name)
+	return fmt.Sprintf("chalkctl config confirm %s keeps it; chalkctl config rollback %s rolls it back now", name, name)
 }
 
 type rollbackConfigFlags struct {
@@ -529,13 +537,13 @@ func (a *app) rollbackConfig(ctx context.Context, f rollbackConfigFlags, name st
 	// config it runs again, which removes the record as well.
 	if e := st.Msg.TrialError; e != "" {
 		if version != "" {
-			fmt.Fprintf(a.stderr, "chalkctl: warning: %s: the record of a config's trial cannot be read: %s; the rollback delivers config %s, the node's previous config, which is the config on trial if a rollback at the trial's deadline replaced it already; if it is, a second apply-config rollback undoes it\n", t.name, e, version)
+			fmt.Fprintf(a.stderr, "chalkctl: warning: %s: the record of a config's trial cannot be read: %s; the rollback delivers config %s, the node's previous config, which is the config on trial if a rollback at the trial's deadline replaced it already; if it is, a second config rollback undoes it\n", t.name, e, version)
 		} else if version = st.Msg.ConfigVersion; version != "" {
 			fmt.Fprintf(a.stderr, "chalkctl: warning: %s: the record of a config's trial cannot be read: %s; the node keeps no previous config, so the rollback delivers config %s, the config it runs, again\n", t.name, e, version)
 		}
 	}
 	if version == "" {
-		return fmt.Errorf("%s keeps no previous config of the image it runs; it keeps one once apply-config replaced the config the image was installed or upgraded with", t.name)
+		return fmt.Errorf("%s keeps no previous config of the image it runs; it keeps one once config apply replaced the config the image was installed or upgraded with", t.name)
 	}
 	running, err := slotConfig(ctx, conn, false)
 	if err != nil {

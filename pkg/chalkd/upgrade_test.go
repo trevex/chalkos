@@ -298,7 +298,7 @@ func TestActivateImageWaitsForATrial(t *testing.T) {
 	s, r := stagedServerOf(t, fixtureSchemas(t), "chalkos_2.efi", ".staged-chalkos_3.efi")
 	rec := recordTrial(t, s, nextConfig)
 	r.Calls = nil
-	want := "config " + rec.Version + " is on trial until " + rec.Deadline.Format(time.RFC3339) + ": confirm it with chalkctl apply-config confirm n1, or roll it back with chalkctl apply-config rollback n1, before an image's activation"
+	want := "config " + rec.Version + " is on trial until " + rec.Deadline.Format(time.RFC3339) + ": confirm it with chalkctl config confirm n1, or roll it back with chalkctl config rollback n1, before an image's activation"
 	if _, err := activateOn(s, stagedImage); codeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), want) {
 		t.Errorf("activate = %v, want %q", err, want)
 	}
@@ -603,7 +603,7 @@ func TestApplyConfigNamesAVolumeAnotherImageAdded(t *testing.T) {
 	}
 	next := strings.Replace(baseConfig, "name: first", "name: second", 1)
 	_, err := sendConfig(s, next)
-	if err == nil || !strings.Contains(err.Error(), "Volume extra: an earlier config of this image or another added it, with an upgrade or chalkctl apply-config --staged, and it stays on the node; name it in this config too") ||
+	if err == nil || !strings.Contains(err.Error(), "Volume extra: an earlier config of this image or another added it, with an upgrade or chalkctl config apply --staged, and it stays on the node; name it in this config too") ||
 		!strings.Contains(err.Error(), "; the config of the image cdcdcdcdcdcd names volume extra") {
 		t.Errorf("err = %v, want the volume named", err)
 	}
@@ -785,7 +785,7 @@ func TestStageConfigNamesNoOtherImageForItsOwnVolume(t *testing.T) {
 		t.Fatal(err)
 	}
 	err := stage(baseConfig, "")
-	want := "Volume extra: an earlier config of this image or another added it, with an upgrade or chalkctl apply-config --staged, and it stays on the node; name it in this config too; only a reinstall of n1 removes it"
+	want := "Volume extra: an earlier config of this image or another added it, with an upgrade or chalkctl config apply --staged, and it stays on the node; name it in this config too; only a reinstall of n1 removes it"
 	if err == nil || !strings.Contains(err.Error(), want) || strings.Contains(err.Error(), "cdcdcdcdcdcd") {
 		t.Errorf("err = %v, want the volume named without the staged image as another", err)
 	}

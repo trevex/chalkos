@@ -220,7 +220,7 @@ func (s *Server) ConfirmConfig(ctx context.Context, req *connect.Request[nodev1.
 		return nil, layer.Errorf(connect.CodeFailedPrecondition, "the trial of config %s ended at its deadline, %s", r.Version, r.Deadline.UTC().Format(time.RFC3339))
 	}
 	if r.Changed {
-		return nil, layer.Errorf(connect.CodeFailedPrecondition, "a rollback of config %s failed after it changed the node: %s; chalkd tries again each minute, or chalkctl apply-config rollback %s finishes it now", r.Version, r.Error, s.nodeName())
+		return nil, layer.Errorf(connect.CodeFailedPrecondition, "a rollback of config %s failed after it changed the node: %s; chalkd tries again each minute, or chalkctl config rollback %s finishes it now", r.Version, r.Error, s.nodeName())
 	}
 	_, st, err := r.state(s.Loader.Slots)
 	if err != nil {
@@ -414,7 +414,7 @@ func (s *Server) trialStatus() (*nodev1.ConfigTrial, string) {
 // record stays until RollbackConfig removes it: every trial may end in a rollback. chalkctl tells
 // this refusal from other internal errors by its message's start, so it stays as it is.
 func (s *Server) unreadableTrial(err error) error {
-	return fmt.Errorf("read the record of the config's trial: %w; other changes are refused until chalkctl apply-config rollback %s restores the previous config, which removes the record", err, s.nodeName())
+	return fmt.Errorf("read the record of the config's trial: %w; other changes are refused until chalkctl config rollback %s restores the previous config, which removes the record", err, s.nodeName())
 }
 
 // refuseOnTrialLocking is refuseOnTrial under s.mu, for an upgrade and an image rollback, which
@@ -460,7 +460,7 @@ func (s *Server) refuseOnTrial(what string, holdsUpgrading bool) error {
 		return nil
 	}
 	name := s.nodeName()
-	return layer.Errorf(connect.CodeFailedPrecondition, "config %s is on trial until %s: confirm it with chalkctl apply-config confirm %s, or roll it back with chalkctl apply-config rollback %s, before %s",
+	return layer.Errorf(connect.CodeFailedPrecondition, "config %s is on trial until %s: confirm it with chalkctl config confirm %s, or roll it back with chalkctl config rollback %s, before %s",
 		r.Version, r.Deadline.UTC().Format(time.RFC3339), name, name, what)
 }
 

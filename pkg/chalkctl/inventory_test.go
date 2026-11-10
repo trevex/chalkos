@@ -186,7 +186,7 @@ func TestValidateTheCluster(t *testing.T) {
 	writeFile(t, filepath.Join(dir, "nodes", "n2.yaml"), strings.Join([]string{n1SystemDisk, fmt.Sprintf(cluster, "10.0.0.20")}, "---\n"))
 	writeFile(t, path, testInventoryYAML+"    n2: {address: 10.0.0.12, files: [nodes/n2.yaml]}\n")
 	ta := newTestApp(t)
-	for _, args := range [][]string{{"validate", "n1"}, {"apply-config", "n1"}} {
+	for _, args := range [][]string{{"validate", "n1"}, {"config", "apply", "n1"}} {
 		if err := ta.run(context.Background(), append(args, "--inventory", path)); err == nil || !strings.Contains(err.Error(), `the nodes hold different Cluster specs: spec.endpoint is "https://10.0.0.10:6443" on n1, "https://10.0.0.20:6443" on n2`) {
 			t.Errorf("%s of nodes of different Cluster specs = %v", args[0], err)
 		}
@@ -359,7 +359,7 @@ func TestStatusComparesWithTheInventory(t *testing.T) {
 	s, _ := installedNode(t, ta, []byte(`{}`))
 	addr := ta.startNode(t, s)
 	args := func(cmd ...string) []string { return append(cmd, "--inventory", path, "--address", addr) }
-	if err := ta.run(context.Background(), args("apply-config", "n1")); err != nil {
+	if err := ta.run(context.Background(), args("config", "apply", "n1")); err != nil {
 		t.Fatal(err)
 	}
 	ta.stdout.Reset()
@@ -385,7 +385,7 @@ func TestStatusComparesWithTheInventory(t *testing.T) {
 	if err := ta.run(context.Background(), args("status", "n1")); err != nil {
 		t.Fatal(err)
 	}
-	if out := ta.stdout.String(); !strings.Contains(out, "(not the inventory's; chalkctl apply-config n1 delivers it)") {
+	if out := ta.stdout.String(); !strings.Contains(out, "(not the inventory's; chalkctl config apply n1 delivers it)") {
 		t.Errorf("status after a change = %q", out)
 	}
 }
@@ -488,7 +488,7 @@ func TestCommandsThatNeedAnInventory(t *testing.T) {
 	ta := newTestApp(t)
 	ta.withoutSecrets(t)
 	for _, args := range [][]string{
-		{"install", "n1", "--insecure"}, {"apply-config", "n1"}, {"storage", "reset", "n1", "var"}, {"node", "renew", "n1"},
+		{"install", "n1", "--insecure"}, {"config", "apply", "n1"}, {"storage", "reset", "n1", "var"}, {"node", "renew", "n1"},
 	} {
 		err := ta.run(context.Background(), append(args, "--address", "127.0.0.1:1"))
 		if err == nil || !strings.Contains(err.Error(), "needs an inventory") {

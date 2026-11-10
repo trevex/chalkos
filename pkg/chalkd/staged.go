@@ -207,7 +207,7 @@ func (s *Server) applyStaged(ctx context.Context, m *nodev1.ApplyConfigRequest) 
 // planSecond plans it before anything changes: the config slot of the image staged in the
 // inactive slot, staged or active, or else the node's pending config. Every config slot is
 // written only once the image that boots it checked it, so the staged image checks the config
-// too; the pending config waits, unchecked as apply-config --staged holds it, for the image of
+// too; the pending config waits, unchecked as config apply --staged holds it, for the image of
 // the next upgrade, which then boots the config delivered last. Neither is set for a delivery
 // without config, or for a node that has neither.
 type secondWrite struct {
@@ -230,7 +230,7 @@ type secondWrite struct {
 // as keepsKnownGood keeps it, and the pending config is replaced as on a node without a staged
 // image. The caller holds s.mu and s.upgrading, as for every write of a slot.
 //
-// The staged image checks the config with its own checker as for apply-config --staged, and
+// The staged image checks the config with its own checker as for config apply --staged, and
 // against the storage STATE records once the running image applied d: d's changes are made
 // before the staged slot is written, and the changes the staged image's config makes on top of
 // them are planned and made after. The rules of both images thus see the storage each change
@@ -281,7 +281,7 @@ func (s *Server) planSecond(ctx context.Context, d *delivery) (secondWrite, erro
 // staged; secret is the fallback secret the request carries. chalkctl sends that secret when the
 // running image's storage enrolls it on a new volume, so a staged image whose own translation of
 // the config adds an encrypted volume the running image's does not is refused without it; the
-// refusal then names the delivery that carries it, apply-config --staged with the secrets file,
+// refusal then names the delivery that carries it, config apply --staged with the secrets file,
 // which chalkctl translates for the inventory's image.
 //
 // The refusal is the staged image's storage rule, which its own checker evaluates: another
@@ -290,7 +290,7 @@ func (s *Server) planSecond(ctx context.Context, d *delivery) (secondWrite, erro
 func (s *Server) stagedRefusal(staged []byte, err error, secret string) error {
 	var hint string
 	if secret == "" && strings.Contains(err.Error(), storage.NoFallbackSecret) {
-		hint = fmt.Sprintf("; the staged image's storage enrolls the fallback secret on a volume the running image's does not, and chalkctl sends the secret for the running image's storage alone: chalkctl apply-config --staged %s --secrets FILE delivers the config to the staged image with the secret", s.nodeName())
+		hint = fmt.Sprintf("; the staged image's storage enrolls the fallback secret on a volume the running image's does not, and chalkctl sends the secret for the running image's storage alone: chalkctl config apply --staged %s --secrets FILE delivers the config to the staged image with the secret", s.nodeName())
 	}
 	return fmt.Errorf("the image %x staged in the inactive slot: %w%s", staged[:6], err, hint)
 }

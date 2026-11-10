@@ -204,7 +204,7 @@ func TestDryRunWaitsForATrial(t *testing.T) {
 	rec := recordTrial(t, s, nextConfig)
 	r.Calls = nil
 	_, err := dryRun(s, baseConfig)
-	want := "config " + rec.Version + " is on trial until " + rec.Deadline.Format(time.RFC3339) + ": confirm it with chalkctl apply-config confirm n1, or roll it back with chalkctl apply-config rollback n1, before another delivery"
+	want := "config " + rec.Version + " is on trial until " + rec.Deadline.Format(time.RFC3339) + ": confirm it with chalkctl config confirm n1, or roll it back with chalkctl config rollback n1, before another delivery"
 	if codeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), want) {
 		t.Errorf("err = %v, want %q", err, want)
 	}

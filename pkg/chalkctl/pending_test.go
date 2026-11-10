@@ -12,10 +12,10 @@ import (
 // pendingSince is when the lab's nodes stored their pending config.
 var pendingSince = time.Date(2026, 11, 1, 12, 0, 0, 0, time.UTC)
 
-// apply-config --staged on a node without a staged image has it hold the inventory's config
+// config apply --staged on a node without a staged image has it hold the inventory's config
 // pending, compared with the running config and sent without a fallback secret; status shows it,
 // another --staged replaces it, a delivery to the running image replaces it too, as its dry run
-// says first, and apply-config discard drops it, needing no inventory.
+// says first, and config discard drops it, needing no inventory.
 func TestApplyConfigStagedHoldsPending(t *testing.T) {
 	l := newUpgradeLab(t, 1)
 	l.useInventory(t, map[string]string{"w": testUpgradeImage(t, "w", "0.2.0")})
@@ -55,19 +55,19 @@ func TestApplyConfigStagedHoldsPending(t *testing.T) {
 		t.Errorf("stdout = %q, pending %q", out, n.pending)
 	}
 	l.ta.stdout.Reset()
-	if err := l.ta.run(context.Background(), []string{"apply-config", "discard", "w1", "--address", l.addrs["w1"]}); err != nil {
+	if err := l.ta.run(context.Background(), []string{"config", "discard", "w1", "--address", l.addrs["w1"]}); err != nil {
 		t.Fatal(err)
 	}
 	if out := l.ta.stdout.String(); out != "w1 dropped its pending config "+want+"\n" || n.pending != "" {
 		t.Errorf("stdout = %q, pending %q", out, n.pending)
 	}
 	l.ta.stdout.Reset()
-	if err := l.ta.run(context.Background(), []string{"apply-config", "discard", "w1", "--inventory", l.inventory, "--address", l.addrs["w1"]}); err != nil || l.ta.stdout.String() != "w1 holds no pending config\n" {
+	if err := l.ta.run(context.Background(), []string{"config", "discard", "w1", "--inventory", l.inventory, "--address", l.addrs["w1"]}); err != nil || l.ta.stdout.String() != "w1 holds no pending config\n" {
 		t.Errorf("a second discard = %v, stdout %q", err, l.ta.stdout)
 	}
 }
 
-// apply-config --staged --dry-run on a node without a staged image says the config would be held
+// config apply --staged --dry-run on a node without a staged image says the config would be held
 // pending and keeps nothing.
 func TestApplyConfigStagedDryRunHoldsNothing(t *testing.T) {
 	l := newUpgradeLab(t, 1)

@@ -118,8 +118,8 @@ func TestClientFileRole(t *testing.T) {
 		t.Errorf("reboot as a reader: %v, want permission denied", err)
 	}
 	// Commands that need the secrets file do not take a client file.
-	if err := ta.run(context.Background(), ta.args([]string{"apply-config", "n1", "--config", reader}, addr)); err == nil {
-		t.Error("apply-config ran with a client file")
+	if err := ta.run(context.Background(), ta.args([]string{"config", "apply", "n1", "--config", reader}, addr)); err == nil {
+		t.Error("config apply ran with a client file")
 	}
 }
 

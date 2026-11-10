@@ -26,12 +26,12 @@ const rolloutTrial = 10 * time.Minute
 // gets the config, such as etcd keeping its quorum. Tests lower it.
 var rolloutQuorumWait = time.Minute
 
-// applyStep is how far apply-config takes the nodes, as --until names it.
+// applyStep is how far config apply takes the nodes, as --until names it.
 type applyStep string
 
 const (
 	// untilDeliver delivers the config to the first node that does not run it, on trial, and leaves
-	// the trial open for apply-config confirm.
+	// the trial open for config confirm.
 	untilDeliver applyStep = "deliver"
 	// untilConfirm delivers the config to every node and confirms each trial.
 	untilConfirm applyStep = "confirm"
@@ -388,7 +388,7 @@ func (n *rolloutNode) roleIn(l layer.Rollout) layer.UpgradeRole {
 }
 
 // checkChanges refuses an upgrade whose config, which each node gets with its image, changes a
-// version a Rollout layer bounds, against the config the node runs: apply-config delivers such a
+// version a Rollout layer bounds, against the config the node runs: config apply delivers such a
 // change in the order the layer needs, which an upgrade does not. A run that withholds config
 // delivers none, and a node that refuses to show its config has the run withhold it.
 func (r *upgradeRun) checkChanges(ctx context.Context) error {
@@ -423,7 +423,7 @@ func (r *upgradeRun) checkChanges(ctx context.Context) error {
 				return err
 			}
 			if change != "" {
-				return fmt.Errorf("%s: the inventory's config changes %s, which an upgrade does not deliver; deliver the config with chalkctl apply-config first, which orders the nodes for it, then upgrade", name, change)
+				return fmt.Errorf("%s: the inventory's config changes %s, which an upgrade does not deliver; deliver the config with chalkctl config apply first, which orders the nodes for it, then upgrade", name, change)
 			}
 		}
 	}

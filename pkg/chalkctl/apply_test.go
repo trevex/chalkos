@@ -10,6 +10,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/spf13/pflag"
+
 	"github.com/trevex/chalkos/pkg/config/slot"
 	imagecontract "github.com/trevex/chalkos/pkg/contract"
 	"github.com/trevex/chalkos/pkg/storage"
@@ -23,13 +25,13 @@ func TestApplyConfigAndStatus(t *testing.T) {
 	if err := ta.run(context.Background(), ta.args([]string{"status", "n1"}, addr)); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(ta.stdout.String(), "config none (not the inventory's; chalkctl apply-config n1 delivers it)") || !strings.Contains(ta.stdout.String(), "var") {
+	if !strings.Contains(ta.stdout.String(), "config none (not the inventory's; chalkctl config apply n1 delivers it)") || !strings.Contains(ta.stdout.String(), "var") {
 		t.Errorf("status before = %q", ta.stdout)
 	}
 
 	ta.stdout.Reset()
 	r.calls = nil
-	if err := ta.run(context.Background(), ta.args([]string{"apply-config", "n1"}, addr)); err != nil {
+	if err := ta.run(context.Background(), ta.args([]string{"config", "apply", "n1"}, addr)); err != nil {
 		t.Fatal(err)
 	}
 	// The node's slot held no documents, so the config's Network is new: the units of the default
@@ -66,7 +68,7 @@ func TestApplyConfigAndStatus(t *testing.T) {
 	}
 }
 
-// apply-config prints why the rule of an effect could not be evaluated as a warning, without the
+// config apply prints why the rule of an effect could not be evaluated as a warning, without the
 // values it read; the node took the rule's effect all the same.
 func TestApplyConfigWarnsOfRulesThatFail(t *testing.T) {
 	ta := newTestApp(t)
@@ -83,7 +85,7 @@ func TestApplyConfigWarnsOfRulesThatFail(t *testing.T) {
 	data, _ := json.Marshal(effects)
 	writeContract(t, s, imagecontract.EffectsFile, string(data))
 	addr := ta.startNode(t, s)
-	if err := ta.run(context.Background(), ta.args([]string{"apply-config", "n1"}, addr)); err != nil {
+	if err := ta.run(context.Background(), ta.args([]string{"config", "apply", "n1"}, addr)); err != nil {
 		t.Fatal(err)
 	}
 	want := "chalkctl: warning: n1: the rule of effect report: a rule cannot be evaluated: no such key; taking the effect all the same\n"
@@ -108,7 +110,7 @@ func TestApplyConfigNamesTheRemedy(t *testing.T) {
 	writeFile(t, filepath.Join(s.Paths.StateDir, "storage", "storage.json"), string(data))
 	addr := ta.startNode(t, s)
 
-	err := ta.run(context.Background(), ta.args([]string{"apply-config", "n1"}, addr))
+	err := ta.run(context.Background(), ta.args([]string{"config", "apply", "n1"}, addr))
 	if err == nil || !strings.Contains(err.Error(), "only a reinstall of n1 carries it out") {
 		t.Fatalf("err = %v, want a reinstall of n1", err)
 	}
@@ -121,7 +123,7 @@ func TestApplyConfigAsksForPasswordOnlyForNewEncryptedVolumes(t *testing.T) {
 	addr := ta.startNode(t, s)
 
 	// Nothing to enroll: the password is not asked for.
-	if err := ta.run(context.Background(), ta.args([]string{"apply-config", "n1"}, addr)); err != nil {
+	if err := ta.run(context.Background(), ta.args([]string{"config", "apply", "n1"}, addr)); err != nil {
 		t.Fatal(err)
 	}
 	if len(ta.prompts) != 0 {
@@ -133,7 +135,7 @@ func TestApplyConfigAsksForPasswordOnlyForNewEncryptedVolumes(t *testing.T) {
 	withPassword(t, ta, storage.EncryptionTPM2)
 	r.calls = nil
 	ta.answers = []string{"right", "wrong"}
-	err := ta.run(context.Background(), ta.args([]string{"apply-config", "n1"}, addr))
+	err := ta.run(context.Background(), ta.args([]string{"config", "apply", "n1"}, addr))
 	if err == nil || !strings.Contains(err.Error(), "differ") {
 		t.Fatalf("err = %v, want the typo noticed", err)
 	}
@@ -177,7 +179,7 @@ func TestApplyConfigRefusesAnotherPlatform(t *testing.T) {
 	writeFile(t, s.Paths.OSRelease, "IMAGE_ID=chalkos\nIMAGE_VERSION=\"\"\nCHALKOS_VARIANT=test\nCHALKOS_PLATFORM=kvm\n")
 	addr := ta.startNode(t, s)
 	want := "n1 runs an image built for kvm, but its image test-metal is built for metal; changing a node's platform is a reinstall"
-	for _, cmd := range [][]string{{"apply-config", "n1"}, {"storage", "reset", "n1", "var"}} {
+	for _, cmd := range [][]string{{"config", "apply", "n1"}, {"storage", "reset", "n1", "var"}} {
 		err := ta.run(context.Background(), ta.args(cmd, addr))
 		if err == nil || !strings.Contains(err.Error(), want) {
 			t.Errorf("%s = %v, want %q", cmd[0], err, want)
@@ -196,7 +198,7 @@ func TestApplyConfigToAnImageOfAnotherVariant(t *testing.T) {
 	s.Paths.OSRelease = filepath.Join(t.TempDir(), "os-release")
 	writeFile(t, s.Paths.OSRelease, "IMAGE_ID=chalkos\nIMAGE_VERSION=\"\"\nCHALKOS_VARIANT=w\nCHALKOS_PLATFORM=metal\n")
 	addr := ta.startNode(t, s)
-	if err := ta.run(context.Background(), ta.args([]string{"apply-config", "n1"}, addr)); err != nil {
+	if err := ta.run(context.Background(), ta.args([]string{"config", "apply", "n1"}, addr)); err != nil {
 		t.Fatal(err)
 	}
 	want := ta.configVersion(t)
@@ -222,9 +224,9 @@ func TestApplyConfigStopsOnAFailingCheck(t *testing.T) {
 	}
 	loadContract(t, s, dir)
 	addr := ta.startNode(t, s)
-	err = ta.run(context.Background(), ta.args([]string{"apply-config", "n1"}, addr))
+	err = ta.run(context.Background(), ta.args([]string{"config", "apply", "n1"}, addr))
 	if err == nil || !strings.Contains(err.Error(), "the config of n1") {
-		t.Fatalf("apply-config = %v, want the check's refusal", err)
+		t.Fatalf("config apply = %v, want the check's refusal", err)
 	}
 	if len(r.calls) != 0 {
 		t.Errorf("node ran %v", r.calls)
@@ -237,11 +239,11 @@ func TestApplyConfigStopsOnAFailingCheck(t *testing.T) {
 	}
 }
 
-// apply-config registers --force once, for every layer's payload flags, and names them in its
+// config apply registers --force once, for every layer's payload flags, and names them in its
 // help and its refusal.
 func TestApplyConfigForceIsChalkctls(t *testing.T) {
 	ta := newTestApp(t)
-	cmd, _, err := newCommand(ta.app).Find([]string{"apply-config"})
+	cmd, _, err := newCommand(ta.app).Find([]string{"config", "apply"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -249,13 +251,13 @@ func TestApplyConfigForceIsChalkctls(t *testing.T) {
 	if f == nil || f.Usage != "with --kubernetes-share, deliver without asking whether the node is revoked" {
 		t.Fatalf("--force: %v", f)
 	}
-	err = ta.run(context.Background(), []string{"apply-config", "n1", "--force", "--inventory", ta.inventory})
+	err = ta.run(context.Background(), []string{"config", "apply", "n1", "--force", "--inventory", ta.inventory})
 	if err == nil || !strings.Contains(err.Error(), "--force goes with --kubernetes-share") {
 		t.Errorf("err = %v", err)
 	}
 }
 
-// apply-config rollback delivers the node's previous config again and prints what it changes;
+// config rollback delivers the node's previous config again and prints what it changes;
 // status names the previous config; a second rollback undoes the first, --diff changes nothing,
 // and the secrets file and the node's address do without an inventory.
 func TestApplyConfigRollback(t *testing.T) {
@@ -266,22 +268,22 @@ func TestApplyConfigRollback(t *testing.T) {
 		ta.stdout.Reset()
 		return ta.run(context.Background(), ta.args(args, addr))
 	}
-	if err := run("apply-config", "rollback", "n1"); err == nil || !strings.Contains(err.Error(), "n1 keeps no previous config of the image it runs") {
+	if err := run("config", "rollback", "n1"); err == nil || !strings.Contains(err.Error(), "n1 keeps no previous config of the image it runs") {
 		t.Errorf("without a previous config: %v", err)
 	}
-	if err := run("apply-config", "n1"); err != nil {
+	if err := run("config", "apply", "n1"); err != nil {
 		t.Fatal(err)
 	}
 	first := ta.configVersion(t)
 	ta.writeNode(t, n1SystemDisk, n1Network, "apiVersion: time.chalkos.dev/v1alpha1\nkind: TimeSync\nmetadata: {name: default}\nspec: {servers: [{host: ntp.lan}]}\n")
-	if err := run("apply-config", "n1"); err != nil {
+	if err := run("config", "apply", "n1"); err != nil {
 		t.Fatal(err)
 	}
 	second := ta.configVersion(t)
-	if err := run("status", "n1"); err != nil || !strings.Contains(ta.stdout.String(), "previous config "+first+" (apply-config rollback restores it)") {
+	if err := run("status", "n1"); err != nil || !strings.Contains(ta.stdout.String(), "previous config "+first+" (config rollback restores it)") {
 		t.Errorf("status = %v:\n%s", err, ta.stdout)
 	}
-	if err := run("apply-config", "rollback", "n1", "--diff"); err != nil || !strings.Contains(ta.stdout.String(), "n1: config 0 added, 1 removed (TimeSync \"default\"), 0 changed") {
+	if err := run("config", "rollback", "n1", "--diff"); err != nil || !strings.Contains(ta.stdout.String(), "n1: config 0 added, 1 removed (TimeSync \"default\"), 0 changed") {
 		t.Errorf("--diff = %v:\n%s", err, ta.stdout)
 	}
 	if want := "- TimeSync \"default\" (in the running config, not in the previous one)\n"; !strings.Contains(ta.stdout.String(), want) {
@@ -290,13 +292,13 @@ func TestApplyConfigRollback(t *testing.T) {
 	if v, _ := slot.Version(slotOf(t, s)); v != second {
 		t.Errorf("--diff changed the node's config to %s", v)
 	}
-	if err := run("apply-config", "rollback", "n1"); err != nil {
+	if err := run("config", "rollback", "n1"); err != nil {
 		t.Fatal(err)
 	}
 	if want := "n1 runs config " + first + " again; config " + second + " is its previous one now"; !strings.Contains(ta.stdout.String(), want) {
 		t.Errorf("stdout lacks %q:\n%s", want, ta.stdout)
 	}
-	if err := run("apply-config", "rollback", "n1"); err != nil {
+	if err := run("config", "rollback", "n1"); err != nil {
 		t.Fatal(err)
 	}
 	if v, _ := slot.Version(slotOf(t, s)); v != second {
@@ -305,10 +307,49 @@ func TestApplyConfigRollback(t *testing.T) {
 	// The node keeps the config it rolls back to, so the secrets file and the address do without an
 	// inventory.
 	ta.stdout.Reset()
-	if err := ta.run(context.Background(), []string{"apply-config", "rollback", "n1", "--address", addr}); err != nil {
+	if err := ta.run(context.Background(), []string{"config", "rollback", "n1", "--address", addr}); err != nil {
 		t.Fatalf("without an inventory: %v", err)
 	}
 	if v, _ := slot.Version(slotOf(t, s)); v != first {
 		t.Errorf("after a rollback without an inventory the node runs %s, want %s", v, first)
+	}
+}
+
+// apply is the short form of config apply: a command of its own with the same flags, which
+// runs the same delivery.
+func TestApplyIsConfigApply(t *testing.T) {
+	ta := newTestApp(t)
+	root := newCommand(ta.app)
+	long, _, err := root.Find([]string{"config", "apply"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	short, _, err := root.Find([]string{"apply"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if long == short {
+		t.Fatal("config apply and apply are one command")
+	}
+	var names []string
+	long.Flags().VisitAll(func(f *pflag.Flag) {
+		names = append(names, f.Name)
+		if g := short.Flags().Lookup(f.Name); g == nil || g.Usage != f.Usage || g.DefValue != f.DefValue {
+			t.Errorf("apply's --%s = %v, want config apply's %v", f.Name, g, f)
+		}
+	})
+	n := 0
+	short.Flags().VisitAll(func(*pflag.Flag) { n++ })
+	if n != len(names) {
+		t.Errorf("apply has %d flags, config apply %d", n, len(names))
+	}
+	if !strings.Contains(short.Long, "short form of chalkctl config apply") {
+		t.Errorf("apply's help does not name config apply:\n%s", short.Long)
+	}
+	for _, args := range [][]string{{"config", "apply"}, {"apply"}} {
+		err := ta.run(context.Background(), append(args, "n1", "--force", "--inventory", ta.inventory))
+		if err == nil || !strings.Contains(err.Error(), "--force goes with --kubernetes-share") {
+			t.Errorf("%v: err = %v", args, err)
+		}
 	}
 }

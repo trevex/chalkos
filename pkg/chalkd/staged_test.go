@@ -270,12 +270,12 @@ func TestApplyConfigRefusedByEitherImage(t *testing.T) {
 
 // TestStagedRefusalNamesTheFallbackSecret names the image in a refusal of the staged image, with
 // the refusal's code, and, when the staged image's storage needs the fallback secret the request
-// does not carry, apply-config --staged, which sends it for the staged image's storage.
+// does not carry, config apply --staged, which sends it for the staged image's storage.
 func TestStagedRefusalNamesTheFallbackSecret(t *testing.T) {
 	s, _ := stagedServer(t, fixtureSchemas(t))
 	refusal := layer.Errorf(connect.CodeInvalidArgument, "volume extra is encrypted and the node's fallback is recovery-key, but %s", storage.NoFallbackSecret)
 	err := s.stagedRefusal(stagedImage, refusal, "")
-	want := "the image 333333333333 staged in the inactive slot: volume extra is encrypted and the node's fallback is recovery-key, but no fallback secret was sent; the staged image's storage enrolls the fallback secret on a volume the running image's does not, and chalkctl sends the secret for the running image's storage alone: chalkctl apply-config --staged n1 --secrets FILE delivers the config to the staged image with the secret"
+	want := "the image 333333333333 staged in the inactive slot: volume extra is encrypted and the node's fallback is recovery-key, but no fallback secret was sent; the staged image's storage enrolls the fallback secret on a volume the running image's does not, and chalkctl sends the secret for the running image's storage alone: chalkctl config apply --staged n1 --secrets FILE delivers the config to the staged image with the secret"
 	if codeOf(err) != connect.CodeInvalidArgument || !strings.HasSuffix(err.Error(), want) {
 		t.Errorf("err = %v, want %q", err, want)
 	}
@@ -867,9 +867,9 @@ func TestGetConfigStaged(t *testing.T) {
 	}
 }
 
-// TestUpgradeOfAStagedImageNamesApplyConfigStaged names apply-config --staged when the config an
+// TestUpgradeOfAStagedImageNamesApplyConfigStaged names config apply --staged when the config an
 // upgrade sends again for a staged image is refused in the recheck, which retires the image;
-// apply-config --staged would have kept it. Any other failure names it not, also of the staged
+// config apply --staged would have kept it. Any other failure names it not, also of the staged
 // image: one that came before the recheck, such as of the image's architecture, retired nothing,
 // and a recheck that could not mount the store retired the image but refused no config.
 func TestUpgradeOfAStagedImageNamesApplyConfigStaged(t *testing.T) {
@@ -899,8 +899,8 @@ func TestUpgradeOfAStagedImageNamesApplyConfigStaged(t *testing.T) {
 		t.Errorf("upgrade of the staged image that fails before the recheck = %v, want no --staged named", err)
 	}
 	installErr = &upgrade.StagedRetiredError{Err: &upgrade.CheckError{Err: refusal}}
-	if err := send(stagedImage); err == nil || !strings.Contains(err.Error(), "the staged image was retired with it: chalkctl apply-config --staged") {
-		t.Errorf("upgrade of the staged image = %v, want apply-config --staged named", err)
+	if err := send(stagedImage); err == nil || !strings.Contains(err.Error(), "the staged image was retired with it: chalkctl config apply --staged") {
+		t.Errorf("upgrade of the staged image = %v, want config apply --staged named", err)
 	}
 	// A recheck that could not mount the store retired the image without refusing its config.
 	installErr = &upgrade.StagedRetiredError{Err: errors.New("mount the written store: wrong fs type")}
@@ -925,12 +925,12 @@ func knownGoodServer(t *testing.T) (*Server, *tooltest.Runner) {
 }
 
 // TestKnownGoodImageKeepsItsConfig refuses other config for the image a rollback staged as the
-// node's known-good one, from apply-config --staged and from an upgrade, as it boots with the
+// node's known-good one, from config apply --staged and from an upgrade, as it boots with the
 // config it last ran; the same config, or an upgrade without config, changes nothing and keeps
 // the record of the rollback.
 func TestKnownGoodImageKeepsItsConfig(t *testing.T) {
 	next := strings.Replace(baseConfig, "name: first", "name: second", 1)
-	t.Run("apply-config --staged", func(t *testing.T) {
+	t.Run("config apply --staged", func(t *testing.T) {
 		s, r := knownGoodServer(t)
 		if err := sendStaged(s, next); codeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "is the one the node falls back to while the boot of chalkos_2+1-2.efi is not found healthy; its config stays as it last ran") {
 			t.Errorf("other config = %v", err)

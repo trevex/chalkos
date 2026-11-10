@@ -14,13 +14,13 @@ import (
 	"github.com/trevex/chalkos/pkg/storage"
 )
 
-// apply-config --dry-run prints the diff and the node's plan of the delivery, and the node
+// config apply --dry-run prints the diff and the node's plan of the delivery, and the node
 // changes nothing: it restarts no unit and keeps its config.
 func TestApplyConfigDryRun(t *testing.T) {
 	ta := newTestApp(t)
 	s, r := installedNode(t, ta, []byte(`{}`))
 	addr := ta.startNode(t, s)
-	if err := ta.run(context.Background(), ta.args([]string{"apply-config", "--dry-run", "n1"}, addr)); err != nil {
+	if err := ta.run(context.Background(), ta.args([]string{"config", "apply", "--dry-run", "n1"}, addr)); err != nil {
 		t.Fatal(err)
 	}
 	want := "n1: config 3 added, 0 removed, 0 changed\n" +
@@ -50,7 +50,7 @@ func TestApplyConfigDryRunOfSeveralNodes(t *testing.T) {
 	s, _ := installedNode(t, ta, []byte(`{}`))
 	addr := ta.startNode(t, s)
 	writeFile(t, ta.inventory, strings.Replace(testInventoryYAML, "10.0.0.11", addr, 1))
-	err := ta.run(context.Background(), []string{"apply-config", "--dry-run", "n9", "n1", "--inventory", ta.inventory})
+	err := ta.run(context.Background(), []string{"config", "apply", "--dry-run", "n9", "n1", "--inventory", ta.inventory})
 	if err == nil || err.Error() != "the dry run failed on 1 node: n9" {
 		t.Errorf("err = %v", err)
 	}
@@ -76,11 +76,11 @@ func TestApplyConfigDryRunRefused(t *testing.T) {
 	addr := ta.startNode(t, s)
 	writeFile(t, ta.inventory, strings.Replace(testInventoryYAML, "10.0.0.11", addr, 1))
 
-	err := ta.run(context.Background(), []string{"apply-config", "--dry-run", "n1", "--inventory", ta.inventory})
+	err := ta.run(context.Background(), []string{"config", "apply", "--dry-run", "n1", "--inventory", ta.inventory})
 	if err == nil || !strings.Contains(err.Error(), "only a reinstall of n1 carries it out") || strings.Contains(err.Error(), "is refused: n1") {
 		t.Errorf("err = %v, want the node's refusal", err)
 	}
-	err = ta.run(context.Background(), []string{"apply-config", "--dry-run", "n1", "n9", "--inventory", ta.inventory})
+	err = ta.run(context.Background(), []string{"config", "apply", "--dry-run", "n1", "n9", "--inventory", ta.inventory})
 	if err == nil || err.Error() != "the config of 1 node is refused: n1; the dry run failed on 1 node: n9" {
 		t.Errorf("err = %v", err)
 	}
@@ -96,7 +96,7 @@ func TestApplyConfigDryRunRefused(t *testing.T) {
 	// A SystemDisk without a disk fails the image's schema before the node is asked.
 	ta.stderr.Reset()
 	writeFile(t, filepath.Join(filepath.Dir(ta.inventory), "nodes", "n1.yaml"), "apiVersion: storage.chalkos.dev/v1alpha1\nkind: SystemDisk\nmetadata: {name: system}\nspec: {}\n---\n"+n1Network)
-	err = ta.run(context.Background(), []string{"apply-config", "--dry-run", "n1", "n9", "--inventory", ta.inventory})
+	err = ta.run(context.Background(), []string{"config", "apply", "--dry-run", "n1", "n9", "--inventory", ta.inventory})
 	if err == nil || err.Error() != "the config of 1 node is refused: n1; the dry run failed on 1 node: n9" {
 		t.Errorf("err = %v", err)
 	}
@@ -122,9 +122,9 @@ func TestApplyConfigDryRunUsage(t *testing.T) {
 		{[]string{"n1", "--dry-run", "--kubernetes-share"}, "[dry-run kubernetes-share] were all set"},
 		{[]string{"n1", "n2", "--dry-run", "--address", "127.0.0.1:1"}, "with several nodes, give each node's address as NODE=ADDR"},
 	} {
-		err := ta.run(context.Background(), append(append([]string{"apply-config"}, tc.args...), "--inventory", ta.inventory))
+		err := ta.run(context.Background(), append(append([]string{"config", "apply"}, tc.args...), "--inventory", ta.inventory))
 		if err == nil || !strings.Contains(err.Error(), tc.want) {
-			t.Errorf("apply-config %v: %v, want %q", tc.args, err, tc.want)
+			t.Errorf("config apply %v: %v, want %q", tc.args, err, tc.want)
 		}
 	}
 }

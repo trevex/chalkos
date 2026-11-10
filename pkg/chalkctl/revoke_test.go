@@ -142,7 +142,7 @@ func TestStatusListsRevokedNodes(t *testing.T) {
 	}
 }
 
-// node renew and apply-config --kubernetes-share issue no certificate to a node a control plane
+// node renew and config apply --kubernetes-share issue no certificate to a node a control plane
 // lists as revoked, nor while no control plane says which nodes are, unless forced.
 func TestCertificatesRefusedToRevokedNodes(t *testing.T) {
 	ta := newTestApp(t)
@@ -151,7 +151,7 @@ func TestCertificatesRefusedToRevokedNodes(t *testing.T) {
 	if _, err := revoked.Revoke(ctx, cs, "n1", time.Date(2026, 10, 23, 12, 0, 0, 0, time.UTC)); err != nil {
 		t.Fatal(err)
 	}
-	for _, cmd := range [][]string{{"node", "renew", "n1"}, {"apply-config", "n1", "--kubernetes-share"}} {
+	for _, cmd := range [][]string{{"node", "renew", "n1"}, {"config", "apply", "n1", "--kubernetes-share"}} {
 		err := ta.run(ctx, ta.args(cmd, addr))
 		if err == nil || !strings.Contains(err.Error(), "n1 is revoked since 2026-10-23T12:00:00Z") ||
 			!strings.Contains(err.Error(), "chalkctl node unrevoke n1") || !strings.Contains(err.Error(), "--force") {
@@ -161,15 +161,15 @@ func TestCertificatesRefusedToRevokedNodes(t *testing.T) {
 	if err := ta.run(ctx, ta.args([]string{"node", "renew", "n1", "--force"}, addr)); err != nil {
 		t.Errorf("node renew --force: %v", err)
 	}
-	// apply-config without a share delivers no certificate.
-	if err := ta.run(ctx, ta.args([]string{"apply-config", "n1", "--diff"}, addr)); err != nil {
-		t.Errorf("apply-config --diff: %v", err)
+	// config apply without a share delivers no certificate.
+	if err := ta.run(ctx, ta.args([]string{"config", "apply", "n1", "--diff"}, addr)); err != nil {
+		t.Errorf("config apply --diff: %v", err)
 	}
-	if err := ta.run(ctx, ta.args([]string{"apply-config", "n1", "--force"}, addr)); err == nil || !strings.Contains(err.Error(), "--force") {
-		t.Errorf("apply-config --force without --kubernetes-share: %v", err)
+	if err := ta.run(ctx, ta.args([]string{"config", "apply", "n1", "--force"}, addr)); err == nil || !strings.Contains(err.Error(), "--force") {
+		t.Errorf("config apply --force without --kubernetes-share: %v", err)
 	}
-	if err := ta.run(ctx, ta.args([]string{"apply-config", "n1", "--kubernetes-share", "--force"}, addr)); err != nil && strings.Contains(err.Error(), "revoked") {
-		t.Errorf("apply-config --kubernetes-share --force: %v", err)
+	if err := ta.run(ctx, ta.args([]string{"config", "apply", "n1", "--kubernetes-share", "--force"}, addr)); err != nil && strings.Contains(err.Error(), "revoked") {
+		t.Errorf("config apply --kubernetes-share --force: %v", err)
 	}
 
 	if _, _, err := revoked.Unrevoke(ctx, cs, "n1", nil); err != nil {

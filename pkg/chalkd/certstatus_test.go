@@ -101,7 +101,7 @@ func TestStatusCertificatesOfAWorker(t *testing.T) {
 			kubelet = c
 		}
 	}
-	if kubelet == nil || !strings.Contains(kubelet.Problem, "chalkctl apply-config n1 --kubernetes-share") {
+	if kubelet == nil || !strings.Contains(kubelet.Problem, "chalkctl config apply n1 --kubernetes-share") {
 		t.Errorf("kubelet client: %v, want the command that delivers a new one", kubelet)
 	}
 }

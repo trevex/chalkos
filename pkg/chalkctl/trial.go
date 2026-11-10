@@ -169,7 +169,7 @@ func (a *app) trialRolledBack(ctx context.Context, t *target, version, previous 
 	case err != nil:
 		return fmt.Errorf("%w; the node did not answer after the deadline either: %v; chalkctl status %s shows where it stands", failure, err, t.name)
 	case unreadable != "":
-		return fmt.Errorf("%w; the record of its trial cannot be read: %s; chalkctl apply-config rollback %s restores the previous config", failure, unreadable, t.name)
+		return fmt.Errorf("%w; the record of its trial cannot be read: %s; chalkctl config rollback %s restores the previous config", failure, unreadable, t.name)
 	case st.ConfigVersion == version:
 		fmt.Fprintf(a.stdout, "%s keeps config %s: the trial is confirmed\n", t.name, version)
 		return nil
@@ -197,7 +197,7 @@ func (a *app) confirmConfigCommand() *cobra.Command {
 	return cmd
 }
 
-// confirmConfig confirms the node's open trial, as apply-config --try does without --no-confirm.
+// confirmConfig confirms the node's open trial, as config apply --try does without --no-confirm.
 func (a *app) confirmConfig(ctx context.Context, n nodeFlags, name string) error {
 	t, err := a.target(ctx, n, name)
 	if err != nil {
@@ -230,26 +230,26 @@ func (a *app) confirmConfig(ctx context.Context, n nodeFlags, name string) error
 // holds back every change but a rollback.
 func trialOpen(name string, st *nodev1.StatusResponse) error {
 	if e := st.GetTrialError(); e != "" {
-		return &layer.NodeError{Node: name, Err: fmt.Errorf("%s: the record of a config's trial cannot be read: %s; other changes are refused until chalkctl apply-config rollback %s restores the previous config", name, e, name), Named: true}
+		return &layer.NodeError{Node: name, Err: fmt.Errorf("%s: the record of a config's trial cannot be read: %s; other changes are refused until chalkctl config rollback %s restores the previous config", name, e, name), Named: true}
 	}
 	tr := st.GetTrial()
 	if tr == nil || st.GetConfigVersion() == tr.PreviousVersion {
 		return nil
 	}
-	return &layer.NodeError{Node: name, Err: fmt.Errorf("%s runs config %s on trial until %s; confirm it with chalkctl apply-config confirm %s, or roll it back with chalkctl apply-config rollback %s, first",
+	return &layer.NodeError{Node: name, Err: fmt.Errorf("%s runs config %s on trial until %s; confirm it with chalkctl config confirm %s, or roll it back with chalkctl config rollback %s, first",
 		name, tr.Version, deadlineOf(tr), name, name), Named: true}
 }
 
 // trialLine is the status line of a config on trial.
 func trialLine(tr *nodev1.ConfigTrial) string {
-	line := fmt.Sprintf("config %s on trial until %s: it rolls back to config %s unless apply-config confirm confirms it", tr.Version, deadlineOf(tr), tr.PreviousVersion)
+	line := fmt.Sprintf("config %s on trial until %s: it rolls back to config %s unless config confirm confirms it", tr.Version, deadlineOf(tr), tr.PreviousVersion)
 	if len(tr.IgnoreUnits) > 0 {
 		line += "; its health check leaves out " + strings.Join(tr.IgnoreUnits, ", ")
 	}
 	switch {
 	case tr.Error != "" && tr.RollbackChanged:
 		line += "; an attempt to roll the config back failed after it changed the node and is tried again each minute: " + tr.Error +
-			"; apply-config confirm no longer keeps the config, and apply-config rollback finishes the rollback now"
+			"; config confirm no longer keeps the config, and config rollback finishes the rollback now"
 	case tr.Error != "":
 		line += "; an attempt to roll the config back failed and is tried again each minute: " + tr.Error
 	}

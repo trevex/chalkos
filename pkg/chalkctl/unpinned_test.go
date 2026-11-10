@@ -45,14 +45,14 @@ func TestValidateWarnsOfUnpinnedImages(t *testing.T) {
 	}
 }
 
-// apply-config warns of an image that names a tag but no digest, and delivers the config all the
+// config apply warns of an image that names a tag but no digest, and delivers the config all the
 // same.
 func TestApplyConfigWarnsOfUnpinnedImages(t *testing.T) {
 	ta := newTestApp(t)
 	s, _ := installedNode(t, ta, []byte(`{}`))
 	addr := ta.startNode(t, s)
 	unpinProxy(t, ta.dir)
-	if err := ta.run(context.Background(), ta.args([]string{"apply-config", "n1"}, addr)); err != nil {
+	if err := ta.run(context.Background(), ta.args([]string{"config", "apply", "n1"}, addr)); err != nil {
 		t.Fatal(err)
 	}
 	if want := "chalkctl: warning: n1: " + unpinnedProxy + "\n"; ta.stderr.String() != want {

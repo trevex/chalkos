@@ -98,7 +98,7 @@ func (l *upgradeLab) rollTo(t *testing.T, version string) {
 }
 
 // newRolloutLab is a lab of three control planes and w1 whose inventory names an image directory
-// for each variant, which apply-config checks the config against. Its Kubernetes nodes run a
+// for each variant, which config apply checks the config against. Its Kubernetes nodes run a
 // config of the lab's Cluster document alone, which names the API server 1.37.1.
 func newRolloutLab(t *testing.T) *upgradeLab {
 	t.Helper()
@@ -135,12 +135,20 @@ func (l *upgradeLab) runAPIServer(version string, names ...string) {
 	}
 }
 
-// applyConfigTo runs apply-config on the nodes with the lab's inventory and every node's address.
+// applyConfigTo runs config apply on the nodes with the lab's inventory and every node's address.
 func (l *upgradeLab) applyConfigTo(names []string, args ...string) error {
 	l.ta.stdout.Reset()
 	l.ta.stderr.Reset()
-	args = append(append([]string{"apply-config"}, names...), args...)
+	args = append(append([]string{"config", "apply"}, names...), args...)
 	return l.run(args...)
+}
+
+// confirmConfigOf runs config confirm on the node with the lab's inventory and every node's
+// address.
+func (l *upgradeLab) confirmConfigOf(name string) error {
+	l.ta.stdout.Reset()
+	l.ta.stderr.Reset()
+	return l.run("config", "confirm", name)
 }
 
 // deliveries are the events of deliveries, confirmations, rollbacks and etcd's quorum checks, the
@@ -151,7 +159,7 @@ func deliveries(events []string) []string {
 		switch {
 		case strings.HasSuffix(e, " members"):
 			got = append(got, "members")
-		case strings.Contains(e, "apply-config"), strings.HasSuffix(e, " confirm"), strings.HasSuffix(e, " rollback"):
+		case strings.Contains(e, "config apply"), strings.HasSuffix(e, " confirm"), strings.HasSuffix(e, " rollback"):
 			got = append(got, e)
 		}
 	}
@@ -165,7 +173,7 @@ func TestApplyConfigToSeveralNodes(t *testing.T) {
 	if err := l.applyConfigTo([]string{"w1", "cp1"}); err != nil {
 		t.Fatalf("%v\n%s", err, l.ta.stdout)
 	}
-	if got, want := deliveries(l.takeEvents()), []string{"w1 apply-config staged=false", "cp1 apply-config staged=false"}; !slices.Equal(got, want) {
+	if got, want := deliveries(l.takeEvents()), []string{"w1 config apply staged=false", "cp1 config apply staged=false"}; !slices.Equal(got, want) {
 		t.Errorf("events %q, want %q\n%s", got, want, l.ta.stdout)
 	}
 	if err := l.applyConfigTo([]string{"w1", "cp1"}); err != nil {
@@ -192,7 +200,7 @@ func TestApplyConfigWithoutAVersionChangeAsksNoLayer(t *testing.T) {
 	if err := l.applyConfigTo([]string{"w1", "cp2"}); err != nil {
 		t.Fatalf("several nodes: %v\n%s", err, l.ta.stdout)
 	}
-	want := []string{"cp1 apply-config staged=false", "w1 apply-config staged=false", "cp2 apply-config staged=false"}
+	want := []string{"cp1 config apply staged=false", "w1 config apply staged=false", "cp2 config apply staged=false"}
 	if got := deliveries(l.takeEvents()); !slices.Equal(got, want) {
 		t.Errorf("events %q, want %q", got, want)
 	}
@@ -208,10 +216,10 @@ func TestApplyConfigRollsOutTheAPIServer(t *testing.T) {
 		t.Fatalf("%v\n%s", err, l.ta.stdout)
 	}
 	want := []string{
-		"members", "cp1 apply-config staged=false", "cp1 confirm",
-		"members", "cp2 apply-config staged=false", "cp2 confirm",
-		"members", "cp3 apply-config staged=false", "cp3 confirm",
-		"w1 apply-config staged=false",
+		"members", "cp1 config apply staged=false", "cp1 confirm",
+		"members", "cp2 config apply staged=false", "cp2 confirm",
+		"members", "cp3 config apply staged=false", "cp3 confirm",
+		"w1 config apply staged=false",
 	}
 	if got := deliveries(l.takeEvents()); !slices.Equal(got, want) {
 		t.Errorf("events %q, want %q\n%s", got, want, l.ta.stdout)
@@ -275,7 +283,7 @@ func TestApplyConfigRolloutStopsAndContinues(t *testing.T) {
 	if err == nil || !strings.HasPrefix(err.Error(), "cp2: config ") || !strings.Contains(err.Error(), " was not confirmed within its trial: its control plane: kube-apiserver is not Ready") {
 		t.Fatalf("err = %v\n%s", err, l.ta.stdout)
 	}
-	want := []string{"members", "cp1 apply-config staged=false", "cp1 confirm", "members", "cp2 apply-config staged=false", "cp2 rollback"}
+	want := []string{"members", "cp1 config apply staged=false", "cp1 confirm", "members", "cp2 config apply staged=false", "cp2 rollback"}
 	if got := deliveries(l.takeEvents()); !slices.Equal(got, want) {
 		t.Errorf("events %q, want %q", got, want)
 	}
@@ -365,7 +373,7 @@ func TestApplyConfigRefusesSkew(t *testing.T) {
 	}
 }
 
-// --until deliver leaves the first trial open, which apply-config confirm confirms; the same
+// --until deliver leaves the first trial open, which config confirm confirms; the same
 // command again goes on with the next node.
 func TestApplyConfigUntilDeliver(t *testing.T) {
 	l := newRolloutLab(t)
@@ -374,7 +382,7 @@ func TestApplyConfigUntilDeliver(t *testing.T) {
 	if err := l.applyConfigTo(all, "--until", "deliver"); err != nil {
 		t.Fatalf("%v\n%s", err, l.ta.stdout)
 	}
-	if got, want := deliveries(l.takeEvents()), []string{"members", "cp1 apply-config staged=false"}; !slices.Equal(got, want) {
+	if got, want := deliveries(l.takeEvents()), []string{"members", "cp1 config apply staged=false"}; !slices.Equal(got, want) {
 		t.Errorf("events %q, want %q", got, want)
 	}
 	if !strings.Contains(l.ta.stdout.String(), endTrialHint("cp1")) {
@@ -383,7 +391,7 @@ func TestApplyConfigUntilDeliver(t *testing.T) {
 	if err := l.applyConfigTo(all, "--until", "deliver"); err == nil || !strings.Contains(err.Error(), "cp1 runs config ") || !strings.Contains(err.Error(), " on trial until ") {
 		t.Errorf("a run during the trial: %v", err)
 	}
-	if err := l.applyConfigTo([]string{"confirm", "cp1"}); err != nil {
+	if err := l.confirmConfigOf("cp1"); err != nil {
 		t.Fatalf("%v\n%s", err, l.ta.stdout)
 	}
 	if got := deliveries(l.takeEvents()); !slices.Equal(got, []string{"cp1 confirm"}) {
@@ -392,7 +400,7 @@ func TestApplyConfigUntilDeliver(t *testing.T) {
 	if err := l.applyConfigTo(all, "--until", "deliver"); err != nil {
 		t.Fatalf("%v\n%s", err, l.ta.stdout)
 	}
-	if got, want := deliveries(l.takeEvents()), []string{"members", "cp2 apply-config staged=false"}; !slices.Equal(got, want) {
+	if got, want := deliveries(l.takeEvents()), []string{"members", "cp2 config apply staged=false"}; !slices.Equal(got, want) {
 		t.Errorf("events %q, want %q", got, want)
 	}
 	if !strings.Contains(l.ta.stdout.String(), "cp1 runs config ") {
@@ -400,8 +408,8 @@ func TestApplyConfigUntilDeliver(t *testing.T) {
 	}
 }
 
-// apply-config confirm waits for the node's layers before it confirms, and rolls the trial back at once when
-// they do not find the node serving with the config.
+// config confirm waits for the node's layers before it confirms, and rolls the trial back at once
+// when they do not find the node serving with the config.
 func TestApplyConfigConfirmWaitsForTheLayers(t *testing.T) {
 	defer func(m time.Duration) { minTrial = m }(minTrial)
 	minTrial = 0
@@ -410,11 +418,11 @@ func TestApplyConfigConfirmWaitsForTheLayers(t *testing.T) {
 	if err := l.applyConfigTo([]string{"cp1"}, "--try", "2s", "--no-confirm"); err != nil {
 		t.Fatalf("%v\n%s", err, l.ta.stdout)
 	}
-	err := l.applyConfigTo([]string{"confirm", "cp1"})
+	err := l.confirmConfigOf("cp1")
 	if err == nil || !strings.HasPrefix(err.Error(), "cp1: config ") || !strings.Contains(err.Error(), " was not confirmed within its trial: its control plane: kube-apiserver is not Ready") {
 		t.Fatalf("err = %v\n%s", err, l.ta.stdout)
 	}
-	if got, want := deliveries(l.takeEvents()), []string{"cp1 apply-config staged=false", "cp1 rollback"}; !slices.Equal(got, want) {
+	if got, want := deliveries(l.takeEvents()), []string{"cp1 config apply staged=false", "cp1 rollback"}; !slices.Equal(got, want) {
 		t.Errorf("events %q, want %q", got, want)
 	}
 }
@@ -429,7 +437,7 @@ func TestApplyConfigTrialWaitsForTheNodeToAnswer(t *testing.T) {
 	if err := l.applyConfigTo([]string{"w1"}, "--try", "5s"); err != nil {
 		t.Fatalf("%v\n%s", err, l.ta.stdout)
 	}
-	if got, want := deliveries(l.takeEvents()), []string{"w1 apply-config staged=false", "w1 confirm"}; !slices.Equal(got, want) {
+	if got, want := deliveries(l.takeEvents()), []string{"w1 config apply staged=false", "w1 confirm"}; !slices.Equal(got, want) {
 		t.Errorf("events %q, want %q\n%s", got, want, l.ta.stdout)
 	}
 }
@@ -449,9 +457,9 @@ func TestApplyConfigTrialEndsAtALayerThatDoesNotAnswer(t *testing.T) {
 			t.Errorf("err = %v", err)
 		}
 	case <-time.After(10 * time.Second):
-		t.Fatal("apply-config still waits for the layer after the trial's deadline")
+		t.Fatal("config apply still waits for the layer after the trial's deadline")
 	}
-	if got, want := deliveries(l.takeEvents()), []string{"w1 apply-config staged=false", "w1 rollback"}; !slices.Equal(got, want) {
+	if got, want := deliveries(l.takeEvents()), []string{"w1 config apply staged=false", "w1 rollback"}; !slices.Equal(got, want) {
 		t.Errorf("events %q, want %q", got, want)
 	}
 }
@@ -474,7 +482,7 @@ func TestApplyConfigAddresses(t *testing.T) {
 	l := newRolloutLab(t)
 	run := func(args ...string) error {
 		l.ta.stdout.Reset()
-		return l.ta.run(context.Background(), append(append([]string{"apply-config"}, args...), "--inventory", l.inventory))
+		return l.ta.run(context.Background(), append(append([]string{"config", "apply"}, args...), "--inventory", l.inventory))
 	}
 	if err := run("cp1", "w1", "--address", l.addrs["cp1"]); err == nil || !strings.Contains(err.Error(), "with several nodes, give each node's address as NODE=ADDR") {
 		t.Errorf("a bare address: %v", err)
@@ -482,7 +490,7 @@ func TestApplyConfigAddresses(t *testing.T) {
 	if err := run("cp1", "w1", "--address", "cp1="+l.addrs["cp1"], "--address", "w1="+l.addrs["w1"]); err != nil {
 		t.Fatalf("%v\n%s", err, l.ta.stdout)
 	}
-	if got, want := deliveries(l.takeEvents()), []string{"cp1 apply-config staged=false", "w1 apply-config staged=false"}; !slices.Equal(got, want) {
+	if got, want := deliveries(l.takeEvents()), []string{"cp1 config apply staged=false", "w1 config apply staged=false"}; !slices.Equal(got, want) {
 		t.Errorf("events %q, want %q", got, want)
 	}
 	if err := run("w1", "--address", l.addrs["w1"]); err != nil {
@@ -508,7 +516,7 @@ func TestUpgradeRefusesAKubeletNewerThanTheAPIServer(t *testing.T) {
 		return slices.ContainsFunc(l.takeEvents(), func(e string) bool { return strings.HasSuffix(e, " upgrade") })
 	}
 	err := l.upgrade(newer, "--nodes", "w1", "--until", "activate")
-	if want := "w1: the image's kubelet 1.38.0 would be newer than the API server 1.37.1 that cp1 runs, the oldest of the cluster; upgrade the control plane first: name the new release's images in the Cluster document and deliver it with chalkctl apply-config"; err == nil || err.Error() != want {
+	if want := "w1: the image's kubelet 1.38.0 would be newer than the API server 1.37.1 that cp1 runs, the oldest of the cluster; upgrade the control plane first: name the new release's images in the Cluster document and deliver it with chalkctl config apply"; err == nil || err.Error() != want {
 		t.Errorf("err = %v, want %q", err, want)
 	}
 	if upgraded() {
@@ -549,14 +557,14 @@ func TestUpgradeRefusesAKubeletNewerThanTheAPIServer(t *testing.T) {
 }
 
 // An upgrade whose config would change the API server a node runs is refused before any node is
-// sent anything; once apply-config delivered the config, the upgrade goes ahead.
+// sent anything; once config apply delivered the config, the upgrade goes ahead.
 func TestUpgradeRefusesAConfigThatChangesTheAPIServer(t *testing.T) {
 	l := newUpgradeLab(t, 1)
 	l.runAPIServer("1.37.1")
 	l.rollTo(t, "1.37.2")
 	img := testUpgradeImage(t, "w", "0.2.0")
 	err := l.upgrade(img, "--nodes", "w1", "--until", "activate")
-	if want := "w1: the inventory's config changes the API server from 1.37.1 to 1.37.2, which an upgrade does not deliver; deliver the config with chalkctl apply-config first, which orders the nodes for it, then upgrade"; err == nil || err.Error() != want {
+	if want := "w1: the inventory's config changes the API server from 1.37.1 to 1.37.2, which an upgrade does not deliver; deliver the config with chalkctl config apply first, which orders the nodes for it, then upgrade"; err == nil || err.Error() != want {
 		t.Errorf("err = %v, want %q", err, want)
 	}
 	if events := l.takeEvents(); len(events) != 0 {
@@ -572,7 +580,7 @@ func TestUpgradeRefusesAConfigThatChangesTheAPIServer(t *testing.T) {
 }
 
 // An upgrade of a node outside the Kubernetes cluster reaches none of the cluster's nodes, so a
-// control plane that does not answer does not stop it; nor does it stop apply-config to that node,
+// control plane that does not answer does not stop it; nor does it stop config apply to that node,
 // whose config names the cluster's API server too.
 func TestOutsideTheClusterReachesNoneOfIt(t *testing.T) {
 	l := newRolloutLab(t)
@@ -584,9 +592,9 @@ func TestOutsideTheClusterReachesNoneOfIt(t *testing.T) {
 	l.runAPIServer("1.37.1", "n1")
 	l.rollTo(t, "1.37.2")
 	if err := l.applyConfigTo([]string{"n1"}); err != nil {
-		t.Fatalf("apply-config: %v\n%s", err, l.ta.stdout)
+		t.Fatalf("config apply: %v\n%s", err, l.ta.stdout)
 	}
-	if got, want := deliveries(l.takeEvents()), []string{"n1 apply-config staged=false"}; !slices.Equal(got, want) {
+	if got, want := deliveries(l.takeEvents()), []string{"n1 config apply staged=false"}; !slices.Equal(got, want) {
 		t.Errorf("events %q, want %q", got, want)
 	}
 }
@@ -623,7 +631,7 @@ func TestApplyConfigToANodeNamedTwice(t *testing.T) {
 	if err := l.applyConfigTo([]string{"w1", "cp1", "w1"}); err != nil {
 		t.Fatalf("%v\n%s", err, l.ta.stdout)
 	}
-	if got, want := deliveries(l.takeEvents()), []string{"w1 apply-config staged=false", "cp1 apply-config staged=false"}; !slices.Equal(got, want) {
+	if got, want := deliveries(l.takeEvents()), []string{"w1 config apply staged=false", "cp1 config apply staged=false"}; !slices.Equal(got, want) {
 		t.Errorf("events %q, want %q", got, want)
 	}
 }

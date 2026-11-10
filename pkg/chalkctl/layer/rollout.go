@@ -12,15 +12,15 @@ import (
 
 // Rollout is a plugin whose layer's cluster bounds how far apart the versions its nodes run may
 // be, as Kubernetes's version skew policy bounds the API server, the kubelets and the other
-// components. chalkctl apply-config and chalkctl upgrade read the nodes' versions through it and
+// components. chalkctl config apply and chalkctl upgrade read the nodes' versions through it and
 // have it refuse what would break the bounds. When a delivery of config changes the versions it
-// bounds, apply-config orders the delivery: the coordinators first, one at a time, each held by
+// bounds, config apply orders the delivery: the coordinators first, one at a time, each held by
 // BeforeDelivery and delivered on trial, which chalkctl confirms only once Delivered passes; then
 // the other nodes. chalkctl asks, for a node, the plugins of the layers its Info names, and for
 // RolloutFlags every compiled plugin. The layer names the nodes whose versions chalkctl reads, so
 // a run that concerns no node of its cluster reaches none of them.
 type Rollout interface {
-	// RolloutFlags registers the layer's flags of apply-config on fs and returns where their values
+	// RolloutFlags registers the layer's flags of config apply on fs and returns where their values
 	// go, which Upgrading.Flags gives the layer's hooks during a delivery.
 	RolloutFlags(fs *pflag.FlagSet) any
 	// Versions reads, from the layer's service on conn, the versions the node runs that the bounds
@@ -30,7 +30,7 @@ type Rollout interface {
 	// versions the bounds compare, against running, the config the node runs as it serves it, such as "the API
 	// server from 1.37.1 to 1.37.2"; "" when it changes none, as for a node outside the layer's
 	// cluster. It reads the configs alone, so a delivery that changes none asks the layer's
-	// service nothing. When a node's delivery changes them, apply-config has CheckConfig check the
+	// service nothing. When a node's delivery changes them, config apply has CheckConfig check the
 	// versions the nodes run and orders the delivery, and chalkctl upgrade refuses the config.
 	Changes(c Cluster, name string, running config.Redacted) (string, error)
 	// CheckConfig refuses to deliver the inventory's config to the nodes named, which changes the

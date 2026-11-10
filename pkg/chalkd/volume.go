@@ -35,7 +35,7 @@ type machineChange struct {
 // grow but not undo. The image's rules refused the changes a node does not make already.
 //
 // A slot whose section lacks a volume the machine has, as one written before an upgrade or
-// apply-config --staged added the volume, is compared only when it is written again. Until then
+// config apply --staged added the volume, is compared only when it is written again. Until then
 // its image mounts the volume too: every boot sets up each volume storage.json records, and
 // nothing at boot removes one. The caller holds s.mu.
 func (s *Server) machineChanges(section storage.Section) (machineChange, error) {
@@ -197,7 +197,7 @@ func (s *Server) resetVolume(ctx context.Context, node, name string, next slot.S
 // elsewhere adds to err, a refusal of config whose storage section is section, the images whose
 // config slots name a volume that section leaves out. It names them only for a volume the machine
 // records and the running image's config never named: the config of one of those images added
-// it, with an upgrade or apply-config --staged, and naming the volume keeps it. The slot being
+// it, with an upgrade or config apply --staged, and naming the volume keeps it. The slot being
 // written, writing, is left out: its config is the one being replaced. The caller holds s.mu.
 func (s *Server) elsewhere(err error, section storage.Section, writing []byte) error {
 	recorded, _, rerr := s.recorded()

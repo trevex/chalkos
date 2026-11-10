@@ -34,7 +34,7 @@ import (
 // An operator may upgrade, but only an admin may deliver config with the upgrade, as ApplyConfig
 // needs: config names the node's networks, volumes and layers' settings, and what an operator
 // may not deliver to the running image it must not deliver to the next one either. Without config
-// the node gives the image its pending config, which an admin's apply-config --staged held, or else
+// the node gives the image its pending config, which an admin's config apply --staged held, or else
 // carries the running image's over.
 //
 // An image the header names in a registry is pulled by the digest it names, with the credentials
@@ -127,15 +127,15 @@ func (s *Server) Upgrade(ctx context.Context, stream *connect.ClientStream[nodev
 		// A refusal retired the image, so its config slot goes too.
 		s.recordImages(nil)
 		// An image staged already is sent again for its config alone, and a refusal of that config
-		// in the recheck retires the image with it; apply-config --staged would have refused it and
+		// in the recheck retires the image with it; config apply --staged would have refused it and
 		// kept the image. A recheck that failed to mount or read the store retired the image too,
-		// but refused no config, so the answer names no apply-config --staged. Other failures, also
+		// but refused no config, so the answer names no config apply --staged. Other failures, also
 		// of a resend, came before the recheck or wrote the image anew, and name no staged image.
 		if retired, ok := errors.AsType[*upgrade.StagedRetiredError](err); ok {
 			if _, ok := errors.AsType[*upgrade.CheckError](retired.Err); !ok {
 				return nil, layer.Errorf(connect.CodeFailedPrecondition, "upgrade: %w; the staged image was retired with it", err)
 			}
-			return nil, layer.Errorf(connect.CodeFailedPrecondition, "upgrade: %w; the staged image was retired with it: chalkctl apply-config --staged %s changes a staged image's config without retiring the image on a refusal", err, s.nodeName())
+			return nil, layer.Errorf(connect.CodeFailedPrecondition, "upgrade: %w; the staged image was retired with it: chalkctl config apply --staged %s changes a staged image's config without retiring the image on a refusal", err, s.nodeName())
 		}
 		return nil, layer.Errorf(connect.CodeFailedPrecondition, "upgrade: %w", err)
 	}
@@ -185,7 +185,7 @@ func (s *Server) Upgrade(ctx context.Context, stream *connect.ClientStream[nodev
 // wrote, without its documents, which names the pending config the image took or the upgrade's
 // config replaced. Upgrade drops that once the image is staged, and activated unless the upgrade
 // stops at staging: until then the image may still fail to be staged or to become the next boot,
-// and the pending config waits for the upgrade after. A refusal keeps it, for apply-config
+// and the pending config waits for the upgrade after. A refusal keeps it, for config apply
 // --staged to replace. It runs once the store is written to the inactive slot, before the image
 // is staged, and again for an image the slot holds already, staged or active.
 func (s *Server) stageConfig(ctx context.Context, st imageStore, system, platform string, rootHash []byte, text, secret string) (imageConfig, error) {

@@ -53,10 +53,10 @@ func (a *app) printStatus(ctx context.Context, t *target, conn *client.Conn) err
 		fmt.Fprintln(a.stdout, trialLine(s.Trial))
 	}
 	if s.TrialError != "" {
-		fmt.Fprintf(a.stdout, "the record of a config's trial cannot be read: %s; other changes are refused until apply-config rollback restores the previous config\n", s.TrialError)
+		fmt.Fprintf(a.stdout, "the record of a config's trial cannot be read: %s; other changes are refused until config rollback restores the previous config\n", s.TrialError)
 	}
 	if s.PreviousConfigVersion != "" {
-		fmt.Fprintf(a.stdout, "previous config %s (apply-config rollback restores it)\n", s.PreviousConfigVersion)
+		fmt.Fprintf(a.stdout, "previous config %s (config rollback restores it)\n", s.PreviousConfigVersion)
 	}
 	if s.Boot.GetStaged() != nil {
 		fmt.Fprintf(a.stdout, "staged config %s (%s)\n", cmp.Or(s.StagedConfigVersion, "none"), t.cluster.stagedConfigState(t.name, s))
@@ -254,7 +254,7 @@ func pendingLine(p *nodev1.PendingConfig) string {
 // configState says whether the running image's slot of a node holds the config chalkctl delivers
 // to it.
 func (c *cluster) configState(name, version string) string {
-	return c.slotState(name, version, func(string) string { return "chalkctl apply-config " + name + " delivers it" })
+	return c.slotState(name, version, func(string) string { return "chalkctl config apply " + name + " delivers it" })
 }
 
 // stagedConfigState says whether the slot of the image the status s names as staged holds the
@@ -280,13 +280,13 @@ func (c *cluster) slotState(name, version string, advice func(want string) strin
 }
 
 // stagedAdvice is what delivers want, the inventory's config, to the slot of the image the status
-// s names as staged, which holds other config. A plain apply-config writes both images' slots, but
+// s names as staged, which holds other config. A plain config apply writes both images' slots, but
 // not that of the known-good image a rollback from a boot not yet found healthy staged, which
 // keeps the config it last ran until that boot is found healthy; chalkd names that image in the
 // status, by the test its deliveries take. While a trial is open the node takes no delivery, and
 // the trial's confirmation writes the staged slot it held back: the advice is the confirmation
 // when want is on trial, and the trial's end otherwise. When the running image runs want already,
-// only the staged slot differs, as after a write of that slot that failed, and apply-config
+// only the staged slot differs, as after a write of that slot that failed, and config apply
 // --staged writes it alone.
 func stagedAdvice(name, want string, s *nodev1.StatusResponse) string {
 	b := s.Boot
@@ -294,13 +294,13 @@ func stagedAdvice(name, want string, s *nodev1.StatusResponse) string {
 	case b.GetStagedKnownGood():
 		return "the rollback image keeps the config it last ran while the boot of " + b.GetEntry() + " is not found healthy"
 	case s.Trial != nil && s.Trial.Version == want:
-		return "the confirmation of its trial writes it: chalkctl apply-config confirm " + name
+		return "the confirmation of its trial writes it: chalkctl config confirm " + name
 	case s.Trial != nil:
 		return "the node takes no delivery until the trial of config " + s.Trial.Version + " ends"
 	case s.ConfigVersion == want:
-		return "chalkctl apply-config --staged " + name + " delivers it"
+		return "chalkctl config apply --staged " + name + " delivers it"
 	}
-	return "chalkctl apply-config " + name + " delivers it"
+	return "chalkctl config apply " + name + " delivers it"
 }
 
 // imageLine is the status line of a node whose store has another root hash than the image the

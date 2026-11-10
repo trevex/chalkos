@@ -23,7 +23,7 @@ func TestNamed(t *testing.T) {
 		{Named("r1", errors.New("the node refused it")), "r1: the node refused it"},
 		{errors.New("r1: the config is refused: x"), "r1: r1: the config is refused: x"},
 		{errors.New("dial tcp 10.0.0.11:4443: no route"), "r1: dial tcp 10.0.0.11:4443: no route"},
-		{errors.New("roll back with chalkctl apply-config rollback <node>"), "r1: roll back with chalkctl apply-config rollback r1"},
+		{errors.New("roll back with chalkctl config rollback <node>"), "r1: roll back with chalkctl config rollback r1"},
 	} {
 		if got := Named("r1", tc.err).Error(); got != tc.want {
 			t.Errorf("Named(%q) = %q, want %q", tc.err, got, tc.want)

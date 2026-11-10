@@ -54,7 +54,7 @@ func (f *applyFlags) Check(staged bool) error {
 
 func (f *applyFlags) Flag() string    { return "--kubernetes-share" }
 func (f *applyFlags) Requested() bool { return f.share }
-func (f *applyFlags) Does() string    { return "apply-config delivers it a Kubernetes share" }
+func (f *applyFlags) Does() string    { return "config apply delivers it a Kubernetes share" }
 
 func (f *applyFlags) None(name string) error {
 	return fmt.Errorf("%s is no Kubernetes node: its Node names no type", name)

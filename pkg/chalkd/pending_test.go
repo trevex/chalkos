@@ -306,7 +306,7 @@ func TestStageConfigKeepsARefusedPendingConfig(t *testing.T) {
 		config  string
 		want    []string
 	}{
-		"an unknown kind":        {withoutDemo, baseConfig, []string{`does not accept kind "Demo"`, "chalkctl apply-config --staged n1 replaces it, and chalkctl apply-config discard n1 drops it"}},
+		"an unknown kind":        {withoutDemo, baseConfig, []string{`does not accept kind "Demo"`, "chalkctl config apply --staged n1 replaces it, and chalkctl config discard n1 drops it"}},
 		"a new encrypted volume": {fixtureSchemas(t), extraConfig("ext4"), []string{"no fallback secret was sent", "a pending config is kept without the fallback secret, so upgrade with the config from an inventory, which carries the secret and needs the admin role"}},
 	} {
 		t.Run(name, func(t *testing.T) {

@@ -123,7 +123,7 @@ type upgradeFake struct {
 	// config and stagedConfig are the config the node runs and the one kept for the staged image, as
 	// delivered.
 	config, stagedConfig string
-	// pending is the config the node holds pending for its next upgrade, as apply-config --staged
+	// pending is the config the node holds pending for its next upgrade, as config apply --staged
 	// keeps it without a staged image; empty without one.
 	pending string
 	// secret is the fallback secret the last upgrade sent.
@@ -2097,7 +2097,7 @@ func (n *upgradeFake) ApplyConfig(ctx context.Context, req *connect.Request[node
 		return connect.NewResponse(&nodev1.ApplyConfigResponse{Pending: &nodev1.PendingConfig{Version: versionOf(req.Msg.Config)}}), nil
 	case req.Msg.Staged && n.staged == "":
 		n.pending = req.Msg.Config
-		n.lab.record("%s apply-config pending", n.name)
+		n.lab.record("%s config apply pending", n.name)
 		return connect.NewResponse(&nodev1.ApplyConfigResponse{Pending: &nodev1.PendingConfig{Version: versionOf(n.pending), Since: timestamppb.New(pendingSince)}}), nil
 	case req.Msg.Staged && req.Msg.DryRun:
 		// The staged image checks the config and plans its version; nothing is kept.
@@ -2130,7 +2130,7 @@ func (n *upgradeFake) ApplyConfig(ctx context.Context, req *connect.Request[node
 			n.pending = req.Msg.Config
 			resp.Pending = &nodev1.PendingConfig{Version: versionOf(n.pending), Since: timestamppb.New(pendingSince)}
 		}
-		n.lab.record("%s apply-config staged=false", n.name)
+		n.lab.record("%s config apply staged=false", n.name)
 		n.lab.mu.Lock()
 		if k := n.lab.dropAfterDelivery[n.name]; k > 0 {
 			if n.lab.unreachable == nil {
@@ -2146,7 +2146,7 @@ func (n *upgradeFake) ApplyConfig(ctx context.Context, req *connect.Request[node
 	default:
 		n.stagedConfig = req.Msg.Config
 	}
-	n.lab.record("%s apply-config staged=%v", n.name, req.Msg.Staged)
+	n.lab.record("%s config apply staged=%v", n.name, req.Msg.Staged)
 	return connect.NewResponse(&nodev1.ApplyConfigResponse{}), nil
 }
 
@@ -2175,11 +2175,11 @@ func (n *upgradeFake) Contract(context.Context, *connect.Request[nodev1.Contract
 	return connect.NewResponse(resp), nil
 }
 
-// applyConfig runs chalkctl apply-config on the lab's node with the args given.
+// applyConfig runs chalkctl config apply on the lab's node with the args given.
 func (l *upgradeLab) applyConfig(name string, args ...string) error {
 	l.ta.stdout.Reset()
 	l.ta.stderr.Reset()
-	return l.ta.run(context.Background(), append([]string{"apply-config", name, "--inventory", l.inventory, "--address", l.addrs[name]}, args...))
+	return l.ta.run(context.Background(), append([]string{"config", "apply", name, "--inventory", l.inventory, "--address", l.addrs[name]}, args...))
 }
 
 // TestApplyConfigStaged delivers the inventory's config for the staged image, checked against the
@@ -2219,14 +2219,14 @@ func TestApplyConfigStaged(t *testing.T) {
 	if err := l.ta.run(context.Background(), []string{"status", "w1", "--inventory", l.inventory, "--address", l.addrs["w1"]}); err != nil {
 		t.Fatal(err)
 	}
-	for _, line := range []string{"config " + want + " (the inventory's)", "staged config " + versionOf("{}") + " (not the inventory's; chalkctl apply-config --staged w1 delivers it)"} {
+	for _, line := range []string{"config " + want + " (the inventory's)", "staged config " + versionOf("{}") + " (not the inventory's; chalkctl config apply --staged w1 delivers it)"} {
 		if !strings.Contains(l.ta.stdout.String(), line) {
 			t.Errorf("status lacks %q:\n%s", line, l.ta.stdout)
 		}
 	}
 }
 
-// apply-config --staged --dry-run prints the diff against the staged image's config and the
+// config apply --staged --dry-run prints the diff against the staged image's config and the
 // plan the node answers with, the staged image's config and the storage changes alone, and the
 // node keeps the config it had.
 func TestApplyConfigStagedDryRun(t *testing.T) {
@@ -2248,7 +2248,7 @@ func TestApplyConfigStagedDryRun(t *testing.T) {
 	}
 }
 
-// apply-config --staged checks the rules that compare the config with the node's against the
+// config apply --staged checks the rules that compare the config with the node's against the
 // running image's config, as the node does, while its diff compares with the staged image's.
 func TestApplyConfigStagedChecksRulesAgainstTheRunningConfig(t *testing.T) {
 	l := newUpgradeLab(t, 1)
@@ -2635,7 +2635,7 @@ func TestUpgradeRollbackOfAControlPlane(t *testing.T) {
 func TestUpgradeRefusesANodeOnTrial(t *testing.T) {
 	l := newUpgradeLab(t, 3)
 	l.nodes["w2"].trial = &nodev1.ConfigTrial{Version: "v2", PreviousVersion: "v1", Deadline: timestamppb.New(time.Date(2026, 10, 29, 12, 0, 0, 0, time.UTC))}
-	want := "w2 runs config v2 on trial until 2026-10-29T12:00:00Z; confirm it with chalkctl apply-config confirm w2, or roll it back with chalkctl apply-config rollback w2, first"
+	want := "w2 runs config v2 on trial until 2026-10-29T12:00:00Z; confirm it with chalkctl config confirm w2, or roll it back with chalkctl config rollback w2, first"
 	if err := l.upgrade(testUpgradeImage(t, "w", "0.2.0")); err == nil || !strings.Contains(err.Error(), want) {
 		t.Errorf("upgrade = %v, want %q", err, want)
 	}

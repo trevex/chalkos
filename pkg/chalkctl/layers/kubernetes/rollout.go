@@ -20,13 +20,13 @@ import (
 	"github.com/trevex/chalkos/pkg/kubernetes/translate"
 )
 
-// rolloutFlags are the Kubernetes layer's flags of chalkctl apply-config.
+// rolloutFlags are the Kubernetes layer's flags of chalkctl config apply.
 type rolloutFlags struct {
 	// allowDowntime is --allow-downtime, allowDowngrade --allow-downgrade.
 	allowDowntime, allowDowngrade bool
 }
 
-// RolloutFlags registers --allow-downtime and --allow-downgrade of apply-config.
+// RolloutFlags registers --allow-downtime and --allow-downgrade of config apply.
 func (p *Plugin) RolloutFlags(fs *pflag.FlagSet) any {
 	f := &rolloutFlags{}
 	fs.BoolVar(&f.allowDowntime, "allow-downtime", false, "deliver a new API server version to a control plane of a cluster with one or two, whose API may be unavailable while that control plane's API server restarts")
@@ -34,8 +34,8 @@ func (p *Plugin) RolloutFlags(fs *pflag.FlagSet) any {
 	return f
 }
 
-// rolloutFlagsOf are the run's values of the layer's apply-config flags, their defaults when the
-// run has none.
+// rolloutFlagsOf are the run's values of the layer's flags of config apply, their defaults when
+// the run has none.
 func (p *Plugin) rolloutFlagsOf(u layer.Upgrading) rolloutFlags {
 	if f, ok := u.Flags(p.Name()).(*rolloutFlags); ok {
 		return *f
@@ -308,7 +308,7 @@ func (p *Plugin) CheckImages(c layer.Cluster, images map[string][]*anypb.Any, re
 		case v.Major != api.Major:
 			return fmt.Errorf("%s: the image's kubelet %s is of Kubernetes %d, and the API server %s that %s runs, the oldest of the cluster, of Kubernetes %d; a kubelet and its API server are of one major release", name, v.Release(), v.Major, api.Release(), oldest, api.Major)
 		case v.Minors(api) > 0:
-			return fmt.Errorf("%s: the image's kubelet %s would be newer than the API server %s that %s runs, the oldest of the cluster; upgrade the control plane first: name the new release's images in the Cluster document and deliver it with chalkctl apply-config", name, v.Release(), api.Release(), oldest)
+			return fmt.Errorf("%s: the image's kubelet %s would be newer than the API server %s that %s runs, the oldest of the cluster; upgrade the control plane first: name the new release's images in the Cluster document and deliver it with chalkctl config apply", name, v.Release(), api.Release(), oldest)
 		}
 	}
 	return nil

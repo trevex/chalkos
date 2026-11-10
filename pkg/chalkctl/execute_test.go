@@ -32,9 +32,8 @@ func TestExecuteUsageErrors(t *testing.T) {
 		{"config", "new"}, {"config", "new", "--name", "ada"},
 		{"upgrade", "--max-unavailable", "0"}, {"rotate", "os-ca", "--resume", "--finish"},
 		{"upgrade", "--timeout", "0"}, {"rotate", "os-ca", "--timeout", "0"}, {"node", "reboot", "n1", "--timeout", "-1s"},
-		{"apply-config", "n1", "--dry-run", "--diff"}, {"apply-config", "confirm"}, {"apply-config", "confirm", "n1", "--try", "1m"},
-		// A flag of apply-config before the name of its subcommand.
-		{"apply-config", "--address", "127.0.0.1", "confirm", "n1"},
+		{"config", "apply", "n1", "--dry-run", "--diff"}, {"apply", "n1", "--dry-run", "--diff"}, {"config", "confirm"},
+		{"config", "confirm", "n1", "--try", "1m"}, {"config", "--address", "127.0.0.1", "confirm", "n1"},
 	} {
 		ta := newTestApp(t)
 		if got := ta.execute(context.Background(), args...); got != 2 {
@@ -81,9 +80,9 @@ func TestExecuteErrors(t *testing.T) {
 	if got := ta.execute(context.Background(), "status", "n1", "--inventory", filepath.Join(ta.dir, "missing.yaml")); got != 1 {
 		t.Errorf("a failing command exits with %d, want 1", got)
 	}
-	// apply-config has subcommands and runs too; after --, a subcommand's name is a node's.
+	// config apply and its short form fail as any command.
 	missing := filepath.Join(ta.dir, "missing.yaml")
-	for _, args := range [][]string{{"apply-config", "n1", "--inventory", missing}, {"apply-config", "--inventory", missing, "--", "confirm"}} {
+	for _, args := range [][]string{{"config", "apply", "n1", "--inventory", missing}, {"apply", "n1", "--inventory", missing}} {
 		ta.stderr.Reset()
 		if got := ta.execute(context.Background(), args...); got != 1 || !strings.Contains(ta.stderr.String(), "missing.yaml") {
 			t.Errorf("chalkctl %v exits with %d, want 1 for the missing inventory:\n%s", args, got, ta.stderr)
@@ -135,13 +134,13 @@ func TestExecuteFlags(t *testing.T) {
 
 // The help names the value of --address [NODE=]ADDR, in every command that takes it.
 func TestAddressValueName(t *testing.T) {
-	for _, name := range []string{"status", "apply-config", "rotate", "upgrade"} {
+	for _, args := range [][]string{{"status"}, {"config", "apply"}, {"apply"}, {"rotate"}, {"upgrade"}} {
 		ta := newTestApp(t)
-		if got := ta.execute(context.Background(), name, "--help"); got != 0 {
-			t.Fatalf("%s --help exits with %d", name, got)
+		if got := ta.execute(context.Background(), append(args, "--help")...); got != 0 {
+			t.Fatalf("%v --help exits with %d", args, got)
 		}
 		if !strings.Contains(ta.stdout.String(), "--address [NODE=]ADDR ") {
-			t.Errorf("%s --help does not show --address [NODE=]ADDR:\n%s", name, ta.stdout.String())
+			t.Errorf("%v --help does not show --address [NODE=]ADDR:\n%s", args, ta.stdout.String())
 		}
 	}
 }

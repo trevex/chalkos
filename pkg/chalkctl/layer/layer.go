@@ -47,7 +47,7 @@ type Status interface {
 
 // Validators is a plugin whose layer links validators of its kinds: the Go code its images run as
 // validator programs, which chalkctl runs in-process on a node's config wherever it checks the
-// config against the node's image, as validate and apply-config do. The image runs its own
+// config against the node's image, as validate and config apply do. The image runs its own
 // programs again, which decide; chalkctl's copies refuse a config before it reaches the node.
 // chalkctl asks every compiled plugin.
 type Validators interface {
@@ -84,7 +84,7 @@ type Delivery interface {
 	// Payloads are the layer's payloads for t, issued from its secrets at now; none for a node
 	// the layer gives nothing.
 	Payloads(t Target, now time.Time) ([]*anypb.Any, error)
-	// ApplyFlags registers apply-config's flags that ask for the layer's payloads; chalkctl
+	// ApplyFlags registers config apply's flags that ask for the layer's payloads; chalkctl
 	// registers --force, which delivers them without Admit.
 	ApplyFlags(fs *pflag.FlagSet) ApplyFlags
 	// Admit refuses to deliver t what the secrets file issues it, which does says.
@@ -93,7 +93,7 @@ type Delivery interface {
 	AdmitInstall(ctx context.Context, t Target) error
 }
 
-// ApplyFlags are apply-config's flags of a layer, as Delivery registered them.
+// ApplyFlags are config apply's flags of a layer, as Delivery registered them.
 type ApplyFlags interface {
 	// Check refuses flags that do not go together; staged is --staged.
 	Check(staged bool) error
@@ -101,7 +101,7 @@ type ApplyFlags interface {
 	Flag() string
 	// Requested reports whether the flags ask for the layer's payloads.
 	Requested() bool
-	// Does says what apply-config does to the node with them, for Admit.
+	// Does says what config apply does to the node with them, for Admit.
 	Does() string
 	// None is the error of a node the layer gives no payloads.
 	None(name string) error

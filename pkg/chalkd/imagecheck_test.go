@@ -195,7 +195,7 @@ func TestApplyConfigStagedDryRun(t *testing.T) {
 	}
 }
 
-// The warnings of the staged image's check reach the answer to apply-config --staged, a dry run's
+// The warnings of the staged image's check reach the answer to config apply --staged, a dry run's
 // too.
 func TestApplyConfigStagedWarns(t *testing.T) {
 	s, _ := stagedServer(t, fixtureSchemas(t))

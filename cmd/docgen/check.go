@@ -247,8 +247,7 @@ func checkInvocation(roots []*cobra.Command, args []string) error {
 					break
 				}
 			}
-		// A command with subcommands whose usage names no arguments takes nothing but them.
-		case cmd.HasAvailableSubCommands() && !strings.Contains(cmd.Use, " "):
+		case cmd.HasAvailableSubCommands():
 			return fmt.Errorf("%s has no command %q", cmd.CommandPath(), arg)
 		}
 	}

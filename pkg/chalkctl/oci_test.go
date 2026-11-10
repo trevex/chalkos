@@ -95,7 +95,7 @@ func TestInstallPullsTheImageFromTheRegistry(t *testing.T) {
 	}
 }
 
-// TestOCIImageContractAndStatus reads the contract apply-config checks a node's config against,
+// TestOCIImageContractAndStatus reads the contract config apply checks a node's config against,
 // and the root hash status compares a node's store with, from the node's image in a registry.
 func TestOCIImageContractAndStatus(t *testing.T) {
 	ta := newTestApp(t)
