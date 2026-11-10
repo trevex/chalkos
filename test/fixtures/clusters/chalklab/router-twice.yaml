@@ -1,5 +1,5 @@
 # The main cluster's r1 with two peers of its fabric session, which only the frr output's
-# renderer refuses: apply-config --dry-run shows the refusal that chalkctl validate cannot.
+# renderer refuses: config apply --dry-run shows the refusal that chalkctl validate cannot.
 apiVersion: chalkctl.chalkos.dev/v1alpha1
 kind: Inventory
 metadata: {name: chalklab}

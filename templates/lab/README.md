@@ -45,7 +45,7 @@ secrets file:
 
 ```sh
 chalkctl validate
-chalkctl apply-config w1 --inventory <lab inventory> --secrets secrets.json
+chalkctl config apply w1 --inventory <lab inventory> --secrets secrets.json
 ```
 
 To upgrade, change the `node` variant's `modules` in `flake.nix` and commit, build the image again

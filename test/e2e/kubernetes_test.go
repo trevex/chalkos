@@ -306,7 +306,7 @@ func revocation(t *testing.T, ctx context.Context, nodes map[string]*node, kubec
 		t.Errorf("status of cp1 does not list w1 as revoked: %v", err)
 	}
 	// The test image renews after each ApplyConfig.
-	if _, err := chalkctl(t, w1, "base", "apply-config", "w1"); err != nil {
+	if _, err := chalkctl(t, w1, "base", "config", "apply", "w1"); err != nil {
 		t.Fatal(err)
 	}
 	waitFor(t, 2*time.Minute, "w1's renewal refused as revoked", func() error {

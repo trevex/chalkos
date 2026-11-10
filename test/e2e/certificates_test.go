@@ -108,7 +108,7 @@ func renewals(t *testing.T, ctx context.Context, cs kubernetes.Interface, nodes 
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := chalkctl(t, w1, "base", "apply-config", "w1"); err != nil {
+	if _, err := chalkctl(t, w1, "base", "config", "apply", "w1"); err != nil {
 		t.Fatal(err)
 	}
 	renewed(t, "w1's node certificate renewed through cp1", w1.addr, w1Before, 2*time.Minute)
@@ -130,7 +130,7 @@ func renewals(t *testing.T, ctx context.Context, cs kubernetes.Interface, nodes 
 		t.Fatal(err)
 	}
 	start := time.Now()
-	if _, err := chalkctl(t, cp1, "base", "apply-config", "cp1"); err != nil {
+	if _, err := chalkctl(t, cp1, "base", "config", "apply", "cp1"); err != nil {
 		t.Fatal(err)
 	}
 	renewed(t, "cp1's node certificate renewed", cp1.addr, cp1Before, 2*time.Minute)

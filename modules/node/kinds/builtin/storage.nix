@@ -235,7 +235,7 @@ in
           messageExpression = ''
             facts.recorded.volumes.filter(n, n != "var" && !(n in documents)).map(n, n in oldDocuments
               ? "Volume " + n + ": the config removes it; only a reinstall of " + node.name + " removes a volume"
-              : "Volume " + n + ": an earlier config of this image or another added it, with an upgrade or chalkctl apply-config --staged, and it stays on the node; name it in this config too; only a reinstall of " + node.name + " removes it").join("; ")
+              : "Volume " + n + ": an earlier config of this image or another added it, with an upgrade or chalkctl config apply --staged, and it stays on the node; name it in this config too; only a reinstall of " + node.name + " removes it").join("; ")
           '';
         }
         # New encrypted volumes are enrolled with the fallback secret, which must open the node's

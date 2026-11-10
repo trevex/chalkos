@@ -226,13 +226,13 @@ const bgpPassword = "lab-s3cret"
 //   - node-ca: chalkctl rotate node-ca over the lab's inventory, on a copy of the secrets file,
 //     gives r1 and r2 certificates of the new node CA, which a new connection verifies, and
 //     their status reports the node certificate without a problem.
-//   - rollback: apply-config rollback, without an inventory, brings r1 back to the config it
+//   - rollback: config rollback, without an inventory, brings r1 back to the config it
 //     ran before the reload, so r2 loses the route to r1's edge0, and a second rollback brings
 //     the route back; frr.conf stays root's with mode 0600.
-//   - trial: apply-config --try with the base inventory is confirmed over a new connection; one
+//   - trial: config apply --try with the base inventory is confirmed over a new connection; one
 //     that accepts chalkd's port on enp0s3 alone cuts the host off, so chalkctl cannot confirm it,
 //     r1 rolls it back at the 30 s deadline and new connections reach it again.
-//   - vrf: apply-config --try with an inventory that puts both routers' enp0s3, and r2's edge0,
+//   - vrf: config apply --try with an inventory that puts both routers' enp0s3, and r2's edge0,
 //     into the VRF fabric of table 100, with their BGP sessions, and r2's resolver of fabric, is
 //     confirmed over a new connection, so chalkd still answers on enp0s2. The sessions run in
 //     fabric, r1 routes r2's edge0 in table 100 and, through its default VRF's import of fabric,
@@ -373,8 +373,8 @@ func (rl *routerLab) bgp(t *testing.T) {
 func (rl *routerLab) reload(t *testing.T) {
 	// A dry run of the delivery plans FRR's reload on its output, and changes nothing.
 	plan := regexp.MustCompile(`(?m)^  (?:effects:  | {10})frr: reload frr\.service \(output frr\)$`)
-	if out, err := chalkctl(t, rl.nodes["r1"], "announce", "apply-config", "--dry-run", "r1"); err != nil || !plan.MatchString(out) {
-		t.Fatalf("apply-config --dry-run plans no reload of FRR: %v\n%s", err, out)
+	if out, err := chalkctl(t, rl.nodes["r1"], "announce", "config", "apply", "--dry-run", "r1"); err != nil || !plan.MatchString(out) {
+		t.Fatalf("config apply --dry-run plans no reload of FRR: %v\n%s", err, out)
 	}
 	// The validator router refuses two peers of one session: chalkctl validate runs its linked
 	// copy, and so does a dry run, before it sends r1 anything.
@@ -382,22 +382,22 @@ func (rl *routerLab) reload(t *testing.T) {
 	if out, err := exec.Command(os.Getenv("CHALKLAB_CHALKCTL"), "validate", "r1", "--inventory", inventoryPath("twice")).CombinedOutput(); err == nil || !strings.Contains(string(out), twice) {
 		t.Fatalf("chalkctl validate of two peers of one session: %v\n%s", err, out)
 	}
-	if out, err := chalkctl(t, rl.nodes["r1"], "twice", "apply-config", "--dry-run", "r1"); err == nil || !strings.Contains(out, twice) {
-		t.Fatalf("apply-config --dry-run of two peers of one session: %v\n%s", err, out)
+	if out, err := chalkctl(t, rl.nodes["r1"], "twice", "config", "apply", "--dry-run", "r1"); err == nil || !strings.Contains(out, twice) {
+		t.Fatalf("config apply --dry-run of two peers of one session: %v\n%s", err, out)
 	}
 	// A FirewallPolicy that names a zone and an AddressSet the config lacks is refused with a
 	// line for each reference, at its field.
-	if out, err := chalkctl(t, rl.nodes["r1"], "", "apply-config", "r1", "--inventory", danglingInventory(t)); err == nil ||
+	if out, err := chalkctl(t, rl.nodes["r1"], "", "config", "apply", "r1", "--inventory", danglingInventory(t)); err == nil ||
 		!strings.Contains(out, `FirewallPolicy/dangling: spec.from: FirewallZone "nowhere" does not exist`) ||
 		!strings.Contains(out, `FirewallPolicy/dangling: spec.rules[0].source.set: AddressSet "nosuch" does not exist`) {
-		t.Fatalf("apply-config of dangling references: %v\n%s", err, out)
+		t.Fatalf("config apply of dangling references: %v\n%s", err, out)
 	}
 	before, err := rl.session("r1", "fabric")
 	if err != nil {
 		t.Fatal(err)
 	}
 	start := time.Now()
-	if _, err := chalkctl(t, rl.nodes["r1"], "announce", "apply-config", "r1"); err != nil {
+	if _, err := chalkctl(t, rl.nodes["r1"], "announce", "config", "apply", "r1"); err != nil {
 		t.Fatal(err)
 	}
 	waitFor(t, 2*time.Minute, "r2's route to r1's edge0", func() error { return rl.learned("2001:db8:ffff::1/128") })
@@ -552,9 +552,9 @@ func (rl *routerLab) rollback(t *testing.T) {
 		t.Fatalf("r1 runs config %s and keeps %q as its previous one, want the config from before the reload", announced, previous)
 	}
 	// The node keeps the config it rolls back to, so no inventory gives it.
-	out, err := chalkctl(t, rl.nodes["r1"], "", "apply-config", "rollback", "r1")
+	out, err := chalkctl(t, rl.nodes["r1"], "", "config", "rollback", "r1")
 	if err != nil || !strings.Contains(out, "r1 runs config "+previous+" again; config "+announced+" is its previous one now") {
-		t.Fatalf("apply-config rollback: %v", err)
+		t.Fatalf("config rollback: %v", err)
 	}
 	waitFor(t, 2*time.Minute, "r2 to lose r1's edge0", func() error {
 		if rl.learned("2001:db8:ffff::1/128") == nil {
@@ -566,9 +566,9 @@ func (rl *routerLab) rollback(t *testing.T) {
 		t.Errorf("after the rollback r1 runs %s and keeps %s, want %s and %s", after.ConfigVersion, after.PreviousConfigVersion, previous, announced)
 	}
 	// A second rollback undoes the first.
-	out, err = chalkctl(t, rl.nodes["r1"], "", "apply-config", "rollback", "r1")
+	out, err = chalkctl(t, rl.nodes["r1"], "", "config", "rollback", "r1")
 	if err != nil || !strings.Contains(out, "r1 runs config "+announced+" again; config "+previous+" is its previous one now") {
-		t.Fatalf("a second apply-config rollback: %v", err)
+		t.Fatalf("a second config rollback: %v", err)
 	}
 	waitFor(t, 2*time.Minute, "r2's route to r1's edge0", func() error { return rl.learned("2001:db8:ffff::1/128") })
 	rl.rootsConfig()
@@ -599,9 +599,9 @@ func (rl *routerLab) trial(t *testing.T) {
 	announced := before.ConfigVersion
 	// A trial that leaves r1 reachable is confirmed: r1 runs the base inventory's config again,
 	// without the address of edge0.
-	out, err := chalkctl(t, rl.nodes["r1"], "base", "apply-config", "--try", "1m", "r1")
+	out, err := chalkctl(t, rl.nodes["r1"], "base", "config", "apply", "--try", "1m", "r1")
 	if err != nil || !regexp.MustCompile(`(?m)^r1 keeps config \S+: the trial is confirmed$`).MatchString(out) {
-		t.Fatalf("apply-config --try: %v\n%s", err, out)
+		t.Fatalf("config apply --try: %v\n%s", err, out)
 	}
 	st, err := fresh()
 	if err != nil || st.Trial != nil || st.TrialError != "" || st.ConfigVersion == announced || st.PreviousConfigVersion != announced {
@@ -612,7 +612,7 @@ func (rl *routerLab) trial(t *testing.T) {
 	// connections through enp0s2 fail, r1 rolls the config back at the deadline and answers new
 	// connections again. The answer to the delivery may be lost as well, which ends the same.
 	start := time.Now()
-	out, err = chalkctl(t, rl.nodes["r1"], "lockout", "apply-config", "--try", "30s", "r1")
+	out, err = chalkctl(t, rl.nodes["r1"], "lockout", "config", "apply", "--try", "30s", "r1")
 	if err == nil || !strings.Contains(out, "r1: config ") || !strings.Contains(out, " was not confirmed within its trial: ") ||
 		!strings.Contains(out, "r1 rolled back to config "+base+" at the trial's deadline\n") {
 		t.Fatalf("a trial that cuts chalkctl off: %v\n%s", err, out)
@@ -634,9 +634,9 @@ func (rl *routerLab) vrf(t *testing.T) {
 	// default VRF into fabric, and r2's only one with it.
 	start := time.Now()
 	for _, name := range []string{"r1", "r2"} {
-		out, err := chalkctl(t, rl.nodes[name], "vrf", "apply-config", "--try", "2m", name)
+		out, err := chalkctl(t, rl.nodes[name], "vrf", "config", "apply", "--try", "2m", name)
 		if err != nil || !regexp.MustCompile(`(?m)^`+name+` keeps config \S+: the trial is confirmed$`).MatchString(out) {
-			t.Fatalf("apply-config --try of %s's VRF: %v\n%s", name, err, out)
+			t.Fatalf("config apply --try of %s's VRF: %v\n%s", name, err, out)
 		}
 	}
 	waitFor(t, 2*time.Minute, "r1's session with r2 in fabric", func() error { return rl.inFabric("r1", "fabric", start) })
@@ -749,9 +749,9 @@ func (rl *routerLab) vrf(t *testing.T) {
 	// releases enp0s3 and edge0, and reloads networkd, which creates fabric in table 200 and
 	// puts them back. The session restarts in fabric, and edge0's static address comes back.
 	start = time.Now()
-	if out, err := chalkctl(t, rl.nodes["r2"], "vrf-table", "apply-config", "r2"); err != nil {
+	if out, err := chalkctl(t, rl.nodes["r2"], "vrf-table", "config", "apply", "r2"); err != nil {
 		rl.failedJobs("r2", "vrf-table", out)
-		t.Fatalf("apply-config of r2's VRF in table 200: %v\n%s", err, out)
+		t.Fatalf("config apply of r2's VRF in table 200: %v\n%s", err, out)
 	}
 	waitFor(t, 2*time.Minute, "r2's session with r1 in fabric of table 200", func() error { return rl.inFabric("r2", "edge", start) })
 	waitFor(t, 2*time.Minute, "r2's default route from r1 in fabric", func() error { return rl.learnedFrom("r2", "fabric", "::/0", "64512") })
@@ -787,8 +787,8 @@ func (rl *routerLab) vrf(t *testing.T) {
 	// instance with them. r1's policy routing goes: its rules, table 300's routes and the
 	// chain. The dummy link policy0 stays, as networkd never deletes a netdev.
 	for _, name := range []string{"r1", "r2"} {
-		if out, err := chalkctl(t, rl.nodes[name], "base", "apply-config", name); err != nil {
-			t.Fatalf("apply-config of %s's base config: %v\n%s", name, err, out)
+		if out, err := chalkctl(t, rl.nodes[name], "base", "config", "apply", name); err != nil {
+			t.Fatalf("config apply of %s's base config: %v\n%s", name, err, out)
 		}
 	}
 	waitFor(t, 2*time.Minute, "r1's session with r2 in the default VRF", func() error { return rl.established("r1", "fabric") })
@@ -884,8 +884,8 @@ func (rl *routerLab) defaultRoute(t *testing.T) {
 	// r2 holds the unconditional default from the base config when the phase starts. It
 	// loses it at once when r1's family gains defaultOriginateWhen, and FRR's scan, every
 	// 5 s, must not send it again while r1 lacks the tracked route.
-	if out, err := chalkctl(t, rl.nodes["r1"], "default-gone", "apply-config", "r1"); err != nil {
-		t.Fatalf("apply-config of r1's conditional default without the tracked route: %v\n%s", err, out)
+	if out, err := chalkctl(t, rl.nodes["r1"], "default-gone", "config", "apply", "r1"); err != nil {
+		t.Fatalf("config apply of r1's conditional default without the tracked route: %v\n%s", err, out)
 	}
 	waitFor(t, 2*time.Minute, "r2 to lose the default route", r2Default)
 	for end := time.Now().Add(15 * time.Second); time.Now().Before(end); {
@@ -904,8 +904,8 @@ func (rl *routerLab) defaultRoute(t *testing.T) {
 		t.Errorf("status of r1 shows a failed unit: %v\n%s", err, out)
 	}
 
-	if out, err := chalkctl(t, rl.nodes["r1"], "default", "apply-config", "r1"); err != nil {
-		t.Fatalf("apply-config of r1's conditional default with the tracked route: %v\n%s", err, out)
+	if out, err := chalkctl(t, rl.nodes["r1"], "default", "config", "apply", "r1"); err != nil {
+		t.Fatalf("config apply of r1's conditional default with the tracked route: %v\n%s", err, out)
 	}
 	waitFor(t, 2*time.Minute, "r1's tracked route in BGP", trackedInBGP)
 	waitFor(t, 2*time.Minute, "r2's default route from r1 once the route exists", func() error {
@@ -919,8 +919,8 @@ func (rl *routerLab) defaultRoute(t *testing.T) {
 	}
 
 	// The base inventory sends the default route whatever r1's table holds.
-	if out, err := chalkctl(t, rl.nodes["r1"], "base", "apply-config", "r1"); err != nil {
-		t.Fatalf("apply-config of r1's base config: %v\n%s", err, out)
+	if out, err := chalkctl(t, rl.nodes["r1"], "base", "config", "apply", "r1"); err != nil {
+		t.Fatalf("config apply of r1's base config: %v\n%s", err, out)
 	}
 	waitFor(t, 2*time.Minute, "r2's default route from r1 again", func() error { return rl.learned("::/0") })
 	rl.rootsConfig()
@@ -940,9 +940,9 @@ func (rl *routerLab) dhcp(t *testing.T) {
 	}()
 	// r1 first, so its server answers r2's first request.
 	for _, name := range []string{"r1", "r2"} {
-		if out, err := chalkctl(t, rl.nodes[name], "dhcp", "apply-config", name); err != nil {
+		if out, err := chalkctl(t, rl.nodes[name], "dhcp", "config", "apply", name); err != nil {
 			rl.failedJobs(name, "dhcp", out)
-			t.Fatalf("apply-config of %s's DHCP: %v\n%s", name, err, out)
+			t.Fatalf("config apply of %s's DHCP: %v\n%s", name, err, out)
 		}
 	}
 	// serving is nil once r1's status shows the server of lan running, with one lease of
@@ -1058,8 +1058,8 @@ func (rl *routerLab) dhcp(t *testing.T) {
 	// The base inventory stops the server; r2 first, so its client does not ask a server that
 	// is gone.
 	for _, name := range []string{"r2", "r1"} {
-		if out, err := chalkctl(t, rl.nodes[name], "base", "apply-config", name); err != nil {
-			t.Fatalf("apply-config of %s's base config: %v\n%s", name, err, out)
+		if out, err := chalkctl(t, rl.nodes[name], "base", "config", "apply", name); err != nil {
+			t.Fatalf("config apply of %s's base config: %v\n%s", name, err, out)
 		}
 	}
 	waitFor(t, time.Minute, "r1's DHCP servers to stop", func() error {

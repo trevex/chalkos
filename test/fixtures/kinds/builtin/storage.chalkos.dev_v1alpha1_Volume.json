@@ -267,7 +267,7 @@
       },
       {
         "description": "No volume the machine records is left out of the config.",
-        "messageExpression": "facts.recorded.volumes.filter(n, n != \"var\" && !(n in documents)).map(n, n in oldDocuments\n  ? \"Volume \" + n + \": the config removes it; only a reinstall of \" + node.name + \" removes a volume\"\n  : \"Volume \" + n + \": an earlier config of this image or another added it, with an upgrade or chalkctl apply-config --staged, and it stays on the node; name it in this config too; only a reinstall of \" + node.name + \" removes it\").join(\"; \")\n",
+        "messageExpression": "facts.recorded.volumes.filter(n, n != \"var\" && !(n in documents)).map(n, n in oldDocuments\n  ? \"Volume \" + n + \": the config removes it; only a reinstall of \" + node.name + \" removes a volume\"\n  : \"Volume \" + n + \": an earlier config of this image or another added it, with an upgrade or chalkctl config apply --staged, and it stays on the node; name it in this config too; only a reinstall of \" + node.name + \" removes it\").join(\"; \")\n",
         "rule": "facts.recorded == null || facts.recorded.volumes.all(n, n == \"var\" || n in documents)",
         "takes": "reinstall"
       },

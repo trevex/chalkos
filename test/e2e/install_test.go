@@ -124,17 +124,17 @@ func TestInstallInPlace(t *testing.T) {
 		t.Errorf("nft-ruleset as a reader: %v, want permission denied", err)
 	}
 
-	if out, err := chalkctl(t, n, "destructive", "apply-config", "chalklab"); err == nil || !strings.Contains(out, "only a reinstall of chalklab carries it out") {
+	if out, err := chalkctl(t, n, "destructive", "config", "apply", "chalklab"); err == nil || !strings.Contains(out, "only a reinstall of chalklab carries it out") {
 		t.Errorf("destructive config was not refused naming a reinstall: %v", err)
 	}
 	// The test image's validator greeting, which runs in the renderers' sandbox, refuses a
 	// Greeting that shouts, which the schema and chalkctl validate accept.
-	if out, err := chalkctl(t, n, "shout", "apply-config", "--dry-run", "chalklab"); err == nil || !strings.Contains(out, "the config is refused: Greeting/hello: spec.message: the message shouts; write it in lower case") {
+	if out, err := chalkctl(t, n, "shout", "config", "apply", "--dry-run", "chalklab"); err == nil || !strings.Contains(out, "the config is refused: Greeting/hello: spec.message: the message shouts; write it in lower case") {
 		t.Errorf("a dry run of a Greeting that shouts: %v\n%s", err, out)
 	}
-	out, err = chalkctl(t, n, "added", "apply-config", "chalklab")
+	out, err = chalkctl(t, n, "added", "config", "apply", "chalklab")
 	if err != nil || !strings.Contains(out, "volume extra: new volume on new disk extra") || !strings.Contains(out, "restarted chalktest-greeting") {
-		t.Fatalf("apply-config: %v", err)
+		t.Fatalf("config apply: %v", err)
 	}
 	greeted("hello again")
 	out, err = chalkctl(t, n, "added", "status", "chalklab")

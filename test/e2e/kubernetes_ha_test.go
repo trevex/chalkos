@@ -527,7 +527,7 @@ func haRollout(t *testing.T, served map[string]string, cluster string) []imageRo
 
 // rolloutControlPlane rolls the control plane out to the next patch release through config: the
 // cluster file of the fixtures' copy names the new images, which the later phases read too, and
-// apply-config delivers it to the three control planes, one at a time in name order, each on trial
+// config apply delivers it to the three control planes, one at a time in name order, each on trial
 // until its static pods run the new images and are Ready. kube-proxy's DaemonSet follows.
 func (c *haCluster) rolloutControlPlane(ctx context.Context, cs kubernetes.Interface) {
 	t := c.t
@@ -553,7 +553,7 @@ func (c *haCluster) rolloutControlPlane(ctx context.Context, cs kubernetes.Inter
 	if err := os.WriteFile(path, []byte(text), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	args := []string{"apply-config", "cp1", "cp2", "cp3", "--inventory", inventoryPath("ha")}
+	args := []string{"config", "apply", "cp1", "cp2", "cp3", "--inventory", inventoryPath("ha")}
 	for _, hn := range haNodes {
 		args = append(args, "--address", hn.name+"="+c.nodes[hn.name].addr)
 	}
