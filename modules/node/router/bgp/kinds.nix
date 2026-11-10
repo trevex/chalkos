@@ -6,9 +6,9 @@
 # rules over a peer's families sit on spec.families and those over an instance's networks and
 # imports on spec.networks and spec.import, where the one document is self, and loop over a
 # policy's terms alone. What depends on the links networkd puts in each VRF or on more than one
-# peer the validator router checks: a peer's interface of another VRF or of a VRF's device and a
-# session two peers name. What depends on FRR's config the output frr checks: a policy two AS
-# numbers prepend and an AS path bgpd refuses.
+# peer the validator router checks: a peer's interface of another VRF or of a VRF's device, a
+# session two peers name and listen ranges of a VRF that overlap. What depends on FRR's config the
+# output frr checks: a policy two AS numbers prepend and an AS path bgpd refuses.
 { lib }:
 let
   inherit (lib) mkOption types;
@@ -70,11 +70,12 @@ let
   # The VRFs the config's BGP documents serve.
   served = "cel.bind(bgps, ${delivered "BGP"}, bgps.map(n, bgps[n].spec.vrf))";
   # Whether the BGPPeer spec s carries its IPv4 routes with next hops its session can: a peer at an
-  # IPv6 address that exchanges IPv4 routes sends them with IPv6 next hops, which the session
-  # carries with extended next hops alone. FRR negotiates them on a link's session by itself.
+  # IPv6 address or with an IPv6 listen range that exchanges IPv4 routes sends them with IPv6 next
+  # hops, which the session carries with extended next hops alone. FRR negotiates them on a link's
+  # session by itself.
   nextHopFits =
     s:
-    ''(${s}.address == null || ${s}.families.ipv4 == null || ${s}.extendedNextHop || ip(${s}.address).family() == "ipv4")'';
+    ''(${s}.families.ipv4 == null || ${s}.extendedNextHop || (${s}.address == null || ip(${s}.address).family() == "ipv4") && (${s}.listen == null || cidr(${s}.listen.range).ip(0).family() == "ipv4"))'';
   # What a BGP instance imports of one family from other VRFs' instances.
   leak = types.submodule {
     options = {
@@ -368,12 +369,12 @@ in
 
   BGPPeer = builtin groups.router // {
     multiple = true;
-    description = "A BGP neighbour of the router, or the neighbours on a set of interfaces: where to reach them, their AS, and what the router accepts from them and sends them in each address family.";
+    description = "A BGP neighbour of the router, or the neighbours on a set of interfaces or of a prefix: where to reach them, their AS, and what the router accepts from them and sends them in each address family.";
     rules = [
       {
-        description = "A BGPPeer names exactly one of address, interface and interfaces.";
-        rule = "documents.all(n, cel.bind(s, documents[n].spec, [s.address, s.interface, s.interfaces].filter(x, x != null).size() == 1))";
-        messageExpression = ''documents.filter(n, cel.bind(s, documents[n].spec, [s.address, s.interface, s.interfaces].filter(x, x != null).size() != 1)).map(n, "BGPPeer " + n).join(", ") + " names not exactly one of address, interface and interfaces; a peer is reached at an address, on an interface or on each interface of a list"'';
+        description = "A BGPPeer names exactly one of address, interface, interfaces and listen.";
+        rule = "documents.all(n, cel.bind(s, documents[n].spec, [s.address, s.interface, s.interfaces, s.listen].filter(x, x != null).size() == 1))";
+        messageExpression = ''documents.filter(n, cel.bind(s, documents[n].spec, [s.address, s.interface, s.interfaces, s.listen].filter(x, x != null).size() != 1)).map(n, "BGPPeer " + n).join(", ") + " names not exactly one of address, interface, interfaces and listen; a peer is reached at an address, on an interface or on each interface of a list, or accepted from a listen range"'';
       }
       {
         description = "A BGPPeer's VRF has a BGP document.";
@@ -381,9 +382,9 @@ in
         messageExpression = ''cel.bind(have, ${served}, documents.filter(n, !(documents[n].spec.vrf in have)).map(n, "BGPPeer " + n + " runs in the VRF " + documents[n].spec.vrf).join(", ") + ": a peer's VRF needs a BGP document, which gives the router its AS number there")'';
       }
       {
-        description = "A BGPPeer at an IPv6 address that exchanges IPv4 routes has extendedNextHop.";
+        description = "A BGPPeer at an IPv6 address or with an IPv6 listen range that exchanges IPv4 routes has extendedNextHop.";
         rule = "documents.all(n, ${nextHopFits "documents[n].spec"})";
-        messageExpression = ''documents.filter(n, !${nextHopFits "documents[n].spec"}).map(n, "BGPPeer " + n + " exchanges IPv4 routes at the IPv6 address " + documents[n].spec.address).join(", ") + " without extendedNextHop: true; the routes' next hops are IPv6 addresses, which a session carries with extendedNextHop alone"'';
+        messageExpression = ''documents.filter(n, !${nextHopFits "documents[n].spec"}).map(n, "BGPPeer " + n + " exchanges IPv4 routes " + (documents[n].spec.address != null ? "at the IPv6 address " + documents[n].spec.address : "from the IPv6 listen range " + documents[n].spec.listen.range)).join(", ") + " without extendedNextHop: true; the routes' next hops are IPv6 addresses, which a session carries with extendedNextHop alone"'';
       }
     ];
     spec = {
@@ -397,7 +398,7 @@ in
         type = types.nullOr address;
         default = null;
         example = "2001:db8:ffff::2";
-        description = "Unicast address of the neighbour beyond the router, neither loopback, link-local nor IPv4-mapped; excludes `interface` and `interfaces`.";
+        description = "Unicast address of the neighbour beyond the router, neither loopback, link-local nor IPv4-mapped; excludes `interface`, `interfaces` and `listen`.";
         rules = [
           {
             description = "A BGPPeer's address is a unicast address beyond the router: not unspecified, loopback, link-local, multicast, broadcast or IPv4-mapped IPv6.";
@@ -410,7 +411,7 @@ in
         type = types.nullOr interfaceName;
         default = null;
         example = "eth1";
-        description = "Interface on whose link the router finds the neighbour by its IPv6 link-local address, without an address of its own on the link; excludes `address` and `interfaces`. A name that reads as an address is refused.";
+        description = "Interface on whose link the router finds the neighbour by its IPv6 link-local address, without an address of its own on the link; excludes `address`, `interfaces` and `listen`. A name that reads as an address is refused.";
         rules = [ (notAddressLike "[self]") ];
       };
       interfaces = lib.chalkos.mkOption {
@@ -420,8 +421,39 @@ in
           "eth1"
           "eth2"
         ];
-        description = "Interfaces, ${interfaceText}, with a session each, as for `interface`; a glob stands for the interfaces of the peer's VRF that the node's Network documents name in a `[Match]` section's `Name=`. Excludes `address` and `interface`.";
+        description = "Interfaces, ${interfaceText}, with a session each, as for `interface`; a glob stands for the interfaces of the peer's VRF that the node's Network documents name in a `[Match]` section's `Name=`. Excludes `address`, `interface` and `listen`.";
         rules = [ (notAddressLike "self") ];
+      };
+      listen = lib.chalkos.mkOption {
+        type = types.nullOr (
+          types.submodule {
+            options.range = mkOption {
+              type = prefix;
+              example = "2001:db8:0:1::/64";
+              description = "Prefix whose addresses may open a session with the router; neither link-local, loopback, multicast nor IPv4-mapped.";
+            };
+          }
+        );
+        default = null;
+        example = {
+          range = "2001:db8:0:1::/64";
+        };
+        description = "Accept a session from every neighbour whose address lies in `range`, which then shares the peer's settings; the router opens no session itself. Excludes `address`, `interface` and `interfaces`.";
+        # The first rule checks the range's first address, as FRR checks a range for a link-local
+        # one; the second refuses a range of length 0, whose first address the first would
+        # refuse with a message that misleads.
+        rules = [
+          {
+            description = "A BGPPeer's listen range starts at an address a neighbour may have: not in link-local, loopback, multicast or IPv4-mapped IPv6 space.";
+            rule = "self == null || cidr(self.range).prefix() == 0 || ${neighbourAddress "string(cidr(self.range).ip(0))"}";
+            messageExpression = ''"the listen range " + self.range + " starts in link-local, loopback, multicast or IPv4-mapped space, where no neighbour's address lies; give the neighbours' prefix. FRR accepts no link-local range"'';
+          }
+          {
+            description = "A BGPPeer's listen range is longer than 0 bits.";
+            rule = "self == null || cidr(self.range).prefix() > 0";
+            messageExpression = ''"a listen range of length 0, " + self.range + ", accepts a session from every address; give the neighbours' prefix"'';
+          }
+        ];
       };
       remoteAS = mkOption {
         type = peerAS;
@@ -454,7 +486,7 @@ in
       extendedNextHop = mkOption {
         type = types.bool;
         default = false;
-        description = "Whether the router sends and accepts IPv4 routes with IPv6 next hops (RFC 8950). A peer at an IPv6 address that exchanges IPv4 routes needs it. FRR negotiates it on sessions of `interface` and `interfaces` whatever this says.";
+        description = "Whether the router sends and accepts IPv4 routes with IPv6 next hops (RFC 8950). A peer at an IPv6 address or with an IPv6 listen range that exchanges IPv4 routes needs it. FRR negotiates it on sessions of `interface` and `interfaces` whatever this says.";
       };
       families = lib.chalkos.mkOption {
         type = types.submodule {

@@ -1,0 +1,29 @@
+{
+  "default": {
+    "vrfId": 0,
+    "vrfName": "default",
+    "2001:db8:1::5": {
+      "remoteAs": 65001,
+      "localAs": 64512,
+      "nbrExternalLink": true,
+      "hostname": "host5",
+      "peerGroup": "peer-hosts",
+      "dynamicPeer": true,
+      "bgpVersion": 4,
+      "remoteRouterId": "192.0.2.105",
+      "bgpState": "Established",
+      "bgpTimerUpMsec": 65000,
+      "bgpTimerUpString": "00:01:05",
+      "addressFamilyInfo": {
+        "ipv6Unicast": {
+          "peerGroupMember": "peer-hosts",
+          "acceptedPrefixCounter": 1,
+          "sentPrefixCounter": 1
+        }
+      },
+      "connectionsEstablished": 1,
+      "connectionsDropped": 0,
+      "lastResetDueTo": "No path to specified Neighbor"
+    }
+  }
+}

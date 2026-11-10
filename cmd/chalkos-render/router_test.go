@@ -267,13 +267,14 @@ func TestRouterOpenings(t *testing.T) {
 }
 
 // A BGPPeer opens BGP's port, and with bfd BFD's single-hop ports, on its links or from its
-// address, and BFD's multi-hop port from its address alone.
+// address or listen range, and BFD's multi-hop port from its address or listen range alone.
 func TestBGPOpenings(t *testing.T) {
 	addr, link := netip.MustParseAddr("192.0.2.9"), "eth1"
 	got, err := bgpOpenings([]derive.Named[derive.PeerSpec]{
 		{Name: "far", Spec: derive.PeerSpec{Address: &addr, BFD: true}},
 		{Name: "near", Spec: derive.PeerSpec{Interface: &link, BFD: true}},
 		{Name: "plain", Spec: derive.PeerSpec{Interfaces: []string{"swp*"}}},
+		{Name: "hosts", Spec: derive.PeerSpec{Listen: &derive.PeerListen{Range: netip.MustParsePrefix("2001:db8:1::/64")}, BFD: true}},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -284,6 +285,8 @@ func TestBGPOpenings(t *testing.T) {
 		{comment: "BGPPeer near", protocol: "tcp", ports: []derive.PortRange{"179"}, interfaces: []string{"eth1"}},
 		{comment: "BGPPeer near", protocol: "udp", ports: []derive.PortRange{"3784", "3785"}, interfaces: []string{"eth1"}},
 		{comment: "BGPPeer plain", protocol: "tcp", ports: []derive.PortRange{"179"}, interfaces: []string{"swp*"}},
+		{comment: "BGPPeer hosts", protocol: "tcp", ports: []derive.PortRange{"179"}, sources: ranges("2001:db8:1::/64")},
+		{comment: "BGPPeer hosts", protocol: "udp", ports: []derive.PortRange{"3784", "3785", "4784"}, sources: ranges("2001:db8:1::/64")},
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("bgpOpenings =\n%+v\nwant\n%+v", got, want)
@@ -954,14 +957,15 @@ func TestUnboundPerVRF(t *testing.T) {
 // A peer in a VRF has its ports opened on its VRF's links by the VRF's device and sdifname: the
 // input hook sees a packet from a VRF's link with the device as iifname and the link as
 // sdifname, so links of other VRFs that the peer's globs match stay closed. A peer of an address
-// in a VRF is opened by the VRF's device and its address, and a peer of the VRF named default by
-// iifname as one of no VRF.
+// in a VRF is opened by the VRF's device and its address, as is a peer of a listen range by its
+// range, and a peer of the VRF named default by iifname as one of no VRF.
 func TestVRFPeerOpenings(t *testing.T) {
 	tenant, def, addr := "tenant", derive.DefaultVRF, netip.MustParseAddr("192.0.2.9")
 	openings, err := bgpOpenings([]derive.Named[derive.PeerSpec]{
 		{Name: "leaves", Spec: derive.PeerSpec{Interfaces: []string{"swp*"}, VRF: &tenant}},
 		{Name: "spines", Spec: derive.PeerSpec{Interfaces: []string{"eth*"}, VRF: &def}},
 		{Name: "far", Spec: derive.PeerSpec{Address: &addr, VRF: &tenant, BFD: true}},
+		{Name: "hosts", Spec: derive.PeerSpec{Listen: &derive.PeerListen{Range: netip.MustParsePrefix("2001:db8:1::/64")}, VRF: &tenant}},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -975,6 +979,7 @@ func TestVRFPeerOpenings(t *testing.T) {
 		`iifname { "eth*" } tcp dport { 179 } accept comment "BGPPeer spines"`,
 		`iifname "tenant" ip saddr { 192.0.2.9/32 } tcp dport { 179 } accept comment "BGPPeer far"`,
 		`iifname "tenant" ip saddr { 192.0.2.9/32 } udp dport { 3784, 3785, 4784 } accept comment "BGPPeer far"`,
+		`iifname "tenant" ip6 saddr { 2001:db8:1::/64 } tcp dport { 179 } accept comment "BGPPeer hosts"`,
 	}
 	if !slices.Equal(got, want) {
 		t.Errorf("lines:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))

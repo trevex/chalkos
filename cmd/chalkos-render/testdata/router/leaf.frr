@@ -12,6 +12,11 @@ router bgp 65101
  bgp router-id 192.0.2.11
  no bgp default ipv4-unicast
  bgp graceful-restart
+ neighbor peer-hosts peer-group
+ neighbor peer-hosts remote-as 65001
+ neighbor peer-hosts bfd
+ neighbor peer-hosts bfd profile chalkos
+ bgp listen range 2001:db8:11::/64 peer-group peer-hosts
  neighbor peer-spines peer-group
  neighbor peer-spines remote-as external
  neighbor peer-spines bfd
@@ -33,6 +38,10 @@ router bgp 65101
   network 2001:db8:11::/64
   maximum-paths 2
   maximum-paths ibgp 1
+  neighbor peer-hosts activate
+  neighbor peer-hosts default-originate
+  neighbor peer-hosts route-map accept-all in
+  neighbor peer-hosts route-map accept-all out
   neighbor peer-spines activate
   neighbor peer-spines route-map accept-all in
   neighbor peer-spines route-map accept-all out

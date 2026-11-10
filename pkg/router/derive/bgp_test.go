@@ -16,7 +16,8 @@ func peerDoc(t *testing.T, name, more string) any {
 }
 
 // The sessions of a peer are its address, its interface or the links of its VRF its globs match,
-// named as bgpd names them; a glob skips the links of other VRFs.
+// named as bgpd names them; a glob skips the links of other VRFs. A peer of a listen range has no
+// sessions, and ranges that overlap pass in different VRFs.
 func TestSessions(t *testing.T) {
 	byKind := map[string]any{
 		"VRF":     []any{derivetest.RouterDoc(t, "VRF", "tenant", `{"table": 100, "interfaces": ["eth2"]}`)},
@@ -26,6 +27,8 @@ func TestSessions(t *testing.T) {
 			peerDoc(t, "b", `"interface": "eth0"`),
 			peerDoc(t, "c", `"interfaces": ["eth1*"]`),
 			peerDoc(t, "d", `"vrf": "tenant", "interfaces": ["eth*"]`),
+			peerDoc(t, "l", `"listen": {"range": "2001:db8:1::/64"}`),
+			peerDoc(t, "m", `"vrf": "tenant", "listen": {"range": "2001:db8:1::/48"}`),
 		},
 	}
 	data, err := json.Marshal(byKind)
@@ -45,6 +48,8 @@ func TestSessions(t *testing.T) {
 		"b": {{Neighbour: "eth0", OnLink: true}},
 		"c": {{Neighbour: "eth1", OnLink: true}},
 		"d": {{Neighbour: "eth2", OnLink: true}},
+		"l": nil,
+		"m": nil,
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("Sessions() = %v, want %v", got, want)
@@ -54,7 +59,7 @@ func TestSessions(t *testing.T) {
 // The validator refuses a peer's sessions where the links networkd puts in each VRF decide: an
 // interface of a VRF's device or of another VRF than the peer's, whether the VRF names it or a
 // glob of it, a glob of other VRFs' links alone, a link a glob expands to that is named like an
-// address, and a session two peers name.
+// address, a session two peers name and listen ranges of a VRF that overlap.
 // It guards, with an internal error, values frr.conf and the firewall would read as syntax.
 func TestSessionRefusals(t *testing.T) {
 	tenant := derivetest.RouterDoc(t, "VRF", "tenant", `{"table": 100, "interfaces": ["eth2"]}`)
@@ -68,6 +73,8 @@ func TestSessionRefusals(t *testing.T) {
 	}{
 		"two peers of one session": {map[string][]any{"BGPPeer": {peerDoc(t, "a", `"interface": "eth1"`), peerDoc(t, "b", `"interface": "eth1"`)}},
 			"BGPPeer/b: spec.interface: BGPPeer a and BGPPeer b both name eth1 in the VRF default; give each session one peer"},
+		"listen ranges that overlap": {map[string][]any{"BGPPeer": {peerDoc(t, "a", `"listen": {"range": "2001:db8:1::/64"}`), peerDoc(t, "b", `"listen": {"range": "2001:db8:1::/48"}`)}},
+			"BGPPeer/b: spec.listen.range: the listen range 2001:db8:1::/48 of BGPPeer b overlaps 2001:db8:1::/64 of BGPPeer a in the VRF default; give each neighbour one peer"},
 		"a link that reads as an address": {map[string][]any{"BGPPeer": {peerDoc(t, "a", `"interfaces": ["*"]`)}, "Network": {derivetest.Doc(t, "Network", "n", `{"match": {"name": "192.0.2.10"}}`)}},
 			`BGPPeer/a: spec.interfaces[0]: interface "192.0.2.10" is an address, which FRR cannot tell from a neighbour's`},
 		"an interface of a VRF's device": {withTenant(peerDoc(t, "x", `"interface": "tenant"`)),

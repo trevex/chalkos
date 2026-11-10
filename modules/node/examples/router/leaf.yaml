@@ -1,6 +1,8 @@
 # A pure routing role: no firewall documents, no reverse-path filter, and the node API on the
 # management interface alone. It peers unnumbered with the spines on each swp link its Network
-# documents name, in both families, and installs two equal paths.
+# documents name, in both families, and installs two equal paths. The rack's hosts on host0
+# announce their own addresses: the leaf accepts a session from every host of the link's prefix
+# and sends each a default route.
 apiVersion: router.chalkos.dev/v1alpha1
 kind: Router
 metadata: {name: router}
@@ -33,6 +35,13 @@ metadata: {name: 30-swp}
 spec:
   match: {name: "swp*"}
 ---
+apiVersion: networkd.chalkos.dev/v1alpha1
+kind: Network
+metadata: {name: 40-hosts}
+spec:
+  match: {name: host0}
+  network: {address: ["2001:db8:11::1/64"]}
+---
 apiVersion: router.chalkos.dev/v1alpha1
 kind: BGP
 metadata: {name: bgp}
@@ -53,3 +62,13 @@ spec:
   bfd: true
   extendedNextHop: true
   families: {ipv4: {}, ipv6: {}}
+---
+apiVersion: router.chalkos.dev/v1alpha1
+kind: BGPPeer
+metadata: {name: hosts}
+spec:
+  listen: {range: "2001:db8:11::/64"}
+  remoteAS: 65001
+  bfd: true
+  families:
+    ipv6: {defaultOriginate: true}

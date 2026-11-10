@@ -172,10 +172,12 @@ type PeerSpec struct {
 	VRF       *string     `json:"vrf"`
 	Address   *netip.Addr `json:"address"`
 	Interface *string     `json:"interface"`
-	// Interfaces is nil when the peer names an address or an interface.
+	// Interfaces is nil when the peer names an address, an interface or a listen range.
 	Interfaces []string `json:"interfaces"`
-	RemoteAS   PeerAS   `json:"remoteAS"`
-	Password   *struct {
+	// Listen is nil unless the peer accepts the neighbours of a prefix.
+	Listen   *PeerListen `json:"listen"`
+	RemoteAS PeerAS      `json:"remoteAS"`
+	Password *struct {
 		SecretRef struct {
 			Name string `json:"name"`
 			Key  string `json:"key"`
@@ -189,6 +191,11 @@ type PeerSpec struct {
 	} `json:"families"`
 	Description *string `json:"description"`
 	Shutdown    bool    `json:"shutdown"`
+}
+
+// PeerListen is a BGPPeer's listen: the prefix whose neighbours may open a session.
+type PeerListen struct {
+	Range netip.Prefix `json:"range"`
 }
 
 // PeerFamily is what a BGPPeer exchanges of one address family.

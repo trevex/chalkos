@@ -14,10 +14,11 @@ import (
 // it or with no family, peers without BGP, lists of another family than a peer's family or a
 // network's, a policy of both families or of more than 6000 terms, ge and le outside their range,
 // a list of both kinds of community, a rejecting term that sets attributes, an AS path or a
-// description too long, a router ID or a neighbour address that is no unicast address, IPv4
-// routes at an IPv6 address without extended next hops, an interface named like an address, a
-// password whose Secret names no credential, and a defaultOriginateWhen without defaultOriginate
-// or of a list of the other family.
+// description too long, a router ID or a neighbour address that is no unicast address, a listen
+// range that starts where no neighbour's address lies or of length 0, IPv4 routes at an IPv6
+// address or from an IPv6 listen range without extended next hops, an interface named like an
+// address, a password whose Secret names no credential, and a defaultOriginateWhen without
+// defaultOriginate or of a list of the other family.
 func TestBGPRules(t *testing.T) {
 	set, doc := routerRules(t)
 	edge := []config.Document{
@@ -54,9 +55,9 @@ func TestBGPRules(t *testing.T) {
 		{"a fabric edge", edge, nil},
 		{"lists and policies without peers", without(without(edge, "BGPPeer"), "BGP"), nil},
 		{"two ways to reach a peer", replace(edge, doc("BGPPeer", "upstream", `{"address": "198.51.100.1", "interface": "eth0", "remoteAS": 64496, "families": {"ipv4": {}}}`)),
-			[]string{"BGPPeer upstream names not exactly one of address, interface and interfaces; a peer is reached at an address, on an interface or on each interface of a list"}},
+			[]string{"BGPPeer upstream names not exactly one of address, interface, interfaces and listen; a peer is reached at an address, on an interface or on each interface of a list, or accepted from a listen range"}},
 		{"no way to reach a peer", replace(edge, doc("BGPPeer", "upstream", `{"remoteAS": 64496, "families": {"ipv4": {}}}`)),
-			[]string{"BGPPeer upstream names not exactly one of address, interface and interfaces; a peer is reached at an address, on an interface or on each interface of a list"}},
+			[]string{"BGPPeer upstream names not exactly one of address, interface, interfaces and listen; a peer is reached at an address, on an interface or on each interface of a list, or accepted from a listen range"}},
 		{"peers without BGP", without(edge, "BGP"),
 			[]string{"BGPPeer fabric runs in the VRF default, BGPPeer upstream runs in the VRF default: a peer's VRF needs a BGP document, which gives the router its AS number there"}},
 		{"a peer of no family", replace(edge, doc("BGPPeer", "upstream", `{"address": "198.51.100.1", "remoteAS": 64496}`)),
@@ -72,6 +73,12 @@ func TestBGPRules(t *testing.T) {
 		{"IPv4 routes at an IPv6 address", replace(edge, doc("BGPPeer", "upstream", `{"address": "2001:db8::9", "remoteAS": 64496, "families": {"ipv4": {}, "ipv6": {}}}`)),
 			[]string{"BGPPeer upstream exchanges IPv4 routes at the IPv6 address 2001:db8::9 without extendedNextHop: true; the routes' next hops are IPv6 addresses, which a session carries with extendedNextHop alone"}},
 		{"IPv4 routes at an IPv6 address with extended next hops", replace(edge, doc("BGPPeer", "upstream", `{"address": "2001:db8::9", "remoteAS": 64496, "extendedNextHop": true, "families": {"ipv4": {}}}`)), nil},
+		{"a listen range", replace(edge, doc("BGPPeer", "hosts", `{"listen": {"range": "2001:db8:1::/64"}, "remoteAS": 65001, "bfd": true, "families": {"ipv6": {"defaultOriginate": true}}}`)), nil},
+		{"a listen range and an address", replace(edge, doc("BGPPeer", "hosts", `{"listen": {"range": "2001:db8:1::/64"}, "address": "2001:db8:1::5", "remoteAS": 65001, "families": {"ipv6": {}}}`)),
+			[]string{"BGPPeer hosts names not exactly one of address, interface, interfaces and listen; a peer is reached at an address, on an interface or on each interface of a list, or accepted from a listen range"}},
+		{"IPv4 routes from an IPv6 listen range", replace(edge, doc("BGPPeer", "hosts", `{"listen": {"range": "2001:db8:1::/64"}, "remoteAS": 65001, "families": {"ipv4": {}}}`)),
+			[]string{"BGPPeer hosts exchanges IPv4 routes from the IPv6 listen range 2001:db8:1::/64 without extendedNextHop: true; the routes' next hops are IPv6 addresses, which a session carries with extendedNextHop alone"}},
+		{"IPv4 routes from an IPv4 listen range", replace(edge, doc("BGPPeer", "hosts", `{"listen": {"range": "198.51.100.0/24"}, "remoteAS": 65001, "families": {"ipv4": {}}}`)), nil},
 		{"a network's policy of the other family", replace(edge, doc("BGP", "bgp", `{"asn": 64512, "routerID": "192.0.2.1", "networks": [{"prefix": "192.0.2.0/24", "policy": "to-fabric"}]}`)),
 			[]string{`BGP/bgp: spec.networks: the RoutingPolicy to-fabric of the network 192.0.2.0/24 matches PrefixLists of another family`}},
 		{"a network's policy that matches no PrefixList", replace(edge, doc("BGP", "bgp", `{"asn": 64512, "routerID": "192.0.2.1", "networks": [{"prefix": "192.0.2.0/24", "policy": "tag"}]}`),
@@ -150,6 +157,28 @@ func TestBGPRules(t *testing.T) {
 			want := []string{`BGPPeer/upstream: spec.address: the address ` + address + ` is no neighbour's: give a unicast address beyond the router, neither loopback, link-local nor IPv4-mapped; a neighbour on a link takes interface or interfaces`}
 			if got := messages(failures); !slices.Equal(got, want) {
 				t.Errorf("failures:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
+			}
+		})
+	}
+	// A listen range starts at an address a neighbour may have: FRR refuses a range whose first
+	// address is link-local, and the rules refuse one that starts in loopback, multicast or
+	// IPv4-mapped space too. A range of length 0 is refused by a rule of its own.
+	for r, want := range map[string]string{
+		"fe80::/64":               `BGPPeer/hosts: spec.listen: the listen range fe80::/64 starts in link-local, loopback, multicast or IPv4-mapped space, where no neighbour's address lies; give the neighbours' prefix. FRR accepts no link-local range`,
+		"127.0.0.0/8":             `BGPPeer/hosts: spec.listen: the listen range 127.0.0.0/8 starts in link-local, loopback, multicast or IPv4-mapped space, where no neighbour's address lies; give the neighbours' prefix. FRR accepts no link-local range`,
+		"224.0.0.0/4":             `BGPPeer/hosts: spec.listen: the listen range 224.0.0.0/4 starts in link-local, loopback, multicast or IPv4-mapped space, where no neighbour's address lies; give the neighbours' prefix. FRR accepts no link-local range`,
+		"ff02::/16":               `BGPPeer/hosts: spec.listen: the listen range ff02::/16 starts in link-local, loopback, multicast or IPv4-mapped space, where no neighbour's address lies; give the neighbours' prefix. FRR accepts no link-local range`,
+		"::ffff:198.51.100.0/120": `BGPPeer/hosts: spec.listen: the listen range ::ffff:198.51.100.0/120 starts in link-local, loopback, multicast or IPv4-mapped space, where no neighbour's address lies; give the neighbours' prefix. FRR accepts no link-local range`,
+		"::/0":                    `BGPPeer/hosts: spec.listen: a listen range of length 0, ::/0, accepts a session from every address; give the neighbours' prefix`,
+		"0.0.0.0/0":               `BGPPeer/hosts: spec.listen: a listen range of length 0, 0.0.0.0/0, accepts a session from every address; give the neighbours' prefix`,
+	} {
+		t.Run("a listen range of "+r, func(t *testing.T) {
+			failures, err := set.Evaluate(Input{Documents: config.Redact(replace(edge, doc("BGPPeer", "hosts", `{"listen": {"range": "`+r+`"}, "remoteAS": 65001, "families": {"ipv6": {}}}`))), Node: "r1"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := messages(failures); !slices.Equal(got, []string{want}) {
+				t.Errorf("failures:\n%s\nwant:\n%s", strings.Join(got, "\n"), want)
 			}
 		})
 	}

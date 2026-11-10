@@ -764,9 +764,10 @@ func (c *frr) needsAcceptAll() bool {
 	return false
 }
 
-// router renders a BGP instance: its settings, a peer group per peer of its VRF with its sessions,
-// and both address families with the networks, the redistribution of the routes its peers'
-// defaults track, each peer's policies and the routes the instance imports from other VRFs.
+// router renders a BGP instance: its settings, a peer group per peer of its VRF with its sessions
+// or its listen range, and both address families with the networks, the redistribution of the
+// routes its peers' defaults track, each peer's policies and the routes the instance imports from
+// other VRFs.
 func (c *frr) router(b *strings.Builder, in *instance) {
 	g := in.spec
 	if in.vrf == derive.DefaultVRF {
@@ -799,6 +800,11 @@ func (c *frr) router(b *strings.Builder, in *instance) {
 		}
 		if s.Shutdown {
 			fmt.Fprintf(b, " neighbor %s shutdown\n", group)
+		}
+		if s.Listen != nil {
+			// In a VRF's instance the line opens the VRF's own listening socket, and bgpd sets the
+			// group's password on it for the range, as it does on the default VRF's socket.
+			fmt.Fprintf(b, " bgp listen range %s peer-group %s\n", s.Listen.Range.Masked(), group)
 		}
 		for _, n := range c.neighbours[p.Name] {
 			if n.OnLink {

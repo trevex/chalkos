@@ -368,18 +368,18 @@ A node's config may hold several, each with a name of its own. It has 8 [change 
 
 ### BGPPeer { #bgppeer }
 
-A BGP neighbour of the router, or the neighbours on a set of interfaces: where to reach them, their AS, and what the router accepts from them and sends them in each address family.
+A BGP neighbour of the router, or the neighbours on a set of interfaces or of a prefix: where to reach them, their AS, and what the router accepts from them and sends them in each address family.
 
 `apiVersion: router.chalkos.dev/v1alpha1`
 
-A node's config may hold several, each with a name of its own. It has 12 [change rules](builtins.md#rules-bgppeer).
+A node's config may hold several, each with a name of its own. It has 14 [change rules](builtins.md#rules-bgppeer).
 
 | Field | Type | Default | Description |
 | --- | --- | --- | --- |
-| `spec.address` | IP address or null | `null` | Unicast address of the neighbour beyond the router, neither loopback, link-local nor IPv4-mapped; excludes `interface` and `interfaces`. |
+| `spec.address` | IP address or null | `null` | Unicast address of the neighbour beyond the router, neither loopback, link-local nor IPv4-mapped; excludes `interface`, `interfaces` and `listen`. |
 | `spec.bfd` | boolean | `false` | Whether the router checks the session's link with BFD, at the timers of the BGP document, and ends the session when BFD finds it down. |
 | `spec.description` | string or null | `null` | What the neighbour is, in up to 80 printable ASCII characters other than `@`, with a single space between two words. |
-| `spec.extendedNextHop` | boolean | `false` | Whether the router sends and accepts IPv4 routes with IPv6 next hops (RFC 8950). A peer at an IPv6 address that exchanges IPv4 routes needs it. FRR negotiates it on sessions of `interface` and `interfaces` whatever this says. |
+| `spec.extendedNextHop` | boolean | `false` | Whether the router sends and accepts IPv4 routes with IPv6 next hops (RFC 8950). A peer at an IPv6 address or with an IPv6 listen range that exchanges IPv4 routes needs it. FRR negotiates it on sessions of `interface` and `interfaces` whatever this says. |
 | `spec.families` | object | `{}` | The address families the session exchanges routes of, and how. |
 | `spec.families.ipv4` | object or null | `null` | IPv4 routes of the session; null exchanges none. |
 | `spec.families.ipv4.defaultOriginate` | boolean | `false` | Whether the router sends the peer a default route of the family: whatever its own table holds, or while `defaultOriginateWhen` holds. |
@@ -393,8 +393,10 @@ A node's config may hold several, each with a name of its own. It has 12 [change
 | `spec.families.ipv6.export` | name of a RoutingPolicy or null | `null` | RoutingPolicy that decides the routes the router sends the peer; null sends every route the router has. |
 | `spec.families.ipv6.import` | name of a RoutingPolicy or null | `null` | RoutingPolicy that decides the routes the router accepts from the peer; null accepts every route. |
 | `spec.families.ipv6.maxPrefix` | integer from 1 to 4294967295 or null | `null` | Routes the router accepts from the peer at most; past them it ends the session. null sets no limit. |
-| `spec.interface` | string or null | `null` | Interface on whose link the router finds the neighbour by its IPv6 link-local address, without an address of its own on the link; excludes `address` and `interfaces`. A name that reads as an address is refused. |
-| `spec.interfaces` | list of string or null | `null` | Interfaces, by name or glob, a glob being a prefix followed by `*`, with a session each, as for `interface`; a glob stands for the interfaces of the peer's VRF that the node's Network documents name in a `[Match]` section's `Name=`. Excludes `address` and `interface`. |
+| `spec.interface` | string or null | `null` | Interface on whose link the router finds the neighbour by its IPv6 link-local address, without an address of its own on the link; excludes `address`, `interfaces` and `listen`. A name that reads as an address is refused. |
+| `spec.interfaces` | list of string or null | `null` | Interfaces, by name or glob, a glob being a prefix followed by `*`, with a session each, as for `interface`; a glob stands for the interfaces of the peer's VRF that the node's Network documents name in a `[Match]` section's `Name=`. Excludes `address`, `interface` and `listen`. |
+| `spec.listen` | object or null | `null` | Accept a session from every neighbour whose address lies in `range`, which then shares the peer's settings; the router opens no session itself. Excludes `address`, `interface` and `interfaces`. |
+| `spec.listen.range` | address range | required | Prefix whose addresses may open a session with the router; neither link-local, loopback, multicast nor IPv4-mapped. |
 | `spec.password` | secret reference or null | `null` | Key of a Secret that holds the session's TCP MD5 password, of 80 characters at most and no white space; null for none. The Secret's name and key hold letters, digits, `.`, `_` and `-` alone. |
 | `spec.remoteAS` | one of `external`, `internal` or integer from 1 to 4294967295 | required | AS of the neighbour: a number, `external` for any AS but the router's, or `internal` for the router's own. |
 | `spec.shutdown` | boolean | `false` | Whether the router keeps the session down while the document stays. |

@@ -374,9 +374,9 @@ Message of rule 8:
 
 | Rule | Field | Guards | Takes | Expression | Message |
 | --- | --- | --- | --- | --- | --- |
-| 1 | — | A BGPPeer names exactly one of address, interface and interfaces. | `refuse` | after the table | after the table |
+| 1 | — | A BGPPeer names exactly one of address, interface, interfaces and listen. | `refuse` | after the table | after the table |
 | 2 | — | A BGPPeer's VRF has a BGP document. | `refuse` | after the table | after the table |
-| 3 | — | A BGPPeer at an IPv6 address that exchanges IPv4 routes has extendedNextHop. | `refuse` | after the table | after the table |
+| 3 | — | A BGPPeer at an IPv6 address or with an IPv6 listen range that exchanges IPv4 routes has extendedNextHop. | `refuse` | after the table | after the table |
 | 4 | `spec.address` | A BGPPeer's address is a unicast address beyond the router: not unspecified, loopback, link-local, multicast, broadcast or IPv4-mapped IPv6. | `refuse` | after the table | after the table |
 | 5 | `spec.description` | A BGPPeer's description holds 80 characters at most. | `refuse` | `self == null || size(self) <= 80` | the description holds more than 80 characters |
 | 6 | `spec.families` | A BGPPeer exchanges the routes of one family at least. | `refuse` | `self.ipv4 != null || self.ipv6 != null` | the peer exchanges the routes of no family; give families.ipv4 or families.ipv6, an empty one accepting and sending every route |
@@ -385,18 +385,20 @@ Message of rule 8:
 | 9 | `spec.families` | A family's defaultOriginateWhen is a PrefixList of that family. | `refuse` | after the table | after the table |
 | 10 | `spec.interface` | A BGPPeer's interfaces are not named like addresses. | `refuse` | after the table | after the table |
 | 11 | `spec.interfaces` | A BGPPeer's interfaces are not named like addresses. | `refuse` | after the table | after the table |
-| 12 | `spec.password` | A BGPPeer's password names its Secret and key as credentials' names. | `refuse` | after the table | the Secret's name and key hold letters, digits, '.', '_' and '-' alone, as the names of frr.service's credentials do |
+| 12 | `spec.listen` | A BGPPeer's listen range starts at an address a neighbour may have: not in link-local, loopback, multicast or IPv4-mapped IPv6 space. | `refuse` | after the table | after the table |
+| 13 | `spec.listen` | A BGPPeer's listen range is longer than 0 bits. | `refuse` | `self == null || cidr(self.range).prefix() > 0` | after the table |
+| 14 | `spec.password` | A BGPPeer's password names its Secret and key as credentials' names. | `refuse` | after the table | the Secret's name and key hold letters, digits, '.', '_' and '-' alone, as the names of frr.service's credentials do |
 
 Expression of rule 1:
 
 ```text
-documents.all(n, cel.bind(s, documents[n].spec, [s.address, s.interface, s.interfaces].filter(x, x != null).size() == 1))
+documents.all(n, cel.bind(s, documents[n].spec, [s.address, s.interface, s.interfaces, s.listen].filter(x, x != null).size() == 1))
 ```
 
 Message of rule 1:
 
 ```text
-documents.filter(n, cel.bind(s, documents[n].spec, [s.address, s.interface, s.interfaces].filter(x, x != null).size() != 1)).map(n, "BGPPeer " + n).join(", ") + " names not exactly one of address, interface and interfaces; a peer is reached at an address, on an interface or on each interface of a list"
+documents.filter(n, cel.bind(s, documents[n].spec, [s.address, s.interface, s.interfaces, s.listen].filter(x, x != null).size() != 1)).map(n, "BGPPeer " + n).join(", ") + " names not exactly one of address, interface, interfaces and listen; a peer is reached at an address, on an interface or on each interface of a list, or accepted from a listen range"
 ```
 
 Expression of rule 2:
@@ -414,13 +416,13 @@ cel.bind(have, cel.bind(bgps, (("router.chalkos.dev/v1alpha1" in config && "BGP"
 Expression of rule 3:
 
 ```text
-documents.all(n, (documents[n].spec.address == null || documents[n].spec.families.ipv4 == null || documents[n].spec.extendedNextHop || ip(documents[n].spec.address).family() == "ipv4"))
+documents.all(n, (documents[n].spec.families.ipv4 == null || documents[n].spec.extendedNextHop || (documents[n].spec.address == null || ip(documents[n].spec.address).family() == "ipv4") && (documents[n].spec.listen == null || cidr(documents[n].spec.listen.range).ip(0).family() == "ipv4")))
 ```
 
 Message of rule 3:
 
 ```text
-documents.filter(n, !(documents[n].spec.address == null || documents[n].spec.families.ipv4 == null || documents[n].spec.extendedNextHop || ip(documents[n].spec.address).family() == "ipv4")).map(n, "BGPPeer " + n + " exchanges IPv4 routes at the IPv6 address " + documents[n].spec.address).join(", ") + " without extendedNextHop: true; the routes' next hops are IPv6 addresses, which a session carries with extendedNextHop alone"
+documents.filter(n, !(documents[n].spec.families.ipv4 == null || documents[n].spec.extendedNextHop || (documents[n].spec.address == null || ip(documents[n].spec.address).family() == "ipv4") && (documents[n].spec.listen == null || cidr(documents[n].spec.listen.range).ip(0).family() == "ipv4"))).map(n, "BGPPeer " + n + " exchanges IPv4 routes " + (documents[n].spec.address != null ? "at the IPv6 address " + documents[n].spec.address : "from the IPv6 listen range " + documents[n].spec.listen.range)).join(", ") + " without extendedNextHop: true; the routes' next hops are IPv6 addresses, which a session carries with extendedNextHop alone"
 ```
 
 Expression of rule 4:
@@ -496,6 +498,24 @@ Message of rule 11:
 ```
 
 Expression of rule 12:
+
+```text
+self == null || cidr(self.range).prefix() == 0 || cel.bind(x, ip(string(cidr(self.range).ip(0))), x != ip("0.0.0.0") && x != ip("::") && !cidr("127.0.0.0/8").contains(x) && x != ip("::1") && !cidr("169.254.0.0/16").contains(x) && !cidr("fe80::/10").contains(x) && !cidr("224.0.0.0/4").contains(x) && !cidr("ff00::/8").contains(x) && x != ip("255.255.255.255") && !cidr("::ffff:0:0/96").contains(x))
+```
+
+Message of rule 12:
+
+```text
+"the listen range " + self.range + " starts in link-local, loopback, multicast or IPv4-mapped space, where no neighbour's address lies; give the neighbours' prefix. FRR accepts no link-local range"
+```
+
+Message of rule 13:
+
+```text
+"a listen range of length 0, " + self.range + ", accepts a session from every address; give the neighbours' prefix"
+```
+
+Expression of rule 14:
 
 ```text
 self == null || self.secretRef.name.matches("^[A-Za-z0-9._-]+$") && self.secretRef.key.matches("^[A-Za-z0-9._-]+$")

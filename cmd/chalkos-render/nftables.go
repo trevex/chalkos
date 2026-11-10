@@ -65,11 +65,12 @@ type opening struct {
 	destinations []netip.Prefix
 }
 
-// bgpOpenings are the ports of each BGPPeer, on its interfaces, of its VRF, or from its address
-// alone: BGP's TCP port 179 and, with bfd, BFD's UDP ports 3784 and 3785 of single-hop sessions,
-// and 4784 of multi-hop ones from an address peer; a peer on a link is one hop away. A peer of a
-// VRF is opened in its VRF alone. The BGPPeer's rules make a peer name one of address, interface
-// and interfaces, and the validator router refuses a peer on a VRF's device.
+// bgpOpenings are the ports of each BGPPeer, on its interfaces, of its VRF, or from its address or
+// listen range alone: BGP's TCP port 179 and, with bfd, BFD's UDP ports 3784 and 3785 of
+// single-hop sessions, and 4784 of multi-hop ones from an address or a listen range, which may
+// hold neighbours beyond the link; a peer on a link is one hop away. A peer of a VRF is opened in
+// its VRF alone. The BGPPeer's rules make a peer name one of address, interface, interfaces and
+// listen, and the validator router refuses a peer on a VRF's device.
 func bgpOpenings(peers []derive.Named[derive.PeerSpec]) ([]opening, error) {
 	var out []opening
 	for _, p := range peers {
@@ -80,6 +81,8 @@ func bgpOpenings(peers []derive.Named[derive.PeerSpec]) ([]opening, error) {
 		case s.Address != nil:
 			a := *s.Address
 			o.sources = []netip.Prefix{netip.PrefixFrom(a, a.BitLen())}
+		case s.Listen != nil:
+			o.sources = []netip.Prefix{s.Listen.Range.Masked()}
 		case s.Interface != nil:
 			o.interfaces = []string{*s.Interface}
 		default:
@@ -91,7 +94,7 @@ func bgpOpenings(peers []derive.Named[derive.PeerSpec]) ([]opening, error) {
 		}
 		o.vrf = derive.VRFDevice(vrf)
 		// An opening without interfaces and sources would accept the port from anywhere.
-		if s.Address == nil {
+		if o.sources == nil {
 			if err := checkInterfaces(what, o.interfaces); err != nil {
 				return nil, err
 			}
@@ -102,7 +105,7 @@ func bgpOpenings(peers []derive.Named[derive.PeerSpec]) ([]opening, error) {
 		if s.BFD {
 			bfd := o
 			bfd.protocol, bfd.ports = "udp", []derive.PortRange{"3784", "3785"}
-			if s.Address != nil {
+			if o.sources != nil {
 				bfd.ports = append(bfd.ports, "4784")
 			}
 			out = append(out, bfd)

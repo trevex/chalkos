@@ -43,6 +43,18 @@ func TestParsePeers(t *testing.T) {
 	}
 }
 
+// A session a host opened from a listen range, written by hand: FRR keys it by the host's address
+// and gives it the peer group of the range, so it is a session of the range's BGPPeer.
+func TestParsePeersOfAListenRange(t *testing.T) {
+	peers, err := ParsePeers(readTestdata(t, "neighbors-listen.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(peers) != 1 || peers[0].VRF != "default" || peers[0].Name != "hosts" || peers[0].Neighbor != "2001:db8:1::5" || peers[0].State != "Established" {
+		t.Errorf("peers = %v, want the session of hosts with 2001:db8:1::5", peers)
+	}
+}
+
 // FRR prints an object per VRF without sessions, or {} without any instance; a VRF's vrfId and
 // vrfName are no sessions, also the vrfId -1 of an instance whose VRF the kernel lacks, and a
 // session of no BGPPeer's peer group is left out. What is no JSON is an error.

@@ -22,13 +22,14 @@ type Session struct {
 
 // Sessions are the sessions of each BGPPeer document, by its name: its address, its interface,
 // which is a link of its VRF, or the links of its VRF its interfaces name, globs matching the
-// links the Network documents name. A glob skips the links of other VRFs, those of no VRF for a
-// peer of a VRF and those of a VRF for a peer of the default one. It refuses, each peer at its
-// first fault, an interface or glob of a VRF's device, an interface of a link of another VRF, a
-// glob that matches links of other VRFs alone and a link a glob expands to that is named like an
-// address. Of the peers it accepts, it then refuses a session that two peers of a VRF name. It
-// guards, with an internal error, an interface or glob that is none, which frr.conf and the
-// firewall write unquoted.
+// links the Network documents name. A peer of a listen range has no sessions: its neighbours open
+// them. A glob skips the links of other VRFs, those of no VRF for a peer of a VRF and those of a
+// VRF for a peer of the default one. It refuses, each peer at its first fault, an interface or
+// glob of a VRF's device, an interface of a link of another VRF, a glob that matches links of
+// other VRFs alone and a link a glob expands to that is named like an address. Of the peers it
+// accepts, it then refuses a session that two peers of a VRF name, and it refuses listen ranges
+// of a VRF that overlap. It guards, with an internal error, an interface or glob that is none,
+// which frr.conf and the firewall write unquoted.
 func (d Model) Sessions() (map[string][]Session, error) {
 	out := map[string][]Session{}
 	devices := d.Devices()
@@ -57,6 +58,21 @@ func (d Model) Sessions() (map[string][]Session, error) {
 			owner[key] = p.Name
 		}
 	}
+	// bgpd refuses a listen range that overlaps another of its instance, which would fail the
+	// whole config at the reload; the validator refuses it first, at the field of the later peer.
+	for i, p := range d.Peers {
+		if p.Spec.Listen == nil {
+			continue
+		}
+		vrf, r := VRFOf(p.Spec.VRF), p.Spec.Listen.Range.Masked()
+		for _, q := range d.Peers[:i] {
+			if q.Spec.Listen == nil || VRFOf(q.Spec.VRF) != vrf || !q.Spec.Listen.Range.Overlaps(r) {
+				continue
+			}
+			errs = append(errs, refusals.Errorf("BGPPeer", p.Name, "spec.listen.range", "the listen range %s of BGPPeer %s overlaps %s of BGPPeer %s in the VRF %s; give each neighbour one peer", r, p.Name, q.Spec.Listen.Range.Masked(), q.Name, vrf))
+			break
+		}
+	}
 	if err := errors.Join(errs...); err != nil {
 		return nil, err
 	}
@@ -69,6 +85,8 @@ func (d Model) Sessions() (map[string][]Session, error) {
 func (d Model) sessions(p Named[PeerSpec], devices []string) ([]Session, error) {
 	s, vrf := p.Spec, VRFOf(p.Spec.VRF)
 	switch {
+	case s.Listen != nil:
+		return nil, nil
 	case s.Address != nil:
 		return []Session{{Neighbour: s.Address.String()}}, nil
 	case s.Interface != nil:
@@ -144,7 +162,8 @@ func (d Model) sessions(p Named[PeerSpec], devices []string) ([]Session, error) 
 }
 
 // peerField is the field of a BGPPeer that names its sessions, which a refusal of a session
-// names: one of address, interface and interfaces, as the BGPPeer's rules require.
+// names: one of address, interface and interfaces, as the BGPPeer's rules require. A peer of a
+// listen range has no sessions, so no refusal of a session names it.
 func peerField(s PeerSpec) string {
 	switch {
 	case s.Address != nil:

@@ -17,3 +17,10 @@ Name=swp2
 [Match]
 Name=swp*
 
+# 40-hosts.network
+[Match]
+Name=host0
+
+[Network]
+Address=2001:db8:11::1/64
+
