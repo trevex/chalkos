@@ -51,11 +51,13 @@ let
 
   # A grant on a name the image runs no service of creates an empty unit, as for a typo. The image's
   # build checks the units it installs, its packages' among them: each granted unit has ExecStart=
-  # in its unit file or a drop-in.
+  # in its unit file or a drop-in. grep reads the files itself: grep -q in a pipe ends at its first
+  # match, which can kill the writer with SIGPIPE and fail the pipe under pipefail. -s keeps quiet
+  # about a unit without drop-ins, and a match still succeeds.
   grantsCheck = pkgs.runCommand "chalkos-grants-check" { } ''
     units=${config.environment.etc."systemd/system".source}
     for name in ${lib.escapeShellArgs (lib.attrNames granted)}; do
-      if ! cat "$units/$name.service" "$units/$name.service.d"/*.conf 2>/dev/null | grep -q '^ExecStart='; then
+      if ! grep -qs '^ExecStart=' "$units/$name.service" "$units/$name.service.d"/*.conf; then
         echo "systemd.services.$name.chalkos.kinds grants kinds to $name.service, which runs nothing: neither its unit file nor a drop-in has ExecStart=" >&2
         exit 1
       fi
