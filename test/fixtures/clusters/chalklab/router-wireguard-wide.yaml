@@ -1,0 +1,13 @@
+# The WireGuard tunnel of router-wireguard.yaml, whose peer r2 on r1 takes fd00:f2::/64 as well.
+apiVersion: chalkctl.chalkos.dev/v1alpha1
+kind: Inventory
+metadata: {name: chalklab}
+spec:
+  images:
+    router-kvm: {source: {directory: images/router-kvm}}
+  all: {files: [cluster/*.yaml]}
+  groups:
+    router: {imageName: router-kvm, files: [groups/router.yaml]}
+  nodes:
+    r1: {groups: [router], files: [nodes/r1.yaml, nodes/r1-bgp.yaml, nodes/r1-peer.yaml, nodes/r1-wireguard-wide.yaml]}
+    r2: {groups: [router], files: [nodes/r2.yaml, nodes/r2-bgp.yaml, nodes/r2-wireguard.yaml]}

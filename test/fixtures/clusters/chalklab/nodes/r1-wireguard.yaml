@@ -1,0 +1,31 @@
+# The edge with an address of 2001:db8:101::/64 on its fabric link and the WireGuard wg0, which
+# takes r2 as its peer. 05-fabric-wireguard takes the place of groups/router.yaml's 10-fabric,
+# which networkd no longer picks for enp0s3. The keys are the test's alone.
+apiVersion: networkd.chalkos.dev/v1alpha1
+kind: Network
+metadata: {name: 05-fabric-wireguard}
+spec:
+  match: {name: enp0s3}
+  network: {address: ["2001:db8:101::1/64"], ipv6AcceptRA: false}
+---
+apiVersion: router.chalkos.dev/v1alpha1
+kind: WireGuard
+metadata: {name: wg0}
+spec:
+  listenPort: 51820
+  addresses: ["fd00:f0::1/64"]
+  privateKey: {secretRef: {name: wireguard, key: private}}
+---
+apiVersion: router.chalkos.dev/v1alpha1
+kind: WireGuardPeer
+metadata: {name: r2}
+spec:
+  interface: wg0
+  publicKey: YCfBku3dYhut+x0pFQMw7WbWU5qVks5ndJDuewg4J2I=
+  allowedIPs: ["fd00:f0::2/128"]
+---
+apiVersion: chalkos.dev/v1alpha1
+kind: Secret
+metadata: {name: wireguard}
+spec:
+  data: {private: oArtBEX5/9ql0dMa7tgy6RXjhNVmQ2Ia/6+jTOrsf2o=}

@@ -271,6 +271,14 @@ const bgpPassword = "lab-s3cret"
 //     address. Both report the session Established with BFD up, r1 under fabric with r2's
 //     address as neighbour, also in chalkctl status, and r2 learns the default route from r1's
 //     address. The base inventory then brings the unnumbered sessions back.
+//   - wireguard: a delivery gives both routers an address of 2001:db8:101::/64 on enp0s3 and a
+//     WireGuard wg0 with the other as its peer; r2 dials r1's address and keeps the tunnel open.
+//     r2 pings r1's address in the tunnel, the diagnostic wireguard on r1 lists r2's public key
+//     with a handshake, r1's rendered .netdev names its private key as a credential and holds no
+//     key, and no unit of either router failed. A delivery that gives r1's peer the range
+//     fd00:f2::/64 as well reaches the running device, which wireguard shows, and r1 routes the
+//     range to wg0. The base inventory then removes the tunnel's units, and chalkos-vrf the wg0
+//     devices of both routers.
 //   - dhcp: a delivery gives both routers a macvlan dhcp0 on enp0s3, untagged on the lab's switch,
 //     which drops the frames of VLANs. r1's dhcp0, in the VRF lan, has a DHCPv4 server that
 //     reserves 192.0.2.10 for the MAC address of r2's dhcp0, with leases of two minutes, and a
@@ -285,9 +293,9 @@ const bgpPassword = "lab-s3cret"
 //
 // Two VMs of 768 MiB and 2 CPUs each; about 85 s once chalklab installed both, a few seconds for
 // the node CA, about 10 s for the rollbacks, 45 s for the trials, two minutes for the VRF with
-// r1's boot, half a minute for the default route, 20 s for the listen range and a minute and a
-// quarter for DHCP with r1's boot, about 9 minutes with the copies of the images. chalklab destroy
-// removes the lab when the test ends.
+// r1's boot, half a minute for the default route, 20 s for the listen range, 20 s for WireGuard
+// and a minute and a quarter for DHCP with r1's boot, about 9 minutes with the copies of the
+// images. chalklab destroy removes the lab when the test ends.
 func TestRouterLab(t *testing.T) {
 	requireEnv(t, append([]string{"CHALKLAB_CHALKLAB", "CHALKLAB_ROUTER_IMAGE_DIR"}, chalkdEnv...)...)
 	dir := vmDir(t)
@@ -333,6 +341,9 @@ func TestRouterLab(t *testing.T) {
 		return
 	}
 	if !rl.phase("listen", rl.listen) {
+		return
+	}
+	if !rl.phase("wireguard", rl.wireguard) {
 		return
 	}
 	rl.phase("dhcp", rl.dhcp)
@@ -991,6 +1002,83 @@ func (rl *routerLab) listen(t *testing.T) {
 	}
 	waitFor(t, 3*time.Minute, "r1's session with r2 on enp0s3 again", func() error { return rl.established("r1", "fabric") })
 	waitFor(t, 2*time.Minute, "r2's session with r1 on enp0s3 again", func() error { return rl.established("r2", "edge") })
+	waitFor(t, 2*time.Minute, "r2's default route from r1 on enp0s3 again", func() error { return rl.learned("::/0") })
+}
+
+// The test's WireGuard keys: r1's private key, which its .netdev must not hold, and r2's public
+// key, which r1's peer names.
+const (
+	r1WireGuardKey = "oArtBEX5/9ql0dMa7tgy6RXjhNVmQ2Ia/6+jTOrsf2o="
+	r2WireGuardPub = "YCfBku3dYhut+x0pFQMw7WbWU5qVks5ndJDuewg4J2I="
+)
+
+// wireguard is the phase wireguard of TestRouterLab.
+func (rl *routerLab) wireguard(t *testing.T) {
+	// A failed phase logs networkd's journal on both routers.
+	defer func() {
+		if t.Failed() {
+			for _, name := range []string{"r1", "r2"} {
+				_, _ = chalkctl(t, rl.nodes[name], "wireguard", "logs", name, "--unit", "systemd-networkd.service")
+			}
+		}
+	}()
+	// r1 first, so it answers r2's first handshake.
+	for _, name := range []string{"r1", "r2"} {
+		if out, err := chalkctl(t, rl.nodes[name], "wireguard", "config", "apply", name); err != nil {
+			rl.failedJobs(name, "wireguard", out)
+			t.Fatalf("config apply of %s's WireGuard: %v\n%s", name, err, out)
+		}
+	}
+	waitFor(t, 2*time.Minute, "r2's ping of r1 through the tunnel", func() error {
+		out, err := chalkctl(t, rl.nodes["r2"], "wireguard", "node", "diag", "r2", "ping", "address=fd00:f0::1", "count=1")
+		if err != nil {
+			return fmt.Errorf("%v\n%s", err, out)
+		}
+		return nil
+	})
+	handshake := regexp.MustCompile(`(?m)^peer: ` + regexp.QuoteMeta(r2WireGuardPub) + `\n(?:  .*\n)*  latest handshake: `)
+	if out, err := chalkctl(t, rl.nodes["r1"], "wireguard", "node", "diag", "r1", "wireguard", "interface=wg0"); err != nil || !handshake.MatchString(out) || strings.Contains(out, r1WireGuardKey) {
+		t.Errorf("wireguard on r1 lists no handshake with r2, or the private key: %v\n%s", err, out)
+	}
+	if out, err := chalkctl(t, rl.nodes["r1"], "wireguard", "node", "diag", "r1", "chalktest-wg-netdev"); err != nil ||
+		!strings.Contains(out, "PrivateKey=@secret_wireguard.private") || strings.Contains(out, r1WireGuardKey) {
+		t.Errorf("r1's wg0.netdev names no credential, or holds the key: %v\n%s", err, out)
+	}
+	for _, name := range []string{"r1", "r2"} {
+		if out, err := chalkctl(t, rl.nodes[name], "wireguard", "status", name); err != nil || rl.failedUnit(name, "wireguard", out) {
+			t.Errorf("status of %s shows a failed unit: %v\n%s", name, err, out)
+		}
+	}
+
+	// A delivery that gives the peer another range applies it to the existing device, and routes
+	// the range into the tunnel.
+	if out, err := chalkctl(t, rl.nodes["r1"], "wireguard-wide", "config", "apply", "r1"); err != nil {
+		rl.failedJobs("r1", "wireguard-wide", out)
+		t.Fatalf("config apply of r1's wider peer: %v\n%s", err, out)
+	}
+	// The kernel lists the ranges in an order of its own.
+	wide := regexp.MustCompile(`(?m)^  allowed ips: (fd00:f0::2/128, fd00:f2::/64|fd00:f2::/64, fd00:f0::2/128)$`)
+	if out, err := chalkctl(t, rl.nodes["r1"], "wireguard-wide", "node", "diag", "r1", "wireguard", "interface=wg0"); err != nil || !wide.MatchString(out) {
+		t.Errorf("wireguard on r1 lists no peer of the wider ranges: %v\n%s", err, out)
+	}
+	if out, err := chalkctl(t, rl.nodes["r1"], "wireguard-wide", "node", "routes", "r1", "fd00:f2::/64"); err != nil || !regexp.MustCompile(`(?m)^fd00:f2::/64\s.*\bwg0\b`).MatchString(out) {
+		t.Errorf("node routes of r1 shows no route of fd00:f2::/64 to wg0: %v\n%s", err, out)
+	}
+
+	// The base inventory removes the tunnel's units, then chalkos-vrf removes the devices with
+	// their keys and peers, and brings the unnumbered sessions back.
+	for _, name := range []string{"r1", "r2"} {
+		if out, err := chalkctl(t, rl.nodes[name], "base", "config", "apply", name); err != nil {
+			rl.failedJobs(name, "base", out)
+			t.Fatalf("config apply of %s's base config: %v\n%s", name, err, out)
+		}
+	}
+	for _, name := range []string{"r1", "r2"} {
+		if out, err := chalkctl(t, rl.nodes[name], "base", "node", "diag", name, "links"); err != nil || strings.Contains(out, `"wg0"`) {
+			t.Errorf("links of %s still lists wg0: %v\n%s", name, err, out)
+		}
+	}
+	waitFor(t, 3*time.Minute, "r1's session with r2 on enp0s3 again", func() error { return rl.established("r1", "fabric") })
 	waitFor(t, 2*time.Minute, "r2's default route from r1 on enp0s3 again", func() error { return rl.learned("::/0") })
 }
 
