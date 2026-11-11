@@ -3,8 +3,8 @@
 # Each part of the router has a directory of its own with its kinds, outputs, effects, services
 # and diagnostics: the firewall, which takes the place of NixOS's, VRFs and policy routing, and
 # the features a variant may leave out, each with its option chalkos.router.<feature>.enable:
-# BGP with FRR, NAT64 with Jool, the resolver with Unbound, DHCP with Kea and DHCP relays with
-# dnsmasq.
+# BGP with FRR, NAT64 with Jool, the resolver with Unbound, DHCP with Kea, DHCP relays with
+# dnsmasq and WireGuard with systemd-networkd.
 {
   config,
   lib,
@@ -26,6 +26,7 @@ in
     ./policy-routing
     ./dhcp
     ./dhcp-relay
+    ./wireguard
     ./validator.nix
   ];
 

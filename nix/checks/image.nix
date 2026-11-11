@@ -264,8 +264,8 @@ in
   # router examples and holds the modules of its firewall and Jool, its firewall check refuses what
   # the kernel would, its FRR check what vtysh would, its Jool check what jool would and its
   # Unbound check what unbound-checkconf would. A router image without BGP, NAT64, the resolver,
-  # DHCP or the DHCP relay, and one without all five, checks its rules and renders the examples
-  # it accepts.
+  # DHCP, the DHCP relay or WireGuard, and one without all six, checks its rules and renders the
+  # examples it accepts.
   rules =
     let
       build =
@@ -383,12 +383,14 @@ in
           (routerWithout [ "resolver" ])
           (routerWithout [ "dhcp" ])
           (routerWithout [ "dhcpRelay" ])
+          (routerWithout [ "wireguard" ])
           (routerWithout [
             "bgp"
             "nat64"
             "resolver"
             "dhcp"
             "dhcpRelay"
+            "wireguard"
           ])
         ];
       }

@@ -874,11 +874,55 @@ lib.runTests {
         };
       };
   };
-  # A router image without BGP, NAT64, the resolver, DHCP and the DHCP relay keeps the router's
-  # core: the router kinds of the firewall, VRFs and policy routing, the outputs and units of the
-  # firewall, the kernel settings and the VRFs, and the diagnostics of every image and traceroute.
-  # Its outputs render the examples of none of the five, and its build allocates the IDs of the
-  # same users and groups as an image with every feature.
+  # Router images take WireGuard and WireGuardPeer documents unless their modules set
+  # chalkos.router.wireguard.enable to false, and the firewall and FRR read the WireGuards' links.
+  # Without the feature neither is there, and the build allocates the same IDs.
+  testRouterWireGuardOptional = {
+    expr =
+      let
+        of = c: {
+          kinds = lib.filter (k: c.chalkos.kinds ? ${k}) [
+            "WireGuard"
+            "WireGuardPeer"
+          ];
+          reads = lib.filter (o: lib.elem "WireGuard" c.chalkos.outputs.${o}.inputs) (
+            lib.attrNames c.chalkos.outputs
+          );
+          unpinned = unpinned c;
+        };
+      in
+      {
+        edge = of layered.edge-metal.config;
+        without = of (routerWithout [ "wireguard" ]);
+      };
+    expected =
+      let
+        pinned = unpinned layered.edge-metal.config;
+      in
+      {
+        edge = {
+          kinds = [
+            "WireGuard"
+            "WireGuardPeer"
+          ];
+          reads = [
+            "frr"
+            "router-nftables"
+          ];
+          unpinned = pinned;
+        };
+        without = {
+          kinds = [ ];
+          reads = [ ];
+          unpinned = pinned;
+        };
+      };
+  };
+  # A router image without BGP, NAT64, the resolver, DHCP, the DHCP relay and WireGuard keeps the
+  # router's core: the router kinds of the firewall, VRFs and policy routing, the outputs and units
+  # of the firewall, the kernel settings and the VRFs, and the diagnostics of every image and
+  # traceroute. Its outputs render the examples of none of the six, and its build allocates the IDs
+  # of the same users and groups as an image with every feature.
   testRouterWithoutFeatures = {
     expr =
       let
@@ -888,6 +932,7 @@ lib.runTests {
           "resolver"
           "dhcp"
           "dhcpRelay"
+          "wireguard"
         ];
       in
       {
@@ -1156,6 +1201,7 @@ lib.runTests {
         "RoutingPolicy"
         "Network"
         "VRF"
+        "WireGuard"
       ];
       firewallReads = true;
       check = true;

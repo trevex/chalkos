@@ -17,7 +17,7 @@ func TestVRFLinks(t *testing.T) {
 		derivetest.Doc(t, "Network", "30-eth1", `{"match": {"name": "eth1"}, "network": {"vrf": "blue"}}`),
 		derivetest.Doc(t, "Network", "40-eth0", `{"match": {"name": "eth0"}}`),
 	}}
-	got, err := vrfLinks([]Named[VRFSpec]{{"tenant", VRFSpec{Table: 100, Interfaces: []string{"swp*"}}}}, networkLinks(byKind), byKind)
+	got, err := vrfLinks([]Named[VRFSpec]{{"tenant", VRFSpec{Table: 100, Interfaces: []string{"swp*"}}}}, networkLinks(byKind), nil, byKind)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -40,7 +40,7 @@ func TestLinkVRFNarrowed(t *testing.T) {
 		derivetest.Doc(t, "Network", "20-swp2", `{"match": {"name": "swp2"}}`),
 		derivetest.Doc(t, "Network", "30-eth", `{"match": {"name": "eth0"`+mac+`}}`),
 	}}
-	m, err := vrfLinks([]Named[VRFSpec]{{"tenant", VRFSpec{Table: 100, Interfaces: []string{"swp*"}}}}, networkLinks(byKind), byKind)
+	m, err := vrfLinks([]Named[VRFSpec]{{"tenant", VRFSpec{Table: 100, Interfaces: []string{"swp*"}}}}, networkLinks(byKind), nil, byKind)
 	if err != nil {
 		t.Fatal(err)
 	}

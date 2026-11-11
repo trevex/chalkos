@@ -685,6 +685,39 @@ A node's config may hold several, each with a name of its own. It has 5 [change 
 | `spec.interfaces` | list of string | `[]` | Links the VRF holds, by name or glob, a glob being a prefix followed by `*`; a glob stands for the links the node's Network documents name in a `[Match]` section's `Name=`. A link is named by a Network document, which gets `VRF=`, and every link of that Network is in this VRF. Each item is unique among the VRF documents. |
 | `spec.table` | integer from 1 to 4294967295 | required | Routing table of the VRF, which no other VRF uses; not 253, 254 or 255, the kernel's tables of the default VRF. A change creates the VRF anew, which ends the sessions in it. Unique among the VRF documents. |
 
+### WireGuard { #wireguard }
+
+A WireGuard interface of the router, named as the document: its UDP port, its addresses, its VRF and the Secret key that holds its private key. Its peers are WireGuardPeer documents.
+
+`apiVersion: router.chalkos.dev/v1alpha1`
+
+A node's config may hold several, each with a name of its own. It has 4 [change rules](builtins.md#rules-wireguard).
+
+| Field | Type | Default | Description |
+| --- | --- | --- | --- |
+| `spec.addresses` | list of address range | required | Addresses of the interface with their prefix lengths, as `Address=` of a `Network` gives them; the router routes each prefix to the interface. The peers' `allowedIPs` add routes of their own. Each item is unique within the list. |
+| `spec.listenPort` | integer from 1 to 65535 | `51820` | UDP port the interface receives its peers' packets on, which the firewall opens in the default VRF. Two WireGuards take different ports. Unique among the WireGuard documents. |
+| `spec.mtu` | integer from 1280 to 9000 or null | `null` | MTU of the interface in bytes, from 1280 to 9000; null takes WireGuard's 1420. |
+| `spec.privateKey` | secret reference | required | Key of a Secret that holds the interface's private key, as `wg genkey` prints it. systemd-networkd reads it from its credentials; no rendered file holds it. The Secret's name and key hold letters, digits, `.`, `_` and `-` alone. |
+| `spec.vrf` | name of a VRF, or `default` | `"default"` | VRF document that holds the interface; `default` for the default VRF. The routes of the peers' `allowedIPs` go into the VRF's table; the tunnel's own UDP packets travel in the default VRF whatever this says. |
+
+### WireGuardPeer { #wireguardpeer }
+
+A peer of one of the router's WireGuard interfaces: its public key, the address ranges it sends from and the router routes to it, and where the router reaches it.
+
+`apiVersion: router.chalkos.dev/v1alpha1`
+
+A node's config may hold several, each with a name of its own. It has a [change rule](builtins.md#rules-wireguardpeer).
+
+| Field | Type | Default | Description |
+| --- | --- | --- | --- |
+| `spec.allowedIPs` | list of address range | required | Address ranges the router accepts from the peer through the tunnel and sends to it: the router routes each range to the interface in the table of the WireGuard's VRF, a site's networks behind the peer included. The ranges of two peers of one interface do not overlap, and none is a default route, ::/0 or 0.0.0.0/0, which the validator `router` checks. Each item is unique within the list, compared as masked ranges. |
+| `spec.endpoint` | string or null | `null` | Address and UDP port the router sends the peer's first packets to: `[<IPv6>]:<port>`, `<IPv4>:<port>` or `<host name>:<port>`. null waits for the peer to send first, as a laptop behind NAT does; the router then answers where the peer's packets come from. |
+| `spec.interface` | name of a WireGuard | required | WireGuard document of the interface the peer belongs to. |
+| `spec.persistentKeepalive` | integer from 1 to 65535 or null | `null` | Seconds between the packets the router sends the peer while the tunnel is idle, which keep a NAT's mapping open; null sends none. |
+| `spec.presharedKey` | secret reference or null | `null` | Key of a Secret that holds a key the router and the peer share on top of their key pairs, as `wg genpsk` prints it; null for none. systemd-networkd reads it from its credentials. The Secret's name and key hold letters, digits, `.`, `_` and `-` alone. |
+| `spec.publicKey` | string | required | Public key of the peer in base64, as `wg pubkey` prints it. The validator `router` refuses a key two peers of one interface have. |
+
 ## storage.chalkos.dev { #storage-chalkos-dev }
 
 The kinds of `storage.chalkos.dev` lay out the node's disks: the system disk and the volumes.

@@ -157,16 +157,17 @@ type Unit struct {
 // names it, whether a document of the VRF exists or not. A Network document is in the VRF of the
 // links it may be the first to match, and vrfLinks refuses unless all links it may match are in
 // that VRF, so that VRF= on the Network puts in the VRF the links that the VRF holds, and only
-// those. It refuses a link two VRFs may hold, a literal interface of a VRF no Network matches by
-// Name= alone, and a VRF device whose first Network is not its own. Without VRF documents and
-// VRF= it checks nothing and puts every link in the default VRF, so that a router image without
+// those. It refuses a link two VRFs may hold, a literal interface of a VRF that is one of
+// wireguards, the WireGuards' interfaces, which join a VRF by their own vrf, or that no Network
+// matches by Name= alone, and a VRF device whose first Network is not its own. Without VRF
+// documents and VRF= it checks nothing and puts every link in the default VRF, so that a router image without
 // VRFs takes the Network documents it took before them.
 //
 // It goes on past a refusal to the end of each of its steps and returns every refusal of the
 // first step that refuses, joined: the VRFs' members and the units, then the Networks that may be
 // the first to match each member's links, then the VRF of each Network. A step reads what the
 // steps before it found, which a refusal leaves wrong.
-func vrfLinks(vrfs []Named[VRFSpec], links []string, byKind map[string]any) (Membership, error) {
+func vrfLinks(vrfs []Named[VRFSpec], links, wireguards []string, byKind map[string]any) (Membership, error) {
 	var none Membership
 	if len(vrfs) == 0 && !anyNetworkVRF(byKind) {
 		return none, nil
@@ -223,6 +224,10 @@ func vrfLinks(vrfs []Named[VRFSpec], links []string, byKind map[string]any) (Mem
 		}
 	}
 	for _, m := range members {
+		if m.Network == "" && slices.Contains(wireguards, m.Glob) {
+			errs = append(errs, refusals.Errorf("VRF", m.VRF, m.Path, "VRF %s names %s, the interface of WireGuard %s; set the WireGuard's vrf instead", m.VRF, m.Glob, m.Glob))
+			continue
+		}
 		if cs := Candidates(units, m.Glob); m.Network == "" && isLiteral(m.Glob) && (len(cs) == 0 || cs[len(cs)-1].Narrowed) {
 			errs = append(errs, refusals.Errorf("VRF", m.VRF, m.Path, "VRF %s names the interface %s, which no Network document's [Match] Name= matches without other [Match] keys; VRF= reaches a link through its Network document, so give it one", m.VRF, m.Glob))
 		}

@@ -130,6 +130,8 @@ let
     "Router"
     "RoutingPolicy"
     "VRF"
+    "WireGuard"
+    "WireGuardPeer"
   ];
   # The installer.
   installer = (mkImages { variants = { }; }).nixos.installer.config;

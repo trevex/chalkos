@@ -1,0 +1,182 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "A WireGuard interface of the router, named as the document: its UDP port, its addresses, its VRF and the Secret key that holds its private key. Its peers are WireGuardPeer documents.",
+  "properties": {
+    "apiVersion": {
+      "const": "router.chalkos.dev/v1alpha1"
+    },
+    "kind": {
+      "const": "WireGuard"
+    },
+    "metadata": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "pattern": "^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "type": "object"
+    },
+    "spec": {
+      "additionalProperties": false,
+      "properties": {
+        "addresses": {
+          "description": "Addresses of the interface with their prefix lengths, as `Address=` of a `Network` gives them; the router routes each prefix to the interface. The peers' `allowedIPs` add routes of their own.",
+          "examples": [
+            [
+              "fd00:f0::1/64"
+            ]
+          ],
+          "items": {
+            "format": "cidr",
+            "type": "string"
+          },
+          "minItems": 1,
+          "type": "array",
+          "x-chalkos-unique": [
+            {
+              "across": "list",
+              "hint": "give each address once"
+            }
+          ]
+        },
+        "listenPort": {
+          "default": 51820,
+          "description": "UDP port the interface receives its peers' packets on, which the firewall opens in the default VRF. Two WireGuards take different ports.",
+          "maximum": 65535,
+          "minimum": 1,
+          "type": "integer",
+          "x-chalkos-unique": [
+            {
+              "across": "kind",
+              "hint": "give each WireGuard a port of its own"
+            }
+          ]
+        },
+        "mtu": {
+          "anyOf": [
+            {
+              "maximum": 9000,
+              "minimum": 1280,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "MTU of the interface in bytes, from 1280 to 9000; null takes WireGuard's 1420."
+        },
+        "privateKey": {
+          "additionalProperties": false,
+          "description": "Key of a Secret that holds the interface's private key, as `wg genkey` prints it. systemd-networkd reads it from its credentials; no rendered file holds it. The Secret's name and key hold letters, digits, `.`, `_` and `-` alone.",
+          "examples": [
+            {
+              "secretRef": {
+                "key": "private",
+                "name": "wireguard"
+              }
+            }
+          ],
+          "properties": {
+            "secretRef": {
+              "additionalProperties": false,
+              "properties": {
+                "key": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "name": {
+                  "minLength": 1,
+                  "type": "string"
+                }
+              },
+              "required": [
+                "key",
+                "name"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "secretRef"
+          ],
+          "type": "object",
+          "x-chalkos-ref": {
+            "apiVersion": "chalkos.dev/v1alpha1",
+            "key": true,
+            "kind": "Secret"
+          },
+          "x-chalkos-rules": [
+            {
+              "description": "A WireGuard key names its Secret and key as credentials' names.",
+              "message": "the Secret's name and key of privateKey hold letters, digits, '.', '_' and '-' alone, as the names of systemd-networkd's credentials do",
+              "rule": "self == null || self.secretRef.name.matches(\"^[A-Za-z0-9._-]+$\") && self.secretRef.key.matches(\"^[A-Za-z0-9._-]+$\")",
+              "takes": "refuse"
+            }
+          ]
+        },
+        "vrf": {
+          "default": "default",
+          "description": "VRF document that holds the interface; `default` for the default VRF. The routes of the peers' `allowedIPs` go into the VRF's table; the tunnel's own UDP packets travel in the default VRF whatever this says.",
+          "examples": [
+            "tenant"
+          ],
+          "pattern": "^(?:[a-z0-9]([-a-z0-9.]*[a-z0-9])?)$",
+          "type": "string",
+          "x-chalkos-ref": {
+            "apiVersion": "router.chalkos.dev/v1alpha1",
+            "kind": "VRF",
+            "reserved": [
+              "default"
+            ]
+          }
+        }
+      },
+      "required": [
+        "addresses",
+        "privateKey"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "apiVersion",
+    "kind",
+    "metadata",
+    "spec"
+  ],
+  "title": "WireGuard",
+  "type": "object",
+  "x-chalkos-kind": {
+    "group": "router.chalkos.dev",
+    "kind": "WireGuard",
+    "multiple": true,
+    "rules": [
+      {
+        "description": "A WireGuard is named as its interface, in 15 characters at most.",
+        "messageExpression": "documents.filter(n, size(n) > 15).map(n, \"WireGuard \" + n).join(\", \") + \" has a name of more than 15 characters, which is no interface's name; give it a shorter one\"",
+        "rule": "documents.all(n, size(n) <= 15)",
+        "takes": "refuse"
+      },
+      {
+        "description": "A WireGuard's name does not start with n64-, which starts the names of the NAT64s' links.",
+        "messageExpression": "documents.filter(n, n.startsWith(\"n64-\")).map(n, \"WireGuard \" + n).join(\", \") + \": n64- starts the names of the NAT64s' links; give the WireGuard another name\"",
+        "rule": "documents.all(n, !n.startsWith(\"n64-\"))",
+        "takes": "refuse"
+      },
+      {
+        "description": "A WireGuard does not take the name of a VRF, whose device has it.",
+        "messageExpression": "cel.bind(vrfs, ((\"router.chalkos.dev/v1alpha1\" in config && \"VRF\" in config[\"router.chalkos.dev/v1alpha1\"]) ? config[\"router.chalkos.dev/v1alpha1\"].VRF : {}), documents.filter(n, n in vrfs).map(n, \"WireGuard \" + n).join(\", \") + \" takes the name of a VRF, whose device has it; give the WireGuard another name\")",
+        "rule": "cel.bind(vrfs, ((\"router.chalkos.dev/v1alpha1\" in config && \"VRF\" in config[\"router.chalkos.dev/v1alpha1\"]) ? config[\"router.chalkos.dev/v1alpha1\"].VRF : {}), documents.all(n, !(n in vrfs)))",
+        "takes": "refuse"
+      }
+    ],
+    "version": "v1alpha1"
+  }
+}

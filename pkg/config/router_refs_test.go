@@ -161,3 +161,15 @@ func TestRouterNextHopRefs(t *testing.T) {
 			routerDoc("PolicyRoute", "lan", `{rules: [{match: {dscp: [46]}, to: {nextHop: isp-a}}, {match: {dscp: [10]}, to: {nextHop: isp-b}}]}`))
 	wantRefused(t, err, `PolicyRoute/lan: spec.rules[1].to.nextHop: NextHop "isp-b" does not exist`)
 }
+
+// A WireGuardPeer names the WireGuard document of its interface, and a WireGuard's private key and
+// a peer's preshared key name keys of Secrets.
+func TestRouterWireGuardRefs(t *testing.T) {
+	_, err := checkRouterRefs(t,
+		routerDoc("WireGuard", "wg0", `{addresses: ["fd00:f0::1/64"], privateKey: {secretRef: {name: wg, key: private}}}`)+
+			routerDoc("WireGuardPeer", "laptop", `{interface: wg1, publicKey: "TNcjWUC/YZFd6+6UkoYLORnFxvy/jvqzi7gh5Tc0lRU=", allowedIPs: ["fd00:f0::2/128"], presharedKey: {secretRef: {name: wg, key: psk}}}`))
+	wantRefused(t, err,
+		`WireGuard/wg0: spec.privateKey: Secret "wg" does not exist`,
+		`WireGuardPeer/laptop: spec.interface: WireGuard "wg1" does not exist`,
+		`WireGuardPeer/laptop: spec.presharedKey: Secret "wg" does not exist`)
+}

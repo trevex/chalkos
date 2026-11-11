@@ -39,7 +39,7 @@ func Kinds() []string { return slices.Clone(kinds) }
 var kinds = []string{
 	"Router", "FirewallZone", "FirewallPolicy", "AddressSet", "NATRule", "BGP", "BGPPeer", "PrefixList",
 	"CommunityList", "RoutingPolicy", "NAT64", "Resolver", "VRF", "PolicyRoute", "NextHop", "DHCPSubnet",
-	"DHCPRelay", "Network",
+	"DHCPRelay", "WireGuard", "WireGuardPeer", "Network",
 }
 
 // Named is the spec of a document, with the document's name.
@@ -52,8 +52,8 @@ type Named[T any] struct {
 // output's input or a validator's: the router kinds' documents, each kind's in the input's order,
 // which sorts them by name, and what the Network and VRF documents say together. The parts that
 // only some outputs need, and that refuse what the others need not see, are methods: Units,
-// NAT64Instances, PolicyTables, Sessions, Subnets and Relays. Validate calls each, where an output
-// would, and the outputs that need one call it again.
+// NAT64Instances, PolicyTables, Sessions, Subnets, Relays and WireGuardInterfaces. Validate calls
+// each, where an output would, and the outputs that need one call it again.
 type Model struct {
 	Routers  []Named[RouterSpec]
 	Zones    []Named[ZoneSpec]
@@ -73,7 +73,10 @@ type Model struct {
 	NextHops        []Named[NextHopSpec]
 	DHCPSubnets     []Named[DHCPSubnetSpec]
 	DHCPRelays      []Named[DHCPRelaySpec]
-	// Links are the interface names the Network documents' [Match] sections name, sorted.
+	WireGuards      []Named[WireGuardSpec]
+	WireGuardPeers  []Named[WireGuardPeerSpec]
+	// Links are the interface names the Network documents' [Match] sections name and the
+	// WireGuards' links, sorted.
 	Links []string
 	// Addresses are the static addresses the Network documents give their links.
 	Addresses []NetworkAddress
@@ -144,12 +147,30 @@ func Build(byKind map[string]any) (Model, error) {
 	if d.DHCPRelays, err = decodeKind[DHCPRelaySpec](byKind, "DHCPRelay"); err != nil {
 		return d, err
 	}
+	if d.WireGuards, err = decodeKind[WireGuardSpec](byKind, "WireGuard"); err != nil {
+		return d, err
+	}
+	if d.WireGuardPeers, err = decodeKind[WireGuardPeerSpec](byKind, "WireGuardPeer"); err != nil {
+		return d, err
+	}
 	d.Links = networkLinks(byKind)
 	d.Addresses = networkAddresses(byKind)
 	d.Networks = networkSpecs(byKind)
-	if d.Membership, err = vrfLinks(d.VRFs, d.Links, byKind); err != nil {
+	wireguards := make([]string, 0, len(d.WireGuards))
+	for _, w := range d.WireGuards {
+		wireguards = append(wireguards, w.Name)
+	}
+	if d.Membership, err = vrfLinks(d.VRFs, d.Links, wireguards, byKind); err != nil {
 		return d, err
 	}
+	// Each WireGuard's link is one of the node's, which its own unit configures.
+	for _, w := range wireguards {
+		if !slices.Contains(d.Links, w) {
+			d.Links = append(d.Links, w)
+		}
+	}
+	slices.Sort(d.Links)
+	d.Membership = d.Membership.withWireGuards(d.WireGuards)
 	return d, nil
 }
 

@@ -1,0 +1,171 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "A peer of one of the router's WireGuard interfaces: its public key, the address ranges it sends from and the router routes to it, and where the router reaches it.",
+  "properties": {
+    "apiVersion": {
+      "const": "router.chalkos.dev/v1alpha1"
+    },
+    "kind": {
+      "const": "WireGuardPeer"
+    },
+    "metadata": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "pattern": "^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "type": "object"
+    },
+    "spec": {
+      "additionalProperties": false,
+      "properties": {
+        "allowedIPs": {
+          "description": "Address ranges the router accepts from the peer through the tunnel and sends to it: the router routes each range to the interface in the table of the WireGuard's VRF, a site's networks behind the peer included. The ranges of two peers of one interface do not overlap, and none is a default route, ::/0 or 0.0.0.0/0, which the validator `router` checks.",
+          "examples": [
+            [
+              "fd00:f0::2/128"
+            ]
+          ],
+          "items": {
+            "format": "cidr",
+            "type": "string"
+          },
+          "minItems": 1,
+          "type": "array",
+          "x-chalkos-unique": [
+            {
+              "across": "list",
+              "as": "cidr",
+              "hint": "name each range once"
+            }
+          ]
+        },
+        "endpoint": {
+          "anyOf": [
+            {
+              "pattern": "^(?:(\\[[0-9A-Fa-f:.]+\\]|[0-9]{1,3}([.][0-9]{1,3}){3}|[A-Za-z0-9]([-A-Za-z0-9.]*[A-Za-z0-9])?):([1-9][0-9]{0,3}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5]))$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Address and UDP port the router sends the peer's first packets to: `[<IPv6>]:<port>`, `<IPv4>:<port>` or `<host name>:<port>`. null waits for the peer to send first, as a laptop behind NAT does; the router then answers where the peer's packets come from.",
+          "examples": [
+            "[2001:db8::1]:51820"
+          ]
+        },
+        "interface": {
+          "description": "WireGuard document of the interface the peer belongs to.",
+          "examples": [
+            "wg0"
+          ],
+          "pattern": "^(?:[a-z0-9]([-a-z0-9.]*[a-z0-9])?)$",
+          "type": "string",
+          "x-chalkos-ref": {
+            "apiVersion": "router.chalkos.dev/v1alpha1",
+            "kind": "WireGuard"
+          }
+        },
+        "persistentKeepalive": {
+          "anyOf": [
+            {
+              "maximum": 65535,
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Seconds between the packets the router sends the peer while the tunnel is idle, which keep a NAT's mapping open; null sends none."
+        },
+        "presharedKey": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "secretRef": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "key": {
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "name": {
+                      "minLength": 1,
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "key",
+                    "name"
+                  ],
+                  "type": "object"
+                }
+              },
+              "required": [
+                "secretRef"
+              ],
+              "type": "object",
+              "x-chalkos-ref": {
+                "apiVersion": "chalkos.dev/v1alpha1",
+                "key": true,
+                "kind": "Secret"
+              }
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Key of a Secret that holds a key the router and the peer share on top of their key pairs, as `wg genpsk` prints it; null for none. systemd-networkd reads it from its credentials. The Secret's name and key hold letters, digits, `.`, `_` and `-` alone.",
+          "x-chalkos-rules": [
+            {
+              "description": "A WireGuard key names its Secret and key as credentials' names.",
+              "message": "the Secret's name and key of presharedKey hold letters, digits, '.', '_' and '-' alone, as the names of systemd-networkd's credentials do",
+              "rule": "self == null || self.secretRef.name.matches(\"^[A-Za-z0-9._-]+$\") && self.secretRef.key.matches(\"^[A-Za-z0-9._-]+$\")",
+              "takes": "refuse"
+            }
+          ]
+        },
+        "publicKey": {
+          "description": "Public key of the peer in base64, as `wg pubkey` prints it. The validator `router` refuses a key two peers of one interface have.",
+          "examples": [
+            "xTIBA5rboUvnH4htodjb6e697QjLERt1NAB4mZqp8Dg="
+          ],
+          "pattern": "^(?:[A-Za-z0-9+/]{42}[AEIMQUYcgkosw480]=)$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "allowedIPs",
+        "interface",
+        "publicKey"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "apiVersion",
+    "kind",
+    "metadata",
+    "spec"
+  ],
+  "title": "WireGuardPeer",
+  "type": "object",
+  "x-chalkos-kind": {
+    "group": "router.chalkos.dev",
+    "kind": "WireGuardPeer",
+    "multiple": true,
+    "version": "v1alpha1"
+  }
+}

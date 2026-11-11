@@ -35,7 +35,8 @@ func Validate(stdin []byte) ([]refusals.Refusal, error) {
 // check runs the router's checks of what the documents of byKind mean together, which no schema
 // or rule sees, and joins their refusals: the VRFs' links as Build checks them, the NAT64s as
 // NAT64Instances checks them, the firewall's zones, NAT rules, management interfaces and policy
-// routes' in, the BGP peers' sessions, the resolvers' addresses, and the DHCP subnets and relays.
+// routes' in, the BGP peers' sessions, the resolvers' addresses, the DHCP subnets and relays, and
+// the WireGuards and their peers.
 // Each goes on past a refusal to the next document, so a config with several faults gets a
 // refusal for each. The checks that read the links' VRFs run once Build accepts them, since a
 // refusal of Build leaves them wrong, and those that read the NAT64s' pools once NAT64Instances
@@ -51,7 +52,8 @@ func check(byKind map[string]any) error {
 	_, serr := d.Sessions()
 	_, derr := d.Subnets()
 	_, rerr := d.Relays()
-	return errors.Join(nerr, d.checkFirewall(nat64), serr, d.checkResolvers(), derr, rerr)
+	_, werr := d.WireGuardInterfaces()
+	return errors.Join(nerr, d.checkFirewall(nat64), serr, d.checkResolvers(), derr, rerr, werr)
 }
 
 // readDocuments is the documents of data, a validator's input, by kind, as Build takes them: each

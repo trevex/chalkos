@@ -270,6 +270,34 @@ type NAT64Spec struct {
 	Pool4  []PoolEntry  `json:"pool4"`
 }
 
+// SecretRef names a key of a Secret, which a unit reads as its credential secret_<name>.<key>.
+type SecretRef struct {
+	SecretRef struct {
+		Name string `json:"name"`
+		Key  string `json:"key"`
+	} `json:"secretRef"`
+}
+
+// WireGuardSpec is a WireGuard document's spec.
+type WireGuardSpec struct {
+	ListenPort uint16         `json:"listenPort"`
+	Addresses  []netip.Prefix `json:"addresses"`
+	MTU        *uint32        `json:"mtu"`
+	PrivateKey SecretRef      `json:"privateKey"`
+	// VRF names the WireGuard's VRF document, or is default; VRFOf reads it.
+	VRF *string `json:"vrf"`
+}
+
+// WireGuardPeerSpec is a WireGuardPeer document's spec.
+type WireGuardPeerSpec struct {
+	Interface           string         `json:"interface"`
+	PublicKey           string         `json:"publicKey"`
+	AllowedIPs          []netip.Prefix `json:"allowedIPs"`
+	Endpoint            *string        `json:"endpoint"`
+	PersistentKeepalive *uint16        `json:"persistentKeepalive"`
+	PresharedKey        *SecretRef     `json:"presharedKey"`
+}
+
 // PoolEntry is an entry of a NAT64's pool4.
 type PoolEntry struct {
 	Prefix    netip.Prefix `json:"prefix"`

@@ -1289,6 +1289,57 @@ Message of rule 5:
 cel.bind(bgps, (("router.chalkos.dev/v1alpha1" in config && "BGP" in config["router.chalkos.dev/v1alpha1"]) ? config["router.chalkos.dev/v1alpha1"].BGP : {}), cel.bind(families, bgps.map(n, [bgps[n].spec["import"].ipv4, bgps[n].spec["import"].ipv6]).flatten(), cel.bind(importers, bgps.filter(n, bgps[n].spec["import"].ipv4 != null || bgps[n].spec["import"].ipv6 != null).map(n, bgps[n].spec.vrf), cel.bind(imported, families.filter(f, f != null).map(f, f.vrfs).flatten(), documents.filter(n, documents[n].spec.conntrackZone != null && (n in importers || n in imported)).map(n, "VRF " + n).join(", ") + ": a VRF with a conntrack zone leaks no routes through a BGP import, as its connections would answer in another zone; drop the zone or the import"))))
 ```
 
+#### WireGuard { #rules-wireguard }
+
+| Rule | Field | Guards | Takes | Expression | Message |
+| --- | --- | --- | --- | --- | --- |
+| 1 | — | A WireGuard is named as its interface, in 15 characters at most. | `refuse` | `documents.all(n, size(n) <= 15)` | after the table |
+| 2 | — | A WireGuard's name does not start with n64-, which starts the names of the NAT64s' links. | `refuse` | `documents.all(n, !n.startsWith("n64-"))` | after the table |
+| 3 | — | A WireGuard does not take the name of a VRF, whose device has it. | `refuse` | after the table | after the table |
+| 4 | `spec.privateKey` | A WireGuard key names its Secret and key as credentials' names. | `refuse` | after the table | the Secret's name and key of privateKey hold letters, digits, '.', '_' and '-' alone, as the names of systemd-networkd's credentials do |
+
+Message of rule 1:
+
+```text
+documents.filter(n, size(n) > 15).map(n, "WireGuard " + n).join(", ") + " has a name of more than 15 characters, which is no interface's name; give it a shorter one"
+```
+
+Message of rule 2:
+
+```text
+documents.filter(n, n.startsWith("n64-")).map(n, "WireGuard " + n).join(", ") + ": n64- starts the names of the NAT64s' links; give the WireGuard another name"
+```
+
+Expression of rule 3:
+
+```text
+cel.bind(vrfs, (("router.chalkos.dev/v1alpha1" in config && "VRF" in config["router.chalkos.dev/v1alpha1"]) ? config["router.chalkos.dev/v1alpha1"].VRF : {}), documents.all(n, !(n in vrfs)))
+```
+
+Message of rule 3:
+
+```text
+cel.bind(vrfs, (("router.chalkos.dev/v1alpha1" in config && "VRF" in config["router.chalkos.dev/v1alpha1"]) ? config["router.chalkos.dev/v1alpha1"].VRF : {}), documents.filter(n, n in vrfs).map(n, "WireGuard " + n).join(", ") + " takes the name of a VRF, whose device has it; give the WireGuard another name")
+```
+
+Expression of rule 4:
+
+```text
+self == null || self.secretRef.name.matches("^[A-Za-z0-9._-]+$") && self.secretRef.key.matches("^[A-Za-z0-9._-]+$")
+```
+
+#### WireGuardPeer { #rules-wireguardpeer }
+
+| Rule | Field | Guards | Takes | Expression | Message |
+| --- | --- | --- | --- | --- | --- |
+| 1 | `spec.presharedKey` | A WireGuard key names its Secret and key as credentials' names. | `refuse` | after the table | the Secret's name and key of presharedKey hold letters, digits, '.', '_' and '-' alone, as the names of systemd-networkd's credentials do |
+
+Expression of rule 1:
+
+```text
+self == null || self.secretRef.name.matches("^[A-Za-z0-9._-]+$") && self.secretRef.key.matches("^[A-Za-z0-9._-]+$")
+```
+
 ## Facts { #facts }
 
 A fact is node state that change rules and the `when` of effects read as `facts.<name>`. A
@@ -1340,7 +1391,7 @@ The validators router images add.
 
 | Validator | Inputs | Command |
 | --- | --- | --- |
-| `router`{ #validator-router } | `AddressSet`, `BGP`, `BGPPeer`, `CommunityList`, `DHCPRelay`, `DHCPSubnet`, `FirewallPolicy`, `FirewallZone`, `NAT64`, `NATRule`, `NextHop`, `PolicyRoute`, `PrefixList`, `Resolver`, `Router`, `RoutingPolicy`, `VRF`, `Network` | `chalkos-render validate router` |
+| `router`{ #validator-router } | `AddressSet`, `BGP`, `BGPPeer`, `CommunityList`, `DHCPRelay`, `DHCPSubnet`, `FirewallPolicy`, `FirewallZone`, `NAT64`, `NATRule`, `NextHop`, `PolicyRoute`, `PrefixList`, `Resolver`, `Router`, `RoutingPolicy`, `VRF`, `WireGuard`, `WireGuardPeer`, `Network` | `chalkos-render validate router` |
 
 ## Outputs { #outputs }
 
@@ -1369,11 +1420,11 @@ The outputs router images add, and the output `networkd` of every image as route
 | Output | Inputs | Directory | Renderer | Check |
 | --- | --- | --- | --- | --- |
 | `dhcp-relay`{ #output-dhcp-relay } | `DHCPRelay`, `VRF`, `Network`, `DHCPSubnet`, `NAT64` | `/run/chalkos/outputs/dhcp-relay` | Command `chalkos-render dhcp-relay` | yes |
-| `frr`{ #output-frr } | `BGP`, `BGPPeer`, `CommunityList`, `PrefixList`, `RoutingPolicy`, `Network`, `VRF` | `/run/chalkos/outputs/frr` | Command `chalkos-render frr` | yes |
+| `frr`{ #output-frr } | `BGP`, `BGPPeer`, `CommunityList`, `PrefixList`, `RoutingPolicy`, `Network`, `VRF`, `WireGuard` | `/run/chalkos/outputs/frr` | Command `chalkos-render frr` | yes |
 | `jool`{ #output-jool } | `NAT64`, `VRF`, `Network` | `/run/chalkos/outputs/jool` | Command `chalkos-render jool` | yes |
 | `kea`{ #output-kea } | `DHCPSubnet`, `VRF`, `Network`, `NAT64` | `/run/chalkos/outputs/kea` | Command `chalkos-render kea chalkos-dhcp6-pd` | yes |
 | `networkd`{ #outputs-router-images-networkd } | `Link`, `NetDev`, `Network`, `NAT64`, `VRF`, `NextHop`, `PolicyRoute` | `/run/systemd/network` | Command `chalkos-render router-networkd chalkos-networkd-schemas` | no |
-| `router-nftables`{ #output-router-nftables } | `Router`, `AddressSet`, `FirewallPolicy`, `FirewallZone`, `NATRule`, `BGPPeer`, `Resolver`, `DHCPSubnet`, `DHCPRelay`, `VRF`, `Network`, `NAT64`, `NextHop`, `PolicyRoute` | `/run/chalkos/outputs/router-nftables` | Command `chalkos-render router-nftables 50000` | yes |
+| `router-nftables`{ #output-router-nftables } | `Router`, `AddressSet`, `FirewallPolicy`, `FirewallZone`, `NATRule`, `BGPPeer`, `Resolver`, `DHCPSubnet`, `DHCPRelay`, `WireGuard`, `VRF`, `Network`, `NAT64`, `NextHop`, `PolicyRoute` | `/run/chalkos/outputs/router-nftables` | Command `chalkos-render router-nftables 50000` | yes |
 | `router-sysctl`{ #output-router-sysctl } | `Router` | `/run/sysctl.d` | Command `chalkos-render router-sysctl` | no |
 | `unbound`{ #output-unbound } | `Resolver`, `VRF`, `Network` | `/run/chalkos/outputs/unbound` | Command `chalkos-render unbound root.key ipv4only.arpa.zone` | yes |
 

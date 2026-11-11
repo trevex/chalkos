@@ -99,6 +99,7 @@ in
         "Resolver"
         "DHCPSubnet"
         "DHCPRelay"
+        "WireGuard"
       ]
       ++ [
         # The links of each VRF, which the zones and conntrack zones match.

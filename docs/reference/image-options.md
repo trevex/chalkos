@@ -199,6 +199,13 @@ Whether router images carry Unbound, the DNS resolvers of the router's VRFs, and
 kind Resolver; only with the router layer. Set it false in a variant's modules to leave
 Unbound out of its images.
 
+### `chalkos.router.wireguard.enable` { #chalkosrouterwireguardenable }
+
+Type: boolean · Default: `true` · Declared in: [modules/node/router/wireguard/default.nix](https://github.com/trevex/chalkos/blob/main/modules/node/router/wireguard/default.nix)
+
+Whether router images accept the kinds WireGuard and WireGuardPeer; only with the router
+layer. Set it false in a variant's modules to leave WireGuard out of its images.
+
 ### `chalkos.forwarding.enable` { #chalkosforwardingenable }
 
 Type: boolean · Default: `false` · Declared in: [modules/node/network.nix](https://github.com/trevex/chalkos/blob/main/modules/node/network.nix)
