@@ -1,11 +1,15 @@
-# Kubernetes with its defaults: IPv4, the pod range 10.244.0.0/16 and the service range
-# 10.96.0.0/12.
+# Kubernetes on IPv6 alone, with the pod range fd00:10:244::/56 and the service range
+# fd00:10:96::/112, its defaults. All three nodes are control planes and run workloads too.
 apiVersion: kubernetes.chalkos.dev/v1alpha1
 kind: Cluster
 metadata: {name: default}
 spec:
-  # cp1's address: the API server of the only control plane.
-  endpoint: https://10.0.0.11:6443
+  ipFamilies: [ipv6]
+  allowSchedulingOnControlPlanes: true
+  # The API server's VIP, which one control plane holds at a time on its interface node0. bird on
+  # that node announces it with the node's address, so the VIP's route follows its holder.
+  endpoint: "https://[fdc8:a1b2:c3d4:ff::10]:6443"
+  vip: {addresses: ["fdc8:a1b2:c3d4:ff::10"], mode: routed}
   # The images of the cluster's components, which containerd pulls as written. The tags of the API
   # server, the controller-manager, the scheduler and kube-proxy follow the kubelet of the image the
   # flake builds, the Kubernetes release of its nixpkgs; the image's checker holds them to
@@ -24,3 +28,12 @@ spec:
     pause: registry.k8s.io/pause:3.10.2@sha256:f548e0e8e3dc1896ca956272154dde3314e8cc4fde0a57577ee9fa1c63f5baf4
     flannel: ghcr.io/flannel-io/flannel:v0.28.9@sha256:708a2c9c1cfbfe529d1dbb249cb7113af117f3ed26b5e3e4c8ee015e10555204
   # --8<-- [end:images]
+---
+# flannel would take the MTU of node0, the dummy interface that holds the node's address, which
+# says nothing of the fabric's. Its VXLAN devices and the pods get spec.mtu less 50 bytes, and
+# VXLAN over IPv6 takes 70, so spec.mtu is the fabric's 1500 less 20.
+apiVersion: kubernetes.chalkos.dev/v1alpha1
+kind: Flannel
+metadata: {name: default}
+spec:
+  mtu: 1480

@@ -8,8 +8,8 @@ description: "Declare a config kind in a NixOS module, so each node's YAML carri
 This page is for an image author whose service needs a value that differs from node to node. At
 the end the image declares a kind of its own, each node's YAML holds documents of that kind, and
 chalkctl refuses a misspelled field before anything reaches a node. The page builds the `Peer`
-kind of the homelab's BGP extension, `extensions/bgp.nix`, which holds the neighbours bird
-connects to.
+kind of the homelab's BGP extension, `extensions/bgp.nix`, which holds the neighbours bird runs
+sessions with, and its `Speaker` kind, of which a node holds one.
 
 ## Before you begin
 
@@ -36,21 +36,51 @@ The declaration sets five things:
 - `description` is a sentence that says what a document of the kind is for. The kind's schema
   carries it as its own `description`. A kind may leave it out.
 - `multiple = true` lets a node hold several `Peer` documents, each with a name of its own.
-  Without it, a node holds at most one document of the kind.
+  Without it, a node holds at most one document of the kind, as
+  [A kind can hold one document per node](#a-kind-can-hold-one-document-per-node) shows.
 - `spec` declares the document's fields as NixOS options, under the names the YAML uses.
 
-A field without a default is required. `password` has the default `null`, so a `Peer` may leave
-it out. A kind's name starts with a capital letter and holds letters and digits alone.
+A field without a default is required. `password` has the default `null` and `bfd` the default
+`true`, so a `Peer` may leave both out. A kind's name starts with a capital letter and holds
+letters and digits alone.
 
-`address` has the type `lib.chalkos.types.address`, which accepts an IPv4 or IPv6 address alone.
-A field whose value lands in a config file needs a type that accepts valid values alone. Without
-it, a value such as `10.0.0.2; import all` would add a statement of its own to `bird.conf`. With
-it, `chalkctl validate` refuses the document before it reaches a node.
+`address` has the type `lib.chalkos.types.address`, which accepts an IPv4 or IPv6 address alone,
+and a rule keeps it to IPv6. A field whose value lands in a config file needs a type that accepts
+valid values alone. Without it, a value such as `fdc8:a1b2:c3d4:1::1; import all` would add a
+statement of its own to `bird.conf`. With it, `chalkctl validate` refuses the document before it
+reaches a node. For the same reason, a `strMatching` pattern keeps each name of `interfaces` to
+the characters of an interface name.
 
-Put the module where the nodes that carry `Peer` documents get it. The homelab has one variant,
-so `extensions/default.nix`, which imports `bgp.nix`, sits in `variants.node.modules`. A module
-in `modules` reaches every variant. A node whose image lacks the kind refuses a config that holds
+Put the module where the nodes that carry `Peer` documents get it. The homelab's nodes run the
+variant `node`, so `extensions/default.nix`, which imports `bgp.nix`, sits in
+`variants.node.modules`, and the router's image takes no `Peer`. A module in `modules` reaches
+every variant. A node whose image lacks the kind refuses a config that holds
 a document of it.
+
+## A kind can hold one document per node
+
+bird needs the node's own AS number and router ID beside its neighbours. `extensions/bgp.nix`
+declares them in a second kind, `Speaker`, without `multiple`:
+
+```nix
+--8<-- "examples/homelab/extensions/bgp.nix:speaker"
+```
+
+A node holds one `Speaker` at most, and chalkctl refuses a second one. Its `export.interfaces`
+shows a nested field: an attribute set of options in `spec` becomes an object of the schema. The
+rule of `routerID` refuses `0.0.0.0`, which the pattern of an IPv4 address accepts. A `Speaker`
+differs from node to node, because each node needs a router ID of its own, so it sits in each
+node's file:
+
+```yaml title="nodes/node1.yaml"
+apiVersion: bgp.example.org/v1alpha1
+kind: Speaker
+metadata: {name: bgp}
+spec:
+  asn: 65001
+  routerID: 0.0.0.11
+  export: {interfaces: [node0]}
+```
 
 ## The build writes the kind's JSON Schema
 
@@ -64,7 +94,7 @@ and the `description` of `password` are left out:
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "Peer",
-  "description": "A BGP neighbour that the node's bird connects to.",
+  "description": "A BGP neighbour that the node's bird runs a session with on each of the given interfaces.",
   "type": "object",
   "properties": {
     "apiVersion": {"const": "bgp.example.org/v1alpha1"},
@@ -72,12 +102,20 @@ and the `description` of `password` are left out:
     "spec": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["address", "asn"],
+      "required": ["address", "asn", "interfaces"],
       "properties": {
         "address": {
           "type": "string",
           "format": "ip",
-          "description": "IPv4 or IPv6 address of the neighbour."
+          "description": "IPv6 address of the neighbour, on the subnet of the interfaces the sessions run on.",
+          "x-chalkos-rules": [
+            {
+              "rule": "ip(self).family() == \"ipv6\"",
+              "description": "A neighbour has an IPv6 address.",
+              "messageExpression": "self + \" is no IPv6 address; bird runs IPv6 sessions alone\"",
+              "takes": "refuse"
+            }
+          ]
         },
         "asn": {
           "type": "integer",
@@ -92,6 +130,13 @@ and the `description` of `password` are left out:
               "takes": "refuse"
             }
           ]
+        },
+        "interfaces": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"type": "string", "pattern": "^(?:[A-Za-z0-9_.-]{1,15})$"},
+          "description": "Interfaces on which bird runs a session with the neighbour, one each, bound to the interface.",
+          "x-chalkos-unique": [{"across": "list", "hint": "list each interface once"}]
         },
         "password": {
           "anyOf": [
@@ -115,6 +160,11 @@ and the `description` of `password` are left out:
             {"type": "null"}
           ],
           "default": null
+        },
+        "bfd": {
+          "type": "boolean",
+          "default": true,
+          "description": "Whether BFD watches each session, so that bird ends it within about a second of its link failing."
         }
       }
     }
@@ -129,6 +179,9 @@ Each part of the schema comes from the options:
 - `required` lists the fields without a default.
 - `lib.chalkos.types.address` becomes `format: ip`, which chalkctl and chalkd check.
 - `ints.between 1 4294967295` becomes `minimum` and `maximum`.
+- `nonEmptyListOf` becomes an `array` with `minItems: 1`, and `strMatching` a `pattern` anchored
+  at both ends.
+- `unique` becomes `x-chalkos-unique`, which chalkctl and chalkd check.
 - The kind's `description`, and its fields' `description`, `default` and `example`, carry
   over, the example as `examples`.
 - `x-chalkos-rules` holds the field's change rules, and `x-chalkos-kind` holds the kind's group,
@@ -156,48 +209,31 @@ the defaults.
 ## Each node's YAML holds documents of the kind
 
 A `Peer` document has the fields of every config document: `apiVersion`, `kind`, `metadata.name`
-and `spec`. Every homelab node peers with the same two routers, so the documents sit in a file
-every node gets:
+and `spec`. Every homelab node peers with the same router on the same two ports, so the `Peer`
+sits in a file that the inventory's group `nodes` gives every node:
 
-```yaml title="cluster/bgp.yaml"
-# The home lab's two routers, which every node peers with over BGP; router-a asks for a password.
-apiVersion: bgp.example.org/v1alpha1
-kind: Peer
-metadata: {name: router-a}
-spec:
-  address: 10.0.0.1
-  asn: 64513
-  password: {secretRef: {name: bgp, key: password}}
----
-apiVersion: bgp.example.org/v1alpha1
-kind: Peer
-metadata: {name: router-b}
-spec: {address: 10.0.0.2, asn: 64514}
----
-# An example value: put router-a's password here, and keep the file out of a public repository.
-apiVersion: chalkos.dev/v1alpha1
-kind: Secret
-metadata: {name: bgp}
-spec:
-  data: {password: example-password}
+```yaml title="bgp/fabric.yaml"
+--8<-- "examples/homelab/bgp/fabric.yaml"
 ```
 
-A node that needs other neighbours gets its `Peer` documents in its own file instead, and the
-shared file leaves them out. Documents never merge. The `password` field and the `Secret` are the
+A node that needs other neighbours gets its `Peer` documents in its own file instead, and leaves
+the shared file out. Documents never merge. The `password` field and the `Secret` are the
 subject of [Pass secrets to a service](pass-secrets.md).
 
 ## chalkctl validate refuses a misspelled field
 
 `chalkctl validate` checks each node's set against the schemas of the image the inventory gives
-it. It reaches no node and needs no secrets file. With `asn` misspelled as `asm` in `router-a`,
-it refuses both nodes:
+it. It reaches no node and needs no secrets file. With `asn` misspelled as `asm` in `router`,
+it refuses the three nodes:
 
 ```console
 $ chalkctl validate
-chalkctl: the config of 2 nodes is invalid:
-node cp1: Peer "router-a": - at '/spec': additional properties 'asm' not allowed
+chalkctl: the config of 3 nodes is invalid:
+node node1: Peer "router": - at '/spec': additional properties 'asm' not allowed
 - at '/spec': missing property 'asn'
-node w1: Peer "router-a": - at '/spec': additional properties 'asm' not allowed
+node node2: Peer "router": - at '/spec': additional properties 'asm' not allowed
+- at '/spec': missing property 'asn'
+node node3: Peer "router": - at '/spec': additional properties 'asm' not allowed
 - at '/spec': missing property 'asn'
 ```
 
@@ -250,10 +286,11 @@ submodule and the types of lib.chalkos.types.
 `lib.chalkos.mkOption` is `lib.mkOption` with three more arguments: `rules`, a list of change
 rules; `unique`, which [A field's values can be unique](#a-fields-values-can-be-unique)
 describes; and `maxItems`, the most items a list field holds, which the schema checks.
-`lib.mkOption` takes none of them. Use `lib.mkOption` for a field without rules, as `address`
-and `password` do, and `lib.chalkos.mkOption` for a field with them, as `asn` does. Both produce
-the same schema apart from `x-chalkos-rules`, `x-chalkos-unique` and `maxItems`. The build fails
-on a `maxItems` on a field that is no list, or one that is no positive integer.
+`lib.mkOption` takes none of them. Use `lib.mkOption` for a field without them, as `password`
+and `bfd` do, and `lib.chalkos.mkOption` for a field with them, as `address`, `asn` and
+`interfaces` do. Both produce the same schema apart from `x-chalkos-rules`, `x-chalkos-unique`
+and `maxItems`. The build fails on a `maxItems` on a field that is no list, or one that is no
+positive integer.
 
 A change rule is a CEL expression that every config the node accepts makes true. In the rule,
 `self` is the field's new value and `oldSelf` its value in the config the node runs. `asn`'s rule
@@ -443,16 +480,20 @@ two more kinds the same way:
 Build the image and validate the inventory:
 
 ```sh
+nix build .#router-metal -o images/router-metal
 nix build .#node-metal -o images/node-metal
 chalkctl validate
 ```
 
-`images/node-metal/schemas/` holds `bgp.example.org_v1alpha1_Peer.json`, and `chalkctl validate`
-prints a line per node:
+`images/node-metal/schemas/` holds `bgp.example.org_v1alpha1_Peer.json` and
+`bgp.example.org_v1alpha1_Speaker.json`, and `chalkctl validate` prints a line per node, the
+router among them:
 
 ```text
-cp1: valid for the image node-metal (node on metal, root hash d871203debfe), config 675850c48eaffe4a755dca41652dbf65a5b7959f1e70a3cdd2a94799136fd200
-w1: valid for the image node-metal (node on metal, root hash d871203debfe), config 82ec5bbabd10ec79bf76ad892a0bcd7627c9db2ed4c9e252ad0657313359254c
+node1: valid for the image node-metal (node on metal, root hash d871203debfe), config c2bef3c1242a847b16346d3e1f6de732a86832fa8294ce90e923bad30c85e6bf
+node2: valid for the image node-metal (node on metal, root hash d871203debfe), config afa765d5e8029dbe3aea1a589d2dafdf260de42fff21692656891ddde062d567
+node3: valid for the image node-metal (node on metal, root hash d871203debfe), config 719604db3fd2c0634df350fc6b7760bba57de0ec82ac3fb9a9b2dcf532cfdc43
+router: valid for the image router-metal (router on metal, root hash e9be19557973), config a8d132f3d5517185654d573c02c543497ab42d0068131d25bbfe8405d5761093
 ```
 
 `chalkctl validate` refuses a document of a kind the image does not declare. If it names `Peer`
@@ -462,7 +503,9 @@ tracks the new file.
 ## What next
 
 - [Read config in a service](read-config.md) gives a unit the `Peer` documents.
-- [Render config files](render-config.md) renders bird's config from the `Peer` documents.
-- [Validate config with a program](validate-config.md) refuses a `Peer` that bird cannot reach.
+- [Render config files](render-config.md) renders bird's config from the `Speaker` and `Peer`
+  documents.
+- [Validate config with a program](validate-config.md) refuses an interface the node does not
+  configure.
 - [Config and the inventory](../how-it-works/node/config.md) explains how the documents reach the
   nodes.

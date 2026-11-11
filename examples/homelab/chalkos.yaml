@@ -1,13 +1,23 @@
-# The cluster's nodes, the address chalkctl reaches each at, the image they run and their config
-# files: every node gets cluster/, each its own file in nodes/.
+# The home lab: a router on the home network and three Kubernetes nodes behind it. chalkctl
+# reaches the router at its address on the home network, and the nodes at their node addresses
+# through the router's WireGuard tunnel. The router's port wan takes its address from the home
+# router by DHCP: reserve the address for wan's MAC address there, so that it stays the one below.
+# The router image accepts neither the Kubernetes kinds nor bird's, so each group names its own
+# files and nothing goes to every node.
 apiVersion: chalkctl.chalkos.dev/v1alpha1
 kind: Inventory
 metadata: {name: homelab}
 spec:
   images:
-    # nix build .#node-metal -o images/node-metal puts the image here.
+    # nix build .#router-metal -o images/router-metal and nix build .#node-metal -o
+    # images/node-metal put the images here.
+    router-metal: {source: {directory: images/router-metal}}
     node-metal: {source: {directory: images/node-metal}}
-  all: {imageName: node-metal, files: [cluster/*.yaml]}
+  groups:
+    router: {imageName: router-metal, files: [router/*.yaml]}
+    nodes: {imageName: node-metal, files: [cluster/*.yaml, bgp/fabric.yaml, bgp/secrets.yaml]}
   nodes:
-    cp1: {address: 10.0.0.11, files: [nodes/cp1.yaml]}
-    w1: {address: 10.0.0.21, files: [nodes/w1.yaml]}
+    router: {address: 192.168.1.2, groups: [router]}
+    node1: {address: "fdc8:a1b2:c3d4:ff::11", groups: [nodes], files: [nodes/node1.yaml]}
+    node2: {address: "fdc8:a1b2:c3d4:ff::12", groups: [nodes], files: [nodes/node2.yaml]}
+    node3: {address: "fdc8:a1b2:c3d4:ff::13", groups: [nodes], files: [nodes/node3.yaml]}

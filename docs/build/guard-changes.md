@@ -35,18 +35,18 @@ in the document of the same name that the node runs. `self == oldSelf` holds whe
 the same. A rule that reads `oldSelf` runs only where the node's running config holds the field,
 so a new `Peer` takes any number.
 
-Say `cluster/bgp.yaml` changes `router-b`'s `asn` from 64514 to 64600. `chalkctl config apply cp1`
-fetches the node's config, prints what changed, runs the rule against the node's config, and
-stops before it sends anything:
+Say `bgp/fabric.yaml` changes the `asn` of the `Peer` `router` from 65000 to 65100.
+`chalkctl config apply node1` fetches the node's config, prints what changed, runs the rule
+against the node's config, and stops before it sends anything:
 
 ```console
-$ chalkctl config apply cp1
-cp1: config 0 added, 0 removed, 1 changed
-chalkctl: cp1: the config is refused: Peer/router-b: spec.asn: the AS number stays 64514; add a Peer of another name for 64600
+$ chalkctl config apply node1
+node1: config 0 added, 0 removed, 1 changed
+chalkctl: node1: the config is refused: Peer/router: spec.asn: the AS number stays 65000; add a Peer of another name for 65100
 ```
 
 The error names the node, then the refusal. A field rule's refusal starts with the kind and the
-document's name, then the field, as `Peer/router-b: spec.asn:`, the form a renderer's refusal takes
+document's name, then the field, as `Peer/router: spec.asn:`, the form a renderer's refusal takes
 too. The rest comes from `messageExpression`, which builds the message from the same variables as
 the rule.
 
@@ -93,13 +93,15 @@ chalkos.kinds.Peer.rules = [
 ];
 ```
 
-With a third `Peer` in `cluster/bgp.yaml`, `chalkctl validate` refuses both nodes:
+With two more `Peer` documents in `bgp/fabric.yaml`, `chalkctl validate` refuses the three nodes
+that get the file:
 
 ```console
 $ chalkctl validate
-chalkctl: the config of 2 nodes is invalid:
-node cp1: the config is refused: a node has two BGP neighbours at most
-node w1: the config is refused: a node has two BGP neighbours at most
+chalkctl: the config of 3 nodes is invalid:
+node node1: the config is refused: a node has two BGP neighbours at most
+node node2: the config is refused: a node has two BGP neighbours at most
+node node3: the config is refused: a node has two BGP neighbours at most
 ```
 
 A kind's message names nothing by itself, so it says which kind it is about.
@@ -158,7 +160,7 @@ config is the baseline also when the delivered config is for another image, as i
 | `oldSelf` | a field's or a spec's | The field's value, or the spec, in the running config's document of the same kind and name; for a kind a node holds once, its document whatever its name. |
 | `documents` | a kind's | The delivered documents of the kind, by name. |
 | `oldDocuments` | a kind's | The running config's documents of the kind, by name. |
-| `config` | every | The whole delivered config by apiVersion, kind and name: `config["bgp.example.org/v1alpha1"].Peer["router-a"]`. |
+| `config` | every | The whole delivered config by apiVersion, kind and name: `config["bgp.example.org/v1alpha1"].Peer["router"]`. |
 | `oldConfig` | every | The running config, in the same shape. |
 | `node.name` | every | The node's name in the inventory, which its node certificate carries. |
 | `facts.<name>` | every | The fact of that name. |
@@ -324,7 +326,7 @@ error.
 A refusal must not leak a secret or a fact's content that the rule only compared:
 
 - A rule that cannot be evaluated refuses the delivery with the kind of error alone, such as
-  `cannot check: Peer/router-a: spec.asn: a rule cannot be evaluated: no such key`. The kind is
+  `cannot check: Peer/router: spec.asn: a rule cannot be evaluated: no such key`. The kind is
   one of `no such key`, `index out of bounds`, `no such overload`, `unknown time zone`,
   `invalid input to a function`, `cost limit exceeded`, `overflow`, `division by zero` and
   `conversion error`. An error of chalkos's functions names the function, such as

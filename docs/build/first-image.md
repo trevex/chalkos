@@ -6,11 +6,11 @@ description: "Write a flake that builds a cluster's image with mkImages, into th
 # Your first image flake
 
 This page is for an image author who builds a cluster's images with Nix. At the end you have a
-flake that builds one unsigned image into `images/node-metal`, the directory the cluster's
-inventory names, and you know what the build writes there and what else `mkImages` returns. The
-page follows the
-[homelab example](https://github.com/trevex/chalkos/tree/main/examples/homelab): one image for
-bare metal, which every node of the cluster runs.
+flake that builds unsigned images into the directories the cluster's inventory names, such as
+`images/node-metal`, and you know what the build writes there and what else `mkImages` returns.
+The page follows the
+[homelab example](https://github.com/trevex/chalkos/tree/main/examples/homelab): two images for
+bare metal, one for its router and one that its three Kubernetes nodes run.
 
 ## Before you begin
 
@@ -23,7 +23,8 @@ needs that directory and no Nix.
 
 ## The flake calls mkImages
 
-The homelab's flake builds one image, with an extension that adds a config kind:
+The homelab's flake builds two images. The nodes' carries an extension that adds two config
+kinds:
 
 ```nix title="flake.nix"
 --8<-- "examples/homelab/flake.nix"
@@ -36,10 +37,12 @@ The call sets three arguments:
 - `revision` is the commit the image is built from. chalkctl shows it beside the image's root
   hash.
 - `platforms` names the kinds of machine to build for, here `metal` alone.
-- `variants.node.modules` adds the extension's NixOS modules to the one variant, `node`.
+- `variants` names two variants. `router` runs the router layer in place of Kubernetes, and
+  `node.modules` adds the extension's NixOS modules to the variant `node`.
 
-`mkImages` returns the image as `images.node-metal`, and the flake exposes it as the package
-`node-metal`. One image serves every node of its variant and platform. What differs between
+`mkImages` returns each image as `images.<variant>-<platform>`, such as `images.node-metal`, and
+the flake exposes them as packages of the same names, beside the installer. One image serves every
+node of its variant and platform. What differs between
 nodes, from their addresses to the cluster's endpoint, is their config: YAML documents that
 chalkctl delivers, which [Config and the inventory](../how-it-works/node/config.md) describes.
 
@@ -87,9 +90,10 @@ systemd-boot would order boot entries by it.
 
 ## Build the image
 
-Build the package and link the result where the inventory looks for it:
+Build each package and link the result where the inventory looks for it:
 
 ```console
+$ nix build .#router-metal -o images/router-metal
 $ nix build .#node-metal -o images/node-metal
 $ ls images/node-metal
 chalkos.raw
@@ -101,7 +105,8 @@ schemas
 ```
 
 `images/node-metal` is a link into `/nix/store`. The homelab's inventory names it as the image
-`node-metal` and gives it to every node:
+`node-metal` and gives it to the nodes of the group `nodes`, and gives `router-metal` to the
+router:
 
 ```yaml title="chalkos.yaml"
 apiVersion: chalkctl.chalkos.dev/v1alpha1
@@ -109,11 +114,16 @@ kind: Inventory
 metadata: {name: homelab}
 spec:
   images:
+    router-metal: {source: {directory: images/router-metal}}
     node-metal: {source: {directory: images/node-metal}}
-  all: {imageName: node-metal, files: [cluster/*.yaml]}
+  groups:
+    router: {imageName: router-metal, files: [router/*.yaml]}
+    nodes: {imageName: node-metal, files: [cluster/*.yaml, bgp/fabric.yaml, bgp/secrets.yaml]}
   nodes:
-    cp1: {address: 10.0.0.11, files: [nodes/cp1.yaml]}
-    w1: {address: 10.0.0.21, files: [nodes/w1.yaml]}
+    router: {address: 192.168.1.2, groups: [router]}
+    node1: {address: "fdc8:a1b2:c3d4:ff::11", groups: [nodes], files: [nodes/node1.yaml]}
+    node2: {address: "fdc8:a1b2:c3d4:ff::12", groups: [nodes], files: [nodes/node2.yaml]}
+    node3: {address: "fdc8:a1b2:c3d4:ff::13", groups: [nodes], files: [nodes/node3.yaml]}
 ```
 
 A relative directory is relative to the inventory's directory. The next build replaces the link,
@@ -151,8 +161,8 @@ KVM, `zstd` compresses the raw image for transport, and `dd` or a USB writer put
 
 ## mkImages returns four sets of outputs
 
-The homelab exposes one image, but `mkImages` returns four attribute sets. Each is built only when
-something asks for it:
+The homelab exposes two images and the installer, but `mkImages` returns four attribute sets.
+Each is built only when something asks for it:
 
 ```mermaid
 flowchart LR
@@ -178,8 +188,8 @@ The image directory is what the inventory names; the OCI layout goes to a regist
 - `nixos.<variant>-<platform>` and `nixos.installer` are the evaluated NixOS systems. They read an
   image's options, such as `nixos.node-metal.config.chalkos.kubernetes.package.version`.
 
-A flake exposes whichever it needs. The homelab's exposes `node-metal` alone. A flake that also
-builds the installer can expose every image directory and the installer:
+A flake exposes whichever it needs. The homelab's exposes its two image directories and the
+installer by name. A flake can also expose every image directory and the installer at once:
 
 ```nix
 packages.x86_64-linux = images.images // { inherit (images) installer; };
@@ -198,8 +208,10 @@ For the homelab it prints a line per node, with the image's root hash and the ha
 config:
 
 ```text
-cp1: valid for the image node-metal (node on metal, root hash d871203debfe), config 675850c48eaffe4a755dca41652dbf65a5b7959f1e70a3cdd2a94799136fd200
-w1: valid for the image node-metal (node on metal, root hash d871203debfe), config 82ec5bbabd10ec79bf76ad892a0bcd7627c9db2ed4c9e252ad0657313359254c
+node1: valid for the image node-metal (node on metal, root hash d871203debfe), config c2bef3c1242a847b16346d3e1f6de732a86832fa8294ce90e923bad30c85e6bf
+node2: valid for the image node-metal (node on metal, root hash d871203debfe), config afa765d5e8029dbe3aea1a589d2dafdf260de42fff21692656891ddde062d567
+node3: valid for the image node-metal (node on metal, root hash d871203debfe), config 719604db3fd2c0634df350fc6b7760bba57de0ec82ac3fb9a9b2dcf532cfdc43
+router: valid for the image router-metal (router on metal, root hash e9be19557973), config a8d132f3d5517185654d573c02c543497ab42d0068131d25bbfe8405d5761093
 ```
 
 A document of a kind the image does not declare, or a misspelled field, fails here. The image is

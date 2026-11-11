@@ -54,10 +54,10 @@ config. chalkctl never reads it from the node's `Network` documents. A node that
 DHCP address and then gets a static one names the static one here. `--address` overrides it for
 one command.
 
-Here is `cp1`'s own file, `nodes/cp1.yaml`:
+Here is `node1`'s own file, `nodes/node1.yaml`:
 
-```yaml title="nodes/cp1.yaml"
---8<-- "examples/homelab/nodes/cp1.yaml"
+```yaml title="nodes/node1.yaml"
+--8<-- "examples/homelab/nodes/node1.yaml"
 ```
 
 Each document has an `apiVersion` with its group and version, a `kind`, a `metadata.name` and a

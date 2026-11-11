@@ -1,0 +1,78 @@
+# node1: a control plane whose two ports are both on the fabric's switch. Its address sits on the
+# dummy interface node0, and bird announces it over a session on each port, so the address stays
+# reachable while one port or cable works.
+#
+# The two Link documents name the ports by their permanent MAC addresses, which a VLAN or a bond
+# on a port does not take, so bgp/fabric.yaml names fabric0 and fabric1 on every node. Replace the
+# addresses with those of the node's ports. A rename of a running node's port changes every
+# document that names the port in the same delivery, best with chalkctl config apply --try.
+apiVersion: networkd.chalkos.dev/v1alpha1
+kind: Link
+metadata: {name: 10-fabric0}
+spec:
+  match: {permanentMACAddress: "02:00:00:00:11:01"}
+  link: {name: fabric0}
+---
+apiVersion: networkd.chalkos.dev/v1alpha1
+kind: Link
+metadata: {name: 10-fabric1}
+spec:
+  match: {permanentMACAddress: "02:00:00:00:11:02"}
+  link: {name: fabric1}
+---
+# Replace the disk with the node's own, by its path below /dev/disk/by-id.
+apiVersion: storage.chalkos.dev/v1alpha1
+kind: SystemDisk
+metadata: {name: system}
+spec:
+  disk: {path: /dev/disk/by-id/nvme-EXAMPLE_SSD_node1}
+---
+# Each port takes an address of the fabric's prefix, the default route, the resolver and the
+# NAT64 prefix from the router's advertisements.
+apiVersion: networkd.chalkos.dev/v1alpha1
+kind: Network
+metadata: {name: 20-fabric0}
+spec:
+  match: {name: fabric0}
+  network: {ipv6AcceptRA: true}
+---
+apiVersion: networkd.chalkos.dev/v1alpha1
+kind: Network
+metadata: {name: 20-fabric1}
+spec:
+  match: {name: fabric1}
+  network: {ipv6AcceptRA: true}
+---
+# node0 holds the node's address, and the API's VIP while the node holds it. chalkd adds the VIP
+# with a preferred lifetime of 0, which networkd counts as a dynamic address, so keepConfiguration
+# yes has networkd keep every address it did not configure itself when it configures the link again.
+apiVersion: networkd.chalkos.dev/v1alpha1
+kind: NetDev
+metadata: {name: 30-node0}
+spec:
+  netDev: {name: node0, kind: dummy}
+---
+apiVersion: networkd.chalkos.dev/v1alpha1
+kind: Network
+metadata: {name: 30-node0}
+spec:
+  match: {name: node0}
+  network: {address: ["fdc8:a1b2:c3d4:ff::11/128"], keepConfiguration: "yes"}
+---
+apiVersion: kubernetes.chalkos.dev/v1alpha1
+kind: Node
+metadata: {name: default}
+spec:
+  type: controlplane
+  nodeIP: {addresses: ["fdc8:a1b2:c3d4:ff::11"]}
+  vip: {interface: node0}
+---
+# The node's side of its BGP sessions. The nodes share an AS number, and each has a router ID of
+# its own.
+apiVersion: bgp.example.org/v1alpha1
+kind: Speaker
+metadata: {name: bgp}
+spec:
+  asn: 65001
+  routerID: 0.0.0.11
+  export: {interfaces: [node0]}

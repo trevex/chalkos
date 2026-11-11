@@ -260,7 +260,7 @@ in
   # effect on a unit the image lacks, a diagnostic whose regex does not compile and an output whose
   # check refuses an example fail the check of their image. The extensions example's Hardware
   # output renders hardware-examples/server.yaml, and the homelab's bird-conf output renders
-  # bgp-examples/two-peers.yaml, which bird -p parses. A router image checks its rules, renders its
+  # bgp-examples/fabric.yaml, which bird -p parses. A router image checks its rules, renders its
   # router examples and holds the modules of its firewall and Jool, its firewall check refuses what
   # the kernel would, its FRR check what vtysh would, its Jool check what jool would and its
   # Unbound check what unbound-checkconf would. A router image without BGP, NAT64, the resolver,

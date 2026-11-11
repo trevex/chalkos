@@ -542,7 +542,7 @@ A refusal ends `chalkctl install` with the image's message, such as that of the 
 validator `bgp-peers` from [Validate config with a program](../build/validate-config.md):
 
 ```text
-chalkctl: install cp1: failed_precondition: install: the config is refused: Peer/router-c: spec.address: 10.0.1.1 lies on no subnet of the node's addresses, 10.0.0.11/24; bird reaches a neighbour on a link of its own alone; the target disk boots nothing, and an install of the image continues on it
+chalkctl: install node1: failed_precondition: install: the config is refused: Peer/router: spec.interfaces[2]: fabric2 has no Network document; bird binds the session to an interface the node configures; the target disk boots nothing, and an install of the image continues on it
 ```
 
 The machine stays in maintenance mode. Fix the config and run `chalkctl install cp1` again: the

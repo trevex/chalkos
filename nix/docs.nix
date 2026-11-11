@@ -16,6 +16,8 @@ let
     "chalkos.yaml"
     "nodes"
     "cluster"
+    "router"
+    "bgp"
   ];
   # The extensions example's files the pages include as snippets.
   extensionsSnippets = [ "rack.nix" ];

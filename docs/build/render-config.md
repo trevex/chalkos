@@ -9,7 +9,7 @@ This page is for an image author whose service reads a config file of its own fo
 an output renders that file from the node's documents, the service's own validator checks it, and
 a document that would break the service is refused before it reaches the node. The page continues
 the homelab's BGP extension, `extensions/bgp.nix`: bird reads `bird.conf`, rendered from the
-`Peer` documents.
+`Speaker` and `Peer` documents.
 
 An output is a directory of files that a program of the image renders from documents. chalkd
 renders and checks every output before a delivery changes anything. When a render or a check
@@ -49,7 +49,7 @@ On a delivery, the files pass through these steps before bird reads them:
 
 ```mermaid
 flowchart LR
-    docs["Peer documents"] -->|input JSON| render["Renderer in the sandbox"]
+    docs["Speaker and Peer documents"] -->|input JSON| render["Renderer in the sandbox"]
     render -->|staged files| check["check"]
     check -->|passes| swap["dir link swapped"]
     check -->|fails| refuse["delivery refused"]
@@ -64,8 +64,8 @@ after it. A refused render changes nothing the service reads.
 ## The renderer reads one JSON object
 
 Every renderer reads the same input on standard input: the node's name and the documents of each
-input kind. For the homelab's two `Peer` documents on `cp1`, `bird-conf`'s renderer reads this
-object, indented here:
+input kind. For the homelab's `Speaker` and `Peer` on `node1`, `bird-conf`'s renderer reads
+this object, indented here:
 
 ```json
 {
@@ -74,25 +74,33 @@ object, indented here:
       {
         "apiVersion": "bgp.example.org/v1alpha1",
         "kind": "Peer",
-        "metadata": {"name": "router-a"},
-        "spec": {"address": "10.0.0.1", "asn": 64513, "password": {"secretRef": {"key": "password", "name": "bgp"}}}
-      },
+        "metadata": {"name": "router"},
+        "spec": {
+          "address": "fdc8:a1b2:c3d4:1::1",
+          "asn": 65000,
+          "bfd": true,
+          "interfaces": ["fabric0", "fabric1"],
+          "password": {"secretRef": {"key": "password", "name": "bgp"}}
+        }
+      }
+    ],
+    "Speaker": [
       {
         "apiVersion": "bgp.example.org/v1alpha1",
-        "kind": "Peer",
-        "metadata": {"name": "router-b"},
-        "spec": {"address": "10.0.0.2", "asn": 64514, "password": null}
+        "kind": "Speaker",
+        "metadata": {"name": "bgp"},
+        "spec": {"asn": 65001, "export": {"interfaces": ["node0"]}, "routerID": "0.0.0.11"}
       }
     ]
   },
-  "node": {"name": "cp1"}
+  "node": {"name": "node1"}
 }
 ```
 
 - `documents` holds one list per kind of `inputs`, empty when the node holds no document of the
   kind. Each list is sorted by the documents' names.
-- The documents carry their schema defaults, so `router-b` has `password: null` although its
-  YAML leaves the field out.
+- The documents carry their schema defaults, so `router` has `bfd: true` although its YAML
+  leaves the field out.
 - A `secretRef` field holds the reference alone. A renderer never sees a `Secret`'s value, as
   [Pass secrets to a service](pass-secrets.md) explains.
 - `node.name` is the node's name in the inventory, which its node certificate carries.
@@ -111,32 +119,74 @@ less `.tmpl`. `bird.conf.tmpl` becomes `bird.conf`:
 From the input above, the template renders this file:
 
 ```text title="bird.conf"
-# bird's config for cp1, rendered by chalkos from its Peer documents.
-router id from "*";
+# bird's config for node1, rendered by chalkos from its Speaker and Peer documents.
+router id 0.0.0.11;
 
 protocol device {
 }
 
-protocol bgp 'router-a' {
-  local as 64512;
-  neighbor 10.0.0.1 as 64513;
+# The addresses of the Speaker's interfaces, which every session announces.
+protocol direct node_addresses {
+  ipv6;
+  interface "node0";
+}
+
+# The default route the peers send, installed into the kernel with a next hop per session.
+protocol kernel {
+  ipv6 {
+    import none;
+    export where source = RTS_BGP;
+  };
+  merge paths on;
+}
+
+protocol bfd {
+}
+
+protocol bgp 'router_fabric0' {
+  local as 65001;
+  neighbor fdc8:a1b2:c3d4:1::1 as 65000;
+  interface "fabric0";
+  direct;
+  connect retry time 5;
+  bfd on;
   authentication md5;
   password 'secret_bgp.password';
-  ipv4 {
-    import all;
-    export none;
+  ipv6 {
+    # The router sends a link-local next hop beside its global one. bird would resolve the global
+    # one through the first port on the fabric's prefix for every session; the link-local one
+    # keeps each session's routes on its own port.
+    next hop prefer local;
+    import where net = ::/0;
+    export where proto = "node_addresses";
   };
 }
 
-protocol bgp 'router-b' {
-  local as 64512;
-  neighbor 10.0.0.2 as 64514;
-  ipv4 {
-    import all;
-    export none;
+protocol bgp 'router_fabric1' {
+  local as 65001;
+  neighbor fdc8:a1b2:c3d4:1::1 as 65000;
+  interface "fabric1";
+  direct;
+  connect retry time 5;
+  bfd on;
+  authentication md5;
+  password 'secret_bgp.password';
+  ipv6 {
+    # The router sends a link-local next hop beside its global one. bird would resolve the global
+    # one through the first port on the fabric's prefix for every session; the link-local one
+    # keeps each session's routes on its own port.
+    next hop prefer local;
+    import where net = ::/0;
+    export where proto = "node_addresses";
   };
 }
 ```
+
+The `Speaker` gives the router ID, the AS number of every session and the interfaces of
+`node_addresses`, whose addresses each session announces. Each `Peer` gets a session per
+interface, named after the `Peer` and the interface and bound to that interface. A session takes
+the default route alone from the neighbour, and `merge paths` installs it with a next hop per
+session, so the node keeps it while one port works.
 
 The template reads the input as `.node.name` and `.documents.<Kind>`. Besides Go's own functions
 it has five more:
@@ -150,8 +200,8 @@ it has five more:
 | `refuse <kind> <name> <path> <message>` | Stops the render and refuses the config, as [A renderer refuses a config](#a-renderer-refuses-a-config) shows. |
 
 A key that a document lacks, or that holds null, prints as nothing, so `{{ .spec.password }}`
-prints nothing for `router-b`. A key below a missing one, such as `.spec.missing.name`, fails the
-render.
+prints nothing for a `Peer` without a password. A key below a missing one, such as
+`.spec.missing.name`, fails the render.
 
 ## A jq program renders one file
 
@@ -171,19 +221,14 @@ chalkos.outputs.peers-json = {
 };
 ```
 
-For the homelab's two peers, the output's `dir` then holds `peers.json`:
+For the homelab's `Peer`, the output's `dir` then holds `peers.json`:
 
 ```json title="peers.json"
 [
   {
-    "name": "router-a",
-    "address": "10.0.0.1",
-    "asn": 64513
-  },
-  {
-    "name": "router-b",
-    "address": "10.0.0.2",
-    "asn": 64514
+    "name": "router",
+    "address": "fdc8:a1b2:c3d4:1::1",
+    "asn": 65000
   }
 ]
 ```
@@ -222,10 +267,8 @@ chalkos.outputs.peers-yaml = {
 ```
 
 ```yaml title="peers.yaml"
-- name: router-a
-  address: 10.0.0.1
-- name: router-b
-  address: 10.0.0.2
+- name: router
+  address: fdc8:a1b2:c3d4:1::1
 ```
 
 The program may write any number of files and directories into `$OUT`, but no links. Its
@@ -239,7 +282,7 @@ such as what several documents mean together. It refuses a config by printing a 
 refusals on standard output, one JSON object:
 
 ```json
-{"refusals": [{"kind": "Peer", "name": "router-c", "path": "spec.asn", "message": "the AS number is the router's own, 64512; give the peer's"}]}
+{"refusals": [{"kind": "Peer", "name": "router", "path": "metadata.name", "message": "a node with Peer documents needs a Speaker document, which gives bird its AS number and router ID"}]}
 ```
 
 - `kind` and `name` name the document. `name` takes the form of a document name.
@@ -253,7 +296,7 @@ report, `{"refusals": []}`, or no output refuses nothing. chalkd reports each re
 outputs print once:
 
 ```text
-the config is refused: Peer/router-c: spec.asn: the AS number is the router's own, 64512; give the peer's
+the config is refused: Peer/router: metadata.name: a node with Peer documents needs a Speaker document, which gives bird its AS number and router ID
 ```
 
 A report that does not take this form fails the render as the renderer's own error, as does more
@@ -261,12 +304,17 @@ than 64 KiB of output. When the renderer also exits with a status other than 0, 
 that status, as it does for any renderer that fails. A refusal can quote any value of the
 documents. It cannot carry a secret's value, because the renderer never reads one.
 
-A template refuses with `refuse`. This line of `bird.conf.tmpl` would refuse a peer of the
-router's own AS number:
+A template refuses with `refuse`. These lines of `bird.conf.tmpl` refuse `Peer` documents on a
+node without a `Speaker`, whose AS number every session needs:
 
 ```text
-{{ if eq (print .spec.asn) "64512" }}{{ refuse "Peer" .metadata.name "spec.asn" "the AS number is the router's own, 64512; give the peer's" }}{{ end }}
+{{- if and .documents.Peer (not .documents.Speaker) }}
+{{- refuse "Peer" (index .documents.Peer 0).metadata.name "metadata.name" "a node with Peer documents needs a Speaker document, which gives bird its AS number and router ID" }}
+{{- end }}
 ```
+
+The validator `bgp-peers` of [Validate config with a program](validate-config.md) refuses the
+same config, before any renderer runs.
 
 A program that `render` names prints the report itself, and a script made by
 `pkgs.writeShellScript` can print it with `echo` or `jq`. A jq renderer cannot refuse: what the
@@ -316,9 +364,9 @@ An output without `check` has its files served as the renderer wrote them.
 against the image's schemas. The image build renders and checks the output from each file, as the
 node `example`, and fails when one fails. A template that does not render, or renders a file the
 check refuses, then fails the build before any node gets it. `bgp.nix` has one example,
-`bgp-examples/two-peers.yaml`, with both peers, the `Secret` that `router-a` names and the node's
-uplink `Network`, which the validator of
-[Validate config with a program](validate-config.md) reads.
+`bgp-examples/fabric.yaml`, with a node's `Speaker`, the `Peer` of the router, the `Secret` that
+the `Peer` names and the `Network` documents of the node's ports and of `node0`, which the
+validator of [Validate config with a program](validate-config.md) reads.
 
 Cover the documents that change what the renderer writes: no documents, one, several, and each
 optional field set and unset. At build time the renderer and the check run outside the sandbox,
@@ -376,11 +424,11 @@ read. Each program runs as a transient unit, `chalkos-render-<n>.service`. Its j
 program's standard error, and the journal of `chalkd.service` names the unit beside the failure:
 
 ```sh
-chalkctl logs cp1 --unit=chalkd.service
-chalkctl logs cp1 --unit=chalkos-render-<n>.service
+chalkctl logs node1 --unit=chalkd.service
+chalkctl logs node1 --unit=chalkos-render-<n>.service
 ```
 
-`chalkctl status cp1` lists each output with three columns. `OUTPUT` is its name. `HASH` is the
+`chalkctl status node1` lists each output with three columns. `OUTPUT` is its name. `HASH` is the
 start of the hash of the files the node serves, `none` while it serves none. `STATE` is
 `rendered`, `failed:` with the last failure, or `not rendered yet`. A refused delivery leaves the
 hash of the files the node still serves.
@@ -416,6 +464,7 @@ renderer that writes without end fills that tmpfs and not `/run`.
 - [React to changes](react-to-changes.md) reloads bird when `bird.conf` changes.
 - [Guard changes with rules and facts](guard-changes.md) refuses a `Peer` change before any
   render.
-- [Validate config with a program](validate-config.md) refuses a `Peer` that bird cannot reach.
+- [Validate config with a program](validate-config.md) refuses an interface the node does not
+  configure.
 - [The config pipeline](../how-it-works/node/config-pipeline.md) shows where rendering sits in a
   delivery, at boot and after an upgrade.

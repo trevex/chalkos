@@ -61,13 +61,13 @@ rendered file, and needs the grant only to receive the `Peer` passwords:
 chalkd writes each of the node's documents to `/run/chalkos/config/<group>/<Kind>/<name>.json`,
 after the schemas' defaults are filled in. `config.chalkos.kinds.Peer.dir` names the kind's
 directory, `/run/chalkos/config/bgp.example.org/Peer`, so a module never spells the path. For the
-homelab's `router-b`, the file holds one line of JSON with sorted keys:
+homelab's `router`, the file holds one line of JSON with sorted keys:
 
-```json title="/run/chalkos/config/bgp.example.org/Peer/router-b.json"
-{"apiVersion":"bgp.example.org/v1alpha1","kind":"Peer","metadata":{"name":"router-b"},"spec":{"address":"10.0.0.2","asn":64514,"password":null}}
+```json title="/run/chalkos/config/bgp.example.org/Peer/router.json"
+{"apiVersion":"bgp.example.org/v1alpha1","kind":"Peer","metadata":{"name":"router"},"spec":{"address":"fdc8:a1b2:c3d4:1::1","asn":65000,"bfd":true,"interfaces":["fabric0","fabric1"],"password":{"secretRef":{"key":"password","name":"bgp"}}}}
 ```
 
-`password` is `null` although the YAML leaves it out, because the field's default is `null`. Any
+`bfd` is `true` although the YAML leaves it out, because the field's default is `true`. Any
 JSON tool reads the files.
 
 chalkd writes the files at boot, from `chalkos-config.service`, which runs before
@@ -87,10 +87,11 @@ documents. The unit above calls it with `path = "spec.address"`, which evaluates
 /nix/store/…-chalkcfg-0.1.0/bin/chalkcfg get Peer -o 'jsonpath={.spec.address}'
 ```
 
-On a homelab node it prints `10.0.0.1` and `10.0.0.2`, one line per document in name order.
+On a homelab node it prints `fdc8:a1b2:c3d4:1::1`, the address of its one `Peer`. A node with
+several prints one line per document, in name order.
 `get` takes three arguments, each optional:
 
-- `name` picks one document, such as `name = "router-a"`.
+- `name` picks one document, such as `name = "router"`.
 - `path` prints one field. Fields are separated by dots. `*` or an index selects the elements of
   a list, and a key or `*` the values of an attribute set.
 - `output` asks for `json`, `yaml`, `jsonpath=<expression>` or `go-template=<template>` in place
@@ -100,7 +101,7 @@ The evaluation checks `path` against the kind's options. A misspelled field fail
 build instead of printing nothing on the node, and the message lists the fields at that point:
 
 ```text
-error: chalkos.kinds.Peer.get: the path "spec.asm" does not follow the kind's options: spec has no field asm; its fields are address, asn, password
+error: chalkos.kinds.Peer.get: the path "spec.asm" does not follow the kind's options: spec has no field asm; its fields are address, asn, bfd, interfaces, password
 ```
 
 The check covers the options, not the documents a node holds. On the node the command behaves as
@@ -145,8 +146,8 @@ value of a `Secret` one of them references changes.
 
 Most daemons read a config file of their own format and know nothing of JSON documents. An output
 renders such a file from the documents, and chalkd checks it before a delivery changes anything.
-bird's `bird.conf` is an output of `bgp.nix`, rendered from the `Peer` documents through a
-template. The extensions example's `hardware.nix` renders its `Hardware` documents into an
+bird's `bird.conf` is an output of `bgp.nix`, rendered from the `Speaker` and `Peer` documents
+through a template. The extensions example's `hardware.nix` renders its `Hardware` documents into an
 environment file that its unit reads with `EnvironmentFile=`.
 
 A unit that reads only its rendered output needs no grant, unless the output names a secret. A
@@ -160,16 +161,17 @@ names the option. Roll the image out with [Upgrade nodes](../operate/upgrade.md)
 then read the unit's journal:
 
 ```sh
-chalkctl logs cp1 --unit=bgp-peers.service
+chalkctl logs node1 --unit=bgp-peers.service
 ```
 
-It shows a line `peer 10.0.0.1` and a line `peer 10.0.0.2`. A unit that logs nothing found no
+It shows a line `peer fdc8:a1b2:c3d4:1::1`. A unit that logs nothing found no
 `Peer` documents on the node: check that the node's files hold them with `chalkctl validate`.
 
 ## What next
 
-- [Render config files](render-config.md) renders `bird.conf` from the `Peer` documents.
-- [Pass secrets to a service](pass-secrets.md) gives bird the password `router-a` names.
+- [Render config files](render-config.md) renders `bird.conf` from the `Speaker` and `Peer`
+  documents.
+- [Pass secrets to a service](pass-secrets.md) gives bird the password the `Peer` names.
 - [Declare a config kind](declare-a-kind.md) adds fields to the kind.
 - [Config and the inventory](../how-it-works/node/config.md) explains how the documents reach the
   node.

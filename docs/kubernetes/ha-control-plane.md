@@ -141,9 +141,12 @@ kind: Network
 metadata: {name: 10-node0}
 spec:
   match: {name: node0}
+  network: {keepConfiguration: "yes"}
 ```
 
-The rest of the file stays as above. `chalkctl validate` refuses a control plane without
+`keepConfiguration: "yes"` keeps the VIP when networkd configures `node0` again: chalkd adds an
+IPv6 VIP with a preferred lifetime of 0, which networkd would otherwise remove as a dynamic address
+it did not configure. The rest of the file stays as above. `chalkctl validate` refuses a control plane without
 `vip.interface` in a cluster with a routed VIP. A worker needs none.
 
 Configure the routing daemon to announce the addresses of `node0`. The VIP's route then follows the

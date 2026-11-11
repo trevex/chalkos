@@ -6,8 +6,8 @@ description: "Declare a read-only command that operators run on a node with chal
 # Add a diagnostic
 
 This page is for an image author whose service has state an operator needs to see on a node,
-such as bird's BGP sessions. At the end, `chalkctl node diag w1 bird-protocols` prints them. The
-page continues the homelab's BGP extension.
+such as bird's BGP sessions. At the end, `chalkctl node diag node1 bird-protocols` prints them.
+The page continues the homelab's BGP extension.
 
 A diagnostic is a read-only command of the image that chalkd runs on a node for a client of the
 node API. Nodes have no logins. On a node without Kubernetes no pod can debug the host either,
@@ -36,10 +36,10 @@ because it only reads bird's state. A diagnostic without a `role` needs an opera
 ## The command is a list of arguments
 
 `command` is the command line as a list, and no shell reads it. Its first argument is a program
-of the image's store: `"${bird}/bin/birdc"`, never `birdc`. A placeholder such as `{peer}` is
-replaced by the parameter's value inside its own argument alone. `"'{peer}'"` becomes
-`'router-a'`, one argument, whatever the value holds. The quotes are for bird, which needs them
-around a protocol name with a hyphen.
+of the image's store: `"${bird}/bin/birdc"`, never `birdc`. A placeholder such as `{protocol}`
+is replaced by the parameter's value inside its own argument alone. `"'{protocol}'"` becomes
+`'router_fabric0'`, one argument, whatever the value holds. The quotes are for bird, which needs
+them around a protocol name with a hyphen, such as that of a `Peer` named `spare-router`.
 
 `birdc -r` asks bird in its restricted mode, which takes only commands that read. Run a program
 in such a mode when it has one.
@@ -61,11 +61,11 @@ and passes the command the value's canonical form:
 
 `regex` is in Go's RE2 syntax and runs from `^` to `$`. Whatever the type, chalkd refuses a
 value that starts with `-`, which a program would read as an option, and a value that holds a
-control character. The regex of `peer` takes the names a Peer document has, so no value closes
-bird's quotes.
+control character. The regex of `protocol` takes the names `bird.conf` gives the sessions, a
+`Peer`'s name and an interface's joined by `_`, so no value closes bird's quotes.
 
 A call gives every parameter that has neither `optional` nor a `default`. When a call leaves out
-an optional parameter, chalkd drops every argument that names it. Without `peer`, the command is
+an optional parameter, chalkd drops every argument that names it. Without `protocol`, the command is
 `birdc -r show protocols`, and bird shows every protocol. A `default` fills the arguments
 instead, as `count`'s default of `4` does for the base diagnostic `ping`. A parameter has one or
 the other.
@@ -122,7 +122,7 @@ The image fails to build when chalkd could not run the declaration:
   compile or does not run from `^` to `$`.
 
 The message names the diagnostic or its option, such as
-`chalkos.diagnostics.bird-protocols: the command or networkNamespace names {protocol}, which is no parameter`.
+`chalkos.diagnostics.bird-protocols: the command or networkNamespace names {session}, which is no parameter`.
 
 ## Check that it worked
 
@@ -131,8 +131,8 @@ Build the image and upgrade a node to it, as
 diagnostic, and running it prints bird's protocols:
 
 ```sh
-chalkctl node diag w1
-chalkctl node diag w1 bird-protocols peer=router-a
+chalkctl node diag node1
+chalkctl node diag node1 bird-protocols protocol=router_fabric0
 ```
 
 `not_found: the image declares no diagnostic "bird-protocols"; chalkctl node diag lists those it does`

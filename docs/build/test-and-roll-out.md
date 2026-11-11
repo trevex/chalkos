@@ -40,7 +40,7 @@ The build fails before any node gets the image when one of these checks fails:
   only facts that a module declares.
 - Every effect acts on units and outputs that the image defines.
 - Every output renders each of its `examples` and passes its `check`. `bird-conf` renders
-  `bgp-examples/two-peers.yaml`, and `bird -p` parses the result.
+  `bgp-examples/fabric.yaml`, and `bird -p` parses the result.
 - The store, its hash tree and the UKIs fit their partitions with room to spare, as
   [Add software, drivers and kernel modules](add-software.md#keep-the-image-within-its-slot)
   describes.
@@ -56,8 +56,10 @@ names for it. It also runs the image's rules that read no facts, and reaches no 
 
 ```console
 $ chalkctl validate
-cp1: valid for the image node-metal (node on metal, root hash d871203debfe), config 675850c48eaffe4a755dca41652dbf65a5b7959f1e70a3cdd2a94799136fd200
-w1: valid for the image node-metal (node on metal, root hash d871203debfe), config 82ec5bbabd10ec79bf76ad892a0bcd7627c9db2ed4c9e252ad0657313359254c
+node1: valid for the image node-metal (node on metal, root hash d871203debfe), config c2bef3c1242a847b16346d3e1f6de732a86832fa8294ce90e923bad30c85e6bf
+node2: valid for the image node-metal (node on metal, root hash d871203debfe), config afa765d5e8029dbe3aea1a589d2dafdf260de42fff21692656891ddde062d567
+node3: valid for the image node-metal (node on metal, root hash d871203debfe), config 719604db3fd2c0634df350fc6b7760bba57de0ec82ac3fb9a9b2dcf532cfdc43
+router: valid for the image router-metal (router on metal, root hash e9be19557973), config a8d132f3d5517185654d573c02c543497ab42d0068131d25bbfe8405d5761093
 ```
 
 Each line names the image, its variant and platform, the start of its root hash, and the hash of
@@ -66,9 +68,10 @@ every node that gets the file:
 
 ```console
 $ chalkctl validate
-chalkctl: the config of 2 nodes is invalid:
-node cp1: Peer "router-b": - at '/spec/asn': minimum: got 0, want 1
-node w1: Peer "router-b": - at '/spec/asn': minimum: got 0, want 1
+chalkctl: the config of 3 nodes is invalid:
+node node1: Peer "router": - at '/spec/asn': minimum: got 0, want 1
+node node2: Peer "router": - at '/spec/asn': minimum: got 0, want 1
+node node3: Peer "router": - at '/spec/asn': minimum: got 0, want 1
 ```
 
 Rules that compare with the config a node runs, such as the `Peer` rule that keeps `asn`, and
@@ -87,7 +90,7 @@ Nodes that run the image already are skipped. Each other node gets its config wi
 documents of the files the inventory gives it, checked against the new image before any node gets
 the image. The node checks them again and keeps them for that image, so a fallback boots the image
 before with its own config. Before it sends a node anything, chalkctl prints a line of what the
-node's config changes, such as `cp1: config unchanged`.
+node's config changes, such as `node1: config unchanged`.
 
 The node has the new image check its config before it installs it, with that image's own
 renderers and their checks. A config one of them refuses refuses the upgrade of that node, and
@@ -103,14 +106,14 @@ delivery changes in the documents. `--dry-run` has the node check the delivery, 
 and their checks included, and print the effects it would take. Neither changes anything:
 
 ```sh
-chalkctl config apply cp1 --secrets=secrets.age --diff
-chalkctl config apply cp1 --secrets=secrets.age --dry-run
-chalkctl config apply cp1 --secrets=secrets.age
+chalkctl config apply node1 --secrets=secrets.age --diff
+chalkctl config apply node1 --secrets=secrets.age --dry-run
+chalkctl config apply node1 --secrets=secrets.age
 ```
 
 The node renders and checks every output before it changes anything, so a document that gives
 bird a config `bird -p` rejects refuses the whole delivery. chalkctl prints each unit the effects
-restarted, as `restarted <unit>`, and then the config the node runs, as `cp1 runs config <hash>`.
+restarted, as `restarted <unit>`, and then the config the node runs, as `node1 runs config <hash>`.
 Reloaded units are not listed.
 
 After an upgrade with `--until stage` or `--until activate`, the image in the node's inactive slot
@@ -129,7 +132,7 @@ upgrade without the secrets file.
 lists each output the node serves:
 
 ```sh
-chalkctl status cp1
+chalkctl status node1
 ```
 
 The outputs form a table with three columns:
@@ -147,15 +150,15 @@ as `failed unit <unit>`.
 `chalkctl logs` prints a node's journal of the current boot, for one unit with `--unit`:
 
 ```sh
-chalkctl logs cp1 --unit=bird.service
+chalkctl logs node1 --unit=bird.service
 ```
 
 A render or a check runs as a transient unit, `chalkos-render-<n>.service`, which keeps the
 program's standard error. The journal of `chalkd.service` names that unit beside the failure:
 
 ```sh
-chalkctl logs cp1 --unit=chalkd.service
-chalkctl logs cp1 --unit=chalkos-render-<n>.service
+chalkctl logs node1 --unit=chalkd.service
+chalkctl logs node1 --unit=chalkos-render-<n>.service
 ```
 
 `--follow` keeps printing new entries until you interrupt it.

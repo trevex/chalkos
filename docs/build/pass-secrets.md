@@ -20,9 +20,10 @@ output from [Render config files](render-config.md) and its effect from
 
 ## A Secret document holds the value
 
-The operator writes the value into a `Secret` document, beside the documents that use it:
+The operator writes the value into a `Secret` document. The homelab keeps it in a file of its own,
+so that the file with the `Peer` can go into a public repository:
 
-```yaml title="cluster/bgp.yaml"
+```yaml title="bgp/secrets.yaml"
 apiVersion: chalkos.dev/v1alpha1
 kind: Secret
 metadata: {name: bgp}
@@ -31,7 +32,8 @@ spec:
 ```
 
 `spec.data` maps keys to string values. A node's set may hold any number of `Secret` documents,
-each with a name of its own.
+each with a name of its own. The router's side of the sessions needs the same password, which
+`router/secrets.yaml` holds in a `Secret` of the router's own.
 
 A `Secret` document is not the cluster's secrets file. The secrets file, `secrets.age`, holds the
 cluster's CAs and keys. `chalkctl gen secrets` writes it once, and chalkctl decrypts it to
@@ -52,26 +54,28 @@ out:
 
 A `Peer` document references the key by the `Secret`'s name and the key:
 
-```yaml title="cluster/bgp.yaml"
+```yaml title="bgp/fabric.yaml"
 apiVersion: bgp.example.org/v1alpha1
 kind: Peer
-metadata: {name: router-a}
+metadata: {name: router}
 spec:
-  address: 10.0.0.1
-  asn: 64513
+  address: "fdc8:a1b2:c3d4:1::1"
+  asn: 65000
+  interfaces: [fabric0, fabric1]
   password: {secretRef: {name: bgp, key: password}}
 ```
 
 chalkctl and chalkd refuse a set whose reference names a `Secret` or a key the set lacks. Without
-the `Secret` document, `chalkctl validate` refuses both homelab nodes:
+the `Secret` document, `chalkctl validate` refuses the three homelab nodes:
 
 ```text
-chalkctl: the config of 2 nodes is invalid:
-node cp1: Peer/router-a: spec.password: Secret "bgp" does not exist
-node w1: Peer/router-a: spec.password: Secret "bgp" does not exist
+chalkctl: the config of 3 nodes is invalid:
+node node1: Peer/router: spec.password: Secret "bgp" does not exist
+node node2: Peer/router: spec.password: Secret "bgp" does not exist
+node node3: Peer/router: spec.password: Secret "bgp" does not exist
 ```
 
-A misspelled key gives `Peer/router-a: spec.password: Secret "bgp" has no key "passwort"`. The
+A misspelled key gives `Peer/router: spec.password: Secret "bgp" has no key "passwort"`. The
 `Secret`'s name and the key become a file name on the node. They hold printable ASCII without `/`
 or `:`, and at most 247 bytes together, or chalkd refuses the set.
 
@@ -210,7 +214,7 @@ password and keeps its sessions to the other peers.
 After `config apply`, bird's journal shows the reload and no error from `bird-credentials`:
 
 ```sh
-chalkctl logs cp1 --unit=bird.service
+chalkctl logs node1 --unit=bird.service
 ```
 
 A failed start that names `secret_bgp.password` with "bird takes no password with a quote or a

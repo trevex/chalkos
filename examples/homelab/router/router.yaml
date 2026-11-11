@@ -1,0 +1,184 @@
+# The router: its port wan on the home network, which gives it an IPv4 address by DHCP, and its
+# port fabric on the switch of the three nodes. The fabric is IPv6 alone. Router advertisements
+# give each node an address, a default route, the resolver and the NAT64 prefix, and the NAT64
+# carries the nodes' connections to the IPv4 internet out of wan. Each node announces its address
+# over BGP, and the workstation reaches the fabric through WireGuard.
+#
+# The two Link documents name the ports by their permanent MAC addresses, which a VLAN or a bond
+# on a port does not take, so the other documents name wan and fabric whatever the kernel calls
+# the ports. Replace the addresses with those of your router. A rename of a running router's port
+# changes every document that names the port in the same delivery, its Network, firewall zone and
+# the management interfaces among them, best with chalkctl config apply --try.
+apiVersion: networkd.chalkos.dev/v1alpha1
+kind: Link
+metadata: {name: 10-wan}
+spec:
+  match: {permanentMACAddress: "02:00:00:00:01:01"}
+  link: {name: wan}
+---
+apiVersion: networkd.chalkos.dev/v1alpha1
+kind: Link
+metadata: {name: 10-fabric}
+spec:
+  match: {permanentMACAddress: "02:00:00:00:01:02"}
+  link: {name: fabric}
+---
+# Replace the disk with the router's own, by its path below /dev/disk/by-id.
+apiVersion: storage.chalkos.dev/v1alpha1
+kind: SystemDisk
+metadata: {name: system}
+spec:
+  disk: {path: /dev/disk/by-id/nvme-EXAMPLE_SSD_router}
+---
+# The home network gives wan an IPv4 address and the default route. The router takes no router
+# advertisements there, so the fabric's prefix stays the one IPv6 network it has.
+apiVersion: networkd.chalkos.dev/v1alpha1
+kind: Network
+metadata: {name: 10-wan}
+spec:
+  match: {name: wan}
+  network: {dhcp: ipv4, ipv6AcceptRA: false}
+---
+# The fabric's address and its router advertisements: the prefix, from which each node's ports
+# take their addresses, the resolver and the NAT64 prefix. The advertisements also make the router
+# each node's default router.
+apiVersion: networkd.chalkos.dev/v1alpha1
+kind: Network
+metadata: {name: 20-fabric}
+spec:
+  match: {name: fabric}
+  network: {address: ["fdc8:a1b2:c3d4:1::1/64"], ipv6AcceptRA: false, ipv6SendRA: true}
+  ipv6Prefix: {prefix: "fdc8:a1b2:c3d4:1::/64"}
+  ipv6SendRA: {dns: ["fdc8:a1b2:c3d4:1::1"]}
+  ipv6PREF64Prefix: {prefix: "64:ff9b::/96"}
+---
+# chalkctl reaches the router on the home network and through the tunnel; the firewall accepts
+# chalkd's port on these interfaces alone.
+apiVersion: router.chalkos.dev/v1alpha1
+kind: Router
+metadata: {name: router}
+spec:
+  management: {interfaces: [wan, wg0]}
+---
+apiVersion: router.chalkos.dev/v1alpha1
+kind: FirewallZone
+metadata: {name: wan}
+spec: {interfaces: [wan]}
+---
+apiVersion: router.chalkos.dev/v1alpha1
+kind: FirewallZone
+metadata: {name: fabric}
+spec: {interfaces: [fabric]}
+---
+apiVersion: router.chalkos.dev/v1alpha1
+kind: FirewallZone
+metadata: {name: vpn}
+spec: {interfaces: [wg0]}
+---
+# The router forwards what these policies accept and drops the rest, so nothing from the home
+# network reaches the fabric. Traffic between two nodes goes through the router and back onto the
+# fabric. The workstation and the nodes reach each other through the tunnel. The NAT64's
+# connections need no policy: the firewall accepts them ahead of the policies.
+apiVersion: router.chalkos.dev/v1alpha1
+kind: FirewallPolicy
+metadata: {name: fabric-fabric}
+spec: {from: fabric, to: fabric, default: accept}
+---
+apiVersion: router.chalkos.dev/v1alpha1
+kind: FirewallPolicy
+metadata: {name: vpn-fabric}
+spec: {from: vpn, to: fabric, default: accept}
+---
+apiVersion: router.chalkos.dev/v1alpha1
+kind: FirewallPolicy
+metadata: {name: fabric-vpn}
+spec: {from: fabric, to: vpn, default: accept}
+---
+# The nodes' connections to 64:ff9b::/96 leave wan from the router's IPv4 address on the home
+# network.
+apiVersion: router.chalkos.dev/v1alpha1
+kind: NAT64
+metadata: {name: nat64}
+spec: {prefix: "64:ff9b::/96"}
+---
+# The resolver of the fabric and the tunnel, which answers for a name with A records alone with
+# AAAA records in the NAT64's prefix. It looks names up from the root servers itself. The firewall
+# accepts DNS from allow to listen.
+apiVersion: router.chalkos.dev/v1alpha1
+kind: Resolver
+metadata: {name: resolver}
+spec:
+  listen: ["fdc8:a1b2:c3d4:1::1", "fdc8:a1b2:c3d4:f0::1"]
+  allow: ["fdc8:a1b2:c3d4::/48"]
+  dns64: {prefix: "64:ff9b::/96"}
+---
+# BGP towards the nodes. Each node's port has a session of its own, so the router installs two
+# equal paths to each node's address and keeps one when a port fails.
+apiVersion: router.chalkos.dev/v1alpha1
+kind: BGP
+metadata: {name: bgp}
+spec:
+  asn: 65000
+  routerID: 0.0.0.1
+  multipath: {ebgp: 2}
+---
+# The router accepts a session from every address of the fabric's prefix: the ports of the nodes
+# take their addresses by SLAAC, so the router does not know them in advance. It sends the nodes a
+# default route alone: to-nodes rejects every other route, and FRR sends the default route that
+# defaultOriginate makes past the export policy. It takes from them only the addresses of
+# fdc8:a1b2:c3d4:ff::/64, the nodes' and the API's VIP.
+apiVersion: router.chalkos.dev/v1alpha1
+kind: BGPPeer
+metadata: {name: nodes}
+spec:
+  listen: {range: "fdc8:a1b2:c3d4:1::/64"}
+  remoteAS: 65001
+  bfd: true
+  password: {secretRef: {name: bgp, key: password}}
+  description: the Kubernetes nodes
+  families:
+    ipv6: {defaultOriginate: true, import: from-nodes, export: to-nodes}
+---
+apiVersion: router.chalkos.dev/v1alpha1
+kind: RoutingPolicy
+metadata: {name: from-nodes}
+spec:
+  terms:
+    - {match: {prefixList: node-addresses}, then: {action: accept}}
+---
+apiVersion: router.chalkos.dev/v1alpha1
+kind: RoutingPolicy
+metadata: {name: to-nodes}
+spec: {default: reject}
+---
+apiVersion: router.chalkos.dev/v1alpha1
+kind: PrefixList
+metadata: {name: node-addresses}
+spec:
+  family: ipv6
+  entries: [{prefix: "fdc8:a1b2:c3d4:ff::/64", ge: 128, le: 128}]
+---
+# The tunnel to the workstation. The firewall accepts its UDP port from anywhere, and wg0 drops
+# every packet that no peer's key decrypts.
+apiVersion: router.chalkos.dev/v1alpha1
+kind: WireGuard
+metadata: {name: wg0}
+spec:
+  listenPort: 51820
+  addresses: ["fdc8:a1b2:c3d4:f0::1/64"]
+  privateKey: {secretRef: {name: wireguard, key: private}}
+---
+# The workstation, whose public key goes here. Its own WireGuard config takes the address
+# fdc8:a1b2:c3d4:f0::2/64, its private key, and one peer: the router's public key, which wg pubkey
+# prints for the key of router/secrets.yaml, the endpoint <router's wan address>:51820, allowed IPs
+# fdc8:a1b2:c3d4::/48 and a persistent keepalive of 25 seconds. The workstation reaches the
+# internet as before, so 64:ff9b::/96 stays out of its allowed IPs. The keepalive matters: each
+# delivery to the router sets its peers anew, and the router reaches the workstation again once
+# the workstation sends.
+apiVersion: router.chalkos.dev/v1alpha1
+kind: WireGuardPeer
+metadata: {name: workstation}
+spec:
+  interface: wg0
+  publicKey: cK0R7bvqvEfk07xvf9i71Jj0ATJEGaKZ3gs1zBXr1m0=
+  allowedIPs: ["fdc8:a1b2:c3d4:f0::2/128"]

@@ -201,10 +201,14 @@ same way but sends no gratuitous ARP and no neighbour advertisements. A routing 
 such as a BGP speaker an extension adds to a variant, announces the addresses of the interface
 instead, and withdraws them when the holder removes them. Every control plane names that interface in
 `vip.interface`, usually a dummy interface the routing daemon announces, and chalkctl and chalkd
-refuse a routed VIP on a control plane without one. The control planes then need no shared L2
-network, and clients reach the VIP through the routers that learn the route. A failover takes the
-election's time plus the time the routing daemons need to withdraw the route on the old holder,
-announce it from the new one and pass the change through their peers.
+refuse a routed VIP on a control plane without one. The `Network` document of that interface sets
+`keepConfiguration: "yes"`, `KeepConfiguration=yes`, so that networkd keeps addresses it did not
+configure itself. chalkd adds an IPv6 VIP with a preferred lifetime of 0, which networkd counts as
+dynamic, so networkd may otherwise remove the VIP when it configures the link again. The control
+planes then need no shared L2 network, and clients reach the VIP through the routers that learn
+the route. A failover takes the election's time plus the time the routing daemons need to
+withdraw the route on the old holder, announce it from the new one and pass the change through
+their peers.
 
 The election runs on an etcd lease of 10 seconds, and every control plane checks its API server
 every 2 seconds. The diagram shows the states of one control plane's chalkd.

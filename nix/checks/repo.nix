@@ -213,20 +213,27 @@ in
       command = validatePinned;
     };
 
-  # The homelab example: its flake builds the nodes' metal image with the BGP extension, and
-  # chalkctl validate accepts its nodes' YAML, Peer documents included, with that image where
-  # their Image points, and validatePinned checks its Cluster document's images.
+  # The homelab example: its flake builds the router's metal image and the nodes' with the BGP
+  # extension, and chalkctl validate accepts the router's and the nodes' YAML, Speaker and Peer
+  # documents included, with those images where their groups point, and validatePinned checks
+  # its Cluster document's images.
   example-homelab =
     let
       homelab = (import ../../examples/homelab/flake.nix).outputs {
         chalkos = self;
         self = { };
       };
+      packages = homelab.packages.${pkgs.stdenv.hostPlatform.system};
     in
+    # The installer, which the guide writes to a USB stick, evaluates.
+    assert lib.isString packages.installer.drvPath;
     checkLib.validateDirectory {
       name = "example-homelab";
       src = ../../examples/homelab;
-      images."images/node-metal" = homelab.packages.${pkgs.stdenv.hostPlatform.system}.node-metal;
+      images = {
+        "images/router-metal" = packages.router-metal;
+        "images/node-metal" = packages.node-metal;
+      };
       command = validatePinned;
     };
 
@@ -246,9 +253,10 @@ in
       images."images/node-metal" = example.packages.${pkgs.stdenv.hostPlatform.system}.node-metal;
     };
 
-  # The homelab's validator bgp-peers refuses router-c with the report validate-config.md shows,
-  # reads the addresses of a list of [Network] sections, of [Address] sections and without a
-  # prefix length, and accepts every Peer when a Network takes its address by DHCP.
+  # The homelab's validator bgp-peers refuses the Peer interface fabric2 with the report
+  # validate-config.md shows, reads the names of a [Match] section's list and of a list of [Match]
+  # sections, takes a glob for no name, refuses an exported interface without a Network and Peers
+  # without a Speaker, and accepts the nodes' config.
   example-homelab-bgp-peers =
     pkgs.runCommand "chalkos-example-homelab-bgp-peers"
       {
@@ -257,27 +265,31 @@ in
         page = ../../docs/build/validate-config.md;
       }
       ''
-        peer='{"kind": "Peer", "metadata": {"name": "router-c"}, "spec": {"address": "10.0.1.1"}}'
-        network() { echo "{\"kind\": \"Network\", \"metadata\": {\"name\": \"10-uplink\"}, \"spec\": $1}"; }
+        speaker='{"kind": "Speaker", "metadata": {"name": "bgp"}, "spec": {"asn": 65001, "routerID": "0.0.0.11", "export": {"interfaces": ["node0"]}}}'
+        peer() { echo "{\"kind\": \"Peer\", \"metadata\": {\"name\": \"router\"}, \"spec\": {\"address\": \"fdc8:a1b2:c3d4:1::1\", \"asn\": 65000, \"interfaces\": $1}}"; }
+        network() { echo "{\"kind\": \"Network\", \"metadata\": {\"name\": \"$1\"}, \"spec\": {\"match\": $2}}"; }
+        nodes="$(network 20-fabric0 '{"name": "fabric0"}'), $(network 20-fabric1 '{"name": "fabric1"}'), $(network 30-node0 '{"name": "node0"}')"
         expect() {
-          got=$(echo "{\"node\": {\"name\": \"cp1\"}, \"documents\": {\"Network\": [$(network "$1")], \"Peer\": [$peer]}}" | jq -c -f $validator)
-          if [ "$got" != "$2" ]; then
-            echo "error: with the Network spec $1, bgp-peers printed $got, not $2" >&2
+          got=$(echo "{\"node\": {\"name\": \"node1\"}, \"documents\": {\"Network\": [$1], \"Speaker\": [$2], \"Peer\": [$3]}}" | jq -c -f $validator)
+          if [ "$got" != "$4" ]; then
+            echo "error: with the Networks $1, the Speakers $2 and the Peers $3, bgp-peers printed $got, not $4" >&2
             exit 1
           fi
         }
         refusal() {
-          echo "{\"refusals\":[{\"kind\":\"Peer\",\"name\":\"router-c\",\"path\":\"spec.address\",\"message\":\"10.0.1.1 lies on no subnet of the node's addresses, $1; bird reaches a neighbour on a link of its own alone\"}]}"
+          echo "{\"refusals\":[{\"kind\":\"$1\",\"name\":\"$2\",\"path\":\"$3\",\"message\":\"$4\"}]}"
         }
-        documented=$(grep '^{"refusals": \[{"kind": "Peer", "name": "router-c"' $page | jq -c .)
+        unconfigured="has no Network document; bird binds the session to an interface the node configures"
+        documented=$(grep '^{"refusals": \[{"kind": "Peer", "name": "router"' $page | jq -c .)
         test -n "$documented"
-        expect '{"network": {"address": ["10.0.0.11/24"], "gateway": "10.0.0.1"}}' "$documented"
-        expect '{"network": [{"address": "10.0.0.11/24"}, {"dns": "10.0.0.1"}]}' "$(refusal 10.0.0.11/24)"
-        expect '{"address": [{"address": "10.0.0.11/24"}]}' "$(refusal 10.0.0.11/24)"
-        expect '{"network": {"address": "10.0.0.11"}}' "$(refusal 10.0.0.11/32)"
-        expect '{"network": {"address": ["10.0.1.11/24"]}}' '{"refusals":[]}'
-        expect '{"network": {"dhcp": "yes"}}' '{"refusals":[]}'
-        expect '{"network": {"address": ["10.0.0.11/24"], "dhcp": "ipv4"}}' '{"refusals":[]}'
+        expect "$nodes" "$speaker" "$(peer '["fabric0", "fabric1", "fabric2"]')" "$documented"
+        expect "$nodes" "$speaker" "$(peer '["fabric0", "fabric1"]')" '{"refusals":[]}'
+        expect "$(network 20-fabric '{"name": ["fabric0", "fabric1"]}'), $(network 30-node0 '[{"name": "node0"}]')" "$speaker" "$(peer '["fabric0", "fabric1"]')" '{"refusals":[]}'
+        expect "$(network 20-fabric '{"name": "fabric0  fabric1"}'), $(network 30-node0 '{"name": "node0"}')" "$speaker" "$(peer '["fabric0", "fabric1"]')" '{"refusals":[]}'
+        expect "$(network 20-fabric '{"name": "fabric*"}'), $(network 30-node0 '{"name": "node0"}')" "$speaker" "$(peer '["fabric0"]')" "$(refusal Peer router 'spec.interfaces[0]' "fabric0 $unconfigured")"
+        expect "$(network 20-fabric0 '{"name": "fabric0"}')" "$speaker" "$(peer '["fabric0"]')" "$(refusal Speaker bgp 'spec.export.interfaces[0]' "node0 has no Network document; bird announces the addresses of an interface the node configures")"
+        expect "$nodes" "" "$(peer '["fabric0"]')" "$(refusal Peer router metadata.name "a node with Peer documents needs a Speaker document, which gives bird its AS number and router ID")"
+        expect "$nodes" "" "" '{"refusals":[]}'
         touch $out
       '';
 

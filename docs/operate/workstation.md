@@ -163,11 +163,11 @@ on a private network alone.
 
 A `Secret` document is a config document, unrelated to the secrets file. It holds values that
 the node's services read, such as a password for a BGP peer, and it reaches the node with the
-rest of the node's config. The homelab's `cluster/bgp.yaml` gives every node one, which the
-`Peer` document for `router-a` names in a `secretRef`:
+rest of the node's config. The homelab's `bgp/secrets.yaml` gives every node one, which the
+`Peer` document for `router` in `bgp/fabric.yaml` names in a `secretRef`:
 
-```yaml title="cluster/bgp.yaml"
---8<-- "examples/homelab/cluster/bgp.yaml"
+```yaml title="bgp/secrets.yaml"
+--8<-- "examples/homelab/bgp/secrets.yaml"
 ```
 
 chalkctl reads every config file as plain YAML, `Secret` documents included. A file that holds

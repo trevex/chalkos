@@ -1,19 +1,64 @@
-# bird's config for {{ .node.name }}, rendered by chalkos from its Peer documents.
-router id from "*";
+# bird's config for {{ .node.name }}, rendered by chalkos from its Speaker and Peer documents.
+{{- if and .documents.Peer (not .documents.Speaker) }}
+{{- refuse "Peer" (index .documents.Peer 0).metadata.name "metadata.name" "a node with Peer documents needs a Speaker document, which gives bird its AS number and router ID" }}
+{{- end }}
+{{- range .documents.Speaker }}
+router id {{ .spec.routerID }};
+{{- else }}
+# Without a Speaker bird runs no session. The router ID lets it start and reaches no peer.
+router id 0.0.0.1;
+{{- end }}
 
 protocol device {
 }
-{{ range .documents.Peer }}
-protocol bgp '{{ .metadata.name }}' {
-  local as 64512;
-  neighbor {{ .spec.address }} as {{ .spec.asn }};
-{{- with .spec.password }}
+{{- range .documents.Speaker }}
+{{- $asn := .spec.asn }}
+
+# The addresses of the Speaker's interfaces, which every session announces.
+protocol direct node_addresses {
+  ipv6;
+{{- range .spec.export.interfaces }}
+  interface {{ quote . }};
+{{- end }}
+}
+
+# The default route the peers send, installed into the kernel with a next hop per session.
+protocol kernel {
+  ipv6 {
+    import none;
+    export where source = RTS_BGP;
+  };
+  merge paths on;
+}
+
+protocol bfd {
+}
+{{- range $.documents.Peer }}
+{{- $peer := . }}
+{{- range .spec.interfaces }}
+
+protocol bgp '{{ $peer.metadata.name }}_{{ . }}' {
+  local as {{ $asn }};
+  neighbor {{ $peer.spec.address }} as {{ $peer.spec.asn }};
+  interface {{ quote . }};
+  direct;
+  connect retry time 5;
+{{- if $peer.spec.bfd }}
+  bfd on;
+{{- end }}
+{{- with $peer.spec.password }}
   authentication md5;
   password 'secret_{{ .secretRef.name }}.{{ .secretRef.key }}';
 {{- end }}
-  ipv4 {
-    import all;
-    export none;
+  ipv6 {
+    # The router sends a link-local next hop beside its global one. bird would resolve the global
+    # one through the first port on the fabric's prefix for every session; the link-local one
+    # keeps each session's routes on its own port.
+    next hop prefer local;
+    import where net = ::/0;
+    export where proto = "node_addresses";
   };
 }
-{{ end -}}
+{{- end }}
+{{- end }}
+{{- end }}

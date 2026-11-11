@@ -1,23 +1,33 @@
 {
-  description = "A chalkos home lab cluster";
+  description = "A chalkos home lab: a router and three Kubernetes nodes on an IPv6 fabric";
 
   inputs.chalkos.url = "github:trevex/chalkos";
 
   outputs =
     { self, chalkos, ... }:
     let
-      # One image for every node, on bare metal; cp1's Node document makes it the control plane.
-      # extensions/default.nix imports the BGP extension.
+      # Two images for bare metal: the router's, without Kubernetes, and the nodes'.
+      # extensions/default.nix adds bird and its Speaker and Peer kinds to the nodes'.
       images = chalkos.lib.mkImages {
         # The commit the images are built from, which chalkctl shows beside an image's root hash.
         revision = self.rev or self.dirtyRev or null;
         platforms = [ "metal" ];
-        variants.node.modules = [ ./extensions ];
+        variants = {
+          router = {
+            kubernetes = false;
+            router = true;
+          };
+          node.modules = [ ./extensions ];
+        };
       };
     in
     {
-      # nix build .#node-metal -o images/node-metal: the image where the inventory, chalkos.yaml,
-      # points.
-      packages.x86_64-linux.node-metal = images.images.node-metal;
+      # nix build .#<image> -o images/<image>: the images where the inventory, chalkos.yaml,
+      # points. nix build .#installer: the installer's raw image and ISO, which install both.
+      packages.x86_64-linux = {
+        router-metal = images.images.router-metal;
+        node-metal = images.images.node-metal;
+        installer = images.installer;
+      };
     };
 }

@@ -148,7 +148,7 @@ The expression reads these variables:
 
 | Variable | Value |
 | --- | --- |
-| `config` | The config the node runs once the delivery is applied, by apiVersion, kind and name: `config["bgp.example.org/v1alpha1"].Peer["router-a"]`. |
+| `config` | The config the node runs once the delivery is applied, by apiVersion, kind and name: `config["bgp.example.org/v1alpha1"].Peer["router"]`. |
 | `oldConfig` | The config before the delivery, in the same shape. |
 | `node.name` | The node's name, which its node certificate carries. |
 | `facts.<name>` | A fact once the delivery is applied. |
@@ -234,7 +234,7 @@ Their names are taken, so an extension's outputs and effects use others.
 [effects](../reference/builtins.md#effects) of every image and of images with Kubernetes.
 
 The output `networkd` writes one unit per document to `/run/systemd/network`, named as the
-document with its kind's suffix, such as `10-uplink.network`. networkd has no offline validator,
+document with its kind's suffix, such as `20-fabric0.network`. networkd has no offline validator,
 so the schemas guard it: they accept exactly the sections and keys of the image's networkd, and
 refuse a value that spans lines. Its units take precedence over the image's own in
 `/etc/systemd/network`. The output owns `/run/systemd/network`, so a unit written there by other
@@ -260,8 +260,8 @@ announces are no output, because they come from the network at runtime.
 node runs. Reloaded units are not listed. Check bird's journal for the reload:
 
 ```sh
-chalkctl config apply cp1
-chalkctl logs cp1 --unit=bird.service
+chalkctl config apply node1
+chalkctl logs node1 --unit=bird.service
 ```
 
 A warning that starts with `the rule of effect` names a `when` that could not be evaluated, whose

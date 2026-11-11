@@ -9,8 +9,8 @@ This page is for an image author whose kind has constraints that a schema or a C
 express, or can express only at great cost. At the end a validator, a program of the image,
 checks the node's documents before a delivery changes anything, and the operator sees which
 document and field it refuses. The page continues the homelab's BGP extension,
-`extensions/bgp.nix`: bird talks to a neighbour on one of the node's own links alone, so a `Peer`
-whose address lies on none of them is refused.
+`extensions/bgp.nix`: bird binds each session to one of the node's interfaces, so a `Peer` that
+names an interface the node does not configure is refused.
 
 A validator reads the documents of the kinds it names and prints the refusals it finds. chalkd
 runs every validator after the change rules and before the outputs render. A refusal, or a
@@ -34,8 +34,8 @@ declares it:
 
 The declaration sets three things:
 
-- `inputs` names the kinds whose documents the validator reads: the `Peer` documents and the
-  node's `Network` documents, which hold its addresses.
+- `inputs` names the kinds whose documents the validator reads: the `Peer` and `Speaker`
+  documents and the node's `Network` documents, which configure its interfaces.
 - `program` is the validator: here a jq program.
 - `examples` is a directory of config files that the image build runs the validator on.
 
@@ -48,23 +48,27 @@ one JSON object to its standard input: the input a renderer reads, as [The rende
 JSON object](render-config.md#the-renderer-reads-one-json-object) describes. `documents` holds one
 list per kind of `inputs`, each sorted by name, with the schema defaults filled in, and `node.name`
 is the node's name. The object holds no `Secret`, and a `secretRef` field holds the reference,
-never the value. For cp1 of the homelab the object reads, indented here:
+never the value. For node1 of the homelab the object reads, trimmed to one `Network` and
+indented here:
 
 ```json
 {
   "documents": {
     "Network": [
-      {"apiVersion": "networkd.chalkos.dev/v1alpha1", "kind": "Network", "metadata": {"name": "10-uplink"},
-       "spec": {"match": {"name": "enp1s0"}, "network": {"address": ["10.0.0.11/24"], "gateway": "10.0.0.1"}}}
+      {"apiVersion": "networkd.chalkos.dev/v1alpha1", "kind": "Network", "metadata": {"name": "20-fabric0"},
+       "spec": {"match": {"name": "fabric0"}, "network": {"ipv6AcceptRA": true}}}
     ],
     "Peer": [
-      {"apiVersion": "bgp.example.org/v1alpha1", "kind": "Peer", "metadata": {"name": "router-a"},
-       "spec": {"address": "10.0.0.1", "asn": 64513, "password": {"secretRef": {"name": "bgp", "key": "password"}}}},
-      {"apiVersion": "bgp.example.org/v1alpha1", "kind": "Peer", "metadata": {"name": "router-b"},
-       "spec": {"address": "10.0.0.2", "asn": 64514, "password": null}}
+      {"apiVersion": "bgp.example.org/v1alpha1", "kind": "Peer", "metadata": {"name": "router"},
+       "spec": {"address": "fdc8:a1b2:c3d4:1::1", "asn": 65000, "bfd": true, "interfaces": ["fabric0", "fabric1"],
+                "password": {"secretRef": {"name": "bgp", "key": "password"}}}}
+    ],
+    "Speaker": [
+      {"apiVersion": "bgp.example.org/v1alpha1", "kind": "Speaker", "metadata": {"name": "bgp"},
+       "spec": {"asn": 65001, "export": {"interfaces": ["node0"]}, "routerID": "0.0.0.11"}}
     ]
   },
-  "node": {"name": "cp1"}
+  "node": {"name": "node1"}
 }
 ```
 
@@ -74,7 +78,7 @@ A validator refuses a config by printing one JSON object on standard output, the
 refusals that a renderer prints too:
 
 ```json
-{"refusals": [{"kind": "Peer", "name": "router-c", "path": "spec.address", "message": "10.0.1.1 lies on no subnet of the node's addresses, 10.0.0.11/24; bird reaches a neighbour on a link of its own alone"}]}
+{"refusals": [{"kind": "Peer", "name": "router", "path": "spec.interfaces[2]", "message": "fabric2 has no Network document; bird binds the session to an interface the node configures"}]}
 ```
 
 Each refusal names the document by `kind` and `name`, the field by its `path`, and says in
@@ -96,21 +100,23 @@ standard error goes to the node's journal alone, because it can echo the documen
 ## A jq program validates
 
 `lib.chalkos.validate.jq` turns a jq program into a validator: jq reads the input, and what the
-program outputs is the report. `bgp-peers.jq` collects the subnets of the node's static IPv4
-addresses and refuses each IPv4 `Peer` outside them:
+program outputs is the report. `bgp-peers.jq` collects the interface names of the node's `Network`
+documents and refuses each interface of a `Peer` or the `Speaker` that is not among them:
 
 ```text title="bgp-peers.jq"
 --8<-- "examples/homelab/extensions/bgp-peers.jq"
 ```
 
 A section of a networkd document may be one object or a list of them, and a key one value or a
-list, so the program reads `address` from every `[Network]` section and every `[Address]`
-section, `spec.address`. An address without a prefix length counts as a host address, /32.
+list, so the program reads `name` from every `[Match]` section, and splits a value that holds
+several names. It compares the names as written. A glob such as `fabric*` may or may not match
+an interface, so the program takes it for no name, and a `Peer` on such an interface is refused.
 
-The subnet of a link that takes its address by DHCP is unknown. So when any `Network` of the node
-has no static IPv4 address, or enables DHCPv4, the validator accepts every `Peer`; otherwise it
-would refuse a peer on that link. The check `example-homelab-bgp-peers` runs the program on these
-cases and on `router-c` below.
+The program also refuses `Peer` documents without a `Speaker`, which gives bird its AS number and
+router ID. The template refuses the same config, as
+[A renderer refuses a config](render-config.md#a-renderer-refuses-a-config) shows, but the
+validators run before the renderers, so the operator sees this refusal. The check
+`example-homelab-bgp-peers` runs the program on these cases and on `fabric2` below.
 
 ## Any program of the store validates
 
@@ -133,7 +139,8 @@ exit 0. A program that serves as a renderer too reads the same input in both rol
 `examples` names a directory of YAML or JSON files, each one node's documents, checked against
 the image's schemas. The image build runs the validator on each file and fails when it refuses
 one or fails. `bgp.nix` runs `bgp-peers` on the examples of the output `bird-conf`, whose
-`two-peers.yaml` holds both peers and the node's uplink `Network`. A jq program with a syntax
+`fabric.yaml` holds a node's `Speaker`, its `Peer` and the `Network` documents of its ports and of
+`node0`. A jq program with a syntax
 error then fails the build before any node gets it.
 
 ## Check that it worked
@@ -141,17 +148,17 @@ error then fails the build before any node gets it.
 Build the image. The build runs each example, so a broken validator fails here and names the
 validator and the example file.
 
-Say `cluster/bgp.yaml` gains a `Peer` named `router-c` at 10.0.1.1, a neighbour behind a router.
-`chalkctl config apply cp1` checks the config as far as chalkctl can, then the node runs the
-validator and refuses the delivery:
+Say the `Peer` of `bgp/fabric.yaml` gains a third interface, `fabric2`, that the nodes have no
+`Network` for. `chalkctl config apply node1` checks the config as far as chalkctl can, then the
+node runs the validator and refuses the delivery:
 
 ```console
-$ chalkctl config apply cp1
-cp1: config 1 added, 0 removed, 0 changed
-chalkctl: cp1: the config is refused: Peer/router-c: spec.address: 10.0.1.1 lies on no subnet of the node's addresses, 10.0.0.11/24; bird reaches a neighbour on a link of its own alone
+$ chalkctl config apply node1
+node1: config 0 added, 0 removed, 1 changed
+chalkctl: node1: the config is refused: Peer/router: spec.interfaces[2]: fabric2 has no Network document; bird binds the session to an interface the node configures
 ```
 
-The node changed nothing. `chalkctl config apply --dry-run cp1` prints the same refusal without
+The node changed nothing. `chalkctl config apply --dry-run node1` prints the same refusal without
 a delivery. `chalkctl validate` accepts the config: chalkctl runs only the validators it links,
 the router layer's `router` on router images, and an image's own validator runs on the node
 alone.
@@ -161,8 +168,8 @@ A validator that fails names itself and its exit status. Each run is a transient
 the journal of `chalkd.service` names the unit beside the failure:
 
 ```sh
-chalkctl logs cp1 --unit=chalkd.service
-chalkctl logs cp1 --unit=chalkos-render-<n>.service
+chalkctl logs node1 --unit=chalkd.service
+chalkctl logs node1 --unit=chalkos-render-<n>.service
 ```
 
 `chalkctl config apply` while an image is staged, with or without `--staged`, and
@@ -202,7 +209,8 @@ the node alone:
 
 ## What next
 
-- [Render config files](render-config.md) renders `bird.conf` from the `Peer` documents.
+- [Render config files](render-config.md) renders `bird.conf` from the `Speaker` and `Peer`
+  documents.
 - [Guard changes with rules and facts](guard-changes.md) refuses a change with a CEL rule, which
   chalkctl checks before it sends anything.
 - [The config pipeline](../how-it-works/node/config-pipeline.md) shows where the validators run in
