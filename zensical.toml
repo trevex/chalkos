@@ -15,6 +15,7 @@ nav = [
     "get-started/index.md",
     "get-started/what-is-chalkos.md",
     "get-started/quick-start.md",
+    "get-started/home-lab.md",
     "get-started/requirements.md",
   ] },
   { "Operate nodes" = [
