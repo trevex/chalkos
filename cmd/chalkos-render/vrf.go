@@ -20,8 +20,9 @@ import (
 // 00-vrf-<name>.network, which brings the device up, leaves it out of the node's online state
 // and ends the table in unreachable default routes, and VRF=<name> in the [Network] section of
 // each Network document that is the first to match links the VRF holds, a .network per NAT64
-// that leaves its link n64-<name> to chalkos-nat64, and the kernel's rules of the PolicyRoute
-// documents and the NextHop documents' tables in the Networks of lo and of the next hops' links.
+// that leaves its link n64-<name> to chalkos-nat64, a .netdev and a .network per WireGuard, and
+// the kernel's rules of the PolicyRoute documents and the NextHop documents' tables in the
+// Networks of lo and of the next hops' links.
 func renderRouterNetworkd(schemas string, in map[string]any, out string) error {
 	byKind := documents(in)
 	d, err := derive.Build(byKind)
@@ -33,6 +34,9 @@ func renderRouterNetworkd(schemas string, in map[string]any, out string) error {
 		return err
 	}
 	if docs, err = withNAT64Units(d, byKind, docs); err != nil {
+		return err
+	}
+	if docs, err = withWireGuardUnits(d, byKind, docs); err != nil {
 		return err
 	}
 	if docs, err = withPolicyRoutes(d, docs); err != nil {

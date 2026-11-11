@@ -875,8 +875,11 @@ lib.runTests {
       };
   };
   # Router images take WireGuard and WireGuardPeer documents unless their modules set
-  # chalkos.router.wireguard.enable to false, and the firewall and FRR read the WireGuards' links.
-  # Without the feature neither is there, and the build allocates the same IDs.
+  # chalkos.router.wireguard.enable to false: networkd's output, the firewall and FRR read the
+  # WireGuards, networkd loads their keys as credentials, which a reload loads again and which the
+  # grant's stand-in credential replaces on a node without config, and the image adds the diagnostic
+  # wireguard, which wg runs with CAP_NET_ADMIN. Without the feature none of it is there, and the
+  # build allocates the same IDs.
   testRouterWireGuardOptional = {
     expr =
       let
@@ -888,6 +891,17 @@ lib.runTests {
           reads = lib.filter (o: lib.elem "WireGuard" c.chalkos.outputs.${o}.inputs) (
             lib.attrNames c.chalkos.outputs
           );
+          grant = c.systemd.services.systemd-networkd.chalkos.kinds;
+          credential = c.systemd.services.systemd-networkd.serviceConfig.SetCredential or null;
+          refresh = c.systemd.services.systemd-networkd.serviceConfig.RefreshOnReload or null;
+          diagnostic =
+            if c.chalkos.diagnostics ? wireguard then
+              {
+                inherit (c.chalkos.diagnostics.wireguard) role capabilities;
+                command = lib.tail c.chalkos.diagnostics.wireguard.command;
+              }
+            else
+              null;
           unpinned = unpinned c;
         };
       in
@@ -907,13 +921,32 @@ lib.runTests {
           ];
           reads = [
             "frr"
+            "networkd"
             "router-nftables"
           ];
+          grant = [
+            "WireGuard"
+            "WireGuardPeer"
+          ];
+          credential = [ "secret:none" ];
+          refresh = "credentials";
+          diagnostic = {
+            role = "reader";
+            capabilities = [ "CAP_NET_ADMIN" ];
+            command = [
+              "show"
+              "{interface}"
+            ];
+          };
           unpinned = pinned;
         };
         without = {
           kinds = [ ];
           reads = [ ];
+          grant = [ ];
+          credential = null;
+          refresh = null;
+          diagnostic = null;
           unpinned = pinned;
         };
       };
@@ -1284,6 +1317,8 @@ lib.runTests {
         "VRF"
         "NextHop"
         "PolicyRoute"
+        "WireGuard"
+        "WireGuardPeer"
       ];
       render = true;
       plainRender = true;

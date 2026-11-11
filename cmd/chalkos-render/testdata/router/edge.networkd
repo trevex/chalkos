@@ -5,6 +5,35 @@ Name=n64-edge
 [Link]
 Unmanaged=yes
 
+# 00-wg-wg0.netdev
+[NetDev]
+Kind=wireguard
+Name=wg0
+
+[WireGuard]
+ListenPort=51820
+PrivateKey=@secret_wireguard.private
+RouteTable=main
+
+[WireGuardPeer]
+AllowedIPs=2001:db8:f0::2/128
+PresharedKey=@secret_wireguard.laptop
+PublicKey=TNcjWUC/YZFd6+6UkoYLORnFxvy/jvqzi7gh5Tc0lRU=
+
+[WireGuardPeer]
+AllowedIPs=2001:db8:f0::3/128
+AllowedIPs=2001:db8:5::/48
+Endpoint=office.example.org:51820
+PersistentKeepalive=25
+PublicKey=+sR2gvS5qKqvh+jLYCQklPI9AQGcRYcDBHLBEJDZTn8=
+
+# 00-wg-wg0.network
+[Match]
+Name=wg0
+
+[Network]
+Address=2001:db8:f0::1/64
+
 # 10-wan.network
 [Match]
 Name=eth0

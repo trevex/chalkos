@@ -1423,7 +1423,7 @@ The outputs router images add, and the output `networkd` of every image as route
 | `frr`{ #output-frr } | `BGP`, `BGPPeer`, `CommunityList`, `PrefixList`, `RoutingPolicy`, `Network`, `VRF`, `WireGuard` | `/run/chalkos/outputs/frr` | Command `chalkos-render frr` | yes |
 | `jool`{ #output-jool } | `NAT64`, `VRF`, `Network` | `/run/chalkos/outputs/jool` | Command `chalkos-render jool` | yes |
 | `kea`{ #output-kea } | `DHCPSubnet`, `VRF`, `Network`, `NAT64` | `/run/chalkos/outputs/kea` | Command `chalkos-render kea chalkos-dhcp6-pd` | yes |
-| `networkd`{ #outputs-router-images-networkd } | `Link`, `NetDev`, `Network`, `NAT64`, `VRF`, `NextHop`, `PolicyRoute` | `/run/systemd/network` | Command `chalkos-render router-networkd chalkos-networkd-schemas` | no |
+| `networkd`{ #outputs-router-images-networkd } | `Link`, `NetDev`, `Network`, `NAT64`, `VRF`, `NextHop`, `PolicyRoute`, `WireGuard`, `WireGuardPeer` | `/run/systemd/network` | Command `chalkos-render router-networkd chalkos-networkd-schemas` | no |
 | `router-nftables`{ #output-router-nftables } | `Router`, `AddressSet`, `FirewallPolicy`, `FirewallZone`, `NATRule`, `BGPPeer`, `Resolver`, `DHCPSubnet`, `DHCPRelay`, `WireGuard`, `VRF`, `Network`, `NAT64`, `NextHop`, `PolicyRoute` | `/run/chalkos/outputs/router-nftables` | Command `chalkos-render router-nftables 50000` | yes |
 | `router-sysctl`{ #output-router-sysctl } | `Router` | `/run/sysctl.d` | Command `chalkos-render router-sysctl` | no |
 | `unbound`{ #output-unbound } | `Resolver`, `VRF`, `Network` | `/run/chalkos/outputs/unbound` | Command `chalkos-render unbound root.key ipv4only.arpa.zone` | yes |
@@ -1579,6 +1579,7 @@ The diagnostics router images add.
 | `dhcp-leases`{ #diagnostic-dhcp-leases } | The leases of the DHCPv4 and DHCPv6 servers of every VRF, or of one subnet or MAC address: each lease's VRF, subnet, address or delegated prefix, MAC address, host name and end, as Kea's lease commands report them. Runs `bash -c <script> dhcp-leases --subnet={subnet} --mac={mac}`, with the script after the table. | `subnet`, pattern `^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$`, optional; `mac`, pattern `^[0-9a-f]{2}(:[0-9a-f]{2}){5}$`, optional | operator | — |
 | `nat64-sessions`{ #diagnostic-nat64-sessions } | A NAT64 instance's sessions, as jool session display prints them: each translated TCP, UDP and ICMP connection's IPv6 and IPv4 addresses and ports, and when it expires. Runs `bash -c <script> nat64-sessions {instance}`, with the script after the table. | `instance`, pattern `^[a-z0-9]([-a-z0-9.]{0,9}[a-z0-9])?$` | operator | `CAP_NET_ADMIN` |
 | `traceroute`{ #diagnostic-traceroute } | The routers on the path to an address, as traceroute -n prints them: one probe a hop, 30 hops at most. Runs `traceroute -n -m 30 -q 1 -w 2 {address}`. | `address`, address | operator | — |
+| `wireguard`{ #diagnostic-wireguard } | The router's WireGuard interfaces and their peers, as wg show prints them: public keys, endpoints, allowed IPs, the latest handshakes and the bytes sent and received. It shows no private or preshared key. Runs `wg show {interface}`. | `interface`, pattern `^[a-z0-9]([-a-z0-9.]{0,13}[a-z0-9])?$`, optional | reader | `CAP_NET_ADMIN` |
 
 Script of `dhcp-leases`:
 

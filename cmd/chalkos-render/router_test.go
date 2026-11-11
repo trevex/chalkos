@@ -293,6 +293,24 @@ func TestBGPOpenings(t *testing.T) {
 	}
 }
 
+// A WireGuard opens its UDP port from anywhere, which renders as one line of the input chain.
+func TestWireGuardOpenings(t *testing.T) {
+	got := wireguardOpenings([]derive.Named[derive.WireGuardSpec]{
+		{Name: "wg0", Spec: derive.WireGuardSpec{ListenPort: 51820}},
+		{Name: "wg1", Spec: derive.WireGuardSpec{ListenPort: 51821, VRF: ptr("tenant")}},
+	})
+	want := []opening{
+		{comment: "WireGuard wg0", protocol: "udp", ports: []derive.PortRange{"51820"}},
+		{comment: "WireGuard wg1", protocol: "udp", ports: []derive.PortRange{"51821"}},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("wireguardOpenings =\n%+v\nwant\n%+v", got, want)
+	}
+	if lines := got[0].lines(); !reflect.DeepEqual(lines, []string{`udp dport { 51820 } accept comment "WireGuard wg0"`}) {
+		t.Errorf("lines = %q", lines)
+	}
+}
+
 // A Resolver opens DNS over UDP and TCP from its clients' ranges to the addresses it listens on.
 // It guards, with an internal error, values that would add to the ruleset and an empty listen or
 // allow, which would open the port wider.

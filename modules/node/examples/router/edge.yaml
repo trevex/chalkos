@@ -3,7 +3,9 @@
 # unnumbered with the fabric's leaves on eth1 and eth2, with BFD and a password, sends them a
 # default route while the WAN's router advertises one, and takes IPv4 routes from a transit peer
 # on the WAN. Its NAT64 translates the well-known prefix, which it announces, from addresses of
-# the 192.0.2.0/24 it announces too, and its resolver answers the fabric with DNS64.
+# the 192.0.2.0/24 it announces too, and its resolver answers the fabric with DNS64. Its WireGuard
+# wg0 takes a laptop as a peer, with a preshared key, and dials an office whose network it routes
+# through the tunnel.
 apiVersion: router.chalkos.dev/v1alpha1
 kind: Router
 metadata: {name: router}
@@ -201,3 +203,38 @@ spec:
   listen: ["2001:db8:ffff::1"]
   allow: ["2001:db8::/32"]
   dns64: {prefix: "64:ff9b::/96"}
+---
+apiVersion: router.chalkos.dev/v1alpha1
+kind: WireGuard
+metadata: {name: wg0}
+spec:
+  addresses: ["2001:db8:f0::1/64"]
+  privateKey: {secretRef: {name: wireguard, key: private}}
+---
+apiVersion: router.chalkos.dev/v1alpha1
+kind: WireGuardPeer
+metadata: {name: laptop}
+spec:
+  interface: wg0
+  publicKey: TNcjWUC/YZFd6+6UkoYLORnFxvy/jvqzi7gh5Tc0lRU=
+  allowedIPs: ["2001:db8:f0::2/128"]
+  presharedKey: {secretRef: {name: wireguard, key: laptop}}
+---
+apiVersion: router.chalkos.dev/v1alpha1
+kind: WireGuardPeer
+metadata: {name: office}
+spec:
+  interface: wg0
+  publicKey: +sR2gvS5qKqvh+jLYCQklPI9AQGcRYcDBHLBEJDZTn8=
+  allowedIPs: ["2001:db8:f0::3/128", "2001:db8:5::/48"]
+  endpoint: "office.example.org:51820"
+  persistentKeepalive: 25
+---
+# Keys for the example alone, which wg genkey and wg genpsk printed; never use them.
+apiVersion: chalkos.dev/v1alpha1
+kind: Secret
+metadata: {name: wireguard}
+spec:
+  data:
+    private: CLoOGmcWa8rU4A0ghoT2wlOssmCtEAQF9bCNxE90BH4=
+    laptop: frGEm74cIxrJpf/DeIDfAQoAnQhEQWp9nO7aMNUK8eA=

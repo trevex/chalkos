@@ -203,8 +203,9 @@ Unbound out of its images.
 
 Type: boolean · Default: `true` · Declared in: [modules/node/router/wireguard/default.nix](https://github.com/trevex/chalkos/blob/main/modules/node/router/wireguard/default.nix)
 
-Whether router images accept the kinds WireGuard and WireGuardPeer; only with the router
-layer. Set it false in a variant's modules to leave WireGuard out of its images.
+Whether router images accept the kinds WireGuard and WireGuardPeer, whose interfaces
+systemd-networkd runs, and run the diagnostic wireguard with wireguard-tools; only with the
+router layer. Set it false in a variant's modules to leave WireGuard out of its images.
 
 ### `chalkos.forwarding.enable` { #chalkosforwardingenable }
 

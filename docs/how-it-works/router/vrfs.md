@@ -155,6 +155,10 @@ anew with its new table and puts its links back into it. A change of `table` the
 sessions of the VRF, and they start over. `chalkos-vrf.service` also reloads a running
 `chalkos-resolvers.service`, which restarts the VRF's resolver on the new device.
 
+networkd keeps a WireGuard device whose `.netdev` went too, with its keys and peers, so a removed
+`WireGuard` document would leave its tunnel working. `chalkos-vrf.service` reads the `.netdev` files
+of `Kind=wireguard` the same way, and deletes each kernel WireGuard device that none declares.
+
 The effect `vrf` reloads `chalkos-vrf.service` whenever the output `networkd` changes. chalkd
 reloads the units of one delivery in one `systemctl reload`, and the units' order applies:
 `chalkos-vrf.service`, then `systemd-networkd.service`, then `frr.service`. At boot,

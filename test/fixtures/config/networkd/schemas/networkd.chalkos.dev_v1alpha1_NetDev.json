@@ -66,6 +66,34 @@
             }
           ],
           "x-chalkos-networkd-section": "VLAN"
+        },
+        "wireGuard": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WireGuard"
+            },
+            {
+              "items": {
+                "$ref": "#/$defs/WireGuard"
+              },
+              "type": "array"
+            }
+          ],
+          "x-chalkos-networkd-section": "WireGuard"
+        },
+        "wireGuardPeer": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WireGuardPeer"
+            },
+            {
+              "items": {
+                "$ref": "#/$defs/WireGuardPeer"
+              },
+              "type": "array"
+            }
+          ],
+          "x-chalkos-networkd-section": "WireGuardPeer"
         }
       },
       "type": "object"
@@ -202,6 +230,212 @@
       },
       "type": "object",
       "x-chalkos-networkd-section": "VLAN"
+    },
+    "WireGuard": {
+      "additionalProperties": false,
+      "properties": {
+        "listenPort": {
+          "anyOf": [
+            {
+              "pattern": "^[^\r\n]*$",
+              "type": [
+                "string",
+                "integer",
+                "boolean"
+              ]
+            },
+            {
+              "items": {
+                "pattern": "^[^\r\n]*$",
+                "type": [
+                  "string",
+                  "integer",
+                  "boolean"
+                ]
+              },
+              "type": "array"
+            }
+          ],
+          "x-chalkos-networkd-key": "ListenPort"
+        },
+        "privateKey": {
+          "anyOf": [
+            {
+              "pattern": "^[^\r\n]*$",
+              "type": [
+                "string",
+                "integer",
+                "boolean"
+              ]
+            },
+            {
+              "items": {
+                "pattern": "^[^\r\n]*$",
+                "type": [
+                  "string",
+                  "integer",
+                  "boolean"
+                ]
+              },
+              "type": "array"
+            }
+          ],
+          "x-chalkos-networkd-key": "PrivateKey"
+        },
+        "routeTable": {
+          "anyOf": [
+            {
+              "pattern": "^[^\r\n]*$",
+              "type": [
+                "string",
+                "integer",
+                "boolean"
+              ]
+            },
+            {
+              "items": {
+                "pattern": "^[^\r\n]*$",
+                "type": [
+                  "string",
+                  "integer",
+                  "boolean"
+                ]
+              },
+              "type": "array"
+            }
+          ],
+          "x-chalkos-networkd-key": "RouteTable"
+        }
+      },
+      "type": "object",
+      "x-chalkos-networkd-section": "WireGuard"
+    },
+    "WireGuardPeer": {
+      "additionalProperties": false,
+      "properties": {
+        "allowedIPs": {
+          "anyOf": [
+            {
+              "pattern": "^[^\r\n]*$",
+              "type": [
+                "string",
+                "integer",
+                "boolean"
+              ]
+            },
+            {
+              "items": {
+                "pattern": "^[^\r\n]*$",
+                "type": [
+                  "string",
+                  "integer",
+                  "boolean"
+                ]
+              },
+              "type": "array"
+            }
+          ],
+          "x-chalkos-networkd-key": "AllowedIPs"
+        },
+        "endpoint": {
+          "anyOf": [
+            {
+              "pattern": "^[^\r\n]*$",
+              "type": [
+                "string",
+                "integer",
+                "boolean"
+              ]
+            },
+            {
+              "items": {
+                "pattern": "^[^\r\n]*$",
+                "type": [
+                  "string",
+                  "integer",
+                  "boolean"
+                ]
+              },
+              "type": "array"
+            }
+          ],
+          "x-chalkos-networkd-key": "Endpoint"
+        },
+        "persistentKeepalive": {
+          "anyOf": [
+            {
+              "pattern": "^[^\r\n]*$",
+              "type": [
+                "string",
+                "integer",
+                "boolean"
+              ]
+            },
+            {
+              "items": {
+                "pattern": "^[^\r\n]*$",
+                "type": [
+                  "string",
+                  "integer",
+                  "boolean"
+                ]
+              },
+              "type": "array"
+            }
+          ],
+          "x-chalkos-networkd-key": "PersistentKeepalive"
+        },
+        "presharedKey": {
+          "anyOf": [
+            {
+              "pattern": "^[^\r\n]*$",
+              "type": [
+                "string",
+                "integer",
+                "boolean"
+              ]
+            },
+            {
+              "items": {
+                "pattern": "^[^\r\n]*$",
+                "type": [
+                  "string",
+                  "integer",
+                  "boolean"
+                ]
+              },
+              "type": "array"
+            }
+          ],
+          "x-chalkos-networkd-key": "PresharedKey"
+        },
+        "publicKey": {
+          "anyOf": [
+            {
+              "pattern": "^[^\r\n]*$",
+              "type": [
+                "string",
+                "integer",
+                "boolean"
+              ]
+            },
+            {
+              "items": {
+                "pattern": "^[^\r\n]*$",
+                "type": [
+                  "string",
+                  "integer",
+                  "boolean"
+                ]
+              },
+              "type": "array"
+            }
+          ],
+          "x-chalkos-networkd-key": "PublicKey"
+        }
+      },
+      "type": "object",
+      "x-chalkos-networkd-section": "WireGuardPeer"
     }
   }
 }

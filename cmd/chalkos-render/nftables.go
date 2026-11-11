@@ -43,6 +43,7 @@ func renderRouterNftables(port string, closed bool, in map[string]any, out strin
 		return err
 	}
 	fw.openings = append(fw.openings, dhcp...)
+	fw.openings = append(fw.openings, wireguardOpenings(d.WireGuards)...)
 	text, err := fw.ruleset()
 	if err != nil {
 		return err
@@ -142,6 +143,18 @@ func resolverOpenings(resolvers []derive.Named[derive.ResolverSpec]) ([]opening,
 		}
 	}
 	return out, nil
+}
+
+// wireguardOpenings are the UDP port of each WireGuard, from anywhere: its peers' packets reach
+// the router in the default VRF, whatever VRF the WireGuard's own link is in, and the interface
+// drops those of no peer's key.
+func wireguardOpenings(wgs []derive.Named[derive.WireGuardSpec]) []opening {
+	var out []opening
+	for _, w := range wgs {
+		port := derive.PortRange(strconv.FormatUint(uint64(w.Spec.ListenPort), 10))
+		out = append(out, opening{comment: "WireGuard " + w.Name, protocol: "udp", ports: []derive.PortRange{port}})
+	}
+	return out
 }
 
 // firewall is what the ruleset is rendered from.
