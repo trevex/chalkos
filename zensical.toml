@@ -51,6 +51,7 @@ nav = [
     "router/policy-routing.md",
     "router/nat64-and-dns.md",
     "router/dhcp.md",
+    "router/wireguard.md",
   ] },
   { "Build images" = [
     "build/index.md",

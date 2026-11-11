@@ -1,6 +1,6 @@
 ---
 title: "Run a router"
-description: "Set up chalkos nodes as routers: forwarding, the node API's interfaces, the firewall, NAT, BGP, VRFs, policy routing, NAT64 and DNS"
+description: "Set up chalkos nodes as routers: forwarding, the node API's interfaces, the firewall, NAT, BGP, VRFs, policy routing, NAT64, DNS, DHCP and WireGuard"
 ---
 
 # Run a router
@@ -10,7 +10,8 @@ These pages are for operators who run nodes of a router image, one whose variant
 and recovers like any node, and its interfaces and addresses are `Network` documents as on any
 node. A router's own documents, of `router.chalkos.dev`, set how it forwards, what its firewall
 lets through, whom it exchanges routes with over BGP, which links share a routing table, how it
-translates IPv6 to IPv4 and resolves names, and which addresses it leases.
+translates IPv6 to IPv4 and resolves names, which addresses it leases, and which peers reach it
+through WireGuard.
 
 <div class="grid cards" markdown>
 
@@ -77,5 +78,14 @@ translates IPv6 to IPv4 and resolves names, and which addresses it leases.
     other servers, in each VRF.
 
     [:octicons-arrow-right-24: Read](dhcp.md)
+
+-   :material-vpn: __Run WireGuard__
+
+    ---
+
+    Give the router a WireGuard interface with keys from Secrets, add peers such as a laptop and
+    check their handshakes.
+
+    [:octicons-arrow-right-24: Read](wireguard.md)
 
 </div>
