@@ -2059,6 +2059,55 @@ lib.runTests {
       };
     };
   };
+  # chalkos-links replays the physical ports' add events once chalkos-config has rendered the
+  # Link documents and udev has handled the first events, and before networkd starts, on a node
+  # with Link documents alone, and fails rather than hangs. A change of the Link documents runs
+  # it again, or for the first time.
+  testLinksUnit = {
+    expr =
+      let
+        unit = withDemo.systemd.services.chalkos-links;
+      in
+      {
+        inherit (unit) wantedBy;
+        after = lib.sort lib.lessThan unit.after;
+        before = lib.sort lib.lessThan unit.before;
+        inherit (unit.unitConfig) DefaultDependencies ConditionPathExistsGlob;
+        inherit (unit.serviceConfig) Type RemainAfterExit TimeoutStartSec;
+        script = lib.hasSuffix "-chalkos-links" (toString unit.serviceConfig.ExecStart);
+        effect = (effectsOf withDemo).links;
+      };
+    expected = {
+      wantedBy = [ "sysinit.target" ];
+      after = [
+        "chalkos-config.service"
+        "systemd-udev-trigger.service"
+        "systemd-udevd.service"
+      ];
+      before = [
+        "network-pre.target"
+        "sysinit.target"
+        "systemd-networkd.service"
+      ];
+      DefaultDependencies = false;
+      ConditionPathExistsGlob = "/run/systemd/network/*.link";
+      Type = "oneshot";
+      RemainAfterExit = true;
+      TimeoutStartSec = "30s";
+      script = true;
+      effect = {
+        outputs = [ ];
+        kinds = [ "Link" ];
+        reload = [ ];
+        restart = [ "chalkos-links.service" ];
+        run = "";
+        start = true;
+        when = "";
+        chalkd = "";
+        hint = null;
+      };
+    };
+  };
   # Every image has the unprivileged user its renderers run as, since it renders the built-in
   # outputs.
   testRenderUser = {

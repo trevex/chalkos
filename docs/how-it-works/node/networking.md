@@ -55,7 +55,28 @@ Each key records its networkd spelling. From it, the built-in
 delivery before it changes anything, and `chalkos-config.service` renders them at every boot before
 networkd starts. A changed network reaches a running node with
 [`chalkctl config apply`](../../reference/cli/chalkctl_config_apply.md), which makes networkd reload
-its units.
+its `.network` and `.netdev` units.
+
+udev applies the `.link` units, and it applies one to a device only while it handles the device's
+add event. At boot the kernel announces the devices before `chalkos-config.service` renders the
+units, so `chalkos-links.service` has udev handle the add event of every physical port again once
+they are rendered, before networkd starts. The unit leaves out virtual devices, such as a bond, a
+VLAN or a bridge. networkd creates them after the unit has run, and udev applies their `.link`
+units then.
+
+A delivery that changes a `Link` document runs `chalkos-links.service` again, through the
+[effect](../../reference/builtins.md#effect-links) `links`. The kernel renames a port that is up,
+so a new name takes effect at once, and networkd then matches the port to the units of its new
+name. An added alternative name or setting takes effect at once too, where the driver accepts it
+on a port that is up. udev only adds alternative names and leaves out settings a unit no longer
+names, and the unit does not run once the last `Link` document is gone, so a removal takes effect
+at the next boot. A `Link` document of a virtual device applies when networkd next creates the
+device.
+
+Each add event also has `systemd-sysctl` apply the `sysctl.d` settings of the port again, such as
+systemd's default `rp_filter`. A per-link setting of a `Network` document, such as
+`IPv4ReversePathFilter=`, is then overwritten until networkd next configures the link: when a
+delivery changes the port's `Network` document, or at the next boot.
 
 ## Ethernet interfaces without a unit get DHCP
 

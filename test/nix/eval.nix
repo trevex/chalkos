@@ -998,6 +998,7 @@ lib.runTests {
       effects = [
         "chrony"
         "chrony-dhcp"
+        "links"
         "networkd"
         "router-nftables"
         "router-sysctl"
@@ -1009,6 +1010,7 @@ lib.runTests {
         "chalkos-config"
         "chalkos-firewall"
         "chalkos-health"
+        "chalkos-links"
         "chalkos-vrf"
       ];
       diagnostics = [

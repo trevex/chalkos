@@ -240,6 +240,21 @@ so they accept exactly the sections and keys that networkd accepts.
 [Config kinds](../reference/kinds.md#network) lists them, and
 [Networking](../how-it-works/node/networking.md) describes how a node applies them.
 
+A node applies its `Link` documents at every boot, before networkd brings the links up. A
+delivery applies a changed `Link` document to the running ports at once, as far as their drivers
+allow, and that includes a new name. Every document that names the port must change in the same
+delivery: the `match` of its `Network`, and the interfaces of a VRF, a BGP peer or a firewall zone.
+Deliver a rename as a trial, with
+[`chalkctl config apply --try`](../reference/cli/chalkctl_config_apply.md#flag-try), so a
+mistake that cuts the node off rolls back. The rollback renames the port back when the previous
+config names it in a `Link` document; otherwise the port keeps the new name until the next boot.
+An added alternative name or setting also takes effect at once, and a removed one at the next
+boot.
+
+A VLAN takes the MAC address of its port, and the ports of a bond take the bond's, so a `Link`
+document that matches by `macAddress` can match the wrong device. Match a port by
+`permanentMACAddress`, which only the physical device has.
+
 ## Host sets the hostname
 
 The hostname is the node's name unless a `Host` document gives another:

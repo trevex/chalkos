@@ -1449,6 +1449,7 @@ The effects every image declares.
 | --- | --- | --- |
 | `chrony`{ #effect-chrony } | The output `chrony` changed. | Runs `chalkos-chrony-reload-sources`. |
 | `chrony-dhcp`{ #effect-chrony-dhcp } | The `when` after the table holds, which reads the documents of `TimeSync`. | Restarts `chalkos-chrony-dhcp.service`. |
+| `links`{ #effect-links } | The documents of `Link`, or a value of a Secret they reference, changed. | Restarts `chalkos-links.service`, and starts them when they are stopped. |
 | `networkd`{ #effect-networkd } | The output `networkd` changed. | Reloads `systemd-networkd.service`. |
 
 `when` of `chrony-dhcp`:

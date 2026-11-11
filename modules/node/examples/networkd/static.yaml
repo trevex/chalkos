@@ -1,9 +1,9 @@
-# A static uplink with a second route, and its interface named by its MAC address.
+# A static uplink with a second route, and its interface named by its permanent MAC address.
 apiVersion: networkd.chalkos.dev/v1alpha1
 kind: Link
 metadata: {name: 10-uplink}
 spec:
-  match: {macAddress: "52:54:00:12:34:56"}
+  match: {permanentMACAddress: "52:54:00:12:34:56"}
   link: {name: uplink}
 ---
 apiVersion: networkd.chalkos.dev/v1alpha1
