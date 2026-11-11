@@ -105,7 +105,8 @@ An address on a loopback interface needs the `Flannel` document's `spec.mtu`, be
 take the loopback's MTU. When it is set, a dummy interface holding a node's address needs an MTU of
 at least its value, 20 more for an IPv6 address. Otherwise the node refuses to prepare, with a
 message such as `the node's address 10.0.0.11 is on the loopback interface lo, whose MTU flannel
-would take; set the Flannel document's spec.mtu`.
+would take; set the Flannel document's spec.mtu`. The homelab's nodes hold their addresses on the
+dummy interface `node0`, and its `Flannel` document sets `spec.mtu`.
 
 ## A control plane's addresses are pinned once it joins etcd
 
@@ -208,7 +209,9 @@ dynamic, so networkd may otherwise remove the VIP when it configures the link ag
 planes then need no shared L2 network, and clients reach the VIP through the routers that learn
 the route. A failover takes the election's time plus the time the routing daemons need to
 withdraw the route on the old holder, announce it from the new one and pass the change through
-their peers.
+their peers. The homelab example works this way: bird on each control plane announces the
+addresses of its dummy interface `node0`, the node's own and the VIP while it holds it, to the
+router over BGP.
 
 The election runs on an etcd lease of 10 seconds, and every control plane checks its API server
 every 2 seconds. The diagram shows the states of one control plane's chalkd.

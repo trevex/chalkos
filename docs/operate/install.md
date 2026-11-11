@@ -8,7 +8,8 @@ description: "Boot a machine or VM into maintenance mode and install a node of t
 This page is for an operator who turns a machine into a node of the inventory. The machine may be
 a physical server or a VM under QEMU, libvirt or Proxmox. At the end the node runs its image from
 its system disk with its config, and chalkctl reaches it at the address the inventory names. The
-page installs the homelab's `cp1`, as [Write a node's config](node-config.md) describes it.
+page installs the homelab's `node1`, as [Write a node's config](node-config.md) describes it.
+[Build a home lab](../get-started/home-lab.md) installs all four of the homelab's machines.
 
 ## Before you begin
 
@@ -94,8 +95,9 @@ signed images/node-metal-signed/chalkos.raw
 chalkbuild signs the copy's boot loader and UKI and checks them against `db.crt`. The output
 directory must not exist, so `rm -rf` removes the signed copy of an earlier build first.
 
-Point the inventory's image at the signed copy. The homelab's inventory names the unsigned build.
-For machines that enforce Secure Boot it names the signed one:
+Point the inventory's image at the signed copy. The homelab's inventory names the unsigned builds.
+For machines that enforce Secure Boot it names the signed ones, `images/router-metal-signed` being
+the router image's signed copy:
 
 ```yaml title="chalkos.yaml"
 apiVersion: chalkctl.chalkos.dev/v1alpha1
@@ -103,12 +105,17 @@ kind: Inventory
 metadata: {name: homelab}
 spec:
   images:
-    # chalkbuild sign writes the signed copy of images/node-metal here.
+    # chalkbuild sign writes the signed copies of the builds here.
+    router-metal: {source: {directory: images/router-metal-signed}}
     node-metal: {source: {directory: images/node-metal-signed}}
-  all: {imageName: node-metal, files: [cluster/*.yaml]}
+  groups:
+    router: {imageName: router-metal, files: [router/*.yaml]}
+    nodes: {imageName: node-metal, files: [cluster/*.yaml, bgp/fabric.yaml, bgp/secrets.yaml]}
   nodes:
-    cp1: {address: 10.0.0.11, files: [nodes/cp1.yaml]}
-    w1: {address: 10.0.0.21, files: [nodes/w1.yaml]}
+    router: {address: 192.168.1.2, groups: [router]}
+    node1: {address: "fdc8:a1b2:c3d4:ff::11", groups: [nodes], files: [nodes/node1.yaml]}
+    node2: {address: "fdc8:a1b2:c3d4:ff::12", groups: [nodes], files: [nodes/node2.yaml]}
+    node3: {address: "fdc8:a1b2:c3d4:ff::13", groups: [nodes], files: [nodes/node3.yaml]}
 ```
 
 Signing leaves the store as it is, so the root hash stays the same. `chalkctl validate` then checks
@@ -125,27 +132,29 @@ image as a package, such as `node-kvm`, as
 [Variants and platforms](../build/variants-and-platforms.md#a-platform-builds-an-image-per-kind-of-machine)
 describes.
 
-Name the signed copy of the `kvm` image in the inventory's `spec.images`. `spec.all.imageName`
-gives it to every node that names no image of its own or through a group:
+The homelab runs on metal. The examples of this section install a VM `vm1` of another cluster,
+on a bridge with the IPv4 network `192.168.122.0/24`. Name the signed copy of the `kvm` image in
+the inventory's `spec.images`. `spec.all.imageName` gives it to every node that names no image of
+its own or through a group:
 
 ```yaml title="chalkos.yaml"
 apiVersion: chalkctl.chalkos.dev/v1alpha1
 kind: Inventory
-metadata: {name: homelab}
+metadata: {name: vms}
 spec:
   images:
     # chalkbuild sign signs a copy of the build into this directory.
     node-kvm: {source: {directory: images/node-kvm-signed}}
   all: {imageName: node-kvm, files: [cluster/*.yaml]}
   nodes:
-    cp1: {address: 10.0.0.11, files: [nodes/cp1.yaml]}
+    vm1: {address: 192.168.122.11, files: [nodes/vm1.yaml]}
 ```
 
 A VM's system disk is a virtio block disk, `/dev/vda` in the guest. Match the network by MAC
 address, so that it does not depend on the interface's name, and give the VM that MAC address.
-`cp1`'s `SystemDisk` and `Network` then read:
+`vm1`'s `SystemDisk` and `Network` then read:
 
-```yaml title="nodes/cp1.yaml"
+```yaml title="nodes/vm1.yaml"
 apiVersion: storage.chalkos.dev/v1alpha1
 kind: SystemDisk
 metadata: {name: system}
@@ -157,7 +166,7 @@ kind: Network
 metadata: {name: 10-uplink}
 spec:
   match: {macAddress: "52:54:00:12:00:11"}
-  network: {address: [10.0.0.11/24], gateway: 10.0.0.1}
+  network: {address: [192.168.122.11/24], gateway: 192.168.122.1}
 ```
 
 On Proxmox with a SCSI disk in place of a virtio block disk, the disk is `/dev/sda`. A node's
@@ -221,7 +230,8 @@ A physical machine boots the installer. A VM boots its own image from a disk mad
 
     The `.iso` is a hybrid image. It boots from a CD, from virtual media and written to a USB
     stick. The `.raw` is the same system as a plain disk image, for machines that boot better from
-    one. The installer takes its addresses by DHCP on every Ethernet port.
+    one. The installer takes its addresses by DHCP on every Ethernet port, and by SLAAC where a
+    router sends advertisements.
     [Customise the installer](../build/customise-installer.md) gives it static addresses, VLANs,
     bonds or extra drivers.
 
@@ -261,8 +271,8 @@ A physical machine boots the installer. A VM boots its own image from a disk mad
     qcow2 stays thin and supports snapshots:
 
     ```sh
-    qemu-img convert -f raw -O qcow2 node.raw cp1.qcow2
-    qemu-img resize cp1.qcow2 32G
+    qemu-img convert -f raw -O qcow2 node.raw vm1.qcow2
+    qemu-img resize vm1.qcow2 32G
     ```
 
     Prepare a UEFI variables file with Secure Boot on and your db certificate enrolled, with
@@ -272,11 +282,11 @@ A physical machine boots the installer. A VM boots its own image from a disk mad
     Microsoft signed. Then start the VM's TPM:
 
     ```sh
-    mkdir -p cp1/tpm
-    virt-fw-vars --input <ovmf-vars> --output cp1/OVMF_VARS.fd \
-      --enroll-generate "cp1 platform key" --no-microsoft --microsoft-kek none \
+    mkdir -p vm1/tpm
+    virt-fw-vars --input <ovmf-vars> --output vm1/OVMF_VARS.fd \
+      --enroll-generate "vm1 platform key" --no-microsoft --microsoft-kek none \
       --add-db "$(uuidgen)" db.crt --secure-boot
-    swtpm socket --tpm2 --tpmstate dir=cp1/tpm --ctrl type=unixio,path=cp1/tpm/swtpm.sock --daemon
+    swtpm socket --tpm2 --tpmstate dir=vm1/tpm --ctrl type=unixio,path=vm1/tpm/swtpm.sock --daemon
     ```
 
     `<ovmf-vars>` is the variables template of your OVMF build, and `<ovmf-code>` below is its
@@ -285,17 +295,17 @@ A physical machine boots the installer. A VM boots its own image from a disk mad
     the same build. Then start the VM:
 
     ```sh
-    qemu-system-x86_64 -name cp1 -machine q35,smm=on,accel=kvm -cpu host -m 3072 -smp 2 \
+    qemu-system-x86_64 -name vm1 -machine q35,smm=on,accel=kvm -cpu host -m 3072 -smp 2 \
       -global driver=cfi.pflash01,property=secure,value=on \
       -drive if=pflash,format=raw,unit=0,readonly=on,file=<ovmf-code> \
-      -drive if=pflash,format=raw,unit=1,file=cp1/OVMF_VARS.fd \
-      -drive if=none,id=disk0,format=qcow2,file=cp1.qcow2 \
+      -drive if=pflash,format=raw,unit=1,file=vm1/OVMF_VARS.fd \
+      -drive if=none,id=disk0,format=qcow2,file=vm1.qcow2 \
       -device virtio-blk-pci,drive=disk0,bootindex=1 \
       -nic bridge,br=br0,model=virtio-net-pci,mac=52:54:00:12:00:11 \
-      -chardev socket,id=chrtpm,path=cp1/tpm/swtpm.sock \
+      -chardev socket,id=chrtpm,path=vm1/tpm/swtpm.sock \
       -tpmdev emulator,id=tpm0,chardev=chrtpm -device tpm-tis,tpmdev=tpm0 \
       -device virtio-serial-pci,id=agent \
-      -chardev socket,id=qga,path=cp1/qga.sock,server=on,wait=off \
+      -chardev socket,id=qga,path=vm1/qga.sock,server=on,wait=off \
       -device virtserialport,bus=agent.0,chardev=qga,name=org.qemu.guest_agent.0 \
       -nographic
     ```
@@ -310,16 +320,16 @@ A physical machine boots the installer. A VM boots its own image from a disk mad
     Give each VM its own disk, converted from the signed image and grown to the node's disk size:
 
     ```sh
-    qemu-img convert -f raw -O qcow2 node.raw /var/lib/libvirt/images/cp1.qcow2
-    qemu-img resize /var/lib/libvirt/images/cp1.qcow2 32G
+    qemu-img convert -f raw -O qcow2 node.raw /var/lib/libvirt/images/vm1.qcow2
+    qemu-img resize /var/lib/libvirt/images/vm1.qcow2 32G
     ```
 
     Write the domain. libvirt chooses the firmware by its features, and starts swtpm for the TPM
     itself:
 
-    ```xml title="cp1.xml"
+    ```xml title="vm1.xml"
     <domain type="kvm">
-      <name>cp1</name>
+      <name>vm1</name>
       <memory unit="MiB">3072</memory>
       <vcpu>2</vcpu>
       <os firmware="efi">
@@ -338,7 +348,7 @@ A physical machine boots the installer. A VM boots its own image from a disk mad
       <devices>
         <disk type="file" device="disk">
           <driver name="qemu" type="qcow2"/>
-          <source file="/var/lib/libvirt/images/cp1.qcow2"/>
+          <source file="/var/lib/libvirt/images/vm1.qcow2"/>
           <target dev="vda" bus="virtio"/>
         </disk>
         <interface type="bridge">
@@ -368,17 +378,17 @@ A physical machine boots the installer. A VM boots its own image from a disk mad
     file:
 
     ```sh
-    virsh define cp1.xml
-    virsh start cp1 --paused
-    virsh destroy cp1
-    virsh dumpxml cp1 | grep nvram
+    virsh define vm1.xml
+    virsh start vm1 --paused
+    virsh destroy vm1
+    virsh dumpxml vm1 | grep nvram
     sudo virt-fw-vars --inplace <nvram-file> --add-db "$(uuidgen)" db.crt
-    virsh start cp1
-    virsh console cp1
+    virsh start vm1
+    virsh console vm1
     ```
 
     `<nvram-file>` is the path that `virsh dumpxml` prints, such as
-    `/var/lib/libvirt/qemu/nvram/cp1_VARS.fd`. virt-fw-vars edits raw edk2 variables files. Where
+    `/var/lib/libvirt/qemu/nvram/vm1_VARS.fd`. virt-fw-vars edits raw edk2 variables files. Where
     a distribution keeps them as qcow2, enrol the certificate in the firmware's setup screen
     instead, as the Proxmox tab describes.
 
@@ -388,7 +398,7 @@ A physical machine boots the installer. A VM boots its own image from a disk mad
     raw image into its storage, so it needs no qcow2:
 
     ```sh
-    qm create 111 --name cp1 --ostype l26 --machine q35 --bios ovmf --cores 2 --memory 3072 \
+    qm create 111 --name vm1 --ostype l26 --machine q35 --bios ovmf --cores 2 --memory 3072 \
       --efidisk0 local-lvm:1,efitype=4m,pre-enrolled-keys=1 \
       --tpmstate0 local-lvm:1,version=v2.0 \
       --virtio0 local-lvm:0,import-from=/root/node.raw \
@@ -434,8 +444,9 @@ in memory, so a reboot into maintenance mode prints a new one.
 When the first line says `accepting any client`, the installer or image has no OS CA. It is the
 generic installer, or the flake's `mkImages` has no `osCA`.
 
-In maintenance mode the machine takes an address by DHCP. That address is not yet the one the
-inventory names, so the commands below reach it with `--address`.
+In maintenance mode the machine takes its addresses by DHCP, and by SLAAC where a router sends
+advertisements. Such an address is not yet the one the inventory names, so the commands below
+reach it with `--address`.
 
 ## Choose the system disk
 
@@ -455,9 +466,9 @@ output lists each disk with the properties a selector matches, as
 
 Name the disk by a `/dev/disk/by-id/` path or a selector, because device names such as
 `/dev/sda` can change between boots. A VM's virtio disk is the exception: it is always
-`/dev/vda`. The homelab's `cp1` names its NVMe disk by its `by-id` path:
+`/dev/vda`. The homelab's `node1` names its NVMe disk by its `by-id` path:
 
-```yaml title="nodes/cp1.yaml"
+```yaml title="nodes/node1.yaml"
 apiVersion: storage.chalkos.dev/v1alpha1
 kind: SystemDisk
 metadata: {name: system}
@@ -466,7 +477,7 @@ spec:
 ```
 
 chalkctl reads the file as it is when a command runs. After a change, check it again with
-`chalkctl validate cp1`.
+`chalkctl validate node1`.
 
 ## Install the node
 
@@ -474,7 +485,7 @@ Run [`chalkctl install`](../reference/cli/chalkctl_install.md) with the node's n
 and the fingerprint:
 
 ```sh
-chalkctl install cp1 --secrets=secrets.age --address=<address> --fingerprint=<fingerprint>
+chalkctl install node1 --secrets=secrets.age --address=<address> --fingerprint=<fingerprint>
 ```
 
 `--fingerprint` pins the node's certificate from the first connection. When reading the console
@@ -486,7 +497,7 @@ fingerprint.
 chalkctl sends the node its config, the documents of the files the inventory gives it, checked
 against the image's schemas. It also sends a node certificate, the OS CA and the secret of the
 second keyslot. chalkctl refuses a node that is installed already, with
-`cp1 at <address> is installed already`.
+`node1 at <address> is installed already`.
 
 !!! note "On the shipped variant, the install carries the node's Kubernetes share"
 
@@ -499,8 +510,8 @@ second keyslot. chalkctl refuses a node that is installed already, with
     Before it installs the node, chalkctl asks the other control planes of the inventory for the
     revoked nodes, and refuses a name that
     [`chalkctl node revoke`](../reference/cli/chalkctl_node_revoke.md) revoked, with
-    `w1 is revoked since <time>, and install installs it only once chalkctl node unrevoke w1 lets
-    it back in, or with --force`.
+    `node3 is revoked since <time>, and install installs it only once chalkctl node unrevoke node3
+    lets it back in, or with --force`.
     [Reuse a removed node's name](add-remove-nodes.md#reuse-a-removed-nodes-name) describes how to
     free the name. chalkctl also refuses while control planes were bootstrapped and none says which
     nodes are revoked. A control plane that does not answer as an installed node counts as not
@@ -516,9 +527,9 @@ store, hash tree, UKI and boot loader, and not the whole raw image. The output b
 illustrative: its lines are chalkctl's, and the disk is an example machine's.
 
 ```text
-installing cp1 onto /dev/disk/by-id/nvme-Samsung_SSD_990_PRO_2TB_S7KHNJ0W100001 from /home/alice/homelab/images/node-metal-signed: chalkos d871203debfe, sending 311717904 bytes of store, hash tree, UKI and boot loader
-cp1 is installed and reboots
-chalkctl recovery-key cp1 prints the key that unlocks it when its TPM fails
+installing node1 onto /dev/disk/by-id/nvme-Samsung_SSD_990_PRO_2TB_S7KHNJ0W100001 from /home/alice/homelab/images/node-metal-signed: chalkos 5f1e60980b55, sending 311717904 bytes of store, hash tree, UKI and boot loader
+node1 is installed and reboots
+chalkctl recovery-key node1 prints the key that unlocks it when its TPM fails
 ```
 
 The first line names the disk, the image directory, the image's ID `chalkos` and the image's name,
@@ -545,7 +556,7 @@ validator `bgp-peers` from [Validate config with a program](../build/validate-co
 chalkctl: install node1: failed_precondition: install: the config is refused: Peer/router: spec.interfaces[2]: fabric2 has no Network document; bird binds the session to an interface the node configures; the target disk boots nothing, and an install of the image continues on it
 ```
 
-The machine stays in maintenance mode. Fix the config and run `chalkctl install cp1` again: the
+The machine stays in maintenance mode. Fix the config and run `chalkctl install node1` again: the
 install continues on the disk without `--wipe-disk`. It does so with another image too, such as
 one rebuilt with a fixed validator, as
 [Continue an install that stopped](#continue-an-install-that-stopped) describes. Build the
@@ -566,8 +577,8 @@ machine's route to the registry and its credentials.
 ### A VM's image installs in place
 
 A VM that booted its own image installs in place. chalkctl checks that the image the VM runs is
-built for the platform of the node's image, prints `installing cp1 in place`, and sends no image.
-Once the node accepted everything, it prints `cp1 is installed and reboots`. The node gives its
+built for the platform of the node's image, prints `installing node1 in place`, and sends no image.
+Once the node accepted everything, it prints `node1 is installed and reboots`. The node gives its
 ESP a random partition UUID, so that no two VMs made from the same image share one.
 
 ### The node reboots into normal mode
@@ -627,7 +638,7 @@ keys, or a replaced mainboard. [`chalkctl recovery-key`](../reference/cli/chalkc
 derives the key from the secrets file:
 
 ```sh
-chalkctl recovery-key cp1 --secrets=secrets.age
+chalkctl recovery-key node1 --secrets=secrets.age
 ```
 
 No file stores the keys, and installing never changes the secrets file, so a backup of the
@@ -643,7 +654,7 @@ the fingerprint, choose the disk and run `chalkctl install`.
 
 !!! note "On the shipped variant, only the first control plane needs a bootstrap"
 
-    Once `cp1` is back up in normal mode, [Bootstrap and get a kubeconfig](../kubernetes/bootstrap.md)
+    Once `node1` is back up in normal mode, [Bootstrap and get a kubeconfig](../kubernetes/bootstrap.md)
     starts the cluster on it. The other nodes need no bootstrap. Workers join at the cluster
     endpoint with the kubelet certificate chalkctl gave them. Further control planes join etcd
     and the control plane on their own, as
@@ -656,14 +667,14 @@ volumes, certificates and failed units, as
 [Status, logs and the console](status-and-logs.md) explains:
 
 ```sh
-chalkctl status cp1 --secrets=secrets.age
+chalkctl status node1 --secrets=secrets.age
 ```
 
 The node shows its volumes as mounted and no failed units. On a VM, the hypervisor also sees the
 guest agent. Under libvirt, `virsh domifaddr` lists the addresses the agent reports:
 
 ```sh
-virsh domifaddr cp1 --source agent
+virsh domifaddr vm1 --source agent
 ```
 
 On Proxmox, the VM's summary shows those addresses.
@@ -680,8 +691,8 @@ chalkctl reports the installer's refusal as its error. The common errors and sym
 | Nothing appears on a VM's console after the firmware | The VM has no serial port, or the console shows the screen. The `kvm` image writes to `ttyS0` only. |
 | `STATE on the target disk ... does not open on this machine, so it belongs to another node` | The disk was installed in another machine. Use `--wipe-disk` if its data may go. |
 | `the config places the system on /dev/sda (model "...", size ...), but the node runs from /dev/vda (model "...", size ...); install it with the installer instead` | The node's `SystemDisk` names another disk than the one the VM booted from. Fix `spec.disk` in the node's file. |
-| `cp1 runs an image built for metal, but its image node-kvm is built for kvm; changing a node's platform is a reinstall` | The VM booted the `metal` image. Make its disk from the signed `images/node-kvm-signed`. |
-| The first boot, or a VM's boot after a hypervisor change, asks for a recovery key | The installer and the image were signed with different keys, Secure Boot changed between install and boot, or a VM's UEFI variables or TPM state were replaced. Type the key that `chalkctl recovery-key cp1` prints. |
+| `vm1 runs an image built for metal, but its image node-kvm is built for kvm; changing a node's platform is a reinstall` | The VM booted the `metal` image. Make its disk from the signed `images/node-kvm-signed`. |
+| The first boot, or a VM's boot after a hypervisor change, asks for a recovery key | The installer and the image were signed with different keys, Secure Boot changed between install and boot, or a VM's UEFI variables or TPM state were replaced. Type the key that `chalkctl recovery-key node1` prints. |
 
 [The console asks for a passphrase at boot](recover-node.md#the-console-asks-for-a-passphrase-at-boot)
 explains the recovery-key prompt and how to make it go away. [Troubleshooting](troubleshooting.md)

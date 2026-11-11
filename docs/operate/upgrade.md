@@ -8,8 +8,8 @@ description: "Roll a new image through the nodes with chalkctl upgrade, and act 
 This page is for an operator who installs a new image on running nodes. At the end every node runs
 the new image, and its boot was found healthy. A node whose new image never becomes healthy boots
 its previous image again. Any change to what the image holds goes this way: a new chalkos release,
-a new Kubernetes release or a change to the image's modules. The page upgrades the homelab's `cp1`
-and `w1`.
+a new Kubernetes release or a change to the image's modules. The page upgrades the homelab's
+router and its three Kubernetes nodes.
 
 A new chalkos release arrives through the image author, who updates the `chalkos` input in the
 flake's `flake.lock` and builds the images again. Take chalkctl from the same revision, as
@@ -58,9 +58,9 @@ is. [Upgrades](../how-it-works/node/upgrades.md) and
 ## Point the inventory at the new image
 
 Without `--image`, `chalkctl upgrade` gives each node its image in the inventory. The homelab's
-inventory names the image directory `images/node-metal` for every node. For machines that enforce
-Secure Boot it names the signed copy `images/node-metal-signed`. Sign each new build again into
-that copy. The output directory must not exist, so remove the copy of the previous build first:
+inventory names the image directory `images/router-metal` for the router and `images/node-metal`
+for the other nodes. For machines that enforce Secure Boot it names the signed copies, such as
+`images/node-metal-signed`. Sign each new build again into its copy. The output directory must not exist, so remove the copy of the previous build first:
 
 ```console
 $ rm -rf images/node-metal-signed
@@ -120,36 +120,41 @@ Kubernetes, but not the drivers and firmware of the cluster's machines.
 Run the command in the inventory's directory, or name the inventory with `--inventory`:
 
 ```console
-$ chalkctl upgrade --secrets secrets.age --allow-downtime
-upgrading node on metal to <new>: cp1, w1
-cp1: installing <new>
-cp1: config unchanged
-cp1: installed <new>, staged as .staged-chalkos_2.efi
-cp1: cordoned, evicted <n> pods, kept <n>
-cp1: activated <new>, which boots next as chalkos_2+3.efi
-cp1: rebooting into <new>
-cp1: runs <new>, found healthy
-cp1: uncordoned
-w1: installing <new>
-w1: config unchanged
-w1: installed <new>, staged as .staged-chalkos_2.efi
-w1: cordoned, evicted <n> pods, kept <n>
-w1: activated <new>, which boots next as chalkos_2+3.efi
-w1: rebooting into <new>
-w1: runs <new>, found healthy
-w1: uncordoned
-upgraded 2 nodes to <new>
+$ chalkctl upgrade --secrets secrets.age
+upgrading node on metal to <new>: node1, node2, node3
+upgrading router on metal to <new-router>: router
+node1: installing <new>
+node1: config unchanged
+node1: installed <new>, staged as .staged-chalkos_2.efi
+node1: cordoned, evicted <n> pods, kept <n>
+node1: activated <new>, which boots next as chalkos_2+3.efi
+node1: rebooting into <new>
+node1: runs <new>, found healthy
+node1: uncordoned
+node2: installing <new>
+...
+node3: uncordoned
+router: installing <new-router>
+router: config unchanged
+router: installed <new-router>, staged as .staged-chalkos_2.efi
+router: activated <new-router>, which boots next as chalkos_2+3.efi
+router: rebooting into <new-router>
+router: runs <new-router>, found healthy
+upgraded 4 nodes to <new>, <new-router>
 ```
 
-`<new>` stands for the new image's name. chalkctl names an image by the first 12 hex characters of
-its root hash. When the build names a tag or a git revision, they follow in parentheses, the
+`<new>` and `<new-router>` stand for the new images' names. chalkctl names an image by the first
+12 hex characters of its root hash. When the build names a tag or a git revision, they follow in parentheses, the
 revision cut to 12 characters, as in `<root hash> (<tag>, <revision>)`. `<n>` stands for numbers of
 pods. `.staged-chalkos_2.efi` is the staged UKI on a node that was installed with
 `chalkos_1.efi`, and `chalkos_2+3.efi` the boot entry its activation gives it: generation 2, with
 three tries.
 
-The first line names the image's variant and platform and the nodes that get it. Then each node
-shows its steps:
+The first lines name each image's variant and platform and the nodes that get it. `...` stands
+for the lines of node2 and node3, which repeat node1's. The control planes go first, one at a time.
+The homelab's nodes reach each other and the Kubernetes API through the router alone, so its
+reboot pauses that traffic; `--nodes router` upgrades the router in a run of its own, at a time
+that suits. Each node shows its steps:
 
 1. `installing` starts sending the image.
 2. The config line says what the node's config changes with the image. `config unchanged` means
@@ -168,8 +173,9 @@ The last line counts the nodes upgraded.
     image is staged, and activates the image only after the drain, so a refused drain leaves the
     image staged and the node boots its current image. chalkctl also waits until the node's Node
     is Ready. Before a control plane is drained, chalkctl checks that etcd keeps its quorum without
-    it. The homelab has one control plane, so etcd and the API server are down while `cp1`
-    reboots, and the run needs `--allow-downtime`.
+    it. The homelab has three control planes, so etcd keeps its quorum while each reboots. A
+    cluster of one or two control planes loses its quorum while one reboots, and its run needs
+    `--allow-downtime`.
     [Upgrade Kubernetes](../kubernetes/upgrade-kubernetes.md) covers the drain, the quorum and
     Kubernetes releases.
 
@@ -178,20 +184,20 @@ The last line counts the nodes upgraded.
 `--until` stops each node after a step. A later command runs the next step, for one node at a time:
 
 ```console
-$ chalkctl upgrade --nodes w1 --until stage --secrets secrets.age
-upgrading node on metal to <new>: w1
-w1: installing <new>
-w1: config unchanged
-w1: installed <new>, staged as .staged-chalkos_2.efi
+$ chalkctl upgrade --nodes node3 --until stage --secrets secrets.age
+upgrading node on metal to <new>: node3
+node3: installing <new>
+node3: config unchanged
+node3: installed <new>, staged as .staged-chalkos_2.efi
 staged <new> on 1 node; chalkctl node activate makes it boot next
-$ chalkctl node activate w1 --secrets secrets.age
-w1: activated <new>, which boots next as chalkos_2+3.efi
-w1: chalkctl node reboot w1 boots it
-$ chalkctl node reboot w1 --secrets secrets.age
-w1: cordoned, evicted <n> pods, kept <n>
-w1: rebooting into <new>
-w1: runs <new>, found healthy
-w1: uncordoned
+$ chalkctl node activate node3 --secrets secrets.age
+node3: activated <new>, which boots next as chalkos_2+3.efi
+node3: chalkctl node reboot node3 boots it
+$ chalkctl node reboot node3 --secrets secrets.age
+node3: cordoned, evicted <n> pods, kept <n>
+node3: rebooting into <new>
+node3: runs <new>, found healthy
+node3: uncordoned
 ```
 
 - `--until stage` stages the image on each node and stops. The node keeps booting its current
@@ -256,8 +262,8 @@ Config that only the new image accepts, such as a document of a kind an extensio
 declares, goes into the node's files before the upgrade. Preview what it changes:
 
 ```sh
-chalkctl validate w1
-chalkctl upgrade --nodes=w1 --diff --secrets secrets.age
+chalkctl validate node3
+chalkctl upgrade --nodes=node3 --diff --secrets secrets.age
 ```
 
 `--diff` prints for each node what its config changes against the config of the image it runs,
@@ -315,7 +321,7 @@ new image's default on both sides, and a rule that keeps a field's value sees no
 was found healthy:
 
 ```console
-$ chalkctl status w1 --secrets secrets.age
+$ chalkctl status node3 --secrets secrets.age
 ...
 image <new>, booted from chalkos_2.efi
 ...
@@ -332,14 +338,14 @@ A node whose new image is not found healthy within its tries boots its previous 
 at that node:
 
 ```text
-chalkctl: w1: upgrade to <new> failed: rolled back to <old>; it stays cordoned; its boots logged:
+chalkctl: node3: upgrade to <new> failed: rolled back to <old>; it stays cordoned; its boots logged:
   <journal lines>
 ```
 
 `<old>` is the image the node runs again. `<journal lines>` are the last 30 lines that chalkd and the
 health check logged during the failed boot, such as
 `the node did not become healthy within 5m0s: ...`. `; it stays cordoned` appears on a node of a
-Kubernetes cluster alone. `chalkctl status w1` shows the same lines for as long as the failed image
+Kubernetes cluster alone. `chalkctl status node3` shows the same lines for as long as the failed image
 stays on the disk.
 
 The node runs its previous image, and that boot is healthy. To go on:
@@ -391,21 +397,22 @@ previous image <old> (upgrade --rollback boots it)
 `chalkctl upgrade --rollback` boots that image again in place of installing one:
 
 ```console
-$ chalkctl upgrade --rollback --allow-downtime
-rolling back 2 nodes to <old>: cp1, w1
-cp1: cordoned, evicted <n> pods, kept <n>
-cp1: rolling back to <old>
-cp1: <old> boots next as chalkos_3+3.efi
-cp1: rebooting into <old>
-cp1: runs <old>, found healthy
-cp1: uncordoned
-w1: cordoned, evicted <n> pods, kept <n>
-w1: rolling back to <old>
-w1: <old> boots next as chalkos_3+3.efi
-w1: rebooting into <old>
-w1: runs <old>, found healthy
-w1: uncordoned
-rolled back 2 nodes to <old>
+$ chalkctl upgrade --rollback --nodes node1,node2,node3
+rolling back 3 nodes to <old>: node1, node2, node3
+node1: cordoned, evicted <n> pods, kept <n>
+node1: rolling back to <old>
+node1: <old> boots next as chalkos_3+3.efi
+node1: rebooting into <old>
+node1: runs <old>, found healthy
+node1: uncordoned
+...
+node3: cordoned, evicted <n> pods, kept <n>
+node3: rolling back to <old>
+node3: <old> boots next as chalkos_3+3.efi
+node3: rebooting into <old>
+node3: runs <old>, found healthy
+node3: uncordoned
+rolled back 3 nodes to <old>
 ```
 
 The node writes no image. It checks that the inactive slot still holds the store and checks the
@@ -419,12 +426,12 @@ the rollback delivers no config and an operator client file suffices. `--image`,
 
 Boot counting protects the rollback's boot when the node runs an image whose boot was found
 healthy. A boot of the image before that fails its tries falls back to the image the node ran, and
-the run stops with `w1: rollback to <old> failed: it fell back to <new>`. A node whose running image
+the run stops with `node3: rollback to <old> failed: it fell back to <new>`. A node whose running image
 was not found healthy yet, as when that image is the one to leave, gets the image before without
 boot counting. That image was found healthy before, so it is the node's known-good image again,
 and the node never falls back from it. chalkctl says so on the `boots next` line, releases the node
 once its layers report it ready, and ends the node's steps with
-`w1: runs <old> (its boots are not counted)`. Until the running boot is found healthy, the node
+`node3: runs <old> (its boots are not counted)`. Until the running boot is found healthy, the node
 keeps the config that image last ran: `config apply --staged` and an upgrade to that image with
 other config are refused.
 
@@ -440,7 +447,7 @@ so a second rollback does not undo the first.
 The run refuses before it changes any node when the nodes name different images:
 
 ```text
-the nodes roll back to different images: cp1 to <a>; w1 to <b>; roll them back separately with --nodes
+the nodes roll back to different images: node1 to <a>; router to <b>; roll them back separately with --nodes
 ```
 
 This happens on a cluster whose control planes and workers run different images, and on nodes that
@@ -474,7 +481,7 @@ data after a Kubernetes upgrade.
 A new Kubernetes release takes two steps, the control plane first:
 
 1. Change the references of `images` in the `Cluster` document to the new release and deliver the
-   config to the cluster's nodes with `chalkctl config apply cp1 cp2 cp3 w1 ...`. chalkctl rolls
+   config to the cluster's nodes with `chalkctl config apply node1 node2 node3`. chalkctl rolls
    the new API server, controller-manager and scheduler out to the control planes one at a time,
    then delivers the config to the other nodes. No node reboots.
 2. Build images with the new kubelet and run `chalkctl upgrade`, as the sections above describe.
@@ -485,7 +492,7 @@ The image's checker refuses a config whose API server is older than its kubelet,
 control planes run:
 
 ```text
-chalkctl: w1: the image's kubelet 1.38.0 would be newer than the API server 1.37.2 that cp2 runs, the oldest of the cluster; upgrade the control plane first: name the new release's images in the Cluster document and deliver it with chalkctl config apply
+chalkctl: node3: the image's kubelet 1.38.0 would be newer than the API server 1.37.2 that node2 runs, the oldest of the cluster; upgrade the control plane first: name the new release's images in the Cluster document and deliver it with chalkctl config apply
 ```
 
 The [Kubernetes version skew policy](https://kubernetes.io/releases/version-skew-policy/) bounds
@@ -517,25 +524,25 @@ the add-ons. In a minor upgrade, kube-proxy then runs one minor ahead of the API
 rolled, which the skew policy does not allow, until the rollout reaches the last control plane, so
 run the rollout to the end in one command.
 
-A run of the first step on three control planes and a worker reads:
+A run of the first step on the homelab's three control planes reads:
 
 ```text
-cp1: config 0 added, 0 removed, 1 changed
-cp1: delivering config <version> on trial until <deadline>
+node1: config 0 added, 0 removed, 1 changed
+node1: delivering config <version> on trial until <deadline>
 restarted chalkos-kubernetes.service
 restarted kubelet.service
-cp1 runs config <version> on trial; it rolls back to config <previous-version> by itself unless confirmed within 10m0s
-cp1: waiting for its layers to serve with the config
-cp1: waiting for a new connection and the node's health to confirm config <version>
-cp1 keeps config <version>: the trial is confirmed
-cp2: config 0 added, 0 removed, 1 changed
+node1 runs config <version> on trial; it rolls back to config <previous-version> by itself unless confirmed within 10m0s
+node1: waiting for its layers to serve with the config
+node1: waiting for a new connection and the node's health to confirm config <version>
+node1 keeps config <version>: the trial is confirmed
+node2: config 0 added, 0 removed, 1 changed
 ...
-w1 runs config <version>
+node3 keeps config <version>: the trial is confirmed
 ```
 
-`...` stands for cp2's and cp3's lines, which repeat cp1's, and w1's first lines. When the first
+`...` stands for the lines of node2 and node3, which repeat node1's. When the first
 step fails, the run stops at that node, rolls its config back and prints which nodes run which API
-server, such as `API server 1.37.1: cp2, cp3, w1`. `chalkctl status cp2` shows the node's
+server, such as `API server 1.37.1: node2, node3`. `chalkctl status node2` shows the node's
 versions in its `kubernetes versions` line. Fix the reference or the registry, then run the same
 command again: it skips the nodes that run the config already. When the second step fails, the
 node rolls back as
@@ -549,7 +556,7 @@ describes. [Upgrade Kubernetes](../kubernetes/upgrade-kubernetes.md) covers both
   back to. Wait for the check, at most the health timeout per try.
 - `Secure Boot would refuse the UKI: ...`: the image is unsigned, or signed with a key the
   firmware's db does not hold. Sign the build with `chalkbuild sign` and the db key.
-- `w1 runs an image built for kvm, but its image node-metal is built for metal; changing a node's
+- `node3 runs an image built for kvm, but its image node-metal is built for metal; changing a node's
   platform is a reinstall`: the inventory names a build of another platform for the node. Fix the
   inventory, or reinstall the node.
 - `upgrade needs the operator role; the reader role may not upgrade nodes`: the client file has the
@@ -559,21 +566,21 @@ describes. [Upgrade Kubernetes](../kubernetes/upgrade-kubernetes.md) covers both
   found no image staged, or another one than the inventory or `--image` names for the node. Stage
   the image with `chalkctl upgrade --nodes <node> --until stage` first, with the same `--image`
   when you activate one.
-- `w1: its boot of <image> settled and is not healthy: ...`: the node runs the image, but its
+- `node3: its boot of <image> settled and is not healthy: ...`: the node runs the image, but its
   boot failed the node's health checks for a minute in a row, after systemd finished starting it
   and the image's health timeout passed. The checks are that chalkd serves and then those of the
   image's layer: on Kubernetes, the etcd member, the API server and the kubelet of a control
   plane, or the kubelet and the Node of a worker. A node whose layer does not decide fails on a
   failed unit or an identity that was not applied. The message names the check that failed. A
-  boot of a blessed entry is not counted, so the node does not fall back. `chalkctl status w1`
-  lists failed units, and `chalkctl logs w1` shows the boot's journal. A boot that is still
+  boot of a blessed entry is not counted, so the node does not fall back. `chalkctl status node3`
+  lists failed units, and `chalkctl logs node3` shows the boot's journal. A boot that is still
   starting at `--timeout` ends with
-  `w1: waiting for <image> to be found healthy: its boot is not healthy yet: ...` instead. When
+  `node3: waiting for <image> to be found healthy: its boot is not healthy yet: ...` instead. When
   the node's status gave no boot ID before the reboot, chalkctl cannot tell the new boot from the
   old one and waits until `--timeout`, ending with `its boot settled and is not healthy: ...`.
-- `w1: activate: ...; <image> boots next all the same, so it stays cordoned: ...`: the node's
+- `node3: activate: ...; <image> boots next all the same, so it stays cordoned: ...`: the node's
   activation failed after it made the image boot next. Uncordoned, the node would boot the image
-  at its next reboot without a drain, so it stays cordoned. `chalkctl node reboot w1` boots the
+  at its next reboot without a drain, so it stays cordoned. `chalkctl node reboot node3` boots the
   image and uncordons the node.
 - `no node keeps a previous image to roll back to: ...`: `--rollback` found no node with an image
   to boot again. [What keeps a node from rolling back](#what-keeps-a-node-from-rolling-back) lists

@@ -50,7 +50,7 @@ use the same tools and variables from `nix/testing/env.nix`.
 | `lib/` | `mkImages` and the module of its arguments. |
 | `nix/` | Tooling: packages, apps, checks, the development shell, the docs build, and the test images and their secrets in `nix/testing/`. |
 | `templates/lab/` | The lab template the quick start uses. |
-| `examples/homelab/` | An example cluster: a flake that builds its image with an extension, an inventory and its YAML, which the `example-homelab` check builds and validates. |
+| `examples/homelab/` | The home lab of the guide Build a home lab: a flake that builds a router image and a node image with the bird extension, the installer, an inventory and its YAML, which the `example-homelab` check builds and validates. |
 | `examples/extensions/` | An example of extension kinds: a flake that builds an image with the `Rack` and `Hardware` extensions and Kubernetes off, an inventory and its node's YAML, which the `example-extensions` check builds and validates. |
 | `test/e2e/` | The end-to-end tests, which boot virtual machines. |
 | `test/nix/` | The Nix evaluation tests. |

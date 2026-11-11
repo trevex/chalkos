@@ -7,9 +7,9 @@ description: "Deliver changed YAML to a running node with chalkctl config apply,
 
 This page is for an operator who changes the YAML files of nodes that are installed and running.
 At the end each node runs the new config, and the services that read what changed have restarted
-or reloaded. A config change needs no new image and no reboot. The page gives the homelab's nodes
-their own time servers, as [Write a node's config](node-config.md#timesync-names-the-time-servers)
-describes.
+or reloaded. A config change needs no new image and no reboot. The page gives the homelab's
+Kubernetes nodes their own time servers, as
+[Write a node's config](node-config.md#timesync-names-the-time-servers) describes.
 
 ## Before you begin
 
@@ -26,8 +26,8 @@ The node runs, and chalkctl reaches it at the address the inventory names.
 
 ## Change the files and validate them
 
-Edit the files the inventory gives the node. This file goes to every node, because the homelab's
-inventory gives each node the files of `cluster/`:
+Edit the files the inventory gives the node. This file goes to the three Kubernetes nodes, because
+the homelab's group `nodes` gives them the files of `cluster/`:
 
 ```yaml title="cluster/time.yaml"
 apiVersion: time.chalkos.dev/v1alpha1
@@ -45,12 +45,15 @@ the inventory, offline:
 
 ```console
 $ chalkctl validate
-cp1: valid for the image node-metal (node on metal, root hash d871203debfe), config 0f55ac1ecfcd83116bbd9b30b5cf2d37c94db754281d1debe29c5d31546d0e90
-w1: valid for the image node-metal (node on metal, root hash d871203debfe), config ec7ca85e562721ea1f8d0368d415bb80dc62819ba0c80857c9c444e4450aba09
+node1: valid for the image node-metal (node on metal, root hash 5f1e60980b55), config c04e79c2726bc0d17aff06773776d277c6980e9cb4779e0cb5edf1270d46cd6b
+node2: valid for the image node-metal (node on metal, root hash 5f1e60980b55), config 9d424712803fbe8efa6b62cdd9af677a6d73ec4e492ea3d2742098811c20a88b
+node3: valid for the image node-metal (node on metal, root hash 5f1e60980b55), config f82e12bd691afbff1f0859703566973a50973dff6cd344b158516e428010186b
+router: valid for the image router-metal (router on metal, root hash e9be19557973), config a8d132f3d5517185654d573c02c543497ab42d0068131d25bbfe8405d5761093
 ```
 
-Each node's config hash differs from the one before the change. That hash is the config's version,
-which `config apply` and `chalkctl status` print too.
+The config hash of each Kubernetes node differs from the one before the change, and the router's
+stays the same. That hash is the config's version, which `config apply` and `chalkctl status`
+print too.
 
 ## Preview the change
 
@@ -58,8 +61,8 @@ which `config apply` and `chalkctl status` print too.
 nothing:
 
 ```console
-$ chalkctl config apply w1 --secrets secrets.age --diff
-w1: config 1 added, 0 removed, 0 changed
+$ chalkctl config apply node1 --secrets secrets.age --diff
+node1: config 1 added, 0 removed, 0 changed
 + TimeSync "default"
 ```
 
@@ -85,10 +88,10 @@ renderer and check. `chalkctl validate` and `--diff` run no renderer, so a confi
 still be refused on delivery. A dry run shows that refusal before the delivery:
 
 ```console
-$ chalkctl config apply w1 --secrets secrets.age --dry-run
-w1: config 1 added, 0 removed, 0 changed
+$ chalkctl config apply node1 --secrets secrets.age --dry-run
+node1: config 1 added, 0 removed, 0 changed
 + TimeSync "default"
-w1: config <previous-version> → <version>
+node1: config <previous-version> → <version>
   outputs:  chrony
   effects:  chrony: run chalkos-chrony-reload-sources (output chrony)
             chrony-dhcp: restart chalkos-chrony-dhcp.service (rule)
@@ -115,13 +118,13 @@ fire it.
 `--dry-run` checks several nodes in one command, one after the other:
 
 ```sh
-chalkctl config apply cp1 w1 --secrets secrets.age --dry-run
+chalkctl config apply node1 node2 --secrets secrets.age --dry-run
 ```
 
 A node that refuses its config does not stop the others, and neither does a node the dry run
 cannot check, such as one missing from the inventory, unreachable or with a config on trial. Each
 error goes to standard error with the node's name, and the command ends with a line that counts the
-two apart, such as `the config of 1 node is refused: w1; the dry run failed on 1 node: cp1`, and
+two apart, such as `the config of 1 node is refused: node1; the dry run failed on 1 node: node2`, and
 exits 1. `--dry-run` refuses `--diff`, `--try`, `--no-confirm`, `--ignore-unit`, `--force` and
 the layers' payload flags such as `--kubernetes-share`. It refuses `--address` with several nodes,
 because the address reaches one node.
@@ -131,10 +134,10 @@ because the address reaches one node.
 Run the command without `--diff`:
 
 ```console
-$ chalkctl config apply w1 --secrets secrets.age
-w1: config 1 added, 0 removed, 0 changed
+$ chalkctl config apply node1 --secrets secrets.age
+node1: config 1 added, 0 removed, 0 changed
 restarted <unit>
-w1 runs config ec7ca85e562721ea1f8d0368d415bb80dc62819ba0c80857c9c444e4450aba09
+node1 runs config c04e79c2726bc0d17aff06773776d277c6980e9cb4779e0cb5edf1270d46cd6b
 ```
 
 `restarted <unit>` stands for one line per unit that the delivery restarted. Which units appear
@@ -151,17 +154,17 @@ delivery, and the node keeps the config it ran. Then it applies additive storage
 the config and takes the effects.
 
 Deliver the config to each node whose files changed. One command takes several nodes and delivers
-to them one after the other. The homelab's change reaches `cp1` as well:
+to them one after the other. The homelab's change reaches `node2` and `node3` as well:
 
 ```sh
-chalkctl config apply w1 cp1 --secrets secrets.age
+chalkctl config apply node1 node2 node3 --secrets secrets.age
 ```
 
 With several nodes, chalkctl reads each node's status and checks its config against its image
 before the first node gets anything. The run stops at the first node that fails. A node that runs
-the config already gets nothing, and chalkctl prints `cp1 runs config <version> already`, so the
+the config already gets nothing, and chalkctl prints `node2 runs config <version> already`, so the
 same command run again continues where a run stopped. A node reached at another address than the
-inventory's takes `--address cp1=<address>`, once per node; a bare `--address <address>` goes with
+inventory's takes `--address node2=<address>`, once per node; a bare `--address <address>` goes with
 one node alone.
 
 A config that changes a version the cluster bounds, such as the Kubernetes API server's, goes to
@@ -204,11 +207,11 @@ the node refuses a storage change itself. chalkctl prints the node's error after
 the error's code. Its message part looks like this:
 
 ```text
-the config takes chalkctl storage reset: Volume scratch: format xfs instead of ext4; reset it with chalkctl storage reset w1 scratch
+the config takes chalkctl storage reset: Volume scratch: format xfs instead of ext4; reset it with chalkctl storage reset node1 scratch
 ```
 
 A rule that reads no facts fails in chalkctl before anything is sent. That error names the node
-first, as in `chalkctl: w1: the config is refused: ...`.
+first, as in `chalkctl: node1: the config is refused: ...`.
 
 A volume that changes its disk, VAR that changes its format and a volume that the files no longer
 name all take a reinstall. [Add storage volumes](storage-volumes.md) lists which storage changes
@@ -229,10 +232,10 @@ Each image on a node keeps its own config. After `chalkctl upgrade --until stage
 checked itself. A plain `config apply` delivers to that image too:
 
 ```console
-$ chalkctl config apply w1 --secrets secrets.age
-w1: config 1 added, 0 removed, 0 changed
-w1 runs config <version>
-w1 boots config <version> with its staged image too
+$ chalkctl config apply node1 --secrets secrets.age
+node1: config 1 added, 0 removed, 0 changed
+node1 runs config <version>
+node1 boots config <version> with its staged image too
 ```
 
 The running image checks the config as it checks every delivery. The staged image checks it as
@@ -245,7 +248,7 @@ created once and serves both images.
 chalkctl sends the fallback secret when the running image's storage enrolls it on a new volume.
 When only the staged image's storage needs it, because that image encrypts a volume the running
 image does not, the staged image refuses the config with `... no fallback secret was sent` and
-names `chalkctl config apply --staged w1 --secrets FILE`. That command translates the config for
+names `chalkctl config apply --staged node1 --secrets FILE`. That command translates the config for
 the image the inventory names, the staged one, sends the secret its storage needs and delivers the
 config to the staged image alone, as described below.
 
@@ -259,7 +262,7 @@ fails before the node records it lists no volume, although a partition it made m
 command again to write the config; it finds the volumes and partitions already made.
 
 `--dry-run` has both images check the config. Its plan ends with the staged image's config:
-`w1: staged image's config <previous-version> → <version>`. With `--try`, the staged image checks
+`node1: staged image's config <previous-version> → <version>`. With `--try`, the staged image checks
 the config before the trial begins, and the node writes the staged image's config only once the
 trial is confirmed. A trial that rolls back leaves it as it was.
 
@@ -270,20 +273,20 @@ node's known-good image. It keeps the config it last ran, and the delivery warns
 `--staged` delivers to the staged image alone, in either state:
 
 ```sh
-chalkctl config apply w1 --staged --secrets secrets.age
+chalkctl config apply node1 --staged --secrets secrets.age
 ```
 
 chalkctl checks the files against the node's image in the inventory. The staged image then checks
 them itself before the node keeps them. Nothing restarts. The command ends with
-`w1 boots config <version> with its staged image`.
+`node1 boots config <version> with its staged image`.
 
 `--dry-run` with `--staged` has the staged image check the config and keeps nothing:
 
 ```console
-$ chalkctl config apply w1 --staged --secrets secrets.age --dry-run
-w1: config 1 added, 0 removed, 0 changed
+$ chalkctl config apply node1 --staged --secrets secrets.age --dry-run
+node1: config 1 added, 0 removed, 0 changed
 + TimeSync "default"
-w1: staged image's config <previous-version> → <version>
+node1: staged image's config <previous-version> → <version>
   storage:  none
 ```
 
@@ -297,9 +300,9 @@ accepts it arrive together. On a node without a staged image, `--staged` stores 
 node's pending config:
 
 ```console
-$ chalkctl config apply w1 --staged --secrets secrets.age
-w1: config 1 added, 0 removed, 0 changed
-w1 holds config <version> pending, unchecked; the next upgrade checks it against its image
+$ chalkctl config apply node1 --staged --secrets secrets.age
+node1: config 1 added, 0 removed, 0 changed
+node1 holds config <version> pending, unchecked; the next upgrade checks it against its image
 ```
 
 chalkctl checks the files against the node's image in the inventory, which is the image the next
@@ -323,10 +326,10 @@ applied the config, replaces the pending config with it, unchecked. The next upg
 the config delivered last:
 
 ```console
-$ chalkctl config apply w1 --secrets secrets.age
-w1: config 1 added, 0 removed, 0 changed
-w1 runs config <version>
-w1 holds config <version> pending, unchecked, in place of its pending config; the next upgrade checks it against its image
+$ chalkctl config apply node1 --secrets secrets.age
+node1: config 1 added, 0 removed, 0 changed
+node1 runs config <version>
+node1 holds config <version> pending, unchecked, in place of its pending config; the next upgrade checks it against its image
 ```
 
 `--dry-run` names the pending config it would store, and a trial replaces the pending config only
@@ -336,8 +339,8 @@ once it is confirmed. A later `--staged` holds config for the next image alone a
 nothing. `chalkctl config discard` removes the pending config and needs no inventory:
 
 ```console
-$ chalkctl config discard w1 --secrets secrets.age
-w1 dropped its pending config <version>
+$ chalkctl config discard node1 --secrets secrets.age
+node1 dropped its pending config <version>
 ```
 
 ## Check that it worked
@@ -345,13 +348,13 @@ w1 dropped its pending config <version>
 `chalkctl status` shows the config the node runs and whether it is the inventory's:
 
 ```console
-$ chalkctl status w1 --secrets secrets.age
-config ec7ca85e562721ea1f8d0368d415bb80dc62819ba0c80857c9c444e4450aba09 (the inventory's)
+$ chalkctl status node1 --secrets secrets.age
+config c04e79c2726bc0d17aff06773776d277c6980e9cb4779e0cb5edf1270d46cd6b (the inventory's)
 ...
 ```
 
 A node whose files changed since the last delivery shows
-`not the inventory's; chalkctl config apply w1 delivers it` in the parentheses.
+`not the inventory's; chalkctl config apply node1 delivers it` in the parentheses.
 
 ## Roll back a config change
 
@@ -360,18 +363,18 @@ A node keeps the config its running image ran before the last delivery, its prev
 it with `--diff` first, which prints what the rollback changes and changes nothing:
 
 ```console
-$ chalkctl config rollback w1 --secrets secrets.age --diff
-w1: config 0 added, 1 removed (TimeSync "default"), 0 changed
+$ chalkctl config rollback node1 --secrets secrets.age --diff
+node1: config 0 added, 1 removed (TimeSync "default"), 0 changed
 - TimeSync "default" (in the running config, not in the previous one)
 ```
 
 Then run it without `--diff`:
 
 ```console
-$ chalkctl config rollback w1 --secrets secrets.age
-w1: config 0 added, 1 removed (TimeSync "default"), 0 changed
+$ chalkctl config rollback node1 --secrets secrets.age
+node1: config 0 added, 1 removed (TimeSync "default"), 0 changed
 restarted <unit>
-w1 runs config <previous-version> again; config ec7ca85e562721ea1f8d0368d415bb80dc62819ba0c80857c9c444e4450aba09 is its previous one now
+node1 runs config <previous-version> again; config c04e79c2726bc0d17aff06773776d277c6980e9cb4779e0cb5edf1270d46cd6b is its previous one now
 ```
 
 The node keeps the previous config itself, so the command needs no inventory. Without one, give
@@ -380,7 +383,7 @@ the node's address with `--address`. The command needs the secrets file, as any 
 The previous config goes through the same checks, storage changes and restarts as any delivery.
 The image's rules may refuse it. A rollback of a delivery that added a volume, for example, removes
 the volume, which takes a reinstall, so the node refuses it with the storage rule's message:
-`Volume scratch: the config removes it; only a reinstall of w1 removes a volume`.
+`Volume scratch: the config removes it; only a reinstall of node1 removes a volume`.
 
 The node keeps one previous config per image. The config a rollback replaces becomes the previous
 one, so a second rollback undoes the first. An install or an upgrade writes a config without a
@@ -396,7 +399,7 @@ previous config <previous-version> (config rollback restores it)
 ```
 
 A node without a previous config refuses the rollback with
-`w1 keeps no previous config of the image it runs; it keeps one once config apply replaced the
+`node1 keeps no previous config of the image it runs; it keeps one once config apply replaced the
 config the image was installed or upgraded with`.
 
 During a trial, `chalkctl config rollback` delivers the config from before the trial and ends
@@ -410,14 +413,14 @@ at the end of the duration unless chalkctl confirms it first. `--try` takes a du
 24h and has no default:
 
 ```console
-$ chalkctl config apply w1 --secrets secrets.age --try 5m
-w1: config 1 added, 0 removed, 0 changed
-w1: delivering config <version> on trial until <deadline>
+$ chalkctl config apply node1 --secrets secrets.age --try 5m
+node1: config 1 added, 0 removed, 0 changed
+node1: delivering config <version> on trial until <deadline>
 restarted <unit>
-w1 runs config <version> on trial; it rolls back to config <previous-version> by itself unless confirmed within 5m0s
-w1: waiting for its layers to serve with the config
-w1: waiting for a new connection and the node's health to confirm config <version>
-w1 keeps config <version>: the trial is confirmed
+node1 runs config <version> on trial; it rolls back to config <previous-version> by itself unless confirmed within 5m0s
+node1: waiting for its layers to serve with the config
+node1: waiting for a new connection and the node's health to confirm config <version>
+node1 keeps config <version>: the trial is confirmed
 ```
 
 The delivery goes through the same checks, storage changes and effects as any delivery. Then
@@ -431,13 +434,13 @@ healthy. [The health check decides whether a counted boot is good](../how-it-wor
 describes the check.
 
 Before it asks the node, chalkctl waits until the image's layers find the node serving with the
-config, and prints `w1: waiting for its layers to serve with the config`. On a Kubernetes node
+config, and prints `node1: waiting for its layers to serve with the config`. On a Kubernetes node
 that means its Node is Ready and, on a control plane, its API server, controller-manager and
 scheduler run the images the config names and are Ready. A Node that is not Ready only because no
 CNI runs yet, as in a cluster created without one, passes: its Ready condition names
 `NetworkReady=false` as its only cause. When the layers do not find the node serving by the
 deadline, chalkctl rolls the config back at once and prints
-`w1 runs config <previous-version> again: config <version> was rolled back`.
+`node1 runs config <previous-version> again: config <version> was rolled back`.
 
 A trial on a Kubernetes node whose Node is not Ready for another reason, such as a kubelet that
 cannot reach its container runtime, therefore rolls back. To deliver a config that is meant to fix
@@ -461,7 +464,7 @@ and those that `--ignore-unit` names, one unit per flag. Before the delivery, ch
 units that have failed already and that `--ignore-unit` does not name:
 
 ```text
-chalkctl: warning: w1: units failed already: late.service; the trial rolls back at its deadline unless they recover, the image ignores them or --ignore-unit leaves them out
+chalkctl: warning: node1: units failed already: late.service; the trial rolls back at its deadline unless they recover, the image ignores them or --ignore-unit leaves them out
 ```
 
 chalkctl delivers the config after the warning. The warning lists every failed unit that the
@@ -469,7 +472,7 @@ node's status reports, so it can name a unit that the check leaves out anyway, s
 job or a unit the image ignores. To leave a unit out of this trial's check, name it:
 
 ```sh
-chalkctl config apply w1 --secrets secrets.age --try 5m --ignore-unit late.service
+chalkctl config apply node1 --secrets secrets.age --try 5m --ignore-unit late.service
 ```
 
 The node keeps the trial's ignored units with the trial, so `chalkctl config confirm` and a
@@ -484,13 +487,13 @@ new connections, for the node to report that the trial ended. It prints how the 
 exits non-zero:
 
 ```text
-w1 rolled back to config <previous-version> at the trial's deadline
+node1 rolled back to config <previous-version> at the trial's deadline
 ```
 
-The error starts with `w1: config <version> was not confirmed within its trial:` and ends with the
+The error starts with `node1: config <version> was not confirmed within its trial:` and ends with the
 last reason, such as `the node is not healthy: units failed: demo.service`. When the node does not
 answer in those two minutes either, the error adds `the node did not answer after the deadline
-either: ...; chalkctl status w1 shows where it stands`.
+either: ...; chalkctl status node1 shows where it stands`.
 
 A config that cuts chalkctl off usually also loses the answer to its delivery. chalkctl does not
 confirm a config whose delivery it saw no answer to. It waits for the rollback in the same way, and
@@ -511,7 +514,7 @@ config ends the trial: the node delivers the config from before it again, and th
 with the two commands that end the trial:
 
 ```text
-chalkctl config confirm w1 keeps it; chalkctl config rollback w1 rolls it back now
+chalkctl config confirm node1 keeps it; chalkctl config rollback node1 rolls it back now
 ```
 
 `chalkctl config confirm` confirms the trial in the same way as `--try`: it waits for the
@@ -519,12 +522,12 @@ image's layers first, then asks over new connections once the node is healthy, a
 trial's deadline:
 
 ```sh
-chalkctl config apply w1 --secrets secrets.age --try 30m --no-confirm
-chalkctl config confirm w1 --secrets secrets.age
+chalkctl config apply node1 --secrets secrets.age --try 30m --no-confirm
+chalkctl config confirm node1 --secrets secrets.age
 ```
 
 The node keeps the config on trial, so the command needs no inventory. A node without a trial
-refuses with `w1 has no open trial to confirm; it runs config <version>`.
+refuses with `node1 has no open trial to confirm; it runs config <version>`.
 
 ### A trial holds back other changes
 
@@ -540,7 +543,7 @@ that `chalkctl node renew` and `chalkctl rotate` deliver. It also refuses `chalk
 `chalkctl upgrade --rollback`. chalkctl checks first, before it changes anything, and refuses with:
 
 ```text
-w1 runs config <version> on trial until <deadline>; confirm it with chalkctl config confirm w1, or roll it back with chalkctl config rollback w1, first
+node1 runs config <version> on trial until <deadline>; confirm it with chalkctl config confirm node1, or roll it back with chalkctl config rollback node1, first
 ```
 
 `config apply --diff` still works during a trial.
@@ -548,7 +551,7 @@ w1 runs config <version> on trial until <deadline>; confirm it with chalkctl con
 ### End a trial early
 
 `chalkctl config rollback` during a trial delivers the config from before the trial at once
-and ends the trial. Its output ends with `w1: the trial of config <version> ended`.
+and ends the trial. Its output ends with `node1: the trial of config <version> ended`.
 
 A reboot ends an open trial as well. The boot restores the config from before the trial before
 networkd, the firewall and every other service start. Resetting the node therefore undoes a config
@@ -586,7 +589,7 @@ the record of a config's trial cannot be read: <why>; other changes are refused 
 ```
 
 The node then refuses every change and every confirmation, and neither the deadline nor a reboot
-ends the trial. `chalkctl config rollback w1 --secrets secrets.age` delivers the previous
+ends the trial. `chalkctl config rollback node1 --secrets secrets.age` delivers the previous
 config and removes the record. chalkctl first warns which config the rollback delivers. If a
 rollback at the deadline has replaced the config already, that previous config is the one that was
 on trial, and a second rollback undoes it. A node that keeps no previous config gets the config
@@ -596,27 +599,27 @@ it runs delivered again, which removes the record as well.
 
 - `pass the secrets file with --secrets FILE, or --secrets - to read it from standard input`: the
   command ran with a client file. Pass the secrets file.
-- `chalkctl: warning: w1: ...`: chalkd could not evaluate the condition of an effect. It took the
+- `chalkctl: warning: node1: ...`: chalkd could not evaluate the condition of an effect. It took the
   effect all the same, so a unit restarted that might not have needed to.
-- `w1 runs config <version> on trial until <deadline>; ...`: a trial is open on the node. Confirm
+- `node1 runs config <version> on trial until <deadline>; ...`: a trial is open on the node. Confirm
   it or roll it back first, as [A trial holds back other changes](#a-trial-holds-back-other-changes)
   describes.
 - `the pending config <version> does not suit the image: ...`: the image an upgrade installs
   refused the config the node held pending. Change the files and run
-  `chalkctl config apply --staged w1` again, or remove the pending config with
-  `chalkctl config discard w1`.
+  `chalkctl config apply --staged node1` again, or remove the pending config with
+  `chalkctl config discard node1`.
 - `the pending config <version> does not suit the image: ...; a pending config is kept without the fallback secret, ...`:
   the pending config adds an encrypted volume, which needs the fallback secret. Upgrade with the
   config from the inventory and the secrets file.
 - `the image <hash> staged in the inactive slot: ... no fallback secret was sent; ...`: the staged
   image's storage needs the fallback secret and the running image's does not. Deliver the config to
-  the staged image with `chalkctl config apply --staged w1 --secrets secrets.age`.
+  the staged image with `chalkctl config apply --staged node1 --secrets secrets.age`.
 - `config <version> is confirmed, but the image <hash>, staged in the inactive slot when the trial began, is the running image now, ...`:
   the node booted into the staged image during the trial, so the running image's config slot never
-  got the confirmed config. Run `chalkctl config apply w1 --secrets secrets.age` to write it.
+  got the confirmed config. Run `chalkctl config apply node1 --secrets secrets.age` to write it.
 - `config <version> is confirmed, but the confirmation that ended its trial stopped before it wrote the config slot of the image <hash> ...`:
   chalkd or the node stopped while it confirmed the trial, and the staged image kept its earlier
-  config. Run `chalkctl config apply w1 --secrets secrets.age` to write it.
+  config. Run `chalkctl config apply node1 --secrets secrets.age` to write it.
 - `--staged delivers config alone; deliver the Kubernetes share to the running image`: `--staged`
   and `--kubernetes-share` do not combine.
 - `the image <hash> predates chalkd check; it cannot check its config`: the staged image, or the

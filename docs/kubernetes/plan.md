@@ -19,8 +19,8 @@ kind: Cluster
 metadata: {name: default}
 spec:
   # The VIP the control planes hold, so the endpoint outlives any one of them.
-  endpoint: https://10.0.0.10:6443
-  vip: {addresses: [10.0.0.10]}
+  endpoint: https://192.0.2.10:6443
+  vip: {addresses: [192.0.2.10]}
   # Fixed once the cluster exists.
   ipFamilies: [ipv4]
   podCIDRs: {ipv4: 10.244.0.0/16}
@@ -75,18 +75,20 @@ flowchart LR
     clients -->|"6443 and 50000"| vip(["VIP"])
     vip --- holder["the control plane holding the VIP"]
     clients -->|"6443 and 50000"| lb["your load balancer"]
-    lb --> cp1["cp1"]
-    lb --> cp2["cp2"]
-    lb --> cp3["cp3"]
+    lb --> node1["node1"]
+    lb --> node2["node2"]
+    lb --> node3["node3"]
 ```
 
 Choose one:
 
-- A VIP, `spec.vip.addresses`, which chalkd holds on one healthy control plane at a time. The
-  holder announces it with gratuitous ARP and unsolicited neighbour advertisements, so the control
-  planes must share one layer-2 segment. Use it for machines in one rack or VLAN. The endpoint is
+- A VIP, `spec.vip.addresses`, which chalkd holds on one healthy control plane at a time. By
+  default the holder announces it with gratuitous ARP and unsolicited neighbour advertisements, so
+  the control planes must share one layer-2 segment. Use it for machines in one rack or VLAN. With
+  `spec.vip.mode: routed`, a routing daemon on each control plane announces the VIP instead, as the
+  homelab's bird does over BGP, and the control planes may sit on different links. The endpoint is
   the VIP or a name that resolves to it; `chalkctl validate` refuses an endpoint address that is
-  none of the VIPs, with `vip: the endpoint https://10.0.0.11:6443 is none of the virtual
+  none of the VIPs, with `vip: the endpoint https://192.0.2.11:6443 is none of the virtual
   addresses`.
 - A load balancer you run, for control planes in different segments. It forwards TCP ports 6443
   and 50000 to the control planes and passes TLS through, because clients authenticate with
@@ -99,9 +101,9 @@ holder's etcd lease of 10 seconds expires.
 [Kubernetes networking](../how-it-works/kubernetes/networking.md#one-healthy-control-plane-holds-the-vip)
 describes the election.
 
-A single control plane can take the endpoint of its own address, as the homelab does. Every
-kubeconfig names the endpoint, so moving to a VIP later means issuing every kubeconfig again. A VIP
-from the start, even on one control plane, keeps the endpoint when control planes join.
+A single control plane can take the endpoint of its own address. Every kubeconfig names the
+endpoint, so moving to a VIP later means issuing every kubeconfig again. A VIP from the start, even
+on one control plane, keeps the endpoint when control planes join.
 
 ## Control planes keep their addresses
 
@@ -109,7 +111,8 @@ Give every control plane a static address in a `Network` document of its own fil
 address as its `address` in the inventory. A control plane's addresses are pinned on STATE when it
 becomes an etcd member, and every later boot waits for exactly those addresses before it starts
 etcd. Changing a control plane's address means taking it out of etcd and reinstalling
-it.
+it. The homelab's control planes hold their addresses on a dummy interface, `node0`, which keeps
+them whichever port or cable fails.
 
 Workers may take their address from DHCP. `spec.nodeIP.validSubnets` of the `Cluster` document
 then picks it from the subnets you list. The inventory names such a worker by an address or name
@@ -118,11 +121,11 @@ that stays.
 ## IP families and ranges are fixed at creation
 
 `spec.ipFamilies` lists the cluster's address families, the primary one first: `[ipv4]` by
-default, or `[ipv4, ipv6]` for dual stack. Each family has a pod range, `podCIDRs`, and a service
-range, `serviceCIDRs`. The families, the ranges and the cluster DNS addresses of `dnsIPs` are fixed
-once the cluster exists, because the certificates, etcd and the ranges the control plane allocated
-were made for them. A node that holds a Kubernetes share refuses a config that changes them, with a
-message such as:
+default, `[ipv6]` for IPv6 alone, as in the homelab, or `[ipv4, ipv6]` for dual stack. Each family
+has a pod range, `podCIDRs`, and a service range, `serviceCIDRs`. The families, the ranges and the
+cluster DNS addresses of `dnsIPs` are fixed once the cluster exists, because the certificates, etcd
+and the ranges the control plane allocated were made for them. A node that holds a Kubernetes share
+refuses a config that changes them, with a message such as:
 
 ```text
 the config changes the cluster's podCIDRs from ipv4 10.244.0.0/16 to ipv4 10.245.0.0/16; they are fixed once the cluster exists, so keep them, or reinstall the node into a new cluster
@@ -137,8 +140,8 @@ apiVersion: kubernetes.chalkos.dev/v1alpha1
 kind: Cluster
 metadata: {name: default}
 spec:
-  endpoint: https://10.0.0.10:6443
-  vip: {addresses: [10.0.0.10]}
+  endpoint: https://192.0.2.10:6443
+  vip: {addresses: [192.0.2.10]}
   ipFamilies: [ipv4, ipv6]
   podCIDRs:
     ipv4: 10.244.0.0/16
@@ -168,11 +171,14 @@ needs no secrets file:
 
 ```console
 $ chalkctl validate
-cp1: valid for the image node-metal (node on metal, root hash d871203debfe), config 675850c48eaffe4a755dca41652dbf65a5b7959f1e70a3cdd2a94799136fd200
-w1: valid for the image node-metal (node on metal, root hash d871203debfe), config 82ec5bbabd10ec79bf76ad892a0bcd7627c9db2ed4c9e252ad0657313359254c
+node1: valid for the image node-metal (node on metal, root hash 5f1e60980b55), config c2bef3c1242a847b16346d3e1f6de732a86832fa8294ce90e923bad30c85e6bf
+node2: valid for the image node-metal (node on metal, root hash 5f1e60980b55), config afa765d5e8029dbe3aea1a589d2dafdf260de42fff21692656891ddde062d567
+node3: valid for the image node-metal (node on metal, root hash 5f1e60980b55), config 719604db3fd2c0634df350fc6b7760bba57de0ec82ac3fb9a9b2dcf532cfdc43
+router: valid for the image router-metal (router on metal, root hash e9be19557973), config a8d132f3d5517185654d573c02c543497ab42d0068131d25bbfe8405d5761093
 ```
 
-The output is the homelab's. Each node of your inventory gets a line. A refused config names the
+The output is the homelab's, whose router runs no Kubernetes. Each node of your inventory gets a
+line. A refused config names the
 node and the field, as in the VIP message above.
 
 ## What next

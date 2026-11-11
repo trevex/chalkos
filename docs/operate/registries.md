@@ -159,7 +159,7 @@ chalkctl validate
 Then upgrade one node, as [Upgrade nodes](upgrade.md) describes:
 
 ```sh
-chalkctl upgrade --nodes=w1 --secrets secrets.age
+chalkctl upgrade --nodes=node1 --secrets secrets.age
 ```
 
 The node pulls the image with the delivered config. A run that ends with

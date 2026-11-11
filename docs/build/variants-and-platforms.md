@@ -178,21 +178,21 @@ sets both to different minors fails to build and names both.
 
 A node runs the image the [inventory](../reference/kinds.md#inventory) names for it. Add the new
 variant's image to `spec.images`, beside `node-metal`, and name it on the node that runs it, here
-`nas1`:
+`storage1`:
 
 ```yaml title="chalkos.yaml"
 apiVersion: chalkctl.chalkos.dev/v1alpha1
 kind: Inventory
-metadata: {name: homelab}
+metadata: {name: storage}
 spec:
   images:
     node-metal: {source: {directory: images/node-metal}}
     storage-metal: {source: {directory: images/storage-metal}}
   all: {imageName: node-metal, files: [cluster/*.yaml]}
   nodes:
-    cp1: {address: 10.0.0.11, files: [nodes/cp1.yaml]}
-    w1: {address: 10.0.0.21, files: [nodes/w1.yaml]}
-    nas1: {address: 10.0.0.31, imageName: storage-metal, files: [nodes/nas1.yaml]}
+    node1: {address: 192.0.2.11, files: [nodes/node1.yaml]}
+    node2: {address: 192.0.2.12, files: [nodes/node2.yaml]}
+    storage1: {address: 192.0.2.31, imageName: storage-metal, files: [nodes/storage1.yaml]}
 ```
 
 A node's own `imageName` wins, then the `imageName` of its groups, then `spec.all.imageName`.

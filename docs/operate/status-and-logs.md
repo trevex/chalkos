@@ -7,7 +7,7 @@ description: "Read what chalkctl status reports, follow a unit's journal, run th
 
 This page is for an operator who wants to know what a node is doing. It explains each line of
 `chalkctl status`, then the four places that tell more: a unit's journal, the image's
-diagnostics, the console and a shell on the node. The examples read the homelab's worker `w1`.
+diagnostics, the console and a shell on the node. The examples read the homelab's `node1`, a control plane.
 
 ## Before you begin
 
@@ -19,32 +19,38 @@ operator's. The console needs the machine's BMC, a screen, or `chalklab console`
 ## chalkctl status reads the node from the top
 
 `chalkctl status` asks the node's chalkd for what it checks, and compares the node's config and
-image with the inventory. A healthy `w1` reads:
+image with the inventory. A healthy `node1` reads:
 
 ```console
-$ chalkctl status w1 --secrets secrets.age
+$ chalkctl status node1 --secrets secrets.age
 config <version> (the inventory's)
 platform metal (the inventory's)
 image <image>, booted from chalkos_1.efi
-VOLUME    DISK      MOUNT POINT        STATE
-longhorn  longhorn  /var/lib/longhorn  mounted
-var       system    /var               mounted
+VOLUME  DISK    MOUNT POINT  STATE
+var     system  /var         mounted
 OUTPUT     HASH    STATE
 bird-conf  <hash>  rendered
 chrony     <hash>  rendered
-hardware   <hash>  rendered
 networkd   <hash>  rendered
-kubernetes worker: joined, node ready: True
-kubernetes versions: API server 1.37.1, kubelet 1.37.1
+kubernetes controlplane: bootstrapped, node ready: True, vip holder, control plane current
+kubernetes versions: API server 1.37.1, kubelet 1.37.1, control-plane pods current
 certificates:
-  node             expires <date>
-  OS CA            expires <date>
-  Kubernetes CA    expires <date>
-  kubelet client   expires <date>
-  kubelet serving  expires <date>
+  node                      expires <date>
+  OS CA                     expires <date>
+  node CA                   expires <date>
+  Kubernetes CA             expires <date>
+  front-proxy CA            expires <date>
+  etcd CA                   expires <date>
+  Kubernetes control plane  expires <date>
+  kubelet client            expires <date>
+  kubelet serving           expires <date>
 trust:
-  OS CA          <fingerprint>
-  Kubernetes CA  <fingerprint>
+  OS CA                 <fingerprint>
+  Kubernetes CA         <fingerprint> (issues)
+  front-proxy CA        <fingerprint> (issues)
+  etcd CA               <fingerprint> (issues)
+  service-account keys  <fingerprint> (issues)
+  encryption keys       <fingerprint> (issues)
 time: synchronised to <server>, offset <offset> s
 ```
 
@@ -67,7 +73,7 @@ its lines out.
 `config <version> (the inventory's)` means the node runs the config the inventory gives it. The
 parentheses say otherwise when they differ:
 
-- `not the inventory's; chalkctl config apply w1 delivers it`: the node's files changed since the
+- `not the inventory's; chalkctl config apply node1 delivers it`: the node's files changed since the
   last delivery.
 - `cannot read the config the inventory gives it: ...`: chalkctl could not build the node's
   documents from the inventory, for the reason it names.
@@ -76,12 +82,12 @@ parentheses say otherwise when they differ:
 
 `config none` is a node installed before config documents existed. A node with an image staged or
 active in its inactive slot adds `staged config <version> (...)`, the config that image boots
-with. When it differs, its parentheses name `chalkctl config apply w1`, which writes the config
-slots of both images, or `chalkctl config apply --staged w1` when the running image runs the
+with. When it differs, its parentheses name `chalkctl config apply node1`, which writes the config
+slots of both images, or `chalkctl config apply --staged node1` when the running image runs the
 inventory's config already. After a rollback from a boot that was not found healthy, the staged
 image is the rollback image, and the parentheses say that it keeps the config it last ran until
 the boot is found healthy. During a trial the node takes no delivery. When the inventory's config
-is on trial, the parentheses name `chalkctl config confirm w1`, because the confirmation
+is on trial, the parentheses name `chalkctl config confirm node1`, because the confirmation
 writes the staged config. Otherwise they say that the trial must end first.
 
 A node that holds config for its next upgrade adds
@@ -144,10 +150,10 @@ still checks ends in `, not found healthy yet`. More lines follow after an upgra
   [A node that fails its health check rolls back](upgrade.md#a-node-that-fails-its-health-check-rolls-back)
   says what to do.
 - `its store's root hash is ..., not that of the image ... the inventory names, ...`: the image was
-  rebuilt since the node's upgrade. The line ends in `chalkctl upgrade --nodes w1 installs that
-  image`, in `it has ... staged: chalkctl node activate w1 makes it boot next` when the image
+  rebuilt since the node's upgrade. The line ends in `chalkctl upgrade --nodes node1 installs that
+  image`, in `it has ... staged: chalkctl node activate node1 makes it boot next` when the image
   waits for its activation, or in `it has ... active, which it boots with its next reboot:
-  chalkctl node reboot w1` when it waits for a reboot.
+  chalkctl node reboot node1` when it waits for a reboot.
 
 `image ...; its boot is unknown: ...` means chalkd could not read the boot entries on the ESP or
 the running store, for the reason named.
@@ -198,7 +204,7 @@ needs doing:
 
 - `less than a third of its lifetime remains`: the node certificate is due for renewal, and a node
   of a Kubernetes cluster renews it through a control plane.
-- `the node certificate expires on <date>; this image cannot renew it on its own; run chalkctl node renew w1`:
+- `the node certificate expires on <date>; this image cannot renew it on its own; run chalkctl node renew router`:
   the node certificate is due for renewal on a node whose image runs no Kubernetes, such as a
   router. Run the command it names. Once the certificate has expired, the line says `expired on`.
 - `renewal failing: <reason>; expires <time>`: the node could not renew through a control plane.
@@ -251,7 +257,7 @@ Read the unit's journal next.
 alone. `-f` follows it:
 
 ```sh
-chalkctl logs w1 --unit=chalkd.service -f
+chalkctl logs node1 --unit=chalkd.service -f
 ```
 
 These units cover most of a node's own work:
@@ -274,7 +280,7 @@ credentials and mirrors for the pods' image pulls.
 A node in maintenance mode answers `chalkctl logs` too, with `--fingerprint` or `--insecure`:
 
 ```sh
-chalkctl logs w1 --insecure --unit=chalkd.service
+chalkctl logs node1 --insecure --unit=chalkd.service
 ```
 
 ## chalkctl node diag runs the image's diagnostics
@@ -284,7 +290,7 @@ chalkd runs it on the node and sends back what it prints, so a node without a lo
 its addresses, routes and firewall. Without a diagnostic, `chalkctl node diag` lists them:
 
 ```console
-$ chalkctl node diag w1 --secrets secrets.age
+$ chalkctl node diag node1 --secrets secrets.age
 DIAGNOSTIC            ROLE      DESCRIPTION
 addresses             reader    The addresses of the node's interfaces, as ip -json address show prints them.
 bird-protocols        reader    The protocols bird runs and the state of their BGP sessions.
@@ -319,9 +325,9 @@ comes from the homelab's BGP extension. Every image has the others.
 Name the diagnostic and give each parameter as `<parameter>=<value>`:
 
 ```sh
-chalkctl node diag w1 route-get address=2001:db8::1
-chalkctl node diag w1 routes family=inet6
-chalkctl node diag w1 tcp-connect address=192.0.2.10 port=443
+chalkctl node diag node1 route-get address=2001:db8::1
+chalkctl node diag node1 routes family=inet6
+chalkctl node diag node1 tcp-connect address=192.0.2.10 port=443
 ```
 
 The command's output goes to standard output and its errors to standard error. chalkctl fails
@@ -348,7 +354,7 @@ A node in maintenance mode answers `chalkctl node diag` too, with `--fingerprint
 `--insecure`. The installer then shows whether the machine reaches a registry before it installs:
 
 ```sh
-chalkctl node diag w1 --insecure tcp-connect address=2001:db8::5000 port=443
+chalkctl node diag node1 --insecure tcp-connect address=2001:db8::5000 port=443
 ```
 
 An image built without an OS CA accepts any client in maintenance mode and treats it as an admin.
@@ -379,7 +385,7 @@ running nodes with an upgrade to the new image.
 On the shipped variant, a privileged pod on the node reaches the tools through the host's root:
 
 ```sh
-kubectl debug node/w1 -it --profile=sysadmin --image=busybox -- \
+kubectl debug node/node1 -it --profile=sysadmin --image=busybox -- \
   chroot /host /run/current-system/sw/bin/bash
 ```
 

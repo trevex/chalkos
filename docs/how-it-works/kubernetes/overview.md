@@ -140,10 +140,10 @@ the first field that differs, in the order of the fields' names, and the nodes o
 values:
 
 ```text
-chalkos.yaml: the nodes hold different Flannel specs: spec.mtu is 1400 on cp1 and cp2, 1450 on w1; every node of the cluster holds the same Cluster and Flannel specs
+chalkos.yaml: the nodes hold different Flannel specs: spec.mtu is 1480 on node1 and node2, 1450 on node3; every node of the cluster holds the same Cluster and Flannel specs
 ```
 
-A node without the `Flannel` document is named as holding none, as in `none on w1`. A node whose
+A node without the `Flannel` document is named as holding none, as in `none on node3`. A node whose
 files chalkctl cannot read, such as one whose files hold a document twice, is left out of the
 comparison, and every command that reads its config refuses it. `chalkctl kubeconfig` points
 clients at the endpoint of the nodes' `Cluster` documents, so it refuses an inventory without
@@ -195,8 +195,8 @@ cluster:
 
 The kubelet gets what differs per node as flags in `$KUBELET_ARGS`. These are the node name, which
 is the node's [name in the inventory](../node/config.md#a-nodes-name-is-its-key-in-the-inventory),
-and the addresses, labels, taints and extra flags of its `Node` document. The homelab example's
-worker carries fast storage and keeps other workloads off:
+and the addresses, labels, taints and extra flags of its `Node` document. This worker carries fast
+storage and keeps other workloads off:
 
 ```yaml
 apiVersion: kubernetes.chalkos.dev/v1alpha1

@@ -153,7 +153,8 @@ Configure the routing daemon to announce the addresses of `node0`. The VIP's rou
 holder: when a new control plane wins the election, the old holder's daemon withdraws the route and
 the new holder's announces it. A failover takes the election's time plus the time the daemons and
 their peers need to move the route. `chalkctl status` shows `vip holder` and `vip standby` as with
-an `l2` VIP.
+an `l2` VIP. The homelab announces its VIP this way, with bird over BGP on both ports of each
+node, as [Build a home lab](../get-started/home-lab.md) sets up.
 
 chalkd adds an IPv6 VIP with a preferred lifetime of 0, so the node never uses it as a source
 address. `ip -6 addr` shows it as `deprecated`, and routing daemons announce it all the same.

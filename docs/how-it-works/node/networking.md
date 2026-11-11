@@ -5,8 +5,7 @@ description: "How a node configures its interfaces with systemd-networkd, filter
 
 # Networking
 
-The homelab example's control plane has one static address on its uplink. Here it also has a route
-through a second router:
+This node has one static address on its uplink, and a route through a second router:
 
 ```yaml
 apiVersion: networkd.chalkos.dev/v1alpha1
@@ -14,9 +13,9 @@ kind: Network
 metadata: {name: 10-uplink}
 spec:
   match: {name: enp1s0}
-  network: {address: [10.0.0.11/24], gateway: 10.0.0.1}
+  network: {address: [192.0.2.11/24], gateway: 192.0.2.1}
   route:
-    - {destination: 10.1.0.0/16, gateway: 10.0.0.254}
+    - {destination: 198.51.100.0/24, gateway: 192.0.2.254}
 ```
 
 A chalkos node configures its interfaces with systemd-networkd from documents like this one,

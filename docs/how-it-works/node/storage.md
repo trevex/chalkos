@@ -5,8 +5,8 @@ description: "STATE, VAR and volumes, how they are encrypted and unlocked, and h
 
 # Storage and encryption
 
-The homelab example gives its worker w1 a VAR of 200 GiB on the NVMe disk it boots from, and a
-volume for Longhorn on a SATA SSD of its own:
+This node has a VAR of 200 GiB on the NVMe disk it boots from, and a volume for Longhorn on a SATA
+SSD of its own:
 
 ```yaml
 apiVersion: storage.chalkos.dev/v1alpha1
@@ -116,7 +116,7 @@ volume (its `Volume`'s `spec.encryption.mode`) can override the mode. STATE foll
 which holds the node's private keys, would be one of them:
 
 ```text
-warning: node w1: its SystemDisk's encryption.mode is none, so STATE, which holds the node's keys and secrets, is not encrypted
+warning: node node1: its SystemDisk's encryption.mode is none, so STATE, which holds the node's keys and secrets, is not encrypted
 ```
 
 PCR 7 measures the Secure Boot state: whether it is on, the contents of PK, KEK, db and dbx, and

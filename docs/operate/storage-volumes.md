@@ -7,8 +7,8 @@ description: "Size VAR and add encrypted or raw volumes on the system disk or on
 
 This page is for an operator who gives nodes storage beyond VAR. At the end a node has a volume
 for a CSI driver, local persistent volumes, Ceph or swap, encrypted or not, formatted and mounted
-or left raw. The page adds a Longhorn disk to the homelab's `w1`, then a scratch volume on its
-system disk.
+or left raw. The page gives the homelab's `node1` a second disk, a SATA SSD for Longhorn, then a
+scratch volume on its system disk.
 
 A node's storage is two kinds of document. One `SystemDisk` names the system disk, sizes VAR and
 sets the encryption. A `Volume` adds each further volume, named by its `metadata.name`. A volume
@@ -30,7 +30,7 @@ partitions on each and what each disk is used for. The output below is illustrat
 are chalkctl's, and the disks, serials and WWNs are an example machine's.
 
 ```console
-$ chalkctl disks w1
+$ chalkctl disks node1
 DEVICE            SIZE    TYPE         MODEL                    SERIAL          WWN                   USE
 /dev/nvme0n1      1.8T    nvme         Samsung SSD 990 PRO 2TB  S7KHNJ0W100002  eui.0025385b11b0c4d2  boot
   /dev/nvme0n1p1  1G      esp          vfat
@@ -51,9 +51,10 @@ chalkctl disks --address=<address> --insecure --secrets=secrets.age
 
 ## Put a volume on a disk of its own
 
-A `Volume` with `disk` takes that disk alone. The homelab's `w1` gives its SATA SSD to Longhorn:
+A `Volume` with `disk` takes that disk alone. With a SATA SSD beside its NVMe disk, `node1` gives
+the SSD to Longhorn:
 
-```yaml title="nodes/w1.yaml"
+```yaml title="nodes/node1.yaml"
 # A SATA SSD for Longhorn replicas next to the NVMe system disk.
 apiVersion: storage.chalkos.dev/v1alpha1
 kind: Volume
@@ -92,7 +93,7 @@ Two volumes may not share a disk, and a volume with `disk` may not name the syst
 
 A `Volume` without `disk` goes on the system disk, behind VAR:
 
-```yaml title="nodes/w1.yaml"
+```yaml title="nodes/node1.yaml"
 apiVersion: storage.chalkos.dev/v1alpha1
 kind: Volume
 metadata: {name: scratch}
@@ -101,9 +102,10 @@ spec:
   mountPoint: /var/lib/scratch
 ```
 
-At most one partition per disk may fill its disk, and VAR counts. The homelab's `w1` sizes VAR at
-`200G`, so the scratch volume may fill the rest, or take a size as here. Sizes are a number with
-an optional `K`, `M`, `G`, `T` or `P`, in units of 1024.
+At most one partition per disk may fill its disk, and VAR counts. A node whose `SystemDisk` sizes
+VAR at `200G`, as [Write a node's config](node-config.md#every-node-holds-one-systemdisk) shows,
+lets the scratch volume fill the rest, or take a size as here. Sizes are a number with an optional
+`K`, `M`, `G`, `T` or `P`, in units of 1024.
 
 The volume's name is its partition label: lower-case letters, digits and dashes, starting and
 ending with a letter or digit, at most 32 characters. `esp`, `store`, `store-verity`, `state`,
@@ -123,7 +125,7 @@ be reset while the node runs. A smaller VAR takes a reinstall.
 `format` is `ext4` by default, or `xfs`, `btrfs`, `swap` or `raw`. A raw volume is a block device
 for software that brings its own format, such as a Ceph OSD:
 
-```yaml title="nodes/w1.yaml"
+```yaml title="nodes/node1.yaml"
 apiVersion: storage.chalkos.dev/v1alpha1
 kind: Volume
 metadata: {name: osd}
@@ -156,7 +158,7 @@ A volume is encrypted like the node, by `spec.encryption.mode` of the `SystemDis
 overrides it, and `spec.var.encryption.mode` of the `SystemDisk` overrides it for VAR. A volume
 whose data is not secret can go without encryption:
 
-```yaml title="nodes/w1.yaml"
+```yaml title="nodes/node1.yaml"
 apiVersion: storage.chalkos.dev/v1alpha1
 kind: Volume
 metadata: {name: longhorn}
@@ -192,16 +194,16 @@ two volumes share is refused before that, on a line of its own such as
 Run the check:
 
 ```sh
-chalkctl validate w1
+chalkctl validate node1
 ```
 
 Then deliver the config:
 
 ```console
-$ chalkctl config apply w1 --secrets secrets.age
-w1: config 1 added, 0 removed, 0 changed
+$ chalkctl config apply node1 --secrets secrets.age
+node1: config 1 added, 0 removed, 0 changed
 volume scratch: new volume
-w1 runs config 45095fb6414e5f6744a8bf134254107d7d943537457d513fc51e7440deace75f
+node1 runs config 45095fb6414e5f6744a8bf134254107d7d943537457d513fc51e7440deace75f
 ```
 
 The first line counts the documents the config adds, removes and changes: here the `Volume`
@@ -226,7 +228,7 @@ Every other change is destructive, and the node refuses the whole config:
 The refusal names the volume and what carries the change out:
 
 ```text
-the config takes chalkctl storage reset: Volume scratch: format xfs instead of ext4; reset it with chalkctl storage reset w1 scratch
+the config takes chalkctl storage reset: Volume scratch: format xfs instead of ext4; reset it with chalkctl storage reset node1 scratch
 ```
 
 [Change a node's config](change-config.md#a-refusal-names-what-the-change-takes) explains the
@@ -239,8 +241,8 @@ refusals. VAR, a removed volume and a volume that moves to another disk take a r
 document now defines it:
 
 ```console
-$ chalkctl storage reset w1 scratch --secrets secrets.age
-volume scratch of w1 was wiped and created again
+$ chalkctl storage reset node1 scratch --secrets secrets.age
+volume scratch of node1 was wiped and created again
 ```
 
 !!! danger "A reset deletes the volume's data"
@@ -268,7 +270,7 @@ other changes one at a time.
 `chalkctl status` lists the node's volumes, the disk each lives on, its mount point and its state:
 
 ```console
-$ chalkctl status w1
+$ chalkctl status node1
 ...
 VOLUME    DISK      MOUNT POINT        STATE
 longhorn  longhorn  /var/lib/longhorn  mounted

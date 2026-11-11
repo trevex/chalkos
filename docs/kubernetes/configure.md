@@ -67,14 +67,15 @@ Each field is one image reference, used as written. A reference names its regist
 repository, and a tag, a digest or both, such as
 `registry.k8s.io/kube-apiserver:v1.37.1@sha256:<digest>`. chalkos adds no default registry, so
 `kube-apiserver:v1.37.1` is refused. With a digest, containerd pulls the image by its digest, and
-the tag labels it. The homelab's block pins every image this way:
+the tag labels it. This `Cluster` of a single control plane at `192.0.2.11` takes the images block
+of the homelab's, which pins every image this way:
 
 ```yaml title="cluster/cluster.yaml"
 apiVersion: kubernetes.chalkos.dev/v1alpha1
 kind: Cluster
 metadata: {name: default}
 spec:
-  endpoint: https://10.0.0.11:6443
+  endpoint: https://192.0.2.11:6443
   --8<-- "examples/homelab/cluster/cluster.yaml:images"
 ```
 
@@ -86,7 +87,7 @@ and `upgrade` warn of it, because each node pulls whatever the tag points to whe
 nodes may run different images under one reference:
 
 ```text
-chalkctl: warning: cp1: Cluster "default": images.proxy: registry.k8s.io/kube-proxy:v1.37.1 names a tag but no digest, so nodes pull whatever the tag points to when they pull; pin it as registry.k8s.io/kube-proxy:v1.37.1@sha256:<digest>
+chalkctl: warning: node1: Cluster "default": images.proxy: registry.k8s.io/kube-proxy:v1.37.1 names a tag but no digest, so nodes pull whatever the tag points to when they pull; pin it as registry.k8s.io/kube-proxy:v1.37.1@sha256:<digest>
 ```
 
 containerd pulls the images when the static pods, the add-ons and the pods need them, through the
@@ -136,11 +137,12 @@ containers keep running; pods started after it get the new sandbox.
 
 ## The Node document gives a node its type, labels and taints
 
-Each node's config holds one `Node` document, usually in the node's own file. The homelab's `w1`
-is a worker for storage: its label attracts the storage system's replicas, and its taint keeps
-other workloads off.
+Each node's config holds one `Node` document, usually in the node's own file. A worker `node4`,
+which the homelab could add as [Add and remove nodes](../operate/add-remove-nodes.md) does, here
+serves storage: its label attracts the storage system's replicas, and its taint keeps other
+workloads off.
 
-```yaml title="nodes/w1.yaml"
+```yaml title="nodes/node4.yaml"
 apiVersion: kubernetes.chalkos.dev/v1alpha1
 kind: Node
 metadata: {name: default}
@@ -160,7 +162,7 @@ The kubelet sets the labels on its own node, so the labels it may set limit your
 such as a `node-role.kubernetes.io/` label:
 
 ```text
-node w1: invalid Kubernetes settings:
+node node4: invalid Kubernetes settings:
 - Node: label "node-role.kubernetes.io/storage": the kubelet sets labels in the kubernetes.io and k8s.io namespaces on its own node only under kubelet.kubernetes.io/ and node.kubernetes.io/ or from the list kubernetes.io/hostname, topology.kubernetes.io/zone, topology.kubernetes.io/region, failure-domain.beta.kubernetes.io/zone, failure-domain.beta.kubernetes.io/region, beta.kubernetes.io/instance-type, node.kubernetes.io/instance-type, kubernetes.io/os, kubernetes.io/arch, beta.kubernetes.io/os, beta.kubernetes.io/arch
 ```
 
@@ -176,8 +178,8 @@ Change the labels and taints of a registered node with kubectl, and keep its `No
 is:
 
 ```sh
-kubectl label node w1 node.kubernetes.io/storage=nvme --overwrite
-kubectl taint node w1 dedicated=storage:NoSchedule-
+kubectl label node node4 node.kubernetes.io/storage=nvme --overwrite
+kubectl taint node node4 dedicated=storage:NoSchedule-
 ```
 
 A reinstall registers the node again with the labels and taints of its `Node` document.
@@ -191,14 +193,15 @@ explains both.
 
 A control plane registers with the taint `node-role.kubernetes.io/control-plane:NoSchedule`, so
 only pods that tolerate it run there. Set `allowSchedulingOnControlPlanes` before the first node
-installs to leave the taint off the control planes:
+installs to leave the taint off the control planes. The homelab sets it, because its three nodes are
+all control planes:
 
 ```yaml title="cluster/cluster.yaml"
 apiVersion: kubernetes.chalkos.dev/v1alpha1
 kind: Cluster
 metadata: {name: default}
 spec:
-  endpoint: https://10.0.0.11:6443
+  endpoint: https://192.0.2.11:6443
   allowSchedulingOnControlPlanes: true
   --8<-- "examples/homelab/cluster/cluster.yaml:images"
 ```
@@ -214,8 +217,8 @@ the config is refused: Cluster/default: spec.allowSchedulingOnControlPlanes: the
 On a running cluster, keep the setting and remove or add the taint with kubectl:
 
 ```sh
-kubectl taint node cp1 node-role.kubernetes.io/control-plane:NoSchedule-
-kubectl taint node cp1 node-role.kubernetes.io/control-plane:NoSchedule
+kubectl taint node node1 node-role.kubernetes.io/control-plane:NoSchedule-
+kubectl taint node node1 node-role.kubernetes.io/control-plane:NoSchedule
 ```
 
 ## Add flags to the control plane's components
@@ -228,7 +231,7 @@ apiVersion: kubernetes.chalkos.dev/v1alpha1
 kind: Cluster
 metadata: {name: default}
 spec:
-  endpoint: https://10.0.0.11:6443
+  endpoint: https://192.0.2.11:6443
   extraArgs:
     # NodePort services take ports from a smaller range.
     kube-apiserver: {service-node-port-range: 30000-31000}
@@ -247,7 +250,7 @@ The API server's flags that decide who may do what are refused, also when spelt 
 `enable-bootstrap-token-auth`. `chalkctl validate` names the flag:
 
 ```text
-node cp1: the Kubernetes cluster the documents give: Cluster "default": extraArgs: kube-apiserver --authentication-config is set by chalkos and cannot be overridden
+node node1: the Kubernetes cluster the documents give: Cluster "default": extraArgs: kube-apiserver --authentication-config is set by chalkos and cannot be overridden
 ```
 
 The API server refuses to start with some flags next to flags chalkos sets, so `chalkctl validate`
@@ -257,7 +260,7 @@ lists them.
 The error names the flag, the flag it conflicts with and what to do instead:
 
 ```text
-node cp1: the Kubernetes cluster the documents give: Cluster "default": extraArgs: kube-apiserver --admission-control conflicts with --enable-admission-plugins: chalkos sets --enable-admission-plugins, and the API server refuses this flag next to it; give the plugins in enable-admission-plugins and disable-admission-plugins
+node node1: the Kubernetes cluster the documents give: Cluster "default": extraArgs: kube-apiserver --admission-control conflicts with --enable-admission-plugins: chalkos sets --enable-admission-plugins, and the API server refuses this flag next to it; give the plugins in enable-admission-plugins and disable-admission-plugins
 ```
 
 From the node, the control plane's pods mount the certificates and kubeconfigs chalkd writes, and
@@ -268,7 +271,7 @@ webhook's configuration, finds no file to read.
 
 `kubeletExtraArgs` of a node's `Node` document adds flags to that node's kubelet:
 
-```yaml title="nodes/w1.yaml"
+```yaml title="nodes/node4.yaml"
 apiVersion: kubernetes.chalkos.dev/v1alpha1
 kind: Node
 metadata: {name: default}
@@ -288,7 +291,7 @@ They also set the node's name, addresses, labels and taints, and who may use the
 A refused flag names its replacement where there is one:
 
 ```text
-node w1: the Kubernetes cluster the documents give: Node "default": kubeletExtraArgs: --register-with-taints is set by chalkos and cannot be overridden; give the node's labels and taints in the Node document's labels and taints
+node node4: the Kubernetes cluster the documents give: Node "default": kubeletExtraArgs: --register-with-taints is set by chalkos and cannot be overridden; give the node's labels and taints in the Node document's labels and taints
 ```
 
 A kubelet flag's name and value hold no whitespace and no backslash, because the flags reach the
@@ -296,7 +299,7 @@ kubelet through an environment file that systemd splits at whitespace. A flag th
 separated by spaces is refused:
 
 ```text
-node w1: the Kubernetes cluster the documents give: Node "default": kubeletExtraArgs: --eviction-hard="memory.available<500Mi nodefs.available<10%": the kubelet's flags cannot hold whitespace or backslashes
+node node4: the Kubernetes cluster the documents give: Node "default": kubeletExtraArgs: --eviction-hard="memory.available<500Mi nodefs.available<10%": the kubelet's flags cannot hold whitespace or backslashes
 ```
 
 ## The API server authenticates with certificates and tokens
@@ -310,7 +313,7 @@ the `oidc-*` flags next to an authentication configuration, so `chalkctl validat
 `extraArgs.kube-apiserver`:
 
 ```text
-node cp1: the Kubernetes cluster the documents give: Cluster "default": extraArgs: kube-apiserver --oidc-issuer-url conflicts with --authentication-config: chalkos configures authentication through --authentication-config, and the API server refuses oidc-* flags next to it; chalkos offers no way to add an authenticator today, so grant narrower access with RBAC
+node node1: the Kubernetes cluster the documents give: Cluster "default": extraArgs: kube-apiserver --oidc-issuer-url conflicts with --authentication-config: chalkos configures authentication through --authentication-config, and the API server refuses oidc-* flags next to it; chalkos offers no way to add an authenticator today, so grant narrower access with RBAC
 ```
 
 For access narrower than `cluster-admin`, bind users and groups to roles with RBAC.
@@ -326,22 +329,26 @@ apiVersion: kubernetes.chalkos.dev/v1alpha1
 kind: Flannel
 metadata: {name: default}
 spec:
-  # Nodes accept the pod network's VXLAN traffic only from the nodes' own network.
-  vxlanSourceSubnets: [10.0.0.0/24]
+  # Nodes accept the pod network's VXLAN traffic only from the nodes' own addresses.
+  vxlanSourceSubnets: ["fdc8:a1b2:c3d4:ff::/64"]
+  mtu: 1480
 ```
 
 - `vxlanSourceSubnets` lists the ranges flannel's VXLAN traffic must come from, at least one of
   each family. Without it, nodes accept VXLAN from any source. Set it to the ranges your nodes live
   in.
 - `mtu` is the MTU of the network between the nodes. Flannel's VXLAN devices and the pods get 50
-  less. Without it, flannel takes the MTU of the interface that holds the node's address.
+  less. Without it, flannel takes the MTU of the interface that holds the node's address. The
+  homelab sets it, because that interface is the dummy `node0`, whose MTU says nothing of the
+  fabric's.
 
 `chalkctl validate` refuses a node whose address lies outside the VXLAN sources, since the other
-nodes would drop its traffic:
+nodes would drop its traffic. With `vxlanSourceSubnets: ["fdc8:a1b2:c3d4:fe::/64"]`, a typo for
+the nodes' `ff::/64`, it refuses every node, such as `node4`:
 
 ```text
-node w1: invalid Kubernetes settings:
-- Node: nodeIP.addresses: the node's address 10.0.0.21 is outside vxlanSourceSubnets 10.1.0.0/24, from which alone the other nodes take VXLAN
+node node4: invalid Kubernetes settings:
+- Node: nodeIP.addresses: the node's address fdc8:a1b2:c3d4:ff::14 is outside vxlanSourceSubnets fdc8:a1b2:c3d4:fe::/64, from which alone the other nodes take VXLAN
 ```
 
 It also refuses a source range that overlaps the pod or service ranges, and an MTU that leaves pods
@@ -394,8 +401,7 @@ Check the config of every node, then deliver it to each node whose files changed
 
 ```sh
 chalkctl validate
-chalkctl config apply cp1 --secrets=secrets.age
-chalkctl config apply w1 --secrets=secrets.age
+chalkctl config apply node1 node2 node3 --secrets=secrets.age
 ```
 
 A changed `Cluster`, `Flannel` or `Node` document restarts `chalkos-kubernetes.service` and
@@ -424,13 +430,13 @@ kubectl shows what reached Kubernetes. The labels and taints of a node, and the 
 `Addon` above:
 
 ```sh
-kubectl --kubeconfig kubeconfig get node w1 --show-labels
-kubectl --kubeconfig kubeconfig describe node w1
+kubectl --kubeconfig kubeconfig get node node4 --show-labels
+kubectl --kubeconfig kubeconfig describe node node4
 kubectl --kubeconfig kubeconfig get rolebinding -n apps
 ```
 
 A component that does not start with an extra flag shows in its control plane's status and in the
-kubelet's journal, `chalkctl logs cp1 --unit=kubelet.service`.
+kubelet's journal, `chalkctl logs node1 --unit=kubelet.service`.
 [Troubleshoot Kubernetes](troubleshooting.md) covers further symptoms.
 
 ## What next

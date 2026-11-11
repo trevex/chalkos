@@ -46,23 +46,30 @@ chalkctl on a machine without Nix, an airgapped one included, copy `bin/.chalkct
 
 ## The repository holds the inventory, the config files and the images
 
-A cluster lives in one repository. The homelab's looks like this once its image is built and its
+A cluster lives in one repository. The homelab's looks like this once its images are built and its
 secrets are generated:
 
 ```text
 homelab/
 ├── .gitignore         keeps images/ and nix build's result links out of git
-├── flake.nix          the image author's flake, which builds the image
+├── flake.nix          the image author's flake, which builds the images and the installer
 ├── extensions/        the image author's NixOS modules that add kinds
 ├── chalkos.yaml       the inventory
-├── cluster/           config files every node gets
-│   ├── bgp.yaml
+├── router/            the router's config files
+│   ├── router.yaml
+│   └── secrets.yaml
+├── cluster/           config files every Kubernetes node gets
 │   └── cluster.yaml
-├── nodes/             each node's own config file
-│   ├── cp1.yaml
-│   └── w1.yaml
+├── bgp/               the BGP neighbour and password every Kubernetes node gets
+│   ├── fabric.yaml
+│   └── secrets.yaml
+├── nodes/             each Kubernetes node's own config file
+│   ├── node1.yaml
+│   ├── node2.yaml
+│   └── node3.yaml
 ├── images/            image directories, outside git
-│   └── node-metal     the build, which nix build links here
+│   ├── router-metal   the builds, which nix build links here
+│   └── node-metal
 ├── secrets.age        the secrets file, encrypted with age
 └── secrets.pub.json   the public half of the secrets file
 ```
@@ -82,7 +89,7 @@ run chalkctl from the repository's root. Paths in the inventory are relative to 
 `chalkbuild sign` writes a signed copy beside it, such as `images/node-metal-signed`, for nodes
 that enforce Secure Boot. Both are outside git: the homelab's `.gitignore` lists `images/`.
 
-Commit the inventory, `cluster/`, `nodes/` and `secrets.pub.json`. A flake that names
+Commit the inventory, the config files and `secrets.pub.json`. A flake that names
 `secrets.pub.json` in `osCA` reads it, and a flake sees only the files git tracks. `secrets.age`
 may be committed too, as the next section explains.
 
@@ -156,14 +163,15 @@ takes it.
 
 Images built without `osCA` accept any client until they are installed, as an admin. Anyone on
 the machine's network may then install it, reboot it and run every diagnostic on it, those for
-operators such as `nft-ruleset` included. The homelab's flake leaves `osCA` out, which suits a lab
-on a private network alone.
+operators such as `nft-ruleset` included. The homelab's flake leaves `osCA` out, so that it builds
+before any cluster has secrets, and
+[Build a home lab](../get-started/home-lab.md#generate-the-clusters-secrets) adds it.
 
 ## Secret documents hold the services' secrets
 
 A `Secret` document is a config document, unrelated to the secrets file. It holds values that
 the node's services read, such as a password for a BGP peer, and it reaches the node with the
-rest of the node's config. The homelab's `bgp/secrets.yaml` gives every node one, which the
+rest of the node's config. The homelab's `bgp/secrets.yaml` gives the three nodes one, which the
 `Peer` document for `router` in `bgp/fabric.yaml` names in a `secretRef`:
 
 ```yaml title="bgp/secrets.yaml"
