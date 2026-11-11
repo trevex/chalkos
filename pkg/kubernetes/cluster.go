@@ -96,13 +96,22 @@ type Flannel struct {
 type VIP struct {
 	// Addresses are the virtual addresses, at most one per family; none means no virtual IP.
 	Addresses []netip.Addr `json:"addresses"`
-	// Mode is how the holder announces them: l2 adds them to an interface and announces them
-	// with gratuitous ARP and unsolicited neighbour advertisements.
+	// Mode is how the holder makes them reachable, VIPModeL2 or VIPModeRouted.
 	Mode string `json:"mode"`
 	// Interface is the interface that carries them on this node, from its Node document; empty
-	// means the one with the node's address of their family.
+	// means the one with the node's address of their family, which a routed VIP does not allow.
 	Interface string `json:"interface"`
 }
+
+// The VIP's modes.
+const (
+	// VIPModeL2 adds the VIPs to an interface and announces them with gratuitous ARP and
+	// unsolicited neighbour advertisements.
+	VIPModeL2 = "l2"
+	// VIPModeRouted adds the VIPs to an interface as host addresses and announces nothing on the
+	// link; a routing daemon on the node announces them.
+	VIPModeRouted = "routed"
+)
 
 // ReadCluster reads and checks a cluster file.
 func ReadCluster(path string) (Cluster, error) {
@@ -215,7 +224,7 @@ func (c Cluster) validateVIP(families []nodeip.Family) error {
 	if len(vips) == 0 {
 		return nil
 	}
-	if c.VIP.Mode != "l2" {
+	if c.VIP.Mode != VIPModeL2 && c.VIP.Mode != VIPModeRouted {
 		return fmt.Errorf("vip: unknown mode %q", c.VIP.Mode)
 	}
 	if err := onePerFamily("vip", vips, families); err != nil {

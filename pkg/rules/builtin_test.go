@@ -30,7 +30,7 @@ func TestBuiltinRulesCompile(t *testing.T) {
 	for kind, want := range map[string]int{
 		"storage.chalkos.dev/v1alpha1 Volume":     7,
 		"storage.chalkos.dev/v1alpha1 SystemDisk": 1,
-		"kubernetes.chalkos.dev/v1alpha1 Node":    3,
+		"kubernetes.chalkos.dev/v1alpha1 Node":    4,
 		"kubernetes.chalkos.dev/v1alpha1 Cluster": 5,
 		"oci.chalkos.dev/v1alpha1 Registry":       1,
 	} {
@@ -124,6 +124,57 @@ func TestRegistrationRules(t *testing.T) {
 			// A node without a share has not registered.
 			if failures, err := set.Evaluate(Input{Documents: config.Redact(docs(tc.node, tc.cluster)), Old: config.Redact(old), Facts: storageFacts{"share": nil}, Node: "n1"}); err != nil || len(failures) != 0 {
 				t.Errorf("without a share: %v, %v", messages(failures), err)
+			}
+		})
+	}
+}
+
+// A routed VIP goes on the interface each control plane names, so a control plane without one is
+// refused; a worker, an l2 VIP, a cluster without VIPs and a config without a Cluster need none.
+func TestRoutedVIPRules(t *testing.T) {
+	s, err := schema.LoadSchemas("../../test/fixtures/kinds/builtin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	set, err := Compile(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// docs is the Node and, unless vip is empty, the Cluster with that VIP.
+	docs := func(nodeType, iface, vip string) []config.Document {
+		d := []config.Document{
+			builtinDoc(t, translate.API, "Node", "default", `{"type": "`+nodeType+`", "vip": {"interface": `+iface+`}}`),
+		}
+		if vip != "" {
+			d = append(d, builtinDoc(t, translate.API, "Cluster", "default", `{"endpoint": "https://[fd00::10]:6443", "vip": `+vip+`}`))
+		}
+		return d
+	}
+	const (
+		routed  = `{"addresses": ["fd00::10"], "mode": "routed"}`
+		l2      = `{"addresses": ["fd00::10"], "mode": "l2"}`
+		none    = `{"addresses": [], "mode": "routed"}`
+		refusal = "Node/default: spec.vip.interface: the Cluster's VIP is routed, so a control plane needs vip.interface: the interface it adds the VIP to, such as a dummy interface its routing daemon announces"
+	)
+	for _, tc := range []struct {
+		name                 string
+		nodeType, iface, vip string
+		want                 []string
+	}{
+		{"routed with an interface", "controlplane", `"node0"`, routed, nil},
+		{"routed without an interface", "controlplane", "null", routed, []string{refusal}},
+		{"routed on a worker", "worker", "null", routed, nil},
+		{"l2 without an interface", "controlplane", "null", l2, nil},
+		{"routed without addresses", "controlplane", "null", none, nil},
+		{"no Cluster", "controlplane", "null", "", nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			failures, err := set.Evaluate(Input{Documents: config.Redact(docs(tc.nodeType, tc.iface, tc.vip)), Node: "n1"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := messages(failures); !slices.Equal(got, tc.want) {
+				t.Errorf("failures:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(tc.want, "\n"))
 			}
 		})
 	}

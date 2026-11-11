@@ -3,6 +3,8 @@ package vip
 import (
 	"net/netip"
 	"os"
+	"slices"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -38,6 +40,59 @@ func TestNodeAddresses(t *testing.T) {
 	}
 }
 
+// An l2 VIP is announced three times; a routed VIP goes on the interface the node names and is
+// announced none, and a routed VIP without an interface is refused.
+func TestNodeAddressesModes(t *testing.T) {
+	s := knode.State{Paths: knode.Paths{RunDir: t.TempDir()}}
+	vips := []netip.Addr{netip.MustParseAddr("10.0.0.10"), netip.MustParseAddr("fd00::10")}
+	for _, tc := range []struct {
+		mode, iface   string
+		announcements int
+	}{
+		{k8s.VIPModeL2, "node0", 3},
+		{k8s.VIPModeRouted, "node0", 0},
+	} {
+		c := k8s.Cluster{VIP: k8s.VIP{Addresses: vips, Mode: tc.mode, Interface: tc.iface}}
+		got, err := NodeAddresses(c, s)
+		if err != nil {
+			t.Fatalf("%s: %v", tc.mode, err)
+		}
+		a := got.(*addresses)
+		if a.announcements != tc.announcements || len(a.addrs) != 2 || a.addrs[0].Interface != tc.iface || a.addrs[1].Interface != tc.iface {
+			t.Errorf("%s: VIPs %v announced %d times, want both on %s announced %d times", tc.mode, a.addrs, a.announcements, tc.iface, tc.announcements)
+		}
+	}
+	c := k8s.Cluster{VIP: k8s.VIP{Addresses: vips[:1], Mode: k8s.VIPModeRouted}}
+	if _, err := NodeAddresses(c, s); err == nil || !strings.Contains(err.Error(), "vip.interface") {
+		t.Errorf("a routed VIP without an interface: %v, want an error naming vip.interface", err)
+	}
+}
+
+// A routed VIP's holder adds and removes every address and announces none.
+func TestRoutedAnnouncesNothing(t *testing.T) {
+	addrs := []Address{
+		{IP: netip.MustParseAddr("10.0.0.10"), Interface: "node0"},
+		{IP: netip.MustParseAddr("fd00::10"), Interface: "node0"},
+	}
+	var added, removed []Address
+	announced := 0
+	a := newAddresses(addrs, 0)
+	a.add = func(addr Address) (bool, error) { added = append(added, addr); return true, nil }
+	a.announce = func(Address) error { announced++; return nil }
+	a.remove = func(addr Address) error { removed = append(removed, addr); return nil }
+	a.spacing = time.Millisecond
+	if err := a.Acquire(); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(50 * time.Millisecond)
+	if err := a.Release(); err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(added, addrs) || !slices.Equal(removed, addrs) || announced != 0 {
+		t.Errorf("added %v, removed %v, announced %d times; want both added and removed, none announced", added, removed, announced)
+	}
+}
+
 // The holder announces only the addresses it added, a few times, and stops once it released
 // them.
 func TestAnnouncesAddedAddressesOnly(t *testing.T) {
@@ -50,7 +105,7 @@ func TestAnnouncesAddedAddressesOnly(t *testing.T) {
 		defer mu.Unlock()
 		return announced[addr]
 	}
-	a := newAddresses([]Address{present, missing})
+	a := newAddresses([]Address{present, missing}, 3)
 	a.add = func(addr Address) (bool, error) { return addr != present, nil }
 	a.announce = func(addr Address) error {
 		mu.Lock()

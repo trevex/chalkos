@@ -358,6 +358,11 @@ func TestClusterFamiliesAndVIP(t *testing.T) {
 	if err := named.Validate(); err != nil {
 		t.Errorf("a host name endpoint with a VIP: %v", err)
 	}
+	routed := valid
+	routed.VIP = VIP{Addresses: mustAddrs("10.0.0.10"), Mode: VIPModeRouted, Interface: "node0"}
+	if err := routed.Validate(); err != nil {
+		t.Errorf("a routed VIP: %v", err)
+	}
 	empty := valid
 	empty.VIP = VIP{Addresses: []netip.Addr{{}}, Mode: "l2"}
 	if err := empty.Validate(); err == nil || err.Error() != "vip: an address is empty" {

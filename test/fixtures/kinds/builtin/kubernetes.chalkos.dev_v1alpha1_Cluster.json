@@ -318,9 +318,10 @@
             },
             "mode": {
               "default": "l2",
-              "description": "Way the node holding the VIP announces its addresses: `l2` adds them to an interface and announces them to the neighbours with gratuitous ARP and unsolicited neighbour advertisements.",
+              "description": "Way the node holding the VIP makes its addresses reachable: `l2` adds them to an interface and announces them to the neighbours with gratuitous ARP and unsolicited neighbour advertisements; `routed` adds them to an interface as host addresses, /32 or /128, and announces nothing, so a routing daemon on the node announces them. In `routed`, every control plane names its `vip.interface`.",
               "enum": [
-                "l2"
+                "l2",
+                "routed"
               ]
             }
           },

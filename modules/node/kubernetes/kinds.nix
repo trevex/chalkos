@@ -8,8 +8,8 @@
 }:
 let
   inherit (lib) mkOption types;
-  inherit (lib.chalkos.internal) builtin;
-  inherit (lib.chalkos.internal.api) groups;
+  inherit (lib.chalkos.internal) builtin cel;
+  inherit (lib.chalkos.internal.api) groups apiVersions;
   kubernetes = config.chalkos.kubernetes.enable;
   flannel = config.chalkos.cni.provider == "flannel";
   inherit (lib.chalkos.internal.kindTypes)
@@ -98,6 +98,8 @@ let
       rule = "facts.share == null || self == oldSelf";
       message = "the config changes ${what}; the value applies when the node registers with the cluster, so changing it on a running node changes nothing; ${instead}, or reinstall the node";
     };
+  # The documents of a Kubernetes kind in the delivered config, by name.
+  delivered = kind: cel.documents "config" apiVersions.kubernetes kind;
   # Binds was and gets to the running and the delivered Cluster spec around expr.
   bindSpecs =
     expr:
@@ -205,10 +207,19 @@ in
               description = "Subnets the node picks its address from, which replace the Cluster's nodeIP.validSubnets as a whole; null takes the Cluster's.";
             };
           };
-          vip.interface = mkOption {
+          vip.interface = lib.chalkos.mkOption {
             type = types.nullOr types.nonEmptyStr;
             default = null;
-            description = "Interface the node adds the Cluster's VIP addresses to while it holds them; null means the one holding the node's address of their family. Only control planes hold the VIP, so a worker's stays null.";
+            description = "Interface the node adds the Cluster's VIP addresses to while it holds them; null means the one holding the node's address of their family, which a routed VIP does not allow. Only control planes hold the VIP, so a worker's stays null.";
+            # A routed VIP goes on an interface the node's routing daemon announces, which the
+            # interface holding the node's address need not be.
+            rules = [
+              {
+                description = "A control plane of a cluster with a routed VIP names the interface it adds the VIP to.";
+                rule = ''self != null || cel.bind(nodes, ${delivered "Node"}, nodes.all(n, nodes[n].spec.type == "worker")) || cel.bind(clusters, ${delivered "Cluster"}, clusters.all(n, clusters[n].spec.vip.mode != "routed" || size(clusters[n].spec.vip.addresses) == 0))'';
+                message = "the Cluster's VIP is routed, so a control plane needs vip.interface: the interface it adds the VIP to, such as a dummy interface its routing daemon announces";
+              }
+            ];
           };
         };
       };
@@ -320,9 +331,12 @@ in
               description = "Virtual addresses of the API server, at most one per family; empty means no virtual IP.";
             };
             mode = mkOption {
-              type = types.enum [ "l2" ];
+              type = types.enum [
+                "l2"
+                "routed"
+              ];
               default = "l2";
-              description = "Way the node holding the VIP announces its addresses: `l2` adds them to an interface and announces them to the neighbours with gratuitous ARP and unsolicited neighbour advertisements.";
+              description = "Way the node holding the VIP makes its addresses reachable: `l2` adds them to an interface and announces them to the neighbours with gratuitous ARP and unsolicited neighbour advertisements; `routed` adds them to an interface as host addresses, /32 or /128, and announces nothing, so a routing daemon on the node announces them. In `routed`, every control plane names its `vip.interface`.";
             };
           };
           images = {

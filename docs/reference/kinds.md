@@ -102,7 +102,7 @@ A node's config holds at most one. It has 5 [change rules](builtins.md#rules-clu
 | `spec.serviceCIDRs.ipv4` | address range | `"10.96.0.0/12"` | Address range of the family's services, at most 2^20 addresses. |
 | `spec.serviceCIDRs.ipv6` | address range | `"fd00:10:96::/112"` | Address range of the family's services, at most 2^20 addresses. |
 | `spec.vip.addresses` | list of IP address | `[]` | Virtual addresses of the API server, at most one per family; empty means no virtual IP. |
-| `spec.vip.mode` | `l2` | `"l2"` | Way the node holding the VIP announces its addresses: `l2` adds them to an interface and announces them to the neighbours with gratuitous ARP and unsolicited neighbour advertisements. |
+| `spec.vip.mode` | one of `l2`, `routed` | `"l2"` | Way the node holding the VIP makes its addresses reachable: `l2` adds them to an interface and announces them to the neighbours with gratuitous ARP and unsolicited neighbour advertisements; `routed` adds them to an interface as host addresses, /32 or /128, and announces nothing, so a routing daemon on the node announces them. In `routed`, every control plane names its `vip.interface`. |
 
 ### Flannel { #flannel }
 
@@ -123,7 +123,7 @@ The node's part in the Kubernetes cluster: its type, the labels and taints it re
 
 `apiVersion: kubernetes.chalkos.dev/v1alpha1`
 
-A node's config holds at most one. It has 3 [change rules](builtins.md#rules-node).
+A node's config holds at most one. It has 4 [change rules](builtins.md#rules-node).
 
 | Field | Type | Default | Description |
 | --- | --- | --- | --- |
@@ -136,7 +136,7 @@ A node's config holds at most one. It has 3 [change rules](builtins.md#rules-nod
 | `spec.taints[].key` | string | required | Taint key. |
 | `spec.taints[].value` | string or null | `null` | Taint value; null for a taint without a value. |
 | `spec.type` | one of `controlplane`, `worker` | required | Type of the node in the cluster; it is fixed once the node holds a Kubernetes share. |
-| `spec.vip.interface` | string or null | `null` | Interface the node adds the Cluster's VIP addresses to while it holds them; null means the one holding the node's address of their family. Only control planes hold the VIP, so a worker's stays null. |
+| `spec.vip.interface` | string or null | `null` | Interface the node adds the Cluster's VIP addresses to while it holds them; null means the one holding the node's address of their family, which a routed VIP does not allow. Only control planes hold the VIP, so a worker's stays null. |
 
 ## networkd.chalkos.dev { #networkd-chalkos-dev }
 

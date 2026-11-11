@@ -14,7 +14,8 @@ import (
 )
 
 // addresses are the cluster's VIPs on this node: each on the interface the cluster names, or
-// else on the one holding the node's address of its family.
+// else, in l2 mode, on the one holding the node's address of its family. In l2 mode the holder
+// announces them to its neighbours; in routed mode a routing daemon on the node announces them.
 type addresses struct {
 	addrs []Address
 	// add, announce and remove change the node's interfaces and tell its neighbours; tests
@@ -23,7 +24,7 @@ type addresses struct {
 	announce func(Address) error
 	remove   func(Address) error
 	// announcements is how often an added address is announced, spacing apart, so neighbours
-	// that missed the first announcement still learn of it.
+	// that missed the first announcement still learn of it. A routed VIP is announced none.
 	announcements int
 	spacing       time.Duration
 
@@ -32,12 +33,12 @@ type addresses struct {
 	releases int
 }
 
-func newAddresses(addrs []Address) *addresses {
-	return &addresses{addrs: addrs, add: Add, announce: Announce, remove: Remove, announcements: 3, spacing: time.Second}
+func newAddresses(addrs []Address, announcements int) *addresses {
+	return &addresses{addrs: addrs, add: Add, announce: Announce, remove: Remove, announcements: announcements, spacing: time.Second}
 }
 
-// Acquire adds the addresses that are missing and announces those alone: an address that was
-// there already was announced when it was added.
+// Acquire adds the addresses that are missing and announces those alone, if the holder announces
+// any: an address that was there already was announced when it was added.
 func (a *addresses) Acquire() error {
 	var errs []error
 	var added []Address
@@ -49,7 +50,7 @@ func (a *addresses) Acquire() error {
 			added = append(added, addr)
 		}
 	}
-	if len(added) == 0 {
+	if len(added) == 0 || a.announcements == 0 {
 		return errors.Join(errs...)
 	}
 	a.mu.Lock()
@@ -94,15 +95,24 @@ func (a *addresses) Release() error {
 	return errors.Join(errs...)
 }
 
-// NodeAddresses finds the interfaces of the cluster's VIPs on this node.
+// NodeAddresses finds the interfaces of the cluster's VIPs on this node. A routed VIP goes on the
+// interface the node names, which its routing daemon announces, and the holder announces nothing
+// on the link; an l2 VIP is announced three times, a second apart.
 func NodeAddresses(c k8s.Cluster, s knode.State) (Holder, error) {
 	vips := c.VIPAddresses()
+	announcements := 3
+	if c.VIP.Mode == k8s.VIPModeRouted {
+		if c.VIP.Interface == "" {
+			return nil, errors.New("the Cluster's VIP is routed, but the node names no vip.interface to add it to")
+		}
+		announcements = 0
+	}
 	var held []Address
 	if c.VIP.Interface != "" {
 		for _, ip := range vips {
 			held = append(held, Address{IP: ip, Interface: c.VIP.Interface})
 		}
-		return newAddresses(held), nil
+		return newAddresses(held, announcements), nil
 	}
 	ips, err := s.ReadNodeIPs()
 	if err != nil {
@@ -124,5 +134,5 @@ func NodeAddresses(c k8s.Cluster, s knode.State) (Holder, error) {
 		}
 		held = append(held, Address{IP: ip, Interface: system[i].Interface})
 	}
-	return newAddresses(held), nil
+	return newAddresses(held, announcements), nil
 }

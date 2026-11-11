@@ -1,6 +1,7 @@
 // Package vip holds the cluster's virtual IPs on one control plane: the node that leads an etcd
-// election adds them to an interface and announces them to the neighbours, so traffic for them
-// reaches it, and removes them when it stops leading.
+// election adds them to an interface, so traffic for them reaches it, and removes them when it
+// stops leading. In l2 mode it announces them to its neighbours on the link; in routed mode a
+// routing daemon on the node announces them.
 package vip
 
 import (
@@ -41,8 +42,8 @@ var ErrEtcdStalled = errors.New("etcd did not answer the resignation from the VI
 
 // Holder holds the node's virtual IPs.
 type Holder interface {
-	// Acquire adds the addresses to the node and announces them; again, it adds what went
-	// missing and announces only that.
+	// Acquire adds the addresses to the node and, in l2 mode, announces them; again, it adds
+	// what went missing and announces only that.
 	Acquire() error
 	// Release removes the addresses from the node.
 	Release() error
