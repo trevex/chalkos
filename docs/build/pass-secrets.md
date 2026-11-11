@@ -89,8 +89,16 @@ For each granted unit, chalkd writes the values to
 unit's `LoadCredential=secret:/run/chalkos/credentials/<unit>`. systemd then loads each file as
 the credential `secret_<secret>.<key>`, here `secret_bgp.password`. The unit reads it at
 `$CREDENTIALS_DIRECTORY/secret_bgp.password` in a script, or as `%d/secret_bgp.password` in a unit
-setting. Every granted unit gets its directory, empty when its kinds reference no secret, because
-systemd refuses to start a unit whose credential path is missing.
+setting. Every granted unit gets its directory, empty when its kinds reference no secret, once
+chalkd loads the node's config. A node without config, as in maintenance mode, has no
+directory, and neither has one whose `chalkos-config.service` failed. systemd refuses to start a
+unit whose credential path is missing unless `SetCredential=` gives a credential of the same name,
+so the grant sets `SetCredential=secret:none`, which stands in for the directory. A unit that
+needs its credentials checks for the directory, as `frr.service` does with
+`ConditionPathIsDirectory=`.
+
+The image's build fails when a granted unit runs nothing: neither its unit file nor a drop-in has
+`ExecStart=`, as for a typo in the unit's name.
 
 A unit receives only the values that its own kinds' documents reference. A `Secret` that no
 granted kind references reaches no unit. A grant of the `Secret` kind itself fails the image's

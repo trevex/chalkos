@@ -29,27 +29,39 @@ let
           `chalkos.effects` does.
         '';
       };
-      # systemd loads every file of the directory as the credential secret_<file>; chalkd keeps
-      # the directory, empty or not, for every granted unit.
+      # systemd loads every file of the directory as the credential secret_<file>. chalkd writes
+      # the directory, empty or not, for every granted unit when it loads the node's config. A node
+      # without config, as in maintenance mode, has none, and neither has one whose chalkos-config
+      # failed; the credential secret of SetCredential= then stands in for the directory, which
+      # systemd would otherwise fail the unit for. A unit that needs its credentials checks for the
+      # directory itself.
       config = lib.mkIf (config.chalkos.kinds != [ ]) {
-        serviceConfig.LoadCredential =
-          checkKinds "systemd.services.${name}.chalkos.kinds" config.chalkos.kinds
-            [ "secret:/run/chalkos/credentials/${name}" ];
+        serviceConfig = {
+          LoadCredential = checkKinds "systemd.services.${name}.chalkos.kinds" config.chalkos.kinds [
+            "secret:/run/chalkos/credentials/${name}"
+          ];
+          # systemd ignores a SetCredential= of an empty value.
+          SetCredential = [ "secret:none" ];
+        };
         path = [ chalkcfg ];
       };
     };
 
   granted = lib.filterAttrs (_: s: s.chalkos.kinds != [ ]) config.systemd.services;
 
-  # A grant on a name the image defines no service of creates an empty unit, as for a typo. A
-  # warning, not an assertion: units from systemd.packages have no ExecStart in the config.
-  orphan =
-    name: s:
-    lib.optional (!(s.serviceConfig ? ExecStart || s.script != "")) ''
-      systemd.services.${name}.chalkos.kinds may grant kinds to no service: systemd.services.${name}
-      defines neither serviceConfig.ExecStart nor script. Ignore this if the unit comes from
-      systemd.packages.
-    '';
+  # A grant on a name the image runs no service of creates an empty unit, as for a typo. The image's
+  # build checks the units it installs, its packages' among them: each granted unit has ExecStart=
+  # in its unit file or a drop-in.
+  grantsCheck = pkgs.runCommand "chalkos-grants-check" { } ''
+    units=${config.environment.etc."systemd/system".source}
+    for name in ${lib.escapeShellArgs (lib.attrNames granted)}; do
+      if ! cat "$units/$name.service" "$units/$name.service.d"/*.conf 2>/dev/null | grep -q '^ExecStart='; then
+        echo "systemd.services.$name.chalkos.kinds grants kinds to $name.service, which runs nothing: neither its unit file nor a drop-in has ExecStart=" >&2
+        exit 1
+      fi
+    done
+    touch $out
+  '';
 
   # What chalkd reads of each granted unit.
   servicesJSON = builtins.toJSON (
@@ -64,7 +76,7 @@ in
   };
 
   config = {
-    warnings = lib.concatLists (lib.mapAttrsToList orphan granted);
+    system.checks = [ grantsCheck ];
     system.build.chalkosServices = pkgs.writeText "chalkos-services.json" servicesJSON;
     environment.etc."chalkos/services.json".text = servicesJSON;
   };

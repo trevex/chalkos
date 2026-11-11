@@ -2156,17 +2156,26 @@ lib.runTests {
       services = true;
     };
   };
-  testGrantWithServiceDoesNotWarn = {
-    expr = withGrant.warnings;
-    expected = [ ];
-  };
-  testGrantWithoutServiceWarns = {
+  # The image's build checks that each granted unit runs something; evaluation warns of none.
+  testGrantCheckedAtBuild = {
     expr =
-      lib.any (lib.hasInfix "systemd.services.orphan.chalkos.kinds")
-        (worker [
-          { systemd.services.orphan.chalkos.kinds = [ "Network" ]; }
-        ]).warnings;
-    expected = true;
+      let
+        c = worker [ { systemd.services.orphan.chalkos.kinds = [ "Network" ]; } ];
+        check = lib.findFirst (d: lib.hasInfix "chalkos-grants-check" d.name) null c.system.checks;
+      in
+      {
+        warnings = c.warnings;
+        checked = check != null && lib.hasInfix "orphan" check.buildCommand;
+      };
+    expected = {
+      warnings = [ ];
+      checked = true;
+    };
+  };
+  # A granted unit falls back to a stand-in credential while chalkd wrote no directory of them.
+  testGrantFallsBackWithoutCredentials = {
+    expr = withGrant.systemd.services.bird.serviceConfig.SetCredential;
+    expected = [ "secret:none" ];
   };
   testGrantOfUnknownKindFails = {
     expr = fails (servicesOf (grantOf [ "Nope" ]));
