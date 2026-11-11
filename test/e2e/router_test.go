@@ -285,11 +285,12 @@ const bgpPassword = "lab-s3cret"
 //     DHCPv6 server that leases an address and a /64 for an hour; r2's dhcp0 takes its addresses
 //     and a prefix from them. r1's status shows both servers of lan running with r2's leases, r2
 //     holds both addresses, r1 routes the prefix to r2 in lan's table, and the diagnostic
-//     dhcp-leases lists the IPv4 lease. After a boot of r1 both servers run again with the leases,
-//     r1 routes the prefix again before r2 renews it, and r2 renews its IPv4 lease there. The base
-//     inventory stops the servers and removes the prefix's route; networkd keeps both routers'
-//     dhcp0 devices, as it keeps every netdev, and no diagnostic deletes a link, so the phase
-//     runs last.
+//     dhcp-leases lists the IPv4 lease. The delivery also brings r1 a Link that gives enp0s3 the
+//     alternative name lab0, which the diagnostic links shows. After a boot of r1 both servers run
+//     again with the leases, r1 routes the prefix again before r2 renews it, r2 renews its IPv4
+//     lease there, and enp0s3 has lab0 again. The base inventory stops the servers and removes
+//     the prefix's route; networkd keeps both routers' dhcp0 devices, as it keeps every netdev,
+//     and enp0s3 keeps lab0, and no diagnostic deletes a link, so the phase runs last.
 //
 // Two VMs of 768 MiB and 2 CPUs each; about 85 s once chalklab installed both, a few seconds for
 // the node CA, about 10 s for the rollbacks, 45 s for the trials, two minutes for the VRF with
@@ -1172,6 +1173,18 @@ func (rl *routerLab) dhcp(t *testing.T) {
 		}
 		return time.Parse(time.RFC3339, m[1])
 	}
+	// linked is nil when the links diagnostic of r1 lists lab0, the alternative name its Link
+	// gives enp0s3.
+	linked := func() error {
+		out, err := chalkctl(t, rl.nodes["r1"], "dhcp", "node", "diag", "r1", "links")
+		if err != nil {
+			return err
+		}
+		if !regexp.MustCompile(`"ifname":"enp0s3",[^}]*"altnames":\[[^\]]*"lab0"`).MatchString(out) {
+			return fmt.Errorf("links of r1 lists no alternative name lab0 of enp0s3:\n%s", out)
+		}
+		return nil
+	}
 	waitFor(t, 2*time.Minute, "r1's DHCP server of lan with r2's lease", serving)
 	waitFor(t, 2*time.Minute, "r2's address from r1", leased)
 	waitFor(t, 2*time.Minute, "r1's DHCPv6 server of lan with r2's lease and prefix", serving6)
@@ -1182,6 +1195,10 @@ func (rl *routerLab) dhcp(t *testing.T) {
 	}
 	if out, err := chalkctl(t, rl.nodes["r1"], "dhcp", "status", "r1"); err != nil || rl.failedUnit("r1", "dhcp", out) {
 		t.Errorf("status of r1 shows a failed unit: %v\n%s", err, out)
+	}
+	// The delivery applied the Link to enp0s3, which is up.
+	if err := linked(); err != nil {
+		t.Error(err)
 	}
 
 	// After a boot of r1, chalkos-dhcp starts the server once dhcp0 and lan exist, the lease
@@ -1207,6 +1224,9 @@ func (rl *routerLab) dhcp(t *testing.T) {
 		return nil
 	})
 	waitFor(t, time.Minute, "r2's address from r1 after r1's boot", leased)
+	if err := linked(); err != nil {
+		t.Errorf("after r1's boot: %v", err)
+	}
 	if out, err := chalkctl(t, rl.nodes["r1"], "dhcp", "status", "r1"); err != nil || rl.failedUnit("r1", "dhcp", out) {
 		t.Errorf("status of r1 after its boot shows a failed unit: %v\n%s", err, out)
 	}

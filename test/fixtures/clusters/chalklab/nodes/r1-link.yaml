@@ -1,0 +1,8 @@
+# r1's switch NIC, by its permanent MAC address, keeps its name enp0s3 and gets the alternative
+# name lab0, which udev sets on a link that is up, so a delivery applies it as a boot does.
+apiVersion: networkd.chalkos.dev/v1alpha1
+kind: Link
+metadata: {name: 10-lab}
+spec:
+  match: {permanentMACAddress: "52:54:00:00:02:01"}
+  link: {name: enp0s3, alternativeName: [lab0]}

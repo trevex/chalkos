@@ -1,5 +1,6 @@
 # The main cluster's routers with a macvlan dhcp0 on their fabric link: r1 serves DHCP on its
-# dhcp0, in the VRF lan, and r2 takes its dhcp0's address from it.
+# dhcp0, in the VRF lan, and r2 takes its dhcp0's address from it. r1's Link gives its switch NIC an
+# alternative name.
 apiVersion: chalkctl.chalkos.dev/v1alpha1
 kind: Inventory
 metadata: {name: chalklab}
@@ -10,5 +11,5 @@ spec:
   groups:
     router: {imageName: router-kvm, files: [groups/router.yaml]}
   nodes:
-    r1: {groups: [router], files: [nodes/r1.yaml, nodes/r1-bgp.yaml, nodes/r1-peer.yaml, nodes/dhcp-fabric.yaml, nodes/r1-dhcp.yaml]}
+    r1: {groups: [router], files: [nodes/r1.yaml, nodes/r1-bgp.yaml, nodes/r1-peer.yaml, nodes/dhcp-fabric.yaml, nodes/r1-dhcp.yaml, nodes/r1-link.yaml]}
     r2: {groups: [router], files: [nodes/r2.yaml, nodes/r2-bgp.yaml, nodes/dhcp-fabric.yaml, nodes/r2-dhcp.yaml]}
