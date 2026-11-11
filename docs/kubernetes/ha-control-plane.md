@@ -30,7 +30,9 @@ The output on this page comes from a lab cluster whose control planes `cp1`, `cp
 - You made the decisions of [Plan a cluster](plan.md): three control planes and a VIP as the
   cluster endpoint.
 - The three machines share one layer-2 segment. Each has a static address, and one free address on
-  the segment is left for the VIP.
+  the segment is left for the VIP. Control planes on different links announce the VIP with a
+  routing daemon instead, as [Announce the VIP with a routing daemon](#announce-the-vip-with-a-routing-daemon)
+  describes.
 - Each machine is booted into the installer, as [Install a node](../operate/install.md) describes.
 
 ## Define three control planes and the VIP
@@ -93,6 +95,65 @@ chalkd adds the VIP to the interface that holds the node's address of the VIP's 
 document can name another interface in `spec.vip.interface`. A cluster takes at most one VIP per
 family, and an endpoint that is an IP address must be one of the VIPs. Check the files with
 `chalkctl validate`.
+
+## Announce the VIP with a routing daemon
+
+The default mode of the VIP, `l2`, needs the control planes on one layer-2 segment. Its holder
+announces the VIP there with gratuitous ARP and unsolicited neighbour advertisements. When the
+control planes sit on different links, or the nodes announce their addresses to a fabric over BGP,
+set `spec.vip.mode` to `routed`. The holder then adds the VIP to an interface as a /32 or /128 host
+address and announces nothing on the link. A routing daemon on each control plane, such as bird
+or FRR from an extension, announces the addresses of that interface to its peers. chalkos does not
+configure the daemon.
+
+The `Cluster` document names the mode beside the addresses:
+
+```yaml title="cluster/cluster.yaml"
+apiVersion: kubernetes.chalkos.dev/v1alpha1
+kind: Cluster
+metadata: {name: default}
+spec:
+  endpoint: https://10.0.100.10:6443
+  vip: {addresses: [10.0.100.10], mode: routed}
+  --8<-- "examples/homelab/cluster/cluster.yaml:images"
+```
+
+Each control plane names the interface it adds the VIP to in `spec.vip.interface`, usually a dummy
+interface that holds only the VIPs. The node's file creates it with a `NetDev` document and brings
+it up with a `Network` document:
+
+```yaml title="nodes/cp1.yaml"
+apiVersion: kubernetes.chalkos.dev/v1alpha1
+kind: Node
+metadata: {name: default}
+spec:
+  type: controlplane
+  vip: {interface: node0}
+---
+apiVersion: networkd.chalkos.dev/v1alpha1
+kind: NetDev
+metadata: {name: 10-node0}
+spec:
+  netDev: {name: node0, kind: dummy}
+---
+apiVersion: networkd.chalkos.dev/v1alpha1
+kind: Network
+metadata: {name: 10-node0}
+spec:
+  match: {name: node0}
+```
+
+The rest of the file stays as above. `chalkctl validate` refuses a control plane without
+`vip.interface` in a cluster with a routed VIP. A worker needs none.
+
+Configure the routing daemon to announce the addresses of `node0`. The VIP's route then follows the
+holder: when a new control plane wins the election, the old holder's daemon withdraws the route and
+the new holder's announces it. A failover takes the election's time plus the time the daemons and
+their peers need to move the route. `chalkctl status` shows `vip holder` and `vip standby` as with
+an `l2` VIP.
+
+chalkd adds an IPv6 VIP with a preferred lifetime of 0, so the node never uses it as a source
+address. `ip -6 addr` shows it as `deprecated`, and routing daemons announce it all the same.
 
 ## Install the three, then bootstrap one
 

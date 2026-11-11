@@ -186,15 +186,25 @@ spec:
 chalkd on every bootstrapped control plane takes part in an election held in etcd under
 `/chalkos/vip`. When it starts, it removes any VIP a chalkd before it left behind. It campaigns only
 while its local API server answers `/readyz`. The winner adds every VIP to an interface as a /32 or
-/128 host address. It announces each address it adds 3 times, 1 second apart, with gratuitous
-ARP and unsolicited neighbour advertisements, so switches and neighbours send its traffic to the
-new holder at once. While it holds the VIPs, it checks every 2 seconds and adds back an address
-that has gone missing, which it then announces again.
+/128 host address. In the `l2` mode, the default, it announces each address it adds 3 times, 1
+second apart, with gratuitous ARP and unsolicited neighbour advertisements, so switches and
+neighbours send its traffic to the new holder at once. While it holds the VIPs, it checks every 2
+seconds and adds back an address that has gone missing, which it then announces again.
 
 The interface is the one `vip.interface` of the node's `Node` document names, or else the one
 holding the node's address of that family. The interface is the node's own, so it goes into the
 node's `Node` document, and only on a control plane: chalkctl and chalkd refuse `vip.interface` on
 a worker, which never holds the VIP.
+
+In the `routed` mode, set with `vip: {addresses: [...], mode: routed}`, the holder adds the VIPs the
+same way but sends no gratuitous ARP and no neighbour advertisements. A routing daemon on the node,
+such as a BGP speaker an extension adds to a variant, announces the addresses of the interface
+instead, and withdraws them when the holder removes them. Every control plane names that interface in
+`vip.interface`, usually a dummy interface the routing daemon announces, and chalkctl and chalkd
+refuse a routed VIP on a control plane without one. The control planes then need no shared L2
+network, and clients reach the VIP through the routers that learn the route. A failover takes the
+election's time plus the time the routing daemons need to withdraw the route on the old holder,
+announce it from the new one and pass the change through their peers.
 
 The election runs on an etcd lease of 10 seconds, and every control plane checks its API server
 every 2 seconds. The diagram shows the states of one control plane's chalkd.
@@ -299,10 +309,11 @@ It does this at boot and whenever the `Node` document changes, through a table o
 
 ## Limits
 
-- The VIP's only mode is `l2`: its holder announces it with ARP and neighbour advertisements, so
-  the control planes must share one L2 network, through which clients reach the VIP. chalkos has
-  no BGP announcement of the VIP. A load balancer or a DNS name in front of the control planes
-  works instead.
+- An `l2` VIP needs the control planes on one L2 network, through which clients reach the VIP,
+  because its holder announces it with ARP and neighbour advertisements. A `routed` VIP needs no
+  shared network, but chalkos does not announce it itself: it needs a routing daemon on every
+  control plane, and its failover takes as long as that daemon and its peers need to move the
+  route. A load balancer or a DNS name in front of the control planes works instead of either.
 - On control planes, etcd's ports 2379 and 2380 are open to every source, not only to the
   cluster's nodes. etcd accepts only clients and peers with a certificate of its CA there.
 - Packets a control plane receives lose the packet mark bit `0x02000000`, which the firewall's rule
