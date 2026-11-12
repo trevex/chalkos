@@ -306,6 +306,10 @@ if it boots something else. chalkd makes a new certificate at that boot: use the
 from here on. [Sign images for Secure Boot](../build/sign-images.md#firmware-in-setup-mode-chalkctl-secureboot-enroll)
 explains what to do when the enrolment fails.
 
+When the router's network cards carry option ROMs, the node refuses the keys and names them: add
+`--option-roms` to enrol their digests, as [Option ROMs](../build/sign-images.md#option-roms)
+explains.
+
 ### Find the disk and the ports
 
 List the disks:

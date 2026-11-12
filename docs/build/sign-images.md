@@ -130,8 +130,9 @@ the enrolment can run where PK and KEK are kept.
 
 The node checks the keys before it writes them. It refuses firmware that is not in Setup Mode, and
 refuses keys under which Secure Boot would refuse the boot loader or the UKI it booted, so a
-machine never ends up with keys that do not start the installer. Sign the installer with
-`keys/db.key` first. `--force` enrols the keys all the same.
+machine never ends up with keys that do not start the installer. It also refuses keys under which
+the firmware would refuse the option ROMs of the machine's cards, as [Option ROMs](#option-roms)
+explains. Sign the installer with `keys/db.key` first. `--force` enrols the keys all the same.
 
 The node makes a new maintenance certificate when it boots again, and chalkctl reads it without a
 fingerprint to verify it against. Compare the new fingerprint that chalkctl prints with the one on
@@ -143,7 +144,8 @@ storage and graphics cards, its option ROM, is signed by Microsoft. A machine wh
 Microsoft's CA may lose its display in the firmware or fail to boot from such a card. When the
 firmware setup offers to clear the keys and keep or restore the factory ones, the factory keys
 usually include Microsoft's certificates already. Leave out `--microsoft` when the machine boots
-only what you signed.
+only what you signed; [Option ROMs](#option-roms) explains how such a machine still loads the
+firmware of its cards.
 
 When a write fails, the node reports which one. db and KEK are written before PK, so the firmware
 stays in Setup Mode until PK is written, and `chalkctl secureboot enroll` can run again. A machine
@@ -154,6 +156,70 @@ again.
 A machine that runs its image from its own disk instead of the installer, such as a VM, enrols the
 same way. It deletes STATE, which holds nothing before the install and which the TPM seals to the
 old PCR 7, and creates it again when it boots.
+
+### Option ROMs
+
+An option ROM is the firmware of an expansion card, such as a graphics card, a network card or a
+disk controller, which the machine's firmware loads at every boot to show the screen, boot from
+the network or reach the disks. Under Secure Boot the firmware loads an option ROM only when db
+allows it: by a certificate that signed it, or by its SHA-256 digest. Most option ROMs are signed
+by Microsoft. With only your own keys in db, the firmware refuses them, and the machine may show
+nothing on a graphics card or no longer boot from a card.
+
+The firmware records each option ROM it loads in the TPM event log, under PCR 2, with the digest
+db must hold. Before it writes the keys, the node reads that log, refuses keys under which db would
+not allow every option ROM it lists, and names the option ROMs it would refuse:
+
+```text
+chalkctl: enroll the keys: failed_precondition: under the new db, Secure Boot would refuse the drivers the firmware loaded from outside its own firmware, as a rule the option ROMs of graphics and network cards: sha256:3f1a... PciRoot(0x0)/Pci(0x3,0x0)/Offset(0x10a00,0x2f9ff); enrol their digests with --option-roms, or Microsoft's UEFI CAs with --microsoft; without them the machine may show nothing or boot from no network card or disk controller; pass --force to enrol the keys all the same, which also skips the check of the boot loader and UKI
+```
+
+The device path names the card's PCI slot. There are three ways to allow the option ROMs:
+
+| Flag | What db gets | Trade-off |
+| --- | --- | --- |
+| `--option-roms` | The digests of the option ROMs the firmware loaded at this boot, as the node reads them from the event log. chalkctl prints them before it enrols them. | db allows those exact option ROMs and nothing else Microsoft signed. A firmware update of a card, or a new card, brings another digest, and the firmware refuses it until db holds that digest too, which takes the firmware setup, or clearing the keys and enrolling again. |
+| `--microsoft` | Microsoft's UEFI CAs, of which the CA of 2011 and the Option ROM CA of 2023 sign most option ROMs. | db allows every option ROM and boot loader Microsoft signed, including shims that boot other operating systems. Cards and firmware updates keep working. |
+| `--db-hash <sha256>` | A digest you give, 64 hex digits, with or without `sha256:` in front; repeat the flag for more. | For an option ROM the firmware did not load at this boot, such as that of a card you add later: take the digest `--option-roms` printed on a machine with the same card and firmware. |
+
+With `--option-roms`, chalkctl lists the option ROMs before the enrolment, and db lists their
+digests after it:
+
+```console
+$ chalkctl secureboot enroll --keys keys --option-roms --address 192.168.1.50 \
+    --fingerprint <fingerprint> --secrets secrets.age
+option ROMs the firmware measured:
+  sha256:<digest> PciRoot(0x0)/Pci(0x3,0x0)/Offset(0x10a00,0x2f9ff)
+db before: empty
+db after:
+  CN=<cluster> Secure Boot db
+  sha256:<digest>
+...
+```
+
+The check passes when db, after the enrolment, holds the digest of every option ROM in the event
+log, or Microsoft's UEFI CA of 2011 or its Option ROM UEFI CA of 2023. The CA of 2011 signs the
+option ROMs Microsoft signed before 2023, and the Option ROM CA of 2023 those it signs since. The
+node cannot tell from the event log who signed an option ROM, so it counts either CA as allowing
+all of them. Microsoft's UEFI CA of 2023 does not count: it signs boot loaders alone. Firmware that
+kept its factory keys when you cleared the platform key often has Microsoft's CAs in db already;
+the check counts those too. An option ROM whose digest dbx lists is refused whatever db holds, and
+the node says so.
+
+The check runs only when the node can read the event log. A machine without a TPM has none, and a
+TPM 1.2 or a TPM whose log holds no SHA-256 digests gives none the node can read. chalkctl then
+prints why the node could not check the option ROMs, and `--option-roms` finds none to enrol. The
+node refuses a log that is corrupt or cut short. `--force` skips the check, together with the
+check of the boot loader and UKI.
+
+The check can be wrong in two rare ways:
+
+- An option ROM signed with a SHA-1 Authenticode digest is looked up by its SHA-1 digest in db,
+  so the SHA-256 digest `--option-roms` enrols does not allow it. Use `--microsoft` for such a
+  card.
+- Some firmware that is not based on EDK2 measures its own drivers into PCR 2 as well. The node
+  then refuses keys for drivers the firmware never checks against db. `--option-roms` enrols their
+  digests too, which does no harm.
 
 ### Firmware not in Setup Mode
 

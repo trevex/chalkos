@@ -464,11 +464,12 @@ chalkctl secureboot enroll --keys keys --address=<address> --fingerprint=<finger
 
 chalkctl signs the updates of the firmware's db, KEK and PK with the keys in `keys/`, and the node
 writes them, PK last. The node refuses firmware that is not in Setup Mode, and keys that would not
-start the installer or image it booted. It then reboots with Secure Boot on, and chalkctl waits
-until the node reports it. chalkd makes a new certificate at that boot, so chalkctl prints a new
-fingerprint: compare it with the console and use it from here on.
-[Sign images for Secure Boot](../build/sign-images.md#firmware-in-setup-mode-chalkctl-secureboot-enroll)
-explains `--microsoft` and what to do when the enrolment fails.
+start the installer or image it booted or load the option ROMs of its cards. It then reboots with
+Secure Boot on, and chalkctl waits until the node reports it. chalkd makes a new certificate at
+that boot, so chalkctl prints a new fingerprint: compare it with the console and use it from here
+on. [Sign images for Secure Boot](../build/sign-images.md#firmware-in-setup-mode-chalkctl-secureboot-enroll)
+explains `--microsoft` and `--option-roms`, which let the firmware load the option ROMs of the
+machine's cards, and what to do when the enrolment fails.
 
 ## Choose the system disk
 
@@ -709,6 +710,7 @@ chalkctl reports the installer's refusal as its error. The common errors and sym
 | --- | --- |
 | `the maintenance image trusts another OS CA than the secrets file, so it refuses chalkctl's certificate` | The installer or the image was built before the OS CA was rotated, or from another cluster's `secrets.pub.json`. Build and sign both again from the current one. |
 | `Secure Boot would refuse the UKI: ...` or `Secure Boot would refuse the boot loader: ...` | The image is unsigned, or signed with a key whose certificate is not in this machine's db. Sign the build again with `chalkbuild sign` and the enrolled key, or enrol the key's certificate. |
+| `under the new db, Secure Boot would refuse the drivers the firmware loaded ...` from `chalkctl secureboot enroll` | The machine's cards carry option ROMs that db would not allow under the new keys. Enrol their digests with `--option-roms` or Microsoft's CAs with `--microsoft`, as [Option ROMs](../build/sign-images.md#option-roms) explains. |
 | The VM's firmware reports `Access Denied` and boots nothing | The image is unsigned or signed with a key whose certificate is not in the VM's db. Sign the image, or enrol `db.crt`. |
 | Nothing appears on a VM's console after the firmware | The VM has no serial port, or the console shows the screen. The `kvm` image writes to `ttyS0` only. |
 | `STATE on the target disk ... does not open on this machine, so it belongs to another node` | The disk was installed in another machine. Use `--wipe-disk` if its data may go. |
