@@ -18,6 +18,14 @@
       "net.ipv6.conf.all.forwarding" = 1;
     };
 
+    # The DHCP client identifier comes from the port's MAC address. networkd derives it from the
+    # machine ID by default, which a node draws anew at every boot, so a DHCP server would hand it
+    # a new lease each time and never find its reservation.
+    systemd.network.config = {
+      dhcpV4Config.DUIDType = "link-layer";
+      dhcpV6Config.DUIDType = "link-layer";
+    };
+
     # The node's addresses have settled. A unit that configures or announces addresses, such as a
     # routing daemon's, orders itself before the target and is wanted by it; a unit that picks the
     # node's addresses, such as the Kubernetes preparation, orders itself after it.

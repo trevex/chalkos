@@ -910,9 +910,12 @@ network's DHCP server.
 
 ### The router takes another address on the home network
 
-Some DHCP servers reserve by the DHCP client identifier, which systemd-networkd derives from the
-machine and not from the MAC address. Have the router send its MAC address as the identifier, in
-the `wan` port's `Network` of `router/router.yaml`:
+The router identifies itself to the DHCP server with a DUID made from the `wan` port's MAC
+address, the same at every boot, as the installer does for each port. Check that the reservation
+names the MAC address that the `addresses` diagnostic shows for `wan`. A DHCP server that matches
+a reservation against a client identifier of the bare MAC address finds none in a DUID. Have the
+router send its MAC address as the identifier, in the `wan` port's `Network` of
+`router/router.yaml`:
 
 ```yaml title="router/router.yaml"
 apiVersion: networkd.chalkos.dev/v1alpha1
