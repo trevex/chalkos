@@ -136,6 +136,12 @@ type Server struct {
 	// InPlace and FromParts install the node; tests replace them.
 	InPlace   func(ctx context.Context, req install.Request, rootHash []byte) error
 	FromParts func(context.Context, install.PartsRequest) error
+	// RemoveState deletes the STATE a node in maintenance mode booted with from its own disk, so
+	// its next boot creates STATE again; tests replace it.
+	RemoveState func(ctx context.Context) error
+	// WriteEFIVariable writes the attributes and payload of an EFI variable to its file in
+	// efivarfs, path; nil writes through efivarfs. Tests replace it.
+	WriteEFIVariable func(path string, attrs uint32, payload []byte) error
 	// CheckImage runs the checker of an image that does not run; nil runs it in the sandbox of
 	// imagecheck. Tests run it in their own process.
 	CheckImage imagecheck.Runner
@@ -204,19 +210,20 @@ func Offline(paths Paths) *Server {
 // permissions are the modes and least role of each procedure of the node API. The authorizer
 // refuses a procedure without an entry.
 var permissions = map[string]layer.Permission{
-	nodev1connect.NodeServiceInfoProcedure:           {Modes: layer.AnyMode, Role: pki.RoleReader},
-	nodev1connect.NodeServiceDisksProcedure:          {Modes: layer.AnyMode, Role: pki.RoleReader},
-	nodev1connect.NodeServiceContractProcedure:       {Modes: layer.AnyMode, Role: pki.RoleReader},
-	nodev1connect.NodeServiceInstallProcedure:        {Modes: layer.MaintenanceOnly, Role: pki.RoleAdmin},
-	nodev1connect.NodeServiceApplyConfigProcedure:    {Modes: layer.NormalOnly, Role: pki.RoleAdmin},
-	nodev1connect.NodeServiceGetConfigProcedure:      {Modes: layer.NormalOnly, Role: pki.RoleAdmin},
-	nodev1connect.NodeServiceResetVolumeProcedure:    {Modes: layer.NormalOnly, Role: pki.RoleAdmin},
-	nodev1connect.NodeServiceRollbackConfigProcedure: {Modes: layer.NormalOnly, Role: pki.RoleAdmin},
-	nodev1connect.NodeServiceConfirmConfigProcedure:  {Modes: layer.NormalOnly, Role: pki.RoleAdmin},
-	nodev1connect.NodeServiceStatusProcedure:         {Modes: layer.NormalOnly, Role: pki.RoleReader},
-	nodev1connect.NodeServiceLogsProcedure:           {Modes: layer.AnyMode, Role: pki.RoleReader},
-	nodev1connect.NodeServiceRebootProcedure:         {Modes: layer.AnyMode, Role: pki.RoleOperator},
-	nodev1connect.NodeServiceDiagnosticsProcedure:    {Modes: layer.AnyMode, Role: pki.RoleReader},
+	nodev1connect.NodeServiceInfoProcedure:             {Modes: layer.AnyMode, Role: pki.RoleReader},
+	nodev1connect.NodeServiceDisksProcedure:            {Modes: layer.AnyMode, Role: pki.RoleReader},
+	nodev1connect.NodeServiceContractProcedure:         {Modes: layer.AnyMode, Role: pki.RoleReader},
+	nodev1connect.NodeServiceInstallProcedure:          {Modes: layer.MaintenanceOnly, Role: pki.RoleAdmin},
+	nodev1connect.NodeServiceEnrollSecureBootProcedure: {Modes: layer.MaintenanceOnly, Role: pki.RoleAdmin},
+	nodev1connect.NodeServiceApplyConfigProcedure:      {Modes: layer.NormalOnly, Role: pki.RoleAdmin},
+	nodev1connect.NodeServiceGetConfigProcedure:        {Modes: layer.NormalOnly, Role: pki.RoleAdmin},
+	nodev1connect.NodeServiceResetVolumeProcedure:      {Modes: layer.NormalOnly, Role: pki.RoleAdmin},
+	nodev1connect.NodeServiceRollbackConfigProcedure:   {Modes: layer.NormalOnly, Role: pki.RoleAdmin},
+	nodev1connect.NodeServiceConfirmConfigProcedure:    {Modes: layer.NormalOnly, Role: pki.RoleAdmin},
+	nodev1connect.NodeServiceStatusProcedure:           {Modes: layer.NormalOnly, Role: pki.RoleReader},
+	nodev1connect.NodeServiceLogsProcedure:             {Modes: layer.AnyMode, Role: pki.RoleReader},
+	nodev1connect.NodeServiceRebootProcedure:           {Modes: layer.AnyMode, Role: pki.RoleOperator},
+	nodev1connect.NodeServiceDiagnosticsProcedure:      {Modes: layer.AnyMode, Role: pki.RoleReader},
 	// RunDiagnostic also needs the diagnostic's own role, which it checks itself, as the table
 	// cannot see the request.
 	nodev1connect.NodeServiceRunDiagnosticProcedure: {Modes: layer.AnyMode, Role: pki.RoleReader},

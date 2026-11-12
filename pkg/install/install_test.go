@@ -737,3 +737,29 @@ func TestInPlaceNamesTheRemedyOfAStateTheTPMDoesNotUnseal(t *testing.T) {
 		t.Errorf("replaced STATE or installed: %v", r.Calls)
 	}
 }
+
+// TestRemoveState closes the STATE the node booted with and deletes it from the boot disk, and
+// refuses an installed node.
+func TestRemoveState(t *testing.T) {
+	r := &fakeRunner{}
+	i := newTestInstaller(t, r, vda)
+	r.add(inPlaceRules(i)...)
+	if err := i.RemoveState(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if !hasPrefix(r.Calls, "umount "+i.StateDir) || !hasPrefix(r.Calls, "systemd-cryptsetup detach state") || !hasPrefix(r.Calls, "sfdisk --lock=nonblock --delete /dev/vda 6") {
+		t.Errorf("commands %v; want STATE closed and partition 6 deleted", r.Calls)
+	}
+
+	r = &fakeRunner{}
+	i = newTestInstaller(t, r, vda)
+	r.add(tooltest.Rule{Prefix: "sfdisk --lock=nonblock --json /dev/vda", Out: sfdisk("/dev/vda", espPart, usrPart)})
+	if err := i.RemoveState(context.Background()); err != nil || hasPrefix(r.Calls, "sfdisk --lock=nonblock --delete") {
+		t.Errorf("RemoveState without STATE = %v, commands %v", err, r.Calls)
+	}
+
+	write(t, filepath.Join(i.StateDir, "installed"), "")
+	if err := i.RemoveState(context.Background()); err == nil || !strings.Contains(err.Error(), "installed") {
+		t.Errorf("RemoveState of an installed node = %v", err)
+	}
+}

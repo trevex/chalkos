@@ -1,0 +1,288 @@
+package chalkd
+
+import (
+	"context"
+	"crypto/x509"
+	"encoding/binary"
+	"errors"
+	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"slices"
+	"strings"
+	"testing"
+	"time"
+
+	"connectrpc.com/connect"
+
+	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
+	"github.com/trevex/chalkos/pkg/chalkd/layer"
+	"github.com/trevex/chalkos/pkg/image/imagetest"
+	"github.com/trevex/chalkos/pkg/secureboot"
+	"github.com/trevex/chalkos/pkg/uki/ukitest"
+)
+
+// testEnrolKeys are new Secure Boot keys and their directory.
+func testEnrolKeys(t *testing.T) (secureboot.Keys, string) {
+	t.Helper()
+	dir := t.TempDir()
+	if err := secureboot.NewKeys(dir, "test"); err != nil {
+		t.Fatal(err)
+	}
+	k, err := secureboot.LoadKeys(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return k, dir
+}
+
+// signedUpdate signs the certificates for the variable with the key pair.
+func signedUpdate(t *testing.T, k secureboot.Keys, name string, attrs uint32, signer secureboot.KeyPair, certs ...*x509.Certificate) []byte {
+	t.Helper()
+	vendor := secureboot.GlobalVariable
+	if name == "db" {
+		vendor = secureboot.ImageSecurityDatabase
+	}
+	u, err := secureboot.SignUpdate(secureboot.Update{Name: name, Vendor: vendor, Attributes: attrs, Data: secureboot.X509SignatureLists(k.Owner, certs...)}, time.Now(), signer.Cert, signer.Key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return u
+}
+
+// enrolRequest is the request chalkctl secureboot enroll sends for the keys.
+func enrolRequest(t *testing.T, k secureboot.Keys) *nodev1.EnrollSecureBootRequest {
+	return &nodev1.EnrollSecureBootRequest{
+		Db:  signedUpdate(t, k, "db", secureboot.AttrAppend, k.KEK, k.DB.Cert),
+		Kek: signedUpdate(t, k, "KEK", secureboot.AttrAppend, k.PK, k.KEK.Cert),
+		Pk:  signedUpdate(t, k, "PK", secureboot.AttrReplace, k.PK, k.PK.Cert),
+	}
+}
+
+// firmware is what a test server writes to the firmware.
+type firmware struct {
+	writes       []string
+	stateRemoved bool
+	rebooted     chan struct{}
+}
+
+// enrolServer is a maintenance server whose firmware is in Setup Mode, or not, with a db that
+// holds the certificate other. Its writes of EFI variables land in its efivars directory as
+// firmware would store them: the value without the authentication descriptor, appended with
+// APPEND_WRITE. Its boot disk holds an unsigned UKI and boot loader.
+func enrolServer(t *testing.T, setupMode bool, other []byte) (*Server, *firmware) {
+	t.Helper()
+	s, _ := newTestServer(t, maintenance, vda)
+	fw := &firmware{rebooted: make(chan struct{})}
+	mode := "\x06\x00\x00\x00\x00"
+	if setupMode {
+		mode = "\x06\x00\x00\x00\x01"
+	}
+	write(t, filepath.Join(s.Paths.EFIVars, "SetupMode-"+globalVariable), mode)
+	write(t, filepath.Join(s.Paths.EFIVars, "db-"+secureboot.SecurityVendor), "\x27\x00\x00\x00"+string(ukitest.SignatureList(other)))
+	write(t, filepath.Join(s.Host.DevRoot, "disk", "chalk-boot", "esp"), "")
+	writeESP(t, s.Paths.ESP, s.Paths.EFIVars, s.Paths.Cmdline, "chalkos_2.efi", "chalkos_2.efi")
+	uki, err := os.ReadFile(filepath.Join(s.Paths.ESP, "EFI", "Linux", "chalkos_2.efi"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	write(t, filepath.Join(s.Paths.ESP, "EFI", "BOOT", "BOOTX64.EFI"), string(uki))
+	s.WriteEFIVariable = func(path string, attrs uint32, payload []byte) error {
+		fw.writes = append(fw.writes, fmt.Sprintf("%s %x", filepath.Base(path), attrs))
+		p, err := secureboot.ParseUpdate(payload)
+		if err != nil {
+			return err
+		}
+		value := binary.LittleEndian.AppendUint32(nil, attrs&^0x40)
+		if old, err := os.ReadFile(path); err == nil && attrs&0x40 != 0 {
+			value = old
+		}
+		return os.WriteFile(path, append(value, p.Data...), 0o644)
+	}
+	s.RemoveState = func(context.Context) error {
+		fw.stateRemoved = true
+		return nil
+	}
+	s.RebootNode = func() { close(fw.rebooted) }
+	return s, fw
+}
+
+// TestEnrollSecureBoot writes db, KEK and PK, PK last, with their attributes, answers the
+// certificates of db and KEK before and after, removes STATE, which the TPM seals to PCR 7, and
+// reboots.
+func TestEnrollSecureBoot(t *testing.T) {
+	if _, err := exec.LookPath("sbsign"); err != nil {
+		t.Skip("sbsign not in PATH")
+	}
+	k, dir := testEnrolKeys(t)
+	_, _, other := imagetest.Signer(t, t.TempDir(), "other")
+	s, fw := enrolServer(t, true, other)
+	// The image this machine booted is signed with the db key enrolled.
+	for _, path := range []string{filepath.Join(s.Paths.ESP, "EFI", "Linux", "chalkos_2.efi"), filepath.Join(s.Paths.ESP, "EFI", "BOOT", "BOOTX64.EFI")} {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		write(t, path, string(imagetest.SBSign(t, data, filepath.Join(dir, "db.key"), filepath.Join(dir, "db.crt"))))
+	}
+
+	resp, err := s.EnrollSecureBoot(context.Background(), connect.NewRequest(enrolRequest(t, k)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := []string{"db-" + secureboot.SecurityVendor + " 67", "KEK-" + globalVariable + " 67", "PK-" + globalVariable + " 27"}; !slices.Equal(fw.writes, want) {
+		t.Errorf("writes %v, want %v", fw.writes, want)
+	}
+	got := resp.Msg
+	if !slices.Equal(got.DbBefore, []string{"CN=other"}) || !slices.Equal(got.DbAfter, []string{"CN=other", "CN=test Secure Boot db"}) ||
+		len(got.KekBefore) != 0 || !slices.Equal(got.KekAfter, []string{"CN=test Secure Boot KEK"}) {
+		t.Errorf("answer %+v", got)
+	}
+	if !fw.stateRemoved {
+		t.Error("STATE was not removed")
+	}
+	select {
+	case <-fw.rebooted:
+	case <-time.After(time.Minute):
+		t.Fatal("the node did not reboot")
+	}
+}
+
+// TestEnrollSecureBootRefuses refuses firmware that is not in Setup Mode, updates it cannot read
+// or that are not signed by the keys they enrol, and an image Secure Boot would refuse under the
+// new db, unless forced; it writes nothing then.
+func TestEnrollSecureBootRefuses(t *testing.T) {
+	k, _ := testEnrolKeys(t)
+	_, _, other := imagetest.Signer(t, t.TempDir(), "other")
+	good := enrolRequest(t, k)
+	for _, tc := range []struct {
+		name      string
+		setupMode bool
+		change    func(r *nodev1.EnrollSecureBootRequest)
+		code      connect.Code
+		want      string
+	}{
+		{"not in Setup Mode", false, func(*nodev1.EnrollSecureBootRequest) {}, connect.CodeFailedPrecondition, "not in Setup Mode"},
+		{"a malformed db update", true, func(r *nodev1.EnrollSecureBootRequest) { r.Db = r.Db[:20] }, connect.CodeInvalidArgument, "the update of db"},
+		{"a KEK update of no signature lists", true, func(r *nodev1.EnrollSecureBootRequest) {
+			u, err := secureboot.SignUpdate(secureboot.Update{Name: "KEK", Vendor: secureboot.GlobalVariable, Attributes: secureboot.AttrAppend, Data: []byte("garbage")}, time.Now(), k.PK.Cert, k.PK.Key)
+			if err != nil {
+				t.Fatal(err)
+			}
+			r.Kek = u
+		}, connect.CodeInvalidArgument, "the update of KEK"},
+		{"two platform keys", true, func(r *nodev1.EnrollSecureBootRequest) {
+			r.Pk = signedUpdate(t, k, "PK", secureboot.AttrReplace, k.PK, k.PK.Cert, k.KEK.Cert)
+		}, connect.CodeInvalidArgument, "PK is one"},
+		{"db signed by the PK", true, func(r *nodev1.EnrollSecureBootRequest) {
+			r.Db = signedUpdate(t, k, "db", secureboot.AttrAppend, k.PK, k.DB.Cert)
+		}, connect.CodeInvalidArgument, "the update of db is not signed for db"},
+		{"a PK update signed for appending", true, func(r *nodev1.EnrollSecureBootRequest) {
+			r.Pk = signedUpdate(t, k, "PK", secureboot.AttrAppend, k.PK, k.PK.Cert)
+		}, connect.CodeInvalidArgument, "the update of PK is not signed"},
+		{"an unsigned image", true, func(*nodev1.EnrollSecureBootRequest) {}, connect.CodeFailedPrecondition, "not signed by a db certificate"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s, fw := enrolServer(t, tc.setupMode, other)
+			r := &nodev1.EnrollSecureBootRequest{Db: good.Db, Kek: good.Kek, Pk: good.Pk}
+			tc.change(r)
+			_, err := s.EnrollSecureBoot(context.Background(), connect.NewRequest(r))
+			if layer.CodeOf(err) != tc.code || err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Errorf("EnrollSecureBoot = %v, want %v naming %q", err, tc.code, tc.want)
+			}
+			if len(fw.writes) > 0 || fw.stateRemoved {
+				t.Errorf("wrote %v, removed STATE: %v", fw.writes, fw.stateRemoved)
+			}
+		})
+	}
+
+	// Forced, the unsigned image does not stop the keys; the installer has no STATE to remove.
+	s, fw := enrolServer(t, true, other)
+	s.Installer = true
+	if _, err := s.EnrollSecureBoot(context.Background(), connect.NewRequest(&nodev1.EnrollSecureBootRequest{Db: good.Db, Kek: good.Kek, Pk: good.Pk, Force: true})); err != nil {
+		t.Fatal(err)
+	}
+	if len(fw.writes) != 3 || fw.stateRemoved {
+		t.Errorf("forced: wrote %v, removed STATE: %v", fw.writes, fw.stateRemoved)
+	}
+}
+
+// TestEnrollSecureBootStopsBeforePK leaves PK unwritten when KEK cannot be written, and says the
+// firmware stays in Setup Mode.
+func TestEnrollSecureBootStopsBeforePK(t *testing.T) {
+	k, _ := testEnrolKeys(t)
+	_, _, other := imagetest.Signer(t, t.TempDir(), "other")
+	s, fw := enrolServer(t, true, other)
+	write := s.WriteEFIVariable
+	s.WriteEFIVariable = func(path string, attrs uint32, payload []byte) error {
+		if strings.HasPrefix(filepath.Base(path), "KEK-") {
+			return errors.New("write error")
+		}
+		return write(path, attrs, payload)
+	}
+	r := enrolRequest(t, k)
+	r.Force = true
+	_, err := s.EnrollSecureBoot(context.Background(), connect.NewRequest(r))
+	if err == nil || !strings.Contains(err.Error(), "write KEK: write error") || !strings.Contains(err.Error(), "stays in Setup Mode") {
+		t.Errorf("EnrollSecureBoot = %v", err)
+	}
+	if !slices.Equal(fw.writes, []string{"db-" + secureboot.SecurityVendor + " 67"}) {
+		t.Errorf("writes %v, want db alone", fw.writes)
+	}
+	select {
+	case <-fw.rebooted:
+		t.Error("the node rebooted")
+	case <-time.After(noReboot):
+	}
+}
+
+// TestEnrollSecureBootRebootsAfterTheWrites reboots once db, KEK and PK are written even when it
+// cannot read db back, and answers with the lists before and none after.
+func TestEnrollSecureBootRebootsAfterTheWrites(t *testing.T) {
+	k, _ := testEnrolKeys(t)
+	_, _, other := imagetest.Signer(t, t.TempDir(), "other")
+	s, fw := enrolServer(t, true, other)
+	write := s.WriteEFIVariable
+	s.WriteEFIVariable = func(path string, attrs uint32, payload []byte) error {
+		if strings.HasPrefix(filepath.Base(path), "db-") {
+			return os.WriteFile(path, []byte("\x67\x00\x00\x00garbage"), 0o644)
+		}
+		return write(path, attrs, payload)
+	}
+	r := enrolRequest(t, k)
+	r.Force = true
+	resp, err := s.EnrollSecureBoot(context.Background(), connect.NewRequest(r))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := resp.Msg; !slices.Equal(got.DbBefore, []string{"CN=other"}) || len(got.DbAfter) != 0 || len(got.KekAfter) != 0 {
+		t.Errorf("answer %+v", got)
+	}
+	if want := []string{"KEK-" + globalVariable + " 67", "PK-" + globalVariable + " 27"}; !slices.Equal(fw.writes, want) {
+		t.Errorf("writes %v, want %v after db", fw.writes, want)
+	}
+	select {
+	case <-fw.rebooted:
+	case <-time.After(time.Minute):
+		t.Fatal("the node did not reboot")
+	}
+}
+
+// TestEnrollSecureBootWithoutESP refuses at once when udev found no ESP on the boot disk, rather
+// than waiting for the ESP's mount.
+func TestEnrollSecureBootWithoutESP(t *testing.T) {
+	k, _ := testEnrolKeys(t)
+	_, _, other := imagetest.Signer(t, t.TempDir(), "other")
+	s, fw := enrolServer(t, true, other)
+	if err := os.Remove(filepath.Join(s.Host.DevRoot, "disk", "chalk-boot", "esp")); err != nil {
+		t.Fatal(err)
+	}
+	_, err := s.EnrollSecureBoot(context.Background(), connect.NewRequest(enrolRequest(t, k)))
+	if layer.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "udev found no ESP on the disk the machine booted from") || !strings.Contains(err.Error(), "--force") {
+		t.Errorf("EnrollSecureBoot = %v", err)
+	}
+	if len(fw.writes) > 0 {
+		t.Errorf("wrote %v", fw.writes)
+	}
+}

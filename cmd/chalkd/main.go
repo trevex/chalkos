@@ -356,6 +356,7 @@ func serve() error {
 	if err != nil {
 		return err
 	}
+	inPlace := install.ForNode(paths.StateDir, paths.RunDir)
 	srv := &chalkd.Server{
 		Mode:        creds.mode,
 		Installer:   os.Getenv("CHALKD_INSTALLER") == "1",
@@ -367,7 +368,8 @@ func serve() error {
 		Run:         tool.ExecRunner{},
 		Host:        storage.DefaultHost(),
 		Loader:      nodeconfig.Default(),
-		InPlace:     install.ForNode(paths.StateDir, paths.RunDir).InPlace,
+		InPlace:     inPlace.InPlace,
+		RemoveState: inPlace.RemoveState,
 		FromParts:   install.ForInstaller(paths.RunDir).FromParts,
 		Journal:     chalkd.Journal,
 	}

@@ -74,6 +74,9 @@ const (
 	// NodeServiceConfirmConfigProcedure is the fully-qualified name of the NodeService's ConfirmConfig
 	// RPC.
 	NodeServiceConfirmConfigProcedure = "/chalkos.node.v1.NodeService/ConfirmConfig"
+	// NodeServiceEnrollSecureBootProcedure is the fully-qualified name of the NodeService's
+	// EnrollSecureBoot RPC.
+	NodeServiceEnrollSecureBootProcedure = "/chalkos.node.v1.NodeService/EnrollSecureBoot"
 )
 
 // NodeServiceClient is a client for the chalkos.node.v1.NodeService service.
@@ -213,6 +216,15 @@ type NodeServiceClient interface {
 	// the image staged in the inactive slot, or the pending config the config on trial replaces.
 	// Available in normal mode to admins.
 	ConfirmConfig(context.Context, *connect.Request[v1.ConfirmConfigRequest]) (*connect.Response[v1.ConfirmConfigResponse], error)
+	// EnrollSecureBoot writes Secure Boot keys into firmware in Setup Mode, as signed updates of its
+	// variables that the client made: it appends to db, then to KEK, and writes PK last, which ends
+	// Setup Mode. It refuses firmware that is not in Setup Mode, and updates that do not write
+	// EFI signature lists of X.509 certificates to db, KEK and PK, signed by the KEK and PK they
+	// bring. Unless forced, it also refuses keys under which Secure Boot would refuse the boot
+	// loader and UKI the node booted. A node that runs from its own disk recreates STATE on its next
+	// boot, as the TPM no longer unseals it once the keys change PCR 7. Once the keys are written,
+	// the node answers and reboots. Available in maintenance mode to admins.
+	EnrollSecureBoot(context.Context, *connect.Request[v1.EnrollSecureBootRequest]) (*connect.Response[v1.EnrollSecureBootResponse], error)
 }
 
 // NewNodeServiceClient constructs a client for the chalkos.node.v1.NodeService service. By default,
@@ -328,28 +340,35 @@ func NewNodeServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			connect.WithSchema(nodeServiceMethods.ByName("ConfirmConfig")),
 			connect.WithClientOptions(opts...),
 		),
+		enrollSecureBoot: connect.NewClient[v1.EnrollSecureBootRequest, v1.EnrollSecureBootResponse](
+			httpClient,
+			baseURL+NodeServiceEnrollSecureBootProcedure,
+			connect.WithSchema(nodeServiceMethods.ByName("EnrollSecureBoot")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
 // nodeServiceClient implements NodeServiceClient.
 type nodeServiceClient struct {
-	info           *connect.Client[v1.InfoRequest, v1.InfoResponse]
-	disks          *connect.Client[v1.DisksRequest, v1.DisksResponse]
-	contract       *connect.Client[v1.ContractRequest, v1.ContractResponse]
-	install        *connect.Client[v1.InstallRequest, v1.InstallResponse]
-	applyConfig    *connect.Client[v1.ApplyConfigRequest, v1.ApplyConfigResponse]
-	getConfig      *connect.Client[v1.GetConfigRequest, v1.GetConfigResponse]
-	resetVolume    *connect.Client[v1.ResetVolumeRequest, v1.ResetVolumeResponse]
-	status         *connect.Client[v1.StatusRequest, v1.StatusResponse]
-	logs           *connect.Client[v1.LogsRequest, v1.LogsResponse]
-	reboot         *connect.Client[v1.RebootRequest, v1.RebootResponse]
-	upgrade        *connect.Client[v1.UpgradeRequest, v1.UpgradeResponse]
-	activateImage  *connect.Client[v1.ActivateImageRequest, v1.ActivateImageResponse]
-	diagnostics    *connect.Client[v1.DiagnosticsRequest, v1.DiagnosticsResponse]
-	runDiagnostic  *connect.Client[v1.RunDiagnosticRequest, v1.RunDiagnosticResponse]
-	rollbackConfig *connect.Client[v1.RollbackConfigRequest, v1.RollbackConfigResponse]
-	rollbackImage  *connect.Client[v1.RollbackImageRequest, v1.RollbackImageResponse]
-	confirmConfig  *connect.Client[v1.ConfirmConfigRequest, v1.ConfirmConfigResponse]
+	info             *connect.Client[v1.InfoRequest, v1.InfoResponse]
+	disks            *connect.Client[v1.DisksRequest, v1.DisksResponse]
+	contract         *connect.Client[v1.ContractRequest, v1.ContractResponse]
+	install          *connect.Client[v1.InstallRequest, v1.InstallResponse]
+	applyConfig      *connect.Client[v1.ApplyConfigRequest, v1.ApplyConfigResponse]
+	getConfig        *connect.Client[v1.GetConfigRequest, v1.GetConfigResponse]
+	resetVolume      *connect.Client[v1.ResetVolumeRequest, v1.ResetVolumeResponse]
+	status           *connect.Client[v1.StatusRequest, v1.StatusResponse]
+	logs             *connect.Client[v1.LogsRequest, v1.LogsResponse]
+	reboot           *connect.Client[v1.RebootRequest, v1.RebootResponse]
+	upgrade          *connect.Client[v1.UpgradeRequest, v1.UpgradeResponse]
+	activateImage    *connect.Client[v1.ActivateImageRequest, v1.ActivateImageResponse]
+	diagnostics      *connect.Client[v1.DiagnosticsRequest, v1.DiagnosticsResponse]
+	runDiagnostic    *connect.Client[v1.RunDiagnosticRequest, v1.RunDiagnosticResponse]
+	rollbackConfig   *connect.Client[v1.RollbackConfigRequest, v1.RollbackConfigResponse]
+	rollbackImage    *connect.Client[v1.RollbackImageRequest, v1.RollbackImageResponse]
+	confirmConfig    *connect.Client[v1.ConfirmConfigRequest, v1.ConfirmConfigResponse]
+	enrollSecureBoot *connect.Client[v1.EnrollSecureBootRequest, v1.EnrollSecureBootResponse]
 }
 
 // Info calls chalkos.node.v1.NodeService.Info.
@@ -435,6 +454,11 @@ func (c *nodeServiceClient) RollbackImage(ctx context.Context, req *connect.Requ
 // ConfirmConfig calls chalkos.node.v1.NodeService.ConfirmConfig.
 func (c *nodeServiceClient) ConfirmConfig(ctx context.Context, req *connect.Request[v1.ConfirmConfigRequest]) (*connect.Response[v1.ConfirmConfigResponse], error) {
 	return c.confirmConfig.CallUnary(ctx, req)
+}
+
+// EnrollSecureBoot calls chalkos.node.v1.NodeService.EnrollSecureBoot.
+func (c *nodeServiceClient) EnrollSecureBoot(ctx context.Context, req *connect.Request[v1.EnrollSecureBootRequest]) (*connect.Response[v1.EnrollSecureBootResponse], error) {
+	return c.enrollSecureBoot.CallUnary(ctx, req)
 }
 
 // NodeServiceHandler is an implementation of the chalkos.node.v1.NodeService service.
@@ -574,6 +598,15 @@ type NodeServiceHandler interface {
 	// the image staged in the inactive slot, or the pending config the config on trial replaces.
 	// Available in normal mode to admins.
 	ConfirmConfig(context.Context, *connect.Request[v1.ConfirmConfigRequest]) (*connect.Response[v1.ConfirmConfigResponse], error)
+	// EnrollSecureBoot writes Secure Boot keys into firmware in Setup Mode, as signed updates of its
+	// variables that the client made: it appends to db, then to KEK, and writes PK last, which ends
+	// Setup Mode. It refuses firmware that is not in Setup Mode, and updates that do not write
+	// EFI signature lists of X.509 certificates to db, KEK and PK, signed by the KEK and PK they
+	// bring. Unless forced, it also refuses keys under which Secure Boot would refuse the boot
+	// loader and UKI the node booted. A node that runs from its own disk recreates STATE on its next
+	// boot, as the TPM no longer unseals it once the keys change PCR 7. Once the keys are written,
+	// the node answers and reboots. Available in maintenance mode to admins.
+	EnrollSecureBoot(context.Context, *connect.Request[v1.EnrollSecureBootRequest]) (*connect.Response[v1.EnrollSecureBootResponse], error)
 }
 
 // NewNodeServiceHandler builds an HTTP handler from the service implementation. It returns the path
@@ -685,6 +718,12 @@ func NewNodeServiceHandler(svc NodeServiceHandler, opts ...connect.HandlerOption
 		connect.WithSchema(nodeServiceMethods.ByName("ConfirmConfig")),
 		connect.WithHandlerOptions(opts...),
 	)
+	nodeServiceEnrollSecureBootHandler := connect.NewUnaryHandler(
+		NodeServiceEnrollSecureBootProcedure,
+		svc.EnrollSecureBoot,
+		connect.WithSchema(nodeServiceMethods.ByName("EnrollSecureBoot")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/chalkos.node.v1.NodeService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case NodeServiceInfoProcedure:
@@ -721,6 +760,8 @@ func NewNodeServiceHandler(svc NodeServiceHandler, opts ...connect.HandlerOption
 			nodeServiceRollbackImageHandler.ServeHTTP(w, r)
 		case NodeServiceConfirmConfigProcedure:
 			nodeServiceConfirmConfigHandler.ServeHTTP(w, r)
+		case NodeServiceEnrollSecureBootProcedure:
+			nodeServiceEnrollSecureBootHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -796,4 +837,8 @@ func (UnimplementedNodeServiceHandler) RollbackImage(context.Context, *connect.R
 
 func (UnimplementedNodeServiceHandler) ConfirmConfig(context.Context, *connect.Request[v1.ConfirmConfigRequest]) (*connect.Response[v1.ConfirmConfigResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("chalkos.node.v1.NodeService.ConfirmConfig is not implemented"))
+}
+
+func (UnimplementedNodeServiceHandler) EnrollSecureBoot(context.Context, *connect.Request[v1.EnrollSecureBootRequest]) (*connect.Response[v1.EnrollSecureBootResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("chalkos.node.v1.NodeService.EnrollSecureBoot is not implemented"))
 }

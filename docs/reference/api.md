@@ -581,6 +581,43 @@ The response of ConfirmConfig, once the trial ended.
 | ----- | ---- | ----------- |
 | `warnings` | list of string | What the confirmation could not write of what the trial's delivery held back: the config slot of the staged image or the pending config, and why. The trial ended all the same, and the config delivered again writes it. |
 
+### EnrollSecureBoot { #method-enrollsecureboot }
+
+EnrollSecureBoot writes Secure Boot keys into firmware in Setup Mode, as signed updates of its
+variables that the client made: it appends to db, then to KEK, and writes PK last, which ends
+Setup Mode. It refuses firmware that is not in Setup Mode, and updates that do not write
+EFI signature lists of X.509 certificates to db, KEK and PK, signed by the KEK and PK they
+bring. Unless forced, it also refuses keys under which Secure Boot would refuse the boot
+loader and UKI the node booted. A node that runs from its own disk recreates STATE on its next
+boot, as the TPM no longer unseals it once the keys change PCR 7. Once the keys are written,
+the node answers and reboots. Available in maintenance mode to admins.
+
+Request: EnrollSecureBootRequest. Response: EnrollSecureBootResponse.
+
+#### EnrollSecureBootRequest { #message-enrollsecurebootrequest }
+
+The request of EnrollSecureBoot: the signed updates of db, KEK and PK, each an
+EFI_VARIABLE_AUTHENTICATION_2 descriptor followed by EFI signature lists, as SetVariable takes
+it without the attributes.
+
+| Field | Type | Description |
+| ----- | ---- | ----------- |
+| `db` | bytes | The update of db, appended, signed by a certificate of the KEK update. |
+| `kek` | bytes | The update of KEK, appended, signed by the PK update's certificate. |
+| `pk` | bytes | The update of PK, signed by its own certificate. |
+| `force` | bool | Write the keys even if Secure Boot would refuse the boot loader or UKI the node booted under them. |
+
+#### EnrollSecureBootResponse { #message-enrollsecurebootresponse }
+
+The response of EnrollSecureBoot, which the node sends before it reboots.
+
+| Field | Type | Description |
+| ----- | ---- | ----------- |
+| `db_before` | list of string | The subjects of the X.509 certificates in db before the update. |
+| `db_after` | list of string | The subjects of the X.509 certificates in db after the update. |
+| `kek_before` | list of string | The subjects of the X.509 certificates in KEK before the update. |
+| `kek_after` | list of string | The subjects of the X.509 certificates in KEK after the update. |
+
 ## Messages { #messages }
 
 These messages are held by fields of other messages.

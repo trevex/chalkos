@@ -231,3 +231,36 @@ func (i *Installer) writeIdentity(req Request, rootHash []byte) error {
 	}
 	return nil
 }
+
+// RemoveState deletes STATE from the disk the node booted from, which must not be installed, so
+// its next boot creates STATE again, sealed to the TPM as the firmware measures the boot then. A
+// change of the Secure Boot keys changes PCR 7, so the TPM would no longer unseal the STATE the
+// node booted with. A disk without STATE is left as it is.
+func (i *Installer) RemoveState(ctx context.Context) error {
+	if installed, err := Installed(i.StateDir); err != nil {
+		return err
+	} else if installed {
+		return errors.New("the node is installed")
+	}
+	boot, err := i.Host.ResolvePath(i.BootDisk)
+	if err != nil {
+		return fmt.Errorf("find the disk the node booted from: %w", err)
+	}
+	table, err := i.readTable(ctx, boot.Device)
+	if err != nil {
+		return err
+	}
+	state, err := table.find(stateLabel, storage.PartitionType(stateLabel))
+	if errors.Is(err, errNotFound) {
+		return nil
+	} else if err != nil {
+		return err
+	}
+	if err := i.closeState(ctx); err != nil {
+		return err
+	}
+	if _, err := i.sfdisk(boot.Device).Exec(ctx, "--delete", boot.Device, strconv.Itoa(state.Number)); err != nil {
+		return fmt.Errorf("delete STATE: %w", err)
+	}
+	return nil
+}
