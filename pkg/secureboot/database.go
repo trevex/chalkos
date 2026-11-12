@@ -50,8 +50,8 @@ func guid(a uint32, b, c uint16, d [8]byte) [16]byte {
 	return g
 }
 
-// guidString formats a stored EFI GUID as it is written.
-func guidString(g [16]byte) string {
+// GUIDString formats a stored EFI GUID as it is written.
+func GUIDString(g [16]byte) string {
 	return fmt.Sprintf("%08x-%04x-%04x-%x-%x", binary.LittleEndian.Uint32(g[0:]), binary.LittleEndian.Uint16(g[4:]), binary.LittleEndian.Uint16(g[6:]), g[8:10], g[10:])
 }
 
@@ -114,7 +114,7 @@ func ParseDatabase(b []byte) (Database, error) {
 			case certX509SHA512:
 				err = digest(&db.TBSSHA512, data, sha512.Size, true, "X.509 SHA-512")
 			default:
-				if g := guidString(typ); !slices.Contains(db.Unreadable, g) {
+				if g := GUIDString(typ); !slices.Contains(db.Unreadable, g) {
 					db.Unreadable = append(db.Unreadable, g)
 				}
 			}
@@ -132,6 +132,13 @@ func ParseDatabase(b []byte) (Database, error) {
 const (
 	GlobalVendor   = "8be4df61-93ca-11d2-aa0d-00e098032b8c"
 	SecurityVendor = "d719b2cb-3d3a-4596-a3bc-dad00e67656f"
+)
+
+// GlobalVariable and ImageSecurityDatabase are GlobalVendor and SecurityVendor as they are stored:
+// the vendors of PK and KEK, and of db and dbx.
+var (
+	GlobalVariable        = guid(0x8be4df61, 0x93ca, 0x11d2, [8]byte{0xaa, 0x0d, 0x00, 0xe0, 0x98, 0x03, 0x2b, 0x8c})
+	ImageSecurityDatabase = guid(0xd719b2cb, 0x3d3a, 0x4596, [8]byte{0xa3, 0xbc, 0xda, 0xd0, 0x0e, 0x67, 0x65, 0x6f})
 )
 
 // Databases returns db and dbx when Secure Boot is enforced, and enforced false when it is not:

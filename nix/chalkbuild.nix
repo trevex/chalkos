@@ -14,6 +14,7 @@ callPackage ./go-module.nix { } {
   paths = [
     ../cmd/chalkbuild
     ../pkg/arch
+    ../pkg/atomicfile
     ../pkg/chalkbuild
     ../pkg/image
     ../pkg/imagepart

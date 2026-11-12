@@ -347,7 +347,7 @@ func TestCreateKeys(t *testing.T) {
 			t.Fatalf("%s.crt holds no PEM", name)
 		}
 		cert, err := x509.ParseCertificate(block.Bytes)
-		if err != nil || cert.Subject.CommonName != "chalklab lab "+name || cert.NotAfter.Before(time.Now().AddDate(9, 0, 0)) {
+		if err != nil || cert.Subject.CommonName != "chalklab lab Secure Boot "+name || cert.NotAfter.Before(time.Now().AddDate(19, 0, 0)) {
 			t.Errorf("%s.crt: %v, %v", name, cert.Subject, err)
 		}
 	}
