@@ -234,7 +234,7 @@ Their names are taken, so an extension's outputs and effects use others.
 [effects](../reference/builtins.md#effects) of every image and of images with Kubernetes.
 
 The output `networkd` writes one unit per document to `/run/systemd/network`, named as the
-document with its kind's suffix, such as `20-fabric0.network`. networkd has no offline validator,
+document with its kind's suffix, such as `20-enp1s0.network`. networkd has no offline validator,
 so the schemas guard it: they accept exactly the sections and keys of the image's networkd, and
 refuse a value that spans lines. Its units take precedence over the image's own in
 `/etc/systemd/network`. The output owns `/run/systemd/network`, so a unit written there by other

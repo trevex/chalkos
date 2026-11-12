@@ -79,7 +79,7 @@ this object, indented here:
           "address": "fdc8:a1b2:c3d4:1::1",
           "asn": 65000,
           "bfd": true,
-          "interfaces": ["fabric0", "fabric1"],
+          "interfaces": ["enp1s0", "enp2s0"],
           "password": {"secretRef": {"key": "password", "name": "bgp"}}
         }
       }
@@ -143,10 +143,10 @@ protocol kernel {
 protocol bfd {
 }
 
-protocol bgp 'router_fabric0' {
+protocol bgp 'router_enp1s0' {
   local as 65001;
   neighbor fdc8:a1b2:c3d4:1::1 as 65000;
-  interface "fabric0";
+  interface "enp1s0";
   direct;
   connect retry time 5;
   bfd on;
@@ -162,10 +162,10 @@ protocol bgp 'router_fabric0' {
   };
 }
 
-protocol bgp 'router_fabric1' {
+protocol bgp 'router_enp2s0' {
   local as 65001;
   neighbor fdc8:a1b2:c3d4:1::1 as 65000;
-  interface "fabric1";
+  interface "enp2s0";
   direct;
   connect retry time 5;
   bfd on;

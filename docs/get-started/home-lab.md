@@ -33,9 +33,9 @@ flowchart TB
     home ---|wan| router
     ws -.->|WireGuard| router
     router ---|fabric| switch
-    switch ---|fabric0, fabric1| node1
-    switch ---|fabric0, fabric1| node2
-    switch ---|fabric0, fabric1| node3
+    switch ---|enp1s0, enp2s0| node1
+    switch ---|enp1s0, enp2s0| node2
+    switch ---|enp1s0, enp2s0| node3
 ```
 
 Every address comes from one unique local /48, `fdc8:a1b2:c3d4::/48` in the example. You replace it
@@ -119,8 +119,8 @@ Run every later command in `homelab`. The example's files explain themselves in 
 | `router/router.yaml` | The router's ports, firewall, NAT64, resolver, BGP and WireGuard. |
 | `router/secrets.yaml` | The router's WireGuard key and BGP password. |
 | `cluster/cluster.yaml` | The Kubernetes cluster that all three nodes share. |
-| `bgp/fabric.yaml`, `bgp/secrets.yaml` | Each node's BGP neighbour, the router, and the password. |
-| `nodes/node1.yaml` to `nodes/node3.yaml` | Each node's ports, disk, address and router ID. |
+| `bgp/fabric.yaml`, `bgp/secrets.yaml` | The nodes' ports, their BGP neighbour, the router, and the password. |
+| `nodes/node1.yaml` to `nodes/node3.yaml` | Each node's disk, address and router ID. |
 | `extensions/` | bird and its `Speaker` and `Peer` kinds, which the nodes' image carries. |
 
 ### Get the tools
@@ -594,10 +594,10 @@ YAML needs for an IPv6 address; the workstation reaches it over the tunnel:
     02:00:00:00:11:02	fdc8:a1b2:c3d4:1:0:ff:fe00:1102
     ```
 
-    The ports of nodes installed before carry the MAC addresses of their `Link` documents in
-    `nodes/`; the others are the installer's. A port the router has not talked to yet is missing
-    from the table: boot one node at a time, and look again after a minute. Check that chalkd
-    answers at an address before you use it:
+    The table also holds the ports of nodes installed before, whose MAC addresses the `addresses`
+    diagnostic shows on each of them. A port the router has not talked to yet is missing from the
+    table: boot one node at a time, and look again after a minute. Check that chalkd answers at an
+    address before you use it:
 
     ```sh
     chalkctl node diag router --secrets=secrets.age tcp-connect \
@@ -627,9 +627,19 @@ enp1s0	02:00:00:00:11:01	UP	fdc8:a1b2:c3d4:1:0:ff:fe00:1101
 enp2s0	02:00:00:00:11:02	UP	fdc8:a1b2:c3d4:1:0:ff:fe00:1102
 ```
 
-The disk's path is `/dev/disk/by-id/nvme-WD_Blue_SN580_1TB_24131D801234` here.
+The disk's path is `/dev/disk/by-id/nvme-WD_Blue_SN580_1TB_24131D801234` here. The two ports are
+`enp1s0` and `enp2s0`, the names the kernel gives them. The names follow from the ports' PCI slots,
+so every machine of the same model shows the same two.
 
 ### Adapt the node's file
+
+`bgp/fabric.yaml`, which every node gets, configures the ports: a `Network` document for each port,
+which takes the router's advertisements, and the `Peer`, which runs a BGP session with the router
+on each port. It names the ports `enp1s0` and `enp2s0`. When the `addresses` diagnostic shows other
+names, replace `enp1s0` and `enp2s0` throughout `bgp/fabric.yaml` with them. You do this once, for
+node1: node2 and node3 have the same names when they are the same model. A node whose ports have
+other names, such as a machine of another model, takes `Network` and `Peer` documents of its own in
+place of `bgp/fabric.yaml`, as the file's comment describes.
 
 `nodes/node1.yaml` holds everything that differs between the nodes:
 
@@ -637,10 +647,7 @@ The disk's path is `/dev/disk/by-id/nvme-WD_Blue_SN580_1TB_24131D801234` here.
 --8<-- "examples/homelab/nodes/node1.yaml"
 ```
 
-Put the two MAC addresses into the `Link` documents, which name the ports `fabric0` and `fabric1`.
-Which port takes which name does not matter, as both are on the switch. `bgp/fabric.yaml`, which
-every node gets, runs a BGP session on each of the two names, so every node needs both. Put your
-disk's path into the `SystemDisk`.
+Put your disk's path into the `SystemDisk`.
 
 The rest of the file stays as it is. `node0` is a dummy interface that holds the node's address,
 `fdc8:a1b2:c3d4:ff::11`, which no cable can take away. The `Node` document makes the node a
@@ -662,9 +669,8 @@ chalkctl install node1 --secrets=secrets.age --fingerprint=<fingerprint>
 ```
 
 chalkctl prints the lines that the router's install printed. The node reboots into its image,
-renames its ports, brings up `node0` and starts bird, whose sessions announce the node's address to
-the router. Put the node's own address back into `chalkos.yaml`, where chalkctl reaches it from
-now on:
+brings up `node0` and starts bird, whose sessions announce the node's address to the router. Put
+the node's own address back into `chalkos.yaml`, where chalkctl reaches it from now on:
 
 ```yaml title="chalkos.yaml"
     node1: {address: "fdc8:a1b2:c3d4:ff::11", groups: [nodes], files: [nodes/node1.yaml]}
@@ -750,8 +756,8 @@ $ chalkctl node diag node1 --secrets=secrets.age bird-protocols
 ...
 Name           Proto      Table      State  Since         Info
 ...
-router_fabric0 BGP        ---        up     10:02:16.731  Established
-router_fabric1 BGP        ---        up     10:02:16.902  Established
+router_enp1s0  BGP        ---        up     10:02:16.731  Established
+router_enp2s0  BGP        ---        up     10:02:16.902  Established
 ```
 
 The router accepts a session from every address of the fabric, and `chalkctl status` lists the six
@@ -834,10 +840,10 @@ chalkctl apply node1 node2 node3 --secrets=secrets.age
 
 [Change a node's config](../operate/change-config.md) covers previews, trials and rollbacks.
 Deliver a change of the router's `management` interfaces or firewall with `--try`, so that the
-router rolls it back when chalkctl loses it. A delivery renames a port at once when its `Link`
-document gives it a new name. Change every document that names the port in the same delivery, its
-`Network`, and on the router its firewall zone and management interfaces, and deliver it with
-`chalkctl config apply --try`, so that the node rolls it back when chalkctl loses it.
+router rolls it back when chalkctl loses it. A delivery renames a router port at once when its
+`Link` document gives it a new name. Change every document that names the port in the same
+delivery, its `Network`, firewall zone and management interfaces, and deliver it with
+`chalkctl config apply router --try`, so that the router rolls it back when chalkctl loses it.
 
 A new chalkos revision or a change to `extensions/` takes new images. Update the flake's lock with
 `nix flake update chalkos`, and enter the shell of [Get the tools](#get-the-tools) again, so that
@@ -872,16 +878,18 @@ The router's advertisements give the ports their addresses. Check that the route
 holds `fdc8:a1b2:c3d4:1::1` with the `addresses` diagnostic, as in
 [Check the router](#check-the-router). When `fabric` is missing and a port of the kernel's name
 shows instead, the MAC address of the router's `Link` document is not the port's: correct it, and
-deliver it with `chalkctl config apply router --try`, which renames the port at once. A node port that shows `DOWN` has
-no carrier on the switch.
+deliver it with `chalkctl config apply router --try`, which renames the port at once. A node port
+that shows `DOWN` has no carrier on the switch. An installed node configures only the ports that
+`bgp/fabric.yaml` names: a port of another name takes no address, so put the names the `addresses`
+diagnostic shows into `bgp/fabric.yaml`, as in [Adapt the node's file](#adapt-the-nodes-file).
 
 ### A BGP session does not come up
 
 The router's `bgp:` table shows no line for a port that never connected. Check, on the node:
 
-- the ports' names: the `addresses` diagnostic shows `fabric0` and `fabric1`. A port under its
-  kernel's name means a wrong MAC address in the node's `Link` documents, and bird runs no
-  session on it;
+- the ports' names: the `addresses` diagnostic shows the names that the `Peer` of
+  `bgp/fabric.yaml` lists, `enp1s0` and `enp2s0` in the example. bird runs no session on a port
+  of another name;
 - the password: the kernel drops TCP segments whose MD5 signature does not match, so neither side
   logs a refused session. The router has no `bgp:` line for the node, and on the node
   `chalkctl node diag node1 bird-protocols` shows the sessions in `Connect` or `Active` instead of

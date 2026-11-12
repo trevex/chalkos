@@ -253,7 +253,7 @@ in
       images."images/node-metal" = example.packages.${pkgs.stdenv.hostPlatform.system}.node-metal;
     };
 
-  # The homelab's validator bgp-peers refuses the Peer interface fabric2 with the report
+  # The homelab's validator bgp-peers refuses the Peer interface enp3s0 with the report
   # validate-config.md shows, reads the names of a [Match] section's list and of a list of [Match]
   # sections, takes a glob for no name, refuses an exported interface without a Network and Peers
   # without a Speaker, and accepts the nodes' config.
@@ -268,7 +268,7 @@ in
         speaker='{"kind": "Speaker", "metadata": {"name": "bgp"}, "spec": {"asn": 65001, "routerID": "0.0.0.11", "export": {"interfaces": ["node0"]}}}'
         peer() { echo "{\"kind\": \"Peer\", \"metadata\": {\"name\": \"router\"}, \"spec\": {\"address\": \"fdc8:a1b2:c3d4:1::1\", \"asn\": 65000, \"interfaces\": $1}}"; }
         network() { echo "{\"kind\": \"Network\", \"metadata\": {\"name\": \"$1\"}, \"spec\": {\"match\": $2}}"; }
-        nodes="$(network 20-fabric0 '{"name": "fabric0"}'), $(network 20-fabric1 '{"name": "fabric1"}'), $(network 30-node0 '{"name": "node0"}')"
+        nodes="$(network 20-enp1s0 '{"name": "enp1s0"}'), $(network 20-enp2s0 '{"name": "enp2s0"}'), $(network 30-node0 '{"name": "node0"}')"
         expect() {
           got=$(echo "{\"node\": {\"name\": \"node1\"}, \"documents\": {\"Network\": [$1], \"Speaker\": [$2], \"Peer\": [$3]}}" | jq -c -f $validator)
           if [ "$got" != "$4" ]; then
@@ -282,13 +282,13 @@ in
         unconfigured="has no Network document; bird binds the session to an interface the node configures"
         documented=$(grep '^{"refusals": \[{"kind": "Peer", "name": "router"' $page | jq -c .)
         test -n "$documented"
-        expect "$nodes" "$speaker" "$(peer '["fabric0", "fabric1", "fabric2"]')" "$documented"
-        expect "$nodes" "$speaker" "$(peer '["fabric0", "fabric1"]')" '{"refusals":[]}'
-        expect "$(network 20-fabric '{"name": ["fabric0", "fabric1"]}'), $(network 30-node0 '[{"name": "node0"}]')" "$speaker" "$(peer '["fabric0", "fabric1"]')" '{"refusals":[]}'
-        expect "$(network 20-fabric '{"name": "fabric0  fabric1"}'), $(network 30-node0 '{"name": "node0"}')" "$speaker" "$(peer '["fabric0", "fabric1"]')" '{"refusals":[]}'
-        expect "$(network 20-fabric '{"name": "fabric*"}'), $(network 30-node0 '{"name": "node0"}')" "$speaker" "$(peer '["fabric0"]')" "$(refusal Peer router 'spec.interfaces[0]' "fabric0 $unconfigured")"
-        expect "$(network 20-fabric0 '{"name": "fabric0"}')" "$speaker" "$(peer '["fabric0"]')" "$(refusal Speaker bgp 'spec.export.interfaces[0]' "node0 has no Network document; bird announces the addresses of an interface the node configures")"
-        expect "$nodes" "" "$(peer '["fabric0"]')" "$(refusal Peer router metadata.name "a node with Peer documents needs a Speaker document, which gives bird its AS number and router ID")"
+        expect "$nodes" "$speaker" "$(peer '["enp1s0", "enp2s0", "enp3s0"]')" "$documented"
+        expect "$nodes" "$speaker" "$(peer '["enp1s0", "enp2s0"]')" '{"refusals":[]}'
+        expect "$(network 20-fabric '{"name": ["enp1s0", "enp2s0"]}'), $(network 30-node0 '[{"name": "node0"}]')" "$speaker" "$(peer '["enp1s0", "enp2s0"]')" '{"refusals":[]}'
+        expect "$(network 20-fabric '{"name": "enp1s0  enp2s0"}'), $(network 30-node0 '{"name": "node0"}')" "$speaker" "$(peer '["enp1s0", "enp2s0"]')" '{"refusals":[]}'
+        expect "$(network 20-fabric '{"name": "enp*"}'), $(network 30-node0 '{"name": "node0"}')" "$speaker" "$(peer '["enp1s0"]')" "$(refusal Peer router 'spec.interfaces[0]' "enp1s0 $unconfigured")"
+        expect "$(network 20-enp1s0 '{"name": "enp1s0"}')" "$speaker" "$(peer '["enp1s0"]')" "$(refusal Speaker bgp 'spec.export.interfaces[0]' "node0 has no Network document; bird announces the addresses of an interface the node configures")"
+        expect "$nodes" "" "$(peer '["enp1s0"]')" "$(refusal Peer router metadata.name "a node with Peer documents needs a Speaker document, which gives bird its AS number and router ID")"
         expect "$nodes" "" "" '{"refusals":[]}'
         touch $out
       '';

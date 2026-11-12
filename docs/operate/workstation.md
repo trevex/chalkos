@@ -60,7 +60,7 @@ homelab/
 │   └── secrets.yaml
 ├── cluster/           config files every Kubernetes node gets
 │   └── cluster.yaml
-├── bgp/               the BGP neighbour and password every Kubernetes node gets
+├── bgp/               the ports, BGP neighbour and password every Kubernetes node gets
 │   ├── fabric.yaml
 │   └── secrets.yaml
 ├── nodes/             each Kubernetes node's own config file

@@ -64,7 +64,7 @@ directory, `/run/chalkos/config/bgp.example.org/Peer`, so a module never spells 
 homelab's `router`, the file holds one line of JSON with sorted keys:
 
 ```json title="/run/chalkos/config/bgp.example.org/Peer/router.json"
-{"apiVersion":"bgp.example.org/v1alpha1","kind":"Peer","metadata":{"name":"router"},"spec":{"address":"fdc8:a1b2:c3d4:1::1","asn":65000,"bfd":true,"interfaces":["fabric0","fabric1"],"password":{"secretRef":{"key":"password","name":"bgp"}}}}
+{"apiVersion":"bgp.example.org/v1alpha1","kind":"Peer","metadata":{"name":"router"},"spec":{"address":"fdc8:a1b2:c3d4:1::1","asn":65000,"bfd":true,"interfaces":["enp1s0","enp2s0"],"password":{"secretRef":{"key":"password","name":"bgp"}}}}
 ```
 
 `bfd` is `true` although the YAML leaves it out, because the field's default is `true`. Any

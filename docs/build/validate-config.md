@@ -55,12 +55,12 @@ indented here:
 {
   "documents": {
     "Network": [
-      {"apiVersion": "networkd.chalkos.dev/v1alpha1", "kind": "Network", "metadata": {"name": "20-fabric0"},
-       "spec": {"match": {"name": "fabric0"}, "network": {"ipv6AcceptRA": true}}}
+      {"apiVersion": "networkd.chalkos.dev/v1alpha1", "kind": "Network", "metadata": {"name": "20-enp1s0"},
+       "spec": {"match": {"name": "enp1s0"}, "network": {"ipv6AcceptRA": true}}}
     ],
     "Peer": [
       {"apiVersion": "bgp.example.org/v1alpha1", "kind": "Peer", "metadata": {"name": "router"},
-       "spec": {"address": "fdc8:a1b2:c3d4:1::1", "asn": 65000, "bfd": true, "interfaces": ["fabric0", "fabric1"],
+       "spec": {"address": "fdc8:a1b2:c3d4:1::1", "asn": 65000, "bfd": true, "interfaces": ["enp1s0", "enp2s0"],
                 "password": {"secretRef": {"name": "bgp", "key": "password"}}}}
     ],
     "Speaker": [
@@ -78,7 +78,7 @@ A validator refuses a config by printing one JSON object on standard output, the
 refusals that a renderer prints too:
 
 ```json
-{"refusals": [{"kind": "Peer", "name": "router", "path": "spec.interfaces[2]", "message": "fabric2 has no Network document; bird binds the session to an interface the node configures"}]}
+{"refusals": [{"kind": "Peer", "name": "router", "path": "spec.interfaces[2]", "message": "enp3s0 has no Network document; bird binds the session to an interface the node configures"}]}
 ```
 
 Each refusal names the document by `kind` and `name`, the field by its `path`, and says in
@@ -109,14 +109,14 @@ documents and refuses each interface of a `Peer` or the `Speaker` that is not am
 
 A section of a networkd document may be one object or a list of them, and a key one value or a
 list, so the program reads `name` from every `[Match]` section, and splits a value that holds
-several names. It compares the names as written. A glob such as `fabric*` may or may not match
+several names. It compares the names as written. A glob such as `enp*` may or may not match
 an interface, so the program takes it for no name, and a `Peer` on such an interface is refused.
 
 The program also refuses `Peer` documents without a `Speaker`, which gives bird its AS number and
 router ID. The template refuses the same config, as
 [A renderer refuses a config](render-config.md#a-renderer-refuses-a-config) shows, but the
 validators run before the renderers, so the operator sees this refusal. The check
-`example-homelab-bgp-peers` runs the program on these cases and on `fabric2` below.
+`example-homelab-bgp-peers` runs the program on these cases and on `enp3s0` below.
 
 ## Any program of the store validates
 
@@ -148,14 +148,14 @@ error then fails the build before any node gets it.
 Build the image. The build runs each example, so a broken validator fails here and names the
 validator and the example file.
 
-Say the `Peer` of `bgp/fabric.yaml` gains a third interface, `fabric2`, that the nodes have no
+Say the `Peer` of `bgp/fabric.yaml` gains a third interface, `enp3s0`, that the nodes have no
 `Network` for. `chalkctl config apply node1` checks the config as far as chalkctl can, then the
 node runs the validator and refuses the delivery:
 
 ```console
 $ chalkctl config apply node1
 node1: config 0 added, 0 removed, 1 changed
-chalkctl: node1: the config is refused: Peer/router: spec.interfaces[2]: fabric2 has no Network document; bird binds the session to an interface the node configures
+chalkctl: node1: the config is refused: Peer/router: spec.interfaces[2]: enp3s0 has no Network document; bird binds the session to an interface the node configures
 ```
 
 The node changed nothing. `chalkctl config apply --dry-run node1` prints the same refusal without

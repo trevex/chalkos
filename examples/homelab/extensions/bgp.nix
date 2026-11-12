@@ -87,13 +87,13 @@ in
         ];
       };
       # --8<-- [end:rule]
-      # Each name lands in bird.conf in quotes. A name holds no glob, so a node whose ports have
-      # other names renames them with Link documents.
+      # Each name lands in bird.conf in quotes. A name holds no glob, so a Peer lists each port by its
+      # exact name.
       interfaces = lib.chalkos.mkOption {
         type = lib.types.nonEmptyListOf interfaceName;
         example = [
-          "fabric0"
-          "fabric1"
+          "enp1s0"
+          "enp2s0"
         ];
         unique = {
           across = "list";
@@ -235,7 +235,7 @@ in
   # --8<-- [start:diagnostic]
   # chalkctl node diag <node> bird-protocols shows bird's sessions. birdc -r asks bird read-only,
   # on bird's socket, which bird makes writable for its group. bird names each session after its
-  # Peer and interface, such as router_fabric0, in quotes, as a name with a hyphen needs them.
+  # Peer and interface, such as router_enp1s0, in quotes, as a name with a hyphen needs them.
   chalkos.diagnostics.bird-protocols = {
     description = "The protocols bird runs and the state of their BGP sessions.";
     command = [
@@ -249,7 +249,7 @@ in
       type = "pattern";
       regex = "^[A-Za-z0-9][A-Za-z0-9._-]*$";
       optional = true;
-      description = "Name of a protocol, such as router_fabric0 for the session of the Peer router on fabric0, which alone is shown; every protocol when left out.";
+      description = "Name of a protocol, such as router_enp1s0 for the session of the Peer router on enp1s0, which alone is shown; every protocol when left out.";
     };
     role = "reader";
     timeout = "10s";

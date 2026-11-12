@@ -38,7 +38,7 @@ because it only reads bird's state. A diagnostic without a `role` needs an opera
 `command` is the command line as a list, and no shell reads it. Its first argument is a program
 of the image's store: `"${bird}/bin/birdc"`, never `birdc`. A placeholder such as `{protocol}`
 is replaced by the parameter's value inside its own argument alone. `"'{protocol}'"` becomes
-`'router_fabric0'`, one argument, whatever the value holds. The quotes are for bird, which needs
+`'router_enp1s0'`, one argument, whatever the value holds. The quotes are for bird, which needs
 them around a protocol name with a hyphen, such as that of a `Peer` named `spare-router`.
 
 `birdc -r` asks bird in its restricted mode, which takes only commands that read. Run a program
@@ -132,7 +132,7 @@ diagnostic, and running it prints bird's protocols:
 
 ```sh
 chalkctl node diag node1
-chalkctl node diag node1 bird-protocols protocol=router_fabric0
+chalkctl node diag node1 bird-protocols protocol=router_enp1s0
 ```
 
 `not_found: the image declares no diagnostic "bird-protocols"; chalkctl node diag lists those it does`

@@ -61,7 +61,7 @@ metadata: {name: router}
 spec:
   address: "fdc8:a1b2:c3d4:1::1"
   asn: 65000
-  interfaces: [fabric0, fabric1]
+  interfaces: [enp1s0, enp2s0]
   password: {secretRef: {name: bgp, key: password}}
 ```
 

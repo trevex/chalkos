@@ -22,45 +22,18 @@ You need to know the new machine's disks and network interfaces, as for any node
 
 A new node needs an entry in `spec.nodes` and a file of its own. Its name, the key in
 `spec.nodes`, stays the node's name until it is reinstalled. Its recovery key derives from that
-name. The homelab gains a worker `node4`, whose two ports are on the fabric's switch like the
-control planes'. Its file `nodes/node4.yaml` is a copy of `node1`'s with the new machine's MAC
-addresses and disk, the address `fdc8:a1b2:c3d4:ff::14`, the router ID `0.0.0.14` and
-`type: worker`. A worker holds no VIP, so its `Node` names no `vip.interface`:
+name. The homelab gains a worker `node4`, a machine of the control planes' model whose two ports
+are on the fabric's switch like theirs. Its ports have the same names, so `bgp/fabric.yaml`
+configures them. Its file `nodes/node4.yaml` is a copy of `node1`'s with the new machine's disk,
+the address `fdc8:a1b2:c3d4:ff::14`, the router ID `0.0.0.14` and `type: worker`. A worker
+holds no VIP, so its `Node` names no `vip.interface`:
 
 ```yaml title="nodes/node4.yaml"
-apiVersion: networkd.chalkos.dev/v1alpha1
-kind: Link
-metadata: {name: 10-fabric0}
-spec:
-  match: {permanentMACAddress: "02:00:00:00:14:01"}
-  link: {name: fabric0}
----
-apiVersion: networkd.chalkos.dev/v1alpha1
-kind: Link
-metadata: {name: 10-fabric1}
-spec:
-  match: {permanentMACAddress: "02:00:00:00:14:02"}
-  link: {name: fabric1}
----
 apiVersion: storage.chalkos.dev/v1alpha1
 kind: SystemDisk
 metadata: {name: system}
 spec:
   disk: {path: /dev/disk/by-id/nvme-Samsung_SSD_990_PRO_2TB_S7KHNJ0W100003}
----
-apiVersion: networkd.chalkos.dev/v1alpha1
-kind: Network
-metadata: {name: 20-fabric0}
-spec:
-  match: {name: fabric0}
-  network: {ipv6AcceptRA: true}
----
-apiVersion: networkd.chalkos.dev/v1alpha1
-kind: Network
-metadata: {name: 20-fabric1}
-spec:
-  match: {name: fabric1}
-  network: {ipv6AcceptRA: true}
 ---
 apiVersion: networkd.chalkos.dev/v1alpha1
 kind: NetDev

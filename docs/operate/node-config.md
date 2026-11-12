@@ -76,9 +76,9 @@ kind and name in one node's set are an error that names both files:
 
 ```text
 chalkctl: the config of 3 nodes is invalid:
-node node1: cluster/net.yaml and nodes/node1.yaml both hold Network "20-fabric0"
-node node2: cluster/net.yaml and nodes/node2.yaml both hold Network "20-fabric0"
-node node3: cluster/net.yaml and nodes/node3.yaml both hold Network "20-fabric0"
+node node1: cluster/net.yaml and bgp/fabric.yaml both hold Network "20-enp1s0"
+node node2: cluster/net.yaml and bgp/fabric.yaml both hold Network "20-enp1s0"
+node node3: cluster/net.yaml and bgp/fabric.yaml both hold Network "20-enp1s0"
 ```
 
 Put a value that every node shares into a shared file once. When one node needs a different value,
@@ -174,7 +174,7 @@ spec:
 ```
 
 Each node's ports take their addresses from those advertisements, with `ipv6AcceptRA: true` in
-their own `Network` documents, as `nodes/node1.yaml` shows.
+their `Network` documents, as `bgp/fabric.yaml` shows.
 
 The image brings one unit of its own, `99-ethernet-default-dhcp`, which runs DHCP on every
 physical Ethernet interface that no `Network` document matches. A node whose config holds no
@@ -229,20 +229,21 @@ the ports to the bond and the VLAN to the bond, and give the VLAN device the nod
 switch ports must form an LACP group too.
 
 A `Link` document is a `.link` file, which sets the properties of a physical device, such as its
-name or its MTU. The homelab's machines name their ports by permanent MAC address, so that the other
-documents name the same ports on every machine, whatever the kernel calls them:
+name or its MTU. The homelab's router names its ports by permanent MAC address, so that its other
+documents name the ports `wan` and `fabric`, whatever the kernel calls them:
 
 ```yaml
 apiVersion: networkd.chalkos.dev/v1alpha1
 kind: Link
-metadata: {name: 10-fabric0}
+metadata: {name: 10-fabric}
 spec:
-  match: {permanentMACAddress: "02:00:00:00:11:01"}
-  link: {name: fabric0}
+  match: {permanentMACAddress: "02:00:00:00:01:02"}
+  link: {name: fabric}
 ```
 
 The installer holds no config, so a machine's ports keep the kernel's names until the installed
-node's first boot, which renames them.
+node's first boot, which renames them. The homelab's Kubernetes nodes keep the kernel's names,
+which identical machines share, and `bgp/fabric.yaml` names their ports by those names.
 
 The schemas of the three kinds come from the networkd of the image's own systemd,
 so they accept exactly the sections and keys that networkd accepts.
@@ -379,10 +380,10 @@ names the document and the field:
 ```text
 node1: valid for the image node-metal (node on metal, root hash 5f1e60980b55), config c2bef3c1242a847b16346d3e1f6de732a86832fa8294ce90e923bad30c85e6bf
 chalkctl: the config of 1 node is invalid:
-node node2: Network "20-fabric0": - at '/spec/network': additional properties 'ipv6AcceptRa' not allowed
+node node2: Network "30-node0": - at '/spec/network': additional properties 'keepconfiguration' not allowed
 ```
 
-Here `ipv6AcceptRa` should be `ipv6AcceptRA`. The common refusals and their fixes:
+Here `keepconfiguration` should be `keepConfiguration`. The common refusals and their fixes:
 
 - An unknown kind means that the node's image does not declare it. Check the `apiVersion`, or ask
   the image author for the extension that brings the kind.

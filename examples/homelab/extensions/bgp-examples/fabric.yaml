@@ -14,7 +14,7 @@ metadata: {name: router}
 spec:
   address: "fdc8:a1b2:c3d4:1::1"
   asn: 65000
-  interfaces: [fabric0, fabric1]
+  interfaces: [enp1s0, enp2s0]
   password: {secretRef: {name: bgp, key: password}}
 ---
 apiVersion: chalkos.dev/v1alpha1
@@ -25,16 +25,16 @@ spec:
 ---
 apiVersion: networkd.chalkos.dev/v1alpha1
 kind: Network
-metadata: {name: 20-fabric0}
+metadata: {name: 20-enp1s0}
 spec:
-  match: {name: fabric0}
+  match: {name: enp1s0}
   network: {ipv6AcceptRA: true}
 ---
 apiVersion: networkd.chalkos.dev/v1alpha1
 kind: Network
-metadata: {name: 20-fabric1}
+metadata: {name: 20-enp2s0}
 spec:
-  match: {name: fabric1}
+  match: {name: enp2s0}
   network: {ipv6AcceptRA: true}
 ---
 apiVersion: networkd.chalkos.dev/v1alpha1

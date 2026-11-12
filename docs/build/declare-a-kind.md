@@ -210,15 +210,16 @@ the defaults.
 
 A `Peer` document has the fields of every config document: `apiVersion`, `kind`, `metadata.name`
 and `spec`. Every homelab node peers with the same router on the same two ports, so the `Peer`
-sits in a file that the inventory's group `nodes` gives every node:
+sits in a file that the inventory's group `nodes` gives every node, beside the `Network` documents
+of the ports:
 
 ```yaml title="bgp/fabric.yaml"
 --8<-- "examples/homelab/bgp/fabric.yaml"
 ```
 
-A node that needs other neighbours gets its `Peer` documents in its own file instead, and leaves
-the shared file out. Documents never merge. The `password` field and the `Secret` are the
-subject of [Pass secrets to a service](pass-secrets.md).
+A node that needs other neighbours or has other port names gets its `Peer` and `Network` documents
+in its own file instead, and leaves the shared file out. Documents never merge. The `password`
+field and the `Secret` are the subject of [Pass secrets to a service](pass-secrets.md).
 
 ## chalkctl validate refuses a misspelled field
 

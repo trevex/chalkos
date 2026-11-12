@@ -2,46 +2,16 @@
 # dummy interface node0, and bird announces it over a session on each port, so the address stays
 # reachable while one port or cable works.
 #
-# The two Link documents name the ports by their permanent MAC addresses, which a VLAN or a bond
-# on a port does not take, so bgp/fabric.yaml names fabric0 and fabric1 on every node. Replace the
-# addresses with those of the node's ports. A rename of a running node's port changes every
-# document that names the port in the same delivery, best with chalkctl config apply --try.
-apiVersion: networkd.chalkos.dev/v1alpha1
-kind: Link
-metadata: {name: 10-fabric0}
-spec:
-  match: {permanentMACAddress: "02:00:00:00:11:01"}
-  link: {name: fabric0}
----
-apiVersion: networkd.chalkos.dev/v1alpha1
-kind: Link
-metadata: {name: 10-fabric1}
-spec:
-  match: {permanentMACAddress: "02:00:00:00:11:02"}
-  link: {name: fabric1}
----
+# The ports' Network documents and the Peer lie in bgp/fabric.yaml, under the names the kernel gives
+# the ports, which identical machines share. A node whose ports have other names leaves
+# bgp/fabric.yaml out and brings its own Network and Peer documents.
+#
 # Replace the disk with the node's own, by its path below /dev/disk/by-id.
 apiVersion: storage.chalkos.dev/v1alpha1
 kind: SystemDisk
 metadata: {name: system}
 spec:
   disk: {path: /dev/disk/by-id/nvme-EXAMPLE_SSD_node1}
----
-# Each port takes an address of the fabric's prefix, the default route, the resolver and the
-# NAT64 prefix from the router's advertisements.
-apiVersion: networkd.chalkos.dev/v1alpha1
-kind: Network
-metadata: {name: 20-fabric0}
-spec:
-  match: {name: fabric0}
-  network: {ipv6AcceptRA: true}
----
-apiVersion: networkd.chalkos.dev/v1alpha1
-kind: Network
-metadata: {name: 20-fabric1}
-spec:
-  match: {name: fabric1}
-  network: {ipv6AcceptRA: true}
 ---
 # node0 holds the node's address, and the API's VIP while the node holds it. chalkd adds the VIP
 # with a preferred lifetime of 0, which networkd counts as a dynamic address, so keepConfiguration

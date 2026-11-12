@@ -294,7 +294,7 @@ $ chalkctl node diag node1 --secrets secrets.age
 DIAGNOSTIC            ROLE      DESCRIPTION
 addresses             reader    The addresses of the node's interfaces, as ip -json address show prints them.
 bird-protocols        reader    The protocols bird runs and the state of their BGP sessions.
-  [protocol=<pattern>]          Name of a protocol, such as router_fabric0 for the session of the Peer router on fabric0, which alone is shown; every protocol when left out. Matches ^[A-Za-z0-9][A-Za-z0-9._-]*$.
+  [protocol=<pattern>]          Name of a protocol, such as router_enp1s0 for the session of the Peer router on enp1s0, which alone is shown; every protocol when left out. Matches ^[A-Za-z0-9][A-Za-z0-9._-]*$.
 dns-query             operator  Looks up a name in DNS, through the node's resolver or the server given.
   name=<hostname>               Name to look up.
   [type=<enum>]                 Record type; A when left out. One of A, AAAA, CAA, CNAME, DS, DNSKEY, MX, NS, PTR, SOA, SRV, TXT.

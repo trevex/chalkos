@@ -18,8 +18,8 @@ adapt these files, install the machines and test a failover. Its source is
 | `router/router.yaml` | The router's ports, firewall, NAT64, resolver, BGP and WireGuard. |
 | `router/secrets.yaml` | The router's WireGuard key and BGP password, as example values. |
 | `cluster/cluster.yaml` | The Kubernetes cluster that all three nodes share. |
-| `bgp/fabric.yaml`, `bgp/secrets.yaml` | Each node's BGP neighbour, the router, and the password. |
-| `nodes/node1.yaml` to `nodes/node3.yaml` | Each node's ports, disk, address and router ID. |
+| `bgp/fabric.yaml`, `bgp/secrets.yaml` | The nodes' ports, their BGP neighbour, the router, and the password. |
+| `nodes/node1.yaml` to `nodes/node3.yaml` | Each node's disk, address and router ID. |
 | `extensions/` | bird and its `Speaker` and `Peer` kinds, which the nodes' image carries. |
 
 The secrets in `router/secrets.yaml` and `bgp/secrets.yaml` are public example values. Replace them
