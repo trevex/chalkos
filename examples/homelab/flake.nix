@@ -42,6 +42,8 @@
           pkgs.jq
           pkgs.openssl
           pkgs.wireguard-tools
+          pkgs.arp-scan
+          pkgs.netcat
         ];
       };
     };

@@ -126,7 +126,7 @@ Run every later command in `homelab`. The example's files explain themselves in 
 ### Get the tools
 
 The flake's shell holds chalkctl and chalkbuild of the chalkos revision that `flake.lock` pins,
-with kubectl, jq, openssl and wg. Lock the flake's chalkos input and enter the shell:
+with kubectl, jq, openssl, wg, arp-scan and nc. Lock the flake's chalkos input and enter the shell:
 
 ```sh
 nix flake lock
@@ -297,15 +297,42 @@ chalkd: maintenance mode, accepting clients of the OS CA; certificate fingerprin
 chalkd: addresses 192.168.1.57; certificate fingerprint <fingerprint>
 ```
 
-Note the address and the fingerprint, 64 hex characters. The commands below reach the machine with
-`--address` and check its certificate with `--fingerprint`.
+Note the address and the fingerprint, 64 hex characters. chalkctl reaches a node that a command
+names at the node's address in `chalkos.yaml`, so put the installer's address there as the
+router's for now, and the commands below need no `--address`:
+
+```yaml title="chalkos.yaml"
+    router: {address: 192.168.1.57, groups: [router]}
+```
+
+The commands check the machine's certificate with `--fingerprint`.
+
+!!! tip "Find the installer without a console"
+
+    On a machine without a screen, look for the installer on the home network: chalkd listens on
+    TCP port 50000. The flake's shell holds `arp-scan` and `nc`; this lists the home network's
+    machines that answer on that port:
+
+    ```sh
+    sudo "$(command -v arp-scan)" --localnet --plain --quiet | awk '{print $1}' \
+      | xargs -I {} nc -zv -w 1 {} 50000 2>&1 | grep -E "succeeded|open"
+    ```
+
+!!! note "--insecure in place of --fingerprint"
+
+    When reading the console is impractical, pass `--insecure` in place of `--fingerprint`. chalkctl
+    then accepts any certificate and prints the fingerprint it saw, as
+    `chalkctl: the node's certificate fingerprint is <fingerprint>`. Compare it with the console
+    when you can. `chalkctl install` sends the secrets only over a connection pinned to that
+    fingerprint.
 
 ### Enrol the Secure Boot keys (optional)
 
 Skip this step without Secure Boot, or when the router's firmware holds your db certificate
 already. When its firmware is
 in Setup Mode, as after you clear its keys in the firmware setup, it boots the installer without
-checking it. Enrol your keys:
+checking it. Enrol your keys; `secureboot enroll` names no node, so it takes the address with
+`--address`:
 
 ```console
 $ chalkctl secureboot enroll --keys keys --address=192.168.1.57 --fingerprint=<fingerprint> \
@@ -330,7 +357,7 @@ explains.
 List the disks:
 
 ```console
-$ chalkctl disks --address=192.168.1.57 --fingerprint=<fingerprint> --secrets=secrets.age
+$ chalkctl disks router --fingerprint=<fingerprint> --secrets=secrets.age
 DEVICE            SIZE    TYPE  MODEL                    SERIAL          WWN                   USE
 /dev/nvme0n1      476.9G  nvme  Samsung SSD 980 512GB    S64DNF0R812345  eui.002538b811b2c3d4
 ...
@@ -349,8 +376,7 @@ The diagnostic `addresses` lists the ports, and the jq filter of
 [Get the tools](#get-the-tools) puts each on a line:
 
 ```console
-$ chalkctl node diag router --address=192.168.1.57 --fingerprint=<fingerprint> \
-    --secrets=secrets.age addresses \
+$ chalkctl node diag router --fingerprint=<fingerprint> --secrets=secrets.age addresses \
   | jq -r "$ports"
 lo	00:00:00:00:00:00	UNKNOWN
 enp1s0	02:00:00:00:01:01	UP	192.168.1.57
@@ -390,9 +416,9 @@ spec:
   disk: {path: /dev/disk/by-id/nvme-Samsung_SSD_980_512GB_S64DNF0R812345}
 ```
 
-Reserve an IPv4 address for the `wan` port's MAC address on your home network's DHCP server, and
-put it into `chalkos.yaml` as the router's `address`. chalkctl reaches the installed router there.
-The example reserves `192.168.1.2`.
+Reserve an IPv4 address for the `wan` port's MAC address on your home network's DHCP server. The
+installed router takes it on `wan`, and chalkctl reaches it there once you put it into
+`chalkos.yaml` after the install. The example reserves `192.168.1.2`.
 
 Check the files against the images:
 
@@ -406,10 +432,10 @@ document and field of each mistake.
 
 ### Install
 
-Install the router at the installer's address:
+Install the router at the installer's address, which `chalkos.yaml` names for now:
 
 ```console
-$ chalkctl install router --secrets=secrets.age --address=192.168.1.57 --fingerprint=<fingerprint>
+$ chalkctl install router --secrets=secrets.age --fingerprint=<fingerprint>
 installing router onto /dev/disk/by-id/nvme-Samsung_SSD_980_512GB_S64DNF0R812345 from /home/alice/homelab/images/router-metal: chalkos <image>, sending <n> bytes of store, hash tree, UKI and boot loader
 router is installed and reboots
 chalkctl recovery-key router prints the key that unlocks it when its TPM fails
@@ -417,7 +443,29 @@ chalkctl recovery-key router prints the key that unlocks it when its TPM fails
 
 `<image>` is the start of the image's root hash, and `<n>` the size of what chalkctl sends. The
 router reboots into its image, renames its ports and takes the reserved address on `wan`. Remove
-the USB stick once the console shows chalkd in normal mode.
+the USB stick once the console shows chalkd in normal mode, and put the reserved address back into
+`chalkos.yaml`:
+
+```yaml title="chalkos.yaml"
+    router: {address: 192.168.1.2, groups: [router]}
+```
+
+!!! note "Wipe a disk that holds data"
+
+    The installer refuses a disk that holds data, such as a disk from another machine or an
+    earlier install of another image, and names what it found:
+
+    ```text
+    install: the target disk /dev/nvme0n1 (model "Samsung SSD 980 512GB", size 476.9G, serial "S64DNF0R812345") carries data (gpt ext4); pass --wipe-disk to replace it
+    ```
+
+    Check in `chalkctl disks` that the disk is the one you mean, and install again with
+    `--wipe-disk`. The installer then clears the disk's partition tables and lays it out anew.
+    Nothing on the disk can be recovered afterwards:
+
+    ```sh
+    chalkctl install router --secrets=secrets.age --fingerprint=<fingerprint> --wipe-disk
+    ```
 
 ### Check the router
 
@@ -519,7 +567,12 @@ chalkd: addresses fdc8:a1b2:c3d4:1:0:ff:fe00:1101 fdc8:a1b2:c3d4:1:0:ff:fe00:110
 
 The console prints no link-local address. A port without an address of the fabric has no cable, or
 the router sends no advertisements: [Troubleshooting](#troubleshooting) covers both. Note one of the
-addresses and the fingerprint.
+addresses and the fingerprint. Put the address into `chalkos.yaml` as node1's for now, quoted, as
+YAML needs for an IPv6 address; the workstation reaches it over the tunnel:
+
+```yaml title="chalkos.yaml"
+    node1: {address: "fdc8:a1b2:c3d4:1:0:ff:fe00:1101", groups: [nodes], files: [nodes/node1.yaml]}
+```
 
 With Secure Boot, and when the node's firmware is in Setup Mode, enrol your keys at that address as
 for the router, in [Enrol the Secure Boot keys](#enrol-the-secure-boot-keys-optional), and note
@@ -527,17 +580,14 @@ the new fingerprint.
 
 ### Find the disk and the ports
 
-The workstation reaches the node over the tunnel. `--address` takes the IPv6 address as it is,
-without brackets:
+List the disks and the ports:
 
 ```console
-$ chalkctl disks --address=fdc8:a1b2:c3d4:1:0:ff:fe00:1101 --fingerprint=<fingerprint> \
-    --secrets=secrets.age
+$ chalkctl disks node1 --fingerprint=<fingerprint> --secrets=secrets.age
 DEVICE            SIZE    TYPE  MODEL                    SERIAL          WWN                   USE
 /dev/nvme0n1      931.5G  nvme  WD Blue SN580 1TB        24131D801234    eui.e8238fa6bf530001
 ...
-$ chalkctl node diag node1 --address=fdc8:a1b2:c3d4:1:0:ff:fe00:1101 --fingerprint=<fingerprint> \
-    --secrets=secrets.age addresses \
+$ chalkctl node diag node1 --fingerprint=<fingerprint> --secrets=secrets.age addresses \
   | jq -r "$ports"
 lo	00:00:00:00:00:00	UNKNOWN
 enp1s0	02:00:00:00:11:01	UP	fdc8:a1b2:c3d4:1:0:ff:fe00:1101
@@ -570,18 +620,25 @@ one `chalkos.yaml` names for it.
 
 ### Install
 
-Validate the files and install the node at the installer's address:
+Validate the files and install the node at the installer's address, which `chalkos.yaml` names for
+now. Add `--wipe-disk` when the installer refuses the disk, as for the router:
 
 ```sh
 chalkctl validate
-chalkctl install node1 --secrets=secrets.age --address=fdc8:a1b2:c3d4:1:0:ff:fe00:1101 \
-  --fingerprint=<fingerprint>
+chalkctl install node1 --secrets=secrets.age --fingerprint=<fingerprint>
 ```
 
 chalkctl prints the lines that the router's install printed. The node reboots into its image,
 renames its ports, brings up `node0` and starts bird, whose sessions announce the node's address to
-the router. chalkctl then reaches the node at its address in `chalkos.yaml`. Until the bootstrap,
-its status shows that it waits:
+the router. Put the node's own address back into `chalkos.yaml`, where chalkctl reaches it from
+now on:
+
+```yaml title="chalkos.yaml"
+    node1: {address: "fdc8:a1b2:c3d4:ff::11", groups: [nodes], files: [nodes/node1.yaml]}
+```
+
+Until the bootstrap, its status shows
+that it waits:
 
 ```console
 $ chalkctl status node1 --secrets=secrets.age
@@ -826,8 +883,8 @@ spec:
   dhcpv4: {clientIdentifier: mac}
 ```
 
-Until the router has the reserved address, reach it with `--address` at the one it took, which its
-console shows.
+Until the router has the reserved address, put the address it took, which its console shows, into
+`chalkos.yaml` as the router's.
 
 ### The tunnel has no handshake
 
