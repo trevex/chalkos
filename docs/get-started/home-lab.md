@@ -79,13 +79,24 @@ You need:
   `wg-quick` from your distribution;
 - an age key or an SSH key of type ed25519 or RSA to encrypt the cluster's secrets to.
 
-The machines enforce Secure Boot with keys of your own, which you create in
-[Build the images and the installer](#build-the-images-and-the-installer). A machine whose firmware
-is in Setup Mode gets the keys from chalkctl during the tutorial. For any other machine, enrol the
-db certificate in its firmware as
-[Sign images for Secure Boot](../build/sign-images.md#firmware-not-in-setup-mode) describes before
-you install it. Without Secure Boot, the tutorial works the same: leave out the keys and the
-signing, and keep the inventory on the unsigned images.
+### Secure Boot is optional
+
+The tutorial installs the machines without Secure Boot, with the unsigned images and installer.
+Turn Secure Boot off in each machine's firmware setup. The steps marked optional add Secure Boot
+with keys of your own: [Sign the images](#sign-the-images-optional) and
+[Enrol the Secure Boot keys](#enrol-the-secure-boot-keys-optional). A machine whose firmware is in
+Setup Mode gets the keys from chalkctl. For any other machine, enrol the db certificate in its
+firmware as [Sign images for Secure Boot](../build/sign-images.md#firmware-not-in-setup-mode)
+describes before you install it.
+
+Without Secure Boot, the TPM still unlocks the disks at every boot. It seals their keys to PCR 7,
+which then measures Secure Boot as off, so a machine that boots another system from a USB stick
+unlocks them too. The encryption protects a disk taken out of its machine, and no longer the
+machine itself. [Security model](../how-it-works/node/security.md) describes what else Secure Boot
+protects.
+
+Decide before you install a machine. Turning Secure Boot on later changes PCR 7: the machine then
+asks for its recovery key at every boot until you install it again.
 
 ## Prepare the files
 
@@ -217,7 +228,10 @@ nix build .#installer -o installer
 The first build takes a while. The router's image carries the router layer and no Kubernetes; the
 nodes' image carries Kubernetes and bird.
 
-Create your Secure Boot keys in `keys/`, and sign copies of the three with the db key, as
+### Sign the images (optional)
+
+Skip this step without Secure Boot. With it, create your Secure Boot keys in `keys/`, and sign
+copies of the three builds with the db key, as
 [Sign images for Secure Boot](../build/sign-images.md#create-the-keys) describes:
 
 ```sh
@@ -251,14 +265,16 @@ spec:
     node3: {address: "fdc8:a1b2:c3d4:ff::13", groups: [nodes], files: [nodes/node3.yaml]}
 ```
 
-Write the signed installer's ISO to the USB stick, or `installer/chalkos-installer.iso` without
-Secure Boot:
+### Write the installer to a USB stick
+
+Write the installer's ISO to the USB stick:
 
 ```sh
-sudo dd if=installer-signed/chalkos-installer.iso of=/dev/<usb-disk> \
+sudo dd if=installer/chalkos-installer.iso of=/dev/<usb-disk> \
   bs=4M conv=fsync status=progress
 ```
 
+With Secure Boot, write the signed copy, `installer-signed/chalkos-installer.iso`, instead.
 `<usb-disk>` is the stick's device, such as `sdb`; `lsblk` lists the candidates. The command
 overwrites everything on the stick. The installer holds no config of a node: it takes addresses on
 every Ethernet port, by DHCP and from router advertisements, and keeps the kernel's names for the
@@ -284,9 +300,10 @@ chalkd: addresses 192.168.1.57; certificate fingerprint <fingerprint>
 Note the address and the fingerprint, 64 hex characters. The commands below reach the machine with
 `--address` and check its certificate with `--fingerprint`.
 
-### Enrol the Secure Boot keys
+### Enrol the Secure Boot keys (optional)
 
-Skip this step when the router's firmware holds your db certificate already. When its firmware is
+Skip this step without Secure Boot, or when the router's firmware holds your db certificate
+already. When its firmware is
 in Setup Mode, as after you clear its keys in the firmware setup, it boots the installer without
 checking it. Enrol your keys:
 
@@ -393,7 +410,7 @@ Install the router at the installer's address:
 
 ```console
 $ chalkctl install router --secrets=secrets.age --address=192.168.1.57 --fingerprint=<fingerprint>
-installing router onto /dev/disk/by-id/nvme-Samsung_SSD_980_512GB_S64DNF0R812345 from /home/alice/homelab/images/router-metal-signed: chalkos <image>, sending <n> bytes of store, hash tree, UKI and boot loader
+installing router onto /dev/disk/by-id/nvme-Samsung_SSD_980_512GB_S64DNF0R812345 from /home/alice/homelab/images/router-metal: chalkos <image>, sending <n> bytes of store, hash tree, UKI and boot loader
 router is installed and reboots
 chalkctl recovery-key router prints the key that unlocks it when its TPM fails
 ```
@@ -504,8 +521,9 @@ The console prints no link-local address. A port without an address of the fabri
 the router sends no advertisements: [Troubleshooting](#troubleshooting) covers both. Note one of the
 addresses and the fingerprint.
 
-When the node's firmware is in Setup Mode, enrol your keys at that address as for the router, in
-[Enrol the Secure Boot keys](#enrol-the-secure-boot-keys), and note the new fingerprint.
+With Secure Boot, and when the node's firmware is in Setup Mode, enrol your keys at that address as
+for the router, in [Enrol the Secure Boot keys](#enrol-the-secure-boot-keys-optional), and note
+the new fingerprint.
 
 ### Find the disk and the ports
 
@@ -733,11 +751,16 @@ document gives it a new name. Change every document that names the port in the s
 
 A new chalkos revision or a change to `extensions/` takes new images. Update the flake's lock with
 `nix flake update chalkos`, and enter the shell of [Get the tools](#get-the-tools) again, so that
-chalkctl matches the images. Build the images again, remove the signed copies
-of the old builds, which `chalkbuild sign` does not overwrite, and sign the new ones:
+chalkctl matches the images. Build the images again, as in
+[Build the images and the installer](#build-the-images-and-the-installer). With Secure Boot, remove
+the signed copies of the old builds, which `chalkbuild sign` does not overwrite, and sign the new
+ones:
 
 ```sh
 rm -rf images/router-metal-signed images/node-metal-signed installer-signed
+chalkbuild sign --key keys/db.key --cert keys/db.crt images/router-metal images/router-metal-signed
+chalkbuild sign --key keys/db.key --cert keys/db.crt images/node-metal images/node-metal-signed
+chalkbuild sign --key keys/db.key --cert keys/db.crt installer installer-signed
 ```
 
 Then roll the images out to the nodes with `chalkctl upgrade`, as
