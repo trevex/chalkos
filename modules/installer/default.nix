@@ -85,6 +85,14 @@ in
   boot.initrd.systemd.services.chalkos-storage.enable = false;
   systemd.services.chalkos-config.enable = false;
 
+  # LVM activates no logical volume: its udev rules would activate the volume groups of the target
+  # disk, in the initrd and after it, and their volumes would hold the disk's partitions, so the
+  # install could neither lay the disk out nor wipe it. The device-mapper udev rules, which the
+  # store's verity device needs, come with lvm2 and stay.
+  environment.etc."lvm/lvm.conf".text = "activation/auto_activation_volume_list = [ ]";
+  boot.initrd.systemd.contents."/etc/lvm/lvm.conf".text =
+    "activation/auto_activation_volume_list = [ ]";
+
   systemd.services.chalkd.environment.CHALKD_INSTALLER = "1";
 
   # What makes the image the installer, which mkImages's installer.modules must keep.
