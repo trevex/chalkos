@@ -314,7 +314,8 @@ type ResolverSpec struct {
 	Forwarders []netip.Addr   `json:"forwarders"`
 	DNSSEC     bool           `json:"dnssec"`
 	DNS64      *struct {
-		Prefix netip.Prefix `json:"prefix"`
+		Prefix        netip.Prefix `json:"prefix"`
+		SynthesizeAll bool         `json:"synthesizeAll"`
 	} `json:"dns64"`
 	LocalZones []LocalZone `json:"localZones"`
 }

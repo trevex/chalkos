@@ -226,4 +226,4 @@ spec:
   vrf: guest
   listen: ["2001:db8:3::1"]
   allow: ["2001:db8:3::/64"]
-  dns64: {prefix: "64:ff9b::/96"}
+  dns64: {prefix: "64:ff9b::/96", synthesizeAll: true}

@@ -313,6 +313,9 @@ remote-control:
   unsigned, and `domain-insecure` has the validator skip it.
 - A local zone becomes a `local-zone` line and a `local-data` line per record. Unbound answers
   them before DNS64, which synthesises nothing from them.
+- `dns64.synthesizeAll` adds `dns64-synthall: yes`: DNS64 then synthesises AAAA records for every
+  name and drops the name's own. A network that reaches the internet over NAT64 alone, such as
+  one of unique local addresses, needs it, as it has no route to a name's own AAAA records.
 - Forwarders become a `forward-zone` of the root.
 
 A VRF's `Resolver` renders `unbound-<vrf>.conf` of the same form, which names the VRF in its

@@ -101,16 +101,17 @@ kind: NAT64
 metadata: {name: nat64}
 spec: {prefix: "64:ff9b::/96"}
 ---
-# The resolver of the fabric and the tunnel, which answers for a name with A records alone with
-# AAAA records in the NAT64's prefix. It looks names up from the root servers itself. The firewall
-# accepts DNS from allow to listen.
+# The resolver of the fabric and the tunnel, which answers for every name with AAAA records in the
+# NAT64's prefix, made from its A records. The fabric reaches the internet over NAT64 alone, so a
+# name's own AAAA records, such as registry.k8s.io's, would give addresses the nodes have no route
+# to. It looks names up from the root servers itself. The firewall accepts DNS from allow to listen.
 apiVersion: router.chalkos.dev/v1alpha1
 kind: Resolver
 metadata: {name: resolver}
 spec:
   listen: ["fdc8:a1b2:c3d4:1::1", "fdc8:a1b2:c3d4:f0::1"]
   allow: ["fdc8:a1b2:c3d4::/48"]
-  dns64: {prefix: "64:ff9b::/96"}
+  dns64: {prefix: "64:ff9b::/96", synthesizeAll: true}
 ---
 # BGP towards the nodes. Each node's port has a session of its own, so the router installs two
 # equal paths to each node's address and keeps one when a port fails.

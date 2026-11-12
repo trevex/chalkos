@@ -17,6 +17,7 @@ server:
   module-config: "dns64 validator iterator"
   trust-anchor-file: "/etc/unbound/root.key"
   dns64-prefix: 64:ff9b::/96
+  dns64-synthall: yes
   domain-insecure: "ipv4only.arpa."
 auth-zone:
   name: "ipv4only.arpa."

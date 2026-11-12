@@ -56,6 +56,11 @@
                   "description": "NAT64 prefix the resolver synthesises AAAA records in, from the A records of names that have no AAAA record.",
                   "format": "cidr",
                   "type": "string"
+                },
+                "synthesizeAll": {
+                  "default": false,
+                  "description": "Whether the resolver synthesises AAAA records from the A records of every name, and answers with them in place of the name's own AAAA records. A network that reaches the internet over NAT64 alone, such as one with only unique local addresses, has no route to the addresses of those records.",
+                  "type": "boolean"
                 }
               },
               "type": "object"

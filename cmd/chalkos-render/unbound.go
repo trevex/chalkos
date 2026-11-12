@@ -117,6 +117,9 @@ func unboundConfig(name string, r derive.ResolverSpec, vrf, trustAnchor, zoneFil
 			return "", derive.Within("dns64", err)
 		}
 		fmt.Fprintf(&b, "  dns64-prefix: %s\n", p)
+		if r.DNS64.SynthesizeAll {
+			b.WriteString("  dns64-synthall: yes\n")
+		}
 		// The zone of ipv4only.arpa below holds no signatures.
 		if r.DNSSEC {
 			fmt.Fprintf(&b, "  domain-insecure: %q\n", ipv4OnlyZone)
