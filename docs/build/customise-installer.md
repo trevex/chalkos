@@ -218,7 +218,7 @@ enforce Secure Boot, sign a copy, as
 
 ```sh
 rm -rf installer-signed
-chalkbuild sign --key db.key --cert db.crt installer installer-signed
+chalkbuild sign --key keys/db.key --cert keys/db.crt installer installer-signed
 ```
 
 [`chalkbuild sign`](../reference/cli/chalkbuild_sign.md) signs the copy's raw image and ISO. It

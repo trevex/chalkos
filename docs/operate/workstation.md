@@ -292,9 +292,9 @@ Back up these files to a place apart from the workstation:
 
 - The secrets file and the age or SSH identities of its recipients, the offline backup key
   included. Without an identity the file cannot be decrypted.
-- The Secure Boot db key and certificate, `db.key` and `db.crt`, which
+- The directory of the Secure Boot keys, PK, KEK and db, which
   [Sign images for Secure Boot](../build/sign-images.md) creates. Every machine's firmware trusts
-  that certificate, so a new key means enrolling a new certificate on each machine.
+  their certificates, so new keys mean enrolling new certificates on each machine.
 - The repository: the inventory, the config files, `secrets.pub.json` and `flake.lock`, which pins
   the chalkos revision every image is built from.
 - The image directory of the image the nodes ran before an upgrade, until the new image has

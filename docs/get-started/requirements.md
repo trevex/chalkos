@@ -26,9 +26,10 @@ A node is the machine that runs a chalkos image, on bare metal or as a virtual m
 The image option [`system`](../reference/mkimages.md#system) sets the architecture, and the
 [`SystemDisk`](../reference/kinds.md#systemdisk) kind describes the encryption modes.
 
-chalkos does not enrol Secure Boot keys on a real machine. The operator enrols the certificate
-that signs the images, as [Sign images for Secure Boot](../build/sign-images.md) shows; chalklab
-enrols its own keys in the lab's virtual machines.
+The operator owns the Secure Boot keys. `chalkctl secureboot enroll` enrols them in firmware that
+is in Setup Mode, and any other firmware gets the certificate that signs the images in its setup or
+through a BMC, as [Sign images for Secure Boot](../build/sign-images.md) shows; chalklab enrols its
+own keys in the lab's virtual machines.
 
 With Secure Boot off, PCR 7 records Secure Boot as off. Any boot chain with Secure Boot off
 reproduces that state, so the TPM unseals STATE and VAR for whatever boots on the machine. chalkd

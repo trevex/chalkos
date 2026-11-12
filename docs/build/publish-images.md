@@ -67,7 +67,7 @@ the db key:
 
 ```sh
 rm -rf oci/node-metal-signed
-chalkbuild sign --key db.key --cert db.crt oci/node-metal oci/node-metal-signed
+chalkbuild sign --key keys/db.key --cert keys/db.crt oci/node-metal oci/node-metal-signed
 ```
 
 [`chalkbuild sign`](../reference/cli/chalkbuild_sign.md) signs copies of the UKI and boot-loader

@@ -16,18 +16,17 @@ Each item says what chalkos does today and what the plan changes.
 
 ### Secure Boot key enrolment
 
-Today the firmware's Secure Boot keys are enrolled out of
-band, in the firmware's setup or through a BMC, before a node is installed. chalkos signs images
-with [`chalkbuild sign`](../reference/cli/chalkbuild_sign.md) and checks signatures against the
-firmware's db and dbx when Secure Boot is enforced, but it
-writes no Secure Boot variables. Only chalklab enrols keys: its
-own lab keys, into its VMs' firmware.
+Today [`chalkctl secureboot new`](../reference/cli/chalkctl_secureboot_new.md) creates an
+operator's PK, KEK and db keys, and
+[`chalkctl secureboot enroll`](../reference/cli/chalkctl_secureboot_enroll.md) enrols them in
+firmware that is in Setup Mode, from the installer or a node's image in maintenance mode. chalkctl
+signs the variable updates, so a node never holds a key that could sign for the firmware. Firmware
+that is not in Setup Mode gets its db certificate out of band, in the firmware's setup or through a
+BMC. chalklab enrols its own lab keys into its VMs' firmware.
 
-The plan keeps the Secure Boot keys in the cluster's secrets
-file and lets chalkd
-apply variable updates that chalkctl signs beforehand, so a node never holds a key that could sign
-for the firmware. No setting yet selects how enrolment runs or whether a node refuses to install
-without Secure Boot.
+chalkos writes no Secure Boot variables on an installed node: it applies no dbx updates and changes
+no keys there. Such a change alters PCR 7, so the node's next boot asks for its recovery key. No
+plan covers that yet, and no setting makes a node refuse to install without Secure Boot.
 
 ### OCI publishing and pulls
 

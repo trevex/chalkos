@@ -146,8 +146,8 @@ registry, and testing and rolling out an upgrade.
 
     ---
 
-    An optional step: create a db key, sign a copy of each image and the installer, and name the
-    signed copy in the inventory.
+    An optional step: create Secure Boot keys and enrol them, sign a copy of each image and the
+    installer, and name the signed copy in the inventory.
 
     [:octicons-arrow-right-24: Read](sign-images.md)
 

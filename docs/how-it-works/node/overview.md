@@ -189,8 +189,9 @@ rotation and revocation.
   image.
 - There is no update server. An install or an upgrade starts only when chalkctl starts it, and a
   node pulls from a registry only when chalkctl tells it to.
-- chalkos does not enrol Secure Boot keys, and installing does not check that Secure Boot is on.
-  The [Security model's limits](security.md#limits) say who enrols them.
+- chalkos enrols Secure Boot keys only in firmware in Setup Mode, before the install, and
+  installing does not check that Secure Boot is on. The
+  [Security model's limits](security.md#limits) say who enrols them otherwise.
 - chalkctl never builds or signs images and never runs Nix.
 - Nothing revokes a single client certificate or kubeconfig. One works until it expires or its CA
   is rotated out, as

@@ -79,11 +79,13 @@ You need:
   `wg-quick` from your distribution;
 - an age key or an SSH key of type ed25519 or RSA to encrypt the cluster's secrets to.
 
-The machines enforce Secure Boot with a key of your own. Create the key and enrol its certificate in
-each machine's firmware as [Sign images for Secure Boot](../build/sign-images.md) describes before
-you start. Without Secure Boot, the tutorial works the same: leave out the signing in
-[Build the images and the installer](#build-the-images-and-the-installer), and keep the inventory
-on the unsigned images.
+The machines enforce Secure Boot with keys of your own, which you create in
+[Build the images and the installer](#build-the-images-and-the-installer). A machine whose firmware
+is in Setup Mode gets the keys from chalkctl during the tutorial. For any other machine, enrol the
+db certificate in its firmware as
+[Sign images for Secure Boot](../build/sign-images.md#firmware-not-in-setup-mode) describes before
+you install it. Without Secure Boot, the tutorial works the same: leave out the keys and the
+signing, and keep the inventory on the unsigned images.
 
 ## Prepare the files
 
@@ -217,14 +219,18 @@ nix build .#installer -o installer
 The first build takes a while. The router's image carries the router layer and no Kubernetes; the
 nodes' image carries Kubernetes and bird.
 
-Sign copies of the three with your Secure Boot key, as
-[Sign images for Secure Boot](../build/sign-images.md#sign-the-image) describes:
+Create your Secure Boot keys in `keys/`, and sign copies of the three with the db key, as
+[Sign images for Secure Boot](../build/sign-images.md#create-the-keys) describes:
 
 ```sh
-chalkbuild sign --key db.key --cert db.crt images/router-metal images/router-metal-signed
-chalkbuild sign --key db.key --cert db.crt images/node-metal images/node-metal-signed
-chalkbuild sign --key db.key --cert db.crt installer installer-signed
+chalkctl secureboot new keys --name homelab
+chalkbuild sign --key keys/db.key --cert keys/db.crt images/router-metal images/router-metal-signed
+chalkbuild sign --key keys/db.key --cert keys/db.crt images/node-metal images/node-metal-signed
+chalkbuild sign --key keys/db.key --cert keys/db.crt installer installer-signed
 ```
+
+The example's `.gitignore` keeps the `.key` files out of git. Keep a backup of `keys/` offline:
+whoever holds its keys decides what the machines boot.
 
 Point the inventory's images at the signed copies. `chalkos.yaml` then reads:
 
@@ -279,6 +285,26 @@ chalkd: addresses 192.168.1.57; certificate fingerprint <fingerprint>
 
 Note the address and the fingerprint, 64 hex characters. The commands below reach the machine with
 `--address` and check its certificate with `--fingerprint`.
+
+### Enrol the Secure Boot keys
+
+Skip this step when the router's firmware holds your db certificate already. When its firmware is
+in Setup Mode, as after you clear its keys in the firmware setup, it boots the installer without
+checking it. Enrol your keys:
+
+```console
+$ chalkctl secureboot enroll --keys keys --address=192.168.1.57 --fingerprint=<fingerprint> \
+    --secrets=secrets.age
+...
+the node reboots with Secure Boot enforced
+chalkctl: the node's certificate fingerprint is now <new fingerprint>; compare it with the node's console and install with --fingerprint <new fingerprint>
+Secure Boot is on; install the node with chalkctl install
+```
+
+The router reboots into the installer, now with Secure Boot on; pick the USB stick in the boot menu
+if it boots something else. chalkd makes a new certificate at that boot: use the new fingerprint
+from here on. [Sign images for Secure Boot](../build/sign-images.md#firmware-in-setup-mode-chalkctl-secureboot-enroll)
+explains what to do when the enrolment fails.
 
 ### Find the disk and the ports
 
@@ -475,6 +501,9 @@ chalkd: addresses fdc8:a1b2:c3d4:1:0:ff:fe00:1101 fdc8:a1b2:c3d4:1:0:ff:fe00:110
 The console prints no link-local address. A port without an address of the fabric has no cable, or
 the router sends no advertisements: [Troubleshooting](#troubleshooting) covers both. Note one of the
 addresses and the fingerprint.
+
+When the node's firmware is in Setup Mode, enrol your keys at that address as for the router, in
+[Enrol the Secure Boot keys](#enrol-the-secure-boot-keys), and note the new fingerprint.
 
 ### Find the disk and the ports
 

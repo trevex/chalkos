@@ -64,7 +64,7 @@ for the other nodes. For machines that enforce Secure Boot it names the signed c
 
 ```console
 $ rm -rf images/node-metal-signed
-$ chalkbuild sign --key db.key --cert db.crt images/node-metal images/node-metal-signed
+$ chalkbuild sign --key keys/db.key --cert keys/db.crt images/node-metal images/node-metal-signed
 signed images/node-metal-signed/chalkos.raw
 ```
 

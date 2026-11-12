@@ -26,10 +26,11 @@ Each machine needs UEFI firmware, Secure Boot and a TPM 2.0. The
 [requirements](../get-started/requirements.md) list the rest. For a machine that enforces Secure
 Boot, you also need:
 
-- a Secure Boot db key and certificate, `db.key` and `db.crt`, with the certificate enrolled in
-  the machine's firmware. [Sign images for Secure Boot](../build/sign-images.md) creates them and
-  explains the enrolment, which chalkos does not do for you;
-- chalkbuild on the machine that holds `db.key`, from
+- Secure Boot keys, with the db certificate enrolled in the machine's firmware.
+  [Sign images for Secure Boot](../build/sign-images.md) creates them in `keys/` and explains the
+  enrolment. A machine whose firmware is in Setup Mode gets them from
+  [`chalkctl secureboot enroll`](#enrol-the-secure-boot-keys) before the install;
+- chalkbuild on the machine that holds `keys/db.key`, from
   `nix shell github:trevex/chalkos#chalkbuild` or the cluster flake's development shell.
 
 A physical machine boots the installer from a USB stick larger than the installer ISO, about
@@ -88,7 +89,7 @@ certificate in its db. Sign a copy of the build into `images/node-metal-signed` 
 
 ```console
 $ rm -rf images/node-metal-signed
-$ chalkbuild sign --key db.key --cert db.crt images/node-metal images/node-metal-signed
+$ chalkbuild sign --key keys/db.key --cert keys/db.crt images/node-metal images/node-metal-signed
 signed images/node-metal-signed/chalkos.raw
 ```
 
@@ -179,7 +180,7 @@ of the signed raw image for the disks:
 ```sh
 nix build .#node-kvm -o images/node-kvm
 rm -rf images/node-kvm-signed
-chalkbuild sign --key db.key --cert db.crt images/node-kvm images/node-kvm-signed
+chalkbuild sign --key keys/db.key --cert keys/db.crt images/node-kvm images/node-kvm-signed
 chalkctl validate
 cp --sparse=always images/node-kvm-signed/chalkos.raw node.raw
 ```
@@ -243,7 +244,7 @@ A physical machine boots the installer. A VM boots its own image from a disk mad
 
     ```sh
     rm -rf installer-signed
-    chalkbuild sign --key db.key --cert db.crt installer installer-signed
+    chalkbuild sign --key keys/db.key --cert keys/db.crt installer installer-signed
     ```
 
     Sign the installer with the same key as the images. The installer seals the node's STATE to
@@ -285,7 +286,7 @@ A physical machine boots the installer. A VM boots its own image from a disk mad
     mkdir -p vm1/tpm
     virt-fw-vars --input <ovmf-vars> --output vm1/OVMF_VARS.fd \
       --enroll-generate "vm1 platform key" --no-microsoft --microsoft-kek none \
-      --add-db "$(uuidgen)" db.crt --secure-boot
+      --add-db "$(uuidgen)" keys/db.crt --secure-boot
     swtpm socket --tpm2 --tpmstate dir=vm1/tpm --ctrl type=unixio,path=vm1/tpm/swtpm.sock --daemon
     ```
 
@@ -382,7 +383,7 @@ A physical machine boots the installer. A VM boots its own image from a disk mad
     virsh start vm1 --paused
     virsh destroy vm1
     virsh dumpxml vm1 | grep nvram
-    sudo virt-fw-vars --inplace <nvram-file> --add-db "$(uuidgen)" db.crt
+    sudo virt-fw-vars --inplace <nvram-file> --add-db "$(uuidgen)" keys/db.crt
     virsh start vm1
     virsh console vm1
     ```
@@ -412,7 +413,7 @@ A physical machine boots the installer. A VM boots its own image from a disk mad
     certificate in the firmware's setup screen, from a file on a FAT disk that the VM can read:
 
     ```sh
-    openssl x509 -in db.crt -outform DER -out db.cer
+    openssl x509 -in keys/db.crt -outform DER -out db.cer
     mkfs.vfat -C db-cert.img 1440
     mcopy -i db-cert.img db.cer ::db.cer
     qm set 111 --virtio1 local-lvm:0,import-from=/root/db-cert.img
@@ -447,6 +448,27 @@ generic installer, or the flake's `mkImages` has no `osCA`.
 In maintenance mode the machine takes its addresses by DHCP, and by SLAAC where a router sends
 advertisements. Such an address is not yet the one the inventory names, so the commands below
 reach it with `--address`.
+
+## Enrol the Secure Boot keys
+
+Skip this step when the machine's firmware holds your db certificate already, or when the machine
+runs without Secure Boot. A machine whose firmware is in Setup Mode boots the signed installer
+without checking it and gets its keys from
+[`chalkctl secureboot enroll`](../reference/cli/chalkctl_secureboot_enroll.md), at the address
+and fingerprint from the console:
+
+```sh
+chalkctl secureboot enroll --keys keys --address=<address> --fingerprint=<fingerprint> \
+  --secrets=secrets.age
+```
+
+chalkctl signs the updates of the firmware's db, KEK and PK with the keys in `keys/`, and the node
+writes them, PK last. The node refuses firmware that is not in Setup Mode, and keys that would not
+start the installer or image it booted. It then reboots with Secure Boot on, and chalkctl waits
+until the node reports it. chalkd makes a new certificate at that boot, so chalkctl prints a new
+fingerprint: compare it with the console and use it from here on.
+[Sign images for Secure Boot](../build/sign-images.md#firmware-in-setup-mode-chalkctl-secureboot-enroll)
+explains `--microsoft` and what to do when the enrolment fails.
 
 ## Choose the system disk
 
