@@ -2,6 +2,7 @@ package secureboot
 
 import (
 	"bytes"
+	"crypto"
 	"crypto/rsa"
 	"crypto/sha256"
 	"crypto/x509"
@@ -173,4 +174,67 @@ func verifySigner(si signerInfo, certs []*x509.Certificate, contentDigest []byte
 		return nil, fmt.Errorf("the signature of %q does not verify: %w", signer.Subject, err)
 	}
 	return signer, nil
+}
+
+// oidData is the PKCS #7 content type of plain data.
+var oidData = asn1.ObjectIdentifier{1, 2, 840, 113549, 1, 7, 1}
+
+// signPKCS7 signs content as a time-based authenticated variable's signature is made, as
+// sbvarsign makes it: DER SignedData, not wrapped in a ContentInfo, with the content left out,
+// the signer's certificate, and one signer without authenticated attributes whose RSA PKCS #1
+// v1.5 signature covers the SHA-256 of the content.
+func signPKCS7(content []byte, cert *x509.Certificate, key *rsa.PrivateKey) ([]byte, error) {
+	sha256Alg := pkix.AlgorithmIdentifier{Algorithm: oidSHA256, Parameters: asn1.NullRawValue}
+	digest := sha256.Sum256(content)
+	sig, err := rsa.SignPKCS1v15(nil, key, crypto.SHA256, digest[:])
+	if err != nil {
+		return nil, err
+	}
+	return asn1.Marshal(signedData{
+		Version:          1,
+		DigestAlgorithms: []pkix.AlgorithmIdentifier{sha256Alg},
+		ContentInfo:      contentInfo{ContentType: oidData},
+		Certificates:     asn1.RawValue{Class: asn1.ClassContextSpecific, Tag: 0, IsCompound: true, Bytes: cert.Raw},
+		SignerInfos: []signerInfo{{
+			Version:                   1,
+			IssuerAndSerial:           issuerAndSerial{Issuer: asn1.RawValue{FullBytes: cert.RawIssuer}, Serial: cert.SerialNumber},
+			DigestAlgorithm:           sha256Alg,
+			DigestEncryptionAlgorithm: pkix.AlgorithmIdentifier{Algorithm: oidRSA, Parameters: asn1.NullRawValue},
+			EncryptedDigest:           sig,
+		}},
+	})
+}
+
+// verifyDetached checks a signature signPKCS7 made, or one like it, over content: a signer of the
+// certificate's issuer and serial number, without authenticated attributes, signed the SHA-256 of
+// content with the certificate's key.
+func verifyDetached(der, content []byte, cert *x509.Certificate) error {
+	var sd signedData
+	if rest, err := asn1.Unmarshal(der, &sd); err != nil {
+		return fmt.Errorf("the signature is not PKCS #7 SignedData: %w", err)
+	} else if len(rest) > 0 {
+		return errors.New("the signature has trailing data")
+	}
+	if len(sd.ContentInfo.Content.Bytes) > 0 {
+		return errors.New("the signature carries its content, which an authenticated variable's leaves out")
+	}
+	for _, si := range sd.SignerInfos {
+		if !bytes.Equal(si.IssuerAndSerial.Issuer.FullBytes, cert.RawIssuer) || si.IssuerAndSerial.Serial.Cmp(cert.SerialNumber) != 0 {
+			continue
+		}
+		if !si.DigestAlgorithm.Algorithm.Equal(oidSHA256) {
+			return errors.New("the signer's digest is not SHA-256")
+		}
+		if len(si.AuthenticatedAttributes.FullBytes) > 0 {
+			return errors.New("the signer has authenticated attributes, which an authenticated variable's signature has not")
+		}
+		if enc := si.DigestEncryptionAlgorithm.Algorithm; !enc.Equal(oidRSA) && !enc.Equal(oidSHA256WithRSA) {
+			return fmt.Errorf("the signer's signature algorithm %v is not supported", enc)
+		}
+		if err := cert.CheckSignature(x509.SHA256WithRSA, content, si.EncryptedDigest); err != nil {
+			return fmt.Errorf("the signature of %q does not verify: %w", cert.Subject, err)
+		}
+		return nil
+	}
+	return fmt.Errorf("%q did not sign the update", cert.Subject)
 }
