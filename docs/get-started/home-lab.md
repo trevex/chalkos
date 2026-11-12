@@ -574,6 +574,39 @@ YAML needs for an IPv6 address; the workstation reaches it over the tunnel:
     node1: {address: "fdc8:a1b2:c3d4:1:0:ff:fe00:1101", groups: [nodes], files: [nodes/node1.yaml]}
 ```
 
+!!! tip "Find the installer through the router"
+
+    When the node has no screen, or its console no longer shows chalkd's lines, find its ports in
+    the router's neighbour table. Each of the installer's ports takes an address of the fabric's
+    prefix with the same interface ID as its link-local address, so this lists every machine the
+    router sees on `fabric` with its MAC address and its address of the fabric:
+
+    ```sh
+    chalkctl node diag router --secrets=secrets.age neighbours \
+      | jq -r '.[] | select(.dev == "fabric" and (.dst | startswith("fe80::")))
+          | [.lladdr, (.dst | sub("^fe80::"; "fdc8:a1b2:c3d4:1:"))] | @tsv'
+    ```
+
+    The output has a line for each port, here the two of node1:
+
+    ```text
+    02:00:00:00:11:01	fdc8:a1b2:c3d4:1:0:ff:fe00:1101
+    02:00:00:00:11:02	fdc8:a1b2:c3d4:1:0:ff:fe00:1102
+    ```
+
+    The ports of nodes installed before carry the MAC addresses of their `Link` documents in
+    `nodes/`; the others are the installer's. A port the router has not talked to yet is missing
+    from the table: boot one node at a time, and look again after a minute. Check that chalkd
+    answers at an address before you use it:
+
+    ```sh
+    chalkctl node diag router --secrets=secrets.age tcp-connect \
+      address=fdc8:a1b2:c3d4:1:0:ff:fe00:1101 port=50000
+    ```
+
+    Without the console you have no fingerprint to compare: reach the installer with `--insecure`
+    in place of `--fingerprint`, as the note in [Boot the installer](#boot-the-installer) describes.
+
 With Secure Boot, and when the node's firmware is in Setup Mode, enrol your keys at that address as
 for the router, in [Enrol the Secure Boot keys](#enrol-the-secure-boot-keys-optional), and note
 the new fingerprint.
