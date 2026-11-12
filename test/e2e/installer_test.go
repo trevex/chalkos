@@ -196,8 +196,9 @@ func cancelledInstall(t *testing.T, n *node, inventory string, args []string) st
 // TestInstallerISOBoots signs a copy of the generic installer as chalkbuild sign does and boots
 // its ISO as a CD-ROM on firmware in Setup Mode, where chalkd serves any client in maintenance
 // mode. chalkctl secureboot enroll writes the test keys, which signed the copy, without --force,
-// so chalkd finds the boot loader and UKI the firmware started from the ISO's ESP. The installer
-// boots again with Secure Boot on, and chalkctl lists the disks of the machine.
+// so chalkd finds the boot loader and UKI the firmware started from the ISO's ESP, and checks
+// the option ROM of the NIC that the TPM event log lists, whose digest --option-roms enrols. The
+// installer boots again with Secure Boot on, and chalkctl lists the disks of the machine.
 func TestInstallerISOBoots(t *testing.T) {
 	requireEnv(t, "CHALKLAB_OVMF_CODE", "CHALKLAB_OVMF_VARS", "CHALKLAB_SB_KEYS", "CHALKLAB_GENERIC_INSTALLER_DIR", "CHALKLAB_CHALKCTL")
 	dir := vmDir(t)
@@ -234,9 +235,25 @@ func TestInstallerISOBoots(t *testing.T) {
 		t.Logf("chalkctl %s:\n%s", strings.Join(args, " "), out)
 		return string(out), err
 	}
-	out, err := run("secureboot", "enroll", "--keys", os.Getenv("CHALKLAB_SB_KEYS"), "--address", n.addr, "--fingerprint", m[1])
+	// OVMF loads the option ROM of the virtio NIC, which the test keys do not sign: --option-roms
+	// enrols the digests the TPM event log lists, and --db-hash one more.
+	hash := strings.Repeat("0123456789abcdef", 4)
+	out, err := run("secureboot", "enroll", "--keys", os.Getenv("CHALKLAB_SB_KEYS"), "--address", n.addr, "--fingerprint", m[1], "--option-roms", "--db-hash", hash)
 	if err != nil {
 		t.Fatalf("secureboot enroll: %v", err)
+	}
+	// The firmware measured the NIC's option ROM, and db holds its digest and the given one after
+	// the enrolment.
+	rom := regexp.MustCompile(`option ROMs the firmware measured:\n  sha256:([0-9a-f]{64}) PciRoot\(`).FindStringSubmatch(out)
+	if rom == nil {
+		t.Fatal("secureboot enroll listed no option ROM")
+	}
+	_, dbAfter, _ := strings.Cut(out, "db after:\n")
+	dbAfter, _, _ = strings.Cut(dbAfter, "KEK before:")
+	for _, want := range []string{"  CN=chalkos test db\n", "  sha256:" + rom[1] + "\n", "  sha256:" + hash + "\n"} {
+		if !strings.Contains(dbAfter, want) {
+			t.Errorf("db after the enrolment holds no %q", want)
+		}
 	}
 	now := regexp.MustCompile(`fingerprint is now ([0-9a-f]{64})`).FindStringSubmatch(out)
 	if now == nil {
