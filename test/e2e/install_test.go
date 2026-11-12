@@ -20,15 +20,16 @@ import (
 	"github.com/trevex/chalkos/pkg/pki"
 )
 
-// TestInstallInPlace installs the test image where it runs and checks the installed node: VAR
-// is mounted, STATE and VAR have a TPM2 and a fallback keyslot, chalkd requires client
+// TestInstallInPlace enrols the test Secure Boot keys in firmware in Setup Mode, which reboots
+// the node with Secure Boot on, installs the test image where it runs and checks the installed
+// node: VAR is mounted, STATE and VAR have a TPM2 and a fallback keyslot, chalkd requires client
 // certificates of the OS CA and honours their roles, the base diagnostics run in their sandbox,
 // and config applies additive storage changes live and refuse destructive ones. An extension kind
 // reaches the unit granted it, with its secret, and an apply that changes it restarts the unit.
 func TestInstallInPlace(t *testing.T) {
-	requireEnv(t, append([]string{"CHALKLAB_OVMF_CODE", "CHALKLAB_OVMF_VARS", "CHALKLAB_IMAGE_DIR"}, chalkdEnv...)...)
+	requireEnv(t, append([]string{"CHALKLAB_OVMF_CODE", "CHALKLAB_OVMF_VARS", "CHALKLAB_SB_KEYS", "CHALKLAB_IMAGE_DIR"}, chalkdEnv...)...)
 	dir := vmDir(t)
-	system := prepareDisk(t, dir, diskOpts{})
+	system := prepareDisk(t, dir, diskOpts{sign: true})
 	extraPath := filepath.Join(dir, "extra.qcow2")
 	if err := lab.CreateDisk(context.Background(), extraPath, "1G"); err != nil {
 		t.Fatal(err)
@@ -45,6 +46,19 @@ func TestInstallInPlace(t *testing.T) {
 	if err := info(anonymous); err == nil {
 		t.Error("a client without a certificate was served in maintenance mode")
 	}
+	// The firmware starts in Setup Mode. Enrolling the test keys, whose db key signed the image, and
+	// Microsoft's CAs, which make db and KEK hold several lists, turns Secure Boot on; the node
+	// boots again, with a STATE its TPM seals to the new PCR 7.
+	out, err := chalkctl(t, n, "", "secureboot", "enroll", "--keys", os.Getenv("CHALKLAB_SB_KEYS"), "--microsoft", "--insecure")
+	if err != nil {
+		t.Fatalf("secureboot enroll: %v", err)
+	}
+	for _, want := range []string{"db before: empty\n", "db after:\n  CN=chalkos test db\n", "  CN=Microsoft Corporation UEFI CA 2011,", "  CN=Microsoft Option ROM UEFI CA 2023,", "KEK after:\n  CN=chalkos test KEK\n", "  CN=Microsoft Corporation KEK 2K CA 2023,", "Secure Boot is on"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("secureboot enroll printed no %q", want)
+		}
+	}
+	assertFacts(t, readFacts(t, n.vm, 5*time.Minute), map[string]string{"secureboot": "1", "state_tpm2": "1", "state_boots": "1"})
 	installInPlace(t, n, "chalklab")
 
 	assertFacts(t, readFacts(t, n.vm, 5*time.Minute), map[string]string{
@@ -75,7 +89,7 @@ func TestInstallInPlace(t *testing.T) {
 	}
 	greeted("hello")
 
-	out, err := chalkctl(t, n, "base", "status", "chalklab")
+	out, err = chalkctl(t, n, "base", "status", "chalklab")
 	if err != nil || !strings.Contains(out, "(the inventory's)") || !regexp.MustCompile(`\s/var\s+mounted`).MatchString(out) {
 		t.Errorf("status: %v", err)
 	}

@@ -193,11 +193,13 @@ func cancelledInstall(t *testing.T, n *node, inventory string, args []string) st
 	return r.out
 }
 
-// TestInstallerISOBoots signs a copy of the generic installer as chalkbuild sign does, boots its
-// ISO as a CD-ROM with Secure Boot on, and checks chalkd serves any client in maintenance mode:
-// chalkctl lists the disks of the machine.
+// TestInstallerISOBoots signs a copy of the generic installer as chalkbuild sign does and boots
+// its ISO as a CD-ROM on firmware in Setup Mode, where chalkd serves any client in maintenance
+// mode. chalkctl secureboot enroll writes the test keys, which signed the copy, without --force,
+// so chalkd finds the boot loader and UKI the firmware started from the ISO's ESP. The installer
+// boots again with Secure Boot on, and chalkctl lists the disks of the machine.
 func TestInstallerISOBoots(t *testing.T) {
-	requireEnv(t, "CHALKLAB_OVMF_CODE", "CHALKLAB_OVMF_VARS_ENROLLED", "CHALKLAB_SB_KEYS", "CHALKLAB_GENERIC_INSTALLER_DIR", "CHALKLAB_CHALKCTL")
+	requireEnv(t, "CHALKLAB_OVMF_CODE", "CHALKLAB_OVMF_VARS", "CHALKLAB_SB_KEYS", "CHALKLAB_GENERIC_INSTALLER_DIR", "CHALKLAB_CHALKCTL")
 	dir := vmDir(t)
 	installer := signedImage(t, dir, "CHALKLAB_GENERIC_INSTALLER_DIR")
 	isos, err := filepath.Glob(filepath.Join(installer, "*.iso"))
@@ -210,7 +212,7 @@ func TestInstallerISOBoots(t *testing.T) {
 	}
 	n := startNode(t, lab.VMConfig{
 		Dir:          dir,
-		FirmwareVars: os.Getenv("CHALKLAB_OVMF_VARS_ENROLLED"),
+		FirmwareVars: os.Getenv("CHALKLAB_OVMF_VARS"),
 		CDROM:        isos[0],
 		Disks:        []lab.VMDisk{{Path: blank, Serial: "chalk-blank"}},
 	})
@@ -221,17 +223,34 @@ func TestInstallerISOBoots(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var out []byte
+	if info := waitForChalkd(t, n, time.Minute); info.SecureBoot != nodev1.SecureBoot_SECURE_BOOT_SETUP_MODE {
+		t.Errorf("Secure Boot = %v, want Setup Mode", info.SecureBoot)
+	}
+
+	run := func(args ...string) (string, error) {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+		defer cancel()
+		out, err := exec.CommandContext(ctx, os.Getenv("CHALKLAB_CHALKCTL"), args...).CombinedOutput()
+		t.Logf("chalkctl %s:\n%s", strings.Join(args, " "), out)
+		return string(out), err
+	}
+	out, err := run("secureboot", "enroll", "--keys", os.Getenv("CHALKLAB_SB_KEYS"), "--address", n.addr, "--fingerprint", m[1])
+	if err != nil {
+		t.Fatalf("secureboot enroll: %v", err)
+	}
+	now := regexp.MustCompile(`fingerprint is now ([0-9a-f]{64})`).FindStringSubmatch(out)
+	if now == nil {
+		t.Fatal("secureboot enroll printed no new fingerprint")
+	}
+
 	err = poll(2*time.Minute, 2*time.Second, func() error {
-		var err error
-		out, err = exec.Command(os.Getenv("CHALKLAB_CHALKCTL"), "disks", "--address", n.addr, "--fingerprint", m[1]).CombinedOutput()
+		out, err = run("disks", "--address", n.addr, "--fingerprint", now[1])
 		return err
 	})
-	t.Logf("chalkctl disks:\n%s", out)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !regexp.MustCompile(`/dev/vda\s+4G\s+hdd\s+.*chalk-blank`).Match(out) {
+	if !regexp.MustCompile(`/dev/vda\s+4G\s+hdd\s+.*chalk-blank`).MatchString(out) {
 		t.Error("the blank disk is not listed")
 	}
 	if info := waitForChalkd(t, n, time.Minute); info.SecureBoot != nodev1.SecureBoot_SECURE_BOOT_ENABLED {
