@@ -586,11 +586,14 @@ The response of ConfirmConfig, once the trial ended.
 EnrollSecureBoot writes Secure Boot keys into firmware in Setup Mode, as signed updates of its
 variables that the client made: it appends to db, then to KEK, and writes PK last, which ends
 Setup Mode. It refuses firmware that is not in Setup Mode, and updates that do not write
-EFI signature lists of X.509 certificates to db, KEK and PK, signed by the KEK and PK they
-bring. Unless forced, it also refuses keys under which Secure Boot would refuse the boot
-loader and UKI the node booted. A node that runs from its own disk recreates STATE on its next
-boot, as the TPM no longer unseals it once the keys change PCR 7. Once the keys are written,
-the node answers and reboots. Available in maintenance mode to admins.
+EFI signature lists of X.509 certificates to KEK and PK, and of X.509 certificates and SHA-256
+digests of images to db, signed by the KEK and PK they bring. Unless forced, it also refuses
+keys under which Secure Boot would refuse the boot loader and UKI the node booted, and keys
+under which db would allow neither by digest nor by a Microsoft CA that signs option ROMs the
+drivers the TPM event log lists in PCR 2, the option ROMs of graphics and network cards, or
+dbx would revoke them. A node that runs from its own disk recreates STATE on its next boot,
+as the TPM no longer unseals it once the keys change PCR 7. Once the keys are written, the
+node answers and reboots. Available in maintenance mode to admins.
 
 Request: EnrollSecureBootRequest. Response: EnrollSecureBootResponse.
 
@@ -602,10 +605,10 @@ it without the attributes.
 
 | Field | Type | Description |
 | ----- | ---- | ----------- |
-| `db` | bytes | The update of db, appended, signed by a certificate of the KEK update. |
+| `db` | bytes | The update of db, appended, signed by a certificate of the KEK update: certificates, and SHA-256 digests of images such as option ROMs. |
 | `kek` | bytes | The update of KEK, appended, signed by the PK update's certificate. |
 | `pk` | bytes | The update of PK, signed by its own certificate. |
-| `force` | bool | Write the keys even if Secure Boot would refuse the boot loader or UKI the node booted under them. |
+| `force` | bool | Write the keys even if Secure Boot would refuse the boot loader or UKI the node booted, or a driver measured into PCR 2, under them. |
 
 #### EnrollSecureBootResponse { #message-enrollsecurebootresponse }
 
@@ -613,10 +616,38 @@ The response of EnrollSecureBoot, which the node sends before it reboots.
 
 | Field | Type | Description |
 | ----- | ---- | ----------- |
-| `db_before` | list of string | The subjects of the X.509 certificates in db before the update. |
-| `db_after` | list of string | The subjects of the X.509 certificates in db after the update. |
+| `db_before` | list of string | The subjects of the X.509 certificates in db before the update, then its SHA-256 digests of images, each as sha256:&lt;hex>. |
+| `db_after` | list of string | The subjects of the X.509 certificates in db after the update, then its SHA-256 digests of images, each as sha256:&lt;hex>. |
 | `kek_before` | list of string | The subjects of the X.509 certificates in KEK before the update. |
 | `kek_after` | list of string | The subjects of the X.509 certificates in KEK after the update. |
+| `drivers_unchecked` | string | Why the node did not check that Secure Boot allows the drivers measured into PCR 2 under the new db, else empty: as a rule, the machine has no TPM, so no event log lists them, or its event log holds no SHA-256 digests. |
+
+### SecureBootDrivers { #method-securebootdrivers }
+
+SecureBootDrivers lists the UEFI drivers the firmware loaded from outside its own firmware,
+as a rule the option ROMs of graphics and network cards, as the TPM event log records their
+measurements into PCR 2: the SHA-256 Authenticode digest of each, which db holds to allow it
+under Secure Boot, and where the firmware found it. Available in maintenance mode to
+readers.
+
+Request: SecureBootDriversRequest. Response: SecureBootDriversResponse.
+
+#### SecureBootDriversRequest { #message-securebootdriversrequest }
+
+The request of SecureBootDrivers.
+
+No fields.
+
+#### SecureBootDriversResponse { #message-securebootdriversresponse }
+
+The response of SecureBootDrivers.
+
+| Field | Type | Description |
+| ----- | ---- | ----------- |
+| `drivers` | list of SecureBootDriver | The drivers measured into PCR 2, in the order the firmware loaded them. |
+| `no_event_log` | string | Why the node has no event log to read the drivers from, else empty: as a rule, the machine has no TPM, or its event log holds no SHA-256 digests. |
+
+Field types: [SecureBootDriver](#message-securebootdriver).
 
 ## Messages { #messages }
 
@@ -932,6 +963,15 @@ A chalkos image in an OCI registry.
 | Field | Type | Description |
 | ----- | ---- | ----------- |
 | `reference` | string | The image's repository and manifest digest, repository@sha256:…, as chalkctl resolved the inventory's reference. The node pulls that manifest and refuses it unless its config is the image the header describes and its store, hash-tree, UKI and, for an install, boot-loader layers have the header's sizes and SHA-256 sums. An upgrade pulls through the Mirror and authenticates with the Registry documents of the config the request delivers, or without one of the running config; an install through those of the config the request delivers. It tries each endpoint of the Mirror of the reference's host, then the host, each with the Registry of its own host, and pulls anonymously from a host without one. |
+
+### SecureBootDriver { #message-securebootdriver }
+
+A UEFI driver the firmware measured into PCR 2.
+
+| Field | Type | Description |
+| ----- | ---- | ----------- |
+| `sha256` | bytes | The SHA-256 Authenticode digest of the driver's image. |
+| `device_path` | string | Where the firmware found the image, as UEFI writes device paths, such as PciRoot(0x0)/Pci(0x3,0x0)/Offset(0x10a00,0x2f9ff), or the size of a path of other nodes. |
 
 ### StagedSlot { #message-stagedslot }
 

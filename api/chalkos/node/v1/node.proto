@@ -154,12 +154,21 @@ service NodeService {
   // EnrollSecureBoot writes Secure Boot keys into firmware in Setup Mode, as signed updates of its
   // variables that the client made: it appends to db, then to KEK, and writes PK last, which ends
   // Setup Mode. It refuses firmware that is not in Setup Mode, and updates that do not write
-  // EFI signature lists of X.509 certificates to db, KEK and PK, signed by the KEK and PK they
-  // bring. Unless forced, it also refuses keys under which Secure Boot would refuse the boot
-  // loader and UKI the node booted. A node that runs from its own disk recreates STATE on its next
-  // boot, as the TPM no longer unseals it once the keys change PCR 7. Once the keys are written,
-  // the node answers and reboots. Available in maintenance mode to admins.
+  // EFI signature lists of X.509 certificates to KEK and PK, and of X.509 certificates and SHA-256
+  // digests of images to db, signed by the KEK and PK they bring. Unless forced, it also refuses
+  // keys under which Secure Boot would refuse the boot loader and UKI the node booted, and keys
+  // under which db would allow neither by digest nor by a Microsoft CA that signs option ROMs the
+  // drivers the TPM event log lists in PCR 2, the option ROMs of graphics and network cards, or
+  // dbx would revoke them. A node that runs from its own disk recreates STATE on its next boot,
+  // as the TPM no longer unseals it once the keys change PCR 7. Once the keys are written, the
+  // node answers and reboots. Available in maintenance mode to admins.
   rpc EnrollSecureBoot(EnrollSecureBootRequest) returns (EnrollSecureBootResponse);
+  // SecureBootDrivers lists the UEFI drivers the firmware loaded from outside its own firmware,
+  // as a rule the option ROMs of graphics and network cards, as the TPM event log records their
+  // measurements into PCR 2: the SHA-256 Authenticode digest of each, which db holds to allow it
+  // under Secure Boot, and where the firmware found it. Available in maintenance mode to
+  // readers.
+  rpc SecureBootDrivers(SecureBootDriversRequest) returns (SecureBootDriversResponse);
 }
 
 // The mode chalkd serves the node in.
@@ -1147,25 +1156,53 @@ message DiagnosticExit {
 // EFI_VARIABLE_AUTHENTICATION_2 descriptor followed by EFI signature lists, as SetVariable takes
 // it without the attributes.
 message EnrollSecureBootRequest {
-  // The update of db, appended, signed by a certificate of the KEK update.
+  // The update of db, appended, signed by a certificate of the KEK update: certificates, and
+  // SHA-256 digests of images such as option ROMs.
   bytes db = 1;
   // The update of KEK, appended, signed by the PK update's certificate.
   bytes kek = 2;
   // The update of PK, signed by its own certificate.
   bytes pk = 3;
-  // Write the keys even if Secure Boot would refuse the boot loader or UKI the node booted under
-  // them.
+  // Write the keys even if Secure Boot would refuse the boot loader or UKI the node booted, or a
+  // driver measured into PCR 2, under them.
   bool force = 4;
 }
 
 // The response of EnrollSecureBoot, which the node sends before it reboots.
 message EnrollSecureBootResponse {
-  // The subjects of the X.509 certificates in db before the update.
+  // The subjects of the X.509 certificates in db before the update, then its SHA-256 digests of
+  // images, each as sha256:<hex>.
   repeated string db_before = 1;
-  // The subjects of the X.509 certificates in db after the update.
+  // The subjects of the X.509 certificates in db after the update, then its SHA-256 digests of
+  // images, each as sha256:<hex>.
   repeated string db_after = 2;
   // The subjects of the X.509 certificates in KEK before the update.
   repeated string kek_before = 3;
   // The subjects of the X.509 certificates in KEK after the update.
   repeated string kek_after = 4;
+  // Why the node did not check that Secure Boot allows the drivers measured into PCR 2 under the
+  // new db, else empty: as a rule, the machine has no TPM, so no event log lists them, or its
+  // event log holds no SHA-256 digests.
+  string drivers_unchecked = 5;
+}
+
+// The request of SecureBootDrivers.
+message SecureBootDriversRequest {}
+
+// The response of SecureBootDrivers.
+message SecureBootDriversResponse {
+  // The drivers measured into PCR 2, in the order the firmware loaded them.
+  repeated SecureBootDriver drivers = 1;
+  // Why the node has no event log to read the drivers from, else empty: as a rule, the machine
+  // has no TPM, or its event log holds no SHA-256 digests.
+  string no_event_log = 2;
+}
+
+// A UEFI driver the firmware measured into PCR 2.
+message SecureBootDriver {
+  // The SHA-256 Authenticode digest of the driver's image.
+  bytes sha256 = 1;
+  // Where the firmware found the image, as UEFI writes device paths, such as
+  // PciRoot(0x0)/Pci(0x3,0x0)/Offset(0x10a00,0x2f9ff), or the size of a path of other nodes.
+  string device_path = 2;
 }

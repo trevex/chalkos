@@ -77,6 +77,9 @@ const (
 	// NodeServiceEnrollSecureBootProcedure is the fully-qualified name of the NodeService's
 	// EnrollSecureBoot RPC.
 	NodeServiceEnrollSecureBootProcedure = "/chalkos.node.v1.NodeService/EnrollSecureBoot"
+	// NodeServiceSecureBootDriversProcedure is the fully-qualified name of the NodeService's
+	// SecureBootDrivers RPC.
+	NodeServiceSecureBootDriversProcedure = "/chalkos.node.v1.NodeService/SecureBootDrivers"
 )
 
 // NodeServiceClient is a client for the chalkos.node.v1.NodeService service.
@@ -219,12 +222,21 @@ type NodeServiceClient interface {
 	// EnrollSecureBoot writes Secure Boot keys into firmware in Setup Mode, as signed updates of its
 	// variables that the client made: it appends to db, then to KEK, and writes PK last, which ends
 	// Setup Mode. It refuses firmware that is not in Setup Mode, and updates that do not write
-	// EFI signature lists of X.509 certificates to db, KEK and PK, signed by the KEK and PK they
-	// bring. Unless forced, it also refuses keys under which Secure Boot would refuse the boot
-	// loader and UKI the node booted. A node that runs from its own disk recreates STATE on its next
-	// boot, as the TPM no longer unseals it once the keys change PCR 7. Once the keys are written,
-	// the node answers and reboots. Available in maintenance mode to admins.
+	// EFI signature lists of X.509 certificates to KEK and PK, and of X.509 certificates and SHA-256
+	// digests of images to db, signed by the KEK and PK they bring. Unless forced, it also refuses
+	// keys under which Secure Boot would refuse the boot loader and UKI the node booted, and keys
+	// under which db would allow neither by digest nor by a Microsoft CA that signs option ROMs the
+	// drivers the TPM event log lists in PCR 2, the option ROMs of graphics and network cards, or
+	// dbx would revoke them. A node that runs from its own disk recreates STATE on its next boot,
+	// as the TPM no longer unseals it once the keys change PCR 7. Once the keys are written, the
+	// node answers and reboots. Available in maintenance mode to admins.
 	EnrollSecureBoot(context.Context, *connect.Request[v1.EnrollSecureBootRequest]) (*connect.Response[v1.EnrollSecureBootResponse], error)
+	// SecureBootDrivers lists the UEFI drivers the firmware loaded from outside its own firmware,
+	// as a rule the option ROMs of graphics and network cards, as the TPM event log records their
+	// measurements into PCR 2: the SHA-256 Authenticode digest of each, which db holds to allow it
+	// under Secure Boot, and where the firmware found it. Available in maintenance mode to
+	// readers.
+	SecureBootDrivers(context.Context, *connect.Request[v1.SecureBootDriversRequest]) (*connect.Response[v1.SecureBootDriversResponse], error)
 }
 
 // NewNodeServiceClient constructs a client for the chalkos.node.v1.NodeService service. By default,
@@ -346,29 +358,36 @@ func NewNodeServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			connect.WithSchema(nodeServiceMethods.ByName("EnrollSecureBoot")),
 			connect.WithClientOptions(opts...),
 		),
+		secureBootDrivers: connect.NewClient[v1.SecureBootDriversRequest, v1.SecureBootDriversResponse](
+			httpClient,
+			baseURL+NodeServiceSecureBootDriversProcedure,
+			connect.WithSchema(nodeServiceMethods.ByName("SecureBootDrivers")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
 // nodeServiceClient implements NodeServiceClient.
 type nodeServiceClient struct {
-	info             *connect.Client[v1.InfoRequest, v1.InfoResponse]
-	disks            *connect.Client[v1.DisksRequest, v1.DisksResponse]
-	contract         *connect.Client[v1.ContractRequest, v1.ContractResponse]
-	install          *connect.Client[v1.InstallRequest, v1.InstallResponse]
-	applyConfig      *connect.Client[v1.ApplyConfigRequest, v1.ApplyConfigResponse]
-	getConfig        *connect.Client[v1.GetConfigRequest, v1.GetConfigResponse]
-	resetVolume      *connect.Client[v1.ResetVolumeRequest, v1.ResetVolumeResponse]
-	status           *connect.Client[v1.StatusRequest, v1.StatusResponse]
-	logs             *connect.Client[v1.LogsRequest, v1.LogsResponse]
-	reboot           *connect.Client[v1.RebootRequest, v1.RebootResponse]
-	upgrade          *connect.Client[v1.UpgradeRequest, v1.UpgradeResponse]
-	activateImage    *connect.Client[v1.ActivateImageRequest, v1.ActivateImageResponse]
-	diagnostics      *connect.Client[v1.DiagnosticsRequest, v1.DiagnosticsResponse]
-	runDiagnostic    *connect.Client[v1.RunDiagnosticRequest, v1.RunDiagnosticResponse]
-	rollbackConfig   *connect.Client[v1.RollbackConfigRequest, v1.RollbackConfigResponse]
-	rollbackImage    *connect.Client[v1.RollbackImageRequest, v1.RollbackImageResponse]
-	confirmConfig    *connect.Client[v1.ConfirmConfigRequest, v1.ConfirmConfigResponse]
-	enrollSecureBoot *connect.Client[v1.EnrollSecureBootRequest, v1.EnrollSecureBootResponse]
+	info              *connect.Client[v1.InfoRequest, v1.InfoResponse]
+	disks             *connect.Client[v1.DisksRequest, v1.DisksResponse]
+	contract          *connect.Client[v1.ContractRequest, v1.ContractResponse]
+	install           *connect.Client[v1.InstallRequest, v1.InstallResponse]
+	applyConfig       *connect.Client[v1.ApplyConfigRequest, v1.ApplyConfigResponse]
+	getConfig         *connect.Client[v1.GetConfigRequest, v1.GetConfigResponse]
+	resetVolume       *connect.Client[v1.ResetVolumeRequest, v1.ResetVolumeResponse]
+	status            *connect.Client[v1.StatusRequest, v1.StatusResponse]
+	logs              *connect.Client[v1.LogsRequest, v1.LogsResponse]
+	reboot            *connect.Client[v1.RebootRequest, v1.RebootResponse]
+	upgrade           *connect.Client[v1.UpgradeRequest, v1.UpgradeResponse]
+	activateImage     *connect.Client[v1.ActivateImageRequest, v1.ActivateImageResponse]
+	diagnostics       *connect.Client[v1.DiagnosticsRequest, v1.DiagnosticsResponse]
+	runDiagnostic     *connect.Client[v1.RunDiagnosticRequest, v1.RunDiagnosticResponse]
+	rollbackConfig    *connect.Client[v1.RollbackConfigRequest, v1.RollbackConfigResponse]
+	rollbackImage     *connect.Client[v1.RollbackImageRequest, v1.RollbackImageResponse]
+	confirmConfig     *connect.Client[v1.ConfirmConfigRequest, v1.ConfirmConfigResponse]
+	enrollSecureBoot  *connect.Client[v1.EnrollSecureBootRequest, v1.EnrollSecureBootResponse]
+	secureBootDrivers *connect.Client[v1.SecureBootDriversRequest, v1.SecureBootDriversResponse]
 }
 
 // Info calls chalkos.node.v1.NodeService.Info.
@@ -459,6 +478,11 @@ func (c *nodeServiceClient) ConfirmConfig(ctx context.Context, req *connect.Requ
 // EnrollSecureBoot calls chalkos.node.v1.NodeService.EnrollSecureBoot.
 func (c *nodeServiceClient) EnrollSecureBoot(ctx context.Context, req *connect.Request[v1.EnrollSecureBootRequest]) (*connect.Response[v1.EnrollSecureBootResponse], error) {
 	return c.enrollSecureBoot.CallUnary(ctx, req)
+}
+
+// SecureBootDrivers calls chalkos.node.v1.NodeService.SecureBootDrivers.
+func (c *nodeServiceClient) SecureBootDrivers(ctx context.Context, req *connect.Request[v1.SecureBootDriversRequest]) (*connect.Response[v1.SecureBootDriversResponse], error) {
+	return c.secureBootDrivers.CallUnary(ctx, req)
 }
 
 // NodeServiceHandler is an implementation of the chalkos.node.v1.NodeService service.
@@ -601,12 +625,21 @@ type NodeServiceHandler interface {
 	// EnrollSecureBoot writes Secure Boot keys into firmware in Setup Mode, as signed updates of its
 	// variables that the client made: it appends to db, then to KEK, and writes PK last, which ends
 	// Setup Mode. It refuses firmware that is not in Setup Mode, and updates that do not write
-	// EFI signature lists of X.509 certificates to db, KEK and PK, signed by the KEK and PK they
-	// bring. Unless forced, it also refuses keys under which Secure Boot would refuse the boot
-	// loader and UKI the node booted. A node that runs from its own disk recreates STATE on its next
-	// boot, as the TPM no longer unseals it once the keys change PCR 7. Once the keys are written,
-	// the node answers and reboots. Available in maintenance mode to admins.
+	// EFI signature lists of X.509 certificates to KEK and PK, and of X.509 certificates and SHA-256
+	// digests of images to db, signed by the KEK and PK they bring. Unless forced, it also refuses
+	// keys under which Secure Boot would refuse the boot loader and UKI the node booted, and keys
+	// under which db would allow neither by digest nor by a Microsoft CA that signs option ROMs the
+	// drivers the TPM event log lists in PCR 2, the option ROMs of graphics and network cards, or
+	// dbx would revoke them. A node that runs from its own disk recreates STATE on its next boot,
+	// as the TPM no longer unseals it once the keys change PCR 7. Once the keys are written, the
+	// node answers and reboots. Available in maintenance mode to admins.
 	EnrollSecureBoot(context.Context, *connect.Request[v1.EnrollSecureBootRequest]) (*connect.Response[v1.EnrollSecureBootResponse], error)
+	// SecureBootDrivers lists the UEFI drivers the firmware loaded from outside its own firmware,
+	// as a rule the option ROMs of graphics and network cards, as the TPM event log records their
+	// measurements into PCR 2: the SHA-256 Authenticode digest of each, which db holds to allow it
+	// under Secure Boot, and where the firmware found it. Available in maintenance mode to
+	// readers.
+	SecureBootDrivers(context.Context, *connect.Request[v1.SecureBootDriversRequest]) (*connect.Response[v1.SecureBootDriversResponse], error)
 }
 
 // NewNodeServiceHandler builds an HTTP handler from the service implementation. It returns the path
@@ -724,6 +757,12 @@ func NewNodeServiceHandler(svc NodeServiceHandler, opts ...connect.HandlerOption
 		connect.WithSchema(nodeServiceMethods.ByName("EnrollSecureBoot")),
 		connect.WithHandlerOptions(opts...),
 	)
+	nodeServiceSecureBootDriversHandler := connect.NewUnaryHandler(
+		NodeServiceSecureBootDriversProcedure,
+		svc.SecureBootDrivers,
+		connect.WithSchema(nodeServiceMethods.ByName("SecureBootDrivers")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/chalkos.node.v1.NodeService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case NodeServiceInfoProcedure:
@@ -762,6 +801,8 @@ func NewNodeServiceHandler(svc NodeServiceHandler, opts ...connect.HandlerOption
 			nodeServiceConfirmConfigHandler.ServeHTTP(w, r)
 		case NodeServiceEnrollSecureBootProcedure:
 			nodeServiceEnrollSecureBootHandler.ServeHTTP(w, r)
+		case NodeServiceSecureBootDriversProcedure:
+			nodeServiceSecureBootDriversHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -841,4 +882,8 @@ func (UnimplementedNodeServiceHandler) ConfirmConfig(context.Context, *connect.R
 
 func (UnimplementedNodeServiceHandler) EnrollSecureBoot(context.Context, *connect.Request[v1.EnrollSecureBootRequest]) (*connect.Response[v1.EnrollSecureBootResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("chalkos.node.v1.NodeService.EnrollSecureBoot is not implemented"))
+}
+
+func (UnimplementedNodeServiceHandler) SecureBootDrivers(context.Context, *connect.Request[v1.SecureBootDriversRequest]) (*connect.Response[v1.SecureBootDriversResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("chalkos.node.v1.NodeService.SecureBootDrivers is not implemented"))
 }

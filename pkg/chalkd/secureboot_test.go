@@ -1,9 +1,12 @@
 package chalkd
 
 import (
+	"bytes"
 	"context"
+	"crypto/sha256"
 	"crypto/x509"
 	"encoding/binary"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"os"
@@ -20,6 +23,7 @@ import (
 	"github.com/trevex/chalkos/pkg/chalkd/layer"
 	"github.com/trevex/chalkos/pkg/image/imagetest"
 	"github.com/trevex/chalkos/pkg/secureboot"
+	"github.com/trevex/chalkos/pkg/secureboot/secureboottest"
 	"github.com/trevex/chalkos/pkg/uki/ukitest"
 )
 
@@ -108,8 +112,8 @@ func enrolServer(t *testing.T, setupMode bool, other []byte) (*Server, *firmware
 	return s, fw
 }
 
-// TestEnrollSecureBoot writes db, KEK and PK, PK last, with their attributes, answers the
-// certificates of db and KEK before and after, removes STATE, which the TPM seals to PCR 7, and
+// TestEnrollSecureBoot writes db, KEK and PK, PK last, with their attributes, answers the entries
+// of db and KEK before and after, removes STATE, which the TPM seals to PCR 7, and
 // reboots.
 func TestEnrollSecureBoot(t *testing.T) {
 	if _, err := exec.LookPath("sbsign"); err != nil {
@@ -127,7 +131,11 @@ func TestEnrollSecureBoot(t *testing.T) {
 		write(t, path, string(imagetest.SBSign(t, data, filepath.Join(dir, "db.key"), filepath.Join(dir, "db.crt"))))
 	}
 
-	resp, err := s.EnrollSecureBoot(context.Background(), connect.NewRequest(enrolRequest(t, k)))
+	// db also gets the digest of an image, which the answer lists after the certificates.
+	rom := sha256.Sum256([]byte("rom"))
+	r := enrolRequest(t, k)
+	r.Db = dbUpdate(t, k, rom)
+	resp, err := s.EnrollSecureBoot(context.Background(), connect.NewRequest(r))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -135,9 +143,13 @@ func TestEnrollSecureBoot(t *testing.T) {
 		t.Errorf("writes %v, want %v", fw.writes, want)
 	}
 	got := resp.Msg
-	if !slices.Equal(got.DbBefore, []string{"CN=other"}) || !slices.Equal(got.DbAfter, []string{"CN=other", "CN=test Secure Boot db"}) ||
+	if !slices.Equal(got.DbBefore, []string{"CN=other"}) || !slices.Equal(got.DbAfter, []string{"CN=other", "CN=test Secure Boot db", "sha256:" + hex.EncodeToString(rom[:])}) ||
 		len(got.KekBefore) != 0 || !slices.Equal(got.KekAfter, []string{"CN=test Secure Boot KEK"}) {
 		t.Errorf("answer %+v", got)
+	}
+	// The node has no event log, so it did not check the drivers of PCR 2.
+	if !strings.Contains(got.DriversUnchecked, "has no TPM") {
+		t.Errorf("DriversUnchecked = %q", got.DriversUnchecked)
 	}
 	if !fw.stateRemoved {
 		t.Error("STATE was not removed")
@@ -167,6 +179,14 @@ func TestEnrollSecureBootRefuses(t *testing.T) {
 		{"a malformed db update", true, func(r *nodev1.EnrollSecureBootRequest) { r.Db = r.Db[:20] }, connect.CodeInvalidArgument, "the update of db"},
 		{"a KEK update of no signature lists", true, func(r *nodev1.EnrollSecureBootRequest) {
 			u, err := secureboot.SignUpdate(secureboot.Update{Name: "KEK", Vendor: secureboot.GlobalVariable, Attributes: secureboot.AttrAppend, Data: []byte("garbage")}, time.Now(), k.PK.Cert, k.PK.Key)
+			if err != nil {
+				t.Fatal(err)
+			}
+			r.Kek = u
+		}, connect.CodeInvalidArgument, "the update of KEK"},
+		{"a KEK update of a digest", true, func(r *nodev1.EnrollSecureBootRequest) {
+			data := append(secureboot.X509SignatureLists(k.Owner, k.KEK.Cert), secureboot.SHA256SignatureList(k.Owner, make([]byte, 32))...)
+			u, err := secureboot.SignUpdate(secureboot.Update{Name: "KEK", Vendor: secureboot.GlobalVariable, Attributes: secureboot.AttrAppend, Data: data}, time.Now(), k.PK.Cert, k.PK.Key)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -284,5 +304,174 @@ func TestEnrollSecureBootWithoutESP(t *testing.T) {
 	}
 	if len(fw.writes) > 0 {
 		t.Errorf("wrote %v", fw.writes)
+	}
+}
+
+// writeEventLog writes an event log of drivers measured into PCR 2, the option ROMs of the PCI
+// devices 3, 4 and so on, of the digests, where the server reads it.
+func writeEventLog(t *testing.T, s *Server, digests ...[32]byte) {
+	t.Helper()
+	l := secureboottest.NewLog(2, secureboottest.AlgSHA1, secureboottest.AlgSHA256)
+	for i, d := range digests {
+		l.Driver(secureboottest.EvBootServicesDriver, d, secureboottest.OptionROMPath(byte(3+i)))
+	}
+	write(t, s.Paths.EventLog, string(l.Bytes))
+}
+
+// dbUpdate is the update of db chalkctl sends for the keys with the digests of images.
+func dbUpdate(t *testing.T, k secureboot.Keys, digests ...[32]byte) []byte {
+	t.Helper()
+	var hashes [][]byte
+	for _, d := range digests {
+		hashes = append(hashes, d[:])
+	}
+	data := append(secureboot.X509SignatureLists(k.Owner, k.DB.Cert), secureboot.SHA256SignatureList(k.Owner, hashes...)...)
+	u, err := secureboot.SignUpdate(secureboot.Update{Name: "db", Vendor: secureboot.ImageSecurityDatabase, Attributes: secureboot.AttrAppend, Data: data}, time.Now(), k.KEK.Cert, k.KEK.Key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return u
+}
+
+// TestSecureBootDrivers lists the drivers of PCR 2 the event log holds, and none, with the
+// reason, without an event log.
+func TestSecureBootDrivers(t *testing.T) {
+	s, _ := newTestServer(t, maintenance, vda)
+	resp, err := s.SecureBootDrivers(context.Background(), connect.NewRequest(&nodev1.SecureBootDriversRequest{}))
+	if err != nil || len(resp.Msg.Drivers) != 0 || !strings.Contains(resp.Msg.NoEventLog, "has no TPM") {
+		t.Errorf("SecureBootDrivers without a log = %+v, %v", resp, err)
+	}
+
+	// A TPM without an event log, and a log of SHA-1 digests alone, list nothing, and say why.
+	write(t, filepath.Join(s.Paths.TPM, "tpm0", "dev"), "10:224\n")
+	if resp, err := s.SecureBootDrivers(context.Background(), connect.NewRequest(&nodev1.SecureBootDriversRequest{})); err != nil || !strings.Contains(resp.Msg.NoEventLog, "has a TPM, but no event log") {
+		t.Errorf("SecureBootDrivers with a TPM and no log = %+v, %v", resp, err)
+	}
+	sha1Only := secureboottest.NewLog(2, secureboottest.AlgSHA1)
+	write(t, s.Paths.EventLog, string(sha1Only.Bytes))
+	if resp, err := s.SecureBootDrivers(context.Background(), connect.NewRequest(&nodev1.SecureBootDriversRequest{})); err != nil || len(resp.Msg.Drivers) != 0 || !strings.Contains(resp.Msg.NoEventLog, "no SHA-256") {
+		t.Errorf("SecureBootDrivers of a SHA-1 log = %+v, %v", resp, err)
+	}
+
+	rom, nic := sha256.Sum256([]byte("rom")), sha256.Sum256([]byte("nic"))
+	writeEventLog(t, s, rom, nic)
+	resp, err = s.SecureBootDrivers(context.Background(), connect.NewRequest(&nodev1.SecureBootDriversRequest{}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := resp.Msg
+	if len(got.Drivers) != 2 || !bytes.Equal(got.Drivers[0].Sha256, rom[:]) || got.Drivers[0].DevicePath != "PciRoot(0x0)/Pci(0x3,0x0)/Offset(0x10a00,0x2f9ff)" ||
+		!bytes.Equal(got.Drivers[1].Sha256, nic[:]) || got.NoEventLog != "" {
+		t.Errorf("SecureBootDrivers = %+v", got)
+	}
+
+	// A log cut short is refused.
+	write(t, s.Paths.EventLog, "garbage")
+	if _, err := s.SecureBootDrivers(context.Background(), connect.NewRequest(&nodev1.SecureBootDriversRequest{})); err == nil || !strings.Contains(err.Error(), "event log") {
+		t.Errorf("SecureBootDrivers of a garbled log = %v", err)
+	}
+}
+
+// TestCheckDrivers allows the drivers of PCR 2 when db holds their digests or a Microsoft CA that
+// signs option ROMs, unless dbx lists them, and otherwise names them and what allows them.
+func TestCheckDrivers(t *testing.T) {
+	k, _ := testEnrolKeys(t)
+	rom, nic := sha256.Sum256([]byte("rom")), sha256.Sum256([]byte("nic"))
+	drivers := []secureboot.Driver{{SHA256: rom[:], DevicePath: "PciRoot(0x0)/Pci(0x3,0x0)"}, {SHA256: nic[:], DevicePath: "PciRoot(0x0)/Pci(0x4,0x0)"}}
+	ms := secureboot.MicrosoftDB()
+	own := []*x509.Certificate{k.DB.Cert}
+	for _, tc := range []struct {
+		name    string
+		drivers []secureboot.Driver
+		db, dbx secureboot.Database
+		refused []string
+	}{
+		{"no drivers", nil, secureboot.Database{Certificates: own}, secureboot.Database{}, nil},
+		{"both digests", drivers, secureboot.Database{Certificates: own, SHA256: [][]byte{nic[:], rom[:]}}, secureboot.Database{}, nil},
+		{"one digest", drivers, secureboot.Database{Certificates: own, SHA256: [][]byte{rom[:]}}, secureboot.Database{}, []string{"sha256:" + hex.EncodeToString(nic[:]) + " PciRoot(0x0)/Pci(0x4,0x0)", "--option-roms", "--microsoft"}},
+		{"no digest", drivers, secureboot.Database{Certificates: own}, secureboot.Database{}, []string{"sha256:" + hex.EncodeToString(rom[:]), "sha256:" + hex.EncodeToString(nic[:])}},
+		{"Microsoft UEFI CA 2011", drivers, secureboot.Database{Certificates: append(own, ms[0])}, secureboot.Database{}, nil},
+		{"Microsoft Option ROM UEFI CA 2023", drivers, secureboot.Database{Certificates: []*x509.Certificate{ms[2]}}, secureboot.Database{}, nil},
+		// The UEFI CA of 2023 signs boot loaders alone.
+		{"Microsoft UEFI CA 2023", drivers, secureboot.Database{Certificates: []*x509.Certificate{ms[1]}}, secureboot.Database{}, []string{"sha256:" + hex.EncodeToString(rom[:])}},
+		{"a Microsoft KEK CA", drivers, secureboot.Database{Certificates: secureboot.MicrosoftKEK()}, secureboot.Database{}, []string{"sha256:" + hex.EncodeToString(rom[:])}},
+		{"a digest dbx lists", drivers, secureboot.Database{Certificates: append(own, ms[0]), SHA256: [][]byte{nic[:]}}, secureboot.Database{SHA256: [][]byte{nic[:]}},
+			[]string{"dbx revokes", "sha256:" + hex.EncodeToString(nic[:]) + " PciRoot(0x0)/Pci(0x4,0x0)"}},
+	} {
+		err := checkDrivers(tc.drivers, tc.db, tc.dbx)
+		if tc.refused == nil {
+			if err != nil {
+				t.Errorf("%s: %v", tc.name, err)
+			}
+			continue
+		}
+		if err == nil {
+			t.Errorf("%s: allowed", tc.name)
+			continue
+		}
+		for _, want := range append(tc.refused, "--force", "boot loader and UKI") {
+			if !strings.Contains(err.Error(), want) {
+				t.Errorf("%s: %v, want it to name %q", tc.name, err, want)
+			}
+		}
+		if tc.name == "a digest dbx lists" && strings.Contains(err.Error(), hex.EncodeToString(rom[:])) {
+			t.Errorf("%s: %v names the option ROM a Microsoft CA allows", tc.name, err)
+		}
+	}
+}
+
+// TestEnrollSecureBootChecksDrivers refuses keys under which db would allow no driver of PCR 2 the
+// event log lists, before it writes anything, and checks the image once db holds their digests;
+// forced, it checks neither. A garbled event log is refused unless forced, and one of SHA-1
+// digests alone is not checked.
+func TestEnrollSecureBootChecksDrivers(t *testing.T) {
+	k, _ := testEnrolKeys(t)
+	_, _, other := imagetest.Signer(t, t.TempDir(), "other")
+	rom := sha256.Sum256([]byte("rom"))
+	for _, tc := range []struct {
+		name  string
+		log   string
+		db    []byte
+		force bool
+		code  connect.Code
+		want  string
+	}{
+		{"an option ROM db does not allow", "rom", nil, false, connect.CodeFailedPrecondition, "sha256:" + hex.EncodeToString(rom[:]) + " PciRoot(0x0)/Pci(0x3,0x0)"},
+		{"the option ROM's digest", "rom", dbUpdate(t, k, rom), false, connect.CodeFailedPrecondition, "not signed by a db certificate"},
+		{"a garbled event log", "garbage", nil, false, connect.CodeFailedPrecondition, "--force"},
+		// A log of SHA-1 digests alone does not list the drivers, so the check of the image follows.
+		{"a SHA-1 event log", "sha1", nil, false, connect.CodeFailedPrecondition, "not signed by a db certificate"},
+		{"forced", "rom", nil, true, 0, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s, fw := enrolServer(t, true, other)
+			s.Installer = true
+			switch tc.log {
+			case "rom":
+				writeEventLog(t, s, rom)
+			case "sha1":
+				write(t, s.Paths.EventLog, string(secureboottest.NewLog(2, secureboottest.AlgSHA1).Bytes))
+			default:
+				write(t, s.Paths.EventLog, "garbage")
+			}
+			r := enrolRequest(t, k)
+			if tc.db != nil {
+				r.Db = tc.db
+			}
+			r.Force = tc.force
+			_, err := s.EnrollSecureBoot(context.Background(), connect.NewRequest(r))
+			if tc.code == 0 {
+				if err != nil || len(fw.writes) != 3 {
+					t.Errorf("EnrollSecureBoot = %v, wrote %v", err, fw.writes)
+				}
+				return
+			}
+			if layer.CodeOf(err) != tc.code || err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Errorf("EnrollSecureBoot = %v, want %v naming %q", err, tc.code, tc.want)
+			}
+			if len(fw.writes) > 0 {
+				t.Errorf("wrote %v", fw.writes)
+			}
+		})
 	}
 }

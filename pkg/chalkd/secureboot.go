@@ -1,6 +1,7 @@
 package chalkd
 
 import (
+	"bytes"
 	"context"
 	"crypto/x509"
 	"encoding/binary"
@@ -11,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 
 	"connectrpc.com/connect"
@@ -33,17 +35,19 @@ type enrolment struct {
 	attrs  uint32
 	update []byte
 	parsed secureboot.ParsedUpdate
-	certs  []*x509.Certificate
+	// entries are the certificates the update adds and, for db, the digests of images.
+	entries secureboot.Database
 }
 
 // EnrollSecureBoot writes the Secure Boot keys of the request into the firmware, which must be in
-// Setup Mode: db and KEK appended, PK last. It checks the updates first: each holds X.509
-// certificates alone, PK one, and is signed as firmware that verifies them in Setup Mode expects,
-// db by a KEK certificate of the request, KEK and PK by the PK certificate. Unless forced, the boot
-// loader and UKI the node booted must verify against db as it will be. A node that runs from its
-// own disk deletes its STATE, which the TPM seals to PCR 7, so its next boot creates STATE again.
-// The node answers and reboots once the three writes went through, with db and KEK as it reads
-// them back, or with them empty when it cannot.
+// Setup Mode: db and KEK appended, PK last. It checks the updates first: KEK and PK hold X.509
+// certificates alone, PK one, db X.509 certificates and SHA-256 digests of images, and each is
+// signed as firmware that verifies them in Setup Mode expects, db by a KEK certificate of the
+// request, KEK and PK by the PK certificate. Unless forced, db as it will be must allow the
+// drivers the TPM event log lists in PCR 2, and the boot loader and UKI the node booted must
+// verify against it. A node that runs from its own disk deletes its STATE, which the TPM seals to
+// PCR 7, so its next boot creates STATE again. The node answers and reboots once the three writes
+// went through, with db and KEK as it reads them back, or with them empty when it cannot.
 func (s *Server) EnrollSecureBoot(ctx context.Context, req *connect.Request[nodev1.EnrollSecureBootRequest]) (*connect.Response[nodev1.EnrollSecureBootResponse], error) {
 	if !s.mu.TryLock() {
 		return nil, layer.Errorf(connect.CodeAborted, "another change of the node is running")
@@ -71,8 +75,24 @@ func (s *Server) EnrollSecureBoot(ctx context.Context, req *connect.Request[node
 	if err != nil {
 		return nil, err
 	}
+	resp := &nodev1.EnrollSecureBootResponse{DbBefore: dbEntries(db), KekBefore: subjects(kek.Certificates)}
 	if !req.Msg.Force {
-		if err := s.checkBootedUnder(db, vars[0].certs); err != nil {
+		newDB := db
+		newDB.Certificates = slices.Concat(db.Certificates, vars[0].entries.Certificates)
+		newDB.SHA256 = slices.Concat(db.SHA256, vars[0].entries.SHA256)
+		dbx, err := s.readEFIDatabase("dbx")
+		if err != nil {
+			return nil, err
+		}
+		drivers, unchecked, err := s.readDrivers()
+		if err != nil {
+			return nil, layer.Errorf(connect.CodeFailedPrecondition, "%w; pass --force to enrol the keys without checking the drivers it lists, which also skips the check of the boot loader and UKI", err)
+		}
+		if err := checkDrivers(drivers, newDB, dbx); err != nil {
+			return nil, layer.Errorf(connect.CodeFailedPrecondition, "%w", err)
+		}
+		resp.DriversUnchecked = unchecked
+		if err := s.checkBootedUnder(newDB, dbx); err != nil {
 			return nil, err
 		}
 	}
@@ -97,32 +117,111 @@ func (s *Server) EnrollSecureBoot(ctx context.Context, req *connect.Request[node
 		log.Printf("read db and KEK after the enrolment: %v", err)
 		dbAfter, kekAfter = secureboot.Database{}, secureboot.Database{}
 	}
-	return connect.NewResponse(&nodev1.EnrollSecureBootResponse{
-		DbBefore: subjects(db.Certificates), DbAfter: subjects(dbAfter.Certificates),
-		KekBefore: subjects(kek.Certificates), KekAfter: subjects(kekAfter.Certificates),
-	}), nil
+	resp.DbAfter, resp.KekAfter = dbEntries(dbAfter), subjects(kekAfter.Certificates)
+	return connect.NewResponse(resp), nil
 }
 
-// checkEnrolment parses the updates of db, KEK and PK, in that order, and checks their
-// certificates and signatures.
+// SecureBootDrivers lists the drivers the TPM event log records in PCR 2, the option ROMs of
+// graphics and network cards as a rule, or none and why when the node has no event log.
+func (s *Server) SecureBootDrivers(ctx context.Context, req *connect.Request[nodev1.SecureBootDriversRequest]) (*connect.Response[nodev1.SecureBootDriversResponse], error) {
+	drivers, unchecked, err := s.readDrivers()
+	if err != nil {
+		return nil, layer.Errorf(connect.CodeFailedPrecondition, "%w", err)
+	}
+	resp := &nodev1.SecureBootDriversResponse{NoEventLog: unchecked}
+	for _, d := range drivers {
+		resp.Drivers = append(resp.Drivers, &nodev1.SecureBootDriver{Sha256: d.SHA256, DevicePath: d.DevicePath})
+	}
+	return connect.NewResponse(resp), nil
+}
+
+// readDrivers reads the drivers measured into PCR 2 from the TPM event log. Without an event log,
+// or with one it cannot read the drivers from, such as a TPM 1.2's, it returns none and why; it
+// refuses a log that is corrupt.
+func (s *Server) readDrivers() ([]secureboot.Driver, string, error) {
+	data, err := os.ReadFile(s.Paths.EventLog)
+	if errors.Is(err, fs.ErrNotExist) {
+		if entries, err := os.ReadDir(s.Paths.TPM); err == nil && len(entries) > 0 {
+			return nil, fmt.Sprintf("the node has a TPM, but no event log at %s, which would list the option ROMs the firmware loaded; the firmware may not have passed one to Linux", s.Paths.EventLog), nil
+		}
+		return nil, fmt.Sprintf("the node has no TPM, so no event log at %s lists the option ROMs the firmware loaded", s.Paths.EventLog), nil
+	}
+	if err != nil {
+		return nil, "", fmt.Errorf("read the TPM event log: %w", err)
+	}
+	drivers, err := secureboot.PCR2Drivers(data)
+	if errors.Is(err, secureboot.ErrUnsupportedLog) {
+		return nil, fmt.Sprintf("the node cannot read the option ROMs from its TPM event log %s: %v", s.Paths.EventLog, err), nil
+	}
+	if err != nil {
+		return nil, "", fmt.Errorf("read the TPM event log %s: %w", s.Paths.EventLog, err)
+	}
+	return drivers, "", nil
+}
+
+// checkDrivers checks that Secure Boot would load the drivers measured into PCR 2 under db and
+// dbx. dbx must not list their digests. db must hold their digests, or a Microsoft CA that signs
+// option ROMs: the UEFI CA of 2011, which signed most of them, or the Option ROM UEFI CA of 2023,
+// which signs those Microsoft signs since. The event log does not say who signed a driver, so
+// either CA counts as allowing all of them. Its error names the drivers it would refuse.
+func checkDrivers(drivers []secureboot.Driver, db, dbx secureboot.Database) error {
+	microsoft := slices.ContainsFunc(secureboot.MicrosoftOptionROMCAs(), func(ca *x509.Certificate) bool {
+		return slices.ContainsFunc(db.Certificates, ca.Equal)
+	})
+	holds := func(digests [][]byte, d []byte) bool {
+		return slices.ContainsFunc(digests, func(h []byte) bool { return bytes.Equal(h, d) })
+	}
+	var refused, revoked []string
+	for _, d := range drivers {
+		name := fmt.Sprintf("sha256:%x %s", d.SHA256, d.DevicePath)
+		switch {
+		case holds(dbx.SHA256, d.SHA256):
+			revoked = append(revoked, name)
+		case !microsoft && !holds(db.SHA256, d.SHA256):
+			refused = append(refused, name)
+		}
+	}
+	var problems []string
+	if len(refused) > 0 {
+		problems = append(problems, fmt.Sprintf("under the new db, Secure Boot would refuse the drivers the firmware loaded from outside its own firmware, as a rule the option ROMs of graphics and network cards: %s; "+
+			"enrol their digests with --option-roms, or Microsoft's UEFI CAs with --microsoft", strings.Join(refused, ", ")))
+	}
+	if len(revoked) > 0 {
+		problems = append(problems, fmt.Sprintf("dbx revokes drivers the firmware loaded from outside its own firmware, so Secure Boot would refuse them whatever db holds: %s; "+
+			"replace the card's firmware with one dbx does not list", strings.Join(revoked, ", ")))
+	}
+	if len(problems) == 0 {
+		return nil
+	}
+	return fmt.Errorf("%s; without them the machine may show nothing or boot from no network card or disk controller; pass --force to enrol the keys all the same, which also skips the check of the boot loader and UKI",
+		strings.Join(problems, "; "))
+}
+
+// checkEnrolment parses the updates of db, KEK and PK, in that order, and checks their entries
+// and signatures.
 func checkEnrolment(vars []*enrolment) error {
 	for _, v := range vars {
 		var err error
 		if v.parsed, err = secureboot.ParseUpdate(v.update); err != nil {
 			return fmt.Errorf("the update of %s: %w", v.name, err)
 		}
-		if v.certs, err = v.parsed.X509Certificates(); err != nil {
+		if v.name == "db" {
+			v.entries, err = v.parsed.DBEntries()
+		} else {
+			v.entries.Certificates, err = v.parsed.X509Certificates()
+		}
+		if err != nil {
 			return fmt.Errorf("the update of %s: %w", v.name, err)
 		}
-		if len(v.certs) == 0 {
+		if len(v.entries.Certificates) == 0 {
 			return fmt.Errorf("the update of %s holds no certificate", v.name)
 		}
 	}
 	db, kek, pk := vars[0], vars[1], vars[2]
-	if len(pk.certs) != 1 {
-		return fmt.Errorf("the update of PK holds %d certificates; PK is one", len(pk.certs))
+	if len(pk.entries.Certificates) != 1 {
+		return fmt.Errorf("the update of PK holds %d certificates; PK is one", len(pk.entries.Certificates))
 	}
-	signers := map[*enrolment][]*x509.Certificate{db: kek.certs, kek: pk.certs, pk: pk.certs}
+	signers := map[*enrolment][]*x509.Certificate{db: kek.entries.Certificates, kek: pk.entries.Certificates, pk: pk.entries.Certificates}
 	for _, v := range vars {
 		var errs []error
 		for _, c := range signers[v] {
@@ -141,13 +240,8 @@ func checkEnrolment(vars []*enrolment) error {
 }
 
 // checkBootedUnder checks that Secure Boot would start the boot loader and UKI the node booted
-// once the certificates are added to db.
-func (s *Server) checkBootedUnder(db secureboot.Database, added []*x509.Certificate) error {
-	dbx, err := s.readEFIDatabase("dbx")
-	if err != nil {
-		return err
-	}
-	db.Certificates = append(db.Certificates, added...)
+// under db and dbx.
+func (s *Server) checkBootedUnder(db, dbx secureboot.Database) error {
 	binaries, err := s.bootedBinaries()
 	if err != nil {
 		return layer.Errorf(connect.CodeFailedPrecondition, "find the boot loader and UKI this machine booted, which must verify against the new db: %w; pass --force to enrol the keys without the check", err)
@@ -298,6 +392,16 @@ func subjects(certs []*x509.Certificate) []string {
 	var s []string
 	for _, c := range certs {
 		s = append(s, c.Subject.String())
+	}
+	return s
+}
+
+// dbEntries are the subjects of db's certificates, then its SHA-256 digests of images, each as
+// sha256:<hex>.
+func dbEntries(db secureboot.Database) []string {
+	s := subjects(db.Certificates)
+	for _, h := range db.SHA256 {
+		s = append(s, fmt.Sprintf("sha256:%x", h))
 	}
 	return s
 }

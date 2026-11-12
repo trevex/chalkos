@@ -511,6 +511,8 @@ func call(c *client.Conn, procedure string) connect.Code {
 			}
 			err = s.Err()
 		}
+	case "SecureBootDrivers":
+		_, err = c.SecureBootDrivers(ctx, connect.NewRequest(&nodev1.SecureBootDriversRequest{}))
 	case "EnrollSecureBoot":
 		_, err = c.EnrollSecureBoot(ctx, connect.NewRequest(&nodev1.EnrollSecureBootRequest{}))
 	case "Install":
@@ -570,7 +572,7 @@ func TestAuthorisation(t *testing.T) {
 	}{
 		{"normal", normal, true, map[pki.Role]map[string]connect.Code{
 			// The test image has no layers, whose RPCs are unimplemented for every role.
-			pki.RoleReader: {"Info": 0, "Disks": 0, "Contract": 0, "Status": 0, "Logs": 0, "Diagnostics": 0, "RunDiagnostic": connect.CodeNotFound, "Reboot": connect.CodePermissionDenied, "ApplyConfig": connect.CodePermissionDenied, "ResetVolume": connect.CodePermissionDenied, "RollbackConfig": connect.CodePermissionDenied, "ConfirmConfig": connect.CodePermissionDenied, "RollbackImage": connect.CodePermissionDenied, "Install": connect.CodeFailedPrecondition, "EnrollSecureBoot": connect.CodeFailedPrecondition,
+			pki.RoleReader: {"Info": 0, "Disks": 0, "Contract": 0, "Status": 0, "Logs": 0, "Diagnostics": 0, "RunDiagnostic": connect.CodeNotFound, "Reboot": connect.CodePermissionDenied, "ApplyConfig": connect.CodePermissionDenied, "ResetVolume": connect.CodePermissionDenied, "RollbackConfig": connect.CodePermissionDenied, "ConfirmConfig": connect.CodePermissionDenied, "RollbackImage": connect.CodePermissionDenied, "Install": connect.CodeFailedPrecondition, "EnrollSecureBoot": connect.CodeFailedPrecondition, "SecureBootDrivers": connect.CodeFailedPrecondition,
 				"EtcdMembers": connect.CodeUnimplemented, "EtcdRemoveMember": connect.CodeUnimplemented, "EtcdLeave": connect.CodeUnimplemented,
 				"RotationStep": connect.CodeUnimplemented, "Upgrade": connect.CodePermissionDenied, "UpgradeWithConfig": connect.CodePermissionDenied, "DrainNode": connect.CodeUnimplemented,
 				"UncordonNode": connect.CodeUnimplemented, "GetConfig": connect.CodePermissionDenied, "RevokeNode": connect.CodeUnimplemented, "UnrevokeNode": connect.CodeUnimplemented,
@@ -595,14 +597,14 @@ func TestAuthorisation(t *testing.T) {
 			pki.RoleNode: nodeRole,
 		}},
 		{"maintenance with OS CA", maintenance, true, map[pki.Role]map[string]connect.Code{
-			pki.RoleReader: {"Info": 0, "Disks": 0, "Contract": 0, "Diagnostics": 0, "RunDiagnostic": connect.CodeNotFound, "Install": connect.CodePermissionDenied, "EnrollSecureBoot": connect.CodePermissionDenied, "Status": connect.CodeFailedPrecondition, "EtcdMembers": connect.CodeUnimplemented},
+			pki.RoleReader: {"Info": 0, "Disks": 0, "Contract": 0, "Diagnostics": 0, "RunDiagnostic": connect.CodeNotFound, "Install": connect.CodePermissionDenied, "EnrollSecureBoot": connect.CodePermissionDenied, "SecureBootDrivers": 0, "Status": connect.CodeFailedPrecondition, "EtcdMembers": connect.CodeUnimplemented},
 			// A header without a target is refused after authorisation.
 			pki.RoleAdmin: {"Install": connect.CodeInvalidArgument, "EnrollSecureBoot": connect.CodeFailedPrecondition, "ApplyConfig": connect.CodeFailedPrecondition, "ResetVolume": connect.CodeFailedPrecondition, "RollbackConfig": connect.CodeFailedPrecondition, "ConfirmConfig": connect.CodeFailedPrecondition, "RollbackImage": connect.CodeFailedPrecondition, "Bootstrap": connect.CodeUnimplemented, "Upgrade": connect.CodeFailedPrecondition, "DrainNode": connect.CodeUnimplemented,
 				"UncordonNode": connect.CodeUnimplemented, "GetConfig": connect.CodeFailedPrecondition, "RevokeNode": connect.CodeUnimplemented, "UnrevokeNode": connect.CodeUnimplemented},
 			unknownOrganization: {"Info": connect.CodePermissionDenied, "Install": connect.CodePermissionDenied},
 		}},
 		{"maintenance on a generic image", maintenance, false, map[pki.Role]map[string]connect.Code{
-			"": {"Info": 0, "Diagnostics": 0, "RunDiagnostic": connect.CodeNotFound, "Install": connect.CodeInvalidArgument, "EnrollSecureBoot": connect.CodeFailedPrecondition, "Reboot": 0, "Disks": 0, "Contract": 0, "ResetVolume": connect.CodeFailedPrecondition},
+			"": {"Info": 0, "Diagnostics": 0, "RunDiagnostic": connect.CodeNotFound, "Install": connect.CodeInvalidArgument, "EnrollSecureBoot": connect.CodeFailedPrecondition, "SecureBootDrivers": 0, "Reboot": 0, "Disks": 0, "Contract": 0, "ResetVolume": connect.CodeFailedPrecondition},
 		}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -1022,6 +1024,7 @@ func TestPathsUnder(t *testing.T) {
 		OSRelease:       "/etc/os-release",
 		EFIVars:         "/sys/firmware/efi/efivars",
 		TPM:             "/sys/class/tpm",
+		EventLog:        "/sys/kernel/security/tpm0/binary_bios_measurements",
 		StorageStatus:   "/run/chalkos/storage-status.json",
 		MountInfo:       "/proc/self/mountinfo",
 		ESP:             "/efi",
