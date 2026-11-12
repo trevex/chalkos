@@ -114,14 +114,12 @@ Run every later command in `homelab`. The example's files explain themselves in 
 
 ### Get the tools
 
-Lock the flake's chalkos input, and take chalkctl and chalkbuild from that revision, with kubectl,
-jq and openssl:
+The flake's shell holds chalkctl and chalkbuild of the chalkos revision that `flake.lock` pins,
+with kubectl, jq, openssl and wg. Lock the flake's chalkos input and enter the shell:
 
 ```sh
 nix flake lock
-rev=$(nix run nixpkgs#jq -- -r .nodes.chalkos.locked.rev flake.lock)
-nix shell "github:trevex/chalkos/$rev#chalkctl" "github:trevex/chalkos/$rev#chalkbuild" \
-  nixpkgs#kubectl nixpkgs#jq nixpkgs#openssl
+nix develop
 ```
 
 Run every later command of this tutorial in that shell. chalkos is unreleased, so chalkctl and the
@@ -734,8 +732,8 @@ document gives it a new name. Change every document that names the port in the s
 `chalkctl config apply --try`, so that the node rolls it back when chalkctl loses it.
 
 A new chalkos revision or a change to `extensions/` takes new images. Update the flake's lock with
-`nix flake update chalkos`, and enter the shell of [Get the tools](#get-the-tools) again with the
-new `$rev`, so that chalkctl matches the images. Build the images again, remove the signed copies
+`nix flake update chalkos`, and enter the shell of [Get the tools](#get-the-tools) again, so that
+chalkctl matches the images. Build the images again, remove the signed copies
 of the old builds, which `chalkbuild sign` does not overwrite, and sign the new ones:
 
 ```sh

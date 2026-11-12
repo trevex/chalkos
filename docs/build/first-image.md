@@ -41,8 +41,9 @@ The call sets three arguments:
   `node.modules` adds the extension's NixOS modules to the variant `node`.
 
 `mkImages` returns each image as `images.<variant>-<platform>`, such as `images.node-metal`, and
-the flake exposes them as packages of the same names, beside the installer. One image serves every
-node of its variant and platform. What differs between
+the flake exposes them as packages of the same names, beside the installer. Its shell, which
+`nix develop` enters, holds chalkctl and chalkbuild of the chalkos that `flake.lock` pins. One image
+serves every node of its variant and platform. What differs between
 nodes, from their addresses to the cluster's endpoint, is their config: YAML documents that
 chalkctl delivers, which [Config and the inventory](../how-it-works/node/config.md) describes.
 
