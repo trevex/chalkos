@@ -152,6 +152,11 @@ nav = [
         ] },
         { "recovery-key" = "reference/cli/chalkctl_recovery-key.md" },
         { "rotate" = "reference/cli/chalkctl_rotate.md" },
+        { "secureboot" = [
+          { "Overview" = "reference/cli/chalkctl_secureboot.md" },
+          { "enroll" = "reference/cli/chalkctl_secureboot_enroll.md" },
+          { "new" = "reference/cli/chalkctl_secureboot_new.md" },
+        ] },
         { "status" = "reference/cli/chalkctl_status.md" },
         { "storage" = [
           { "Overview" = "reference/cli/chalkctl_storage.md" },

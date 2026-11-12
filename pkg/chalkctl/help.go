@@ -557,3 +557,53 @@ const validateExample = `  # Check every node of chalkos.yaml.
 
   # Check two nodes of another inventory.
   chalkctl validate cp1 w1 --inventory lab/chalkos.yaml`
+
+const securebootLong = `Creates the Secure Boot keys of the machines an operator owns and enrols them in the firmware of a
+node in maintenance mode whose firmware is in Setup Mode, without the firmware's setup screen. The
+private keys stay on the workstation: chalkctl signs the updates of the firmware's variables, and
+the node writes them. See https://trevex.github.io/chalkos/build/sign-images/.`
+
+const securebootExample = `  chalkctl secureboot new keys
+  chalkctl secureboot enroll --keys keys --address 192.168.1.50 --insecure --secrets secrets.age`
+
+const securebootNewLong = `Creates a directory of Secure Boot keys: the platform key PK, the key exchange key KEK and the
+db key, which signs images. Each is an RSA 2048 key in <name>.key, readable by its owner alone, and
+a self-signed certificate in <name>.crt, valid for 20 years; firmware does not check the validity.
+owner.txt holds a random GUID, the owner of the entries chalkctl secureboot enroll writes. The
+directory must not exist or be empty.
+
+chalkbuild sign signs images with db.key and db.crt. Whoever holds PK.key or KEK.key can change
+which images the firmware starts, so keep the directory offline and backed up.`
+
+const securebootNewExample = `  chalkctl secureboot new keys
+  chalkbuild sign --key keys/db.key --cert keys/db.crt images/node-metal images/node-metal-signed`
+
+const securebootEnrollLong = `Enrols the Secure Boot keys of --keys in the firmware of a node in maintenance mode, which must be
+in Setup Mode, as firmware is once its platform key is cleared in its setup. chalkctl signs three
+updates of the firmware's variables: db and KEK, appended to what the firmware holds, and PK, which
+ends Setup Mode. It reads PK.key, PK.crt, KEK.key, KEK.crt, db.crt and owner.txt from --keys;
+db.key, which signs images, may stay on the machine that signs them. With --microsoft, db also
+gets Microsoft's UEFI CAs of 2011 and 2023 and its option ROM CA of 2023, and KEK Microsoft's KEK
+CAs of 2011 and 2023; firmware needs them to start the option ROMs of many graphics and network
+cards and boot loaders Microsoft signed.
+
+The node refuses the keys unless the boot loader and UKI it booted verify against db with the new
+keys, so sign the installer or image with the db key first (chalkbuild sign) and boot it; --force
+enrols the keys all the same. A node that runs its image from its own disk deletes STATE, which
+holds nothing before the install and which the TPM no longer unseals once the keys change, and
+creates it again when it boots. The node writes PK last: when a write fails before it, the firmware
+stays in Setup Mode and enroll can run again.
+
+The node then reboots, and chalkctl waits until it answers with Secure Boot on. It makes a new
+certificate in maintenance mode when it boots, which chalkctl accepts without verifying and prints
+the fingerprint of; compare it with the node's console before the install. Like chalkctl disks, the
+command reaches the node by --address, with --fingerprint or --insecure, and with the secrets file
+or an admin's client file when its image carries an OS CA.`
+
+const securebootEnrollExample = `  # Enrol the keys in a machine that booted the signed installer, then install it.
+  chalkctl secureboot enroll --keys keys --address 192.168.1.50 --insecure --secrets secrets.age
+  chalkctl install w1 --secrets secrets.age --address 192.168.1.50 --fingerprint <fingerprint>
+
+  # Enrol Microsoft's CAs too, for a graphics card's option ROM.
+  chalkctl secureboot enroll --keys keys --microsoft --address 192.168.1.50 \
+    --fingerprint 9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08`

@@ -15,6 +15,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -63,6 +64,9 @@ type testApp struct {
 	mu       sync.Mutex
 	wrap     func(http.Handler) http.Handler
 	requests map[string][]string
+	// served holds the certificate each node startNode serves presents, by its address; mu guards
+	// it. renewMaintenanceCertificate replaces one, as a reboot in maintenance mode does.
+	served map[string]*atomic.Pointer[tls.Certificate]
 }
 
 // setWrap has the nodes startNode serves wrap their handler with wrap from now on.
@@ -223,7 +227,34 @@ func (ta *testApp) startNode(t *testing.T, s *chalkd.Server) string {
 		}
 		h.ServeHTTP(w, r)
 	})
-	return serveTLS(t, record, chalkd.TLSConfig(chalkd.StaticCertificate(&pair), s.ClientCAs))
+	served := &atomic.Pointer[tls.Certificate]{}
+	served.Store(&pair)
+	addr := serveTLS(t, record, chalkd.TLSConfig(func(*tls.ClientHelloInfo) (*tls.Certificate, error) { return served.Load(), nil }, s.ClientCAs))
+	ta.mu.Lock()
+	defer ta.mu.Unlock()
+	if ta.served == nil {
+		ta.served = map[string]*atomic.Pointer[tls.Certificate]{}
+	}
+	ta.served[addr] = served
+	return addr
+}
+
+// renewMaintenanceCertificate has the node at addr present a new self-signed certificate, as
+// chalkd makes one when it boots in maintenance mode, and returns its fingerprint.
+func (ta *testApp) renewMaintenanceCertificate(t *testing.T, addr string) string {
+	t.Helper()
+	cert, err := pki.SelfSigned("chalkd", time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	pair, err := tls.X509KeyPair([]byte(cert.Certificate), []byte(cert.Key))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ta.mu.Lock()
+	defer ta.mu.Unlock()
+	ta.served[addr].Store(&pair)
+	return pki.Fingerprint(pair.Certificate[0])
 }
 
 // serveTLS serves h with the configuration as chalkd does, and returns the address. httptest's
