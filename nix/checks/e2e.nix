@@ -20,6 +20,31 @@ let
         touch $out
       '';
   kubernetesImages = "${chalkPkgs.test-kubernetes-images}/images.json";
+  # A disk that a previous system left with an LVM volume group on its one partition, as the
+  # installer's target: the group's volume stays inactive, so the install can wipe the disk. The
+  # volume is created without activating it, which needs no device mapper in the build's VM.
+  lvmDisk = pkgs.vmTools.runInLinuxVM (
+    pkgs.runCommand "chalkos-test-lvm-disk"
+      {
+        nativeBuildInputs = [
+          pkgs.lvm2
+          pkgs.util-linux
+        ];
+        preVM = ''
+          mkdir $out
+          diskImage=$out/disk.raw
+          ${pkgs.qemu-utils}/bin/qemu-img create -f raw $diskImage 64M
+        '';
+      }
+      ''
+        echo 'label: gpt' | sfdisk /dev/vda
+        echo ',,L' | sfdisk --append /dev/vda
+        lvm=(--config 'devices { use_devicesfile = 0 } activation { udev_sync = 0 udev_rules = 0 }')
+        pvcreate "''${lvm[@]}" /dev/vda1
+        vgcreate "''${lvm[@]}" pool /dev/vda1
+        lvcreate "''${lvm[@]}" --activate n --zero n -n data -l 100%FREE pool
+      ''
+  );
 in
 {
   e2e-firmware = e2e "firmware" "^TestFirmwareBoots$" [ ] { };
@@ -27,10 +52,10 @@ in
   e2e-secureboot = e2e "secureboot" "^TestSecureBoot" [ "CHALKLAB_IMAGE_DIR" ] { };
   e2e-verity = e2e "verity" "^TestVerityRejectsTamperedStore$" [ "CHALKLAB_IMAGE_DIR" ] { };
   e2e-install = e2e "install" "^TestInstallInPlace$" [ "CHALKLAB_IMAGE_DIR" ] { };
-  e2e-installer = e2e "installer" "^TestInstallerInstallsOntoBlankDisk$" [
+  e2e-installer = e2e "installer" "^TestInstallerInstallsOntoLVMDisk$" [
     "CHALKLAB_IMAGE_DIR"
     "CHALKLAB_INSTALLER_DIR"
-  ] { };
+  ] { CHALKLAB_LVM_DISK = "${lvmDisk}/disk.raw"; };
   e2e-iso = e2e "iso" "^TestInstallerISOBoots$" [ "CHALKLAB_GENERIC_INSTALLER_DIR" ] { };
   e2e-storage = e2e "storage" "^TestStorage" [ "CHALKLAB_STORAGE_IMAGE_DIR" ] { };
   e2e-upgrade = e2e "upgrade" "^TestUpgrade$" [

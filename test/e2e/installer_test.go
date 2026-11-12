@@ -29,25 +29,26 @@ func consoleFingerprint(t *testing.T, vm *lab.VM) string {
 	return m[1]
 }
 
-// TestInstallerInstallsOntoBlankDisk boots the test cluster's signed installer under Secure Boot
-// next to a blank disk and installs a node onto that disk from its image, signed beforehand as
-// chalkbuild signs it. The first install streams the image's parts from the host and is cancelled
-// while slot A is written. The second, of config with a Greeting that shouts, is refused by the
+// TestInstallerInstallsOntoLVMDisk boots the test cluster's signed installer under Secure Boot
+// next to a disk that holds an LVM volume group, which the installer leaves inactive, and installs
+// a node onto that disk from its image, signed beforehand as chalkbuild signs it. The first
+// install wipes the disk with --wipe-disk, streams the image's parts from the host and is
+// cancelled while slot A is written. The second, of config with a Greeting that shouts, is refused by the
 // image's validator once the image's store is on the disk. The install run again without
 // --wipe-disk continues on the disk, with the image pulled from a registry on the host with the
 // credentials of a Registry in the node's config. The
 // node then boots from the disk installed: slot A holding the image under labels of its root
 // hash, its UKI as chalkos_1.efi, slot B empty, VAR mounted, STATE and VAR with two keyslots,
 // chalkd over mTLS.
-func TestInstallerInstallsOntoBlankDisk(t *testing.T) {
-	requireEnv(t, append([]string{"CHALKLAB_OVMF_CODE", "CHALKLAB_OVMF_VARS_ENROLLED", "CHALKLAB_SB_KEYS", "CHALKLAB_INSTALLER_DIR", "CHALKLAB_IMAGE_DIR"}, chalkdEnv...)...)
+func TestInstallerInstallsOntoLVMDisk(t *testing.T) {
+	requireEnv(t, append([]string{"CHALKLAB_LVM_DISK", "CHALKLAB_OVMF_CODE", "CHALKLAB_OVMF_VARS_ENROLLED", "CHALKLAB_SB_KEYS", "CHALKLAB_INSTALLER_DIR", "CHALKLAB_IMAGE_DIR"}, chalkdEnv...)...)
 	root := rootHash(t, "CHALKLAB_IMAGE_DIR")
 	start := time.Now()
 	dir := vmDir(t)
 	reg := startImageRegistry(t, filepath.Join(dir, "registry"), "pull-s3cret")
 	installer := prepareDisk(t, dir, diskOpts{imageEnv: "CHALKLAB_INSTALLER_DIR", sign: true})
 	targetPath := filepath.Join(dir, "target.qcow2")
-	if err := lab.CreateDisk(context.Background(), targetPath, "16G"); err != nil {
+	if err := lab.CreateOverlay(context.Background(), os.Getenv("CHALKLAB_LVM_DISK"), targetPath, "16G"); err != nil {
 		t.Fatal(err)
 	}
 	n := startNode(t, lab.VMConfig{
@@ -67,9 +68,10 @@ func TestInstallerInstallsOntoBlankDisk(t *testing.T) {
 		files: "nodes/chalklab-target.yaml", registry: "nodes/chalklab-target-registry.yaml",
 	})
 	install := []string{"install", "chalklab-target", "--fingerprint", fingerprint, "--inventory", inv}
-	// An install streamed from the image's directory and cancelled while chalkd writes slot A of
-	// the laid-out target continues without --wipe-disk from the registry.
-	interrupted := cancelledInstall(t, n, "", append(slices.Clone(install), "--image", image))
+	// An install streamed from the image's directory wipes the target, whose volume group stayed
+	// inactive, and is cancelled while chalkd writes slot A of the laid-out target; it continues
+	// without --wipe-disk from the registry.
+	interrupted := cancelledInstall(t, n, "", append(slices.Clone(install), "--image", image, "--wipe-disk"))
 	// The store data, hash tree, UKI and boot loader, not the whole raw image.
 	m := regexp.MustCompile(`sending (\d+) bytes`).FindStringSubmatch(interrupted)
 	if m == nil {
