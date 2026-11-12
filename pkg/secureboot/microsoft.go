@@ -56,3 +56,9 @@ func microsoft(files ...string) []*x509.Certificate {
 	}
 	return certs
 }
+
+// MicrosoftOptionROMCAs returns the CAs of MicrosoftDB that sign option ROMs: the UEFI CA of 2011
+// and the Option ROM UEFI CA of 2023. The UEFI CA of 2023 signs boot loaders alone.
+func MicrosoftOptionROMCAs() []*x509.Certificate {
+	return microsoft("ms-uefi-2011.der", "ms-uefi-rom-2023.der")
+}

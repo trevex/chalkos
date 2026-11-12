@@ -2,6 +2,7 @@ package secureboot
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"encoding/binary"
 	"path/filepath"
 	"testing"
@@ -40,5 +41,25 @@ func TestX509SignatureLists(t *testing.T) {
 	db, err := ParseDatabase(b)
 	if err != nil || len(db.Certificates) != 2 || !db.Certificates[0].Equal(k.DB.Cert) || !db.Certificates[1].Equal(k.KEK.Cert) {
 		t.Errorf("ParseDatabase = %+v, %v", db, err)
+	}
+}
+
+// TestSHA256SignatureList writes the digests as one list of entries of the owner and 32 bytes,
+// which ParseDatabase reads back, and nothing for no digests.
+func TestSHA256SignatureList(t *testing.T) {
+	owner := [16]byte{1, 2, 3}
+	a, b := sha256.Sum256([]byte("a")), sha256.Sum256([]byte("b"))
+	list := SHA256SignatureList(owner, a[:], b[:])
+	want := append(bytes.Clone(certSHA256[:]), 28+2*48, 0, 0, 0, 0, 0, 0, 0, 48, 0, 0, 0)
+	want = append(append(append(want, owner[:]...), a[:]...), owner[:]...)
+	if want = append(want, b[:]...); !bytes.Equal(list, want) {
+		t.Errorf("SHA256SignatureList = %x, want %x", list, want)
+	}
+	db, err := ParseDatabase(list)
+	if err != nil || len(db.SHA256) != 2 || !bytes.Equal(db.SHA256[0], a[:]) || !bytes.Equal(db.SHA256[1], b[:]) {
+		t.Errorf("ParseDatabase = %+v, %v", db, err)
+	}
+	if list := SHA256SignatureList(owner); len(list) != 0 {
+		t.Errorf("SHA256SignatureList of no digests = %x", list)
 	}
 }

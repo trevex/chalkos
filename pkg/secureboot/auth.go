@@ -125,12 +125,25 @@ func (p ParsedUpdate) Verify(name string, vendor [16]byte, attrs uint32, cert *x
 // X509Certificates returns the certificates of the update's data, which must be EFI signature
 // lists of X.509 certificates alone.
 func (p ParsedUpdate) X509Certificates() ([]*x509.Certificate, error) {
-	db, err := ParseDatabase(p.Data)
+	db, err := p.DBEntries()
 	if err != nil {
 		return nil, err
 	}
-	if len(db.Unreadable) > 0 || len(db.SHA256)+len(db.SHA384)+len(db.SHA512)+len(db.TBSSHA256)+len(db.TBSSHA384)+len(db.TBSSHA512) > 0 {
+	if len(db.SHA256) > 0 {
 		return nil, errors.New("the signature lists hold entries other than X.509 certificates")
 	}
 	return db.Certificates, nil
+}
+
+// DBEntries returns the certificates and the SHA-256 digests of images of the update's data,
+// which must be EFI signature lists of these alone, as an update of db may hold.
+func (p ParsedUpdate) DBEntries() (Database, error) {
+	db, err := ParseDatabase(p.Data)
+	if err != nil {
+		return Database{}, err
+	}
+	if len(db.Unreadable) > 0 || len(db.SHA384)+len(db.SHA512)+len(db.TBSSHA256)+len(db.TBSSHA384)+len(db.TBSSHA512) > 0 {
+		return Database{}, errors.New("the signature lists hold entries other than X.509 certificates and SHA-256 digests of images")
+	}
+	return db, nil
 }

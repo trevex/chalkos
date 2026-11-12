@@ -192,3 +192,19 @@ func TestSignUpdateAsSbvarsign(t *testing.T) {
 		t.Errorf("the update differs from sbvarsign's:\nours   %x\ntheirs %x", ours, theirs)
 	}
 }
+
+// TestDBEntries reads X.509 certificates and SHA-256 digests of images, which an update of db
+// may hold, and refuses other entries.
+func TestDBEntries(t *testing.T) {
+	k, _ := testKeys(t)
+	digest := make([]byte, 32)
+	p := ParsedUpdate{Data: append(X509SignatureLists(k.Owner, k.DB.Cert), SHA256SignatureList(k.Owner, digest)...)}
+	db, err := p.DBEntries()
+	if err != nil || len(db.Certificates) != 1 || !db.Certificates[0].Equal(k.DB.Cert) || len(db.SHA256) != 1 || !bytes.Equal(db.SHA256[0], digest) {
+		t.Errorf("DBEntries = %+v, %v", db, err)
+	}
+	p.Data = append(p.Data, signatureList(certSHA384, make([]byte, 48))...)
+	if _, err := p.DBEntries(); err == nil || !strings.Contains(err.Error(), "SHA-256") {
+		t.Errorf("DBEntries of a SHA-384 digest: %v", err)
+	}
+}
