@@ -587,12 +587,22 @@ gets Microsoft's UEFI CAs of 2011 and 2023 and its option ROM CA of 2023, and KE
 CAs of 2011 and 2023; firmware needs them to start the option ROMs of many graphics and network
 cards and boot loaders Microsoft signed.
 
+Option ROMs are the firmware of graphics cards, network cards and disk controllers, which the
+machine's firmware loads at every boot. Under Secure Boot, db must allow each of them, by a CA
+that signed it or by its digest. --option-roms asks the node for the SHA-256 digests of the option
+ROMs its firmware loaded, as the TPM event log lists them, prints them and adds them to db.
+--db-hash adds a digest of your own, such as that of an option ROM the machine did not load this
+boot.
+
 The node refuses the keys unless the boot loader and UKI it booted verify against db with the new
-keys, so sign the installer or image with the db key first (chalkbuild sign) and boot it; --force
-enrols the keys all the same. A node that runs its image from its own disk deletes STATE, which
-holds nothing before the install and which the TPM no longer unseals once the keys change, and
-creates it again when it boots. The node writes PK last: when a write fails before it, the firmware
-stays in Setup Mode and enroll can run again.
+keys, so sign the installer or image with the db key first (chalkbuild sign) and boot it. It also
+refuses keys under which db would not allow every option ROM its TPM event log lists, by its digest
+or by holding Microsoft's UEFI CA of 2011 or its option ROM CA of 2023, and option ROMs dbx
+revokes. When the node cannot read its option ROMs, without a TPM for one, chalkctl says so.
+--force enrols the keys all the same, skipping both checks. A node that runs its image from its
+own disk deletes STATE, which holds nothing before the install and which the TPM no longer unseals
+once the keys change, and creates it again when it boots. The node writes PK last: when a write
+fails before it, the firmware stays in Setup Mode and enroll can run again.
 
 The node then reboots, and chalkctl waits until it answers with Secure Boot on. It makes a new
 certificate in maintenance mode when it boots, which chalkctl accepts without verifying and prints
@@ -606,4 +616,8 @@ const securebootEnrollExample = `  # Enrol the keys in a machine that booted the
 
   # Enrol Microsoft's CAs too, for a graphics card's option ROM.
   chalkctl secureboot enroll --keys keys --microsoft --address 192.168.1.50 \
+    --fingerprint 9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08
+
+  # Enrol the digests of the option ROMs the machine loaded instead of Microsoft's CAs.
+  chalkctl secureboot enroll --keys keys --option-roms --address 192.168.1.50 \
     --fingerprint 9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08`

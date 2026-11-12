@@ -1,8 +1,11 @@
 package chalkctl
 
 import (
+	"bytes"
 	"context"
+	"crypto/sha256"
 	"crypto/x509"
+	"encoding/hex"
 	"os"
 	"path/filepath"
 	"slices"
@@ -11,6 +14,7 @@ import (
 	"time"
 
 	"github.com/trevex/chalkos/pkg/secureboot"
+	"github.com/trevex/chalkos/pkg/secureboot/secureboottest"
 )
 
 // TestSecurebootNew writes the keys named after their directory and prints how to sign images
@@ -52,12 +56,17 @@ type enrolledNode struct {
 // enrollNode serves a node in maintenance mode whose firmware is in Setup Mode. Its reboot sets
 // SecureBoot to secureBootAfter and has it present a new certificate, as chalkd does when it
 // boots in maintenance mode. With early, SecureBoot is on as soon as PK is written, before the
-// reboot, as some firmware reports it, and the reboot comes later.
-func enrollNode(t *testing.T, ta *testApp, secureBootAfter byte, early bool) *enrolledNode {
+// reboot, as some firmware reports it, and the reboot comes later. Its TPM event log is eventLog,
+// none for nil.
+func enrollNode(t *testing.T, ta *testApp, secureBootAfter byte, early bool, eventLog []byte) *enrolledNode {
 	t.Helper()
 	n := &enrolledNode{written: map[string]secureboot.ParsedUpdate{}, rebooted: make(chan string, 1)}
 	s := maintenanceNode()
 	s.Paths.EFIVars = t.TempDir()
+	s.Paths.EventLog = filepath.Join(t.TempDir(), "binary_bios_measurements")
+	if eventLog != nil {
+		writeFile(t, s.Paths.EventLog, string(eventLog))
+	}
 	s.RebootDelay = 10 * time.Millisecond
 	if early {
 		s.RebootDelay = 300 * time.Millisecond
@@ -105,7 +114,7 @@ func TestSecurebootEnroll(t *testing.T) {
 	}
 	for _, microsoft := range []bool{false, true} {
 		ta := newTestApp(t)
-		n := enrollNode(t, ta, 1, false)
+		n := enrollNode(t, ta, 1, false, nil)
 		addr, written := n.addr, n.written
 		args := []string{"secureboot", "enroll", "--keys", keys, "--address", addr, "--insecure", "--force"}
 		if microsoft {
@@ -159,14 +168,14 @@ func TestSecurebootEnrollRefusals(t *testing.T) {
 	}
 
 	ta := newTestApp(t)
-	addr := enrollNode(t, ta, 0, false).addr
+	addr := enrollNode(t, ta, 0, false, nil).addr
 	err := ta.run(context.Background(), []string{"secureboot", "enroll", "--keys", keys, "--address", addr, "--insecure", "--force", "--timeout", "300ms"})
 	if err == nil || !strings.Contains(err.Error(), "the node booted again without Secure Boot on, it reports SECURE_BOOT_DISABLED") {
 		t.Errorf("enroll on a node that does not turn Secure Boot on = %v", err)
 	}
 
 	ta = newTestApp(t)
-	n := enrollNode(t, ta, 1, false)
+	n := enrollNode(t, ta, 1, false, nil)
 	addr, written := n.addr, n.written
 	ta.run(context.Background(), []string{"secureboot", "enroll", "--keys", keys, "--address", addr, "--insecure", "--force"})
 	ta.stdout.Reset()
@@ -193,7 +202,7 @@ func TestSecurebootEnrollWaitsForTheReboot(t *testing.T) {
 		t.Fatal(err)
 	}
 	ta := newTestApp(t)
-	n := enrollNode(t, ta, 1, true)
+	n := enrollNode(t, ta, 1, true, nil)
 	if err := ta.run(context.Background(), []string{"secureboot", "enroll", "--keys", keys, "--address", n.addr, "--insecure", "--force"}); err != nil {
 		t.Fatal(err)
 	}
@@ -205,5 +214,69 @@ func TestSecurebootEnrollWaitsForTheReboot(t *testing.T) {
 	}
 	if !strings.Contains(ta.stderr.String(), "fingerprint is now "+rebooted) {
 		t.Errorf("stderr = %q, want the rebooted node's fingerprint %s", ta.stderr, rebooted)
+	}
+}
+
+// TestSecurebootEnrollOptionROMs adds the digests of the option ROMs the node lists with
+// --option-roms, and those of --db-hash, to db once each, and prints the option ROMs.
+func TestSecurebootEnrollOptionROMs(t *testing.T) {
+	keys := filepath.Join(t.TempDir(), "keys")
+	if err := secureboot.NewKeys(keys, "test"); err != nil {
+		t.Fatal(err)
+	}
+	gpu, nic, other := sha256.Sum256([]byte("gpu")), sha256.Sum256([]byte("nic")), sha256.Sum256([]byte("other"))
+	l := secureboottest.NewLog(2, secureboottest.AlgSHA256)
+	l.Driver(secureboottest.EvBootServicesDriver, gpu, secureboottest.OptionROMPath(3))
+	l.Driver(secureboottest.EvBootServicesDriver, nic, secureboottest.OptionROMPath(4))
+	ta := newTestApp(t)
+	n := enrollNode(t, ta, 1, false, l.Bytes)
+	err := ta.run(context.Background(), []string{"secureboot", "enroll", "--keys", keys, "--address", n.addr, "--insecure", "--force",
+		"--option-roms", "--db-hash", "sha256:" + hex.EncodeToString(other[:]), "--db-hash", strings.ToUpper(hex.EncodeToString(nic[:]))})
+	if err != nil {
+		t.Fatalf("%v\n%s", err, ta.stderr)
+	}
+	db, err := n.written["db"].DBEntries()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := [][]byte{other[:], nic[:], gpu[:]}; !slices.EqualFunc(db.SHA256, want, bytes.Equal) {
+		t.Errorf("db's digests %x, want %x", db.SHA256, want)
+	}
+	if out, want := ta.stdout.String(), "option ROMs the firmware measured:\n  sha256:"+hex.EncodeToString(gpu[:])+" PciRoot(0x0)/Pci(0x3,0x0)/Offset(0x10a00,0x2f9ff)\n"; !strings.Contains(out, want) {
+		t.Errorf("stdout %q, want %q", out, want)
+	}
+}
+
+// TestSecurebootEnrollRefusesOptionROMs prints the node's refusal of keys under which Secure Boot
+// would refuse its option ROMs, and refuses a --db-hash that is no SHA-256 digest; without an
+// event log, --option-roms says that the node lists none.
+func TestSecurebootEnrollRefusesOptionROMs(t *testing.T) {
+	keys := filepath.Join(t.TempDir(), "keys")
+	if err := secureboot.NewKeys(keys, "test"); err != nil {
+		t.Fatal(err)
+	}
+	gpu := sha256.Sum256([]byte("gpu"))
+	l := secureboottest.NewLog(2, secureboottest.AlgSHA256)
+	l.Driver(secureboottest.EvBootServicesDriver, gpu, secureboottest.OptionROMPath(3))
+	ta := newTestApp(t)
+	n := enrollNode(t, ta, 1, false, l.Bytes)
+	err := ta.run(context.Background(), []string{"secureboot", "enroll", "--keys", keys, "--address", n.addr, "--insecure"})
+	if err == nil || !strings.Contains(err.Error(), "sha256:"+hex.EncodeToString(gpu[:])) || !strings.Contains(err.Error(), "--option-roms") || len(n.written) != 0 {
+		t.Errorf("enroll of keys that refuse an option ROM = %v, wrote %d", err, len(n.written))
+	}
+
+	for _, hash := range []string{"abc", strings.Repeat("g", 64)} {
+		if err := ta.run(context.Background(), []string{"secureboot", "enroll", "--keys", keys, "--address", n.addr, "--insecure", "--db-hash", hash}); err == nil || !strings.Contains(err.Error(), "--db-hash") {
+			t.Errorf("enroll --db-hash %s = %v", hash, err)
+		}
+	}
+
+	ta = newTestApp(t)
+	n = enrollNode(t, ta, 1, false, nil)
+	if err := ta.run(context.Background(), []string{"secureboot", "enroll", "--keys", keys, "--address", n.addr, "--insecure", "--force", "--option-roms"}); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(ta.stderr.String(), "has no TPM") {
+		t.Errorf("stderr %q, want the node's reason for listing no option ROMs", ta.stderr)
 	}
 }

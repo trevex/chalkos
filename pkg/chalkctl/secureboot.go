@@ -1,10 +1,15 @@
 package chalkctl
 
 import (
+	"bytes"
 	"context"
+	"crypto/sha256"
 	"crypto/tls"
+	"encoding/hex"
 	"fmt"
 	"path/filepath"
+	"slices"
+	"strings"
 	"time"
 
 	"connectrpc.com/connect"
@@ -54,6 +59,8 @@ type securebootEnrollFlags struct {
 	pin              pinFlags
 	keys             string
 	microsoft, force bool
+	optionROMs       bool
+	dbHashes         []string
 	timeout          time.Duration
 }
 
@@ -69,7 +76,9 @@ func (a *app) securebootEnrollCommand() *cobra.Command {
 	fs := cmd.Flags()
 	fs.StringVar(&f.keys, "keys", "", "directory of the keys, as chalkctl secureboot new writes it")
 	fs.BoolVar(&f.microsoft, "microsoft", false, "also enrol Microsoft's KEK CAs and its UEFI and option ROM CAs, which sign the firmware of graphics and network cards and other boot loaders")
-	fs.BoolVar(&f.force, "force", false, "enrol the keys even if Secure Boot would refuse the boot loader or UKI the node booted under them")
+	fs.BoolVar(&f.optionROMs, "option-roms", false, "also enrol in db the SHA-256 digests of the option ROMs the node's firmware loaded, as its TPM event log lists them")
+	fs.StringArrayVar(&f.dbHashes, "db-hash", nil, "also enrol in db this SHA-256 Authenticode digest of an image, 64 hex digits, optionally after sha256: (repeatable)")
+	fs.BoolVar(&f.force, "force", false, "enrol the keys even if Secure Boot would refuse the boot loader or UKI the node booted, or an option ROM it loaded, under them")
 	fs.StringVar(&f.address, "address", "", "address of the node's chalkd, host or host:port")
 	f.secrets.Register(fs)
 	fs.StringVar(&f.config, "config", "", "client file of an admin to authenticate with instead of the secrets file")
@@ -84,11 +93,15 @@ func (a *app) securebootEnroll(ctx context.Context, f securebootEnrollFlags) err
 	if f.timeout <= 0 {
 		return cli.Usagef("--timeout must be positive")
 	}
-	keys, err := secureboot.LoadEnrolmentKeys(f.keys)
-	if err != nil {
-		return err
+	var hashes [][]byte
+	for _, s := range f.dbHashes {
+		h, err := hex.DecodeString(strings.TrimPrefix(s, "sha256:"))
+		if err != nil || len(h) != sha256.Size {
+			return cli.Usagef("--db-hash %s is not a SHA-256 digest of 64 hex digits", s)
+		}
+		hashes = addHash(hashes, h)
 	}
-	req, err := enrolmentRequest(keys, f.microsoft, f.force, time.Now())
+	keys, err := secureboot.LoadEnrolmentKeys(f.keys)
 	if err != nil {
 		return err
 	}
@@ -120,9 +133,34 @@ func (a *app) securebootEnroll(ctx context.Context, f securebootEnrollFlags) err
 	if info.Msg.Mode != nodev1.Mode_MODE_MAINTENANCE {
 		return fmt.Errorf("the node at %s is installed; Secure Boot keys are enrolled in maintenance mode, before the install", f.address)
 	}
+	if f.optionROMs {
+		drivers, err := conn.SecureBootDrivers(ctx, connect.NewRequest(&nodev1.SecureBootDriversRequest{}))
+		if err != nil {
+			return fmt.Errorf("list the option ROMs: %w", err)
+		}
+		switch {
+		case drivers.Msg.NoEventLog != "":
+			fmt.Fprintf(a.stderr, "chalkctl: the node lists no option ROMs: %s\n", drivers.Msg.NoEventLog)
+		case len(drivers.Msg.Drivers) == 0:
+			fmt.Fprintln(a.stdout, "option ROMs the firmware measured: none")
+		default:
+			fmt.Fprintln(a.stdout, "option ROMs the firmware measured:")
+		}
+		for _, d := range drivers.Msg.Drivers {
+			fmt.Fprintf(a.stdout, "  sha256:%x %s\n", d.Sha256, d.DevicePath)
+			hashes = addHash(hashes, d.Sha256)
+		}
+	}
+	req, err := enrolmentRequest(keys, f.microsoft, hashes, f.force, time.Now())
+	if err != nil {
+		return err
+	}
 	resp, err := conn.EnrollSecureBoot(ctx, connect.NewRequest(req))
 	if err != nil {
 		return fmt.Errorf("enroll the keys: %w", err)
+	}
+	if resp.Msg.DriversUnchecked != "" {
+		fmt.Fprintf(a.stderr, "chalkctl: the node did not check its option ROMs against the new db: %s\n", resp.Msg.DriversUnchecked)
 	}
 	for _, db := range []struct {
 		name string
@@ -151,9 +189,10 @@ func (a *app) securebootEnroll(ctx context.Context, f securebootEnrollFlags) err
 
 // enrolmentRequest signs the updates of db, KEK and PK of the keys at now: db and KEK appended to
 // what the firmware holds, db signed by the KEK and KEK by the PK, and PK, which ends Setup Mode,
-// signed by itself. With microsoft, Microsoft's CAs are added to db and KEK.
-func enrolmentRequest(k secureboot.Keys, microsoft, force bool, now time.Time) (*nodev1.EnrollSecureBootRequest, error) {
-	db := secureboot.X509SignatureLists(k.Owner, k.DB.Cert)
+// signed by itself. With microsoft, Microsoft's CAs are added to db and KEK; db also gets the
+// SHA-256 digests of images, hashes.
+func enrolmentRequest(k secureboot.Keys, microsoft bool, hashes [][]byte, force bool, now time.Time) (*nodev1.EnrollSecureBootRequest, error) {
+	db := append(secureboot.X509SignatureLists(k.Owner, k.DB.Cert), secureboot.SHA256SignatureList(k.Owner, hashes...)...)
 	kek := secureboot.X509SignatureLists(k.Owner, k.KEK.Cert)
 	if microsoft {
 		db = append(db, secureboot.X509SignatureLists(secureboot.MicrosoftOwner, secureboot.MicrosoftDB()...)...)
@@ -210,4 +249,12 @@ func (a *app) waitSecureBoot(ctx context.Context, addr string, cert *tls.Certifi
 		return nil
 	})
 	return fingerprint, err
+}
+
+// addHash appends the digest to the digests unless they hold it already.
+func addHash(hashes [][]byte, h []byte) [][]byte {
+	if slices.ContainsFunc(hashes, func(o []byte) bool { return bytes.Equal(o, h) }) {
+		return hashes
+	}
+	return append(hashes, h)
 }
