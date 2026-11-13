@@ -4313,25 +4313,30 @@ lib.runTests {
       };
     };
   };
-  # The first serial port's getty runs only where the port exists and is a UART of a known type,
-  # which ends its restarts on a machine without one: the 8250 driver registers ttyS0 on x86 with
-  # type 0 when no UART answers. It is a drop-in to the instance the kernel's console= creates.
+  # A serial port's getty runs only where the port exists and is a UART of a known type, which
+  # ends its restarts on a machine without one: the 8250 driver registers ttyS0 on x86 with type 0
+  # when no UART answers. The conditions are in the template's drop-in, next to agetty's
+  # ExecStart, and no instance has a drop-in of its own, whose file of the same name would hide
+  # the template's and leave the upstream unit's ExecStart, a path that does not exist.
   testSerialGettyNeedsThePort = {
     expr =
       let
-        unit = (worker [ ]).systemd.services."serial-getty@ttyS0";
+        c = worker [ ];
+        unit = c.systemd.services."serial-getty@";
       in
       {
-        inherit (unit) overrideStrategy;
         condition = unit.unitConfig.ConditionPathExists;
         knownType =
-          builtins.match ".*/bin/[a-z]+ -c '! /nix/store/[^ ]*/bin/grep -qx 0 /sys/class/tty/ttyS0/type'" unit.serviceConfig.ExecCondition
+          builtins.match ".*/bin/[a-z]+ -c '! /nix/store/[^ ]*/bin/grep -qsx 0 /sys/class/tty/%I/type'" unit.serviceConfig.ExecCondition
           != null;
+        agetty = lib.hasInfix "/bin/agetty " c.systemd.units."serial-getty@.service".text;
+        instances = lib.filter (lib.hasPrefix "serial-getty@tty") (lib.attrNames c.systemd.units);
       };
     expected = {
-      overrideStrategy = "asDropin";
-      condition = "/sys/class/tty/ttyS0/device";
+      condition = "/sys/class/tty/%I";
       knownType = true;
+      agetty = true;
+      instances = [ ];
     };
   };
 }

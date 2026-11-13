@@ -36,14 +36,14 @@ in
 
   config = lib.mkMerge [
     {
-      # The kernel's console=ttyS0 makes systemd start a getty on the first serial port, which
-      # restarts without end on a machine that has none. On x86 the 8250 driver registers ttyS0
-      # whether a UART is there or not, so the device's path exists on such a machine too, and
-      # its type is 0, unknown; QEMU's 16550 is of type 4.
-      systemd.services."serial-getty@ttyS0" = {
-        overrideStrategy = "asDropin";
-        unitConfig.ConditionPathExists = "/sys/class/tty/ttyS0/device";
-        serviceConfig.ExecCondition = "${pkgs.runtimeShell} -c '! ${pkgs.gnugrep}/bin/grep -qx 0 /sys/class/tty/ttyS0/type'";
+      # A kernel console= on a serial port makes systemd start a getty there, which restarts
+      # without end on a machine that has no such port. On x86 the 8250 driver registers ttyS0
+      # whether a UART is there or not, so the port exists on such a machine too, and its type is
+      # 0, unknown; QEMU's 16550 is of type 4. The conditions go to the template: a drop-in of the
+      # same name for an instance would hide the template's, which holds agetty's ExecStart.
+      systemd.services."serial-getty@" = {
+        unitConfig.ConditionPathExists = "/sys/class/tty/%I";
+        serviceConfig.ExecCondition = "${pkgs.runtimeShell} -c '! ${pkgs.gnugrep}/bin/grep -qsx 0 /sys/class/tty/%I/type'";
       };
     }
     (lib.mkIf cfg.enable {
