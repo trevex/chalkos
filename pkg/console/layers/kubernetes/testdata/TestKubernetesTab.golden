@@ -1,0 +1,25 @@
+node1  node n1  normal  up 3h 12m
+image 81bd81bd81bd generation 7  worker on metal
+healthy
+ 1 Overview   2 Network   3 Storage   4 Logs   5 Kubernetes 
+kubernetes controlplane: bootstrapped, node ready: True, vip holder, control
+  plane current
+kubernetes versions: API server 1.37.1, kubelet 1.37.1, control-plane pods
+  current
+pods not running:
+  apps/migrate-7c2b: Pending
+  web/crash-5d9f: Running CrashLoopBackOff
+  and 21 more
+
+
+
+
+
+
+
+
+
+
+
+
+Tab/Left/Right 1-5 tabs  Up/Down/PgUp/PgDn scroll  a actions (off in this image)

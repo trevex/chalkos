@@ -1,0 +1,25 @@
+node1  node n1  normal  up 3h 12m
+image 81bd81bd81bd generation 7  worker on metal
+healthy
+ 1 Overview   2 Network   3 Storage   4 Logs   5 Kubernetes 
+kubernetes worker: joined, node ready: False (KubeletNotReady: container runtime
+  network not ready)
+kubernetes versions: API server 1.37.1, kubelet 1.37.1
+pods unknown: forbidden\x1b[2J
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Tab/Left/Right 1-5 tabs  Up/Down/PgUp/PgDn scroll  a actions (off in this image)

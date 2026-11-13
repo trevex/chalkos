@@ -9,6 +9,7 @@ callPackage ./go-module.nix { } {
     ../pkg/client
     ../pkg/console
     ../pkg/jsonfile
+    ../pkg/layers
     ../pkg/pki
     ../pkg/statusview
   ];

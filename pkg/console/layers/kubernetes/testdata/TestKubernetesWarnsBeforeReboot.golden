@@ -1,0 +1,25 @@
+node1  node n1  normal  up 3h 12m
+image 81bd81bd81bd generation 7  worker on metal
+healthy
+ 1 Overview   2 Network   3 Storage   4 Logs   5 Kubernetes 
+Reboot n1? It goes down at once and boots the image and config it runs. chalkctl
+node reboot drains the node and checks etcd's quorum first; the console does
+neither.
+
+y: reboot   Enter or Esc: back
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Tab/Left/Right 1-5 tabs  Up/Down/PgUp/PgDn scroll  a actions
