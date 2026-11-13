@@ -1,0 +1,5 @@
+DEVICE        SIZE    TYPE       MODEL            SERIAL     WWN           USE
+/dev/vda      16G     hdd        QEMU HARDDISK    chalk-sys                boot
+  /dev/vda1   512M    esp        vfat                                      
+  /dev/vda2   1.5G    chalkos-a  erofs                                     
+/dev/nvme0n1  931.5G  ssd        Samsung SSD 980  S64DNF0R   eui.002538b1  volume data
