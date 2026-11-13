@@ -639,25 +639,6 @@ func TestApplyConfigTrialUsage(t *testing.T) {
 	}
 }
 
-func TestTrialLine(t *testing.T) {
-	tr := &nodev1.ConfigTrial{Version: "v2", PreviousVersion: "v1", Deadline: timestamppb.New(time.Date(2026, 10, 29, 12, 0, 0, 0, time.UTC))}
-	if got, want := trialLine(tr), "config v2 on trial until 2026-10-29T12:00:00Z: it rolls back to config v1 unless config confirm confirms it"; got != want {
-		t.Errorf("%q, want %q", got, want)
-	}
-	tr.IgnoreUnits = []string{"late.service", "sync.timer"}
-	if got := trialLine(tr); !strings.HasSuffix(got, " confirms it; its health check leaves out late.service, sync.timer") {
-		t.Errorf("with ignored units: %q", got)
-	}
-	tr.Error = "output demo failed"
-	if got := trialLine(tr); !strings.HasSuffix(got, "; an attempt to roll the config back failed and is tried again each minute: output demo failed") {
-		t.Errorf("with an error: %q", got)
-	}
-	tr.RollbackChanged = true
-	if got := trialLine(tr); !strings.HasSuffix(got, "; an attempt to roll the config back failed after it changed the node and is tried again each minute: output demo failed; config confirm no longer keeps the config, and config rollback finishes the rollback now") {
-		t.Errorf("with a rollback that changed the node: %q", got)
-	}
-}
-
 func TestFailedUnitsWarning(t *testing.T) {
 	if got := failedUnitsWarning([]string{"late.service"}, []string{"late.service"}); got != "" {
 		t.Errorf("all left out: %q", got)

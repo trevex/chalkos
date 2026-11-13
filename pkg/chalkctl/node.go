@@ -5,7 +5,6 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
-	"strings"
 
 	"connectrpc.com/connect"
 	"github.com/spf13/cobra"
@@ -13,6 +12,7 @@ import (
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/client"
 	"github.com/trevex/chalkos/pkg/internal/cli"
+	"github.com/trevex/chalkos/pkg/statusview"
 )
 
 func (a *app) disksCommand() *cobra.Command {
@@ -69,26 +69,7 @@ func (a *app) disks(ctx context.Context, f nodePinFlags, pos []string) error {
 	if p.insecure {
 		fmt.Fprintf(a.stderr, "chalkctl: the node's certificate fingerprint is %s\n", conn.Fingerprint())
 	}
-	w := a.table()
-	fmt.Fprintln(w, "DEVICE\tSIZE\tTYPE\tMODEL\tSERIAL\tWWN\tUSE")
-	for _, d := range resp.Msg.Disks {
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n", d.Device, size(d.Size), d.Type, d.Model, d.Serial, d.Wwn, d.Usage)
-		for _, part := range d.Partitions {
-			fmt.Fprintf(w, "  %s\t%s\t%s\t%s\t\t\t\n", part.Device, size(part.Size), part.Label, part.Content)
-		}
-	}
-	return w.Flush()
-}
-
-func size(bytes uint64) string {
-	units := []string{"B", "K", "M", "G", "T", "P"}
-	v := float64(bytes)
-	i := 0
-	for v >= 1024 && i < len(units)-1 {
-		v /= 1024
-		i++
-	}
-	return strings.TrimSuffix(fmt.Sprintf("%.1f", v), ".0") + units[i]
+	return statusview.WriteDisks(a.stdout, resp.Msg.Disks)
 }
 
 type logsFlags struct {

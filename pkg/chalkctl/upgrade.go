@@ -23,6 +23,7 @@ import (
 	"github.com/trevex/chalkos/pkg/esp"
 	"github.com/trevex/chalkos/pkg/internal/cli"
 	"github.com/trevex/chalkos/pkg/pki"
+	"github.com/trevex/chalkos/pkg/statusview"
 	"github.com/trevex/chalkos/pkg/storage"
 )
 
@@ -393,7 +394,7 @@ func (r *upgradeRun) run(ctx context.Context) error {
 		images[g.image.name()] = true
 	}
 	if r.rollback {
-		r.say("rolling back %s to %s: %s", layer.Count(len(r.nodes), "node"), bootImageName(r.rollbackTo), strings.Join(r.order(), ", "))
+		r.say("rolling back %s to %s: %s", layer.Count(len(r.nodes), "node"), statusview.BootImageName(r.rollbackTo), strings.Join(r.order(), ", "))
 	}
 	for _, name := range coordinators {
 		if err := r.node(ctx, r.nodes[name]); err != nil {
@@ -415,9 +416,9 @@ func (r *upgradeRun) run(ctx context.Context) error {
 	count := layer.Count(len(r.nodes), "node")
 	switch {
 	case r.rollback && r.until == untilActivate:
-		r.say("staged %s on %s; it boots with their next reboot, which chalkctl node reboot runs, and an upgrade to the image they run leaves it staged", bootImageName(r.rollbackTo), count)
+		r.say("staged %s on %s; it boots with their next reboot, which chalkctl node reboot runs, and an upgrade to the image they run leaves it staged", statusview.BootImageName(r.rollbackTo), count)
 	case r.rollback:
-		r.say("rolled back %s to %s", count, bootImageName(r.rollbackTo))
+		r.say("rolled back %s to %s", count, statusview.BootImageName(r.rollbackTo))
 	case r.until == untilStage:
 		r.say("staged %s on %s; chalkctl node activate makes it boot next", names, count)
 	case r.until == untilActivate:
@@ -710,9 +711,9 @@ const uncountedRollback = "without boot counting: the boot the node runs was not
 // with what its boots logged. A node that serves a cluster stays held there, for an operator to
 // look at.
 func (r *upgradeRun) rolledBack(n *rebootNode, boot *nodev1.BootStatus) error {
-	msg := fmt.Sprintf("%s: upgrade to %s failed: rolled back to %s", n.name, bootImageName(boot.Failed), bootImageName(boot.Running))
+	msg := fmt.Sprintf("%s: upgrade to %s failed: rolled back to %s", n.name, statusview.BootImageName(boot.Failed), statusview.BootImageName(boot.Running))
 	if r.rollback {
-		msg = fmt.Sprintf("%s: rollback to %s failed: it fell back to %s", n.name, bootImageName(boot.Failed), bootImageName(boot.Running))
+		msg = fmt.Sprintf("%s: rollback to %s failed: it fell back to %s", n.name, statusview.BootImageName(boot.Failed), statusview.BootImageName(boot.Running))
 	}
 	return fellBackError(n, msg, boot)
 }

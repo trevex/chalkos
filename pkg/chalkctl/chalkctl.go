@@ -13,6 +13,7 @@ import (
 
 	"github.com/trevex/chalkos/pkg/chalkctl/layer"
 	"github.com/trevex/chalkos/pkg/internal/cli"
+	"github.com/trevex/chalkos/pkg/statusview"
 )
 
 // app is chalkctl's environment, which every command shares. Its streams are those of the
@@ -115,5 +116,5 @@ func (a *app) poll() time.Duration {
 
 // table writes aligned columns, separated by tabs, to standard output once flushed.
 func (a *app) table() *tabwriter.Writer {
-	return tabwriter.NewWriter(a.stdout, 0, 4, 2, ' ', 0)
+	return statusview.Table(a.stdout)
 }

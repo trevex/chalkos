@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
+	"github.com/trevex/chalkos/pkg/statusview"
 )
 
 // upgradeNode is a node to upgrade, by its roles in the clusters of its layers; the image it gets;
@@ -32,7 +33,7 @@ type upgradeNode struct {
 // name in messages and its root hash.
 func (n *upgradeNode) target() (string, []byte) {
 	if n.rollbackTo != nil {
-		return bootImageName(n.rollbackTo), n.rollbackTo.GetRootHash()
+		return statusview.BootImageName(n.rollbackTo), n.rollbackTo.GetRootHash()
 	}
 	return n.image.name(), n.image.header.RootHash
 }
@@ -243,7 +244,7 @@ func (r *upgradeRun) planRollback(ctx context.Context, named []string) error {
 	}
 	for _, name := range candidates {
 		if b := boots[name]; rollbackVote(b) == nil && !bytes.Equal(b.GetRunning().GetRootHash(), target.GetRootHash()) {
-			return fmt.Errorf("%s does not run %s, which the other nodes roll back to, and keeps no previous image: %s; leave it out with --nodes", name, bootImageName(target), noPrevious(b))
+			return fmt.Errorf("%s does not run %s, which the other nodes roll back to, and keeps no previous image: %s; leave it out with --nodes", name, statusview.BootImageName(target), noPrevious(b))
 		}
 		r.nodes[name].rollbackTo = target
 	}
@@ -273,7 +274,7 @@ func rollbackTarget(votes map[string][]string, images map[string]*nodev1.BootIma
 	}
 	var parts []string
 	for _, key := range slices.Sorted(maps.Keys(votes)) {
-		parts = append(parts, strings.Join(votes[key], ", ")+" to "+bootImageName(images[key]))
+		parts = append(parts, strings.Join(votes[key], ", ")+" to "+statusview.BootImageName(images[key]))
 	}
 	return nil, fmt.Errorf("the nodes roll back to different images: %s; roll them back separately with --nodes", strings.Join(parts, "; "))
 }
@@ -282,9 +283,9 @@ func rollbackTarget(votes map[string][]string, images map[string]*nodev1.BootIma
 func noPrevious(b *nodev1.BootStatus) string {
 	switch {
 	case b.GetStagedState() == nodev1.SlotState_SLOT_STATE_STAGED:
-		return "its inactive slot holds " + bootImageName(b.GetStaged()) + ", staged; chalkctl node activate makes it boot next"
+		return "its inactive slot holds " + statusview.BootImageName(b.GetStaged()) + ", staged; chalkctl node activate makes it boot next"
 	case b.GetStaged() != nil:
-		return "its inactive slot holds " + bootImageName(b.GetStaged()) + ", which boots next; chalkctl node reboot boots it"
+		return "its inactive slot holds " + statusview.BootImageName(b.GetStaged()) + ", which boots next; chalkctl node reboot boots it"
 	}
 	return "its inactive slot holds no image it booted before, as after an install, or an upgrade or rollback it fell back from"
 }

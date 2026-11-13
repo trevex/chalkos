@@ -8,7 +8,6 @@ import (
 	"testing"
 	"time"
 
-	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/chalkd"
 	"github.com/trevex/chalkos/pkg/client"
 	"github.com/trevex/chalkos/pkg/clustersecrets"
@@ -63,13 +62,6 @@ func TestClientFilesAndInstallsTrustBothOSCAs(t *testing.T) {
 	}
 	if _, err := pki.VerifyNode(string(got.NodeCertificate), string(got.NodeKey), bundle, time.Now()); err != nil {
 		t.Error(err)
-	}
-}
-
-func TestTrustLine(t *testing.T) {
-	line := trustLine(&nodev1.TrustStatus{Name: "Kubernetes CA", Fingerprints: []string{strings.Repeat("a", 64), strings.Repeat("b", 64)}, Issuing: strings.Repeat("b", 64)})
-	if line != "  Kubernetes CA\taaaaaaaaaaaaaaaa, bbbbbbbbbbbbbbbb (issues)" {
-		t.Errorf("trust line %q", line)
 	}
 }
 

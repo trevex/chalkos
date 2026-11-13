@@ -2,12 +2,10 @@ package chalkctl
 
 import (
 	"bytes"
-	"cmp"
 	"context"
 	"encoding/hex"
 	"fmt"
-	"strings"
-	"time"
+	"io"
 
 	"connectrpc.com/connect"
 	"github.com/spf13/cobra"
@@ -16,6 +14,7 @@ import (
 	"github.com/trevex/chalkos/pkg/chalkctl/layer"
 	"github.com/trevex/chalkos/pkg/client"
 	"github.com/trevex/chalkos/pkg/internal/cli"
+	"github.com/trevex/chalkos/pkg/statusview"
 )
 
 func (a *app) statusCommand() *cobra.Command {
@@ -45,190 +44,41 @@ func (a *app) printStatus(ctx context.Context, t *target, conn *client.Conn) err
 	if err != nil {
 		return err
 	}
-	s := resp.Msg
-	state := t.cluster.configState(t.name, s.ConfigVersion)
-	// A node installed before config documents runs an identity alone.
-	fmt.Fprintf(a.stdout, "config %s (%s)\n", cmp.Or(s.ConfigVersion, "none"), state)
-	if s.Trial != nil {
-		fmt.Fprintln(a.stdout, trialLine(s.Trial))
-	}
-	if s.TrialError != "" {
-		fmt.Fprintf(a.stdout, "the record of a config's trial cannot be read: %s; other changes are refused until config rollback restores the previous config\n", s.TrialError)
-	}
-	if s.PreviousConfigVersion != "" {
-		fmt.Fprintf(a.stdout, "previous config %s (config rollback restores it)\n", s.PreviousConfigVersion)
-	}
-	if s.Boot.GetStaged() != nil {
-		fmt.Fprintf(a.stdout, "staged config %s (%s)\n", cmp.Or(s.StagedConfigVersion, "none"), t.cluster.stagedConfigState(t.name, s))
-	}
-	if p := s.PendingConfig; p != nil {
-		fmt.Fprintln(a.stdout, pendingLine(p))
-	}
-	fmt.Fprintln(a.stdout, t.cluster.platformLine(t.name, s.Platform))
-	for _, line := range bootLines(s.Boot) {
-		fmt.Fprintln(a.stdout, line)
-	}
-	if line := t.cluster.imageLine(t.name, s.Boot); line != "" {
-		fmt.Fprintln(a.stdout, line)
-	}
-	w := a.table()
-	fmt.Fprintln(w, "VOLUME\tDISK\tMOUNT POINT\tSTATE")
-	for _, v := range s.Volumes {
-		st := "present"
-		switch {
-		case !v.Present:
-			st = "missing"
-		case v.Mounted:
-			st = "mounted"
-		case v.MountPoint != "":
-			st = "not mounted"
-		}
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", v.Name, v.Disk, v.MountPoint, st)
-	}
-	if err := w.Flush(); err != nil {
-		return err
-	}
-	for _, d := range s.Disks {
-		if d.Error != "" {
-			fmt.Fprintf(a.stdout, "disk %s: %s\n", d.Name, d.Error)
-		}
-	}
-	if len(s.Outputs) > 0 {
-		w := a.table()
-		fmt.Fprintln(w, "OUTPUT\tHASH\tSTATE")
-		for _, o := range s.Outputs {
-			fmt.Fprintln(w, outputLine(o))
-		}
-		if err := w.Flush(); err != nil {
-			return err
-		}
-	}
-	info, err := conn.Info(ctx, connect.NewRequest(&nodev1.InfoRequest{}))
-	if err != nil {
-		return err
-	}
-	for _, p := range pluginsOf[layer.Status](info.Msg.Layers) {
-		if err := p.PrintStatus(ctx, host{a}, conn); err != nil {
-			return err
-		}
-	}
-	if len(s.Certificates) > 0 {
-		fmt.Fprintln(a.stdout, "certificates:")
-		w := a.table()
-		for _, c := range s.Certificates {
-			fmt.Fprintln(w, certificateLine(c, t.name))
-		}
-		if err := w.Flush(); err != nil {
-			return err
-		}
-	}
-	if len(s.Trust) > 0 {
-		fmt.Fprintln(a.stdout, "trust:")
-		w := a.table()
-		for _, tr := range s.Trust {
-			fmt.Fprintln(w, trustLine(tr))
-		}
-		if err := w.Flush(); err != nil {
-			return err
-		}
-	}
-	if s.Time != nil {
-		fmt.Fprintln(a.stdout, timeLine(s.Time))
-	}
-	for _, u := range s.FailedUnits {
-		fmt.Fprintf(a.stdout, "failed unit %s\n", u)
-	}
-	return nil
+	return statusview.Write(a.stdout, resp.Msg, statusview.Options{
+		Node:      t.name,
+		Inventory: nodeInventory{c: t.cluster, name: t.name},
+		Layers: func(io.Writer) error {
+			info, err := conn.Info(ctx, connect.NewRequest(&nodev1.InfoRequest{}))
+			if err != nil {
+				return err
+			}
+			for _, p := range pluginsOf[layer.Status](info.Msg.Layers) {
+				if err := p.PrintStatus(ctx, host{a}, conn); err != nil {
+					return err
+				}
+			}
+			return nil
+		},
+	})
 }
 
-// bootLines are the status lines of the node's boot: the image it runs, an upgrade it boots next,
-// the image a rollback boots, and one it fell back from, with the lines that image logged last.
-func bootLines(b *nodev1.BootStatus) []string {
-	if b == nil {
-		return nil
-	}
-	running := bootImageName(b.Running)
-	if b.Error != "" {
-		return []string{fmt.Sprintf("image %s; its boot is unknown: %s", running, b.Error)}
-	}
-	line := fmt.Sprintf("image %s, booted from %s", running, b.Entry)
-	if !b.Blessed {
-		line += ", not found healthy yet"
-	}
-	lines := []string{line}
-	switch {
-	case b.Staged != nil && bytes.Equal(b.GetRollback().GetRootHash(), b.Staged.GetRootHash()):
-		lines = append(lines, fmt.Sprintf("rollback to %s staged; it boots next", bootImageName(b.Staged)))
-	case b.Staged != nil && b.StagedState == nodev1.SlotState_SLOT_STATE_STAGED:
-		lines = append(lines, fmt.Sprintf("upgrade to %s staged; node activate makes it boot next", bootImageName(b.Staged)))
-	case b.Staged != nil:
-		lines = append(lines, fmt.Sprintf("upgrade to %s active; it boots next", bootImageName(b.Staged)))
-	}
-	if b.Previous != nil {
-		lines = append(lines, fmt.Sprintf("previous image %s (upgrade --rollback boots it)", bootImageName(b.Previous)))
-	}
-	if b.Failed != nil {
-		lines = append(lines, fmt.Sprintf("upgrade to %s failed: rolled back to %s", bootImageName(b.Failed), running))
-		for _, l := range b.Journal {
-			lines = append(lines, "  "+l)
-		}
-	}
-	return lines
+// nodeInventory compares the node name with the inventory of c, as statusview asks.
+type nodeInventory struct {
+	c    *cluster
+	name string
 }
 
-// certificateLine is a certificate's line of the status, with tabs between its columns.
-func certificateLine(c *nodev1.CertificateStatus, node string) string {
-	line := fmt.Sprintf("  %s\texpires %s", c.Name, c.NotAfter.AsTime().UTC().Format(time.DateOnly))
-	if c.NotAfter == nil {
-		line = fmt.Sprintf("  %s\texpiry unknown", c.Name)
-	}
-	if c.Problem != "" {
-		line += "\t" + strings.ReplaceAll(c.Problem, "<node>", node)
-	}
-	return line
+func (i nodeInventory) ConfigState(version string) string { return i.c.configState(i.name, version) }
+
+func (i nodeInventory) StagedConfigState(s *nodev1.StatusResponse) string {
+	return i.c.stagedConfigState(i.name, s)
 }
 
-// trustLine is a line of the status's trust section: what is trusted, by the first 16 hex digits
-// of each fingerprint, the issuing one marked.
-func trustLine(t *nodev1.TrustStatus) string {
-	var fps []string
-	for _, fp := range t.Fingerprints {
-		short := fp[:min(16, len(fp))]
-		if fp == t.Issuing {
-			short += " (issues)"
-		}
-		fps = append(fps, short)
-	}
-	return fmt.Sprintf("  %s\t%s", t.Name, strings.Join(fps, ", "))
+func (i nodeInventory) PlatformLine(reported string) string {
+	return i.c.platformLine(i.name, reported)
 }
 
-// timeLine is the status line of the node's clock.
-func timeLine(t *nodev1.TimeStatus) string {
-	switch {
-	case t.Error != "":
-		return "time: unknown: " + t.Error
-	case !t.Synchronised:
-		return "time: not synchronised; certificates are checked against this clock"
-	}
-	return fmt.Sprintf("time: synchronised to %s, offset %+.6f s", t.Source, t.OffsetSeconds)
-}
-
-// outputLine is an output's line of the status: the start of the hash of the files the node
-// serves, and whether its last render passed, why it failed, or that none rendered it yet.
-func outputLine(o *nodev1.OutputStatus) string {
-	hash := "none"
-	if len(o.Hash) >= 12 {
-		hash = o.Hash[:12]
-	}
-	state := "rendered"
-	switch {
-	case o.Error != "":
-		state = "failed: " + o.Error
-	case o.Hash == "":
-		state = "not rendered yet"
-	}
-	return o.Name + "\t" + hash + "\t" + state
-}
+func (i nodeInventory) ImageLine(boot *nodev1.BootStatus) string { return i.c.imageLine(i.name, boot) }
 
 // platformLine is the status line of the platform the node runs on, compared with its config's.
 func (c *cluster) platformLine(name, reported string) string {
@@ -243,12 +93,6 @@ func (c *cluster) platformLine(name, reported string) string {
 		return fmt.Sprintf("platform %s, but %s; changing a node's platform is a reinstall", reported, c.declares(name, want))
 	}
 	return fmt.Sprintf("platform %s (the inventory's)", reported)
-}
-
-// pendingLine is status's line of the config a node holds pending for its next upgrade, which
-// nothing checked yet.
-func pendingLine(p *nodev1.PendingConfig) string {
-	return fmt.Sprintf("pending config %s (unchecked, since %s; the next upgrade checks it against its image)", p.GetVersion(), p.GetSince().AsTime().UTC().Format(time.RFC3339))
 }
 
 // configState says whether the running image's slot of a node holds the config chalkctl delivers
@@ -327,9 +171,9 @@ func (c *cluster) imageLine(name string, boot *nodev1.BootStatus) string {
 	// the node's next boot.
 	if want, err := hex.DecodeString(md.RootHash); err == nil && bytes.Equal(boot.GetStaged().GetRootHash(), want) {
 		if boot.GetStagedState() == nodev1.SlotState_SLOT_STATE_STAGED {
-			return fmt.Sprintf("%s; it has %s staged: chalkctl node activate %s makes it boot next", line, bootImageName(boot.GetStaged()), name)
+			return fmt.Sprintf("%s; it has %s staged: chalkctl node activate %s makes it boot next", line, statusview.BootImageName(boot.GetStaged()), name)
 		}
-		return fmt.Sprintf("%s; it has %s active, which it boots with its next reboot: chalkctl node reboot %s", line, bootImageName(boot.GetStaged()), name)
+		return fmt.Sprintf("%s; it has %s active, which it boots with its next reboot: chalkctl node reboot %s", line, statusview.BootImageName(boot.GetStaged()), name)
 	}
 	return fmt.Sprintf("%s; chalkctl upgrade --nodes %s installs that image", line, name)
 }

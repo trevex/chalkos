@@ -16,6 +16,7 @@ import (
 	"github.com/trevex/chalkos/pkg/chalkctl/layer"
 	"github.com/trevex/chalkos/pkg/internal/cli"
 	"github.com/trevex/chalkos/pkg/internal/poll"
+	"github.com/trevex/chalkos/pkg/statusview"
 )
 
 // minTrial and maxTrial bound --try. A shorter trial ends before the restarts and the health
@@ -237,27 +238,7 @@ func trialOpen(name string, st *nodev1.StatusResponse) error {
 		return nil
 	}
 	return &layer.NodeError{Node: name, Err: fmt.Errorf("%s runs config %s on trial until %s; confirm it with chalkctl config confirm %s, or roll it back with chalkctl config rollback %s, first",
-		name, tr.Version, deadlineOf(tr), name, name), Named: true}
-}
-
-// trialLine is the status line of a config on trial.
-func trialLine(tr *nodev1.ConfigTrial) string {
-	line := fmt.Sprintf("config %s on trial until %s: it rolls back to config %s unless config confirm confirms it", tr.Version, deadlineOf(tr), tr.PreviousVersion)
-	if len(tr.IgnoreUnits) > 0 {
-		line += "; its health check leaves out " + strings.Join(tr.IgnoreUnits, ", ")
-	}
-	switch {
-	case tr.Error != "" && tr.RollbackChanged:
-		line += "; an attempt to roll the config back failed after it changed the node and is tried again each minute: " + tr.Error +
-			"; config confirm no longer keeps the config, and config rollback finishes the rollback now"
-	case tr.Error != "":
-		line += "; an attempt to roll the config back failed and is tried again each minute: " + tr.Error
-	}
-	return line
-}
-
-func deadlineOf(tr *nodev1.ConfigTrial) string {
-	return tr.Deadline.AsTime().UTC().Format(time.RFC3339)
+		name, tr.Version, statusview.DeadlineOf(tr), name, name), Named: true}
 }
 
 // failedUnitsWarning names the units the node lists as failed that the trial does not leave out,

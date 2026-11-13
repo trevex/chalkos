@@ -10,9 +10,6 @@ import (
 	"testing"
 	"time"
 
-	"google.golang.org/protobuf/types/known/timestamppb"
-
-	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/chalkd"
 	"github.com/trevex/chalkos/pkg/clustersecrets"
 	imagecontract "github.com/trevex/chalkos/pkg/contract"
@@ -222,37 +219,6 @@ func TestStatusShowsCertificatesAndTime(t *testing.T) {
 	for _, want := range []string{"certificates:\n", "  node   expires " + leaf.NotAfter.UTC().Format(time.DateOnly) + "\n", "  OS CA  expires ", "time: unknown: "} {
 		if !strings.Contains(out, want) {
 			t.Errorf("status lacks %q:\n%s", want, out)
-		}
-	}
-}
-
-func TestTimeLine(t *testing.T) {
-	for _, tc := range []struct {
-		status *nodev1.TimeStatus
-		want   string
-	}{
-		{&nodev1.TimeStatus{Synchronised: true, Source: "10.0.2.2", OffsetSeconds: -0.0000123}, "time: synchronised to 10.0.2.2, offset -0.000012 s"},
-		{&nodev1.TimeStatus{}, "time: not synchronised; certificates are checked against this clock"},
-		{&nodev1.TimeStatus{Error: "506 Cannot talk to daemon"}, "time: unknown: 506 Cannot talk to daemon"},
-	} {
-		if got := timeLine(tc.status); got != tc.want {
-			t.Errorf("timeLine = %q, want %q", got, tc.want)
-		}
-	}
-}
-
-func TestCertificateLine(t *testing.T) {
-	expires := time.Date(2027, 10, 8, 12, 0, 0, 0, time.UTC)
-	for _, tc := range []struct {
-		status *nodev1.CertificateStatus
-		want   string
-	}{
-		{&nodev1.CertificateStatus{Name: "node", NotAfter: timestamppb.New(expires)}, "  node\texpires 2027-10-08"},
-		{&nodev1.CertificateStatus{Name: "node", NotAfter: timestamppb.New(expires), Problem: "expired; renew it with chalkctl node renew <node>"}, "  node\texpires 2027-10-08\texpired; renew it with chalkctl node renew n1"},
-		{&nodev1.CertificateStatus{Name: "Kubernetes share", Problem: "unreadable: parse the Kubernetes share"}, "  Kubernetes share\texpiry unknown\tunreadable: parse the Kubernetes share"},
-	} {
-		if got := certificateLine(tc.status, "n1"); got != tc.want {
-			t.Errorf("certificateLine = %q, want %q", got, tc.want)
 		}
 	}
 }

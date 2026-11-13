@@ -1,0 +1,30 @@
+config 3fa9c1e2b7d04e5f (inventory on 3fa9c1e2b7d04e5f)
+config 3fa9c1e2b7d04e5f on trial until 2026-11-13T15:04:00Z: it rolls back to config 77aa01bc23de45f6 unless config confirm confirms it; its health check leaves out late.service; an attempt to roll the config back failed and is tried again each minute: output demo failed
+the record of a config's trial cannot be read: parse chalkd/trial: unexpected end of JSON input; other changes are refused until config rollback restores the previous config
+previous config 77aa01bc23de45f6 (config rollback restores it)
+staged config 77aa01bc23de45f6 (inventory on the staged)
+pending config 9c0ffee12345abcd (unchecked, since 2026-11-12T08:00:00Z; the next upgrade checks it against its image)
+platform metal (the inventory's)
+image 81bd81bd81bd (v1.4.0, a1b2c3d4e5f6), booted from chalkos_7+2-1.efi, not found healthy yet
+upgrade to 3fa93fa93fa9 (v1.5.0) staged; node activate makes it boot next
+previous image 123412341234 (0123456789ab-dirty) (upgrade --rollback boots it)
+upgrade to deaddeaddead failed: rolled back to 81bd81bd81bd (v1.4.0, a1b2c3d4e5f6)
+  Nov 13 14:00:01 n1 chalkd[412]: health check failed
+  Nov 13 14:00:02 n1 systemd[1]: Reached target Reboot.
+image line of the inventory
+VOLUME  DISK    MOUNT POINT    STATE
+var     system  /var           mounted
+data    data    /var/lib/data  missing
+disk data: no disk matches the selector serial=S64DNF0R
+OUTPUT    HASH          STATE
+web-conf  abababababab  rendered
+motd      none          failed: its renderer failed (exit 2); see the node's journal
+layer section
+certificates:
+  node          expires 2027-10-08  expires in 20 days; renew it with chalkctl node renew n1
+  client share  expiry unknown      unreadable: parse the client share
+trust:
+  OS CA    aaaaaaaaaaaaaaaa (issues)
+  node CA  cccccccccccccccc, dddddddddddddddd (issues)
+time: synchronised to 10.0.2.2, offset -0.000012 s
+failed unit demo.service

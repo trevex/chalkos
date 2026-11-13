@@ -19,6 +19,7 @@ import (
 	"github.com/trevex/chalkos/pkg/client"
 	"github.com/trevex/chalkos/pkg/internal/cli"
 	"github.com/trevex/chalkos/pkg/internal/poll"
+	"github.com/trevex/chalkos/pkg/statusview"
 )
 
 // rebooter reboots nodes of a cluster as chalkctl upgrade and chalkctl node reboot both do,
@@ -251,7 +252,7 @@ func (b *rebooter) waitHealthy(ctx context.Context, n *rebootNode, t bootTarget)
 			fellBack = b.failed(n, boot)
 			return poll.Permanent{Err: fellBack}
 		case !bytes.Equal(boot.GetRunning().GetRootHash(), t.root):
-			return fmt.Errorf("it runs %s", bootImageName(boot.GetRunning()))
+			return fmt.Errorf("it runs %s", statusview.BootImageName(boot.GetRunning()))
 		case !boot.GetBlessed():
 			return errors.New("its boot was not found healthy yet")
 		case health == nil:
@@ -295,7 +296,7 @@ func (b *rebooter) failed(n *rebootNode, boot *nodev1.BootStatus) error {
 	if b.fellBack != nil {
 		return b.fellBack(n, boot)
 	}
-	return fellBackError(n, fmt.Sprintf("%s: its boot of %s failed: it fell back to %s", n.name, bootImageName(boot.Failed), bootImageName(boot.Running)), boot)
+	return fellBackError(n, fmt.Sprintf("%s: its boot of %s failed: it fell back to %s", n.name, statusview.BootImageName(boot.Failed), statusview.BootImageName(boot.Running)), boot)
 }
 
 // unhealthyError is the error of a node whose boot of the target's image settled without being
@@ -530,5 +531,5 @@ func (a *app) nodeReboot(ctx context.Context, f nodeRebootFlags, name string) er
 			return err
 		}
 	}
-	return b.reboot(ctx, n, bootOf(bootImageName(next), next.GetRootHash(), st), !f.noDrain, nil)
+	return b.reboot(ctx, n, bootOf(statusview.BootImageName(next), next.GetRootHash(), st), !f.noDrain, nil)
 }
