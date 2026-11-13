@@ -4250,4 +4250,60 @@ lib.runTests {
         };
       };
     };
+  # Every image and the installer serve the console with its actions; an image turns the actions
+  # off, or the console with them. chalkd learns both from its unit's environment.
+  testConsole = {
+    expr =
+      let
+        env = c: {
+          console = c.systemd.services.chalkd.environment.CHALKD_CONSOLE or null;
+          actions = c.systemd.services.chalkd.environment.CHALKD_CONSOLE_ACTIONS or null;
+        };
+      in
+      {
+        default = env (worker [ ]);
+        installer = env (mkImages { }).nixos.installer.config;
+        noActions = env (worker [ { chalkos.console.actions.enable = false; } ]);
+        off = env (worker [ { chalkos.console.enable = false; } ]);
+      };
+    expected = {
+      default = {
+        console = "1";
+        actions = "1";
+      };
+      installer = {
+        console = "1";
+        actions = "1";
+      };
+      noActions = {
+        console = "1";
+        actions = "0";
+      };
+      off = {
+        console = null;
+        actions = null;
+      };
+    };
+  };
+  # The first serial port's getty runs only where the port exists and is a UART of a known type,
+  # which ends its restarts on a machine without one: the 8250 driver registers ttyS0 on x86 with
+  # type 0 when no UART answers. It is a drop-in to the instance the kernel's console= creates.
+  testSerialGettyNeedsThePort = {
+    expr =
+      let
+        unit = (worker [ ]).systemd.services."serial-getty@ttyS0";
+      in
+      {
+        inherit (unit) overrideStrategy;
+        condition = unit.unitConfig.ConditionPathExists;
+        knownType =
+          builtins.match ".*/bin/[a-z]+ -c '! /nix/store/[^ ]*/bin/grep -qx 0 /sys/class/tty/ttyS0/type'" unit.serviceConfig.ExecCondition
+          != null;
+      };
+    expected = {
+      overrideStrategy = "asDropin";
+      condition = "/sys/class/tty/ttyS0/device";
+      knownType = true;
+    };
+  };
 }

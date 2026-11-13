@@ -245,6 +245,26 @@ chalkd reboots the node, so the boot loader tries again or falls back. A boot th
 not healthy this long after systemd finished starting it has settled, also when it is not
 counted, and chalkctl stops waiting for it.
 
+## Console { #console }
+
+Whether chalkd serves the console on the machine's screen, and whether the console may act on the node.
+
+### `chalkos.console.actions.enable` { #chalkosconsoleactionsenable }
+
+Type: boolean · Default: `true` · Declared in: [modules/node/console.nix](https://github.com/trevex/chalkos/blob/main/modules/node/console.nix)
+
+Whether the console may reboot and shut down the node and roll back its image and its
+config. Anyone at the machine's keyboard can use them; chalkd refuses them on the
+console's socket when this is false.
+
+### `chalkos.console.enable` { #chalkosconsoleenable }
+
+Type: boolean · Default: `true` · Declared in: [modules/node/console.nix](https://github.com/trevex/chalkos/blob/main/modules/node/console.nix)
+
+Whether chalkd serves the console on the machine's screen, through the socket
+`/run/chalkd/console.sock`, which root alone reaches, without TLS. The console holds no
+certificate: it calls what the API reference says the console may call.
+
 ## Debug and maintenance { #debug-and-maintenance }
 
 The debug tools an image carries, and the OS CA whose clients its maintenance mode accepts.

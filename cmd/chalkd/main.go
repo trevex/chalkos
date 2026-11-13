@@ -325,6 +325,13 @@ func renewOnApplyConfig(getenv func(string) string) bool {
 	return true
 }
 
+// consoleSettings reports whether chalkd serves the console on its socket and whether the console
+// may act on the node, as the image's chalkos.console options say in CHALKD_CONSOLE and
+// CHALKD_CONSOLE_ACTIONS.
+func consoleSettings(getenv func(string) string) (serve, actions bool) {
+	return getenv("CHALKD_CONSOLE") == "1", getenv("CHALKD_CONSOLE_ACTIONS") == "1"
+}
+
 // healthIgnoreUnits are the units whose failure leaves the node healthy, as the image's health
 // check ignores them, which chalkd's unit passes in CHALKD_HEALTH_IGNORE_UNITS separated by spaces.
 func healthIgnoreUnits(getenv func(string) string) []string {
@@ -389,6 +396,8 @@ func serve() error {
 		return err
 	}
 	srv.RenewOnApplyConfig = renewOnApplyConfig(os.Getenv)
+	serveConsole, actions := consoleSettings(os.Getenv)
+	srv.ConsoleActions = actions
 	if srv.Plugins, err = registry(srv); err != nil {
 		return err
 	}
@@ -457,6 +466,18 @@ func serve() error {
 	go func() {
 		served <- httpServer(srv.Handler(), chalkd.TLSConfig(creds.getCertificate(), creds.clientCAs)).ServeTLS(ln, "", "")
 	}()
+	// The console is a convenience at the machine: chalkd serves the network without it.
+	if serveConsole {
+		if cln, err := chalkd.ListenConsole(paths.RunDir); err != nil {
+			log.Printf("listen for the console: %v", err)
+		} else {
+			go func() {
+				if err := httpServer(srv.ConsoleHandler(), nil).Serve(cln); err != nil {
+					log.Printf("serve the console: %v", err)
+				}
+			}()
+		}
+	}
 	select {
 	case err := <-served:
 		return err

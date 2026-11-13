@@ -214,6 +214,25 @@ func TestRenewalHookIsLogged(t *testing.T) {
 	}
 }
 
+// chalkd serves the console's socket, and lets the console act, as the image's chalkos.console
+// options say in its unit's environment.
+func TestConsoleSettings(t *testing.T) {
+	for _, tc := range []struct {
+		env            map[string]string
+		serve, actions bool
+	}{
+		{map[string]string{}, false, false},
+		{map[string]string{"CHALKD_CONSOLE": "1"}, true, false},
+		{map[string]string{"CHALKD_CONSOLE": "1", "CHALKD_CONSOLE_ACTIONS": "1"}, true, true},
+		{map[string]string{"CHALKD_CONSOLE": "1", "CHALKD_CONSOLE_ACTIONS": "0"}, true, false},
+	} {
+		serve, actions := consoleSettings(func(k string) string { return tc.env[k] })
+		if serve != tc.serve || actions != tc.actions {
+			t.Errorf("%v: serve %v, actions %v; want %v, %v", tc.env, serve, actions, tc.serve, tc.actions)
+		}
+	}
+}
+
 func TestHealthArgs(t *testing.T) {
 	for _, tc := range []struct {
 		args []string
