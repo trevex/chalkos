@@ -78,7 +78,7 @@ kernel's tree. That directory decides which module group holds it:
 
 ```console
 $ modinfo -n mt7921e
-/lib/modules/6.18.55/kernel/drivers/net/wireless/mediatek/mt76/mt7921/mt7921e.ko.xz
+/lib/modules/6.18.63/kernel/drivers/net/wireless/mediatek/mt76/mt7921/mt7921e.ko.xz
 ```
 
 `drivers/net/wireless` belongs to the `wireless` group. Next, check whether the image carries the
@@ -98,7 +98,7 @@ $ find result/ -name 'mt7921e*'
 ```
 
 No output means the image lacks the module. A module the image carries prints its path, such as
-`result/lib/modules/6.18.55/kernel/drivers/net/ethernet/mellanox/mlx5/core/mlx5_core.ko.xz`.
+`result/lib/modules/6.18.63/kernel/drivers/net/ethernet/mellanox/mlx5/core/mlx5_core.ko.xz`.
 Replace `node-metal` with the variant and platform of the node's image.
 
 ## Kernel module groups select whole driver directories
