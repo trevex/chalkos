@@ -1,6 +1,9 @@
 package lab
 
-import "testing"
+import (
+	"slices"
+	"testing"
+)
 
 func hasPair(args []string, flag, value string) bool {
 	for i := 0; i+1 < len(args); i++ {
@@ -92,6 +95,35 @@ func TestQemuArgs(t *testing.T) {
 		if !hasPair(agent, w[0], w[1]) {
 			t.Errorf("missing %s %s in %v", w[0], w[1], agent)
 		}
+	}
+	c.NoSerialPort = true
+	c.Credentials = map[string]string{"b.two": "2", "a.one": "1"}
+	bare := c.qemuArgs("")
+	if !hasPair(bare, "-serial", "none") || hasPair(bare, "-serial", "chardev:console") {
+		t.Errorf("a VM without a serial port has args %q", bare)
+	}
+	// The console's log stays defined, so the log a test follows exists.
+	if !hasPair(bare, "-chardev", "file,id=console,append=on,path="+c.ConsolePath()) {
+		t.Errorf("the console's chardev is gone: %q", bare)
+	}
+	i := slices.Index(bare, "type=11,value=io.systemd.credential:a.one=1")
+	j := slices.Index(bare, "type=11,value=io.systemd.credential:b.two=2")
+	if i < 1 || j < i || bare[i-1] != "-smbios" || bare[j-1] != "-smbios" {
+		t.Errorf("credentials are not SMBIOS strings in name order: %q", bare)
+	}
+}
+
+func TestKeyChords(t *testing.T) {
+	got, err := keyChords("aZ-9\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := [][]string{{"a"}, {"shift", "z"}, {"minus"}, {"9"}, {"ret"}}
+	if !slices.EqualFunc(got, want, slices.Equal) {
+		t.Errorf("keyChords = %q, want %q", got, want)
+	}
+	if _, err := keyChords("é"); err == nil {
+		t.Error("a character without a key was typed")
 	}
 }
 

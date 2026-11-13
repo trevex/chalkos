@@ -6,10 +6,12 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"maps"
 	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"sync"
 	"syscall"
@@ -42,6 +44,12 @@ type VMConfig struct {
 	MAC    string
 	// GuestAgent adds the channel the QEMU guest agent answers on, at GuestAgentSocket.
 	GuestAgent bool
+	// NoSerialPort leaves the VM without a serial port, as many machines are; the console's log
+	// then gets nothing.
+	NoSerialPort bool
+	// Credentials are systemd credentials the VM gets through SMBIOS, by name. A value holds no
+	// comma.
+	Credentials map[string]string
 }
 
 // GuestForward makes a host address reachable at a guest address, such as 10.0.2.100:5000.
@@ -74,6 +82,10 @@ func (c VMConfig) ConsolePath() string { return filepath.Join(c.Dir, "console.lo
 func (c VMConfig) GuestAgentSocket() string { return filepath.Join(c.Dir, "qga.sock") }
 
 func (c VMConfig) qemuArgs(tpmSocket string) []string {
+	serial := "chardev:console"
+	if c.NoSerialPort {
+		serial = "none"
+	}
 	args := []string{
 		"-name", c.Name,
 		"-machine", "q35,smm=on,accel=kvm:tcg",
@@ -87,7 +99,7 @@ func (c VMConfig) qemuArgs(tpmSocket string) []string {
 		"-monitor", "none",
 		// QEMU writes the console itself, so it outlives whoever started the VM.
 		"-chardev", "file,id=console,append=on,path=" + c.ConsolePath(),
-		"-serial", "chardev:console",
+		"-serial", serial,
 		"-qmp", "unix:" + c.qmpPath() + ",server=on,wait=off",
 		"-pidfile", c.pidPath(),
 	}
@@ -134,6 +146,9 @@ func (c VMConfig) qemuArgs(tpmSocket string) []string {
 			"-chardev", "socket,id=chrtpm,path="+tpmSocket,
 			"-tpmdev", "emulator,id=tpm0,chardev=chrtpm",
 			"-device", "tpm-tis,tpmdev=tpm0")
+	}
+	for _, name := range slices.Sorted(maps.Keys(c.Credentials)) {
+		args = append(args, "-smbios", "type=11,value=io.systemd.credential:"+name+"="+c.Credentials[name])
 	}
 	return args
 }
@@ -375,6 +390,65 @@ func stopProcess(pid int, dir string, timeout time.Duration) {
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
+}
+
+// Screen is what the VM's display shows now, as QEMU's screendump writes it into the VM's
+// directory.
+func (vm *VM) Screen() (*Screen, error) {
+	path := filepath.Join(vm.Config.Dir, "screen.ppm")
+	if _, err := vm.QMP.Execute("screendump", map[string]any{"filename": path, "format": "ppm"}); err != nil {
+		return nil, err
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	return ReadPPM(f)
+}
+
+// otherKeys are QEMU's key codes of the characters Type types besides letters and digits, on a
+// US keyboard layout.
+var otherKeys = map[rune][]string{
+	'-': {"minus"}, '_': {"shift", "minus"}, ' ': {"spc"}, '\n': {"ret"}, '.': {"dot"},
+	',': {"comma"}, '/': {"slash"}, '=': {"equal"}, ':': {"shift", "semicolon"},
+}
+
+// keyChords are the keys that type text, a chord of keys pressed together per character.
+func keyChords(text string) ([][]string, error) {
+	var chords [][]string
+	for _, r := range text {
+		switch {
+		case r >= 'a' && r <= 'z', r >= '0' && r <= '9':
+			chords = append(chords, []string{string(r)})
+		case r >= 'A' && r <= 'Z':
+			chords = append(chords, []string{"shift", string(r - 'A' + 'a')})
+		case otherKeys[r] != nil:
+			chords = append(chords, otherKeys[r])
+		default:
+			return nil, fmt.Errorf("no key types %q", r)
+		}
+	}
+	return chords, nil
+}
+
+// Type types text on the VM's keyboard. QEMU queues each chord's presses and releases in order,
+// so a character typed twice in a row arrives twice.
+func (vm *VM) Type(text string) error {
+	chords, err := keyChords(text)
+	if err != nil {
+		return err
+	}
+	for _, chord := range chords {
+		keys := make([]map[string]string, len(chord))
+		for i, k := range chord {
+			keys[i] = map[string]string{"type": "qcode", "data": k}
+		}
+		if _, err := vm.QMP.Execute("send-key", map[string]any{"keys": keys}); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // FreePort returns a TCP port on 127.0.0.1 that is free now, for a forward.
