@@ -66,6 +66,7 @@ in
   chalkos-storage = pkgs.callPackage ./chalkos-storage.nix { };
   chalkd = pkgs.callPackage ./chalkd.nix { };
   chalkcfg = pkgs.callPackage ./chalkcfg.nix { };
+  chalkos-console = pkgs.callPackage ./chalkos-console.nix { };
 
   test-image = testing.images.test-metal;
   # The test image's OCI image layout, as mkImages's oci output writes it.

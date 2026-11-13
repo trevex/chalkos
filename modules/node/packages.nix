@@ -5,6 +5,7 @@
   _module.args.chalkosPackages = {
     chalkcfg = pkgs.callPackage ../../nix/chalkcfg.nix { };
     chalkd = pkgs.callPackage ../../nix/chalkd.nix { };
+    chalkos-console = pkgs.callPackage ../../nix/chalkos-console.nix { };
     chalkos-networkd-schema = pkgs.callPackage ../../nix/chalkos-networkd-schema.nix { };
     chalkos-render = pkgs.callPackage ../../nix/chalkos-render.nix { };
     chalkos-rules = pkgs.callPackage ../../nix/chalkos-rules.nix { };

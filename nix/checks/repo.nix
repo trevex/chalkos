@@ -91,6 +91,7 @@ in
           "chalkbuild"
           "chalkcfg"
           "chalkd"
+          "chalkos-console"
           "chalkos-networkd-schema"
           "chalkos-render"
           "chalkos-rules"
