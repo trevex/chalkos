@@ -4,14 +4,17 @@ import (
 	"context"
 	"crypto/tls"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/fake"
 
@@ -162,5 +165,78 @@ func TestStatusReportsWhyTheNodeIsNotReady(t *testing.T) {
 	st := kubernetestest.Status(t, s)
 	if st.NodeReady != "False" || st.NodeReadyReason != "KubeletNotReady" || st.NodeReadyMessage != message {
 		t.Errorf("node ready %q, reason %q, message %q", st.NodeReady, st.NodeReadyReason, st.NodeReadyMessage)
+	}
+}
+
+// TestStatusReportsPodsNotRunning lists the node's pods that do not run, read with the kubelet's
+// credentials: those neither running nor succeeded, other than a Job's failed ones, and running
+// ones with a waiting container, pending ones first.
+func TestStatusReportsPodsNotRunning(t *testing.T) {
+	s, _ := kubernetesNode(t, k8s.KindWorker, true)
+	waiting := func(reason string) []corev1.ContainerStatus {
+		return []corev1.ContainerStatus{{State: corev1.ContainerState{Waiting: &corev1.ContainerStateWaiting{Reason: reason}}}}
+	}
+	s.k.hooks.Node = func(context.Context) (*corev1.Node, error) {
+		n := kubernetestest.ReadyNode()
+		n.Name = "n1"
+		return n, nil
+	}
+	job := []metav1.OwnerReference{{Kind: "Job", Name: "backup"}}
+	s.k.hooks.Pods = func(_ context.Context, node string) ([]corev1.Pod, error) {
+		if node != "n1" {
+			t.Errorf("pods of %q", node)
+		}
+		return []corev1.Pod{
+			{ObjectMeta: metav1.ObjectMeta{Namespace: "kube-system", Name: "ok"}, Status: corev1.PodStatus{Phase: corev1.PodRunning}},
+			{ObjectMeta: metav1.ObjectMeta{Namespace: "kube-system", Name: "done"}, Status: corev1.PodStatus{Phase: corev1.PodSucceeded}},
+			{ObjectMeta: metav1.ObjectMeta{Namespace: "web", Name: "crash"}, Status: corev1.PodStatus{Phase: corev1.PodRunning, ContainerStatuses: waiting("CrashLoopBackOff")}},
+			{ObjectMeta: metav1.ObjectMeta{Namespace: "apps", Name: "pull"}, Status: corev1.PodStatus{Phase: corev1.PodPending, ContainerStatuses: waiting("ImagePullBackOff")}},
+			{ObjectMeta: metav1.ObjectMeta{Namespace: "apps", Name: "evicted"}, Status: corev1.PodStatus{Phase: corev1.PodFailed, Reason: "Evicted"}},
+			{ObjectMeta: metav1.ObjectMeta{Namespace: "apps", Name: "backup-1", OwnerReferences: job}, Status: corev1.PodStatus{Phase: corev1.PodFailed}},
+			{ObjectMeta: metav1.ObjectMeta{Namespace: "web", Name: "init"}, Status: corev1.PodStatus{
+				Phase:                 corev1.PodPending,
+				InitContainerStatuses: []corev1.ContainerStatus{{State: corev1.ContainerState{Terminated: &corev1.ContainerStateTerminated{ExitCode: 1, Reason: "Error"}}}},
+				ContainerStatuses:     waiting("PodInitializing"),
+			}},
+			{ObjectMeta: metav1.ObjectMeta{Namespace: "web", Name: "sidecar"}, Status: corev1.PodStatus{
+				Phase:                 corev1.PodRunning,
+				InitContainerStatuses: []corev1.ContainerStatus{{State: corev1.ContainerState{Waiting: &corev1.ContainerStateWaiting{Reason: "CrashLoopBackOff"}}}},
+			}},
+		}, nil
+	}
+	st := kubernetestest.Status(t, s)
+	var got []string
+	for _, p := range st.PodsNotRunning {
+		got = append(got, p.Namespace+"/"+p.Name+" "+p.Phase+" "+p.Reason)
+	}
+	want := []string{
+		"apps/pull Pending ImagePullBackOff", "web/init Pending Init:Error",
+		"web/crash Running CrashLoopBackOff", "web/sidecar Running Init:CrashLoopBackOff",
+		"apps/evicted Failed Evicted",
+	}
+	if !slices.Equal(got, want) || st.PodsNotRunningTotal != 5 || st.PodsError != "" {
+		t.Errorf("pods not running %q of %d, error %q; want %q", got, st.PodsNotRunningTotal, st.PodsError, want)
+	}
+
+	s.k.hooks.Pods = func(context.Context, string) ([]corev1.Pod, error) { return nil, errors.New("forbidden") }
+	if st := kubernetestest.Status(t, s); st.PodsError != "forbidden" || len(st.PodsNotRunning) != 0 {
+		t.Errorf("pods error %q, pods %v", st.PodsError, st.PodsNotRunning)
+	}
+}
+
+// TestStatusListsTwentyPodsNotRunning lists the first 20 of the pods that do not run, and counts
+// them all.
+func TestStatusListsTwentyPodsNotRunning(t *testing.T) {
+	s, _ := kubernetesNode(t, k8s.KindWorker, true)
+	s.k.hooks.Pods = func(context.Context, string) ([]corev1.Pod, error) {
+		var pods []corev1.Pod
+		for i := range 25 {
+			pods = append(pods, corev1.Pod{ObjectMeta: metav1.ObjectMeta{Namespace: "web", Name: fmt.Sprintf("pod-%02d", i)}, Status: corev1.PodStatus{Phase: corev1.PodPending}})
+		}
+		return pods, nil
+	}
+	st := kubernetestest.Status(t, s)
+	if len(st.PodsNotRunning) != 20 || st.PodsNotRunningTotal != 25 || st.PodsNotRunning[19].Name != "pod-19" {
+		t.Errorf("%d pods listed of %d", len(st.PodsNotRunning), st.PodsNotRunningTotal)
 	}
 }

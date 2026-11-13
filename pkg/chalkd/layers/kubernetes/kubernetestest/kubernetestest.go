@@ -248,6 +248,9 @@ func AppliedAtOnce(_ context.Context, _ kpki.Share, applied func(int)) error {
 // NodeReady is an API server whose Node of the node is Ready.
 func NodeReady(context.Context) (*corev1.Node, error) { return ReadyNode(), nil }
 
+// NoPods is an API server that lists no pods on the node.
+func NoPods(context.Context, string) ([]corev1.Pod, error) { return nil, nil }
+
 // NoEtcdEndpoints is a cluster endpoint at which no API server answers.
 func NoEtcdEndpoints(context.Context, k8s.Cluster, kpki.Share, []netip.Addr) ([]string, error) {
 	return nil, errors.New("connection refused")

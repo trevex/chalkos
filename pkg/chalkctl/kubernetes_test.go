@@ -20,6 +20,7 @@ import (
 	"github.com/trevex/chalkos/pkg/chalkd/chalkdtest"
 	"github.com/trevex/chalkos/pkg/chalkd/layer"
 	kubernetesplugin "github.com/trevex/chalkos/pkg/chalkd/layers/kubernetes"
+	"github.com/trevex/chalkos/pkg/chalkd/layers/kubernetes/kubernetestest"
 	"github.com/trevex/chalkos/pkg/clustersecrets"
 	imagecontract "github.com/trevex/chalkos/pkg/contract"
 	"github.com/trevex/chalkos/pkg/install"
@@ -127,6 +128,9 @@ func kubernetesNodeWith(t *testing.T, ta *testApp, o kubernetesplugin.Options) (
 		o.Hooks.Node = func(context.Context) (*corev1.Node, error) {
 			return &corev1.Node{Status: corev1.NodeStatus{Conditions: []corev1.NodeCondition{{Type: corev1.NodeReady, Status: corev1.ConditionTrue}}}}, nil
 		}
+	}
+	if o.Hooks.Pods == nil {
+		o.Hooks.Pods = kubernetestest.NoPods
 	}
 	if o.Hooks.APIClient == nil {
 		// The API server keeps no objects.

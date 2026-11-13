@@ -1,14 +1,17 @@
 package kubernetes
 
 import (
+	"cmp"
 	"context"
 	"fmt"
+	"slices"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/client-go/kubernetes"
 
+	kubernetesv1 "github.com/trevex/chalkos/pkg/api/kubernetes/v1"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
 	"github.com/trevex/chalkos/pkg/kubernetes/manifests"
 )
@@ -74,4 +77,80 @@ func podReady(p *corev1.Pod) bool {
 		}
 	}
 	return false
+}
+
+// maxPodsNotRunning is how many of the pods that do not run the status lists.
+const maxPodsNotRunning = 20
+
+// podsNotRunning are the pods that do not run, as notRunning tells: the first maxPodsNotRunning
+// in phaseOrder, then namespace and name order, and how many there are.
+func podsNotRunning(pods []corev1.Pod) ([]*kubernetesv1.NodePod, int) {
+	var list []*kubernetesv1.NodePod
+	for _, p := range pods {
+		if reason, ok := notRunning(p); ok {
+			list = append(list, &kubernetesv1.NodePod{Namespace: p.Namespace, Name: p.Name, Phase: string(p.Status.Phase), Reason: reason})
+		}
+	}
+	slices.SortFunc(list, func(a, b *kubernetesv1.NodePod) int {
+		return cmp.Or(cmp.Compare(phaseOrder(a.Phase), phaseOrder(b.Phase)), cmp.Compare(a.Namespace, b.Namespace), cmp.Compare(a.Name, b.Name))
+	})
+	return list[:min(len(list), maxPodsNotRunning)], len(list)
+}
+
+// phaseOrder orders the pods that do not run: pending ones first, as they wait to start, then
+// running ones with a problem, then failed ones and the rest.
+func phaseOrder(phase string) int {
+	switch corev1.PodPhase(phase) {
+	case corev1.PodPending:
+		return 0
+	case corev1.PodRunning:
+		return 1
+	case corev1.PodFailed:
+		return 2
+	}
+	return 3
+}
+
+// notRunning reports whether a pod does not run, and why: its phase is neither Running nor
+// Succeeded, or it runs with a container that waits. A failed pod of a Job runs no more, as the
+// Job's record of a run, and counts as neither. The reason is containerProblem's, else the pod's
+// own.
+func notRunning(p corev1.Pod) (reason string, ok bool) {
+	reason, waits := containerProblem(p.Status)
+	switch p.Status.Phase {
+	case corev1.PodSucceeded:
+		return "", false
+	case corev1.PodRunning:
+		return reason, waits
+	case corev1.PodFailed:
+		if ownedByJob(p) {
+			return "", false
+		}
+	}
+	return cmp.Or(reason, p.Status.Reason), true
+}
+
+// containerProblem is the reason of the first init container that waits with a reason or ended
+// with an error, prefixed Init:, as kubectl shows it, else of the first container that waits;
+// waits is set when a container waits.
+func containerProblem(s corev1.PodStatus) (reason string, waits bool) {
+	for _, c := range s.InitContainerStatuses {
+		switch {
+		case c.State.Waiting != nil && c.State.Waiting.Reason != "":
+			return "Init:" + c.State.Waiting.Reason, true
+		case c.State.Terminated != nil && c.State.Terminated.ExitCode != 0:
+			return "Init:" + cmp.Or(c.State.Terminated.Reason, "Error"), false
+		}
+	}
+	for _, c := range s.ContainerStatuses {
+		if c.State.Waiting != nil {
+			return c.State.Waiting.Reason, true
+		}
+	}
+	return "", false
+}
+
+// ownedByJob reports whether a Job owns the pod.
+func ownedByJob(p corev1.Pod) bool {
+	return slices.ContainsFunc(p.OwnerReferences, func(o metav1.OwnerReference) bool { return o.Kind == "Job" })
 }

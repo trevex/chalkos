@@ -71,7 +71,8 @@ var probeDoneRE = regexp.MustCompile(`CHALKTEST done=1`)
 // subnets. Each phase is a subtest; a failed phase stops the ones after it.
 //   - ready: the host reaches the nodes' guest agents, both nodes register, a second bootstrap is
 //     refused, both nodes keep their clocks with the test's NTP server and show no failed unit,
-//     and a reader's client file reads a node's status but cannot reboot it. The worker accepts
+//     the worker's status reads its pods with the kubelet's credentials, and a reader's client
+//     file reads a node's status but cannot reboot it. The worker accepts
 //     VXLAN on its addresses only, the API server answers anonymous requests for health alone,
 //     and the worker pulls a private image with the node's registry credentials through a
 //     mirror, without a pull secret.
@@ -147,7 +148,7 @@ func TestKubernetesCluster(t *testing.T) {
 		if out, err := chalkctl(t, nodes["cp1"], "base", "bootstrap", "cp1"); err == nil || !strings.Contains(out, "bootstrapped already") {
 			t.Errorf("a second bootstrap was not refused: %v", err)
 		}
-		if out, err := chalkctl(t, nodes["w1"], "base", "status", "w1"); err != nil || !strings.Contains(out, "kubernetes worker: joined, node ready: True") {
+		if out, err := chalkctl(t, nodes["w1"], "base", "status", "w1"); err != nil || !strings.Contains(out, "kubernetes worker: joined, node ready: True") || strings.Contains(out, "pods unknown") {
 			t.Errorf("status of w1: %v\n%s", err, out)
 		}
 		for _, name := range []string{"cp1", "w1"} {

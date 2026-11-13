@@ -65,6 +65,7 @@ func kubernetesNode(t *testing.T, kind string, share bool) (*Plugin, *tooltest.R
 			Objects:           kubernetestest.NoObjects,
 			ControlPlane:      kubernetestest.AppliedAtOnce,
 			Node:              kubernetestest.NodeReady,
+			Pods:              kubernetestest.NoPods,
 			EtcdEndpoints:     kubernetestest.NoEtcdEndpoints,
 			ClusterAnswers:    kubernetestest.NoClusterAnswers,
 			CheckControlPlane: kubernetestest.ControlPlaneCurrent,

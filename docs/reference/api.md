@@ -1165,8 +1165,11 @@ The response of Status: the state of the node's Kubernetes.
 | `control_plane_pods_current` | bool | Whether control_plane_pods is "current". False on other nodes. |
 | `node_ready_reason` | string | The reason the kubelet gives the Node's Ready condition, such as KubeletNotReady. Empty while the condition gives none, and when node_ready says why the Node could not be read. |
 | `node_ready_message` | string | The message the kubelet gives the Node's Ready condition, such as "container runtime network not ready: NetworkReady=false reason:NetworkPluginNotReady message:Network plugin returns error: cni plugin not initialized" on a node whose cluster has no CNI yet. Empty while the condition gives none, and when node_ready says why the Node could not be read. |
+| `pods_not_running` | list of NodePod | The pods on the node that do not run: those whose phase is neither Running nor Succeeded, and running pods with a container that waits, as one in CrashLoopBackOff. A failed pod of a Job is left out, as it records a run that ended. Pending pods come first, then running ones, then failed ones and those of an unknown phase, each in namespace and name order, and the first 20 of them alone; pods_not_running_total counts them all. Read with the kubelet's credentials, as node_ready is. Empty while every pod runs and when they could not be read, which pods_error tells apart. |
+| `pods_error` | string | Why the node's pods could not be read; empty when they were. |
+| `pods_not_running_total` | uint32 | How many pods on the node do not run, of which pods_not_running lists the first 20. |
 
-Field types: [Phase](#kubernetes-enum-phase), [RevokedNode](#kubernetes-message-revokednode).
+Field types: [Phase](#kubernetes-enum-phase), [RevokedNode](#kubernetes-message-revokednode), [NodePod](#kubernetes-message-nodepod).
 
 ### Bootstrap { #kubernetes-method-bootstrap }
 
@@ -1479,6 +1482,17 @@ The Kubernetes facts of an image, as its contract carries them in its layer fact
 | Field | Type | Description |
 | ----- | ---- | ----------- |
 | `image_json` | bytes | The image's Kubernetes facts: the release of the image's kubelet and the pod network it ships. |
+
+### NodePod { #kubernetes-message-nodepod }
+
+A pod on the node that does not run.
+
+| Field | Type | Description |
+| ----- | ---- | ----------- |
+| `namespace` | string | The pod's namespace. |
+| `name` | string | The pod's name. |
+| `phase` | string | The pod's phase: Pending, Running, Failed or Unknown. |
+| `reason` | string | Why it does not run: the reason an init container gives that waits or failed, prefixed Init:, such as Init:CrashLoopBackOff, else the reason a waiting container gives, such as ImagePullBackOff, else the pod's own, such as Evicted; empty when none gives one. |
 
 ### NotEtcdMember { #kubernetes-message-notetcdmember }
 

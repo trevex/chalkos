@@ -15,6 +15,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
 
@@ -130,6 +131,12 @@ func (k *side) status(ctx context.Context) (*kubernetesv1.StatusResponse, error)
 		return st, nil
 	}
 	st.NodeReady, st.NodeReadyReason, st.NodeReadyMessage = nodeReady(node)
+	if pods, err := k.hooks.Pods(ctx, node.Name); err != nil {
+		st.PodsError = err.Error()
+	} else {
+		list, total := podsNotRunning(pods)
+		st.PodsNotRunning, st.PodsNotRunningTotal = list, uint32(total)
+	}
 	if share != nil {
 		if cs, err := k.hooks.APIClient(c, *share); err != nil {
 			st.ControlPlanePods = "its static pods are unknown: " + err.Error()
@@ -196,23 +203,45 @@ func servesFile(ctx context.Context, addr, file string) error {
 	return nil
 }
 
-// node reads the node's Node object with the kubelet's credentials, which may read their own
-// node.
-func (k *side) node(ctx context.Context) (*corev1.Node, error) {
-	n, err := k8s.ReadNode(k.state.NodeFile)
-	if err != nil {
-		return nil, err
-	}
+// kubeletClient is a client of the API server with the kubelet's credentials, which may read the
+// node's own Node and the pods bound to it.
+func (k *side) kubeletClient() (kubernetes.Interface, error) {
 	cfg, err := clientcmd.BuildConfigFromFlags("", k.state.Kubeconfig())
 	if err != nil {
 		return nil, err
 	}
 	cfg.Timeout = 5 * time.Second
-	client, err := kubernetes.NewForConfig(cfg)
+	return kubernetes.NewForConfig(cfg)
+}
+
+// node reads the node's Node object with the kubelet's credentials.
+func (k *side) node(ctx context.Context) (*corev1.Node, error) {
+	n, err := k8s.ReadNode(k.state.NodeFile)
+	if err != nil {
+		return nil, err
+	}
+	client, err := k.kubeletClient()
 	if err != nil {
 		return nil, err
 	}
 	return client.CoreV1().Nodes().Get(ctx, n.Name, metav1.GetOptions{})
+}
+
+// pods lists the pods bound to the node with the kubelet's credentials, from the API server's
+// watch cache.
+func (k *side) pods(ctx context.Context, node string) ([]corev1.Pod, error) {
+	client, err := k.kubeletClient()
+	if err != nil {
+		return nil, err
+	}
+	list, err := client.CoreV1().Pods(metav1.NamespaceAll).List(ctx, metav1.ListOptions{
+		FieldSelector:   fields.OneTermEqualSelector("spec.nodeName", node).String(),
+		ResourceVersion: "0",
+	})
+	if err != nil {
+		return nil, err
+	}
+	return list.Items, nil
 }
 
 // nodeReady returns the status, the reason and the message of the Node's Ready condition.

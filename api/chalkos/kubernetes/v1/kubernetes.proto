@@ -147,6 +147,18 @@ message StatusResponse {
   // error: cni plugin not initialized" on a node whose cluster has no CNI yet. Empty while the
   // condition gives none, and when node_ready says why the Node could not be read.
   string node_ready_message = 16;
+  // The pods on the node that do not run: those whose phase is neither Running nor Succeeded, and
+  // running pods with a container that waits, as one in CrashLoopBackOff. A failed pod of a Job
+  // is left out, as it records a run that ended. Pending pods come first, then running ones,
+  // then failed ones and those of an unknown phase, each in namespace and name order, and the
+  // first 20 of them alone; pods_not_running_total counts them all. Read with the kubelet's
+  // credentials, as node_ready is. Empty while every pod runs and when they could not be read,
+  // which pods_error tells apart.
+  repeated NodePod pods_not_running = 17;
+  // Why the node's pods could not be read; empty when they were.
+  string pods_error = 18;
+  // How many pods on the node do not run, of which pods_not_running lists the first 20.
+  uint32 pods_not_running_total = 19;
 }
 
 // Where a node stands in its Kubernetes cluster. On a control-plane node it follows the node's
@@ -180,6 +192,20 @@ message RevokedNode {
   string name = 1;
   // When the node was revoked; unset when the time it is listed with cannot be read.
   google.protobuf.Timestamp revoked_at = 2;
+}
+
+// A pod on the node that does not run.
+message NodePod {
+  // The pod's namespace.
+  string namespace = 1;
+  // The pod's name.
+  string name = 2;
+  // The pod's phase: Pending, Running, Failed or Unknown.
+  string phase = 3;
+  // Why it does not run: the reason an init container gives that waits or failed, prefixed
+  // Init:, such as Init:CrashLoopBackOff, else the reason a waiting container gives, such as
+  // ImagePullBackOff, else the pod's own, such as Evicted; empty when none gives one.
+  string reason = 4;
 }
 
 // The request of Bootstrap.

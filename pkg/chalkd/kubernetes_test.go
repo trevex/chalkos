@@ -58,6 +58,7 @@ func addKubernetes(t *testing.T, s *Server, kind string, share bool, adjust ...f
 			Objects:           kubernetestest.NoObjects,
 			ControlPlane:      kubernetestest.AppliedAtOnce,
 			Node:              kubernetestest.NodeReady,
+			Pods:              kubernetestest.NoPods,
 			EtcdEndpoints:     kubernetestest.NoEtcdEndpoints,
 			ClusterAnswers:    kubernetestest.NoClusterAnswers,
 			CheckControlPlane: kubernetestest.ControlPlaneCurrent,

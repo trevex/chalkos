@@ -1,7 +1,9 @@
 package kubernetes
 
 import (
+	"bytes"
 	"slices"
+	"strings"
 	"testing"
 
 	kubernetesv1 "github.com/trevex/chalkos/pkg/api/kubernetes/v1"
@@ -40,5 +42,35 @@ func TestVersionsLine(t *testing.T) {
 		if got := versionsLine(k); got != want {
 			t.Errorf("versionsLine(%v) = %q, want %q", k, got, want)
 		}
+	}
+}
+
+// TestPodsAndReadyReason checks that the section names the pods that do not run, or why they
+// could not be read, and the reason of a Ready condition that is not True.
+func TestPodsAndReadyReason(t *testing.T) {
+	k := &kubernetesv1.StatusResponse{Kind: "worker", State: "joined", NodeReady: "False", NodeReadyReason: "KubeletNotReady",
+		NodeReadyMessage: "container runtime network not ready",
+		PodsNotRunning: []*kubernetesv1.NodePod{
+			{Namespace: "web", Name: "crash", Phase: "Running", Reason: "CrashLoopBackOff"},
+			{Namespace: "web", Name: "pending-pod", Phase: "Pending"},
+		}, PodsNotRunningTotal: 3}
+	var b bytes.Buffer
+	if err := Write(&b, k); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"kubernetes worker: joined, node ready: False (KubeletNotReady: container runtime network not ready)\n",
+		"pods not running:\n  web/crash        Running  CrashLoopBackOff\n  web/pending-pod  Pending  -\n  and 1 more\n",
+	} {
+		if !strings.Contains(b.String(), want) {
+			t.Errorf("no %q in\n%s", want, b.String())
+		}
+	}
+	b.Reset()
+	if err := Write(&b, &kubernetesv1.StatusResponse{Kind: "worker", NodeReady: "True", NodeReadyReason: "KubeletReady", PodsError: "forbidden"}); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(b.String(), "KubeletReady") || !strings.Contains(b.String(), "pods unknown: forbidden\n") {
+		t.Errorf("section:\n%s", b.String())
 	}
 }

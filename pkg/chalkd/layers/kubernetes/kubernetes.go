@@ -91,6 +91,8 @@ type Hooks struct {
 	ControlPlane func(ctx context.Context, share kpki.Share, applied func(n int)) error
 	// Node returns the node's Node object.
 	Node func(ctx context.Context) (*corev1.Node, error)
+	// Pods returns the pods bound to the node, read with the kubelet's credentials.
+	Pods func(ctx context.Context, node string) ([]corev1.Pod, error)
 	// EtcdEndpoints returns the client URLs of the cluster's etcd members other than the node's,
 	// as the API server at the cluster's endpoint lists them. It fails while there is none.
 	EtcdEndpoints func(ctx context.Context, c k8s.Cluster, share kpki.Share, self []netip.Addr) ([]string, error)
@@ -219,6 +221,9 @@ func newSide(o Options) *side {
 	}
 	if h.Node == nil {
 		h.Node = k.node
+	}
+	if h.Pods == nil {
+		h.Pods = k.pods
 	}
 	if h.EtcdEndpoints == nil {
 		h.EtcdEndpoints = k.etcdEndpoints

@@ -274,8 +274,20 @@ type StatusResponse struct {
 	// error: cni plugin not initialized" on a node whose cluster has no CNI yet. Empty while the
 	// condition gives none, and when node_ready says why the Node could not be read.
 	NodeReadyMessage string `protobuf:"bytes,16,opt,name=node_ready_message,json=nodeReadyMessage,proto3" json:"node_ready_message,omitempty"`
-	unknownFields    protoimpl.UnknownFields
-	sizeCache        protoimpl.SizeCache
+	// The pods on the node that do not run: those whose phase is neither Running nor Succeeded, and
+	// running pods with a container that waits, as one in CrashLoopBackOff. A failed pod of a Job
+	// is left out, as it records a run that ended. Pending pods come first, then running ones,
+	// then failed ones and those of an unknown phase, each in namespace and name order, and the
+	// first 20 of them alone; pods_not_running_total counts them all. Read with the kubelet's
+	// credentials, as node_ready is. Empty while every pod runs and when they could not be read,
+	// which pods_error tells apart.
+	PodsNotRunning []*NodePod `protobuf:"bytes,17,rep,name=pods_not_running,json=podsNotRunning,proto3" json:"pods_not_running,omitempty"`
+	// Why the node's pods could not be read; empty when they were.
+	PodsError string `protobuf:"bytes,18,opt,name=pods_error,json=podsError,proto3" json:"pods_error,omitempty"`
+	// How many pods on the node do not run, of which pods_not_running lists the first 20.
+	PodsNotRunningTotal uint32 `protobuf:"varint,19,opt,name=pods_not_running_total,json=podsNotRunningTotal,proto3" json:"pods_not_running_total,omitempty"`
+	unknownFields       protoimpl.UnknownFields
+	sizeCache           protoimpl.SizeCache
 }
 
 func (x *StatusResponse) Reset() {
@@ -420,6 +432,27 @@ func (x *StatusResponse) GetNodeReadyMessage() string {
 	return ""
 }
 
+func (x *StatusResponse) GetPodsNotRunning() []*NodePod {
+	if x != nil {
+		return x.PodsNotRunning
+	}
+	return nil
+}
+
+func (x *StatusResponse) GetPodsError() string {
+	if x != nil {
+		return x.PodsError
+	}
+	return ""
+}
+
+func (x *StatusResponse) GetPodsNotRunningTotal() uint32 {
+	if x != nil {
+		return x.PodsNotRunningTotal
+	}
+	return 0
+}
+
 // A node revoked in the cluster.
 type RevokedNode struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
@@ -475,6 +508,81 @@ func (x *RevokedNode) GetRevokedAt() *timestamppb.Timestamp {
 	return nil
 }
 
+// A pod on the node that does not run.
+type NodePod struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The pod's namespace.
+	Namespace string `protobuf:"bytes,1,opt,name=namespace,proto3" json:"namespace,omitempty"`
+	// The pod's name.
+	Name string `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	// The pod's phase: Pending, Running, Failed or Unknown.
+	Phase string `protobuf:"bytes,3,opt,name=phase,proto3" json:"phase,omitempty"`
+	// Why it does not run: the reason an init container gives that waits or failed, prefixed
+	// Init:, such as Init:CrashLoopBackOff, else the reason a waiting container gives, such as
+	// ImagePullBackOff, else the pod's own, such as Evicted; empty when none gives one.
+	Reason        string `protobuf:"bytes,4,opt,name=reason,proto3" json:"reason,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *NodePod) Reset() {
+	*x = NodePod{}
+	mi := &file_chalkos_kubernetes_v1_kubernetes_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *NodePod) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*NodePod) ProtoMessage() {}
+
+func (x *NodePod) ProtoReflect() protoreflect.Message {
+	mi := &file_chalkos_kubernetes_v1_kubernetes_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use NodePod.ProtoReflect.Descriptor instead.
+func (*NodePod) Descriptor() ([]byte, []int) {
+	return file_chalkos_kubernetes_v1_kubernetes_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *NodePod) GetNamespace() string {
+	if x != nil {
+		return x.Namespace
+	}
+	return ""
+}
+
+func (x *NodePod) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *NodePod) GetPhase() string {
+	if x != nil {
+		return x.Phase
+	}
+	return ""
+}
+
+func (x *NodePod) GetReason() string {
+	if x != nil {
+		return x.Reason
+	}
+	return ""
+}
+
 // The request of Bootstrap.
 type BootstrapRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -484,7 +592,7 @@ type BootstrapRequest struct {
 
 func (x *BootstrapRequest) Reset() {
 	*x = BootstrapRequest{}
-	mi := &file_chalkos_kubernetes_v1_kubernetes_proto_msgTypes[3]
+	mi := &file_chalkos_kubernetes_v1_kubernetes_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -496,7 +604,7 @@ func (x *BootstrapRequest) String() string {
 func (*BootstrapRequest) ProtoMessage() {}
 
 func (x *BootstrapRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_chalkos_kubernetes_v1_kubernetes_proto_msgTypes[3]
+	mi := &file_chalkos_kubernetes_v1_kubernetes_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -509,7 +617,7 @@ func (x *BootstrapRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BootstrapRequest.ProtoReflect.Descriptor instead.
 func (*BootstrapRequest) Descriptor() ([]byte, []int) {
-	return file_chalkos_kubernetes_v1_kubernetes_proto_rawDescGZIP(), []int{3}
+	return file_chalkos_kubernetes_v1_kubernetes_proto_rawDescGZIP(), []int{4}
 }
 
 // The response of Bootstrap, once the add-ons are applied.
@@ -523,7 +631,7 @@ type BootstrapResponse struct {
 
 func (x *BootstrapResponse) Reset() {
 	*x = BootstrapResponse{}
-	mi := &file_chalkos_kubernetes_v1_kubernetes_proto_msgTypes[4]
+	mi := &file_chalkos_kubernetes_v1_kubernetes_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -535,7 +643,7 @@ func (x *BootstrapResponse) String() string {
 func (*BootstrapResponse) ProtoMessage() {}
 
 func (x *BootstrapResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_chalkos_kubernetes_v1_kubernetes_proto_msgTypes[4]
+	mi := &file_chalkos_kubernetes_v1_kubernetes_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -548,7 +656,7 @@ func (x *BootstrapResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BootstrapResponse.ProtoReflect.Descriptor instead.
 func (*BootstrapResponse) Descriptor() ([]byte, []int) {
-	return file_chalkos_kubernetes_v1_kubernetes_proto_rawDescGZIP(), []int{4}
+	return file_chalkos_kubernetes_v1_kubernetes_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *BootstrapResponse) GetApplied() uint32 {
@@ -570,7 +678,7 @@ type NotEtcdMember struct {
 
 func (x *NotEtcdMember) Reset() {
 	*x = NotEtcdMember{}
-	mi := &file_chalkos_kubernetes_v1_kubernetes_proto_msgTypes[5]
+	mi := &file_chalkos_kubernetes_v1_kubernetes_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -582,7 +690,7 @@ func (x *NotEtcdMember) String() string {
 func (*NotEtcdMember) ProtoMessage() {}
 
 func (x *NotEtcdMember) ProtoReflect() protoreflect.Message {
-	mi := &file_chalkos_kubernetes_v1_kubernetes_proto_msgTypes[5]
+	mi := &file_chalkos_kubernetes_v1_kubernetes_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -595,7 +703,7 @@ func (x *NotEtcdMember) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use NotEtcdMember.ProtoReflect.Descriptor instead.
 func (*NotEtcdMember) Descriptor() ([]byte, []int) {
-	return file_chalkos_kubernetes_v1_kubernetes_proto_rawDescGZIP(), []int{5}
+	return file_chalkos_kubernetes_v1_kubernetes_proto_rawDescGZIP(), []int{6}
 }
 
 // A member of etcd.
@@ -618,7 +726,7 @@ type EtcdMember struct {
 
 func (x *EtcdMember) Reset() {
 	*x = EtcdMember{}
-	mi := &file_chalkos_kubernetes_v1_kubernetes_proto_msgTypes[6]
+	mi := &file_chalkos_kubernetes_v1_kubernetes_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -630,7 +738,7 @@ func (x *EtcdMember) String() string {
 func (*EtcdMember) ProtoMessage() {}
 
 func (x *EtcdMember) ProtoReflect() protoreflect.Message {
-	mi := &file_chalkos_kubernetes_v1_kubernetes_proto_msgTypes[6]
+	mi := &file_chalkos_kubernetes_v1_kubernetes_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -643,7 +751,7 @@ func (x *EtcdMember) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EtcdMember.ProtoReflect.Descriptor instead.
 func (*EtcdMember) Descriptor() ([]byte, []int) {
-	return file_chalkos_kubernetes_v1_kubernetes_proto_rawDescGZIP(), []int{6}
+	return file_chalkos_kubernetes_v1_kubernetes_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *EtcdMember) GetId() uint64 {
@@ -690,7 +798,7 @@ type EtcdMembersRequest struct {
 
 func (x *EtcdMembersRequest) Reset() {
 	*x = EtcdMembersRequest{}
-	mi := &file_chalkos_kubernetes_v1_kubernetes_proto_msgTypes[7]
+	mi := &file_chalkos_kubernetes_v1_kubernetes_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -702,7 +810,7 @@ func (x *EtcdMembersRequest) String() string {
 func (*EtcdMembersRequest) ProtoMessage() {}
 
 func (x *EtcdMembersRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_chalkos_kubernetes_v1_kubernetes_proto_msgTypes[7]
+	mi := &file_chalkos_kubernetes_v1_kubernetes_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -715,7 +823,7 @@ func (x *EtcdMembersRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EtcdMembersRequest.ProtoReflect.Descriptor instead.
 func (*EtcdMembersRequest) Descriptor() ([]byte, []int) {
-	return file_chalkos_kubernetes_v1_kubernetes_proto_rawDescGZIP(), []int{7}
+	return file_chalkos_kubernetes_v1_kubernetes_proto_rawDescGZIP(), []int{8}
 }
 
 // The response of EtcdMembers.
@@ -729,7 +837,7 @@ type EtcdMembersResponse struct {
 
 func (x *EtcdMembersResponse) Reset() {
 	*x = EtcdMembersResponse{}
-	mi := &file_chalkos_kubernetes_v1_kubernetes_proto_msgTypes[8]
+	mi := &file_chalkos_kubernetes_v1_kubernetes_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -741,7 +849,7 @@ func (x *EtcdMembersResponse) String() string {
 func (*EtcdMembersResponse) ProtoMessage() {}
 
 func (x *EtcdMembersResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_chalkos_kubernetes_v1_kubernetes_proto_msgTypes[8]
+	mi := &file_chalkos_kubernetes_v1_kubernetes_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -754,7 +862,7 @@ func (x *EtcdMembersResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EtcdMembersResponse.ProtoReflect.Descriptor instead.
 func (*EtcdMembersResponse) Descriptor() ([]byte, []int) {
-	return file_chalkos_kubernetes_v1_kubernetes_proto_rawDescGZIP(), []int{8}
+	return file_chalkos_kubernetes_v1_kubernetes_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *EtcdMembersResponse) GetMembers() []*EtcdMember {
@@ -777,7 +885,7 @@ type EtcdRemoveMemberRequest struct {
 
 func (x *EtcdRemoveMemberRequest) Reset() {
 	*x = EtcdRemoveMemberRequest{}
-	mi := &file_chalkos_kubernetes_v1_kubernetes_proto_msgTypes[9]
+	mi := &file_chalkos_kubernetes_v1_kubernetes_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -789,7 +897,7 @@ func (x *EtcdRemoveMemberRequest) String() string {
 func (*EtcdRemoveMemberRequest) ProtoMessage() {}
 
 func (x *EtcdRemoveMemberRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_chalkos_kubernetes_v1_kubernetes_proto_msgTypes[9]
+	mi := &file_chalkos_kubernetes_v1_kubernetes_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -802,7 +910,7 @@ func (x *EtcdRemoveMemberRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EtcdRemoveMemberRequest.ProtoReflect.Descriptor instead.
 func (*EtcdRemoveMemberRequest) Descriptor() ([]byte, []int) {
-	return file_chalkos_kubernetes_v1_kubernetes_proto_rawDescGZIP(), []int{9}
+	return file_chalkos_kubernetes_v1_kubernetes_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *EtcdRemoveMemberRequest) GetMember() string {
@@ -830,7 +938,7 @@ type EtcdRemoveMemberResponse struct {
 
 func (x *EtcdRemoveMemberResponse) Reset() {
 	*x = EtcdRemoveMemberResponse{}
-	mi := &file_chalkos_kubernetes_v1_kubernetes_proto_msgTypes[10]
+	mi := &file_chalkos_kubernetes_v1_kubernetes_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -842,7 +950,7 @@ func (x *EtcdRemoveMemberResponse) String() string {
 func (*EtcdRemoveMemberResponse) ProtoMessage() {}
 
 func (x *EtcdRemoveMemberResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_chalkos_kubernetes_v1_kubernetes_proto_msgTypes[10]
+	mi := &file_chalkos_kubernetes_v1_kubernetes_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -855,7 +963,7 @@ func (x *EtcdRemoveMemberResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EtcdRemoveMemberResponse.ProtoReflect.Descriptor instead.
 func (*EtcdRemoveMemberResponse) Descriptor() ([]byte, []int) {
-	return file_chalkos_kubernetes_v1_kubernetes_proto_rawDescGZIP(), []int{10}
+	return file_chalkos_kubernetes_v1_kubernetes_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *EtcdRemoveMemberResponse) GetRemoved() *EtcdMember {
@@ -877,7 +985,7 @@ type EtcdLeaveRequest struct {
 
 func (x *EtcdLeaveRequest) Reset() {
 	*x = EtcdLeaveRequest{}
-	mi := &file_chalkos_kubernetes_v1_kubernetes_proto_msgTypes[11]
+	mi := &file_chalkos_kubernetes_v1_kubernetes_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -889,7 +997,7 @@ func (x *EtcdLeaveRequest) String() string {
 func (*EtcdLeaveRequest) ProtoMessage() {}
 
 func (x *EtcdLeaveRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_chalkos_kubernetes_v1_kubernetes_proto_msgTypes[11]
+	mi := &file_chalkos_kubernetes_v1_kubernetes_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -902,7 +1010,7 @@ func (x *EtcdLeaveRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EtcdLeaveRequest.ProtoReflect.Descriptor instead.
 func (*EtcdLeaveRequest) Descriptor() ([]byte, []int) {
-	return file_chalkos_kubernetes_v1_kubernetes_proto_rawDescGZIP(), []int{11}
+	return file_chalkos_kubernetes_v1_kubernetes_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *EtcdLeaveRequest) GetForce() bool {
@@ -921,7 +1029,7 @@ type EtcdLeaveResponse struct {
 
 func (x *EtcdLeaveResponse) Reset() {
 	*x = EtcdLeaveResponse{}
-	mi := &file_chalkos_kubernetes_v1_kubernetes_proto_msgTypes[12]
+	mi := &file_chalkos_kubernetes_v1_kubernetes_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -933,7 +1041,7 @@ func (x *EtcdLeaveResponse) String() string {
 func (*EtcdLeaveResponse) ProtoMessage() {}
 
 func (x *EtcdLeaveResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_chalkos_kubernetes_v1_kubernetes_proto_msgTypes[12]
+	mi := &file_chalkos_kubernetes_v1_kubernetes_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -946,7 +1054,7 @@ func (x *EtcdLeaveResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EtcdLeaveResponse.ProtoReflect.Descriptor instead.
 func (*EtcdLeaveResponse) Descriptor() ([]byte, []int) {
-	return file_chalkos_kubernetes_v1_kubernetes_proto_rawDescGZIP(), []int{12}
+	return file_chalkos_kubernetes_v1_kubernetes_proto_rawDescGZIP(), []int{13}
 }
 
 // The request of RenewNodeCertificate.
@@ -961,7 +1069,7 @@ type RenewNodeCertificateRequest struct {
 
 func (x *RenewNodeCertificateRequest) Reset() {
 	*x = RenewNodeCertificateRequest{}
-	mi := &file_chalkos_kubernetes_v1_kubernetes_proto_msgTypes[13]
+	mi := &file_chalkos_kubernetes_v1_kubernetes_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -973,7 +1081,7 @@ func (x *RenewNodeCertificateRequest) String() string {
 func (*RenewNodeCertificateRequest) ProtoMessage() {}
 
 func (x *RenewNodeCertificateRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_chalkos_kubernetes_v1_kubernetes_proto_msgTypes[13]
+	mi := &file_chalkos_kubernetes_v1_kubernetes_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -986,7 +1094,7 @@ func (x *RenewNodeCertificateRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RenewNodeCertificateRequest.ProtoReflect.Descriptor instead.
 func (*RenewNodeCertificateRequest) Descriptor() ([]byte, []int) {
-	return file_chalkos_kubernetes_v1_kubernetes_proto_rawDescGZIP(), []int{13}
+	return file_chalkos_kubernetes_v1_kubernetes_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *RenewNodeCertificateRequest) GetCertificateRequest() []byte {
@@ -1007,7 +1115,7 @@ type RenewNodeCertificateResponse struct {
 
 func (x *RenewNodeCertificateResponse) Reset() {
 	*x = RenewNodeCertificateResponse{}
-	mi := &file_chalkos_kubernetes_v1_kubernetes_proto_msgTypes[14]
+	mi := &file_chalkos_kubernetes_v1_kubernetes_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1019,7 +1127,7 @@ func (x *RenewNodeCertificateResponse) String() string {
 func (*RenewNodeCertificateResponse) ProtoMessage() {}
 
 func (x *RenewNodeCertificateResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_chalkos_kubernetes_v1_kubernetes_proto_msgTypes[14]
+	mi := &file_chalkos_kubernetes_v1_kubernetes_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1032,7 +1140,7 @@ func (x *RenewNodeCertificateResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RenewNodeCertificateResponse.ProtoReflect.Descriptor instead.
 func (*RenewNodeCertificateResponse) Descriptor() ([]byte, []int) {
-	return file_chalkos_kubernetes_v1_kubernetes_proto_rawDescGZIP(), []int{14}
+	return file_chalkos_kubernetes_v1_kubernetes_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *RenewNodeCertificateResponse) GetCertificateChain() []byte {
@@ -1053,7 +1161,7 @@ type RotationStepRequest struct {
 
 func (x *RotationStepRequest) Reset() {
 	*x = RotationStepRequest{}
-	mi := &file_chalkos_kubernetes_v1_kubernetes_proto_msgTypes[15]
+	mi := &file_chalkos_kubernetes_v1_kubernetes_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1065,7 +1173,7 @@ func (x *RotationStepRequest) String() string {
 func (*RotationStepRequest) ProtoMessage() {}
 
 func (x *RotationStepRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_chalkos_kubernetes_v1_kubernetes_proto_msgTypes[15]
+	mi := &file_chalkos_kubernetes_v1_kubernetes_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1078,7 +1186,7 @@ func (x *RotationStepRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RotationStepRequest.ProtoReflect.Descriptor instead.
 func (*RotationStepRequest) Descriptor() ([]byte, []int) {
-	return file_chalkos_kubernetes_v1_kubernetes_proto_rawDescGZIP(), []int{15}
+	return file_chalkos_kubernetes_v1_kubernetes_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *RotationStepRequest) GetStep() RotationStep {
@@ -1109,7 +1217,7 @@ type RotationStepResponse struct {
 
 func (x *RotationStepResponse) Reset() {
 	*x = RotationStepResponse{}
-	mi := &file_chalkos_kubernetes_v1_kubernetes_proto_msgTypes[16]
+	mi := &file_chalkos_kubernetes_v1_kubernetes_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1121,7 +1229,7 @@ func (x *RotationStepResponse) String() string {
 func (*RotationStepResponse) ProtoMessage() {}
 
 func (x *RotationStepResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_chalkos_kubernetes_v1_kubernetes_proto_msgTypes[16]
+	mi := &file_chalkos_kubernetes_v1_kubernetes_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1134,7 +1242,7 @@ func (x *RotationStepResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RotationStepResponse.ProtoReflect.Descriptor instead.
 func (*RotationStepResponse) Descriptor() ([]byte, []int) {
-	return file_chalkos_kubernetes_v1_kubernetes_proto_rawDescGZIP(), []int{16}
+	return file_chalkos_kubernetes_v1_kubernetes_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *RotationStepResponse) GetRestarted() []string {
@@ -1187,7 +1295,7 @@ type EncryptedObjects struct {
 
 func (x *EncryptedObjects) Reset() {
 	*x = EncryptedObjects{}
-	mi := &file_chalkos_kubernetes_v1_kubernetes_proto_msgTypes[17]
+	mi := &file_chalkos_kubernetes_v1_kubernetes_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1199,7 +1307,7 @@ func (x *EncryptedObjects) String() string {
 func (*EncryptedObjects) ProtoMessage() {}
 
 func (x *EncryptedObjects) ProtoReflect() protoreflect.Message {
-	mi := &file_chalkos_kubernetes_v1_kubernetes_proto_msgTypes[17]
+	mi := &file_chalkos_kubernetes_v1_kubernetes_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1212,7 +1320,7 @@ func (x *EncryptedObjects) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EncryptedObjects.ProtoReflect.Descriptor instead.
 func (*EncryptedObjects) Descriptor() ([]byte, []int) {
-	return file_chalkos_kubernetes_v1_kubernetes_proto_rawDescGZIP(), []int{17}
+	return file_chalkos_kubernetes_v1_kubernetes_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *EncryptedObjects) GetResource() string {
@@ -1251,7 +1359,7 @@ type DrainNodeRequest struct {
 
 func (x *DrainNodeRequest) Reset() {
 	*x = DrainNodeRequest{}
-	mi := &file_chalkos_kubernetes_v1_kubernetes_proto_msgTypes[18]
+	mi := &file_chalkos_kubernetes_v1_kubernetes_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1263,7 +1371,7 @@ func (x *DrainNodeRequest) String() string {
 func (*DrainNodeRequest) ProtoMessage() {}
 
 func (x *DrainNodeRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_chalkos_kubernetes_v1_kubernetes_proto_msgTypes[18]
+	mi := &file_chalkos_kubernetes_v1_kubernetes_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1276,7 +1384,7 @@ func (x *DrainNodeRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DrainNodeRequest.ProtoReflect.Descriptor instead.
 func (*DrainNodeRequest) Descriptor() ([]byte, []int) {
-	return file_chalkos_kubernetes_v1_kubernetes_proto_rawDescGZIP(), []int{18}
+	return file_chalkos_kubernetes_v1_kubernetes_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *DrainNodeRequest) GetNode() string {
@@ -1319,7 +1427,7 @@ type DrainNodeResponse struct {
 
 func (x *DrainNodeResponse) Reset() {
 	*x = DrainNodeResponse{}
-	mi := &file_chalkos_kubernetes_v1_kubernetes_proto_msgTypes[19]
+	mi := &file_chalkos_kubernetes_v1_kubernetes_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1331,7 +1439,7 @@ func (x *DrainNodeResponse) String() string {
 func (*DrainNodeResponse) ProtoMessage() {}
 
 func (x *DrainNodeResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_chalkos_kubernetes_v1_kubernetes_proto_msgTypes[19]
+	mi := &file_chalkos_kubernetes_v1_kubernetes_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1344,7 +1452,7 @@ func (x *DrainNodeResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DrainNodeResponse.ProtoReflect.Descriptor instead.
 func (*DrainNodeResponse) Descriptor() ([]byte, []int) {
-	return file_chalkos_kubernetes_v1_kubernetes_proto_rawDescGZIP(), []int{19}
+	return file_chalkos_kubernetes_v1_kubernetes_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *DrainNodeResponse) GetMarked() bool {
@@ -1386,7 +1494,7 @@ type UncordonNodeRequest struct {
 
 func (x *UncordonNodeRequest) Reset() {
 	*x = UncordonNodeRequest{}
-	mi := &file_chalkos_kubernetes_v1_kubernetes_proto_msgTypes[20]
+	mi := &file_chalkos_kubernetes_v1_kubernetes_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1398,7 +1506,7 @@ func (x *UncordonNodeRequest) String() string {
 func (*UncordonNodeRequest) ProtoMessage() {}
 
 func (x *UncordonNodeRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_chalkos_kubernetes_v1_kubernetes_proto_msgTypes[20]
+	mi := &file_chalkos_kubernetes_v1_kubernetes_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1411,7 +1519,7 @@ func (x *UncordonNodeRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UncordonNodeRequest.ProtoReflect.Descriptor instead.
 func (*UncordonNodeRequest) Descriptor() ([]byte, []int) {
-	return file_chalkos_kubernetes_v1_kubernetes_proto_rawDescGZIP(), []int{20}
+	return file_chalkos_kubernetes_v1_kubernetes_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *UncordonNodeRequest) GetNode() string {
@@ -1432,7 +1540,7 @@ type UncordonNodeResponse struct {
 
 func (x *UncordonNodeResponse) Reset() {
 	*x = UncordonNodeResponse{}
-	mi := &file_chalkos_kubernetes_v1_kubernetes_proto_msgTypes[21]
+	mi := &file_chalkos_kubernetes_v1_kubernetes_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1444,7 +1552,7 @@ func (x *UncordonNodeResponse) String() string {
 func (*UncordonNodeResponse) ProtoMessage() {}
 
 func (x *UncordonNodeResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_chalkos_kubernetes_v1_kubernetes_proto_msgTypes[21]
+	mi := &file_chalkos_kubernetes_v1_kubernetes_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1457,7 +1565,7 @@ func (x *UncordonNodeResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UncordonNodeResponse.ProtoReflect.Descriptor instead.
 func (*UncordonNodeResponse) Descriptor() ([]byte, []int) {
-	return file_chalkos_kubernetes_v1_kubernetes_proto_rawDescGZIP(), []int{21}
+	return file_chalkos_kubernetes_v1_kubernetes_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *UncordonNodeResponse) GetUncordoned() bool {
@@ -1478,7 +1586,7 @@ type RevokeNodeRequest struct {
 
 func (x *RevokeNodeRequest) Reset() {
 	*x = RevokeNodeRequest{}
-	mi := &file_chalkos_kubernetes_v1_kubernetes_proto_msgTypes[22]
+	mi := &file_chalkos_kubernetes_v1_kubernetes_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1490,7 +1598,7 @@ func (x *RevokeNodeRequest) String() string {
 func (*RevokeNodeRequest) ProtoMessage() {}
 
 func (x *RevokeNodeRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_chalkos_kubernetes_v1_kubernetes_proto_msgTypes[22]
+	mi := &file_chalkos_kubernetes_v1_kubernetes_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1503,7 +1611,7 @@ func (x *RevokeNodeRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RevokeNodeRequest.ProtoReflect.Descriptor instead.
 func (*RevokeNodeRequest) Descriptor() ([]byte, []int) {
-	return file_chalkos_kubernetes_v1_kubernetes_proto_rawDescGZIP(), []int{22}
+	return file_chalkos_kubernetes_v1_kubernetes_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *RevokeNodeRequest) GetNode() string {
@@ -1526,7 +1634,7 @@ type RevokeNodeResponse struct {
 
 func (x *RevokeNodeResponse) Reset() {
 	*x = RevokeNodeResponse{}
-	mi := &file_chalkos_kubernetes_v1_kubernetes_proto_msgTypes[23]
+	mi := &file_chalkos_kubernetes_v1_kubernetes_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1538,7 +1646,7 @@ func (x *RevokeNodeResponse) String() string {
 func (*RevokeNodeResponse) ProtoMessage() {}
 
 func (x *RevokeNodeResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_chalkos_kubernetes_v1_kubernetes_proto_msgTypes[23]
+	mi := &file_chalkos_kubernetes_v1_kubernetes_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1551,7 +1659,7 @@ func (x *RevokeNodeResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RevokeNodeResponse.ProtoReflect.Descriptor instead.
 func (*RevokeNodeResponse) Descriptor() ([]byte, []int) {
-	return file_chalkos_kubernetes_v1_kubernetes_proto_rawDescGZIP(), []int{23}
+	return file_chalkos_kubernetes_v1_kubernetes_proto_rawDescGZIP(), []int{24}
 }
 
 func (x *RevokeNodeResponse) GetRevokedAt() *timestamppb.Timestamp {
@@ -1582,7 +1690,7 @@ type UnrevokeNodeRequest struct {
 
 func (x *UnrevokeNodeRequest) Reset() {
 	*x = UnrevokeNodeRequest{}
-	mi := &file_chalkos_kubernetes_v1_kubernetes_proto_msgTypes[24]
+	mi := &file_chalkos_kubernetes_v1_kubernetes_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1594,7 +1702,7 @@ func (x *UnrevokeNodeRequest) String() string {
 func (*UnrevokeNodeRequest) ProtoMessage() {}
 
 func (x *UnrevokeNodeRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_chalkos_kubernetes_v1_kubernetes_proto_msgTypes[24]
+	mi := &file_chalkos_kubernetes_v1_kubernetes_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1607,7 +1715,7 @@ func (x *UnrevokeNodeRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UnrevokeNodeRequest.ProtoReflect.Descriptor instead.
 func (*UnrevokeNodeRequest) Descriptor() ([]byte, []int) {
-	return file_chalkos_kubernetes_v1_kubernetes_proto_rawDescGZIP(), []int{24}
+	return file_chalkos_kubernetes_v1_kubernetes_proto_rawDescGZIP(), []int{25}
 }
 
 func (x *UnrevokeNodeRequest) GetNode() string {
@@ -1640,7 +1748,7 @@ type UnrevokeNodeResponse struct {
 
 func (x *UnrevokeNodeResponse) Reset() {
 	*x = UnrevokeNodeResponse{}
-	mi := &file_chalkos_kubernetes_v1_kubernetes_proto_msgTypes[25]
+	mi := &file_chalkos_kubernetes_v1_kubernetes_proto_msgTypes[26]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1652,7 +1760,7 @@ func (x *UnrevokeNodeResponse) String() string {
 func (*UnrevokeNodeResponse) ProtoMessage() {}
 
 func (x *UnrevokeNodeResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_chalkos_kubernetes_v1_kubernetes_proto_msgTypes[25]
+	mi := &file_chalkos_kubernetes_v1_kubernetes_proto_msgTypes[26]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1665,7 +1773,7 @@ func (x *UnrevokeNodeResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UnrevokeNodeResponse.ProtoReflect.Descriptor instead.
 func (*UnrevokeNodeResponse) Descriptor() ([]byte, []int) {
-	return file_chalkos_kubernetes_v1_kubernetes_proto_rawDescGZIP(), []int{25}
+	return file_chalkos_kubernetes_v1_kubernetes_proto_rawDescGZIP(), []int{26}
 }
 
 func (x *UnrevokeNodeResponse) GetRevokedAt() *timestamppb.Timestamp {
@@ -1694,7 +1802,7 @@ type Share struct {
 
 func (x *Share) Reset() {
 	*x = Share{}
-	mi := &file_chalkos_kubernetes_v1_kubernetes_proto_msgTypes[26]
+	mi := &file_chalkos_kubernetes_v1_kubernetes_proto_msgTypes[27]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1706,7 +1814,7 @@ func (x *Share) String() string {
 func (*Share) ProtoMessage() {}
 
 func (x *Share) ProtoReflect() protoreflect.Message {
-	mi := &file_chalkos_kubernetes_v1_kubernetes_proto_msgTypes[26]
+	mi := &file_chalkos_kubernetes_v1_kubernetes_proto_msgTypes[27]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1719,7 +1827,7 @@ func (x *Share) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Share.ProtoReflect.Descriptor instead.
 func (*Share) Descriptor() ([]byte, []int) {
-	return file_chalkos_kubernetes_v1_kubernetes_proto_rawDescGZIP(), []int{26}
+	return file_chalkos_kubernetes_v1_kubernetes_proto_rawDescGZIP(), []int{27}
 }
 
 func (x *Share) GetShare() []byte {
@@ -1740,7 +1848,7 @@ type ImageFacts struct {
 
 func (x *ImageFacts) Reset() {
 	*x = ImageFacts{}
-	mi := &file_chalkos_kubernetes_v1_kubernetes_proto_msgTypes[27]
+	mi := &file_chalkos_kubernetes_v1_kubernetes_proto_msgTypes[28]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1752,7 +1860,7 @@ func (x *ImageFacts) String() string {
 func (*ImageFacts) ProtoMessage() {}
 
 func (x *ImageFacts) ProtoReflect() protoreflect.Message {
-	mi := &file_chalkos_kubernetes_v1_kubernetes_proto_msgTypes[27]
+	mi := &file_chalkos_kubernetes_v1_kubernetes_proto_msgTypes[28]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1765,7 +1873,7 @@ func (x *ImageFacts) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ImageFacts.ProtoReflect.Descriptor instead.
 func (*ImageFacts) Descriptor() ([]byte, []int) {
-	return file_chalkos_kubernetes_v1_kubernetes_proto_rawDescGZIP(), []int{27}
+	return file_chalkos_kubernetes_v1_kubernetes_proto_rawDescGZIP(), []int{28}
 }
 
 func (x *ImageFacts) GetImageJson() []byte {
@@ -1780,7 +1888,7 @@ var File_chalkos_kubernetes_v1_kubernetes_proto protoreflect.FileDescriptor
 const file_chalkos_kubernetes_v1_kubernetes_proto_rawDesc = "" +
 	"\n" +
 	"&chalkos/kubernetes/v1/kubernetes.proto\x12\x15chalkos.kubernetes.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\x0f\n" +
-	"\rStatusRequest\"\xbb\x05\n" +
+	"\rStatusRequest\"\xd9\x06\n" +
 	"\x0eStatusResponse\x12\x12\n" +
 	"\x04kind\x18\x01 \x01(\tR\x04kind\x12\x14\n" +
 	"\x05state\x18\x02 \x01(\tR\x05state\x122\n" +
@@ -1799,11 +1907,20 @@ const file_chalkos_kubernetes_v1_kubernetes_proto_rawDesc = "" +
 	"\x12control_plane_pods\x18\r \x01(\tR\x10controlPlanePods\x12;\n" +
 	"\x1acontrol_plane_pods_current\x18\x0e \x01(\bR\x17controlPlanePodsCurrent\x12*\n" +
 	"\x11node_ready_reason\x18\x0f \x01(\tR\x0fnodeReadyReason\x12,\n" +
-	"\x12node_ready_message\x18\x10 \x01(\tR\x10nodeReadyMessage\"\\\n" +
+	"\x12node_ready_message\x18\x10 \x01(\tR\x10nodeReadyMessage\x12H\n" +
+	"\x10pods_not_running\x18\x11 \x03(\v2\x1e.chalkos.kubernetes.v1.NodePodR\x0epodsNotRunning\x12\x1d\n" +
+	"\n" +
+	"pods_error\x18\x12 \x01(\tR\tpodsError\x123\n" +
+	"\x16pods_not_running_total\x18\x13 \x01(\rR\x13podsNotRunningTotal\"\\\n" +
 	"\vRevokedNode\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x129\n" +
 	"\n" +
-	"revoked_at\x18\x02 \x01(\v2\x1a.google.protobuf.TimestampR\trevokedAt\"\x12\n" +
+	"revoked_at\x18\x02 \x01(\v2\x1a.google.protobuf.TimestampR\trevokedAt\"i\n" +
+	"\aNodePod\x12\x1c\n" +
+	"\tnamespace\x18\x01 \x01(\tR\tnamespace\x12\x12\n" +
+	"\x04name\x18\x02 \x01(\tR\x04name\x12\x14\n" +
+	"\x05phase\x18\x03 \x01(\tR\x05phase\x12\x16\n" +
+	"\x06reason\x18\x04 \x01(\tR\x06reason\"\x12\n" +
 	"\x10BootstrapRequest\"-\n" +
 	"\x11BootstrapResponse\x12\x18\n" +
 	"\aapplied\x18\x01 \x01(\rR\aapplied\"\x0f\n" +
@@ -1921,77 +2038,79 @@ func file_chalkos_kubernetes_v1_kubernetes_proto_rawDescGZIP() []byte {
 }
 
 var file_chalkos_kubernetes_v1_kubernetes_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
-var file_chalkos_kubernetes_v1_kubernetes_proto_msgTypes = make([]protoimpl.MessageInfo, 28)
+var file_chalkos_kubernetes_v1_kubernetes_proto_msgTypes = make([]protoimpl.MessageInfo, 29)
 var file_chalkos_kubernetes_v1_kubernetes_proto_goTypes = []any{
 	(Phase)(0),                           // 0: chalkos.kubernetes.v1.Phase
 	(RotationStep)(0),                    // 1: chalkos.kubernetes.v1.RotationStep
 	(*StatusRequest)(nil),                // 2: chalkos.kubernetes.v1.StatusRequest
 	(*StatusResponse)(nil),               // 3: chalkos.kubernetes.v1.StatusResponse
 	(*RevokedNode)(nil),                  // 4: chalkos.kubernetes.v1.RevokedNode
-	(*BootstrapRequest)(nil),             // 5: chalkos.kubernetes.v1.BootstrapRequest
-	(*BootstrapResponse)(nil),            // 6: chalkos.kubernetes.v1.BootstrapResponse
-	(*NotEtcdMember)(nil),                // 7: chalkos.kubernetes.v1.NotEtcdMember
-	(*EtcdMember)(nil),                   // 8: chalkos.kubernetes.v1.EtcdMember
-	(*EtcdMembersRequest)(nil),           // 9: chalkos.kubernetes.v1.EtcdMembersRequest
-	(*EtcdMembersResponse)(nil),          // 10: chalkos.kubernetes.v1.EtcdMembersResponse
-	(*EtcdRemoveMemberRequest)(nil),      // 11: chalkos.kubernetes.v1.EtcdRemoveMemberRequest
-	(*EtcdRemoveMemberResponse)(nil),     // 12: chalkos.kubernetes.v1.EtcdRemoveMemberResponse
-	(*EtcdLeaveRequest)(nil),             // 13: chalkos.kubernetes.v1.EtcdLeaveRequest
-	(*EtcdLeaveResponse)(nil),            // 14: chalkos.kubernetes.v1.EtcdLeaveResponse
-	(*RenewNodeCertificateRequest)(nil),  // 15: chalkos.kubernetes.v1.RenewNodeCertificateRequest
-	(*RenewNodeCertificateResponse)(nil), // 16: chalkos.kubernetes.v1.RenewNodeCertificateResponse
-	(*RotationStepRequest)(nil),          // 17: chalkos.kubernetes.v1.RotationStepRequest
-	(*RotationStepResponse)(nil),         // 18: chalkos.kubernetes.v1.RotationStepResponse
-	(*EncryptedObjects)(nil),             // 19: chalkos.kubernetes.v1.EncryptedObjects
-	(*DrainNodeRequest)(nil),             // 20: chalkos.kubernetes.v1.DrainNodeRequest
-	(*DrainNodeResponse)(nil),            // 21: chalkos.kubernetes.v1.DrainNodeResponse
-	(*UncordonNodeRequest)(nil),          // 22: chalkos.kubernetes.v1.UncordonNodeRequest
-	(*UncordonNodeResponse)(nil),         // 23: chalkos.kubernetes.v1.UncordonNodeResponse
-	(*RevokeNodeRequest)(nil),            // 24: chalkos.kubernetes.v1.RevokeNodeRequest
-	(*RevokeNodeResponse)(nil),           // 25: chalkos.kubernetes.v1.RevokeNodeResponse
-	(*UnrevokeNodeRequest)(nil),          // 26: chalkos.kubernetes.v1.UnrevokeNodeRequest
-	(*UnrevokeNodeResponse)(nil),         // 27: chalkos.kubernetes.v1.UnrevokeNodeResponse
-	(*Share)(nil),                        // 28: chalkos.kubernetes.v1.Share
-	(*ImageFacts)(nil),                   // 29: chalkos.kubernetes.v1.ImageFacts
-	(*timestamppb.Timestamp)(nil),        // 30: google.protobuf.Timestamp
+	(*NodePod)(nil),                      // 5: chalkos.kubernetes.v1.NodePod
+	(*BootstrapRequest)(nil),             // 6: chalkos.kubernetes.v1.BootstrapRequest
+	(*BootstrapResponse)(nil),            // 7: chalkos.kubernetes.v1.BootstrapResponse
+	(*NotEtcdMember)(nil),                // 8: chalkos.kubernetes.v1.NotEtcdMember
+	(*EtcdMember)(nil),                   // 9: chalkos.kubernetes.v1.EtcdMember
+	(*EtcdMembersRequest)(nil),           // 10: chalkos.kubernetes.v1.EtcdMembersRequest
+	(*EtcdMembersResponse)(nil),          // 11: chalkos.kubernetes.v1.EtcdMembersResponse
+	(*EtcdRemoveMemberRequest)(nil),      // 12: chalkos.kubernetes.v1.EtcdRemoveMemberRequest
+	(*EtcdRemoveMemberResponse)(nil),     // 13: chalkos.kubernetes.v1.EtcdRemoveMemberResponse
+	(*EtcdLeaveRequest)(nil),             // 14: chalkos.kubernetes.v1.EtcdLeaveRequest
+	(*EtcdLeaveResponse)(nil),            // 15: chalkos.kubernetes.v1.EtcdLeaveResponse
+	(*RenewNodeCertificateRequest)(nil),  // 16: chalkos.kubernetes.v1.RenewNodeCertificateRequest
+	(*RenewNodeCertificateResponse)(nil), // 17: chalkos.kubernetes.v1.RenewNodeCertificateResponse
+	(*RotationStepRequest)(nil),          // 18: chalkos.kubernetes.v1.RotationStepRequest
+	(*RotationStepResponse)(nil),         // 19: chalkos.kubernetes.v1.RotationStepResponse
+	(*EncryptedObjects)(nil),             // 20: chalkos.kubernetes.v1.EncryptedObjects
+	(*DrainNodeRequest)(nil),             // 21: chalkos.kubernetes.v1.DrainNodeRequest
+	(*DrainNodeResponse)(nil),            // 22: chalkos.kubernetes.v1.DrainNodeResponse
+	(*UncordonNodeRequest)(nil),          // 23: chalkos.kubernetes.v1.UncordonNodeRequest
+	(*UncordonNodeResponse)(nil),         // 24: chalkos.kubernetes.v1.UncordonNodeResponse
+	(*RevokeNodeRequest)(nil),            // 25: chalkos.kubernetes.v1.RevokeNodeRequest
+	(*RevokeNodeResponse)(nil),           // 26: chalkos.kubernetes.v1.RevokeNodeResponse
+	(*UnrevokeNodeRequest)(nil),          // 27: chalkos.kubernetes.v1.UnrevokeNodeRequest
+	(*UnrevokeNodeResponse)(nil),         // 28: chalkos.kubernetes.v1.UnrevokeNodeResponse
+	(*Share)(nil),                        // 29: chalkos.kubernetes.v1.Share
+	(*ImageFacts)(nil),                   // 30: chalkos.kubernetes.v1.ImageFacts
+	(*timestamppb.Timestamp)(nil),        // 31: google.protobuf.Timestamp
 }
 var file_chalkos_kubernetes_v1_kubernetes_proto_depIdxs = []int32{
 	0,  // 0: chalkos.kubernetes.v1.StatusResponse.phase:type_name -> chalkos.kubernetes.v1.Phase
 	4,  // 1: chalkos.kubernetes.v1.StatusResponse.revoked_nodes:type_name -> chalkos.kubernetes.v1.RevokedNode
-	30, // 2: chalkos.kubernetes.v1.RevokedNode.revoked_at:type_name -> google.protobuf.Timestamp
-	8,  // 3: chalkos.kubernetes.v1.EtcdMembersResponse.members:type_name -> chalkos.kubernetes.v1.EtcdMember
-	8,  // 4: chalkos.kubernetes.v1.EtcdRemoveMemberResponse.removed:type_name -> chalkos.kubernetes.v1.EtcdMember
-	1,  // 5: chalkos.kubernetes.v1.RotationStepRequest.step:type_name -> chalkos.kubernetes.v1.RotationStep
-	19, // 6: chalkos.kubernetes.v1.RotationStepResponse.encrypted:type_name -> chalkos.kubernetes.v1.EncryptedObjects
-	30, // 7: chalkos.kubernetes.v1.RevokeNodeResponse.revoked_at:type_name -> google.protobuf.Timestamp
-	30, // 8: chalkos.kubernetes.v1.UnrevokeNodeResponse.revoked_at:type_name -> google.protobuf.Timestamp
-	2,  // 9: chalkos.kubernetes.v1.KubernetesService.Status:input_type -> chalkos.kubernetes.v1.StatusRequest
-	5,  // 10: chalkos.kubernetes.v1.KubernetesService.Bootstrap:input_type -> chalkos.kubernetes.v1.BootstrapRequest
-	9,  // 11: chalkos.kubernetes.v1.KubernetesService.EtcdMembers:input_type -> chalkos.kubernetes.v1.EtcdMembersRequest
-	11, // 12: chalkos.kubernetes.v1.KubernetesService.EtcdRemoveMember:input_type -> chalkos.kubernetes.v1.EtcdRemoveMemberRequest
-	13, // 13: chalkos.kubernetes.v1.KubernetesService.EtcdLeave:input_type -> chalkos.kubernetes.v1.EtcdLeaveRequest
-	15, // 14: chalkos.kubernetes.v1.KubernetesService.RenewNodeCertificate:input_type -> chalkos.kubernetes.v1.RenewNodeCertificateRequest
-	17, // 15: chalkos.kubernetes.v1.KubernetesService.RotationStep:input_type -> chalkos.kubernetes.v1.RotationStepRequest
-	20, // 16: chalkos.kubernetes.v1.KubernetesService.DrainNode:input_type -> chalkos.kubernetes.v1.DrainNodeRequest
-	22, // 17: chalkos.kubernetes.v1.KubernetesService.UncordonNode:input_type -> chalkos.kubernetes.v1.UncordonNodeRequest
-	24, // 18: chalkos.kubernetes.v1.KubernetesService.RevokeNode:input_type -> chalkos.kubernetes.v1.RevokeNodeRequest
-	26, // 19: chalkos.kubernetes.v1.KubernetesService.UnrevokeNode:input_type -> chalkos.kubernetes.v1.UnrevokeNodeRequest
-	3,  // 20: chalkos.kubernetes.v1.KubernetesService.Status:output_type -> chalkos.kubernetes.v1.StatusResponse
-	6,  // 21: chalkos.kubernetes.v1.KubernetesService.Bootstrap:output_type -> chalkos.kubernetes.v1.BootstrapResponse
-	10, // 22: chalkos.kubernetes.v1.KubernetesService.EtcdMembers:output_type -> chalkos.kubernetes.v1.EtcdMembersResponse
-	12, // 23: chalkos.kubernetes.v1.KubernetesService.EtcdRemoveMember:output_type -> chalkos.kubernetes.v1.EtcdRemoveMemberResponse
-	14, // 24: chalkos.kubernetes.v1.KubernetesService.EtcdLeave:output_type -> chalkos.kubernetes.v1.EtcdLeaveResponse
-	16, // 25: chalkos.kubernetes.v1.KubernetesService.RenewNodeCertificate:output_type -> chalkos.kubernetes.v1.RenewNodeCertificateResponse
-	18, // 26: chalkos.kubernetes.v1.KubernetesService.RotationStep:output_type -> chalkos.kubernetes.v1.RotationStepResponse
-	21, // 27: chalkos.kubernetes.v1.KubernetesService.DrainNode:output_type -> chalkos.kubernetes.v1.DrainNodeResponse
-	23, // 28: chalkos.kubernetes.v1.KubernetesService.UncordonNode:output_type -> chalkos.kubernetes.v1.UncordonNodeResponse
-	25, // 29: chalkos.kubernetes.v1.KubernetesService.RevokeNode:output_type -> chalkos.kubernetes.v1.RevokeNodeResponse
-	27, // 30: chalkos.kubernetes.v1.KubernetesService.UnrevokeNode:output_type -> chalkos.kubernetes.v1.UnrevokeNodeResponse
-	20, // [20:31] is the sub-list for method output_type
-	9,  // [9:20] is the sub-list for method input_type
-	9,  // [9:9] is the sub-list for extension type_name
-	9,  // [9:9] is the sub-list for extension extendee
-	0,  // [0:9] is the sub-list for field type_name
+	5,  // 2: chalkos.kubernetes.v1.StatusResponse.pods_not_running:type_name -> chalkos.kubernetes.v1.NodePod
+	31, // 3: chalkos.kubernetes.v1.RevokedNode.revoked_at:type_name -> google.protobuf.Timestamp
+	9,  // 4: chalkos.kubernetes.v1.EtcdMembersResponse.members:type_name -> chalkos.kubernetes.v1.EtcdMember
+	9,  // 5: chalkos.kubernetes.v1.EtcdRemoveMemberResponse.removed:type_name -> chalkos.kubernetes.v1.EtcdMember
+	1,  // 6: chalkos.kubernetes.v1.RotationStepRequest.step:type_name -> chalkos.kubernetes.v1.RotationStep
+	20, // 7: chalkos.kubernetes.v1.RotationStepResponse.encrypted:type_name -> chalkos.kubernetes.v1.EncryptedObjects
+	31, // 8: chalkos.kubernetes.v1.RevokeNodeResponse.revoked_at:type_name -> google.protobuf.Timestamp
+	31, // 9: chalkos.kubernetes.v1.UnrevokeNodeResponse.revoked_at:type_name -> google.protobuf.Timestamp
+	2,  // 10: chalkos.kubernetes.v1.KubernetesService.Status:input_type -> chalkos.kubernetes.v1.StatusRequest
+	6,  // 11: chalkos.kubernetes.v1.KubernetesService.Bootstrap:input_type -> chalkos.kubernetes.v1.BootstrapRequest
+	10, // 12: chalkos.kubernetes.v1.KubernetesService.EtcdMembers:input_type -> chalkos.kubernetes.v1.EtcdMembersRequest
+	12, // 13: chalkos.kubernetes.v1.KubernetesService.EtcdRemoveMember:input_type -> chalkos.kubernetes.v1.EtcdRemoveMemberRequest
+	14, // 14: chalkos.kubernetes.v1.KubernetesService.EtcdLeave:input_type -> chalkos.kubernetes.v1.EtcdLeaveRequest
+	16, // 15: chalkos.kubernetes.v1.KubernetesService.RenewNodeCertificate:input_type -> chalkos.kubernetes.v1.RenewNodeCertificateRequest
+	18, // 16: chalkos.kubernetes.v1.KubernetesService.RotationStep:input_type -> chalkos.kubernetes.v1.RotationStepRequest
+	21, // 17: chalkos.kubernetes.v1.KubernetesService.DrainNode:input_type -> chalkos.kubernetes.v1.DrainNodeRequest
+	23, // 18: chalkos.kubernetes.v1.KubernetesService.UncordonNode:input_type -> chalkos.kubernetes.v1.UncordonNodeRequest
+	25, // 19: chalkos.kubernetes.v1.KubernetesService.RevokeNode:input_type -> chalkos.kubernetes.v1.RevokeNodeRequest
+	27, // 20: chalkos.kubernetes.v1.KubernetesService.UnrevokeNode:input_type -> chalkos.kubernetes.v1.UnrevokeNodeRequest
+	3,  // 21: chalkos.kubernetes.v1.KubernetesService.Status:output_type -> chalkos.kubernetes.v1.StatusResponse
+	7,  // 22: chalkos.kubernetes.v1.KubernetesService.Bootstrap:output_type -> chalkos.kubernetes.v1.BootstrapResponse
+	11, // 23: chalkos.kubernetes.v1.KubernetesService.EtcdMembers:output_type -> chalkos.kubernetes.v1.EtcdMembersResponse
+	13, // 24: chalkos.kubernetes.v1.KubernetesService.EtcdRemoveMember:output_type -> chalkos.kubernetes.v1.EtcdRemoveMemberResponse
+	15, // 25: chalkos.kubernetes.v1.KubernetesService.EtcdLeave:output_type -> chalkos.kubernetes.v1.EtcdLeaveResponse
+	17, // 26: chalkos.kubernetes.v1.KubernetesService.RenewNodeCertificate:output_type -> chalkos.kubernetes.v1.RenewNodeCertificateResponse
+	19, // 27: chalkos.kubernetes.v1.KubernetesService.RotationStep:output_type -> chalkos.kubernetes.v1.RotationStepResponse
+	22, // 28: chalkos.kubernetes.v1.KubernetesService.DrainNode:output_type -> chalkos.kubernetes.v1.DrainNodeResponse
+	24, // 29: chalkos.kubernetes.v1.KubernetesService.UncordonNode:output_type -> chalkos.kubernetes.v1.UncordonNodeResponse
+	26, // 30: chalkos.kubernetes.v1.KubernetesService.RevokeNode:output_type -> chalkos.kubernetes.v1.RevokeNodeResponse
+	28, // 31: chalkos.kubernetes.v1.KubernetesService.UnrevokeNode:output_type -> chalkos.kubernetes.v1.UnrevokeNodeResponse
+	21, // [21:32] is the sub-list for method output_type
+	10, // [10:21] is the sub-list for method input_type
+	10, // [10:10] is the sub-list for extension type_name
+	10, // [10:10] is the sub-list for extension extendee
+	0,  // [0:10] is the sub-list for field type_name
 }
 
 func init() { file_chalkos_kubernetes_v1_kubernetes_proto_init() }
@@ -2005,7 +2124,7 @@ func file_chalkos_kubernetes_v1_kubernetes_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_chalkos_kubernetes_v1_kubernetes_proto_rawDesc), len(file_chalkos_kubernetes_v1_kubernetes_proto_rawDesc)),
 			NumEnums:      2,
-			NumMessages:   28,
+			NumMessages:   29,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
