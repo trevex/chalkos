@@ -180,20 +180,26 @@ modules.
 
 ## Change the console
 
-The installer writes its console to the screen and to the first serial port, `ttyS0`. Linux sends
-kernel messages to every console on the command line. chalkd's lines, with the fingerprint and
-the addresses, go to the last one only. A machine whose BMC shows serial-over-LAN on the second
-port needs that port last:
+The installer's kernel consoles are the first serial port, `ttyS0`, and the screen, the screen
+last, as on `metal`. The kernel prints its messages on both and the passphrase prompts appear on
+both. The screen shows the boot's status and then [the console](../operate/console.md) with the
+fingerprint and the addresses. The journal's copy of chalkd's lines, with the fingerprint and the
+addresses, goes to every serial port of the list. A machine whose BMC shows serial-over-LAN on the
+second port lists that port:
 
 ```nix title="installer.nix"
-{ lib, ... }:
 {
-  boot.kernelParams = lib.mkAfter [ "console=ttyS1,115200" ];
+  chalkos.consoles = [
+    "ttyS1,115200"
+    "tty0"
+  ];
 }
 ```
 
-`lib.mkAfter` places the entry after the installer's own `console=` entries. A plain list would
-come before them, leaving `ttyS0` last.
+A serial port put last becomes `/dev/console` and shows the boot's status and the emergency
+shell too, as
+[Variants and platforms](variants-and-platforms.md#the-last-console-is-devconsole)
+describes.
 
 ## The installer keeps chalkd in installer mode
 

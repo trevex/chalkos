@@ -224,9 +224,10 @@ findutils, procps, iproute2 and util-linux, and crictl on images with Kubernetes
 shows how they are reached.
 
 A platform's modules come before the variant's in each of its images. chalkos's `metal` platform
-sets the console to the screen and the first serial port, where a BMC's serial-over-LAN shows it.
-Its `kvm` platform sets the console to the first serial port and adds the QEMU guest agent, about
-6 MiB of store, limited to reporting on the node and shutting it down.
+sets the kernel's consoles to the first serial port and the screen, the screen last, so the screen
+is `/dev/console`. Its `kvm` platform sets the kernel's console to the first serial port alone and
+adds the QEMU guest agent, about 6 MiB of store, limited to reporting on the node and shutting it
+down.
 [Add software, drivers and kernel modules](../../build/add-software.md) and
 [Variants and platforms](../../build/variants-and-platforms.md#a-platform-builds-an-image-per-kind-of-machine)
 show how an image author changes each of these.

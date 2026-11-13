@@ -209,11 +209,10 @@ its next boot, so an image that does not accept the node's config never boots.
 A platform's NixOS modules add what one kind of machine needs and other machines do not: drivers,
 firmware, agents and the console. chalkos has modules for two platforms:
 
-- `metal` puts the console on the screen and the first serial port, where a BMC's
-  serial-over-LAN shows it.
-- `kvm` puts the console on the first serial port, adds the virtio disk drivers to the initrd and
-  runs a QEMU guest agent, which starts only under KVM. The host may ask the agent about the node
-  and shut it down. It never runs commands or reads and writes files on the node.
+- `metal` sets the kernel's consoles to the first serial port and the screen, the screen last.
+- `kvm` sets the kernel's console to the first serial port alone, adds the virtio disk drivers to
+  the initrd and runs a QEMU guest agent, which starts only under KVM. The host may ask the agent
+  about the node and shut it down. It never runs commands or reads and writes files on the node.
 
 `platforms` names the platforms every variant is built for. A list names them: `[ "metal" ]`
 builds metal images alone. An attribute set also gives each platform modules of its own. This
@@ -221,9 +220,9 @@ call adds modules for one server model as a platform `r650`:
 
 ```nix title="platforms/r650.nix"
 {
-  boot.kernelParams = [
-    "console=tty0"
-    "console=ttyS1,115200"
+  chalkos.consoles = [
+    "tty0"
+    "ttyS1,115200"
   ];
   chalkos.kernel.extraModules = [ "mlx5_ib" ];
 }
@@ -240,17 +239,52 @@ images = chalkos.lib.mkImages {
 ```
 
 It builds `images.node-metal` and `images.node-r650`. Only the `r650` images carry the module and
-the console settings. Either form of `platforms` replaces the default, so a platform is built only
-when it is named: `metal` is built here because it is named.
+the consoles. Here the BMC's serial-over-LAN on the second serial port is the console people
+watch, so that port comes last. Either form of `platforms` replaces the default, so a platform is
+built only when it is named: `metal` is built here because it is named.
 
 `metal` and `kvm` carry chalkos's own modules for them before the ones given. A platform of your
-own starts from chalkos's node modules alone, without `metal`'s, so give it a console. Its name
-follows the rules of a variant's name and becomes `CHALKOS_PLATFORM` in its images' os-release.
+own starts from chalkos's node modules alone, without `metal`'s, and its consoles default to
+`metal`'s. Its name follows the rules of a variant's name and becomes `CHALKOS_PLATFORM` in its
+images' os-release.
 
 A node refuses an image of a platform other than the one it runs, so a node changes platform only
 by being installed again. Its config files stay as they are on any platform. One image per
 platform keeps each image small, because a universal image would carry every platform's agents
 and drivers.
+
+### The last console is /dev/console
+
+[`chalkos.consoles`](../reference/image-options.md#chalkosconsoles) lists the kernel's consoles in
+order, each as the kernel's `console=` parameter takes it, such as `ttyS0,115200` or `tty0` for
+the screen. The kernel prints its messages on every console, and systemd asks for each passphrase
+and recovery key on every console, so any of them can answer. The last entry becomes
+`/dev/console`: systemd's boot status and the emergency shell appear there alone.
+
+`metal`, a platform of your own and the installer put the screen last, so a machine without a
+serial port shows its boot and its emergency shell on the screen. While the last console is a
+virtual terminal such as the screen, the unit `chalkos-serial-log@` copies chalkd's lines, with
+its fingerprint and addresses, from the journal to every serial port of the list, such as
+`ttyS0`, `ttyAMA0` or `hvc0`, so a BMC's serial-over-LAN shows them. An entry of another form,
+such as `uart8250,mmio32,0xfe215040`, gets only the kernel's messages. On the screen, chalkd's
+lines keep off [the console](../operate/console.md), which shows the fingerprint and addresses
+itself; an image without the console shows chalkd's lines there. While the last console is a
+serial port, chalkd's lines reach it as `/dev/console`.
+
+A machine whose BMC's serial-over-LAN is the console people watch can put that port last, so the
+boot's status and the emergency shell appear there too. Set it in a variant's or the platform's
+modules, or in `modules` for every image:
+
+```nix
+{
+  chalkos.consoles = [
+    "tty0"
+    "ttyS0,115200"
+  ];
+}
+```
+
+The build refuses a `console=` entry in `boot.kernelParams` and names `chalkos.consoles`.
 
 ## Modules apply in a fixed order
 

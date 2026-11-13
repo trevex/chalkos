@@ -387,11 +387,15 @@ takes only the client files of its cluster in maintenance mode, each with its ow
 
 ## The serial console shows the boot and chalkd's lines
 
-The machine's screen and its serial console show the boot: the boot loader, the kernel, the
-initrd and a passphrase prompt for an encrypted disk. Once chalkd serves, the screen shows
-[the console](console.md) in place of a login prompt. The serial console goes on to show
-chalkd's lines. In maintenance mode, chalkd prints its certificate's fingerprint and the node's
-addresses there:
+The machine's screen and its serial console show the boot: the boot loader, the kernel's
+messages and a passphrase prompt for an encrypted disk. systemd's boot status and the emergency
+shell appear on the last of the image's kernel consoles alone: the screen on `metal` and the
+installer, the serial port on `kvm`, as
+[Variants and platforms](../build/variants-and-platforms.md#the-last-console-is-devconsole)
+describes. Once chalkd serves, the screen shows [the console](console.md) in place of a login
+prompt. The serial console goes on to show chalkd's lines, which `chalkos-serial-log@` copies
+there from the journal while the screen is the last console. In maintenance mode, chalkd prints
+its certificate's fingerprint and the node's addresses there:
 
 ```text
 chalkd: maintenance mode, accepting clients of the OS CA; certificate fingerprint <fingerprint>

@@ -17,8 +17,8 @@ the node through chalkd on a local socket, so it needs no network and no client 
 ## Before you begin
 
 You need the machine's screen and keyboard, or a BMC or hypervisor that shows them. The serial
-console is a separate console. It shows the boot loader, the initrd, the passphrase prompts of
-encrypted volumes and chalkd's lines, as
+console is a separate console. It shows the boot loader, the kernel's messages, the passphrase
+prompts of encrypted volumes and chalkd's lines, as
 [Status, logs and the console](status-and-logs.md#the-serial-console-shows-the-boot-and-chalkds-lines)
 describes. The `kvm` platform writes the boot to the serial console alone. The VMs of a lab have
 no screen, so `chalklab console` shows their serial console.

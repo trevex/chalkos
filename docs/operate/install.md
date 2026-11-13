@@ -265,6 +265,8 @@ A physical machine boots the installer. A VM boots its own image from a disk mad
 
     Boot the machine from the stick through the firmware's boot menu. The installer's kernel
     writes to the screen and to the first serial port, where a BMC's serial-over-LAN shows it.
+    The screen shows the boot's status and then the console; chalkd's lines appear on the
+    serial port.
 
 === "QEMU"
 
