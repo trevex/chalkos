@@ -29,7 +29,6 @@ let
       [
         ../zensical.toml
         ../docs
-        ../includes
       ]
       ++ map (path: ../examples/homelab + "/${path}") homelabSnippets
       ++ map (path: ../examples/extensions + "/${path}") extensionsSnippets
@@ -45,7 +44,7 @@ let
     "docs/reference/extension-api.md"
     "docs/reference/builtins.md"
     "docs/reference/api.md"
-    "includes/abbreviations.md"
+    "docs/includes/abbreviations.md"
     "zensical.toml"
   ];
 
@@ -202,7 +201,7 @@ rec {
       }
       ''
         export HOME=$TMPDIR
-        mkdir -p $out/docs/reference $out/includes
+        mkdir -p $out/docs/reference $out/docs/includes
         install -m 644 ${../zensical.toml} $out/zensical.toml
         docgen cli $out/docs/reference/cli $out/zensical.toml ${helpLinkPages}
         docgen kinds $out/docs/reference/kinds.md ${kindSchemas} ${snippetSchemas}/chalkctl.chalkos.dev_v1alpha1_Inventory.json ${snippetSchemas}/chalklab.chalkos.dev_v1alpha1_Lab.json
@@ -212,7 +211,7 @@ rec {
         chmod -R u+w proto
         (cd proto && buf generate)
         cp proto/docs/reference/api.md $out/docs/reference/api.md
-        docgen abbr ${../docs/reference/glossary.md} $out/includes/abbreviations.md
+        docgen abbr ${../docs/reference/glossary.md} $out/docs/includes/abbreviations.md
       '';
 
   # The site builds strictly; the chalkctl, chalklab, chalkbuild and chalkcfg commands its pages
@@ -300,7 +299,6 @@ rec {
       copy() {
         rsync -a --delete --exclude /superpowers/ docs/ "$work/docs/"
         rsync -a zensical.toml "$work/zensical.toml"
-        rsync -a includes/ "$work/includes/"
         mkdir -p "$work/examples/homelab"
         for path in ${lib.escapeShellArgs homelabSnippets}; do
           rsync -a --delete "examples/homelab/$path" "$work/examples/homelab/"

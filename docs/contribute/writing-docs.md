@@ -67,7 +67,7 @@ These pages are generated and never edited by hand:
 | `docs/reference/builtins.md` | the schemas, `facts.json`, `outputs.json` and `effects.json` of an image of the default variant and of one with `kubernetes = false`, which the node modules in `modules/node/` declare | `docgen builtins` |
 | `docs/reference/api.md` | the proto files of the node API and of each layer's API, `api/chalkos/*/v1/*.proto`, through the template `api/markdown.tmpl` | protoc-gen-doc in `buf.gen.yaml` |
 | the navigation region of `zensical.toml` | the command trees | `docgen cli` |
-| `includes/abbreviations.md` | the first sentence of each entry of `docs/reference/glossary.md` | `docgen abbr` |
+| `docs/includes/abbreviations.md` | the first sentence of each entry of `docs/reference/glossary.md` | `docgen abbr` |
 
 To change one, change its source and regenerate all of them:
 
@@ -84,7 +84,7 @@ and the generated pages together.
 
 Every page shows a glossary term's definition as a tooltip when the reader hovers over the term.
 `docgen abbr` turns each entry of `docs/reference/glossary.md` into lines of Python-Markdown's
-`abbr` syntax in `includes/abbreviations.md`, and `pymdownx.snippets` appends that file to every
+`abbr` syntax in `docs/includes/abbreviations.md`, and `pymdownx.snippets` appends that file to every
 page. Terms in code get no tooltip; terms in headings and link text do.
 
 ```markdown title="docs/reference/glossary.md"
