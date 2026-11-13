@@ -12,6 +12,7 @@ import (
 	"github.com/trevex/chalkos/pkg/chalkctl/layer"
 	"github.com/trevex/chalkos/pkg/client"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
+	kubernetesview "github.com/trevex/chalkos/pkg/statusview/layers/kubernetes"
 )
 
 // revokedNodesOf reads the revoked nodes by name from the first of the control planes whose
@@ -85,7 +86,7 @@ func (p *Plugin) AdmitInstall(ctx context.Context, t layer.Target) error {
 		return fmt.Errorf("%w; install installs %s only once one does, or with --force", err, t.Name())
 	}
 	if n, ok := list[t.Name()]; ok {
-		return fmt.Errorf("%s is revoked %s, and install installs it only once chalkctl node unrevoke %s lets it back in, or with --force", t.Name(), revokedSince(n), t.Name())
+		return fmt.Errorf("%s is revoked %s, and install installs it only once chalkctl node unrevoke %s lets it back in, or with --force", t.Name(), kubernetesview.RevokedSince(n), t.Name())
 	}
 	return nil
 }
@@ -115,7 +116,7 @@ func (p *Plugin) Admit(ctx context.Context, t layer.Target, does string) error {
 		return fmt.Errorf("%w; %s only once one does, or with --force", err, does)
 	}
 	if n, ok := list[t.Name()]; ok {
-		return fmt.Errorf("%s is revoked %s, and %s only once chalkctl node unrevoke %s lets it back in, or with --force", t.Name(), revokedSince(n), does, t.Name())
+		return fmt.Errorf("%s is revoked %s, and %s only once chalkctl node unrevoke %s lets it back in, or with --force", t.Name(), kubernetesview.RevokedSince(n), does, t.Name())
 	}
 	return nil
 }

@@ -1,0 +1,18 @@
+bgp:
+  VRF      PEER     NEIGHBOR       STATE        UPTIME  RECEIVED  SENT  BFD
+  default  fabric   eth1           Established  1h2m3s  1         2     up
+  tenant   transit  203.0.113.254  Active       -       0         0     -
+nat64:
+  INSTANCE  SESSIONS  BINDINGS  POOL TCP  POOL UDP  POOL ICMP
+  edge      3         2         4535      4535      -
+resolver: running
+resolver guest: not running: unbound@guest.service is inactive
+dhcp4 default: running
+  SUBNET  RANGE         LEASED  POOL
+  office  192.0.2.0/24  2       100
+dhcp6 default: running
+  SUBNET   RANGE            LEASED  POOL    DELEGATED  DELEGABLE
+  office6  2001:db8:1::/64  1       >=2^64  1          256
+dhcp4 guest: not running: dial unix /run/kea/dhcp4-guest.sock: connect: no such file or directory
+dhcp-relay default: running
+dhcp-relay guest: not running: dhcrelay@guest.service is failed

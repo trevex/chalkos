@@ -18,6 +18,7 @@ import (
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
 	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
 	"github.com/trevex/chalkos/pkg/pki"
+	kubernetesview "github.com/trevex/chalkos/pkg/statusview/layers/kubernetes"
 )
 
 // tokenRefresh is how long after the switch of the service-account key kubelets have renewed
@@ -65,7 +66,7 @@ func (p *Plugin) RevokedNodes(ctx context.Context, r layer.Rotating) (map[string
 	}
 	since := make(map[string]string, len(list))
 	for name, n := range list {
-		since[name] = revokedSince(n)
+		since[name] = kubernetesview.RevokedSince(n)
 	}
 	return since, nil
 }
