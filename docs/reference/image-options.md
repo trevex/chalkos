@@ -261,9 +261,10 @@ console's socket when this is false.
 
 Type: boolean · Default: `true` · Declared in: [modules/node/console.nix](https://github.com/trevex/chalkos/blob/main/modules/node/console.nix)
 
-Whether chalkd serves the console on the machine's screen, through the socket
-`/run/chalkd/console.sock`, which root alone reaches, without TLS. The console holds no
-certificate: it calls what the API reference says the console may call.
+Whether the console runs on the machine's screen, tty1, in place of a login prompt.
+chalkd serves it, chalkos-console, through the socket `/run/chalkd/console.sock`, which
+root alone reaches, without TLS. The console holds no certificate: it calls what the API
+reference says the console may call.
 
 ## Debug and maintenance { #debug-and-maintenance }
 

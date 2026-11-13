@@ -11,6 +11,7 @@ let
       gnugrep
       gawk
       jq
+      systemd
     ];
     text = ''
       fact() { echo "CHALKTEST $1=$2"; }
@@ -96,6 +97,12 @@ let
           fi
         done
       fi
+      # The console takes tty1 once chalkd runs, without restarting; the getty it replaces never
+      # starts.
+      wait_for systemctl is-active --quiet chalkos-console.service || true
+      fact console_active "$(systemctl is-active chalkos-console.service || true)"
+      fact getty_tty1 "$(systemctl is-active getty@tty1.service || true)"
+      fact console_restarts "$(systemctl show -p NRestarts --value chalkos-console.service || true)"
       # Tests may hard-reset the VM right after "done", which would drop unflushed counters.
       sync
       fact "done" 1

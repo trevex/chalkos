@@ -953,9 +953,9 @@ lib.runTests {
   };
   # A router image without BGP, NAT64, the resolver, DHCP, the DHCP relay and WireGuard keeps the
   # router's core: the router kinds of the firewall, VRFs and policy routing, the outputs and units
-  # of the firewall, the kernel settings and the VRFs, and the diagnostics of every image and
-  # traceroute. Its outputs render the examples of none of the six, and its build allocates the IDs
-  # of the same users and groups as an image with every feature.
+  # of the firewall, the kernel settings and the VRFs, the console every image runs, and the
+  # diagnostics of every image and traceroute. Its outputs render the examples of none of the six,
+  # and its build allocates the IDs of the same users and groups as an image with every feature.
   testRouterWithoutFeatures = {
     expr =
       let
@@ -1008,6 +1008,7 @@ lib.runTests {
         "chalkos-chrony-dhcp"
         "chalkos-chrony-dhcp-links"
         "chalkos-config"
+        "chalkos-console"
         "chalkos-firewall"
         "chalkos-health"
         "chalkos-links"
@@ -4250,14 +4251,21 @@ lib.runTests {
         };
       };
     };
-  # Every image and the installer serve the console with its actions; an image turns the actions
-  # off, or the console with them. chalkd learns both from its unit's environment.
+  # Every image and the installer run the console on tty1 in place of the getty, with its actions;
+  # an image turns the actions off, or the console with them, which brings the getty back and the
+  # kernel's own console log level. chalkd and the console learn both from their units'
+  # environments.
   testConsole = {
     expr =
       let
         env = c: {
           console = c.systemd.services.chalkd.environment.CHALKD_CONSOLE or null;
           actions = c.systemd.services.chalkd.environment.CHALKD_CONSOLE_ACTIONS or null;
+          unit = c.systemd.services.chalkos-console.serviceConfig.TTYPath or null;
+          consoleActions = c.systemd.services.chalkos-console.environment.CHALKOS_CONSOLE_ACTIONS or null;
+          getty = c.systemd.services."getty@tty1".enable or true;
+          autovt = c.systemd.services."autovt@tty1".enable or true;
+          printk = c.boot.kernel.sysctl."kernel.printk" or null;
         };
       in
       {
@@ -4270,18 +4278,38 @@ lib.runTests {
       default = {
         console = "1";
         actions = "1";
+        unit = "/dev/tty1";
+        consoleActions = "1";
+        getty = false;
+        autovt = false;
+        printk = "1 4 1 7";
       };
       installer = {
         console = "1";
         actions = "1";
+        unit = "/dev/tty1";
+        consoleActions = "1";
+        getty = false;
+        autovt = false;
+        printk = "1 4 1 7";
       };
       noActions = {
         console = "1";
         actions = "0";
+        unit = "/dev/tty1";
+        consoleActions = "0";
+        getty = false;
+        autovt = false;
+        printk = "1 4 1 7";
       };
       off = {
         console = null;
         actions = null;
+        unit = null;
+        consoleActions = null;
+        getty = true;
+        autovt = true;
+        printk = 4;
       };
     };
   };

@@ -20,12 +20,17 @@ import (
 	"github.com/trevex/chalkos/pkg/pki"
 )
 
+// consoleFacts say that the console runs on tty1 without restarting and the getty it replaces does
+// not.
+var consoleFacts = map[string]string{"console_active": "active", "console_restarts": "0", "getty_tty1": "inactive"}
+
 // TestInstallInPlace enrols the test Secure Boot keys in firmware in Setup Mode, which reboots
 // the node with Secure Boot on, installs the test image where it runs and checks the installed
 // node: VAR is mounted, STATE and VAR have a TPM2 and a fallback keyslot, chalkd requires client
 // certificates of the OS CA and honours their roles, the base diagnostics run in their sandbox,
 // and config applies additive storage changes live and refuse destructive ones. An extension kind
 // reaches the unit granted it, with its secret, and an apply that changes it restarts the unit.
+// The console runs on the screen in either mode, in place of the getty on tty1.
 func TestInstallInPlace(t *testing.T) {
 	requireEnv(t, append([]string{"CHALKLAB_OVMF_CODE", "CHALKLAB_OVMF_VARS", "CHALKLAB_SB_KEYS", "CHALKLAB_IMAGE_DIR"}, chalkdEnv...)...)
 	dir := vmDir(t)
@@ -36,7 +41,7 @@ func TestInstallInPlace(t *testing.T) {
 	}
 	extra := lab.VMDisk{Path: extraPath, Serial: "chalk-extra"}
 	n := startNode(t, lab.VMConfig{Dir: dir, FirmwareVars: os.Getenv("CHALKLAB_OVMF_VARS"), Disks: []lab.VMDisk{system, extra}})
-	readFacts(t, n.vm, 5*time.Minute)
+	assertFacts(t, readFacts(t, n.vm, 5*time.Minute), consoleFacts)
 
 	// The image carries the OS CA, so even in maintenance mode a client needs its certificate.
 	anonymous, err := client.Dial(n.addr, client.Options{Verify: client.AnyCertificate()})
@@ -61,11 +66,13 @@ func TestInstallInPlace(t *testing.T) {
 	assertFacts(t, readFacts(t, n.vm, 5*time.Minute), map[string]string{"secureboot": "1", "state_tpm2": "1", "state_boots": "1"})
 	installInPlace(t, n, "chalklab")
 
-	assertFacts(t, readFacts(t, n.vm, 5*time.Minute), map[string]string{
+	installed := readFacts(t, n.vm, 5*time.Minute)
+	assertFacts(t, installed, map[string]string{
 		"var_fstype":     "ext4",
 		"state_keyslots": "2",
 		"var_keyslots":   "2",
 	})
+	assertFacts(t, installed, consoleFacts)
 	waitForNode(t, n, "chalklab")
 
 	// The test image declares the Greeting kind; chalktest-greeting reads the node's Greeting with
