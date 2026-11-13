@@ -289,12 +289,16 @@ on the fabric.
 
 Cable one of the router's ports to the home network and the other to the switch. Which port is
 which does not matter yet: the next step finds out. Boot the router from the USB stick through
-the firmware's boot menu. Once chalkd runs, the console shows its fingerprint and the address that
-the home network's DHCP server gave the port it reaches:
+the firmware's boot menu. Once chalkd runs, the screen shows
+[the console](../operate/console.md). Its header keeps chalkd's fingerprint on screen, and the
+address that the home network's DHCP server gave the port it reaches:
 
 ```text
-chalkd: maintenance mode, accepting clients of the OS CA; certificate fingerprint <fingerprint>
-chalkd: addresses 192.168.1.57; certificate fingerprint <fingerprint>
+nixos  installer  up 1m
+image 81bd81bd81bd
+installer: chalkctl install installs nodes from here
+fingerprint <fingerprint>
+addresses 192.168.1.57
 ```
 
 Note the address and the fingerprint, 64 hex characters. chalkctl reaches a node that a command
@@ -307,7 +311,7 @@ router's for now, and the commands below need no `--address`:
 
 The commands check the machine's certificate with `--fingerprint`.
 
-!!! tip "Find the installer without a console"
+!!! tip "Find the installer without a screen"
 
     On a machine without a screen, look for the installer on the home network: chalkd listens on
     TCP port 50000. The flake's shell holds `arp-scan` and `nc`; this lists the home network's
@@ -443,7 +447,7 @@ chalkctl recovery-key router prints the key that unlocks it when its TPM fails
 
 `<image>` is the start of the image's root hash, and `<n>` the size of what chalkctl sends. The
 router reboots into its image, renames its ports and takes the reserved address on `wan`. Remove
-the USB stick once the console shows chalkd in normal mode, and put the reserved address back into
+the USB stick once the console's header shows `normal`, and put the reserved address back into
 `chalkos.yaml`:
 
 ```yaml title="chalkos.yaml"
@@ -558,14 +562,18 @@ Install node1, node2 and node3 one after another, with the same steps.
 ### Boot the installer
 
 Cable both of the node's ports to the switch and boot it from the USB stick. The router's
-advertisements give each port an address of the fabric's prefix, and the console prints both:
+advertisements give each port an address of the fabric's prefix, and the console's header shows
+both:
 
 ```text
-chalkd: maintenance mode, accepting clients of the OS CA; certificate fingerprint <fingerprint>
-chalkd: addresses fdc8:a1b2:c3d4:1:0:ff:fe00:1101 fdc8:a1b2:c3d4:1:0:ff:fe00:1102; certificate fingerprint <fingerprint>
+nixos  installer  up 1m
+image 81bd81bd81bd
+installer: chalkctl install installs nodes from here
+fingerprint <fingerprint>
+addresses fdc8:a1b2:c3d4:1:0:ff:fe00:1101 fdc8:a1b2:c3d4:1:0:ff:fe00:1102
 ```
 
-The console prints no link-local address. A port without an address of the fabric has no cable, or
+The header shows no link-local address. A port without an address of the fabric has no cable, or
 the router sends no advertisements: [Troubleshooting](#troubleshooting) covers both. Note one of the
 addresses and the fingerprint. Put the address into `chalkos.yaml` as node1's for now, quoted, as
 YAML needs for an IPv6 address; the workstation reaches it over the tunnel:
@@ -576,10 +584,10 @@ YAML needs for an IPv6 address; the workstation reaches it over the tunnel:
 
 !!! tip "Find the installer through the router"
 
-    When the node has no screen, or its console no longer shows chalkd's lines, find its ports in
-    the router's neighbour table. Each of the installer's ports takes an address of the fabric's
-    prefix with the same interface ID as its link-local address, so this lists every machine the
-    router sees on `fabric` with its MAC address and its address of the fabric:
+    When the node has no screen, find its ports in the router's neighbour table. Each of the
+    installer's ports takes an address of the fabric's prefix with the same interface ID as its
+    link-local address, so this lists every machine the router sees on `fabric` with its MAC
+    address and its address of the fabric:
 
     ```sh
     chalkctl node diag router --secrets=secrets.age neighbours \

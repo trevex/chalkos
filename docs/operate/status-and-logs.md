@@ -7,14 +7,19 @@ description: "Read what chalkctl status reports, follow a unit's journal, run th
 
 This page is for an operator who wants to know what a node is doing. It explains each line of
 `chalkctl status`, then the four places that tell more: a unit's journal, the image's
-diagnostics, the console and a shell on the node. The examples read the homelab's `node1`, a control plane.
+diagnostics, the serial console and a shell on the node. The examples read the homelab's `node1`, a control plane.
+
+At the machine itself, the console on its screen shows the same status, the node's network,
+storage and journal, without a workstation or a network, as
+[The console on the machine's screen](console.md) describes.
 
 ## Before you begin
 
 You need the workstation that [Set up your workstation](workstation.md) describes.
 `chalkctl status`, `chalkctl logs` and `chalkctl node diag` need a reader client file or the
 secrets file. The diagnostics that send traffic from the node or show its firewall need an
-operator's. The console needs the machine's BMC, a screen, or `chalklab console` in a lab.
+operator's. The boot and the serial console need the machine's BMC, a screen, or
+`chalklab console` in a lab.
 
 ## chalkctl status reads the node from the top
 
@@ -188,7 +193,9 @@ The image author declares the outputs, as
 On the shipped variant, `kubernetes worker: joined, node ready: True` names the node's kind, its
 state and whether its Node is Ready. A control plane adds its VIP role, `vip holder` or
 `vip standby`, and `control plane current` when its API server and etcd serve the current
-certificates and the API server answers ready.
+certificates and the API server answers ready. A Node that is not Ready adds the reason and the
+message of its Ready condition, such as
+`node ready: False (KubeletNotReady: container runtime network not ready)`.
 [Kubernetes status states](../reference/kubernetes.md#kubernetes-status-states)
 lists every state, and [Troubleshoot Kubernetes](../kubernetes/troubleshooting.md) acts on them.
 
@@ -196,6 +203,22 @@ The line after it, `kubernetes versions: API server 1.37.1, kubelet 1.37.1`, nam
 version of the API server the node's config names and the release of its image's kubelet. A
 bootstrapped control plane adds `control-plane pods current` once its API server, controller-manager
 and scheduler run the images its config names and are Ready, or says which of them does not yet.
+
+A node with pods that do not run lists them after these lines, with each pod's phase and reason:
+
+```text
+pods not running:
+  web/pending-pod  Pending  -
+  web/crash        Running  CrashLoopBackOff
+  and 1 more
+```
+
+A pod counts when its phase is neither `Running` nor `Succeeded`, or when it runs with a container
+that waits. The reason is that of the first init container that waits or failed, prefixed `Init:`,
+else of the first container that waits, else the pod's own. A failed pod of a Job is left out, as
+the Job's record of a run. Pending pods come first, then running ones, then failed ones. The list
+holds at most 20 pods and counts the rest in `and <n> more`. `pods unknown: <error>` means the node
+could not list its pods.
 
 ## The certificates section warns before an expiry
 
@@ -362,12 +385,25 @@ A caller without a certificate may then run every diagnostic, `nft-ruleset` and 
 operator diagnostics included. It may call Install and Reboot as well. An image with the OS CA
 takes only the client files of its cluster in maintenance mode, each with its own role.
 
-## The console shows the boot before chalkd serves
+## The serial console shows the boot and chalkd's lines
 
-The console shows the boot loader, the initrd, a passphrase prompt for an encrypted disk, and
-chalkd's output. In maintenance mode, chalkd prints its certificate's fingerprint and the node's
-addresses there. On hardware the console is the BMC's serial-over-LAN or a screen. In a lab,
-`chalklab console` prints a VM's serial console and follows it:
+The machine's screen and its serial console show the boot: the boot loader, the kernel, the
+initrd and a passphrase prompt for an encrypted disk. Once chalkd serves, the screen shows
+[the console](console.md) in place of a login prompt. The serial console goes on to show
+chalkd's lines. In maintenance mode, chalkd prints its certificate's fingerprint and the node's
+addresses there:
+
+```text
+chalkd: maintenance mode, accepting clients of the OS CA; certificate fingerprint <fingerprint>
+chalkd: addresses 192.168.1.50; certificate fingerprint <fingerprint>
+```
+
+On an image with the console, the kernel prints only emergencies on its consoles, so the serial
+console shows a panic or an oops but no other kernel message. The journal keeps them all.
+
+On hardware the serial console is the BMC's serial-over-LAN. A VM of the `kvm` platform writes
+its console to the serial port alone. In a lab, `chalklab console` prints a VM's serial console
+and follows it:
 
 ```sh
 chalklab console w1
@@ -401,6 +437,7 @@ describes.
 ## What next
 
 - [Troubleshooting](troubleshooting.md) starts from a symptom and links its fix.
+- [The console on the machine's screen](console.md) reads the node at its machine.
 - [Recover a node](recover-node.md) brings back a node that does not unlock, boot or renew.
 - [`chalkctl status`](../reference/cli/chalkctl_status.md),
   [`chalkctl logs`](../reference/cli/chalkctl_logs.md) and

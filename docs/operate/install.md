@@ -429,9 +429,20 @@ A physical machine boots the installer. A VM boots its own image from a disk mad
 
 ## Note the address and the fingerprint
 
-Once chalkd starts in maintenance mode, it prints its mode and the SHA-256 fingerprint of its
-self-signed certificate on the console. It then prints its addresses with the fingerprint
-whenever they change:
+Once chalkd starts in maintenance mode, the machine's screen shows
+[the console](console.md). Its header keeps the SHA-256 fingerprint of chalkd's self-signed
+certificate and the machine's addresses on screen, and follows the addresses when they change:
+
+```text
+nixos  maintenance  up 2m
+image 81bd81bd81bd
+maintenance mode: chalkctl install installs this node
+fingerprint <fingerprint>
+addresses 192.168.1.50
+```
+
+chalkd prints its mode and the fingerprint on the serial console too, then its addresses with the
+fingerprint whenever they change. A VM of the `kvm` platform shows them there alone:
 
 ```text
 chalkd: maintenance mode, accepting clients of the OS CA; certificate fingerprint <fingerprint>
@@ -440,10 +451,10 @@ chalkd: addresses 192.168.1.50; certificate fingerprint <fingerprint>
 
 `<fingerprint>` is 64 hex characters. Note it and the address. The fingerprint tells chalkctl that
 it talks to this machine and not to something in the network path. chalkd keeps the certificate
-in memory, so a reboot into maintenance mode prints a new one.
+in memory, so a reboot into maintenance mode shows a new one.
 
-When the first line says `accepting any client`, the installer or image has no OS CA. It is the
-generic installer, or the flake's `mkImages` has no `osCA`.
+When chalkd's first line on the serial console says `accepting any client`, the installer or
+image has no OS CA. It is the generic installer, or the flake's `mkImages` has no `osCA`.
 
 In maintenance mode the machine takes its addresses by DHCP, and by SLAAC where a router sends
 advertisements. Such an address is not yet the one the inventory names, so the commands below

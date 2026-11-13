@@ -119,6 +119,14 @@ the next one either. GetConfig returns a node's config with its secret values ha
 admin role too, because names, addresses and the shape of the config tell an attacker much about
 the node.
 
+chalkd serves the same API a second time to the console on the machine's screen, through the
+socket `/run/chalkd/console.sock` without TLS. The socket and its directory belong to root, and
+only root may open them. A call on the socket carries no certificate and no role. Each method
+says instead whether the console may call it, and chalkd refuses the others, as in
+`the console may not call /chalkos.node.v1.NodeService/Install`.
+[The console acts for whoever sits at the machine](#the-console-acts-for-whoever-sits-at-the-machine)
+explains what that gives.
+
 ## Clients authenticate with the secrets file or a client file
 
 chalkctl authenticates with one of two credentials.
@@ -179,12 +187,14 @@ its disk, can still issue node certificates until a rotation of `os-ca` retires 
 
 A node that is not installed runs chalkd in maintenance mode. It has no node certificate yet, so it
 serves a self-signed one and prints the certificate's SHA-256 fingerprint and the node's addresses
-on its console:
+on its serial console:
 
 ```text
 chalkd: maintenance mode, accepting clients of the OS CA; certificate fingerprint <fingerprint>
 chalkd: addresses <addresses>; certificate fingerprint <fingerprint>
 ```
+
+The header of the console on the machine's screen keeps both on screen.
 
 chalkctl verifies the node in one of two ways:
 
@@ -236,6 +246,31 @@ files, for the host, so the hypervisor's admin gets no shell on the node through
     [`chalkos.debug.tools`](../../reference/image-options.md#chalkosdebugtools) adds the usual
     command-line tools to an image for that.
 
+## The console acts for whoever sits at the machine
+
+The machine's screen shows the [console](../../operate/console.md) in place of a login prompt.
+It offers no shell and needs no credential: whoever reaches the screen and keyboard,
+in person, through a BMC or through a hypervisor's display, uses it. Access to the console is
+privileged access, as access to a BMC is.
+
+Through chalkd's console socket, the console reads what a reader reads: the node's information,
+status, disks and journal, and the status of the image's layer. chalkd also lets it run the
+diagnostics of readers and operators, and refuses it those of admins. The console runs the ones
+its tabs show, such as the DHCP leases of a router, which need the operator role through chalkctl.
+
+Its actions reboot and shut down the node, and roll back its image and its config. Through
+chalkctl, the first three need the operator role and the config rollback the admin role. Physical
+access gives a reset and a power-off through the machine's buttons already. The rollbacks also
+return the node to the image or the config it ran before, which the node still holds. The console
+calls no method that installs a node, delivers or reads config, upgrades or issues certificates.
+
+An image built with
+[`chalkos.console.actions.enable`](../../reference/image-options.md#chalkosconsoleactionsenable)
+set to false offers no actions. chalkd then refuses them on the console's socket with
+`the image turns the console's actions off`, and the console keeps its reads. An image built with
+[`chalkos.console.enable`](../../reference/image-options.md#chalkosconsoleenable) set to false
+runs no console, and chalkd serves no console socket.
+
 ## Limits
 
 - chalkos enrols Secure Boot keys only in firmware in Setup Mode, with `chalkctl secureboot
@@ -253,6 +288,8 @@ files, for the host, so the hypervisor's admin gets no shell on the node through
   expires or its CA is rotated, as [Certificates](certificates.md#access-is-revoked-by-rotating-its-ca)
   explains. On the shipped variant, revoking a node shuts out that node alone, with the gaps listed
   under [Revocation leaves reads and the certificates valid](../kubernetes/certificates.md#revocation-leaves-reads-and-the-certificates-valid).
+- The console asks nobody for a credential. Anyone at the machine's keyboard, or with its BMC,
+  reads what the console shows and uses its actions, unless the image turns the actions off.
 - The TPM unseals without a PIN for every boot under the same Secure Boot state, so a machine
   decrypts its own disks whenever it boots. chalkos does not defend against an attacker with the
   machine in hand who attacks it while it runs, for example through its memory.
@@ -282,5 +319,6 @@ files, for the host, so the hypervisor's admin gets no shell on the node through
 - [The image](image.md): the store, dm-verity and the UKI.
 - [Sign images for Secure Boot](../../build/sign-images.md).
 - [Manage access and certificates](../../operate/access.md).
+- [The console on the machine's screen](../../operate/console.md).
 - [Node API](../../reference/api.md), [`chalkctl client new`](../../reference/cli/chalkctl_client_new.md)
   and [`chalkctl gen secrets`](../../reference/cli/chalkctl_gen_secrets.md).

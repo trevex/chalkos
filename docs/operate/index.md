@@ -112,6 +112,14 @@ These pages read what a node does and bring back a node that fails.
 
     [:octicons-arrow-right-24: Read](status-and-logs.md)
 
+-   :material-monitor: __The console on the machine's screen__
+
+    ---
+
+    Read a node at its screen, and reboot, shut down or roll it back there.
+
+    [:octicons-arrow-right-24: Read](console.md)
+
 -   :material-lifebuoy: __Recover a node__
 
     ---

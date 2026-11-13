@@ -365,8 +365,8 @@ lives in `$XDG_STATE_HOME/chalklab/<name>`, after the lab file's `metadata.name`
 ## Maintenance mode { #maintenance-mode }
 
 The mode chalkd runs in on a node that is not installed. In it, chalkd serves a self-signed
-certificate, prints its fingerprint and the node's addresses on the console, and accepts only
-reads, reboots and an install. See [Architecture](../how-it-works/node/architecture.md#maintenance-mode-serves-a-node-that-is-not-installed).
+certificate, shows its fingerprint and the node's addresses on the console, and accepts only
+reads, diagnostics, a reboot, a shutdown, the enrolment of Secure Boot keys and an install. See [Architecture](../how-it-works/node/architecture.md#maintenance-mode-serves-a-node-that-is-not-installed).
 
 ## Module group { #module-group }
 <!-- abbr: module groups, Module groups -->

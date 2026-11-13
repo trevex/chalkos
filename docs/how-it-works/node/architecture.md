@@ -24,6 +24,7 @@ flowchart LR
         chalkd --> systemd
         chalkd --> disk["Disk: slots, STATE, VAR"]
         chalkd --> tpm["TPM"]
+        console["chalkos-console on tty1"] -->|node API, local socket| chalkd
     end
 ```
 
@@ -97,6 +98,10 @@ the only way to reach the node.
 [Architecture for developers](../../contribute/architecture.md#chalkd-runs-with-a-narrow-sandbox)
 describes its sandbox.
 
+The machine's screen shows chalkos-console, the [console](../../operate/console.md), in place of a
+login prompt. It reaches chalkd through a local socket and calls the node API there, for the reads
+and the few actions the console may call. It changes nothing on the node itself.
+
 !!! note "On the shipped variant, chalkd also runs the control plane"
 
     On a control plane, chalkd renders the static pods of etcd, the API server, the
@@ -161,7 +166,8 @@ A machine reaches maintenance mode in one of two ways:
   mode.
 
 In maintenance mode, chalkd serves a self-signed certificate and accepts only reads (node
-information, disks and logs), a reboot and an install. How chalkctl trusts that certificate by
+information, the image's contract, disks, logs and the drivers the firmware loaded), diagnostics,
+a reboot, a shutdown, the enrolment of Secure Boot keys and an install. How chalkctl trusts that certificate by
 the fingerprint on the console, and whom chalkd accepts, is explained in
 [A node in maintenance mode is trusted by its fingerprint](security.md#a-node-in-maintenance-mode-is-trusted-by-its-fingerprint).
 [Install a node](../../operate/install.md) covers the install as a task.
