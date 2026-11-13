@@ -263,7 +263,11 @@ whose modules set it twice fails to build, unless one of them uses `lib.mkDefaul
 The last entry becomes `/dev/console`. systemd's boot status, the emergency shell and
 chalkd's lines, its fingerprint and addresses among them, appear there. While the last
 entry is `tty0` or `tty1` and the console runs on tty1, chalkd keeps off `/dev/console`, and
-the console shows the fingerprint and addresses.
+the console shows the fingerprint and addresses. While the last entry is a virtual
+terminal, the unit `chalkos-serial-log@` copies chalkd's lines from the journal to every
+serial port of the list, a device such as `ttyS0`, `ttyAMA0`, `ttyUSB0` or `hvc0`, so a
+BMC's serial-over-LAN shows them. An entry of another form, such as
+`uart8250,mmio32,0xfe215040`, gets only the kernel's messages.
 
 The `metal` platform, a platform of your own and the installer put the screen last; the
 `kvm` platform has the first serial port alone. A machine whose BMC shows serial-over-LAN

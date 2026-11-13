@@ -20,7 +20,7 @@
   ];
 
   # The probe writes its facts to the first serial port itself, whichever console is last, and
-  # chalkd prints its lines there too.
+  # chalkos-serial-log@ copies chalkd's lines there.
   boot.kernelParams = [ "quiet" ];
 
   # Certificates last a year; a test renews them by delivering config, due or not.

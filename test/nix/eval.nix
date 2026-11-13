@@ -953,9 +953,10 @@ lib.runTests {
   };
   # A router image without BGP, NAT64, the resolver, DHCP, the DHCP relay and WireGuard keeps the
   # router's core: the router kinds of the firewall, VRFs and policy routing, the outputs and units
-  # of the firewall, the kernel settings and the VRFs, the console every image runs, and the
-  # diagnostics of every image and traceroute. Its outputs render the examples of none of the six,
-  # and its build allocates the IDs of the same users and groups as an image with every feature.
+  # of the firewall, the kernel settings and the VRFs, the console and the copy of chalkd's lines
+  # to the serial port every metal image runs, and the diagnostics of every image and traceroute.
+  # Its outputs render the examples of none of the six, and its build allocates the IDs of the
+  # same users and groups as an image with every feature.
   testRouterWithoutFeatures = {
     expr =
       let
@@ -1012,6 +1013,7 @@ lib.runTests {
         "chalkos-firewall"
         "chalkos-health"
         "chalkos-links"
+        "chalkos-serial-log@"
         "chalkos-vrf"
       ];
       diagnostics = [
@@ -2550,6 +2552,92 @@ lib.runTests {
       screenAlone = [ "journal" ];
       otherTerminal = [ "journal+console" ];
       noConsole = [ "journal+console" ];
+    };
+  };
+  # While the last kernel console is a virtual terminal, chalkos-serial-log@ copies chalkd's lines
+  # from the journal to each serial port of the list, whether the console runs or not: ttyS*,
+  # ttyAMA* and hvc* among them; a uart8250 entry names no device file. A serial port last gets
+  # them through /dev/console, and a port without a UART starts no copy.
+  testSerialLog = {
+    expr =
+      let
+        i = mkImages { variants.worker = { }; };
+        copies = c: lib.filter (lib.hasPrefix "chalkos-serial-log@") c.systemd.targets.multi-user.wants;
+        on = consoles: copies (worker [ { chalkos.consoles = consoles; } ]);
+        unit = i.nixos.worker-metal.config.systemd.services."chalkos-serial-log@";
+      in
+      {
+        metal = copies i.nixos.worker-metal.config;
+        kvm = copies i.nixos.worker-kvm.config;
+        installer = copies i.nixos.installer.config;
+        serialLast = on [
+          "tty0"
+          "ttyS0,115200"
+        ];
+        twoPorts = on [
+          "ttyS1,115200"
+          "ttyS0"
+          "tty0"
+        ];
+        screenAlone = on [ "tty0" ];
+        noConsole = copies (worker [ { chalkos.console.enable = false; } ]);
+        otherPorts = on [
+          "ttyAMA0,115200"
+          "hvc0"
+          "uart8250,mmio32,0xfe215040"
+          "tty1"
+        ];
+        unit = {
+          condition = unit.unitConfig.ConditionPathExists;
+          typeZero = lib.hasInfix "grep -qsx 0 /sys/class/tty/%i/type" unit.serviceConfig.ExecCondition;
+          follows = lib.tail (lib.splitString " " unit.serviceConfig.ExecStart);
+          inherit (unit.serviceConfig)
+            StandardInput
+            StandardOutput
+            TTYPath
+            TTYVHangup
+            Restart
+            CapabilityBoundingSet
+            ;
+        };
+        noTemplate =
+          (worker [ { chalkos.consoles = [ "ttyS0,115200" ]; } ]).systemd.services ? "chalkos-serial-log@";
+      };
+    expected = {
+      metal = [ "chalkos-serial-log@ttyS0.service" ];
+      kvm = [ ];
+      installer = [ "chalkos-serial-log@ttyS0.service" ];
+      serialLast = [ ];
+      twoPorts = [
+        "chalkos-serial-log@ttyS1.service"
+        "chalkos-serial-log@ttyS0.service"
+      ];
+      screenAlone = [ ];
+      noConsole = [ "chalkos-serial-log@ttyS0.service" ];
+      otherPorts = [
+        "chalkos-serial-log@ttyAMA0.service"
+        "chalkos-serial-log@hvc0.service"
+      ];
+      unit = {
+        condition = "/sys/class/tty/%i";
+        typeZero = true;
+        follows = [
+          "--follow"
+          "--boot"
+          "--lines=all"
+          "--no-pager"
+          "--output=cat"
+          "--cursor-file=/run/chalkos-serial-log/%i.cursor"
+          "_SYSTEMD_UNIT=chalkd.service"
+        ];
+        StandardInput = "null";
+        StandardOutput = "tty";
+        TTYPath = "/dev/%i";
+        TTYVHangup = false;
+        Restart = "always";
+        CapabilityBoundingSet = "";
+      };
+      noTemplate = false;
     };
   };
   # The guest agent answers what the host asks about the node and shuts it down; it runs no

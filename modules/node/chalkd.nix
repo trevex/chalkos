@@ -87,7 +87,8 @@ in
         Restart = "always";
         RestartSec = 5;
         # The fingerprint and addresses must reach the console in maintenance mode: through
-        # /dev/console, or the console on the screen.
+        # /dev/console, the serial ports that chalkos-serial-log@ copies them to, or the console on
+        # the screen.
         StandardOutput = output;
         StandardError = output;
 
