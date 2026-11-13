@@ -81,6 +81,8 @@ const (
 	// NodeServiceSecureBootDriversProcedure is the fully-qualified name of the NodeService's
 	// SecureBootDrivers RPC.
 	NodeServiceSecureBootDriversProcedure = "/chalkos.node.v1.NodeService/SecureBootDrivers"
+	// NodeServiceShutdownProcedure is the fully-qualified name of the NodeService's Shutdown RPC.
+	NodeServiceShutdownProcedure = "/chalkos.node.v1.NodeService/Shutdown"
 )
 
 // NodeServiceClient is a client for the chalkos.node.v1.NodeService service.
@@ -242,6 +244,10 @@ type NodeServiceClient interface {
 	// under Secure Boot, and where the firmware found it. Available in maintenance mode to
 	// readers.
 	SecureBootDrivers(context.Context, *connect.Request[v1.SecureBootDriversRequest]) (*connect.Response[v1.SecureBootDriversResponse], error)
+	// Shutdown powers the node off once the response is sent, as Reboot reboots it. Available in
+	// maintenance and normal mode to operators. The console may call it while the image allows the
+	// console's actions.
+	Shutdown(context.Context, *connect.Request[v1.ShutdownRequest]) (*connect.Response[v1.ShutdownResponse], error)
 }
 
 // NewNodeServiceClient constructs a client for the chalkos.node.v1.NodeService service. By default,
@@ -369,6 +375,12 @@ func NewNodeServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			connect.WithSchema(nodeServiceMethods.ByName("SecureBootDrivers")),
 			connect.WithClientOptions(opts...),
 		),
+		shutdown: connect.NewClient[v1.ShutdownRequest, v1.ShutdownResponse](
+			httpClient,
+			baseURL+NodeServiceShutdownProcedure,
+			connect.WithSchema(nodeServiceMethods.ByName("Shutdown")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -393,6 +405,7 @@ type nodeServiceClient struct {
 	confirmConfig     *connect.Client[v1.ConfirmConfigRequest, v1.ConfirmConfigResponse]
 	enrollSecureBoot  *connect.Client[v1.EnrollSecureBootRequest, v1.EnrollSecureBootResponse]
 	secureBootDrivers *connect.Client[v1.SecureBootDriversRequest, v1.SecureBootDriversResponse]
+	shutdown          *connect.Client[v1.ShutdownRequest, v1.ShutdownResponse]
 }
 
 // Info calls chalkos.node.v1.NodeService.Info.
@@ -488,6 +501,11 @@ func (c *nodeServiceClient) EnrollSecureBoot(ctx context.Context, req *connect.R
 // SecureBootDrivers calls chalkos.node.v1.NodeService.SecureBootDrivers.
 func (c *nodeServiceClient) SecureBootDrivers(ctx context.Context, req *connect.Request[v1.SecureBootDriversRequest]) (*connect.Response[v1.SecureBootDriversResponse], error) {
 	return c.secureBootDrivers.CallUnary(ctx, req)
+}
+
+// Shutdown calls chalkos.node.v1.NodeService.Shutdown.
+func (c *nodeServiceClient) Shutdown(ctx context.Context, req *connect.Request[v1.ShutdownRequest]) (*connect.Response[v1.ShutdownResponse], error) {
+	return c.shutdown.CallUnary(ctx, req)
 }
 
 // NodeServiceHandler is an implementation of the chalkos.node.v1.NodeService service.
@@ -649,6 +667,10 @@ type NodeServiceHandler interface {
 	// under Secure Boot, and where the firmware found it. Available in maintenance mode to
 	// readers.
 	SecureBootDrivers(context.Context, *connect.Request[v1.SecureBootDriversRequest]) (*connect.Response[v1.SecureBootDriversResponse], error)
+	// Shutdown powers the node off once the response is sent, as Reboot reboots it. Available in
+	// maintenance and normal mode to operators. The console may call it while the image allows the
+	// console's actions.
+	Shutdown(context.Context, *connect.Request[v1.ShutdownRequest]) (*connect.Response[v1.ShutdownResponse], error)
 }
 
 // NewNodeServiceHandler builds an HTTP handler from the service implementation. It returns the path
@@ -772,6 +794,12 @@ func NewNodeServiceHandler(svc NodeServiceHandler, opts ...connect.HandlerOption
 		connect.WithSchema(nodeServiceMethods.ByName("SecureBootDrivers")),
 		connect.WithHandlerOptions(opts...),
 	)
+	nodeServiceShutdownHandler := connect.NewUnaryHandler(
+		NodeServiceShutdownProcedure,
+		svc.Shutdown,
+		connect.WithSchema(nodeServiceMethods.ByName("Shutdown")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/chalkos.node.v1.NodeService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case NodeServiceInfoProcedure:
@@ -812,6 +840,8 @@ func NewNodeServiceHandler(svc NodeServiceHandler, opts ...connect.HandlerOption
 			nodeServiceEnrollSecureBootHandler.ServeHTTP(w, r)
 		case NodeServiceSecureBootDriversProcedure:
 			nodeServiceSecureBootDriversHandler.ServeHTTP(w, r)
+		case NodeServiceShutdownProcedure:
+			nodeServiceShutdownHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -895,4 +925,8 @@ func (UnimplementedNodeServiceHandler) EnrollSecureBoot(context.Context, *connec
 
 func (UnimplementedNodeServiceHandler) SecureBootDrivers(context.Context, *connect.Request[v1.SecureBootDriversRequest]) (*connect.Response[v1.SecureBootDriversResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("chalkos.node.v1.NodeService.SecureBootDrivers is not implemented"))
+}
+
+func (UnimplementedNodeServiceHandler) Shutdown(context.Context, *connect.Request[v1.ShutdownRequest]) (*connect.Response[v1.ShutdownResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("chalkos.node.v1.NodeService.Shutdown is not implemented"))
 }

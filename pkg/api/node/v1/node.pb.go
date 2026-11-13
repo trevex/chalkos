@@ -5458,6 +5458,80 @@ func (x *SecureBootDriver) GetDevicePath() string {
 	return ""
 }
 
+// The request of Shutdown.
+type ShutdownRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ShutdownRequest) Reset() {
+	*x = ShutdownRequest{}
+	mi := &file_chalkos_node_v1_node_proto_msgTypes[70]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ShutdownRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ShutdownRequest) ProtoMessage() {}
+
+func (x *ShutdownRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_chalkos_node_v1_node_proto_msgTypes[70]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ShutdownRequest.ProtoReflect.Descriptor instead.
+func (*ShutdownRequest) Descriptor() ([]byte, []int) {
+	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{70}
+}
+
+// The response of Shutdown, which the node sends before it powers off.
+type ShutdownResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ShutdownResponse) Reset() {
+	*x = ShutdownResponse{}
+	mi := &file_chalkos_node_v1_node_proto_msgTypes[71]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ShutdownResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ShutdownResponse) ProtoMessage() {}
+
+func (x *ShutdownResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_chalkos_node_v1_node_proto_msgTypes[71]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ShutdownResponse.ProtoReflect.Descriptor instead.
+func (*ShutdownResponse) Descriptor() ([]byte, []int) {
+	return file_chalkos_node_v1_node_proto_rawDescGZIP(), []int{71}
+}
+
 var File_chalkos_node_v1_node_proto protoreflect.FileDescriptor
 
 const file_chalkos_node_v1_node_proto_rawDesc = "" +
@@ -5829,7 +5903,9 @@ const file_chalkos_node_v1_node_proto_rawDesc = "" +
 	"\x10SecureBootDriver\x12\x16\n" +
 	"\x06sha256\x18\x01 \x01(\fR\x06sha256\x12\x1f\n" +
 	"\vdevice_path\x18\x02 \x01(\tR\n" +
-	"devicePath*C\n" +
+	"devicePath\"\x11\n" +
+	"\x0fShutdownRequest\"\x12\n" +
+	"\x10ShutdownResponse*C\n" +
 	"\x04Mode\x12\x14\n" +
 	"\x10MODE_UNSPECIFIED\x10\x00\x12\x14\n" +
 	"\x10MODE_MAINTENANCE\x10\x01\x12\x0f\n" +
@@ -5848,7 +5924,7 @@ const file_chalkos_node_v1_node_proto_rawDesc = "" +
 	"\x18PENDING_FATE_UNSPECIFIED\x10\x00\x12\x16\n" +
 	"\x12PENDING_FATE_TAKEN\x10\x01\x12\x19\n" +
 	"\x15PENDING_FATE_REPLACED\x10\x02\x12\x15\n" +
-	"\x11PENDING_FATE_KEPT\x10\x032\x84\r\n" +
+	"\x11PENDING_FATE_KEPT\x10\x032\xd5\r\n" +
 	"\vNodeService\x12C\n" +
 	"\x04Info\x12\x1c.chalkos.node.v1.InfoRequest\x1a\x1d.chalkos.node.v1.InfoResponse\x12F\n" +
 	"\x05Disks\x12\x1d.chalkos.node.v1.DisksRequest\x1a\x1e.chalkos.node.v1.DisksResponse\x12O\n" +
@@ -5868,7 +5944,8 @@ const file_chalkos_node_v1_node_proto_rawDesc = "" +
 	"\rRollbackImage\x12%.chalkos.node.v1.RollbackImageRequest\x1a&.chalkos.node.v1.RollbackImageResponse\x12^\n" +
 	"\rConfirmConfig\x12%.chalkos.node.v1.ConfirmConfigRequest\x1a&.chalkos.node.v1.ConfirmConfigResponse\x12g\n" +
 	"\x10EnrollSecureBoot\x12(.chalkos.node.v1.EnrollSecureBootRequest\x1a).chalkos.node.v1.EnrollSecureBootResponse\x12j\n" +
-	"\x11SecureBootDrivers\x12).chalkos.node.v1.SecureBootDriversRequest\x1a*.chalkos.node.v1.SecureBootDriversResponseB2Z0github.com/trevex/chalkos/pkg/api/node/v1;nodev1b\x06proto3"
+	"\x11SecureBootDrivers\x12).chalkos.node.v1.SecureBootDriversRequest\x1a*.chalkos.node.v1.SecureBootDriversResponse\x12O\n" +
+	"\bShutdown\x12 .chalkos.node.v1.ShutdownRequest\x1a!.chalkos.node.v1.ShutdownResponseB2Z0github.com/trevex/chalkos/pkg/api/node/v1;nodev1b\x06proto3"
 
 var (
 	file_chalkos_node_v1_node_proto_rawDescOnce sync.Once
@@ -5883,7 +5960,7 @@ func file_chalkos_node_v1_node_proto_rawDescGZIP() []byte {
 }
 
 var file_chalkos_node_v1_node_proto_enumTypes = make([]protoimpl.EnumInfo, 4)
-var file_chalkos_node_v1_node_proto_msgTypes = make([]protoimpl.MessageInfo, 74)
+var file_chalkos_node_v1_node_proto_msgTypes = make([]protoimpl.MessageInfo, 76)
 var file_chalkos_node_v1_node_proto_goTypes = []any{
 	(Mode)(0),                         // 0: chalkos.node.v1.Mode
 	(SecureBoot)(0),                   // 1: chalkos.node.v1.SecureBoot
@@ -5959,21 +6036,23 @@ var file_chalkos_node_v1_node_proto_goTypes = []any{
 	(*SecureBootDriversRequest)(nil),  // 71: chalkos.node.v1.SecureBootDriversRequest
 	(*SecureBootDriversResponse)(nil), // 72: chalkos.node.v1.SecureBootDriversResponse
 	(*SecureBootDriver)(nil),          // 73: chalkos.node.v1.SecureBootDriver
-	nil,                               // 74: chalkos.node.v1.ContractResponse.SchemasEntry
-	nil,                               // 75: chalkos.node.v1.ImageContract.SystemDefinitionsEntry
-	nil,                               // 76: chalkos.node.v1.ImageContract.SchemasEntry
-	nil,                               // 77: chalkos.node.v1.RunDiagnosticRequest.ArgumentsEntry
-	(*anypb.Any)(nil),                 // 78: google.protobuf.Any
-	(*durationpb.Duration)(nil),       // 79: google.protobuf.Duration
-	(*timestamppb.Timestamp)(nil),     // 80: google.protobuf.Timestamp
+	(*ShutdownRequest)(nil),           // 74: chalkos.node.v1.ShutdownRequest
+	(*ShutdownResponse)(nil),          // 75: chalkos.node.v1.ShutdownResponse
+	nil,                               // 76: chalkos.node.v1.ContractResponse.SchemasEntry
+	nil,                               // 77: chalkos.node.v1.ImageContract.SystemDefinitionsEntry
+	nil,                               // 78: chalkos.node.v1.ImageContract.SchemasEntry
+	nil,                               // 79: chalkos.node.v1.RunDiagnosticRequest.ArgumentsEntry
+	(*anypb.Any)(nil),                 // 80: google.protobuf.Any
+	(*durationpb.Duration)(nil),       // 81: google.protobuf.Duration
+	(*timestamppb.Timestamp)(nil),     // 82: google.protobuf.Timestamp
 }
 var file_chalkos_node_v1_node_proto_depIdxs = []int32{
 	0,  // 0: chalkos.node.v1.InfoResponse.mode:type_name -> chalkos.node.v1.Mode
 	1,  // 1: chalkos.node.v1.InfoResponse.secure_boot:type_name -> chalkos.node.v1.SecureBoot
 	8,  // 2: chalkos.node.v1.DisksResponse.disks:type_name -> chalkos.node.v1.Disk
 	9,  // 3: chalkos.node.v1.Disk.partitions:type_name -> chalkos.node.v1.Partition
-	74, // 4: chalkos.node.v1.ContractResponse.schemas:type_name -> chalkos.node.v1.ContractResponse.SchemasEntry
-	78, // 5: chalkos.node.v1.ContractResponse.layer_facts:type_name -> google.protobuf.Any
+	76, // 4: chalkos.node.v1.ContractResponse.schemas:type_name -> chalkos.node.v1.ContractResponse.SchemasEntry
+	80, // 5: chalkos.node.v1.ContractResponse.layer_facts:type_name -> google.protobuf.Any
 	13, // 6: chalkos.node.v1.InstallRequest.header:type_name -> chalkos.node.v1.InstallHeader
 	21, // 7: chalkos.node.v1.InstallRequest.chunk:type_name -> chalkos.node.v1.ImageChunk
 	15, // 8: chalkos.node.v1.InstallHeader.in_place:type_name -> chalkos.node.v1.InPlace
@@ -5981,22 +6060,22 @@ var file_chalkos_node_v1_node_proto_depIdxs = []int32{
 	17, // 10: chalkos.node.v1.InstallHeader.image:type_name -> chalkos.node.v1.ImageHeader
 	14, // 11: chalkos.node.v1.InstallHeader.contract:type_name -> chalkos.node.v1.ImageContract
 	19, // 12: chalkos.node.v1.InstallHeader.source:type_name -> chalkos.node.v1.ImageSource
-	78, // 13: chalkos.node.v1.InstallHeader.layers:type_name -> google.protobuf.Any
-	75, // 14: chalkos.node.v1.ImageContract.system_definitions:type_name -> chalkos.node.v1.ImageContract.SystemDefinitionsEntry
-	76, // 15: chalkos.node.v1.ImageContract.schemas:type_name -> chalkos.node.v1.ImageContract.SchemasEntry
-	78, // 16: chalkos.node.v1.ImageContract.layer_facts:type_name -> google.protobuf.Any
+	80, // 13: chalkos.node.v1.InstallHeader.layers:type_name -> google.protobuf.Any
+	77, // 14: chalkos.node.v1.ImageContract.system_definitions:type_name -> chalkos.node.v1.ImageContract.SystemDefinitionsEntry
+	78, // 15: chalkos.node.v1.ImageContract.schemas:type_name -> chalkos.node.v1.ImageContract.SchemasEntry
+	80, // 16: chalkos.node.v1.ImageContract.layer_facts:type_name -> google.protobuf.Any
 	18, // 17: chalkos.node.v1.ImageHeader.store:type_name -> chalkos.node.v1.ImagePart
 	18, // 18: chalkos.node.v1.ImageHeader.hash_tree:type_name -> chalkos.node.v1.ImagePart
 	18, // 19: chalkos.node.v1.ImageHeader.uki:type_name -> chalkos.node.v1.ImagePart
 	18, // 20: chalkos.node.v1.ImageHeader.boot_loader:type_name -> chalkos.node.v1.ImagePart
 	20, // 21: chalkos.node.v1.ImageSource.oci:type_name -> chalkos.node.v1.RegistryImage
-	78, // 22: chalkos.node.v1.ApplyConfigRequest.layers:type_name -> google.protobuf.Any
-	79, // 23: chalkos.node.v1.ApplyConfigRequest.try:type_name -> google.protobuf.Duration
+	80, // 22: chalkos.node.v1.ApplyConfigRequest.layers:type_name -> google.protobuf.Any
+	81, // 23: chalkos.node.v1.ApplyConfigRequest.try:type_name -> google.protobuf.Duration
 	31, // 24: chalkos.node.v1.ApplyConfigResponse.changes:type_name -> chalkos.node.v1.StorageChange
 	29, // 25: chalkos.node.v1.ApplyConfigResponse.plan:type_name -> chalkos.node.v1.Plan
 	28, // 26: chalkos.node.v1.ApplyConfigResponse.pending:type_name -> chalkos.node.v1.PendingConfig
 	27, // 27: chalkos.node.v1.ApplyConfigResponse.staged:type_name -> chalkos.node.v1.StagedSlot
-	80, // 28: chalkos.node.v1.PendingConfig.since:type_name -> google.protobuf.Timestamp
+	82, // 28: chalkos.node.v1.PendingConfig.since:type_name -> google.protobuf.Timestamp
 	30, // 29: chalkos.node.v1.Plan.effects:type_name -> chalkos.node.v1.PlannedEffect
 	31, // 30: chalkos.node.v1.RollbackConfigResponse.changes:type_name -> chalkos.node.v1.StorageChange
 	52, // 31: chalkos.node.v1.StatusResponse.disks:type_name -> chalkos.node.v1.DiskStatus
@@ -6008,7 +6087,7 @@ var file_chalkos_node_v1_node_proto_depIdxs = []int32{
 	45, // 37: chalkos.node.v1.StatusResponse.outputs:type_name -> chalkos.node.v1.OutputStatus
 	44, // 38: chalkos.node.v1.StatusResponse.trial:type_name -> chalkos.node.v1.ConfigTrial
 	28, // 39: chalkos.node.v1.StatusResponse.pending_config:type_name -> chalkos.node.v1.PendingConfig
-	80, // 40: chalkos.node.v1.ConfigTrial.deadline:type_name -> google.protobuf.Timestamp
+	82, // 40: chalkos.node.v1.ConfigTrial.deadline:type_name -> google.protobuf.Timestamp
 	48, // 41: chalkos.node.v1.BootStatus.running:type_name -> chalkos.node.v1.BootImage
 	48, // 42: chalkos.node.v1.BootStatus.staged:type_name -> chalkos.node.v1.BootImage
 	48, // 43: chalkos.node.v1.BootStatus.failed:type_name -> chalkos.node.v1.BootImage
@@ -6016,7 +6095,7 @@ var file_chalkos_node_v1_node_proto_depIdxs = []int32{
 	48, // 45: chalkos.node.v1.BootStatus.rollback:type_name -> chalkos.node.v1.BootImage
 	2,  // 46: chalkos.node.v1.BootStatus.staged_state:type_name -> chalkos.node.v1.SlotState
 	47, // 47: chalkos.node.v1.BootStatus.health:type_name -> chalkos.node.v1.BootHealth
-	80, // 48: chalkos.node.v1.CertificateStatus.not_after:type_name -> google.protobuf.Timestamp
+	82, // 48: chalkos.node.v1.CertificateStatus.not_after:type_name -> google.protobuf.Timestamp
 	59, // 49: chalkos.node.v1.UpgradeRequest.header:type_name -> chalkos.node.v1.UpgradeHeader
 	21, // 50: chalkos.node.v1.UpgradeRequest.chunk:type_name -> chalkos.node.v1.ImageChunk
 	17, // 51: chalkos.node.v1.UpgradeHeader.image:type_name -> chalkos.node.v1.ImageHeader
@@ -6025,7 +6104,7 @@ var file_chalkos_node_v1_node_proto_depIdxs = []int32{
 	3,  // 54: chalkos.node.v1.PendingOutcome.fate:type_name -> chalkos.node.v1.PendingFate
 	64, // 55: chalkos.node.v1.DiagnosticsResponse.diagnostics:type_name -> chalkos.node.v1.Diagnostic
 	65, // 56: chalkos.node.v1.Diagnostic.parameters:type_name -> chalkos.node.v1.DiagnosticParameter
-	77, // 57: chalkos.node.v1.RunDiagnosticRequest.arguments:type_name -> chalkos.node.v1.RunDiagnosticRequest.ArgumentsEntry
+	79, // 57: chalkos.node.v1.RunDiagnosticRequest.arguments:type_name -> chalkos.node.v1.RunDiagnosticRequest.ArgumentsEntry
 	68, // 58: chalkos.node.v1.RunDiagnosticResponse.exit:type_name -> chalkos.node.v1.DiagnosticExit
 	73, // 59: chalkos.node.v1.SecureBootDriversResponse.drivers:type_name -> chalkos.node.v1.SecureBootDriver
 	4,  // 60: chalkos.node.v1.NodeService.Info:input_type -> chalkos.node.v1.InfoRequest
@@ -6047,27 +6126,29 @@ var file_chalkos_node_v1_node_proto_depIdxs = []int32{
 	40, // 76: chalkos.node.v1.NodeService.ConfirmConfig:input_type -> chalkos.node.v1.ConfirmConfigRequest
 	69, // 77: chalkos.node.v1.NodeService.EnrollSecureBoot:input_type -> chalkos.node.v1.EnrollSecureBootRequest
 	71, // 78: chalkos.node.v1.NodeService.SecureBootDrivers:input_type -> chalkos.node.v1.SecureBootDriversRequest
-	5,  // 79: chalkos.node.v1.NodeService.Info:output_type -> chalkos.node.v1.InfoResponse
-	7,  // 80: chalkos.node.v1.NodeService.Disks:output_type -> chalkos.node.v1.DisksResponse
-	11, // 81: chalkos.node.v1.NodeService.Contract:output_type -> chalkos.node.v1.ContractResponse
-	22, // 82: chalkos.node.v1.NodeService.Install:output_type -> chalkos.node.v1.InstallResponse
-	26, // 83: chalkos.node.v1.NodeService.ApplyConfig:output_type -> chalkos.node.v1.ApplyConfigResponse
-	25, // 84: chalkos.node.v1.NodeService.GetConfig:output_type -> chalkos.node.v1.GetConfigResponse
-	33, // 85: chalkos.node.v1.NodeService.ResetVolume:output_type -> chalkos.node.v1.ResetVolumeResponse
-	43, // 86: chalkos.node.v1.NodeService.Status:output_type -> chalkos.node.v1.StatusResponse
-	55, // 87: chalkos.node.v1.NodeService.Logs:output_type -> chalkos.node.v1.LogsResponse
-	57, // 88: chalkos.node.v1.NodeService.Reboot:output_type -> chalkos.node.v1.RebootResponse
-	60, // 89: chalkos.node.v1.NodeService.Upgrade:output_type -> chalkos.node.v1.UpgradeResponse
-	39, // 90: chalkos.node.v1.NodeService.ActivateImage:output_type -> chalkos.node.v1.ActivateImageResponse
-	63, // 91: chalkos.node.v1.NodeService.Diagnostics:output_type -> chalkos.node.v1.DiagnosticsResponse
-	67, // 92: chalkos.node.v1.NodeService.RunDiagnostic:output_type -> chalkos.node.v1.RunDiagnosticResponse
-	35, // 93: chalkos.node.v1.NodeService.RollbackConfig:output_type -> chalkos.node.v1.RollbackConfigResponse
-	37, // 94: chalkos.node.v1.NodeService.RollbackImage:output_type -> chalkos.node.v1.RollbackImageResponse
-	41, // 95: chalkos.node.v1.NodeService.ConfirmConfig:output_type -> chalkos.node.v1.ConfirmConfigResponse
-	70, // 96: chalkos.node.v1.NodeService.EnrollSecureBoot:output_type -> chalkos.node.v1.EnrollSecureBootResponse
-	72, // 97: chalkos.node.v1.NodeService.SecureBootDrivers:output_type -> chalkos.node.v1.SecureBootDriversResponse
-	79, // [79:98] is the sub-list for method output_type
-	60, // [60:79] is the sub-list for method input_type
+	74, // 79: chalkos.node.v1.NodeService.Shutdown:input_type -> chalkos.node.v1.ShutdownRequest
+	5,  // 80: chalkos.node.v1.NodeService.Info:output_type -> chalkos.node.v1.InfoResponse
+	7,  // 81: chalkos.node.v1.NodeService.Disks:output_type -> chalkos.node.v1.DisksResponse
+	11, // 82: chalkos.node.v1.NodeService.Contract:output_type -> chalkos.node.v1.ContractResponse
+	22, // 83: chalkos.node.v1.NodeService.Install:output_type -> chalkos.node.v1.InstallResponse
+	26, // 84: chalkos.node.v1.NodeService.ApplyConfig:output_type -> chalkos.node.v1.ApplyConfigResponse
+	25, // 85: chalkos.node.v1.NodeService.GetConfig:output_type -> chalkos.node.v1.GetConfigResponse
+	33, // 86: chalkos.node.v1.NodeService.ResetVolume:output_type -> chalkos.node.v1.ResetVolumeResponse
+	43, // 87: chalkos.node.v1.NodeService.Status:output_type -> chalkos.node.v1.StatusResponse
+	55, // 88: chalkos.node.v1.NodeService.Logs:output_type -> chalkos.node.v1.LogsResponse
+	57, // 89: chalkos.node.v1.NodeService.Reboot:output_type -> chalkos.node.v1.RebootResponse
+	60, // 90: chalkos.node.v1.NodeService.Upgrade:output_type -> chalkos.node.v1.UpgradeResponse
+	39, // 91: chalkos.node.v1.NodeService.ActivateImage:output_type -> chalkos.node.v1.ActivateImageResponse
+	63, // 92: chalkos.node.v1.NodeService.Diagnostics:output_type -> chalkos.node.v1.DiagnosticsResponse
+	67, // 93: chalkos.node.v1.NodeService.RunDiagnostic:output_type -> chalkos.node.v1.RunDiagnosticResponse
+	35, // 94: chalkos.node.v1.NodeService.RollbackConfig:output_type -> chalkos.node.v1.RollbackConfigResponse
+	37, // 95: chalkos.node.v1.NodeService.RollbackImage:output_type -> chalkos.node.v1.RollbackImageResponse
+	41, // 96: chalkos.node.v1.NodeService.ConfirmConfig:output_type -> chalkos.node.v1.ConfirmConfigResponse
+	70, // 97: chalkos.node.v1.NodeService.EnrollSecureBoot:output_type -> chalkos.node.v1.EnrollSecureBootResponse
+	72, // 98: chalkos.node.v1.NodeService.SecureBootDrivers:output_type -> chalkos.node.v1.SecureBootDriversResponse
+	75, // 99: chalkos.node.v1.NodeService.Shutdown:output_type -> chalkos.node.v1.ShutdownResponse
+	80, // [80:100] is the sub-list for method output_type
+	60, // [60:80] is the sub-list for method input_type
 	60, // [60:60] is the sub-list for extension type_name
 	60, // [60:60] is the sub-list for extension extendee
 	0,  // [0:60] is the sub-list for field type_name
@@ -6107,7 +6188,7 @@ func file_chalkos_node_v1_node_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_chalkos_node_v1_node_proto_rawDesc), len(file_chalkos_node_v1_node_proto_rawDesc)),
 			NumEnums:      4,
-			NumMessages:   74,
+			NumMessages:   76,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

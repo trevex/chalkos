@@ -180,6 +180,10 @@ service NodeService {
   // under Secure Boot, and where the firmware found it. Available in maintenance mode to
   // readers.
   rpc SecureBootDrivers(SecureBootDriversRequest) returns (SecureBootDriversResponse);
+  // Shutdown powers the node off once the response is sent, as Reboot reboots it. Available in
+  // maintenance and normal mode to operators. The console may call it while the image allows the
+  // console's actions.
+  rpc Shutdown(ShutdownRequest) returns (ShutdownResponse);
 }
 
 // The mode chalkd serves the node in.
@@ -1217,3 +1221,9 @@ message SecureBootDriver {
   // PciRoot(0x0)/Pci(0x3,0x0)/Offset(0x10a00,0x2f9ff), or the size of a path of other nodes.
   string device_path = 2;
 }
+
+// The request of Shutdown.
+message ShutdownRequest {}
+
+// The response of Shutdown, which the node sends before it powers off.
+message ShutdownResponse {}

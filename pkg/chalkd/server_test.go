@@ -122,8 +122,9 @@ func newTestServer(t *testing.T, mode nodev1.Mode, disks ...storagetest.Disk) (*
 		Journal: func(context.Context, string, bool) (io.ReadCloser, error) {
 			return io.NopCloser(strings.NewReader("")), nil
 		},
-		RebootNode:  func() {},
-		RebootDelay: testRebootDelay,
+		RebootNode:   func() {},
+		PowerOffNode: func() {},
+		RebootDelay:  testRebootDelay,
 	}
 	s.Loader = nodeconfig.LoaderUnder(root)
 	s.Loader.Render.Run = outputs.Direct{}
@@ -376,7 +377,7 @@ const (
 // Kubernetes layer, which the test image lacks, are unimplemented before any role is checked.
 var deniedEverything = map[string]connect.Code{
 	"Info": connect.CodePermissionDenied, "Disks": connect.CodePermissionDenied, "Contract": connect.CodePermissionDenied, "Status": connect.CodePermissionDenied,
-	"Logs": connect.CodePermissionDenied, "Reboot": connect.CodePermissionDenied, "ApplyConfig": connect.CodePermissionDenied,
+	"Logs": connect.CodePermissionDenied, "Reboot": connect.CodePermissionDenied, "Shutdown": connect.CodePermissionDenied, "ApplyConfig": connect.CodePermissionDenied,
 	"ResetVolume": connect.CodePermissionDenied, "ConfirmConfig": connect.CodePermissionDenied, "Install": connect.CodeFailedPrecondition, "Bootstrap": connect.CodeUnimplemented,
 	"RenewNodeCertificate": connect.CodeUnimplemented, "RotationStep": connect.CodeUnimplemented, "Upgrade": connect.CodePermissionDenied,
 	"DrainNode": connect.CodeUnimplemented, "UncordonNode": connect.CodeUnimplemented, "GetConfig": connect.CodePermissionDenied,
@@ -387,7 +388,7 @@ var deniedEverything = map[string]connect.Code{
 // nodeRole is what a node gets in normal mode on an image without layers: nothing of the node
 // API, and the unimplemented RPCs of the layers, RenewNodeCertificate among them.
 var nodeRole = map[string]connect.Code{
-	"Info": connect.CodePermissionDenied, "Contract": connect.CodePermissionDenied, "Status": connect.CodePermissionDenied, "Reboot": connect.CodePermissionDenied,
+	"Info": connect.CodePermissionDenied, "Contract": connect.CodePermissionDenied, "Status": connect.CodePermissionDenied, "Reboot": connect.CodePermissionDenied, "Shutdown": connect.CodePermissionDenied,
 	"ApplyConfig": connect.CodePermissionDenied, "ConfirmConfig": connect.CodePermissionDenied, "EtcdMembers": connect.CodeUnimplemented, "RenewNodeCertificate": connect.CodeUnimplemented,
 	"RotationStep": connect.CodeUnimplemented, "Upgrade": connect.CodePermissionDenied, "UpgradeWithConfig": connect.CodePermissionDenied, "DrainNode": connect.CodeUnimplemented,
 	"UncordonNode": connect.CodeUnimplemented, "GetConfig": connect.CodePermissionDenied, "RevokeNode": connect.CodeUnimplemented,
@@ -478,6 +479,8 @@ func call(c *client.Conn, procedure string) connect.Code {
 		_, err = c.Status(ctx, connect.NewRequest(&nodev1.StatusRequest{}))
 	case "Reboot":
 		_, err = c.Reboot(ctx, connect.NewRequest(&nodev1.RebootRequest{}))
+	case "Shutdown":
+		_, err = c.Shutdown(ctx, connect.NewRequest(&nodev1.ShutdownRequest{}))
 	case "ApplyConfig":
 		_, err = c.ApplyConfig(ctx, connect.NewRequest(&nodev1.ApplyConfigRequest{}))
 	case "RollbackConfig":
@@ -572,20 +575,20 @@ func TestAuthorisation(t *testing.T) {
 	}{
 		{"normal", normal, true, map[pki.Role]map[string]connect.Code{
 			// The test image has no layers, whose RPCs are unimplemented for every role.
-			pki.RoleReader: {"Info": 0, "Disks": 0, "Contract": 0, "Status": 0, "Logs": 0, "Diagnostics": 0, "RunDiagnostic": connect.CodeNotFound, "Reboot": connect.CodePermissionDenied, "ApplyConfig": connect.CodePermissionDenied, "ResetVolume": connect.CodePermissionDenied, "RollbackConfig": connect.CodePermissionDenied, "ConfirmConfig": connect.CodePermissionDenied, "RollbackImage": connect.CodePermissionDenied, "Install": connect.CodeFailedPrecondition, "EnrollSecureBoot": connect.CodeFailedPrecondition, "SecureBootDrivers": connect.CodeFailedPrecondition,
+			pki.RoleReader: {"Info": 0, "Disks": 0, "Contract": 0, "Status": 0, "Logs": 0, "Diagnostics": 0, "RunDiagnostic": connect.CodeNotFound, "Reboot": connect.CodePermissionDenied, "Shutdown": connect.CodePermissionDenied, "ApplyConfig": connect.CodePermissionDenied, "ResetVolume": connect.CodePermissionDenied, "RollbackConfig": connect.CodePermissionDenied, "ConfirmConfig": connect.CodePermissionDenied, "RollbackImage": connect.CodePermissionDenied, "Install": connect.CodeFailedPrecondition, "EnrollSecureBoot": connect.CodeFailedPrecondition, "SecureBootDrivers": connect.CodeFailedPrecondition,
 				"EtcdMembers": connect.CodeUnimplemented, "EtcdRemoveMember": connect.CodeUnimplemented, "EtcdLeave": connect.CodeUnimplemented,
 				"RotationStep": connect.CodeUnimplemented, "Upgrade": connect.CodePermissionDenied, "UpgradeWithConfig": connect.CodePermissionDenied, "DrainNode": connect.CodeUnimplemented,
 				"UncordonNode": connect.CodeUnimplemented, "GetConfig": connect.CodePermissionDenied, "RevokeNode": connect.CodeUnimplemented, "UnrevokeNode": connect.CodeUnimplemented,
 				"KubernetesStatus": connect.CodeUnimplemented, "RouterStatus": connect.CodeUnimplemented, "Routes": connect.CodeUnimplemented},
 			// A request without a header is refused after authorisation, an upgrade with config for
 			// the role.
-			pki.RoleOperator: {"Reboot": 0, "ApplyConfig": connect.CodePermissionDenied, "ResetVolume": connect.CodePermissionDenied, "RollbackConfig": connect.CodePermissionDenied, "ConfirmConfig": connect.CodePermissionDenied, "RollbackImage": connect.CodeInvalidArgument, "Bootstrap": connect.CodeUnimplemented,
+			pki.RoleOperator: {"Reboot": 0, "Shutdown": 0, "ApplyConfig": connect.CodePermissionDenied, "ResetVolume": connect.CodePermissionDenied, "RollbackConfig": connect.CodePermissionDenied, "ConfirmConfig": connect.CodePermissionDenied, "RollbackImage": connect.CodeInvalidArgument, "Bootstrap": connect.CodeUnimplemented,
 				"EtcdRemoveMember": connect.CodeUnimplemented, "EtcdLeave": connect.CodeUnimplemented, "RotationStep": connect.CodeUnimplemented,
 				"Upgrade": connect.CodeInvalidArgument, "UpgradeWithConfig": connect.CodePermissionDenied, "DrainNode": connect.CodeUnimplemented, "UncordonNode": connect.CodeUnimplemented,
 				"GetConfig": connect.CodePermissionDenied, "RevokeNode": connect.CodeUnimplemented, "UnrevokeNode": connect.CodeUnimplemented},
 			// An empty request and a reset without config are refused after authorisation; refusing
 			// them means the call got through.
-			pki.RoleAdmin: {"ApplyConfig": connect.CodeInvalidArgument, "ResetVolume": connect.CodeInvalidArgument, "RollbackConfig": connect.CodeInvalidArgument, "ConfirmConfig": connect.CodeInvalidArgument, "RollbackImage": connect.CodeInvalidArgument, "Reboot": 0, "Bootstrap": connect.CodeUnimplemented,
+			pki.RoleAdmin: {"ApplyConfig": connect.CodeInvalidArgument, "ResetVolume": connect.CodeInvalidArgument, "RollbackConfig": connect.CodeInvalidArgument, "ConfirmConfig": connect.CodeInvalidArgument, "RollbackImage": connect.CodeInvalidArgument, "Reboot": 0, "Shutdown": 0, "Bootstrap": connect.CodeUnimplemented,
 				"EtcdRemoveMember": connect.CodeUnimplemented, "EtcdLeave": connect.CodeUnimplemented, "RenewNodeCertificate": connect.CodeUnimplemented,
 				"RotationStep": connect.CodeUnimplemented, "GetConfig": 0, "UpgradeWithConfig": connect.CodeInvalidArgument, "RevokeNode": connect.CodeUnimplemented,
 				"UnrevokeNode": connect.CodeUnimplemented},
@@ -604,7 +607,7 @@ func TestAuthorisation(t *testing.T) {
 			unknownOrganization: {"Info": connect.CodePermissionDenied, "Install": connect.CodePermissionDenied},
 		}},
 		{"maintenance on a generic image", maintenance, false, map[pki.Role]map[string]connect.Code{
-			"": {"Info": 0, "Diagnostics": 0, "RunDiagnostic": connect.CodeNotFound, "Install": connect.CodeInvalidArgument, "EnrollSecureBoot": connect.CodeFailedPrecondition, "SecureBootDrivers": 0, "Reboot": 0, "Disks": 0, "Contract": 0, "ResetVolume": connect.CodeFailedPrecondition},
+			"": {"Info": 0, "Diagnostics": 0, "RunDiagnostic": connect.CodeNotFound, "Install": connect.CodeInvalidArgument, "EnrollSecureBoot": connect.CodeFailedPrecondition, "SecureBootDrivers": 0, "Reboot": 0, "Shutdown": 0, "Disks": 0, "Contract": 0, "ResetVolume": connect.CodeFailedPrecondition},
 		}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -789,6 +792,22 @@ func TestRebootAfterResponse(t *testing.T) {
 	}
 }
 
+// TestShutdownAfterResponse powers the node off once Shutdown answered, as Reboot reboots it.
+func TestShutdownAfterResponse(t *testing.T) {
+	s, _ := newTestServer(t, normal, vda)
+	off := make(chan struct{})
+	s.PowerOffNode = func() { close(off) }
+	s.RebootNode = func() { t.Error("Shutdown rebooted the node") }
+	if _, err := s.Shutdown(context.Background(), connect.NewRequest(&nodev1.ShutdownRequest{})); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-off:
+	case <-time.After(time.Minute):
+		t.Fatal("the node was not powered off")
+	}
+}
+
 // A procedure without an entry is refused, so a new one must be given its modes and role; each
 // RPC's comment in node.proto, which the API reference shows, names them. The console's
 // actions are those named here alone.
@@ -796,7 +815,7 @@ func TestNodeAPIPermissions(t *testing.T) {
 	service := nodev1.File_chalkos_node_v1_node_proto.Services().ByName("NodeService")
 	layertest.CheckPermissions(t, service, permissions)
 	layertest.CheckComments(t, filepath.Join("..", "..", "api", "chalkos", "node", "v1", "node.proto"), service, permissions, "")
-	layertest.CheckConsole(t, permissions, nodev1connect.NodeServiceRebootProcedure, nodev1connect.NodeServiceRollbackImageProcedure, nodev1connect.NodeServiceRollbackConfigProcedure)
+	layertest.CheckConsole(t, permissions, nodev1connect.NodeServiceRebootProcedure, nodev1connect.NodeServiceShutdownProcedure, nodev1connect.NodeServiceRollbackImageProcedure, nodev1connect.NodeServiceRollbackConfigProcedure)
 }
 
 func TestRequestSizeLimit(t *testing.T) {

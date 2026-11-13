@@ -659,6 +659,26 @@ The response of SecureBootDrivers.
 
 Field types: [SecureBootDriver](#message-securebootdriver).
 
+### Shutdown { #method-shutdown }
+
+Shutdown powers the node off once the response is sent, as Reboot reboots it. Available in
+maintenance and normal mode to operators. The console may call it while the image allows the
+console's actions.
+
+Request: ShutdownRequest. Response: ShutdownResponse.
+
+#### ShutdownRequest { #message-shutdownrequest }
+
+The request of Shutdown.
+
+No fields.
+
+#### ShutdownResponse { #message-shutdownresponse }
+
+The response of Shutdown, which the node sends before it powers off.
+
+No fields.
+
 ## Messages { #messages }
 
 These messages are held by fields of other messages.

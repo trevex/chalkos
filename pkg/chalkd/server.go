@@ -164,8 +164,10 @@ type Server struct {
 	Journal func(ctx context.Context, unit string, follow bool) (io.ReadCloser, error)
 	// RebootNode reboots the node; it is called once the response has been sent.
 	RebootNode func()
-	// RebootDelay is how long the node waits after a response before it reboots, so the response
-	// reaches the client; zero or less means a second. Tests shorten it.
+	// PowerOffNode powers the node off; it is called once the response has been sent.
+	PowerOffNode func()
+	// RebootDelay is how long the node waits after a response before it reboots or powers off, so
+	// the response reaches the client; zero or less means a second. Tests shorten it.
 	RebootDelay time.Duration
 	// Facts runs the commands of facts; nil runs them with systemd-run. Tests replace it.
 	Facts facts.Runner
@@ -228,6 +230,7 @@ var permissions = map[string]layer.Permission{
 	nodev1connect.NodeServiceStatusProcedure:            {Modes: layer.NormalOnly, Role: pki.RoleReader, Console: layer.ConsoleAllowed},
 	nodev1connect.NodeServiceLogsProcedure:              {Modes: layer.AnyMode, Role: pki.RoleReader, Console: layer.ConsoleAllowed},
 	nodev1connect.NodeServiceRebootProcedure:            {Modes: layer.AnyMode, Role: pki.RoleOperator, Console: layer.ConsoleAction},
+	nodev1connect.NodeServiceShutdownProcedure:          {Modes: layer.AnyMode, Role: pki.RoleOperator, Console: layer.ConsoleAction},
 	nodev1connect.NodeServiceDiagnosticsProcedure:       {Modes: layer.AnyMode, Role: pki.RoleReader, Console: layer.ConsoleAllowed},
 	// RunDiagnostic also needs the diagnostic's own role, which it checks itself, as the table
 	// cannot see the request.
@@ -492,15 +495,23 @@ func (s *Server) Reboot(ctx context.Context, _ *connect.Request[nodev1.RebootReq
 	return connect.NewResponse(&nodev1.RebootResponse{}), nil
 }
 
+func (s *Server) Shutdown(ctx context.Context, _ *connect.Request[nodev1.ShutdownRequest]) (*connect.Response[nodev1.ShutdownResponse], error) {
+	s.afterResponse(s.PowerOffNode)
+	return connect.NewResponse(&nodev1.ShutdownResponse{}), nil
+}
+
 // rebootSoon reboots once the response has had time to reach the client.
-func (s *Server) rebootSoon() {
+func (s *Server) rebootSoon() { s.afterResponse(s.RebootNode) }
+
+// afterResponse calls f once the response has had time to reach the client.
+func (s *Server) afterResponse(f func()) {
 	delay := time.Second
 	if s.RebootDelay > 0 {
 		delay = s.RebootDelay
 	}
 	go func() {
 		time.Sleep(delay)
-		s.RebootNode()
+		f()
 	}()
 }
 

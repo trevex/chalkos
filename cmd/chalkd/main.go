@@ -373,11 +373,16 @@ func serve() error {
 		FromParts:   install.ForInstaller(paths.RunDir).FromParts,
 		Journal:     chalkd.Journal,
 	}
-	srv.RebootNode = func() {
-		if _, err := tool.Run(context.Background(), srv.Run, "systemctl", "reboot"); err != nil {
-			log.Printf("reboot: %v", err)
+	// systemctl runs a verb of systemd that ends the boot, once a response has been sent.
+	systemctl := func(verb string) func() {
+		return func() {
+			if _, err := tool.Run(context.Background(), srv.Run, "systemctl", verb); err != nil {
+				log.Printf("%s: %v", verb, err)
+			}
 		}
 	}
+	srv.RebootNode = systemctl("reboot")
+	srv.PowerOffNode = systemctl("poweroff")
 
 	// The running image's contract does not change while it runs.
 	if srv.Loader.Contract, err = contract.Load(contract.DefaultDir, contract.RenderRoot(srv.Loader.Render.Root)); err != nil {
