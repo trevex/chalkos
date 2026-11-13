@@ -343,22 +343,22 @@ in
             apiServer = image {
               what = "the API server";
               versioned = true;
-              example = "registry.k8s.io/kube-apiserver:v1.37.1@sha256:e190f914a6cc21cab9268485d1ae7282fdeab1315ac64b668aa42d732fd1061d";
+              example = "registry.k8s.io/kube-apiserver:v1.37.2@sha256:3e563afb5cb5b72a10bac7012698dd09f5a42bde7d22de8d7d3c12e654df86b4";
             };
             controllerManager = image {
               what = "the controller-manager";
               versioned = true;
-              example = "registry.k8s.io/kube-controller-manager:v1.37.1@sha256:d470c1b85aebb466e971c06239cc6a31a4ac337a78600cef80375a79a1be1641";
+              example = "registry.k8s.io/kube-controller-manager:v1.37.2@sha256:28e62daf706ed815a8bd1dd27b03294ba09421b2e1674e9a83bbac38e24ceb0c";
             };
             scheduler = image {
               what = "the scheduler";
               versioned = true;
-              example = "registry.k8s.io/kube-scheduler:v1.37.1@sha256:b6e2474a6c20309f0df1e7337364281fda95c6a0722259ba7f032a1e177d3f29";
+              example = "registry.k8s.io/kube-scheduler:v1.37.2@sha256:028c847fc321b8a7f9787f7b1c0840f832d6b68439be2e5c09279ffb14203d6b";
             };
             proxy = image {
               what = "kube-proxy";
               versioned = true;
-              example = "registry.k8s.io/kube-proxy:v1.37.1@sha256:b9ae667ed9c160c9d5b66f55e8afec97fc5483a12db0ada5286541b0385cb9f4";
+              example = "registry.k8s.io/kube-proxy:v1.37.2@sha256:b2e075697d7ab4f0878775dff9e5dccf818b67644437175210ce72fc1ec70551";
             };
             etcd = image {
               what = "etcd, which control planes run";

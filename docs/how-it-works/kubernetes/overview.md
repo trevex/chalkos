@@ -125,7 +125,7 @@ chalkctl delivers the documents at install and with
 apply, chalkd builds the node's cluster from its `Node`, `Cluster` and `Flannel` documents and
 `image.json`. It writes the result to `/run/chalkos/kubernetes/cluster.json`. The file carries the
 release of the image's kubelet as `version` and the Kubernetes version of `images.apiServer`'s tag
-as `apiServerVersion`, such as `1.37.1` for both; the image's rules read them as
+as `apiServerVersion`, such as `1.37.2` for both; the image's rules read them as
 `facts.cluster.version` and `facts.cluster.apiServerVersion`.
 
 ## Every node holds the same cluster documents

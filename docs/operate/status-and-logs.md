@@ -38,7 +38,7 @@ bird-conf  <hash>  rendered
 chrony     <hash>  rendered
 networkd   <hash>  rendered
 kubernetes controlplane: bootstrapped, node ready: True, vip holder, control plane current
-kubernetes versions: API server 1.37.1, kubelet 1.37.1, control-plane pods current
+kubernetes versions: API server 1.37.2, kubelet 1.37.2, control-plane pods current
 certificates:
   node                      expires <date>
   OS CA                     expires <date>
@@ -199,7 +199,7 @@ message of its Ready condition, such as
 [Kubernetes status states](../reference/kubernetes.md#kubernetes-status-states)
 lists every state, and [Troubleshoot Kubernetes](../kubernetes/troubleshooting.md) acts on them.
 
-The line after it, `kubernetes versions: API server 1.37.1, kubelet 1.37.1`, names the Kubernetes
+The line after it, `kubernetes versions: API server 1.37.2, kubelet 1.37.2`, names the Kubernetes
 version of the API server the node's config names and the release of its image's kubelet. A
 bootstrapped control plane adds `control-plane pods current` once its API server, controller-manager
 and scheduler run the images its config names and are Ready, or says which of them does not yet.

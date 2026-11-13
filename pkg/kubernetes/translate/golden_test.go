@@ -13,7 +13,7 @@ import (
 var update = flag.Bool("update", false, "rewrite the golden files")
 
 // homelabImage is the Kubernetes facts of the homelab's images.
-var homelabImage = kubernetes.Image{Version: "1.37.1", CNI: kubernetes.CNIFlannel}
+var homelabImage = kubernetes.Image{Version: "1.37.2", CNI: kubernetes.CNIFlannel}
 
 // The homelab worker's documents on the homelab's image give the whole cluster in
 // testdata/homelab-w1-cluster.json.

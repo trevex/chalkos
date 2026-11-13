@@ -206,7 +206,7 @@ waits for exactly these addresses before it starts etcd. A joined control plane 
 
 ```text
 kubernetes controlplane: bootstrapped, node ready: True, vip standby, control plane current
-kubernetes versions: API server 1.37.1, kubelet 1.37.1, control-plane pods current
+kubernetes versions: API server 1.37.2, kubelet 1.37.2, control-plane pods current
 ```
 
 `vip standby` means another control plane holds the VIP, and the holder shows `vip holder`. A
@@ -360,10 +360,10 @@ them disagree. Then check that the API server answers through the VIP:
 ```console
 $ kubectl get nodes
 NAME   STATUS   ROLES    AGE   VERSION
-cp1    Ready    <none>   41s   v1.37.1
-cp2    Ready    <none>   39s   v1.37.1
-cp3    Ready    <none>   38s   v1.37.1
-w1     Ready    <none>   37s   v1.37.1
+cp1    Ready    <none>   41s   v1.37.2
+cp2    Ready    <none>   39s   v1.37.2
+cp3    Ready    <none>   38s   v1.37.2
+w1     Ready    <none>   37s   v1.37.2
 ```
 
 ## If something goes wrong

@@ -82,7 +82,7 @@ The two steps run apart. `chalkctl upgrade` delivers each node's config with its
 refuses a config whose API server differs from the one the node runs, before it sends any image:
 
 ```text
-chalkctl: w1: the inventory's config changes the API server from 1.37.1 to 1.37.2, which an upgrade does not deliver; deliver the config with chalkctl config apply first, which orders the nodes for it, then upgrade
+chalkctl: w1: the inventory's config changes the API server from 1.37.2 to 1.37.3, which an upgrade does not deliver; deliver the config with chalkctl config apply first, which orders the nodes for it, then upgrade
 ```
 
 Deliver the new `Cluster` document with `chalkctl config apply` to every node first. The upgrade
@@ -97,10 +97,10 @@ describes:
 
 ```yaml title="cluster/cluster.yaml"
 images:
-  apiServer: registry.k8s.io/kube-apiserver:v1.37.2@sha256:<digest>
-  controllerManager: registry.k8s.io/kube-controller-manager:v1.37.2@sha256:<digest>
-  scheduler: registry.k8s.io/kube-scheduler:v1.37.2@sha256:<digest>
-  proxy: registry.k8s.io/kube-proxy:v1.37.2@sha256:<digest>
+  apiServer: registry.k8s.io/kube-apiserver:v1.37.3@sha256:<digest>
+  controllerManager: registry.k8s.io/kube-controller-manager:v1.37.3@sha256:<digest>
+  scheduler: registry.k8s.io/kube-scheduler:v1.37.3@sha256:<digest>
+  proxy: registry.k8s.io/kube-proxy:v1.37.3@sha256:<digest>
   # etcd, coredns, pause and flannel as before
 ```
 
@@ -165,8 +165,8 @@ prints which nodes run which API server:
 
 ```text
 cp2 runs config <previous-version> again: config <version> was rolled back
-API server 1.37.1: cp2, cp3, w1
-API server 1.37.2: cp1
+API server 1.37.2: cp2, cp3, w1
+API server 1.37.3: cp1
 chalkctl: cp2: config <version> was not confirmed within its trial: its control plane: kube-apiserver is not Ready
 ```
 
@@ -230,7 +230,7 @@ names the node:
 
 ```text
 chalkctl: images.apiServer: v1.39.0 is 2 minors newer than the API server 1.37 that cp1 runs; a cluster's API servers may be at most one minor apart, so upgrade one minor at a time
-chalkctl: w1: the image's kubelet 1.38.0 would be newer than the API server 1.37.2 that cp2 runs, the oldest of the cluster; upgrade the control plane first: name the new release's images in the Cluster document and deliver it with chalkctl config apply
+chalkctl: w1: the image's kubelet 1.38.0 would be newer than the API server 1.37.3 that cp2 runs, the oldest of the cluster; upgrade the control plane first: name the new release's images in the Cluster document and deliver it with chalkctl config apply
 ```
 
 `config apply` also refuses a config that names two API servers for the nodes of one run, and a
@@ -419,10 +419,10 @@ kubectl uncordon w1
 ```console
 $ kubectl get nodes
 NAME   STATUS   ROLES    AGE   VERSION
-cp1    Ready    <none>   19m   v1.37.1
-cp2    Ready    <none>   19m   v1.37.1
-cp3    Ready    <none>   19m   v1.37.1
-w1     Ready    <none>   19m   v1.37.1
+cp1    Ready    <none>   19m   v1.37.2
+cp2    Ready    <none>   19m   v1.37.2
+cp3    Ready    <none>   19m   v1.37.2
+w1     Ready    <none>   19m   v1.37.2
 ```
 
 `chalkctl etcd members` shows every control plane as a healthy voter again.
@@ -432,7 +432,7 @@ line ends `control-plane pods current` once its static pods run the config's ima
 
 ```text
 kubernetes controlplane: bootstrapped, node ready: True, vip holder, control plane current
-kubernetes versions: API server 1.37.2, kubelet 1.37.1, control-plane pods current
+kubernetes versions: API server 1.37.3, kubelet 1.37.2, control-plane pods current
 ```
 
 `kubectl get pods -n kube-system -o wide` lists the static pods, kube-proxy and CoreDNS, and
@@ -462,7 +462,7 @@ kubernetes versions: API server 1.37.2, kubelet 1.37.1, control-plane pods curre
   plane runs. Pass the flag when the downgrade is meant.
 - `images.apiServer: v1.38.0 is 4 minors newer than the kubelet 1.34 that w1 runs; ...`: a node
   runs a kubelet too old for the new API server. Upgrade that node's image first.
-- `w1 is no control plane, and the control planes cp2 do not run the API server 1.37.2 yet;
+- `w1 is no control plane, and the control planes cp2 do not run the API server 1.37.3 yet;
   deliver the config to them first`: the command named a worker before every control plane runs
   the new API server. Name the control planes too, or deliver to them first.
 - `cp2: config <version> was not confirmed within its trial: its control plane: kube-apiserver is
@@ -471,7 +471,7 @@ kubernetes versions: API server 1.37.2, kubelet 1.37.1, control-plane pods curre
   then run the same command again.
 - `the versions w1 runs are unknown: ...; the version skew check needs every node of the cluster`:
   chalkctl could not read a node's versions. Bring the node back, or remove it from the inventory.
-- `w1: the image's kubelet 1.38.0 would be newer than the API server 1.37.2 that cp2 runs, ...`:
+- `w1: the image's kubelet 1.38.0 would be newer than the API server 1.37.3 that cp2 runs, ...`:
   `chalkctl upgrade` refuses an image whose kubelet is ahead of the control plane. Roll the control
   plane out through config first.
 

@@ -492,7 +492,7 @@ The image's checker refuses a config whose API server is older than its kubelet,
 control planes run:
 
 ```text
-chalkctl: node3: the image's kubelet 1.38.0 would be newer than the API server 1.37.2 that node2 runs, the oldest of the cluster; upgrade the control plane first: name the new release's images in the Cluster document and deliver it with chalkctl config apply
+chalkctl: node3: the image's kubelet 1.38.0 would be newer than the API server 1.37.3 that node2 runs, the oldest of the cluster; upgrade the control plane first: name the new release's images in the Cluster document and deliver it with chalkctl config apply
 ```
 
 The [Kubernetes version skew policy](https://kubernetes.io/releases/version-skew-policy/) bounds
@@ -542,7 +542,7 @@ node3 keeps config <version>: the trial is confirmed
 
 `...` stands for the lines of node2 and node3, which repeat node1's. When the first
 step fails, the run stops at that node, rolls its config back and prints which nodes run which API
-server, such as `API server 1.37.1: node2, node3`. `chalkctl status node2` shows the node's
+server, such as `API server 1.37.2: node2, node3`. `chalkctl status node2` shows the node's
 versions in its `kubernetes versions` line. Fix the reference or the registry, then run the same
 command again: it skips the nodes that run the config already. When the second step fails, the
 node rolls back as

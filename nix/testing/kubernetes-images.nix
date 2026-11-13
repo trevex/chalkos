@@ -9,57 +9,57 @@ let
   images = [
     {
       name = "registry.k8s.io/kube-apiserver";
-      tag = "v1.37.1";
-      digest = "sha256:1f207ab66b1ca6579dd5bf1024396015ca2a0f638157a7741d2d88d7b3c82c51";
-      hash = "sha256-ipcbwAdQETHK9TRZyYcsQDLO+k/mc0LmUkCU2f7pNVE=";
-    }
-    {
-      name = "registry.k8s.io/kube-controller-manager";
-      tag = "v1.37.1";
-      digest = "sha256:24366808a9bf9dfefb3aa171f0fadac61a1dde50a43e578c42eb3d8785cb606e";
-      hash = "sha256-fp1tWLMGhv1b6xy0AKPJAe0+d4M5HDA36yiIFQ7EEBg=";
-    }
-    {
-      name = "registry.k8s.io/kube-scheduler";
-      tag = "v1.37.1";
-      digest = "sha256:e4fc6f552722518aaa7d6cddbb8b638df275a5adbc5d1e5d59276af52692fb2c";
-      hash = "sha256-ugoOn2ufyQDj2o/450VCTkUidfsqRWFcoW/qNNnGgbA=";
-    }
-    {
-      name = "registry.k8s.io/kube-proxy";
-      tag = "v1.37.1";
-      digest = "sha256:abbadc84931b520750bcda3350819f6a828ee44a4a0cab548a26016aa7e2a3b7";
-      hash = "sha256-gv3WvhqAZ0ooTzz6DWqpLtKwzMhXZFyVnZ+5Ib42dDg=";
-    }
-    # The next patch release of the components the cluster config names, which the HA test rolls
-    # its control plane out to through config.
-    {
-      name = "registry.k8s.io/kube-apiserver";
       tag = "v1.37.2";
       digest = "sha256:f3916d65eddfe52b6d21ff4a17abdf4c52589c8ef62ec7e0c17204f276cd8db6";
       hash = "sha256-e/43JQBvRwbx5sdMQam/eyVxl68p00F0CLyl2gR5deg=";
-      rollout = true;
     }
     {
       name = "registry.k8s.io/kube-controller-manager";
       tag = "v1.37.2";
       digest = "sha256:07fccf8e84f4cdc72c8e59f1a50da68f15acf1299e455004a944610aecac60c4";
       hash = "sha256-gPeQKbQbin2uMaa3eKNL3rhX1M2Kc1UUTEp+S7X8wJM=";
-      rollout = true;
     }
     {
       name = "registry.k8s.io/kube-scheduler";
       tag = "v1.37.2";
       digest = "sha256:e5438c1bb8c569c41ad556d8a1e8eba44fc5b3cfe4da3adf2a17168102434074";
       hash = "sha256-30HHdJQnWnWWFCNMtv+CBdyCShv+5L+VR6ARB1OC7b8=";
-      rollout = true;
     }
     {
       name = "registry.k8s.io/kube-proxy";
       tag = "v1.37.2";
       digest = "sha256:8c355aac6f4397e98a5462d4bb47b55386df688e6e1e46c67bf374155ac02c45";
       hash = "sha256-luyR8gZ1Z4Ugtmzq5jybX992NIX+0Uw3ZwUJu3qIci0=";
-      rollout = true;
+    }
+    # The previous patch release of the components above, which the HA test's cluster config names
+    # before the test rolls its control plane out through config to the release above.
+    {
+      name = "registry.k8s.io/kube-apiserver";
+      tag = "v1.37.1";
+      digest = "sha256:1f207ab66b1ca6579dd5bf1024396015ca2a0f638157a7741d2d88d7b3c82c51";
+      hash = "sha256-ipcbwAdQETHK9TRZyYcsQDLO+k/mc0LmUkCU2f7pNVE=";
+      haStart = true;
+    }
+    {
+      name = "registry.k8s.io/kube-controller-manager";
+      tag = "v1.37.1";
+      digest = "sha256:24366808a9bf9dfefb3aa171f0fadac61a1dde50a43e578c42eb3d8785cb606e";
+      hash = "sha256-fp1tWLMGhv1b6xy0AKPJAe0+d4M5HDA36yiIFQ7EEBg=";
+      haStart = true;
+    }
+    {
+      name = "registry.k8s.io/kube-scheduler";
+      tag = "v1.37.1";
+      digest = "sha256:e4fc6f552722518aaa7d6cddbb8b638df275a5adbc5d1e5d59276af52692fb2c";
+      hash = "sha256-ugoOn2ufyQDj2o/450VCTkUidfsqRWFcoW/qNNnGgbA=";
+      haStart = true;
+    }
+    {
+      name = "registry.k8s.io/kube-proxy";
+      tag = "v1.37.1";
+      digest = "sha256:abbadc84931b520750bcda3350819f6a828ee44a4a0cab548a26016aa7e2a3b7";
+      hash = "sha256-gv3WvhqAZ0ooTzz6DWqpLtKwzMhXZFyVnZ+5Ib42dDg=";
+      haStart = true;
     }
     {
       name = "registry.k8s.io/etcd";
@@ -120,17 +120,17 @@ let
         mv index.json $out/index.json
       '';
   # The Kubernetes components the e2e clusters name follow the kubelet of the test images:
-  # nixpkgs's Kubernetes release. Those the HA test rolls out to are a later patch release of the
-  # same minor, which the skew rules let the API server run ahead of the kubelet.
+  # nixpkgs's Kubernetes release. Those the HA test starts from are an earlier patch release of
+  # the same minor, which the skew rules let the API server run behind the kubelet by.
   kubeletMinor = pkgs.lib.versions.majorMinor pkgs.kubernetes.version;
   stale = map (image: "${image.name}:${image.tag}") (
     builtins.filter (
       image:
       pkgs.lib.hasPrefix "registry.k8s.io/kube-" image.name
       && (
-        if image.rollout or false then
+        if image.haStart or false then
           pkgs.lib.versions.majorMinor (pkgs.lib.removePrefix "v" image.tag) != kubeletMinor
-          || builtins.compareVersions (pkgs.lib.removePrefix "v" image.tag) pkgs.kubernetes.version <= 0
+          || builtins.compareVersions (pkgs.lib.removePrefix "v" image.tag) pkgs.kubernetes.version >= 0
         else
           image.tag != "v${pkgs.kubernetes.version}"
       )
@@ -138,7 +138,7 @@ let
   );
 in
 assert pkgs.lib.assertMsg (stale == [ ])
-  "nix/testing/kubernetes-images.nix pins ${toString stale}, but the test images' kubelet is ${pkgs.kubernetes.version}: the cluster's components follow it, and the rollout's are a later patch release of ${kubeletMinor}";
+  "nix/testing/kubernetes-images.nix pins ${toString stale}, but the test images' kubelet is ${pkgs.kubernetes.version}: the cluster's components follow it, and those the HA test starts from are an earlier patch release of ${kubeletMinor}";
 pkgs.writeTextDir "images.json" (
   builtins.toJSON (
     builtins.listToAttrs (

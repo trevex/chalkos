@@ -288,8 +288,8 @@ $ export KUBECONFIG=~/.local/state/chalklab/lab/kubeconfig
 $ export CHALKOSCONFIG=~/.local/state/chalklab/lab/chalkctl.json
 $ kubectl get nodes
 NAME   STATUS   ROLES    AGE   VERSION
-cp1    Ready    <none>   21s   v1.37.1
-w1     Ready    <none>   12s   v1.37.1
+cp1    Ready    <none>   21s   v1.37.2
+w1     Ready    <none>   12s   v1.37.2
 ```
 
 The nodes may show `NotReady` for the first minute, until flannel, the network plugin, runs on
@@ -331,7 +331,7 @@ OUTPUT    HASH          STATE
 chrony    0af9b0bd41ca  rendered
 networkd  4cd3700df352  rendered
 kubernetes controlplane: bootstrapped, node ready: True, control plane current
-kubernetes versions: API server 1.37.1, kubelet 1.37.1, control-plane pods current
+kubernetes versions: API server 1.37.2, kubelet 1.37.2, control-plane pods current
 certificates:
   node                      expires 2027-10-23
   OS CA                     expires 2036-10-20
@@ -536,7 +536,7 @@ OUTPUT    HASH          STATE
 chrony    3b1ba1116223  rendered
 networkd  195ac3c4ec51  rendered
 kubernetes worker: joined, node ready: True
-kubernetes versions: API server 1.37.1, kubelet 1.37.1
+kubernetes versions: API server 1.37.2, kubelet 1.37.2
 certificates:
   node             expires 2027-10-23
   OS CA            expires 2036-10-20
@@ -557,8 +557,8 @@ Both nodes are `Ready` in Kubernetes again:
 ```console
 $ kubectl get nodes
 NAME   STATUS   ROLES    AGE     VERSION
-cp1    Ready    <none>   5m4s    v1.37.1
-w1     Ready    <none>   4m55s   v1.37.1
+cp1    Ready    <none>   5m4s    v1.37.2
+w1     Ready    <none>   4m55s   v1.37.2
 ```
 
 The new image has the debugging tools, so a debugging pod can run the node's own `cat` on its

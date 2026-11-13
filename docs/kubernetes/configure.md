@@ -65,8 +65,8 @@ with the config. Every field is required:
 
 Each field is one image reference, used as written. A reference names its registry, its
 repository, and a tag, a digest or both, such as
-`registry.k8s.io/kube-apiserver:v1.37.1@sha256:<digest>`. chalkos adds no default registry, so
-`kube-apiserver:v1.37.1` is refused. With a digest, containerd pulls the image by its digest, and
+`registry.k8s.io/kube-apiserver:v1.37.2@sha256:<digest>`. chalkos adds no default registry, so
+`kube-apiserver:v1.37.2` is refused. With a digest, containerd pulls the image by its digest, and
 the tag labels it. This `Cluster` of a single control plane at `192.0.2.11` takes the images block
 of the homelab's, which pins every image this way:
 
@@ -87,7 +87,7 @@ and `upgrade` warn of it, because each node pulls whatever the tag points to whe
 nodes may run different images under one reference:
 
 ```text
-chalkctl: warning: node1: Cluster "default": images.proxy: registry.k8s.io/kube-proxy:v1.37.1 names a tag but no digest, so nodes pull whatever the tag points to when they pull; pin it as registry.k8s.io/kube-proxy:v1.37.1@sha256:<digest>
+chalkctl: warning: node1: Cluster "default": images.proxy: registry.k8s.io/kube-proxy:v1.37.2 names a tag but no digest, so nodes pull whatever the tag points to when they pull; pin it as registry.k8s.io/kube-proxy:v1.37.2@sha256:<digest>
 ```
 
 containerd pulls the images when the static pods, the add-ons and the pods need them, through the
@@ -115,7 +115,7 @@ image is staged must suit the staged image's kubelet too. The refusals name the 
 ```text
 Cluster "default": images.apiServer: v1.36.0 is older than the image's kubelet 1.37; a kubelet must not be newer than the API server, so upgrade the control plane first
 Cluster "default": images.apiServer: v1.41.0 is 4 minors newer than the image's kubelet 1.37; a kubelet may be at most three minors older than the API server, so upgrade the nodes' images first
-Cluster "default": images.scheduler: v1.38.0 is newer than images.apiServer v1.37.1; it must not be newer than the API server
+Cluster "default": images.scheduler: v1.38.0 is newer than images.apiServer v1.37.2; it must not be newer than the API server
 Cluster "default": images.proxy: v1.36.0 is 4 minors older than images.apiServer v1.40.0; kube-proxy may be at most three minors older
 ```
 
@@ -423,7 +423,7 @@ the `Cluster` document names and are Ready:
 
 ```text
 kubernetes controlplane: bootstrapped, node ready: True, control plane current
-kubernetes versions: API server 1.37.1, kubelet 1.37.1, control-plane pods current
+kubernetes versions: API server 1.37.2, kubelet 1.37.2, control-plane pods current
 ```
 
 kubectl shows what reached Kubernetes. The labels and taints of a node, and the objects of the

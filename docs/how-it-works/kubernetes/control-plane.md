@@ -12,7 +12,7 @@ others join it on their own. A healthy control plane that holds the VIP reports 
 
 ```text
 kubernetes controlplane: bootstrapped, node ready: True, vip holder, control plane current
-kubernetes versions: API server 1.37.1, kubelet 1.37.1, control-plane pods current
+kubernetes versions: API server 1.37.2, kubelet 1.37.2, control-plane pods current
 ```
 
 The first line names the node's kind and state, whether its Node is Ready, its VIP role and whether

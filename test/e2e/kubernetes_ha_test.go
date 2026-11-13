@@ -488,7 +488,7 @@ func logHAMemory(t *testing.T, ctx context.Context, cs kubernetes.Interface) {
 	}
 }
 
-// haComponents are the components the control-plane rollout moves to their next patch release:
+// haComponents are the components the control-plane rollout moves to another patch release:
 // the three static pods, then kube-proxy.
 var haComponents = []string{"kube-apiserver", "kube-controller-manager", "kube-scheduler", "kube-proxy"}
 
@@ -498,7 +498,7 @@ type imageRollout struct{ from, to string }
 
 // haRollout is an imageRollout for each of haComponents. The test registry serves two releases of
 // each, which nix/testing/kubernetes-images.nix pins: the one the cluster file names and the
-// next patch release.
+// release of the image's kubelet.
 func haRollout(t *testing.T, served map[string]string, cluster string) []imageRollout {
 	t.Helper()
 	var rollout []imageRollout
@@ -525,13 +525,18 @@ func haRollout(t *testing.T, served map[string]string, cluster string) []imageRo
 	return rollout
 }
 
-// rolloutControlPlane rolls the control plane out to the next patch release through config: the
+// rolloutControlPlane rolls the control plane out to another patch release through config: the
 // cluster file of the fixtures' copy names the new images, which the later phases read too, and
 // config apply delivers it to the three control planes, one at a time in name order, each on trial
 // until its static pods run the new images and are Ready. kube-proxy's DaemonSet follows.
 func (c *haCluster) rolloutControlPlane(ctx context.Context, cs kubernetes.Interface) {
 	t := c.t
 	t.Helper()
+	// Status reports the API server of the config next to the image's kubelet, a patch behind it.
+	before := "kubernetes versions: API server 1.37.1, kubelet 1.37.2, control-plane pods current\n"
+	if out, err := c.chalkctl("cp1", "status", "cp1"); err != nil || !strings.Contains(out, before) {
+		t.Errorf("cp1's status lacks %q: %v\n%s", before, err, out)
+	}
 	data, err := os.ReadFile(os.Getenv("CHALKLAB_K8S_IMAGES"))
 	if err != nil {
 		t.Fatal(err)
@@ -613,8 +618,8 @@ func (c *haCluster) rolloutControlPlane(ctx context.Context, cs kubernetes.Inter
 		}
 		return nil
 	})
-	// Status reports the API server of the config next to the image's kubelet, a patch behind it.
-	want := "kubernetes versions: API server 1.37.2, kubelet 1.37.1, control-plane pods current\n"
+	// The API server of the config now runs the kubelet's release.
+	want := "kubernetes versions: API server 1.37.2, kubelet 1.37.2, control-plane pods current\n"
 	if out, err := c.chalkctl("cp1", "status", "cp1"); err != nil || !strings.Contains(out, want) {
 		t.Errorf("cp1's status lacks %q: %v\n%s", want, err, out)
 	}

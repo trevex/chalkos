@@ -112,7 +112,7 @@ same as the first one:
 
 ```text
 kubernetes controlplane: bootstrapped, node ready: True, vip standby, control plane current
-kubernetes versions: API server 1.37.1, kubelet 1.37.1, control-plane pods current
+kubernetes versions: API server 1.37.2, kubelet 1.37.2, control-plane pods current
 ```
 
 `vip standby` appears when the cluster has a VIP and another control plane holds it; the holder
@@ -124,7 +124,7 @@ install. Once flannel runs on the node, the node is ready:
 
 ```text
 kubernetes worker: joined, node ready: True
-kubernetes versions: API server 1.37.1, kubelet 1.37.1
+kubernetes versions: API server 1.37.2, kubelet 1.37.2
 ```
 
 ## Get a kubeconfig
@@ -184,9 +184,9 @@ List the nodes with the kubeconfig:
 ```console
 $ kubectl --kubeconfig kubeconfig get nodes
 NAME    STATUS   ROLES    AGE   VERSION
-node1   Ready    <none>   4m    v1.37.1
-node2   Ready    <none>   2m    v1.37.1
-node3   Ready    <none>   1m    v1.37.1
+node1   Ready    <none>   4m    v1.37.2
+node2   Ready    <none>   2m    v1.37.2
+node3   Ready    <none>   1m    v1.37.2
 ```
 
 Every node of the inventory appears, with the Kubernetes release of its image.

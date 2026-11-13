@@ -12,7 +12,7 @@ plane's Kubernetes line in `chalkctl status` says whether the control plane runs
 
 ```text
 kubernetes controlplane: bootstrapped, node ready: True, vip holder, control plane current
-kubernetes versions: API server 1.37.1, kubelet 1.37.1, control-plane pods current
+kubernetes versions: API server 1.37.2, kubelet 1.37.2, control-plane pods current
 ```
 
 `control plane current` means that the API server and etcd serve the current certificates and the

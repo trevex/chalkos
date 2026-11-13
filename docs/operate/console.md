@@ -189,7 +189,7 @@ node that do not run:
 ```text
 kubernetes controlplane: bootstrapped, node ready: True, vip holder, control
   plane current
-kubernetes versions: API server 1.37.1, kubelet 1.37.1, control-plane pods
+kubernetes versions: API server 1.37.2, kubelet 1.37.2, control-plane pods
   current
 pods not running:
   apps/migrate-7c2b: Pending
