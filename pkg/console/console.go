@@ -63,9 +63,9 @@ func (s Source[T]) Problem(what string) string {
 	case s.Err == nil:
 		return ""
 	case s.At.IsZero():
-		return oneLine(fmt.Sprintf("%s: %v", what, s.Err))
+		return OneLine(fmt.Sprintf("%s: %v", what, s.Err))
 	}
-	return oneLine(fmt.Sprintf("%s: %v; shown as of %s", what, s.Err, s.At.Local().Format(time.TimeOnly)))
+	return OneLine(fmt.Sprintf("%s: %v; shown as of %s", what, s.Err, s.At.Local().Format(time.TimeOnly)))
 }
 
 // NodeMsg is what the console read of the node, which every tab gets after each read.

@@ -111,7 +111,7 @@ func (n *network) View(width, height int) string {
 			if len(l.AddrInfo) > 0 {
 				first = addressWithPrefix(l.AddrInfo[0])
 			}
-			fmt.Fprintf(t, "%s\t%s\t%s\t%d\t%s\n", oneLine(l.IfName), oneLine(l.OperState), oneLine(l.Address), l.MTU, first)
+			fmt.Fprintf(t, "%s\t%s\t%s\t%d\t%s\n", OneLine(l.IfName), OneLine(l.OperState), OneLine(l.Address), l.MTU, first)
 			for _, a := range l.AddrInfo[min(1, len(l.AddrInfo)):] {
 				fmt.Fprintf(t, "\t\t\t\t%s\n", addressWithPrefix(a))
 			}
@@ -143,13 +143,13 @@ func (n *network) View(width, height int) string {
 		b.WriteString(ErrorStyle.Render(p) + "\n")
 	}
 	if n.dns.Value != nil || n.dns.Err == nil {
-		b.WriteString("DNS servers: " + oneLine(cmp.Or(strings.Join(n.dns.Value, ", "), "none")) + "\n")
+		b.WriteString("DNS servers: " + OneLine(cmp.Or(strings.Join(n.dns.Value, ", "), "none")) + "\n")
 	}
 	return n.pane.View(b.String(), width, height)
 }
 
 // addressWithPrefix is an address with the length of its prefix, such as 192.168.1.50/24.
-func addressWithPrefix(a ipAddr) string { return oneLine(fmt.Sprintf("%s/%d", a.Local, a.PrefixLen)) }
+func addressWithPrefix(a ipAddr) string { return OneLine(fmt.Sprintf("%s/%d", a.Local, a.PrefixLen)) }
 
 // defaultRoutes are the lines of a default route: its gateway, link and protocol, one line for
 // each path of a multipath route.
@@ -159,11 +159,11 @@ func defaultRoutes(r ipRoute) []string {
 		proto = " (" + r.Protocol + ")"
 	}
 	if len(r.Nexthops) == 0 {
-		return []string{oneLine(via(r.Gateway, r.Dev) + proto)}
+		return []string{OneLine(via(r.Gateway, r.Dev) + proto)}
 	}
 	lines := make([]string, len(r.Nexthops))
 	for i, h := range r.Nexthops {
-		lines[i] = oneLine(fmt.Sprintf("%s weight %d%s", via(h.Gateway, h.Dev), h.Weight, proto))
+		lines[i] = OneLine(fmt.Sprintf("%s weight %d%s", via(h.Gateway, h.Dev), h.Weight, proto))
 	}
 	return lines
 }

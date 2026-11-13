@@ -70,10 +70,10 @@ func count(n int, thing string) string {
 	return fmt.Sprintf("%d %ss", n, thing)
 }
 
-// clean makes text safe to print on the screen: a tab expands to the next multiple of 8 columns
+// Clean makes text safe to print on the screen: a tab expands to the next multiple of 8 columns
 // of its line, and every other control character, the escape that starts a terminal's sequences
 // among them, shows as \xNN. Newlines stay.
-func clean(s string) string {
+func Clean(s string) string {
 	if !strings.ContainsFunc(s, func(r rune) bool { return r != '\n' && isControl(r) }) {
 		return s
 	}
@@ -102,11 +102,11 @@ func clean(s string) string {
 // isControl reports whether r is a control character of C0 or C1, or DEL.
 func isControl(r rune) bool { return r < 0x20 || r == 0x7f || (r >= 0x80 && r < 0xa0) }
 
-// lineBreaks are what oneLine replaces with a space.
+// lineBreaks are what OneLine replaces with a space.
 var lineBreaks = strings.NewReplacer("\r\n", " ", "\n", " ", "\r", " ")
 
-// oneLine is s for a single line of the screen: its line breaks become spaces, and it is clean.
-func oneLine(s string) string { return clean(lineBreaks.Replace(s)) }
+// OneLine is s for a single line of the screen: its line breaks become spaces, and it is clean.
+func OneLine(s string) string { return Clean(lineBreaks.Replace(s)) }
 
 // wrapChars is label and text on rows of width, text broken anywhere; the rows after the first
 // are indented below the text.
@@ -120,4 +120,33 @@ func wrapChars(label, text string, width int) []string {
 		row, text = indent, text[room:]
 	}
 	return append(rows, row+text)
+}
+
+// Wrap breaks each line of text wider than width at its spaces; the rows after a line's first
+// are indented by two spaces more than the line. A word wider than width stays whole. The text
+// is plain: styles go on the rows afterwards, a row at a time, so no style spans a break.
+func Wrap(text string, width int) string {
+	var rows []string
+	for _, line := range strings.Split(text, "\n") {
+		if ansi.StringWidth(line) <= width {
+			rows = append(rows, line)
+			continue
+		}
+		lead := line[:len(line)-len(strings.TrimLeft(line, " "))]
+		indent := lead + "  "
+		row := lead
+		for i, w := range strings.Fields(line) {
+			switch {
+			case i == 0:
+				row += w
+			case ansi.StringWidth(row)+1+ansi.StringWidth(w) > width:
+				rows = append(rows, row)
+				row = indent + w
+			default:
+				row += " " + w
+			}
+		}
+		rows = append(rows, row)
+	}
+	return strings.Join(rows, "\n")
 }

@@ -41,7 +41,7 @@ const actionTimeout = 5 * time.Minute
 // actions are the console's actions for the node as last read.
 func (m *Model) actions() []action {
 	info, st := m.node.Info.Value, m.node.Status.Value
-	name := oneLine(cmp.Or(info.GetNodeName(), info.GetHostname(), "the node"))
+	name := OneLine(cmp.Or(info.GetNodeName(), info.GetHostname(), "the node"))
 	warning := m.powerWarning()
 	return []action{
 		{
@@ -171,9 +171,9 @@ func (m *Model) menuKey(k tea.KeyMsg) tea.Cmd {
 				defer cancel()
 				result, err := run(ctx, c)
 				if err != nil {
-					return actionDoneMsg{ErrorStyle.Render(oneLine(verb + " failed: " + err.Error()))}
+					return actionDoneMsg{ErrorStyle.Render(OneLine(verb + " failed: " + err.Error()))}
 				}
-				return actionDoneMsg{OKStyle.Render(oneLine(result))}
+				return actionDoneMsg{OKStyle.Render(OneLine(result))}
 			}
 		case "enter", "esc", "n":
 			m.menu.chosen = ""

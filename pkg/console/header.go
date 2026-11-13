@@ -16,9 +16,9 @@ import (
 // fingerprint and the addresses that install needs.
 func (m *Model) headerLines() []string {
 	info := m.node.Info.Value
-	first := []string{TitleStyle.Render(oneLine(cmp.Or(info.GetHostname(), "chalkos")))}
+	first := []string{TitleStyle.Render(OneLine(cmp.Or(info.GetHostname(), "chalkos")))}
 	if n := info.GetNodeName(); n != "" {
-		first = append(first, "node "+oneLine(n))
+		first = append(first, "node "+OneLine(n))
 	}
 	if w := modeWord(info); w != "" {
 		first = append(first, w)
@@ -31,17 +31,17 @@ func (m *Model) headerLines() []string {
 		second[0] += fmt.Sprintf(" generation %d", g)
 	}
 	if v := info.GetVariant(); v != "" {
-		second = append(second, oneLine(v+" on "+cmp.Or(info.GetPlatform(), "every platform")))
+		second = append(second, OneLine(v+" on "+cmp.Or(info.GetPlatform(), "every platform")))
 	}
 	lines := []string{strings.Join(first, "  "), strings.Join(second, "  "), m.healthLine()}
 	if m.prompt {
-		name := oneLine(cmp.Or(info.GetNodeName(), "<node>"))
+		name := OneLine(cmp.Or(info.GetNodeName(), "<node>"))
 		for _, row := range wrapWords("passphrase", "prompt waits on this screen; chalkctl recovery-key "+name+" prints the key", m.width) {
 			lines = append(lines, WarnStyle.Render(row))
 		}
 	}
 	if info != nil && !m.node.Normal() {
-		lines = append(lines, wrapChars("fingerprint", oneLine(info.GetFingerprint()), m.width)...)
+		lines = append(lines, wrapChars("fingerprint", OneLine(info.GetFingerprint()), m.width)...)
 		lines = append(lines, wrapWords("addresses", m.addressList(), m.width)...)
 	}
 	for i := range lines {
@@ -82,7 +82,7 @@ func uptimeWords(d time.Duration) string {
 // a config on trial and a rollback that boots next, or else that all is well.
 func (m *Model) healthLine() string {
 	if err := m.node.Info.Err; err != nil {
-		return ErrorStyle.Render(oneLine(fmt.Sprintf("chalkd does not answer, retrying: %v", err)))
+		return ErrorStyle.Render(OneLine(fmt.Sprintf("chalkd does not answer, retrying: %v", err)))
 	}
 	info := m.node.Info.Value
 	switch {
@@ -102,16 +102,16 @@ func (m *Model) healthLine() string {
 	}
 	var parts []string
 	if n := len(st.FailedUnits); n > 0 {
-		parts = append(parts, ErrorStyle.Render(oneLine(count(n, "failed unit")+": "+strings.Join(st.FailedUnits, ", "))))
+		parts = append(parts, ErrorStyle.Render(OneLine(count(n, "failed unit")+": "+strings.Join(st.FailedUnits, ", "))))
 	}
 	if tr := st.Trial; tr != nil {
-		parts = append(parts, WarnStyle.Render(oneLine(fmt.Sprintf("config %s on trial until %s", tr.Version[:min(12, len(tr.Version))], tr.Deadline.AsTime().Local().Format("15:04")))))
+		parts = append(parts, WarnStyle.Render(OneLine(fmt.Sprintf("config %s on trial until %s", tr.Version[:min(12, len(tr.Version))], tr.Deadline.AsTime().Local().Format("15:04")))))
 	}
 	if st.TrialError != "" {
 		parts = append(parts, ErrorStyle.Render("the record of a config's trial cannot be read"))
 	}
 	if b := st.Boot; b.GetStaged() != nil && bytes.Equal(b.GetStaged().GetRootHash(), b.GetRollback().GetRootHash()) {
-		parts = append(parts, WarnStyle.Render(oneLine("rollback to "+statusview.BootImageName(b.Staged)+" boots next")))
+		parts = append(parts, WarnStyle.Render(OneLine("rollback to "+statusview.BootImageName(b.Staged)+" boots next")))
 	}
 	if len(parts) == 0 {
 		return OKStyle.Render("healthy")
@@ -127,7 +127,7 @@ func (m *Model) addressList() string {
 	case m.addresses.At.IsZero():
 		return "reading..."
 	}
-	list := oneLine(cmp.Or(strings.Join(m.addresses.Value, " "), "none"))
+	list := OneLine(cmp.Or(strings.Join(m.addresses.Value, " "), "none"))
 	if p := m.addresses.Problem("addresses"); p != "" {
 		list += " " + ErrorStyle.Render(p)
 	}

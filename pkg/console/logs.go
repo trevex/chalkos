@@ -268,7 +268,7 @@ func (l *logs) Update(msg tea.Msg) (Tab, tea.Cmd) {
 		if l.picker != nil {
 			units := make([]string, len(msg.units))
 			for i, u := range msg.units {
-				units[i] = oneLine(u)
+				units[i] = OneLine(u)
 			}
 			l.picker.units = append([]string{allUnits}, units...)
 			l.picker.err, l.picker.loaded = msg.err, true
@@ -298,7 +298,7 @@ func (l *logs) add(msg logLinesMsg) tea.Cmd {
 		return nil
 	}
 	for _, line := range msg.lines {
-		l.lines = append(l.lines, oneLine(line))
+		l.lines = append(l.lines, OneLine(line))
 	}
 	if drop := len(l.lines) - maxLogLines; drop > 0 {
 		l.lines = append([]string(nil), l.lines[drop:]...)
@@ -441,7 +441,7 @@ func (l *logs) searchKey(k tea.KeyMsg) {
 			l.search = string(r[:len(r)-1])
 		}
 	case k.Type == tea.KeyRunes, k.Type == tea.KeySpace:
-		l.search += oneLine(string(k.Runes))
+		l.search += OneLine(string(k.Runes))
 	}
 }
 
@@ -558,14 +558,14 @@ func (l *logs) statusRow(width int) string {
 		case connect.CodeOf(l.why) == connect.CodeUnavailable:
 			why = "chalkd does not answer"
 		case l.why != nil:
-			why = oneLine(l.why.Error())
+			why = OneLine(l.why.Error())
 		}
 		row += WarnStyle.Render("; read by the console: " + why)
 	} else if l.why != nil && l.shown == 0 {
-		row += WarnStyle.Render(oneLine(fmt.Sprintf("; chalkd's stream ended: %v", l.why)))
+		row += WarnStyle.Render(OneLine(fmt.Sprintf("; chalkd's stream ended: %v", l.why)))
 	}
 	if l.done {
-		row += ErrorStyle.Render(oneLine(fmt.Sprintf("; the journal ended: %v", l.ended)))
+		row += ErrorStyle.Render(OneLine(fmt.Sprintf("; the journal ended: %v", l.ended)))
 	}
 	if keys := "   u unit  / search  n N match  w wrap"; ansi.StringWidth(row)+len(keys) <= width {
 		row += GreyStyle.Render(keys)
@@ -580,7 +580,7 @@ func (l *logs) pickerView(width, height int) string {
 	case !p.loaded:
 		rows = append(rows, "reading the units...")
 	case p.err != nil:
-		rows = append(rows, ErrorStyle.Render(oneLine("units: "+p.err.Error())))
+		rows = append(rows, ErrorStyle.Render(OneLine("units: "+p.err.Error())))
 	}
 	h := max(1, height-len(rows))
 	first := max(0, min(p.selected-h/2, len(p.units)-h))

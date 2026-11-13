@@ -49,7 +49,7 @@ func (s *storage) View(width, height int) string {
 			if err := statusview.WriteDisks(&text, disks.Value.Disks); err != nil {
 				fmt.Fprintln(&text, err)
 			}
-			b.WriteString(clean(text.String()))
+			b.WriteString(Clean(text.String()))
 		}
 		return s.pane.View(b.String(), width, height)
 	}
@@ -58,7 +58,7 @@ func (s *storage) View(width, height int) string {
 		t := statusview.Table(&b)
 		fmt.Fprintln(t, "DISK\tSIZE\tTYPE\tMODEL\tSERIAL\tUSE")
 		for _, d := range disks.Value.Disks {
-			fmt.Fprintf(t, "%s\t%s\t%s\t%s\t%s\t%s\n", oneLine(d.Device), statusview.Size(d.Size), oneLine(d.Type), oneLine(d.Model), oneLine(d.Serial), oneLine(d.Usage))
+			fmt.Fprintf(t, "%s\t%s\t%s\t%s\t%s\t%s\n", OneLine(d.Device), statusview.Size(d.Size), OneLine(d.Type), OneLine(d.Model), OneLine(d.Serial), OneLine(d.Usage))
 		}
 		t.Flush()
 	}
@@ -69,12 +69,12 @@ func (s *storage) View(width, height int) string {
 		t := statusview.Table(&b)
 		fmt.Fprintln(t, "VOLUME\tDISK\tMOUNT POINT\tENCRYPTION\tUSE")
 		for _, v := range st.Volumes {
-			fmt.Fprintf(t, "%s\t%s\t%s\t%s\t%s\n", oneLine(v.Name), oneLine(v.Disk), oneLine(v.MountPoint), oneLine(v.Encryption), volumeUse(v))
+			fmt.Fprintf(t, "%s\t%s\t%s\t%s\t%s\n", OneLine(v.Name), OneLine(v.Disk), OneLine(v.MountPoint), OneLine(v.Encryption), volumeUse(v))
 		}
 		t.Flush()
 		for _, d := range st.Disks {
 			if d.Error != "" {
-				b.WriteString(ErrorStyle.Render(oneLine(fmt.Sprintf("disk %s: %s", d.Name, d.Error))) + "\n")
+				b.WriteString(ErrorStyle.Render(OneLine(fmt.Sprintf("disk %s: %s", d.Name, d.Error))) + "\n")
 			}
 		}
 	}
