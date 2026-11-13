@@ -18,8 +18,8 @@ unitCheck "controlplane-ports" checkLib.networkTools ''
   ${checkLib.peerNamespace}
 
   # The firewall as NixOS loads it, with the state file it keeps.
-  mkdir -p /var/lib/nftables
-  touch /var/lib/nftables/deletions.nft
+  mkdir -p /run/nftables
+  touch /run/nftables/deletions.nft
   nft -f ${firewall}
   for port in 6443 2379 2380; do
     socat TCP4-LISTEN:$port,fork,reuseaddr /dev/null &

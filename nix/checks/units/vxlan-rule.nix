@@ -56,8 +56,8 @@ unitCheck "vxlan-rule" checkLib.networkTools ''
   done
 
   # The firewall as NixOS loads it, with the state file it keeps.
-  mkdir -p /var/lib/nftables
-  touch /var/lib/nftables/deletions.nft
+  mkdir -p /run/nftables
+  touch /run/nftables/deletions.nft
   nft -f ${firewall}
   # Counts the packets the firewall accepted, and those still marked then.
   nft -f - <<'NFT'
