@@ -38,6 +38,9 @@ rec {
     CHALKOS_TEST_REPART = "${pkgs.systemd}/bin/systemd-repart";
     # The install tests also lay out a disk as the test image would be installed.
     CHALKOS_TEST_IMAGE_DEFINITIONS = "${chalkPkgs.test-repart-definitions}";
+    # The font of the test images' consoles, console.font of modules/testing/test-image.nix, with
+    # which the e2e tests read a VM's screen.
+    CHALKLAB_CONSOLE_FONT = "${pkgs.kbd}/share/consolefonts/default8x16.psfu.gz";
   };
 
   # The variables of every e2e test: they install nodes with the real chalkctl, from the test

@@ -1,4 +1,4 @@
-// Package e2e boots chalkos images in chalklab VMs. The dev shell sets the firmware and key
+// Package e2e boots chalkos images in chalklab VMs. The dev shell sets the firmware, key and font
 // variables; tests that boot an image or install a node skip unless these are exported too:
 //
 //	export CHALKLAB_IMAGE_DIR=$(nix build .#test-image --no-link --print-out-paths)
@@ -383,4 +383,61 @@ func waitFor(t *testing.T, timeout time.Duration, what string, check func() erro
 	if err := poll(timeout, 5*time.Second, check); err != nil {
 		t.Fatalf("waiting for %s: %v", what, err)
 	}
+}
+
+// startVMConfig starts a VM of c as it is, which a test made from another VM's configuration, and
+// stops it when the test ends.
+func startVMConfig(t *testing.T, c lab.VMConfig) *lab.VM {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+	vm, err := lab.StartVM(ctx, c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { vm.Stop() })
+	return vm
+}
+
+// consoleFont is the test images' console font, with which the tests read a VM's screen.
+func consoleFont(t *testing.T) *lab.Font {
+	t.Helper()
+	f, err := lab.ReadPSF(os.Getenv("CHALKLAB_CONSOLE_FONT"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return f
+}
+
+// screenText is the text on the VM's screen, a line per row.
+func screenText(vm *lab.VM, font *lab.Font) (string, error) {
+	s, err := vm.Screen()
+	if err != nil {
+		return "", err
+	}
+	return strings.Join(font.Text(s), "\n"), nil
+}
+
+// waitForScreen waits until the screen shows re and returns the last match; on a timeout it fails
+// the test with the screen's text.
+func waitForScreen(t *testing.T, vm *lab.VM, font *lab.Font, re *regexp.Regexp, timeout time.Duration) []string {
+	t.Helper()
+	var text string
+	var m []string
+	err := poll(timeout, 2*time.Second, func() error {
+		var err error
+		if text, err = screenText(vm, font); err != nil {
+			return err
+		}
+		all := re.FindAllStringSubmatch(text, -1)
+		if len(all) == 0 {
+			return fmt.Errorf("the screen shows no %s", re)
+		}
+		m = all[len(all)-1]
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("%v; the screen:\n%s", err, text)
+	}
+	return m
 }
