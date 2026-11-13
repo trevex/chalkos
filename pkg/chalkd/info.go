@@ -41,6 +41,9 @@ func (s *Server) Info(ctx context.Context, _ *connect.Request[nodev1.InfoRequest
 	if entries, err := os.ReadDir(s.Paths.TPM); err == nil && len(entries) > 0 {
 		resp.Tpm = true
 	}
+	if s.Mode == normal {
+		resp.NodeName, _ = s.name()
+	}
 	resp.Hostname, _ = os.Hostname()
 	return connect.NewResponse(resp), nil
 }

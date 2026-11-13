@@ -1,6 +1,7 @@
 package chalkd
 
 import (
+	"cmp"
 	"context"
 	"encoding/csv"
 	"encoding/json"
@@ -70,13 +71,23 @@ func (s *Server) Status(ctx context.Context, req *connect.Request[nodev1.StatusR
 	}
 	for _, name := range slices.Sorted(maps.Keys(section.Volumes)) {
 		v := section.Volumes[name]
-		resp.Volumes = append(resp.Volumes, &nodev1.VolumeStatus{
+		vs := &nodev1.VolumeStatus{
 			Name:       name,
 			Disk:       v.Disk,
 			MountPoint: v.MountPoint,
 			Present:    pins.Disks[v.Disk].Partitions[name] != "",
 			Mounted:    v.MountPoint != "" && mounts[v.MountPoint],
-		})
+			Encryption: cmp.Or(v.Encryption, storage.EncryptionNone),
+		}
+		if vs.Mounted {
+			// A file system that cannot be read reports no use; the volume's state says the rest.
+			if size, used, err := s.statfs(v.MountPoint); err == nil {
+				vs.SizeBytes, vs.UsedBytes = size, used
+			} else {
+				log.Printf("read the use of %s: %v", v.MountPoint, err)
+			}
+		}
+		resp.Volumes = append(resp.Volumes, vs)
 	}
 
 	if resp.FailedUnits, err = systemctl.FailedUnits(ctx, s.Run); err != nil {
@@ -223,4 +234,17 @@ func clockMonotonic() (time.Duration, error) {
 		return 0, err
 	}
 	return time.Duration(ts.Nano()), nil
+}
+
+// statfs reads the size and use of the file system mounted at path.
+func (s *Server) statfs(path string) (size, used uint64, err error) {
+	if s.Statfs != nil {
+		return s.Statfs(path)
+	}
+	var st unix.Statfs_t
+	if err := unix.Statfs(path, &st); err != nil {
+		return 0, 0, err
+	}
+	block := uint64(st.Frsize)
+	return st.Blocks * block, (st.Blocks - st.Bfree) * block, nil
 }

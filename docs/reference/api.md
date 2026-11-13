@@ -69,6 +69,7 @@ The response of Info.
 | `revision` | string | The git revision the running image was built from, as the node's record of the images it installed names it; empty when it does not know it. |
 | `tag` | string | The git tag the running image was built from, as the node's record of the images it installed names it; empty when it does not know it. |
 | `layers` | list of string | The layers the running image carries beside the base every image has, such as "kubernetes", in name order; empty on the installer and on an image of the base alone. |
+| `node_name` | string | The node's name, as its node certificate names it; empty in maintenance mode and on the installer. |
 
 Field types: [Mode](#enum-mode), [SecureBoot](#enum-secureboot).
 
@@ -1070,6 +1071,9 @@ A volume of the node's storage.
 | `mount_point` | string | Where the config mounts the volume; empty for a volume it leaves unmounted. |
 | `present` | bool | Whether the volume's partition exists. |
 | `mounted` | bool | Whether the volume is mounted at its mount point. |
+| `encryption` | string | How the volume is encrypted: tpm2, or none. |
+| `size_bytes` | uint64 | The size of the volume's file system in bytes, while it is mounted; zero otherwise. |
+| `used_bytes` | uint64 | The bytes the volume's file system uses, while it is mounted; zero otherwise. |
 
 ## Enums { #enums }
 

@@ -160,6 +160,9 @@ type Server struct {
 	// Monotonic reads CLOCK_MONOTONIC, which systemd's timestamps of the boot count in; nil reads
 	// the kernel's. Tests replace it.
 	Monotonic func() (time.Duration, error)
+	// Statfs reads the size of the file system mounted at path and the bytes it uses; nil asks
+	// the kernel. Tests replace it.
+	Statfs func(path string) (size, used uint64, err error)
 	// Journal streams the journal of the boot, or of one unit.
 	Journal func(ctx context.Context, unit string, follow bool) (io.ReadCloser, error)
 	// RebootNode reboots the node; it is called once the response has been sent.

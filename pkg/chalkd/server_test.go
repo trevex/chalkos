@@ -124,7 +124,9 @@ func newTestServer(t *testing.T, mode nodev1.Mode, disks ...storagetest.Disk) (*
 		},
 		RebootNode:   func() {},
 		PowerOffNode: func() {},
-		RebootDelay:  testRebootDelay,
+		// Tests never read the host's file systems.
+		Statfs:      func(string) (uint64, uint64, error) { return 0, 0, errors.New("no file system to read") },
+		RebootDelay: testRebootDelay,
 	}
 	s.Loader = nodeconfig.LoaderUnder(root)
 	s.Loader.Render.Run = outputs.Direct{}
@@ -680,6 +682,16 @@ func TestInfo(t *testing.T) {
 	if resp, err = s.Info(context.Background(), connect.NewRequest(&nodev1.InfoRequest{})); err != nil || resp.Msg.Revision != "a1b2c3d4e5f6" || resp.Msg.Tag != "v1.5.0" {
 		t.Errorf("info with the record = %+v, %v", resp.Msg, err)
 	}
+
+	// An installed node names itself as its node certificate does; maintenance mode names none.
+	if resp.Msg.NodeName != "" {
+		t.Errorf("node name in maintenance mode = %q", resp.Msg.NodeName)
+	}
+	c := newCreds(t)
+	s.Mode, s.Certificate = normal, loadedCertificate(t, c, c.node)
+	if resp, err = s.Info(context.Background(), connect.NewRequest(&nodev1.InfoRequest{})); err != nil || resp.Msg.NodeName != "n1" {
+		t.Errorf("node name = %q, %v; want n1", resp.Msg.GetNodeName(), err)
+	}
 }
 
 // TestPlatform reports the platform the running image was built for in Info and Status.
@@ -735,6 +747,12 @@ func TestStatus(t *testing.T) {
 	write(t, s.Paths.StorageStatus, `{"installed": true, "disks": {"system": {"device": "/dev/disk/chalk-boot-disk"}, "extra": {"error": "no disk matches serial \"chalk-extra\""}}}`)
 	write(t, s.Paths.MountInfo, "30 1 0:27 / / rw - tmpfs tmpfs rw\n41 30 253:1 / /var rw - ext4 /dev/mapper/var rw\n")
 	r.Rules = []tooltest.Rule{{Prefix: "systemctl list-units --state=failed", Out: "systemd-cryptsetup@extra.service loaded failed failed Unlock chalkos volume extra\nsrv-extra.mount loaded failed failed chalkos volume extra\n"}}
+	s.Statfs = func(path string) (size, used uint64, err error) {
+		if path != "/var" {
+			return 0, 0, fmt.Errorf("statfs %s", path)
+		}
+		return 10 << 30, 3 << 30, nil
+	}
 
 	resp, err := s.Status(context.Background(), connect.NewRequest(&nodev1.StatusRequest{}))
 	if err != nil {
@@ -753,6 +771,12 @@ func TestStatus(t *testing.T) {
 	if len(got.Volumes) != 2 || got.Volumes[0].Name != "extra" || got.Volumes[0].Present || got.Volumes[0].Mounted ||
 		got.Volumes[1].Name != "var" || !got.Volumes[1].Present || !got.Volumes[1].Mounted {
 		t.Errorf("volumes = %+v", got.Volumes)
+	}
+	if v := got.Volumes[1]; v.Encryption != "tpm2" || v.SizeBytes != 10<<30 || v.UsedBytes != 3<<30 {
+		t.Errorf("var = %+v; want tpm2, 10 GiB, 3 GiB used", v)
+	}
+	if v := got.Volumes[0]; v.SizeBytes != 0 || v.UsedBytes != 0 {
+		t.Errorf("an unmounted volume reports its use: %+v", v)
 	}
 }
 

@@ -247,6 +247,9 @@ message InfoResponse {
   // The layers the running image carries beside the base every image has, such as "kubernetes",
   // in name order; empty on the installer and on an image of the base alone.
   repeated string layers = 14;
+  // The node's name, as its node certificate names it; empty in maintenance mode and on the
+  // installer.
+  string node_name = 15;
 }
 
 // The request of Disks.
@@ -986,6 +989,12 @@ message VolumeStatus {
   bool present = 4;
   // Whether the volume is mounted at its mount point.
   bool mounted = 5;
+  // How the volume is encrypted: tpm2, or none.
+  string encryption = 6;
+  // The size of the volume's file system in bytes, while it is mounted; zero otherwise.
+  uint64 size_bytes = 7;
+  // The bytes the volume's file system uses, while it is mounted; zero otherwise.
+  uint64 used_bytes = 8;
 }
 
 // The request of Logs.

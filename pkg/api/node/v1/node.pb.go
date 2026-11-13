@@ -325,7 +325,10 @@ type InfoResponse struct {
 	Tag string `protobuf:"bytes,13,opt,name=tag,proto3" json:"tag,omitempty"`
 	// The layers the running image carries beside the base every image has, such as "kubernetes",
 	// in name order; empty on the installer and on an image of the base alone.
-	Layers        []string `protobuf:"bytes,14,rep,name=layers,proto3" json:"layers,omitempty"`
+	Layers []string `protobuf:"bytes,14,rep,name=layers,proto3" json:"layers,omitempty"`
+	// The node's name, as its node certificate names it; empty in maintenance mode and on the
+	// installer.
+	NodeName      string `protobuf:"bytes,15,opt,name=node_name,json=nodeName,proto3" json:"node_name,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -456,6 +459,13 @@ func (x *InfoResponse) GetLayers() []string {
 		return x.Layers
 	}
 	return nil
+}
+
+func (x *InfoResponse) GetNodeName() string {
+	if x != nil {
+		return x.NodeName
+	}
+	return ""
 }
 
 // The request of Disks.
@@ -4061,7 +4071,13 @@ type VolumeStatus struct {
 	// Whether the volume's partition exists.
 	Present bool `protobuf:"varint,4,opt,name=present,proto3" json:"present,omitempty"`
 	// Whether the volume is mounted at its mount point.
-	Mounted       bool `protobuf:"varint,5,opt,name=mounted,proto3" json:"mounted,omitempty"`
+	Mounted bool `protobuf:"varint,5,opt,name=mounted,proto3" json:"mounted,omitempty"`
+	// How the volume is encrypted: tpm2, or none.
+	Encryption string `protobuf:"bytes,6,opt,name=encryption,proto3" json:"encryption,omitempty"`
+	// The size of the volume's file system in bytes, while it is mounted; zero otherwise.
+	SizeBytes uint64 `protobuf:"varint,7,opt,name=size_bytes,json=sizeBytes,proto3" json:"size_bytes,omitempty"`
+	// The bytes the volume's file system uses, while it is mounted; zero otherwise.
+	UsedBytes     uint64 `protobuf:"varint,8,opt,name=used_bytes,json=usedBytes,proto3" json:"used_bytes,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -4129,6 +4145,27 @@ func (x *VolumeStatus) GetMounted() bool {
 		return x.Mounted
 	}
 	return false
+}
+
+func (x *VolumeStatus) GetEncryption() string {
+	if x != nil {
+		return x.Encryption
+	}
+	return ""
+}
+
+func (x *VolumeStatus) GetSizeBytes() uint64 {
+	if x != nil {
+		return x.SizeBytes
+	}
+	return 0
+}
+
+func (x *VolumeStatus) GetUsedBytes() uint64 {
+	if x != nil {
+		return x.UsedBytes
+	}
+	return 0
 }
 
 // The request of Logs.
@@ -5537,7 +5574,7 @@ var File_chalkos_node_v1_node_proto protoreflect.FileDescriptor
 const file_chalkos_node_v1_node_proto_rawDesc = "" +
 	"\n" +
 	"\x1achalkos/node/v1/node.proto\x12\x0fchalkos.node.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x19google/protobuf/any.proto\x1a\x1egoogle/protobuf/duration.proto\"\r\n" +
-	"\vInfoRequest\"\xb6\x03\n" +
+	"\vInfoRequest\"\xd3\x03\n" +
 	"\fInfoResponse\x12)\n" +
 	"\x04mode\x18\x01 \x01(\x0e2\x15.chalkos.node.v1.ModeR\x04mode\x12\x19\n" +
 	"\bimage_id\x18\x02 \x01(\tR\aimageId\x12\x1c\n" +
@@ -5554,7 +5591,8 @@ const file_chalkos_node_v1_node_proto_rawDesc = "" +
 	"\troot_hash\x18\v \x01(\fR\brootHash\x12\x1a\n" +
 	"\brevision\x18\f \x01(\tR\brevision\x12\x10\n" +
 	"\x03tag\x18\r \x01(\tR\x03tag\x12\x16\n" +
-	"\x06layers\x18\x0e \x03(\tR\x06layers\"\x0e\n" +
+	"\x06layers\x18\x0e \x03(\tR\x06layers\x12\x1b\n" +
+	"\tnode_name\x18\x0f \x01(\tR\bnodeName\"\x0e\n" +
 	"\fDisksRequest\"<\n" +
 	"\rDisksResponse\x12+\n" +
 	"\x05disks\x18\x01 \x03(\v2\x15.chalkos.node.v1.DiskR\x05disks\"\x80\x02\n" +
@@ -5808,14 +5846,21 @@ const file_chalkos_node_v1_node_proto_rawDesc = "" +
 	"DiskStatus\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x16\n" +
 	"\x06device\x18\x02 \x01(\tR\x06device\x12\x14\n" +
-	"\x05error\x18\x03 \x01(\tR\x05error\"\x8b\x01\n" +
+	"\x05error\x18\x03 \x01(\tR\x05error\"\xe9\x01\n" +
 	"\fVolumeStatus\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x12\n" +
 	"\x04disk\x18\x02 \x01(\tR\x04disk\x12\x1f\n" +
 	"\vmount_point\x18\x03 \x01(\tR\n" +
 	"mountPoint\x12\x18\n" +
 	"\apresent\x18\x04 \x01(\bR\apresent\x12\x18\n" +
-	"\amounted\x18\x05 \x01(\bR\amounted\"9\n" +
+	"\amounted\x18\x05 \x01(\bR\amounted\x12\x1e\n" +
+	"\n" +
+	"encryption\x18\x06 \x01(\tR\n" +
+	"encryption\x12\x1d\n" +
+	"\n" +
+	"size_bytes\x18\a \x01(\x04R\tsizeBytes\x12\x1d\n" +
+	"\n" +
+	"used_bytes\x18\b \x01(\x04R\tusedBytes\"9\n" +
 	"\vLogsRequest\x12\x12\n" +
 	"\x04unit\x18\x01 \x01(\tR\x04unit\x12\x16\n" +
 	"\x06follow\x18\x02 \x01(\bR\x06follow\"\"\n" +
