@@ -72,16 +72,6 @@ reads them every 5 seconds, and every 30 seconds once they have stayed the same 
 installer's health row reads `installer: chalkctl install installs nodes from here`.
 [Install a node](install.md#note-the-address-and-the-fingerprint) uses both values.
 
-While a passphrase prompt waits for an answer, the header adds a row that names the command that
-prints the node's recovery key:
-
-```text
-passphrase prompt waits on this screen; chalkctl recovery-key n1 prints the key
-```
-
-[The console asks for a passphrase at boot](recover-node.md#the-console-asks-for-a-passphrase-at-boot)
-explains the prompt.
-
 ## Overview shows the node's status
 
 Overview shows what `chalkctl status` prints, read every 2 seconds:
@@ -258,6 +248,63 @@ open, it takes the keys instead.
 The logs' own keys are listed in [Logs follows the journal of this boot](#logs-follows-the-journal-of-this-boot).
 In the actions menu, Up and Down select an action, and Enter or the action's letter picks it.
 Esc, `a` or F10 closes the menu.
+
+While a password request is on screen, it takes every key:
+
+| Key | Does |
+| --- | --- |
+| Enter | Sends what you typed. |
+| Esc | Cancels the request. |
+| Backspace | Erases the last character. |
+| Ctrl+U | Erases everything you typed. |
+
+## The console answers password requests
+
+A unit that needs a password after the boot asks through systemd, for example to unlock a volume
+that opens late. systemd's own prompt cannot use tty1 while the console runs there, so the console
+answers the request itself. The question takes the screen below the header, in place of the tabs:
+
+```text
+node1  node n1  normal  up 3h 12m
+image 81bd81bd81bd generation 7  worker on metal
+healthy
+systemd asks for a password
+
+Please enter passphrase for disk data:
+chalkctl recovery-key n1 prints the node's recovery key
+
+> ***_
+```
+
+The input shows a star for each character you type. A request that allows echo, such as one for a
+user name, shows the text itself, and a request that asks for silence shows nothing. Enter sends
+the answer and Esc cancels the request. When a volume asks, the console names the command that
+prints the node's recovery key, as
+[Unlock the node with its recovery key](recover-node.md#unlock-the-node-with-its-recovery-key)
+describes.
+
+When several requests wait, the console shows the oldest first and counts the others below it,
+such as `1 more request waits`. The next one comes on screen as soon as you answer or cancel the
+one before. A request that ends without your answer closes on the screen too: it timed out, or
+someone answered it elsewhere, such as on the serial console. If an answer cannot reach the
+request, the row above the keys says so and the request stays on screen. A request that is still
+there 5 seconds after your answer comes back, because the unit did not take the answer.
+
+For 300 milliseconds after a request comes on screen, Enter does nothing, so an Enter you meant
+for the tab or menu before it sends no empty password. The input takes up to 2048 bytes, the
+longest answer systemd reads, and ignores keys beyond that. A question too long for the screen is
+cut and ends with `…`, so the input row stays visible.
+
+The console clears what you typed once it sends the answer or the request closes, and it writes no
+password to its log.
+
+Answering does not depend on the console's actions, so `chalkos.console.actions.enable = false`
+leaves it on. With `chalkos.console.enable = false` there is no console, and systemd's own prompt
+asks on the kernel's consoles, as during the boot.
+
+The prompts of the boot come before the console starts.
+[The console asks for a passphrase at boot](recover-node.md#the-console-asks-for-a-passphrase-at-boot)
+explains them.
 
 ## Actions reboot, shut down or roll back the node
 
