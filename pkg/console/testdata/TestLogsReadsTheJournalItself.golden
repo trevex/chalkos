@@ -1,0 +1,25 @@
+node1  node n1  normal  up 3h 12m
+image 81bd81bd81bd generation 7  worker on metal
+healthy
+ 1 Overview   2 Network   3 Storage   4 Logs 
+this boot, all units, following; read by the console: chalkd does not answer
+2026-11-13T11:52:01+00:00 node1 systemd[1]: Started chalkd.service.
+2026-11-13T11:52:03+00:00 node1 chalkd[612]: read the node's state
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Tab/Left/Right 1-4 tabs  Up/Down/PgUp/PgDn scroll  a actions (off in this image)

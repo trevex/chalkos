@@ -1,0 +1,25 @@
+node1  node n1  normal  up 3h 12m
+image 81bd81bd81bd generation 7  worker on metal
+healthy
+ 1 Overview   2 Network   3 Storage   4 Logs 
+Actions
+> r  Reboot
+  s  Shut down
+  i  Roll back the image     the node keeps no previous image
+  c  Roll back the config
+
+Enter or a letter: choose   Esc: close
+
+
+
+
+
+
+
+
+
+
+
+
+
+Tab/Left/Right 1-4 tabs  Up/Down/PgUp/PgDn scroll  a actions

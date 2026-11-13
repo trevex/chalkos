@@ -1,0 +1,25 @@
+node1  node n1  normal  up 3h 12m
+image 81bd81bd81bd generation 7  worker on metal
+healthy
+ 1 Overview   2 Network   3 Storage   4 Logs 
+this boot, all units, "apply": 1 match   u unit  / search  n N match  w wrap
+2026-11-13T11:52:01+00:00 node1 systemd[1]: Started chalkd.service.
+2026-11-13T11:52:02+00:00 node1 chronyd[580]: chronyd version 4.6 starting (+CMD
+2026-11-13T11:52:02+00:00 node1 chalkd[612]: serving the node API on :50000
+2026-11-13T11:52:08+00:00 node1 chronyd[580]: Selected source 192.168.1.1
+2026-11-13T11:52:09+00:00 node1 systemd[1]: Reached target Multi-User System.
+2026-11-13T11:53:15+00:00 node1 chalkd[612]: apply: output networkd failed: rend
+2026-11-13T11:54:30+00:00 node1 chronyd[580]: System clock wrong by 0.000123 sec
+2026-11-13T11:55:00+00:00 node1 chalkd[612]: config 3fa9c1e2b7d0 delivered
+
+
+
+
+
+
+
+
+
+
+
+Tab/Left/Right 1-4 tabs  Up/Down/PgUp/PgDn scroll  a actions (off in this image)

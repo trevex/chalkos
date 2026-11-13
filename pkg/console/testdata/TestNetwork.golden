@@ -1,0 +1,25 @@
+node1  node n1  normal  up 3h 12m
+image 81bd81bd81bd generation 7  worker on metal
+healthy
+ 1 Overview   2 Network   3 Storage   4 Logs 
+LINK    STATE  MAC                MTU   ADDRESSES
+enp1s0  UP     52:54:00:12:34:56  1500  192.168.1.50/24
+                                        2001:db8::50/64
+                                        fe80::5054:ff:fe12:3456/64
+enp2s0  DOWN   52:54:00:ab:cd:ef  1500  
+default routes:
+  via 192.168.1.1 dev enp1s0 (dhcp)
+  via fe80::1 dev enp1s0 (ra)
+DNS servers: 192.168.1.1, 2001:db8::1
+
+
+
+
+
+
+
+
+
+
+
+Tab/Left/Right 1-4 tabs  Up/Down/PgUp/PgDn scroll  a actions (off in this image)

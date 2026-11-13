@@ -1,0 +1,25 @@
+node1  node n1  normal  up 3h 12m
+image 81bd81bd81bd generation 7  worker on metal
+healthy
+ 1 Overview   2 Network   3 Storage   4 Logs 
+DISK      SIZE  TYPE  MODEL          SERIAL      USE
+/dev/vda  16G   hdd   QEMU HARDDISK  chalk-sys   boot
+/dev/vdb  8G    hdd   QEMU HARDDISK  chalk-data  disk data
+VOLUME  DISK    MOUNT POINT  ENCRYPTION  USE
+var     system  /var         tpm2        1.2G of 9.8G (12%)
+data    data    /srv/data    none        not mounted
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Tab/Left/Right 1-4 tabs  Up/Down/PgUp/PgDn scroll  a actions (off in this image)
