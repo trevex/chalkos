@@ -2,13 +2,23 @@
   description = "chalkos: an image-based NixOS for Kubernetes nodes";
 
   inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+  # The Go toolchain: the Go project's release that go.mod names.
+  inputs.go-overlay = {
+    url = "github:purpleclay/go-overlay";
+    inputs.nixpkgs.follows = "nixpkgs";
+  };
 
   outputs =
-    { self, nixpkgs }:
+    {
+      self,
+      nixpkgs,
+      go-overlay,
+    }:
     let
       system = "x86_64-linux";
-      pkgs = nixpkgs.legacyPackages.${system};
-      chalkos = import ./lib { inherit nixpkgs; };
+      goOverlay = import ./nix/go.nix { inherit go-overlay; };
+      pkgs = nixpkgs.legacyPackages.${system}.extend goOverlay;
+      chalkos = import ./lib { inherit nixpkgs goOverlay; };
       # The images the e2e tests boot, those the checks and the documentation evaluate, and the
       # documentation, which the packages, checks and apps share.
       testing = import ./nix/testing/images.nix { inherit self pkgs; };

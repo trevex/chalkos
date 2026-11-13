@@ -79,7 +79,7 @@ have nothing to do there; `installer.modules` are its own.
 
 Type: any · Default: the nixpkgs chalkos is tested against · Declared in: [lib/images-arguments.nix](https://github.com/trevex/chalkos/blob/main/lib/images-arguments.nix)
 
-nixpkgs whose `lib.nixosSystem` evaluates the images and whose packages they are built from.
+nixpkgs whose `lib.nixosSystem` evaluates the images and whose packages they are built from. chalkos's own programs are built with chalkos's Go toolchain, whichever nixpkgs this is.
 
 ### `osCA` { #osca }
 

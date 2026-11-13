@@ -1,7 +1,7 @@
 # mkImages builds a cluster's images: each variant on each platform, an image directory each, and
 # the installer, which installs images of every platform. Its arguments are the options of
 # images-arguments.nix. The images' modules get lib.chalkos as part of lib.
-{ defaultNixpkgs }:
+{ defaultNixpkgs, goOverlay }:
 arguments:
 let
   inherit (defaultNixpkgs) lib;
@@ -20,6 +20,13 @@ let
   # The lib of every image's modules: nixpkgs's, with lib.chalkos.
   imageLib = cfg.nixpkgs.lib.extend (final: _: { chalkos = import ./chalkos.nix { lib = final; }; });
 
+  # chalkos's Go toolchain in the images' nixpkgs, which builds chalkos's programs whatever
+  # nixpkgs the images come from.
+  goToolchain = {
+    _file = "chalkos.lib.mkImages";
+    nixpkgs.overlays = [ goOverlay ];
+  };
+
   # A variant's image on a platform: chalkos's node modules, the platform's modules, those of every
   # variant, then the variant's own. A NixOS value merges by priority, not by module order: a
   # variant overrides a value its platform defines plainly with lib.mkForce, and one the platform
@@ -32,6 +39,7 @@ let
       lib = imageLib;
       modules = [
         ../modules/node
+        goToolchain
         {
           nixpkgs.hostPlatform = cfg.system;
           chalkos.variant.name = variant;
@@ -64,6 +72,7 @@ let
     lib = imageLib;
     modules = [
       ../modules/node
+      goToolchain
       ../modules/installer
       {
         nixpkgs.hostPlatform = cfg.system;

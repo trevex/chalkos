@@ -3,8 +3,12 @@
 # different parts of the source. A program is built from cmd/<pname> unless subPackages says
 # otherwise, and without its tests, which the go-unit check runs. Unless it runs or builds tests,
 # its source leaves out the _test.go files and testdata directories, so a change to a test alone
-# rebuilds no program and no image.
-{ lib, buildGoModule }:
+# rebuilds no program and no image. The Go toolchain is chalkosGo of nix/go.nix's overlay.
+{
+  lib,
+  buildGoModule,
+  chalkosGo,
+}:
 {
   pname,
   # Source paths besides go.mod and go.sum.
@@ -41,7 +45,7 @@ let
     ++ paths
   );
 in
-buildGoModule (
+(buildGoModule.override { go = chalkosGo; }) (
   {
     version = "0.1.0";
     src = lib.fileset.toSource {

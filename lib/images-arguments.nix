@@ -44,7 +44,7 @@ in
       type = types.raw;
       default = defaultNixpkgs;
       defaultText = lib.literalMD "the nixpkgs chalkos is tested against";
-      description = "nixpkgs whose `lib.nixosSystem` evaluates the images and whose packages they are built from.";
+      description = "nixpkgs whose `lib.nixosSystem` evaluates the images and whose packages they are built from. chalkos's own programs are built with chalkos's Go toolchain, whichever nixpkgs this is.";
     };
     system = mkOption {
       type = types.str;

@@ -1,4 +1,7 @@
-{ nixpkgs }:
+{ nixpkgs, goOverlay }:
 {
-  mkImages = import ./images.nix { defaultNixpkgs = nixpkgs; };
+  mkImages = import ./images.nix {
+    defaultNixpkgs = nixpkgs;
+    inherit goOverlay;
+  };
 }

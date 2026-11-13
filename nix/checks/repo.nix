@@ -71,7 +71,7 @@ in
   go-lint = goCheck {
     pname = "chalkos-go-lint";
     nativeBuildInputs = [
-      pkgs.go-tools
+      pkgs.chalkosGo.tools.staticcheck.latest
       pkgs.jq
     ];
     goPrograms = builtins.toJSON (
