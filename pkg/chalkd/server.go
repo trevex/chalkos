@@ -184,6 +184,9 @@ type Server struct {
 	// ApplyConfig that delivers config, due or not. Only test images set it, to renew within a
 	// test's time.
 	RenewOnApplyConfig bool
+	// ConsoleActions lets the console reboot and shut down the node and roll back its image and
+	// config, as the image's chalkos.console.actions.enable says.
+	ConsoleActions bool
 
 	// clock is the time client certificates are verified at; nil is the system clock.
 	clock func() time.Time
@@ -267,6 +270,16 @@ func (s *Server) gates() map[string]gate {
 
 type roleKey struct{}
 
+// consoleKey marks a call on the console's socket, which has no role: each procedure's
+// Permission.Console decides it instead.
+type consoleKey struct{}
+
+// onConsole reports whether the call came through the console's socket.
+func onConsole(ctx context.Context) bool {
+	console, _ := ctx.Value(consoleKey{}).(bool)
+	return console
+}
+
 // unverifiedKey holds why a client certificate no longer verifies.
 type unverifiedKey struct{}
 
@@ -276,18 +289,7 @@ type unverifiedKey struct{}
 // root the node stopped trusting, or one whose certificate expired, authorised for as long as it
 // keeps the connection open.
 func (s *Server) Handler() http.Handler {
-	opts := []connect.HandlerOption{
-		connect.WithInterceptors(authorizer{s: s, gates: s.gates()}, errorCodes{}),
-		connect.WithReadMaxBytes(maxMessageBytes),
-		// An oversized compressed request would otherwise be decompressed in full before being
-		// discarded; refusing compression up front keeps that cost off chalkd.
-		connect.WithCompression("gzip", nil, nil),
-	}
-	mux := http.NewServeMux()
-	mux.Handle(nodev1connect.NewNodeServiceHandler(s, opts...))
-	for _, p := range s.Plugins.Compiled() {
-		mux.Handle(p.Handler(opts...))
-	}
+	mux := s.mux()
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var role pki.Role
 		ctx := r.Context()
@@ -308,6 +310,33 @@ func (s *Server) Handler() http.Handler {
 		}
 		mux.ServeHTTP(w, r.WithContext(context.WithValue(ctx, roleKey{}, role)))
 	})
+}
+
+// ConsoleHandler serves the node API and every compiled plugin's API to the console, on chalkd's
+// local socket: its calls have no role, and each procedure's Permission.Console grants or refuses
+// them.
+func (s *Server) ConsoleHandler() http.Handler {
+	mux := s.mux()
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mux.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), consoleKey{}, true)))
+	})
+}
+
+// mux serves the node API and every compiled plugin's API behind the authorizer.
+func (s *Server) mux() *http.ServeMux {
+	opts := []connect.HandlerOption{
+		connect.WithInterceptors(authorizer{s: s, gates: s.gates()}, errorCodes{}),
+		connect.WithReadMaxBytes(maxMessageBytes),
+		// An oversized compressed request would otherwise be decompressed in full before being
+		// discarded; refusing compression up front keeps that cost off chalkd.
+		connect.WithCompression("gzip", nil, nil),
+	}
+	mux := http.NewServeMux()
+	mux.Handle(nodev1connect.NewNodeServiceHandler(s, opts...))
+	for _, p := range s.Plugins.Compiled() {
+		mux.Handle(p.Handler(opts...))
+	}
+	return mux
 }
 
 // verifyClient verifies a client's certificate, with the certificates it presented after it as
@@ -339,8 +368,8 @@ func (s *Server) verifyClient(presented []*x509.Certificate) ([][]*x509.Certific
 	})
 }
 
-// authorizer refuses calls of a layer the image lacks, in the wrong mode or with too little a
-// role, in that order.
+// authorizer refuses calls of a layer the image lacks, in the wrong mode, and with too little a
+// role or, on the console's socket, what the console may not call, in that order.
 type authorizer struct {
 	s     *Server
 	gates map[string]gate
@@ -360,6 +389,9 @@ func (a authorizer) check(ctx context.Context, procedure string) error {
 		}
 		return connect.NewError(connect.CodeFailedPrecondition, errors.New("the node is installed"))
 	}
+	if onConsole(ctx) {
+		return a.checkConsole(procedure, r.Console)
+	}
 	if err, ok := ctx.Value(unverifiedKey{}).(error); ok {
 		return connect.NewError(connect.CodeUnauthenticated, fmt.Errorf("the client certificate does not verify against the OS CAs the node trusts: %w", err))
 	}
@@ -368,6 +400,18 @@ func (a authorizer) check(ctx context.Context, procedure string) error {
 		return connect.NewError(connect.CodePermissionDenied, fmt.Errorf("%s needs the %s role", procedure, r.Role))
 	}
 	return nil
+}
+
+// checkConsole refuses the console a procedure its permission does not grant it, and its actions
+// while the image turns them off.
+func (a authorizer) checkConsole(procedure string, c layer.Console) error {
+	switch {
+	case c == layer.ConsoleAllowed, c == layer.ConsoleAction && a.s.ConsoleActions:
+		return nil
+	case c == layer.ConsoleAction:
+		return connect.NewError(connect.CodePermissionDenied, errors.New("the image turns the console's actions off"))
+	}
+	return connect.NewError(connect.CodePermissionDenied, fmt.Errorf("the console may not call %s", procedure))
 }
 
 func (a authorizer) WrapUnary(next connect.UnaryFunc) connect.UnaryFunc {

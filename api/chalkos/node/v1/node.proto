@@ -114,7 +114,8 @@ service NodeService {
   // a default or optional is given. chalkd runs the command as a transient systemd unit under a
   // user of its own, on a read-only file system, with no capabilities but those the diagnostic
   // names, for at most its timeout, and stops a command that prints more than 1 MiB. Four run at
-  // a time. Available in maintenance and normal mode to readers. The console may call it.
+  // a time. The console runs the diagnostics of readers and operators. Available in maintenance
+  // and normal mode to readers. The console may call it.
   rpc RunDiagnostic(RunDiagnosticRequest) returns (stream RunDiagnosticResponse);
   // RollbackConfig delivers the running image's previous config again: the config the image ran
   // before the delivery that replaced it, which the node keeps until the next delivery replaces

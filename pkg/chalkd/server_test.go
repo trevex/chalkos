@@ -358,6 +358,7 @@ func newCredsAt(t *testing.T, now time.Time) creds {
 	c.clients[pki.RoleNode] = &pair
 	c.clients[unknownOrganization] = clientWithOrganization(t, ca, []string{"root"})
 	c.clients[noOrganization] = clientWithOrganization(t, ca, nil)
+	c.clients[consoleOrganization] = clientWithOrganization(t, ca, []string{"console"})
 	admin := clientWithOrganization(t, nodeCA, []string{string(pki.RoleAdmin)})
 	nodeCACert, _ := pki.ParseCertificate([]byte(nodeCA.Certificate))
 	admin.Certificate = append(admin.Certificate, nodeCACert.Raw)
@@ -369,6 +370,8 @@ func newCredsAt(t *testing.T, now time.Time) creds {
 const (
 	unknownOrganization = "unknown organization"
 	noOrganization      = "no organization"
+	// consoleOrganization names the console, which no certificate stands for.
+	consoleOrganization = "console organization"
 	// nodeCAAdmin holds a certificate of the node CA that names the admin role.
 	nodeCAAdmin = "admin organization from the node CA"
 )
@@ -595,6 +598,7 @@ func TestAuthorisation(t *testing.T) {
 			// A certificate of the OS CA without a role's Organization grants nothing.
 			unknownOrganization: deniedEverything,
 			noOrganization:      deniedEverything,
+			consoleOrganization: deniedEverything,
 			// Whatever its Organization says, a certificate of the node CA is a node's.
 			nodeCAAdmin:  nodeRole,
 			pki.RoleNode: nodeRole,

@@ -171,6 +171,25 @@ func Dial(endpoint string, o Options) (*Conn, error) {
 	return c, nil
 }
 
+// DialSocket prepares a client of chalkd's console socket at path, which serves the node API
+// without TLS to root alone. Calls dial the socket again after chalkd restarts.
+func DialSocket(path string) *Conn {
+	c := &Conn{}
+	c.netDial = func(ctx context.Context, _, _ string) (net.Conn, error) {
+		var d net.Dialer
+		conn, err := d.DialContext(ctx, "unix", path)
+		if err != nil {
+			return nil, fmt.Errorf("reach chalkd at %s: %w", path, err)
+		}
+		return conn, nil
+	}
+	c.transport = &http.Transport{DialContext: c.dial}
+	c.http = &http.Client{Transport: c.transport}
+	c.baseURL = "http://chalkd"
+	c.NodeServiceClient = nodev1connect.NewNodeServiceClient(c.http, c.baseURL)
+	return c
+}
+
 // HTTPClient and BaseURL reach the node's other services, such as a layer's, over the
 // connections and checks of this client: connect's New…Client takes them.
 func (c *Conn) HTTPClient() connect.HTTPClient { return c.http }
