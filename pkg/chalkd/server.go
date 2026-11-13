@@ -163,8 +163,9 @@ type Server struct {
 	// Statfs reads the size of the file system mounted at path and the bytes it uses; nil asks
 	// the kernel. Tests replace it.
 	Statfs func(path string) (size, used uint64, err error)
-	// Journal streams the journal of the boot, or of one unit.
-	Journal func(ctx context.Context, unit string, follow bool) (io.ReadCloser, error)
+	// Journal streams the journal of the boot, or of one unit, from its last lines entries when
+	// lines is not zero.
+	Journal func(ctx context.Context, unit string, follow bool, lines uint32) (io.ReadCloser, error)
 	// RebootNode reboots the node; it is called once the response has been sent.
 	RebootNode func()
 	// PowerOffNode powers the node off; it is called once the response has been sent.

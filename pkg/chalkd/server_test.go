@@ -119,7 +119,7 @@ func newTestServer(t *testing.T, mode nodev1.Mode, disks ...storagetest.Disk) (*
 		Host:      h,
 		InPlace:   func(context.Context, install.Request, []byte) error { return errors.New("no install expected") },
 		FromParts: func(context.Context, install.PartsRequest) error { return errors.New("no install expected") },
-		Journal: func(context.Context, string, bool) (io.ReadCloser, error) {
+		Journal: func(context.Context, string, bool, uint32) (io.ReadCloser, error) {
 			return io.NopCloser(strings.NewReader("")), nil
 		},
 		RebootNode:   func() {},
@@ -642,7 +642,7 @@ func TestClientWithoutCertificateIsRejected(t *testing.T) {
 	for _, mode := range []nodev1.Mode{normal, maintenance} {
 		s, _ := newTestServer(t, mode, vda)
 		called := false
-		s.Journal = func(context.Context, string, bool) (io.ReadCloser, error) {
+		s.Journal = func(context.Context, string, bool, uint32) (io.ReadCloser, error) {
 			called = true
 			return io.NopCloser(strings.NewReader("")), nil
 		}
@@ -785,12 +785,13 @@ func TestLogsStreamsJournal(t *testing.T) {
 	s, _ := newTestServer(t, normal, vda)
 	var unit string
 	var follow bool
-	s.Journal = func(_ context.Context, u string, f bool) (io.ReadCloser, error) {
-		unit, follow = u, f
+	var last uint32
+	s.Journal = func(_ context.Context, u string, f bool, n uint32) (io.ReadCloser, error) {
+		unit, follow, last = u, f, n
 		return io.NopCloser(strings.NewReader("line one\nline two\n")), nil
 	}
 	conn := dial(t, serve(t, s, c, c.pool), c.clients[pki.RoleReader])
-	stream, err := conn.Logs(context.Background(), connect.NewRequest(&nodev1.LogsRequest{Unit: "chalkd.service", Follow: true}))
+	stream, err := conn.Logs(context.Background(), connect.NewRequest(&nodev1.LogsRequest{Unit: "chalkd.service", Follow: true, Lines: 100}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -801,8 +802,8 @@ func TestLogsStreamsJournal(t *testing.T) {
 	if err := stream.Err(); err != nil {
 		t.Fatal(err)
 	}
-	if !reflect.DeepEqual(lines, []string{"line one", "line two"}) || unit != "chalkd.service" || !follow {
-		t.Errorf("lines = %v, unit = %q, follow = %v", lines, unit, follow)
+	if !reflect.DeepEqual(lines, []string{"line one", "line two"}) || unit != "chalkd.service" || !follow || last != 100 {
+		t.Errorf("lines = %v, unit = %q, follow = %v, last = %d", lines, unit, follow, last)
 	}
 }
 
@@ -916,7 +917,7 @@ func TestLogsLimitsStreams(t *testing.T) {
 	c := newCreds(t)
 	s, _ := newTestServer(t, normal, vda)
 	started := make(chan struct{}, maxLogStreams+2)
-	s.Journal = func(ctx context.Context, _ string, _ bool) (io.ReadCloser, error) {
+	s.Journal = func(ctx context.Context, _ string, _ bool, _ uint32) (io.ReadCloser, error) {
 		started <- struct{}{}
 		pr, pw := io.Pipe()
 		go func() {

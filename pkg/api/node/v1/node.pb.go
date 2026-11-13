@@ -4174,7 +4174,10 @@ type LogsRequest struct {
 	// Unit whose journal to stream; empty streams the whole boot.
 	Unit string `protobuf:"bytes,1,opt,name=unit,proto3" json:"unit,omitempty"`
 	// Whether the stream goes on with new entries until the client cancels it.
-	Follow        bool `protobuf:"varint,2,opt,name=follow,proto3" json:"follow,omitempty"`
+	Follow bool `protobuf:"varint,2,opt,name=follow,proto3" json:"follow,omitempty"`
+	// How many of the boot's last entries the stream starts with, as journalctl --lines takes it;
+	// zero starts with the boot's first entry.
+	Lines         uint32 `protobuf:"varint,3,opt,name=lines,proto3" json:"lines,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -4221,6 +4224,13 @@ func (x *LogsRequest) GetFollow() bool {
 		return x.Follow
 	}
 	return false
+}
+
+func (x *LogsRequest) GetLines() uint32 {
+	if x != nil {
+		return x.Lines
+	}
+	return 0
 }
 
 // A message of the Logs stream.
@@ -5860,10 +5870,11 @@ const file_chalkos_node_v1_node_proto_rawDesc = "" +
 	"\n" +
 	"size_bytes\x18\a \x01(\x04R\tsizeBytes\x12\x1d\n" +
 	"\n" +
-	"used_bytes\x18\b \x01(\x04R\tusedBytes\"9\n" +
+	"used_bytes\x18\b \x01(\x04R\tusedBytes\"O\n" +
 	"\vLogsRequest\x12\x12\n" +
 	"\x04unit\x18\x01 \x01(\tR\x04unit\x12\x16\n" +
-	"\x06follow\x18\x02 \x01(\bR\x06follow\"\"\n" +
+	"\x06follow\x18\x02 \x01(\bR\x06follow\x12\x14\n" +
+	"\x05lines\x18\x03 \x01(\rR\x05lines\"\"\n" +
 	"\fLogsResponse\x12\x12\n" +
 	"\x04line\x18\x01 \x01(\tR\x04line\"\x0f\n" +
 	"\rRebootRequest\"\x10\n" +

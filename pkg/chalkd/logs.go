@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os/exec"
+	"strconv"
 
 	"connectrpc.com/connect"
 
@@ -19,7 +20,7 @@ func (s *Server) Logs(ctx context.Context, req *connect.Request[nodev1.LogsReque
 		return layer.Errorf(connect.CodeResourceExhausted, "%d log streams are open already; close one first", maxLogStreams)
 	}
 	defer s.logStreams.Add(-1)
-	r, err := s.Journal(ctx, req.Msg.Unit, req.Msg.Follow)
+	r, err := s.Journal(ctx, req.Msg.Unit, req.Msg.Follow, req.Msg.Lines)
 	if err != nil {
 		return fmt.Errorf("read the journal: %w", err)
 	}
@@ -37,9 +38,13 @@ func (s *Server) Logs(ctx context.Context, req *connect.Request[nodev1.LogsReque
 	return nil
 }
 
-// Journal runs journalctl for the current boot; following ends when ctx does.
-func Journal(ctx context.Context, unit string, follow bool) (io.ReadCloser, error) {
+// Journal runs journalctl for the current boot, from its last lines entries when lines is not zero;
+// following ends when ctx does.
+func Journal(ctx context.Context, unit string, follow bool, lines uint32) (io.ReadCloser, error) {
 	args := []string{"--boot", "--no-pager", "--output=short-iso"}
+	if lines > 0 {
+		args = append(args, "--lines="+strconv.FormatUint(uint64(lines), 10))
+	}
 	if unit != "" {
 		args = append(args, "--unit="+unit)
 	}

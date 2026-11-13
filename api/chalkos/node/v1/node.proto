@@ -1003,6 +1003,9 @@ message LogsRequest {
   string unit = 1;
   // Whether the stream goes on with new entries until the client cancels it.
   bool follow = 2;
+  // How many of the boot's last entries the stream starts with, as journalctl --lines takes it;
+  // zero starts with the boot's first entry.
+  uint32 lines = 3;
 }
 
 // A message of the Logs stream.

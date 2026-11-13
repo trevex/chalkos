@@ -313,6 +313,7 @@ The request of Logs.
 | ----- | ---- | ----------- |
 | `unit` | string | Unit whose journal to stream; empty streams the whole boot. |
 | `follow` | bool | Whether the stream goes on with new entries until the client cancels it. |
+| `lines` | uint32 | How many of the boot's last entries the stream starts with, as journalctl --lines takes it; zero starts with the boot's first entry. |
 
 #### LogsResponse { #message-logsresponse }
 
