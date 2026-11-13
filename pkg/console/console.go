@@ -15,6 +15,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
+	"github.com/trevex/chalkos/pkg/askpassword"
 )
 
 // Tab is one tab of the console.
@@ -109,8 +110,8 @@ type Options struct {
 	Units func(ctx context.Context) ([]string, error)
 	// DNSServers lists the DNS servers the node asks.
 	DNSServers func() ([]string, error)
-	// PassphrasePrompt reports whether a passphrase prompt waits for an answer on the console.
-	PassphrasePrompt func() bool
+	// Asks are systemd's password requests, which the console answers.
+	Asks askpassword.Agent
 }
 
 // withDefaults fills the zero fields with the node's own.
@@ -130,9 +131,6 @@ func (o Options) withDefaults() Options {
 	}
 	if o.DNSServers == nil {
 		o.DNSServers = dnsServers
-	}
-	if o.PassphrasePrompt == nil {
-		o.PassphrasePrompt = passphrasePrompt
 	}
 	return o
 }
@@ -172,9 +170,22 @@ type Model struct {
 	addresses        Source[[]string]
 	addressesRead    time.Time
 	addressesChanged time.Time
-	// prompt is set while a passphrase prompt waits on the console.
-	prompt  bool
-	reading bool
+	// ctx ends with Close, and with it the watch of the password requests.
+	ctx    context.Context
+	cancel context.CancelFunc
+	// asks are the password requests as last read, oldest first, by the read numbered asksRead
+	// of the asksSeq reads so far; prompt is the one on screen; answered are those answered
+	// whose files remain, by when, which the prompt skips for answeredFor; asksChanged signals a
+	// change of the requests' directory, nil without a watch; askNote is why the last answer did
+	// not reach its request.
+	asks        []askpassword.Request
+	asksSeq     int
+	asksRead    int
+	prompt      *prompt
+	answered    map[string]time.Time
+	asksChanged <-chan struct{}
+	askNote     string
+	reading     bool
 	// lastKey is when the last key came; idle is set once none came for idleAfter. tickGen numbers
 	// the chain of ticks, which a key that ends the idle time starts anew.
 	lastKey time.Time
@@ -191,14 +202,20 @@ type Model struct {
 func New(c Client, o Options) *Model {
 	o = o.withDefaults()
 	tabs := append([]Tab{newOverview(), newNetwork(o), newStorage(), newLogs(o)}, o.Tabs...)
-	m := &Model{c: c, o: o, tabs: tabs}
+	m := &Model{c: c, o: o, tabs: tabs, answered: map[string]time.Time{}}
+	m.ctx, m.cancel = context.WithCancel(context.Background())
 	m.shown = m.applying()
 	return m
 }
 
+// Close stops the console's watch of the password requests.
+func (m *Model) Close() { m.cancel() }
+
 func (m *Model) Init() tea.Cmd {
 	m.lastKey = m.o.Now()
-	cmds := []tea.Cmd{m.read(), m.tick()}
+	// Without a watch, such as before systemd made the requests' directory, the ticks read the
+	// requests and try to watch them again.
+	cmds := []tea.Cmd{m.read(), m.tick(), m.readAsks(), m.watchAsks()}
 	for _, t := range m.tabs {
 		cmds = append(cmds, t.Init(m.c))
 	}
@@ -228,7 +245,6 @@ type readMsg struct {
 	addresses     []string
 	addressesErr  error
 	addressesRead bool
-	prompt        bool
 	at            time.Time
 }
 
@@ -247,12 +263,12 @@ func (m *Model) read() tea.Cmd {
 		return nil
 	}
 	m.reading = true
-	c, now, prompt := m.c, m.o.Now(), m.o.PassphrasePrompt
+	c, now := m.c, m.o.Now()
 	wantAddresses := now.Sub(m.addressesRead) >= m.addressesInterval(now)
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), readTimeout)
 		defer cancel()
-		r := readMsg{at: now, prompt: prompt()}
+		r := readMsg{at: now}
 		r.info, r.infoErr = c.Info(ctx)
 		if r.infoErr != nil {
 			return r
@@ -285,10 +301,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.idle = m.o.Now().Sub(m.lastKey) >= idleAfter
-		return m, tea.Batch(m.read(), m.tick(), m.ticks())
+		return m, tea.Batch(m.read(), m.tick(), m.ticks(), m.readAsks(), m.watchAsks())
 	case readMsg:
 		m.reading = false
-		m.prompt = msg.prompt
 		m.node.Info.Set(msg.info, msg.infoErr, msg.at)
 		if msg.infoErr == nil {
 			m.node.Disks.Set(msg.disks, msg.disksErr, msg.at)
@@ -305,6 +320,23 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.reshow()
 		return m, m.broadcast(m.node)
+	case asksChangedMsg:
+		return m, tea.Batch(m.readAsks(), waitAsks(m.asksChanged))
+	case asksWatchEndedMsg:
+		m.asksChanged = nil
+		return m, tea.Batch(m.readAsks(), m.watchAsks())
+	case asksMsg:
+		if msg.seq > m.asksRead && msg.err == nil {
+			m.asksRead = msg.seq
+			m.setAsks(msg.reqs)
+		}
+		return m, nil
+	case answeredMsg:
+		if msg.err != nil {
+			delete(m.answered, msg.path)
+			m.askNote = OneLine("the answer did not reach the request: " + msg.err.Error())
+		}
+		return m, m.readAsks()
 	case actionDoneMsg:
 		m.running = false
 		m.note = msg.note
@@ -365,8 +397,9 @@ func (m *Model) show(n int) tea.Cmd {
 	return cmd
 }
 
-// key handles a key: it ends the idle time, then the actions menu takes it while open, a
-// capturing tab while it captures, then the console's own keys, and the tab on screen the rest.
+// key handles a key: it ends the idle time, then a password request on screen takes it, the
+// actions menu while open, a capturing tab while it captures, then the console's own keys, and
+// the tab on screen the rest.
 func (m *Model) key(k tea.KeyMsg) tea.Cmd {
 	m.lastKey = m.o.Now()
 	var resume tea.Cmd
@@ -379,6 +412,9 @@ func (m *Model) key(k tea.KeyMsg) tea.Cmd {
 }
 
 func (m *Model) handle(k tea.KeyMsg) tea.Cmd {
+	if m.prompt != nil {
+		return m.promptKey(k)
+	}
 	if m.menu != nil {
 		return m.menuKey(k)
 	}
@@ -407,6 +443,9 @@ func (m *Model) handle(k tea.KeyMsg) tea.Cmd {
 func (m *Model) View() string {
 	if m.width == 0 {
 		return ""
+	}
+	if m.prompt != nil {
+		return m.promptScreen()
 	}
 	top := append(m.headerLines(), m.tabsLine())
 	bottom := []string{m.keysLine()}

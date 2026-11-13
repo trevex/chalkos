@@ -89,9 +89,14 @@ in
           StandardInput = "tty";
           StandardOutput = "tty";
           StandardError = "journal";
-          # It reaches chalkd's socket, runs journalctl and systemctl and reads /proc; it needs no
-          # network, writes no file and needs no capability: as root it owns the journal's files,
-          # the sockets of chalkd and systemd, and tty1.
+          # It reaches chalkd's socket, runs journalctl and systemctl, reads /proc, and answers
+          # systemd's password requests: it watches /run/systemd/ask-password with inotify and
+          # sends each answer as a datagram to the socket the request names. It needs no network,
+          # writes no file and needs no capability: as root it owns the journal's files, the
+          # sockets of chalkd and systemd, tty1, and the requests' sockets, which systemd creates
+          # with mode 0600 for root, and the asking process takes answers of root and of its own
+          # user. A path socket stays reachable on a read-only file system and from the private
+          # network namespace, which hides abstract sockets alone.
           CapabilityBoundingSet = "";
           NoNewPrivileges = true;
           PrivateNetwork = true;

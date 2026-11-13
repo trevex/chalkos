@@ -11,9 +11,9 @@ import (
 	"github.com/trevex/chalkos/pkg/statusview"
 )
 
-// headerLines are the header's rows: who the node is, which image it runs, its health, a
-// passphrase prompt that waits, and in maintenance mode and on the installer the certificate's
-// fingerprint and the addresses that install needs.
+// headerLines are the header's rows: who the node is, which image it runs, its health, and in
+// maintenance mode and on the installer the certificate's fingerprint and the addresses that
+// install needs.
 func (m *Model) headerLines() []string {
 	info := m.node.Info.Value
 	first := []string{TitleStyle.Render(OneLine(cmp.Or(info.GetHostname(), "chalkos")))}
@@ -34,12 +34,6 @@ func (m *Model) headerLines() []string {
 		second = append(second, OneLine(v+" on "+cmp.Or(info.GetPlatform(), "every platform")))
 	}
 	lines := []string{strings.Join(first, "  "), strings.Join(second, "  "), m.healthLine()}
-	if m.prompt {
-		name := OneLine(cmp.Or(info.GetNodeName(), "<node>"))
-		for _, row := range wrapWords("passphrase", "prompt waits on this screen; chalkctl recovery-key "+name+" prints the key", m.width) {
-			lines = append(lines, WarnStyle.Render(row))
-		}
-	}
 	if info != nil && !m.node.Normal() {
 		lines = append(lines, wrapChars("fingerprint", OneLine(info.GetFingerprint()), m.width)...)
 		lines = append(lines, wrapWords("addresses", m.addressList(), m.width)...)

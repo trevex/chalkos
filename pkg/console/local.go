@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -84,13 +83,4 @@ func dnsServers() ([]string, error) {
 		}
 	}
 	return servers, nil
-}
-
-// askPassword is where systemd's passphrase prompts wait for an answer, each as an ask.* file.
-const askPassword = "/run/systemd/ask-password"
-
-// passphrasePrompt reports whether a passphrase prompt waits for an answer.
-func passphrasePrompt() bool {
-	asks, _ := filepath.Glob(filepath.Join(askPassword, "ask.*"))
-	return len(asks) > 0
 }

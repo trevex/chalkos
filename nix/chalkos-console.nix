@@ -6,6 +6,7 @@ callPackage ./go-module.nix { } {
   paths = [
     ../cmd/chalkos-console
     ../pkg/api
+    ../pkg/askpassword
     ../pkg/client
     ../pkg/console
     ../pkg/jsonfile

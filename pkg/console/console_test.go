@@ -58,15 +58,6 @@ func TestSwitchTabs(t *testing.T) {
 	consoletest.Snapshot(t, tm)
 }
 
-// While a passphrase prompt waits, the header says where the key comes from.
-func TestPassphrasePrompt(t *testing.T) {
-	o := consoletest.Options()
-	o.PassphrasePrompt = func() bool { return true }
-	tm := consoletest.Start(t, console.New(consoletest.Normal(), o))
-	consoletest.WaitFor(t, tm, "recovery-key n1")
-	consoletest.Snapshot(t, tm)
-}
-
 // On a narrow screen the fingerprint breaks over rows instead of being cut.
 func TestFingerprintWraps(t *testing.T) {
 	m := console.New(consoletest.Maintenance(), consoletest.Options())

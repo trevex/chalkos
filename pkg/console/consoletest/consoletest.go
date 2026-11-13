@@ -23,6 +23,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
+	"github.com/trevex/chalkos/pkg/askpassword"
 	"github.com/trevex/chalkos/pkg/console"
 )
 
@@ -298,9 +299,10 @@ func Options() console.Options {
 		Units: func(context.Context) ([]string, error) {
 			return []string{"chalkd.service", "chronyd.service", "systemd-networkd.service"}, nil
 		},
-		Journal:          func(context.Context, string, func(string)) error { return errors.New("no journal in tests") },
-		DNSServers:       func() ([]string, error) { return []string{"192.168.1.1", "2001:db8::1"}, nil },
-		PassphrasePrompt: func() bool { return false },
+		Journal:    func(context.Context, string, func(string)) error { return errors.New("no journal in tests") },
+		DNSServers: func() ([]string, error) { return []string{"192.168.1.1", "2001:db8::1"}, nil },
+		// No requests: a directory that does not exist holds none.
+		Asks: askpassword.Agent{Dir: "/nonexistent/chalkos-console-test"},
 	}
 }
 
@@ -308,13 +310,17 @@ func Options() console.Options {
 var plain sync.Once
 
 // Start runs the console m on a terminal of 80 columns and 25 lines, with lipgloss writing no
-// colours and times in UTC, so the screens compare as text on any machine.
+// colours and times in UTC, so the screens compare as text on any machine. A model with a Close
+// method is closed when the test ends.
 func Start(t *testing.T, m tea.Model) *teatest.TestModel {
 	t.Helper()
 	plain.Do(func() {
 		lipgloss.SetColorProfile(termenv.Ascii)
 		time.Local = time.UTC
 	})
+	if c, ok := m.(interface{ Close() }); ok {
+		t.Cleanup(c.Close)
+	}
 	return teatest.NewTestModel(t, m, teatest.WithInitialTermSize(80, 25))
 }
 
@@ -340,6 +346,7 @@ var keys = map[string]tea.KeyType{
 	"tab": tea.KeyTab, "shift+tab": tea.KeyShiftTab, "f10": tea.KeyF10, "enter": tea.KeyEnter,
 	"esc": tea.KeyEsc, "up": tea.KeyUp, "down": tea.KeyDown, "pgup": tea.KeyPgUp,
 	"pgdown": tea.KeyPgDown, "home": tea.KeyHome, "end": tea.KeyEnd, "backspace": tea.KeyBackspace,
+	"ctrl+u": tea.KeyCtrlU,
 }
 
 func keyMsg(key string) tea.KeyMsg {
