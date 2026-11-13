@@ -187,7 +187,7 @@ func TestPasswordSlots(t *testing.T) {
 		`{"keyslots": {"0": {"type": "luks2"}, "2": {"type": "luks2"}}, "tokens": {"0": {"type": "systemd-tpm2", "keyslots": ["0"]}}}`:                                    {"2"},
 		`{"keyslots": {"0": {}, "1": {}, "10": {}}, "tokens": {"0": {"type": "systemd-tpm2", "keyslots": ["0"]}, "1": {"type": "systemd-recovery", "keyslots": ["10"]}}}`: {"1"},
 		`{"keyslots": {"0": {}}, "tokens": {"0": {"type": "systemd-tpm2", "keyslots": ["0"]}}}`:                                                                           nil,
-		`{"keyslots": {"3": {}, "1": {}}, "tokens": {}}`: {"1", "3"},
+		`{"keyslots": {"3": {}, "1": {}}, "tokens": {}}`:                                                                                                                  {"1", "3"},
 	} {
 		got, err := passwordSlots([]byte(dump))
 		if err != nil || !reflect.DeepEqual(got, want) {
