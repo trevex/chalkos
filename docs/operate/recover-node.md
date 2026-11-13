@@ -44,6 +44,16 @@ and the PK, KEK, db and dbx. Any of these causes changes it:
 A cleared TPM, or a disk moved to another machine, has no sealed keys at all, with the same
 result.
 
+systemd-cryptsetup asks on every kernel console at once, the screen and each serial port, and the
+first answer counts. A machine without a serial port shows the prompt on its screen, and its
+keyboard answers it. The boot's status around the prompt, such as the unit that waits, shows only
+on the last console of [`chalkos.consoles`](../reference/image-options.md#chalkosconsoles), which
+is the screen unless the image puts a serial port last;
+[Variants and platforms](../build/variants-and-platforms.md#the-last-console-is-devconsole)
+describes the choice. A volume that asks after the boot shows its prompt in the console on the
+screen, as [The console answers password requests](console.md#the-console-answers-password-requests)
+describes.
+
 The node stays at the prompt. It does not fall back to maintenance mode, because that would let
 anyone with physical access give it a new config. A boot that waits at the prompt never reaches
 the health check either. After an upgrade, the node stays in that boot until you unlock it or

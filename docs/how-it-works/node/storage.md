@@ -166,7 +166,9 @@ flowchart TD
 ```
 
 The console always asks for STATE, and for VAR and the volumes unless the fallback is `none`.
-Typing the recovery key or password boots the node as usual.
+Typing the recovery key or password boots the node as usual. systemd-cryptsetup asks on every
+kernel console, so the screen of a machine without a serial port shows the prompt too. A volume
+that opens after the boot asks in [the console](../../operate/console.md) on the screen.
 
 With fallback `none`, nothing opens a partition the TPM does not unseal. A volume's unlock unit
 fails, and [`chalkctl storage reset`](../../reference/cli/chalkctl_storage_reset.md) recreates the

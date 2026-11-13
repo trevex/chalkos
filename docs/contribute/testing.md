@@ -151,12 +151,16 @@ shell functions `fail`, `retry` and `refuses` the check scripts call. The test s
 
 The end-to-end tests in `test/e2e` boot chalkos images in QEMU with OVMF, Secure Boot and a software
 TPM, through the same `pkg/lab` code chalklab uses, and drive
-the nodes with the real chalkctl. Each check runs one test or a group of them:
+the nodes with the real chalkctl. Most tests read the probe's facts on the serial console. A test
+of a VM without a serial port reads its screen as text instead: `pkg/lab` takes QEMU's screendump
+and matches each character cell against the console font that the test image loads and that
+`CHALKLAB_CONSOLE_FONT` names, and it types on the VM's keyboard through QMP. Each check runs one
+test or a group of them:
 
 | Check | Test | VMs |
 | --- | --- | --- |
 | `e2e-firmware` | The firmware with a TPM starts and reaches the serial console. | 1 |
-| `e2e-image` | The test image boots without Secure Boot. | 1 |
+| `e2e-image` | The test image boots without Secure Boot, then without its serial port and TPM: STATE asks for the recovery key on the screen, which the test reads with the test image's console font and answers on the keyboard, and the console answers a password request after the boot. | 1 |
 | `e2e-secureboot` | A signed image boots under Secure Boot and an unsigned one is refused. | 1 per test |
 | `e2e-verity` | A tampered store fails to read. | 1 |
 | `e2e-install` | An install in place, with a second disk. | 1 |
