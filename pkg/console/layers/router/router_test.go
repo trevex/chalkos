@@ -2,7 +2,6 @@ package router_test
 
 import (
 	"context"
-	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -116,15 +115,25 @@ func TestRouterTabWithoutFeatures(t *testing.T) {
 func TestRouterTabFailingDiagnostic(t *testing.T) {
 	c := routerNode()
 	c.DiagnosticErrs = map[string]error{
-		consoletest.Key("dhcp-leases", nil): connect.NewError(connect.CodePermissionDenied, errors.New("the console may not run dhcp-leases\x1b[2J")),
+		// The tab's own bound on a diagnostic's run passed before chalkd answered.
+		consoletest.Key("dhcp-leases", nil): connect.NewError(connect.CodeDeadlineExceeded, context.DeadlineExceeded),
 	}
 	tm := start(t, c, status(true))
 	consoletest.WaitFor(t, tm, "nat64-sessions instance=")
 	consoletest.Press(tm, "end")
-	consoletest.WaitFor(t, tm, "dhcp leases: permission_denied")
-	screen := consoletest.Snapshot(t, tm)
-	if !strings.Contains(screen, `dhcp-leases\x1b[2J`) {
-		t.Errorf("the error is not escaped:\n%s", screen)
+	consoletest.WaitFor(t, tm, "dhcp leases: deadline_exceeded")
+	consoletest.Snapshot(t, tm)
+}
+
+// A lease shows the host name a DHCP client chose with its control characters escaped.
+func TestRouterTabEscapesLeases(t *testing.T) {
+	c := routerNode()
+	c.Diagnostics[consoletest.Key("dhcp-leases", nil)] = "VRF\tSUBNET\tADDRESS\tMAC\tHOSTNAME\tENDS\n" +
+		"default\toffice\t192.0.2.12\t52:54:00:aa:bb:03\tprinter\x1b[2J\t2026-11-13T20:00:00Z\n"
+	tm := start(t, c, status(true))
+	consoletest.WaitFor(t, tm, "nat64-sessions instance=")
+	if screen := consoletest.Snapshot(t, tm); !strings.Contains(screen, `printer\x1b[2J`) {
+		t.Errorf("the host name is not escaped:\n%s", screen)
 	}
 }
 
