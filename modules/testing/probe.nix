@@ -1,5 +1,6 @@
-# Test-only: prints "CHALKTEST key=value" facts to the console once the system is up,
-# so chalklab tests can assert on a node that has no shell access.
+# Test-only: prints "CHALKTEST key=value" facts to the journal and to the first serial port once
+# the system is up, so chalklab tests can assert on a node that has no shell access, whichever
+# kernel console is last.
 { lib, pkgs, ... }:
 let
   probe = pkgs.writeShellApplication {
@@ -14,7 +15,16 @@ let
       systemd
     ];
     text = ''
-      fact() { echo "CHALKTEST $1=$2"; }
+      # The tests read the facts on the first serial port. dd, a child of the shell, opens it: a
+      # redirect would have the shell open it, which systemd makes a session leader, so the port
+      # would become the shell's controlling terminal, and the shell's exit would hang it up for
+      # chalkd too. The write blocks while chalkos-serial-log fills the port, so no fact is lost;
+      # QEMU's port always has carrier. A port without a UART fails the write, which the probe
+      # ignores.
+      fact() {
+        echo "CHALKTEST $1=$2"
+        echo "CHALKTEST $1=$2" | dd of=/dev/ttyS0 oflag=noctty status=none 2>/dev/null || true
+      }
 
       count_boots() {
         local file=$1 n=0
@@ -111,13 +121,13 @@ let
 in
 {
   systemd.services.chalktest-probe = {
-    description = "Report chalkos boot facts on the console for chalklab tests";
+    description = "Report chalkos boot facts on the serial port for chalklab tests";
     wantedBy = [ "multi-user.target" ];
     after = [ "local-fs.target" ];
     serviceConfig = {
       Type = "oneshot";
       ExecStart = lib.getExe probe;
-      StandardOutput = "journal+console";
+      StandardOutput = "journal";
     };
   };
 }
