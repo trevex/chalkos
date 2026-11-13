@@ -47,6 +47,12 @@ writeShellApplication {
       awk -v root="$tree/lib/modules/$version/" '$1 == "insmod" && index($2, root) == 1 { print substr($2, length(root) + 1) }' <<<"$out"
     }
 
+    # The module files below a directory, compressed or not. An out-of-tree module package also
+    # holds the certificate its modules are signed with, as <module>.ko.cer, which is no module.
+    moduleFiles() {
+      find -L "$1" -regextype posix-extended -regex '.*\.ko(\.(xz|zst|gz))?'
+    }
+
     # The names of module files, read from stdin, as the kernel names the modules.
     moduleNames() {
       sed -E 's|.*/||; s|\.ko(\.[a-z]+)?$||; s|-|_|g' | sort -u
@@ -88,7 +94,7 @@ writeShellApplication {
       # What the out-of-tree modules depend on, unless they bring it themselves: from the kernel's
       # tree, as modprobe would load it.
       for extra in "''${extras[@]}"; do
-        if [[ -d $extra/lib/modules/$version ]]; then find -L "$extra/lib/modules/$version" -name '*.ko*'; fi
+        if [[ -d $extra/lib/modules/$version ]]; then moduleFiles "$extra/lib/modules/$version"; fi
       done >"$work/extra"
       moduleNames <"$work/extra" >"$work/extraNames"
       dependencies <"$work/extra" >"$work/extraDependencies"
@@ -143,7 +149,7 @@ writeShellApplication {
 
       # depmod leaves a dependency it cannot find out of modules.dep, so modinfo tells.
       work=$(mktemp -d)
-      find -L "$root" -name '*.ko*' >"$work/modules"
+      moduleFiles "$root" >"$work/modules"
       {
         moduleNames <"$work/modules"
         if [[ -f $root/modules.builtin ]]; then moduleNames <"$root/modules.builtin"; fi
