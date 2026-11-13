@@ -1,0 +1,25 @@
+node1  node n1  normal  up 3h 12m
+image 81bd81bd81bd generation 7  worker on metal
+healthy
+ 1 Overview   2 Network   3 Storage   4 Logs   5 Router 
+bgp:
+  VRF      PEER      NEIGHBOR       STATE        UPTIME  RECEIVED  SENT  BFD
+  default  fabric    eth1           Established  1h2m3s  1         2     up
+  default  upstream  203.0.113.254  Active       -       0         0     -
+nat64:
+  INSTANCE  SESSIONS  BINDINGS  POOL TCP  POOL UDP  POOL ICMP
+  edge      2         2         4535      4535      -
+dhcp4 default: running
+  SUBNET  RANGE         LEASED  POOL
+  office  192.0.2.0/24  2       100
+nat64 sessions: chalkctl node diag n1 nat64-sessions instance=<name> lists them
+dhcp leases:
+  VRF      SUBNET  ADDRESS     MAC                HOSTNAME  ENDS
+  default  office  192.0.2.10  52:54:00:aa:bb:01  laptop    2026-11-13T19:04:05Z
+  default  office  192.0.2.11  52:54:00:aa:bb:02  -         2026-11-13T18:30:00Z
+wireguard:
+  interface: wg0
+    public key: uLRrWL5pg3FX2ydGsAsUrQ/VvWautg0OJpoJEGP12XM=
+    private key: (hidden)
+    listening port: 51820
+Tab/Left/Right 1-5 tabs  Up/Down/PgUp/PgDn scroll  a actions (off in this image)
