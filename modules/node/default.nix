@@ -9,6 +9,7 @@
     ./kinds
     ./kernel.nix
     ./chalkd.nix
+    ./consoles.nix
     ./console.nix
     ./time.nix
     ./network.nix

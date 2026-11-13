@@ -49,7 +49,7 @@ var imagePages = []optionPage{
 			{"Kubernetes and CNI", "kubernetes-and-cni", "Whether an image runs Kubernetes, the packages and images it runs it with, and its CNI.", []string{"chalkos.kubernetes", "chalkos.cni"}},
 			{"Router and forwarding", "router-and-forwarding", "Whether an image carries the router layer, and whether its node forwards packets between its interfaces.", []string{"chalkos.router", "chalkos.forwarding"}},
 			{"Upgrade and health", "upgrade-and-health", "How many times systemd-boot boots a new image before it falls back, and when a boot of it is healthy.", []string{"chalkos.upgrade"}},
-			{"Console", "console", "Whether chalkd serves the console on the machine's screen, and whether the console may act on the node.", []string{"chalkos.console"}},
+			{"Console", "console", "The kernel's consoles, where the boot and its passphrase prompts appear, whether chalkd serves the console on the machine's screen, and whether the console may act on the node.", []string{"chalkos.consoles", "chalkos.console"}},
 			{"Debug and maintenance", "debug-and-maintenance", "The debug tools an image carries, and the OS CA whose clients its maintenance mode accepts.", []string{"chalkos.debug", "chalkos.maintenance"}},
 			{"Set by mkImages", "set-by-mkimages", "mkImages sets these from its arguments; a module reads them rather than setting them.", []string{"chalkos.variant", "chalkos.platform", "chalkos.provenance"}},
 		},

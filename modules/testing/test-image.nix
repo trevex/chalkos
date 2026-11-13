@@ -19,7 +19,8 @@
     "virtio_blk"
   ];
 
-  # The platform puts the console on the first serial port, where the tests read the facts.
+  # The probe writes its facts to the first serial port itself, whichever console is last, and
+  # chalkd prints its lines there too.
   boot.kernelParams = [ "quiet" ];
 
   # Certificates last a year; a test renews them by delivering config, due or not.

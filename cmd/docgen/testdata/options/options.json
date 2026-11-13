@@ -294,6 +294,25 @@
     "readOnly": false,
     "type": "boolean"
   },
+  "chalkos.consoles": {
+    "declarations": [
+      {
+        "name": "modules/node/consoles.nix",
+        "url": "https://example.org/modules/node/consoles.nix"
+      }
+    ],
+    "default": {
+      "_type": "literalExpression",
+      "text": "[\n  \"ttyS0,115200\"\n  \"tty0\"\n]"
+    },
+    "description": "The kernel's consoles in order.",
+    "loc": [
+      "chalkos",
+      "consoles"
+    ],
+    "readOnly": false,
+    "type": "non-empty (list of string matching the pattern [A-Za-z0-9]+(,[A-Za-z0-9]+)*)"
+  },
   "chalkos.debug.tools": {
     "declarations": [
       {

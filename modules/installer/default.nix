@@ -124,11 +124,12 @@ in
     "virtio_scsi"
     "xhci_pci"
   ];
-  # One installer serves every platform, so its console is on the screen and the first serial
-  # port; mkImages's installer.modules may add others.
-  boot.kernelParams = [
-    "console=tty0"
-    "console=ttyS0,115200"
+  # One installer serves every platform, so its consoles are the first serial port and the
+  # screen, the screen last, as on metal: a machine without a serial port shows the boot and the
+  # console with the fingerprint. mkImages's installer.modules may choose another order.
+  chalkos.consoles = lib.mkDefault [
+    "ttyS0,115200"
+    "tty0"
   ];
 
   # A CD-ROM has no partitions in Linux; a partitioned loop device over it exposes the store

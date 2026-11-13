@@ -1967,8 +1967,10 @@ lib.runTests {
       {
         node = lib.sort lib.lessThan (marks i.nixos.node-metal);
         installer = marks i.nixos.installer;
-        # metal's modules of chalkos stay when platforms.metal gives more: console=tty0 is theirs.
-        console = lib.elem "console=tty0" i.nixos.node-metal.config.boot.kernelParams;
+        # metal's modules of chalkos stay when platforms.metal gives more: they set the consoles.
+        console = lib.any (
+          d: lib.hasSuffix "modules/platforms/metal.nix" d.file
+        ) i.nixos.node-metal.options.chalkos.consoles.definitionsWithLocations;
       };
     expected = {
       node = [
@@ -2324,8 +2326,9 @@ lib.runTests {
       testImage = true;
     };
   };
-  # The installer's modules reach its image, whose console is on the screen and the first serial
-  # port; it is no variant and belongs to no platform, as it installs images of every one.
+  # The installer's modules reach its image, whose consoles are the first serial port and the
+  # screen, the screen last; it is no variant and belongs to no platform, as it installs images of
+  # every one.
   testInstallerModules = {
     expr =
       let
@@ -2355,8 +2358,8 @@ lib.runTests {
       uplink = "52:54:00:12:34:56";
       wireless = true;
       consoles = [
-        "console=tty0"
         "console=ttyS0,115200"
+        "console=tty0"
       ];
       osRelease = {
         CHALKOS_BOOT_TRIES = "3";
@@ -2392,8 +2395,8 @@ lib.runTests {
       metal = {
         platform = "metal";
         consoles = [
-          "console=tty0"
           "console=ttyS0,115200"
+          "console=tty0"
         ];
         guestAgent = false;
         condition = null;
@@ -2404,6 +2407,149 @@ lib.runTests {
         guestAgent = true;
         condition = "kvm";
       };
+    };
+  };
+  # The kernel's consoles: metal, a platform of the arguments' own and the installer put the
+  # screen last, kvm has the first serial port alone, and an image or the installer may choose
+  # another order. Two plain lists conflict, and lib.mkForce overrides one. A console= of
+  # boot.kernelParams's own is refused, as are an empty list and an entry that is no device and
+  # options; an entry may have several options, as uart8250's takes them.
+  testConsoles = {
+    expr =
+      let
+        i = mkImages {
+          variants.worker = { };
+          platforms = {
+            metal = [ ];
+            kvm = [ ];
+            esxi = [ ];
+          };
+        };
+        serialLast = [
+          "tty0"
+          "ttyS0,115200"
+        ];
+        consoles = c: lib.filter (lib.hasPrefix "console=") c.boot.kernelParams;
+        message = "boot.kernelParams holds console= entries of its own; set the kernel's consoles in chalkos.consoles, whose last entry is /dev/console";
+        refused = c: lib.any (a: !a.assertion && a.message == message) c.assertions;
+        # The worker of a platform r650 whose own module sets the consoles plainly, with the
+        # variant's module given.
+        onR650 =
+          module:
+          (mkImages {
+            platforms.r650 = [
+              {
+                chalkos.consoles = [
+                  "ttyS1,115200"
+                  "tty0"
+                ];
+              }
+            ];
+            variants.worker.modules = [ module ];
+          }).nixos.worker-r650.config;
+      in
+      {
+        metal = consoles i.nixos.worker-metal.config;
+        kvm = consoles i.nixos.worker-kvm.config;
+        esxi = consoles i.nixos.worker-esxi.config;
+        installer = consoles i.nixos.installer.config;
+        serialLast = consoles (worker [ { chalkos.consoles = serialLast; } ]);
+        installerSerialLast =
+          consoles
+            (mkImages { installer.modules = [ { chalkos.consoles = serialLast; } ]; }).nixos.installer.config;
+        stray = refused (worker [ { boot.kernelParams = [ "console=ttyS1,115200" ]; } ]);
+        plain = refused (worker [ ]);
+        empty = fails (worker [ { chalkos.consoles = [ ]; } ]).chalkos.consoles;
+        notADevice = fails (worker [ { chalkos.consoles = [ "ttyS0 quiet" ]; } ]).chalkos.consoles;
+        # A platform's and a variant's plain lists conflict; lib.mkForce overrides the platform's.
+        twice = fails (onR650 { chalkos.consoles = serialLast; }).chalkos.consoles;
+        forced = consoles (onR650 {
+          chalkos.consoles = lib.mkForce serialLast;
+        });
+        uart = consoles (worker [
+          {
+            chalkos.consoles = [
+              "uart8250,mmio32,0xfe215040"
+              "tty0"
+            ];
+          }
+        ]);
+      };
+    expected = {
+      metal = [
+        "console=ttyS0,115200"
+        "console=tty0"
+      ];
+      kvm = [ "console=ttyS0,115200" ];
+      esxi = [
+        "console=ttyS0,115200"
+        "console=tty0"
+      ];
+      installer = [
+        "console=ttyS0,115200"
+        "console=tty0"
+      ];
+      serialLast = [
+        "console=tty0"
+        "console=ttyS0,115200"
+      ];
+      installerSerialLast = [
+        "console=tty0"
+        "console=ttyS0,115200"
+      ];
+      stray = true;
+      plain = false;
+      empty = true;
+      notADevice = true;
+      twice = true;
+      forced = [
+        "console=tty0"
+        "console=ttyS0,115200"
+      ];
+      uart = [
+        "console=uart8250,mmio32,0xfe215040"
+        "console=tty0"
+      ];
+    };
+  };
+  # /dev/console is the last kernel console. While that is tty0 or tty1 and the console runs on
+  # tty1, chalkd's unit leaves /dev/console out, so its lines do not run over the console, which
+  # shows the fingerprint and the addresses. Otherwise /dev/console gets them.
+  testChalkdOutput = {
+    expr =
+      let
+        i = mkImages { variants.worker = { }; };
+        output =
+          c:
+          lib.unique [
+            c.systemd.services.chalkd.serviceConfig.StandardOutput
+            c.systemd.services.chalkd.serviceConfig.StandardError
+          ];
+        on = consoles: output (worker [ { chalkos.consoles = consoles; } ]);
+      in
+      {
+        metal = output i.nixos.worker-metal.config;
+        kvm = output i.nixos.worker-kvm.config;
+        installer = output i.nixos.installer.config;
+        serialLast = on [
+          "tty0"
+          "ttyS0,115200"
+        ];
+        screenAlone = on [ "tty1" ];
+        otherTerminal = on [
+          "ttyS0,115200"
+          "tty2"
+        ];
+        noConsole = output (worker [ { chalkos.console.enable = false; } ]);
+      };
+    expected = {
+      metal = [ "journal" ];
+      kvm = [ "journal+console" ];
+      installer = [ "journal" ];
+      serialLast = [ "journal+console" ];
+      screenAlone = [ "journal" ];
+      otherTerminal = [ "journal+console" ];
+      noConsole = [ "journal+console" ];
     };
   };
   # The guest agent answers what the host asks about the node and shuts it down; it runs no

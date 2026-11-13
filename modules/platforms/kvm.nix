@@ -1,8 +1,9 @@
 # Virtual machines under KVM, such as QEMU, libvirt and Proxmox: virtio is in the base module
-# groups; the console is the first serial port, and the QEMU guest agent answers the host.
+# groups; the kernel's console is the first serial port alone, which hypervisors show, and the
+# QEMU guest agent answers the host.
 { config, lib, ... }:
 {
-  boot.kernelParams = [ "console=ttyS0,115200" ];
+  chalkos.consoles = lib.mkDefault [ "ttyS0,115200" ];
 
   # The store and STATE are on virtio disks, which the initrd must see before it can mount them:
   # virtio-blk, or virtio-scsi as Proxmox offers it. The initrd needs no network, so no NIC driver.

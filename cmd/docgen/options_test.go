@@ -51,6 +51,7 @@ func TestWriteOptions(t *testing.T) {
 				"\n### `chalkos.router.enable` { #chalkosrouterenable }\n",
 				"\n## Upgrade and health { #upgrade-and-health }\n\n",
 				"\n## Console { #console }\n\n",
+				"\n### `chalkos.consoles` { #chalkosconsoles }\n",
 				"\n### `chalkos.console.enable` { #chalkosconsoleenable }\n",
 				"\n## Debug and maintenance { #debug-and-maintenance }\n\n",
 				"\n## Set by mkImages { #set-by-mkimages }\n\n",

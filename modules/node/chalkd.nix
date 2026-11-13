@@ -11,6 +11,16 @@ let
   inherit (chalkosPackages) chalkd;
   inherit (config.chalkos.maintenance) osCA;
   publicVersion = toString lib.chalkos.internal.secretsVersion;
+  # /dev/console is the last of the kernel's consoles. tty0, the foreground terminal, and tty1 are
+  # the terminal the console runs on: while it runs there, chalkd keeps off /dev/console, and the
+  # console shows the fingerprint and addresses.
+  consoleLast =
+    lib.elem (lib.head (lib.splitString "," (lib.last config.chalkos.consoles))) [
+      "tty0"
+      "tty1"
+    ]
+    && config.chalkos.console.enable;
+  output = if consoleLast then "journal" else "journal+console";
 in
 {
   options.chalkos.maintenance.osCA = lib.mkOption {
@@ -76,9 +86,10 @@ in
         ExecStart = "${lib.getExe chalkd} serve";
         Restart = "always";
         RestartSec = 5;
-        # The fingerprint and addresses must reach the console in maintenance mode.
-        StandardOutput = "journal+console";
-        StandardError = "journal+console";
+        # The fingerprint and addresses must reach the console in maintenance mode: through
+        # /dev/console, or the console on the screen.
+        StandardOutput = output;
+        StandardError = output;
 
         # chalkd mounts volumes the host must see, writes efivars and sets the hostname, so it gets
         # no file system or UTS namespace: no ProtectSystem, PrivateTmp, PrivateDevices,
