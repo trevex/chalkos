@@ -54,13 +54,13 @@ func (m *Model) actions() []action {
 			confirm: "Shut down " + name + "? It stays off until someone powers it on." + warning,
 			run:     func(ctx context.Context, c Client) (string, error) { return "the node shuts down", c.Shutdown(ctx) },
 		},
-		m.rollbackImage(info, st, name),
+		m.rollbackImage(info, st, name, warning),
 		m.rollbackConfig(info, st, name),
 	}
 }
 
-// powerWarning is what the layers' tabs warn of before a reboot or a shutdown, as sentences after
-// the question.
+// powerWarning is what the layers' tabs warn of before a reboot, a shutdown or a rollback of the
+// image, which reboots too, as sentences after the question.
 func (m *Model) powerWarning() string {
 	var warning string
 	for _, i := range m.shown {
@@ -86,7 +86,7 @@ func (m *Model) unavailableBeforeStatus(info *nodev1.InfoResponse) string {
 	return ""
 }
 
-func (m *Model) rollbackImage(info *nodev1.InfoResponse, st *nodev1.StatusResponse, name string) action {
+func (m *Model) rollbackImage(info *nodev1.InfoResponse, st *nodev1.StatusResponse, name, warning string) action {
 	a := action{key: "i", title: "Roll back the image", verb: "roll back the image", unavailable: m.unavailableBeforeStatus(info)}
 	prev := st.GetBoot().GetPrevious()
 	if a.unavailable == "" && prev == nil {
@@ -96,7 +96,7 @@ func (m *Model) rollbackImage(info *nodev1.InfoResponse, st *nodev1.StatusRespon
 		return a
 	}
 	image := statusview.BootImageName(prev)
-	a.confirm = "Roll back " + name + " to the image " + image + "? It reboots into it, with the config it last ran."
+	a.confirm = "Roll back " + name + " to the image " + image + "? It reboots into it, with the config it last ran." + warning
 	a.run = func(ctx context.Context, c Client) (string, error) {
 		resp, err := c.RollbackImage(ctx, prev.GetRootHash())
 		if resp.GetAlreadyInstalled() {

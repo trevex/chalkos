@@ -84,8 +84,8 @@ func TestKubernetesWarnsBeforeReboot(t *testing.T) {
 	consoletest.Snapshot(t, tm)
 }
 
-// A worker's reboot carries no warning.
-func TestKubernetesWorkerRebootsWithoutWarning(t *testing.T) {
+// A worker's reboot warns that it skips chalkctl's drain, and names no quorum.
+func TestKubernetesWarnsWorker(t *testing.T) {
 	st := &kubernetesv1.StatusResponse{Kind: "worker", State: "joined", NodeReady: "True"}
 	o := consoletest.Options()
 	o.Actions = true
@@ -96,10 +96,25 @@ func TestKubernetesWorkerRebootsWithoutWarning(t *testing.T) {
 	consoletest.WaitFor(t, tm, "kubernetes worker: joined")
 	consoletest.Press(tm, "a")
 	consoletest.Press(tm, "r")
-	consoletest.WaitFor(t, tm, "y: reboot")
+	consoletest.WaitFor(t, tm, "the console does not")
 	if screen := consoletest.Snapshot(t, tm); strings.Contains(screen, "quorum") {
-		t.Errorf("a worker's reboot warns:\n%s", screen)
+		t.Errorf("a worker's reboot warns of the quorum:\n%s", screen)
 	}
+}
+
+// A rollback of the image reboots the node, so it warns as a reboot does.
+func TestKubernetesWarnsBeforeImageRollback(t *testing.T) {
+	o := consoletest.Options()
+	o.Actions = true
+	o.Tabs = []console.Tab{kubernetes.New(statusOf{controlPlane})}
+	tm := consoletest.Start(t, console.New(kubernetesNode(), o))
+	consoletest.WaitFor(t, tm, "5 Kubernetes")
+	consoletest.Press(tm, "5")
+	consoletest.WaitFor(t, tm, "CrashLoopBackOff")
+	consoletest.Press(tm, "a")
+	consoletest.Press(tm, "i")
+	consoletest.WaitFor(t, tm, "quorum")
+	consoletest.Snapshot(t, tm)
 }
 
 // The tab shows only on images with the Kubernetes layer.

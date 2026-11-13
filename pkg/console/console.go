@@ -32,10 +32,11 @@ type Capturer interface {
 	Capturing() bool
 }
 
-// PowerWarner is a tab whose layer warns before the console reboots or shuts the node down.
+// PowerWarner is a tab whose layer warns before the console reboots or shuts the node down, or
+// rolls back its image, which reboots it.
 type PowerWarner interface {
-	// PowerWarning says what a reboot or shutdown from the console leaves out that chalkctl does;
-	// empty when nothing.
+	// PowerWarning says what a reboot, a shutdown or a rollback of the image from the console leaves
+	// out that chalkctl does; empty when nothing.
 	PowerWarning() string
 }
 

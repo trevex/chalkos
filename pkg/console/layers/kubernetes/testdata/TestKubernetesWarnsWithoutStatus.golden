@@ -3,8 +3,8 @@ image 81bd81bd81bd generation 7  worker on metal
 healthy
  1 Overview   2 Network   3 Storage   4 Logs   5 Kubernetes 
 Reboot n1? It goes down at once and boots the image and config it runs. The node
-may be a control plane: chalkctl node reboot drains the node and checks etcd's
-quorum first; the console does neither.
+may be a control plane: chalkctl node reboot and upgrade --rollback drain the
+node and check etcd's quorum first; the console does neither.
 
 y: reboot   Enter or Esc: back
 

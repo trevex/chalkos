@@ -1,6 +1,6 @@
 // Package kubernetes is the console's Kubernetes tab: the layer's section of the node's status,
-// with the Node's Ready condition and the pods that do not run, and the warning before a reboot
-// or a shutdown of a control plane.
+// with the Node's Ready condition and the pods that do not run, and the warning before a reboot,
+// a shutdown or a rollback of the image, which skip chalkctl's drain.
 package kubernetes
 
 import (
@@ -162,18 +162,22 @@ func (t *Tab) View(width, height int) string {
 	return t.pane.View(b.String(), width, height)
 }
 
-// PowerWarning warns on a control plane that the console reboots and shuts down without
-// chalkctl's drain and etcd quorum check, and so while the layer's status, which tells the
-// node's kind, could not be read yet.
+// PowerWarning warns that the console reboots, shuts down and rolls back the image without
+// chalkctl's drain, and on a control plane without its etcd quorum check too. A node whose kind
+// is unknown, as the layer's status could not be read yet, may be a control plane.
 func (t *Tab) PowerWarning() string {
-	const skips = "chalkctl node reboot drains the node and checks etcd's quorum first; the console does neither."
+	const (
+		worker       = "chalkctl node reboot and upgrade --rollback drain the node first; the console does not."
+		controlPlane = "chalkctl node reboot and upgrade --rollback drain the node and check etcd's quorum first; the console does neither."
+	)
+	kind := t.status.Value.GetKind()
 	switch {
 	case !t.normal:
 		return ""
-	case t.status.Value == nil:
-		return "The node may be a control plane: " + skips
-	case t.status.Value.GetKind() == "controlplane":
-		return skips
+	case kind == "":
+		return "The node may be a control plane: " + controlPlane
+	case kind == "controlplane":
+		return controlPlane
 	}
-	return ""
+	return worker
 }
