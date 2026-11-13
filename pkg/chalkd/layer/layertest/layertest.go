@@ -36,9 +36,31 @@ func CheckPermissions(t *testing.T, service protoreflect.ServiceDescriptor, perm
 	}
 }
 
+// CheckConsole fails t when perms let the console call a procedure that needs the admin or the
+// node role, other than as one of its actions, or when the console's actions are other than the
+// procedures given: whoever sits at the machine reads the node and acts on it as an operator,
+// and rolls its config back.
+func CheckConsole(t *testing.T, perms map[string]layer.Permission, actions ...string) {
+	t.Helper()
+	var got []string
+	for procedure, p := range perms {
+		switch {
+		case p.Console == layer.ConsoleAction:
+			got = append(got, procedure)
+		case p.Console != layer.ConsoleDenied && (p.Role == pki.RoleAdmin || p.Role == pki.RoleNode):
+			t.Errorf("the console may call %s, which needs the %s role", procedure, p.Role)
+		}
+	}
+	slices.Sort(got)
+	if want := slices.Sorted(slices.Values(actions)); !slices.Equal(got, want) {
+		t.Errorf("the console's actions are %v, want %v", got, want)
+	}
+}
+
 // CheckComments fails t unless the comment of each RPC of the proto file, which the API
-// reference shows, names the modes, role and layer its permission gives; layerName is "" for the
-// node API.
+// reference shows, names the modes, role and layer its permission gives, and whether the console
+// may call it: "The console may call it." or "The console may call it while the image allows the
+// console's actions."; layerName is "" for the node API.
 func CheckComments(t *testing.T, protoFile string, service protoreflect.ServiceDescriptor, perms map[string]layer.Permission, layerName string) {
 	t.Helper()
 	data, err := os.ReadFile(protoFile)
@@ -46,6 +68,7 @@ func CheckComments(t *testing.T, protoFile string, service protoreflect.ServiceD
 		t.Fatal(err)
 	}
 	available := regexp.MustCompile(`Available in (maintenance and normal|maintenance|normal) mode to (readers|operators|admins|nodes)(?:, on images with the (\w+) layer)?\.`)
+	console := regexp.MustCompile(`The console may call it( while the image allows the console's actions)?\.`)
 	rpc := regexp.MustCompile(`^rpc (\w+)\(`)
 	modes := map[string][]nodev1.Mode{"maintenance and normal": layer.AnyMode, "maintenance": layer.MaintenanceOnly, "normal": layer.NormalOnly}
 	roles := map[string]pki.Role{"readers": pki.RoleReader, "operators": pki.RoleOperator, "admins": pki.RoleAdmin, "nodes": pki.RoleNode}
@@ -60,12 +83,23 @@ func CheckComments(t *testing.T, protoFile string, service protoreflect.ServiceD
 		if m := rpc.FindStringSubmatch(line); m != nil {
 			rpcs++
 			p := perms["/"+string(service.FullName())+"/"+m[1]]
-			a := available.FindStringSubmatch(strings.Join(comment, " "))
+			joined := strings.Join(comment, " ")
+			a := available.FindStringSubmatch(joined)
 			switch {
 			case a == nil:
 				t.Errorf("the comment of %s names no modes and role", m[1])
 			case !slices.Equal(modes[a[1]], p.Modes) || roles[a[2]] != p.Role || strings.ToLower(a[3]) != layerName:
 				t.Errorf("the comment of %s says %q, the permission is %v to %s of the layer %q", m[1], a[0], p.Modes, p.Role, layerName)
+			}
+			said := layer.ConsoleDenied
+			if c := console.FindStringSubmatch(joined); c != nil {
+				said = layer.ConsoleAllowed
+				if c[1] != "" {
+					said = layer.ConsoleAction
+				}
+			}
+			if said != p.Console {
+				t.Errorf("the comment of %s gives the console %v, the permission %v", m[1], said, p.Console)
 			}
 		}
 		comment = nil

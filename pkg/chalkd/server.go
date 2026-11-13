@@ -211,11 +211,11 @@ func Offline(paths Paths) *Server {
 	return &Server{Paths: paths, Run: tool.ExecRunner{}}
 }
 
-// permissions are the modes and least role of each procedure of the node API. The authorizer
-// refuses a procedure without an entry.
+// permissions are the modes, least role and console access of each procedure of the node API. The
+// authorizer refuses a procedure without an entry.
 var permissions = map[string]layer.Permission{
-	nodev1connect.NodeServiceInfoProcedure:              {Modes: layer.AnyMode, Role: pki.RoleReader},
-	nodev1connect.NodeServiceDisksProcedure:             {Modes: layer.AnyMode, Role: pki.RoleReader},
+	nodev1connect.NodeServiceInfoProcedure:              {Modes: layer.AnyMode, Role: pki.RoleReader, Console: layer.ConsoleAllowed},
+	nodev1connect.NodeServiceDisksProcedure:             {Modes: layer.AnyMode, Role: pki.RoleReader, Console: layer.ConsoleAllowed},
 	nodev1connect.NodeServiceContractProcedure:          {Modes: layer.AnyMode, Role: pki.RoleReader},
 	nodev1connect.NodeServiceInstallProcedure:           {Modes: layer.MaintenanceOnly, Role: pki.RoleAdmin},
 	nodev1connect.NodeServiceEnrollSecureBootProcedure:  {Modes: layer.MaintenanceOnly, Role: pki.RoleAdmin},
@@ -223,20 +223,20 @@ var permissions = map[string]layer.Permission{
 	nodev1connect.NodeServiceApplyConfigProcedure:       {Modes: layer.NormalOnly, Role: pki.RoleAdmin},
 	nodev1connect.NodeServiceGetConfigProcedure:         {Modes: layer.NormalOnly, Role: pki.RoleAdmin},
 	nodev1connect.NodeServiceResetVolumeProcedure:       {Modes: layer.NormalOnly, Role: pki.RoleAdmin},
-	nodev1connect.NodeServiceRollbackConfigProcedure:    {Modes: layer.NormalOnly, Role: pki.RoleAdmin},
+	nodev1connect.NodeServiceRollbackConfigProcedure:    {Modes: layer.NormalOnly, Role: pki.RoleAdmin, Console: layer.ConsoleAction},
 	nodev1connect.NodeServiceConfirmConfigProcedure:     {Modes: layer.NormalOnly, Role: pki.RoleAdmin},
-	nodev1connect.NodeServiceStatusProcedure:            {Modes: layer.NormalOnly, Role: pki.RoleReader},
-	nodev1connect.NodeServiceLogsProcedure:              {Modes: layer.AnyMode, Role: pki.RoleReader},
-	nodev1connect.NodeServiceRebootProcedure:            {Modes: layer.AnyMode, Role: pki.RoleOperator},
-	nodev1connect.NodeServiceDiagnosticsProcedure:       {Modes: layer.AnyMode, Role: pki.RoleReader},
+	nodev1connect.NodeServiceStatusProcedure:            {Modes: layer.NormalOnly, Role: pki.RoleReader, Console: layer.ConsoleAllowed},
+	nodev1connect.NodeServiceLogsProcedure:              {Modes: layer.AnyMode, Role: pki.RoleReader, Console: layer.ConsoleAllowed},
+	nodev1connect.NodeServiceRebootProcedure:            {Modes: layer.AnyMode, Role: pki.RoleOperator, Console: layer.ConsoleAction},
+	nodev1connect.NodeServiceDiagnosticsProcedure:       {Modes: layer.AnyMode, Role: pki.RoleReader, Console: layer.ConsoleAllowed},
 	// RunDiagnostic also needs the diagnostic's own role, which it checks itself, as the table
 	// cannot see the request.
-	nodev1connect.NodeServiceRunDiagnosticProcedure: {Modes: layer.AnyMode, Role: pki.RoleReader},
+	nodev1connect.NodeServiceRunDiagnosticProcedure: {Modes: layer.AnyMode, Role: pki.RoleReader, Console: layer.ConsoleAllowed},
 	// Upgrade needs the admin role when its header carries config or a fallback secret, as
 	// ApplyConfig does; Upgrade checks that itself, as the table cannot see the header.
 	nodev1connect.NodeServiceUpgradeProcedure:       {Modes: layer.NormalOnly, Role: pki.RoleOperator},
 	nodev1connect.NodeServiceActivateImageProcedure: {Modes: layer.NormalOnly, Role: pki.RoleOperator},
-	nodev1connect.NodeServiceRollbackImageProcedure: {Modes: layer.NormalOnly, Role: pki.RoleOperator},
+	nodev1connect.NodeServiceRollbackImageProcedure: {Modes: layer.NormalOnly, Role: pki.RoleOperator, Console: layer.ConsoleAction},
 }
 
 // gate is where a procedure may be called: its permission and its layer, layers.Base for the

@@ -35,18 +35,46 @@ type Plugin interface {
 	// generated New…Handler returns them. chalkd mounts that of every compiled plugin, so that it
 	// answers for a layer the image lacks.
 	Handler(opts ...connect.HandlerOption) (string, http.Handler)
-	// Permissions are the modes and least role of each of the layer's procedures; chalkd asks every
-	// compiled plugin.
+	// Permissions are the modes, least role and console access of each of the layer's procedures;
+	// chalkd asks every compiled plugin.
 	Permissions() map[string]Permission
 	// Start runs the layer's background loops until ctx ends and returns once they stopped. chalkd
 	// starts the active plugins, in normal mode alone.
 	Start(ctx context.Context) error
 }
 
-// Permission is where a procedure may be called and the least role it needs.
+// Permission is where a procedure may be called, the least role it needs, and whether the console
+// may call it.
 type Permission struct {
 	Modes []nodev1.Mode
 	Role  pki.Role
+	// Console says whether the console, on chalkd's local socket, may call the procedure.
+	Console Console
+}
+
+// Console is whether the console may call a procedure. The console holds no certificate: chalkd
+// serves it on a socket that root alone reaches, and lets it call what a procedure's Permission
+// grants it, whatever the procedure's role.
+type Console int
+
+const (
+	// ConsoleDenied refuses the procedure to the console.
+	ConsoleDenied Console = iota
+	// ConsoleAllowed lets the console call the procedure.
+	ConsoleAllowed
+	// ConsoleAction lets the console call the procedure while the image allows the console's
+	// actions.
+	ConsoleAction
+)
+
+func (c Console) String() string {
+	switch c {
+	case ConsoleAllowed:
+		return "allowed"
+	case ConsoleAction:
+		return "an action"
+	}
+	return "denied"
 }
 
 // The modes a procedure may be called in.

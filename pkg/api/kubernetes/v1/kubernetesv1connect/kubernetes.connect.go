@@ -74,7 +74,7 @@ const (
 type KubernetesServiceClient interface {
 	// Status reports the state of the node's Kubernetes: its part in the cluster, its preparation,
 	// its etcd membership, its Node, VIPs, control plane and the revoked nodes. Available in normal
-	// mode to readers, on images with the Kubernetes layer.
+	// mode to readers, on images with the Kubernetes layer. The console may call it.
 	Status(context.Context, *connect.Request[v1.StatusRequest]) (*connect.Response[v1.StatusResponse], error)
 	// Bootstrap initialises etcd on a control-plane node, starts the control plane and applies
 	// chalkos's add-ons and the objects of the node's Addon documents. It is refused on a node that
@@ -296,7 +296,7 @@ func (c *kubernetesServiceClient) UnrevokeNode(ctx context.Context, req *connect
 type KubernetesServiceHandler interface {
 	// Status reports the state of the node's Kubernetes: its part in the cluster, its preparation,
 	// its etcd membership, its Node, VIPs, control plane and the revoked nodes. Available in normal
-	// mode to readers, on images with the Kubernetes layer.
+	// mode to readers, on images with the Kubernetes layer. The console may call it.
 	Status(context.Context, *connect.Request[v1.StatusRequest]) (*connect.Response[v1.StatusResponse], error)
 	// Bootstrap initialises etcd on a control-plane node, starts the control plane and applies
 	// chalkos's add-ons and the objects of the node's Addon documents. It is refused on a node that

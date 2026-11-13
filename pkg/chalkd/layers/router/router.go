@@ -119,7 +119,7 @@ func (p *Plugin) Handler(opts ...connect.HandlerOption) (string, http.Handler) {
 
 func (p *Plugin) Permissions() map[string]layer.Permission {
 	return map[string]layer.Permission{
-		routerv1connect.RouterServiceStatusProcedure: {Modes: layer.NormalOnly, Role: pki.RoleReader},
+		routerv1connect.RouterServiceStatusProcedure: {Modes: layer.NormalOnly, Role: pki.RoleReader, Console: layer.ConsoleAllowed},
 		routerv1connect.RouterServiceRoutesProcedure: {Modes: layer.NormalOnly, Role: pki.RoleReader},
 	}
 }

@@ -1,7 +1,8 @@
 syntax = "proto3";
 
 // The API of chalkd, the agent on every chalkos node and on the installer. chalkd serves it on
-// TCP port 50000 over TLS; chalkctl is its client.
+// TCP port 50000 over TLS, whose client is chalkctl, and to the console on the machine's screen
+// through a local socket.
 package chalkos.node.v1;
 
 option go_package = "github.com/trevex/chalkos/pkg/api/node/v1;nodev1";
@@ -15,11 +16,18 @@ import "google/protobuf/duration.proto";
 // needs to call it: reader, operator or admin, where each role may call what the roles before it
 // may. The API of each layer the image carries, such as chalkos.kubernetes.v1.KubernetesService,
 // is served beside it.
+//
+// chalkd also serves the API to the console on the machine's screen, through the socket
+// /run/chalkd/console.sock, which root alone reaches, without TLS. The console holds no
+// certificate; each method's comment says whether the console may call it, and chalkd refuses it
+// PERMISSION_DENIED otherwise. The console's actions are refused while the image turns them off
+// with chalkos.console.actions.enable.
 service NodeService {
   // Info describes the node and the agent. Available in maintenance and normal mode to readers.
+  // The console may call it.
   rpc Info(InfoRequest) returns (InfoResponse);
   // Disks lists the node's disks and their partitions. Available in maintenance and normal mode to
-  // readers.
+  // readers. The console may call it.
   rpc Disks(DisksRequest) returns (DisksResponse);
   // Contract returns the config contract of the image the node runs: the variant and platform it
   // was built for, its layers, the schemas of the config kinds it accepts and its layers' facts,
@@ -61,13 +69,13 @@ service NodeService {
   rpc ResetVolume(ResetVolumeRequest) returns (ResetVolumeResponse);
   // Status reports the state of an installed node: its config versions, storage, failed units,
   // certificates, trust, clock, boot and outputs; each layer's own state is its service's Status.
-  // Available in normal mode to readers.
+  // Available in normal mode to readers. The console may call it.
   rpc Status(StatusRequest) returns (StatusResponse);
   // Logs streams the journal of the current boot, or of one unit in it. Available in maintenance
-  // and normal mode to readers.
+  // and normal mode to readers. The console may call it.
   rpc Logs(LogsRequest) returns (stream LogsResponse);
   // Reboot reboots the node once the response is sent. Available in maintenance and normal mode
-  // to operators.
+  // to operators. The console may call it while the image allows the console's actions.
   rpc Reboot(RebootRequest) returns (RebootResponse);
   // Upgrade installs a new image into the node's inactive slot and stages it there, then activates
   // it as ActivateImage does, so it boots next, counting the image's boot tries until a boot is
@@ -97,6 +105,7 @@ service NodeService {
   rpc ActivateImage(ActivateImageRequest) returns (ActivateImageResponse);
   // Diagnostics lists the diagnostics the image declares: read-only commands of the image, such as
   // ip route get, that RunDiagnostic runs. Available in maintenance and normal mode to readers.
+  // The console may call it.
   rpc Diagnostics(DiagnosticsRequest) returns (DiagnosticsResponse);
   // RunDiagnostic runs one of the image's diagnostics with the arguments given and streams what
   // its command prints on standard output and standard error, then how it ended. It is refused
@@ -105,7 +114,7 @@ service NodeService {
   // a default or optional is given. chalkd runs the command as a transient systemd unit under a
   // user of its own, on a read-only file system, with no capabilities but those the diagnostic
   // names, for at most its timeout, and stops a command that prints more than 1 MiB. Four run at
-  // a time. Available in maintenance and normal mode to readers.
+  // a time. Available in maintenance and normal mode to readers. The console may call it.
   rpc RunDiagnostic(RunDiagnosticRequest) returns (stream RunDiagnosticResponse);
   // RollbackConfig delivers the running image's previous config again: the config the image ran
   // before the delivery that replaced it, which the node keeps until the next delivery replaces
@@ -122,7 +131,8 @@ service NodeService {
   // it again when the node runs it already, and removes the record once that went through. Status
   // reports no trial then, so once a rollback at the deadline wrote the config from before the
   // trial, previous_config_version is the config on trial, and config_version is the version that
-  // finishes the rollback. Available in normal mode to admins.
+  // finishes the rollback. Available in normal mode to admins. The console may call it while the
+  // image allows the console's actions.
   rpc RollbackConfig(RollbackConfigRequest) returns (RollbackConfigResponse);
   // RollbackImage makes the previous image boot next again: the image an upgrade replaced, whose
   // store the inactive slot still holds, whose UKI is on the ESP and whose config slot STATE
@@ -133,6 +143,7 @@ service NodeService {
   // stays the node's known-good entry. The image boots with the config it last ran. The node
   // reboots into it when asked to. Refused with FAILED_PRECONDITION when the node keeps no
   // previous image, as while an upgrade's image is staged. Available in normal mode to operators.
+  // The console may call it while the image allows the console's actions.
   rpc RollbackImage(RollbackImageRequest) returns (RollbackImageResponse);
   // ConfirmConfig ends the trial of a config that ApplyConfig delivered with try, and the node keeps
   // the config from then on. The node must be healthy as the health check of a boot finds it:

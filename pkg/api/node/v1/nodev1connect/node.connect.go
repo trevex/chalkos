@@ -3,7 +3,8 @@
 // Source: chalkos/node/v1/node.proto
 
 // The API of chalkd, the agent on every chalkos node and on the installer. chalkd serves it on
-// TCP port 50000 over TLS; chalkctl is its client.
+// TCP port 50000 over TLS, whose client is chalkctl, and to the console on the machine's screen
+// through a local socket.
 package nodev1connect
 
 import (
@@ -85,9 +86,10 @@ const (
 // NodeServiceClient is a client for the chalkos.node.v1.NodeService service.
 type NodeServiceClient interface {
 	// Info describes the node and the agent. Available in maintenance and normal mode to readers.
+	// The console may call it.
 	Info(context.Context, *connect.Request[v1.InfoRequest]) (*connect.Response[v1.InfoResponse], error)
 	// Disks lists the node's disks and their partitions. Available in maintenance and normal mode to
-	// readers.
+	// readers. The console may call it.
 	Disks(context.Context, *connect.Request[v1.DisksRequest]) (*connect.Response[v1.DisksResponse], error)
 	// Contract returns the config contract of the image the node runs: the variant and platform it
 	// was built for, its layers, the schemas of the config kinds it accepts and its layers' facts,
@@ -129,13 +131,13 @@ type NodeServiceClient interface {
 	ResetVolume(context.Context, *connect.Request[v1.ResetVolumeRequest]) (*connect.Response[v1.ResetVolumeResponse], error)
 	// Status reports the state of an installed node: its config versions, storage, failed units,
 	// certificates, trust, clock, boot and outputs; each layer's own state is its service's Status.
-	// Available in normal mode to readers.
+	// Available in normal mode to readers. The console may call it.
 	Status(context.Context, *connect.Request[v1.StatusRequest]) (*connect.Response[v1.StatusResponse], error)
 	// Logs streams the journal of the current boot, or of one unit in it. Available in maintenance
-	// and normal mode to readers.
+	// and normal mode to readers. The console may call it.
 	Logs(context.Context, *connect.Request[v1.LogsRequest]) (*connect.ServerStreamForClient[v1.LogsResponse], error)
 	// Reboot reboots the node once the response is sent. Available in maintenance and normal mode
-	// to operators.
+	// to operators. The console may call it while the image allows the console's actions.
 	Reboot(context.Context, *connect.Request[v1.RebootRequest]) (*connect.Response[v1.RebootResponse], error)
 	// Upgrade installs a new image into the node's inactive slot and stages it there, then activates
 	// it as ActivateImage does, so it boots next, counting the image's boot tries until a boot is
@@ -165,6 +167,7 @@ type NodeServiceClient interface {
 	ActivateImage(context.Context, *connect.Request[v1.ActivateImageRequest]) (*connect.Response[v1.ActivateImageResponse], error)
 	// Diagnostics lists the diagnostics the image declares: read-only commands of the image, such as
 	// ip route get, that RunDiagnostic runs. Available in maintenance and normal mode to readers.
+	// The console may call it.
 	Diagnostics(context.Context, *connect.Request[v1.DiagnosticsRequest]) (*connect.Response[v1.DiagnosticsResponse], error)
 	// RunDiagnostic runs one of the image's diagnostics with the arguments given and streams what
 	// its command prints on standard output and standard error, then how it ended. It is refused
@@ -173,7 +176,7 @@ type NodeServiceClient interface {
 	// a default or optional is given. chalkd runs the command as a transient systemd unit under a
 	// user of its own, on a read-only file system, with no capabilities but those the diagnostic
 	// names, for at most its timeout, and stops a command that prints more than 1 MiB. Four run at
-	// a time. Available in maintenance and normal mode to readers.
+	// a time. Available in maintenance and normal mode to readers. The console may call it.
 	RunDiagnostic(context.Context, *connect.Request[v1.RunDiagnosticRequest]) (*connect.ServerStreamForClient[v1.RunDiagnosticResponse], error)
 	// RollbackConfig delivers the running image's previous config again: the config the image ran
 	// before the delivery that replaced it, which the node keeps until the next delivery replaces
@@ -190,7 +193,8 @@ type NodeServiceClient interface {
 	// it again when the node runs it already, and removes the record once that went through. Status
 	// reports no trial then, so once a rollback at the deadline wrote the config from before the
 	// trial, previous_config_version is the config on trial, and config_version is the version that
-	// finishes the rollback. Available in normal mode to admins.
+	// finishes the rollback. Available in normal mode to admins. The console may call it while the
+	// image allows the console's actions.
 	RollbackConfig(context.Context, *connect.Request[v1.RollbackConfigRequest]) (*connect.Response[v1.RollbackConfigResponse], error)
 	// RollbackImage makes the previous image boot next again: the image an upgrade replaced, whose
 	// store the inactive slot still holds, whose UKI is on the ESP and whose config slot STATE
@@ -201,6 +205,7 @@ type NodeServiceClient interface {
 	// stays the node's known-good entry. The image boots with the config it last ran. The node
 	// reboots into it when asked to. Refused with FAILED_PRECONDITION when the node keeps no
 	// previous image, as while an upgrade's image is staged. Available in normal mode to operators.
+	// The console may call it while the image allows the console's actions.
 	RollbackImage(context.Context, *connect.Request[v1.RollbackImageRequest]) (*connect.Response[v1.RollbackImageResponse], error)
 	// ConfirmConfig ends the trial of a config that ApplyConfig delivered with try, and the node keeps
 	// the config from then on. The node must be healthy as the health check of a boot finds it:
@@ -488,9 +493,10 @@ func (c *nodeServiceClient) SecureBootDrivers(ctx context.Context, req *connect.
 // NodeServiceHandler is an implementation of the chalkos.node.v1.NodeService service.
 type NodeServiceHandler interface {
 	// Info describes the node and the agent. Available in maintenance and normal mode to readers.
+	// The console may call it.
 	Info(context.Context, *connect.Request[v1.InfoRequest]) (*connect.Response[v1.InfoResponse], error)
 	// Disks lists the node's disks and their partitions. Available in maintenance and normal mode to
-	// readers.
+	// readers. The console may call it.
 	Disks(context.Context, *connect.Request[v1.DisksRequest]) (*connect.Response[v1.DisksResponse], error)
 	// Contract returns the config contract of the image the node runs: the variant and platform it
 	// was built for, its layers, the schemas of the config kinds it accepts and its layers' facts,
@@ -532,13 +538,13 @@ type NodeServiceHandler interface {
 	ResetVolume(context.Context, *connect.Request[v1.ResetVolumeRequest]) (*connect.Response[v1.ResetVolumeResponse], error)
 	// Status reports the state of an installed node: its config versions, storage, failed units,
 	// certificates, trust, clock, boot and outputs; each layer's own state is its service's Status.
-	// Available in normal mode to readers.
+	// Available in normal mode to readers. The console may call it.
 	Status(context.Context, *connect.Request[v1.StatusRequest]) (*connect.Response[v1.StatusResponse], error)
 	// Logs streams the journal of the current boot, or of one unit in it. Available in maintenance
-	// and normal mode to readers.
+	// and normal mode to readers. The console may call it.
 	Logs(context.Context, *connect.Request[v1.LogsRequest], *connect.ServerStream[v1.LogsResponse]) error
 	// Reboot reboots the node once the response is sent. Available in maintenance and normal mode
-	// to operators.
+	// to operators. The console may call it while the image allows the console's actions.
 	Reboot(context.Context, *connect.Request[v1.RebootRequest]) (*connect.Response[v1.RebootResponse], error)
 	// Upgrade installs a new image into the node's inactive slot and stages it there, then activates
 	// it as ActivateImage does, so it boots next, counting the image's boot tries until a boot is
@@ -568,6 +574,7 @@ type NodeServiceHandler interface {
 	ActivateImage(context.Context, *connect.Request[v1.ActivateImageRequest]) (*connect.Response[v1.ActivateImageResponse], error)
 	// Diagnostics lists the diagnostics the image declares: read-only commands of the image, such as
 	// ip route get, that RunDiagnostic runs. Available in maintenance and normal mode to readers.
+	// The console may call it.
 	Diagnostics(context.Context, *connect.Request[v1.DiagnosticsRequest]) (*connect.Response[v1.DiagnosticsResponse], error)
 	// RunDiagnostic runs one of the image's diagnostics with the arguments given and streams what
 	// its command prints on standard output and standard error, then how it ended. It is refused
@@ -576,7 +583,7 @@ type NodeServiceHandler interface {
 	// a default or optional is given. chalkd runs the command as a transient systemd unit under a
 	// user of its own, on a read-only file system, with no capabilities but those the diagnostic
 	// names, for at most its timeout, and stops a command that prints more than 1 MiB. Four run at
-	// a time. Available in maintenance and normal mode to readers.
+	// a time. Available in maintenance and normal mode to readers. The console may call it.
 	RunDiagnostic(context.Context, *connect.Request[v1.RunDiagnosticRequest], *connect.ServerStream[v1.RunDiagnosticResponse]) error
 	// RollbackConfig delivers the running image's previous config again: the config the image ran
 	// before the delivery that replaced it, which the node keeps until the next delivery replaces
@@ -593,7 +600,8 @@ type NodeServiceHandler interface {
 	// it again when the node runs it already, and removes the record once that went through. Status
 	// reports no trial then, so once a rollback at the deadline wrote the config from before the
 	// trial, previous_config_version is the config on trial, and config_version is the version that
-	// finishes the rollback. Available in normal mode to admins.
+	// finishes the rollback. Available in normal mode to admins. The console may call it while the
+	// image allows the console's actions.
 	RollbackConfig(context.Context, *connect.Request[v1.RollbackConfigRequest]) (*connect.Response[v1.RollbackConfigResponse], error)
 	// RollbackImage makes the previous image boot next again: the image an upgrade replaced, whose
 	// store the inactive slot still holds, whose UKI is on the ESP and whose config slot STATE
@@ -604,6 +612,7 @@ type NodeServiceHandler interface {
 	// stays the node's known-good entry. The image boots with the config it last ran. The node
 	// reboots into it when asked to. Refused with FAILED_PRECONDITION when the node keeps no
 	// previous image, as while an upgrade's image is staged. Available in normal mode to operators.
+	// The console may call it while the image allows the console's actions.
 	RollbackImage(context.Context, *connect.Request[v1.RollbackImageRequest]) (*connect.Response[v1.RollbackImageResponse], error)
 	// ConfirmConfig ends the trial of a config that ApplyConfig delivered with try, and the node keeps
 	// the config from then on. The node must be healthy as the health check of a boot finds it:

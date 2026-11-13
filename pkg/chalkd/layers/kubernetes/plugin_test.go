@@ -16,4 +16,6 @@ func TestKubernetesAPIPermissions(t *testing.T) {
 	service := kubernetesv1.File_chalkos_kubernetes_v1_kubernetes_proto.Services().ByName("KubernetesService")
 	layertest.CheckPermissions(t, service, p.Permissions())
 	layertest.CheckComments(t, filepath.Join("..", "..", "..", "..", "api", "chalkos", "kubernetes", "v1", "kubernetes.proto"), service, p.Permissions(), layers.Kubernetes)
+	// The console reads the Kubernetes status and takes no action of the layer.
+	layertest.CheckConsole(t, p.Permissions())
 }

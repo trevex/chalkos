@@ -45,7 +45,7 @@ func (p *Plugin) Handler(opts ...connect.HandlerOption) (string, http.Handler) {
 
 func (p *Plugin) Permissions() map[string]layer.Permission {
 	return map[string]layer.Permission{
-		kubernetesv1connect.KubernetesServiceStatusProcedure:               {Modes: layer.NormalOnly, Role: pki.RoleReader},
+		kubernetesv1connect.KubernetesServiceStatusProcedure:               {Modes: layer.NormalOnly, Role: pki.RoleReader, Console: layer.ConsoleAllowed},
 		kubernetesv1connect.KubernetesServiceBootstrapProcedure:            {Modes: layer.NormalOnly, Role: pki.RoleAdmin},
 		kubernetesv1connect.KubernetesServiceEtcdMembersProcedure:          {Modes: layer.NormalOnly, Role: pki.RoleReader},
 		kubernetesv1connect.KubernetesServiceEtcdRemoveMemberProcedure:     {Modes: layer.NormalOnly, Role: pki.RoleAdmin},

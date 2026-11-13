@@ -790,11 +790,13 @@ func TestRebootAfterResponse(t *testing.T) {
 }
 
 // A procedure without an entry is refused, so a new one must be given its modes and role; each
-// RPC's comment in node.proto, which the API reference shows, names them.
+// RPC's comment in node.proto, which the API reference shows, names them. The console's
+// actions are those named here alone.
 func TestNodeAPIPermissions(t *testing.T) {
 	service := nodev1.File_chalkos_node_v1_node_proto.Services().ByName("NodeService")
 	layertest.CheckPermissions(t, service, permissions)
 	layertest.CheckComments(t, filepath.Join("..", "..", "api", "chalkos", "node", "v1", "node.proto"), service, permissions, "")
+	layertest.CheckConsole(t, permissions, nodev1connect.NodeServiceRebootProcedure, nodev1connect.NodeServiceRollbackImageProcedure, nodev1connect.NodeServiceRollbackConfigProcedure)
 }
 
 func TestRequestSizeLimit(t *testing.T) {

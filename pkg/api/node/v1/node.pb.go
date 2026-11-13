@@ -5,7 +5,8 @@
 // source: chalkos/node/v1/node.proto
 
 // The API of chalkd, the agent on every chalkos node and on the installer. chalkd serves it on
-// TCP port 50000 over TLS; chalkctl is its client.
+// TCP port 50000 over TLS, whose client is chalkctl, and to the console on the machine's screen
+// through a local socket.
 
 package nodev1
 

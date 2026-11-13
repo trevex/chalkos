@@ -30,9 +30,16 @@ needs to call it: reader, operator or admin, where each role may call what the r
 may. The API of each layer the image carries, such as chalkos.kubernetes.v1.KubernetesService,
 is served beside it.
 
+chalkd also serves the API to the console on the machine's screen, through the socket
+/run/chalkd/console.sock, which root alone reaches, without TLS. The console holds no
+certificate; each method's comment says whether the console may call it, and chalkd refuses it
+PERMISSION_DENIED otherwise. The console's actions are refused while the image turns them off
+with chalkos.console.actions.enable.
+
 ### Info { #method-info }
 
 Info describes the node and the agent. Available in maintenance and normal mode to readers.
+The console may call it.
 
 Request: InfoRequest. Response: InfoResponse.
 
@@ -68,7 +75,7 @@ Field types: [Mode](#enum-mode), [SecureBoot](#enum-secureboot).
 ### Disks { #method-disks }
 
 Disks lists the node's disks and their partitions. Available in maintenance and normal mode to
-readers.
+readers. The console may call it.
 
 Request: DisksRequest. Response: DisksResponse.
 
@@ -254,7 +261,7 @@ No fields.
 
 Status reports the state of an installed node: its config versions, storage, failed units,
 certificates, trust, clock, boot and outputs; each layer's own state is its service's Status.
-Available in normal mode to readers.
+Available in normal mode to readers. The console may call it.
 
 Request: StatusRequest. Response: StatusResponse.
 
@@ -293,7 +300,7 @@ Field types: [DiskStatus](#message-diskstatus), [VolumeStatus](#message-volumest
 ### Logs { #method-logs }
 
 Logs streams the journal of the current boot, or of one unit in it. Available in maintenance
-and normal mode to readers.
+and normal mode to readers. The console may call it.
 
 Request: LogsRequest. Response: a stream of LogsResponse.
 
@@ -317,7 +324,7 @@ A message of the Logs stream.
 ### Reboot { #method-reboot }
 
 Reboot reboots the node once the response is sent. Available in maintenance and normal mode
-to operators.
+to operators. The console may call it while the image allows the console's actions.
 
 Request: RebootRequest. Response: RebootResponse.
 
@@ -415,6 +422,7 @@ The response of ActivateImage.
 
 Diagnostics lists the diagnostics the image declares: read-only commands of the image, such as
 ip route get, that RunDiagnostic runs. Available in maintenance and normal mode to readers.
+The console may call it.
 
 Request: DiagnosticsRequest. Response: DiagnosticsResponse.
 
@@ -443,7 +451,7 @@ INVALID_ARGUMENT unless each argument is of its parameter's type and every param
 a default or optional is given. chalkd runs the command as a transient systemd unit under a
 user of its own, on a read-only file system, with no capabilities but those the diagnostic
 names, for at most its timeout, and stops a command that prints more than 1 MiB. Four run at
-a time. Available in maintenance and normal mode to readers.
+a time. Available in maintenance and normal mode to readers. The console may call it.
 
 Request: RunDiagnosticRequest. Response: a stream of RunDiagnosticResponse.
 
@@ -485,7 +493,8 @@ cannot read names no version: RollbackConfig rolls back to the version asked for
 it again when the node runs it already, and removes the record once that went through. Status
 reports no trial then, so once a rollback at the deadline wrote the config from before the
 trial, previous_config_version is the config on trial, and config_version is the version that
-finishes the rollback. Available in normal mode to admins.
+finishes the rollback. Available in normal mode to admins. The console may call it while the
+image allows the console's actions.
 
 Request: RollbackConfigRequest. Response: RollbackConfigResponse.
 
@@ -521,6 +530,7 @@ running image's boot has not been found healthy, the name carries no tries inste
 stays the node's known-good entry. The image boots with the config it last ran. The node
 reboots into it when asked to. Refused with FAILED_PRECONDITION when the node keeps no
 previous image, as while an upgrade's image is staged. Available in normal mode to operators.
+The console may call it while the image allows the console's actions.
 
 Request: RollbackImageRequest. Response: RollbackImageResponse.
 
@@ -1097,7 +1107,7 @@ layer every method fails with UNIMPLEMENTED, before the mode and the role are ch
 
 Status reports the state of the node's Kubernetes: its part in the cluster, its preparation,
 its etcd membership, its Node, VIPs, control plane and the revoked nodes. Available in normal
-mode to readers, on images with the Kubernetes layer.
+mode to readers, on images with the Kubernetes layer. The console may call it.
 
 Request: StatusRequest. Response: StatusResponse.
 
@@ -1514,7 +1524,7 @@ checked.
 
 Status reports the state of the router's routing daemons, its NAT64 instances, its resolvers
 and its DHCP servers and relays. Available in normal mode to readers, on images with the
-router layer.
+router layer. The console may call it.
 
 Request: StatusRequest. Response: StatusResponse.
 

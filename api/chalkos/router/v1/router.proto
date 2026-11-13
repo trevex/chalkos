@@ -13,7 +13,7 @@ option go_package = "github.com/trevex/chalkos/pkg/api/router/v1;routerv1";
 service RouterService {
   // Status reports the state of the router's routing daemons, its NAT64 instances, its resolvers
   // and its DHCP servers and relays. Available in normal mode to readers, on images with the
-  // router layer.
+  // router layer. The console may call it.
   rpc Status(StatusRequest) returns (StatusResponse);
   // Routes lists the routes in the node's kernel, of the main table unless a VRF or another table
   // is asked for, and the paths the BGP instance of that VRF selected, each within an address
