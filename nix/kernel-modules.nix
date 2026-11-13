@@ -67,6 +67,39 @@ writeShellApplication {
         $1 == "softdep:" { for (i = 2; i <= NF; i++) if ($i != "pre:" && $i != "post:") print "softdep", module, $i }'
     }
 
+    # Writes modules.order and modules.cer of the modules the file SELECTED lists to the directory
+    # OUT, from those of the tree at ROOT. nixpkgs's modules.cer holds the certificate each module
+    # is signed with, one DER certificate for each line of modules.order, in its order; NixOS adds
+    # those of the out-of-tree modules when it joins the trees.
+    certificates() {
+      local root=$1 selected=$2 out=$3 work offset length
+      work=$(mktemp -d)
+      # The offset and length of each certificate: a DER SEQUENCE, whose length takes one byte
+      # below 128 and otherwise the number of bytes the first one's low bits give.
+      od -An -v -tu1 "$root/modules.cer" | awk '
+        { for (i = 1; i <= NF; i++) b[n++] = $i }
+        END {
+          for (p = 0; p < n; p += h + l) {
+            if (b[p] != 48) { print "error: modules.cer holds no certificate at byte " p > "/dev/stderr"; exit 1 }
+            h = 2; l = b[p + 1]
+            if (l >= 128) { k = l - 128; l = 0; for (j = 0; j < k; j++) l = l * 256 + b[p + 2 + j]; h += k }
+            print p, h + l
+          }
+        }' >"$work/certificates"
+      if [[ $(wc -l <"$work/certificates") != $(wc -l <"$root/modules.order") ]]; then
+        echo "error: $root/modules.cer holds $(wc -l <"$work/certificates") certificates for the $(wc -l <"$root/modules.order") modules of modules.order" >&2
+        exit 1
+      fi
+      sed -E 's/\.ko\.[a-z]+$/.ko/' "$selected" >"$work/selected"
+      paste -d ' ' "$root/modules.order" "$work/certificates" |
+        awk 'NR == FNR { want[$0] = 1; next } $1 in want' "$work/selected" - >"$work/kept"
+      cut -d ' ' -f 1 "$work/kept" >"$out/modules.order"
+      while read -r _ offset length; do
+        dd if="$root/modules.cer" iflag=skip_bytes,count_bytes skip="$offset" count="$length" status=none
+      done <"$work/kept" >"$out/modules.cer"
+      rm -r "$work"
+    }
+
     filter() {
       local source=$1 out=$2 directories=$3 names=$4 extras=("''${@:5}")
       local version root work failed=0 dir name before after kind module dependency extra
@@ -127,7 +160,8 @@ writeShellApplication {
 
       mkdir -p "$out/lib/modules/$version"
       (cd "$root" && xargs -r -a "$work/selected" cp --parents --no-preserve=mode -t "$out/lib/modules/$version")
-      cp --no-preserve=mode "$root"/modules.builtin "$root"/modules.builtin.modinfo "$root"/modules.order "$out/lib/modules/$version/"
+      cp --no-preserve=mode "$root"/modules.builtin "$root"/modules.builtin.modinfo "$out/lib/modules/$version/"
+      certificates "$root" "$work/selected" "$out/lib/modules/$version"
       depmod -b "$out" -C no-config "$version"
       echo "kept $(wc -l <"$work/selected") of $(wc -l <"$root/modules.dep") kernel modules"
       rm -r "$work"
