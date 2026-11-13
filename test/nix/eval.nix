@@ -1426,7 +1426,7 @@ lib.runTests {
           builtins.match ".*/bin/chalkos-render kea /nix/store/[^ ]*-chalkos-dhcp6-pd/bin/chalkos-dhcp6-pd" edge.chalkos.outputs.kea.render
           != null;
         check = lib.hasInfix "/bin/kea-$family -t" edge.chalkos.outputs.kea.check;
-        package = lib.hasSuffix "-kea-dhcp-3.2.0" kea;
+        package = lib.hasSuffix "-kea-dhcp-${pkgs.kea.version}" kea;
         hooks = builtins.attrNames (builtins.readDir "${kea}/lib/kea/hooks");
         firewallReads = lib.elem "DHCPSubnet" edge.chalkos.outputs.router-nftables.inputs;
         user = edge.users.users.kea.isSystemUser;
