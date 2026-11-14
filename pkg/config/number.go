@@ -11,11 +11,9 @@ import (
 // million digits; such a number stays as written, which no integer field takes anyway.
 const maxExponent = 1000
 
-// integral rewrites, in place, each json.Number in v of an integer value into its integer
-// spelling: 100.0 and 1e2 into 100, -1e2 into -100. JSON Schema's type integer takes those
-// spellings, which Parse and FromJSON keep as written, while encoding/json refuses them for an
-// integer field and CEL reads them as doubles. Plain digits, fractions such as 1.5, and strings
-// stay as they are. It returns v, rewritten.
+// integral rewrites, in place, each json.Number in v of an integer value into plain digits, such
+// as 100.0 and 1e2 into 100, and returns v. JSON Schema's integer type accepts those spellings,
+// while encoding/json refuses them for an integer field and CEL reads them as doubles.
 func integral(v any) any {
 	switch v := v.(type) {
 	case map[string]any:

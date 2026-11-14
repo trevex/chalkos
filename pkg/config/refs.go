@@ -36,10 +36,9 @@ func (r Ref) Secret() (SecretRef, bool) {
 	return SecretRef{Name: r.Target.Name, Key: r.Key}, r.Key != ""
 }
 
-// Refs returns the references of d that its kind's schema in schemas marks, in the order of the
-// schema's fields by name and of list items by index; none for a kind schemas does not declare,
-// or without schemas. A field that holds one of the names its reference reserves, such as the VRF
-// default, references nothing.
+// Refs returns the references of d that its kind's schema marks, in field-name and list-index
+// order; none without a schema for the kind. A field holding a name its reference reserves, such
+// as the VRF default, references nothing.
 func Refs(d Document, schemas *schema.Schemas) []Ref {
 	var refs []Ref
 	walk(d, schemas, func(n schema.Node) bool {
@@ -69,11 +68,9 @@ func Refs(d Document, schemas *schema.Schemas) []Ref {
 	return refs
 }
 
-// checkRefs returns the references of each of docs, by the document's ID, and refuses those that
-// do not resolve: a reference to a document docs lack or a key its Secret lacks, and a key
-// reference that cannot become a credential file of its own, as the node writes one for each unit
-// that reads it. It reports every such reference at once, one line each, in the order of docs and
-// of each document's references.
+// checkRefs returns the references of each of docs by document ID, and refuses, all at once,
+// those that do not resolve or whose key cannot become a credential file of its own, which the
+// node writes for each unit that reads it.
 func checkRefs(docs Documents, s *schema.Schemas) (map[ID][]Ref, error) {
 	have := map[ID]bool{}
 	for _, d := range docs {

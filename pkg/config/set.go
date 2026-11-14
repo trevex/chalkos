@@ -23,9 +23,6 @@ func NewSet(docs []Document, s *schema.Schemas) (*Set, error) {
 }
 
 // newSet checks docs as NewSet does, and requires a SystemDisk only where requireSystemDisk is set.
-// Each document is valid and of a kind the image accepts, a kind that is not multiple appears
-// once, names are unique per kind, references resolve and no value the schemas declare unique
-// repeats.
 func newSet(docs []Document, s *schema.Schemas, requireSystemDisk bool) (*Set, error) {
 	multiple := map[ID]bool{}
 	for _, k := range s.Kinds() {
@@ -66,9 +63,8 @@ func newSet(docs []Document, s *schema.Schemas, requireSystemDisk bool) (*Set, e
 	return set, nil
 }
 
-// Refs returns the references of the set's documents, by the ID of the document that holds them;
-// a document without references has no entry. Every reference resolves within the set. The map
-// and its slices are the set's own, which callers read and never change.
+// Refs returns each document's references by its ID, every one resolving within the set. The map
+// is the set's own, so callers must not change it.
 func (s *Set) Refs() map[ID][]Ref { return s.refs }
 
 // Documents returns the set's documents, ordered by apiVersion, kind and name.
@@ -93,8 +89,7 @@ func (s *Set) One(kind string) (Document, bool) {
 	return Document{}, false
 }
 
-// CheckRegistries refuses a set whose Registry and Mirror documents RegistriesOf refuses: two of
-// one registry, or an http:// endpoint whose host has no Registry that allows plain HTTP.
+// CheckRegistries refuses a set whose Registry and Mirror documents RegistriesOf refuses.
 func (s *Set) CheckRegistries() error {
 	_, err := RegistriesOf(s.docs, nil)
 	return err

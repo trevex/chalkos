@@ -55,12 +55,8 @@ func checkSet(docs []Document, schemas *schema.Schemas, requireSystemDisk bool) 
 }
 
 // Identity translates the set into the identity of the node called name on an image of the
-// platform: what every image gives the node, its hostname, storage and network. Extension kinds
-// stay in the set, and the image's translators add what its layers give.
-//
-// name is the node's name in the inventory, which its node certificate carries. Whatever the
-// documents call the node, the hostname defaults to name unless a Host gives one, and the storage
-// seeds derive from name.
+// platform: its hostname, storage and network. name is the node's inventory name, which its
+// certificate carries; the hostname defaults to it and the storage seeds derive from it.
 func (s *Set) Identity(name, platform string) (identity.Identity, error) {
 	if name == "" {
 		return identity.Identity{}, fmt.Errorf("the node has no name to translate its config for")

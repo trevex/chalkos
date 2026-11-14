@@ -9,12 +9,8 @@ import (
 	"github.com/trevex/chalkos/pkg/schema"
 )
 
-// Hash names a set of documents by the SHA-256, in lower-case hex, of their canonical form: the
-// documents as Redact gives them, ordered by apiVersion, kind and name, as one JSON array in which
-// every object's keys are sorted. Numbers are hashed as FromObject keeps them, so 1 and 1.0 hash
-// alike while 1.5 and 1.50 differ. It shows whether two sets are the same without revealing a
-// secret. Clients hash the documents they deliver, before chalkd fills in defaults, so the hash
-// depends on the operator's files alone and not on the schemas of the image they meet.
+// Hash is the hex SHA-256 of the redacted documents in canonical order. Clients hash before
+// chalkd fills defaults, so the hash depends on the operator's files alone.
 func Hash(docs []Document) (string, error) {
 	return Redact(docs).hash()
 }
@@ -36,10 +32,9 @@ func (r Redacted) hash() (string, error) {
 	return hex.EncodeToString(sum[:]), nil
 }
 
-// KindHashes hashes the documents of each kind in docs, by kind name, together with the Secrets
-// they reference, as Hash hashes a set, so a kind's hash changes when one of its documents does or
-// a Secret one of them references. Secrets have no entry of their own. schemas tell which fields
-// are key references.
+// KindHashes hashes the documents of each kind, by kind name, together with the Secrets they
+// reference, so a kind's hash changes when a referenced Secret does. Secrets have no entry of
+// their own.
 func KindHashes(docs Redacted, schemas *schema.Schemas) (map[string]string, error) {
 	secrets := map[string]Document{}
 	byKind := map[string]Documents{}

@@ -10,8 +10,8 @@ import (
 	"github.com/trevex/chalkos/pkg/jsonfile"
 )
 
-// FromJSON is the document a JSON object holds, its numbers kept as json.Number, as Parse keeps
-// them, so no digit is rounded away.
+// FromJSON is the document a JSON object holds, its numbers kept as json.Number so no digit is
+// rounded away.
 func FromJSON(data []byte) (Document, error) {
 	var obj map[string]any
 	if err := jsonfile.DecodeExact(data, &obj); err != nil {
@@ -23,15 +23,9 @@ func FromJSON(data []byte) (Document, error) {
 	return FromObject(obj), nil
 }
 
-// Restore returns hashed, documents a check of delivered gave back with their defaults and their
-// secret values hashed, with the secret values of delivered in place of the hashes: each Secret's
-// spec.data, and the data and stringData of each Secret object delivered embeds, which no schema
-// fills defaults into. It refuses documents that are not those of delivered with defaults: one
-// that delivered lacks, two of one name, a delivered document that is missing, one that lacks the
-// place of a Secret object delivered embeds, or one whose hashed form differs from Redact of the
-// result, as when a check filled defaults into the values it got hashed or added a Secret object
-// with values to a document. A Secret object delivered embeds keeps its apiVersion and kind as
-// they were delivered.
+// Restore puts the secret values of delivered back into hashed, a check's redacted output of
+// delivered with defaults filled. It refuses output that is not delivered plus defaults, such as
+// a check that filled defaults into hashed values or added a Secret object with values.
 func Restore(hashed, delivered []Document) ([]Document, error) {
 	values := make(map[ID]Document, len(delivered))
 	for _, d := range delivered {
@@ -99,11 +93,9 @@ func restoreSecret(h, d map[string]any) map[string]any {
 	return obj
 }
 
-// restoreEmbedded returns h, a check's hashed form of d, with the data and stringData of each
-// Secret object d embeds taken from d, at the same place in h, and the rest of h, its defaults
-// among it, as it is. It returns false where h lacks the place of such an object, holds there one
-// whose apiVersion or kind is spelled otherwise than in d, or holds a list of another length on
-// the way to it. h itself is left as it is.
+// restoreEmbedded returns a copy of h, a check's hashed form of d, with the data and stringData
+// of each Secret object d embeds taken from d. It returns false where h's shape on the way to
+// such an object, or the object's apiVersion or kind, differs from d.
 func restoreEmbedded(h, d any) (any, bool) {
 	switch d := d.(type) {
 	case map[string]any:

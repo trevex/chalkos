@@ -123,12 +123,9 @@ func (s *Set) storage(name string) (storage.Section, error) {
 	return sec, nil
 }
 
-// storageErrors are the storage checks of a node's config, all reported at once and in this
-// order: each volume's own problems by volume name, then volumes that fill the system disk. vols
-// are ordered by name. The set check has refused two volumes of one disk reference or one mount
-// point, and a volume's mount point is never /var, VAR's. Names and mount points are held to
-// storage.ValidName, storage.Reserved and storage.SafeMountPoint, the rules Section.Validate holds
-// a section chalkd receives to, so the section rendered here passes it.
+// storageErrors reports the storage checks of a node's config all at once: each volume's own
+// problems, then volumes that fill the system disk. It holds names and mount points to the rules
+// Section.Validate applies to what chalkd receives, so the rendered section passes it.
 func storageErrors(system storage.Ref, sys systemDiskSpec, vols []namedVolume) error {
 	var errs []string
 	add := func(format string, args ...any) { errs = append(errs, fmt.Sprintf(format, args...)) }

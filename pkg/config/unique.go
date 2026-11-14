@@ -15,8 +15,8 @@ import (
 )
 
 // normalisers turn a string into the form it compares in, and refuse a string they cannot read,
-// one for each of schema.Normalisers. ip and cidr compare as the rules' ip() and cidr() do, and host as RegistriesOf compares
-// registry hosts.
+// one for each of schema.Normalisers. ip and cidr compare as the rules' ip() and cidr() do, and
+// host as RegistriesOf compares registry hosts.
 var normalisers = map[string]func(string) (string, bool){
 	"ip": func(s string) (string, bool) {
 		a, err := netip.ParseAddr(s)
@@ -33,10 +33,9 @@ var normalisers = map[string]func(string) (string, bool){
 	"lower": func(s string) (string, bool) { return strings.ToLower(s), true },
 }
 
-// keyOf is the form v compares in, tagged so that no two kinds of value share an encoding:
-// normalised with as, which takes strings alone, and a number as the exact rational it is, so
-// that 100 and 1e2 compare equal and 0.5 and 0.25 apart. ok is false for a value the normaliser
-// cannot read.
+// keyOf is the form v compares in, tagged so no two kinds of value share an encoding. Strings are
+// normalised with as and numbers compare as exact rationals, so 100 equals 1e2. ok is false for a
+// value the normaliser cannot read.
 func keyOf(v any, as string) (key [2]any, ok bool) {
 	if v == nil {
 		return [2]any{"value", nil}, true
@@ -94,10 +93,9 @@ func (o occurrence) shown() string {
 	return "(" + strings.Join(vs, ", ") + ")"
 }
 
-// occurrences are the keys of the node n holds under decl, with the encoding each compares by:
-// the node's value, or each item of a list. A key whose members are all null or left out takes
-// no part, nor does one with a value its normaliser cannot read, which the field's type or a rule
-// has to refuse; a null member of a tuple compares equal to another null.
+// occurrences are the keys n holds under decl, one for its value or for each list item. A key
+// whose members are all null or unreadable takes no part, as the field's type or a rule refuses an
+// unreadable one; null members of a tuple compare equal.
 func occurrences(doc ID, n schema.Node, decl schema.Unique) (keys []string, occs []occurrence) {
 	type at struct {
 		v    any
@@ -142,10 +140,8 @@ func occurrences(doc ID, n schema.Node, decl schema.Unique) (keys []string, occs
 	return keys, occs
 }
 
-// checkUnique refuses docs, a set's documents in its order, when a value that a uniqueness
-// declaration of their kinds' schemas covers repeats: within one list, or among all documents of
-// the kind. It reports every repeated value at once, one line each, sorted: the documents and
-// paths that hold it, the value as its first occurrence writes it, and the declaration's hint.
+// checkUnique refuses docs when a value a uniqueness declaration of their schemas covers repeats,
+// within one list or among all documents of the kind. It reports every repeat at once, sorted.
 func checkUnique(docs Documents, s *schema.Schemas) error {
 	type group struct {
 		decl schema.Unique

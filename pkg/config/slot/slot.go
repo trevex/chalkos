@@ -54,10 +54,8 @@ func Previous(dir string) string {
 	return filepath.Join(filepath.Dir(dir), "."+filepath.Base(dir)+previousSuffix)
 }
 
-// Pending is the slot below root, such as /state/config, that holds the node's pending config:
-// config delivered for the next image before an upgrade installs one, which that upgrade checks
-// and writes to the image's slot. It is written and read as a slot, without defaults or an
-// identity. Its name is no root hash, so List and Retire pass it by.
+// Pending is the slot below root that holds config delivered for the next image before an
+// upgrade installs it. Its name is no root hash, so List and Retire pass it by.
 func Pending(root string) string {
 	return filepath.Join(root, "pending")
 }
@@ -107,10 +105,7 @@ func slotHash(name string) ([]byte, bool) {
 	return h, err == nil && len(h) > 0 && name == hex.EncodeToString(h)
 }
 
-// Retire removes every slot below root but those of the root hashes kept: its link first, so a
-// reader finds the slot whole or not at all, then the directory the link named, the slot's
-// previous config and those that interrupted writes of it left. A directory where a slot's link
-// would be is refused, as replace refuses it.
+// Retire removes, as Remove does, every slot below root except those in keep.
 func Retire(root string, keep [][]byte) error {
 	entries, err := os.ReadDir(root)
 	if errors.Is(err, fs.ErrNotExist) {
@@ -140,10 +135,8 @@ func Retire(root string, keep [][]byte) error {
 	return atomicfile.SyncDir(root)
 }
 
-// Remove removes the slot dir as Retire removes a slot it does not keep: its link first, with the
-// link an interrupted replace left and its previous config's, then the directories they named and
-// those interrupted writes left. A slot that does not exist is removed already. A directory where
-// its link would be is refused, as replace refuses it.
+// Remove removes the slot dir, its links before the directories they named, so a reader finds the
+// slot whole or not at all. A directory where its link would be is refused.
 func Remove(dir string) error {
 	root := filepath.Dir(dir)
 	if err := checkLink(dir); err != nil {
@@ -166,12 +159,9 @@ func Remove(dir string) error {
 	return removeStale(dir)
 }
 
-// Write replaces the slot dir, such as /state/config/<root hash>, as a whole. The documents as
-// delivered go below delivered/, those with defaults below documents/, each to
-// <group>/<Kind>/<name>.json and Secrets to secrets/<name>.json, readable by root alone; the
-// identity goes to identity.json, readable by root alone, and the version to version. See
-// replace for how a power cut leaves either slot whole. A slot Write writes keeps no previous
-// config: one WriteKeepingPrevious kept goes, its link before its directory.
+// Write replaces the slot dir, such as /state/config/<root hash>, as a whole: delivered/ and
+// documents/ hold the documents without and with defaults, identity.json the identity. A slot
+// Write writes keeps no previous config.
 func Write(dir string, s Stored) error {
 	if err := checkLink(dir); err != nil {
 		return err
@@ -182,13 +172,9 @@ func Write(dir string, s Stored) error {
 	return replace(dir, fill(s))
 }
 
-// WriteKeepingPrevious writes s to the slot dir as Write does and keeps the set the slot held as
-// its previous config, which Previous names, one level deep: the previous config before it goes.
-// A slot that holds s's version already keeps its previous config as it is, so a delivery sent
-// twice does not lose it; a slot that holds no set is written as Write writes it. The previous
-// link is renamed and synced after the new set is on disk and before the slot's link, and a
-// directory goes only once no link names it, so a power cut leaves the slot whole and its
-// previous config either the set before or the set the slot still holds.
+// WriteKeepingPrevious writes s as Write does and keeps the set the slot held as its previous
+// config, one level deep; a repeated delivery keeps it as it is. A power cut leaves the previous
+// config either the set before or the set the slot still holds.
 func WriteKeepingPrevious(dir string, s Stored) error {
 	prev := Previous(dir)
 	if err := checkLink(dir); err != nil {
@@ -246,12 +232,9 @@ func WriteKeepingPrevious(dir string, s Stored) error {
 	return err
 }
 
-// RestorePrevious makes the slot dir's previous config its config again, and the set the slot
-// held its previous one, as a boot that ends a config's trial does. It writes no set: the two links
-// trade places. The slot's link moves first, through the temporary name replace gives it, so a
-// power cut before the previous link follows leaves both naming the restored set, which callers
-// take for no previous config. The set the slot held may then go with the next write, never the
-// restored one.
+// RestorePrevious makes the slot dir's previous config its config again, and the set it held its
+// previous one, by swapping the two links. The slot's link moves first, so a power cut leaves both
+// naming the restored set, which callers take for no previous config.
 func RestorePrevious(dir string) error {
 	prev := Previous(dir)
 	if err := checkLink(dir); err != nil {
@@ -413,12 +396,9 @@ func Version(dir string) (string, error) {
 	return strings.TrimSpace(string(b)), nil
 }
 
-// replace fills a new directory next to dir and makes dir, a symbolic link, name it, then removes
-// the directory dir named before and any an interrupted replace left. Renaming a link over
-// another is atomic where renaming a directory over a non-empty one is impossible, so a reader
-// or a power cut finds either set whole. The link is relative, so it resolves wherever the file
-// system is mounted, as the installer mounts a target's STATE elsewhere than /state. The
-// directories keep names are left too, as a slot's previous config.
+// replace fills a new directory next to dir, points dir, a relative symbolic link, at it and
+// removes older directories but those keep names. Renaming a link over another is atomic, so a
+// reader or a power cut finds either set whole; relative, it resolves wherever STATE is mounted.
 func replace(dir string, fill func(tmp string) error, keep ...string) error {
 	return replaceAfter(dir, fill, nil, keep...)
 }

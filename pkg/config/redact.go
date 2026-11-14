@@ -14,30 +14,15 @@ import (
 	"github.com/trevex/chalkos/pkg/schema"
 )
 
-// Redacted are config documents with every secret value hidden, as Redact hides them: all that
-// rules, renderers, validators and command facts read of a config, and all of it that leaves a
-// node or reaches an image's checker. Only Redact and the readers of documents that Redact gave
-// where they were written produce it, so a program that takes Redacted never sees a secret
-// value. No document is redacted twice: Redact takes documents with their values, which Redacted
-// does not convert to. The zero value holds no documents.
+// Redacted are config documents with every secret value hidden. Only Redact and the readers of
+// documents Redact wrote produce it, so a program that takes Redacted never sees a secret value.
 type Redacted struct {
 	docs Documents
 }
 
-// Redact returns docs with every secret value hidden, so a node can show its config for comparison,
-// and an image check it, without revealing a secret:
-//   - each value of a Secret's spec.data as hideValue hides it: a string by its hex SHA-256 and
-//     any other value by the zero value of its JSON type; a spec.data, or a spec, that is no
-//     object, which no schema accepts, the same way as a whole;
-//   - each data and stringData value of a Secret object another document embeds, at any depth, by
-//     the hex SHA-256 of the value, of its JSON where it is no string. An embedded Secret object
-//     is an object of apiVersion v1, or /v1, and kind Secret in any casing, such as a document
-//     carries for another API to apply.
-//
-// Redact needs no schemas: it hides the same values whichever image's documents it is given, also
-// those of an image the node does not run. Two sets redact to the same documents where they hold
-// the same strings, and an embedded Secret object's to the same where they hold the same values of
-// any type. docs are left as they are.
+// Redact returns docs with secret values hidden: a Secret's spec.data values by hideValue, and
+// the data and stringData of embedded v1 Secret objects by their SHA-256. It needs no schemas, so
+// it hides the same values for any image.
 func Redact(docs []Document) Redacted {
 	out := make(Documents, len(docs))
 	for i, d := range docs {
@@ -47,9 +32,8 @@ func Redact(docs []Document) Redacted {
 	return Redacted{docs: out}
 }
 
-// RedactedObjects are the documents of objects that Redact gave where they were written, such as
-// a baseline chalkd records or the input chalkd gives an image's checker. They stay as they are:
-// RedactedObjects trusts its caller to pass objects that were redacted when they were written.
+// RedactedObjects wraps objects that Redact wrote earlier. It trusts its caller that they were
+// redacted when written.
 func RedactedObjects(objects []map[string]any) Redacted {
 	docs := make(Documents, len(objects))
 	for i, obj := range objects {
@@ -58,9 +42,8 @@ func RedactedObjects(objects []map[string]any) Redacted {
 	return Redacted{docs: docs}
 }
 
-// ParseRedacted reads a stream of documents that Redact gave where they were written, as a node
-// serves its config, as Parse reads one. They stay as they are: ParseRedacted trusts its caller
-// to pass documents that were redacted when they were written.
+// ParseRedacted reads a stream of documents that Redact wrote earlier, such as a node's served
+// config. It trusts its caller that they were redacted when written.
 func ParseRedacted(r io.Reader) (Redacted, error) {
 	docs, err := Parse(r)
 	if err != nil {
@@ -78,7 +61,7 @@ func (r Redacted) Documents() Documents {
 // Len is the number of documents.
 func (r Redacted) Len() int { return len(r.docs) }
 
-// Objects are the documents' objects, in their order, as RedactedObjects reads them back.
+// Objects are the documents' objects, in their order.
 func (r Redacted) Objects() []map[string]any {
 	out := make([]map[string]any, len(r.docs))
 	for i, d := range r.docs {
@@ -87,12 +70,9 @@ func (r Redacted) Objects() []map[string]any {
 	return out
 }
 
-// Defaulted is r with the defaults schemas give filled in, as the rules of the image whose
-// schemas they are compare a config with it. The documents another image delivered or translated
-// mean to this image what its own defaults make of them: a field the delivery left out takes
-// this image's default, whatever default the other image gave it. A document of a kind schemas
-// does not accept is left out, as no rule of this image reads its kind. Documents with defaults
-// already keep them. The defaults are the schemas' own, so the documents stay redacted.
+// Defaulted is r with the schemas' defaults filled in, so documents another image delivered mean
+// what this image's defaults make of them. A document of a kind schemas does not accept is left
+// out, as no rule of this image reads it.
 func (r Redacted) Defaulted(schemas *schema.Schemas) Redacted {
 	var out Documents
 	for _, d := range r.docs {
@@ -106,10 +86,8 @@ func (r Redacted) Defaulted(schemas *schema.Schemas) Redacted {
 	return Redacted{docs: out}
 }
 
-// TranslateRedacted is Translate of redacted documents, which it accepts as it accepts the
-// documents with their values: the checks of secret references need the Secrets' keys alone, and
-// a hidden value keeps the JSON type of its value for the schemas. It returns the set's
-// documents, with their defaults, which stay redacted, since the defaults are the schemas' own.
+// TranslateRedacted is Translate of redacted documents. Secret reference checks need the keys
+// alone and a hidden value keeps its JSON type, so redacted documents pass as the originals would.
 func TranslateRedacted(name string, docs Redacted, schemas *schema.Schemas, t Target) (Redacted, identity.Identity, error) {
 	set, id, err := Translate(name, docs.docs, schemas, t)
 	if err != nil {
@@ -118,11 +96,8 @@ func TranslateRedacted(name string, docs Redacted, schemas *schema.Schemas, t Ta
 	return Redacted{docs: set.Documents()}, id, nil
 }
 
-// CheckRedacted checks docs as Translate checks a set, against the schemas, the set rules, the
-// Secrets the secretRefs name and the Registry and Mirror documents, short of what a node's
-// identity needs: a SystemDisk, and the translation itself, of every image and of the layers. It
-// returns the set's documents with their defaults, which stay redacted, as TranslateRedacted
-// returns them. It checks the documents an image's tests are about, which need no whole node.
+// CheckRedacted checks docs as Translate does, short of what a whole node needs (a SystemDisk and
+// the translation), and returns them with their defaults. Image tests use it.
 func CheckRedacted(docs Redacted, schemas *schema.Schemas) (Redacted, error) {
 	set, err := checkSet(docs.docs, schemas, false)
 	if err != nil {
@@ -131,8 +106,7 @@ func CheckRedacted(docs Redacted, schemas *schema.Schemas) (Redacted, error) {
 	return Redacted{docs: set.Documents()}, nil
 }
 
-// hidden is the document's object with its secret values hidden, as Redact hides them. The
-// document is left as it is.
+// hidden is the document's object with its secret values hidden.
 func (d Document) hidden() map[string]any {
 	if d.IsSecret() {
 		return hideSecret(d.Object)
@@ -165,10 +139,9 @@ func hideSecret(obj map[string]any) map[string]any {
 // secretFields are the fields of an embedded Secret object that hold its values.
 var secretFields = []string{"data", "stringData"}
 
-// hideEmbedded returns v with the values of each Secret object in it hashed, and whether it hid
-// any; v itself is left as it is, and a part of it without a Secret object is shared, not copied.
-// The values are hashed whatever their type, so a change of any value changes the hash of the
-// document's kind, and a data that is no object is hashed whole.
+// hideEmbedded returns v with the values of each embedded Secret object hashed, and whether it hid
+// any. Parts without a Secret object are shared. Values of any type are hashed, so any change
+// changes the document's hash.
 func hideEmbedded(v any) (any, bool) {
 	switch v := v.(type) {
 	case map[string]any:
@@ -214,10 +187,8 @@ func hideEmbedded(v any) (any, bool) {
 	return v, false
 }
 
-// embeddedSecret tells whether obj is a Secret object a document embeds: of the core group's
-// version v1 and kind Secret. The apiVersion is v1 or /v1, both of which Kubernetes parses as the
-// core group's v1. The kind is compared in any casing: what an API server would refuse is still
-// not to be shown.
+// embeddedSecret tells whether obj is a core v1 Secret. Kubernetes parses both v1 and /v1 as the
+// core group; the kind matches in any casing, as a refused Secret is still not to be shown.
 func embeddedSecret(obj map[string]any) bool {
 	apiVersion, _ := obj["apiVersion"].(string)
 	kind, _ := obj["kind"].(string)
@@ -276,13 +247,8 @@ func hashValue(v any) any {
 	return hex.EncodeToString(sum[:])
 }
 
-// hideValue hides a value of a Secret as Redact does: a string by its hex SHA-256, and any other
-// value by the zero value of its JSON type, such as 0 for a number, also one Go built as an int
-// or a float64 rather than parsed as a json.Number. A value that is no
-// string keeps its type, so a schema that refuses it refuses the hidden document with the same
-// message, as a schema's message of a value of the wrong type names the type alone. Secret values
-// are strings, so a document that holds another passes no check, and no delivery is named by
-// the zero values its hash then holds.
+// hideValue hides a Secret value: a string by its SHA-256, anything else by the zero value of
+// its JSON type, so a schema refuses the hidden document as it would the original.
 func hideValue(v any) any {
 	switch v := v.(type) {
 	case string:

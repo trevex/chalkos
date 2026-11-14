@@ -29,12 +29,11 @@ type Registries struct {
 	Mirrors []RegistryMirror
 }
 
-// RegistriesOf returns the Registry and Mirror documents among docs, with each password taken
-// from secret, or left empty when secret is nil. It reads documents as delivered, without the
-// image's defaults, as chalkd reads an upgrade's config before it checks it against the image.
-// It refuses two Registry or two Mirror documents of one registry, also when they name it
-// differently, such as docker.io and index.docker.io, an endpoint with a user in its URL, and an
-// http:// endpoint unless the Registry of its host allows plain HTTP.
+// RegistriesOf returns the Registry and Mirror documents among docs, each password taken from
+// secret, or empty when secret is nil. It needs no image defaults, so chalkd can read an
+// upgrade's config before checking it against the image. It refuses two documents of one registry,
+// also under different names such as docker.io and index.docker.io, an endpoint with a user in
+// its URL, and plain HTTP unless the host's Registry allows it.
 func RegistriesOf(docs Documents, secret func(SecretRef) (string, bool)) (Registries, error) {
 	var r Registries
 	type named struct {
@@ -137,11 +136,9 @@ func (r Registries) Endpoints(host string) []string {
 	return nil
 }
 
-// HostsTOML returns containerd's hosts.toml of each registry a Mirror names, or whose Registry
-// allows plain HTTP, by the directory below containerd's config_path that holds it: the
-// registry's host in lower case, and docker.io for Docker Hub, as containerd looks them up.
-// containerd tries the endpoints in order, then the registry itself, over plain HTTP when its
-// Registry allows it.
+// HostsTOML returns containerd's hosts.toml of each registry a Mirror names or whose Registry
+// allows plain HTTP, keyed by the directory below config_path that containerd looks it up in.
+// containerd tries the endpoints in order, then the registry itself.
 func (r Registries) HostsTOML() map[string]string {
 	out := map[string]string{}
 	add := func(host string, endpoints []string) {

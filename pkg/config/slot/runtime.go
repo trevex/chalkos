@@ -14,15 +14,10 @@ import (
 	"github.com/trevex/chalkos/pkg/schema"
 )
 
-// WriteRuntime writes a config set for the node's services. Its documents go below runDir/config as
-// <group>/<Kind>/<name>.json, readable by all, except Secrets and the documents of the kinds
-// schemas declare withheld; replacing the directory removes any an earlier write left. For each
-// granted unit, by name with the kinds it reads, the values the secretRefs of those kinds'
-// documents name go to runDir/credentials/<unit>/<secret>.<key>, readable by root alone, which the
-// unit loads with LoadCredential=secret:<that directory>. Every granted unit gets its directory,
-// empty when it references no secret, because systemd refuses to start a unit whose credential
-// path is missing. schemas tell which fields are key references and which kinds are withheld; nil
-// when docs is empty.
+// WriteRuntime writes the config for the node's services: the documents below runDir/config,
+// without Secrets and withheld kinds, and each granted unit's secret values below
+// runDir/credentials/<unit>, readable by root alone. Every granted unit gets its directory, even
+// empty, because systemd refuses to start a unit whose credential path is missing.
 func WriteRuntime(runDir string, docs []config.Document, schemas *schema.Schemas, units map[string][]string) error {
 	creds, err := credentials(docs, schemas, units)
 	if err != nil {
@@ -122,10 +117,9 @@ func syncFiles(dir string, files map[string][]byte) error {
 	return nil
 }
 
-// CredentialSecrets returns the value a secretRef names among the credentials of a granted unit,
-// as systemd loads them into dir, the unit's $CREDENTIALS_DIRECTORY, and whether dir holds it. A
-// reference that could not name a credential file, such as one holding /, holds no value, so no
-// reference reads a file outside dir.
+// CredentialSecrets reads secret values from dir, a unit's $CREDENTIALS_DIRECTORY. A reference
+// that could not name a credential file, such as one holding /, holds no value, so no reference
+// reads a file outside dir.
 func CredentialSecrets(dir string) func(config.SecretRef) (string, bool) {
 	return func(ref config.SecretRef) (string, bool) {
 		if dir == "" || config.CheckCredential(ref) != nil {

@@ -8,10 +8,9 @@ import (
 	"github.com/trevex/chalkos/pkg/schema"
 )
 
-// UnpinnedImages names each image reference of the documents that has a tag but no digest: every
-// value whose schema has the format image-reference or versioned-image-reference. containerd
-// pulls such an image by whatever the tag points to when it pulls, so two nodes may run different
-// images under one reference. Each line names the document, the field below spec and the reference.
+// UnpinnedImages names each image reference in the documents that has a tag but no digest.
+// containerd pulls such an image by whatever the tag points to, so two nodes may run different
+// images under one reference.
 func (docs Documents) UnpinnedImages(schemas *schema.Schemas) []string {
 	var lines []string
 	for _, d := range docs {

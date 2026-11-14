@@ -23,14 +23,12 @@ type Document struct {
 	APIVersion string
 	Kind       string
 	Name       string
-	// Object is the whole document as YAML read it, with no scalar reinterpreted: strings,
-	// timestamps and binary values stay exactly the text written, and every integer and float is
-	// a json.Number in JSON's spelling of the same value, which no decoder has rounded, one of an
-	// integer value in plain digits however the config wrote it.
+	// Object is the whole document with no scalar reinterpreted: strings, timestamps and binary
+	// values keep their text, and numbers are exact json.Numbers, integers in plain digits.
 	Object map[string]any
 }
 
-// Documents are a node's config documents, such as a Set holds or a config slot stores.
+// Documents are a node's config documents.
 type Documents []Document
 
 // Of returns the documents of a kind, in their order.
@@ -58,11 +56,9 @@ var jsonNumber = regexp.MustCompile(`^-?(0|[1-9][0-9]*)(\.[0-9]+)?([eE][+-]?[0-9
 // mergeTag is the short form of the YAML tag a plain "<<" scalar resolves to.
 const mergeTag = "!!merge"
 
-// Parse reads the documents of a YAML stream, separated by ---. Empty documents are skipped.
-// Every scalar keeps its exact value: Parse does not let yaml.v3's resolver turn an
-// unquoted value such as a date into a time.Time, or a number into a float64 that cannot hold it
-// exactly. A mapping key must be a plain or quoted string; any other key, and a merge key (<<),
-// are errors naming the document and line.
+// Parse reads the documents of a YAML stream, skipping empty ones. Every scalar keeps its exact
+// value, so no date becomes a time.Time and no number loses precision. Mapping keys must be
+// strings, and merge keys (<<) are refused.
 func Parse(r io.Reader) ([]Document, error) {
 	dec := yaml.NewDecoder(r)
 	var docs []Document
@@ -215,10 +211,9 @@ func (d Document) DecodeSpec(v any) error {
 
 func (d Document) String() string { return fmt.Sprintf("%s %q", d.Kind, d.Name) }
 
-// FromObject is the document an object decoded from YAML or JSON holds, with its apiVersion,
-// kind and name read from the object. It rewrites each number in m of an integer value into plain
-// digits, as integral does. Every document passes through here, from Parse, FromJSON and a
-// baseline, so a check, a config slot and a renderer's input hold 100 where the config wrote 100.0.
+// FromObject is the document an object decoded from YAML or JSON holds. It rewrites integral
+// numbers in m into plain digits; every document passes through here, so every reader of it sees
+// 100 where the config wrote 100.0.
 func FromObject(m map[string]any) Document {
 	integral(m)
 	d := Document{Object: m}
