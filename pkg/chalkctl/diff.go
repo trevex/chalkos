@@ -42,15 +42,14 @@ type configDiff []docChange
 // field one spells out and the other leaves to its default differs. Both are redacted, so secret
 // values compare by their hashes and show as changed alone.
 func diffConfig(node, inventory config.Redacted) configDiff {
-	key := func(d config.Document) string { return d.APIVersion + " " + d.Kind + " " + d.Name }
-	was := map[string]config.Document{}
+	was := map[config.ID]config.Document{}
 	for _, d := range node.Documents() {
-		was[key(d)] = d
+		was[d.ID()] = d
 	}
 	var changes configDiff
 	for _, d := range inventory.Documents() {
-		old, ok := was[key(d)]
-		delete(was, key(d))
+		old, ok := was[d.ID()]
+		delete(was, d.ID())
 		if !ok {
 			changes = append(changes, docChange{op: '+', doc: d})
 			continue

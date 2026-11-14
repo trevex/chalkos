@@ -33,16 +33,14 @@ func FromJSON(data []byte) (Document, error) {
 // with values to a document. A Secret object delivered embeds keeps its apiVersion and kind as
 // they were delivered.
 func Restore(hashed, delivered []Document) ([]Document, error) {
-	type key struct{ apiVersion, kind, name string }
-	of := func(d Document) key { return key{d.APIVersion, d.Kind, d.Name} }
-	values := make(map[key]Document, len(delivered))
+	values := make(map[ID]Document, len(delivered))
 	for _, d := range delivered {
-		values[of(d)] = d
+		values[d.ID()] = d
 	}
 	out := make([]Document, len(hashed))
-	seen := make(map[key]bool, len(hashed))
+	seen := make(map[ID]bool, len(hashed))
 	for i, h := range hashed {
-		k := of(h)
+		k := h.ID()
 		d, ok := values[k]
 		switch {
 		case !ok:

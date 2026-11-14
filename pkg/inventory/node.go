@@ -41,7 +41,7 @@ func (inv *Inventory) Node(name string) (*NodeConfig, error) {
 		return nil, err
 	}
 	var docs []config.Document
-	seen := map[string]string{}
+	seen := map[config.ID]string{}
 	for _, f := range files {
 		read, err := inv.read(f)
 		if err != nil {
@@ -51,11 +51,10 @@ func (inv *Inventory) Node(name string) (*NodeConfig, error) {
 			// The inventory reads a file once for every node that gets it; each node gets its own
 			// copy, so that changing one node's documents changes no other's.
 			d.Object = schema.DeepCopy(d.Object).(map[string]any)
-			key := d.APIVersion + " " + d.Kind + " " + d.Name
-			if other, ok := seen[key]; ok {
+			if other, ok := seen[d.ID()]; ok {
 				return nil, fmt.Errorf("node %s: %s and %s both hold %s", name, inv.rel(other), inv.rel(f), d)
 			}
-			seen[key] = f
+			seen[d.ID()] = f
 			docs = append(docs, d)
 		}
 	}
