@@ -103,7 +103,7 @@ The Kubernetes line of `chalkctl status` names the node's kind and one of these 
 | `waiting for bootstrap or for the cluster at <endpoint>` | A control plane that found no cluster to join yet |
 | `joining the cluster at <endpoint>: <step>` | A join that runs, with its step or its last error |
 | `bootstrapped` | A control plane that is an etcd voter, by bootstrap or join |
-| `bootstrapped: <problem>` | A control plane whose address differs from its etcd peer URL, or whose etcd member belongs to another cluster than the other control planes' members |
+| `bootstrapped: <problem>` | A control plane whose etcd member belongs to another cluster than the other control planes' members |
 | `joined` | A worker |
 | `joined: <problem>` | A worker whose Node lacks a pod range of one of the cluster's families |
 | `preparation failed: <reason>` | The preparation stopped, for example because no address matched |

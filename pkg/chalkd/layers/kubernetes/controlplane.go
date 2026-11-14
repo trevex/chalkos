@@ -6,8 +6,6 @@ import (
 	"fmt"
 	"io/fs"
 	"log"
-	"slices"
-	"strings"
 	"time"
 
 	"k8s.io/client-go/kubernetes"
@@ -111,53 +109,8 @@ func (k *side) runControlPlaneOnce(ctx context.Context, applied func(n int)) err
 	if err != nil {
 		return err
 	}
-	c, err := k8s.ReadCluster(k.state.Cluster)
-	if err != nil {
-		return err
-	}
-	if pin, err := k.state.ReadPin(); err != nil {
-		return err
-	} else if pin == nil {
-		if err := k.pinFromEtcd(ctx, c, share); err != nil {
-			return err
-		}
-	}
 	go k.watchSplit(ctx, share)
 	return k.hooks.ControlPlane(ctx, share, applied)
-}
-
-// pinFromEtcd pins a bootstrapped node without a pin, as an older image left it, to its
-// addresses. It does so once its etcd member's peer URL confirms them, since etcd's peers know
-// the member by that URL. A node whose address differs is not pinned, and its status says so.
-func (k *side) pinFromEtcd(ctx context.Context, c k8s.Cluster, share kpki.Share) error {
-	ips, err := k.state.ReadNodeIPs()
-	if err != nil {
-		return err
-	}
-	cli, err := k.dialEtcd(c, share)
-	if err != nil {
-		return err
-	}
-	defer cli.Close()
-	rctx, cancel := k.etcdRequest(ctx)
-	defer cancel()
-	self, err := cli.Local(rctx, k.localEtcd(c))
-	if err != nil {
-		return fmt.Errorf("pin the node's addresses: %w", err)
-	}
-	if !slices.Equal(self.PeerURLs, []string{k8s.EtcdPeerURL(ips[0])}) {
-		problem := fmt.Sprintf("the node's address differs from its etcd peer URL %s; restore the address", strings.Join(self.PeerURLs, ", "))
-		k.setPinProblem(problem)
-		return errors.New(problem)
-	}
-	k.setPinProblem("")
-	return k.state.WritePin(ips)
-}
-
-func (k *side) setPinProblem(problem string) {
-	k.mu.Lock()
-	defer k.mu.Unlock()
-	k.pinProblem = problem
 }
 
 // runControlPlane waits for the local API server, then approves kubelet serving certificates and

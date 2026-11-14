@@ -32,7 +32,6 @@ import (
 	"github.com/trevex/chalkos/pkg/config/slot"
 	"github.com/trevex/chalkos/pkg/internal/testwait"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
-	"github.com/trevex/chalkos/pkg/kubernetes/etcd/etcdtest"
 	"github.com/trevex/chalkos/pkg/kubernetes/manifests"
 	knode "github.com/trevex/chalkos/pkg/kubernetes/node"
 	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
@@ -282,60 +281,6 @@ func TestControlPlaneLoopWaitsForPreparation(t *testing.T) {
 	case <-runs:
 	case <-time.After(time.Minute):
 		t.Fatal("the control plane's loop did not start once the node's files were prepared")
-	}
-}
-
-// A bootstrapped control plane without a pin, as an older image left it, is pinned once its
-// files are prepared and its etcd member's peer URL confirms its address.
-func TestControlPlaneLoopPins(t *testing.T) {
-	s, _ := kubernetesNode(t, k8s.KindControlPlane, true)
-	k := s.k
-	write(t, k.state.BootstrappedMarker(), "")
-	share, _ := k.state.ReadShare()
-	k.etcdURL = etcdtest.StartAdvertising(t, *share.EtcdCA, "n1", "https://192.168.100.11:2380").ClientURL
-	ran := make(chan struct{})
-	k.hooks.ControlPlane = func(ctx context.Context, _ kpki.Share, _ func(int)) error {
-		close(ran)
-		<-ctx.Done()
-		return ctx.Err()
-	}
-	k.startLoops()
-	select {
-	case <-ran:
-	case <-time.After(time.Minute):
-		t.Fatal("the control plane's loop did not run")
-	}
-	if pin, err := k.state.ReadPin(); err != nil || len(pin) != 1 || pin[0].String() != "192.168.100.11" {
-		t.Errorf("pin = %v, %v, want the node's address", pin, err)
-	}
-}
-
-// A bootstrapped control plane whose address is not the one its etcd member was started with is
-// never pinned to it.
-func TestControlPlaneLoopRefusesMismatchedPin(t *testing.T) {
-	s, _ := kubernetesNode(t, k8s.KindControlPlane, true)
-	k := s.k
-	write(t, k.state.BootstrappedMarker(), "")
-	share, _ := k.state.ReadShare()
-	k.etcdURL = etcdtest.StartAdvertising(t, *share.EtcdCA, "n1", "https://192.168.100.12:2380").ClientURL
-	k.timing.RestartBackoff, k.timing.MaxRestartBackoff = 10*time.Millisecond, 20*time.Millisecond
-	var ran atomic.Bool
-	k.hooks.ControlPlane = func(ctx context.Context, _ kpki.Share, _ func(int)) error {
-		ran.Store(true)
-		<-ctx.Done()
-		return ctx.Err()
-	}
-	k.startLoops()
-	want := "bootstrapped: the node's address differs from its etcd peer URL https://192.168.100.12:2380; restore the address"
-	testwait.Eventually(t, "the mismatch's state", func() bool {
-		st, err := k.status(context.Background())
-		return err == nil && st.State == want
-	})
-	if exists(k.state.Pin()) {
-		t.Error("the node was pinned to an address its etcd member does not have")
-	}
-	if ran.Load() {
-		t.Error("the control plane's loop ran without the node's pin")
 	}
 }
 

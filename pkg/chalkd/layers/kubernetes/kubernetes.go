@@ -61,8 +61,6 @@ type side struct {
 	stopped bool
 	// split says why the node's etcd and the other control planes' belong to different clusters.
 	split string
-	// pinProblem says why the node cannot be pinned to its addresses.
-	pinProblem string
 	// reload asks the running loop to start again.
 	reload chan struct{}
 	// done is closed once the manifests were applied; count is how many.

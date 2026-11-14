@@ -91,10 +91,8 @@ func (k *side) status(ctx context.Context) (*kubernetesv1.StatusResponse, error)
 	case m == knode.MembershipBootstrapped:
 		st.State, st.Phase = "bootstrapped", kubernetesv1.Phase_PHASE_BOOTSTRAPPED
 		k.mu.Lock()
-		for _, problem := range []string{k.pinProblem, k.split} {
-			if problem != "" {
-				st.State += ": " + problem
-			}
+		if k.split != "" {
+			st.State += ": " + k.split
 		}
 		k.mu.Unlock()
 		if len(c.VIP.Addresses) > 0 {
