@@ -1,5 +1,6 @@
 # The router layer, on images whose nodes route between networks: its marker, forwarding, the
-# Router kind and its output router-sysctl, the router's diagnostics and the validator router.
+# Router kind and its output router-sysctl, the router's diagnostics, the validator router and
+# routerLib, the module argument of the router's parts.
 # Each part of the router has a directory of its own with its kinds, outputs, effects, services
 # and diagnostics: the firewall, which takes the place of NixOS's, VRFs and policy routing, and
 # the features a variant may leave out, each with its option chalkos.router.<feature>.enable:
@@ -13,17 +14,17 @@
   ...
 }:
 let
-  inherit
-    (import ./lib.nix {
-      inherit
-        chalkosLib
-        config
-        lib
-        pkgs
-        ;
-    })
-    accepted
-    ;
+  # What the router's parts share, which they get as the module argument routerLib, as NixOS's
+  # modules get utils.
+  routerLib = import ./lib.nix {
+    inherit
+      chalkosLib
+      config
+      lib
+      pkgs
+      ;
+  };
+  inherit (routerLib) accepted;
 in
 {
   imports = [
@@ -89,16 +90,22 @@ in
     '';
   };
 
-  config = lib.mkIf config.chalkos.router.enable {
-    chalkos.kinds = import ./kinds.nix { inherit chalkosLib lib; };
-    chalkos.layers.router = "";
-    chalkos.forwarding.enable = true;
+  config = lib.mkMerge [
+    # Every image declares the parts' options, which read routerLib, so it is set beside the
+    # condition rather than under it: under it, an image without the router layer fails with
+    # routerLib missing as soon as anything reads one of those options.
+    { _module.args.routerLib = routerLib; }
+    (lib.mkIf config.chalkos.router.enable {
+      chalkos.kinds = routerLib.kinds ./kinds.nix;
+      chalkos.layers.router = "";
+      chalkos.forwarding.enable = true;
 
-    # zebra installs BGP's routes and next hops, and chalkos-nat64 the routes to the NAT64s'
-    # links, which networkd would remove as foreign ones each time it configures a link.
-    systemd.network.config.networkConfig = {
-      ManageForeignRoutes = false;
-      ManageForeignNextHops = false;
-    };
-  };
+      # zebra installs BGP's routes and next hops, and chalkos-nat64 the routes to the NAT64s'
+      # links, which networkd would remove as foreign ones each time it configures a link.
+      systemd.network.config.networkConfig = {
+        ManageForeignRoutes = false;
+        ManageForeignNextHops = false;
+      };
+    })
+  ];
 }

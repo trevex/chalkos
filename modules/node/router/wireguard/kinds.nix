@@ -8,13 +8,17 @@
 # networkd may pick for it before its own unit, and a link of a VRF other than the interface's. The
 # validator also refuses a default route among a peer's allowed IPs and an endpoint whose host is
 # no host name, which the schema's pattern lets through.
-{ chalkosLib, lib }:
+{
+  chalkosLib,
+  lib,
+  routerLib,
+}:
 let
   inherit (lib) mkOption types;
   inherit (chalkosLib.internal) builtin;
   inherit (chalkosLib.internal.api) groups;
   inherit (chalkosLib.types) ref secretRef;
-  inherit (import ../types.nix { inherit chalkosLib lib; })
+  inherit (routerLib.types)
     prefix
     vrfRef
     delivered

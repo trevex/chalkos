@@ -13,24 +13,16 @@
 # the records' directory but cannot write /var/lib, so it cannot put another directory in its
 # place, and chalkd, which reads the records as root, removes none of them.
 {
-  chalkosLib,
   config,
   lib,
   pkgs,
+  routerLib,
   ...
 }:
 let
   cfg = config.chalkos.router.dhcp;
-  routerLib = import ../lib.nix {
-    inherit
-      chalkosLib
-      config
-      lib
-      pkgs
-      ;
-  };
   inherit (routerLib) hardened;
-  kinds = import ./kinds.nix { inherit chalkosLib lib; };
+  kinds = routerLib.kinds ./kinds.nix;
   inherit (pkgs.chalkos) kea;
   dir = config.chalkos.outputs.kea.dir;
   pdRecords = "/var/lib/chalkos-dhcp6-pd";
@@ -184,6 +176,8 @@ let
     };
 in
 {
+  imports = [ ./diagnostics.nix ];
+
   options.chalkos.router.dhcp.enable = routerLib.feature ''
     Whether router images carry the DHCP server, Kea, and accept the kind DHCPSubnet; only
     with the router layer. Set it false in a variant's modules to leave Kea out of its images,
@@ -192,7 +186,6 @@ in
 
   config = lib.mkIf (config.chalkos.router.enable && cfg.enable) {
     chalkos.kinds = kinds;
-    chalkos.diagnostics = import ./diagnostics.nix { inherit lib pkgs; };
 
     # The images allocate the IDs of users without one statically, from 999 down, so a user
     # of an unpinned ID would move the IDs of the users after it, and the owners of their files

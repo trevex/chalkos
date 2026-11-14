@@ -9,14 +9,18 @@
 # peer the validator router checks: a peer's interface of another VRF or of a VRF's device, a
 # session two peers name and listen ranges of a VRF that overlap. What depends on FRR's config the
 # output frr checks: a policy two AS numbers prepend and an AS path bgpd refuses.
-{ chalkosLib, lib }:
+{
+  chalkosLib,
+  lib,
+  routerLib,
+}:
 let
   inherit (lib) mkOption types;
   inherit (chalkosLib.internal) builtin;
   inherit (chalkosLib.internal.api) groups;
   inherit (chalkosLib.internal.kindTypes) peerAS;
   inherit (chalkosLib.types) ref secretRef;
-  inherit (import ../types.nix { inherit chalkosLib lib; })
+  inherit (routerLib.types)
     interface
     interfaceText
     interfaceName

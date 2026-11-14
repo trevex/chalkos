@@ -3,24 +3,16 @@
 # chalkos-nat64.service, which brings Jool's instances, their namespaces and links and the routes
 # to them to the rendered files at boot and on each delivery that changes them.
 {
-  chalkosLib,
   config,
   lib,
   pkgs,
+  routerLib,
   ...
 }:
 let
   cfg = config.chalkos.router.nat64;
-  routerLib = import ../lib.nix {
-    inherit
-      chalkosLib
-      config
-      lib
-      pkgs
-      ;
-  };
   inherit (routerLib) hardened;
-  kinds = import ./kinds.nix { inherit chalkosLib lib; };
+  kinds = routerLib.kinds ./kinds.nix;
   jool = pkgs.jool-cli;
   # Brings Jool's instances, their namespaces and links and the routes to them to the files of the
   # output jool: <name>.json is Jool's, <name>.veth the link's. It checks every file before it
@@ -276,6 +268,8 @@ let
   };
 in
 {
+  imports = [ ./diagnostics.nix ];
+
   options.chalkos.router.nat64.enable = routerLib.feature ''
     Whether router images carry Jool, the kernel module and tool of the NAT64 instances, and
     accept the kind NAT64; only with the router layer. Set it false in a variant's modules to
@@ -284,7 +278,6 @@ in
 
   config = lib.mkIf (config.chalkos.router.enable && cfg.enable) {
     chalkos.kinds = kinds;
-    chalkos.diagnostics = import ./diagnostics.nix { inherit pkgs; };
     boot.extraModulePackages = [ config.boot.kernelPackages.jool ];
     # Loaded at boot, so the image's module check proves the tree holds it and what it depends on.
     boot.kernelModules = [ "jool" ];

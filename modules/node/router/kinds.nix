@@ -1,12 +1,16 @@
 # How a router forwards, on images with the router layer: the families it forwards, its
 # reverse-path filter, its multipath hash, its connection table and the interfaces of its node
 # API, which the output router-sysctl renders (sysctl.nix) and the firewall reads.
-{ chalkosLib, lib }:
+{
+  chalkosLib,
+  lib,
+  routerLib,
+}:
 let
   inherit (lib) mkOption types;
   inherit (chalkosLib.internal) builtin;
   inherit (chalkosLib.internal.api) groups;
-  inherit (import ./types.nix { inherit chalkosLib lib; })
+  inherit (routerLib.types)
     interface
     interfaceText
     matchNames

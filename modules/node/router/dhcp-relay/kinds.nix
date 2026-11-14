@@ -2,12 +2,16 @@
 # clients' DHCP requests the router forwards to DHCP servers elsewhere, one document each, which
 # the output dhcp-relay renders for dnsmasq's relay of the VRF the links are in (default.nix). A
 # relay names each of its links, as a DHCPSubnet does.
-{ chalkosLib, lib }:
+{
+  chalkosLib,
+  lib,
+  routerLib,
+}:
 let
   inherit (lib) types;
   inherit (chalkosLib.internal) builtin;
   inherit (chalkosLib.internal.api) groups;
-  inherit (import ../types.nix { inherit chalkosLib lib; }) interfaceName address;
+  inherit (routerLib.types) interfaceName address;
 in
 {
   DHCPRelay = builtin groups.router // {

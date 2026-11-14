@@ -5,13 +5,17 @@
 # chalkd refuses a rule that may cost more than two nested loops over a config's lists. So a rule
 # over a policy route's rules sits on spec.rules, where document() looks up a rule's AddressSet or
 # NextHop at a constant cost.
-{ chalkosLib, lib }:
+{
+  chalkosLib,
+  lib,
+  routerLib,
+}:
 let
   inherit (lib) mkOption types;
   inherit (chalkosLib.internal) builtin;
   inherit (chalkosLib.internal.api) groups;
   inherit (chalkosLib.types) ref;
-  inherit (import ../types.nix { inherit chalkosLib lib; })
+  inherit (routerLib.types)
     interface
     interfaceText
     interfaceName

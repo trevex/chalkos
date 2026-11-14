@@ -7,14 +7,18 @@
 # Network documents' static addresses bind their sections and their values as flat lists. What
 # compares the documents of the kind in pairs the validator router checks: two NAT64s of one VRF
 # whose prefixes overlap and two NAT64s whose pools share an address.
-{ chalkosLib, lib }:
+{
+  chalkosLib,
+  lib,
+  routerLib,
+}:
 let
   inherit (lib) mkOption types;
   inherit (chalkosLib.internal) builtin;
   inherit (chalkosLib.internal.api) groups apiVersions;
   inherit (chalkosLib.internal) cel;
   inherit (chalkosLib.types) portRange;
-  inherit (import ../types.nix { inherit chalkosLib lib; })
+  inherit (routerLib.types)
     prefix
     vrfRef
     nat64Prefix

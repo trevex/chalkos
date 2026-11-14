@@ -5,14 +5,14 @@
 # with their members. networkd keeps a WireGuard device whose unit went too, with its keys and
 # peers, so chalkos-vrf removes those as well.
 {
-  chalkosLib,
   config,
   lib,
   pkgs,
+  routerLib,
   ...
 }:
 let
-  kinds = import ./kinds.nix { inherit chalkosLib lib; };
+  kinds = routerLib.kinds ./kinds.nix;
   networkd = config.chalkos.outputs.networkd.dir;
   # Removes each kernel VRF that no .netdev of Kind=vrf declares with its table, after flushing the
   # unreachable defaults that networkd put into its table, and each WireGuard device that no .netdev

@@ -9,20 +9,13 @@
   config,
   lib,
   pkgs,
+  routerLib,
   ...
 }:
 let
   cfg = config.chalkos.router.resolver;
-  routerLib = import ../lib.nix {
-    inherit
-      chalkosLib
-      config
-      lib
-      pkgs
-      ;
-  };
   inherit (routerLib) hardened;
-  kinds = import ./kinds.nix { inherit chalkosLib lib; };
+  kinds = routerLib.kinds ./kinds.nix;
   unbound = config.services.unbound.package;
   dir = config.chalkos.outputs.unbound.dir;
   rendered = "${dir}/unbound.conf";

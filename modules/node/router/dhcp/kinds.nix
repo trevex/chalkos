@@ -15,12 +15,16 @@
 # what spans documents: a link of two subnets of a family, subnets that overlap in a VRF, the
 # router's own addresses on the links in a pool or reservation, and the links' router
 # advertisements.
-{ chalkosLib, lib }:
+{
+  chalkosLib,
+  lib,
+  routerLib,
+}:
 let
   inherit (lib) mkOption types;
   inherit (chalkosLib.internal) builtin;
   inherit (chalkosLib.internal.api) groups;
-  inherit (import ../types.nix { inherit chalkosLib lib; })
+  inherit (routerLib.types)
     interfaceName
     prefix
     address

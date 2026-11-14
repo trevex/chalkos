@@ -7,12 +7,16 @@
 # in pairs, or a resolver with the links of other VRFs, the validator router and the output check:
 # a resolver's address of another VRF's links (the validator), and a record twice or a CNAME beside
 # another record (output unbound).
-{ chalkosLib, lib }:
+{
+  chalkosLib,
+  lib,
+  routerLib,
+}:
 let
   inherit (lib) mkOption types;
   inherit (chalkosLib.internal) builtin;
   inherit (chalkosLib.internal.api) groups;
-  inherit (import ../types.nix { inherit chalkosLib lib; })
+  inherit (routerLib.types)
     prefix
     address
     vrfRef

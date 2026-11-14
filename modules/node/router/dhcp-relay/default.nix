@@ -6,24 +6,16 @@
 # dnsmasq reads its relays at start alone, and stops those without a config. A relay keeps no
 # state, and finds its links' addresses as requests come, so it starts before its links exist.
 {
-  chalkosLib,
   config,
   lib,
   pkgs,
+  routerLib,
   ...
 }:
 let
   cfg = config.chalkos.router.dhcpRelay;
-  routerLib = import ../lib.nix {
-    inherit
-      chalkosLib
-      config
-      lib
-      pkgs
-      ;
-  };
   inherit (routerLib) hardened;
-  kinds = import ./kinds.nix { inherit chalkosLib lib; };
+  kinds = routerLib.kinds ./kinds.nix;
   inherit (pkgs) dnsmasq;
   dir = config.chalkos.outputs.dhcp-relay.dir;
   # chalkd router services relay stops the relays without a config, then starts the relay of each

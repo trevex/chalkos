@@ -3,25 +3,15 @@
 # the network comes up, and a fallback ruleset when the node has none rendered; the output's
 # effect reloads it, in one transaction, when it changes.
 {
-  chalkosLib,
   config,
   lib,
   pkgs,
+  routerLib,
   ...
 }:
 let
-  inherit
-    (import ../lib.nix {
-      inherit
-        chalkosLib
-        config
-        lib
-        pkgs
-        ;
-    })
-    declared
-    ;
-  kinds = import ./kinds.nix { inherit chalkosLib lib; };
+  inherit (routerLib) declared;
+  kinds = routerLib.kinds ./kinds.nix;
   render = lib.getExe pkgs.chalkos.chalkos-render;
   nft = "${pkgs.nftables}/bin/nft";
   unshare = "${pkgs.util-linux}/bin/unshare";

@@ -9,12 +9,16 @@
 # the links networkd puts in each VRF and on the devices the VRFs create, the validator router
 # checks: a management interface or glob that may be a link of a VRF or matches a VRF's device,
 # and links two VRFs hold. The output router-networkd checks a NetDev of a VRF's name.
-{ chalkosLib, lib }:
+{
+  chalkosLib,
+  lib,
+  routerLib,
+}:
 let
   inherit (lib) types;
   inherit (chalkosLib.internal) builtin;
   inherit (chalkosLib.internal.api) groups apiVersions;
-  inherit (import ../types.nix { inherit chalkosLib lib; }) interface interfaceText matchNames;
+  inherit (routerLib.types) interface interfaceText matchNames;
   inherit (chalkosLib.internal) cel;
 
   # The documents of a router kind in the delivered config, by name.

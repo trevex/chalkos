@@ -4,13 +4,17 @@
 # chalkd refuses a rule that may cost more than two nested loops over a config's lists. So a rule
 # over a policy's firewall rules sits on spec.rules, where document() looks up a rule's AddressSet
 # at a constant cost, and lists of lists are flattened before the next loop reads them.
-{ chalkosLib, lib }:
+{
+  chalkosLib,
+  lib,
+  routerLib,
+}:
 let
   inherit (lib) mkOption types;
   inherit (chalkosLib.internal) builtin;
   inherit (chalkosLib.internal.api) groups;
   inherit (chalkosLib.types) portRange ref;
-  inherit (import ../types.nix { inherit chalkosLib lib; })
+  inherit (routerLib.types)
     interface
     interfaceText
     prefix

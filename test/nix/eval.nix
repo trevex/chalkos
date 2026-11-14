@@ -4669,4 +4669,44 @@ lib.runTests {
       custom = true;
     };
   };
+  # The router modules get routerLib, the helpers and types the router's parts share, as a module
+  # argument. Images without the router layer get it as well, as they declare the parts' options.
+  testRouterModulesGetRouterLib = {
+    expr =
+      let
+        # What a module of the image c reads of routerLib.
+        probe =
+          c:
+          builtins.fromJSON
+            (c [
+              (
+                { routerLib, ... }:
+                {
+                  environment.etc."chalkos-test/router-lib.json".text = builtins.toJSON {
+                    hardened = routerLib.hardened.NoNewPrivileges;
+                    types = routerLib.types ? interface;
+                    feature = routerLib ? feature;
+                    declared = routerLib.declared [
+                      "NAT64"
+                      "Nope"
+                    ];
+                  };
+                }
+              )
+            ]).environment.etc."chalkos-test/router-lib.json".text;
+      in
+      {
+        router = probe router;
+        worker = (probe worker).feature;
+      };
+    expected = {
+      router = {
+        hardened = true;
+        types = true;
+        feature = true;
+        declared = [ "NAT64" ];
+      };
+      worker = true;
+    };
+  };
 }
