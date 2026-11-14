@@ -15,6 +15,7 @@ import (
 	"github.com/trevex/chalkos/pkg/contract"
 	"github.com/trevex/chalkos/pkg/outputs"
 	"github.com/trevex/chalkos/pkg/pki"
+	"github.com/trevex/chalkos/pkg/schema/schematest"
 )
 
 const nodeIdentity = `{
@@ -168,15 +169,7 @@ spec: {data: {token: s3cret}}
 // copySchemas copies the fixture schemas of the built-in kinds and the Demo kind into dir.
 func copySchemas(t *testing.T, dir string) {
 	t.Helper()
-	for _, src := range []string{"../../test/fixtures/kinds/builtin", "../../test/fixtures/kinds/image/schemas"} {
-		entries, err := os.ReadDir(src)
-		if err != nil {
-			t.Fatal(err)
-		}
-		for _, e := range entries {
-			write(t, filepath.Join(dir, e.Name()), read(t, filepath.Join(src, e.Name())))
-		}
-	}
+	schematest.Copy(t, dir, schematest.Builtin, schematest.Image)
 }
 
 func TestLoadWritesConfig(t *testing.T) {

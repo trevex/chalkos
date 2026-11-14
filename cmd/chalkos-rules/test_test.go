@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/trevex/chalkos/pkg/schema/schematest"
 )
 
 // testImage lays out an image with the built-in kinds, as every image has them, and the Greeting
@@ -22,17 +24,8 @@ func testImage(t *testing.T) string {
 	f["effects.json"] = `{"greeter": {"outputs": ["greeting"], "restart": ["greeter.service"]},
 	  "greeter-reload": {"when": "facts.share != oldFacts.share", "reload": ["greeter.service"]}}`
 	// A test's config needs none of the built-in kinds, the SystemDisk among them.
-	builtin := "../../test/fixtures/kinds/builtin"
-	entries, err := os.ReadDir(builtin)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, e := range entries {
-		data, err := os.ReadFile(filepath.Join(builtin, e.Name()))
-		if err != nil {
-			t.Fatal(err)
-		}
-		f["schemas/"+e.Name()] = string(data)
+	for name, data := range schematest.Files(t, schematest.Builtin) {
+		f["schemas/"+name] = string(data)
 	}
 	return image(t, f)
 }

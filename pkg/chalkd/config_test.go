@@ -27,6 +27,7 @@ import (
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
 	"github.com/trevex/chalkos/pkg/outputs"
 	"github.com/trevex/chalkos/pkg/rules"
+	"github.com/trevex/chalkos/pkg/schema/schematest"
 	"github.com/trevex/chalkos/pkg/storage"
 	"github.com/trevex/chalkos/pkg/tool"
 	"github.com/trevex/chalkos/pkg/tool/tooltest"
@@ -61,32 +62,15 @@ spec: {servers: [{host: ntp.lan}]}
 // schemaFixtures hold the schemas of the built-in kinds, of a networkd Network and of the Demo
 // extension kind, whose token is a secretRef.
 var schemaFixtures = []string{
-	"../../test/fixtures/kinds/builtin",
-	"../../test/fixtures/config/networkd/schemas",
-	"../../test/fixtures/kinds/image/schemas",
+	schematest.Builtin,
+	schematest.Networkd,
+	schematest.Image,
 }
 
 // fixtureSchemas returns the fixture schemas by file name, as an install header carries them.
 func fixtureSchemas(t *testing.T) map[string][]byte {
 	t.Helper()
-	files := map[string][]byte{}
-	for _, dir := range schemaFixtures {
-		entries, err := os.ReadDir(dir)
-		if err != nil {
-			t.Fatal(err)
-		}
-		for _, e := range entries {
-			if !strings.HasSuffix(e.Name(), ".json") {
-				continue
-			}
-			b, err := os.ReadFile(filepath.Join(dir, e.Name()))
-			if err != nil {
-				t.Fatal(err)
-			}
-			files[e.Name()] = b
-		}
-	}
-	return files
+	return schematest.Files(t, schemaFixtures...)
 }
 
 // writeSchemas writes the fixture schemas into the test server's contract and loads it again.

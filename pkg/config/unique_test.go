@@ -2,14 +2,13 @@ package config
 
 import (
 	"maps"
-	"os"
-	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
 	"testing"
 
 	"github.com/trevex/chalkos/pkg/schema"
+	"github.com/trevex/chalkos/pkg/schema/schematest"
 )
 
 // poolSchema is an extension kind as the kinds module writes it, with a uniqueness declaration of
@@ -193,24 +192,9 @@ func TestNormalisers(t *testing.T) {
 // NewSet runs the uniqueness check after the reference check, on the documents with their
 // defaults, so chalkctl validate, apply and the image's self-check all refuse a repeat.
 func TestNewSetRefusesARepeatedValue(t *testing.T) {
-	dir := t.TempDir()
-	entries, err := os.ReadDir(builtinSchemas)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, e := range entries {
-		data, err := os.ReadFile(filepath.Join(builtinSchemas, e.Name()))
-		if err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(filepath.Join(dir, e.Name()), data, 0o644); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if err := os.WriteFile(filepath.Join(dir, "pool.example.org_v1_Pool.json"), []byte(poolSchema), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	s, err := schema.LoadSchemas(dir)
+	files := schematest.Files(t, schematest.Builtin)
+	files["pool.example.org_v1_Pool.json"] = []byte(poolSchema)
+	s, err := schema.LoadFiles(files)
 	if err != nil {
 		t.Fatal(err)
 	}

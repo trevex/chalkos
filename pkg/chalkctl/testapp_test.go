@@ -38,6 +38,7 @@ import (
 	"github.com/trevex/chalkos/pkg/nodeconfig"
 	"github.com/trevex/chalkos/pkg/outputs"
 	"github.com/trevex/chalkos/pkg/pki"
+	"github.com/trevex/chalkos/pkg/schema/schematest"
 	"github.com/trevex/chalkos/pkg/storage"
 	"github.com/trevex/chalkos/pkg/tool"
 	"github.com/trevex/chalkos/pkg/uki/ukitest"
@@ -281,24 +282,12 @@ func maintenanceNode() *chalkd.Server {
 }
 
 // fixtureSchemas are the schemas of the built-in kinds and of networkd's Network.
-var fixtureSchemas = []string{"../../test/fixtures/kinds/builtin", "../../test/fixtures/config/networkd/schemas"}
+var fixtureSchemas = []string{schematest.Builtin, schematest.Networkd}
 
 // copySchemas writes the fixture schemas into dir, as an image ships them.
 func copySchemas(t *testing.T, dir string) {
 	t.Helper()
-	for _, src := range fixtureSchemas {
-		entries, err := os.ReadDir(src)
-		if err != nil {
-			t.Fatal(err)
-		}
-		for _, e := range entries {
-			data, err := os.ReadFile(filepath.Join(src, e.Name()))
-			if err != nil {
-				t.Fatal(err)
-			}
-			writeFile(t, filepath.Join(dir, e.Name()), string(data))
-		}
-	}
+	schematest.Copy(t, dir, fixtureSchemas...)
 }
 
 // contractDir is the directory of s's contract; a server without one gets the fixture schemas.

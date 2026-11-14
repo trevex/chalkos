@@ -3,7 +3,6 @@ package chalkctl
 import (
 	"context"
 	"encoding/json"
-	"os"
 	"path/filepath"
 	"slices"
 	"strconv"
@@ -15,6 +14,7 @@ import (
 	"github.com/trevex/chalkos/pkg/outputs"
 	"github.com/trevex/chalkos/pkg/refusals"
 	"github.com/trevex/chalkos/pkg/schema"
+	"github.com/trevex/chalkos/pkg/schema/schematest"
 )
 
 // reservedPlugin is a layer that links the validator reserved, which an image with Network
@@ -126,7 +126,7 @@ func TestValidateRunsTheRouterValidator(t *testing.T) {
 	uplink := strings.Replace(n1Network, "spec: {", "spec: {match: {name: enp1s0}, ", 1)
 	vrf := "apiVersion: router.chalkos.dev/v1alpha1\nkind: VRF\nmetadata: {name: tenant}\nspec: {table: 100}\n"
 	path := writeInventory(t, ta.dir, n1SystemDisk, uplink, vrf)
-	copyDir(t, "../../test/fixtures/kinds/router", filepath.Join(ta.dir, "images", "test-metal", "schemas"))
+	schematest.Copy(t, filepath.Join(ta.dir, "images", "test-metal", "schemas"), schematest.Router)
 	if err := ta.run(context.Background(), []string{"validate", "--inventory", path}); err != nil {
 		t.Fatal(err)
 	}
@@ -150,25 +150,9 @@ func TestValidateRefusesAVRFDeviceConflict(t *testing.T) {
 	vrf := "apiVersion: router.chalkos.dev/v1alpha1\nkind: VRF\nmetadata: {name: tenant}\nspec: {table: 100}\n"
 	zone := "apiVersion: router.chalkos.dev/v1alpha1\nkind: FirewallZone\nmetadata: {name: lan}\nspec: {interfaces: [tenant]}\n"
 	path := writeInventory(t, ta.dir, n1SystemDisk, uplink, vrf, zone)
-	copyDir(t, "../../test/fixtures/kinds/router", filepath.Join(ta.dir, "images", "test-metal", "schemas"))
+	schematest.Copy(t, filepath.Join(ta.dir, "images", "test-metal", "schemas"), schematest.Router)
 	err := ta.run(context.Background(), []string{"validate", "--inventory", path})
 	if want := "FirewallZone/lan: spec.interfaces[0]: tenant matches tenant, the device of VRF tenant; name the VRF in vrfs"; err == nil || !strings.Contains(err.Error(), want) {
 		t.Errorf("validate = %v, want %q", err, want)
-	}
-}
-
-// copyDir copies the files of the directory src into dst.
-func copyDir(t *testing.T, src, dst string) {
-	t.Helper()
-	entries, err := os.ReadDir(src)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, e := range entries {
-		data, err := os.ReadFile(filepath.Join(src, e.Name()))
-		if err != nil {
-			t.Fatal(err)
-		}
-		writeFile(t, filepath.Join(dst, e.Name()), string(data))
 	}
 }

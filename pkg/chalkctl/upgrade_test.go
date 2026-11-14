@@ -38,6 +38,7 @@ import (
 	"github.com/trevex/chalkos/pkg/ociimage/ocitest"
 	"github.com/trevex/chalkos/pkg/pki"
 	"github.com/trevex/chalkos/pkg/schema"
+	"github.com/trevex/chalkos/pkg/schema/schematest"
 )
 
 // testUpgradeImage builds a metal disk image of the variant as chalkos images are laid out: an
@@ -159,10 +160,12 @@ type upgradeFake struct {
 
 // upgradeLab is a cluster of fake nodes.
 type upgradeLab struct {
-	t     *testing.T
-	ta    *testApp
-	nodes map[string]*upgradeFake
-	addrs map[string]string
+	t  *testing.T
+	ta *testApp
+	// schemas are the fixture schemas the nodes' contracts hold.
+	schemas map[string][]byte
+	nodes   map[string]*upgradeFake
+	addrs   map[string]string
 	// inventory is the lab's inventory once useInventory wrote it.
 	inventory string
 
@@ -697,7 +700,7 @@ func newUpgradeLabOf(t *testing.T, controlPlanes int, workers []string, cpVarian
 		nodes = append(nodes, testNode{w, kubernetes.KindWorker, wVariant})
 	}
 	nodes = append(nodes, testNode{"n1", "", "plain"})
-	l := &upgradeLab{t: t, ta: ta, nodes: map[string]*upgradeFake{}, addrs: map[string]string{}, unhealthy: map[string]bool{}, sick: map[string]string{}, cordoned: map[string]bool{}, emptyDir: map[string]bool{}, stopping: map[string]bool{}, notReady: map[string]bool{}, healthChecked: map[string][]string{}}
+	l := &upgradeLab{t: t, ta: ta, schemas: schematest.Files(t, fixtureSchemas...), nodes: map[string]*upgradeFake{}, addrs: map[string]string{}, unhealthy: map[string]bool{}, sick: map[string]string{}, cordoned: map[string]bool{}, emptyDir: map[string]bool{}, stopping: map[string]bool{}, notReady: map[string]bool{}, healthChecked: map[string][]string{}}
 	for _, node := range nodes {
 		name := node.name
 		n := &upgradeFake{lab: l, name: name, variant: node.variant, platform: "metal", kind: node.kind, image: "0.1.0", root: bytes.Repeat([]byte{1}, 32), generation: 1}
@@ -2153,18 +2156,7 @@ func (n *upgradeFake) ApplyConfig(ctx context.Context, req *connect.Request[node
 // Contract is the contract of the image the node runs: the fixture schemas and, on the lab's
 // Kubernetes variants, image.json.
 func (n *upgradeFake) Contract(context.Context, *connect.Request[nodev1.ContractRequest]) (*connect.Response[nodev1.ContractResponse], error) {
-	resp := &nodev1.ContractResponse{Platform: n.platform, Schemas: map[string][]byte{}}
-	for _, dir := range fixtureSchemas {
-		entries, err := os.ReadDir(dir)
-		if err != nil {
-			return nil, err
-		}
-		for _, e := range entries {
-			if resp.Schemas[e.Name()], err = os.ReadFile(filepath.Join(dir, e.Name())); err != nil {
-				return nil, err
-			}
-		}
-	}
+	resp := &nodev1.ContractResponse{Platform: n.platform, Schemas: n.lab.schemas}
 	if n.variant == "cp" || n.variant == "w" || n.variant == "k8s" {
 		facts, err := kubernetes.FactsPayload([]byte(testImageJSON))
 		if err != nil {

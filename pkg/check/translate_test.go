@@ -2,14 +2,13 @@ package check
 
 import (
 	"errors"
-	"os"
-	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
 
 	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/schema"
+	"github.com/trevex/chalkos/pkg/schema/schematest"
 )
 
 // demo is a Demo whose token is a Secret's.
@@ -46,20 +45,7 @@ func testSchemas(t *testing.T) *schema.Schemas {
 // kind's schema.
 func schemasWith(t *testing.T, replace ...string) *schema.Schemas {
 	t.Helper()
-	files := map[string][]byte{}
-	for _, dir := range []string{"../../test/fixtures/kinds/builtin", "../../test/fixtures/kinds/image/schemas"} {
-		entries, err := os.ReadDir(dir)
-		if err != nil {
-			t.Fatal(err)
-		}
-		for _, e := range entries {
-			data, err := os.ReadFile(filepath.Join(dir, e.Name()))
-			if err != nil {
-				t.Fatal(err)
-			}
-			files[e.Name()] = data
-		}
-	}
+	files := schematest.Files(t, schematest.Builtin, schematest.Image)
 	demo := "demo.example.org_v1alpha1_Demo.json"
 	files[demo] = []byte(strings.Replace(string(files[demo]), `"name": { "type": "string", "description"`, `"name": { "type": "string", `+frozenRule+` "description"`, 1))
 	for i := 0; i+1 < len(replace); i += 2 {

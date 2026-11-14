@@ -14,6 +14,7 @@ import (
 
 	"github.com/trevex/chalkos/pkg/config/slot"
 	imagecontract "github.com/trevex/chalkos/pkg/contract"
+	"github.com/trevex/chalkos/pkg/schema/schematest"
 	"github.com/trevex/chalkos/pkg/storage"
 )
 
@@ -212,19 +213,15 @@ func TestApplyConfigToAnImageOfAnotherVariant(t *testing.T) {
 func TestApplyConfigStopsOnAFailingCheck(t *testing.T) {
 	ta := newTestApp(t)
 	s, r := installedNode(t, ta, []byte(`{"hostname": "old"}`))
-	entries, err := os.ReadDir(fixtureSchemas[1])
-	if err != nil {
-		t.Fatal(err)
-	}
 	dir := contractDir(t, s)
-	for _, e := range entries {
-		if err := os.Remove(filepath.Join(dir, imagecontract.SchemasDir, e.Name())); err != nil {
+	for name := range schematest.Files(t, schematest.Networkd) {
+		if err := os.Remove(filepath.Join(dir, imagecontract.SchemasDir, name)); err != nil {
 			t.Fatal(err)
 		}
 	}
 	loadContract(t, s, dir)
 	addr := ta.startNode(t, s)
-	err = ta.run(context.Background(), ta.args([]string{"config", "apply", "n1"}, addr))
+	err := ta.run(context.Background(), ta.args([]string{"config", "apply", "n1"}, addr))
 	if err == nil || !strings.Contains(err.Error(), "the config of n1") {
 		t.Fatalf("config apply = %v, want the check's refusal", err)
 	}

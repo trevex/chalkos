@@ -3,40 +3,19 @@ package config
 import (
 	"encoding/json"
 	"errors"
-	"os"
-	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
 
 	"github.com/trevex/chalkos/pkg/identity"
 	"github.com/trevex/chalkos/pkg/schema"
+	"github.com/trevex/chalkos/pkg/schema/schematest"
 )
 
 // allSchemas combines the built-in kinds' fixture schemas with the networkd fixture.
 func allSchemas(t *testing.T) *schema.Schemas {
 	t.Helper()
-	dir := t.TempDir()
-	for _, src := range []string{builtinSchemas, "../../test/fixtures/config/networkd/schemas"} {
-		entries, err := os.ReadDir(src)
-		if err != nil {
-			t.Fatal(err)
-		}
-		for _, e := range entries {
-			b, err := os.ReadFile(filepath.Join(src, e.Name()))
-			if err != nil {
-				t.Fatal(err)
-			}
-			if err := os.WriteFile(filepath.Join(dir, e.Name()), b, 0o644); err != nil {
-				t.Fatal(err)
-			}
-		}
-	}
-	s, err := schema.LoadSchemas(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return s
+	return schematest.Load(t, schematest.Builtin, schematest.Networkd)
 }
 
 func TestIdentityCarriesTheMatchedMAC(t *testing.T) {

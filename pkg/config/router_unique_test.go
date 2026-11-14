@@ -1,38 +1,17 @@
 package config
 
 import (
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/trevex/chalkos/pkg/schema"
+	"github.com/trevex/chalkos/pkg/schema/schematest"
 )
 
 // routerImageSchemas are a router image's schemas: the built-in kinds' and the router kinds'.
 func routerImageSchemas(t *testing.T) *schema.Schemas {
 	t.Helper()
-	dir := t.TempDir()
-	for _, from := range []string{builtinSchemas, "../../test/fixtures/kinds/router"} {
-		entries, err := os.ReadDir(from)
-		if err != nil {
-			t.Fatal(err)
-		}
-		for _, e := range entries {
-			data, err := os.ReadFile(filepath.Join(from, e.Name()))
-			if err != nil {
-				t.Fatal(err)
-			}
-			if err := os.WriteFile(filepath.Join(dir, e.Name()), data, 0o644); err != nil {
-				t.Fatal(err)
-			}
-		}
-	}
-	s, err := schema.LoadSchemas(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return s
+	return schematest.Load(t, schematest.Builtin, schematest.Router)
 }
 
 // uniqueCase is a config whose values repeat where a kind declares them unique, and NewSet's

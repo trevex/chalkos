@@ -1,54 +1,21 @@
 package router
 
 import (
-	"os"
-	"path/filepath"
 	"slices"
 	"testing"
 
 	"github.com/trevex/chalkos/pkg/router/derive"
 	"github.com/trevex/chalkos/pkg/schema"
-)
-
-// schemas are the schemas of the fixture directories, as one image ships them.
-func schemas(t *testing.T, dirs ...string) *schema.Schemas {
-	t.Helper()
-	out := t.TempDir()
-	for _, dir := range dirs {
-		entries, err := os.ReadDir(dir)
-		if err != nil {
-			t.Fatal(err)
-		}
-		for _, e := range entries {
-			data, err := os.ReadFile(filepath.Join(dir, e.Name()))
-			if err != nil {
-				t.Fatal(err)
-			}
-			if err := os.WriteFile(filepath.Join(out, e.Name()), data, 0o644); err != nil {
-				t.Fatal(err)
-			}
-		}
-	}
-	s, err := schema.LoadSchemas(out)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return s
-}
-
-const (
-	builtinSchemas  = "../../../../test/fixtures/kinds/builtin"
-	networkdSchemas = "../../../../test/fixtures/config/networkd/schemas"
-	routerSchemas   = "../../../../test/fixtures/kinds/router"
+	"github.com/trevex/chalkos/pkg/schema/schematest"
 )
 
 // A router image runs the validator router, which reads the documents of the router kinds and of
 // Network, each kind once; an image without the Router kind runs none.
 func TestValidators(t *testing.T) {
-	if got := New().Validators(schemas(t, builtinSchemas, networkdSchemas)); got != nil {
+	if got := New().Validators(schematest.Load(t, schematest.Builtin, schematest.Networkd)); got != nil {
 		t.Errorf("an image without the router kinds runs %v", got)
 	}
-	got := New().Validators(schemas(t, builtinSchemas, networkdSchemas, routerSchemas))
+	got := New().Validators(schematest.Load(t, schematest.Builtin, schematest.Networkd, schematest.Router))
 	if len(got) != 1 || got[0].Name != "router" {
 		t.Fatalf("validators = %v", got)
 	}
@@ -59,23 +26,15 @@ func TestValidators(t *testing.T) {
 		t.Errorf("Validate of no documents = %v, %v", rs, err)
 	}
 	// A variant without BGP declares none of its kinds, and the validator reads none of them.
-	noBGP := t.TempDir()
-	entries, err := os.ReadDir(routerSchemas)
+	files := schematest.Files(t, schematest.Builtin, schematest.Networkd, schematest.Router)
+	for _, kind := range []string{"BGP", "BGPPeer", "PrefixList", "CommunityList", "RoutingPolicy"} {
+		delete(files, "router.chalkos.dev_v1alpha1_"+kind+".json")
+	}
+	noBGP, err := schema.LoadFiles(files)
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, e := range entries {
-		if kind := e.Name(); !slices.Contains([]string{"BGP", "BGPPeer", "PrefixList", "CommunityList", "RoutingPolicy"}, kind[len("router.chalkos.dev_v1alpha1_"):len(kind)-len(".json")]) {
-			data, err := os.ReadFile(filepath.Join(routerSchemas, kind))
-			if err != nil {
-				t.Fatal(err)
-			}
-			if err := os.WriteFile(filepath.Join(noBGP, kind), data, 0o644); err != nil {
-				t.Fatal(err)
-			}
-		}
-	}
-	got = New().Validators(schemas(t, builtinSchemas, networkdSchemas, noBGP))
+	got = New().Validators(noBGP)
 	if len(got) != 1 || slices.Contains(got[0].Inputs, "BGPPeer") || !slices.Contains(got[0].Inputs, "VRF") {
 		t.Errorf("validators of an image without BGP = %v", got)
 	}
