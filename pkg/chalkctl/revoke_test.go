@@ -304,14 +304,12 @@ func TestInstallRefusesRevokedNames(t *testing.T) {
 	}
 
 	l.revoked = nil
-	l.revokedErr = map[string]string{"cp1": "read the revoked nodes: connection refused"}
-	l.unreported = map[string]bool{"cp2": true}
+	l.revokedErr = map[string]string{"cp1": "read the revoked nodes: connection refused", "cp2": "read the revoked nodes: connection refused"}
 	if err := l.install(); err == nil || !strings.Contains(err.Error(), "no control-plane node said which nodes are revoked") || !strings.Contains(err.Error(), "--force") {
 		t.Errorf("installing without the list: %v", err)
 	}
 
 	l.revokedErr = nil
-	l.unreported = nil
 	if err := l.install(); err != nil {
 		t.Errorf("installing a name that is not revoked: %v", err)
 	}

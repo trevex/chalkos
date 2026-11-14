@@ -29,7 +29,7 @@ func nodeRevokeCommand(h layer.Host) *cobra.Command {
 	f.node.RegisterClient(cmd.Flags())
 	fs := cmd.Flags()
 	fs.StringVar(&f.via, "via", "", "control plane that revokes the node (default the first other one that answers)")
-	fs.BoolVar(&f.force, "force", false, "revoke the node although it is a control plane, an etcd member or the one --via names, or although a control plane does not say it reads the revoked nodes")
+	fs.BoolVar(&f.force, "force", false, "revoke the node although it is a control plane, an etcd member or the one --via names, or although a control plane cannot read the revoked nodes")
 	return cmd
 }
 
@@ -101,11 +101,9 @@ func controlPlanesRead(h layer.Host, ctx context.Context, f viaFlags, name strin
 	return everyControlPlaneReads(ctx, controlPlanes, name, nodeStatusOf(nodes))
 }
 
-// everyControlPlaneReads refuses to revoke the node while a control plane may renew its node
-// certificate unaware of the revocation: one that does not answer, cannot read the revoked
-// nodes, or does not say it read them, as a chalkd from before node revocation, which renews
-// node certificates without asking. A control plane that is not bootstrapped, or that left etcd,
-// renews none.
+// everyControlPlaneReads refuses to revoke the node while a control plane does not answer, or a
+// bootstrapped one cannot read the revoked nodes. One that is not bootstrapped, left etcd or lost
+// its etcd data renews no node certificate.
 func everyControlPlaneReads(ctx context.Context, controlPlanes []string, name string, status func(ctx context.Context, name string) (*kubernetesv1.StatusResponse, error)) error {
 	var why []string
 	for _, cp := range controlPlanes {
@@ -117,19 +115,14 @@ func everyControlPlaneReads(ctx context.Context, controlPlanes []string, name st
 			why = append(why, layer.Named(cp, err).Error())
 			continue
 		}
-		switch {
-		case !everBootstrapped(k) || k.Phase == kubernetesv1.Phase_PHASE_LEFT:
-		case k.RevokedNodesError != "":
+		if k.Phase == kubernetesv1.Phase_PHASE_BOOTSTRAPPED && k.RevokedNodesError != "" {
 			why = append(why, fmt.Sprintf("%s: cannot read the revoked nodes: %s", cp, k.RevokedNodesError))
-		case !k.RevokedNodesRead:
-			why = append(why, fmt.Sprintf("%s: its chalkd predates node revocation and renews %s's node certificate until it is upgraded", cp, name))
 		}
 	}
 	if len(why) == 0 {
 		return nil
 	}
-	return fmt.Errorf("not every control-plane node says it reads the revoked nodes, and one that does not may go on renewing %s's node certificate (%s); "+
-		"upgrade or repair those, or pass --force to revoke %s anyway", name, strings.Join(why, "; "), name)
+	return fmt.Errorf("not every control-plane node reads the revoked nodes (%s); repair those, or pass --force to revoke %s anyway", strings.Join(why, "; "), name)
 }
 
 // etcdMemberRefusal refuses to revoke a node that is still an etcd member, a control plane.

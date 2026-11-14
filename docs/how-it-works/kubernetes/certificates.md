@@ -179,10 +179,8 @@ revocation whose apply was cancelled, within about 10 seconds. The API server th
 through denies the node's writes within seconds. The other control planes' API servers pick up
 the policy shortly after.
 
-`chalkctl node revoke` first asks every other control plane whether it reads the revoked nodes.
-A control plane whose chalkd predates node revocation renews the node's certificate regardless,
-so the command refuses while one does not answer, cannot read the list, or does not say it read
-it. `--force` revokes the node anyway.
+`chalkctl node revoke` first asks every other control plane whether it reads the revoked nodes,
+and refuses while one does not answer or cannot read the list. `--force` revokes the node anyway.
 
 chalkctl reads the list as well. `chalkctl rotate` reads it before each phase and skips the listed
 nodes, so no rotation hands a revoked node a certificate. `chalkctl node renew` and

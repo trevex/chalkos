@@ -190,7 +190,6 @@ func (k *side) revokedStatus(ctx context.Context, st *kubernetesv1.StatusRespons
 		st.RevokedNodesError = err.Error()
 		return
 	}
-	st.RevokedNodesRead = true
 	for _, name := range slices.Sorted(maps.Keys(list)) {
 		n := &kubernetesv1.RevokedNode{Name: name}
 		if at := list[name]; !at.IsZero() {

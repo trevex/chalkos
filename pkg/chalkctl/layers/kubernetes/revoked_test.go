@@ -13,7 +13,7 @@ import (
 // revokedNodesOf counts a control plane whose image has no Kubernetes layer among those not
 // bootstrapped: alone it leaves the list empty, beside one that gives the list it is passed over.
 func TestRevokedNodesOfWithoutTheKubernetesLayer(t *testing.T) {
-	read := &kubernetesv1.StatusResponse{State: "bootstrapped", Phase: kubernetesv1.Phase_PHASE_BOOTSTRAPPED, RevokedNodesRead: true,
+	read := &kubernetesv1.StatusResponse{State: "bootstrapped", Phase: kubernetesv1.Phase_PHASE_BOOTSTRAPPED,
 		RevokedNodes: []*kubernetesv1.RevokedNode{{Name: "w1"}}}
 	status := func(_ context.Context, name string) (*kubernetesv1.StatusResponse, error) {
 		switch name {
@@ -33,5 +33,16 @@ func TestRevokedNodesOfWithoutTheKubernetesLayer(t *testing.T) {
 	_, err := revokedNodesOf(context.Background(), []string{"router", "down"}, status)
 	if err == nil || !strings.Contains(err.Error(), "router: is not bootstrapped: no Kubernetes") || !strings.Contains(err.Error(), "down: connection refused") {
 		t.Errorf("beside one that is down: %v, want a refusal naming both", err)
+	}
+}
+
+// A control plane that left etcd or lost its etcd data gives no list and says why by its state.
+func TestRevokedNodesOfNamesTheStateOfOneThatGivesNoList(t *testing.T) {
+	status := func(_ context.Context, name string) (*kubernetesv1.StatusResponse, error) {
+		return &kubernetesv1.StatusResponse{State: "etcd data missing: restore etcd or reinstall the node", Phase: kubernetesv1.Phase_PHASE_ETCD_DATA_MISSING}, nil
+	}
+	_, err := revokedNodesOf(context.Background(), []string{"cp1"}, status)
+	if err == nil || !strings.Contains(err.Error(), "cp1: etcd data missing: restore etcd or reinstall the node") {
+		t.Errorf("err = %v, want the control plane's state", err)
 	}
 }

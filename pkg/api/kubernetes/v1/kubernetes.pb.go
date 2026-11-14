@@ -243,37 +243,34 @@ type StatusResponse struct {
 	ControlPlaneCurrent bool `protobuf:"varint,7,opt,name=control_plane_current,json=controlPlaneCurrent,proto3" json:"control_plane_current,omitempty"`
 	// On a bootstrapped control-plane node: the nodes revoked in the cluster, in name order, as the
 	// ConfigMap kube-system/chalkos-revoked-nodes lists them. Empty when none is revoked, and when
-	// the list was not reported; revoked_nodes_read tells the two apart.
+	// they could not be read, which revoked_nodes_error tells apart.
 	RevokedNodes []*RevokedNode `protobuf:"bytes,8,rep,name=revoked_nodes,json=revokedNodes,proto3" json:"revoked_nodes,omitempty"`
 	// On a bootstrapped control-plane node: why the revoked nodes could not be read; empty when
 	// they were.
 	RevokedNodesError string `protobuf:"bytes,9,opt,name=revoked_nodes_error,json=revokedNodesError,proto3" json:"revoked_nodes_error,omitempty"`
-	// Whether the node read the revoked nodes, so that an empty revoked_nodes means none is
-	// revoked. False on other nodes and when revoked_nodes_error is set.
-	RevokedNodesRead bool `protobuf:"varint,10,opt,name=revoked_nodes_read,json=revokedNodesRead,proto3" json:"revoked_nodes_read,omitempty"`
 	// The Kubernetes version of the API server the node's running config names, from the tag of the
 	// Cluster document's images.apiServer, such as 1.37.2. Every node reports it, a worker too,
 	// whose config names the cluster's API server as the control planes' does.
-	ApiServerVersion string `protobuf:"bytes,11,opt,name=api_server_version,json=apiServerVersion,proto3" json:"api_server_version,omitempty"`
+	ApiServerVersion string `protobuf:"bytes,10,opt,name=api_server_version,json=apiServerVersion,proto3" json:"api_server_version,omitempty"`
 	// The release of the running image's kubelet, as its image.json names it, such as 1.37.1.
-	KubeletVersion string `protobuf:"bytes,12,opt,name=kubelet_version,json=kubeletVersion,proto3" json:"kubelet_version,omitempty"`
+	KubeletVersion string `protobuf:"bytes,11,opt,name=kubelet_version,json=kubeletVersion,proto3" json:"kubelet_version,omitempty"`
 	// On a bootstrapped control-plane node: "current" once the static pods of kube-apiserver,
 	// kube-controller-manager and kube-scheduler run the images the node's running config names and
 	// are Ready, as their mirror pods in kube-system show it; otherwise what is not so, such as
 	// "kube-scheduler runs registry.k8s.io/kube-scheduler:v1.37.1, not
 	// registry.k8s.io/kube-scheduler:v1.37.2" or "kube-apiserver is not Ready". Empty on other
 	// nodes.
-	ControlPlanePods string `protobuf:"bytes,13,opt,name=control_plane_pods,json=controlPlanePods,proto3" json:"control_plane_pods,omitempty"`
+	ControlPlanePods string `protobuf:"bytes,12,opt,name=control_plane_pods,json=controlPlanePods,proto3" json:"control_plane_pods,omitempty"`
 	// Whether control_plane_pods is "current". False on other nodes.
-	ControlPlanePodsCurrent bool `protobuf:"varint,14,opt,name=control_plane_pods_current,json=controlPlanePodsCurrent,proto3" json:"control_plane_pods_current,omitempty"`
+	ControlPlanePodsCurrent bool `protobuf:"varint,13,opt,name=control_plane_pods_current,json=controlPlanePodsCurrent,proto3" json:"control_plane_pods_current,omitempty"`
 	// The reason the kubelet gives the Node's Ready condition, such as KubeletNotReady. Empty while
 	// the condition gives none, and when node_ready says why the Node could not be read.
-	NodeReadyReason string `protobuf:"bytes,15,opt,name=node_ready_reason,json=nodeReadyReason,proto3" json:"node_ready_reason,omitempty"`
+	NodeReadyReason string `protobuf:"bytes,14,opt,name=node_ready_reason,json=nodeReadyReason,proto3" json:"node_ready_reason,omitempty"`
 	// The message the kubelet gives the Node's Ready condition, such as "container runtime network
 	// not ready: NetworkReady=false reason:NetworkPluginNotReady message:Network plugin returns
 	// error: cni plugin not initialized" on a node whose cluster has no CNI yet. Empty while the
 	// condition gives none, and when node_ready says why the Node could not be read.
-	NodeReadyMessage string `protobuf:"bytes,16,opt,name=node_ready_message,json=nodeReadyMessage,proto3" json:"node_ready_message,omitempty"`
+	NodeReadyMessage string `protobuf:"bytes,15,opt,name=node_ready_message,json=nodeReadyMessage,proto3" json:"node_ready_message,omitempty"`
 	// The pods on the node that do not run: those whose phase is neither Running nor Succeeded, and
 	// running pods with a container that waits, as one in CrashLoopBackOff. A failed pod of a Job
 	// is left out, as it records a run that ended. Pending pods come first, then running ones,
@@ -281,11 +278,11 @@ type StatusResponse struct {
 	// first 20 of them alone; pods_not_running_total counts them all. Read with the kubelet's
 	// credentials, as node_ready is. Empty while every pod runs and when they could not be read,
 	// which pods_error tells apart.
-	PodsNotRunning []*NodePod `protobuf:"bytes,17,rep,name=pods_not_running,json=podsNotRunning,proto3" json:"pods_not_running,omitempty"`
+	PodsNotRunning []*NodePod `protobuf:"bytes,16,rep,name=pods_not_running,json=podsNotRunning,proto3" json:"pods_not_running,omitempty"`
 	// Why the node's pods could not be read; empty when they were.
-	PodsError string `protobuf:"bytes,18,opt,name=pods_error,json=podsError,proto3" json:"pods_error,omitempty"`
+	PodsError string `protobuf:"bytes,17,opt,name=pods_error,json=podsError,proto3" json:"pods_error,omitempty"`
 	// How many pods on the node do not run, of which pods_not_running lists the first 20.
-	PodsNotRunningTotal uint32 `protobuf:"varint,19,opt,name=pods_not_running_total,json=podsNotRunningTotal,proto3" json:"pods_not_running_total,omitempty"`
+	PodsNotRunningTotal uint32 `protobuf:"varint,18,opt,name=pods_not_running_total,json=podsNotRunningTotal,proto3" json:"pods_not_running_total,omitempty"`
 	unknownFields       protoimpl.UnknownFields
 	sizeCache           protoimpl.SizeCache
 }
@@ -381,13 +378,6 @@ func (x *StatusResponse) GetRevokedNodesError() string {
 		return x.RevokedNodesError
 	}
 	return ""
-}
-
-func (x *StatusResponse) GetRevokedNodesRead() bool {
-	if x != nil {
-		return x.RevokedNodesRead
-	}
-	return false
 }
 
 func (x *StatusResponse) GetApiServerVersion() string {
@@ -1888,7 +1878,7 @@ var File_chalkos_kubernetes_v1_kubernetes_proto protoreflect.FileDescriptor
 const file_chalkos_kubernetes_v1_kubernetes_proto_rawDesc = "" +
 	"\n" +
 	"&chalkos/kubernetes/v1/kubernetes.proto\x12\x15chalkos.kubernetes.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\x0f\n" +
-	"\rStatusRequest\"\xd9\x06\n" +
+	"\rStatusRequest\"\xab\x06\n" +
 	"\x0eStatusResponse\x12\x12\n" +
 	"\x04kind\x18\x01 \x01(\tR\x04kind\x12\x14\n" +
 	"\x05state\x18\x02 \x01(\tR\x05state\x122\n" +
@@ -1900,18 +1890,17 @@ const file_chalkos_kubernetes_v1_kubernetes_proto_rawDesc = "" +
 	"\x15control_plane_current\x18\a \x01(\bR\x13controlPlaneCurrent\x12G\n" +
 	"\rrevoked_nodes\x18\b \x03(\v2\".chalkos.kubernetes.v1.RevokedNodeR\frevokedNodes\x12.\n" +
 	"\x13revoked_nodes_error\x18\t \x01(\tR\x11revokedNodesError\x12,\n" +
-	"\x12revoked_nodes_read\x18\n" +
-	" \x01(\bR\x10revokedNodesRead\x12,\n" +
-	"\x12api_server_version\x18\v \x01(\tR\x10apiServerVersion\x12'\n" +
-	"\x0fkubelet_version\x18\f \x01(\tR\x0ekubeletVersion\x12,\n" +
-	"\x12control_plane_pods\x18\r \x01(\tR\x10controlPlanePods\x12;\n" +
-	"\x1acontrol_plane_pods_current\x18\x0e \x01(\bR\x17controlPlanePodsCurrent\x12*\n" +
-	"\x11node_ready_reason\x18\x0f \x01(\tR\x0fnodeReadyReason\x12,\n" +
-	"\x12node_ready_message\x18\x10 \x01(\tR\x10nodeReadyMessage\x12H\n" +
-	"\x10pods_not_running\x18\x11 \x03(\v2\x1e.chalkos.kubernetes.v1.NodePodR\x0epodsNotRunning\x12\x1d\n" +
+	"\x12api_server_version\x18\n" +
+	" \x01(\tR\x10apiServerVersion\x12'\n" +
+	"\x0fkubelet_version\x18\v \x01(\tR\x0ekubeletVersion\x12,\n" +
+	"\x12control_plane_pods\x18\f \x01(\tR\x10controlPlanePods\x12;\n" +
+	"\x1acontrol_plane_pods_current\x18\r \x01(\bR\x17controlPlanePodsCurrent\x12*\n" +
+	"\x11node_ready_reason\x18\x0e \x01(\tR\x0fnodeReadyReason\x12,\n" +
+	"\x12node_ready_message\x18\x0f \x01(\tR\x10nodeReadyMessage\x12H\n" +
+	"\x10pods_not_running\x18\x10 \x03(\v2\x1e.chalkos.kubernetes.v1.NodePodR\x0epodsNotRunning\x12\x1d\n" +
 	"\n" +
-	"pods_error\x18\x12 \x01(\tR\tpodsError\x123\n" +
-	"\x16pods_not_running_total\x18\x13 \x01(\rR\x13podsNotRunningTotal\"\\\n" +
+	"pods_error\x18\x11 \x01(\tR\tpodsError\x123\n" +
+	"\x16pods_not_running_total\x18\x12 \x01(\rR\x13podsNotRunningTotal\"\\\n" +
 	"\vRevokedNode\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x129\n" +
 	"\n" +

@@ -116,37 +116,34 @@ message StatusResponse {
   bool control_plane_current = 7;
   // On a bootstrapped control-plane node: the nodes revoked in the cluster, in name order, as the
   // ConfigMap kube-system/chalkos-revoked-nodes lists them. Empty when none is revoked, and when
-  // the list was not reported; revoked_nodes_read tells the two apart.
+  // they could not be read, which revoked_nodes_error tells apart.
   repeated RevokedNode revoked_nodes = 8;
   // On a bootstrapped control-plane node: why the revoked nodes could not be read; empty when
   // they were.
   string revoked_nodes_error = 9;
-  // Whether the node read the revoked nodes, so that an empty revoked_nodes means none is
-  // revoked. False on other nodes and when revoked_nodes_error is set.
-  bool revoked_nodes_read = 10;
   // The Kubernetes version of the API server the node's running config names, from the tag of the
   // Cluster document's images.apiServer, such as 1.37.2. Every node reports it, a worker too,
   // whose config names the cluster's API server as the control planes' does.
-  string api_server_version = 11;
+  string api_server_version = 10;
   // The release of the running image's kubelet, as its image.json names it, such as 1.37.1.
-  string kubelet_version = 12;
+  string kubelet_version = 11;
   // On a bootstrapped control-plane node: "current" once the static pods of kube-apiserver,
   // kube-controller-manager and kube-scheduler run the images the node's running config names and
   // are Ready, as their mirror pods in kube-system show it; otherwise what is not so, such as
   // "kube-scheduler runs registry.k8s.io/kube-scheduler:v1.37.1, not
   // registry.k8s.io/kube-scheduler:v1.37.2" or "kube-apiserver is not Ready". Empty on other
   // nodes.
-  string control_plane_pods = 13;
+  string control_plane_pods = 12;
   // Whether control_plane_pods is "current". False on other nodes.
-  bool control_plane_pods_current = 14;
+  bool control_plane_pods_current = 13;
   // The reason the kubelet gives the Node's Ready condition, such as KubeletNotReady. Empty while
   // the condition gives none, and when node_ready says why the Node could not be read.
-  string node_ready_reason = 15;
+  string node_ready_reason = 14;
   // The message the kubelet gives the Node's Ready condition, such as "container runtime network
   // not ready: NetworkReady=false reason:NetworkPluginNotReady message:Network plugin returns
   // error: cni plugin not initialized" on a node whose cluster has no CNI yet. Empty while the
   // condition gives none, and when node_ready says why the Node could not be read.
-  string node_ready_message = 16;
+  string node_ready_message = 15;
   // The pods on the node that do not run: those whose phase is neither Running nor Succeeded, and
   // running pods with a container that waits, as one in CrashLoopBackOff. A failed pod of a Job
   // is left out, as it records a run that ended. Pending pods come first, then running ones,
@@ -154,11 +151,11 @@ message StatusResponse {
   // first 20 of them alone; pods_not_running_total counts them all. Read with the kubelet's
   // credentials, as node_ready is. Empty while every pod runs and when they could not be read,
   // which pods_error tells apart.
-  repeated NodePod pods_not_running = 17;
+  repeated NodePod pods_not_running = 16;
   // Why the node's pods could not be read; empty when they were.
-  string pods_error = 18;
+  string pods_error = 17;
   // How many pods on the node do not run, of which pods_not_running lists the first 20.
-  uint32 pods_not_running_total = 19;
+  uint32 pods_not_running_total = 18;
 }
 
 // Where a node stands in its Kubernetes cluster. On a control-plane node it follows the node's

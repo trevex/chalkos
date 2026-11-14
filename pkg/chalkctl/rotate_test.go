@@ -182,7 +182,6 @@ func (n *fakeNode) status() (*nodev1.StatusResponse, *kubernetesv1.StatusRespons
 				k = &kubernetesv1.StatusResponse{Kind: n.kind, State: s, Phase: phase}
 			} else {
 				k.RevokedNodes, k.RevokedNodesError = n.lab.revoked, n.lab.revokedErr[n.name]
-				k.RevokedNodesRead = k.RevokedNodesError == "" && !n.lab.unreported[n.name]
 			}
 			n.lab.mu.Unlock()
 		} else {
@@ -327,10 +326,8 @@ type rotationLab struct {
 	// why one could not read them.
 	revoked    []*kubernetesv1.RevokedNode
 	revokedErr map[string]string
-	// unreported makes control planes report no revoked nodes, as a chalkd from before
-	// revocation; states makes them report a Kubernetes state other than bootstrapped.
-	unreported map[string]bool
-	states     map[string]string
+	// states makes control planes report a Kubernetes state other than bootstrapped.
+	states map[string]string
 }
 
 func (l *rotationLab) record(event string) {
@@ -903,20 +900,6 @@ func TestRotateRefusesWithoutRevokedNodes(t *testing.T) {
 	}
 }
 
-// TestRotateRefusesRevokedNodesNotReported takes no empty list from a control plane that does not
-// say it read the list, as one whose chalkd predates revocation.
-func TestRotateRefusesRevokedNodesNotReported(t *testing.T) {
-	l := newRotationLab(t)
-	l.unreported = map[string]bool{"cp1": true, "cp2": true}
-	err := l.rotate("os-ca")
-	if err == nil || !strings.Contains(err.Error(), "cp1: reports no revoked nodes") || !strings.Contains(err.Error(), "cp2: ") {
-		t.Errorf("err = %v, want a refusal naming both control planes", err)
-	}
-	if l.phase() != "" {
-		t.Errorf("the secrets file records %q, want no rotation", l.phase())
-	}
-}
-
 // TestRotateBeforeBootstrap takes a cluster whose control planes all answer and none of which is
 // bootstrapped to have no revoked nodes; one that does not answer leaves that unknown.
 func TestRotateBeforeBootstrap(t *testing.T) {
@@ -973,8 +956,7 @@ func TestRotateReadsRevokedNodesBeforeEachPhase(t *testing.T) {
 func TestRotateIgnoreRevoked(t *testing.T) {
 	l := newRotationLab(t)
 	l.revoked = []*kubernetesv1.RevokedNode{{Name: "w1"}}
-	l.revokedErr = map[string]string{"cp1": "read the revoked nodes: connection refused"}
-	l.unreported = map[string]bool{"cp2": true}
+	l.revokedErr = map[string]string{"cp1": "read the revoked nodes: connection refused", "cp2": "read the revoked nodes: connection refused"}
 	if err := l.rotate("os-ca", "--ignore-revoked"); err != nil {
 		t.Fatal(err)
 	}

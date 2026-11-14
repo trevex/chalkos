@@ -49,9 +49,9 @@ func TestEtcdMemberRefusal(t *testing.T) {
 
 func TestEveryControlPlaneReadsRevoked(t *testing.T) {
 	statuses := map[string]*kubernetesv1.StatusResponse{
-		"read":     {State: "bootstrapped", Phase: kubernetesv1.Phase_PHASE_BOOTSTRAPPED, RevokedNodesRead: true},
-		"old":      {State: "bootstrapped", Phase: kubernetesv1.Phase_PHASE_BOOTSTRAPPED},
-		"unread":   {State: "etcd data missing: restore etcd", Phase: kubernetesv1.Phase_PHASE_ETCD_DATA_MISSING, RevokedNodesError: "read the revoked nodes: connection refused"},
+		"read":     {State: "bootstrapped", Phase: kubernetesv1.Phase_PHASE_BOOTSTRAPPED},
+		"unread":   {State: "bootstrapped", Phase: kubernetesv1.Phase_PHASE_BOOTSTRAPPED, RevokedNodesError: "read the revoked nodes: connection refused"},
+		"missing":  {State: "etcd data missing: restore etcd", Phase: kubernetesv1.Phase_PHASE_ETCD_DATA_MISSING},
 		"waiting":  {State: "waiting for bootstrap", Phase: kubernetesv1.Phase_PHASE_WAITING},
 		"left":     {State: "left etcd: reinstall the node", Phase: kubernetesv1.Phase_PHASE_LEFT},
 		"no share": {State: "no share", Phase: kubernetesv1.Phase_PHASE_PREPARING},
@@ -70,8 +70,7 @@ func TestEveryControlPlaneReadsRevoked(t *testing.T) {
 		controlPlanes []string
 		want          []string
 	}{
-		{[]string{"read", "waiting", "left", "no share", "router"}, nil},
-		{[]string{"read", "old"}, []string{"old: its chalkd predates node revocation and renews w1's node certificate until it is upgraded"}},
+		{[]string{"read", "missing", "waiting", "left", "no share", "router"}, nil},
 		{[]string{"unread", "down"}, []string{"unread: cannot read the revoked nodes: read the revoked nodes: connection refused", "down: connection refused"}},
 	} {
 		err := everyControlPlaneReads(context.Background(), tc.controlPlanes, "w1", status)

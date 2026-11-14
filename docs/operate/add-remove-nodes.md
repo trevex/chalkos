@@ -225,15 +225,13 @@ change to the ConfigMap, so an edit with `kubectl edit` takes effect too. Revoke
 nodes with chalkctl all the same, because an edit by hand skips the commands' checks.
 
 Before it revokes the node, `chalkctl node revoke` asks every other control plane whether it reads
-the revoked nodes. A control plane whose chalkd predates node revocation renews the node's
-certificate regardless, so the command refuses while one does not answer, cannot read the list, or
-runs such a chalkd:
+the revoked nodes, and refuses while one does not answer or cannot read the list:
 
 ```text
-chalkctl: not every control-plane node says it reads the revoked nodes, and one that does not may go on renewing node4's node certificate (node2: its chalkd predates node revocation and renews node4's node certificate until it is upgraded); upgrade or repair those, or pass --force to revoke node4 anyway
+chalkctl: not every control-plane node reads the revoked nodes (node2: cannot read the revoked nodes: read the revoked nodes: connection refused); repair those, or pass --force to revoke node4 anyway
 ```
 
-Upgrade or repair that control plane, then revoke again. `--force` revokes the node at once; the
+Repair that control plane, then revoke again. `--force` revokes the node at once; the
 API server denies its writes all the same.
 
 A control plane also refuses a revocation that would make the list too long for the API server to
