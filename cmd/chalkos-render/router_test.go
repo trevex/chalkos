@@ -39,9 +39,6 @@ const (
 	testPDHook = "/etc/kea/chalkos-dhcp6-pd"
 )
 
-// routerKinds are the kinds of router.chalkos.dev.
-var routerKinds = []string{"Router", "FirewallZone", "FirewallPolicy", "AddressSet", "NATRule", "BGP", "BGPPeer", "PrefixList", "CommunityList", "RoutingPolicy", "NAT64", "Resolver", "VRF", "PolicyRoute", "NextHop", "DHCPSubnet", "DHCPRelay"}
-
 // routerInput is the input of the router outputs for the config file path, as chalkd builds it:
 // the documents of each router kind with their schema defaults, sorted by name.
 func routerInput(t *testing.T, path string) string {
@@ -60,7 +57,7 @@ func routerInput(t *testing.T, path string) string {
 		t.Fatal(err)
 	}
 	byKind := map[string][]any{}
-	for _, kind := range append(slices.Clone(routerKinds), "Network", "NetDev") {
+	for _, kind := range append(derive.Kinds(), "NetDev") {
 		byKind[kind] = []any{}
 	}
 	slices.SortStableFunc(docs, func(a, b config.Document) int { return cmp.Compare(a.Name, b.Name) })

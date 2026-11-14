@@ -30,16 +30,53 @@ import (
 // API is the apiVersion of the router layer's kinds.
 const API = "router.chalkos.dev/v1alpha1"
 
-// Kinds are the kinds whose documents Build reads, a copy of kinds for the caller to keep.
-func Kinds() []string { return slices.Clone(kinds) }
-
-// kinds are the kinds whose documents Build reads: the router layer's and networkd's Network. An
+// Kinds are the kinds whose documents Build reads: the router layer's and networkd's Network. An
 // image declares those of its router features; the validator router reads the documents of the
 // kinds of Kinds that the image declares, on the node as in chalkctl.
-var kinds = []string{
-	"Router", "FirewallZone", "FirewallPolicy", "AddressSet", "NATRule", "BGP", "BGPPeer", "PrefixList",
-	"CommunityList", "RoutingPolicy", "NAT64", "Resolver", "VRF", "PolicyRoute", "NextHop", "DHCPSubnet",
-	"DHCPRelay", "WireGuard", "WireGuardPeer", "Network",
+func Kinds() []string {
+	names := make([]string, 0, len(routerKinds)+1)
+	for _, k := range routerKinds {
+		names = append(names, k.name)
+	}
+	return append(names, "Network")
+}
+
+// routerKind is a router layer kind: its name, its spec's Go type, and how Build decodes its
+// documents into the model.
+type routerKind struct {
+	name   string
+	spec   reflect.Type
+	decode func(m *Model, byKind map[string]any) error
+}
+
+func kindOf[T any](name string, field func(*Model) *[]Named[T]) routerKind {
+	return routerKind{name, reflect.TypeFor[T](), func(m *Model, byKind map[string]any) (err error) {
+		*field(m), err = decodeKind[T](byKind, name)
+		return err
+	}}
+}
+
+// routerKinds are the router layer's kinds, in the order Build decodes them.
+var routerKinds = []routerKind{
+	kindOf("Router", func(m *Model) *[]Named[RouterSpec] { return &m.Routers }),
+	kindOf("FirewallZone", func(m *Model) *[]Named[ZoneSpec] { return &m.Zones }),
+	kindOf("FirewallPolicy", func(m *Model) *[]Named[PolicySpec] { return &m.Policies }),
+	kindOf("AddressSet", func(m *Model) *[]Named[AddressSetSpec] { return &m.Sets }),
+	kindOf("NATRule", func(m *Model) *[]Named[NATSpec] { return &m.NAT }),
+	kindOf("BGP", func(m *Model) *[]Named[BGPSpec] { return &m.BGP }),
+	kindOf("BGPPeer", func(m *Model) *[]Named[PeerSpec] { return &m.Peers }),
+	kindOf("PrefixList", func(m *Model) *[]Named[PrefixListSpec] { return &m.Prefixes }),
+	kindOf("CommunityList", func(m *Model) *[]Named[CommunityListSpec] { return &m.Communities }),
+	kindOf("RoutingPolicy", func(m *Model) *[]Named[RoutingPolicySpec] { return &m.RoutingPolicies }),
+	kindOf("NAT64", func(m *Model) *[]Named[NAT64Spec] { return &m.NAT64 }),
+	kindOf("Resolver", func(m *Model) *[]Named[ResolverSpec] { return &m.Resolvers }),
+	kindOf("VRF", func(m *Model) *[]Named[VRFSpec] { return &m.VRFs }),
+	kindOf("PolicyRoute", func(m *Model) *[]Named[PolicyRouteSpec] { return &m.PolicyRoutes }),
+	kindOf("NextHop", func(m *Model) *[]Named[NextHopSpec] { return &m.NextHops }),
+	kindOf("DHCPSubnet", func(m *Model) *[]Named[DHCPSubnetSpec] { return &m.DHCPSubnets }),
+	kindOf("DHCPRelay", func(m *Model) *[]Named[DHCPRelaySpec] { return &m.DHCPRelays }),
+	kindOf("WireGuard", func(m *Model) *[]Named[WireGuardSpec] { return &m.WireGuards }),
+	kindOf("WireGuardPeer", func(m *Model) *[]Named[WireGuardPeerSpec] { return &m.WireGuardPeers }),
 }
 
 // Named is the spec of a document, with the document's name.
@@ -96,62 +133,10 @@ type Model struct {
 func Build(byKind map[string]any) (Model, error) {
 	d := Model{byKind: byKind}
 	var err error
-	if d.Routers, err = decodeKind[RouterSpec](byKind, "Router"); err != nil {
-		return d, err
-	}
-	if d.Zones, err = decodeKind[ZoneSpec](byKind, "FirewallZone"); err != nil {
-		return d, err
-	}
-	if d.Policies, err = decodeKind[PolicySpec](byKind, "FirewallPolicy"); err != nil {
-		return d, err
-	}
-	if d.Sets, err = decodeKind[AddressSetSpec](byKind, "AddressSet"); err != nil {
-		return d, err
-	}
-	if d.NAT, err = decodeKind[NATSpec](byKind, "NATRule"); err != nil {
-		return d, err
-	}
-	if d.BGP, err = decodeKind[BGPSpec](byKind, "BGP"); err != nil {
-		return d, err
-	}
-	if d.Peers, err = decodeKind[PeerSpec](byKind, "BGPPeer"); err != nil {
-		return d, err
-	}
-	if d.Prefixes, err = decodeKind[PrefixListSpec](byKind, "PrefixList"); err != nil {
-		return d, err
-	}
-	if d.Communities, err = decodeKind[CommunityListSpec](byKind, "CommunityList"); err != nil {
-		return d, err
-	}
-	if d.RoutingPolicies, err = decodeKind[RoutingPolicySpec](byKind, "RoutingPolicy"); err != nil {
-		return d, err
-	}
-	if d.NAT64, err = decodeKind[NAT64Spec](byKind, "NAT64"); err != nil {
-		return d, err
-	}
-	if d.Resolvers, err = decodeKind[ResolverSpec](byKind, "Resolver"); err != nil {
-		return d, err
-	}
-	if d.VRFs, err = decodeKind[VRFSpec](byKind, "VRF"); err != nil {
-		return d, err
-	}
-	if d.PolicyRoutes, err = decodeKind[PolicyRouteSpec](byKind, "PolicyRoute"); err != nil {
-		return d, err
-	}
-	if d.NextHops, err = decodeKind[NextHopSpec](byKind, "NextHop"); err != nil {
-		return d, err
-	}
-	if d.DHCPSubnets, err = decodeKind[DHCPSubnetSpec](byKind, "DHCPSubnet"); err != nil {
-		return d, err
-	}
-	if d.DHCPRelays, err = decodeKind[DHCPRelaySpec](byKind, "DHCPRelay"); err != nil {
-		return d, err
-	}
-	if d.WireGuards, err = decodeKind[WireGuardSpec](byKind, "WireGuard"); err != nil {
-		return d, err
-	}
-	if d.WireGuardPeers, err = decodeKind[WireGuardPeerSpec](byKind, "WireGuardPeer"); err != nil {
-		return d, err
+	for _, k := range routerKinds {
+		if err = k.decode(&d, byKind); err != nil {
+			return d, err
+		}
 	}
 	d.Links = networkLinks(byKind)
 	d.Addresses = networkAddresses(byKind)

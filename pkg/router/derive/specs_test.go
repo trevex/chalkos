@@ -13,33 +13,12 @@ import (
 	"github.com/trevex/chalkos/pkg/router/derive/derivetest"
 )
 
-// specTypes are the Go types Build decodes each router kind's spec into.
-var specTypes = map[string]reflect.Type{
-	"Router":         reflect.TypeFor[RouterSpec](),
-	"FirewallZone":   reflect.TypeFor[ZoneSpec](),
-	"FirewallPolicy": reflect.TypeFor[PolicySpec](),
-	"AddressSet":     reflect.TypeFor[AddressSetSpec](),
-	"NATRule":        reflect.TypeFor[NATSpec](),
-	"BGP":            reflect.TypeFor[BGPSpec](),
-	"BGPPeer":        reflect.TypeFor[PeerSpec](),
-	"PrefixList":     reflect.TypeFor[PrefixListSpec](),
-	"CommunityList":  reflect.TypeFor[CommunityListSpec](),
-	"RoutingPolicy":  reflect.TypeFor[RoutingPolicySpec](),
-	"NAT64":          reflect.TypeFor[NAT64Spec](),
-	"Resolver":       reflect.TypeFor[ResolverSpec](),
-	"VRF":            reflect.TypeFor[VRFSpec](),
-	"PolicyRoute":    reflect.TypeFor[PolicyRouteSpec](),
-	"NextHop":        reflect.TypeFor[NextHopSpec](),
-	"DHCPSubnet":     reflect.TypeFor[DHCPSubnetSpec](),
-	"DHCPRelay":      reflect.TypeFor[DHCPRelaySpec](),
-}
-
 // The specs' types decode every value of each enum of the kinds' schemas, and a field of an
 // address or an address range is one whose schema holds it to the format ip or cidr, or to a
 // pattern: the typed decode refuses nothing the schemas accept.
 func TestSpecTypesTakeTheSchemas(t *testing.T) {
-	for kind, typ := range specTypes {
-		data, err := os.ReadFile(filepath.Join(routerSchemas, strings.ReplaceAll(API, "/", "_")+"_"+kind+".json"))
+	for _, k := range routerKinds {
+		data, err := os.ReadFile(filepath.Join(routerSchemas, strings.ReplaceAll(API, "/", "_")+"_"+k.name+".json"))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -48,7 +27,7 @@ func TestSpecTypesTakeTheSchemas(t *testing.T) {
 			t.Fatal(err)
 		}
 		props, _ := s["properties"].(map[string]any)
-		matchesSchema(t, kind+".spec", props["spec"], typ)
+		matchesSchema(t, k.name+".spec", props["spec"], k.spec)
 	}
 }
 
@@ -178,7 +157,7 @@ func TestSpecTypesHoldWhatCheckDecodedReads(t *testing.T) {
 			t.Errorf("%s is a %s", path, typ.Kind())
 		}
 	}
-	for kind, typ := range specTypes {
-		walk(kind, typ)
+	for _, k := range routerKinds {
+		walk(k.name, k.spec)
 	}
 }
