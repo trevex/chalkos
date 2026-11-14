@@ -12,13 +12,8 @@ import (
 	"github.com/trevex/chalkos/pkg/schema"
 )
 
-// base is a node's config: its system disk and a Demo whose token is a Secret's.
-const base = `
-apiVersion: storage.chalkos.dev/v1alpha1
-kind: SystemDisk
-metadata: {name: system}
-spec: {disk: {path: /dev/vda}}
----
+// demo is a Demo whose token is a Secret's.
+const demo = `
 apiVersion: demo.example.org/v1alpha1
 kind: Demo
 metadata: {name: one}
@@ -29,6 +24,14 @@ kind: Secret
 metadata: {name: demo}
 spec: {data: {token: s3cret}}
 `
+
+// base is a node's config: its system disk and demo.
+const base = `
+apiVersion: storage.chalkos.dev/v1alpha1
+kind: SystemDisk
+metadata: {name: system}
+spec: {disk: {path: /dev/vda}}
+---` + demo
 
 // frozenRule keeps a Demo's name while the fact frozen is true.
 const frozenRule = `"x-chalkos-rules": [{"rule": "facts.frozen != true || self == oldSelf", "message": "the name stays while the demo is frozen"}],`

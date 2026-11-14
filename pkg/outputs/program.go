@@ -81,6 +81,15 @@ type Failure struct {
 
 func (f Failure) Error() string { return string(f.Role) + " " + f.Name + ": " + f.Problem }
 
+// OffNode is the failure as Error says it without the pointer to the node's journal, for a caller
+// that runs the programs elsewhere and logs what they write to standard error itself, as an
+// image's build does.
+func (f Failure) OffNode() string { return strings.TrimSuffix(f.Error(), journalHint) }
+
+// journalHint ends the problem of a program that failed, which wrote what says why to standard
+// error, and so to the node's journal.
+const journalHint = "; see the node's journal"
+
 // Message is the message a config the failures refuse is refused with, as chalkd and check.Run
 // say it. The refusals come first, as refusals.Message reports them: each once, since outputs that
 // share a check, or a validator and a renderer, can refuse a config with the same refusal. Each
@@ -176,9 +185,9 @@ func (r Renderer) run(ctx context.Context, role Role, name, part string, p Progr
 	case errors.Is(err, context.DeadlineExceeded):
 		return fmt.Errorf("its %s did not finish within %s", part, p.Timeout)
 	case failed != nil && part == partCheck:
-		return fmt.Errorf("its check refused the rendered files (%s); see the node's journal", failed.Status)
+		return fmt.Errorf("its check refused the rendered files (%s)%s", failed.Status, journalHint)
 	case failed != nil:
-		return fmt.Errorf("its %s failed (%s); see the node's journal", part, failed.Status)
+		return fmt.Errorf("its %s failed (%s)%s", part, failed.Status, journalHint)
 	}
 	return fmt.Errorf("its %s: %w", part, err)
 }

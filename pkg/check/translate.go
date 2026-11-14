@@ -40,6 +40,17 @@ func (img Image) TranslateRedacted(node string, docs config.Redacted) (config.Re
 	return set, id, nil
 }
 
+// CheckRedacted checks docs as a set, as config.CheckRedacted does, short of the translation into a
+// node's identity, as an image's tests check theirs. It returns the set's documents with their
+// defaults, redacted; a set the image does not accept is a *Refusal of StageConfig.
+func (img Image) CheckRedacted(docs config.Redacted) (config.Redacted, error) {
+	set, err := config.CheckRedacted(docs, img.Schemas)
+	if err != nil {
+		return config.Redacted{}, &Refusal{Stage: StageConfig, Message: err.Error()}
+	}
+	return set, nil
+}
+
 // encodeIdentity is id as JSON.
 func encodeIdentity(id identity.Identity) ([]byte, error) {
 	data, err := json.Marshal(id)

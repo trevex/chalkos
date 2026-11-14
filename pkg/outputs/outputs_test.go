@@ -204,6 +204,10 @@ func TestRenderFailures(t *testing.T) {
 		if f.Error() != want[i] {
 			t.Errorf("failure %d = %q, want %q", i, f.Error(), want[i])
 		}
+		// Off the node, the failures name no journal.
+		if off := f.OffNode(); off != strings.TrimSuffix(want[i], "; see the node's journal") || strings.Contains(off, "journal") {
+			t.Errorf("failure %d off the node = %q", i, off)
+		}
 	}
 	if !strings.Contains(logged.String(), "leaked s3cret") || !strings.Contains(logged.String(), "bad file") {
 		t.Errorf("the log lacks the programs' stderr: %s", logged.String())

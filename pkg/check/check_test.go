@@ -335,11 +335,12 @@ func TestRunRequiresFacts(t *testing.T) {
 	}
 }
 
-// RunTranslated runs the stages after the translation on documents checked as a set without a
-// node's identity, here a set without a SystemDisk, and gives no identity.
+// RunTranslated runs the stages after the translation on documents Image.CheckRedacted checked as
+// a set without a node's identity, here a set without a SystemDisk, and gives no identity.
+// CheckRedacted refuses a set as the translation does.
 func TestRunTranslated(t *testing.T) {
 	img := testImage(t, `cat > "$OUT/demo.json"`)
-	docs, err := config.CheckRedacted(config.Redact(parse(t, strings.SplitN(base, "---", 2)[1])), img.Schemas)
+	docs, err := img.CheckRedacted(config.Redact(parse(t, demo)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -354,4 +355,13 @@ func TestRunTranslated(t *testing.T) {
 	if _, err := RunTranslated(context.Background(), img, Input{Node: "n1"}, docs); err == nil {
 		t.Error("RunTranslated without facts passed")
 	}
+	if _, err := img.CheckRedacted(config.Redact(parse(t, strings.Replace(demo, "kind: Demo", "kind: Demon", 1)))); !isStage(err, StageConfig) {
+		t.Errorf("CheckRedacted of an unknown kind = %v, want a refusal of the config", err)
+	}
+}
+
+// isStage tells whether err is a refusal of the stage.
+func isStage(err error, stage Stage) bool {
+	r, ok := errors.AsType[*Refusal](err)
+	return ok && r.Stage == stage
 }

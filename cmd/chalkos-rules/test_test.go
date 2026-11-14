@@ -71,6 +71,7 @@ func TestRun(t *testing.T) {
 	cases := map[string]struct {
 		tests       string
 		goldens     map[string]string
+		links       map[string]string // relative path -> target, below <tmp>/golden
 		wantFiles   map[string]string
 		wantMissing []string
 	}{
@@ -85,14 +86,45 @@ func TestRun(t *testing.T) {
 				"t/refusals.json":                 "[]\n",
 				"t/effects.json":                  "[]\n",
 			},
+			wantMissing: []string{"t/warnings"},
 		},
-		"a config of extension documents alone": {
-			tests:   `{"t": {"config": "$C/hello.yaml", "node": "example", "outputs": {"greeting": "$G/greeting"}, "refusals": []}}`,
-			goldens: map[string]string{"greeting/greeting.txt": "hello\n"},
+		"a config of extension documents alone, refusals: []": {
+			tests: `{"t": {"config": "$C/hello.yaml", "node": "example", "refusals": []}}`,
 			wantFiles: map[string]string{
 				"summary.txt":     "PASS t\n",
 				"t/refusals.json": "[]\n",
 			},
+		},
+		"a refused config, no refusals expected": {
+			tests: `{"t": {"config": "$C/other.yaml", "node": "example"}}`,
+			wantFiles: map[string]string{
+				"failures":        "FAIL t: refusals differ: expected [], got [" + greeterRefusal + "]\n",
+				"t/refusals.json": "[" + greeterRefusal + "]\n",
+			},
+		},
+		"a golden that holds a link": {
+			tests:   `{"t": {"config": "$C/hello.yaml", "node": "example", "outputs": {"greeting": "$G/greeting"}}}`,
+			goldens: map[string]string{"greeting/greeting.txt": "hello\n", "greeting/real": "x"},
+			links:   map[string]string{"greeting/link": "real"},
+			wantFiles: map[string]string{
+				"failures":    "FAIL t: output greeting differs from its golden files\n",
+				"goldens.tsv": "t\tgreeting\t$G/greeting\tt/outputs/greeting\n",
+			},
+		},
+		"facts the image does not declare": {
+			tests: `{"t": {"config": "$C/hello.yaml", "node": "example", "facts": {"locked": true, "lock": null}, "oldFacts": {"shared": 1}}}`,
+			wantFiles: map[string]string{
+				"failures": "FAIL t: facts names locked, which the image does not declare; it declares lock, share\n" +
+					"FAIL t: oldFacts names shared, which the image does not declare; it declares lock, share\n",
+				"t/refusals.json": "[]\n",
+			},
+		},
+		"a before that cannot be read": {
+			tests: `{"t": {"config": "$C/hello.yaml", "before": "$C/missing.yaml", "node": "example"}}`,
+			wantFiles: map[string]string{
+				"failures": "FAIL t: the check of before failed: open $C/missing.yaml: no such file or directory\n",
+			},
+			wantMissing: []string{"t"},
 		},
 		"a golden that differs": {
 			tests:   `{"t": {"config": "$C/hello.yaml", "node": "example", "outputs": {"greeting": "$G/greeting"}}}`,
@@ -236,6 +268,11 @@ func TestRun(t *testing.T) {
 			expand := strings.NewReplacer("$C", c, "$G", g).Replace
 			writeFiles(t, c, configs)
 			writeFiles(t, g, tc.goldens)
+			for path, target := range tc.links {
+				if err := os.Symlink(target, filepath.Join(g, path)); err != nil {
+					t.Fatal(err)
+				}
+			}
 			writeFiles(t, dir, map[string]string{"tests.json": `{"tests": ` + expand(tc.tests) + `}`})
 			if err := runTests(img, filepath.Join(dir, "tests.json"), out); err != nil {
 				t.Fatalf("runTests = %v", err)
@@ -259,9 +296,13 @@ func TestRun(t *testing.T) {
 func TestRunCannotRun(t *testing.T) {
 	img := testImage(t)
 	for name, tc := range map[string]struct{ tests, want string }{
-		"tests that are no JSON":      {`{"tests": `, "tests.json: unexpected EOF"},
-		"an unknown field":            {`{"tests": {"t": {"config": "x", "output": {}}}}`, `unknown field "output"`},
-		"a test that is no file name": {`{"tests": {"a/b": {"config": "x"}}}`, `the test "a/b" is no file name`},
+		"tests that are no JSON":                {`{"tests": `, "tests.json: unexpected EOF"},
+		"an unknown field":                      {`{"tests": {"t": {"config": "x", "output": {}}}}`, `unknown field "output"`},
+		"a test that is no file name":           {`{"tests": {"a/b": {"config": "x"}}}`, `the test "a/b" is no name of a directory of its own`},
+		"a test named as the summary":           {`{"tests": {"summary.txt": {"config": "x"}}}`, `the test "summary.txt" is no name`},
+		"a test named as the failures":          {`{"tests": {"failures": {"config": "x"}}}`, `the test "failures" is no name`},
+		"a test named as the goldens":           {`{"tests": {"goldens.tsv": {"config": "x"}}}`, `the test "goldens.tsv" is no name`},
+		"a test named with a control character": {`{"tests": {"a\tb": {"config": "x"}}}`, `the test "a\tb" is no name`},
 	} {
 		t.Run(name, func(t *testing.T) {
 			dir := t.TempDir()
@@ -277,7 +318,7 @@ func TestRunCannotRun(t *testing.T) {
 }
 
 // An error of the check that is no refusal is the check's failure, which refusalsOf returns, and
-// which runTest reports as "the check failed: …".
+// which tester.run reports as "the check failed: …".
 func TestRefusalsOfAFailure(t *testing.T) {
 	failure := fmt.Errorf("the image's validators: %w", os.ErrPermission)
 	if got, err := refusalsOf(failure); got != nil || err != failure {
@@ -285,5 +326,35 @@ func TestRefusalsOfAFailure(t *testing.T) {
 	}
 	if got, err := refusalsOf(nil); err != nil || got == nil || len(got) != 0 {
 		t.Errorf("refusalsOf(nil) = %#v, %v; want none", got, err)
+	}
+}
+
+// An effect rule that cannot be evaluated warns, in the test's warnings and the summary, and takes
+// its effect all the same, as chalkd does; the warning fails no test.
+func TestRunWarnings(t *testing.T) {
+	img := testImage(t)
+	writeFiles(t, img, map[string]string{
+		"facts.json":   `{"count": {"file": "/run/count.json"}}`,
+		"effects.json": `{"greeter": {"when": "facts.count > 1", "reload": ["greeter.service"]}}`,
+	})
+	dir := t.TempDir()
+	out := filepath.Join(dir, "out")
+	writeFiles(t, dir, map[string]string{
+		"hello.yaml": hello,
+		"tests.json": `{"tests": {"t": {"config": "` + filepath.Join(dir, "hello.yaml") + `", "before": "` + filepath.Join(dir, "hello.yaml") + `",
+		  "node": "example", "facts": {"count": "many"}, "effects": ["greeter"]}}}`,
+	})
+	if err := runTests(img, filepath.Join(dir, "tests.json"), out); err != nil {
+		t.Fatal(err)
+	}
+	const warning = "the rule of effect greeter: a rule cannot be evaluated: no such overload; taking the effect all the same"
+	for path, want := range map[string]string{
+		"summary.txt": "PASS t\nWARN t: " + warning + "\n",
+		"failures":    "",
+		"t/warnings":  warning + "\n",
+	} {
+		if got, err := os.ReadFile(filepath.Join(out, path)); err != nil || string(got) != want {
+			t.Errorf("%s = %q, %v; want %q", path, got, err, want)
+		}
 	}
 }

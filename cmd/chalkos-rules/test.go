@@ -13,10 +13,12 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"unicode"
 
 	"github.com/trevex/chalkos/pkg/check"
 	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/contract"
+	"github.com/trevex/chalkos/pkg/facts"
 	"github.com/trevex/chalkos/pkg/jsonfile"
 	"github.com/trevex/chalkos/pkg/outputs"
 	"github.com/trevex/chalkos/pkg/refusals"
@@ -30,17 +32,18 @@ type testFile struct {
 
 // testCase is a test as chalkos.tests declares it: the config, and the config before it for a
 // test of a change; the node's name and facts, as they are and as they were before; and what the
-// test expects, each left unchecked when null: the files of the outputs named, by output, the
-// refusals, and the names of the effects due.
+// test expects: the files of the outputs named, by output; the refusals, always checked, none
+// when null, as for a config the test expects accepted; and the names of the effects due, left
+// unchecked when null.
 type testCase struct {
-	Config   string              `json:"config"`
-	Before   string              `json:"before"`
-	Node     string              `json:"node"`
-	Facts    map[string]any      `json:"facts"`
-	OldFacts map[string]any      `json:"oldFacts"`
-	Outputs  map[string]string   `json:"outputs"`
-	Refusals *[]refusals.Refusal `json:"refusals"`
-	Effects  *[]string           `json:"effects"`
+	Config   string             `json:"config"`
+	Before   string             `json:"before"`
+	Node     string             `json:"node"`
+	Facts    map[string]any     `json:"facts"`
+	OldFacts map[string]any     `json:"oldFacts"`
+	Outputs  map[string]string  `json:"outputs"`
+	Refusals []refusals.Refusal `json:"refusals"`
+	Effects  *[]string          `json:"effects"`
 }
 
 // givenFacts are a test's facts, which a rule reads as facts.<name>; one it does not give is null.
@@ -59,12 +62,16 @@ var storeHash = regexp.MustCompile(`/nix/store/[0-9a-df-np-sv-z]{32}-`)
 
 const normalisedStore = "/nix/store/eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee-"
 
+// reservedNames are the files of OUT itself, which no test's directory may be.
+var reservedNames = []string{"summary.txt", "failures", "goldens.tsv"}
+
 // runTests runs the tests of the file testsPath against the image of the directory image and
-// writes what each got below out: OUT/<test>/outputs/<output>/, refusals.json and effects.json;
-// summary.txt, a PASS or FAIL line per test; failures, the FAIL lines alone; and goldens.tsv, a
-// line per output whose files differ from its golden files: the test, the output, the golden
-// files' directory and the rendered files' directory below out. A test that fails is no error:
-// an error is an image or a file of tests the runner cannot read.
+// writes what each got below out, which should be new or empty, as files of an earlier run stay:
+// OUT/<test>/outputs/<output>/, refusals.json, effects.json and warnings; summary.txt, a PASS or
+// FAIL line per test and a WARN line per warning; failures, the FAIL lines alone; and
+// goldens.tsv, a line per output whose files differ from its golden files: the test, the output,
+// the golden files' directory and the rendered files' directory below out. A test that fails is
+// no error: an error is an image or a file of tests the runner cannot read.
 func runTests(image, testsPath, out string) error {
 	c, err := contract.Load(image)
 	if err != nil {
@@ -87,8 +94,8 @@ func runTests(image, testsPath, out string) error {
 		return fmt.Errorf("%s: %w", testsPath, err)
 	}
 	for name := range tf.Tests {
-		if name == "" || name == "." || name == ".." || strings.ContainsRune(name, '/') {
-			return fmt.Errorf("%s: the test %q is no file name", testsPath, name)
+		if name == "" || name == "." || name == ".." || strings.ContainsRune(name, '/') || slices.Contains(reservedNames, name) || strings.ContainsFunc(name, unicode.IsControl) {
+			return fmt.Errorf("%s: the test %q is no name of a directory of its own", testsPath, name)
 		}
 	}
 	root, err := os.MkdirTemp("", "chalkos-tests-")
@@ -98,30 +105,36 @@ func runTests(image, testsPath, out string) error {
 	defer os.RemoveAll(root)
 	// The build runs the programs as they are, and leaves the files' owner.
 	render := outputs.Renderer{Root: root, Run: outputs.Direct{}, KeepOwner: true}
-	img := check.Image{
-		Schemas: c.Schemas, ChangeRules: set,
-		Effects:    check.Effects{Defs: c.Effects, Rules: effectRules},
-		Validators: check.Programs{Defs: c.Validators, Render: render},
-		Outputs:    c.Outputs, Renderer: render,
+	r := tester{
+		img: check.Image{
+			Schemas: c.Schemas, ChangeRules: set,
+			Effects:    check.Effects{Defs: c.Effects, Rules: effectRules},
+			Validators: check.Programs{Defs: c.Validators, Render: render},
+			Outputs:    c.Outputs, Renderer: render,
+		},
+		facts: c.Facts,
 	}
 	if err := os.MkdirAll(out, 0o755); err != nil {
 		return err
 	}
 	var summary, failures, goldens strings.Builder
 	for _, name := range slices.Sorted(maps.Keys(tf.Tests)) {
-		r, err := runTest(context.Background(), img, filepath.Join(out, name), tf.Tests[name])
+		got, err := r.run(context.Background(), filepath.Join(out, name), tf.Tests[name])
 		if err != nil {
 			return fmt.Errorf("test %s: %w", name, err)
 		}
-		if len(r.problems) == 0 {
+		if len(got.problems) == 0 {
 			fmt.Fprintf(&summary, "PASS %s\n", name)
 		}
-		for _, p := range r.problems {
+		for _, p := range got.problems {
 			line := fmt.Sprintf("FAIL %s: %s\n", name, p)
 			summary.WriteString(line)
 			failures.WriteString(line)
 		}
-		for _, o := range r.goldens {
+		for _, w := range got.warnings {
+			fmt.Fprintf(&summary, "WARN %s: %s\n", name, w)
+		}
+		for _, o := range got.goldens {
 			fmt.Fprintf(&goldens, "%s\t%s\t%s\t%s\n", name, o, tf.Tests[name].Outputs[o], filepath.Join(name, "outputs", o))
 		}
 	}
@@ -133,16 +146,34 @@ func runTests(image, testsPath, out string) error {
 	return nil
 }
 
+// tester runs tests against an image: img checks their configs, and facts are the facts it
+// declares, which a test's facts name.
+type tester struct {
+	img   check.Image
+	facts map[string]facts.Definition
+}
+
 // testResult is what a test got wrong: its problems, in the order the summary lists them, and
-// the outputs whose files differ from their golden files.
+// the outputs whose files differ from their golden files; and the warnings of its check.
 type testResult struct {
 	problems []string
 	goldens  []string
+	warnings []string
 }
 
-// runTest runs tc against img and writes what it got below dir. An error is one of writing dir.
-func runTest(ctx context.Context, img check.Image, dir string, tc testCase) (testResult, error) {
+// run runs tc and writes what it got below dir. An error is one of writing dir.
+func (t tester) run(ctx context.Context, dir string, tc testCase) (testResult, error) {
 	var r testResult
+	for _, given := range []struct {
+		field string
+		facts map[string]any
+	}{{"facts", tc.Facts}, {"oldFacts", tc.OldFacts}} {
+		for _, name := range slices.Sorted(maps.Keys(given.facts)) {
+			if _, ok := t.facts[name]; !ok {
+				r.problems = append(r.problems, fmt.Sprintf("%s names %s, which the image does not declare; it declares %s", given.field, name, declared(t.facts)))
+			}
+		}
+	}
 	docs, err := readConfig(tc.Config)
 	if err != nil {
 		r.problems = append(r.problems, "the check failed: "+err.Error())
@@ -150,14 +181,14 @@ func runTest(ctx context.Context, img check.Image, dir string, tc testCase) (tes
 	}
 	in := check.Input{Node: tc.Node, Delivered: docs, Facts: factsOf(tc.Facts)}
 	if tc.Before != "" {
-		cmp, before, problem := runBefore(ctx, img, tc)
+		cmp, before, problem := t.before(ctx, tc)
 		if problem != "" {
 			r.problems = append(r.problems, problem)
 			return r, nil
 		}
 		in.Old, in.Compare = before, []check.Comparison{cmp}
 	}
-	res, runErr := checkConfig(ctx, img, in)
+	res, runErr := t.check(ctx, in)
 	got, err := refusalsOf(runErr)
 	if err != nil {
 		r.problems = append(r.problems, "the check failed: "+err.Error())
@@ -177,11 +208,17 @@ func runTest(ctx context.Context, img check.Image, dir string, tc testCase) (tes
 	for _, e := range res.Plan.Effects {
 		effects = append(effects, e.Name)
 	}
+	r.warnings = res.Warnings
 	if err := writeJSON(filepath.Join(dir, "refusals.json"), got); err != nil {
 		return r, err
 	}
 	if err := writeJSON(filepath.Join(dir, "effects.json"), effects); err != nil {
 		return r, err
+	}
+	if len(r.warnings) > 0 {
+		if err := os.WriteFile(filepath.Join(dir, "warnings"), []byte(strings.Join(r.warnings, "\n")+"\n"), 0o644); err != nil {
+			return r, err
+		}
 	}
 	for _, o := range slices.Sorted(maps.Keys(tc.Outputs)) {
 		switch {
@@ -200,8 +237,12 @@ func runTest(ctx context.Context, img check.Image, dir string, tc testCase) (tes
 			}
 		}
 	}
-	if tc.Refusals != nil && !slices.Equal(*tc.Refusals, got) {
-		r.problems = append(r.problems, fmt.Sprintf("refusals differ: expected %s, got %s", compact(*tc.Refusals), compact(got)))
+	want := tc.Refusals
+	if want == nil {
+		want = []refusals.Refusal{}
+	}
+	if !slices.Equal(want, got) {
+		r.problems = append(r.problems, fmt.Sprintf("refusals differ: expected %s, got %s", compact(want), compact(got)))
 	}
 	if tc.Effects != nil && !slices.Equal(*tc.Effects, effects) {
 		r.problems = append(r.problems, fmt.Sprintf("effects differ: expected %s, got %s", compact(*tc.Effects), compact(effects)))
@@ -209,27 +250,41 @@ func runTest(ctx context.Context, img check.Image, dir string, tc testCase) (tes
 	return r, nil
 }
 
-// runBefore checks the config before tc's change, with the facts as they were, and returns what
-// the effects compare tc's config with, and the documents before as delivered; or the problem of a
-// before that is refused.
-func runBefore(ctx context.Context, img check.Image, tc testCase) (check.Comparison, config.Redacted, string) {
+// before checks the config before tc's change, with the facts as they were, and returns what the
+// effects compare tc's config with, and the documents before as delivered; or the problem of a
+// before that is refused, or whose check failed.
+func (t tester) before(ctx context.Context, tc testCase) (check.Comparison, config.Redacted, string) {
 	before, err := readConfig(tc.Before)
 	if err != nil {
+		return check.Comparison{}, config.Redacted{}, "the check of before failed: " + err.Error()
+	}
+	prev, err := t.check(ctx, check.Input{Node: tc.Node, Delivered: before, Facts: factsOf(tc.OldFacts)})
+	if _, refused := errors.AsType[*check.Refusal](err); refused {
 		return check.Comparison{}, config.Redacted{}, "before is refused: " + err.Error()
 	}
-	prev, err := checkConfig(ctx, img, check.Input{Node: tc.Node, Delivered: before, Facts: factsOf(tc.OldFacts)})
 	if err != nil {
-		return check.Comparison{}, config.Redacted{}, "before is refused: " + err.Error()
+		return check.Comparison{}, config.Redacted{}, "the check of before failed: " + err.Error()
 	}
 	defer prev.Staged.Discard()
-	kinds, err := config.KindHashes(prev.Documents, img.Schemas)
+	kinds, err := config.KindHashes(prev.Documents, t.img.Schemas)
 	if err != nil {
-		return check.Comparison{}, config.Redacted{}, "before is refused: " + err.Error()
+		return check.Comparison{}, config.Redacted{}, "the check of before failed: " + err.Error()
 	}
 	return check.Comparison{
 		Documents: prev.Documents, Facts: givenFacts(tc.Facts), OldFacts: givenFacts(tc.OldFacts),
 		Outputs: prev.Staged.States(), Kinds: kinds,
 	}, before, ""
+}
+
+// check is check.Run without the translation into the node's identity, which chalkctl validate
+// checks, so a test holds the documents it is about alone: it checks in.Delivered as a set with
+// Image.CheckRedacted and runs check.RunTranslated.
+func (t tester) check(ctx context.Context, in check.Input) (check.Result, error) {
+	docs, err := t.img.CheckRedacted(in.Delivered)
+	if err != nil {
+		return check.Result{}, err
+	}
+	return check.RunTranslated(ctx, t.img, in, docs)
 }
 
 // readConfig reads the documents of the YAML or JSON file at path, redacted, as a delivery gives
@@ -247,7 +302,7 @@ func readConfig(path string) (config.Redacted, error) {
 	return config.Redact(docs), nil
 }
 
-// refusalsOf are the refusals of err, an error of checkConfig, in the order chalkctl prints them,
+// refusalsOf are the refusals of err, an error of tester.check, in the order chalkctl prints them,
 // each once: none for no error, and for a failure without refusals, a refusal of its message
 // alone. An error that is no *check.Refusal is returned.
 func refusalsOf(err error) ([]refusals.Refusal, error) {
@@ -255,8 +310,8 @@ func refusalsOf(err error) ([]refusals.Refusal, error) {
 	if err == nil {
 		return got, nil
 	}
-	var r *check.Refusal
-	if !errors.As(err, &r) {
+	r, ok := errors.AsType[*check.Refusal](err)
+	if !ok {
 		return nil, err
 	}
 	add := func(rs ...refusals.Refusal) {
@@ -272,14 +327,14 @@ func refusalsOf(err error) ([]refusals.Refusal, error) {
 			add(f.Refusal)
 		}
 	case (r.Stage == check.StageValidators || r.Stage == check.StageOutputs) && len(r.Failed) > 0:
-		// outputs.Message reports the refusals first, then each other failure.
+		// outputs.Message reports the refusals first, then each other failure. What a program
+		// wrote to standard error is in the log of the run.
 		for _, f := range r.Failed {
 			add(f.Refusals...)
 		}
-		// What a program wrote to standard error is in the log of the run, and in no journal.
 		for _, f := range r.Failed {
 			if len(f.Refusals) == 0 {
-				add(refusals.Refusal{Message: strings.TrimSuffix(f.Error(), "; see the node's journal")})
+				add(refusals.Refusal{Message: f.OffNode()})
 			}
 		}
 	default:
@@ -288,8 +343,8 @@ func refusalsOf(err error) ([]refusals.Refusal, error) {
 	return got, nil
 }
 
-// copyNormalised copies the regular files below from to to, with each store path's hash replaced
-// as storeHash says.
+// copyNormalised copies the files below from, which a renderer wrote and so are regular, to to,
+// each with mode 0644 and with each store path's hash replaced as storeHash says.
 func copyNormalised(from, to string) error {
 	return filepath.WalkDir(from, func(path string, e fs.DirEntry, err error) error {
 		if err != nil {
@@ -309,34 +364,41 @@ func copyNormalised(from, to string) error {
 }
 
 // sameFiles tells whether the directories a and b hold the same files, by relative path, with the
-// same content; a missing directory holds none.
+// same content; a missing directory holds none, and one that holds anything but directories and
+// regular files, such as a link, is the same as none.
 func sameFiles(a, b string) (bool, error) {
-	fa, err := filesOf(a)
+	fa, regularA, err := filesOf(a)
 	if err != nil {
 		return false, err
 	}
-	fb, err := filesOf(b)
+	fb, regularB, err := filesOf(b)
 	if err != nil {
 		return false, err
 	}
-	return maps.EqualFunc(fa, fb, bytes.Equal), nil
+	return regularA && regularB && maps.EqualFunc(fa, fb, bytes.Equal), nil
 }
 
-// filesOf are the contents of the files below dir, by relative path.
-func filesOf(dir string) (map[string][]byte, error) {
+// filesOf are the contents of the regular files below dir, by relative path, and whether dir holds
+// nothing but directories and regular files.
+func filesOf(dir string) (map[string][]byte, bool, error) {
 	files := map[string][]byte{}
+	regular := true
 	err := filepath.WalkDir(dir, func(path string, e fs.DirEntry, err error) error {
 		if errors.Is(err, fs.ErrNotExist) && path == dir {
 			return filepath.SkipDir
 		}
-		if err != nil || e.IsDir() {
+		switch {
+		case err != nil || e.IsDir():
 			return err
+		case !e.Type().IsRegular():
+			regular = false
+			return nil
 		}
 		rel, _ := filepath.Rel(dir, path)
 		files[rel], err = os.ReadFile(path)
 		return err
 	})
-	return files, err
+	return files, regular, err
 }
 
 // writeJSON writes v to path as compact JSON with a trailing newline.
@@ -355,15 +417,4 @@ func compact(v any) string {
 		panic(err)
 	}
 	return string(data)
-}
-
-// checkConfig is check.Run without the translation into the node's identity, which chalkctl
-// validate checks, so a test holds the documents it is about alone: it checks in.Delivered as a
-// set with config.CheckRedacted, which refuses as StageConfig, and runs check.RunTranslated.
-func checkConfig(ctx context.Context, img check.Image, in check.Input) (check.Result, error) {
-	docs, err := config.CheckRedacted(in.Delivered, img.Schemas)
-	if err != nil {
-		return check.Result{}, &check.Refusal{Stage: check.StageConfig, Message: err.Error()}
-	}
-	return check.RunTranslated(ctx, img, in, docs)
 }

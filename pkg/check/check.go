@@ -12,7 +12,7 @@
 // image or of the check itself. Run runs them in a row, for an image that checks its own config,
 // and plans the effects a delivery of the config takes; RunTranslated runs the last three and plans
 // the effects, for documents checked as a set without a node's identity, as an image's tests check
-// theirs with config.CheckRedacted. chalkd runs the stages for a delivery to the running image,
+// theirs with Image.CheckRedacted. chalkd runs the stages for a delivery to the running image,
 // with its own checks of the machine between them; chalkctl runs the first three, without the
 // node's facts and with the validators it links.
 //
@@ -188,12 +188,18 @@ type Result struct {
 	Warnings  []string
 }
 
+// errNoFacts is the error of a check whose input gives no facts.
+var errNoFacts = errors.New("the check has no facts to give the rules")
+
 // Run checks in as img checks it, its stages in their order: it translates in.Delivered, runs the
 // image's change rules against in.Old with the image's defaults, its validators, and every
 // output's renderer and check, and plans the effects. A refused config is a *Refusal; any other
 // error is the image's own failure. A config refused after its translation still gives the
 // translation, whose storage a caller names in the refusal.
 func Run(ctx context.Context, img Image, in Input) (Result, error) {
+	if in.Facts == nil {
+		return Result{}, errNoFacts
+	}
 	docs, id, err := img.TranslateRedacted(in.Node, in.Delivered)
 	if err != nil {
 		return Result{}, err
@@ -208,12 +214,13 @@ func Run(ctx context.Context, img Image, in Input) (Result, error) {
 }
 
 // RunTranslated is Run after the translation: it runs the image's change rules on docs, the set
-// in.Delivered translates or is checked as, against in.Old with the image's defaults, its
-// validators, and every output's renderer and check, and plans the effects. The result holds no
-// identity. A refused config is a *Refusal; any other error is the image's own failure.
+// translated, or checked by Image.CheckRedacted, against in.Old with the image's defaults, its
+// validators, and every output's renderer and check, and plans the effects. It reads docs in place
+// of in.Delivered, which it does not read, and the result holds no identity. A refused config is a
+// *Refusal; any other error is the image's own failure.
 func RunTranslated(ctx context.Context, img Image, in Input, docs config.Redacted) (Result, error) {
 	if in.Facts == nil {
-		return Result{}, errors.New("the check has no facts to give the rules")
+		return Result{}, errNoFacts
 	}
 	res := Result{Documents: docs}
 	old := in.Old.Defaulted(img.Schemas)

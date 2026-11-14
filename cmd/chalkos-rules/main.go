@@ -40,14 +40,18 @@ every output and validator is a program of the image's store and reads kinds the
 and every diagnostic is one chalkd can run.
 
 test runs the tests of TESTS, chalkos.tests as the image's build writes them, against the image
-IMAGE, and writes what each got to OUT: OUT/<test>/outputs/<output>/, each output's files with
-their store paths' hashes replaced by eeee...; OUT/<test>/refusals.json, the refusals, [] for an
-accepted config; OUT/<test>/effects.json, the effects due, sorted by name; OUT/summary.txt, a
-PASS or FAIL line per test; OUT/failures, the FAIL lines alone; and OUT/goldens.tsv, a line per
-output that differs from its golden files: the test, the output, the golden files and the
-rendered files below OUT. A test whose config cannot be read, whose before is refused or whose
-check fails gets its FAIL line alone, with no files below OUT/<test>. It exits 0 whatever the
-tests got.`
+IMAGE, and writes what each got to OUT, which should be new or empty, as the files of an earlier
+run stay: OUT/<test>/outputs/<output>/, each output's files with their store paths' hashes
+replaced by eeee...; OUT/<test>/refusals.json, the refusals, [] for an accepted config;
+OUT/<test>/effects.json, the effects due, sorted by name; OUT/<test>/warnings, the effect rules
+that could not be evaluated, when there are any; OUT/summary.txt, a PASS or FAIL line per test
+and a WARN line per warning, which fails no test; OUT/failures, the FAIL lines alone; and
+OUT/goldens.tsv, a line per output that differs from its golden files: the test, the output, the
+golden files and the rendered files below OUT. A test's refusals are always compared, none
+expected when it gives none; its effects only when it gives them; and a fact it gives
+that the image does not declare fails it. A test whose config cannot be read, whose before is
+refused or whose check, or that of its before, fails gets its FAIL lines alone, with no files
+below OUT/<test>. It exits 0 whatever the tests got.`
 
 func main() {
 	var err error

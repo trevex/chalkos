@@ -139,7 +139,8 @@ func withOutput(t *testing.T, files map[string]string, render, check string) map
 
 const hello = "apiVersion: greeting.example.org/v1alpha1\nkind: Greeting\nmetadata: {name: g}\nspec: {message: hello}\n"
 
-// The image's build refuses an output it could not run on a node and an effect on an output the image lacks.
+// The image's build refuses an output it could not run on a node and an effect on an output the
+// image lacks.
 func TestCheckOutputs(t *testing.T) {
 	render := `sed -n 's/.*"message":"\([^"]*\)".*/\1/p' > "$OUT/message"`
 	accepts := `grep -qx hello "$OUT/message"`
@@ -228,8 +229,8 @@ func withValidator(t *testing.T, files map[string]string, commands string) map[s
 
 // The image's build refuses a validator it could not run on a node.
 func TestCheckValidators(t *testing.T) {
-	// The validator refuses a Greeting whose message is other.
-	validate := `if grep -q '"message":"other"'; then echo '{"refusals": [{"kind": "Greeting", "name": "g", "path": "spec.message", "message": "say hello"}]}'; fi`
+	// The check never runs the validator's program; the image's tests do.
+	validate := `true`
 	base := func() map[string]string { return files(greeting(fieldRule, kindRule), lock, "{}") }
 	var out bytes.Buffer
 	if err := checkImage(image(t, withValidator(t, base(), validate)), &out); err != nil || out.String() != "2 rules and 0 effect rules compile, reading the facts lock\n" {

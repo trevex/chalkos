@@ -181,8 +181,14 @@ func TestCheckRedacted(t *testing.T) {
 	if got.Len() != 4 || !strings.Contains(string(text), `"token":"`+sum("s3cret")+`"`) || strings.Contains(string(text), `"s3cret"`) {
 		t.Errorf("CheckRedacted = %s, want the four documents with the Secret's value hidden", text)
 	}
-	if want, _, err := TranslateRedacted("n1", Redact(parseDocs(t, minimal+"---\n"+registriesDocs)), schemas(t), Target{Platform: "metal"}); err != nil || !reflect.DeepEqual(got.Objects(), slices.DeleteFunc(want.Objects(), func(o map[string]any) bool { return o["kind"] == "SystemDisk" })) {
-		t.Errorf("CheckRedacted's documents differ from TranslateRedacted's: %v", err)
+	// The documents are those the translation gives of the set with a SystemDisk, but for that.
+	translated, _, err := TranslateRedacted("n1", Redact(parseDocs(t, minimal+"---\n"+registriesDocs)), schemas(t), Target{Platform: "metal"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := slices.DeleteFunc(translated.Objects(), func(o map[string]any) bool { return o["kind"] == "SystemDisk" })
+	if !reflect.DeepEqual(got.Objects(), want) {
+		t.Errorf("CheckRedacted = %v, want the documents TranslateRedacted gives, %v", got.Objects(), want)
 	}
 	for name, tc := range map[string]struct{ docs, want string }{
 		"an unknown kind":                   {strings.Replace(registriesDocs, "kind: Mirror", "kind: Mirorr", 1), `does not accept kind "Mirorr"`},
