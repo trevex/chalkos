@@ -7,8 +7,7 @@ import (
 	"github.com/santhosh-tekuri/jsonschema/v6"
 )
 
-// Fill checks doc against the schema of its kind, as Validate does, and returns it with the
-// defaults that schema gives, as Default does.
+// Fill checks doc against the schema of its kind and returns it with that schema's defaults.
 func (s *Schemas) Fill(doc map[string]any) (map[string]any, error) {
 	if err := s.Validate(doc); err != nil {
 		return nil, err

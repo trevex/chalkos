@@ -59,10 +59,8 @@ func (e *FactError) Error() string {
 }
 func (e *FactError) Unwrap() error { return e.Err }
 
-// Evaluate runs every rule of the set against in and returns those the config does not meet, in
-// the set's order. Every rule sees config, oldConfig and node; a kind's rules documents and
-// oldDocuments, a field's self and oldSelf. An error is a rule that could not be evaluated, or a
-// fact that could not be loaded, which refuses the delivery as well.
+// Evaluate returns the rules of the set that the config in does not meet, in the set's order. A
+// rule that cannot be evaluated or a fact that cannot be loaded is an error, refusing the delivery.
 func (s *Set) Evaluate(in Input) ([]Failure, error) {
 	next, old := in.Documents.Documents(), in.Old.Documents()
 	cfg, oldCfg := ConfigOf(in.Documents), ConfigOf(in.Old)
@@ -192,7 +190,7 @@ func (p *Program) evaluate(vars map[string]any, cfg, oldCfg, node map[string]any
 }
 
 // messageError is what a failure says of a messageExpression that yields msg and err: the kind
-// of error, as evalError says it, or the type it yields instead of a string.
+// of error, or the type it yields instead of a string.
 func messageError(msg ref.Val, err error) string {
 	if err != nil {
 		return evalError(err)
@@ -318,10 +316,9 @@ func Refusal(failures []Failure, node string) string {
 // maxErrorText bounds the error a refusal shows of a fact that cannot be loaded.
 const maxErrorText = 512
 
-// evalErrors are the errors of a rule that cannot be evaluated a refusal names, by how CEL's
-// error starts, and what the refusal says of each. CEL's errors show the value they are about,
-// such as the key a map lacks or the index past a list's end, which can be one a rule read, so a
-// refusal says only what kind of error it is, and of an error not listed here nothing.
+// evalErrors maps how a CEL evaluation error starts to what a refusal says of it. CEL's errors
+// show the value they are about, which can be one a rule read, so a refusal names only the kind
+// of error, and nothing for one not listed.
 var evalErrors = []struct{ prefix, says string }{
 	{"no such key: ", "no such key"},
 	{"index out of bounds: ", "index out of bounds"},

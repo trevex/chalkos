@@ -25,9 +25,8 @@ func (e *EffectRule) Where() string {
 	return "effect " + e.Name
 }
 
-// CompileEffect compiles when, the rule of the effect name. It sees config, oldConfig and node
-// as change rules do, and each fact it names as facts.<name> after the delivery and as
-// oldFacts.<name> before it.
+// CompileEffect compiles when, the rule of the effect name. It sees config, oldConfig and node,
+// and each fact it names as facts.<name> after the delivery and oldFacts.<name> before it.
 func CompileEffect(name, when string) (*EffectRule, error) {
 	e := &EffectRule{Name: name, When: when}
 	fail := func(format string, args ...any) error {
@@ -53,15 +52,14 @@ func CompileEffect(name, when string) (*EffectRule, error) {
 // node's facts after the delivery and before it.
 type EffectInput struct {
 	Documents, Old config.Redacted
-	// Node is the node's name, which effects read as node.name, as Input.Node is.
+	// Node is the node's name, which effects read as node.name.
 	Node            string
 	Facts, OldFacts Facts
 }
 
-// Due evaluates every effect against in and returns those that are due, in order. An effect
-// whose rule cannot be evaluated, or reads a fact that cannot be loaded, is due too, so a unit
-// restarts once more than it needed to rather than run on config it has not read; errs say why,
-// one for each such effect.
+// Due returns the effects that are due for in, in order. An effect whose rule fails to evaluate
+// is due too, so a unit restarts once more than needed rather than run on config it has not read;
+// errs say why.
 func Due(effects []*EffectRule, in EffectInput) (due []*EffectRule, errs []error) {
 	cfg, oldCfg := ConfigOf(in.Documents), ConfigOf(in.Old)
 	node := map[string]any{"name": in.Node}

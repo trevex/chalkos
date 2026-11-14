@@ -1,7 +1,6 @@
 // Package networkdschema generates the spec schemas of chalkos's networkd kinds from systemd's
-// gperf tables, the lists of sections and keys networkd itself accepts in .network, .netdev and
-// .link files. Section and key names are camelCase in documents; each schema records the systemd
-// spelling, from which chalkos-render renders the unit files.
+// gperf tables, the sections and keys networkd accepts. Documents spell names in camelCase; each
+// schema records the systemd spelling, from which chalkos-render renders the unit files.
 package networkdschema
 
 import (
@@ -75,13 +74,9 @@ func Parse(r io.Reader) ([]Entry, error) {
 	return entries, nil
 }
 
-// CamelCase spells a networkd name as documents do: its leading word or acronym in lower case,
-// the rest unchanged, so MACAddress becomes macAddress and VLANId becomes vlanId. A dash is
-// removed before lowering, so SR-IOV becomes sriov and SR-IOVVirtualFunctions becomes
-// sriovVirtualFunctions. A version digit glues itself to the acronym before it, so IPv6AcceptRA
-// becomes ipv6AcceptRA and DHCPv4 becomes dhcpv4. IPoIB and MACsec are themselves the leading
-// token and lower whole regardless of what follows: IPoIB becomes ipoib and
-// MACsecReceiveAssociation becomes macsecReceiveAssociation.
+// CamelCase spells a networkd name as documents do: dashes removed and the leading word or
+// acronym in lower case, a version suffix included, so MACAddress becomes macAddress, SR-IOV
+// sriov and IPv6AcceptRA ipv6AcceptRA.
 func CamelCase(name string) string {
 	return lowerLeading(strings.ReplaceAll(name, "-", ""))
 }
@@ -120,10 +115,8 @@ func lowerLeading(word string) string {
 	return string(r)
 }
 
-// scalarSchema is a key's value: networkd parses every value from text, and a key given as a
-// list is written once per element. A string spans no lines, because a line break would end the
-// key and start another in the unit. It returns a fresh map each call, since callers embed it in
-// their own schema and must not share one map between keys.
+// scalarSchema is a key's value, which networkd parses from text. A string spans no lines, since
+// a line break would end the key in the unit; each call returns a fresh map, so keys share none.
 func scalarSchema() map[string]any {
 	return map[string]any{"type": []any{"string", "integer", "boolean"}, "pattern": "^[^\r\n]*$"}
 }
@@ -195,12 +188,9 @@ type Section struct {
 	Keys map[string]string
 }
 
-// Names reads the systemd names of the sections and keys of a networkd kind's schema, a whole
-// kind's around a spec that SpecSchema wrote, by each section's field of the spec: the
-// x-chalkos-networkd-section of the spec's fields, and the x-chalkos-networkd-key of the fields of
-// the section's definition, which SpecSchema names by the section. pkg/schema decodes and walks the
-// same annotations; this reads only the layout SpecSchema writes, with the standard library
-// alone, for chalkos-render.
+// Names reads the systemd names of the sections and keys of a networkd kind's schema, by each
+// section's field of the spec. It reads only the layout SpecSchema writes, with the standard
+// library alone, for chalkos-render.
 func Names(kindSchema map[string]any) map[string]Section {
 	spec, _ := field(kindSchema, "properties", "spec", "properties").(map[string]any)
 	names := map[string]Section{}

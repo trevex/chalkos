@@ -18,21 +18,14 @@ const (
 )
 
 // A Node is a node of a kind's schema that a walk reaches: a property, a list's items, a map's
-// values or a branch of an anyOf, with $ref followed.
-//
-// Both walks follow the same keywords: properties, additionalProperties that is a schema, items
-// and the branches of anyOf. A node with $ref stands for the schema it refers to, following a
-// chain of $ref to its end: its Schema, and so what lies below it and its annotations, are the
-// target's, and its Keywords are the target's with those beside each $ref laid over them, such as
-// a field's own description. compile refuses an x-chalkos-* keyword beside $ref. Other
-// applicators, such as allOf, oneOf and prefixItems, are not walked: the kinds' schemas use none.
+// values or a branch of an anyOf. A node with $ref stands for the end of its $ref chain. The walks
+// follow no other applicators, such as allOf or oneOf, since the kinds' schemas use none.
 type Node struct {
 	// Schema is the node, with $ref followed.
 	Schema *jsonschema.Schema
 	// Field is the node's place in the schema, a step per level below the document: a property's
-	// name, ItemStep for each item of a list, ValueStep for each value of a map. It is the same for
-	// every value the node describes, and empty at the document's root. A branch of an anyOf has
-	// the Field of the anyOf.
+	// name, ItemStep or ValueStep. It is empty at the root, and a branch of an anyOf has the Field
+	// of the anyOf.
 	Field []string
 	// Path is, in Walk, the value's path below the document, such as spec.rules[2].to; in
 	// WalkSchema the field's, as FieldPath writes it.
@@ -90,14 +83,8 @@ func Resolve(s *jsonschema.Schema) *jsonschema.Schema {
 	return s
 }
 
-// Walk walks v, a document of the kind of apiVersion and kind or a value as one holds it,
-// alongside the kind's schema from its root, and calls visit for every node it reaches, where
-// visit returns whether to walk on below the node. It walks the fields of an object that v holds,
-// in name order, by their properties or else by additionalProperties, and each item of a list by
-// items; a key or item the schema says nothing about is left alone. At an anyOf it visits the
-// node and then the one branch that describes v, with the same Path: the first whose type,
-// $ref followed, is v's JSON type, or the first branch when none is. It walks nothing for a kind
-// the schemas do not declare.
+// Walk visits v, a document of the kind or a value in one, alongside the kind's schema,
+// fields in name order; visit returns whether to descend. An anyOf follows branchFor's pick.
 func (s *Schemas) Walk(apiVersion, kind string, v any, visit func(Node) bool) {
 	if sch, ok := s.schemas[key(apiVersion, kind)]; ok {
 		walkValue(Node{Schema: sch, Value: v}, visit)
@@ -136,13 +123,9 @@ func walkValue(n Node, visit func(Node) bool) {
 	}
 }
 
-// WalkSchema walks the schema of the kind of apiVersion and kind from its root, without a value,
-// and calls visit for every node it reaches, where visit returns whether to walk on below the
-// node. Below a node it walks the properties in name order, then additionalProperties, then
-// items, then every branch of an anyOf, in order and with the node's Field: a walk without a
-// value cannot tell which branch a value would take. It does not visit a node whose schema is
-// already above it on its path, as below a schema that refers to itself. It walks nothing for a
-// kind the schemas do not declare.
+// WalkSchema visits the kind's schema without a value, fields in name order; visit returns
+// whether to descend. It visits every branch of an anyOf, since without a value it cannot pick
+// one, and skips a schema already above it on its path, so a recursive schema ends.
 func (s *Schemas) WalkSchema(apiVersion, kind string, visit func(Node) bool) {
 	if sch, ok := s.schemas[key(apiVersion, kind)]; ok {
 		walkSchema(Node{Schema: sch}, nil, visit)

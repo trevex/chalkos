@@ -1,9 +1,6 @@
 // Package identity holds a node's identity: the form its config translates to, which the node
-// applies at boot (identity.json in each image's config slot below /state/config, then
-// /run/chalkos/node.json) and its layers read. Every image gives the node its hostname, platform,
-// network and storage; each layer of the image keeps its own part below Layers, by the layer's
-// name, which this package does not interpret. It imports nothing of chalkos but the storage
-// section, so every package on the node may use it.
+// applies at boot from identity.json in its config slot. Each layer keeps an opaque part below
+// Layers. It imports only the storage section of chalkos, so every package on the node may use it.
 package identity
 
 import (

@@ -27,10 +27,8 @@ var (
 	ipType   = types.NewOpaqueType("ip")
 )
 
-// library holds the functions rules use besides CEL's own and its lists, sets, strings and
-// bindings extensions: address ranges and addresses, which compare by what they denote rather
-// than how they are spelt, sizes as the storage kinds write them, ranges of ports as the router
-// kinds write them, and DNS names and record data as the Resolver's local zones hold them.
+// library holds chalkos's own CEL functions: addresses and address ranges, which compare by what
+// they denote rather than how they are spelt, sizes, port ranges, DNS names and record data.
 func library() cel.EnvOption {
 	return cel.Lib(celLib{})
 }
@@ -176,8 +174,7 @@ func stringScanCosts() cel.EnvOption {
 	return cel.CostEstimatorOptions(opts...)
 }
 
-// portRangeOf is the first and last port of s, as PortRange reads it, as portRange() yields
-// them.
+// portRangeOf is the first and last port of s, as portRange() yields them.
 func portRangeOf(s string) ref.Val {
 	first, last, ok := schema.PortRange(s)
 	if !ok {

@@ -14,9 +14,8 @@ import (
 )
 
 // Cost limits. A rule's estimated cost assumes every list, map and string holds sizeHint
-// elements or characters, so a loop over the documents of a kind costs about sizeHint times its
-// body, and two nested loops about sizeHint²; three nested loops exceed the limit. The runtime
-// limit stops a rule on the documents it actually meets.
+// elements, so two nested loops over a kind's documents fit and three exceed the limit. The
+// runtime limit stops a rule on the documents it meets.
 const (
 	sizeHint         = 256
 	maxEstimatedCost = 10_000_000
@@ -54,13 +53,9 @@ type Set struct {
 	Programs []*Program
 }
 
-// Compile compiles the rules every schema of s declares: a kind's own, then those of its fields
-// in the order schema.WalkSchema reaches them, which is by path. A field's rule applies wherever
-// the schema declares it, outside spec too; lib/kinds/schema.nix declares rules on spec and its
-// fields alone. It reports every rule that does not compile, each naming the kind or field that
-// declares it. A rule binds self to the value at its path, which a list item or a map value has
-// none of, so rules below a list's items or a map's values are refused: they are declared on the
-// list or the map instead. Without s it compiles none.
+// Compile compiles the rules every schema of s declares: a kind's own, then its fields' by path.
+// A rule binds self to the value at its path, which a list item or map value lacks, so a rule
+// below one is refused and belongs on the list or the map. Without s it compiles none.
 func Compile(s *schema.Schemas) (*Set, error) {
 	set := &Set{}
 	if s == nil {
@@ -143,10 +138,9 @@ func compile(apiVersions map[string]string, k schema.Kind, path []string, r sche
 	return p, nil
 }
 
-// parseRule parses rule and the further expressions of srcs in base, and extends base with each
-// fact they read as <ident>.<name> for every one of idents. The rule must not be empty; an empty
-// further expression is not parsed and its AST is nil. It returns the extended environment, the
-// ASTs in the order of the sources, and the facts' names, sorted.
+// parseRule parses rule and the further expressions srcs in base, and extends base with each fact
+// they read as <ident>.<name> for every one of idents. An empty further expression has a nil AST;
+// the facts' names come back sorted.
 func parseRule(base *cel.Env, idents []string, rule string, srcs ...string) (*cel.Env, []*cel.Ast, []string, error) {
 	if strings.TrimSpace(rule) == "" {
 		return nil, nil, nil, errors.New("the rule is empty")

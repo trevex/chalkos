@@ -12,12 +12,9 @@ import (
 	"github.com/trevex/chalkos/pkg/imageref"
 )
 
-// formats are the values of "format" that the kinds' schemas assert, besides JSON Schema's own:
-// an address, an address range, a range of ports, an image reference and an image reference whose
-// tag is a version. Each accepts a subset of what the rules' ip(), cidr() and portRange() and the
-// renderers read, stricter where they differ (ip refuses the zones ip() reads), so that a value
-// the schema accepts parses everywhere; the image references are those imageref.Parse reads. A
-// JSON Schema tool that knows none of them takes them as annotations.
+// formats are the "format" values the kinds' schemas assert beyond JSON Schema's own. Each accepts
+// a subset of what the rules' CEL functions and the renderers read (ip refuses zones), so a value
+// the schema accepts parses everywhere.
 var formats = []*jsonschema.Format{
 	{Name: "ip", Validate: validateIP},
 	{Name: "cidr", Validate: validateCIDR},

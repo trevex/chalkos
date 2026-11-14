@@ -1,18 +1,11 @@
-// Package refusals is the format in which a program that checks a node's documents says what it
-// refuses, for what no schema or rule of the image sees: a renderer of an output, and a
-// validator. The program prints one JSON object on standard output,
+// Package refusals is the format in which an output's renderer or a validator says what it
+// refuses of a node's documents. The program prints one JSON object on standard output,
 //
 //	{"refusals": [{"kind": "BGPPeer", "name": "fabric", "path": "spec.interfaces", "message": "..."}]}
 //
-// each refusal naming a document by its kind and name, the field it is about by its path in the
-// document as written, such as spec.rules[0].source.set, and what is wrong and how to fix it.
-// chalkd reports refusals to the operator as "<Kind>/<name>: <path>: <message>", as it reports
-// a reference that does not resolve, after "the config is refused: ", as it reports a rule's.
-// What else the program writes, to standard error, goes to the node's journal alone, since it can
-// echo the documents.
-//
-// A refusal cannot carry a secret's value: the program reads the documents without the Secrets
-// and with every other secret value hashed, as rules read them.
+// naming each field by its document's kind and name and its path as written. Standard error goes
+// to the node's journal alone, since it can echo the documents. A refusal cannot carry a secret's
+// value: the program reads the documents without the Secrets and other secret values hashed.
 package refusals
 
 import (
@@ -45,8 +38,7 @@ func (r Refusal) String() string {
 }
 
 // Where is what String puts before the message: "<Kind>/<name>: <path>", "<Kind>/<name>" for a
-// whole document, and nothing for no document. A field's rule that cannot be evaluated names
-// its field this way too.
+// whole document, and nothing for no document.
 func (r Refusal) Where() string {
 	switch {
 	case r.Name == "":
@@ -57,10 +49,8 @@ func (r Refusal) Where() string {
 	return r.Kind + "/" + r.Name + ": " + r.Path
 }
 
-// An Error is a refusal as a Go error, as a program's checks return it. A check names the
-// document and field where it refuses, and the code around it passes the error on unchanged, so
-// every program that shares the check refuses with the same refusal, which chalkd reports once.
-// Its text is the refusal's String.
+// An Error is a refusal as a Go error. Code around a check passes it on unchanged, so every
+// program that shares the check refuses alike and chalkd reports the refusal once.
 type Error struct{ Refusal }
 
 func (e *Error) Error() string { return e.String() }
@@ -72,11 +62,9 @@ func Errorf(kind, name, path, format string, args ...any) error {
 	return &Error{Refusal{Kind: kind, Name: name, Path: path, Message: fmt.Sprintf(format, args...)}}
 }
 
-// Split is what err refuses, the refusals of the Errors in err's tree as errors.Join and %w build
-// it, each once, in the order errors.As would find them, and the errors of the tree that hold no
-// Error, which are no refusal, such as an internal error. A check that goes on past its first
-// refusal joins the refusals it finds, so that a program reports them all; the text that a %w
-// wraps around an Error goes, since the Error names its document and field already.
+// Split returns the refusals of the Errors in err's tree, each once, in errors.As order, and the
+// errors that hold no Error. Text a %w wraps around an Error is dropped, since the Error names its
+// document and field already.
 func Split(err error) ([]Refusal, []error) {
 	var rs []Refusal
 	var others []error
@@ -173,11 +161,9 @@ const (
 	MaxMessage = 1 << 10
 )
 
-// Parse reads what a program printed: nothing, or one Report and nothing after it. It returns
-// the refusals each once, in the order printed. A report outside the format, null, a report
-// without its list of refusals or with null, a field it does not know or spells in other case, a
-// refusal Check refuses or more than MaxReport bytes, is an error of the program, which says what
-// is wrong and quotes no more than the kind, name or path Check refuses.
+// Parse reads what a program printed: nothing, or one Report in the exact format and nothing
+// after it. It returns the refusals each once, in the order printed; an error quotes no more than
+// the kind, name or path Check refuses.
 func Parse(data []byte) ([]Refusal, error) {
 	if len(data) > MaxReport {
 		return nil, fmt.Errorf("it holds more than %d bytes", MaxReport)

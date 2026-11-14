@@ -24,9 +24,7 @@ const documentFunction = "@chalkos_document"
 const documentConfig = "@chalkos_config"
 
 // documents gives change rules document(kind, name): the document of the kind by that name as
-// config holds it, with its schema defaults and its secret values hashed, or null where config
-// holds none, as for a null name or a name a reference reserves. The kind is a string literal;
-// apiVersions maps each kind of the image to its apiVersion, which the macro writes into the call,
+// config holds it, or null. The kind is a string literal the macro resolves to its apiVersion,
 // so a kind the image lacks fails the rule's compilation.
 func documents(apiVersions map[string]string) cel.EnvOption {
 	return cel.Lib(documentLib{apiVersions})

@@ -10,10 +10,9 @@ import (
 	"cel.dev/cel-go/common/types/traits"
 )
 
-// adapter converts the JSON rules read, the documents and the facts, into CEL values whose maps
-// iterate in key order. CEL's own maps iterate in Go's random order, so a message listing the
-// documents a rule refuses would name them in another order each time; sort() would order them
-// too, but its cost cannot be estimated for a list of dyn.
+// adapter converts documents and facts into CEL values whose maps iterate in key order, so a
+// message listing documents names them in the same order each time. sort() has no cost estimate
+// for a list of dyn.
 type adapter struct{}
 
 func (adapter) NativeToValue(v any) ref.Val {

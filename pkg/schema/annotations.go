@@ -17,11 +17,9 @@ import (
 	"github.com/trevex/chalkos/pkg/networkdschema"
 )
 
-// The x-chalkos-* keywords a kind's schema may hold, which lib/kinds/schema.nix and
-// pkg/networkdschema write. compile decodes each of them once, strictly, into the Annotations of
-// the schema node that holds it, and refuses a schema with a malformed one or with any other
-// x-chalkos-* keyword, so a fault in an image's schemas fails the image's own load and never a
-// delivery.
+// The x-chalkos-* keywords a kind's schema may hold. compile decodes them strictly and refuses a
+// malformed or unknown one, so a fault in an image's schemas fails the image's own load and never
+// a delivery.
 const (
 	// kindKeyword is the root's record of the kind: {group, version, kind, multiple, withheld,
 	// rules}.
@@ -67,11 +65,9 @@ type Ref struct {
 	Key        bool     `json:"key"`
 }
 
-// Unique is one declaration of x-chalkos-unique, as the converter writes it from
-// chalkosLib.mkOption's or chalkos.kinds.<Kind>'s unique: the values that must not repeat within
-// one list (across "list") or among all documents of the kind (across "kind"). Without By the key
-// is the value itself, or each item of a list, normalised with As; with By it is the tuple of
-// those fields of the object, or of each object of a list, each normalised with its own As.
+// Unique is one x-chalkos-unique declaration: values that must not repeat within one list
+// (across "list") or among all documents of the kind (across "kind"). The key is the value
+// normalised with As or, with By, the tuple of those fields, each normalised with its own As.
 type Unique struct {
 	Across string     `json:"across"`
 	By     []KeyField `json:"by"`
@@ -159,9 +155,8 @@ func AnnotationsOf(s *jsonschema.Schema) Annotations {
 }
 
 // KeywordsOf returns the keywords of the compiled schema node s as its file writes them, numbers
-// as json.Number, $ref followed: the keywords of the schema it refers to, with those beside each
-// $ref, such as a description of its own, laid over them, and $ref itself left out. It is nil for
-// a schema no Schemas compiled. The caller must not change them.
+// as json.Number, with those beside a $ref laid over its target's. It is nil for a schema no
+// Schemas compiled. The caller must not change them.
 func KeywordsOf(s *jsonschema.Schema) map[string]any {
 	x := extOf(s)
 	if x == nil {

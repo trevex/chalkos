@@ -1,11 +1,7 @@
-// Package schema reads the config contract of a chalkos image: metadata.json, which names the
-// image and the config kinds it accepts, and a schemas directory, one JSON Schema per kind. Load
-// reads a build directory, which has both. A running node ships only the schemas directory, as
-// /etc/chalkos/schemas, with no metadata.json alongside it — metadata's rootHash is computed over
-// the image itself — so chalkd reads the running image's contract with LoadSchemas instead, which
-// finds each schema's kind from the schema's own "x-chalkos-kind". The package validates config
-// documents against those schemas, and decodes the x-chalkos-* annotations of the schemas' nodes as
-// it compiles them, for the readers of Walk and WalkSchema.
+// Package schema reads the config contract of a chalkos image: metadata.json and a schemas
+// directory with one JSON Schema per kind. A running node has only /etc/chalkos/schemas, since
+// metadata's rootHash is computed over the image itself, so each schema names its own kind in
+// "x-chalkos-kind".
 package schema
 
 import (
@@ -49,10 +45,8 @@ type Kind struct {
 	Kind       string `json:"kind"`
 	// Multiple tells whether a node's config may hold more than one document of the kind.
 	Multiple bool `json:"multiple"`
-	// Withheld tells whether the node withholds the kind's documents from its services: they stay
-	// in the node's stored config for chalkd alone, and no unit, renderer, validator or effect
-	// reads them. A layer declares it for a kind chalkd reads itself, such as one whose documents
-	// carry secrets of their own.
+	// Withheld tells whether the node keeps the kind's documents for chalkd alone, hidden from
+	// its services, as for a kind whose documents carry secrets of their own.
 	Withheld bool `json:"withheld,omitempty"`
 }
 
@@ -63,10 +57,8 @@ var rootHash = regexp.MustCompile(`^[0-9a-f]{64}$`)
 // lower-case hex digits.
 func IsRootHash(s string) bool { return rootHash.MatchString(s) }
 
-// Schemas is the compiled schema of every kind named by the *.json files of a schemas directory,
-// such as an image's schemas/ in its build output or /etc/chalkos/schemas on a running node, or by
-// the files LoadFiles is given. It is built from each file's "x-chalkos-kind" alone, so it needs
-// no metadata.json.
+// Schemas is the compiled schema of every kind in a set of schema files. It is built from each
+// file's "x-chalkos-kind" alone, so it needs no metadata.json.
 type Schemas struct {
 	// kinds is in the order of the files' names.
 	kinds   []Kind
@@ -75,8 +67,8 @@ type Schemas struct {
 	files map[string][]byte
 }
 
-// LoadSchemas compiles every *.json file in dir, as compile does, naming each by its path in
-// errors. Directories are skipped; a link is followed.
+// LoadSchemas compiles every *.json file in dir, naming each by its path in errors. Directories
+// are skipped; a link is followed.
 func LoadSchemas(dir string) (*Schemas, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -96,13 +88,9 @@ func LoadSchemas(dir string) (*Schemas, error) {
 	return compile(files, dir)
 }
 
-// compile compiles the schema files, by name, in the order of their names, and builds the kind
-// list from each file's "x-chalkos-kind": {"group","version","kind","multiple"}, with "withheld"
-// for a withheld kind and "rules" for the kind's rules. A file's name must equal
-// "<group>_<version>_<kind>.json" by its own declared identity, and no two files may declare the
-// same kind; either failure names the offending file or kind. Every x-chalkos-* keyword is decoded
-// as the file compiles, into the Annotations of its node, and a malformed one fails the file.
-// Errors name a file by its path below dir, or by its name alone when dir is empty.
+// compile compiles the schema files, by name, and builds the kind list from each file's
+// "x-chalkos-kind". A file must be named by FileName for its own kind and no two may declare the
+// same kind. Errors name a file by its path below dir, or by its name alone when dir is empty.
 func compile(files map[string][]byte, dir string) (*Schemas, error) {
 	c := jsonschema.NewCompiler()
 	c.DefaultDraft(jsonschema.Draft2020)
@@ -173,7 +161,7 @@ func KindsInDir(dir string) ([]Kind, error) {
 }
 
 // decodeDoc decodes the JSON document of the file at path with jsonschema.UnmarshalJSON, which
-// keeps numbers exact, the way compileSchema needs it and the way kindOf reads "x-chalkos-kind".
+// keeps numbers exact.
 func decodeDoc(data []byte, path string) (any, error) {
 	doc, err := jsonschema.UnmarshalJSON(bytes.NewReader(data))
 	if err != nil {
@@ -222,8 +210,8 @@ func (s *Schemas) Withheld(apiVersion, kind string) bool {
 	return i >= 0 && s.kinds[i].Withheld
 }
 
-// Validate checks a document — decoded JSON such as jsonschema.UnmarshalJSON returns, which keeps
-// numbers exact — against the schema of its apiVersion and kind.
+// Validate checks a document against the schema of its apiVersion and kind. The document is
+// decoded with jsonschema.UnmarshalJSON, which keeps numbers exact.
 func (s *Schemas) Validate(doc map[string]any) error {
 	apiVersion, _ := doc["apiVersion"].(string)
 	docKind, _ := doc["kind"].(string)
@@ -267,10 +255,8 @@ func ParseMetadata(data []byte) (Metadata, error) {
 	return md, nil
 }
 
-// compileSchema compiles a schema document already read by readDoc. Its identity inside the
-// compiler, needed to resolve its internal $refs, is id, a URL built from the schema's file name
-// alone: jsonschema otherwise treats the filesystem path itself as a URL, which misreads or
-// rejects a path whose directory contains '%', '#' or '?'. Errors still name the real path.
+// compileSchema compiles a decoded schema document under a URL built from its file name alone:
+// jsonschema would otherwise treat the path as a URL and misread one containing '%', '#' or '?'.
 func compileSchema(c *jsonschema.Compiler, doc any, path, name string) (s *jsonschema.Schema, err error) {
 	// The library panics on some schemas, such as a multipleOf too small for math/big; a schema
 	// is data, which must not crash chalkd or chalkctl.
@@ -331,11 +317,8 @@ func leafText(e *jsonschema.ValidationError, docKind, name string) string {
 	return e.Error()
 }
 
-// leafCauses walks e's causes down to the assertions that actually failed. For an anyOf — the
-// shape networkd's "one or many" sections and chalkos's optional secretRef both use — a branch
-// that fails only because the instance has the wrong JSON type is noise once another branch fails
-// for a more specific reason, so it is dropped; if every branch merely disagrees on type, all of
-// them are kept, since none says more than that.
+// leafCauses walks e's causes down to the assertions that failed. In an anyOf it drops the
+// branches that fail only on JSON type when another fails for a more specific reason.
 func leafCauses(e *jsonschema.ValidationError) []*jsonschema.ValidationError {
 	if len(e.Causes) == 0 {
 		return []*jsonschema.ValidationError{e}

@@ -29,10 +29,9 @@ func Read(path string, v any) error {
 	return nil
 }
 
-// ReadDefs reads the definitions by name that the JSON file at path declares, as an image declares
-// its facts, effects or outputs; a missing file declares none. It refuses them with every error
-// check returns, in the order of their names, each naming path, what the definition is and its
-// name.
+// ReadDefs reads the definitions by name that the JSON file at path declares; a missing file
+// declares none. It joins every error check returns, in name order, each prefixed with path, what
+// and the definition's name.
 func ReadDefs[T any](path, what string, check func(name string, def T) error) (map[string]T, error) {
 	data, err := os.ReadFile(path)
 	if errors.Is(err, fs.ErrNotExist) {

@@ -1,8 +1,6 @@
-// Package dns holds the syntax of the DNS names and record data that a router's Resolver
-// documents give their local zones. The rules' isDNSName() and isRecordData() check a config with
-// it, and chalkos-render's output unbound guards the names and data it writes into Unbound's
-// config with it, so the two cannot drift apart. It takes the standard library alone, as
-// chalkos-render does.
+// Package dns holds the syntax of the DNS names and record data of a Resolver's local zones. The
+// rules and chalkos-render's Unbound output share it, so the two cannot drift apart; it takes the
+// standard library alone, as chalkos-render does.
 package dns
 
 import (
@@ -12,10 +10,8 @@ import (
 	"strings"
 )
 
-// name is a DNS name in lower case without the root's dot, as the Resolver's local zones and
-// records name them: labels of letters, digits, dashes and underscores, which SRV records' names
-// take, of 63 characters at most, that start with a letter, a digit or an underscore and end with
-// a letter or a digit, or are an underscore alone.
+// name is a lower-case DNS name without the root's dot. Its labels may hold underscores, which
+// SRV records' names take.
 var name = regexp.MustCompile(`^([a-z0-9_]([-a-z0-9_]{0,61}[a-z0-9])?\.)*[a-z0-9_]([-a-z0-9_]{0,61}[a-z0-9])?$`)
 
 // IsName tells whether s is a DNS name of 253 characters at most in lower case without the root's
@@ -25,12 +21,7 @@ func IsName(s string) bool {
 	return len(s) <= 253 && name.MatchString(s)
 }
 
-// IsRecordData tells whether v is data a record of the type t holds, as Unbound's local-data takes
-// it: an IPv4 address for A and an IPv6 address, no IPv4-mapped one, for AAAA, both without a
-// zone; a name IsName takes for CNAME and PTR; a preference and a name for MX, and a priority, a
-// weight, a port and a name for SRV, a single space apart, each number from 0 to 65535 in decimal
-// without a sign or leading zeros; and for TXT 1 to 255 printable ASCII characters without quotes
-// or backslashes. A type of none of these holds no data.
+// IsRecordData tells whether v is valid Unbound local-data for a record of type t.
 func IsRecordData(t, v string) bool {
 	switch t {
 	case "A", "AAAA":
