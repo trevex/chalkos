@@ -1,0 +1,19 @@
+# Network documents alone: a node without BGP.
+---
+apiVersion: networkd.chalkos.dev/v1alpha1
+kind: Network
+metadata: {name: 20-enp1s0}
+spec:
+  match: {name: enp1s0}
+---
+apiVersion: networkd.chalkos.dev/v1alpha1
+kind: Network
+metadata: {name: 20-enp2s0}
+spec:
+  match: {name: enp2s0}
+---
+apiVersion: networkd.chalkos.dev/v1alpha1
+kind: Network
+metadata: {name: 30-node0}
+spec:
+  match: {name: node0}

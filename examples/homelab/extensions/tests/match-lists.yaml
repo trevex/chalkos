@@ -1,0 +1,30 @@
+# A [Match] section names the Peer's interfaces as a list, and node0's Network has a list of
+# [Match] sections.
+---
+apiVersion: bgp.example.org/v1alpha1
+kind: Speaker
+metadata: {name: bgp}
+spec:
+  asn: 65001
+  routerID: 0.0.0.11
+  export: {interfaces: [node0]}
+---
+apiVersion: bgp.example.org/v1alpha1
+kind: Peer
+metadata: {name: router}
+spec:
+  address: "fdc8:a1b2:c3d4:1::1"
+  asn: 65000
+  interfaces: [enp1s0, enp2s0]
+---
+apiVersion: networkd.chalkos.dev/v1alpha1
+kind: Network
+metadata: {name: 20-fabric}
+spec:
+  match: {name: [enp1s0, enp2s0]}
+---
+apiVersion: networkd.chalkos.dev/v1alpha1
+kind: Network
+metadata: {name: 30-node0}
+spec:
+  match: [{name: node0}]

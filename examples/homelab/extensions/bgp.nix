@@ -192,9 +192,71 @@ in
     program = chalkosLib.validate.jq ./bgp-peers.jq;
   };
   # --8<-- [end:validator]
-  # The image accepts the example: bgp-peers refuses nothing, and bird parses the bird.conf it
-  # renders.
-  chalkos.tests.bgp-fabric.config = ./bgp-examples/fabric.yaml;
+  chalkos.tests =
+    let
+      # A test of bgp-peers: the config of tests/<name>.yaml and the refusals it gets, none
+      # unless given.
+      validatorTest = name: refusals: {
+        "bgp-${name}" = {
+          config = ./tests + "/${name}.yaml";
+          inherit refusals;
+        };
+      };
+      unconfigured = "has no Network document; bird binds the session to an interface the node configures";
+    in
+    {
+      # The image accepts the example: bgp-peers refuses nothing, bird parses the bird.conf it
+      # renders, and that is the golden file's.
+      bgp-fabric = {
+        config = ./bgp-examples/fabric.yaml;
+        outputs.bird-conf = ./tests/fabric/bird-conf;
+      };
+      # A new password leaves bird.conf as it was, which names the credential alone, and bird
+      # reloads to load the credential anew.
+      bgp-new-password = {
+        before = ./bgp-examples/fabric.yaml;
+        config = ./tests/fabric-new-password.yaml;
+        effects = [ "bird" ];
+      };
+    }
+    # The refusal docs/build/validate-config.md shows, which the check
+    # example-homelab-validator-docs finds in the page.
+    // validatorTest "unconfigured-peer-interface" [
+      {
+        kind = "Peer";
+        name = "router";
+        path = "spec.interfaces[2]";
+        message = "enp3s0 ${unconfigured}";
+      }
+    ]
+    // validatorTest "configured-interfaces" [ ]
+    // validatorTest "match-lists" [ ]
+    // validatorTest "match-spaced-names" [ ]
+    // validatorTest "match-glob" [
+      {
+        kind = "Peer";
+        name = "router";
+        path = "spec.interfaces[0]";
+        message = "enp1s0 ${unconfigured}";
+      }
+    ]
+    // validatorTest "unconfigured-export" [
+      {
+        kind = "Speaker";
+        name = "bgp";
+        path = "spec.export.interfaces[0]";
+        message = "node0 has no Network document; bird announces the addresses of an interface the node configures";
+      }
+    ]
+    // validatorTest "peer-without-speaker" [
+      {
+        kind = "Peer";
+        name = "router";
+        path = "metadata.name";
+        message = "a node with Peer documents needs a Speaker document, which gives bird its AS number and router ID";
+      }
+    ]
+    // validatorTest "no-peers" [ ];
 
   # --8<-- [start:service]
   services.bird = {

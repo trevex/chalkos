@@ -21,6 +21,11 @@ let
     "chalklab/router-twice.yaml" =
       "the config is refused: BGPPeer/fabric: spec.interfaces: BGPPeer again and BGPPeer fabric both name enp0s3 in the VRF default; give each session one peer";
   };
+  # The homelab example's flake, with this flake as its chalkos.
+  homelab = (import ../../examples/homelab/flake.nix).outputs {
+    chalkos = self;
+    self = { };
+  };
   # chalkctl validate of a tree whose Cluster document pins every image: a reference with a tag
   # and no digest fails the check, and so does an API server that no longer follows the kubelet
   # of nixpkgs's Kubernetes release.
@@ -228,10 +233,6 @@ in
   # its Cluster document's images.
   example-homelab =
     let
-      homelab = (import ../../examples/homelab/flake.nix).outputs {
-        chalkos = self;
-        self = { };
-      };
       packages = homelab.packages.${pkgs.stdenv.hostPlatform.system};
     in
     # The installer, which the guide writes to a USB stick, evaluates.
@@ -293,43 +294,28 @@ in
       images."images/node-metal" = example.packages.${pkgs.stdenv.hostPlatform.system}.node-metal;
     };
 
-  # The homelab's validator bgp-peers refuses the Peer interface enp3s0 with the report
-  # validate-config.md shows, reads the names of a [Match] section's list and of a list of [Match]
-  # sections, takes a glob for no name, refuses an exported interface without a Network and Peers
-  # without a Speaker, and accepts the nodes' config.
-  example-homelab-bgp-peers =
-    pkgs.runCommand "chalkos-example-homelab-bgp-peers"
+  # validate-config.md shows the report of the refusal that the homelab's test
+  # bgp-unconfigured-peer-interface expects of its validator bgp-peers.
+  example-homelab-validator-docs =
+    pkgs.runCommand "chalkos-example-homelab-validator-docs"
       {
         nativeBuildInputs = [ pkgs.jq ];
-        validator = ../../examples/homelab/extensions/bgp-peers.jq;
         page = ../../docs/build/validate-config.md;
+        expected = builtins.toJSON {
+          inherit
+            (homelab.nixosConfigurations.node-metal.config.chalkos.tests.bgp-unconfigured-peer-interface)
+            refusals
+            ;
+        };
       }
       ''
-        speaker='{"kind": "Speaker", "metadata": {"name": "bgp"}, "spec": {"asn": 65001, "routerID": "0.0.0.11", "export": {"interfaces": ["node0"]}}}'
-        peer() { echo "{\"kind\": \"Peer\", \"metadata\": {\"name\": \"router\"}, \"spec\": {\"address\": \"fdc8:a1b2:c3d4:1::1\", \"asn\": 65000, \"interfaces\": $1}}"; }
-        network() { echo "{\"kind\": \"Network\", \"metadata\": {\"name\": \"$1\"}, \"spec\": {\"match\": $2}}"; }
-        nodes="$(network 20-enp1s0 '{"name": "enp1s0"}'), $(network 20-enp2s0 '{"name": "enp2s0"}'), $(network 30-node0 '{"name": "node0"}')"
-        expect() {
-          got=$(echo "{\"node\": {\"name\": \"node1\"}, \"documents\": {\"Network\": [$1], \"Speaker\": [$2], \"Peer\": [$3]}}" | jq -c -f $validator)
-          if [ "$got" != "$4" ]; then
-            echo "error: with the Networks $1, the Speakers $2 and the Peers $3, bgp-peers printed $got, not $4" >&2
-            exit 1
-          fi
-        }
-        refusal() {
-          echo "{\"refusals\":[{\"kind\":\"$1\",\"name\":\"$2\",\"path\":\"$3\",\"message\":\"$4\"}]}"
-        }
-        unconfigured="has no Network document; bird binds the session to an interface the node configures"
-        documented=$(grep '^{"refusals": \[{"kind": "Peer", "name": "router"' $page | jq -c .)
-        test -n "$documented"
-        expect "$nodes" "$speaker" "$(peer '["enp1s0", "enp2s0", "enp3s0"]')" "$documented"
-        expect "$nodes" "$speaker" "$(peer '["enp1s0", "enp2s0"]')" '{"refusals":[]}'
-        expect "$(network 20-fabric '{"name": ["enp1s0", "enp2s0"]}'), $(network 30-node0 '[{"name": "node0"}]')" "$speaker" "$(peer '["enp1s0", "enp2s0"]')" '{"refusals":[]}'
-        expect "$(network 20-fabric '{"name": "enp1s0  enp2s0"}'), $(network 30-node0 '{"name": "node0"}')" "$speaker" "$(peer '["enp1s0", "enp2s0"]')" '{"refusals":[]}'
-        expect "$(network 20-fabric '{"name": "enp*"}'), $(network 30-node0 '{"name": "node0"}')" "$speaker" "$(peer '["enp1s0"]')" "$(refusal Peer router 'spec.interfaces[0]' "enp1s0 $unconfigured")"
-        expect "$(network 20-enp1s0 '{"name": "enp1s0"}')" "$speaker" "$(peer '["enp1s0"]')" "$(refusal Speaker bgp 'spec.export.interfaces[0]' "node0 has no Network document; bird announces the addresses of an interface the node configures")"
-        expect "$nodes" "" "$(peer '["enp1s0"]')" "$(refusal Peer router metadata.name "a node with Peer documents needs a Speaker document, which gives bird its AS number and router ID")"
-        expect "$nodes" "" "" '{"refusals":[]}'
+        documented=$(grep '^{"refusals": \[{"kind": "Peer", "name": "router"' "$page" | jq -cS .)
+        test -n "$documented" || { echo "error: $page shows no report of the Peer router" >&2; exit 1; }
+        expected=$(jq -cS . <<<"$expected")
+        if [ "$documented" != "$expected" ]; then
+          echo "error: $page shows $documented, not the test's $expected" >&2
+          exit 1
+        fi
         touch $out
       '';
 

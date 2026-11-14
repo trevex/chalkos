@@ -1,0 +1,27 @@
+# A Peer without a Speaker, which gives bird its AS number and router ID.
+---
+apiVersion: bgp.example.org/v1alpha1
+kind: Peer
+metadata: {name: router}
+spec:
+  address: "fdc8:a1b2:c3d4:1::1"
+  asn: 65000
+  interfaces: [enp1s0]
+---
+apiVersion: networkd.chalkos.dev/v1alpha1
+kind: Network
+metadata: {name: 20-enp1s0}
+spec:
+  match: {name: enp1s0}
+---
+apiVersion: networkd.chalkos.dev/v1alpha1
+kind: Network
+metadata: {name: 20-enp2s0}
+spec:
+  match: {name: enp2s0}
+---
+apiVersion: networkd.chalkos.dev/v1alpha1
+kind: Network
+metadata: {name: 30-node0}
+spec:
+  match: {name: node0}

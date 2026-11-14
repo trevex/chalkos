@@ -38,8 +38,11 @@
     inputs = [ "Hardware" ];
     render = chalkosLib.render.template ./hardware.env.tmpl;
   };
-  # The image accepts the example and renders hardware.env from it.
-  chalkos.tests.hardware-server.config = ./hardware-examples/server.yaml;
+  # The image accepts the example and renders the hardware.env of the golden file from it.
+  chalkos.tests.hardware-server = {
+    config = ./hardware-examples/server.yaml;
+    outputs.hardware = ./tests/server/hardware;
+  };
   # The unit reads the file when it starts, so a changed file restarts it.
   chalkos.effects.hardware-info = chalkosLib.restartOn { outputs = [ "hardware" ]; } [
     "hardware-info.service"
