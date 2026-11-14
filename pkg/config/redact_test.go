@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -162,5 +163,36 @@ func TestHashIsOfRedact(t *testing.T) {
 	}
 	if mustHash(t, docs) == mustHash(t, rotated) {
 		t.Error("an embedded Secret object's rotated value hashes alike")
+	}
+}
+
+// CheckRedacted accepts a set without a SystemDisk, fills in its defaults and keeps it redacted,
+// and refuses what Translate refuses of a set: an unknown kind, a reference that does not
+// resolve, and a Mirror that RegistriesOf refuses.
+func TestCheckRedacted(t *testing.T) {
+	got, err := CheckRedacted(Redact(parseDocs(t, registriesDocs)), schemas(t))
+	if err != nil {
+		t.Fatalf("CheckRedacted = %v", err)
+	}
+	text, err := json.Marshal(got.Objects())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Len() != 4 || !strings.Contains(string(text), `"token":"`+sum("s3cret")+`"`) || strings.Contains(string(text), `"s3cret"`) {
+		t.Errorf("CheckRedacted = %s, want the four documents with the Secret's value hidden", text)
+	}
+	if want, _, err := TranslateRedacted("n1", Redact(parseDocs(t, minimal+"---\n"+registriesDocs)), schemas(t), Target{Platform: "metal"}); err != nil || !reflect.DeepEqual(got.Objects(), slices.DeleteFunc(want.Objects(), func(o map[string]any) bool { return o["kind"] == "SystemDisk" })) {
+		t.Errorf("CheckRedacted's documents differ from TranslateRedacted's: %v", err)
+	}
+	for name, tc := range map[string]struct{ docs, want string }{
+		"an unknown kind":                   {strings.Replace(registriesDocs, "kind: Mirror", "kind: Mirorr", 1), `does not accept kind "Mirorr"`},
+		"a reference that does not resolve": {strings.Replace(registriesDocs, "name: hub, key: token", "name: lab, key: token", 1), `"lab"`},
+		"a plain HTTP endpoint":             {strings.Replace(registriesDocs, "insecure: true", "insecure: false", 1), "is plain HTTP"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := CheckRedacted(Redact(parseDocs(t, tc.docs)), schemas(t)); err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Errorf("err = %v, want %q", err, tc.want)
+			}
+		})
 	}
 }

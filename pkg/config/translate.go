@@ -28,11 +28,8 @@ type Target struct {
 // gives the node, and then runs the image's translators, which check the documents of their
 // layers. chalkctl and chalkd both translate with it, so they accept the same configs.
 func Translate(name string, docs []Document, schemas *schema.Schemas, t Target) (*Set, identity.Identity, error) {
-	set, err := NewSet(docs, schemas)
+	set, err := checkSet(docs, schemas, singletons)
 	if err != nil {
-		return nil, identity.Identity{}, err
-	}
-	if err := set.CheckRegistries(); err != nil {
 		return nil, identity.Identity{}, err
 	}
 	id, err := set.Identity(name, t.Platform)
@@ -45,6 +42,19 @@ func Translate(name string, docs []Document, schemas *schema.Schemas, t Target) 
 		}
 	}
 	return set, id, nil
+}
+
+// checkSet checks docs as a set, as Translate does before it translates them: NewSet's checks, with
+// the kinds required given, and CheckRegistries.
+func checkSet(docs []Document, schemas *schema.Schemas, required []kindName) (*Set, error) {
+	set, err := newSet(docs, schemas, required)
+	if err != nil {
+		return nil, err
+	}
+	if err := set.CheckRegistries(); err != nil {
+		return nil, err
+	}
+	return set, nil
 }
 
 // Identity translates the set into the identity of the node called name on an image of the

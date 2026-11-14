@@ -7,11 +7,11 @@ import (
 	"testing"
 )
 
-// testImage lays out an image with the built-in kinds and the Greeting kind, whose field rule refuses a change of the
-// message while facts.lock is set; the output greeting, which writes the message to
-// greeting.txt and whose check refuses the message boom; the validator greeting, which refuses
-// the message other; the effect greeter on the output and the effect greeter-reload, due when
-// facts.share changes.
+// testImage lays out an image with the built-in kinds, as every image has them, and the Greeting
+// kind, whose field rule refuses a change of the message while facts.lock is set; the output
+// greeting, which writes the message to greeting.txt and whose check refuses the message boom;
+// the validator greeting, which refuses the message other; the effect greeter on the output and
+// the effect greeter-reload, due when facts.share changes.
 func testImage(t *testing.T) string {
 	t.Helper()
 	render := `echo "$(sed -n 's/.*"message":"\([^"]*\)".*/\1/p')" > "$OUT/greeting.txt"`
@@ -20,7 +20,7 @@ func testImage(t *testing.T) string {
 	f := withValidator(t, withOutput(t, files(greeting(fieldRule, kindRule), lock, "{}"), render, refuseBoom), refuseOther)
 	f["effects.json"] = `{"greeter": {"outputs": ["greeting"], "restart": ["greeter.service"]},
 	  "greeter-reload": {"when": "facts.share != oldFacts.share", "reload": ["greeter.service"]}}`
-	// The built-in kinds, of which a node's config holds a SystemDisk.
+	// A test's config needs none of the built-in kinds, the SystemDisk among them.
 	builtin := "../../test/fixtures/kinds/builtin"
 	entries, err := os.ReadDir(builtin)
 	if err != nil {
@@ -38,11 +38,8 @@ func testImage(t *testing.T) string {
 
 // say is a Greeting whose message is the one given.
 func say(message string) string {
-	return disk + strings.Replace(hello, "message: hello", "message: "+message, 1)
+	return strings.Replace(hello, "message: hello", "message: "+message, 1)
 }
-
-// disk is the system disk of a node's config.
-const disk = "apiVersion: storage.chalkos.dev/v1alpha1\nkind: SystemDisk\nmetadata: {name: system}\nspec: {disk: {path: /dev/vda}}\n---\n"
 
 // writeFiles writes each file of files, by its path below dir.
 func writeFiles(t *testing.T, dir string, files map[string]string) {
@@ -61,12 +58,12 @@ func writeFiles(t *testing.T, dir string, files map[string]string) {
 func TestRun(t *testing.T) {
 	img := testImage(t)
 	configs := map[string]string{
-		"hello.yaml": say("hello"),
+		"hello.yaml": hello,
 		"hi.yaml":    say("hi"),
 		"other.yaml": say("other"),
 		"boom.yaml":  say("boom"),
 		"store.yaml": say("/nix/store/0123456789abcdfghijklmnpqrsvwxyz-x/bin/y and /nix/store/short-x"),
-		"typo.yaml":  strings.Replace(say("hello"), "kind: Greeting", "kind: Greting", 1),
+		"typo.yaml":  strings.Replace(hello, "kind: Greeting", "kind: Greting", 1),
 	}
 	const greeterRefusal = `{"kind":"Greeting","name":"g","path":"spec.message","message":"say hello"}`
 	// $C is the directory of the configs, $G that of the golden files.
@@ -86,6 +83,14 @@ func TestRun(t *testing.T) {
 				"t/outputs/greeting/greeting.txt": "hello\n",
 				"t/refusals.json":                 "[]\n",
 				"t/effects.json":                  "[]\n",
+			},
+		},
+		"a config of extension documents alone": {
+			tests:   `{"t": {"config": "$C/hello.yaml", "node": "example", "outputs": {"greeting": "$G/greeting"}, "refusals": []}}`,
+			goldens: map[string]string{"greeting/greeting.txt": "hello\n"},
+			wantFiles: map[string]string{
+				"summary.txt":     "PASS t\n",
+				"t/refusals.json": "[]\n",
 			},
 		},
 		"a golden that differs": {

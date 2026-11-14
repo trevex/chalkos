@@ -118,6 +118,19 @@ func TranslateRedacted(name string, docs Redacted, schemas *schema.Schemas, t Ta
 	return Redacted{docs: set.Documents()}, id, nil
 }
 
+// CheckRedacted checks docs as Translate checks a set, against the schemas, the set rules, the
+// Secrets the secretRefs name and the Registry and Mirror documents, short of what a node's
+// identity needs: a SystemDisk, and the translation itself, of every image and of the layers. It
+// returns the set's documents with their defaults, which stay redacted, as TranslateRedacted
+// returns them. It checks the documents an image's tests are about, which need no whole node.
+func CheckRedacted(docs Redacted, schemas *schema.Schemas) (Redacted, error) {
+	set, err := checkSet(docs.docs, schemas, nil)
+	if err != nil {
+		return Redacted{}, err
+	}
+	return Redacted{docs: set.Documents()}, nil
+}
+
 // hidden is the document's object with its secret values hidden, as Redact hides them. The
 // document is left as it is.
 func (d Document) hidden() map[string]any {

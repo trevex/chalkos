@@ -1,10 +1,5 @@
 package main
 
-// The tests of an image run each config through check.Run, the stages chalkd runs for a delivery:
-// the translation against the schemas, the change rules, the validators, the renderers and their
-// checks, and the plan of the effects. The layers' translators do not run: the image's build has
-// no node facts to give them, and chalkctl validate checks the layers' translation.
-
 import (
 	"bytes"
 	"context"
@@ -28,7 +23,8 @@ import (
 	"github.com/trevex/chalkos/pkg/rules"
 )
 
-// testFile is tests.json: the image's platform and its tests by name.
+// testFile is tests.json: the image's platform, which only the translation into a node's identity
+// reads, and its tests by name.
 type testFile struct {
 	Platform string              `json:"platform"`
 	Tests    map[string]testCase `json:"tests"`
@@ -105,7 +101,7 @@ func runTests(image, testsPath, out string) error {
 	// The build runs the programs as they are, and leaves the files' owner.
 	render := outputs.Renderer{Root: root, Run: outputs.Direct{}, KeepOwner: true}
 	img := check.Image{
-		Schemas: c.Schemas, Target: config.Target{Platform: tf.Platform}, ChangeRules: set,
+		Schemas: c.Schemas, ChangeRules: set,
 		Effects:    check.Effects{Defs: c.Effects, Rules: effectRules},
 		Validators: check.Programs{Defs: c.Validators, Render: render},
 		Outputs:    c.Outputs, Renderer: render,
@@ -163,7 +159,7 @@ func runTest(ctx context.Context, img check.Image, dir string, tc testCase) (tes
 		}
 		in.Old, in.Compare = before, []check.Comparison{cmp}
 	}
-	res, runErr := check.Run(ctx, img, in)
+	res, runErr := runChecks(ctx, img, in)
 	got, err := refusalsOf(runErr)
 	if err != nil {
 		r.problems = append(r.problems, "the check failed: "+err.Error())
@@ -223,7 +219,7 @@ func runBefore(ctx context.Context, img check.Image, tc testCase) (check.Compari
 	if err != nil {
 		return check.Comparison{}, config.Redacted{}, "before is refused: " + err.Error()
 	}
-	prev, err := check.Run(ctx, img, check.Input{Node: tc.Node, Delivered: before, Facts: factsOf(tc.OldFacts)})
+	prev, err := runChecks(ctx, img, check.Input{Node: tc.Node, Delivered: before, Facts: factsOf(tc.OldFacts)})
 	if err != nil {
 		return check.Comparison{}, config.Redacted{}, "before is refused: " + err.Error()
 	}
@@ -253,7 +249,7 @@ func readConfig(path string) (config.Redacted, error) {
 	return config.Redact(docs), nil
 }
 
-// refusalsOf are the refusals of err, an error of check.Run, in the order chalkctl prints them,
+// refusalsOf are the refusals of err, an error of runChecks, in the order chalkctl prints them,
 // each once: none for no error, and for a failure without refusals, a refusal of its message
 // alone. An error that is no *check.Refusal is returned.
 func refusalsOf(err error) ([]refusals.Refusal, error) {
@@ -361,4 +357,34 @@ func compact(v any) string {
 		panic(err)
 	}
 	return string(data)
+}
+
+// runChecks is check.Run without the translation into the node's identity, which chalkctl
+// validate checks, so a test holds the documents it is about alone: it checks in.Delivered as a
+// set with config.CheckRedacted, which refuses as StageConfig, and then runs the image's change
+// rules, validators and renderers and plans the effects, as Run does.
+func runChecks(ctx context.Context, img check.Image, in check.Input) (check.Result, error) {
+	docs, err := config.CheckRedacted(in.Delivered, img.Schemas)
+	if err != nil {
+		return check.Result{}, &check.Refusal{Stage: check.StageConfig, Message: err.Error()}
+	}
+	res := check.Result{Documents: docs}
+	old := in.Old.Defaulted(img.Schemas)
+	if err := img.Rules(rules.Input{Documents: docs, Old: old, Node: in.Node, Facts: in.Facts(docs, old)}); err != nil {
+		return res, err
+	}
+	if err := img.Validate(ctx, in.Node, docs); err != nil {
+		return res, err
+	}
+	staged, err := img.Render(ctx, in.Node, docs, true)
+	if err != nil {
+		return res, err
+	}
+	o, warnings, err := check.Due(img.Effects, check.Delivery{Node: in.Node, Documents: docs, Schemas: img.Schemas, Outputs: staged.States()}, in.Compare)
+	if err != nil {
+		staged.Discard()
+		return res, err
+	}
+	res.Staged, res.Plan, res.Warnings = staged, check.PlanOf(img.Effects, o), warnings
+	return res, nil
 }

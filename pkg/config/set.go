@@ -16,8 +16,11 @@ type Set struct {
 	refs map[ID][]Ref
 }
 
-// singletons are the kinds a set holds exactly once.
-var singletons = []struct{ apiVersion, kind string }{
+// kindName is a kind by its apiVersion and name.
+type kindName struct{ apiVersion, kind string }
+
+// singletons are the kinds a node's set holds exactly once.
+var singletons = []kindName{
 	{StorageAPI, "SystemDisk"},
 }
 
@@ -27,6 +30,11 @@ var singletons = []struct{ apiVersion, kind string }{
 // reference a key its Secret holds and a credential file of its own, and no value repeats that
 // the schemas declare unique. A layer's Translator checks the documents its layer requires.
 func NewSet(docs []Document, s *schema.Schemas) (*Set, error) {
+	return newSet(docs, s, singletons)
+}
+
+// newSet is NewSet with the kinds that must be present given, instead of the SystemDisk.
+func newSet(docs []Document, s *schema.Schemas, required []kindName) (*Set, error) {
 	multiple := map[string]bool{}
 	for _, k := range s.Kinds() {
 		multiple[k.APIVersion+" "+k.Kind] = k.Multiple
@@ -51,7 +59,7 @@ func NewSet(docs []Document, s *schema.Schemas) (*Set, error) {
 		names[id+" "+d.Name] = true
 		set.docs = append(set.docs, d)
 	}
-	for _, k := range singletons {
+	for _, k := range required {
 		if count[k.apiVersion+" "+k.kind] == 0 {
 			return nil, fmt.Errorf("no %s: a node's config holds one %s", k.kind, k.kind)
 		}
