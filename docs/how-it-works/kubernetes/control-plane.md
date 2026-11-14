@@ -243,7 +243,9 @@ stateDiagram-v2
 ```
 
 A bootstrapped control plane and a joined worker can add a problem to their state, such as an
-address that differs from the etcd peer URL. [Kubernetes status states](../../reference/kubernetes.md#kubernetes-status-states)
+etcd member that belongs to another cluster than the other control planes' members, or a
+worker's Node without a pod range of one of the cluster's families.
+[Kubernetes status states](../../reference/kubernetes.md#kubernetes-status-states)
 lists every state and its meaning. [Troubleshoot Kubernetes](../../kubernetes/troubleshooting.md)
 acts on them.
 

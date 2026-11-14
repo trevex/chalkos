@@ -181,8 +181,8 @@ networkd document of that name, a `NetDev` that creates a device of the link's n
 6. It routes the prefix and an explicit pool's prefixes to the link in the VRF's table.
 
 It then removes, in this order, routes of protocol 64 that no file names, `n64-` links that no
-file names, and `nat64-` namespaces that no file names. Removing a namespace removes its instance and its veth
-pair. A route never goes with its link before its own removal.
+file names, and `nat64-` namespaces that no file names. Removing a namespace removes its instance
+and its veth pair. A route never goes with its link before its own removal.
 
 A step that fails leaves the others to run, and the unit then fails with each failed step. An
 instance that failed keeps the routes its file names. Stopping the unit removes every instance,

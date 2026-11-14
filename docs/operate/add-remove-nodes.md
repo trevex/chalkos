@@ -231,8 +231,8 @@ the revoked nodes, and refuses while one does not answer or cannot read the list
 chalkctl: not every control-plane node reads the revoked nodes (node2: cannot read the revoked nodes: read the revoked nodes: connection refused); repair those, or pass --force to revoke node4 anyway
 ```
 
-Repair that control plane, then revoke again. `--force` revokes the node at once; the
-API server denies its writes all the same.
+Repair that control plane, then revoke again. `--force` revokes the node at once; the API server
+denies its writes all the same.
 
 A control plane also refuses a revocation that would make the list too long for the API server to
 compile the admission policy, at about 2,000 short names. Unrevoke names whose CAs were rotated

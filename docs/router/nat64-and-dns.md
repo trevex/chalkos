@@ -118,6 +118,9 @@ chalkctl: r1: the config is refused: NAT64/lab: spec.prefix: NAT64 lab and NAT64
 A delivery that changes a NAT64's pool keeps its connections. One that changes its prefix, or
 renames it, replaces the translator, and the connections it carried end.
 
+Each translated connection takes two entries in the router's connection table, one per side.
+Raise `Router.spec.conntrackMax` when the NAT64s carry many connections.
+
 ### Keep 169.254.64.0/18 free
 
 Each NAT64 joins the router through a link of its own, whose two ends take a /30 of
@@ -180,6 +183,10 @@ spec:
 
 A router without BGP needs routes to the prefix on the clients' side, such as a static route of a
 `Network` document on their router.
+
+The zones' policies do not filter the connections a NAT64 translates: any host whose packets to
+the prefix reach the router in the NAT64's VRF uses it. Limit who routes the prefix to the router,
+by the routes you announce and by the reverse-path filter.
 
 ## Resolve names with DNS64
 
@@ -356,6 +363,9 @@ The delivery applies the NAT64s and reloads the resolvers, which keep their cach
 added starts its resolver, and one removed stops it. The rules and the validator `router` check
 the documents before chalkctl sends anything. The renderers' checks run on the router, as
 [Fix a refused delivery](#fix-a-refused-delivery) describes.
+`chalkos-nat64.service` and `chalkos-resolvers.service` are units of the boot, so when either
+fails on an upgrade's first boot, the router falls back to the image it ran, as
+[Boot, health and rollback](../how-it-works/node/boot-and-rollback.md) describes.
 
 `chalkctl status` shows the NAT64s and the resolvers after the BGP sessions:
 
