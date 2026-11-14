@@ -6,6 +6,7 @@
 # on are declared here; the modules of a feature, such as the base firewall or a layer, declare
 # theirs and add them while the feature is on.
 {
+  chalkosLib,
   config,
   lib,
   pkgs,
@@ -215,11 +216,9 @@ let
   # since the tree is built without the system's assertions too.
   unknown = lib.filter (name: !cfg.groups ? ${name}) (lib.unique cfg.moduleGroups);
   unknownMessage = "chalkos.kernel.moduleGroups names ${lib.concatStringsSep ", " unknown}, which chalkos.kernel.groups does not declare; it declares ${lib.concatStringsSep ", " (lib.attrNames cfg.groups)}";
-  selected =
-    if unknown != [ ] then
-      throw unknownMessage
-    else
-      map (name: cfg.groups.${name}) (lib.unique cfg.moduleGroups);
+  selected = chalkosLib.internal.refuse (lib.optional (unknown != [ ]) unknownMessage) (
+    map (name: cfg.groups.${name}) (lib.unique cfg.moduleGroups)
+  );
   directories = lib.unique (lib.concatMap (g: g.directories or [ ]) selected);
   names = lib.unique (lib.concatMap (g: g.modules or [ ]) selected ++ cfg.extraModules);
 
