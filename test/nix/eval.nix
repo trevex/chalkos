@@ -4,6 +4,7 @@
   lib,
   pkgs,
   mkImages,
+  flakeLib,
 }:
 let
   inherit (import ./lib.nix { inherit lib mkImages; })
@@ -2050,8 +2051,8 @@ lib.runTests {
       false
     ];
   };
-  # mkImages evaluates the images with the nixpkgs and the module arguments given, and gives
-  # their modules a lib that holds lib.chalkos.
+  # mkImages evaluates the images with the nixpkgs and the module arguments given, adds
+  # chalkosLib to those arguments and leaves nixpkgs's lib as it is.
   testMkImagesUsesItsNixpkgs = {
     expr =
       let
@@ -2060,21 +2061,81 @@ lib.runTests {
             nixpkgs.lib = lib // {
               nixosSystem = args: {
                 marker = "custom";
-                inherit (args) specialArgs lib;
+                inherit (args) specialArgs;
+                passesLib = args ? lib;
               };
             };
             specialArgs.answer = 42;
           }).nixos.node-metal;
       in
       {
-        inherit (n) marker;
+        inherit (n) marker passesLib;
         inherit (n.specialArgs) answer;
-        chalkos = n.lib ? chalkos;
+        chalkosLib = n.specialArgs.chalkosLib ? mkOption;
       };
     expected = {
       marker = "custom";
+      passesLib = false;
       answer = 42;
-      chalkos = true;
+      chalkosLib = true;
+    };
+  };
+  # An image's modules get chalkosLib, without mkImages, and nixpkgs's lib, without a chalkos
+  # attribute.
+  testImageModulesGetChalkosLib = {
+    expr =
+      builtins.fromJSON
+        (worker [
+          (
+            { chalkosLib, lib, ... }:
+            {
+              environment.etc."chalkos-test/lib.json".text = builtins.toJSON {
+                libChalkos = lib ? chalkos;
+                mkOption = chalkosLib ? mkOption;
+                mkImages = chalkosLib ? mkImages;
+              };
+            }
+          )
+        ]).environment.etc."chalkos-test/lib.json".text;
+    expected = {
+      libChalkos = false;
+      mkOption = true;
+      mkImages = false;
+    };
+  };
+  # mkImages refuses a module argument of the user's named chalkosLib.
+  testMkImagesRefusesChalkosLibArgument = {
+    expr =
+      fails
+        (mkImages { specialArgs.chalkosLib = removeAttrs flakeLib [ "mkImages" ]; })
+        .nixos.node-metal.config.chalkos.variant.name;
+    expected = true;
+  };
+  # The flake's lib holds chalkosLib's helpers besides mkImages, usable outside an image.
+  testFlakeLibOutsideAnImage = {
+    expr = {
+      mkImages = flakeLib ? mkImages;
+      rules =
+        (flakeLib.mkOption {
+          type = lib.types.str;
+          rules = [
+            {
+              rule = "self == oldSelf";
+              message = "immutable";
+            }
+          ];
+        })."x-chalkos-rules";
+      template = flakeLib.render.template ../../modules/testing/greeting.tmpl;
+    };
+    expected = {
+      mkImages = true;
+      rules = [
+        {
+          rule = "self == oldSelf";
+          message = "immutable";
+        }
+      ];
+      template.template = ../../modules/testing/greeting.tmpl;
     };
   };
   # A variant's modules set the image's pod network, which its image.json names; the image names

@@ -77,7 +77,7 @@ These pages list how an image is built, what it holds and how a node boots it.
 
     ---
 
-    The options and `lib.chalkos` helpers an extension declares kinds, facts, outputs and effects with.
+    The options and `chalkosLib` helpers an extension declares kinds, facts, outputs and effects with.
 
     [:octicons-arrow-right-24: Read](extension-api.md)
 

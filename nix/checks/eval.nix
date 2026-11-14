@@ -13,6 +13,7 @@ in
     import ../../test/nix/eval.nix {
       inherit pkgs mkImages;
       inherit (pkgs) lib;
+      flakeLib = self.lib;
     }
   );
   eval-kinds = checkLib.evalTests "eval-kinds" "kind evaluation" (

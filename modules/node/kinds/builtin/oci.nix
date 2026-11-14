@@ -1,9 +1,9 @@
 # The OCI registries chalkd and containerd pull from: their credentials, transport and mirrors.
-{ lib, ... }:
+{ chalkosLib, lib, ... }:
 let
   inherit (lib) mkOption types;
-  inherit (lib.chalkos.internal) builtin dnsName;
-  inherit (lib.chalkos.internal.api) groups;
+  inherit (chalkosLib.internal) builtin dnsName;
+  inherit (chalkosLib.internal.api) groups;
   # A host as registries are named: a DNS name, an IPv4 address or an IPv6 address in brackets.
   # The closing bracket stays unescaped: POSIX ERE has no \], and a lone ] is literal in ERE,
   # ECMA-262 and Go alike.
@@ -27,7 +27,7 @@ in
         # whichever way the documents name it: docker.io is index.docker.io, in any case.
         # RegistriesOf checks it again for an upgrade's config, which chalkd reads before the new
         # image's schemas check it.
-        host = lib.chalkos.mkOption {
+        host = chalkosLib.mkOption {
           type = types.strMatching "${host}(:[0-9]+)?";
           unique = {
             as = "host";
@@ -42,7 +42,7 @@ in
           description = "User chalkd authenticates to the host as, with the password, and containerd too on images that run Kubernetes; null pulls anonymously.";
         };
         password = mkOption {
-          type = types.nullOr lib.chalkos.types.secretRef;
+          type = types.nullOr chalkosLib.types.secretRef;
           default = null;
           description = "Password or token of the user, from a Secret; null pulls anonymously.";
         };
@@ -59,7 +59,7 @@ in
       spec = {
         # chalkd and containerd try one list of endpoints for a registry, so a registry has one,
         # whichever way the documents name it, as for a Registry's host.
-        registry = lib.chalkos.mkOption {
+        registry = chalkosLib.mkOption {
           type = types.strMatching "${host}(:[0-9]+)?";
           unique = {
             as = "host";

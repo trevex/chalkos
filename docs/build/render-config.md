@@ -109,7 +109,7 @@ The renderer writes its files into the directory that the environment variable `
 
 ## A template renders one file
 
-`lib.chalkos.render.template` renders a Go `text/template` into one file, named as the template
+`chalkosLib.render.template` renders a Go `text/template` into one file, named as the template
 less `.tmpl`. `bird.conf.tmpl` becomes `bird.conf`:
 
 ```text title="extensions/bird.conf.tmpl"
@@ -205,7 +205,7 @@ prints nothing for a `Peer` without a password. A key below a missing one, such 
 
 ## A jq program renders one file
 
-`lib.chalkos.render.jq` runs a jq program on the input and writes its result into one file, named
+`chalkosLib.render.jq` runs a jq program on the input and writes its result into one file, named
 as the program less `.jq`, so `peers.json.jq` writes `peers.json`. Here is that program, which
 turns the peers into a JSON list for a tool that reads its neighbours from JSON:
 
@@ -217,7 +217,7 @@ turns the peers into a JSON list for a tool that reads its neighbours from JSON:
 ```nix
 chalkos.outputs.peers-json = {
   inputs = [ "Peer" ];
-  render = lib.chalkos.render.jq ./peers.json.jq;
+  render = chalkosLib.render.jq ./peers.json.jq;
 };
 ```
 
@@ -237,13 +237,13 @@ jq runs with `-r`, so a program whose result is a string writes the string raw, 
 
 ## The documents renderer copies documents
 
-`lib.chalkos.render.documents` writes each document of the kinds it names as
+`chalkosLib.render.documents` writes each document of the kinds it names as
 `<Kind>/<name>.json`, for a service that reads documents from a directory of its own choosing:
 
 ```nix
 chalkos.outputs.racks = {
   inputs = [ "Rack" ];
-  render = lib.chalkos.render.documents [ "Rack" ];
+  render = chalkosLib.render.documents [ "Rack" ];
 };
 ```
 

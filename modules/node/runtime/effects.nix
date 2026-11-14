@@ -2,16 +2,17 @@
 # reloads units, runs a command or a layer's action in chalkd when one of its outputs changed,
 # the documents of one of its kinds did, or its CEL rule holds.
 {
+  chalkosLib,
   config,
   lib,
   pkgs,
   ...
 }:
 let
-  inherit (lib.chalkos.internal) refuse kindProblems;
+  inherit (chalkosLib.internal) refuse kindProblems;
   outputs = config.chalkos.outputs;
   layerNames = lib.attrNames config.chalkos.layers;
-  image = lib.chalkos.internal.imageText config.chalkos.variant.name;
+  image = chalkosLib.internal.imageText config.chalkos.variant.name;
 
   # What is wrong with the kinds of an effect, each prefixed with `where`: a kind the image does
   # not declare, Secret or a withheld kind. A Secret's values count for the kinds whose secretRef

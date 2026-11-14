@@ -18,7 +18,7 @@ node state, such as what a survey found, reads it from a fact: the JSON of a fil
 ## Before you begin
 
 You need a kind of your own, as [Declare a config kind](declare-a-kind.md) declares one. Rules
-on a field need `lib.chalkos.mkOption`, which that page introduces. CEL is the
+on a field need `chalkosLib.mkOption`, which that page introduces. CEL is the
 [Common Expression Language](https://cel.dev/); its syntax resembles that of C and JavaScript.
 
 ## A field rule keeps a Peer's AS number
@@ -144,7 +144,7 @@ two.
 
 The build estimates that cost with 256 items in each list, but a node meets the lists of the
 config it gets. A spec rule over two long lists can pass the build and still exceed the node's
-limit. Bound such lists with `maxItems` on `lib.chalkos.mkOption`, so that the schema refuses a
+limit. Bound such lists with `maxItems` on `chalkosLib.mkOption`, so that the schema refuses a
 list longer than the rule can loop over, and test the rule at the bounds. A `DHCPSubnet` takes 32
 pools and 512 reservations at most: its rule that compares each reservation with each pool then
 costs about 330,000.
@@ -303,7 +303,7 @@ names and reads each named document costs as one loop. `isDNSName` and `isRecord
 and a tenth of a step for each character of the string they check, as CEL's own string
 functions do. chalkos's other functions cost one step each.
 
-chalkctl and chalkd check every `lib.chalkos.types.ref` field before any rule runs, so
+chalkctl and chalkd check every `chalkosLib.types.ref` field before any rule runs, so
 `document()` of such a field yields `null` only for a `null` field or a reserved name. Rules of
 effects have no `document()`.
 

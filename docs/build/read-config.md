@@ -132,7 +132,7 @@ started. An effect restarts or reloads the unit when its kinds change. The rack 
 `Rack` once, so a changed `Rack` restarts it:
 
 ```nix
-chalkos.effects.rack-location = lib.chalkos.restartOn { kinds = [ "Rack" ]; } [
+chalkos.effects.rack-location = chalkosLib.restartOn { kinds = [ "Rack" ]; } [
   "rack-location.service"
 ];
 ```

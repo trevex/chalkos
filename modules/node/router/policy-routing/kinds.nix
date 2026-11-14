@@ -5,13 +5,13 @@
 # chalkd refuses a rule that may cost more than two nested loops over a config's lists. So a rule
 # over a policy route's rules sits on spec.rules, where document() looks up a rule's AddressSet or
 # NextHop at a constant cost.
-{ lib }:
+{ chalkosLib, lib }:
 let
   inherit (lib) mkOption types;
-  inherit (lib.chalkos.internal) builtin;
-  inherit (lib.chalkos.internal.api) groups;
-  inherit (lib.chalkos.types) ref;
-  inherit (import ../types.nix { inherit lib; })
+  inherit (chalkosLib.internal) builtin;
+  inherit (chalkosLib.internal.api) groups;
+  inherit (chalkosLib.types) ref;
+  inherit (import ../types.nix { inherit chalkosLib lib; })
     interface
     interfaceText
     interfaceName
@@ -140,7 +140,7 @@ in
         default = null;
         description = "Where the traffic comes in: a zone or interfaces; null for every link.";
       };
-      rules = lib.chalkos.mkOption {
+      rules = chalkosLib.mkOption {
         type = types.nonEmptyListOf policyRule;
         description = "Rules in order: the first that matches a packet decides where it goes.";
         rules = [
@@ -195,7 +195,7 @@ in
     multiple = true;
     description = "A next hop of policy routing: the router at an address on one of the node's links, and a routing table of its own that holds a default route through it and an unreachable default route after it, so that the traffic is dropped while the link is down. PolicyRoute rules name it in `to.nextHop`; the rules that name one NextHop share its table, its route and its mark.";
     spec = {
-      address = lib.chalkos.mkOption {
+      address = chalkosLib.mkOption {
         type = address;
         example = "198.51.100.1";
         description = "Address of the router the traffic leaves through: a unicast address, link-local ones included, and no IPv4-mapped IPv6 address. The rules that name the NextHop match packets of its family.";
@@ -207,7 +207,7 @@ in
           }
         ];
       };
-      interface = lib.chalkos.mkOption {
+      interface = chalkosLib.mkOption {
         type = interfaceName;
         example = "wanb0";
         description = "Link the next hop is on, which a Network document names alone in its `[Match]` section; the route through the next hop goes into that Network.";
@@ -219,7 +219,7 @@ in
           }
         ];
       };
-      table = lib.chalkos.mkOption {
+      table = chalkosLib.mkOption {
         type = types.ints.between 1 4294967295;
         unique.hint = "give each NextHop a table of its own";
         example = 200;

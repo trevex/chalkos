@@ -4,6 +4,7 @@
 # on each reload, which applies the changes with frr-reload.py and keeps the sessions they leave
 # alone.
 {
+  chalkosLib,
   chalkosPackages,
   config,
   lib,
@@ -12,8 +13,15 @@
 }:
 let
   cfg = config.chalkos.router.bgp;
-  routerLib = import ../lib.nix { inherit config lib pkgs; };
-  kinds = import ./kinds.nix { inherit lib; };
+  routerLib = import ../lib.nix {
+    inherit
+      chalkosLib
+      config
+      lib
+      pkgs
+      ;
+  };
+  kinds = import ./kinds.nix { inherit chalkosLib lib; };
   render = lib.getExe chalkosPackages.chalkos-render;
   frr = pkgs.frr;
   rendered = "${config.chalkos.outputs.frr.dir}/frr.conf";

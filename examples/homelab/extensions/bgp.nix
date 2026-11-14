@@ -8,6 +8,7 @@
 # names the credential, never the value. A variant that carries this module accepts Speaker and
 # Peer documents. The comments # --8<-- mark the sections the guides include.
 {
+  chalkosLib,
   config,
   lib,
   pkgs,
@@ -60,8 +61,8 @@ in
       # The address lands in bird.conf. chalkctl and chalkd accept only an IPv4 or IPv6 address,
       # which holds nothing that could end bird's statement, and the rule keeps it to IPv6, the
       # family of the sessions bird.conf sets up.
-      address = lib.chalkos.mkOption {
-        type = lib.chalkos.types.address;
+      address = chalkosLib.mkOption {
+        type = chalkosLib.types.address;
         example = "fdc8:a1b2:c3d4:1::1";
         description = "IPv6 address of the neighbour, on the subnet of the interfaces the sessions run on.";
         rules = [
@@ -74,7 +75,7 @@ in
       };
       # --8<-- [start:rule]
       # A neighbour's AS number is part of who it is: a new one is a new Peer.
-      asn = lib.chalkos.mkOption {
+      asn = chalkosLib.mkOption {
         type = lib.types.ints.between 1 4294967295;
         example = 65000;
         description = "AS number of the neighbour.";
@@ -89,7 +90,7 @@ in
       # --8<-- [end:rule]
       # Each name lands in bird.conf in quotes. A name holds no glob, so a Peer lists each port by its
       # exact name.
-      interfaces = lib.chalkos.mkOption {
+      interfaces = chalkosLib.mkOption {
         type = lib.types.nonEmptyListOf interfaceName;
         example = [
           "enp1s0"
@@ -102,7 +103,7 @@ in
         description = "Interfaces on which bird runs a session with the neighbour, one each, bound to the interface.";
       };
       password = lib.mkOption {
-        type = lib.types.nullOr lib.chalkos.types.secretRef;
+        type = lib.types.nullOr chalkosLib.types.secretRef;
         default = null;
         example = {
           secretRef = {
@@ -134,7 +135,7 @@ in
         example = 65001;
         description = "AS number of the node.";
       };
-      routerID = lib.chalkos.mkOption {
+      routerID = chalkosLib.mkOption {
         type = lib.types.strMatching "(${octet})([.](${octet})){3}";
         example = "0.0.0.11";
         description = "Router ID of the node in the form of an IPv4 address, unique within the node's AS.";
@@ -168,7 +169,7 @@ in
       "Speaker"
       "Peer"
     ];
-    render = lib.chalkos.render.template ./bird.conf.tmpl;
+    render = chalkosLib.render.template ./bird.conf.tmpl;
     check = ''
       conf=$(mktemp)
       grep -o "'secret_[^']*'" "$OUT/bird.conf" | sort -u | sed 's/.*/define & = "checked";/' >"$conf"
@@ -189,7 +190,7 @@ in
       "Speaker"
       "Network"
     ];
-    program = lib.chalkos.validate.jq ./bgp-peers.jq;
+    program = chalkosLib.validate.jq ./bgp-peers.jq;
     examples = ./bgp-examples;
   };
   # --8<-- [end:validator]
@@ -229,7 +230,7 @@ in
 
   # --8<-- [start:effect]
   # bird reads its config again on birdc configure, which keeps the sessions a restart would drop.
-  chalkos.effects.bird = lib.chalkos.reloadOn { outputs = [ "bird-conf" ]; } [ "bird.service" ];
+  chalkos.effects.bird = chalkosLib.reloadOn { outputs = [ "bird-conf" ]; } [ "bird.service" ];
   # --8<-- [end:effect]
 
   # --8<-- [start:diagnostic]

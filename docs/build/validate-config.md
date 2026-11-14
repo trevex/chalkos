@@ -99,7 +99,7 @@ standard error goes to the node's journal alone, because it can echo the documen
 
 ## A jq program validates
 
-`lib.chalkos.validate.jq` turns a jq program into a validator: jq reads the input, and what the
+`chalkosLib.validate.jq` turns a jq program into a validator: jq reads the input, and what the
 program outputs is the report. `bgp-peers.jq` collects the interface names of the node's `Network`
 documents and refuses each interface of a `Peer` or the `Speaker` that is not among them:
 

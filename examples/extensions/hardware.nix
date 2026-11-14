@@ -3,6 +3,7 @@
 # template, which the build renders from the examples in hardware-examples. A variant that
 # carries this module accepts Hardware documents.
 {
+  chalkosLib,
   config,
   lib,
   pkgs,
@@ -35,11 +36,11 @@
   # hardware.env, with VENDOR, MODEL and ASSET_TAG; empty on a node without a Hardware document.
   chalkos.outputs.hardware = {
     inputs = [ "Hardware" ];
-    render = lib.chalkos.render.template ./hardware.env.tmpl;
+    render = chalkosLib.render.template ./hardware.env.tmpl;
     examples = ./hardware-examples;
   };
   # The unit reads the file when it starts, so a changed file restarts it.
-  chalkos.effects.hardware-info = lib.chalkos.restartOn { outputs = [ "hardware" ]; } [
+  chalkos.effects.hardware-info = chalkosLib.restartOn { outputs = [ "hardware" ]; } [
     "hardware-info.service"
   ];
   systemd.services.hardware-info = {

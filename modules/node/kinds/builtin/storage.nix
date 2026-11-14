@@ -1,11 +1,11 @@
 # The node's storage: the system disk with the encryption of the node's storage, and the volumes.
 # The facts the rules read, facts.recorded, facts.disks and facts.fallback, are declared in
 # base/storage.nix with the chalkos-storage command that reads them.
-{ lib, ... }:
+{ chalkosLib, lib, ... }:
 let
   inherit (lib) mkOption types;
-  inherit (lib.chalkos.internal) builtin;
-  inherit (lib.chalkos.internal.api) groups apiVersions;
+  inherit (chalkosLib.internal) builtin;
+  inherit (chalkosLib.internal.api) groups apiVersions;
   # A size as repart reads it, in powers of 1024: at most 18 digits without a suffix and 15, 12, 9,
   # 6 or 3 with K, M, G, T or P, so it stays below 2^63 bytes, which a rule reads as an int.
   sizePattern = "[0-9]{1,18}|[0-9]{1,15}K|[0-9]{1,12}M|[0-9]{1,9}G|[0-9]{1,6}T|[0-9]{1,3}P";
@@ -255,7 +255,7 @@ in
       spec = {
         # A volume with a disk occupies it alone: no two volumes give one disk reference, every
         # key compared as written and a key left out equal to another left out.
-        disk = lib.chalkos.mkOption {
+        disk = chalkosLib.mkOption {
           type = types.nullOr diskRef;
           unique = {
             by = [
@@ -287,7 +287,7 @@ in
           default = "ext4";
           description = "File system of the volume; `raw` leaves a raw block device, which has no mountPoint.";
         };
-        mountPoint = lib.chalkos.mkOption {
+        mountPoint = chalkosLib.mkOption {
           type = types.nullOr types.str;
           unique.hint = "mount each volume at a path of its own";
           default = null;

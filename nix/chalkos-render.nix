@@ -1,4 +1,4 @@
-# chalkos-render, the renderer of the outputs lib.chalkos.render.template and .documents build, and
+# chalkos-render, the renderer of the outputs chalkosLib.render.template and .documents build, and
 # of the built-in outputs networkd, router-sysctl and router-nftables, and the program of the
 # validator router. Every image carries it, so it is stripped and takes the standard library alone,
 # besides pkg/dns, which shares the resolver's DNS syntax with the rules, pkg/networkdschema, which

@@ -2,13 +2,14 @@
 # change rule sees, which chalkd runs before a delivery changes anything and refuses it with what
 # they report.
 {
+  chalkosLib,
   config,
   lib,
   pkgs,
   ...
 }:
 let
-  inherit (lib.chalkos.internal)
+  inherit (chalkosLib.internal)
     refuse
     kindProblems
     plainName
@@ -16,7 +17,7 @@ let
     ;
 
   # The command of a validator's program: a command as it is, or the wrapper of a jq program of
-  # lib.chalkos.validate.jq, which prints what the program makes of the documents. jq takes no
+  # chalkosLib.validate.jq, which prints what the program makes of the documents. jq takes no
   # arguments, so the wrapper drops "validate <name>". null for anything else.
   programCommand =
     name: p:
@@ -44,9 +45,9 @@ let
             lib.types.attrsOf lib.types.raw
           )
           // {
-            description = "command, package or lib.chalkos.validate value";
+            description = "command, package or chalkosLib.validate value";
           };
-        example = lib.literalExpression "lib.chalkos.validate.jq ./peers.jq";
+        example = lib.literalExpression "chalkosLib.validate.jq ./peers.jq";
         description = ''
           Program of the image's store, with its arguments, that checks the documents. chalkd
           runs it as `<program> validate <name>`. It reads what a renderer reads on standard
@@ -59,7 +60,7 @@ let
           any other status, or anything else printed on standard output, fails it, which refuses
           the config too. It runs in the renderers' sandbox, may write no path but `/tmp`, and
           must finish within 30 seconds.
-          `lib.chalkos.validate.jq` builds a validator from a jq program, whose output is the
+          `chalkosLib.validate.jq` builds a validator from a jq program, whose output is the
           report.
         '';
       };
@@ -89,7 +90,7 @@ let
     ++ kindProblems config.chalkos.kinds "${where}.inputs" v.inputs
     ++
       lib.optional (programCommand name v.program == null)
-        "${where}.program: a validator's program is a command or lib.chalkos.validate.jq, not ${attrsetText v.program}";
+        "${where}.program: a validator's program is a command or chalkosLib.validate.jq, not ${attrsetText v.program}";
   # A validator as chalkd reads it.
   validatorJSON = name: v: {
     inherit (v) inputs;

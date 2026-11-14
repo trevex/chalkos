@@ -9,6 +9,7 @@
 # nftables table in a user and network namespace of its own, and the build renders its examples.
 # The validator greeting refuses a message in capitals, which the schema and chalkctl accept.
 {
+  chalkosLib,
   config,
   lib,
   pkgs,
@@ -25,7 +26,7 @@
       }
     ];
     spec = {
-      message = lib.chalkos.mkOption {
+      message = chalkosLib.mkOption {
         type = lib.types.nonEmptyStr;
         description = "What the unit logs.";
         rules = [
@@ -36,7 +37,7 @@
         ];
       };
       token = lib.mkOption {
-        type = lib.chalkos.types.secretRef;
+        type = chalkosLib.types.secretRef;
         description = "A secret the unit reads as a credential.";
       };
     };
@@ -46,7 +47,7 @@
   # line each, and nothing without one.
   chalkos.outputs.greeting = {
     inputs = [ "Greeting" ];
-    render = lib.chalkos.render.template ./greeting.tmpl;
+    render = chalkosLib.render.template ./greeting.tmpl;
     check = ''
       lines=$(wc -l < "$OUT/greeting")
       [ "$lines" -eq 0 ] || [ "$lines" -eq 2 ]
@@ -72,7 +73,7 @@
     '';
     examples = ./greeting-examples;
   };
-  chalkos.effects.chalktest-greeting = lib.chalkos.restartOn { outputs = [ "greeting" ]; } [
+  chalkos.effects.chalktest-greeting = chalkosLib.restartOn { outputs = [ "greeting" ]; } [
     "chalktest-greeting.service"
   ];
   systemd.services.chalktest-greeting = {

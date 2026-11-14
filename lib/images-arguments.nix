@@ -96,7 +96,7 @@ in
       type = types.attrsOf types.raw;
       default = { };
       example = lib.literalExpression "{ inherit inputs; }";
-      description = "Arguments every image's NixOS modules receive besides NixOS's own, such as a flake's inputs.";
+      description = "Arguments every image's NixOS modules receive besides NixOS's own, such as a flake's inputs. `chalkosLib` is chalkos's own and refused.";
     };
     platforms = mkOption {
       type = types.either (types.listOf (types.strMatching namePattern)) (types.attrsOf modules);

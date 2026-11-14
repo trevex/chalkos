@@ -3,6 +3,7 @@
 # fields name into the unit's credentials, and chalkcfg is on its PATH. A grant never restarts
 # the unit; an effect does (effects.nix).
 {
+  chalkosLib,
   chalkosPackages,
   config,
   lib,
@@ -11,7 +12,7 @@
 }:
 let
   inherit (chalkosPackages) chalkcfg;
-  checkKinds = lib.chalkos.internal.checkKinds config.chalkos.kinds;
+  checkKinds = chalkosLib.internal.checkKinds config.chalkos.kinds;
 
   grant =
     { name, config, ... }:

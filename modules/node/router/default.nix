@@ -6,13 +6,24 @@
 # BGP with FRR, NAT64 with Jool, the resolver with Unbound, DHCP with Kea, DHCP relays with
 # dnsmasq and WireGuard with systemd-networkd.
 {
+  chalkosLib,
   config,
   lib,
   pkgs,
   ...
 }:
 let
-  inherit (import ./lib.nix { inherit config lib pkgs; }) accepted;
+  inherit
+    (import ./lib.nix {
+      inherit
+        chalkosLib
+        config
+        lib
+        pkgs
+        ;
+    })
+    accepted
+    ;
 in
 {
   imports = [
@@ -79,7 +90,7 @@ in
   };
 
   config = lib.mkIf config.chalkos.router.enable {
-    chalkos.kinds = import ./kinds.nix { inherit lib; };
+    chalkos.kinds = import ./kinds.nix { inherit chalkosLib lib; };
     chalkos.layers.router = "";
     chalkos.forwarding.enable = true;
 

@@ -3,13 +3,14 @@
 # runs it before the router's outputs render; chalkctl links the same code and runs it in-process
 # for an image of the router kinds, on the same documents.
 {
+  chalkosLib,
   chalkosPackages,
   config,
   lib,
   ...
 }:
 let
-  inherit (lib.chalkos.internal.api) groups;
+  inherit (chalkosLib.internal.api) groups;
   # The router kinds the image declares, and Network. A variant that leaves a router feature out
   # declares none of its kinds, and chalkctl's copy reads only the kinds the image declares too.
   kinds = lib.attrNames (lib.filterAttrs (_: k: k.group == groups.router) config.chalkos.kinds) ++ [

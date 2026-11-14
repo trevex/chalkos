@@ -9,14 +9,14 @@
 # peer the validator router checks: a peer's interface of another VRF or of a VRF's device, a
 # session two peers name and listen ranges of a VRF that overlap. What depends on FRR's config the
 # output frr checks: a policy two AS numbers prepend and an AS path bgpd refuses.
-{ lib }:
+{ chalkosLib, lib }:
 let
   inherit (lib) mkOption types;
-  inherit (lib.chalkos.internal) builtin;
-  inherit (lib.chalkos.internal.api) groups;
-  inherit (lib.chalkos.internal.kindTypes) peerAS;
-  inherit (lib.chalkos.types) ref secretRef;
-  inherit (import ../types.nix { inherit lib; })
+  inherit (chalkosLib.internal) builtin;
+  inherit (chalkosLib.internal.api) groups;
+  inherit (chalkosLib.internal.kindTypes) peerAS;
+  inherit (chalkosLib.types) ref secretRef;
+  inherit (import ../types.nix { inherit chalkosLib lib; })
     interface
     interfaceText
     interfaceName
@@ -79,7 +79,7 @@ let
   # What a BGP instance imports of one family from other VRFs' instances.
   leak = types.submodule {
     options = {
-      vrfs = lib.chalkos.mkOption {
+      vrfs = chalkosLib.mkOption {
         type = types.nonEmptyListOf vrfRef;
         unique = {
           across = "list";
@@ -228,14 +228,14 @@ in
       }
     ];
     spec = {
-      vrf = lib.chalkos.mkOption {
+      vrf = chalkosLib.mkOption {
         type = vrfRef;
         unique.hint = "a VRF has one BGP instance";
         default = "default";
         example = "tenant";
         description = "VRF document whose instance this is; `default` for the default VRF, which holds every link no VRF holds.";
       };
-      asn = lib.chalkos.mkOption {
+      asn = chalkosLib.mkOption {
         type = positive32;
         example = 64512;
         description = "AS number of the instance. It stays while the BGP document keeps its name; a BGP document of another name replaces the old one, AS number included.";
@@ -247,7 +247,7 @@ in
           }
         ];
       };
-      routerID = lib.chalkos.mkOption {
+      routerID = chalkosLib.mkOption {
         type = types.strMatching "(${octet})([.](${octet})){3}";
         example = "192.0.2.1";
         description = "Router ID, an IPv4 address other than 0.0.0.0, a multicast address and 255.255.255.255, which the router's peers know it by; give an IPv6-only router one too.";
@@ -298,7 +298,7 @@ in
         default = false;
         description = "Whether the router keeps a peer's routes while the peer restarts and asks its peers to keep its own.";
       };
-      networks = lib.chalkos.mkOption {
+      networks = chalkosLib.mkOption {
         type = types.listOf (
           types.submodule {
             options = {
@@ -334,7 +334,7 @@ in
           }
         ];
       };
-      import = lib.chalkos.mkOption {
+      import = chalkosLib.mkOption {
         type = types.submodule {
           options = {
             ipv4 = mkOption {
@@ -394,7 +394,7 @@ in
         example = "tenant";
         description = "VRF document whose BGP instance runs the session; `default` for the default VRF. The peer's interfaces are links of that VRF.";
       };
-      address = lib.chalkos.mkOption {
+      address = chalkosLib.mkOption {
         type = types.nullOr address;
         default = null;
         example = "2001:db8:ffff::2";
@@ -407,14 +407,14 @@ in
           }
         ];
       };
-      interface = lib.chalkos.mkOption {
+      interface = chalkosLib.mkOption {
         type = types.nullOr interfaceName;
         default = null;
         example = "eth1";
         description = "Interface on whose link the router finds the neighbour by its IPv6 link-local address, without an address of its own on the link; excludes `address`, `interfaces` and `listen`. A name that reads as an address is refused.";
         rules = [ (notAddressLike "[self]") ];
       };
-      interfaces = lib.chalkos.mkOption {
+      interfaces = chalkosLib.mkOption {
         type = types.nullOr (types.nonEmptyListOf interface);
         default = null;
         example = [
@@ -424,7 +424,7 @@ in
         description = "Interfaces, ${interfaceText}, with a session each, as for `interface`; a glob stands for the interfaces of the peer's VRF that the node's Network documents name in a `[Match]` section's `Name=`. Excludes `address`, `interface` and `listen`.";
         rules = [ (notAddressLike "self") ];
       };
-      listen = lib.chalkos.mkOption {
+      listen = chalkosLib.mkOption {
         type = types.nullOr (
           types.submodule {
             options.range = mkOption {
@@ -460,7 +460,7 @@ in
         example = "external";
         description = "AS of the neighbour: a number, `external` for any AS but the router's, or `internal` for the router's own.";
       };
-      password = lib.chalkos.mkOption {
+      password = chalkosLib.mkOption {
         type = types.nullOr secretRef;
         default = null;
         example = {
@@ -488,7 +488,7 @@ in
         default = false;
         description = "Whether the router sends and accepts IPv4 routes with IPv6 next hops (RFC 8950). A peer at an IPv6 address or with an IPv6 listen range that exchanges IPv4 routes needs it. FRR negotiates it on sessions of `interface` and `interfaces` whatever this says.";
       };
-      families = lib.chalkos.mkOption {
+      families = chalkosLib.mkOption {
         type = types.submodule {
           options = {
             ipv4 = mkOption {
@@ -530,7 +530,7 @@ in
           }
         ];
       };
-      description = lib.chalkos.mkOption {
+      description = chalkosLib.mkOption {
         type = types.nullOr (types.strMatching "[!-?A-~]+( [!-?A-~]+)*");
         default = null;
         description = "What the neighbour is, in up to 80 printable ASCII characters other than `@`, with a single space between two words.";
@@ -565,7 +565,7 @@ in
         type = family;
         description = "Address family of the list.";
       };
-      entries = lib.chalkos.mkOption {
+      entries = chalkosLib.mkOption {
         type = types.nonEmptyListOf (
           types.submodule {
             options = {
@@ -624,7 +624,7 @@ in
       }
     ];
     # The pattern takes each community in one spelling, so a repeat compares as written.
-    spec.communities = lib.chalkos.mkOption {
+    spec.communities = chalkosLib.mkOption {
       type = types.nonEmptyListOf community;
       unique = {
         across = "list";
@@ -639,7 +639,7 @@ in
     multiple = true;
     description = "What the router does with the routes of a peer's family or of a network: terms in order, the first that matches a route deciding, then a default.";
     spec = {
-      terms = lib.chalkos.mkOption {
+      terms = chalkosLib.mkOption {
         type = types.listOf (
           types.submodule {
             options = {

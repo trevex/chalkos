@@ -1,6 +1,6 @@
 # mkImages builds a cluster's images: each variant on each platform, an image directory each, and
 # the installer, which installs images of every platform. Its arguments are the options of
-# images-arguments.nix. The images' modules get lib.chalkos as part of lib.
+# images-arguments.nix. The images' modules get chalkosLib as a module argument.
 { defaultNixpkgs, goOverlay }:
 arguments:
 let
@@ -17,8 +17,15 @@ let
       specialArgs = { inherit defaultNixpkgs; };
     }).config;
 
-  # The lib of every image's modules: nixpkgs's, with lib.chalkos.
-  imageLib = cfg.nixpkgs.lib.extend (final: _: { chalkos = import ./chalkos.nix { lib = final; }; });
+  # chalkosLib, which every image's modules get as a module argument, built from the images'
+  # nixpkgs's lib, so its option types are those of the module system that evaluates them. It is
+  # an argument of its own, as nixpkgs reserves lib for its library.
+  chalkosLib = import ./chalkos.nix { inherit (cfg.nixpkgs) lib; };
+  specialArgs =
+    if cfg.specialArgs ? chalkosLib then
+      throw "mkImages: specialArgs.chalkosLib is chalkos's own module argument; give yours another name"
+    else
+      cfg.specialArgs // { inherit chalkosLib; };
 
   # chalkos's Go toolchain in the images' nixpkgs, which builds chalkos's programs whatever
   # nixpkgs the images come from.
@@ -35,8 +42,7 @@ let
   variantSystem =
     variant: v: platform: platformModules:
     cfg.nixpkgs.lib.nixosSystem {
-      inherit (cfg) specialArgs;
-      lib = imageLib;
+      inherit specialArgs;
       modules = [
         ../modules/node
         goToolchain
@@ -68,8 +74,7 @@ let
   collision = lib.findFirst (n: lib.count (m: m == n) names > 1) null names;
 
   installer = cfg.nixpkgs.lib.nixosSystem {
-    inherit (cfg) specialArgs;
-    lib = imageLib;
+    inherit specialArgs;
     modules = [
       ../modules/node
       goToolchain

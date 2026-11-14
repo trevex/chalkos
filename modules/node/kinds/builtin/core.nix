@@ -1,9 +1,9 @@
 # The node's host name and the secrets other documents reference.
-{ lib, ... }:
+{ chalkosLib, lib, ... }:
 let
   inherit (lib) mkOption types;
-  inherit (lib.chalkos.internal) builtin dnsName;
-  inherit (lib.chalkos.internal.api) groups;
+  inherit (chalkosLib.internal) builtin dnsName;
+  inherit (chalkosLib.internal.api) groups;
 in
 {
   chalkos.kinds = {

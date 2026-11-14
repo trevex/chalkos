@@ -44,7 +44,7 @@ A field without a default is required. `password` has the default `null` and `bf
 `true`, so a `Peer` may leave both out. A kind's name starts with a capital letter and holds
 letters and digits alone.
 
-`address` has the type `lib.chalkos.types.address`, which accepts an IPv4 or IPv6 address alone,
+`address` has the type `chalkosLib.types.address`, which accepts an IPv4 or IPv6 address alone,
 and a rule keeps it to IPv6. A field whose value lands in a config file needs a type that accepts
 valid values alone. Without it, a value such as `fdc8:a1b2:c3d4:1::1; import all` would add a
 statement of its own to `bird.conf`. With it, `chalkctl validate` refuses the document before it
@@ -177,7 +177,7 @@ Each part of the schema comes from the options:
 
 - `additionalProperties: false` refuses a field the kind does not declare.
 - `required` lists the fields without a default.
-- `lib.chalkos.types.address` becomes `format: ip`, which chalkctl and chalkd check.
+- `chalkosLib.types.address` becomes `format: ip`, which chalkctl and chalkd check.
 - `ints.between 1 4294967295` becomes `minimum` and `maximum`.
 - `nonEmptyListOf` becomes an `array` with `minItems: 1`, and `strMatching` a `pattern` anchored
   at both ends.
@@ -262,12 +262,12 @@ A field's option type decides its schema. The converter knows these types:
 | `listOf <type>`, `nonEmptyListOf <type>` | `array` of the type; the second with `minItems: 1` |
 | `attrsOf <type>`, `lazyAttrsOf <type>` | `object` whose values have the type |
 | `submodule { options = ...; }` | `object` with the submodule's options, refusing others |
-| `lib.chalkos.types.ref "<Kind>"`, `lib.chalkos.types.ref { kind = "<Kind>"; reserved = [ ... ]; }` | `string` with the pattern of a document name, and `x-chalkos-ref` with the kind's `apiVersion`, the `kind` and `reserved` |
-| `lib.chalkos.types.secretRef` | `object` holding `secretRef` with `name` and `key` |
-| `lib.chalkos.types.address` | `string` with `format: ip` |
-| `lib.chalkos.types.prefix` | `string` with `format: cidr` |
-| `lib.chalkos.types.portRange` | `anyOf` an `integer` from 1 to 65535 and a `string` with `format: port-range` |
-| `lib.chalkos.types.imageReference` | `string` with `format: image-reference` |
+| `chalkosLib.types.ref "<Kind>"`, `chalkosLib.types.ref { kind = "<Kind>"; reserved = [ ... ]; }` | `string` with the pattern of a document name, and `x-chalkos-ref` with the kind's `apiVersion`, the `kind` and `reserved` |
+| `chalkosLib.types.secretRef` | `object` holding `secretRef` with `name` and `key` |
+| `chalkosLib.types.address` | `string` with `format: ip` |
+| `chalkosLib.types.prefix` | `string` with `format: cidr` |
+| `chalkosLib.types.portRange` | `anyOf` an `integer` from 1 to 65535 and a `string` with `format: port-range` |
+| `chalkosLib.types.imageReference` | `string` with `format: image-reference` |
 
 A pattern of `strMatching` is a POSIX regular expression to Nix and an ECMA-262 one to JSON
 Schema. Keep to their common subset: character classes such as `[[:alpha:]]` differ between the
@@ -279,16 +279,16 @@ like this:
 ```text
 error: chalkos.kinds.Peer.spec.keyFile: the option type absolute path has no JSON Schema mapping. Kinds accept str,
 nonEmptyStr, strMatching, bool, int, ints.*, port, float, enum, nullOr, listOf, attrsOf,
-submodule and the types of lib.chalkos.types.
+submodule and the types of chalkosLib.types.
 ```
 
-## Field rules need lib.chalkos.mkOption
+## Field rules need chalkosLib.mkOption
 
-`lib.chalkos.mkOption` is `lib.mkOption` with three more arguments: `rules`, a list of change
+`chalkosLib.mkOption` is `lib.mkOption` with three more arguments: `rules`, a list of change
 rules; `unique`, which [A field's values can be unique](#a-fields-values-can-be-unique)
 describes; and `maxItems`, the most items a list field holds, which the schema checks.
 `lib.mkOption` takes none of them. Use `lib.mkOption` for a field without them, as `password`
-and `bfd` do, and `lib.chalkos.mkOption` for a field with them, as `address`, `asn` and
+and `bfd` do, and `chalkosLib.mkOption` for a field with them, as `address`, `asn` and
 `interfaces` do. Both produce the same schema apart from `x-chalkos-rules`, `x-chalkos-unique`
 and `maxItems`. The build fails on a `maxItems` on a field that is no list, or one that is no
 positive integer.
@@ -301,17 +301,17 @@ instead, and a rule that compares fields of one document into `chalkos.kinds.<Ki
 [Guard changes with rules and facts](guard-changes.md) covers all three, and the facts a rule
 reads about the node.
 
-The `rules`, `unique` and `maxItems` arguments exist only on `lib.chalkos`, which every image
-module gets as part of `lib`. The types of `lib.chalkos.types` come from the same place.
+The `rules`, `unique` and `maxItems` arguments exist only on `chalkosLib`, which every image
+module gets as a module argument. The types of `chalkosLib.types` come from the same place.
 
 ## A field can name a document of another kind
 
-`lib.chalkos.types.ref` declares a field that holds the name of a document of another kind, as
+`chalkosLib.types.ref` declares a field that holds the name of a document of another kind, as
 `metadata.name` writes it. The field names the kind without its group: kind names are unique
 within an image, and the build fills in the `apiVersion`.
 
 ```nix
-{ lib, ... }:
+{ chalkosLib, lib, ... }:
 {
   chalkos.kinds.Session = {
     group = "bgp.example.org";
@@ -319,11 +319,11 @@ within an image, and the build fills in the `apiVersion`.
     multiple = true;
     spec = {
       peer = lib.mkOption {
-        type = lib.chalkos.types.ref "Peer";
+        type = chalkosLib.types.ref "Peer";
         description = "Peer the session runs to.";
       };
       table = lib.mkOption {
-        type = lib.chalkos.types.ref {
+        type = chalkosLib.types.ref {
           kind = "Table";
           reserved = [ "main" ];
         };
@@ -357,14 +357,14 @@ describes.
 
 ## A field's values can be unique
 
-`unique` on `lib.chalkos.mkOption` declares values that must not repeat, and
+`unique` on `chalkosLib.mkOption` declares values that must not repeat, and
 `chalkos.kinds.<Kind>.unique` declares tuples of spec fields that no two documents share.
 chalkctl and chalkd check every declaration with the rest of the set, before any rule runs, so
 a kind needs no rule for them. Here a `Session` takes each local port once, lists each neighbour
 once, and runs one session per peer and table:
 
 ```nix
-{ lib, ... }:
+{ chalkosLib, lib, ... }:
 {
   chalkos.kinds.Session = {
     group = "bgp.example.org";
@@ -377,17 +377,17 @@ once, and runs one session per peer and table:
       }
     ];
     spec = {
-      peer = lib.mkOption { type = lib.chalkos.types.ref "Peer"; };
+      peer = lib.mkOption { type = chalkosLib.types.ref "Peer"; };
       table = lib.mkOption {
         type = lib.types.str;
         default = "main";
       };
-      port = lib.chalkos.mkOption {
+      port = chalkosLib.mkOption {
         type = lib.types.port;
         unique = true;
         description = "Local TCP port of the session.";
       };
-      neighbours = lib.chalkos.mkOption {
+      neighbours = chalkosLib.mkOption {
         type = lib.types.listOf (
           lib.types.submodule {
             options.address = lib.mkOption { type = lib.types.str; };

@@ -9,13 +9,13 @@
 # the links networkd puts in each VRF and on the devices the VRFs create, the validator router
 # checks: a management interface or glob that may be a link of a VRF or matches a VRF's device,
 # and links two VRFs hold. The output router-networkd checks a NetDev of a VRF's name.
-{ lib }:
+{ chalkosLib, lib }:
 let
-  inherit (lib) mkOption types;
-  inherit (lib.chalkos.internal) builtin;
-  inherit (lib.chalkos.internal.api) groups apiVersions;
-  inherit (import ../types.nix { inherit lib; }) interface interfaceText matchNames;
-  inherit (lib.chalkos.internal) cel;
+  inherit (lib) types;
+  inherit (chalkosLib.internal) builtin;
+  inherit (chalkosLib.internal.api) groups apiVersions;
+  inherit (import ../types.nix { inherit chalkosLib lib; }) interface interfaceText matchNames;
+  inherit (chalkosLib.internal) cel;
 
   # The documents of a router kind in the delivered config, by name.
   delivered = kind: cel.documents "config" apiVersions.router kind;
@@ -69,7 +69,7 @@ in
       }
     ];
     spec = {
-      table = lib.chalkos.mkOption {
+      table = chalkosLib.mkOption {
         type = types.ints.between 1 4294967295;
         unique.hint = "give each VRF a table of its own";
         example = 100;
@@ -77,7 +77,7 @@ in
       };
       # An interface or glob is in one VRF, once, compared as written; the validator router
       # refuses globs whose links overlap.
-      interfaces = lib.chalkos.mkOption {
+      interfaces = chalkosLib.mkOption {
         type = types.listOf interface;
         unique.hint = "give each interface one VRF";
         default = [ ];
@@ -87,7 +87,7 @@ in
         ];
         description = "Links the VRF holds, ${interfaceText}; a glob stands for the links the node's Network documents name in a `[Match]` section's `Name=`. A link is named by a Network document, which gets `VRF=`, and every link of that Network is in this VRF.";
       };
-      conntrackZone = lib.chalkos.mkOption {
+      conntrackZone = chalkosLib.mkOption {
         type = types.nullOr (types.ints.between 1 65535);
         unique.hint = "give each VRF a zone of its own";
         default = null;

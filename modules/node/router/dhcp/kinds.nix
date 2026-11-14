@@ -15,12 +15,12 @@
 # what spans documents: a link of two subnets of a family, subnets that overlap in a VRF, the
 # router's own addresses on the links in a pool or reservation, and the links' router
 # advertisements.
-{ lib }:
+{ chalkosLib, lib }:
 let
   inherit (lib) mkOption types;
-  inherit (lib.chalkos.internal) builtin;
-  inherit (lib.chalkos.internal.api) groups;
-  inherit (import ../types.nix { inherit lib; })
+  inherit (chalkosLib.internal) builtin;
+  inherit (chalkosLib.internal.api) groups;
+  inherit (import ../types.nix { inherit chalkosLib lib; })
     interfaceName
     prefix
     address
@@ -190,7 +190,7 @@ in
       )
     ];
     spec = {
-      interfaces = lib.chalkos.mkOption {
+      interfaces = chalkosLib.mkOption {
         type = types.nonEmptyListOf interfaceName;
         unique = {
           across = "list";
@@ -199,7 +199,7 @@ in
         example = [ "lan0" ];
         description = "Links the server answers on, each by its full name, without a glob, and once: links of one VRF, each of which a Network document matching it by Name= alone gives a static address in the subnet; one link for an IPv6 subnet. A link takes one subnet of each family.";
       };
-      subnet = lib.chalkos.mkOption {
+      subnet = chalkosLib.mkOption {
         type = prefix;
         example = "192.0.2.0/24";
         description = "Range the subnet's addresses are in, whose family the server's is: an IPv4 range of 30 bits at most or an IPv6 range of 120 bits at most.";
@@ -211,7 +211,7 @@ in
           }
         ];
       };
-      pools = lib.chalkos.mkOption {
+      pools = chalkosLib.mkOption {
         type = types.listOf (
           types.submodule {
             options = {
@@ -242,7 +242,7 @@ in
         example = "192.0.2.1";
         description = "Router the clients route through, inside an IPv4 subnet and neither its network nor its broadcast address; null gives them none. IPv6 clients learn their routers from router advertisements.";
       };
-      dns = lib.chalkos.mkOption {
+      dns = chalkosLib.mkOption {
         type = types.listOf address;
         default = [ ];
         maxItems = 16;
@@ -255,7 +255,7 @@ in
         example = "lan.example.org";
         description = "Domain of the clients' names, which they also search; null gives none.";
       };
-      leaseTime = lib.chalkos.mkOption {
+      leaseTime = chalkosLib.mkOption {
         type = types.strMatching "[1-9][0-9]{0,5}[smhd]";
         default = "12h";
         example = "1d";
@@ -270,7 +270,7 @@ in
           }
         ];
       };
-      reservations = lib.chalkos.mkOption {
+      reservations = chalkosLib.mkOption {
         type = types.listOf (
           types.submodule {
             options = {
@@ -319,7 +319,7 @@ in
           }
         ];
       };
-      prefixDelegation = lib.chalkos.mkOption {
+      prefixDelegation = chalkosLib.mkOption {
         type = types.nullOr (
           types.submodule {
             options = {
@@ -346,7 +346,7 @@ in
           }
         ];
       };
-      boot = lib.chalkos.mkOption {
+      boot = chalkosLib.mkOption {
         type = types.nullOr (
           types.submodule {
             options = {

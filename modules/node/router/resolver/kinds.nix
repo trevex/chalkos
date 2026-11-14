@@ -7,12 +7,12 @@
 # in pairs, or a resolver with the links of other VRFs, the validator router and the output check:
 # a resolver's address of another VRF's links (the validator), and a record twice or a CNAME beside
 # another record (output unbound).
-{ lib }:
+{ chalkosLib, lib }:
 let
   inherit (lib) mkOption types;
-  inherit (lib.chalkos.internal) builtin;
-  inherit (lib.chalkos.internal.api) groups;
-  inherit (import ../types.nix { inherit lib; })
+  inherit (chalkosLib.internal) builtin;
+  inherit (chalkosLib.internal.api) groups;
+  inherit (import ../types.nix { inherit chalkosLib lib; })
     prefix
     address
     vrfRef
@@ -123,14 +123,14 @@ in
       }
     ];
     spec = {
-      vrf = lib.chalkos.mkOption {
+      vrf = chalkosLib.mkOption {
         type = vrfRef;
         unique.hint = "a VRF has one resolver";
         default = "default";
         example = "tenant";
         description = "VRF document on whose links the resolver answers and through whose links it sends its queries; `default` for the default VRF.";
       };
-      listen = lib.chalkos.mkOption {
+      listen = chalkosLib.mkOption {
         type = types.nonEmptyListOf address;
         example = [ "2001:db8:ffff::1" ];
         description = "Addresses of the router in the resolver's VRF on which it answers on port 53, over UDP and TCP; the firewall accepts DNS on them from `allow`.";
@@ -143,13 +143,13 @@ in
         ];
         unique = once "ip" "name each address once";
       };
-      allow = lib.chalkos.mkOption {
+      allow = chalkosLib.mkOption {
         type = types.nonEmptyListOf prefix;
         example = [ "2001:db8::/32" ];
         description = "Address ranges of the clients the resolver answers; it refuses others, and the firewall accepts DNS from these alone. A family's whole range, `0.0.0.0/0` or `::/0`, answers whoever reaches the addresses of `listen`: an open resolver, if one of them faces the internet.";
         unique = once "cidr" "name each range once";
       };
-      forwarders = lib.chalkos.mkOption {
+      forwarders = chalkosLib.mkOption {
         type = types.listOf address;
         default = [ ];
         example = [ "2001:db8::53" ];
@@ -168,7 +168,7 @@ in
         default = true;
         description = "Whether the resolver validates DNSSEC with the root's trust anchor of the image. The forwarders then pass DNSSEC records on.";
       };
-      dns64 = lib.chalkos.mkOption {
+      dns64 = chalkosLib.mkOption {
         type = types.nullOr (
           types.submodule {
             options.prefix = mkOption {
@@ -197,7 +197,7 @@ in
           )
         ];
       };
-      localZones = lib.chalkos.mkOption {
+      localZones = chalkosLib.mkOption {
         type = types.listOf localZone;
         default = [ ];
         description = "Zones the resolver answers from its own records. A record appears once, and a CNAME record's name holds no other record, which the output `unbound` checks. With `dns64`, no zone holds `ipv4only.arpa`, which DNS64 answers.";

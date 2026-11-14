@@ -2,21 +2,22 @@
 # Kubernetes: the node's type, labels and taints, the cluster's endpoint, ranges and component
 # flags, the Addon manifests and, with flannel as the CNI, flannel's settings.
 {
+  chalkosLib,
   config,
   lib,
   ...
 }:
 let
   inherit (lib) mkOption types;
-  inherit (lib.chalkos.internal) builtin cel;
-  inherit (lib.chalkos.internal.api) groups apiVersions;
+  inherit (chalkosLib.internal) builtin cel;
+  inherit (chalkosLib.internal.api) groups apiVersions;
   kubernetes = config.chalkos.kubernetes.enable;
   flannel = config.chalkos.cni.provider == "flannel";
-  inherit (lib.chalkos.internal.kindTypes)
+  inherit (chalkosLib.internal.kindTypes)
     kubernetesObject
     versionedImageReference
     ;
-  inherit (lib.chalkos.types) address prefix imageReference;
+  inherit (chalkosLib.types) address prefix imageReference;
   # An image of the cluster, which containerd pulls as written. A Kubernetes component's names its
   # version in its tag, which the image's checker compares with the kubelet's.
   image =
@@ -170,7 +171,7 @@ in
             ];
             description = "Type of the node in the cluster; it is fixed once the node holds a Kubernetes share.";
           };
-          labels = lib.chalkos.mkOption {
+          labels = chalkosLib.mkOption {
             type = types.attrsOf types.str;
             default = { };
             description = "Kubernetes labels the node registers with; they are fixed once the node holds a Kubernetes share.";
@@ -182,7 +183,7 @@ in
               })
             ];
           };
-          taints = lib.chalkos.mkOption {
+          taints = chalkosLib.mkOption {
             type = types.listOf taint;
             default = [ ];
             description = "Kubernetes taints the node registers with; they are fixed once the node holds a Kubernetes share.";
@@ -207,7 +208,7 @@ in
               description = "Subnets the node picks its address from, which replace the Cluster's nodeIP.validSubnets as a whole; null takes the Cluster's.";
             };
           };
-          vip.interface = lib.chalkos.mkOption {
+          vip.interface = chalkosLib.mkOption {
             type = types.nullOr types.nonEmptyStr;
             default = null;
             description = "Interface the node adds the Cluster's VIP addresses to while it holds them; null means the one holding the node's address of their family, which a routed VIP does not allow. Only control planes hold the VIP, so a worker's stays null.";
@@ -252,7 +253,7 @@ in
             default = "cluster.local";
             description = "DNS domain of the cluster.";
           };
-          allowSchedulingOnControlPlanes = lib.chalkos.mkOption {
+          allowSchedulingOnControlPlanes = chalkosLib.mkOption {
             type = types.bool;
             default = false;
             description = "Whether workloads run on control-plane nodes, which otherwise register with the taint `node-role.kubernetes.io/control-plane:NoSchedule`; it is fixed once the node holds a Kubernetes share.";
@@ -264,7 +265,7 @@ in
               })
             ];
           };
-          ipFamilies = lib.chalkos.mkOption {
+          ipFamilies = chalkosLib.mkOption {
             type = types.nonEmptyListOf (
               types.enum [
                 "ipv4"

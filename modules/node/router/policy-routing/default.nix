@@ -5,9 +5,14 @@
 # Both outputs read the NextHop documents: the firewall for the family and table of a rule's next
 # hop, networkd for every next hop's routes. The outputs' effects reload the firewall and
 # networkd; networkd adds a next hop's route again each time its link comes up.
-{ config, lib, ... }:
+{
+  chalkosLib,
+  config,
+  lib,
+  ...
+}:
 let
-  kinds = import ./kinds.nix { inherit lib; };
+  kinds = import ./kinds.nix { inherit chalkosLib lib; };
 in
 {
   config = lib.mkIf config.chalkos.router.enable {

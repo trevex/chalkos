@@ -44,7 +44,7 @@ it after.
 
 ## A secretRef field names the value
 
-A field of type `lib.chalkos.types.secretRef` holds a reference to a key of a `Secret`, never the
+A field of type `chalkosLib.types.secretRef` holds a reference to a key of a `Secret`, never the
 value. `Peer` declares `password` that way, with `nullOr` so a peer without a password leaves it
 out:
 

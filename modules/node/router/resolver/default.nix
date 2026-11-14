@@ -5,6 +5,7 @@
 # a Resolver runs no Unbound; a delivery that adds or removes a resolver starts or stops it, and
 # one that changes it reloads Unbound and keeps its cache.
 {
+  chalkosLib,
   chalkosPackages,
   config,
   lib,
@@ -13,14 +14,21 @@
 }:
 let
   cfg = config.chalkos.router.resolver;
-  routerLib = import ../lib.nix { inherit config lib pkgs; };
+  routerLib = import ../lib.nix {
+    inherit
+      chalkosLib
+      config
+      lib
+      pkgs
+      ;
+  };
   inherit (routerLib) hardened;
-  kinds = import ./kinds.nix { inherit lib; };
+  kinds = import ./kinds.nix { inherit chalkosLib lib; };
   unbound = config.services.unbound.package;
   dir = config.chalkos.outputs.unbound.dir;
   rendered = "${dir}/unbound.conf";
-  inherit (lib.chalkos.internal) cel;
-  inherit (lib.chalkos.internal.api) apiVersions;
+  inherit (chalkosLib.internal) cel;
+  inherit (chalkosLib.internal.api) apiVersions;
   # The number of the default VRF's resolvers in the config c: a running config of an image whose
   # Resolver had no vrf lacks the field.
   defaultResolvers =

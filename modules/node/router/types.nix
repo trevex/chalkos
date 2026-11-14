@@ -1,12 +1,12 @@
 # The option types and CEL the router kinds share: interfaces, address ranges, addresses and
 # families, the names the Network documents match, what the rules of FirewallPolicy and
 # PolicyRoute documents match, and NAT64 prefixes.
-{ lib }:
+{ chalkosLib, lib }:
 let
   inherit (lib) mkOption types;
-  inherit (lib.chalkos.types) portRange prefix ref;
-  inherit (lib.chalkos.internal.api) apiVersions;
-  inherit (lib.chalkos.internal) cel;
+  inherit (chalkosLib.types) portRange prefix ref;
+  inherit (chalkosLib.internal.api) apiVersions;
+  inherit (chalkosLib.internal) cel;
   # The documents of a router kind in the delivered config, by name.
   delivered = kind: cel.documents "config" apiVersions.router kind;
   family = types.enum [
@@ -68,7 +68,7 @@ in
   interfaceName = types.strMatching "[A-Za-z0-9_.:@-]{1,15}";
   # An address range, which the rules read with cidr(), and an address, which they read with ip().
   inherit prefix;
-  inherit (lib.chalkos.types) address;
+  inherit (chalkosLib.types) address;
   # A reference to a VRF document by its name, or default for the default VRF, which holds every
   # link no VRF holds and has no document.
   vrfRef = ref {

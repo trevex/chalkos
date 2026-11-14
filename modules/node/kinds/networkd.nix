@@ -4,6 +4,7 @@
 # schemas exist only once systemd's tables are built, and a section of theirs may be an object or
 # a list, so a path through them cannot be checked during evaluation.
 {
+  chalkosLib,
   chalkosPackages,
   config,
   lib,
@@ -11,7 +12,7 @@
   ...
 }:
 let
-  inherit (lib.chalkos.internal) schema api;
+  inherit (chalkosLib.internal) schema api;
 
   # What a document of each kind is, which its schema carries.
   descriptions = {

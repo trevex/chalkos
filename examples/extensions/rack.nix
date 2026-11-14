@@ -3,6 +3,7 @@
 # rack-survey tool wrote where it found the node, takes no other location than that once it runs;
 # an install reads no facts and takes any.
 {
+  chalkosLib,
   config,
   lib,
   pkgs,
@@ -13,7 +14,7 @@
     group = "rack.example.org";
     version = "v1alpha1";
     description = "The rack and height unit a node is mounted in.";
-    spec.location = lib.chalkos.mkOption {
+    spec.location = chalkosLib.mkOption {
       type = lib.types.nonEmptyStr;
       example = "rack-a/u12";
       description = "Rack and height unit the node is mounted in.";
@@ -29,7 +30,7 @@
   # What the rack survey found, {"location": "rack-a/u12"}; null on a node not surveyed yet.
   chalkos.facts.rackSurvey.file = "/var/lib/rack-survey/location.json";
   # The unit reads the Rack when it starts, so a changed Rack restarts it.
-  chalkos.effects.rack-location = lib.chalkos.restartOn { kinds = [ "Rack" ]; } [
+  chalkos.effects.rack-location = chalkosLib.restartOn { kinds = [ "Rack" ]; } [
     "rack-location.service"
   ];
   systemd.services.rack-location = {

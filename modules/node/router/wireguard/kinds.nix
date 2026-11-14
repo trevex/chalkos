@@ -8,13 +8,13 @@
 # networkd may pick for it before its own unit, and a link of a VRF other than the interface's. The
 # validator also refuses a default route among a peer's allowed IPs and an endpoint whose host is
 # no host name, which the schema's pattern lets through.
-{ lib }:
+{ chalkosLib, lib }:
 let
   inherit (lib) mkOption types;
-  inherit (lib.chalkos.internal) builtin;
-  inherit (lib.chalkos.internal.api) groups;
-  inherit (lib.chalkos.types) ref secretRef;
-  inherit (import ../types.nix { inherit lib; })
+  inherit (chalkosLib.internal) builtin;
+  inherit (chalkosLib.internal.api) groups;
+  inherit (chalkosLib.types) ref secretRef;
+  inherit (import ../types.nix { inherit chalkosLib lib; })
     prefix
     vrfRef
     delivered
@@ -52,13 +52,13 @@ in
       }
     ];
     spec = {
-      listenPort = lib.chalkos.mkOption {
+      listenPort = chalkosLib.mkOption {
         type = types.ints.between 1 65535;
         default = 51820;
         unique.hint = "give each WireGuard a port of its own";
         description = "UDP port the interface receives its peers' packets on, which the firewall opens in the default VRF. Two WireGuards take different ports.";
       };
-      addresses = lib.chalkos.mkOption {
+      addresses = chalkosLib.mkOption {
         type = types.nonEmptyListOf prefix;
         unique = {
           across = "list";
@@ -72,7 +72,7 @@ in
         default = null;
         description = "MTU of the interface in bytes, from 1280 to 9000; null takes WireGuard's 1420.";
       };
-      privateKey = lib.chalkos.mkOption {
+      privateKey = chalkosLib.mkOption {
         type = secretRef;
         example = {
           secretRef = {
@@ -106,7 +106,7 @@ in
         example = "xTIBA5rboUvnH4htodjb6e697QjLERt1NAB4mZqp8Dg=";
         description = "Public key of the peer in base64, as `wg pubkey` prints it. The validator `router` refuses a key two peers of one interface have.";
       };
-      allowedIPs = lib.chalkos.mkOption {
+      allowedIPs = chalkosLib.mkOption {
         type = types.nonEmptyListOf prefix;
         unique = {
           across = "list";
@@ -129,7 +129,7 @@ in
         default = null;
         description = "Seconds between the packets the router sends the peer while the tunnel is idle, which keep a NAT's mapping open; null sends none.";
       };
-      presharedKey = lib.chalkos.mkOption {
+      presharedKey = chalkosLib.mkOption {
         type = types.nullOr secretRef;
         default = null;
         description = "Key of a Secret that holds a key the router and the peer share on top of their key pairs, as `wg genpsk` prints it; null for none. systemd-networkd reads it from its credentials. The Secret's name and key hold letters, digits, `.`, `_` and `-` alone.";

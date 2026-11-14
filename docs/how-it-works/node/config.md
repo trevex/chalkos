@@ -192,7 +192,7 @@ A node's set is valid when:
   `Addon`, `Network`, `NetDev`, `Link` and extension kinds declared with `multiple = true`);
 - every document's `apiVersion` and `kind` is one the node's image declares;
 - no two documents of a kind share a `metadata.name`;
-- every `lib.chalkos.types.ref` field names a document of its kind in the set, unless it holds a
+- every `chalkosLib.types.ref` field names a document of its kind in the set, unless it holds a
   reserved name; every `secretRef` names a `Secret` of the set and a key it holds; chalkctl and
   chalkd report each one that does not, one line each;
 - every `secretRef` can name the systemd credential a unit loads its value from: the key is
@@ -583,7 +583,7 @@ spec:
     password: s3cret
 ```
 
-A field of an extension kind declared with the type `lib.chalkos.types.secretRef` references one of
+A field of an extension kind declared with the type `chalkosLib.types.secretRef` references one of
 its keys instead of holding the value, written as
 `password: {secretRef: {name: bgp, key: password}}`. chalkctl and chalkd refuse a set in which a
 reference names a `Secret` or key the set lacks.

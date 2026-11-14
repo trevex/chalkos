@@ -4,13 +4,13 @@
 # chalkd refuses a rule that may cost more than two nested loops over a config's lists. So a rule
 # over a policy's firewall rules sits on spec.rules, where document() looks up a rule's AddressSet
 # at a constant cost, and lists of lists are flattened before the next loop reads them.
-{ lib }:
+{ chalkosLib, lib }:
 let
   inherit (lib) mkOption types;
-  inherit (lib.chalkos.internal) builtin;
-  inherit (lib.chalkos.internal.api) groups;
-  inherit (lib.chalkos.types) portRange ref;
-  inherit (import ../types.nix { inherit lib; })
+  inherit (chalkosLib.internal) builtin;
+  inherit (chalkosLib.internal.api) groups;
+  inherit (chalkosLib.types) portRange ref;
+  inherit (import ../types.nix { inherit chalkosLib lib; })
     interface
     interfaceText
     prefix
@@ -110,7 +110,7 @@ in
     spec = {
       # An interface or glob is in one FirewallZone, once, compared as written; the validator
       # router refuses an interface that may be a link of a VRF another zone holds.
-      interfaces = lib.chalkos.mkOption {
+      interfaces = chalkosLib.mkOption {
         type = types.listOf interface;
         unique.hint = "give each interface one zone";
         default = [ ];
@@ -120,7 +120,7 @@ in
         ];
         description = "Interfaces of the zone, ${interfaceText}. A link a VRF holds may be named here without its VRF, so that one VRF's links fall into several zones; the VRF itself is then in no other zone.";
       };
-      vrfs = lib.chalkos.mkOption {
+      vrfs = chalkosLib.mkOption {
         type = types.listOf vrfDocRef;
         unique.hint = "give each VRF one zone";
         default = [ ];
@@ -166,7 +166,7 @@ in
         default = "drop";
         description = "What happens to a connection no rule matches; `reject` answers with an administratively prohibited error.";
       };
-      rules = lib.chalkos.mkOption {
+      rules = chalkosLib.mkOption {
         type = types.listOf firewallRule;
         default = [ ];
         description = "Rules in order: the first that matches a connection decides.";

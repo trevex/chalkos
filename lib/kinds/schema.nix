@@ -237,7 +237,7 @@ let
       throw ''
         ${at}: the option type ${t.description} has no JSON Schema mapping. Kinds accept str,
         nonEmptyStr, strMatching, bool, int, ints.*, port, float, enum, nullOr, listOf, attrsOf,
-        submodule and the types of lib.chalkos.types.
+        submodule and the types of chalkosLib.types.
       '';
 
   # attrsOf and lazyAttrsOf read a submodule's options by instantiating it once, before any
@@ -433,7 +433,7 @@ let
     // lib.optionalAttrs (opt ? "x-chalkos-unique") {
       "x-chalkos-unique" = uniqueSchema "${at}.unique" at s opt."x-chalkos-unique";
     }
-    # The most items of a list, which lib.chalkos.mkOption puts under x-chalkos-maxItems.
+    # The most items of a list, which chalkosLib.mkOption puts under x-chalkos-maxItems.
     // lib.optionalAttrs (opt ? "x-chalkos-maxItems") {
       maxItems =
         let
@@ -453,7 +453,7 @@ let
     // lib.optionalAttrs (opt ? example && isPlain opt.example && !leaksNamePlaceholder opt.example) {
       examples = [ opt.example ];
     }
-    # A field's change rules, which lib.chalkos.mkOption puts under x-chalkos-rules.
+    # A field's change rules, which chalkosLib.mkOption puts under x-chalkos-rules.
     // lib.optionalAttrs (opt ? "x-chalkos-rules") {
       "x-chalkos-rules" = map ruleSchema opt."x-chalkos-rules";
     };

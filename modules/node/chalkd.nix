@@ -1,6 +1,7 @@
 # chalkd, the node agent, and the unit that applies the node's identity and config at boot. Images
 # built with an OS CA carry it, so chalkd in maintenance mode only accepts that CA's clients.
 {
+  chalkosLib,
   chalkosPackages,
   config,
   lib,
@@ -10,7 +11,7 @@
 let
   inherit (chalkosPackages) chalkd;
   inherit (config.chalkos.maintenance) osCA;
-  publicVersion = toString lib.chalkos.internal.secretsVersion;
+  publicVersion = toString chalkosLib.internal.secretsVersion;
   # /dev/console is the last of the kernel's consoles. tty0, the foreground terminal, and tty1 are
   # the terminal the console runs on: while it runs there, chalkd keeps off /dev/console, and the
   # console shows the fingerprint and addresses.

@@ -7,16 +7,15 @@
 # Network documents' static addresses bind their sections and their values as flat lists. What
 # compares the documents of the kind in pairs the validator router checks: two NAT64s of one VRF
 # whose prefixes overlap and two NAT64s whose pools share an address.
-{ lib }:
+{ chalkosLib, lib }:
 let
   inherit (lib) mkOption types;
-  inherit (lib.chalkos.internal) builtin;
-  inherit (lib.chalkos.internal.api) groups apiVersions;
-  inherit (lib.chalkos.internal) cel;
-  inherit (lib.chalkos.types) portRange;
-  inherit (import ../types.nix { inherit lib; })
+  inherit (chalkosLib.internal) builtin;
+  inherit (chalkosLib.internal.api) groups apiVersions;
+  inherit (chalkosLib.internal) cel;
+  inherit (chalkosLib.types) portRange;
+  inherit (import ../types.nix { inherit chalkosLib lib; })
     prefix
-    address
     vrfRef
     nat64Prefix
     ;
@@ -78,7 +77,7 @@ let
         default = "61001-65535";
         description = "Ports, or ICMP identifiers, of the addresses the translated connections take: a port or a range `<first>-<last>` that leaves out the kernel's ephemeral ports, 32768 to 60999, which the router's own connections take.";
       };
-      protocols = lib.chalkos.mkOption {
+      protocols = chalkosLib.mkOption {
         unique = {
           across = "list";
           hint = "name each protocol once";
@@ -129,13 +128,13 @@ in
         example = "tenant";
         description = "VRF document whose links route the prefix to the NAT64 and carry its translated connections; `default` for the default VRF. The NAT64 runs in the network namespace nat64-<name>, which the link n64-<name> joins to the VRF.";
       };
-      prefix = lib.chalkos.mkOption {
+      prefix = chalkosLib.mkOption {
         type = prefix;
         default = "64:ff9b::/96";
         description = "IPv6 range whose addresses the NAT64 translates, each embedding an IPv4 address as RFC 6052 says: 32, 40, 48, 56, 64 or 96 bits, by default the well-known prefix. The router routes it to the NAT64's link in the NAT64's VRF, a route that BGP announces when `BGP.spec.networks` of that VRF names the prefix. The prefixes of the NAT64s of one VRF do not overlap, which the validator `router` checks.";
         rules = [ (nat64Prefix "self") ];
       };
-      pool4 = lib.chalkos.mkOption {
+      pool4 = chalkosLib.mkOption {
         type = types.listOf poolEntry;
         default = [ ];
         example = [ { prefix = "192.0.2.10/32"; } ];

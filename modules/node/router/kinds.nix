@@ -1,12 +1,12 @@
 # How a router forwards, on images with the router layer: the families it forwards, its
 # reverse-path filter, its multipath hash, its connection table and the interfaces of its node
 # API, which the output router-sysctl renders (sysctl.nix) and the firewall reads.
-{ lib }:
+{ chalkosLib, lib }:
 let
   inherit (lib) mkOption types;
-  inherit (lib.chalkos.internal) builtin;
-  inherit (lib.chalkos.internal.api) groups;
-  inherit (import ./types.nix { inherit lib; })
+  inherit (chalkosLib.internal) builtin;
+  inherit (chalkosLib.internal.api) groups;
+  inherit (import ./types.nix { inherit chalkosLib lib; })
     interface
     interfaceText
     matchNames
@@ -63,7 +63,7 @@ in
         default = null;
         description = "Connections the router tracks at most, `net.netfilter.nf_conntrack_max`; null keeps the kernel's default, which follows the memory.";
       };
-      management.interfaces = lib.chalkos.mkOption {
+      management.interfaces = chalkosLib.mkOption {
         type = types.nullOr (types.nonEmptyListOf interface);
         default = null;
         example = [ "eth0" ];

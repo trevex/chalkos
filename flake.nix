@@ -35,7 +35,7 @@
       };
     in
     {
-      lib = { inherit (chalkos) mkImages; };
+      lib = chalkos;
       templates.lab = {
         path = ./templates/lab;
         description = "A cluster of a control plane and a worker that chalklab runs as QEMU virtual machines";

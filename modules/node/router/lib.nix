@@ -2,13 +2,14 @@
 # output of one feature reads of another's, the record of a VRF's device and the sandbox of their
 # units.
 {
+  chalkosLib,
   config,
   lib,
   pkgs,
 }:
 let
   # The kinds the image accepts: its own and networkd's.
-  accepted = lib.chalkos.internal.declaredKinds config.chalkos.kinds;
+  accepted = chalkosLib.internal.declaredKinds config.chalkos.kinds;
 in
 {
   inherit accepted;

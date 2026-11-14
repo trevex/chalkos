@@ -13,6 +13,7 @@
 # the records' directory but cannot write /var/lib, so it cannot put another directory in its
 # place, and chalkd, which reads the records as root, removes none of them.
 {
+  chalkosLib,
   chalkosPackages,
   config,
   lib,
@@ -21,9 +22,16 @@
 }:
 let
   cfg = config.chalkos.router.dhcp;
-  routerLib = import ../lib.nix { inherit config lib pkgs; };
+  routerLib = import ../lib.nix {
+    inherit
+      chalkosLib
+      config
+      lib
+      pkgs
+      ;
+  };
   inherit (routerLib) hardened;
-  kinds = import ./kinds.nix { inherit lib; };
+  kinds = import ./kinds.nix { inherit chalkosLib lib; };
   inherit (chalkosPackages) kea;
   dir = config.chalkos.outputs.kea.dir;
   pdRecords = "/var/lib/chalkos-dhcp6-pd";

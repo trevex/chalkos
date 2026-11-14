@@ -1,6 +1,7 @@
 # Outputs: sets of files a program renders from the node's documents, which chalkd checks before
 # a delivery changes anything and swaps in once it is stored.
 {
+  chalkosLib,
   chalkosPackages,
   config,
   lib,
@@ -9,7 +10,7 @@
 }:
 let
   inherit (chalkosPackages) chalkos-render;
-  inherit (lib.chalkos.internal)
+  inherit (chalkosLib.internal)
     refuse
     kindProblems
     plainName
@@ -26,7 +27,7 @@ let
     in
     lib.removeSuffix suffix (if hashed == null then name else lib.head hashed);
   # The command of an output's render: a command as it is, or that of a renderer of
-  # lib.chalkos.render; null for anything else.
+  # chalkosLib.render; null for anything else.
   renderCommand =
     r:
     if lib.isString r then
@@ -60,9 +61,9 @@ let
               lib.types.attrsOf lib.types.raw
             )
             // {
-              description = "command, package or lib.chalkos.render value";
+              description = "command, package or chalkosLib.render value";
             };
-          example = lib.literalExpression "lib.chalkos.render.template ./bird.conf.tmpl";
+          example = lib.literalExpression "chalkosLib.render.template ./bird.conf.tmpl";
           description = ''
             Program of the image's store, with its arguments, that renders the output. It reads
             `{"node": {"name": …}, "documents": {"<Kind>": [<document>, …]}}` on standard input,
@@ -75,8 +76,8 @@ let
             must give the same files: chalkd renders every output again at boot. It refuses a
             config by printing `{"refusals": [{"kind": …, "name": …, "path": …, "message": …}]}`
             on standard output, which chalkd reports as it reports a rule's refusal; anything else
-            it prints there fails it. `lib.chalkos.render.template`, `.jq` and `.documents` build
-            the common renderers; `lib.chalkos.render.template` renders a Go template, in which a
+            it prints there fails it. `chalkosLib.render.template`, `.jq` and `.documents` build
+            the common renderers; `chalkosLib.render.template` renders a Go template, in which a
             key a document lacks, or that holds null, prints as nothing, and whose `refuse`
             function refuses.
           '';
@@ -194,7 +195,7 @@ let
     ++ kindProblems config.chalkos.kinds "${where}.inputs" o.inputs
     ++
       lib.optional (renderCommand o.render == null)
-        "${where}.render: a renderer is a command or one of lib.chalkos.render.template, .jq and .documents, not ${attrsetText o.render}";
+        "${where}.render: a renderer is a command or one of chalkosLib.render.template, .jq and .documents, not ${attrsetText o.render}";
   # An output as chalkd reads it.
   outputJSON = name: o: {
     inherit (o)

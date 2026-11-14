@@ -99,7 +99,7 @@ images
   # back after one try of 30 seconds. The upgrade image's output farewell refuses a Farewell whose
   # message is stay in its check alone, which neither its schema nor chalkctl validate do.
   upgradeImage = variantAs "test" "upgrade" (
-    { lib, ... }:
+    { chalkosLib, lib, ... }:
     {
       chalkos.kinds.Farewell = {
         group = "greeting.example.org";
@@ -111,7 +111,7 @@ images
       };
       chalkos.outputs.farewell = {
         inputs = [ "Farewell" ];
-        render = lib.chalkos.render.documents [ "Farewell" ];
+        render = chalkosLib.render.documents [ "Farewell" ];
         check = ''! grep -rqw stay "$OUT"'';
       };
     }

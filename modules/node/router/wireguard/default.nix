@@ -4,6 +4,7 @@
 # networkd's credentials, which chalkd loads from the Secrets the documents name, so no rendered
 # file holds a key. The diagnostic wireguard shows the interfaces as wg show prints them.
 {
+  chalkosLib,
   config,
   lib,
   pkgs,
@@ -11,8 +12,15 @@
 }:
 let
   cfg = config.chalkos.router.wireguard;
-  routerLib = import ../lib.nix { inherit config lib pkgs; };
-  kinds = import ./kinds.nix { inherit lib; };
+  routerLib = import ../lib.nix {
+    inherit
+      chalkosLib
+      config
+      lib
+      pkgs
+      ;
+  };
+  kinds = import ./kinds.nix { inherit chalkosLib lib; };
 in
 {
   options.chalkos.router.wireguard.enable = routerLib.feature ''

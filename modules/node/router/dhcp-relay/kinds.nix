@@ -2,12 +2,12 @@
 # clients' DHCP requests the router forwards to DHCP servers elsewhere, one document each, which
 # the output dhcp-relay renders for dnsmasq's relay of the VRF the links are in (default.nix). A
 # relay names each of its links, as a DHCPSubnet does.
-{ lib }:
+{ chalkosLib, lib }:
 let
-  inherit (lib) mkOption types;
-  inherit (lib.chalkos.internal) builtin;
-  inherit (lib.chalkos.internal.api) groups;
-  inherit (import ../types.nix { inherit lib; }) interfaceName address;
+  inherit (lib) types;
+  inherit (chalkosLib.internal) builtin;
+  inherit (chalkosLib.internal.api) groups;
+  inherit (import ../types.nix { inherit chalkosLib lib; }) interfaceName address;
 in
 {
   DHCPRelay = builtin groups.router // {
@@ -15,13 +15,13 @@ in
     description = "Links whose clients' DHCP requests the router relays to DHCP servers elsewhere, DHCPv4 to the IPv4 servers and DHCPv6 to the IPv6 ones.";
     spec = {
       # A link takes one relay, and a relay names it once.
-      interfaces = lib.chalkos.mkOption {
+      interfaces = chalkosLib.mkOption {
         type = types.nonEmptyListOf interfaceName;
         unique.hint = "a link takes one relay";
         example = [ "vlan20" ];
         description = "Links the clients ask on, each by its full name, without a glob: links of one VRF, each of which a Network document matching it by Name= alone gives a static address of each family the servers have, a global one for IPv6. A link takes one relay.";
       };
-      servers = lib.chalkos.mkOption {
+      servers = chalkosLib.mkOption {
         type = types.nonEmptyListOf address;
         example = [
           "198.51.100.53"

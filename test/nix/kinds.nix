@@ -6,20 +6,20 @@
 }:
 let
   inherit (lib) mkOption types;
-  libChalkos = import ../../lib/chalkos.nix { inherit lib; };
-  inherit (libChalkos.internal) schema kindTypes;
-  getLib = libChalkos.internal.get;
+  chalkosLib = import ../../lib/chalkos.nix { inherit lib; };
+  inherit (chalkosLib.internal) schema kindTypes;
+  getLib = chalkosLib.internal.get;
   inherit (import ./lib.nix { inherit lib mkImages; }) fails worker router;
 
   demoModule =
-    { lib, ... }:
+    { chalkosLib, lib, ... }:
     {
       chalkos.kinds.Demo = {
         group = "demo.example.org";
         version = "v1alpha1";
         multiple = true;
         spec.token = lib.mkOption {
-          type = lib.types.nullOr lib.chalkos.types.secretRef;
+          type = lib.types.nullOr chalkosLib.types.secretRef;
           default = null;
         };
       };
@@ -28,7 +28,7 @@ let
   # Zone references Lane: lane alone, reserving default, which stands for no Lane; and to in the
   # items of rules, nullable.
   laneModule =
-    { lib, ... }:
+    { chalkosLib, lib, ... }:
     {
       chalkos.kinds.Lane = {
         group = "lane.example.org";
@@ -40,7 +40,7 @@ let
         version = "v1";
         multiple = true;
         spec.lane = lib.mkOption {
-          type = lib.chalkos.types.ref {
+          type = chalkosLib.types.ref {
             kind = "Lane";
             reserved = [ "default" ];
           };
@@ -50,7 +50,7 @@ let
           type = lib.types.listOf (
             lib.types.submodule {
               options.to = lib.mkOption {
-                type = lib.types.nullOr (lib.chalkos.types.ref "Lane");
+                type = lib.types.nullOr (chalkosLib.types.ref "Lane");
                 default = null;
               };
             }
@@ -171,13 +171,13 @@ let
   };
   withPeering = worker [
     (
-      { lib, ... }:
+      { chalkosLib, ... }:
       {
         chalkos.kinds.Peering = {
           group = "bgp.example.org";
           version = "v1alpha1";
           multiple = true;
-          spec = peeringSpec lib.chalkos.types.secretRef;
+          spec = peeringSpec chalkosLib.types.secretRef;
         };
       }
     )
@@ -247,10 +247,10 @@ let
   # The x-chalkos-unique of a field of the type given, declared with unique.
   uniqueOf =
     type: unique:
-    (specOf { x = libChalkos.mkOption { inherit type unique; }; }).properties.x."x-chalkos-unique";
+    (specOf { x = chalkosLib.mkOption { inherit type unique; }; }).properties.x."x-chalkos-unique";
   # The schema of a field of the type given, declared with maxItems.
   maxItemsOf =
-    type: maxItems: (specOf { x = libChalkos.mkOption { inherit type maxItems; }; }).properties.x;
+    type: maxItems: (specOf { x = chalkosLib.mkOption { inherit type maxItems; }; }).properties.x;
   # A list item with fields of each shape a key may and may not hold.
   reservation = types.submodule {
     options = {
@@ -429,13 +429,13 @@ lib.runTests {
       (worker [
         laneModule
         (
-          { lib, ... }:
+          { chalkosLib, lib, ... }:
           {
             chalkos.kinds.Area = {
               group = "area.example.org";
               version = "v1";
               spec.lane = lib.mkOption {
-                type = lib.chalkos.types.ref {
+                type = chalkosLib.types.ref {
                   kind = "Lane";
                   reserved = [
                     "none"
@@ -457,12 +457,12 @@ lib.runTests {
     expr = fails (
       schemasOf (worker [
         (
-          { lib, ... }:
+          { chalkosLib, lib, ... }:
           {
             chalkos.kinds.Zone = {
               group = "zone.example.org";
               version = "v1";
-              spec.lane = lib.mkOption { type = lib.chalkos.types.ref "Lane"; };
+              spec.lane = lib.mkOption { type = chalkosLib.types.ref "Lane"; };
             };
           }
         )
@@ -486,7 +486,7 @@ lib.runTests {
     expr = [
       (uniqueOf types.ints.u32 true)
       (specOf {
-        x = libChalkos.mkOption {
+        x = chalkosLib.mkOption {
           type = types.nullOr types.ints.u32;
           default = null;
           unique = true;
@@ -641,7 +641,7 @@ lib.runTests {
       (propOf (
         types.listOf (
           types.submodule {
-            options.protocols = libChalkos.mkOption {
+            options.protocols = chalkosLib.mkOption {
               type = types.listOf types.str;
               unique.across = "list";
             };
@@ -1034,7 +1034,7 @@ lib.runTests {
       minItems = 1;
     };
   };
-  # lib.chalkos.mkOption's maxItems bounds a list, and fails the evaluation on any other type or
+  # chalkosLib.mkOption's maxItems bounds a list, and fails the evaluation on any other type or
   # on a bound that is no positive integer.
   testMaxItems = {
     expr = maxItemsOf (types.nonEmptyListOf types.str) 8;
@@ -1463,12 +1463,12 @@ lib.runTests {
     expr =
       (worker [
         (
-          { lib, ... }:
+          { chalkosLib, ... }:
           {
             chalkos.kinds.Demo = {
               group = "demo.example.org";
               version = "v1alpha1";
-              spec.x = mkOption { type = lib.chalkos.types.kubernetesObject or null; };
+              spec.x = mkOption { type = chalkosLib.types.kubernetesObject or null; };
             };
           }
         )
@@ -1636,20 +1636,20 @@ lib.runTests {
         dirOption = "/run/chalkos/outputs/bird-conf";
       };
     };
-  # lib.chalkos's renderers are data, which an output's render turns into the program's command,
+  # chalkosLib's renderers are data, which an output's render turns into the program's command,
   # naming the file it writes after the template or program.
   testRenderers =
     let
       config = withBird (
-        { pkgs, ... }:
+        { chalkosLib, pkgs, ... }:
         {
           chalkos.outputs = {
-            t.render = libChalkos.render.template ../../modules/testing/greeting.tmpl;
-            d.render = libChalkos.render.documents [
+            t.render = chalkosLib.render.template ../../modules/testing/greeting.tmpl;
+            d.render = chalkosLib.render.documents [
               "Peer"
               "Link"
             ];
-            j.render = libChalkos.render.jq (builtins.toFile "bird.conf.jq" ".");
+            j.render = chalkosLib.render.jq (builtins.toFile "bird.conf.jq" ".");
             p.render = pkgs.writeShellScript "r" "true";
           };
         }
@@ -1658,7 +1658,7 @@ lib.runTests {
     in
     {
       expr = {
-        value = libChalkos.render.documents [ "Peer" ];
+        value = chalkosLib.render.documents [ "Peer" ];
         template = builtins.match ".*/bin/chalkos-render template /nix/store/[^ ]*-greeting.tmpl (.*)" (
           render "t"
         );
@@ -1675,11 +1675,11 @@ lib.runTests {
       };
     };
   # A validator reaches chalkd with its input kinds and its program's command: a command as it is,
-  # a package as its path, and a jq program of lib.chalkos.validate as a wrapper of the store.
+  # a package as its path, and a jq program of chalkosLib.validate as a wrapper of the store.
   testValidatorsReachChalkd =
     let
       config = withBird (
-        { pkgs, ... }:
+        { chalkosLib, pkgs, ... }:
         {
           chalkos.validators = {
             c = {
@@ -1695,7 +1695,7 @@ lib.runTests {
             };
             j = {
               inputs = [ "Demo" ];
-              program = libChalkos.validate.jq (builtins.toFile "demo.jq" "{refusals: []}");
+              program = chalkosLib.validate.jq (builtins.toFile "demo.jq" "{refusals: []}");
             };
           };
         }
@@ -1708,7 +1708,7 @@ lib.runTests {
         inputs = validators.p.inputs;
         package = lib.hasPrefix "/nix/store/" validators.p.program;
         jq = lib.hasSuffix "-chalkos-validate-jq-j" validators.j.program;
-        value = libChalkos.validate.jq "x.jq";
+        value = chalkosLib.validate.jq "x.jq";
       };
       expected = {
         c = {
@@ -1725,7 +1725,7 @@ lib.runTests {
       };
     };
   # A validator of a kind the image does not declare, of Secret documents, of no kind, of a name
-  # that is not plain, or whose program is no command or lib.chalkos value fails the evaluation.
+  # that is not plain, or whose program is no command or chalkosLib value fails the evaluation.
   testValidatorsRefused =
     let
       refused =
@@ -1773,7 +1773,7 @@ lib.runTests {
         accepted = false;
       };
     };
-  # An attribute set that is none of lib.chalkos's renderers, or a mix of more than one, fails the
+  # An attribute set that is none of chalkosLib's renderers, or a mix of more than one, fails the
   # evaluation.
   testUnknownRendererFails = {
     expr = {
@@ -1798,11 +1798,11 @@ lib.runTests {
       twoKeys = true;
     };
   };
-  # lib.chalkos's effects act on units when outputs or the documents of kinds change.
+  # chalkosLib's effects act on units when outputs or the documents of kinds change.
   testEffectHelpers = {
     expr = {
-      restart = libChalkos.restartOn { outputs = [ "bird-conf" ]; } [ "bird.service" ];
-      reload = libChalkos.reloadOn { kinds = [ "Demo" ]; } [ "bird.service" ];
+      restart = chalkosLib.restartOn { outputs = [ "bird-conf" ]; } [ "bird.service" ];
+      reload = chalkosLib.reloadOn { kinds = [ "Demo" ]; } [ "bird.service" ];
     };
     expected = {
       restart = {
@@ -2537,7 +2537,7 @@ lib.runTests {
       let
         props =
           (specOf {
-            x = libChalkos.mkOption {
+            x = chalkosLib.mkOption {
               type = types.str;
               rules = [
                 {
@@ -2550,7 +2550,7 @@ lib.runTests {
             };
             group = mkOption {
               type = types.submodule {
-                options.y = libChalkos.mkOption {
+                options.y = chalkosLib.mkOption {
                   type = types.int;
                   rules = [
                     {
@@ -2584,17 +2584,17 @@ lib.runTests {
       ]
     ];
   };
-  # The Extension API page, whose table of lib.chalkos is in nix/docs-templates, lists each
-  # helper of lib.chalkos: a function, or a type, as the leaves of its attribute sets.
+  # The Extension API page, whose table of chalkosLib is in nix/docs-templates, lists each
+  # helper of chalkosLib: a function, or a type, as the leaves of its attribute sets.
   testExtensionAPIListsEveryHelper = {
     expr =
       let
-        rows = lib.filter (l: lib.hasPrefix "| `lib.chalkos." (lib.trim l)) (
+        rows = lib.filter (l: lib.hasPrefix "| `chalkosLib." (lib.trim l)) (
           lib.splitString "\n" (builtins.readFile ../../nix/docs-templates/extension-api.tail.md)
         );
       in
       lib.sort lib.lessThan (
-        map (l: lib.head (builtins.match "[|] `lib[.]chalkos[.]([A-Za-z.]+)`.*" (lib.trim l))) rows
+        map (l: lib.head (builtins.match "[|] `chalkosLib[.]([A-Za-z.]+)`.*" (lib.trim l))) rows
       );
     expected =
       let
@@ -2610,12 +2610,12 @@ lib.runTests {
             ) set
           );
       in
-      # lib.chalkos.internal is chalkos's own, which the page does not list.
-      lib.sort lib.lessThan (leaves "" (removeAttrs libChalkos [ "internal" ]));
+      # chalkosLib.internal is chalkos's own, which the page does not list.
+      lib.sort lib.lessThan (leaves "" (removeAttrs chalkosLib [ "internal" ]));
   };
   # An option without rules is lib.mkOption's.
   testMkOptionWithoutRules = {
-    expr = libChalkos.mkOption { type = types.str; } == mkOption { type = types.str; };
+    expr = chalkosLib.mkOption { type = types.str; } == mkOption { type = types.str; };
     expected = true;
   };
   # A kind's rules reach x-chalkos-kind; a kind without rules has none there.

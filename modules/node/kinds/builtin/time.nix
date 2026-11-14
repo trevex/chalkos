@@ -1,9 +1,9 @@
 # The time servers the node synchronises its clock with.
-{ lib, ... }:
+{ chalkosLib, lib, ... }:
 let
   inherit (lib) mkOption types;
-  inherit (lib.chalkos.internal) builtin;
-  inherit (lib.chalkos.internal.api) groups;
+  inherit (chalkosLib.internal) builtin;
+  inherit (chalkosLib.internal.api) groups;
   timeServer = types.submodule {
     options = {
       host = mkOption {

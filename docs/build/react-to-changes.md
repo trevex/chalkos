@@ -28,7 +28,7 @@ You need a service that reads config from the node: its documents through a gran
 --8<-- "examples/homelab/extensions/bgp.nix:effect"
 ```
 
-`lib.chalkos.reloadOn` takes the triggers and the units. The line above is the same effect as:
+`chalkosLib.reloadOn` takes the triggers and the units. The line above is the same effect as:
 
 ```nix
 chalkos.effects.bird = {
@@ -43,12 +43,12 @@ bird's `ExecReload` runs `birdc configure`, which reads the config again and kee
 that a restart would drop. A delivery that leaves `bird.conf` and its password unchanged reloads
 nothing.
 
-`lib.chalkos.restartOn` builds an effect that restarts its units instead. The rack unit of the
+`chalkosLib.restartOn` builds an effect that restarts its units instead. The rack unit of the
 [extensions example](https://github.com/trevex/chalkos/tree/main/examples/extensions) reads its
 `Rack` when it starts, so a changed `Rack` restarts it:
 
 ```nix
-chalkos.effects.rack-location = lib.chalkos.restartOn { kinds = [ "Rack" ]; } [
+chalkos.effects.rack-location = chalkosLib.restartOn { kinds = [ "Rack" ]; } [
   "rack-location.service"
 ];
 ```

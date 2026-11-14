@@ -129,7 +129,7 @@ Example: `self.rev or self.dirtyRev or null`
 
 Type: map of any · Default: `{ }` · Declared in: [lib/images-arguments.nix](https://github.com/trevex/chalkos/blob/main/lib/images-arguments.nix)
 
-Arguments every image's NixOS modules receive besides NixOS's own, such as a flake's inputs.
+Arguments every image's NixOS modules receive besides NixOS's own, such as a flake's inputs. `chalkosLib` is chalkos's own and refused.
 
 Example: `{ inherit inputs; }`
 

@@ -23,11 +23,11 @@ rec {
       badNames = lib.filter (n: !lib.isString n || builtins.match documentName n == null) reserved;
     in
     if !(t ? kind) || !lib.isString t.kind then
-      throw ''lib.chalkos.types.ref: give the kind of the documents the field names, as ref "VRF" or ref { kind = "VRF"; }''
+      throw ''chalkosLib.types.ref: give the kind of the documents the field names, as ref "VRF" or ref { kind = "VRF"; }''
     else if unknown != [ ] then
-      throw "lib.chalkos.types.ref ${t.kind}: ${lib.head unknown} is none of kind and reserved"
+      throw "chalkosLib.types.ref ${t.kind}: ${lib.head unknown} is none of kind and reserved"
     else if badNames != [ ] then
-      throw "lib.chalkos.types.ref ${t.kind}: the reserved name ${builtins.toJSON (lib.head badNames)} is no document name, which matches ^${documentName}$"
+      throw "chalkosLib.types.ref ${t.kind}: the reserved name ${builtins.toJSON (lib.head badNames)} is no document name, which matches ^${documentName}$"
     else
       lib.types.strMatching documentName
       // {
@@ -60,7 +60,7 @@ rec {
     };
 
   # A Kubernetes object, which the control planes apply as it is. Built-in kinds alone use it:
-  # lib.chalkos.types does not offer it, as extensions get no raw schemas.
+  # chalkosLib.types does not offer it, as extensions get no raw schemas.
   kubernetesObject = lib.types.attrsOf lib.types.anything // {
     name = "chalkosKubernetesObject";
     description = "Kubernetes object";

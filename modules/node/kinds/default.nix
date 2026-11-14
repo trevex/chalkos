@@ -6,6 +6,7 @@
 # The image builds only when chalkos-rules accepts the rules of its kinds, facts (facts.nix),
 # outputs, effects and diagnostics.
 {
+  chalkosLib,
   chalkosPackages,
   config,
   lib,
@@ -13,8 +14,8 @@
   ...
 }:
 let
-  inherit (lib.chalkos.internal) schema api refuse;
-  getLib = lib.chalkos.internal.get;
+  inherit (chalkosLib.internal) schema api refuse;
+  getLib = chalkosLib.internal.get;
   inherit (chalkosPackages) chalkcfg chalkos-rules;
   cfg = config.chalkos.kinds;
 
@@ -173,9 +174,9 @@ let
             Option declarations of the document's `spec`, as under a module's `options`. They are
             converted into the kind's JSON Schema: an option without a default is required, and
             `description`, `default` and `example` carry over. A field declares change rules with
-            `lib.chalkos.mkOption { …; rules = [ { rule = "self == oldSelf"; message = "…"; } ]; }`,
+            `chalkosLib.mkOption { …; rules = [ { rule = "self == oldSelf"; message = "…"; } ]; }`,
             in the shape of `rules`, where `self` is the field's new value and `oldSelf` its value in
-            the running config. `lib.chalkos.mkOption`'s `unique` declares values that must not
+            the running config. `chalkosLib.mkOption`'s `unique` declares values that must not
             repeat, among the node's documents of the kind or within one list, and its `maxItems`
             the most items a list holds.
           '';
@@ -236,7 +237,7 @@ let
             all of `by`'s fields. A field of `by` is a field name or `{ field; as; }`, where `as`
             normalises the value before the comparison: `ip`, `cidr`, `host` or `lower`. `hint`
             ends the refusal with what to do instead. A single field's values, and those of list
-            items, are declared unique with `lib.chalkos.mkOption`'s `unique`.
+            items, are declared unique with `chalkosLib.mkOption`'s `unique`.
           '';
         };
         dir = lib.mkOption {

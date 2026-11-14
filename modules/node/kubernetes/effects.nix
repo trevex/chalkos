@@ -1,10 +1,15 @@
 # What a change of the node's config restarts or reloads on an image that runs Kubernetes: the
 # registry units, the control plane's ports, the preparation and the kubelet, and chalkd's
 # Kubernetes loops, through the Kubernetes layer's actions.
-{ config, lib, ... }:
+{
+  chalkosLib,
+  config,
+  lib,
+  ...
+}:
 let
-  inherit (lib.chalkos.internal) cel;
-  inherit (lib.chalkos.internal.api) apiVersions;
+  inherit (chalkosLib.internal) cel;
+  inherit (chalkosLib.internal.api) apiVersions;
   # Where chalkd writes the node's Kubernetes files, as default.nix names it.
   run = "/run/chalkos/kubernetes";
   # The Address= values of each Network's [Network] sections, as written and in the order of the

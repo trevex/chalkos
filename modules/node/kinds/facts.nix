@@ -1,6 +1,7 @@
 # Facts: node state that change rules read as facts.<name>, each from a file or a command. The
 # image lists them in /etc/chalkos/facts.json, from which chalkd loads them.
 {
+  chalkosLib,
   config,
   lib,
   pkgs,
@@ -72,7 +73,7 @@ let
     ++ map (name: "chalkos.facts.${name}: a fact has either a file or a command") unsourcedFacts
     ++ map (name: "chalkos.facts.${name}: only a command fact takes inputs") fileInputs
     ++ map (name: "chalkos.facts.${name}: only a file fact keeps fields or hashes them") commandFields;
-  facts = lib.chalkos.internal.refuse problems (
+  facts = chalkosLib.internal.refuse problems (
     lib.mapAttrs (
       _: f:
       if f.file != null then

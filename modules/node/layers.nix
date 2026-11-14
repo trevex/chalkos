@@ -2,11 +2,16 @@
 # module names it in chalkos.layers, and the image holds the layer's marker
 # /etc/chalkos/layers/<name>, from which chalkd learns the layers whose methods of the node API it
 # serves. An image carries one layer at most.
-{ config, lib, ... }:
+{
+  chalkosLib,
+  config,
+  lib,
+  ...
+}:
 let
   inherit (config.chalkos) layers;
   names = lib.attrNames layers;
-  image = lib.chalkos.internal.imageText config.chalkos.variant.name;
+  image = chalkosLib.internal.imageText config.chalkos.variant.name;
 in
 {
   options.chalkos.layers = lib.mkOption {

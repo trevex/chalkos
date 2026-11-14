@@ -4,6 +4,7 @@
 # built-in output chrony renders into a sources file, and so does whether the servers DHCP
 # announces count: one image serves nodes with different servers.
 {
+  chalkosLib,
   config,
   lib,
   pkgs,
@@ -15,8 +16,8 @@ let
   dhcpSources = "/run/chalkos/chrony-dhcp";
   inherit (config.services.chrony) package;
   dhcpEnabled = config.chalkos.kinds.TimeSync.get { path = "spec.dhcp"; };
-  inherit (lib.chalkos.internal) cel;
-  inherit (lib.chalkos.internal.api) apiVersions;
+  inherit (chalkosLib.internal) cel;
+  inherit (chalkosLib.internal.api) apiVersions;
   # A server as a line of chrony's sources file.
   server =
     s:
@@ -137,7 +138,7 @@ in
   # line too. The examples run the check when the image is built.
   chalkos.outputs.chrony = {
     inputs = [ "TimeSync" ];
-    render = lib.chalkos.render.template template;
+    render = chalkosLib.render.template template;
     check = ''
       conf=$(mktemp)
       echo "include $OUT/servers.sources" >"$conf"
