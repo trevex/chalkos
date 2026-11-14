@@ -23,12 +23,10 @@ type Target struct {
 }
 
 // Translate checks docs as the set of the node called name and translates them into its identity
-// on the image t describes. It checks the set rules, each document against its schema, the
-// Secrets the secretRefs name and the Registry and Mirror documents, translates what every image
-// gives the node, and then runs the image's translators, which check the documents of their
-// layers. chalkctl and chalkd both translate with it, so they accept the same configs.
+// on the image t describes, the image's layers' translators last. chalkctl and chalkd both call it,
+// so they accept the same configs.
 func Translate(name string, docs []Document, schemas *schema.Schemas, t Target) (*Set, identity.Identity, error) {
-	set, err := checkSet(docs, schemas, singletons)
+	set, err := checkSet(docs, schemas, true)
 	if err != nil {
 		return nil, identity.Identity{}, err
 	}
@@ -44,10 +42,9 @@ func Translate(name string, docs []Document, schemas *schema.Schemas, t Target) 
 	return set, id, nil
 }
 
-// checkSet checks docs as a set, as Translate does before it translates them: NewSet's checks, with
-// the kinds required given, and CheckRegistries.
-func checkSet(docs []Document, schemas *schema.Schemas, required []kindName) (*Set, error) {
-	set, err := newSet(docs, schemas, required)
+// checkSet is newSet followed by CheckRegistries.
+func checkSet(docs []Document, schemas *schema.Schemas, requireSystemDisk bool) (*Set, error) {
+	set, err := newSet(docs, schemas, requireSystemDisk)
 	if err != nil {
 		return nil, err
 	}

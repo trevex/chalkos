@@ -16,53 +16,43 @@ type Set struct {
 	refs map[ID][]Ref
 }
 
-// kindName is a kind by its apiVersion and name.
-type kindName struct{ apiVersion, kind string }
-
-// singletons are the kinds a node's set holds exactly once.
-var singletons = []kindName{
-	{StorageAPI, "SystemDisk"},
-}
-
-// NewSet checks docs as a node's config against the image's schemas: each document is valid, its
-// kind is one the image accepts, kinds that are not multiple appear once, names are unique per
-// kind, the SystemDisk is present, and every reference names a document of the set, a key
-// reference a key its Secret holds and a credential file of its own, and no value repeats that
-// the schemas declare unique. A layer's Translator checks the documents its layer requires.
+// NewSet checks docs as a node's whole config against the image's schemas. A layer's Translator
+// checks the documents its layer requires.
 func NewSet(docs []Document, s *schema.Schemas) (*Set, error) {
-	return newSet(docs, s, singletons)
+	return newSet(docs, s, true)
 }
 
-// newSet is NewSet with the kinds that must be present given, instead of the SystemDisk.
-func newSet(docs []Document, s *schema.Schemas, required []kindName) (*Set, error) {
-	multiple := map[string]bool{}
+// newSet checks docs as NewSet does, and requires a SystemDisk only where requireSystemDisk is set.
+// Each document is valid and of a kind the image accepts, a kind that is not multiple appears
+// once, names are unique per kind, references resolve and no value the schemas declare unique
+// repeats.
+func newSet(docs []Document, s *schema.Schemas, requireSystemDisk bool) (*Set, error) {
+	multiple := map[ID]bool{}
 	for _, k := range s.Kinds() {
-		multiple[k.APIVersion+" "+k.Kind] = k.Multiple
+		multiple[ID{APIVersion: k.APIVersion, Kind: k.Kind}] = k.Multiple
 	}
 	set := &Set{schemas: s}
-	count := map[string]int{}
-	names := map[string]bool{}
+	count := map[ID]int{}
+	names := map[ID]bool{}
 	for _, d := range docs {
 		filled, err := s.Fill(d.Object)
 		if err != nil {
 			return nil, err
 		}
 		d.Object = filled
-		id := d.APIVersion + " " + d.Kind
-		count[id]++
-		if count[id] > 1 && !multiple[id] {
+		kind := ID{APIVersion: d.APIVersion, Kind: d.Kind}
+		count[kind]++
+		if count[kind] > 1 && !multiple[kind] {
 			return nil, fmt.Errorf("more than one %s: the image accepts one %s per node", d.Kind, d.Kind)
 		}
-		if names[id+" "+d.Name] {
+		if names[d.ID()] {
 			return nil, fmt.Errorf("two %s documents named %q", d.Kind, d.Name)
 		}
-		names[id+" "+d.Name] = true
+		names[d.ID()] = true
 		set.docs = append(set.docs, d)
 	}
-	for _, k := range required {
-		if count[k.apiVersion+" "+k.kind] == 0 {
-			return nil, fmt.Errorf("no %s: a node's config holds one %s", k.kind, k.kind)
-		}
+	if requireSystemDisk && count[ID{APIVersion: StorageAPI, Kind: "SystemDisk"}] == 0 {
+		return nil, fmt.Errorf("no SystemDisk: a node's config holds one SystemDisk")
 	}
 	SortDocuments(set.docs)
 	refs, err := checkRefs(set.docs, s)

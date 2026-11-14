@@ -124,7 +124,7 @@ func TranslateRedacted(name string, docs Redacted, schemas *schema.Schemas, t Ta
 // returns the set's documents with their defaults, which stay redacted, as TranslateRedacted
 // returns them. It checks the documents an image's tests are about, which need no whole node.
 func CheckRedacted(docs Redacted, schemas *schema.Schemas) (Redacted, error) {
-	set, err := checkSet(docs.docs, schemas, nil)
+	set, err := checkSet(docs.docs, schemas, false)
 	if err != nil {
 		return Redacted{}, err
 	}
