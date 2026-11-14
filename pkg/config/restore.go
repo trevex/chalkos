@@ -6,15 +6,15 @@ import (
 	"fmt"
 	"maps"
 	"slices"
+
+	"github.com/trevex/chalkos/pkg/jsonfile"
 )
 
 // FromJSON is the document a JSON object holds, its numbers kept as json.Number, as Parse keeps
 // them, so no digit is rounded away.
 func FromJSON(data []byte) (Document, error) {
-	dec := json.NewDecoder(bytes.NewReader(data))
-	dec.UseNumber()
 	var obj map[string]any
-	if err := dec.Decode(&obj); err != nil {
+	if err := jsonfile.DecodeExact(data, &obj); err != nil {
 		return Document{}, err
 	}
 	if obj == nil {

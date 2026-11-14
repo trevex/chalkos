@@ -1,13 +1,13 @@
 package chalkd
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 
 	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/facts"
+	"github.com/trevex/chalkos/pkg/jsonfile"
 	"github.com/trevex/chalkos/pkg/rules"
 )
 
@@ -48,10 +48,8 @@ func jsonValue(v any) any {
 	if err != nil {
 		return nil
 	}
-	dec := json.NewDecoder(bytes.NewReader(data))
-	dec.UseNumber()
 	var out any
-	if err := dec.Decode(&out); err != nil {
+	if err := jsonfile.DecodeExact(data, &out); err != nil {
 		return nil
 	}
 	return out

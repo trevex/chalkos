@@ -1,7 +1,6 @@
 package imagecheck
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -16,6 +15,7 @@ import (
 	checkv1 "github.com/trevex/chalkos/pkg/api/check/v1"
 	"github.com/trevex/chalkos/pkg/api/check/v1/checkv1connect"
 	"github.com/trevex/chalkos/pkg/config"
+	"github.com/trevex/chalkos/pkg/jsonfile"
 	"github.com/trevex/chalkos/pkg/rules"
 )
 
@@ -53,8 +53,8 @@ type factsHandler struct {
 }
 
 func (h *factsHandler) Fact(_ context.Context, req *connect.Request[checkv1.FactRequest]) (*connect.Response[checkv1.FactResponse], error) {
-	input, err := decodeJSON(req.Msg.GetInput())
-	if err != nil {
+	var input any
+	if err := jsonfile.DecodeExact([]byte(req.Msg.GetInput()), &input); err != nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("the fact's input: %w", err))
 	}
 	obj, ok := input.(map[string]any)
@@ -131,19 +131,9 @@ func (ri *remoteInput) ask(name string) (any, error) {
 		}
 		return nil, err
 	}
-	return decodeJSON(resp.Msg.GetValue())
-}
-
-// decodeJSON reads one JSON value with its numbers exact, as facts and documents hold them.
-func decodeJSON(s string) (any, error) {
-	dec := json.NewDecoder(bytes.NewReader([]byte(s)))
-	dec.UseNumber()
 	var v any
-	if err := dec.Decode(&v); err != nil {
+	if err := jsonfile.DecodeExact([]byte(resp.Msg.GetValue()), &v); err != nil {
 		return nil, err
-	}
-	if dec.More() {
-		return nil, errors.New("more than one JSON value")
 	}
 	return v, nil
 }

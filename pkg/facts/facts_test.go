@@ -341,7 +341,7 @@ func TestCommandFailures(t *testing.T) {
 		"not JSON": {&fakeRunner{out: map[string]string{"/bin/disks": "s3cret: ok"}},
 			"/bin/disks printed no JSON; see the node's journal", "fact disks: /bin/disks printed no JSON: invalid character"},
 		"two values": {&fakeRunner{out: map[string]string{"/bin/disks": "{} {}"}},
-			"/bin/disks printed no JSON; see the node's journal", "more than one JSON value"},
+			"/bin/disks printed no JSON; see the node's journal", "data after the JSON value"},
 		"too long": {&fakeRunner{out: map[string]string{"/bin/disks": `"` + strings.Repeat("x", command.MaxOutput) + `"`}},
 			"/bin/disks printed more than 1048576 bytes", ""},
 		"timeout": {&fakeRunner{block: true}, "/bin/disks did not finish within 50ms", ""},

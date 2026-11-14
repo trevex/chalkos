@@ -5,10 +5,10 @@ package derivetest
 
 import (
 	"encoding/json"
-	"strings"
 	"testing"
 
 	"github.com/trevex/chalkos/pkg/config"
+	"github.com/trevex/chalkos/pkg/jsonfile"
 )
 
 // routerAPI is the API version of the router kinds. It mirrors derive.API, which derivetest does
@@ -30,9 +30,7 @@ func RouterDoc(t testing.TB, kind, name, spec string) any {
 func withSpec(t testing.TB, apiVersion, kind, name, spec string) any {
 	t.Helper()
 	var s any
-	dec := json.NewDecoder(strings.NewReader(spec))
-	dec.UseNumber()
-	if err := dec.Decode(&s); err != nil {
+	if err := jsonfile.DecodeExact([]byte(spec), &s); err != nil {
 		t.Fatal(err)
 	}
 	return map[string]any{"apiVersion": apiVersion, "kind": kind, "metadata": map[string]any{"name": name}, "spec": s}

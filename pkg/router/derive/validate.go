@@ -1,12 +1,10 @@
 package derive
 
 import (
-	"bytes"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 
+	"github.com/trevex/chalkos/pkg/jsonfile"
 	"github.com/trevex/chalkos/pkg/refusals"
 )
 
@@ -60,16 +58,11 @@ func check(byKind map[string]any) error {
 // kind's documents a list sorted by name, with the numbers exact. A kind whose value is no list is
 // an error.
 func readDocuments(data []byte) (map[string]any, error) {
-	dec := json.NewDecoder(bytes.NewReader(data))
-	dec.UseNumber()
 	var in struct {
 		Documents map[string][]any `json:"documents"`
 	}
-	if err := dec.Decode(&in); err != nil {
+	if err := jsonfile.DecodeExact(data, &in); err != nil {
 		return nil, fmt.Errorf("the input is no object of documents by kind: %w", err)
-	}
-	if err := dec.Decode(new(json.RawMessage)); !errors.Is(err, io.EOF) {
-		return nil, errors.New("the input is no object of documents by kind: more follows the object")
 	}
 	if in.Documents == nil {
 		return nil, errors.New("the input holds no documents")

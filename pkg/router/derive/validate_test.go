@@ -48,7 +48,7 @@ func TestValidate(t *testing.T) {
 	}
 	for input, want := range map[string]string{
 		`[{"kind": "VRF"}]`:                        "the input is no object of documents by kind",
-		`{"documents": {}} {}`:                     "more follows the object",
+		`{"documents": {}} {}`:                     "data after the JSON value",
 		`{"node": {"name": "r1"}}`:                 "the input holds no documents",
 		`{"documents": {"VRF": {"name": "blue"}}}`: "the input is no object of documents by kind",
 	} {

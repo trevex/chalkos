@@ -17,6 +17,7 @@ import (
 	"testing"
 
 	"github.com/trevex/chalkos/pkg/config"
+	"github.com/trevex/chalkos/pkg/jsonfile"
 	"github.com/trevex/chalkos/pkg/refusals"
 	"github.com/trevex/chalkos/pkg/router/derive"
 	"github.com/trevex/chalkos/pkg/router/derive/derivetest"
@@ -455,9 +456,7 @@ func TestRecordValues(t *testing.T) {
 func TestRouterRefusals(t *testing.T) {
 	doc := func(kind, name, spec string) any {
 		var s any
-		dec := json.NewDecoder(strings.NewReader(spec))
-		dec.UseNumber()
-		if err := dec.Decode(&s); err != nil {
+		if err := jsonfile.DecodeExact([]byte(spec), &s); err != nil {
 			t.Fatal(err)
 		}
 		return map[string]any{"apiVersion": derive.API, "kind": kind, "metadata": map[string]any{"name": name}, "spec": s}
@@ -522,9 +521,7 @@ func TestRouterRefusals(t *testing.T) {
 func TestFRRRefusals(t *testing.T) {
 	doc := func(kind, name, spec string) any {
 		var s any
-		dec := json.NewDecoder(strings.NewReader(spec))
-		dec.UseNumber()
-		if err := dec.Decode(&s); err != nil {
+		if err := jsonfile.DecodeExact([]byte(spec), &s); err != nil {
 			t.Fatal(err)
 		}
 		return map[string]any{"apiVersion": derive.API, "kind": kind, "metadata": map[string]any{"name": name}, "spec": s}

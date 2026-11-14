@@ -66,7 +66,7 @@ func ParseDefs[T any](path string, data []byte, what string, check func(name str
 	return defs, nil
 }
 
-// ErrTrailingData is the error of DecodeStrict for data after the JSON value.
+// ErrTrailingData is the error of DecodeStrict and DecodeExact for data after the JSON value.
 var ErrTrailingData = errors.New("data after the JSON value")
 
 // DecodeStrict decodes the JSON value data holds into v, refusing fields v lacks and, with
@@ -74,6 +74,18 @@ var ErrTrailingData = errors.New("data after the JSON value")
 func DecodeStrict(data []byte, v any) error {
 	dec := json.NewDecoder(bytes.NewReader(data))
 	dec.DisallowUnknownFields()
+	return decode(dec, v)
+}
+
+// DecodeExact decodes the JSON value data holds into v with its numbers exact, as json.Number,
+// as documents and facts hold them. It refuses anything after the value with ErrTrailingData.
+func DecodeExact(data []byte, v any) error {
+	dec := json.NewDecoder(bytes.NewReader(data))
+	dec.UseNumber()
+	return decode(dec, v)
+}
+
+func decode(dec *json.Decoder, v any) error {
 	if err := dec.Decode(v); err != nil {
 		return err
 	}

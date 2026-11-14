@@ -1,7 +1,6 @@
 package derive
 
 import (
-	"bytes"
 	"cmp"
 	"encoding/json"
 	"os"
@@ -12,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/trevex/chalkos/pkg/config"
+	"github.com/trevex/chalkos/pkg/jsonfile"
 	"github.com/trevex/chalkos/pkg/schema"
 )
 
@@ -64,10 +64,8 @@ func example(t *testing.T, name string) map[string]any {
 // decode is data as JSON decodes it with its numbers exact.
 func decode(t *testing.T, data []byte) any {
 	t.Helper()
-	dec := json.NewDecoder(bytes.NewReader(data))
-	dec.UseNumber()
 	var v any
-	if err := dec.Decode(&v); err != nil {
+	if err := jsonfile.DecodeExact(data, &v); err != nil {
 		t.Fatal(err)
 	}
 	return v

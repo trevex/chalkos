@@ -9,6 +9,7 @@ import (
 
 	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/internal/cli/clitest"
+	"github.com/trevex/chalkos/pkg/jsonfile"
 )
 
 // run runs chalkcfg with args on s and returns its stdout, stderr and exit status.
@@ -142,10 +143,8 @@ func TestNoCompletion(t *testing.T) {
 // YAML numbers keep an integer's digits, and a float written with an exponent gets a point, which
 // YAML 1.1 needs to read it as a float.
 func TestYAMLNumbers(t *testing.T) {
-	dec := json.NewDecoder(strings.NewReader(`{"a":1e3,"b":2.5,"c":1E-7,"d":12345678901234567890,"e":-0.5e10}`))
-	dec.UseNumber()
 	var obj map[string]any
-	if err := dec.Decode(&obj); err != nil {
+	if err := jsonfile.DecodeExact([]byte(`{"a":1e3,"b":2.5,"c":1E-7,"d":12345678901234567890,"e":-0.5e10}`), &obj); err != nil {
 		t.Fatal(err)
 	}
 	var buf bytes.Buffer

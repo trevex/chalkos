@@ -1,7 +1,6 @@
 package config
 
 import (
-	"bytes"
 	"cmp"
 	"encoding/json"
 	"errors"
@@ -15,6 +14,8 @@ import (
 	"strings"
 
 	"go.yaml.in/yaml/v3"
+
+	"github.com/trevex/chalkos/pkg/jsonfile"
 )
 
 // Document is one config document.
@@ -206,9 +207,7 @@ func (d Document) DecodeSpec(v any) error {
 	if err != nil {
 		return err
 	}
-	dec := json.NewDecoder(bytes.NewReader(b))
-	dec.UseNumber()
-	if err := dec.Decode(v); err != nil {
+	if err := jsonfile.DecodeExact(b, v); err != nil {
 		return fmt.Errorf("%s %q: %w", d.Kind, d.Name, err)
 	}
 	return nil

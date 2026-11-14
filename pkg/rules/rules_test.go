@@ -10,6 +10,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/trevex/chalkos/pkg/config"
+	"github.com/trevex/chalkos/pkg/jsonfile"
 	"github.com/trevex/chalkos/pkg/kubernetes/translate"
 	"github.com/trevex/chalkos/pkg/refusals"
 	"github.com/trevex/chalkos/pkg/schema"
@@ -89,9 +90,7 @@ func compiled(t *testing.T, kinds ...map[string]any) *Set {
 func doc(t *testing.T, kind, name, spec string) config.Document {
 	t.Helper()
 	var s any
-	dec := json.NewDecoder(strings.NewReader(spec))
-	dec.UseNumber()
-	if err := dec.Decode(&s); err != nil {
+	if err := jsonfile.DecodeExact([]byte(spec), &s); err != nil {
 		t.Fatal(err)
 	}
 	return config.FromObject(map[string]any{

@@ -1,6 +1,7 @@
 package jsonfile
 
 import (
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -34,6 +35,16 @@ func TestDecodeStrict(t *testing.T) {
 		t.Errorf("an unknown field: %v", err)
 	}
 	if err := DecodeStrict([]byte(`{"A": 1} {}`), &v); !errors.Is(err, ErrTrailingData) {
+		t.Errorf("data after the value: %v", err)
+	}
+}
+
+func TestDecodeExact(t *testing.T) {
+	var v any
+	if err := DecodeExact([]byte(`{"n": 12345678901234567890}`), &v); err != nil || v.(map[string]any)["n"] != json.Number("12345678901234567890") {
+		t.Errorf("DecodeExact = %v, %v", err, v)
+	}
+	if err := DecodeExact([]byte(`1 2`), &v); !errors.Is(err, ErrTrailingData) {
 		t.Errorf("data after the value: %v", err)
 	}
 }

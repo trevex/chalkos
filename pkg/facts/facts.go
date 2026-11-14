@@ -4,7 +4,6 @@
 package facts
 
 import (
-	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -192,8 +191,8 @@ func readFile(path string, fields []string, hashOthers bool) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	v, err := decode(data)
-	if err != nil {
+	var v any
+	if err := jsonfile.DecodeExact(data, &v); err != nil {
 		return nil, fmt.Errorf("%s is not JSON", path)
 	}
 	if len(fields) == 0 && !hashOthers {
@@ -269,24 +268,10 @@ func (l *Loader) command(name string, def Definition, stdin []byte) (any, error)
 	case len(out) > command.MaxOutput:
 		return nil, fmt.Errorf("%s printed more than %d bytes", argv[0], command.MaxOutput)
 	}
-	v, err := decode(out)
-	if err != nil {
+	var v any
+	if err := jsonfile.DecodeExact(out, &v); err != nil {
 		log.Printf("fact %s: %s printed no JSON: %v", name, argv[0], err)
 		return nil, fmt.Errorf("%s printed no JSON; see the node's journal", argv[0])
-	}
-	return v, nil
-}
-
-// decode reads JSON with its numbers exact, as documents hold them.
-func decode(data []byte) (any, error) {
-	dec := json.NewDecoder(bytes.NewReader(data))
-	dec.UseNumber()
-	var v any
-	if err := dec.Decode(&v); err != nil {
-		return nil, err
-	}
-	if dec.More() {
-		return nil, errors.New("more than one JSON value")
 	}
 	return v, nil
 }

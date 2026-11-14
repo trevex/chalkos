@@ -12,6 +12,7 @@ import (
 
 	"github.com/trevex/chalkos/pkg/atomicfile"
 	"github.com/trevex/chalkos/pkg/config"
+	"github.com/trevex/chalkos/pkg/jsonfile"
 	"github.com/trevex/chalkos/pkg/outputs"
 	"github.com/trevex/chalkos/pkg/rules"
 )
@@ -80,17 +81,10 @@ func readBaseline(path string) (b baseline, found bool, err error) {
 	if err != nil {
 		return baseline{}, false, err
 	}
-	if err := decode(data, &b); err != nil {
+	if err := jsonfile.DecodeExact(data, &b); err != nil {
 		return baseline{}, false, fmt.Errorf("%s: %w", path, err)
 	}
 	return b, true, nil
-}
-
-// decode decodes data into v, with numbers kept as json.Number, as documents and facts hold them.
-func decode(data []byte, v any) error {
-	dec := json.NewDecoder(bytes.NewReader(data))
-	dec.UseNumber()
-	return dec.Decode(v)
 }
 
 // newBaseline records old, the running slot's config, the facts the rules read, names, as f
@@ -122,7 +116,7 @@ func (a baselineAttempt) recorded() ([]byte, error) {
 		return nil, err
 	}
 	var read baselineAttempt
-	if err := decode(data, &read); err != nil {
+	if err := jsonfile.DecodeExact(data, &read); err != nil {
 		return nil, err
 	}
 	return json.Marshal(read)
@@ -145,7 +139,7 @@ func addAttempt(path string, a baselineAttempt) (previous []byte, err error) {
 		return nil, err
 	}
 	var b baseline
-	if err := decode(previous, &b); err != nil {
+	if err := jsonfile.DecodeExact(previous, &b); err != nil {
 		return nil, fmt.Errorf("%s: %w", path, err)
 	}
 	b.Attempts = append(b.Attempts, a)
