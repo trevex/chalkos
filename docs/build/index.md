@@ -51,8 +51,8 @@ software it carries.
 ## Configure services
 
 These pages give the services in an image their configuration: a config kind for each node's
-YAML, the files and secrets a unit reads, and the effects and rules that apply when a delivery
-changes them.
+YAML, the files and secrets a unit reads, the effects and rules that apply when a delivery
+changes them, and the tests that check them before a node does.
 
 <div class="grid cards" markdown>
 
@@ -124,6 +124,15 @@ changes them.
     cannot check.
 
     [:octicons-arrow-right-24: Read](validate-config.md)
+
+-   :material-test-tube: __Test an extension__
+
+    ---
+
+    Check what an image renders, refuses and reloads for a config, with tests that nix flake
+    check runs.
+
+    [:octicons-arrow-right-24: Read](test-an-extension.md)
 
 </div>
 

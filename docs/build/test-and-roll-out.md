@@ -6,7 +6,7 @@ description: "Check an image and the nodes' config, upgrade the nodes, and confi
 # Test and roll out an image
 
 This page is for an image author whose changed image is ready to reach running nodes. At the end
-the image has passed its build checks, every node's config has passed `chalkctl validate`, the
+the image has passed its build checks and its tests, every node's config has passed `chalkctl validate`, the
 nodes run the image, and `chalkctl status` and `chalkctl logs` show that the outputs rendered and
 the services read them. The page uses the homelab and its BGP extension, `extensions/bgp.nix`.
 
@@ -38,16 +38,31 @@ The build fails before any node gets the image when one of these checks fails:
 
 - Every rule of the image's kinds and effects compiles, stays within the cost limit, and reads
   only facts that a module declares.
-- Every effect acts on units and outputs that the image defines.
-- Every output renders each of its `examples` and passes its `check`. `bird-conf` renders
-  `bgp-examples/fabric.yaml`, and `bird -p` parses the result.
+- Every effect acts on units, outputs and kinds that the image defines.
+- Every output and validator is a program of the image's store, and reads kinds the image
+  declares.
 - The store, its hash tree and the UKIs fit their partitions with room to spare, as
   [Add software, drivers and kernel modules](add-software.md#keep-the-image-within-its-slot)
   describes.
 
-The error names the rule, the effect or the output and its example file.
-[Render config files](render-config.md#examples-are-rendered-when-the-image-is-built) explains
-which examples to write, so that the build covers the documents nodes hold.
+The error names the rule, the effect, the output or the validator.
+
+## nix flake check runs the image's tests
+
+The image's tests, `chalkos.tests`, run each test's config through the checks a node runs for a
+delivery: they render every output and run its check, run the validators, and compare the files,
+refusals and effects with what each test expects. The homelab's flake exports them as its checks,
+so one command runs every image's tests:
+
+```sh
+nix flake check
+```
+
+It fails on a test that fails, with a diff for each output whose files differ from the test's
+golden files. `bird-conf` renders `bgp-examples/fabric.yaml` in the test `bgp-fabric`, `bird -p`
+parses the result, and the test compares it with its golden `bird.conf`. The image's build runs
+the tests only with `chalkos.testsOnBuild`. [Test an extension](test-an-extension.md) declares the
+tests and covers the documents nodes hold.
 
 ## chalkctl validate checks each node's config
 

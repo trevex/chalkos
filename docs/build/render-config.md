@@ -30,13 +30,12 @@ declares it:
 --8<-- "examples/homelab/extensions/bgp.nix:output"
 ```
 
-The declaration sets four things:
+The declaration sets three things:
 
 - `inputs` names the kinds whose documents the renderer reads.
 - `render` is the renderer: here a Go template, rendered into `bird.conf`.
 - `check` is a shell script that checks the rendered files. `bird -p` parses the config without
   running it and exits with an error on a config bird rejects.
-- `examples` is a directory of config files that the image build renders and checks.
 
 bird's config includes the rendered file from the output's `dir`. The module names the path as
 `config.chalkos.outputs.bird-conf.dir`, so a misspelled output name fails the image's evaluation:
@@ -358,19 +357,21 @@ constants exist on the node alone.
 
 An output without `check` has its files served as the renderer wrote them.
 
-## Examples are rendered when the image is built
+## Tests render the output before any node does
 
-`examples` names a directory of YAML or JSON files. Each file is one node's documents, checked
-against the image's schemas. The image build renders and checks the output from each file, as the
-node `example`, and fails when one fails. A template that does not render, or renders a file the
-check refuses, then fails the build before any node gets it. `bgp.nix` has one example,
-`bgp-examples/fabric.yaml`, with a node's `Speaker`, the `Peer` of the router, the `Secret` that
-the `Peer` names and the `Network` documents of the node's ports and of `node0`, which the
-validator of [Validate config with a program](validate-config.md) reads.
+A test of `chalkos.tests` renders and checks every output from a config file, as chalkd does for
+a delivery, and compares an output's files with golden files that hold what it should render.
+`nix flake check` runs the tests, so a template that does not render, or renders a file the check
+refuses, fails there before any node gets the image. The homelab's test `bgp-fabric` renders
+`bird-conf` from `bgp-examples/fabric.yaml`, with a node's `Speaker`, the `Peer` of the router,
+the `Secret` that the `Peer` names and the `Network` documents of the node's ports and of `node0`,
+which the validator of [Validate config with a program](validate-config.md) reads. It compares the
+result with `tests/fabric/bird-conf/bird.conf`.
 
 Cover the documents that change what the renderer writes: no documents, one, several, and each
-optional field set and unset. At build time the renderer and the check run outside the sandbox,
-and the files keep the owner the build gives them.
+optional field set and unset. In a test the renderer and the check run outside the sandbox, and
+the files keep the owner the build gives them. [Test an extension](test-an-extension.md) declares
+the tests and takes the golden files.
 
 ## The output's dir is a link
 
@@ -408,8 +409,18 @@ chalkos.outputs.bird-conf = {
 
 ## Check that it worked
 
-Build the image. The build renders each example and runs the check, so a broken template fails
-here and names the output and the example file.
+Run the tests. `nix flake check` renders `bird-conf` for each test and runs its check, so a
+broken template fails here, and a `bird.conf` that differs from `bgp-fabric`'s golden file fails
+with a diff:
+
+```sh
+nix flake check
+```
+
+A test that fails names the output in a `FAIL` line, such as
+`FAIL bgp-fabric: output bird-conf differs from its golden files`.
+[A failing test shows what it got](test-an-extension.md#a-failing-test-shows-what-it-got) shows the
+diff and how to take the new file.
 
 After `chalkctl config apply`, a render or check that fails refuses the delivery, and nothing on
 the node changes. A renderer's refusal shows as `the config is refused:` and the refusals. Any
@@ -466,5 +477,7 @@ renderer that writes without end fills that tmpfs and not `/run`.
   render.
 - [Validate config with a program](validate-config.md) refuses an interface the node does not
   configure.
+- [Test an extension](test-an-extension.md) takes `bird.conf` as a golden file, which every
+  `nix flake check` compares.
 - [The config pipeline](../how-it-works/node/config-pipeline.md) shows where rendering sits in a
   delivery, at boot and after an upgrade.

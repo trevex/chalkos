@@ -209,6 +209,7 @@ in
       unexported = "has no Network document; bird announces the addresses of ${configured}";
     in
     {
+      # --8<-- [start:tests]
       # The image accepts the example: bgp-peers refuses nothing, bird parses the bird.conf it
       # renders, and that is the golden file's.
       bgp-fabric = {
@@ -223,6 +224,7 @@ in
         outputs.bird-conf = ./tests/fabric/bird-conf;
         effects = [ "bird" ];
       };
+      # --8<-- [end:tests]
     }
     # The refusal docs/build/validate-config.md shows, which the check
     # example-homelab-validator-docs finds in the page.

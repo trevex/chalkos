@@ -256,8 +256,26 @@ announces are no output, because they come from the network at runtime.
 
 ## Check that it worked
 
-`chalkctl config apply` prints each unit it restarted, as `restarted <unit>`, then the config the
-node runs. Reloaded units are not listed. Check bird's journal for the reload:
+A test of a change checks which effects it takes, before any node gets the image. The homelab's
+test `bgp-new-password` changes the password of the `Peer`'s `Secret` alone, and expects the
+effect `bird`. `bird.conf` stays the same, but the `outputs` trigger counts a changed value of a
+`Secret` that the output's input documents reference:
+
+```nix
+chalkos.tests.bgp-new-password = {
+  before = ./bgp-examples/fabric.yaml;
+  config = ./tests/fabric-new-password.yaml;
+  outputs.bird-conf = ./tests/fabric/bird-conf;
+  effects = [ "bird" ];
+};
+```
+
+`nix flake check` runs it, and fails with `FAIL bgp-new-password: effects differ:` and the effects
+expected and taken when the effect does not fire. [Effects are those of a
+change](test-an-extension.md#effects-are-those-of-a-change) describes such tests.
+
+On a node, `chalkctl config apply` prints each unit it restarted, as `restarted <unit>`, then the
+config the node runs. Reloaded units are not listed. Check bird's journal for the reload:
 
 ```sh
 chalkctl config apply node1
@@ -274,5 +292,6 @@ effect chalkd took all the same. A unit that did not restart was not running: an
   bird's effect.
 - [Guard changes with rules and facts](guard-changes.md) refuses a change before any effect.
 - [Render config files](render-config.md) for the outputs an effect names.
+- [Test an extension](test-an-extension.md) for tests of the effects of a change.
 - [The config pipeline](../how-it-works/node/config-pipeline.md) for where effects sit in a
   delivery.

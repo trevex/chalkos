@@ -5,11 +5,11 @@ description: "Unit, namespace, evaluation and end-to-end tests, and when to writ
 
 # Testing
 
-chalkos has four kinds of tests: Go unit tests, tests in a network namespace or on disk image
-files, Nix evaluation and build checks, and end-to-end tests that boot virtual machines. Each
-change is proved at the cheapest level that can prove it, because the VM tests take minutes and
-gigabytes of memory each, and the whole suite runs on a developer's machine. This page explains
-each kind, where it lives and how to run it.
+chalkos has five kinds of tests: Go unit tests, tests in a network namespace or on disk image
+files, Nix evaluation and build checks, image tests of what an image makes of a config, and
+end-to-end tests that boot virtual machines. Each change is proved at the cheapest level that
+can prove it, because the VM tests take minutes and gigabytes of memory each, and the whole suite
+runs on a developer's machine. This page explains each kind, where it lives and how to run it.
 
 ## Which test to write?
 
@@ -20,6 +20,7 @@ Start at the top of the table and go down only when the level above cannot show 
 | Go unit test | next to the code, `*_test.go` in `pkg/` and `cmd/` | logic, parsing, error paths, command output | seconds |
 | Namespace or disk-image test | `pkg/kubernetes/vip`, `pkg/install/parts_test.go`, `pkg/upgrade/lab_test.go`, the `vxlan-rule`, `router-firewall`, `router-policy-routing` and `router-nat64` checks | network rules, partition tables and file systems written by the real tools | seconds |
 | Evaluation test | `test/nix/eval.nix`, `test/nix/kinds.nix` | the arguments of `mkImages`, option defaults, assertions, what a module sets in an image, config kinds | one evaluation |
+| Image test | `chalkos.tests` of a module, with golden files such as those in `modules/node/router/tests` | the files an image renders from a config, the refusals it gives and the effects a change takes | one run of the image's renderers and validators |
 | Build check | `nix/checks/` | what an image build produces: kernel modules, sizes, the bootspec | one image build |
 | End-to-end test | `test/e2e/` | behaviour that needs a booted node: firmware, Secure Boot, the TPM, the initrd, a cluster | minutes and 2 GiB or more per VM |
 
@@ -142,10 +143,54 @@ shell functions `fail`, `retry` and `refuses` the check scripts call. The test s
 | `router-dhcp-relay` | A router's `dnsmasq-relay.service` and `dnsmasq-relay@<vrf>.service` and the firewall's openings of the relays, in network namespaces. |
 | `frr-credentials` | A router's `frr.service` fills its config's passwords in from its credentials, and refuses those FRR would not take. |
 | `image-checker` | An image's `chalkd check` in its sandbox on a NixOS VM, with a second store: the image's renderer and command fact run from it, a renderer's refusal comes back, the sandbox hides `/run/chalkos`, and another user reaches neither the facts socket nor the result. |
-| `rules` | The images' rules compile, their outputs render their examples and pass their checks, and a broken rule, effect, output or diagnostic fails its image. |
+| `rules` | The images' rules compile, the outputs' checks pass the files they should and refuse broken ones, and a broken rule, effect, output or diagnostic fails its image. |
+| `image-tests` | The image tests of the test image, the router images and the examples' image pass: their outputs render the golden files, and their refusals and effects are those expected. |
 | `template-lab` | The lab template's image builds, and `chalkctl validate` accepts the template's YAML with it. |
 | `example-homelab` | The homelab example's image builds, and `chalkctl validate` accepts its YAML, `Peer` documents included, with it. |
 | `example-extensions` | The extensions example's image builds, and `chalkctl validate` accepts its YAML, `Rack` and `Hardware` documents included, with it. |
+
+## Image tests
+
+An image test, a test of `chalkos.tests`, runs a config file through the checks chalkd runs for a
+delivery, at build time and without a node: the kinds' schemas, the change rules, the validators,
+every output's renderer and check, and the plan of effects. It compares the files an output
+renders with golden files, the refusals with those it expects, and for a change from `before`, the
+effects taken. [Test an extension](../build/test-an-extension.md) describes the fields and the
+results. `cmd/chalkos-rules test` runs the tests, and `modules/node/runtime/tests.nix` declares
+them and builds `chalkosTestResults` and `chalkosTests`.
+
+chalkos's own modules carry image tests:
+
+- `modules/node/kinds/networkd.nix` and `modules/node/time.nix` turn each file of
+  `modules/node/examples/networkd` and `modules/node/examples/chrony` into a test that the
+  image accepts it, renders every output and passes their checks, through
+  `chalkosLib.internal.exampleTests`.
+- The router layer turns each file `<name>.yaml` of `modules/node/examples/router` into the test
+  `router-<name>`, which runs as the node `r1`. On an image with every router feature it compares
+  each router output with the golden files of `modules/node/router/tests/<name>/<output>`. A
+  missing directory stands for an output that renders no files, as git keeps no empty directory.
+  `router-vrf-strict` renders the VRF example under the strict reverse-path filter.
+- The test image's `Greeting` output has a test per file of `modules/testing/greeting-examples`.
+  The examples' image carries the tests of the homelab's BGP extension and of the extensions
+  example, with golden files below `examples/homelab/extensions/tests` and
+  `examples/extensions/tests`.
+
+The `image-tests` check builds `chalkosTests` of the test image, the router image, each router
+image without a feature and the examples' image. A golden file that differs fails it with a diff
+and a command that takes what was rendered:
+
+```sh
+nix build -L .#checks.x86_64-linux.image-tests
+```
+
+To take new golden files after a change of a renderer, or for a new router example, read each
+diff, then run the command the log prints after it, with `DIR` the golden directory, such as
+`modules/node/router/tests/lan/router-nftables`. A new example's outputs have no golden
+directories yet, so each output that renders files fails with a diff against no files. Create
+`modules/node/router/tests/<name>` first, and run each command without `rm -r DIR &&`, as there
+is no directory to remove. The `rules` check and
+the router's namespace checks, such as `router-firewall`, read the files the router image's tests
+rendered, so they fail too when an example renders nothing.
 
 ## End-to-end tests
 
@@ -209,17 +254,17 @@ Every check builds with `nix build`, and a change runs the checks of the parts i
 | `api/chalkos/*/v1/*.proto` | `api-generated`, `docs-generated`, `go-unit`, `go-lint` |
 | Command help, option descriptions | `docs-generated`, `docs` |
 | Pages in `docs/` | `docs` |
-| Modules in `modules/` or `lib/` | `eval`, `eval-kinds`, and the build and end-to-end checks of what the module does |
-| `examples/homelab` | `example-homelab` |
-| `examples/extensions` | `example-extensions` |
+| Modules in `modules/` or `lib/` | `eval`, `eval-kinds`, `image-tests`, and the build and end-to-end checks of what the module does |
+| `examples/homelab` | `example-homelab`, `example-homelab-validator-docs`, `image-tests` |
+| `examples/extensions` | `example-extensions`, `image-tests` |
 | Kernel modules, closure, image size | `kernel-modules`, `image-size`, `bootspec` |
 | The firewall or VXLAN rule | `vxlan-rule`, `go-unit`, `e2e-kubernetes` |
-| The router's kinds, outputs or firewall | `router-firewall`, `rules`, `eval`, `eval-kinds`, `go-unit` |
-| The router's BGP: its kinds, `frr` output, FRR's unit, `pkg/router` | `rules`, `frr-credentials`, `eval`, `eval-kinds`, `go-unit`, `e2e-router` |
-| The router's NAT64 and resolvers: their kinds, the `jool` and `unbound` outputs, their units, `pkg/router` | `router-nat64`, `router-firewall`, `rules`, `eval`, `eval-kinds`, `go-unit`, `image-size`, `e2e-router` |
-| The router's VRFs: the `VRF` kind, `router-networkd`, `chalkos-vrf` | `rules`, `eval`, `eval-kinds`, `go-unit`, `router-vrf`, `router-firewall`, `e2e-router` |
-| The router's policy routing: the `PolicyRoute` and `NextHop` kinds, their chain and units | `router-policy-routing`, `router-firewall`, `rules`, `eval`, `eval-kinds`, `go-unit`, `e2e-router` |
-| The router's DHCP and relays: the `DHCPSubnet` and `DHCPRelay` kinds, the `kea` and `dhcp-relay` outputs, their units, `pkg/router` | `router-dhcp`, `router-dhcp6`, `router-dhcp-relay`, `router-firewall`, `rules`, `eval`, `eval-kinds`, `go-unit`, `e2e-router` |
+| The router's kinds, outputs or firewall | `router-firewall`, `rules`, `image-tests`, `eval`, `eval-kinds`, `go-unit` |
+| The router's BGP: its kinds, `frr` output, FRR's unit, `pkg/router` | `rules`, `image-tests`, `frr-credentials`, `eval`, `eval-kinds`, `go-unit`, `e2e-router` |
+| The router's NAT64 and resolvers: their kinds, the `jool` and `unbound` outputs, their units, `pkg/router` | `router-nat64`, `router-firewall`, `rules`, `image-tests`, `eval`, `eval-kinds`, `go-unit`, `image-size`, `e2e-router` |
+| The router's VRFs: the `VRF` kind, `router-networkd`, `chalkos-vrf` | `rules`, `image-tests`, `eval`, `eval-kinds`, `go-unit`, `router-vrf`, `router-firewall`, `e2e-router` |
+| The router's policy routing: the `PolicyRoute` and `NextHop` kinds, their chain and units | `router-policy-routing`, `router-firewall`, `rules`, `image-tests`, `eval`, `eval-kinds`, `go-unit`, `e2e-router` |
+| The router's DHCP and relays: the `DHCPSubnet` and `DHCPRelay` kinds, the `kea` and `dhcp-relay` outputs, their units, `pkg/router` | `router-dhcp`, `router-dhcp6`, `router-dhcp-relay`, `router-firewall`, `rules`, `image-tests`, `eval`, `eval-kinds`, `go-unit`, `e2e-router` |
 | An image's checker: `pkg/imagecheck`, `chalkd check` | `image-checker`, `go-unit`, `go-lint`, `e2e-upgrade` |
 | `templates/lab` | `template-lab` |
 | `.github/workflows` | `workflows` |

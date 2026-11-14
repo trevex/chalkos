@@ -72,6 +72,7 @@ nav = [
     "build/pass-secrets.md",
     "build/guard-changes.md",
     "build/validate-config.md",
+    "build/test-an-extension.md",
     "build/customise-installer.md",
     "build/sign-images.md",
     "build/publish-images.md",

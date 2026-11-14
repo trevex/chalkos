@@ -32,12 +32,11 @@ declares it:
 --8<-- "examples/homelab/extensions/bgp.nix:validator"
 ```
 
-The declaration sets three things:
+The declaration sets two things:
 
 - `inputs` names the kinds whose documents the validator reads: the `Peer` and `Speaker`
   documents and the node's `Network` documents, which configure its interfaces.
 - `program` is the validator: here a jq program.
-- `examples` is a directory of config files that the image build runs the validator on.
 
 The name is lower-case letters, digits and dashes, as an output's.
 
@@ -115,8 +114,8 @@ an interface, so the program takes it for no name, and a `Peer` on such an inter
 The program also refuses `Peer` documents without a `Speaker`, which gives bird its AS number and
 router ID. The template refuses the same config, as
 [A renderer refuses a config](render-config.md#a-renderer-refuses-a-config) shows, but the
-validators run before the renderers, so the operator sees this refusal. The check
-`example-homelab-bgp-peers` runs the program on these cases and on `enp3s0` below.
+validators run before the renderers, so the operator sees this refusal. The homelab's tests run
+the program on these cases and on `enp3s0` below.
 
 ## Any program of the store validates
 
@@ -134,23 +133,50 @@ chalkos.validators.bgp-peers.program = pkgs.writeShellScript "bgp-peers" ''
 A Go program, or one in any other language, works the same way: read the input, print the report,
 exit 0. A program that serves as a renderer too reads the same input in both roles.
 
-## Examples run when the image is built
+## Tests run the validator before any node does
 
-`examples` names a directory of YAML or JSON files, each one node's documents, checked against
-the image's schemas. The image build runs the validator on each file and fails when it refuses
-one or fails. `bgp.nix` runs `bgp-peers` on the examples of the output `bird-conf`, whose
-`fabric.yaml` holds a node's `Speaker`, its `Peer` and the `Network` documents of its ports and of
-`node0`. A jq program with a syntax
-error then fails the build before any node gets it.
+A test of `chalkos.tests` runs every validator on a config file, as chalkd does for a delivery,
+and compares the refusals with those the test expects. A test that expects none expects the config
+accepted. `nix flake check` runs the tests, so a jq program with a syntax error, or one that
+refuses a config it should accept, fails there before any node gets the image. `bgp.nix` tests
+`bgp-peers` on a config file per case below `tests/`: interfaces matched by lists, by a glob and by
+names separated by spaces, a `Peer` without a `Speaker`, a `Speaker` that exports an interface
+without a `Network` document and a node without `Peer` documents. It also tests
+`bgp-examples/fabric.yaml`, with a node's `Speaker`, its `Peer` and the `Network` documents of its
+ports and of `node0`, which the validator accepts.
 
 ## Check that it worked
 
-Build the image. The build runs each example, so a broken validator fails here and names the
-validator and the example file.
+Run the tests:
 
-Say the `Peer` of `bgp/fabric.yaml` gains a third interface, `enp3s0`, that the nodes have no
-`Network` for. `chalkctl config apply node1` checks the config as far as chalkctl can, then the
-node runs the validator and refuses the delivery:
+```sh
+nix flake check
+```
+
+The homelab's test `bgp-unconfigured-peer-interface` gives the `Peer` a third interface, `enp3s0`,
+without a `Network` document, and expects the refusal of the report above:
+
+```nix
+chalkos.tests.bgp-unconfigured-peer-interface = {
+  config = ./tests/unconfigured-peer-interface.yaml;
+  refusals = [
+    {
+      kind = "Peer";
+      name = "router";
+      path = "spec.interfaces[2]";
+      message = "enp3s0 has no Network document; bird binds the session to an interface the node configures";
+    }
+  ];
+};
+```
+
+A validator that fails, or refuses another config than the test expects, fails the test with a
+`FAIL` line of the refusals it expected and those it got, as
+[Test an extension](test-an-extension.md#a-failing-test-shows-what-it-got) shows.
+
+On a node, say the `Peer` of `bgp/fabric.yaml` gains the same interface, `enp3s0`, that the nodes
+have no `Network` for. `chalkctl config apply node1` checks the config as far as chalkctl can,
+then the node runs the validator and refuses the delivery:
 
 ```console
 $ chalkctl config apply node1
@@ -209,6 +235,7 @@ the node alone:
 
 ## What next
 
+- [Test an extension](test-an-extension.md) tests the files, refusals and effects of a config.
 - [Render config files](render-config.md) renders `bird.conf` from the `Speaker` and `Peer`
   documents.
 - [Guard changes with rules and facts](guard-changes.md) refuses a change with a CEL rule, which
