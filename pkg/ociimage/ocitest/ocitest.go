@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 
@@ -23,23 +24,57 @@ import (
 // Registry serves an empty registry from memory until the test ends and returns its host,
 // 127.0.0.1:<port>, which go-containerregistry reaches over plain HTTP as a loopback address.
 func Registry(t testing.TB) string {
-	host, _ := CountingRegistry(t)
-	return host
+	return RegistryWith(t, nil)
+}
+
+// RegistryWith is Registry that hands each request to intercept first and serves it unless
+// intercept handled it and returns true. A nil intercept handles none.
+func RegistryWith(t testing.TB, intercept func(w http.ResponseWriter, r *http.Request) bool) string {
+	t.Helper()
+	reg := registry.New(registry.Logger(log.New(io.Discard, "", 0)))
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if intercept == nil || !intercept(w, r) {
+			reg.ServeHTTP(w, r)
+		}
+	}))
+	t.Cleanup(srv.Close)
+	return strings.TrimPrefix(srv.URL, "http://")
 }
 
 // CountingRegistry is Registry that counts the manifest requests it answers.
 func CountingRegistry(t testing.TB) (string, *atomic.Int64) {
 	t.Helper()
 	var manifests atomic.Int64
-	reg := registry.New(registry.Logger(log.New(io.Discard, "", 0)))
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	host := RegistryWith(t, func(_ http.ResponseWriter, r *http.Request) bool {
 		if strings.Contains(r.URL.Path, "/manifests/") {
 			manifests.Add(1)
 		}
-		reg.ServeHTTP(w, r)
-	}))
-	t.Cleanup(srv.Close)
-	return strings.TrimPrefix(srv.URL, "http://"), &manifests
+		return false
+	})
+	return host, &manifests
+}
+
+// ServedBlobs is Registry that records the digest of each blob it serves.
+func ServedBlobs(t testing.TB) (string, *sync.Map) {
+	t.Helper()
+	var served sync.Map
+	host := RegistryWith(t, func(_ http.ResponseWriter, r *http.Request) bool {
+		if _, digest, ok := strings.Cut(r.URL.Path, "/blobs/"); ok && r.Method == http.MethodGet {
+			served.Store(digest, true)
+		}
+		return false
+	})
+	return host, &served
+}
+
+// Header is the header of a small test image, built fresh so a test may change its copy.
+func Header() ociimage.Header {
+	return ociimage.Header{ImageID: "chalkos", RootHash: strings.Repeat("ab", 32), Architecture: "x86-64", Platform: "metal"}
+}
+
+// Contract is a small contract, built fresh so a test may change its copy.
+func Contract() ociimage.Contract {
+	return ociimage.Contract{Metadata: []byte("{}"), Schemas: map[string][]byte{"a.json": []byte("{}")}, Definitions: map[string][]byte{"00-esp.conf": []byte("esp")}}
 }
 
 // Image is a chalkos image of the header and the contract whose store, hash tree, UKI and boot
@@ -78,19 +113,16 @@ func Push(t testing.TB, img v1.Image, ref string) string {
 // default keychain as chalkbuild and chalkctl do; the test must not run in parallel.
 func AuthRegistry(t testing.TB, user, password string) string {
 	t.Helper()
-	reg := registry.New(registry.Logger(log.New(io.Discard, "", 0)))
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if u, p, ok := r.BasicAuth(); !ok || u != user || p != password {
-			w.Header().Set("WWW-Authenticate", `Basic realm="ocitest"`)
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusUnauthorized)
-			io.WriteString(w, `{"errors": [{"code": "UNAUTHORIZED", "message": "authentication required"}]}`)
-			return
+	host := RegistryWith(t, func(w http.ResponseWriter, r *http.Request) bool {
+		if u, p, ok := r.BasicAuth(); ok && u == user && p == password {
+			return false
 		}
-		reg.ServeHTTP(w, r)
-	}))
-	t.Cleanup(srv.Close)
-	host := strings.TrimPrefix(srv.URL, "http://")
+		w.Header().Set("WWW-Authenticate", `Basic realm="ocitest"`)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnauthorized)
+		io.WriteString(w, `{"errors": [{"code": "UNAUTHORIZED", "message": "authentication required"}]}`)
+		return true
+	})
 	dir := t.TempDir()
 	auth := base64.StdEncoding.EncodeToString([]byte(user + ":" + password))
 	if err := os.WriteFile(filepath.Join(dir, "config.json"), []byte(`{"auths": {"`+host+`": {"auth": "`+auth+`"}}}`), 0o600); err != nil {

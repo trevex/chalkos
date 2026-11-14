@@ -3,17 +3,13 @@ package ociimage_test
 import (
 	"context"
 	"encoding/hex"
-	"io"
-	"log"
 	"net/http"
-	"net/http/httptest"
 	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
 
 	"github.com/google/go-containerregistry/pkg/name"
-	"github.com/google/go-containerregistry/pkg/registry"
 	"github.com/google/go-containerregistry/pkg/v1/random"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/google/go-containerregistry/pkg/v1/types"
@@ -91,7 +87,8 @@ func TestReadRefuses(t *testing.T) {
 		t.Fatal(err)
 	}
 	md := `{"schemaVersion": 0, "id": "chalkos", "variant": "node", "platform": "metal", "rootHash": "` + strings.Repeat("ab", 32) + `", "kinds": []}`
-	c := ociimage.Contract{Metadata: []byte(md), Schemas: map[string][]byte{"a.json": []byte("{}")}, Definitions: map[string][]byte{"00-esp.conf": []byte("esp")}}
+	c := ocitest.Contract()
+	c.Metadata = []byte(md)
 	ocitest.Push(t, ocitest.Image(t, ociimage.Header{ImageID: "chalkos", RootHash: strings.Repeat("cd", 32), Architecture: "x86-64", Platform: "metal"}, c), host+"/chalkos/other:v1")
 	for ref, want := range map[string]string{
 		host + "/other/ctr":        "no image reference with a registry and a tag or digest",
@@ -114,8 +111,8 @@ func TestReadRefuses(t *testing.T) {
 // silently accept the swapped image.
 func TestReadRefusesASwappedManifest(t *testing.T) {
 	ctx := context.Background()
-	c := ociimage.Contract{Metadata: []byte("{}"), Schemas: map[string][]byte{"a.json": []byte("{}")}, Definitions: map[string][]byte{"00-esp.conf": []byte("esp")}}
-	a := ocitest.Image(t, ociimage.Header{ImageID: "chalkos", RootHash: strings.Repeat("ab", 32), Architecture: "x86-64", Platform: "metal"}, c)
+	c := ocitest.Contract()
+	a := ocitest.Image(t, ocitest.Header(), c)
 	b := ocitest.Image(t, ociimage.Header{ImageID: "chalkos", RootHash: strings.Repeat("cd", 32), Architecture: "x86-64", Platform: "metal"}, c)
 	digestA, err := a.Digest()
 	if err != nil {
@@ -125,17 +122,14 @@ func TestReadRefusesASwappedManifest(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	reg := registry.New(registry.Logger(log.New(io.Discard, "", 0)))
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	host := ocitest.RegistryWith(t, func(w http.ResponseWriter, r *http.Request) bool {
 		if r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/manifests/"+digestA.String()) {
 			w.Header().Set("Content-Type", string(types.OCIManifestSchema1))
 			w.Write(manifestB)
-			return
+			return true
 		}
-		reg.ServeHTTP(w, r)
-	}))
-	defer srv.Close()
-	host := strings.TrimPrefix(srv.URL, "http://")
+		return false
+	})
 	tagRef, err := name.ParseReference(host + "/chalkos/x:v1")
 	if err != nil {
 		t.Fatal(err)

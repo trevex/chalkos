@@ -7,9 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
-	"net/http"
-	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -23,7 +20,6 @@ import (
 	"time"
 
 	"github.com/google/go-containerregistry/pkg/authn"
-	"github.com/google/go-containerregistry/pkg/registry"
 
 	"github.com/trevex/chalkos/pkg/esp"
 	"github.com/trevex/chalkos/pkg/image/imagetest"
@@ -1138,17 +1134,9 @@ func TestInstallPassesOverAHeldStoreOfAPull(t *testing.T) {
 	}
 	os.Remove(filepath.Join(l.esp, esp.LinuxDir, "chalkos_2+3.efi"))
 
-	var served sync.Map
-	reg := registry.New(registry.Logger(log.New(io.Discard, "", 0)))
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if _, digest, ok := strings.Cut(r.URL.Path, "/blobs/"); ok && r.Method == http.MethodGet {
-			served.Store(digest, true)
-		}
-		reg.ServeHTTP(w, r)
-	}))
-	t.Cleanup(srv.Close)
+	host, served := ocitest.ServedBlobs(t)
 	oh := ociimage.Header{ImageID: "chalkos", RootHash: hex.EncodeToString(img.Root), Architecture: "x86-64", Platform: "metal"}
-	contract, err := ociimage.Contract{Metadata: []byte("{}"), Schemas: map[string][]byte{"a.json": []byte("{}")}, Definitions: map[string][]byte{"00-esp.conf": []byte("esp")}}.Tar()
+	contract, err := ocitest.Contract().Tar()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1161,7 +1149,7 @@ func TestInstallPassesOverAHeldStoreOfAPull(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ref := ocitest.Push(t, oci, strings.TrimPrefix(srv.URL, "http://")+"/lab/node-metal:v1")
+	ref := ocitest.Push(t, oci, host+"/lab/node-metal:v1")
 	clear(l.writes)
 	served.Clear()
 	h := img.header

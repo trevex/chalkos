@@ -7,19 +7,13 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
-	"net/http"
-	"net/http/httptest"
 	"os"
 	"reflect"
-	"slices"
 	"strings"
-	"sync"
 	"testing"
 
 	"connectrpc.com/connect"
 	"github.com/google/go-containerregistry/pkg/authn"
-	"github.com/google/go-containerregistry/pkg/registry"
 	"google.golang.org/protobuf/proto"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
@@ -54,8 +48,8 @@ spec: {data: {token: s3cret}}
 // upgrade that pulls it, as chalkctl sends it.
 func pulledHeader(t *testing.T, host string) *nodev1.UpgradeHeader {
 	t.Helper()
-	h := ociimage.Header{ImageID: "chalkos", RootHash: strings.Repeat("ab", 32), Architecture: "x86-64", Platform: "metal"}
-	img := ocitest.Image(t, h, ociimage.Contract{Metadata: []byte("{}"), Schemas: map[string][]byte{"a.json": []byte("{}")}, Definitions: map[string][]byte{"00-esp.conf": []byte("esp")}})
+	h := ocitest.Header()
+	img := ocitest.Image(t, h, ocitest.Contract())
 	ref := ocitest.Push(t, img, host+"/lab/node-metal:v1")
 	part := func(data string) *nodev1.ImagePart {
 		sum := sha256.Sum256([]byte(data))
@@ -355,19 +349,7 @@ func TestInstallPullsTheImage(t *testing.T) {
 // TestInstallPassesOverAStoreItHolds lets the install pass over the store and hash tree of a
 // pulled image without fetching them, as it does for a slot an earlier attempt wrote.
 func TestInstallPassesOverAStoreItHolds(t *testing.T) {
-	reg := registry.New(registry.Logger(log.New(io.Discard, "", 0)))
-	var mu sync.Mutex
-	var blobs []string
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if _, digest, ok := strings.Cut(r.URL.Path, "/blobs/"); ok && r.Method == http.MethodGet {
-			mu.Lock()
-			blobs = append(blobs, digest)
-			mu.Unlock()
-		}
-		reg.ServeHTTP(w, r)
-	}))
-	t.Cleanup(srv.Close)
-	host := strings.TrimPrefix(srv.URL, "http://")
+	host, served := ocitest.ServedBlobs(t)
 	s, _ := newTestServer(t, maintenance, vda)
 	s.Installer = true
 	var rest []byte
@@ -388,15 +370,15 @@ func TestInstallPassesOverAStoreItHolds(t *testing.T) {
 	if string(rest) != "ukiboot loader" {
 		t.Errorf("after the store: %q", rest)
 	}
-	mu.Lock()
-	defer mu.Unlock()
 	for _, part := range []string{"store", "hash tree"} {
-		if digest := fmt.Sprintf("sha256:%x", sha256.Sum256([]byte(part))); slices.Contains(blobs, digest) {
-			t.Errorf("fetched the %s, %s, among %v", part, digest, blobs)
+		digest := fmt.Sprintf("sha256:%x", sha256.Sum256([]byte(part)))
+		if _, ok := served.Load(digest); ok {
+			t.Errorf("fetched the %s, %s", part, digest)
 		}
 	}
-	if uki := fmt.Sprintf("sha256:%x", sha256.Sum256([]byte("uki"))); !slices.Contains(blobs, uki) {
-		t.Errorf("did not fetch the UKI, %s, among %v", uki, blobs)
+	uki := fmt.Sprintf("sha256:%x", sha256.Sum256([]byte("uki")))
+	if _, ok := served.Load(uki); !ok {
+		t.Errorf("did not fetch the UKI, %s", uki)
 	}
 }
 

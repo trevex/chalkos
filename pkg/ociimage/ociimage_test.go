@@ -8,9 +8,7 @@ import (
 	"errors"
 	"io"
 	"io/fs"
-	"log"
 	"net/http"
-	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -20,7 +18,6 @@ import (
 	"time"
 
 	"github.com/google/go-containerregistry/pkg/name"
-	"github.com/google/go-containerregistry/pkg/registry"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/mutate"
 	"github.com/google/go-containerregistry/pkg/v1/random"
@@ -31,6 +28,7 @@ import (
 	"github.com/trevex/chalkos/pkg/image"
 	"github.com/trevex/chalkos/pkg/image/imagetest"
 	"github.com/trevex/chalkos/pkg/ociimage"
+	"github.com/trevex/chalkos/pkg/ociimage/ocitest"
 )
 
 // writeImage writes the image directory of a test image with its contract into dir and returns
@@ -59,17 +57,11 @@ func writeLayout(t *testing.T, in, out string) v1.Hash {
 	return d
 }
 
-// smallHeader is the header of a small test image, built fresh so a test may change a field of
-// its own copy.
-func smallHeader() ociimage.Header {
-	return ociimage.Header{ImageID: "chalkos", RootHash: strings.Repeat("ab", 32), Architecture: "x86-64", Platform: "metal"}
-}
-
 // smallBlobs are the five blobs of a small test image's layers, a few bytes each, built fresh so
 // a test may replace one before calling ociimage.Build.
 func smallBlobs(t *testing.T) (store, hashTree, uki, bootLoader, contract ociimage.Blob) {
 	t.Helper()
-	c := ociimage.Contract{Metadata: []byte("{}"), Schemas: map[string][]byte{"a.json": []byte("{}")}, Definitions: map[string][]byte{"00-esp.conf": []byte("esp")}}
+	c := ocitest.Contract()
 	tar, err := c.Tar()
 	if err != nil {
 		t.Fatal(err)
@@ -79,17 +71,6 @@ func smallBlobs(t *testing.T) (store, hashTree, uki, bootLoader, contract ociima
 		ociimage.BytesBlob(ociimage.UKIType, []byte("uki")),
 		ociimage.BytesBlob(ociimage.BootLoaderType, []byte("boot loader")),
 		ociimage.BytesBlob(ociimage.ContractType, tar)
-}
-
-// smallImage is a chalkos image of a few bytes per layer, for tests that need no disk image.
-func smallImage(t *testing.T) v1.Image {
-	t.Helper()
-	store, hashTree, uki, bootLoader, contract := smallBlobs(t)
-	img, err := ociimage.Build(smallHeader(), store, hashTree, uki, bootLoader, contract)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return img
 }
 
 // TestWriteLayout writes the layout of an image directory: one manifest of the chalkos artifact
@@ -178,7 +159,7 @@ func TestWriteLayoutNeedsANewDirectory(t *testing.T) {
 		filepath.Join(dir, "exists"):         "exists",
 		filepath.Join(dir, "missing", "out"): "no such file or directory",
 	} {
-		if _, err := ociimage.WriteLayout(context.Background(), smallImage(t), out); err == nil || !strings.Contains(err.Error(), want) {
+		if _, err := ociimage.WriteLayout(context.Background(), ocitest.Image(t, ocitest.Header(), ocitest.Contract()), out); err == nil || !strings.Contains(err.Error(), want) {
 			t.Errorf("WriteLayout(%s) = %v, want %q", out, err, want)
 		}
 	}
@@ -371,7 +352,7 @@ func TestWriteLayoutStopsOnCtxCancellation(t *testing.T) {
 	out := filepath.Join(dir, "out")
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	if _, err := ociimage.WriteLayout(ctx, smallImage(t), out); err == nil || !errors.Is(err, context.Canceled) {
+	if _, err := ociimage.WriteLayout(ctx, ocitest.Image(t, ocitest.Header(), ocitest.Contract()), out); err == nil || !errors.Is(err, context.Canceled) {
 		t.Errorf("WriteLayout = %v, want context.Canceled", err)
 	}
 	if entries, _ := os.ReadDir(dir); len(entries) != 0 {
@@ -384,7 +365,7 @@ func TestWriteLayoutStopsOnCtxCancellation(t *testing.T) {
 func TestWriteLayoutRefusesALayerWhoseContentDoesNotMatchItsDigest(t *testing.T) {
 	store, hashTree, uki, bootLoader, contract := smallBlobs(t)
 	store.Open = func() (io.ReadCloser, error) { return io.NopCloser(bytes.NewReader([]byte("STORE"))), nil }
-	img, err := ociimage.Build(smallHeader(), store, hashTree, uki, bootLoader, contract)
+	img, err := ociimage.Build(ocitest.Header(), store, hashTree, uki, bootLoader, contract)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -441,7 +422,7 @@ func TestReadLayoutRefusesACorruptManifestOrConfig(t *testing.T) {
 // go-containerregistry verifies a remote blob's digest only once a reader of it reaches end of
 // stream, which archive/tar's reader does not reach on its own.
 func TestReadContractRefusesATamperedBlob(t *testing.T) {
-	img := smallImage(t)
+	img := ocitest.Image(t, ocitest.Header(), ocitest.Contract())
 	l, err := ociimage.Layer(img, ociimage.ContractType)
 	if err != nil {
 		t.Fatal(err)
@@ -450,24 +431,23 @@ func TestReadContractRefusesATamperedBlob(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	reg := registry.New(registry.Logger(log.New(io.Discard, "", 0)))
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet || !strings.HasSuffix(r.URL.Path, "/blobs/"+contractDigest.String()) {
-			reg.ServeHTTP(w, r)
-			return
+	blob, err := l.Compressed()
+	if err != nil {
+		t.Fatal(err)
+	}
+	tampered, err := io.ReadAll(blob)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tampered[len(tampered)-1] ^= 1
+	host := ocitest.RegistryWith(t, func(w http.ResponseWriter, r *http.Request) bool {
+		if r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/blobs/"+contractDigest.String()) {
+			w.Write(tampered)
+			return true
 		}
-		rec := httptest.NewRecorder()
-		reg.ServeHTTP(rec, r)
-		body := rec.Body.Bytes()
-		body[len(body)-1] ^= 1
-		for k, v := range rec.Header() {
-			w.Header()[k] = v
-		}
-		w.WriteHeader(rec.Code)
-		w.Write(body)
-	}))
-	defer srv.Close()
-	ref, err := name.ParseReference(strings.TrimPrefix(srv.URL, "http://") + "/x:v1")
+		return false
+	})
+	ref, err := name.ParseReference(host + "/x:v1")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -488,7 +468,7 @@ func TestReadContractRefusesATamperedBlob(t *testing.T) {
 func TestReadContractRefusesAnOversizedLayer(t *testing.T) {
 	store, hashTree, uki, bootLoader, _ := smallBlobs(t)
 	big := ociimage.BytesBlob(ociimage.ContractType, bytes.Repeat([]byte("x"), 16<<20+1))
-	img, err := ociimage.Build(smallHeader(), store, hashTree, uki, bootLoader, big)
+	img, err := ociimage.Build(ocitest.Header(), store, hashTree, uki, bootLoader, big)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -511,7 +491,7 @@ func TestReadHeaderRefusesANonChalkosImage(t *testing.T) {
 // TestReplaceRefusesExtraLayers refuses a manifest with a layer besides the five known ones,
 // rather than silently dropping it.
 func TestReplaceRefusesExtraLayers(t *testing.T) {
-	img, err := mutate.AppendLayers(smallImage(t), static.NewLayer([]byte("extra"), "application/vnd.chalkos.image.extra.v1"))
+	img, err := mutate.AppendLayers(ocitest.Image(t, ocitest.Header(), ocitest.Contract()), static.NewLayer([]byte("extra"), "application/vnd.chalkos.image.extra.v1"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -525,7 +505,7 @@ func TestReplaceRefusesExtraLayers(t *testing.T) {
 func TestBuildRefusesDuplicateLayerDigests(t *testing.T) {
 	store, _, uki, bootLoader, contract := smallBlobs(t)
 	dup := ociimage.BytesBlob(ociimage.HashTreeType, []byte("store"))
-	if _, err := ociimage.Build(smallHeader(), store, dup, uki, bootLoader, contract); err == nil || !strings.Contains(err.Error(), "digest") {
+	if _, err := ociimage.Build(ocitest.Header(), store, dup, uki, bootLoader, contract); err == nil || !strings.Contains(err.Error(), "digest") {
 		t.Errorf("Build = %v", err)
 	}
 }

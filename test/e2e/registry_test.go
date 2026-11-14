@@ -19,6 +19,8 @@ import (
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/layout"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
+
+	"github.com/trevex/chalkos/pkg/ociimage/ocitest"
 )
 
 // The private repository of startRegistry's registry, which answers only the user e2e with
@@ -44,18 +46,16 @@ func startRegistry(t *testing.T) string {
 	if err := json.Unmarshal(data, &images); err != nil {
 		t.Fatal(err)
 	}
-	reg := registry.New(registry.Logger(log.New(io.Discard, "", 0)))
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-		if strings.HasPrefix(req.URL.Path, "/v2/"+privateRepo+"/") {
-			if user, pass, ok := req.BasicAuth(); !ok || user != "e2e" || pass != privatePassword {
-				unauthorized(w)
-				return
-			}
+	host := ocitest.RegistryWith(t, func(w http.ResponseWriter, req *http.Request) bool {
+		if !strings.HasPrefix(req.URL.Path, "/v2/"+privateRepo+"/") {
+			return false
 		}
-		reg.ServeHTTP(w, req)
-	}))
-	t.Cleanup(srv.Close)
-	host := strings.TrimPrefix(srv.URL, "http://")
+		if user, pass, ok := req.BasicAuth(); ok && user == "e2e" && pass == privatePassword {
+			return false
+		}
+		unauthorized(w)
+		return true
+	})
 	for ref, dir := range images {
 		tagged, digest, _ := strings.Cut(ref, "@")
 		tag, err := name.NewTag(tagged)

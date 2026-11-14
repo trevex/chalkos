@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -16,14 +15,12 @@ import (
 	"net/url"
 	"reflect"
 	"strings"
-	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/name"
-	"github.com/google/go-containerregistry/pkg/registry"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/google/go-containerregistry/pkg/v1/remote/transport"
@@ -84,25 +81,10 @@ func testParts() []ociimage.Part {
 // digest, its header, and the parts an upgrade pulls of it: store, hash tree and UKI.
 func pushSmall(t *testing.T, host string) (string, ociimage.Header, []ociimage.Part) {
 	t.Helper()
-	h := ociimage.Header{ImageID: "chalkos", RootHash: strings.Repeat("ab", 32), Architecture: "x86-64", Platform: "metal"}
-	img := ocitest.Image(t, h, ociimage.Contract{Metadata: []byte("{}"), Schemas: map[string][]byte{"a.json": []byte("{}")}, Definitions: map[string][]byte{"00-esp.conf": []byte("esp")}})
+	h := ocitest.Header()
+	img := ocitest.Image(t, h, ocitest.Contract())
 	ref := ocitest.Push(t, img, host+"/lab/node-metal:v1")
 	return ref, h, testParts()
-}
-
-// servedBlobs is a registry from memory that records the digests of the blobs it serves.
-func servedBlobs(t *testing.T) (string, *sync.Map) {
-	t.Helper()
-	var served sync.Map
-	reg := registry.New(registry.Logger(log.New(io.Discard, "", 0)))
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if _, digest, ok := strings.Cut(r.URL.Path, "/blobs/"); ok && r.Method == http.MethodGet {
-			served.Store(digest, true)
-		}
-		reg.ServeHTTP(w, r)
-	}))
-	t.Cleanup(srv.Close)
-	return strings.TrimPrefix(srv.URL, "http://"), &served
 }
 
 // TestPull reads the parts of an image by digest, one after the other.
@@ -160,9 +142,9 @@ func TestPullRefuses(t *testing.T) {
 // silently stream the swapped image's layers.
 func TestPullRefusesASwappedManifest(t *testing.T) {
 	ctx := context.Background()
-	h := ociimage.Header{ImageID: "chalkos", RootHash: strings.Repeat("ab", 32), Architecture: "x86-64", Platform: "metal"}
+	h := ocitest.Header()
 	other := ociimage.Header{ImageID: "chalkos", RootHash: strings.Repeat("cd", 32), Architecture: "x86-64", Platform: "metal"}
-	c := ociimage.Contract{Metadata: []byte("{}"), Schemas: map[string][]byte{"a.json": []byte("{}")}, Definitions: map[string][]byte{"00-esp.conf": []byte("esp")}}
+	c := ocitest.Contract()
 	host, digestA := swappingRegistry(t, ocitest.Image(t, h, c), ocitest.Image(t, other, c))
 	pinnedRef := host + "/chalkos/x@" + digestA.String()
 	p, err := ociimage.NewPull(ctx, pinnedRef, direct(authn.Anonymous, true), h, testParts())
@@ -186,17 +168,14 @@ func swappingRegistry(t *testing.T, a, b v1.Image) (string, v1.Hash) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	reg := registry.New(registry.Logger(log.New(io.Discard, "", 0)))
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	host := ocitest.RegistryWith(t, func(w http.ResponseWriter, r *http.Request) bool {
 		if r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/manifests/"+digestA.String()) {
 			w.Header().Set("Content-Type", string(types.OCIManifestSchema1))
 			w.Write(manifestB)
-			return
+			return true
 		}
-		reg.ServeHTTP(w, r)
-	}))
-	t.Cleanup(srv.Close)
-	host := strings.TrimPrefix(srv.URL, "http://")
+		return false
+	})
 	tagRef, err := name.ParseReference(host + "/chalkos/x:v1")
 	if err != nil {
 		t.Fatal(err)
@@ -225,16 +204,13 @@ func TestPullRefusesATamperedLayer(t *testing.T) {
 		{"truncated", "sto"},  // shorter than "store"
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			reg := registry.New(registry.Logger(log.New(io.Discard, "", 0)))
-			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			host := ocitest.RegistryWith(t, func(w http.ResponseWriter, r *http.Request) bool {
 				if r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, blobPath) {
 					io.WriteString(w, tc.serve)
-					return
+					return true
 				}
-				reg.ServeHTTP(w, r)
-			}))
-			defer srv.Close()
-			host := strings.TrimPrefix(srv.URL, "http://")
+				return false
+			})
 			ref, h, parts := pushSmall(t, host)
 			p, err := ociimage.NewPull(context.Background(), ref, direct(authn.Anonymous, true), h, parts)
 			if err != nil {
@@ -273,7 +249,7 @@ func TestPullWithCredentials(t *testing.T) {
 
 // TestPullSkips passes over the store and hash tree without fetching them.
 func TestPullSkips(t *testing.T) {
-	host, served := servedBlobs(t)
+	host, served := ocitest.ServedBlobs(t)
 	ref, h, parts := pushSmall(t, host)
 	p, err := ociimage.NewPull(context.Background(), ref, direct(authn.Anonymous, true), h, parts)
 	if err != nil {
@@ -324,16 +300,13 @@ func blobServer(t *testing.T, data string, serve http.HandlerFunc) string {
 	t.Helper()
 	sum := sha256.Sum256([]byte(data))
 	blobPath := "/blobs/sha256:" + hex.EncodeToString(sum[:])
-	reg := registry.New(registry.Logger(log.New(io.Discard, "", 0)))
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	return ocitest.RegistryWith(t, func(w http.ResponseWriter, r *http.Request) bool {
 		if r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, blobPath) {
 			serve(w, r)
-			return
+			return true
 		}
-		reg.ServeHTTP(w, r)
-	}))
-	t.Cleanup(srv.Close)
-	return strings.TrimPrefix(srv.URL, "http://")
+		return false
+	})
 }
 
 // TestPullCancelsAStalledLayer cancels the fetch of a layer whose registry stops sending data
@@ -403,7 +376,7 @@ func metadataOf(rootHash string) []byte {
 // manifest again.
 func TestPullContract(t *testing.T) {
 	host, manifests := ocitest.CountingRegistry(t)
-	h := ociimage.Header{ImageID: "chalkos", RootHash: strings.Repeat("ab", 32), Architecture: "x86-64", Platform: "metal"}
+	h := ocitest.Header()
 	c := ociimage.Contract{
 		Metadata: metadataOf(h.RootHash), Schemas: map[string][]byte{"a.json": []byte("{}")},
 		Definitions: map[string][]byte{"00-esp.conf": []byte("esp")}, Facts: map[string][]byte{"kubernetes": []byte(`{"version": "1.37.1"}`)},
@@ -433,13 +406,14 @@ func TestPullContract(t *testing.T) {
 // after a refused contract checks the manifest again.
 func TestPullContractRefuses(t *testing.T) {
 	host, manifests := ocitest.CountingRegistry(t)
-	h := ociimage.Header{ImageID: "chalkos", RootHash: strings.Repeat("ab", 32), Architecture: "x86-64", Platform: "metal"}
+	h := ocitest.Header()
 	for name, tc := range map[string]struct{ metadataRoot, wantPlatform, want string }{
 		"another-header":   {strings.Repeat("ab", 32), "kvm", "its header describes"},
 		"another-metadata": {strings.Repeat("cd", 32), "metal", `the contract layer's metadata.json names the root hash "cdcd`},
 	} {
 		t.Run(name, func(t *testing.T) {
-			c := ociimage.Contract{Metadata: metadataOf(tc.metadataRoot), Schemas: map[string][]byte{"a.json": []byte("{}")}, Definitions: map[string][]byte{"00-esp.conf": []byte("esp")}}
+			c := ocitest.Contract()
+			c.Metadata = metadataOf(tc.metadataRoot)
 			ref := ocitest.Push(t, ocitest.Image(t, h, c), host+"/lab/"+name+":v1")
 			want := h
 			want.Platform = tc.wantPlatform
@@ -463,7 +437,7 @@ func TestPullContractRefuses(t *testing.T) {
 // refuses connections, one without the image and one that refuses anonymous pulls, never
 // reaching the registry the reference names, and with each endpoint's own credentials.
 func TestPullThroughMirrors(t *testing.T) {
-	host, served := servedBlobs(t)
+	host, served := ocitest.ServedBlobs(t)
 	ref, h, parts := pushSmall(t, host)
 	empty := ocitest.Registry(t)
 	private := ocitest.AuthRegistry(t, "ci-bot", "s3cret")
@@ -486,7 +460,7 @@ func TestPullThroughMirrors(t *testing.T) {
 	if _, ok := served.Load("sha256:" + hex.EncodeToString(store[:])); !ok {
 		t.Error("the store did not come from the mirror that holds it")
 	}
-	privRef := ocitest.Push(t, ocitest.Image(t, h, ociimage.Contract{Metadata: []byte("{}"), Schemas: map[string][]byte{"a.json": []byte("{}")}, Definitions: map[string][]byte{"00-esp.conf": []byte("esp")}}), private+"/lab/node-metal:v1")
+	privRef := ocitest.Push(t, ocitest.Image(t, h, ocitest.Contract()), private+"/lab/node-metal:v1")
 	p, err = ociimage.NewPull(context.Background(), elsewhere(privRef, "registry.invalid"), []ociimage.Source{
 		{Endpoint: "http://" + private, Auth: &authn.Basic{Username: "ci-bot", Password: "s3cret"}, Insecure: true},
 		{Auth: authn.Anonymous},
@@ -520,11 +494,11 @@ func TestPullThroughAPathPrefix(t *testing.T) {
 // TestPullFallsBackForALayer fetches a layer a mirror lacks from the next source, after the
 // manifest came from the mirror.
 func TestPullFallsBackForALayer(t *testing.T) {
-	host, served := servedBlobs(t)
+	host, served := ocitest.ServedBlobs(t)
 	ref, h, parts := pushSmall(t, host)
 	store := sha256.Sum256([]byte("store"))
 	mirror := blobServer(t, "store", func(w http.ResponseWriter, r *http.Request) { http.NotFound(w, r) })
-	ocitest.Push(t, ocitest.Image(t, h, ociimage.Contract{Metadata: []byte("{}"), Schemas: map[string][]byte{"a.json": []byte("{}")}, Definitions: map[string][]byte{"00-esp.conf": []byte("esp")}}), mirror+"/lab/node-metal:v1")
+	ocitest.Push(t, ocitest.Image(t, h, ocitest.Contract()), mirror+"/lab/node-metal:v1")
 	p, err := ociimage.NewPull(context.Background(), ref, []ociimage.Source{
 		{Endpoint: "http://" + mirror, Auth: authn.Anonymous, Insecure: true}, {Auth: authn.Anonymous, Insecure: true}}, h, parts)
 	if err != nil {
@@ -560,10 +534,10 @@ func TestPullFailsAtTheLastSource(t *testing.T) {
 // TestPullDoesNotPassOverAMismatch fails at a mirror that serves other bytes for the pinned
 // digest, without asking the registry: the content is pinned.
 func TestPullDoesNotPassOverAMismatch(t *testing.T) {
-	h := ociimage.Header{ImageID: "chalkos", RootHash: strings.Repeat("ab", 32), Architecture: "x86-64", Platform: "metal"}
+	h := ocitest.Header()
 	other := h
 	other.RootHash = strings.Repeat("cd", 32)
-	c := ociimage.Contract{Metadata: []byte("{}"), Schemas: map[string][]byte{"a.json": []byte("{}")}, Definitions: map[string][]byte{"00-esp.conf": []byte("esp")}}
+	c := ocitest.Contract()
 	a := ocitest.Image(t, h, c)
 	mirror, _ := swappingRegistry(t, a, ocitest.Image(t, other, c))
 	host, manifests := ocitest.CountingRegistry(t)
@@ -601,7 +575,7 @@ func TestPullRefusesAPlainHTTPMirror(t *testing.T) {
 func TestPullDoesNotPassOverATamperedLayer(t *testing.T) {
 	store := sha256.Sum256([]byte("store"))
 	for want, serve := range map[string]string{"checksum": "xtore", "layer is longer than 5 bytes": "store" + strings.Repeat("x", 1<<16)} {
-		host, served := servedBlobs(t)
+		host, served := ocitest.ServedBlobs(t)
 		ref, h, parts := pushSmall(t, host)
 		mirror := blobServer(t, "store", func(w http.ResponseWriter, r *http.Request) { io.WriteString(w, serve) })
 		pushSmall(t, mirror)
@@ -629,7 +603,7 @@ func TestPullPassesOverAStalledMirror(t *testing.T) {
 		case <-time.After(10 * time.Second):
 		}
 	}
-	host, served := servedBlobs(t)
+	host, served := ocitest.ServedBlobs(t)
 	ref, h, parts := pushSmall(t, host)
 	mirror := blobServer(t, "store", hang)
 	pushSmall(t, mirror)
@@ -740,19 +714,16 @@ type Source = ociimage.Source
 func TestPullPassesOverAHangingManifest(t *testing.T) {
 	ociimage.SetSourceTimeout(t, 200*time.Millisecond)
 	ref, h, parts := pushSmall(t, ocitest.Registry(t))
-	reg := registry.New(registry.Logger(log.New(io.Discard, "", 0)))
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	mirror := ocitest.RegistryWith(t, func(w http.ResponseWriter, r *http.Request) bool {
 		if strings.Contains(r.URL.Path, "/manifests/") && r.Method == http.MethodGet {
 			select {
 			case <-r.Context().Done():
 			case <-time.After(10 * time.Second):
 			}
-			return
+			return true
 		}
-		reg.ServeHTTP(w, r)
-	}))
-	t.Cleanup(srv.Close)
-	mirror := strings.TrimPrefix(srv.URL, "http://")
+		return false
+	})
 	pushSmall(t, mirror)
 	start := time.Now()
 	p, err := ociimage.NewPull(context.Background(), ref, []ociimage.Source{
@@ -771,23 +742,21 @@ func TestPullPassesOverAHangingManifest(t *testing.T) {
 // missingBlob is a registry that answers a GET of the blob of digest with 404.
 func missingBlob(t *testing.T, digest v1.Hash) string {
 	t.Helper()
-	reg := registry.New(registry.Logger(log.New(io.Discard, "", 0)))
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	return ocitest.RegistryWith(t, func(w http.ResponseWriter, r *http.Request) bool {
 		if r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/blobs/"+digest.String()) {
 			http.NotFound(w, r)
-			return
+			return true
 		}
-		reg.ServeHTTP(w, r)
-	}))
-	t.Cleanup(srv.Close)
-	return strings.TrimPrefix(srv.URL, "http://")
+		return false
+	})
 }
 
 // TestPullPassesOverAMissingHeaderOrContract asks the registry for the image when a mirror serves
 // its manifest but not its header, or, for Contract, not its contract layer.
 func TestPullPassesOverAMissingHeaderOrContract(t *testing.T) {
-	h := ociimage.Header{ImageID: "chalkos", RootHash: strings.Repeat("ab", 32), Architecture: "x86-64", Platform: "metal"}
-	c := ociimage.Contract{Metadata: metadataOf(h.RootHash), Schemas: map[string][]byte{"a.json": []byte("{}")}, Definitions: map[string][]byte{"00-esp.conf": []byte("esp")}}
+	h := ocitest.Header()
+	c := ocitest.Contract()
+	c.Metadata = metadataOf(h.RootHash)
 	img := ocitest.Image(t, h, c)
 	config, err := img.ConfigName()
 	if err != nil {
