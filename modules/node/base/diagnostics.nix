@@ -4,13 +4,12 @@
 # is the smallest that does the job, as every image carries them: ip alone rather than iproute2,
 # ldns's drill rather than dig, and bash's /dev/tcp for a TCP connect.
 {
-  chalkosPackages,
   lib,
   pkgs,
   ...
 }:
 let
-  ip = lib.getExe chalkosPackages.iproute2-ip;
+  ip = lib.getExe pkgs.chalkos.iproute2-ip;
   bash = "${pkgs.bash}/bin/bash";
   address = {
     type = "address";

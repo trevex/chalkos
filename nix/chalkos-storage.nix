@@ -1,6 +1,6 @@
 # chalkos-storage, statically linked because it runs in the initrd.
-{ callPackage }:
-callPackage ./go-module.nix { } {
+{ buildGoProgram }:
+buildGoProgram {
   pname = "chalkos-storage";
   paths = [
     ../cmd/chalkos-storage

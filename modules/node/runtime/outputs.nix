@@ -2,14 +2,13 @@
 # a delivery changes anything and swaps in once it is stored.
 {
   chalkosLib,
-  chalkosPackages,
   config,
   lib,
   pkgs,
   ...
 }:
 let
-  inherit (chalkosPackages) chalkos-render;
+  inherit (pkgs.chalkos) chalkos-render;
   inherit (chalkosLib.internal)
     refuse
     kindProblems

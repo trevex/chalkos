@@ -5,7 +5,6 @@
 # a list, so a path through them cannot be checked during evaluation.
 {
   chalkosLib,
-  chalkosPackages,
   config,
   lib,
   pkgs,
@@ -31,7 +30,7 @@ let
     name = "chalkos-networkd-schemas";
     inherit (config.systemd.package) src;
     nativeBuildInputs = [
-      chalkosPackages.chalkos-networkd-schema
+      pkgs.chalkos.chalkos-networkd-schema
       pkgs.jq
     ];
     dontConfigure = true;
@@ -78,7 +77,7 @@ in
   # these.
   chalkos.outputs.networkd = {
     inputs = api.networkdKinds;
-    render = lib.mkDefault "${lib.getExe chalkosPackages.chalkos-render} networkd ${schemas}";
+    render = lib.mkDefault "${lib.getExe pkgs.chalkos.chalkos-render} networkd ${schemas}";
     dir = "/run/systemd/network";
     examples = ../examples/networkd;
   };

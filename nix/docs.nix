@@ -55,13 +55,7 @@ let
     fileset = lib.fileset.difference ../docs ../docs/reference/cli;
   };
 
-  docgen = pkgs.callPackage ./go-module.nix { } {
-    pname = "docgen";
-    paths = [
-      ../cmd
-      ../pkg
-    ];
-  };
+  inherit (pkgs.chalkos) docgen;
 
   # Declarations link to the repository rather than to the store path of the flake's source.
   root = toString ../.;

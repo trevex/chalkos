@@ -446,7 +446,7 @@ it has no `completion` command.
 
 | Directory | What it holds |
 | --- | --- |
-| `modules/node/` | The NixOS modules of every image: `packages.nix` (chalkos's programs, as the module argument `chalkosPackages`), `base/` (appliance, closure, disk, image directory, storage), `kinds/` (`chalkos.kinds`, `chalkos.facts`, networkd's kinds and the kinds every image accepts), `runtime/` (grants, `chalkos.outputs`, `chalkos.effects`, chalkcfg on the system path), kernel, chalkd, time, the CNI, `kubernetes/` (the kubelet, its kinds, effects, containerd, registries, firewall), `router/` (the router layer), upgrade. |
+| `modules/node/` | The NixOS modules of every image: `base/` (appliance, closure, disk, image directory, storage), `kinds/` (`chalkos.kinds`, `chalkos.facts`, networkd's kinds and the kinds every image accepts), `runtime/` (grants, `chalkos.outputs`, `chalkos.effects`, chalkcfg on the system path), kernel, chalkd, time, the CNI, `kubernetes/` (the kubelet, its kinds, effects, containerd, registries, firewall), `router/` (the router layer), upgrade. |
 | `modules/node/router/` | The router layer: `default.nix` (its option, marker and forwarding), the Router kind (`kinds.nix`) and its output `router-sysctl` (`sysctl.nix`), the types the router kinds share (`types.nix`), what the router's parts share (`lib.nix`: the enable option of a feature, the kinds the image declares and the sandbox of the units), traceroute (`diagnostics.nix`) and the validator router (`validator.nix`). Each part of the router has a directory: `kinds.nix` holds its kinds, `diagnostics.nix` its diagnostics and `default.nix` the rest. Every router image carries `firewall/`, `vrf/` and `policy-routing/`; a variant can leave out `bgp/`, `nat64/`, `resolver/`, `dhcp/` and `dhcp-relay/` with `chalkos.router.<feature>.enable`. |
 | `modules/platforms/` | `metal` and `kvm`. |
 | `modules/installer/` | The installer image and its ISO. |
@@ -468,8 +468,11 @@ The layout follows these rules, so each change has one place to go:
   arguments of `mkImages`. Everything about a cluster or a node is a config kind, not an option.
 - Go code reads a node's config documents and the image's files alone.
 - `nix/` holds packages and tooling: apps, checks, the development shell, the docs build and
-  test fixtures. The scripts the node modules run, such as the control plane's ports, are
-  packages there; the modules decide where and with which arguments an image runs them.
+  test fixtures. `overlay.nix` adds `pkgs.chalkos`, the scope of chalkos's programs and Go
+  toolchain, which the flake exports as `overlays.default` and mkImages applies to the images'
+  nixpkgs. The node modules take chalkos's programs and scripts from that scope and decide where
+  and with which arguments an image runs them. A script a module builds from its config, such as
+  the control plane's ports, sits next to that module.
 - `cmd/` holds the mains, which wire packages up; logic worth testing lives in `pkg/`.
 
 [Development setup](development.md) lists the commands of a development loop and

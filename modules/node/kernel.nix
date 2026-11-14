@@ -6,7 +6,6 @@
 # on are declared here; the modules of a feature, such as the base firewall or a layer, declare
 # theirs and add them while the feature is on.
 {
-  chalkosPackages,
   config,
   lib,
   pkgs,
@@ -15,7 +14,7 @@
 let
   cfg = config.chalkos.kernel;
   inherit (pkgs.stdenv.hostPlatform) isx86_64;
-  tool = chalkosPackages.kernel-modules;
+  tool = pkgs.chalkos.kernel-modules;
   full = lib.getOutput "modules" config.boot.kernelPackages.kernel;
 
   groups = {

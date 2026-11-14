@@ -6,7 +6,6 @@
 # the raw image's ESP as its El Torito boot image, followed by the store partitions, with a GPT
 # describing the ESP and the store, so it boots from a CD as well as written to a USB disk.
 {
-  chalkosPackages,
   config,
   lib,
   pkgs,
@@ -26,7 +25,7 @@ let
           pkgs.xorriso
           pkgs.jq
           pkgs.util-linux
-          chalkosPackages.relabel-partitions
+          pkgs.chalkos.relabel-partitions
         ];
       }
       ''

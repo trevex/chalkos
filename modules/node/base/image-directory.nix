@@ -2,7 +2,6 @@
 # repart's report, the system region's repart definitions, the schemas, the facts of the image's
 # layers and metadata.json. Its build fails when the image leaves no room for the next one.
 {
-  chalkosPackages,
   config,
   lib,
   pkgs,
@@ -21,7 +20,7 @@ let
     in
     pkgs.runCommand "${name}-fits"
       {
-        nativeBuildInputs = [ chalkosPackages.image-size ];
+        nativeBuildInputs = [ pkgs.chalkos.image-size ];
         ukis = if cfg.storeSize == null then 1 else 3;
         storeSize = lib.defaultTo "-" cfg.storeSize;
         storeVeritySize = lib.defaultTo "-" cfg.storeVeritySize;
@@ -110,7 +109,7 @@ in
           inherit fits;
           nativeBuildInputs = [
             pkgs.jq
-            chalkosPackages.relabel-partitions
+            pkgs.chalkos.relabel-partitions
           ];
         }
         ''

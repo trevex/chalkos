@@ -5,7 +5,6 @@
 # alone.
 {
   chalkosLib,
-  chalkosPackages,
   config,
   lib,
   pkgs,
@@ -22,7 +21,7 @@ let
       ;
   };
   kinds = import ./kinds.nix { inherit chalkosLib lib; };
-  render = lib.getExe chalkosPackages.chalkos-render;
+  render = lib.getExe pkgs.chalkos.chalkos-render;
   frr = pkgs.frr;
   rendered = "${config.chalkos.outputs.frr.dir}/frr.conf";
   # vtysh reads vtysh.conf from its config directory; the check's own holds no more, so vtysh

@@ -2,7 +2,6 @@
 {
   imports = [
     ./settings.nix
-    ./packages.nix
     ./base
     ./runtime
     ./diagnostics.nix

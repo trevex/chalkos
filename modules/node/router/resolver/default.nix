@@ -6,7 +6,6 @@
 # one that changes it reloads Unbound and keeps its cache.
 {
   chalkosLib,
-  chalkosPackages,
   config,
   lib,
   pkgs,
@@ -43,7 +42,7 @@ let
   # resolver keeps in /run/unbound-<vrf>/unbound-<vrf>.ifindex. A VRF that chalkos-vrf removed and
   # networkd created anew has a new index, or no device yet, so its resolver restarts on the new
   # device. systemctl comes from the unit's PATH.
-  reconcile = "${lib.getExe chalkosPackages.chalkd} router services unbound";
+  reconcile = "${lib.getExe pkgs.chalkos.chalkd} router services unbound";
   # RFC 8880's answer for ipv4only.arpa, which a DNS64 resolver gives itself; the dns64 module
   # synthesizes its AAAA records from these A records.
   ipv4only = pkgs.writeText "ipv4only.arpa.zone" ''
@@ -87,7 +86,7 @@ in
         "VRF"
         "Network"
       ];
-      render = "${lib.getExe chalkosPackages.chalkos-render} unbound ${pkgs.dns-root-data}/root.key ${ipv4only}";
+      render = "${lib.getExe pkgs.chalkos.chalkos-render} unbound ${pkgs.dns-root-data}/root.key ${ipv4only}";
       check = ''for f in "$OUT"/*.conf; do [ ! -e "$f" ] || ${unbound}/bin/unbound-checkconf "$f" || exit; done'';
       examples = config.chalkos.router.examples;
     };

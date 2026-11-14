@@ -2,7 +2,6 @@
 # plane's ports, which only control planes open, and flannel's VXLAN, accepted only when sent to
 # the node's addresses.
 {
-  chalkosPackages,
   config,
   lib,
   pkgs,
@@ -10,7 +9,7 @@
 }:
 let
   flannel = config.chalkos.cni.provider == "flannel";
-  chalkd = lib.getExe chalkosPackages.chalkd;
+  chalkd = lib.getExe pkgs.chalkos.chalkd;
 
   # flannel's VXLAN carries pod traffic unauthenticated, so it is accepted only when sent to the
   # node's addresses, which flanneld uses and other nodes send to: on the interface holding one,
@@ -28,7 +27,7 @@ let
   # the node receives, so a network plugin of the cluster's own (cni.provider "none") must not
   # use it.
   controlPlaneMark = "0x02000000";
-  controlPlanePorts = pkgs.callPackage ../../../nix/controlplane-ports.nix {
+  controlPlanePorts = pkgs.callPackage ./controlplane-ports.nix {
     typeCommand = config.chalkos.kinds.Node.get { path = "spec.type"; };
     ports = config.networking.firewall.enable;
     mark = controlPlaneMark;

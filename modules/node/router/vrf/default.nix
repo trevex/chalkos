@@ -6,7 +6,6 @@
 # peers, so chalkos-vrf removes those as well.
 {
   chalkosLib,
-  chalkosPackages,
   config,
   lib,
   pkgs,
@@ -111,7 +110,7 @@ in
     # the VRF documents.
     chalkos.outputs.networkd = {
       inputs = lib.attrNames kinds;
-      render = "${lib.getExe chalkosPackages.chalkos-render} router-networkd ${config.system.build.chalkosNetworkdSchemas}";
+      render = "${lib.getExe pkgs.chalkos.chalkos-render} router-networkd ${config.system.build.chalkosNetworkdSchemas}";
     };
     chalkos.effects.vrf = {
       outputs = [ "networkd" ];

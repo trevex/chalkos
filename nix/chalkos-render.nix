@@ -6,8 +6,8 @@
 # chalkd reads, pkg/router/derive, the router's model of a node's config, which chalkctl links
 # for the validator router, pkg/router/services, the names of the per-VRF services' files, and
 # pkg/router/keaconf, the types of Kea's configs, both of which chalkd reads back.
-{ callPackage }:
-callPackage ./go-module.nix { } {
+{ buildGoProgram }:
+buildGoProgram {
   pname = "chalkos-render";
   paths = [
     ../cmd/chalkos-render

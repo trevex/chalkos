@@ -2,16 +2,16 @@
 # document into /run/sysctl.d. systemd-sysctl applies them at boot, once chalkos-config rendered
 # them, and again when they change.
 {
-  chalkosPackages,
   config,
   lib,
+  pkgs,
   ...
 }:
 {
   config = lib.mkIf config.chalkos.router.enable {
     chalkos.outputs.router-sysctl = {
       inputs = [ "Router" ];
-      render = "${lib.getExe chalkosPackages.chalkos-render} router-sysctl";
+      render = "${lib.getExe pkgs.chalkos.chalkos-render} router-sysctl";
       dir = "/run/sysctl.d";
       examples = config.chalkos.router.examples;
     };

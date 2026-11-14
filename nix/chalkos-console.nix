@@ -1,7 +1,7 @@
 # chalkos-console, the console on a machine's screen. Every image with chalkos.console.enable
 # carries it, so it is statically linked and stripped, and takes only the packages it imports.
-{ callPackage }:
-callPackage ./go-module.nix { } {
+{ buildGoProgram }:
+buildGoProgram {
   pname = "chalkos-console";
   paths = [
     ../cmd/chalkos-console

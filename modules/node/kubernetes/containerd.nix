@@ -1,7 +1,6 @@
 # containerd on images that run Kubernetes: the binaries, the CNI plugins the image names and the
 # CRI settings.
 {
-  chalkosPackages,
   config,
   lib,
   pkgs,
@@ -102,7 +101,7 @@ in
       serviceConfig = {
         Type = "oneshot";
         RemainAfterExit = true;
-        ExecStart = "${lib.getExe chalkosPackages.chalkd} kubernetes containerd-config ${clusterSettings}";
+        ExecStart = "${lib.getExe pkgs.chalkos.chalkd} kubernetes containerd-config ${clusterSettings}";
       };
     };
 

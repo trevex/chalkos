@@ -4,10 +4,9 @@
 # node's config, and writes everything node-specific below /run/chalkos/kubernetes before the
 # kubelet starts.
 {
-  chalkosPackages,
   config,
-  options,
   lib,
+  options,
   pkgs,
   ...
 }:
@@ -17,7 +16,7 @@ let
   # Whether the image's modules define an option, so that its default does not stand.
   defined = o: o.highestPrio < (lib.mkOptionDefault null).priority;
   inherit (k) enable;
-  inherit (chalkosPackages) chalkd;
+  inherit (pkgs.chalkos) chalkd;
   # The kubelet alone: the package holds every component, which control planes run from images.
   kubelet = pkgs.runCommand "kubelet-${k.package.version}" { } ''
     install -Dm755 ${k.package}/bin/kubelet $out/bin/kubelet

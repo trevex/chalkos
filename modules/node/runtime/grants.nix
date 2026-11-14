@@ -4,14 +4,13 @@
 # the unit; an effect does (effects.nix).
 {
   chalkosLib,
-  chalkosPackages,
   config,
   lib,
   pkgs,
   ...
 }:
 let
-  inherit (chalkosPackages) chalkcfg;
+  inherit (pkgs.chalkos) chalkcfg;
   checkKinds = chalkosLib.internal.checkKinds config.chalkos.kinds;
 
   grant =

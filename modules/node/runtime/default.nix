@@ -3,9 +3,9 @@
 # (validators.nix) and the restarts, reloads and commands a delivery takes (effects.nix).
 # chalkcfg prints the documents, on the system path of every image.
 {
-  chalkosPackages,
   config,
   lib,
+  pkgs,
   ...
 }:
 {
@@ -18,6 +18,6 @@
 
   # The installer is no variant and never has config to query.
   environment.systemPackages = lib.mkIf (config.chalkos.variant.name != null) [
-    chalkosPackages.chalkcfg
+    pkgs.chalkos.chalkcfg
   ];
 }

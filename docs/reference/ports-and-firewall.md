@@ -200,7 +200,6 @@ control plane that holds it and announces it to the neighbours with ARP or IPv6 
 advertisements.
 
 Sources: the firewall rules of `modules/node/chalkd.nix`, `modules/node/kubernetes`,
-`modules/node/router`, `cmd/chalkos-render/nftables.go`, `nix/controlplane-ports.nix` and
-`pkg/kubernetes/vxlan`, and the listeners of
-`cmd/chalkd`, `pkg/kubernetes/manifests/manifests.go`, `pkg/kubernetes/addons` and
+`modules/node/router`, `cmd/chalkos-render/nftables.go` and `pkg/kubernetes/vxlan`, and the
+listeners of `cmd/chalkd`, `pkg/kubernetes/manifests/manifests.go`, `pkg/kubernetes/addons` and
 `modules/node/kubernetes`.

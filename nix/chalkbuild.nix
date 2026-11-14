@@ -1,15 +1,16 @@
 # chalkbuild, with the tools that read and sign images. The flake's package and mkImages's oci
-# outputs build it alike; mkImages builds it from the images' own nixpkgs, as they build chalkd.
-# It takes only the packages it imports, so other Go changes do not rebuild the oci outputs.
+# outputs build it the same way, from the chalkos scope of the nixpkgs at hand, as they build
+# chalkd. It takes only the packages it imports, so other Go changes do not rebuild the oci
+# outputs.
 {
+  buildGoProgram,
+  coreutils,
   lib,
-  callPackage,
   makeWrapper,
   mtools,
   sbsigntool,
-  coreutils,
 }:
-callPackage ./go-module.nix { } {
+buildGoProgram {
   pname = "chalkbuild";
   paths = [
     ../cmd/chalkbuild

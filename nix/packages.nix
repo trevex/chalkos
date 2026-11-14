@@ -7,66 +7,24 @@
 }:
 let
   inherit (pkgs) lib;
-  goModule = pkgs.callPackage ./go-module.nix { };
-
-  goPaths = import ./go-paths.nix { inherit lib; };
 in
 {
+  inherit (pkgs.chalkos)
+    chalkbuild
+    chalkcfg
+    chalkctl
+    chalkd
+    chalklab
+    chalklab-e2e
+    chalkos-console
+    chalkos-storage
+    ;
+
   test-secureboot = import ./testing/secureboot.nix { inherit pkgs; };
   test-secrets = testing.secrets;
 
-  chalkctl = goModule {
-    pname = "chalkctl";
-    paths = goPaths;
-    # Its tests run as it is built.
-    doCheck = true;
-    nativeBuildInputs = [ pkgs.makeWrapper ];
-    postFixup = ''
-      wrapProgram $out/bin/chalkctl --prefix PATH : ${
-        lib.makeBinPath [
-          pkgs.mtools
-        ]
-      }
-    '';
-  };
-
-  # chalklab, with the tools a lab runs: QEMU, OVMF with Secure Boot, swtpm, the switch, socat for
-  # guest forwards, the tools that sign images and enroll the lab's keys, and chalkctl. A package of
-  # its own, so chalkctl's closure stays free of them. QEMU is the headless one of the binary cache;
-  # chalklab denies it io_uring, whose main loop loses TPM emulator commands.
-  chalklab = goModule {
-    pname = "chalklab";
-    paths = goPaths;
-    nativeBuildInputs = [ pkgs.makeWrapper ];
-    postFixup = ''
-      wrapProgram $out/bin/chalklab --prefix PATH : ${
-        lib.makeBinPath [
-          pkgs.qemu_test
-          pkgs.swtpm
-          pkgs.vde2
-          pkgs.socat
-          pkgs.mtools
-          pkgs.sbsigntool
-          pkgs.coreutils
-          pkgs.python3Packages.virt-firmware
-          self.packages.${pkgs.stdenv.hostPlatform.system}.chalkctl
-        ]
-      } \
-        --set-default CHALKLAB_OVMF_CODE ${pkgs.OVMFFull.fd}/FV/OVMF_CODE.fd \
-        --set-default CHALKLAB_OVMF_VARS ${pkgs.OVMFFull.fd}/FV/OVMF_VARS.fd
-    '';
-  };
-
-  # chalkbuild, with the tools that read and sign images.
-  chalkbuild = pkgs.callPackage ./chalkbuild.nix { };
-
   # The documentation site.
   docs = docs.site;
-
-  chalkos-storage = pkgs.callPackage ./chalkos-storage.nix { };
-  chalkd = pkgs.callPackage ./chalkd.nix { };
-  chalkcfg = pkgs.callPackage ./chalkcfg.nix { };
-  chalkos-console = pkgs.callPackage ./chalkos-console.nix { };
 
   test-image = testing.images.test-metal;
   # The test image's OCI image layout, as mkImages's oci output writes it.
@@ -93,22 +51,4 @@ in
 
   # The installer without an OS CA: it accepts any client until it installs a node.
   installer = (self.lib.mkImages { variants = { }; }).installer;
-
-  chalklab-e2e = goModule {
-    pname = "chalklab-e2e";
-    paths = goPaths;
-    # The e2e tests are its program.
-    withTests = true;
-    subPackages = null;
-    buildPhase = ''
-      runHook preBuild
-      go test -c -o chalklab-e2e ./test/e2e
-      runHook postBuild
-    '';
-    installPhase = ''
-      runHook preInstall
-      install -Dm755 chalklab-e2e $out/bin/chalklab-e2e
-      runHook postInstall
-    '';
-  };
 }

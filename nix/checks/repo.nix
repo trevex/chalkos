@@ -39,9 +39,9 @@ let
   # A check that builds the Go code of the whole tree, its tests included, in its buildPhase.
   goCheck =
     args:
-    pkgs.callPackage ../go-module.nix { } (
+    pkgs.chalkos.buildGoProgram (
       {
-        paths = import ../go-paths.nix { inherit lib; };
+        paths = pkgs.chalkos.treeGoPaths;
         withTests = true;
         installPhase = "touch $out";
       }
@@ -71,7 +71,7 @@ in
   go-lint = goCheck {
     pname = "chalkos-go-lint";
     nativeBuildInputs = [
-      pkgs.chalkosGo.tools.staticcheck.latest
+      pkgs.chalkos.go.tools.staticcheck.latest
       pkgs.jq
     ];
     goPrograms = builtins.toJSON (
@@ -79,7 +79,7 @@ in
         (
           name:
           let
-            program = pkgs.callPackage (../. + "/${name}.nix") { };
+            program = pkgs.chalkos.${name};
           in
           {
             inherit name;

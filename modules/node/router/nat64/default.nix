@@ -4,7 +4,6 @@
 # to them to the rendered files at boot and on each delivery that changes them.
 {
   chalkosLib,
-  chalkosPackages,
   config,
   lib,
   pkgs,
@@ -297,7 +296,7 @@ in
         "VRF"
         "Network"
       ];
-      render = "${lib.getExe chalkosPackages.chalkos-render} jool";
+      render = "${lib.getExe pkgs.chalkos.chalkos-render} jool";
       # jool file check reads a file as file handle does, without the kernel.
       check = ''for f in "$OUT"/*.json; do [ ! -e "$f" ] || ${jool}/bin/jool file check "$f" || exit; done'';
       examples = config.chalkos.router.examples;

@@ -1,7 +1,7 @@
 # chalkos-rules, which checks an image's change rules when the image is built. It runs at build
 # time alone, so no image carries it.
-{ callPackage }:
-callPackage ./go-module.nix { } {
+{ buildGoProgram }:
+buildGoProgram {
   pname = "chalkos-rules";
   paths = [
     ../cmd/chalkos-rules

@@ -2,10 +2,10 @@
 # rebuild the images. withTests keeps the tests in its source, for the image-checker check, which
 # builds those of pkg/imagecheck.
 {
-  callPackage,
+  buildGoProgram,
   withTests ? false,
 }:
-callPackage ./go-module.nix { } {
+buildGoProgram {
   pname = "chalkd";
   inherit withTests;
   paths = [

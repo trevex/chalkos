@@ -2,7 +2,6 @@
 # unlocks and mounts STATE, then creates the volumes recorded on it and mounts VAR; in the
 # booted system its generator writes units for the remaining volumes.
 {
-  chalkosPackages,
   config,
   lib,
   pkgs,
@@ -10,7 +9,7 @@
   ...
 }:
 let
-  inherit (chalkosPackages) chalkos-storage;
+  inherit (pkgs.chalkos) chalkos-storage;
   exe = lib.getExe chalkos-storage;
   initrdSystemd = config.boot.initrd.systemd.package;
   # Tools chalkos-storage and repart run in the initrd, besides mount, udevadm, systemd-repart

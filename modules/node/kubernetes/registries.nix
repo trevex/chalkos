@@ -1,17 +1,16 @@
 # The node's registries on images that run Kubernetes: containerd's mirrors and the kubelet's
 # registry credentials, both from the Mirror and Registry documents.
 {
-  chalkosPackages,
   config,
   lib,
   pkgs,
   ...
 }:
 let
-  inherit (chalkosPackages) chalkd;
+  inherit (pkgs.chalkos) chalkd;
   # chalkd renders each registry's hosts.toml from the Mirror and Registry documents, so
   # containerd also reaches a registry over plain HTTP when its Registry allows it.
-  registryMirrors = pkgs.callPackage ../../../nix/registry-mirrors.nix {
+  registryMirrors = pkgs.callPackage ./registry-mirrors.nix {
     mirrorsCommand = "${lib.getExe chalkd} kubernetes containerd-hosts";
   };
 in

@@ -2,19 +2,19 @@
 # node's type from typeCommand. The NixOS firewall drops what its own input chain does not
 # accept, whatever other tables do, so the table chalkos-controlplane only marks TCP to 6443,
 # 2379 and 2380, and the firewall accepts what carries the mark (see
-# modules/node/kubernetes/firewall.nix). The table is not the firewall's: reloading the firewall
-# leaves it alone. On a worker the table goes. Without the firewall, ports is false and the
-# script makes etcd's directory alone.
+# firewall.nix next to it). The table is not the firewall's: reloading the firewall leaves it
+# alone. On a worker the table goes. Without the firewall, ports is false and the script makes
+# etcd's directory alone.
 {
-  lib,
-  writeShellApplication,
   coreutils,
-  nftables,
-  typeCommand,
   etcdDir ? "/var/lib/etcd",
-  ports ? true,
+  lib,
   # The packet mark bit the firewall accepts the ports with.
   mark,
+  nftables,
+  ports ? true,
+  typeCommand,
+  writeShellApplication,
 }:
 let
   clear = "meta mark & ${mark} == ${mark} meta mark set meta mark ^ ${mark}";

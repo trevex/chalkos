@@ -4,7 +4,6 @@
 # effect reloads it, in one transaction, when it changes.
 {
   chalkosLib,
-  chalkosPackages,
   config,
   lib,
   pkgs,
@@ -23,7 +22,7 @@ let
     declared
     ;
   kinds = import ./kinds.nix { inherit chalkosLib lib; };
-  render = lib.getExe chalkosPackages.chalkos-render;
+  render = lib.getExe pkgs.chalkos.chalkos-render;
   nft = "${pkgs.nftables}/bin/nft";
   unshare = "${pkgs.util-linux}/bin/unshare";
   # chalkd's port, which modules/node/chalkd.nix opens in NixOS's firewall on other images.

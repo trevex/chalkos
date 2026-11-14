@@ -3,11 +3,11 @@
 # go to a new directory that is swapped in for certsDir in one rename, so containerd never reads a
 # mix of two configs nor finds none; a failing command leaves certsDir as it was.
 {
-  lib,
-  writeShellApplication,
-  coreutils,
-  mirrorsCommand,
   certsDir ? "/run/containerd/certs.d",
+  coreutils,
+  lib,
+  mirrorsCommand,
+  writeShellApplication,
 }:
 writeShellApplication {
   name = "chalkos-registry-mirrors";

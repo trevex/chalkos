@@ -7,8 +7,8 @@ pkgs.mkShell (
     packages =
       testEnv.tools
       ++ (with pkgs; [
-        chalkosGo
-        chalkosGo.tools.gopls.latest
+        chalkos.go
+        chalkos.go.tools.gopls.latest
         buf
         protoc-gen-go
         protoc-gen-connect-go
@@ -17,7 +17,7 @@ pkgs.mkShell (
         python3Packages.virt-firmware
         jq
         nixfmt
-        chalkosGo.tools.staticcheck.latest
+        chalkos.go.tools.staticcheck.latest
       ]);
   }
   // testEnv.vars

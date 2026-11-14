@@ -2,14 +2,13 @@
 # built with an OS CA carry it, so chalkd in maintenance mode only accepts that CA's clients.
 {
   chalkosLib,
-  chalkosPackages,
   config,
   lib,
   pkgs,
   ...
 }:
 let
-  inherit (chalkosPackages) chalkd;
+  inherit (pkgs.chalkos) chalkd;
   inherit (config.chalkos.maintenance) osCA;
   publicVersion = toString chalkosLib.internal.secretsVersion;
   # /dev/console is the last of the kernel's consoles. tty0, the foreground terminal, and tty1 are

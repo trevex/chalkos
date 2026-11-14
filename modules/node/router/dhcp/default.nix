@@ -14,7 +14,6 @@
 # place, and chalkd, which reads the records as root, removes none of them.
 {
   chalkosLib,
-  chalkosPackages,
   config,
   lib,
   pkgs,
@@ -32,7 +31,7 @@ let
   };
   inherit (routerLib) hardened;
   kinds = import ./kinds.nix { inherit chalkosLib lib; };
-  inherit (chalkosPackages) kea;
+  inherit (pkgs.chalkos) kea;
   dir = config.chalkos.outputs.kea.dir;
   pdRecords = "/var/lib/chalkos-dhcp6-pd";
   # The hook writes each record here first and renames it into pdRecords, on the same file system,
@@ -97,7 +96,7 @@ let
   # has a new index, so its server restarts on the new device. It then starts
   # chalkos-dhcp6-routes, which routes the delegated prefixes of the configs. systemctl comes from
   # the unit's PATH.
-  reconcile = "${lib.getExe chalkosPackages.chalkd} router services kea";
+  reconcile = "${lib.getExe pkgs.chalkos.chalkd} router services kea";
   # A server's hardening: the user kea, port 67 or 547, its sockets in /run/kea and its leases in
   # /var/lib/kea, which the servers share and which outlive them. The DHCPv4 servers read and
   # answer on raw sockets; the DHCPv6 servers on UDP sockets, and run chalkos-dhcp6-pd, which
@@ -216,7 +215,7 @@ in
           "Network"
         ]
         ++ routerLib.declared [ "NAT64" ];
-      render = "${lib.getExe chalkosPackages.chalkos-render} kea ${lib.getExe pdHook}";
+      render = "${lib.getExe pkgs.chalkos.chalkos-render} kea ${lib.getExe pdHook}";
       # kea-dhcp4 -t and kea-dhcp6 -t refuse a config of links the check's network namespace
       # lacks, so it checks each config without them.
       check = ''
@@ -287,7 +286,7 @@ in
           path = [ pkgs.iproute2 ];
           serviceConfig = hardened // {
             Type = "oneshot";
-            ExecStart = "${lib.getExe chalkosPackages.chalkd} router dhcp6-routes";
+            ExecStart = "${lib.getExe pkgs.chalkos.chalkd} router dhcp6-routes";
             CapabilityBoundingSet = [ "CAP_NET_ADMIN" ];
             RestrictAddressFamilies = [
               "AF_UNIX"

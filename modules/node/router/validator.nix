@@ -4,9 +4,9 @@
 # for an image of the router kinds, on the same documents.
 {
   chalkosLib,
-  chalkosPackages,
   config,
   lib,
+  pkgs,
   ...
 }:
 let
@@ -21,7 +21,7 @@ in
   config = lib.mkIf config.chalkos.router.enable {
     chalkos.validators.router = {
       inputs = kinds;
-      program = lib.getExe chalkosPackages.chalkos-render;
+      program = lib.getExe pkgs.chalkos.chalkos-render;
       examples = config.chalkos.router.examples;
     };
   };

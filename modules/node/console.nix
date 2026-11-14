@@ -2,7 +2,6 @@
 # chalkos-console.service runs it on tty1 in place of the getty, and chalkd serves it the node API
 # on a local socket and lets it act on the node, as these options say.
 {
-  chalkosPackages,
   config,
   lib,
   pkgs,
@@ -76,7 +75,7 @@ in
           CHALKOS_CONSOLE_ACTIONS = if cfg.actions.enable then "1" else "0";
         };
         serviceConfig = {
-          ExecStart = lib.getExe chalkosPackages.chalkos-console;
+          ExecStart = lib.getExe pkgs.chalkos.chalkos-console;
           Restart = "always";
           RestartSec = 1;
           RestartSteps = 5;

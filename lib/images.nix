@@ -1,7 +1,7 @@
 # mkImages builds a cluster's images: each variant on each platform, an image directory each, and
 # the installer, which installs images of every platform. Its arguments are the options of
 # images-arguments.nix. The images' modules get chalkosLib as a module argument.
-{ defaultNixpkgs, goOverlay }:
+{ defaultNixpkgs, overlay }:
 arguments:
 let
   inherit (defaultNixpkgs) lib;
@@ -27,11 +27,12 @@ let
     else
       cfg.specialArgs // { inherit chalkosLib; };
 
-  # chalkos's Go toolchain in the images' nixpkgs, which builds chalkos's programs whatever
-  # nixpkgs the images come from.
-  goToolchain = {
+  # chalkos's package scope in the images' nixpkgs, which builds chalkos's programs with
+  # chalkos's Go toolchain whatever nixpkgs the images come from. It comes before the images' own
+  # overlays, so they can override chalkos's packages with pkgs.chalkos.overrideScope.
+  chalkosScope = {
     _file = "chalkos.lib.mkImages";
-    nixpkgs.overlays = [ goOverlay ];
+    nixpkgs.overlays = lib.mkBefore [ overlay ];
   };
 
   # A variant's image on a platform: chalkos's node modules, the platform's modules, those of every
@@ -45,7 +46,7 @@ let
       inherit specialArgs;
       modules = [
         ../modules/node
-        goToolchain
+        chalkosScope
         {
           nixpkgs.hostPlatform = cfg.system;
           chalkos.variant.name = variant;
@@ -77,7 +78,7 @@ let
     inherit specialArgs;
     modules = [
       ../modules/node
-      goToolchain
+      chalkosScope
       ../modules/installer
       {
         nixpkgs.hostPlatform = cfg.system;
@@ -111,7 +112,7 @@ in
       inherit (nixos.${name}) pkgs;
     in
     pkgs.runCommand "chalkos-${name}-oci" {
-      nativeBuildInputs = [ (pkgs.callPackage ../nix/chalkbuild.nix { }) ];
+      nativeBuildInputs = [ pkgs.chalkos.chalkbuild ];
     } "chalkbuild oci ${image} $out"
   ) images;
   # The installer: a raw image and a hybrid ISO that boot chalkd in maintenance mode.

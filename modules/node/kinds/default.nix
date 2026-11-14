@@ -7,7 +7,6 @@
 # outputs, effects and diagnostics.
 {
   chalkosLib,
-  chalkosPackages,
   config,
   lib,
   pkgs,
@@ -16,7 +15,7 @@
 let
   inherit (chalkosLib.internal) schema api refuse;
   getLib = chalkosLib.internal.get;
-  inherit (chalkosPackages) chalkcfg chalkos-rules;
+  inherit (pkgs.chalkos) chalkcfg chalkos-rules;
   cfg = config.chalkos.kinds;
 
   # A change rule, of a kind or, in the same shape, of a field.

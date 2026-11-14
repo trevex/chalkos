@@ -7,7 +7,6 @@
 # state, and finds its links' addresses as requests come, so it starts before its links exist.
 {
   chalkosLib,
-  chalkosPackages,
   config,
   lib,
   pkgs,
@@ -32,7 +31,7 @@ let
   # with the argument stop, it stops all of them. A VRF's relay keeps the index of the device its
   # sockets are bound to in /run/dnsmasq-relay/dnsmasq-relay-<vrf>.ifindex. systemctl comes from
   # the unit's PATH.
-  reconcile = "${lib.getExe chalkosPackages.chalkd} router services relay";
+  reconcile = "${lib.getExe pkgs.chalkos.chalkd} router services relay";
   # A relay's hardening: the user dnsmasq, which dnsmasq stays as, with the capabilities it
   # demands of a relay: port 67 and 547, the ICMPv6 socket of DHCPv6 and the ARP entries of
   # DHCPv4 clients without an address. It writes no lease file and no pid file.
@@ -97,7 +96,7 @@ in
           "DHCPSubnet"
           "NAT64"
         ];
-      render = "${lib.getExe chalkosPackages.chalkos-render} dhcp-relay";
+      render = "${lib.getExe pkgs.chalkos.chalkos-render} dhcp-relay";
       check = ''
         for f in "$OUT"/*.conf; do
           [ -e "$f" ] || continue

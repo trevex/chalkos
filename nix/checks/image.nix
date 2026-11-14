@@ -37,7 +37,7 @@ in
         ];
       };
       v4l2loopbackCheck = v4l2loopback.config.system.build.chalkosKernelModulesCheck;
-      tool = lib.getExe (pkgs.callPackage ../kernel-modules.nix { });
+      tool = lib.getExe pkgs.chalkos.kernel-modules;
       full = lib.getOutput "modules" worker.config.boot.kernelPackages.kernel;
       version = worker.config.boot.kernelPackages.kernel.modDirVersion;
       # A package of one out-of-tree module whose modinfo names the dependencies given.
@@ -111,14 +111,7 @@ in
   # verity, which an upgrade reads the sizes with.
   image-size =
     let
-      veritysize = pkgs.callPackage ../go-module.nix { } {
-        pname = "veritysize";
-        paths = [
-          ../../test/veritysize
-          ../../pkg/verity
-        ];
-        subPackages = [ "test/veritysize" ];
-      };
+      inherit (pkgs.chalkos) veritysize;
       ceilings = import ../testing/image-sizes.nix;
       measure =
         name: config: ceiling:
@@ -151,7 +144,7 @@ in
     pkgs.runCommand "chalkos-image-size"
       {
         nativeBuildInputs = [
-          (pkgs.callPackage ../image-size.nix { })
+          pkgs.chalkos.image-size
           veritysize
         ];
       }
@@ -375,7 +368,7 @@ in
     pkgs.runCommand "chalkos-rules"
       {
         nativeBuildInputs = [
-          (pkgs.callPackage ../chalkos-rules.nix { })
+          pkgs.chalkos.chalkos-rules
           pkgs.jq
         ];
         checked = [

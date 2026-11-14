@@ -16,9 +16,9 @@
     }:
     let
       system = "x86_64-linux";
-      goOverlay = import ./nix/go.nix { inherit go-overlay; };
-      pkgs = nixpkgs.legacyPackages.${system}.extend goOverlay;
-      chalkos = import ./lib { inherit nixpkgs goOverlay; };
+      overlay = import ./nix/overlay.nix { inherit go-overlay; };
+      pkgs = nixpkgs.legacyPackages.${system}.extend overlay;
+      chalkos = import ./lib { inherit nixpkgs overlay; };
       # The images the e2e tests boot, those the checks and the documentation evaluate, and the
       # documentation, which the packages, checks and apps share.
       testing = import ./nix/testing/images.nix { inherit self pkgs; };
@@ -36,6 +36,7 @@
     in
     {
       lib = chalkos;
+      overlays.default = overlay;
       templates.lab = {
         path = ./templates/lab;
         description = "A cluster of a control plane and a worker that chalklab runs as QEMU virtual machines";

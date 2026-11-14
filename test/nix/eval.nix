@@ -4634,4 +4634,39 @@ lib.runTests {
       instances = [ ];
     };
   };
+  # An image's own overlay can override chalkos's packages with overrideScope: mkImages adds the
+  # chalkos scope before the image's overlays, so a variant's chalkd replaces the one on the
+  # system path, which is otherwise the scope's.
+  testImageOverlayOverridesTheChalkosScope = {
+    expr =
+      let
+        onPath = name: c: lib.any (p: lib.getName p == name) c.environment.systemPackages;
+        images =
+          (mkImages {
+            platforms = [ "metal" ];
+            variants = {
+              node = { };
+              custom.modules = [
+                {
+                  nixpkgs.overlays = [
+                    (_: prev: {
+                      chalkos = prev.chalkos.overrideScope (
+                        _: sp: { chalkd = sp.chalkd.overrideAttrs { pname = "chalkd-custom"; }; }
+                      );
+                    })
+                  ];
+                }
+              ];
+            };
+          }).nixos;
+      in
+      {
+        scope = lib.elem images.node-metal.pkgs.chalkos.chalkd images.node-metal.config.environment.systemPackages;
+        custom = onPath "chalkd-custom" images.custom-metal.config;
+      };
+    expected = {
+      scope = true;
+      custom = true;
+    };
+  };
 }
