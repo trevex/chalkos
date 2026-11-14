@@ -89,8 +89,7 @@ func TestStorageVolumesOnSystemAndOwnDisk(t *testing.T) {
 	if fast.Ref.Selector.Model != "Samsung*" || fast.Ref.Selector.Type != "nvme" || fast.Repart["10-fast.conf"] == "" {
 		t.Errorf("fast = %+v", fast)
 	}
-	// A raw volume is recorded with an empty format, as one recorded when null meant raw, and its
-	// partition gets no file system.
+	// A raw volume is recorded with an empty format, and its partition gets no file system.
 	if v := sec.Volumes["fast"]; v.Disk != "fast" || v.Format != "" || v.Encryption != "tpm2" {
 		t.Errorf("volume fast = %+v", v)
 	}
