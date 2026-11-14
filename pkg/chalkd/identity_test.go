@@ -35,7 +35,7 @@ const (
 // section renders a storage section with VAR and, when extraFormat is set, a volume on the disk
 // with the serial chalk-extra.
 func section(varSize, extraFormat string) string {
-	size := "null"
+	size := `""`
 	if varSize != "" {
 		size = `"` + varSize + `"`
 	}
@@ -43,7 +43,7 @@ func section(varSize, extraFormat string) string {
 	volumes := `"var": {"disk": "system", "label": "var", "format": "ext4", "mountPoint": "/var", "encryption": "tpm2", "size": ` + size + `}`
 	if extraFormat != "" {
 		disks += `, "extra": {"ref": {"serial": "chalk-extra"}, "seed": "088717f0-ffd4-dba5-a524-7d3d44310d1e", "repart": {"10-extra.conf": "[Partition]\nLabel=extra\n"}}`
-		volumes += `, "extra": {"disk": "extra", "label": "extra", "format": "` + extraFormat + `", "mountPoint": "/srv/extra", "encryption": "tpm2", "size": null}`
+		volumes += `, "extra": {"disk": "extra", "label": "extra", "format": "` + extraFormat + `", "mountPoint": "/srv/extra", "encryption": "tpm2", "size": ""}`
 	}
 	return `{"disks": {` + disks + `}, "volumes": {` + volumes + `}, "fallback": "recovery-key", "encryption": "tpm2"}`
 }

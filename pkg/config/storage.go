@@ -188,8 +188,7 @@ func storageErrors(system storage.Ref, sys systemDiskSpec, vols []namedVolume) e
 const formatRaw = "raw"
 
 // fileSystem is the file system repart formats a volume of the format with, which the recorded
-// section names: none for a raw volume. It stays empty, as it was when a null format meant raw,
-// so a raw volume recorded then is no change of format.
+// section names: none for a raw volume.
 func fileSystem(format string) string {
 	if format == formatRaw {
 		return ""

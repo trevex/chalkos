@@ -300,9 +300,6 @@ func TestStorageRules(t *testing.T) {
 			want: []string{`Volume data: its disk data (serial "d") is not plugged in; plug it in`}},
 		{name: "a larger size on a disk the node cannot tell is plugged in", volumes: map[string]string{"data": edit(dataVolume, "size", `"2G"`)}, unplugged: true, presentError: "two disks have its identity", takes: schema.Refuse,
 			want: []string{"Volume data: the node cannot find its disk data: two disks have its identity; try again once it can"}},
-		// A recorded size bytes() cannot read, as an older image could write one, is recreated.
-		{name: "a recorded size past the limit", volumes: map[string]string{"data": dataVolume}, recorded: recordedOf(map[string]map[string]any{"data": with(map[string]any{"size": "99999999P"})}), takes: schema.Reset,
-			want: []string{"Volume data: size 1G instead of 99999999P; reset it with chalkctl storage reset n1 data"}},
 		{name: "mounted elsewhere", volumes: map[string]string{"data": edit(dataVolume, "mountPoint", `"/srv/data"`)}},
 		{name: "smaller", volumes: map[string]string{"data": edit(dataVolume, "size", `"512M"`)}, takes: schema.Reset,
 			want: []string{"Volume data: smaller: 512M instead of 1G; reset it with chalkctl storage reset n1 data"}},
@@ -310,14 +307,12 @@ func TestStorageRules(t *testing.T) {
 			want: []string{"Volume data: format ext4 instead of xfs; reset it with chalkctl storage reset n1 data"}},
 		{name: "raw instead of formatted", volumes: map[string]string{"data": edit(edit(dataVolume, "format", `"raw"`), "mountPoint", "null")}, takes: schema.Reset,
 			want: []string{"Volume data: format raw instead of xfs; reset it with chalkctl storage reset n1 data"}},
-		// A raw volume's recorded format is empty, as one recorded when null meant raw.
-		{name: "raw as recorded", volumes: map[string]string{"data": edit(edit(dataVolume, "format", `"raw"`), "mountPoint", "null")}, recorded: recordedOf(map[string]map[string]any{"data": with(map[string]any{"format": nil, "mountPoint": nil})})},
-		{name: "raw as recorded empty", volumes: map[string]string{"data": edit(edit(dataVolume, "format", `"raw"`), "mountPoint", "null")}, recorded: recordedOf(map[string]map[string]any{"data": with(map[string]any{"format": "", "mountPoint": nil})})},
-		{name: "formatted instead of raw", volumes: map[string]string{"data": dataVolume}, recorded: recordedOf(map[string]map[string]any{"data": with(map[string]any{"format": nil})}), takes: schema.Reset,
+		{name: "raw as recorded", volumes: map[string]string{"data": edit(edit(dataVolume, "format", `"raw"`), "mountPoint", "null")}, recorded: recordedOf(map[string]map[string]any{"data": with(map[string]any{"format": "", "mountPoint": ""})})},
+		{name: "formatted instead of raw", volumes: map[string]string{"data": dataVolume}, recorded: recordedOf(map[string]map[string]any{"data": with(map[string]any{"format": ""})}), takes: schema.Reset,
 			want: []string{"Volume data: format xfs instead of raw; reset it with chalkctl storage reset n1 data"}},
 		{name: "another encryption", volumes: map[string]string{"data": edit(dataVolume, "encryption", `{"mode": "none"}`)}, takes: schema.Reset,
 			want: []string{"Volume data: encryption none instead of tpm2; reset it with chalkctl storage reset n1 data"}},
-		{name: "a fixed size where it filled its disk", volumes: map[string]string{"data": dataVolume}, recorded: recordedOf(map[string]map[string]any{"data": with(map[string]any{"size": nil})}), takes: schema.Reset,
+		{name: "a fixed size where it filled its disk", volumes: map[string]string{"data": dataVolume}, recorded: recordedOf(map[string]map[string]any{"data": with(map[string]any{"size": ""})}), takes: schema.Reset,
 			want: []string{"Volume data: size 1G instead of filling its disk; reset it with chalkctl storage reset n1 data"}},
 		// A growth is no part of what a reset recreates the volume for.
 		{name: "larger and of another encryption", volumes: map[string]string{"data": edit(edit(dataVolume, "size", `"2G"`), "encryption", `{"mode": "none"}`)}, takes: schema.Reset,
@@ -336,7 +331,7 @@ func TestStorageRules(t *testing.T) {
 		// VAR is never raw, so a recorded VAR without a format has none.
 		{name: "VAR recorded without a format", volumes: map[string]string{"data": dataVolume}, recorded: func() map[string]any {
 			r := recordedOf(map[string]map[string]any{"data": data})
-			r["volumes"].(map[string]any)["var"].(map[string]any)["format"] = nil
+			r["volumes"].(map[string]any)["var"].(map[string]any)["format"] = ""
 			return r
 		}(), takes: schema.Reinstall, want: []string{"VAR: format ext4 instead of none; only a reinstall of n1 carries it out"}},
 		// The volume follows the node's encryption, and VAR too.

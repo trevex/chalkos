@@ -58,8 +58,8 @@ let
   # The storage kinds' rules compare the delivered documents with the section STATE records,
   # facts.recorded, rather than with the running config: the machine has one storage, which a
   # slot's config may grow but not undo. Null facts.recorded, as at an install, has nothing to
-  # compare with. A recorded value is "" or null where the documents say null; a raw volume's
-  # format is recorded as "".
+  # compare with. A recorded value is "" where the documents say null, and a raw volume's format
+  # is recorded as "".
   storageAPI = apiVersions.storage;
   systemDiskSpec = ''config["${storageAPI}"].SystemDisk.map(k, config["${storageAPI}"].SystemDisk[k].spec)[0]'';
   orEmpty = x: ''(${x} == null ? "" : ${x})'';
@@ -73,18 +73,14 @@ let
     "cel.bind(v, documents[n].spec, cel.bind(sd, ${systemDiskSpec}, cel.bind(r, n in facts.recorded.volumes ? facts.recorded.volumes[n] : null, ${expr})))";
   # The volume's definition as the recorded section writes it.
   volDisk = ''(v.disk == null ? "system" : n)'';
-  # raw is recorded empty, as it was when null meant raw, so a raw volume's recorded format does
-  # not read as another.
   volFormat = ''(v.format == "raw" ? "" : v.format)'';
   volEncryption = "(v.encryption.mode != null ? v.encryption.mode : sd.encryption.mode)";
   # The reason a change from the recorded size needs the volume recreated, or "" if it does not.
   # - A larger size, or filling the disk instead of a size, only grows the partition.
   # - Sizes of the same bytes, such as 1G and 1024M, are the same size.
-  # - A size bytes() cannot read, which a section an older image recorded can hold, needs the
-  #   volume recreated.
   sizeReason =
     size: recorded:
-    ''(${size} == ${recorded} || ${size} == "" ? "" : ${recorded} == "" ? "size " + ${size} + " instead of filling its disk" : !isSize(${size}) || !isSize(${recorded}) ? "size " + ${size} + " instead of " + ${recorded} : bytes(${size}) < bytes(${recorded}) ? "smaller: " + ${size} + " instead of " + ${recorded} : "")'';
+    ''(${size} == ${recorded} || ${size} == "" ? "" : ${recorded} == "" ? "size " + ${size} + " instead of filling its disk" : bytes(${size}) < bytes(${recorded}) ? "smaller: " + ${size} + " instead of " + ${recorded} : "")'';
   # Whether two sizes differ, as sizes of the same bytes do not.
   sizeChanged =
     a: b: "(${a} != ${b} && !(isSize(${a}) && isSize(${b}) && bytes(${a}) == bytes(${b})))";
@@ -92,14 +88,14 @@ let
     enc: recorded:
     ''(${enc} != ${recorded} ? "encryption " + ${enc} + " instead of " + ${recorded} : "")'';
   resetReasons = ''
-    [${volFormat} != ${orEmpty "r.format"} ? "format " + ${shown volFormat} + " instead of " + ${shown (orEmpty "r.format")} : "",
+    [${volFormat} != r.format ? "format " + ${shown volFormat} + " instead of " + ${shown "r.format"} : "",
      ${encryptionReason volEncryption "r.encryption"},
-     ${sizeReason (orEmpty "v.size") (orEmpty "r.size")}].filter(x, x != "")'';
+     ${sizeReason (orEmpty "v.size") "r.size"}].filter(x, x != "")'';
   ownDisk = "v.disk != null && n in facts.disks";
   movedByRef = ''${ownDisk} && facts.disks[n].changed && facts.disks[n].error == "" && !facts.disks[n].same'';
   unresolved = ''${ownDisk} && facts.disks[n].changed && facts.disks[n].error != ""'';
   needsReset = "r != null && ${volDisk} == r.disk && !(${movedByRef}) && !(${unresolved}) && size(${resetReasons}) > 0";
-  volChanges = "r == null || ${volFormat} != ${orEmpty "r.format"} || ${volEncryption} != r.encryption || ${sizeChanged (orEmpty "v.size") (orEmpty "r.size")} || ${orEmpty "v.mountPoint"} != ${orEmpty "r.mountPoint"}";
+  volChanges = "r == null || ${volFormat} != r.format || ${volEncryption} != r.encryption || ${sizeChanged (orEmpty "v.size") "r.size"} || ${orEmpty "v.mountPoint"} != r.mountPoint";
   missingDisk = "${ownDisk} && facts.disks[n].pinned && !facts.disks[n].present && (${volChanges})";
   # A rule over each Volume document n: `bad` holds for none, and `message` describes each it
   # holds for. Both are CEL expressions over n and the names bindVolume binds.
@@ -132,9 +128,9 @@ in
             expr:
             ''cel.bind(sd, documents.map(n, documents[n].spec)[0], cel.bind(r, facts.recorded.volumes["var"], ${expr}))'';
           reasons = ''
-            [${orEmpty "r.format"} != "ext4" ? "format ext4 instead of " + (${orEmpty "r.format"} == "" ? "none" : r.format) : "",
+            [r.format != "ext4" ? "format ext4 instead of " + (r.format == "" ? "none" : r.format) : "",
              ${encryptionReason "(sd.var.encryption.mode != null ? sd.var.encryption.mode : sd.encryption.mode)" "r.encryption"},
-             ${sizeReason (orEmpty "sd.var.size") (orEmpty "r.size")}].filter(x, x != "")'';
+             ${sizeReason (orEmpty "sd.var.size") "r.size"}].filter(x, x != "")'';
         in
         [
           {

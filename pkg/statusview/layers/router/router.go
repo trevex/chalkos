@@ -57,7 +57,6 @@ func Write(w io.Writer, r *routerv1.StatusResponse) error {
 		}
 	}
 	for _, d := range r.Dhcp {
-		// A chalkd of DHCPv4 alone gives no family.
 		name := "dhcp4"
 		if d.Family == "ipv6" {
 			name = "dhcp6"
