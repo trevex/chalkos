@@ -6,7 +6,6 @@
 }:
 let
   inherit (pkgs) lib;
-  chalkPkgs = self.packages.${pkgs.stdenv.hostPlatform.system};
   testEnv = import ./testing/env.nix { inherit pkgs self; };
 
   # TestKubernetesCluster without the test's registry: the nodes' mirror is unreachable, so
@@ -15,12 +14,12 @@ let
   # binary.
   kubernetesOnline = pkgs.writeShellApplication {
     name = "chalkos-e2e-kubernetes-online";
-    runtimeInputs = testEnv.tools ++ [ chalkPkgs.chalklab-e2e ];
+    runtimeInputs = testEnv.tools ++ [ pkgs.chalkos.chalklab-e2e ];
     text = ''
       ${lib.concatStrings (
         lib.mapAttrsToList (name: value: "export ${name}=${lib.escapeShellArg value}\n") (
           testEnv.e2eEnv [ "CHALKLAB_K8S_IMAGE_DIR" ] {
-            CHALKLAB_CHALKLAB = lib.getExe chalkPkgs.chalklab;
+            CHALKLAB_CHALKLAB = lib.getExe pkgs.chalkos.chalklab;
             CHALKLAB_K8S_ONLINE = "1";
           }
         )
@@ -32,7 +31,7 @@ in
 {
   chalklab = {
     type = "app";
-    program = lib.getExe chalkPkgs.chalklab;
+    program = lib.getExe pkgs.chalkos.chalklab;
     meta.description = "Run a chalkos cluster's nodes as QEMU virtual machines on this machine";
   };
   docgen = {

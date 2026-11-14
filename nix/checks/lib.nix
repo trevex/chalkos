@@ -163,7 +163,7 @@ in
       images,
       command ? "chalkctl validate",
     }:
-    pkgs.runCommand "chalkos-${name}" { nativeBuildInputs = [ chalkPkgs.chalkctl ]; } ''
+    pkgs.runCommand "chalkos-${name}" { nativeBuildInputs = [ pkgs.chalkos.chalkctl ]; } ''
       cp -r ${src} tree
       chmod -R u+w tree
       ${lib.concatStrings (

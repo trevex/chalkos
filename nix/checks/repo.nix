@@ -202,8 +202,8 @@ in
       shell = template.devShells.${system}.default;
     in
     assert lib.all (p: lib.elem p shell.nativeBuildInputs) [
-      chalkPkgs.chalklab
-      chalkPkgs.chalkctl
+      pkgs.chalkos.chalklab
+      pkgs.chalkos.chalkctl
       pkgs.kubectl
     ];
     assert lib.isString shell.drvPath;

@@ -11,11 +11,10 @@
 {
   pkgs,
   lib,
-  checkLib,
   ...
 }:
 let
-  inherit (checkLib.chalkPkgs) chalkd;
+  inherit (pkgs.chalkos) chalkd;
   # pkg/imagecheck's tests as one binary.
   tests = (chalkd.override { withTests = true; }).overrideAttrs {
     pname = "chalkos-imagecheck-tests";

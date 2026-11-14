@@ -46,7 +46,7 @@ rec {
   # The variables of every e2e test: they install nodes with the real chalkctl, from the test
   # clusters' fixtures.
   e2eVars = {
-    CHALKLAB_CHALKCTL = pkgs.lib.getExe chalkPkgs.chalkctl;
+    CHALKLAB_CHALKCTL = pkgs.lib.getExe pkgs.chalkos.chalkctl;
     CHALKLAB_SECRETS = "${chalkPkgs.test-secrets}/secrets.json";
     CHALKLAB_FIXTURES = "${../../test/fixtures/clusters}";
   };

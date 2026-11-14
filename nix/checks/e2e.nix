@@ -10,7 +10,7 @@ let
       (
         {
           requiredSystemFeatures = [ "kvm" ];
-          nativeBuildInputs = testEnv.tools ++ [ chalkPkgs.chalklab-e2e ];
+          nativeBuildInputs = testEnv.tools ++ [ pkgs.chalkos.chalklab-e2e ];
         }
         // testEnv.e2eEnv imageDirs vars
       )
@@ -64,11 +64,11 @@ in
     "CHALKLAB_UNHEALTHY_IMAGE_DIR"
   ] { };
   e2e-kubernetes = e2e "kubernetes" "^TestKubernetesCluster$" [ "CHALKLAB_K8S_IMAGE_DIR" ] {
-    CHALKLAB_CHALKLAB = lib.getExe chalkPkgs.chalklab;
+    CHALKLAB_CHALKLAB = lib.getExe pkgs.chalkos.chalklab;
     CHALKLAB_K8S_IMAGES = kubernetesImages;
   };
   e2e-router = e2e "router" "^TestRouterLab$" [ "CHALKLAB_ROUTER_IMAGE_DIR" ] {
-    CHALKLAB_CHALKLAB = lib.getExe chalkPkgs.chalklab;
+    CHALKLAB_CHALKLAB = lib.getExe pkgs.chalkos.chalklab;
   };
   e2e-kubernetes-ha =
     e2e "kubernetes-ha" "^TestKubernetesHA$"
