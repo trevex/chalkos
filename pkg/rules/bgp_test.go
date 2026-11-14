@@ -358,8 +358,6 @@ func TestBGPKeepsTheDefaultInstance(t *testing.T) {
 	def := doc("BGP", "bgp", `{"asn": 64512, "routerID": "192.0.2.1"}`)
 	inTenant := doc("BGP", "tenant", `{"vrf": "tenant", "asn": 64512, "routerID": "192.0.2.1"}`)
 	moved := doc("BGP", "bgp", `{"vrf": "tenant", "asn": 64512, "routerID": "192.0.2.1"}`)
-	// A running config of an image whose BGP has no vrf holds documents without the field.
-	before := builtinDoc(t, derive.API, "BGP", "bgp", `{"asn": 64512, "routerID": "192.0.2.1"}`)
 	refused := []string{"the config drops the default VRF's BGP document and keeps a running BGP instance of another VRF, which FRR does not allow; drop the other VRFs' BGP documents in the same delivery, or keep the default VRF's"}
 	for _, tc := range []struct {
 		name      string
@@ -371,8 +369,6 @@ func TestBGPKeepsTheDefaultInstance(t *testing.T) {
 		{"an instance moved into a VRF", []config.Document{eth0, tenant, def}, []config.Document{eth0, tenant, moved}, nil},
 		{"another VRF's instance dropped", []config.Document{eth0, tenant, def, inTenant}, []config.Document{eth0, tenant, def}, nil},
 		{"a first delivery", nil, []config.Document{eth0, tenant, inTenant}, nil},
-		{"a running config without vrf", []config.Document{eth0, before}, []config.Document{eth0, tenant, def, inTenant}, nil},
-		{"a running config without vrf, its instance dropped", []config.Document{eth0, before}, []config.Document{eth0, tenant, inTenant}, nil},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			failures, err := set.Evaluate(Input{Documents: config.Redact(tc.docs), Old: config.Redact(tc.old), Node: "r1"})

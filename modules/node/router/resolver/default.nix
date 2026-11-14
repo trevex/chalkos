@@ -21,13 +21,12 @@ let
   rendered = "${dir}/unbound.conf";
   inherit (chalkosLib.internal) cel;
   inherit (chalkosLib.internal.api) apiVersions;
-  # The number of the default VRF's resolvers in the config c: a running config of an image whose
-  # Resolver had no vrf lacks the field.
+  # The number of the default VRF's resolvers in the config c.
   defaultResolvers =
     c:
     "cel.bind(r, ${
       cel.documents c apiVersions.router "Resolver"
-    }, size(r.filter(n, !has(r[n].spec.vrf) || r[n].spec.vrf == \"default\")))";
+    }, size(r.filter(n, r[n].spec.vrf == \"default\")))";
   # chalkd router services unbound runs the resolvers of the VRFs: it starts the resolver of each
   # VRF with a rendered config that does not run, reloads those that run and stops those without a
   # config, after the others ran; with the argument stop, it stops all of them. systemd binds a

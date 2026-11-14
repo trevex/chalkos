@@ -308,7 +308,7 @@ documents.filter(n, cel.bind(s, documents[n].spec, ![s["import"].ipv4, s["import
 Expression of rule 2:
 
 ```text
-!oldDocuments.exists(n, (has(oldDocuments[n].spec.vrf) ? oldDocuments[n].spec.vrf : "default") == "default") || documents.exists(n, documents[n].spec.vrf == "default") || !documents.exists(n, documents[n].spec.vrf != "default" && oldDocuments.exists(m, (has(oldDocuments[m].spec.vrf) ? oldDocuments[m].spec.vrf : "default") == documents[n].spec.vrf))
+!oldDocuments.exists(n, oldDocuments[n].spec.vrf == "default") || documents.exists(n, documents[n].spec.vrf == "default") || !documents.exists(n, documents[n].spec.vrf != "default" && oldDocuments.exists(m, oldDocuments[m].spec.vrf == documents[n].spec.vrf))
 ```
 
 Expression of rule 3:
@@ -1528,7 +1528,7 @@ The effects router images add.
 `when` of `unbound-start`:
 
 ```text
-cel.bind(r, (("router.chalkos.dev/v1alpha1" in config && "Resolver" in config["router.chalkos.dev/v1alpha1"]) ? config["router.chalkos.dev/v1alpha1"].Resolver : {}), size(r.filter(n, !has(r[n].spec.vrf) || r[n].spec.vrf == "default"))) != cel.bind(r, (("router.chalkos.dev/v1alpha1" in oldConfig && "Resolver" in oldConfig["router.chalkos.dev/v1alpha1"]) ? oldConfig["router.chalkos.dev/v1alpha1"].Resolver : {}), size(r.filter(n, !has(r[n].spec.vrf) || r[n].spec.vrf == "default")))
+cel.bind(r, (("router.chalkos.dev/v1alpha1" in config && "Resolver" in config["router.chalkos.dev/v1alpha1"]) ? config["router.chalkos.dev/v1alpha1"].Resolver : {}), size(r.filter(n, r[n].spec.vrf == "default"))) != cel.bind(r, (("router.chalkos.dev/v1alpha1" in oldConfig && "Resolver" in oldConfig["router.chalkos.dev/v1alpha1"]) ? oldConfig["router.chalkos.dev/v1alpha1"].Resolver : {}), size(r.filter(n, r[n].spec.vrf == "default")))
 ```
 
 ## Diagnostics { #diagnostics }

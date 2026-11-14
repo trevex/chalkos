@@ -63,9 +63,6 @@ let
     messageExpression = ''"the interface " + ${interfaces}.filter(i, i.matches("${addressLike}"))[0] + " is named like an address, which FRR cannot tell from a neighbour's; give the peer its address, or rename the interface"'';
   };
 
-  # The vrf of the running BGP document of the name n, default for the default VRF; a running
-  # config of an image whose BGP had no vrf lacks the field.
-  oldVRF = n: ''(has(oldDocuments[${n}].spec.vrf) ? oldDocuments[${n}].spec.vrf : "default")'';
   # Whether the BGP spec s runs in the default VRF or announces no default route. Every other
   # VRF's table ends in an unreachable default route, which a network of length 0 would match at
   # all times.
@@ -222,7 +219,7 @@ in
       }
       {
         description = "A delivery that drops the default VRF's BGP document keeps no running BGP instance of another VRF, as FRR keeps its default instance while another runs.";
-        rule = ''!oldDocuments.exists(n, ${oldVRF "n"} == "default") || documents.exists(n, documents[n].spec.vrf == "default") || !documents.exists(n, documents[n].spec.vrf != "default" && oldDocuments.exists(m, ${oldVRF "m"} == documents[n].spec.vrf))'';
+        rule = ''!oldDocuments.exists(n, oldDocuments[n].spec.vrf == "default") || documents.exists(n, documents[n].spec.vrf == "default") || !documents.exists(n, documents[n].spec.vrf != "default" && oldDocuments.exists(m, oldDocuments[m].spec.vrf == documents[n].spec.vrf))'';
         message = "the config drops the default VRF's BGP document and keeps a running BGP instance of another VRF, which FRR does not allow; drop the other VRFs' BGP documents in the same delivery, or keep the default VRF's";
       }
       {

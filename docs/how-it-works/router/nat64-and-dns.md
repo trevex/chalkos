@@ -180,9 +180,8 @@ networkd document of that name, a `NetDev` that creates a device of the link's n
    is removed first, and its sessions end.
 6. It routes the prefix and an explicit pool's prefixes to the link in the VRF's table.
 
-It then removes, in this order, Jool's instances of the router's own namespace, such as one an
-older image ran, routes of protocol 64 that no file names, `n64-` links that no file names, and
-`nat64-` namespaces that no file names. Removing a namespace removes its instance and its veth
+It then removes, in this order, routes of protocol 64 that no file names, `n64-` links that no
+file names, and `nat64-` namespaces that no file names. Removing a namespace removes its instance and its veth
 pair. A route never goes with its link before its own removal.
 
 A step that fails leaves the others to run, and the unit then fails with each failed step. An

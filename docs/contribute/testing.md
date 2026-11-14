@@ -74,11 +74,12 @@ run them in isolation:
   golden test, one in the default VRF with an explicit pool and one in a VRF with an empty pool.
   Jool's module cannot load there, so a stub of `jool` keeps the instances per network namespace.
   The check proves each instance's namespace with forwarding off, its link in its VRF, the
-  addresses and routes, the removal of an older image's instance, routes and namespaces that no
-  file names, the 30-second wait for a VRF's table, once for two NAT64s of one VRF, a second run
-  that changes nothing, and `stop`. A run fails without changing anything when a link holds an
-  address of an explicit pool, and leaves a device of another kind under a link's name alone. With the VRF example's ruleset, it sends a guest's packet into the NAT64's namespace and
-  a connection out of it, masqueraded to the uplink's address.
+  addresses and routes, the removal of routes and namespaces that no file names, the 30-second
+  wait for a VRF's table, once for two NAT64s of one VRF, a second run that changes nothing, and
+  `stop`. A run fails without changing anything when a link holds an address of an explicit pool,
+  and leaves a device of another kind under a link's name alone. With the VRF example's ruleset,
+  it sends a guest's packet into the NAT64's namespace and a connection out of it, masqueraded
+  to the uplink's address.
 - The `router-dhcp` check runs a router image's `kea-dhcp4.service` over the DHCP example's
   server of the default VRF, behind the example's ruleset, with busybox's `udhcpc` as a client in
   a peer namespace. It proves a lease of the pool with the subnet's options, a reservation by MAC

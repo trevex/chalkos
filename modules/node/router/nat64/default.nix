@@ -29,10 +29,10 @@ let
   # instances of that VRF at once. A file's instance is created, or replaced in place, which keeps
   # its sessions; Jool keeps an instance's pool6, so an instance of another prefix is removed first
   # and loses its sessions. The VRF's table routes the prefix and an explicit pool's prefixes to
-  # the link, with protocol 64, which BGP announces when a network names it. Instances of the
-  # router's own namespace, routes of protocol 64, links and namespaces that no file names are
-  # removed, in that order, so no route is gone with its link before its removal; with the argument
-  # stop, every one is. Without the output's directory, as in maintenance mode, no file names one.
+  # the link, with protocol 64, which BGP announces when a network names it. Routes of protocol 64,
+  # links and namespaces that no file names are removed, in that order, so no route is gone with
+  # its link before its removal; with the argument stop, every one is. Without the output's
+  # directory, as in maintenance mode, no file names one.
   # A step that fails leaves the others to run, and the script then fails, naming each failed step;
   # an instance that failed keeps the routes its file names.
   apply = pkgs.writeShellApplication {
@@ -215,15 +215,6 @@ let
             failed+=("route $route")
         done
       done
-      # An instance of the router's own namespace, such as one an older image ran, takes every
-      # link's packets; jool lists the instances of every namespace, and global display finds those
-      # of the unit's own alone.
-      instances=$(jool instance display --csv --no-headers) || failed+=("list instances")
-      while IFS=, read -r _ name _; do
-        if [[ -n $name ]] && jool -i "$name" global display >/dev/null 2>&1; then
-          jool -i "$name" instance remove || failed+=("remove instance $name of the router's namespace")
-        fi
-      done <<<"$instances"
       for family in -4 -6; do
         # ip -N gives each table's number, and leaves out the table of a route of main.
         routes=$(ip -N "$family" -j route show table all proto "$proto" | jq -r '.[] | "\(.table // "254") \(.dst)"') ||

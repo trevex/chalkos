@@ -4,8 +4,7 @@
 # the image's jool; it keys them by the caller's network namespace, as Jool does. The unit gives
 # each instance its namespace with forwarding off, its veth pair in its VRF, the addresses of its
 # .veth and the default routes back, its instance in its namespace, and its prefix's and
-# explicit pool's routes in its VRF's table. It removes an older image's instance of the
-# router's own namespace with its unreachable route, a route of protocol 64 no file names, and
+# explicit pool's routes in its VRF's table. It removes routes of protocol 64 no file names, and
 # the namespace, link and routes of a NAT64 that went. A second run changes nothing. With the VRF
 # example's ruleset, a guest's packet to the NAT64 prefix reaches guest's namespace past policies
 # and the conntrack zone, and a connection from the namespace's inner address leaves guest's
@@ -82,10 +81,6 @@ unitCheck "router-nat64"
       echo "$ns $name $(jq -r .global.pool6 "$3")" >>"$STATE"
       exit 0
       ;;
-    "instance display")
-      awk '{ print $1 "," $2 ",netfilter" }' "$STATE"
-      exit 0
-      ;;
     esac
     if [ "$1" = -i ]; then
       name=$2
@@ -98,9 +93,6 @@ unitCheck "router-nat64"
       case "$*" in
       "global display --csv")
         echo "pool6,''${line##* }"
-        exit 0
-        ;;
-      "global display")
         exit 0
         ;;
       "instance remove")
@@ -143,10 +135,8 @@ unitCheck "router-nat64"
 
     ip link set lo up
     main=$(readlink /proc/self/ns/net)
-    # An older image's instance of the router's own namespace with its unreachable route, a
-    # route of protocol 64 no file names, the namespace of a NAT64 that went with its link and
-    # a route through it, and the link of one whose namespace went.
-    echo "$main edge 64:ff9b::/96" >>"$STATE"
+    # Routes of protocol 64 no file names, the namespace of a NAT64 that went with its link and a
+    # route through it, and the link of one whose namespace went.
     ip -6 route add unreachable 64:ff9b::/96 proto 64
     ip -4 route add unreachable 198.51.100.64/30 proto 64
     ip netns add nat64-old
@@ -210,11 +200,10 @@ unitCheck "router-nat64"
     ip -4 route show proto 64 | grep -q "^192.0.2.252/30 via ''${edge%/*} dev n64-edge" || fail "the main table does not route the edge's pool to n64-edge"
     [ "$(ip -4 route show table all proto 64 | wc -l)" = 1 ] || fail "routes of protocol 64 beside the edge's pool: $(ip -4 route show table all proto 64)"
     [ "$(ip -6 route show table all proto 64 | wc -l)" = 2 ] || fail "IPv6 routes of protocol 64 beside the two prefixes: $(ip -6 route show table all proto 64)"
-    if ip -6 route show table all proto 64 | grep -q unreachable; then fail "kept the older image's unreachable route"; fi
+    if ip -6 route show table all proto 64 | grep -q unreachable; then fail "kept an unreachable route"; fi
     if [ -e /run/netns/nat64-old ]; then fail "kept the namespace of a NAT64 that went"; fi
     if ip link show n64-old >/dev/null 2>&1; then fail "kept the link of a NAT64 that went"; fi
     if ip link show n64-gone >/dev/null 2>&1; then fail "kept the link of a NAT64 whose namespace went"; fi
-    if awk -v ns="$main" '$1 == ns' "$STATE" | grep -q .; then fail "kept an instance of the router's own namespace"; fi
 
     # A namespace that forwards again is set back; nothing else changes.
     inside guest sh -c 'echo 1 >/proc/sys/net/ipv4/conf/all/forwarding; echo 1 >/proc/sys/net/ipv6/conf/all/forwarding'
@@ -326,7 +315,6 @@ unitCheck "router-nat64"
     if ls /run/netns/nat64-* >/dev/null 2>&1; then fail "kept a namespace after stopping"; fi
     if ip link show n64-edge >/dev/null 2>&1 || ip link show n64-guest >/dev/null 2>&1; then fail "kept a link after stopping"; fi
     [ -z "$(ip route show table all proto 64; ip -6 route show table all proto 64)" ] || fail "kept routes of protocol 64 after stopping"
-    if awk -v ns="$main" '$1 == ns' "$STATE" | grep -q .; then fail "an instance of the router's own namespace after stopping"; fi
     # Jool drops the instances of a namespace that goes.
     : >"$STATE"
 
