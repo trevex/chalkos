@@ -79,19 +79,26 @@ func (c *Contract) setFact(layer string, data []byte) {
 	c.Facts[layer] = data
 }
 
-// readFiles reads the files of dir whose names match pattern, by name.
+// readFiles reads the files of dir whose names match pattern, by name. A missing dir has none.
 func readFiles(dir, pattern string) (map[string][]byte, error) {
-	paths, err := filepath.Glob(filepath.Join(dir, pattern))
-	if err != nil {
+	entries, err := os.ReadDir(dir)
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return nil, err
 	}
 	files := map[string][]byte{}
-	for _, p := range paths {
-		data, err := os.ReadFile(p)
+	for _, e := range entries {
+		ok, err := filepath.Match(pattern, e.Name())
 		if err != nil {
 			return nil, err
 		}
-		files[filepath.Base(p)] = data
+		if !ok {
+			continue
+		}
+		data, err := os.ReadFile(filepath.Join(dir, e.Name()))
+		if err != nil {
+			return nil, err
+		}
+		files[e.Name()] = data
 	}
 	return files, nil
 }

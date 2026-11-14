@@ -94,28 +94,19 @@ type diskImage struct{ name, partitions string }
 // repart-output.json describes, and each ISO, which the .json file named after it describes. It
 // checks that every disk's partitions file exists before SignDirectory copies anything.
 func diskImages(dir string) ([]diskImage, error) {
+	raw, err := image.FindRaw(dir)
+	if err != nil {
+		return nil, err
+	}
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return nil, err
 	}
-	var raws, isos []string
+	disks := []diskImage{{filepath.Base(raw), "repart-output.json"}}
 	for _, e := range entries {
-		if e.IsDir() {
-			continue
+		if !e.IsDir() && filepath.Ext(e.Name()) == ".iso" {
+			disks = append(disks, diskImage{e.Name(), e.Name() + ".json"})
 		}
-		switch filepath.Ext(e.Name()) {
-		case ".raw":
-			raws = append(raws, e.Name())
-		case ".iso":
-			isos = append(isos, e.Name())
-		}
-	}
-	if len(raws) != 1 {
-		return nil, fmt.Errorf("want exactly one .raw image in %s, found %v", dir, raws)
-	}
-	disks := []diskImage{{raws[0], "repart-output.json"}}
-	for _, iso := range isos {
-		disks = append(disks, diskImage{iso, iso + ".json"})
 	}
 	for _, d := range disks {
 		if _, err := os.Stat(filepath.Join(dir, d.partitions)); err != nil {

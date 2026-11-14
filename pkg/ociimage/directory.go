@@ -18,12 +18,9 @@ import (
 // such as the installer. The UKI and boot-loader blobs read copies in a temporary directory,
 // which closeImage removes, so the image must be written before then.
 func FromDirectory(ctx context.Context, dir string) (_ v1.Image, closeImage func() error, err error) {
-	raws, err := filepath.Glob(filepath.Join(dir, "*.raw"))
+	raw, err := image.FindRaw(dir)
 	if err != nil {
 		return nil, nil, err
-	}
-	if len(raws) != 1 {
-		return nil, nil, fmt.Errorf("want exactly one .raw image in %s, found %v", dir, raws)
 	}
 	c, err := ReadContractDir(dir)
 	if err != nil {
@@ -37,7 +34,7 @@ func FromDirectory(ctx context.Context, dir string) (_ v1.Image, closeImage func
 	if err != nil {
 		return nil, nil, err
 	}
-	p, err := image.OpenParts(ctx, raws[0], partitions, true)
+	p, err := image.OpenParts(ctx, raw, partitions, true)
 	if err != nil {
 		return nil, nil, err
 	}

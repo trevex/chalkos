@@ -259,11 +259,9 @@ func imageFiles(path string) (raw, definitions string, err error) {
 	}
 	raw = path
 	if info.IsDir() {
-		raws, err := filepath.Glob(filepath.Join(path, "*.raw"))
-		if err != nil || len(raws) != 1 {
-			return "", "", fmt.Errorf("want exactly one .raw image in %s, found %v", path, raws)
+		if raw, err = image.FindRaw(path); err != nil {
+			return "", "", err
 		}
-		raw = raws[0]
 	}
 	return raw, filepath.Join(filepath.Dir(raw), "repart.d"), nil
 }

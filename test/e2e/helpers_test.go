@@ -275,19 +275,19 @@ func prepareDisk(t *testing.T, dir string, o diskOpts) lab.VMDisk {
 		o.imageEnv = "CHALKLAB_IMAGE_DIR"
 	}
 	imageDir := os.Getenv(o.imageEnv)
-	raws, err := filepath.Glob(filepath.Join(imageDir, "*.raw"))
-	if err != nil || len(raws) != 1 {
-		t.Fatalf("want exactly one .raw in %s, got %v (%v)", imageDir, raws, err)
+	src, err := image.FindRaw(imageDir)
+	if err != nil {
+		t.Fatal(err)
 	}
 	parts, err := image.ReadPartitions(filepath.Join(imageDir, "repart-output.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	raw := raws[0]
+	raw := src
 	if o.mutate != nil || o.sign {
 		raw = filepath.Join(dir, "image.raw")
-		if err := lab.CopySparse(ctx, raws[0], raw); err != nil {
+		if err := lab.CopySparse(ctx, src, raw); err != nil {
 			t.Fatal(err)
 		}
 	}
