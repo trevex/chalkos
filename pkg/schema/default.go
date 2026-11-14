@@ -93,21 +93,24 @@ func defaultOf(sch *jsonschema.Schema) *any {
 }
 
 // DeepCopy copies a decoded JSON value, its objects and arrays included.
-func DeepCopy(v any) any {
+func DeepCopy(v any) any { return MapJSON(v, func(x any) any { return x }) }
+
+// MapJSON copies a decoded JSON value with leaf applied to each value that is neither an object
+// nor an array.
+func MapJSON(v any, leaf func(any) any) any {
 	switch v := v.(type) {
 	case map[string]any:
 		out := make(map[string]any, len(v))
-		for k, val := range v {
-			out[k] = DeepCopy(val)
+		for k, e := range v {
+			out[k] = MapJSON(e, leaf)
 		}
 		return out
 	case []any:
 		out := make([]any, len(v))
-		for i, val := range v {
-			out[i] = DeepCopy(val)
+		for i, e := range v {
+			out[i] = MapJSON(e, leaf)
 		}
 		return out
-	default:
-		return v
 	}
+	return leaf(v)
 }

@@ -287,20 +287,10 @@ func valueAt(obj map[string]any, path []string) (any, bool) {
 
 // celValue converts JSON as documents and facts hold it for CEL: a json.Number becomes an int
 // when it is one, else a double, as CEL compares ints with ints.
-func celValue(v any) any {
+func celValue(v any) any { return schema.MapJSON(v, celLeaf) }
+
+func celLeaf(v any) any {
 	switch v := v.(type) {
-	case map[string]any:
-		out := make(map[string]any, len(v))
-		for k, val := range v {
-			out[k] = celValue(val)
-		}
-		return out
-	case []any:
-		out := make([]any, len(v))
-		for i, val := range v {
-			out[i] = celValue(val)
-		}
-		return out
 	case json.Number:
 		if i, err := v.Int64(); err == nil {
 			return i

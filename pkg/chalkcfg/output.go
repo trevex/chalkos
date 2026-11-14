@@ -14,6 +14,7 @@ import (
 
 	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/internal/cli"
+	"github.com/trevex/chalkos/pkg/schema"
 )
 
 // output is a parsed --output: the format, and the expression or template of jsonpath and
@@ -123,28 +124,17 @@ func (o output) write(w io.Writer, docs []config.Document, named bool) error {
 // numbers returns v with each json.Number as an int64 where it is one and a float64 otherwise,
 // as kubectl decodes objects for jsonpath and templates.
 func numbers(v any) any {
-	switch v := v.(type) {
-	case map[string]any:
-		out := make(map[string]any, len(v))
-		for k, e := range v {
-			out[k] = numbers(e)
+	return schema.MapJSON(v, func(v any) any {
+		if n, ok := v.(json.Number); ok {
+			if i, err := n.Int64(); err == nil {
+				return i
+			}
+			if f, err := n.Float64(); err == nil {
+				return f
+			}
 		}
-		return out
-	case []any:
-		out := make([]any, len(v))
-		for i, e := range v {
-			out[i] = numbers(e)
-		}
-		return out
-	case json.Number:
-		if i, err := v.Int64(); err == nil {
-			return i
-		}
-		if f, err := v.Float64(); err == nil {
-			return f
-		}
-	}
-	return v
+		return v
+	})
 }
 
 // index is the template function index, but a key a map lacks is an error, as missingkey=error
