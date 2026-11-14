@@ -17,9 +17,8 @@ import (
 // MaxOutput is the most a program may print on standard output.
 const MaxOutput = 1 << 20
 
-// InStore tells whether path is in the Nix store, where an image's own programs are: below
-// /nix/store, and clean, without a .. that would lead out of it once a sandbox joins it to where
-// an image's store is on the node.
+// InStore tells whether path is clean and below /nix/store, so no .. leads out of the image's
+// store once a sandbox joins it to where that store is on the node.
 func InStore(path string) bool {
 	return strings.HasPrefix(path, "/nix/store/") && path == filepath.Clean(path)
 }
@@ -27,10 +26,9 @@ func InStore(path string) bool {
 // maxStderr bounds what an Error keeps of a program's standard error.
 const maxStderr = 4096
 
-// Run runs argv with stdin and env added to the caller's environment, and returns its standard
-// output, refusing more than limit bytes. A program that fails is an Error that holds the start of
-// what it wrote to standard error; Run returns what it printed before it failed too, as a renderer
-// prints its refusals and fails.
+// Run runs argv with stdin and env added to the caller's environment, and returns at most limit
+// bytes of its standard output. A failed program is an Error holding the start of its standard
+// error; Run returns its output too, since a renderer prints its refusals and then fails.
 func Run(ctx context.Context, argv []string, stdin []byte, limit int, env ...string) ([]byte, error) {
 	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
 	if len(env) > 0 {

@@ -8,11 +8,9 @@ import (
 	"time"
 )
 
-// Until runs check every interval until it passes, up to timeout: a timeout of 0 or less, a time
-// already past, checks once. A check that fails with a Permanent error ends the wait at once with
-// the error it wraps. Otherwise a wait that ends before a check passed returns the last check's
-// error, followed by the context's cause when ctx ended the wait and the check's error does not
-// say so already. A what other than "" names what was waited for: "waiting for <what>: ...".
+// Until runs check every interval until it passes, up to timeout; a timeout of 0 or less checks
+// once. A Permanent error ends the wait at once. A failed wait returns the last check's error,
+// with ctx's cause when ctx ended it, prefixed "waiting for <what>: " when what is not empty.
 func Until(ctx context.Context, what string, timeout, interval time.Duration, check func() error) error {
 	return wait(ctx, what, time.Now().Add(timeout), interval, check)
 }

@@ -12,18 +12,15 @@ import (
 // maxLinks bounds the symbolic links a path of an image follows, as the kernel's limit does.
 const maxLinks = 40
 
-// Resolve is where the file at name, an absolute path of an image whose root is at root on this
-// node, is, its symbolic links followed within the image: their absolute targets, such as /etc's
-// links into /nix/store, name paths of the image, not of the running system. An error wraps
-// fs.ErrNotExist when there is no such file.
+// Resolve is where name, an absolute path in the image rooted at root, is on this node. Symbolic
+// links resolve within the image, so /etc's links into /nix/store name the image's store.
 func Resolve(root, name string) (string, error) {
 	return resolve(name, func(p string) (string, error) { return filepath.Join(root, filepath.FromSlash(p)), nil })
 }
 
-// ResolveInStore is where the file at name, a path of an image's store, is on this node, where
-// the store is at store, its symbolic links followed within the store, such as a package's bin/
-// link into another package. A link that leads out of the store is an error that wraps
-// fs.ErrNotExist: the image's store is all of the image there is.
+// ResolveInStore is where name, a path in an image's store at store, is on this node, symbolic
+// links followed within the store. A link out of the store wraps fs.ErrNotExist, since the store
+// is all of the image there is.
 func ResolveInStore(store, name string) (string, error) {
 	return resolve(name, func(p string) (string, error) {
 		switch p {

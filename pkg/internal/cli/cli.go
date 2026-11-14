@@ -32,10 +32,8 @@ func usage(err error) error {
 	return fmt.Errorf("%w: %w", ErrUsage, err)
 }
 
-// Root makes root the root of a command tree that Execute runs:
-//   - Execute prints errors and the usage, so cobra prints neither.
-//   - Every flag error of the tree is a usage error.
-//   - root only holds subcommands, as a Group does.
+// Root makes root a Group at the root of a tree that Execute runs. Every flag error is a usage
+// error, and cobra prints nothing, since Execute prints errors and the usage.
 func Root(root *cobra.Command) *cobra.Command {
 	root.SilenceErrors = true
 	root.SilenceUsage = true
@@ -124,12 +122,9 @@ func Execute(ctx context.Context, root *cobra.Command, opts Options) int {
 	return status
 }
 
-// isUsage reports whether cobra failed cmd before running it, with an error it returns without
-// the flag error function:
-//   - A command with subcommands fails only with usage errors. Another error of its own is a flag
-//     before a subcommand's name, which cobra parses as this command's.
-//   - A leaf with a required flag not set, or with flags of a group set wrongly, never runs.
-//   - A leaf whose Args refuses its positional arguments never runs.
+// isUsage reports whether cobra failed cmd before running it with an error that bypasses the
+// flag error function: a missing required flag, or arguments a leaf's Args refuses. Every error of
+// a command with subcommands is one: a flag before a subcommand's name parses as its own.
 func isUsage(cmd *cobra.Command, err error) bool {
 	if errors.Is(err, ErrUsage) {
 		return false

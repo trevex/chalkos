@@ -21,18 +21,17 @@ func systemctl(args ...string) ([]byte, error) {
 	return Run(ctx, append([]string{"systemctl"}, args...), nil, MaxOutput, Manager)
 }
 
-// StopUnit stops a transient unit and resets it: one systemd-run stopped waiting for, which may
-// run on, or one a chalkd that crashed left behind, which would keep systemd-run from starting a
-// unit of its name. A unit that is not loaded is no error; nothing is.
+// StopUnit stops and resets a transient unit: one systemd-run stopped waiting for, which may run
+// on, or one a crashed chalkd left behind, which would keep a new unit of its name from starting.
+// It reports no errors.
 func StopUnit(unit string) {
 	systemctl("stop", unit)
 	systemctl("reset-failed", unit)
 }
 
 // FailedUnit asks the manager why a transient oneshot unit failed, which it keeps until the unit
-// is reset, and resets it. result is the unit's Result, such as "exit-code" or "timeout"; status
-// is "exit N" for a program that exited with N, "unknown" when the manager knows no status, and
-// the result for any other. ok is false when the manager did not answer.
+// is reset, and resets it. status is "exit N", "unknown" or the Result; ok is false when the
+// manager did not answer.
 func FailedUnit(unit string) (result, status string, ok bool) {
 	show, err := systemctl("show", "--property=Result", "--property=ExecMainStatus", unit)
 	systemctl("reset-failed", unit)

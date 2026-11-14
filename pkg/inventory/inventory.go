@@ -266,10 +266,8 @@ func (inv *Inventory) Image(node string) (name string, source ImageSource, err e
 	return name, inv.Spec.Images[name].Source, nil
 }
 
-// Artifact reads the OCI image ref names once per inventory, and so once per command: the first
-// call resolves the reference to its manifest's digest and reads the image's header and contract
-// layer, and later calls return what it read, or why it could not read it. A read runs under the
-// context SetContext gave, and ends after readTimeout, 2 minutes, at the latest.
+// Artifact reads the OCI image ref names once per inventory, and so once per command; later calls
+// return the first call's result. A read runs under SetContext's context, for readTimeout at most.
 func (inv *Inventory) Artifact(ref string) (*ociimage.Artifact, error) {
 	// The lock is held across the read, so reads of different references wait for each other;
 	// the nodes of an inventory name few images, and every node waits for its image anyway.
@@ -335,10 +333,8 @@ func (inv *Inventory) Dir() string { return filepath.Dir(inv.Path) }
 // NodeNames are the inventory's nodes, sorted.
 func (inv *Inventory) NodeNames() []string { return slices.Sorted(maps.Keys(inv.Spec.Nodes)) }
 
-// Files are the config files of a node, in the order their documents form its set: the shared
-// files, then its groups' files in the order it names the groups, then its own. Each path or glob
-// must name at least one file; a glob's files come in name order, and a file named twice counts
-// where it is named first. Its errors name the node.
+// Files are the config files of a node in set order: the shared files, its groups' files, then
+// its own. Each path or glob must name a file, and a file named twice counts where it comes first.
 func (inv *Inventory) Files(node string) ([]string, error) {
 	n, ok := inv.Spec.Nodes[node]
 	if !ok {

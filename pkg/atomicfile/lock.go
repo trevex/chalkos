@@ -11,10 +11,9 @@ import (
 // ErrLocked means another process holds the lock.
 var ErrLocked = errors.New("another process holds the lock")
 
-// Lock opens the file at path, creating it with perm, and takes an exclusive lock on it, held
-// until the file is closed or the process ends; a crash leaves no lock behind. With wait unset it
-// fails with ErrLocked while another process holds the lock. It does not follow a symbolic link
-// at path.
+// Lock opens or creates the file at path, not following a symbolic link, and locks it
+// exclusively until it is closed, so a crash leaves no lock behind. With wait unset it fails with
+// ErrLocked while another process holds the lock.
 func Lock(path string, perm fs.FileMode, wait bool) (*os.File, error) {
 	f, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE|unix.O_NOFOLLOW, perm)
 	if err != nil {
@@ -30,7 +29,7 @@ func Lock(path string, perm fs.FileMode, wait bool) (*os.File, error) {
 	return f, nil
 }
 
-// Flock takes an exclusive lock on the open file f as Lock does.
+// Flock takes an exclusive lock on the open file f; with wait unset it fails with ErrLocked.
 func Flock(f *os.File, wait bool) error {
 	how := unix.LOCK_EX
 	if !wait {

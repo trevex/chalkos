@@ -1,11 +1,6 @@
-// Package nodeconfig applies the running image's config slot on the node, at boot in
-// chalkos-config.service and after every ApplyConfig. It:
-//   - writes the identity the config translates to as /run/chalkos/node.json, which the node's
-//     layers read, and sets the hostname;
-//   - writes the config's documents for the units granted config kinds;
-//   - has the image's layers write what they derive from the documents, such as the Kubernetes
-//     cluster file;
-//   - at boot, renders the image's outputs, such as networkd's units and chrony's time servers.
+// Package nodeconfig applies the running image's config slot on the node: it writes the identity
+// as /run/chalkos/node.json and sets the hostname, writes the documents for the units granted
+// config kinds, has the layers derive their files and, at boot, renders the image's outputs.
 package nodeconfig
 
 import (
@@ -97,13 +92,9 @@ func (l Loader) Slot() (string, error) {
 	return slot.Dir(l.Slots, hash), nil
 }
 
-// Load applies the running image's config slot: the identity it holds, then its documents for
-// the granted units, then the outputs rendered from them.
-//
-//   - A node without any slot, such as the installer, is not installed: Load applies nothing.
-//   - A node whose slots all belong to other images, such as one booted into an image no install
-//     or upgrade wrote config for, fails without applying any. Its health check then fails, so a
-//     counted boot falls back to an image that has config.
+// Load applies the running image's config slot, and nothing on a node without slots such as the
+// installer. A node whose slots all belong to other images fails, so its health check fails and a
+// counted boot falls back to an image that has config.
 func (l Loader) Load() error {
 	slots, err := slot.List(l.Slots)
 	if err != nil {
@@ -141,10 +132,9 @@ func (l Loader) readSlot() (slot.Stored, error) {
 	return stored, nil
 }
 
-// LoadConfig writes the running image's slot for the units that read it: its documents, Secrets
-// excepted, below RunDir/config, and for each granted unit the values the secretRefs of its kinds
-// name below RunDir/credentials/<unit>. The image's layers then write what they derive from the
-// documents.
+// LoadConfig writes the running image's slot for the units that read it: documents without
+// Secrets below RunDir/config and each granted unit's secret values below
+// RunDir/credentials/<unit>.
 func (l Loader) LoadConfig() error {
 	stored, err := l.readSlot()
 	if err != nil {
@@ -153,10 +143,9 @@ func (l Loader) LoadConfig() error {
 	return l.writeConfig(stored)
 }
 
-// writeConfig writes a slot's documents as LoadConfig does. It does not check them against the
-// image's schemas again: the slot is the image's own, written only once they passed. A slot without
-// documents, an identity alone, gets empty directories, so its units load their credentials all
-// the same.
+// writeConfig writes a slot's documents without checking them again: a slot is written only once
+// they pass the image's schemas. A slot without documents gets empty directories, so its units
+// still load their credentials.
 func (l Loader) writeConfig(stored slot.Stored) error {
 	// A unit of no kinds loads no credentials, so it gets no directory.
 	kinds := map[string][]string{}
@@ -222,12 +211,9 @@ func (l Loader) OutputStates(docs config.Redacted, schemas *schema.Schemas) (map
 	return states, nil
 }
 
-// renderAtBoot renders the outputs of the slot's documents and swaps in every one that passes,
-// since /run starts empty. It runs no validators: every slot was written only once the checker of
-// the image that boots it passed the documents, its validators and renderers among it, whether an
-// install, an upgrade or a delivery wrote it. An output that fails fails the boot's config, which
-// fails its health check; the status names it. On an image with outputs, a node certificate that
-// cannot be read fails it as well, since the outputs render for the node it names.
+// renderAtBoot renders the slot's outputs into the empty /run and swaps in every one that passes.
+// It runs no validators: a slot is written only once its own image's checker passes it. A failed
+// output, or an unreadable node certificate, fails the boot's config and so its health check.
 func (l Loader) renderAtBoot(docs []config.Document) error {
 	if len(l.Contract.Outputs) == 0 {
 		return nil

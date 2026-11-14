@@ -1,7 +1,6 @@
-// Package askpassword answers systemd's password requests as a password agent does, by systemd's
-// protocol (docs/PASSWORD_AGENTS.md): each request is an ask.* file of the ini format in
-// /run/systemd/ask-password, which names a datagram socket; the agent sends "+" and the password
-// to it, or "-" to cancel. The asking process accepts answers of root and of its own user alone.
+// Package askpassword is a systemd password agent (docs/PASSWORD_AGENTS.md): each ask.* ini file
+// in /run/systemd/ask-password names a datagram socket that takes "+" and the password, or "-" to
+// cancel. The asking process accepts answers from root and its own user alone.
 package askpassword
 
 import (

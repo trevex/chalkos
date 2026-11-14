@@ -37,10 +37,8 @@ type Options struct {
 	GetClientCertificate func(*tls.CertificateRequestInfo) (*tls.Certificate, error)
 	// Source says where the address came from, such as --address; an error reaching it names it.
 	Source string
-	// Untrusted, when set, gives the error of a call whose TLS handshake failed because the
-	// node's certificate does not verify against the CA or because the node refused Certificate for
-	// an issuer it does not know; it is passed the handshake's error and whether the node
-	// refused.
+	// Untrusted, when set, replaces the error of a call whose TLS handshake failed for want of
+	// trust in either direction; refused tells whether the node refused Certificate.
 	Untrusted func(err error, refused bool) error
 }
 
@@ -66,10 +64,8 @@ type Conn struct {
 // errClosed is what calls after Close fail with.
 var errClosed = errors.New("the client of the node is closed")
 
-// Close ends every connection to the node, calls on them fail. A call that ended at its deadline
-// may leave its connection open, waiting for an answer to HTTP/2's check of the connection, as
-// long as the node keeps it open; Close ends that one too, and one whose dial completes later.
-// Later calls fail.
+// Close ends every connection to the node and fails later calls. It also ends a connection that a
+// timed-out call left waiting on HTTP/2's ping, and one whose dial completes later.
 func (c *Conn) Close() {
 	c.mu.Lock()
 	conns := c.conns
@@ -208,10 +204,8 @@ func (c *Conn) verifyConnection(cs tls.ConnectionState, v Verifier) error {
 	return v.verify(cs.PeerCertificates, fp)
 }
 
-// untrusted replaces the error of a request whose TLS handshake failed for want of trust, as
-// Options.Untrusted says. Every call, unary or streaming, sends its request through the
-// transport, which performs the handshake and returns its error, so wrapping the transport covers
-// all of them.
+// untrusted replaces the error of a request whose TLS handshake failed for want of trust. Every
+// call, unary or streaming, goes through the transport, so wrapping it covers all of them.
 type untrusted struct {
 	http.RoundTripper
 	conn     *Conn
@@ -229,9 +223,8 @@ func (u *untrusted) RoundTrip(req *http.Request) (*http.Response, error) {
 		return nil, u.replace(err, refused)
 	}
 	// In TLS 1.3 the client's handshake ends before the node checks the client's certificate, so
-	// the node's alert may reach the request only as a broken connection. A connection of its
-	// own, which reads the node's first bytes, receives the alert itself. Any other failure, and
-	// a request its caller ended, has nothing to learn from one.
+	// the node's alert may reach the request only as a broken connection; a fresh connection
+	// reads the alert itself.
 	if req.Context().Err() != nil || !alertShaped(err) {
 		return nil, err
 	}
@@ -242,10 +235,9 @@ func (u *untrusted) RoundTrip(req *http.Request) (*http.Response, error) {
 	return nil, err
 }
 
-// alertShaped reports whether err may hide the node's TLS alert: an alert of any kind, or a
-// connection the node closed or reset. When the alert closes the connection before the first
-// request takes a stream, http2 returns an unexported sentinel that wraps nothing, so only its
-// text identifies it.
+// alertShaped reports whether err may hide the node's TLS alert. When the alert closes the
+// connection before the first stream, http2 returns an unexported sentinel that wraps nothing,
+// so only its text identifies it.
 func alertShaped(err error) bool {
 	if op, ok := errors.AsType[*net.OpError](err); ok && op.Op == "remote error" {
 		return true
@@ -261,10 +253,8 @@ func alertShaped(err error) bool {
 	return false
 }
 
-// readAlert connects to the node at addr with the TLS configuration cfg and reads its first
-// bytes, the HTTP/2 settings of a node that accepts the client; it returns the error when the
-// node and the client distrust each other, and nil otherwise, also when the node cannot be
-// reached. Nothing is sent over the connection.
+// readAlert connects to addr with cfg and reads the node's first bytes without sending any. It
+// returns the error when the node and the client distrust each other, and nil otherwise.
 func readAlert(ctx context.Context, dial func(context.Context, string, string) (net.Conn, error), addr string, cfg *tls.Config) error {
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
@@ -289,11 +279,10 @@ func readAlert(ctx context.Context, dial func(context.Context, string, string) (
 	return nil
 }
 
-// RefusesCertificate reports whether the node at addr, host or host:port, refused cert for an
-// issuer it does not know, given err, the error of a call to it. It connects again, without
-// verifying the node, only when err may hide the node's alert. Only the unknown certificate
-// authority alert counts: the node sends a bad certificate alert for a certificate it cannot use
-// for other reasons, such as one that expired.
+// RefusesCertificate reports whether the node at addr refused cert for an unknown issuer, given
+// err from a call to it; it reconnects unverified when err may hide the alert. Only the unknown
+// certificate authority alert counts: the node sends a bad certificate alert for other
+// reasons too, such as an expired certificate.
 func RefusesCertificate(ctx context.Context, err error, addr string, cert *tls.Certificate) bool {
 	if cert == nil || err == nil {
 		return false
@@ -318,10 +307,8 @@ func unknownAuthority(err error) bool {
 }
 
 // distrusted reports whether err is a TLS handshake's failure for want of trust, and whether the
-// node refused: an OS CA that does not verify the node's certificate fails on the client's side,
-// and the node's alert that it refused the client's certificate on the node's. A remote alert
-// reaches the client as a net.OpError of an unexported type, so only its text tells which alert
-// it was.
+// node refused the client's certificate. A remote alert arrives as a net.OpError of an unexported
+// type, so only its text tells which alert it was.
 func distrusted(err error) (bad, refused bool) {
 	if err == nil {
 		return false, false

@@ -50,9 +50,8 @@ func (anyCertificate) check() error { return nil }
 
 func (anyCertificate) verify([]*x509.Certificate, string) error { return nil }
 
-// ByCA verifies the certificate of an installed node: it must chain to the CA and be valid for
-// the node's name. The CA issues every node's certificate; only the name tells this node from the
-// others.
+// ByCA verifies an installed node's certificate: it must chain to the CA and be valid for name,
+// since the CA issues every node's certificate.
 func ByCA(ca *x509.CertPool, name string) Verifier {
 	return byCA{ca: ca, name: name}
 }

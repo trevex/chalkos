@@ -91,10 +91,9 @@ func (c *NodeConfig) Artifact() (*ociimage.Artifact, error) {
 	return a, nil
 }
 
-// Resolve reads the metadata.json of the node's image once, from its directory or from the
-// contract layer of its image in a registry: the image's platform, variant and root hash, which
-// chalkctl checks images and nodes against. The node's documents stay as its files give them, so
-// its config's version does not change with every build of its image.
+// Resolve reads the metadata.json of the node's image once, from its directory or registry. The
+// node's documents stay as its files give them, so its config's version does not change with
+// every build of its image.
 func (c *NodeConfig) Resolve() (schema.Metadata, error) {
 	if c.Image != nil {
 		return *c.Image, nil
