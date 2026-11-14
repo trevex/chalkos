@@ -1,7 +1,7 @@
 # The image directory mkImages returns: the raw image with slot A labelled by its root hash,
 # repart's report, the system region's repart definitions, the schemas, the facts of the image's
 # layers and metadata.json. Its build fails when the image leaves no room for the next one, or
-# when a derivation of chalkos.imageDirectory.checks fails, such as the image's tests.
+# when a derivation of chalkos.imageDirectory.checks fails, such as the image's rules check.
 {
   config,
   lib,
@@ -76,9 +76,10 @@ in
     default = [ ];
     internal = true;
     description = ''
-      Derivations the image directory's build depends on, which fail it when they fail. Unlike
-      `system.checks`, they stay out of the system's derivation, so they change neither the
-      image's content nor its root hash.
+      Derivations the build of the image directory, and of the installer, depends on, which fail
+      it when they fail: the image's rules, grants and kernel modules checks, and its tests with
+      `chalkos.testsOnBuild`. Unlike `system.checks`, they stay out of the system's derivation,
+      so a change to a check changes neither the image's content nor its root hash.
     '';
   };
 

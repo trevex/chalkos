@@ -2212,7 +2212,9 @@ lib.runTests {
     expr =
       let
         c = worker [ { systemd.services.orphan.chalkos.kinds = [ "Network" ]; } ];
-        check = lib.findFirst (d: lib.hasInfix "chalkos-grants-check" d.name) null c.system.checks;
+        check = lib.findFirst (
+          d: lib.hasInfix "chalkos-grants-check" d.name
+        ) null c.chalkos.imageDirectory.checks;
       in
       {
         inherit (c) warnings;
@@ -2965,17 +2967,45 @@ lib.runTests {
       let
         off = worker [ ];
         on = worker [ { chalkos.testsOnBuild = true; } ];
-        checks = c: map (d: d.name) c.chalkos.imageDirectory.checks;
+        tested = c: lib.elem "chalkos-tests" (map (d: d.name) c.chalkos.imageDirectory.checks);
       in
       {
-        off = checks off;
-        on = checks on;
+        off = tested off;
+        on = tested on;
         sameSystem = off.system.build.toplevel.drvPath == on.system.build.toplevel.drvPath;
       };
     expected = {
-      off = [ ];
-      on = [ "chalkos-tests" ];
+      off = false;
+      on = true;
       sameSystem = true;
+    };
+  };
+  # The image's rules, grants and kernel modules checks fail the builds of the image directory and
+  # of the installer, and stay out of the system's derivation, so a check changes no root hash.
+  testBuildChecksOutsideTheSystem = {
+    expr =
+      let
+        images = mkImages { variants.worker = { }; };
+        c = images.nixos.worker-metal.config;
+        names = ds: map (d: d.name) ds;
+      in
+      {
+        image = lib.sort lib.lessThan (names c.chalkos.imageDirectory.checks);
+        # NixOS's own checks stay; none of the image's are among them.
+        system = lib.filter (n: lib.elem n (names c.chalkos.imageDirectory.checks)) (names c.system.checks);
+        imageDepends = images.images.worker-metal.checks == c.chalkos.imageDirectory.checks;
+        installerDepends =
+          images.installer.checks == images.nixos.installer.config.chalkos.imageDirectory.checks;
+      };
+    expected = {
+      image = [
+        "chalkos-grants-check"
+        "chalkos-rules-check"
+        "kernel-modules-check"
+      ];
+      system = [ ];
+      imageDepends = true;
+      installerDepends = true;
     };
   };
   # mkImages's checks hold each image's tests, and none of the installer.

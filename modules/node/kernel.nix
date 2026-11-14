@@ -334,7 +334,7 @@ in
     );
     # A module the image loads that its tree lacks, or one a module of the tree depends on, fails
     # the build, not the boot.
-    system.checks = [ check ];
+    chalkos.imageDirectory.checks = [ check ];
     system.build.chalkosKernelModules = if cfg.allModules then full else filtered;
     system.build.chalkosKernelModulesCheck = check;
   };

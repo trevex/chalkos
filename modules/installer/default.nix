@@ -142,6 +142,8 @@ in
     pkgs.runCommand "chalkos-installer"
       {
         fits = config.system.build.chalkosImageFits;
+        # The image's checks, such as its rules and kernel modules, fail the installer's build too.
+        inherit (config.chalkos.imageDirectory) checks;
       }
       ''
         mkdir $out

@@ -351,7 +351,7 @@ in
     system.build.chalkosKindSchemas = kindSchemas;
     system.build.chalkosRulesCheck = rulesCheck;
     system.build.chalkosRulesImage = rulesImage;
-    system.checks = [ rulesCheck ];
+    chalkos.imageDirectory.checks = [ rulesCheck ];
     system.build.chalkosKinds = map (
       k:
       {

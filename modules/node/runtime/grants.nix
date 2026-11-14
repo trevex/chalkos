@@ -78,7 +78,7 @@ in
   };
 
   config = {
-    system.checks = [ grantsCheck ];
+    chalkos.imageDirectory.checks = [ grantsCheck ];
     system.build.chalkosServices = pkgs.writeText "chalkos-services.json" servicesJSON;
     environment.etc."chalkos/services.json".text = servicesJSON;
   };
