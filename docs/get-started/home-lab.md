@@ -18,7 +18,6 @@ installs.
 
     This lab is a maintainer's own home lab. Its BGP fabric, IPv6-only nodes, NAT64 and WireGuard
     tunnel are there for fun and to try those features out, not because a home network needs them.
-   
     The guide shares the setup in case it helps you test chalkos on a similar network.
 
 ## What you build
