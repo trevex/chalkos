@@ -25,11 +25,8 @@ let
       ;
   };
   inherit (routerLib) accepted;
-  # Whether the image carries every feature of the router: the attribute sets of chalkos.router
-  # are the features, each with its enable option.
-  allFeatures = lib.all (feature: feature.enable) (
-    lib.filter lib.isAttrs (lib.attrValues config.chalkos.router)
-  );
+  # Whether the image carries every feature of the router.
+  allFeatures = lib.all (feature: config.chalkos.router.${feature}.enable) routerLib.features;
 in
 {
   imports = [
@@ -55,6 +52,17 @@ in
       the node's interfaces and accepts the kinds of `router.chalkos.dev`. An image carries the
       Kubernetes layer or the router layer, not both. mkImages sets it from the variant's
       `router`; the installer carries no layer.
+    '';
+  };
+
+  options.chalkos.router.features = lib.mkOption {
+    type = lib.types.listOf lib.types.str;
+    internal = true;
+    readOnly = true;
+    default = routerLib.features;
+    description = ''
+      The features of the router layer a variant may leave out, each with its option
+      `chalkos.router.<feature>.enable`.
     '';
   };
 

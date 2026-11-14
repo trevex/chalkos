@@ -68,7 +68,7 @@ in
 {
   imports = [ ./diagnostics.nix ];
 
-  options.chalkos.router.bgp.enable = routerLib.feature ''
+  options.chalkos.router.bgp.enable = routerLib.feature "bgp" ''
     Whether router images carry FRR, which runs BGP and BFD, and accept the kinds BGP, BGPPeer,
     PrefixList, CommunityList and RoutingPolicy; only with the router layer. Set it false in a
     variant's modules to leave FRR and the Python of frr-reload.py out of its images.

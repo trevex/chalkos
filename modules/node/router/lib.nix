@@ -1,8 +1,8 @@
-# routerLib, what the router's parts share: the enable option of a feature, the kinds the image
-# declares, which an output of one part reads of another's, the record of a VRF's device, the
-# sandbox of their units, the option types and CEL the router kinds share (types, from types.nix)
-# and the loader of a part's kinds file. The router module gives it to its parts as the module
-# argument routerLib.
+# routerLib, what the router's parts share: its features and their enable options, the kinds the
+# image declares, which an output of one part reads of another's, the record of a VRF's device,
+# the sandbox of their units, the option types and CEL the router kinds share (types, from
+# types.nix) and the loader of a part's kinds file. The router module gives it to its parts as the
+# module argument routerLib.
 {
   chalkosLib,
   config,
@@ -22,15 +22,32 @@ let
     # the kinds it returns must not depend on accepted or declared, which read them.
     kinds = path: import path { inherit chalkosLib lib routerLib; };
 
-    # The option chalkos.router.<feature>.enable of a feature of the layer, which images carry
+    # The features of the layer a variant may leave out, each with its option
+    # chalkos.router.<feature>.enable.
+    features = [
+      "bgp"
+      "nat64"
+      "resolver"
+      "dhcp"
+      "dhcpRelay"
+      "wireguard"
+    ];
+
+    # The option chalkos.router.<name>.enable of the feature name of features, which images carry
     # unless a variant leaves it out.
     feature =
-      description:
-      lib.mkOption {
-        type = lib.types.bool;
-        default = true;
-        inherit description;
-      };
+      name: description:
+      chalkosLib.internal.refuse
+        (lib.optional (
+          !lib.elem name routerLib.features
+        ) "the router feature ${name} is missing from routerLib.features")
+        (
+          lib.mkOption {
+            type = lib.types.bool;
+            default = true;
+            inherit description;
+          }
+        );
 
     # Keeps the kinds of a list that the image accepts, in order, so an output reads the kinds of
     # another feature only on images that carry it.

@@ -7,8 +7,9 @@
 # other ports the main table, DSCP 46 takes transit in both families, ahead of the next hops the
 # servers' sources take in each family, traffic between lan0 and lan1 the main table ahead of
 # those next hops, and other traffic the main table. A rule without in that sends BGP to the
-# main table leaves the router's BGP in transit alone in both families. While wanb0 is down the next hops' traffic is dropped, not routed by the main table,
-# and once networkd's route is back it takes wanb0 again.
+# main table leaves the router's BGP in transit alone in both families. While wanb0 is down the
+# next hops' traffic is dropped, not routed by the main table, and once networkd's route is back
+# it takes wanb0 again.
 {
   checkLib,
   unitCheck,

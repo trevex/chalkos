@@ -516,6 +516,43 @@ lib.runTests {
       ];
     };
   };
+  # Each feature of chalkos.router.features has its enable option. On a router image with every
+  # feature, the test of each router example compares golden files, the router's sysctl file among
+  # them; on one without a feature, none does.
+  testRouterGoldens =
+    let
+      edge = layered.edge-metal.config;
+      withoutDHCP = routerWithout [ "dhcp" ];
+      # The router tests of an image, by name, that compare no golden file of the output given,
+      # or of any output for null.
+      lacking =
+        c: output:
+        lib.attrNames (
+          lib.filterAttrs (
+            name: t:
+            lib.hasPrefix "router-" name
+            && (if output == null then t.outputs == { } else !(t.outputs ? ${output}))
+          ) c.chalkos.tests
+        );
+    in
+    {
+      expr = {
+        enableOptions = lib.all (
+          f: lib.isBool edge.chalkos.router.${f}.enable
+        ) edge.chalkos.router.features;
+        routerTests = lib.length (lib.filter (lib.hasPrefix "router-") (lib.attrNames edge.chalkos.tests));
+        withoutSysctl = lacking edge "router-sysctl";
+        withoutDHCPWithGoldens = lib.subtractLists (lacking withoutDHCP null) (
+          lib.filter (lib.hasPrefix "router-") (lib.attrNames withoutDHCP.chalkos.tests)
+        );
+      };
+      expected = {
+        enableOptions = true;
+        routerTests = 10;
+        withoutSysctl = [ ];
+        withoutDHCPWithGoldens = [ ];
+      };
+    };
   # The users and groups of the router's features have pinned IDs, free in NixOS's ids.nix, so an
   # image that adds or drops a feature moves no other user's or group's ID; the build allocates
   # IDs to the router image's other users and groups alone.

@@ -270,7 +270,7 @@ in
 {
   imports = [ ./diagnostics.nix ];
 
-  options.chalkos.router.nat64.enable = routerLib.feature ''
+  options.chalkos.router.nat64.enable = routerLib.feature "nat64" ''
     Whether router images carry Jool, the kernel module and tool of the NAT64 instances, and
     accept the kind NAT64; only with the router layer. Set it false in a variant's modules to
     leave Jool out of its images.

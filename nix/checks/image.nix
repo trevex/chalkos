@@ -15,14 +15,7 @@ let
     worker
     ;
   # The router features a variant may leave out.
-  features = [
-    "bgp"
-    "nat64"
-    "resolver"
-    "dhcp"
-    "dhcpRelay"
-    "wireguard"
-  ];
+  inherit (router.config.chalkos.router) features;
   # The router image without each of the features alone and without all six, by the names of
   # the features left out joined by dashes, each with their chalkos.router.<feature>.enable set
   # to false.

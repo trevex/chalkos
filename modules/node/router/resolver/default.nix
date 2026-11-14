@@ -46,7 +46,7 @@ let
   '';
 in
 {
-  options.chalkos.router.resolver.enable = routerLib.feature ''
+  options.chalkos.router.resolver.enable = routerLib.feature "resolver" ''
     Whether router images carry Unbound, the DNS resolvers of the router's VRFs, and accept the
     kind Resolver; only with the router layer. Set it false in a variant's modules to leave
     Unbound out of its images.
