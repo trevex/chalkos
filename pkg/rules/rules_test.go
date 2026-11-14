@@ -86,17 +86,55 @@ func compiled(t *testing.T, kinds ...map[string]any) *Set {
 	return set
 }
 
-// doc is a document of the kind with the spec, given as JSON.
+// doc is a document of the kind of t.example.org/v1 with the spec, given as JSON.
 func doc(t *testing.T, kind, name, spec string) config.Document {
+	t.Helper()
+	return builtinDoc(t, "t.example.org/v1", kind, name, spec)
+}
+
+// builtinDoc is a document of the kind with the spec, given as JSON, its numbers exact as a
+// delivery's are.
+func builtinDoc(t *testing.T, apiVersion, kind, name, spec string) config.Document {
 	t.Helper()
 	var s any
 	if err := jsonfile.DecodeExact([]byte(spec), &s); err != nil {
 		t.Fatal(err)
 	}
 	return config.FromObject(map[string]any{
-		"apiVersion": "t.example.org/v1", "kind": kind,
+		"apiVersion": apiVersion, "kind": kind,
 		"metadata": map[string]any{"name": name}, "spec": s,
 	})
+}
+
+// replaced is docs with each of with in place of the document of its kind and name, or added.
+func replaced(docs []config.Document, with ...config.Document) []config.Document {
+	out := slices.Clone(docs)
+	for _, w := range with {
+		i := slices.IndexFunc(out, func(d config.Document) bool { return d.Kind == w.Kind && d.Name == w.Name })
+		if i < 0 {
+			out = append(out, w)
+		} else {
+			out[i] = w
+		}
+	}
+	return out
+}
+
+// wantFailures evaluates the rules over in, on the node r1 unless in names one, wants the
+// failures' messages want, in order, and returns the failures.
+func wantFailures(t *testing.T, set *Set, in Input, want []string) []Failure {
+	t.Helper()
+	if in.Node == "" {
+		in.Node = "r1"
+	}
+	failures, err := set.Evaluate(in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := messages(failures); !slices.Equal(got, want) {
+		t.Errorf("failures:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
+	}
+	return failures
 }
 
 func messages(failures []Failure) []string {

@@ -2,20 +2,13 @@ package rules
 
 import (
 	"fmt"
-	"slices"
-	"strings"
 	"testing"
 
 	"github.com/trevex/chalkos/pkg/config"
 )
 
-// The DHCPSubnet rules take an IPv6 subnet on one link with pools, a reservation, DNS servers, a
-// domain and delegated prefixes, and one of delegated prefixes alone, and refuse an IPv6 subnet of
-// more than 120 bits or over link-local addresses, one on two links, an IPv6 subnet's gateway and
-// boot files, an IPv4 or IPv4-mapped DNS server of an IPv6 subnet, a pool or reservation of the
-// subnet-router anycast address, delegated prefixes of an IPv4 subnet, of an IPv4 range, of
-// ::/8, fe80::/10 or ff00::/8, of a length no longer than their range, and of a range that
-// overlaps the subnet.
+// The DHCPSubnet rules accept IPv6 subnets with pools and delegated prefixes and refuse each
+// misconfiguration below.
 func TestDHCPSubnetIPv6Rules(t *testing.T) {
 	set, doc := routerRules(t)
 	subnet := func(name, spec string) config.Document { return doc("DHCPSubnet", name, spec) }
@@ -71,15 +64,7 @@ func TestDHCPSubnetIPv6Rules(t *testing.T) {
 		{"delegation of the subnet", delegate("2001:db8:1::/48", 64), []string{at + "prefixDelegation's prefix 2001:db8:1::/48 overlaps the subnet 2001:db8:1::/64"}},
 		{"delegation within the subnet", delegate("2001:db8:1:0:8000::/65", 72), []string{at + "prefixDelegation's prefix 2001:db8:1:0:8000::/65 overlaps the subnet 2001:db8:1::/64"}},
 	} {
-		t.Run(tc.name, func(t *testing.T) {
-			failures, err := set.Evaluate(Input{Documents: config.Redact(tc.docs), Node: "r1"})
-			if err != nil {
-				t.Fatal(err)
-			}
-			if got := messages(failures); !slices.Equal(got, tc.want) {
-				t.Errorf("failures:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(tc.want, "\n"))
-			}
-		})
+		t.Run(tc.name, func(t *testing.T) { wantFailures(t, set, Input{Documents: config.Redact(tc.docs)}, tc.want) })
 	}
 }
 
@@ -106,13 +91,7 @@ func TestDHCPRelayRules(t *testing.T) {
 		{"an IPv4-mapped server", `["::ffff:198.51.100.53"]`, []string{`DHCPRelay/guests: spec.servers: the server ::ffff:198.51.100.53 is no unicast address a relay forwards to`}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			failures, err := set.Evaluate(Input{Documents: config.Redact([]config.Document{relay(tc.servers)}), Node: "r1"})
-			if err != nil {
-				t.Fatal(err)
-			}
-			if got := messages(failures); !slices.Equal(got, tc.want) {
-				t.Errorf("failures:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(tc.want, "\n"))
-			}
+			wantFailures(t, set, Input{Documents: config.Redact([]config.Document{relay(tc.servers)})}, tc.want)
 		})
 	}
 }

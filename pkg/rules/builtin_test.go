@@ -2,27 +2,20 @@ package rules
 
 import (
 	"encoding/json"
-	"slices"
 	"strings"
 	"testing"
 
 	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/kubernetes/translate"
 	"github.com/trevex/chalkos/pkg/schema"
+	"github.com/trevex/chalkos/pkg/schema/schematest"
 	"github.com/trevex/chalkos/pkg/storage"
 )
 
 // The built-in kinds' rules reach their schemas and compile: the storage kinds', Node's and
 // Kubernetes's.
 func TestBuiltinRulesCompile(t *testing.T) {
-	s, err := schema.LoadSchemas("../../test/fixtures/kinds/builtin")
-	if err != nil {
-		t.Fatal(err)
-	}
-	set, err := Compile(s)
-	if err != nil {
-		t.Fatal(err)
-	}
+	set := builtinRules(t)
 	count := map[string]int{}
 	for _, p := range set.Programs {
 		count[p.Kind.APIVersion+" "+p.Kind.Kind]++
@@ -42,14 +35,7 @@ func TestBuiltinRulesCompile(t *testing.T) {
 
 // The Registry rule refuses a user without a password or a password without a user.
 func TestRegistryRules(t *testing.T) {
-	s, err := schema.LoadSchemas("../../test/fixtures/kinds/builtin")
-	if err != nil {
-		t.Fatal(err)
-	}
-	set, err := Compile(s)
-	if err != nil {
-		t.Fatal(err)
-	}
+	set := builtinRules(t)
 	registry := func(name, spec string) config.Document {
 		return builtinDoc(t, config.OCIAPI, "Registry", name, spec)
 	}
@@ -64,13 +50,9 @@ func TestRegistryRules(t *testing.T) {
 		{"a user alone", []config.Document{registry("a", `{"host": "ghcr.io", "username": "u", "password": null}`)},
 			[]string{"Registry a: give username and password together, or neither to pull anonymously"}},
 	} {
-		failures, err := set.Evaluate(Input{Documents: config.Redact(tc.docs), Node: "n1"})
-		if err != nil {
-			t.Fatal(err)
-		}
-		if got := messages(failures); !slices.Equal(got, tc.want) {
-			t.Errorf("%s: %q, want %q", tc.name, got, tc.want)
-		}
+		t.Run(tc.name, func(t *testing.T) {
+			wantFailures(t, set, Input{Documents: config.Redact(tc.docs), Node: "n1"}, tc.want)
+		})
 	}
 }
 
@@ -78,14 +60,7 @@ func TestRegistryRules(t *testing.T) {
 // registers the node, so a node holding a Kubernetes share refuses changes to them. A node without
 // a share, as at its install, and unchanged values pass.
 func TestRegistrationRules(t *testing.T) {
-	s, err := schema.LoadSchemas("../../test/fixtures/kinds/builtin")
-	if err != nil {
-		t.Fatal(err)
-	}
-	set, err := Compile(s)
-	if err != nil {
-		t.Fatal(err)
-	}
+	set := builtinRules(t)
 	docs := func(node, cluster string) []config.Document {
 		return []config.Document{
 			builtinDoc(t, translate.API, "Node", "default", `{"type": "controlplane", `+node+`}`),
@@ -114,17 +89,9 @@ func TestRegistrationRules(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			share := storageFacts{"share": map[string]any{"kind": "controlplane"}}
-			failures, err := set.Evaluate(Input{Documents: config.Redact(docs(tc.node, tc.cluster)), Old: config.Redact(old), Facts: share, Node: "n1"})
-			if err != nil {
-				t.Fatal(err)
-			}
-			if got := messages(failures); !slices.Equal(got, tc.want) {
-				t.Errorf("failures:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(tc.want, "\n"))
-			}
+			wantFailures(t, set, Input{Documents: config.Redact(docs(tc.node, tc.cluster)), Old: config.Redact(old), Facts: share, Node: "n1"}, tc.want)
 			// A node without a share has not registered.
-			if failures, err := set.Evaluate(Input{Documents: config.Redact(docs(tc.node, tc.cluster)), Old: config.Redact(old), Facts: storageFacts{"share": nil}, Node: "n1"}); err != nil || len(failures) != 0 {
-				t.Errorf("without a share: %v, %v", messages(failures), err)
-			}
+			wantFailures(t, set, Input{Documents: config.Redact(docs(tc.node, tc.cluster)), Old: config.Redact(old), Facts: storageFacts{"share": nil}, Node: "n1"}, nil)
 		})
 	}
 }
@@ -132,14 +99,7 @@ func TestRegistrationRules(t *testing.T) {
 // A routed VIP goes on the interface each control plane names, so a control plane without one is
 // refused; a worker, an l2 VIP, a cluster without VIPs and a config without a Cluster need none.
 func TestRoutedVIPRules(t *testing.T) {
-	s, err := schema.LoadSchemas("../../test/fixtures/kinds/builtin")
-	if err != nil {
-		t.Fatal(err)
-	}
-	set, err := Compile(s)
-	if err != nil {
-		t.Fatal(err)
-	}
+	set := builtinRules(t)
 	// docs is the Node and, unless vip is empty, the Cluster with that VIP.
 	docs := func(nodeType, iface, vip string) []config.Document {
 		d := []config.Document{
@@ -169,26 +129,13 @@ func TestRoutedVIPRules(t *testing.T) {
 		{"no Cluster", "controlplane", "null", "", nil},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			failures, err := set.Evaluate(Input{Documents: config.Redact(docs(tc.nodeType, tc.iface, tc.vip)), Node: "n1"})
-			if err != nil {
-				t.Fatal(err)
-			}
-			if got := messages(failures); !slices.Equal(got, tc.want) {
-				t.Errorf("failures:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(tc.want, "\n"))
-			}
+			wantFailures(t, set, Input{Documents: config.Redact(docs(tc.nodeType, tc.iface, tc.vip)), Node: "n1"}, tc.want)
 		})
 	}
 }
 
 func TestOf(t *testing.T) {
-	s, err := schema.LoadSchemas("../../test/fixtures/kinds/builtin")
-	if err != nil {
-		t.Fatal(err)
-	}
-	set, err := Compile(s)
-	if err != nil {
-		t.Fatal(err)
-	}
+	set := builtinRules(t)
 	storage := set.Of("storage.chalkos.dev/v1alpha1")
 	if len(storage.Programs) != 8 {
 		t.Errorf("the storage kinds have %d rules, want 8", len(storage.Programs))
@@ -213,13 +160,14 @@ func storageConfig(t *testing.T, systemDisk string, volumes map[string]string) [
 	return docs
 }
 
-func builtinDoc(t *testing.T, apiVersion, kind, name, spec string) config.Document {
+// builtinRules compiles the built-in kinds' rules.
+func builtinRules(t *testing.T) *Set {
 	t.Helper()
-	var s any
-	if err := json.Unmarshal([]byte(spec), &s); err != nil {
+	set, err := Compile(schematest.Load(t, schematest.Builtin))
+	if err != nil {
 		t.Fatal(err)
 	}
-	return config.FromObject(map[string]any{"apiVersion": apiVersion, "kind": kind, "metadata": map[string]any{"name": name}, "spec": s})
+	return set
 }
 
 // storageFacts are the facts of a node whose disk data is pinned and plugged in, whose recorded
@@ -245,14 +193,7 @@ func recordedOf(volumes map[string]map[string]any) map[string]any {
 // for VAR, a removed volume and one that moves to another disk, and refuse a missing fallback
 // secret; a larger volume, a moved mount point and a new volume pass.
 func TestStorageRules(t *testing.T) {
-	s, err := schema.LoadSchemas("../../test/fixtures/kinds/builtin")
-	if err != nil {
-		t.Fatal(err)
-	}
-	set, err := Compile(s)
-	if err != nil {
-		t.Fatal(err)
-	}
+	set := builtinRules(t)
 	data := map[string]any{"disk": "data", "label": "data", "format": "xfs", "mountPoint": "/var/lib/data", "encryption": "tpm2", "size": "1G"}
 	with := func(changes map[string]any) map[string]any {
 		out := map[string]any{}
@@ -366,35 +307,20 @@ func TestStorageRules(t *testing.T) {
 				"fallback": fallback,
 			}
 			old := storageConfig(t, systemDisk, map[string]string{"data": dataVolume})
-			failures, err := set.Evaluate(Input{Documents: config.Redact(storageConfig(t, sd, tc.volumes)), Old: config.Redact(old), Facts: facts, Node: "n1"})
-			if err != nil {
-				t.Fatal(err)
-			}
-			if got := messages(failures); !slices.Equal(got, tc.want) {
-				t.Errorf("failures:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(tc.want, "\n"))
-			}
+			failures := wantFailures(t, set, Input{Documents: config.Redact(storageConfig(t, sd, tc.volumes)), Old: config.Redact(old), Facts: facts, Node: "n1"}, tc.want)
 			if len(failures) > 0 && failures[0].Takes != tc.takes {
 				t.Errorf("takes = %s, want %s", failures[0].Takes, tc.takes)
 			}
 			// At an install there is nothing to compare with.
 			facts["recorded"] = nil
-			if failures, err := set.Evaluate(Input{Documents: config.Redact(storageConfig(t, sd, tc.volumes)), Facts: facts, Node: "n1"}); err != nil || len(failures) != 0 {
-				t.Errorf("without a recorded section: %v, %v", messages(failures), err)
-			}
+			wantFailures(t, set, Input{Documents: config.Redact(storageConfig(t, sd, tc.volumes)), Facts: facts, Node: "n1"}, nil)
 		})
 	}
 }
 
 // The storage rules name the node they refuse a change for by node.name.
 func TestStorageRulesNameTheNode(t *testing.T) {
-	s, err := schema.LoadSchemas("../../test/fixtures/kinds/builtin")
-	if err != nil {
-		t.Fatal(err)
-	}
-	set, err := Compile(s)
-	if err != nil {
-		t.Fatal(err)
-	}
+	set := builtinRules(t)
 	data := map[string]any{"disk": "data", "label": "data", "format": "xfs", "mountPoint": "/var/lib/data", "encryption": "tpm2", "size": "1G"}
 	facts := storageFacts{
 		"recorded": recordedOf(map[string]map[string]any{"data": data}),
@@ -412,13 +338,7 @@ func TestStorageRulesNameTheNode(t *testing.T) {
 		{"reinstall", nil, "Volume data: the config removes it; only a reinstall of w1 removes a volume"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			failures, err := set.Evaluate(Input{Documents: config.Redact(storageConfig(t, systemDisk, tc.volumes)), Old: config.Redact(old), Facts: facts, Node: "w1"})
-			if err != nil {
-				t.Fatal(err)
-			}
-			if got := messages(failures); !slices.Equal(got, []string{tc.want}) {
-				t.Errorf("failures = %q, want %q", got, tc.want)
-			}
+			wantFailures(t, set, Input{Documents: config.Redact(storageConfig(t, systemDisk, tc.volumes)), Old: config.Redact(old), Facts: facts, Node: "w1"}, []string{tc.want})
 		})
 	}
 }

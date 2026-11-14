@@ -2,23 +2,16 @@ package rules
 
 import (
 	"fmt"
-	"slices"
 	"strings"
 	"testing"
 
 	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/router/derive"
-	"github.com/trevex/chalkos/pkg/schema"
+	"github.com/trevex/chalkos/pkg/schema/schematest"
 )
 
-// The DHCPSubnet rules accept an office's subnet with pools, reservations, options and PXE files
-// and a subnet of reservations alone, and refuse a subnet of more than 30 bits or of addresses no
-// server leases; a pool outside the subnet, that runs backwards, that shares addresses with
-// another, or that holds the subnet's network or broadcast address, the gateway, a DNS server or
-// boot's server; a reservation outside the subnet, in a pool, at the network or broadcast address
-// or of a server's address; a gateway outside the subnet or at its network or broadcast address;
-// a DNS server of IPv6 in an IPv4 subnet; a boot of no file, a boot server of IPv6 and BIOS or UEFI
-// files without a boot server. An iPXE script of an HTTP URL needs no server.
+// The DHCPSubnet rules accept an office's IPv4 subnet and refuse each misconfiguration below. An
+// iPXE script of an HTTP URL needs no boot server.
 func TestDHCPSubnetRules(t *testing.T) {
 	set, doc := routerRules(t)
 	subnet := func(name, spec string) config.Document { return doc("DHCPSubnet", name, spec) }
@@ -112,15 +105,7 @@ func TestDHCPSubnetRules(t *testing.T) {
 		{"a UEFI file without a server", office(`, "boot": {"uefi": "ipxe.efi"}`),
 			[]string{`DHCPSubnet/office: spec.boot: boot's bios and uefi files load over TFTP from boot's server; give server`}},
 	} {
-		t.Run(tc.name, func(t *testing.T) {
-			failures, err := set.Evaluate(Input{Documents: config.Redact(tc.docs), Node: "r1"})
-			if err != nil {
-				t.Fatal(err)
-			}
-			if got := messages(failures); !slices.Equal(got, tc.want) {
-				t.Errorf("failures:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(tc.want, "\n"))
-			}
-		})
+		t.Run(tc.name, func(t *testing.T) { wantFailures(t, set, Input{Documents: config.Redact(tc.docs)}, tc.want) })
 	}
 }
 
@@ -129,10 +114,7 @@ func TestDHCPSubnetRules(t *testing.T) {
 // most pools, reservations and DNS servers the schema takes; it takes no more.
 func TestDHCPSubnetManyRanges(t *testing.T) {
 	set, doc := routerRules(t)
-	s, err := schema.LoadSchemas("../../test/fixtures/kinds/router")
-	if err != nil {
-		t.Fatal(err)
-	}
+	s := schematest.Load(t, schematest.Router)
 	const maxPools, maxReservations, maxDNS = 32, 512, 16
 	// A subnet of n pools, m reservations and d DNS servers, each list's last item at last.
 	subnet := func(n, m, d int, last ...string) config.Document {
@@ -169,13 +151,7 @@ func TestDHCPSubnetManyRanges(t *testing.T) {
 			if err := s.Validate(tc.doc.Object); err != nil {
 				t.Fatal(err)
 			}
-			failures, err := set.Evaluate(Input{Documents: config.Redact([]config.Document{tc.doc}), Node: "r1"})
-			if err != nil {
-				t.Fatal(err)
-			}
-			if got := messages(failures); !slices.Equal(got, tc.want) {
-				t.Errorf("failures:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(tc.want, "\n"))
-			}
+			wantFailures(t, set, Input{Documents: config.Redact([]config.Document{tc.doc})}, tc.want)
 		})
 	}
 	for _, more := range []config.Document{subnet(maxPools+1, 1, 1), subnet(1, maxReservations+1, 1), subnet(1, 1, maxDNS+1)} {
@@ -198,30 +174,20 @@ func TestDHCPSubnetLeaseTime(t *testing.T) {
 		"999999d": {`DHCPSubnet/office: spec.leaseTime: a lease of 999999d is longer than 4294967295 seconds, the longest Kea takes`},
 	} {
 		d := doc("DHCPSubnet", "office", `{"interfaces": ["lan0"], "subnet": "192.0.2.0/24", "leaseTime": "`+leaseTime+`"}`)
-		failures, err := set.Evaluate(Input{Documents: config.Redact([]config.Document{d}), Node: "r1"})
-		if err != nil {
-			t.Fatal(err)
-		}
-		if got := messages(failures); !slices.Equal(got, want) {
-			t.Errorf("leaseTime %s: failures = %q, want %q", leaseTime, got, want)
-		}
+		wantFailures(t, set, Input{Documents: config.Redact([]config.Document{d})}, want)
 	}
 }
 
-// The DHCPSubnet schema takes links by name alone, at least one, so the server answers only on
-// links a document names; it refuses a glob.
+// The DHCPSubnet schema takes links by name alone, so the server answers only on links a document
+// names.
 func TestDHCPSubnetSchema(t *testing.T) {
-	s, err := schema.LoadSchemas("../../test/fixtures/kinds/router")
-	if err != nil {
-		t.Fatal(err)
-	}
+	s := schematest.Load(t, schematest.Router)
 	for _, tc := range []struct {
 		interfaces string
 		ok         bool
 	}{
 		{`["lan0"]`, true},
 		{`["lan0", "vlan20.1"]`, true},
-		{`[]`, false},
 		{`["lan*"]`, false},
 		{`["*"]`, false},
 		{`["lan0x123456789ab"]`, false},

@@ -27,10 +27,7 @@ func policyLAN(doc func(kind, name, spec string) config.Document) []config.Docum
 	}
 }
 
-// The PolicyRoute rules accept a LAN router's policies into a VRF, a table and next hops, and
-// refuse an in of a zone and interfaces, an empty match, a set beside ranges, addresses of another
-// family, ports without a protocol, a to of no target or of two, a next hop of another family, and
-// the local table, a VRF's or a NextHop's as a table.
+// The PolicyRoute rules accept a LAN router's policies and refuse each misconfiguration below.
 func TestPolicyRouteRules(t *testing.T) {
 	set, doc := routerRules(t)
 	lan := policyLAN(doc)
@@ -72,6 +69,6 @@ func TestPolicyRouteRules(t *testing.T) {
 		{"a NextHop's table", replaced(lan, route("lan", `{"rules": [{"match": {"dscp": [46]}, "to": {"table": 201}}]}`)),
 			[]string{`PolicyRoute/lan: spec.rules: a rule's table 201 is the table of NextHop b6; name the NextHop in nextHop, or take another table`}},
 	} {
-		t.Run(tc.name, func(t *testing.T) { wantFailures(t, set, tc.docs, tc.want) })
+		t.Run(tc.name, func(t *testing.T) { wantFailures(t, set, Input{Documents: config.Redact(tc.docs)}, tc.want) })
 	}
 }

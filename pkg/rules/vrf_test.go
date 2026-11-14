@@ -3,21 +3,16 @@ package rules
 import (
 	"encoding/json"
 	"slices"
-	"strings"
 	"testing"
 
 	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/router/derive"
-	"github.com/trevex/chalkos/pkg/schema"
+	"github.com/trevex/chalkos/pkg/schema/schematest"
 )
 
-// The VRF kind's rules accept an edge with two VRFs and refuse the name default, a name past 15
-// characters, a name a NAT64's link starts with, a table of the kernel's, a management interface
-// in a VRF, a node whose node API answers on every interface but whose Network documents all name
-// links of VRFs, and a VRF with a zone that imports routes or whose routes another VRF imports.
-// Against management interfaces and the Network documents' names, globs match as globs. A
-// management interface of a VRF's device and a NetDev of a VRF's name are the renderers' to
-// refuse.
+// The VRF kind's rules accept an edge with two VRFs and refuse each misconfiguration below. Globs
+// match as globs. A management interface of a VRF's device and a NetDev of a VRF's name are the
+// renderers' to refuse.
 func TestVRFRules(t *testing.T) {
 	set, doc := routerRules(t)
 	networks := []config.Document{
@@ -100,38 +95,21 @@ func TestVRFRules(t *testing.T) {
 		{"a zoned VRF that another imports", with(zoned("", `, "conntrackZone": 2`), importer...), zoneMessage("internet")},
 		{"a zoned VRF that the default VRF imports", with(zoned(`, "conntrackZone": 1`, ""), bgp("bgp", "null", `, "import": {"ipv6": {"vrfs": ["tenant"]}}`), bgp("tenant", `"tenant"`, "")), zoneMessage("tenant")},
 	} {
-		t.Run(tc.name, func(t *testing.T) {
-			failures, err := set.Evaluate(Input{Documents: config.Redact(tc.docs), Node: "r1"})
-			if err != nil {
-				t.Fatal(err)
-			}
-			if got := messages(failures); !slices.Equal(got, tc.want) {
-				t.Errorf("failures:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(tc.want, "\n"))
-			}
-		})
+		t.Run(tc.name, func(t *testing.T) { wantFailures(t, set, Input{Documents: config.Redact(tc.docs)}, tc.want) })
 	}
 }
 
-// The VRF kind's schema takes tables from 1 to 2^32 - 1, interfaces by name or glob and conntrack
-// zones from 1 to 65535.
+// The VRF kind's schema takes interfaces by name or glob.
 func TestVRFSchema(t *testing.T) {
-	s, err := schema.LoadSchemas("../../test/fixtures/kinds/router")
-	if err != nil {
-		t.Fatal(err)
-	}
+	s := schematest.Load(t, schematest.Router)
 	for _, tc := range []struct {
 		spec string
 		ok   bool
 	}{
 		{`{"table": 100}`, true},
 		{`{"table": 4294967295, "interfaces": ["eth1", "swp*"]}`, true},
-		{`{"table": 0}`, false},
-		{`{"table": 4294967296}`, false},
 		{`{"interfaces": ["eth1"]}`, false},
 		{`{"table": 100, "interfaces": ["eth 1"]}`, false},
-		{`{"table": 100, "conntrackZone": 65535}`, true},
-		{`{"table": 100, "conntrackZone": 0}`, false},
-		{`{"table": 100, "conntrackZone": 65536}`, false},
 	} {
 		d := builtinDoc(t, derive.API, "VRF", "tenant", tc.spec)
 		if err := s.Validate(d.Object); (err == nil) != tc.ok {

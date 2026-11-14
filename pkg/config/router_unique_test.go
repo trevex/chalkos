@@ -114,37 +114,6 @@ func TestBGPUnique(t *testing.T) {
 	})
 }
 
-// A community has one spelling, without leading zeros, so that two of one value compare equal as
-// written: the schema refuses a leading zero in a CommunityList and in a RoutingPolicy's
-// addCommunities, and takes the bounds of each number.
-func TestCommunityWithALeadingZero(t *testing.T) {
-	s := routerImageSchemas(t)
-	for _, c := range []struct{ name, yaml, want string }{
-		{"a standard community",
-			routerDoc("CommunityList", "c", `{communities: ["64512:0100"]}`),
-			`CommunityList "c": - at '/spec/communities/0': '64512:0100' does not match pattern `},
-		{"a large community",
-			routerDoc("CommunityList", "c", `{communities: ["1:2:03"]}`),
-			`CommunityList "c": - at '/spec/communities/0': '1:2:03' does not match pattern `},
-		{"an added community",
-			routerDoc("RoutingPolicy", "p", `{terms: [{then: {action: accept, addCommunities: ["64512:0100"]}}]}`),
-			`RoutingPolicy "p": - at '/spec/terms/0/then/addCommunities/0': '64512:0100' does not match pattern `},
-		{"the bounds",
-			routerDoc("CommunityList", "c", `{communities: ["0:0", "65535:65535", "4294967295:0:1"]}`), ""},
-	} {
-		t.Run(c.name, func(t *testing.T) {
-			docs, err := Parse(strings.NewReader(minimal + c.yaml))
-			if err != nil {
-				t.Fatal(err)
-			}
-			_, err = NewSet(docs, s)
-			if c.want == "" && err != nil || c.want != "" && (err == nil || !strings.HasPrefix(err.Error(), c.want)) {
-				t.Errorf("err = %v, want %q", err, c.want)
-			}
-		})
-	}
-}
-
 // A pool entry names each protocol once, a VRF has one resolver, and a resolver names each
 // address, client range, forwarder and local zone once, addresses and ranges in whatever spelling.
 func TestNAT64AndResolverUnique(t *testing.T) {
