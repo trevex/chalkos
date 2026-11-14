@@ -56,7 +56,7 @@ func (s *Server) EnrollSecureBoot(ctx context.Context, req *connect.Request[node
 	if s.installed {
 		return nil, layer.Errorf(connect.CodeFailedPrecondition, "the node is installed and reboots")
 	}
-	setup, err := s.readEFIVariable("SetupMode", secureboot.GlobalVendor)
+	setup, err := secureboot.ReadVariable(s.Paths.EFIVars, "SetupMode", secureboot.GlobalVendor)
 	if err != nil {
 		return nil, err
 	}
@@ -310,7 +310,7 @@ func (s *Server) readEFIDatabase(name string) (secureboot.Database, error) {
 	if name == "KEK" {
 		vendor = secureboot.GlobalVendor
 	}
-	data, err := s.readEFIVariable(name, vendor)
+	data, err := secureboot.ReadVariable(s.Paths.EFIVars, name, vendor)
 	if err != nil {
 		return secureboot.Database{}, err
 	}
@@ -319,22 +319,6 @@ func (s *Server) readEFIDatabase(name string) (secureboot.Database, error) {
 		return secureboot.Database{}, fmt.Errorf("the firmware's %s: %w", name, err)
 	}
 	return db, nil
-}
-
-// readEFIVariable reads an EFI variable's value from efivarfs; nil when it is not set.
-func (s *Server) readEFIVariable(name, vendor string) ([]byte, error) {
-	data, err := os.ReadFile(filepath.Join(s.Paths.EFIVars, name+"-"+vendor))
-	if errors.Is(err, fs.ErrNotExist) {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, fmt.Errorf("read the EFI variable %s: %w", name, err)
-	}
-	// Four bytes of attributes precede the value.
-	if len(data) < 4 {
-		return nil, fmt.Errorf("the EFI variable %s is cut short", name)
-	}
-	return data[4:], nil
 }
 
 // writeEFIVariable writes an authenticated EFI variable through efivarfs, or through

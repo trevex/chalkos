@@ -5,13 +5,11 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
-	"io/fs"
-	"os"
-	"path/filepath"
 	"strings"
 	"unicode/utf16"
 
 	"github.com/trevex/chalkos/pkg/esp"
+	"github.com/trevex/chalkos/pkg/secureboot"
 )
 
 // Booted finds the entry the node booted: the one systemd-boot says it selected, which must boot
@@ -42,25 +40,9 @@ func Booted(entries []esp.Entry, efivars string, running []byte) (esp.Entry, err
 // loaderVendor is the vendor of systemd-boot's EFI variables.
 const loaderVendor = "4a67b082-0a4c-41cf-b6c7-440b29bb8c4f"
 
-// readVariable reads an EFI variable's value from efivarfs; nil when it is not set.
-func readVariable(efivars, name, vendor string) ([]byte, error) {
-	data, err := os.ReadFile(filepath.Join(efivars, name+"-"+vendor))
-	if errors.Is(err, fs.ErrNotExist) {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, fmt.Errorf("read the EFI variable %s: %w", name, err)
-	}
-	// Four bytes of attributes precede the value.
-	if len(data) < 4 {
-		return nil, fmt.Errorf("the EFI variable %s is cut short", name)
-	}
-	return data[4:], nil
-}
-
 // loaderString reads a string variable of systemd-boot; "" when it is not set.
 func loaderString(efivars, name string) (string, error) {
-	data, err := readVariable(efivars, name, loaderVendor)
+	data, err := secureboot.ReadVariable(efivars, name, loaderVendor)
 	if err != nil || data == nil {
 		return "", err
 	}

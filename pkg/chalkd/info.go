@@ -5,18 +5,15 @@ import (
 	"fmt"
 	"maps"
 	"os"
-	"path/filepath"
 	"slices"
 
 	"connectrpc.com/connect"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
+	"github.com/trevex/chalkos/pkg/secureboot"
 	"github.com/trevex/chalkos/pkg/storage"
 	"github.com/trevex/chalkos/pkg/uki"
 )
-
-// globalVariable is the EFI vendor GUID of SecureBoot and SetupMode.
-const globalVariable = "8be4df61-93ca-11d2-aa0d-00e098032b8c"
 
 func (s *Server) Info(ctx context.Context, _ *connect.Request[nodev1.InfoRequest]) (*connect.Response[nodev1.InfoResponse], error) {
 	release := readOSRelease(s.Paths.OSRelease)
@@ -49,18 +46,14 @@ func (s *Server) Info(ctx context.Context, _ *connect.Request[nodev1.InfoRequest
 }
 
 func (s *Server) secureBoot() nodev1.SecureBoot {
-	read := func(name string) (byte, bool) {
-		data, err := os.ReadFile(filepath.Join(s.Paths.EFIVars, name+"-"+globalVariable))
-		// Four bytes of attributes precede the value.
-		if err != nil || len(data) < 5 {
-			return 0, false
-		}
-		return data[4], true
+	set := func(name string) bool {
+		data, err := secureboot.ReadVariable(s.Paths.EFIVars, name, secureboot.GlobalVendor)
+		return err == nil && len(data) > 0 && data[0] == 1
 	}
-	if setup, ok := read("SetupMode"); ok && setup == 1 {
+	if set("SetupMode") {
 		return nodev1.SecureBoot_SECURE_BOOT_SETUP_MODE
 	}
-	if enabled, ok := read("SecureBoot"); ok && enabled == 1 {
+	if set("SecureBoot") {
 		return nodev1.SecureBoot_SECURE_BOOT_ENABLED
 	}
 	return nodev1.SecureBoot_SECURE_BOOT_DISABLED

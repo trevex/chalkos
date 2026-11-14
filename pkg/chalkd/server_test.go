@@ -48,6 +48,7 @@ import (
 	"github.com/trevex/chalkos/pkg/outputs"
 	"github.com/trevex/chalkos/pkg/pki"
 	"github.com/trevex/chalkos/pkg/rules"
+	"github.com/trevex/chalkos/pkg/secureboot"
 	"github.com/trevex/chalkos/pkg/storage/storagetest"
 	"github.com/trevex/chalkos/pkg/tool/tooltest"
 	"github.com/trevex/chalkos/pkg/upgrade"
@@ -662,8 +663,8 @@ func TestInfo(t *testing.T) {
 	s.Installer = true
 	s.Fingerprint = "ab01"
 	write(t, s.Paths.OSRelease, "ID=nixos\nIMAGE_ID=\"chalkos-installer\"\nIMAGE_VERSION=\"\"\nCHALKOS_VARIANT=\"worker\"\n")
-	write(t, filepath.Join(s.Paths.EFIVars, "SecureBoot-"+globalVariable), "\x06\x00\x00\x00\x01")
-	write(t, filepath.Join(s.Paths.EFIVars, "SetupMode-"+globalVariable), "\x06\x00\x00\x00\x00")
+	write(t, filepath.Join(s.Paths.EFIVars, "SecureBoot-"+secureboot.GlobalVendor), "\x06\x00\x00\x00\x01")
+	write(t, filepath.Join(s.Paths.EFIVars, "SetupMode-"+secureboot.GlobalVendor), "\x06\x00\x00\x00\x00")
 	write(t, filepath.Join(s.Paths.TPM, "tpm0", "dev"), "10:224\n")
 	write(t, s.Paths.Cmdline, "init=/x usrhash="+strings.Repeat("ab", 32)+"\n")
 

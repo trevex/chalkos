@@ -83,7 +83,7 @@ func enrolServer(t *testing.T, setupMode bool, other []byte) (*Server, *firmware
 	if setupMode {
 		mode = "\x06\x00\x00\x00\x01"
 	}
-	write(t, filepath.Join(s.Paths.EFIVars, "SetupMode-"+globalVariable), mode)
+	write(t, filepath.Join(s.Paths.EFIVars, "SetupMode-"+secureboot.GlobalVendor), mode)
 	write(t, filepath.Join(s.Paths.EFIVars, "db-"+secureboot.SecurityVendor), "\x27\x00\x00\x00"+string(ukitest.SignatureList(other)))
 	write(t, filepath.Join(s.Host.DevRoot, "disk", "chalk-boot", "esp"), "")
 	writeESP(t, s.Paths.ESP, s.Paths.EFIVars, s.Paths.Cmdline, "chalkos_2.efi", "chalkos_2.efi")
@@ -139,7 +139,7 @@ func TestEnrollSecureBoot(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if want := []string{"db-" + secureboot.SecurityVendor + " 67", "KEK-" + globalVariable + " 67", "PK-" + globalVariable + " 27"}; !slices.Equal(fw.writes, want) {
+	if want := []string{"db-" + secureboot.SecurityVendor + " 67", "KEK-" + secureboot.GlobalVendor + " 67", "PK-" + secureboot.GlobalVendor + " 27"}; !slices.Equal(fw.writes, want) {
 		t.Errorf("writes %v, want %v", fw.writes, want)
 	}
 	got := resp.Msg
@@ -279,7 +279,7 @@ func TestEnrollSecureBootRebootsAfterTheWrites(t *testing.T) {
 	if got := resp.Msg; !slices.Equal(got.DbBefore, []string{"CN=other"}) || len(got.DbAfter) != 0 || len(got.KekAfter) != 0 {
 		t.Errorf("answer %+v", got)
 	}
-	if want := []string{"KEK-" + globalVariable + " 67", "PK-" + globalVariable + " 27"}; !slices.Equal(fw.writes, want) {
+	if want := []string{"KEK-" + secureboot.GlobalVendor + " 67", "PK-" + secureboot.GlobalVendor + " 27"}; !slices.Equal(fw.writes, want) {
 		t.Errorf("writes %v, want %v after db", fw.writes, want)
 	}
 	select {

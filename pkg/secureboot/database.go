@@ -10,6 +10,9 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"io/fs"
+	"os"
+	"path/filepath"
 	"slices"
 )
 
@@ -141,10 +144,26 @@ var (
 	ImageSecurityDatabase = guid(0xd719b2cb, 0x3d3a, 0x4596, [8]byte{0xa3, 0xbc, 0xda, 0xd0, 0x0e, 0x67, 0x65, 0x6f})
 )
 
-// Databases returns db and dbx when Secure Boot is enforced, and enforced false when it is not:
-// disabled, or in setup mode. read returns the value of the EFI variable of the name and vendor,
-// nil when it is not set.
-func Databases(read func(name, vendor string) ([]byte, error)) (db, dbx Database, enforced bool, err error) {
+// ReadVariable reads the value of an EFI variable from efivarfs at efivars; nil when it is not set.
+func ReadVariable(efivars, name, vendor string) ([]byte, error) {
+	data, err := os.ReadFile(filepath.Join(efivars, name+"-"+vendor))
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("read the EFI variable %s: %w", name, err)
+	}
+	// Four bytes of attributes precede the value.
+	if len(data) < 4 {
+		return nil, fmt.Errorf("the EFI variable %s is cut short", name)
+	}
+	return data[4:], nil
+}
+
+// Databases reads db and dbx from efivarfs at efivars when Secure Boot is enforced, and returns
+// enforced false when it is not: disabled, or in setup mode.
+func Databases(efivars string) (db, dbx Database, enforced bool, err error) {
+	read := func(name, vendor string) ([]byte, error) { return ReadVariable(efivars, name, vendor) }
 	enabled, err := read("SecureBoot", GlobalVendor)
 	if err != nil {
 		return Database{}, Database{}, false, err
