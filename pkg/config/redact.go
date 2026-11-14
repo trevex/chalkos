@@ -155,12 +155,8 @@ func hideSecret(obj map[string]any) map[string]any {
 		return out
 	}
 	spec = maps.Clone(spec)
-	switch data := spec["data"].(type) {
-	case nil:
-	case map[string]any:
-		spec["data"] = hideValues(data)
-	default:
-		spec["data"] = hideValue(data)
+	if data := spec["data"]; data != nil {
+		spec["data"] = hideData(data, hideValue)
 	}
 	out["spec"] = spec
 	return out
@@ -183,12 +179,8 @@ func hideEmbedded(v any) (any, bool) {
 			changed := false
 			switch {
 			case secret && slices.Contains(secretFields, k):
-				switch data := x.(type) {
-				case nil:
-				case map[string]any:
-					hidden, changed = hashValues(data), true
-				default:
-					hidden, changed = hashValue(data), true
+				if x != nil {
+					hidden, changed = hideData(x, hashValue), true
 				}
 			default:
 				hidden, changed = hideEmbedded(x)
@@ -259,18 +251,22 @@ func SecretField(d Document, path []string) bool {
 	return false
 }
 
-// hashValues returns data with each value replaced by hashValue of it, as Redact hides the values
-// of an embedded Secret object.
-func hashValues(data map[string]any) map[string]any {
-	hidden := make(map[string]any, len(data))
-	for k, v := range data {
-		hidden[k] = hashValue(v)
+// hideData hides the data of a Secret or an embedded Secret object: each value of an object by
+// leaf, and data that is no object whole.
+func hideData(data any, leaf func(any) any) any {
+	m, ok := data.(map[string]any)
+	if !ok {
+		return leaf(data)
+	}
+	hidden := make(map[string]any, len(m))
+	for k, v := range m {
+		hidden[k] = leaf(v)
 	}
 	return hidden
 }
 
 // hashValue is the hex SHA-256 of v: of a string as it is, of any other value as its JSON.
-func hashValue(v any) string {
+func hashValue(v any) any {
 	s, isString := v.(string)
 	if !isString {
 		b, _ := json.Marshal(v)
@@ -278,15 +274,6 @@ func hashValue(v any) string {
 	}
 	sum := sha256.Sum256([]byte(s))
 	return hex.EncodeToString(sum[:])
-}
-
-// hideValues returns data with each value hidden by hideValue, as Redact hides a Secret's.
-func hideValues(data map[string]any) map[string]any {
-	hidden := make(map[string]any, len(data))
-	for k, v := range data {
-		hidden[k] = hideValue(v)
-	}
-	return hidden
 }
 
 // hideValue hides a value of a Secret as Redact does: a string by its hex SHA-256, and any other
