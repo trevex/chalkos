@@ -475,58 +475,6 @@ it. Its refusal fails the delivery, and `chalkctl` prints it in the same form:
 | `Resolver/resolver: spec.localZones[0].records[1]: a.lan.example.org. AAAA 2001:db8::1 appears twice; Unbound keeps one, so drop the other` | Drop one of the records. |
 | `Resolver/resolver: spec.localZones[0].records[1]: www.lan.example.org holds a CNAME record and another record; a CNAME's name holds it alone` | Drop the other records of the name, or the CNAME record. |
 
-## Upgrade a router whose NAT64 ran beside its links
-
-On older images, Jool ran in the router's own network namespace and took the router's own
-addresses as its pool. Images that run each NAT64 in a namespace of its own refuse or break some
-of the configs those images took. Change these before you upgrade. The older image takes each
-change, except that it runs one NAT64 with an empty `pool4` at most:
-
-- Rename each NAT64 whose name has more than 11 characters. The rules refuse it with
-  `NAT64 <name> has a name of more than 11 characters, which its link n64-<name> does not take as an interface's name; give it a shorter one`.
-  A rename replaces the translator, and its connections end.
-- Empty each `pool4` that holds an address of the router's own links. An empty pool takes the
-  uplink's address, as before. `chalkctl validate` with the new image in the inventory refuses
-  a pool of a static address, as [Add a NAT64](#add-a-nat64) shows. A pool of an address from
-  DHCP passes it, and `chalkos-nat64.service` then fails at the new image's first boot, so the
-  router falls back to the image it ran.
-- Move every static address out of `169.254.64.0/18`, and leave IPv4 link-local addressing off
-  on the router's links.
-- Give no `dnat` or `snat` rule a `to.address` in a NAT64's pool, and no `dnat` rule a
-  `match.destination` in a NAT64's pool or prefix.
-- Give each VRF whose clients use a NAT64 a `NAT64` of its own, with `vrf` set. On older images
-  the one Jool of the router's namespace translated whatever reached its prefix, from any VRF
-  whose routes led there. Each NAT64 now translates the traffic of its own VRF alone, so a VRF
-  without one loses NAT64.
-- Rename one of two NAT64s whose names' hashes pick one /30, as
-  [Keep 169.254.64.0/18 free](#keep-16925464018-free) shows. The validator `router` of the new
-  image refuses them, and `chalkctl validate` with the new image in the inventory runs it.
-- Name the links a `FirewallZone` or a NAT rule means where its `interfaces` name or glob a
-  NAT64's link, such as `*` or `n*` in a zone, or where a NAT rule's interface matches NAT64 links
-  alone. The validator `router` refuses both.
-
-`chalkctl validate` does not run the renderers. The new image runs them when `chalkctl upgrade`
-installs it, and refuses the upgrade of a router whose config one of them refuses, so the router
-keeps booting the image it runs. Look for this before you upgrade:
-
-- A `Network` that sorts before `00-n64-<name>` and may match the NAT64's link `n64-<name>`, such
-  as a catch-all `00-all` with `Name=*`. The renderer of the output `networkd` refuses it with
-  `Network/00-all: metadata.name: Network 00-all matches the link n64-edge of NAT64 edge before 00-n64-edge; rename it to sort after 00-n64-edge`.
-  Rename it to sort after `00-n64-<name>`, or narrow its `Name=`.
-
-The upgrade reboots the router, and the NAT64s' connections end. Once `chalkos-nat64.service`
-runs on the new image, clients connect again. The translated connections now pass the firewall's
-connection tracking: each takes two entries, one for its IPv6 side and one for its IPv4 side,
-where it took none before. Raise `Router.spec.conntrackMax` when the NAT64s carry many connections.
-
-The zones' policies do not filter the connections a NAT64 translates. Any host whose packets to
-a NAT64's prefix reach the router in the NAT64's VRF uses the NAT64. Limit who routes the prefix
-to the router, by the routes you announce and by the reverse-path filter.
-
-`chalkos-nat64.service` and `chalkos-resolvers.service` are units of the boot. When either fails
-on the new image, the boot's health check fails, and the router falls back to the image it ran,
-as [Boot, health and rollback](../how-it-works/node/boot-and-rollback.md) describes.
-
 ## What next
 
 - [NAT64 and DNS64 on a router](../how-it-works/router/nat64-and-dns.md) explains the translator,
