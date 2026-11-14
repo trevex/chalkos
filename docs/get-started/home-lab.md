@@ -14,6 +14,13 @@ keeps its address when one of its cables is pulled, and the Kubernetes API stays
 control plane goes down. Plan an afternoon; most of it goes into the first image builds and the
 installs.
 
+!!! info "A personal home lab"
+
+    This lab is a maintainer's own home lab. Its BGP fabric, IPv6-only nodes, NAT64 and WireGuard
+    tunnel are there for fun and to try those features out, not because a home network needs them.
+   
+    The guide shares the setup in case it helps you test chalkos on a similar network.
+
 ## What you build
 
 The router connects the home network to the fabric, a switch that holds the router's second port
