@@ -18,10 +18,8 @@ type Translated struct {
 // IdentityJSON is the identity as JSON, as a config slot keeps it.
 func (t Translated) IdentityJSON() ([]byte, error) { return encodeIdentity(t.Identity) }
 
-// Translate checks docs as the set of the node called node against the image's schemas, fills in
-// their defaults and translates them into the node's identity on the image's target, as
-// config.Translate does. A set the image does not accept is a *Refusal of StageConfig, whose
-// message is the translation's error.
+// Translate checks docs as the set of the node called node, fills in their defaults and
+// translates them into the node's identity. A set the image refuses is a *Refusal of StageConfig.
 func (img Image) Translate(node string, docs []config.Document) (Translated, error) {
 	set, id, err := config.Translate(node, docs, img.Schemas, img.Target)
 	if err != nil {
@@ -30,8 +28,7 @@ func (img Image) Translate(node string, docs []config.Document) (Translated, err
 	return Translated{Documents: set.Documents(), Identity: id}, nil
 }
 
-// TranslateRedacted is Translate of redacted documents, as config.TranslateRedacted translates
-// them: it returns the set's documents with their defaults, redacted.
+// TranslateRedacted is Translate of redacted documents.
 func (img Image) TranslateRedacted(node string, docs config.Redacted) (config.Redacted, identity.Identity, error) {
 	set, id, err := config.TranslateRedacted(node, docs, img.Schemas, img.Target)
 	if err != nil {
@@ -40,9 +37,8 @@ func (img Image) TranslateRedacted(node string, docs config.Redacted) (config.Re
 	return set, id, nil
 }
 
-// CheckRedacted checks docs as a set, as config.CheckRedacted does, short of the translation into a
-// node's identity, as an image's tests check theirs. It returns the set's documents with their
-// defaults, redacted; a set the image does not accept is a *Refusal of StageConfig.
+// CheckRedacted checks docs as a set short of the translation into a node's identity, and returns
+// them with their defaults. A set the image refuses is a *Refusal of StageConfig.
 func (img Image) CheckRedacted(docs config.Redacted) (config.Redacted, error) {
 	set, err := config.CheckRedacted(docs, img.Schemas)
 	if err != nil {

@@ -19,10 +19,9 @@ import (
 	"github.com/trevex/chalkos/pkg/schema"
 )
 
-// Input is what renderers and validators read: a node's config set, with its defaults, the
-// schemas that tell its secretRef fields, and the node's name. The set is redacted, so no program
-// that reads it sees a secret value, and the states take a hidden value, the hash of the value, as
-// it is.
+// Input is what renderers and validators read: a node's redacted config set with its defaults,
+// the schemas that tell its secretRef fields, and the node's name. A hidden value's hash stands in
+// for the value, so the states still change when a secret does.
 type Input struct {
 	Node      string
 	Documents config.Redacted
@@ -68,10 +67,8 @@ const (
 	RoleValidator Role = "validator"
 )
 
-// A Failure is an output that could not be rendered or whose check refused it, or a validator
-// that refused the config or did not run to its end. Its problem names what failed and its exit
-// status, or the refusals the program reported, which Refusals holds too. What a program wrote to
-// standard error goes to the journal alone, since it can echo the documents it read.
+// A Failure is an output or validator that refused the config or did not run to its end. Standard
+// error goes to the journal alone, since it can echo the documents the program read.
 type Failure struct {
 	Name     string
 	Role     Role
@@ -90,11 +87,9 @@ func (f Failure) OffNode() string { return strings.TrimSuffix(f.Error(), journal
 // error, and so to the node's journal.
 const journalHint = "; see the node's journal"
 
-// Message is the message a config the failures refuse is refused with, as chalkd and check.Run
-// say it. The refusals come first, as refusals.Message reports them: each once, since outputs that
-// share a check, or a validator and a renderer, can refuse a config with the same refusal. Each
-// other failure follows as its Error says it, in the order given, all joined by "; ". Join gives
-// the failures as one error instead.
+// Message is the message a config the failures refuse is refused with: the refusals first, each
+// once, since programs that share a check can report the same one, then the other failures, all
+// joined by "; ".
 func Message(failures []Failure) string {
 	var refused []refusals.Refusal
 	var msgs []string
@@ -149,13 +144,9 @@ const (
 	partProgram  = "program"
 )
 
-// run runs p, a program of the role's definition name, which part names, with the runner and the
-// timeout of r, logging what a failed program wrote to standard error, or the unit whose journal
-// holds it. A program that reports refusals on standard output, a renderer or a validator,
-// refuses the config with them, as a *refused, whether it failed or not; one that exits 0 and
-// prints anything else there fails for what it printed, and one that fails and prints anything
-// else fails for its exit status. A check's standard output is discarded: a service's own check
-// can echo the files, so its failure says no more than that.
+// run runs p, the part of the role's definition name, with the runner and timeout of r. A
+// renderer's or validator's refusals on standard output make a *refused whatever its exit status.
+// A check's standard output is discarded, because a service's own check can echo the files.
 func (r Renderer) run(ctx context.Context, role Role, name, part string, p Program) error {
 	p.Timeout = cmp.Or(r.Timeout, DefaultTimeout)
 	printed, err := r.Run.Run(ctx, p)
@@ -213,10 +204,8 @@ func scratch(parent, name string) (string, error) {
 // and in a validator's argv: lower-case letters, digits and dashes.
 var plainName = regexp.MustCompile(`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`)
 
-// checkDefinition refuses a definition of the image chalkd could not run: a name that is not
-// plain, an input of Secret, whose values no program reads, or a program of programs, by part,
-// that is no absolute path. The image's build checks that the programs are of its store, and that
-// the image declares the kinds and withholds none of them.
+// checkDefinition refuses a definition of the image chalkd could not run. The image's build checks
+// what needs the store: that the programs are of it and the kinds are declared.
 func checkDefinition(n string, inputs []string, programs map[string]string) error {
 	if !plainName.MatchString(n) {
 		return errors.New("the name is not lower-case letters, digits and dashes")

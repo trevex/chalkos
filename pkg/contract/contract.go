@@ -1,18 +1,13 @@
-// Package contract loads an image's contract: what the image declares about config and about
-// itself, from the files of one directory, /etc/chalkos on a node, etc/chalkos of an image's
-// NixOS system, or the directory chalkos-rules checks as an image's build lays it out:
+// Package contract loads an image's contract, what the image declares about config and itself,
+// from one directory (/etc/chalkos on a node):
 //
-//   - schemas/, the schemas of its kinds, and the change rules they declare;
+//   - schemas/, the schemas of its kinds and the change rules they declare;
 //   - facts.json, the facts those rules and the effects' rules read;
-//   - effects.json, what a delivery does to the node's services, and services.json, the units
-//     granted config kinds;
+//   - effects.json, what a delivery does to services, and services.json, the units granted kinds;
 //   - outputs.json and validators.json, the programs that read the node's config documents;
 //   - diagnostics.json, the commands an admin may run on the node.
 //
-// Load checks every definition as chalkd needs it; a file other than the schemas that is missing
-// declares none. It compiles the change rules and the effects' rules when they are first asked
-// for, as a boot renders the outputs without them. An image's contract does not change while it
-// runs, so chalkd loads the running image's once.
+// A missing file other than schemas/ declares none.
 package contract
 
 import (

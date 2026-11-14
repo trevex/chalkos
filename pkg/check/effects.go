@@ -53,14 +53,9 @@ type Fired struct {
 	By   []string
 }
 
-// Due compares d with each of olds and returns what it changes. An effect is due when, compared
-// with one of them:
-//   - one of its outputs has a state in d.Outputs that differs;
-//   - the documents of one of its kinds, or a Secret they reference, differ;
-//   - its rule holds on the facts of the comparison.
-//
-// A rule that cannot be evaluated counts as true; warnings say why, without the values it read,
-// one for each such rule.
+// Due compares d with each of olds and returns the outputs and effects it changes. A rule that
+// cannot be evaluated counts as true, so its effect runs; a warning says why, without the values
+// it read.
 func Due(fx Effects, d Delivery, olds []Comparison) (o Outcome, warnings []string, err error) {
 	kinds, err := config.KindHashes(d.Documents, d.Schemas)
 	if err != nil {

@@ -1,7 +1,5 @@
 // Package effects reads what an image declares about its services: services.json, the units
 // granted config kinds, and effects.json, what a delivery does to those units and to chalkd.
-// chalkd reads both on the node and carries out the effects a delivery makes due with Apply;
-// chalkos-rules checks effects.json when the image is built.
 package effects
 
 import (
@@ -31,11 +29,8 @@ type Hint struct {
 	File string `json:"file"`
 }
 
-// Definition is what a delivery does to the node's services, as /etc/chalkos/effects.json records
-// it: when one of the outputs Outputs changed, the documents of one of the kinds Kinds did, or the
-// CEL rule When holds, chalkd reloads the units of Reload, runs Run, restarts the units of
-// Restart, starting them too with Start, and runs the layer action Chalkd names on what only the
-// running chalkd holds.
+// Definition is an effect of /etc/chalkos/effects.json: when one of Outputs or Kinds changed, or
+// the CEL rule When holds, chalkd reloads, runs, restarts and runs the layer action it names.
 type Definition struct {
 	Outputs []string `json:"outputs"`
 	Kinds   []string `json:"kinds"`
@@ -93,10 +88,8 @@ func Read(path string) (map[string]Definition, error) {
 // layerAction is what Chalkd names: <layer>:<action>.
 var layerAction = regexp.MustCompile(`^[a-z][a-z0-9-]*:[a-z][a-z0-9-]*$`)
 
-// Check refuses an effect that nothing triggers or that does nothing, a unit that is no unit
-// name, a Chalkd that names no layer's action, a hint without text or with a relative file, and
-// a command that names no program: chalkd splits Run on spaces, with no shell quoting, and runs
-// the first word, a program of its PATH or of the image's store.
+// Check refuses an effect chalkd could not carry out as declared. chalkd splits Run on spaces,
+// with no shell quoting, so its first word must name a program.
 func (d Definition) Check() error {
 	if len(d.Outputs) == 0 && len(d.Kinds) == 0 && d.When == "" {
 		return errors.New("it has none of outputs, kinds and when, so nothing triggers it")

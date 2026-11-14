@@ -18,18 +18,11 @@ import (
 	"github.com/trevex/chalkos/pkg/command"
 )
 
-// Sandbox runs a diagnostic as a transient unit of its own, with systemd-run's --pipe, so the
-// output reaches chalkd as the program prints it:
-//   - under a dynamic user, without new privileges, and with only the capabilities and groups the
-//     diagnostic names;
-//   - on a read-only system with a private /tmp, without home directories, devices, STATE,
-//     /var/lib, or the config, credentials and Kubernetes keys chalkd writes below /run/chalkos;
-//   - in the host's network, or the network namespace the diagnostic names, with Unix, IPv4, IPv6
-//     and netlink sockets alone;
-//   - for at most the diagnostic's timeout, after which systemd stops the unit.
-//
-// A failed unit stays loaded, so its result tells a timeout apart from an exit status; chalkd
-// resets it after reading it.
+// Sandbox runs a diagnostic as a transient unit under systemd-run --pipe: a dynamic user with
+// only the capabilities and groups it names, a read-only system without STATE, /var/lib or the
+// secrets below /run/chalkos, Unix, IP and netlink sockets alone in the host's network or the
+// namespace it names, and at most its timeout. A failed unit stays loaded, so its result
+// tells a timeout apart from an exit status; chalkd resets it after reading it.
 type Sandbox struct {
 	// NamespaceDir holds the named network namespaces a run may join; empty for NamespaceDir.
 	NamespaceDir string

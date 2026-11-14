@@ -1,8 +1,6 @@
 // Package diagnostics reads the diagnostics an image declares in diagnostics.json: read-only
-// commands of its store that chalkd runs for a client of the node API. It checks a call's
-// arguments against their parameters' types, builds the command line, and runs it as a transient
-// systemd unit with a sandbox of its own. chalkd reads the file on the node; chalkos-rules checks
-// it when the image is built.
+// commands of its store that chalkd runs for a client of the node API, each in a sandboxed
+// transient systemd unit.
 package diagnostics
 
 import (
@@ -125,11 +123,7 @@ func Read(path string) (map[string]Definition, error) {
 	})
 }
 
-// Check refuses a diagnostic chalkd could not run as declared: a command that runs no program
-// of the image's store, a role, timeout, capability or group chalkd does not know, a network
-// namespace that no call could fill to a name below NamespaceDir, a placeholder without its
-// parameter or a parameter without its placeholder, an optional parameter the network namespace
-// names, and a parameter whose declaration does not fit its type.
+// Check refuses a diagnostic chalkd could not run as declared.
 func (d Definition) Check() error {
 	if len(d.Command) == 0 {
 		return errors.New("its command is empty")

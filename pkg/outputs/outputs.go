@@ -1,32 +1,16 @@
-// Package outputs runs the programs of an image's store that read a node's config documents:
-// renderers and validators, which read the same input and report refusals in the same form.
-//
-// Each output of /etc/chalkos/outputs.json is a renderer that reads the documents of its input
-// kinds as JSON and writes a service's config files into a directory, and an optional check of
-// those files. chalkd renders and checks every output into a staging directory before a delivery
-// changes the node, and swaps each one in by a symlink rename once the delivery is stored, so a
-// service never reads half an output; chalkos-config renders them at boot, since /run is a tmpfs.
-//
-// Each validator of /etc/chalkos/validators.json is a renderer without files: a program that
-// checks the documents of its input kinds for what no schema or change rule of the image sees,
-// such as what several documents mean together, or what takes a parser or a tool to tell. chalkd
-// runs it as
+// Package outputs runs the programs of an image's store that read a node's config documents.
+// Each output of /etc/chalkos/outputs.json is a renderer that writes a service's config files into
+// a directory, with an optional check of them; outputs are staged and swapped in by a symlink
+// rename, so a service never reads half an output. Each validator of /etc/chalkos/validators.json
+// is a renderer without files, run as
 //
 //	<program> validate <name>
 //
-// in the sandbox renderers run in, after the change rules and before the renderers, in a
-// delivery, its dry run, an install in place and the image's check of its own config. A boot runs
-// none, as every slot was written only once the checker of its image passed the documents.
-// chalkctl runs the validators it links, LinkedValidators that read the same JSON, in-process
-// when it checks a node's config.
-//
 // Every program reads one JSON object on standard input, {"node": {"name": …}, "documents":
-// {"<Kind>": [<document>, …]}}: the documents of each of its input kinds, sorted by name, with
-// their schema defaults, without the Secrets and with every other secret value hashed. A renderer
-// or a validator refuses a config by printing a report of refusals on standard output, as
-// pkg/refusals describes it, whatever its exit status; otherwise exit status 0 means that it ran,
-// and any other status is a failure of the program, which refuses the config too. What a program
-// writes to standard error goes to the node's journal alone.
+// {"<Kind>": [<document>, …]}}: the documents of its input kinds, sorted by name, with their
+// defaults, without the Secrets and with every other secret value hashed. A program refuses a
+// config by printing a pkg/refusals report on standard output, whatever its exit status; otherwise
+// any status but 0 is a failure, which refuses the config too. Standard error goes to the journal.
 package outputs
 
 import (
@@ -111,13 +95,9 @@ func (d Definition) check(name, root string) error {
 	return nil
 }
 
-// checkDir refuses a dir of the output name that a swap could not safely replace by a link. root
-// is /run/chalkos/outputs. It refuses a dir that:
-//   - lies outside /run, a tmpfs, or is not clean;
-//   - has a component that starts with a dot, as the links and directories chalkd keeps beside
-//     the outputs' do;
-//   - lies in /run/chalkos, where chalkd keeps the node's config and credentials, other than
-//     /run/chalkos/outputs/<name> or a path below it.
+// checkDir refuses a dir of the output name that a swap could not safely replace by a link: one
+// outside /run, with a dot component like chalkd's own links, or in /run/chalkos, where the
+// config and credentials live, other than below root/<name>.
 func checkDir(name, dir, root string) error {
 	chalkos := filepath.Dir(root)
 	run := filepath.Dir(chalkos)

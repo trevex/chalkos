@@ -28,10 +28,8 @@ func (s *Staged) Dirs() map[string]string {
 	return maps.Clone(s.staging)
 }
 
-// Swap makes each staged output the one its dir links to: the files move below Root/.rendered,
-// and a new link replaces the old one in one rename, so a service reads the old files or the new
-// ones and never a mix. The files the old link named are removed. It records each swapped
-// output's hash in the status.
+// Swap makes each staged output the one its dir links to, replacing the link in one rename so a
+// service reads the old files or the new ones and never a mix.
 func (s *Staged) Swap() error {
 	if len(s.staging) == 0 {
 		return nil

@@ -22,10 +22,9 @@ type State struct {
 	Secrets string `json:"secrets"`
 }
 
-// secrets hashes the values the secretRefs of the output's input documents name, by Secret and
-// key; empty for documents that reference none. The values of the redacted input are their hashes
-// already, which the state takes as they are; a key the Secret lacks counts as the hash of the
-// empty value.
+// secrets hashes the values the secretRefs of the output's input documents name; empty for
+// documents that reference none. The redacted values are hashes already, which it takes as they
+// are.
 func (d Definition) secrets(in Input) string {
 	secrets := in.Documents.Documents().Secrets()
 	var lines []string

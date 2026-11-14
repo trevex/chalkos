@@ -14,10 +14,7 @@ import (
 	"github.com/trevex/chalkos/pkg/statusview"
 )
 
-// Write writes a router's BGP sessions, its NAT64 instances, its resolvers and its DHCP
-// servers with their subnets' leases and delegated prefixes, and its DHCP relays, the default
-// VRF's first, or why their state is unknown. A router whose image carries no BGP writes no line
-// of it, and one without NAT64 instances, resolvers, DHCP servers or relays none of them.
+// Write writes the router layer's status section.
 func Write(w io.Writer, r *routerv1.StatusResponse) error {
 	if err := bgpStatus(w, r); err != nil {
 		return err

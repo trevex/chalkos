@@ -201,10 +201,8 @@ func (d Definition) values(args map[string]string) (map[string]string, error) {
 }
 
 // Call checks a call's arguments, by parameter name, and returns the command line to run and the
-// network namespace it runs in. Each placeholder becomes its argument, in the form its type gives
-// it, or the parameter's default. An argument of the command that names an optional parameter the
-// call leaves out is dropped. The namespace is empty for the host's network; Call refuses one
-// that fills to no file's name below NamespaceDir, such as one with a slash or of dots alone.
+// network namespace it runs in, empty for the host's. A namespace that fills to no file's name
+// below NamespaceDir is refused, so a call cannot escape it with a slash or dots.
 func (d Definition) Call(args map[string]string) (argv []string, ns string, err error) {
 	values, err := d.values(args)
 	if err != nil {

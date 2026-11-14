@@ -1,24 +1,14 @@
-// Package check checks a node's config as the image the config is for checks it, from what that
-// image holds and what the node gives it, and changes nothing. A check has four stages, each a
-// method of Image, in this order:
+// Package check checks a node's config as the image the config is for checks it, and changes
+// nothing. A check has four stages, each a method of Image, in this order:
 //
-//  1. Translate: the documents against the schemas, the set's own rules, and the identity they
-//     translate to;
+//  1. Translate: the documents against the schemas, the set's own rules and the node's identity;
 //  2. Rules: the image's change rules, against the config the new one replaces;
 //  3. Validate: the image's validators;
 //  4. Render: the image's renderers and their checks.
 //
 // Each stage returns a *Refusal for a config it refuses and any other error for a failure of the
-// image or of the check itself. Run runs them in a row, for an image that checks its own config,
-// and plans the effects a delivery of the config takes; RunTranslated runs the last three and plans
-// the effects, for documents checked as a set without a node's identity, as an image's tests check
-// theirs with Image.CheckRedacted. chalkd runs the stages for a delivery to the running image,
-// with its own checks of the machine between them; chalkctl runs the first three, without the
-// node's facts and with the validators it links.
-//
-// A check never sees a Secret's value: it takes the documents as config.Redacted after their
-// translation, which is all rules, validators and renderers read of them, and the checks of secret
-// references need the Secrets' keys alone.
+// image or the check. A check never sees a Secret's value: rules, validators and renderers read
+// config.Redacted, and the checks of secret references need the Secrets' keys alone.
 package check
 
 import (
@@ -59,13 +49,12 @@ type Programs struct {
 	Render outputs.Renderer
 }
 
-// Validate runs the programs of p as outputs.Renderer.Validate does.
+// Validate runs the programs of p.
 func (p Programs) Validate(ctx context.Context, in outputs.Input) ([]outputs.Failure, error) {
 	return p.Render.Validate(ctx, p.Defs, in)
 }
 
-// Linked are validators linked into the program that checks, which run in-process as
-// outputs.RunLinked runs them.
+// Linked are validators linked into the program that checks, which run in-process.
 type Linked []outputs.LinkedValidator
 
 // Validate runs l in the order given; it never fails itself.
@@ -88,11 +77,8 @@ const (
 	StageOutputs Stage = "outputs"
 )
 
-// Refusal is a config a check refused: the stage that refused it, and why, as that stage says it.
-// A refused translation says what is wrong with the set, which the caller puts in its own words;
-// the other stages' messages say that the config is refused, or what failed. Failures are the
-// change rules the config does not meet, for StageRules; Failed the validators or outputs that
-// failed, for StageValidators and StageOutputs.
+// Refusal is a config a check refused: the stage that refused it and why. Failures holds the
+// change rules not met (StageRules), Failed the validators or outputs that failed.
 type Refusal struct {
 	Stage    Stage
 	Message  string
@@ -102,10 +88,8 @@ type Refusal struct {
 
 func (r *Refusal) Error() string { return r.Message }
 
-// Rules checks in.Documents, a config set with its defaults, against the image's change rules,
-// which compare it with in.Old and read in.Facts; without facts, the rules that read them do not
-// run. A rule the config does not meet refuses it, and so does one that cannot be checked or a
-// fact that cannot be loaded.
+// Rules checks in.Documents against the image's change rules, which compare it with in.Old. A rule
+// that cannot be checked, or reads a fact that cannot be loaded, refuses the config too.
 func (img Image) Rules(in rules.Input) error {
 	if img.ChangeRules == nil {
 		return nil
@@ -136,12 +120,9 @@ func (img Image) Validate(ctx context.Context, node string, docs config.Redacted
 	return nil
 }
 
-// Render renders every output of the image from docs, a config set with its defaults, for the
-// node called node, checks it and stages it; it changes nothing a service reads. An output that
-// fails refuses the config. With refuse, a refusal stages nothing: Render discards what it staged
-// and returns no outputs. Without it, as for a delivery that keeps the node's documents, Render
-// returns the outputs that passed, staged, along with the refusal of those that did not, which the
-// caller reports and goes ahead.
+// Render renders, checks and stages every output of the image from docs; it changes nothing a
+// service reads. With refuse, a failed output discards everything staged; without it, Render
+// returns the outputs that passed along with the refusal, so a delivery can go ahead in part.
 func (img Image) Render(ctx context.Context, node string, docs config.Redacted, refuse bool) (*outputs.Staged, error) {
 	staged, failed := img.Renderer.Render(ctx, img.Outputs, img.input(node, docs))
 	if len(failed) == 0 {
@@ -160,14 +141,9 @@ func (img Image) input(node string, docs config.Redacted) outputs.Input {
 	return outputs.Input{Node: node, Documents: docs, Schemas: img.Schemas}
 }
 
-// Input is a config to check for the node called Node:
-//   - Delivered are the documents as delivered, and Old the documents of the config they replace,
-//     as delivered too, or with the defaults of the image that checks; empty at an install.
-//   - Facts gives the node's facts for a check of the translated documents against Old, with its
-//     defaults, which command facts read; it loads a fact when a rule first reads it. Run requires
-//     it.
-//   - Compare are what the effects compare the config with: the config the node runs, or a
-//     baseline and what the deliveries that failed since applied; none plans no effects.
+// Input is a config to check for the node called Node. Old is the config Delivered replaces, empty
+// at an install. Facts, which Run requires, loads each fact when a rule first reads it. Compare
+// holds the states the effects compare the config with; none plans no effects.
 type Input struct {
 	Node      string
 	Delivered config.Redacted
@@ -176,10 +152,9 @@ type Input struct {
 	Compare   []Comparison
 }
 
-// Result is a config that passed: its documents with their defaults, redacted, the identity they
-// translate to (JSON), its outputs, rendered and checked, and the plan of a delivery of it.
-// Warnings name the effect rules that could not be evaluated, whose effects the plan takes all
-// the same, as Due gives them. The caller discards or swaps in Staged.
+// Result is a config that passed: its documents with defaults, its identity as JSON, its staged
+// outputs and the plan of its delivery. Warnings name effect rules that could not be evaluated,
+// whose effects the plan takes all the same. The caller discards or swaps in Staged.
 type Result struct {
 	Documents config.Redacted
 	Identity  []byte
@@ -191,11 +166,8 @@ type Result struct {
 // errNoFacts is the error of a check whose input gives no facts.
 var errNoFacts = errors.New("the check has no facts to give the rules")
 
-// Run checks in as img checks it, its stages in their order: it translates in.Delivered, runs the
-// image's change rules against in.Old with the image's defaults, its validators, and every
-// output's renderer and check, and plans the effects. A refused config is a *Refusal; any other
-// error is the image's own failure. A config refused after its translation still gives the
-// translation, whose storage a caller names in the refusal.
+// Run runs every stage on in.Delivered and plans the effects. A refused config is a *Refusal. A
+// config refused after its translation still returns the translation, so a caller can name it.
 func Run(ctx context.Context, img Image, in Input) (Result, error) {
 	if in.Facts == nil {
 		return Result{}, errNoFacts
@@ -213,11 +185,8 @@ func Run(ctx context.Context, img Image, in Input) (Result, error) {
 	return res, err
 }
 
-// RunTranslated is Run after the translation: it runs the image's change rules on docs, the set
-// translated, or checked by Image.CheckRedacted, against in.Old with the image's defaults, its
-// validators, and every output's renderer and check, and plans the effects. It reads docs in place
-// of in.Delivered, which it does not read, and the result holds no identity. A refused config is a
-// *Refusal; any other error is the image's own failure.
+// RunTranslated is Run after the translation, on docs in place of in.Delivered; the result holds
+// no identity. It serves documents checked as a set by Image.CheckRedacted, as an image's tests do.
 func RunTranslated(ctx context.Context, img Image, in Input, docs config.Redacted) (Result, error) {
 	if in.Facts == nil {
 		return Result{}, errNoFacts

@@ -40,11 +40,8 @@ func (v Validator) check(name string) error {
 	return nil
 }
 
-// Validate runs every validator of defs, in the order of their names, on the documents of in, as
-// Render runs a renderer, below Root/.validating, and returns the failures of those that refused
-// the config or did not run to their end. Each program gets an empty directory of its own as
-// $OUT, which it cannot write, and opens no netlink socket. An error is chalkd's own, such as one
-// preparing that directory, and no validator's.
+// Validate runs every validator of defs on in, below Root/.validating, and returns the failures
+// of those that refused the config or did not run to their end. An error is chalkd's own.
 func (r Renderer) Validate(ctx context.Context, defs map[string]Validator, in Input) ([]Failure, error) {
 	if len(defs) == 0 {
 		return nil, nil
@@ -88,9 +85,8 @@ type LinkedValidator struct {
 	Validate ValidateFunc
 }
 
-// RunLinked runs every linked validator, in the order given, on the documents of in, in-process,
-// as Validate runs a validator's program: on the same JSON, with its report held to the same
-// format, and returns the failures of those that refused the config or failed.
+// RunLinked runs every linked validator in-process on in and returns the failures of those that
+// refused the config or failed.
 func RunLinked(linked []LinkedValidator, in Input) []Failure {
 	var failures []Failure
 	for _, l := range linked {
@@ -101,10 +97,9 @@ func RunLinked(linked []LinkedValidator, in Input) []Failure {
 	return failures
 }
 
-// runLinked runs l on in, and parses its refusals as Validate parses a program's report, so a
-// linked validator refuses nothing a program could not print. It first replaces the runes of each
-// message that refusals.Unprintable reports by spaces, as chalkos-render does before it prints a
-// report, so a message that quotes one stays a refusal.
+// runLinked runs l on in and parses its refusals as a program's report, so a linked validator
+// refuses nothing a program could not print. Unprintable runes become spaces first, as
+// chalkos-render does, so a message that quotes one stays a refusal.
 func runLinked(l LinkedValidator, in Input) error {
 	stdin, err := in.stdin(l.Inputs)
 	if err != nil {

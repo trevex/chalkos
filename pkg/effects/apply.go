@@ -15,12 +15,8 @@ import (
 	"github.com/trevex/chalkos/pkg/tool/systemctl"
 )
 
-// Actions are what the due effects ask for together:
-//   - Reload and Restart: the units to reload and to restart, each sorted;
-//   - Start: the units of Restart to start too;
-//   - Run: the commands to run, in the order of their effects' names;
-//   - Chalkd: the layer actions to run, sorted;
-//   - Hints: the hint of each unit in the restart of any effect of the image, due or not.
+// Actions are what the due effects ask for together. Run keeps the order of the effects' names;
+// Hints holds the hint of each unit any effect of the image restarts, due or not.
 type Actions struct {
 	Reload, Restart []string
 	Start           map[string]bool
@@ -96,21 +92,14 @@ func (e *ApplyError) Error() string {
 
 func (e *ApplyError) Unwrap() error { return e.Err }
 
-// Apply reloads the units of a.Reload that run, runs a.Run, then restarts the units of a.Restart,
-// and returns the restarted units; the caller runs the layer actions of a.Chalkd. A unit it
-// restarts is not reloaded, because the restart reads all a reload would. A unit of a.Reload that
-// failed is restarted as a failed unit of a.Restart is: systemctl reloads no failed unit, and its
-// start, such as a firewall's that loads the new ruleset, is what the new config needs. It
-// restarts after the reloads, so after units that are ordered after it: a unit whose reload
-// depends on such a unit's work asks for that work itself, such as by restarting the unit.
-//
-// The restarts take one systemctl call for each way of restarting, each in the units' order:
-//   - try-restart for a unit that runs, or ran and stays active, so a unit that never started,
-//     or was stopped, stays so;
+// Apply reloads the units of a.Reload that run, runs a.Run, then restarts the units of a.Restart
+// and returns them; the caller runs a.Chalkd. A restarted unit is not reloaded too, and a failed
+// unit of a.Reload is restarted, since systemctl reloads no failed unit. The restarts take one
+// systemctl call per mode:
+//   - try-restart for a unit that runs, so a unit that never started or was stopped stays so;
 //   - restart for a unit whose effect starts it too;
-//   - reset-failed and restart for a unit that failed, such as one that found no document of its
-//     kind at boot. The new config may be what it lacked, and try-restart leaves a failed unit
-//     alone.
+//   - reset-failed and restart for a failed unit, which the new config may fix and try-restart
+//     leaves alone.
 //
 // What fails is an *ApplyError; the rest is done regardless.
 func Apply(ctx context.Context, r tool.Runner, a Actions) ([]string, error) {
@@ -212,19 +201,10 @@ func Apply(ctx context.Context, r tool.Runner, a Actions) ([]string, error) {
 	return restarted, nil
 }
 
-// unitOrder returns what sorts a list of the units of lists so that each unit follows the units
-// of the list it is ordered after, by its After= or their Before=, which systemd shows as its
-// After. systemctl queues the job of each unit it is given in a transaction of its own, one after
-// the other, and systemd holds a job back only for the jobs already queued: a job queued first
-// runs at once, whatever its unit's order. The order holds within one systemctl call alone, so
-// the reloads run before any restart, whatever the units' order.
-//
-// systemctl names the units of After by their main names, which a unit given by an alias matches
-// through its Names. Each step of the sort takes the first unit that follows none of the units
-// left, so units ordered against none of the others keep their place. Once only units that follow
-// one another in a cycle, or follow such units, are left, they all keep their order, after the
-// others. Every list keeps the order given when systemctl does not answer, or answers for other
-// units than those asked for, as for a glob.
+// unitOrder returns a sort of the units of lists by their After= ordering. systemctl queues each
+// unit's job in a transaction of its own, and systemd holds a job back only for jobs already
+// queued, so the order given decides; it holds within one call alone, so the reloads run before
+// any restart. Units in a cycle keep their order, after the others.
 func unitOrder(ctx context.Context, r tool.Runner, lists ...[]string) func([]string) []string {
 	keep := func(units []string) []string { return units }
 	var units []string

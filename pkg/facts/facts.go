@@ -80,8 +80,7 @@ func (d Definition) Check() error {
 }
 
 // programInStore tells whether the program a command line runs, its first word, is of the
-// image's store. The arguments are no concern of InStore: an argument such as /var/lib/ need not
-// be a clean path, and a blank command runs no program at all.
+// image's store; its arguments need not be store paths.
 func programInStore(cmd string) bool {
 	argv := strings.Fields(cmd)
 	return len(argv) > 0 && command.InStore(argv[0])
@@ -93,10 +92,8 @@ type Runner interface {
 	Run(ctx context.Context, argv []string, stdin []byte, limit int) ([]byte, error)
 }
 
-// Loader loads the facts of one delivery, each once, when a rule first reads it. A loader For
-// another input shares what it loaded: a file is read once a delivery, and a command runs once
-// for each input it reads. A loader and the loaders For it are not for concurrent use: chalkd
-// calls them in sequence, under the config lock.
+// Loader loads the facts of one delivery, each once, when a rule first reads it; the loaders For
+// other inputs share what it loaded. It is not for concurrent use.
 type Loader struct {
 	Definitions map[string]Definition
 	Run         Runner

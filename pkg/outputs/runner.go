@@ -15,15 +15,10 @@ import (
 	"github.com/trevex/chalkos/pkg/refusals"
 )
 
-// A Program is a renderer, a check or a validator to run: its argv, the input it reads on
-// standard input, and $OUT, the directory of the output's files, which a renderer may write and a
-// check may only read; a validator gets an empty directory of its own. The sandbox keeps the
-// program's input and output in files beside Out, and names the program's unit after Out's
-// extension, which makes it unique. Report tells that the program prints a report of refusals on
-// standard output, as a renderer and a validator do, which the runner returns, up to
-// refusals.MaxReport bytes; any other program's standard output is discarded, since a service's
-// own check can echo the files. Netlink lets the program open netlink sockets besides Unix ones,
-// as a check's nft --check needs. Timeout bounds it.
+// A Program is a renderer, a check or a validator to run, with Out as its $OUT. The sandbox names
+// the program's unit after Out's extension, which makes it unique. Report keeps standard output,
+// up to refusals.MaxReport bytes, as a report of refusals; Netlink allows the netlink sockets a
+// check such as nft --check needs.
 type Program struct {
 	Argv    []string
 	Stdin   []byte
@@ -54,19 +49,14 @@ func (e *ProgramError) Error() string { return "the program failed (" + e.Status
 // which owns $OUT while the renderer writes it.
 const RenderUser = "chalkos-render"
 
-// Sandbox runs programs as oneshot transient units that write standard error to the journal, and
-// standard output, of a program that reports refusals, to a file of chalkd's, in a
-// sandbox of their own: as RenderUser without capabilities, devices or network, on a read-only
-// system without STATE, /var, or the config, credentials and Kubernetes keys chalkd writes below
-// /run/chalkos, so a program reads no Secret's value; a renderer may write $OUT alone, and a check
-// may open netlink sockets besides Unix ones, which renderers and validators may not. Through
-// netlink a check reaches only its own network namespace, but nf_tables there makes the kernel
-// load the modules of the expressions a ruleset uses, ProtectKernelModules notwithstanding.
-// chalkos-config renders before sysinit.target, where the system bus does not run yet, so
-// systemd-run reaches the manager on its private socket, on which it cannot follow a unit as
-// --wait and --pipe do: the start job of a oneshot unit finishes when the program exits, the
-// program reads standard input from a file, and its exit status is the unit's. The units have no
-// default dependencies, which would wait for sysinit.target.
+// Sandbox runs programs as oneshot transient units, as RenderUser without capabilities, devices
+// or network, on a read-only system without STATE, /var or the secrets below /run/chalkos, so a
+// program reads no Secret's value. Through netlink a check reaches only its own network
+// namespace, but nf_tables there loads the modules a ruleset uses despite ProtectKernelModules.
+// Renders at boot run before the system bus, so systemd-run uses the manager's private socket,
+// which cannot follow a unit as --wait and --pipe do: stdin comes from a file and the oneshot's
+// start job ends with the program. The units have no default dependencies, which would wait for
+// sysinit.target.
 type Sandbox struct{}
 
 // stopMargin is how much longer than a program's timeout chalkd waits for systemd-run, so the
