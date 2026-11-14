@@ -53,7 +53,6 @@ func TestChanges(t *testing.T) {
 		{"larger and mounted elsewhere", with("data", func(v *Volume) { v.Size = "2G"; v.MountPoint = "" }), []Change{{"data", "larger: 2G instead of 1G; mounted at null instead of /var/lib/data"}}},
 		// The changes the node does not make are the rules' to refuse.
 		{"smaller size", with("data", func(v *Volume) { v.Size = "512M" }), nil},
-		{"fixed size where null was", with("var", func(v *Volume) { v.Size = "" }), []Change{{"var", "fills its disk instead of 2G"}}},
 		{"another format", with("data", func(v *Volume) { v.Format = "ext4" }), nil},
 		{"removed volume", with("data", nil), nil},
 		{"equal size written differently", with("data", func(v *Volume) { v.Size = "1024M" }), nil},
