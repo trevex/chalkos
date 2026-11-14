@@ -20,7 +20,7 @@ in
     chalkos-storage
     ;
 
-  test-secureboot = import ./testing/secureboot.nix { inherit pkgs; };
+  test-secureboot = import ../testing/secureboot.nix { inherit pkgs; };
   test-secrets = testing.secrets;
 
   # The documentation site.
@@ -46,7 +46,7 @@ in
   # The kubelet of every Kubernetes release an image can run, by minor, to build by hand after a
   # change of the table. No check builds it: each release but nixpkgs's own compiles from source.
   kubelet-releases = pkgs.linkFarm "kubelet-releases" (
-    import ../modules/node/kubernetes/releases.nix { inherit lib pkgs; }
+    import ../../modules/node/kubernetes/releases.nix { inherit lib pkgs; }
   );
 
   # The installer without an OS CA: it accepts any client until it installs a node.

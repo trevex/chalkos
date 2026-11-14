@@ -6,7 +6,7 @@
 }:
 let
   inherit (pkgs) lib;
-  testEnv = import ./testing/env.nix { inherit pkgs self; };
+  testEnv = import ../testing/env.nix { inherit pkgs self; };
 
   # TestKubernetesCluster without the test's registry: the nodes' mirror is unreachable, so
   # containerd falls back to pulling their images from the upstream registries. It needs network

@@ -129,7 +129,7 @@ in
             case "$dir/" in "$path"/*) covered=1 ;; esac
           done
           if [ -z "$covered" ]; then
-            echo "error: $name imports ./$dir, which nix/$name.nix does not list" >&2
+            echo "error: $name imports ./$dir, which nix/packages/$name.nix does not list" >&2
             failed=1
           fi
         done
@@ -139,7 +139,7 @@ in
             case "$dir/" in "$path"/*) used=1 ;; esac
           done
           if [ -z "$used" ]; then
-            echo "error: nix/$name.nix lists ./$path, of which $name imports no package" >&2
+            echo "error: nix/packages/$name.nix lists ./$path, of which $name imports no package" >&2
             failed=1
           fi
         done

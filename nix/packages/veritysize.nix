@@ -4,8 +4,8 @@
 buildGoProgram {
   pname = "veritysize";
   paths = [
-    ../test/veritysize
-    ../pkg/verity
+    ../../test/veritysize
+    ../../pkg/verity
   ];
   subPackages = [ "test/veritysize" ];
 }

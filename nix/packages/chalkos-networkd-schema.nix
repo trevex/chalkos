@@ -3,7 +3,7 @@
 buildGoProgram {
   pname = "chalkos-networkd-schema";
   paths = [
-    ../cmd/chalkos-networkd-schema
-    ../pkg/networkdschema
+    ../../cmd/chalkos-networkd-schema
+    ../../pkg/networkdschema
   ];
 }

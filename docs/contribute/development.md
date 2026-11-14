@@ -21,7 +21,7 @@ cd chalkos
 nix develop
 ```
 
-The shell, defined in `nix/shell.nix`, provides:
+The shell, defined in `nix/outputs/shell.nix`, provides:
 
 - Go, gopls, staticcheck, buf with protoc-gen-go, protoc-gen-connect-go and protoc-gen-doc,
   openssl, jq, nixfmt and virt-firmware;
@@ -40,7 +40,7 @@ use the same tools and variables from `nix/testing/env.nix`.
 
 The `go` directive of `go.mod` names the Go release that builds chalkos, such as `go 1.27.4`.
 The flake input `go-overlay` provides that release as the Go project publishes it, independent
-of the Go version nixpkgs ships. `nix/overlay.nix` selects it from `go.mod` with go-overlay's
+of the Go version nixpkgs ships. `nix/overlay/default.nix` selects it from `go.mod` with go-overlay's
 `fromGoModStrict`, which fails when go-overlay lacks that exact release, and adds it to nixpkgs
 as `pkgs.chalkos.go`, in the scope of chalkos's packages. The development shell, every Go
 package, the `go-unit` and `go-lint` checks and the programs in the images use it, and the
@@ -53,7 +53,7 @@ To move to another Go release:
 1. Update go-overlay if it predates the release: `nix flake update go-overlay`.
 2. Change the `go` directive in `go.mod`.
 3. Run `nix build .#chalkctl`. If it reports a hash mismatch for the Go modules, set
-   `vendorHash` in `nix/build-go-program.nix` to the hash it reports.
+   `vendorHash` in `nix/overlay/build-go-program.nix` to the hash it reports.
 4. Run the `go-lint` and `go-unit` checks and fix their findings.
 
 `nix run github:purpleclay/go-overlay#goversions` lists the releases go-overlay provides.

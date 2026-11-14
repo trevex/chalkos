@@ -13,25 +13,25 @@
 buildGoProgram {
   pname = "chalkbuild";
   paths = [
-    ../cmd/chalkbuild
-    ../pkg/arch
-    ../pkg/atomicfile
-    ../pkg/chalkbuild
-    ../pkg/image
-    ../pkg/imagepart
-    ../pkg/imagesign
-    ../pkg/internal/cli
-    ../pkg/internal/filecopy
-    ../pkg/internal/strs
-    ../pkg/jsonfile
-    ../pkg/ociimage
-    ../pkg/pki
-    ../pkg/networkdschema
-    ../pkg/schema
-    ../pkg/imageref
-    ../pkg/secureboot
-    ../pkg/uki
-    ../pkg/verity
+    ../../cmd/chalkbuild
+    ../../pkg/arch
+    ../../pkg/atomicfile
+    ../../pkg/chalkbuild
+    ../../pkg/image
+    ../../pkg/imagepart
+    ../../pkg/imagesign
+    ../../pkg/internal/cli
+    ../../pkg/internal/filecopy
+    ../../pkg/internal/strs
+    ../../pkg/jsonfile
+    ../../pkg/ociimage
+    ../../pkg/pki
+    ../../pkg/networkdschema
+    ../../pkg/schema
+    ../../pkg/imageref
+    ../../pkg/secureboot
+    ../../pkg/uki
+    ../../pkg/verity
   ];
   nativeBuildInputs = [ makeWrapper ];
   postFixup = ''

@@ -1,6 +1,6 @@
 { pkgs, self }:
 let
-  testEnv = import ./testing/env.nix { inherit pkgs self; };
+  testEnv = import ../testing/env.nix { inherit pkgs self; };
 in
 pkgs.mkShell (
   {

@@ -24,15 +24,15 @@ let
   # The lab template's files the pages include as snippets.
   templateSnippets = [ "cluster" ];
   src = lib.fileset.toSource {
-    root = ../.;
+    root = ../../.;
     fileset = lib.fileset.unions (
       [
-        ../zensical.toml
-        ../docs
+        ../../zensical.toml
+        ../../docs
       ]
-      ++ map (path: ../examples/homelab + "/${path}") homelabSnippets
-      ++ map (path: ../examples/extensions + "/${path}") extensionsSnippets
-      ++ map (path: ../templates/lab + "/${path}") templateSnippets
+      ++ map (path: ../../examples/homelab + "/${path}") homelabSnippets
+      ++ map (path: ../../examples/extensions + "/${path}") extensionsSnippets
+      ++ map (path: ../../templates/lab + "/${path}") templateSnippets
     );
   };
   # The pages and files docgen writes, as they lie in the repository.
@@ -51,14 +51,14 @@ let
   # The pages that title the links of command help to the site: every page but the generated
   # command pages, which would otherwise feed their own generation.
   helpLinkPages = lib.fileset.toSource {
-    root = ../docs;
-    fileset = lib.fileset.difference ../docs ../docs/reference/cli;
+    root = ../../docs;
+    fileset = lib.fileset.difference ../../docs ../../docs/reference/cli;
   };
 
   inherit (pkgs.chalkos) docgen;
 
   # Declarations link to the repository rather than to the store path of the flake's source.
-  root = toString ../.;
+  root = toString ../../.;
   repository = "https://github.com/trevex/chalkos/blob/main";
   linkDeclarations =
     opt:
@@ -81,7 +81,7 @@ let
 
   # The arguments of chalkos.lib.mkImages, from the module that checks them.
   arguments = lib.evalModules {
-    modules = [ ../lib/images-arguments.nix ];
+    modules = [ ../../lib/images-arguments.nix ];
     specialArgs.defaultNixpkgs = self.inputs.nixpkgs;
   };
   argumentOptions =
@@ -90,15 +90,15 @@ let
       transformOptions = linkDeclarations;
     }).optionsJSON;
 
-  # The documentation is generated and checked against the images of testing/fixtures.nix: the
+  # The documentation is generated and checked against the images of nix/testing/fixtures.nix: the
   # default variant, whose options the reference lists, one without Kubernetes, whose built-ins are
   # those of every image, a router image, whose kinds and built-ins router images add, and one with
   # the examples' extensions, whose documents the pages show as an extension's. An image's own
   # options are those the node modules declare.
   imageSystem = fixtures.nixos.docs-metal;
   # The schemas of chalkctl's inventory and chalklab's lab file, which they are built with.
-  inventorySchema = ../pkg/inventory/chalkctl.chalkos.dev_v1alpha1_Inventory.json;
-  labSchema = ../pkg/chalklab/chalklab.chalkos.dev_v1alpha1_Lab.json;
+  inventorySchema = ../../pkg/inventory/chalkctl.chalkos.dev_v1alpha1_Inventory.json;
+  labSchema = ../../pkg/chalklab/chalklab.chalkos.dev_v1alpha1_Lab.json;
   # The schemas of the kinds router images add.
   routerSchemas = "${fixtures.nixos.edge-metal.config.system.build.chalkosSchemas}/router.chalkos.dev_*.json";
   # The schemas the pages' config documents are checked against: the kinds of the image with the
@@ -145,7 +145,7 @@ let
 
   # The openings of the options pages, and the end of the extension API's, which docgen options
   # writes the options between.
-  optionsTemplates = ./docs-templates;
+  optionsTemplates = ./templates;
 in
 rec {
   inherit docgen;
@@ -165,7 +165,7 @@ rec {
         cp -r ${src} work
         chmod -R u+w work
         cd work
-        python3 ${./docs-nav.py} zensical.toml
+        python3 ${./nav.py} zensical.toml
         zensical build --strict --clean
         cp -r site $out
       '';
@@ -185,18 +185,18 @@ rec {
           pkgs.protoc-gen-doc
         ];
         api = lib.fileset.toSource {
-          root = ../.;
+          root = ../../.;
           fileset = lib.fileset.unions [
-            ../buf.yaml
-            ../buf.gen.yaml
-            ../api
+            ../../buf.yaml
+            ../../buf.gen.yaml
+            ../../api
           ];
         };
       }
       ''
         export HOME=$TMPDIR
         mkdir -p $out/docs/reference $out/docs/includes
-        install -m 644 ${../zensical.toml} $out/zensical.toml
+        install -m 644 ${../../zensical.toml} $out/zensical.toml
         docgen cli $out/docs/reference/cli $out/zensical.toml ${helpLinkPages}
         docgen kinds $out/docs/reference/kinds.md ${kindSchemas} ${snippetSchemas}/chalkctl.chalkos.dev_v1alpha1_Inventory.json ${snippetSchemas}/chalklab.chalkos.dev_v1alpha1_Lab.json
         docgen options $out/docs/reference ${optionsTemplates} ${argumentOptions}/share/doc/nixos/options.json ${imageOptions}/share/doc/nixos/options.json
@@ -205,7 +205,7 @@ rec {
         chmod -R u+w proto
         (cd proto && buf generate)
         cp proto/docs/reference/api.md $out/docs/reference/api.md
-        docgen abbr ${../docs/reference/glossary.md} $out/docs/includes/abbreviations.md
+        docgen abbr ${../../docs/reference/glossary.md} $out/docs/includes/abbreviations.md
       '';
 
   # The site builds strictly; the chalkctl, chalklab, chalkbuild and chalkcfg commands its pages

@@ -472,12 +472,13 @@ The layout follows these rules, so each change has one place to go:
 - The node modules declare the image options; `lib/images-arguments.nix` declares the
   arguments of `mkImages`. Everything about a cluster or a node is a config kind, not an option.
 - Go code reads a node's config documents and the image's files alone.
-- `nix/` holds packages and tooling: apps, checks, the development shell, the docs build and
-  test fixtures. `overlay.nix` adds `pkgs.chalkos`, the scope of chalkos's programs and Go
-  toolchain, which the flake exports as `overlays.default` and mkImages applies to the images'
-  nixpkgs. The node modules take chalkos's programs and scripts from that scope and decide where
-  and with which arguments an image runs them. A script a module builds from its config, such as
-  the control plane's ports, sits next to that module.
+- `nix/` holds how the repository builds and checks chalkos: the packages, the overlay, the
+  flake outputs, the docs build, the checks and the test images. `nix/overlay/default.nix` adds
+  `pkgs.chalkos`, the scope of chalkos's programs and Go toolchain, which the flake exports as
+  `overlays.default` and mkImages applies to the images' nixpkgs. The node modules take
+  chalkos's programs and scripts from that scope and decide where and with which arguments an
+  image runs them. A script a module builds from its config, such as the control plane's ports,
+  sits next to that module.
 - `cmd/` holds the mains, which wire packages up; logic worth testing lives in `pkg/`.
 
 [Development setup](development.md) lists the commands of a development loop and

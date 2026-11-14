@@ -16,14 +16,14 @@
     }:
     let
       system = "x86_64-linux";
-      overlay = import ./nix/overlay.nix { inherit go-overlay; };
+      overlay = import ./nix/overlay { inherit go-overlay; };
       pkgs = nixpkgs.legacyPackages.${system}.extend overlay;
       chalkos = import ./lib { inherit nixpkgs overlay; };
       # The images the e2e tests boot, those the checks and the documentation evaluate, and the
       # documentation, which the packages, checks and apps share.
       testing = import ./nix/testing/images.nix { inherit self pkgs; };
       fixtures = import ./nix/testing/fixtures.nix { inherit self; };
-      docs = import ./nix/docs.nix { inherit pkgs self fixtures; };
+      docs = import ./nix/docs { inherit pkgs self fixtures; };
       arguments = {
         inherit
           pkgs
@@ -41,10 +41,10 @@
         path = ./templates/lab;
         description = "A cluster of a control plane and a worker that chalklab runs as QEMU virtual machines";
       };
-      packages.${system} = import ./nix/packages.nix arguments;
+      packages.${system} = import ./nix/outputs/packages.nix arguments;
       checks.${system} = import ./nix/checks arguments;
-      apps.${system} = import ./nix/apps.nix arguments;
-      devShells.${system}.default = import ./nix/shell.nix { inherit pkgs self; };
+      apps.${system} = import ./nix/outputs/apps.nix arguments;
+      devShells.${system}.default = import ./nix/outputs/shell.nix { inherit pkgs self; };
       formatter.${system} = pkgs.nixfmt-tree;
     };
 }

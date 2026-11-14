@@ -3,11 +3,11 @@
 buildGoProgram {
   pname = "chalkos-storage";
   paths = [
-    ../cmd/chalkos-storage
-    ../pkg/atomicfile
-    ../pkg/internal/poll
-    ../pkg/storage
-    ../pkg/tool
+    ../../cmd/chalkos-storage
+    ../../pkg/atomicfile
+    ../../pkg/internal/poll
+    ../../pkg/storage
+    ../../pkg/tool
   ];
   ldflags = [
     "-s"

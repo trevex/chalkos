@@ -10,13 +10,13 @@
 buildGoProgram {
   pname = "chalkos-render";
   paths = [
-    ../cmd/chalkos-render
-    ../pkg/dns
-    ../pkg/networkdschema
-    ../pkg/refusals
-    ../pkg/router/derive
-    ../pkg/router/keaconf
-    ../pkg/router/services
+    ../../cmd/chalkos-render
+    ../../pkg/dns
+    ../../pkg/networkdschema
+    ../../pkg/refusals
+    ../../pkg/router/derive
+    ../../pkg/router/keaconf
+    ../../pkg/router/services
   ];
   ldflags = [
     "-s"

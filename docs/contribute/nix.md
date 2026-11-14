@@ -12,13 +12,28 @@ describes what the modules do.
 
 ## Where Nix code lives
 
+The repository's top level holds what chalkos is and what its users use: the Go code, `modules/`,
+`lib/`, `templates/`, `examples/`, `docs/` and `test/`. `nix/` holds how the repository builds
+and checks it.
+
 | Path | What it holds |
 | --- | --- |
 | `flake.nix` | The flake's inputs and outputs. Each output is built in a file the flake imports. |
 | `lib/` | The flake's `lib`: chalkosLib plus `mkImages` (`default.nix`). chalkosLib (`chalkos.nix`) is a function of nixpkgs's `lib` alone, with no `pkgs` and no store paths. `mkImages` (`images.nix`) evaluates a cluster's images; its arguments are declared in `images-arguments.nix`. |
-| `nix/` | `overlay.nix`, which adds `pkgs.chalkos`, the scope of chalkos's packages, with one file per package; the flake's packages, apps, development shell, docs build and checks; and the test images in `testing/`. |
 | `modules/` | The NixOS modules of the images: `node/` (every image, plus the Kubernetes and router layers), `platforms/`, `installer/` and `testing/`. |
 | `test/nix/` | The evaluation tests, which the `eval` and `eval-kinds` checks run. |
+| `nix/` | How the repository builds and checks chalkos, one entry per kind of file. |
+
+`nix/` holds these entries:
+
+| Path | What it holds |
+| --- | --- |
+| `nix/overlay/` | `default.nix`, the overlay that adds `pkgs.chalkos`, the scope of chalkos's packages, and the scope's helpers: `build-go-program.nix` (`buildGoProgram`) and `go-paths.nix` (`treeGoPaths`). |
+| `nix/packages/` | The scope's packages, one file each, named as the package. The overlay finds them with `lib.packagesFromDirectoryRecursive`. |
+| `nix/outputs/` | The flake outputs that one file builds: `packages.nix`, `apps.nix` and `shell.nix`, the development shell. |
+| `nix/docs/` | The docs output: `default.nix` builds the site and the generated reference pages, `nav.py` checks the site's navigation, and `templates/` holds the openings of the options pages and the end of the extension API's. |
+| `nix/checks/` | The flake's checks. |
+| `nix/testing/` | The test images, their fixtures and the test environment that the checks, the apps and the development shell share. |
 
 ## What a module gets
 
@@ -48,10 +63,11 @@ packages with `pkgs.chalkos.overrideScope`.
 
 1. If it needs only `lib` and belongs to no layer, add it to chalkosLib in `lib/`, under
    `internal` unless extensions should call it.
-2. If it builds a derivation that the flake or an image ships, write a package file in `nix/` and
-   add it to the scope in `nix/overlay.nix`. A package file takes its dependencies by name, as
-   `callPackage` passes them. A file that takes an argument with the same name as a member of
-   the scope gets that argument passed explicitly, as `kea.nix` gets nixpkgs's `kea`.
+2. If it builds a derivation that the flake or an image ships, it is a file in `nix/packages/`,
+   named as the package. The overlay adds every file there to the scope, so a new package needs
+   no other change. A package file takes its dependencies by name, as `callPackage` passes them.
+   A file that takes an argument with the same name as a member of the scope gets that argument
+   passed explicitly in `nix/overlay/default.nix`, as `kea.nix` gets nixpkgs's `kea`.
 3. If it needs a module's `config` or belongs to one layer, add it to that layer's module
    argument, as `routerLib` is for the router layer.
 4. If one module uses it, put it in a file next to that module. A script that a module builds

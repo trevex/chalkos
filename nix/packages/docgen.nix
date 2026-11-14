@@ -3,7 +3,7 @@
 buildGoProgram {
   pname = "docgen";
   paths = [
-    ../cmd
-    ../pkg
+    ../../cmd
+    ../../pkg
   ];
 }

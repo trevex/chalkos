@@ -4,15 +4,15 @@
 buildGoProgram {
   pname = "chalkos-console";
   paths = [
-    ../cmd/chalkos-console
-    ../pkg/api
-    ../pkg/askpassword
-    ../pkg/client
-    ../pkg/console
-    ../pkg/jsonfile
-    ../pkg/layers
-    ../pkg/pki
-    ../pkg/statusview
+    ../../cmd/chalkos-console
+    ../../pkg/api
+    ../../pkg/askpassword
+    ../../pkg/client
+    ../../pkg/console
+    ../../pkg/jsonfile
+    ../../pkg/layers
+    ../../pkg/pki
+    ../../pkg/statusview
   ];
   ldflags = [
     "-s"
