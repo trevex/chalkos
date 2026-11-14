@@ -187,7 +187,9 @@ The image directory is what the inventory names; the OCI layout goes to a regist
 - `installer` is one directory with a raw image and a hybrid ISO, which installs images of every
   platform. [Customise the installer](customise-installer.md) adds to it.
 - `nixos.<variant>-<platform>` and `nixos.installer` are the evaluated NixOS systems. They read an
-  image's options, such as `nixos.node-metal.config.chalkos.kubernetes.package.version`.
+  image's options, such as `nixos.node-metal.config.chalkos.kubernetes.package.version`, and
+  their `config.system.build` holds parts of the image that build on their own, such as its
+  schemas, `chalkosSchemas`.
 
 A flake exposes whichever it needs. The homelab's exposes its two image directories and the
 installer by name. A flake can also expose every image directory and the installer at once:
@@ -195,6 +197,15 @@ installer by name. A flake can also expose every image directory and the install
 ```nix
 packages.x86_64-linux = images.images // { inherit (images) installer; };
 ```
+
+The homelab's flake also exports the NixOS systems, as `nixosConfigurations`:
+
+```nix
+nixosConfigurations = images.nixos;
+```
+
+The guides use them to build one part of an image without the rest, such as its schemas with
+`nix build .#nixosConfigurations.node-metal.config.system.build.chalkosSchemas`.
 
 ## Check that it worked
 

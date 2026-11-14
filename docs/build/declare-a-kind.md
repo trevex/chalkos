@@ -190,6 +190,42 @@ Each part of the schema comes from the options:
   [Withheld kinds stay out of /run](../how-it-works/node/config.md#withheld-kinds-stay-out-of-run)
   describes.
 
+You can look at a schema without building the image. The schemas are a build output of their own,
+`system.build.chalkosSchemas`, which builds in seconds. The homelab's flake exports the images' evaluated NixOS systems as
+`nixosConfigurations`:
+
+```nix
+nixosConfigurations = images.nixos;
+```
+
+Build the node image's schemas and print the `asn` field of `Peer`:
+
+```console
+$ nix build .#nixosConfigurations.node-metal.config.system.build.chalkosSchemas
+$ jq .properties.spec.properties.asn result/bgp.example.org_v1alpha1_Peer.json
+{
+  "description": "AS number of the neighbour.",
+  "examples": [
+    65000
+  ],
+  "maximum": 4294967295,
+  "minimum": 1,
+  "type": "integer",
+  "x-chalkos-rules": [
+    {
+      "description": "A Peer keeps its AS number.",
+      "messageExpression": "\"the AS number stays \" + string(oldSelf) + \"; add a Peer of another name for \" + string(self)",
+      "rule": "self == oldSelf",
+      "takes": "refuse"
+    }
+  ]
+}
+```
+
+`result/` holds a file for each kind the image accepts, chalkos's own among them. The same
+outputs show what other guides describe: [Add software and drivers](add-software.md) builds the
+image's kernel modules the same way.
+
 chalkctl and chalkd check every document against these schemas:
 
 ```mermaid

@@ -36,6 +36,7 @@ A flake calls mkImages and exposes the images to build:
     in
     {
       packages.x86_64-linux = images.images // { inherit (images) installer; };
+      nixosConfigurations = images.nixos;
     };
 }
 ```
@@ -52,4 +53,7 @@ mkImages returns an attribute set:
 - `installer`: the installer, a raw image and a hybrid ISO in one directory, which installs
   images of every platform.
 - `nixos.<variant>-<platform>` and `nixos.installer`: the evaluated NixOS systems, to read an
-  image's options, such as `nixos.node-metal.config.chalkos.kubernetes.package.version`.
+  image's options, such as `nixos.node-metal.config.chalkos.kubernetes.package.version`. A flake
+  exports them as `nixosConfigurations`, so that
+  `nix build .#nixosConfigurations.node-metal.config.system.build.chalkosSchemas` builds one part
+  of an image, its schemas here, without the rest.

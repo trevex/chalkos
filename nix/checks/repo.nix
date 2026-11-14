@@ -207,6 +207,10 @@ in
       pkgs.kubectl
     ];
     assert lib.isString shell.drvPath;
+    # nixosConfigurations holds the system the image is built from, whose outputs the guides build.
+    assert
+      template.nixosConfigurations.node-kvm.config.system.build.chalkosImage.drvPath
+      == template.packages.${system}.node-kvm.drvPath;
     checkLib.validateDirectory {
       name = "template-lab";
       src = ../../templates/lab;
@@ -228,6 +232,18 @@ in
     in
     # The installer, which the guide writes to a USB stick, evaluates.
     assert lib.isString packages.installer.drvPath;
+    # nixosConfigurations holds the systems the images are built from, whose outputs the guides
+    # build, such as declare-a-kind.md's schemas.
+    assert lib.all
+      (
+        image:
+        homelab.nixosConfigurations.${image}.config.system.build.chalkosImage.drvPath
+        == packages.${image}.drvPath
+      )
+      [
+        "router-metal"
+        "node-metal"
+      ];
     checkLib.validateDirectory {
       name = "example-homelab";
       src = ../../examples/homelab;
@@ -248,6 +264,10 @@ in
         self = { };
       };
     in
+    # nixosConfigurations holds the system the image is built from, whose outputs the guides build.
+    assert
+      example.nixosConfigurations.node-metal.config.system.build.chalkosImage.drvPath
+      == example.packages.${pkgs.stdenv.hostPlatform.system}.node-metal.drvPath;
     checkLib.validateDirectory {
       name = "example-extensions";
       src = ../../examples/extensions;

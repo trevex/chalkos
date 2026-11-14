@@ -83,17 +83,11 @@ $ modinfo -n mt7921e
 
 `drivers/net/wireless` belongs to the `wireless` group. Next, check whether the image carries the
 module. The image's module tree is a build output of its own, so this needs no full image build.
-Expose the tree of the image's NixOS system in `flake.nix`, next to the images:
-
-```nix
-packages.x86_64-linux.node-metal-modules =
-  images.nixos.node-metal.config.system.build.chalkosKernelModules;
-```
-
-Then build it and look for the module:
+A flake that exports the images' NixOS systems, `nixosConfigurations = images.nixos;` as the
+homelab's does, builds the tree alone. Build it and look for the module:
 
 ```console
-$ nix build .#node-metal-modules
+$ nix build .#nixosConfigurations.node-metal.config.system.build.chalkosKernelModules
 $ find result/ -name 'mt7921e*'
 ```
 

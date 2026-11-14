@@ -31,6 +31,11 @@
         inherit (images) installer;
       };
 
+      # The evaluated NixOS systems, <image> and installer, whose build outputs a guide builds on
+      # their own, such as an image's schemas:
+      # nix build .#nixosConfigurations.node-metal.config.system.build.chalkosSchemas
+      nixosConfigurations = images.nixos;
+
       # nix develop: chalkctl and chalkbuild of the chalkos this flake pins, and the other tools
       # the guide runs.
       devShells.${system}.default = pkgs.mkShellNoCC {

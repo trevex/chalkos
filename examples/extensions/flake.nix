@@ -22,5 +22,10 @@
       # nix build .#node-metal -o images/node-metal: the image where the inventory, chalkos.yaml,
       # points.
       packages.x86_64-linux.node-metal = images.images.node-metal;
+
+      # The evaluated NixOS systems, node-metal and installer, whose build outputs a guide builds
+      # on their own, such as the image's schemas:
+      # nix build .#nixosConfigurations.node-metal.config.system.build.chalkosSchemas
+      nixosConfigurations = images.nixos;
     };
 }

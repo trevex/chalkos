@@ -24,6 +24,11 @@
       # points.
       packages.${system}.node-kvm = images.images.node-kvm;
 
+      # The evaluated NixOS systems, node-kvm and installer, whose build outputs a guide builds on
+      # their own, such as the image's schemas:
+      # nix build .#nixosConfigurations.node-kvm.config.system.build.chalkosSchemas
+      nixosConfigurations = images.nixos;
+
       # nix develop: chalklab and chalkctl of the chalkos this flake pins, and kubectl.
       devShells.${system}.default = pkgs.mkShellNoCC {
         packages = [
