@@ -33,21 +33,35 @@ let
       "wireguard"
     ];
 
-    # The option chalkos.router.<name>.enable of the feature name of features, which images carry
-    # unless a variant leaves it out.
+    # The outputs of the router layer, which the tests of its examples compare with golden files on
+    # an image with every feature.
+    outputs = [
+      "router-sysctl"
+      "router-nftables"
+      "frr"
+      "jool"
+      "unbound"
+      "networkd"
+      "kea"
+      "dhcp-relay"
+    ];
+
+    # The options a feature declares under chalkos.router: <name>.enable, whether the image
+    # carries the feature, which it does unless a variant leaves it out. The name must be one of
+    # features.
     feature =
       name: description:
       chalkosLib.internal.refuse
         (lib.optional (
           !lib.elem name routerLib.features
         ) "the router feature ${name} is missing from routerLib.features")
-        (
-          lib.mkOption {
+        {
+          ${name}.enable = lib.mkOption {
             type = lib.types.bool;
             default = true;
             inherit description;
-          }
-        );
+          };
+        };
 
     # Keeps the kinds of a list that the image accepts, in order, so an output reads the kinds of
     # another feature only on images that carry it.

@@ -15,6 +15,23 @@ let
   # checks, and whose units the router checks run.
   router = fixtures.nixos.edge-metal;
 
+  # The files the router image renders from its example <example>.yaml, as its test
+  # router-<example> got them: a link to a directory of <output>/<file>, whose store paths have
+  # their hashes written as e's. It fails to build when the test rendered nothing.
+  routerRendered =
+    example:
+    pkgs.runCommand "chalkos-router-${example}-rendered" { } ''
+      dir=${router.config.system.build.chalkosTestResults}/router-${example}/outputs
+      if [ ! -d "$dir" ]; then
+        echo "error: router-${example} rendered nothing; see checks.image-tests" >&2
+        exit 1
+      fi
+      ln -s "$dir" $out
+    '';
+
+  # The ruleset the router image renders from its example <example>.yaml.
+  routerRuleset = example: "${routerRendered example}/router-nftables/ruleset.nft";
+
   # Runs the script as root of user and network namespaces of its own. In there:
   # - run/ and var/ of the build directory are /run and /var;
   # - /etc holds the worker's schemas and the root user alone, nothing of the host's.
@@ -71,16 +88,12 @@ in
     fixtures
     prelude
     router
+    routerRendered
+    routerRuleset
     testing
     worker
     ;
   testEnv = import ../testing/env.nix { inherit pkgs self; };
-
-  # The files the router image renders from its example <example>.yaml, as its test
-  # router-<example> got them: a directory of <output>/<file>, whose store paths have their hashes
-  # written as e's.
-  routerRendered =
-    example: "${router.config.system.build.chalkosTestResults}/router-${example}/outputs";
 
   # The script NixOS runs to load and reload the worker's firewall.
   firewall =

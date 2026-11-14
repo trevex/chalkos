@@ -34,7 +34,7 @@ let
   dir = router.chalkos.outputs.kea.dir;
   nftDir = router.chalkos.outputs.router-nftables.dir;
   leases = lib.elemAt router.chalkos.diagnostics.dhcp-leases.command 2;
-  inherit (checkLib) routerRendered;
+  inherit (checkLib) routerRendered routerRuleset;
 in
 unitCheck "router-dhcp6"
   (
@@ -73,12 +73,17 @@ unitCheck "router-dhcp6"
     mkdir -m 0750 /run/kea /var/lib/kea
     mkdir -m 0755 ${records}
     mkdir -m 0700 ${records}.new
-    install -m 644 ${routerRendered "dhcp6"}/router-nftables/ruleset.nft ${nftDir}/ruleset.nft
+    install -m 644 ${routerRuleset "dhcp6"} ${nftDir}/ruleset.nft
     ${firewall} || fail "chalkos-firewall did not load the dhcp6 example's ruleset"
     # take <file>: a config the dhcp6 example renders, with the image's hook in place of the
     # test result's, whose store path has its hash written as e's.
     take() {
-      jq --arg hook ${pdHook} '(.Dhcp6["hooks-libraries"][] | select(.library == "libdhcp_run_script.so") | .parameters.name) = $hook' ${routerRendered "dhcp6"}/kea/"$1" >"${dir}/$1"
+      local rendered=${routerRendered "dhcp6"}/kea/$1
+      jq -e .Dhcp6 "$rendered" >/dev/null || fail "the dhcp6 example renders no DHCPv6 server in $1"
+      jq --arg hook ${pdHook} \
+        '(.Dhcp6["hooks-libraries"][] | select(.library == "libdhcp_run_script.so")
+          | .parameters.name) = $hook' \
+        "$rendered" >"${dir}/$1"
     }
     take kea-dhcp6.json
     take kea-dhcp6-access.json
@@ -166,7 +171,7 @@ unitCheck "router-dhcp6"
     mv records.real ${records}
 
     # Without the opening the client gets nothing.
-    install -m 644 ${routerRendered "dhcp"}/router-nftables/ruleset.nft ${nftDir}/ruleset.nft
+    install -m 644 ${routerRuleset "dhcp"} ${nftDir}/ruleset.nft
     ${firewall} || fail "chalkos-firewall did not load the dhcp example's ruleset"
     on_pc ip -6 addr flush dev eth0 scope global
     lease pc "  ia_na 1"

@@ -27,6 +27,17 @@ let
   inherit (routerLib) accepted;
   # Whether the image carries every feature of the router.
   allFeatures = lib.all (feature: config.chalkos.router.${feature}.enable) routerLib.features;
+  # The VRF example with the strict reverse-path filter in its Router, in place of the default
+  # loose one.
+  vrfStrict =
+    let
+      vrf = builtins.readFile ../examples/router/vrf.yaml;
+      management = "  management: {interfaces: [eth0]}\n";
+      strict = lib.replaceStrings [ management ] [ "${management}  rpFilter: strict\n" ] vrf;
+    in
+    chalkosLib.internal.refuse (lib.optional (strict == vrf)
+      "the VRF example's Router no longer gives its management interfaces on a line of their own"
+    ) (pkgs.writeText "vrf-strict.yaml" strict);
 in
 {
   imports = [
@@ -113,21 +124,38 @@ in
       chalkos.layers.router = "";
       chalkos.forwarding.enable = true;
       # The examples' tests run as the node r1 and, on an image with every feature of the router,
-      # compare the outputs with the golden files of tests/<example>/<output>. An image that leaves
-      # a feature out renders the examples it accepts without comparing them.
-      chalkos.tests = lib.mapAttrs (
-        name: t:
-        let
-          dir = ./tests + "/${lib.removePrefix "router-" name}";
-        in
-        t
-        // {
-          node = "r1";
-          outputs = lib.optionalAttrs (allFeatures && builtins.pathExists dir) (
-            lib.mapAttrs (output: _: dir + "/${output}") (builtins.readDir dir)
-          );
-        }
-      ) (chalkosLib.internal.exampleTests "router" config.chalkos.router.examples);
+      # compare each router output with the golden files of tests/<example>/<output>, or with no
+      # file where that directory is missing, as git keeps no empty one. An image that leaves a
+      # feature out renders the examples it accepts without comparing them.
+      chalkos.tests =
+        lib.mapAttrs (
+          name: t:
+          let
+            dir = ./tests + "/${lib.removePrefix "router-" name}";
+          in
+          t
+          // {
+            node = "r1";
+            outputs = lib.optionalAttrs allFeatures (
+              lib.genAttrs routerLib.outputs (
+                output:
+                let
+                  golden = dir + "/${output}";
+                in
+                if builtins.pathExists golden then golden else pkgs.emptyDirectory
+              )
+            );
+          }
+        ) (chalkosLib.internal.exampleTests "router" config.chalkos.router.examples)
+        // lib.optionalAttrs allFeatures {
+          # The VRF example under the strict reverse-path filter, whose ruleset accepts the
+          # neighbour discovery of link-local sources on the VRFs' devices before the fib check.
+          router-vrf-strict = {
+            node = "r1";
+            config = vrfStrict;
+            outputs.router-nftables = ./tests/vrf-strict/router-nftables;
+          };
+        };
 
       # zebra installs BGP's routes and next hops, and chalkos-nat64 the routes to the NAT64s'
       # links, which networkd would remove as foreign ones each time it configures a link.

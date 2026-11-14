@@ -517,40 +517,45 @@ lib.runTests {
     };
   };
   # Each feature of chalkos.router.features has its enable option. On a router image with every
-  # feature, the test of each router example compares golden files, the router's sysctl file among
-  # them; on one without a feature, none does.
+  # feature, the test of each router example compares all eight router outputs with golden files,
+  # and router-vrf-strict the ruleset; on one without a feature, no router test compares any.
   testRouterGoldens =
     let
       edge = layered.edge-metal.config;
       withoutDHCP = routerWithout [ "dhcp" ];
-      # The router tests of an image, by name, that compare no golden file of the output given,
-      # or of any output for null.
-      lacking =
-        c: output:
-        lib.attrNames (
-          lib.filterAttrs (
-            name: t:
-            lib.hasPrefix "router-" name
-            && (if output == null then t.outputs == { } else !(t.outputs ? ${output}))
-          ) c.chalkos.tests
-        );
+      # The tests of the router's examples of an image.
+      exampleTests = c: map (file: "router-${lib.removeSuffix ".yaml" file}") (examplesOf c);
+      # The outputs a test of an image compares.
+      outputsOf = c: name: lib.attrNames c.chalkos.tests.${name}.outputs;
+      # The outputs each test of the router's examples of an image compares, by test.
+      compared = c: lib.genAttrs (exampleTests c) (outputsOf c);
+      routerOutputs = [
+        "dhcp-relay"
+        "frr"
+        "jool"
+        "kea"
+        "networkd"
+        "router-nftables"
+        "router-sysctl"
+        "unbound"
+      ];
     in
     {
       expr = {
-        enableOptions = lib.all (
-          f: lib.isBool edge.chalkos.router.${f}.enable
-        ) edge.chalkos.router.features;
-        routerTests = lib.length (lib.filter (lib.hasPrefix "router-") (lib.attrNames edge.chalkos.tests));
-        withoutSysctl = lacking edge "router-sysctl";
-        withoutDHCPWithGoldens = lib.subtractLists (lacking withoutDHCP null) (
-          lib.filter (lib.hasPrefix "router-") (lib.attrNames withoutDHCP.chalkos.tests)
+        enableOptions = lib.all (f: edge.chalkos.router ? ${f}.enable) edge.chalkos.router.features;
+        compared = compared edge;
+        vrfStrict = lib.attrNames edge.chalkos.tests.router-vrf-strict.outputs;
+        goldensWithoutDHCP = lib.attrNames (
+          lib.filterAttrs (
+            name: t: lib.hasPrefix "router-" name && t.outputs != { }
+          ) withoutDHCP.chalkos.tests
         );
       };
       expected = {
         enableOptions = true;
-        routerTests = 10;
-        withoutSysctl = [ ];
-        withoutDHCPWithGoldens = [ ];
+        compared = lib.genAttrs (exampleTests edge) (_: routerOutputs);
+        vrfStrict = [ "router-nftables" ];
+        goldensWithoutDHCP = [ ];
       };
     };
   # The users and groups of the router's features have pinned IDs, free in NixOS's ids.nix, so an

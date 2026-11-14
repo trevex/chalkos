@@ -20,7 +20,7 @@ let
   nftDir = router.chalkos.outputs.router-nftables.dir;
   leases = lib.elemAt router.chalkos.diagnostics.dhcp-leases.command 2;
   udhcpc = "${pkgs.busybox}/bin/busybox udhcpc";
-  inherit (checkLib) routerRendered;
+  inherit (checkLib) routerRendered routerRuleset;
 in
 unitCheck "router-dhcp" checkLib.networkTools ''
   debug() {
@@ -35,7 +35,7 @@ unitCheck "router-dhcp" checkLib.networkTools ''
   on_client ip link set eth0 up
 
   mkdir -p ${dir} ${nftDir}
-  install -m 644 ${routerRendered "dhcp"}/router-nftables/ruleset.nft ${nftDir}/ruleset.nft
+  install -m 644 ${routerRuleset "dhcp"} ${nftDir}/ruleset.nft
   ${firewall} || fail "chalkos-firewall did not load the dhcp example's ruleset"
   install -m 644 ${routerRendered "dhcp"}/kea/kea-dhcp4.json ${dir}/kea-dhcp4.json
   grep -q '"office"' ${dir}/kea-dhcp4.json || fail "the dhcp example renders no server of the default VRF"

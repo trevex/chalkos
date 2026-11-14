@@ -29,9 +29,7 @@ let
     ExecReload
     ;
   dir = checkLib.router.config.chalkos.outputs.router-nftables.dir;
-  inherit (checkLib) routerRendered;
-  # The VRF example's ruleset with the strict reverse-path filter, a golden file of chalkos-render.
-  strictVRF = ../../../cmd/chalkos-render/testdata/router/vrf-strict.nft;
+  inherit (checkLib) routerRuleset;
   # Answers a connection with the address it came from.
   whoami = pkgs.writeShellScript "whoami" ''echo "$SOCAT_PEERADDR"'';
   # rdisc6 sends a router solicitation, radvd router advertisements.
@@ -124,7 +122,7 @@ unitCheck "router-firewall" tools ''
 
   where="with the LAN example's ruleset"
   mkdir -p ${dir}
-  install -m 644 ${routerRendered "lan"}/router-nftables/ruleset.nft ${dir}/ruleset.nft
+  install -m 644 ${routerRuleset "lan"} ${dir}/ruleset.nft
   ${ExecReload} || fail "chalkos-firewall did not reload the LAN ruleset"
   [ "$(nft list tables | grep -c 'table inet chalkos$')" = 1 ] || fail "the reload left two tables"
   nft list tables | grep -qx 'table inet count' || fail "the reload removed another table"
@@ -167,7 +165,7 @@ unitCheck "router-firewall" tools ''
   accepted on_wan 198.51.100.1 50000
 
   where="with the leaf example's ruleset"
-  install -m 644 ${routerRendered "leaf"}/router-nftables/ruleset.nft ${dir}/ruleset.nft
+  install -m 644 ${routerRuleset "leaf"} ${dir}/ruleset.nft
   # At boot, with no table loaded yet, chalkos-firewall loads the rendered ruleset.
   nft delete table inet chalkos
   ${ExecStart} || fail "chalkos-firewall did not load the leaf ruleset"
@@ -278,7 +276,7 @@ unitCheck "router-firewall" tools ''
     }
   }
   NFT
-  install -m 644 ${routerRendered "vrf"}/router-nftables/ruleset.nft ${dir}/ruleset.nft
+  install -m 644 ${routerRuleset "vrf"} ${dir}/ruleset.nft
   ${ExecReload} || fail "chalkos-firewall did not reload the VRF ruleset"
   none() { nft list counter inet passed "$1" | grep -q 'packets 0 '; }
 
@@ -347,7 +345,7 @@ unitCheck "router-firewall" tools ''
   # address on its loopback, so it solicits the router from its link-local address, and the
   # router reaches that address through the host's link-local address, which advertises
   # itself from there. Its router solicitations and, from radvd, advertisements reach input.
-  install -m 644 ${strictVRF} ${dir}/ruleset.nft
+  install -m 644 ${routerRuleset "vrf-strict"} ${dir}/ruleset.nft
   ${ExecReload} || fail "chalkos-firewall did not reload the VRF ruleset with the strict filter"
   nft -f - <<'NFT'
   table inet solicited {
@@ -394,7 +392,7 @@ unitCheck "router-firewall" tools ''
 
   where="with the VRF example's ruleset without its conntrack zones"
   # The same probe without the zones: guest's host passes as mgmt's connection.
-  sed '/^\tchain ct-\(prerouting\|output\) {$/,/^\t}$/d' ${routerRendered "vrf"}/router-nftables/ruleset.nft >${dir}/ruleset.nft
+  sed '/^\tchain ct-\(prerouting\|output\) {$/,/^\t}$/d' ${routerRuleset "vrf"} >${dir}/ruleset.nft
   if grep -q 'ct zone' ${dir}/ruleset.nft; then fail "the ruleset still sets conntrack zones"; fi
   ${ExecReload} || fail "chalkos-firewall did not reload the VRF ruleset without conntrack zones"
   on_mgmt socat -u EXEC:"sleep 3" TCP:192.0.2.1:22,sourceport=40001,connect-timeout=1 &

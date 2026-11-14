@@ -18,7 +18,7 @@
 let
   inherit (checkLib.router.config.systemd.services.chalkos-firewall.serviceConfig) ExecStart;
   dir = checkLib.router.config.chalkos.outputs.router-nftables.dir;
-  inherit (checkLib) routerRendered;
+  inherit (checkLib) routerRendered routerRuleset;
 in
 unitCheck "router-policy-routing" checkLib.networkTools ''
   debug() {
@@ -127,7 +127,7 @@ unitCheck "router-policy-routing" checkLib.networkTools ''
   settled() { retry 100 "the links' IPv6 addresses stayed tentative" untentative; }
   settled
   mkdir -p ${dir}
-  install -m 644 ${routerRendered "policy"}/router-nftables/ruleset.nft ${dir}/ruleset.nft
+  install -m 644 ${routerRuleset "policy"} ${dir}/ruleset.nft
   ${ExecStart} || fail "chalkos-firewall did not load the policy example's ruleset"
 
   # way <source> <port> [<socat options>]: the name of the peer that answered a connection

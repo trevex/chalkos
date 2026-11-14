@@ -56,7 +56,7 @@ let
     "${dnsmasq}/bin/dnsmasq --keep-in-foreground --log-facility=- --pid-file= --conf-file=${conf}";
 in
 {
-  options.chalkos.router.dhcpRelay.enable = routerLib.feature "dhcpRelay" ''
+  options.chalkos.router = routerLib.feature "dhcpRelay" ''
     Whether router images carry the DHCP relay, dnsmasq, and accept the kind DHCPRelay; only
     with the router layer. Set it false in a variant's modules to leave dnsmasq out of its
     images.

@@ -35,7 +35,7 @@ let
     p: lib.getName p == "jool-cli"
   ) (throw "chalkd's PATH holds no jool") checkLib.router.config.systemd.services.chalkd.path;
   dir = checkLib.router.config.chalkos.outputs.jool.dir;
-  inherit (checkLib) routerRendered;
+  inherit (checkLib) routerRendered routerRuleset;
   # Answers a connection with the address and port it came from.
   whoami = pkgs.writeShellScript "whoami" ''echo "$SOCAT_PEERADDR:$SOCAT_PEERPORT"'';
 in
@@ -226,7 +226,7 @@ unitCheck "router-nat64"
 
     # With the VRF example's ruleset, guest's NAT64 takes its LAN's traffic to the prefix and
     # leaves through its uplink from the uplink's address.
-    nft -f ${routerRendered "vrf"}/router-nftables/ruleset.nft || fail "nft refused the VRF example's ruleset"
+    nft -f ${routerRuleset "vrf"} || fail "nft refused the VRF example's ruleset"
     inside guest nft -f - <<'NFT'
     table ip6 count {
       counter reached {}

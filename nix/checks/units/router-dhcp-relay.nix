@@ -30,7 +30,9 @@ let
   dir = router.chalkos.outputs.dhcp-relay.dir;
   nftDir = router.chalkos.outputs.router-nftables.dir;
   udhcpc = "${pkgs.busybox}/bin/busybox udhcpc";
-  inherit (checkLib) routerRendered;
+  inherit (checkLib) routerRuleset;
+  # The DHCP relays' configs the dhcp-relay example renders.
+  relays = "${checkLib.routerRendered "dhcp-relay"}/dhcp-relay";
   tools = checkLib.networkTools ++ [
     pkgs.dhcpcd
     pkgs.procps
@@ -95,10 +97,12 @@ unitCheck "router-dhcp-relay" tools ''
   on_server env KEA_LOCKFILE_DIR=none KEA_PIDFILE_DIR="$PWD/kea6" ${kea}/bin/kea-dhcp6 -c kea-dhcp6.json >kea-dhcp6.log 2>&1 &
 
   mkdir -p ${dir} ${nftDir} /var/run/dhcpcd /var/db/dhcpcd /var/lib/dhcpcd
-  install -m 644 -t ${dir} ${routerRendered "dhcp-relay"}/dhcp-relay/dnsmasq-relay.conf ${routerRendered "dhcp-relay"}/dhcp-relay/dnsmasq-relay-guest.conf
-  grep -qx 'dhcp-relay=192.0.2.1,203.0.113.53' ${dir}/dnsmasq-relay.conf || fail "the dhcp-relay example renders no relay of the default VRF"
-  grep -qx 'dhcp-relay=198.51.100.1,203.0.113.154' ${dir}/dnsmasq-relay-guest.conf || fail "the dhcp-relay example renders no relay of the VRF guest"
-  install -m 644 ${routerRendered "dhcp-relay"}/router-nftables/ruleset.nft ${nftDir}/ruleset.nft
+  install -m 644 -t ${dir} ${relays}/dnsmasq-relay.conf ${relays}/dnsmasq-relay-guest.conf
+  grep -qx 'dhcp-relay=192.0.2.1,203.0.113.53' ${dir}/dnsmasq-relay.conf \
+    || fail "the dhcp-relay example renders no relay of the default VRF"
+  grep -qx 'dhcp-relay=198.51.100.1,203.0.113.154' ${dir}/dnsmasq-relay-guest.conf \
+    || fail "the dhcp-relay example renders no relay of the VRF guest"
+  install -m 644 ${routerRuleset "dhcp-relay"} ${nftDir}/ruleset.nft
   ${firewall} || fail "chalkos-firewall did not load the dhcp-relay example's ruleset"
 
   # relays: starts both relays, the one given first first, and checks that both run.
@@ -135,7 +139,7 @@ unitCheck "router-dhcp-relay" tools ''
     grep -q 'DHCP4_LEASE_ALLOC.*198.51.100.1[0-9][0-9]' kea-dhcp4.log || fail "the client on vlan20 took no IPv4 lease through the VRF's relay"
   done
 
-  install -m 644 ${routerRendered "none"}/router-nftables/ruleset.nft ${nftDir}/ruleset.nft
+  install -m 644 ${routerRuleset "none"} ${nftDir}/ruleset.nft
   ${firewall} || fail "chalkos-firewall did not load the none example's ruleset"
   : >kea-dhcp4.log
   got=$(leases)

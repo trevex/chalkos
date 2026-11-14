@@ -11,6 +11,7 @@ let
     chalkPkgs
     router
     routerRendered
+    routerRuleset
     testing
     worker
     ;
@@ -380,7 +381,7 @@ in
         # kernel would not load, with nft in a user and network namespace of its own.
         check=$(jq -r '."router-nftables".check' ${routerBuild.chalkosOutputs})
         mkdir nftables
-        install -m 644 ${routerRendered "lan"}/router-nftables/ruleset.nft nftables/ruleset.nft
+        install -m 644 ${routerRuleset "lan"} nftables/ruleset.nft
         OUT=$PWD/nftables $check </dev/null
         printf 'table inet chalkos {\n  chain input {\n    iif "nosuchif0" accept\n  }\n}\n' >nftables/ruleset.nft
         refuses "the router's nftables check" 'Error: Interface does not exist' env OUT=$PWD/nftables "$check" </dev/null
@@ -411,6 +412,8 @@ in
         mkdir unbound
         sed -e "s|^\( *trust-anchor-file: \).*|\1\"$anchor\"|" -e "s|^\( *zonefile: \).*|\1\"$zone\"|" \
           ${routerRendered "lan"}/unbound/unbound.conf >unbound/unbound.conf
+        grep -qF "trust-anchor-file: \"$anchor\"" unbound/unbound.conf \
+          || fail "the LAN example's unbound.conf names no trust anchor to put $anchor in place of"
         OUT=$PWD/unbound $check </dev/null
         sed -i 's/IN A 192.0.2.1/IN A 192.0.2.300/' unbound/unbound.conf
         refuses "the router's Unbound check" 'Bad local-data RR' env OUT=$PWD/unbound "$check" </dev/null
