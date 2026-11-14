@@ -297,7 +297,9 @@ in
   # validate-config.md shows the report of the refusal that the homelab's test
   # bgp-unconfigured-peer-interface expects of its validator bgp-peers. The page keeps the report
   # on one line of its own that starts with {"refusals": [{"kind": "Peer", "name": "router", which
-  # is how the check finds it.
+  # is how the check finds it. test-an-extension.md shows the refusals of the test bgp-new-asn as
+  # refusals.json holds them, on one line of its own that starts with
+  # [{"kind":"Peer","name":"router","path":"spec.asn".
   example-homelab-validator-docs =
     let
       inherit (homelab.nixosConfigurations.node-metal.config.chalkos) tests;
@@ -307,6 +309,8 @@ in
         nativeBuildInputs = [ pkgs.jq ];
         page = ../../docs/build/validate-config.md;
         expected = builtins.toJSON { inherit (tests.bgp-unconfigured-peer-interface) refusals; };
+        testPage = ../../docs/build/test-an-extension.md;
+        changeRefusals = builtins.toJSON tests.bgp-new-asn.refusals;
       }
       ''
         documented=$(grep '^{"refusals": \[{"kind": "Peer", "name": "router"' "$page" | jq -cS .)
@@ -317,6 +321,12 @@ in
         expected=$(jq -cS . <<<"$expected")
         if [ "$documented" != "$expected" ]; then
           echo "error: $page shows $documented, not the test's $expected" >&2
+          exit 1
+        fi
+        documented=$(grep -F '[{"kind":"Peer","name":"router","path":"spec.asn"' "$testPage" | jq -cS .)
+        expected=$(jq -cS . <<<"$changeRefusals")
+        if [ "$documented" != "$expected" ]; then
+          echo "error: $testPage shows $documented, not the refusals $expected of the test bgp-new-asn" >&2
           exit 1
         fi
         touch $out

@@ -225,6 +225,21 @@ in
         effects = [ "bird" ];
       };
       # --8<-- [end:tests]
+      # A Peer keeps its AS number: the change rule of the field asn refuses a new one. The
+      # refusal docs/build/test-an-extension.md shows, which the check
+      # example-homelab-validator-docs finds in the page.
+      bgp-new-asn = {
+        before = ./bgp-examples/fabric.yaml;
+        config = ./tests/new-asn.yaml;
+        refusals = [
+          {
+            kind = "Peer";
+            name = "router";
+            path = "spec.asn";
+            message = "the AS number stays 65000; add a Peer of another name for 65002";
+          }
+        ];
+      };
     }
     # The refusal docs/build/validate-config.md shows, which the check
     # example-homelab-validator-docs finds in the page.

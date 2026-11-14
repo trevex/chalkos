@@ -1,0 +1,50 @@
+# The fabric example with the Peer's AS number changed, which the Peer's rule refuses.
+apiVersion: bgp.example.org/v1alpha1
+kind: Speaker
+metadata: {name: bgp}
+spec:
+  asn: 65001
+  routerID: 0.0.0.11
+  export: {interfaces: [node0]}
+---
+apiVersion: bgp.example.org/v1alpha1
+kind: Peer
+metadata: {name: router}
+spec:
+  address: "fdc8:a1b2:c3d4:1::1"
+  asn: 65002
+  interfaces: [enp1s0, enp2s0]
+  password: {secretRef: {name: bgp, key: password}}
+---
+apiVersion: chalkos.dev/v1alpha1
+kind: Secret
+metadata: {name: bgp}
+spec:
+  data: {password: example-password}
+---
+apiVersion: networkd.chalkos.dev/v1alpha1
+kind: Network
+metadata: {name: 20-enp1s0}
+spec:
+  match: {name: enp1s0}
+  network: {ipv6AcceptRA: true}
+---
+apiVersion: networkd.chalkos.dev/v1alpha1
+kind: Network
+metadata: {name: 20-enp2s0}
+spec:
+  match: {name: enp2s0}
+  network: {ipv6AcceptRA: true}
+---
+apiVersion: networkd.chalkos.dev/v1alpha1
+kind: NetDev
+metadata: {name: 30-node0}
+spec:
+  netDev: {name: node0, kind: dummy}
+---
+apiVersion: networkd.chalkos.dev/v1alpha1
+kind: Network
+metadata: {name: 30-node0}
+spec:
+  match: {name: node0}
+  network: {address: ["fdc8:a1b2:c3d4:ff::11/128"]}

@@ -138,11 +138,12 @@ $ cat result/bgp-unconfigured-peer-interface/refusals.json
 ```
 
 Refusals come from every stage of the check. A change rule's refusal needs `before`, since the
-rule compares with the config the node runs: with `before = ./bgp-examples/fabric.yaml` and a
-config whose `Peer` has the AS number 65002, the `Peer` rule of
-[Guard changes with rules and facts](guard-changes.md) gives this refusal:
+rule compares with the config the node runs. The homelab's `bgp-new-asn` has
+`before = ./bgp-examples/fabric.yaml` and a config whose `Peer` has the AS number 65002, which
+the `Peer` rule of [Guard changes with rules and facts](guard-changes.md) refuses:
 
-```json
+```console
+$ cat result/bgp-new-asn/refusals.json
 [{"kind":"Peer","name":"router","path":"spec.asn","message":"the AS number stays 65000; add a Peer of another name for 65002"}]
 ```
 
