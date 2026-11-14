@@ -27,7 +27,7 @@ let
         };
       };
     }).nixos;
-  # The example files a router image's outputs render at its build.
+  # The example files of a router image's tests, chalkos.tests.router-<name>.
   examplesOf = c: lib.attrNames (builtins.readDir c.chalkos.router.examples);
   # The users and groups of an image whose IDs its build allocates from 999 down, in the order of
   # their names: those without a pinned ID.
@@ -209,8 +209,8 @@ lib.runTests {
     };
   };
   # Router images take DHCPSubnet documents and run Kea unless their modules set
-  # chalkos.router.dhcp.enable to false, whose router outputs then render no example of DHCP at the
-  # build, and which carry no output kea or effect dhcp, no Kea, its units, the routes' path unit,
+  # chalkos.router.dhcp.enable to false, whose router tests then run no example of DHCP, and
+  # which carry no output kea or effect dhcp, no Kea, its units, the routes' path unit,
   # user or package, and no diagnostic dhcp-leases; other images never take them.
   testRouterDHCPOptional = {
     expr =
@@ -302,8 +302,8 @@ lib.runTests {
     };
   };
   # Router images take DHCPRelay documents and run dnsmasq's relays unless their modules set
-  # chalkos.router.dhcpRelay.enable to false, whose router outputs then render no example of a
-  # relay at the build, and which carry no output dhcp-relay or effect dhcp-relay, no dnsmasq, its
+  # chalkos.router.dhcpRelay.enable to false, whose router tests then run no example of a
+  # relay, and which carry no output dhcp-relay or effect dhcp-relay, no dnsmasq, its
   # units or user; other images never take them.
   testRouterDHCPRelayOptional = {
     expr =
@@ -471,10 +471,9 @@ lib.runTests {
       };
     };
   };
-  # The router outputs render, at the image's build, the examples all of whose documents are of
-  # kinds the image accepts: every one on a router image with every feature, those without
-  # DHCPSubnet documents on one without DHCP, and those without DHCPRelay documents on one without
-  # the relay.
+  # The router's tests run the examples all of whose documents are of kinds the image accepts:
+  # every one on a router image with every feature, those without DHCPSubnet documents on one
+  # without DHCP, and those without DHCPRelay documents on one without the relay.
   testRouterExamples = {
     expr = {
       edge = examplesOf layered.edge-metal.config;
@@ -563,7 +562,7 @@ lib.runTests {
   # chalkos.router.bgp.enable to false, whose images carry no FRR: no BGP kinds, output frr,
   # effect frr, frr.service, FRR's users, groups, package or config, no vtysh on chalkd's PATH,
   # no unit that runs FRR's programs and no BGP or BFD diagnostics; their firewall reads no
-  # BGPPeer, and their outputs render no example with BGP at the build but the NAT64 one.
+  # BGPPeer, and their tests run no example with BGP but the NAT64 one.
   # networkd keeps the routes others install either way, and the build allocates the same IDs.
   testRouterBGPOptional = {
     expr =
@@ -685,8 +684,8 @@ lib.runTests {
   # Router images run Jool and take NAT64 documents unless their modules set
   # chalkos.router.nat64.enable to false, whose images carry no Jool: no kind NAT64, output jool,
   # effect jool, chalkos-nat64.service, kernel module or jool on chalkd's PATH, no unit that runs
-  # jool and no diagnostic nat64-sessions; no output reads NAT64 documents, and their outputs
-  # render no example with NAT64 at the build. The build allocates the same IDs.
+  # jool and no diagnostic nat64-sessions; no output reads NAT64 documents, and their tests
+  # run no example with NAT64. The build allocates the same IDs.
   testRouterNAT64Optional = {
     expr =
       let
@@ -777,8 +776,8 @@ lib.runTests {
   # chalkos.router.resolver.enable to false, whose images carry no Unbound: no kind Resolver,
   # output unbound, effects unbound, unbound-start and resolvers, units unbound, unbound@ and
   # chalkos-resolvers, Unbound's user, group, package or config and no unbound-control on
-  # chalkd's PATH; their firewall reads no Resolver, and their outputs render no example with a
-  # Resolver at the build but the NAT64 one. The build allocates the same IDs.
+  # chalkd's PATH; their firewall reads no Resolver, and their tests run no example with a
+  # Resolver but the NAT64 one. The build allocates the same IDs.
   testRouterResolverOptional = {
     expr =
       let
@@ -956,7 +955,7 @@ lib.runTests {
   # router's core: the router kinds of the firewall, VRFs and policy routing, the outputs and units
   # of the firewall, the kernel settings and the VRFs, the console and the copy of chalkd's lines
   # to the serial port every metal image runs, and the diagnostics of every image and traceroute.
-  # Its outputs render the examples of none of the six, and its build allocates the IDs of the
+  # Its tests run the examples of none of the six, and its build allocates the IDs of the
   # same users and groups as an image with every feature.
   testRouterWithoutFeatures = {
     expr =
@@ -2311,8 +2310,8 @@ lib.runTests {
               hint = null;
             }
             && lib.any (p: lib.getName p == "chalkos-chrony-reload-sources") c.systemd.services.chalkd.path;
-          # The TimeSync's servers are an output, which a template renders, chronyd checks, and
-          # the examples exercise when the image is built.
+          # The TimeSync's servers are an output, which a template renders and chronyd checks,
+          # and whose examples are tests of the image.
           output =
             let
               o = c.chalkos.outputs.chrony;
@@ -2327,7 +2326,7 @@ lib.runTests {
               template =
                 lib.hasInfix "chalkos-render template " render && lib.hasSuffix " servers.sources" render;
               check = lib.hasInfix "/bin/chronyd -p -f" o.check;
-              examples = lib.attrNames (builtins.readDir o.examples);
+              tests = lib.filter (lib.hasPrefix "chrony-") (lib.attrNames c.chalkos.tests);
             };
           chalkdProtectsClock = c.systemd.services.chalkd.serviceConfig.ProtectClock;
         };
@@ -2363,10 +2362,10 @@ lib.runTests {
         dir = "/run/chalkos/outputs/chrony";
         template = true;
         check = true;
-        examples = [
-          "empty.yaml"
-          "none.yaml"
-          "servers.yaml"
+        tests = [
+          "chrony-empty"
+          "chrony-none"
+          "chrony-servers"
         ];
       };
       chalkdProtectsClock = true;

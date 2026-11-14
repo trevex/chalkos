@@ -13,6 +13,37 @@ let
     testing
     worker
     ;
+  # The router image without the router features named, whose modules set their
+  # chalkos.router.<feature>.enable to false.
+  routerWithout =
+    features:
+    (router.extendModules {
+      modules = [
+        {
+          chalkos.router = lib.genAttrs features (_: {
+            enable = false;
+          });
+        }
+      ];
+    }).config;
+  # The features the checks leave out of the router image: each a variant may leave out alone,
+  # and all six.
+  routerFeatureSets = [
+    [ "bgp" ]
+    [ "nat64" ]
+    [ "resolver" ]
+    [ "dhcp" ]
+    [ "dhcpRelay" ]
+    [ "wireguard" ]
+    [
+      "bgp"
+      "nat64"
+      "resolver"
+      "dhcp"
+      "dhcpRelay"
+      "wireguard"
+    ]
+  ];
 in
 {
   # The worker's and the router's kernel module trees, and one with the gpu group: a module outside
@@ -250,15 +281,12 @@ in
   # act on units it defines. The test image's Greeting and the examples' Rack, Hardware and Peer
   # bring extension kinds with their own rules, facts, effects and outputs; a rule that does not
   # compile, one that reads a fact no module declares, an effect's rule that does not compile, an
-  # effect on a unit the image lacks, a diagnostic whose regex does not compile and an output whose
-  # check refuses an example fail the check of their image. The extensions example's Hardware
-  # output renders hardware-examples/server.yaml, and the homelab's bird-conf output renders
-  # bgp-examples/fabric.yaml, which bird -p parses. A router image checks its rules, renders its
-  # router examples and holds the modules of its firewall and Jool, its firewall check refuses what
-  # the kernel would, its FRR check what vtysh would, its Jool check what jool would and its
-  # Unbound check what unbound-checkconf would. A router image without BGP, NAT64, the resolver,
-  # DHCP, the DHCP relay or WireGuard, and one without all six, checks its rules and renders the
-  # examples it accepts.
+  # effect on a unit the image lacks and a diagnostic whose regex does not compile fail the check
+  # of their image. A router image checks its rules and holds the modules of its firewall and
+  # Jool, its firewall check refuses what the kernel would, its FRR check what vtysh would, its
+  # Jool check what jool would and its Unbound check what unbound-checkconf would. A router image
+  # without BGP, NAT64, the resolver, DHCP, the DHCP relay or WireGuard, and one without all six,
+  # checks its rules. image-tests renders the images' outputs.
   rules =
     let
       build =
@@ -266,18 +294,6 @@ in
         (self.lib.mkImages { variants.worker.modules = modules; }).nixos.worker-metal.config.system.build;
       examples = checkLib.fixtures.nixos.examples-metal.config.system.build;
       router = checkLib.router.config.system.build;
-      # The rules check of the router image without the router features named.
-      routerWithout =
-        features:
-        (checkLib.router.extendModules {
-          modules = [
-            {
-              chalkos.router = lib.genAttrs features (_: {
-                enable = false;
-              });
-            }
-          ];
-        }).config.system.build.chalkosRulesCheck;
       # The router image loads nf_conntrack, the modules of its firewall and Jool, which its module
       # tree must hold with what they depend on.
       routerModules = checkLib.router.config.system.build.chalkosKernelModulesCheck;
@@ -311,35 +327,6 @@ in
             restart = [ "bird.service" ];
           };
         }
-      ];
-      # An output whose check refuses the file one of its examples renders.
-      refusedExample = build [
-        (
-          {
-            chalkosLib,
-            lib,
-            pkgs,
-            ...
-          }:
-          {
-            chalkos.kinds.Demo = {
-              group = "demo.example.org";
-              version = "v1alpha1";
-              spec.name = lib.mkOption { type = lib.types.str; };
-            };
-            chalkos.outputs.demo = {
-              inputs = [ "Demo" ];
-              render = chalkosLib.render.jq (pkgs.writeText "name.jq" ".documents.Demo[].spec.name");
-              check = ''grep -qx first "$OUT/name"'';
-              examples = pkgs.writeTextDir "second.yaml" ''
-                apiVersion: demo.example.org/v1alpha1
-                kind: Demo
-                metadata: {name: demo}
-                spec: {name: second}
-              '';
-            };
-          }
-        )
       ];
       # A diagnostic whose pattern Go's regexp does not compile, which no evaluation catches.
       brokenDiagnostic = build [
@@ -376,21 +363,8 @@ in
           examples.chalkosRulesCheck
           router.chalkosRulesCheck
           routerModules
-          (routerWithout [ "bgp" ])
-          (routerWithout [ "nat64" ])
-          (routerWithout [ "resolver" ])
-          (routerWithout [ "dhcp" ])
-          (routerWithout [ "dhcpRelay" ])
-          (routerWithout [ "wireguard" ])
-          (routerWithout [
-            "bgp"
-            "nat64"
-            "resolver"
-            "dhcp"
-            "dhcpRelay"
-            "wireguard"
-          ])
-        ];
+        ]
+        ++ map (features: (routerWithout features).system.build.chalkosRulesCheck) routerFeatureSets;
       }
       ''
         ${checkLib.prelude}
@@ -401,7 +375,6 @@ in
         refused ${undeclared.chalkosRulesImage} 'Demo: rule "facts.missing == null" reads facts.missing, which the image does not declare'
         refused ${brokenEffect.chalkosRulesImage} 'effect bird: rule "config ==": ERROR: <input>:1:10: Syntax error'
         refused ${undefinedUnit.chalkosRulesImage} 'effect bird: the image defines no unit bird.service'
-        refused ${refusedExample.chalkosRulesImage} 'output demo: example second.yaml: its check refused the rendered files (exit 1)'
         refused ${brokenDiagnostic.chalkosRulesImage} 'diagnostic broken: parameter table: its regex: error parsing regexp: missing closing ]'
         # The check of chrony's output passes the servers its template renders, and refuses a
         # line chronyd does not parse or a sourcedir file does not take.
@@ -454,6 +427,27 @@ in
         refuses "the router's Unbound check" 'Bad local-data RR' env OUT=$PWD/unbound "$check" </dev/null
         touch $out
       '';
+
+  # The tests of chalkos.tests of the test image, the router image with every feature, without
+  # each of the features a variant may leave out and without all six, and the image of the
+  # examples' extensions, as nix flake check runs an image's tests: the router's examples, the
+  # networkd, chrony and Greeting examples, and those of the Hardware and bird-conf outputs
+  # render, pass the outputs' checks and the validators accept them.
+  image-tests = pkgs.linkFarm "chalkos-image-tests" (
+    lib.mapAttrs (_: c: c.system.build.chalkosTests) (
+      {
+        test = testing.nixos.test-metal.config;
+        router = router.config;
+        examples = checkLib.fixtures.nixos.examples-metal.config;
+      }
+      // lib.listToAttrs (
+        map (
+          features:
+          lib.nameValuePair "router-without-${lib.concatStringsSep "-" features}" (routerWithout features)
+        ) routerFeatureSets
+      )
+    )
+  );
 
   # An image directory describes itself and carries schemas that accept a real Network document
   # and reject a misspelled key.

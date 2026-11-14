@@ -36,6 +36,9 @@
       # nix build .#nixosConfigurations.node-metal.config.system.build.chalkosSchemas
       nixosConfigurations = images.nixos;
 
+      # nix flake check: the images' tests, chalkos.tests.
+      checks.${system} = images.checks;
+
       # nix develop: chalkctl and chalkbuild of the chalkos this flake pins, and the other tools
       # the guide runs.
       devShells.${system}.default = pkgs.mkShellNoCC {

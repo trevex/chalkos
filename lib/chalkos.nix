@@ -83,8 +83,8 @@ in
 
   # What chalkos's own modules share, which extensions do not call: the kinds' API groups, the
   # schema converter, the get paths, the CEL of effects' rules, the kinds an image declares and
-  # the check of the kinds a grant, an output, a validator or an effect names, and how a module
-  # refuses what it is given.
+  # the check of the kinds a grant, an output, a validator or an effect names, how a module
+  # refuses what it is given, and the tests of a directory of config files.
   internal =
     refuseLib
     // kindCheck
@@ -103,5 +103,21 @@ in
       };
       # A DNS name: letters, digits, dots and dashes, starting and ending with a letter or digit.
       dnsName = "[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?";
+      # The config files of the directory dir, YAML or JSON, as tests of chalkos.tests named
+      # <prefix>-<the file's name up to its first dot>, each with the file as its config alone: a
+      # test that the image accepts the config, renders every output from it and passes the
+      # outputs' checks.
+      exampleTests =
+        prefix: dir:
+        lib.mapAttrs'
+          (
+            file: _:
+            lib.nameValuePair "${prefix}-${lib.head (lib.splitString "." file)}" { config = dir + "/${file}"; }
+          )
+          (
+            lib.filterAttrs (
+              file: type: type == "regular" && builtins.match ".*\\.(yaml|yml|json)" file != null
+            ) (builtins.readDir dir)
+          );
     };
 }

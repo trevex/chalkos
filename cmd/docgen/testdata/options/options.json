@@ -445,6 +445,25 @@
     "readOnly": false,
     "type": "attribute set of (submodule)"
   },
+  "chalkos.tests": {
+    "declarations": [
+      {
+        "name": "modules/node/runtime/tests.nix",
+        "url": "https://example.org/modules/node/runtime/tests.nix"
+      }
+    ],
+    "default": {
+      "_type": "literalExpression",
+      "text": "{ }"
+    },
+    "description": "Tests.",
+    "loc": [
+      "chalkos",
+      "tests"
+    ],
+    "readOnly": false,
+    "type": "attribute set of (submodule)"
+  },
   "chalkos.imageDirectory.facts": {
     "declarations": [
       {

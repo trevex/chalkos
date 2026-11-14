@@ -22,7 +22,6 @@ in
     chalkos.validators.router = {
       inputs = kinds;
       program = lib.getExe pkgs.chalkos.chalkos-render;
-      examples = config.chalkos.router.examples;
     };
   };
 }

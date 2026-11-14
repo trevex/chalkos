@@ -64,15 +64,6 @@ let
           report.
         '';
       };
-      examples = lib.mkOption {
-        type = lib.types.nullOr lib.types.path;
-        default = null;
-        example = lib.literalExpression "./examples";
-        description = ''
-          Directory of config files, YAML or JSON, each one example of a node's documents. The
-          image's build runs the validator on each, and fails when it fails or refuses one.
-        '';
-      };
     };
   };
 

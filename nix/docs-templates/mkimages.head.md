@@ -37,6 +37,8 @@ A flake calls mkImages and exposes the images to build:
     {
       packages.x86_64-linux = images.images // { inherit (images) installer; };
       nixosConfigurations = images.nixos;
+      # nix flake check runs the images' tests.
+      checks.x86_64-linux = images.checks;
     };
 }
 ```
@@ -50,6 +52,10 @@ mkImages returns an attribute set:
 - `oci.<variant>-<platform>`: the image directory as an OCI image layout, as
   [`chalkbuild oci`](cli/chalkbuild_oci.md) writes it, each built only when asked for;
   [Publish images to a registry](../build/publish-images.md) signs and pushes it.
+- `checks.<variant>-<platform>`: the tests of an image, its `chalkos.tests`, as a derivation
+  that builds when every test passes and fails with what each failed test got otherwise. A
+  flake exports them as `checks.x86_64-linux`, so that `nix flake check` runs them; the image
+  build itself runs them only with `chalkos.testsOnBuild`.
 - `installer`: the installer, a raw image and a hybrid ISO in one directory, which installs
   images of every platform.
 - `nixos.<variant>-<platform>` and `nixos.installer`: the evaluated NixOS systems, to read an

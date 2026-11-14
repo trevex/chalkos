@@ -2018,7 +2018,8 @@ lib.runTests {
       };
     };
   # networkd's units are a built-in output in networkd's runtime directory, rendered by
-  # chalkos-render with the image's networkd schemas and examples, which networkd reloads.
+  # chalkos-render with the image's networkd schemas, which networkd reloads, and the image tests
+  # its examples.
   testBuiltinNetworkd = {
     expr =
       let
@@ -2029,7 +2030,7 @@ lib.runTests {
         render =
           builtins.match "/nix/store/[^ ]+-chalkos-render-[^ ]+/bin/chalkos-render networkd /nix/store/[^ ]+-chalkos-networkd-schemas" output.render
           != null;
-        examples = lib.attrNames (builtins.readDir withDemo.chalkos.outputs.networkd.examples);
+        tests = lib.filter (lib.hasPrefix "networkd-") (lib.attrNames withDemo.chalkos.tests);
         effect = (effectsOf withDemo).networkd;
       };
     expected = {
@@ -2041,10 +2042,10 @@ lib.runTests {
       dir = "/run/systemd/network";
       check = "";
       render = true;
-      examples = [
-        "none.yaml"
-        "static.yaml"
-        "vlan.yaml"
+      tests = [
+        "networkd-none"
+        "networkd-static"
+        "networkd-vlan"
       ];
       effect = {
         outputs = [ "networkd" ];
@@ -2196,7 +2197,6 @@ lib.runTests {
       files = [
         "diagnostics.json"
         "effects.json"
-        "examples.json"
         "facts.json"
         "outputs.json"
         "schemas"
@@ -2858,5 +2858,169 @@ lib.runTests {
           }
         ]).system.build.chalkosFacts.drvPath;
     expected = true;
+  };
+  # A test's file, which chalkos-rules test reads: each test with its expectations, the files it
+  # names as their store paths and what it leaves unset at the defaults.
+  testTestsJSON = {
+    expr =
+      let
+        c = worker [
+          {
+            chalkos.tests.demo = {
+              config = ../../modules/node/examples/networkd/none.yaml;
+              refusals = [ { message = "no"; } ];
+            };
+          }
+        ];
+      in
+      (builtins.fromJSON (builtins.unsafeDiscardStringContext c.system.build.chalkosTestsJSON.text))
+      .tests.demo;
+    expected = {
+      config = "${../../modules/node/examples/networkd/none.yaml}";
+      before = null;
+      node = "example";
+      facts = { };
+      oldFacts = { };
+      outputs = { };
+      refusals = [
+        {
+          kind = "";
+          name = "";
+          path = "";
+          message = "no";
+        }
+      ];
+      effects = null;
+    };
+  };
+  # A test refuses, at evaluation, effects without before, an output, an effect or a fact the
+  # image lacks, and a name that is no file name of its own in the runner's results.
+  testTestProblemsFail =
+    let
+      config = ../../modules/node/examples/networkd/none.yaml;
+      refused =
+        test:
+        fails
+          (worker [ { chalkos.tests.${test.name or "demo"} = removeAttrs test [ "name" ]; } ])
+          .system.build.chalkosTestsJSON.text;
+    in
+    {
+      expr = {
+        accepted = refused { inherit config; };
+        effectsWithoutBefore = refused {
+          inherit config;
+          effects = [ ];
+        };
+        unknownOutput = refused {
+          inherit config;
+          outputs.missing = ../../modules/node/examples/networkd;
+        };
+        unknownEffect = refused {
+          inherit config;
+          before = config;
+          effects = [ "missing" ];
+        };
+        unknownFact = refused {
+          inherit config;
+          facts.missing = true;
+        };
+        unknownOldFact = refused {
+          inherit config;
+          oldFacts.missing = true;
+        };
+        reservedName = refused {
+          inherit config;
+          name = "summary.txt";
+        };
+        pathName = refused {
+          inherit config;
+          name = "a/b";
+        };
+        dotName = refused {
+          inherit config;
+          name = "..";
+        };
+        controlName = refused {
+          inherit config;
+          name = "a\tb";
+        };
+      };
+      expected = {
+        accepted = false;
+        effectsWithoutBefore = true;
+        unknownOutput = true;
+        unknownEffect = true;
+        unknownFact = true;
+        unknownOldFact = true;
+        reservedName = true;
+        pathName = true;
+        dotName = true;
+        controlName = true;
+      };
+    };
+  # The image directory's build runs the tests only with chalkos.testsOnBuild, which leaves the
+  # system, and so the image's store and root hash, as it is.
+  testTestsOnBuild = {
+    expr =
+      let
+        off = worker [ ];
+        on = worker [ { chalkos.testsOnBuild = true; } ];
+        checks = c: map (d: d.name) c.chalkos.imageDirectory.checks;
+      in
+      {
+        off = checks off;
+        on = checks on;
+        sameSystem = off.system.build.toplevel.drvPath == on.system.build.toplevel.drvPath;
+      };
+    expected = {
+      off = [ ];
+      on = [ "chalkos-tests" ];
+      sameSystem = true;
+    };
+  };
+  # mkImages's checks hold each image's tests, and none of the installer.
+  testMkImagesChecks = {
+    expr =
+      let
+        images = mkImages { variants.worker = { }; };
+      in
+      {
+        names = lib.attrNames images.checks;
+        tests =
+          images.checks.worker-metal.drvPath
+          == images.nixos.worker-metal.config.system.build.chalkosTests.drvPath;
+      };
+    expected = {
+      names = [
+        "worker-kvm"
+        "worker-metal"
+      ];
+      tests = true;
+    };
+  };
+  # The examples of networkd and chrony are tests of every image, and the router's of a router
+  # image.
+  testExampleTests = {
+    expr =
+      let
+        names = c: lib.attrNames c.chalkos.tests;
+      in
+      {
+        worker = lib.all (lib.flip lib.elem (names (worker [ ]))) [
+          "chrony-servers"
+          "networkd-static"
+        ];
+        workerRouter = lib.any (lib.hasPrefix "router-") (names (worker [ ]));
+        router = lib.all (lib.flip lib.elem (names (router [ ]))) [
+          "networkd-static"
+          "router-dhcp"
+          "router-edge"
+        ];
+      };
+    expected = {
+      worker = true;
+      workerRouter = false;
+      router = true;
+    };
   };
 }

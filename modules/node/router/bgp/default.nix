@@ -103,7 +103,6 @@ in
       render = "${render} frr";
       # vtysh parses the config as the daemons' commands take it, without the daemons.
       check = "${frr}/bin/vtysh --dryrun --config_dir ${checkDir} -f \"$OUT/frr.conf\"";
-      examples = config.chalkos.router.examples;
     };
     # A reload of a failed frr.service restarts it, which fills the config in as a reload does.
     chalkos.effects.frr = {

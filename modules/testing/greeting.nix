@@ -6,7 +6,8 @@
 # rules, which the image's rules check compiles, refuse a message too long for one log line, and
 # a new message while the fact greetingLock, a file no test writes, holds one; the output's check
 # refuses a message of more than one line, fails outside an unprivileged sandbox and checks an
-# nftables table in a user and network namespace of its own, and the build renders its examples.
+# nftables table in a user and network namespace of its own, and the tests render the examples of
+# greeting-examples.
 # The validator greeting refuses a message in capitals, which the schema and chalkctl accept.
 {
   chalkosLib,
@@ -59,10 +60,9 @@
       # nft --check does.
       echo 'table inet greeting { }' | ${pkgs.util-linux}/bin/unshare --map-root-user --net ${pkgs.nftables}/bin/nft --check --file -
     '';
-    examples = ./greeting-examples;
   };
   # The validator greeting refuses a message in capitals, a shout, and fails outside an
-  # unprivileged sandbox without STATE; the build runs it on the output's examples.
+  # unprivileged sandbox without STATE; the tests run it on the examples.
   chalkos.validators.greeting = {
     inputs = [ "Greeting" ];
     program = pkgs.writeShellScript "chalktest-greeting-validate" ''
@@ -71,8 +71,8 @@
       [ ! -e /state/chalkd ]
       exec ${lib.getExe pkgs.jq} -c '{refusals: [.documents.Greeting[] | select(.spec.message | test("^[A-Z !]+$")) | {kind, name: .metadata.name, path: "spec.message", message: "the message shouts; write it in lower case"}]}'
     '';
-    examples = ./greeting-examples;
   };
+  chalkos.tests = chalkosLib.internal.exampleTests "greeting" ./greeting-examples;
   chalkos.effects.chalktest-greeting = chalkosLib.restartOn { outputs = [ "greeting" ]; } [
     "chalktest-greeting.service"
   ];

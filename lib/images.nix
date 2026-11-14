@@ -98,12 +98,19 @@ let
   images = lib.mapAttrs (_: n: n.config.system.build.chalkosImage) (
     removeAttrs nixos [ "installer" ]
   );
+  # The tests of each image, <variant>-<platform>, chalkos.tests, which nix flake check runs.
+  checks = lib.mapAttrs (_: n: n.config.system.build.chalkosTests) (
+    removeAttrs nixos [ "installer" ]
+  );
 in
 {
   # The evaluated NixOS systems: <variant>-<platform> and installer.
   inherit nixos;
   # The image directories, <variant>-<platform>, each built only when asked for.
   inherit images;
+  # The tests of each image, <variant>-<platform>, chalkos.tests, which a flake exports as its
+  # checks so that nix flake check runs them.
+  inherit checks;
   # The OCI image layouts of the image directories, <variant>-<platform>, each built only when
   # asked for by chalkbuild oci, which the image's own nixpkgs builds as it builds chalkd.
   oci = lib.mapAttrs (

@@ -27,5 +27,8 @@
       # on their own, such as the image's schemas:
       # nix build .#nixosConfigurations.node-metal.config.system.build.chalkosSchemas
       nixosConfigurations = images.nixos;
+
+      # nix flake check: the image's tests, chalkos.tests.
+      checks.x86_64-linux = images.checks;
     };
 }

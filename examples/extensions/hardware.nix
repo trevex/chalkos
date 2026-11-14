@@ -1,6 +1,6 @@
 # The Hardware kind, which records who made a node's server and which model it is, and a unit
 # that logs it. The documents reach the unit as an output: an environment file rendered from a
-# template, which the build renders from the examples in hardware-examples. A variant that
+# template, which a test renders from the example in hardware-examples. A variant that
 # carries this module accepts Hardware documents.
 {
   chalkosLib,
@@ -37,8 +37,9 @@
   chalkos.outputs.hardware = {
     inputs = [ "Hardware" ];
     render = chalkosLib.render.template ./hardware.env.tmpl;
-    examples = ./hardware-examples;
   };
+  # The image accepts the example and renders hardware.env from it.
+  chalkos.tests.hardware-server.config = ./hardware-examples/server.yaml;
   # The unit reads the file when it starts, so a changed file restarts it.
   chalkos.effects.hardware-info = chalkosLib.restartOn { outputs = [ "hardware" ]; } [
     "hardware-info.service"

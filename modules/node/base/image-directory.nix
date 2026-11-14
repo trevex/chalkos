@@ -1,6 +1,7 @@
 # The image directory mkImages returns: the raw image with slot A labelled by its root hash,
 # repart's report, the system region's repart definitions, the schemas, the facts of the image's
-# layers and metadata.json. Its build fails when the image leaves no room for the next one.
+# layers and metadata.json. Its build fails when the image leaves no room for the next one, or
+# when a derivation of chalkos.imageDirectory.checks fails, such as the image's tests.
 {
   config,
   lib,
@@ -70,6 +71,17 @@ in
     '';
   };
 
+  options.chalkos.imageDirectory.checks = lib.mkOption {
+    type = lib.types.listOf lib.types.package;
+    default = [ ];
+    internal = true;
+    description = ''
+      Derivations the image directory's build depends on, which fail it when they fail. Unlike
+      `system.checks`, they stay out of the system's derivation, so they change neither the
+      image's content nor its root hash.
+    '';
+  };
+
   options.chalkos.provenance = {
     revision = lib.mkOption {
       type = lib.types.nullOr lib.types.str;
@@ -107,6 +119,7 @@ in
       pkgs.runCommand "${config.image.repart.name}-image"
         {
           inherit fits;
+          inherit (config.chalkos.imageDirectory) checks;
           nativeBuildInputs = [
             pkgs.jq
             pkgs.chalkos.relabel-partitions

@@ -29,6 +29,9 @@
       # nix build .#nixosConfigurations.node-kvm.config.system.build.chalkosSchemas
       nixosConfigurations = images.nixos;
 
+      # nix flake check: the image's tests, chalkos.tests.
+      checks.${system} = images.checks;
+
       # nix develop: chalklab and chalkctl of the chalkos this flake pins, and kubectl.
       devShells.${system}.default = pkgs.mkShellNoCC {
         packages = [

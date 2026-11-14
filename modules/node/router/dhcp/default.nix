@@ -227,7 +227,6 @@ in
           }
         done
       '';
-      examples = config.chalkos.router.examples;
     };
     # A subnet added, changed or removed, and a link or VRF networkd creates anew.
     chalkos.effects.dhcp = {

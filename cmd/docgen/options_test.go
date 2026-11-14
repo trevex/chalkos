@@ -79,6 +79,8 @@ func TestWriteOptions(t *testing.T) {
 				"\n## Effects { #effects }\n\n",
 				"\n## Diagnostics { #diagnostics }\n\n",
 				"\n### `chalkos.diagnostics` { #chalkosdiagnostics }\n",
+				"\n## Tests { #tests }\n\n",
+				"\n### `chalkos.tests` { #chalkostests }\n",
 				"\n## chalkosLib { #chalkoslib }\n\nThe helpers.\n",
 				"\nSources: ",
 			},

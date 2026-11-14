@@ -95,7 +95,6 @@ in
           ${dnsmasq}/bin/dnsmasq --test --conf-file="$f" >/dev/null
         done
       '';
-      examples = config.chalkos.router.examples;
     };
     # A relay added, changed or removed, and a VRF networkd creates anew.
     chalkos.effects.dhcp-relay = {

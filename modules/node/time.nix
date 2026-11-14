@@ -135,7 +135,7 @@ in
   # reads sourcedir files only when it starts or reloads its sources, and its -p parses files of
   # include alone, so the check includes the file. A sourcedir file takes server, pool and peer
   # directives alone, and the template checks nothing of its own, so the check refuses any other
-  # line too. The examples run the check when the image is built.
+  # line too. The tests run the check on the examples of examples/chrony.
   chalkos.outputs.chrony = {
     inputs = [ "TimeSync" ];
     render = chalkosLib.render.template template;
@@ -148,8 +148,8 @@ in
         exit 1
       fi
     '';
-    examples = ./examples/chrony;
   };
+  chalkos.tests = chalkosLib.internal.exampleTests "chrony" ./examples/chrony;
   # chrony reads the sources again when they change; whether the servers DHCP announces count is
   # chalkos-chrony-dhcp's. The effect tells the chronyd every node runs, while it runs.
   chalkos.effects.chrony = {

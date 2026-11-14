@@ -211,6 +211,10 @@ in
     assert
       template.nixosConfigurations.node-kvm.config.system.build.chalkosImage.drvPath
       == template.packages.${system}.node-kvm.drvPath;
+    # checks holds the tests of the system the image is built from, which nix flake check runs.
+    assert
+      template.checks.${system}.node-kvm.drvPath
+      == template.nixosConfigurations.node-kvm.config.system.build.chalkosTests.drvPath;
     checkLib.validateDirectory {
       name = "template-lab";
       src = ../../templates/lab;
@@ -244,6 +248,17 @@ in
         "router-metal"
         "node-metal"
       ];
+    # checks holds the tests of the systems the images are built from, which nix flake check runs.
+    assert lib.all
+      (
+        image:
+        homelab.checks.${pkgs.stdenv.hostPlatform.system}.${image}.drvPath
+        == homelab.nixosConfigurations.${image}.config.system.build.chalkosTests.drvPath
+      )
+      [
+        "router-metal"
+        "node-metal"
+      ];
     checkLib.validateDirectory {
       name = "example-homelab";
       src = ../../examples/homelab;
@@ -268,6 +283,10 @@ in
     assert
       example.nixosConfigurations.node-metal.config.system.build.chalkosImage.drvPath
       == example.packages.${pkgs.stdenv.hostPlatform.system}.node-metal.drvPath;
+    # checks holds the tests of the system the image is built from, which nix flake check runs.
+    assert
+      example.checks.${pkgs.stdenv.hostPlatform.system}.node-metal.drvPath
+      == example.nixosConfigurations.node-metal.config.system.build.chalkosTests.drvPath;
     checkLib.validateDirectory {
       name = "example-extensions";
       src = ../../examples/extensions;

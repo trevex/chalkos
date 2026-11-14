@@ -72,15 +72,15 @@ in
   # schemas, which are the image's, so the units follow from the documents alone. chalkos-config
   # renders them before networkd starts, and nothing else writes the directory. networkd has no
   # offline validator, so the output has no check: the schemas accept exactly the sections and
-  # keys the image's networkd does, and the examples render when the image is built. A layer may
-  # render the output with a renderer of its own, which writes the units of more kinds beside
-  # these.
+  # keys the image's networkd does, and the tests render the examples of examples/networkd. A
+  # layer may render the output with a renderer of its own, which writes the units of more kinds
+  # beside these.
   chalkos.outputs.networkd = {
     inputs = api.networkdKinds;
     render = lib.mkDefault "${lib.getExe pkgs.chalkos.chalkos-render} networkd ${schemas}";
     dir = "/run/systemd/network";
-    examples = ../examples/networkd;
   };
+  chalkos.tests = chalkosLib.internal.exampleTests "networkd" ../examples/networkd;
   # networkd reloads on systemctl reload as on networkctl reload. Its reload reads the .netdev and
   # .network units alone.
   chalkos.effects.networkd = {

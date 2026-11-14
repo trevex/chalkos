@@ -132,7 +132,6 @@ The options within each, by their path below `chalkos.validators`:
 
 | Option | Type | Default | Description |
 | --- | --- | --- | --- |
-| `<name>.examples`{ #chalkosvalidatorsexamples } | path or null | `null` | Directory of config files, YAML or JSON, each one example of a node's documents. The image's build runs the validator on each, and fails when it fails or refuses one. Example: `./examples` |
 | `<name>.inputs`{ #chalkosvalidatorsinputs } | non-empty (list of string) | required | Config kinds, by name as for a grant, whose documents the validator reads. Example: `[ "Peer" ]` |
 | `<name>.program`{ #chalkosvalidatorsprogram } | command, package or chalkosLib.validate value | required | Program of the image's store, with its arguments, that checks the documents. chalkd runs it as `<program> validate <name>`. It reads what a renderer reads on standard input: `{"node": {"name": …}, "documents": {"<Kind>": [<document>, …]}}`, the documents of each kind of `inputs`, sorted by name, with their schema defaults and without any Secret's values. It refuses a config by printing `{"refusals": [{"kind": …, "name": …, "path": …, "message": …}]}` on standard output, whatever its exit status, which chalkd reports as it reports a rule's refusal; it prints nothing, or no refusal, for a config it accepts. Otherwise exit status 0 means it ran; any other status, or anything else printed on standard output, fails it, which refuses the config too. It runs in the renderers' sandbox, may write no path but `/tmp`, and must finish within 30 seconds. `chalkosLib.validate.jq` builds a validator from a jq program, whose output is the report. Example: `chalkosLib.validate.jq ./peers.jq` |
 
@@ -157,7 +156,6 @@ The options within each, by their path below `chalkos.outputs`:
 | --- | --- | --- | --- |
 | `<name>.check`{ #chalkosoutputscheck } | string or null | `null` | Shell commands, run by bash with `set -e` in the renderer's sandbox, with coreutils, grep and sed on the `PATH`, that check the rendered files in `$OUT`; they read the renderer's input on standard input and may not write `$OUT`. Unlike the renderer they may open netlink sockets, so `unshare --map-root-user --net nft --check --file "$OUT/…"` checks an nftables ruleset in a user and network namespace of its own. The files are as the renderer wrote them, before they get the output's owner and mode. A failure refuses the delivery before it changes anything, and at boot fails `chalkos-config.service`. Example: `"${pkgs.bird}/bin/bird -p -c $OUT/bird.conf"` |
 | `<name>.dir`{ #chalkosoutputsdir } | string | `"/run/chalkos/outputs/<name>"` | Where services read the output's files: a link that chalkd replaces in one rename, so a service reads the files of one render, never a mix of two. Refer to it as `config.chalkos.outputs.<name>.dir`, so a misspelled name fails the evaluation. A directory at the path is removed when the link first replaces it, so the path is a clean path below `/run` whose components start with no dot, outside `/run/chalkos` but for `/run/chalkos/outputs/<name>` and the paths below it, and neither another output's dir nor inside one. |
-| `<name>.examples`{ #chalkosoutputsexamples } | path or null | `null` | Directory of config files, YAML or JSON, each one example of a node's documents. The image's build renders and checks the output from each, as the node `example`, and fails when one fails. Example: `./examples` |
 | `<name>.group`{ #chalkosoutputsgroup } | string | `"root"` | Group of the output's files and directories. |
 | `<name>.inputs`{ #chalkosoutputsinputs } | list of string | `[ ]` | Config kinds, by name as for a grant, whose documents the renderer reads. Example: `[ "Peer" ]` |
 | `<name>.mode`{ #chalkosoutputsmode } | string matching `0?[0-7]{3}` | `"0644"` | Mode of the output's files; its directories are 0755. |
@@ -232,6 +230,49 @@ The options within each, by their path below `chalkos.diagnostics`:
 | `<name>.parameters.<name>.values`{ #chalkosdiagnosticsparametersvalues } | list of non-empty string | `[ ]` | Values of an `enum` parameter. Example: `[ "inet" "inet6" ]` |
 | `<name>.role`{ #chalkosdiagnosticsrole } | one of `reader`, `operator`, `admin` | `"operator"` | Least client role that runs the diagnostic, which chalkd checks on top of the reader role that RunDiagnostic needs. |
 | `<name>.timeout`{ #chalkosdiagnosticstimeout } | string matching `[1-9][0-9]*[sm]` | `"30s"` | How long a run may take, in seconds or minutes, from `1s` to `10m`; systemd stops the run then. Example: `"10s"` |
+
+## Tests { #tests }
+
+The configs an image's tests give it and what the image should make of them, which nix flake check runs.
+
+### `chalkos.tests` { #chalkostests }
+
+Type: map of submodule · Default: `{ }` · Declared in: [modules/node/runtime/tests.nix](https://github.com/trevex/chalkos/blob/main/modules/node/runtime/tests.nix)
+
+Tests of the image, by a name of the test's own: a config a node could be given, and what
+the image makes of it, the files its outputs render, the refusals it gives and, for a
+change, the effects it takes. `chalkos-rules test` runs each config through the checks
+chalkd runs for a delivery: the kinds' schemas, change rules, validators, every output's
+renderer and check, and the effects' plan. `system.build.chalkosTestResults` holds what
+each test got, `<test>/outputs/<output>/`, `<test>/refusals.json` and
+`<test>/effects.json`, and builds whatever the tests got; `system.build.chalkosTests`
+fails when a test does, with a diff of each output's golden files. mkImages's `checks`
+holds each image's `chalkosTests`, so `nix flake check` runs them.
+
+The options within each, by their path below `chalkos.tests`:
+
+| Option | Type | Default | Description |
+| --- | --- | --- | --- |
+| `<name>.before`{ #chalkostestsbefore } | path or null | `null` | YAML or JSON file of the node's documents before `config`, which makes the test one of a change from these documents to those of `config`: change rules compare the two, and the effects due are those of the change. It must be accepted, or the test fails. Null makes the test one of a first delivery. Example: `./tests/one-peer.yaml` |
+| `<name>.config`{ #chalkostestsconfig } | path | required | YAML or JSON file of a node's documents, as a delivery gives them. The test checks them as a set, as chalkd checks a delivery, without the documents of the node's identity, such as its SystemDisk, which a test need not hold. Example: `./tests/two-peers.yaml` |
+| `<name>.effects`{ #chalkostestseffects } | list of string or null | `null` | Names of the effects of `chalkos.effects` the change from `before` to `config` takes, sorted by name, as chalkd's plan lists them; an empty list expects none. Null leaves the effects unchecked. A test that sets it needs `before`. Example: `[ "bird" ]` |
+| `<name>.facts`{ #chalkostestsfacts } | map of JSON value | `{ }` | Facts that rules and effects' `when` conditions read as `facts.<name>`, by name, each any JSON value. A fact the test leaves out reads as null. Each must be a fact of `chalkos.facts`. Example: `{ greetingLock = { message = "hello"; }; }` |
+| `<name>.node`{ #chalkostestsnode } | string | `"example"` | Name of the node, which rules read as `node.name` and renderers and validators as `.node.name`. |
+| `<name>.oldFacts`{ #chalkostestsoldfacts } | map of JSON value | `{ }` | Facts as they were before the change, in the form of `facts`, which the check of `before` and effects' `when` conditions read. |
+| `<name>.outputs`{ #chalkostestsoutputs } | map of path | `{ }` | Golden files of outputs of `chalkos.outputs`, by output: a directory that holds exactly the files the output renders from `config`, with the hash of each store path written as `eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee`. A missing, extra or different file fails the test. An output left out is rendered and checked, but its files are not compared. Example: `{ bird-conf = ./tests/two-peers/bird-conf; }` |
+| `<name>.refusals`{ #chalkostestsrefusals } | list of submodule | `[ ]` | The refusals the config gets, from the kinds' schemas, change rules, validators and outputs' checks, in the order chalkctl prints them, each once. They are always compared: the default, an empty list, expects the config to be accepted. |
+| `<name>.refusals.*.kind`{ #chalkostestsrefusalskind } | string | `""` | Kind of the refused document; empty for a refusal of no one document. Example: `"Peer"` |
+| `<name>.refusals.*.message`{ #chalkostestsrefusalsmessage } | string | required | The refusal's message, exactly as chalkctl prints it. Example: `"enp3s0 has no Network document"` |
+| `<name>.refusals.*.name`{ #chalkostestsrefusalsname } | string | `""` | Name of the refused document; empty for a refusal of no one document. Example: `"router"` |
+| `<name>.refusals.*.path`{ #chalkostestsrefusalspath } | string | `""` | Path of the refused field in the document; empty for the whole document. Example: `"spec.interfaces[2]"` |
+
+### `chalkos.testsOnBuild` { #chalkostestsonbuild }
+
+Type: boolean · Default: `false` · Declared in: [modules/node/runtime/tests.nix](https://github.com/trevex/chalkos/blob/main/modules/node/runtime/tests.nix)
+
+Whether the image directory's build runs the tests of `chalkos.tests` and fails when one
+does. The tests change neither the image's content nor its root hash; without this,
+`nix flake check` runs them through mkImages's `checks`.
 
 ## Image directory { #image-directory }
 

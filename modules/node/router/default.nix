@@ -83,10 +83,10 @@ in
             throw "the router example ${baseNameOf file} is a ${type}, not a file";
       };
     description = ''
-      The examples the router outputs render at the image's build: the files of
-      modules/node/examples/router all of whose documents are of kinds the image accepts. An
-      image whose variant leaves a router feature out refuses that feature's kinds, and renders
-      the examples without them.
+      The config files the router's tests run, the test `router-<name>` of `chalkos.tests` the
+      file `<name>.yaml`: the files of modules/node/examples/router all of whose documents are
+      of kinds the image accepts. An image whose variant leaves a router feature out refuses
+      that feature's kinds, and runs the tests of the examples without them.
     '';
   };
 
@@ -99,6 +99,7 @@ in
       chalkos.kinds = routerLib.kinds ./kinds.nix;
       chalkos.layers.router = "";
       chalkos.forwarding.enable = true;
+      chalkos.tests = chalkosLib.internal.exampleTests "router" config.chalkos.router.examples;
 
       # zebra installs BGP's routes and next hops, and chalkos-nat64 the routes to the NAT64s'
       # links, which networkd would remove as foreign ones each time it configures a link.

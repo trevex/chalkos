@@ -176,7 +176,6 @@ in
       echo "include \"$OUT/bird.conf\";" >>"$conf"
       ${bird}/bin/bird -p -c "$conf"
     '';
-    examples = ./bgp-examples;
   };
   # --8<-- [end:output]
 
@@ -191,9 +190,11 @@ in
       "Network"
     ];
     program = chalkosLib.validate.jq ./bgp-peers.jq;
-    examples = ./bgp-examples;
   };
   # --8<-- [end:validator]
+  # The image accepts the example: bgp-peers refuses nothing, and bird parses the bird.conf it
+  # renders.
+  chalkos.tests.bgp-fabric.config = ./bgp-examples/fabric.yaml;
 
   # --8<-- [start:service]
   services.bird = {
