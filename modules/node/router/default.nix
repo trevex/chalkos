@@ -27,16 +27,34 @@ let
   inherit (routerLib) accepted;
   # Whether the image carries every feature of the router.
   allFeatures = lib.all (feature: config.chalkos.router.${feature}.enable) routerLib.features;
+  # The tests of the router's examples, router-<name> of each file <name>.yaml.
+  exampleTests = chalkosLib.internal.exampleTests "router" config.chalkos.router.examples;
   # The VRF example with the strict reverse-path filter in its Router, in place of the default
-  # loose one.
+  # loose one, the config of the test router-vrf-strict.
   vrfStrict =
     let
       vrf = builtins.readFile ../examples/router/vrf.yaml;
       management = "  management: {interfaces: [eth0]}\n";
       strict = lib.replaceStrings [ management ] [ "${management}  rpFilter: strict\n" ] vrf;
+      # The lines of the VRF example that set an rpFilter.
+      rpFilters = lib.filter (line: builtins.match "[ ]*rpFilter:.*" line != null) (
+        lib.splitString "\n" vrf
+      );
     in
-    chalkosLib.internal.refuse (lib.optional (strict == vrf)
-      "the VRF example's Router no longer gives its management interfaces on a line of their own"
+    chalkosLib.internal.refuse (
+      lib.optional (lib.length (lib.splitString management vrf) != 2) (
+        "the VRF example's Router must give its management interfaces once, on the line "
+        + "`management: {interfaces: [eth0]}`, after which the test router-vrf-strict sets "
+        + "its rpFilter"
+      )
+      ++ lib.optional (rpFilters != [ ]) (
+        "the VRF example sets an rpFilter, which the test router-vrf-strict sets to strict; "
+        + "leave the VRF example with the default loose filter"
+      )
+      ++ lib.optional (exampleTests ? router-vrf-strict) (
+        "the router example vrf-strict gives the test router-vrf-strict, which the VRF example "
+        + "under the strict filter takes; rename the example"
+      )
     ) (pkgs.writeText "vrf-strict.yaml" strict);
 in
 {
@@ -146,7 +164,7 @@ in
               )
             );
           }
-        ) (chalkosLib.internal.exampleTests "router" config.chalkos.router.examples)
+        ) exampleTests
         // lib.optionalAttrs allFeatures {
           # The VRF example under the strict reverse-path filter, whose ruleset accepts the
           # neighbour discovery of link-local sources on the VRFs' devices before the fib check.
