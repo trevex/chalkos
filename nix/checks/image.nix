@@ -13,37 +13,33 @@ let
     testing
     worker
     ;
-  # The router image without the router features named, whose modules set their
-  # chalkos.router.<feature>.enable to false.
-  routerWithout =
-    features:
-    (router.extendModules {
-      modules = [
-        {
-          chalkos.router = lib.genAttrs features (_: {
-            enable = false;
-          });
-        }
-      ];
-    }).config;
-  # The features the checks leave out of the router image: each a variant may leave out alone,
-  # and all six.
-  routerFeatureSets = [
-    [ "bgp" ]
-    [ "nat64" ]
-    [ "resolver" ]
-    [ "dhcp" ]
-    [ "dhcpRelay" ]
-    [ "wireguard" ]
-    [
-      "bgp"
-      "nat64"
-      "resolver"
-      "dhcp"
-      "dhcpRelay"
-      "wireguard"
-    ]
+  # The router features a variant may leave out.
+  features = [
+    "bgp"
+    "nat64"
+    "resolver"
+    "dhcp"
+    "dhcpRelay"
+    "wireguard"
   ];
+  # The router image without each of the features alone and without all six, by the names of
+  # the features left out joined by dashes, each with their chalkos.router.<feature>.enable set
+  # to false.
+  routerWithout = lib.listToAttrs (
+    map (
+      without:
+      lib.nameValuePair (lib.concatStringsSep "-" without)
+        (router.extendModules {
+          modules = [
+            {
+              chalkos.router = lib.genAttrs without (_: {
+                enable = false;
+              });
+            }
+          ];
+        }).config
+    ) (map lib.singleton features ++ [ features ])
+  );
 in
 {
   # The worker's and the router's kernel module trees, and one with the gpu group: a module outside
@@ -293,7 +289,7 @@ in
         modules:
         (self.lib.mkImages { variants.worker.modules = modules; }).nixos.worker-metal.config.system.build;
       examples = checkLib.fixtures.nixos.examples-metal.config.system.build;
-      router = checkLib.router.config.system.build;
+      routerBuild = checkLib.router.config.system.build;
       # The router image loads nf_conntrack, the modules of its firewall and Jool, which its module
       # tree must hold with what they depend on.
       routerModules = checkLib.router.config.system.build.chalkosKernelModulesCheck;
@@ -361,10 +357,10 @@ in
         checked = [
           testing.nixos.test-metal.config.system.build.chalkosRulesCheck
           examples.chalkosRulesCheck
-          router.chalkosRulesCheck
+          routerBuild.chalkosRulesCheck
           routerModules
         ]
-        ++ map (features: (routerWithout features).system.build.chalkosRulesCheck) routerFeatureSets;
+        ++ lib.mapAttrsToList (_: c: c.system.build.chalkosRulesCheck) routerWithout;
       }
       ''
         ${checkLib.prelude}
@@ -388,7 +384,7 @@ in
         done
         # The check of the router's firewall passes the LAN example's ruleset and refuses one the
         # kernel would not load, with nft in a user and network namespace of its own.
-        check=$(jq -r '."router-nftables".check' ${router.chalkosOutputs})
+        check=$(jq -r '."router-nftables".check' ${routerBuild.chalkosOutputs})
         mkdir nftables
         install -m 644 ${../../cmd/chalkos-render/testdata/router/lan.nft} nftables/ruleset.nft
         OUT=$PWD/nftables $check </dev/null
@@ -396,7 +392,7 @@ in
         refuses "the router's nftables check" 'Error: Interface does not exist' env OUT=$PWD/nftables "$check" </dev/null
         # The check of FRR's config passes the edge example's and the IPv4 and IPv6 tracking of
         # the renderer's tests, and refuses a command no daemon takes, with vtysh alone.
-        check=$(jq -r .frr.check ${router.chalkosOutputs})
+        check=$(jq -r .frr.check ${routerBuild.chalkosOutputs})
         mkdir frr
         install -m 644 ${../../cmd/chalkos-render/testdata/router/tracked.frr} frr/frr.conf
         OUT=$PWD/frr $check </dev/null
@@ -408,7 +404,7 @@ in
         # The check of Jool's instances passes the edge example's and refuses a port past 65535,
         # with jool alone. A golden holds its files, each after a line that names it; the check
         # takes Jool's file of the edge example alone.
-        check=$(jq -r .jool.check ${router.chalkosOutputs})
+        check=$(jq -r .jool.check ${routerBuild.chalkosOutputs})
         mkdir jool
         awk 'NR > 1 && /^# /{ exit } NR > 1' ${../../cmd/chalkos-render/testdata/router/edge.jool} >jool/edge.json
         OUT=$PWD/jool $check </dev/null
@@ -417,8 +413,8 @@ in
         # The check of Unbound's config passes the LAN example's, with the trust anchor and zone
         # the image renders it with in place of the golden's, and refuses a record Unbound does not
         # take.
-        check=$(jq -r .unbound.check ${router.chalkosOutputs})
-        read -r _ _ anchor zone < <(jq -r .unbound.render ${router.chalkosOutputs})
+        check=$(jq -r .unbound.check ${routerBuild.chalkosOutputs})
+        read -r _ _ anchor zone < <(jq -r .unbound.render ${routerBuild.chalkosOutputs})
         mkdir unbound
         sed -e 1d -e "s|/etc/unbound/root.key|$anchor|" -e "s|/etc/unbound/ipv4only.arpa.zone|$zone|" \
           ${../../cmd/chalkos-render/testdata/router/lan.unbound} >unbound/unbound.conf
@@ -440,12 +436,7 @@ in
         router = router.config;
         examples = checkLib.fixtures.nixos.examples-metal.config;
       }
-      // lib.listToAttrs (
-        map (
-          features:
-          lib.nameValuePair "router-without-${lib.concatStringsSep "-" features}" (routerWithout features)
-        ) routerFeatureSets
-      )
+      // lib.mapAttrs' (without: c: lib.nameValuePair "router-without-${without}" c) routerWithout
     )
   );
 

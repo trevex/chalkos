@@ -104,20 +104,27 @@ in
       # A DNS name: letters, digits, dots and dashes, starting and ending with a letter or digit.
       dnsName = "[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?";
       # The config files of the directory dir, YAML or JSON, as tests of chalkos.tests named
-      # <prefix>-<the file's name up to its first dot>, each with the file as its config alone: a
-      # test that the image accepts the config, renders every output from it and passes the
-      # outputs' checks.
+      # <prefix>-<the file's name without its extension>, each with the file as its config alone:
+      # a test that the image accepts the config, renders every output from it and passes the
+      # outputs' checks. Two files that give one name, such as a.yaml and a.json, are refused.
       exampleTests =
         prefix: dir:
-        lib.mapAttrs'
-          (
-            file: _:
-            lib.nameValuePair "${prefix}-${lib.head (lib.splitString "." file)}" { config = dir + "/${file}"; }
-          )
-          (
-            lib.filterAttrs (
-              file: type: type == "regular" && builtins.match ".*\\.(yaml|yml|json)" file != null
-            ) (builtins.readDir dir)
+        let
+          # The name of the file's test, or null for a file that is no config file.
+          testName =
+            file:
+            let
+              m = builtins.match "(.*)\\.(yaml|yml|json)" file;
+            in
+            if m == null then null else "${prefix}-${lib.head m}";
+          files = lib.attrNames (
+            lib.filterAttrs (file: type: type == "regular" && testName file != null) (builtins.readDir dir)
           );
+          byName = lib.groupBy testName files;
+          clashes = lib.filterAttrs (_: fs: lib.length fs > 1) byName;
+        in
+        refuseLib.refuse (lib.mapAttrsToList (
+          name: fs: "${toString dir}: ${lib.concatStringsSep " and " fs} both give the test ${name}"
+        ) clashes) (lib.mapAttrs (_: fs: { config = dir + "/${lib.head fs}"; }) byName);
     };
 }

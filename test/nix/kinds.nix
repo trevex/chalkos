@@ -2998,6 +2998,23 @@ lib.runTests {
       tests = true;
     };
   };
+  # exampleTests names a test by its file without the extension, skips files of other types, and
+  # refuses two files that give one name.
+  testExampleTestsNames = {
+    expr = {
+      tests = lib.mapAttrs (_: t: baseNameOf t.config) (
+        chalkosLib.internal.exampleTests "demo" ./fixtures/example-tests
+      );
+      clash = fails (chalkosLib.internal.exampleTests "demo" ./fixtures/example-tests-clash);
+    };
+    expected = {
+      tests = {
+        demo-one = "one.yaml";
+        "demo-two.v1" = "two.v1.json";
+      };
+      clash = true;
+    };
+  };
   # The examples of networkd and chrony are tests of every image, and the router's of a router
   # image.
   testExampleTests = {

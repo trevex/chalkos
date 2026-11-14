@@ -249,22 +249,49 @@ each test got, `<test>/outputs/<output>/`, `<test>/refusals.json` and
 fails when a test does, with a diff of each output's golden files. mkImages's `checks`
 holds each image's `chalkosTests`, so `nix flake check` runs them.
 
+Example:
+
+```nix
+{
+  # A second Peer: bird.conf gets its session, and bird reloads.
+  two-peers = {
+    before = ./tests/one-peer.yaml;
+    config = ./tests/two-peers.yaml;
+    outputs.bird-conf = ./tests/two-peers/bird-conf;
+    effects = [ "bird" ];
+  };
+}
+```
+
 The options within each, by their path below `chalkos.tests`:
 
 | Option | Type | Default | Description |
 | --- | --- | --- | --- |
 | `<name>.before`{ #chalkostestsbefore } | path or null | `null` | YAML or JSON file of the node's documents before `config`, which makes the test one of a change from these documents to those of `config`: change rules compare the two, and the effects due are those of the change. It must be accepted, or the test fails. Null makes the test one of a first delivery. Example: `./tests/one-peer.yaml` |
-| `<name>.config`{ #chalkostestsconfig } | path | required | YAML or JSON file of a node's documents, as a delivery gives them. The test checks them as a set, as chalkd checks a delivery, without the documents of the node's identity, such as its SystemDisk, which a test need not hold. Example: `./tests/two-peers.yaml` |
+| `<name>.config`{ #chalkostestsconfig } | path | required | YAML or JSON file of a node's documents, as a delivery gives them: a file of the flake, such as `./tests/two-peers.yaml`, or of the store. The test checks them as a set, as chalkd checks a delivery, without the documents of the node's identity, such as its SystemDisk, which a test need not hold. Example: `./tests/two-peers.yaml` |
 | `<name>.effects`{ #chalkostestseffects } | list of string or null | `null` | Names of the effects of `chalkos.effects` the change from `before` to `config` takes, sorted by name, as chalkd's plan lists them; an empty list expects none. Null leaves the effects unchecked. A test that sets it needs `before`. Example: `[ "bird" ]` |
 | `<name>.facts`{ #chalkostestsfacts } | map of JSON value | `{ }` | Facts that rules and effects' `when` conditions read as `facts.<name>`, by name, each any JSON value. A fact the test leaves out reads as null. Each must be a fact of `chalkos.facts`. Example: `{ greetingLock = { message = "hello"; }; }` |
 | `<name>.node`{ #chalkostestsnode } | string | `"example"` | Name of the node, which rules read as `node.name` and renderers and validators as `.node.name`. |
-| `<name>.oldFacts`{ #chalkostestsoldfacts } | map of JSON value | `{ }` | Facts as they were before the change, in the form of `facts`, which the check of `before` and effects' `when` conditions read. |
-| `<name>.outputs`{ #chalkostestsoutputs } | map of path | `{ }` | Golden files of outputs of `chalkos.outputs`, by output: a directory that holds exactly the files the output renders from `config`, with the hash of each store path written as `eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee`. A missing, extra or different file fails the test. An output left out is rendered and checked, but its files are not compared. Example: `{ bird-conf = ./tests/two-peers/bird-conf; }` |
+| `<name>.oldFacts`{ #chalkostestsoldfacts } | map of JSON value | `{ }` | Facts as they were before the change, in the form of `facts`, which the check of `before` and effects' `when` conditions read. Example: `{ greetingLock = null; }` |
+| `<name>.outputs`{ #chalkostestsoutputs } | map of path | `{ }` | Golden files of outputs of `chalkos.outputs`, by output: a directory that holds exactly the files the output renders from `config`, with the hash of each store path written as `eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee`. A missing, extra or different file fails the test. An output left out is rendered and checked, but its files are not compared. An output that renders no files has no golden directory in a flake of a git repository, as git keeps no empty directory, so a test leaves it out. Example: `{ bird-conf = ./tests/two-peers/bird-conf; }` |
 | `<name>.refusals`{ #chalkostestsrefusals } | list of submodule | `[ ]` | The refusals the config gets, from the kinds' schemas, change rules, validators and outputs' checks, in the order chalkctl prints them, each once. They are always compared: the default, an empty list, expects the config to be accepted. |
 | `<name>.refusals.*.kind`{ #chalkostestsrefusalskind } | string | `""` | Kind of the refused document; empty for a refusal of no one document. Example: `"Peer"` |
 | `<name>.refusals.*.message`{ #chalkostestsrefusalsmessage } | string | required | The refusal's message, exactly as chalkctl prints it. Example: `"enp3s0 has no Network document"` |
 | `<name>.refusals.*.name`{ #chalkostestsrefusalsname } | string | `""` | Name of the refused document; empty for a refusal of no one document. Example: `"router"` |
 | `<name>.refusals.*.path`{ #chalkostestsrefusalspath } | string | `""` | Path of the refused field in the document; empty for the whole document. Example: `"spec.interfaces[2]"` |
+
+Example of `<name>.refusals`:
+
+```nix
+[
+  {
+    kind = "Peer";
+    message = "enp3s0 has no Network document; bird binds the session to an interface the node configures";
+    name = "router";
+    path = "spec.interfaces[2]";
+  }
+]
+```
 
 ### `chalkos.testsOnBuild` { #chalkostestsonbuild }
 

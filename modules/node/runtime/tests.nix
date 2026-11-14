@@ -49,9 +49,10 @@ let
         type = lib.types.path;
         example = lib.literalExpression "./tests/two-peers.yaml";
         description = ''
-          YAML or JSON file of a node's documents, as a delivery gives them. The test checks them
-          as a set, as chalkd checks a delivery, without the documents of the node's identity,
-          such as its SystemDisk, which a test need not hold.
+          YAML or JSON file of a node's documents, as a delivery gives them: a file of the flake,
+          such as `./tests/two-peers.yaml`, or of the store. The test checks them as a set, as
+          chalkd checks a delivery, without the documents of the node's identity, such as its
+          SystemDisk, which a test need not hold.
         '';
       };
       before = lib.mkOption {
@@ -85,6 +86,9 @@ let
       oldFacts = lib.mkOption {
         type = factValues;
         default = { };
+        example = {
+          greetingLock = null;
+        };
         description = ''
           Facts as they were before the change, in the form of `facts`, which the check of
           `before` and effects' `when` conditions read.
@@ -98,12 +102,22 @@ let
           Golden files of outputs of `chalkos.outputs`, by output: a directory that holds
           exactly the files the output renders from `config`, with the hash of each store path
           written as `eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee`. A missing, extra or different file fails
-          the test. An output left out is rendered and checked, but its files are not compared.
+          the test. An output left out is rendered and checked, but its files are not compared. An
+          output that renders no files has no golden directory in a flake of a git repository,
+          as git keeps no empty directory, so a test leaves it out.
         '';
       };
       refusals = lib.mkOption {
         type = lib.types.listOf (lib.types.submodule refusal);
         default = [ ];
+        example = [
+          {
+            kind = "Peer";
+            name = "router";
+            path = "spec.interfaces[2]";
+            message = "enp3s0 has no Network document; bird binds the session to an interface the node configures";
+          }
+        ];
         description = ''
           The refusals the config gets, from the kinds' schemas, change rules, validators and
           outputs' checks, in the order chalkctl prints them, each once. They are always
@@ -191,19 +205,21 @@ let
         chalkos-rules test ${config.system.build.chalkosRulesImage} ${testsJSON} $out
       '';
   # The tests' summary, built only when every test passes; otherwise the build fails with the
-  # failures and a diff of each output's golden files and the files it rendered.
+  # FAIL and WARN lines and a diff of each output's golden files and the files it rendered.
   tests = pkgs.runCommand "chalkos-tests" { nativeBuildInputs = [ pkgs.diffutils ]; } ''
     if [ -s ${results}/failures ]; then
-      cat ${results}/failures >&2
+      grep -v '^PASS ' ${results}/summary.txt >&2
       while IFS=$'\t' read -r test output golden got; do
         echo >&2
         echo "test $test, output $output: the golden files differ from what it rendered:" >&2
         diff -ruN "$golden" "${results}/$got" >&2 || true
         echo "to take what it rendered, with DIR the directory of chalkos.tests.$test.outputs.$output:" >&2
-        echo "  rm -r DIR && cp -r --no-preserve=mode ${results}/$got DIR" >&2
+        echo "  rm -r DIR && cp -r --no-preserve=mode ${results}/$got DIR && git add DIR" >&2
       done < ${results}/goldens.tsv
       exit 1
     fi
+    # A warning fails no test, but the build shows it.
+    grep '^WARN ' ${results}/summary.txt >&2 || true
     cp ${results}/summary.txt $out
   '';
 in
@@ -211,6 +227,17 @@ in
   options.chalkos.tests = lib.mkOption {
     type = lib.types.attrsOf (lib.types.submodule test);
     default = { };
+    example = lib.literalExpression ''
+      {
+        # A second Peer: bird.conf gets its session, and bird reloads.
+        two-peers = {
+          before = ./tests/one-peer.yaml;
+          config = ./tests/two-peers.yaml;
+          outputs.bird-conf = ./tests/two-peers/bird-conf;
+          effects = [ "bird" ];
+        };
+      }
+    '';
     description = ''
       Tests of the image, by a name of the test's own: a config a node could be given, and what
       the image makes of it, the files its outputs render, the refusals it gives and, for a
