@@ -105,7 +105,7 @@ let
   # The files of the image chalkos-rules checks, laid out as it reads them; units holds every
   # systemd unit of the image, the upstream ones among them.
   rulesImage = pkgs.linkFarm "chalkos-rules-image" {
-    schemas = schemas;
+    inherit schemas;
     "facts.json" = config.system.build.chalkosFacts;
     "effects.json" = config.system.build.chalkosEffects;
     "services.json" = config.system.build.chalkosServices;

@@ -1476,7 +1476,7 @@ lib.runTests {
     expected = null;
   };
   testBuiltinSchemasMatchFixtures = {
-    expr = map (kind: builtinSchema kind) [
+    expr = map builtinSchema [
       "Host"
       "Flannel"
       "Cluster"
@@ -1704,7 +1704,7 @@ lib.runTests {
     in
     {
       expr = {
-        c = validators.c;
+        inherit (validators) c;
         inputs = validators.p.inputs;
         package = lib.hasPrefix "/nix/store/" validators.p.program;
         jq = lib.hasSuffix "-chalkos-validate-jq-j" validators.j.program;
@@ -2215,7 +2215,7 @@ lib.runTests {
         check = lib.findFirst (d: lib.hasInfix "chalkos-grants-check" d.name) null c.system.checks;
       in
       {
-        warnings = c.warnings;
+        inherit (c) warnings;
         checked = check != null && lib.hasInfix "orphan" check.buildCommand;
       };
     expected = {
@@ -2722,8 +2722,7 @@ lib.runTests {
         defined = config.system.build.chalkosFactDefinitions;
       in
       {
-        seen = defined.seen;
-        probe = defined.probe;
+        inherit (defined) seen probe;
         etc = config.environment.etc."chalkos/facts.json".source == config.system.build.chalkosFacts;
       };
     expected = {
@@ -2749,9 +2748,7 @@ lib.runTests {
       {
         names = lib.attrNames defined;
         plain = lib.attrNames plainImage.system.build.chalkosFactDefinitions;
-        recorded = defined.recorded;
-        share = defined.share;
-        cluster = defined.cluster;
+        inherit (defined) recorded share cluster;
         disks = lib.hasSuffix " disks" defined.disks.command && !(defined.disks ? inputs);
         fallback =
           lib.hasSuffix " fallback" defined.fallback.command

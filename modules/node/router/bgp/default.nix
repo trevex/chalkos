@@ -14,7 +14,7 @@ let
   cfg = config.chalkos.router.bgp;
   kinds = routerLib.kinds ./kinds.nix;
   render = lib.getExe pkgs.chalkos.chalkos-render;
-  frr = pkgs.frr;
+  inherit (pkgs) frr;
   rendered = "${config.chalkos.outputs.frr.dir}/frr.conf";
   # vtysh reads vtysh.conf from its config directory; the check's own holds no more, so vtysh
   # checks the rendered file alone.

@@ -1,0 +1,6 @@
+# The statix lints the nix-lint check leaves out, each with the reason.
+#
+# repeated_keys: a module sets several options under one key, such as chalkos.*, boot.* or
+# systemd.*, as separate lines, each with its own comment, which reads better than one
+# nested set.
+disabled = ["repeated_keys"]

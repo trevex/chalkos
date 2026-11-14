@@ -179,6 +179,16 @@ gofmt -l -w cmd pkg test
 `nix fmt` runs nixfmt over the Nix files; `nix fmt -- --ci` checks them without changing
 anything.
 
+Lint the Nix code with statix and with deadnix, which finds unused bindings and arguments:
+
+```sh
+deadnix .
+statix check .
+```
+
+`statix.toml` lists the statix lints chalkos leaves out, each with its reason. The `nix-lint` check
+runs nixfmt, deadnix and statix in the Nix sandbox and fails on any finding.
+
 Lint the Go code, the end-to-end tests included, with go vet and staticcheck:
 
 ```sh

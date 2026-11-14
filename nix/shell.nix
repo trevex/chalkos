@@ -17,6 +17,8 @@ pkgs.mkShell (
         python3Packages.virt-firmware
         jq
         nixfmt
+        deadnix
+        statix
         chalkos.go.tools.staticcheck.latest
       ]);
   }

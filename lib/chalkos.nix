@@ -92,7 +92,7 @@ in
       inherit api kindTypes declaredKinds;
       # The version of secrets.pub.json chalkos reads.
       secretsVersion = import ./secrets-version.nix;
-      cel = import ./cel.nix { inherit lib; };
+      cel = import ./cel.nix;
       schema = import ./kinds/schema.nix { inherit lib; };
       get = import ./kinds/get.nix { inherit lib; };
       # The fields that make a kind of the group a built-in one.

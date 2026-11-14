@@ -27,9 +27,8 @@
       # nix build .#<image> -o images/<image>: the images where the inventory, chalkos.yaml,
       # points. nix build .#installer: the installer's raw image and ISO, which install both.
       packages.${system} = {
-        router-metal = images.images.router-metal;
-        node-metal = images.images.node-metal;
-        installer = images.installer;
+        inherit (images.images) router-metal node-metal;
+        inherit (images) installer;
       };
 
       # nix develop: chalkctl and chalkbuild of the chalkos this flake pins, and the other tools

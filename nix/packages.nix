@@ -50,5 +50,5 @@ in
   );
 
   # The installer without an OS CA: it accepts any client until it installs a node.
-  installer = (self.lib.mkImages { variants = { }; }).installer;
+  inherit (self.lib.mkImages { variants = { }; }) installer;
 }

@@ -313,6 +313,32 @@ in
         touch $out
       '';
 
+  # The Nix files are formatted as nix fmt formats them, hold no unused binding or argument
+  # (deadnix) and pass statix, except for the lints statix.toml leaves out.
+  nix-lint =
+    pkgs.runCommand "chalkos-nix-lint"
+      {
+        nativeBuildInputs = [
+          pkgs.nixfmt
+          pkgs.deadnix
+          pkgs.statix
+        ];
+        src = lib.fileset.toSource {
+          root = ../..;
+          fileset = lib.fileset.unions [
+            (lib.fileset.fileFilter (f: f.hasExt "nix") ../..)
+            ../../statix.toml
+          ];
+        };
+      }
+      ''
+        cd $src
+        nixfmt --check $(find . -name '*.nix' | sort)
+        deadnix --fail .
+        statix check --config statix.toml .
+        touch $out
+      '';
+
   # The documentation site builds strictly and shows only commands that exist.
   docs = docs.check;
   # The pages generated from the code are those in the repository.

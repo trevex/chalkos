@@ -1,6 +1,5 @@
 # CEL that the rules of effects share. A rule reads config and oldConfig, each a config by
 # apiVersion, kind and name, and node.
-{ lib }:
 rec {
   # The documents of a kind in the config c by name, none when c holds none of the kind.
   documents =

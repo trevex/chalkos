@@ -1293,10 +1293,8 @@ lib.runTests {
         effect = {
           inherit (edge.chalkos.effects.vrf) outputs reload;
         };
-        after = vrf.after;
-        before = vrf.before;
+        inherit (vrf) after before wantedBy;
         defaults = vrf.unitConfig.DefaultDependencies;
-        wantedBy = vrf.wantedBy;
         reloads = vrf.serviceConfig.ExecReload == vrf.serviceConfig.ExecStart;
         capabilities = vrf.serviceConfig.CapabilityBoundingSet;
         frrAfter = lib.elem "systemd-networkd.service" edge.systemd.services.frr.after;
