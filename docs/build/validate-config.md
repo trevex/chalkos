@@ -170,8 +170,8 @@ chalkos.tests.bgp-unconfigured-peer-interface = {
 };
 ```
 
-A validator that fails, or refuses another config than the test expects, fails the test with a
-`FAIL` line of the refusals it expected and those it got, as
+A validator that fails, or whose refusals differ from those the test expects, fails the test with
+a `FAIL` line of the refusals it expected and those it got, as
 [Test an extension](test-an-extension.md#a-failing-test-shows-what-it-got) shows.
 
 On a node, say the `Peer` of `bgp/fabric.yaml` gains the same interface, `enp3s0`, that the nodes

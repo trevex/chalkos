@@ -253,7 +253,7 @@ Every check builds with `nix build`, and a change runs the checks of the parts i
 | End-to-end tests in `test/e2e` | `go-lint`, and the end-to-end checks of the changed tests |
 | `api/chalkos/*/v1/*.proto` | `api-generated`, `docs-generated`, `go-unit`, `go-lint` |
 | Command help, option descriptions | `docs-generated`, `docs` |
-| Pages in `docs/` | `docs` |
+| Pages in `docs/` | `docs`, and `example-homelab-validator-docs` for `validate-config.md` and `test-an-extension.md` |
 | Modules in `modules/` or `lib/` | `eval`, `eval-kinds`, `image-tests`, and the build and end-to-end checks of what the module does |
 | `examples/homelab` | `example-homelab`, `example-homelab-validator-docs`, `image-tests` |
 | `examples/extensions` | `example-extensions`, `image-tests` |

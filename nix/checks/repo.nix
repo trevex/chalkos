@@ -323,7 +323,11 @@ in
           echo "error: $page shows $documented, not the test's $expected" >&2
           exit 1
         fi
-        documented=$(grep -F '[{"kind":"Peer","name":"router","path":"spec.asn"' "$testPage" | jq -cS .)
+        documented=$(grep '^\[{"kind":"Peer","name":"router","path":"spec\.asn"' "$testPage" | jq -cS . || true)
+        if [ -z "$documented" ]; then
+          echo "error: $testPage shows no refusals of the test bgp-new-asn" >&2
+          exit 1
+        fi
         expected=$(jq -cS . <<<"$changeRefusals")
         if [ "$documented" != "$expected" ]; then
           echo "error: $testPage shows $documented, not the refusals $expected of the test bgp-new-asn" >&2

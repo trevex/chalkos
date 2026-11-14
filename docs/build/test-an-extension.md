@@ -32,8 +32,8 @@ it, and an extension with an output, a validator or an effect, as
 ```
 
 `config` is a YAML or JSON file of a node's documents, as a delivery gives them. The test checks
-them as a set, without the documents of the node's identity, so a test's file holds no
-`SystemDisk` and only the documents it is about. `bgp-examples/fabric.yaml` holds a node's
+them as a set, without the documents of the node's identity, so a test's file need not hold a
+`SystemDisk`, and holds only the documents it is about. `bgp-examples/fabric.yaml` holds a node's
 `Speaker`, the `Peer` of the router, the `Secret` with its password and the `Network` documents
 the validator `bgp-peers` reads.
 
@@ -50,11 +50,12 @@ The other fields say what the test expects:
 
 The refusals are always compared, so every test also checks that its config is accepted or
 refused as expected. An output the test leaves out of `outputs` is rendered and checked all the
-same, and only its files go uncompared. The [extension API](../reference/extension-api.md#chalkostests)
-lists each field.
+same, only its files are not compared. The
+[extension API](../reference/extension-api.md#chalkostests) lists each field.
 
-Besides the extension's tests, an image carries the tests of chalkos's own outputs, such as
-`chrony-servers` and `networkd-vlan`, which render the examples of those outputs.
+Besides the extension's tests, an image carries chalkos's tests of its `chrony` and `networkd`
+outputs, one per config file of `modules/node/examples`, such as `chrony-servers` and
+`networkd-vlan`.
 
 ## Golden files hold what an output renders
 
@@ -172,12 +173,14 @@ $ cat result/bgp-new-password/effects.json
 ```
 
 `effects` lists the names of the effects of `chalkos.effects` the change takes, sorted by name, as
-chalkd's plan lists them, and `[ ]` expects none. A test that sets `effects` needs `before`, and
-`before` must be accepted, or the test fails. Without `before` the evaluation fails:
+chalkd's plan lists them, and `[ ]` expects none. A test that sets `effects` needs `before`.
+Without it the evaluation fails:
 
 ```text
 error: chalkos.tests.bgp-new-password.effects: effects are those of a change, so the test needs before
 ```
+
+A `before` that the image refuses fails the test.
 
 An effect whose `when` reads a fact gets that fact from the test's `facts`, and from `oldFacts` for
 the state before the change. A fact the test leaves out reads as null, and a fact the image does
@@ -196,11 +199,17 @@ checks.${system} = images.checks;
 
 ```console
 $ nix flake check
+evaluating flake...
 ...
+checking flake output 'checks'...
 checking derivation checks.x86_64-linux.router-metal...
+derivation evaluated to /nix/store/hq8nrh0035j90d0265l7jxq00rcnh5x5-chalkos-tests.drv
 checking derivation checks.x86_64-linux.node-metal...
+derivation evaluated to /nix/store/lg0m7da2jlwrv8qsszjskrnk7imidjq8-chalkos-tests.drv
 ...
-running 3 flake checks...
+running 2 flake checks...
+building '/nix/store/hq8nrh0035j90d0265l7jxq00rcnh5x5-chalkos-tests.drv'...
+building '/nix/store/lg0m7da2jlwrv8qsszjskrnk7imidjq8-chalkos-tests.drv'...
 all checks passed!
 ```
 
@@ -251,9 +260,11 @@ to take what it rendered, with DIR the directory of chalkos.tests.bgp-fabric.out
 
 When the new file is the one bird should get, run the command that follows its diff, with `DIR`
 the golden directory, here `extensions/tests/fabric/bird-conf`. Both tests name that
-directory, so one copy mends both.
+directory, so one copy fixes both.
 
-A refusal or an effect that differs gets one line, with what the test expected and what it got:
+Say a test `bgp-asn-zero` gives the `Peer` `asn: 0` and expects the config accepted, and
+`bgp-new-password` sets `effects = [ ]`. Each gets one line, with what the test expected and what
+it got:
 
 ```text
 FAIL bgp-asn-zero: refusals differ: expected [], got [{"kind":"","name":"","path":"","message":"Peer \"router\": - at '/spec/asn': minimum: got 0, want 1"}]
@@ -271,8 +282,9 @@ Run the checks of the flake:
 nix flake check
 ```
 
-It ends with `all checks passed!`. `result/summary.txt` of `chalkosTestResults` lists a `PASS`
-line for each test, the extension's among them.
+It ends with `all checks passed!`. After
+`nix build .#nixosConfigurations.node-metal.config.system.build.chalkosTestResults`,
+`result/summary.txt` lists a `PASS` line for each test, the extension's among them.
 
 ## What next
 

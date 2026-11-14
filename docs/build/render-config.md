@@ -369,7 +369,8 @@ which the validator of [Validate config with a program](validate-config.md) read
 result with `tests/fabric/bird-conf/bird.conf`.
 
 Cover the documents that change what the renderer writes: no documents, one, several, and each
-optional field set and unset. In a test the renderer and the check run outside the sandbox, and
+optional field set and unset. In a test the renderer and the check run in the Nix build sandbox, not
+in the output's sandbox of [The renderer runs in a sandbox](#the-renderer-runs-in-a-sandbox), and
 the files keep the owner the build gives them. [Test an extension](test-an-extension.md) declares
 the tests and takes the golden files.
 

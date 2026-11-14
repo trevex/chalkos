@@ -6,9 +6,10 @@ description: "Check an image and the nodes' config, upgrade the nodes, and confi
 # Test and roll out an image
 
 This page is for an image author whose changed image is ready to reach running nodes. At the end
-the image has passed its build checks and its tests, every node's config has passed `chalkctl validate`, the
-nodes run the image, and `chalkctl status` and `chalkctl logs` show that the outputs rendered and
-the services read them. The page uses the homelab and its BGP extension, `extensions/bgp.nix`.
+the image has passed its build checks and its tests, every node's config has passed
+`chalkctl validate`, the nodes run the image, and `chalkctl status` and `chalkctl logs` show that
+the outputs rendered and the services read them. The page uses the homelab and its BGP extension,
+`extensions/bgp.nix`.
 
 A change reaches a node in one of two ways. A changed image reaches it with
 [`chalkctl upgrade`](../reference/cli/chalkctl_upgrade.md), which brings the node's config along.
