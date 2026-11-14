@@ -14,6 +14,7 @@ import (
 	"cel.dev/cel-go/common/types/ref"
 
 	"github.com/trevex/chalkos/pkg/config"
+	"github.com/trevex/chalkos/pkg/internal/strs"
 	"github.com/trevex/chalkos/pkg/refusals"
 	"github.com/trevex/chalkos/pkg/schema"
 )
@@ -64,8 +65,8 @@ func (e *FactError) Unwrap() error { return e.Err }
 // fact that could not be loaded, which refuses the delivery as well.
 func (s *Set) Evaluate(in Input) ([]Failure, error) {
 	next, old := in.Documents.Documents(), in.Old.Documents()
-	cfg, oldCfg := configMap(next), configMap(old)
-	node := nodeOf(in.Node)
+	cfg, oldCfg := ConfigOf(in.Documents), ConfigOf(in.Old)
+	node := map[string]any{"name": in.Node}
 	var failures []Failure
 	for _, p := range s.Programs {
 		if len(p.Facts) > 0 && in.Facts == nil {
@@ -145,11 +146,6 @@ func evalBool(prg cel.Program, vars map[string]any, factErr *error) (bool, error
 	return bool(ok), nil
 }
 
-// nodeOf is the node variable of a node named name.
-func nodeOf(name string) map[string]any {
-	return map[string]any{"name": name}
-}
-
 // evaluate runs the program with the variables given; doc is the document of a field's rule.
 func (p *Program) evaluate(vars map[string]any, cfg, oldCfg, node map[string]any, facts Facts, doc string) ([]Failure, error) {
 	vars["config"], vars["oldConfig"], vars["node"] = cfg, oldCfg, node
@@ -210,12 +206,8 @@ func messageError(msg ref.Val, err error) string {
 // ConfigOf is a config set as rules see it and command facts read it: objects by apiVersion, kind
 // and name, with their secret values hidden.
 func ConfigOf(docs config.Redacted) map[string]any {
-	return configMap(docs.Documents())
-}
-
-func configMap(docs []config.Document) map[string]any {
 	out := map[string]any{}
-	for _, d := range docs {
+	for _, d := range docs.Documents() {
 		kinds, ok := out[d.APIVersion].(map[string]any)
 		if !ok {
 			kinds = map[string]any{}
@@ -320,11 +312,7 @@ func Refusal(failures []Failure, node string) string {
 	case takes(schema.Reinstall):
 		head = "the config takes a reinstall of " + node
 	}
-	msgs := make([]string, len(failures))
-	for i, f := range failures {
-		msgs[i] = f.String()
-	}
-	return head + ": " + strings.Join(msgs, "; ")
+	return head + ": " + strs.Join(failures, "; ")
 }
 
 // maxErrorText bounds the error a refusal shows of a fact that cannot be loaded.

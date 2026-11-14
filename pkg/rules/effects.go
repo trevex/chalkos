@@ -64,7 +64,7 @@ type EffectInput struct {
 // one for each such effect.
 func Due(effects []*EffectRule, in EffectInput) (due []*EffectRule, errs []error) {
 	cfg, oldCfg := ConfigOf(in.Documents), ConfigOf(in.Old)
-	node := nodeOf(in.Node)
+	node := map[string]any{"name": in.Node}
 	for _, e := range effects {
 		ok, err := e.evaluate(cfg, oldCfg, node, in.Facts, in.OldFacts)
 		if err != nil {

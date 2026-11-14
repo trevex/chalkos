@@ -15,6 +15,7 @@ buildGoProgram {
     ../../pkg/effects
     ../../pkg/facts
     ../../pkg/identity
+    ../../pkg/internal/strs
     ../../pkg/jsonfile
     ../../pkg/outputs
     ../../pkg/refusals
