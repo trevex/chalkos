@@ -1,0 +1,7 @@
+[Match]
+Name=eth1
+Name=eth2
+
+[Network]
+IPv6AcceptRA=false
+

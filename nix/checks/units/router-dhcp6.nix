@@ -34,7 +34,7 @@ let
   dir = router.chalkos.outputs.kea.dir;
   nftDir = router.chalkos.outputs.router-nftables.dir;
   leases = lib.elemAt router.chalkos.diagnostics.dhcp-leases.command 2;
-  goldens = ../../../cmd/chalkos-render/testdata/router;
+  inherit (checkLib) routerRendered;
 in
 unitCheck "router-dhcp6"
   (
@@ -73,13 +73,12 @@ unitCheck "router-dhcp6"
     mkdir -m 0750 /run/kea /var/lib/kea
     mkdir -m 0755 ${records}
     mkdir -m 0700 ${records}.new
-    install -m 644 ${goldens}/dhcp6.nft ${nftDir}/ruleset.nft
+    install -m 644 ${routerRendered "dhcp6"}/router-nftables/ruleset.nft ${nftDir}/ruleset.nft
     ${firewall} || fail "chalkos-firewall did not load the dhcp6 example's ruleset"
-    # take <file>: a config of the dhcp6 example's golden, whose hook is the image's.
+    # take <file>: a config the dhcp6 example renders, with the image's hook in place of the
+    # test result's, whose store path has its hash written as e's.
     take() {
-      awk -v want="# $1" '$0 == want { take = 1; next } /^# / { take = 0 } take' ${goldens}/dhcp6.kea |
-        jq --arg hook ${pdHook} '(.Dhcp6["hooks-libraries"][] | select(.library == "libdhcp_run_script.so") | .parameters.name) = $hook' >"${dir}/$1"
-      grep -q '"Dhcp6"' "${dir}/$1" || fail "the dhcp6 example's golden holds no $1"
+      jq --arg hook ${pdHook} '(.Dhcp6["hooks-libraries"][] | select(.library == "libdhcp_run_script.so") | .parameters.name) = $hook' ${routerRendered "dhcp6"}/kea/"$1" >"${dir}/$1"
     }
     take kea-dhcp6.json
     take kea-dhcp6-access.json
@@ -167,7 +166,7 @@ unitCheck "router-dhcp6"
     mv records.real ${records}
 
     # Without the opening the client gets nothing.
-    install -m 644 ${goldens}/dhcp.nft ${nftDir}/ruleset.nft
+    install -m 644 ${routerRendered "dhcp"}/router-nftables/ruleset.nft ${nftDir}/ruleset.nft
     ${firewall} || fail "chalkos-firewall did not load the dhcp example's ruleset"
     on_pc ip -6 addr flush dev eth0 scope global
     lease pc "  ia_na 1"

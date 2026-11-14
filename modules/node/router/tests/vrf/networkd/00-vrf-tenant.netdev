@@ -1,0 +1,7 @@
+[NetDev]
+Kind=vrf
+Name=tenant
+
+[VRF]
+Table=200
+

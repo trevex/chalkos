@@ -1,0 +1,7 @@
+[NetDev]
+Kind=vlan
+Name=vlan20
+
+[VLAN]
+Id=20
+

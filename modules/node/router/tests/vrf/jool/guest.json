@@ -1,0 +1,24 @@
+{
+  "instance": "guest",
+  "framework": "netfilter",
+  "global": {
+    "pool6": "64:ff9b::/96"
+  },
+  "pool4": [
+    {
+      "protocol": "TCP",
+      "prefix": "169.254.111.206/32",
+      "port range": "61001-65535"
+    },
+    {
+      "protocol": "UDP",
+      "prefix": "169.254.111.206/32",
+      "port range": "61001-65535"
+    },
+    {
+      "protocol": "ICMP",
+      "prefix": "169.254.111.206/32",
+      "port range": "61001-65535"
+    }
+  ]
+}

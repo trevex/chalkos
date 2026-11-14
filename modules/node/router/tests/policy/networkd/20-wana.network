@@ -1,0 +1,10 @@
+[Match]
+Name=wana0
+
+[Network]
+Address=198.51.100.1/25
+Address=2001:db8:a::1/64
+Gateway=198.51.100.2
+Gateway=2001:db8:a::2
+IPv6AcceptRA=false
+

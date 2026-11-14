@@ -28,11 +28,10 @@ var update = flag.Bool("update", false, "rewrite the golden files")
 const (
 	// routerSchemas are the router kinds' schemas, as a router image generates them.
 	routerSchemas = "../../test/fixtures/kinds/router"
-	// routerExamples are the examples of the outputs router-sysctl, router-nftables, frr, jool,
-	// unbound and router-networkd.
+	// routerExamples are the router's example configs.
 	routerExamples = "../../modules/node/examples/router"
 	// testTrustAnchor and testZoneFile stand for the store paths the image gives chalkos-render
-	// unbound; the rules check replaces them with those of a router image.
+	// unbound.
 	testTrustAnchor = "/etc/unbound/root.key"
 	testZoneFile    = "/etc/unbound/ipv4only.arpa.zone"
 	// testPDHook stands for the store path of the program that records delegated prefixes, which
@@ -146,35 +145,6 @@ func renderedFiles(t *testing.T, args []string, input string) string {
 		b.WriteString("# " + e.Name() + "\n" + string(data))
 	}
 	return b.String()
-}
-
-// Each example of the router outputs renders its golden sysctl file, ruleset, FRR config, Jool
-// instances, Unbound config, networkd units, Kea configs and DHCP relays: no documents, a leaf that
-// only routes, a fabric edge, a LAN router, an edge with VRFs, a LAN router with policy routing, a
-// LAN router that leases IPv4 addresses, a router with a NAT64 alone, one that leases IPv6
-// addresses and delegates prefixes and one that relays DHCP.
-func TestRouterGolden(t *testing.T) {
-	examples, err := filepath.Glob(filepath.Join(routerExamples, "*.yaml"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(examples) != 10 {
-		t.Fatalf("examples = %v", examples)
-	}
-	for _, path := range examples {
-		name := strings.TrimSuffix(filepath.Base(path), ".yaml")
-		t.Run(name, func(t *testing.T) {
-			input := routerInput(t, path)
-			golden(t, name+".conf", renderedFile(t, []string{"router-sysctl"}, input, sysctlFile))
-			golden(t, name+".nft", renderedFile(t, []string{"router-nftables", "50000"}, input, rulesetFile))
-			golden(t, name+".frr", renderedFile(t, []string{"frr"}, input, frrFile))
-			golden(t, name+".jool", renderedFiles(t, []string{"jool"}, input))
-			golden(t, name+".unbound", renderedFiles(t, []string{"unbound", testTrustAnchor, testZoneFile}, input))
-			golden(t, name+".networkd", renderedFiles(t, []string{"router-networkd", networkFixture}, input))
-			golden(t, name+".kea", renderedFiles(t, []string{"kea", testPDHook}, input))
-			golden(t, name+".relay", renderedFiles(t, []string{"dhcp-relay"}, input))
-		})
-	}
 }
 
 // chalkos-render validate router reads the input a renderer reads, needs no $OUT, and prints the

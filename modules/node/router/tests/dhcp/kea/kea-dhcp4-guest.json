@@ -1,0 +1,86 @@
+{
+  "Dhcp4": {
+    "interfaces-config": {
+      "interfaces": [
+        "vlan20"
+      ],
+      "dhcp-socket-type": "raw",
+      "service-sockets-retry-wait-time": 5000,
+      "service-sockets-max-retries": 4294967295
+    },
+    "control-sockets": [
+      {
+        "socket-type": "unix",
+        "socket-name": "/run/kea/dhcp4-guest.sock"
+      }
+    ],
+    "lease-database": {
+      "type": "memfile",
+      "persist": true,
+      "name": "/var/lib/kea/dhcp4-guest.leases",
+      "lfc-interval": 3600
+    },
+    "hooks-libraries": [
+      {
+        "library": "libdhcp_lease_cmds.so"
+      }
+    ],
+    "loggers": [
+      {
+        "name": "kea-dhcp4",
+        "severity": "INFO",
+        "output-options": [
+          {
+            "output": "stdout",
+            "pattern": "%-5p [%c] %m\n"
+          }
+        ]
+      },
+      {
+        "name": "kea-dhcp4.dhcp",
+        "severity": "ERROR",
+        "output-options": [
+          {
+            "output": "stdout",
+            "pattern": "%-5p [%c] %m\n"
+          }
+        ]
+      },
+      {
+        "name": "kea-dhcp4.commands",
+        "severity": "WARN",
+        "output-options": [
+          {
+            "output": "stdout",
+            "pattern": "%-5p [%c] %m\n"
+          }
+        ]
+      }
+    ],
+    "subnet4": [
+      {
+        "id": 3325256704,
+        "subnet": "198.51.100.0/24",
+        "valid-lifetime": 3600,
+        "pools": [
+          {
+            "pool": "198.51.100.10 - 198.51.100.250"
+          }
+        ],
+        "option-data": [
+          {
+            "name": "routers",
+            "data": "198.51.100.1"
+          },
+          {
+            "name": "domain-name-servers",
+            "data": "198.51.100.1"
+          }
+        ],
+        "user-context": {
+          "name": "guests"
+        }
+      }
+    ]
+  }
+}

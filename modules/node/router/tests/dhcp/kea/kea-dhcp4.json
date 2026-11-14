@@ -1,0 +1,129 @@
+{
+  "Dhcp4": {
+    "interfaces-config": {
+      "interfaces": [
+        "lan0"
+      ],
+      "dhcp-socket-type": "raw",
+      "service-sockets-retry-wait-time": 5000,
+      "service-sockets-max-retries": 4294967295
+    },
+    "control-sockets": [
+      {
+        "socket-type": "unix",
+        "socket-name": "/run/kea/dhcp4.sock"
+      }
+    ],
+    "lease-database": {
+      "type": "memfile",
+      "persist": true,
+      "name": "/var/lib/kea/dhcp4.leases",
+      "lfc-interval": 3600
+    },
+    "hooks-libraries": [
+      {
+        "library": "libdhcp_lease_cmds.so"
+      }
+    ],
+    "loggers": [
+      {
+        "name": "kea-dhcp4",
+        "severity": "INFO",
+        "output-options": [
+          {
+            "output": "stdout",
+            "pattern": "%-5p [%c] %m\n"
+          }
+        ]
+      },
+      {
+        "name": "kea-dhcp4.dhcp",
+        "severity": "ERROR",
+        "output-options": [
+          {
+            "output": "stdout",
+            "pattern": "%-5p [%c] %m\n"
+          }
+        ]
+      },
+      {
+        "name": "kea-dhcp4.commands",
+        "severity": "WARN",
+        "output-options": [
+          {
+            "output": "stdout",
+            "pattern": "%-5p [%c] %m\n"
+          }
+        ]
+      }
+    ],
+    "client-classes": [
+      {
+        "name": "office-ipxe",
+        "only-in-additional-list": true,
+        "test": "substring(option[77].hex, 0, 4) == 'iPXE'",
+        "boot-file-name": "http://192.0.2.5/boot.ipxe",
+        "next-server": "192.0.2.5"
+      },
+      {
+        "name": "office-uefi",
+        "only-in-additional-list": true,
+        "test": "not member('office-ipxe') and (option[93].hex == 0x0007 or option[93].hex == 0x0009)",
+        "boot-file-name": "ipxe.efi",
+        "next-server": "192.0.2.5"
+      },
+      {
+        "name": "office-bios",
+        "only-in-additional-list": true,
+        "test": "not member('office-ipxe') and option[93].hex == 0x0000",
+        "boot-file-name": "undionly.kpxe",
+        "next-server": "192.0.2.5"
+      }
+    ],
+    "subnet4": [
+      {
+        "id": 3221225984,
+        "subnet": "192.0.2.0/24",
+        "valid-lifetime": 43200,
+        "pools": [
+          {
+            "pool": "192.0.2.100 - 192.0.2.199"
+          }
+        ],
+        "option-data": [
+          {
+            "name": "routers",
+            "data": "192.0.2.1"
+          },
+          {
+            "name": "domain-name-servers",
+            "data": "192.0.2.1"
+          },
+          {
+            "name": "domain-name",
+            "data": "lan.example.org"
+          },
+          {
+            "name": "domain-search",
+            "data": "lan.example.org"
+          }
+        ],
+        "reservations": [
+          {
+            "hw-address": "52:54:00:12:34:56",
+            "ip-address": "192.0.2.10",
+            "hostname": "printer"
+          }
+        ],
+        "user-context": {
+          "name": "office"
+        },
+        "evaluate-additional-classes": [
+          "office-ipxe",
+          "office-uefi",
+          "office-bios"
+        ]
+      }
+    ]
+  }
+}

@@ -10,6 +10,7 @@ let
   inherit (checkLib)
     chalkPkgs
     router
+    routerRendered
     testing
     worker
     ;
@@ -386,7 +387,7 @@ in
         # kernel would not load, with nft in a user and network namespace of its own.
         check=$(jq -r '."router-nftables".check' ${routerBuild.chalkosOutputs})
         mkdir nftables
-        install -m 644 ${../../cmd/chalkos-render/testdata/router/lan.nft} nftables/ruleset.nft
+        install -m 644 ${routerRendered "lan"}/router-nftables/ruleset.nft nftables/ruleset.nft
         OUT=$PWD/nftables $check </dev/null
         printf 'table inet chalkos {\n  chain input {\n    iif "nosuchif0" accept\n  }\n}\n' >nftables/ruleset.nft
         refuses "the router's nftables check" 'Error: Interface does not exist' env OUT=$PWD/nftables "$check" </dev/null
@@ -396,28 +397,27 @@ in
         mkdir frr
         install -m 644 ${../../cmd/chalkos-render/testdata/router/tracked.frr} frr/frr.conf
         OUT=$PWD/frr $check </dev/null
-        install -m 644 ${../../cmd/chalkos-render/testdata/router/edge.frr} frr/frr.conf
+        install -m 644 ${routerRendered "edge"}/frr/frr.conf frr/frr.conf
         OUT=$PWD/frr $check </dev/null
         sed -i 's/^ neighbor peer-fabric bfd$/ neighbor peer-fabric bfd sometimes/' frr/frr.conf
         refuses "the router's FRR check" 'Unknown command' env OUT=$PWD/frr "$check" </dev/null
         grep -qF 'neighbor peer-fabric bfd sometimes' refused.log || fail "the router's FRR check refused another command: $(cat refused.log)"
         # The check of Jool's instances passes the edge example's and refuses a port past 65535,
-        # with jool alone. A golden holds its files, each after a line that names it; the check
-        # takes Jool's file of the edge example alone.
+        # with jool alone. It gets the edge example's instance file without its .veth.
         check=$(jq -r .jool.check ${routerBuild.chalkosOutputs})
         mkdir jool
-        awk 'NR > 1 && /^# /{ exit } NR > 1' ${../../cmd/chalkos-render/testdata/router/edge.jool} >jool/edge.json
+        install -m 644 ${routerRendered "edge"}/jool/edge.json jool/edge.json
         OUT=$PWD/jool $check </dev/null
         sed -i 's/"61001-65535"/"61001-70000"/' jool/edge.json
         refuses "the router's Jool check" "'70000' is out of bounds" env OUT=$PWD/jool "$check" </dev/null
         # The check of Unbound's config passes the LAN example's, with the trust anchor and zone
-        # the image renders it with in place of the golden's, and refuses a record Unbound does not
-        # take.
+        # the image renders it with in place of the test result's, whose store paths have their
+        # hashes written as e's, and refuses a record Unbound does not take.
         check=$(jq -r .unbound.check ${routerBuild.chalkosOutputs})
         read -r _ _ anchor zone < <(jq -r .unbound.render ${routerBuild.chalkosOutputs})
         mkdir unbound
-        sed -e 1d -e "s|/etc/unbound/root.key|$anchor|" -e "s|/etc/unbound/ipv4only.arpa.zone|$zone|" \
-          ${../../cmd/chalkos-render/testdata/router/lan.unbound} >unbound/unbound.conf
+        sed -e "s|^\( *trust-anchor-file: \).*|\1\"$anchor\"|" -e "s|^\( *zonefile: \).*|\1\"$zone\"|" \
+          ${routerRendered "lan"}/unbound/unbound.conf >unbound/unbound.conf
         OUT=$PWD/unbound $check </dev/null
         sed -i 's/IN A 192.0.2.1/IN A 192.0.2.300/' unbound/unbound.conf
         refuses "the router's Unbound check" 'Bad local-data RR' env OUT=$PWD/unbound "$check" </dev/null

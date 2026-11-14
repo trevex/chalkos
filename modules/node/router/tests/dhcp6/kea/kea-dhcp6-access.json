@@ -1,0 +1,91 @@
+{
+  "Dhcp6": {
+    "interfaces-config": {
+      "interfaces": [
+        "cust0"
+      ],
+      "service-sockets-retry-wait-time": 5000,
+      "service-sockets-max-retries": 4294967295
+    },
+    "control-sockets": [
+      {
+        "socket-type": "unix",
+        "socket-name": "/run/kea/dhcp6-access.sock"
+      }
+    ],
+    "lease-database": {
+      "type": "memfile",
+      "persist": true,
+      "name": "/var/lib/kea/dhcp6-access.leases",
+      "lfc-interval": 3600
+    },
+    "hooks-libraries": [
+      {
+        "library": "libdhcp_lease_cmds.so"
+      },
+      {
+        "library": "libdhcp_run_script.so",
+        "parameters": {
+          "name": "/nix/store/eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee-chalkos-dhcp6-pd/bin/chalkos-dhcp6-pd"
+        }
+      }
+    ],
+    "loggers": [
+      {
+        "name": "kea-dhcp6",
+        "severity": "INFO",
+        "output-options": [
+          {
+            "output": "stdout",
+            "pattern": "%-5p [%c] %m\n"
+          }
+        ]
+      },
+      {
+        "name": "kea-dhcp6.dhcp",
+        "severity": "ERROR",
+        "output-options": [
+          {
+            "output": "stdout",
+            "pattern": "%-5p [%c] %m\n"
+          }
+        ]
+      },
+      {
+        "name": "kea-dhcp6.commands",
+        "severity": "WARN",
+        "output-options": [
+          {
+            "output": "stdout",
+            "pattern": "%-5p [%c] %m\n"
+          }
+        ]
+      }
+    ],
+    "subnet6": [
+      {
+        "id": 979616295,
+        "subnet": "2001:db8:2::/64",
+        "valid-lifetime": 86400,
+        "option-data": [
+          {
+            "name": "dns-servers",
+            "data": "2001:db8:2::1"
+          }
+        ],
+        "user-context": {
+          "name": "customers"
+        },
+        "interface": "cust0",
+        "preferred-lifetime": 86400,
+        "pd-pools": [
+          {
+            "prefix": "2001:db8:100::",
+            "prefix-len": 40,
+            "delegated-len": 56
+          }
+        ]
+      }
+    ]
+  }
+}

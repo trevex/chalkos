@@ -1,0 +1,6 @@
+[Match]
+Name=mgmt0
+
+[Network]
+DHCP=yes
+

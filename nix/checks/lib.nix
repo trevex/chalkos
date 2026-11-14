@@ -76,6 +76,11 @@ in
     ;
   testEnv = import ../testing/env.nix { inherit pkgs self; };
 
+  # The files the router image renders from its example <example>.yaml, as its test
+  # router-<example> got them: a directory of <output>/<file>, with real store paths.
+  routerRendered =
+    example: "${router.config.system.build.chalkosTestResults}/router-${example}/outputs";
+
   # The script NixOS runs to load and reload the worker's firewall.
   firewall =
     lib.findFirst (lib.hasSuffix "-nftables-rules")

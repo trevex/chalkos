@@ -1,0 +1,7 @@
+[Match]
+Name=eth2 swp1 swp2
+
+[Network]
+IPv6AcceptRA=false
+VRF=tenant
+

@@ -1,0 +1,16 @@
+[Match]
+Name=wanb0
+
+[Network]
+Address=198.51.100.129/25
+Address=2001:db8:b::1/64
+IPv6AcceptRA=false
+
+[Route]
+Gateway=198.51.100.130
+Table=200
+
+[Route]
+Gateway=2001:db8:b::2
+Table=201
+

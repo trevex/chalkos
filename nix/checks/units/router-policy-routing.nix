@@ -1,14 +1,13 @@
 # The policy example's ruleset in network namespaces: LAN peers on lan0 and lan1, uplinks on
 # wana0, which the main table routes, and wanb0, and a transit peer on vt0 in the VRF transit of
 # table 100. The router holds the kernel's rules and the next hops' tables as networkd installs
-# them from the example's units (cmd/chalkos-render/testdata/router/policy.networkd), and
-# transit's table the routes of the example's Networks of lan0 and lan1. Each uplink and transit
-# answer on the same far address with their name, so a probe tells which way the router sent
-# it. Guests' HTTPS takes transit and their other ports the main table, DSCP 46 takes transit
-# in both families, ahead of the next hops the servers' sources take in each family, traffic
-# between lan0 and lan1 the main table ahead of those next hops, and other traffic the main
-# table. A rule without in that sends BGP to the main table leaves the router's BGP in transit
-# alone in both families. While wanb0 is down the next hops' traffic is dropped, not routed by the main table,
+# them from the units the example renders, and transit's table the routes of the example's
+# Networks of lan0 and lan1. Each uplink and transit answer on the same far address with their
+# name, so a probe tells which way the router sent it. Guests' HTTPS takes transit and their
+# other ports the main table, DSCP 46 takes transit in both families, ahead of the next hops the
+# servers' sources take in each family, traffic between lan0 and lan1 the main table ahead of
+# those next hops, and other traffic the main table. A rule without in that sends BGP to the
+# main table leaves the router's BGP in transit alone in both families. While wanb0 is down the next hops' traffic is dropped, not routed by the main table,
 # and once networkd's route is back it takes wanb0 again.
 {
   checkLib,
@@ -18,7 +17,7 @@
 let
   inherit (checkLib.router.config.systemd.services.chalkos-firewall.serviceConfig) ExecStart;
   dir = checkLib.router.config.chalkos.outputs.router-nftables.dir;
-  goldens = ../../../cmd/chalkos-render/testdata/router;
+  inherit (checkLib) routerRendered;
 in
 unitCheck "router-policy-routing" checkLib.networkTools ''
   debug() {
@@ -83,7 +82,7 @@ unitCheck "router-policy-routing" checkLib.networkTools ''
   # [RoutingPolicyRule] of the units, in both families.
   awk -F= '/^\[RoutingPolicyRule\]/ { rule = 1; next } /^\[/ { rule = 0 }
     rule && $1 == "FirewallMark" { mark = $2 } rule && $1 == "Table" { print mark, $2 }' \
-    ${goldens}/policy.networkd >rules
+    ${routerRendered "policy"}/networkd/* >rules
   [ "$(wc -l <rules)" = 4 ] || fail "the example's units hold $(wc -l <rules) RoutingPolicyRules, not four"
   while read -r mark table; do
     for family in -4 -6; do
@@ -127,7 +126,7 @@ unitCheck "router-policy-routing" checkLib.networkTools ''
   settled() { retry 100 "the links' IPv6 addresses stayed tentative" untentative; }
   settled
   mkdir -p ${dir}
-  install -m 644 ${goldens}/policy.nft ${dir}/ruleset.nft
+  install -m 644 ${routerRendered "policy"}/router-nftables/ruleset.nft ${dir}/ruleset.nft
   ${ExecStart} || fail "chalkos-firewall did not load the policy example's ruleset"
 
   # way <source> <port> [<socat options>]: the name of the peer that answered a connection

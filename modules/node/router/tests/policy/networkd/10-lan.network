@@ -1,0 +1,16 @@
+[Match]
+Name=lan0
+
+[Network]
+Address=192.0.2.1/25
+Address=2001:db8:1::1/64
+IPv6AcceptRA=false
+
+[Route]
+Destination=192.0.2.0/25
+Table=100
+
+[Route]
+Destination=2001:db8:1::/64
+Table=100
+

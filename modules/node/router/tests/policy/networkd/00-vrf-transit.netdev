@@ -1,0 +1,7 @@
+[NetDev]
+Kind=vrf
+Name=transit
+
+[VRF]
+Table=100
+

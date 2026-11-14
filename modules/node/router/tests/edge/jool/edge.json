@@ -1,0 +1,24 @@
+{
+  "instance": "edge",
+  "framework": "netfilter",
+  "global": {
+    "pool6": "64:ff9b::/96"
+  },
+  "pool4": [
+    {
+      "protocol": "TCP",
+      "prefix": "192.0.2.252/30",
+      "port range": "61001-65535"
+    },
+    {
+      "protocol": "UDP",
+      "prefix": "192.0.2.252/30",
+      "port range": "61001-65535"
+    },
+    {
+      "protocol": "ICMP",
+      "prefix": "192.0.2.252/30",
+      "port range": "61001-65535"
+    }
+  ]
+}

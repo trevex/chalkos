@@ -1,15 +1,14 @@
 # The router's firewall unit in network namespaces, with a LAN peer on lan0 and a WAN peer on
 # wan0, each over a veth pair. Without a rendered ruleset chalkos-firewall loads the fallback,
 # which accepts chalkd's port on every interface and forwards nothing. With the LAN example's
-# ruleset, which chalkos-render's golden test keeps as the renderer writes it, the peers probe
-# chalkd's port on the management interface alone, the protected ping past policies that drop
-# everything else and on dmz0, an interface of no zone, an AddressSet, forwarding by zone,
-# masquerade, destination NAT and the strict reverse-path filter. A reload replaces the table
-# alone, in one transaction, and keeps it when nft refuses the new one. The leaf example, loaded
-# as at boot, forwards everything. The VRF example's ruleset, with its links in VRFs as networkd
-# leaves them and the routes its imports leak, forwards and masquerades in IPv4 from the zone of
-# VRF tenant to that of VRF internet and nothing back, forwards nothing between mgmt and tenant
-# in IPv6, whose routes the default VRF imports, drops the internet's connections to the
+# ruleset, as the image renders it, the peers probe chalkd's port on the management interface
+# alone, the protected ping past policies that drop everything else and on dmz0, an interface of
+# no zone, an AddressSet, forwarding by zone, masquerade, destination NAT and the strict
+# reverse-path filter. A reload replaces the table alone, in one transaction, and keeps it when
+# nft refuses the new one. The leaf example, loaded as at boot, forwards everything. The VRF
+# example's ruleset, with its links in VRFs as networkd leaves them and the routes its imports
+# leak, forwards and masquerades in IPv4 from the zone of VRF tenant to that of VRF internet and
+# nothing back, forwards nothing between mgmt and tenant in IPv6, whose routes the default VRF imports, drops the internet's connections to the
 # router's other ports, opens the transit's BGP port in its VRF alone, masquerades and
 # translates in guest, whose addresses the default VRF and internet also use, and keeps guest's
 # connections in their conntrack zone, so that a guest host of a management host's address
@@ -29,7 +28,9 @@ let
     ExecReload
     ;
   dir = checkLib.router.config.chalkos.outputs.router-nftables.dir;
-  goldens = ../../../cmd/chalkos-render/testdata/router;
+  inherit (checkLib) routerRendered;
+  # The VRF example's ruleset with the strict reverse-path filter, a golden file of chalkos-render.
+  strictVRF = ../../../cmd/chalkos-render/testdata/router/vrf-strict.nft;
   # Answers a connection with the address it came from.
   whoami = pkgs.writeShellScript "whoami" ''echo "$SOCAT_PEERADDR"'';
   # rdisc6 sends a router solicitation, radvd router advertisements.
@@ -122,7 +123,7 @@ unitCheck "router-firewall" tools ''
 
   where="with the LAN example's ruleset"
   mkdir -p ${dir}
-  install -m 644 ${goldens}/lan.nft ${dir}/ruleset.nft
+  install -m 644 ${routerRendered "lan"}/router-nftables/ruleset.nft ${dir}/ruleset.nft
   ${ExecReload} || fail "chalkos-firewall did not reload the LAN ruleset"
   [ "$(nft list tables | grep -c 'table inet chalkos$')" = 1 ] || fail "the reload left two tables"
   nft list tables | grep -qx 'table inet count' || fail "the reload removed another table"
@@ -165,7 +166,7 @@ unitCheck "router-firewall" tools ''
   accepted on_wan 198.51.100.1 50000
 
   where="with the leaf example's ruleset"
-  install -m 644 ${goldens}/leaf.nft ${dir}/ruleset.nft
+  install -m 644 ${routerRendered "leaf"}/router-nftables/ruleset.nft ${dir}/ruleset.nft
   # At boot, with no table loaded yet, chalkos-firewall loads the rendered ruleset.
   nft delete table inet chalkos
   ${ExecStart} || fail "chalkos-firewall did not load the leaf ruleset"
@@ -276,7 +277,7 @@ unitCheck "router-firewall" tools ''
     }
   }
   NFT
-  install -m 644 ${goldens}/vrf.nft ${dir}/ruleset.nft
+  install -m 644 ${routerRendered "vrf"}/router-nftables/ruleset.nft ${dir}/ruleset.nft
   ${ExecReload} || fail "chalkos-firewall did not reload the VRF ruleset"
   none() { nft list counter inet passed "$1" | grep -q 'packets 0 '; }
 
@@ -345,7 +346,7 @@ unitCheck "router-firewall" tools ''
   # address on its loopback, so it solicits the router from its link-local address, and the
   # router reaches that address through the host's link-local address, which advertises
   # itself from there. Its router solicitations and, from radvd, advertisements reach input.
-  install -m 644 ${goldens}/vrf-strict.nft ${dir}/ruleset.nft
+  install -m 644 ${strictVRF} ${dir}/ruleset.nft
   ${ExecReload} || fail "chalkos-firewall did not reload the VRF ruleset with the strict filter"
   nft -f - <<'NFT'
   table inet solicited {
@@ -392,7 +393,7 @@ unitCheck "router-firewall" tools ''
 
   where="with the VRF example's ruleset without its conntrack zones"
   # The same probe without the zones: guest's host passes as mgmt's connection.
-  sed '/^\tchain ct-\(prerouting\|output\) {$/,/^\t}$/d' ${goldens}/vrf.nft >${dir}/ruleset.nft
+  sed '/^\tchain ct-\(prerouting\|output\) {$/,/^\t}$/d' ${routerRendered "vrf"}/router-nftables/ruleset.nft >${dir}/ruleset.nft
   if grep -q 'ct zone' ${dir}/ruleset.nft; then fail "the ruleset still sets conntrack zones"; fi
   ${ExecReload} || fail "chalkos-firewall did not reload the VRF ruleset without conntrack zones"
   on_mgmt socat -u EXEC:"sleep 3" TCP:192.0.2.1:22,sourceport=40001,connect-timeout=1 &

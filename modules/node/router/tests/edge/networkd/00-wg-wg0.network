@@ -1,0 +1,6 @@
+[Match]
+Name=wg0
+
+[Network]
+Address=2001:db8:f0::1/64
+

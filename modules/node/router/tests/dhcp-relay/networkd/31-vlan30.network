@@ -1,0 +1,8 @@
+[Match]
+Name=vlan30
+
+[Network]
+Address=203.0.113.130/25
+IPv6AcceptRA=false
+VRF=guest
+

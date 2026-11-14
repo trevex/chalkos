@@ -20,7 +20,7 @@ let
   nftDir = router.chalkos.outputs.router-nftables.dir;
   leases = lib.elemAt router.chalkos.diagnostics.dhcp-leases.command 2;
   udhcpc = "${pkgs.busybox}/bin/busybox udhcpc";
-  goldens = ../../../cmd/chalkos-render/testdata/router;
+  inherit (checkLib) routerRendered;
 in
 unitCheck "router-dhcp" checkLib.networkTools ''
   debug() {
@@ -35,10 +35,10 @@ unitCheck "router-dhcp" checkLib.networkTools ''
   on_client ip link set eth0 up
 
   mkdir -p ${dir} ${nftDir}
-  install -m 644 ${goldens}/dhcp.nft ${nftDir}/ruleset.nft
+  install -m 644 ${routerRendered "dhcp"}/router-nftables/ruleset.nft ${nftDir}/ruleset.nft
   ${firewall} || fail "chalkos-firewall did not load the dhcp example's ruleset"
-  awk '/^# kea-dhcp4.json$/ { take = 1; next } /^# / { take = 0 } take' ${goldens}/dhcp.kea >${dir}/kea-dhcp4.json
-  grep -q '"office"' ${dir}/kea-dhcp4.json || fail "the dhcp example's golden holds no server of the default VRF"
+  install -m 644 ${routerRendered "dhcp"}/kea/kea-dhcp4.json ${dir}/kea-dhcp4.json
+  grep -q '"office"' ${dir}/kea-dhcp4.json || fail "the dhcp example renders no server of the default VRF"
   mkdir -p /var/lib
   mkdir -m 0750 /run/kea /var/lib/kea
   ${ExecStart} >kea.log 2>&1 &

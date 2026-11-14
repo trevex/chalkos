@@ -1,0 +1,96 @@
+{
+  "Dhcp6": {
+    "interfaces-config": {
+      "interfaces": [
+        "lan0"
+      ],
+      "service-sockets-retry-wait-time": 5000,
+      "service-sockets-max-retries": 4294967295
+    },
+    "control-sockets": [
+      {
+        "socket-type": "unix",
+        "socket-name": "/run/kea/dhcp6.sock"
+      }
+    ],
+    "lease-database": {
+      "type": "memfile",
+      "persist": true,
+      "name": "/var/lib/kea/dhcp6.leases",
+      "lfc-interval": 3600
+    },
+    "hooks-libraries": [
+      {
+        "library": "libdhcp_lease_cmds.so"
+      }
+    ],
+    "loggers": [
+      {
+        "name": "kea-dhcp6",
+        "severity": "INFO",
+        "output-options": [
+          {
+            "output": "stdout",
+            "pattern": "%-5p [%c] %m\n"
+          }
+        ]
+      },
+      {
+        "name": "kea-dhcp6.dhcp",
+        "severity": "ERROR",
+        "output-options": [
+          {
+            "output": "stdout",
+            "pattern": "%-5p [%c] %m\n"
+          }
+        ]
+      },
+      {
+        "name": "kea-dhcp6.commands",
+        "severity": "WARN",
+        "output-options": [
+          {
+            "output": "stdout",
+            "pattern": "%-5p [%c] %m\n"
+          }
+        ]
+      }
+    ],
+    "subnet6": [
+      {
+        "id": 3216929172,
+        "subnet": "2001:db8:1::/64",
+        "valid-lifetime": 43200,
+        "pools": [
+          {
+            "pool": "2001:db8:1::100 - 2001:db8:1::1ff"
+          }
+        ],
+        "option-data": [
+          {
+            "name": "dns-servers",
+            "data": "2001:db8:1::1"
+          },
+          {
+            "name": "domain-search",
+            "data": "lan.example.org"
+          }
+        ],
+        "reservations": [
+          {
+            "hw-address": "52:54:00:12:34:56",
+            "ip-addresses": [
+              "2001:db8:1::10"
+            ],
+            "hostname": "printer"
+          }
+        ],
+        "user-context": {
+          "name": "office6"
+        },
+        "interface": "lan0",
+        "preferred-lifetime": 43200
+      }
+    ]
+  }
+}

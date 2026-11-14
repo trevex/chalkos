@@ -1,0 +1,7 @@
+[NetDev]
+Kind=vrf
+Name=guest
+
+[VRF]
+Table=300
+

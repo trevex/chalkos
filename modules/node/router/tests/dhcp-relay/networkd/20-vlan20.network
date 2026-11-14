@@ -1,0 +1,8 @@
+[Match]
+Name=vlan20
+
+[Network]
+Address=198.51.100.1/24
+IPv6AcceptRA=false
+VRF=guest
+

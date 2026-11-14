@@ -13,14 +13,14 @@
 let
   fill = checkLib.router.config.systemd.services.frr.serviceConfig.ExecStartPre;
   dir = checkLib.router.config.chalkos.outputs.frr.dir;
-  golden = ../../../cmd/chalkos-render/testdata/router/edge.frr;
+  rendered = "${checkLib.routerRendered "edge"}/frr/frr.conf";
 in
 unitCheck "frr-credentials" [ pkgs.diffutils ] ''
   filled=' neighbor peer-fabric password example-password'
   mkdir -p /run/frr ${dir} credentials
   export CREDENTIALS_DIRECTORY=$PWD/credentials
   # Placeholders the renderer never writes outside a peer group's password line.
-  sed 's/^\( neighbor peer-fabric password .*\)$/\1\n neighbor peer-fabric description x password @secret_bgp.fabric@\n neighbor 203.0.113.254 password @secret_bgp.fabric@/' ${golden} >${dir}/frr.conf
+  sed 's/^\( neighbor peer-fabric password .*\)$/\1\n neighbor peer-fabric description x password @secret_bgp.fabric@\n neighbor 203.0.113.254 password @secret_bgp.fabric@/' ${rendered} >${dir}/frr.conf
   grep -c '@secret_bgp.fabric@' ${dir}/frr.conf | grep -qx 3 || fail "the input lacks the placeholders"
   printf 'example-password' >credentials/secret_bgp.fabric
   ${fill} || fail "the credentials of the edge example were not filled in"

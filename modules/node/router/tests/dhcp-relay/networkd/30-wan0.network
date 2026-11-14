@@ -1,0 +1,11 @@
+[Match]
+Name=wan0
+
+[Network]
+Address=203.0.113.2/25
+Address=2001:db8:ff::2/64
+Gateway=203.0.113.1
+Gateway=2001:db8:ff::1
+IPv6AcceptRA=false
+VLAN=vlan30
+

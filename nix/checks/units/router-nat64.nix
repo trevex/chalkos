@@ -1,8 +1,8 @@
-# chalkos-nat64 in network namespaces, over the goldens of the edge's NAT64, of the default VRF
-# with an explicit pool, and of the VRF example's guest, in VRF guest with an own pool. Jool's
-# module does not load here, so a script over a file of instances is mounted over the image's
-# jool; it keys them by the caller's network namespace, as Jool does. The unit gives each
-# instance its namespace with forwarding off, its veth pair in its VRF, the addresses of its
+# chalkos-nat64 in network namespaces, over the rendered instances of the edge's NAT64, of the
+# default VRF with an explicit pool, and of the VRF example's guest, in VRF guest with an own
+# pool. Jool's module does not load here, so a script over a file of instances is mounted over
+# the image's jool; it keys them by the caller's network namespace, as Jool does. The unit gives
+# each instance its namespace with forwarding off, its veth pair in its VRF, the addresses of its
 # .veth and the default routes back, its instance in its namespace, and its prefix's and
 # explicit pool's routes in its VRF's table. It removes an older image's instance of the
 # router's own namespace with its unreachable route, a route of protocol 64 no file names, and
@@ -35,7 +35,7 @@ let
     p: lib.getName p == "jool-cli"
   ) (throw "chalkd's PATH holds no jool") checkLib.router.config.systemd.services.chalkd.path;
   dir = checkLib.router.config.chalkos.outputs.jool.dir;
-  goldens = ../../../cmd/chalkos-render/testdata/router;
+  inherit (checkLib) routerRendered;
   # Answers a connection with the address and port it came from.
   whoami = pkgs.writeShellScript "whoami" ''echo "$SOCAT_PEERADDR:$SOCAT_PEERPORT"'';
 in
@@ -185,9 +185,8 @@ unitCheck "router-nat64"
       echo 0 >/proc/sys/net/ipv4/conf/$conf/rp_filter
     done
 
-    # The goldens hold the output's files, each after a line with its name.
     mkdir -p ${dir}
-    awk -v dir=${dir} '/^# /{ out = dir "/" $2; next } { print > out }' ${goldens}/edge.jool ${goldens}/vrf.jool
+    install -m 644 -t ${dir} ${routerRendered "edge"}/jool/* ${routerRendered "vrf"}/jool/*
     ${ExecReload} || fail "chalkos-nat64 failed"
     for name in edge guest; do
       veth=${dir}/$name.veth
@@ -227,7 +226,7 @@ unitCheck "router-nat64"
 
     # With the VRF example's ruleset, guest's NAT64 takes its LAN's traffic to the prefix and
     # leaves through its uplink from the uplink's address.
-    nft -f ${goldens}/vrf.nft || fail "nft refused the VRF example's ruleset"
+    nft -f ${routerRendered "vrf"}/router-nftables/ruleset.nft || fail "nft refused the VRF example's ruleset"
     inside guest nft -f - <<'NFT'
     table ip6 count {
       counter reached {}

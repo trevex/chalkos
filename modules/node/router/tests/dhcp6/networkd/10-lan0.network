@@ -1,0 +1,14 @@
+[Match]
+Name=lan0
+
+[IPv6Prefix]
+Prefix=2001:db8:1::/64
+
+[IPv6SendRA]
+Managed=true
+
+[Network]
+Address=2001:db8:1::1/64
+IPv6AcceptRA=false
+IPv6SendRA=true
+

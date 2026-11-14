@@ -25,6 +25,11 @@ let
       ;
   };
   inherit (routerLib) accepted;
+  # Whether the image carries every feature of the router: the attribute sets of chalkos.router
+  # are the features, each with its enable option.
+  allFeatures = lib.all (feature: feature.enable) (
+    lib.filter lib.isAttrs (lib.attrValues config.chalkos.router)
+  );
 in
 {
   imports = [
@@ -99,7 +104,22 @@ in
       chalkos.kinds = routerLib.kinds ./kinds.nix;
       chalkos.layers.router = "";
       chalkos.forwarding.enable = true;
-      chalkos.tests = chalkosLib.internal.exampleTests "router" config.chalkos.router.examples;
+      # The examples' tests run as the node r1 and, on an image with every feature of the router,
+      # compare the outputs with the golden files of tests/<example>/<output>. An image that leaves
+      # a feature out renders the examples it accepts without comparing them.
+      chalkos.tests = lib.mapAttrs (
+        name: t:
+        let
+          dir = ./tests + "/${lib.removePrefix "router-" name}";
+        in
+        t
+        // {
+          node = "r1";
+          outputs = lib.optionalAttrs (allFeatures && builtins.pathExists dir) (
+            lib.mapAttrs (output: _: dir + "/${output}") (builtins.readDir dir)
+          );
+        }
+      ) (chalkosLib.internal.exampleTests "router" config.chalkos.router.examples);
 
       # zebra installs BGP's routes and next hops, and chalkos-nat64 the routes to the NAT64s'
       # links, which networkd would remove as foreign ones each time it configures a link.
