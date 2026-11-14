@@ -45,7 +45,9 @@ their store paths' hashes replaced by eeee...; OUT/<test>/refusals.json, the ref
 accepted config; OUT/<test>/effects.json, the effects due, sorted by name; OUT/summary.txt, a
 PASS or FAIL line per test; OUT/failures, the FAIL lines alone; and OUT/goldens.tsv, a line per
 output that differs from its golden files: the test, the output, the golden files and the
-rendered files below OUT. It exits 0 whatever the tests got.`
+rendered files below OUT. A test whose config cannot be read, whose before is refused or whose
+check fails gets its FAIL line alone, with no files below OUT/<test>. It exits 0 whatever the
+tests got.`
 
 func main() {
 	var err error

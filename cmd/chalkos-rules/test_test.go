@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -62,7 +63,7 @@ func TestRun(t *testing.T) {
 		"hi.yaml":    say("hi"),
 		"other.yaml": say("other"),
 		"boom.yaml":  say("boom"),
-		"store.yaml": say("/nix/store/0123456789abcdfghijklmnpqrsvwxyz-x/bin/y and /nix/store/short-x"),
+		"store.yaml": say("/nix/store/0123456789abcdfghijklmnpqrsvwxyz-x and /nix/store/short-x and /nix/store/0123456789abcdefghijklmnopqrstuv-z"),
 		"typo.yaml":  strings.Replace(hello, "kind: Greeting", "kind: Greting", 1),
 	}
 	const greeterRefusal = `{"kind":"Greeting","name":"g","path":"spec.message","message":"say hello"}`
@@ -206,10 +207,10 @@ func TestRun(t *testing.T) {
 		},
 		"store paths normalised": {
 			tests:   `{"t": {"config": "$C/store.yaml", "node": "example", "outputs": {"greeting": "$G/greeting"}}}`,
-			goldens: map[string]string{"greeting/greeting.txt": "/nix/store/eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee-x/bin/y and /nix/store/short-x\n"},
+			goldens: map[string]string{"greeting/greeting.txt": "/nix/store/eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee-x and /nix/store/short-x and /nix/store/0123456789abcdefghijklmnopqrstuv-z\n"},
 			wantFiles: map[string]string{
 				"summary.txt":                     "PASS t\n",
-				"t/outputs/greeting/greeting.txt": "/nix/store/eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee-x/bin/y and /nix/store/short-x\n",
+				"t/outputs/greeting/greeting.txt": "/nix/store/eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee-x and /nix/store/short-x and /nix/store/0123456789abcdefghijklmnopqrstuv-z\n",
 			},
 		},
 		"several tests and problems": {
@@ -235,7 +236,7 @@ func TestRun(t *testing.T) {
 			expand := strings.NewReplacer("$C", c, "$G", g).Replace
 			writeFiles(t, c, configs)
 			writeFiles(t, g, tc.goldens)
-			writeFiles(t, dir, map[string]string{"tests.json": `{"platform": "metal", "tests": ` + expand(tc.tests) + `}`})
+			writeFiles(t, dir, map[string]string{"tests.json": `{"tests": ` + expand(tc.tests) + `}`})
 			if err := runTests(img, filepath.Join(dir, "tests.json"), out); err != nil {
 				t.Fatalf("runTests = %v", err)
 			}
@@ -259,8 +260,8 @@ func TestRunCannotRun(t *testing.T) {
 	img := testImage(t)
 	for name, tc := range map[string]struct{ tests, want string }{
 		"tests that are no JSON":      {`{"tests": `, "tests.json: unexpected EOF"},
-		"an unknown field":            {`{"platform": "metal", "tests": {"t": {"config": "x", "output": {}}}}`, `unknown field "output"`},
-		"a test that is no file name": {`{"platform": "metal", "tests": {"a/b": {"config": "x"}}}`, `the test "a/b" is no file name`},
+		"an unknown field":            {`{"tests": {"t": {"config": "x", "output": {}}}}`, `unknown field "output"`},
+		"a test that is no file name": {`{"tests": {"a/b": {"config": "x"}}}`, `the test "a/b" is no file name`},
 	} {
 		t.Run(name, func(t *testing.T) {
 			dir := t.TempDir()
@@ -272,5 +273,17 @@ func TestRunCannotRun(t *testing.T) {
 	}
 	if err := runTests(img, filepath.Join(t.TempDir(), "missing.json"), t.TempDir()); err == nil {
 		t.Error("runTests of a missing file of tests succeeded")
+	}
+}
+
+// An error of the check that is no refusal is the check's failure, which refusalsOf returns, and
+// which runTest reports as "the check failed: …".
+func TestRefusalsOfAFailure(t *testing.T) {
+	failure := fmt.Errorf("the image's validators: %w", os.ErrPermission)
+	if got, err := refusalsOf(failure); got != nil || err != failure {
+		t.Errorf("refusalsOf = %v, %v; want the error itself", got, err)
+	}
+	if got, err := refusalsOf(nil); err != nil || got == nil || len(got) != 0 {
+		t.Errorf("refusalsOf(nil) = %#v, %v; want none", got, err)
 	}
 }

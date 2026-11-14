@@ -334,3 +334,24 @@ func TestRunRequiresFacts(t *testing.T) {
 		t.Error("Run without facts passed")
 	}
 }
+
+// RunTranslated runs the stages after the translation on documents checked as a set without a
+// node's identity, here a set without a SystemDisk, and gives no identity.
+func TestRunTranslated(t *testing.T) {
+	img := testImage(t, `cat > "$OUT/demo.json"`)
+	docs, err := config.CheckRedacted(config.Redact(parse(t, strings.SplitN(base, "---", 2)[1])), img.Schemas)
+	if err != nil {
+		t.Fatal(err)
+	}
+	res, err := RunTranslated(context.Background(), img, Input{Node: "n1", Facts: fixed(&facts{})}, docs)
+	if err != nil {
+		t.Fatalf("RunTranslated = %v", err)
+	}
+	defer res.Staged.Discard()
+	if res.Identity != nil || res.Documents.Len() != 2 || len(res.Staged.States()) != 1 {
+		t.Errorf("RunTranslated = %+v, want the two documents, the output demo and no identity", res)
+	}
+	if _, err := RunTranslated(context.Background(), img, Input{Node: "n1"}, docs); err == nil {
+		t.Error("RunTranslated without facts passed")
+	}
+}

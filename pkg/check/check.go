@@ -10,9 +10,11 @@
 //
 // Each stage returns a *Refusal for a config it refuses and any other error for a failure of the
 // image or of the check itself. Run runs them in a row, for an image that checks its own config,
-// and plans the effects a delivery of the config takes. chalkd runs them for a delivery to the
-// running image, with its own checks of the machine between them; chalkctl runs the first three,
-// without the node's facts and with the validators it links.
+// and plans the effects a delivery of the config takes; RunTranslated runs the last three and plans
+// the effects, for documents checked as a set without a node's identity, as an image's tests check
+// theirs with config.CheckRedacted. chalkd runs the stages for a delivery to the running image,
+// with its own checks of the machine between them; chalkctl runs the first three, without the
+// node's facts and with the validators it links.
 //
 // A check never sees a Secret's value: it takes the documents as config.Redacted after their
 // translation, which is all rules, validators and renderers read of them, and the checks of secret
@@ -192,17 +194,28 @@ type Result struct {
 // error is the image's own failure. A config refused after its translation still gives the
 // translation, whose storage a caller names in the refusal.
 func Run(ctx context.Context, img Image, in Input) (Result, error) {
-	if in.Facts == nil {
-		return Result{}, errors.New("the check has no facts to give the rules")
-	}
 	docs, id, err := img.TranslateRedacted(in.Node, in.Delivered)
 	if err != nil {
 		return Result{}, err
 	}
-	res := Result{Documents: docs}
-	if res.Identity, err = encodeIdentity(id); err != nil {
+	identity, err := encodeIdentity(id)
+	if err != nil {
 		return Result{}, err
 	}
+	res, err := RunTranslated(ctx, img, in, docs)
+	res.Identity = identity
+	return res, err
+}
+
+// RunTranslated is Run after the translation: it runs the image's change rules on docs, the set
+// in.Delivered translates or is checked as, against in.Old with the image's defaults, its
+// validators, and every output's renderer and check, and plans the effects. The result holds no
+// identity. A refused config is a *Refusal; any other error is the image's own failure.
+func RunTranslated(ctx context.Context, img Image, in Input, docs config.Redacted) (Result, error) {
+	if in.Facts == nil {
+		return Result{}, errors.New("the check has no facts to give the rules")
+	}
+	res := Result{Documents: docs}
 	old := in.Old.Defaulted(img.Schemas)
 	if err := img.Rules(rules.Input{Documents: docs, Old: old, Node: in.Node, Facts: in.Facts(docs, old)}); err != nil {
 		return res, err
