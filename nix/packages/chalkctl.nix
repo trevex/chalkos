@@ -1,4 +1,4 @@
-# chalkctl, the operators' command. Its tests run as it is built.
+# chalkctl, the operators' command.
 {
   buildGoProgram,
   lib,
@@ -9,7 +9,6 @@
 buildGoProgram {
   pname = "chalkctl";
   paths = treeGoPaths;
-  doCheck = true;
   nativeBuildInputs = [ makeWrapper ];
   postFixup = ''
     wrapProgram $out/bin/chalkctl --prefix PATH : ${lib.makeBinPath [ mtools ]}

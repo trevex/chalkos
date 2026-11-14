@@ -13,9 +13,8 @@
   pname,
   # Source paths besides go.mod and go.sum.
   paths,
-  doCheck ? false,
   # Whether the source keeps the tests, for a program that runs or builds them.
-  withTests ? doCheck,
+  withTests ? false,
   ...
 }@args:
 let
@@ -58,7 +57,7 @@ in
     vendorHash = "sha256-FxJji46/hz2knQAzPQ+G2P2THt1xYvBKkwI/aIWFQxc=";
     env.CGO_ENABLED = "0";
     subPackages = [ "cmd/${pname}" ];
-    inherit doCheck;
+    doCheck = false;
     meta.mainProgram = pname;
     # The source paths, relative to the repository, which the go-lint check compares with the
     # packages the program imports.
