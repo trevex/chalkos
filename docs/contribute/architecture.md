@@ -444,6 +444,8 @@ it has no `completion` command.
 
 ## Nix modules
 
+[Nix code](nix.md) says where a new helper goes and which practices the Nix code follows.
+
 | Directory | What it holds |
 | --- | --- |
 | `modules/node/` | The NixOS modules of every image: `base/` (appliance, closure, disk, image directory, storage), `kinds/` (`chalkos.kinds`, `chalkos.facts`, networkd's kinds and the kinds every image accepts), `runtime/` (grants, `chalkos.outputs`, `chalkos.effects`, chalkcfg on the system path), kernel, chalkd, time, the CNI, `kubernetes/` (the kubelet, its kinds, effects, containerd, registries, firewall), `router/` (the router layer), upgrade. |

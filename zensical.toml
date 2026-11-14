@@ -213,6 +213,7 @@ nav = [
     "contribute/development.md",
     "contribute/testing.md",
     "contribute/architecture.md",
+    "contribute/nix.md",
     "contribute/writing-docs.md",
     "contribute/style.md",
     "contribute/roadmap.md",

@@ -36,6 +36,15 @@ touches.
 
     [:octicons-arrow-right-24: Read](architecture.md)
 
+-   :material-nix: __Nix code__
+
+    ---
+
+    How the Nix code is laid out, what a module gets, where a new helper goes and the practices
+    the Nix code follows.
+
+    [:octicons-arrow-right-24: Read](nix.md)
+
 -   :material-file-document-edit: __Writing documentation__
 
     ---
