@@ -27,8 +27,7 @@ type baseline struct {
 	Documents []map[string]any         `json:"documents"`
 	Facts     recordedFacts            `json:"facts"`
 	Outputs   map[string]outputs.State `json:"outputs"`
-	// Kinds are the hashes of the kinds' documents, by kind, as config.KindHashes gives them. A
-	// baseline an older chalkd wrote has none, which makes every effect on a kind due.
+	// Kinds are the hashes of the kinds' documents, by kind, as config.KindHashes gives them.
 	Kinds map[string]string `json:"kinds"`
 	// Attempts are what each delivery since applied, or may have, as it records before its first
 	// change: a unit it restarted runs that delivery's config, which a later delivery of the

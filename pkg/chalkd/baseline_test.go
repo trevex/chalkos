@@ -24,14 +24,14 @@ func TestBaselineRecordsKinds(t *testing.T) {
 	}
 }
 
-// A failed delivery's attempt goes to the baseline before it changes anything, and a baseline an
-// older chalkd wrote, without attempts, reads as one with none. The facts the attempt loaded once
-// it changed the node go to it later. A retry that loads the same facts leaves the attempt once;
-// one that loads others keeps both runs.
+// A failed delivery's attempt goes to the baseline before it changes anything, and a baseline
+// without attempts reads as one with none. The facts the attempt loaded once it changed the node
+// go to it later. A retry that loads the same facts leaves the attempt once; one that loads others
+// keeps both runs.
 func TestBaselineAddsAttempts(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "baseline.json")
-	older := `{"documents": [], "facts": {}, "outputs": {}}`
-	write(t, path, older)
+	plain := `{"documents": [], "facts": {}, "outputs": {}}`
+	write(t, path, plain)
 	a := baselineAttempt{Documents: []map[string]any{{"kind": "Demo"}}, Kinds: map[string]string{"Demo": "abc"}}
 	facts := recordedFacts{"node": {Value: "h2"}}
 	for i := range 2 {
@@ -39,8 +39,8 @@ func TestBaselineAddsAttempts(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if i == 0 && string(previous) != older {
-			t.Errorf("previous = %s, want %s", previous, older)
+		if i == 0 && string(previous) != plain {
+			t.Errorf("previous = %s, want %s", previous, plain)
 		}
 		if b, _, _ := readBaseline(path); len(b.Attempts) != i+1 || b.Attempts[i].Facts != nil {
 			t.Fatalf("baseline = %+v; want %d attempts, the newest without facts", b, i+1)

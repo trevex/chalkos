@@ -81,12 +81,10 @@ func (s *Server) checkWithImage(ctx context.Context, st imageStore, system, plat
 }
 
 // runImageCheck runs the checker of the image whose store is st on c and returns its result, a
-// refusal among them. An image without a checker, and one that cannot check config, fail.
+// refusal among them.
 func (s *Server) runImageCheck(ctx context.Context, st imageStore, system, platform, name string, c imageCheck) (*checkv1.Result, error) {
 	checker, err := st.Resolve(system + imagecheck.CheckerPath)
-	if errors.Is(err, fs.ErrNotExist) {
-		return nil, layer.Errorf(connect.CodeFailedPrecondition, "the image %x predates chalkd check; it cannot check its config", c.image[:6])
-	} else if err != nil {
+	if err != nil {
 		return nil, fmt.Errorf("find the image's checker: %w", err)
 	}
 	f, err := s.stagedFacts(ctx, st, system, c)

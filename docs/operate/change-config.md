@@ -622,9 +622,6 @@ it runs delivered again, which removes the record as well.
   config. Run `chalkctl config apply node1 --secrets secrets.age` to write it.
 - `--staged delivers config alone; deliver the Kubernetes share to the running image`: `--staged`
   and `--kubernetes-share` do not combine.
-- `the image <hash> predates chalkd check; it cannot check its config`: the staged image, or the
-  image an upgrade installs, was built before images checked their own config. Upgrade to an image
-  built from a newer chalkos first.
 - A unit that the change should have restarted did not restart. A restart effect leaves a stopped
   unit stopped, unless the effect starts it too.
   [Troubleshooting](troubleshooting.md) helps with a unit that fails after the delivery.

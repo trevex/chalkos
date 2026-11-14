@@ -3,8 +3,6 @@ package chalkd
 import (
 	"context"
 	"encoding/json"
-	"fmt"
-	"os"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -117,24 +115,15 @@ func TestImageCheckComparesWithTheRunningConfigAsDelivered(t *testing.T) {
 	}
 }
 
-// An image without a checker, as one built before chalkd check, cannot check its config and is
-// refused; so is a checker whose documents carry other secret values than were delivered.
+// A checker whose documents carry other secret values than were delivered is refused.
 func TestImageCheckRefuses(t *testing.T) {
 	s, _ := configServer(t)
-	old := imageWith(t, s, fixtureSchemas(t), "")
-	if err := os.Remove(filepath.Join(string(old), "nix/store/x/sw/bin/chalkd")); err != nil {
-		t.Fatal(err)
-	}
-	_, err := s.stageConfig(context.Background(), old, "/nix/store/x", "metal", newImage, baseConfig, "")
-	if err == nil || err.Error() != fmt.Sprintf("the image %x predates chalkd check; it cannot check its config", newImage[:6]) {
-		t.Errorf("an image without a checker: %v", err)
-	}
 	s.CheckImage = &recording{run: s.CheckImage, answer: func(res *checkv1.Result) {
 		for i, d := range res.Documents {
 			res.Documents[i] = strings.Replace(d, `"token":"`, `"token":"0`, 1)
 		}
 	}}
-	_, err = s.stageConfig(context.Background(), imageWith(t, s, fixtureSchemas(t), ""), "/nix/store/x", "metal", newImage, baseConfig, "")
+	_, err := s.stageConfig(context.Background(), imageWith(t, s, fixtureSchemas(t), ""), "/nix/store/x", "metal", newImage, baseConfig, "")
 	if err == nil || !strings.Contains(err.Error(), `the image's checker gave back other documents than it got: Secret "demo" holds other secret values than were delivered`) {
 		t.Errorf("other secret values: %v", err)
 	}
