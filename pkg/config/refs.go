@@ -21,7 +21,7 @@ func (id ID) String() string { return id.Kind + "/" + id.Name }
 func (d Document) ID() ID { return ID{APIVersion: d.APIVersion, Kind: d.Kind, Name: d.Name} }
 
 // Ref is a reference of a document to another: a field its kind's schema marks with
-// x-chalkos-ref, as the converter marks a lib.chalkos.types.ref or secretRef field.
+// x-chalkos-ref, as the converter marks a chalkosLib.types.ref or secretRef field.
 type Ref struct {
 	// Path is the field's path below the document, such as spec.rules[2].to.vrf.
 	Path string

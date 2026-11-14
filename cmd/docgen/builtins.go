@@ -572,7 +572,7 @@ func writeValidators(b *strings.Builder, anchor, intro string, names, changed []
 	}
 }
 
-// renderer describes an output's render command: one of lib.chalkos.render's renderers, or a
+// renderer describes an output's render command: one of chalkosLib.render's renderers, or a
 // command.
 func renderer(render string) string {
 	words := strings.Fields(stripStore(render))

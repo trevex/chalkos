@@ -68,7 +68,7 @@ type Ref struct {
 }
 
 // Unique is one declaration of x-chalkos-unique, as the converter writes it from
-// lib.chalkos.mkOption's or chalkos.kinds.<Kind>'s unique: the values that must not repeat within
+// chalkosLib.mkOption's or chalkos.kinds.<Kind>'s unique: the values that must not repeat within
 // one list (across "list") or among all documents of the kind (across "kind"). Without By the key
 // is the value itself, or each item of a list, normalised with As; with By it is the tuple of
 // those fields of the object, or of each object of a list, each normalised with its own As.

@@ -79,7 +79,7 @@ func TestWriteOptions(t *testing.T) {
 				"\n## Effects { #effects }\n\n",
 				"\n## Diagnostics { #diagnostics }\n\n",
 				"\n### `chalkos.diagnostics` { #chalkosdiagnostics }\n",
-				"\n## lib.chalkos { #lib-chalkos }\n\nThe helpers.\n",
+				"\n## chalkosLib { #chalkoslib }\n\nThe helpers.\n",
 				"\nSources: ",
 			},
 			want: []string{
@@ -90,7 +90,7 @@ func TestWriteOptions(t *testing.T) {
 					"| `<name>.rules`{ #chalkoskindsrules } | list of submodule | `[ ]` | Change rules of the kind. |\n" +
 					"| `<name>.rules.*.takes`{ #chalkoskindsrulestakes } | one of `refuse`, `reset` | `\"refuse\"` | What a refused change needs. |\n\n" +
 					"Example of `<name>.rules`:\n\n```nix\n[\n  # A rule.\n  { rule = \"true\"; message = \"never\"; }\n]\n```\n",
-				"| `<name>.render`{ #chalkosoutputsrender } | command, package or lib.chalkos.render value | required | The renderer. |\n",
+				"| `<name>.render`{ #chalkosoutputsrender } | command, package or chalkosLib.render value | required | The renderer. |\n",
 				"Type: list of string · Default: `[ ]` · Declared in: [modules/node/runtime/default.nix](https://example.org/modules/node/runtime/default.nix)\n\nConfig kinds the unit reads.\n\nExample: `[ \"Peer\" ]`\n",
 			},
 		},
@@ -166,7 +166,7 @@ func TestOptionType(t *testing.T) {
 		"string matching the pattern 0?[0-7]{3}":                 "string matching `0?[0-7]{3}`",
 		"null or string matching the pattern [a-z0-9][a-z0-9-]*": "string matching `[a-z0-9][a-z0-9-]*` or null",
 		"(list of string matching the pattern [a-z0-9][a-z0-9-]*) or attribute set of list of module": "list of string matching `[a-z0-9][a-z0-9-]*` or map of list of module",
-		"command, package or lib.chalkos.render value":                                                "command, package or lib.chalkos.render value",
+		"command, package or chalkosLib.render value":                                                 "command, package or chalkosLib.render value",
 	} {
 		if got := optionType(in); got != want {
 			t.Errorf("optionType(%q) = %q, want %q", in, got, want)

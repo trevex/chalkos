@@ -405,7 +405,7 @@
       "render"
     ],
     "readOnly": false,
-    "type": "command, package or lib.chalkos.render value"
+    "type": "command, package or chalkosLib.render value"
   },
   "chalkos.effects": {
     "declarations": [

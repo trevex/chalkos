@@ -1,4 +1,4 @@
 
-## lib.chalkos { #lib-chalkos }
+## chalkosLib { #chalkoslib }
 
 The helpers.
