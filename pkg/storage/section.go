@@ -85,16 +85,6 @@ type Selector struct {
 	Size string `json:"size,omitempty"`
 	// Type is nvme, ssd or hdd.
 	Type string `json:"type,omitempty"`
-	// unknown lists the keys a newer chalkos wrote that this one does not know, separated by ", ".
-	unknown string
-}
-
-// UnknownKeys returns the selector keys this version of chalkos does not know, in sorted order.
-func (r Ref) UnknownKeys() []string {
-	if r.Selector.unknown == "" {
-		return nil
-	}
-	return strings.Split(r.Selector.unknown, ", ")
 }
 
 // UnmarshalJSON reads a reference written as a /dev path string or as a selector object.
@@ -102,31 +92,11 @@ func (r *Ref) UnmarshalJSON(data []byte) error {
 	if bytes.HasPrefix(bytes.TrimSpace(data), []byte(`"`)) {
 		return json.Unmarshal(data, &r.Path)
 	}
-	// Unknown keys are recorded rather than refused, so an older image still reads state a
-	// newer one wrote; a selector with unknown keys never matches a disk.
-	var keys map[string]json.RawMessage
-	if err := json.Unmarshal(data, &keys); err != nil {
-		return err
-	}
-	if err := json.Unmarshal(data, &r.Selector); err != nil {
-		return err
-	}
-	var unknown []string
-	for key := range keys {
-		if !slices.Contains(selectorKeys, strings.ToLower(key)) {
-			unknown = append(unknown, key)
-		}
-	}
-	slices.Sort(unknown)
-	r.Selector.unknown = strings.Join(unknown, ", ")
-	return nil
+	return json.Unmarshal(data, &r.Selector)
 }
 
-// selectorKeys are the JSON keys of Selector; encoding/json matches them ignoring case.
-var selectorKeys = []string{"model", "serial", "wwn", "size", "type"}
-
 // MarshalJSON writes the reference as UnmarshalJSON reads it: the path as a string, or else the
-// selector as an object. Unknown selector keys are not written back.
+// selector as an object.
 func (r Ref) MarshalJSON() ([]byte, error) {
 	if r.Path != "" {
 		return json.Marshal(r.Path)
