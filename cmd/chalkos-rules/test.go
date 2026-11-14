@@ -208,7 +208,10 @@ func (t tester) run(ctx context.Context, dir string, tc testCase) (testResult, e
 	for _, e := range res.Plan.Effects {
 		effects = append(effects, e.Name)
 	}
-	r.warnings = res.Warnings
+	// A warning is one line of the summary and of the warnings file.
+	for _, w := range res.Warnings {
+		r.warnings = append(r.warnings, strings.ReplaceAll(w, "\n", " "))
+	}
 	if err := writeJSON(filepath.Join(dir, "refusals.json"), got); err != nil {
 		return r, err
 	}
@@ -227,11 +230,15 @@ func (t tester) run(ctx context.Context, dir string, tc testCase) (testResult, e
 		case !rendered[o]:
 			r.problems = append(r.problems, fmt.Sprintf("output %s rendered nothing; the image declares no output %s", o, o))
 		default:
-			same, err := sameFiles(tc.Outputs[o], filepath.Join(dir, "outputs", o))
+			same, irregular, err := sameFiles(tc.Outputs[o], filepath.Join(dir, "outputs", o))
 			if err != nil {
 				return r, fmt.Errorf("output %s: %w", o, err)
 			}
-			if !same {
+			switch {
+			case irregular != "":
+				// Taking the rendered files would not mend it, so goldens.tsv does not list it.
+				r.problems = append(r.problems, fmt.Sprintf("output %s: its golden files hold %s, which is no regular file", o, irregular))
+			case !same:
 				r.problems = append(r.problems, fmt.Sprintf("output %s differs from its golden files", o))
 				r.goldens = append(r.goldens, o)
 			}
@@ -363,42 +370,45 @@ func copyNormalised(from, to string) error {
 	})
 }
 
-// sameFiles tells whether the directories a and b hold the same files, by relative path, with the
-// same content; a missing directory holds none, and one that holds anything but directories and
-// regular files, such as a link, is the same as none.
-func sameFiles(a, b string) (bool, error) {
-	fa, regularA, err := filesOf(a)
-	if err != nil {
-		return false, err
+// sameFiles tells whether the directories golden and got hold the same files, by relative path,
+// with the same content; a missing directory holds none. A directory that holds anything but
+// directories and regular files, such as a link, differs from every directory: irregular is the
+// first such file of golden, by relative path.
+func sameFiles(golden, got string) (same bool, irregular string, err error) {
+	fa, irregular, err := filesOf(golden)
+	if err != nil || irregular != "" {
+		return false, irregular, err
 	}
-	fb, regularB, err := filesOf(b)
+	fb, other, err := filesOf(got)
 	if err != nil {
-		return false, err
+		return false, "", err
 	}
-	return regularA && regularB && maps.EqualFunc(fa, fb, bytes.Equal), nil
+	return other == "" && maps.EqualFunc(fa, fb, bytes.Equal), "", nil
 }
 
-// filesOf are the contents of the regular files below dir, by relative path, and whether dir holds
-// nothing but directories and regular files.
-func filesOf(dir string) (map[string][]byte, bool, error) {
+// filesOf are the contents of the regular files below dir, by relative path, and the first file
+// below dir, in lexical order, that is neither a directory nor a regular file; empty for none.
+func filesOf(dir string) (map[string][]byte, string, error) {
 	files := map[string][]byte{}
-	regular := true
+	irregular := ""
 	err := filepath.WalkDir(dir, func(path string, e fs.DirEntry, err error) error {
 		if errors.Is(err, fs.ErrNotExist) && path == dir {
 			return filepath.SkipDir
 		}
-		switch {
-		case err != nil || e.IsDir():
+		if err != nil || e.IsDir() {
 			return err
-		case !e.Type().IsRegular():
-			regular = false
-			return nil
 		}
 		rel, _ := filepath.Rel(dir, path)
+		if !e.Type().IsRegular() {
+			if irregular == "" {
+				irregular = rel
+			}
+			return nil
+		}
 		files[rel], err = os.ReadFile(path)
 		return err
 	})
-	return files, regular, err
+	return files, irregular, err
 }
 
 // writeJSON writes v to path as compact JSON with a trailing newline.

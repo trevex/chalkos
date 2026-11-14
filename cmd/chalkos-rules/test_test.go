@@ -69,9 +69,11 @@ func TestRun(t *testing.T) {
 	const greeterRefusal = `{"kind":"Greeting","name":"g","path":"spec.message","message":"say hello"}`
 	// $C is the directory of the configs, $G that of the golden files.
 	cases := map[string]struct {
-		tests       string
-		goldens     map[string]string
-		links       map[string]string // relative path -> target, below <tmp>/golden
+		tests   string
+		goldens map[string]string
+		// links are the symbolic links below the golden files' directory, by relative path, to
+		// their targets.
+		links       map[string]string
 		wantFiles   map[string]string
 		wantMissing []string
 	}{
@@ -107,8 +109,8 @@ func TestRun(t *testing.T) {
 			goldens: map[string]string{"greeting/greeting.txt": "hello\n", "greeting/real": "x"},
 			links:   map[string]string{"greeting/link": "real"},
 			wantFiles: map[string]string{
-				"failures":    "FAIL t: output greeting differs from its golden files\n",
-				"goldens.tsv": "t\tgreeting\t$G/greeting\tt/outputs/greeting\n",
+				"failures":    "FAIL t: output greeting: its golden files hold link, which is no regular file\n",
+				"goldens.tsv": "",
 			},
 		},
 		"facts the image does not declare": {
