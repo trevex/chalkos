@@ -7,27 +7,31 @@ import (
 	"github.com/trevex/chalkos/pkg/command"
 )
 
-// Sandbox runs command facts as transient units of systemd, so a fact reads the node without
-// changing it: the file system, STATE among it where the node has one, is read-only but for /dev
-// and the unit's own, writable /tmp and /var/tmp; home directories are hidden; the kernel's
-// tunables and control groups cannot be changed, and the unit cannot load a kernel module itself,
-// although the kernel still loads one on request, as for a socket family; the unit has no
-// network, opens no socket but Unix and kernel crypto ones, and cannot gain privileges. Devices
-// stay accessible and the unit keeps root's capabilities but CAP_SYS_MODULE, since resolving
-// disks and testing a passphrase read block devices and cryptsetup may set up a temporary
-// device-mapper mapping for a cipher the kernel crypto API lacks; cryptsetup's lock directory
-// stays writable, where it exists, for the passphrase test.
+// Sandbox runs command facts as transient units that cannot change the node: read-only file
+// systems but /dev and a private /tmp, no network, no kernel tunables or module loading, and no new
+// privileges. Devices stay readable and root keeps its capabilities but CAP_SYS_MODULE, because
+// resolving disks and testing a passphrase read block devices, and cryptsetup may map a device for
+// a cipher the kernel crypto API lacks.
 //
-// Store, when set, is where the store of an image that does not run is on this node, as chalkd
-// mounted it: the unit sees it as its /nix/store, so a fact of that image runs that image's
-// programs. The fact's own program runs from Store, where systemd-run finds it: the running
-// system's store may lack it. A program that is a link, as a package's bin/ often holds one into
-// another package, is followed within Store first, as the running system would follow it into its
-// own store. The program then runs under the name of what the link leads to: systemd-run takes
-// no argv[0] apart from the program, so a fact names its program itself, not a link to a
-// multi-call binary such as kmod's lsmod.
+// Store, when set, is a non-running image's store, mounted as the unit's /nix/store; the fact's
+// program runs from it, links followed within it. systemd-run sets no separate argv[0], so a fact
+// names its program, not a link to a multi-call binary such as kmod's lsmod.
 type Sandbox struct {
 	Store string
+}
+
+// sandbox holds the properties of every fact's unit.
+var sandbox = []string{
+	"--property=ProtectSystem=strict",
+	"--property=ReadOnlyPaths=-/state",
+	"--property=ProtectHome=yes",
+	"--property=PrivateTmp=yes",
+	"--property=ProtectKernelTunables=yes",
+	"--property=ProtectKernelModules=yes",
+	"--property=ProtectControlGroups=yes",
+	"--property=PrivateNetwork=yes",
+	"--property=RestrictAddressFamilies=AF_UNIX AF_ALG",
+	"--property=NoNewPrivileges=yes",
 }
 
 func (s Sandbox) Run(ctx context.Context, argv []string, stdin []byte, limit int) ([]byte, error) {
@@ -40,9 +44,14 @@ func (s Sandbox) Run(ctx context.Context, argv []string, stdin []byte, limit int
 
 // command is the command line that runs argv in the sandbox.
 func (s Sandbox) command(argv []string) ([]string, error) {
-	extra := []string{"--property=ReadWritePaths=-/run/cryptsetup"}
+	args := append([]string{"systemd-run", "--pipe", "--wait", "--quiet", "--collect"}, sandbox...)
+	args = append(args,
+		// RuntimeMaxSec stops the unit itself when chalkd stops waiting.
+		fmt.Sprintf("--property=RuntimeMaxSec=%d", int(Timeout.Seconds())),
+		// cryptsetup's lock directory, for the passphrase test.
+		"--property=ReadWritePaths=-/run/cryptsetup")
 	if s.Store != "" {
-		extra = append(extra, "--property=BindReadOnlyPaths="+s.Store+":/nix/store")
+		args = append(args, "--property=BindReadOnlyPaths="+s.Store+":/nix/store")
 		if command.InStore(argv[0]) {
 			program, err := command.ResolveInStore(s.Store, argv[0])
 			if err != nil {
@@ -51,32 +60,5 @@ func (s Sandbox) command(argv []string) ([]string, error) {
 			argv = append([]string{program}, argv[1:]...)
 		}
 	}
-	return sandboxed(argv, extra...), nil
-}
-
-// sandboxed is the command line that runs argv in the sandbox Sandbox describes, with the extra
-// options of systemd-run given.
-func sandboxed(argv []string, extra ...string) []string {
-	args := append([]string{"systemd-run", "--pipe", "--wait", "--quiet", "--collect"}, sandboxProperties()...)
-	// RuntimeMaxSec stops the unit itself when chalkd stops waiting.
-	args = append(args, fmt.Sprintf("--property=RuntimeMaxSec=%d", int(Timeout.Seconds())))
-	args = append(args, extra...)
-	return append(append(args, "--"), argv...)
-}
-
-// sandboxProperties are the properties of the sandbox Sandbox describes, without cryptsetup's
-// lock directory and the time limit, as options of systemd-run.
-func sandboxProperties() []string {
-	return []string{
-		"--property=ProtectSystem=strict",
-		"--property=ReadOnlyPaths=-/state",
-		"--property=ProtectHome=yes",
-		"--property=PrivateTmp=yes",
-		"--property=ProtectKernelTunables=yes",
-		"--property=ProtectKernelModules=yes",
-		"--property=ProtectControlGroups=yes",
-		"--property=PrivateNetwork=yes",
-		"--property=RestrictAddressFamilies=AF_UNIX AF_ALG",
-		"--property=NoNewPrivileges=yes",
-	}
+	return append(append(args, "--"), argv...), nil
 }
