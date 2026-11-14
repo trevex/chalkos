@@ -1,13 +1,17 @@
-// Command chalkos-rules checks an image when it is built: every change rule its schemas declare
-// and every rule of its effects compiles, within the cost limit, and reads only facts the image
-// declares, each a file or a program of the image's store; every effect acts on units the image
-// defines, outputs it declares and kinds its schemas declare; every output renders its examples
-// and passes its check; every validator accepts its examples; and every diagnostic is one chalkd
-// can run.
+// Command chalkos-rules checks an image when it is built, and runs its tests.
+//
+// The check: every change rule its schemas declare and every rule of its effects compiles, within
+// the cost limit, and reads only facts the image declares, each a file or a program of the image's
+// store; every effect acts on units the image defines, outputs it declares and kinds its schemas
+// declare; every output and validator is a program of the image's store that reads kinds the
+// image gives its programs; and every diagnostic is one chalkd can run.
+//
+// The tests: each config of chalkos.tests goes through the checks chalkd runs for a delivery, and
+// what it got, the outputs' files, the refusals and the effects due, is compared with what the
+// test expects.
 package main
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -18,45 +22,53 @@ import (
 	"strings"
 
 	"github.com/trevex/chalkos/pkg/command"
-	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/contract"
 	"github.com/trevex/chalkos/pkg/effects"
-	"github.com/trevex/chalkos/pkg/jsonfile"
 	"github.com/trevex/chalkos/pkg/outputs"
-	"github.com/trevex/chalkos/pkg/refusals"
 	"github.com/trevex/chalkos/pkg/schema"
 )
 
 const usage = `usage: chalkos-rules check IMAGE
+       chalkos-rules test IMAGE TESTS OUT
 
-Checks the files of the directory IMAGE, as an image's build lays them out: schemas/, the
+check checks the files of the directory IMAGE, as an image's build lays them out: schemas/, the
 directory of its schemas; facts.json, effects.json, outputs.json, validators.json and
-diagnostics.json, the image's own; examples.json, {"outputs": {...}, "validators": {...}}, the
-examples directory of each output and of each validator by name; and units/, its systemd units.
-Every rule of the schemas and of the effects compiles and reads only facts facts.json declares,
-every unit an effect restarts or reloads is one of units/, every effect's outputs and kinds name
-an output or a kind that exists, every output and validator reads kinds the schemas declare,
-each output renders each of its examples and passes its check, each validator accepts each of
-its examples, and every diagnostic is one chalkd can run.`
+diagnostics.json, the image's own; and units/, its systemd units. Every rule of the schemas and of
+the effects compiles and reads only facts facts.json declares, every unit an effect restarts or
+reloads is one of units/, every effect's outputs and kinds name an output or a kind that exists,
+every output and validator is a program of the image's store and reads kinds the schemas declare,
+and every diagnostic is one chalkd can run.
+
+test runs the tests of TESTS, chalkos.tests as the image's build writes them, against the image
+IMAGE, and writes what each got to OUT: OUT/<test>/outputs/<output>/, each output's files with
+their store paths' hashes replaced by eeee...; OUT/<test>/refusals.json, the refusals, [] for an
+accepted config; OUT/<test>/effects.json, the effects due, sorted by name; OUT/summary.txt, a
+PASS or FAIL line per test; OUT/failures, the FAIL lines alone; and OUT/goldens.tsv, a line per
+output that differs from its golden files: the test, the output, the golden files and the
+rendered files below OUT. It exits 0 whatever the tests got.`
 
 func main() {
-	if len(os.Args) != 3 || os.Args[1] != "check" {
+	var err error
+	switch {
+	case len(os.Args) == 3 && os.Args[1] == "check":
+		err = checkImage(os.Args[2], os.Stdout)
+	case len(os.Args) == 5 && os.Args[1] == "test":
+		err = runTests(os.Args[2], os.Args[3], os.Args[4])
+	default:
 		fmt.Fprintln(os.Stderr, usage)
 		os.Exit(2)
 	}
-	if err := check(os.Args[2], os.Stdout); err != nil {
+	if err != nil {
 		fmt.Fprintln(os.Stderr, "chalkos-rules: "+err.Error())
 		os.Exit(1)
 	}
 }
 
-func check(image string, out io.Writer) error {
+// checkImage checks the image of the directory image, as check of the usage says, and writes what
+// it checked to out.
+func checkImage(image string, out io.Writer) error {
 	c, err := contract.Load(image)
 	if err != nil {
-		return err
-	}
-	var ex examples
-	if err := jsonfile.Read(filepath.Join(image, "examples.json"), &ex); err != nil {
 		return err
 	}
 	s, defs := c.Schemas, c.Facts
@@ -105,12 +117,7 @@ func check(image string, out io.Writer) error {
 	if len(errs) > 0 {
 		return errors.Join(errs...)
 	}
-	// The outputs and the validators run on their examples once they are sound.
-	ran, exampleErrs := checkExamples(s, outs, vals, ex)
-	if len(exampleErrs) > 0 {
-		return errors.Join(exampleErrs...)
-	}
-	fmt.Fprintf(out, "%d rules and %d effect rules compile, reading the facts %s; %d outputs render %d examples; %d validators accept %d examples\n", len(set.Programs), len(effectRules), declared(read), len(outs), ran[outputs.RoleOutput], len(vals), ran[outputs.RoleValidator])
+	fmt.Fprintf(out, "%d rules and %d effect rules compile, reading the facts %s\n", len(set.Programs), len(effectRules), declared(read))
 	return nil
 }
 
@@ -195,114 +202,4 @@ func checkEffects(kinds kindNames, outs map[string]outputs.Definition, effectDef
 		}
 	}
 	return errs
-}
-
-// examples are the examples directories of the image's outputs and validators, by name, as
-// examples.json holds them.
-type examples struct {
-	Outputs    map[string]string `json:"outputs"`
-	Validators map[string]string `json:"validators"`
-}
-
-// checkExamples runs each output and each validator on each file of its examples directory, a
-// config set of its own, as the node example, as a node would: an output renders it and passes its
-// check, and a validator accepts it. It returns the number of examples run, by role. The build
-// runs the programs as they are, and leaves the files' owner.
-func checkExamples(s *schema.Schemas, outs map[string]outputs.Definition, vals map[string]outputs.Validator, ex examples) (map[outputs.Role]int, []error) {
-	n := map[outputs.Role]int{}
-	var errs []error
-	for role, dirs := range map[outputs.Role]map[string]string{outputs.RoleOutput: ex.Outputs, outputs.RoleValidator: ex.Validators} {
-		for _, name := range slices.Sorted(maps.Keys(dirs)) {
-			_, isOutput := outs[name]
-			_, isValidator := vals[name]
-			if role == outputs.RoleOutput && !isOutput || role == outputs.RoleValidator && !isValidator {
-				errs = append(errs, fmt.Errorf("%s %s: it has examples but is no %s", role, name, role))
-				continue
-			}
-			files, err := exampleFiles(dirs[name])
-			if err != nil {
-				errs = append(errs, fmt.Errorf("%s %s: its examples: %w", role, name, err))
-				continue
-			}
-			for _, file := range files {
-				if err := runExample(s, role, name, outs, vals, file); err != nil {
-					errs = append(errs, fmt.Errorf("%s %s: example %s: %w", role, name, filepath.Base(file), err))
-				}
-				n[role]++
-			}
-		}
-	}
-	// The map's order is random; the errors are not.
-	slices.SortFunc(errs, func(a, b error) int { return strings.Compare(a.Error(), b.Error()) })
-	return n, errs
-}
-
-// exampleFiles are the YAML and JSON files of dir, sorted; a directory without any is refused.
-func exampleFiles(dir string) ([]string, error) {
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		return nil, err
-	}
-	var files []string
-	for _, e := range entries {
-		switch filepath.Ext(e.Name()) {
-		case ".yaml", ".yml", ".json":
-			files = append(files, filepath.Join(dir, e.Name()))
-		}
-	}
-	if len(files) == 0 {
-		return nil, fmt.Errorf("%s holds no YAML or JSON file", dir)
-	}
-	return files, nil
-}
-
-// exampleDocuments are the documents of an example file, each valid against the schemas and with
-// its defaults and redacted, as a node's renderers and validators read them.
-func exampleDocuments(s *schema.Schemas, file string) (config.Redacted, error) {
-	f, err := os.Open(file)
-	if err != nil {
-		return config.Redacted{}, err
-	}
-	docs, err := config.Parse(f)
-	f.Close()
-	if err != nil {
-		return config.Redacted{}, err
-	}
-	for i, doc := range docs {
-		filled, err := s.Fill(doc.Object)
-		if err != nil {
-			return config.Redacted{}, err
-		}
-		docs[i].Object = filled
-	}
-	return config.Redact(docs), nil
-}
-
-// runExample runs the output or the validator name, as role says, on the example file.
-func runExample(s *schema.Schemas, role outputs.Role, name string, outs map[string]outputs.Definition, vals map[string]outputs.Validator, file string) error {
-	docs, err := exampleDocuments(s, file)
-	if err != nil {
-		return err
-	}
-	root, err := os.MkdirTemp("", "chalkos-example-")
-	if err != nil {
-		return err
-	}
-	defer os.RemoveAll(root)
-	r := outputs.Renderer{Root: root, Run: outputs.Direct{}, KeepOwner: true}
-	in := outputs.Input{Node: "example", Documents: docs, Schemas: s}
-	var failures []outputs.Failure
-	if role == outputs.RoleOutput {
-		_, failures = r.Render(context.Background(), map[string]outputs.Definition{name: outs[name]}, in)
-	} else if failures, err = r.Validate(context.Background(), map[string]outputs.Validator{name: vals[name]}, in); err != nil {
-		return err
-	}
-	if len(failures) == 0 {
-		return nil
-	}
-	// What the program wrote to standard error is in the build's log, above.
-	if f := failures[0]; len(f.Refusals) > 0 {
-		return errors.New(refusals.Message(f.Refusals))
-	}
-	return errors.New(strings.TrimSuffix(failures[0].Problem, "; see the node's journal"))
 }

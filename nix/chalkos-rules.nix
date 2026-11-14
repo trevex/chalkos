@@ -6,6 +6,7 @@ buildGoProgram {
   paths = [
     ../cmd/chalkos-rules
     ../pkg/atomicfile
+    ../pkg/check
     ../pkg/command
     ../pkg/config
     ../pkg/contract

@@ -23,6 +23,11 @@ func (s *Staged) States() map[string]State {
 	return maps.Clone(s.states)
 }
 
+// Dirs are the directories the staged outputs' files are in, by name, until Swap or Discard.
+func (s *Staged) Dirs() map[string]string {
+	return maps.Clone(s.staging)
+}
+
 // Swap makes each staged output the one its dir links to: the files move below Root/.rendered,
 // and a new link replaces the old one in one rename, so a service reads the old files or the new
 // ones and never a mix. The files the old link named are removed. It records each swapped
