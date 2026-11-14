@@ -275,7 +275,7 @@ func prepareDisk(t *testing.T, dir string, o diskOpts) lab.VMDisk {
 		o.imageEnv = "CHALKLAB_IMAGE_DIR"
 	}
 	imageDir := os.Getenv(o.imageEnv)
-	src, err := image.FindRaw(imageDir)
+	raw, err := image.FindRaw(imageDir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -284,12 +284,12 @@ func prepareDisk(t *testing.T, dir string, o diskOpts) lab.VMDisk {
 		t.Fatal(err)
 	}
 
-	raw := src
 	if o.mutate != nil || o.sign {
-		raw = filepath.Join(dir, "image.raw")
-		if err := lab.CopySparse(ctx, src, raw); err != nil {
+		copied := filepath.Join(dir, "image.raw")
+		if err := lab.CopySparse(ctx, raw, copied); err != nil {
 			t.Fatal(err)
 		}
+		raw = copied
 	}
 	if o.mutate != nil {
 		o.mutate(t, raw, parts)

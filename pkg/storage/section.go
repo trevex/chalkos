@@ -92,7 +92,9 @@ func (r *Ref) UnmarshalJSON(data []byte) error {
 	if bytes.HasPrefix(bytes.TrimSpace(data), []byte(`"`)) {
 		return json.Unmarshal(data, &r.Path)
 	}
-	return json.Unmarshal(data, &r.Selector)
+	dec := json.NewDecoder(bytes.NewReader(data))
+	dec.DisallowUnknownFields()
+	return dec.Decode(&r.Selector)
 }
 
 // MarshalJSON writes the reference as UnmarshalJSON reads it: the path as a string, or else the

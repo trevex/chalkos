@@ -267,3 +267,12 @@ func TestWriteDefinitionsValidates(t *testing.T) {
 		t.Errorf("wrote into %s for an invalid section: %v", dir, err)
 	}
 }
+
+// A selector with a key chalkos does not know is refused, so it never matches a disk by the
+// keys it knows alone.
+func TestRefRefusesUnknownSelectorKeys(t *testing.T) {
+	var r Ref
+	if err := r.UnmarshalJSON([]byte(`{"model": "Samsung*", "vendor": "x"}`)); err == nil || !strings.Contains(err.Error(), "vendor") {
+		t.Errorf("err = %v, want the unknown key refused", err)
+	}
+}

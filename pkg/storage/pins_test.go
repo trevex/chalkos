@@ -42,7 +42,7 @@ func TestReadPinsMissingFile(t *testing.T) {
 func TestReadPinsIgnoresUnknownFields(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "disks.json")
 	content := `{"disks": {"data": {
-	  "ref": {"serial": "S1", "vendor": "x"},
+	  "ref": {"serial": "S1"},
 	  "identity": {"serial": "S1", "size": 1024, "type": "ssd", "firmware": "1.0"},
 	  "partitions": {"data": "d506b831-fde9-4335-b2be-9710f18219a6"},
 	  "health": "ok"

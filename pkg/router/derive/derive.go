@@ -30,9 +30,9 @@ import (
 // API is the apiVersion of the router layer's kinds.
 const API = "router.chalkos.dev/v1alpha1"
 
-// Kinds are the kinds whose documents Build reads: the router layer's and networkd's Network. An
-// image declares those of its router features; the validator router reads the documents of the
-// kinds of Kinds that the image declares, on the node as in chalkctl.
+// Kinds returns the kinds whose documents Build reads: the router layer's and networkd's
+// Network. An image declares those of its router features; the validator router reads the
+// documents of the kinds of Kinds that the image declares, on the node as in chalkctl.
 func Kinds() []string {
 	names := make([]string, 0, len(routerKinds)+1)
 	for _, k := range routerKinds {
@@ -49,6 +49,7 @@ type routerKind struct {
 	decode func(m *Model, byKind map[string]any) error
 }
 
+// kindOf is the router kind of the name whose documents Build decodes into field.
 func kindOf[T any](name string, field func(*Model) *[]Named[T]) routerKind {
 	return routerKind{name, reflect.TypeFor[T](), func(m *Model, byKind map[string]any) (err error) {
 		*field(m), err = decodeKind[T](byKind, name)
@@ -132,9 +133,8 @@ type Model struct {
 // none the schemas take.
 func Build(byKind map[string]any) (Model, error) {
 	d := Model{byKind: byKind}
-	var err error
 	for _, k := range routerKinds {
-		if err = k.decode(&d, byKind); err != nil {
+		if err := k.decode(&d, byKind); err != nil {
 			return d, err
 		}
 	}
@@ -145,6 +145,7 @@ func Build(byKind map[string]any) (Model, error) {
 	for _, w := range d.WireGuards {
 		wireguards = append(wireguards, w.Name)
 	}
+	var err error
 	if d.Membership, err = vrfLinks(d.VRFs, d.Links, wireguards, byKind); err != nil {
 		return d, err
 	}
