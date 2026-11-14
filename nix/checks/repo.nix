@@ -295,22 +295,25 @@ in
     };
 
   # validate-config.md shows the report of the refusal that the homelab's test
-  # bgp-unconfigured-peer-interface expects of its validator bgp-peers.
+  # bgp-unconfigured-peer-interface expects of its validator bgp-peers. The page keeps the report
+  # on one line of its own that starts with {"refusals": [{"kind": "Peer", "name": "router", which
+  # is how the check finds it.
   example-homelab-validator-docs =
+    let
+      inherit (homelab.nixosConfigurations.node-metal.config.chalkos) tests;
+    in
     pkgs.runCommand "chalkos-example-homelab-validator-docs"
       {
         nativeBuildInputs = [ pkgs.jq ];
         page = ../../docs/build/validate-config.md;
-        expected = builtins.toJSON {
-          inherit
-            (homelab.nixosConfigurations.node-metal.config.chalkos.tests.bgp-unconfigured-peer-interface)
-            refusals
-            ;
-        };
+        expected = builtins.toJSON { inherit (tests.bgp-unconfigured-peer-interface) refusals; };
       }
       ''
         documented=$(grep '^{"refusals": \[{"kind": "Peer", "name": "router"' "$page" | jq -cS .)
-        test -n "$documented" || { echo "error: $page shows no report of the Peer router" >&2; exit 1; }
+        if [ -z "$documented" ]; then
+          echo "error: $page shows no report of the Peer router" >&2
+          exit 1
+        fi
         expected=$(jq -cS . <<<"$expected")
         if [ "$documented" != "$expected" ]; then
           echo "error: $page shows $documented, not the test's $expected" >&2

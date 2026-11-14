@@ -202,7 +202,11 @@ in
           inherit refusals;
         };
       };
-      unconfigured = "has no Network document; bird binds the session to an interface the node configures";
+      # The ends of the messages of an interface without a Network document, of a Peer and of the
+      # Speaker.
+      configured = "an interface the node configures";
+      unconfigured = "has no Network document; bird binds the session to ${configured}";
+      unexported = "has no Network document; bird announces the addresses of ${configured}";
     in
     {
       # The image accepts the example: bgp-peers refuses nothing, bird parses the bird.conf it
@@ -216,6 +220,7 @@ in
       bgp-new-password = {
         before = ./bgp-examples/fabric.yaml;
         config = ./tests/fabric-new-password.yaml;
+        outputs.bird-conf = ./tests/fabric/bird-conf;
         effects = [ "bird" ];
       };
     }
@@ -245,7 +250,7 @@ in
         kind = "Speaker";
         name = "bgp";
         path = "spec.export.interfaces[0]";
-        message = "node0 has no Network document; bird announces the addresses of an interface the node configures";
+        message = "node0 ${unexported}";
       }
     ]
     // validatorTest "peer-without-speaker" [
@@ -253,7 +258,9 @@ in
         kind = "Peer";
         name = "router";
         path = "metadata.name";
-        message = "a node with Peer documents needs a Speaker document, which gives bird its AS number and router ID";
+        message =
+          "a node with Peer documents needs a Speaker document, "
+          + "which gives bird its AS number and router ID";
       }
     ]
     // validatorTest "no-peers" [ ];
