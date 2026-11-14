@@ -47,10 +47,8 @@ func wantRefused(t *testing.T, err error, want ...string) {
 	}
 }
 
-// A BGP instance, a peer, a NAT64, a resolver, an import, a zone and a policy route's target
-// name VRF documents. default names the default VRF, which has no document, where a document
-// runs in a VRF or an import takes its routes; a zone and a policy route's target name VRF
-// documents alone. No VRF document is named default.
+// The router kinds name VRF documents, where default names the default VRF, which has no document;
+// a zone and a policy route's target name VRF documents alone.
 func TestRouterVRFRefs(t *testing.T) {
 	_, err := checkRouterRefs(t,
 		routerDoc("BGP", "tenant", `{vrf: tenant, asn: 64512, routerID: 192.0.2.1, import: {ipv4: {vrfs: [lab4]}, ipv6: {vrfs: [lab, default]}}}`)+

@@ -67,10 +67,14 @@ func TestParseRejectsANonObjectDocument(t *testing.T) {
 	}
 }
 
-func TestNewSetDefaultsDocuments(t *testing.T) {
+// A set needs no document but a SystemDisk, and gets the schemas' defaults.
+func TestNewSetOfASystemDiskAlone(t *testing.T) {
 	s, err := parseSet(t, minimal)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if len(s.Documents()) != 1 {
+		t.Errorf("documents = %+v", s.Documents())
 	}
 	d, ok := s.One("SystemDisk")
 	if !ok {
@@ -105,17 +109,6 @@ func TestOneIsFalseForAMultipleKind(t *testing.T) {
 	}
 	if _, ok := s.One("Secret"); ok {
 		t.Error(`One("Secret") = true, want false: Secret is a multiple kind`)
-	}
-}
-
-// A set needs no document but a SystemDisk.
-func TestNewSetOfASystemDiskAlone(t *testing.T) {
-	s, err := parseSet(t, minimal)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(s.Documents()) != 1 {
-		t.Errorf("documents = %+v", s.Documents())
 	}
 }
 

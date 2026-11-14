@@ -8,10 +8,8 @@ import (
 	"github.com/trevex/chalkos/pkg/schema"
 )
 
-// refSchemas are two kinds of an extension as the kinds module writes them: Lane, whose name
-// default Zone's lane reserves and which therefore refuses it as a name; and Zone, whose fields
-// reference a Lane alone, in a list of nullable references, in list items, in map values, and a
-// key of a Secret.
+// refSchemas are two kinds of an extension: Lane, whose name default Zone's lane reserves, and
+// Zone, whose fields reference Lanes and a Secret's key in each place a schema can mark one.
 func refSchemas(t *testing.T) *schema.Schemas {
 	t.Helper()
 	const name = `"type": "string", "pattern": "^(?:[a-z0-9]([-a-z0-9.]*[a-z0-9])?)$"`
@@ -63,10 +61,8 @@ func parseOne(t *testing.T, yaml string) Document {
 	return docs[0]
 }
 
-// Refs finds a reference wherever the schema marks one: a field, the items of a list of nullable
-// references, a field of list items, the values of a map, and a key of a Secret. Its paths name
-// map keys after a dot where they are plain and in quoted brackets where not, and it lists the
-// references in the order of the fields' names.
+// Refs finds a reference wherever the schema marks one, in the order of the fields' names. Its
+// paths name plain map keys after a dot and others in quoted brackets.
 func TestRefs(t *testing.T) {
 	d := parseOne(t, `
 apiVersion: zone.example.org/v1
@@ -170,27 +166,17 @@ func parseAll(t *testing.T, yaml string) Documents {
 }
 
 // checkRefs reports every reference that does not resolve, one line each, naming the document
-// that holds it, the field, and the target.
+// that holds it, the field and the target, so a removed document names each referrer.
 func TestCheckRefsReportsEveryUnresolvedReference(t *testing.T) {
 	docs := parseAll(t, zoneOf("z", "{lane: blue, lanes: [a, b], token: {secretRef: {name: s, key: nope}}}")+
+		zoneOf("y", "{rules: [{to: b}]}")+
 		laneOf("a")+
 		"---\napiVersion: chalkos.dev/v1alpha1\nkind: Secret\nmetadata: {name: s}\nspec: {data: {k: v}}\n")
 	_, err := checkRefs(docs, refSchemas(t))
-	want := `Zone/z: spec.lane: Lane "blue" does not exist
+	want := `Zone/y: spec.rules[0].to: Lane "b" does not exist
+Zone/z: spec.lane: Lane "blue" does not exist
 Zone/z: spec.lanes[1]: Lane "b" does not exist
 Zone/z: spec.token: Secret "s" has no key "nope"`
-	if err == nil || err.Error() != want {
-		t.Fatalf("err = %v, want\n%s", err, want)
-	}
-}
-
-// A set is applied whole, so removing a document others reference is refused by naming each
-// referrer.
-func TestCheckRefsNamesEachReferrerOfAMissingDocument(t *testing.T) {
-	docs := parseAll(t, zoneOf("x", "{lanes: [gone]}")+zoneOf("y", "{rules: [{to: gone}]}"))
-	_, err := checkRefs(docs, refSchemas(t))
-	want := `Zone/x: spec.lanes[0]: Lane "gone" does not exist
-Zone/y: spec.rules[0].to: Lane "gone" does not exist`
 	if err == nil || err.Error() != want {
 		t.Fatalf("err = %v, want\n%s", err, want)
 	}

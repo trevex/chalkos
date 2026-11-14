@@ -198,10 +198,9 @@ spec: {hostname: n1}
 	}
 }
 
-// KindHashes of redacted documents read back as written, as a baseline reads them, are those of
-// the documents Redact gave, also of a document that embeds a Secret object: reading them back
-// redacts nothing again. A kind that references no Secret hashes as Hash hashes its documents,
-// the embedded Secret object's values hidden alike, and a rotated value changes it.
+// KindHashes of redacted documents read back, as a baseline reads them, are those of the
+// documents Redact gave: reading them back redacts nothing again. A kind hashes as Hash hashes its
+// documents, and a rotated embedded value changes its hash.
 func TestKindHashesReadBack(t *testing.T) {
 	s := imageSchemas(t)
 	const bundle = "---\napiVersion: bundle.example.org/v1alpha1\nkind: Bundle\nmetadata: {name: apps}\n" +
