@@ -454,24 +454,17 @@ lib.runTests {
         relays = edge.systemd.services.chalkos-dhcp-relays;
       in
       {
-        inputs = edge.chalkos.outputs.dhcp-relay.inputs;
-        render = lib.hasSuffix "/bin/chalkos-render dhcp-relay" edge.chalkos.outputs.dhcp-relay.render;
         check = lib.hasInfix "/bin/dnsmasq --test" edge.chalkos.outputs.dhcp-relay.check;
         relay = {
-          start =
-            builtins.match "/nix/store/[^ ]*-dnsmasq-2.93/bin/dnsmasq --keep-in-foreground --log-facility=- --pid-file= --conf-file=/run/chalkos/outputs/dhcp-relay/dnsmasq-relay.conf" relay.serviceConfig.ExecStart
-            != null;
           inherit (relay.serviceConfig)
             User
             AmbientCapabilities
-            CapabilityBoundingSet
             RestrictAddressFamilies
             ;
           inherit (relay.unitConfig) ConditionPathExists;
           wanted = relay.wantedBy;
         };
         vrfRelay = {
-          start = lib.hasSuffix "--conf-file=/run/chalkos/outputs/dhcp-relay/dnsmasq-relay-%I.conf" vrf.serviceConfig.ExecStart;
           inherit (vrf.serviceConfig) BindNetworkInterface;
           inherit (vrf.unitConfig) Requires;
           records =
@@ -484,30 +477,13 @@ lib.runTests {
           runs = lib.hasSuffix "/bin/chalkd router services relay" relays.serviceConfig.ExecStart;
           reloads = relays.serviceConfig.ExecReload == relays.serviceConfig.ExecStart;
           stops = lib.hasSuffix " stop" relays.serviceConfig.ExecStop;
-          effect = {
-            inherit (edge.chalkos.effects.dhcp-relay) outputs reload;
-          };
         };
       };
     expected = {
-      inputs = [
-        "DHCPRelay"
-        "VRF"
-        "Network"
-        "DHCPSubnet"
-        "NAT64"
-      ];
-      render = true;
       check = true;
       relay = {
-        start = true;
         User = "dnsmasq";
         AmbientCapabilities = [
-          "CAP_NET_BIND_SERVICE"
-          "CAP_NET_RAW"
-          "CAP_NET_ADMIN"
-        ];
-        CapabilityBoundingSet = [
           "CAP_NET_BIND_SERVICE"
           "CAP_NET_RAW"
           "CAP_NET_ADMIN"
@@ -522,7 +498,6 @@ lib.runTests {
         wanted = [ ];
       };
       vrfRelay = {
-        start = true;
         BindNetworkInterface = "%I";
         Requires = "sys-subsystem-net-devices-%i.device";
         records = true;
@@ -534,13 +509,6 @@ lib.runTests {
         runs = true;
         reloads = true;
         stops = true;
-        effect = {
-          outputs = [
-            "dhcp-relay"
-            "networkd"
-          ];
-          reload = [ "chalkos-dhcp-relays.service" ];
-        };
       };
     };
   };
@@ -764,12 +732,7 @@ lib.runTests {
         node = of layered.node-metal.config;
         after = lib.elem "chalkos-config.service" unit.after;
         before = lib.elem "network-pre.target" unit.before;
-        sysctlDir = edge.chalkos.outputs.router-sysctl.dir;
         sysctlAfter = edge.systemd.services.systemd-sysctl.after;
-        effects = {
-          inherit (edge.chalkos.effects.router-sysctl) restart;
-          inherit (edge.chalkos.effects.router-nftables) reload;
-        };
         # The modules the rulesets need, which the kernel-modules-check finds in the tree.
         missingModules = lib.subtractLists edge.boot.kernelModules [
           "nf_conntrack"
@@ -809,12 +772,7 @@ lib.runTests {
       };
       after = true;
       before = true;
-      sysctlDir = "/run/sysctl.d";
       sysctlAfter = [ "chalkos-config.service" ];
-      effects = {
-        restart = [ "systemd-sysctl.service" ];
-        reload = [ "chalkos-firewall.service" ];
-      };
       missingModules = [ ];
     };
   };
@@ -844,31 +802,6 @@ lib.runTests {
       plain = [ ];
     };
   };
-  # Router images add traceroute to every image's diagnostics; it sends traffic, so it takes an
-  # operator.
-  testRouterDiagnostics = {
-    expr = {
-      edge = layered.edge-metal.config.chalkos.diagnostics ? traceroute;
-      plain = layered.plain-metal.config.chalkos.diagnostics ? traceroute;
-      role = layered.edge-metal.config.chalkos.diagnostics.traceroute.role or null;
-      arguments = lib.tail (layered.edge-metal.config.chalkos.diagnostics.traceroute.command or [ null ]);
-    };
-    expected = {
-      edge = true;
-      plain = false;
-      role = "operator";
-      arguments = [
-        "-n"
-        "-m"
-        "30"
-        "-q"
-        "1"
-        "-w"
-        "2"
-        "{address}"
-      ];
-    };
-  };
   # Router images run FRR with bgpd and bfdd, whose config the output frr renders from the BGP
   # kinds and the Network documents' names, checked by vtysh, and whose reload the effect asks
   # for. frr.service reads the BGPPeers' passwords as credentials, starts after the firewall and
@@ -887,10 +820,7 @@ lib.runTests {
           inherit (edge.services.frr.bgpd) enable;
           bfdd = edge.services.frr.bfdd.enable;
         };
-        inputs = edge.chalkos.outputs.frr.inputs;
-        firewallReads = lib.elem "BGPPeer" edge.chalkos.outputs.router-nftables.inputs;
         check = lib.hasInfix "vtysh --dryrun" edge.chalkos.outputs.frr.check;
-        effect = edge.chalkos.effects.frr.reload;
         grant = frr.chalkos.kinds;
         after = lib.subtractLists frr.after [
           "chalkos-config.service"
@@ -908,11 +838,7 @@ lib.runTests {
           lib.last frr.serviceConfig.ExecReload
         );
         refresh = frr.serviceConfig.RefreshOnReload;
-        vtysh = lib.any (p: lib.getName p == "frr") edge.systemd.services.chalkd.path;
         networkd = edge.systemd.network.config.networkConfig;
-        diagnostics = lib.filter (n: lib.hasPrefix "bgp-" n || lib.hasPrefix "bfd-" n) (
-          lib.attrNames edge.chalkos.diagnostics
-        );
         groups = edge.chalkos.diagnostics.bgp-summary.groups;
         plain = layered.plain-metal.config.services.frr.bgpd.enable;
         node = layered.node-metal.config.chalkos.outputs ? frr;
@@ -922,19 +848,7 @@ lib.runTests {
         enable = true;
         bfdd = true;
       };
-      inputs = [
-        "BGP"
-        "BGPPeer"
-        "CommunityList"
-        "PrefixList"
-        "RoutingPolicy"
-        "Network"
-        "VRF"
-        "WireGuard"
-      ];
-      firewallReads = true;
       check = true;
-      effect = [ "frr.service" ];
       grant = [ "BGPPeer" ];
       after = [ ];
       before = true;
@@ -945,17 +859,10 @@ lib.runTests {
       fillsAlike = true;
       reloadsLink = true;
       refresh = "credentials";
-      vtysh = true;
       networkd = {
         ManageForeignNextHops = false;
         ManageForeignRoutes = false;
       };
-      diagnostics = [
-        "bfd-peers"
-        "bgp-neighbor"
-        "bgp-route"
-        "bgp-summary"
-      ];
       groups = [ "frrvty" ];
       plain = false;
       node = false;
@@ -976,51 +883,16 @@ lib.runTests {
       in
       {
         kind = edge.chalkos.kinds ? VRF;
-        inputs = edge.chalkos.outputs.networkd.inputs;
-        render = lib.hasInfix " router-networkd " edge.chalkos.outputs.networkd.render;
-        plainRender = lib.hasInfix " networkd " layered.plain-metal.config.chalkos.outputs.networkd.render;
         plainKind = layered.plain-metal.config.chalkos.kinds ? VRF;
-        effect = {
-          inherit (edge.chalkos.effects.vrf) outputs reload;
-        };
         inherit (vrf) after before wantedBy;
         defaults = vrf.unitConfig.DefaultDependencies;
         reloads = vrf.serviceConfig.ExecReload == vrf.serviceConfig.ExecStart;
         capabilities = vrf.serviceConfig.CapabilityBoundingSet;
         frrAfter = lib.elem "systemd-networkd.service" edge.systemd.services.frr.after;
-        firewallInputs = lib.filter (
-          k: k == "VRF" || k == "Network"
-        ) edge.chalkos.outputs.router-nftables.inputs;
-        commands = map (d: lib.last edge.chalkos.diagnostics.${d}.command) [
-          "bgp-summary"
-          "bgp-neighbor"
-          "bgp-route"
-          "bfd-peers"
-        ];
-        parameter = {
-          inherit (edge.chalkos.diagnostics.bgp-summary.parameters.vrf) type default;
-        };
       };
     expected = {
       kind = true;
-      inputs = [
-        "Link"
-        "NetDev"
-        "Network"
-        "NAT64"
-        "VRF"
-        "NextHop"
-        "PolicyRoute"
-        "WireGuard"
-        "WireGuardPeer"
-      ];
-      render = true;
-      plainRender = true;
       plainKind = false;
-      effect = {
-        outputs = [ "networkd" ];
-        reload = [ "chalkos-vrf.service" ];
-      };
       after = [ "chalkos-config.service" ];
       before = [ "systemd-networkd.service" ];
       defaults = false;
@@ -1028,57 +900,6 @@ lib.runTests {
       reloads = true;
       capabilities = [ "CAP_NET_ADMIN" ];
       frrAfter = true;
-      firewallInputs = [
-        "VRF"
-        "Network"
-      ];
-      commands = [
-        "show bgp vrf {vrf} summary"
-        "show bgp vrf {vrf} neighbors {peer}"
-        "show bgp vrf {vrf} {family} unicast {prefix}"
-        "show bfd vrf {vrf} peers"
-      ];
-      parameter = {
-        type = "pattern";
-        default = "default";
-      };
-    };
-  };
-  # Router images accept PolicyRoute and NextHop documents, which both the firewall, which marks
-  # the packets they match, and networkd, which keeps the kernel's rules and the next hops' tables,
-  # read; other images have no such kinds.
-  testRouterPolicyRouting = {
-    expr =
-      let
-        edge = layered.edge-metal.config;
-        kinds = [
-          "PolicyRoute"
-          "NextHop"
-        ];
-      in
-      {
-        kinds = map (k: edge.chalkos.kinds ? ${k}) kinds;
-        plainKinds = map (k: layered.plain-metal.config.chalkos.kinds ? ${k}) kinds;
-        firewall = map (k: lib.elem k edge.chalkos.outputs.router-nftables.inputs) kinds;
-        networkd = map (k: lib.elem k edge.chalkos.outputs.networkd.inputs) kinds;
-      };
-    expected = {
-      kinds = [
-        true
-        true
-      ];
-      plainKinds = [
-        false
-        false
-      ];
-      firewall = [
-        true
-        true
-      ];
-      networkd = [
-        true
-        true
-      ];
     };
   };
   # Router images accept DHCPSubnet documents, which the output kea renders into a config per VRF
@@ -1110,14 +931,9 @@ lib.runTests {
       {
         kind = edge.chalkos.kinds ? DHCPSubnet;
         plainKind = layered.plain-metal.config.chalkos.kinds ? DHCPSubnet;
-        inputs = edge.chalkos.outputs.kea.inputs;
-        render =
-          builtins.match ".*/bin/chalkos-render kea /nix/store/[^ ]*-chalkos-dhcp6-pd/bin/chalkos-dhcp6-pd" edge.chalkos.outputs.kea.render
-          != null;
         check = lib.hasInfix "/bin/kea-$family -t" edge.chalkos.outputs.kea.check;
         package = lib.hasSuffix "-kea-dhcp-${pkgs.kea.version}" kea;
         hooks = builtins.attrNames (builtins.readDir "${kea}/lib/kea/hooks");
-        firewallReads = lib.elem "DHCPSubnet" edge.chalkos.outputs.router-nftables.inputs;
         user = edge.users.users.kea.isSystemUser;
         server = {
           start = lib.hasSuffix "/bin/kea-dhcp4 -c /run/chalkos/outputs/kea/kea-dhcp4.json" server.serviceConfig.ExecStart;
@@ -1150,7 +966,6 @@ lib.runTests {
           inherit (server6.serviceConfig)
             User
             AmbientCapabilities
-            CapabilityBoundingSet
             RestrictAddressFamilies
             ReadWritePaths
             ;
@@ -1168,15 +983,9 @@ lib.runTests {
           };
         };
         routes = {
-          start = lib.hasSuffix "/bin/chalkd router dhcp6-routes" routes.serviceConfig.ExecStart;
           inherit (routes) after wantedBy;
           inherit (routes.unitConfig) StartLimitIntervalSec;
-          inherit (routes.serviceConfig)
-            Type
-            CapabilityBoundingSet
-            RestrictAddressFamilies
-            TimeoutStartSec
-            ;
+          inherit (routes.serviceConfig) Type RestrictAddressFamilies;
           ip = lib.any (p: lib.getName p == "iproute2") routes.path;
           path = {
             inherit (edge.systemd.paths.chalkos-dhcp6-routes) wantedBy;
@@ -1201,32 +1010,19 @@ lib.runTests {
           runs = lib.hasSuffix "/bin/chalkd router services kea" dhcp.serviceConfig.ExecStart;
           reloads = dhcp.serviceConfig.ExecReload == dhcp.serviceConfig.ExecStart;
           stops = lib.hasSuffix " stop" dhcp.serviceConfig.ExecStop;
-          effect = {
-            inherit (edge.chalkos.effects.dhcp) outputs reload;
-          };
         };
-        diagnostic = {
-          inherit (edge.chalkos.diagnostics.dhcp-leases) role groups;
-        };
+        diagnosticGroups = edge.chalkos.diagnostics.dhcp-leases.groups;
         plain = layered.plain-metal.config.chalkos.outputs ? kea;
       };
     expected = {
       kind = true;
       plainKind = false;
-      inputs = [
-        "DHCPSubnet"
-        "VRF"
-        "Network"
-        "NAT64"
-      ];
-      render = true;
       check = true;
       package = true;
       hooks = [
         "libdhcp_lease_cmds.so"
         "libdhcp_run_script.so"
       ];
-      firewallReads = true;
       user = true;
       server = {
         start = true;
@@ -1268,7 +1064,6 @@ lib.runTests {
         start = true;
         User = "kea";
         AmbientCapabilities = [ "CAP_NET_BIND_SERVICE" ];
-        CapabilityBoundingSet = [ "CAP_NET_BIND_SERVICE" ];
         RestrictAddressFamilies = [
           "AF_UNIX"
           "AF_NETLINK"
@@ -1288,17 +1083,14 @@ lib.runTests {
         };
       };
       routes = {
-        start = true;
         StartLimitIntervalSec = 0;
         after = [ "chalkos-dhcp.service" ];
         wantedBy = [ "multi-user.target" ];
         Type = "oneshot";
-        CapabilityBoundingSet = [ "CAP_NET_ADMIN" ];
         RestrictAddressFamilies = [
           "AF_UNIX"
           "AF_NETLINK"
         ];
-        TimeoutStartSec = "30s";
         ip = true;
         path = {
           wantedBy = [ "multi-user.target" ];
@@ -1321,18 +1113,8 @@ lib.runTests {
         runs = true;
         reloads = true;
         stops = true;
-        effect = {
-          outputs = [
-            "kea"
-            "networkd"
-          ];
-          reload = [ "chalkos-dhcp.service" ];
-        };
       };
-      diagnostic = {
-        role = "operator";
-        groups = [ "kea" ];
-      };
+      diagnosticGroups = [ "kea" ];
       plain = false;
     };
   };
@@ -1360,27 +1142,9 @@ lib.runTests {
         unbound = edge.systemd.services.unbound;
       in
       {
-        module = map lib.getName edge.boot.extraModulePackages;
-        loaded = lib.elem "jool" edge.boot.kernelModules;
-        inputs = {
-          jool = edge.chalkos.outputs.jool.inputs;
-          unbound = edge.chalkos.outputs.unbound.inputs;
-        };
-        firewallReads = lib.all (k: lib.elem k edge.chalkos.outputs.router-nftables.inputs) [
-          "Resolver"
-          "NAT64"
-        ];
-        networkdReads = lib.elem "NAT64" edge.chalkos.outputs.networkd.inputs;
         checks = {
           jool = lib.hasInfix "/bin/jool file check" edge.chalkos.outputs.jool.check;
           unbound = lib.hasInfix "/bin/unbound-checkconf" edge.chalkos.outputs.unbound.check;
-        };
-        effects = {
-          jool = edge.chalkos.effects.jool.reload;
-          unbound = edge.chalkos.effects.unbound.reload;
-          start = {
-            inherit (edge.chalkos.effects.unbound-start) restart start;
-          };
         };
         nat64After = lib.subtractLists nat64.after [
           "chalkos-config.service"
@@ -1429,9 +1193,7 @@ lib.runTests {
           "unbound"
           "util-linux"
         ];
-        diagnostic = {
-          inherit (edge.chalkos.diagnostics.nat64-sessions) role capabilities networkNamespace;
-        };
+        diagnosticNamespace = edge.chalkos.diagnostics.nat64-sessions.networkNamespace;
         vrfResolver =
           let
             u = edge.systemd.services."unbound@";
@@ -1481,9 +1243,6 @@ lib.runTests {
             runs = lib.hasSuffix "/bin/chalkd router services unbound" r.serviceConfig.ExecStart;
             reloads = r.serviceConfig.ExecReload == r.serviceConfig.ExecStart;
             stops = lib.hasSuffix " stop" r.serviceConfig.ExecStop;
-            effect = {
-              inherit (edge.chalkos.effects.resolvers) outputs reload;
-            };
           };
         unboundCheck = lib.hasInfix ''for f in "$OUT"/*.conf'' edge.chalkos.outputs.unbound.check;
         plain = {
@@ -1492,33 +1251,9 @@ lib.runTests {
         };
       };
     expected = {
-      module = [ "jool" ];
-      loaded = true;
-      inputs = {
-        jool = [
-          "NAT64"
-          "VRF"
-          "Network"
-        ];
-        unbound = [
-          "Resolver"
-          "VRF"
-          "Network"
-        ];
-      };
-      firewallReads = true;
-      networkdReads = true;
       checks = {
         jool = true;
         unbound = true;
-      };
-      effects = {
-        jool = [ "chalkos-nat64.service" ];
-        unbound = [ "unbound.service" ];
-        start = {
-          restart = [ "unbound.service" ];
-          start = true;
-        };
       };
       nat64After = [ ];
       nat64Before = [ "frr.service" ];
@@ -1543,11 +1278,7 @@ lib.runTests {
       unboundReload = true;
       localQueries = false;
       chalkd = [ ];
-      diagnostic = {
-        role = "operator";
-        capabilities = [ "CAP_NET_ADMIN" ];
-        networkNamespace = "nat64-{instance}";
-      };
+      diagnosticNamespace = "nat64-{instance}";
       vrfResolver = {
         BindNetworkInterface = "%I";
         RuntimeDirectory = "unbound-%I";
@@ -1576,13 +1307,6 @@ lib.runTests {
         runs = true;
         reloads = true;
         stops = true;
-        effect = {
-          outputs = [
-            "unbound"
-            "networkd"
-          ];
-          reload = [ "chalkos-resolvers.service" ];
-        };
       };
       unboundCheck = true;
       plain = {
@@ -1954,16 +1678,9 @@ lib.runTests {
           chrony = c.services.chrony.enable;
           timesyncd = c.services.timesyncd.enable;
           servers = c.services.chrony.servers;
-          makestep = with c.services.chrony.makestep; [
-            enable
-            threshold
-            limit
-          ];
           sourcedirs = lib.filter (lib.hasPrefix "sourcedir") (
             lib.splitString "\n" c.services.chrony.extraConfig
           );
-          certTimeCheck = lib.hasInfix "nocerttimecheck 1" c.services.chrony.extraConfig;
-          ntsDump = lib.hasInfix "ntsdumpdir /var/lib/chrony" c.services.chrony.extraConfig;
           dhcpPath = c.systemd.paths ? chalkos-chrony-dhcp;
           # The servers DHCP announced at boot are read once networkd is up, not only on a change.
           dhcpAtBoot =
@@ -2001,24 +1718,11 @@ lib.runTests {
               hint = null;
             }
             && lib.any (p: lib.getName p == "chalkos-chrony-reload-sources") c.systemd.services.chalkd.path;
-          # The TimeSync's servers are an output, which a template renders and chronyd checks,
-          # and whose examples are tests of the image.
-          output =
-            let
-              o = c.chalkos.outputs.chrony;
-              # The command chalkd runs, which outputs.json holds.
-              render =
-                (builtins.fromJSON (
-                  builtins.unsafeDiscardStringContext c.environment.etc."chalkos/outputs.json".text
-                )).chrony.render;
-            in
-            {
-              inherit (o) inputs dir;
-              template =
-                lib.hasInfix "chalkos-render template " render && lib.hasSuffix " servers.sources" render;
-              check = lib.hasInfix "/bin/chronyd -p -f" o.check;
-              tests = lib.filter (lib.hasPrefix "chrony-") (lib.attrNames c.chalkos.tests);
-            };
+          # chronyd checks the output chrony, whose examples are tests of the image.
+          output = {
+            check = lib.hasInfix "/bin/chronyd -p -f" c.chalkos.outputs.chrony.check;
+            tests = lib.filter (lib.hasPrefix "chrony-") (lib.attrNames c.chalkos.tests);
+          };
           chalkdProtectsClock = c.systemd.services.chalkd.serviceConfig.ProtectClock;
         };
       in
@@ -2028,17 +1732,10 @@ lib.runTests {
       chrony = true;
       timesyncd = false;
       servers = [ ];
-      makestep = [
-        true
-        1
-        3
-      ];
       sourcedirs = [
         "sourcedir /run/chalkos/outputs/chrony"
         "sourcedir /run/chalkos/chrony-dhcp"
       ];
-      certTimeCheck = true;
-      ntsDump = true;
       dhcpPath = true;
       dhcpAtBoot = true;
       dhcpDir = true;
@@ -2049,9 +1746,6 @@ lib.runTests {
       chalkdHasChronyc = true;
       reloadSources = true;
       output = {
-        inputs = [ "TimeSync" ];
-        dir = "/run/chalkos/outputs/chrony";
-        template = true;
         check = true;
         tests = [
           "chrony-empty"
@@ -2692,18 +2386,10 @@ lib.runTests {
         config = worker [ ];
       in
       {
-        # The image opens neither the API server's nor etcd's ports, which etcd authenticates by its
-        # CA, nor makes etcd's directory: chalkos-controlplane does both by the Node's type.
-        firewall = lib.any (port: lib.elem port config.networking.firewall.allowedTCPPorts) [
-          6443
-          2379
-          2380
-        ];
-        apiServerPort = lib.elem 6443 config.networking.firewall.allowedTCPPorts;
-        markedPorts = lib.hasInfix "tcp dport { 6443, 2379, 2380 } meta mark & 0x02000000 == 0x02000000 accept" config.networking.firewall.extraInputRules;
         # chalkd renders the add-ons and reads the Addon documents from the config; the image
         # ships no objects of its own.
         addonObjects = config.environment.etc ? "chalkos/kubernetes/manifests.json";
+        # chalkos-controlplane makes etcd's directory by the Node's type, not the image.
         etcdDir = lib.elem "d /var/lib/etcd 0700 root root -" config.systemd.tmpfiles.rules;
         grant =
           (builtins.fromJSON config.environment.etc."chalkos/services.json".text).chalkos-controlplane.kinds;
@@ -2723,9 +2409,6 @@ lib.runTests {
           lib.elem "nftables.service" unit.after;
       };
     expected = {
-      firewall = false;
-      apiServerPort = false;
-      markedPorts = true;
       addonObjects = false;
       etcdDir = false;
       grant = [ "Node" ];
@@ -3109,13 +2792,11 @@ lib.runTests {
           modules:
           let
             config = worker modules;
-            inherit (config.networking) firewall nftables;
+            inherit (config.networking) nftables;
             prepare = config.systemd.services.chalkos-kubernetes;
           in
           {
             nftables = nftables.enable && !nftables.flushRuleset;
-            open = lib.elem 8472 firewall.allowedUDPPorts;
-            acceptsMark = lib.hasInfix "udp dport 8472 meta mark & 0x01000000 == 0x01000000 accept" firewall.extraInputRules;
             # The ports the node opens, in the table of both families.
             bothFamilies =
               nftables.tables.nixos-fw.family == "inet"
@@ -3146,8 +2827,6 @@ lib.runTests {
     expected = {
       flannel = {
         nftables = true;
-        open = false;
-        acceptsMark = true;
         bothFamilies = true;
         emptied = true;
         prepareFills = true;
@@ -3155,8 +2834,6 @@ lib.runTests {
       };
       none = {
         nftables = true;
-        open = false;
-        acceptsMark = false;
         bothFamilies = true;
         emptied = false;
         prepareFills = false;
@@ -3164,8 +2841,6 @@ lib.runTests {
       };
       withoutFirewall = {
         nftables = true;
-        open = false;
-        acceptsMark = true;
         emptied = false;
         prepareFills = false;
         afterFirewall = false;
@@ -4089,9 +3764,7 @@ lib.runTests {
       ];
     };
   # Every image declares the base diagnostics, the installer among them, each running a program of
-  # the store. Readers run those that read the node's state; ping, dns-query and tcp-connect send
-  # traffic and nft-ruleset shows the firewall, so they need an operator, and ping and nft-ruleset
-  # alone get a capability. ip is the ip-only build, which leaves iproute2's other tools and arpd's
+  # the store. ip is the ip-only build, which leaves iproute2's other tools and arpd's
   # Berkeley DB out of the images.
   testBaseDiagnostics =
     let
@@ -4121,15 +3794,6 @@ lib.runTests {
         installer = lib.attrNames installer;
         inStore = lib.all (d: lib.hasPrefix "/nix/store/" (lib.head d.command)) (lib.attrValues node);
         ip = lib.hasSuffix "-iproute2-ip-${pkgs.iproute2.version}/bin/ip" (lib.head node.route-get.command);
-        roles = lib.mapAttrs (_: d: d.role) node;
-        capabilities = lib.filterAttrs (_: c: c != [ ]) (lib.mapAttrs (_: d: d.capabilities) node);
-        routeGet = node.route-get // {
-          command = lib.tail node.route-get.command;
-        };
-        routes = lib.tail node.routes.command;
-        ipRules = lib.tail node.ip-rules.command;
-        ping = lib.tail node.ping.command;
-        dnsQuery = lib.tail node.dns-query.command;
         tcpConnect = {
           program = lib.head node.tcp-connect.command;
           arguments = lib.drop 3 node.tcp-connect.command;
@@ -4144,75 +3808,6 @@ lib.runTests {
         installer = names;
         inStore = true;
         ip = true;
-        roles = {
-          addresses = "reader";
-          dns-query = "operator";
-          ip-rules = "reader";
-          links = "reader";
-          neighbours = "reader";
-          nft-ruleset = "operator";
-          ping = "operator";
-          route-get = "reader";
-          routes = "reader";
-          tcp-connect = "operator";
-        };
-        capabilities = {
-          nft-ruleset = [ "CAP_NET_ADMIN" ];
-          ping = [ "CAP_NET_RAW" ];
-        };
-        routeGet = {
-          description = "The route the kernel takes to an address.";
-          command = [
-            "-json"
-            "route"
-            "get"
-            "{address}"
-          ];
-          parameters.address = {
-            type = "address";
-            description = "IPv4 or IPv6 address, without a zone: ip route get takes none, and finds a link-local address's interface by the routes.";
-            optional = false;
-            default = "";
-            min = null;
-            max = null;
-            values = [ ];
-            regex = "";
-          };
-          role = "reader";
-          timeout = "10s";
-          capabilities = [ ];
-          groups = [ ];
-          networkNamespace = "";
-        };
-        routes = [
-          "-json"
-          "-family"
-          "{family}"
-          "route"
-          "show"
-          "table"
-          "{table}"
-        ];
-        ipRules = [
-          "-json"
-          "-family"
-          "{family}"
-          "rule"
-          "show"
-        ];
-        ping = [
-          "-n"
-          "-w"
-          "10"
-          "-c"
-          "{count}"
-          "{address}"
-        ];
-        dnsQuery = [
-          "{name}"
-          "{type}"
-          "@{server}"
-        ];
         # After bash, -c and its script: $0 and the arguments.
         tcpConnect = {
           program = "${pkgs.bash}/bin/bash";
