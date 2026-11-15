@@ -8,11 +8,9 @@ import (
 	"slices"
 	"strings"
 
-	"connectrpc.com/connect"
 	"github.com/spf13/pflag"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
-	"github.com/trevex/chalkos/pkg/client"
 	"github.com/trevex/chalkos/pkg/clustersecrets"
 	"github.com/trevex/chalkos/pkg/storage"
 )
@@ -73,24 +71,10 @@ func (a *app) askPassword(ctx context.Context, node string) (string, error) {
 	return password, nil
 }
 
-// fallbackFor returns the fallback secret when delivering the config enrolls it: on an encrypted
-// volume the node does not have yet, or on the volume reset recreates. section is the storage the
-// config gives the node; the node's status says which volumes it has. A password typed on the
-// terminal is confirmed: the node checks it against its existing fallback keyslot only when it
-// has one.
-func (a *app) fallbackFor(ctx context.Context, conn *client.Conn, t *target, section storage.Section, passwordFile, reset string) (string, error) {
-	// Without a fallback the node is not asked for its volumes.
-	if section.Fallback == storage.FallbackNone {
-		return "", nil
-	}
-	resp, err := conn.Status(ctx, connect.NewRequest(&nodev1.StatusRequest{}))
-	if err != nil {
-		return "", fmt.Errorf("ask %s for its volumes: %w", t.name, err)
-	}
-	return a.fallbackOf(ctx, resp.Msg, t, section, passwordFile, reset)
-}
-
-// fallbackOf is fallbackFor with the node's status at hand.
+// fallbackOf returns the fallback secret when delivering the config enrolls it: on an encrypted
+// volume the node, by its status st, does not have yet, or on the volume reset recreates. section
+// is the storage the config gives the node. A password typed on the terminal is confirmed: the
+// node checks it against its existing fallback keyslot only when it has one.
 func (a *app) fallbackOf(ctx context.Context, st *nodev1.StatusResponse, t *target, section storage.Section, passwordFile, reset string) (string, error) {
 	var existing []string
 	for _, v := range st.Volumes {

@@ -615,7 +615,11 @@ func (a *app) resetVolume(ctx context.Context, f resetVolumeFlags, pos []string)
 	if err != nil {
 		return err
 	}
-	fallback, err := a.fallbackFor(ctx, conn, t, d.identity.Storage, f.passwordFile, pos[1])
+	st, err := conn.Status(ctx, connect.NewRequest(&nodev1.StatusRequest{}))
+	if err != nil {
+		return fmt.Errorf("ask %s for its volumes: %w", t.name, err)
+	}
+	fallback, err := a.fallbackOf(ctx, st.Msg, t, d.identity.Storage, f.passwordFile, pos[1])
 	if err != nil {
 		return err
 	}
