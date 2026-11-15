@@ -206,9 +206,11 @@ func TestVIPMovesWhenUnhealthy(t *testing.T) {
 		t.Fatal("the unhealthy node holds the VIPs again")
 	}
 	second := holder(t, nodes)
-	// Healthy again, it waits as a standby.
+	// Healthy again, it campaigns and waits as a standby while its lease is renewed.
 	first.healthy.Store(true)
-	time.Sleep(500 * time.Millisecond)
+	campaigning(t, second.election.Client, 2)
+	renewed := first.renewals.Load()
+	testwait.Eventually(t, "renewals of the standby's lease", func() bool { return first.renewals.Load() >= renewed+2 })
 	if holder(t, nodes) != second {
 		t.Error("the VIPs moved back")
 	}
@@ -263,7 +265,7 @@ func TestVIPResignedOnStop(t *testing.T) {
 	holder(t, []*electionNode{current})
 	for i := range 4 {
 		next := startNode(t, ca, m.ClientURL, "cp"+string(rune('2'+i)), 60, h)
-		time.Sleep(200 * time.Millisecond)
+		campaigning(t, current.election.Client, 2)
 		stopped := time.Now()
 		current.stop()
 		<-current.done
@@ -343,17 +345,22 @@ func stalledStandby(t *testing.T) (first, standby *electionNode) {
 	holder(t, []*electionNode{first})
 	proxy := etcdtest.NewProxy(t, m.ClientURL, 0)
 	standby = startNode(t, ca, proxy.URL, "cp2", electionTTL, h)
-	cli := first.election.Client
-	testwait.Eventually(t, "the standby's campaign", func() bool {
-		resp, err := cli.Get(context.Background(), electionPrefix, clientv3.WithPrefix(), clientv3.WithCountOnly())
-		return err == nil && resp.Count == 2
-	})
+	campaigning(t, first.election.Client, 2)
 	// Renewals sent after its key was written return after the reply to its campaign: it waits
 	// for the holder's key to go.
 	renewed := standby.renewals.Load()
 	testwait.Eventually(t, "renewals of the standby's lease", func() bool { return standby.renewals.Load() >= renewed+2 })
 	proxy.Pause()
 	return first, standby
+}
+
+// campaigning waits until n nodes campaign in the election, cli reaching its etcd.
+func campaigning(t *testing.T, cli *clientv3.Client, n int64) {
+	t.Helper()
+	testwait.Eventually(t, "the campaigns", func() bool {
+		resp, err := cli.Get(context.Background(), electionPrefix, clientv3.WithPrefix(), clientv3.WithCountOnly())
+		return err == nil && resp.Count == n
+	})
 }
 
 // waitStalled waits for the election of the standby to end, which it must once its cancelled
