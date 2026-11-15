@@ -77,7 +77,7 @@ lives one hour and exists only in memory.
 
 chalkd checks its node certificate about hourly on every node in normal mode. Once two thirds of
 its lifetime have passed, the certificate is due. An image whose layer issues node certificates,
-Kubernetes with the Kubernetes layer, then renews it, and any other image reports it.
+the Kubernetes layer, then renews it, and any other image reports it.
 
 On a Kubernetes node, chalkd creates a new key and asks a control plane for a certificate through
 the Kubernetes layer's [RenewNodeCertificate](../../reference/api.md#kubernetes-method-renewnodecertificate), on
@@ -163,7 +163,7 @@ again to the recipients recorded inside it.
 [`chalkctl rotate node-ca`](../../reference/cli/chalkctl_rotate.md) replaces the node CA alone, in
 one go without pausing, on every kind of node. The accept and the finish change nothing on the
 nodes, because they trust the OS CA the new node CA chains to. The switch delivers the new node CA
-to the nodes that hold it, the control planes with the Kubernetes layer; on a cluster without
+to the nodes that hold it, the control planes of a Kubernetes cluster; on a cluster without
 Kubernetes no node holds it. The refresh issues every node a certificate of it from the secrets
 file. Control planes come first, then the other nodes by name. Node certificates of the old node CA
 stay valid until they expire, because they chain to the same OS CA.

@@ -148,8 +148,8 @@ unit. The check repeats every 5 seconds until the node is healthy or
 
 Every check starts with chalkd. It must complete a TLS handshake with the node's own certificate
 on port 50000, because a node that chalkd cannot serve cannot be managed and must fall back. On a
-node without Kubernetes, and with the Kubernetes layer on a node without a Kubernetes share or a
-control plane not bootstrapped yet, two more criteria follow. The node's config must have been
+node without the Kubernetes layer, and on a Kubernetes node without a Kubernetes share or whose
+control plane is not bootstrapped yet, two more criteria follow. The node's config must have been
 applied, and no unit of the boot may have failed. A unit of the boot is one that
 `multi-user.target` or `sysinit.target` pulls in. Jobs that timers and sockets
 start do not count, nor do the units listed in

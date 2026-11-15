@@ -78,9 +78,9 @@ chalkctl validate
 image does not accept. [Config travels with the image](#config-travels-with-the-image) covers
 config that only the new image accepts.
 
-The run also stops before it sends anything when a node runs another platform than its image in
-the inventory. Changing a node's platform is a reinstall. A node whose image in the inventory has another name
-than the image it runs gets that image, and chalkctl prints the change.
+The run also stops before it sends anything when a node runs another platform than its image in the
+inventory. Changing a node's platform is a reinstall. A node whose image in the inventory has
+another name than the image it runs gets that image, and chalkctl prints the change.
 
 ## Install a prebuilt image
 

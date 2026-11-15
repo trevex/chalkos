@@ -12,10 +12,10 @@ protection stops. For the whole model on one page first, read
 
 ## The node OS
 
-These pages describe the operating system of a node: the base that every image carries. A layer
-adds one role on top of the base, and an image carries one layer at most. The Kubernetes layer
-and the router layer below describe what chalkos adds to run Kubernetes on it, or to route
-between networks.
+These pages describe the operating system of a node: the base that every image carries. A layer, a
+predefined set of NixOS modules that chalkos ships and an image lists in its modules, adds one role
+on top of the base, and an image carries one layer at most. The Kubernetes layer and the router
+layer below describe what chalkos adds to run Kubernetes on it, or to route between networks.
 
 <div class="grid cards" markdown>
 

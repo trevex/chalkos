@@ -55,12 +55,12 @@ to nodes. See [its commands](cli/chalkbuild.md) and
 
 ## chalkcfg { #chalkcfg }
 
-The command on every node that prints the node's [config documents](#config-document). It reads
-them from `/run/chalkos/config` and prints them by kind and
-name, as names, JSON, YAML, a jsonpath expression or a Go template. It has no network access and
-never prints `Secret`s or the documents of withheld kinds, such as `Addon`s. An image's NixOS modules build its commands with
-[`chalkos.kinds.<Kind>.get`](extension-api.md#chalkoskindsget), which checks a path against the kind's
-options when the image is evaluated. See [its commands](cli/chalkcfg.md).
+The command on every node that prints the node's [config documents](#config-document). It reads them
+from `/run/chalkos/config` and prints them by kind and name, as names, JSON, YAML, a jsonpath
+expression or a Go template. It has no network access and never prints `Secret`s or the documents of
+withheld kinds, such as `Addon`s. An image's NixOS modules build its commands with
+[`chalkos.kinds.<Kind>.get`](extension-api.md#chalkoskindsget), which checks a path against the
+kind's options when the image is evaluated. See [its commands](cli/chalkcfg.md).
 
 ## chalkctl { #chalkctl }
 
@@ -290,12 +290,12 @@ same way to check it. See [Image and partition layout](image-layout.md#files-on-
 <!-- abbr: none -->
 
 The whole operating system of a node as one unsigned raw disk image. It has the ESP and slot A
-filled and is built by `chalkos.lib.mkImage`, or `chalkos.lib.mkImages` for a list of images,
-from a name, a [platform](#platform) and NixOS modules, a [layer](#layer) among them. Its name is
-`CHALKOS_IMAGE` in its os-release and `name` in its `metadata.json`, and
-`chalkctl upgrade --image` gives it to the nodes that run an image of that name. Every node that
-runs it boots the same bytes; what differs between nodes travels in their [config](#config). Its build output is an [image directory](#image-directory).
-See [The image](../how-it-works/node/image.md).
+filled and is built by `chalkos.lib.mkImage`, or `chalkos.lib.mkImages` for a list of images, from a
+name, a [platform](#platform) and NixOS modules, a [layer](#layer) among them. Its name is
+`CHALKOS_IMAGE` in its os-release and `name` in its `metadata.json`, and `chalkctl upgrade --image`
+gives it to the nodes that run an image of that name. Every node that runs it boots the same bytes;
+what differs between nodes travels in their [config](#config). Its build output is an [image
+directory](#image-directory). See [The image](../how-it-works/node/image.md).
 
 ## Image directory { #image-directory }
 <!-- abbr: image directories, Image directories -->
@@ -313,9 +313,10 @@ See [Image and partition layout](image-layout.md#outputs-of-an-image-build).
 
 ## Installer { #installer }
 
-An image that always boots into [maintenance mode](#maintenance-mode) and writes a node's image to
-a disk of the machine. `chalkos.lib.mkImages` builds one, as a raw image and a hybrid ISO, with
-[`installer.modules`](mkimages.md#installermodules); it installs images of every platform. See [Architecture](../how-it-works/node/architecture.md).
+An image that always boots into [maintenance mode](#maintenance-mode) and writes a node's image to a
+disk of the machine. `chalkos.lib.mkImages` builds one, as a raw image and a hybrid ISO, with
+[`installer.modules`](mkimages.md#installermodules); it installs images of every platform. See
+[Architecture](../how-it-works/node/architecture.md).
 
 ## Inventory { #inventory }
 

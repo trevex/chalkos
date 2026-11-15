@@ -206,9 +206,9 @@ maintenance mode.
 
 ## Outputs of an image build
 
-An image directory is what
-[`mkImage`](mkimages.md) returns, and `mkImages` returns by the image's name, such as
-`nix build .#node-kvm` in the lab template, whose flake exposes `images.node-kvm`. It holds six entries:
+An image directory is what [`mkImage`](mkimages.md) returns, and `mkImages` returns by the image's
+name, such as `nix build .#node-kvm` in the lab template, whose flake exposes `images.node-kvm`. It
+holds six entries:
 
 | Entry | What it is |
 | --- | --- |
@@ -258,9 +258,9 @@ as `repart-output.json` does, and a `metadata.json` of the same fields, with the
 ## OCI artifact { #oci-artifact }
 
 An OCI artifact holds an image for publishing to a registry. An image of `mkImage` carries it as
-`oci`, such as `images.node-kvm.oci`, and [`chalkbuild oci`](cli/chalkbuild_oci.md) writes it from an image
-directory. Both write an OCI image layout: the file `oci-layout`, an `index.json` that names one
-manifest, and the blobs below `blobs/sha256/`. The manifest has the artifact type
+`oci`, such as `images.node-kvm.oci`, and [`chalkbuild oci`](cli/chalkbuild_oci.md) writes it from
+an image directory. Both write an OCI image layout: the file `oci-layout`, an `index.json` that
+names one manifest, and the blobs below `blobs/sha256/`. The manifest has the artifact type
 `application/vnd.chalkos.image.v1`, and no index wraps it.
 
 | Part | Media type | Content |

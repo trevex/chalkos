@@ -89,11 +89,11 @@ The sections below follow these stages in order. Each one links the page that ex
 ## Nix builds an image and chalkbuild signs it
 
 A flake calls `chalkos.lib.mkImages`, which builds one image directory for each image the flake
-lists, each with a name and a platform. The image directory holds an unsigned raw disk image and the JSON Schemas of the config
-the image accepts. chalkbuild then signs a copy of the image directory on the
-machine that holds the db key, so the key never enters `/nix/store`. Every file of the store is
-covered by the signature, because the signed UKI carries the store's root hash and dm-verity
-checks every read against it. [The image](image.md) describes what an image holds.
+lists, each with a name and a platform. The image directory holds an unsigned raw disk image and the
+JSON Schemas of the config the image accepts. chalkbuild then signs a copy of the image directory on
+the machine that holds the db key, so the key never enters `/nix/store`. Every file of the store is
+covered by the signature, because the signed UKI carries the store's root hash and dm-verity checks
+every read against it. [The image](image.md) describes what an image holds.
 
 ## An install turns a machine in maintenance mode into a node
 

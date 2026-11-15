@@ -62,8 +62,7 @@ An entry of `images` sets three things:
 A name is lower-case letters, digits and dashes, and starts with a letter or digit. It becomes
 `CHALKOS_IMAGE` in the image's os-release and `name` in its `metadata.json`. `mkImages` refuses
 two entries of one name, and an entry named `installer`, which names the installer. The names
-above end in their platform by choice: the platform is the one `platform` names, whatever the
-name says.
+above end in their platform only by convention; `platform` alone sets the platform.
 
 `chalkctl upgrade --image` without `--nodes` installs the image on the nodes that run an image of
 the same name. A renamed image matches no running node, so its first upgrade names the nodes with
@@ -267,11 +266,11 @@ model as a platform `r650`:
 }
 ```
 
-Only `node-r650` carries the module and the consoles. Here the BMC's serial-over-LAN on the
-second serial port is the console people watch, so that port comes last. A platform of your own
-starts from chalkos's node modules alone, without `metal`'s, and its consoles default to
-`metal`'s. Its name follows the rules of an image's name and becomes `CHALKOS_PLATFORM` in the
-image's os-release.
+Only `node-r650` carries the module and the consoles. Here the BMC's serial-over-LAN on the second
+serial port is the console people watch, so that port comes last. A platform of your own starts from
+chalkos's node modules alone, without `metal`'s modules; its consoles default to the first serial
+port and the screen, as on `metal`. Its name follows the rules of an image's name and becomes
+`CHALKOS_PLATFORM` in the image's os-release.
 
 A node refuses an image of a platform other than the one it runs, so a node changes platform only
 by being installed again. Its config files stay as they are on any platform. One image per
@@ -311,16 +310,16 @@ boot's status and the emergency shell appear there too. Set it in the image's mo
 
 The build refuses a `console=` entry in `boot.kernelParams` and names `chalkos.consoles`.
 
-## Modules apply in a fixed order
+## An image is one NixOS system of four lists of modules
 
-An image is one NixOS system, evaluated from four lists of modules in this order:
+An image is one NixOS system, evaluated from four lists of modules:
 
 ```mermaid
 flowchart LR
-    node["chalkos node modules"] --> platform["Platform modules"]
-    platform --> every["modules"]
-    every --> own["The image's modules"]
-    own --> system["NixOS system of the image"]
+    node["chalkos node modules"] --> system["NixOS system of the image"]
+    platform["Platform modules"] --> system
+    every["modules"] --> system
+    own["The image's modules"] --> system
 ```
 
 1. chalkos's node modules.
@@ -328,12 +327,12 @@ flowchart LR
 3. `modules`, which every image of the `mkImages` call carries.
 4. The image's own `modules`, with its layer.
 
-The order decides the order of list entries such as `boot.kernelParams`, and nothing else. NixOS
-merges a value by priority, not by module order. So an image that sets a value its platform also
-sets plainly gets a conflict. It overrides that value with `lib.mkForce`. A value the platform
-forces itself, such as the `kvm` platform's `ExecStart` of the guest agent, needs
-`lib.mkOverride` with a priority below 50, for example `lib.mkOverride 40`. `lib.mkBefore` and
-`lib.mkAfter` place a list's entries.
+NixOS merges a value by priority, not by module order. So an image that sets a value its platform
+also sets plainly gets a conflict, and overrides that value with `lib.mkForce`. A value the
+platform forces itself, such as the `kvm` platform's `ExecStart` of the guest agent, needs
+`lib.mkOverride` with a priority below 50, for example `lib.mkOverride 40`. A list such as
+`boot.kernelParams` holds every module's entries, the image's own before those of `modules`.
+`lib.mkBefore` puts an entry first and `lib.mkAfter` puts one last.
 
 The installer is a system of its own, built from chalkos's node modules, its installer modules and
 `installer.modules`. It carries no image's modules and no `modules`, because it holds no config

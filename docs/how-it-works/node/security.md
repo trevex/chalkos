@@ -303,9 +303,9 @@ runs no console, and chalkd serves no console socket.
   [The clock decides whether a certificate is valid](certificates.md#the-clock-decides-whether-a-certificate-is-valid)
   explains.
 - With the Kubernetes layer, a `Registry`'s credentials serve the image pulls of every pod on the
-  node. chalkd keeps them in a `credentials.json` that only root reads, but the kubelet hands them to
-  containerd for any pod whose image names the `Registry`'s host, and containerd sends them to that
-  host's mirror endpoints as well, as
+  node. chalkd keeps them in a `credentials.json` that only root reads, but the kubelet hands them
+  to containerd for any pod whose image names the `Registry`'s host, and containerd sends them to
+  that host's mirror endpoints as well, as
   [How Kubernetes runs on a node](../kubernetes/overview.md#pods-pull-private-images-with-node-credentials)
   describes.
 

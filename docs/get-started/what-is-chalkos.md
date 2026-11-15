@@ -128,8 +128,8 @@ node certificate needs `chalkctl node renew`. A CA or key changes only when an o
 ## Where chalkos fits
 
 chalkos suits machines that should run as appliances, on bare metal or as virtual machines under
-KVM. Every node that runs an image boots the same verified bytes, and nobody logs in to change it. An
-upgrade either becomes healthy or rolls back by itself. Today its nodes run Kubernetes. It suits
+KVM. Every node that runs an image boots the same verified bytes, and nobody logs in to change it.
+An upgrade either becomes healthy or rolls back by itself. Today its nodes run Kubernetes. It suits
 teams that already describe systems in Nix, because an image can use any NixOS module. Only the
 images need Nix. chalkctl reads the YAML files and the image directories a build produced, so the
 machine that installs and operates the nodes needs no Nix, an airgapped one included.

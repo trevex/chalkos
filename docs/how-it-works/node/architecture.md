@@ -36,13 +36,13 @@ chalkd on every node. The sections below take them in that order.
 Nix builds the software a node runs: the operating system, Kubernetes and chalkd.
 [`chalkos.lib.mkImages`](../../reference/mkimages.md#mkimages-arguments) evaluates one NixOS system
 per image the flake lists, each with a name and a platform. Each system comes from chalkos's node
-modules, the platform's modules, the modules every image shares and the image's own. Nix builds
-each into an unsigned raw disk image in an image directory. It also builds one installer, which
-installs images of every platform. mkImages takes no node, address or cluster setting. Its only input of a cluster is the
-optional public part of its secrets, for the OS CA. So one image serves every node the
-[inventory](../../reference/kinds.md#inventory) runs on it, control planes and workers alike.
-[Images and platforms](../../build/images-and-platforms.md) explains images, platforms and
-the order of their modules.
+modules, the platform's modules, the modules every image shares and the image's own. Nix builds each
+into an unsigned raw disk image in an image directory. It also builds one installer, which installs
+images of every platform. mkImages takes no node, address or cluster setting. Its only input of a
+cluster is the optional public part of its secrets, for the OS CA. So one image serves every node
+the [inventory](../../reference/kinds.md#inventory) runs on it, control planes and workers alike.
+[Images and platforms](../../build/images-and-platforms.md) explains images, platforms and how their
+modules combine.
 
 Everything that differs between nodes is config, delivered at runtime. The split keeps the images
 few, so a cluster of three control planes and fifty workers that run the same software builds and

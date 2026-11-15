@@ -79,8 +79,8 @@ router: valid for the image router-metal (router-metal on metal, root hash befe5
 ```
 
 Each line names the image as the inventory names it, the name and platform it was built with, the
-start of its root hash, and the hash of the config the node would get. A `Peer` with `asn: 0`, below the kind's minimum of 1, fails on
-every node that gets the file:
+start of its root hash, and the hash of the config the node would get. A `Peer` with `asn: 0`, below
+the kind's minimum of 1, fails on every node that gets the file:
 
 ```console
 $ chalkctl validate

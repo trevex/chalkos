@@ -434,8 +434,8 @@ profile leaves the pod without their capabilities. A node has no `/bin/bash`, so
 the bash of the system path.
 
 This needs the node's kubelet and the API server. A node that has not joined the cluster has
-`chalkctl logs`, `chalkctl node diag` and its console. On an image without the Kubernetes layer, the image
-author adds diagnostics for its services, as [Add a diagnostic](../build/add-a-diagnostic.md)
+`chalkctl logs`, `chalkctl node diag` and its console. On an image without the Kubernetes layer, the
+image author adds diagnostics for its services, as [Add a diagnostic](../build/add-a-diagnostic.md)
 describes.
 
 ## What next

@@ -57,12 +57,11 @@ The output comes from a lab cluster. `...` stands for cp2's and cp3's lines, whi
 
 ## A new Kubernetes release takes two steps
 
-The image fixes the kubelet's release. The image author sets it in the image's modules, as
-[Choose the kubelet's release](../build/images-and-platforms.md#choose-the-kubelets-release) describes,
-and every image with the Kubernetes layer is built again. The control plane, kube-proxy, CoreDNS and the
-pod sandbox run the images the `Cluster` document names, as
-[Images name every component but the kubelet](configure.md#images-name-every-component-but-the-kubelet)
-describes.
+The image fixes the kubelet's release. The image author sets it in the image's modules, as [Choose
+the kubelet's release](../build/images-and-platforms.md#choose-the-kubelets-release) describes, and
+every image with the Kubernetes layer is built again. The control plane, kube-proxy, CoreDNS and the
+pod sandbox run the images the `Cluster` document names, as [Images name every component but the
+kubelet](configure.md#images-name-every-component-but-the-kubelet) describes.
 
 A kubelet must not be newer than the API server it talks to, so the control plane moves first:
 

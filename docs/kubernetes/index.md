@@ -5,13 +5,12 @@ description: "Plan and run Kubernetes clusters on chalkos nodes"
 
 # Run Kubernetes
 
-These pages are for operators who run a Kubernetes cluster on nodes whose image lists the
-Kubernetes layer. They
-build on [Operate nodes](../operate/index.md): they assume a workstation with the secrets file,
-and nodes installed as [Install a node](../operate/install.md) describes. Plan the cluster before
-you install its nodes, because a few of its settings are fixed once it runs. The other pages
-follow in order: bootstrap the cluster, configure it, run its control plane on several nodes,
-upgrade Kubernetes, rotate its CAs and keys, and find out why it misbehaves.
+These pages are for operators who run a Kubernetes cluster on nodes whose image lists the Kubernetes
+layer. They build on [Operate nodes](../operate/index.md): they assume a workstation with the
+secrets file, and nodes installed as [Install a node](../operate/install.md) describes. Plan the
+cluster before you install its nodes, because a few of its settings are fixed once it runs. The
+other pages follow in order: bootstrap the cluster, configure it, run its control plane on several
+nodes, upgrade Kubernetes, rotate its CAs and keys, and find out why it misbehaves.
 
 <div class="grid cards" markdown>
 

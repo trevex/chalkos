@@ -5,9 +5,9 @@ description: "What an image holds: the erofs store on dm-verity, the signed UKI 
 
 # The image
 
-An image is the whole operating system of a node in one unsigned raw disk image: systemd-boot, a
-UKI with the kernel and initrd, and a read-only Nix store. `chalkos.lib.mkImages` builds one for
-each image a flake lists, by name and platform, and every node that runs it boots the same bytes. The
+An image is the whole operating system of a node in one unsigned raw disk image: systemd-boot, a UKI
+with the kernel and initrd, and a read-only Nix store. `chalkos.lib.mkImages` builds one for each
+image a flake lists, by name and platform, and every node that runs it boots the same bytes. The
 diagram shows a node's system disk after an upgrade, with the image it runs in slot A and the new
 one in slot B.
 

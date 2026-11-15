@@ -471,7 +471,8 @@ The layout follows these rules, so each change has one place to go:
   `default.nix`. An output that reads another feature's kinds filters them by the kinds the image
   declares.
 - The node modules declare the image options; `lib/images-arguments.nix` declares the
-  arguments of `mkImage` and `mkImages`. Everything about a cluster or a node is a config kind, not an option.
+  arguments of `mkImage` and `mkImages`. Everything about a cluster or a node is a config kind,
+  not an option.
 - Go code reads a node's config documents and the image's files alone.
 - `nix/` holds how the repository builds and checks chalkos: the packages, the overlay, the
   flake outputs, the docs build, the checks and the test images. `nix/overlay/default.nix` adds

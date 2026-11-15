@@ -54,8 +54,9 @@ A flake calls mkImages and exposes the images to build:
 
 ## Layers { #layers }
 
-A layer is a set of NixOS modules that chalkos ships. An image lists it in its `modules` like any
-other module, and lists one layer at most. An image without a layer runs chalkos's base alone.
+A layer is a predefined set of NixOS modules that chalkos ships, which enables chalkos's
+Kubernetes or router modules. An image lists it in its `modules` like any other module, and
+lists one layer at most. An image without a layer runs chalkos's base alone.
 
 - `chalkos.nixosModules.kubernetes`: the Kubernetes layer, which runs containerd and the kubelet.
   One image serves control planes and workers: each node's Kubernetes Node document makes it one

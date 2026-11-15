@@ -91,8 +91,8 @@ in the node's network path could receive the new certificate. Renewing before ex
 
 ## Rotate the node CA before it expires
 
-The node CA issues every node certificate, and with the Kubernetes layer the control planes hold
-it to renew them. It is valid for five years. No node certificate outlives it, so control planes warn
+The node CA issues every node certificate, and with the Kubernetes layer the control planes hold it
+to renew them. It is valid for five years. No node certificate outlives it, so control planes warn
 once less than 18 months remain, with `node CA expires <date>; run chalkctl rotate node-ca`.
 
 `chalkctl rotate node-ca` issues a new node CA from the OS CA, delivers it to the nodes that hold
@@ -251,9 +251,9 @@ os-ca: every node applied the refresh phase
 Every node serves a certificate of the new node CA and trusts the old and the new OS CA. Client files from before the rotation cannot verify the nodes any more and are refused after the finish: issue new ones with chalkctl client new. Build images and installer media again from secrets.pub.json; older ones trust the old OS CA alone, and installing from them fails. Then remove the old OS CA with chalkctl rotate os-ca --finish.
 ```
 
-The switch gives the new node CA to the nodes that renew node certificates: with the
-Kubernetes layer, the control planes. The refresh gives every node a certificate of it. A node renewed earlier shows
-`serves a certificate of the new node CA already`.
+The switch gives the new node CA to the nodes that renew node certificates: with the Kubernetes
+layer, the control planes. The refresh gives every node a certificate of it. A node renewed earlier
+shows `serves a certificate of the new node CA already`.
 
 Commit the new `secrets.pub.json`, and have the installer and the images you keep for installs built
 again. Running nodes need no new image. The next image built carries the new OS CA, which gives it
