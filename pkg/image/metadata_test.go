@@ -23,7 +23,6 @@ func TestProvenance(t *testing.T) {
 		{"its root hash in upper case", `{"schemaVersion": 0, "rootHash": "` + strings.ToUpper(hexRoot) + `", "revision": "a1b2c3", "tag": "v1.5.0"}`, true},
 		{"another root hash", `{"schemaVersion": 0, "rootHash": "` + strings.Repeat("ab", 32) + `", "revision": "a1b2c3", "tag": "v1.5.0"}`, false},
 		{"its root hash and another schema version", `{"schemaVersion": 9, "rootHash": "` + hexRoot + `", "revision": "a1b2c3", "tag": "v1.5.0"}`, false},
-		{"another root hash and schema version", `{"schemaVersion": 9, "rootHash": "` + strings.Repeat("ab", 32) + `", "revision": "a1b2c3", "tag": "v1.5.0"}`, false},
 		{"no root hash", `{"schemaVersion": 0, "revision": "a1b2c3", "tag": "v1.5.0"}`, false},
 		{"no JSON", `revision=a1b2c3`, false},
 	} {

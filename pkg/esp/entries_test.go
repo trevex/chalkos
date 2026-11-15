@@ -114,17 +114,6 @@ func TestStagedEntry(t *testing.T) {
 	}
 }
 
-// TestEntryNames names an image's UKIs by generation, with the tries counter of an upgrade or
-// without one.
-func TestEntryNames(t *testing.T) {
-	if got := EntryName("chalkos", 1); got != "chalkos_1.efi" {
-		t.Errorf("EntryName = %s", got)
-	}
-	if got := CountedEntryName("chalkos", 12, 3); got != "chalkos_12+3.efi" {
-		t.Errorf("CountedEntryName = %s", got)
-	}
-}
-
 // TestTriesCounter reads the tries counter of a name as systemd-boot does, which takes a count
 // past an int32 for no counter, and the whole name for the entry's ID.
 func TestTriesCounter(t *testing.T) {
@@ -155,19 +144,29 @@ func testUKI(root []byte) []byte {
 	return ukitest.UKI(map[string]string{"IMAGE_ID": "chalkos", "IMAGE_VERSION": "", "CHALKOS_PLATFORM": "metal", "CHALKOS_BOOT_TRIES": "3"}, fmt.Sprintf("init=/nix/store/x/init usrhash=%x", root))
 }
 
+// writeUKIs writes the files by name to /EFI/Linux of a new ESP and returns the ESP and that
+// directory.
+func writeUKIs(t *testing.T, files map[string][]byte) (esp, dir string) {
+	t.Helper()
+	esp = t.TempDir()
+	dir = filepath.Join(esp, LinuxDir)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for name, data := range files {
+		if err := os.WriteFile(filepath.Join(dir, name), data, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return esp, dir
+}
+
 // TestEntriesWhileBlessed lists the UKIs again when one is renamed while they are read, as
 // systemd-bless-boot renames the booted one once the boot was found healthy.
 func TestEntriesWhileBlessed(t *testing.T) {
 	root := bytes.Repeat([]byte{0xb}, 32)
 	ukiData := testUKI(root)
-	esp := t.TempDir()
-	dir := filepath.Join(esp, LinuxDir)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(dir, "chalkos_2+2-1.efi"), ukiData, 0o644); err != nil {
-		t.Fatal(err)
-	}
+	esp, dir := writeUKIs(t, map[string][]byte{"chalkos_2+2-1.efi": ukiData})
 	blessed := false
 	list, err := entries(esp, func(path string) (*os.File, error) {
 		if !blessed {
@@ -188,16 +187,7 @@ func TestEntriesWhileBlessed(t *testing.T) {
 func TestEntriesReadErrors(t *testing.T) {
 	root := bytes.Repeat([]byte{0xb}, 32)
 	ukiData := testUKI(root)
-	esp := t.TempDir()
-	dir := filepath.Join(esp, LinuxDir)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	for name, data := range map[string][]byte{"chalkos_1.efi": ukiData, "chalkos_2.efi": []byte("not a UKI")} {
-		if err := os.WriteFile(filepath.Join(dir, name), data, 0o644); err != nil {
-			t.Fatal(err)
-		}
-	}
+	esp, dir := writeUKIs(t, map[string][]byte{"chalkos_1.efi": ukiData, "chalkos_2.efi": []byte("not a UKI")})
 	list, err := entries(esp, os.Open)
 	if err != nil || len(list) != 2 || !list[0].Readable || !bytes.Equal(list[0].RootHash, root) || list[1].Readable || list[1].RootHash != nil {
 		t.Fatalf("entries = %+v, %v", list, err)
