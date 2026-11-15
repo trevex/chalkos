@@ -107,9 +107,6 @@ type Hooks struct {
 // Timing holds the waits and timeouts of the Kubernetes side. A zero field takes its default
 // (withDefaults).
 type Timing struct {
-	// RestartBackoff is the first wait before the control plane's loop starts again after it
-	// failed; it doubles up to MaxRestartBackoff.
-	RestartBackoff, MaxRestartBackoff time.Duration
 	// JoinRetry is the wait between two attempts to join the cluster.
 	JoinRetry time.Duration
 	// PromoteTimeout is how long the join waits for its learner to catch up with the leader
@@ -135,8 +132,6 @@ type Timing struct {
 
 // withDefaults returns t with each zero field but EtcdStatusTimeout set to its default.
 func (t Timing) withDefaults() Timing {
-	t.RestartBackoff = cmp.Or(t.RestartBackoff, 5*time.Second)
-	t.MaxRestartBackoff = cmp.Or(t.MaxRestartBackoff, time.Minute)
 	t.JoinRetry = cmp.Or(t.JoinRetry, 10*time.Second)
 	t.PromoteTimeout = cmp.Or(t.PromoteTimeout, 10*time.Minute)
 	t.VIPTTL = cmp.Or(t.VIPTTL, vip.DefaultTTL)

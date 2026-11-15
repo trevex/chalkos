@@ -48,12 +48,15 @@ func (k *side) controlPlaneRenewal() *renewal.Renewal {
 	})
 }
 
+// restartBackoff is the first wait before the control plane's loop starts again after it failed;
+// it doubles up to maxRestartBackoff.
+const restartBackoff, maxRestartBackoff = 5 * time.Second, time.Minute
+
 // superviseControlPlane runs the control plane's loop and starts it again with backoff when it
 // fails, and at once when reloadControlPlane asks for it. Each start reads the share from STATE, so a share
 // delivered since takes effect.
 func (k *side) superviseControlPlane(ctx context.Context, applied func(n int), reload <-chan struct{}) {
-	first, limit := k.timing.RestartBackoff, k.timing.MaxRestartBackoff
-	backoff := first
+	backoff := restartBackoff
 	for {
 		started := time.Now()
 		runCtx, cancel := context.WithCancel(ctx)
@@ -74,26 +77,26 @@ func (k *side) superviseControlPlane(ctx context.Context, applied func(n int), r
 		}
 		if reloaded {
 			log.Print("kubernetes: the node's share or config changed; starting the control plane's loop again")
-			backoff = first
+			backoff = restartBackoff
 			continue
 		}
 		if err == nil {
 			return
 		}
 		// A loop that ran for a while failed afresh rather than again.
-		if time.Since(started) > limit {
-			backoff = first
+		if time.Since(started) > maxRestartBackoff {
+			backoff = restartBackoff
 		}
 		log.Printf("kubernetes: the control plane's loop stopped: %v; starting it again in %v", err, backoff)
 		select {
 		case <-ctx.Done():
 			return
 		case <-reload:
-			backoff = first
+			backoff = restartBackoff
 			continue
 		case <-time.After(backoff):
 		}
-		backoff = min(2*backoff, limit)
+		backoff = min(2*backoff, maxRestartBackoff)
 	}
 }
 

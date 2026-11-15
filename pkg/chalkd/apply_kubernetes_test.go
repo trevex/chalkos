@@ -13,6 +13,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"connectrpc.com/connect"
@@ -265,37 +266,39 @@ func TestApplyConfigRestartsKubernetesOnHostChange(t *testing.T) {
 // A share delivered to a running control plane reaches its loop at once, which starts again
 // with it.
 func TestApplyConfigRestartsControlPlaneLoopWithNewShare(t *testing.T) {
-	shares := make(chan kpki.Share, 4)
-	s, _ := kubernetesServer(t, k8s.KindControlPlane, true, func(o *kubernetesplugin.Options) {
-		// Only a reload restarts the loop this quickly.
-		o.Timing.RestartBackoff = time.Hour
-		o.Hooks.ControlPlane = func(ctx context.Context, share kpki.Share, applied func(int)) error {
-			shares <- share
-			applied(19)
-			<-ctx.Done()
-			return ctx.Err()
+	testwait.Bubble(t, func(t *testing.T) {
+		shares := make(chan kpki.Share, 4)
+		s, _ := kubernetesServer(t, k8s.KindControlPlane, true, func(o *kubernetesplugin.Options) {
+			o.Hooks.ControlPlane = func(ctx context.Context, share kpki.Share, applied func(int)) error {
+				shares <- share
+				applied(19)
+				<-ctx.Done()
+				return ctx.Err()
+			}
+		})
+		if _, err := kubernetestest.Bootstrap(context.Background(), kubernetesOf(s)); err != nil {
+			t.Fatal(err)
+		}
+		<-shares
+		replaced := kubernetestest.Share(t, k8s.KindControlPlane, "n1")
+		want, err := kpki.ParseShare(replaced)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := deliver(context.Background(), s, kubernetesIdentity("n1"), &nodev1.ApplyConfigRequest{Layers: shareLayers(t, replaced)}); err != nil {
+			t.Fatal(err)
+		}
+		// No time passes, so the loop starts again because of a reload, not after a failure.
+		synctest.Wait()
+		select {
+		case second := <-shares:
+			if second.CA.Certificate != want.CA.Certificate {
+				t.Error("the loop started again with the old share")
+			}
+		default:
+			t.Fatal("the running loop did not start again with the delivered share")
 		}
 	})
-	if _, err := kubernetestest.Bootstrap(context.Background(), kubernetesOf(s)); err != nil {
-		t.Fatal(err)
-	}
-	<-shares
-	replaced := kubernetestest.Share(t, k8s.KindControlPlane, "n1")
-	want, err := kpki.ParseShare(replaced)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := deliver(context.Background(), s, kubernetesIdentity("n1"), &nodev1.ApplyConfigRequest{Layers: shareLayers(t, replaced)}); err != nil {
-		t.Fatal(err)
-	}
-	select {
-	case second := <-shares:
-		if second.CA.Certificate != want.CA.Certificate {
-			t.Error("the loop started again with the old share")
-		}
-	case <-time.After(time.Minute):
-		t.Fatal("the running loop did not start again with the delivered share")
-	}
 }
 
 // A node that finds no address keeps the config, runs no kubelet, and says why.
