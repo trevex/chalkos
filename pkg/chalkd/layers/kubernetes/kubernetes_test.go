@@ -592,60 +592,58 @@ func TestApplyOnceLeavesTheRevokedNodesToTheApprover(t *testing.T) {
 // After a reboot chalkd's loops start before the preparation wrote the control plane's
 // certificates: the renewal waits for them and issues none of its own.
 func TestControlPlaneRenewalWaitsForThePreparation(t *testing.T) {
-	s, _ := kubernetesNode(t, k8s.KindControlPlane, true)
-	p := s.k.state
-	// RUN is empty after a reboot.
-	if err := os.RemoveAll(p.RunDir); err != nil {
-		t.Fatal(err)
-	}
-	r := s.k.controlPlaneRenewal()
-	renew := r.Renew
-	renewals := 0
-	r.Renew = func(ctx context.Context, now time.Time) error {
-		renewals++
-		return renew(ctx, now)
-	}
-	s.k.leaves = r
-	start := time.Now()
-	clock := renewaltest.NewClock(start)
-	r.Now, r.After = clock.Now, clock.After
-	advance, _ := renewaltest.Run(t, r.Run, clock)
-	now := start
-	for range 3 {
-		now = now.Add(advance(now))
-		if r.Problem() != "" {
-			t.Errorf("problem before the preparation = %q", r.Problem())
+	testwait.Bubble(t, func(t *testing.T) {
+		s, _ := kubernetesNode(t, k8s.KindControlPlane, true)
+		p := s.k.state
+		// RUN is empty after a reboot.
+		if err := os.RemoveAll(p.RunDir); err != nil {
+			t.Fatal(err)
 		}
-		certificates, _ := s.Certificates(context.Background(), time.Now())
-		for _, c := range certificates {
-			if strings.Contains(c.Problem, "renewal failing") {
-				t.Errorf("status %s: %s", c.Name, c.Problem)
+		r := s.k.controlPlaneRenewal()
+		renew := r.Renew
+		renewals := 0
+		r.Renew = func(ctx context.Context, now time.Time) error {
+			renewals++
+			return renew(ctx, now)
+		}
+		s.k.leaves = r
+		next := renewaltest.Run(t, r)
+		for range 3 {
+			next()
+			if r.Problem() != "" {
+				t.Errorf("problem before the preparation = %q", r.Problem())
+			}
+			certificates, _ := s.Certificates(context.Background(), time.Now())
+			for _, c := range certificates {
+				if strings.Contains(c.Problem, "renewal failing") {
+					t.Errorf("status %s: %s", c.Name, c.Problem)
+				}
 			}
 		}
-	}
-	if exists(p.PKI) {
-		t.Error("the renewal wrote the control plane's certificates before the preparation")
-	}
-	// The certificates the preparation writes are new: none are renewed, so no static pod
-	// starts again.
-	if err := p.Prepare(now, kubernetestest.NodeIP("192.168.100.11"), nil); err != nil {
-		t.Fatal(err)
-	}
-	apiServer := filepath.Join(p.PKI, kpki.FileAPIServer)
-	prepared, err := os.ReadFile(apiServer)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for range 2 {
-		now = now.Add(advance(now))
-	}
-	if renewals != 0 {
-		t.Errorf("renewed %d times after the preparation", renewals)
-	}
-	if after, _ := os.ReadFile(apiServer); string(after) != string(prepared) {
-		t.Error("the certificates the preparation wrote were issued again")
-	}
-	if r.Problem() != "" {
-		t.Errorf("problem after the preparation = %q", r.Problem())
-	}
+		if exists(p.PKI) {
+			t.Error("the renewal wrote the control plane's certificates before the preparation")
+		}
+		// The certificates the preparation writes are new: none are renewed, so no static pod
+		// starts again.
+		if err := p.Prepare(time.Now(), kubernetestest.NodeIP("192.168.100.11"), nil); err != nil {
+			t.Fatal(err)
+		}
+		apiServer := filepath.Join(p.PKI, kpki.FileAPIServer)
+		prepared, err := os.ReadFile(apiServer)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for range 2 {
+			next()
+		}
+		if renewals != 0 {
+			t.Errorf("renewed %d times after the preparation", renewals)
+		}
+		if after, _ := os.ReadFile(apiServer); string(after) != string(prepared) {
+			t.Error("the certificates the preparation wrote were issued again")
+		}
+		if r.Problem() != "" {
+			t.Errorf("problem after the preparation = %q", r.Problem())
+		}
+	})
 }

@@ -1,83 +1,40 @@
-// Package renewaltest is the fake clock that drives a Renewal in the tests of chalkd and of the
-// renewal package, so a test ends each wait itself instead of waiting on it in real time.
+// Package renewaltest runs a Renewal in a test's synctest bubble, where the waits between its
+// checks pass in fake time, and hands the test each check.
 package renewaltest
 
 import (
 	"context"
 	"testing"
+	"testing/synctest"
 	"time"
+
+	"github.com/trevex/chalkos/pkg/chalkd/renewal"
 )
 
-// Clock hands the waits a Renewal asks for to the test, which ends each one with Next or Advance.
-type Clock struct {
-	now   time.Time
-	waits chan time.Duration
-	fire  chan time.Time
-}
-
-// NewClock returns a clock at now.
-func NewClock(now time.Time) *Clock {
-	return &Clock{now: now, waits: make(chan time.Duration), fire: make(chan time.Time)}
-}
-
-// Now is the clock's current time, for a Renewal's Now.
-func (c *Clock) Now() time.Time { return c.now }
-
-// After hands the wait to the test and returns the channel Next or Advance fires, for a
-// Renewal's After.
-func (c *Clock) After(d time.Duration) <-chan time.Time {
-	c.waits <- d
-	return c.fire
-}
-
-// Waits is the channel each wait's duration arrives on, for a select of the test's own.
-func (c *Clock) Waits() <-chan time.Duration { return c.waits }
-
-// Next returns the wait the renewal asked for, or fails the test if none comes within a minute.
-func (c *Clock) Next(t testing.TB) time.Duration {
-	t.Helper()
-	select {
-	case d := <-c.waits:
-		return d
-	case <-time.After(time.Minute):
-		t.Fatal("the renewal asked for no wait")
-		return 0
-	}
-}
-
-// Advance sets the clock to now, ends the wait it is handing out and returns the next one.
-func (c *Clock) Advance(t testing.TB, now time.Time) time.Duration {
-	t.Helper()
-	c.now = now
-	c.fire <- now
-	return c.Next(t)
-}
-
-// Drain fires the clock until done closes, so a renewal still ending after the test cancelled
-// its context finds a clock to receive from rather than blocking on one nobody reads any more.
-func (c *Clock) Drain(done <-chan struct{}) {
-	for {
-		select {
-		case <-done:
-			return
-		case <-c.waits:
-		case c.fire <- c.now:
-		}
-	}
-}
-
-// Run starts run, such as a Renewal's Run, against clock and arranges for it to stop once the
-// test ends. It returns a function that ends the current wait at the time given and returns the
-// next one, and the first wait.
-func Run(t testing.TB, run func(context.Context), clock *Clock) (advance func(time.Time) time.Duration, first time.Duration) {
+// Run runs r until the test ends and returns a function that waits for r's next check and
+// returns the time it checked at, once the check and any renewal it started have ended. The
+// time between two checks is the wait r chose. Call both in a synctest bubble.
+func Run(t *testing.T, r *renewal.Renewal) (next func() time.Time) {
 	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
+	checks := make(chan time.Time)
+	due := r.Due
+	r.Due = func(now time.Time) (bool, time.Time, error) {
+		select {
+		case checks <- now:
+		case <-ctx.Done():
+		}
+		return due(now)
+	}
 	done := make(chan struct{})
-	go func() { run(ctx); close(done) }()
+	go func() { r.Run(ctx); close(done) }()
 	t.Cleanup(func() {
 		cancel()
-		clock.Drain(done)
+		<-done
 	})
-	first = clock.Next(t)
-	return func(now time.Time) time.Duration { return clock.Advance(t, now) }, first
+	return func() time.Time {
+		at := <-checks
+		synctest.Wait()
+		return at
+	}
 }

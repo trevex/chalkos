@@ -161,7 +161,7 @@ Test helpers live in packages of their own:
 - `chalkd/layer/layertest`: checks of a layer's API against its plugin's permissions.
 - `chalkd/layers/kubernetes/kubernetestest`: a node's Kubernetes files, shares and CAs, and
   stand-ins for the preparation, the API server's Node and chalkd.
-- `chalkd/renewal/renewaltest`: a fake clock that drives a renewal.
+- `chalkd/renewal/renewaltest`: runs a renewal in a synctest bubble and hands the test each check.
 - `kubernetes/etcd/etcdtest`: in-process etcd members.
 - `ociimage/ocitest`: in-memory OCI registries and small chalkos images.
 - `pki/pkitest`: node CAs.

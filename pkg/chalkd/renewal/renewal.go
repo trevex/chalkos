@@ -27,9 +27,6 @@ type Renewal struct {
 	Due func(now time.Time) (due bool, expires time.Time, err error)
 	// Renew renews; nil for what something else renews, which Run then only logs once it is due.
 	Renew func(ctx context.Context, now time.Time) error
-	// Now and After are the clock; tests replace them.
-	Now   func() time.Time
-	After func(time.Duration) <-chan time.Time
 	// Timeout bounds each attempt, so a peer that accepts the connection and never answers does
 	// not stop the renewal for good.
 	Timeout time.Duration
@@ -47,8 +44,6 @@ func New(what string, due func(time.Time) (bool, time.Time, error), renew func(c
 		What:    what,
 		Due:     due,
 		Renew:   renew,
-		Now:     time.Now,
-		After:   time.After,
 		Timeout: time.Minute,
 		force:   make(chan struct{}, 1),
 	}
@@ -83,11 +78,11 @@ func (r *Renewal) Run(ctx context.Context) {
 		select {
 		case <-ctx.Done():
 			return
-		case <-r.After(wait):
+		case <-time.After(wait):
 		case <-r.force:
 			forced = true
 		}
-		now := r.Now()
+		now := time.Now()
 		due, expires, err := r.Due(now)
 		switch {
 		case err != nil:

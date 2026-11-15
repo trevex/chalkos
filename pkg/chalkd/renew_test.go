@@ -309,65 +309,69 @@ func TestWorkerRenewsThroughControlPlane(t *testing.T) {
 }
 
 func TestRenewalThresholdsAndBackoff(t *testing.T) {
-	c := newCreds(t)
-	start := time.Now()
-	cert := loadedCertificate(t, c, c.node)
-	leaf := cert.Current().Leaf
-	clock := renewaltest.NewClock(start)
-	failing := true
-	issued := 0
-	r := NewNodeRenewal(cert, func(_ context.Context, request []byte) (string, error) {
-		issued++
-		if failing {
-			return "", errors.New("connection refused")
+	testwait.Bubble(t, func(t *testing.T) {
+		c := newCreds(t)
+		cert := loadedCertificate(t, c, c.node)
+		leaf := cert.Current().Leaf
+		failing := true
+		issued := 0
+		r := NewNodeRenewal(cert, func(_ context.Context, request []byte) (string, error) {
+			issued++
+			if failing {
+				return "", errors.New("connection refused")
+			}
+			return signRequest(c.nodeCA, pki.NamesOf(leaf), request, time.Now())
+		})
+		// The renewal starts half an hour before two thirds of the lifetime passed.
+		renewAt := pki.RenewAt(leaf)
+		time.Sleep(time.Until(renewAt.Add(-30 * time.Minute)))
+		start := time.Now()
+		next := renewaltest.Run(t, r)
+		first := next()
+		if wait := first.Sub(start); wait >= time.Hour/10 {
+			t.Errorf("the first check comes after %v, want soon after the start", wait)
 		}
-		return signRequest(c.nodeCA, pki.NamesOf(leaf), request, clock.Now())
+		// Before two thirds of the lifetime nothing is renewed, and the next check is about an hour on.
+		if issued != 0 {
+			t.Error("renewed before two thirds of the lifetime passed")
+		}
+		at := next()
+		if wait := at.Sub(first); wait < 54*time.Minute || wait > 66*time.Minute {
+			t.Errorf("the next check comes after %v, want about an hour", wait)
+		}
+		// Once due, failures are tried again after about a minute, doubling up to about an hour; each
+		// wait is spread by up to a tenth either way, so nodes that failed together do not retry together.
+		var retries []time.Duration
+		for range 9 {
+			prev := at
+			at = next()
+			retries = append(retries, at.Sub(prev))
+		}
+		want := []time.Duration{time.Minute, 2 * time.Minute, 4 * time.Minute, 8 * time.Minute, 16 * time.Minute, 32 * time.Minute, time.Hour, time.Hour, time.Hour}
+		for i := range want {
+			if retries[i] < want[i]-want[i]/10 || retries[i] > want[i]+want[i]/10 {
+				t.Fatalf("waits after failures %v, want about %v", retries, want)
+			}
+		}
+		if slices.Equal(retries, want) {
+			t.Errorf("waits after failures %v carry no jitter", retries)
+		}
+		problem := r.Problem()
+		if !strings.HasPrefix(problem, "renewal failing: connection refused; expires ") || !strings.Contains(problem, leaf.NotAfter.UTC().Format(time.RFC3339)) {
+			t.Errorf("problem = %q", problem)
+		}
+		if cert.Current().Leaf != leaf {
+			t.Error("a failed renewal replaced the certificate")
+		}
+		failing = false
+		renewed := next()
+		if wait := next().Sub(renewed); wait < 54*time.Minute {
+			t.Errorf("after the renewal the next check comes after %v", wait)
+		}
+		if r.Problem() != "" || cert.Current().Leaf.SerialNumber.Cmp(leaf.SerialNumber) == 0 {
+			t.Errorf("after a renewal: problem %q, serial unchanged %v", r.Problem(), cert.Current().Leaf.SerialNumber.Cmp(leaf.SerialNumber) == 0)
+		}
 	})
-	r.Now, r.After = clock.Now, clock.After
-	advance, first := renewaltest.Run(t, r.Run, clock)
-	if first >= time.Hour/10 {
-		t.Errorf("the first check comes after %v, want soon after the start", first)
-	}
-	// Before two thirds of the lifetime nothing is renewed, and the next check is about an hour on.
-	renewAt := pki.RenewAt(leaf)
-	wait := advance(renewAt.Add(-time.Minute))
-	if issued != 0 {
-		t.Error("renewed before two thirds of the lifetime passed")
-	}
-	if wait < 54*time.Minute || wait > 66*time.Minute {
-		t.Errorf("the next check comes after %v, want about an hour", wait)
-	}
-	// Once due, failures are tried again after about a minute, doubling up to about an hour; each
-	// wait is spread by up to a tenth either way, so nodes that failed together do not retry together.
-	var retries []time.Duration
-	now := renewAt
-	for range 9 {
-		retries = append(retries, advance(now))
-		now = now.Add(retries[len(retries)-1])
-	}
-	want := []time.Duration{time.Minute, 2 * time.Minute, 4 * time.Minute, 8 * time.Minute, 16 * time.Minute, 32 * time.Minute, time.Hour, time.Hour, time.Hour}
-	for i := range want {
-		if retries[i] < want[i]-want[i]/10 || retries[i] > want[i]+want[i]/10 {
-			t.Fatalf("waits after failures %v, want about %v", retries, want)
-		}
-	}
-	if slices.Equal(retries, want) {
-		t.Errorf("waits after failures %v carry no jitter", retries)
-	}
-	problem := r.Problem()
-	if !strings.HasPrefix(problem, "renewal failing: connection refused; expires ") || !strings.Contains(problem, leaf.NotAfter.UTC().Format(time.RFC3339)) {
-		t.Errorf("problem = %q", problem)
-	}
-	if cert.Current().Leaf != leaf {
-		t.Error("a failed renewal replaced the certificate")
-	}
-	failing = false
-	if wait := advance(now); wait < 54*time.Minute {
-		t.Errorf("after the renewal the next check comes after %v", wait)
-	}
-	if r.Problem() != "" || cert.Current().Leaf.SerialNumber.Cmp(leaf.SerialNumber) == 0 {
-		t.Errorf("after a renewal: problem %q, serial unchanged %v", r.Problem(), cert.Current().Leaf.SerialNumber.Cmp(leaf.SerialNumber) == 0)
-	}
 }
 
 func TestRenewalRefusesWhatItDidNotAskFor(t *testing.T) {
@@ -432,8 +436,6 @@ func TestRenewOnApplyConfig(t *testing.T) {
 				issued <- struct{}{}
 				return "", errors.New("the test issues none")
 			})
-			// The clock never ends a wait: only a forced renewal runs.
-			s.Renewal.After = func(time.Duration) <-chan time.Time { return nil }
 			ctx, cancel := context.WithCancel(context.Background())
 			done := make(chan struct{})
 			go func() { s.Renewal.Run(ctx); close(done) }()
@@ -504,27 +506,35 @@ func TestRenewalAttemptsEndAtTheirDeadline(t *testing.T) {
 		return kubernetesplugin.RenewThrough(ctx, w1, addr, request)
 	})
 	r.Timeout = time.Second
-	clock := renewaltest.NewClock(time.Now())
-	r.Now, r.After = clock.Now, clock.After
+	// The certificate is new, so only the forced renewal makes an attempt.
+	renew := r.Renew
+	ended := make(chan error, 1)
+	r.Renew = func(ctx context.Context, now time.Time) error {
+		err := renew(ctx, now)
+		ended <- err
+		return err
+	}
 
 	before := runtime.NumGoroutine()
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
 	go func() { r.Run(ctx); close(done) }()
-	clock.Next(t)
 	r.Force()
 	start := time.Now()
 	select {
-	case <-clock.Waits():
+	case err := <-ended:
+		if err == nil {
+			t.Error("an attempt with a silent peer succeeded")
+		}
 	case <-time.After(10 * time.Second):
 		t.Fatalf("an attempt with a silent peer still runs after %v", time.Since(start))
 	}
 	if elapsed := time.Since(start); elapsed > 5*time.Second {
 		t.Errorf("the attempt ended after %v, want about its deadline of %v", elapsed, r.Timeout)
 	}
-	if !strings.HasPrefix(r.Problem(), "renewal failing: ") {
-		t.Errorf("problem = %q", r.Problem())
-	}
+	testwait.Eventually(t, "the failed attempt to be the renewal's problem", func() bool {
+		return strings.HasPrefix(r.Problem(), "renewal failing: ")
+	})
 	cancel()
 	<-done
 
@@ -623,25 +633,25 @@ func TestNodeRenewalWithoutAnIssuer(t *testing.T) {
 	var logged bytes.Buffer
 	log.SetOutput(&logged)
 	t.Cleanup(func() { log.SetOutput(os.Stderr) })
-	c := newCreds(t)
-	cert := loadedCertificate(t, c, c.node)
-	leaf := cert.Current().Leaf
-	r := NewNodeRenewal(cert, nil)
-	if r.Renew != nil {
-		t.Fatal("a renewal without an issuer renews")
-	}
-	clock := renewaltest.NewClock(time.Now())
-	r.Now, r.After = clock.Now, clock.After
-	advance, _ := renewaltest.Run(t, r.Run, clock)
-	advance(pki.RenewAt(leaf).Add(time.Minute))
-	// A forced renewal runs at once and asks for the next wait, which Next takes.
-	r.Force()
-	clock.Next(t)
-	if cert.Current().Leaf != leaf || r.Problem() != "" {
-		t.Errorf("certificate replaced %v, problem %q", cert.Current().Leaf != leaf, r.Problem())
-	}
-	want := "node certificate is due for renewal and expires " + leaf.NotAfter.UTC().Format(time.RFC3339) + "; nothing on this node renews it"
-	if n := strings.Count(logged.String(), want); n != 1 || strings.Contains(logged.String(), "renewed") {
-		t.Errorf("logged %q, want %q once", logged.String(), want)
-	}
+	testwait.Bubble(t, func(t *testing.T) {
+		c := newCreds(t)
+		cert := loadedCertificate(t, c, c.node)
+		leaf := cert.Current().Leaf
+		r := NewNodeRenewal(cert, nil)
+		if r.Renew != nil {
+			t.Fatal("a renewal without an issuer renews")
+		}
+		time.Sleep(time.Until(pki.RenewAt(leaf).Add(time.Minute)))
+		next := renewaltest.Run(t, r)
+		next()
+		r.Force()
+		next()
+		if cert.Current().Leaf != leaf || r.Problem() != "" {
+			t.Errorf("certificate replaced %v, problem %q", cert.Current().Leaf != leaf, r.Problem())
+		}
+		want := "node certificate is due for renewal and expires " + leaf.NotAfter.UTC().Format(time.RFC3339) + "; nothing on this node renews it"
+		if n := strings.Count(logged.String(), want); n != 1 || strings.Contains(logged.String(), "renewed") {
+			t.Errorf("logged %q, want %q once", logged.String(), want)
+		}
+	})
 }
