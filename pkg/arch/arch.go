@@ -51,11 +51,6 @@ func ByName(name string) (Arch, bool) {
 	return find(func(a Arch) bool { return a.Name == name })
 }
 
-// ByGOARCH finds the architecture of a GOARCH such as amd64.
-func ByGOARCH(goarch string) (Arch, bool) {
-	return find(func(a Arch) bool { return a.GOARCH == goarch })
-}
-
 // ByPEMachine finds the architecture of an EFI binary's PE machine type.
 func ByPEMachine(machine uint16) (Arch, bool) {
 	return find(func(a Arch) bool { return a.PEMachine == machine })
@@ -83,6 +78,6 @@ func ByRepartType(typ string) (a Arch, verity, ok bool) {
 // Native is the architecture the running program is built for, and the zero Arch when chalkos
 // builds no images for it.
 func Native() Arch {
-	a, _ := ByGOARCH(runtime.GOARCH)
+	a, _ := find(func(a Arch) bool { return a.GOARCH == runtime.GOARCH })
 	return a
 }

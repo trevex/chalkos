@@ -15,7 +15,6 @@ func TestLookups(t *testing.T) {
 	for _, a := range All {
 		for name, got := range map[string]func() (Arch, bool){
 			"ByName":      func() (Arch, bool) { return ByName(a.Name) },
-			"ByGOARCH":    func() (Arch, bool) { return ByGOARCH(a.GOARCH) },
 			"ByPEMachine": func() (Arch, bool) { return ByPEMachine(a.PEMachine) },
 		} {
 			if found, ok := got(); !ok || found != a {
@@ -35,9 +34,6 @@ func TestLookups(t *testing.T) {
 	}
 	if _, ok := ByName("riscv64"); ok {
 		t.Error("ByName found riscv64")
-	}
-	if _, ok := ByGOARCH("386"); ok {
-		t.Error("ByGOARCH found 386")
 	}
 	if _, ok := ByPEMachine(pe.IMAGE_FILE_MACHINE_I386); ok {
 		t.Error("ByPEMachine found i386")

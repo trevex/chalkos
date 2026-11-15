@@ -255,8 +255,8 @@ func (s *Server) checkBootedUnder(db, dbx secureboot.Database) error {
 
 // bootedBinaries are the files of the boot loader and the UKI the node booted on the ESP.
 func (s *Server) bootedBinaries() ([]string, error) {
-	a, ok := arch.ByGOARCH(runtime.GOARCH)
-	if !ok {
+	a := arch.Native()
+	if a.Name == "" {
 		return nil, fmt.Errorf("chalkos builds no images for %s", runtime.GOARCH)
 	}
 	running, err := uki.RunningHash(s.Paths.Cmdline)

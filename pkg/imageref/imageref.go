@@ -67,8 +67,8 @@ func (v Version) MinorString() string { return fmt.Sprintf("%d.%d", v.Major, v.M
 
 var versionTag = regexp.MustCompile(`^v?(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z][0-9A-Za-z.-]*)?$`)
 
-// ErrNoVersion is the error of a reference whose tag is no version.
-var ErrNoVersion = errors.New("its tag is no version v<major>.<minor>.<patch>, optionally with a suffix such as -rc.1")
+// errNoVersion is the error of a reference whose tag is no version.
+var errNoVersion = errors.New("its tag is no version v<major>.<minor>.<patch>, optionally with a suffix such as -rc.1")
 
 // ParseVersion reads a version with or without its leading v, such as 1.37.1 or v1.38.0-rc.1.
 func ParseVersion(s string) (Version, error) {
@@ -91,11 +91,11 @@ func ParseVersion(s string) (Version, error) {
 // Version is the version the reference's tag names, which starts with v.
 func (r Reference) Version() (Version, error) {
 	if !strings.HasPrefix(r.Tag, "v") {
-		return Version{}, ErrNoVersion
+		return Version{}, errNoVersion
 	}
 	v, err := ParseVersion(r.Tag)
 	if err != nil {
-		return Version{}, ErrNoVersion
+		return Version{}, errNoVersion
 	}
 	return v, nil
 }

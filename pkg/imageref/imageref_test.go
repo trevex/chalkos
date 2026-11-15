@@ -49,7 +49,7 @@ func TestVersion(t *testing.T) {
 	}
 	for _, tag := range []string{"", "1.37.1", "v1.37", "v1.37.1.2", "v01.37.1", "latest", "v1.37.1-", "v1.37.1+build"} {
 		if _, err := (Reference{Tag: tag}).Version(); err == nil || !strings.Contains(err.Error(), "no version") {
-			t.Errorf("version of %q: err = %v, want ErrNoVersion", tag, err)
+			t.Errorf("version of %q: err = %v, want errNoVersion", tag, err)
 		}
 	}
 }

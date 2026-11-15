@@ -18,7 +18,6 @@ const (
 	evNoAction              = 0x3
 	evBootServicesDriver    = 0x80000004
 	evRuntimeServicesDriver = 0x80000005
-	algSHA1                 = 0x0004
 	algSHA256               = 0x000b
 )
 
