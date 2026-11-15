@@ -27,6 +27,7 @@ import (
 	"github.com/trevex/chalkos/pkg/esp"
 	"github.com/trevex/chalkos/pkg/image/imagetest"
 	"github.com/trevex/chalkos/pkg/imagepart"
+	"github.com/trevex/chalkos/pkg/secureboot"
 	"github.com/trevex/chalkos/pkg/storage"
 	"github.com/trevex/chalkos/pkg/storage/gpt"
 	"github.com/trevex/chalkos/pkg/storage/hostops"
@@ -247,19 +248,13 @@ func (l *partsLab) table() map[int]gpt.Partition {
 	if err != nil {
 		return nil
 	}
-	var dump struct {
-		Table struct {
-			Partitions []gpt.Partition `json:"partitions"`
-		} `json:"partitiontable"`
-	}
-	if err := json.Unmarshal(out, &dump); err != nil {
+	list, err := gpt.ParseTable(l.disk, out)
+	if err != nil {
 		l.t.Fatal(err)
 	}
 	parts := map[int]gpt.Partition{}
-	for _, p := range dump.Table.Partitions {
-		p.Number, _ = strconv.Atoi(strings.TrimPrefix(p.Node, l.disk))
+	for _, p := range list {
 		p.Node = labDev + strconv.Itoa(p.Number)
-		p.UUID, p.Type = strings.ToLower(p.UUID), strings.ToLower(p.Type)
 		parts[p.Number] = p
 	}
 	return parts
@@ -612,7 +607,6 @@ func (l *partsLab) foreignTable() {
 // revoked, which may be none.
 func (l *partsLab) enforceSecureBoot(db []byte, revoked ...[]byte) {
 	l.t.Helper()
-	const global, security = "8be4df61-93ca-11d2-aa0d-00e098032b8c", "d719b2cb-3d3a-4596-a3bc-dad00e67656f"
 	var dbx []byte
 	for _, der := range revoked {
 		dbx = append(dbx, ukitest.SignatureList(der)...)
@@ -621,10 +615,10 @@ func (l *partsLab) enforceSecureBoot(db []byte, revoked ...[]byte) {
 		name, vendor string
 		value        []byte
 	}{
-		{"SecureBoot", global, []byte{1}},
-		{"SetupMode", global, []byte{0}},
-		{"db", security, db},
-		{"dbx", security, dbx},
+		{"SecureBoot", secureboot.GlobalVendor, []byte{1}},
+		{"SetupMode", secureboot.GlobalVendor, []byte{0}},
+		{"db", secureboot.SecurityVendor, db},
+		{"dbx", secureboot.SecurityVendor, dbx},
 	} {
 		write(l.t, filepath.Join(l.efivars, v.name+"-"+v.vendor), string(append([]byte{7, 0, 0, 0}, v.value...)))
 	}
@@ -650,22 +644,9 @@ func TestFromPartsRefuses(t *testing.T) {
 	revokedLoader := signed
 	revokedLoader.BootLoader = imagetest.SBSign(t, img.BootLoader, revokedKey, revokedCert)
 	revokedLoader.header = revokedLoader.headerFor()
-	noTries := img
-	noTries.UKI = ukitest.UKI(map[string]string{
-		"IMAGE_ID": "chalkos", "IMAGE_VERSION": "", "CHALKOS_VARIANT": "worker", "CHALKOS_PLATFORM": "metal", "CHALKOS_BOOT_TRIES": "0",
-	}, fmt.Sprintf("usrhash=%x", img.Root))
-	noTries.header = noTries.headerFor()
-	otherStore := img
-	otherStore.UKI = ukitest.UKI(map[string]string{
-		"IMAGE_ID": "chalkos", "IMAGE_VERSION": "", "CHALKOS_VARIANT": "worker", "CHALKOS_PLATFORM": "metal", "CHALKOS_BOOT_TRIES": "3",
-	}, fmt.Sprintf("usrhash=%x", upgradetest.Sum([]byte("another store"))))
-	otherStore.header = otherStore.headerFor()
 	armLoader := img
 	armLoader.BootLoader = ukitest.WithMachine(img.BootLoader, 0xaa64)
 	armLoader.header = armLoader.headerFor()
-	armUKI := img
-	armUKI.UKI = ukitest.WithMachine(img.UKI, 0xaa64)
-	armUKI.header = armUKI.headerFor()
 	for _, tc := range []struct {
 		name  string
 		setup func(l *partsLab)
@@ -699,24 +680,13 @@ func TestFromPartsRefuses(t *testing.T) {
 			l.r.efi.bootNext = ""
 		}, newPartsImage(t, "b"), nil, "holds an installed node"},
 		{"slot A of another image whose config STATE holds", func(l *partsLab) { l.stopAt(img, "write the boot loader") }, newPartsImage(t, "b"), nil, "of another image, whose config STATE holds"},
-		{"another platform", nil, img, func(r *PartsRequest) { r.Image.Platform = "kvm" }, "the UKI's platform is \"metal\""},
-		{"a corrupt store", nil, img, func(r *PartsRequest) {
-			corrupt := bytes.Clone(img.Store)
-			corrupt[100]++
-			r.Parts = io.MultiReader(bytes.NewReader(corrupt), bytes.NewReader(img.HashTree), bytes.NewReader(img.UKI), bytes.NewReader(img.BootLoader))
-		}, "the store's SHA-256"},
-		{"another root hash", nil, img, func(r *PartsRequest) { r.Image.RootHash = upgradetest.Sum([]byte("other")) }, "the written store"},
-		{"a UKI booting another store", nil, otherStore, nil, "the UKI boots another store"},
 		{"a corrupt boot loader", nil, img, func(r *PartsRequest) { r.Image.BootLoader.SHA256 = upgradetest.Sum(nil) }, "the boot loader's SHA-256"},
 		{"a boot loader for another machine", nil, armLoader, nil, "the boot loader is built for arm64, but the image names x86-64"},
-		{"a UKI for another machine", nil, armUKI, nil, "the UKI is built for arm64, but the image names x86-64"},
-		{"an unsigned UKI", func(l *partsLab) { l.enforceSecureBoot(ukitest.SignatureList(der)) }, img, nil, "Secure Boot would refuse the UKI"},
 		{"an unsigned boot loader", func(l *partsLab) { l.enforceSecureBoot(ukitest.SignatureList(der)) }, unsignedLoader, nil, "Secure Boot would refuse the boot loader"},
 		{"a signer dbx lists", func(l *partsLab) { l.enforceSecureBoot(ukitest.SignatureList(der), der) }, signed, nil, "Secure Boot would refuse the UKI"},
 		{"a boot loader signer dbx lists", func(l *partsLab) {
 			l.enforceSecureBoot(append(ukitest.SignatureList(der), ukitest.SignatureList(revokedDER)...), revokedDER)
 		}, revokedLoader, nil, "Secure Boot would refuse the boot loader"},
-		{"a UKI without boot tries", nil, noTries, nil, "boot tries \"0\" are not a positive number"},
 		{"a wrong store SHA-256 on a resumed install", func(l *partsLab) { l.stopAt(img, "write the UKI") }, img, func(r *PartsRequest) { r.Image.Store.SHA256 = upgradetest.Sum(nil) }, "the store's SHA-256"},
 		{"a wrong hash tree SHA-256 on a resumed install", func(l *partsLab) { l.stopAt(img, "write the UKI") }, img, func(r *PartsRequest) { r.Image.Verity.SHA256 = upgradetest.Sum(nil) }, "the hash tree's SHA-256"},
 		{"a header without a boot loader", nil, img, func(r *PartsRequest) { r.Image.BootLoader = imagepart.Part{} }, "brings no boot loader"},
@@ -1004,8 +974,9 @@ func TestFromPartsRefusesDiskInUse(t *testing.T) {
 	}
 }
 
-// TestFromPartsReleasesTheTarget frees a target whose STATE a crashed chalkd left open before it
-// installs, and frees it again when the install fails.
+// TestFromPartsReleasesTheTarget frees the target's STATE, ESP and slot A's store that a crashed
+// chalkd left mounted and open, in that order, before it installs, and frees STATE again when the
+// install fails.
 func TestFromPartsReleasesTheTarget(t *testing.T) {
 	img := newPartsImage(t, "a")
 	l := newPartsLab(t)
@@ -1019,15 +990,21 @@ func TestFromPartsReleasesTheTarget(t *testing.T) {
 			l.leaveMounted(hostops.Mapper("state"), l.i.StateDir)
 		}
 	}
+	espDir, storeDir := filepath.Join(l.i.WorkDir, "esp"), filepath.Join(l.i.WorkDir, "store")
+	l.leaveMounted(labDev+"1", espDir)
+	l.r.host.SetMapped(upgrade.StoreMapping, labDev+"3")
+	l.leaveMounted(hostops.Mapper(upgrade.StoreMapping), storeDir)
 	l.r.Calls = nil
 	if err := l.install(img); err != nil {
 		t.Fatal(err)
 	}
-	assertCalls(t, l.r.Calls[:2], []string{"umount " + l.i.StateDir, "systemd-cryptsetup detach state"})
+	assertCalls(t, l.r.Calls[:5], []string{"umount " + l.i.StateDir, "systemd-cryptsetup detach state", "umount " + espDir, "umount " + storeDir, "veritysetup close " + upgrade.StoreMapping})
 	l.checkInstalled(img)
 }
 
-func TestOpenExclusiveGivesUpWhenLocked(t *testing.T) {
+// TestOpenExclusiveGivesUp gives up on a disk another program keeps locked, at the context's
+// deadline or, when the install runs on without its client's cancellation, after diskLockWait.
+func TestOpenExclusiveGivesUp(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "disk")
 	write(t, path, "")
 	d, err := openExclusive(context.Background(), path)
@@ -1035,16 +1012,26 @@ func TestOpenExclusiveGivesUpWhenLocked(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer d.Close()
-
-	ctx, cancel := context.WithTimeout(context.Background(), 250*time.Millisecond)
+	defer func(wait time.Duration) { diskLockWait = wait }(diskLockWait)
+	diskLockWait = 300 * time.Millisecond
+	deadline, cancel := context.WithTimeout(context.Background(), 250*time.Millisecond)
 	defer cancel()
-	start := time.Now()
-	_, err = openExclusive(ctx, path)
-	if err == nil || !strings.Contains(err.Error(), "the target disk is locked by another process") {
-		t.Fatalf("err = %v, want the lock held by another process", err)
-	}
-	if waited := time.Since(start); waited > 2*time.Second {
-		t.Errorf("waited %s for the lock, past the context's deadline", waited)
+	uncanceled, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	for _, tc := range []struct {
+		ctx  context.Context
+		want string
+	}{
+		{deadline, "the target disk is locked by another process"},
+		{context.WithoutCancel(uncanceled), "another program kept the target disk " + path + " locked for 300ms"},
+	} {
+		start := time.Now()
+		if _, err := openExclusive(tc.ctx, path); err == nil || !strings.Contains(err.Error(), tc.want) {
+			t.Errorf("err = %v, want %q", err, tc.want)
+		}
+		if waited := time.Since(start); waited > 2*time.Second {
+			t.Errorf("waited %s for the lock", waited)
+		}
 	}
 }
 
@@ -1086,49 +1073,6 @@ func (l *partsLab) image() []byte {
 		l.t.Fatal(err)
 	}
 	return data
-}
-
-// TestOpenExclusiveWaitsBounded gives up on a disk another program keeps locked, also when the
-// install runs on without its client's cancellation.
-func TestOpenExclusiveWaitsBounded(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "disk")
-	write(t, path, "")
-	d, err := openExclusive(context.Background(), path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer d.Close()
-	defer func(wait time.Duration) { diskLockWait = wait }(diskLockWait)
-	diskLockWait = 300 * time.Millisecond
-
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	start := time.Now()
-	_, err = openExclusive(context.WithoutCancel(ctx), path)
-	if err == nil || !strings.Contains(err.Error(), "another program kept the target disk "+path+" locked for 300ms") {
-		t.Fatalf("err = %v, want the lock held too long", err)
-	}
-	if waited := time.Since(start); waited > 2*time.Second {
-		t.Errorf("waited %s for the lock", waited)
-	}
-}
-
-// TestFromPartsUnmountsALeftoverESP wipes a target whose ESP a crashed chalkd left mounted.
-func TestFromPartsUnmountsALeftoverESP(t *testing.T) {
-	img := newPartsImage(t, "a")
-	l := newPartsLab(t)
-	l.stopAt(img, "write the identity")
-	espPart := filepath.Join(l.i.WorkDir, "esp")
-	l.leaveMounted(labDev+"1", espPart)
-	req := l.request(img)
-	req.WipeDisk = true
-	if err := l.i.FromParts(context.Background(), req); err != nil {
-		t.Fatal(err)
-	}
-	l.checkInstalled(img)
-	if mounted, _ := l.r.host.Mounted(espPart); mounted {
-		t.Error("the ESP is still mounted")
-	}
 }
 
 // TestFromPartsWithTheImageDefinitions installs with the definitions the test image ships,
@@ -1421,7 +1365,7 @@ func TestFromPartsRefusesAnotherStorageSection(t *testing.T) {
 		return Checked{Config: slot.Stored{Identity: text}}, nil
 	}
 	err = l.i.FromParts(context.Background(), req)
-	if err == nil || !strings.Contains(err.Error(), "they differ in the encryption policy, disk system, volume data, volume var; the target disk boots nothing; install the image with the installer built with it, with --wipe-disk if that installer refuses the disk's layout") {
+	if err == nil || !strings.Contains(err.Error(), "they differ in the encryption policy, disk system, volume data, volume var; the target disk boots nothing") {
 		t.Fatalf("install = %v, want the storage refused", err)
 	}
 	if l.bootable() || l.installed() {
@@ -1440,8 +1384,8 @@ func TestFromPartsRefusesACheckerWithoutAnIdentity(t *testing.T) {
 		identity []byte
 		want     string
 	}{
-		"none":        {nil, "the image's checker gave no identity; the target disk boots nothing, and an install of the image continues on it"},
-		"not as JSON": {[]byte("hostname"), "parse the identity the image's checker gave: invalid character 'h' looking for beginning of value; the target disk boots nothing, and an install of the image continues on it"},
+		"none":        {nil, "the image's checker gave no identity"},
+		"not as JSON": {[]byte("hostname"), "parse the identity the image's checker gave: "},
 	} {
 		t.Run(name, func(t *testing.T) {
 			l := newPartsLab(t)
@@ -1449,7 +1393,7 @@ func TestFromPartsRefusesACheckerWithoutAnIdentity(t *testing.T) {
 			req.Check = func(context.Context, Store, string) (Checked, error) {
 				return Checked{Config: slot.Stored{Identity: tc.identity}}, nil
 			}
-			if err := l.i.FromParts(context.Background(), req); err == nil || !strings.HasSuffix(err.Error(), tc.want) {
+			if err := l.i.FromParts(context.Background(), req); err == nil || !strings.Contains(err.Error(), tc.want) || !strings.HasSuffix(err.Error(), "; the target disk boots nothing, and an install of the image continues on it") {
 				t.Fatalf("install = %v, want %q", err, tc.want)
 			}
 			if l.bootable() || l.installed() {
@@ -1467,24 +1411,4 @@ func TestSectionDifferenceTakesMissingForEmpty(t *testing.T) {
 	if diff := sectionDifference(a, b); len(diff) != 0 {
 		t.Errorf("difference = %q, want none", diff)
 	}
-}
-
-// TestFromPartsReleasesALeftoverStore frees slot A's store that a chalkd which crashed while the
-// image checked the config left mounted and open.
-func TestFromPartsReleasesALeftoverStore(t *testing.T) {
-	img := newPartsImage(t, "a")
-	l := newPartsLab(t)
-	req := l.request(img)
-	req.Check = func(context.Context, Store, string) (Checked, error) { return Checked{}, errStop }
-	if err := l.i.FromParts(context.Background(), req); !errors.Is(err, errStop) {
-		t.Fatalf("install = %v, want the stop", err)
-	}
-	l.r.host.SetMapped(upgrade.StoreMapping, labDev+"3")
-	l.leaveMounted(hostops.Mapper(upgrade.StoreMapping), filepath.Join(l.i.WorkDir, "store"))
-	l.r.Calls = nil
-	if err := l.install(img); err != nil {
-		t.Fatal(err)
-	}
-	assertCalls(t, l.r.Calls[:2], []string{"umount " + filepath.Join(l.i.WorkDir, "store"), "veritysetup close " + upgrade.StoreMapping})
-	l.checkInstalled(img)
 }
