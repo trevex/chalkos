@@ -169,30 +169,6 @@ func TestWriteLayoutNeedsANewDirectory(t *testing.T) {
 	}
 }
 
-// TestRenameNewRefusesAnOutputThatAppeared leaves an output that appeared after CheckNew as it is,
-// even an empty directory, which a plain rename would replace.
-func TestRenameNewRefusesAnOutputThatAppeared(t *testing.T) {
-	dir := t.TempDir()
-	tmp, out := filepath.Join(dir, "tmp"), filepath.Join(dir, "out")
-	for _, d := range []string{tmp, out} {
-		if err := os.Mkdir(d, 0o755); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if err := ociimage.RenameNew(tmp, out); err == nil || !strings.Contains(err.Error(), "appeared") {
-		t.Errorf("RenameNew onto an empty directory = %v", err)
-	}
-	if _, err := os.Stat(tmp); err != nil {
-		t.Errorf("RenameNew moved tmp: %v", err)
-	}
-	if err := os.Remove(out); err != nil {
-		t.Fatal(err)
-	}
-	if err := ociimage.RenameNew(tmp, out); err != nil {
-		t.Fatal(err)
-	}
-}
-
 // TestContractTar writes a contract as a tar of regular files in name order, owned by 0:0 and
 // modified at the epoch, and reads it back.
 func TestContractTar(t *testing.T) {

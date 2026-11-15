@@ -8,27 +8,19 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/trevex/chalkos/pkg/atomicfile"
 	"github.com/trevex/chalkos/pkg/image"
 	"github.com/trevex/chalkos/pkg/internal/filecopy"
-	"github.com/trevex/chalkos/pkg/ociimage"
 	"github.com/trevex/chalkos/pkg/pki"
 	"github.com/trevex/chalkos/pkg/secureboot"
 )
 
-// SignDirectory signs the disk images of the image directory in with the Secure Boot db key and
-// certificate, and writes the result to the new directory out. It returns the names of the disk
-// images it signed.
-//
-// The disk images are the raw image, which repart-output.json describes, and each ISO beside it,
-// which <name>.iso.json describes. SignDirectory signs the UKI and the boot loader on each, and
-// checks them against cert as firmware with cert in db would.
-//
-//   - It works on a copy next to out and leaves in as it is. The copy skips the holes of disk
-//     images and resolves symlinks, so it holds no link into in.
-//   - out must not exist and its parent directory must; otherwise it refuses before copying.
-//   - It renames the copy to out only once every disk image is signed and verified, and removes the
-//     copy on any failure, including out appearing meanwhile.
-func SignDirectory(ctx context.Context, in, out, key, cert string) (_ []string, err error) {
+// SignDirectory copies the image directory in to the new directory out, signs the UKI and boot
+// loader of its raw image and of each ISO with the Secure Boot db key, and checks them against
+// cert as firmware with cert in db would. It returns the names of the signed disk images. The copy
+// resolves symlinks and keeps disk images sparse; it refuses before copying when out exists, and
+// writes out as atomicfile.NewDir does, so out appears only once every image is signed.
+func SignDirectory(ctx context.Context, in, out, key, cert string) ([]string, error) {
 	info, err := os.Stat(in)
 	if err != nil {
 		return nil, err
@@ -36,7 +28,7 @@ func SignDirectory(ctx context.Context, in, out, key, cert string) (_ []string, 
 	if !info.IsDir() {
 		return nil, fmt.Errorf("%s is no image directory", in)
 	}
-	if err := ociimage.CheckNew(out); err != nil {
+	if err := atomicfile.CheckNew(out); err != nil {
 		return nil, err
 	}
 	disks, err := diskImages(in)
@@ -50,38 +42,32 @@ func SignDirectory(ctx context.Context, in, out, key, cert string) (_ []string, 
 	if err != nil {
 		return nil, err
 	}
-	tmp, err := os.MkdirTemp(filepath.Dir(out), "."+filepath.Base(out)+"-")
-	if err != nil {
-		return nil, err
-	}
-	defer func() {
-		if err != nil {
-			os.RemoveAll(tmp)
-		}
-	}()
-	if err := copyTree(ctx, in, tmp); err != nil {
-		return nil, err
-	}
 	var names []string
-	for _, d := range disks {
-		raw := filepath.Join(tmp, d.name)
-		parts, err := image.ReadPartitions(filepath.Join(tmp, d.partitions))
-		if err != nil {
-			return nil, err
+	err = atomicfile.NewDir(out, func(tmp string) error {
+		if err := copyTree(ctx, in, tmp); err != nil {
+			return err
 		}
-		esp, err := image.FindPartition(parts, "esp")
-		if err != nil {
-			return nil, fmt.Errorf("%s: %w", d.partitions, err)
+		for _, d := range disks {
+			raw := filepath.Join(tmp, d.name)
+			parts, err := image.ReadPartitions(filepath.Join(tmp, d.partitions))
+			if err != nil {
+				return err
+			}
+			esp, err := image.FindPartition(parts, "esp")
+			if err != nil {
+				return fmt.Errorf("%s: %w", d.partitions, err)
+			}
+			if err := SignImage(ctx, raw, esp.Offset, key, cert); err != nil {
+				return err
+			}
+			if err := verify(ctx, raw, esp.Offset, certs); err != nil {
+				return fmt.Errorf("%s: %w", d.name, err)
+			}
+			names = append(names, d.name)
 		}
-		if err := SignImage(ctx, raw, esp.Offset, key, cert); err != nil {
-			return nil, err
-		}
-		if err := verify(ctx, raw, esp.Offset, certs); err != nil {
-			return nil, fmt.Errorf("%s: %w", d.name, err)
-		}
-		names = append(names, d.name)
-	}
-	if err := ociimage.RenameNew(tmp, out); err != nil {
+		return nil
+	})
+	if err != nil {
 		return nil, err
 	}
 	return names, nil
@@ -122,8 +108,8 @@ var errNotFileOrDir = errors.New("not a regular file or a directory")
 
 // copyTree copies the entries of the directory src into dst with symlinks resolved: disk images
 // without their holes, other files and directories by their content. It refuses a dangling
-// symlink and any entry that resolves to neither a regular file nor a directory, rather than, for
-// a FIFO, blocking on a reader that never comes.
+// symlink and any entry that resolves to neither a regular file nor a directory: a FIFO would
+// block the copy.
 func copyTree(ctx context.Context, src, dst string) error {
 	entries, err := os.ReadDir(src)
 	if err != nil {

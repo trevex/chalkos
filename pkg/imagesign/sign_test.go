@@ -91,7 +91,7 @@ func TestSignFile(t *testing.T) {
 	if err := os.WriteFile(file, data, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := SignFile(context.Background(), file, key, cert); err != nil {
+	if err := signFile(context.Background(), file, key, cert); err != nil {
 		t.Fatal(err)
 	}
 	if err := exec.Command("sbverify", "--cert", cert, file).Run(); err != nil {

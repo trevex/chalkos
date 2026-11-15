@@ -5,11 +5,9 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"errors"
 	"fmt"
 	"hash"
 	"io"
-	"io/fs"
 	"os"
 	"path/filepath"
 
@@ -17,7 +15,8 @@ import (
 	"github.com/google/go-containerregistry/pkg/v1/empty"
 	"github.com/google/go-containerregistry/pkg/v1/layout"
 	"github.com/google/go-containerregistry/pkg/v1/types"
-	"golang.org/x/sys/unix"
+
+	"github.com/trevex/chalkos/pkg/atomicfile"
 )
 
 // IsLayout tells whether dir is an OCI image layout: whether it holds an oci-layout file.
@@ -26,64 +25,19 @@ func IsLayout(dir string) bool {
 	return err == nil
 }
 
-// CheckNew refuses an output directory that exists, or whose parent directory does not.
-func CheckNew(out string) error {
-	if _, err := os.Lstat(out); err == nil {
-		return fmt.Errorf("%s exists; the output is a new directory", out)
-	} else if !errors.Is(err, fs.ErrNotExist) {
-		return err
-	}
-	parent := filepath.Dir(out)
-	info, err := os.Stat(parent)
-	if err != nil {
-		return err
-	}
-	if !info.IsDir() {
-		return fmt.Errorf("%s is no directory", parent)
-	}
-	return nil
-}
-
-// RenameNew renames the directory tmp to out, which CheckNew found missing, and fails if out
-// exists by now. It renames with RENAME_NOREPLACE, so out cannot appear between the check and the
-// rename; on a file system without RENAME_NOREPLACE it checks out just before renaming.
-func RenameNew(tmp, out string) error {
-	err := unix.Renameat2(unix.AT_FDCWD, tmp, unix.AT_FDCWD, out, unix.RENAME_NOREPLACE)
-	if errors.Is(err, unix.EINVAL) || errors.Is(err, unix.ENOSYS) {
-		if _, err := os.Lstat(out); err == nil {
-			return fmt.Errorf("%s appeared while it was being written", out)
-		} else if !errors.Is(err, fs.ErrNotExist) {
-			return err
-		}
-		return os.Rename(tmp, out)
-	}
-	if errors.Is(err, fs.ErrExist) {
-		return fmt.Errorf("%s appeared while it was being written", out)
-	}
-	if err != nil {
-		return &os.LinkError{Op: "rename", Old: tmp, New: out, Err: err}
-	}
-	return nil
-}
-
 // WriteLayout writes a chalkos image as an OCI image layout into the new directory out, whose
 // index.json names its one manifest with the artifact type, and returns the manifest's digest.
-// out must not exist and its parent directory must. The layout is built in a directory next to
-// out and renamed to out once complete; on any failure, including ctx ending, which stops the
-// copy of a layer, the partial layout is removed.
-func WriteLayout(ctx context.Context, img v1.Image, out string) (_ v1.Hash, err error) {
-	if err := CheckNew(out); err != nil {
-		return v1.Hash{}, err
-	}
-	tmp, err := os.MkdirTemp(filepath.Dir(out), "."+filepath.Base(out)+"-")
-	if err != nil {
-		return v1.Hash{}, err
-	}
-	defer func() {
-		if err != nil {
-			os.RemoveAll(tmp)
-		}
-	}()
+// It writes out as atomicfile.NewDir does; ctx ending stops the copy of a layer.
+func WriteLayout(ctx context.Context, img v1.Image, out string) (v1.Hash, error) {
+	var digest v1.Hash
+	err := atomicfile.NewDir(out, func(tmp string) (err error) {
+		digest, err = writeLayout(ctx, img, tmp)
+		return err
+	})
+	return digest, err
+}
+
+func writeLayout(ctx context.Context, img v1.Image, tmp string) (v1.Hash, error) {
 	p, err := layout.Write(tmp, empty.Index)
 	if err != nil {
 		return v1.Hash{}, err
@@ -143,9 +97,6 @@ func WriteLayout(ctx context.Context, img v1.Image, out string) (_ v1.Hash, err 
 	if err := os.Chmod(tmp, 0o755); err != nil {
 		return v1.Hash{}, err
 	}
-	if err := RenameNew(tmp, out); err != nil {
-		return v1.Hash{}, err
-	}
 	return digest, nil
 }
 
@@ -163,12 +114,10 @@ func (r ctxReader) Read(p []byte) (int, error) {
 }
 
 // VerifiedReader reads a layer's content and hashes every byte read through it. Verify then
-// checks that it read exactly the bytes the layer's Digest and Size name.
-//
-// A layout's blob store does not check a blob against the digest its file name is, so a local
-// layer needs this check as much as a remote one. WriteBlob and io.Copy close their reader without
-// checking the error of Close. A caller therefore calls Verify once its copy, and closing the
-// copy's destination, both succeeded.
+// checks that it read exactly the bytes the layer's Digest and Size name. A layout's blob store
+// does not check a blob against the digest its file name is, so a local layer needs this as much
+// as a remote one. WriteBlob and io.Copy ignore the error of Close, so call Verify once the copy
+// and closing its destination succeeded.
 type VerifiedReader struct {
 	io.ReadCloser
 	hash hash.Hash
@@ -201,8 +150,7 @@ func (v *VerifiedReader) Read(p []byte) (int, error) {
 	return n, err
 }
 
-// Verify fails unless the VerifiedReader read exactly the bytes its layer's own Digest and Size
-// say it is.
+// Verify fails unless the VerifiedReader read exactly the bytes of its layer's Digest and Size.
 func (v *VerifiedReader) Verify() error {
 	if v.n != v.size {
 		return fmt.Errorf("read %d bytes, not the %d its descriptor names", v.n, v.size)
@@ -214,12 +162,8 @@ func (v *VerifiedReader) Verify() error {
 	return nil
 }
 
-// ReadLayout reads the chalkos image of an OCI image layout, whose index.json names one
-// manifest. A layout's blob store does not check a blob's content against the digest its file
-// name is, so ReadLayout checks the manifest bytes against index.json's descriptor and the
-// config bytes against the manifest's, before trusting either: a layout corrupted since
-// WriteLayout wrote it is refused here, rather than carried into a sign or a push. Its layers are
-// checked the same way as they are read, by NewVerifiedReader.
+// ReadLayout reads the chalkos image of the layout at dir, whose index.json names one manifest.
+// It checks the manifest and config against their digests; VerifiedReader checks the layers.
 func ReadLayout(dir string) (v1.Image, error) {
 	p, err := layout.FromPath(dir)
 	if err != nil {

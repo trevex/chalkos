@@ -40,7 +40,7 @@ func SignImage(ctx context.Context, raw string, espOffset int64, key, cert strin
 		if _, err := image.Mtools(ctx, "mcopy", "-n", "-i", fat, f, local); err != nil {
 			return err
 		}
-		if err := SignFile(ctx, local, key, cert); err != nil {
+		if err := signFile(ctx, local, key, cert); err != nil {
 			return fmt.Errorf("%s: %w", f, err)
 		}
 		if _, err := image.Mtools(ctx, "mcopy", "-o", "-i", fat, local, f); err != nil {
@@ -72,8 +72,8 @@ func listSignedBinaries(ctx context.Context, fat string) ([]string, error) {
 	return files, nil
 }
 
-// SignFile signs an EFI binary in place with sbsign.
-func SignFile(ctx context.Context, file, key, cert string) error {
+// signFile signs an EFI binary in place with sbsign.
+func signFile(ctx context.Context, file, key, cert string) error {
 	signed := file + ".signed"
 	if out, err := exec.CommandContext(ctx, "sbsign", "--key", key, "--cert", cert, "--output", signed, file).CombinedOutput(); err != nil {
 		return fmt.Errorf("sbsign %s: %w: %s", file, err, out)

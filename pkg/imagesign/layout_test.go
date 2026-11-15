@@ -99,9 +99,7 @@ func TestSignLayout(t *testing.T) {
 }
 
 // TestSignLayoutRefusesACorruptUKI fails, and leaves out unwritten, when the UKI blob of the
-// layout it signs does not hash to the digest its manifest names: a layout's blob store does not
-// check a blob's content against the digest its file name is, so a corrupted UKI would otherwise
-// come out of SignFile validly signed and validly addressed.
+// layout it signs does not hash to the digest its manifest names.
 func TestSignLayoutRefusesACorruptUKI(t *testing.T) {
 	dir := t.TempDir()
 	key, cert, _ := imagetest.Signer(t, dir, "db")

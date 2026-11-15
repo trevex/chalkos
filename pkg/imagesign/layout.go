@@ -10,18 +10,16 @@ import (
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/types"
 
+	"github.com/trevex/chalkos/pkg/atomicfile"
 	"github.com/trevex/chalkos/pkg/ociimage"
 )
 
-// SignLayout copies the OCI image layout in, as chalkbuild oci writes it, to out with the UKI and
-// the boot loader of its chalkos image signed with the Secure Boot db key and its certificate,
-// and returns the new manifest's digest. It signs copies of the two layers in a temporary
-// directory and checks them against cert, as firmware with cert in db would, before it writes
-// out; the new layout holds them in place of the old layers, its other blobs as they are. out
-// must not exist and its parent directory must, or SignLayout refuses before signing anything;
-// in stays as it is.
+// SignLayout copies the OCI layout in, as chalkbuild oci writes it, to the new directory out with
+// its UKI and boot loader signed with the Secure Boot db key and checked against cert as firmware
+// with cert in db would, and returns the new manifest's digest. It refuses before signing when
+// out exists. in is not changed.
 func SignLayout(ctx context.Context, in, out, key, cert string) (v1.Hash, error) {
-	if err := ociimage.CheckNew(out); err != nil {
+	if err := atomicfile.CheckNew(out); err != nil {
 		return v1.Hash{}, err
 	}
 	img, err := ociimage.ReadLayout(in)
@@ -52,7 +50,7 @@ func SignLayout(ctx context.Context, in, out, key, cert string) (v1.Hash, error)
 		if err := extractLayer(img, part.mediaType, path); err != nil {
 			return v1.Hash{}, fmt.Errorf("the %s of %s: %w", part.what, in, err)
 		}
-		if err := SignFile(ctx, path, key, cert); err != nil {
+		if err := signFile(ctx, path, key, cert); err != nil {
 			return v1.Hash{}, err
 		}
 		if err := verifyFile(path, certs); err != nil {
@@ -71,11 +69,9 @@ func SignLayout(ctx context.Context, in, out, key, cert string) (v1.Hash, error)
 	return ociimage.WriteLayout(ctx, signedImg, out)
 }
 
-// extractLayer writes the layer of img of the media type to a new file at path, and fails unless
-// what it wrote hashes to the layer's own digest: ReadLayout already checked the layout's
-// manifest and config, but go-containerregistry's layout reader does not check a layer's blob
-// against the digest its file name is, and a corrupted UKI or boot loader would otherwise come
-// out of SignFile validly signed and validly addressed.
+// extractLayer writes img's layer of the media type to a new file at path and fails unless it
+// matches the layer's digest (see ociimage.VerifiedReader): a corrupted UKI or boot loader would
+// otherwise come out of signFile validly signed.
 func extractLayer(img v1.Image, mediaType types.MediaType, path string) error {
 	l, err := ociimage.Layer(img, mediaType)
 	if err != nil {
