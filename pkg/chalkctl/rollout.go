@@ -189,7 +189,7 @@ func (r *configRollout) changes(ctx context.Context, conn *client.Conn, n *rollo
 		if change == "" {
 			continue
 		}
-		r.say("%s: the config changes %s", n.name, change)
+		r.Say("%s: the config changes %s", n.name, change)
 		if !slices.Contains(r.ordered, l) {
 			r.ordered = append(r.ordered, l)
 		}
@@ -221,7 +221,7 @@ func (r *configRollout) node(ctx context.Context, n *rolloutNode) (bool, error) 
 	}
 	coordinator := r.coordinator(n)
 	if n.runs != "" && n.runs == n.version {
-		r.say("%s runs config %s already", n.name, n.version)
+		r.Say("%s runs config %s already", n.name, n.version)
 		if coordinator {
 			return false, r.a.waitDelivered(ctx, t, time.Now().Add(rolloutTrial))
 		}
@@ -277,12 +277,9 @@ func (b *rebooter) readVersions(ctx context.Context, l layer.Rollout) layer.Read
 
 // summary prints which nodes run which versions, as the ordered layers say it, once a run stopped.
 func (r *configRollout) summary(ctx context.Context) {
-	if len(r.ordered) == 0 {
-		return
-	}
 	for _, l := range r.ordered {
 		for _, line := range l.Summary(r.cluster, r.readVersions(ctx, l)) {
-			r.say("%s", line)
+			r.Say("%s", line)
 		}
 	}
 }
@@ -292,9 +289,6 @@ func (r *configRollout) summary(ctx context.Context) {
 // the nodes' versions only when an image concerns a node of its cluster.
 func (r *upgradeRun) checkImages(ctx context.Context) error {
 	layers := compiled[layer.Rollout]()
-	if len(layers) == 0 {
-		return nil
-	}
 	images := map[string][]*anypb.Any{}
 	for name, n := range r.nodes {
 		if n.image != nil && n.image.contract != nil {

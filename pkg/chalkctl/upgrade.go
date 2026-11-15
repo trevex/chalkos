@@ -228,7 +228,7 @@ func (r *upgradeRun) chooseConfig(diff bool) error {
 func (r *upgradeRun) withhold(format string, args ...any) {
 	r.withholdOnce.Do(func() {
 		r.withheld.Store(true)
-		r.say(format, args...)
+		r.Say(format, args...)
 	})
 }
 
@@ -340,7 +340,7 @@ func (r *upgradeRun) configChanges(ctx context.Context, conn *client.Conn, n *up
 		return nil, nil
 	}
 	if n.delivery == nil {
-		r.say("%s: no inventory to compare the config with; the node gives the image its pending config, else carries its own over", n.name)
+		r.Say("%s: no inventory to compare the config with; the node gives the image its pending config, else carries its own over", n.name)
 		return nil, nil
 	}
 	nodeDocs, err := slotConfig(ctx, conn, false)
@@ -352,7 +352,7 @@ func (r *upgradeRun) configChanges(ctx context.Context, conn *client.Conn, n *up
 		return nil, err
 	}
 	changes := diffConfig(nodeDocs, config.Redact(n.delivery.Documents))
-	r.say("%s: %s", n.name, changes.summary())
+	r.Say("%s: %s", n.name, changes.summary())
 	return changes, nil
 }
 
@@ -384,11 +384,11 @@ func (r *upgradeRun) run(ctx context.Context) error {
 	coordinators, others := r.split()
 	images := map[string]bool{}
 	for _, g := range r.groups {
-		r.say("upgrading %s on %s to %s: %s", g.variant, g.platform, g.image.name(), strings.Join(g.nodes, ", "))
+		r.Say("upgrading %s on %s to %s: %s", g.variant, g.platform, g.image.name(), strings.Join(g.nodes, ", "))
 		images[g.image.name()] = true
 	}
 	if r.rollback {
-		r.say("rolling back %s to %s: %s", strs.Count(len(r.nodes), "node"), statusview.BootImageName(r.rollbackTo), strings.Join(r.order(), ", "))
+		r.Say("rolling back %s to %s: %s", strs.Count(len(r.nodes), "node"), statusview.BootImageName(r.rollbackTo), strings.Join(r.order(), ", "))
 	}
 	for _, name := range coordinators {
 		if err := r.node(ctx, r.nodes[name]); err != nil {
@@ -410,15 +410,15 @@ func (r *upgradeRun) run(ctx context.Context) error {
 	count := strs.Count(len(r.nodes), "node")
 	switch {
 	case r.rollback && r.until == untilActivate:
-		r.say("staged %s on %s; it boots with their next reboot, which chalkctl node reboot runs, and an upgrade to the image they run leaves it staged", statusview.BootImageName(r.rollbackTo), count)
+		r.Say("staged %s on %s; it boots with their next reboot, which chalkctl node reboot runs, and an upgrade to the image they run leaves it staged", statusview.BootImageName(r.rollbackTo), count)
 	case r.rollback:
-		r.say("rolled back %s to %s", count, statusview.BootImageName(r.rollbackTo))
+		r.Say("rolled back %s to %s", count, statusview.BootImageName(r.rollbackTo))
 	case r.until == untilStage:
-		r.say("staged %s on %s; chalkctl node activate makes it boot next", names, count)
+		r.Say("staged %s on %s; chalkctl node activate makes it boot next", names, count)
 	case r.until == untilActivate:
-		r.say("activated %s on %s; it boots with their next reboot, which chalkctl node reboot runs", names, count)
+		r.Say("activated %s on %s; it boots with their next reboot, which chalkctl node reboot runs", names, count)
 	default:
-		r.say("upgraded %s to %s", count, names)
+		r.Say("upgraded %s to %s", count, names)
 	}
 	return nil
 }
@@ -442,16 +442,16 @@ func (r *upgradeRun) node(ctx context.Context, n *upgradeNode) error {
 		return r.rolledBack(&n.rebootNode, boot)
 	case runs && boot.GetBlessed():
 		if r.until != untilReboot {
-			r.say("%s: runs %s", n.name, image)
+			r.Say("%s: runs %s", n.name, image)
 			return nil
 		}
 		// An earlier run may have stopped while the node did not serve its clusters; it is released
 		// only once it does.
 	case runs:
-		r.say("%s: booted %s; waiting for it to be found healthy", n.name, image)
+		r.Say("%s: booted %s; waiting for it to be found healthy", n.name, image)
 	default:
 		if failed {
-			r.say("%s: fell back from %s before; trying it again", n.name, image)
+			r.Say("%s: fell back from %s before; trying it again", n.name, image)
 		}
 		sent, err := r.stage(ctx, n, st)
 		if err != nil {
@@ -481,7 +481,7 @@ func (r *upgradeRun) stage(ctx context.Context, n *upgradeNode, st *nodev1.Statu
 	// inactive slot and replaces the config it keeps for it.
 	if r.stagedAlready(n, st) {
 		image, _ := n.target()
-		r.say("%s: %s is installed already", n.name, image)
+		r.Say("%s: %s is installed already", n.name, image)
 		return false, nil
 	}
 	return true, r.install(ctx, n)
@@ -494,7 +494,7 @@ func (r *upgradeRun) activate(ctx context.Context, n *upgradeNode, st *nodev1.St
 	image, target := n.target()
 	boot := st.GetBoot()
 	if n.rollbackTo == nil && !sent && boot.GetStagedState() == nodev1.SlotState_SLOT_STATE_ACTIVE && bytes.Equal(boot.GetStaged().GetRootHash(), target) {
-		r.say("%s: %s boots next already", n.name, image)
+		r.Say("%s: %s boots next already", n.name, image)
 		return nil
 	}
 	if n.rollbackTo == nil {
@@ -504,14 +504,14 @@ func (r *upgradeRun) activate(ctx context.Context, n *upgradeNode, st *nodev1.St
 		})); err != nil {
 			return err
 		}
-		r.say("%s", activatedLine(n.name, image, resp))
+		r.Say("%s", activatedLine(n.name, image, resp))
 		return nil
 	}
 	if r.stagedAlready(n, st) {
 		// A rollback stages its image without tries while the boot the node runs was not found
 		// healthy.
 		n.uncounted = !st.GetBoot().GetBlessed()
-		r.say("%s: %s is staged already", n.name, image)
+		r.Say("%s: %s is staged already", n.name, image)
 		return nil
 	}
 	return r.reactivate(ctx, n)
@@ -588,9 +588,9 @@ func (r *upgradeRun) install(ctx context.Context, n *upgradeNode) error {
 	name, img := n.name, n.image
 	parts := io.MultiReader()
 	if ref := img.source.GetOci().GetReference(); ref != "" {
-		r.say("%s: installing %s, which it pulls from %s", name, img.name(), ref)
+		r.Say("%s: installing %s, which it pulls from %s", name, img.name(), ref)
 	} else {
-		r.say("%s: installing %s", name, img.name())
+		r.Say("%s: installing %s", name, img.name())
 		stream, done, err := img.stream()
 		if err != nil {
 			return err
@@ -628,16 +628,16 @@ func (r *upgradeRun) install(ctx context.Context, n *upgradeNode) error {
 	}
 	switch {
 	case resp.AlreadyInstalled:
-		r.say("%s: runs %s already", name, img.name())
+		r.Say("%s: runs %s already", name, img.name())
 	case resp.AlreadyStaged && resp.Active:
-		r.say("%s: %s boots next already, as %s; its config is replaced", name, img.name(), resp.Entry)
+		r.Say("%s: %s boots next already, as %s; its config is replaced", name, img.name(), resp.Entry)
 	case resp.AlreadyStaged:
-		r.say("%s: %s is staged already, as %s; its config is replaced", name, img.name(), resp.Entry)
+		r.Say("%s: %s is staged already, as %s; its config is replaced", name, img.name(), resp.Entry)
 	default:
-		r.say("%s: installed %s, staged as %s", name, img.name(), resp.Entry)
+		r.Say("%s: installed %s, staged as %s", name, img.name(), resp.Entry)
 	}
 	if note := pendingOutcome(name, resp.Pending); note != "" {
-		r.say("%s", note)
+		r.Say("%s", note)
 	}
 	return nil
 }
@@ -660,7 +660,7 @@ func pendingOutcome(name string, p *nodev1.PendingOutcome) string {
 // reactivate has the node boot the rollback's image next again, its previous image.
 func (r *upgradeRun) reactivate(ctx context.Context, n *upgradeNode) error {
 	image, root := n.target()
-	r.say("%s: rolling back to %s", n.name, image)
+	r.Say("%s: rolling back to %s", n.name, image)
 	var resp *nodev1.RollbackImageResponse
 	if err := r.reach.Call(n.name, layer.Fetch(&resp, func(conn *client.Conn) (*connect.Response[nodev1.RollbackImageResponse], error) {
 		return conn.RollbackImage(ctx, connect.NewRequest(&nodev1.RollbackImageRequest{RootHash: root}))
@@ -670,15 +670,15 @@ func (r *upgradeRun) reactivate(ctx context.Context, n *upgradeNode) error {
 	n.uncounted = !resp.AlreadyInstalled && !esp.Counted(resp.Entry)
 	switch {
 	case resp.AlreadyInstalled:
-		r.say("%s: runs %s already", n.name, image)
+		r.Say("%s: runs %s already", n.name, image)
 	case resp.AlreadyStaged && n.uncounted:
-		r.say("%s: %s is staged already, as %s, %s", n.name, image, resp.Entry, uncountedRollback)
+		r.Say("%s: %s is staged already, as %s, %s", n.name, image, resp.Entry, uncountedRollback)
 	case resp.AlreadyStaged:
-		r.say("%s: %s is staged already, as %s", n.name, image, resp.Entry)
+		r.Say("%s: %s is staged already, as %s", n.name, image, resp.Entry)
 	case n.uncounted:
-		r.say("%s: %s boots next as %s, %s", n.name, image, resp.Entry, uncountedRollback)
+		r.Say("%s: %s boots next as %s, %s", n.name, image, resp.Entry, uncountedRollback)
 	default:
-		r.say("%s: %s boots next as %s", n.name, image, resp.Entry)
+		r.Say("%s: %s boots next as %s", n.name, image, resp.Entry)
 	}
 	return nil
 }

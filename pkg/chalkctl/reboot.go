@@ -156,7 +156,7 @@ func (b *rebooter) reboot(ctx context.Context, n *rebootNode, t bootTarget, hold
 	}); err != nil {
 		return err
 	}
-	b.say("%s: rebooting into %s", n.name, t.image)
+	b.Say("%s: rebooting into %s", n.name, t.image)
 	return b.release(ctx, n, t, hold)
 }
 
@@ -277,10 +277,10 @@ func (b *rebooter) waitHealthy(ctx context.Context, n *rebootNode, t bootTarget)
 	if n.uncounted {
 		// The entry is blessed from the start, so the boot loader counts none of its boots: only
 		// the node's check found this one healthy.
-		b.say("%s: runs %s, found healthy; its boots are not counted", n.name, t.image)
+		b.Say("%s: runs %s, found healthy; its boots are not counted", n.name, t.image)
 		return nil
 	}
-	b.say("%s: runs %s, found healthy", n.name, t.image)
+	b.Say("%s: runs %s, found healthy", n.name, t.image)
 	return nil
 }
 
@@ -327,10 +327,10 @@ func (n *rebootNode) ready(ctx context.Context, conn *client.Conn) error {
 
 // noCoordinator is the error of the first of the node's layers that needs a coordinator for it,
 // a member; nil when none does.
-func (n *rebootNode) noCoordinator(name string) error {
+func (n *rebootNode) noCoordinator() error {
 	for _, r := range n.roles {
 		if r.role.Member {
-			return r.u.NoCoordinator(name)
+			return r.u.NoCoordinator(n.name)
 		}
 	}
 	return nil
@@ -346,8 +346,8 @@ func (b *rebooter) hooks(ctx context.Context, n *rebootNode, hook func(layer.Upg
 	return nil
 }
 
-// say prints a line of the run's progress, from any node's goroutine.
-func (b *rebooter) say(format string, args ...any) {
+// Say prints a line of the run's progress, from any node's goroutine.
+func (b *rebooter) Say(format string, args ...any) {
 	b.out.Lock()
 	defer b.out.Unlock()
 	fmt.Fprintf(b.a.stdout, format+"\n", args...)
@@ -411,7 +411,7 @@ func (b *rebooter) findCoordinators(ctx context.Context, probed map[string]bool,
 	}
 	if len(b.coordinators) == 0 {
 		for _, n := range held {
-			if err := n.noCoordinator(n.name); err != nil {
+			if err := n.noCoordinator(); err != nil {
 				return err
 			}
 		}
@@ -420,8 +420,6 @@ func (b *rebooter) findCoordinators(ctx context.Context, probed map[string]bool,
 }
 
 var _ layer.Upgrading = (*rebooter)(nil)
-
-func (b *rebooter) Say(format string, args ...any) { b.say(format, args...) }
 func (b *rebooter) Flags(layer string) any         { return b.layerFlags[layer] }
 func (b *rebooter) DrainTimeout() time.Duration    { return b.drainTimeout }
 func (b *rebooter) QuorumWait() time.Duration      { return b.quorumWait }

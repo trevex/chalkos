@@ -160,12 +160,12 @@ func (r *upgradeRun) find(ctx context.Context, named []string, img *diskImage) e
 		}
 		r.nodes[name] = n
 		if info.Variant != "" && info.Variant != g.variant {
-			r.say("%s runs the variant %s; it gets the image of %s", name, info.Variant, g.variant)
+			r.Say("%s runs the variant %s; it gets the image of %s", name, info.Variant, g.variant)
 		}
 		g.nodes = append(g.nodes, name)
 	}
 	if len(skipped) > 0 {
-		r.say("skipping %s: the image is built for %s", strings.Join(skipped, ", "), img.Info.Platform())
+		r.Say("skipping %s: the image is built for %s", strings.Join(skipped, ", "), img.Info.Platform())
 	}
 	if len(r.nodes) == 0 {
 		if img != nil {

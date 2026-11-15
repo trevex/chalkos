@@ -191,6 +191,7 @@ func (r *rotation) run(ctx context.Context) error {
 	first := true
 	for {
 		rot := *r.file.secrets.Rotation
+		rotator := rotatorOf(r, rot.Kind)
 		if !rot.Applied {
 			if !first {
 				if err := r.skipRevoked(ctx); err != nil {
@@ -199,15 +200,15 @@ func (r *rotation) run(ctx context.Context) error {
 			}
 			first = false
 			r.Say("%s: the %s phase", rot.Kind, rot.Phase)
-			if err := rotatorOf(r, rot.Kind).ApplyRotation(ctx, r, rot.Kind, rot.Phase); err != nil {
+			if err := rotator.ApplyRotation(ctx, r, rot.Kind, rot.Phase); err != nil {
 				return fmt.Errorf("the %s phase of the rotation of the %s stopped: %w; once that is fixed, continue with chalkctl rotate %s --resume", rot.Phase, rot.Kind.Name(), err, rot.Kind)
 			}
 			if err := r.save(func(s *clustersecrets.Secrets) error { return s.RecordApplied(time.Now()) }); err != nil {
 				return err
 			}
 			r.Say("%s: every node applied the %s phase", rot.Kind, rot.Phase)
-			if rotatorOf(r, rot.Kind).PausesAfter(rot.Kind, rot.Phase) {
-				return rotatorOf(r, rot.Kind).Paused(ctx, r, rot)
+			if rotator.PausesAfter(rot.Kind, rot.Phase) {
+				return rotator.Paused(ctx, r, rot)
 			}
 		}
 		var err error
@@ -217,11 +218,11 @@ func (r *rotation) run(ctx context.Context) error {
 		case clustersecrets.PhaseSwitch:
 			err = r.save(func(s *clustersecrets.Secrets) error { return s.RefreshRotation() })
 		case clustersecrets.PhaseRefresh:
-			if rotatorOf(r, rot.Kind).PausesAfter(rot.Kind, rot.Phase) {
-				return rotatorOf(r, rot.Kind).Paused(ctx, r, rot)
+			if rotator.PausesAfter(rot.Kind, rot.Phase) {
+				return rotator.Paused(ctx, r, rot)
 			}
 			// A kind that does not pause after its refresh finishes at once.
-			if err := rotatorOf(r, rot.Kind).FinishGuard(ctx, r, rot.Kind, false); err != nil {
+			if err := rotator.FinishGuard(ctx, r, rot.Kind, false); err != nil {
 				return err
 			}
 			err = r.save(func(s *clustersecrets.Secrets) error { return s.FinishRotation() })
@@ -229,7 +230,7 @@ func (r *rotation) run(ctx context.Context) error {
 			if err := r.save(func(s *clustersecrets.Secrets) error { return s.EndRotation() }); err != nil {
 				return err
 			}
-			state, advice := rotatorOf(r, rot.Kind).Finished(rot.Kind)
+			state, advice := rotator.Finished(rot.Kind)
 			r.Say("the rotation of the %s is finished: %s; %s", rot.Kind.Name(), state, r.file.written())
 			if advice != "" {
 				r.Say("%s", advice)
@@ -343,15 +344,6 @@ func (r *rotation) nodes() (nodeSet, error) {
 	return nodeSet{cluster: r.cluster, creds: creds, addresses: r.addresses}, nil
 }
 
-// target addresses a node with the secrets as they are now.
-func (r *rotation) target(name string) (*target, error) {
-	nodes, err := r.nodes()
-	if err != nil {
-		return nil, err
-	}
-	return nodes.target(name)
-}
-
 // Call runs fn against a node.
 func (r *rotation) Call(name string, fn func(conn *client.Conn) error) error {
 	nodes, err := r.nodes()
@@ -375,7 +367,11 @@ func (r *rotation) deliver(ctx context.Context, name string, req *nodev1.ApplyCo
 
 // DeliverPayloads sends a node the payloads its layers issue it as the secrets file has them now.
 func (r *rotation) DeliverPayloads(ctx context.Context, name string) error {
-	t, err := r.target(name)
+	nodes, err := r.nodes()
+	if err != nil {
+		return err
+	}
+	t, err := nodes.target(name)
 	if err != nil {
 		return err
 	}
