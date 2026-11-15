@@ -12,11 +12,10 @@ import (
 	"github.com/trevex/chalkos/pkg/image"
 )
 
-// SignImage signs the boot loader (/EFI/BOOT/BOOT*.EFI) and the UKIs (/EFI/Linux/*.efi) on
-// the image's ESP in place with sbsign. Other EFI binaries stay unsigned so that whatever
-// else lands on the ESP does not gain the cluster's db signature.
-// The image's verity-protected store is untouched; the UKI's signature covers the store
-// because the UKI command line carries the store's verity root hash.
+// SignImage signs the boot loader (/EFI/BOOT/BOOT*.EFI) and the UKIs (/EFI/Linux/*.efi) on the
+// image's ESP in place with sbsign. Other EFI binaries stay unsigned, so whatever else lands on the
+// ESP does not gain the db signature. The UKI's signature covers the store through the verity
+// root hash on its command line.
 func SignImage(ctx context.Context, raw string, espOffset int64, key, cert string) error {
 	fat := image.FAT(raw, espOffset)
 	// Only direct children match.

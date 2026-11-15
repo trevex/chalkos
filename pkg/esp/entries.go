@@ -94,7 +94,7 @@ func NextGeneration(entries []Entry, imageID string) (uint64, error) {
 // StagedEntry is the image's entry that boots next instead of the booted one: the highest
 // generation any name gives, while its UKI is of the image and its tries are not used up. It
 // counts tries after an upgrade, and not after a rollback from a boot that was not found healthy.
-// false when that is the booted entry, a bad one, or one that boots the booted entry's store, as
+// It is false when that entry is the booted one, is bad, or boots the booted entry's store, as
 // when the boot menu picked an entry below it: the running image boots next then.
 func StagedEntry(entries []Entry, imageID string, booted Entry) (Entry, bool) {
 	var highest Entry

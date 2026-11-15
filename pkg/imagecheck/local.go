@@ -15,10 +15,9 @@ import (
 	checkv1 "github.com/trevex/chalkos/pkg/api/check/v1"
 )
 
-// Local runs a checker in this process, as tests do: Check is the checker's own function, the one
-// chalkd check runs, which Local calls with the image's system where it lies on this machine,
-// below the directory that holds Store, and with a facts socket of its own. The input and the
-// result pass as protobuf JSON, as through the sandbox.
+// Local runs a checker in this process: Check is the function chalkd check runs, which Local calls
+// with the image's system below the directory that holds Store and with a facts socket of its own.
+// Input and result pass as protobuf JSON, as through the sandbox.
 type Local struct {
 	Check func(ctx context.Context, system, socket, dir string, stdin io.Reader, stdout io.Writer) error
 }

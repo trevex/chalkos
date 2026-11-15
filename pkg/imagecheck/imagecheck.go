@@ -17,13 +17,11 @@ import (
 	"github.com/trevex/chalkos/pkg/config"
 )
 
-// Image is an image whose checker runs: Store is where its store's /nix/store is on this node,
-// System its NixOS system, a path of its store, and Checker where its chalkd is on this node:
-// System's sw/bin/chalkd, its links followed within the image.
+// Image is an image whose checker runs.
 type Image struct {
-	Store   string
-	System  string
-	Checker string
+	Store   string // where the image's /nix/store is on this node
+	System  string // the image's NixOS system, a store path
+	Checker string // where its chalkd is on this node: System's sw/bin/chalkd, links followed within the image
 }
 
 // CheckerPath is where an image's system holds the checker, its chalkd.

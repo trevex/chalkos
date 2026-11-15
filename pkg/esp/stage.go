@@ -32,10 +32,10 @@ func Temporary(dir string, rootHash []byte) (string, error) {
 // a staged image stays staged across a restart of chalkd and a reboot.
 const stagedPrefix = ".staged-"
 
-// StagedName is the file name in /EFI/Linux of the UKI of the image staged in the inactive slot:
-// .staged-<id>_<generation>.efi. The generation is the one its activation names the entry at
-// least, chosen when the image is staged, before the retirement removes the UKIs of the image
-// that named higher ones: a new entry never takes the ID of an entry the node booted before.
+// StagedName is .staged-<id>_<generation>.efi, the name in /EFI/Linux of the UKI of the image
+// staged in the inactive slot. The generation, chosen at staging before the retirement removes
+// higher ones, is the least its activation names the entry, so a new entry never takes the ID of
+// one the node booted.
 func StagedName(imageID string, generation uint64) string {
 	return stagedPrefix + EntryName(imageID, generation)
 }
@@ -88,11 +88,10 @@ func StagedFiles(dir string) ([]string, error) {
 	return staged, nil
 }
 
-// NextStagedGeneration is the generation an upgrade names the UKI it stages in the ESP mounted at
-// dir: NextGeneration of the entries, and above the generation any file under a staged name gives
-// the image too, whatever it holds. The retirement before staging removes a staged UKI whose
-// generation was chosen above an entry it removed as well, such as a failed one's: without the
-// staged name, the next image staged would take that entry's generation again.
+// NextStagedGeneration is NextGeneration of the entries, raised above the generation any staged
+// name on the ESP at dir gives the image, whatever the file holds. A retirement removes a staged
+// UKI along with the entries it was chosen above, such as a failed one's; without this the next
+// staged image would reuse such an entry's generation.
 func NextStagedGeneration(dir string, entries []Entry, imageID string) (uint64, error) {
 	names, err := StagedFiles(dir)
 	if err != nil {
