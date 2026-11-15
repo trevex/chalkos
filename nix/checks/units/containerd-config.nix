@@ -15,16 +15,14 @@ unitCheck "containerd-config" [ ] ''
     ${dump} >dump.toml || fail "containerd refused its config"
     sed -n 's/^ *sandbox = //p' dump.toml
   }
-  cluster=/run/chalkos/config/kubernetes.chalkos.dev/Cluster/default.json
   pause=registry.example/pause:3.10@sha256:f548e0e8e3dc1896ca956272154dde3314e8cc4fde0a57577ee9fa1c63f5baf4
   own=$(sandbox)
   [ -n "$own" ] || fail "containerd names no sandbox image of its own"
   [ "$own" != "'$pause'" ] || fail "containerd's own sandbox image is the document's"
-  mkdir -p "$(dirname "$cluster")"
-  printf '{"apiVersion":"kubernetes.chalkos.dev/v1alpha1","kind":"Cluster","metadata":{"name":"default"},"spec":{"images":{"pause":"%s"}}}\n' "$pause" >"$cluster"
+  document kubernetes.chalkos.dev Cluster default '{"images":{"pause":"'"$pause"'"}}'
   ${script}
   [ "$(sandbox)" = "'$pause'" ] || fail "the sandbox image is $(sandbox), not the document's"
-  printf '{"apiVersion":"kubernetes.chalkos.dev/v1alpha1","kind":"Cluster","metadata":{"name":"default"},"spec":{}}\n' >"$cluster"
+  document kubernetes.chalkos.dev Cluster default '{}'
   ${script}
   [ "$(sandbox)" = "$own" ] || fail "without a sandbox image in the document it is $(sandbox)"
 ''

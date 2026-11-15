@@ -119,7 +119,16 @@ in
   # is shellchecked, and runs with errexit, nounset and pipefail. It may call the functions of
   # prelude and:
   # - netns <name>...: starts a network namespace for each name, holds the PID of its process in
-  #   pids[<name>] and defines on_<name>, which runs a command in it.
+  #   pids[<name>] and defines on_<name>, which runs a command in it;
+  # - veth <namespace>[/<peer link>] <link> <VRF or -> <address>... [-- <peer address>...]: a veth
+  #   pair from the node's link, in the VRF unless -, to the namespace's eth0 or the peer link
+  #   given, with the addresses on either end, both ends up and lo up in the namespace. Neither
+  #   end runs duplicate address detection, so IPv6 addresses are usable at once;
+  # - forwarding: the node forwards both families, with the reverse-path filter off, as on a
+  #   router, whose firewall is the only one;
+  # - document <group> <Kind> <name> <spec>: writes the v1alpha1 config document of the JSON spec
+  #   where chalkd delivers it;
+  # - stub <name>: a sh script stub/<name> that runs what the standard input holds.
   unitCheck =
     name: runtimeInputs: text:
     pkgs.runCommand "chalkos-${name}" { nativeBuildInputs = [ pkgs.bubblewrap ]; } ''
@@ -142,6 +151,49 @@ in
                   retry 600 "the network namespace $name did not start" test -e "$name-ready"
                 done
               }
+              veth() {
+                local ns=''${1%/*} peer=eth0 link=$2 vrf=$3 address end=node
+                if [[ $1 == */* ]]; then peer=''${1#*/}; fi
+                shift 3
+                ip link add "$link" type veth peer name "$peer" netns "''${pids[$ns]}"
+                echo 0 >"/proc/sys/net/ipv6/conf/$link/accept_dad"
+                "on_$ns" sh -c "echo 0 >/proc/sys/net/ipv6/conf/$peer/accept_dad"
+                if [ "$vrf" != - ]; then ip link set "$link" master "$vrf"; fi
+                for address in "$@"; do
+                  if [ "$address" = -- ]; then
+                    end=peer
+                  elif [ "$end" = node ]; then
+                    ip addr add "$address" dev "$link"
+                  else
+                    "on_$ns" ip addr add "$address" dev "$peer"
+                  fi
+                done
+                ip link set "$link" up
+                "on_$ns" ip link set lo up
+                "on_$ns" ip link set "$peer" up
+              }
+              forwarding() {
+                local conf
+                echo 1 >/proc/sys/net/ipv4/ip_forward
+                echo 1 >/proc/sys/net/ipv6/conf/all/forwarding
+                for conf in /proc/sys/net/ipv4/conf/*/rp_filter; do
+                  echo 0 >"$conf"
+                done
+              }
+              document() {
+                local dir=/run/chalkos/config/$1/$2
+                mkdir -p "$dir"
+                printf '{"apiVersion":"%s/v1alpha1","kind":"%s","metadata":{"name":"%s"},"spec":%s}\n' \
+                  "$1" "$2" "$3" "$4" >"$dir/$3.json"
+              }
+              stub() {
+                mkdir -p stub
+                {
+                  echo '#!/bin/sh'
+                  cat
+                } >"stub/$1"
+                chmod +x "stub/$1"
+              }
             ''
             + text;
         }
@@ -163,14 +215,7 @@ in
   peerNamespace = ''
     ip link set lo up
     netns peer
-    ip link add v0 type veth peer name v1 netns "''${pids[peer]}"
-    ip addr add 10.0.0.11/24 dev v0
-    ip addr add fd00::11/64 dev v0 nodad
-    ip link set v0 up
-    on_peer ip link set lo up
-    on_peer ip addr add 10.0.0.12/24 dev v1
-    on_peer ip addr add fd00::12/64 dev v1 nodad
-    on_peer ip link set v1 up
+    veth peer/v1 v0 - 10.0.0.11/24 fd00::11/64 -- 10.0.0.12/24 fd00::12/64
   '';
 
   # A check that copies the directory, links the image directories given below it by their

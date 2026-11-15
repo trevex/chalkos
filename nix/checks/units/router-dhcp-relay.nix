@@ -13,6 +13,7 @@
   pkgs,
   lib,
   checkLib,
+  routerFirewall,
   unitCheck,
   boundTo,
   bindDevice,
@@ -26,11 +27,8 @@ let
     lib.replaceStrings [ "%I" ] [ "guest" ]
       router.systemd.services."dnsmasq-relay@".serviceConfig.ExecStart;
   kea = lib.head (lib.splitString "/bin/" router.systemd.services.kea-dhcp4.serviceConfig.ExecStart);
-  firewall = router.systemd.services.chalkos-firewall.serviceConfig.ExecStart;
   dir = router.chalkos.outputs.dhcp-relay.dir;
-  nftDir = router.chalkos.outputs.router-nftables.dir;
   udhcpc = "${pkgs.busybox}/bin/busybox udhcpc";
-  inherit (checkLib) routerRuleset;
   # The DHCP relays' configs the dhcp-relay example renders.
   relays = "${checkLib.routerRendered "dhcp-relay"}/dhcp-relay";
   tools = checkLib.networkTools ++ [
@@ -44,36 +42,13 @@ unitCheck "router-dhcp-relay" tools ''
   }
   ip link set lo up
   netns client guest server
-  echo 1 >/proc/sys/net/ipv4/ip_forward
-  echo 1 >/proc/sys/net/ipv6/conf/all/forwarding
+  forwarding
   ip link add guest type vrf table 300
   ip link set guest up
-  ip link add lan0 type veth peer name eth0 netns "''${pids[client]}"
-  ip link add vlan20 type veth peer name eth0 netns "''${pids[guest]}"
-  ip link add wan0 type veth peer name s0 netns "''${pids[server]}"
-  ip link add vlan30 type veth peer name s1 netns "''${pids[server]}"
-  ip link set vlan20 master guest
-  ip link set vlan30 master guest
-  for l in lan0 wan0; do echo 0 >"/proc/sys/net/ipv6/conf/$l/accept_dad"; done
-  ip addr add 192.0.2.1/24 dev lan0
-  ip addr add 2001:db8:1::1/64 dev lan0 nodad
-  ip addr add 198.51.100.1/24 dev vlan20
-  ip addr add 203.0.113.2/25 dev wan0
-  ip addr add 2001:db8:ff::2/64 dev wan0 nodad
-  ip addr add 203.0.113.130/25 dev vlan30
-  for l in lan0 vlan20 wan0 vlan30; do ip link set "$l" up; done
-  for c in on_client on_guest; do
-    $c ip link set lo up
-    $c sh -c 'echo 0 >/proc/sys/net/ipv6/conf/eth0/accept_dad'
-    $c ip link set eth0 up
-  done
-  on_server ip link set lo up
-  on_server sh -c 'echo 0 >/proc/sys/net/ipv6/conf/s0/accept_dad'
-  on_server ip addr add 203.0.113.53/25 dev s0
-  on_server ip addr add 2001:db8:ff::53/64 dev s0 nodad
-  on_server ip addr add 203.0.113.154/25 dev s1
-  on_server ip link set s0 up
-  on_server ip link set s1 up
+  veth client lan0 - 192.0.2.1/24 2001:db8:1::1/64
+  veth guest vlan20 guest 198.51.100.1/24
+  veth server/s0 wan0 - 203.0.113.2/25 2001:db8:ff::2/64 -- 203.0.113.53/25 2001:db8:ff::53/64
+  veth server/s1 vlan30 guest 203.0.113.130/25 -- 203.0.113.154/25
   on_server ip route add 192.0.2.0/24 via 203.0.113.2
   on_server ip route add 2001:db8:1::/64 via 2001:db8:ff::2
   on_server ip route add 198.51.100.0/24 via 203.0.113.130
@@ -96,14 +71,13 @@ unitCheck "router-dhcp-relay" tools ''
   on_server env KEA_LOCKFILE_DIR=none KEA_PIDFILE_DIR="$PWD/kea4" ${kea}/bin/kea-dhcp4 -c kea-dhcp4.json >kea-dhcp4.log 2>&1 &
   on_server env KEA_LOCKFILE_DIR=none KEA_PIDFILE_DIR="$PWD/kea6" ${kea}/bin/kea-dhcp6 -c kea-dhcp6.json >kea-dhcp6.log 2>&1 &
 
-  mkdir -p ${dir} ${nftDir} /var/run/dhcpcd /var/db/dhcpcd /var/lib/dhcpcd
+  mkdir -p ${dir} /var/run/dhcpcd /var/db/dhcpcd /var/lib/dhcpcd
   install -m 644 -t ${dir} ${relays}/dnsmasq-relay.conf ${relays}/dnsmasq-relay-guest.conf
   grep -qx 'dhcp-relay=192.0.2.1,203.0.113.53' ${dir}/dnsmasq-relay.conf \
     || fail "the dhcp-relay example renders no relay of the default VRF"
   grep -qx 'dhcp-relay=198.51.100.1,203.0.113.154' ${dir}/dnsmasq-relay-guest.conf \
     || fail "the dhcp-relay example renders no relay of the VRF guest"
-  install -m 644 ${routerRuleset "dhcp-relay"} ${nftDir}/ruleset.nft
-  ${firewall} || fail "chalkos-firewall did not load the dhcp-relay example's ruleset"
+  ${routerFirewall.load "dhcp-relay"}
 
   # relays: starts both relays, the one given first first, and checks that both run.
   relays() {
@@ -139,8 +113,7 @@ unitCheck "router-dhcp-relay" tools ''
     grep -q 'DHCP4_LEASE_ALLOC.*198.51.100.1[0-9][0-9]' kea-dhcp4.log || fail "the client on vlan20 took no IPv4 lease through the VRF's relay"
   done
 
-  install -m 644 ${routerRuleset "none"} ${nftDir}/ruleset.nft
-  ${firewall} || fail "chalkos-firewall did not load the none example's ruleset"
+  ${routerFirewall.load "none"}
   : >kea-dhcp4.log
   got=$(leases)
   if [ -n "$got" ] || grep -q DHCP4_LEASE_ALLOC kea-dhcp4.log; then

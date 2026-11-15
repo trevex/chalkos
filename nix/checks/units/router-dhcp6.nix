@@ -14,6 +14,7 @@
   pkgs,
   lib,
   checkLib,
+  routerFirewall,
   unitCheck,
   boundTo,
   bindDevice,
@@ -30,11 +31,9 @@ let
   # longer than the unit lets it.
   routes = "timeout ${routesUnit.TimeoutStartSec} ${boundTo routesUnit.CapabilityBoundingSet} ${routesUnit.ExecStart}";
   records = router.systemd.paths.chalkos-dhcp6-routes.pathConfig.PathChanged;
-  firewall = router.systemd.services.chalkos-firewall.serviceConfig.ExecStart;
   dir = router.chalkos.outputs.kea.dir;
-  nftDir = router.chalkos.outputs.router-nftables.dir;
   leases = lib.elemAt router.chalkos.diagnostics.dhcp-leases.command 2;
-  inherit (checkLib) routerRendered routerRuleset;
+  inherit (checkLib) routerRendered;
 in
 unitCheck "router-dhcp6"
   (
@@ -53,28 +52,15 @@ unitCheck "router-dhcp6"
     netns pc cpe
     ip link add access type vrf table 500
     ip link set access up
-    ip link add lan0 type veth peer name eth0 netns "''${pids[pc]}"
-    ip link add cust0 type veth peer name eth0 netns "''${pids[cpe]}"
-    ip link set cust0 master access
-    for l in lan0:2001:db8:1::1 cust0:2001:db8:2::1; do
-      link=''${l%%:*}
-      echo 0 >"/proc/sys/net/ipv6/conf/$link/accept_dad"
-      ip addr add "''${l#*:}/64" dev "$link" nodad
-      ip link set "$link" up
-    done
-    for ns in pc cpe; do
-      "on_$ns" ip link set lo up
-      "on_$ns" sh -c 'echo 0 >/proc/sys/net/ipv6/conf/eth0/accept_dad'
-      "on_$ns" ip link set eth0 up
-    done
+    veth pc lan0 - 2001:db8:1::1/64
+    veth cpe cust0 access 2001:db8:2::1/64
     on_pc ip link set eth0 address 52:54:00:12:34:56
 
-    mkdir -p ${dir} ${nftDir} /var/lib /var/run/dhcpcd /var/db/dhcpcd /var/lib/dhcpcd
+    mkdir -p ${dir} /var/lib /var/run/dhcpcd /var/db/dhcpcd /var/lib/dhcpcd
     mkdir -m 0750 /run/kea /var/lib/kea
     mkdir -m 0755 ${records}
     mkdir -m 0700 ${records}.new
-    install -m 644 ${routerRuleset "dhcp6"} ${nftDir}/ruleset.nft
-    ${firewall} || fail "chalkos-firewall did not load the dhcp6 example's ruleset"
+    ${routerFirewall.load "dhcp6"}
     # take <file>: a config the dhcp6 example renders, with the image's hook in place of the
     # test result's, whose store path has its hash written as e's.
     take() {
@@ -171,8 +157,7 @@ unitCheck "router-dhcp6"
     mv records.real ${records}
 
     # Without the opening the client gets nothing.
-    install -m 644 ${routerRuleset "dhcp"} ${nftDir}/ruleset.nft
-    ${firewall} || fail "chalkos-firewall did not load the dhcp example's ruleset"
+    ${routerFirewall.load "dhcp"}
     on_pc ip -6 addr flush dev eth0 scope global
     lease pc "  ia_na 1"
     if on_pc ip -6 addr show dev eth0 | grep -q 'inet6 2001:db8:'; then

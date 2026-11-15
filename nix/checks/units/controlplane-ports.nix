@@ -43,10 +43,8 @@ unitCheck "controlplane-ports" checkLib.networkTools ''
       if reaches '[fd00::11]' $port; then fail "$port open over IPv6 $1"; fi
     done
   }
-  node=/run/chalkos/config/kubernetes.chalkos.dev/Node/default.json
-  mkdir -p "$(dirname "$node")"
   node_type() {
-    printf '{"apiVersion":"kubernetes.chalkos.dev/v1alpha1","kind":"Node","metadata":{"name":"default"},"spec":{"type":"%s"}}\n' "$1" >"$node"
+    document kubernetes.chalkos.dev Node default '{"type":"'"$1"'"}'
   }
 
   closed "without the table"

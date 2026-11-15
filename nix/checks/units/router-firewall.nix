@@ -20,15 +20,12 @@
 {
   pkgs,
   checkLib,
+  routerFirewall,
   unitCheck,
   ...
 }:
 let
-  inherit (checkLib.router.config.systemd.services.chalkos-firewall.serviceConfig)
-    ExecStart
-    ExecReload
-    ;
-  dir = checkLib.router.config.chalkos.outputs.router-nftables.dir;
+  inherit (routerFirewall) ExecStart ExecReload dir;
   inherit (checkLib) routerRuleset;
   # Answers a connection with the address it came from.
   whoami = pkgs.writeShellScript "whoami" ''echo "$SOCAT_PEERADDR"'';
@@ -45,38 +42,15 @@ unitCheck "router-firewall" tools ''
   }
   ip link set lo up
   netns lan wan
-  ip link add lan0 type veth peer name eth0 netns "''${pids[lan]}"
-  ip link add wan0 type veth peer name eth0 netns "''${pids[wan]}"
-  ip addr add 192.0.2.1/24 dev lan0
-  ip addr add 2001:db8:1::1/64 dev lan0 nodad
-  ip addr add 198.51.100.1/24 dev wan0
-  ip addr add 2001:db8:2::1/64 dev wan0 nodad
-  ip link set lan0 up
-  ip link set wan0 up
+  veth lan lan0 - 192.0.2.1/24 2001:db8:1::1/64 -- 192.0.2.2/24 2001:db8:1::2/64
+  veth wan wan0 - 198.51.100.1/24 2001:db8:2::1/64 -- 198.51.100.2/24 2001:db8:2::2/64
   # The LAN peer reaches the node over dmz0 too, an interface of no zone.
-  ip link add dmz0 type veth peer name eth1 netns "''${pids[lan]}"
-  ip addr add 203.0.113.1/24 dev dmz0
-  ip link set dmz0 up
-  on_lan ip link set lo up
-  on_lan ip addr add 192.0.2.2/24 dev eth0
-  on_lan ip addr add 2001:db8:1::2/64 dev eth0 nodad
-  on_lan ip link set eth0 up
-  on_lan ip addr add 203.0.113.2/24 dev eth1
-  on_lan ip link set eth1 up
+  veth lan/eth1 dmz0 - 203.0.113.1/24 -- 203.0.113.2/24
   on_lan ip route add default via 192.0.2.1
   on_lan ip route add default via 2001:db8:1::1
   # The WAN peer has an IPv6 route to the LAN and none in IPv4, where the router masquerades.
-  on_wan ip link set lo up
-  on_wan ip addr add 198.51.100.2/24 dev eth0
-  on_wan ip addr add 2001:db8:2::2/64 dev eth0 nodad
-  on_wan ip link set eth0 up
   on_wan ip route add 2001:db8:1::/64 via 2001:db8:2::1
-  echo 1 >/proc/sys/net/ipv4/ip_forward
-  echo 1 >/proc/sys/net/ipv6/conf/all/forwarding
-  # The firewall's reverse-path filter is the only one, as router-sysctl sets it.
-  for conf in all default lan0 wan0 dmz0; do
-    echo 0 >/proc/sys/net/ipv4/conf/$conf/rp_filter
-  done
+  forwarding
 
   # Each listener holds a connection open for 5 s, so that a connection is established while
   # another tries the same addresses and ports.
@@ -192,17 +166,9 @@ unitCheck "router-firewall" tools ''
   vrf guest 300
   netns mgmt isp tenant guest gisp
   # vrflink <link> <VRF or -> <peer's namespace> <router's address> <peer's address>: a veth
-  # pair to the peer's eth0 in a /24, the peer's default route through the router. Link-local
-  # addresses are usable at once, without duplicate address detection.
+  # pair to the peer's eth0 in a /24, the peer's default route through the router.
   vrflink() {
-    "on_$3" sh -c 'echo 0 >/proc/sys/net/ipv6/conf/default/accept_dad'
-    ip link add "$1" type veth peer name eth0 netns "''${pids[$3]}"
-    if [ "$2" != - ]; then ip link set "$1" master "$2"; fi
-    ip addr add "$4/24" dev "$1"
-    ip link set "$1" up
-    "on_$3" ip link set lo up
-    "on_$3" ip addr add "$5/24" dev eth0
-    "on_$3" ip link set eth0 up
+    veth "$3" "$1" "$2" "$4/24" -- "$5/24"
     "on_$3" ip route add default via "$4"
   }
   vrflink eth0 - mgmt 192.0.2.1 192.0.2.10

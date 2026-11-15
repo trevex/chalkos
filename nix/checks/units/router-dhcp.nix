@@ -9,18 +9,17 @@
   pkgs,
   lib,
   checkLib,
+  routerFirewall,
   unitCheck,
   ...
 }:
 let
   router = checkLib.router.config;
   inherit (router.systemd.services.kea-dhcp4.serviceConfig) ExecStart;
-  firewall = router.systemd.services.chalkos-firewall.serviceConfig.ExecStart;
   dir = router.chalkos.outputs.kea.dir;
-  nftDir = router.chalkos.outputs.router-nftables.dir;
   leases = lib.elemAt router.chalkos.diagnostics.dhcp-leases.command 2;
   udhcpc = "${pkgs.busybox}/bin/busybox udhcpc";
-  inherit (checkLib) routerRendered routerRuleset;
+  inherit (checkLib) routerRendered;
 in
 unitCheck "router-dhcp" checkLib.networkTools ''
   debug() {
@@ -28,15 +27,10 @@ unitCheck "router-dhcp" checkLib.networkTools ''
   }
   ip link set lo up
   netns client
-  ip link add lan0 type veth peer name eth0 netns "''${pids[client]}"
-  ip addr add 192.0.2.1/24 dev lan0
-  ip link set lan0 up
-  on_client ip link set lo up
-  on_client ip link set eth0 up
+  veth client lan0 - 192.0.2.1/24
 
-  mkdir -p ${dir} ${nftDir}
-  install -m 644 ${routerRuleset "dhcp"} ${nftDir}/ruleset.nft
-  ${firewall} || fail "chalkos-firewall did not load the dhcp example's ruleset"
+  ${routerFirewall.load "dhcp"}
+  mkdir -p ${dir}
   install -m 644 ${routerRendered "dhcp"}/kea/kea-dhcp4.json ${dir}/kea-dhcp4.json
   grep -q '"office"' ${dir}/kea-dhcp4.json || fail "the dhcp example renders no server of the default VRF"
   mkdir -p /var/lib

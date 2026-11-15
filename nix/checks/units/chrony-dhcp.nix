@@ -19,21 +19,17 @@ let
 in
 unitCheck "chrony-dhcp" [ ] ''
   # chronyc of the unit's path, which this namespace has no chronyd for.
-  mkdir -p stub
-  cat >stub/chronyc <<'STUB'
-  #!/bin/sh
+  stub chronyc <<'STUB'
   echo "$@" >>chronyc.log
   STUB
-  chmod +x stub/chronyc
   export PATH=$PWD/stub:${path}:$PATH
   mkdir -p /run/systemd/netif/links /run/chalkos/chrony-dhcp
   printf 'ADMIN_STATE=configured\nNTP=10.0.0.1 ntp.example\n' >/run/systemd/netif/links/2
   printf 'NTP=10.0.0.1 10.0.0.2\n' >/run/systemd/netif/links/3
   sources=/run/chalkos/chrony-dhcp/dhcp.sources
   timesync=/run/chalkos/config/time.chalkos.dev/TimeSync/timesync.json
-  mkdir -p "$(dirname "$timesync")"
   dhcp() {
-    printf '{"apiVersion":"time.chalkos.dev/v1alpha1","kind":"TimeSync","metadata":{"name":"timesync"},"spec":{"servers":[],"dhcp":%s}}\n' "$1" >"$timesync"
+    document time.chalkos.dev TimeSync timesync '{"servers":[],"dhcp":'"$1"'}'
   }
 
   dhcp true
@@ -57,11 +53,9 @@ unitCheck "chrony-dhcp" [ ] ''
   [ "$(ls -A /run/chalkos/chrony-dhcp)" = dhcp.sources ] || fail "left behind: $(ls -A /run/chalkos/chrony-dhcp)"
   # chrony's effect reloads the sources of a chronyd that runs, and leaves one that does not
   # run, which reads them when it starts.
-  cat >stub/systemctl <<'STUB'
-  #!/bin/sh
+  stub systemctl <<'STUB'
   exit "$ACTIVE"
   STUB
-  chmod +x stub/systemctl
   : >chronyc.log
   ACTIVE=3 ${reloadSources} || fail "the effect failed for a chronyd that does not run"
   [ ! -s chronyc.log ] || fail "reloaded the sources of a chronyd that does not run"

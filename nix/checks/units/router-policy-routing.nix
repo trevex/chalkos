@@ -12,13 +12,12 @@
 # it takes wanb0 again.
 {
   checkLib,
+  routerFirewall,
   unitCheck,
   ...
 }:
 let
-  inherit (checkLib.router.config.systemd.services.chalkos-firewall.serviceConfig) ExecStart;
-  dir = checkLib.router.config.chalkos.outputs.router-nftables.dir;
-  inherit (checkLib) routerRendered routerRuleset;
+  inherit (checkLib) routerRendered;
 in
 unitCheck "router-policy-routing" checkLib.networkTools ''
   debug() {
@@ -28,43 +27,30 @@ unitCheck "router-policy-routing" checkLib.networkTools ''
   }
   ip link set lo up
   netns lan lan1 wana wanb transit
-  on() {
-    local ns=$1
-    shift
-    nsenter -t "''${pids[$ns]}" -n "$@"
-  }
   ip link add transit type vrf table 100
   ip link set transit up
-  # link <namespace> <router's link> <router's IPv4> <router's IPv6> <peer's IPv4> <peer's IPv6>:
-  # a veth pair whose peer routes everything through the router and forwards nothing, so a
-  # packet the router sends the wrong way does not come back to it.
+  # link <namespace> <router's link> <VRF or -> <router's IPv4> <router's IPv6> <peer's IPv4>
+  # <peer's IPv6>: a veth pair whose peer routes everything through the router and forwards
+  # nothing, so a packet the router sends the wrong way does not come back to it.
   link() {
-    ip link add "$2" type veth peer name eth0 netns "''${pids[$1]}"
-    if [ "$2" = vt0 ]; then ip link set vt0 master transit; fi
-    ip addr add "$3" dev "$2"
-    ip addr add "$4" dev "$2" nodad
-    ip link set "$2" up
-    on "$1" ip link set lo up
-    on "$1" sh -c "echo 0 >/proc/sys/net/ipv4/ip_forward; echo 0 >/proc/sys/net/ipv6/conf/all/forwarding"
-    on "$1" ip addr add "$5" dev eth0
-    on "$1" ip addr add "$6" dev eth0 nodad
-    on "$1" ip link set eth0 up
-    on "$1" ip route add default via "''${3%/*}"
-    on "$1" ip route add default via "''${4%/*}"
+    veth "$1" "$2" "$3" "$4" "$5" -- "$6" "$7"
+    "on_$1" sh -c "echo 0 >/proc/sys/net/ipv4/ip_forward; echo 0 >/proc/sys/net/ipv6/conf/all/forwarding"
+    "on_$1" ip route add default via "''${4%/*}"
+    "on_$1" ip route add default via "''${5%/*}"
   }
-  link lan lan0 192.0.2.1/25 2001:db8:1::1/64 192.0.2.2/25 2001:db8:1::2/64
-  link lan1 lan1 192.0.2.129/25 2001:db8:2::1/64 192.0.2.130/25 2001:db8:2::2/64
-  link wana wana0 198.51.100.1/25 2001:db8:a::1/64 198.51.100.2/25 2001:db8:a::2/64
-  link wanb wanb0 198.51.100.129/25 2001:db8:b::1/64 198.51.100.130/25 2001:db8:b::2/64
-  link transit vt0 203.0.113.1/24 2001:db8:c::1/64 203.0.113.2/24 2001:db8:c::2/64
+  link lan lan0 - 192.0.2.1/25 2001:db8:1::1/64 192.0.2.2/25 2001:db8:1::2/64
+  link lan1 lan1 - 192.0.2.129/25 2001:db8:2::1/64 192.0.2.130/25 2001:db8:2::2/64
+  link wana wana0 - 198.51.100.1/25 2001:db8:a::1/64 198.51.100.2/25 2001:db8:a::2/64
+  link wanb wanb0 - 198.51.100.129/25 2001:db8:b::1/64 198.51.100.130/25 2001:db8:b::2/64
+  link transit vt0 transit 203.0.113.1/24 2001:db8:c::1/64 203.0.113.2/24 2001:db8:c::2/64
   # The LAN's guest and server hosts.
-  on lan ip addr add 192.0.2.70/25 dev eth0
-  on lan ip addr add 192.0.2.33/25 dev eth0
-  on lan ip addr add 2001:db8:1::21/64 dev eth0 nodad
+  on_lan ip addr add 192.0.2.70/25 dev eth0
+  on_lan ip addr add 192.0.2.33/25 dev eth0
+  on_lan ip addr add 2001:db8:1::21/64 dev eth0 nodad
   # The far address, which each uplink and transit answer on.
   for ns in wana wanb transit; do
-    on "$ns" ip addr add 198.18.0.1/32 dev lo
-    on "$ns" ip addr add fd00:ff::1/128 dev lo
+    "on_$ns" ip addr add 198.18.0.1/32 dev lo
+    "on_$ns" ip addr add fd00:ff::1/128 dev lo
   done
   # The main table, as 20-wana's gateways give it, and transit's, as a BGP session in transit
   # and 10-lan's and 11-lan1's routes of table 100 give it.
@@ -100,35 +86,23 @@ unitCheck "router-policy-routing" checkLib.networkTools ''
       ip "$family" route add unreachable default metric 4278198272 table "$table" proto static
     done
   done
-  echo 1 >/proc/sys/net/ipv4/ip_forward
-  echo 1 >/proc/sys/net/ipv6/conf/all/forwarding
-  # The firewall's reverse-path filter is the only one, as router-sysctl sets it.
-  for conf in /proc/sys/net/ipv4/conf/*/rp_filter; do
-    echo 0 >"$conf"
-  done
+  forwarding
 
   for ns in wana wanb transit; do
     for port in 80 443; do
-      on "$ns" socat TCP4-LISTEN:$port,fork,reuseaddr EXEC:"echo $ns" &
-      on "$ns" socat TCP6-LISTEN:$port,fork,reuseaddr,ipv6only=1 EXEC:"echo $ns" &
+      "on_$ns" socat TCP4-LISTEN:$port,fork,reuseaddr EXEC:"echo $ns" &
+      "on_$ns" socat TCP6-LISTEN:$port,fork,reuseaddr,ipv6only=1 EXEC:"echo $ns" &
     done
   done
-  on lan1 socat TCP4-LISTEN:80,fork,reuseaddr EXEC:"echo lan1" &
-  on lan1 socat TCP6-LISTEN:80,fork,reuseaddr,ipv6only=1 EXEC:"echo lan1" &
+  on_lan1 socat TCP4-LISTEN:80,fork,reuseaddr EXEC:"echo lan1" &
+  on_lan1 socat TCP6-LISTEN:80,fork,reuseaddr,ipv6only=1 EXEC:"echo lan1" &
   # The router's BGP in transit, which listens on the VRF's device.
   socat TCP4-LISTEN:179,fork,reuseaddr,so-bindtodevice=transit EXEC:"echo router" &
   socat TCP6-LISTEN:179,fork,reuseaddr,ipv6only=1,so-bindtodevice=transit EXEC:"echo router" &
-  listening() { [ "$(on wana ss -Hltn | wc -l)" = 4 ] && [ "$(on wanb ss -Hltn | wc -l)" = 4 ] && [ "$(on transit ss -Hltn | wc -l)" = 4 ] && [ "$(on lan1 ss -Hltn | wc -l)" = 2 ] && [ "$(ss -Hltn | wc -l)" = 2 ]; }
+  listening() { [ "$(on_wana ss -Hltn | wc -l)" = 4 ] && [ "$(on_wanb ss -Hltn | wc -l)" = 4 ] && [ "$(on_transit ss -Hltn | wc -l)" = 4 ] && [ "$(on_lan1 ss -Hltn | wc -l)" = 2 ] && [ "$(ss -Hltn | wc -l)" = 2 ]; }
   retry 100 "the listeners did not start" listening
 
-  # settled waits until no link holds a tentative IPv6 address, as neighbour discovery waits
-  # for the links' link-local addresses.
-  untentative() { [ -z "$(ip -6 addr show tentative)$(for ns in lan lan1 wana wanb transit; do on "$ns" ip -6 addr show tentative; done)" ]; }
-  settled() { retry 100 "the links' IPv6 addresses stayed tentative" untentative; }
-  settled
-  mkdir -p ${dir}
-  install -m 644 ${routerRuleset "policy"} ${dir}/ruleset.nft
-  ${ExecStart} || fail "chalkos-firewall did not load the policy example's ruleset"
+  ${routerFirewall.load "policy"}
 
   # way <source> <port> [<socat options>]: the name of the peer that answered a connection
   # from the LAN host's source to the far address, or to $far when it is set, or none.
@@ -139,7 +113,7 @@ unitCheck "router-policy-routing" checkLib.networkTools ''
       source="[$1]"
       ;;
     esac
-    on lan socat -t 2 - "$to:$2,bind=$source,connect-timeout=1''${3:+,$3}" </dev/null 2>/dev/null || echo none
+    on_lan socat -t 2 - "$to:$2,bind=$source,connect-timeout=1''${3:+,$3}" </dev/null 2>/dev/null || echo none
   }
   takes() {
     local got
@@ -166,7 +140,7 @@ unitCheck "router-policy-routing" checkLib.networkTools ''
   nft 'add rule inet chalkos policy-routing tcp dport 179 counter meta mark set meta mark & 0xff00ffff | 0x00040000 return comment "bgp 1"'
   nft 'add rule inet chalkos input tcp dport 179 accept'
   for to in TCP4:203.0.113.1 'TCP6:[2001:db8:c::1]'; do
-    got=$(on transit socat -t 2 - "$to:179,connect-timeout=1" </dev/null 2>/dev/null || echo none)
+    got=$(on_transit socat -t 2 - "$to:179,connect-timeout=1" </dev/null 2>/dev/null || echo none)
     [ "$got" = router ] || fail "transit's peer reached $got, not the router's BGP on $to, past a policy without in"
   done
 
@@ -178,8 +152,7 @@ unitCheck "router-policy-routing" checkLib.networkTools ''
   # networkd configures the link again once it is up: its IPv6 address, which the kernel
   # removed, and the routes of its Network.
   ip link set wanb0 up
-  ip -6 addr add 2001:db8:b::1/64 dev wanb0 nodad
-  settled
+  ip -6 addr add 2001:db8:b::1/64 dev wanb0
   hops
   takes wanb 192.0.2.33 80 "" "the next hop takes its traffic again once its route is back"
   takes wanb 2001:db8:1::21 80 "" "the next hop takes its traffic again once its route is back"

@@ -32,6 +32,25 @@ let
     C
     $CC -shared -fPIC -o $out bind.c -ldl
   '';
+  # The router's chalkos-firewall.service: its scripts, the directory of its ruleset, and load
+  # <example>, the lines of a check that load the ruleset the router image renders from the
+  # example as the unit's start does.
+  routerFirewall =
+    let
+      inherit (checkLib.router.config.systemd.services.chalkos-firewall.serviceConfig)
+        ExecStart
+        ExecReload
+        ;
+      dir = checkLib.router.config.chalkos.outputs.router-nftables.dir;
+    in
+    {
+      inherit ExecStart ExecReload dir;
+      load = example: ''
+        mkdir -p ${dir}
+        install -m 644 ${checkLib.routerRuleset example} ${dir}/ruleset.nft
+        ${ExecStart} || fail "chalkos-firewall did not load the ${example} example's ruleset"
+      '';
+    };
   arguments = {
     inherit
       pkgs
@@ -42,6 +61,7 @@ let
       unitCheck
       boundTo
       bindDevice
+      routerFirewall
       ;
   };
 in

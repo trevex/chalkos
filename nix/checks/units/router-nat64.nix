@@ -152,28 +152,11 @@ unitCheck "router-nat64"
     ip -6 route add unreachable default metric 4278198272 table 300
     ip -4 route show table all | grep -q "table guest-table" || fail "ip does not name table 300"
     netns lan wan
-    ip link add eth3 type veth peer name eth0 netns "''${pids[lan]}"
-    ip link add eth4 type veth peer name eth0 netns "''${pids[wan]}"
-    ip link set eth3 master guest
-    ip link set eth4 master guest
-    ip addr add 2001:db8:3::1/64 dev eth3 nodad
-    ip addr add 203.0.113.1/24 dev eth4
-    ip link set eth3 up
-    ip link set eth4 up
-    on_lan ip link set lo up
-    on_lan ip addr add 2001:db8:3::2/64 dev eth0 nodad
-    on_lan ip link set eth0 up
+    veth lan eth3 guest 2001:db8:3::1/64 -- 2001:db8:3::2/64
+    veth wan eth4 guest 203.0.113.1/24 -- 203.0.113.254/24
     on_lan ip route add default via 2001:db8:3::1
-    on_wan ip link set lo up
-    on_wan ip addr add 203.0.113.254/24 dev eth0
-    on_wan ip link set eth0 up
     ip route add default via 203.0.113.254 table 300
-    echo 1 >/proc/sys/net/ipv4/ip_forward
-    echo 1 >/proc/sys/net/ipv6/conf/all/forwarding
-    # The firewall's reverse-path filter is the only one, as router-sysctl sets it.
-    for conf in all default; do
-      echo 0 >/proc/sys/net/ipv4/conf/$conf/rp_filter
-    done
+    forwarding
 
     mkdir -p ${dir}
     install -m 644 -t ${dir} ${routerRendered "edge"}/jool/* ${routerRendered "vrf"}/jool/*

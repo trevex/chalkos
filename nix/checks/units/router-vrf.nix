@@ -32,17 +32,13 @@ unitCheck "router-vrf" checkLib.networkTools ''
     if grep -q '^reload' systemctl.log; then fail "$1: systemctl was called with: $(cat systemctl.log)"; fi
     : >systemctl.log
   }
-  mkdir -p stub
-  cat >stub/networkctl <<'STUB'
-  #!/bin/sh
+  stub networkctl <<'STUB'
   echo "$@" >>networkctl.log
   STUB
-  cat >stub/systemctl <<'STUB'
-  #!/bin/sh
+  stub systemctl <<'STUB'
   echo "$@" >>systemctl.log
   [ "$1" != is-active ] || exit "''${ACTIVE:-0}"
   STUB
-  chmod +x stub/networkctl stub/systemctl
   : >networkctl.log
   : >systemctl.log
   export PATH=$PWD/stub:$PATH
