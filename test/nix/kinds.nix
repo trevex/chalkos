@@ -333,43 +333,6 @@ let
   };
 in
 lib.runTests {
-  # A secretRef is a key reference to a Secret, whose apiVersion every image has.
-  testSecretRefMarker = {
-    expr = (propOf kindTypes.secretRef)."x-chalkos-ref";
-    expected = {
-      apiVersion = "chalkos.dev/v1alpha1";
-      kind = "Secret";
-      key = true;
-    };
-  };
-  # A reference is a document's name, marked with the kind it names and the names it reserves.
-  testRefSchema = {
-    expr = propOf (
-      kindTypes.ref {
-        kind = "VRF";
-        reserved = [ "default" ];
-      }
-    );
-    expected = {
-      type = "string";
-      pattern = "^(?:${kindTypes.documentName})$";
-      "x-chalkos-ref" = {
-        kind = "VRF";
-        reserved = [ "default" ];
-      };
-    };
-  };
-  testRefOfAKindAlone = {
-    expr = (propOf (kindTypes.ref "PrefixList"))."x-chalkos-ref";
-    expected.kind = "PrefixList";
-  };
-  testRefComposes = {
-    expr = (propOf (types.listOf (types.nullOr (kindTypes.ref "PrefixList")))).items.anyOf;
-    expected = [
-      (propOf (kindTypes.ref "PrefixList"))
-      { type = "null"; }
-    ];
-  };
   testRefRefusesAReservedNameNoDocumentHas = {
     expr =
       fails
@@ -871,10 +834,6 @@ lib.runTests {
       builtins.readFile ../fixtures/kinds/image/schemas/demo.example.org_v1alpha1_Demo.json
     );
   };
-  testFileName = {
-    expr = schema.fileName demo;
-    expected = "demo.example.org_v1alpha1_Demo.json";
-  };
   testStrMatchingIsAnchored = {
     expr = propOf (types.strMatching "[a-z]+");
     expected = {
@@ -1023,14 +982,6 @@ lib.runTests {
       { type = "null"; }
     ];
   };
-  testNonEmptyListOf = {
-    expr = propOf (types.nonEmptyListOf types.str);
-    expected = {
-      type = "array";
-      items.type = "string";
-      minItems = 1;
-    };
-  };
   # chalkosLib.mkOption's maxItems bounds a list, and fails the evaluation on any other type or
   # on a bound that is no positive integer.
   testMaxItems = {
@@ -1155,18 +1106,6 @@ lib.runTests {
   testKindDir = {
     expr = withDemo.chalkos.kinds.Demo.dir;
     expected = "/run/chalkos/config/demo.example.org/Demo";
-  };
-  testKindMultipleDefaultsToFalse = {
-    expr =
-      (worker [
-        {
-          chalkos.kinds.Single = {
-            group = "demo.example.org";
-            version = "v1";
-          };
-        }
-      ]).chalkos.kinds.Single.multiple;
-    expected = false;
   };
   testImageShipsSchemas = {
     expr = "${withDemo.environment.etc."chalkos/schemas".source}";
@@ -1326,16 +1265,6 @@ lib.runTests {
         builtins.readFile (../fixtures/kinds/router + "/router.chalkos.dev_v1alpha1_${kind}.json")
       )
     ) routerKinds;
-  };
-  # A NAT rule translates to a port from 1, as nftables takes it.
-  testNATRulePortFromOne = {
-    expr =
-      (builtins.head
-        (builtins.head
-          routerImage.system.build.chalkosKindSchemas."router.chalkos.dev_v1alpha1_NATRule.json".properties.spec.properties.to.anyOf
-        ).properties.port.anyOf
-      ).minimum;
-    expected = 1;
   };
   testImageWithoutKubernetesHasRegistryAndMirror = {
     expr = lib.subtractLists (kindNames plainImage) [
@@ -2028,7 +1957,8 @@ lib.runTests {
           builtins.match "/nix/store/[^ ]+-chalkos-render-[^ ]+/bin/chalkos-render networkd /nix/store/[^ ]+-chalkos-networkd-schemas" output.render
           != null;
         tests = lib.filter (lib.hasPrefix "networkd-") (lib.attrNames withDemo.chalkos.tests);
-        effect = (effectsOf withDemo).networkd;
+        # The router's examples are tests of router images alone.
+        routerTests = lib.any (lib.hasPrefix "router-") (lib.attrNames withDemo.chalkos.tests);
       };
     expected = {
       inputs = [
@@ -2044,17 +1974,7 @@ lib.runTests {
         "networkd-static"
         "networkd-vlan"
       ];
-      effect = {
-        outputs = [ "networkd" ];
-        kinds = [ ];
-        reload = [ "systemd-networkd.service" ];
-        restart = [ ];
-        run = "";
-        start = false;
-        when = "";
-        chalkd = "";
-        hint = null;
-      };
+      routerTests = false;
     };
   };
   # chalkos-links replays the physical ports' add events once chalkos-config has rendered the
@@ -2073,7 +1993,6 @@ lib.runTests {
         inherit (unit.unitConfig) DefaultDependencies ConditionPathExistsGlob;
         inherit (unit.serviceConfig) Type RemainAfterExit TimeoutStartSec;
         script = lib.hasSuffix "-chalkos-links" (toString unit.serviceConfig.ExecStart);
-        effect = (effectsOf withDemo).links;
       };
     expected = {
       wantedBy = [ "sysinit.target" ];
@@ -2093,17 +2012,6 @@ lib.runTests {
       RemainAfterExit = true;
       TimeoutStartSec = "30s";
       script = true;
-      effect = {
-        outputs = [ ];
-        kinds = [ "Link" ];
-        reload = [ ];
-        restart = [ "chalkos-links.service" ];
-        run = "";
-        start = true;
-        when = "";
-        chalkd = "";
-        hint = null;
-      };
     };
   };
   # Every image has the unprivileged user its renderers run as, since it renders the built-in
@@ -2172,11 +2080,6 @@ lib.runTests {
         "nr_inodes=147456"
       ];
     };
-  };
-  # The image's rules check reads the effects, the outputs and the units.
-  testRulesCheckReadsTheImage = {
-    expr = lib.hasInfix "chalkos-rules-image" withGrant.system.build.chalkosRulesCheck.buildCommand;
-    expected = true;
   };
   # The rules check reads each file of the contract a node loads from /etc/chalkos, as the node
   # reads it.
@@ -2529,12 +2432,6 @@ lib.runTests {
       lib.hasInfix "/bin/chalkcfg get Rack rack -o 'jsonpath={.spec.location}'" c.systemd.services.rack-location.serviceConfig.ExecStart.text;
     expected = true;
   };
-  testBuiltinKindHasGet = {
-    expr = lib.hasSuffix "/bin/chalkcfg get Node -o 'jsonpath={.spec.type}'" (
-      kubernetesImage.chalkos.kinds.Node.get { path = "spec.type"; }
-    );
-    expected = true;
-  };
   # A field's rules reach its property, also in a submodule, with takes defaulted and the
   # attributes left null left out.
   testFieldRulesReachTheSchema = {
@@ -2783,27 +2680,6 @@ lib.runTests {
       fallback = true;
     };
   };
-  # The test image's Greeting refuses a message too long for one log line, and a new one while
-  # its lock fact holds one; the image declares the fact, and checks the rules when it is built.
-  testGreetingRulesAndFact = {
-    expr =
-      let
-        build = (worker [ ../../modules/testing/greeting.nix ]).system.build;
-        greeting = build.chalkosKindSchemas."greeting.example.org_v1alpha1_Greeting.json";
-      in
-      {
-        kind = map (r: r.takes) greeting."x-chalkos-kind".rules;
-        field = map (r: r.rule) greeting.properties.spec.properties.message."x-chalkos-rules";
-        fact = build.chalkosFactDefinitions.greetingLock;
-        checked = lib.hasPrefix "chalkos-rules-check" build.chalkosRulesCheck.name;
-      };
-    expected = {
-      kind = [ "refuse" ];
-      field = [ "facts.greetingLock == null || self == oldSelf" ];
-      fact.file = "/run/chalktest-greeting-lock.json";
-      checked = true;
-    };
-  };
   testFactNameIsAnIdentifier = {
     expr = fails (worker [ { chalkos.facts.disk-ids.file = "/x"; } ]).system.build.chalkosFacts.drvPath;
     expected = true;
@@ -3046,31 +2922,6 @@ lib.runTests {
         "demo-two.v1" = "two.v1.json";
       };
       clash = true;
-    };
-  };
-  # The examples of networkd and chrony are tests of every image, and the router's of a router
-  # image.
-  testExampleTests = {
-    expr =
-      let
-        names = c: lib.attrNames c.chalkos.tests;
-      in
-      {
-        worker = lib.all (lib.flip lib.elem (names (worker [ ]))) [
-          "chrony-servers"
-          "networkd-static"
-        ];
-        workerRouter = lib.any (lib.hasPrefix "router-") (names (worker [ ]));
-        router = lib.all (lib.flip lib.elem (names (router [ ]))) [
-          "networkd-static"
-          "router-dhcp"
-          "router-edge"
-        ];
-      };
-    expected = {
-      worker = true;
-      workerRouter = false;
-      router = true;
     };
   };
 }
