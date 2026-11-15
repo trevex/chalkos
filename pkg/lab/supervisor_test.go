@@ -621,19 +621,35 @@ func TestStartErrorLoggedOnce(t *testing.T) {
 		syscall.Kill(pid, syscall.SIGTERM)
 		testwait.Eventually(t, "w1 to stop", func() bool { return !Ready(dir) && !Running(w1) })
 	}
-	// StartStopped asks every second while w1, whose QEMU fails, fails to start.
-	failingStarts := func() {
+	// StartStopped asks every second while w1, whose QEMU fails, fails to start: failingStarts lets
+	// it ask three times and waits until the supervisor has logged logs failed starts in all.
+	failingStarts := func(logs int) {
 		t.Helper()
+		// The supervisor runs in this process, which hears each start StartStopped asks for too.
+		asked := make(chan os.Signal, 10)
+		signal.Notify(asked, startSignal)
+		defer signal.Stop(asked)
 		os.Setenv(fakeQEMUFail, "no firmware")
-		ctx, cancel := context.WithTimeout(context.Background(), 3500*time.Millisecond)
+		defer os.Unsetenv(fakeQEMUFail)
+		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
-		if err := StartStopped(ctx, dir); err == nil {
-			t.Fatal("w1 started with a failing QEMU")
+		done := make(chan error, 1)
+		go func() { done <- StartStopped(ctx, dir) }()
+		for range 3 {
+			select {
+			case <-asked:
+			case err := <-done:
+				t.Fatalf("StartStopped with a failing QEMU = %v", err)
+			}
 		}
-		os.Unsetenv(fakeQEMUFail)
+		cancel()
+		<-done
+		testwait.Eventually(t, "the failed start to be logged", func() bool {
+			return strings.Count(log.String(), "start the VM of w1") >= logs
+		})
 	}
 	stopW1()
-	failingStarts()
+	failingStarts(1)
 	if got := strings.Count(log.String(), "start the VM of w1"); got != 1 {
 		t.Errorf("logged the failed start %d times, want once:\n%s", got, log.String())
 	}
@@ -643,7 +659,7 @@ func TestStartErrorLoggedOnce(t *testing.T) {
 		t.Fatal(err)
 	}
 	stopW1()
-	failingStarts()
+	failingStarts(2)
 	if got := strings.Count(log.String(), "start the VM of w1"); got != 2 {
 		t.Errorf("logged the failed start %d times, want once after each start that worked:\n%s", got, log.String())
 	}
