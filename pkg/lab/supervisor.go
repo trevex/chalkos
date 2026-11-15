@@ -267,21 +267,25 @@ func Supervisor(dir string) (int, bool, error) {
 		return 0, false, err
 	}
 	// A supervisor that just took the lock writes its PID right after.
-	deadline := time.Now().Add(5 * time.Second)
-	for {
+	var pid int
+	err = poll.Until(context.Background(), "", 5*time.Second, 20*time.Millisecond, func() error {
 		data, err := os.ReadFile(f.Name())
 		if err != nil {
-			return 0, false, err
+			return poll.Permanent{Err: err}
 		}
-		if s := strings.TrimSpace(string(data)); s != "" || time.Now().After(deadline) {
-			pid, err := strconv.Atoi(s)
-			if err != nil {
-				return 0, false, fmt.Errorf("%s holds no PID: %w", f.Name(), err)
-			}
-			return pid, true, nil
+		s := strings.TrimSpace(string(data))
+		if s == "" {
+			return fmt.Errorf("%s holds no PID", f.Name())
 		}
-		time.Sleep(20 * time.Millisecond)
+		if pid, err = strconv.Atoi(s); err != nil {
+			return poll.Permanent{Err: fmt.Errorf("%s holds no PID: %w", f.Name(), err)}
+		}
+		return nil
+	})
+	if err != nil {
+		return 0, false, err
 	}
+	return pid, true, nil
 }
 
 // PrepareStart readies a lab that no supervisor runs to start again from its state, as after a
