@@ -844,9 +844,7 @@ func TestShutdownAfterResponse(t *testing.T) {
 // actions are those named here alone.
 func TestNodeAPIPermissions(t *testing.T) {
 	service := nodev1.File_chalkos_node_v1_node_proto.Services().ByName("NodeService")
-	layertest.CheckPermissions(t, service, permissions)
-	layertest.CheckComments(t, filepath.Join("..", "..", "api", "chalkos", "node", "v1", "node.proto"), service, permissions, "")
-	layertest.CheckConsole(t, permissions, nodev1connect.NodeServiceRebootProcedure, nodev1connect.NodeServiceShutdownProcedure, nodev1connect.NodeServiceRollbackImageProcedure, nodev1connect.NodeServiceRollbackConfigProcedure)
+	layertest.CheckAPI(t, filepath.Join("..", "..", "api", "chalkos", "node", "v1", "node.proto"), service, permissions, "", nodev1connect.NodeServiceRebootProcedure, nodev1connect.NodeServiceShutdownProcedure, nodev1connect.NodeServiceRollbackImageProcedure, nodev1connect.NodeServiceRollbackConfigProcedure)
 }
 
 func TestRequestSizeLimit(t *testing.T) {

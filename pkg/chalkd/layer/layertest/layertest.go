@@ -17,30 +17,11 @@ import (
 	"github.com/trevex/chalkos/pkg/pki"
 )
 
-// CheckPermissions fails t unless perms has an entry for every method of the service and no
-// other: chalkd refuses a procedure without one.
-func CheckPermissions(t *testing.T, service protoreflect.ServiceDescriptor, perms map[string]layer.Permission) {
-	t.Helper()
-	methods := service.Methods()
-	if methods.Len() == 0 {
-		t.Fatalf("%s has no methods", service.FullName())
-	}
-	for i := range methods.Len() {
-		procedure := "/" + string(service.FullName()) + "/" + string(methods.Get(i).Name())
-		if _, ok := perms[procedure]; !ok {
-			t.Errorf("%s has no permission", procedure)
-		}
-	}
-	if len(perms) != methods.Len() {
-		t.Errorf("%d permissions for the %d methods of %s", len(perms), methods.Len(), service.FullName())
-	}
-}
-
-// CheckConsole fails t when perms let the console call a procedure that needs the admin or the
+// checkConsole fails t when perms let the console call a procedure that needs the admin or the
 // node role, other than as one of its actions, or when the console's actions are other than the
 // procedures given: whoever sits at the machine reads the node and acts on it as an operator,
 // and rolls its config back.
-func CheckConsole(t *testing.T, perms map[string]layer.Permission, actions ...string) {
+func checkConsole(t *testing.T, perms map[string]layer.Permission, actions ...string) {
 	t.Helper()
 	var got []string
 	for procedure, p := range perms {
@@ -57,12 +38,14 @@ func CheckConsole(t *testing.T, perms map[string]layer.Permission, actions ...st
 	}
 }
 
-// CheckComments fails t unless the comment of each RPC of the proto file, which the API
-// reference shows, names the modes, role and layer its permission gives, and whether the console
-// may call it: "The console may call it." or "The console may call it while the image allows the
-// console's actions."; layerName is "" for the node API.
-func CheckComments(t *testing.T, protoFile string, service protoreflect.ServiceDescriptor, perms map[string]layer.Permission, layerName string) {
+// CheckAPI fails t unless perms has an entry for each RPC of the service in protoFile and no other
+// (chalkd refuses a procedure without one), and each RPC's comment, which the API reference shows,
+// names the modes, role and layer its permission gives and whether the console may call it: "The
+// console may call it." or "The console may call it while the image allows the console's
+// actions."; layerName is "" for the node API. consoleActions are the console's actions.
+func CheckAPI(t *testing.T, protoFile string, service protoreflect.ServiceDescriptor, perms map[string]layer.Permission, layerName string, consoleActions ...string) {
 	t.Helper()
+	checkConsole(t, perms, consoleActions...)
 	data, err := os.ReadFile(protoFile)
 	if err != nil {
 		t.Fatal(err)

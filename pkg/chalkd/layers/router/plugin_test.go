@@ -14,8 +14,6 @@ import (
 func TestRouterAPIPermissions(t *testing.T) {
 	p := New(runnerNode{}, Options{})
 	service := routerv1.File_chalkos_router_v1_router_proto.Services().ByName("RouterService")
-	layertest.CheckPermissions(t, service, p.Permissions())
-	layertest.CheckComments(t, filepath.Join("..", "..", "..", "..", "api", "chalkos", "router", "v1", "router.proto"), service, p.Permissions(), layers.Router)
 	// The console reads the router's status and takes no action of the layer.
-	layertest.CheckConsole(t, p.Permissions())
+	layertest.CheckAPI(t, filepath.Join("..", "..", "..", "..", "api", "chalkos", "router", "v1", "router.proto"), service, p.Permissions(), layers.Router)
 }
