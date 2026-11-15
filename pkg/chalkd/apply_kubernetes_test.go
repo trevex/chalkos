@@ -70,7 +70,7 @@ func loops(s *Server) *[]string {
 	return &acted
 }
 
-// Every layer action of the default image's effects is one the Kubernetes layer has, which the
+// Every layer action of the Kubernetes image's effects is one the Kubernetes layer has, which the
 // tests that filter the effects by their layers rely on.
 func TestFixtureEffectsActionsResolve(t *testing.T) {
 	defs, err := effects.Read("../../test/fixtures/kinds/effects.json")

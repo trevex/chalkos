@@ -153,16 +153,16 @@ func newTestServer(t *testing.T, mode nodev1.Mode, disks ...storagetest.Disk) (*
 	return s, r
 }
 
-// writeEffects declares the effects of the default image, which the tests carry out, and those
-// of extra, a JSON object of effects by name, at the test server's path. An effect of the default
-// image that runs an action of a layer s's image does not carry is left out, as an image without
-// the layer has none; addLayerEffects adds it once s has the layer.
+// writeEffects declares the effects of the Kubernetes image, which the tests carry out, and those
+// of extra, a JSON object of effects by name, at the test server's path. An effect of the
+// Kubernetes image that runs an action of a layer s's image does not carry is left out, as an
+// image without the layer has none; addLayerEffects adds it once s has the layer.
 func writeEffects(t *testing.T, s *Server, extra string) {
 	t.Helper()
 	writeMerged(t, s, contract.EffectsFile, chalkdtest.Effects(t, s.Plugins.Layers()), extra)
 }
 
-// addLayerEffects adds the default image's effects that run an action of a layer s's image
+// addLayerEffects adds the Kubernetes image's effects that run an action of a layer s's image
 // carries, which writeEffects left out before s had the layer, to the effects s declares.
 func addLayerEffects(t *testing.T, s *Server) {
 	t.Helper()
@@ -182,8 +182,8 @@ func addLayerEffects(t *testing.T, s *Server) {
 	writeContract(t, s, contract.EffectsFile, string(data))
 }
 
-// writeServices grants the kinds the default image's units read, and those of extra, a JSON object
-// of grants by unit, at the test server's path.
+// writeServices grants the kinds the Kubernetes image's units read, and those of extra, a JSON
+// object of grants by unit, at the test server's path.
 func writeServices(t *testing.T, s *Server, extra string) {
 	t.Helper()
 	var services map[string]json.RawMessage

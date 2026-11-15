@@ -1,5 +1,5 @@
 // Package chalkdtest holds the fixtures of the tests that run chalkd's server: the layers chalkd
-// compiles in and the default image's effects. It does not import chalkd, so chalkd's own tests
+// compiles in and the Kubernetes image's effects. It does not import chalkd, so chalkd's own tests
 // share it.
 package chalkdtest
 
@@ -18,11 +18,11 @@ import (
 	"github.com/trevex/chalkos/pkg/layers"
 )
 
-// effectsFixture is the default image's effects.json, relative to the directory go test runs a
-// package's tests in, the package's own. Effects reads it from there, so only the tests of a
-// package two directories below the repository root, such as pkg/chalkd or pkg/chalkctl, call
-// it. The path is not resolved from this file's, which a build with -trimpath, as Nix's, does
-// not record.
+// effectsFixture is the Kubernetes image's effects.json, test/fixtures/kinds/effects.json,
+// relative to the directory go test runs a package's tests in, the package's own. Effects reads
+// it from there, so only the tests of a package two directories below the repository root, such
+// as pkg/chalkd or pkg/chalkctl, call it. The path is not resolved from this file's, which a
+// build with -trimpath, as Nix's, does not record.
 const effectsFixture = "../../test/fixtures/kinds/effects.json"
 
 // Plugins compiles the Kubernetes and router layers into node, on an image of the layers l: the
@@ -45,7 +45,7 @@ func Plugins(t testing.TB, node layer.Node, l layers.Set, plugins ...layer.Plugi
 	return reg
 }
 
-// Effects are the default image's effects by name, without those that run an action of a layer
+// Effects are the Kubernetes image's effects by name, without those that run an action of a layer
 // an image of the layers l does not carry, as an image without the layer has none. An action
 // that one of l lacks stays, so the delivery refuses it.
 func Effects(t testing.TB, l layers.Set) map[string]json.RawMessage {

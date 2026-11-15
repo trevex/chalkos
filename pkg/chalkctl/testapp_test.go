@@ -370,7 +370,7 @@ func installedNode(t *testing.T, ta *testApp, recorded []byte) (*chalkd.Server, 
 	return s, r
 }
 
-// writeEffects declares the effects of the default image, which the node carries out, as
+// writeEffects declares the effects of the Kubernetes image, which the node carries out, as
 // chalkdtest.Effects gives them for the layers of s's image.
 func writeEffects(t *testing.T, s *chalkd.Server) {
 	t.Helper()

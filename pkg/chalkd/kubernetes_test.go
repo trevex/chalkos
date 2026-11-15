@@ -179,7 +179,7 @@ func TestStatusKubernetes(t *testing.T) {
 	}
 }
 
-// prepareErrorHint points the hint of the default image's kubernetes effect at the preparation's
+// prepareErrorHint points the hint of the Kubernetes image's kubernetes effect at the preparation's
 // error file of s's Kubernetes side, as the image points it at the node's.
 func prepareErrorHint(t *testing.T, s *Server) {
 	t.Helper()
@@ -189,7 +189,7 @@ func prepareErrorHint(t *testing.T, s *Server) {
 	}
 	e, ok := declared["kubernetes"]
 	if !ok || e.Hint == nil {
-		t.Fatal("the default image's kubernetes effect has no hint")
+		t.Fatal("the Kubernetes image's kubernetes effect has no hint")
 	}
 	e.Hint.File = kubernetesState(s).PrepareError()
 	declared["kubernetes"] = e

@@ -1275,7 +1275,7 @@ lib.runTests {
     ];
   };
   # chalkd's tests carry out the built-in effects and grants from these fixtures, so they are the
-  # effects.json and services.json of the default image.
+  # effects.json and services.json of an image with the Kubernetes layer.
   testBuiltinEffectsMatchFixture = {
     expr = effectsOf kubernetesImage;
     expected = builtins.fromJSON (builtins.readFile ../fixtures/kinds/effects.json);
