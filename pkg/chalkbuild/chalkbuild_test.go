@@ -94,7 +94,7 @@ func TestOCISignAndPush(t *testing.T) {
 	key, cert, _ := imagetest.Signer(t, dir, "db")
 	in := filepath.Join(dir, "in")
 	img := imagetest.Image{Variant: "node", Platform: "metal", Seed: "1"}
-	imagetest.WriteContract(t, in, img, imagetest.Write(t, in, img))
+	imagetest.WriteDir(t, in, img)
 	layout := filepath.Join(dir, "oci", "node-metal")
 	if status, stdout, stderr := run("oci", in, layout); status != 0 || !strings.HasPrefix(stdout, "wrote "+layout+", manifest sha256:") {
 		t.Fatalf("oci = %d, stdout %q, stderr %q", status, stdout, stderr)

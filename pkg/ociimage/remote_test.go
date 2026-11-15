@@ -12,6 +12,7 @@ import (
 	"github.com/google/go-containerregistry/pkg/v1/random"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 
+	"github.com/trevex/chalkos/pkg/image/imagetest"
 	"github.com/trevex/chalkos/pkg/ociimage"
 	"github.com/trevex/chalkos/pkg/ociimage/ocitest"
 )
@@ -22,9 +23,9 @@ func TestPushAndRead(t *testing.T) {
 	ctx := context.Background()
 	dir := t.TempDir()
 	in := filepath.Join(dir, "in")
-	root := writeImage(t, in)
+	root := imagetest.WriteDir(t, in, nodeImage)
 	out := filepath.Join(dir, "out")
-	d := writeLayout(t, in, out)
+	d := ocitest.Layout(t, in, out)
 	img, err := ociimage.ReadLayout(out)
 	if err != nil {
 		t.Fatal(err)

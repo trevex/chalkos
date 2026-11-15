@@ -4,6 +4,7 @@ package imagetest
 
 import (
 	"bytes"
+	"context"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/x509"
@@ -35,16 +36,22 @@ type Image struct {
 	Edit func(osRelease map[string]string)
 }
 
+// NeedTools skips the test unless every tool is in PATH.
+func NeedTools(t testing.TB, tools ...string) {
+	t.Helper()
+	for _, tool := range tools {
+		if _, err := exec.LookPath(tool); err != nil {
+			t.Skipf("%s not in PATH", tool)
+		}
+	}
+}
+
 // Write writes the image's chalkos.raw and repart-output.json into dir, made when missing, and
 // returns the root hash of its store. The ESP starts the raw image, at offset 0. It skips the
 // test without mkfs.vfat and mtools.
 func Write(t testing.TB, dir string, img Image) []byte {
 	t.Helper()
-	for _, tool := range []string{"mkfs.vfat", "mmd", "mcopy", "mdir"} {
-		if _, err := exec.LookPath(tool); err != nil {
-			t.Skipf("%s not in PATH", tool)
-		}
-	}
+	NeedTools(t, "mkfs.vfat", "mmd", "mcopy", "mdir")
 	blockSize := img.BlockSize
 	if blockSize == 0 {
 		blockSize = 512
@@ -72,10 +79,8 @@ func Write(t testing.TB, dir string, img Image) []byte {
 		{"mcopy", "-i", esp, ukiPath, "::/EFI/Linux/chalkos_1.efi"},
 		{"mcopy", "-i", esp, loader, "::/EFI/BOOT/BOOTX64.EFI"},
 	} {
-		cmd := exec.Command(args[0], args[1:]...)
-		cmd.Env = append(os.Environ(), "MTOOLS_SKIP_CHECK=1")
-		if out, err := cmd.CombinedOutput(); err != nil {
-			t.Fatalf("%v: %v: %s", args, err, out)
+		if _, err := image.Mtools(context.Background(), args[0], args[1:]...); err != nil {
+			t.Fatal(err)
 		}
 	}
 	espData, err := os.ReadFile(esp)
@@ -135,6 +140,15 @@ func SBSign(t testing.TB, binary []byte, key, cert string) []byte {
 		t.Fatal(err)
 	}
 	return signed
+}
+
+// WriteDir writes a whole image directory into dir, the image's Write and its WriteContract, and
+// returns the root hash of its store.
+func WriteDir(t testing.TB, dir string, img Image) []byte {
+	t.Helper()
+	root := Write(t, dir, img)
+	WriteContract(t, dir, img, root)
+	return root
 }
 
 // WriteContract writes the contract files of an image directory into dir: metadata.json of the

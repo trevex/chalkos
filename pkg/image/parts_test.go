@@ -6,7 +6,6 @@ import (
 	"errors"
 	"io/fs"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -18,10 +17,8 @@ import (
 
 func mtools(t *testing.T, args ...string) {
 	t.Helper()
-	cmd := exec.Command(args[0], args[1:]...)
-	cmd.Env = append(os.Environ(), "MTOOLS_SKIP_CHECK=1")
-	if out, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("%v: %v: %s", args, err, out)
+	if _, err := image.Mtools(context.Background(), args[0], args[1:]...); err != nil {
+		t.Fatal(err)
 	}
 }
 

@@ -13,6 +13,7 @@ import (
 
 	"github.com/trevex/chalkos/pkg/image/imagetest"
 	"github.com/trevex/chalkos/pkg/ociimage"
+	"github.com/trevex/chalkos/pkg/ociimage/ocitest"
 	"github.com/trevex/chalkos/pkg/secureboot"
 )
 
@@ -22,25 +23,15 @@ func unsignedLayout(t *testing.T, dir string) (string, string) {
 	t.Helper()
 	in := filepath.Join(dir, "in")
 	img := imagetest.Image{Variant: "node", Platform: "metal", Seed: "1"}
-	root := imagetest.Write(t, in, img)
-	imagetest.WriteContract(t, in, img, root)
-	oci, closeImage, err := ociimage.FromDirectory(context.Background(), in)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer closeImage()
+	imagetest.WriteDir(t, in, img)
 	out := filepath.Join(dir, "unsigned")
-	d, err := ociimage.WriteLayout(context.Background(), oci, out)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return out, d.String()
+	return out, ocitest.Layout(t, in, out).String()
 }
 
 // TestSignLayout signs the UKI and the boot loader of a layout's image into a new layout whose
 // header, store, hash tree and contract stay as they are, and leaves the input as it is.
 func TestSignLayout(t *testing.T) {
-	needSigningTools(t)
+	imagetest.NeedTools(t, "sbsign", "sbverify")
 	dir := t.TempDir()
 	key, cert, _ := imagetest.Signer(t, dir, "db")
 	in, before := unsignedLayout(t, dir)
@@ -136,7 +127,7 @@ func TestSignLayoutRefusesACorruptUKI(t *testing.T) {
 
 // TestSignLayoutNeedsANewDirectory refuses an output that exists before it signs anything.
 func TestSignLayoutNeedsANewDirectory(t *testing.T) {
-	needSigningTools(t)
+	imagetest.NeedTools(t, "sbsign", "sbverify")
 	dir := t.TempDir()
 	key, cert, _ := imagetest.Signer(t, dir, "db")
 	in, _ := unsignedLayout(t, dir)

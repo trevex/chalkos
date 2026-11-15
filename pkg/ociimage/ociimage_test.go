@@ -31,31 +31,8 @@ import (
 	"github.com/trevex/chalkos/pkg/ociimage/ocitest"
 )
 
-// writeImage writes the image directory of a test image with its contract into dir and returns
-// the root hash of its store.
-func writeImage(t *testing.T, dir string) []byte {
-	t.Helper()
-	img := imagetest.Image{Variant: "node", Platform: "metal", Seed: "1"}
-	root := imagetest.Write(t, dir, img)
-	imagetest.WriteContract(t, dir, img, root)
-	return root
-}
-
-// writeLayout writes the layout of the image directory in to out and returns its manifest's
-// digest.
-func writeLayout(t *testing.T, in, out string) v1.Hash {
-	t.Helper()
-	img, closeImage, err := ociimage.FromDirectory(context.Background(), in)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer closeImage()
-	d, err := ociimage.WriteLayout(context.Background(), img, out)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return d
-}
+// nodeImage is the test image of a node on metal.
+var nodeImage = imagetest.Image{Variant: "node", Platform: "metal", Seed: "1"}
 
 // smallBlobs are the five blobs of a small test image's layers, a few bytes each, built fresh so
 // a test may replace one before calling ociimage.Build.
@@ -79,9 +56,9 @@ func smallBlobs(t *testing.T) (store, hashTree, uki, bootLoader, contract ociima
 func TestWriteLayout(t *testing.T) {
 	dir := t.TempDir()
 	in := filepath.Join(dir, "in")
-	root := writeImage(t, in)
+	root := imagetest.WriteDir(t, in, nodeImage)
 	out := filepath.Join(dir, "out")
-	d := writeLayout(t, in, out)
+	d := ocitest.Layout(t, in, out)
 	img, err := ociimage.ReadLayout(out)
 	if err != nil {
 		t.Fatal(err)
@@ -134,9 +111,9 @@ func TestWriteLayout(t *testing.T) {
 func TestWriteLayoutIsReproducible(t *testing.T) {
 	dir := t.TempDir()
 	in := filepath.Join(dir, "in")
-	writeImage(t, in)
+	imagetest.WriteDir(t, in, nodeImage)
 	a, b := filepath.Join(dir, "a"), filepath.Join(dir, "b")
-	if da, db := writeLayout(t, in, a), writeLayout(t, in, b); da != db {
+	if da, db := ocitest.Layout(t, in, a), ocitest.Layout(t, in, b); da != db {
 		t.Errorf("manifests %s and %s differ", da, db)
 	}
 	for _, f := range []string{"index.json", "oci-layout"} {
@@ -263,7 +240,7 @@ func TestParseContract(t *testing.T) {
 // .json, which names no layer.
 func TestReadContractDirRefusesFactsWithoutALayerName(t *testing.T) {
 	dir := t.TempDir()
-	writeImage(t, dir)
+	imagetest.WriteDir(t, dir, nodeImage)
 	if _, err := ociimage.ReadContractDir(dir); err != nil {
 		t.Fatal(err)
 	}
@@ -281,7 +258,7 @@ func TestReadContractDirRefusesFactsWithoutALayerName(t *testing.T) {
 // TestFromDirectoryRefuses refuses an image directory whose metadata.json names another root hash
 // or platform than its raw image, and one whose UKI names no variant, such as the installer's.
 func TestFromDirectoryRefuses(t *testing.T) {
-	metal := imagetest.Image{Variant: "node", Platform: "metal", Seed: "1"}
+	metal := nodeImage
 	noVariant := imagetest.Image{Platform: "metal", Seed: "1"}
 	for want, tc := range map[string]struct {
 		img, contract imagetest.Image
@@ -344,9 +321,9 @@ func TestReadLayoutRefusesACorruptManifestOrConfig(t *testing.T) {
 		t.Run(which, func(t *testing.T) {
 			dir := t.TempDir()
 			in := filepath.Join(dir, "in")
-			writeImage(t, in)
+			imagetest.WriteDir(t, in, nodeImage)
 			out := filepath.Join(dir, "out")
-			target := writeLayout(t, in, out)
+			target := ocitest.Layout(t, in, out)
 			if which == "config" {
 				img, err := ociimage.ReadLayout(out)
 				if err != nil {

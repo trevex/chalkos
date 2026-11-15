@@ -97,6 +97,22 @@ func Image(t testing.TB, h ociimage.Header, c ociimage.Contract) v1.Image {
 	return img
 }
 
+// Layout writes the OCI layout of the image directory in to out, as chalkbuild oci does, and
+// returns its manifest's digest.
+func Layout(t testing.TB, in, out string) v1.Hash {
+	t.Helper()
+	img, closeImage, err := ociimage.FromDirectory(context.Background(), in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer closeImage()
+	d, err := ociimage.WriteLayout(context.Background(), img, out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return d
+}
+
 // Push pushes img to ref and returns the reference of its manifest by digest.
 func Push(t testing.TB, img v1.Image, ref string) string {
 	t.Helper()

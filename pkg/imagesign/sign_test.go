@@ -9,29 +9,25 @@ import (
 	"strconv"
 	"testing"
 
+	"github.com/trevex/chalkos/pkg/image"
 	"github.com/trevex/chalkos/pkg/image/imagetest"
+	"github.com/trevex/chalkos/pkg/uki/ukitest"
 )
 
 func mustRun(t *testing.T, name string, args ...string) {
 	t.Helper()
-	cmd := exec.Command(name, args...)
-	cmd.Env = append(os.Environ(), "MTOOLS_SKIP_CHECK=1")
-	if out, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("%s %v: %v\n%s", name, args, err, out)
+	if _, err := image.Mtools(context.Background(), name, args...); err != nil {
+		t.Fatal(err)
 	}
 }
 
 func TestSignImageSignsOnlyBootLoaderAndUKIs(t *testing.T) {
-	for _, tool := range []string{"mkfs.vfat", "mmd", "mcopy", "mdir", "sbsign", "sbverify"} {
-		if _, err := exec.LookPath(tool); err != nil {
-			t.Skipf("%s not in PATH", tool)
-		}
-	}
-	efi := os.Getenv("CHALKOS_TEST_EFI")
-	if efi == "" {
-		t.Skip("CHALKOS_TEST_EFI not set")
-	}
+	imagetest.NeedTools(t, "mkfs.vfat", "mmd", "mcopy", "mdir", "sbsign", "sbverify")
 	dir := t.TempDir()
+	efi := filepath.Join(dir, "binary.efi")
+	if err := os.WriteFile(efi, ukitest.Build(nil), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	key, cert, _ := imagetest.Signer(t, dir, "db")
 
 	// 1 MiB of padding stands in for the partition table, followed by a 32 MiB FAT filesystem.
@@ -67,34 +63,5 @@ func TestSignImageSignsOnlyBootLoaderAndUKIs(t *testing.T) {
 	}
 	if verify("::/EFI/tools/shell.efi") == nil {
 		t.Error("::/EFI/tools/shell.efi was signed")
-	}
-}
-
-// TestSignFile signs an EFI binary in place.
-func TestSignFile(t *testing.T) {
-	for _, tool := range []string{"sbsign", "sbverify"} {
-		if _, err := exec.LookPath(tool); err != nil {
-			t.Skipf("%s not in PATH", tool)
-		}
-	}
-	efi := os.Getenv("CHALKOS_TEST_EFI")
-	if efi == "" {
-		t.Skip("CHALKOS_TEST_EFI not set")
-	}
-	dir := t.TempDir()
-	key, cert, _ := imagetest.Signer(t, dir, "db")
-	data, err := os.ReadFile(efi)
-	if err != nil {
-		t.Fatal(err)
-	}
-	file := filepath.Join(dir, "BOOTX64.EFI")
-	if err := os.WriteFile(file, data, 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if err := signFile(context.Background(), file, key, cert); err != nil {
-		t.Fatal(err)
-	}
-	if err := exec.Command("sbverify", "--cert", cert, file).Run(); err != nil {
-		t.Errorf("the file is not signed: %v", err)
 	}
 }

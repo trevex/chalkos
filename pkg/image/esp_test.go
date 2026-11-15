@@ -7,54 +7,55 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/trevex/chalkos/pkg/uki/ukitest"
 )
 
-func mustRun(t *testing.T, name string, args ...string) {
+// newESP makes an empty ESP with /EFI/BOOT and /EFI/Linux in dir, and an EFI binary to copy onto
+// it, and returns the ESP's image and the binary's path.
+func newESP(t *testing.T, dir string) (raw, efi string) {
 	t.Helper()
-	cmd := exec.Command(name, args...)
-	cmd.Env = append(os.Environ(), "MTOOLS_SKIP_CHECK=1")
-	if out, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("%s %v: %v\n%s", name, args, err, out)
-	}
-}
-
-// TestExtractUKI copies the one UKI off an ESP and refuses an ESP with none or two.
-func TestExtractUKI(t *testing.T) {
 	for _, tool := range []string{"mkfs.vfat", "mmd", "mcopy", "mdir"} {
 		if _, err := exec.LookPath(tool); err != nil {
 			t.Skipf("%s not in PATH", tool)
 		}
 	}
-	efi := os.Getenv("CHALKOS_TEST_EFI")
-	if efi == "" {
-		t.Skip("CHALKOS_TEST_EFI not set")
+	raw, efi = filepath.Join(dir, "disk.raw"), filepath.Join(dir, "binary.efi")
+	if err := os.WriteFile(efi, ukitest.Build(nil), 0o644); err != nil {
+		t.Fatal(err)
 	}
-	dir := t.TempDir()
-	raw := filepath.Join(dir, "disk.raw")
 	if err := os.WriteFile(raw, nil, 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.Truncate(raw, 32<<20); err != nil {
 		t.Fatal(err)
 	}
-	mustRun(t, "mkfs.vfat", raw)
-	fat := raw + "@@0"
-	mustRun(t, "mmd", "-i", fat, "::/EFI", "::/EFI/BOOT", "::/EFI/Linux")
-	mustRun(t, "mcopy", "-i", fat, efi, "::/EFI/BOOT/BOOTX64.EFI")
+	mtools(t, "mkfs.vfat", raw)
+	mtools(t, "mmd", "-i", FAT(raw, 0), "::/EFI", "::/EFI/BOOT", "::/EFI/Linux")
+	return raw, efi
+}
+
+func mtools(t *testing.T, name string, args ...string) {
+	t.Helper()
+	if _, err := Mtools(context.Background(), name, args...); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// TestExtractUKI copies the one UKI off an ESP and refuses an ESP with none or two.
+func TestExtractUKI(t *testing.T) {
+	dir := t.TempDir()
+	raw, efi := newESP(t, dir)
+	mtools(t, "mcopy", "-i", FAT(raw, 0), efi, "::/EFI/BOOT/BOOTX64.EFI")
 	if _, err := extractUKI(context.Background(), raw, 0, dir); err == nil || !strings.Contains(err.Error(), "holds 0 UKIs") {
 		t.Errorf("an ESP without a UKI: %v", err)
 	}
-	mustRun(t, "mcopy", "-i", fat, efi, "::/EFI/Linux/chalkos_2.efi")
-	out := filepath.Join(dir, "out")
-	os.Mkdir(out, 0o755)
-	uki, err := extractUKI(context.Background(), raw, 0, out)
-	if err != nil {
-		t.Fatal(err)
+	mtools(t, "mcopy", "-i", FAT(raw, 0), efi, "::/EFI/Linux/chalkos_2.efi")
+	out := t.TempDir()
+	if uki, err := extractUKI(context.Background(), raw, 0, out); err != nil || filepath.Base(uki) != "chalkos_2.efi" {
+		t.Errorf("extracted %s, %v", uki, err)
 	}
-	if filepath.Base(uki) != "chalkos_2.efi" {
-		t.Errorf("extracted %s", uki)
-	}
-	mustRun(t, "mcopy", "-i", fat, efi, "::/EFI/Linux/other.efi")
+	mtools(t, "mcopy", "-i", FAT(raw, 0), efi, "::/EFI/Linux/other.efi")
 	if _, err := extractUKI(context.Background(), raw, 0, dir); err == nil || !strings.Contains(err.Error(), "holds 2 UKIs") {
 		t.Errorf("an ESP with two UKIs: %v", err)
 	}
@@ -63,40 +64,19 @@ func TestExtractUKI(t *testing.T) {
 // TestExtractBootLoader copies systemd-boot off an ESP, as an install sends it, and leaves the
 // other binaries of /EFI/BOOT, another architecture's boot loader among them, and the UKIs alone.
 func TestExtractBootLoader(t *testing.T) {
-	for _, tool := range []string{"mkfs.vfat", "mmd", "mcopy", "mdir"} {
-		if _, err := exec.LookPath(tool); err != nil {
-			t.Skipf("%s not in PATH", tool)
-		}
-	}
-	efi := os.Getenv("CHALKOS_TEST_EFI")
-	if efi == "" {
-		t.Skip("CHALKOS_TEST_EFI not set")
-	}
 	dir := t.TempDir()
-	image := filepath.Join(dir, "disk.raw")
-	if err := os.WriteFile(image, nil, 0o644); err != nil {
-		t.Fatal(err)
+	raw, efi := newESP(t, dir)
+	for _, dst := range []string{"::/EFI/Linux/chalkos_2.efi", "::/EFI/BOOT/fallback.efi", "::/EFI/BOOT/BOOTAA64.EFI"} {
+		mtools(t, "mcopy", "-i", FAT(raw, 0), efi, dst)
 	}
-	if err := os.Truncate(image, 32<<20); err != nil {
-		t.Fatal(err)
-	}
-	mustRun(t, "mkfs.vfat", image)
-	fat := image + "@@0"
-	mustRun(t, "mmd", "-i", fat, "::/EFI", "::/EFI/BOOT", "::/EFI/Linux")
-	mustRun(t, "mcopy", "-i", fat, efi, "::/EFI/Linux/chalkos_2.efi")
-	mustRun(t, "mcopy", "-i", fat, efi, "::/EFI/BOOT/fallback.efi")
-	// Another architecture's boot loader is no x86-64 image's.
-	mustRun(t, "mcopy", "-i", fat, efi, "::/EFI/BOOT/BOOTAA64.EFI")
-	if _, err := extractBootLoader(context.Background(), image, 0, dir, "x86-64"); err == nil || !strings.Contains(err.Error(), "has no /EFI/BOOT/BOOTX64.EFI") {
+	if _, err := extractBootLoader(context.Background(), raw, 0, dir, "x86-64"); err == nil || !strings.Contains(err.Error(), "has no /EFI/BOOT/BOOTX64.EFI") {
 		t.Errorf("an ESP without a boot loader: %v", err)
 	}
-	if _, err := extractBootLoader(context.Background(), image, 0, dir, "riscv64"); err == nil || !strings.Contains(err.Error(), "riscv64") {
+	if _, err := extractBootLoader(context.Background(), raw, 0, dir, "riscv64"); err == nil || !strings.Contains(err.Error(), "riscv64") {
 		t.Errorf("an unknown architecture: %v", err)
 	}
-	mustRun(t, "mcopy", "-i", fat, efi, "::/EFI/BOOT/BOOTX64.EFI")
-	out := filepath.Join(dir, "out")
-	os.Mkdir(out, 0o755)
-	loader, err := extractBootLoader(context.Background(), image, 0, out, "x86-64")
+	mtools(t, "mcopy", "-i", FAT(raw, 0), efi, "::/EFI/BOOT/BOOTX64.EFI")
+	loader, err := extractBootLoader(context.Background(), raw, 0, t.TempDir(), "x86-64")
 	if err != nil {
 		t.Fatal(err)
 	}

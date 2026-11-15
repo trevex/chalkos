@@ -15,15 +15,6 @@ import (
 	"github.com/trevex/chalkos/pkg/image/imagetest"
 )
 
-func needSigningTools(t *testing.T) {
-	t.Helper()
-	for _, tool := range []string{"sbsign", "sbverify"} {
-		if _, err := exec.LookPath(tool); err != nil {
-			t.Skipf("%s not in PATH", tool)
-		}
-	}
-}
-
 func write(t *testing.T, path, content string) {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
@@ -47,7 +38,7 @@ func verified(t *testing.T, disk, file, cert string) error {
 // as a build's links into the Nix store, with the installer's ISO next to its raw image. The copy
 // holds no links, and the image directory stays as it is.
 func TestSignDirectory(t *testing.T) {
-	needSigningTools(t)
+	imagetest.NeedTools(t, "sbsign", "sbverify")
 	dir := t.TempDir()
 	key, cert, _ := imagetest.Signer(t, dir, "db")
 	in := filepath.Join(dir, "in")
@@ -114,7 +105,7 @@ func TestSignDirectory(t *testing.T) {
 // TestSignDirectoryRefuses leaves an output directory that exists as it is, and removes the copy
 // again when signing fails, here with the certificate of another key.
 func TestSignDirectoryRefuses(t *testing.T) {
-	needSigningTools(t)
+	imagetest.NeedTools(t, "sbsign", "sbverify")
 	dir := t.TempDir()
 	key, _, _ := imagetest.Signer(t, dir, "db")
 	_, other, _ := imagetest.Signer(t, dir, "other")
@@ -151,7 +142,7 @@ func TestSignDirectoryRefuses(t *testing.T) {
 // TestSignDirectoryBracketInPath signs an image directory whose path holds characters that are
 // wildcards to filepath.Glob, which diskImages must not use to find a directory's disk images.
 func TestSignDirectoryBracketInPath(t *testing.T) {
-	needSigningTools(t)
+	imagetest.NeedTools(t, "sbsign", "sbverify")
 	dir := t.TempDir()
 	key, cert, _ := imagetest.Signer(t, dir, "db")
 	in := filepath.Join(dir, "in[1]")
