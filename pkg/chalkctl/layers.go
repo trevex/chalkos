@@ -12,7 +12,7 @@ import (
 )
 
 // plugins are chalkctl's layers, in the order of their names.
-var plugins = []layer.Plugin{kuberneteslayer.New(), routerlayer.New()}
+var plugins = []layer.Plugin{&kuberneteslayer.Plugin{}, &routerlayer.Plugin{}}
 
 // compiled are the plugins that implement the hook T.
 func compiled[T any]() []T {

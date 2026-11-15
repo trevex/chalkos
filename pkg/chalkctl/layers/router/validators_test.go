@@ -12,10 +12,10 @@ import (
 // A router image runs the validator router, which reads the documents of the router kinds and of
 // Network, each kind once; an image without the Router kind runs none.
 func TestValidators(t *testing.T) {
-	if got := New().Validators(schematest.Load(t, schematest.Builtin, schematest.Networkd)); got != nil {
+	if got := (&Plugin{}).Validators(schematest.Load(t, schematest.Builtin, schematest.Networkd)); got != nil {
 		t.Errorf("an image without the router kinds runs %v", got)
 	}
-	got := New().Validators(schematest.Load(t, schematest.Builtin, schematest.Networkd, schematest.Router))
+	got := (&Plugin{}).Validators(schematest.Load(t, schematest.Builtin, schematest.Networkd, schematest.Router))
 	if len(got) != 1 || got[0].Name != "router" {
 		t.Fatalf("validators = %v", got)
 	}
@@ -34,7 +34,7 @@ func TestValidators(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	got = New().Validators(noBGP)
+	got = (&Plugin{}).Validators(noBGP)
 	if len(got) != 1 || slices.Contains(got[0].Inputs, "BGPPeer") || !slices.Contains(got[0].Inputs, "VRF") {
 		t.Errorf("validators of an image without BGP = %v", got)
 	}

@@ -82,7 +82,7 @@ func readNothing(t *testing.T) layer.ReadVersions {
 // Changes compares the API server the inventory's config names with the one the node's running
 // config names, patch releases included.
 func TestRolloutChanges(t *testing.T) {
-	p := New()
+	p := &Plugin{}
 	runningOn := func(ref string) []config.Document {
 		docs, _ := fakeCluster{apiServer: map[string]string{"cp1": ref}}.Documents("cp1")
 		return docs
@@ -124,7 +124,7 @@ func TestRolloutChanges(t *testing.T) {
 
 // Kubernetes's version skew policy for a delivery's API server, each rule at its boundary.
 func TestCheckConfig(t *testing.T) {
-	p := New()
+	p := &Plugin{}
 	unknown := errors.New("connection refused")
 	with := func(nodes []runs, change func(n *runs)) []runs {
 		nodes = slices.Clone(nodes)
@@ -218,7 +218,7 @@ func imageOf(t *testing.T, kubelet string) []*anypb.Any {
 
 // An image's kubelet is no newer than the oldest API server the control planes run.
 func TestCheckImages(t *testing.T) {
-	p := New()
+	p := &Plugin{}
 	unknown := errors.New("connection refused")
 	other, err := anypb.New(&kubernetesv1.EtcdMembersRequest{})
 	if err != nil {
@@ -262,7 +262,7 @@ func TestCheckImages(t *testing.T) {
 // An upgrade whose images concern no node of the cluster reads no node's versions: neither an
 // image without a kubelet nor one for a node without a Node document.
 func TestCheckImagesOutsideTheCluster(t *testing.T) {
-	p := New()
+	p := &Plugin{}
 	c, _ := versionsLab(t, append(threeAndOne("1.37.1", "1.37.1"), runs{"n1", "", "", "", errors.New("connection refused")})...)
 	if err := p.CheckImages(c, map[string][]*anypb.Any{"n1": imageOf(t, "1.38.0")}, readNothing(t)); err != nil {
 		t.Errorf("a node without Kubernetes: %v", err)
@@ -349,7 +349,7 @@ func TestSummary(t *testing.T) {
 		runs{"w1", k8s.KindWorker, "1.37.1", "1.37.1", nil},
 	)
 	want := []string{"API server 1.37.1: cp2, w1", "API server 1.37.2: cp1", "API server unknown: cp3"}
-	if got := New().Summary(c, readOf(all)); !slices.Equal(got, want) {
+	if got := (&Plugin{}).Summary(c, readOf(all)); !slices.Equal(got, want) {
 		t.Errorf("Summary = %q, want %q", got, want)
 	}
 }

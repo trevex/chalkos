@@ -6,8 +6,6 @@ import (
 	"github.com/trevex/chalkos/pkg/kubernetes/translate"
 )
 
-var _ layer.Inventory = (*Plugin)(nil)
-
 // NodeDocuments leaves the Addon documents to the control planes.
 func (*Plugin) NodeDocuments(docs []config.Document) []config.Document {
 	return translate.NodeDocuments(docs)

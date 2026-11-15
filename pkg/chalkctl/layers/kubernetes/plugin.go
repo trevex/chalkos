@@ -25,10 +25,8 @@ var (
 	_ layer.Rotation      = (*Plugin)(nil)
 	_ layer.RotationNodes = (*Plugin)(nil)
 	_ layer.Rollout       = (*Plugin)(nil)
+	_ layer.Inventory     = (*Plugin)(nil)
 )
-
-// New returns chalkctl's Kubernetes layer.
-func New() *Plugin { return &Plugin{} }
 
 // Name is the Kubernetes layer's.
 func (*Plugin) Name() string { return layers.Kubernetes }
