@@ -1,11 +1,9 @@
 # Writes containerd's hosts.toml files from the output of mirrorsCommand, chalkd kubernetes
 # containerd-hosts: for each registry a line "=== <directory>" and then its hosts.toml. The files
-# go to a new directory that is swapped in for certsDir in one rename, so containerd never reads a
-# mix of two configs nor finds none; a failing command leaves certsDir as it was.
+# go to a new directory that is swapped in for /run/containerd/certs.d in one rename, so
+# containerd never reads a mix of two configs nor finds none; a failing command leaves it as it was.
 {
-  certsDir ? "/run/containerd/certs.d",
   coreutils,
-  lib,
   mirrorsCommand,
   writeShellApplication,
 }:
@@ -13,7 +11,7 @@ writeShellApplication {
   name = "chalkos-registry-mirrors";
   runtimeInputs = [ coreutils ];
   text = ''
-    dir=${lib.escapeShellArg certsDir}
+    dir=/run/containerd/certs.d
     parent=$(dirname "$dir")
     mkdir -p "$parent"
     tmp=$(mktemp -d "$parent/.certs.d.XXXXXX")

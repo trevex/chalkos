@@ -7,12 +7,11 @@
 # etcd's directory alone.
 {
   coreutils,
-  etcdDir ? "/var/lib/etcd",
   lib,
   # The packet mark bit the firewall accepts the ports with.
   mark,
   nftables,
-  ports ? true,
+  ports,
   typeCommand,
   writeShellApplication,
 }:
@@ -25,7 +24,7 @@ writeShellApplication {
   text = ''
     type=$(${typeCommand})
     if [ "$type" = controlplane ]; then
-      install -d -m 0700 ${lib.escapeShellArg etcdDir}
+      install -d -m 0700 /var/lib/etcd
     fi
   ''
   + lib.optionalString ports ''
