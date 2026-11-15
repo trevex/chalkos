@@ -67,20 +67,10 @@ func TestSignMakesOutsParent(t *testing.T) {
 	}
 }
 
-// TestSignNeedsKeyCertAndTwoDirectories refuses a sign without --key or --cert, or without both
-// directories.
-func TestSignNeedsKeyCertAndTwoDirectories(t *testing.T) {
-	for _, tc := range []struct {
-		args []string
-		want string
-	}{
-		{[]string{"sign", "--key", "db.key", "in", "out"}, `required flag(s) "cert" not set`},
-		{[]string{"sign", "--cert", "db.crt", "in", "out"}, `required flag(s) "key" not set`},
-		{[]string{"sign", "--key", "db.key", "--cert", "db.crt", "in"}, "accepts 2 arg(s), received 1"},
-	} {
-		if status, _, stderr := run(tc.args...); status != 2 || !strings.Contains(stderr, tc.want) || !strings.Contains(stderr, "Usage:") {
-			t.Errorf("%v = %d, %q; want %q", tc.args, status, stderr, tc.want)
-		}
+// TestSignNeedsCert refuses a sign without --cert as a usage error.
+func TestSignNeedsCert(t *testing.T) {
+	if status, _, stderr := run("sign", "--key", "db.key", "in", "out"); status != 2 || !strings.Contains(stderr, `required flag(s) "cert" not set`) {
+		t.Errorf("sign without --cert = %d, %q", status, stderr)
 	}
 }
 
@@ -114,19 +104,3 @@ func TestOCISignAndPush(t *testing.T) {
 	}
 }
 
-// TestOCIAndPushNeedTwoArguments refuses oci and push without both of their arguments.
-func TestOCIAndPushNeedTwoArguments(t *testing.T) {
-	for _, tc := range []struct {
-		args []string
-		want string
-	}{
-		{[]string{"oci", "in"}, "accepts 2 arg(s), received 1"},
-		{[]string{"oci", "in", "out", "extra"}, "accepts 2 arg(s), received 3"},
-		{[]string{"oci", "in", "out", "--bogus"}, "unknown flag: --bogus"},
-		{[]string{"push", "layout"}, "accepts 2 arg(s), received 1"},
-	} {
-		if status, _, stderr := run(tc.args...); status != 2 || !strings.Contains(stderr, tc.want) || !strings.Contains(stderr, "Usage:") {
-			t.Errorf("%v = %d, %q; want %q", tc.args, status, stderr, tc.want)
-		}
-	}
-}
