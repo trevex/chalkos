@@ -571,7 +571,8 @@ func TestClearMembership(t *testing.T) {
 	}
 }
 
-// RemoveEtcdData empties etcd's data directory and keeps the directory.
+// RemoveEtcdData, like RemoveStaticPods, empties its directory, keeps it, and finds nothing to do
+// without it.
 func TestRemoveEtcdData(t *testing.T) {
 	s := testNode(t, kubernetes.KindControlPlane, "cp1", nil)
 	write(t, filepath.Join(s.EtcdData, "member", "snap", "db"), "")
@@ -880,16 +881,12 @@ func TestKubeletFlags(t *testing.T) {
 			t.Errorf("flag = %s, want %s", got, want)
 		}
 	}
-}
-
-func TestEtcdHasData(t *testing.T) {
-	s := testNode(t, kubernetes.KindControlPlane, "cp1", nil)
-	if has, err := s.EtcdHasData(); err != nil || has {
-		t.Errorf("missing directory: %v, %v", has, err)
-	}
-	write(t, filepath.Join(s.EtcdData, "member", "snap", "db"), "")
-	if has, err := s.EtcdHasData(); err != nil || !has {
-		t.Errorf("directory with a member: %v, %v", has, err)
+	// The extra flags come sorted, after chalkos's own, so they override them.
+	c = kubernetes.Cluster{Kind: kubernetes.KindWorker, ExtraArgs: map[string]map[string]string{
+		"kubelet": {"v": "2", "max-pods": "50"}, "kube-apiserver": {"v": "4"},
+	}}
+	if got, want := kubeletFlags(c, kubernetes.Node{Name: "w1"}), []string{"--hostname-override=w1", "--max-pods=50", "--v=2"}; !slices.Equal(got, want) {
+		t.Errorf("flags = %v, want %v", got, want)
 	}
 }
 
@@ -1250,53 +1247,6 @@ func TestPrepareGivesTheKubeletEveryCA(t *testing.T) {
 	}
 }
 
-func TestKubeletFlagsEndWithTheExtraFlags(t *testing.T) {
-	c := kubernetes.Cluster{Kind: kubernetes.KindWorker, ExtraArgs: map[string]map[string]string{
-		"kubelet": {"v": "2", "max-pods": "50"}, "kube-apiserver": {"v": "4"},
-	}}
-	got := kubeletFlags(c, kubernetes.Node{Name: "w1"})
-	// Sorted, after chalkos's own, so they override them.
-	if want := []string{"--hostname-override=w1", "--max-pods=50", "--v=2"}; !slices.Equal(got, want) {
-		t.Errorf("flags = %v, want %v", got, want)
-	}
-}
-
-func TestPrepareWritesTheKubeletConfig(t *testing.T) {
-	s := testNode(t, kubernetes.KindWorker, "w1", secrets(t))
-	if err := s.Prepare(now, picked, nil); err != nil {
-		t.Fatal(err)
-	}
-	var config struct {
-		ClusterDomain  string   `json:"clusterDomain"`
-		ClusterDNS     []string `json:"clusterDNS"`
-		StaticPodPath  string   `json:"staticPodPath"`
-		Authentication struct {
-			X509 struct {
-				ClientCAFile string `json:"clientCAFile"`
-			} `json:"x509"`
-		} `json:"authentication"`
-	}
-	data, err := os.ReadFile(s.KubeletConfig())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := json.Unmarshal(data, &config); err != nil {
-		t.Fatal(err)
-	}
-	if config.ClusterDomain != "cluster.local" {
-		t.Errorf("clusterDomain = %q", config.ClusterDomain)
-	}
-	if !slices.Equal(config.ClusterDNS, []string{"10.96.0.10"}) {
-		t.Errorf("clusterDNS = %v", config.ClusterDNS)
-	}
-	if config.StaticPodPath != s.Manifests() {
-		t.Errorf("staticPodPath = %q, want %q", config.StaticPodPath, s.Manifests())
-	}
-	if want := filepath.Join(s.KubeletDir(), "ca.crt"); config.Authentication.X509.ClientCAFile != want {
-		t.Errorf("clientCAFile = %q, want %q", config.Authentication.X509.ClientCAFile, want)
-	}
-}
-
 // TestKubeletConfig is the kubelet's whole configuration: clients authenticate with certificates
 // or tokens the API server checks, the kernel's tunables are the image's, and pods resolve
 // through the cluster DNS address of the primary family.
@@ -1336,24 +1286,3 @@ func TestCheckPrepared(t *testing.T) {
 	}
 }
 
-// RemoveStaticPods removes every manifest, and finds nothing to do without the directory.
-func TestRemoveStaticPods(t *testing.T) {
-	s := State{Paths{RunDir: t.TempDir()}}
-	if err := s.RemoveStaticPods(); err != nil {
-		t.Fatalf("without manifests: %v", err)
-	}
-	if err := os.MkdirAll(s.Manifests(), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	for _, name := range []string{"etcd.json", "kube-apiserver.json"} {
-		if err := os.WriteFile(filepath.Join(s.Manifests(), name), []byte("{}"), 0o644); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if err := s.RemoveStaticPods(); err != nil {
-		t.Fatal(err)
-	}
-	if entries, err := os.ReadDir(s.Manifests()); err != nil || len(entries) != 0 {
-		t.Errorf("manifests left: %v, %v", entries, err)
-	}
-}

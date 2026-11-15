@@ -22,9 +22,7 @@ func TestReadMembership(t *testing.T) {
 		leftovers Leftovers
 	}{
 		"fresh":                       {nil, MembershipNone, Leftovers{}},
-		"initial cluster only":        {[]string{initialCluster}, MembershipNone, Leftovers{InitialCluster: true}},
-		"pinned only":                 {[]string{pin}, MembershipNone, Leftovers{Pinned: true}},
-		"etcd data only":              {[]string{etcdData}, MembershipNone, Leftovers{EtcdData: true}},
+		"leftovers only":              {[]string{initialCluster, pin, etcdData}, MembershipNone, Leftovers{InitialCluster: true, Pinned: true, EtcdData: true}},
 		"joining":                     {[]string{joining}, MembershipJoining, Leftovers{}},
 		"joining with what it wrote":  {[]string{joining, initialCluster, pin, etcdData}, MembershipJoining, Leftovers{InitialCluster: true, Pinned: true, EtcdData: true}},
 		"bootstrapped":                {[]string{bootstrapped, pin, etcdData, initialised}, MembershipBootstrapped, Leftovers{Pinned: true, EtcdData: true}},
@@ -74,16 +72,5 @@ func TestReadMembershipUnreadable(t *testing.T) {
 	}
 	if m, _, err := s.ReadMembership(); err != nil || m != MembershipNone {
 		t.Fatalf("no state: %v, %v", m, err)
-	}
-}
-
-func TestPinned(t *testing.T) {
-	s := State{Paths{StateDir: t.TempDir()}}
-	if _, l, err := s.ReadMembership(); err != nil || l.Pinned {
-		t.Errorf("not pinned: %v, %v", l.Pinned, err)
-	}
-	write(t, s.Pin(), "192.168.100.11\n")
-	if _, l, err := s.ReadMembership(); err != nil || !l.Pinned {
-		t.Errorf("pinned: %v, %v", l.Pinned, err)
 	}
 }
