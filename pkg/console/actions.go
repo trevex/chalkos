@@ -11,6 +11,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
+	"github.com/trevex/chalkos/pkg/internal/strs"
 	"github.com/trevex/chalkos/pkg/statusview"
 )
 
@@ -123,7 +124,7 @@ func (m *Model) rollbackConfig(info *nodev1.InfoResponse, st *nodev1.StatusRespo
 	a.confirm = "Roll back the config of " + name + " to " + short + "? The node delivers it again, and the units its effects name restart."
 	a.run = func(ctx context.Context, c Client) (string, error) {
 		resp, err := c.RollbackConfig(ctx, version)
-		return fmt.Sprintf("config rolled back to %s; %s restarted", short, count(len(resp.GetRestartedUnits()), "unit")), err
+		return fmt.Sprintf("config rolled back to %s; %s restarted", short, strs.Count(len(resp.GetRestartedUnits()), "unit")), err
 	}
 	return a
 }

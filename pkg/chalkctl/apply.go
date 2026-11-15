@@ -20,6 +20,7 @@ import (
 	"github.com/trevex/chalkos/pkg/client"
 	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/internal/cli"
+	"github.com/trevex/chalkos/pkg/internal/strs"
 )
 
 type applyConfigFlags struct {
@@ -186,10 +187,10 @@ func (a *app) dryRunConfig(ctx context.Context, f applyConfigFlags, names []stri
 	}
 	var msgs []string
 	if len(refused) > 0 {
-		msgs = append(msgs, fmt.Sprintf("the config of %s is refused: %s", layer.Count(len(refused), "node"), strings.Join(refused, ", ")))
+		msgs = append(msgs, fmt.Sprintf("the config of %s is refused: %s", strs.Count(len(refused), "node"), strings.Join(refused, ", ")))
 	}
 	if len(failed) > 0 {
-		msgs = append(msgs, fmt.Sprintf("the dry run failed on %s: %s", layer.Count(len(failed), "node"), strings.Join(failed, ", ")))
+		msgs = append(msgs, fmt.Sprintf("the dry run failed on %s: %s", strs.Count(len(failed), "node"), strings.Join(failed, ", ")))
 	}
 	if len(msgs) > 0 {
 		return errors.New(strings.Join(msgs, "; "))

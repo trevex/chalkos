@@ -11,6 +11,7 @@ import (
 	kubernetesv1 "github.com/trevex/chalkos/pkg/api/kubernetes/v1"
 	"github.com/trevex/chalkos/pkg/chalkctl/layer"
 	"github.com/trevex/chalkos/pkg/internal/cli"
+	"github.com/trevex/chalkos/pkg/internal/strs"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
 )
 
@@ -60,6 +61,6 @@ func bootstrap(h layer.Host, ctx context.Context, f bootstrapFlags, pos []string
 	if err != nil {
 		return fmt.Errorf("bootstrap %s: %w", t.Name(), err)
 	}
-	fmt.Fprintf(h.Stdout(), "%s is bootstrapped; applied %s\n", t.Name(), layer.Count(resp.Msg.Applied, "object"))
+	fmt.Fprintf(h.Stdout(), "%s is bootstrapped; applied %s\n", t.Name(), strs.Count(resp.Msg.Applied, "object"))
 	return nil
 }

@@ -10,6 +10,7 @@ import (
 	"github.com/trevex/chalkos/pkg/chalkctl/layer"
 	"github.com/trevex/chalkos/pkg/client"
 	"github.com/trevex/chalkos/pkg/clustersecrets"
+	"github.com/trevex/chalkos/pkg/internal/strs"
 	"github.com/trevex/chalkos/pkg/pki"
 )
 
@@ -98,7 +99,7 @@ func (r *rotation) applyOSCA(ctx context.Context, phase clustersecrets.Phase) er
 			}); err != nil {
 				return err
 			}
-			r.Say("  %s trusts the %s of the secrets file", name, layer.Count(len(want), "OS CA"))
+			r.Say("  %s trusts the %s of the secrets file", name, strs.Count(len(want), "OS CA"))
 			return nil
 		})
 	case clustersecrets.PhaseSwitch:

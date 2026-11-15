@@ -8,6 +8,7 @@ import (
 	"time"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
+	"github.com/trevex/chalkos/pkg/internal/strs"
 	"github.com/trevex/chalkos/pkg/statusview"
 )
 
@@ -96,7 +97,7 @@ func (m *Model) healthLine() string {
 	}
 	var parts []string
 	if n := len(st.FailedUnits); n > 0 {
-		parts = append(parts, ErrorStyle.Render(OneLine(count(n, "failed unit")+": "+strings.Join(st.FailedUnits, ", "))))
+		parts = append(parts, ErrorStyle.Render(OneLine(strs.Count(n, "failed unit")+": "+strings.Join(st.FailedUnits, ", "))))
 	}
 	if tr := st.Trial; tr != nil {
 		parts = append(parts, WarnStyle.Render(OneLine(fmt.Sprintf("config %s on trial until %s", tr.Version[:min(12, len(tr.Version))], tr.Deadline.AsTime().Local().Format("15:04")))))

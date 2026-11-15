@@ -88,11 +88,3 @@ func (p *Plugin) Actions() map[string]func(context.Context) error {
 		"reload":  func(context.Context) error { p.k.reloadControlPlane(); return nil },
 	}
 }
-
-// count is n and the noun, in the plural unless n is one.
-func count[N ~int | ~uint64](n N, noun string) string {
-	if n == 1 {
-		return "1 " + noun
-	}
-	return fmt.Sprintf("%d %ss", n, noun)
-}

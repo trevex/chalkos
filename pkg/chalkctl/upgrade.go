@@ -22,6 +22,7 @@ import (
 	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/esp"
 	"github.com/trevex/chalkos/pkg/internal/cli"
+	"github.com/trevex/chalkos/pkg/internal/strs"
 	"github.com/trevex/chalkos/pkg/pki"
 	"github.com/trevex/chalkos/pkg/statusview"
 	"github.com/trevex/chalkos/pkg/storage"
@@ -394,7 +395,7 @@ func (r *upgradeRun) run(ctx context.Context) error {
 		images[g.image.name()] = true
 	}
 	if r.rollback {
-		r.say("rolling back %s to %s: %s", layer.Count(len(r.nodes), "node"), statusview.BootImageName(r.rollbackTo), strings.Join(r.order(), ", "))
+		r.say("rolling back %s to %s: %s", strs.Count(len(r.nodes), "node"), statusview.BootImageName(r.rollbackTo), strings.Join(r.order(), ", "))
 	}
 	for _, name := range coordinators {
 		if err := r.node(ctx, r.nodes[name]); err != nil {
@@ -413,7 +414,7 @@ func (r *upgradeRun) run(ctx context.Context) error {
 		}
 	}
 	names := strings.Join(slices.Sorted(maps.Keys(images)), ", ")
-	count := layer.Count(len(r.nodes), "node")
+	count := strs.Count(len(r.nodes), "node")
 	switch {
 	case r.rollback && r.until == untilActivate:
 		r.say("staged %s on %s; it boots with their next reboot, which chalkctl node reboot runs, and an upgrade to the image they run leaves it staged", statusview.BootImageName(r.rollbackTo), count)

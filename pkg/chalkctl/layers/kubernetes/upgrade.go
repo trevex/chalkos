@@ -14,6 +14,7 @@ import (
 	"github.com/trevex/chalkos/pkg/chalkctl/layer"
 	"github.com/trevex/chalkos/pkg/client"
 	"github.com/trevex/chalkos/pkg/internal/poll"
+	"github.com/trevex/chalkos/pkg/internal/strs"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
 )
 
@@ -150,17 +151,17 @@ func quorumOnce(ctx context.Context, u layer.Upgrading, allowDowntime bool, name
 		// A control plane that is no etcd member takes nothing of etcd down.
 		return nil
 	case voters-1 < quorum && !allowDowntime && reboot:
-		return poll.Permanent{Err: fmt.Errorf("etcd has %s, and without %s fewer than the %d its quorum needs: it and the API server are down while %s reboots; pass --allow-downtime to accept that", layer.Count(voters, "voter"), name, quorum, name)}
+		return poll.Permanent{Err: fmt.Errorf("etcd has %s, and without %s fewer than the %d its quorum needs: it and the API server are down while %s reboots; pass --allow-downtime to accept that", strs.Count(voters, "voter"), name, quorum, name)}
 	case voters-1 < quorum && !allowDowntime:
 		others := "no other control plane"
 		if voters > 1 {
-			others = layer.Count(voters-1, "other control plane")
+			others = strs.Count(voters-1, "other control plane")
 		}
 		return poll.Permanent{Err: fmt.Errorf("the API server of %s restarts, and with %s the cluster's API may be unavailable meanwhile; pass --allow-downtime to accept that", name, others)}
 	case voters-1 < quorum:
 		return nil
 	case healthy < quorum:
-		return fmt.Errorf("without %s etcd has %s of %d, fewer than the %d its quorum needs", name, layer.Count(healthy, "healthy voter"), voters, quorum)
+		return fmt.Errorf("without %s etcd has %s of %d, fewer than the %d its quorum needs", name, strs.Count(healthy, "healthy voter"), voters, quorum)
 	}
 	return nil
 }
@@ -189,7 +190,7 @@ func drain(ctx context.Context, u layer.Upgrading, deleteEmptyDir bool, name str
 	if !resp.Marked {
 		cordon = "was cordoned before and stays so"
 	}
-	u.Say("%s: %s, evicted %s, kept %d", name, cordon, layer.Count(len(resp.Evicted), "pod"), len(resp.Kept)+len(resp.Unmanaged))
+	u.Say("%s: %s, evicted %s, kept %d", name, cordon, strs.Count(len(resp.Evicted), "pod"), len(resp.Kept)+len(resp.Unmanaged))
 	if len(resp.Unmanaged) > 0 {
 		u.Say("%s: keeps pods without a controller: %s; nothing starts them elsewhere, and they are deleted for good if the node stays down longer than their tolerations allow", name, strings.Join(resp.Unmanaged, ", "))
 	}

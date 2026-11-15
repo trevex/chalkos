@@ -23,6 +23,7 @@ import (
 	kubernetesv1 "github.com/trevex/chalkos/pkg/api/kubernetes/v1"
 	"github.com/trevex/chalkos/pkg/chalkd/layer"
 	"github.com/trevex/chalkos/pkg/internal/poll"
+	"github.com/trevex/chalkos/pkg/internal/strs"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
 	"github.com/trevex/chalkos/pkg/kubernetes/etcd"
 	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
@@ -212,7 +213,7 @@ func rootCAHolds(ctx context.Context, client kubernetes.Interface, namespace str
 	}
 	slices.Sort(got)
 	if !slices.Equal(got, want) {
-		return fmt.Errorf("it holds %s, not the %d the control plane trusts", count(len(got), "CA certificate"), len(want))
+		return fmt.Errorf("it holds %s, not the %d the control plane trusts", strs.Count(len(got), "CA certificate"), len(want))
 	}
 	return nil
 }
@@ -351,7 +352,7 @@ func rewriteEncrypted(ctx context.Context, client kubernetes.Interface) (uint64,
 			opts.Continue = list.Continue
 		}
 	}
-	log.Printf("rotation: rewrote %s", count(rewritten, "encrypted object"))
+	log.Printf("rotation: rewrote %s", strs.Count(rewritten, "encrypted object"))
 	return rewritten, nil
 }
 

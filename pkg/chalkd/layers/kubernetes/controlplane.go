@@ -13,6 +13,7 @@ import (
 
 	"github.com/trevex/chalkos/pkg/chalkd/renewal"
 	"github.com/trevex/chalkos/pkg/config/slot"
+	"github.com/trevex/chalkos/pkg/internal/strs"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
 	"github.com/trevex/chalkos/pkg/kubernetes/addons"
 	kapply "github.com/trevex/chalkos/pkg/kubernetes/apply"
@@ -154,7 +155,7 @@ func (k *side) serveControlPlane(ctx context.Context, c k8s.Cluster, cfg *rest.C
 	for {
 		n, err := k.applyOnce(ctx, c, cfg)
 		if err == nil {
-			log.Printf("kubernetes: applied %s", count(n, "object"))
+			log.Printf("kubernetes: applied %s", strs.Count(n, "object"))
 			applied(n)
 			break
 		}

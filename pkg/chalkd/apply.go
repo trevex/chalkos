@@ -14,6 +14,7 @@ import (
 	"github.com/trevex/chalkos/pkg/check"
 	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/config/slot"
+	"github.com/trevex/chalkos/pkg/internal/strs"
 	"github.com/trevex/chalkos/pkg/outputs"
 	"github.com/trevex/chalkos/pkg/rules"
 )
@@ -312,7 +313,7 @@ func (d *delivery) commit(ctx context.Context) (*connect.Response[nodev1.ApplyCo
 			}
 			return nil, err
 		}
-		log.Printf("trusting %s from now on", count(strings.Count(d.osCA, "-----BEGIN CERTIFICATE-----"), "OS CA"))
+		log.Printf("trusting %s from now on", strs.Count(strings.Count(d.osCA, "-----BEGIN CERTIFICATE-----"), "OS CA"))
 	}
 	if !d.keep {
 		if err := s.applyMachine(ctx, d.machine, m.FallbackSecret); err != nil {

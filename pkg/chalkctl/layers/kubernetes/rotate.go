@@ -15,6 +15,7 @@ import (
 	"github.com/trevex/chalkos/pkg/client"
 	"github.com/trevex/chalkos/pkg/clustersecrets"
 	"github.com/trevex/chalkos/pkg/internal/poll"
+	"github.com/trevex/chalkos/pkg/internal/strs"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
 	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
 	"github.com/trevex/chalkos/pkg/pki"
@@ -374,7 +375,7 @@ func rewriteEncrypted(ctx context.Context, r layer.Rotating) error {
 		return err
 	}
 	if n := counts[old[0].Name]; n > 0 {
-		return fmt.Errorf("etcd still holds %s under the old key %s", layer.Count(n, "object"), old[0].Name)
+		return fmt.Errorf("etcd still holds %s under the old key %s", strs.Count(n, "object"), old[0].Name)
 	}
 	return nil
 }
@@ -399,7 +400,7 @@ func (p *Plugin) FinishGuard(ctx context.Context, r layer.Rotating, kind cluster
 			return err
 		}
 		if n := counts[old[0].Name]; n > 0 {
-			return fmt.Errorf("etcd holds %s encrypted with the old key %s, which removing it would lose; rewrite them with chalkctl rotate encryption-key --resume", layer.Count(n, "object"), old[0].Name)
+			return fmt.Errorf("etcd holds %s encrypted with the old key %s, which removing it would lose; rewrite them with chalkctl rotate encryption-key --resume", strs.Count(n, "object"), old[0].Name)
 		}
 	}
 	return nil
@@ -464,7 +465,7 @@ func encryptedCounts(ctx context.Context, r layer.Rotating, step kubernetesv1.Ro
 			return err
 		}
 		if resp.Msg.Rewritten > 0 {
-			r.Say("  rewrote %s unchanged", layer.Count(resp.Msg.Rewritten, "encrypted object"))
+			r.Say("  rewrote %s unchanged", strs.Count(resp.Msg.Rewritten, "encrypted object"))
 		}
 		for _, e := range resp.Msg.Encrypted {
 			counts[e.Key] += e.Objects

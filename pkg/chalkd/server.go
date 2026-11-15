@@ -604,11 +604,3 @@ func (s *Server) Changes() sync.Locker { return &s.mu }
 func (s *Server) Runner() tool.Runner { return s.Run }
 
 func (s *Server) Slot() (string, error) { return s.Loader.Slot() }
-
-// count is n and the noun, in the plural unless n is one.
-func count[N ~int | ~uint64](n N, noun string) string {
-	if n == 1 {
-		return "1 " + noun
-	}
-	return fmt.Sprintf("%d %ss", n, noun)
-}

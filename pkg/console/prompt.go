@@ -11,6 +11,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/trevex/chalkos/pkg/askpassword"
+	"github.com/trevex/chalkos/pkg/internal/strs"
 )
 
 // enterGuard is how long a prompt ignores Enter after it comes on screen, so an Enter meant for
@@ -258,7 +259,7 @@ func (m *Model) promptView(width, height int) string {
 		if waiting > 1 {
 			verb = " wait"
 		}
-		rows = append(rows, "", GreyStyle.Render(count(waiting, "more request")+verb))
+		rows = append(rows, "", GreyStyle.Render(strs.Count(waiting, "more request")+verb))
 	}
 	return block(strings.Join(rows, "\n"), width, height)
 }

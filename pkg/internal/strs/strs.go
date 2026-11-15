@@ -28,3 +28,11 @@ func list(names []string, conj string) string {
 	}
 	return strings.Join(names[:len(names)-1], ", ") + " " + conj + " " + names[len(names)-1]
 }
+
+// Count is n and the noun, in the plural unless n is one: "1 node", "2 nodes".
+func Count[N ~int | ~uint32 | ~uint64](n N, noun string) string {
+	if n == 1 {
+		return "1 " + noun
+	}
+	return fmt.Sprintf("%d %ss", n, noun)
+}

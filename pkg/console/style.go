@@ -62,14 +62,6 @@ func wrapWords(label, text string, width int) []string {
 	return append(rows, row)
 }
 
-// count is n of a thing, such as 1 unit or 2 units.
-func count(n int, thing string) string {
-	if n == 1 {
-		return "1 " + thing
-	}
-	return fmt.Sprintf("%d %ss", n, thing)
-}
-
 // Clean makes text safe to print on the screen: a tab expands to the next multiple of 8 columns
 // of its line, and every other control character, the escape that starts a terminal's sequences
 // among them, shows as \xNN. Newlines stay.

@@ -9,6 +9,7 @@ buildGoProgram {
     ../../pkg/askpassword
     ../../pkg/client
     ../../pkg/console
+    ../../pkg/internal/strs
     ../../pkg/jsonfile
     ../../pkg/layers
     ../../pkg/pki
