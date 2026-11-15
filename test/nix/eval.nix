@@ -208,164 +208,237 @@ lib.runTests {
       edge = false;
     };
   };
-  # Router images take DHCPSubnet documents and run Kea unless their modules set
-  # chalkos.router.dhcp.enable to false, whose router tests then run no example of DHCP, and
-  # which carry no output kea or effect dhcp, no Kea, its units, the routes' path unit,
-  # user or package, and no diagnostic dhcp-leases; other images never take them.
-  testRouterDHCPOptional = {
-    expr =
-      let
-        kinds = c: c.chalkos.kinds ? DHCPSubnet;
-        example = c: builtins.pathExists "${c.chalkos.router.examples}/dhcp.yaml";
-        # What of Kea the image c carries.
-        kea = c: {
-          output = c.chalkos.outputs ? kea;
-          effect = c.chalkos.effects ? dhcp;
-          units = lib.filter (
-            n: lib.hasPrefix "kea" n || n == "chalkos-dhcp" || n == "chalkos-dhcp6-routes"
-          ) (lib.attrNames c.systemd.services);
-          path = c.systemd.paths ? chalkos-dhcp6-routes;
-          user = c.users.users ? kea;
-          # A pinned ID, so that the user moves no other user's ID.
-          ids =
-            if c.users.users ? kea then
-              [
-                c.users.users.kea.uid
-                c.users.groups.kea.gid
-              ]
-            else
-              null;
-          package = lib.any (p: lib.hasPrefix "kea" (lib.getName p)) c.environment.systemPackages;
-          # A unit that runs one of Kea's programs.
-          referenced = lib.any (u: lib.hasInfix "-kea-dhcp-" (u.text or "")) (lib.attrValues c.systemd.units);
-          diagnostic = c.chalkos.diagnostics ? dhcp-leases;
-        };
-        without = routerWithout [ "dhcp" ];
-      in
-      {
-        edge = kinds layered.edge-metal.config;
-        without = kinds without;
-        node = kinds layered.node-metal.config;
-        plain = kinds layered.plain-metal.config;
-        examples = {
-          edge = example layered.edge-metal.config;
-          without = example without;
-        };
-        kea = {
-          edge = kea layered.edge-metal.config;
-          without = kea without;
-        };
-      };
-    expected = {
-      edge = true;
-      without = false;
-      node = false;
-      plain = false;
-      examples = {
-        edge = true;
-        without = false;
-      };
-      kea = {
-        edge = {
-          output = true;
-          effect = true;
-          units = [
-            "chalkos-dhcp"
-            "chalkos-dhcp6-routes"
-            "kea-dhcp4"
-            "kea-dhcp4@"
-            "kea-dhcp6"
-            "kea-dhcp6@"
-          ];
-          path = true;
-          user = true;
-          ids = [
-            328
-            328
-          ];
-          package = false;
-          referenced = true;
-          diagnostic = true;
-        };
-        without = {
-          output = false;
-          effect = false;
-          units = [ ];
-          path = false;
-          user = false;
-          ids = null;
-          package = false;
-          referenced = false;
-          diagnostic = false;
-        };
-      };
-    };
-  };
-  # Router images take DHCPRelay documents and run dnsmasq's relays unless their modules set
-  # chalkos.router.dhcpRelay.enable to false, whose router tests then run no example of a
-  # relay, and which carry no output dhcp-relay or effect dhcp-relay, no dnsmasq, its
-  # units or user; other images never take them.
-  testRouterDHCPRelayOptional = {
-    expr =
-      let
-        relay = c: {
-          kind = c.chalkos.kinds ? DHCPRelay;
-          example = builtins.pathExists "${c.chalkos.router.examples}/dhcp-relay.yaml";
-          output = c.chalkos.outputs ? dhcp-relay;
-          effect = c.chalkos.effects ? dhcp-relay;
-          units = lib.filter (n: lib.hasPrefix "dnsmasq" n || n == "chalkos-dhcp-relays") (
-            lib.attrNames c.systemd.services
+  # A router feature that a variant disables with chalkos.router.<feature>.enable = false leaves
+  # nothing of itself in the image: per feature, exactly the parts listed go and nothing comes in
+  # their place, the build allocates the same IDs and networkd keeps the routes others install.
+  # Images without the router layer take no router kind.
+  testRouterFeaturesOptional =
+    let
+      edge = layered.edge-metal.config;
+      inherit (layered.edge-metal._module.args.routerLib) features;
+      names = lib.attrNames;
+      parts =
+        c:
+        let
+          networkd = c.systemd.services.systemd-networkd;
+        in
+        {
+          kinds = names c.chalkos.kinds;
+          outputs = names c.chalkos.outputs;
+          effects = names c.chalkos.effects;
+          services = names c.systemd.services;
+          paths = names c.systemd.paths;
+          users = names c.users.users;
+          groups = names c.users.groups;
+          diagnostics = names c.chalkos.diagnostics;
+          chalkd = map lib.getName c.systemd.services.chalkd.path;
+          packages = map lib.getName c.environment.systemPackages;
+          modulePackages = map lib.getName c.boot.extraModulePackages;
+          kernelModules = c.boot.kernelModules;
+          etc = names c.environment.etc;
+          # The kinds each output reads, as <output>:<kind>.
+          reads = lib.concatMap (o: map (k: "${o}:${k}") c.chalkos.outputs.${o}.inputs) (
+            names c.chalkos.outputs
           );
-          ids =
-            if c.users.users ? dnsmasq then
-              [
-                c.users.users.dnsmasq.uid
-                c.users.groups.dnsmasq.gid
-              ]
-            else
-              null;
-          referenced = lib.any (u: lib.hasInfix "-dnsmasq-" (u.text or "")) (lib.attrValues c.systemd.units);
-          firewallReads = lib.elem "DHCPRelay" c.chalkos.outputs.router-nftables.inputs;
+          # networkd's grant and the credentials it loads.
+          networkd =
+            networkd.chalkos.kinds
+            ++ networkd.serviceConfig.SetCredential or [ ]
+            ++ lib.optional (
+              networkd.serviceConfig ? RefreshOnReload
+            ) "RefreshOnReload=${networkd.serviceConfig.RefreshOnReload}";
+          examples = examplesOf c;
         };
-      in
-      {
-        edge = relay layered.edge-metal.config;
-        without = relay (routerWithout [ "dhcpRelay" ]);
-        node = layered.node-metal.config.chalkos.kinds ? DHCPRelay;
-        plain = layered.plain-metal.config.chalkos.kinds ? DHCPRelay;
-      };
-    expected = {
-      edge = {
-        kind = true;
-        example = true;
-        output = true;
-        effect = true;
-        units = [
-          "chalkos-dhcp-relays"
-          "dnsmasq-relay"
-          "dnsmasq-relay@"
+      all = parts edge;
+      without = lib.genAttrs features (f: routerWithout [ f ]);
+      # What the image without feature f lacks, leaving out the reads of the outputs it lacks.
+      removed =
+        f:
+        let
+          p = parts without.${f};
+        in
+        lib.filterAttrs (_: v: v != [ ]) (
+          lib.mapAttrs (k: v: lib.subtractLists p.${k} v) all
+          // {
+            reads = lib.filter (r: lib.elem (lib.head (lib.splitString ":" r)) p.outputs) (
+              lib.subtractLists p.reads all.reads
+            );
+          }
+        );
+      added =
+        f:
+        let
+          p = parts without.${f};
+        in
+        lib.concatLists (lib.mapAttrsToList (k: v: lib.subtractLists all.${k} v) p);
+      routerKinds = c: names (lib.filterAttrs (_: k: k.group == "router.chalkos.dev") c.chalkos.kinds);
+    in
+    {
+      expr = {
+        removed = lib.genAttrs features removed;
+        added = lib.concatMap added features;
+        ids = lib.all (f: unpinned without.${f} == unpinned edge) features;
+        foreignRoutes = lib.all (
+          f: without.${f}.systemd.network.config.networkConfig == edge.systemd.network.config.networkConfig
+        ) features;
+        otherImages = map routerKinds [
+          layered.node-metal.config
+          layered.plain-metal.config
         ];
-        ids = [
-          332
-          332
+      };
+      expected = {
+        removed = {
+          bgp = {
+            kinds = [
+              "BGP"
+              "BGPPeer"
+              "CommunityList"
+              "PrefixList"
+              "RoutingPolicy"
+            ];
+            outputs = [ "frr" ];
+            effects = [ "frr" ];
+            services = [ "frr" ];
+            users = [ "frr" ];
+            groups = [
+              "frr"
+              "frrvty"
+            ];
+            diagnostics = [
+              "bfd-peers"
+              "bgp-neighbor"
+              "bgp-route"
+              "bgp-summary"
+            ];
+            chalkd = [ "frr" ];
+            packages = [ "frr" ];
+            etc = [
+              "frr/daemons"
+              "frr/frr.conf"
+              "frr/vtysh.conf"
+            ];
+            reads = [ "router-nftables:BGPPeer" ];
+            examples = [
+              "edge.yaml"
+              "leaf.yaml"
+              "vrf.yaml"
+            ];
+          };
+          nat64 = {
+            kinds = [ "NAT64" ];
+            outputs = [ "jool" ];
+            effects = [ "jool" ];
+            services = [ "chalkos-nat64" ];
+            diagnostics = [ "nat64-sessions" ];
+            chalkd = [ "jool-cli" ];
+            modulePackages = [ "jool" ];
+            kernelModules = [ "jool" ];
+            reads = [
+              "dhcp-relay:NAT64"
+              "kea:NAT64"
+              "networkd:NAT64"
+              "router-nftables:NAT64"
+            ];
+            examples = [
+              "edge.yaml"
+              "nat64.yaml"
+              "vrf.yaml"
+            ];
+          };
+          resolver = {
+            kinds = [ "Resolver" ];
+            outputs = [ "unbound" ];
+            effects = [
+              "resolvers"
+              "unbound"
+              "unbound-start"
+            ];
+            services = [
+              "chalkos-resolvers"
+              "unbound"
+              "unbound@"
+            ];
+            users = [ "unbound" ];
+            groups = [ "unbound" ];
+            chalkd = [ "unbound" ];
+            packages = [ "unbound" ];
+            etc = [ "unbound/unbound.conf" ];
+            reads = [ "router-nftables:Resolver" ];
+            examples = [
+              "edge.yaml"
+              "lan.yaml"
+              "vrf.yaml"
+            ];
+          };
+          dhcp = {
+            kinds = [ "DHCPSubnet" ];
+            outputs = [ "kea" ];
+            effects = [ "dhcp" ];
+            services = [
+              "chalkos-dhcp"
+              "chalkos-dhcp6-routes"
+              "kea-dhcp4"
+              "kea-dhcp4@"
+              "kea-dhcp6"
+              "kea-dhcp6@"
+            ];
+            paths = [ "chalkos-dhcp6-routes" ];
+            users = [ "kea" ];
+            groups = [ "kea" ];
+            diagnostics = [ "dhcp-leases" ];
+            reads = [
+              "dhcp-relay:DHCPSubnet"
+              "router-nftables:DHCPSubnet"
+            ];
+            examples = [
+              "dhcp.yaml"
+              "dhcp6.yaml"
+            ];
+          };
+          dhcpRelay = {
+            kinds = [ "DHCPRelay" ];
+            outputs = [ "dhcp-relay" ];
+            effects = [ "dhcp-relay" ];
+            services = [
+              "chalkos-dhcp-relays"
+              "dnsmasq-relay"
+              "dnsmasq-relay@"
+            ];
+            users = [ "dnsmasq" ];
+            groups = [ "dnsmasq" ];
+            reads = [ "router-nftables:DHCPRelay" ];
+            examples = [ "dhcp-relay.yaml" ];
+          };
+          wireguard = {
+            kinds = [
+              "WireGuard"
+              "WireGuardPeer"
+            ];
+            diagnostics = [ "wireguard" ];
+            reads = [
+              "frr:WireGuard"
+              "networkd:WireGuard"
+              "networkd:WireGuardPeer"
+              "router-nftables:WireGuard"
+            ];
+            networkd = [
+              "WireGuard"
+              "WireGuardPeer"
+              "secret:none"
+              "RefreshOnReload=credentials"
+            ];
+            examples = [ "edge.yaml" ];
+          };
+        };
+        added = [ ];
+        ids = true;
+        foreignRoutes = true;
+        otherImages = [
+          [ ]
+          [ ]
         ];
-        referenced = true;
-        firewallReads = true;
       };
-      without = {
-        kind = false;
-        example = false;
-        output = false;
-        effect = false;
-        units = [ ];
-        ids = null;
-        referenced = false;
-        firewallReads = false;
-      };
-      node = false;
-      plain = false;
     };
-  };
   # The output dhcp-relay renders a dnsmasq config per VRF from the DHCPRelay documents, the VRFs,
   # the Networks and, to refuse a family relayed beside Kea's servers, the DHCPSubnets, and checks
   # each with dnsmasq --test. dnsmasq-relay runs the default VRF's relay and dnsmasq-relay@<vrf>
@@ -471,53 +544,24 @@ lib.runTests {
       };
     };
   };
-  # The router's tests run the examples all of whose documents are of kinds the image accepts:
-  # every one on a router image with every feature, those without DHCPSubnet documents on one
-  # without DHCP, and those without DHCPRelay documents on one without the relay.
+  # A router image with every feature runs a test of every router example; one without a feature
+  # runs those whose documents it accepts.
   testRouterExamples = {
-    expr = {
-      edge = examplesOf layered.edge-metal.config;
-      withoutDHCP = examplesOf (routerWithout [ "dhcp" ]);
-      withoutDHCPRelay = examplesOf (routerWithout [ "dhcpRelay" ]);
-    };
-    expected = {
-      edge = [
-        "dhcp-relay.yaml"
-        "dhcp.yaml"
-        "dhcp6.yaml"
-        "edge.yaml"
-        "lan.yaml"
-        "leaf.yaml"
-        "nat64.yaml"
-        "none.yaml"
-        "policy.yaml"
-        "vrf.yaml"
-      ];
-      withoutDHCP = [
-        "dhcp-relay.yaml"
-        "edge.yaml"
-        "lan.yaml"
-        "leaf.yaml"
-        "nat64.yaml"
-        "none.yaml"
-        "policy.yaml"
-        "vrf.yaml"
-      ];
-      withoutDHCPRelay = [
-        "dhcp.yaml"
-        "dhcp6.yaml"
-        "edge.yaml"
-        "lan.yaml"
-        "leaf.yaml"
-        "nat64.yaml"
-        "none.yaml"
-        "policy.yaml"
-        "vrf.yaml"
-      ];
-    };
+    expr = examplesOf layered.edge-metal.config;
+    expected = [
+      "dhcp-relay.yaml"
+      "dhcp.yaml"
+      "dhcp6.yaml"
+      "edge.yaml"
+      "lan.yaml"
+      "leaf.yaml"
+      "nat64.yaml"
+      "none.yaml"
+      "policy.yaml"
+      "vrf.yaml"
+    ];
   };
-  # Each feature of routerLib.features has its enable option. On a router image with every
-  # feature, the test of each router example compares all eight router outputs with golden files,
+  # On a router image with every feature, the test of each router example compares all eight router outputs with golden files,
   # and router-vrf-strict the ruleset; on one without a feature, no router test compares any.
   testRouterGoldens =
     let
@@ -542,9 +586,6 @@ lib.runTests {
     in
     {
       expr = {
-        enableOptions = lib.all (
-          f: edge.chalkos.router ? ${f}.enable
-        ) layered.edge-metal._module.args.routerLib.features;
         compared = compared edge;
         vrfStrict = lib.attrNames edge.chalkos.tests.router-vrf-strict.outputs;
         goldensWithoutDHCP = lib.attrNames (
@@ -554,7 +595,6 @@ lib.runTests {
         );
       };
       expected = {
-        enableOptions = true;
         compared = lib.genAttrs (exampleTests edge) (_: routerOutputs);
         vrfStrict = [ "router-nftables" ];
         goldensWithoutDHCP = [ ];
@@ -601,399 +641,6 @@ lib.runTests {
         ];
       };
     };
-  };
-  # Router images run FRR and take the BGP kinds unless their modules set
-  # chalkos.router.bgp.enable to false, whose images carry no FRR: no BGP kinds, output frr,
-  # effect frr, frr.service, FRR's users, groups, package or config, no vtysh on chalkd's PATH,
-  # no unit that runs FRR's programs and no BGP or BFD diagnostics; their firewall reads no
-  # BGPPeer, and their tests run no example with BGP but the NAT64 one.
-  # networkd keeps the routes others install either way, and the build allocates the same IDs.
-  testRouterBGPOptional = {
-    expr =
-      let
-        of = c: {
-          kinds = lib.filter (k: c.chalkos.kinds ? ${k}) [
-            "BGP"
-            "BGPPeer"
-            "PrefixList"
-            "CommunityList"
-            "RoutingPolicy"
-          ];
-          output = c.chalkos.outputs ? frr;
-          effect = c.chalkos.effects ? frr;
-          unit = c.systemd.services ? frr;
-          users = lib.filter (n: c.users.users ? ${n}) [ "frr" ];
-          groups = lib.filter (n: c.users.groups ? ${n}) [
-            "frr"
-            "frrvty"
-          ];
-          package = lib.any (p: lib.getName p == "frr") c.environment.systemPackages;
-          chalkd = lib.any (p: lib.getName p == "frr") c.systemd.services.chalkd.path;
-          config = c.environment.etc ? "frr/frr.conf";
-          # A unit that runs one of FRR's programs.
-          referenced = lib.any (u: lib.hasInfix "-frr-" (u.text or "")) (lib.attrValues c.systemd.units);
-          diagnostics = lib.filter (n: lib.hasPrefix "bgp-" n || lib.hasPrefix "bfd-" n) (
-            lib.attrNames c.chalkos.diagnostics
-          );
-          firewallReads = lib.elem "BGPPeer" c.chalkos.outputs.router-nftables.inputs;
-          examples = lib.filter (lib.flip lib.elem [
-            "edge.yaml"
-            "leaf.yaml"
-            "vrf.yaml"
-          ]) (examplesOf c);
-          nat64Example = lib.elem "nat64.yaml" (examplesOf c);
-          foreignRoutes = c.systemd.network.config.networkConfig;
-          unpinned = unpinned c;
-        };
-      in
-      {
-        edge = of layered.edge-metal.config;
-        without = of (routerWithout [ "bgp" ]);
-      };
-    expected =
-      let
-        foreignRoutes = {
-          ManageForeignNextHops = false;
-          ManageForeignRoutes = false;
-        };
-        unpinned = {
-          users = [
-            "chalkos-render"
-            "nscd"
-            "systemd-oom"
-          ];
-          groups = [
-            "chalkos-render"
-            "nscd"
-            "systemd-coredump"
-            "systemd-oom"
-          ];
-        };
-      in
-      {
-        edge = {
-          kinds = [
-            "BGP"
-            "BGPPeer"
-            "PrefixList"
-            "CommunityList"
-            "RoutingPolicy"
-          ];
-          output = true;
-          effect = true;
-          unit = true;
-          users = [ "frr" ];
-          groups = [
-            "frr"
-            "frrvty"
-          ];
-          package = true;
-          chalkd = true;
-          config = true;
-          referenced = true;
-          diagnostics = [
-            "bfd-peers"
-            "bgp-neighbor"
-            "bgp-route"
-            "bgp-summary"
-          ];
-          firewallReads = true;
-          examples = [
-            "edge.yaml"
-            "leaf.yaml"
-            "vrf.yaml"
-          ];
-          nat64Example = true;
-          inherit foreignRoutes unpinned;
-        };
-        without = {
-          kinds = [ ];
-          output = false;
-          effect = false;
-          unit = false;
-          users = [ ];
-          groups = [ ];
-          package = false;
-          chalkd = false;
-          config = false;
-          referenced = false;
-          diagnostics = [ ];
-          firewallReads = false;
-          examples = [ ];
-          nat64Example = true;
-          inherit foreignRoutes unpinned;
-        };
-      };
-  };
-  # Router images run Jool and take NAT64 documents unless their modules set
-  # chalkos.router.nat64.enable to false, whose images carry no Jool: no kind NAT64, output jool,
-  # effect jool, chalkos-nat64.service, kernel module or jool on chalkd's PATH, no unit that runs
-  # jool and no diagnostic nat64-sessions; no output reads NAT64 documents, and their tests
-  # run no example with NAT64. The build allocates the same IDs.
-  testRouterNAT64Optional = {
-    expr =
-      let
-        of = c: {
-          kind = c.chalkos.kinds ? NAT64;
-          output = c.chalkos.outputs ? jool;
-          effect = c.chalkos.effects ? jool;
-          unit = c.systemd.services ? chalkos-nat64;
-          module = map lib.getName c.boot.extraModulePackages;
-          loaded = lib.elem "jool" c.boot.kernelModules;
-          chalkd = lib.any (p: lib.getName p == "jool-cli") c.systemd.services.chalkd.path;
-          # A unit that runs jool.
-          referenced = lib.any (u: lib.hasInfix "-jool-" (u.text or "")) (lib.attrValues c.systemd.units);
-          diagnostic = c.chalkos.diagnostics ? nat64-sessions;
-          reads = lib.filter (o: lib.elem "NAT64" c.chalkos.outputs.${o}.inputs) (
-            lib.attrNames c.chalkos.outputs
-          );
-          examples = lib.filter (lib.flip lib.elem [
-            "edge.yaml"
-            "nat64.yaml"
-            "vrf.yaml"
-          ]) (examplesOf c);
-          unpinned = unpinned c;
-        };
-      in
-      {
-        edge = of layered.edge-metal.config;
-        without = of (routerWithout [ "nat64" ]);
-      };
-    expected =
-      let
-        unpinned = {
-          users = [
-            "chalkos-render"
-            "nscd"
-            "systemd-oom"
-          ];
-          groups = [
-            "chalkos-render"
-            "nscd"
-            "systemd-coredump"
-            "systemd-oom"
-          ];
-        };
-      in
-      {
-        edge = {
-          kind = true;
-          output = true;
-          effect = true;
-          unit = true;
-          module = [ "jool" ];
-          loaded = true;
-          chalkd = true;
-          referenced = true;
-          diagnostic = true;
-          reads = [
-            "dhcp-relay"
-            "jool"
-            "kea"
-            "networkd"
-            "router-nftables"
-          ];
-          examples = [
-            "edge.yaml"
-            "nat64.yaml"
-            "vrf.yaml"
-          ];
-          inherit unpinned;
-        };
-        without = {
-          kind = false;
-          output = false;
-          effect = false;
-          unit = false;
-          module = [ ];
-          loaded = false;
-          chalkd = false;
-          referenced = false;
-          diagnostic = false;
-          reads = [ ];
-          examples = [ ];
-          inherit unpinned;
-        };
-      };
-  };
-  # Router images run Unbound and take Resolver documents unless their modules set
-  # chalkos.router.resolver.enable to false, whose images carry no Unbound: no kind Resolver,
-  # output unbound, effects unbound, unbound-start and resolvers, units unbound, unbound@ and
-  # chalkos-resolvers, Unbound's user, group, package or config and no unbound-control on
-  # chalkd's PATH; their firewall reads no Resolver, and their tests run no example with a
-  # Resolver but the NAT64 one. The build allocates the same IDs.
-  testRouterResolverOptional = {
-    expr =
-      let
-        of = c: {
-          kind = c.chalkos.kinds ? Resolver;
-          output = c.chalkos.outputs ? unbound;
-          effects = lib.filter (e: c.chalkos.effects ? ${e}) [
-            "resolvers"
-            "unbound"
-            "unbound-start"
-          ];
-          units = lib.filter (u: c.systemd.services ? ${u}) [
-            "chalkos-resolvers"
-            "unbound"
-            "unbound@"
-          ];
-          users = lib.filter (n: c.users.users ? ${n}) [ "unbound" ];
-          groups = lib.filter (n: c.users.groups ? ${n}) [ "unbound" ];
-          package = lib.any (p: lib.getName p == "unbound") c.environment.systemPackages;
-          chalkd = lib.any (p: lib.getName p == "unbound") c.systemd.services.chalkd.path;
-          config = c.environment.etc ? "unbound/unbound.conf";
-          firewallReads = lib.elem "Resolver" c.chalkos.outputs.router-nftables.inputs;
-          examples = lib.filter (lib.flip lib.elem [
-            "edge.yaml"
-            "lan.yaml"
-            "vrf.yaml"
-          ]) (examplesOf c);
-          nat64Example = lib.elem "nat64.yaml" (examplesOf c);
-          unpinned = unpinned c;
-        };
-      in
-      {
-        edge = of layered.edge-metal.config;
-        without = of (routerWithout [ "resolver" ]);
-      };
-    expected =
-      let
-        unpinned = {
-          users = [
-            "chalkos-render"
-            "nscd"
-            "systemd-oom"
-          ];
-          groups = [
-            "chalkos-render"
-            "nscd"
-            "systemd-coredump"
-            "systemd-oom"
-          ];
-        };
-      in
-      {
-        edge = {
-          kind = true;
-          output = true;
-          effects = [
-            "resolvers"
-            "unbound"
-            "unbound-start"
-          ];
-          units = [
-            "chalkos-resolvers"
-            "unbound"
-            "unbound@"
-          ];
-          users = [ "unbound" ];
-          groups = [ "unbound" ];
-          package = true;
-          chalkd = true;
-          config = true;
-          firewallReads = true;
-          examples = [
-            "edge.yaml"
-            "lan.yaml"
-            "vrf.yaml"
-          ];
-          nat64Example = true;
-          inherit unpinned;
-        };
-        without = {
-          kind = false;
-          output = false;
-          effects = [ ];
-          units = [ ];
-          users = [ ];
-          groups = [ ];
-          package = false;
-          chalkd = false;
-          config = false;
-          firewallReads = false;
-          examples = [ ];
-          nat64Example = true;
-          inherit unpinned;
-        };
-      };
-  };
-  # Router images take WireGuard and WireGuardPeer documents unless their modules set
-  # chalkos.router.wireguard.enable to false: networkd's output, the firewall and FRR read the
-  # WireGuards, networkd loads their keys as credentials, which a reload loads again and which the
-  # grant's stand-in credential replaces on a node without config, and the image adds the diagnostic
-  # wireguard, which wg runs with CAP_NET_ADMIN. Without the feature none of it is there, and the
-  # build allocates the same IDs.
-  testRouterWireGuardOptional = {
-    expr =
-      let
-        of = c: {
-          kinds = lib.filter (k: c.chalkos.kinds ? ${k}) [
-            "WireGuard"
-            "WireGuardPeer"
-          ];
-          reads = lib.filter (o: lib.elem "WireGuard" c.chalkos.outputs.${o}.inputs) (
-            lib.attrNames c.chalkos.outputs
-          );
-          grant = c.systemd.services.systemd-networkd.chalkos.kinds;
-          credential = c.systemd.services.systemd-networkd.serviceConfig.SetCredential or null;
-          refresh = c.systemd.services.systemd-networkd.serviceConfig.RefreshOnReload or null;
-          diagnostic =
-            if c.chalkos.diagnostics ? wireguard then
-              {
-                inherit (c.chalkos.diagnostics.wireguard) role capabilities;
-                command = lib.tail c.chalkos.diagnostics.wireguard.command;
-              }
-            else
-              null;
-          unpinned = unpinned c;
-        };
-      in
-      {
-        edge = of layered.edge-metal.config;
-        without = of (routerWithout [ "wireguard" ]);
-      };
-    expected =
-      let
-        pinned = unpinned layered.edge-metal.config;
-      in
-      {
-        edge = {
-          kinds = [
-            "WireGuard"
-            "WireGuardPeer"
-          ];
-          reads = [
-            "frr"
-            "networkd"
-            "router-nftables"
-          ];
-          grant = [
-            "WireGuard"
-            "WireGuardPeer"
-          ];
-          credential = [ "secret:none" ];
-          refresh = "credentials";
-          diagnostic = {
-            role = "reader";
-            capabilities = [ "CAP_NET_ADMIN" ];
-            command = [
-              "show"
-              "{interface}"
-            ];
-          };
-          unpinned = pinned;
-        };
-        without = {
-          kinds = [ ];
-          reads = [ ];
-          grant = [ ];
-          credential = null;
-          refresh = null;
-          diagnostic = null;
-          unpinned = pinned;
-        };
-      };
   };
   # A router image without BGP, NAT64, the resolver, DHCP, the DHCP relay and WireGuard keeps the
   # router's core: the router kinds of the firewall, VRFs and policy routing, the outputs and units
