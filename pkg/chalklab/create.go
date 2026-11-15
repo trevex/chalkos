@@ -491,7 +491,7 @@ func (a *app) printNext(l *lab.Lab, withKubernetes bool) {
 	if controlPlanes == 1 || controlPlanes == 2 {
 		downtime = " --allow-downtime"
 	}
-	fmt.Fprintf(a.stdout, "The lab's firmware refuses unsigned images; upgrade with a copy signed by the lab's db key:\n  chalklab sign <image dir> --out <signed dir>\n  chalkctl upgrade --image <signed dir> --inventory %s%s\n",
+	fmt.Fprintf(a.stdout, "The lab's inventory names unsigned images, which its firmware refuses; upgrade with a copy\nsigned by the lab's db key:\n  chalklab sign <image dir> --out <signed dir>\n  chalkctl upgrade --image <signed dir> --inventory %s%s\n",
 		inventory, downtime)
 }
 

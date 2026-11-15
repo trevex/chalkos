@@ -200,7 +200,8 @@ the lab lab runs cp1, w1; next:
   chalkctl status cp1 --inventory /home/alice/.local/state/chalklab/lab/chalkos.yaml
   chalklab status
   chalklab destroy
-The lab's firmware refuses unsigned images; upgrade with a copy signed by the lab's db key:
+The lab's inventory names unsigned images, which its firmware refuses; upgrade with a copy
+signed by the lab's db key:
   chalklab sign <image dir> --out <signed dir>
   chalkctl upgrade --image <signed dir> --inventory /home/alice/.local/state/chalklab/lab/chalkos.yaml --allow-downtime
 ```

@@ -95,7 +95,7 @@ func (n node) group(kind string) (string, error) {
 		return "", errors.New("Secrets are never printed: a service gets the values its kinds reference as the systemd credentials secret_<secret>.<key>")
 	}
 	if k, ok := n.kinds[kind]; ok && k.withheld {
-		return "", fmt.Errorf("%s documents are never printed: the image withholds this kind from the node's services", kind)
+		return "", fmt.Errorf("%s documents are never printed: the image withholds this kind from the node's services, and chalkd alone reads its documents from the node's stored config, readable by root alone", kind)
 	}
 	kinds := maps.Clone(n.kinds)
 	maps.DeleteFunc(kinds, withheldKind)

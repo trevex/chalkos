@@ -213,7 +213,7 @@ rules that read no facts, and the node checks them again. The node replaces its 
 applies additive storage changes such as a new volume while it runs, and restarts the units that
 read what changed; chalkctl prints the changes and the units. When the image's rules refuse a
 change, the node refuses the whole config and names the remedy. chalkctl warns of each image
-reference in the config that names a tag but no digest. See
+reference in the config that names a tag but no digest, and delivers the config all the same. See
 https://trevex.github.io/chalkos/how-it-works/node/config/#change-rules-decide-which-changes-a-node-accepts.
 
 With several nodes, config apply delivers to them one after the other and stops at the first that
@@ -247,8 +247,10 @@ applied it, the node writes the staged image's config, except that of a rollback
 boot is not found healthy. When that write fails, the command fails naming it, and running it
 again writes it. --staged delivers to the staged image alone, and nothing restarts. Without a
 staged image, --staged holds the config pending for the next upgrade, which takes it unless it
-carries config of its own; the node only parses it, and it carries no fallback secret. A delivery
-to the running image replaces a pending config too, and config discard drops it. See
+carries config of its own. chalkctl checks it against the node's image in the inventory; the node
+only parses it, as no image is there to check it against. A pending config carries no fallback
+secret. A delivery to the running image replaces a pending config too, and config discard drops
+it. See
 https://trevex.github.io/chalkos/how-it-works/node/config/#a-node-keeps-one-config-slot-per-image.
 
 --try applies the config on trial for the duration given, from 10s to 24h: unless chalkctl

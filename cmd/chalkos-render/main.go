@@ -40,7 +40,8 @@ const usage = `usage: chalkos-render template TEMPLATE FILE
 
 Each renderer reads the output's input on standard input and writes into $OUT; a config it
 refuses it prints as {"refusals": [...]} on standard output, and fails. validate router prints
-the validator's report on standard output.`
+the validator's report on standard output, one of no refusals for a config it accepts, and
+succeeds; it fails on input it cannot read.`
 
 // main prints a refused config, a *refusals.Error, as a report on standard output for chalkd, and
 // every error on standard error, which only the journal sees, since it can echo the documents.

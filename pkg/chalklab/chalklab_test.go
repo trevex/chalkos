@@ -77,9 +77,9 @@ spec:
 `
 
 // TestLabNodes runs the nodes of the lab file, each with its MAC address and the machine its type
-// gives it unless the lab file says otherwise, from the directory of its image in the inventory; it
-// refuses a node of a metal image, two nodes of one MAC address, a multicast MAC address, a node the
-// inventory lacks and an image from a registry.
+// gives it unless the lab file says otherwise, from the directory of its image in the inventory;
+// it refuses a node of a metal image, two nodes of one MAC address, a multicast MAC address, a
+// node the inventory lacks and an image from a registry.
 func TestLabNodes(t *testing.T) {
 	dir := t.TempDir()
 	lf, inv := loadLab(t, writeLabFiles(t, dir, testLab))
@@ -708,7 +708,8 @@ the lab lab runs cp1, w1; next:
   chalkctl status cp1 --inventory /state/lab/chalkos.yaml
   chalklab status
   chalklab destroy
-The lab's firmware refuses unsigned images; upgrade with a copy signed by the lab's db key:
+The lab's inventory names unsigned images, which its firmware refuses; upgrade with a copy
+signed by the lab's db key:
   chalklab sign <image dir> --out <signed dir>
   chalkctl upgrade --image <signed dir> --inventory /state/lab/chalkos.yaml --allow-downtime
 `
