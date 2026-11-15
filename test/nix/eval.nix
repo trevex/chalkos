@@ -2421,15 +2421,14 @@ lib.runTests {
   testKernelModules = {
     expr =
       let
-        image = worker;
-        c = image [ ];
-        gpu = image [
+        c = worker [ ];
+        gpu = worker [
           {
             chalkos.kernel.moduleGroups = [ "gpu" ];
             chalkos.kernel.extraModules = [ "kvm_amd" ];
           }
         ];
-        all = image [ { chalkos.kernel.allModules = true; } ];
+        all = worker [ { chalkos.kernel.allModules = true; } ];
         tree = c: c.system.build.chalkosKernelModules;
         kernelModules = c: "${lib.getOutput "modules" c.boot.kernelPackages.kernel}";
         check = c.system.build.chalkosKernelModulesCheck;

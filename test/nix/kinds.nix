@@ -8,7 +8,6 @@ let
   inherit (lib) mkOption types;
   chalkosLib = import ../../lib/chalkos.nix { inherit lib; };
   inherit (chalkosLib.internal) schema kindTypes;
-  getLib = chalkosLib.internal.get;
   inherit (import ./lib.nix { inherit lib mkImages; }) fails worker router;
 
   demoModule =
@@ -169,21 +168,23 @@ let
       default = null;
     };
   };
-  withPeering = worker [
-    (
-      { chalkosLib, ... }:
-      {
-        chalkos.kinds.Peering = {
-          group = "bgp.example.org";
-          version = "v1alpha1";
-          multiple = true;
-          spec = peeringSpec chalkosLib.types.secretRef;
-        };
-      }
-    )
-  ];
   # The arguments of the command get builds, and whether it runs the image's chalkcfg.
   getPeering =
+    let
+      withPeering = worker [
+        (
+          { chalkosLib, ... }:
+          {
+            chalkos.kinds.Peering = {
+              group = "bgp.example.org";
+              version = "v1alpha1";
+              multiple = true;
+              spec = peeringSpec chalkosLib.types.secretRef;
+            };
+          }
+        )
+      ];
+    in
     args:
     let
       words = lib.splitString " " (withPeering.chalkos.kinds.Peering.get args);
@@ -193,11 +194,7 @@ let
         lib.hasSuffix "/bin/chalkcfg" (lib.head words) && lib.hasPrefix "/nix/store/" (lib.head words);
       args = lib.concatStringsSep " " (lib.tail words);
     };
-  resolvePeering = getLib.resolve (peeringSpec kindTypes.secretRef);
-  # The extensions example's image, with its Rack extension.
-  extensions =
-    (mkImages { variants.node.modules = [ ../../examples/extensions/rack.nix ]; })
-    .nixos.node-metal.config;
+  resolvePeering = chalkosLib.internal.get.resolve (peeringSpec kindTypes.secretRef);
   kindNames = config: map (k: k.kind) config.system.build.chalkosKinds;
   builtinFixture =
     file: builtins.fromJSON (builtins.readFile (../fixtures/kinds/builtin + "/${file}"));
@@ -2523,7 +2520,13 @@ lib.runTests {
   # The extensions example's unit reads the node's Rack with chalkcfg, by a path the evaluation
   # checked.
   testExtensionsRackReadsWithChalkcfg = {
-    expr = lib.hasInfix "/bin/chalkcfg get Rack rack -o 'jsonpath={.spec.location}'" extensions.systemd.services.rack-location.serviceConfig.ExecStart.text;
+    expr =
+      let
+        c =
+          (mkImages { variants.node.modules = [ ../../examples/extensions/rack.nix ]; })
+          .nixos.node-metal.config;
+      in
+      lib.hasInfix "/bin/chalkcfg get Rack rack -o 'jsonpath={.spec.location}'" c.systemd.services.rack-location.serviceConfig.ExecStart.text;
     expected = true;
   };
   testBuiltinKindHasGet = {
