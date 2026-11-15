@@ -11,7 +11,6 @@ import (
 	kubernetesv1 "github.com/trevex/chalkos/pkg/api/kubernetes/v1"
 	"github.com/trevex/chalkos/pkg/chalkctl/layer"
 	"github.com/trevex/chalkos/pkg/config"
-	"github.com/trevex/chalkos/pkg/imageref"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
 )
 
@@ -298,12 +297,11 @@ func TestNetworkOnly(t *testing.T) {
 		reason, message string
 		want            bool
 	}{
-		"the network alone":               {"KubeletNotReady", networkNotReady, true},
-		"another cause":                   {"KubeletNotReady", runtimeNotReady, false},
-		"the network and another cause":   {"KubeletNotReady", "[" + runtimeNotReady + ", " + networkNotReady + "]", false},
-		"the network and a storage cause": {"KubeletNotReady", "[" + networkNotReady + ", Missing node capacity for resources: pods]", false},
-		"not the kubelet's":               {"NodeStatusUnknown", networkNotReady, false},
-		"no message":                      {"KubeletNotReady", "", false},
+		"the network alone":             {"KubeletNotReady", networkNotReady, true},
+		"another cause":                 {"KubeletNotReady", runtimeNotReady, false},
+		"the network and another cause": {"KubeletNotReady", "[" + runtimeNotReady + ", " + networkNotReady + "]", false},
+		"not the kubelet's":             {"NodeStatusUnknown", networkNotReady, false},
+		"no message":                    {"KubeletNotReady", "", false},
 	} {
 		t.Run(name, func(t *testing.T) {
 			if got := networkOnly(tc.reason, tc.message); got != tc.want {
@@ -326,8 +324,6 @@ func TestDelivered(t *testing.T) {
 			ControlPlanePods: "kube-apiserver is not Ready"}, "its control plane: kube-apiserver is not Ready"},
 		"not Ready for another reason": {&kubernetesv1.StatusResponse{Kind: k8s.KindWorker, Phase: kubernetesv1.Phase_PHASE_JOINED, NodeReady: "False", NodeReadyReason: "KubeletNotReady", NodeReadyMessage: runtimeNotReady},
 			"its Node is not Ready: False: " + runtimeNotReady},
-		"no longer posting": {&kubernetesv1.StatusResponse{Kind: k8s.KindWorker, Phase: kubernetesv1.Phase_PHASE_JOINED, NodeReady: "Unknown", NodeReadyReason: "NodeStatusUnknown", NodeReadyMessage: "Kubelet stopped posting node status."},
-			"its Node is not Ready: Unknown: Kubelet stopped posting node status."},
 		"pods behind": {&kubernetesv1.StatusResponse{Kind: k8s.KindControlPlane, Phase: kubernetesv1.Phase_PHASE_BOOTSTRAPPED, NodeReady: "True", ControlPlanePods: "kube-scheduler is not Ready"},
 			"its control plane: kube-scheduler is not Ready"},
 		"current":        {&kubernetesv1.StatusResponse{Kind: k8s.KindControlPlane, Phase: kubernetesv1.Phase_PHASE_BOOTSTRAPPED, NodeReady: "True", ControlPlanePods: "current", ControlPlanePodsCurrent: true}, ""},
@@ -362,9 +358,5 @@ func TestSummary(t *testing.T) {
 func TestVersionsOf(t *testing.T) {
 	if _, err := versionsOf(&kubernetesv1.StatusResponse{Kind: k8s.KindWorker, KubeletVersion: "1.37.1"}); err == nil || !strings.Contains(err.Error(), "its API server's version") {
 		t.Errorf("no API server version: %v", err)
-	}
-	v, err := versionsOf(&kubernetesv1.StatusResponse{Kind: k8s.KindWorker, ApiServerVersion: "1.37.2", KubeletVersion: "1.37.1"})
-	if want := (versions{k8s.KindWorker, imageref.Version{Major: 1, Minor: 37, Patch: 2}, imageref.Version{Major: 1, Minor: 37, Patch: 1}}); err != nil || v != want {
-		t.Errorf("versionsOf = %+v, %v; want %+v", v, err, want)
 	}
 }

@@ -34,6 +34,9 @@ func TestAddresses(t *testing.T) {
 	if want := map[string]string{"n1": "10.0.0.3", "n2": "10.0.0.4"}; err != nil || !maps.Equal(got, want) {
 		t.Errorf("Resolve(n1) = %v, %v, want %v", got, err, want)
 	}
+	if !a.Named() {
+		t.Error("Named() is false with NODE=ADDR values")
+	}
 	if bare := a.Bare(); bare != "10.0.0.1" {
 		t.Errorf("Bare() = %q, want 10.0.0.1", bare)
 	}
@@ -44,18 +47,10 @@ func TestAddresses(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if bare, _ := parse("10.0.0.1"); bare.Named() {
+		t.Error("Named() is true for a bare ADDR")
+	}
 	if got, err := named.Resolve(""); err != nil || got["n1"] != "10.0.0.1" || named.Bare() != "" {
 		t.Errorf("Resolve() = %v, %v, Bare() = %q; want n1's address alone", got, err, named.Bare())
-	}
-}
-
-// Named tells a NODE=ADDR among the values.
-func TestAddressesNamed(t *testing.T) {
-	var a Addresses
-	if err := a.Set("10.0.0.1"); err != nil || a.Named() {
-		t.Errorf("a bare ADDR: Named() = %v, %v", a.Named(), err)
-	}
-	if err := a.Set("n1=10.0.0.2"); err != nil || !a.Named() {
-		t.Errorf("with NODE=ADDR: Named() = %v, %v", a.Named(), err)
 	}
 }

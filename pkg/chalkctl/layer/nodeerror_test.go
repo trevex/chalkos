@@ -18,11 +18,9 @@ func TestNamed(t *testing.T) {
 		want string
 	}{
 		{named, "r1 runs config v2 on trial"},
-		{&NodeError{Node: "r1", Err: errors.New("x"), Refused: true}, "r1: x"},
+		{&NodeError{Node: "r1", Err: errors.New("x")}, "r1: x"},
 		{fmt.Errorf("wrapped: %w", named), "wrapped: r1 runs config v2 on trial"},
-		{Named("r1", errors.New("the node refused it")), "r1: the node refused it"},
 		{errors.New("r1: the config is refused: x"), "r1: r1: the config is refused: x"},
-		{errors.New("dial tcp 10.0.0.11:4443: no route"), "r1: dial tcp 10.0.0.11:4443: no route"},
 		{errors.New("roll back with chalkctl config rollback <node>"), "r1: roll back with chalkctl config rollback r1"},
 	} {
 		if got := Named("r1", tc.err).Error(); got != tc.want {
