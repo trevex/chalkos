@@ -1017,22 +1017,7 @@ func TestFRRDefaultOriginateWhen(t *testing.T) {
 	// config with vtysh, as no example tracks IPv4.
 	docs["PrefixList"] = append(docs["PrefixList"], derivetest.RouterDoc(t, "PrefixList", "uplink4", `{"family": "ipv4", "entries": [{"prefix": "0.0.0.0/0", "action": "permit"}]}`))
 	docs["BGPPeer"] = []any{derivetest.RouterDoc(t, "BGPPeer", "leaf", `{"vrf": "tenant", "interface": "eth2", "remoteAS": "external", "families": {"ipv4": {"defaultOriginate": true, "defaultOriginateWhen": "uplink4"}, "ipv6": {"defaultOriginate": true, "defaultOriginateWhen": "uplink"}}}`)}
-	both := conf()
-	for _, want := range []string{
-		"ip prefix-list pl-uplink4 seq 5 permit 0.0.0.0/0\n",
-		"route-map do-uplink4 permit 10\n match ip address prefix-list pl-uplink4\nexit\n",
-		"route-map leak-default-ipv4 deny 5\n match large-community chalkos-tracked\nexit\nroute-map leak-default-ipv4 permit 10\nexit\n",
-		"route-map track-tenant-ipv4 deny 5\n match ip next-hop type blackhole\nexit\n" +
-			"route-map track-tenant-ipv4 permit 10\n match ip address prefix-list pl-uplink4\n set community no-advertise additive\n set distance 255\n set large-community 4200000000:0:1 additive\n set weight 0\nexit\n",
-		"  import vrf route-map leak-default-ipv4\n  import vrf tenant\n",
-		"  redistribute kernel route-map track-tenant-ipv4\n  redistribute connected route-map track-tenant-ipv4\n",
-		"  neighbor peer-leaf default-originate route-map do-uplink4\n",
-	} {
-		if !strings.Contains(both, want) {
-			t.Errorf("frr.conf with both families tracked lacks %q:\n%s", want, both)
-		}
-	}
-	golden(t, "tracked.frr", both)
+	golden(t, "tracked.frr", conf())
 }
 
 // A peer's interface is in the VRF of the first Network document networkd picks for it, which
@@ -1204,32 +1189,10 @@ func TestVRFNATOfEveryInterface(t *testing.T) {
 	}
 }
 
-// A VRF with a conntrack zone puts the connections through its links in its zone before conntrack
-// sees them: in prerouting by the link a packet comes in on, whose pass decides its zone, and in
-// output by the link the router sends it through. Without zones the ruleset has neither chain.
-func TestConntrackZones(t *testing.T) {
-	docs := vrfZoneDocs(t)
-	docs["VRF"][0] = derivetest.RouterDoc(t, "VRF", "guest", `{"table": 300, "interfaces": ["eth3", "eth4"], "conntrackZone": 1}`)
-	want := "\tchain ct-prerouting {\n" +
-		"\t\ttype filter hook prerouting priority raw; policy accept;\n" +
-		"\t\tiifname { \"eth3\", \"eth4\" } ct zone set 1 comment \"VRF guest\"\n" +
-		"\t}\n" +
-		"\tchain ct-output {\n" +
-		"\t\ttype filter hook output priority raw; policy accept;\n" +
-		"\t\toifname { \"eth3\", \"eth4\" } ct zone set 1 comment \"VRF guest\"\n" +
-		"\t}\n" +
-		"\tchain prerouting {\n"
-	if text := vrfRuleset(t, docs); !strings.Contains(text, want) {
-		t.Errorf("the ruleset lacks\n%s\nin\n%s", want, text)
-	}
-	if text := vrfRuleset(t, vrfZoneDocs(t)); strings.Contains(text, "ct zone") {
-		t.Errorf("a ruleset without conntrack zones sets one:\n%s", text)
-	}
-}
-
-// Each VRF with a conntrack zone and links has one rule per chain, in the order of the VRFs, of
-// the links its document and the Networks' own VRF= name; a VRF with a zone but no links has none,
-// and a ruleset whose zoned VRFs have no links has no conntrack chains.
+// A VRF with a conntrack zone and links sets its zone before conntrack sees a connection: in
+// prerouting by the link a packet comes in on, in output by the link it leaves on, one rule per
+// chain in the order of the VRFs. A zoned VRF without links has none, and a ruleset whose zoned
+// VRFs have no links has no conntrack chains.
 func TestConntrackZonesOfSeveralVRFs(t *testing.T) {
 	docs := vrfZoneDocs(t)
 	docs["VRF"][0] = derivetest.RouterDoc(t, "VRF", "guest", `{"table": 300, "interfaces": ["eth3", "eth4"], "conntrackZone": 1}`)
@@ -1242,7 +1205,7 @@ func TestConntrackZonesOfSeveralVRFs(t *testing.T) {
 		"\t\tiifname { \"dummy*\" } ct zone set 3 comment \"VRF lab\"\n" +
 		"\t}\n"
 	text := vrfRuleset(t, docs)
-	if !strings.Contains(text, want) {
+	if !strings.Contains(text, want) || !strings.Contains(text, "\tchain ct-output {\n\t\ttype filter hook output priority raw; policy accept;\n\t\toifname { \"eth3\", \"eth4\" } ct zone set 1 comment \"VRF guest\"\n") {
 		t.Errorf("the ruleset lacks\n%s\nin\n%s", want, text)
 	}
 	if strings.Contains(text, "ct zone set 2") {
