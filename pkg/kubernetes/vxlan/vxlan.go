@@ -272,14 +272,12 @@ func runNFT(input string, args ...string) error {
 	return err
 }
 
-// Apply fills the table from file, which holds what Accept.Marshal writes, and empties its input
-// chain without file, given as "" or missing. The forward chain comes from the cluster's ranges
-// on every run, whatever file holds, so it stands while the cluster has them; when they cannot be
-// read it drops all VXLAN the node forwards. A file that cannot be read or holds anything else
-// leaves the input chain empty and fails. A ruleset nft refuses changes nothing, so then the
-// input chain is emptied and forwarded VXLAN dropped as without the ranges. Should nft refuse
-// even that, the table is deleted: no rule of an earlier run stays. The table goes to the
-// standard output.
+// Apply fills the table from file (Accept.Marshal's format). A file given as "" or missing leaves
+// the input chain empty; one that cannot be read or parsed does too, and Apply fails. The forward
+// chain always comes from the cluster file, or drops all forwarded VXLAN when that cannot be read.
+// If nft refuses the ruleset, Apply falls back to an empty input chain with forwarded VXLAN
+// dropped and, failing that, deletes the table, so no rule of an earlier run stays. The table goes
+// to the standard output.
 func (r Rule) Apply(file string) error {
 	unlock, err := lock(r.LockFile)
 	if err != nil {

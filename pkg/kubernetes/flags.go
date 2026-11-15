@@ -71,16 +71,11 @@ func (c Cluster) validateExtraArgs() error {
 	return nil
 }
 
-// ValidateFlags refuses extra flags of a component, such as kube-apiserver or kubelet. Its errors
-// start with the flag. It refuses:
-//   - names flagNamePattern does not allow;
-//   - the component's protected flags, in any spelling it accepts;
-//   - the API server's flags that conflict with chalkos's own;
-//   - kubelet flags holding whitespace or backslashes.
-//
-// The kubelet's flags reach it through KUBELET_ARGS. systemd reads that variable from an
-// environment file, which drops backslashes, and ExecStart splits the unbraced variable at
-// whitespace.
+// ValidateFlags refuses extra flags of a component, such as kube-apiserver or kubelet, that
+// flagNamePattern refuses, that are protected in any spelling, or that conflict with chalkos's;
+// errors start with the flag. Kubelet flags reach it through KUBELET_ARGS, which systemd reads from
+// an environment file that drops backslashes and ExecStart splits at whitespace, so they hold
+// neither.
 func ValidateFlags(component string, flags map[string]string) error {
 	protected := map[string][]string{"kube-apiserver": protectedAPIServerFlags, "kubelet": protectedKubeletFlags}
 	for _, name := range slices.Sorted(maps.Keys(flags)) {

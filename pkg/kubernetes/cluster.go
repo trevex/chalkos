@@ -1,5 +1,4 @@
-// Package kubernetes describes a chalkos node's Kubernetes cluster, as config builds it from the
-// node's config and its image's facts, and the node itself as its identity names it.
+// Package kubernetes holds a node's Kubernetes cluster settings and its Kubernetes identity.
 package kubernetes
 
 import (
@@ -144,8 +143,7 @@ func parseCluster(data []byte) (Cluster, error) {
 	return c, nil
 }
 
-// Validate checks the endpoint, the extra flags, the kind, how nodes pick their address, the
-// address families and their ranges, flannel's settings, the VIPs and the images.
+// Validate checks the cluster file.
 func (c Cluster) Validate() error {
 	if _, err := parseEndpoint(c.Endpoint); err != nil {
 		return err

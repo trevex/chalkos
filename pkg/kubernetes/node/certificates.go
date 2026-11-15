@@ -113,15 +113,12 @@ func (s State) ControlPlaneRenewAt() (time.Time, *x509.Certificate, error) {
 	return pki.RenewAt(first), first, nil
 }
 
-// RenewControlPlane issues the control plane's certificates and kubeconfigs again, for the
-// addresses the preparation picked, and replaces them at once; a bootstrapped node renders its
-// static pods again, whose certificate hash makes the kubelet start each one again. It waits
-// until ctx ends for a preparation that runs, which writes them itself, and leaves the current
-// ones on any failure.
-//
-// Static pods that still run on the certificates before the current ones, as after a renewal
-// interrupted before it rendered them, are only rendered: issuing again would remove the
-// certificates they run on.
+// RenewControlPlane issues the control plane's certificates and kubeconfigs again for the picked
+// addresses and replaces them at once; a bootstrapped node renders its static pods again, which the
+// kubelet restarts on their certificate hash. It waits until ctx ends for a running preparation,
+// which writes them itself, and leaves the current ones on any failure. Static pods still running
+// on the certificates before the current ones, as after an interrupted renewal, are only rendered:
+// issuing again would remove the certificates they run on.
 func (s State) RenewControlPlane(ctx context.Context, now time.Time) error {
 	unlock, err := s.LockPKI(ctx)
 	if err != nil {

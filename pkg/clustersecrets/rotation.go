@@ -204,8 +204,7 @@ func (k KubernetesSecrets) ServiceAccountPublicKeys() ([]string, error) {
 	return append([]string{pub}, k.Accepted.ServiceAccountKeys...), nil
 }
 
-// validateAccepted checks the accepted values: certificates of CAs, P-256 public keys, and
-// encryption keys of the right size under names of their own that the API server can tell apart.
+// validateAccepted checks the accepted OS CAs and, with ValidateAccepted, the Kubernetes values.
 func (s Secrets) validateAccepted() error {
 	for i, c := range s.Accepted.OSCA {
 		if err := pki.ValidateRoot(c); err != nil {
@@ -217,8 +216,8 @@ func (s Secrets) validateAccepted() error {
 
 // ValidateAccepted checks what the Kubernetes components accept besides what issues or signs:
 // certificates of CAs, P-256 public keys, and encryption keys of the right size under names of
-// their own that the API server can tell apart. A worker's share holds CA certificates alone and
-// no service-account or encryption key, which ValidateAccepted does not ask for.
+// their own that the API server can tell apart. Without a service-account and an encryption key,
+// as in a worker's share, it accepts CA certificates alone.
 func (k KubernetesSecrets) ValidateAccepted() error {
 	for _, slot := range k.caSlots() {
 		for i, c := range *slot.accepted {

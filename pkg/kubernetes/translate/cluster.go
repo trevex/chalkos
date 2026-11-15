@@ -15,12 +15,9 @@ import (
 	"github.com/trevex/chalkos/pkg/kubernetes/nodeip"
 )
 
-// Cluster builds the Kubernetes cluster the documents give on an image with the facts img:
-// its kind, the kubelet's extra flags and the VIP's interface from the Kubernetes Node, its
-// endpoint, images and other settings from the Cluster document and, on a flannel image,
-// flannel's settings from the Flannel document, and checks it. It holds the per-family values of
-// the cluster's families alone, and each error names the document whose setting fails. docs carry
-// their schema defaults, as a Set and the stored config do.
+// Cluster builds and checks the cluster from the Node, Cluster and, on a flannel image, Flannel
+// documents, which carry their schema defaults. It keeps only the values of the cluster's
+// families; errors name the failing document.
 func Cluster(docs config.Documents, img kubernetes.Image) (kubernetes.Cluster, error) {
 	nodeDoc, ok := docs.Single(API, "Node")
 	if !ok {

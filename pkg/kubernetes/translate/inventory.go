@@ -45,14 +45,11 @@ func NodeDocuments(docs []config.Document) []config.Document {
 // from its own documents, so nodes that differ would each run another one.
 var clusterKinds = []string{"Cluster", "Flannel"}
 
-// Endpoint checks that the nodes describe one cluster and returns the URL of its Kubernetes API
-// server, the endpoint of their Cluster documents; documents gives a node's documents. Every
-// node that holds a Cluster document holds the same Cluster spec, and the same Flannel spec or,
-// on every one of them, none, whatever the documents are called; a node without a Cluster
-// document runs no Kubernetes and is skipped. The specs compare as written, so a field left to
-// its default differs from one set to it, and only the order of Flannel's vxlanSourceSubnets
-// makes no difference. The endpoint is empty when no node holds a Cluster document, as for no
-// nodes.
+// Endpoint returns the API server URL that the nodes' Cluster documents share, or "" when no node
+// has one; documents gives a node's documents. Nodes without a Cluster document are skipped. Nodes
+// whose Cluster or Flannel specs differ as written, apart from the order of vxlanSourceSubnets, are
+// refused, whatever the documents are called; a field left to its default differs from one set to
+// it.
 func Endpoint(nodes []string, documents func(name string) ([]config.Document, error)) (string, error) {
 	var members []string
 	held := map[string]map[string]map[string]any{}

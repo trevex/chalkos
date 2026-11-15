@@ -43,14 +43,7 @@ func (i Images) fields() []imageField {
 
 // validateImages checks that every image is a reference, that the Kubernetes components' tags
 // name their versions, that the cluster has a flannel image exactly when it runs flannel, and the
-// versions against each other and the kubelet's, with Kubernetes's version skew policy:
-//   - the API server is no older than the kubelet, and at most three minors newer;
-//   - the controller-manager and the scheduler are no newer than the API server, and at most one
-//     minor older;
-//   - kube-proxy is no newer than the API server, and at most three minors older.
-//
-// The policy also keeps kube-proxy within three minors of the kubelet, which the bounds above
-// already ensure. The policy compares minor versions; patch releases and suffixes do not count.
+// versions with checkSkew.
 func (c Cluster) validateImages() error {
 	versions := map[string]imageref.Version{}
 	for _, f := range c.Images.fields() {
@@ -93,7 +86,8 @@ func (c Cluster) validateImages() error {
 }
 
 // checkSkew checks the components' versions by their config names against each other and the
-// kubelet's.
+// kubelet's with Kubernetes's version skew policy, which compares minor versions. The policy's
+// bound between kube-proxy and the kubelet follows from the others.
 func checkSkew(kubelet imageref.Version, v map[string]imageref.Version) error {
 	api := v["apiServer"]
 	// In the order of the fields, so that the refusal names the same field every time.

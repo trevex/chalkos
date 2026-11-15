@@ -1,7 +1,7 @@
 // Package translate translates a node's config on an image with Kubernetes: it builds the cluster
-// the Node, Cluster and Flannel documents give, adds the node's Kubernetes settings to its
+// from the Node, Cluster and Flannel documents, adds the node's Kubernetes settings to its
 // identity, and reads the Cluster's sandbox image and the Addon documents' objects. chalkd and
-// chalkctl add its Translator to the target of an image whose facts include Kubernetes facts.
+// chalkctl add its Translator to the target of an image with Kubernetes facts.
 package translate
 
 import (
@@ -32,10 +32,8 @@ func Target(facts *anypb.Any, t *config.Target) (claimed bool, err error) {
 	return true, nil
 }
 
-// Translator is the translation of an image with the Kubernetes facts img: it builds the cluster
-// the Node, Cluster and Flannel documents give, adds the node's Kubernetes settings from its Node
-// document to the identity, the Kubernetes node called name, and refuses Addon documents that do
-// not decode.
+// Translator translates on an image with the Kubernetes facts img: it builds the cluster, adds the
+// Kubernetes node called name to the identity, and refuses Addon documents that do not decode.
 func Translator(img kubernetes.Image) config.Translator {
 	return func(s *config.Set, name string, id *identity.Identity) error {
 		// The node's addresses follow the families and nodeIP.validSubnets of the cluster the

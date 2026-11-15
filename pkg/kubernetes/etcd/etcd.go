@@ -141,7 +141,7 @@ func (e *StaleMemberError) Error() string {
 // such a member is stale. ok is false when no member is the node's.
 //
 // Own is strict on purpose: a node that joins must not take over a member it cannot prove is its
-// own. Self is the lenient lookup for a node that joined already.
+// own.
 func Own(members []Member, name, peerURL string, resume bool) (m Member, ok bool, err error) {
 	for _, m := range members {
 		atPeerURL := slices.Contains(m.PeerURLs, peerURL)
@@ -157,10 +157,8 @@ func Own(members []Member, name, peerURL string, resume bool) (m Member, ok bool
 }
 
 // Self finds a joined node's own member: the one named name or, as a learner that never started
-// has none, a nameless one at peerURL. An empty peerURL finds it by name alone.
-//
-// Self is lenient on purpose and reports no stale member: it only looks up the node's own. Own is
-// the strict check at join time.
+// has none, a nameless one at peerURL. An empty peerURL finds it by name alone. Unlike Own, it
+// reports no stale member.
 func Self(members []Member, name, peerURL string) (Member, bool) {
 	for _, m := range members {
 		if m.Name == name || (m.Name == "" && peerURL != "" && slices.Contains(m.PeerURLs, peerURL)) {

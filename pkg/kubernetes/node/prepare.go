@@ -65,12 +65,11 @@ func (in inputs) check() error {
 	return nil
 }
 
-// Prepare picks the node's address and writes the kubelet's files and, on a control-plane node,
-// the control plane's certificates, and its static pods once the node is bootstrapped; then it
-// lets the firewall, if any, accept VXLAN to the address. A node without a share or an address,
-// and one whose preparation fails, keeps none of them, so its kubelet does not start, and
-// accepts no VXLAN. The node is marked prepared only once all of this is done; otherwise
-// PrepareError says why.
+// Prepare picks the node's address, writes the kubelet's files and, on a control plane, its
+// certificates and, once bootstrapped, its static pods, then lets the firewall, if any, accept VXLAN
+// to the address. Without a share or an address, or on any failure, the node keeps none of them, so
+// its kubelet does not start and no VXLAN is accepted; PrepareError says why. The node is marked
+// prepared last.
 func (s State) Prepare(now time.Time, resolve Resolver, firewall Firewall) error {
 	// chalkd renews the control plane's certificates only between preparations.
 	unlock, err := s.lockPKI(true)

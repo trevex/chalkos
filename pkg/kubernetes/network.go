@@ -10,13 +10,7 @@ import (
 	"github.com/trevex/chalkos/pkg/kubernetes/nodeip"
 )
 
-// validateRanges checks the ranges of family f as kubeadm does:
-//   - each range is a network of its family;
-//   - the pod and service ranges are apart;
-//   - the service range holds at most 2^20 addresses;
-//   - the node parts of the pod range are longer than it by at most 16 bits;
-//   - the DNS address lies inside the service range, but is neither its network address nor its
-//     first address, which the kubernetes service gets.
+// validateRanges checks the ranges of family f as kubeadm does.
 func (c Cluster) validateRanges(f nodeip.Family) error {
 	pod := c.PodCIDRs.Of(f)
 	if err := checkRange("podCIDRs", f, pod); err != nil {

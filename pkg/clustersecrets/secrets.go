@@ -120,10 +120,7 @@ func (s Secrets) Public() Public {
 	}
 }
 
-// Validate checks the version, that every secret is present, that the certificates belong to
-// their keys, that osCA is a CA that may issue the node CA, that nodeCA is a node CA osCA
-// issued, that the Kubernetes secrets and the accepted values are valid, that no two CAs share a
-// key, and that a running rotation is consistent.
+// Validate checks the secrets file, a running rotation included.
 func (s Secrets) Validate() error {
 	if s.Version != Version {
 		return fmt.Errorf("version %d is not supported; chalkos reads version %d only, so generate new secrets with chalkctl gen secrets", s.Version, Version)
