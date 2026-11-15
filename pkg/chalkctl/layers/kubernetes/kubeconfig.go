@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
-	"os"
 	"strings"
 	"time"
 
@@ -101,13 +100,12 @@ func kubeconfig(h layer.Host, ctx context.Context, f kubeconfigFlags) error {
 		_, err := h.Stdout().Write(data)
 		return err
 	}
+	write := atomicfile.WriteNew
 	if f.force {
-		if err := os.Remove(f.out); err != nil && !errors.Is(err, os.ErrNotExist) {
-			return err
-		}
+		write = atomicfile.WriteFile
 	}
 	// The file holds the admin's private key.
-	if err := atomicfile.WriteNew(f.out, data, 0o600); err != nil {
+	if err := write(f.out, data, 0o600); err != nil {
 		return err
 	}
 	fmt.Fprintf(h.Stdout(), "wrote %s; its certificate is valid for %s\n", f.out, f.ttl)

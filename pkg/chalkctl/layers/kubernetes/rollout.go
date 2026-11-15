@@ -34,15 +34,6 @@ func (p *Plugin) RolloutFlags(fs *pflag.FlagSet) any {
 	return f
 }
 
-// rolloutFlagsOf are the run's values of the layer's flags of config apply, their defaults when
-// the run has none.
-func (p *Plugin) rolloutFlagsOf(u layer.Upgrading) rolloutFlags {
-	if f, ok := u.Flags(p.Name()).(*rolloutFlags); ok {
-		return *f
-	}
-	return rolloutFlags{}
-}
-
 // versions are what a node of the cluster runs that Kubernetes's version skew policy bounds: the
 // API server its running config names and its image's kubelet.
 type versions struct {
@@ -225,7 +216,7 @@ func (p *Plugin) CheckConfig(u layer.Upgrading, c layer.Cluster, named []string,
 		switch d := r[newest].apiServer.Minors(next); {
 		case d > 1:
 			return fmt.Errorf("images.apiServer: %s is %d minors older than the API server %s that %s runs; a cluster's API servers may be at most one minor apart", next, d, r[newest].apiServer.MinorString(), newest)
-		case d > 0 && !p.rolloutFlagsOf(u).allowDowngrade:
+		case d > 0 && !flagsOf[rolloutFlags](u).allowDowngrade:
 			return fmt.Errorf("images.apiServer: %s is older than the API server %s that %s runs; pass --allow-downgrade to downgrade the control plane", next, r[newest].apiServer.MinorString(), newest)
 		}
 	}
@@ -340,7 +331,7 @@ func (p *Plugin) BeforeDelivery(ctx context.Context, u layer.Upgrading, name str
 	if !role.Coordinator {
 		return nil
 	}
-	return quorum(ctx, u, p.rolloutFlagsOf(u).allowDowntime, name, false)
+	return quorum(ctx, u, flagsOf[rolloutFlags](u).allowDowntime, name, false)
 }
 
 // Delivered checks that a node of the cluster has its Node Ready, or held back by its container

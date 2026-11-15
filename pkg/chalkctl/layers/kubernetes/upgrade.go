@@ -16,6 +16,7 @@ import (
 	"github.com/trevex/chalkos/pkg/internal/poll"
 	"github.com/trevex/chalkos/pkg/internal/strs"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
+	"github.com/trevex/chalkos/pkg/layers"
 )
 
 // UpgradeRole reads the node's part in its cluster: a control plane coordinates, and a node that
@@ -63,24 +64,25 @@ func (p *Plugin) UpgradeFlags(fs *pflag.FlagSet) any {
 	return f
 }
 
-// flagsOf are the run's values of the layer's flags, their defaults when the run has none.
-func (p *Plugin) flagsOf(u layer.Upgrading) upgradeFlags {
-	if f, ok := u.Flags(p.Name()).(*upgradeFlags); ok {
+// flagsOf are the run's values of the layer's flags of type T, their defaults when the run has none.
+func flagsOf[T any](u layer.Upgrading) T {
+	if f, ok := u.Flags(layers.Kubernetes).(*T); ok {
 		return *f
 	}
-	return upgradeFlags{}
+	var zero T
+	return zero
 }
 
 // BeforeReboot waits for etcd to keep its quorum while a control plane reboots, then drains a node
 // of the cluster.
 func (p *Plugin) BeforeReboot(ctx context.Context, u layer.Upgrading, name string, role layer.UpgradeRole) error {
 	if role.Coordinator {
-		if err := quorum(ctx, u, p.flagsOf(u).allowDowntime, name, true); err != nil {
+		if err := quorum(ctx, u, flagsOf[upgradeFlags](u).allowDowntime, name, true); err != nil {
 			return err
 		}
 	}
 	if role.Member {
-		return drain(ctx, u, p.flagsOf(u).deleteEmptyDir, name)
+		return drain(ctx, u, flagsOf[upgradeFlags](u).deleteEmptyDir, name)
 	}
 	return nil
 }

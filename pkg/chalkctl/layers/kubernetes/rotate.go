@@ -259,10 +259,7 @@ func waitQuorum(ctx context.Context, r layer.Rotating, name string) error {
 		case err != nil && (answer == nil || !connect.IsWireError(answer)):
 			if silent.Holds() {
 				// The sentence names the node, so the error goes without its name.
-				if e, ok := errors.AsType[*layer.NodeError](err); ok {
-					err = e.Err
-				}
-				return poll.Permanent{Err: fmt.Errorf("%s does not answer: %w", name, err)}
+				return poll.Permanent{Err: fmt.Errorf("%s does not answer: %w", name, layer.Unnamed(name, err))}
 			}
 			return err
 		case err != nil:
@@ -327,12 +324,21 @@ func refreshKubernetesCA(ctx context.Context, r layer.Rotating, workers []string
 	})
 }
 
+// oldEncryptionKey is the name of the one old encryption key the secrets file accepts.
+func oldEncryptionKey(r layer.Rotating) (string, error) {
+	old := r.Secrets().Kubernetes.Accepted.EncryptionKeys
+	if len(old) != 1 {
+		return "", errors.New("the secrets file accepts no single old encryption key")
+	}
+	return old[0].Name, nil
+}
+
 // rewriteEncrypted has a control plane rewrite every encrypted object and checks that etcd
 // holds none under the old key afterwards.
 func rewriteEncrypted(ctx context.Context, r layer.Rotating) error {
-	old := r.Secrets().Kubernetes.Accepted.EncryptionKeys
-	if len(old) != 1 {
-		return errors.New("the secrets file accepts no single old encryption key")
+	old, err := oldEncryptionKey(r)
+	if err != nil {
+		return err
 	}
 	deadline := time.Now().Add(r.Timeout())
 	counts, err := encryptedCounts(ctx, r, kubernetesv1.RotationStep_ROTATION_STEP_REWRITE_ENCRYPTED)
@@ -344,8 +350,8 @@ func rewriteEncrypted(ctx context.Context, r layer.Rotating) error {
 	if err != nil {
 		return err
 	}
-	if n := counts[old[0].Name]; n > 0 {
-		return fmt.Errorf("etcd still holds %s under the old key %s", strs.Count(n, "object"), old[0].Name)
+	if n := counts[old]; n > 0 {
+		return fmt.Errorf("etcd still holds %s under the old key %s", strs.Count(n, "object"), old)
 	}
 	return nil
 }
@@ -361,16 +367,16 @@ func (p *Plugin) FinishGuard(ctx context.Context, r layer.Rotating, kind cluster
 			return fmt.Errorf("tokens signed with the old service-account key are renewed until %s, an hour after every control plane applied the switch; finish then, or pass --force to refuse the tokens not renewed yet", at.Local().Format(time.RFC3339))
 		}
 	case clustersecrets.RotateEncryptionKey:
-		old := r.Secrets().Kubernetes.Accepted.EncryptionKeys
-		if len(old) != 1 {
-			return errors.New("the secrets file accepts no single old encryption key")
+		old, err := oldEncryptionKey(r)
+		if err != nil {
+			return err
 		}
 		counts, err := encryptedCounts(ctx, r, kubernetesv1.RotationStep_ROTATION_STEP_COUNT_ENCRYPTED)
 		if err != nil {
 			return err
 		}
-		if n := counts[old[0].Name]; n > 0 {
-			return fmt.Errorf("etcd holds %s encrypted with the old key %s, which removing it would lose; rewrite them with chalkctl rotate encryption-key --resume", strs.Count(n, "object"), old[0].Name)
+		if n := counts[old]; n > 0 {
+			return fmt.Errorf("etcd holds %s encrypted with the old key %s, which removing it would lose; rewrite them with chalkctl rotate encryption-key --resume", strs.Count(n, "object"), old)
 		}
 	}
 	return nil
