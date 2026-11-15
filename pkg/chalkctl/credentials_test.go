@@ -2,7 +2,6 @@ package chalkctl
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -96,8 +95,7 @@ func TestConfigNew(t *testing.T) {
 
 func TestClientFileRole(t *testing.T) {
 	ta := newTestApp(t)
-	current, _ := json.Marshal(ta.identity(t))
-	s, _ := installedNode(t, ta, current)
+	s, _ := installedNode(t, ta, nil)
 	addr := ta.startNode(t, s)
 	reader := ta.writeConfig(t, "alice", pki.RoleReader, time.Hour*24*365, time.Now())
 	ta.withoutSecrets(t)
@@ -119,8 +117,7 @@ func TestClientFileRole(t *testing.T) {
 // names it, also when one is at hand.
 func TestCredentialChoice(t *testing.T) {
 	ta := newTestApp(t)
-	current, _ := json.Marshal(ta.identity(t))
-	s, _ := installedNode(t, ta, current)
+	s, _ := installedNode(t, ta, nil)
 	addr := ta.startNode(t, s)
 	reader := ta.writeConfig(t, "alice", pki.RoleReader, time.Hour*24*365, time.Now())
 	secrets := filepath.Join(ta.dir, "secrets.json")
@@ -160,8 +157,7 @@ func TestCredentialChoice(t *testing.T) {
 
 func TestClientFileExpiry(t *testing.T) {
 	ta := newTestApp(t)
-	current, _ := json.Marshal(ta.identity(t))
-	s, _ := installedNode(t, ta, current)
+	s, _ := installedNode(t, ta, nil)
 	addr := ta.startNode(t, s)
 	soon := ta.writeConfig(t, "alice", pki.RoleReader, 10*24*time.Hour, time.Now())
 	if err := ta.run(context.Background(), ta.args([]string{"status", "n1", "--config", soon}, addr)); err != nil {
@@ -181,8 +177,7 @@ func TestClientFileExpiry(t *testing.T) {
 
 func TestClientFileWithoutAnInventory(t *testing.T) {
 	ta := newTestApp(t)
-	current, _ := json.Marshal(ta.identity(t))
-	s, _ := installedNode(t, ta, current)
+	s, _ := installedNode(t, ta, nil)
 	addr := ta.startNode(t, s)
 	reader := ta.writeConfig(t, "alice", pki.RoleReader, time.Hour*24*365, time.Now())
 	ta.withoutSecrets(t)
@@ -213,8 +208,7 @@ func TestClientFileWithoutAnInventory(t *testing.T) {
 // and streaming alike, with or without an inventory.
 func TestClientFileOfAnotherCluster(t *testing.T) {
 	ta := newTestApp(t)
-	current, _ := json.Marshal(ta.identity(t))
-	s, _ := installedNode(t, ta, current)
+	s, _ := installedNode(t, ta, nil)
 	addr := ta.startNode(t, s)
 	foreign, err := clustersecrets.Generate(time.Now())
 	if err != nil {

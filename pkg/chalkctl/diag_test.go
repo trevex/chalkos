@@ -2,7 +2,6 @@ package chalkctl
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"io"
 	"reflect"
@@ -62,8 +61,7 @@ func (f *fakeDiagnose) recorded() []diagnostics.Run {
 // diagNode serves n1 in normal mode with testDiagnostics, which f runs, and returns its address.
 func diagNode(t *testing.T, ta *testApp, f *fakeDiagnose) string {
 	t.Helper()
-	current, _ := json.Marshal(ta.identity(t))
-	s, _ := installedNode(t, ta, current)
+	s, _ := installedNode(t, ta, nil)
 	writeContract(t, s, imagecontract.DiagnosticsFile, testDiagnostics)
 	s.Diagnose = f
 	return ta.startNode(t, s)

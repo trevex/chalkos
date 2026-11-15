@@ -337,9 +337,13 @@ func clusterFile(t *testing.T, kind string) string {
 // testImageJSON is the image.json of a Kubernetes image with flannel, as the fixture schemas are.
 const testImageJSON = kubernetestest.Image
 
-// installedNode is a normal-mode chalkd whose STATE holds the test node's identity.
+// installedNode is a normal-mode chalkd whose STATE holds the identity recorded, nil for the test
+// node's current one.
 func installedNode(t *testing.T, ta *testApp, recorded []byte) (*chalkd.Server, *fakeRunner) {
 	t.Helper()
+	if recorded == nil {
+		recorded, _ = json.Marshal(ta.identity(t))
+	}
 	root := t.TempDir()
 	r := &fakeRunner{}
 	s := &chalkd.Server{

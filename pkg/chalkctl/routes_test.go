@@ -2,7 +2,6 @@ package chalkctl
 
 import (
 	"context"
-	"encoding/json"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -28,8 +27,7 @@ import (
 // VRF tenant (table 100), whose instance imports a path from the VRF fabric.
 func routerNode(t *testing.T, ta *testApp) string {
 	t.Helper()
-	current, _ := json.Marshal(ta.identity(t))
-	s, _ := installedNode(t, ta, current)
+	s, _ := installedNode(t, ta, nil)
 	frr := func(name string) string {
 		data, err := os.ReadFile("../router/testdata/" + name)
 		if err != nil {
@@ -95,8 +93,7 @@ func TestNodeRoutes(t *testing.T) {
 // A node of an image without the router layer says so.
 func TestNodeRoutesWithoutTheLayer(t *testing.T) {
 	ta := newTestApp(t)
-	current, _ := json.Marshal(ta.identity(t))
-	s, _ := installedNode(t, ta, current)
+	s, _ := installedNode(t, ta, nil)
 	addr := ta.startNode(t, s)
 	err := ta.run(context.Background(), ta.args([]string{"node", "routes", "n1"}, addr))
 	if connect.CodeOf(err) != connect.CodeUnimplemented || !strings.Contains(err.Error(), "the router layer is not in this image") {
@@ -133,8 +130,7 @@ func (p withoutVRFs) Routes(ctx context.Context, req *connect.Request[routerv1.R
 // main table instead of the VRF's.
 func TestNodeRoutesOfAVRFWithoutVRFs(t *testing.T) {
 	ta := newTestApp(t)
-	current, _ := json.Marshal(ta.identity(t))
-	s, _ := installedNode(t, ta, current)
+	s, _ := installedNode(t, ta, nil)
 	r := &tooltest.Runner{Rules: []tooltest.Rule{{Prefix: "vtysh", Out: "{}"}}}
 	s.Plugins = chalkdtest.Plugins(t, s, layers.Of(layers.Router), withoutVRFs{routerplugin.New(runsWith{s, r}, routerplugin.Options{
 		KernelRoutes: func() ([]*router.KernelRoute, error) { return nil, nil },

@@ -3,7 +3,6 @@ package chalkctl
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"math"
 	"net/http"
 	"strings"
@@ -143,8 +142,7 @@ func cannedStatus() *nodev1.StatusResponse {
 // cannedNodeAt serves n1 with the canned answers and returns its address.
 func cannedNodeAt(t *testing.T, ta *testApp) string {
 	t.Helper()
-	current, _ := json.Marshal(ta.identity(t))
-	s, _ := installedNode(t, ta, current)
+	s, _ := installedNode(t, ta, nil)
 	addr := ta.startNode(t, s)
 	mux := http.NewServeMux()
 	n := cannedNode{s: s}

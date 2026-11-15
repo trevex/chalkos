@@ -115,8 +115,7 @@ func kubernetesNode(t *testing.T, ta *testApp) (*chalkd.Server, *fakeRunner) {
 // hooks o leaves nil are kubernetesNode's.
 func kubernetesNodeWith(t *testing.T, ta *testApp, o kubernetesplugin.Options) (*chalkd.Server, *fakeRunner) {
 	t.Helper()
-	current, _ := json.Marshal(ta.identity(t))
-	s, r := installedNode(t, ta, current)
+	s, r := installedNode(t, ta, nil)
 	root := t.TempDir()
 	o.Paths = knode.Paths{
 		StateDir: filepath.Join(s.Paths.StateDir, "kubernetes"),

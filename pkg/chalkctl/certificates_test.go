@@ -38,8 +38,7 @@ func TestNodeRenewReachesAnExpiredNode(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	current, _ := json.Marshal(ta.identity(t))
-	s, r := installedNode(t, ta, current)
+	s, r := installedNode(t, ta, nil)
 	addr := ta.nodeWithCertificate(t, s, expired)
 
 	// Every other command verifies the node's certificate with its dates.
@@ -80,8 +79,7 @@ func TestNodeRenewWarnsOfRulesThatFail(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	current, _ := json.Marshal(ta.identity(t))
-	s, _ := installedNode(t, ta, current)
+	s, _ := installedNode(t, ta, nil)
 	var effects map[string]any
 	raw, err := os.ReadFile(filepath.Join(contractDir(t, s), imagecontract.EffectsFile))
 	if err != nil {
@@ -106,8 +104,7 @@ func TestNodeRenewWarnsOfRulesThatFail(t *testing.T) {
 func TestNodeRenewVerifiesTheNode(t *testing.T) {
 	ta := newTestApp(t)
 	other := newTestApp(t)
-	current, _ := json.Marshal(ta.identity(t))
-	s, _ := installedNode(t, ta, current)
+	s, _ := installedNode(t, ta, nil)
 	// A node certificate of another cluster's node CA, for the right name.
 	foreign, err := pki.IssueNode(other.secrets.NodeCA, pki.NodeNames{CommonName: "n1", DNSNames: []string{"n1"}}, time.Now())
 	if err != nil {
@@ -200,8 +197,7 @@ func TestRotateNodeCAOnAControlPlane(t *testing.T) {
 
 func TestStatusShowsCertificatesAndTime(t *testing.T) {
 	ta := newTestApp(t)
-	current, _ := json.Marshal(ta.identity(t))
-	s, _ := installedNode(t, ta, current)
+	s, _ := installedNode(t, ta, nil)
 	cert, err := pki.IssueNode(ta.secrets.NodeCA, pki.NodeNames{CommonName: "n1", DNSNames: []string{"n1"}}, time.Now())
 	if err != nil {
 		t.Fatal(err)
