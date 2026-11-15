@@ -24,16 +24,6 @@ func hopDoc(t *testing.T, name, address, link string, table int) any {
 	return derivetest.RouterDoc(t, "NextHop", name, string(b))
 }
 
-// policyInput is the input of the router outputs for the documents.
-func policyInput(t *testing.T, docs map[string][]any) string {
-	t.Helper()
-	input, err := json.Marshal(map[string]any{"node": map[string]any{"name": "r1"}, "documents": docs})
-	if err != nil {
-		t.Fatal(err)
-	}
-	return string(input)
-}
-
 // nextHopRoute is a PolicyRoute's spec of one rule, for DSCP 46, to the NextHop.
 func nextHopRoute(hop string) string {
 	return `{"rules": [{"match": {"dscp": [46]}, "to": {"nextHop": "` + hop + `"}}]}`
@@ -94,7 +84,7 @@ func TestPolicyRouteChain(t *testing.T) {
 		"a", `{"rules": [{"match": {"dscp": [46]}, "to": {"nextHop": "b4"}}, {"match": {"source": {"cidrs": ["192.0.2.0/24"]}}, "to": {"vrf": "transit"}}]}`,
 		"b", `{"in": {"zone": "lan", "interfaces": []}, "rules": [{"match": {"dscp": [10]}, "to": {"nextHop": "b4"}}]}`)
 	docs["NextHop"] = append(docs["NextHop"], hopDoc(t, "spare", "198.51.100.131", "wanb0", 150))
-	ruleset := renderedFile(t, []string{"router-nftables", "50000"}, policyInput(t, docs), rulesetFile)
+	ruleset := renderedFile(t, []string{"router-nftables", "50000"}, inputOf(t, docs), rulesetFile)
 	for _, want := range []string{
 		"\t\ttype filter hook prerouting priority mangle + 10; policy drop;\n" +
 			"\t\tiifname { \"transit\" } meta mark & 0x00ff0000 != 0 accept\n\t\tmeta nfproto ipv4 udp sport",
@@ -113,7 +103,7 @@ func TestPolicyRouteChain(t *testing.T) {
 		t.Errorf("a NextHop of IPv4 marks IPv6:\n%s", ruleset)
 	}
 	delete(docs, "PolicyRoute")
-	if ruleset := renderedFile(t, []string{"router-nftables", "50000"}, policyInput(t, docs), rulesetFile); strings.Contains(ruleset, "meta mark") || strings.Contains(ruleset, "policy-routing") {
+	if ruleset := renderedFile(t, []string{"router-nftables", "50000"}, inputOf(t, docs), rulesetFile); strings.Contains(ruleset, "meta mark") || strings.Contains(ruleset, "policy-routing") {
 		t.Errorf("a ruleset without PolicyRoute documents marks packets:\n%s", ruleset)
 	}
 }
@@ -197,7 +187,7 @@ func TestPolicyRouteUnits(t *testing.T) {
 		"b", `{"rules": [{"match": {"dscp": [10]}, "to": {"nextHop": "b4"}}]}`)
 	units := func() string {
 		t.Helper()
-		return renderedFiles(t, []string{"router-networkd", networkFixture}, policyInput(t, docs))
+		return renderedFiles(t, []string{"router-networkd", networkFixture}, inputOf(t, docs))
 	}
 	rules := "[RoutingPolicyRule]\nFamily=both\nFirewallMark=0x10000/0xff0000\nPriority=900\nTable=100\n\n" +
 		"[RoutingPolicyRule]\nFamily=both\nFirewallMark=0x20000/0xff0000\nPriority=900\nTable=200\n\n"

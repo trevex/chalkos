@@ -79,11 +79,7 @@ func routerInput(t *testing.T, path string) string {
 		}
 		byKind[d.Kind] = append(byKind[d.Kind], filled)
 	}
-	data, err := json.Marshal(map[string]any{"node": map[string]any{"name": "r1"}, "documents": byKind})
-	if err != nil {
-		t.Fatal(err)
-	}
-	return string(data)
+	return inputOf(t, byKind)
 }
 
 // golden compares got with the golden file testdata/router/<name>, or rewrites it with -update.
@@ -326,11 +322,7 @@ func TestNAT64Firewall(t *testing.T) {
 	}
 	ruleset := func(docs map[string][]any) string {
 		t.Helper()
-		input, err := json.Marshal(map[string]any{"node": map[string]any{"name": "r1"}, "documents": docs})
-		if err != nil {
-			t.Fatal(err)
-		}
-		return renderedFile(t, []string{"router-nftables", "50000"}, string(input), rulesetFile)
+		return renderedFile(t, []string{"router-nftables", "50000"}, inputOf(t, docs), rulesetFile)
 	}
 	got := ruleset(docs)
 	for _, want := range []string{
@@ -401,11 +393,7 @@ func TestNATRuleWiderThanNAT64Pool(t *testing.T) {
 	zone := derivetest.RouterDoc(t, "FirewallZone", "wan", `{"interfaces": ["eth0"]}`)
 	rule := derivetest.RouterDoc(t, "NATRule", "web", `{"type": "dnat", "family": "ipv4", "in": {"zone": "wan"}, "match": {"destination": ["192.0.2.0/24"]}, "to": {"address": "198.51.100.1"}}`)
 	docs := map[string][]any{"NAT64": {nat64}, "FirewallZone": {zone}, "NATRule": {rule}}
-	input, err := json.Marshal(map[string]any{"node": map[string]any{"name": "r1"}, "documents": docs})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got := renderedFile(t, []string{"router-nftables", "50000"}, string(input), rulesetFile); !strings.Contains(got, "ip daddr { 192.0.2.0/24 } dnat ip to 198.51.100.1") {
+	if got := renderedFile(t, []string{"router-nftables", "50000"}, inputOf(t, docs), rulesetFile); !strings.Contains(got, "ip daddr { 192.0.2.0/24 } dnat ip to 198.51.100.1") {
 		t.Errorf("a dnat rule of a range wider than the pool is missing:\n%s", got)
 	}
 }
@@ -503,11 +491,7 @@ func TestRouterRefusals(t *testing.T) {
 		"a peer's VRF that ends a set": {[]string{"router-nftables", "50000"}, map[string][]any{"BGPPeer": {doc("BGPPeer", "a", `{"remoteAS": "external", "vrf": "x\" accept", "interface": "eth1"}`)}}, `internal error: BGPPeer a: the VRF "x\" accept" is no VRF's name`},
 	} {
 		t.Run(name, func(t *testing.T) {
-			input, err := json.Marshal(map[string]any{"node": map[string]any{"name": "r1"}, "documents": c.docs})
-			if err != nil {
-				t.Fatal(err)
-			}
-			if _, err := render(t, c.args, string(input)); err == nil || !strings.Contains(err.Error(), c.want) {
+			if _, err := render(t, c.args, inputOf(t, c.docs)); err == nil || !strings.Contains(err.Error(), c.want) {
 				t.Errorf("err = %v, want %q", err, c.want)
 			}
 		})
@@ -615,11 +599,7 @@ func TestFRRRefusals(t *testing.T) {
 		"a prepend below one": {map[string][]any{"BGP": {bgp("")}, "RoutingPolicy": {policy("p", `{"then": {"action": "accept", "prepend": -1}}`)}}, "internal error: RoutingPolicy p: term 1: prepend -1 lies outside 1 to 10"},
 	} {
 		t.Run(name, func(t *testing.T) {
-			input, err := json.Marshal(map[string]any{"node": map[string]any{"name": "r1"}, "documents": c.docs})
-			if err != nil {
-				t.Fatal(err)
-			}
-			if _, err := render(t, []string{"frr"}, string(input)); err == nil || !strings.Contains(err.Error(), c.want) {
+			if _, err := render(t, []string{"frr"}, inputOf(t, c.docs)); err == nil || !strings.Contains(err.Error(), c.want) {
 				t.Errorf("err = %v, want %q", err, c.want)
 			}
 		})
@@ -658,11 +638,7 @@ func TestCheckASPath(t *testing.T) {
 // refused renders the output of args from docs and wants an error that holds want.
 func refused(t *testing.T, args []string, docs map[string][]any, want string) {
 	t.Helper()
-	input, err := json.Marshal(map[string]any{"node": map[string]any{"name": "r1"}, "documents": docs})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := render(t, args, string(input)); err == nil || !strings.Contains(err.Error(), want) {
+	if _, err := render(t, args, inputOf(t, docs)); err == nil || !strings.Contains(err.Error(), want) {
 		t.Errorf("err = %v, want %q", err, want)
 	}
 }
@@ -711,11 +687,7 @@ func TestJoolProtocols(t *testing.T) {
 	nat64 := func(protocols string) map[string][]any {
 		return map[string][]any{"NAT64": {derivetest.RouterDoc(t, "NAT64", "edge", `{"prefix": "64:ff9b::/96", "pool4": [{"prefix": "192.0.2.8/30", "ports": "61001-65535", "protocols": [`+protocols+`]}]}`)}}
 	}
-	input, err := json.Marshal(map[string]any{"node": map[string]any{"name": "r1"}, "documents": nat64(`"icmp", "tcp\", \"mark\": \"1", "tcp"`)})
-	if err != nil {
-		t.Fatal(err)
-	}
-	out, err := render(t, []string{"jool"}, string(input))
+	out, err := render(t, []string{"jool"}, inputOf(t, nat64(`"icmp", "tcp\", \"mark\": \"1", "tcp"`)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -750,11 +722,7 @@ func TestNAT64Links(t *testing.T) {
 		t.Helper()
 		docs := map[string][]any{"NAT64": nat64}
 		maps.Copy(docs, vrf)
-		input, err := json.Marshal(map[string]any{"node": map[string]any{"name": "r1"}, "documents": docs})
-		if err != nil {
-			t.Fatal(err)
-		}
-		out, err := render(t, []string{"jool"}, string(input))
+		out, err := render(t, []string{"jool"}, inputOf(t, docs))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -1001,13 +969,10 @@ func TestFRRVRFRefusals(t *testing.T) {
 // default-route network only while the table holds a default route.
 func TestFRRDefaultRouteNetwork(t *testing.T) {
 	timers := `"multipath": {"ebgp": 1, "ibgp": 1, "asPathRelax": false}, "bfd": {"receiveMs": 300, "transmitMs": 300, "multiplier": 3}`
-	input, err := json.Marshal(map[string]any{"node": map[string]any{"name": "r1"}, "documents": map[string][]any{
+	input := inputOf(t, map[string][]any{
 		"BGP": {derivetest.RouterDoc(t, "BGP", "bgp", `{"asn": 64512, "routerID": "192.0.2.1", `+timers+`, "networks": [{"prefix": "0.0.0.0/0"}, {"prefix": "::/0"}]}`)},
-	}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	conf := renderedFile(t, []string{"frr"}, string(input), frrFile)
+	})
+	conf := renderedFile(t, []string{"frr"}, input, frrFile)
 	for _, want := range []string{"  network 0.0.0.0/0\n", "  network ::/0\n"} {
 		if !strings.Contains(conf, want) {
 			t.Errorf("frr.conf lacks %q:\n%s", want, conf)
@@ -1047,11 +1012,7 @@ func TestFRRDefaultOriginateWhen(t *testing.T) {
 	}
 	conf := func() string {
 		t.Helper()
-		input, err := json.Marshal(map[string]any{"node": map[string]any{"name": "r1"}, "documents": docs})
-		if err != nil {
-			t.Fatal(err)
-		}
-		return renderedFile(t, []string{"frr"}, string(input), frrFile)
+		return renderedFile(t, []string{"frr"}, inputOf(t, docs), frrFile)
 	}
 	tracked := conf()
 	for _, want := range []string{
@@ -1146,11 +1107,7 @@ func TestFRRVRFInterfaceByGlob(t *testing.T) {
 		return []any{derivetest.RouterDoc(t, "BGPPeer", "leaf", `{"interface": "swp1", "remoteAS": "external", "families": {"ipv6": {}}`+more+`}`)}
 	}
 	docs["BGPPeer"] = peer(`, "vrf": "tenant"`)
-	input, err := json.Marshal(map[string]any{"node": map[string]any{"name": "r1"}, "documents": docs})
-	if err != nil {
-		t.Fatal(err)
-	}
-	conf := renderedFile(t, []string{"frr"}, string(input), frrFile)
+	conf := renderedFile(t, []string{"frr"}, inputOf(t, docs), frrFile)
 	if !strings.Contains(conf, "router bgp 64512 vrf tenant\n bgp router-id 192.0.2.1\n no bgp default ipv4-unicast\n neighbor peer-leaf peer-group\n neighbor peer-leaf remote-as external\n neighbor swp1 interface peer-group peer-leaf\n") {
 		t.Errorf("frr.conf runs no session on swp1 in tenant:\n%s", conf)
 	}
@@ -1159,11 +1116,7 @@ func TestFRRVRFInterfaceByGlob(t *testing.T) {
 		derivetest.Doc(t, "Network", "20-swp1", `{"match": {"name": "swp1"}}`),
 		derivetest.Doc(t, "Network", "40-sw0", `{"match": {"name": "sw0"}}`))
 	docs["BGPPeer"] = []any{derivetest.RouterDoc(t, "BGPPeer", "leaves", `{"interfaces": ["sw*"], "remoteAS": "external", "families": {"ipv6": {}}}`)}
-	input, err = json.Marshal(map[string]any{"node": map[string]any{"name": "r1"}, "documents": docs})
-	if err != nil {
-		t.Fatal(err)
-	}
-	conf = renderedFile(t, []string{"frr"}, string(input), frrFile)
+	conf = renderedFile(t, []string{"frr"}, inputOf(t, docs), frrFile)
 	if !strings.Contains(conf, " neighbor sw0 interface peer-group peer-leaves\n") || strings.Contains(conf, "neighbor swp1 ") {
 		t.Errorf("frr.conf runs sw*'s sessions elsewhere than on sw0:\n%s", conf)
 	}
@@ -1188,11 +1141,7 @@ func TestFRRVRFPrependAndBFD(t *testing.T) {
 			derivetest.RouterDoc(t, "BGPPeer", "leaf", `{"vrf": "tenant", "interface": "eth2", "bfd": true, "remoteAS": "external", "families": {"ipv6": {}}}`),
 		},
 	}
-	input, err := json.Marshal(map[string]any{"node": map[string]any{"name": "r1"}, "documents": docs})
-	if err != nil {
-		t.Fatal(err)
-	}
-	conf := renderedFile(t, []string{"frr"}, string(input), frrFile)
+	conf := renderedFile(t, []string{"frr"}, inputOf(t, docs), frrFile)
 	for _, want := range []string{
 		" set as-path prepend 64513\n",
 		" neighbor peer-spine bfd profile chalkos\n",
@@ -1232,11 +1181,7 @@ func vrfZoneDocs(t *testing.T) map[string][]any {
 // vrfRuleset renders router-nftables from the documents.
 func vrfRuleset(t *testing.T, docs map[string][]any) string {
 	t.Helper()
-	input, err := json.Marshal(map[string]any{"node": map[string]any{"name": "r1"}, "documents": docs})
-	if err != nil {
-		t.Fatal(err)
-	}
-	return renderedFile(t, []string{"router-nftables", "50000"}, string(input), rulesetFile)
+	return renderedFile(t, []string{"router-nftables", "50000"}, inputOf(t, docs), rulesetFile)
 }
 
 // The input and forward hooks see a packet from a VRF's link with the VRF's device as iifname and

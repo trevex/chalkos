@@ -26,11 +26,7 @@ func networkd(t *testing.T, dir string, documents map[string][]any) (map[string]
 // files by name.
 func unitFiles(t *testing.T, args []string, documents map[string][]any) (map[string]string, error) {
 	t.Helper()
-	input, err := json.Marshal(map[string]any{"node": map[string]any{"name": "cp1"}, "documents": documents})
-	if err != nil {
-		t.Fatal(err)
-	}
-	out, err := render(t, args, string(input))
+	out, err := render(t, args, inputOf(t, documents))
 	if err != nil {
 		return nil, err
 	}

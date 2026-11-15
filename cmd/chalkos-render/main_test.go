@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"errors"
 	"io"
 	"os"
@@ -131,4 +132,14 @@ func TestTemplateMissingKeys(t *testing.T) {
 	if _, err := render(t, []string{"template", tmpl, "peers"}, peers); err == nil {
 		t.Error("a key below a missing one rendered")
 	}
+}
+
+// inputOf is the input of node r1 with docs, its documents by kind.
+func inputOf(t *testing.T, docs any) string {
+	t.Helper()
+	input, err := json.Marshal(map[string]any{"node": map[string]any{"name": "r1"}, "documents": docs})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(input)
 }
