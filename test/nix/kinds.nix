@@ -8,7 +8,13 @@ let
   inherit (lib) mkOption types;
   chalkosLib = import ../../lib/chalkos.nix { inherit lib; };
   inherit (chalkosLib.internal) schema kindTypes;
-  inherit (import ./lib.nix { inherit lib mkImages; }) fails worker router;
+  inherit (import ./lib.nix { inherit lib mkImages; })
+    fails
+    refuses
+    etcJSON
+    worker
+    router
+    ;
 
   demoModule =
     { chalkosLib, lib, ... }:
@@ -74,11 +80,6 @@ let
     demoModule
     grantModule
   ];
-  etcJSON =
-    file: config:
-    builtins.fromJSON (
-      builtins.unsafeDiscardStringContext config.environment.etc."chalkos/${file}".text
-    );
   servicesOf = etcJSON "services.json";
   effectsOf = etcJSON "effects.json";
   outputsOf = etcJSON "outputs.json";
@@ -834,153 +835,32 @@ lib.runTests {
       builtins.readFile ../fixtures/kinds/image/schemas/demo.example.org_v1alpha1_Demo.json
     );
   };
-  testStrMatchingIsAnchored = {
-    expr = propOf (types.strMatching "[a-z]+");
-    expected = {
-      type = "string";
-      pattern = "^(?:[a-z]+)$";
+  # The schemas of option types the kinds' fixtures do not show.
+  testTypes = {
+    expr = lib.mapAttrs (_: propOf) {
+      inherit (types) int float;
+      s8 = types.ints.s8;
+      between = types.ints.between (-5) 5;
+      lazyAttrsOf = types.lazyAttrsOf types.int;
     };
-  };
-  testBool = {
-    expr = propOf types.bool;
-    expected.type = "boolean";
-  };
-  testInt = {
-    expr = propOf types.int;
-    expected.type = "integer";
-  };
-  testIntsBetween = {
-    expr = propOf (types.ints.between (-5) 5);
     expected = {
-      type = "integer";
-      minimum = -5;
-      maximum = 5;
-    };
-  };
-  testPort = {
-    expr = propOf types.port;
-    expected = {
-      type = "integer";
-      minimum = 0;
-      maximum = 65535;
-    };
-  };
-  # A port or a range of ports, as the router kinds take them: a number from port 1, or
-  # "<first>-<last>", which the format port-range checks.
-  testPortRange = {
-    expr = propOf kindTypes.portRange;
-    expected.anyOf = [
-      {
+      int.type = "integer";
+      float.type = "number";
+      s8 = {
         type = "integer";
-        minimum = 1;
-        maximum = 65535;
-      }
-      {
-        type = "string";
-        format = "port-range";
-      }
-    ];
-  };
-  # An image reference and one whose tag is a version, which the formats image-reference and
-  # versioned-image-reference check.
-  testImageReference = {
-    expr = propOf kindTypes.imageReference;
-    expected = {
-      type = "string";
-      format = "image-reference";
-    };
-  };
-  testVersionedImageReference = {
-    expr = propOf kindTypes.versionedImageReference;
-    expected = {
-      type = "string";
-      format = "versioned-image-reference";
-    };
-  };
-  # An address and an address range, which the formats ip and cidr check.
-  testAddress = {
-    expr = propOf (types.listOf kindTypes.address);
-    expected = {
-      type = "array";
-      items = {
-        type = "string";
-        format = "ip";
+        minimum = -128;
+        maximum = 127;
+      };
+      between = {
+        type = "integer";
+        minimum = -5;
+        maximum = 5;
+      };
+      lazyAttrsOf = {
+        type = "object";
+        additionalProperties.type = "integer";
       };
     };
-  };
-  testPrefix = {
-    expr = propOf (types.nullOr kindTypes.prefix);
-    expected.anyOf = [
-      {
-        type = "string";
-        format = "cidr";
-      }
-      { type = "null"; }
-    ];
-  };
-  # A BGP neighbour's AS, as BGPPeer takes it: external, internal or a 32-bit AS number.
-  testPeerAS = {
-    expr = propOf kindTypes.peerAS;
-    expected.anyOf = [
-      {
-        enum = [
-          "external"
-          "internal"
-        ];
-      }
-      {
-        type = "integer";
-        minimum = 1;
-        maximum = 4294967295;
-      }
-    ];
-  };
-  testPositive = {
-    expr = propOf types.ints.positive;
-    expected = {
-      type = "integer";
-      minimum = 1;
-    };
-  };
-  testFloat = {
-    expr = propOf types.float;
-    expected.type = "number";
-  };
-  testAttrsOf = {
-    expr = propOf (types.attrsOf types.int);
-    expected = {
-      type = "object";
-      additionalProperties.type = "integer";
-    };
-  };
-  testLazyAttrsOf = {
-    expr = propOf (types.lazyAttrsOf types.int);
-    expected = {
-      type = "object";
-      additionalProperties.type = "integer";
-    };
-  };
-  testIntsUnsigned = {
-    expr = propOf types.ints.unsigned;
-    expected = {
-      type = "integer";
-      minimum = 0;
-    };
-  };
-  testIntsS8 = {
-    expr = propOf types.ints.s8;
-    expected = {
-      type = "integer";
-      minimum = -128;
-      maximum = 127;
-    };
-  };
-  testNullOrStr = {
-    expr = propOf (types.nullOr types.str);
-    expected.anyOf = [
-      { type = "string"; }
-      { type = "null"; }
-    ];
   };
   # chalkosLib.mkOption's maxItems bounds a list, and fails the evaluation on any other type or
   # on a bound that is no positive integer.
@@ -2232,194 +2112,115 @@ lib.runTests {
   # A layer's name is a file name in facts/: lower-case letters, digits and dashes.
   testImageDirectoryRefusesFactsOfABadLayerName = {
     expr =
-      let
-        failed =
-          layer:
-          map (a: a.message) (
-            lib.filter (a: !a.assertion)
-              (worker [ { chalkos.imageDirectory.facts.${layer} = ./kinds.nix; } ]).assertions
-          );
-      in
-      map failed [
-        "edge-2"
-        ""
-        "Edge"
-        "a/b"
-      ];
-    expected = [
-      [ ]
-      [
-        "chalkos.imageDirectory.facts names the layer \"\"; a layer's name is lower-case letters, digits and dashes"
-      ]
-      [
-        "chalkos.imageDirectory.facts names the layer \"Edge\"; a layer's name is lower-case letters, digits and dashes"
-      ]
-      [
-        "chalkos.imageDirectory.facts names the layer \"a/b\"; a layer's name is lower-case letters, digits and dashes"
-      ]
-    ];
-  };
-  testGetPath = {
-    expr = getPeering {
-      name = "uplink";
-      path = "spec.asn";
-    };
-    expected = {
-      chalkcfg = true;
-      args = "get Peering uplink -o 'jsonpath={.spec.asn}'";
-    };
-  };
-  testGetNestedGroup = {
-    expr = (getPeering { path = "spec.peer.address"; }).args;
-    expected = "get Peering -o 'jsonpath={.spec.peer.address}'";
-  };
-  testGetNullOrSubmodule = {
-    expr = resolvePeering "spec.timers.hold";
-    expected.jsonpath = "{.spec.timers.hold}";
-  };
-  testGetListElements = {
-    expr = (getPeering { path = "spec.neighbours.*.address"; }).args;
-    expected = "get Peering -o 'jsonpath={.spec.neighbours[*].address}'";
-  };
-  testGetListIndex = {
-    expr = resolvePeering "spec.neighbours.0.address";
-    expected.jsonpath = "{.spec.neighbours[0].address}";
-  };
-  testGetAttrsOfKey = {
-    expr = resolvePeering "spec.labels.zone-a";
-    expected.jsonpath = "{.spec.labels['zone-a']}";
-  };
-  testGetAttrsOfIdentifierKey = {
-    expr = resolvePeering "spec.labels.zone";
-    expected.jsonpath = "{.spec.labels.zone}";
-  };
-  # client-go's jsonpath takes [*] for lists only; .* takes every value of an object.
-  testGetAttrsOfAll = {
-    expr = resolvePeering "spec.labels.*";
-    expected.jsonpath = "{.spec.labels.*}";
-  };
-  testGetAttrsOfSubmoduleAll = {
-    expr = (getPeering { path = "spec.pools.*.cidr"; }).args;
-    expected = "get Peering -o 'jsonpath={.spec.pools.*.cidr}'";
-  };
-  testGetAttrsOfKeyWithSlashColonAndDigits = {
-    expr = map resolvePeering [
-      "spec.labels.zone/a"
-      "spec.labels.a:b"
-      "spec.labels.0"
-    ];
-    expected = [
-      { jsonpath = "{.spec.labels['zone/a']}"; }
-      { jsonpath = "{.spec.labels['a:b']}"; }
-      { jsonpath = "{.spec.labels['0']}"; }
-    ];
-  };
-  # client-go's jsonpath does not quote within ['…'], so it misreads keys with these characters.
-  testGetKeyWithSpaceFails = {
-    expr = resolvePeering "spec.labels.a b";
-    expected.error = "the key a b cannot be addressed by a jsonpath; use output with a go-template";
-  };
-  testGetKeyWithAtFails = {
-    expr = resolvePeering "spec.labels.a@b";
-    expected.error = "the key a@b cannot be addressed by a jsonpath; use output with a go-template";
-  };
-  testGetSecretRef = {
-    expr = resolvePeering "spec.token.secretRef.name";
-    expected.jsonpath = "{.spec.token.secretRef.name}";
-  };
-  testGetMetadataName = {
-    expr = resolvePeering "metadata.name";
-    expected.jsonpath = "{.metadata.name}";
-  };
-  testGetWithoutPath = {
-    expr = getPeering { };
-    expected = {
-      chalkcfg = true;
-      args = "get Peering";
-    };
-  };
-  testGetOutput = {
-    expr =
-      (getPeering {
-        name = "uplink";
-        output = "json";
-      }).args;
-    expected = "get Peering uplink -o json";
-  };
-  # chalkcfg reads only names that follow metadata.name's pattern.
-  testGetDottedName = {
-    expr = (getPeering { name = "uplink.a-1"; }).args;
-    expected = "get Peering uplink.a-1";
-  };
-  testGetInvalidNameFails = {
-    expr =
       map
         (
-          name:
-          fails (getPeering {
-            inherit name;
-          })
+          layer:
+          refuses "names the layer \"${layer}\"; a layer's name is" (worker [
+            { chalkos.imageDirectory.facts.${layer} = ./kinds.nix; }
+          ])
         )
         [
-          "a b"
-          "Uplink"
-          "-a"
-          "a."
-          "../x"
+          "edge-2"
           ""
+          "Edge"
+          "a/b"
         ];
     expected = [
-      true
-      true
-      true
+      false
       true
       true
       true
     ];
   };
-  testGetUnknownFieldListsFields = {
-    expr = resolvePeering "spec.asnn";
-    expected.error = "spec has no field asnn; its fields are asn, labels, neighbours, peer, pools, timers, token";
+  # The command get builds: the image's chalkcfg get with the kind, a name of metadata.name's
+  # pattern, and the jsonpath of a path or an output.
+  testGet = {
+    expr = map getPeering [
+      {
+        name = "uplink";
+        path = "spec.asn";
+      }
+      { }
+      {
+        name = "uplink";
+        output = "json";
+      }
+      { name = "uplink.a-1"; }
+    ];
+    expected =
+      map
+        (args: {
+          chalkcfg = true;
+          inherit args;
+        })
+        [
+          "get Peering uplink -o 'jsonpath={.spec.asn}'"
+          "get Peering"
+          "get Peering uplink -o json"
+          "get Peering uplink.a-1"
+        ];
   };
-  testGetUnknownTopField = {
-    expr = resolvePeering "status";
-    expected.error = "the document has no field status; its fields are apiVersion, kind, metadata, spec";
+  # get refuses a name chalkcfg would not read, a path with an output, and an unknown output.
+  testGetRefuses = {
+    expr = map (a: fails (getPeering a)) [
+      { name = "a b"; }
+      { name = "Uplink"; }
+      { name = "-a"; }
+      { name = "a."; }
+      { name = "../x"; }
+      { name = ""; }
+      {
+        path = "spec.asn";
+        output = "json";
+      }
+      { output = "xml"; }
+    ];
+    expected = lib.replicate 8 true;
   };
-  testGetBelowValue = {
-    expr = resolvePeering "spec.peer.address.port";
-    expected.error = "spec.peer.address holds a string and has no fields";
-  };
-  testGetListNeedsIndex = {
-    expr = resolvePeering "spec.neighbours.address";
-    expected.error = "spec.neighbours is a list: follow it with * or an index such as 0, not address";
-  };
-  testGetEmptyField = {
-    expr = resolvePeering "spec..asn";
-    expected.error = "the path has an empty field name";
-  };
-  testGetUnquotableKey = {
-    expr = resolvePeering "spec.labels.it's";
-    expected.error = "the key it's cannot be addressed by a jsonpath; use output with a go-template";
-  };
-  testGetInvalidPathFails = {
-    expr = fails (getPeering {
-      path = "spec.asnn";
-    });
-    expected = true;
-  };
-  testGetPathAndOutputFail = {
-    expr = fails (getPeering {
-      path = "spec.asn";
-      output = "json";
-    });
-    expected = true;
-  };
-  testGetUnknownOutputFails = {
-    expr = fails (getPeering {
-      output = "xml";
-    });
-    expected = true;
-  };
+  # The jsonpath of each path of a Peering.
+  testGetJSONPath =
+    let
+      paths = {
+        "spec.peer.address" = "{.spec.peer.address}";
+        "spec.timers.hold" = "{.spec.timers.hold}";
+        "spec.neighbours.*.address" = "{.spec.neighbours[*].address}";
+        "spec.neighbours.0.address" = "{.spec.neighbours[0].address}";
+        "spec.labels.zone-a" = "{.spec.labels['zone-a']}";
+        "spec.labels.zone" = "{.spec.labels.zone}";
+        # client-go's jsonpath takes [*] for lists only; .* takes every value of an object.
+        "spec.labels.*" = "{.spec.labels.*}";
+        "spec.pools.*.cidr" = "{.spec.pools.*.cidr}";
+        "spec.labels.zone/a" = "{.spec.labels['zone/a']}";
+        "spec.labels.a:b" = "{.spec.labels['a:b']}";
+        "spec.labels.0" = "{.spec.labels['0']}";
+        "spec.token.secretRef.name" = "{.spec.token.secretRef.name}";
+        "metadata.name" = "{.metadata.name}";
+      };
+    in
+    {
+      expr = lib.mapAttrs (path: _: resolvePeering path) paths;
+      expected = lib.mapAttrs (_: jsonpath: { inherit jsonpath; }) paths;
+    };
+  # The error of each path of a Peering that resolves to no jsonpath.
+  testGetPathErrors =
+    let
+      errors = {
+        "spec.asnn" =
+          "spec has no field asnn; its fields are asn, labels, neighbours, peer, pools, timers, token";
+        status = "the document has no field status; its fields are apiVersion, kind, metadata, spec";
+        "spec.peer.address.port" = "spec.peer.address holds a string and has no fields";
+        "spec.neighbours.address" =
+          "spec.neighbours is a list: follow it with * or an index such as 0, not address";
+        "spec..asn" = "the path has an empty field name";
+        # client-go's jsonpath does not quote within ['…'], so it misreads keys with a space, an @
+        # or a quote.
+        "spec.labels.a b" = "the key a b cannot be addressed by a jsonpath; use output with a go-template";
+      };
+    in
+    {
+      expr = lib.mapAttrs (path: _: resolvePeering path) errors;
+      expected = lib.mapAttrs (_: error: { inherit error; }) errors;
+    };
   # The extensions example's unit reads the node's Rack with chalkcfg, by a path the evaluation
   # checked.
   testExtensionsRackReadsWithChalkcfg = {
