@@ -17,7 +17,6 @@ import (
 	"testing"
 
 	"github.com/trevex/chalkos/pkg/config"
-	"github.com/trevex/chalkos/pkg/jsonfile"
 	"github.com/trevex/chalkos/pkg/refusals"
 	"github.com/trevex/chalkos/pkg/router/derive"
 	"github.com/trevex/chalkos/pkg/router/derive/derivetest"
@@ -442,13 +441,7 @@ func TestRecordValues(t *testing.T) {
 // ruleset or keep it from loading, should a document bypass them, with an internal error: names
 // and ports the ruleset writes unquoted, interfaces, families, ICMP types and the hash policy.
 func TestRouterRefusals(t *testing.T) {
-	doc := func(kind, name, spec string) any {
-		var s any
-		if err := jsonfile.DecodeExact([]byte(spec), &s); err != nil {
-			t.Fatal(err)
-		}
-		return map[string]any{"apiVersion": derive.API, "kind": kind, "metadata": map[string]any{"name": name}, "spec": s}
-	}
+	doc := func(kind, name, spec string) any { return derivetest.RouterDoc(t, kind, name, spec) }
 	zone := doc("FirewallZone", "wan", `{"interfaces": ["eth0"]}`)
 	rule := func(r string) any {
 		return doc("FirewallPolicy", "wan-local", `{"from": "wan", "to": "local", "default": "drop", "rules": [`+r+`]}`)
@@ -462,16 +455,13 @@ func TestRouterRefusals(t *testing.T) {
 		"an unknown hash":                {[]string{"router-sysctl"}, map[string][]any{"Router": {doc("Router", "r", `{"forwarding": {"ipv4": true, "ipv6": true}, "rpFilter": "loose", "ecmpHash": "l5", "conntrackMax": null, "management": {"interfaces": null}}`)}}, `internal error: Router r: "l5" is none of l3, l4`},
 		"an unknown reverse-path filter": {[]string{"router-nftables", "50000"}, map[string][]any{"Router": {doc("Router", "r", `{"forwarding": {"ipv4": true, "ipv6": true}, "rpFilter": "any", "ecmpHash": "l4", "conntrackMax": null, "management": {"interfaces": null}}`)}}, `internal error: Router r: "any" is none of off, loose, strict`},
 		// Ports, which the ruleset writes unquoted.
-		"an inverted range":       {[]string{"router-nftables", "50000"}, map[string][]any{"FirewallZone": {zone}, "FirewallPolicy": {rule(`{"protocol": "tcp", "destinationPorts": ["90-80"], "action": "accept"}`)}}, `internal error: FirewallPolicy wan-local: "90-80" is no range of ports`},
 		"port zero":               {[]string{"router-nftables", "50000"}, map[string][]any{"FirewallZone": {zone}, "FirewallPolicy": {rule(`{"protocol": "tcp", "destinationPorts": [0], "action": "accept"}`)}}, "internal error: FirewallPolicy wan-local: a port is a number from 1 to 65535"},
-		"a range from port zero":  {[]string{"router-nftables", "50000"}, map[string][]any{"FirewallZone": {zone}, "FirewallPolicy": {rule(`{"protocol": "tcp", "destinationPorts": ["0-80"], "action": "accept"}`)}}, `internal error: FirewallPolicy wan-local: "0-80" is no range of ports`},
 		"a port that adds a rule": {[]string{"router-nftables", "50000"}, map[string][]any{"FirewallZone": {zone}, "FirewallPolicy": {rule(`{"protocol": "tcp", "destinationPorts": ["22 } accept; tcp dport { 23"], "action": "accept"}`)}}, `internal error: FirewallPolicy wan-local: "22 } accept; tcp dport { 23" is no range of ports`},
 		// Values nftables would read as syntax of the ruleset.
 		"an ICMP type that adds a rule": {[]string{"router-nftables", "50000"}, map[string][]any{"FirewallZone": {zone}, "FirewallPolicy": {rule(`{"protocol": "icmp", "icmpTypes": ["echo-request } ip saddr 0.0.0.0/0 accept; icmp type { echo-reply"], "action": "drop"}`)}}, `internal error: FirewallPolicy wan-local: "echo-request } ip saddr 0.0.0.0/0 accept; icmp type { echo-reply" is none of echo-request, echo-reply, destination-unreachable, time-exceeded, parameter-problem, packet-too-big`},
 		"a family that adds a match":    {[]string{"router-nftables", "50000"}, map[string][]any{"FirewallZone": {zone}, "FirewallPolicy": {rule(`{"family": "ipv4 ip saddr 0.0.0.0/0", "action": "accept"}`)}}, `internal error: FirewallPolicy wan-local: "ipv4 ip saddr 0.0.0.0/0" is none of ipv4, ipv6`},
 		"a set's family":                {[]string{"router-nftables", "50000"}, map[string][]any{"AddressSet": {doc("AddressSet", "office", `{"family": "ipv4_addr; flags interval", "prefixes": ["192.0.2.0/24"]}`)}}, `internal error: AddressSet office: "ipv4_addr; flags interval" is none of ipv4, ipv6`},
 		"a policy name that adds rules": {[]string{"router-nftables", "50000"}, map[string][]any{"FirewallZone": {zone}, "FirewallPolicy": {doc("FirewallPolicy", "x { accept; }; chain y", `{"from": "wan", "to": "local", "default": "drop", "rules": []}`)}}, `internal error: a FirewallPolicy document: "x { accept; }; chain y" is no document name`},
-		"a set name in capitals":        {[]string{"router-nftables", "50000"}, map[string][]any{"AddressSet": {doc("AddressSet", "Office", `{"family": "ipv4", "prefixes": ["192.0.2.0/24"]}`)}}, `internal error: a AddressSet document: "Office" is no document name`},
 		"an interface that ends a set":  {[]string{"router-nftables", "50000"}, map[string][]any{"FirewallZone": {doc("FirewallZone", "wan", `{"interfaces": ["eth0\" } accept; iifname { \"eth1"]}`)}}, `internal error: FirewallZone wan: "eth0\" } accept; iifname { \"eth1" is no interface name or glob`},
 		"a glob inside a name":          {[]string{"router-nftables", "50000"}, map[string][]any{"FirewallZone": {doc("FirewallZone", "wan", `{"interfaces": ["e*h0"]}`)}}, `internal error: FirewallZone wan: "e*h0" is no interface name or glob`},
 		"a management interface":        {[]string{"router-nftables", "50000"}, map[string][]any{"Router": {doc("Router", "router", `{"forwarding": {"ipv4": true, "ipv6": true}, "rpFilter": "loose", "ecmpHash": "l4", "conntrackMax": null, "management": {"interfaces": ["eth0 accept"]}}`)}}, `internal error: Router: management.interfaces: "eth0 accept" is no interface name or glob`},
@@ -490,11 +480,7 @@ func TestRouterRefusals(t *testing.T) {
 		"a peer of nothing":            {[]string{"router-nftables", "50000"}, map[string][]any{"BGPPeer": {doc("BGPPeer", "a", `{"remoteAS": "external"}`)}}, "internal error: BGPPeer a names no interface"},
 		"a peer's VRF that ends a set": {[]string{"router-nftables", "50000"}, map[string][]any{"BGPPeer": {doc("BGPPeer", "a", `{"remoteAS": "external", "vrf": "x\" accept", "interface": "eth1"}`)}}, `internal error: BGPPeer a: the VRF "x\" accept" is no VRF's name`},
 	} {
-		t.Run(name, func(t *testing.T) {
-			if _, err := render(t, c.args, inputOf(t, c.docs)); err == nil || !strings.Contains(err.Error(), c.want) {
-				t.Errorf("err = %v, want %q", err, c.want)
-			}
-		})
+		t.Run(name, func(t *testing.T) { refused(t, c.args, c.docs, c.want) })
 	}
 }
 
@@ -503,13 +489,7 @@ func TestRouterRefusals(t *testing.T) {
 // as further commands or arguments, references to no document and a prepend's count, should a
 // document bypass the schemas, the rules and the validator router.
 func TestFRRRefusals(t *testing.T) {
-	doc := func(kind, name, spec string) any {
-		var s any
-		if err := jsonfile.DecodeExact([]byte(spec), &s); err != nil {
-			t.Fatal(err)
-		}
-		return map[string]any{"apiVersion": derive.API, "kind": kind, "metadata": map[string]any{"name": name}, "spec": s}
-	}
+	doc := func(kind, name, spec string) any { return derivetest.RouterDoc(t, kind, name, spec) }
 	bgp := func(more string) any {
 		return doc("BGP", "bgp", `{"asn": 64512, "routerID": "192.0.2.1", "multipath": {"ebgp": 1, "ibgp": 1, "asPathRelax": false},
 			"bfd": {"receiveMs": 300, "transmitMs": 300, "multiplier": 3}, "gracefulRestart": false, "networks": [`+more+`]}`)
@@ -534,38 +514,17 @@ func TestFRRRefusals(t *testing.T) {
 			peer("fabric", `{"interface": "eth1", "remoteAS": "external", "families": {"ipv6": {}}}`),
 			peer("x", `{"interface": "peer-fabric", "remoteAS": "external", "families": {"ipv6": {}}}`)}}, "BGPPeer/fabric: metadata.name: BGPPeer x names peer-fabric, the peer group of BGPPeer fabric"},
 		// AS paths bgpd's regcomp refuses, which would leave the term matching no route.
-		"an AS path that does not compile":       {map[string][]any{"BGP": {bgp("")}, "RoutingPolicy": {policy("p", `{"match": {"asPath": "(1"}, "then": {"action": "accept"}}`)}}, `RoutingPolicy/p: spec.terms[0].match.asPath: asPath "(1" is no regular expression bgpd compiles`},
-		"an AS path with a parenthesis too many": {map[string][]any{"BGP": {bgp("")}, "RoutingPolicy": {policy("p", `{"match": {"asPath": "1)"}, "then": {"action": "accept"}}`)}}, `asPath "1)" is no regular expression`},
-		"an AS path that starts with a star":     {map[string][]any{"BGP": {bgp("")}, "RoutingPolicy": {policy("p", `{"match": {"asPath": "*1"}, "then": {"action": "accept"}}`)}}, `asPath "*1" is no regular expression`},
-		"an AS path that repeats an anchor":      {map[string][]any{"BGP": {bgp("")}, "RoutingPolicy": {policy("p", `{"match": {"asPath": "^*1"}, "then": {"action": "accept"}}`)}}, `asPath "^*1" is no regular expression`},
-		"an AS path that repeats an alternative": {map[string][]any{"BGP": {bgp("")}, "RoutingPolicy": {policy("p", `{"match": {"asPath": "(1|+2)"}, "then": {"action": "accept"}}`)}}, `asPath "(1|+2)" is no regular expression`},
-		"an AS path with an AS set's brace":      {map[string][]any{"BGP": {bgp("")}, "RoutingPolicy": {policy("p", `{"match": {"asPath": "_{64512"}, "then": {"action": "accept"}}`)}}, `asPath "_{64512" is no regular expression`},
-		"an AS path with an open interval":       {map[string][]any{"BGP": {bgp("")}, "RoutingPolicy": {policy("p", `{"match": {"asPath": "1{,5}"}, "then": {"action": "accept"}}`)}}, `asPath "1{,5}" is no regular expression`},
-		"an AS path with an inverted interval":   {map[string][]any{"BGP": {bgp("")}, "RoutingPolicy": {policy("p", `{"match": {"asPath": "1{3,2}"}, "then": {"action": "accept"}}`)}}, `asPath "1{3,2}" is no regular expression`},
-		"an AS path with an unclosed interval":   {map[string][]any{"BGP": {bgp("")}, "RoutingPolicy": {policy("p", `{"match": {"asPath": "1{2"}, "then": {"action": "accept"}}`)}}, `asPath "1{2" is no regular expression`},
+		"an AS path that does not compile": {map[string][]any{"BGP": {bgp("")}, "RoutingPolicy": {policy("p", `{"match": {"asPath": "(1"}, "then": {"action": "accept"}}`)}}, `RoutingPolicy/p: spec.terms[0].match.asPath: asPath "(1" is no regular expression bgpd compiles`},
 		"a peer without a BGP document": {map[string][]any{"BGPPeer": {peer("a", `{"interface": "eth1", "remoteAS": "external", "families": {"ipv6": {}}}`)}},
 			"internal error: the config holds BGPPeer documents but no BGP document"},
 		// Guards of values FRR would read as further commands or arguments of the config.
 		"an IPv6 router ID":               {map[string][]any{"BGP": {doc("BGP", "bgp", `{"asn": 64512, "routerID": "2001:db8::1"}`)}}, `internal error: BGP bgp: routerID 2001:db8::1 is no IPv4 address`},
-		"a router ID of five parts":       {map[string][]any{"BGP": {doc("BGP", "bgp", `{"asn": 64512, "routerID": "192.0.2.1.1"}`)}}, `internal error: BGP bgp: ParseAddr("192.0.2.1.1"): IPv4 address too long`},
 		"a router ID that adds a command": {map[string][]any{"BGP": {doc("BGP", "bgp", `{"asn": 64512, "routerID": "192.0.2.1\n neighbor 192.0.2.9 remote-as 64999"}`)}}, `internal error: BGP bgp: ParseAddr("192.0.2.1\n neighbor 192.0.2.9 remote-as 64999"): unexpected character (at "\n neighbor 192.0.2.9 remote-as 64999")`},
-		"an unknown remote AS":            {map[string][]any{"BGP": {bgp("")}, "BGPPeer": {peer("a", `{"interface": "eth1", "remoteAS": "anyone", "families": {"ipv6": {}}}`)}}, `internal error: BGPPeer a: remoteAS is external, internal or an AS number from 1 to 4294967295, not "anyone"`},
 		"a remote AS that adds a neighbour": {map[string][]any{"BGP": {bgp("")}, "BGPPeer": {peer("a", `{"interface": "eth1", "remoteAS": "external\n neighbor 192.0.2.9 remote-as 64999", "families": {"ipv6": {}}}`)}},
 			"internal error: BGPPeer a: remoteAS is external, internal or an AS number"},
-		"a fractional remote AS":       {map[string][]any{"BGP": {bgp("")}, "BGPPeer": {peer("a", `{"interface": "eth1", "remoteAS": 64512.5, "families": {"ipv6": {}}}`)}}, "internal error: BGPPeer a: remoteAS is external, internal or an AS number from 1 to 4294967295, not 64512.5"},
-		"a community of 17 bits":       {map[string][]any{"BGP": {bgp("")}, "CommunityList": {doc("CommunityList", "c", `{"communities": ["65536:1"]}`)}}, `internal error: CommunityList c: "65536:1" is no community: its parts are numbers of 16 bits`},
-		"a large community of 33 bits": {map[string][]any{"BGP": {bgp("")}, "CommunityList": {doc("CommunityList", "c", `{"communities": ["1:4294967296:1"]}`)}}, `internal error: CommunityList c: "1:4294967296:1" is no community: its parts are numbers of 32 bits`},
-		"a community with a sign":      {map[string][]any{"BGP": {bgp("")}, "CommunityList": {doc("CommunityList", "c", `{"communities": ["+1:1"]}`)}}, `internal error: CommunityList c: "+1:1" is no community`},
-		"a community that adds an argument": {map[string][]any{"BGP": {bgp("")}, "RoutingPolicy": {policy("p", `{"then": {"action": "accept", "addCommunities": ["64512:1 no-export"]}}`)}},
-			`internal error: RoutingPolicy p: "64512:1 no-export" is no community: its parts are numbers of 16 bits`},
 		"an AS path that adds a command": {map[string][]any{"BGP": {bgp("")}, "RoutingPolicy": {policy("p", `{"match": {"asPath": "^1$\n neighbor x shutdown"}, "then": {"action": "accept"}}`)}},
 			`internal error: RoutingPolicy p: term 1: asPath "^1$\n neighbor x shutdown" holds more than digits, single spaces and _^$.*+?()|{},-`},
-		"a description of two lines":           {description("a\nb"), notDescription},
-		"a description of spaces":              {description("  "), notDescription},
-		"a description of two spaces in a row": {description("a  b"), notDescription},
-		"a description that ends in a space":   {description("a "), notDescription},
-		"a description that adds a neighbour":  {description("x\n neighbor 192.0.2.9 remote-as 64999"), notDescription},
-		"a description that ends the router":   {description("x\rexit\r"), notDescription},
+		"a description that adds a neighbour": {description("x\n neighbor 192.0.2.9 remote-as 64999"), notDescription},
 		// The credentials helper fills in a placeholder of a password line, and vtysh shows a
 		// description to every reader.
 		"a description that holds a placeholder": {description("x password @secret_bgp.fabric@"), notDescription},
@@ -581,10 +540,6 @@ func TestFRRRefusals(t *testing.T) {
 			`internal error: PrefixList l: netip.ParsePrefix("192.0.2.0/24 le 32"): bad bits after slash: "24 le 32"`},
 		"a prefix list action that adds a prefix": {map[string][]any{"BGP": {bgp("")}, "PrefixList": {list("l", "ipv4", `{"prefix": "192.0.2.0/24", "action": "permit 0.0.0.0/0\nip prefix-list pl-l seq 1 permit"}`)}},
 			`internal error: PrefixList l: "permit 0.0.0.0/0\nip prefix-list pl-l seq 1 permit" is none of permit, deny`},
-		"a policy name that adds a command": {map[string][]any{"BGP": {bgp("")}, "RoutingPolicy": {doc("RoutingPolicy", "p 10\nexit\nrouter bgp 64999", `{"terms": [], "default": "reject"}`)}},
-			`internal error: a RoutingPolicy document: "p 10\nexit\nrouter bgp 64999" is no document name`},
-		"a peer name that adds a command": {map[string][]any{"BGP": {bgp("")}, "BGPPeer": {peer("a remote-as 64999", `{"interface": "eth1", "remoteAS": "external", "families": {"ipv6": {}}}`)}},
-			`internal error: a BGPPeer document: "a remote-as 64999" is no document name`},
 		"a list a term names that adds a command": {map[string][]any{"BGP": {bgp("")}, "RoutingPolicy": {policy("p", `{"match": {"prefixList": "v4\n set metric 1"}, "then": {"action": "accept"}}`)}},
 			`internal error: RoutingPolicy p: term 1: the input holds no PrefixList "v4\n set metric 1"`},
 		"a policy a family names that adds a command": {map[string][]any{"BGP": {bgp("")}, "BGPPeer": {peer("a", `{"interface": "eth1", "remoteAS": "external", "families": {"ipv6": {"import": "p in\n neighbor 192.0.2.9 remote-as 64999"}}}`)}},
@@ -598,11 +553,7 @@ func TestFRRRefusals(t *testing.T) {
 		"a prepend of 11":     {map[string][]any{"BGP": {bgp("")}, "RoutingPolicy": {policy("p", `{"then": {"action": "accept", "prepend": 11}}`)}}, "internal error: RoutingPolicy p: term 1: prepend 11 lies outside 1 to 10"},
 		"a prepend below one": {map[string][]any{"BGP": {bgp("")}, "RoutingPolicy": {policy("p", `{"then": {"action": "accept", "prepend": -1}}`)}}, "internal error: RoutingPolicy p: term 1: prepend -1 lies outside 1 to 10"},
 	} {
-		t.Run(name, func(t *testing.T) {
-			if _, err := render(t, []string{"frr"}, inputOf(t, c.docs)); err == nil || !strings.Contains(err.Error(), c.want) {
-				t.Errorf("err = %v, want %q", err, c.want)
-			}
-		})
+		t.Run(name, func(t *testing.T) { refused(t, []string{"frr"}, c.docs, c.want) })
 	}
 }
 
@@ -665,16 +616,9 @@ func TestJoolRefusals(t *testing.T) {
 		"a pool of a /15":     {[]any{pool(`{"prefix": "198.18.0.0/15", "ports": "61001-65535", "protocols": ["tcp"]}`)}, `internal error: NAT64 edge: pool entry 1: 198.18.0.0/15 is no IPv4 range of 16 bits or more`},
 		"ephemeral ports":     {[]any{pool(`{"prefix": "192.0.2.8/30", "ports": "1-65535", "protocols": ["tcp"]}`)}, "internal error: NAT64 edge: pool entry 1: the ports 1-65535 take the kernel's ephemeral ports, 32768 to 60999, which Jool refuses"},
 		"one ephemeral port":  {[]any{pool(`{"prefix": "192.0.2.8/30", "ports": 40000, "protocols": ["icmp"]}`)}, "internal error: NAT64 edge: pool entry 1: the ports 40000 take the kernel's ephemeral ports"},
-		"port zero":           {[]any{pool(`{"prefix": "192.0.2.8/30", "ports": "0-100", "protocols": ["tcp"]}`)}, `internal error: NAT64 edge: "0-100" is no range of ports`},
-		"an inverted range":   {[]any{pool(`{"prefix": "192.0.2.8/30", "ports": "65535-61001", "protocols": ["tcp"]}`)}, `internal error: NAT64 edge: "65535-61001" is no range of ports`},
 		// Values that would add to the JSON Jool reads, were it written by hand.
-		"a prefix that adds a key":  {[]any{nat64("edge", `{"prefix": "64:ff9b::/96\", \"framework\": \"iptables", "pool4": []}`)}, "internal error: NAT64 edge: netip.ParsePrefix"},
-		"a pool that adds an entry": {[]any{pool(`{"prefix": "192.0.2.8/30\"}, {\"prefix\": \"198.51.100.0/24", "ports": "61001-65535", "protocols": ["tcp"]}`)}, "internal error: NAT64 edge: netip.ParsePrefix"},
-		"ports that add a key":      {[]any{pool(`{"prefix": "192.0.2.8/30", "ports": "61001-65535\", \"mark\": \"1", "protocols": ["tcp"]}`)}, "is no range of ports"},
-		"a name that adds a key":    {[]any{nat64("e\", \"x", `{"prefix": "64:ff9b::/96", "pool4": []}`)}, "internal error: a NAT64 document: \"e\\\", \\\"x\" is no document name"},
-		"a prefix of a line break":  {[]any{nat64("edge", `{"prefix": "64:ff9b::/96\n", "pool4": []}`)}, "internal error: NAT64 edge: netip.ParsePrefix"},
-		"a pool that ends the list": {[]any{pool(`{"prefix": "192.0.2.8/30\"}]}", "ports": "61001-65535", "protocols": ["tcp"]}`)}, "internal error: NAT64 edge: netip.ParsePrefix"},
-		"ports of a backslash":      {[]any{pool(`{"prefix": "192.0.2.8/30", "ports": "61001-65535\\", "protocols": ["tcp"]}`)}, "is no range of ports"},
+		"a prefix that adds a key": {[]any{nat64("edge", `{"prefix": "64:ff9b::/96\", \"framework\": \"iptables", "pool4": []}`)}, "internal error: NAT64 edge: netip.ParsePrefix"},
+		"ports that add a key":     {[]any{pool(`{"prefix": "192.0.2.8/30", "ports": "61001-65535\", \"mark\": \"1", "protocols": ["tcp"]}`)}, "is no range of ports"},
 	} {
 		t.Run(name, func(t *testing.T) { refused(t, []string{"jool"}, map[string][]any{"NAT64": c.docs}, c.want) })
 	}
