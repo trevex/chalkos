@@ -493,24 +493,29 @@ func TestStartSwitchOverAStaleSocket(t *testing.T) {
 }
 
 // TestSupervisorPIDNotYetWritten waits for the PID of a supervisor that holds the lock but has
-// not written its PID yet.
+// not written its PID yet, and gives up on one that does not write it.
 func TestSupervisorPIDNotYetWritten(t *testing.T) {
-	dir := t.TempDir()
-	lock, err := os.OpenFile(filepath.Join(dir, supervisorFile), os.O_RDWR|os.O_CREATE, 0o600)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer lock.Close()
-	if err := syscall.Flock(int(lock.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
-		t.Fatal(err)
-	}
-	go func() {
-		time.Sleep(200 * time.Millisecond)
-		lock.WriteString("4242\n")
-	}()
-	if pid, running, err := Supervisor(dir); err != nil || !running || pid != 4242 {
-		t.Errorf("Supervisor = %d, %v, %v; want 4242 once written", pid, running, err)
-	}
+	testwait.Bubble(t, func(t *testing.T) {
+		dir := t.TempDir()
+		lock, err := os.OpenFile(filepath.Join(dir, supervisorFile), os.O_RDWR|os.O_CREATE, 0o600)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer lock.Close()
+		if err := syscall.Flock(int(lock.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+			t.Fatal(err)
+		}
+		if _, _, err := Supervisor(dir); err == nil || !strings.Contains(err.Error(), "holds no PID") {
+			t.Errorf("Supervisor without a PID = %v", err)
+		}
+		go func() {
+			time.Sleep(200 * time.Millisecond)
+			lock.WriteString("4242\n")
+		}()
+		if pid, running, err := Supervisor(dir); err != nil || !running || pid != 4242 {
+			t.Errorf("Supervisor = %d, %v, %v; want 4242 once written", pid, running, err)
+		}
+	})
 }
 
 // TestRunningPIDMatchesTheDirectory takes a process for one of the lab's only when its command
