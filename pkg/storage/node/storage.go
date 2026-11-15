@@ -37,6 +37,12 @@ type Storage struct {
 	StatusFile     string
 }
 
+// The links udev makes to the boot disk and to its partitions.
+const (
+	DefaultBootDisk       = "/dev/disk/chalk-boot-disk"
+	DefaultBootPartitions = "/dev/disk/chalk-boot"
+)
+
 // Default is the storage setup of the initrd.
 func Default() *Storage {
 	run := tool.ExecRunner{}
@@ -46,8 +52,8 @@ func Default() *Storage {
 		Ops:            hostops.System(run),
 		StateDir:       "/sysroot/state",
 		VarDir:         "/sysroot/var",
-		BootDisk:       "/dev/disk/chalk-boot-disk",
-		BootPartitions: "/dev/disk/chalk-boot",
+		BootDisk:       DefaultBootDisk,
+		BootPartitions: DefaultBootPartitions,
 		StatusFile:     "/run/chalkos/storage-status.json",
 	}
 }

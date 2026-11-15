@@ -99,8 +99,8 @@ func PathsUnder(root string) Paths {
 	runDir := at("/run/chalkd")
 	return Paths{
 		StateDir:        at(storage.StateDir),
-		BootDisk:        "/dev/disk/chalk-boot-disk",
-		BootPartitions:  "/dev/disk/chalk-boot",
+		BootDisk:        node.DefaultBootDisk,
+		BootPartitions:  node.DefaultBootPartitions,
 		OSRelease:       at("/etc/os-release"),
 		EFIVars:         at("/sys/firmware/efi/efivars"),
 		TPM:             at("/sys/class/tpm"),

@@ -7,7 +7,6 @@ package main
 import (
 	"log"
 	"os"
-	"path/filepath"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -16,7 +15,7 @@ import (
 )
 
 // socket is chalkd's console socket.
-var socket = filepath.Join("/run/chalkd", "console.sock")
+const socket = "/run/chalkd/console.sock"
 
 func main() {
 	log.SetFlags(0)

@@ -27,7 +27,7 @@ func runFacts(args []string, stdin io.Reader, stdout io.Writer) error {
 		Host:           storage.DefaultHost(),
 		Ops:            hostops.System(run),
 		StateDir:       storage.StateDir,
-		BootPartitions: "/dev/disk/chalk-boot",
+		BootPartitions: node.DefaultBootPartitions,
 	}
 	out, err := s.Facts(context.Background(), args[0], input)
 	if err != nil {
