@@ -174,9 +174,7 @@ func (s *Server) applyStaged(ctx context.Context, m *nodev1.ApplyConfigRequest) 
 			return nil, err
 		}
 		resp := &nodev1.ApplyConfigResponse{Plan: &nodev1.Plan{Version: w.next.Version, Replaces: held}, Warnings: w.warnings}
-		for _, c := range w.machine.changes {
-			resp.Changes = append(resp.Changes, &nodev1.StorageChange{Volume: c.Volume, Reason: c.Reason})
-		}
+		resp.Changes = append(resp.Changes, storageChanges(w.machine.changes)...)
 		return connect.NewResponse(resp), nil
 	}
 	recorded, _, err := s.recorded()
@@ -197,9 +195,7 @@ func (s *Server) applyStaged(ctx context.Context, m *nodev1.ApplyConfigRequest) 
 		return nil, err
 	}
 	resp := &nodev1.ApplyConfigResponse{Warnings: warnings}
-	for _, c := range storage.Changes(recorded, after) {
-		resp.Changes = append(resp.Changes, &nodev1.StorageChange{Volume: c.Volume, Reason: c.Reason})
-	}
+	resp.Changes = append(resp.Changes, storageChanges(storage.Changes(recorded, after))...)
 	return connect.NewResponse(resp), nil
 }
 
@@ -322,9 +318,7 @@ func (w secondWrite) write(ctx context.Context, s *Server, version, secret strin
 			if err != nil {
 				made = s.recordedSince(mc.recorded)
 			}
-			for _, c := range made {
-				resp.Changes = append(resp.Changes, &nodev1.StorageChange{Volume: c.Volume, Reason: c.Reason})
-			}
+			resp.Changes = append(resp.Changes, storageChanges(made)...)
 		}
 		if err == nil {
 			if err = slot.Write(slot.Dir(s.Loader.Slots, w.image), w.slot.next); err != nil {
@@ -388,9 +382,7 @@ func (w secondWrite) plan(resp *nodev1.ApplyConfigResponse) {
 	resp.Warnings = append(resp.Warnings, w.warnings...)
 	switch {
 	case w.image != nil:
-		for _, c := range w.slot.machine.changes {
-			resp.Changes = append(resp.Changes, &nodev1.StorageChange{Volume: c.Volume, Reason: c.Reason})
-		}
+		resp.Changes = append(resp.Changes, storageChanges(w.slot.machine.changes)...)
 		resp.Warnings = append(resp.Warnings, w.stagedWarnings()...)
 		resp.Staged = &nodev1.StagedSlot{Version: w.slot.next.Version, Replaces: w.held}
 	case w.pending != "":

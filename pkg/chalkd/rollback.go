@@ -197,13 +197,11 @@ func (s *Server) RollbackImage(ctx context.Context, req *connect.Request[nodev1.
 	if len(m.RootHash) == 0 {
 		return nil, layer.Errorf(connect.CodeInvalidArgument, "the request names no image to roll back to")
 	}
-	if !s.upgrading.TryLock() {
-		return nil, layer.Errorf(connect.CodeAborted, "an upgrade, an image rollback, a config delivery or the rollback at a trial's deadline is running")
-	}
-	defer s.upgrading.Unlock()
-	if err := s.refuseOnTrialLocking("an image rollback"); err != nil {
+	unlock, err := s.lockSlots("an image rollback")
+	if err != nil {
 		return nil, err
 	}
+	defer unlock()
 	running, err := uki.RunningHash(s.Paths.Cmdline)
 	if err != nil {
 		return nil, err

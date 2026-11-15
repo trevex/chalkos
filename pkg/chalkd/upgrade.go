@@ -40,13 +40,11 @@ import (
 // An image the header names in a registry is pulled by the digest it names, with the credentials
 // of the config's Registry of its host, and checked against the header as a streamed one.
 func (s *Server) Upgrade(ctx context.Context, stream *connect.ClientStream[nodev1.UpgradeRequest]) (*connect.Response[nodev1.UpgradeResponse], error) {
-	if !s.upgrading.TryLock() {
-		return nil, layer.Errorf(connect.CodeAborted, "an upgrade, an image rollback, a config delivery or the rollback at a trial's deadline is running")
-	}
-	defer s.upgrading.Unlock()
-	if err := s.refuseOnTrialLocking("an upgrade"); err != nil {
+	unlock, err := s.lockSlots("an upgrade")
+	if err != nil {
 		return nil, err
 	}
+	defer unlock()
 	if !stream.Receive() {
 		if err := stream.Err(); err != nil {
 			return nil, err
@@ -361,13 +359,11 @@ func (s *Server) ActivateImage(ctx context.Context, req *connect.Request[nodev1.
 	if len(root) == 0 {
 		return nil, layer.Errorf(connect.CodeInvalidArgument, "the request names no image to activate")
 	}
-	if !s.upgrading.TryLock() {
-		return nil, layer.Errorf(connect.CodeAborted, "an upgrade, an image rollback, a config delivery or the rollback at a trial's deadline is running")
-	}
-	defer s.upgrading.Unlock()
-	if err := s.refuseOnTrialLocking("an image's activation"); err != nil {
+	unlock, err := s.lockSlots("an image's activation")
+	if err != nil {
 		return nil, err
 	}
+	defer unlock()
 	res, err := s.imageSlots().Activate(ctx, root)
 	if err != nil {
 		log.Printf("activation of %x failed: %v", root, err)

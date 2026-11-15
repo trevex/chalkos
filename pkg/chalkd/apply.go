@@ -110,9 +110,7 @@ func (s *Server) dryRun(ctx context.Context, r applyRequest) (*connect.Response[
 		plan.Effects = append(plan.Effects, &nodev1.PlannedEffect{Name: e.Name, FiredBy: e.FiredBy, Actions: e.Actions})
 	}
 	resp := &nodev1.ApplyConfigResponse{Plan: plan, Warnings: warnings}
-	for _, c := range d.machine.changes {
-		resp.Changes = append(resp.Changes, &nodev1.StorageChange{Volume: c.Volume, Reason: c.Reason})
-	}
+	resp.Changes = append(resp.Changes, storageChanges(d.machine.changes)...)
 	if r.try > 0 {
 		if err := checkSecondTrial(second); err != nil {
 			return nil, err
@@ -374,8 +372,6 @@ func (d *delivery) commit(ctx context.Context) (*connect.Response[nodev1.ApplyCo
 		}
 	}
 	resp := &nodev1.ApplyConfigResponse{RestartedUnits: restarted, Warnings: warnings}
-	for _, c := range d.machine.changes {
-		resp.Changes = append(resp.Changes, &nodev1.StorageChange{Volume: c.Volume, Reason: c.Reason})
-	}
+	resp.Changes = append(resp.Changes, storageChanges(d.machine.changes)...)
 	return connect.NewResponse(resp), nil
 }

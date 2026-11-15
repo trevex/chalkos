@@ -65,6 +65,15 @@ func (s *Server) applyStorage(ctx context.Context, recorded, section storage.Sec
 	return storageFailed(s.storage().Change(ctx, recorded, section, secret, changes))
 }
 
+// storageChanges are the changes as the API answers them.
+func storageChanges(changes []storage.Change) []*nodev1.StorageChange {
+	var out []*nodev1.StorageChange
+	for _, c := range changes {
+		out = append(out, &nodev1.StorageChange{Volume: c.Volume, Reason: c.Reason})
+	}
+	return out
+}
+
 // storageFailed gives an error of a change to the node's storage its code: a failure of the node
 // itself is internal, and anything else refuses the request.
 func storageFailed(err error) error {

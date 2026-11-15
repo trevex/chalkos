@@ -417,12 +417,20 @@ func (s *Server) unreadableTrial(err error) error {
 	return fmt.Errorf("read the record of the config's trial: %w; other changes are refused until chalkctl config rollback %s restores the previous config, which removes the record", err, s.nodeName())
 }
 
-// refuseOnTrialLocking is refuseOnTrial under s.mu, for an upgrade and an image rollback, which
-// hold s.upgrading and take s.mu only while they read or write what it guards.
-func (s *Server) refuseOnTrialLocking(what string) error {
+// lockSlots takes s.upgrading for what, a change of the image slots: it refuses the change with
+// ABORTED while another holds it, and during a trial. The caller holds s.upgrading until unlock
+// and takes s.mu only while it reads or writes what s.mu guards.
+func (s *Server) lockSlots(what string) (unlock func(), err error) {
+	if !s.upgrading.TryLock() {
+		return nil, layer.Errorf(connect.CodeAborted, "an upgrade, an image rollback, a config delivery or the rollback at a trial's deadline is running")
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.refuseOnTrial(what, true)
+	if err := s.refuseOnTrial(what, true); err != nil {
+		s.upgrading.Unlock()
+		return nil, err
+	}
+	return s.upgrading.Unlock, nil
 }
 
 // refuseOnTrial refuses what would change the node while a config is on trial, so the trial's
@@ -434,7 +442,7 @@ func (s *Server) refuseOnTrialLocking(what string) error {
 // rollback at a trial's deadline that holds it runs. A trial whose slot runs neither config loses
 // its record, as at its deadline, and the change goes ahead. The caller holds s.mu, which a
 // trial's delivery holds while it writes the record; an upgrade and an image rollback call it
-// through refuseOnTrialLocking.
+// through lockSlots.
 func (s *Server) refuseOnTrial(what string, holdsUpgrading bool) error {
 	r, open, err := readTrial(s.Paths.StateDir)
 	if err != nil {
