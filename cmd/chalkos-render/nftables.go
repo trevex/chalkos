@@ -413,9 +413,7 @@ func (f *firewall) ruleset() (string, error) {
 	f.conntrackZones(&b)
 	f.prerouting(&b)
 	f.policyRouting(&b)
-	if err := f.input(&b); err != nil {
-		return "", err
-	}
+	f.input(&b)
 	f.forward(&b)
 	if err := f.translation(&b); err != nil {
 		return "", err
@@ -499,7 +497,7 @@ func (f *firewall) policyRouting(b *strings.Builder) {
 
 // input accepts the protected traffic, chalkd's port on the management interfaces, the openings,
 // then hands each connection from a zone to the policy to local of that zone, and drops the rest.
-func (f *firewall) input(b *strings.Builder) error {
+func (f *firewall) input(b *strings.Builder) {
 	api := fmt.Sprintf("tcp dport %d accept", f.port)
 	if f.router.Management.Interfaces != nil {
 		api = "iifname " + interfaceSet(f.router.Management.Interfaces) + " " + api
@@ -524,7 +522,6 @@ func (f *firewall) input(b *strings.Builder) error {
 		}
 	}
 	writeChain(b, "input", "type filter hook input priority filter; policy drop;", lines)
-	return nil
 }
 
 // forward accepts everything while no policy goes between two zones and the ruleset is not closed.
@@ -562,14 +559,14 @@ func (f *firewall) forward(b *strings.Builder) {
 		prefix := n.Prefix
 		source := n.Inner.Addr().String()
 		if len(n.Pools) > 0 {
-			source = poolSet(n.Pools)
+			source = set(prefixes(n.Pools))
 		}
 		lines = append(lines,
 			fmt.Sprintf("%s ip6 saddr %s accept comment %s", from, prefix, c),
 			fmt.Sprintf("%s ip saddr %s accept comment %s", from, source, c),
 			fmt.Sprintf("oifname %s ip6 daddr %s accept comment %s", link, prefix, c))
 		if len(n.Pools) > 0 {
-			lines = append(lines, fmt.Sprintf("oifname %s ip daddr %s accept comment %s", link, poolSet(n.Pools), c))
+			lines = append(lines, fmt.Sprintf("oifname %s ip daddr %s accept comment %s", link, set(prefixes(n.Pools)), c))
 		}
 	}
 	if slices.ContainsFunc(f.nat, func(n derive.Named[derive.NATSpec]) bool { return n.Spec.Type == "dnat" }) {
@@ -614,7 +611,7 @@ func (f *firewall) translation(b *strings.Builder) error {
 				fmt.Sprintf("iifname %s accept comment %s", strconv.Quote(derive.NAT64LinkPrefix+n.Name), c),
 				fmt.Sprintf("ip6 daddr %s accept comment %s", n.Prefix, c))
 			if len(n.Pools) > 0 {
-				exempt = append(exempt, fmt.Sprintf("ip daddr %s accept comment %s", poolSet(n.Pools), c))
+				exempt = append(exempt, fmt.Sprintf("ip daddr %s accept comment %s", set(prefixes(n.Pools)), c))
 			}
 		}
 		dst = append(exempt, dst...)
@@ -651,7 +648,7 @@ func (f *firewall) nat64Lines() []string {
 				fmt.Sprintf("ip saddr %s masquerade comment %s", n.Inner.Addr(), c))
 			continue
 		}
-		lines = append(lines, fmt.Sprintf("ip saddr %s accept comment %s", poolSet(n.Pools), c))
+		lines = append(lines, fmt.Sprintf("ip saddr %s accept comment %s", set(prefixes(n.Pools)), c))
 	}
 	return lines
 }
@@ -1002,11 +999,3 @@ func dhcpOpenings(d derive.Model) ([]opening, error) {
 	return out, nil
 }
 
-// poolSet is the anonymous nftables set of the prefixes of a NAT64's explicit pool.
-func poolSet(pools []netip.Prefix) string {
-	l := make([]string, len(pools))
-	for i, p := range pools {
-		l[i] = p.String()
-	}
-	return set(l)
-}
