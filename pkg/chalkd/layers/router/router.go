@@ -117,7 +117,7 @@ func (p *Plugin) Status(ctx context.Context, _ *connect.Request[routerv1.StatusR
 }
 
 // askTimeout bounds the questions chalkd asks one router daemon, so Status answers while one
-// hangs. Tests shorten it.
+// hangs. The test of a Kea that hangs on a real socket shortens it.
 var askTimeout = 5 * time.Second
 
 // ask runs one of the router's fixed questions to its daemons, whose standard error, while the

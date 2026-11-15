@@ -19,6 +19,7 @@ import (
 
 	routerv1 "github.com/trevex/chalkos/pkg/api/router/v1"
 	"github.com/trevex/chalkos/pkg/chalkd/layer"
+	"github.com/trevex/chalkos/pkg/internal/testwait"
 	routing "github.com/trevex/chalkos/pkg/router"
 	"github.com/trevex/chalkos/pkg/router/services"
 	"github.com/trevex/chalkos/pkg/tool"
@@ -138,32 +139,32 @@ func (hangingRunner) Exec(ctx context.Context, _ tool.Cmd) ([]byte, error) {
 
 // Daemons that hang, systemd too, cost Status one timeout altogether, as chalkd asks them side by
 // side, and the router's part says which hang. Asked one after another, the four would cost four
-// timeouts; the bound leaves a busy machine room below that.
+// timeouts.
 func TestRouterStatusWhileDaemonsHang(t *testing.T) {
-	s, _ := routerNode(t)
-	s.run = hangingRunner{}
-	defer func(d time.Duration) { askTimeout = d }(askTimeout)
-	askTimeout = 500 * time.Millisecond
-	for _, file := range []string{s.ResolverConfig, filepath.Join(s.NAT64Dir, "edge.json"), filepath.Join(s.ResolverDir, "unbound-guest.conf")} {
-		touch(t, file, "\n")
-	}
-	start := time.Now()
-	st := routerStatus(t, s)
-	if took := time.Since(start); took >= 3*askTimeout {
-		t.Errorf("Status took %v while the daemons hang, not about %v", took, askTimeout)
-	}
-	if st == nil || len(st.Peers) != 0 || !strings.Contains(st.BgpError, "vtysh did not answer within 500ms") {
-		t.Fatalf("router status while FRR hangs = %v", st)
-	}
-	if len(st.Nat64) != 0 || !strings.Contains(st.Nat64Error, "jool did not answer within 500ms") {
-		t.Errorf("router status while Jool hangs = %v", st)
-	}
-	if st.Resolver == nil || st.Resolver.Running || !strings.Contains(st.Resolver.Error, "unbound-control did not answer within 500ms") {
-		t.Errorf("router status while Unbound hangs = %v", st)
-	}
-	if len(st.VrfResolvers) != 1 || st.VrfResolvers[0].Running || !strings.Contains(st.VrfResolvers[0].Error, "systemctl did not answer within 500ms") {
-		t.Errorf("router status while systemd hangs = %v", st.VrfResolvers)
-	}
+	testwait.Bubble(t, func(t *testing.T) {
+		s, _ := routerNode(t)
+		s.run = hangingRunner{}
+		for _, file := range []string{s.ResolverConfig, filepath.Join(s.NAT64Dir, "edge.json"), filepath.Join(s.ResolverDir, "unbound-guest.conf")} {
+			touch(t, file, "\n")
+		}
+		start := time.Now()
+		st := routerStatus(t, s)
+		if took := time.Since(start); took != askTimeout {
+			t.Errorf("Status took %v while the daemons hang, not %v", took, askTimeout)
+		}
+		if st == nil || len(st.Peers) != 0 || !strings.Contains(st.BgpError, "vtysh did not answer within 5s") {
+			t.Fatalf("router status while FRR hangs = %v", st)
+		}
+		if len(st.Nat64) != 0 || !strings.Contains(st.Nat64Error, "jool did not answer within 5s") {
+			t.Errorf("router status while Jool hangs = %v", st)
+		}
+		if st.Resolver == nil || st.Resolver.Running || !strings.Contains(st.Resolver.Error, "unbound-control did not answer within 5s") {
+			t.Errorf("router status while Unbound hangs = %v", st)
+		}
+		if len(st.VrfResolvers) != 1 || st.VrfResolvers[0].Running || !strings.Contains(st.VrfResolvers[0].Error, "systemctl did not answer within 5s") {
+			t.Errorf("router status while systemd hangs = %v", st.VrfResolvers)
+		}
+	})
 }
 
 // slowJool is a jool that lists one instance and its statistics at once and takes a while for each
@@ -189,22 +190,22 @@ func (j slowJool) Exec(ctx context.Context, c tool.Cmd) ([]byte, error) {
 }
 
 // jool's questions share one timeout: pools that each answer in time but together take longer
-// leave the NAT64 part unknown, and Status answers soon after the timeout; the bound leaves a busy
-// machine room.
+// leave the NAT64 part unknown, and Status answers when the timeout ends.
 func TestRouterStatusWhileJoolIsSlow(t *testing.T) {
-	s, _ := routerNode(t)
-	s.run = slowJool{40 * time.Millisecond}
-	touch(t, filepath.Join(s.NAT64Dir, "edge.json"), "{}\n")
-	defer func(d time.Duration) { askTimeout = d }(askTimeout)
-	askTimeout = 100 * time.Millisecond
-	start := time.Now()
-	st := routerStatus(t, s)
-	if took := time.Since(start); took >= 5*askTimeout {
-		t.Errorf("Status took %v while Jool is slow, not about %v", took, askTimeout)
-	}
-	if st == nil || len(st.Nat64) != 0 || !strings.Contains(st.Nat64Error, "jool did not answer within 100ms") {
-		t.Errorf("router status while Jool is slow = %v", st)
-	}
+	testwait.Bubble(t, func(t *testing.T) {
+		s, _ := routerNode(t)
+		// Each of the three pools answers in two fifths of the timeout.
+		s.run = slowJool{2 * askTimeout / 5}
+		touch(t, filepath.Join(s.NAT64Dir, "edge.json"), "{}\n")
+		start := time.Now()
+		st := routerStatus(t, s)
+		if took := time.Since(start); took != askTimeout {
+			t.Errorf("Status took %v while Jool is slow, not %v", took, askTimeout)
+		}
+		if st == nil || len(st.Nat64) != 0 || !strings.Contains(st.Nat64Error, "jool did not answer within 5s") {
+			t.Errorf("router status while Jool is slow = %v", st)
+		}
+	})
 }
 
 // TestRouterNAT64Status lists the Jool instances of the node's NAT64 documents, recorded from Jool
