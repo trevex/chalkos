@@ -24,16 +24,13 @@ type upgradeNode struct {
 	// secret is the fallback secret the delivery's new encrypted volumes are enrolled with, asked
 	// for before any node is drained; empty when it adds none.
 	secret string
-	// rollbackTo is the image a rollback run boots on every node, as planRollback chose it; nil
-	// for an upgrade.
-	rollbackTo *nodev1.BootImage
 }
 
 // target is the image the node gets: the image to install, or the one a rollback boots; by its
 // name in messages and its root hash.
-func (n *upgradeNode) target() (string, []byte) {
-	if n.rollbackTo != nil {
-		return statusview.BootImageName(n.rollbackTo), n.rollbackTo.GetRootHash()
+func (r *upgradeRun) target(n *upgradeNode) (string, []byte) {
+	if r.rollback {
+		return statusview.BootImageName(r.rollbackTo), r.rollbackTo.GetRootHash()
 	}
 	return n.image.name(), n.image.header.RootHash
 }
@@ -101,14 +98,10 @@ func (p *upgradePlan) closeImages() {
 //     its config against the image before the image becomes the next boot.
 func (r *upgradeRun) find(ctx context.Context, named []string, img *diskImage) error {
 	c := r.cluster
-	candidates := named
-	if len(candidates) == 0 {
-		candidates = r.nodeNames()
+	candidates, err := r.candidates(named)
+	if err != nil {
+		return err
 	}
-	if len(candidates) == 0 && c.Partial() {
-		return errors.New("without an inventory, give each node's address with --address NODE=ADDR")
-	}
-	r.nodes = map[string]*upgradeNode{}
 	groups := map[string]*upgradeGroup{}
 	var skipped []string
 	skip := func(name, platform string) error {
@@ -192,19 +185,28 @@ func (r *upgradeRun) coordinate(ctx context.Context, probed map[string]bool) err
 	return r.findCoordinators(ctx, probed, held)
 }
 
-// planRollback chooses the image a rollback boots, before any node is sent anything: the one image
-// the nodes vote for, as rollbackVote reads it. A node without a vote must run that image already.
-// A rerun after a stopped run picks the same image, so it continues rather than rolling nodes
-// forward.
-func (r *upgradeRun) planRollback(ctx context.Context, named []string) error {
+// candidates are the nodes named, else every node, and start the run's nodes afresh.
+func (r *upgradeRun) candidates(named []string) ([]string, error) {
 	candidates := named
 	if len(candidates) == 0 {
 		candidates = r.nodeNames()
 	}
 	if len(candidates) == 0 && r.cluster.Partial() {
-		return errors.New("without an inventory, give each node's address with --address NODE=ADDR")
+		return nil, errors.New("without an inventory, give each node's address with --address NODE=ADDR")
 	}
 	r.nodes = map[string]*upgradeNode{}
+	return candidates, nil
+}
+
+// planRollback chooses the image a rollback boots, before any node is sent anything: the one image
+// the nodes vote for, as rollbackVote reads it. A node without a vote must run that image already.
+// A rerun after a stopped run picks the same image, so it continues rather than rolling nodes
+// forward.
+func (r *upgradeRun) planRollback(ctx context.Context, named []string) error {
+	candidates, err := r.candidates(named)
+	if err != nil {
+		return err
+	}
 	probed := map[string]bool{}
 	boots := map[string]*nodev1.BootStatus{}
 	// votes are the nodes by the root hash, in hex, of the image they roll back to, and images
@@ -245,7 +247,6 @@ func (r *upgradeRun) planRollback(ctx context.Context, named []string) error {
 		if b := boots[name]; rollbackVote(b) == nil && !bytes.Equal(b.GetRunning().GetRootHash(), target.GetRootHash()) {
 			return fmt.Errorf("%s does not run %s, which the other nodes roll back to, and keeps no previous image: %s; leave it out with --nodes", name, statusview.BootImageName(target), noPrevious(b))
 		}
-		r.nodes[name].rollbackTo = target
 	}
 	r.rollbackTo = target
 	return r.coordinate(ctx, probed)

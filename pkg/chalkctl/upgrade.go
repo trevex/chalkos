@@ -413,7 +413,7 @@ func (r *upgradeRun) run(ctx context.Context) error {
 // staged or active already is not sent again, and a node that booted it is waited for. Its layers
 // hold it before the reboot and release it after. Images are compared by their store's root hash.
 func (r *upgradeRun) node(ctx context.Context, n *upgradeNode) error {
-	image, target := n.target()
+	image, target := r.target(n)
 	_, st, _, err := r.probe(ctx, n.name)
 	if err != nil {
 		return err
@@ -460,13 +460,13 @@ func (r *upgradeRun) node(ctx context.Context, n *upgradeNode) error {
 // unless the node has it staged or active already with the config the run gives it, and reports
 // whether it sent it. A rollback stages nothing: its image is in the node's inactive slot already.
 func (r *upgradeRun) stage(ctx context.Context, n *upgradeNode, st *nodev1.StatusResponse) (bool, error) {
-	if n.rollbackTo != nil {
+	if r.rollback {
 		return false, nil
 	}
 	// An image staged or active is sent again only for its config: the node finds the image in its
 	// inactive slot and replaces the config it keeps for it.
 	if r.stagedAlready(n, st) {
-		image, _ := n.target()
+		image, _ := r.target(n)
 		r.Say("%s: %s is installed already", n.name, image)
 		return false, nil
 	}
@@ -477,13 +477,13 @@ func (r *upgradeRun) stage(ctx context.Context, n *upgradeNode, st *nodev1.Statu
 // node's status said it boots next already and the run did not send it again; a rollback's image
 // is made boot next by the rollback, which stages it as an upgrade's activation does.
 func (r *upgradeRun) activate(ctx context.Context, n *upgradeNode, st *nodev1.StatusResponse, sent bool) error {
-	image, target := n.target()
+	image, target := r.target(n)
 	boot := st.GetBoot()
-	if n.rollbackTo == nil && !sent && boot.GetStagedState() == nodev1.SlotState_SLOT_STATE_ACTIVE && bytes.Equal(boot.GetStaged().GetRootHash(), target) {
+	if !r.rollback && !sent && boot.GetStagedState() == nodev1.SlotState_SLOT_STATE_ACTIVE && bytes.Equal(boot.GetStaged().GetRootHash(), target) {
 		r.Say("%s: %s boots next already", n.name, image)
 		return nil
 	}
-	if n.rollbackTo == nil {
+	if !r.rollback {
 		var resp *nodev1.ActivateImageResponse
 		if err := r.reach.Call(n.name, layer.Fetch(&resp, func(conn *client.Conn) (*connect.Response[nodev1.ActivateImageResponse], error) {
 			return conn.ActivateImage(ctx, connect.NewRequest(&nodev1.ActivateImageRequest{RootHash: target}))
@@ -519,14 +519,14 @@ func activatedLine(name, image string, resp *nodev1.ActivateImageResponse) strin
 // sent again only for its config.
 func (r *upgradeRun) stagedAlready(n *upgradeNode, st *nodev1.StatusResponse) bool {
 	d := r.deliveryOf(n)
-	_, target := n.target()
+	_, target := r.target(n)
 	return bytes.Equal(st.GetBoot().GetStaged().GetRootHash(), target) && (d == nil || st.GetStagedConfigVersion() == d.Version)
 }
 
 // installs reports whether the run sends the node its image, as node decides from its status.
 func (r *upgradeRun) installs(n *upgradeNode, st *nodev1.StatusResponse) bool {
 	boot := st.GetBoot()
-	_, target := n.target()
+	_, target := r.target(n)
 	switch {
 	case boot.GetError() != "", bytes.Equal(boot.GetRunning().GetRootHash(), target):
 		return false
@@ -645,7 +645,7 @@ func pendingOutcome(name string, p *nodev1.PendingOutcome) string {
 
 // reactivate has the node boot the rollback's image next again, its previous image.
 func (r *upgradeRun) reactivate(ctx context.Context, n *upgradeNode) error {
-	image, root := n.target()
+	image, root := r.target(n)
 	r.Say("%s: rolling back to %s", n.name, image)
 	var resp *nodev1.RollbackImageResponse
 	if err := r.reach.Call(n.name, layer.Fetch(&resp, func(conn *client.Conn) (*connect.Response[nodev1.RollbackImageResponse], error) {
