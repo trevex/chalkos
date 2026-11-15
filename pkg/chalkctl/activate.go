@@ -13,7 +13,6 @@ import (
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/chalkctl/layer"
 	"github.com/trevex/chalkos/pkg/client"
-	"github.com/trevex/chalkos/pkg/image"
 	"github.com/trevex/chalkos/pkg/internal/cli"
 	"github.com/trevex/chalkos/pkg/statusview"
 )
@@ -82,15 +81,7 @@ func (a *app) nodeActivate(ctx context.Context, f nodeActivateFlags, name string
 // imageRoot reads the root hash, revision and tag of the image at path, as upgrade --image takes
 // it. Opening the image checks its hash tree against repart's root hash.
 func imageRoot(ctx context.Context, path string, stderr io.Writer) (root []byte, revision, tag string, err error) {
-	raw, _, err := imageFiles(path)
-	if err != nil {
-		return nil, "", "", err
-	}
-	parts, err := image.ReadPartitions(filepath.Join(filepath.Dir(raw), "repart-output.json"))
-	if err != nil {
-		return nil, "", "", err
-	}
-	p, err := image.OpenParts(ctx, raw, parts, false)
+	p, raw, _, err := openParts(ctx, path, false)
 	if err != nil {
 		return nil, "", "", err
 	}

@@ -6,8 +6,12 @@ import (
 	"path/filepath"
 )
 
-// FindRaw returns the path of the one raw image in an image directory.
+// FindRaw returns the path of the one raw image in the image directory dir, or dir itself when it
+// is a file.
 func FindRaw(dir string) (string, error) {
+	if info, err := os.Stat(dir); err != nil || !info.IsDir() {
+		return dir, err
+	}
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return "", err

@@ -340,15 +340,8 @@ func nodeNames(l *lab.Lab) []string {
 // rawAndPartitions finds the raw image in an image directory, or takes the file given, and the
 // partition table describing it: repart-output.json next to a raw image, or an ISO's .json.
 func rawAndPartitions(path string) (raw, partitions string, err error) {
-	info, err := os.Stat(path)
-	if err != nil {
+	if raw, err = image.FindRaw(path); err != nil {
 		return "", "", err
-	}
-	raw = path
-	if info.IsDir() {
-		if raw, err = image.FindRaw(path); err != nil {
-			return "", "", err
-		}
 	}
 	if _, err := os.Stat(raw + ".json"); err == nil {
 		return raw, raw + ".json", nil

@@ -41,15 +41,7 @@ type diskImage struct {
 // openImage reads a raw image with repart-output.json beside it, or nix build's directory, with its
 // contract, for install (with bootLoader) or upgrade. Warnings go to stderr.
 func openImage(ctx context.Context, path string, bootLoader bool, stderr io.Writer) (_ *diskImage, err error) {
-	raw, definitions, err := imageFiles(path)
-	if err != nil {
-		return nil, err
-	}
-	parts, err := image.ReadPartitions(filepath.Join(filepath.Dir(raw), "repart-output.json"))
-	if err != nil {
-		return nil, err
-	}
-	p, err := image.OpenParts(ctx, raw, parts, bootLoader)
+	p, raw, definitions, err := openParts(ctx, path, bootLoader)
 	if err != nil {
 		return nil, err
 	}
@@ -244,20 +236,20 @@ func provenance(dir string, rootHash []byte, stderr io.Writer) (revision, tag st
 // chunkSize is how much of an image one install or upgrade message carries.
 const chunkSize = 1 << 20
 
-// imageFiles finds the raw image in an image directory or takes the given file; the image's
-// system-region definitions are in repart.d next to it.
-func imageFiles(path string) (raw, definitions string, err error) {
-	info, err := os.Stat(path)
+// openParts opens the parts of the raw image at path, or of an image directory's, as its
+// repart-output.json lays them out; definitions is the image's repart.d beside it.
+func openParts(ctx context.Context, path string, bootLoader bool) (p *image.Parts, raw, definitions string, err error) {
+	if raw, err = image.FindRaw(path); err != nil {
+		return nil, "", "", err
+	}
+	parts, err := image.ReadPartitions(filepath.Join(filepath.Dir(raw), "repart-output.json"))
 	if err != nil {
-		return "", "", err
+		return nil, "", "", err
 	}
-	raw = path
-	if info.IsDir() {
-		if raw, err = image.FindRaw(path); err != nil {
-			return "", "", err
-		}
+	if p, err = image.OpenParts(ctx, raw, parts, bootLoader); err != nil {
+		return nil, "", "", err
 	}
-	return raw, filepath.Join(filepath.Dir(raw), "repart.d"), nil
+	return p, raw, filepath.Join(filepath.Dir(raw), "repart.d"), nil
 }
 
 // name names the image chalkctl sends.
