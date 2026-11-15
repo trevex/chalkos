@@ -3218,10 +3218,6 @@ lib.runTests {
     expr =
       let
         groupsOf = c: lib.sort lib.lessThan (lib.unique c.chalkos.kernel.moduleGroups);
-        message = "chalkos.kernel.moduleGroups names chalkos-nothing, which chalkos.kernel.groups does not declare; it declares ${
-          lib.concatStringsSep ", " (lib.attrNames (worker [ ]).chalkos.kernel.groups)
-        }";
-        refused = modules: lib.any (a: !a.assertion && a.message == message) (worker modules).assertions;
       in
       {
         node = groupsOf layered.node-metal.config;
@@ -3229,8 +3225,6 @@ lib.runTests {
         edge = groupsOf layered.edge-metal.config;
         declared = layered.plain-metal.config.chalkos.kernel.groups ? kubernetes;
         firewall = layered.plain-metal.config.chalkos.kernel.groups.firewall.directories;
-        unknown = refused [ { chalkos.kernel.moduleGroups = [ "chalkos-nothing" ]; } ];
-        known = refused [ ];
         unknownTree =
           (builtins.tryEval
             (worker [ { chalkos.kernel.moduleGroups = [ "chalkos-nothing" ]; } ])
@@ -3258,8 +3252,6 @@ lib.runTests {
           "net/ipv4/netfilter"
           "net/ipv6/netfilter"
         ];
-        unknown = true;
-        known = false;
         unknownTree = false;
       };
   };

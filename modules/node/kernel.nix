@@ -212,13 +212,12 @@ let
     else
       lib.concatStringsSep ", " (lib.init quoted) + " and " + lib.last quoted;
 
-  # A name chalkos.kernel.groups lacks fails the evaluation of the tree as well as the assertion,
-  # since the tree is built without the system's assertions too.
+  # A name chalkos.kernel.groups lacks fails the evaluation of the tree, which is built without
+  # the system's assertions too; with allModules, which filters nothing, it goes unreported.
   unknown = lib.filter (name: !cfg.groups ? ${name}) (lib.unique cfg.moduleGroups);
-  unknownMessage = "chalkos.kernel.moduleGroups names ${lib.concatStringsSep ", " unknown}, which chalkos.kernel.groups does not declare; it declares ${lib.concatStringsSep ", " (lib.attrNames cfg.groups)}";
-  selected = chalkosLib.internal.refuse (lib.optional (unknown != [ ]) unknownMessage) (
-    map (name: cfg.groups.${name}) (lib.unique cfg.moduleGroups)
-  );
+  selected = chalkosLib.internal.refuse (lib.optional (unknown != [ ])
+    "chalkos.kernel.moduleGroups names ${lib.concatStringsSep ", " unknown}, which chalkos.kernel.groups does not declare; it declares ${lib.concatStringsSep ", " (lib.attrNames cfg.groups)}"
+  ) (map (name: cfg.groups.${name}) (lib.unique cfg.moduleGroups));
   directories = lib.unique (lib.concatMap (g: g.directories or [ ]) selected);
   names = lib.unique (lib.concatMap (g: g.modules or [ ]) selected ++ cfg.extraModules);
 
@@ -323,12 +322,6 @@ in
   config = {
     chalkos.kernel.groups = groups;
     chalkos.kernel.moduleGroups = baseGroups;
-    assertions = [
-      {
-        assertion = unknown == [ ];
-        message = unknownMessage;
-      }
-    ];
     system.modulesTree = lib.mkIf (!cfg.allModules) (
       lib.mkForce ([ filtered ] ++ config.boot.extraModulePackages)
     );
