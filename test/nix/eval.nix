@@ -9,7 +9,11 @@
 let
   inherit (import ./lib.nix { inherit lib mkImages; })
     fails
+    refuses
+    etcJSON
+    hasPackage
     worker
+    installer
     router
     routerWithout
     ;
@@ -27,6 +31,12 @@ let
         };
       };
     }).nixos;
+  # The images most tests read, each evaluated once: the worker without modules, the router with
+  # every feature, and the router without each feature.
+  w = worker [ ];
+  edge = layered.edge-metal.config;
+  inherit (layered.edge-metal._module.args.routerLib) features;
+  without = lib.genAttrs features (f: routerWithout [ f ]);
   # The example files of a router image's tests, chalkos.tests.router-<name>.
   examplesOf = c: lib.attrNames (builtins.readDir c.chalkos.router.examples);
   # The users and groups of an image whose IDs its build allocates from 999 down, in the order of
@@ -40,10 +50,10 @@ lib.runTests {
   # Every image carries its checker, chalkd, on its system path, where the chalkd of a node that
   # runs another image finds it as sw/bin/chalkd.
   testImageCarriesItsChecker = {
-    expr = map (c: lib.any (p: lib.getName p == "chalkd") c.environment.systemPackages) [
-      (worker [ ])
+    expr = map (c: hasPackage "chalkd" c.environment.systemPackages) [
+      w
       layered.plain-metal.config
-      layered.edge-metal.config
+      edge
     ];
     expected = [
       true
@@ -176,8 +186,8 @@ lib.runTests {
       {
         node = markers layered.node-metal.config;
         plain = markers layered.plain-metal.config;
-        edge = markers layered.edge-metal.config;
-        installer = markers (mkImages { }).nixos.installer.config;
+        edge = markers edge;
+        installer = markers (installer [ ]);
       };
     expected = {
       node."chalkos/layers/kubernetes" = "";
@@ -191,15 +201,14 @@ lib.runTests {
   testLayersExcludeEachOther = {
     expr =
       let
-        message = "the variant both enables the kubernetes and router layers; an image carries one layer at most, so set kubernetes = false or router = false";
-        refused = c: lib.any (a: !a.assertion && a.message == message) c.assertions;
+        refused = refuses "the variant both enables the kubernetes and router layers";
         both = (mkImages { variants.both.router = true; }).nixos.both-metal.config;
       in
       {
         both = refused both;
         node = refused layered.node-metal.config;
         plain = refused layered.plain-metal.config;
-        edge = refused layered.edge-metal.config;
+        edge = refused edge;
       };
     expected = {
       both = true;
@@ -214,8 +223,6 @@ lib.runTests {
   # Images without the router layer take no router kind.
   testRouterFeaturesOptional =
     let
-      edge = layered.edge-metal.config;
-      inherit (layered.edge-metal._module.args.routerLib) features;
       names = lib.attrNames;
       parts =
         c:
@@ -250,7 +257,6 @@ lib.runTests {
           examples = examplesOf c;
         };
       all = parts edge;
-      without = lib.genAttrs features (f: routerWithout [ f ]);
       # What the image without feature f lacks, leaving out the reads of the outputs it lacks.
       removed =
         f:
@@ -448,7 +454,6 @@ lib.runTests {
   testRouterDHCPRelay = {
     expr =
       let
-        edge = layered.edge-metal.config;
         relay = edge.systemd.services.dnsmasq-relay;
         vrf = edge.systemd.services."dnsmasq-relay@";
         relays = edge.systemd.services.chalkos-dhcp-relays;
@@ -515,7 +520,7 @@ lib.runTests {
   # A router image with every feature runs a test of every router example; one without a feature
   # runs those whose documents it accepts.
   testRouterExamples = {
-    expr = examplesOf layered.edge-metal.config;
+    expr = examplesOf edge;
     expected = [
       "dhcp-relay.yaml"
       "dhcp.yaml"
@@ -533,8 +538,7 @@ lib.runTests {
   # and router-vrf-strict the ruleset; on one without a feature, no router test compares any.
   testRouterGoldens =
     let
-      edge = layered.edge-metal.config;
-      withoutDHCP = routerWithout [ "dhcp" ];
+
       # The tests of the router's examples of an image.
       exampleTests = c: map (file: "router-${lib.removeSuffix ".yaml" file}") (examplesOf c);
       # The outputs a test of an image compares.
@@ -559,7 +563,7 @@ lib.runTests {
         goldensWithoutDHCP = lib.attrNames (
           lib.filterAttrs (
             name: t: lib.hasPrefix "router-" name && t.outputs != { }
-          ) withoutDHCP.chalkos.tests
+          ) without.dhcp.chalkos.tests
         );
       };
       expected = {
@@ -574,7 +578,7 @@ lib.runTests {
   testRouterUserIDs = {
     expr =
       let
-        c = layered.edge-metal.config;
+        c = edge;
       in
       {
         users = lib.genAttrs [ "dnsmasq" "frr" "kea" "unbound" ] (n: c.users.users.${n}.uid);
@@ -636,7 +640,7 @@ lib.runTests {
         diagnostics = lib.attrNames c.chalkos.diagnostics;
         examples = examplesOf c;
         unpinned = unpinned c;
-        same = unpinned c == unpinned layered.edge-metal.config;
+        same = unpinned c == unpinned edge;
       };
     expected = {
       kinds = [
@@ -723,7 +727,6 @@ lib.runTests {
           unit = c.systemd.services ? chalkos-firewall;
           outputs = lib.filter (lib.hasPrefix "router-") (lib.attrNames c.chalkos.outputs);
         };
-        edge = layered.edge-metal.config;
         unit = edge.systemd.services.chalkos-firewall;
       in
       {
@@ -812,7 +815,6 @@ lib.runTests {
   testRouterBGP = {
     expr =
       let
-        edge = layered.edge-metal.config;
         frr = edge.systemd.services.frr;
       in
       {
@@ -878,7 +880,6 @@ lib.runTests {
   testRouterVRF = {
     expr =
       let
-        edge = layered.edge-metal.config;
         vrf = edge.systemd.services.chalkos-vrf;
       in
       {
@@ -919,7 +920,6 @@ lib.runTests {
   testRouterDHCP = {
     expr =
       let
-        edge = layered.edge-metal.config;
         server = edge.systemd.services.kea-dhcp4;
         vrf = edge.systemd.services."kea-dhcp4@";
         server6 = edge.systemd.services.kea-dhcp6;
@@ -986,7 +986,7 @@ lib.runTests {
           inherit (routes) after wantedBy;
           inherit (routes.unitConfig) StartLimitIntervalSec;
           inherit (routes.serviceConfig) Type RestrictAddressFamilies;
-          ip = lib.any (p: lib.getName p == "iproute2") routes.path;
+          ip = hasPackage "iproute2" routes.path;
           path = {
             inherit (edge.systemd.paths.chalkos-dhcp6-routes) wantedBy;
             inherit (edge.systemd.paths.chalkos-dhcp6-routes.pathConfig) PathChanged TriggerLimitIntervalSec;
@@ -1137,7 +1137,6 @@ lib.runTests {
   testRouterNAT64AndResolver = {
     expr =
       let
-        edge = layered.edge-metal.config;
         nat64 = edge.systemd.services.chalkos-nat64;
         unbound = edge.systemd.services.unbound;
       in
@@ -1344,7 +1343,7 @@ lib.runTests {
       in
       {
         node = forwarding layered.node-metal.config == on;
-        edge = forwarding layered.edge-metal.config == on;
+        edge = forwarding edge == on;
         plain = forwarding layered.plain-metal.config;
         asked = forwarding plainForwarding == on;
       };
@@ -1553,7 +1552,7 @@ lib.runTests {
   testImageRunsChalkd = {
     expr =
       let
-        services = (worker [ ]).systemd.services;
+        services = w.systemd.services;
       in
       {
         chalkd = services.chalkd.wantedBy;
@@ -1609,7 +1608,7 @@ lib.runTests {
         };
       in
       {
-        withoutCA = (worker [ ]).environment.etc ? "chalkos/os-ca.crt";
+        withoutCA = w.environment.etc ? "chalkos/os-ca.crt";
         setting = withCA.nixos.worker-metal.config.chalkos ? osCA;
       };
     expected = {
@@ -1651,8 +1650,7 @@ lib.runTests {
             && lib.elem "multi-user.target" c.systemd.services.chalkos-chrony-dhcp.wantedBy
             && lib.elem "systemd-networkd.service" c.systemd.services.chalkos-chrony-dhcp.after;
           dhcpDir = lib.elem "d /run/chalkos/chrony-dhcp 0755 root root - -" c.systemd.tmpfiles.rules;
-          dhcpGrant =
-            (builtins.fromJSON c.environment.etc."chalkos/services.json".text).chalkos-chrony-dhcp.kinds;
+          dhcpGrant = (etcJSON "services.json" c).chalkos-chrony-dhcp.kinds;
           dhcpReadsConfig = lib.hasInfix "chalkcfg get TimeSync" c.systemd.services.chalkos-chrony-dhcp.script;
           # Active after it ran, so chalkd's try-restart runs it again; a link's change restarts it.
           dhcpRerunsOnChange =
@@ -1669,7 +1667,7 @@ lib.runTests {
           # chrony's effect, on its output, runs a script of chalkd's PATH, which leaves a chronyd
           # that does not run.
           reloadSources =
-            (builtins.fromJSON c.environment.etc."chalkos/effects.json".text).chrony == {
+            (etcJSON "effects.json" c).chrony == {
               outputs = [ "chrony" ];
               kinds = [ ];
               run = "chalkos-chrony-reload-sources";
@@ -1680,7 +1678,7 @@ lib.runTests {
               chalkd = "";
               hint = null;
             }
-            && lib.any (p: lib.getName p == "chalkos-chrony-reload-sources") c.systemd.services.chalkd.path;
+            && hasPackage "chalkos-chrony-reload-sources" c.systemd.services.chalkd.path;
           # chronyd checks the output chrony, whose examples are tests of the image.
           output = {
             check = lib.hasInfix "/bin/chronyd -p -f" c.chalkos.outputs.chrony.check;
@@ -1690,7 +1688,7 @@ lib.runTests {
         };
       in
       # The units are always there; TimeSync.spec.dhcp decides at runtime.
-      summary (worker [ ]);
+      summary w;
     expected = {
       chrony = true;
       timesyncd = false;
@@ -1725,7 +1723,7 @@ lib.runTests {
         hook = c: c.systemd.services.chalkd.environment ? CHALKD_TEST_RENEW_ON_APPLY_CONFIG;
       in
       {
-        image = hook (worker [ ]);
+        image = hook w;
         testImage = hook (worker [ ../../modules/testing/test-image.nix ]);
       };
     expected = {
@@ -1807,8 +1805,7 @@ lib.runTests {
           "ttyS0,115200"
         ];
         consoles = c: lib.filter (lib.hasPrefix "console=") c.boot.kernelParams;
-        message = "boot.kernelParams holds console= entries of its own; set the kernel's consoles in chalkos.consoles, whose last entry is /dev/console";
-        refused = c: lib.any (a: !a.assertion && a.message == message) c.assertions;
+        refused = refuses "boot.kernelParams holds console= entries of its own";
         # The worker of a platform r650 whose own module sets the consoles plainly, with the
         # variant's module given.
         onR650 =
@@ -1831,11 +1828,9 @@ lib.runTests {
         esxi = consoles i.nixos.worker-esxi.config;
         installer = consoles i.nixos.installer.config;
         serialLast = consoles (worker [ { chalkos.consoles = serialLast; } ]);
-        installerSerialLast =
-          consoles
-            (mkImages { installer.modules = [ { chalkos.consoles = serialLast; } ]; }).nixos.installer.config;
+        installerSerialLast = consoles (installer [ { chalkos.consoles = serialLast; } ]);
         stray = refused (worker [ { boot.kernelParams = [ "console=ttyS1,115200" ]; } ]);
-        plain = refused (worker [ ]);
+        plain = refused w;
         empty = fails (worker [ { chalkos.consoles = [ ]; } ]).chalkos.consoles;
         notADevice = fails (worker [ { chalkos.consoles = [ "ttyS0 quiet" ]; } ]).chalkos.consoles;
         # A platform's and a variant's plain lists conflict; lib.mkForce overrides the platform's.
@@ -2148,15 +2143,15 @@ lib.runTests {
   # say.
   testInstallerEssentials =
     let
-      installer = modules: (mkImages { installer.modules = modules; }).installer.drvPath;
+      build = modules: (installer modules).system.build.chalkosInstaller.drvPath;
     in
     {
       expr = {
-        chalkd = fails (installer [ { systemd.services.chalkd.enable = false; } ]);
-        mode = fails (installer [
+        chalkd = fails (build [ { systemd.services.chalkd.enable = false; } ]);
+        mode = fails (build [
           { systemd.services.chalkd.environment.CHALKD_INSTALLER = lib.mkForce "0"; }
         ]);
-        platform = fails (installer [ { chalkos.platform.name = "kvm"; } ]);
+        platform = fails (build [ { chalkos.platform.name = "kvm"; } ]);
       };
       expected = {
         chalkd = true;
@@ -2165,12 +2160,12 @@ lib.runTests {
       };
     };
   testStateHasItsOwnPartitionType = {
-    expr = (worker [ ]).systemd.repart.partitions."50-state".Type;
+    expr = w.systemd.repart.partitions."50-state".Type;
     expected = "480b7842-1236-1abb-0339-e5503b43122a";
   };
   # containerd runs portmap, which needs nft.
   testContainerdFindsNft = {
-    expr = lib.any (p: (p.pname or "") == "nftables") (worker [ ]).systemd.services.containerd.path;
+    expr = lib.any (p: (p.pname or "") == "nftables") w.systemd.services.containerd.path;
     expected = true;
   };
   # The image fixes its Kubernetes release, whose kubelet it runs, and its pod network, as options
@@ -2178,7 +2173,7 @@ lib.runTests {
   testImageKubernetesOptions = {
     expr =
       let
-        c = worker [ ];
+        c = w;
       in
       {
         inherit (c.chalkos.kubernetes) enable;
@@ -2246,9 +2241,8 @@ lib.runTests {
   # version and the package names one minor in both.
   testKubeletPackageAndVersionAgree =
     let
-      message = "chalkos.kubernetes.package is Kubernetes ${pkgs.kubernetes.version} and chalkos.kubernetes.version is 1.36; set one of them, or both to one minor";
       releases = import ../../modules/node/kubernetes/releases.nix { inherit lib pkgs; };
-      refused = modules: lib.any (a: !a.assertion && a.message == message) (worker modules).assertions;
+      refused = modules: refuses "and chalkos.kubernetes.version is 1.36" (worker modules);
     in
     {
       expr = {
@@ -2312,7 +2306,7 @@ lib.runTests {
   testKubernetesImage = {
     expr =
       let
-        config = worker [ ];
+        config = w;
       in
       {
         # chalkd renders the add-ons and reads the Addon documents from the config; the image
@@ -2320,8 +2314,7 @@ lib.runTests {
         addonObjects = config.environment.etc ? "chalkos/kubernetes/manifests.json";
         # chalkos-controlplane makes etcd's directory by the Node's type, not the image.
         etcdDir = lib.elem "d /var/lib/etcd 0700 root root -" config.systemd.tmpfiles.rules;
-        grant =
-          (builtins.fromJSON config.environment.etc."chalkos/services.json".text).chalkos-controlplane.kinds;
+        grant = (etcJSON "services.json" config).chalkos-controlplane.kinds;
         beforeKubernetes = lib.all (u: lib.elem u config.systemd.services.chalkos-controlplane.before) [
           "chalkos-kubernetes.service"
           "kubelet.service"
@@ -2421,7 +2414,7 @@ lib.runTests {
   testKernelModules = {
     expr =
       let
-        c = worker [ ];
+        c = w;
         gpu = worker [
           {
             chalkos.kernel.moduleGroups = [ "gpu" ];
@@ -2480,7 +2473,7 @@ lib.runTests {
       {
         node = groupsOf layered.node-metal.config;
         plain = groupsOf layered.plain-metal.config;
-        edge = groupsOf layered.edge-metal.config;
+        edge = groupsOf edge;
         declared = layered.plain-metal.config.chalkos.kernel.groups ? kubernetes;
         firewall = layered.plain-metal.config.chalkos.kernel.groups.firewall.directories;
         unknownTree =
@@ -2517,15 +2510,15 @@ lib.runTests {
   testTrimmedTools = {
     expr =
       let
-        c = worker [ ];
+        c = w;
         named = name: lib.findFirst (p: lib.getName p == name) null;
         xfsprogs = named "xfsprogs" c.systemd.services.chalkd.path;
         containerd = named "containerd" c.systemd.services.containerd.path;
       in
       {
         scrub = lib.elem "--enable-scrub=no" xfsprogs.configureFlags;
-        python = lib.any (p: lib.getName p == "python3") xfsprogs.buildInputs;
-        icu = lib.any (p: lib.getName p == "icu4c") (
+        python = hasPackage "python3" xfsprogs.buildInputs;
+        icu = hasPackage "icu4c" (
           xfsprogs.buildInputs ++ xfsprogs.propagatedBuildInputs ++ xfsprogs.nativeBuildInputs
         );
         inherit (containerd) binaries;
@@ -2548,9 +2541,9 @@ lib.runTests {
   # Mirrors come from the Mirror and Registry documents, written to /run before containerd starts.
   testRegistryMirrorsFromConfig =
     let
-      config = worker [ ];
+      config = w;
       unit = config.systemd.services.chalkos-registry-mirrors;
-      services = builtins.fromJSON config.environment.etc."chalkos/services.json".text;
+      services = etcJSON "services.json" config;
     in
     {
       expr = {
@@ -2577,9 +2570,9 @@ lib.runTests {
   # that chalkos-containerd-config writes before containerd starts; the image bakes in none.
   testContainerdImportsClusterSettings =
     let
-      config = worker [ ];
+      config = w;
       unit = config.systemd.services.chalkos-containerd-config;
-      services = builtins.fromJSON config.environment.etc."chalkos/services.json".text;
+      services = etcJSON "services.json" config;
     in
     {
       expr = {
@@ -2606,9 +2599,8 @@ lib.runTests {
   testImageFacts =
     let
       factsOf = c: builtins.fromJSON (builtins.readFile c.chalkos.imageDirectory.facts.kubernetes);
-      image = factsOf (worker [ ]);
+      image = factsOf w;
       noFlannel = factsOf (worker [ { chalkos.cni.provider = "none"; } ]);
-      w = worker [ ];
     in
     {
       expr = {
@@ -2634,7 +2626,7 @@ lib.runTests {
   testKubeletUnit = {
     expr =
       let
-        config = worker [ ];
+        config = w;
         inherit (config.systemd.services.kubelet.serviceConfig) ExecStart;
       in
       {
@@ -2670,11 +2662,11 @@ lib.runTests {
   # the unit and its flags file may be missing, so a failure to write them leaves anonymous pulls.
   testRegistryCredentialsUnit =
     let
-      config = worker [ ];
+      config = w;
       unit = config.systemd.services.chalkos-registry-credentials;
       kubelet = config.systemd.services.kubelet;
-      services = builtins.fromJSON config.environment.etc."chalkos/services.json".text;
-      effects = builtins.fromJSON config.environment.etc."chalkos/effects.json".text;
+      services = etcJSON "services.json" config;
+      effects = etcJSON "effects.json" config;
     in
     {
       expr = {
@@ -2780,7 +2772,7 @@ lib.runTests {
   testChalkdStartsWithoutKubernetesPreparation = {
     expr =
       let
-        chalkd = (worker [ ]).systemd.services.chalkd;
+        chalkd = w.systemd.services.chalkd;
       in
       {
         after = lib.elem "chalkos-kubernetes.service" chalkd.after;
@@ -2905,7 +2897,7 @@ lib.runTests {
       in
       {
         units = (environment ignoring).CHALKD_HEALTH_IGNORE_UNITS or null;
-        none = (environment (worker [ ])) ? CHALKD_HEALTH_IGNORE_UNITS;
+        none = (environment w) ? CHALKD_HEALTH_IGNORE_UNITS;
       };
     expected = {
       units = "a.service b.service";
@@ -2920,7 +2912,7 @@ lib.runTests {
         timeout = c: c.systemd.services.chalkd.environment.CHALKD_HEALTH_TIMEOUT or null;
       in
       {
-        default = timeout (worker [ ]);
+        default = timeout w;
         set = timeout (worker [ { chalkos.upgrade.healthTimeout = 30; } ]);
       };
     expected = {
@@ -2936,15 +2928,8 @@ lib.runTests {
   testImageHasNoVersion = {
     expr =
       let
-        message = "chalkos orders boot entries by generation; pass revision and tag to mkImages for provenance";
-        refused = c: lib.any (a: !a.assertion && a.message == message) c.assertions;
-        installer =
-          modules:
-          (mkImages {
-            variants = { };
-            installer = { inherit modules; };
-          }).nixos.installer.config;
-        node = worker [ ];
+        refused = refuses "chalkos orders boot entries by generation";
+        node = w;
         osReleaseLines =
           c:
           lib.filter (l: lib.hasPrefix "IMAGE_" l || lib.hasPrefix "CHALKOS_" l) (
@@ -2996,18 +2981,11 @@ lib.runTests {
   testImageIDShape = {
     expr =
       let
-        message = "system.image.id must consist of lower-case letters, digits, \".\", \"_\" and \"-\", as it names the image's boot entries";
-        refused = c: lib.any (a: !a.assertion && a.message == message) c.assertions;
-        installer =
-          modules:
-          (mkImages {
-            variants = { };
-            installer = { inherit modules; };
-          }).nixos.installer.config;
+        refused = refuses "system.image.id must consist of lower-case letters";
         id = id: worker [ { system.image.id = lib.mkForce id; } ];
       in
       {
-        default = refused (worker [ ]) || refused (installer [ ]);
+        default = refused w || refused (installer [ ]);
         allowed = refused (id "chalkos.lab_2-x");
         upper = refused (id "Chalkos");
         plus = refused (id "chalkos+1");
@@ -3100,7 +3078,7 @@ lib.runTests {
   testESPMount = {
     expr =
       let
-        c = worker [ ];
+        c = w;
       in
       {
         inherit (c.fileSystems."/efi") device fsType options;
@@ -3160,7 +3138,7 @@ lib.runTests {
   testStoreLeavesOutKernelAndInitrd = {
     expr =
       let
-        c = worker [ ];
+        c = w;
         forbidden =
           path: lib.any (r: builtins.match r "${path}" != null) c.system.forbiddenDependenciesRegexes;
       in
@@ -3291,7 +3269,13 @@ lib.runTests {
       plain = {
         description = "A test.";
         role = "reader";
+        command = [ ip ];
       };
+      # The refusals of the diagnostic route, or in-namespace in the namespace ns-{name}, with the
+      # attributes given.
+      route = attrs: refusals { route = plain // attrs; };
+      inNamespace =
+        attrs: refusals { in-namespace = plain // { networkNamespace = "ns-{name}"; } // attrs; };
       table = {
         type = "pattern";
         regex = "^[a-z]+$";
@@ -3300,144 +3284,69 @@ lib.runTests {
     in
     {
       expr = {
-        accepted = refusals {
-          route = plain // {
-            command = [
-              ip
-              "route"
-              "get"
-              "{address}"
-            ];
-            parameters.address = {
-              type = "address";
-              description = "An address.";
-            };
+        accepted = route {
+          command = [
+            ip
+            "route"
+            "get"
+            "{address}"
+          ];
+          parameters.address = {
+            type = "address";
+            description = "An address.";
           };
         };
-        name = refusals {
-          Route_Get = plain // {
-            command = [ ip ];
+        name = refusals { Route_Get = plain; };
+        program = route {
+          command = [
+            "ip"
+            "route"
+          ];
+        };
+        placeholder = route {
+          command = [
+            ip
+            "{address}"
+          ];
+        };
+        parameter = route { parameters.table = table; };
+        parameterName = route {
+          command = [
+            ip
+            "{Table}"
+          ];
+          parameters.Table = table;
+        };
+        optionalDefault = route {
+          command = [
+            ip
+            "{table}"
+          ];
+          parameters.table = table // {
+            optional = true;
+            default = "main";
           };
         };
-        program = refusals {
-          route = plain // {
-            command = [
-              "ip"
-              "route"
-            ];
+        group = route { groups = [ "chalkos-no-such-group" ]; };
+        groupForm = route { groups = [ "Wheel" ]; };
+        longName = refusals { ${lib.strings.replicate 65 "a"} = plain; };
+        longTimeout = route { timeout = "601s"; };
+        longestTimeout = route { timeout = "10m"; };
+        namespace = inNamespace { parameters.name = table; };
+        namespaceOptional = inNamespace {
+          parameters.name = table // {
+            optional = true;
           };
         };
-        placeholder = refusals {
-          route = plain // {
-            command = [
-              ip
-              "route"
-              "get"
-              "{address}"
-            ];
-          };
-        };
-        parameter = refusals {
-          route = plain // {
-            command = [
-              ip
-              "route"
-              "show"
-            ];
-            parameters.table = table;
-          };
-        };
-        parameterName = refusals {
-          route = plain // {
-            command = [
-              ip
-              "route"
-              "show"
-              "{Table}"
-            ];
-            parameters.Table = table;
-          };
-        };
-        optionalDefault = refusals {
-          route = plain // {
-            command = [
-              ip
-              "route"
-              "show"
-              "table"
-              "{table}"
-            ];
-            parameters.table = table // {
-              optional = true;
-              default = "main";
-            };
-          };
-        };
-        group = refusals {
-          route = plain // {
-            command = [ ip ];
-            groups = [ "chalkos-no-such-group" ];
-          };
-        };
-        groupForm = refusals {
-          route = plain // {
-            command = [ ip ];
-            groups = [ "Wheel" ];
-          };
-        };
-        longName = refusals {
-          ${lib.strings.replicate 65 "a"} = plain // {
-            command = [ ip ];
-          };
-        };
-        longTimeout = refusals {
-          route = plain // {
-            command = [ ip ];
-            timeout = "601s";
-          };
-        };
-        longestTimeout = refusals {
-          route = plain // {
-            command = [ ip ];
-            timeout = "10m";
-          };
-        };
-        namespace = refusals {
-          in-namespace = plain // {
-            command = [ ip ];
-            networkNamespace = "ns-{name}";
-            parameters.name = table;
-          };
-        };
-        namespaceOptional = refusals {
-          in-namespace = plain // {
-            command = [ ip ];
-            networkNamespace = "ns-{name}";
-            parameters.name = table // {
-              optional = true;
-            };
-          };
-        };
-        namespaceParameter = refusals {
-          in-namespace = plain // {
-            command = [ ip ];
-            networkNamespace = "ns-{name}";
-          };
-        };
+        namespaceParameter = inNamespace { };
         # A parameter fills a namespace's name with one character at least.
-        namespaceLongest = refusals {
-          in-namespace = plain // {
-            command = [ ip ];
-            networkNamespace = "${lib.strings.replicate 254 "a"}{name}";
-            parameters.name = table;
-          };
+        namespaceLongest = inNamespace {
+          networkNamespace = "${lib.strings.replicate 254 "a"}{name}";
+          parameters.name = table;
         };
-        namespaceLong = refusals {
-          in-namespace = plain // {
-            command = [ ip ];
-            networkNamespace = "${lib.strings.replicate 255 "a"}{name}";
-            parameters.name = table;
-          };
+        namespaceLong = inNamespace {
+          networkNamespace = "${lib.strings.replicate 255 "a"}{name}";
+          parameters.name = table;
         };
       };
       expected = {
@@ -3511,9 +3420,7 @@ lib.runTests {
           }
         )
       ];
-      etc = builtins.fromJSON (
-        builtins.unsafeDiscardStringContext c.environment.etc."chalkos/diagnostics.json".text
-      );
+      etc = etcJSON "diagnostics.json" c;
       # writeText keeps its text as an attribute, so no build runs during evaluation.
       build = builtins.fromJSON (
         builtins.unsafeDiscardStringContext c.system.build.chalkosDiagnostics.text
@@ -3609,13 +3516,8 @@ lib.runTests {
   # Berkeley DB out of the images.
   testBaseDiagnostics =
     let
-      read =
-        c:
-        builtins.fromJSON (
-          builtins.unsafeDiscardStringContext c.environment.etc."chalkos/diagnostics.json".text
-        );
-      node = read (worker [ ]);
-      installer = read (mkImages { }).nixos.installer.config;
+      node = etcJSON "diagnostics.json" w;
+      inInstaller = etcJSON "diagnostics.json" (installer [ ]);
       names = [
         "addresses"
         "dns-query"
@@ -3632,7 +3534,7 @@ lib.runTests {
     {
       expr = {
         names = lib.attrNames node;
-        installer = lib.attrNames installer;
+        installer = lib.attrNames inInstaller;
         inStore = lib.all (d: lib.hasPrefix "/nix/store/" (lib.head d.command)) (lib.attrValues node);
         ip = lib.hasSuffix "-iproute2-ip-${pkgs.iproute2.version}/bin/ip" (lib.head node.route-get.command);
         tcpConnect = {
@@ -3679,8 +3581,8 @@ lib.runTests {
         };
       in
       {
-        default = env (worker [ ]);
-        installer = env (mkImages { }).nixos.installer.config;
+        default = env w;
+        installer = env (installer [ ]);
         noActions = env (worker [ { chalkos.console.actions.enable = false; } ]);
         off = env (worker [ { chalkos.console.enable = false; } ]);
       };
@@ -3731,7 +3633,7 @@ lib.runTests {
   testSerialGettyNeedsThePort = {
     expr =
       let
-        c = worker [ ];
+        c = w;
         unit = c.systemd.services."serial-getty@";
       in
       {
