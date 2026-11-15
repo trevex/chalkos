@@ -103,7 +103,7 @@ func (p recordingRouter) Validators(s *schema.Schemas) []outputs.LinkedValidator
 }
 
 // chalkctl validate runs the router validator in-process on a node whose image declares the router
-// kinds.
+// kinds, and refuses what it refuses.
 func TestValidateRunsTheRouterValidator(t *testing.T) {
 	var read [][]byte
 	saved := plugins
@@ -136,18 +136,9 @@ func TestValidateRunsTheRouterValidator(t *testing.T) {
 	if err := json.Unmarshal(read[0], &in); err != nil || len(in.Documents["Network"]) != 1 || len(in.Documents["VRF"]) != 1 || len(in.Documents["Router"]) != 0 {
 		t.Errorf("the validator read %s: %v", read[0], err)
 	}
-}
-
-// validate refuses what the router layer's validator refuses, as the node would at the delivery:
-// a zone that names a VRF's device, which no schema or rule sees, by the document and field.
-func TestValidateRefusesAVRFDeviceConflict(t *testing.T) {
-	ta := newTestApp(t)
-	ta.withoutSecrets(t)
-	uplink := strings.Replace(n1Network, "spec: {", "spec: {match: {name: enp1s0}, ", 1)
-	vrf := "apiVersion: router.chalkos.dev/v1alpha1\nkind: VRF\nmetadata: {name: tenant}\nspec: {table: 100}\n"
+	// It refuses what the validator refuses, as the node would: a zone that names a VRF's device.
 	zone := "apiVersion: router.chalkos.dev/v1alpha1\nkind: FirewallZone\nmetadata: {name: lan}\nspec: {interfaces: [tenant]}\n"
-	path := writeInventory(t, ta.dir, n1SystemDisk, uplink, vrf, zone)
-	schematest.Copy(t, filepath.Join(ta.dir, "images", "test-metal", "schemas"), schematest.Router)
+	path = writeInventory(t, ta.dir, n1SystemDisk, uplink, vrf, zone)
 	err := ta.run(context.Background(), []string{"validate", "--inventory", path})
 	if want := "FirewallZone/lan: spec.interfaces[0]: tenant matches tenant, the device of VRF tenant; name the VRF in vrfs"; err == nil || !strings.Contains(err.Error(), want) {
 		t.Errorf("validate = %v, want %q", err, want)
