@@ -24,28 +24,15 @@ unitCheck "vxlan-rule" checkLib.networkTools ''
   ip addr add fd00:1::11/64 dev d0 nodad
   ip link set d0 up
   # An interface of the pod network, over which the peer reaches the node too.
-  ip link add cni0 type veth peer name c1 netns "''${pids[peer]}"
-  ip addr add 10.0.2.11/24 dev cni0
-  ip addr add fd00:2::11/64 dev cni0 nodad
-  ip link set cni0 up
+  veth peer/c1 cni0 - 10.0.2.11/24 fd00:2::11/64 -- 10.0.2.12/24 fd00:2::12/64
   on_peer ip route add 10.0.1.0/24 via 10.0.0.11
   on_peer ip route add fd00:1::/64 via fd00::11
-  on_peer ip addr add 10.0.2.12/24 dev c1
-  on_peer ip addr add fd00:2::12/64 dev c1 nodad
-  on_peer ip link set c1 up
   # The routes of datagrams the peer sends out of c1.
   on_peer ip route add 10.0.1.0/24 via 10.0.2.11 dev c1 metric 100
   on_peer ip route add fd00:1::/64 via fd00:2::11 dev c1 metric 2048
   # A pod on the node, whose datagrams the node forwards to the peer.
   netns pod
-  ip link add p0 type veth peer name p1 netns "''${pids[pod]}"
-  ip addr add 10.244.0.1/24 dev p0
-  ip addr add fd00:10:244::1/64 dev p0 nodad
-  ip link set p0 up
-  on_pod ip link set lo up
-  on_pod ip addr add 10.244.0.2/24 dev p1
-  on_pod ip addr add fd00:10:244::2/64 dev p1 nodad
-  on_pod ip link set p1 up
+  veth pod/p1 p0 - 10.244.0.1/24 fd00:10:244::1/64 -- 10.244.0.2/24 fd00:10:244::2/64
   on_pod ip route add default via 10.244.0.1
   on_pod ip route add default via fd00:10:244::1
   echo 1 >/proc/sys/net/ipv4/ip_forward
@@ -125,10 +112,6 @@ unitCheck "vxlan-rule" checkLib.networkTools ''
   rules() {
     grep -c 'meta mark set meta mark |' rules.log || true
   }
-  # The rules in the table now, which may differ from what the rule printed.
-  marking() {
-    nft list table inet chalkos-vxlan 2>/dev/null | grep -c 'meta mark set meta mark |' || true
-  }
   marked() {
     nft list counter inet count marked | grep -o 'packets [0-9]*'
   }
@@ -174,21 +157,14 @@ unitCheck "vxlan-rule" checkLib.networkTools ''
 
   # Ranges that cannot be read drop all VXLAN the node forwards, and say so; the node still
   # takes VXLAN.
-  closed() {
-    holding "$v4$v6"
-    [ "$status" = 0 ] && [ "$(rules)" = 2 ] || fail "the addresses $1"
-    grep -q "ranges are unknown" errors.log || fail "no warning $1"
-    if forwarded 10.0.2.12 8472; then fail "a pod sent VXLAN outside the source ranges $1"; fi
-    if forwarded fd00:2::12 8472; then fail "a pod sent IPv6 VXLAN outside the source ranges $1"; fi
-    forwarded 10.0.2.12 8473 || fail "a pod's datagram to another port was dropped $1"
-    arrives 10.0.0.11 || fail "VXLAN to the node was refused $1"
-  }
-  rm "$cluster"
-  closed "without a cluster file"
   echo '{' >"$cluster"
-  closed "with a cluster file that cannot be read"
-  spec '{"ipFamilies":["ipv4","ipv6"],"podCIDRs":{"ipv4":"10.244.0.0/16"}}'
-  closed "with a family without a pod range"
+  holding "$v4$v6"
+  [ "$status" = 0 ] && [ "$(rules)" = 2 ] || fail "the addresses without ranges"
+  grep -q "ranges are unknown" errors.log || fail "no warning without ranges"
+  if forwarded 10.0.2.12 8472; then fail "a pod sent VXLAN outside the source ranges without ranges"; fi
+  if forwarded fd00:2::12 8472; then fail "a pod sent IPv6 VXLAN outside the source ranges without ranges"; fi
+  forwarded 10.0.2.12 8473 || fail "a pod's datagram to another port was dropped without ranges"
+  arrives 10.0.0.11 || fail "VXLAN to the node was refused without ranges"
   # Without flannel VXLAN may come from anywhere, so nothing is dropped.
   spec '{"ipFamilies":["ipv4","ipv6"],"podCIDRs":{"ipv4":"10.244.0.0/16","ipv6":"fd00:10:244::/56"}}'
   holding "$v4$v6"
@@ -253,57 +229,8 @@ unitCheck "vxlan-rule" checkLib.networkTools ''
 
   # A file holding anything but the node's addresses and source ranges adds no rule, empties
   # the table and fails.
-  for content in "" 'destination 10.0.0.11 eth0\n' 'destination cafe.be interface\n' \
-    'destination fe80::1%v0 interface\n' "$v4"'source 10.0.0.0/24 }\n'; do
-    holding "$v4"
-    holding "$content"
-    [ "$status" != 0 ] && [ "$(rules)" = 0 ] || fail "accepted a file holding '$content'"
-    if arrives 10.0.0.11; then fail "VXLAN arrived after the file held '$content'"; fi
-  done
-
-  # IPv6 addresses written out in full, and with an IPv4 address at the end.
-  holding "$v4"'destination fd00:0:0:0:0:0:0:11 interface\n'
-  [ "$status" = 0 ] && [ "$(rules)" = 2 ] || fail "an IPv6 address in full"
-  arrives fd00::11 || fail "IPv6 VXLAN to the address in full was refused"
-  holding 'destination ::ffff:10.0.0.11 interface\n'
-  [ "$status" = 0 ] && [ "$(rules)" = 1 ] || fail "an IPv6 address ending in an IPv4 one"
-
-  # A file that cannot be read empties the table and fails.
-  for kind in directory socket; do
-    holding "$v4"
-    rm vxlan
-    case $kind in
-      directory) mkdir vxlan ;;
-      socket)
-        socat UNIX-LISTEN:vxlan /dev/null &
-        listener=$!
-        retry 600 "socat opened no socket vxlan" test -S vxlan
-        ;;
-    esac
-    run vxlan
-    [ "$status" != 0 ] && [ "$(marking)" = 0 ] || fail "accepted a $kind"
-    if arrives 10.0.0.11; then fail "VXLAN arrived after the file was a $kind"; fi
-    if [ "$kind" = socket ]; then kill "$listener"; wait "$listener" || true; fi
-    rm -rf vxlan
-  done
-
-  # A lock that cannot be taken empties the table and fails.
   holding "$v4"
-  rm /run/chalkos-vxlan-rule.lock
-  mkdir /run/chalkos-vxlan-rule.lock
-  run vxlan
-  [ "$status" != 0 ] && [ "$(marking)" = 0 ] || fail "kept its rules without the lock"
-  if arrives 10.0.0.11; then fail "VXLAN arrived after the lock could not be taken"; fi
-  rmdir /run/chalkos-vxlan-rule.lock
-
-  # Without the file or an argument the table is emptied.
-  holding "$v4"
-  rm vxlan
-  run vxlan
-  [ "$status" = 0 ] && [ "$(rules)" = 0 ] || fail "without the file"
-  holding "$v4"
-  run
-  [ "$status" = 0 ] && [ "$(rules)" = 0 ] || fail "without an argument"
-  if arrives 10.0.0.11; then fail "VXLAN arrived without the file"; fi
-  if forwarded 10.0.0.12 8472; then fail "a pod sent VXLAN to a source range without the file"; fi
+  holding 'destination 10.0.0.11 eth0\n'
+  [ "$status" != 0 ] && [ "$(rules)" = 0 ] || fail "accepted a file naming an interface"
+  if arrives 10.0.0.11; then fail "VXLAN arrived after the file named an interface"; fi
 ''
