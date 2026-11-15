@@ -131,9 +131,6 @@ type Timing struct {
 	// Poll is the time between two looks at what a rotation step, a drain or a joining learner
 	// waits for.
 	Poll time.Duration
-	// StatusTimeout bounds each read of the status from the API server, the revoked nodes and the
-	// Node apart.
-	StatusTimeout time.Duration
 }
 
 // withDefaults returns t with each zero field but EtcdStatusTimeout set to its default.
@@ -147,7 +144,6 @@ func (t Timing) withDefaults() Timing {
 	t.EtcdTimeout = cmp.Or(t.EtcdTimeout, 30*time.Second)
 	t.EtcdRetry = cmp.Or(t.EtcdRetry, time.Second)
 	t.Poll = cmp.Or(t.Poll, 2*time.Second)
-	t.StatusTimeout = cmp.Or(t.StatusTimeout, 5*time.Second)
 	return t
 }
 

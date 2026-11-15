@@ -21,6 +21,7 @@ import (
 	"github.com/trevex/chalkos/pkg/chalkd/layer"
 	"github.com/trevex/chalkos/pkg/chalkd/layers/kubernetes/kubernetestest"
 	"github.com/trevex/chalkos/pkg/clustersecrets"
+	"github.com/trevex/chalkos/pkg/internal/testwait"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
 	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
 	"github.com/trevex/chalkos/pkg/kubernetes/revoked"
@@ -360,26 +361,27 @@ func TestRevokeNodeAppliesThePolicy(t *testing.T) {
 // TestStatusReadsTheNodeWhileTheListHangs bounds the read of the revoked nodes and that of the
 // Node apart, so a read that hangs leaves the other its time.
 func TestStatusReadsTheNodeWhileTheListHangs(t *testing.T) {
-	l := newRevokeLab(t)
-	k := l.s.k
-	k.timing.StatusTimeout = 200 * time.Millisecond
-	l.cs.PrependReactor("get", "configmaps", func(k8stesting.Action) (bool, runtime.Object, error) {
-		time.Sleep(k.timing.StatusTimeout)
-		return true, nil, context.DeadlineExceeded
-	})
-	k.hooks.Node = func(ctx context.Context) (*corev1.Node, error) {
-		if err := ctx.Err(); err != nil {
-			return nil, err
+	testwait.Bubble(t, func(t *testing.T) {
+		l := newRevokeLab(t)
+		k := l.s.k
+		l.cs.PrependReactor("get", "configmaps", func(k8stesting.Action) (bool, runtime.Object, error) {
+			time.Sleep(statusTimeout)
+			return true, nil, context.DeadlineExceeded
+		})
+		k.hooks.Node = func(ctx context.Context) (*corev1.Node, error) {
+			if err := ctx.Err(); err != nil {
+				return nil, err
+			}
+			return kubernetestest.ReadyNode(), nil
 		}
-		return kubernetestest.ReadyNode(), nil
-	}
-	st, err := k.status(context.Background())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if st.NodeReady != "True" || st.RevokedNodesError == "" {
-		t.Errorf("node ready %q, revoked nodes error %q; want the Node read and the list's error", st.NodeReady, st.RevokedNodesError)
-	}
+		st, err := k.status(context.Background())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if st.NodeReady != "True" || st.RevokedNodesError == "" {
+			t.Errorf("node ready %q, revoked nodes error %q; want the Node read and the list's error", st.NodeReady, st.RevokedNodesError)
+		}
+	})
 }
 
 // A revocation that would make the admission policy's map of revoked nodes longer than the API

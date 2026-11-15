@@ -56,6 +56,10 @@ func (p preparation) problem() string {
 	return ""
 }
 
+// statusTimeout bounds each read of the status from the API server, the revoked nodes and the
+// Node apart.
+const statusTimeout = 5 * time.Second
+
 // status describes the node's Kubernetes state.
 func (k *side) status(ctx context.Context) (*kubernetesv1.StatusResponse, error) {
 	c, err := k8s.ReadCluster(k.state.Cluster)
@@ -117,11 +121,11 @@ func (k *side) status(ctx context.Context) (*kubernetesv1.StatusResponse, error)
 		return st, nil
 	}
 	if c.Kind == k8s.KindControlPlane {
-		rctx, cancel := context.WithTimeout(ctx, k.timing.StatusTimeout)
+		rctx, cancel := context.WithTimeout(ctx, statusTimeout)
 		k.revokedStatus(rctx, st)
 		cancel()
 	}
-	ctx, cancel := context.WithTimeout(ctx, k.timing.StatusTimeout)
+	ctx, cancel := context.WithTimeout(ctx, statusTimeout)
 	defer cancel()
 	node, err := k.hooks.Node(ctx)
 	if err != nil {

@@ -17,7 +17,6 @@ func apiClientLab(t *testing.T) *side {
 	k := s.k
 	write(t, k.state.BootstrappedMarker(), "")
 	k.hooks.APIClient = k.ownAPIClient
-	k.timing.StatusTimeout = time.Second
 	return k
 }
 
