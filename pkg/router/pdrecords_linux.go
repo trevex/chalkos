@@ -13,24 +13,19 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-// ErrTooManyPDRecords is the error of ReadPDRecords when the directory holds more than
-// MaxPDRecords records that have not ended, of which it read MaxPDRecords.
+// ErrTooManyPDRecords is the error of ReadPDRecords past MaxPDRecords live records.
 var ErrTooManyPDRecords = fmt.Errorf("more than %d records of delegated prefixes", MaxPDRecords)
 
-// ReadPDRecords reads the records of delegated prefixes in dir, which the user kea writes, and
-// returns the routes of those whose leases have not ended at now and that a pool of pools
-// delegates on the record's link, by its range and length, to a link-local address. It ignores
-// the other records and files whose names start with a dot, the hook's own, half written. A
-// missing dir holds no records. It opens neither a dir nor a record that is a symbolic link,
-// refuses a dir that every user may write, reads regular files alone, without waiting, and
-// MaxPDRecordSize bytes of each, and MaxPDRecords records that have not ended at most: beyond
-// those, it returns the routes it read and ErrTooManyPDRecords. Records that ended, of leases
-// whose expiry the hook missed, count toward no limit; it reads them on each run all the same.
+// ReadPDRecords returns the routes of the live records in dir that a pool delegates on the
+// record's link. The user kea writes dir, so it opens no links, reads regular files alone without
+// blocking, and refuses a dir others may write. Past MaxPDRecords live records it stops and
+// returns ErrTooManyPDRecords with the routes so far; ended records count toward no limit. A
+// missing dir holds no records.
 func ReadPDRecords(dir string, pools []PDPool, now time.Time) ([]PDRoute, error) {
 	return readPDRecords(dir, pools, now, MaxPDRecords)
 }
 
-// readPDRecords is ReadPDRecords of limit records that have not ended at most.
+// readPDRecords is ReadPDRecords with the limit as a parameter, for tests.
 func readPDRecords(dir string, pools []PDPool, now time.Time, limit int) ([]PDRoute, error) {
 	fd, err := unix.Open(dir, unix.O_RDONLY|unix.O_DIRECTORY|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
 	if errors.Is(err, unix.ENOENT) {
@@ -53,7 +48,7 @@ func readPDRecords(dir string, pools []PDPool, now time.Time, limit int) ([]PDRo
 	for {
 		names, err := d.Readdirnames(256)
 		for _, name := range names {
-			if strings.HasPrefix(name, ".") {
+			if strings.HasPrefix(name, ".") { // the hook's half-written files
 				continue
 			}
 			link, prefix, ok := pdRecordName(name)
@@ -61,14 +56,18 @@ func readPDRecords(dir string, pools []PDPool, now time.Time, limit int) ([]PDRo
 				continue
 			}
 			data, ok := readPDRecord(fd, name)
-			if !ok || !pdRecordLive(data, now) {
+			if !ok {
+				continue
+			}
+			via, ends, ok := pdRecord(data)
+			if !ok || !ends.After(now) {
 				continue
 			}
 			if live == limit {
 				return sortPDRoutes(routes), ErrTooManyPDRecords
 			}
 			live++
-			if r, ok := pdRoute(link, prefix, data, pools, now); ok {
+			if r, ok := pdRoute(link, prefix, via, ends, pools, now); ok {
 				routes = append(routes, r)
 			}
 		}
@@ -89,8 +88,8 @@ func sortPDRoutes(routes []PDRoute) []PDRoute {
 	return routes
 }
 
-// readPDRecord reads the record name in the directory dir: a regular file of MaxPDRecordSize
-// bytes at most, opened without following a link and without waiting for a writer.
+// readPDRecord reads the record name in dir: a regular file of maxPDRecordSize bytes at most,
+// opened without following a link or waiting for a writer.
 func readPDRecord(dir int, name string) ([]byte, bool) {
 	fd, err := unix.Openat(dir, name, unix.O_RDONLY|unix.O_NOFOLLOW|unix.O_NONBLOCK|unix.O_NOCTTY|unix.O_CLOEXEC, 0)
 	if err != nil {
@@ -102,8 +101,8 @@ func readPDRecord(dir int, name string) ([]byte, bool) {
 	if err := unix.Fstat(fd, &st); err != nil || st.Mode&unix.S_IFMT != unix.S_IFREG {
 		return nil, false
 	}
-	data, err := io.ReadAll(io.LimitReader(f, MaxPDRecordSize+1))
-	if err != nil || len(data) > MaxPDRecordSize {
+	data, err := io.ReadAll(io.LimitReader(f, maxPDRecordSize+1))
+	if err != nil || len(data) > maxPDRecordSize {
 		return nil, false
 	}
 	return data, true

@@ -175,16 +175,11 @@ type PeerSpec struct {
 	// Interfaces is nil when the peer names an address, an interface or a listen range.
 	Interfaces []string `json:"interfaces"`
 	// Listen is nil unless the peer accepts the neighbours of a prefix.
-	Listen   *PeerListen `json:"listen"`
-	RemoteAS PeerAS      `json:"remoteAS"`
-	Password *struct {
-		SecretRef struct {
-			Name string `json:"name"`
-			Key  string `json:"key"`
-		} `json:"secretRef"`
-	} `json:"password"`
-	BFD             bool `json:"bfd"`
-	ExtendedNextHop bool `json:"extendedNextHop"`
+	Listen          *PeerListen `json:"listen"`
+	RemoteAS        PeerAS      `json:"remoteAS"`
+	Password        *SecretRef  `json:"password"`
+	BFD             bool        `json:"bfd"`
+	ExtendedNextHop bool        `json:"extendedNextHop"`
 	Families        struct {
 		IPv4 *PeerFamily `json:"ipv4"`
 		IPv6 *PeerFamily `json:"ipv6"`

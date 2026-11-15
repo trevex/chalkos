@@ -94,7 +94,7 @@ func TestReadPDRecords(t *testing.T) {
 }
 
 // The user kea writes the records, so a record is a route only as a regular file of
-// MaxPDRecordSize bytes at most: a link to a record, a FIFO, which no one writes, and a longer
+// maxPDRecordSize bytes at most: a link to a record, a FIFO, which no one writes, and a longer
 // file are none, and none of them blocks the read.
 func TestReadPDRecordsOfOtherFiles(t *testing.T) {
 	dir, elsewhere := t.TempDir(), t.TempDir()
@@ -107,7 +107,7 @@ func TestReadPDRecordsOfOtherFiles(t *testing.T) {
 	if err := unix.Mkfifo(filepath.Join(dir, "cust0_2001:db8:100:100::_56"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	writeRecords(t, dir, map[string]string{"cust0_2001:db8:100:200::_56": record[:len(record)-1] + strings.Repeat(" ", MaxPDRecordSize) + "\n"})
+	writeRecords(t, dir, map[string]string{"cust0_2001:db8:100:200::_56": record[:len(record)-1] + strings.Repeat(" ", maxPDRecordSize) + "\n"})
 	if err := os.Mkdir(filepath.Join(dir, "cust0_2001:db8:100:300::_56"), 0o755); err != nil {
 		t.Fatal(err)
 	}

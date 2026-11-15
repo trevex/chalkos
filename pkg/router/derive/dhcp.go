@@ -45,8 +45,8 @@ type Subnet struct {
 // refuse, is IPv6 to Kea, so the relays and the firewall take it as IPv6 too.
 func (s Subnet) Is6() bool { return s.Prefix.Addr().Is6() }
 
-// MaxDelegated is the number of delegated prefixes chalkd routes at most, pkg/router's
-// MaxPDRecords: one record each, of all servers.
+// MaxDelegated is the number of delegated prefixes of all servers chalkd routes at most, one
+// record each (router.MaxPDRecords).
 const MaxDelegated = 65536
 
 // Subnets are the DHCPSubnet documents as the router serves them, in their order. It refuses,

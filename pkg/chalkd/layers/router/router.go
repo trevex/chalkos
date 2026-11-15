@@ -262,7 +262,7 @@ func (p *Plugin) nat64Instance(ctx, budget context.Context, name string) (*route
 	if n.Sessions, n.Bindings, err = routing.ParseJoolStats(out); err != nil {
 		return nil, fmt.Errorf("instance %s: %w", name, err)
 	}
-	for _, protocol := range routing.NAT64Protocols {
+	for _, protocol := range derive.PoolProtocols {
 		out, err := jool(routing.JoolPool4Args(name, protocol))
 		if err != nil {
 			return nil, err

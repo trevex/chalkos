@@ -27,7 +27,7 @@ import (
 	"github.com/trevex/chalkos/pkg/client"
 	"github.com/trevex/chalkos/pkg/lab"
 	"github.com/trevex/chalkos/pkg/pki"
-	"github.com/trevex/chalkos/pkg/router"
+	"github.com/trevex/chalkos/pkg/router/derive"
 )
 
 // routerLab is the routers of TestRouterLab.
@@ -494,7 +494,7 @@ func (rl *routerLab) nat64(t *testing.T) {
 		}
 		r := resp.Msg
 		edge := slices.ContainsFunc(r.GetNat64(), func(n *routerv1.NAT64Status) bool {
-			return n.Name == "edge" && n.Sessions > 0 && n.Bindings > 0 && slices.EqualFunc(n.Pools, router.NAT64Protocols, func(p *routerv1.NAT64PoolStatus, protocol string) bool {
+			return n.Name == "edge" && n.Sessions > 0 && n.Bindings > 0 && slices.EqualFunc(n.Pools, derive.PoolProtocols, func(p *routerv1.NAT64PoolStatus, protocol string) bool {
 				return p.Protocol == protocol && p.Size == 4535
 			})
 		})

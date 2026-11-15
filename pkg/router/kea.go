@@ -59,9 +59,9 @@ type KeaSubnet struct {
 
 // ParseKeaSubnets reads the subnets of a DHCPv4 or DHCPv6 config of the output kea, in its order.
 func ParseKeaSubnets(data []byte) ([]KeaSubnet, error) {
-	var c keaconf.Config
-	if err := json.Unmarshal(data, &c); err != nil {
-		return nil, fmt.Errorf("read Kea's config: %w", err)
+	c, err := readKeaConfig(data)
+	if err != nil {
+		return nil, err
 	}
 	var out []KeaSubnet
 	add := func(s keaconf.Subnet) {
@@ -85,9 +85,9 @@ func ParseKeaSubnets(data []byte) ([]KeaSubnet, error) {
 // one. A config whose section lists no interfaces, not even an empty list, is no config of the
 // output.
 func ParseKeaInterfaces(data []byte) ([]string, error) {
-	var c keaconf.Config
-	if err := json.Unmarshal(data, &c); err != nil {
-		return nil, fmt.Errorf("read Kea's config: %w", err)
+	c, err := readKeaConfig(data)
+	if err != nil {
+		return nil, err
 	}
 	var s *keaconf.Server
 	if c.Dhcp4 != nil {
@@ -151,4 +151,13 @@ func ParseKeaStatistics(args json.RawMessage) (map[uint32]KeaLeases, error) {
 		out[uint32(id)] = l
 	}
 	return out, nil
+}
+
+// readKeaConfig reads a config of the output kea.
+func readKeaConfig(data []byte) (keaconf.Config, error) {
+	var c keaconf.Config
+	if err := json.Unmarshal(data, &c); err != nil {
+		return c, fmt.Errorf("read Kea's config: %w", err)
+	}
+	return c, nil
 }

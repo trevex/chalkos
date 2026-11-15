@@ -8,9 +8,6 @@ import (
 	"strconv"
 )
 
-// NAT64Protocols are the protocols Jool translates, in the order the status lists them.
-var NAT64Protocols = []string{"tcp", "udp", "icmp"}
-
 // JoolInstancesArgs are jool's arguments that list its instances.
 var JoolInstancesArgs = []string{"instance", "display", "--csv", "--no-headers"}
 
