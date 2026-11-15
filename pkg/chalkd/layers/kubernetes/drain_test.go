@@ -22,6 +22,7 @@ import (
 
 	kubernetesv1 "github.com/trevex/chalkos/pkg/api/kubernetes/v1"
 	"github.com/trevex/chalkos/pkg/chalkd/layer"
+	"github.com/trevex/chalkos/pkg/internal/testwait"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
 	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
 )
@@ -338,52 +339,54 @@ func TestDrainEmptyDir(t *testing.T) {
 // again after it timed out, it waits for the pods it evicted before, without evicting them again,
 // as for any pod that terminates already.
 func TestDrainWaitsForStoppingPods(t *testing.T) {
-	podsResource := corev1.SchemeGroupVersion.WithResource("pods")
-	l := newDrainLab(t, 0, w1(false))
-	leaving := pod("kube-flannel", "leaving", "w1", "DaemonSet", func(p *corev1.Pod) {
-		now := metav1.Now()
-		p.DeletionTimestamp = &now
-	})
-	if err := l.cs.Tracker().Add(leaving); err != nil {
-		t.Fatal(err)
-	}
-	// Accepted, and the pod starts to stop, slowly.
-	l.onEviction(func(ev *policyv1.Eviction) (bool, error) {
-		l.mu.Lock()
-		l.evicted = append(l.evicted, ev.Namespace+"/"+ev.Name)
-		l.mu.Unlock()
-		obj, err := l.cs.Tracker().Get(podsResource, ev.Namespace, ev.Name)
-		if err != nil {
-			return true, err
+	testwait.Bubble(t, func(t *testing.T) {
+		podsResource := corev1.SchemeGroupVersion.WithResource("pods")
+		l := newDrainLab(t, 0, w1(false))
+		leaving := pod("kube-flannel", "leaving", "w1", "DaemonSet", func(p *corev1.Pod) {
+			now := metav1.Now()
+			p.DeletionTimestamp = &now
+		})
+		if err := l.cs.Tracker().Add(leaving); err != nil {
+			t.Fatal(err)
 		}
-		p := obj.(*corev1.Pod).DeepCopy()
-		now := metav1.Now()
-		p.DeletionTimestamp = &now
-		return true, l.cs.Tracker().Update(podsResource, p, ev.Namespace)
-	})
-	stopping := "pods default/guarded, default/web-1, kube-flannel/leaving still run"
-	for i := range 2 {
-		if _, err := l.drain(1); layer.CodeOf(err) != connect.CodeDeadlineExceeded || !strings.Contains(err.Error(), stopping) {
-			t.Fatalf("drain %d = %v", i, err)
-		}
-	}
-	if want := []string{"default/guarded", "default/web-1"}; !slices.Equal(slices.Sorted(slices.Values(l.evicted)), want) {
-		t.Errorf("evicted %v, want each of %v once", l.evicted, want)
-	}
-	go func() {
-		time.Sleep(300 * time.Millisecond)
-		for _, p := range []string{"default/guarded", "default/web-1", "kube-flannel/leaving"} {
-			ns, name, _ := strings.Cut(p, "/")
-			if err := l.cs.Tracker().Delete(podsResource, ns, name); err != nil {
-				t.Error(err)
+		// Accepted, and the pod starts to stop, slowly.
+		l.onEviction(func(ev *policyv1.Eviction) (bool, error) {
+			l.mu.Lock()
+			l.evicted = append(l.evicted, ev.Namespace+"/"+ev.Name)
+			l.mu.Unlock()
+			obj, err := l.cs.Tracker().Get(podsResource, ev.Namespace, ev.Name)
+			if err != nil {
+				return true, err
+			}
+			p := obj.(*corev1.Pod).DeepCopy()
+			now := metav1.Now()
+			p.DeletionTimestamp = &now
+			return true, l.cs.Tracker().Update(podsResource, p, ev.Namespace)
+		})
+		stopping := "pods default/guarded, default/web-1, kube-flannel/leaving still run"
+		for i := range 2 {
+			if _, err := l.drain(1); layer.CodeOf(err) != connect.CodeDeadlineExceeded || !strings.Contains(err.Error(), stopping) {
+				t.Fatalf("drain %d = %v", i, err)
 			}
 		}
-	}()
-	start := time.Now()
-	if _, err := l.drain(10); err != nil {
-		t.Fatalf("drain once the pods stopped = %v", err)
-	}
-	if d := time.Since(start); d < 300*time.Millisecond {
-		t.Errorf("the drain finished after %v, before the pods stopped", d)
-	}
+		if want := []string{"default/guarded", "default/web-1"}; !slices.Equal(slices.Sorted(slices.Values(l.evicted)), want) {
+			t.Errorf("evicted %v, want each of %v once", l.evicted, want)
+		}
+		go func() {
+			time.Sleep(300 * time.Millisecond)
+			for _, p := range []string{"default/guarded", "default/web-1", "kube-flannel/leaving"} {
+				ns, name, _ := strings.Cut(p, "/")
+				if err := l.cs.Tracker().Delete(podsResource, ns, name); err != nil {
+					t.Error(err)
+				}
+			}
+		}()
+		start := time.Now()
+		if _, err := l.drain(10); err != nil {
+			t.Fatalf("drain once the pods stopped = %v", err)
+		}
+		if d := time.Since(start); d < 300*time.Millisecond {
+			t.Errorf("the drain finished after %v, before the pods stopped", d)
+		}
+	})
 }
