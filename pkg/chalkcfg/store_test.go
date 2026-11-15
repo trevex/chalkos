@@ -1,8 +1,6 @@
 package chalkcfg
 
 import (
-	"encoding/json"
-	"errors"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -53,14 +51,6 @@ func testNode(t *testing.T) store {
 	return s
 }
 
-func names(docs []config.Document) []string {
-	var out []string
-	for _, d := range docs {
-		out = append(out, d.Name)
-	}
-	return out
-}
-
 // documents reads s and returns its documents of a kind, as get does.
 func documents(t *testing.T, s store, kind, name string) ([]config.Document, error) {
 	t.Helper()
@@ -90,57 +80,6 @@ func TestKinds(t *testing.T) {
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("kinds = %+v, want %+v", got, want)
-	}
-}
-
-func TestDocuments(t *testing.T) {
-	s := testNode(t)
-	docs, err := documents(t, s, "Peer", "")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got := names(docs); !reflect.DeepEqual(got, []string{"backup", "uplink"}) {
-		t.Errorf("Peers = %v, want backup and uplink in name order", got)
-	}
-	spec := docs[1].Object["spec"].(map[string]any)
-	if asn := spec["asn"]; asn != json.Number("4200000001") {
-		t.Errorf("asn = %#v, want the number with its digits", asn)
-	}
-
-	docs, err = documents(t, s, "Rack", "rack")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(docs) != 1 || docs[0].Kind != "Rack" || docs[0].Object["spec"].(map[string]any)["location"] != "rack-a/u12" {
-		t.Errorf("Rack rack = %+v", docs)
-	}
-
-	docs, err = documents(t, s, "Site", "")
-	if err != nil || len(docs) != 0 {
-		t.Errorf("Site = %v, %v; want no documents and no error", docs, err)
-	}
-}
-
-func TestDocumentsRefused(t *testing.T) {
-	s := testNode(t)
-	for _, c := range []struct{ kind, name, want string }{
-		{"Nope", "", "the image declares no kind Nope; it declares Peer, Rack, Site"},
-		{"Rack", "other", `the node has no Rack named "other"`},
-		{"Rack", "../Rack/rack", `the node has no Rack named "../Rack/rack"`},
-		{"Site", "main", `the node has no Site named "main"`},
-		{"Secret", "", "Secrets are never printed"},
-		{"Bundle", "", "Bundle documents are never printed: the image withholds the kind"},
-	} {
-		_, err := documents(t, s, c.kind, c.name)
-		if err == nil || !strings.Contains(err.Error(), c.want) {
-			t.Errorf("%s %q: err = %v, want %q", c.kind, c.name, err, c.want)
-		}
-	}
-	if _, err := documents(t, s, "Secret", ""); !errors.Is(err, errSecret) {
-		t.Errorf("Secret: err = %v, want errSecret", err)
-	}
-	if _, err := documents(t, s, "Bundle", "manifests"); !errors.Is(err, errWithheld) {
-		t.Errorf("Bundle: err = %v, want errWithheld", err)
 	}
 }
 

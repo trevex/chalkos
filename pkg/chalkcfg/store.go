@@ -40,10 +40,6 @@ type kindInfo struct {
 	withheld  bool
 }
 
-var errSecret = errors.New("Secrets are never printed: a service gets the values its kinds reference as the systemd credentials secret_<secret>.<key>")
-
-// errWithheld is why chalkcfg prints no document of a kind the image declares withheld.
-var errWithheld = errors.New("the image withholds the kind from the node's services, and chalkd alone reads its documents from the node's stored config, readable by root alone")
 
 // secretKind is the kind of Secrets, which chalkcfg never prints.
 const secretKind = "Secret"
@@ -99,10 +95,10 @@ func groupOf(apiVersion string) string {
 // group returns the group of a kind named by its name alone.
 func (n node) group(kind string) (string, error) {
 	if kind == secretKind {
-		return "", errSecret
+		return "", errors.New("Secrets are never printed: a service gets the values its kinds reference as the systemd credentials secret_<secret>.<key>")
 	}
 	if k, ok := n.kinds[kind]; ok && k.withheld {
-		return "", fmt.Errorf("%s documents are never printed: %w", kind, errWithheld)
+		return "", fmt.Errorf("%s documents are never printed: the image withholds this kind from the node's services", kind)
 	}
 	kinds := maps.Clone(n.kinds)
 	maps.DeleteFunc(kinds, withheldKind)
