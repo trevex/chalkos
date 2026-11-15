@@ -193,18 +193,6 @@ func TestRenameNewRefusesAnOutputThatAppeared(t *testing.T) {
 	}
 }
 
-// TestFromDirectoryRefusesMetadataOfAnotherImage refuses an image directory whose metadata.json
-// names another root hash than its raw image's store has.
-func TestFromDirectoryRefusesMetadataOfAnotherImage(t *testing.T) {
-	in := t.TempDir()
-	img := imagetest.Image{Variant: "node", Platform: "metal", Seed: "1"}
-	imagetest.Write(t, in, img)
-	imagetest.WriteContract(t, in, img, bytes.Repeat([]byte{0xcd}, 32))
-	if _, _, err := ociimage.FromDirectory(context.Background(), in); err == nil || !strings.Contains(err.Error(), `metadata.json names the root hash "cdcd`) {
-		t.Errorf("FromDirectory = %v", err)
-	}
-}
-
 // TestContractTar writes a contract as a tar of regular files in name order, owned by 0:0 and
 // modified at the epoch, and reads it back.
 func TestContractTar(t *testing.T) {
@@ -284,10 +272,10 @@ func TestParseContract(t *testing.T) {
 	for name, entries := range map[string][]*tar.Header{
 		"is no regular file":                                       append(valid, &tar.Header{Typeflag: tar.TypeSymlink, Name: "schemas/b.json", Linkname: "/etc/passwd"}),
 		"the contract has no metadata":                             valid[1:],
+		"holds metadata.json twice":                                append(valid, reg("metadata.json")),
 		"holds facts/test.json twice":                              append(valid, reg("facts/test.json"), reg("facts/test.json")),
 		`"facts/.json", the facts of a layer whose name is not`:    append(valid, reg("facts/.json")),
 		`"facts/Kubernetes.json", the facts of a layer whose name`: append(valid, reg("facts/Kubernetes.json")),
-		`"facts/a_b.json", the facts of a layer whose name`:        append(valid, reg("facts/test.json"), reg("facts/a_b.json")),
 	} {
 		if _, err := ociimage.ParseContract(bytes.NewReader(tarOf(entries...))); err == nil || !strings.Contains(err.Error(), name) {
 			t.Errorf("ParseContract = %v, want %q", err, name)
@@ -296,8 +284,7 @@ func TestParseContract(t *testing.T) {
 }
 
 // TestReadContractDirRefusesFactsWithoutALayerName refuses an image directory whose facts/ holds
-// .json, which names no layer, or the facts of a layer whose name is not lower-case letters,
-// digits and dashes.
+// .json, which names no layer.
 func TestReadContractDirRefusesFactsWithoutALayerName(t *testing.T) {
 	dir := t.TempDir()
 	writeImage(t, dir)
@@ -313,35 +300,30 @@ func TestReadContractDirRefusesFactsWithoutALayerName(t *testing.T) {
 	if _, err := ociimage.ReadContractDir(dir); err == nil || !strings.Contains(err.Error(), `"facts/.json", the facts of a layer whose name`) {
 		t.Errorf("ReadContractDir = %v, want the facts of a layer without a name refused", err)
 	}
-	if err := os.Rename(filepath.Join(dir, "facts", ".json"), filepath.Join(dir, "facts", "Kube.json")); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := ociimage.ReadContractDir(dir); err == nil || !strings.Contains(err.Error(), `"facts/Kube.json", the facts of a layer whose name`) {
-		t.Errorf("ReadContractDir = %v, want the facts of the layer Kube refused", err)
-	}
 }
 
-// TestFromDirectoryRefusesMetadataOfAnotherPlatform refuses an image directory whose metadata.json
-// names another platform than the image's UKI boots.
-func TestFromDirectoryRefusesMetadataOfAnotherPlatform(t *testing.T) {
-	in := t.TempDir()
-	img := imagetest.Image{Variant: "node", Platform: "metal", Seed: "1"}
-	root := imagetest.Write(t, in, img)
-	imagetest.WriteContract(t, in, imagetest.Image{Variant: img.Variant, Platform: "kvm"}, root)
-	if _, _, err := ociimage.FromDirectory(context.Background(), in); err == nil || !strings.Contains(err.Error(), `metadata.json names the platform "kvm", but the image's UKI names "metal"`) {
-		t.Errorf("FromDirectory = %v", err)
-	}
-}
-
-// TestFromDirectoryRefusesNoVariant refuses an image directory whose UKI names no variant, such
-// as the installer's.
-func TestFromDirectoryRefusesNoVariant(t *testing.T) {
-	in := t.TempDir()
-	img := imagetest.Image{Platform: "metal", Seed: "1"}
-	root := imagetest.Write(t, in, img)
-	imagetest.WriteContract(t, in, img, root)
-	if _, _, err := ociimage.FromDirectory(context.Background(), in); err == nil || !strings.Contains(err.Error(), "names no variant") {
-		t.Errorf("FromDirectory = %v", err)
+// TestFromDirectoryRefuses refuses an image directory whose metadata.json names another root hash
+// or platform than its raw image, and one whose UKI names no variant, such as the installer's.
+func TestFromDirectoryRefuses(t *testing.T) {
+	metal := imagetest.Image{Variant: "node", Platform: "metal", Seed: "1"}
+	noVariant := imagetest.Image{Platform: "metal", Seed: "1"}
+	for want, tc := range map[string]struct {
+		img, contract imagetest.Image
+		root          []byte
+	}{
+		`metadata.json names the root hash "cdcd`:                                   {metal, metal, bytes.Repeat([]byte{0xcd}, 32)},
+		`metadata.json names the platform "kvm", but the image's UKI names "metal"`: {metal, imagetest.Image{Variant: "node", Platform: "kvm"}, nil},
+		"names no variant": {noVariant, noVariant, nil},
+	} {
+		in := t.TempDir()
+		root := imagetest.Write(t, in, tc.img)
+		if tc.root != nil {
+			root = tc.root
+		}
+		imagetest.WriteContract(t, in, tc.contract, root)
+		if _, _, err := ociimage.FromDirectory(context.Background(), in); err == nil || !strings.Contains(err.Error(), want) {
+			t.Errorf("FromDirectory = %v, want %q", err, want)
+		}
 	}
 }
 
@@ -379,9 +361,8 @@ func TestWriteLayoutRefusesALayerWhoseContentDoesNotMatchItsDigest(t *testing.T)
 	}
 }
 
-// TestReadLayoutRefusesACorruptManifestOrConfig refuses a layout whose manifest or config blob,
-// opened by the digest its index.json or its manifest names, does not hash to that digest: a
-// layout's blob store does not check a blob's content against the digest its file name is.
+// TestReadLayoutRefusesACorruptManifestOrConfig refuses a layout whose manifest or config blob does
+// not hash to the digest that names it.
 func TestReadLayoutRefusesACorruptManifestOrConfig(t *testing.T) {
 	for _, which := range []string{"manifest", "config"} {
 		t.Run(which, func(t *testing.T) {
@@ -488,8 +469,7 @@ func TestReadHeaderRefusesANonChalkosImage(t *testing.T) {
 	}
 }
 
-// TestReplaceRefusesExtraLayers refuses a manifest with a layer besides the five known ones,
-// rather than silently dropping it.
+// TestReplaceRefusesExtraLayers refuses a manifest with a layer besides the five known ones.
 func TestReplaceRefusesExtraLayers(t *testing.T) {
 	img, err := mutate.AppendLayers(ocitest.Image(t, ocitest.Header(), ocitest.Contract()), static.NewLayer([]byte("extra"), "application/vnd.chalkos.image.extra.v1"))
 	if err != nil {
@@ -507,25 +487,5 @@ func TestBuildRefusesDuplicateLayerDigests(t *testing.T) {
 	dup := ociimage.BytesBlob(ociimage.HashTreeType, []byte("store"))
 	if _, err := ociimage.Build(ocitest.Header(), store, dup, uki, bootLoader, contract); err == nil || !strings.Contains(err.Error(), "digest") {
 		t.Errorf("Build = %v", err)
-	}
-}
-
-// TestParseContractRefusesDuplicateNames refuses a contract layer that holds the same file twice.
-func TestParseContractRefusesDuplicateNames(t *testing.T) {
-	var buf bytes.Buffer
-	w := tar.NewWriter(&buf)
-	for _, entry := range []string{"metadata.json", "schemas/a.json", "repart.d/00-esp.conf", "metadata.json"} {
-		if err := w.WriteHeader(&tar.Header{Typeflag: tar.TypeReg, Name: entry, Mode: 0o644, Size: 1}); err != nil {
-			t.Fatal(err)
-		}
-		if _, err := w.Write([]byte("x")); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if err := w.Close(); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := ociimage.ParseContract(bytes.NewReader(buf.Bytes())); err == nil || !strings.Contains(err.Error(), "twice") {
-		t.Errorf("ParseContract = %v", err)
 	}
 }

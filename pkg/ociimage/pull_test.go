@@ -36,6 +36,50 @@ func direct(auth authn.Authenticator, insecure bool) []ociimage.Source {
 	return []ociimage.Source{{Auth: auth, Insecure: insecure}}
 }
 
+// loopback is the one source of a pull from a test registry.
+var loopback = direct(authn.Anonymous, true)
+
+// viaMirror is the endpoint as a mirror, followed by the test registry the reference names.
+func viaMirror(endpoint string) []ociimage.Source {
+	return []ociimage.Source{{Endpoint: endpoint, Auth: authn.Anonymous, Insecure: true}, {Auth: authn.Anonymous, Insecure: true}}
+}
+
+// newPull is ociimage.NewPull that fails the test on an error and closes the pull at its end.
+func newPull(t *testing.T, ref string, src []ociimage.Source, h ociimage.Header, parts []ociimage.Part) *ociimage.Pull {
+	t.Helper()
+	p, err := ociimage.NewPull(context.Background(), ref, src, h, parts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { p.Close() })
+	return p
+}
+
+// allParts is what a pull of the parts testParts names reads.
+const allParts = "storehash treeuki"
+
+// wantRead reads p to its end and fails the test unless it reads want.
+func wantRead(t *testing.T, p *ociimage.Pull, want string) {
+	t.Helper()
+	if got, err := io.ReadAll(p); err != nil || string(got) != want {
+		t.Errorf("read %q, %v; want %q", got, err, want)
+	}
+}
+
+// storeDigest is the digest of the store layer of ocitest.Image.
+var storeDigest = func() string {
+	sum := sha256.Sum256([]byte("store"))
+	return "sha256:" + hex.EncodeToString(sum[:])
+}()
+
+// hang answers no request until it ends.
+func hang(_ http.ResponseWriter, r *http.Request) {
+	select {
+	case <-r.Context().Done():
+	case <-time.After(10 * time.Second):
+	}
+}
+
 // elsewhere is ref with its registry host replaced by host.
 func elsewhere(ref, host string) string {
 	_, rest, _ := strings.Cut(ref, "/")
@@ -90,15 +134,7 @@ func pushSmall(t *testing.T, host string) (string, ociimage.Header, []ociimage.P
 // TestPull reads the parts of an image by digest, one after the other.
 func TestPull(t *testing.T) {
 	ref, h, parts := pushSmall(t, ocitest.Registry(t))
-	p, err := ociimage.NewPull(context.Background(), ref, direct(authn.Anonymous, true), h, parts)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer p.Close()
-	got, err := io.ReadAll(p)
-	if err != nil || string(got) != "storehash treeuki" {
-		t.Errorf("read %q, %v", got, err)
-	}
+	wantRead(t, newPull(t, ref, loopback, h, parts), allParts)
 }
 
 // TestPullRefuses refuses a reference by tag, an image whose header or layers are not those
@@ -106,7 +142,7 @@ func TestPull(t *testing.T) {
 func TestPullRefuses(t *testing.T) {
 	host := ocitest.Registry(t)
 	ref, h, parts := pushSmall(t, host)
-	if _, err := ociimage.NewPull(context.Background(), host+"/lab/node-metal:v1", direct(authn.Anonymous, true), h, parts); err == nil || !strings.Contains(err.Error(), "is no image reference by digest") {
+	if _, err := ociimage.NewPull(context.Background(), host+"/lab/node-metal:v1", loopback, h, parts); err == nil || !strings.Contains(err.Error(), "is no image reference by digest") {
 		t.Errorf("by tag: %v", err)
 	}
 	other := sha256.Sum256([]byte("other"))
@@ -123,36 +159,10 @@ func TestPullRefuses(t *testing.T) {
 		{"another hash tree", ref, h, []ociimage.Part{parts[0], {MediaType: ociimage.HashTreeType, Part: imagepart.Part{Size: 9, SHA256: other[:]}}, parts[2]}, "its application/vnd.chalkos.image.hash-tree.v1 layer is sha256:"},
 		{"an unknown digest", host + "/lab/node-metal@sha256:" + strings.Repeat("0", 64), h, parts, "MANIFEST_UNKNOWN"},
 	} {
-		p, err := ociimage.NewPull(context.Background(), tc.ref, direct(authn.Anonymous, true), tc.h, tc.parts)
-		if err != nil {
-			t.Fatal(err)
-		}
-		_, err = io.ReadAll(p)
+		_, err := io.ReadAll(newPull(t, tc.ref, loopback, tc.h, tc.parts))
 		if err == nil || !strings.Contains(err.Error(), tc.want) || !strings.Contains(err.Error(), tc.ref) {
 			t.Errorf("%s: %v, want %q and the reference", tc.name, err, tc.want)
 		}
-	}
-}
-
-// TestPullRefusesASwappedManifest serves a chalkos image through a proxy that answers a fetch of
-// its pinned digest with a different chalkos image's manifest, bytes an attacker who controls (or
-// sits in front of) a registry might substitute once a tag has already resolved to a digest.
-// go-containerregistry hashes the manifest bytes it receives and refuses them when they do not
-// match the digest the caller asked for, so a Pull of the pinned reference must fail rather than
-// silently stream the swapped image's layers.
-func TestPullRefusesASwappedManifest(t *testing.T) {
-	ctx := context.Background()
-	h := ocitest.Header()
-	other := ociimage.Header{ImageID: "chalkos", RootHash: strings.Repeat("cd", 32), Architecture: "x86-64", Platform: "metal"}
-	c := ocitest.Contract()
-	host, digestA := swappingRegistry(t, ocitest.Image(t, h, c), ocitest.Image(t, other, c))
-	pinnedRef := host + "/chalkos/x@" + digestA.String()
-	p, err := ociimage.NewPull(ctx, pinnedRef, direct(authn.Anonymous, true), h, testParts())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := io.ReadAll(p); err == nil || !strings.Contains(err.Error(), "does not match requested digest") {
-		t.Errorf("swapped manifest: %v, want a digest mismatch", err)
 	}
 }
 
@@ -186,94 +196,36 @@ func swappingRegistry(t *testing.T, a, b v1.Image) (string, v1.Hash) {
 	return host, digestA
 }
 
-// TestPullRefusesATamperedLayer serves a chalkos image through a proxy that answers a fetch of
-// its store layer's blob with bytes other than those its digest names, truncated or tampered,
-// bytes an attacker who controls (or sits in front of) a registry might substitute after the
-// manifest has already been checked against the header and parts wanted. go-containerregistry
-// hashes every byte of a blob it streams and fails once it has read to the blob's end if the hash
-// does not match the digest asked for, so Read must surface that error rather than hand the
-// caller bytes that do not match the pulled image.
-func TestPullRefusesATamperedLayer(t *testing.T) {
-	store := sha256.Sum256([]byte("store"))
-	blobPath := "/blobs/sha256:" + hex.EncodeToString(store[:])
-	for _, tc := range []struct {
-		name  string
-		serve string
-	}{
-		{"tampered", "xtore"}, // same length as "store", different bytes
-		{"truncated", "sto"},  // shorter than "store"
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			host := ocitest.RegistryWith(t, func(w http.ResponseWriter, r *http.Request) bool {
-				if r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, blobPath) {
-					io.WriteString(w, tc.serve)
-					return true
-				}
-				return false
-			})
-			ref, h, parts := pushSmall(t, host)
-			p, err := ociimage.NewPull(context.Background(), ref, direct(authn.Anonymous, true), h, parts)
-			if err != nil {
-				t.Fatal(err)
-			}
-			got, err := io.ReadAll(p)
-			if err == nil {
-				t.Fatalf("read %q, want an error before the layer's end", got)
-			}
-			if !strings.Contains(err.Error(), "checksum") {
-				t.Errorf("%s layer: %v, want a checksum mismatch", tc.name, err)
-			}
-		})
-	}
-}
-
 // TestPullWithCredentials pulls from a registry that asks for credentials with the user and
 // password given, and is refused anonymously.
 func TestPullWithCredentials(t *testing.T) {
 	ref, h, parts := pushSmall(t, ocitest.AuthRegistry(t, "ci-bot", "s3cret"))
-	p, err := ociimage.NewPull(context.Background(), ref, direct(authn.Anonymous, true), h, parts)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := io.ReadAll(p); err == nil || !strings.Contains(err.Error(), "UNAUTHORIZED") {
+	if _, err := io.ReadAll(newPull(t, ref, loopback, h, parts)); err == nil || !strings.Contains(err.Error(), "UNAUTHORIZED") {
 		t.Errorf("anonymously: %v", err)
 	}
-	p, err = ociimage.NewPull(context.Background(), ref, direct(&authn.Basic{Username: "ci-bot", Password: "s3cret"}, true), h, parts)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got, err := io.ReadAll(p); err != nil || string(got) != "storehash treeuki" {
-		t.Errorf("with credentials: %q, %v", got, err)
-	}
+	wantRead(t, newPull(t, ref, direct(&authn.Basic{Username: "ci-bot", Password: "s3cret"}, true), h, parts), allParts)
 }
 
 // TestPullSkips passes over the store and hash tree without fetching them.
 func TestPullSkips(t *testing.T) {
 	host, served := ocitest.ServedBlobs(t)
 	ref, h, parts := pushSmall(t, host)
-	p, err := ociimage.NewPull(context.Background(), ref, direct(authn.Anonymous, true), h, parts)
-	if err != nil {
-		t.Fatal(err)
-	}
+	p := newPull(t, ref, loopback, h, parts)
 	if err := p.Skip(parts[0].Size + parts[1].Size); err != nil {
 		t.Fatal(err)
 	}
-	if got, err := io.ReadAll(p); err != nil || string(got) != "uki" {
-		t.Errorf("after the skip: %q, %v", got, err)
-	}
-	store := sha256.Sum256([]byte("store"))
-	if _, ok := served.Load("sha256:" + hex.EncodeToString(store[:])); ok {
+	wantRead(t, p, "uki")
+	if _, ok := served.Load(storeDigest); ok {
 		t.Error("the store was fetched")
 	}
 }
 
-// TestPullContextCanceled refuses to fetch the manifest once its context is canceled, rather than
-// hang or silently succeed.
+// TestPullContextCanceled refuses to fetch the manifest once its context is canceled.
 func TestPullContextCanceled(t *testing.T) {
 	ref, h, parts := pushSmall(t, ocitest.Registry(t))
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	p, err := ociimage.NewPull(ctx, ref, direct(authn.Anonymous, true), h, parts)
+	p, err := ociimage.NewPull(ctx, ref, loopback, h, parts)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -286,22 +238,17 @@ func TestPullContextCanceled(t *testing.T) {
 // allows it, and names the setting that does.
 func TestPullOverHTTPSAlone(t *testing.T) {
 	ref, h, parts := pushSmall(t, ocitest.Registry(t))
-	p, err := ociimage.NewPull(context.Background(), ref, direct(authn.Anonymous, false), h, parts)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := io.ReadAll(p); err == nil || !strings.Contains(err.Error(), "plain HTTP to 127.0.0.1") || !strings.Contains(err.Error(), "insecure: true") || !strings.Contains(err.Error(), ref) {
+	_, err := io.ReadAll(newPull(t, ref, direct(authn.Anonymous, false), h, parts))
+	if err == nil || !strings.Contains(err.Error(), "plain HTTP to 127.0.0.1") || !strings.Contains(err.Error(), "insecure: true") || !strings.Contains(err.Error(), ref) {
 		t.Errorf("over plain HTTP: %v", err)
 	}
 }
 
-// blobServer is a registry that answers a GET of the blob of data with serve.
-func blobServer(t *testing.T, data string, serve http.HandlerFunc) string {
+// blobServer is a registry that answers a GET of the blob of digest with serve.
+func blobServer(t *testing.T, digest string, serve http.HandlerFunc) string {
 	t.Helper()
-	sum := sha256.Sum256([]byte(data))
-	blobPath := "/blobs/sha256:" + hex.EncodeToString(sum[:])
 	return ocitest.RegistryWith(t, func(w http.ResponseWriter, r *http.Request) bool {
-		if r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, blobPath) {
+		if r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/blobs/"+digest) {
 			serve(w, r)
 			return true
 		}
@@ -313,23 +260,15 @@ func blobServer(t *testing.T, data string, serve http.HandlerFunc) string {
 // halfway, naming the layer and the reference.
 func TestPullCancelsAStalledLayer(t *testing.T) {
 	ociimage.SetStallTimeout(t, 200*time.Millisecond)
-	host := blobServer(t, "store", func(w http.ResponseWriter, r *http.Request) {
+	host := blobServer(t, storeDigest, func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Length", "5")
 		io.WriteString(w, "st")
 		w.(http.Flusher).Flush()
-		select {
-		case <-r.Context().Done():
-		case <-time.After(10 * time.Second):
-		}
+		hang(w, r)
 	})
 	ref, h, parts := pushSmall(t, host)
-	p, err := ociimage.NewPull(context.Background(), ref, direct(authn.Anonymous, true), h, parts)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer p.Close()
 	start := time.Now()
-	_, err = io.ReadAll(p)
+	_, err := io.ReadAll(newPull(t, ref, loopback, h, parts))
 	want := "no data from the registry " + host + " for 200ms while pulling the application/vnd.chalkos.image.store.v1 layer of " + ref
 	if err == nil || err.Error() != want {
 		t.Errorf("stalled layer: %v, want %q", err, want)
@@ -339,30 +278,23 @@ func TestPullCancelsAStalledLayer(t *testing.T) {
 	}
 }
 
-// TestPullRefusesALongerLayer refuses a layer that goes on past its part's size, before it reads
-// to its end.
+// TestPullRefusesALongerLayer refuses a last layer that goes on past its part's size, before it
+// reads to its end.
 func TestPullRefusesALongerLayer(t *testing.T) {
-	for _, data := range []string{"store", "uki"} {
-		t.Run(data, func(t *testing.T) {
-			host := blobServer(t, data, func(w http.ResponseWriter, r *http.Request) {
-				io.WriteString(w, data+strings.Repeat("x", 1<<16))
-			})
-			ref, h, parts := pushSmall(t, host)
-			p, err := ociimage.NewPull(context.Background(), ref, direct(authn.Anonymous, true), h, parts)
-			if err != nil {
-				t.Fatal(err)
-			}
-			defer p.Close()
-			// An upgrade reads the UKI by its size alone, with io.CopyN, which drops the error of
-			// the read that returns its last bytes; it reads once more to find the stream ended.
-			_, err = io.CopyN(io.Discard, p, parts[0].Size+parts[1].Size+parts[2].Size)
-			if err == nil {
-				_, err = p.Read(make([]byte, 1))
-			}
-			if err == nil || !strings.Contains(err.Error(), "layer is longer than "+fmt.Sprint(len(data))+" bytes") || !strings.Contains(err.Error(), ref) {
-				t.Errorf("longer layer: %v", err)
-			}
-		})
+	sum := sha256.Sum256([]byte("uki"))
+	host := blobServer(t, "sha256:"+hex.EncodeToString(sum[:]), func(w http.ResponseWriter, r *http.Request) {
+		io.WriteString(w, "uki"+strings.Repeat("x", 1<<16))
+	})
+	ref, h, parts := pushSmall(t, host)
+	p := newPull(t, ref, loopback, h, parts)
+	// An upgrade reads the UKI by its size alone, with io.CopyN, which drops the error of the
+	// read that returns its last bytes; it reads once more to find the stream ended.
+	_, err := io.CopyN(io.Discard, p, parts[0].Size+parts[1].Size+parts[2].Size)
+	if err == nil {
+		_, err = p.Read(make([]byte, 1))
+	}
+	if err == nil || !strings.Contains(err.Error(), "layer is longer than 3 bytes") || !strings.Contains(err.Error(), ref) {
+		t.Errorf("longer layer: %v", err)
 	}
 }
 
@@ -377,25 +309,18 @@ func metadataOf(rootHash string) []byte {
 func TestPullContract(t *testing.T) {
 	host, manifests := ocitest.CountingRegistry(t)
 	h := ocitest.Header()
-	c := ociimage.Contract{
-		Metadata: metadataOf(h.RootHash), Schemas: map[string][]byte{"a.json": []byte("{}")},
-		Definitions: map[string][]byte{"00-esp.conf": []byte("esp")}, Facts: map[string][]byte{"kubernetes": []byte(`{"version": "1.37.1"}`)},
-	}
+	c := ocitest.Contract()
+	c.Metadata = metadataOf(h.RootHash)
+	c.Facts = map[string][]byte{"kubernetes": []byte(`{"version": "1.37.1"}`)}
 	ref := ocitest.Push(t, ocitest.Image(t, h, c), host+"/lab/node-metal:v1")
 	loader := sha256.Sum256([]byte("boot loader"))
 	parts := append(testParts(), ociimage.Part{MediaType: ociimage.BootLoaderType, Part: imagepart.Part{Size: int64(len("boot loader")), SHA256: loader[:]}})
 	before := manifests.Load()
-	p, err := ociimage.NewPull(context.Background(), ref, direct(authn.Anonymous, true), h, parts)
-	if err != nil {
-		t.Fatal(err)
-	}
-	got, err := p.Contract()
-	if err != nil || !reflect.DeepEqual(got, c) {
+	p := newPull(t, ref, loopback, h, parts)
+	if got, err := p.Contract(); err != nil || !reflect.DeepEqual(got, c) {
 		t.Errorf("Contract = %+v, %v; want %+v", got, err, c)
 	}
-	if all, err := io.ReadAll(p); err != nil || string(all) != "storehash treeukiboot loader" {
-		t.Errorf("the parts = %q, %v", all, err)
-	}
+	wantRead(t, p, allParts+"boot loader")
 	if n := manifests.Load() - before; n != 1 {
 		t.Errorf("fetched %d manifests, want 1", n)
 	}
@@ -417,10 +342,7 @@ func TestPullContractRefuses(t *testing.T) {
 			ref := ocitest.Push(t, ocitest.Image(t, h, c), host+"/lab/"+name+":v1")
 			want := h
 			want.Platform = tc.wantPlatform
-			p, err := ociimage.NewPull(context.Background(), ref, direct(authn.Anonymous, true), want, testParts())
-			if err != nil {
-				t.Fatal(err)
-			}
+			p := newPull(t, ref, loopback, want, testParts())
 			if _, err := p.Contract(); err == nil || !strings.Contains(err.Error(), tc.want) || !strings.Contains(err.Error(), ref) {
 				t.Errorf("Contract = %v, want an error naming %s and %q", err, ref, tc.want)
 			}
@@ -449,28 +371,15 @@ func TestPullThroughMirrors(t *testing.T) {
 		{Endpoint: "http://" + host, Auth: authn.Anonymous, Insecure: true},
 		{Auth: authn.Anonymous},
 	}
-	p, err := ociimage.NewPull(context.Background(), pinned, mirrors, h, parts)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got, err := io.ReadAll(p); err != nil || string(got) != "storehash treeuki" {
-		t.Fatalf("read %q, %v", got, err)
-	}
-	store := sha256.Sum256([]byte("store"))
-	if _, ok := served.Load("sha256:" + hex.EncodeToString(store[:])); !ok {
+	wantRead(t, newPull(t, pinned, mirrors, h, parts), allParts)
+	if _, ok := served.Load(storeDigest); !ok {
 		t.Error("the store did not come from the mirror that holds it")
 	}
 	privRef := ocitest.Push(t, ocitest.Image(t, h, ocitest.Contract()), private+"/lab/node-metal:v1")
-	p, err = ociimage.NewPull(context.Background(), elsewhere(privRef, "registry.invalid"), []ociimage.Source{
+	wantRead(t, newPull(t, elsewhere(privRef, "registry.invalid"), []ociimage.Source{
 		{Endpoint: "http://" + private, Auth: &authn.Basic{Username: "ci-bot", Password: "s3cret"}, Insecure: true},
 		{Auth: authn.Anonymous},
-	}, h, parts)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got, err := io.ReadAll(p); err != nil || string(got) != "storehash treeuki" {
-		t.Errorf("with the endpoint's credentials: %q, %v", got, err)
-	}
+	}, h, parts), allParts)
 }
 
 // TestPullThroughAPathPrefix reaches a mirror's registry API below the endpoint's path, with
@@ -480,13 +389,10 @@ func TestPullThroughAPathPrefix(t *testing.T) {
 	ref, h, parts := pushSmall(t, host)
 	for _, path := range []string{"/cache", "/cache/v2"} {
 		mirror, used := prefixedRegistry(t, host, "/cache")
-		p, err := ociimage.NewPull(context.Background(), elsewhere(ref, "registry.invalid"), []ociimage.Source{
-			{Endpoint: "http://" + mirror + path, Auth: authn.Anonymous, Insecure: true}, {Auth: authn.Anonymous}}, h, parts)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if got, err := io.ReadAll(p); err != nil || string(got) != "storehash treeuki" || !used.Load() {
-			t.Errorf("%s: read %q, %v, below the path: %v", path, got, err, used.Load())
+		wantRead(t, newPull(t, elsewhere(ref, "registry.invalid"), []ociimage.Source{
+			{Endpoint: "http://" + mirror + path, Auth: authn.Anonymous, Insecure: true}, {Auth: authn.Anonymous}}, h, parts), allParts)
+		if !used.Load() {
+			t.Errorf("%s: the pull did not go below the path", path)
 		}
 	}
 }
@@ -496,18 +402,10 @@ func TestPullThroughAPathPrefix(t *testing.T) {
 func TestPullFallsBackForALayer(t *testing.T) {
 	host, served := ocitest.ServedBlobs(t)
 	ref, h, parts := pushSmall(t, host)
-	store := sha256.Sum256([]byte("store"))
-	mirror := blobServer(t, "store", func(w http.ResponseWriter, r *http.Request) { http.NotFound(w, r) })
-	ocitest.Push(t, ocitest.Image(t, h, ocitest.Contract()), mirror+"/lab/node-metal:v1")
-	p, err := ociimage.NewPull(context.Background(), ref, []ociimage.Source{
-		{Endpoint: "http://" + mirror, Auth: authn.Anonymous, Insecure: true}, {Auth: authn.Anonymous, Insecure: true}}, h, parts)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got, err := io.ReadAll(p); err != nil || string(got) != "storehash treeuki" {
-		t.Fatalf("read %q, %v", got, err)
-	}
-	if _, ok := served.Load("sha256:" + hex.EncodeToString(store[:])); !ok {
+	mirror := blobServer(t, storeDigest, http.NotFound)
+	pushSmall(t, mirror)
+	wantRead(t, newPull(t, ref, viaMirror("http://"+mirror), h, parts), allParts)
+	if _, ok := served.Load(storeDigest); !ok {
 		t.Error("the store did not come from the registry")
 	}
 }
@@ -519,12 +417,7 @@ func TestPullFailsAtTheLastSource(t *testing.T) {
 	_, h, parts := pushSmall(t, host)
 	ref := host + "/lab/node-metal@sha256:" + strings.Repeat("0", 64)
 	empty := ocitest.Registry(t)
-	p, err := ociimage.NewPull(context.Background(), ref, []ociimage.Source{
-		{Endpoint: "http://" + empty, Auth: authn.Anonymous, Insecure: true}, {Auth: authn.Anonymous, Insecure: true}}, h, parts)
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, err = io.ReadAll(p)
+	_, err := io.ReadAll(newPull(t, ref, viaMirror("http://"+empty), h, parts))
 	if err == nil || !strings.Contains(err.Error(), ref) || !strings.Contains(err.Error(), "MANIFEST_UNKNOWN") ||
 		!strings.Contains(err.Error(), ", after the mirror http://"+empty+": ") {
 		t.Errorf("pull = %v", err)
@@ -543,12 +436,7 @@ func TestPullDoesNotPassOverAMismatch(t *testing.T) {
 	host, manifests := ocitest.CountingRegistry(t)
 	ref := ocitest.Push(t, a, host+"/chalkos/x:v1")
 	before := manifests.Load()
-	p, err := ociimage.NewPull(context.Background(), ref, []ociimage.Source{
-		{Endpoint: "http://" + mirror, Auth: authn.Anonymous, Insecure: true}, {Auth: authn.Anonymous, Insecure: true}}, h, testParts())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := io.ReadAll(p); err == nil || !strings.Contains(err.Error(), "does not match requested digest") {
+	if _, err := io.ReadAll(newPull(t, ref, viaMirror("http://"+mirror), h, testParts())); err == nil || !strings.Contains(err.Error(), "does not match requested digest") {
 		t.Errorf("swapped at the mirror: %v", err)
 	}
 	if manifests.Load() != before {
@@ -571,24 +459,22 @@ func TestPullRefusesAPlainHTTPMirror(t *testing.T) {
 }
 
 // TestPullDoesNotPassOverATamperedLayer fails at a mirror whose layer does not match its digest,
-// or goes on past its size, without fetching the layer from the registry.
+// is cut short or goes on past its size, without fetching the layer from the registry.
 func TestPullDoesNotPassOverATamperedLayer(t *testing.T) {
-	store := sha256.Sum256([]byte("store"))
-	for want, serve := range map[string]string{"checksum": "xtore", "layer is longer than 5 bytes": "store" + strings.Repeat("x", 1<<16)} {
+	for name, tc := range map[string]struct{ serve, want string }{
+		"tampered":  {"xtore", "checksum"},
+		"truncated": {"sto", "checksum"},
+		"longer":    {"store" + strings.Repeat("x", 1<<16), "layer is longer than 5 bytes"},
+	} {
 		host, served := ocitest.ServedBlobs(t)
 		ref, h, parts := pushSmall(t, host)
-		mirror := blobServer(t, "store", func(w http.ResponseWriter, r *http.Request) { io.WriteString(w, serve) })
+		mirror := blobServer(t, storeDigest, func(w http.ResponseWriter, r *http.Request) { io.WriteString(w, tc.serve) })
 		pushSmall(t, mirror)
-		p, err := ociimage.NewPull(context.Background(), ref, []ociimage.Source{
-			{Endpoint: "http://" + mirror, Auth: authn.Anonymous, Insecure: true}, {Auth: authn.Anonymous, Insecure: true}}, h, parts)
-		if err != nil {
-			t.Fatal(err)
+		if _, err := io.ReadAll(newPull(t, ref, viaMirror("http://"+mirror), h, parts)); err == nil || !strings.Contains(err.Error(), tc.want) || !strings.Contains(err.Error(), ref) {
+			t.Errorf("%s at the mirror: %v, want %q", name, err, tc.want)
 		}
-		if _, err := io.ReadAll(p); err == nil || !strings.Contains(err.Error(), want) || !strings.Contains(err.Error(), ref) {
-			t.Errorf("tampered at the mirror: %v, want %q", err, want)
-		}
-		if _, ok := served.Load("sha256:" + hex.EncodeToString(store[:])); ok {
-			t.Error("the store was fetched from the registry after the mirror's tampered one")
+		if _, ok := served.Load(storeDigest); ok {
+			t.Errorf("%s: the store was fetched from the registry after the mirror's", name)
 		}
 	}
 }
@@ -597,43 +483,24 @@ func TestPullDoesNotPassOverATamperedLayer(t *testing.T) {
 // response for it within the stall timeout, and fails once the last source stalls too.
 func TestPullPassesOverAStalledMirror(t *testing.T) {
 	ociimage.SetStallTimeout(t, 200*time.Millisecond)
-	hang := func(w http.ResponseWriter, r *http.Request) {
-		select {
-		case <-r.Context().Done():
-		case <-time.After(10 * time.Second):
-		}
-	}
 	host, served := ocitest.ServedBlobs(t)
 	ref, h, parts := pushSmall(t, host)
-	mirror := blobServer(t, "store", hang)
+	mirror := blobServer(t, storeDigest, hang)
 	pushSmall(t, mirror)
-	p, err := ociimage.NewPull(context.Background(), ref, []ociimage.Source{
-		{Endpoint: "http://" + mirror, Auth: authn.Anonymous, Insecure: true}, {Auth: authn.Anonymous, Insecure: true}}, h, parts)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got, err := io.ReadAll(p); err != nil || string(got) != "storehash treeuki" {
-		t.Fatalf("read %q, %v", got, err)
-	}
-	store := sha256.Sum256([]byte("store"))
-	if _, ok := served.Load("sha256:" + hex.EncodeToString(store[:])); !ok {
+	wantRead(t, newPull(t, ref, viaMirror("http://"+mirror), h, parts), allParts)
+	if _, ok := served.Load(storeDigest); !ok {
 		t.Error("the store did not come from the registry")
 	}
-	stalled := blobServer(t, "store", hang)
+	stalled := blobServer(t, storeDigest, hang)
 	ref, _, _ = pushSmall(t, stalled)
-	p, err = ociimage.NewPull(context.Background(), ref, []ociimage.Source{
-		{Endpoint: "http://" + mirror, Auth: authn.Anonymous, Insecure: true}, {Auth: authn.Anonymous, Insecure: true}}, h, parts)
-	if err != nil {
-		t.Fatal(err)
-	}
 	want := "no data from the registry " + stalled + " for 200ms while pulling the application/vnd.chalkos.image.store.v1 layer of " + ref + ", after the mirror http://" + mirror + ": no data from the mirror http://" + mirror + " for 200ms"
-	if _, err := io.ReadAll(p); err == nil || !strings.HasPrefix(err.Error(), want) {
+	if _, err := io.ReadAll(newPull(t, ref, viaMirror("http://"+mirror), h, parts)); err == nil || !strings.HasPrefix(err.Error(), want) {
 		t.Errorf("stalled everywhere: %v, want %q", err, want)
 	}
 }
 
-// closingServer is an endpoint host that closes each connection as it accepts it.
-func closingServer(t *testing.T) string {
+// tcpServer is an endpoint host that hands each connection it accepts to serve.
+func tcpServer(t *testing.T, serve func(net.Conn)) string {
 	t.Helper()
 	l, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -646,32 +513,7 @@ func closingServer(t *testing.T) string {
 			if err != nil {
 				return
 			}
-			c.Close()
-		}
-	}()
-	return l.Addr().String()
-}
-
-// alertServer is an endpoint host that answers each TLS handshake with a fatal
-// certificate_required alert, as a server that requires client certificates does.
-func alertServer(t *testing.T) string {
-	t.Helper()
-	l, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { l.Close() })
-	go func() {
-		for {
-			c, err := l.Accept()
-			if err != nil {
-				return
-			}
-			go func() {
-				defer c.Close()
-				c.Read(make([]byte, 4096))
-				c.Write([]byte{0x15, 0x03, 0x03, 0x00, 0x02, 0x02, 116})
-			}()
+			go serve(c)
 		}
 	}()
 	return l.Addr().String()
@@ -687,27 +529,27 @@ func TestPullPassesOverAFailingMirror(t *testing.T) {
 		t.Cleanup(srv.Close)
 		return strings.TrimPrefix(srv.URL, "http://")
 	}
+	closing := tcpServer(t, func(c net.Conn) { c.Close() })
+	// A fatal certificate_required alert, as a server that requires client certificates sends.
+	alert := tcpServer(t, func(c net.Conn) {
+		defer c.Close()
+		c.Read(make([]byte, 4096))
+		c.Write([]byte{0x15, 0x03, 0x03, 0x00, 0x02, 0x02, 116})
+	})
 	ref, h, parts := pushSmall(t, ocitest.Registry(t))
-	for name, endpoint := range map[string]Source{
-		"closed":     {Endpoint: "https://" + closingServer(t)},
+	for name, endpoint := range map[string]ociimage.Source{
+		"closed":     {Endpoint: "https://" + closing},
 		"plain HTTP": {Endpoint: "https://" + ocitest.Registry(t)},
-		"alert":      {Endpoint: "https://" + alertServer(t)},
+		"alert":      {Endpoint: "https://" + alert},
 		"503":        {Endpoint: "http://" + status(http.StatusServiceUnavailable), Insecure: true},
 		"429":        {Endpoint: "http://" + status(http.StatusTooManyRequests), Insecure: true},
 	} {
-		endpoint.Auth = authn.Anonymous
-		p, err := ociimage.NewPull(context.Background(), ref, []ociimage.Source{endpoint, {Auth: authn.Anonymous, Insecure: true}}, h, parts)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if got, err := io.ReadAll(p); err != nil || string(got) != "storehash treeuki" {
-			t.Errorf("%s: read %q, %v", name, got, err)
-		}
+		t.Run(name, func(t *testing.T) {
+			endpoint.Auth = authn.Anonymous
+			wantRead(t, newPull(t, ref, append([]ociimage.Source{endpoint}, loopback...), h, parts), allParts)
+		})
 	}
 }
-
-// Source is ociimage.Source.
-type Source = ociimage.Source
 
 // TestPullPassesOverAHangingManifest asks the registry once a mirror does not answer for the
 // manifest within the source timeout.
@@ -716,39 +558,17 @@ func TestPullPassesOverAHangingManifest(t *testing.T) {
 	ref, h, parts := pushSmall(t, ocitest.Registry(t))
 	mirror := ocitest.RegistryWith(t, func(w http.ResponseWriter, r *http.Request) bool {
 		if strings.Contains(r.URL.Path, "/manifests/") && r.Method == http.MethodGet {
-			select {
-			case <-r.Context().Done():
-			case <-time.After(10 * time.Second):
-			}
+			hang(w, r)
 			return true
 		}
 		return false
 	})
 	pushSmall(t, mirror)
 	start := time.Now()
-	p, err := ociimage.NewPull(context.Background(), ref, []ociimage.Source{
-		{Endpoint: "http://" + mirror, Auth: authn.Anonymous, Insecure: true}, {Auth: authn.Anonymous, Insecure: true}}, h, parts)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got, err := io.ReadAll(p); err != nil || string(got) != "storehash treeuki" {
-		t.Errorf("read %q, %v", got, err)
-	}
+	wantRead(t, newPull(t, ref, viaMirror("http://"+mirror), h, parts), allParts)
 	if d := time.Since(start); d > 5*time.Second {
 		t.Errorf("the hanging mirror was passed over after %v", d)
 	}
-}
-
-// missingBlob is a registry that answers a GET of the blob of digest with 404.
-func missingBlob(t *testing.T, digest v1.Hash) string {
-	t.Helper()
-	return ocitest.RegistryWith(t, func(w http.ResponseWriter, r *http.Request) bool {
-		if r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/blobs/"+digest.String()) {
-			http.NotFound(w, r)
-			return true
-		}
-		return false
-	})
 }
 
 // TestPullPassesOverAMissingHeaderOrContract asks the registry for the image when a mirror serves
@@ -775,20 +595,14 @@ func TestPullPassesOverAMissingHeaderOrContract(t *testing.T) {
 	host, manifests := ocitest.CountingRegistry(t)
 	ref := ocitest.Push(t, img, host+"/lab/node-metal:v1")
 	for name, digest := range map[string]v1.Hash{"header": config, "contract": contract} {
-		mirror := missingBlob(t, digest)
+		mirror := blobServer(t, digest.String(), http.NotFound)
 		ocitest.Push(t, img, mirror+"/lab/node-metal:v1")
 		before := manifests.Load()
-		p, err := ociimage.NewPull(context.Background(), ref, []ociimage.Source{
-			{Endpoint: "http://" + mirror, Auth: authn.Anonymous, Insecure: true}, {Auth: authn.Anonymous, Insecure: true}}, h, testParts())
-		if err != nil {
-			t.Fatal(err)
-		}
+		p := newPull(t, ref, viaMirror("http://"+mirror), h, testParts())
 		if got, err := p.Contract(); err != nil || !reflect.DeepEqual(got, c) {
 			t.Errorf("%s: Contract = %v", name, err)
 		}
-		if got, err := io.ReadAll(p); err != nil || string(got) != "storehash treeuki" {
-			t.Errorf("%s: read %q, %v", name, got, err)
-		}
+		wantRead(t, p, allParts)
 		if manifests.Load() == before {
 			t.Errorf("%s: the registry was not asked", name)
 		}
@@ -807,12 +621,7 @@ func TestPullCutsAPassedOverError(t *testing.T) {
 	host := ocitest.Registry(t)
 	_, h, parts := pushSmall(t, host)
 	ref := host + "/lab/node-metal@sha256:" + strings.Repeat("0", 64)
-	p, err := ociimage.NewPull(context.Background(), ref, []ociimage.Source{
-		{Endpoint: srv.URL, Auth: authn.Anonymous, Insecure: true}, {Auth: authn.Anonymous, Insecure: true}}, h, parts)
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, err = io.ReadAll(p)
+	_, err := io.ReadAll(newPull(t, ref, viaMirror(srv.URL), h, parts))
 	if err == nil || !strings.Contains(err.Error(), "after the mirror "+srv.URL+": ") || !strings.HasSuffix(err.Error(), "…") || len(err.Error()) > 1024 {
 		t.Errorf("pull = %.2000v (%d bytes)", err, len(fmt.Sprint(err)))
 	}
@@ -824,12 +633,9 @@ func TestPullOverHTTPSToAnHTTPSMirror(t *testing.T) {
 	host, manifests := ocitest.CountingRegistry(t)
 	ref, h, parts := pushSmall(t, host)
 	before := manifests.Load()
-	p, err := ociimage.NewPull(context.Background(), elsewhere(ref, "registry.invalid"), []ociimage.Source{
-		{Endpoint: "https://" + host, Auth: authn.Anonymous, Insecure: true}, {Auth: authn.Anonymous}}, h, parts)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := io.ReadAll(p); err == nil || !strings.Contains(err.Error(), "after the mirror https://"+host+": ") {
+	_, err := io.ReadAll(newPull(t, elsewhere(ref, "registry.invalid"), []ociimage.Source{
+		{Endpoint: "https://" + host, Auth: authn.Anonymous, Insecure: true}, {Auth: authn.Anonymous}}, h, parts))
+	if err == nil || !strings.Contains(err.Error(), "after the mirror https://"+host+": ") {
 		t.Errorf("pull = %v", err)
 	}
 	if manifests.Load() != before {

@@ -3,7 +3,6 @@ package ociimage_test
 import (
 	"context"
 	"encoding/hex"
-	"net/http"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -12,7 +11,6 @@ import (
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/google/go-containerregistry/pkg/v1/random"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
-	"github.com/google/go-containerregistry/pkg/v1/types"
 
 	"github.com/trevex/chalkos/pkg/ociimage"
 	"github.com/trevex/chalkos/pkg/ociimage/ocitest"
@@ -86,10 +84,11 @@ func TestReadRefuses(t *testing.T) {
 	if err := remote.WriteIndex(idxRef, idx); err != nil {
 		t.Fatal(err)
 	}
-	md := `{"schemaVersion": 0, "id": "chalkos", "variant": "node", "platform": "metal", "rootHash": "` + strings.Repeat("ab", 32) + `", "kinds": []}`
 	c := ocitest.Contract()
-	c.Metadata = []byte(md)
-	ocitest.Push(t, ocitest.Image(t, ociimage.Header{ImageID: "chalkos", RootHash: strings.Repeat("cd", 32), Architecture: "x86-64", Platform: "metal"}, c), host+"/chalkos/other:v1")
+	c.Metadata = metadataOf(strings.Repeat("ab", 32))
+	other := ocitest.Header()
+	other.RootHash = strings.Repeat("cd", 32)
+	ocitest.Push(t, ocitest.Image(t, other, c), host+"/chalkos/other:v1")
 	for ref, want := range map[string]string{
 		host + "/other/ctr":        "no image reference with a registry and a tag or digest",
 		host + "/other/ctr:v1":     "it is no chalkos image",
@@ -103,42 +102,14 @@ func TestReadRefuses(t *testing.T) {
 	}
 }
 
-// TestReadRefusesASwappedManifest serves a chalkos image through a proxy that answers a fetch of
-// its pinned digest with a different chalkos image's manifest, bytes an attacker who controls (or
-// sits in front of) a registry might substitute once a tag has already resolved to a digest.
-// go-containerregistry hashes the manifest bytes it receives and refuses them when they do not
-// match the digest the caller asked for, so Read of the pinned reference must fail rather than
-// silently accept the swapped image.
+// TestReadRefusesASwappedManifest refuses a manifest whose bytes do not match the pinned digest.
 func TestReadRefusesASwappedManifest(t *testing.T) {
-	ctx := context.Background()
 	c := ocitest.Contract()
-	a := ocitest.Image(t, ocitest.Header(), c)
-	b := ocitest.Image(t, ociimage.Header{ImageID: "chalkos", RootHash: strings.Repeat("cd", 32), Architecture: "x86-64", Platform: "metal"}, c)
-	digestA, err := a.Digest()
-	if err != nil {
-		t.Fatal(err)
-	}
-	manifestB, err := b.RawManifest()
-	if err != nil {
-		t.Fatal(err)
-	}
-	host := ocitest.RegistryWith(t, func(w http.ResponseWriter, r *http.Request) bool {
-		if r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/manifests/"+digestA.String()) {
-			w.Header().Set("Content-Type", string(types.OCIManifestSchema1))
-			w.Write(manifestB)
-			return true
-		}
-		return false
-	})
-	tagRef, err := name.ParseReference(host + "/chalkos/x:v1")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := remote.Write(tagRef, a); err != nil {
-		t.Fatal(err)
-	}
+	other := ocitest.Header()
+	other.RootHash = strings.Repeat("cd", 32)
+	host, digestA := swappingRegistry(t, ocitest.Image(t, ocitest.Header(), c), ocitest.Image(t, other, c))
 	pinnedRef := host + "/chalkos/x@" + digestA.String()
-	if _, err := ociimage.Read(ctx, pinnedRef); err == nil || !strings.Contains(err.Error(), "does not match requested digest") {
+	if _, err := ociimage.Read(context.Background(), pinnedRef); err == nil || !strings.Contains(err.Error(), "does not match requested digest") {
 		t.Errorf("Read(%s) = %v, want a digest mismatch", pinnedRef, err)
 	}
 }
