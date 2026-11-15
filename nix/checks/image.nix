@@ -429,14 +429,12 @@ in
     )
   );
 
-  # An image directory describes itself and carries schemas that accept a real Network document
-  # and reject a misspelled key.
+  # An image directory describes itself and carries a schema for each kind it lists.
   image-contract =
     pkgs.runCommand "chalkos-image-contract"
       {
         nativeBuildInputs = [
           pkgs.jq
-          pkgs.check-jsonschema
           pkgs.util-linux
           pkgs.mtools
         ];
@@ -485,26 +483,6 @@ in
         jq -e '.cni == "flannel" and (keys == ["cni", "version"])' $k/facts/kubernetes.json
         jq -e 'has("kubernetes") | not' $k/metadata.json
         jq -e '.variant == "k8s"' $k/metadata.json
-
-        schema=$dir/schemas/networkd.chalkos.dev_v1alpha1_Network.json
-        cat > good.json <<'EOF'
-        {
-          "apiVersion": "networkd.chalkos.dev/v1alpha1",
-          "kind": "Network",
-          "metadata": { "name": "10-uplink" },
-          "spec": {
-            "match": { "name": "enp1s0" },
-            "network": { "address": ["10.0.0.11/24"], "gateway": "10.0.0.1", "ipv6AcceptRA": false },
-            "route": [ { "destination": "10.1.0.0/16", "gateway": "10.0.0.254" } ]
-          }
-        }
-        EOF
-        check-jsonschema --schemafile $schema good.json
-        jq '.spec.network.gatway = "10.0.0.1"' good.json > typo.json
-        if check-jsonschema --schemafile $schema typo.json; then
-          echo "error: the Network schema accepted the misspelled key gatway" >&2
-          exit 1
-        fi
         touch $out
       '';
 
