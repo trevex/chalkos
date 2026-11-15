@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/trevex/chalkos/pkg/arch"
@@ -51,7 +52,7 @@ func ExtractBinaries(ctx context.Context, raw string, espOffset int64, dir strin
 
 // extractUKI copies the one UKI on the image's ESP into dir and returns the copy's path.
 func extractUKI(ctx context.Context, raw string, espOffset int64, dir string) (string, error) {
-	found, err := list(ctx, raw, espOffset, "::/EFI/Linux", "*.EFI")
+	found, err := ListESP(ctx, FAT(raw, espOffset), "::/EFI/LINUX/*.EFI")
 	if err != nil {
 		return "", err
 	}
@@ -69,7 +70,7 @@ func extractBootLoader(ctx context.Context, raw string, espOffset int64, dir, ar
 		return "", fmt.Errorf("chalkos builds no images for the architecture %q", archName)
 	}
 	name := a.BootLoader
-	found, err := list(ctx, raw, espOffset, "::/EFI/BOOT", name)
+	found, err := ListESP(ctx, FAT(raw, espOffset), "::/EFI/BOOT/"+name)
 	if err != nil {
 		return "", err
 	}
@@ -79,16 +80,20 @@ func extractBootLoader(ctx context.Context, raw string, espOffset int64, dir, ar
 	return copyOut(ctx, raw, espOffset, found[0], dir)
 }
 
-// list returns the files of the ESP directory whose upper-cased names match pattern.
-func list(ctx context.Context, raw string, espOffset int64, espDir, pattern string) ([]string, error) {
-	out, err := Mtools(ctx, "mdir", "-b", "-i", fmt.Sprintf("%s@@%d", raw, espOffset), espDir)
+// FAT is mtools' name of the FAT file system at offset in the disk image raw.
+func FAT(raw string, offset int64) string { return fmt.Sprintf("%s@@%d", raw, offset) }
+
+// ListESP lists the files below ::/EFI of the FAT file system fat whose upper-cased paths match
+// one of the patterns, as FAT names are case-insensitive. path.Match's * does not cross "/".
+func ListESP(ctx context.Context, fat string, patterns ...string) ([]string, error) {
+	out, err := Mtools(ctx, "mdir", "-/", "-b", "-i", fat, "::/EFI")
 	if err != nil {
 		return nil, err
 	}
 	var found []string
 	for _, line := range strings.Split(out, "\n") {
 		line = strings.TrimSpace(line)
-		if ok, _ := path.Match(pattern, strings.ToUpper(path.Base(line))); ok {
+		if slices.ContainsFunc(patterns, func(p string) bool { ok, _ := path.Match(p, strings.ToUpper(line)); return ok }) {
 			found = append(found, line)
 		}
 	}
@@ -98,7 +103,7 @@ func list(ctx context.Context, raw string, espOffset int64, espDir, pattern stri
 // copyOut copies a file of the ESP into dir.
 func copyOut(ctx context.Context, raw string, espOffset int64, file, dir string) (string, error) {
 	dst := filepath.Join(dir, path.Base(file))
-	if _, err := Mtools(ctx, "mcopy", "-n", "-i", fmt.Sprintf("%s@@%d", raw, espOffset), file, dst); err != nil {
+	if _, err := Mtools(ctx, "mcopy", "-n", "-i", FAT(raw, espOffset), file, dst); err != nil {
 		return "", err
 	}
 	return dst, nil

@@ -7,9 +7,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"path"
 	"path/filepath"
-	"strings"
 
 	"github.com/trevex/chalkos/pkg/image"
 )
@@ -20,8 +18,9 @@ import (
 // The image's verity-protected store is untouched; the UKI's signature covers the store
 // because the UKI command line carries the store's verity root hash.
 func SignImage(ctx context.Context, raw string, espOffset int64, key, cert string) error {
-	fat := fmt.Sprintf("%s@@%d", raw, espOffset)
-	files, err := listSignedBinaries(ctx, fat)
+	fat := image.FAT(raw, espOffset)
+	// Only direct children match.
+	files, err := image.ListESP(ctx, fat, "::/EFI/BOOT/BOOT*.EFI", "::/EFI/LINUX/*.EFI")
 	if err != nil {
 		return err
 	}
@@ -48,28 +47,6 @@ func SignImage(ctx context.Context, raw string, espOffset int64, key, cert strin
 		}
 	}
 	return nil
-}
-
-// signedPatterns are matched against upper-cased paths because FAT names are
-// case-insensitive. path.Match's * does not cross "/", so only direct children match.
-var signedPatterns = []string{"::/EFI/BOOT/BOOT*.EFI", "::/EFI/LINUX/*.EFI"}
-
-func listSignedBinaries(ctx context.Context, fat string) ([]string, error) {
-	out, err := image.Mtools(ctx, "mdir", "-/", "-b", "-i", fat, "::/EFI")
-	if err != nil {
-		return nil, err
-	}
-	var files []string
-	for _, line := range strings.Split(out, "\n") {
-		line = strings.TrimSpace(line)
-		for _, p := range signedPatterns {
-			if ok, _ := path.Match(p, strings.ToUpper(line)); ok {
-				files = append(files, line)
-				break
-			}
-		}
-	}
-	return files, nil
 }
 
 // signFile signs an EFI binary in place with sbsign.
