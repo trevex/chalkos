@@ -9,7 +9,7 @@ import (
 // the partition types, which the image derives too, and the disks' seeds installed nodes hold.
 func UUIDOf(input string) string {
 	sum := sha256.Sum256([]byte(input))
-	h := hex.EncodeToString(sum[:])
+	h := hex.EncodeToString(sum[:16])
 	return h[0:8] + "-" + h[8:12] + "-" + h[12:16] + "-" + h[16:20] + "-" + h[20:32]
 }
 

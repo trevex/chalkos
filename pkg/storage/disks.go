@@ -138,30 +138,16 @@ func (h Host) Disks() ([]BlockDisk, error) {
 
 func (h Host) disk(name string) (BlockDisk, error) {
 	dir := filepath.Join(h.SysRoot, "block", name)
-	devnum, err := readTrimmed(filepath.Join(dir, "dev"))
+	size, props, err := h.readBlock(dir)
 	if err != nil {
-		return BlockDisk{}, err
+		return BlockDisk{}, fmt.Errorf("disk %s: %w", name, err)
 	}
-	sectors, err := readTrimmed(filepath.Join(dir, "size"))
-	if err != nil {
-		return BlockDisk{}, err
-	}
-	n, err := strconv.ParseUint(sectors, 10, 64)
-	if err != nil {
-		return BlockDisk{}, fmt.Errorf("size: %w", err)
-	}
-	props, err := readUdevProperties(filepath.Join(h.UdevRoot, "b"+devnum))
-	if err != nil {
-		return BlockDisk{}, err
-	}
-
 	id := Identity{
 		WWN:    props["ID_WWN"],
 		Serial: props["ID_SERIAL_SHORT"],
 		Model:  strings.ReplaceAll(props["ID_MODEL"], "_", " "),
 		Path:   props["ID_PATH"],
-		// sysfs counts 512-byte sectors regardless of the disk's block size.
-		Size: n * 512,
+		Size:   size,
 	}
 	if id.Serial == "" {
 		id.Serial = props["ID_SERIAL"]

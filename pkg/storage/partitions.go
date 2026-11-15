@@ -58,27 +58,34 @@ func (h Host) Partitions(disk BlockDisk) ([]Partition, error) {
 	return parts, nil
 }
 
-func (h Host) partition(dir, name string) (Partition, error) {
+// readBlock reads the size in bytes of the block device whose sysfs directory is dir, and its
+// properties in the udev database. sysfs counts 512-byte sectors whatever the block size.
+func (h Host) readBlock(dir string) (uint64, map[string]string, error) {
 	devnum, err := readTrimmed(filepath.Join(dir, "dev"))
 	if err != nil {
-		return Partition{}, err
+		return 0, nil, err
 	}
 	sectors, err := readTrimmed(filepath.Join(dir, "size"))
 	if err != nil {
-		return Partition{}, err
+		return 0, nil, err
 	}
 	n, err := strconv.ParseUint(sectors, 10, 64)
 	if err != nil {
-		return Partition{}, fmt.Errorf("partition %s size: %w", name, err)
+		return 0, nil, fmt.Errorf("size: %w", err)
 	}
 	props, err := readUdevProperties(filepath.Join(h.UdevRoot, "b"+devnum))
+	return n * 512, props, err
+}
+
+func (h Host) partition(dir, name string) (Partition, error) {
+	size, props, err := h.readBlock(dir)
 	if err != nil {
-		return Partition{}, err
+		return Partition{}, fmt.Errorf("partition %s: %w", name, err)
 	}
 	return Partition{
 		Name:    name,
 		Device:  "/dev/" + name,
-		Size:    n * 512,
+		Size:    size,
 		Type:    strings.ToLower(props["ID_PART_ENTRY_TYPE"]),
 		Label:   props["ID_PART_ENTRY_NAME"],
 		UUID:    strings.ToLower(props["ID_PART_ENTRY_UUID"]),

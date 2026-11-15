@@ -7,6 +7,7 @@ buildGoProgram {
     ../../pkg/atomicfile
     ../../pkg/internal/poll
     ../../pkg/internal/strs
+    ../../pkg/jsonfile
     ../../pkg/storage
     ../../pkg/tool
   ];

@@ -66,7 +66,7 @@ func (s *Storage) Generate(cryptsetup string) (Units, error) {
 			if err := units.add(name, cryptUnit, "cryptsetup.target", cryptsetupUnit(name, dev, cryptsetup, section.Fallback != storage.FallbackNone)); err != nil {
 				return units, err
 			}
-			source = "/dev/mapper/" + name
+			source = hostops.Mapper(name)
 		}
 		switch {
 		case v.Format == "swap":

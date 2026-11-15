@@ -2,12 +2,9 @@ package storage
 
 import (
 	"encoding/json"
-	"errors"
-	"fmt"
-	"io/fs"
-	"os"
 
 	"github.com/trevex/chalkos/pkg/atomicfile"
+	"github.com/trevex/chalkos/pkg/jsonfile"
 )
 
 // Pins is /state/storage/disks.json: for each disk name, the physical disk its reference
@@ -25,19 +22,11 @@ type Pin struct {
 	Partitions map[string]string `json:"partitions"`
 }
 
-// ReadPins reads disks.json; a missing file yields empty pins. Unknown fields are ignored, so an
-// older image boots with pins a newer one wrote.
+// ReadPins reads disks.json; a missing file yields empty pins.
 func ReadPins(path string) (Pins, error) {
-	data, err := os.ReadFile(path)
-	if errors.Is(err, fs.ErrNotExist) {
-		return Pins{Disks: map[string]Pin{}}, nil
-	}
-	if err != nil {
-		return Pins{}, err
-	}
 	var p Pins
-	if err := json.Unmarshal(data, &p); err != nil {
-		return Pins{}, fmt.Errorf("parse %s: %w", path, err)
+	if err := jsonfile.Read(path, &p); err != nil {
+		return Pins{}, err
 	}
 	if p.Disks == nil {
 		p.Disks = map[string]Pin{}
