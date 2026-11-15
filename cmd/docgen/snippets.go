@@ -38,37 +38,31 @@ func checkYAML(dir, schemasDir string) error {
 		group, _, _ := strings.Cut(k.APIVersion, "/")
 		groups[group] = true
 	}
-	files, err := markdownFiles(dir)
+	var problems []string
+	err = eachBlock(dir, []string{"yaml", "yml"}, func(path string, b codeBlock) error {
+		lines, source, err := expandSections(b.lines)
+		if err != nil {
+			problems = append(problems, problem(path, b.first, err))
+			return nil
+		}
+		docs, line, err := blockDocuments(lines)
+		if err != nil {
+			problems = append(problems, problem(path, b.first+sourceLine(source, line)-1, err))
+			return nil
+		}
+		for _, d := range docs {
+			group, _, _ := strings.Cut(d.doc.APIVersion, "/")
+			if group != "chalkos.dev" && !strings.HasSuffix(group, ".chalkos.dev") && !groups[group] {
+				continue
+			}
+			if err := schemas.Validate(d.doc.Object); err != nil {
+				problems = append(problems, problem(path, b.first+sourceLine(source, d.line)-1, err))
+			}
+		}
+		return nil
+	})
 	if err != nil {
 		return err
-	}
-	var problems []string
-	for _, path := range files {
-		blocks, err := codeBlocks(path, "yaml", "yml")
-		if err != nil {
-			return err
-		}
-		for _, b := range blocks {
-			lines, source, err := expandSections(b.lines)
-			if err != nil {
-				problems = append(problems, problem(path, b.first, err))
-				continue
-			}
-			docs, line, err := blockDocuments(lines)
-			if err != nil {
-				problems = append(problems, problem(path, b.first+sourceLine(source, line)-1, err))
-				continue
-			}
-			for _, d := range docs {
-				group, _, _ := strings.Cut(d.doc.APIVersion, "/")
-				if group != "chalkos.dev" && !strings.HasSuffix(group, ".chalkos.dev") && !groups[group] {
-					continue
-				}
-				if err := schemas.Validate(d.doc.Object); err != nil {
-					problems = append(problems, problem(path, b.first+sourceLine(source, d.line)-1, err))
-				}
-			}
-		}
 	}
 	if len(problems) > 0 {
 		return errors.New("config documents in the documentation that the schemas refuse:\n" + strings.Join(problems, "\n"))
@@ -136,30 +130,20 @@ func writeNix(dir, outDir string) error {
 	if err := os.MkdirAll(outDir, 0o755); err != nil {
 		return err
 	}
-	files, err := markdownFiles(dir)
-	if err != nil {
-		return err
-	}
-	for _, path := range files {
-		blocks, err := codeBlocks(path, "nix")
-		if err != nil {
+	return eachBlock(dir, []string{"nix"}, func(path string, b codeBlock) error {
+		if snippetsOnly(b.lines) {
+			return nil
+		}
+		kind := ".fragment"
+		if strings.HasSuffix(b.title, ".nix") {
+			kind = ""
+		}
+		name := fmt.Sprintf("%s_%d%s.nix", strings.ReplaceAll(filepath.ToSlash(path), "/", "_"), b.first, kind)
+		if err := os.WriteFile(filepath.Join(outDir, name), []byte(strings.Join(b.lines, "\n")+"\n"), 0o644); err != nil {
 			return err
 		}
-		for _, b := range blocks {
-			if snippetsOnly(b.lines) {
-				continue
-			}
-			kind := ".fragment"
-			if strings.HasSuffix(b.title, ".nix") {
-				kind = ""
-			}
-			name := fmt.Sprintf("%s_%d%s.nix", strings.ReplaceAll(filepath.ToSlash(path), "/", "_"), b.first, kind)
-			if err := os.WriteFile(filepath.Join(outDir, name), []byte(strings.Join(b.lines, "\n")+"\n"), 0o644); err != nil {
-				return err
-			}
-		}
-	}
-	return nil
+		return nil
+	})
 }
 
 // snippetInclude matches a line of pymdownx.snippets that includes a file or a section of one.

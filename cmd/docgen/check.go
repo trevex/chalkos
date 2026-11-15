@@ -19,48 +19,22 @@ var shellLanguages = []string{"", "sh", "bash", "shell", "zsh", "console", "shel
 // one that runs a command or passes a flag the programs do not have. newRoots returns fresh
 // command trees, as parsing changes a tree's flags.
 func check(newRoots func() []*cobra.Command, dir string) error {
-	files, err := markdownFiles(dir)
-	if err != nil {
-		return err
-	}
 	var problems []string
-	for _, path := range files {
-		blocks, err := shellBlocks(path)
-		if err != nil {
-			return err
-		}
-		for _, b := range blocks {
-			for _, inv := range invocations(b) {
-				if err := checkInvocation(newRoots(), inv.args); err != nil {
-					problems = append(problems, fmt.Sprintf("%s:%d: %s: %v", path, inv.line, strings.Join(inv.args, " "), err))
-				}
+	err := eachBlock(dir, shellLanguages, func(path string, b codeBlock) error {
+		for _, inv := range invocations(b) {
+			if err := checkInvocation(newRoots(), inv.args); err != nil {
+				problems = append(problems, fmt.Sprintf("%s:%d: %s: %v", path, inv.line, strings.Join(inv.args, " "), err))
 			}
 		}
+		return nil
+	})
+	if err != nil {
+		return err
 	}
 	if len(problems) > 0 {
 		return errors.New("commands in the documentation that chalkctl, chalklab, chalkbuild and chalkcfg do not have:\n" + strings.Join(problems, "\n"))
 	}
 	return nil
-}
-
-// block is a shell code block: its lines and the line number of the first one.
-type block struct {
-	first   int
-	console bool
-	lines   []string
-}
-
-// shellBlocks returns the shell code blocks of a Markdown file.
-func shellBlocks(path string) ([]block, error) {
-	cbs, err := codeBlocks(path, shellLanguages...)
-	if err != nil {
-		return nil, err
-	}
-	blocks := make([]block, len(cbs))
-	for i, b := range cbs {
-		blocks[i] = block{first: b.first, console: b.lang == "console" || b.lang == "shell-session", lines: b.lines}
-	}
-	return blocks, nil
 }
 
 // invocation is a command line that runs chalkctl, chalklab, chalkbuild or chalkcfg: the program
@@ -76,7 +50,8 @@ var programNames = []string{"chalkctl", "chalklab", "chalkbuild", "chalkcfg"}
 // invocations returns the chalkctl, chalklab, chalkbuild and chalkcfg command lines of a block.
 // Lines continued with a backslash are joined, and a $ prompt is dropped; in a console block, only
 // lines with a $ prompt are commands, and the lines they continue on may start with a > prompt.
-func invocations(b block) []invocation {
+func invocations(b codeBlock) []invocation {
+	console := b.lang == "console" || b.lang == "shell-session"
 	var invs []invocation
 	for i := 0; i < len(b.lines); i++ {
 		start := b.first + i
@@ -84,12 +59,12 @@ func invocations(b block) []invocation {
 		for strings.HasSuffix(line, "\\") && i+1 < len(b.lines) {
 			i++
 			next := strings.TrimSpace(b.lines[i])
-			if b.console {
+			if console {
 				next = strings.TrimPrefix(next, "> ")
 			}
 			line = strings.TrimSuffix(line, "\\") + " " + next
 		}
-		if b.console {
+		if console {
 			rest, ok := strings.CutPrefix(line, "$ ")
 			if !ok {
 				continue
@@ -197,8 +172,6 @@ func checkInvocation(roots []*cobra.Command, args []string) error {
 	if root == nil {
 		return fmt.Errorf("no program %s", args[0])
 	}
-	root.InitDefaultHelpCmd()
-	root.InitDefaultCompletionCmd()
 	cmd, rest, err := root.Find(args[1:])
 	if err != nil {
 		return err

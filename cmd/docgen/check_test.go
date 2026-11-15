@@ -53,7 +53,7 @@ func TestCheck(t *testing.T) {
 
 // The good page's commands are all found, so the check passing them means they were checked.
 func TestInvocationsOfTheGoodPage(t *testing.T) {
-	blocks, err := shellBlocks("testdata/docs/index.md")
+	blocks, err := codeBlocks("testdata/docs/index.md", shellLanguages...)
 	if err != nil {
 		t.Fatal(err)
 	}

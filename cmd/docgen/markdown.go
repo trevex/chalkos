@@ -29,6 +29,26 @@ func markdownFiles(dir string) ([]string, error) {
 	return files, err
 }
 
+// eachBlock calls f on each code block of a language of langs in the Markdown files under dir.
+func eachBlock(dir string, langs []string, f func(path string, b codeBlock) error) error {
+	files, err := markdownFiles(dir)
+	if err != nil {
+		return err
+	}
+	for _, path := range files {
+		blocks, err := codeBlocks(path, langs...)
+		if err != nil {
+			return err
+		}
+		for _, b := range blocks {
+			if err := f(path, b); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
 // fence opens or closes a code block, also indented in a list, an admonition or a tab, and
 // holds its info string. The info string of a fence of backticks has no backticks.
 var fence = regexp.MustCompile("^\\s*(```+|~~~+)(.*)$")
