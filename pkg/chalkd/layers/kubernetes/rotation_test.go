@@ -26,6 +26,7 @@ import (
 	kubernetesv1 "github.com/trevex/chalkos/pkg/api/kubernetes/v1"
 	"github.com/trevex/chalkos/pkg/chalkd/layer"
 	"github.com/trevex/chalkos/pkg/chalkd/layers/kubernetes/kubernetestest"
+	"github.com/trevex/chalkos/pkg/internal/testwait"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
 	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
 )
@@ -147,65 +148,68 @@ func TestListTokenSecrets(t *testing.T) {
 // TestRestartAddons checks that the workloads of the cluster's manifests restart once
 // kube-root-ca.crt holds every Kubernetes CA, and that the step waits until they rolled out.
 func TestRestartAddons(t *testing.T) {
-	s, _, _ := memberNode(t)
-	share, err := s.k.state.ReadShare()
-	if err != nil {
-		t.Fatal(err)
-	}
-	s.k.hooks.Objects = objectsOf(t, `[
-	  {"apiVersion": "v1", "kind": "ConfigMap", "metadata": {"name": "coredns", "namespace": "kube-system"}},
-	  {"apiVersion": "apps/v1", "kind": "Deployment", "metadata": {"name": "coredns", "namespace": "kube-system"}},
-	  {"apiVersion": "apps/v1", "kind": "DaemonSet", "metadata": {"name": "kube-flannel-ds", "namespace": "kube-flannel"}}
-	]`)
-	two := int32(2)
-	other := secretsCA(t)
-	client := withAPI(s,
-		&corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Namespace: "kube-system", Name: "kube-root-ca.crt"}, Data: map[string]string{"ca.crt": share.CABundle()}},
-		&corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Namespace: "kube-flannel", Name: "kube-root-ca.crt"}, Data: map[string]string{"ca.crt": other}},
-		&appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Namespace: "kube-system", Name: "coredns"}, Spec: appsv1.DeploymentSpec{Replicas: &two},
-			Status: appsv1.DeploymentStatus{Replicas: 2, UpdatedReplicas: 2, AvailableReplicas: 2}},
-		&appsv1.DaemonSet{ObjectMeta: metav1.ObjectMeta{Namespace: "kube-flannel", Name: "kube-flannel-ds"},
-			Status: appsv1.DaemonSetStatus{DesiredNumberScheduled: 2, UpdatedNumberScheduled: 1, NumberAvailable: 2}},
-	)
-	ctx := context.Background()
+	testwait.Bubble(t, func(t *testing.T) {
+		s, _ := kubernetesNode(t, k8s.KindControlPlane, true)
+		write(t, s.k.state.BootstrappedMarker(), "")
+		share, err := s.k.state.ReadShare()
+		if err != nil {
+			t.Fatal(err)
+		}
+		s.k.hooks.Objects = objectsOf(t, `[
+		  {"apiVersion": "v1", "kind": "ConfigMap", "metadata": {"name": "coredns", "namespace": "kube-system"}},
+		  {"apiVersion": "apps/v1", "kind": "Deployment", "metadata": {"name": "coredns", "namespace": "kube-system"}},
+		  {"apiVersion": "apps/v1", "kind": "DaemonSet", "metadata": {"name": "kube-flannel-ds", "namespace": "kube-flannel"}}
+		]`)
+		two := int32(2)
+		other := secretsCA(t)
+		client := withAPI(s,
+			&corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Namespace: "kube-system", Name: "kube-root-ca.crt"}, Data: map[string]string{"ca.crt": share.CABundle()}},
+			&corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Namespace: "kube-flannel", Name: "kube-root-ca.crt"}, Data: map[string]string{"ca.crt": other}},
+			&appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Namespace: "kube-system", Name: "coredns"}, Spec: appsv1.DeploymentSpec{Replicas: &two},
+				Status: appsv1.DeploymentStatus{Replicas: 2, UpdatedReplicas: 2, AvailableReplicas: 2}},
+			&appsv1.DaemonSet{ObjectMeta: metav1.ObjectMeta{Namespace: "kube-flannel", Name: "kube-flannel-ds"},
+				Status: appsv1.DaemonSetStatus{DesiredNumberScheduled: 2, UpdatedNumberScheduled: 1, NumberAvailable: 2}},
+		)
+		ctx := context.Background()
 
-	// kube-flannel's kube-root-ca.crt holds another CA: nothing restarts.
-	short, cancel := context.WithTimeout(ctx, 200*time.Millisecond)
-	defer cancel()
-	if _, err := rotationStep(short, s, kubernetesv1.RotationStep_ROTATION_STEP_RESTART_ADDONS); err == nil || !strings.Contains(err.Error(), "kube-root-ca.crt of kube-flannel") {
-		t.Fatalf("err = %v, want a wait for kube-flannel's kube-root-ca.crt", err)
-	}
-	if d, _ := client.AppsV1().Deployments("kube-system").Get(ctx, "coredns", metav1.GetOptions{}); d.Spec.Template.Annotations[restartedAnnotation] != "" {
-		t.Error("coredns restarted before every namespace trusted the CAs")
-	}
+		// kube-flannel's kube-root-ca.crt holds another CA: nothing restarts.
+		short, cancel := context.WithTimeout(ctx, 200*time.Millisecond)
+		defer cancel()
+		if _, err := rotationStep(short, s, kubernetesv1.RotationStep_ROTATION_STEP_RESTART_ADDONS); err == nil || !strings.Contains(err.Error(), "kube-root-ca.crt of kube-flannel") {
+			t.Fatalf("err = %v, want a wait for kube-flannel's kube-root-ca.crt", err)
+		}
+		if d, _ := client.AppsV1().Deployments("kube-system").Get(ctx, "coredns", metav1.GetOptions{}); d.Spec.Template.Annotations[restartedAnnotation] != "" {
+			t.Error("coredns restarted before every namespace trusted the CAs")
+		}
 
-	// Once it holds the CAs, the workloads restart, and the step waits for flannel's rollout.
-	cm, _ := client.CoreV1().ConfigMaps("kube-flannel").Get(ctx, "kube-root-ca.crt", metav1.GetOptions{})
-	cm.Data["ca.crt"] = share.CABundle()
-	if _, err := client.CoreV1().ConfigMaps("kube-flannel").Update(ctx, cm, metav1.UpdateOptions{}); err != nil {
-		t.Fatal(err)
-	}
-	go func() {
-		time.Sleep(100 * time.Millisecond)
+		// Once it holds the CAs, the workloads restart, and the step waits for flannel's rollout.
+		cm, _ := client.CoreV1().ConfigMaps("kube-flannel").Get(ctx, "kube-root-ca.crt", metav1.GetOptions{})
+		cm.Data["ca.crt"] = share.CABundle()
+		if _, err := client.CoreV1().ConfigMaps("kube-flannel").Update(ctx, cm, metav1.UpdateOptions{}); err != nil {
+			t.Fatal(err)
+		}
+		go func() {
+			time.Sleep(100 * time.Millisecond)
+			ds, _ := client.AppsV1().DaemonSets("kube-flannel").Get(ctx, "kube-flannel-ds", metav1.GetOptions{})
+			ds.Status.UpdatedNumberScheduled = 2
+			client.AppsV1().DaemonSets("kube-flannel").UpdateStatus(ctx, ds, metav1.UpdateOptions{})
+		}()
+		resp, err := rotationStep(ctx, s, kubernetesv1.RotationStep_ROTATION_STEP_RESTART_ADDONS)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !slices.Equal(resp.Restarted, []string{"kube-system/Deployment/coredns", "kube-flannel/DaemonSet/kube-flannel-ds"}) {
+			t.Errorf("restarted %v", resp.Restarted)
+		}
+		d, _ := client.AppsV1().Deployments("kube-system").Get(ctx, "coredns", metav1.GetOptions{})
 		ds, _ := client.AppsV1().DaemonSets("kube-flannel").Get(ctx, "kube-flannel-ds", metav1.GetOptions{})
-		ds.Status.UpdatedNumberScheduled = 2
-		client.AppsV1().DaemonSets("kube-flannel").UpdateStatus(ctx, ds, metav1.UpdateOptions{})
-	}()
-	resp, err := rotationStep(ctx, s, kubernetesv1.RotationStep_ROTATION_STEP_RESTART_ADDONS)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !slices.Equal(resp.Restarted, []string{"kube-system/Deployment/coredns", "kube-flannel/DaemonSet/kube-flannel-ds"}) {
-		t.Errorf("restarted %v", resp.Restarted)
-	}
-	d, _ := client.AppsV1().Deployments("kube-system").Get(ctx, "coredns", metav1.GetOptions{})
-	ds, _ := client.AppsV1().DaemonSets("kube-flannel").Get(ctx, "kube-flannel-ds", metav1.GetOptions{})
-	if d.Spec.Template.Annotations[restartedAnnotation] == "" || ds.Spec.Template.Annotations[restartedAnnotation] == "" {
-		t.Error("a workload's pod template was not changed")
-	}
-	if ds.Status.UpdatedNumberScheduled != 2 {
-		t.Error("the step ended before flannel rolled out")
-	}
+		if d.Spec.Template.Annotations[restartedAnnotation] == "" || ds.Spec.Template.Annotations[restartedAnnotation] == "" {
+			t.Error("a workload's pod template was not changed")
+		}
+		if ds.Status.UpdatedNumberScheduled != 2 {
+			t.Error("the step ended before flannel rolled out")
+		}
+	})
 }
 
 // secretsCA is the certificate of a CA of other secrets.
