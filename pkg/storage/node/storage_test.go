@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -45,28 +46,45 @@ const (
 	dataUUID   = "d506b831-fde9-4335-b2be-9710f18219a6"
 )
 
-// writeStorage records a section with VAR on the system disk and a volume on a disk selected
-// by its serial.
+// writeStorage records the testSection with the fallback.
 func writeStorage(t *testing.T, b *Storage, fallback string) {
 	t.Helper()
-	section := `{
-	  "disks": {
-	    "system": {"ref": "/dev/vda", "seed": "` + systemSeed + `", "repart": {"50-var.conf": "[Partition]\nLabel=var\n"}},
-	    "data": {"ref": {"serial": "chalk-data"}, "seed": "` + dataSeed + `", "repart": {"10-data.conf": "[Partition]\nLabel=data\n"}}
-	  },
-	  "volumes": {
-	    "var": {"disk": "system", "label": "var", "format": "ext4", "mountPoint": "/var", "encryption": "tpm2", "size": null},
-	    "data": {"disk": "data", "label": "data", "format": "xfs", "mountPoint": "/var/lib/data", "encryption": "tpm2", "size": null}
-	  },
-	  "fallback": "` + fallback + `"
-	}`
-	path := filepath.Join(b.StateDir, "storage", "storage.json")
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	testSection(t, b, func(s *storage.Section) { s.Fallback = fallback })
+}
+
+// testSection records a section with VAR on the system disk and a volume on a disk selected by
+// its serial, as edit changes it.
+func testSection(t *testing.T, b *Storage, edit func(s *storage.Section)) {
+	t.Helper()
+	s := storage.Section{
+		Disks: map[string]storage.Disk{
+			"system": {Ref: storage.Ref{Path: "/dev/vda"}, Seed: systemSeed, Repart: map[string]string{"50-var.conf": "[Partition]\nLabel=var\n"}},
+			"data":   {Ref: storage.Ref{Selector: storage.Selector{Serial: "chalk-data"}}, Seed: dataSeed, Repart: map[string]string{"10-data.conf": "[Partition]\nLabel=data\n"}},
+		},
+		Volumes: map[string]storage.Volume{
+			"var":  {Disk: "system", Label: "var", Format: "ext4", MountPoint: "/var", Encryption: "tpm2"},
+			"data": {Disk: "data", Label: "data", Format: "xfs", MountPoint: "/var/lib/data", Encryption: "tpm2"},
+		},
+		Fallback: "recovery-key",
+	}
+	edit(&s)
+	data, err := json.Marshal(s)
+	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(path, []byte(section), 0o600); err != nil {
-		t.Fatal(err)
-	}
+	writeSection(t, b, string(data))
+}
+
+// ranRepartOn reports whether calls ran systemd-repart on dev.
+func ranRepartOn(calls []string, dev string) bool {
+	return slices.ContainsFunc(calls, func(c string) bool { return strings.HasPrefix(c, "systemd-repart") && strings.HasSuffix(c, " "+dev) })
+}
+
+// editDisk changes the disk of the name in s.
+func editDisk(s *storage.Section, name string, edit func(d *storage.Disk)) {
+	d := s.Disks[name]
+	edit(&d)
+	s.Disks[name] = d
 }
 
 func repartRow(file, uuid string) string {
@@ -171,7 +189,7 @@ func TestSetUpFirstBoot(t *testing.T) {
 		"mount -t ext4 /dev/mapper/var " + b.VarDir,
 		"systemd-growfs " + b.VarDir,
 	})
-	pins, err := storage.ReadPins(filepath.Join(b.StorageDir(), "disks.json"))
+	pins, err := storage.ReadPins(b.PinsFile())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -213,7 +231,7 @@ func TestSetUpUsesPinnedDisks(t *testing.T) {
 	if err := b.SetUp(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	if !contains(r.Calls, "systemd-repart --dry-run=no --json=short --definitions="+b.StorageDir()+"/disks/data --seed="+dataSeed+" --empty=allow /dev/vdb") {
+	if !slices.Contains(r.Calls, "systemd-repart --dry-run=no --json=short --definitions="+b.StorageDir()+"/disks/data --seed="+dataSeed+" --empty=allow /dev/vdb") {
 		t.Errorf("the pinned data disk was not set up: %v", r.Calls)
 	}
 	for _, call := range r.Calls {
@@ -229,17 +247,9 @@ func TestSetUpRefusesUnidentifiableDisk(t *testing.T) {
 	anonymous.Props = map[string]string{"ID_MODEL": "QEMU_HARDDISK"}
 	b := newTestBoot(t, r, bootDisk, anonymous)
 	r.Rules = firstBootRules(b)
-	writeSection(t, b, `{
-	  "disks": {
-	    "system": {"ref": "/dev/vda", "seed": "`+systemSeed+`", "repart": {"50-var.conf": "[Partition]\nLabel=var\n"}},
-	    "data": {"ref": "/dev/vdb", "seed": "`+dataSeed+`", "repart": {"10-data.conf": "[Partition]\nLabel=data\n"}}
-	  },
-	  "volumes": {
-	    "var": {"disk": "system", "label": "var", "format": "ext4", "mountPoint": "/var", "encryption": "tpm2", "size": null},
-	    "data": {"disk": "data", "label": "data", "format": "xfs", "mountPoint": "/var/lib/data", "encryption": "tpm2", "size": null}
-	  },
-	  "fallback": "recovery-key"
-	}`)
+	testSection(t, b, func(s *storage.Section) {
+		editDisk(s, "data", func(d *storage.Disk) { d.Ref = storage.Ref{Path: "/dev/vdb"} })
+	})
 
 	if err := b.SetUp(context.Background()); err != nil {
 		t.Fatal(err)
@@ -249,7 +259,7 @@ func TestSetUpRefusesUnidentifiableDisk(t *testing.T) {
 			t.Errorf("touched a disk that cannot be recognised again: %s", call)
 		}
 	}
-	pins, err := storage.ReadPins(filepath.Join(b.StorageDir(), "disks.json"))
+	pins, err := storage.ReadPins(b.PinsFile())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -277,7 +287,7 @@ func TestSetUpRefusesUnidentifiableBootDisk(t *testing.T) {
 			t.Errorf("set up VAR on a disk that cannot be recognised again: %s", call)
 		}
 	}
-	pins, err := storage.ReadPins(filepath.Join(b.StorageDir(), "disks.json"))
+	pins, err := storage.ReadPins(b.PinsFile())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -303,7 +313,7 @@ func TestSetUpWaitsForUdevBeforeResolving(t *testing.T) {
 			t.Errorf("resolved a reference before udev settled: %s", call)
 		}
 	}
-	if !contains(r.Calls, "mount -t ext4 /dev/mapper/var "+b.VarDir) {
+	if !slices.Contains(r.Calls, "mount -t ext4 /dev/mapper/var "+b.VarDir) {
 		t.Errorf("VAR not mounted: %v", r.Calls)
 	}
 	if s := readStatus(t, b); !strings.Contains(s.Disks["data"].Error, "udev") {
@@ -331,7 +341,7 @@ func TestSetUpPinnedDiskMissing(t *testing.T) {
 			t.Errorf("ran repart for the missing disk: %s", call)
 		}
 	}
-	if !contains(r.Calls, "mount -t ext4 /dev/mapper/var "+b.VarDir) {
+	if !slices.Contains(r.Calls, "mount -t ext4 /dev/mapper/var "+b.VarDir) {
 		t.Errorf("VAR not mounted: %v", r.Calls)
 	}
 	if s := readStatus(t, b); !strings.Contains(s.Disks["data"].Error, `pinned disk model "", size 2G, serial "chalk-data" is missing`) {
@@ -376,7 +386,7 @@ func TestSetUpRefusesDiskWithData(t *testing.T) {
 			t.Errorf("touched a disk with a file system: %s", call)
 		}
 	}
-	pins, err := storage.ReadPins(filepath.Join(b.StorageDir(), "disks.json"))
+	pins, err := storage.ReadPins(b.PinsFile())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -424,25 +434,16 @@ func TestSetUpChecksNewDiskIsUnused(t *testing.T) {
 			r := &tooltest.Runner{}
 			b := newTestBoot(t, r, bootDisk, dataDisk)
 			r.Rules = append(c.rules, firstBootRules(b)...)
-			writeSection(t, b, `{
-			  "disks": {
-			    "system": {"ref": "/dev/vda", "seed": "`+systemSeed+`", "repart": {"50-var.conf": "[Partition]\nLabel=var\n"}},
-			    "data": {"ref": {"serial": "chalk-data"}, "seed": "`+dataSeed+`", "repart": {"10-data.conf": "[Partition]\nType=`+dataType+`\nLabel=data\n"}}
-			  },
-			  "volumes": {
-			    "var": {"disk": "system", "label": "var", "format": "ext4", "mountPoint": "/var", "encryption": "tpm2", "size": null},
-			    "data": {"disk": "data", "label": "data", "format": "xfs", "mountPoint": "/var/lib/data", "encryption": "tpm2", "size": null}
-			  },
-			  "fallback": "recovery-key"
-			}`)
+			testSection(t, b, func(s *storage.Section) {
+				editDisk(s, "data", func(d *storage.Disk) {
+					d.Repart = map[string]string{"10-data.conf": "[Partition]\nType=" + dataType + "\nLabel=data\n"}
+				})
+			})
 
 			if err := b.SetUp(context.Background()); err != nil {
 				t.Fatal(err)
 			}
-			repartRan := false
-			for _, call := range r.Calls {
-				repartRan = repartRan || strings.HasPrefix(call, "systemd-repart") && strings.HasSuffix(call, " /dev/vdb")
-			}
+			repartRan := ranRepartOn(r.Calls, "/dev/vdb")
 			status := readStatus(t, b).Disks["data"]
 			if c.refusal == "" {
 				if !repartRan || status.Error != "" {
@@ -503,16 +504,16 @@ func TestSetUpMountsUnencryptedVar(t *testing.T) {
 	r := &tooltest.Runner{}
 	b := newTestBoot(t, r, bootDisk)
 	r.Rules = append([]tooltest.Rule{{Prefix: "blkid -p -o value -s TYPE /dev/disk/chalk-boot/var", Out: "ext4\n"}}, firstBootRules(b)...)
-	writeSection(t, b, `{
-	  "disks": {"system": {"ref": "/dev/vda", "seed": "`+systemSeed+`", "repart": {"50-var.conf": "[Partition]\nLabel=var\n"}}},
-	  "volumes": {"var": {"disk": "system", "label": "var", "format": "ext4", "mountPoint": "/var", "encryption": "none", "size": null}},
-	  "fallback": "recovery-key"
-	}`)
+	testSection(t, b, func(s *storage.Section) {
+		delete(s.Disks, "data")
+		delete(s.Volumes, "data")
+		s.Volumes["var"] = storage.Volume{Disk: "system", Label: "var", Format: "ext4", MountPoint: "/var", Encryption: "none"}
+	})
 
 	if err := b.SetUp(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	if !contains(r.Calls, "mount -t ext4 /dev/disk/chalk-boot/var "+b.VarDir) {
+	if !slices.Contains(r.Calls, "mount -t ext4 /dev/disk/chalk-boot/var "+b.VarDir) {
 		t.Errorf("unencrypted VAR not mounted: %v", r.Calls)
 	}
 }
@@ -524,7 +525,7 @@ func TestSetUpWithoutFallbackDoesNotPrompt(t *testing.T) {
 	writeStorage(t, b, "none")
 
 	err := b.SetUp(context.Background())
-	if !contains(r.Calls, "systemd-cryptsetup attach var /dev/disk/chalk-boot/var - tpm2-device=auto,headless=true") {
+	if !slices.Contains(r.Calls, "systemd-cryptsetup attach var /dev/disk/chalk-boot/var - tpm2-device=auto,headless=true") {
 		t.Errorf("commands = %v, want a headless attach", r.Calls)
 	}
 	if err == nil || !strings.Contains(err.Error(), "the node must be reinstalled") {
@@ -557,19 +558,10 @@ func TestSetUpRefusesReferenceToPinnedDisk(t *testing.T) {
 	}
 
 	// A new disk, ordered before the pinned one, references the pinned data disk by its path.
-	writeSection(t, b, `{
-	  "disks": {
-	    "system": {"ref": "/dev/vda", "seed": "`+systemSeed+`", "repart": {"50-var.conf": "[Partition]\nLabel=var\n"}},
-	    "alpha": {"ref": "/dev/vdb", "seed": "`+dataSeed+`", "repart": {"10-alpha.conf": "[Partition]\nLabel=alpha\n"}},
-	    "data": {"ref": {"serial": "chalk-data"}, "seed": "`+dataSeed+`", "repart": {"10-data.conf": "[Partition]\nLabel=data\n"}}
-	  },
-	  "volumes": {
-	    "var": {"disk": "system", "label": "var", "format": "ext4", "mountPoint": "/var", "encryption": "tpm2", "size": null},
-	    "alpha": {"disk": "alpha", "label": "alpha", "format": "ext4", "mountPoint": "/srv/alpha", "encryption": "tpm2", "size": null},
-	    "data": {"disk": "data", "label": "data", "format": "xfs", "mountPoint": "/var/lib/data", "encryption": "tpm2", "size": null}
-	  },
-	  "fallback": "recovery-key"
-	}`)
+	testSection(t, b, func(s *storage.Section) {
+		s.Disks["alpha"] = storage.Disk{Ref: storage.Ref{Path: "/dev/vdb"}, Seed: dataSeed, Repart: map[string]string{"10-alpha.conf": "[Partition]\nLabel=alpha\n"}}
+		s.Volumes["alpha"] = storage.Volume{Disk: "alpha", Label: "alpha", Format: "ext4", MountPoint: "/srv/alpha", Encryption: "tpm2"}
+	})
 	r.Calls = nil
 	if err := b.SetUp(context.Background()); err != nil {
 		t.Fatal(err)
@@ -579,7 +571,7 @@ func TestSetUpRefusesReferenceToPinnedDisk(t *testing.T) {
 			t.Errorf("ran repart for a reference to a pinned disk: %s", call)
 		}
 	}
-	pins, err := storage.ReadPins(filepath.Join(b.StorageDir(), "disks.json"))
+	pins, err := storage.ReadPins(b.PinsFile())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -589,15 +581,6 @@ func TestSetUpRefusesReferenceToPinnedDisk(t *testing.T) {
 	if s := readStatus(t, b); !strings.Contains(s.Disks["alpha"].Error, "disk data already uses") {
 		t.Errorf("alpha status = %+v", s.Disks["alpha"])
 	}
-}
-
-func contains(list []string, s string) bool {
-	for _, item := range list {
-		if item == s {
-			return true
-		}
-	}
-	return false
 }
 
 func TestSetUpWithoutFallbackReportsOtherAttachFailures(t *testing.T) {
@@ -619,17 +602,7 @@ func TestSetUpRefusesEmptySeed(t *testing.T) {
 	r := &tooltest.Runner{}
 	b := newTestBoot(t, r, bootDisk, dataDisk)
 	r.Rules = firstBootRules(b)
-	writeSection(t, b, `{
-	  "disks": {
-	    "system": {"ref": "/dev/vda", "seed": "`+systemSeed+`", "repart": {"50-var.conf": "[Partition]\nLabel=var\n"}},
-	    "data": {"ref": {"serial": "chalk-data"}, "seed": "", "repart": {"10-data.conf": "[Partition]\nLabel=data\n"}}
-	  },
-	  "volumes": {
-	    "var": {"disk": "system", "label": "var", "format": "ext4", "mountPoint": "/var", "encryption": "tpm2", "size": null},
-	    "data": {"disk": "data", "label": "data", "format": "xfs", "mountPoint": "/var/lib/data", "encryption": "tpm2", "size": null}
-	  },
-	  "fallback": "recovery-key"
-	}`)
+	testSection(t, b, func(s *storage.Section) { editDisk(s, "data", func(d *storage.Disk) { d.Seed = "" }) })
 
 	if err := b.SetUp(context.Background()); err != nil {
 		t.Fatal(err)
@@ -661,10 +634,10 @@ func TestSetUpRefreshesPinThatGainedIdentifiers(t *testing.T) {
 	if err := b.SetUp(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	if !contains(r.Calls, "systemd-repart --dry-run=no --json=short --definitions="+b.StorageDir()+"/disks/data --seed="+dataSeed+" --empty=allow /dev/vdb") {
+	if !slices.Contains(r.Calls, "systemd-repart --dry-run=no --json=short --definitions="+b.StorageDir()+"/disks/data --seed="+dataSeed+" --empty=allow /dev/vdb") {
 		t.Errorf("the data disk was not found again: %v", r.Calls)
 	}
-	pins, err := storage.ReadPins(filepath.Join(b.StorageDir(), "disks.json"))
+	pins, err := storage.ReadPins(b.PinsFile())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -697,7 +670,7 @@ func TestOpenStateChecksFileSystem(t *testing.T) {
 			b := newTestBoot(t, r, bootDisk)
 
 			err := b.OpenState(context.Background())
-			mounted := contains(r.Calls, "mount -t ext4 /dev/mapper/state "+b.StateDir)
+			mounted := slices.Contains(r.Calls, "mount -t ext4 /dev/mapper/state "+b.StateDir)
 			if c.refusal == "" {
 				if err != nil || !mounted {
 					t.Errorf("err = %v, mounted = %v; want STATE mounted", err, mounted)
@@ -735,17 +708,12 @@ func TestSetUpChecksPinnedDiskIsUnchanged(t *testing.T) {
 			r := &tooltest.Runner{}
 			b := newTestBoot(t, r, bootDisk, portOnly)
 			r.Rules = firstBootRules(b)
-			writeSection(t, b, `{
-			  "disks": {
-			    "system": {"ref": "/dev/vda", "seed": "`+systemSeed+`", "repart": {"50-var.conf": "[Partition]\nLabel=var\n"}},
-			    "data": {"ref": "/dev/vdb", "seed": "`+dataSeed+`", "repart": {"10-data.conf": "[Partition]\nType=`+dataType+`\nLabel=data\n"}}
-			  },
-			  "volumes": {
-			    "var": {"disk": "system", "label": "var", "format": "ext4", "mountPoint": "/var", "encryption": "tpm2", "size": null},
-			    "data": {"disk": "data", "label": "data", "format": "xfs", "mountPoint": "/var/lib/data", "encryption": "tpm2", "size": null}
-			  },
-			  "fallback": "recovery-key"
-			}`)
+			testSection(t, b, func(s *storage.Section) {
+				editDisk(s, "data", func(d *storage.Disk) {
+					d.Ref = storage.Ref{Path: "/dev/vdb"}
+					d.Repart = map[string]string{"10-data.conf": "[Partition]\nType=" + dataType + "\nLabel=data\n"}
+				})
+			})
 			if err := b.SetUp(context.Background()); err != nil {
 				t.Fatal(err)
 			}
@@ -765,10 +733,7 @@ func TestSetUpChecksPinnedDiskIsUnchanged(t *testing.T) {
 				t.Fatalf("a pinned extra disk stopped the boot: %v", err)
 			}
 
-			repartRan := false
-			for _, call := range r.Calls {
-				repartRan = repartRan || strings.HasPrefix(call, "systemd-repart") && strings.HasSuffix(call, " /dev/vdb")
-			}
+			repartRan := ranRepartOn(r.Calls, "/dev/vdb")
 			status := readStatus(t, b).Disks["data"]
 			if !c.refused {
 				if !repartRan || status.Error != "" {
@@ -782,7 +747,7 @@ func TestSetUpChecksPinnedDiskIsUnchanged(t *testing.T) {
 			if want := "pinned disk data at /dev/vdb now holds data chalkos did not create; refusing to touch it"; !strings.Contains(status.Error, want) {
 				t.Errorf("data status = %+v, want %q", status, want)
 			}
-			if !contains(r.Calls, "mount -t ext4 /dev/mapper/var "+b.VarDir) {
+			if !slices.Contains(r.Calls, "mount -t ext4 /dev/mapper/var "+b.VarDir) {
 				t.Errorf("VAR not mounted: %v", r.Calls)
 			}
 			after, err := storage.ReadPins(pinsFile)

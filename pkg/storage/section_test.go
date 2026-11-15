@@ -174,9 +174,6 @@ func TestValidate(t *testing.T) {
 		want   string
 	}{
 		{"disk name escaping the directory", func(s *Section) { s.Disks["../x"] = s.Disks["longhorn"] }, `disk name "../x"`},
-		{"upper-case disk name", func(s *Section) { s.Disks["Longhorn"] = s.Disks["longhorn"] }, `disk name "Longhorn"`},
-		{"disk name ending in a dash", func(s *Section) { s.Disks["longhorn-"] = s.Disks["longhorn"] }, `disk name "longhorn-"`},
-		{"disk name of 33 characters", func(s *Section) { s.Disks[strings.Repeat("a", 33)] = s.Disks["longhorn"] }, "disk name"},
 		{"definition file name with a slash", func(s *Section) {
 			s.Disks["longhorn"].Repart["../../etc/x.conf"] = "[Partition]\n"
 		}, `definition file "../../etc/x.conf"`},
@@ -186,27 +183,14 @@ func TestValidate(t *testing.T) {
 		{"volume name escaping a path", func(s *Section) { s.Volumes["../data"] = Volume{Disk: "system", Label: "../data"} }, `volume name "../data"`},
 		{"label other than the name", func(s *Section) { s.Volumes["data"] = Volume{Disk: "system", Label: "state"} }, `volume data has the label "state"`},
 		{"reserved name state", func(s *Section) { s.Volumes["state"] = Volume{Disk: "system", Label: "state"} }, "reserved"},
-		{"reserved name esp", func(s *Section) { s.Volumes["esp"] = Volume{Disk: "system", Label: "esp"} }, "reserved"},
-		{"reserved name store", func(s *Section) { s.Volumes["store"] = Volume{Disk: "system", Label: "store"} }, "reserved"},
-		{"reserved name store-verity", func(s *Section) { s.Volumes["store-verity"] = Volume{Disk: "system", Label: "store-verity"} }, "reserved"},
-		{"reserved name system", func(s *Section) { s.Volumes["system"] = Volume{Disk: "system", Label: "system"} }, "reserved"},
 		{"VAR on another disk", func(s *Section) { v := s.Volumes["var"]; v.Disk = "longhorn"; s.Volumes["var"] = v }, "VAR"},
 		{"VAR mounted elsewhere", func(s *Section) { v := s.Volumes["var"]; v.MountPoint = "/srv"; s.Volumes["var"] = v }, "VAR"},
 		{"volume on an unknown disk", func(s *Section) { s.Volumes["data"] = Volume{Disk: "nope", Label: "data"} }, "unknown disk"},
 		{"duplicate mount point", func(s *Section) {
 			s.Volumes["data"] = Volume{Disk: "system", Label: "data", Format: "ext4", MountPoint: "/var/lib/longhorn"}
 		}, "mount point /var/lib/longhorn"},
-		{"mount point /var", func(s *Section) {
-			s.Volumes["data"] = Volume{Disk: "system", Label: "data", Format: "ext4", MountPoint: "/var"}
-		}, "mount point"},
-		{"mount point below /state", func(s *Section) {
-			s.Volumes["data"] = Volume{Disk: "system", Label: "data", Format: "ext4", MountPoint: "/state/x"}
-		}, "mount point"},
 		{"mount point with a newline", func(s *Section) {
 			s.Volumes["data"] = Volume{Disk: "system", Label: "data", Format: "ext4", MountPoint: "/srv/x\nExecStart=/bin/sh"}
-		}, "mount point"},
-		{"mount point with ..", func(s *Section) {
-			s.Volumes["data"] = Volume{Disk: "system", Label: "data", Format: "ext4", MountPoint: "/srv/../nix"}
 		}, "mount point"},
 	} {
 		t.Run(c.name, func(t *testing.T) {

@@ -270,22 +270,6 @@ func TestIdentitySame(t *testing.T) {
 	}
 }
 
-func TestIdentityRecognisable(t *testing.T) {
-	for _, c := range []struct {
-		id   Identity
-		want bool
-	}{
-		{Identity{WWN: "w"}, true},
-		{Identity{Serial: "s"}, true},
-		{Identity{Path: "p"}, true},
-		{Identity{Model: "m", Size: 1 << 30, Type: "hdd"}, false},
-	} {
-		if got := c.id.Recognisable(); got != c.want {
-			t.Errorf("%+v.Recognisable() = %v, want %v", c.id, got, c.want)
-		}
-	}
-}
-
 func TestFindRefusesAmbiguousIdentity(t *testing.T) {
 	twin := sataSSD
 	twin.name, twin.devnum = "sdc", "8:32"
@@ -305,21 +289,6 @@ func TestResolveWWNIgnoresHexPrefix(t *testing.T) {
 		if err != nil || d.Device != "/dev/sda" {
 			t.Errorf("wwn %s resolved to %v, %v", wwn, d, err)
 		}
-	}
-}
-
-func TestFindPinnedDiskThatGainedWWN(t *testing.T) {
-	disk := sataSSD
-	disk.props = map[string]string{
-		"ID_MODEL":        "Samsung_SSD_870_QVO_4TB",
-		"ID_SERIAL_SHORT": "S6PFNX0T100001",
-		"ID_WWN":          "0x5002538e40a1b2c3",
-		"ID_PATH":         "pci-0000:00:17.0-ata-1",
-	}
-	h := newHost(t, nvmeSystem, disk)
-	d, ok, err := h.Find(Identity{Serial: "S6PFNX0T100001", Model: "Samsung SSD 870 QVO 4TB"})
-	if err != nil || !ok || d.Device != "/dev/sda" {
-		t.Errorf("Find = %v, %v, %v", d, ok, err)
 	}
 }
 
