@@ -30,8 +30,7 @@ rec {
         inherit modules;
       };
     }).nixos.edge-metal.config;
-  # The router image without the router features named, whose modules set their
-  # chalkos.router.<feature>.enable to false.
+  # A router image with the named features disabled.
   routerWithout =
     features:
     router [

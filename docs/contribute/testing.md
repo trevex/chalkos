@@ -112,13 +112,15 @@ Prefer this level for anything about partitions, firewall rules or interfaces.
 attribute has an `expr` and an `expected` value. They evaluate images with `mkImages` and check
 its arguments, the images' options and assertions, and what the images set; a test that an
 evaluation fails uses `builtins.tryEval`. The `eval` check fails with the list of failures, and
-`eval-kinds` does the same for `test/nix/kinds.nix`, the tests of config kinds. Both take
-`fails`, `worker`, `router` and `routerWithout` from `test/nix/lib.nix`.
+`eval-kinds` does the same for `test/nix/kinds.nix`, the tests of config kinds, outputs,
+effects, facts and validators. Both take their helpers from `test/nix/lib.nix`: `fails`,
+`refuses`, `worker`, `router`, `routerWithout`, `installer`, `etcJSON` and `hasPackage`. Here
+`w` is the plain worker image, which eval.nix evaluates once:
 
 ```nix
-testVariantSetsDiskOptions = {
-  expr = (worker [ { chalkos.disk.espSize = "256M"; } ]).chalkos.disk.espSize;
-  expected = "256M";
+testStateHasItsOwnPartitionType = {
+  expr = w.systemd.repart.partitions."50-state".Type;
+  expected = "480b7842-1236-1abb-0339-e5503b43122a";
 };
 ```
 

@@ -1,4 +1,4 @@
-# Evaluation tests for config kinds: the schema converter and the chalkos.kinds option of images.
+# Evaluation tests of config kinds and their schemas, outputs, effects, facts and validators.
 # Returns lib.runTests failures, empty on success.
 {
   lib,
@@ -893,9 +893,8 @@ lib.runTests {
       additionalProperties = false;
     };
   };
-  # attrsOf and lazyAttrsOf instantiate their submodule once to read its options, before any
-  # attribute name is known, so a default computed from the submodule's name argument is the
-  # module system's placeholder rather than a real value and must not reach the schema.
+  # attrsOf and lazyAttrsOf build their submodule before any name exists, so a default from the
+  # submodule's name is a placeholder and stays out of the schema.
   testSubmoduleNamePlaceholderDropsDefault = {
     expr =
       (propOf (
@@ -1115,7 +1114,6 @@ lib.runTests {
     ];
     expected = [ ];
   };
-  # Flannel is a kind only where flannel is the pod network.
   # Registries and endpoints as containerd takes them: IPv6 hosts in brackets, endpoints with a
   # scheme and an optional path.
   testMirrorEndpoints =
@@ -1176,6 +1174,7 @@ lib.runTests {
         ];
       };
     };
+  # Flannel is a kind only where flannel is the pod network.
   testFlannelKindFollowsTheProvider = {
     expr = lib.elem "Flannel" (kindNames (worker [ { chalkos.cni.provider = "none"; } ]));
     expected = false;

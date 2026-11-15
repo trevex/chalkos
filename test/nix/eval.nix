@@ -447,12 +447,9 @@ lib.runTests {
         ];
       };
     };
-  # The output dhcp-relay renders a dnsmasq config per VRF from the DHCPRelay documents, the VRFs,
-  # the Networks and, to refuse a family relayed beside Kea's servers, the DHCPSubnets, and checks
-  # each with dnsmasq --test. dnsmasq-relay runs the default VRF's relay and dnsmasq-relay@<vrf>
-  # each VRF's, bound to the VRF's device, whose index it records, as the user dnsmasq with the
-  # capabilities dnsmasq demands of a relay. chalkos-dhcp-relays starts, restarts and stops them
-  # without capabilities whenever the output dhcp-relay or networkd changes.
+  # Router images run dnsmasq-relay for the default VRF and dnsmasq-relay@<vrf> bound to each VRF's
+  # device, as the user dnsmasq with a relay's capabilities; chalkos-dhcp-relays starts, restarts
+  # and stops them without capabilities.
   testRouterDHCPRelay = {
     expr =
       let
@@ -536,8 +533,9 @@ lib.runTests {
       "vrf.yaml"
     ];
   };
-  # On a router image with every feature, the test of each router example compares all eight router outputs with golden files,
-  # and router-vrf-strict the ruleset; on one without a feature, no router test compares any.
+  # On a router image with every feature, the test of each router example compares all eight
+  # router outputs with golden files, and router-vrf-strict the ruleset; on one without a feature,
+  # no router test compares any.
   testRouterGoldens =
     let
 
@@ -716,10 +714,8 @@ lib.runTests {
   };
   # On a router image the router layer owns the firewall: NixOS's firewall and nftables service are
   # off, chalkos-firewall loads the table after chalkos-config renders it and before the network
-  # comes up, the outputs router-sysctl and router-nftables render the router kinds, and their
-  # effects restart systemd-sysctl, which waits for the rendered file, and reload the firewall. The
-  # image loads the kernel modules of its rulesets.
-  # Other images keep NixOS's firewall.
+  # comes up, systemd-sysctl waits for the rendered file, and the image loads its rulesets' kernel
+  # modules. Other images keep NixOS's firewall.
   testRouterFirewall = {
     expr =
       let
@@ -807,13 +803,9 @@ lib.runTests {
       plain = [ ];
     };
   };
-  # Router images run FRR with bgpd and bfdd, whose config the output frr renders from the BGP
-  # kinds and the Network documents' names, checked by vtysh, and whose reload the effect asks
-  # for. frr.service reads the BGPPeers' passwords as credentials, starts after the firewall and
-  # before the node's addresses settle, on a node with config alone, and fills its config in
-  # before it starts, a restart of a failed unit included, and on reload; the firewall opens the
-  # peers' ports. chalkd asks vtysh for FRR's state, networkd keeps zebra's routes, and the image
-  # adds the BGP diagnostics. Other images run no FRR.
+  # Router images run FRR with bgpd and bfdd. frr.service starts after the firewall and before the
+  # node's addresses settle, fills the BGPPeers' passwords in from its credentials before it starts
+  # and on reload, and networkd keeps zebra's routes. Other images run no FRR.
   testRouterBGP = {
     expr =
       let
@@ -872,13 +864,9 @@ lib.runTests {
       node = false;
     };
   };
-  # Router images accept VRF documents and render them with networkd's documents and the NAT64s,
-  # whose links networkd leaves alone, through chalkos-render router-networkd; other images render
-  # networkd's documents alone. chalkos-vrf, which a change of the output networkd reloads, runs
-  # before networkd at boot and removes the VRFs the rendered units no longer declare. FRR orders
-  # after networkd, which creates a VRF's device before FRR's reload configures its instance, and
-  # the BGP and BFD diagnostics take a VRF.
-  # The firewall reads the VRFs and the Network documents.
+  # Router images accept VRF documents; other images do not. chalkos-vrf runs before networkd at
+  # boot with CAP_NET_ADMIN alone, and FRR orders after networkd, which creates a VRF's device
+  # before FRR's reload configures its instance.
   testRouterVRF = {
     expr =
       let
@@ -905,20 +893,11 @@ lib.runTests {
       frrAfter = true;
     };
   };
-  # Router images accept DHCPSubnet documents, which the output kea renders into a config per VRF
-  # and family and checks with kea-dhcp4 -t or kea-dhcp6 -t, and run the servers of Kea without its
-  # database backends, with the lease commands' and the run_script hooks alone, as the user kea:
-  # kea-dhcp4 with raw sockets and port 67, kea-dhcp6 with port 547 alone and the directory of
-  # chalkos-dhcp6-pd, which records delegated prefixes, as that of hook scripts; one each for the
-  # default VRF, and kea-dhcp4@<vrf> and kea-dhcp6@<vrf> bound to the VRF's device, whose index
-  # they record, requiring the device without stopping with it, all reloaded by SIGHUP and started
-  # again when they stop. chalkos-dhcp starts, reloads and stops them once the VRFs and networkd
-  # are up, whenever the output kea or networkd changes, without capabilities, in the group kea,
-  # which the diagnostic dhcp-leases runs in. chalkos-dhcp6-routes routes the delegated prefixes
-  # with CAP_NET_ADMIN alone, at boot and whenever a record in /var/lib/chalkos-dhcp6-pd changes,
-  # which kea writes, readable by every user, in a directory of its own in /var/lib. The
-  # firewall reads the subnets for DHCPv6's port; Kea's raw sockets of DHCPv4 come before it.
-  # Other images run no Kea.
+  # Router images run Kea without its database backends, with the lease commands' and run_script
+  # hooks alone, as the user kea: kea-dhcp4 and kea-dhcp6 for the default VRF and
+  # kea-dhcp4@<vrf> and kea-dhcp6@<vrf> bound to each VRF's device, restarted when they stop.
+  # chalkos-dhcp6-routes routes the prefixes chalkos-dhcp6-pd records, and chalkos-dhcp starts,
+  # reloads and stops the servers without capabilities, in the group kea.
   testRouterDHCP = {
     expr =
       let
@@ -1120,22 +1099,9 @@ lib.runTests {
       plain = false;
     };
   };
-  # Router images carry Jool's module, loaded at boot, and run chalkos-nat64, which the output jool
-  # renders NAT64 instances for and whose reload the effect asks for, after the firewall and
-  # networkd and before FRR, with CAP_NET_ADMIN and CAP_SYS_ADMIN and no mount namespace of its
-  # own, so the host sees the instances' namespaces. They run Unbound of the config the output
-  # unbound renders, once one is rendered, after chalkos-nat64, with CAP_NET_BIND_SERVICE alone and
-  # its control socket's directory closed to other users; a changed resolver reloads it with its
-  # cache, and one added or removed starts or stops it. The firewall opens the resolver's port and
-  # reads the NAT64s, as networkd does, chalkd asks jool in each instance's namespace and
-  # unbound-control for their state, the image adds the diagnostic nat64-sessions in the instance's
-  # namespace, and the node's own names resolve as before. Each VRF's resolver runs as
-  # unbound@<vrf> with the same hardening, bound to the VRF's device with BindNetworkInterface=,
-  # whose index it records, requiring the device without stopping with it. chalkos-resolvers
-  # starts, reloads and stops them once chalkos-vrf, networkd and the NAT64s are up, whenever the
-  # output unbound or networkd changes, without capabilities, devices or write access to the
-  # cgroups, in the group unbound; the output reads the VRFs and Networks and checks every config
-  # it renders. Other images run neither.
+  # Router images run Jool (chalkos-nat64) and Unbound per VRF (reconciled by chalkos-resolvers):
+  # their outputs' checks, ordering and hardening. chalkos-nat64 has no mount namespace of its own,
+  # so the host sees the instances' namespaces. Other images run neither.
   testRouterNAT64AndResolver = {
     expr =
       let
@@ -3253,10 +3219,7 @@ lib.runTests {
   };
 
   # A diagnostic chalkd could not run fails the image's build, with a message that names its
-  # option: a name not of [a-z][a-z0-9-]*, a program outside the store, a placeholder without its
-  # parameter or a parameter without its placeholder, a parameter both optional and with a
-  # default, a group not of [a-z_][a-z0-9_-]* or one the image lacks, a name longer than 64
-  # characters, and a timeout longer than 10m.
+  # option.
   testDiagnosticsRefuseWhatChalkdCannotRun =
     let
       ip = "${pkgs.iproute2}/bin/ip";
