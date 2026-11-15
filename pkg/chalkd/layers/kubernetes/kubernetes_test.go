@@ -132,18 +132,20 @@ func files(t *testing.T, dirs ...string) map[string]string {
 }
 
 func TestBootstrapReturnsBeforeManifestsApplied(t *testing.T) {
-	s, _ := kubernetesNode(t, k8s.KindControlPlane, true)
-	s.k.hooks.ControlPlane = func(ctx context.Context, _ kpki.Share, _ func(int)) error { <-ctx.Done(); return ctx.Err() }
-	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
-	defer cancel()
-	_, err := kubernetestest.Bootstrap(ctx, s)
-	if layer.CodeOf(err) != connect.CodeDeadlineExceeded {
-		t.Fatalf("err = %v, want deadline exceeded", err)
-	}
-	// The node stays committed: it never initialises a second cluster.
-	if m, _, _ := s.k.state.ReadMembership(); m != knode.MembershipBootstrapped {
-		t.Error("the node lost its bootstrap marker")
-	}
+	testwait.Bubble(t, func(t *testing.T) {
+		s, _ := kubernetesNode(t, k8s.KindControlPlane, true)
+		s.k.hooks.ControlPlane = func(ctx context.Context, _ kpki.Share, _ func(int)) error { <-ctx.Done(); return ctx.Err() }
+		ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+		defer cancel()
+		_, err := kubernetestest.Bootstrap(ctx, s)
+		if layer.CodeOf(err) != connect.CodeDeadlineExceeded {
+			t.Fatalf("err = %v, want deadline exceeded", err)
+		}
+		// The node stays committed: it never initialises a second cluster.
+		if m, _, _ := s.k.state.ReadMembership(); m != knode.MembershipBootstrapped {
+			t.Error("the node lost its bootstrap marker")
+		}
+	})
 }
 
 // readyServer is an API server whose /readyz answers ok once ready is set.
