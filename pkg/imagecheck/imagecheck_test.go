@@ -11,10 +11,7 @@ import (
 	"reflect"
 	"slices"
 	"strings"
-	"sync"
-	"sync/atomic"
 	"testing"
-	"time"
 
 	"connectrpc.com/connect"
 	"google.golang.org/protobuf/encoding/protojson"
@@ -167,35 +164,25 @@ func TestFactsRefuseABadInput(t *testing.T) {
 	}
 }
 
-// exclusiveFacts fails a fact asked while another is loading.
-type exclusiveFacts struct {
-	busy atomic.Bool
+// lockedFacts fails a fact asked while its handler's lock is free.
+type lockedFacts struct {
+	h *factsHandler
 }
 
-func (f *exclusiveFacts) Fact(string, map[string]any) (any, error) {
-	if !f.busy.CompareAndSwap(false, true) {
-		return nil, errors.New("asked while another fact loads")
+func (f *lockedFacts) Fact(string, map[string]any) (any, error) {
+	if f.h.mu.TryLock() {
+		f.h.mu.Unlock()
+		return nil, errors.New("asked without the handler's lock")
 	}
-	time.Sleep(time.Millisecond)
-	f.busy.Store(false)
 	return "ok", nil
 }
 
-// A checker that asks on several connections at once gets its facts one at a time.
+// The handler loads facts one at a time, as a checker may ask on several connections at once.
 func TestFactsOneAtATime(t *testing.T) {
-	r := serve(t, &exclusiveFacts{})
-	var wg sync.WaitGroup
-	errs := make(chan error, 16)
-	for range 16 {
-		wg.Go(func() {
-			if _, err := r.For(config.Redacted{}, config.Redacted{}).Fact("disks"); err != nil {
-				errs <- err
-			}
-		})
-	}
-	wg.Wait()
-	close(errs)
-	for err := range errs {
-		t.Error(err)
+	f := &lockedFacts{}
+	f.h = &factsHandler{f: f}
+	res, err := f.h.Fact(context.Background(), connect.NewRequest(&checkv1.FactRequest{Name: "disks", Input: "{}"}))
+	if err != nil || res.Msg.GetValue() != `"ok"` {
+		t.Errorf("Fact = %v, %v", res, err)
 	}
 }
