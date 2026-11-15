@@ -18,6 +18,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"connectrpc.com/connect"
@@ -201,75 +202,80 @@ func TestStatusEtcdDataMissing(t *testing.T) {
 
 // The control plane's loop starts again after an error, with the share as STATE holds it then.
 func TestControlPlaneLoopRestarts(t *testing.T) {
-	s, _ := kubernetesNode(t, k8s.KindControlPlane, true)
-	k := s.k
-	k.timing.RestartBackoff = 10 * time.Millisecond
-	replaced := kubernetestest.Share(t, k8s.KindControlPlane, "n1")
-	want, err := kpki.ParseShare(replaced)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var runs atomic.Int32
-	var second kpki.Share
-	k.hooks.ControlPlane = func(_ context.Context, share kpki.Share, applied func(int)) error {
-		if runs.Add(1) == 1 {
-			if err := os.WriteFile(k.state.Share(), replaced, 0o600); err != nil {
-				return err
-			}
-			return errors.New("the API server went away")
+	testwait.Bubble(t, func(t *testing.T) {
+		s, _ := kubernetesNode(t, k8s.KindControlPlane, true)
+		k := s.k
+		replaced := kubernetestest.Share(t, k8s.KindControlPlane, "n1")
+		want, err := kpki.ParseShare(replaced)
+		if err != nil {
+			t.Fatal(err)
 		}
-		second = share
-		applied(19)
-		return nil
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
-	defer cancel()
-	resp, err := kubernetestest.Bootstrap(ctx, s)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if resp.Applied != 19 || runs.Load() != 2 {
-		t.Errorf("applied %d objects after %d runs", resp.Applied, runs.Load())
-	}
-	if second.CA.Certificate != want.CA.Certificate {
-		t.Error("the restarted loop did not read the share again")
-	}
+		var runs atomic.Int32
+		var second kpki.Share
+		k.hooks.ControlPlane = func(_ context.Context, share kpki.Share, applied func(int)) error {
+			if runs.Add(1) == 1 {
+				if err := os.WriteFile(k.state.Share(), replaced, 0o600); err != nil {
+					return err
+				}
+				return errors.New("the API server went away")
+			}
+			second = share
+			applied(19)
+			return nil
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+		defer cancel()
+		resp, err := kubernetestest.Bootstrap(ctx, s)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if resp.Applied != 19 || runs.Load() != 2 {
+			t.Errorf("applied %d objects after %d runs", resp.Applied, runs.Load())
+		}
+		if second.CA.Certificate != want.CA.Certificate {
+			t.Error("the restarted loop did not read the share again")
+		}
+	})
 }
 
 // chalkd starts before the preparation at boot; the control plane's loop waits for it.
 func TestControlPlaneLoopWaitsForPreparation(t *testing.T) {
-	s, _ := kubernetesNode(t, k8s.KindControlPlane, true)
-	k := s.k
-	p := k.state
-	write(t, p.BootstrappedMarker(), "")
-	write(t, p.Pin(), "192.168.100.11\n")
-	if err := os.Remove(p.PreparedMarker()); err != nil {
-		t.Fatal(err)
-	}
-	k.timing.RestartBackoff, k.timing.MaxRestartBackoff = 10*time.Millisecond, 20*time.Millisecond
-	runs := make(chan struct{}, 1)
-	k.hooks.ControlPlane = func(ctx context.Context, _ kpki.Share, _ func(int)) error {
+	testwait.Bubble(t, func(t *testing.T) {
+		s, _ := kubernetesNode(t, k8s.KindControlPlane, true)
+		k := s.k
+		p := k.state
+		write(t, p.BootstrappedMarker(), "")
+		write(t, p.Pin(), "192.168.100.11\n")
+		if err := os.Remove(p.PreparedMarker()); err != nil {
+			t.Fatal(err)
+		}
+		runs := make(chan struct{}, 1)
+		k.hooks.ControlPlane = func(ctx context.Context, _ kpki.Share, _ func(int)) error {
+			select {
+			case runs <- struct{}{}:
+			default:
+			}
+			<-ctx.Done()
+			return ctx.Err()
+		}
+		k.startLoops()
+		// The loop tries and fails several times meanwhile.
+		time.Sleep(time.Minute)
+		synctest.Wait()
 		select {
-		case runs <- struct{}{}:
+		case <-runs:
+			t.Fatal("the control plane's loop ran before the node's files were prepared")
 		default:
 		}
-		<-ctx.Done()
-		return ctx.Err()
-	}
-	k.startLoops()
-	select {
-	case <-runs:
-		t.Fatal("the control plane's loop ran before the node's files were prepared")
-	case <-time.After(200 * time.Millisecond):
-	}
-	if err := p.Prepare(time.Now(), kubernetestest.NodeIP("192.168.100.11"), nil); err != nil {
-		t.Fatal(err)
-	}
-	select {
-	case <-runs:
-	case <-time.After(time.Minute):
-		t.Fatal("the control plane's loop did not start once the node's files were prepared")
-	}
+		if err := p.Prepare(time.Now(), kubernetestest.NodeIP("192.168.100.11"), nil); err != nil {
+			t.Fatal(err)
+		}
+		select {
+		case <-runs:
+		case <-time.After(time.Hour):
+			t.Fatal("the control plane's loop did not start once the node's files were prepared")
+		}
+	})
 }
 
 func TestCredentialIsShortLived(t *testing.T) {
@@ -313,12 +319,6 @@ func TestStartAfterStopDoesNothing(t *testing.T) {
 	s, _ := kubernetesNode(t, k8s.KindControlPlane, true)
 	k := s.k
 	p := k.state
-	var runs atomic.Int32
-	k.hooks.ControlPlane = func(ctx context.Context, _ kpki.Share, _ func(int)) error {
-		runs.Add(1)
-		<-ctx.Done()
-		return ctx.Err()
-	}
 	k.stop()
 	// Not bootstrapped, the node would join.
 	k.startLoops()
@@ -327,13 +327,45 @@ func TestStartAfterStopDoesNothing(t *testing.T) {
 	write(t, p.Pin(), "192.168.100.11\n")
 	k.startLoops()
 	k.reloadControlPlane()
-	time.Sleep(200 * time.Millisecond)
+	// Each decides under k.mu, and a loop runs only in the group it makes.
 	k.mu.Lock()
-	started, joining := k.started, k.joining
+	started, joining, group := k.started, k.joining, k.group
 	k.mu.Unlock()
-	if started || joining || runs.Load() != 0 {
-		t.Errorf("after Stop: started %v, joining %v, %d runs of the control plane's loop", started, joining, runs.Load())
+	if started || joining || group != nil {
+		t.Errorf("after Stop: started %v, joining %v, loops %v", started, joining, group != nil)
 	}
+}
+
+// A reload starts the control plane's loop again once the one before ended.
+func TestReloadWaitsForTheLoopToEnd(t *testing.T) {
+	testwait.Bubble(t, func(t *testing.T) {
+		s, _ := kubernetesNode(t, k8s.KindControlPlane, true)
+		k := s.k
+		write(t, k.state.BootstrappedMarker(), "")
+		write(t, k.state.Pin(), "192.168.100.11\n")
+		events := make(chan string, 4)
+		k.hooks.ControlPlane = func(ctx context.Context, _ kpki.Share, applied func(int)) error {
+			events <- "start"
+			applied(1)
+			<-ctx.Done()
+			// A loop that takes a while to end must have ended before the next starts.
+			time.Sleep(50 * time.Millisecond)
+			events <- "end"
+			return ctx.Err()
+		}
+		k.startLoops()
+		synctest.Wait()
+		k.reloadControlPlane()
+		time.Sleep(time.Second)
+		synctest.Wait()
+		var got []string
+		for len(events) > 0 {
+			got = append(got, <-events)
+		}
+		if want := []string{"start", "end", "start"}; !slices.Equal(got, want) {
+			t.Errorf("events %v, want %v", got, want)
+		}
+	})
 }
 
 func TestControlPlaneRenewsItsCertificates(t *testing.T) {
@@ -435,38 +467,42 @@ func TestControlPlaneRendersStaleStaticPods(t *testing.T) {
 // Stopping the loops, as before the node leaves etcd, waits for a renewal of the control plane's
 // certificates that runs, which would render static pods.
 func TestStopLoopsWaitsForTheCertificateRenewal(t *testing.T) {
-	s, _ := kubernetesNode(t, k8s.KindControlPlane, true)
-	k := s.k
-	entered, release := make(chan struct{}), make(chan struct{})
-	k.leaves = renewal.New("test", func(time.Time) (bool, time.Time, error) {
-		return true, time.Time{}, nil
-	}, func(context.Context, time.Time) error {
-		close(entered)
-		<-release
-		return nil
+	testwait.Bubble(t, func(t *testing.T) {
+		s, _ := kubernetesNode(t, k8s.KindControlPlane, true)
+		k := s.k
+		entered, release := make(chan struct{}), make(chan struct{})
+		k.leaves = renewal.New("test", func(time.Time) (bool, time.Time, error) {
+			return true, time.Time{}, nil
+		}, func(context.Context, time.Time) error {
+			close(entered)
+			<-release
+			return nil
+		})
+		write(t, k.state.BootstrappedMarker(), "")
+		write(t, k.state.Pin(), "192.168.100.11\n")
+		k.startLoops()
+		k.leaves.Force()
+		select {
+		case <-entered:
+		case <-time.After(time.Hour):
+			t.Fatal("the renewal did not run")
+		}
+		stopped := make(chan struct{})
+		go func() { k.stopLoops(); close(stopped) }()
+		synctest.Wait()
+		select {
+		case <-stopped:
+			t.Error("the loops stopped while a renewal still ran")
+		default:
+		}
+		close(release)
+		synctest.Wait()
+		select {
+		case <-stopped:
+		default:
+			t.Error("the loops did not stop once the renewal ended")
+		}
 	})
-	write(t, k.state.BootstrappedMarker(), "")
-	write(t, k.state.Pin(), "192.168.100.11\n")
-	k.startLoops()
-	k.leaves.Force()
-	select {
-	case <-entered:
-	case <-time.After(10 * time.Second):
-		t.Fatal("the renewal did not run")
-	}
-	stopped := make(chan struct{})
-	go func() { k.stopLoops(); close(stopped) }()
-	select {
-	case <-stopped:
-		t.Error("the loops stopped while a renewal still ran")
-	case <-time.After(300 * time.Millisecond):
-	}
-	close(release)
-	select {
-	case <-stopped:
-	case <-time.After(10 * time.Second):
-		t.Error("the loops did not stop once the renewal ended")
-	}
 }
 
 // TestObjectsAreTheAddOnsThenTheAddonDocuments: chalkd applies the add-ons it renders for the
