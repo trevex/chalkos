@@ -133,10 +133,7 @@ func upgradeWith(t *testing.T, c creds, header *nodev1.UpgradeHeader, running, p
 	h := proto.Clone(header).(*nodev1.UpgradeHeader)
 	h.Config = cfg
 	stream := conn.Upgrade(context.Background())
-	if err := stream.Send(&nodev1.UpgradeRequest{Message: &nodev1.UpgradeRequest_Header{Header: h}}); err != nil {
-		t.Fatal(err)
-	}
-	_, err := stream.CloseAndReceive()
+	_, err := sendAll(t, stream, &nodev1.UpgradeRequest{Message: &nodev1.UpgradeRequest_Header{Header: h}})
 	return got, err
 }
 
@@ -202,10 +199,7 @@ func TestUpgradePullsNothingForAnImageItHolds(t *testing.T) {
 	}
 	conn := dial(t, serve(t, s, c, c.pool), c.clients[pki.RoleOperator])
 	stream := conn.Upgrade(context.Background())
-	if err := stream.Send(&nodev1.UpgradeRequest{Message: &nodev1.UpgradeRequest_Header{Header: header}}); err != nil {
-		t.Fatal(err)
-	}
-	resp, err := stream.CloseAndReceive()
+	resp, err := sendAll(t, stream, &nodev1.UpgradeRequest{Message: &nodev1.UpgradeRequest_Header{Header: header}})
 	if err != nil || !resp.Msg.GetAlreadyInstalled() {
 		t.Fatalf("upgrade = %v, %v", resp, err)
 	}

@@ -82,18 +82,11 @@ func sendInstall(t *testing.T, s *Server, h *nodev1.InstallHeader, image []byte)
 	t.Helper()
 	c := newCreds(t)
 	conn := dial(t, serve(t, s, c, nil), nil)
-	stream := conn.Install(context.Background())
-	if err := stream.Send(&nodev1.InstallRequest{Message: &nodev1.InstallRequest_Header{Header: h}}); err != nil {
-		t.Fatal(err)
+	msgs := []*nodev1.InstallRequest{{Message: &nodev1.InstallRequest_Header{Header: h}}}
+	for chunk := range slices.Chunk(image, 1000) {
+		msgs = append(msgs, &nodev1.InstallRequest{Message: &nodev1.InstallRequest_Chunk{Chunk: &nodev1.ImageChunk{Data: chunk}}})
 	}
-	for len(image) > 0 {
-		n := min(len(image), 1000)
-		if err := stream.Send(&nodev1.InstallRequest{Message: &nodev1.InstallRequest_Chunk{Chunk: &nodev1.ImageChunk{Data: image[:n]}}}); err != nil {
-			t.Fatal(err)
-		}
-		image = image[n:]
-	}
-	_, err := stream.CloseAndReceive()
+	_, err := sendAll(t, conn.Install(context.Background()), msgs...)
 	return err
 }
 

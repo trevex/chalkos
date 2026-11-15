@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -81,20 +82,13 @@ func TestUpgrade(t *testing.T) {
 			}
 			addr := serve(t, s, c, c.pool)
 			conn := dial(t, addr, c.clients[pki.RoleOperator])
-			stream := conn.Upgrade(context.Background())
 			h := proto.Clone(header).(*nodev1.UpgradeHeader)
 			h.Reboot = tc.reboot
-			if err := stream.Send(&nodev1.UpgradeRequest{Message: &nodev1.UpgradeRequest_Header{Header: h}}); err != nil {
-				t.Fatal(err)
+			msgs := []*nodev1.UpgradeRequest{{Message: &nodev1.UpgradeRequest_Header{Header: h}}}
+			for chunk := range slices.Chunk(image, 1<<20) {
+				msgs = append(msgs, &nodev1.UpgradeRequest{Message: &nodev1.UpgradeRequest_Chunk{Chunk: &nodev1.ImageChunk{Data: chunk}}})
 			}
-			for rest := image; len(rest) > 0; {
-				n := min(len(rest), 1<<20)
-				if err := stream.Send(&nodev1.UpgradeRequest{Message: &nodev1.UpgradeRequest_Chunk{Chunk: &nodev1.ImageChunk{Data: rest[:n]}}}); err != nil {
-					t.Fatal(err)
-				}
-				rest = rest[n:]
-			}
-			resp, err := stream.CloseAndReceive()
+			resp, err := sendAll(t, conn.Upgrade(context.Background()), msgs...)
 			if connect.CodeOf(err) != tc.wantCode && !(err == nil && tc.wantCode == 0) {
 				t.Fatalf("upgrade = %v, want code %v", err, tc.wantCode)
 			}
@@ -150,18 +144,13 @@ func TestUpgradeStageOnly(t *testing.T) {
 		stageOnly bool
 		entry     string
 	}{{true, ".staged-chalkos_2.efi"}, {false, "chalkos_2+3.efi"}} {
-		stream := conn.Upgrade(context.Background())
 		h := &nodev1.UpgradeHeader{StageOnly: tc.stageOnly, Image: &nodev1.ImageHeader{
 			ImageId: "chalkos", Platform: "metal", Architecture: "x86-64", RootHash: []byte{1, 2},
 			Store: &nodev1.ImagePart{Size: 1, Sha256: []byte{4}}, HashTree: &nodev1.ImagePart{Size: 1, Sha256: []byte{5}}, Uki: &nodev1.ImagePart{Size: 1, Sha256: []byte{6}},
 		}}
-		if err := stream.Send(&nodev1.UpgradeRequest{Message: &nodev1.UpgradeRequest_Header{Header: h}}); err != nil {
-			t.Fatal(err)
-		}
-		if err := stream.Send(&nodev1.UpgradeRequest{Message: &nodev1.UpgradeRequest_Chunk{Chunk: &nodev1.ImageChunk{Data: []byte("suh")}}}); err != nil {
-			t.Fatal(err)
-		}
-		resp, err := stream.CloseAndReceive()
+		resp, err := sendAll(t, conn.Upgrade(context.Background()),
+			&nodev1.UpgradeRequest{Message: &nodev1.UpgradeRequest_Header{Header: h}},
+			&nodev1.UpgradeRequest{Message: &nodev1.UpgradeRequest_Chunk{Chunk: &nodev1.ImageChunk{Data: []byte("suh")}}})
 		if err != nil || resp.Msg.Entry != tc.entry || resp.Msg.Active == tc.stageOnly || resp.Msg.Rebooting {
 			t.Errorf("stage only %v: %v, %v", tc.stageOnly, resp, err)
 		}
@@ -180,10 +169,7 @@ func TestUpgradeWhoseActivationFails(t *testing.T) {
 	conn := dial(t, serve(t, s, c, c.pool), c.clients[pki.RoleOperator])
 	stream := conn.Upgrade(context.Background())
 	h := &nodev1.UpgradeHeader{Reboot: true, Image: &nodev1.ImageHeader{ImageId: "chalkos", RootHash: []byte{1, 2}, Revision: "a1b2c3d4e5f6", Tag: "v1.5.0"}}
-	if err := stream.Send(&nodev1.UpgradeRequest{Message: &nodev1.UpgradeRequest_Header{Header: h}}); err != nil {
-		t.Fatal(err)
-	}
-	_, err := stream.CloseAndReceive()
+	_, err := sendAll(t, stream, &nodev1.UpgradeRequest{Message: &nodev1.UpgradeRequest_Header{Header: h}})
 	if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "upgrade: the image is staged as .staged-chalkos_2.efi, but its activation failed: Secure Boot would refuse the UKI") {
 		t.Errorf("upgrade = %v", err)
 	}
@@ -369,10 +355,7 @@ func TestUpgradeDeliversConfigOnlyForAdmins(t *testing.T) {
 			conn := dial(t, serve(t, s, c, c.pool), c.clients[tc.role])
 			stream := conn.Upgrade(context.Background())
 			header := &nodev1.UpgradeHeader{Image: &nodev1.ImageHeader{ImageId: "chalkos", RootHash: newImage}, Config: tc.config, FallbackSecret: tc.secret}
-			if err := stream.Send(&nodev1.UpgradeRequest{Message: &nodev1.UpgradeRequest_Header{Header: header}}); err != nil {
-				t.Fatal(err)
-			}
-			_, err := stream.CloseAndReceive()
+			_, err := sendAll(t, stream, &nodev1.UpgradeRequest{Message: &nodev1.UpgradeRequest_Header{Header: header}})
 			if tc.want == "" {
 				if connect.CodeOf(err) != connect.CodePermissionDenied || !strings.Contains(err.Error(), "needs the admin role") {
 					t.Errorf("upgrade = %v, want it refused for the admin role", err)
@@ -683,10 +666,7 @@ func TestUpgradeRetiresConfigSlots(t *testing.T) {
 	conn := dial(t, serve(t, s, c, c.pool), c.clients[pki.RoleOperator])
 	stream := conn.Upgrade(context.Background())
 	header := &nodev1.UpgradeHeader{Image: &nodev1.ImageHeader{ImageId: "chalkos", RootHash: kept}}
-	if err := stream.Send(&nodev1.UpgradeRequest{Message: &nodev1.UpgradeRequest_Header{Header: header}}); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := stream.CloseAndReceive(); connect.CodeOf(err) != connect.CodeFailedPrecondition {
+	if _, err := sendAll(t, stream, &nodev1.UpgradeRequest{Message: &nodev1.UpgradeRequest_Header{Header: header}}); connect.CodeOf(err) != connect.CodeFailedPrecondition {
 		t.Fatalf("upgrade = %v, want its refusal", err)
 	}
 	slots, err := slot.List(s.Loader.Slots)

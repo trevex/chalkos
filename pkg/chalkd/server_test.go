@@ -473,6 +473,20 @@ func dial(t *testing.T, addr string, cert *tls.Certificate) *client.Conn {
 	return c
 }
 
+// sendAll sends msgs on the stream and returns the server's answer. A server may answer before it
+// reads them all, which fails the sends after with io.EOF; the answer then says why.
+func sendAll[Req, Res any](t *testing.T, stream *connect.ClientStreamForClient[Req, Res], msgs ...*Req) (*connect.Response[Res], error) {
+	t.Helper()
+	for _, m := range msgs {
+		if err := stream.Send(m); errors.Is(err, io.EOF) {
+			break
+		} else if err != nil {
+			t.Fatal(err)
+		}
+	}
+	return stream.CloseAndReceive()
+}
+
 // call runs one RPC and returns its error code; 0 when it succeeded.
 func call(c *client.Conn, procedure string) connect.Code {
 	ctx := context.Background()

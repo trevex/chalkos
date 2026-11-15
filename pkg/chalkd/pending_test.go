@@ -361,10 +361,7 @@ func upgradePending(t *testing.T, s *Server, role pki.Role, cfg string, fail err
 	conn := dial(t, serve(t, s, c, c.pool), c.clients[role])
 	stream := conn.Upgrade(context.Background())
 	header := &nodev1.UpgradeHeader{Image: &nodev1.ImageHeader{ImageId: "chalkos", RootHash: newImage}, Config: cfg}
-	if err := stream.Send(&nodev1.UpgradeRequest{Message: &nodev1.UpgradeRequest_Header{Header: header}}); err != nil {
-		t.Fatal(err)
-	}
-	res, err := stream.CloseAndReceive()
+	res, err := sendAll(t, stream, &nodev1.UpgradeRequest{Message: &nodev1.UpgradeRequest_Header{Header: header}})
 	if err != nil {
 		return version, nil, err
 	}
@@ -511,10 +508,7 @@ func TestUpgradeAnswersAPendingConfigKept(t *testing.T) {
 	c := newCreds(t)
 	stream := dial(t, serve(t, s, c, c.pool), c.clients[pki.RoleOperator]).Upgrade(context.Background())
 	header := &nodev1.UpgradeHeader{Image: &nodev1.ImageHeader{ImageId: "chalkos", RootHash: newImage}}
-	if err := stream.Send(&nodev1.UpgradeRequest{Message: &nodev1.UpgradeRequest_Header{Header: header}}); err != nil {
-		t.Fatal(err)
-	}
-	res, err := stream.CloseAndReceive()
+	res, err := sendAll(t, stream, &nodev1.UpgradeRequest{Message: &nodev1.UpgradeRequest_Header{Header: header}})
 	if err != nil {
 		t.Fatal(err)
 	}

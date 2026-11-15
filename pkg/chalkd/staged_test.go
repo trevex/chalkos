@@ -885,10 +885,7 @@ func TestUpgradeOfAStagedImageNamesApplyConfigStaged(t *testing.T) {
 	send := func(rootHash []byte) error {
 		stream := conn.Upgrade(context.Background())
 		header := &nodev1.UpgradeHeader{Image: &nodev1.ImageHeader{ImageId: "chalkos", RootHash: rootHash}, Config: baseConfig}
-		if err := stream.Send(&nodev1.UpgradeRequest{Message: &nodev1.UpgradeRequest_Header{Header: header}}); err != nil {
-			t.Fatal(err)
-		}
-		_, err := stream.CloseAndReceive()
+		_, err := sendAll(t, stream, &nodev1.UpgradeRequest{Message: &nodev1.UpgradeRequest_Header{Header: header}})
 		return err
 	}
 	if err := send(bytes.Repeat([]byte{'9'}, 32)); err == nil || strings.Contains(err.Error(), "--staged") {
@@ -960,10 +957,7 @@ func TestKnownGoodImageKeepsItsConfig(t *testing.T) {
 		send := func(config string) error {
 			stream := conn.Upgrade(context.Background())
 			header := &nodev1.UpgradeHeader{Image: &nodev1.ImageHeader{ImageId: "chalkos", RootHash: stagedImage}, Config: config}
-			if err := stream.Send(&nodev1.UpgradeRequest{Message: &nodev1.UpgradeRequest_Header{Header: header}}); err != nil {
-				t.Fatal(err)
-			}
-			_, err := stream.CloseAndReceive()
+			_, err := sendAll(t, stream, &nodev1.UpgradeRequest{Message: &nodev1.UpgradeRequest_Header{Header: header}})
 			return err
 		}
 		if err := send(next); connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "its config stays as it last ran until that boot is found healthy") {
