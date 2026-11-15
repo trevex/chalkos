@@ -16,7 +16,8 @@ var update = flag.Bool("update", false, "rewrite the golden files")
 // TestRenderGolden renders the addons of clusters that differ in their families and their pod
 // network, each from its testdata/<setup>/cluster.json: dual stack with flannel, an MTU and ranges
 // other than the defaults, IPv4 alone, IPv6 alone, and IPv6 primary without flannel and with
-// another cluster domain.
+// another cluster domain. Review the order of the objects, flanneld's --public-ip arguments and
+// the kube-dns family in a diff.
 func TestRenderGolden(t *testing.T) {
 	setups, err := filepath.Glob(filepath.Join("testdata", "*", "cluster.json"))
 	if err != nil {

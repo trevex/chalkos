@@ -7,7 +7,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"net/netip"
 	"slices"
 	"strings"
 
@@ -31,21 +30,20 @@ import (
 // Render returns the objects in the order the control plane applies them: RBAC, kube-proxy, the
 // pod network, the cluster DNS.
 func Render(c kubernetes.Cluster) ([]map[string]any, error) {
-	families := c.Families()
 	configs := rbac()
-	proxy, err := kubeProxy(c, families)
+	proxy, err := kubeProxy(c)
 	if err != nil {
 		return nil, err
 	}
 	configs = append(configs, proxy...)
 	if c.Flannel != nil {
-		f, err := flannel(c, families)
+		f, err := flannel(c)
 		if err != nil {
 			return nil, err
 		}
 		configs = append(configs, f...)
 	}
-	configs = append(configs, coreDNS(c, families[0])...)
+	configs = append(configs, coreDNS(c)...)
 	objects := make([]map[string]any, len(configs))
 	for i, config := range configs {
 		if objects[i], err = runtime.DefaultUnstructuredConverter.ToUnstructured(config); err != nil {
@@ -118,13 +116,13 @@ func rbac() []any {
 	return []any{
 		// Admin kubeconfigs from chalkctl kubeconfig carry this group, which RBAC can revoke,
 		// unlike system:masters.
-		clusterRoleBinding("chalkos:cluster-admins", "cluster-admin", subject("Group", "chalkos:cluster-admins")),
+		clusterRoleBinding(kpki.ClusterAdminGroup, "cluster-admin", subject("Group", kpki.ClusterAdminGroup)),
 		// Kubelets renew their client certificates; the controller-manager approves the requests
 		// of nodes renewing their own.
 		clusterRoleBinding("chalkos:selfnodeclient", "system:certificates.k8s.io:certificatesigningrequests:selfnodeclient",
-			subject("Group", "system:nodes")),
+			subject("Group", kpki.NodesGroup)),
 		// The API server reaches kubelets for logs, exec and port forwarding.
-		clusterRoleBinding("chalkos:apiserver-kubelet", "system:kubelet-api-admin", subject("User", "chalkos:kube-apiserver-kubelet-client")),
+		clusterRoleBinding("chalkos:apiserver-kubelet", "system:kubelet-api-admin", subject("User", kpki.APIServerKubeletClientUser)),
 	}
 }
 
@@ -141,15 +139,11 @@ type kubeProxyConfiguration struct {
 	NodePortAddresses []string `json:"nodePortAddresses"`
 }
 
-func kubeProxy(c kubernetes.Cluster, families []nodeip.Family) ([]any, error) {
-	cidrs := make([]netip.Prefix, len(families))
-	for i, f := range families {
-		cidrs[i] = c.PodCIDRs.Of(f)
-	}
+func kubeProxy(c kubernetes.Cluster) ([]any, error) {
 	// kube-proxy serves every family the node has addresses of; it binds as kubeadm's does, by
 	// the primary family.
 	bind := "0.0.0.0"
-	if families[0] == nodeip.IPv6 {
+	if c.Primary() == nodeip.IPv6 {
 		bind = "::"
 	}
 	proxyConfig := kubeProxyConfiguration{
@@ -157,7 +151,7 @@ func kubeProxy(c kubernetes.Cluster, families []nodeip.Family) ([]any, error) {
 		Kind:       "KubeProxyConfiguration",
 		// The node's firewall and flannel run on nftables too.
 		Mode:        "nftables",
-		ClusterCIDR: strs.Join(cidrs, ","),
+		ClusterCIDR: strs.Join(c.PodCIDRList(), ","),
 		BindAddress: bind,
 		// NodePorts answer on the node's own addresses, one per family, as the kubelet registered
 		// them.
@@ -279,7 +273,8 @@ type (
 	}
 )
 
-func flannel(c kubernetes.Cluster, families []nodeip.Family) ([]any, error) {
+func flannel(c kubernetes.Cluster) ([]any, error) {
+	families := c.Families()
 	// VXLAN in every family of the cluster (flannel.1 and flannel-v6.1, both on UDP 8472), with
 	// the rules flannel needs in nftables tables of its own.
 	var nc netConf
@@ -411,7 +406,8 @@ const corefile = `.:53 {
 }
 `
 
-func coreDNS(c kubernetes.Cluster, primary nodeip.Family) []any {
+func coreDNS(c kubernetes.Cluster) []any {
+	primary := c.Primary()
 	labels := map[string]string{"k8s-app": "kube-dns"}
 	family := map[nodeip.Family]corev1.IPFamily{nodeip.IPv4: corev1.IPv4Protocol, nodeip.IPv6: corev1.IPv6Protocol}[primary]
 	serviceLabels := map[string]string{
