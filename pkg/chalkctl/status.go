@@ -68,20 +68,9 @@ type nodeInventory struct {
 	name string
 }
 
-func (i nodeInventory) ConfigState(version string) string { return i.c.configState(i.name, version) }
-
-func (i nodeInventory) StagedConfigState(s *nodev1.StatusResponse) string {
-	return i.c.stagedConfigState(i.name, s)
-}
-
+// PlatformLine is the status line of the platform the node runs on, compared with its config's.
 func (i nodeInventory) PlatformLine(reported string) string {
-	return i.c.platformLine(i.name, reported)
-}
-
-func (i nodeInventory) ImageLine(boot *nodev1.BootStatus) string { return i.c.imageLine(i.name, boot) }
-
-// platformLine is the status line of the platform the node runs on, compared with its config's.
-func (c *cluster) platformLine(name, reported string) string {
+	c, name := i.c, i.name
 	if c.Partial() {
 		return "platform " + reported
 	}
@@ -95,21 +84,24 @@ func (c *cluster) platformLine(name, reported string) string {
 	return fmt.Sprintf("platform %s (the inventory's)", reported)
 }
 
-// configState says whether the running image's slot of a node holds the config chalkctl delivers
+// ConfigState says whether the running image's slot of a node holds the config chalkctl delivers
 // to it.
-func (c *cluster) configState(name, version string) string {
-	return c.slotState(name, version, func(string) string { return "chalkctl config apply " + name + " delivers it" })
+func (i nodeInventory) ConfigState(version string) string {
+	name := i.name
+	return i.slotState(version, func(string) string { return "chalkctl config apply " + name + " delivers it" })
 }
 
-// stagedConfigState says whether the slot of the image the status s names as staged holds the
+// StagedConfigState says whether the slot of the image the status s names as staged holds the
 // config chalkctl delivers to the node, as stagedAdvice advises.
-func (c *cluster) stagedConfigState(name string, s *nodev1.StatusResponse) string {
-	return c.slotState(name, s.StagedConfigVersion, func(want string) string { return stagedAdvice(name, want, s) })
+func (i nodeInventory) StagedConfigState(s *nodev1.StatusResponse) string {
+	name := i.name
+	return i.slotState(s.StagedConfigVersion, func(want string) string { return stagedAdvice(name, want, s) })
 }
 
-// slotState says whether a slot of a node holds version, the config chalkctl delivers to it, and
+// slotState says whether a slot of the node holds version, the config chalkctl delivers to it, and
 // when it does not, what advice says delivers it, given the inventory's version.
-func (c *cluster) slotState(name, version string, advice func(want string) string) string {
+func (i nodeInventory) slotState(version string, advice func(want string) string) string {
+	c, name := i.c, i.name
 	if c.Partial() {
 		return "no inventory to compare it with"
 	}
@@ -143,10 +135,11 @@ func stagedAdvice(name, want string, s *nodev1.StatusResponse) string {
 	return "chalkctl config apply " + name + " delivers it"
 }
 
-// imageLine is the status line of a node whose store has another root hash than the image the
+// ImageLine is the status line of a node whose store has another root hash than the image the
 // inventory names for it, or whose image directory cannot be read; empty when it has that image,
 // or when the node or its config is unknown, which the config line reports.
-func (c *cluster) imageLine(name string, boot *nodev1.BootStatus) string {
+func (i nodeInventory) ImageLine(boot *nodev1.BootStatus) string {
+	c, name := i.c, i.name
 	running := boot.GetRunning().GetRootHash()
 	if c.Partial() || len(running) == 0 {
 		return ""

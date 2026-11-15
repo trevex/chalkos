@@ -110,10 +110,10 @@ func TestOCIImageContractAndStatus(t *testing.T) {
 		t.Errorf("imageContractOf = %+v, %v", ct, err)
 	}
 	same, _ := hex.DecodeString(testRootHash)
-	if got := c.imageLine("n1", &nodev1.BootStatus{Running: &nodev1.BootImage{RootHash: same}}); got != "" {
+	if got := (nodeInventory{c, "n1"}).ImageLine(&nodev1.BootStatus{Running: &nodev1.BootImage{RootHash: same}}); got != "" {
 		t.Errorf("the line of the image the inventory names = %q", got)
 	}
-	got := c.imageLine("n1", &nodev1.BootStatus{Running: &nodev1.BootImage{RootHash: bytes.Repeat([]byte{0xcd}, 32)}})
+	got := (nodeInventory{c, "n1"}).ImageLine(&nodev1.BootStatus{Running: &nodev1.BootImage{RootHash: bytes.Repeat([]byte{0xcd}, 32)}})
 	if !strings.Contains(got, "not that of the image test-metal the inventory names, "+testRootHash) {
 		t.Errorf("the line of another image = %q", got)
 	}

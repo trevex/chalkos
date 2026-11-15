@@ -390,22 +390,6 @@ func TestStatusComparesWithTheInventory(t *testing.T) {
 	}
 }
 
-// TestImageLine names a store other than the one of the image the node's config names.
-func TestImageLine(t *testing.T) {
-	c, err := loadInventory(context.Background(), writeInventory(t, t.TempDir()))
-	if err != nil {
-		t.Fatal(err)
-	}
-	same, _ := hex.DecodeString(testRootHash)
-	if got := c.imageLine("n1", &nodev1.BootStatus{Running: &nodev1.BootImage{RootHash: same}}); got != "" {
-		t.Errorf("the line of the image the config names = %q", got)
-	}
-	got := c.imageLine("n1", &nodev1.BootStatus{Running: &nodev1.BootImage{RootHash: bytes.Repeat([]byte{0xcd}, 32)}})
-	if !strings.Contains(got, "not that of the image test-metal the inventory names, "+testRootHash) {
-		t.Errorf("the line of another image = %q", got)
-	}
-}
-
 // TestAddressFromTheInventory reaches a node at --address, else at the inventory's address, and
 // asks for --address without either.
 func TestAddressFromTheInventory(t *testing.T) {
@@ -513,16 +497,19 @@ func TestImageLineOfAStagedImage(t *testing.T) {
 	}
 	other := bytes.Repeat([]byte{0xcd}, 32)
 	want, _ := hex.DecodeString(testRootHash)
+	if got := (nodeInventory{c, "n1"}).ImageLine(&nodev1.BootStatus{Running: &nodev1.BootImage{RootHash: want}}); got != "" {
+		t.Errorf("the line of the image the config names = %q", got)
+	}
 	running := &nodev1.BootImage{RootHash: other, Generation: 1}
 	active := &nodev1.BootStatus{Running: running, Staged: &nodev1.BootImage{RootHash: want, Generation: 2, Tag: "v1.5.0"}, StagedState: nodev1.SlotState_SLOT_STATE_ACTIVE}
-	if got := c.imageLine("n1", active); !strings.Contains(got, "it has "+testRootHash[:12]+" (v1.5.0) active, which it boots with its next reboot: chalkctl node reboot n1") {
+	if got := (nodeInventory{c, "n1"}).ImageLine(active); !strings.Contains(got, "it has "+testRootHash[:12]+" (v1.5.0) active, which it boots with its next reboot: chalkctl node reboot n1") {
 		t.Errorf("the line of an active image = %q", got)
 	}
 	staged := &nodev1.BootStatus{Running: running, Staged: active.Staged, StagedState: nodev1.SlotState_SLOT_STATE_STAGED}
-	if got := c.imageLine("n1", staged); !strings.Contains(got, "it has "+testRootHash[:12]+" (v1.5.0) staged: chalkctl node activate n1 makes it boot next") {
+	if got := (nodeInventory{c, "n1"}).ImageLine(staged); !strings.Contains(got, "it has "+testRootHash[:12]+" (v1.5.0) staged: chalkctl node activate n1 makes it boot next") {
 		t.Errorf("the line of a staged image = %q", got)
 	}
-	if got := c.imageLine("n1", &nodev1.BootStatus{Running: running, Staged: &nodev1.BootImage{RootHash: bytes.Repeat([]byte{0xee}, 32), Generation: 2}, StagedState: nodev1.SlotState_SLOT_STATE_ACTIVE}); strings.Contains(got, "node reboot") || !strings.Contains(got, "chalkctl upgrade --nodes n1 installs that image") {
+	if got := (nodeInventory{c, "n1"}).ImageLine(&nodev1.BootStatus{Running: running, Staged: &nodev1.BootImage{RootHash: bytes.Repeat([]byte{0xee}, 32), Generation: 2}, StagedState: nodev1.SlotState_SLOT_STATE_ACTIVE}); strings.Contains(got, "node reboot") || !strings.Contains(got, "chalkctl upgrade --nodes n1 installs that image") {
 		t.Errorf("the line of another image staged = %q", got)
 	}
 	if err := os.Remove(filepath.Join(dir, "images", "test-metal", "metadata.json")); err != nil {
@@ -531,7 +518,7 @@ func TestImageLineOfAStagedImage(t *testing.T) {
 	if c, err = loadInventory(context.Background(), filepath.Join(dir, "chalkos.yaml")); err != nil {
 		t.Fatal(err)
 	}
-	if got := c.imageLine("n1", &nodev1.BootStatus{Running: running}); !strings.Contains(got, "its store is not compared with its image in the inventory: ") || !strings.Contains(got, "has no metadata.json") {
+	if got := (nodeInventory{c, "n1"}).ImageLine(&nodev1.BootStatus{Running: running}); !strings.Contains(got, "its store is not compared with its image in the inventory: ") || !strings.Contains(got, "has no metadata.json") {
 		t.Errorf("the line without the image's directory = %q", got)
 	}
 }
