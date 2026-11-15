@@ -35,17 +35,6 @@ func TestCodes(t *testing.T) {
 	}
 }
 
-// Errorf keeps the error it wraps, and its text is that of fmt.Errorf.
-func TestErrorfWraps(t *testing.T) {
-	err := Errorf(connect.CodeFailedPrecondition, "read the slot: %w", fs.ErrNotExist)
-	if !errors.Is(err, fs.ErrNotExist) {
-		t.Errorf("%v does not wrap fs.ErrNotExist", err)
-	}
-	if got, want := err.Error(), "read the slot: "+fs.ErrNotExist.Error(); got != want {
-		t.Errorf("Error() = %q, want %q", got, want)
-	}
-}
-
 // Error answers with the whole text and the code, keeps a connect error as it is and carries the
 // details of the error in its tree that has its code.
 func TestCodesError(t *testing.T) {

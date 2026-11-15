@@ -95,20 +95,8 @@ func TestRegistryAction(t *testing.T) {
 	}
 }
 
-// Only active issuers count: a compiled issuer of a layer the image lacks leaves the active one
-// the image's issuer.
-func TestRegistryCountsActiveIssuers(t *testing.T) {
-	r, err := NewRegistry(layers.Of("b"), issuer{fake{name: "a"}}, issuer{fake{name: "b"}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got, ok := r.Issuer().(Plugin); !ok || got.Name() != "b" {
-		t.Errorf("issuer %v, want the b layer's", got)
-	}
-}
-
 // Active[T] and Compiled[T] list the plugins that implement the hook, of the active and the
-// compiled plugins.
+// compiled plugins; the image's issuer is the active one.
 func TestRegistryHooks(t *testing.T) {
 	r, err := NewRegistry(layers.Of("c"), issuer{fake{name: "a"}}, fake{name: "b"}, issuer{fake{name: "c"}}, fake{name: "d"})
 	if err != nil {
@@ -126,5 +114,8 @@ func TestRegistryHooks(t *testing.T) {
 	}
 	if got := hookNames(Active[Issuer](r)); !slices.Equal(got, []string{"c"}) {
 		t.Errorf("active issuers %v", got)
+	}
+	if got, ok := r.Issuer().(Plugin); !ok || got.Name() != "c" {
+		t.Errorf("issuer %v, want the c layer's", got)
 	}
 }
