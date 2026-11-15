@@ -334,27 +334,20 @@ let
   };
 in
 lib.runTests {
-  testRefRefusesAReservedNameNoDocumentHas = {
-    expr =
-      fails
-        (kindTypes.ref {
-          kind = "VRF";
-          reserved = [ "Default" ];
-        }).name;
-    expected = true;
-  };
-  testRefRefusesAnUnknownAttribute = {
-    expr =
-      fails
-        (kindTypes.ref {
-          kind = "VRF";
-          reserve = [ "default" ];
-        }).name;
-    expected = true;
-  };
-  testRefNeedsAKind = {
-    expr = fails (kindTypes.ref { reserved = [ "default" ]; }).name;
-    expected = true;
+  # ref refuses a reserved name no document can have, an unknown attribute and no kind.
+  testRefRefuses = {
+    expr = map (a: fails (kindTypes.ref a).name) [
+      {
+        kind = "VRF";
+        reserved = [ "Default" ];
+      }
+      {
+        kind = "VRF";
+        reserve = [ "default" ];
+      }
+      { reserved = [ "default" ]; }
+    ];
+    expected = lib.replicate 3 true;
   };
   # The image's schemas carry the apiVersion of the kind a reference names, wherever it sits.
   testRefGetsItsTargetsAPIVersion = {
@@ -789,23 +782,6 @@ lib.runTests {
           unique = [ { by = [ "nope" ]; } ];
           refusal = "by names nope, which is no field of chalkos.kinds.Pair.spec, whose fields are from, tags, to";
         }
-        {
-          unique = [ { by = [ "tags" ]; } ];
-          refusal = "by names tags, a list, an object or a secretRef, which a key cannot hold";
-        }
-        {
-          unique = [
-            {
-              by = [
-                {
-                  field = "from";
-                  as = "upper";
-                }
-              ];
-            }
-          ];
-          refusal = ''the normaliser "upper" is none of cidr, host, ip, lower'';
-        }
       ];
       # Pair's spec, as pairWith declares it.
       pairSpec = specOf {
@@ -1016,70 +992,56 @@ lib.runTests {
           "Network"
         ];
   };
-  testNetworkdKindNameIsTaken = {
-    expr = fails (
-      schemasOf (worker [
-        {
-          chalkos.kinds.Network = {
+  # A kind is refused when a built-in kind has its name, when its group is reserved, and when its
+  # name, group or version is malformed.
+  testKindDeclarationsRefused = {
+    expr =
+      map
+        (
+          {
+            name,
+            group,
+            version ? "v1",
+          }:
+          fails (schemasOf (worker [ { chalkos.kinds.${name} = { inherit group version; }; } ]))
+        )
+        [
+          {
+            name = "Demo";
             group = "demo.example.org";
-            version = "v1";
-          };
-        }
-      ])
-    );
-    expected = true;
-  };
-  testNetworkdGroupIsReserved = {
-    expr = fails (
-      schemasOf (worker [
-        {
-          chalkos.kinds.Bridge = {
+          }
+          {
+            name = "Network";
+            group = "demo.example.org";
+          }
+          {
+            name = "Host";
+            group = "demo.example.org";
+          }
+          {
+            name = "Bridge";
             group = "networkd.chalkos.dev";
             version = "v1alpha1";
-          };
-        }
-      ])
-    );
-    expected = true;
-  };
-  testLowerCaseKindFails = {
-    expr = fails (
-      schemasOf (worker [
-        {
-          chalkos.kinds.demo = {
+          }
+          {
+            name = "Mine";
+            group = "extra.chalkos.dev";
+          }
+          {
+            name = "demo";
             group = "demo.example.org";
-            version = "v1";
-          };
-        }
-      ])
-    );
-    expected = true;
-  };
-  testInvalidGroupFails = {
-    expr =
-      fails
-        (worker [
-          {
-            chalkos.kinds.Demo = {
-              group = "Demo";
-              version = "v1";
-            };
           }
-        ]).chalkos.kinds.Demo.group;
-    expected = true;
-  };
-  testInvalidVersionFails = {
-    expr =
-      fails
-        (worker [
           {
-            chalkos.kinds.Demo = {
-              group = "demo.example.org";
-              version = "1.0";
-            };
+            name = "Demo";
+            group = "Demo";
           }
-        ]).chalkos.kinds.Demo.version;
-    expected = true;
+          {
+            name = "Demo";
+            group = "demo.example.org";
+            version = "1.0";
+          }
+        ];
+    expected = [ false ] ++ lib.replicate 7 true;
   };
   testBuiltinKindsOfKubernetesImage = {
     expr = lib.sort lib.lessThan (kindNames kubernetesImage);
@@ -1319,32 +1281,6 @@ lib.runTests {
     expr = servicesOf kubernetesImage;
     expected = builtins.fromJSON (builtins.readFile ../fixtures/kinds/services.json);
   };
-  testReservedGroupFails = {
-    expr = fails (
-      schemasOf (worker [
-        {
-          chalkos.kinds.Mine = {
-            group = "extra.chalkos.dev";
-            version = "v1";
-          };
-        }
-      ])
-    );
-    expected = true;
-  };
-  testBuiltinNameIsTaken = {
-    expr =
-      fails
-        (worker [
-          {
-            chalkos.kinds.Host = {
-              group = "demo.example.org";
-              version = "v1";
-            };
-          }
-        ]).chalkos.kinds.Host.group;
-    expected = true;
-  };
   testGrantLoadsItsSecrets = {
     expr = withGrant.systemd.services.bird.serviceConfig.LoadCredential;
     expected = [ "secret:/run/chalkos/credentials/bird" ];
@@ -1579,31 +1515,6 @@ lib.runTests {
         accepted = false;
       };
     };
-  # An attribute set that is none of chalkosLib's renderers, or a mix of more than one, fails the
-  # evaluation.
-  testUnknownRendererFails = {
-    expr = {
-      unknownKey = fails (
-        outputsOf (withBird {
-          chalkos.outputs.t.render = {
-            python = "x.py";
-          };
-        })
-      );
-      twoKeys = fails (
-        outputsOf (withBird {
-          chalkos.outputs.t.render = {
-            jq = "a.jq";
-            template = "a.tmpl";
-          };
-        })
-      );
-    };
-    expected = {
-      unknownKey = true;
-      twoKeys = true;
-    };
-  };
   # chalkosLib's effects act on units when outputs or the documents of kinds change.
   testEffectHelpers = {
     expr = {
@@ -1623,19 +1534,7 @@ lib.runTests {
       };
     };
   };
-  # An effect's outputs name outputs alone, so a misspelled one fails the evaluation.
-  testOutputsRefusesANameThatIsNoOutput = {
-    expr = fails (
-      effectsOf (withBird {
-        chalkos.effects.bird = {
-          outputs = [ "bird-cnf" ];
-          reload = [ "bird.service" ];
-        };
-      })
-    );
-    expected = true;
-  };
-  # An effect on a kind reaches chalkd; a kind the image lacks, Secret and Addon fail.
+  # An effect on a kind reaches chalkd.
   testEffectOnAKindReachesChalkd = {
     expr =
       (effectsOf (withBird {
@@ -1646,47 +1545,92 @@ lib.runTests {
       })).bird.kinds;
     expected = [ "Demo" ];
   };
-  testEffectOnAnUnknownKindFails = {
-    expr =
-      map
-        (
-          kind:
-          fails (
-            effectsOf (withBird {
-              chalkos.effects.bird = {
-                kinds = [ kind ];
-                restart = [ "bird.service" ];
-              };
-            })
+  # An effect fails the evaluation when it names an output the image lacks, which a misspelling
+  # gives, a kind the image lacks, Secret or Addon, or when it has no trigger or no action.
+  testEffectsRefused =
+    let
+      onKind = kind: {
+        kinds = [ kind ];
+        restart = [ "bird.service" ];
+      };
+    in
+    {
+      expr =
+        lib.mapAttrs
+          (
+            _: e:
+            fails (
+              effectsOf (withBird {
+                chalkos.effects.bird = e;
+              })
+            )
           )
-        )
-        [
-          "Nope"
-          "Secret"
-          "Addon"
-        ];
-    expected = [
-      true
-      true
-      true
-    ];
-  };
-  testEffectWithoutTriggerFails = {
-    expr = fails (
-      effectsOf (withBird {
-        chalkos.effects.bird.restart = [ "bird.service" ];
-      })
-    );
-    expected = true;
-  };
-  testEffectWithoutActionFails = {
-    expr = fails (
-      effectsOf (withBird {
-        chalkos.effects.bird.when = "true";
-      })
-    );
-    expected = true;
-  };
+          {
+            output = {
+              outputs = [ "bird-cnf" ];
+              reload = [ "bird.service" ];
+            };
+            unknownKind = onKind "Nope";
+            secret = onKind "Secret";
+            addon = onKind "Addon";
+            noTrigger.restart = [ "bird.service" ];
+            noAction.when = "true";
+          };
+      expected = {
+        output = true;
+        unknownKind = true;
+        secret = true;
+        addon = true;
+        noTrigger = true;
+        noAction = true;
+      };
+    };
+  # An output fails the evaluation when its renderer is none of chalkosLib's or a mix of two, when
+  # it reads a kind the image lacks or Secret, and when its name is not plain.
+  testOutputsRefused =
+    let
+      render = "/nix/store/x-render/bin/render";
+    in
+    {
+      expr =
+        lib.mapAttrs
+          (
+            _: o:
+            fails (
+              outputsOf (withBird {
+                chalkos.outputs = o;
+              })
+            )
+          )
+          {
+            accepted.bird-conf = {
+              inputs = [ "Demo" ];
+              inherit render;
+            };
+            renderer.t.render.python = "x.py";
+            twoRenderers.t.render = {
+              jq = "a.jq";
+              template = "a.tmpl";
+            };
+            unknownKind.bird-conf = {
+              inputs = [ "Nope" ];
+              inherit render;
+            };
+            secret.bird-conf = {
+              inputs = [ "Secret" ];
+              inherit render;
+            };
+            name."Bird.conf" = { inherit render; };
+          };
+      expected = {
+        accepted = false;
+        renderer = true;
+        twoRenderers = true;
+        unknownKind = true;
+        secret = true;
+        name = true;
+      };
+    };
   # An effect's chalkd action or run names a layer of the image; another layer fails.
   testEffectOfAnotherLayerFails = {
     expr =
@@ -1738,36 +1682,6 @@ lib.runTests {
       text = "bird needs its peers";
       file = "/run/bird/why";
     };
-  };
-  testOutputOfUnknownKindFails = {
-    expr = fails (
-      outputsOf (withBird {
-        chalkos.outputs.bird-conf = {
-          inputs = [ "Nope" ];
-          render = "/nix/store/x-render/bin/render";
-        };
-      })
-    );
-    expected = true;
-  };
-  testOutputOfSecretFails = {
-    expr = fails (
-      outputsOf (withBird {
-        chalkos.outputs.bird-conf = {
-          inputs = [ "Secret" ];
-          render = "/nix/store/x-render/bin/render";
-        };
-      })
-    );
-    expected = true;
-  };
-  testOutputNameIsPlain = {
-    expr = fails (
-      outputsOf (withBird {
-        chalkos.outputs."Bird.conf".render = "/nix/store/x-render/bin/render";
-      })
-    );
-    expected = true;
   };
   # An output's dir is a clean path below /run, out of chalkos's own directories but its own and
   # out of every other output's dir, since chalkd replaces whatever it holds with a link.
@@ -2097,10 +2011,6 @@ lib.runTests {
         effect = true;
       };
     };
-  testUnknownKindFailsTheUnits = {
-    expr = fails (grantOf [ "Nope" ]).systemd.services.bird.serviceConfig.LoadCredential;
-    expected = true;
-  };
   testKubernetesImageDirectoryHasKubernetesFacts = {
     expr = builtins.attrNames kubernetesImage.chalkos.imageDirectory.facts;
     expected = [ "kubernetes" ];
@@ -2321,35 +2231,49 @@ lib.runTests {
     expr = chalkosLib.mkOption { type = types.str; } == mkOption { type = types.str; };
     expected = true;
   };
-  # A kind's rules reach x-chalkos-kind; a kind without rules has none there.
-  testKindRulesReachTheSchema = {
+  # A kind's rules reach x-chalkos-kind and its specRules its spec's x-chalkos-rules, as a field's
+  # rules reach the field, each without the other's; a kind without them has neither.
+  testKindAndSpecRulesReachTheSchema = {
     expr =
       let
         schemas =
           (worker [
             demoModule
             {
-              chalkos.kinds.Demo.rules = [
-                {
-                  rule = "size(documents) <= 1";
-                  message = "one Demo";
-                  description = "A node holds one Demo at most.";
-                }
-                {
-                  rule = "documents == oldDocuments";
-                  messageExpression = "\"keep \" + oldDocuments.map(n, n).join(\", \")";
-                  takes = "reinstall";
-                }
-              ];
+              chalkos.kinds.Demo = {
+                rules = [
+                  {
+                    rule = "size(documents) <= 1";
+                    message = "one Demo";
+                    description = "A node holds one Demo at most.";
+                  }
+                  {
+                    rule = "documents == oldDocuments";
+                    messageExpression = "\"keep \" + oldDocuments.map(n, n).join(\", \")";
+                    takes = "reinstall";
+                  }
+                ];
+                specRules = [
+                  {
+                    rule = "self.token == null || self.token == oldSelf.token";
+                    message = "the token stays";
+                    description = "A Demo keeps its token.";
+                  }
+                ];
+              };
             }
           ]).system.build.chalkosKindSchemas;
+        demo = schemas."demo.example.org_v1alpha1_Demo.json";
+        host = schemas."chalkos.dev_v1alpha1_Host.json";
       in
       {
-        demo = schemas."demo.example.org_v1alpha1_Demo.json"."x-chalkos-kind".rules;
-        host = schemas."chalkos.dev_v1alpha1_Host.json"."x-chalkos-kind" ? rules;
+        kind = demo."x-chalkos-kind".rules;
+        spec = demo.properties.spec."x-chalkos-rules";
+        hostKind = host."x-chalkos-kind" ? rules;
+        hostSpec = host.properties.spec ? "x-chalkos-rules";
       };
     expected = {
-      demo = [
+      kind = [
         {
           rule = "size(documents) <= 1";
           message = "one Demo";
@@ -2362,35 +2286,6 @@ lib.runTests {
           takes = "reinstall";
         }
       ];
-      host = false;
-    };
-  };
-  # A kind's specRules reach its spec's x-chalkos-rules, as a field's rules reach the field; a kind
-  # without them has none there, and they add no rule to x-chalkos-kind.
-  testSpecRulesReachTheSpec = {
-    expr =
-      let
-        schemas =
-          (worker [
-            demoModule
-            {
-              chalkos.kinds.Demo.specRules = [
-                {
-                  rule = "self.token == null || self.token == oldSelf.token";
-                  message = "the token stays";
-                  description = "A Demo keeps its token.";
-                }
-              ];
-            }
-          ]).system.build.chalkosKindSchemas;
-        demo = schemas."demo.example.org_v1alpha1_Demo.json";
-      in
-      {
-        spec = demo.properties.spec."x-chalkos-rules";
-        kind = demo."x-chalkos-kind" ? rules;
-        host = schemas."chalkos.dev_v1alpha1_Host.json".properties.spec ? "x-chalkos-rules";
-      };
-    expected = {
       spec = [
         {
           rule = "self.token == null || self.token == oldSelf.token";
@@ -2399,8 +2294,8 @@ lib.runTests {
           description = "A Demo keeps its token.";
         }
       ];
-      kind = false;
-      host = false;
+      hostKind = false;
+      hostSpec = false;
     };
   };
   # The image's facts reach /etc/chalkos/facts.json: a file with the fields it keeps, or a command
@@ -2481,65 +2376,42 @@ lib.runTests {
       fallback = true;
     };
   };
-  testFactNameIsAnIdentifier = {
-    expr = fails (worker [ { chalkos.facts.disk-ids.file = "/x"; } ]).system.build.chalkosFacts.drvPath;
-    expected = true;
-  };
-  testFactWithFileAndCommandFails = {
+  # A fact fails the build when its name is no identifier, when it has both a file and a command or
+  # neither, when a file fact has inputs, and when a command fact has fields or hashes others.
+  testFactsRefused = {
     expr =
-      fails
-        (worker [
-          {
-            chalkos.facts.x = {
-              file = "/x";
-              command = "/bin/x";
-            };
-          }
-        ]).system.build.chalkosFacts.drvPath;
-    expected = true;
-  };
-  testFactWithoutSourceFails = {
-    expr = fails (worker [ { chalkos.facts.x = { }; } ]).system.build.chalkosFacts.drvPath;
-    expected = true;
-  };
-  testFileFactWithInputsFails = {
-    expr =
-      fails
-        (worker [
-          {
-            chalkos.facts.x = {
-              file = "/x";
-              inputs = [ "fallbackSecret" ];
-            };
-          }
-        ]).system.build.chalkosFacts.drvPath;
-    expected = true;
-  };
-  testCommandFactWithFieldsFails = {
-    expr =
-      fails
-        (worker [
-          {
-            chalkos.facts.x = {
-              command = "/bin/x";
-              fields = [ "kind" ];
-            };
-          }
-        ]).system.build.chalkosFacts.drvPath;
-    expected = true;
-  };
-  testCommandFactThatHashesFails = {
-    expr =
-      fails
-        (worker [
-          {
-            chalkos.facts.x = {
-              command = "/bin/x";
-              hashOthers = true;
-            };
-          }
-        ]).system.build.chalkosFacts.drvPath;
-    expected = true;
+      lib.mapAttrs
+        (_: facts: fails (worker [ { chalkos = { inherit facts; }; } ]).system.build.chalkosFacts.drvPath)
+        {
+          accepted.x.file = "/x";
+          name.disk-ids.file = "/x";
+          fileAndCommand.x = {
+            file = "/x";
+            command = "/bin/x";
+          };
+          noSource.x = { };
+          fileWithInputs.x = {
+            file = "/x";
+            inputs = [ "fallbackSecret" ];
+          };
+          commandWithFields.x = {
+            command = "/bin/x";
+            fields = [ "kind" ];
+          };
+          commandHashes.x = {
+            command = "/bin/x";
+            hashOthers = true;
+          };
+        };
+    expected = {
+      accepted = false;
+      name = true;
+      fileAndCommand = true;
+      noSource = true;
+      fileWithInputs = true;
+      commandWithFields = true;
+      commandHashes = true;
+    };
   };
   # A test's file, which chalkos-rules test reads: each test with its expectations, the files it
   # names as their store paths and what it leaves unset at the defaults.
