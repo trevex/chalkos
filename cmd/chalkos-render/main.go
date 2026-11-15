@@ -22,6 +22,7 @@ import (
 	"text/template"
 	"text/template/parse"
 
+	"github.com/trevex/chalkos/pkg/jsonfile"
 	"github.com/trevex/chalkos/pkg/refusals"
 	"github.com/trevex/chalkos/pkg/router/derive"
 )
@@ -176,10 +177,12 @@ func validate(name string, stdin io.Reader, stdout io.Writer) error {
 
 // readInput reads the input with its numbers exact, as documents hold them.
 func readInput(r io.Reader) (map[string]any, error) {
-	dec := json.NewDecoder(r)
-	dec.UseNumber()
+	data, err := io.ReadAll(r)
+	if err != nil {
+		return nil, fmt.Errorf("read the input: %w", err)
+	}
 	var in map[string]any
-	if err := dec.Decode(&in); err != nil {
+	if err := jsonfile.DecodeExact(data, &in); err != nil {
 		return nil, fmt.Errorf("read the input: %w", err)
 	}
 	return in, nil
