@@ -22,12 +22,11 @@ import (
 	"github.com/trevex/chalkos/pkg/statusview"
 )
 
-// rebooter reboots nodes of a cluster as chalkctl upgrade and chalkctl node reboot both do,
-// one node at a time: the node's layers hold it (Kubernetes keeps etcd's quorum and drains
-// it), it reboots, chalkctl waits until it runs the image it boots next and its boot was
-// found healthy, and its layers release it once it serves their clusters again (Kubernetes
-// uncordons it once its Node is Ready). The layers act through the cluster's coordinators,
-// such as Kubernetes control planes.
+// rebooter reboots nodes one at a time for upgrade and node reboot: the node's layers hold it
+// (Kubernetes keeps etcd's quorum and drains it), it reboots, chalkctl waits for a healthy boot of
+// the image it boots next, and the layers release it once it serves their clusters (Kubernetes
+// uncordons it once its Node is Ready). The layers act through the cluster's coordinators, such as
+// Kubernetes control planes.
 type rebooter struct {
 	a       *app
 	cluster *cluster
@@ -37,8 +36,8 @@ type rebooter struct {
 	// coordinators are the cluster's nodes that act for the others, which the layers drain and
 	// release nodes through.
 	coordinators []string
-	// fellBack is the error of a node that fell back from the image it rebooted into, with what its
-	// boots logged; nil says so of a reboot alone.
+	// fellBack builds the error for a node that fell back from its image, with what its boots
+	// logged; nil uses the default message.
 	fellBack func(n *rebootNode, boot *nodev1.BootStatus) error
 	out      sync.Mutex
 }
@@ -118,13 +117,10 @@ func (t bootTarget) booted(boot *nodev1.BootStatus) bool {
 	return bytes.Equal(boot.GetRunning().GetRootHash(), t.root) && boot.GetBlessed() && (t.before == "" || boot.GetBootId() != t.before)
 }
 
-// reboot runs the reboot step for the node: its layers hold it unless hold is false, it reboots
-// into the target's image, and release waits for that boot and releases the node. activate, when
-// set, runs once the node is held, right before the reboot: an upgrade makes the image boot next
-// only then, so a refused hold, as when etcd would lose its quorum, leaves the image staged, which
-// no reboot of the node boots meanwhile. An activation that fails leaves the image staged too,
-// and the node, which does not reboot, is released at once, unless the image boots next all the
-// same.
+// reboot holds the node (unless hold is false), runs activate, reboots it into t and has release
+// wait for the boot and release it. activate runs only once the node is held, so a refused hold, as
+// when etcd would lose its quorum, leaves the image staged. A failed activation leaves it staged
+// too and releases the node at once, unless the image boots next anyway.
 func (b *rebooter) reboot(ctx context.Context, n *rebootNode, t bootTarget, hold bool, activate func() error) error {
 	if hold {
 		n.held = true
@@ -164,10 +160,9 @@ func (b *rebooter) reboot(ctx context.Context, n *rebootNode, t bootTarget, hold
 	return b.release(ctx, n, t, hold)
 }
 
-// heldForActivation is the error of a node held for a reboot whose activation failed with err,
-// when the node stays held: the target's image boots next all the same, or the node's status,
-// which tells, cannot be read. It is nil when the image does not boot next, so the node is
-// released.
+// heldForActivation is the error of a node whose activation failed with err and that stays held,
+// since t's image boots next anyway or the status cannot tell; nil when the image does not boot
+// next, so the node is released.
 func (b *rebooter) heldForActivation(ctx context.Context, n *rebootNode, t bootTarget, err error) error {
 	held := "it stays held"
 	if n.roles.member() {
@@ -196,11 +191,10 @@ func (b *rebooter) release(ctx context.Context, n *rebootNode, t bootTarget, hel
 	return b.hooks(ctx, n, layer.Upgrade.After)
 }
 
-// waitHealthy waits until the node runs the target's image in another boot than the one before,
-// its boot was found healthy, and it serves the clusters of its layers again, or until it fell
-// back or its boot settled and stayed unhealthy for the grace period. The chalkd of the boot
-// before may answer until it stops, so without the ID of that boot a settled boot that is not
-// healthy may be the one before, and only the timeout ends the wait.
+// waitHealthy waits for a healthy boot of t, other than the one before, that serves the node's
+// layers. It fails early when the node fell back or stayed settled and unhealthy for the grace
+// period; without t.before only the timeout ends the wait, since the previous boot's chalkd may
+// still answer.
 func (b *rebooter) waitHealthy(ctx context.Context, n *rebootNode, t bootTarget) error {
 	var fellBack, unhealthy error
 	// checkHealth is set once a look found the boot the wait is for; only then is the node asked
@@ -394,13 +388,10 @@ func (b *rebooter) nodeNames() []string {
 	return b.cluster.NodeNames()
 }
 
-// findCoordinators names the cluster's coordinators: the nodes probed, or asked now, that act for
-// the others, and those the inventory lists. The coordinators drain the nodes and keep their
-// cluster's quorum, so every node's role is read, also of nodes the run leaves alone. Loading the
-// inventory read every node's files already, so a node whose files are broken stops every command,
-// and this adds only a node whose files hold the same document twice. Without an inventory, the
-// nodes --address names that the run leaves alone are asked. When the run holds nodes, a node of
-// held that its layers hold through a coordinator stops the run while the cluster has none.
+// findCoordinators collects the nodes that act for the others, which drain nodes and keep their
+// cluster's quorum: probed nodes that report the role and those the inventory lists, so every
+// node's role is read. Without an inventory, the --address nodes are probed too. With no
+// coordinator, a held node that its layers hold through one stops the run.
 func (b *rebooter) findCoordinators(ctx context.Context, probed map[string]bool, held []*rebootNode) error {
 	for _, name := range b.nodeNames() {
 		if _, ok := probed[name]; b.cluster.Partial() && !ok {

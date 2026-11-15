@@ -282,10 +282,9 @@ func kindList(kinds []clustersecrets.RotationKind, last string) string {
 	return strings.Join(names[:len(names)-1], ", ") + last + names[len(names)-1]
 }
 
-// skipRevoked reads the revoked nodes from every layer that lists them and leaves those of the
-// cluster out of the rotation, naming each as it first skips it. Without a layer's list no phase
-// runs, so none hands a certificate to a revoked node. A node stays skipped for the rest of the
-// run once it is: it missed the phases before.
+// skipRevoked leaves the nodes the layers list as revoked out of the rotation and names each the
+// first time. Without a layer's list no phase runs, so no revoked node gets a certificate. A
+// skipped node stays skipped for the run, as it missed the earlier phases.
 func (r *rotation) skipRevoked(ctx context.Context) error {
 	if r.ignoreRevoked {
 		return nil

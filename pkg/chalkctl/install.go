@@ -188,10 +188,9 @@ func (a *app) install(ctx context.Context, f installFlags, pos []string) error {
 	return nil
 }
 
-// installerImage is the image an installer writes, with its contract: the image the path names,
-// or without one the node's image in the inventory. That image comes from its directory, which
-// must hold the build its metadata.json names, or from a registry, which the installer pulls by
-// the digest chalkctl resolved.
+// installerImage opens path, or else the node's image in the inventory: its directory, which must
+// hold the build its metadata.json names, or its OCI reference, which the installer pulls by the
+// digest chalkctl resolved.
 func (a *app) installerImage(ctx context.Context, t *target, path string) (*diskImage, error) {
 	fromInventory := path == ""
 	if fromInventory {

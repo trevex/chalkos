@@ -37,13 +37,11 @@ const (
 	untilConfirm applyStep = "confirm"
 )
 
-// configRollout delivers the inventory's config to several nodes, one after the other, and stops
-// at the first that fails. When the config changes the versions a layer's cluster bounds, such as
-// the Kubernetes API server's, the run is ordered: the layer checks the versions its nodes run
-// first, then the coordinators get the config one at a time, each held by the layer and on trial
-// until the layer finds it serves its cluster with the config, and the other nodes after them.
-// No node reboots. A node that runs the config already is left alone, so the same command run
-// again continues where a run stopped.
+// configRollout delivers the inventory's config node by node and stops at the first failure. When
+// the config changes a version a layer bounds, such as the Kubernetes API server's, the layer
+// checks the versions its nodes run, then coordinators go first, one at a time, each held and on
+// trial until the layer finds it serving. No node reboots. Nodes that run the config already are
+// left alone, so a rerun continues.
 type configRollout struct {
 	*rebooter
 	f applyConfigFlags
@@ -94,11 +92,9 @@ func (a *app) deliverToNodes(ctx context.Context, f applyConfigFlags, names []st
 	return nil
 }
 
-// plan reads, before anything is delivered, each node's layers and, from several, its status,
-// and checks its config against the image it runs; then it asks the node's Rollout layers whether
-// the config changes the versions they bound against the config the node runs. A run that changes
-// none asks no layer's service anything. One that changes some reads each node's roles, and the
-// layers that find a change check the versions the nodes of their clusters run.
+// plan reads each node's layers and, for several nodes, its status, and checks its config against
+// its image. Only when a Rollout layer reports a version change does it read roles, and the layers
+// check the versions their clusters' nodes run.
 func (r *configRollout) plan(ctx context.Context, names []string) error {
 	for _, name := range names {
 		if err := r.cluster.node(name); err != nil {
@@ -214,10 +210,10 @@ func (r *configRollout) order() []string {
 	return append(coordinators, others...)
 }
 
-// node delivers the config to the node and reports whether it delivered it. A node that runs the
-// config already gets nothing; in an ordered run a coordinator is then checked as one the run
-// delivered to, so a run again continues once it serves its cluster. A coordinator of an ordered
-// run is held by its layers and gets the config on trial.
+// node delivers the config to the node and reports whether it did. A node that runs it already gets
+// nothing, but in an ordered run a coordinator is then checked as if delivered, so a rerun
+// continues once it serves its cluster. An ordered run's coordinator is held and gets the config on
+// trial.
 func (r *configRollout) node(ctx context.Context, n *rolloutNode) (bool, error) {
 	t, err := r.reach.target(n.name)
 	if err != nil {
@@ -313,10 +309,9 @@ func (r *upgradeRun) checkImages(ctx context.Context) error {
 	return nil
 }
 
-// waitDelivered waits, until the time given, for the Rollout layers of the image the node runs to
-// find that it serves their clusters with the config it runs, asking over a new connection each
-// time. The layers are read on each attempt too: a node that does not answer for a while after a
-// delivery, as one whose config restarts its network, is asked again until the time given.
+// waitDelivered waits until until for the node's Rollout layers to find it serving their clusters
+// with its config, reading the layers again over a new connection on each attempt, so a node whose
+// config restarts its network is asked again.
 func (a *app) waitDelivered(ctx context.Context, t *target, until time.Time) error {
 	said := false
 	var last error
@@ -387,10 +382,9 @@ func (n *rolloutNode) roleIn(l layer.Rollout) layer.UpgradeRole {
 	return layer.UpgradeRole{}
 }
 
-// checkChanges refuses an upgrade whose config, which each node gets with its image, changes a
-// version a Rollout layer bounds, against the config the node runs: config apply delivers such a
-// change in the order the layer needs, which an upgrade does not. A run that withholds config
-// delivers none, and a node that refuses to show its config has the run withhold it.
+// checkChanges refuses an upgrade whose config changes a version a Rollout layer bounds: config
+// apply delivers such a change in the order the layer needs, an upgrade does not. A run that
+// withholds config delivers none.
 func (r *upgradeRun) checkChanges(ctx context.Context) error {
 	layers := compiled[layer.Rollout]()
 	if len(layers) == 0 {
