@@ -2,7 +2,6 @@ package main
 
 import (
 	"encoding/binary"
-	"encoding/json"
 	"fmt"
 	"maps"
 	"math"
@@ -121,11 +120,7 @@ func renderKea(pdHook string, in map[string]any, out string) error {
 		} else {
 			config = keaConfig(srv, byServer[srv])
 		}
-		data, err := json.MarshalIndent(config, "", "  ")
-		if err != nil {
-			return err
-		}
-		if err := writeFile(out, srv.file(), append(data, '\n')); err != nil {
+		if err := writeJSON(out, srv.file(), config); err != nil {
 			return err
 		}
 	}

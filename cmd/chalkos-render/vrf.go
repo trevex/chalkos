@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"maps"
 	"slices"
-	"strconv"
 	"strings"
 
 	"github.com/trevex/chalkos/pkg/refusals"
@@ -76,7 +75,7 @@ func withVRFUnits(vrfs []derive.Named[derive.VRFSpec], networks map[string]strin
 		unit := map[string]any{"name": derive.VRFUnitPrefix + v.Name}
 		netdevs = append(netdevs, map[string]any{"metadata": unit, "spec": map[string]any{
 			"netDev": map[string]any{"kind": "vrf", "name": v.Name},
-			"vrf":    map[string]any{"table": json.Number(strconv.FormatUint(uint64(v.Spec.Table), 10))},
+			"vrf":    map[string]any{"table": number(v.Spec.Table)},
 		}})
 		docs = append(docs, map[string]any{"metadata": unit, "spec": map[string]any{
 			"match": map[string]any{"name": v.Name},
@@ -149,7 +148,7 @@ const vrfDefaultMetric = "4278198272"
 // goes on to the main table otherwise, so the VRF's traffic would follow the default VRF's routes
 // and the loose reverse-path filter would accept sources that only the default VRF reaches.
 func unreachableDefaults(table uint32) []any {
-	t := json.Number(strconv.FormatUint(uint64(table), 10))
+	t := number(table)
 	var routes []any
 	for _, destination := range []string{"0.0.0.0/0", "::/0"} {
 		routes = append(routes, map[string]any{

@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/json"
 	"fmt"
 	"net/netip"
 	"strings"
@@ -53,11 +52,7 @@ func renderJool(in map[string]any, out string) error {
 			name string
 			v    any
 		}{{n.Name + ".json", joolOf(n)}, {n.Name + ".veth", linkOf(n)}} {
-			data, err := json.MarshalIndent(f.v, "", "  ")
-			if err != nil {
-				return err
-			}
-			if err := writeFile(out, f.name, append(data, '\n')); err != nil {
+			if err := writeJSON(out, f.name, f.v); err != nil {
 				return err
 			}
 		}

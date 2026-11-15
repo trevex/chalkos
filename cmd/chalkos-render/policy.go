@@ -228,7 +228,7 @@ func withPolicyRoutes(d derive.Model, docs map[string]any) (map[string]any, erro
 	for _, t := range targets {
 		rules = append(rules, map[string]any{
 			"firewallMark": fmt.Sprintf("0x%x/0x%x", t.mark, policyMarkMask),
-			"table":        json.Number(strconv.FormatUint(uint64(t.table), 10)),
+			"table":        number(t.table),
 			"priority":     json.Number(strconv.Itoa(policyRulePriority)),
 			"family":       "both",
 		})
@@ -263,7 +263,7 @@ func withPolicyRoutes(d derive.Model, docs map[string]any) (map[string]any, erro
 		}
 		add(link, "route", []any{map[string]any{
 			"gateway": h.Address.String(),
-			"table":   json.Number(strconv.FormatUint(uint64(h.Table), 10)),
+			"table":   number(h.Table),
 		}})
 	}
 	out := maps.Clone(docs)

@@ -1,11 +1,9 @@
 package main
 
 import (
-	"encoding/json"
 	"maps"
 	"net/netip"
 	"slices"
-	"strconv"
 
 	"github.com/trevex/chalkos/pkg/refusals"
 	"github.com/trevex/chalkos/pkg/router/derive"
@@ -49,7 +47,7 @@ func withWireGuardUnits(d derive.Model, byKind, docs map[string]any) (map[string
 				peer["endpoint"] = *p.Spec.Endpoint
 			}
 			if k := p.Spec.PersistentKeepalive; k != nil {
-				peer["persistentKeepalive"] = json.Number(strconv.FormatUint(uint64(*k), 10))
+				peer["persistentKeepalive"] = number(*k)
 			}
 			if p.Spec.PresharedKey != nil {
 				psk, err := credentialOf(*p.Spec.PresharedKey)
@@ -64,7 +62,7 @@ func withWireGuardUnits(d derive.Model, byKind, docs map[string]any) (map[string
 		netdev := map[string]any{
 			"netDev": map[string]any{"kind": "wireguard", "name": w.Name},
 			"wireGuard": map[string]any{
-				"listenPort": json.Number(strconv.FormatUint(uint64(w.Spec.ListenPort), 10)),
+				"listenPort": number(w.Spec.ListenPort),
 				"privateKey": key,
 				"routeTable": routeTable(w.Table),
 			},
@@ -79,7 +77,7 @@ func withWireGuardUnits(d derive.Model, byKind, docs map[string]any) (map[string
 		}
 		spec := map[string]any{"match": map[string]any{"name": w.Name}, "network": network}
 		if w.Spec.MTU != nil {
-			spec["link"] = map[string]any{"mtuBytes": json.Number(strconv.FormatUint(uint64(*w.Spec.MTU), 10))}
+			spec["link"] = map[string]any{"mtuBytes": number(*w.Spec.MTU)}
 		}
 		networks = append(networks, map[string]any{"metadata": meta, "spec": spec})
 	}
@@ -114,5 +112,5 @@ func routeTable(table uint32) any {
 	if table == 254 {
 		return "main"
 	}
-	return json.Number(strconv.FormatUint(uint64(table), 10))
+	return number(table)
 }

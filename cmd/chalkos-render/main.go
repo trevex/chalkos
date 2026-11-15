@@ -287,16 +287,26 @@ func writeDocuments(kinds []string, in map[string]any, out string) error {
 			if err != nil {
 				return err
 			}
-			b, err := json.MarshalIndent(obj, "", "  ")
-			if err != nil {
-				return err
-			}
-			if err := writeFile(out, filepath.Join(kind, name+".json"), append(b, '\n')); err != nil {
+			if err := writeJSON(out, filepath.Join(kind, name+".json"), obj); err != nil {
 				return err
 			}
 		}
 	}
 	return nil
+}
+
+// writeJSON writes v as indented JSON to the file rel below out.
+func writeJSON(out, rel string, v any) error {
+	data, err := json.MarshalIndent(v, "", "  ")
+	if err != nil {
+		return err
+	}
+	return writeFile(out, rel, append(data, '\n'))
+}
+
+// number is n as a JSON number.
+func number[T ~uint16 | ~uint32](n T) json.Number {
+	return json.Number(strconv.FormatUint(uint64(n), 10))
 }
 
 // writeFile writes data to out/rel, which must stay below out.
