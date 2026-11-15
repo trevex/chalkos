@@ -68,8 +68,8 @@ func (c *Clock) Drain(done <-chan struct{}) {
 
 // Run starts run, such as a Renewal's Run, against clock and arranges for it to stop once the
 // test ends. It returns a function that ends the current wait at the time given and returns the
-// next one.
-func Run(t testing.TB, run func(context.Context), clock *Clock) func(time.Time) time.Duration {
+// next one, and the first wait.
+func Run(t testing.TB, run func(context.Context), clock *Clock) (advance func(time.Time) time.Duration, first time.Duration) {
 	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
@@ -78,6 +78,6 @@ func Run(t testing.TB, run func(context.Context), clock *Clock) func(time.Time) 
 		cancel()
 		clock.Drain(done)
 	})
-	clock.Next(t)
-	return func(now time.Time) time.Duration { return clock.Advance(t, now) }
+	first = clock.Next(t)
+	return func(now time.Time) time.Duration { return clock.Advance(t, now) }, first
 }

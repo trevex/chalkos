@@ -582,9 +582,8 @@ func TestControlPlaneRenewalWaitsForThePreparation(t *testing.T) {
 	s.k.leaves = r
 	start := time.Now()
 	clock := renewaltest.NewClock(start)
-	r.Now = clock.Now
-	r.After = clock.After
-	advance := renewaltest.Run(t, r.Run, clock)
+	r.Now, r.After = clock.Now, clock.After
+	advance, _ := renewaltest.Run(t, r.Run, clock)
 	now := start
 	for range 3 {
 		now = now.Add(advance(now))

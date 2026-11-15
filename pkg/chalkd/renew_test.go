@@ -321,18 +321,9 @@ func TestRenewalThresholdsAndBackoff(t *testing.T) {
 		}
 		return signRequest(c.nodeCA, pki.NamesOf(leaf), request, clock.Now())
 	})
-	r.Now = clock.Now
-	r.After = clock.After
-	ctx, cancel := context.WithCancel(context.Background())
-	done := make(chan struct{})
-	go func() { r.Run(ctx); close(done) }()
-	t.Cleanup(func() {
-		cancel()
-		clock.Drain(done)
-	})
-	advance := func(now time.Time) time.Duration { return clock.Advance(t, now) }
-
-	if first := clock.Next(t); first >= time.Hour/10 {
+	r.Now, r.After = clock.Now, clock.After
+	advance, first := renewaltest.Run(t, r.Run, clock)
+	if first >= time.Hour/10 {
 		t.Errorf("the first check comes after %v, want soon after the start", first)
 	}
 	// Before two thirds of the lifetime nothing is renewed, and the next check is about an hour on.
@@ -508,8 +499,7 @@ func TestRenewalAttemptsEndAtTheirDeadline(t *testing.T) {
 	})
 	r.Timeout = time.Second
 	clock := renewaltest.NewClock(time.Now())
-	r.Now = clock.Now
-	r.After = clock.After
+	r.Now, r.After = clock.Now, clock.After
 
 	before := runtime.NumGoroutine()
 	ctx, cancel := context.WithCancel(context.Background())
@@ -642,7 +632,7 @@ func TestNodeRenewalWithoutAnIssuer(t *testing.T) {
 	}
 	clock := renewaltest.NewClock(time.Now())
 	r.Now, r.After = clock.Now, clock.After
-	advance := renewaltest.Run(t, r.Run, clock)
+	advance, _ := renewaltest.Run(t, r.Run, clock)
 	advance(pki.RenewAt(leaf).Add(time.Minute))
 	// A forced renewal runs at once and asks for the next wait, which Next takes.
 	r.Force()

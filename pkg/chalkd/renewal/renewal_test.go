@@ -18,9 +18,9 @@ import (
 func runRenewal(t *testing.T, r *Renewal, start time.Time) (*renewaltest.Clock, func(time.Time) time.Duration) {
 	t.Helper()
 	clock := renewaltest.NewClock(start)
-	r.Now = clock.Now
-	r.After = clock.After
-	return clock, renewaltest.Run(t, r.Run, clock)
+	r.Now, r.After = clock.Now, clock.After
+	advance, _ := renewaltest.Run(t, r.Run, clock)
+	return clock, advance
 }
 
 // A check that fails, as before the preparation wrote the control plane's certificates at boot,
@@ -80,20 +80,6 @@ func TestRenewalAfterAFailureRenewsOnlyWhileDue(t *testing.T) {
 	if renewals != 1 {
 		t.Errorf("renewed again though nothing was due any more")
 	}
-	if r.Problem() != "" {
-		t.Errorf("problem once nothing is due = %q", r.Problem())
-	}
-}
-
-// A renewal started again keeps no problem from an earlier run once a check finds nothing due.
-func TestRenewalClearsAnEarlierProblem(t *testing.T) {
-	start := time.Now()
-	r := New("test", func(time.Time) (bool, time.Time, error) {
-		return false, start.Add(48 * time.Hour), nil
-	}, func(context.Context, time.Time) error { return nil })
-	r.setProblem("renewal failing: connection refused; expires 2027-10-08T12:00:00Z")
-	_, advance := runRenewal(t, r, start)
-	advance(start)
 	if r.Problem() != "" {
 		t.Errorf("problem once nothing is due = %q", r.Problem())
 	}

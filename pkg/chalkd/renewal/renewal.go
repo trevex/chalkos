@@ -10,6 +10,13 @@ import (
 	"time"
 )
 
+// The time between two checks, and the first wait after a failure, which doubles up to maxRetry.
+const (
+	check      = time.Hour
+	firstRetry = time.Minute
+	maxRetry   = time.Hour
+)
+
 // Renewal renews a certificate, or a set of them, once it is due, checking about hourly. A failed
 // renewal keeps what is there and is tried again with backoff.
 type Renewal struct {
@@ -23,9 +30,6 @@ type Renewal struct {
 	// Now and After are the clock; tests replace them.
 	Now   func() time.Time
 	After func(time.Duration) <-chan time.Time
-	// Check is the time between two checks; FirstRetry is the first wait after a failure, which
-	// doubles up to MaxRetry.
-	Check, FirstRetry, MaxRetry time.Duration
 	// Timeout bounds each attempt, so a peer that accepts the connection and never answers does
 	// not stop the renewal for good.
 	Timeout time.Duration
@@ -40,16 +44,13 @@ type Renewal struct {
 // hourly.
 func New(what string, due func(time.Time) (bool, time.Time, error), renew func(context.Context, time.Time) error) *Renewal {
 	return &Renewal{
-		What:       what,
-		Due:        due,
-		Renew:      renew,
-		Now:        time.Now,
-		After:      time.After,
-		Check:      time.Hour,
-		FirstRetry: time.Minute,
-		MaxRetry:   time.Hour,
-		Timeout:    time.Minute,
-		force:      make(chan struct{}, 1),
+		What:    what,
+		Due:     due,
+		Renew:   renew,
+		Now:     time.Now,
+		After:   time.After,
+		Timeout: time.Minute,
+		force:   make(chan struct{}, 1),
 	}
 }
 
@@ -70,7 +71,7 @@ func (r *Renewal) setProblem(problem string) {
 // Run renews when due until ctx ends. The first check comes soon after the start, so a node that
 // was off when a renewal fell due renews at once.
 func (r *Renewal) Run(ctx context.Context) {
-	wait := jitter(r.Check / 10)
+	wait := jitter(check / 10)
 	retry := time.Duration(0)
 	// forced is a forced renewal that has not succeeded yet. Any other attempt follows a check
 	// that found the renewal due: one that failed may have been made unnecessary since, by a
@@ -88,33 +89,29 @@ func (r *Renewal) Run(ctx context.Context) {
 		}
 		now := r.Now()
 		due, expires, err := r.Due(now)
-		if err == nil && !forced && !due {
-			retry, logged = 0, false
-			r.setProblem("")
-			wait = r.nextCheck()
-			continue
-		}
-		if err == nil && r.Renew == nil {
+		switch {
+		case err != nil:
+		case !forced && !due:
+			logged = false
+		case r.Renew == nil:
 			// Nothing here renews: the renewal says once that it is due, and Status says what to do.
 			if due && !logged {
 				log.Printf("%s is due for renewal and expires %s; nothing on this node renews it", r.What, expires.UTC().Format(time.RFC3339))
 			}
 			logged = due
-			retry, forced = 0, false
-			r.setProblem("")
-			wait = r.nextCheck()
-			continue
-		}
-		if err == nil {
+		default:
 			attempt, cancel := context.WithTimeout(ctx, r.Timeout)
 			err = r.Renew(attempt, now)
 			cancel()
-		}
-		if ctx.Err() != nil {
-			return
+			if ctx.Err() != nil {
+				return
+			}
+			if err == nil {
+				log.Printf("%s renewed", r.What)
+			}
 		}
 		if err != nil {
-			retry = min(max(2*retry, r.FirstRetry), r.MaxRetry)
+			retry = min(max(2*retry, firstRetry), maxRetry)
 			problem := "renewal failing: " + err.Error()
 			if !expires.IsZero() {
 				problem += "; expires " + expires.UTC().Format(time.RFC3339)
@@ -128,13 +125,10 @@ func (r *Renewal) Run(ctx context.Context) {
 		}
 		retry, forced = 0, false
 		r.setProblem("")
-		log.Printf("%s renewed", r.What)
-		wait = r.nextCheck()
+		// The next check comes after an hour, give or take a tenth.
+		wait = check - check/10 + jitter(check/5)
 	}
 }
-
-// nextCheck is how long the renewal waits for its next check: Check give or take a tenth.
-func (r *Renewal) nextCheck() time.Duration { return r.Check - r.Check/10 + jitter(r.Check/5) }
 
 // jitter returns a random duration below d, so nodes that started together spread their checks.
 func jitter(d time.Duration) time.Duration {
