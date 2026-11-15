@@ -45,15 +45,9 @@ func (s *Server) Upgrade(ctx context.Context, stream *connect.ClientStream[nodev
 		return nil, err
 	}
 	defer unlock()
-	if !stream.Receive() {
-		if err := stream.Err(); err != nil {
-			return nil, err
-		}
-		return nil, layer.Errorf(connect.CodeInvalidArgument, "the upgrade request has no header")
-	}
-	h := stream.Msg().GetHeader()
-	if h == nil {
-		return nil, layer.Errorf(connect.CodeInvalidArgument, "the first upgrade message must be the header")
+	h, err := readHeader(stream, (*nodev1.UpgradeRequest).GetHeader, "upgrade")
+	if err != nil {
+		return nil, err
 	}
 	if role, _ := ctx.Value(roleKey{}).(pki.Role); (h.GetConfig() != "" || h.GetFallbackSecret() != "") && !role.Allows(pki.RoleAdmin) {
 		return nil, layer.Errorf(connect.CodePermissionDenied, "%s with config or a fallback secret needs the %s role; without them the node gives the image its pending config, else carries its own config over", stream.Spec().Procedure, pki.RoleAdmin)
@@ -198,10 +192,7 @@ func (s *Server) stageConfig(ctx context.Context, st imageStore, system, platfor
 	if err != nil {
 		return imageConfig{}, c.refused(err, s.nodeName())
 	}
-	// An upgrade's answer has no warnings; the journal keeps them.
-	for _, w := range warnings {
-		log.Printf("the config of %x: %s", rootHash, w)
-	}
+	logWarnings(rootHash, warnings)
 	c.docs = nil
 	return c, nil
 }

@@ -202,9 +202,6 @@ func headerName(h *nodev1.InstallHeader) (string, error) {
 // describe it, and the contract's schemas: what the installer translates the config with to lay
 // the target disk out.
 func (s *Server) headerTarget(h *nodev1.InstallHeader, contract *nodev1.ImageContract) (config.Target, *schema.Schemas, error) {
-	if h.Image == nil {
-		return config.Target{}, nil, layer.Errorf(connect.CodeInvalidArgument, "the installer needs the node's image to write to the target disk")
-	}
 	if len(contract.GetSchemas()) == 0 {
 		return config.Target{}, nil, layer.Errorf(connect.CodeInvalidArgument, "the header carries config but not the schemas of the image it installs")
 	}

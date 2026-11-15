@@ -36,15 +36,9 @@ func (s *Server) Install(ctx context.Context, stream *connect.ClientStream[nodev
 	if s.installed {
 		return nil, layer.Errorf(connect.CodeFailedPrecondition, "the node is installed and reboots")
 	}
-	if !stream.Receive() {
-		if err := stream.Err(); err != nil {
-			return nil, err
-		}
-		return nil, layer.Errorf(connect.CodeInvalidArgument, "the install request has no header")
-	}
-	h := stream.Msg().GetHeader()
-	if h == nil {
-		return nil, layer.Errorf(connect.CodeInvalidArgument, "the first install message must be the header")
+	h, err := readHeader(stream, (*nodev1.InstallRequest).GetHeader, "install")
+	if err != nil {
+		return nil, err
 	}
 	// The target must fit the mode before the config is translated for the image it names.
 	switch h.Target.(type) {
@@ -65,6 +59,9 @@ func (s *Server) Install(ctx context.Context, stream *connect.ClientStream[nodev
 	default:
 		return nil, layer.Errorf(connect.CodeInvalidArgument, "the install header names no target")
 	}
+	if h.Config == "" {
+		return nil, layer.Errorf(connect.CodeInvalidArgument, "the header delivers no config")
+	}
 	// An image the installer pulls brings the contract the config is translated with.
 	contract := h.GetContract()
 	var pull *ociimage.Pull
@@ -75,9 +72,6 @@ func (s *Server) Install(ctx context.Context, stream *connect.ClientStream[nodev
 			return nil, err
 		}
 		defer pull.Close()
-	}
-	if h.Config == "" {
-		return nil, layer.Errorf(connect.CodeInvalidArgument, "the header delivers no config")
 	}
 	name, err := headerName(h)
 	if err != nil {
@@ -168,10 +162,7 @@ func (s *Server) installCheck(ctx context.Context, st imageStore, system string,
 	if err != nil {
 		return install.Checked{}, err
 	}
-	// An install's answer has no warnings; the journal keeps them.
-	for _, w := range warnings {
-		log.Printf("the config of %x: %s", root, w)
-	}
+	logWarnings(root, warnings)
 	payloads, err := s.installPayloads(ctx, layer.Compiled[layer.Delivery](s.Plugins), h, next.Identity)
 	if err != nil {
 		return install.Checked{}, err
@@ -210,11 +201,8 @@ func (s *Server) pullInstall(ctx context.Context, stream *connect.ClientStream[n
 	if err := img.Validate(); err != nil {
 		return nil, nil, layer.Errorf(connect.CodeInvalidArgument, "the image: %w", err)
 	}
-	switch {
-	case img.BootLoader.Size == 0:
+	if img.BootLoader.Size == 0 {
 		return nil, nil, layer.Errorf(connect.CodeInvalidArgument, "the image brings no boot loader, which an install writes to the ESP")
-	case h.Config == "":
-		return nil, nil, layer.Errorf(connect.CodeInvalidArgument, "the header delivers no config")
 	}
 	if err := noChunks(stream, "an install"); err != nil {
 		return nil, nil, err
@@ -262,6 +250,30 @@ func chunks[T any, M interface {
 		}
 		return M(stream.Msg()).GetChunk(), true
 	}, err: stream.Err}
+}
+
+// readHeader reads the first message of an install or upgrade (what), which must carry its header.
+func readHeader[T any, H comparable](stream *connect.ClientStream[T], get func(*T) H, what string) (H, error) {
+	var none H
+	if !stream.Receive() {
+		if err := stream.Err(); err != nil {
+			return none, err
+		}
+		return none, layer.Errorf(connect.CodeInvalidArgument, "the %s request has no header", what)
+	}
+	h := get(stream.Msg())
+	if h == none {
+		return none, layer.Errorf(connect.CodeInvalidArgument, "the first %s message must be the header", what)
+	}
+	return h, nil
+}
+
+// logWarnings logs the warnings of the check of the config of the image with the root hash: the
+// answers of an install and an upgrade have none, and the journal keeps them.
+func logWarnings(rootHash []byte, warnings []string) {
+	for _, w := range warnings {
+		log.Printf("the config of %x: %s", rootHash, w)
+	}
 }
 
 // noChunks refuses any request after the header: an install or upgrade (what) that pulls its
