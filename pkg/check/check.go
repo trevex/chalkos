@@ -142,9 +142,11 @@ func (img Image) input(node string, docs config.Redacted) outputs.Input {
 	return outputs.Input{Node: node, Documents: docs, Schemas: img.Schemas}
 }
 
-// Input is a config to check for the node called Node. Old is the config Delivered replaces, empty
-// at an install. Facts, which Run requires, loads each fact when a rule first reads it. Compare
-// holds the states the effects compare the config with; none plans no effects.
+// Input is a config to check for the node called Node. Old is the config Delivered replaces, as
+// delivered, or with the defaults of the image that checks; empty at an install. Facts, which Run
+// requires, loads each fact when a rule first reads it. Compare holds what the effects compare the
+// config with: the config the node runs, or a baseline and what the deliveries that failed since
+// applied; none plans no effects.
 type Input struct {
 	Node      string
 	Delivered config.Redacted

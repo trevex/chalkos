@@ -74,7 +74,8 @@ func (r Redacted) Objects() []map[string]any {
 
 // Defaulted is r with the schemas' defaults filled in, so documents another image delivered mean
 // what this image's defaults make of them. A document of a kind schemas does not accept is left
-// out, as no rule of this image reads it.
+// out, as no rule of this image reads it. The defaults are the schemas' own, so the documents stay
+// redacted.
 func (r Redacted) Defaulted(schemas *schema.Schemas) Redacted {
 	var out Documents
 	for _, d := range r.docs {

@@ -107,8 +107,8 @@ func TestBGPRules(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) { wantFailures(t, set, Input{Documents: config.Redact(tc.docs)}, tc.want) })
 	}
-	// A router ID is an IPv4 unicast address: neither 0.0.0.0, multicast nor 255.255.255.255, all of
-	// which the schema's pattern takes.
+	// A router ID is an IPv4 unicast address: neither 0.0.0.0, multicast nor 255.255.255.255,
+	// all of which the schema's pattern takes.
 	for _, id := range []string{"0.0.0.0", "224.0.0.5", "239.255.255.255", "255.255.255.255"} {
 		t.Run("a router ID of "+id, func(t *testing.T) {
 			wantFailures(t, set, Input{Documents: config.Redact(replaced(edge, doc("BGP", "bgp", `{"asn": 64512, "routerID": "`+id+`"}`)))},

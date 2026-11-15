@@ -74,9 +74,10 @@ func Parse(r io.Reader) ([]Entry, error) {
 	return entries, nil
 }
 
-// CamelCase spells a networkd name as documents do: dashes removed and the leading word or
-// acronym in lower case, a version suffix included, so MACAddress becomes macAddress, SR-IOV
-// sriov and IPv6AcceptRA ipv6AcceptRA.
+// CamelCase spells a networkd name as documents do: dashes removed and the leading word or acronym
+// in lower case, a version suffix included, so MACAddress becomes macAddress, SR-IOV sriov and
+// IPv6AcceptRA ipv6AcceptRA. IPoIB and MACsec lower whole as the leading token, so
+// MACsecReceiveAssociation becomes macsecReceiveAssociation.
 func CamelCase(name string) string {
 	return lowerLeading(strings.ReplaceAll(name, "-", ""))
 }

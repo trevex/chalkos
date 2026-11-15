@@ -177,10 +177,9 @@ func Write(dir string, s Stored) error {
 
 // WriteKeepingPrevious writes s as Write does and keeps the set the slot held as its previous
 // config, one level deep; a repeated delivery keeps it as it is, and a slot that holds no set is
-// written as Write writes it. The previous link is renamed and
-// synced after the new set is on disk and before the slot's link, and a directory goes only once
-// no link names it, so a power cut leaves the previous config either the set before or the set
-// the slot still holds.
+// written as Write writes it. The previous link is renamed and synced after the new set is on disk
+// and before the slot's link, and a directory goes only once no link names it, so a power cut
+// leaves the previous config either the set before or the set the slot still holds.
 func WriteKeepingPrevious(dir string, s Stored) error {
 	prev := Previous(dir)
 	if err := checkLink(dir); err != nil {

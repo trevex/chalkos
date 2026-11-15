@@ -89,10 +89,10 @@ func Read(path string) (map[string]Definition, error) {
 // layerAction is what Chalkd names: <layer>:<action>.
 var layerAction = regexp.MustCompile(`^[a-z][a-z0-9-]*:[a-z][a-z0-9-]*$`)
 
-// Check refuses an effect chalkd could not carry out as declared: one nothing triggers or that
-// does nothing, a unit that is no unit name, a Chalkd that names no layer's action, or a hint
-// without text or with a relative file. chalkd splits Run on spaces,
-// with no shell quoting, so its first word must name a program.
+// Check refuses an effect chalkd could not carry out as declared: one nothing triggers or that does
+// nothing, a unit that is no unit name, a Chalkd that names no layer's action, or a hint without
+// text or with a relative file. chalkd splits Run on spaces, with no shell quoting, so its first
+// word must name a program.
 func (d Definition) Check() error {
 	if len(d.Outputs) == 0 && len(d.Kinds) == 0 && d.When == "" {
 		return errors.New("it has none of outputs, kinds and when, so nothing triggers it")

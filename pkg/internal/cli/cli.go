@@ -122,9 +122,10 @@ func Execute(ctx context.Context, root *cobra.Command, opts Options) int {
 	return status
 }
 
-// isUsage reports whether cobra failed cmd before running it with an error that bypasses the
-// flag error function: a missing required flag, or arguments a leaf's Args refuses. Every error of
-// a command with subcommands is one: a flag before a subcommand's name parses as its own.
+// isUsage reports whether cobra failed cmd before running it with an error that bypasses the flag
+// error function: a missing required flag, flags of a group set wrongly, or arguments a leaf's Args
+// refuses. Every error of a command with subcommands is one: a flag before a subcommand's name
+// parses as its own.
 func isUsage(cmd *cobra.Command, err error) bool {
 	if errors.Is(err, ErrUsage) {
 		return false
