@@ -21,15 +21,12 @@ import (
 	"github.com/trevex/chalkos/pkg/uki"
 )
 
-// RollbackConfig delivers the running image's previous config again, as rollbackConfig does. Like
-// ApplyConfig, it waits for no upgrade: one writes the node's config slots too. During a trial it
-// takes only the config from before the trial, rolls the config on trial back at once and ends the
-// trial: a trial's slot keeps the config from before it as its previous one. A slot that runs that
-// config already, as a rollback at the deadline that failed after it wrote the slot leaves it,
-// keeps the config on trial as its previous one instead, so the rollback delivers the config the
-// slot runs again, which finishes the rollback. A trial record that cannot be read names no
-// version, so the rollback goes to the version asked for, or delivers it again when the slot runs
-// it already, and the record goes once that went through.
+// RollbackConfig delivers the running image's previous config again. Like ApplyConfig it waits for
+// no upgrade, which writes config slots too. During a trial it takes only the config from before
+// the trial and ends the trial; a slot that runs that config already, as a failed rollback at the
+// deadline leaves it, gets it delivered again, which finishes that rollback. With a trial record
+// that cannot be read, it rolls back to the version asked for, or delivers it again when the slot
+// runs it already, and then removes the record.
 func (s *Server) RollbackConfig(ctx context.Context, req *connect.Request[nodev1.RollbackConfigRequest]) (*connect.Response[nodev1.RollbackConfigResponse], error) {
 	version := req.Msg.Version
 	if version == "" {
@@ -106,14 +103,11 @@ func rollbackResponse(resp *nodev1.ApplyConfigResponse) *connect.Response[nodev1
 	return connect.NewResponse(&nodev1.RollbackConfigResponse{Changes: resp.Changes, RestartedUnits: resp.RestartedUnits, Warnings: resp.Warnings})
 }
 
-// rollbackConfig delivers the previous config of the running image's slot, whose version must be
-// version, through the pipeline of a delivery: checked by the image's rules against the config
-// the node runs, the machine and the facts, rendered, written and acted on by the effects as any
-// delivery, and refused as a whole when anything refuses it. The config it replaces becomes the
-// slot's previous one. Only the documents return: the OS CAs, the node certificate and the
-// layers' payloads are the node's, not the slot's. The documents are translated again, as
-// delivered, against the running image. changed reports whether a rollback that failed did so
-// after it began to change the node. The caller holds s.mu and s.upgrading.
+// rollbackConfig delivers the previous config of the running image's slot, which must be of
+// version, through the whole pipeline of a delivery, translated again against the running image;
+// the config it replaces becomes the slot's previous one. Only the documents return: the OS CAs,
+// the node certificate and the layers' payloads are the node's, not the slot's. changed reports
+// whether a failed rollback had begun to change the node. The caller holds s.mu and s.upgrading.
 func (s *Server) rollbackConfig(ctx context.Context, version string) (resp *nodev1.ApplyConfigResponse, changed bool, err error) {
 	dir, err := s.Loader.Slot()
 	if err != nil {

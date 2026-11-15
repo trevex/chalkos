@@ -39,15 +39,14 @@ type enrolment struct {
 	entries secureboot.Database
 }
 
-// EnrollSecureBoot writes the Secure Boot keys of the request into the firmware, which must be in
-// Setup Mode: db and KEK appended, PK last. It checks the updates first: KEK and PK hold X.509
-// certificates alone, PK one, db X.509 certificates and SHA-256 digests of images, and each is
-// signed as firmware that verifies them in Setup Mode expects, db by a KEK certificate of the
-// request, KEK and PK by the PK certificate. Unless forced, db as it will be must allow the
-// drivers the TPM event log lists in PCR 2, and the boot loader and UKI the node booted must
-// verify against it. A node that runs from its own disk deletes its STATE, which the TPM seals to
-// PCR 7, so its next boot creates STATE again. The node answers and reboots once the three writes
-// went through, with db and KEK as it reads them back, or with them empty when it cannot.
+// EnrollSecureBoot writes the request's Secure Boot keys into the firmware, which must be in Setup
+// Mode: db and KEK appended, PK last. It checks first that KEK and PK hold X.509 certificates
+// alone, PK one, db certificates and SHA-256 image digests, each signed as Setup Mode firmware
+// expects: db by a KEK certificate of the request, KEK and PK by the PK certificate. Unless forced,
+// the new db must allow the drivers the TPM event log lists in PCR 2 and the boot loader and UKI
+// the node booted. A node that runs from its own disk deletes its STATE, which the TPM seals to
+// PCR 7, so the next boot creates it again. The node answers and reboots once the three writes went
+// through, with db and KEK as it reads them back, or empty when it cannot.
 func (s *Server) EnrollSecureBoot(ctx context.Context, req *connect.Request[nodev1.EnrollSecureBootRequest]) (*connect.Response[nodev1.EnrollSecureBootResponse], error) {
 	if !s.mu.TryLock() {
 		return nil, layer.Errorf(connect.CodeAborted, "another change of the node is running")

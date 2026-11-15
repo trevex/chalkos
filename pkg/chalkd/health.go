@@ -174,12 +174,11 @@ func (h *Health) Wait(ctx context.Context, timeout time.Duration) error {
 	return h.unhealthy(ctx, fmt.Errorf("the node did not become healthy within %v: %s", timeout, last))
 }
 
-// Stopped handles the end of a health check that did not decide, as when systemd stopped it at
-// its unit's timeout or it crashed: result and status are how the check ended, as systemd tells
-// ExecStopPost= in $SERVICE_RESULT and $EXIT_STATUS. Like Wait after an unhealthy boot, it
-// records the boot and reboots only when that leads the boot loader on, so a boot with nothing to
-// fall back to is never rebooted in a loop. A check that succeeded, or failed with status 1,
-// decided by itself.
+// Stopped handles a health check that ended undecided, stopped at its unit's timeout or crashed;
+// result and status are systemd's $SERVICE_RESULT and $EXIT_STATUS for ExecStopPost=. Like Wait
+// after an unhealthy boot, it records the boot and reboots only when that leads the boot loader
+// on, so a boot with nothing to fall back to never reboots in a loop. A check that succeeded or
+// failed with status 1 decided by itself.
 func (h *Health) Stopped(ctx context.Context, result, status string) error {
 	if result == "" || result == "success" || result == "exit-code" && status == "1" {
 		return nil

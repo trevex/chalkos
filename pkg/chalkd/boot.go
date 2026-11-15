@@ -14,13 +14,11 @@ import (
 	"github.com/trevex/chalkos/pkg/upgrade"
 )
 
-// bootStatus reads the boot from the ESP: the entry the node booted and whether it was blessed,
-// and the other UKI of its image an upgrade installed: staged, active or failed. A UKI whose
-// tries are used up while the node runs another image is an image it fell back from. It also
-// names the image a rollback boots, the one an upgrade replaced, while STATE keeps its config
-// slot, and the image the last rollback rolled back to, while the node runs or stages it. Each
-// image is named by its root hash and generation, with the provenance the record of installed
-// images gives it.
+// bootStatus reads the boot from the ESP: the entry booted and whether it was blessed, and the
+// other UKI an upgrade installed, staged, active or failed (tries used up while another image
+// runs). It names the image a rollback boots while STATE keeps its config slot, and the one the
+// last rollback rolled back to while the node runs or stages it, each by root hash and generation
+// with the provenance the record of installed images gives it.
 func (s *Server) bootStatus() *nodev1.BootStatus {
 	st := &nodev1.BootStatus{}
 	// A client that rebooted the node waits for another boot by its ID; without one it waits for

@@ -29,34 +29,27 @@ type imageStore interface {
 	Dir() string
 }
 
-// imageCheck is config for an image that does not run, to check with that image's checker:
-//   - delivered is the config as delivered, with its Secret values, which the checker gets
-//     hashed; old the config it replaces as delivered, the running slot's, without the running
-//     image's defaults: the checker fills in its own, so its rules compare the two configs with
-//     the meaning it gives them, whatever another image's defaults made of the old one; none at
-//     an install from the installer;
-//   - secret is the fallback secret, which only the facts that declare it get, run by chalkd;
-//   - recorded, when set, stands for the storage STATE records, as for a check against storage
-//     that a delivery to the running image makes before the slot is written;
-//   - image is the root hash of the image that checks, which its errors name;
-//   - writing is the root hash of the image whose slot the config is for, when it is written,
-//     which a refusal of a storage change leaves out of the images it names.
+// imageCheck is config for an image that does not run, to check with that image's checker.
 type imageCheck struct {
+	// delivered is the config as delivered, whose Secret values the checker gets hashed; old is
+	// the running slot's as delivered, none at an install from the installer. Both come without
+	// defaults, so the checker compares them with the meaning its own defaults give them.
 	delivered, old []config.Document
-	secret         string
-	recorded       *storage.Section
+	// secret is the fallback secret, which only the facts that declare it get, run by chalkd.
+	secret string
+	// recorded, when set, stands for the storage STATE records, as a delivery to the running image
+	// leaves it before the slot is written.
+	recorded *storage.Section
+	// image is the root hash of the image that checks, which its errors name; writing that of the
+	// image whose slot is written, which a refusal of a storage change leaves out of those it names.
 	image, writing []byte
 }
 
-// checkWithImage has the image whose store is st and whose NixOS system is system check c for the
-// node called name, on platform, and returns the config slot the image keeps for it, with the
-// warnings of its check. The checker is the image's own chalkd, which its store holds; the running
-// chalkd, a node's or the installer's, reads nothing of the image but its facts.json. The caller
-// holds s.mu.
-//
-// The slot holds the documents with their Secret values, which the checker never had: chalkd puts
-// the delivered values in place of the hashes in the documents the checker gave back, with the
-// image's defaults, after making sure the hashes are those of the delivered values.
+// checkWithImage has the image in the store st, whose NixOS system is system, check c for the node
+// called name on platform with its own chalkd, and returns the config slot it keeps, with the
+// check's warnings. The running chalkd reads nothing of the image but its facts.json. The checker
+// never sees Secret values: chalkd puts the delivered values back in place of the hashes once it
+// made sure they match. The caller holds s.mu.
 func (s *Server) checkWithImage(ctx context.Context, st imageStore, system, platform, name string, c imageCheck) (slot.Stored, []string, error) {
 	res, err := s.runImageCheck(ctx, st, system, platform, name, c)
 	if err != nil {

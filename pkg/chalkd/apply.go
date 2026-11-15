@@ -41,12 +41,9 @@ func (s *Server) ApplyConfig(ctx context.Context, req *connect.Request[nodev1.Ap
 	if err != nil {
 		return nil, err
 	}
-	// An upgrade writes its image's slot, checked against the machine, before the image is
-	// staged, so a delivery in between would find no staged image to write the slot of. TryLock
-	// never waits: the upgrade, an image rollback and a trial's deadline hold upgrading while they
-	// take s.mu.
-	// An upgrade reads and removes the pending config, so storing or dropping it waits for none
-	// either.
+	// Upgrades write slots and the pending config; TryLock so a running upgrade, image rollback or
+	// trial deadline, which takes s.mu while it holds s.upgrading, refuses us instead of
+	// deadlocking.
 	if req.Msg.Config != "" || req.Msg.DiscardPending {
 		if !s.upgrading.TryLock() {
 			return nil, layer.Errorf(connect.CodeAborted, "an upgrade, an image rollback or the rollback at a trial's deadline is running; apply the config once it ended")
@@ -288,14 +285,11 @@ func (s *Server) planDelivery(ctx context.Context, r applyRequest) (*delivery, e
 //  4. the running slot, last, which keeps the config it replaces as the image's previous one;
 //  5. the effects.
 //
-// Until the slot is written, STATE holds the identity and the documents the node ran before, which
-// a boot applies whole. A retry applies the identity and the granted units' config again, and its
-// effects compare with the baseline effectsOf recorded, so it restarts what they ask for whatever
-// the failed attempt wrote. The baseline records what the delivery applies before its first
-// change, so another delivery, even one of the config the node ran before, takes the effects that
-// undo it, whether the delivery failed or chalkd stopped part way. storage.json is the machine's
-// rather than an image's: applyStorage records the section once its additive changes are made, so
-// a retry makes none twice.
+// Until the slot is written, STATE holds the identity and documents the node ran before, which a
+// boot applies whole. The baseline records what the delivery applies before its first change, so
+// a retry, or any later delivery, takes the effects of what a failed or interrupted attempt
+// changed. storage.json is the machine's, not an image's: applyStorage records the section once
+// its additive changes are made, so a retry makes none twice.
 func (d *delivery) commit(ctx context.Context) (*connect.Response[nodev1.ApplyConfigResponse], error) {
 	s, m := d.s, d.msg
 	if err := s.recordAttempt(d.fx, d.staged.States()); err != nil {

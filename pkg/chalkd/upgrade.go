@@ -23,22 +23,16 @@ import (
 	"github.com/trevex/chalkos/pkg/upgrade"
 )
 
-// Upgrade installs the image an operator streams with the node's config for it, stages it and,
-// unless the header asks to stop there, activates it as ActivateImage does. It checks that the
-// image is of the node's platform, whatever its variant, that it boots the store it carries and,
-// before it is staged, that the image's own checker accepts the config, but cannot tell an image
-// to trust from another: without Secure Boot, an operator can run any image as root, with STATE
-// and VAR unsealed, as their keys are sealed to PCR 7 alone. Secure Boot is what limits upgrades
-// to images signed for db.
+// Upgrade installs the streamed or pulled image with its config, stages it and activates it
+// unless the header's stage_only stops there. It checks the image's platform, that it boots its
+// store and that its own checker accepts the config, but cannot tell an image to trust: without
+// Secure Boot an operator can run any image as root, with STATE and VAR unsealed, as their keys
+// are sealed to PCR 7 alone. Secure Boot limits upgrades to images signed for db.
 //
-// An operator may upgrade, but only an admin may deliver config with the upgrade, as ApplyConfig
-// needs: config names the node's networks, volumes and layers' settings, and what an operator
-// may not deliver to the running image it must not deliver to the next one either. Without config
-// the node gives the image its pending config, which an admin's config apply --staged held, or else
-// carries the running image's over.
-//
-// An image the header names in a registry is pulled by the digest it names, with the credentials
-// of the config's Registry of its host, and checked against the header as a streamed one.
+// Config or a fallback secret needs the admin role, as ApplyConfig does: what an operator may not
+// deliver to the running image must not reach the next one either. Without config the image gets
+// the pending config, else the running image's. A pulled image is fetched by the header's digest
+// with the credentials of the config's Registry of its host.
 func (s *Server) Upgrade(ctx context.Context, stream *connect.ClientStream[nodev1.UpgradeRequest]) (*connect.Response[nodev1.UpgradeResponse], error) {
 	unlock, err := s.lockSlots("an upgrade")
 	if err != nil {
@@ -100,12 +94,10 @@ func (s *Server) Upgrade(ctx context.Context, stream *connect.ClientStream[nodev
 	res, staged, err := s.imageSlots().Install(ctx, header, h.GetConfig(), h.GetFallbackSecret(), h.GetStageOnly(), parts)
 	if _, ok := errors.AsType[*upgrade.StagedError](err); ok {
 		log.Printf("upgrade to %x failed: %v", img.GetRootHash(), err)
-		// The image is staged with the config stageConfig wrote, as after an upgrade that stops
-		// there, and ActivateImage may activate it later: the node records its provenance, how the
-		// node got to the image the inactive slot held before is gone with that image, and the
-		// pending config goes as once a stage-only upgrade staged the image, since the image's slot
-		// holds the config that took or replaced it. The answer is an error, which names no pending
-		// config; Status tells.
+		// The image is staged with its config, as by a stage-only upgrade, and ActivateImage may
+		// activate it later: record its provenance, forget the rollback to the image it replaced,
+		// and drop the pending config its slot took or replaced. The error names no pending
+		// config; Status does.
 		s.recordImages(&header)
 		s.forgetRollback()
 		s.settlePending(staged, img.GetRootHash())
@@ -170,16 +162,13 @@ func (s *Server) Upgrade(ctx context.Context, stream *connect.ClientStream[nodev
 	return connect.NewResponse(resp), nil
 }
 
-// stageConfig writes the config slot of the image an upgrade installs, whose store is st with the
-// root hash, through writeSlot. The config is the one text delivers, or else the node's pending
-// config, or else the running slot's documents as they were delivered, as upgradeConfig chooses.
-// secret is the fallback secret a new encrypted volume is enrolled with. It returns the config it
-// wrote, without its documents, which names the pending config the image took or the upgrade's
-// config replaced. Upgrade drops that once the image is staged, and activated unless the upgrade
-// stops at staging: until then the image may still fail to be staged or to become the next boot,
-// and the pending config waits for the upgrade after. A refusal keeps it, for config apply
-// --staged to replace. It runs once the store is written to the inactive slot, before the image
-// is staged, and again for an image the slot holds already, staged or active.
+// stageConfig writes the config slot of the image an upgrade installs, in the store st with the
+// root hash, through writeSlot: the config text delivers, else the node's pending config, else the
+// running slot's documents as delivered. secret is the fallback secret new encrypted volumes are
+// enrolled with. The config it returns names the pending config the image took or replaced, which
+// Upgrade drops only once the image is staged, and activated unless the upgrade stops at staging;
+// a refusal keeps it. It runs once the store is in the inactive slot, before the image is staged,
+// and again for an image the slot holds already.
 func (s *Server) stageConfig(ctx context.Context, st imageStore, system, platform string, rootHash []byte, text, secret string) (imageConfig, error) {
 	// ApplyConfig writes the slots and changes the machine under the same lock.
 	s.mu.Lock()
@@ -206,20 +195,13 @@ type slotWrite struct {
 }
 
 // planSlot checks docs, config as delivered, for the config slot of an image that does not run,
-// whose store is st with the root hash, and changes nothing. system is the image's NixOS system in
-// st, platform its platform and secret the fallback secret. recorded, when set, is the storage a
-// delivery to the running image records before the slot is written, which the image checks the
-// config against and its storage changes are planned on top of; nil plans them on the storage
-// STATE records. The caller holds s.mu.
-//
-// The image checks the config itself, with its own chalkd, as it would check a delivery once it
-// runs: its schemas, its rules and its renderers, against the running slot's config as it was
-// delivered and with its own facts of this node. chalkd then checks the slot's storage against
-// the machine, as for every slot write. A config chalkos-config could not apply would leave boot
-// counting to fall back. planSlot refuses:
-//   - config the image refuses, such as one that changes what a node holding a share was set up
-//     for, or one a renderer of the image cannot render;
-//   - storage changes that take a reset or a reinstall, which the image's storage rules refuse.
+// in the store st with the root hash, and changes nothing. The image checks the config with its
+// own chalkd, as it would once it runs: its schemas, rules and renderers, against the running
+// slot's config and with its own facts of this node. chalkd then checks the slot's storage against
+// the machine. Config chalkos-config could not apply, which would leave boot counting to fall
+// back, is refused, and so are storage changes that take a reset or a reinstall. recorded, when
+// set, is the storage a delivery to the running image records first, which the image checks
+// against and plans its changes on top of; nil plans on what STATE records. The caller holds s.mu.
 func (s *Server) planSlot(ctx context.Context, st imageStore, system, platform string, rootHash []byte, docs []config.Document, secret string, recorded *storage.Section) (slotWrite, error) {
 	_, running, _, err := s.runningSlot()
 	if err != nil {
@@ -246,12 +228,11 @@ func (s *Server) planSlot(ctx context.Context, st imageStore, system, platform s
 	return slotWrite{next: next, machine: mc, warnings: warnings}, nil
 }
 
-// writeSlot writes docs to the config slot of an image that does not run once planSlot checked
-// them. Storage changes the image's rules accept, such as a new volume, are made now and recorded
-// in storage.json. Every boot sets up the volumes storage.json records, so the running image
-// mounts such a volume too although its config does not name it; its slot counts as removing the
-// volume only once it is written again. It returns the warnings of the image's check. The caller
-// holds s.mu.
+// writeSlot writes docs to the config slot of an image that does not run once planSlot passed
+// them, and returns the warnings of the image's check. Storage changes the image accepts, such as a
+// new volume, are made now and recorded in storage.json. Every boot sets up what storage.json
+// records, so the running image mounts such a volume too; its slot removes the volume only once
+// it is written again. The caller holds s.mu.
 func (s *Server) writeSlot(ctx context.Context, st imageStore, system, platform string, rootHash []byte, docs []config.Document, secret string) ([]string, error) {
 	w, err := s.planSlot(ctx, st, system, platform, rootHash, docs, secret, nil)
 	if err != nil {
@@ -282,14 +263,11 @@ func headerPart(p *nodev1.ImagePart) imagepart.Part {
 	return imagepart.Part{Size: int64(p.GetSize()), SHA256: p.GetSha256()}
 }
 
-// recordImages forgets every image no UKI on the ESP boots any more, an entry's or the staged
-// one's, in one step:
-//   - the record of installed images keeps only the others;
-//   - the config slots keep only those of the others and of the running image.
-//
-// installed, when set, is the image an upgrade installed or found installed; the record keeps its
-// provenance. Failing to forget fails no upgrade, because both only shrink and a boot loads only
-// its own image's slot. The next upgrade forgets again.
+// recordImages forgets, in one step, every image no UKI on the ESP boots any more, an entry's or
+// the staged one: the record of installed images keeps only the others, and the config slots
+// those of the others and of the running image. installed, when set, is the image an upgrade
+// installed or found installed; the record keeps its provenance. A failure fails no upgrade: both
+// only shrink, a boot loads only its own image's slot, and the next upgrade forgets again.
 func (s *Server) recordImages(installed *upgrade.Header) {
 	entries, err := esp.Entries(s.Paths.ESP)
 	if err != nil {
@@ -339,12 +317,11 @@ func (s *Server) recordImages(installed *upgrade.Header) {
 	}
 }
 
-// ActivateImage makes the image staged in the inactive slot boot next, as upgrade.Node.Activate
-// does, under the lock an upgrade and a rollback hold, so none of them writes the ESP while
-// another does. It runs no check of the config: the image's own checker passed its slot before
-// the image was staged. A staged image whose config slot STATE no longer keeps is refused before
-// anything changes: it would boot without config, fail its health check and fall back. Refusals
-// fail the precondition, and a failure to read or change the disk or the ESP is internal.
+// ActivateImage makes the staged image boot next, under the lock an upgrade and a rollback hold,
+// so only one writes the ESP at a time. It checks no config: the image's checker passed its slot
+// before it was staged. A staged image whose slot STATE no longer keeps is refused first, as
+// checkStagedSlot says. Refusals fail the precondition; a failure to read or change the disk or
+// the ESP is internal.
 func (s *Server) ActivateImage(ctx context.Context, req *connect.Request[nodev1.ActivateImageRequest]) (*connect.Response[nodev1.ActivateImageResponse], error) {
 	root := req.Msg.RootHash
 	if len(root) == 0 {

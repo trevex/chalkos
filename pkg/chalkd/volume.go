@@ -30,14 +30,11 @@ type machineChange struct {
 	changes           []storage.Change
 }
 
-// machineChanges compares a slot's storage section with the machine's. Every write of a slot
-// does, whichever image the slot is for: the machine has one storage, which a slot's config may
-// grow but not undo. The image's rules refused the changes a node does not make already.
-//
-// A slot whose section lacks a volume the machine has, as one written before an upgrade or
-// config apply --staged added the volume, is compared only when it is written again. Until then
-// its image mounts the volume too: every boot sets up each volume storage.json records, and
-// nothing at boot removes one. The caller holds s.mu.
+// machineChanges compares a slot's storage section with the machine's, for every slot write of any
+// image: the machine has one storage, which a slot's config may grow but not undo. A slot that
+// lacks a volume another image's config added is compared only when written again; until then
+// its image mounts the volume too, as every boot sets up what storage.json records and none
+// removes a volume. The caller holds s.mu.
 func (s *Server) machineChanges(section storage.Section) (machineChange, error) {
 	recorded, _, err := s.recorded()
 	if err != nil {

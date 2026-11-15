@@ -36,12 +36,9 @@ func configure(name, text string, schemas *schema.Schemas, t config.Target) (slo
 	return c, nil
 }
 
-// translateSlot returns what the config slot of the image t describes keeps for docs, the config
-// documents as delivered. It checks docs as a set against schemas, fills in their defaults and
-// translates them into the identity of the node called name.
-//
-// The set's version is the hash of the documents as delivered, before the defaults, the same hash
-// a client computes from the files it sends.
+// translateSlot returns what the config slot of the image t keeps for docs, the documents as
+// delivered: checked as a set against schemas, with defaults, translated into the identity of the
+// node called name. Its version is the hash of docs before the defaults, as a client computes it.
 func translateSlot(name string, docs []config.Document, schemas *schema.Schemas, t config.Target) (slot.Stored, error) {
 	version, err := config.Hash(docs)
 	if err != nil {
@@ -133,21 +130,13 @@ func (s *Server) recordRefused(err error) {
 	}
 }
 
-// installConfig translates the config an install header delivers, for the node name, into the
-// identity of the node for the image installed, and returns the config slot of that image,
-// identity included.
-//
-// In place, that image is the running one, which boots once the node is installed, so it checks
-// the config with check.Run, as its checker would, before the install changes anything: its
-// rules, with no running config to compare with, so rules of a field that read oldSelf do not run,
-// the rules of a kind see no oldDocuments, and every fact is null, as an install in place that is
-// tried again must not read what the attempt before it left on STATE; then its validators and its
-// renderers. It plans no effects: nothing runs yet to take them.
-//
-// From the installer, the header and contract describe the image, and the installer translates
-// the config with its own code alone: the storage section of that translation is what it lays the
-// target disk out by before the image's store is written. The image's own checker checks the
-// config once the store is (installCheck), and its slot is what the install writes.
+// installConfig translates the config an install header delivers for the node name and returns
+// the config slot of the image installed. In place, that image is the running one, which checks
+// the config with check.Run before anything changes, with no old config and every fact null, so
+// a retried install reads nothing an earlier attempt left on STATE; it plans no effects. From the
+// installer, the header and contract describe the image, and the installer's own translation only
+// gives the storage the target disk is laid out by; the image's checker checks the config once
+// its store is written (installCheck).
 func (s *Server) installConfig(ctx context.Context, h *nodev1.InstallHeader, name string, contract *nodev1.ImageContract) (slot.Stored, error) {
 	var (
 		t       config.Target

@@ -22,11 +22,9 @@ import (
 )
 
 // stagedImage is the root hash of the image in the inactive slot that the node keeps a config slot
-// for: staged, as an upgrade that stopped before the activation leaves it, or active, booting next
-// instead of the running one, as an upgrade or a rollback without a reboot leaves it; nil without
-// one. Everything that reads or writes the staged image's config treats both alike. A node whose
-// config slots are the running image's alone has none, whatever the ESP holds: no upgrade wrote
-// config for another.
+// for, staged or active (booting next), which everything that reads or writes its config treats
+// alike; nil without one. A node with no config slot but the running image's has none, whatever
+// the ESP holds.
 func (s *Server) stagedImage() ([]byte, error) {
 	sl, ok, err := s.stagedEntry()
 	if err != nil || !ok {
@@ -84,11 +82,10 @@ func (s *Server) stagedEntry() (secondSlot, bool, error) {
 	return secondSlot{entry: e, booted: booted}, true, nil
 }
 
-// keepsKnownGood refuses config for the image of the root hash while it is staged as the node's
-// known-good image, as secondSlot.knownGood tells: a rollback from a boot that was not found
-// healthy staged it, and it boots with the config it last ran. text, the config delivered, passes
-// when it is that config; empty delivers none. It reports whether the image is the known-good one.
-// The caller holds s.mu.
+// keepsKnownGood refuses config for the image of the root hash while it is the node's known-good
+// image, which boots with the config it last ran. text, the config delivered, passes when it is
+// that config; empty delivers none. It reports whether the image is the known-good one. The caller
+// holds s.mu.
 func (s *Server) keepsKnownGood(rootHash []byte, text string) (bool, error) {
 	sl, ok, err := s.stagedEntry()
 	if err != nil {
@@ -118,15 +115,12 @@ func (s *Server) keepsKnownGood(rootHash []byte, text string) (bool, error) {
 	return true, nil
 }
 
-// applyStaged checks the config of a request against the image in the inactive slot, staged or
-// active, and keeps it in that image's slot, as an upgrade that finds the image staged already
-// does: checked by that image's own checker against the running slot's config, and against the
-// machine, whose storage changes the image accepts it makes with the request's fallback secret.
-// With dry_run it checks the config the same way and answers with the plan, the slot's version
-// before and after and the storage changes, and changes nothing. Nothing the running image runs
-// changes. Without an image staged, the config is held pending for the next upgrade, as
-// holdPending keeps it; a pending config stays as it is while an image is staged, as after a
-// rollback that staged the image before. The caller holds s.mu.
+// applyStaged writes the request's config to the slot of the image in the inactive slot, staged
+// or active, once that image's checker passed it against the running config and the machine; the
+// storage changes it makes use the request's fallback secret. dry_run answers with the plan and
+// changes nothing. Nothing the running image runs changes. Without a staged image the config is
+// held pending for the next upgrade; with one, a pending config stays as it is. The caller holds
+// s.mu.
 func (s *Server) applyStaged(ctx context.Context, m *nodev1.ApplyConfigRequest) (*connect.Response[nodev1.ApplyConfigResponse], error) {
 	if m.Config == "" || len(m.Layers) > 0 || len(m.NodeCertificate) > 0 || len(m.NodeKey) > 0 || len(m.Trust) > 0 {
 		return nil, layer.Errorf(connect.CodeInvalidArgument, "a request for the staged image delivers config alone, with the fallback secret: the share, the certificates and the OS CAs are the node's")
@@ -199,13 +193,10 @@ func (s *Server) applyStaged(ctx context.Context, m *nodev1.ApplyConfigRequest) 
 	return connect.NewResponse(resp), nil
 }
 
-// secondWrite is what config delivered to the running image writes besides the running slot, as
-// planSecond plans it before anything changes: the config slot of the image staged in the
-// inactive slot, staged or active, or else the node's pending config. Every config slot is
-// written only once the image that boots it checked it, so the staged image checks the config
-// too; the pending config waits, unchecked as config apply --staged holds it, for the image of
-// the next upgrade, which then boots the config delivered last. Neither is set for a delivery
-// without config, or for a node that has neither.
+// secondWrite is what config delivered to the running image writes besides the running slot: the
+// slot of the image in the inactive slot, which that image checks first, as every slot is checked
+// by the image that boots it, or else the pending config, unchecked until the next upgrade.
+// Neither is set for a delivery without config or a node that has neither.
 type secondWrite struct {
 	// image is the root hash of the staged image, slot its slot as that image's checker passed it,
 	// and held the version the slot holds until it is written.
@@ -220,17 +211,12 @@ type secondWrite struct {
 	warnings []string
 }
 
-// planSecond plans what the delivery d writes besides the running slot, as secondWrite says,
-// before anything changes, so a refusal of the staged image refuses the delivery whole. The
-// known-good image a rollback staged counts as no staged image: it keeps the config it last ran,
-// as keepsKnownGood keeps it, and the pending config is replaced as on a node without a staged
-// image. The caller holds s.mu and s.upgrading, as for every write of a slot.
-//
-// The staged image checks the config with its own checker as for config apply --staged, and
-// against the storage STATE records once the running image applied d: d's changes are made
-// before the staged slot is written, and the changes the staged image's config makes on top of
-// them are planned and made after. The rules of both images thus see the storage each change
-// starts from.
+// planSecond plans the secondWrite of the delivery d before anything changes, so a refusal by the
+// staged image refuses the delivery whole. A known-good image counts as none: it keeps the config
+// it last ran, and the pending config is replaced instead. The staged image checks the config
+// against the storage as d leaves it, since d's changes are made first and the staged image's on
+// top of them, so each image's rules see the storage its change starts from. The caller holds s.mu
+// and s.upgrading.
 func (s *Server) planSecond(ctx context.Context, d *delivery) (secondWrite, error) {
 	if d.keep {
 		return secondWrite{}, nil
@@ -273,16 +259,12 @@ func (s *Server) planSecond(ctx context.Context, d *delivery) (secondWrite, erro
 	return secondWrite{image: staged, slot: w, held: held}, nil
 }
 
-// stagedRefusal is the refusal of a delivery for err, the staged image's, whose root hash is
-// staged; secret is the fallback secret the request carries. chalkctl sends that secret when the
-// running image's storage enrolls it on a new volume, so a staged image whose own translation of
-// the config adds an encrypted volume the running image's does not is refused without it; the
-// refusal then names the delivery that carries it, config apply --staged with the secrets file,
-// which chalkctl translates for the inventory's image.
-//
-// The refusal is the staged image's storage rule, which its own checker evaluates: another
-// image's chalkd, whose errors reach this one as text alone. That rule's message ends with
-// storage.NoFallbackSecret, so the text is what tells the refusal apart.
+// stagedRefusal is the refusal of a delivery for err, the staged image's refusal; secret is the
+// request's fallback secret. chalkctl sends the secret only when the running image's storage
+// enrolls it, so a staged image that adds an encrypted volume of its own is refused without it,
+// and the refusal names config apply --staged with the secrets file. The staged image's checker
+// is another chalkd whose errors arrive as text, so storage.NoFallbackSecret at the end of its
+// rule's message tells this refusal apart.
 func (s *Server) stagedRefusal(staged []byte, err error, secret string) error {
 	var hint string
 	if secret == "" && strings.Contains(err.Error(), storage.NoFallbackSecret) {
@@ -291,20 +273,15 @@ func (s *Server) stagedRefusal(staged []byte, err error, secret string) error {
 	return fmt.Errorf("the image %x staged in the inactive slot: %w%s", staged[:6], err, hint)
 }
 
-// write writes what planSecond planned, once the running image applied version, the delivered
-// config, and adds it to resp: the staged image's slot, after the storage changes its config
-// makes on top of those of the running image, or the pending config. A write that fails leaves
-// the slot or the pending config as it was and fails the delivery, naming it and what the
-// delivery did, which resp held so far, with the volumes a storage change of the staged image
-// recorded before it failed, as recordedSince finds them; the running image runs the config all
-// the same, and the delivery sent again writes it. The caller holds s.mu.
+// write writes what planSecond planned once the running image applied version, and adds it to
+// resp. A failed write leaves the slot or the pending config as it was and fails the delivery,
+// naming what it did so far; the running image runs the config all the same, and the delivery
+// sent again writes it. The caller holds s.mu.
 //
-// The staged image's storage changes go first, recorded in storage.json, and its slot after.
-// Every boot sets up the volumes storage.json records and no others, so with the slot written
-// first, a failure before the volume was made would leave the staged image to boot a config that
-// names a volume that does not exist. This order leaves at worst a volume that storage.json
-// records and no slot names yet, which every boot mounts; the delivery sent again finds it made
-// and writes the slot alone.
+// The staged image's storage changes go first, recorded in storage.json, and its slot after:
+// every boot sets up the volumes storage.json records and no others, so the slot never names a
+// volume that does not exist. At worst a recorded volume no slot names yet is left, which every
+// boot mounts and a delivery sent again finds made.
 func (w secondWrite) write(ctx context.Context, s *Server, version, secret string, resp *nodev1.ApplyConfigResponse) error {
 	resp.Warnings = append(resp.Warnings, w.warnings...)
 	switch {
@@ -341,12 +318,10 @@ func (w secondWrite) write(ctx context.Context, s *Server, version, secret strin
 	return nil
 }
 
-// recordedSince is what storage.json records beyond recorded, the storage it recorded before a
-// change that failed: the change records the volumes it made all at once, after it made them, so
-// a failure before the record leaves none and one after it, as when a new volume's units do not
-// start, leaves them all. A partition repart made before a failure that kept it from the record
-// is not listed; the change sent again finds it made. A record that cannot be read lists none,
-// which is logged.
+// recordedSince is what storage.json records beyond recorded, from before a change that failed.
+// A change records all its volumes at once after it made them, so a partition made before a
+// failure that kept it from the record is not listed; the change sent again finds it made. A
+// record that cannot be read lists none, which is logged.
 func (s *Server) recordedSince(recorded storage.Section) []storage.Change {
 	after, _, err := s.recorded()
 	if err != nil {

@@ -147,15 +147,12 @@ func (s *Server) Install(ctx context.Context, stream *connect.ClientStream[nodev
 	return connect.NewResponse(&nodev1.InstallResponse{}), nil
 }
 
-// installCheck has the image an install from the installer writes check the config docs, as
-// delivered, for the node name, with the image's own checker in the store st that slot A of the
-// target holds, whose NixOS system is system, as an upgrade has the image it writes check its
-// config: its schemas, rules, validators and renderers, with its facts of this machine, against no
-// running config. The installer's machine has no STATE and no volumes, so a fact of what the node
-// holds reads null, and its hardware is the node's. The checker reads the image's layer facts
-// itself, with the image's compiled layers. It returns the image's config slot, its Secret values
-// restored, and the payloads of the header checked against the identity the checker gave, by the
-// layers compiled into the installer: it carries no layer of its own. Install holds s.mu.
+// installCheck has the image an install from the installer writes, in the store st of the
+// target's slot A with the NixOS system system, check docs for the node name with its own checker,
+// against no running config. The installer's machine has no STATE or volumes, so facts of what
+// the node holds read null; its hardware is the node's. It returns the image's config slot, Secret
+// values restored, and the header's payloads, checked against the checker's identity by the
+// layers compiled into the installer, which has no layer of its own. Install holds s.mu.
 func (s *Server) installCheck(ctx context.Context, st imageStore, system string, h *nodev1.InstallHeader, name string, docs []config.Document) (install.Checked, error) {
 	root := h.GetImage().GetRootHash()
 	next, warnings, err := s.checkWithImage(ctx, st, system, h.GetImage().GetPlatform(), name, imageCheck{delivered: docs, secret: h.FallbackSecret, image: root, writing: root})
@@ -186,12 +183,11 @@ func (s *Server) installPayloads(ctx context.Context, deliveries []layer.Deliver
 	return writers, nil
 }
 
-// pullInstall prepares the pull of the image an install from the installer names in a registry.
-// The client sends no chunks of that image. chalkd authenticates with the Registry of the
-// reference's host among the documents of the config the header delivers, the only config the
-// installer has. It checks the header's image first, then fetches the manifest, the header and
-// the contract layer before the install changes anything, and returns the image's contract from
-// that layer, which the manifest's digest pins. Install logs each refusal as it returns it.
+// pullInstall prepares the pull of the image an install from the installer names in a registry,
+// whose chunks the client does not send. It authenticates with the Registry of the reference's
+// host in the header's config, the only config the installer has. Before anything changes it
+// fetches the manifest, header and contract layer, and returns the contract, which the manifest's
+// digest pins. Install logs each refusal it returns.
 func (s *Server) pullInstall(ctx context.Context, stream *connect.ClientStream[nodev1.InstallRequest], h *nodev1.InstallHeader) (*ociimage.Pull, *nodev1.ImageContract, error) {
 	ref := h.GetSource().GetOci().GetReference()
 	img := imageHeader(h.Image)

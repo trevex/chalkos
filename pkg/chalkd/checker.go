@@ -20,16 +20,13 @@ import (
 	"github.com/trevex/chalkos/pkg/outputs"
 )
 
-// Check is chalkd check: the image checks config for itself, as the chalkd of a running image
-// asks it to before the image boots. It reads a chalkos.check.v1 Input on stdin and writes the
-// Result to stdout, both as protobuf JSON, and asks for facts on the Unix socket at socket.
-// system is the image's NixOS system, whose etc holds what it checks config with: its schemas,
-// validators, outputs and layer facts, never the /etc of the system it runs on, which is the
-// running image's. Validators, renderers and checks run as children of the checker, in the
-// sandbox it runs in, and keep their files below dir, which the checker removes after.
-//
-// A refusal is part of the result; so is a fault of the image, such as schemas it cannot load,
-// as its error. An error of Check itself is one of its input or output.
+// Check is chalkd check: the image checks config for itself before it boots, as a running chalkd
+// asks it to. It reads a chalkos.check.v1 Input on stdin, writes the Result to stdout, both as
+// protobuf JSON, and asks for facts on the Unix socket at socket. It checks with what the etc of
+// system, the image's NixOS system, holds, never the running image's /etc. Validators, renderers
+// and checks run as its children in its sandbox, with their files below dir, which it removes
+// after. A refusal and a fault of the image are part of the result; Check's own error is one of
+// its input or output.
 func (s *Server) Check(ctx context.Context, system, socket, dir string, stdin io.Reader, stdout io.Writer) error {
 	data, err := io.ReadAll(stdin)
 	if err != nil {

@@ -34,30 +34,28 @@ const trialFile = "chalkd/trial"
 // config was delivered. It goes with the trial's record.
 const trialStagedSlot = "chalkd/trial-staged"
 
-// trialRecord is a config on trial: the slot it was delivered to, by its name below the slots'
-// directory; the version on trial; the version the slot ran before, which the slot keeps as its
-// previous config and a rollback delivers again; the deadline; and the units the trial's health
-// check leaves out besides the image's. Error is why the last attempt to roll the trial back
-// failed, at the deadline or as a delivery of the config from before it, which the node runs
-// already, that ends the trial, or why the trial's slot could not be read at the deadline;
-// Attempts counts those that failed, and Changed is set once one failed after it changed the
-// node, which the deadline's retries or a rollback on request then finish.
-//
-// What the delivery writes besides the running slot waits for the confirmation, so a trial that
-// rolls back leaves it as it was: Staged is the root hash, in hex, of the staged image whose slot
-// the confirmation writes from the copy at trialStagedSlot, and Pending is set when the
-// confirmation replaces the node's pending config with the config on trial.
+// trialRecord is a config on trial. What the delivery writes besides the running slot waits for
+// the confirmation, so a rollback leaves it as it was.
 type trialRecord struct {
-	Slot        string    `json:"slot"`
-	Version     string    `json:"version"`
-	Previous    string    `json:"previous"`
-	Deadline    time.Time `json:"deadline"`
-	IgnoreUnits []string  `json:"ignoreUnits,omitempty"`
-	Error       string    `json:"error,omitempty"`
-	Attempts    int       `json:"attempts,omitempty"`
-	Changed     bool      `json:"changed,omitempty"`
-	Staged      string    `json:"staged,omitempty"`
-	Pending     bool      `json:"pending,omitempty"`
+	// Slot is the slot the config went to, by its name below the slots' directory. Previous is the
+	// version it ran before, which it keeps as its previous config and a rollback delivers again.
+	Slot     string    `json:"slot"`
+	Version  string    `json:"version"`
+	Previous string    `json:"previous"`
+	Deadline time.Time `json:"deadline"`
+	// IgnoreUnits are left out of the trial's health check besides the image's.
+	IgnoreUnits []string `json:"ignoreUnits,omitempty"`
+	// Error is why the last rollback failed, at the deadline or as the delivery that finishes it,
+	// or why the slot could not be read at the deadline. Attempts counts the failures; Changed is
+	// set once one failed after it changed the node, which a retry or a rollback on request
+	// finishes.
+	Error    string `json:"error,omitempty"`
+	Attempts int    `json:"attempts,omitempty"`
+	Changed  bool   `json:"changed,omitempty"`
+	// Staged is the hex root hash of the staged image whose slot the confirmation writes from the
+	// copy at trialStagedSlot; Pending is set when the confirmation replaces the pending config.
+	Staged  string `json:"staged,omitempty"`
+	Pending bool   `json:"pending,omitempty"`
 }
 
 // readTrial reads the trial record below stateDir; open is false without one.
@@ -108,10 +106,9 @@ func removeTrialRecord(stateDir string) error {
 	return atomicfile.SyncDir(filepath.Dir(path))
 }
 
-// removeStagedCopy removes the copy of the staged image's slot a trial kept at trialStagedSlot,
-// once the trial's record is gone; a failure is logged. A copy without a record, which a crash or
-// a failed removal leaves, is no harm: only a confirmation reads the copy, and only while the
-// record that names the staged image is open, and a trial that names it writes its own copy
+// removeStagedCopy removes the copy of the staged image's slot at trialStagedSlot once the trial's
+// record is gone; a failure is logged. A copy left without a record is harmless: only a
+// confirmation reads it, while the record that names it is open, and a trial writes its own copy
 // before its record. The boot and chalkd's start remove such a copy.
 func removeStagedCopy(stateDir string) {
 	if err := slot.Remove(filepath.Join(stateDir, trialStagedSlot)); err != nil {
@@ -154,15 +151,11 @@ func (r trialRecord) state(slots string) (string, trialState, error) {
 	return dir, trialLost, nil
 }
 
-// ConfirmConfig ends the trial of a config once the node is healthy, and the node keeps the config.
-// The health check leaves out the units the trial's record names besides the image's. It runs
-// before s.mu is taken: the layers' checks take their time and must not hold back a delivery or
-// the deadline. The record is read without the lock first, and a request that cannot confirm it,
-// for another version or without a trial, skips the check. Under the lock the record is read
-// again, and a record that changed meanwhile is refused with UNAVAILABLE, so the client asks again
-// and the check covers the trial it confirms; so is a record a rollback at the deadline rewrote.
-// A trial past its deadline is confirmed only while its rollback failed and is retried, and not
-// once a rollback failed after it changed the node.
+// ConfirmConfig ends a trial once the node is healthy, and the node keeps the config. The health
+// check runs before s.mu is taken so the layers' slow checks do not hold back a delivery or the
+// deadline; a record that changed meanwhile, as a rollback at the deadline rewrites it, is refused
+// with UNAVAILABLE so the client asks again. A trial past its deadline is confirmed only while its
+// rollback failed without changing the node.
 func (s *Server) ConfirmConfig(ctx context.Context, req *connect.Request[nodev1.ConfirmConfigRequest]) (*connect.Response[nodev1.ConfirmConfigResponse], error) {
 	version := req.Msg.Version
 	if version == "" {
@@ -228,12 +221,10 @@ func (s *Server) ConfirmConfig(ctx context.Context, req *connect.Request[nodev1.
 	return connect.NewResponse(&nodev1.ConfirmConfigResponse{Warnings: warnings}), nil
 }
 
-// writeHeldBack writes what the delivery of the trial r, now confirmed, held back: the staged
-// image's slot from the copy the trial kept, which that image's checker passed before the trial
-// began, or the pending config, which the config on trial replaces. Nothing that changes either
-// runs during a trial: deliveries, upgrades, activations and image rollbacks are refused. A
-// write that fails leaves the slot or the pending config as it was and is a warning: the
-// confirmation goes ahead, and the config delivered again writes it. The caller holds s.mu.
+// writeHeldBack writes what the delivery of the confirmed trial r held back: the staged image's
+// slot from the trial's copy, which its checker passed, or the pending config. Nothing else changes
+// either during a trial. A failed write leaves it as it was and is a warning; delivering the config
+// again writes it. The caller holds s.mu.
 func (s *Server) writeHeldBack(r trialRecord) []string {
 	switch {
 	case r.Staged != "":
@@ -259,14 +250,10 @@ func (s *Server) writeHeldBack(r trialRecord) []string {
 	return nil
 }
 
-// unwrittenCopy warns, for a confirmation of version sent again without a trial open, of the copy
-// of the staged image's slot that the first confirmation never wrote: it removed the trial's
-// record and crashed before writeHeldBack. The copy, which holds version, stays until the next
-// boot or chalkd's start, and the image in the inactive slot, still staged and not the known-good
-// one, holds other config. A copy that only a failed removal left after its write, or that a
-// trial of another version left, says nothing. A pending config the crash left unreplaced leaves
-// no trace and goes without a warning; nothing reads it before the next upgrade, which checks it.
-// The caller holds s.mu.
+// unwrittenCopy warns, for a confirmation of version sent again, that the first one removed the
+// record and crashed before writeHeldBack: the trial's copy holds version, and the image still
+// staged and not known-good holds other config. A pending config left unreplaced goes without a
+// warning: the next upgrade checks it. The caller holds s.mu.
 func (s *Server) unwrittenCopy(version string) []string {
 	held, found, err := slot.Read(filepath.Join(s.Paths.StateDir, trialStagedSlot))
 	if err != nil {
@@ -305,16 +292,12 @@ var (
 	errKnownGood      = errors.New("the staged image is the known-good one")
 )
 
-// writeStagedCopy writes the copy a trial kept at trialStagedSlot to the config slot of the
-// staged image, whose root hash staged gives in hex. The slot is written only while that image is
-// still the one in the inactive slot, as stagedEntry finds it, while STATE keeps its slot, and
-// while it is not the node's known-good image, which keeps the config it last ran, as
-// keepsKnownGood keeps it; otherwise the copy is dropped and the error says why. Nothing staged
-// another image during the trial, but a boot may have: one into the staged image, whose rollback
-// of the trial failed, keeps the record open, and the running slot is then the staged image's,
-// which never got the config on trial, as the trial's slot is that of the image that ran before.
-// A boot that was not found healthy may likewise have left the staged image as the known-good
-// one. The caller holds s.mu.
+// writeStagedCopy writes the trial's copy at trialStagedSlot to the slot of the staged image
+// (staged is its hex root hash) while that image is still staged, STATE keeps its slot, and it is
+// neither running nor the known-good image, which keeps the config it last ran; else the copy is
+// dropped and the error says why. Nothing stages another image during a trial, but a boot whose
+// rollback of the trial failed may run the staged image with the record open, or a boot not found
+// healthy leave it the known-good one. The caller holds s.mu.
 func (s *Server) writeStagedCopy(staged string) error {
 	image, err := hex.DecodeString(staged)
 	if err != nil {
@@ -354,8 +337,8 @@ func (s *Server) writeStagedCopy(staged string) error {
 	return nil
 }
 
-// endTrial ends the trial as closeTrial does and removes the copy of the staged image's slot it
-// kept, which nothing writes then; the caller holds s.mu.
+// endTrial closes the trial and removes the copy of the staged image's slot it kept; the caller
+// holds s.mu.
 func (s *Server) endTrial() error {
 	if err := s.closeTrial(); err != nil {
 		return err
@@ -375,8 +358,7 @@ func (s *Server) closeTrial() error {
 }
 
 // dropLostTrial ends the trial r, whose slot runs neither its config nor the one from before it,
-// which leaves nothing to confirm or roll back: its record goes, as endTrial says. The caller
-// holds s.mu.
+// which leaves nothing to confirm or roll back. The caller holds s.mu.
 func (s *Server) dropLostTrial(r trialRecord) error {
 	log.Printf("the trial of config %s ended: its slot runs neither it nor config %s", r.Version, r.Previous)
 	return s.endTrial()
@@ -419,16 +401,13 @@ func (s *Server) lockSlots(what string) (unlock func(), err error) {
 	return s.upgrading.Unlock, nil
 }
 
-// refuseOnTrial refuses what would change the node while a config is on trial, so the trial's
-// rollback restores what the node ran before it. what names the change. A trial whose slot runs
-// the config from before it already, as a rollback that failed after it wrote the slot, or whose
-// record a crash or a failed removal kept, leaves it, is finished first, and the change goes
-// ahead. That needs s.upgrading: holdsUpgrading tells that the caller holds it, and otherwise it
-// is tried, and the change is refused with ABORTED while the upgrade, the image rollback or the
-// rollback at a trial's deadline that holds it runs. A trial whose slot runs neither config loses
-// its record, as at its deadline, and the change goes ahead. The caller holds s.mu, which a
-// trial's delivery holds while it writes the record; an upgrade and an image rollback call it
-// through lockSlots.
+// refuseOnTrial refuses what, a change of the node, while a config is on trial, so the trial's
+// rollback restores what the node ran before it. A trial whose slot runs the config from before
+// it already, as a failed rollback or a record a crash kept leaves it, is finished first and the
+// change goes ahead. That needs s.upgrading: holdsUpgrading says the caller holds it, else it is
+// tried and the change refused with ABORTED while another holds it. A trial whose slot runs
+// neither config loses its record. The caller holds s.mu, which a trial's delivery holds while it
+// writes the record.
 func (s *Server) refuseOnTrial(what string, holdsUpgrading bool) error {
 	r, open, err := readTrial(s.Paths.StateDir)
 	if err != nil {
@@ -508,15 +487,10 @@ func checkTrial(found bool, running, next string, m machineChange) error {
 }
 
 // applyTrial delivers config on trial. The record goes to STATE, synced, before the delivery
-// changes anything, so neither a crash nor a boot finds the config on trial without it; once the
-// delivery ended, settleTrial arms the deadline or, when the slot does not run the config, ends
-// the trial. A delivery that failed says which: the config stays on trial until its deadline, or
-// the config from before it is delivered again. The caller holds s.mu and s.upgrading.
-//
-// The staged image checks the config before anything changes, as for a delivery without a trial,
-// but its slot is written only once the trial is confirmed, from a copy the trial keeps, and so is
-// the pending config replaced: a rollback, at the deadline, on request or at a boot, then leaves
-// both as they were.
+// changes anything, so neither a crash nor a boot finds the config on trial without it; then
+// settleTrial arms the deadline or ends the trial. The staged image checks the config first, but
+// its slot and the pending config are written only at the confirmation, so any rollback leaves
+// them as they were. The caller holds s.mu and s.upgrading.
 func (s *Server) applyTrial(ctx context.Context, r applyRequest) (*connect.Response[nodev1.ApplyConfigResponse], error) {
 	d, err := s.planDelivery(ctx, r)
 	if err != nil {
@@ -560,8 +534,8 @@ func (s *Server) applyTrial(ctx context.Context, r applyRequest) (*connect.Respo
 	return nil, err
 }
 
-// checkSecondTrial refuses a trial whose config makes the staged image's config add to the
-// machine's storage, which a rollback cannot undo, as checkTrial refuses the running image's.
+// checkSecondTrial refuses a trial whose config makes the staged image's config change the
+// machine's storage, which a rollback cannot undo.
 func checkSecondTrial(w secondWrite) error {
 	if len(w.slot.machine.changes) > 0 {
 		c := w.slot.machine.changes[0]
@@ -591,12 +565,9 @@ func (s *Server) holdBack(rec *trialRecord, w secondWrite) error {
 }
 
 // settleTrial settles the trial r once its delivery ended or chalkd started, and returns where it
-// stands: while its slot runs the config on trial, it arms the deadline; while the slot runs the
-// config from before it, as a delivery that failed before it wrote the slot or a crash leaves it,
-// it finishes the trial and returns finishTrial's error. A trial whose slot runs neither loses its
-// record; one that cannot be removed has the deadline try again. A slot that cannot be read
-// leaves the decision to the deadline, as the trial applied. The caller holds s.mu and
-// s.upgrading.
+// stands. It arms the deadline while the slot runs the config on trial or cannot be read, finishes
+// the trial while the slot runs the config from before it, and else drops the record, which the
+// deadline tries again when that fails. The caller holds s.mu and s.upgrading.
 func (s *Server) settleTrial(r trialRecord) (trialState, error) {
 	_, st, err := r.state(s.Loader.Slots)
 	switch {
@@ -690,11 +661,9 @@ func (d *trialDeadline) rollbackContext() (context.Context, context.CancelFunc) 
 }
 
 // finishTrial ends a trial whose slot runs the config from before it again. It delivers that
-// config again first: the effects compare with the baseline a delivery that failed part way left,
-// the rollback's or the trial's own, so they take what it left undone, such as a restart or an
-// output's swap. Only then does the record go. A delivery that fails keeps the trial open, as
-// keepTrial does, and the deadline tries again; so does a record that cannot be removed. The
-// caller holds s.mu and s.upgrading.
+// config again first, so the effects, which compare with the baseline a failed delivery left, take
+// what it left undone, such as a restart; only then does the record go. A failed delivery or
+// removal keeps the trial open for the deadline to retry. The caller holds s.mu and s.upgrading.
 func (s *Server) finishTrial(r trialRecord) error {
 	log.Printf("the node runs config %s from before the trial of config %s; delivering it again to end the trial", r.Previous, r.Version)
 	ctx, cancel := s.trial.rollbackContext()
@@ -732,20 +701,12 @@ func (s *Server) armTrial(r trialRecord, after time.Duration) {
 	s.trial.arm(after, func(armed uint64) { s.expireTrial(r.Version, r.Deadline, armed) })
 }
 
-// expireTrial rolls back the config on trial whose version and deadline are given, once the
-// deadline passed unconfirmed, through rollbackConfig, the pipeline of RollbackConfig. armed is
-// the count of armed deadlines when its own was armed: a deadline armed after it, or stopped,
-// leaves it nothing to do, as its timer may have fired while it was replaced. It takes s.upgrading
-// before s.mu, as Upgrade and RollbackImage do. ApplyConfig and RollbackConfig hold s.mu and only
-// try s.upgrading, so nothing waits for the lock the other holds. The trial is re-read under the
-// locks:
-//   - a trial confirmed or rolled back meanwhile, or a later trial, even of the same version, is
-//     left alone;
-//   - a node that runs the config from before the trial already, as after a rollback that failed
-//     after it wrote the slot, or a rollback on request whose record a crash kept, finishes the
-//     trial; a slot that runs neither only loses the record;
-//   - a rollback that fails keeps the trial open, its failure and whether it changed the node in
-//     the record, and is tried again; so does one that outlasts trialRollbackTimeout.
+// expireTrial rolls the trial of version back at its deadline through rollbackConfig. It takes
+// s.upgrading before s.mu; handlers that hold s.mu only TryLock s.upgrading, so the two cannot
+// deadlock. A deadline armed after this one's (armed) or stopped, and a trial confirmed, rolled
+// back or replaced meanwhile, leave it nothing to do. A slot that runs the config from before the
+// trial finishes it and one that runs neither loses the record. A rollback that fails or outlasts
+// trialRollbackTimeout keeps the trial open and is retried.
 func (s *Server) expireTrial(version string, deadline time.Time, armed uint64) {
 	s.upgrading.Lock()
 	defer s.upgrading.Unlock()
@@ -794,19 +755,13 @@ func (s *Server) expireTrial(version string, deadline time.Time, armed uint64) {
 	}
 }
 
-// ResumeTrial settles a trial recorded before chalkd started, as settleTrial does: one past its
-// deadline rolls back at once, and one whose slot runs the config from before it, as a crash
-// before the slot was written leaves it, is finished. A record that cannot be read stays, so
-// every change is refused until RollbackConfig removes it. ctx ends when chalkd stops, and so do
-// the rollbacks of trials from then on, this one's and those at a deadline. A trial chalkd
-// stopped before ResumeTrial took the locks stays as it is for the next start. Without a record,
-// the copy of the staged image's slot a trial kept goes, as a crash during a confirmation leaves
-// it.
-//
-// chalkd calls it in normal mode once it serves, so a rollback does not keep the node from being
-// reached. Until it ends, an upgrade or an image rollback is refused with ABORTED, and the
-// requests that take the config lock wait, such as a delivery, a confirmation, GetConfig and
-// PullImage; Status does not.
+// ResumeTrial settles a trial recorded before chalkd started, so one past its deadline rolls back
+// at once. A record that cannot be read stays, and every change is refused until RollbackConfig
+// removes it; without a record, a leftover copy of the staged image's slot goes. ctx ends, with
+// chalkd, the rollbacks of trials from then on; a stop before it took the locks leaves the trial
+// to the next start. chalkd calls it in normal mode once it serves, so the node stays reachable.
+// Until it ends, upgrades and image rollbacks are refused with ABORTED and requests that take
+// s.mu wait; Status does not.
 func (s *Server) ResumeTrial(ctx context.Context) {
 	// chalkd serves before it calls ResumeTrial, so an upgrade or an image rollback may take
 	// s.upgrading first. It refuses itself on the record, or finishes a trial that ended under a
@@ -833,16 +788,12 @@ func (s *Server) ResumeTrial(ctx context.Context) {
 	_, _ = s.settleTrial(r)
 }
 
-// RestoreTrialAtBoot ends a trial that was open when the node booted, before chalkos-config applies
-// the slot: the slot's previous config, the one from before the trial, becomes its config again,
-// and the config on trial its previous one. Every boot ends a trial, before its deadline or after,
-// so a reset undoes a config that cut the node off. A trial that was never applied or was rolled
-// back leaves the slot as it is, and the record goes. When the slot cannot be read or restored,
-// the record stays with the boot's time as its deadline: chalkd then rolls the trial back at once
-// as it starts, and a confirmation keeps it only once that rollback failed without changing the
-// node. A record that cannot be read stays as well, and the node takes no change until
-// RollbackConfig removes it. Without a record, the copy of the staged image's slot a trial kept
-// goes, as a crash during a confirmation leaves it.
+// RestoreTrialAtBoot rolls an open trial back before chalkos-config applies the slot, swapping
+// the slot's config and its previous one: every boot ends a trial, so a reset undoes a config that
+// cut the node off. If the slot cannot be read or restored, the record stays with the boot's time
+// as its deadline, and chalkd rolls back at once as it starts. A record that cannot be read stays,
+// and the node takes no change until RollbackConfig removes it; without a record, a leftover copy
+// of the staged image's slot goes.
 func RestoreTrialAtBoot(stateDir, slots string) error {
 	r, open, err := readTrial(stateDir)
 	if err != nil {

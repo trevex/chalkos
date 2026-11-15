@@ -18,13 +18,12 @@ import (
 	"github.com/trevex/chalkos/pkg/storage"
 )
 
-// holdPending keeps docs, the config of a request with staged on a node without a staged image,
-// as the node's pending config, in place of any it held, and answers with it. No image is there
-// to check it against, so chalkd only parses it: the next upgrade checks it with the image it
-// installs and writes it to that image's slot. A dry run keeps nothing. The fallback secret is
-// refused rather than stored: a pending config waits on STATE for as long as no upgrade comes,
-// and the upgrade that adds an encrypted volume carries the secret itself. The caller holds s.mu
-// and s.upgrading, so no upgrade reads the pending config while it is replaced.
+// holdPending keeps docs, staged config on a node without a staged image, as the pending config
+// in place of any it held. No image is there to check it, so chalkd only parses it; the next
+// upgrade checks it and writes it to that image's slot. A dry run keeps nothing. The fallback
+// secret is refused rather than kept on STATE for an unknown time: the upgrade that adds an
+// encrypted volume carries it. The caller holds s.mu and s.upgrading, so no upgrade reads the
+// pending config while it is replaced.
 func (s *Server) holdPending(m *nodev1.ApplyConfigRequest, docs []config.Document) (*connect.Response[nodev1.ApplyConfigResponse], error) {
 	if m.FallbackSecret != "" {
 		return nil, layer.Errorf(connect.CodeInvalidArgument, "no image is staged, so the config is held pending for the next upgrade, which is stored without the fallback secret; the upgrade that adds an encrypted volume carries it")
@@ -193,18 +192,11 @@ func (c imageConfig) refused(err error, name string) error {
 	return fmt.Errorf("the pending config %s does not suit the image: %w; chalkctl config apply --staged %s replaces it, and chalkctl config discard %s drops it", c.pending, err, name, name)
 }
 
-// settlePending removes the pending config that c, the config stageConfig wrote to the image's
-// slot, names: the one the image an upgrade staged took, or the one the config the upgrade carried
-// replaced; c names none when no slot was written. That image is staged with its config now, and
-// a later upgrade must not take the pending config. Only once the image is staged may it go: an
-// upgrade that fails after the image's slot was written but before the image was staged, as when
-// writing its UKI fails, retires the slot and keeps the pending config for the upgrade after, and
-// one whose activation fails once the image is staged settles it too. The image is staged
-// already, so a failure to remove it does not fail the upgrade: the journal says so, Status keeps
-// naming the pending config, and config discard drops it. It returns what became
-// of the pending config for the upgrade's answer, as chalkd knows it, since chalkd reboots soon
-// after; nil when the node held none, or when reading one it keeps failed, which the journal
-// records. The caller holds s.upgrading.
+// settlePending drops the pending config c names, the one the upgrade's image took or replaced,
+// once the image is staged: an upgrade that fails before that keeps it for the next one. A failed
+// removal is only logged; Status keeps naming the pending config and config discard drops it. It
+// returns the config's fate for the upgrade's answer, nil when the node held none or reading it
+// failed, which is logged. The caller holds s.upgrading.
 func (s *Server) settlePending(c imageConfig, rootHash []byte) *nodev1.PendingOutcome {
 	s.mu.Lock()
 	defer s.mu.Unlock()

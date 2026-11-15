@@ -17,13 +17,12 @@ import (
 	"github.com/trevex/chalkos/pkg/rules"
 )
 
-// baseline is what the effects compare a delivery with while an earlier one is not applied
-// whole: the running slot's config, the facts the rules read, the states of the outputs and
-// the hashes of the kinds, as they were before the first delivery that failed part way. What that
-// delivery applied, such as a share or a slot, is then no reason for a retry to find nothing
-// changed. It holds what the rules see alone: the documents with their secret values hashed, as
-// config.Redact hashes them, and the facts as their definitions keep them, the share's keys among
-// them as hashes. A reboot, which clears /run, starts every unit anyway.
+// baseline is what the effects compare a delivery with while an earlier one is not applied whole:
+// the running slot's config, the rules' facts, the outputs' states and the kinds' hashes from
+// before the first delivery that failed part way, so a retry does not find what it applied
+// unchanged. It holds what the rules see alone: secret values hashed as config.Redact hashes them,
+// and facts as their definitions keep them, the share's keys as hashes. It lives in /run: a
+// reboot starts every unit anyway.
 type baseline struct {
 	Documents []map[string]any         `json:"documents"`
 	Facts     recordedFacts            `json:"facts"`
@@ -125,11 +124,10 @@ func (a baselineAttempt) recorded() ([]byte, error) {
 // maxAttempts is how many attempts a baseline keeps, the newest.
 const maxAttempts = 16
 
-// addAttempt adds a, what a delivery applies, to the baseline at path, which that delivery
-// compares with, and returns the baseline as it was, for a delivery refused before it changed
-// anything to restore. Every delivery adds its attempt, a retry and one of the baseline's own
-// config among them: either can change the facts alone, as a share does. Beyond maxAttempts the
-// oldest go.
+// addAttempt adds a, what a delivery applies, to the baseline at path and returns the baseline as
+// it was, which a delivery refused before it changed anything restores. Every delivery adds one,
+// a retry or one of the baseline's own config too: either can change the facts alone, as a share
+// does. Beyond maxAttempts the oldest go.
 func addAttempt(path string, a baselineAttempt) (previous []byte, err error) {
 	previous, err = os.ReadFile(path)
 	if errors.Is(err, fs.ErrNotExist) {

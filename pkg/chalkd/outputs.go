@@ -10,15 +10,11 @@ import (
 	"github.com/trevex/chalkos/pkg/outputs"
 )
 
-// renderOutputs renders img's outputs from docs for the node called name, checks them and stages
-// them, as img.Render does. A failure is handled by refuse:
-//   - set, it refuses the delivery whole and the node keeps serving its outputs;
-//   - unset, as for a delivery that keeps the node's documents, the outputs that passed are staged
-//     and the failures logged.
-//
-// The status records the failures either way, unless dry, as for a dry run, which changes
-// nothing. What renderers and checks write to standard error goes to the journal alone. The
-// renderers read docs redacted, as they would read them in the image's checker.
+// renderOutputs renders, checks and stages img's outputs from docs for the node called name. With
+// refuse, a failure refuses the delivery whole and the node keeps serving its outputs; without, as
+// for a delivery that keeps the node's documents, the outputs that passed are staged and the
+// failures logged. The status records the failures unless dry. Renderers read docs redacted, as in
+// the image's checker, and their standard error goes to the journal alone.
 func (s *Server) renderOutputs(ctx context.Context, img check.Image, name string, docs config.Redacted, refuse, dry bool) (*outputs.Staged, error) {
 	staged, err := img.Render(ctx, name, docs, refuse)
 	r, ok := errors.AsType[*check.Refusal](err)

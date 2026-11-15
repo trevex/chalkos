@@ -436,10 +436,9 @@ func serve() error {
 		}
 		srv.Renewal = chalkd.NewNodeRenewal(creds.node, issue)
 		go srv.Renewal.Run(ctx)
-		// A trial recorded before chalkd started gets its deadline again, and one the boot could
-		// not end rolls back at once. Its delivery reads srv.Renewal and the layers, so it comes
-		// once they are set and their loops run, and once chalkd listens, so the node can be
-		// reached while it runs. It ends with ctx, and chalkd waits for it as for the loops.
+		// A trial recorded before chalkd started reads srv.Renewal and the layers, so it resumes
+		// once they run and once chalkd listens, which keeps the node reachable meanwhile. It ends
+		// with ctx, and chalkd waits for it as for the loops.
 		loops.Go(func() { srv.ResumeTrial(ctx) })
 	}
 	go announceAddresses(srv.CurrentFingerprint)
