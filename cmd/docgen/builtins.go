@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"maps"
 	"os"
@@ -132,78 +133,38 @@ func writeBuiltins(page, def, plain, router string) error {
 	writeRulesSection(&b, "rules-kubernetes", "The rules of the kinds that images with Kubernetes accept, and those they add to other kinds.", kubeRules, taken)
 	writeRulesSection(&b, "rules-router-images", "The rules of the kinds that router images accept, and those they add to other kinds.", routerRules, taken)
 
-	everyFacts, kubeFacts, err := splitEvery("fact", d.facts, p.facts)
-	if err != nil {
+	parts := []error{
+		writePart(&b, "fact", "Facts", factsIntro, "declares", d, p, r, writeFacts, func(i builtinImage) map[string]facts.Definition { return i.facts }),
+		writePart(&b, "validator", "Validators", validatorsIntro, "runs", d, p, r, writeValidators, func(i builtinImage) map[string]outputs.Validator { return i.validators }),
+		writePart(&b, "output", "Outputs", outputsIntro, "renders", d, p, r, writeOutputs, func(i builtinImage) map[string]outputs.Definition { return i.outputs }),
+		writePart(&b, "effect", "Effects", effectsIntro, "declares", d, p, r, writeEffects, func(i builtinImage) map[string]effects.Definition { return i.effects }),
+		writePart(&b, "diagnostic", "Diagnostics", diagnosticsIntro, "declares", d, p, r, writeDiagnostics, func(i builtinImage) map[string]diagnostics.Definition { return i.diagnostics }),
+	}
+	if err := errors.Join(parts...); err != nil {
 		return err
 	}
-	_, routerFacts, routerChangedFacts, err := split("fact", "the router image", r.facts, p.facts)
-	if err != nil {
-		return err
-	}
-	fmt.Fprintf(&b, "\n## Facts { #facts }\n\n%s", factsIntro)
-	writeFacts(&b, "facts-every-image", "The facts every image declares.", everyFacts, nil, d)
-	writeFacts(&b, "facts-kubernetes", "The facts images with Kubernetes add.", kubeFacts, nil, d)
-	writeFacts(&b, "facts-router-images", layerIntro("The facts router images add", "fact", "router images", routerChangedFacts),
-		sortedUnion(routerFacts, routerChangedFacts), routerChangedFacts, r)
-
-	everyValidators, kubeValidators, err := splitEvery("validator", d.validators, p.validators)
-	if err != nil {
-		return err
-	}
-	_, routerValidators, routerChangedValidators, err := split("validator", "the router image", r.validators, p.validators)
-	if err != nil {
-		return err
-	}
-	fmt.Fprintf(&b, "\n## Validators { #validators }\n\n%s", validatorsIntro)
-	writeValidators(&b, "validators-every-image", "The validators every image runs.", everyValidators, nil, d.validators)
-	writeValidators(&b, "validators-kubernetes", "The validators images with Kubernetes add.", kubeValidators, nil, d.validators)
-	writeValidators(&b, "validators-router-images", layerIntro("The validators router images add", "validator", "router images", routerChangedValidators),
-		sortedUnion(routerValidators, routerChangedValidators), routerChangedValidators, r.validators)
-
-	everyOutputs, kubeOutputs, err := splitEvery("output", d.outputs, p.outputs)
-	if err != nil {
-		return err
-	}
-	_, routerOutputs, routerChangedOutputs, err := split("output", "the router image", r.outputs, p.outputs)
-	if err != nil {
-		return err
-	}
-	fmt.Fprintf(&b, "\n## Outputs { #outputs }\n\n%s", outputsIntro)
-	writeOutputs(&b, "outputs-every-image", "The outputs every image renders.", everyOutputs, nil, d.outputs)
-	writeOutputs(&b, "outputs-kubernetes", "The outputs images with Kubernetes add.", kubeOutputs, nil, d.outputs)
-	writeOutputs(&b, "outputs-router-images", layerIntro("The outputs router images add", "output", "router images", routerChangedOutputs),
-		sortedUnion(routerOutputs, routerChangedOutputs), routerChangedOutputs, r.outputs)
-
-	everyEffects, kubeEffects, err := splitEvery("effect", d.effects, p.effects)
-	if err != nil {
-		return err
-	}
-	_, routerEffects, routerChangedEffects, err := split("effect", "the router image", r.effects, p.effects)
-	if err != nil {
-		return err
-	}
-	fmt.Fprintf(&b, "\n## Effects { #effects }\n\n%s", effectsIntro)
-	writeEffects(&b, "effects-every-image", "The effects every image declares.", everyEffects, nil, d.effects)
-	writeEffects(&b, "effects-kubernetes", "The effects images with Kubernetes add.", kubeEffects, nil, d.effects)
-	writeEffects(&b, "effects-router-images", layerIntro("The effects router images add", "effect", "router images", routerChangedEffects),
-		sortedUnion(routerEffects, routerChangedEffects), routerChangedEffects, r.effects)
-
-	everyDiagnostics, kubeDiagnostics, err := splitEvery("diagnostic", d.diagnostics, p.diagnostics)
-	if err != nil {
-		return err
-	}
-	_, routerDiagnostics, routerChangedDiagnostics, err := split("diagnostic", "the router image", r.diagnostics, p.diagnostics)
-	if err != nil {
-		return err
-	}
-	fmt.Fprintf(&b, "\n## Diagnostics { #diagnostics }\n\n%s", diagnosticsIntro)
-	writeDiagnostics(&b, "diagnostics-every-image", "The diagnostics every image declares.", everyDiagnostics, nil, d.diagnostics)
-	writeDiagnostics(&b, "diagnostics-kubernetes", "The diagnostics images with Kubernetes add.", kubeDiagnostics, nil, d.diagnostics)
-	writeDiagnostics(&b, "diagnostics-router-images", layerIntro("The diagnostics router images add", "diagnostic", "router images", routerChangedDiagnostics),
-		sortedUnion(routerDiagnostics, routerChangedDiagnostics), routerChangedDiagnostics, r.diagnostics)
-
 	b.WriteString(builtinsSources)
 	return os.WriteFile(page, []byte(b.String()), 0o644)
+}
+
+// writePart writes the section of one sort of built-in, such as "fact": those of every image, which
+// an image verb, those images with Kubernetes add, and those router images add or declare
+// otherwise. of reads the sort from an image.
+func writePart[T any](b *strings.Builder, sort, heading, intro, verb string, d, p, r builtinImage, write func(b *strings.Builder, anchor, intro string, names, changed []string, img builtinImage), of func(builtinImage) map[string]T) error {
+	every, kube, err := splitEvery(sort, of(d), of(p))
+	if err != nil {
+		return err
+	}
+	_, router, changed, err := split(sort, "the router image", of(r), of(p))
+	if err != nil {
+		return err
+	}
+	plural := sort + "s"
+	fmt.Fprintf(b, "\n## %s { #%s }\n\n%s", heading, plural, intro)
+	write(b, plural+"-every-image", "The "+plural+" every image "+verb+".", every, nil, d)
+	write(b, plural+"-kubernetes", "The "+plural+" images with Kubernetes add.", kube, nil, d)
+	write(b, plural+"-router-images", layerIntro("The "+plural+" router images add", sort, "router images", changed), sortedUnion(router, changed), changed, r)
+	return nil
 }
 
 // readBuiltinImage reads the schemas, facts.json, validators.json, outputs.json, effects.json and
@@ -540,7 +501,8 @@ func writeFacts(b *strings.Builder, anchor, intro string, names, changed []strin
 }
 
 // writeOutputs writes a section of outputs.
-func writeOutputs(b *strings.Builder, anchor, intro string, names, changed []string, defs map[string]outputs.Definition) {
+func writeOutputs(b *strings.Builder, anchor, intro string, names, changed []string, img builtinImage) {
+	defs := img.outputs
 	writeSubsection(b, anchor, intro, len(names))
 	if len(names) == 0 {
 		return
@@ -559,7 +521,8 @@ func writeOutputs(b *strings.Builder, anchor, intro string, names, changed []str
 
 // writeValidators writes a section of validators, each with the kinds it reads and the command
 // chalkd runs it as: its program with validate and its name.
-func writeValidators(b *strings.Builder, anchor, intro string, names, changed []string, defs map[string]outputs.Validator) {
+func writeValidators(b *strings.Builder, anchor, intro string, names, changed []string, img builtinImage) {
+	defs := img.validators
 	writeSubsection(b, anchor, intro, len(names))
 	if len(names) == 0 {
 		return
@@ -588,7 +551,8 @@ func renderer(render string) string {
 }
 
 // writeEffects writes a section of effects, each with when it fires and what it does.
-func writeEffects(b *strings.Builder, anchor, intro string, names, changed []string, defs map[string]effects.Definition) {
+func writeEffects(b *strings.Builder, anchor, intro string, names, changed []string, img builtinImage) {
+	defs := img.effects
 	writeSubsection(b, anchor, intro, len(names))
 	if len(names) == 0 {
 		return
@@ -656,7 +620,8 @@ func writeEffects(b *strings.Builder, anchor, intro string, names, changed []str
 
 // writeDiagnostics writes a section of diagnostics, each with what it shows and runs, its
 // parameters, its role and the capabilities of its run.
-func writeDiagnostics(b *strings.Builder, anchor, intro string, names, changed []string, defs map[string]diagnostics.Definition) {
+func writeDiagnostics(b *strings.Builder, anchor, intro string, names, changed []string, img builtinImage) {
+	defs := img.diagnostics
 	writeSubsection(b, anchor, intro, len(names))
 	if len(names) == 0 {
 		return
