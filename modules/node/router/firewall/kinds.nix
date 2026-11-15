@@ -1,9 +1,9 @@
 # The router's firewall, on images with the router layer: its zones, policies, address sets and
 # NAT rules, which the output router-nftables renders (default.nix).
 #
-# chalkd refuses a rule that may cost more than two nested loops over a config's lists. So a rule
-# over a policy's firewall rules sits on spec.rules, where document() looks up a rule's AddressSet
-# at a constant cost, and lists of lists are flattened before the next loop reads them.
+# CEL's cost limit (docs/build/guard-changes.md) allows two nested loops over a config's lists. So a
+# rule over a policy's firewall rules sits on spec.rules, where document() looks up a rule's
+# AddressSet at a constant cost, and lists of lists are flattened before the next loop reads them.
 {
   chalkosLib,
   lib,

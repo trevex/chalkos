@@ -2,11 +2,10 @@
 # VRF, which the output unbound renders for Unbound (default.nix). A resolver's DNS64 prefix names
 # no NAT64 document: it may be that of a NAT64 another router runs.
 #
-# chalkd refuses a rule that may cost more than two nested loops over a config's lists. So the
-# rules over the local zones' records loop over the records flattened. What compares all records
-# in pairs, or a resolver with the links of other VRFs, the validator router and the output check:
-# a resolver's address of another VRF's links (the validator), and a record twice or a CNAME beside
-# another record (output unbound).
+# CEL's cost limit (docs/build/guard-changes.md) allows two nested loops over a config's lists. So
+# the rules over the local zones' records loop over the records flattened. Checks across documents
+# too costly for CEL live in the validator router (pkg/router/derive) and in the output unbound's
+# check.
 {
   chalkosLib,
   lib,

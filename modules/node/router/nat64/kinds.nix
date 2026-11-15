@@ -2,11 +2,10 @@
 # instances, each in a network namespace of its own joined to its VRF, which the output jool
 # renders for Jool (default.nix).
 #
-# chalkd refuses a rule that may cost more than two nested loops over a config's lists. So the
-# rule over two entries of one pool loops over the pool's ranges flattened, and the rules over the
-# Network documents' static addresses bind their sections and their values as flat lists. What
-# compares the documents of the kind in pairs the validator router checks: two NAT64s of one VRF
-# whose prefixes overlap and two NAT64s whose pools share an address.
+# CEL's cost limit (docs/build/guard-changes.md) allows two nested loops over a config's lists. So
+# the rule over two entries of one pool loops over the pool's ranges flattened, and the rules over
+# the Network documents' static addresses bind their sections and their values as flat lists. Checks
+# across documents too costly for CEL live in the validator router (pkg/router/derive).
 {
   chalkosLib,
   lib,

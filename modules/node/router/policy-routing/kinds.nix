@@ -2,9 +2,9 @@
 # what they match to a VRF, a table or a next hop, and the NextHop documents, which the outputs
 # router-nftables and networkd render (default.nix).
 #
-# chalkd refuses a rule that may cost more than two nested loops over a config's lists. So a rule
-# over a policy route's rules sits on spec.rules, where document() looks up a rule's AddressSet or
-# NextHop at a constant cost.
+# CEL's cost limit (docs/build/guard-changes.md) allows two nested loops over a config's lists. So a
+# rule over a policy route's rules sits on spec.rules, where document() looks up a rule's AddressSet
+# or NextHop at a constant cost.
 {
   chalkosLib,
   lib,

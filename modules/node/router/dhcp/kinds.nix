@@ -4,17 +4,14 @@
 # that the firewall does not see, so a subnet names each of its links: no glob serves a link by
 # chance.
 #
-# chalkd refuses a rule that may cost more than two nested loops over a config's lists, and costs
-# every string as one of 256 characters. A subnet's rules are rules of its spec, which see one
-# document at a time, so a rule may compare two of its lists, as its reservations with its pools,
-# within that limit; a pool is two addresses rather than a string to split, and ip().compare()
-# orders them. chalkd stops a rule at a cost of 1,000,000 on the config it meets, so the lists
-# those rules pair are bounded: 32 pools, 512 reservations and 16 DNS servers, at which the
-# costliest rule, reservations against pools, costs about 330,000, and its message as much. The
-# reservations' MAC addresses and addresses are declared unique. The validator router refuses
-# what spans documents: a link of two subnets of a family, subnets that overlap in a VRF, the
-# router's own addresses on the links in a pool or reservation, and the links' router
-# advertisements.
+# CEL's cost limit (docs/build/guard-changes.md) allows two nested loops over a config's lists. It
+# costs every string as one of 256 characters and stops a rule at 1,000,000 on the config it meets.
+# A subnet's rules see one document at a time, so a rule may compare two of its lists, as its
+# reservations with its pools; a pool is two addresses rather than a string to split, and
+# ip().compare() orders them. The lists those rules pair are bounded: 32 pools, 512 reservations and
+# 16 DNS servers, at which the costliest rule, reservations against pools, costs about 330,000, and
+# its message as much. The reservations' MAC addresses and addresses are unique. Checks across
+# documents too costly for CEL live in the validator router (pkg/router/derive).
 {
   chalkosLib,
   lib,

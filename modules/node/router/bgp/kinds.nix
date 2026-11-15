@@ -2,13 +2,11 @@
 # and the prefix lists, community lists and routing policies peers, networks and imports name,
 # which the output frr renders into FRR's config (default.nix).
 #
-# chalkd refuses a rule that may cost more than two nested loops over a config's lists. So the
-# rules over a peer's families sit on spec.families and those over an instance's networks and
-# imports on spec.networks and spec.import, where the one document is self, and loop over a
-# policy's terms alone. What depends on the links networkd puts in each VRF or on more than one
-# peer the validator router checks: a peer's interface of another VRF or of a VRF's device, a
-# session two peers name and listen ranges of a VRF that overlap. What depends on FRR's config the
-# output frr checks: a policy two AS numbers prepend and an AS path bgpd refuses.
+# CEL's cost limit (docs/build/guard-changes.md) allows two nested loops over a config's lists. So
+# the rules over a peer's families sit on spec.families and those over an instance's networks and
+# imports on spec.networks and spec.import, where the one document is self, and loop over a policy's
+# terms alone. Checks across documents too costly for CEL live in the validator router
+# (pkg/router/derive) and in the output frr's check.
 {
   chalkosLib,
   lib,

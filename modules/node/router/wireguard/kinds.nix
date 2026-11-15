@@ -2,12 +2,9 @@
 # interfaces and their peers, which the output networkd renders into a .netdev and a .network per
 # interface (default.nix).
 #
-# What compares the peers of one interface with each other, and the interface with the links the
-# Network documents name, the validator router checks: allowed IPs two peers of an interface
-# share, a public key two of its peers have, a Network document that names the interface or that
-# networkd may pick for it before its own unit, and a link of a VRF other than the interface's. The
-# validator also refuses a default route among a peer's allowed IPs and an endpoint whose host is
-# no host name, which the schema's pattern lets through.
+# The validator router (pkg/router/derive) checks what spans documents, a default route among a
+# peer's allowed IPs, and an endpoint whose host is no host name, which the schema's pattern lets
+# through.
 {
   chalkosLib,
   lib,

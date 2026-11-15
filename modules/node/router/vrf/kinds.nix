@@ -3,12 +3,11 @@
 # router kinds name a VRF by its document's name; the default VRF, of every link no VRF holds, has
 # no document.
 #
-# chalkd refuses a rule that may cost more than two nested loops over a config's lists, so the
-# rules bind the members of every VRF as a flat list before they loop over them, and match the
-# Network documents' names against one regular expression of the VRFs' members. What depends on
-# the links networkd puts in each VRF and on the devices the VRFs create, the validator router
-# checks: a management interface or glob that may be a link of a VRF or matches a VRF's device,
-# and links two VRFs hold. The output router-networkd checks a NetDev of a VRF's name.
+# CEL's cost limit (docs/build/guard-changes.md) allows two nested loops over a config's lists. So
+# the rules bind the members of every VRF as a flat list before they loop over them, and match the
+# Network documents' names against one regular expression of the VRFs' members. Checks across
+# documents too costly for CEL live in the validator router (pkg/router/derive) and in the output
+# router-networkd.
 {
   chalkosLib,
   lib,
