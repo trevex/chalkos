@@ -194,13 +194,9 @@ func (s *Server) ConfirmConfig(ctx context.Context, req *connect.Request[nodev1.
 		return nil, s.unreadableTrial(err)
 	}
 	if !open {
-		dir, err := s.Loader.Slot()
+		_, running, err := s.runningVersion()
 		if err != nil {
-			return nil, fmt.Errorf("find the running image's config slot: %w", err)
-		}
-		running, err := slot.Version(dir)
-		if err != nil {
-			return nil, fmt.Errorf("read the config's version: %w", err)
+			return nil, err
 		}
 		// A confirmation sent again, whose first answer was lost, finds the node on the config. One
 		// whose first attempt crashed after it removed the record finds the copy of the staged slot

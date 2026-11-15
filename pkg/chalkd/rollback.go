@@ -80,11 +80,7 @@ func (s *Server) RollbackConfig(ctx context.Context, req *connect.Request[nodev1
 // rollbackOrRedeliver rolls the config back to version, or delivers it again when the running
 // image's slot runs it already. The caller holds s.mu and s.upgrading.
 func (s *Server) rollbackOrRedeliver(ctx context.Context, version string) (*nodev1.ApplyConfigResponse, error) {
-	dir, err := s.Loader.Slot()
-	if err != nil {
-		return nil, fmt.Errorf("find the running image's config slot: %w", err)
-	}
-	if running, err := slot.Version(dir); err == nil && running == version {
+	if _, running, err := s.runningVersion(); err == nil && running == version {
 		log.Printf("the node runs config %s already; delivering it again", version)
 		return s.redeliver(ctx)
 	}
@@ -123,17 +119,11 @@ func (s *Server) rollbackConfig(ctx context.Context, version string) (resp *node
 	if err != nil {
 		return nil, false, fmt.Errorf("find the running image's config slot: %w", err)
 	}
-	running, err := slot.Version(dir)
-	if err != nil {
-		return nil, false, fmt.Errorf("read the config's version: %w", err)
-	}
-	prev, found, err := slot.Read(slot.Previous(dir))
+	prev, found, err := slot.ReadPrevious(dir)
 	switch {
 	case err != nil:
 		return nil, false, fmt.Errorf("read the previous config: %w", err)
-	// A write interrupted between the previous link and the slot's leaves both naming one set,
-	// which is no config to roll back to.
-	case !found || prev.Version == "" || prev.Version == running:
+	case !found:
 		return nil, false, layer.Errorf(connect.CodeFailedPrecondition, "the node keeps no previous config of the running image: it keeps one once a delivery replaced the config the image was installed or upgraded with")
 	case prev.Version != version:
 		return nil, false, layer.Errorf(connect.CodeFailedPrecondition, "the node's previous config is %s, not %s", prev.Version, version)

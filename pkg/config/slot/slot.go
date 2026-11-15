@@ -402,6 +402,30 @@ func Version(dir string) (string, error) {
 	return strings.TrimSpace(string(b)), nil
 }
 
+// PreviousVersion returns the version of the slot dir's previous config, or "" when it keeps
+// none. A previous link that names the set the slot holds, as a write interrupted between the
+// previous link and the slot's leaves it, is no previous config.
+func PreviousVersion(dir string) (string, error) {
+	running, err := Version(dir)
+	if err != nil {
+		return "", err
+	}
+	previous, err := Version(Previous(dir))
+	if err != nil || previous == running {
+		return "", err
+	}
+	return previous, nil
+}
+
+// ReadPrevious reads the slot dir's previous config as Read reads a slot; found is false when
+// PreviousVersion finds none.
+func ReadPrevious(dir string) (s Stored, found bool, err error) {
+	if v, err := PreviousVersion(dir); err != nil || v == "" {
+		return Stored{}, false, err
+	}
+	return Read(Previous(dir))
+}
+
 // replace fills a new directory next to dir, points dir, a relative symbolic link, at it and
 // removes older directories but those keep names. Renaming a link over another is atomic, so a
 // reader or a power cut finds either set whole; relative, it resolves wherever STATE is mounted.

@@ -256,6 +256,18 @@ func imageFacts(hooks []layer.ImageFacts, read func(layer.ImageFacts) (*anypb.An
 	return list, nil
 }
 
+// runningVersion is the running image's config slot on STATE and the version of the config it
+// holds; "" while it holds none.
+func (s *Server) runningVersion() (dir, version string, err error) {
+	if dir, err = s.Loader.Slot(); err != nil {
+		return "", "", fmt.Errorf("find the running image's config slot: %w", err)
+	}
+	if version, err = slot.Version(dir); err != nil {
+		return "", "", fmt.Errorf("read the config's version: %w", err)
+	}
+	return dir, version, nil
+}
+
 // runningSlot is the running image's config slot on STATE and what it holds; found is false while
 // it holds nothing.
 func (s *Server) runningSlot() (dir string, stored slot.Stored, found bool, err error) {
@@ -280,7 +292,7 @@ func (s *Server) GetConfig(ctx context.Context, req *connect.Request[nodev1.GetC
 	if err != nil {
 		return nil, fmt.Errorf("find the running image's config slot: %w", err)
 	}
-	running, pending := dir, false
+	read, pending := slot.Read, false
 	switch {
 	case req.Msg.Staged && req.Msg.Previous:
 		return nil, layer.Errorf(connect.CodeInvalidArgument, "ask for the staged image's config or the running image's previous one, not both")
@@ -296,20 +308,11 @@ func (s *Server) GetConfig(ctx context.Context, req *connect.Request[nodev1.GetC
 			dir = slot.Dir(s.Loader.Slots, staged)
 		}
 	case req.Msg.Previous:
-		dir = slot.Previous(dir)
+		read = slot.ReadPrevious
 	}
-	stored, found, err := slot.Read(dir)
+	stored, found, err := read(dir)
 	if err != nil {
 		return nil, fmt.Errorf("read the config slot: %w", err)
-	}
-	// A write interrupted between the previous link and the slot's leaves both naming one set,
-	// which is no config to roll back to, as Status and RollbackConfig say.
-	if found && req.Msg.Previous {
-		version, err := slot.Version(running)
-		if err != nil {
-			return nil, fmt.Errorf("read the config's version: %w", err)
-		}
-		found = stored.Version != "" && stored.Version != version
 	}
 	switch {
 	case !found && req.Msg.Previous:

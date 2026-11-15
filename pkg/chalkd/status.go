@@ -31,20 +31,13 @@ import (
 
 func (s *Server) Status(ctx context.Context, req *connect.Request[nodev1.StatusRequest]) (*connect.Response[nodev1.StatusResponse], error) {
 	resp := &nodev1.StatusResponse{Platform: readOSRelease(s.Paths.OSRelease)["CHALKOS_PLATFORM"]}
-	dir, err := s.Loader.Slot()
+	dir, version, err := s.runningVersion()
 	if err != nil {
-		return nil, fmt.Errorf("find the running image's config slot: %w", err)
+		return nil, err
 	}
-	if resp.ConfigVersion, err = slot.Version(dir); err != nil {
-		return nil, fmt.Errorf("read the config's version: %w", err)
-	}
-	if resp.PreviousConfigVersion, err = slot.Version(slot.Previous(dir)); err != nil {
+	resp.ConfigVersion = version
+	if resp.PreviousConfigVersion, err = slot.PreviousVersion(dir); err != nil {
 		return nil, fmt.Errorf("read the previous config's version: %w", err)
-	}
-	// A write interrupted between the previous link and the slot's leaves both naming one set,
-	// which is no config to roll back to.
-	if resp.PreviousConfigVersion == resp.ConfigVersion {
-		resp.PreviousConfigVersion = ""
 	}
 	resp.Trial, resp.TrialError = s.trialStatus()
 
