@@ -250,9 +250,9 @@ func TestControlPlaneShareRejectsSharedCAs(t *testing.T) {
 		name, a, b string
 		edit       func(s *Share)
 	}{
-		{"etcd CA is the Kubernetes CA", "ca", "etcdCA", func(s *Share) { ca := s.CA; s.EtcdCA = &ca }},
-		{"front-proxy CA is the Kubernetes CA", "ca", "frontProxyCA", func(s *Share) { ca := s.CA; s.FrontProxyCA = &ca }},
-		{"etcd CA is the front-proxy CA", "frontProxyCA", "etcdCA", func(s *Share) { ca := *s.FrontProxyCA; s.EtcdCA = &ca }},
+		{"etcd CA is the Kubernetes CA", "kubernetes.ca", "kubernetes.etcdCA", func(s *Share) { ca := s.CA; s.EtcdCA = &ca }},
+		{"front-proxy CA is the Kubernetes CA", "kubernetes.ca", "kubernetes.frontProxyCA", func(s *Share) { ca := s.CA; s.FrontProxyCA = &ca }},
+		{"etcd CA is the front-proxy CA", "kubernetes.frontProxyCA", "kubernetes.etcdCA", func(s *Share) { ca := *s.FrontProxyCA; s.EtcdCA = &ca }},
 	} {
 		s := ControlPlaneShare(k, pkitest.NodeCA(t, now))
 		tc.edit(&s)

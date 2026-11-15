@@ -196,11 +196,11 @@ func checkRenewedClient(path string, ca pki.CertKey, want *x509.Certificate, nod
 	if err != nil {
 		return fmt.Errorf("the cluster CA: %w", err)
 	}
-	if _, err := cert.Verify(x509.VerifyOptions{Roots: roots, KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth}, CurrentTime: now}); err != nil {
+	switch got, err := kpki.VerifyKubeletClient(cert, roots, now); {
+	case err != nil:
 		return err
-	}
-	if cert.Subject.CommonName != kpki.NodeUserPrefix+node || !slices.Equal(cert.Subject.Organization, []string{kpki.NodesGroup}) {
-		return fmt.Errorf("the certificate is for %q in groups %q, want node %s in %q only", cert.Subject.CommonName, cert.Subject.Organization, node, kpki.NodesGroup)
+	case got != node:
+		return fmt.Errorf("the certificate is for node %q, want %s", got, node)
 	}
 	if !cert.NotAfter.After(want.NotAfter) {
 		return errors.New("it expires no later than the share's certificate")

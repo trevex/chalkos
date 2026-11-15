@@ -176,23 +176,15 @@ func (s Share) Validate() error {
 		if s.FrontProxyCA == nil || s.EtcdCA == nil || s.NodeCA == nil || s.Kubelet != nil {
 			return errors.New("a control-plane share holds the front-proxy, etcd and node CAs and no kubelet certificate")
 		}
-		if nodeCA, err := pki.ParseCertificate([]byte(s.NodeCA.Certificate)); err != nil || !pki.IsNodeCA(nodeCA) {
-			return errors.New("Kubernetes share: nodeCA is not a node CA")
-		}
-		cas := []pki.NamedCA{{Name: "ca", CA: s.CA}, {Name: "frontProxyCA", CA: *s.FrontProxyCA}, {Name: "etcdCA", CA: *s.EtcdCA}, {Name: "nodeCA", CA: *s.NodeCA}}
-		for _, ca := range cas {
-			if err := pki.ValidateCA(ca.CA); err != nil {
-				return fmt.Errorf("Kubernetes share: %s: %w", ca.Name, err)
-			}
-		}
-		if err := pki.RequireDistinctCAs(cas...); err != nil {
+		k := s.secrets()
+		if err := k.Validate(); err != nil {
 			return fmt.Errorf("Kubernetes share: %w", err)
 		}
-		if _, err := pki.ParseECKey(s.ServiceAccountKey); err != nil {
-			return fmt.Errorf("Kubernetes share: service account key: %w", err)
+		if err := pki.ValidateCA(*s.NodeCA); err != nil {
+			return fmt.Errorf("Kubernetes share: nodeCA: %w", err)
 		}
-		if len(s.EncryptionKey) != clustersecrets.EncryptionKeySize {
-			return fmt.Errorf("Kubernetes share: the encryption key must be %d bytes", clustersecrets.EncryptionKeySize)
+		if nodeCA, err := pki.ParseCertificate([]byte(s.NodeCA.Certificate)); err != nil || !pki.IsNodeCA(nodeCA) {
+			return errors.New("Kubernetes share: nodeCA is not a node CA")
 		}
 		if err := s.validateAccepted(); err != nil {
 			return err
@@ -220,17 +212,9 @@ func (s Share) Validate() error {
 		}
 		roots := x509.NewCertPool()
 		roots.AddCert(ca)
-		if _, err := cert.Verify(x509.VerifyOptions{Roots: roots, KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth}, CurrentTime: cert.NotBefore}); err != nil {
-			return fmt.Errorf("Kubernetes share: the kubelet certificate does not verify against the CA: %w", err)
-		}
-		// Any other group, system:masters above all, would give the kubelet more than the node
-		// authorizer allows a node.
-		if !slices.Equal(cert.Subject.Organization, []string{NodesGroup}) {
-			return fmt.Errorf("Kubernetes share: the kubelet certificate's groups are %q, want only %q", cert.Subject.Organization, NodesGroup)
-		}
-		name, ok := strings.CutPrefix(cert.Subject.CommonName, NodeUserPrefix)
-		if !ok || name == "" {
-			return fmt.Errorf("Kubernetes share: the kubelet certificate is for %q, not a node", cert.Subject.CommonName)
+		name, err := VerifyKubeletClient(cert, roots, cert.NotBefore)
+		if err != nil {
+			return fmt.Errorf("Kubernetes share: %w", err)
 		}
 		if errs := validation.IsDNS1123Subdomain(name); len(errs) > 0 {
 			return fmt.Errorf("Kubernetes share: the kubelet certificate's node name %q is invalid: %s", name, strings.Join(errs, "; "))
@@ -241,6 +225,24 @@ func (s Share) Validate() error {
 	return nil
 }
 
+// VerifyKubeletClient checks that cert is a kubelet client certificate that roots issued and that
+// is valid at at, and returns the node it is for.
+func VerifyKubeletClient(cert *x509.Certificate, roots *x509.CertPool, at time.Time) (string, error) {
+	if _, err := cert.Verify(x509.VerifyOptions{Roots: roots, KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth}, CurrentTime: at}); err != nil {
+		return "", fmt.Errorf("the kubelet certificate does not verify against the CA: %w", err)
+	}
+	// Any other group, system:masters above all, would give the kubelet more than the node
+	// authorizer allows a node.
+	if !slices.Equal(cert.Subject.Organization, []string{NodesGroup}) {
+		return "", fmt.Errorf("the kubelet certificate's groups are %q, want only %q", cert.Subject.Organization, NodesGroup)
+	}
+	name, ok := strings.CutPrefix(cert.Subject.CommonName, NodeUserPrefix)
+	if !ok || name == "" {
+		return "", fmt.Errorf("the kubelet certificate is for %q, not a node", cert.Subject.CommonName)
+	}
+	return name, nil
+}
+
 // validateAccepted checks what the share accepts besides the values that issue, the name of the
 // key that encrypts, accepted or not, and that no CA it accepts shares a key with one that issues
 // or with the node CA.
@@ -248,9 +250,6 @@ func (s Share) validateAccepted() error {
 	k := s.secrets()
 	if err := k.ValidateAccepted(); err != nil {
 		return fmt.Errorf("Kubernetes share: %w", err)
-	}
-	if s.Accepted == nil {
-		return nil
 	}
 	cas := []pki.NamedCA{{Name: "ca", CA: s.CA}}
 	if s.FrontProxyCA != nil {
@@ -262,7 +261,7 @@ func (s Share) validateAccepted() error {
 	for _, list := range []struct {
 		name  string
 		certs []string
-	}{{"accepted.ca", s.Accepted.CA}, {"accepted.frontProxyCA", s.Accepted.FrontProxyCA}, {"accepted.etcdCA", s.Accepted.EtcdCA}} {
+	}{{"accepted.ca", k.Accepted.CA}, {"accepted.frontProxyCA", k.Accepted.FrontProxyCA}, {"accepted.etcdCA", k.Accepted.EtcdCA}} {
 		for i, c := range list.certs {
 			cas = append(cas, pki.NamedCA{Name: fmt.Sprintf("%s[%d]", list.name, i), CA: pki.CertKey{Certificate: c}})
 		}
