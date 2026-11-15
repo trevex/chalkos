@@ -119,8 +119,9 @@ func (t bootTarget) booted(boot *nodev1.BootStatus) bool {
 
 // reboot holds the node (unless hold is false), runs activate, reboots it into t and has release
 // wait for the boot and release it. activate runs only once the node is held, so a refused hold, as
-// when etcd would lose its quorum, leaves the image staged. A failed activation leaves it staged
-// too and releases the node at once, unless the image boots next anyway.
+// when etcd would lose its quorum, leaves the image staged, which no reboot of the node boots
+// meanwhile. A failed activation leaves it staged too and releases the node at once, unless the
+// image boots next anyway.
 func (b *rebooter) reboot(ctx context.Context, n *rebootNode, t bootTarget, hold bool, activate func() error) error {
 	if hold {
 		n.held = true
@@ -382,8 +383,11 @@ func (b *rebooter) nodeNames() []string {
 
 // findCoordinators collects the nodes that act for the others, which drain nodes and keep their
 // cluster's quorum: probed nodes that report the role and those the inventory lists, so every
-// node's role is read. Without an inventory, the --address nodes are probed too. With no
-// coordinator, a held node that its layers hold through one stops the run.
+// node's role is read, also of nodes the run leaves alone. Loading the inventory read every node's
+// files already, so a node whose files are broken stops every command, and this adds only a node
+// whose files hold the same document twice. Without an inventory, the --address nodes the run
+// leaves alone are probed too. With no coordinator, a held node that its layers hold through one
+// stops the run.
 func (b *rebooter) findCoordinators(ctx context.Context, probed map[string]bool, held []*rebootNode) error {
 	for _, name := range b.nodeNames() {
 		if _, ok := probed[name]; b.cluster.Partial() && !ok {

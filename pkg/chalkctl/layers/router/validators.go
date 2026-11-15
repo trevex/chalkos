@@ -10,7 +10,7 @@ import (
 
 // Validators links the validator router for an image whose schemas hold the Router kind: the
 // image runs it as chalkos-render validate router, chalkctl runs derive.Validate in-process on the
-// documents of the same kinds.
+// documents of the same kinds. An image without the router layer runs none.
 func (*Plugin) Validators(s *schema.Schemas) []outputs.LinkedValidator {
 	kinds := s.Kinds()
 	if !slices.ContainsFunc(kinds, func(k schema.Kind) bool { return k.APIVersion == derive.API && k.Kind == "Router" }) {

@@ -2467,8 +2467,8 @@ func TestUpgradeRollbackFallsBack(t *testing.T) {
 	}
 }
 
-// TestUpgradeRollbackOfAControlPlane rolls back a control plane as an upgrade takes it down: drained
-// after the quorum check and uncordoned once back.
+// TestUpgradeRollbackOfAControlPlane rolls back a control plane as an upgrade takes it down:
+// drained after the quorum check and uncordoned once back.
 func TestUpgradeRollbackOfAControlPlane(t *testing.T) {
 	l := newUpgradeLab(t, 3)
 	if err := l.upgrade(testUpgradeImage(t, "cp", "0.2.0"), "--nodes", "cp1"); err != nil {

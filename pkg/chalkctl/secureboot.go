@@ -189,7 +189,8 @@ func (a *app) securebootEnroll(ctx context.Context, f securebootEnrollFlags) err
 
 // enrolmentRequest signs the updates of db, KEK and PK of the keys at now: db and KEK appended to
 // what the firmware holds, db signed by KEK, KEK by PK, and PK, which ends Setup Mode, by itself.
-// With microsoft, Microsoft's CAs join db and KEK; db also gets the SHA-256 image digests hashes.
+// With microsoft, Microsoft's CAs join db and KEK; db also gets hashes, the SHA-256 digests of
+// images.
 func enrolmentRequest(k secureboot.Keys, microsoft bool, hashes [][]byte, force bool, now time.Time) (*nodev1.EnrollSecureBootRequest, error) {
 	db := append(secureboot.X509SignatureLists(k.Owner, k.DB.Cert), secureboot.SHA256SignatureList(k.Owner, hashes...)...)
 	kek := secureboot.X509SignatureLists(k.Owner, k.KEK.Cert)

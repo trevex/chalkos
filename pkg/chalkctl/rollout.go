@@ -92,9 +92,9 @@ func (a *app) deliverToNodes(ctx context.Context, f applyConfigFlags, names []st
 	return nil
 }
 
-// plan reads each node's layers and, for several nodes, its status, and checks its config against
-// its image. Only when a Rollout layer reports a version change does it read roles, and the layers
-// check the versions their clusters' nodes run.
+// plan reads, before anything is delivered, each node's layers and, for several nodes, its status,
+// and checks its config against its image. Only when a Rollout layer reports a version change does
+// it read roles, and the layers check the versions their clusters' nodes run.
 func (r *configRollout) plan(ctx context.Context, names []string) error {
 	for _, name := range names {
 		if err := r.cluster.node(name); err != nil {
@@ -362,9 +362,10 @@ func (n *rolloutNode) roleIn(l layer.Rollout) layer.UpgradeRole {
 	return layer.UpgradeRole{}
 }
 
-// checkChanges refuses an upgrade whose config changes a version a Rollout layer bounds: config
-// apply delivers such a change in the order the layer needs, an upgrade does not. A run that
-// withholds config delivers none.
+// checkChanges refuses an upgrade whose config changes a version a Rollout layer bounds, against
+// the config the node runs: config apply delivers such a change in the order the layer needs, an
+// upgrade does not. A run that withholds config delivers none, and a node that refuses to show its
+// config has the run withhold it.
 func (r *upgradeRun) checkChanges(ctx context.Context) error {
 	layers := compiled[layer.Rollout]()
 	if len(layers) == 0 {

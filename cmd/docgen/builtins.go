@@ -146,9 +146,10 @@ func writeBuiltins(page, def, plain, router string) error {
 	return os.WriteFile(page, []byte(b.String()), 0o644)
 }
 
-// writePart writes the section of one sort of built-in, such as "fact": those of every image, which
-// an image verb, those images with Kubernetes add, and those router images add or declare
-// otherwise. of reads the sort from an image.
+// writePart writes the section of one sort of built-in, such as "fact", under heading: those of
+// every image, which every image declares, runs or renders as verb says, those images with
+// Kubernetes add, and those router images add or declare otherwise. write writes a subsection of
+// them, and of reads the sort from an image.
 func writePart[T any](b *strings.Builder, sort, heading, intro, verb string, d, p, r builtinImage, write func(b *strings.Builder, anchor, intro string, names, changed []string, img builtinImage), of func(builtinImage) map[string]T) error {
 	every, kube, err := splitEvery(sort, of(d), of(p))
 	if err != nil {

@@ -63,7 +63,8 @@ func (p *Plugin) UpgradeFlags(fs *pflag.FlagSet) any {
 	return f
 }
 
-// flagsOf are the run's values of the layer's flags of type T, their defaults when the run has none.
+// flagsOf are the run's values of the layer's flags of type T, their defaults when the run has
+// none.
 func flagsOf[T any](u layer.Upgrading) T {
 	if f, ok := u.Flags(layers.Kubernetes).(*T); ok {
 		return *f

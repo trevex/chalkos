@@ -342,9 +342,9 @@ func (r *upgradeRun) configChanges(ctx context.Context, conn *client.Conn, n *up
 	return changes, nil
 }
 
-// checkConfig checks each node's inventory config against its new image before any node is drained,
-// and keeps it for delivery. Nodes that run the image already are checked too. Each node checks the
-// config again; on a partial cluster that is the only check.
+// checkConfig checks each node's inventory config against its new image before any node is drained
+// or sent its image, and keeps it for delivery. Nodes that run the image already are checked too.
+// Each node checks the config again; on a partial cluster that is the only check.
 func (r *upgradeRun) checkConfig() error {
 	if r.cluster.Partial() {
 		return nil
@@ -409,8 +409,9 @@ func (r *upgradeRun) run(ctx context.Context) error {
 	return nil
 }
 
-// node takes one node as far as --until says, resuming where an earlier run stopped: the image
-// staged or active already is not sent again, and a node that booted it is waited for. Its layers
+// node takes one node as far as --until says, resuming where an earlier run stopped: a node that
+// runs the image and was found healthy is released once it serves its clusters again, one that
+// booted it is waited for, and the image staged or active already is not sent again. Its layers
 // hold it before the reboot and release it after. Images are compared by their store's root hash.
 func (r *upgradeRun) node(ctx context.Context, n *upgradeNode) error {
 	image, target := r.target(n)

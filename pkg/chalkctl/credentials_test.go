@@ -287,7 +287,8 @@ func TestUnreachableAddressNamesItsSource(t *testing.T) {
 	}
 }
 
-// chalkctl's admin certificate from the secrets file is chalkctl's and lasts one run, an hour at most.
+// The admin certificate chalkctl issues itself from the secrets file is chalkctl's and lasts an
+// hour at most.
 func TestAdminCertificateLastsOneRun(t *testing.T) {
 	ta := newTestApp(t)
 	c, err := secretCredentials(ta.secrets)

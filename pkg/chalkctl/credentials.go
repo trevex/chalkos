@@ -198,6 +198,7 @@ func (a *app) clientNew(ctx context.Context, f clientNewFlags) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return err
 	}
+	// The file holds the user's private key.
 	if f.force {
 		err = atomicfile.WriteFile(path, data, 0o600)
 	} else if _, statErr := os.Stat(path); statErr == nil {

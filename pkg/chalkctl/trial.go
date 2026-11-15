@@ -32,9 +32,10 @@ var trialEnd = 2 * time.Minute
 // confirmTrial confirms the trial of config version, which otherwise rolls back to previous, over a
 // new connection per attempt, so a confirmation proves a client still reaches the node; the node
 // confirms only once healthy. Attempts end at deadline, chalkctl's reckoning of the node's own,
-// after which the node rolls back by itself and is waited for. With late, the deadline has passed
-// and the node still lets a confirmation end the trial: attempts end after trialEnd, and nothing
-// rolls back when they fail. An answer that asking again does not change ends the attempts at once.
+// which falls after it; then the node rolls back by itself and is waited for. With late, the
+// deadline has passed and the node still lets a confirmation end the trial: attempts end after
+// trialEnd, and nothing rolls back when they fail. An answer that asking again does not change ends
+// the attempts at once.
 func (a *app) confirmTrial(ctx context.Context, t *target, version, previous string, deadline time.Time, late bool) error {
 	until := deadline
 	if late {

@@ -1,4 +1,5 @@
-// Command chalkos-rules checks an image when it is built and runs its tests; see usage.
+// Command chalkos-rules checks an image when it is built, its rules compiling within the cost
+// limit, and runs its tests; see usage.
 package main
 
 import (

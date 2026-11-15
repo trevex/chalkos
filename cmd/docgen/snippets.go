@@ -114,10 +114,10 @@ func blockDocuments(lines []string) ([]blockDocument, int, error) {
 	}
 }
 
-// writeNix writes each Nix block of the docs under dir to outDir as <page>_<line>.nix when its
-// title names a .nix file, else as <page>_<line>.fragment.nix, an expression or a module's
-// attributes. A block of snippet includes alone is skipped: the image build it belongs to evaluates
-// it.
+// writeNix writes each Nix block of the docs under dir to outDir, named by the page's path with /
+// as _ and the block's first line: <page>_<line>.nix when its title names a .nix file, else
+// <page>_<line>.fragment.nix, an expression or a module's attributes. A block of snippet includes
+// alone is skipped: the image build it belongs to evaluates it.
 func writeNix(dir, outDir string) error {
 	if err := os.MkdirAll(outDir, 0o755); err != nil {
 		return err
