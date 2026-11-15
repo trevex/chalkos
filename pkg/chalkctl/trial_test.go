@@ -160,8 +160,9 @@ func TestApplyConfigOnTrialUnconfirmed(t *testing.T) {
 }
 
 // holdAnswer has the node carry out each request for the procedure, then drop the connection
-// without an answer, as a config that cuts chalkctl off does, or answer only after delay.
-func holdAnswer(procedure string, delay time.Duration) func(http.Handler) http.Handler {
+// without an answer, as a config that cuts chalkctl off does, or, with late, answer only once
+// chalkctl stopped waiting for it.
+func holdAnswer(procedure string, late bool) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if !strings.HasSuffix(r.URL.Path, "/"+procedure) {
@@ -170,10 +171,10 @@ func holdAnswer(procedure string, delay time.Duration) func(http.Handler) http.H
 			}
 			rec := httptest.NewRecorder()
 			next.ServeHTTP(rec, r.WithContext(context.WithoutCancel(r.Context())))
-			if delay == 0 {
+			if !late {
 				panic(http.ErrAbortHandler)
 			}
-			time.Sleep(delay)
+			<-r.Context().Done()
 			maps.Copy(w.Header(), rec.Header())
 			w.WriteHeader(rec.Code)
 			w.Write(rec.Body.Bytes())
@@ -220,11 +221,11 @@ func trialNode(t *testing.T, ta *testApp) (s *chalkd.Server, run func(ctx contex
 // TestApplyConfigOnTrialAnswerLost: a delivery on trial whose answer is lost or late is not
 // confirmed; chalkctl waits for the node to roll it back and fails.
 func TestApplyConfigOnTrialAnswerLost(t *testing.T) {
-	for name, delay := range map[string]time.Duration{"dropped": 0, "late": 2 * time.Second} {
+	for name, late := range map[string]bool{"dropped": false, "late": true} {
 		t.Run(name, func(t *testing.T) {
 			ta := newTestApp(t)
 			s, run, first, second := trialNode(t, ta)
-			ta.setWrap(holdAnswer("ApplyConfig", delay))
+			ta.setWrap(holdAnswer("ApplyConfig", late))
 			err := run(context.Background(), "config", "apply", "n1", "--try", "1s")
 			if err == nil || !strings.Contains(err.Error(), "n1: config "+second+" was not confirmed within its trial: the answer to its delivery did not come: ") {
 				t.Fatalf("a delivery on trial whose answer was lost = %v\n%s", err, ta.stdout)
@@ -249,7 +250,7 @@ func TestApplyConfigOnTrialAnswerLost(t *testing.T) {
 func TestConfirmAnswerLate(t *testing.T) {
 	ta := newTestApp(t)
 	s, run, _, second := trialNode(t, ta)
-	ta.setWrap(holdAnswer("ConfirmConfig", 2*time.Second))
+	ta.setWrap(holdAnswer("ConfirmConfig", true))
 	if err := run(context.Background(), "config", "apply", "n1", "--try", "1s"); err != nil {
 		t.Fatalf("%v\n%s", err, ta.stdout)
 	}
@@ -362,7 +363,7 @@ func TestTrialRollbackWaitInterrupted(t *testing.T) {
 	_, run, _, second := trialNode(t, ta)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	lost := holdAnswer("ApplyConfig", 0)
+	lost := holdAnswer("ApplyConfig", false)
 	var delivered atomic.Bool
 	ta.setWrap(func(next http.Handler) http.Handler {
 		h := lost(next)
