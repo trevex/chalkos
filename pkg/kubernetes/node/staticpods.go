@@ -28,19 +28,7 @@ func (s State) RenderEtcd() error {
 
 // RemoveStaticPods removes the static pods, so the kubelet stops the control plane.
 func (s State) RemoveStaticPods() error {
-	entries, err := os.ReadDir(s.Manifests())
-	if errors.Is(err, fs.ErrNotExist) {
-		return nil
-	}
-	if err != nil {
-		return err
-	}
-	for _, e := range entries {
-		if err := os.Remove(filepath.Join(s.Manifests(), e.Name())); err != nil {
-			return err
-		}
-	}
-	return nil
+	return emptyDir(s.Manifests())
 }
 
 // RefreshStaticPods renders the static pods again when they run on other certificates than the
@@ -73,11 +61,7 @@ func (s State) RefreshStaticPods() error {
 // other certificates, by their hash, than it would; wrote reports whether it did. It refuses to
 // write them while etcd's data is missing.
 func (s State) refreshFrom(in inputs) (wrote bool, err error) {
-	files, err := s.readPKI()
-	if err != nil {
-		return false, err
-	}
-	pods, err := s.renderPods(in, files)
+	pods, err := s.pods(in)
 	if err != nil {
 		return false, err
 	}
@@ -100,11 +84,7 @@ func (s State) StaticPodsStale() (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	files, err := s.readPKI()
-	if err != nil {
-		return false, err
-	}
-	pods, err := s.renderPods(in, files)
+	pods, err := s.pods(in)
 	if err != nil {
 		return false, err
 	}
@@ -169,11 +149,7 @@ func (s State) render(only string) error {
 // renderFrom writes the static pods from in and the certificates in PKI, or only the one in the
 // file only names. The caller checks etcd's data first.
 func (s State) renderFrom(in inputs, only string) error {
-	files, err := s.readPKI()
-	if err != nil {
-		return err
-	}
-	pods, err := s.renderPods(in, files)
+	pods, err := s.pods(in)
 	if err != nil {
 		return err
 	}
@@ -209,17 +185,13 @@ func (s State) podInputs() (inputs, error) {
 	return in, nil
 }
 
-// readPKI reads the control plane's certificates, by their path in PKI.
-func (s State) readPKI() (map[string][]byte, error) {
+// pods renders the static pods, by file name, from in, the control plane's certificates in PKI and
+// the initial cluster.
+func (s State) pods(in inputs) (map[string][]byte, error) {
 	files, err := readDir(s.PKI)
 	if err != nil {
 		return nil, fmt.Errorf("read the control plane's certificates: %w", err)
 	}
-	return files, nil
-}
-
-// renderPods renders the static pods from in and the control plane's certificates, by file name.
-func (s State) renderPods(in inputs, files map[string][]byte) (map[string][]byte, error) {
 	initialCluster, err := s.readInitialCluster()
 	if err != nil {
 		return nil, err

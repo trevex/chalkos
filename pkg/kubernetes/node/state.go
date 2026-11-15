@@ -85,7 +85,12 @@ func (s State) MarkLeft(now time.Time) error {
 
 // RemoveEtcdData deletes etcd's data and keeps its directory.
 func (s State) RemoveEtcdData() error {
-	entries, err := os.ReadDir(s.EtcdData)
+	return emptyDir(s.EtcdData)
+}
+
+// emptyDir removes everything in dir and keeps dir; a missing dir is empty.
+func emptyDir(dir string) error {
+	entries, err := os.ReadDir(dir)
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil
 	}
@@ -93,7 +98,7 @@ func (s State) RemoveEtcdData() error {
 		return err
 	}
 	for _, e := range entries {
-		if err := os.RemoveAll(filepath.Join(s.EtcdData, e.Name())); err != nil {
+		if err := os.RemoveAll(filepath.Join(dir, e.Name())); err != nil {
 			return err
 		}
 	}
