@@ -45,11 +45,15 @@ func TestParseDatabase(t *testing.T) {
 		t.Errorf("unreadable types %v, want %v", db.Unreadable, want)
 	}
 	for name, broken := range map[string][]byte{
-		"cut short":        value[:len(value)-1],
-		"short header":     value[:20],
-		"short digest":     signatureList(certSHA256, digest[:31]),
-		"short TBS digest": signatureList(certX509SHA256, digest[:]),
-		"bad certificate":  signatureList(certX509, []byte("not DER")),
+		"cut short":         value[:len(value)-1],
+		"short header":      value[:20],
+		"short digest":      signatureList(certSHA256, digest[:31]),
+		"short TBS digest":  signatureList(certX509SHA256, digest[:]),
+		"short SHA-384":     signatureList(certSHA384, make([]byte, 47)),
+		"short SHA-512":     signatureList(certSHA512, make([]byte, 63)),
+		"short TBS SHA-384": signatureList(certX509SHA384, make([]byte, 48)),
+		"short TBS SHA-512": signatureList(certX509SHA512, make([]byte, 64)),
+		"bad certificate":   signatureList(certX509, []byte("not DER")),
 	} {
 		if _, err := ParseDatabase(broken); err == nil {
 			t.Errorf("%s: accepted", name)

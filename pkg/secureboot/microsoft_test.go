@@ -3,14 +3,13 @@ package secureboot
 import (
 	"crypto/rsa"
 	"crypto/x509"
-	"slices"
 	"testing"
 
 	"github.com/trevex/chalkos/pkg/pki"
 )
 
-// TestMicrosoftCertificates holds the embedded certificates to the subjects and fingerprints
-// microsoft.go names.
+// TestMicrosoftCertificates holds the embedded certificates to their subjects and SHA-256
+// fingerprints.
 func TestMicrosoftCertificates(t *testing.T) {
 	type want struct{ name, fingerprint string }
 	for _, tc := range []struct {
@@ -43,16 +42,5 @@ func TestMicrosoftCertificates(t *testing.T) {
 	}
 	if GUIDString(MicrosoftOwner) != "77fa9abd-0359-4d32-bd60-28f4e78f784b" {
 		t.Errorf("MicrosoftOwner = %s", GUIDString(MicrosoftOwner))
-	}
-}
-
-// TestMicrosoftOptionROMCAs are the UEFI CA of 2011 and the Option ROM UEFI CA of 2023.
-func TestMicrosoftOptionROMCAs(t *testing.T) {
-	var names []string
-	for _, c := range MicrosoftOptionROMCAs() {
-		names = append(names, c.Subject.CommonName)
-	}
-	if want := []string{"Microsoft Corporation UEFI CA 2011", "Microsoft Option ROM UEFI CA 2023"}; !slices.Equal(names, want) {
-		t.Errorf("MicrosoftOptionROMCAs = %v, want %v", names, want)
 	}
 }

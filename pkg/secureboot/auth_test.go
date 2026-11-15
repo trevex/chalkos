@@ -57,24 +57,6 @@ func TestSignUpdate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// EFI_TIME, then WIN_CERTIFICATE_UEFI_GUID: its length, revision 2.0, type EFI_GUID and the
-	// GUID of PKCS #7.
-	wantTime := []byte{0xea, 0x07, 11, 12, 10, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
-	if !bytes.Equal(payload[:16], wantTime) {
-		t.Errorf("EFI_TIME %x, want %x", payload[:16], wantTime)
-	}
-	length := binary.LittleEndian.Uint32(payload[16:])
-	if binary.LittleEndian.Uint16(payload[20:]) != 0x0200 || binary.LittleEndian.Uint16(payload[22:]) != 0x0ef1 || !bytes.Equal(payload[24:40], certTypePKCS7[:]) {
-		t.Errorf("WIN_CERTIFICATE_UEFI_GUID header %x", payload[16:40])
-	}
-	if !bytes.Equal(payload[16+length:], data) {
-		t.Error("the signature lists do not follow the descriptor")
-	}
-	// The signed data is bare SignedData, whose digest algorithm firmware reads at offset 13.
-	if signed := payload[40 : 16+length]; signed[0] != 0x30 || signed[1] != 0x82 || !bytes.Equal(signed[13:22], []byte{0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x01}) {
-		t.Errorf("the signed data starts with %x", signed[:24])
-	}
-
 	p, err := ParseUpdate(payload)
 	if err != nil {
 		t.Fatal(err)

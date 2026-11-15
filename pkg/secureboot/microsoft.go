@@ -8,18 +8,8 @@ import (
 
 // Microsoft's Secure Boot certificates, which firmware ships enrolled and which sign option ROMs,
 // shims and other boot loaders. They come from python3Packages.virt-firmware 25.12 in nixpkgs,
-// virt/firmware/certs/microsoft.com, converted to DER. Their SHA-256 fingerprints:
-//
-//	ms-kek-2011.der       Microsoft Corporation KEK CA 2011
-//	                      a1117f516a32cefcba3f2d1ace10a87972fd6bbe8fe0d0b996e09e65d802a503
-//	ms-kek-2023.der       Microsoft Corporation KEK 2K CA 2023
-//	                      3cd3f0309edae228767a976dd40d9f4affc4fbd5218f2e8cc3c9dd97e8ac6f9d
-//	ms-uefi-2011.der      Microsoft Corporation UEFI CA 2011
-//	                      48e99b991f57fc52f76149599bff0a58c47154229b9f8d603ac40d3500248507
-//	ms-uefi-2023.der      Microsoft UEFI CA 2023
-//	                      f6124e34125bee3fe6d79a574eaa7b91c0e7bd9d929c1a321178efd611dad901
-//	ms-uefi-rom-2023.der  Microsoft Option ROM UEFI CA 2023
-//	                      e5be3e64c6e66a281457ecdece0d6d0787577aad2a3a0144262c10c14ba8d8f1
+// virt/firmware/certs/microsoft.com, converted to DER; TestMicrosoftCertificates pins their
+// fingerprints.
 //
 //go:embed microsoft/*.der
 var microsoftCerts embed.FS

@@ -29,6 +29,11 @@ import (
 // rootHash is a store root hash, as UKIs name it in their command line.
 const rootHash = "a334de1f08f79f925c9c65187238eb212b5f408c378f0f3a361ee8d395c94ddd"
 
+// testUKI is a UKI of the image chalkos that boots the store of rootHash.
+func testUKI() []byte {
+	return ukitest.UKI(map[string]string{"IMAGE_ID": "chalkos"}, "usrhash="+rootHash)
+}
+
 // authenticode signs the PE image as sbsign does, with any key: an Authenticode signature of
 // its digest appended as its certificate table, carrying the signer's certificate and those of bag.
 func authenticode(t *testing.T, image []byte, cert *x509.Certificate, key crypto.Signer, bag ...*x509.Certificate) []byte {
@@ -118,7 +123,7 @@ func authenticode(t *testing.T, image []byte, cert *x509.Certificate, key crypto
 
 // FuzzVerifySignature checks that no image makes VerifySignature panic.
 func FuzzVerifySignature(f *testing.F) {
-	f.Add(ukitest.UKI(map[string]string{"IMAGE_ID": "chalkos"}, "usrhash="+rootHash))
+	f.Add(testUKI())
 	f.Add(shortOptionalHeader())
 	f.Fuzz(func(t *testing.T, image []byte) {
 		VerifySignature(bytes.NewReader(image), int64(len(image)), Database{}, Database{})
@@ -128,7 +133,7 @@ func FuzzVerifySignature(f *testing.F) {
 // shortOptionalHeader is a PE32+ image whose optional header ends before the count of its data
 // directories.
 func shortOptionalHeader() []byte {
-	img := ukitest.UKI(map[string]string{"IMAGE_ID": "chalkos"}, "usrhash="+rootHash)
+	img := testUKI()
 	binary.LittleEndian.PutUint16(img[0x44+16:], 100)
 	return img
 }
@@ -151,7 +156,7 @@ func TestVerifySignatureRefuses(t *testing.T) {
 	ca := newSigner(t, dir, "ca", nil, false)
 	leaf := newSigner(t, dir, "leaf", ca, false)
 	db := Database{Certificates: []*x509.Certificate{ca.cert}}
-	uki := ukitest.UKI(map[string]string{"IMAGE_ID": "chalkos"}, "usrhash="+rootHash)
+	uki := testUKI()
 	signed := sbsign(t, dir, uki, leaf)
 	if err := verify(signed, db, Database{}); err != nil {
 		t.Fatal(err)
@@ -226,7 +231,7 @@ func TestECDSASignerRefused(t *testing.T) {
 	ec := newSigner(t, dir, "ec", nil, true)
 	ecLeaf := newSigner(t, dir, "ec-leaf", ec, true)
 	rsaLeaf := newSigner(t, dir, "rsa-leaf", ec, false)
-	uki := ukitest.UKI(map[string]string{"IMAGE_ID": "chalkos"}, "usrhash="+rootHash)
+	uki := testUKI()
 	for _, s := range []*signer{ec, ecLeaf, rsaLeaf} {
 		signed := authenticode(t, uki, s.cert, s.key.(crypto.Signer))
 		if err := verify(signed, Database{Certificates: []*x509.Certificate{ec.cert}}, Database{}); err == nil || !strings.Contains(err.Error(), "RSA") {
@@ -235,14 +240,8 @@ func TestECDSASignerRefused(t *testing.T) {
 	}
 }
 
-// EFI signature types, as efivar lists them.
-var (
-	efiSHA1       = guid(0x826ca512, 0xcf10, 0x4ac9, [8]byte{0xb1, 0x87, 0xbe, 0x01, 0x49, 0x66, 0x31, 0xbd})
-	efiSHA384     = guid(0xff3e5307, 0x9fd0, 0x48c9, [8]byte{0x85, 0xf1, 0x8a, 0xd5, 0x6c, 0x70, 0x1e, 0x01})
-	efiSHA512     = guid(0x093e0fae, 0xa6c4, 0x4f50, [8]byte{0x9f, 0x1b, 0xd4, 0x1e, 0x2b, 0x89, 0xc1, 0x9a})
-	efiX509SHA384 = guid(0x7076876e, 0x80c2, 0x4ee6, [8]byte{0xaa, 0xd2, 0x28, 0xb3, 0x49, 0xa6, 0x86, 0x5b})
-	efiX509SHA512 = guid(0x446dbf63, 0x2502, 0x4cda, [8]byte{0xbc, 0xfa, 0x24, 0x65, 0xd2, 0xb0, 0xfe, 0x9d})
-)
+// efiSHA1 is the EFI signature type of SHA-1 digests, which chalkos does not read.
+var efiSHA1 = guid(0x826ca512, 0xcf10, 0x4ac9, [8]byte{0xb1, 0x87, 0xbe, 0x01, 0x49, 0x66, 0x31, 0xbd})
 
 // TestDbx refuses an image when dbx lists any certificate its signature carries, a certificate
 // that issued one of its chain, or its digest of any hash dbx holds, and when dbx holds entries
@@ -254,7 +253,7 @@ func TestDbx(t *testing.T) {
 	leaf := newSigner(t, dir, "leaf", mid, false)
 	carried := newSigner(t, dir, "carried", nil, false)
 	db := Database{Certificates: []*x509.Certificate{mid.cert}}
-	uki := ukitest.UKI(map[string]string{"IMAGE_ID": "chalkos"}, "usrhash="+rootHash)
+	uki := testUKI()
 	signed := authenticode(t, uki, leaf.cert, leaf.key.(crypto.Signer), carried.cert)
 	if err := verify(signed, db, Database{}); err != nil {
 		t.Fatal(err)
@@ -281,11 +280,11 @@ func TestDbx(t *testing.T) {
 	}{
 		{"a carried certificate", signatureList(certX509, carried.cert.Raw), "dbx revokes the certificate \"CN=carried\""},
 		{"a carried certificate by its TBS SHA-256", signatureList(certX509SHA256, tbs(sha256.New(), carried.cert)), "dbx revokes the certificate \"CN=carried\""},
-		{"a carried certificate by its TBS SHA-384", signatureList(efiX509SHA384, tbs(sha512.New384(), carried.cert)), "dbx revokes the certificate \"CN=carried\""},
-		{"the signer by its TBS SHA-512", signatureList(efiX509SHA512, tbs(sha512.New(), leaf.cert)), "dbx revokes the certificate \"CN=leaf\""},
+		{"a carried certificate by its TBS SHA-384", signatureList(certX509SHA384, tbs(sha512.New384(), carried.cert)), "dbx revokes the certificate \"CN=carried\""},
+		{"the signer by its TBS SHA-512", signatureList(certX509SHA512, tbs(sha512.New(), leaf.cert)), "dbx revokes the certificate \"CN=leaf\""},
 		{"the issuer of a db certificate", signatureList(certX509, root.cert.Raw), "dbx revokes the certificate \"CN=root\""},
-		{"the image's SHA-384", signatureList(efiSHA384, digest(sha512.New384())), "dbx revokes the image"},
-		{"the image's SHA-512", signatureList(efiSHA512, digest(sha512.New())), "dbx revokes the image"},
+		{"the image's SHA-384", signatureList(certSHA384, digest(sha512.New384())), "dbx revokes the image"},
+		{"the image's SHA-512", signatureList(certSHA512, digest(sha512.New())), "dbx revokes the image"},
 		{"an entry it cannot read", signatureList(efiSHA1, make([]byte, 20)), "cannot read"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -301,26 +300,16 @@ func TestDbx(t *testing.T) {
 	// Digests of other images and certificates revoke nothing.
 	other := sha512.Sum512([]byte("other"))
 	dbx, err := ParseDatabase(bytes.Join([][]byte{
-		signatureList(efiSHA384, other[:48]),
-		signatureList(efiSHA512, other[:]),
-		signatureList(efiX509SHA384, append(other[:48:48], make([]byte, 16)...)),
-		signatureList(efiX509SHA512, append(other[:64:64], make([]byte, 16)...)),
+		signatureList(certSHA384, other[:48]),
+		signatureList(certSHA512, other[:]),
+		signatureList(certX509SHA384, append(other[:48:48], make([]byte, 16)...)),
+		signatureList(certX509SHA512, append(other[:64:64], make([]byte, 16)...)),
 	}, nil))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if err := verify(signed, db, dbx); err != nil {
 		t.Errorf("VerifySignature with unrelated dbx entries = %v", err)
-	}
-	for name, broken := range map[string][]byte{
-		"short SHA-384":     signatureList(efiSHA384, other[:47]),
-		"short SHA-512":     signatureList(efiSHA512, other[:63]),
-		"short TBS SHA-384": signatureList(efiX509SHA384, other[:48]),
-		"short TBS SHA-512": signatureList(efiX509SHA512, other[:64]),
-	} {
-		if _, err := ParseDatabase(broken); err == nil {
-			t.Errorf("%s: accepted", name)
-		}
 	}
 }
 
@@ -430,7 +419,7 @@ func TestVerifySignature(t *testing.T) {
 	other := newSigner(t, dir, "other", nil, false)
 	// A signing certificate the db certificate issued, as a db CA would.
 	leaf := newSigner(t, dir, "leaf", db, false)
-	uki := ukitest.UKI(map[string]string{"IMAGE_ID": "chalkos"}, "usrhash="+rootHash)
+	uki := testUKI()
 	// An image whose size is not a multiple of eight, which sbsign pads.
 	odd := append(bytes.Clone(uki), 1, 2, 3)
 	trusted := Database{Certificates: []*x509.Certificate{db.cert}}
