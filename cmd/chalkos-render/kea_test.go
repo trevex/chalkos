@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/trevex/chalkos/pkg/router/derive/derivetest"
+	"github.com/trevex/chalkos/pkg/router/keaconf"
 )
 
 // The renderer guards, with an internal error, values that Kea's check passes and that would
@@ -50,24 +51,6 @@ func TestKeaPerVRF(t *testing.T) {
 	if names := slices.Sorted(maps.Keys(files)); !slices.Equal(names, []string{"kea-dhcp4-guest.json", "kea-dhcp4.json"}) {
 		t.Fatalf("files = %v", names)
 	}
-	type server struct {
-		Dhcp4 struct {
-			Interfaces struct {
-				Interfaces []string `json:"interfaces"`
-			} `json:"interfaces-config"`
-			Sockets []struct {
-				Name string `json:"socket-name"`
-			} `json:"control-sockets"`
-			Leases struct {
-				Name string `json:"name"`
-			} `json:"lease-database"`
-			Subnets []struct {
-				ID       uint32 `json:"id"`
-				Subnet   string `json:"subnet"`
-				Lifetime uint64 `json:"valid-lifetime"`
-			} `json:"subnet4"`
-		} `json:"Dhcp4"`
-	}
 	for file, want := range map[string]struct {
 		links          []string
 		socket, leases string
@@ -76,13 +59,9 @@ func TestKeaPerVRF(t *testing.T) {
 		"kea-dhcp4.json":       {[]string{"lan0", "lan1"}, "/run/kea/dhcp4.sock", "/var/lib/kea/dhcp4.leases", 43200},
 		"kea-dhcp4-guest.json": {[]string{"vlan20"}, "/run/kea/dhcp4-guest.sock", "/var/lib/kea/dhcp4-guest.leases", 3600},
 	} {
-		var s server
-		if err := json.Unmarshal([]byte(files[file]), &s); err != nil {
-			t.Fatal(err)
-		}
-		d := s.Dhcp4
-		if !slices.Equal(d.Interfaces.Interfaces, want.links) || len(d.Sockets) != 1 || d.Sockets[0].Name != want.socket || d.Leases.Name != want.leases ||
-			len(d.Subnets) != 1 || d.Subnets[0].ID != 3221225984 || d.Subnets[0].Subnet != "192.0.2.0/24" || d.Subnets[0].Lifetime != want.lifetime {
+		d := decodeKea(t, files[file]).Dhcp4
+		if d == nil || !slices.Equal(d.InterfacesConfig.Interfaces, want.links) || len(d.ControlSockets) != 1 || d.ControlSockets[0].SocketName != want.socket || d.LeaseDatabase.Name != want.leases ||
+			len(d.Subnet4) != 1 || d.Subnet4[0].ID != 3221225984 || d.Subnet4[0].Subnet.Subnet != "192.0.2.0/24" || d.Subnet4[0].ValidLifetime != want.lifetime {
 			t.Errorf("%s = %s", file, files[file])
 		}
 	}
@@ -123,4 +102,14 @@ func TestKeaBootClasses(t *testing.T) {
 	if !strings.Contains(config, `"test": "substring(option[77].hex, 0, 4) == 'iPXE'"`) || strings.Contains(config, "next-server") {
 		t.Errorf("kea-dhcp4.json lacks the iPXE class or has a next server:\n%s", config)
 	}
+}
+
+// decodeKea decodes a rendered Kea config.
+func decodeKea(t *testing.T, data string) keaconf.Config {
+	t.Helper()
+	var c keaconf.Config
+	if err := json.Unmarshal([]byte(data), &c); err != nil {
+		t.Fatal(err)
+	}
+	return c
 }

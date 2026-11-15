@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/json"
 	"maps"
 	"net/netip"
 	"slices"
@@ -28,58 +27,20 @@ func TestKea6PerVRF(t *testing.T) {
 	if names := slices.Sorted(maps.Keys(files)); !slices.Equal(names, []string{"kea-dhcp6-guest.json", "kea-dhcp6.json"}) {
 		t.Fatalf("files = %v", names)
 	}
-	type server struct {
-		Dhcp6 struct {
-			Interfaces struct {
-				Interfaces []string `json:"interfaces"`
-			} `json:"interfaces-config"`
-			Sockets []struct {
-				Name string `json:"socket-name"`
-			} `json:"control-sockets"`
-			Leases struct {
-				Name string `json:"name"`
-			} `json:"lease-database"`
-			Hooks []struct {
-				Library    string `json:"library"`
-				Parameters struct {
-					Name string `json:"name"`
-				} `json:"parameters"`
-			} `json:"hooks-libraries"`
-			Subnets []struct {
-				ID        uint32 `json:"id"`
-				Subnet    string `json:"subnet"`
-				Interface string `json:"interface"`
-				Valid     uint64 `json:"valid-lifetime"`
-				Preferred uint64 `json:"preferred-lifetime"`
-				PD        []struct {
-					Prefix    string `json:"prefix"`
-					Length    int    `json:"prefix-len"`
-					Delegated int    `json:"delegated-len"`
-				} `json:"pd-pools"`
-			} `json:"subnet6"`
-		} `json:"Dhcp6"`
-	}
-	read := func(file string) server {
-		var s server
-		if err := json.Unmarshal([]byte(files[file]), &s); err != nil {
-			t.Fatal(err)
-		}
-		return s
-	}
-	def := read("kea-dhcp6.json").Dhcp6
-	if !slices.Equal(def.Interfaces.Interfaces, []string{"lan0", "lan1"}) || def.Sockets[0].Name != "/run/kea/dhcp6.sock" || def.Leases.Name != "/var/lib/kea/dhcp6.leases" ||
-		len(def.Hooks) != 2 || def.Hooks[1].Library != "libdhcp_run_script.so" || def.Hooks[1].Parameters.Name != testPDHook || len(def.Subnets) != 2 {
+	def := decodeKea(t, files["kea-dhcp6.json"]).Dhcp6
+	if def == nil || !slices.Equal(def.InterfacesConfig.Interfaces, []string{"lan0", "lan1"}) || def.ControlSockets[0].SocketName != "/run/kea/dhcp6.sock" || def.LeaseDatabase.Name != "/var/lib/kea/dhcp6.leases" ||
+		len(def.HooksLibraries) != 2 || def.HooksLibraries[1].Library != "libdhcp_run_script.so" || def.HooksLibraries[1].Parameters.Name != testPDHook || len(def.Subnet6) != 2 {
 		t.Fatalf("kea-dhcp6.json = %s", files["kea-dhcp6.json"])
 	}
-	if s := def.Subnets[0]; s.Interface != "lan0" || s.Valid != 3600 || s.Preferred != 3600 || s.ID != subnetID6(netip.MustParsePrefix("2001:db8:1::/64")) {
+	if s := def.Subnet6[0]; s.Interface != "lan0" || s.ValidLifetime != 3600 || s.PreferredLifetime != 3600 || s.ID != subnetID6(netip.MustParsePrefix("2001:db8:1::/64")) {
 		t.Errorf("office6 = %+v", s)
 	}
-	if s := def.Subnets[1]; s.Interface != "lan1" || len(s.PD) != 1 || s.PD[0].Prefix != "2001:db8:100::" || s.PD[0].Length != 40 || s.PD[0].Delegated != 56 {
+	if s := def.Subnet6[1]; s.Interface != "lan1" || len(s.PDPools) != 1 || s.PDPools[0].Prefix != netip.MustParseAddr("2001:db8:100::") || s.PDPools[0].PrefixLen != 40 || s.PDPools[0].DelegatedLen != 56 {
 		t.Errorf("cpe = %+v", s)
 	}
-	guest := read("kea-dhcp6-guest.json").Dhcp6
-	if guest.Sockets[0].Name != "/run/kea/dhcp6-guest.sock" || guest.Leases.Name != "/var/lib/kea/dhcp6-guest.leases" || len(guest.Hooks) != 1 ||
-		len(guest.Subnets) != 1 || guest.Subnets[0].Interface != "vlan30" {
+	guest := decodeKea(t, files["kea-dhcp6-guest.json"]).Dhcp6
+	if guest == nil || guest.ControlSockets[0].SocketName != "/run/kea/dhcp6-guest.sock" || guest.LeaseDatabase.Name != "/var/lib/kea/dhcp6-guest.leases" || len(guest.HooksLibraries) != 1 ||
+		len(guest.Subnet6) != 1 || guest.Subnet6[0].Interface != "vlan30" {
 		t.Errorf("kea-dhcp6-guest.json = %s", files["kea-dhcp6-guest.json"])
 	}
 }
