@@ -2,8 +2,6 @@ package services
 
 import (
 	"testing"
-
-	"github.com/trevex/chalkos/pkg/router/derive"
 )
 
 // Each service names its instance of a VRF, and of the default VRF, by its config file, its unit
@@ -61,31 +59,5 @@ func TestVRFOfFileRefuses(t *testing.T) {
 		if vrf, ok := tc.s.VRFOfFile(tc.name); ok {
 			t.Errorf("%s.VRFOfFile(%q) = %q, true, want false", tc.s.Name, tc.name, vrf)
 		}
-	}
-}
-
-// escape escapes as systemd-escape does.
-func TestEscape(t *testing.T) {
-	for in, want := range map[string]string{
-		"guest":   "guest",
-		"dmz-a":   `dmz\x2da`,
-		"v1.2":    "v1.2",
-		".a":      `\x2ea`,
-		"a/b":     "a-b",
-		"a b":     `a\x20b`,
-		"a:b_c.d": "a:b_c.d",
-		"\\":      `\x5c`,
-		"é":       `\xc3\xa9`,
-	} {
-		if got := escape(in); got != want {
-			t.Errorf("escape(%q) = %q, want %q", in, got, want)
-		}
-	}
-}
-
-// The default VRF is the model's.
-func TestDefaultVRF(t *testing.T) {
-	if defaultVRF != derive.DefaultVRF {
-		t.Errorf("defaultVRF = %q, want derive.DefaultVRF %q", defaultVRF, derive.DefaultVRF)
 	}
 }

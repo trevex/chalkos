@@ -1,16 +1,15 @@
 // Package services names the files, systemd units and runtime directories of the router's services
 // that run once per VRF: Kea's DHCPv4 and DHCPv6 servers, Unbound and dnsmasq's DHCP relay. The
 // renderer writes the configs by these names, the modules in modules/node/router run the units by
-// them, and chalkd reads them back. It takes the standard library alone, as chalkos-render does.
+// them, and chalkd reads them back.
 package services
 
 import (
-	"fmt"
 	"strings"
-)
 
-// defaultVRF names the VRF of every link no VRF holds, as derive.DefaultVRF does.
-const defaultVRF = "default"
+	"github.com/trevex/chalkos/pkg/internal/strs"
+	"github.com/trevex/chalkos/pkg/router/derive"
+)
 
 // Service is a router service of one instance per VRF. The default VRF's instance runs as
 // <Name>.service from the config <Name><Ext>, a VRF's as <Name>@<vrf>.service from
@@ -37,7 +36,7 @@ var (
 
 // stem is the name of the instance of vrf: Name for the default VRF, Name-<vrf> for a VRF.
 func (s Service) stem(vrf string) string {
-	if vrf == defaultVRF {
+	if vrf == derive.DefaultVRF {
 		return s.Name
 	}
 	return s.Name + "-" + vrf
@@ -56,10 +55,10 @@ func (s Service) VRFOfFile(name string) (vrf string, ok bool) {
 		return "", false
 	}
 	if stem == s.Name {
-		return defaultVRF, true
+		return derive.DefaultVRF, true
 	}
 	vrf, ok = strings.CutPrefix(stem, s.Name+"-")
-	if !ok || vrf == "" || vrf == defaultVRF {
+	if !ok || vrf == "" || vrf == derive.DefaultVRF {
 		return "", false
 	}
 	return vrf, true
@@ -67,15 +66,15 @@ func (s Service) VRFOfFile(name string) (vrf string, ok bool) {
 
 // Unit is the systemd unit of the instance of vrf.
 func (s Service) Unit(vrf string) string {
-	if vrf == defaultVRF {
+	if vrf == derive.DefaultVRF {
 		return s.Name + ".service"
 	}
-	return s.Name + "@" + escape(vrf) + ".service"
+	return s.Name + "@" + strs.UnitEscape(vrf) + ".service"
 }
 
 // RuntimeDir is the runtime directory of the instance of vrf, a name in /run.
 func (s Service) RuntimeDir(vrf string) string {
-	if s.RuntimePerVRF && vrf != defaultVRF {
+	if s.RuntimePerVRF && vrf != derive.DefaultVRF {
 		return s.Runtime + "-" + vrf
 	}
 	return s.Runtime
@@ -85,28 +84,8 @@ func (s Service) RuntimeDir(vrf string) string {
 // systemd bound its sockets to, <RuntimeDir>/<Name>-<vrf>.ifindex, a path in /run. The default
 // VRF's instance is bound to no device and keeps none: it is "".
 func (s Service) IndexRecord(vrf string) string {
-	if vrf == defaultVRF {
+	if vrf == derive.DefaultVRF {
 		return ""
 	}
 	return s.RuntimeDir(vrf) + "/" + s.stem(vrf) + ".ifindex"
-}
-
-// escape is s as systemd-escape escapes a unit's instance: ASCII letters, digits, ':', '_' and
-// every '.' after the first byte stay as they are, '/' becomes '-', and every other byte becomes
-// \x and its two hex digits.
-func escape(s string) string {
-	var b strings.Builder
-	for i := range len(s) {
-		c := s[i]
-		switch {
-		case c == '/':
-			b.WriteByte('-')
-		case c == '.' && i > 0, c == ':', c == '_',
-			'0' <= c && c <= '9', 'a' <= c && c <= 'z', 'A' <= c && c <= 'Z':
-			b.WriteByte(c)
-		default:
-			fmt.Fprintf(&b, `\x%02x`, c)
-		}
-	}
-	return b.String()
 }

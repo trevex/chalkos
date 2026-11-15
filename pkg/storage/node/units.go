@@ -10,6 +10,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/trevex/chalkos/pkg/internal/strs"
 	"github.com/trevex/chalkos/pkg/storage"
 	"github.com/trevex/chalkos/pkg/storage/hostops"
 )
@@ -61,7 +62,7 @@ func (s *Storage) Generate(cryptsetup string) (Units, error) {
 		}
 		source, cryptUnit := dev, ""
 		if v.Encryption == storage.EncryptionTPM2 {
-			cryptUnit = "systemd-cryptsetup@" + escapeName(name) + ".service"
+			cryptUnit = "systemd-cryptsetup@" + strs.UnitEscape(name) + ".service"
 			if err := units.add(name, cryptUnit, "cryptsetup.target", cryptsetupUnit(name, dev, cryptsetup, section.Fallback != storage.FallbackNone)); err != nil {
 				return units, err
 			}

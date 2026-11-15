@@ -6,6 +6,7 @@ buildGoProgram {
     ../../cmd/chalkos-storage
     ../../pkg/atomicfile
     ../../pkg/internal/poll
+    ../../pkg/internal/strs
     ../../pkg/storage
     ../../pkg/tool
   ];

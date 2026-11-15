@@ -12,6 +12,7 @@ buildGoProgram {
   paths = [
     ../../cmd/chalkos-render
     ../../pkg/dns
+    ../../pkg/internal/strs
     ../../pkg/jsonfile
     ../../pkg/networkdschema
     ../../pkg/refusals

@@ -1,4 +1,5 @@
-// Package strs joins values into the lists messages and flags show, and counts nouns, as "2 nodes".
+// Package strs joins values into the lists messages and flags show, counts nouns, as "2 nodes",
+// and escapes unit names.
 package strs
 
 import (
@@ -35,4 +36,23 @@ func Count[N ~int | ~uint32 | ~uint64](n N, noun string) string {
 		return "1 " + noun
 	}
 	return fmt.Sprintf("%d %ss", n, noun)
+}
+
+// UnitEscape escapes s for a unit name as systemd-escape does: ASCII letters, digits, ':', '_'
+// and every '.' after the first byte stay, '/' becomes '-', and every other byte becomes \xNN.
+func UnitEscape(s string) string {
+	var b strings.Builder
+	for i := range len(s) {
+		c := s[i]
+		switch {
+		case c == '/':
+			b.WriteByte('-')
+		case c == '.' && i > 0, c == ':', c == '_',
+			'0' <= c && c <= '9', 'a' <= c && c <= 'z', 'A' <= c && c <= 'Z':
+			b.WriteByte(c)
+		default:
+			fmt.Fprintf(&b, `\x%02x`, c)
+		}
+	}
+	return b.String()
 }

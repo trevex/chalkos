@@ -52,3 +52,22 @@ func TestCount(t *testing.T) {
 		}
 	}
 }
+
+// Expected values are the output of systemd-escape from systemd 261.
+func TestUnitEscape(t *testing.T) {
+	for in, want := range map[string]string{
+		"guest":   "guest",
+		"my-vol":  `my\x2dvol`,
+		"v1.2":    "v1.2",
+		".a":      `\x2ea`,
+		"a/b":     "a-b",
+		"a b":     `a\x20b`,
+		"a:b_c.d": "a:b_c.d",
+		"\\":      `\x5c`,
+		"é":       `\xc3\xa9`,
+	} {
+		if got := UnitEscape(in); got != want {
+			t.Errorf("UnitEscape(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
