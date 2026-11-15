@@ -53,7 +53,7 @@ in
       description = ''
         Whether the image runs Kubernetes: containerd, the kubelet and the preparation of the
         node's Kubernetes configuration. mkImages sets it from the variant's
-        [`kubernetes`](mkimages.md#variants); the installer runs none.
+        [`kubernetes`](mkimages.md#variantskubernetes); the installer runs none.
       '';
     };
     version = lib.mkOption {

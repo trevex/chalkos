@@ -212,8 +212,8 @@ let
     else
       lib.concatStringsSep ", " (lib.init quoted) + " and " + lib.last quoted;
 
-  # A name chalkos.kernel.groups lacks fails the evaluation of the tree, which is built without
-  # the system's assertions too; with allModules, which filters nothing, it goes unreported.
+  # A name chalkos.kernel.groups lacks fails the evaluation of the tree, which builds without
+  # the system's assertions; with allModules, which filters nothing, it goes unreported.
   unknown = lib.filter (name: !cfg.groups ? ${name}) (lib.unique cfg.moduleGroups);
   selected = chalkosLib.internal.refuse (lib.optional (unknown != [ ])
     "chalkos.kernel.moduleGroups names ${lib.concatStringsSep ", " unknown}, which chalkos.kernel.groups does not declare; it declares ${lib.concatStringsSep ", " (lib.attrNames cfg.groups)}"

@@ -19,16 +19,17 @@ let
   # of a router link, changes no instance. Each instance runs in namespace nat64-<name>, joined to
   # its VRF by the veth pair n64-<name> (end nat64 inside): Jool's hook takes the packets of every
   # link of its namespace, so in the router's own it would translate other VRFs' packets too. The
-  # namespace forwards nothing: a packet Jool leaves alone would loop back until its hop limit ran
-  # out. A link whose peer left the namespace (a namespace removed while a process held it) is made
-  # anew; a device of its name and another kind fails the instance, as does a VRF without the
-  # file's table after 30 s (with the VRF's other instances). An instance is created or replaced in
-  # place, keeping its sessions, except on a new pool6, which Jool cannot change: then it is
-  # removed first and loses them. The VRF's table routes the prefix and an explicit pool to the
-  # link with protocol 64, which BGP announces when a network names it. Protocol-64 routes, links
-  # and namespaces no file names are removed in that order, so no route goes with its link first;
-  # `stop` removes all, as does a missing output directory (maintenance mode). A failed step does
-  # not stop the others; the script then fails naming each. A failed instance keeps its routes.
+  # namespace forwards nothing: Jool sends what it translates, and a packet it leaves alone would
+  # loop back until its hop limit ran out. A link whose peer left the namespace (a namespace removed
+  # while a process held it) is made anew; a device of its name and another kind fails the
+  # instance, as does a VRF without the file's table after 30 s (with the VRF's other instances).
+  # An instance is created or replaced in place, keeping its sessions, except on a new pool6, which
+  # Jool cannot change: then it is removed first and loses them. The VRF's table routes the prefix
+  # and an explicit pool to the link with protocol 64, which BGP announces when a network names
+  # it. Protocol-64 routes, links and namespaces no file names are removed in that order, so no
+  # route goes with its link first; `stop` removes all, as does a missing output directory
+  # (maintenance mode). A failed step does not stop the others; the script then fails naming each.
+  # A failed instance keeps its routes.
   apply = pkgs.writeShellApplication {
     name = "chalkos-nat64";
     runtimeInputs = [

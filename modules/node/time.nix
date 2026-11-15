@@ -135,7 +135,8 @@ in
   # reads sourcedir files only when it starts or reloads its sources, and its -p parses files of
   # include alone, so the check includes the file. A sourcedir file takes server, pool and peer
   # directives alone, and the template checks nothing of its own, so the check refuses any other
-  # line too. The tests run the check on the examples of examples/chrony.
+  # line too. The tests run the check on the examples of examples/chrony and examples/networkd's
+  # none.
   chalkos.outputs.chrony = {
     inputs = [ "TimeSync" ];
     render = chalkosLib.render.template template;
