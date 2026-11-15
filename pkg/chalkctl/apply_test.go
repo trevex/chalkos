@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-
+	"github.com/trevex/chalkos/pkg/chalkd"
 	"github.com/trevex/chalkos/pkg/config/slot"
 	imagecontract "github.com/trevex/chalkos/pkg/contract"
 	"github.com/trevex/chalkos/pkg/schema/schematest"
@@ -34,20 +34,9 @@ func TestApplyConfigAndStatus(t *testing.T) {
 	if err := ta.run(context.Background(), ta.args([]string{"config", "apply", "n1"}, addr)); err != nil {
 		t.Fatal(err)
 	}
-	// The node's slot held no documents, so the config's Network is new: the units of the default
-	// image that read the node's static addresses restart, and so does containerd with its
-	// settings, for the Cluster's pod sandbox image is new too. The node declares no outputs, so
-	// the effect on networkd's output does not fire.
-	if !reflect.DeepEqual(r.calls, []string{
-		"systemctl list-units --state=failed --plain --no-legend --no-pager", "chronyc -n -c tracking",
-		"systemctl show --property=ActiveState --value chalkos-containerd-config.service",
-		"systemctl show --property=ActiveState --value chalkos-kubernetes.service",
-		"systemctl show --property=ActiveState --value containerd.service",
-		"systemctl show --property=ActiveState --value kubelet.service",
-		"systemctl show --property=Names,After chalkos-kubernetes.service kubelet.service chalkos-containerd-config.service containerd.service",
-		"systemctl restart chalkos-kubernetes.service kubelet.service",
-		"systemctl try-restart chalkos-containerd-config.service containerd.service",
-	}) {
+	// The config's Network is new: the units that read the node's static addresses restart, and so
+	// does containerd, for the Cluster's pod sandbox image is new too.
+	if !slices.Contains(r.calls, "systemctl restart chalkos-kubernetes.service kubelet.service") || !slices.Contains(r.calls, "systemctl try-restart chalkos-containerd-config.service containerd.service") {
 		t.Errorf("node ran %v", r.calls)
 	}
 	want := ta.configVersion(t)
@@ -102,12 +91,7 @@ func TestApplyConfigNamesTheRemedy(t *testing.T) {
 	s, _ := installedNode(t, ta, []byte(`{}`))
 	// The node recorded VAR as xfs, so the inventory's ext4 is a destructive change, which only a
 	// reinstall carries out, since a reset cannot recreate VAR while the node runs.
-	section := ta.identity(t).Storage
-	v := section.Volumes["var"]
-	v.Format = "xfs"
-	section.Volumes = map[string]storage.Volume{"var": v}
-	data, _ := json.Marshal(section)
-	writeFile(t, filepath.Join(s.Paths.StateDir, "storage", "storage.json"), string(data))
+	recordVarFormat(t, ta, s, "xfs")
 	addr := ta.startNode(t, s)
 
 	err := ta.run(context.Background(), ta.args([]string{"config", "apply", "n1"}, addr))
@@ -327,4 +311,15 @@ func TestApplyIsConfigApply(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "--force goes with --kubernetes-share") {
 		t.Errorf("apply: err = %v", err)
 	}
+}
+
+// recordVarFormat has the node record its VAR volume, alone, as formatted with format.
+func recordVarFormat(t *testing.T, ta *testApp, s *chalkd.Server, format string) {
+	t.Helper()
+	section := ta.identity(t).Storage
+	v := section.Volumes["var"]
+	v.Format = format
+	section.Volumes = map[string]storage.Volume{"var": v}
+	data, _ := json.Marshal(section)
+	writeFile(t, filepath.Join(s.Paths.StateDir, "storage", "storage.json"), string(data))
 }

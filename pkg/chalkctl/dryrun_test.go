@@ -2,7 +2,6 @@ package chalkctl
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"path/filepath"
@@ -11,7 +10,6 @@ import (
 
 	"github.com/trevex/chalkos/pkg/chalkctl/layer"
 	"github.com/trevex/chalkos/pkg/config/slot"
-	"github.com/trevex/chalkos/pkg/storage"
 )
 
 // config apply --dry-run prints the diff and the node's plan of the delivery, and the node
@@ -67,12 +65,7 @@ func TestApplyConfigDryRunRefused(t *testing.T) {
 	s, r := installedNode(t, ta, []byte(`{}`))
 	// The node recorded VAR as xfs, so the inventory's ext4 takes a reinstall, which the node
 	// refuses.
-	section := ta.identity(t).Storage
-	v := section.Volumes["var"]
-	v.Format = "xfs"
-	section.Volumes = map[string]storage.Volume{"var": v}
-	data, _ := json.Marshal(section)
-	writeFile(t, filepath.Join(s.Paths.StateDir, "storage", "storage.json"), string(data))
+	recordVarFormat(t, ta, s, "xfs")
 	addr := ta.startNode(t, s)
 	writeFile(t, ta.inventory, strings.Replace(testInventoryYAML, "10.0.0.11", addr, 1))
 

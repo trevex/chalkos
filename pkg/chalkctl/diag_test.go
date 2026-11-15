@@ -49,6 +49,8 @@ func (f *fakeDiagnose) Run(_ context.Context, r diagnostics.Run, stdout, stderr 
 	f.mu.Unlock()
 	io.WriteString(stdout, f.stdout)
 	io.WriteString(stderr, f.stderr)
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	return f.exit, nil
 }
 
@@ -108,6 +110,9 @@ func TestNodeDiagRuns(t *testing.T) {
 
 // node diag fails when the diagnostic does: with its exit status, or why the node stopped it.
 func TestNodeDiagFailsWithTheDiagnostic(t *testing.T) {
+	ta := newTestApp(t)
+	f := &fakeDiagnose{}
+	addr := diagNode(t, ta, f)
 	for _, tc := range []struct {
 		exit diagnostics.Exit
 		want string
@@ -117,8 +122,9 @@ func TestNodeDiagFailsWithTheDiagnostic(t *testing.T) {
 		{diagnostics.Exit{Stopped: diagnostics.StoppedOutputLimit}, "ping printed more than 1 MiB, and the node stopped it there"},
 		{diagnostics.Exit{Stopped: "signal"}, "ping ended: signal"},
 	} {
-		ta := newTestApp(t)
-		addr := diagNode(t, ta, &fakeDiagnose{exit: tc.exit})
+		f.mu.Lock()
+		f.exit = tc.exit
+		f.mu.Unlock()
 		err := ta.run(context.Background(), ta.args([]string{"node", "diag", "n1", "ping", "address=192.0.2.1"}, addr))
 		if err == nil || err.Error() != tc.want {
 			t.Errorf("%+v: err = %v, want %q", tc.exit, err, tc.want)

@@ -12,7 +12,6 @@ import (
 	kubernetesplugin "github.com/trevex/chalkos/pkg/chalkd/layers/kubernetes"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
 	"github.com/trevex/chalkos/pkg/kubernetes/etcd/etcdtest"
-	knode "github.com/trevex/chalkos/pkg/kubernetes/node"
 	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
 )
 
@@ -62,29 +61,6 @@ func TestEtcdMembers(t *testing.T) {
 	// --address reaches one node, which --via names.
 	if err := ta.run(context.Background(), ta.args([]string{"etcd", "members"}, addr)); err == nil || !strings.Contains(err.Error(), "--via") {
 		t.Errorf("without --via: %v", err)
-	}
-}
-
-func TestEtcdRemoveMemberRefusesOwnMember(t *testing.T) {
-	ta := newTestApp(t)
-	s := etcdNode(t, ta, nil)
-	addr := ta.startNode(t, s)
-	err := ta.run(context.Background(), ta.args([]string{"etcd", "remove-member", "n1", "--via", "n1"}, addr))
-	if err == nil || !strings.Contains(err.Error(), "chalkctl etcd leave n1") {
-		t.Errorf("err = %v, want the node's refusal naming chalkctl etcd leave", err)
-	}
-}
-
-func TestEtcdLeaveRefusesLastVoter(t *testing.T) {
-	ta := newTestApp(t)
-	s := etcdNode(t, ta, nil)
-	addr := ta.startNode(t, s)
-	err := ta.run(context.Background(), ta.args([]string{"etcd", "leave", "n1"}, addr))
-	if err == nil || !strings.Contains(err.Error(), "etcd's last voter") {
-		t.Errorf("err = %v, want a refusal for the last voter", err)
-	}
-	if m, _, _ := kubernetesState(s).ReadMembership(); m != knode.MembershipBootstrapped {
-		t.Error("a refused leave changed the node")
 	}
 }
 

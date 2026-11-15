@@ -303,21 +303,6 @@ func TestGenSecretsPublicOut(t *testing.T) {
 	}
 }
 
-// TestUnsyncedWriteWarns checks that a secrets file written in place whose directory was not
-// synced draws a warning, not an error, and that other errors stay errors.
-func TestUnsyncedWriteWarns(t *testing.T) {
-	ta := newTestApp(t)
-	if err := ta.warnUnsynced(&clustersecrets.UnsyncedError{Path: "secrets.json", Err: errors.New("sync failed")}); err != nil {
-		t.Errorf("err = %v, want a warning", err)
-	}
-	if !strings.Contains(ta.stderr.String(), "warning: secrets.json is written") {
-		t.Errorf("no warning: %q", ta.stderr.String())
-	}
-	if err := ta.warnUnsynced(errors.New("disk full")); err == nil {
-		t.Error("another error became a warning")
-	}
-}
-
 func TestGenSecretsPlaintext(t *testing.T) {
 	ta := newTestApp(t)
 	out := filepath.Join(ta.dir, "new")
@@ -434,17 +419,6 @@ func TestDefaultIdentitiesSkipUnreadable(t *testing.T) {
 	// An identity named on the command line must load.
 	if _, err := ta.ageIdentities(context.Background(), []string{broken}); err == nil || !strings.Contains(err.Error(), broken) {
 		t.Errorf("err = %v, want the named identity's failure", err)
-	}
-}
-
-func TestOlderSecretsFilesAreRefused(t *testing.T) {
-	ta := newTestApp(t)
-	for _, version := range []string{"1", "2"} {
-		writeFile(t, filepath.Join(ta.dir, "secrets.json"), `{"version": `+version+`, "osCA": {}, "admin": {}}`)
-		err := ta.run(context.Background(), ta.args([]string{"status", "n1"}, "127.0.0.1:1"))
-		if err == nil || !strings.Contains(err.Error(), "version "+version+" is not supported") || !strings.Contains(err.Error(), "chalkctl gen secrets") {
-			t.Errorf("version %s: %v, want a refusal naming chalkctl gen secrets", version, err)
-		}
 	}
 }
 

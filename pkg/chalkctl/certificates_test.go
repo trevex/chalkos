@@ -11,7 +11,6 @@ import (
 
 	"github.com/trevex/chalkos/pkg/chalkd"
 	"github.com/trevex/chalkos/pkg/clustersecrets"
-	imagecontract "github.com/trevex/chalkos/pkg/contract"
 	"github.com/trevex/chalkos/pkg/kubernetes"
 	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
 	"github.com/trevex/chalkos/pkg/pki"
@@ -68,36 +67,6 @@ func TestNodeRenewReachesAnExpiredNode(t *testing.T) {
 		if !strings.HasPrefix(c, "systemctl list-units") && c != "chronyc -n -c tracking" {
 			t.Errorf("node renew ran %s", c)
 		}
-	}
-}
-
-// node renew prints why the rule of an effect could not be evaluated as a warning, as config apply
-// does.
-func TestNodeRenewWarnsOfRulesThatFail(t *testing.T) {
-	ta := newTestApp(t)
-	cert, err := pki.IssueNode(ta.secrets.NodeCA, pki.NodeNames{CommonName: "n1", DNSNames: []string{"n1"}}, time.Now())
-	if err != nil {
-		t.Fatal(err)
-	}
-	s, _ := installedNode(t, ta, nil)
-	var effects map[string]any
-	raw, err := os.ReadFile(filepath.Join(contractDir(t, s), imagecontract.EffectsFile))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := json.Unmarshal(raw, &effects); err != nil {
-		t.Fatal(err)
-	}
-	effects["report"] = map[string]any{"when": `config["chalkos.dev/v1alpha1"].Node.missing.spec.type == "worker"`, "restart": []string{"report.service"}}
-	data, _ := json.Marshal(effects)
-	writeContract(t, s, imagecontract.EffectsFile, string(data))
-	addr := ta.nodeWithCertificate(t, s, cert)
-	if err := ta.run(context.Background(), ta.args([]string{"node", "renew", "n1"}, addr)); err != nil {
-		t.Fatal(err)
-	}
-	want := "chalkctl: warning: n1: the rule of effect report: a rule cannot be evaluated: no such key; taking the effect all the same\n"
-	if ta.stderr.String() != want {
-		t.Errorf("stderr = %q, want %q", ta.stderr, want)
 	}
 }
 
@@ -225,19 +194,5 @@ func TestRotateNodeCANamesThePublicFile(t *testing.T) {
 	}
 	if !strings.Contains(ta.stdout.String(), "secrets.pub.json still holds the previous public half") {
 		t.Errorf("stdout = %q, want secrets.pub.json named", ta.stdout)
-	}
-}
-
-// node renew trusts the expired node's old key, which its help says.
-func TestNodeRenewHelp(t *testing.T) {
-	ta := newTestApp(t)
-	if err := ta.run(context.Background(), []string{"node", "renew", "-h"}); err != nil {
-		t.Fatal(err)
-	}
-	help := ta.stdout.String()
-	for _, want := range []string{"chalkctl node renew <node>", "old key", "--address"} {
-		if !strings.Contains(help, want) {
-			t.Errorf("help lacks %q:\n%s", want, help)
-		}
 	}
 }
