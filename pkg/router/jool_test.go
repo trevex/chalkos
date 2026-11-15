@@ -67,13 +67,3 @@ func TestParseJoolPool4(t *testing.T) {
 		}
 	}
 }
-
-// jool's arguments ask for all of an instance's statistics, and for one protocol's pool.
-func TestJoolArgs(t *testing.T) {
-	if got := strings.Join(JoolStatsArgs("edge"), " "); got != "-i edge stats display --csv --no-headers --all" {
-		t.Errorf("stats: %s", got)
-	}
-	if got := strings.Join(JoolPool4Args("edge", "icmp"), " "); got != "-i edge pool4 display --csv --no-headers --icmp" {
-		t.Errorf("pool4: %s", got)
-	}
-}

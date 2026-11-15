@@ -123,9 +123,10 @@ func TestParseBGPRoutes(t *testing.T) {
 	}
 }
 
-// FRR 10.7 names a session's BFD status Up, Down, Admin Down or Unknown.
+// FRR 10.7 names a session's BFD status Up, Down, Admin Down or Unknown; TestParsePeers reads
+// the others.
 func TestBFDState(t *testing.T) {
-	for in, want := range map[string]string{"Up": "up", "Down": "down", "Admin Down": "admin-down", "Unknown": "unknown", "": "unknown"} {
+	for in, want := range map[string]string{"Admin Down": "admin-down", "Unknown": "unknown", "": "unknown"} {
 		if got := bfdState(in); got != want {
 			t.Errorf("bfdState(%q) = %q, want %q", in, got, want)
 		}

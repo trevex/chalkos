@@ -14,21 +14,25 @@ func TestFilter(t *testing.T) {
 		{Destination: "2001:db8:1::1/128", Protocol: "kernel", Table: 255},
 		{Destination: "192.0.2.0/24", Protocol: "static", Table: 254},
 		{Destination: "198.51.100.0/24", Protocol: "bgp", Table: 100},
+		{Destination: "64:ff9b::/96", Type: "unreachable", Protocol: protocolName(64), Table: 254},
 	}
 	bgp := []*BGPRoute{{Prefix: "::/0"}, {Prefix: "2001:db8:1::/48"}, {Prefix: "192.0.2.0/24"}}
 	for _, c := range []struct {
 		prefix, protocol, table string
 		kernel, bgp             []string
 	}{
-		{"", "", "", []string{"::/0", "2001:db8:1::/64", "192.0.2.0/24"}, []string{"::/0", "2001:db8:1::/48", "192.0.2.0/24"}},
+		{"", "", "", []string{"::/0", "2001:db8:1::/64", "192.0.2.0/24", "64:ff9b::/96"}, []string{"::/0", "2001:db8:1::/48", "192.0.2.0/24"}},
 		{"2001:db8::/32", "", "", []string{"2001:db8:1::/64"}, []string{"2001:db8:1::/48"}},
-		{"::/0", "", "", []string{"::/0", "2001:db8:1::/64"}, []string{"::/0", "2001:db8:1::/48"}},
+		{"::/0", "", "", []string{"::/0", "2001:db8:1::/64", "64:ff9b::/96"}, []string{"::/0", "2001:db8:1::/48"}},
 		{"0.0.0.0/0", "bgp", "all", []string{"198.51.100.0/24"}, []string{"192.0.2.0/24"}},
 		{"", "kernel", "local", []string{"2001:db8:1::1/128"}, nil},
 		{"", "static", "254", []string{"192.0.2.0/24"}, nil},
 		// A protocol's number stands for its name.
 		{"", "4", "", []string{"192.0.2.0/24"}, nil},
 		{"0.0.0.0/0", "186", "all", []string{"198.51.100.0/24"}, []string{"192.0.2.0/24"}},
+		// The routes of the NAT64 prefixes carry the protocol nat64, number 64.
+		{"", "nat64", "", []string{"64:ff9b::/96"}, nil},
+		{"", "64", "", []string{"64:ff9b::/96"}, nil},
 		{"192.0.2.1/32", "", "", nil, nil},
 	} {
 		f, err := NewFilter(c.prefix, c.protocol, c.table)
@@ -59,23 +63,6 @@ func TestFilterRefusals(t *testing.T) {
 	} {
 		if _, err := NewFilter(c.prefix, c.protocol, c.table); err == nil || !strings.Contains(err.Error(), c.want) {
 			t.Errorf("%+v: %v", c, err)
-		}
-	}
-}
-
-// The routes of the router's NAT64 prefixes carry the protocol nat64, number 64.
-func TestFilterNAT64(t *testing.T) {
-	kernel := []*KernelRoute{
-		{Destination: "64:ff9b::/96", Type: "unreachable", Protocol: protocolName(64), Table: 254},
-		{Destination: "::/0", Protocol: "bgp", Table: 254},
-	}
-	for _, protocol := range []string{"nat64", "64"} {
-		f, err := NewFilter("", protocol, "")
-		if err != nil {
-			t.Fatal(err)
-		}
-		if got := f.Kernel(kernel); len(got) != 1 || got[0].Destination != "64:ff9b::/96" || f.WantsBGP() {
-			t.Errorf("%s: kernel %v, BGP %v", protocol, got, f.WantsBGP())
 		}
 	}
 }

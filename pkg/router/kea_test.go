@@ -3,31 +3,33 @@ package router
 import (
 	"encoding/json"
 	"math"
-	"os"
 	"reflect"
 	"testing"
 )
 
-// Kea 3.2.0's statistic-get-all of a server of one subnet that leased the reservation of a
-// printer and an address of its pool of 100 gives each subnet's newest counts of leased and pool
-// addresses by its number, leaving out the counts of the server, of the pools and the others.
+// Kea 3.2.0's statistic-get-all gives each subnet's newest counts by its number, leaving out the
+// counts of the server and of the pools: of a DHCPv4 server that leased a printer's reservation
+// and an address of its pool of 100, and of a DHCPv6 server that leased an address of its pool of
+// 256 and delegated a prefix of its 256. A count past 64 bits, as of the addresses of a pool of a
+// /64, is the largest of 64.
 func TestParseKeaStatistics(t *testing.T) {
-	data, err := os.ReadFile("testdata/kea-statistic-get-all.json")
-	if err != nil {
-		t.Fatal(err)
+	for file, want := range map[string]map[uint32]KeaLeases{
+		"kea-statistic-get-all.json":  {3221225984: {Assigned: 2, Total: 100}},
+		"kea6-statistic-get-all.json": {2387838497: {Assigned: 1, Total: 256, Delegated: 1, Delegable: 256}},
+	} {
+		var answer struct {
+			Arguments json.RawMessage `json:"arguments"`
+		}
+		if err := json.Unmarshal(readTestdata(t, file), &answer); err != nil {
+			t.Fatal(err)
+		}
+		if got, err := ParseKeaStatistics(answer.Arguments); err != nil || !reflect.DeepEqual(got, want) {
+			t.Errorf("%s: statistics = %v, %v; want %v", file, got, err, want)
+		}
 	}
-	var answer struct {
-		Arguments json.RawMessage `json:"arguments"`
-	}
-	if err := json.Unmarshal(data, &answer); err != nil {
-		t.Fatal(err)
-	}
-	got, err := ParseKeaStatistics(answer.Arguments)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if want := map[uint32]KeaLeases{3221225984: {Assigned: 2, Total: 100}}; !reflect.DeepEqual(got, want) {
-		t.Errorf("statistics = %v, want %v", got, want)
+	got, err := ParseKeaStatistics(json.RawMessage(`{"subnet[7].total-nas": [[36893488147419103230, "2026-11-01 10:00:00.000000"]]}`))
+	if err != nil || got[7].Total != math.MaxUint64 {
+		t.Errorf("a pool past 64 bits = %v, %v", got, err)
 	}
 	if _, err := ParseKeaStatistics(json.RawMessage(`{"subnet[1].assigned-addresses": [["two", "2026-11-01 10:00:00.000000"]]}`)); err == nil {
 		t.Error("a count of no number parsed")
@@ -68,33 +70,5 @@ func TestParseKeaInterfaces(t *testing.T) {
 		if got, err := ParseKeaInterfaces([]byte(data)); err == nil {
 			t.Errorf("ParseKeaInterfaces(%s) = %v, want an error", data, got)
 		}
-	}
-}
-
-// Kea 3.2.0's statistic-get-all of a DHCPv6 server of one subnet that leased an address of its
-// pool of 256 and delegated a prefix of its 256 gives the subnet's counts of both, leaving out the
-// counts of the server and of the pools. A count past 64 bits, as of the addresses of a pool of a
-// /64, is the largest of 64.
-func TestParseKea6Statistics(t *testing.T) {
-	data, err := os.ReadFile("testdata/kea6-statistic-get-all.json")
-	if err != nil {
-		t.Fatal(err)
-	}
-	var answer struct {
-		Arguments json.RawMessage `json:"arguments"`
-	}
-	if err := json.Unmarshal(data, &answer); err != nil {
-		t.Fatal(err)
-	}
-	got, err := ParseKeaStatistics(answer.Arguments)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if want := map[uint32]KeaLeases{2387838497: {Assigned: 1, Total: 256, Delegated: 1, Delegable: 256}}; !reflect.DeepEqual(got, want) {
-		t.Errorf("statistics = %v, want %v", got, want)
-	}
-	got, err = ParseKeaStatistics(json.RawMessage(`{"subnet[7].total-nas": [[36893488147419103230, "2026-11-01 10:00:00.000000"]]}`))
-	if err != nil || got[7].Total != math.MaxUint64 {
-		t.Errorf("a pool past 64 bits = %v, %v", got, err)
 	}
 }
