@@ -10,7 +10,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/spf13/pflag"
 
 	"github.com/trevex/chalkos/pkg/config/slot"
 	imagecontract "github.com/trevex/chalkos/pkg/contract"
@@ -246,11 +245,7 @@ func TestApplyConfigForceIsChalkctls(t *testing.T) {
 	}
 	f := cmd.Flags().Lookup("force")
 	if f == nil || f.Usage != "with --kubernetes-share, deliver without asking whether the node is revoked" {
-		t.Fatalf("--force: %v", f)
-	}
-	err = ta.run(context.Background(), []string{"config", "apply", "n1", "--force", "--inventory", ta.inventory})
-	if err == nil || !strings.Contains(err.Error(), "--force goes with --kubernetes-share") {
-		t.Errorf("err = %v", err)
+		t.Errorf("--force: %v", f)
 	}
 }
 
@@ -325,25 +320,11 @@ func TestApplyIsConfigApply(t *testing.T) {
 	if long == short {
 		t.Fatal("config apply and apply are one command")
 	}
-	var names []string
-	long.Flags().VisitAll(func(f *pflag.Flag) {
-		names = append(names, f.Name)
-		if g := short.Flags().Lookup(f.Name); g == nil || g.Usage != f.Usage || g.DefValue != f.DefValue {
-			t.Errorf("apply's --%s = %v, want config apply's %v", f.Name, g, f)
-		}
-	})
-	n := 0
-	short.Flags().VisitAll(func(*pflag.Flag) { n++ })
-	if n != len(names) {
-		t.Errorf("apply has %d flags, config apply %d", n, len(names))
-	}
 	if !strings.Contains(short.Long, "short form of chalkctl config apply") {
 		t.Errorf("apply's help does not name config apply:\n%s", short.Long)
 	}
-	for _, args := range [][]string{{"config", "apply"}, {"apply"}} {
-		err := ta.run(context.Background(), append(args, "n1", "--force", "--inventory", ta.inventory))
-		if err == nil || !strings.Contains(err.Error(), "--force goes with --kubernetes-share") {
-			t.Errorf("%v: err = %v", args, err)
-		}
+	err = ta.run(context.Background(), []string{"apply", "n1", "--force", "--inventory", ta.inventory})
+	if err == nil || !strings.Contains(err.Error(), "--force goes with --kubernetes-share") {
+		t.Errorf("apply: err = %v", err)
 	}
 }

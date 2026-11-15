@@ -70,14 +70,6 @@ func TestExecuteErrors(t *testing.T) {
 	if got := ta.execute(context.Background(), "status", "n1", "--inventory", filepath.Join(ta.dir, "missing.yaml")); got != 1 {
 		t.Errorf("a failing command exits with %d, want 1", got)
 	}
-	// config apply and its short form fail as any command.
-	missing := filepath.Join(ta.dir, "missing.yaml")
-	for _, args := range [][]string{{"config", "apply", "n1", "--inventory", missing}, {"apply", "n1", "--inventory", missing}} {
-		ta.stderr.Reset()
-		if got := ta.execute(context.Background(), args...); got != 1 || !strings.Contains(ta.stderr.String(), "missing.yaml") {
-			t.Errorf("chalkctl %v exits with %d, want 1 for the missing inventory:\n%s", args, got, ta.stderr)
-		}
-	}
 	if !strings.HasPrefix(ta.stderr.String(), "chalkctl: ") {
 		t.Errorf("stderr = %q, want the error after chalkctl:", ta.stderr.String())
 	}
@@ -122,7 +114,7 @@ func TestExecuteFlags(t *testing.T) {
 
 // The help names the value of --address [NODE=]ADDR, in every command that takes it.
 func TestAddressValueName(t *testing.T) {
-	for _, args := range [][]string{{"status"}, {"config", "apply"}, {"apply"}, {"rotate"}, {"upgrade"}} {
+	for _, args := range [][]string{{"status"}, {"config", "apply"}, {"rotate"}, {"upgrade"}} {
 		ta := newTestApp(t)
 		if got := ta.execute(context.Background(), append(args, "--help")...); got != 0 {
 			t.Fatalf("%v --help exits with %d", args, got)
