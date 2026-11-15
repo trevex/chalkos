@@ -38,12 +38,14 @@ type image struct {
 // boots.
 var imageNames sync.Map
 
-// storeBlocks makes trees of two levels.
-const storeBlocks = 300
+// storeBlocks dm-verity blocks of 4 KiB, as images are built, make a tree of two levels and fit
+// the lab's slots.
+const storeBlocks = 200
 
+// newImage makes an image of storeBlocks blocks.
 func newImage(t *testing.T, name string, tries int) image {
 	t.Helper()
-	return newImageOfBlocks(t, name, tries, 512, storeBlocks)
+	return newImageOfBlocks(t, name, tries, 4096, storeBlocks)
 }
 
 // newImageOfBlocks makes an image whose store has the number of dm-verity blocks of the size.

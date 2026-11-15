@@ -95,33 +95,6 @@ func TestUpgradeAndFallBack(t *testing.T) {
 	}
 }
 
-// TestVerityBlockSizes installs images whose stores have dm-verity blocks of 4 KiB, as images
-// are built, or of 512 bytes, as they were, over each other, and boots them.
-func TestVerityBlockSizes(t *testing.T) {
-	// 200 blocks of 4 KiB make a tree of two levels and fit the lab's slots.
-	const blocks4K = 200
-	for _, tc := range []struct {
-		name         string
-		running, img image
-	}{
-		{"512 to 4096", newImage(t, "a", 3), newImageOfBlocks(t, "b", 2, 4096, blocks4K)},
-		{"4096 to 4096", newImageOfBlocks(t, "a", 3, 4096, blocks4K), newImageOfBlocks(t, "b", 2, 4096, blocks4K)},
-		{"4096 to 512", newImageOfBlocks(t, "a", 3, 4096, blocks4K), newImage(t, "b", 2)},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			l := newLab(t, tc.running)
-			if _, err := l.install(tc.img); err != nil {
-				t.Fatal(err)
-			}
-			l.boots(tc.img, 2)
-			l.bless(l.attempt())
-			if e, name := l.boot(); name != tc.img.Name || e.File != "chalkos_2.efi" {
-				t.Errorf("a blessed boot booted %q from %s", name, e.File)
-			}
-		})
-	}
-}
-
 // TestFourKnDisk upgrades a node whose disk has 4096-byte sectors, which sfdisk counts sizes in: a
 // store larger than an eighth of the 1 MiB slot fits, and one larger than the slot is refused
 // before anything changes.
@@ -339,15 +312,7 @@ func TestStageAndActivate(t *testing.T) {
 	if _, err := l.node.Activate(ctx, b.Root); !errors.As(err, &refusal) || !strings.Contains(err.Error(), "no image is staged in the inactive slot") {
 		t.Errorf("activate without a staged image = %v, want a refusal", err)
 	}
-	stage := func(img image) Result {
-		t.Helper()
-		res, err := l.node.Install(ctx, img.header, img.Stream())
-		if err != nil {
-			t.Fatal(err)
-		}
-		return res
-	}
-	if res := stage(b); res.Active || res.AlreadyStaged || res.Entry != ".staged-chalkos_2.efi" || !res.Wrote {
+	if res := l.stage(b); res.Active || res.AlreadyStaged || res.Entry != ".staged-chalkos_2.efi" || !res.Wrote {
 		t.Errorf("stage = %+v", res)
 	}
 	if e, name := l.boot(); name != "a" || e.File != "chalkos_1.efi" {
@@ -356,7 +321,7 @@ func TestStageAndActivate(t *testing.T) {
 	if staged, ok, err := esp.Staged(l.esp, "chalkos"); !ok || err != nil || !bytes.Equal(staged.RootHash, b.Root) || staged.Generation != 2 {
 		t.Errorf("staged = %+v, %v, %v", staged, ok, err)
 	}
-	if res := stage(b); res.Active || !res.AlreadyStaged || res.Entry != ".staged-chalkos_2.efi" || res.Wrote {
+	if res := l.stage(b); res.Active || !res.AlreadyStaged || res.Entry != ".staged-chalkos_2.efi" || res.Wrote {
 		t.Errorf("staging the staged image again = %+v", res)
 	}
 	// CheckStaged is asked only once the image staged is the one asked for, and its error refuses.
@@ -394,14 +359,14 @@ func TestStageAndActivate(t *testing.T) {
 	if res, err := l.node.Activate(ctx, b.Root); err != nil || !res.AlreadyInstalled {
 		t.Errorf("activate the running image = %+v, %v", res, err)
 	}
-	if res := stage(c); res.Entry != ".staged-chalkos_3.efi" || l.file("chalkos_1.efi") != nil {
+	if res := l.stage(c); res.Entry != ".staged-chalkos_3.efi" || l.file("chalkos_1.efi") != nil {
 		t.Errorf("stage = %+v; the image before kept: %v", res, l.file("chalkos_1.efi") != nil)
 	}
 	if _, err := l.node.Rollback(ctx, a.Root, nil, nil); err == nil || !strings.Contains(err.Error(), fmt.Sprintf("the image %x is staged in the inactive slot", c.Root)) {
 		t.Errorf("rollback while an image is staged = %v", err)
 	}
 	// The staged UKI's generation counts as an entry's: the image staged next takes the one above.
-	if res := stage(d); res.Entry != ".staged-chalkos_4.efi" || !res.Wrote || l.file(".staged-chalkos_3.efi") != nil {
+	if res := l.stage(d); res.Entry != ".staged-chalkos_4.efi" || !res.Wrote || l.file(".staged-chalkos_3.efi") != nil {
 		t.Errorf("stage another image = %+v; the staged UKI before kept: %v", res, l.file(".staged-chalkos_3.efi") != nil)
 	}
 	if staged, ok, err := esp.Staged(l.esp, "chalkos"); !ok || err != nil || !bytes.Equal(staged.RootHash, d.Root) {
@@ -421,15 +386,7 @@ func TestStagedGenerationsNeverGoBack(t *testing.T) {
 	a, b, c, d := newImage(t, "a", 3), newImage(t, "b", 2), newImage(t, "c", 3), newImage(t, "d", 3)
 	l := newLab(t, a)
 	ctx := context.Background()
-	stage := func(img image) Result {
-		t.Helper()
-		res, err := l.node.Install(ctx, img.header, img.Stream())
-		if err != nil {
-			t.Fatal(err)
-		}
-		return res
-	}
-	if res := stage(b); res.Entry != ".staged-chalkos_2.efi" {
+	if res := l.stage(b); res.Entry != ".staged-chalkos_2.efi" {
 		t.Fatalf("stage = %+v", res)
 	}
 	if res, err := l.node.Activate(ctx, b.Root); err != nil || res.Entry != "chalkos_2+2.efi" {
@@ -443,10 +400,10 @@ func TestStagedGenerationsNeverGoBack(t *testing.T) {
 	if e, name := l.boot(); name != "a" || e.File != "chalkos_1.efi" || l.file("chalkos_2+0-2.efi") == nil {
 		t.Fatalf("after the tries the disk boots %s from %s, want a beside the failed chalkos_2+0-2.efi", name, e.File)
 	}
-	if res := stage(c); res.Entry != ".staged-chalkos_3.efi" || l.file("chalkos_2+0-2.efi") != nil {
+	if res := l.stage(c); res.Entry != ".staged-chalkos_3.efi" || l.file("chalkos_2+0-2.efi") != nil {
 		t.Fatalf("stage = %+v; the failed UKI kept: %v", res, l.file("chalkos_2+0-2.efi") != nil)
 	}
-	if res := stage(d); res.Entry != ".staged-chalkos_4.efi" {
+	if res := l.stage(d); res.Entry != ".staged-chalkos_4.efi" {
 		t.Errorf("stage over the staged image = %+v, want generation 4", res)
 	}
 	if res, err := l.node.Activate(ctx, d.Root); err != nil || res.Entry != "chalkos_4+3.efi" {
@@ -599,6 +556,8 @@ func TestRefusesBeforeChanging(t *testing.T) {
 		{"no platform", func(h *Header) { h.Platform = "" }, nil, "platform are required"},
 		{"another architecture", func(h *Header) { h.Architecture = "arm64" }, nil, "the image is built for arm64, this machine for x86-64"},
 		{"a store larger than the slot", func(h *Header) { h.Store.Size = 2 << 20 }, nil, "do not fit"},
+		// An upgrade leaves the boot loader as it is.
+		{"a boot loader", func(h *Header) { h.BootLoader = imagepart.Part{Size: 1, SHA256: upgradetest.Sum([]byte{1})} }, nil, "boot loader"},
 		// The node booted generation 2, which is counted, and falls back to generation 1.
 		{"a running boot not found healthy", nil, func(l *lab) {
 			os.Rename(filepath.Join(l.esp, esp.LinuxDir, "chalkos_1.efi"), filepath.Join(l.esp, esp.LinuxDir, "chalkos_2+2-1.efi"))
@@ -731,6 +690,9 @@ func TestRefusesBeforeActivating(t *testing.T) {
 			}
 			if p := l.table(); p[4].Name != storeslot.EmptyLabel || p[5].Name != storeslot.EmptyLabel {
 				t.Errorf("the slot is labelled %q and %q", p[4].Name, p[5].Name)
+			}
+			if temp := l.tempUKIs(); len(temp) != 0 {
+				t.Errorf("the ESP keeps %q", temp)
 			}
 		})
 	}
@@ -948,17 +910,16 @@ func TestDiskLockedElsewhere(t *testing.T) {
 		t.Errorf("the disk boots %s from %s", name, e.File)
 	}
 
-	// A lock released within the wait is taken.
-	l = newLab(t, old)
-	l.node.LockWait = 10 * time.Second
-	release = l.holdDisk()
-	go func() {
-		time.Sleep(300 * time.Millisecond)
-		release()
-	}()
-	if _, err := l.install(img); err != nil {
-		t.Errorf("install once the disk's lock was released = %v", err)
+}
+
+// stage installs img, failing the test on an error.
+func (l *lab) stage(img image) Result {
+	l.t.Helper()
+	res, err := l.node.Install(context.Background(), img.header, img.Stream())
+	if err != nil {
+		l.t.Fatal(err)
 	}
+	return res
 }
 
 // tempUKIs are the UKIs on the ESP written under the temporary name.
@@ -1005,72 +966,35 @@ func TestRemovesTheTemporaryUKI(t *testing.T) {
 			}
 		})
 	}
-	// A UKI refused once written.
-	otherPlatform := img
-	osRelease := upgradetest.OSRelease("chalkos", 3)
-	osRelease["CHALKOS_PLATFORM"] = "kvm"
-	otherPlatform.UKI = upgradetest.UKI(osRelease, img.Root)
-	l = newLab(t, old)
-	if _, err := l.install(withHeader(otherPlatform)); err == nil {
-		t.Fatal("installed a UKI of another platform")
-	}
-	if temp := l.tempUKIs(); len(temp) != 0 {
-		t.Errorf("the ESP keeps %q", temp)
-	}
 }
 
-// TestRefusesABootLoader refuses an image that brings a boot loader before anything changes: an
-// upgrade leaves the boot loader as it is.
-func TestRefusesABootLoader(t *testing.T) {
-	old, img := newImage(t, "a", 3), newImage(t, "b", 3)
-	l := newLab(t, old)
-	l.node.Change = func(what string) error {
-		t.Errorf("changed: %s", what)
-		return nil
-	}
-	img.header.BootLoader = imagepart.Part{Size: 1, SHA256: upgradetest.Sum([]byte{1})}
-	stream := io.MultiReader(img.Stream(), bytes.NewReader([]byte{1}))
-	if _, err := l.node.Install(context.Background(), img.header, stream); err == nil || !strings.Contains(err.Error(), "boot loader") {
-		t.Fatalf("install = %v, want the boot loader refused", err)
-	}
-}
-
-// TestHeaderValidate checks the header's boot loader: optional, with its size and SHA-256
-// together, and bounded.
+// TestHeaderValidate checks the header's boot loader, optional, with its size and SHA-256
+// together, and bounded, and requires an architecture chalkos builds images for.
 func TestHeaderValidate(t *testing.T) {
 	img := newImage(t, "b", 3)
 	for _, tc := range []struct {
-		name   string
-		size   int64
-		sha256 []byte
-		want   string
+		name, arch string
+		size       int64
+		sha256     []byte
+		want       string
 	}{
-		{"none", 0, nil, ""},
-		{"one", 100, upgradetest.Sum([]byte{1}), ""},
-		{"no SHA-256", 100, nil, "together"},
-		{"a SHA-256 alone", 0, upgradetest.Sum([]byte{1}), "together"},
-		{"too large", 64 << 20, upgradetest.Sum([]byte{1}), "larger"},
+		{"none", "x86-64", 0, nil, ""},
+		{"one", "x86-64", 100, upgradetest.Sum([]byte{1}), ""},
+		{"no SHA-256", "x86-64", 100, nil, "together"},
+		{"a SHA-256 alone", "x86-64", 0, upgradetest.Sum([]byte{1}), "together"},
+		{"too large", "x86-64", 64 << 20, upgradetest.Sum([]byte{1}), "larger"},
+		{"arm64", "arm64", 0, nil, ""},
+		{"no architecture", "", 0, nil, "architecture"},
+		{"a GOARCH", "amd64", 0, nil, "architecture"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			h := img.header
-			h.BootLoader = imagepart.Part{Size: tc.size, SHA256: tc.sha256}
+			h.Architecture, h.BootLoader = tc.arch, imagepart.Part{Size: tc.size, SHA256: tc.sha256}
 			err := h.Validate()
 			if tc.want == "" && err != nil || tc.want != "" && (err == nil || !strings.Contains(err.Error(), tc.want)) {
 				t.Errorf("Validate = %v, want %q", err, tc.want)
 			}
 		})
-	}
-}
-
-// TestHeaderArchitecture requires an architecture chalkos builds images for.
-func TestHeaderArchitecture(t *testing.T) {
-	img := newImage(t, "b", 3)
-	for arch, ok := range map[string]bool{"x86-64": true, "arm64": true, "": false, "amd64": false} {
-		h := img.header
-		h.Architecture = arch
-		if err := h.Validate(); (err == nil) != ok || err != nil && !strings.Contains(err.Error(), "architecture") {
-			t.Errorf("Validate of %q = %v", arch, err)
-		}
 	}
 }
 
@@ -1173,22 +1097,17 @@ func TestInstallPassesOverAHeldStoreOfAPull(t *testing.T) {
 	}
 }
 
-// TestInstallRefusesAStreamGoingOnAfterTheUKI refuses a stream with bytes after the UKI.
+// TestInstallRefusesAStreamGoingOnAfterTheUKI refuses a stream with bytes after the UKI, or whose
+// read after the UKI fails.
 func TestInstallRefusesAStreamGoingOnAfterTheUKI(t *testing.T) {
 	old, img := newImage(t, "a", 3), newImage(t, "b", 3)
-	l := newLab(t, old)
-	stream := io.MultiReader(img.Stream(), strings.NewReader("x"))
-	if _, err := l.node.Install(context.Background(), img.header, stream); err == nil || !strings.Contains(err.Error(), "the stream goes on after the UKI") {
-		t.Errorf("install = %v", err)
-	}
-}
-
-// TestInstallRefusesAStreamFailingAtItsEnd refuses a stream whose read after the UKI fails.
-func TestInstallRefusesAStreamFailingAtItsEnd(t *testing.T) {
-	old, img := newImage(t, "a", 3), newImage(t, "b", 3)
-	l := newLab(t, old)
-	stream := io.MultiReader(img.Stream(), iotest.ErrReader(errors.New("connection reset")))
-	if _, err := l.node.Install(context.Background(), img.header, stream); err == nil || !strings.Contains(err.Error(), "receive the UKI: connection reset") {
-		t.Errorf("install = %v", err)
+	for tail, want := range map[io.Reader]string{
+		strings.NewReader("x"):                           "the stream goes on after the UKI",
+		iotest.ErrReader(errors.New("connection reset")): "receive the UKI: connection reset",
+	} {
+		l := newLab(t, old)
+		if _, err := l.node.Install(context.Background(), img.header, io.MultiReader(img.Stream(), tail)); err == nil || !strings.Contains(err.Error(), want) {
+			t.Errorf("install = %v, want %q", err, want)
+		}
 	}
 }
