@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -104,7 +106,10 @@ func kubeconfig(h layer.Host, ctx context.Context, f kubeconfigFlags) error {
 	if f.force {
 		write = atomicfile.WriteFile
 	}
-	// The file holds the admin's private key.
+	// The file holds the admin's private key: a directory created for it is its owner's alone.
+	if err := os.MkdirAll(filepath.Dir(f.out), 0o700); err != nil {
+		return err
+	}
 	if err := write(f.out, data, 0o600); err != nil {
 		return err
 	}

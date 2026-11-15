@@ -217,8 +217,26 @@ func TestKubeconfig(t *testing.T) {
 	if err := ta.run(context.Background(), args); err == nil {
 		t.Error("replaced an existing kubeconfig without --force")
 	}
+	// --force replaces the file with a new one of its owner alone.
+	if err := os.Chmod(out, 0o644); err != nil {
+		t.Fatal(err)
+	}
 	if err := ta.run(context.Background(), append(args, "--force")); err != nil {
-		t.Errorf("--force: %v", err)
+		t.Fatalf("--force: %v", err)
+	}
+	if info, err := os.Stat(out); err != nil || info.Mode().Perm() != 0o600 {
+		t.Errorf("kubeconfig after --force: %v, %v; want mode 0600", info, err)
+	}
+	if again := readKubeconfig(t, out).Users[0].User.Certificate; string(again) == string(kc.Users[0].User.Certificate) {
+		t.Error("--force kept the old admin certificate")
+	}
+	// A missing directory is created for the owner alone.
+	nested := filepath.Join(ta.dir, "new", "kubeconfig")
+	if err := ta.run(context.Background(), []string{"kubeconfig", "--inventory", ta.inventory, "--out", nested, "--force"}); err != nil {
+		t.Fatal(err)
+	}
+	if info, err := os.Stat(filepath.Dir(nested)); err != nil || info.Mode().Perm() != 0o700 {
+		t.Errorf("the new directory: %v, %v; want mode 0700", info, err)
 	}
 }
 

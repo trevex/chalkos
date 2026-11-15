@@ -105,7 +105,7 @@ func TestNodeUnrevoke(t *testing.T) {
 	if err := ta.run(ctx, ta.args([]string{"node", "unrevoke", "w2", "--via", "n1", "--force"}, addr)); err != nil {
 		t.Fatal(err)
 	}
-	if got := ta.stdout.String(); !strings.HasPrefix(got, "unrevoked node w2; ") {
+	if got := ta.stdout.String(); !strings.HasPrefix(got, "unrevoked node w2; ") || !strings.Contains(got, "work again until they expire: the os-ca and kubernetes-ca were not rotated since") {
 		t.Errorf("forced: stdout = %q", got)
 	}
 	if list, _ := revoked.Load(ctx, cs); len(list) != 0 {

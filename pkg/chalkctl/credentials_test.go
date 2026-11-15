@@ -2,6 +2,7 @@ package chalkctl
 
 import (
 	"context"
+	"crypto/x509"
 	"errors"
 	"os"
 	"path/filepath"
@@ -283,6 +284,24 @@ func TestUnreachableAddressNamesItsSource(t *testing.T) {
 	err = ta.run(context.Background(), []string{"status", "n1", "--inventory", ta.inventory, "--address", "127.0.0.1:1"})
 	if err == nil || !strings.Contains(err.Error(), "127.0.0.1:1 (from --address)") {
 		t.Errorf("an unreachable --address: %v, want it named with --address", err)
+	}
+}
+
+// chalkctl's admin certificate from the secrets file is chalkctl's and lasts one run, an hour at most.
+func TestAdminCertificateLastsOneRun(t *testing.T) {
+	ta := newTestApp(t)
+	c, err := secretCredentials(ta.secrets)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cert := c.cert.Leaf
+	if cert == nil {
+		if cert, err = x509.ParseCertificate(c.cert.Certificate[0]); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if cert.Subject.CommonName != "chalkctl" || time.Until(cert.NotAfter) > time.Hour {
+		t.Errorf("the admin certificate is %s until %v, want chalkctl for an hour at most", cert.Subject, cert.NotAfter)
 	}
 }
 
