@@ -889,14 +889,23 @@ func TestDiskLockedElsewhere(t *testing.T) {
 	lock := &tableLock{}
 	l.node.TableLock = lock
 	l.node.LockWait = 500 * time.Millisecond
+	// A program holds the disk's lock for good.
 	release := l.holdDisk()
-	// A program that holds the lock for good, which the test ends after a while.
-	go func() {
-		time.Sleep(5 * time.Second)
-		release()
-	}()
 	start := time.Now()
-	_, err := l.install(img)
+	result := make(chan error, 1)
+	go func() {
+		_, err := l.install(img)
+		result <- err
+	}()
+	var err error
+	select {
+	case err = <-result:
+	case <-time.After(time.Minute):
+		// Released, the disk lets the upgrade end before the test does.
+		release()
+		<-result
+		t.Fatal("the upgrade waits for the disk's lock for good")
+	}
 	if err == nil || !strings.Contains(err.Error(), "locked") {
 		t.Errorf("install = %v, want the disk locked", err)
 	}
