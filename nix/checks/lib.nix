@@ -85,12 +85,10 @@ in
 {
   inherit
     chalkPkgs
-    fixtures
     prelude
     router
     routerRendered
     routerRuleset
-    testing
     worker
     ;
   testEnv = import ../testing/env.nix { inherit pkgs self; };

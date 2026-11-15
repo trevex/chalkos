@@ -3,6 +3,8 @@
   pkgs,
   self,
   checkLib,
+  testing,
+  fixtures,
   ...
 }:
 let
@@ -12,27 +14,20 @@ let
     router
     routerRendered
     routerRuleset
-    testing
     worker
     ;
+  testLib = import ../../test/nix/lib.nix {
+    inherit lib;
+    inherit (self.lib) mkImages;
+  };
+  examples = fixtures.nixos.examples-metal.config;
   # The router features a variant may leave out.
   inherit (router._module.args.routerLib) features;
   # The router image without each of the features alone and without all six, by the names of
-  # the features left out joined by dashes, each with their chalkos.router.<feature>.enable set
-  # to false.
+  # the features left out joined by dashes.
   routerWithout = lib.listToAttrs (
     map (
-      without:
-      lib.nameValuePair (lib.concatStringsSep "-" without)
-        (router.extendModules {
-          modules = [
-            {
-              chalkos.router = lib.genAttrs without (_: {
-                enable = false;
-              });
-            }
-          ];
-        }).config
+      without: lib.nameValuePair (lib.concatStringsSep "-" without) (testLib.routerWithout without)
     ) (map lib.singleton features ++ [ features ])
   );
 in
@@ -280,14 +275,12 @@ in
   # checks its rules. image-tests renders the images' outputs.
   rules =
     let
-      build =
-        modules:
-        (self.lib.mkImages { variants.worker.modules = modules; }).nixos.worker-metal.config.system.build;
-      examples = checkLib.fixtures.nixos.examples-metal.config.system.build;
-      routerBuild = checkLib.router.config.system.build;
+      build = modules: (testLib.worker modules).system.build;
+      examplesBuild = examples.system.build;
+      routerBuild = router.config.system.build;
       # The router image loads nf_conntrack, the modules of its firewall and Jool, which its module
       # tree must hold with what they depend on.
-      routerModules = checkLib.router.config.system.build.chalkosKernelModulesCheck;
+      routerModules = routerBuild.chalkosKernelModulesCheck;
       demo = rule: {
         chalkos.kinds.Demo = {
           group = "demo.example.org";
@@ -351,7 +344,7 @@ in
         ];
         checked = [
           testing.nixos.test-metal.config.system.build.chalkosRulesCheck
-          examples.chalkosRulesCheck
+          examplesBuild.chalkosRulesCheck
           routerBuild.chalkosRulesCheck
           routerModules
         ]
@@ -359,7 +352,7 @@ in
       }
       ''
         ${checkLib.prelude}
-        chalkos-rules check ${examples.chalkosRulesImage} | grep -q rackSurvey
+        chalkos-rules check ${examplesBuild.chalkosRulesImage} | grep -q rackSurvey
         # refused <image> <message>: the check of the image's files fails, and says why.
         refused() { refuses "chalkos-rules check $1" "$2" chalkos-rules check "$1"; }
         refused ${broken.chalkosRulesImage} 'Demo: rule "documents ==": ERROR: <input>:1:13: Syntax error'
@@ -430,7 +423,7 @@ in
       {
         test = testing.nixos.test-metal.config;
         router = router.config;
-        examples = checkLib.fixtures.nixos.examples-metal.config;
+        inherit examples;
       }
       // lib.mapAttrs' (without: c: lib.nameValuePair "router-without-${without}" c) routerWithout
     )

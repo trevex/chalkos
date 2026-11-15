@@ -10,7 +10,13 @@
 let
   inherit (pkgs) lib;
   arguments = {
-    inherit pkgs self docs;
+    inherit
+      pkgs
+      self
+      docs
+      testing
+      fixtures
+      ;
     checkLib = import ./lib.nix {
       inherit
         pkgs
