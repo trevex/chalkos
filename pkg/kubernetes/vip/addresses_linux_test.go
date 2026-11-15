@@ -80,11 +80,9 @@ func TestRoutedAnnouncesNothing(t *testing.T) {
 	a.add = func(addr Address) (bool, error) { added = append(added, addr); return true, nil }
 	a.announce = func(Address) error { announced++; return nil }
 	a.remove = func(addr Address) error { removed = append(removed, addr); return nil }
-	a.spacing = time.Millisecond
 	if err := a.Acquire(); err != nil {
 		t.Fatal(err)
 	}
-	time.Sleep(50 * time.Millisecond)
 	if err := a.Release(); err != nil {
 		t.Fatal(err)
 	}
@@ -96,53 +94,54 @@ func TestRoutedAnnouncesNothing(t *testing.T) {
 // The holder announces only the addresses it added, a few times, and stops once it released
 // them.
 func TestAnnouncesAddedAddressesOnly(t *testing.T) {
-	present := Address{IP: netip.MustParseAddr("10.0.0.10"), Interface: "eth0"}
-	missing := Address{IP: netip.MustParseAddr("fd00::10"), Interface: "eth0"}
-	var mu sync.Mutex
-	announced := map[Address]int{}
-	count := func(addr Address) int {
-		mu.Lock()
-		defer mu.Unlock()
-		return announced[addr]
-	}
-	a := newAddresses([]Address{present, missing}, 3)
-	a.add = func(addr Address) (bool, error) { return addr != present, nil }
-	a.announce = func(addr Address) error {
-		mu.Lock()
-		defer mu.Unlock()
-		announced[addr]++
-		return nil
-	}
-	a.remove = func(Address) error { return nil }
-	a.spacing = 50 * time.Millisecond
-	if err := a.Acquire(); err != nil {
-		t.Fatal(err)
-	}
-	testwait.Eventually(t, "the announcements", func() bool { return count(missing) >= 3 })
-	if count(present) != 0 || count(missing) != 3 {
-		t.Errorf("announced the present address %d times and the added one %d times, want 0 and 3", count(present), count(missing))
-	}
-	// Both stay on the node: acquiring them again announces nothing.
-	a.add = func(Address) (bool, error) { return false, nil }
-	if err := a.Acquire(); err != nil {
-		t.Fatal(err)
-	}
-	time.Sleep(200 * time.Millisecond)
-	if count(missing) != 3 {
-		t.Errorf("announced %d times after acquiring present addresses, want 3", count(missing))
-	}
-	// Released at once after being added again, it is announced no more.
-	a.add = func(addr Address) (bool, error) { return addr == missing, nil }
-	if err := a.Acquire(); err != nil {
-		t.Fatal(err)
-	}
-	if err := a.Release(); err != nil {
-		t.Fatal(err)
-	}
-	time.Sleep(400 * time.Millisecond)
-	if count(missing) != 4 || count(present) != 0 {
-		t.Errorf("announced %d and %d times after the release, want 4 and 0", count(missing), count(present))
-	}
+	testwait.Bubble(t, func(t *testing.T) {
+		present := Address{IP: netip.MustParseAddr("10.0.0.10"), Interface: "eth0"}
+		missing := Address{IP: netip.MustParseAddr("fd00::10"), Interface: "eth0"}
+		var mu sync.Mutex
+		announced := map[Address]int{}
+		count := func(addr Address) int {
+			mu.Lock()
+			defer mu.Unlock()
+			return announced[addr]
+		}
+		a := newAddresses([]Address{present, missing}, 3)
+		a.add = func(addr Address) (bool, error) { return addr != present, nil }
+		a.announce = func(addr Address) error {
+			mu.Lock()
+			defer mu.Unlock()
+			announced[addr]++
+			return nil
+		}
+		a.remove = func(Address) error { return nil }
+		if err := a.Acquire(); err != nil {
+			t.Fatal(err)
+		}
+		// The announcements end within their spacing times their number.
+		time.Sleep(3 * announceSpacing)
+		if count(present) != 0 || count(missing) != 3 {
+			t.Errorf("announced the present address %d times and the added one %d times, want 0 and 3", count(present), count(missing))
+		}
+		// Both stay on the node: acquiring them again announces nothing.
+		a.add = func(Address) (bool, error) { return false, nil }
+		if err := a.Acquire(); err != nil {
+			t.Fatal(err)
+		}
+		if count(missing) != 3 {
+			t.Errorf("announced %d times after acquiring present addresses, want 3", count(missing))
+		}
+		// Released at once after being added again, it is announced no more.
+		a.add = func(addr Address) (bool, error) { return addr == missing, nil }
+		if err := a.Acquire(); err != nil {
+			t.Fatal(err)
+		}
+		if err := a.Release(); err != nil {
+			t.Fatal(err)
+		}
+		time.Sleep(3 * announceSpacing)
+		if count(missing) != 4 || count(present) != 0 {
+			t.Errorf("announced %d and %d times after the release, want 4 and 0", count(missing), count(present))
+		}
+	})
 }
 
 // vipControlPlane runs the VIP election of the bootstrapped control plane n1 on its own etcd

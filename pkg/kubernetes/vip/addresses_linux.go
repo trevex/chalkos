@@ -13,6 +13,9 @@ import (
 	"github.com/trevex/chalkos/pkg/kubernetes/nodeip"
 )
 
+// announceSpacing is the time between the announcements of an added address.
+const announceSpacing = time.Second
+
 // addresses are the cluster's VIPs on this node: each on the interface the cluster names, or
 // else, in l2 mode, on the one holding the node's address of its family.
 type addresses struct {
@@ -22,10 +25,10 @@ type addresses struct {
 	add      func(Address) (bool, error)
 	announce func(Address) error
 	remove   func(Address) error
-	// announcements is how often an added address is announced, spacing apart, so neighbours
-	// that missed the first announcement still learn of it. A routed VIP is announced none.
+	// announcements is how often an added address is announced, announceSpacing apart, so
+	// neighbours that missed the first announcement still learn of it. A routed VIP is announced
+	// none.
 	announcements int
-	spacing       time.Duration
 
 	mu sync.Mutex
 	// releases counts the releases, after which earlier announcements stop.
@@ -33,7 +36,7 @@ type addresses struct {
 }
 
 func newAddresses(addrs []Address, announcements int) *addresses {
-	return &addresses{addrs: addrs, add: Add, announce: Announce, remove: Remove, announcements: announcements, spacing: time.Second}
+	return &addresses{addrs: addrs, add: Add, announce: Announce, remove: Remove, announcements: announcements}
 }
 
 // Acquire adds the addresses that are missing and announces those alone, if the holder announces
@@ -58,7 +61,7 @@ func (a *addresses) Acquire() error {
 	a.mu.Unlock()
 	go func() {
 		for range a.announcements - 1 {
-			time.Sleep(a.spacing)
+			time.Sleep(announceSpacing)
 			a.mu.Lock()
 			if a.releases != releases {
 				a.mu.Unlock()
