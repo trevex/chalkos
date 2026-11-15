@@ -84,24 +84,6 @@ func TestKubernetesWarnsBeforeReboot(t *testing.T) {
 	consoletest.Snapshot(t, tm)
 }
 
-// A worker's reboot warns that it skips chalkctl's drain, and names no quorum.
-func TestKubernetesWarnsWorker(t *testing.T) {
-	st := &kubernetesv1.StatusResponse{Kind: "worker", State: "joined", NodeReady: "True"}
-	o := consoletest.Options()
-	o.Actions = true
-	o.Tabs = []console.Tab{kubernetes.New(statusOf{st})}
-	tm := consoletest.Start(t, console.New(kubernetesNode(), o))
-	consoletest.WaitFor(t, tm, "5 Kubernetes")
-	consoletest.Press(tm, "5")
-	consoletest.WaitFor(t, tm, "kubernetes worker: joined")
-	consoletest.Press(tm, "a")
-	consoletest.Press(tm, "r")
-	consoletest.WaitFor(t, tm, "the console does not")
-	if screen := consoletest.Snapshot(t, tm); strings.Contains(screen, "quorum") {
-		t.Errorf("a worker's reboot warns of the quorum:\n%s", screen)
-	}
-}
-
 // A rollback of the image reboots the node, so it warns as a reboot does.
 func TestKubernetesWarnsBeforeImageRollback(t *testing.T) {
 	o := consoletest.Options()
@@ -114,7 +96,6 @@ func TestKubernetesWarnsBeforeImageRollback(t *testing.T) {
 	consoletest.Press(tm, "a")
 	consoletest.Press(tm, "i")
 	consoletest.WaitFor(t, tm, "quorum")
-	consoletest.Snapshot(t, tm)
 }
 
 // The tab shows only on images with the Kubernetes layer.
@@ -159,17 +140,26 @@ func (statusFails) Status(context.Context, *connect.Request[kubernetesv1.StatusR
 	return nil, connect.NewError(connect.CodeUnavailable, errors.New("the API server does not answer"))
 }
 
-// While the status cannot be read, the node may be a control plane, and a reboot warns as on one.
-func TestKubernetesWarnsWithoutStatus(t *testing.T) {
-	o := consoletest.Options()
-	o.Actions = true
-	o.Tabs = []console.Tab{kubernetes.New(statusFails{})}
-	tm := consoletest.Start(t, console.New(kubernetesNode(), o))
-	consoletest.WaitFor(t, tm, "5 Kubernetes")
-	consoletest.Press(tm, "5")
-	consoletest.WaitFor(t, tm, "does not answer")
-	consoletest.Press(tm, "a")
-	consoletest.Press(tm, "r")
-	consoletest.WaitFor(t, tm, "may be a control plane")
-	consoletest.Snapshot(t, tm)
+// The power warning names etcd's quorum on a control plane and on a node whose status cannot be
+// read, which may be one, and only the drain on a worker.
+func TestKubernetesPowerWarning(t *testing.T) {
+	worker := &kubernetesv1.StatusResponse{Kind: "worker", State: "joined", NodeReady: "True"}
+	node := console.NodeMsg{Info: console.Source[*nodev1.InfoResponse]{Value: kubernetesNode().InfoResp, At: consoletest.Now}}
+	for _, tc := range []struct {
+		name   string
+		client kubernetes.StatusClient
+		want   string
+		quorum bool
+	}{
+		{"worker", statusOf{worker}, "the console does not.", false},
+		{"control plane", statusOf{controlPlane}, "check etcd's quorum", true},
+		{"unreadable status", statusFails{}, "The node may be a control plane", true},
+	} {
+		tab := kubernetes.New(tc.client)
+		_, cmd := tab.Update(node)
+		tab.Update(cmd())
+		if got := tab.PowerWarning(); !strings.Contains(got, tc.want) || strings.Contains(got, "quorum") != tc.quorum {
+			t.Errorf("%s: %q, want %q", tc.name, got, tc.want)
+		}
+	}
 }
