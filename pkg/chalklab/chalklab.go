@@ -117,9 +117,8 @@ func Execute(ctx context.Context, root *cobra.Command) int {
 	return cli.Execute(ctx, root, cli.Options{})
 }
 
-// superviseArgs are the arguments that run the supervisor of the lab in dir: the path of the
-// supervise command below the root, so a program running chalklab's tree under a root of its
-// own starts the supervisor without code of its own.
+// superviseArgs runs the hidden supervise command below the root, also when chalklab's tree sits
+// under another root.
 func (a *app) superviseArgs(dir string) []string {
 	return append(strings.Fields(a.supervise.CommandPath())[1:], dir)
 }

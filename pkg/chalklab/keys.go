@@ -8,10 +8,9 @@ import (
 	"github.com/trevex/chalkos/pkg/secureboot"
 )
 
-// createKeys creates the lab's Secure Boot keys, PK, KEK and db, in dir, as chalkctl secureboot
-// new does, and a firmware variable store with them enrolled and Secure Boot on, from the
-// firmware's template. They are test keys of this lab alone; the private keys are its owner's to
-// read only.
+// createKeys creates the lab's test Secure Boot keys, PK, KEK and db, in dir, as chalkctl
+// secureboot new does, readable by the owner alone, and a firmware variable store from the template
+// with them enrolled and Secure Boot on.
 func (a *app) createKeys(ctx context.Context, dir, labName, templateVars string) error {
 	if err := secureboot.NewKeys(dir, "chalklab "+labName); err != nil {
 		return err

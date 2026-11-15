@@ -18,10 +18,9 @@ import (
 	"github.com/trevex/chalkos/pkg/schema"
 )
 
-// store is where a node's documents are: chalkd writes them below run, as slot.WriteRuntime
-// does, and the image keeps each kind's schema in schemas. chalkcfg reads the schemas' names to
-// tell a kind the image declares but the node has no documents of from a kind the image does not
-// know, and of their contents whether the kind is withheld.
+// store is where chalkd writes the node's documents (below run, as slot.WriteRuntime does) and
+// where the image keeps its kinds' schemas, whose names tell a declared kind without documents from
+// an unknown one and whose contents tell whether a kind is withheld.
 type store struct {
 	run, schemas string
 }
@@ -43,11 +42,10 @@ type kindInfo struct {
 // secretKind is the kind of Secrets, which chalkcfg never prints.
 const secretKind = "Secret"
 
-// read reads the kinds the image declares and the node's documents. chalkd replaces the config
-// by pointing /run/chalkos/config at a new directory and removing the old one; slot.ReadRuntime
-// resolves the link once, so the documents read are those of one config. Every command reads
-// every document below the directory, whichever kind it prints, so a file chalkd wrote that does
-// not decode fails every command.
+// read reads the declared kinds and the node's documents. slot.ReadRuntime resolves the
+// /run/chalkos/config link once, so all documents come from one config, which chalkd replaces by
+// pointing the link at a new directory. Every command reads every document, so a file that does not
+// decode fails every command.
 func (s store) read() (node, error) {
 	docs, err := slot.ReadRuntime(s.run)
 	if err != nil {

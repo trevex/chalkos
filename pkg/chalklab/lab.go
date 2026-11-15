@@ -275,9 +275,8 @@ func (a *app) destroy(ctx context.Context, name string) error {
 	return nil
 }
 
-// start starts the VMs of a lab again from its state, with their disks, firmware variables, TPM
-// state and ports: through its supervisor the VMs that exited, or a lab that no supervisor runs,
-// as after a host's reboot or a supervisor that was killed.
+// startCommand starts a stopped lab from its state, as after a host's reboot or a killed
+// supervisor, or through its supervisor the VMs that exited.
 func (a *app) startCommand() *cobra.Command {
 	var name string
 	cmd := a.command(&cobra.Command{

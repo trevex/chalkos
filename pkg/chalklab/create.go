@@ -252,10 +252,9 @@ func assignPorts(l *lab.Lab) error {
 	return nil
 }
 
-// labNodes are the VMs of the lab file's nodes, in name order, with each node's image directory:
-// that of its image in the inventory, which must hold a kvm image. A VM gets the MAC address the
-// lab file gives it, and the machine the lab file gives it or else its type's: 3072 MiB for a
-// control plane, 2048 MiB otherwise, 2 CPUs and one disk of 16G.
+// labNodes returns the VMs of the lab file's nodes in name order, each with its image directory
+// from the inventory, which must hold a kvm image. The lab file gives a VM its MAC address and
+// machine, else its type's defaults.
 func labNodes(inv *inventory.Inventory, lf *labFile) ([]lab.Node, map[string]string, error) {
 	images := map[string]string{}
 	macs := map[string]string{}
@@ -432,11 +431,9 @@ func (a *app) startSupervisor(ctx context.Context, dir string) error {
 // maintenanceRE is chalkd's line on the console in maintenance mode.
 var maintenanceRE = regexp.MustCompile(`maintenance mode.*certificate fingerprint ([0-9a-f]{64})`)
 
-// setUp writes an admin client file, installs each node in place, bootstraps the first control
-// plane, and writes a kubeconfig that reaches the lab through its forwarded ports. chalkctl reads
-// the lab's inventory, which names the nodes at their forwarded ports, and the secrets file. The
-// wait for the bootstrap polls with the client file, so an encrypted secrets file is decrypted
-// once per command rather than once per poll.
+// setUp writes an admin client file, installs every node, bootstraps the first control plane and
+// writes a kubeconfig that reaches the lab through its forwarded ports. Polls use the client file,
+// so an encrypted secrets file is decrypted once per command rather than per poll.
 func (a *app) setUp(ctx context.Context, f createFlags, l *lab.Lab) error {
 	inventory := filepath.Join(l.Dir, inventoryFile)
 	cluster := []string{"--inventory", inventory, "--secrets", f.secrets}
@@ -484,10 +481,8 @@ func (a *app) setUp(ctx context.Context, f createFlags, l *lab.Lab) error {
 	return nil
 }
 
-// printNext prints the commands that use the lab: the kubeconfig when a control plane was
-// bootstrapped, and the client file as $CHALKOSCONFIG, which chalkctl reads when no --config or
-// --secrets is given, so the commands after it name neither. The lab's inventory names the
-// unsigned builds, of which the lab signed copies, so an upgrade takes a copy chalklab sign signs.
+// printNext prints the commands that use the lab, after exporting KUBECONFIG (with Kubernetes) and
+// CHALKOSCONFIG, so they name neither, and how to upgrade with a signed copy of an image.
 func (a *app) printNext(l *lab.Lab, withKubernetes bool) {
 	inventory := filepath.Join(l.Dir, inventoryFile)
 	fmt.Fprintf(a.stdout, "\nthe lab %s runs %s; next:\n", l.Name, strings.Join(nodeNames(l), ", "))
@@ -511,7 +506,7 @@ func (a *app) printNext(l *lab.Lab, withKubernetes bool) {
 	if controlPlanes == 1 || controlPlanes == 2 {
 		downtime = " --allow-downtime"
 	}
-	fmt.Fprintf(a.stdout, "The lab's inventory names unsigned images, which the lab's firmware refuses: sign a copy of an\nimage with the lab's db key and upgrade the nodes of its variant with it:\n  chalklab sign <image dir> --out <signed dir>\n  chalkctl upgrade --image <signed dir> --inventory %s%s\n",
+	fmt.Fprintf(a.stdout, "The lab's firmware refuses unsigned images; upgrade with a copy signed by the lab's db key:\n  chalklab sign <image dir> --out <signed dir>\n  chalkctl upgrade --image <signed dir> --inventory %s%s\n",
 		inventory, downtime)
 }
 

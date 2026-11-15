@@ -8,8 +8,7 @@ import (
 	"github.com/trevex/chalkos/pkg/internal/cli"
 )
 
-// Where chalkd writes the node's documents, below config, and where the image keeps its kinds'
-// schemas.
+// Paths on the node.
 const (
 	runDir     = "/run/chalkos"
 	schemasDir = "/etc/chalkos/schemas"

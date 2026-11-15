@@ -28,12 +28,10 @@ const (
 // startSignal asks a supervisor to start the VMs of its lab that do not run.
 const startSignal = syscall.SIGUSR1
 
-// Supervise runs the lab of the state directory dir until ctx ends: the switch of the lab
-// network, then each node's VM with its TPM. Once they all run it marks the lab ready; when it
-// ends, or starting failed, it stops them. A VM that exits, as when its guest powers off, leaves
-// the others running: the supervisor logs it to log and the lab is no longer ready until
-// StartStopped starts the VM again. It holds the lab's lock meanwhile, so one supervisor runs a
-// lab.
+// Supervise runs the lab in dir until ctx ends: the switch, then each node's VM with its TPM; it
+// marks the lab ready once all run and stops them when it ends or starting fails. A VM that exits
+// leaves the others running, logged to log, and the lab is not ready until StartStopped restarts
+// it. It holds the lab's lock meanwhile, so one supervisor runs a lab.
 func Supervise(ctx context.Context, dir string, log io.Writer) error {
 	// Before the PID is written, so a start that reads it may signal this process.
 	start := make(chan os.Signal, 1)
