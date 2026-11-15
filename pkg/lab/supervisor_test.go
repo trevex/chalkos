@@ -388,10 +388,16 @@ func TestVMExitKeepsTheLab(t *testing.T) {
 // which the supervisor still runs when it hears the first start.
 func TestStartWhileAVMExits(t *testing.T) {
 	dir, l := testLab(t)
-	t.Setenv(fakeQEMULinger, "1s")
+	t.Setenv(fakeQEMULinger, "w1")
 	supervise(t, dir, io.Discard)
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	// w1 started again exits on SIGTERM.
+	os.Unsetenv(fakeQEMULinger)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
+	// The supervisor runs in this process, which hears each start StartStopped asks for too.
+	asked := make(chan os.Signal, 10)
+	signal.Notify(asked, startSignal)
+	defer signal.Stop(asked)
 
 	w1 := l.VMConfig(l.Nodes[1])
 	pid, ok := runningPID(w1.pidPath(), w1.Dir)
@@ -399,14 +405,19 @@ func TestStartWhileAVMExits(t *testing.T) {
 		t.Fatal("w1 does not run")
 	}
 	syscall.Kill(pid, syscall.SIGTERM)
-	for Running(w1) {
+	testwait.Eventually(t, "w1's QEMU to remove its PID file", func() bool { return !Running(w1) })
+	started := make(chan error, 1)
+	go func() { started <- StartStopped(ctx, dir) }()
+	// StartStopped asks again while w1 does not run, as the supervisor skips w1 while its QEMU runs.
+	for range 2 {
 		select {
-		case <-ctx.Done():
-			t.Fatal("w1 runs on")
-		case <-time.After(10 * time.Millisecond):
+		case <-asked:
+		case err := <-started:
+			t.Fatalf("StartStopped ended while w1's QEMU runs: %v", err)
 		}
 	}
-	if err := StartStopped(ctx, dir); err != nil {
+	syscall.Kill(pid, syscall.SIGKILL)
+	if err := <-started; err != nil {
 		t.Fatal(err)
 	}
 	if newPID, ok := runningPID(w1.pidPath(), w1.Dir); !ok || newPID == pid {

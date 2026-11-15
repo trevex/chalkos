@@ -111,8 +111,8 @@ func fakeFail(err error) {
 // beforeExit runs when a fake tool got SIGTERM, before it exits.
 var beforeExit = func() {}
 
-// fakeQEMULinger is the variable that, set to a duration, has fake QEMU remove its PID file on
-// SIGTERM and exit only that long after, as QEMU removes its PID file before it exits.
+// fakeQEMULinger is the variable that, set to a VM's name, has that VM's fake QEMU remove its PID
+// file on SIGTERM and run on until killed, as QEMU removes its PID file before it exits.
 const fakeQEMULinger = "FAKE_QEMU_LINGER"
 
 // fakeQEMUFail is the variable that, set, has fake QEMU fail at once with its value as the error.
@@ -153,10 +153,10 @@ func fakeQEMU(args []string) {
 	if err := os.WriteFile(pidFile, []byte(fmt.Sprintf("%d\n", os.Getpid())), 0o644); err != nil {
 		fakeFail(err)
 	}
-	if linger, err := time.ParseDuration(os.Getenv(fakeQEMULinger)); err == nil {
+	if name := os.Getenv(fakeQEMULinger); name != "" && name == flagValue(args, "-name") {
 		beforeExit = func() {
 			os.Remove(pidFile)
-			time.Sleep(linger)
+			select {}
 		}
 	}
 	qmp := listenUnix(strings.TrimSuffix(strings.TrimPrefix(flagValue(args, "-qmp"), "unix:"), ",server=on,wait=off"))
