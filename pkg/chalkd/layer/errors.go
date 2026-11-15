@@ -51,35 +51,39 @@ func (c Codes) Of(err error) connect.Code {
 	if err == nil {
 		return 0
 	}
-	if code, ok := c.find(err); ok {
-		return code
-	}
-	return connect.CodeInternal
+	code := connect.CodeInternal
+	firstIn(err, func(e error) bool {
+		if ce, ok := e.(Coded); ok {
+			code = ce.Code()
+			return true
+		}
+		for _, f := range c {
+			if cf, ok := f(e); ok {
+				code = cf
+				return true
+			}
+		}
+		return false
+	})
+	return code
 }
 
-func (c Codes) find(err error) (connect.Code, bool) {
-	if err == nil {
-		return 0, false
-	}
-	if e, ok := err.(Coded); ok {
-		return e.Code(), true
-	}
-	for _, f := range c {
-		if code, ok := f(err); ok {
-			return code, true
-		}
+// firstIn is the first error in err's tree, depth first, that match matches, or nil.
+func firstIn(err error, match func(error) bool) error {
+	if err == nil || match(err) {
+		return err
 	}
 	switch u := err.(type) {
 	case interface{ Unwrap() error }:
-		return c.find(u.Unwrap())
+		return firstIn(u.Unwrap(), match)
 	case interface{ Unwrap() []error }:
 		for _, e := range u.Unwrap() {
-			if code, ok := c.find(e); ok {
-				return code, true
+			if found := firstIn(e, match); found != nil {
+				return found
 			}
 		}
 	}
-	return 0, false
+	return nil
 }
 
 // Detailed is a coded error with details for the client, such as what to do next.
@@ -96,32 +100,15 @@ func (c Codes) Error(err error) *connect.Error {
 	}
 	code := c.Of(err)
 	ce := connect.NewError(code, err)
-	for _, d := range details(err, code) {
-		ce.AddDetail(d)
-	}
-	return ce
-}
-
-// details are the details of the first Detailed error in err's tree, depth first, whose code is
-// code.
-func details(err error, code connect.Code) []*connect.ErrorDetail {
-	if err == nil {
-		return nil
-	}
-	if d, ok := err.(Detailed); ok && d.Code() == code {
-		return d.Details()
-	}
-	switch u := err.(type) {
-	case interface{ Unwrap() error }:
-		return details(u.Unwrap(), code)
-	case interface{ Unwrap() []error }:
-		for _, e := range u.Unwrap() {
-			if d := details(e, code); d != nil {
-				return d
-			}
+	if d, ok := firstIn(err, func(e error) bool {
+		d, ok := e.(Detailed)
+		return ok && d.Code() == code
+	}).(Detailed); ok {
+		for _, detail := range d.Details() {
+			ce.AddDetail(detail)
 		}
 	}
-	return nil
+	return ce
 }
 
 // CodeOf is the code err answers an RPC with, as Codes.Of finds it without domain errors: 0 for no
