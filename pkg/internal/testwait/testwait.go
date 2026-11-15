@@ -2,25 +2,19 @@
 package testwait
 
 import (
-	"context"
-	"errors"
 	"testing"
 	"time"
-
-	"github.com/trevex/chalkos/pkg/internal/poll"
 )
 
-// Eventually checks every 20ms until check holds, failing the test when it does not hold within
-// a minute.
+// Eventually checks until check holds, failing the test when it does not hold within a minute.
+// It looks again after a millisecond and then twice as long after each look, up to 100ms.
 func Eventually(t testing.TB, what string, check func() bool) {
 	t.Helper()
-	err := poll.Until(context.Background(), what, time.Minute, 20*time.Millisecond, func() error {
-		if check() {
-			return nil
+	deadline := time.Now().Add(time.Minute)
+	for pause := time.Millisecond; !check(); pause = min(2*pause, 100*time.Millisecond) {
+		if time.Now().After(deadline) {
+			t.Fatalf("waiting for %s: it does not hold after a minute", what)
 		}
-		return errors.New("it does not hold")
-	})
-	if err != nil {
-		t.Fatal(err)
+		time.Sleep(pause)
 	}
 }

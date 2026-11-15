@@ -19,6 +19,7 @@ import (
 	"github.com/trevex/chalkos/pkg/client"
 	"github.com/trevex/chalkos/pkg/contract"
 	"github.com/trevex/chalkos/pkg/diagnostics"
+	"github.com/trevex/chalkos/pkg/internal/testwait"
 	"github.com/trevex/chalkos/pkg/pki"
 )
 
@@ -346,9 +347,5 @@ func TestRunDiagnosticStopsWhenTheClientGoesAway(t *testing.T) {
 	case <-time.After(10 * time.Second):
 		t.Fatal("the run was not stopped")
 	}
-	for deadline := time.Now().Add(10 * time.Second); s.diagnosticRuns.Load() != 0; time.Sleep(10 * time.Millisecond) {
-		if time.Now().After(deadline) {
-			t.Fatalf("%d runs counted after the client went away", s.diagnosticRuns.Load())
-		}
-	}
+	testwait.Eventually(t, "no runs counted after the client went away", func() bool { return s.diagnosticRuns.Load() == 0 })
 }

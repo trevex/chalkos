@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/trevex/chalkos/pkg/internal/poll"
 	"github.com/trevex/chalkos/pkg/kubernetes/etcd/etcdtest"
 	"github.com/trevex/chalkos/pkg/pki"
 )
@@ -260,15 +261,11 @@ func join(t *testing.T, ctx context.Context, cli *Client, ca pki.CertKey, name s
 	peerURL := etcdtest.PeerURL(t)
 	var added Member
 	var initial string
-	var err error
 	// etcd adds no member while one it just promoted is not yet in touch with the others.
-	for {
+	err := poll.UntilDone(ctx, "the learner", 100*time.Millisecond, func() (err error) {
 		added, initial, err = joinAsLearner(ctx, cli, name, peerURL, false)
-		if err == nil || ctx.Err() != nil {
-			break
-		}
-		time.Sleep(100 * time.Millisecond)
-	}
+		return err
+	})
 	if err != nil {
 		t.Fatal(err)
 	}

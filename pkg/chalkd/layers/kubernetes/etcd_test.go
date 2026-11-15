@@ -17,6 +17,7 @@ import (
 	kubernetesv1 "github.com/trevex/chalkos/pkg/api/kubernetes/v1"
 	"github.com/trevex/chalkos/pkg/chalkd/layer"
 	"github.com/trevex/chalkos/pkg/chalkd/layers/kubernetes/kubernetestest"
+	"github.com/trevex/chalkos/pkg/internal/poll"
 	"github.com/trevex/chalkos/pkg/internal/testwait"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
 	"github.com/trevex/chalkos/pkg/kubernetes/etcd"
@@ -38,14 +39,11 @@ func addMember(t *testing.T, cli *etcd.Client, ca pki.CertKey, name string) *etc
 	peerURL := etcdtest.PeerURL(t)
 	var added etcd.Member
 	var initial string
-	var err error
 	// etcd adds no member while one it just promoted is not yet in touch with the others.
-	for {
-		if added, initial, err = cli.AddLearner(ctx, name, peerURL); err == nil || ctx.Err() != nil {
-			break
-		}
-		time.Sleep(100 * time.Millisecond)
-	}
+	err := poll.UntilDone(ctx, "the learner", 100*time.Millisecond, func() (err error) {
+		added, initial, err = cli.AddLearner(ctx, name, peerURL)
+		return err
+	})
 	if err != nil {
 		t.Fatal(err)
 	}

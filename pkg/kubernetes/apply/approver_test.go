@@ -25,6 +25,7 @@ import (
 	"k8s.io/client-go/kubernetes/fake"
 	k8stesting "k8s.io/client-go/testing"
 
+	"github.com/trevex/chalkos/pkg/internal/testwait"
 	"github.com/trevex/chalkos/pkg/kubernetes/revoked"
 )
 
@@ -373,15 +374,8 @@ func TestApproverRunEnforcesRevokedNodes(t *testing.T) {
 		cancel()
 		<-done
 	}()
-	deadline := time.Now().Add(time.Minute)
-	for {
+	testwait.Eventually(t, "the policy", func() bool {
 		_, err := cs.AdmissionregistrationV1().ValidatingAdmissionPolicies().Get(ctx, revoked.Name, metav1.GetOptions{})
-		if err == nil {
-			return
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("no policy applied: %v", err)
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
+		return err == nil
+	})
 }

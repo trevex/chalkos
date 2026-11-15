@@ -12,6 +12,7 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"errors"
+	"fmt"
 	"io"
 	"log"
 	"net"
@@ -523,13 +524,7 @@ func TestRenewalAttemptsEndAtTheirDeadline(t *testing.T) {
 	<-done
 
 	// The attempt's connection and the goroutines serving it are gone.
-	deadline := time.Now().Add(5 * time.Second)
-	for runtime.NumGoroutine() > before && time.Now().Before(deadline) {
-		time.Sleep(10 * time.Millisecond)
-	}
-	if after := runtime.NumGoroutine(); after > before {
-		t.Errorf("%d goroutines before the attempt, %d after", before, after)
-	}
+	testwait.Eventually(t, fmt.Sprintf("%d goroutines at most, as before the attempt", before), func() bool { return runtime.NumGoroutine() <= before })
 }
 
 // On a control plane whose loop runs, the test images' hook renews the control plane's

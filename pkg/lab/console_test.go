@@ -12,6 +12,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/trevex/chalkos/pkg/internal/testwait"
 )
 
 var factRE = regexp.MustCompile(`CHALKTEST (\w+)=(\S*)`)
@@ -88,19 +90,11 @@ func TestConsoleSkipDiscardsEarlierLines(t *testing.T) {
 // waitForLines waits until the console holds n lines.
 func waitForLines(t *testing.T, c *Console, n int) {
 	t.Helper()
-	deadline := time.Now().Add(5 * time.Second)
-	for {
+	testwait.Eventually(t, fmt.Sprintf("%d lines on the console", n), func() bool {
 		c.mu.Lock()
-		got := len(c.lines)
-		c.mu.Unlock()
-		if got >= n {
-			return
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("the console holds %d lines, want %d", got, n)
-		}
-		time.Sleep(time.Millisecond)
-	}
+		defer c.mu.Unlock()
+		return len(c.lines) >= n
+	})
 }
 
 // TestFileConsoleSkip follows a console log from an offset, and Skip passes over what the log

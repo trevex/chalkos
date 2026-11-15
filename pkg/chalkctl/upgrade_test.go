@@ -31,6 +31,7 @@ import (
 	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/image/imagetest"
 	"github.com/trevex/chalkos/pkg/internal/cli"
+	"github.com/trevex/chalkos/pkg/internal/poll"
 	"github.com/trevex/chalkos/pkg/kubernetes"
 	"github.com/trevex/chalkos/pkg/layers"
 	"github.com/trevex/chalkos/pkg/ociimage"
@@ -247,14 +248,15 @@ func (l *upgradeLab) record(format string, args ...any) {
 // awaitDrained waits a minute at most until the node uncordonAfter names for node was drained,
 // and logs a wait that ran out, as when the nodes of a batch did not upgrade together.
 func (l *upgradeLab) awaitDrained(node string) {
-	for deadline := time.Now().Add(time.Minute); time.Now().Before(deadline); time.Sleep(5 * time.Millisecond) {
+	if poll.Until(context.Background(), "", time.Minute, 5*time.Millisecond, func() error {
 		l.mu.Lock()
-		other := l.uncordonAfter[node]
-		drained := other == "" || slices.Contains(l.events, other+" drain")
-		l.mu.Unlock()
-		if drained {
-			return
+		defer l.mu.Unlock()
+		if other := l.uncordonAfter[node]; other != "" && !slices.Contains(l.events, other+" drain") {
+			return errors.New("not drained")
 		}
+		return nil
+	}) == nil {
+		return
 	}
 	l.mu.Lock()
 	other := l.uncordonAfter[node]

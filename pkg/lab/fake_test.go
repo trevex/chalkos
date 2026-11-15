@@ -2,6 +2,7 @@ package lab
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -14,6 +15,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/trevex/chalkos/pkg/internal/poll"
 )
 
 // The test binary stands in for QEMU, swtpm and vde_switch when it runs under their names, as
@@ -50,9 +53,12 @@ func TestMain(m *testing.M) {
 func exitWithTest() {
 	parent := os.Getppid()
 	go func() {
-		for os.Getppid() == parent {
-			time.Sleep(200 * time.Millisecond)
-		}
+		poll.UntilDone(context.Background(), "", 200*time.Millisecond, func() error {
+			if os.Getppid() == parent {
+				return errors.New("the test runs")
+			}
+			return nil
+		})
 		os.Exit(1)
 	}()
 }

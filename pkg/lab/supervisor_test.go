@@ -16,6 +16,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/trevex/chalkos/pkg/internal/testwait"
 )
 
 // testLab writes the state of a lab of two nodes to a new state directory.
@@ -610,9 +612,7 @@ func TestStartErrorLoggedOnce(t *testing.T) {
 			t.Fatal("w1 does not run")
 		}
 		syscall.Kill(pid, syscall.SIGTERM)
-		for Ready(dir) || Running(w1) {
-			time.Sleep(20 * time.Millisecond)
-		}
+		testwait.Eventually(t, "w1 to stop", func() bool { return !Ready(dir) && !Running(w1) })
 	}
 	// StartStopped asks every second while w1, whose QEMU fails, fails to start.
 	failingStarts := func() {
