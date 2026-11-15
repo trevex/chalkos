@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/trevex/chalkos/pkg/internal/filecopy"
+	"golang.org/x/sys/unix"
 )
 
 // VMConfig describes one QEMU virtual machine with UEFI firmware and an optional software TPM.
@@ -381,13 +382,26 @@ func namesDir(pid int, dir string) bool {
 // stopProcess ends the process that runs with dir on its command line: it waits for it to exit
 // on its own until timeout, then kills it.
 func stopProcess(pid int, dir string, timeout time.Duration) {
-	deadline := time.Now().Add(timeout)
-	for namesDir(pid, dir) {
-		if time.Now().After(deadline) {
-			syscall.Kill(pid, syscall.SIGKILL)
-			deadline = time.Now().Add(timeout)
+	// The pidfd refers to the process even once its PID is used again, and polls readable once it
+	// exited. Opening it fails when no process has the PID.
+	fd, err := unix.PidfdOpen(pid, 0)
+	if err != nil {
+		return
+	}
+	defer unix.Close(fd)
+	// Checked after the pidfd is open, so a PID used again by then is not taken for the process.
+	if !namesDir(pid, dir) {
+		return
+	}
+	for {
+		n, err := unix.Poll([]unix.PollFd{{Fd: int32(fd), Events: unix.POLLIN}}, int(timeout.Milliseconds()))
+		switch {
+		case errors.Is(err, unix.EINTR):
+		case err != nil || n > 0:
+			return
+		default:
+			unix.PidfdSendSignal(fd, unix.SIGKILL, nil, 0)
 		}
-		time.Sleep(50 * time.Millisecond)
 	}
 }
 

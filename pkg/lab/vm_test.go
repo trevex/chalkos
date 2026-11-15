@@ -1,8 +1,12 @@
 package lab
 
 import (
+	"os/exec"
 	"slices"
+	"strings"
 	"testing"
+
+	"github.com/trevex/chalkos/pkg/internal/testwait"
 )
 
 func hasPair(args []string, flag, value string) bool {
@@ -119,5 +123,39 @@ func TestKeyChords(t *testing.T) {
 	}
 	if _, err := keyChords("é"); err == nil {
 		t.Error("a character without a key was typed")
+	}
+}
+
+// TestStopProcess kills a process that runs with the directory on its command line once the
+// timeout passed without it exiting, and leaves a process of another directory alone.
+func TestStopProcess(t *testing.T) {
+	dir := t.TempDir()
+	start := func(arg string) *exec.Cmd {
+		t.Helper()
+		// The shell waits for input that does not come, with arg on its command line.
+		cmd := exec.Command("/bin/sh", "-c", "read line", arg)
+		if _, err := cmd.StdinPipe(); err != nil {
+			t.Fatal(err)
+		}
+		if err := cmd.Start(); err != nil {
+			t.Fatal(err)
+		}
+		// The command line reads empty until the new program is set up.
+		testwait.Eventually(t, "the shell to run", func() bool { return namesDir(cmd.Process.Pid, arg) })
+		return cmd
+	}
+	other := start(dir + "2")
+	defer func() {
+		other.Process.Kill()
+		other.Wait()
+	}()
+	stopProcess(other.Process.Pid, dir, 0)
+	if !namesDir(other.Process.Pid, dir+"2") {
+		t.Error("stopped the process of another directory")
+	}
+	own := start(dir)
+	stopProcess(own.Process.Pid, dir, 0)
+	if err := own.Wait(); err == nil || !strings.Contains(err.Error(), "killed") {
+		t.Errorf("the process ended with %v, want killed", err)
 	}
 }
