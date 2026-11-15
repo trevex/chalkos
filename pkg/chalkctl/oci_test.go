@@ -56,7 +56,7 @@ func TestValidateOCIImage(t *testing.T) {
 	if err := ta.run(context.Background(), []string{"validate", "--inventory", ta.inventory}); err != nil {
 		t.Fatal(err)
 	}
-	if want := "n1: valid for the image test-metal at " + pinned + " (root hash abababababab), config "; !strings.Contains(ta.stdout.String(), want) {
+	if want := "n1: valid for the image test-metal at " + pinned + " (test-metal on metal, root hash abababababab), config "; !strings.Contains(ta.stdout.String(), want) {
 		t.Errorf("stdout = %q, want %q", ta.stdout, want)
 	}
 }

@@ -32,7 +32,7 @@ func (m *Model) headerLines() []string {
 		second[0] += fmt.Sprintf(" generation %d", g)
 	}
 	if n := info.GetImage(); n != "" {
-		second = append(second, OneLine(n))
+		second = append(second, OneLine(n+" on "+cmp.Or(info.GetPlatform(), "every platform")))
 	}
 	lines := []string{strings.Join(first, "  "), strings.Join(second, "  "), m.healthLine()}
 	if info != nil && !m.node.Normal() {

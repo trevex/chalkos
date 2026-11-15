@@ -86,7 +86,7 @@ func TestValidate(t *testing.T) {
 	if err := ta.run(context.Background(), []string{"validate", "--inventory", path}); err != nil {
 		t.Fatal(err)
 	}
-	if want := "n1: valid for the image test-metal (root hash abababababab), config "; !strings.Contains(ta.stdout.String(), want) {
+	if want := "n1: valid for the image test-metal (test-metal on metal, root hash abababababab), config "; !strings.Contains(ta.stdout.String(), want) {
 		t.Errorf("stdout = %q, want %q", ta.stdout, want)
 	}
 	// n2's Network misspells a key.
@@ -217,7 +217,7 @@ func TestValidateKubernetes(t *testing.T) {
 		!strings.Contains(err.Error(), "images/plain-metal has no metadata.json; build the image or link its directory there") {
 		t.Errorf("validate without n1's image = %v", err)
 	}
-	if !strings.Contains(ta.stdout.String(), "cp1: valid for the image k8s-metal (root hash ") {
+	if !strings.Contains(ta.stdout.String(), "cp1: valid for the image k8s-metal (k8s-metal on metal, root hash ") {
 		t.Errorf("stdout = %q, want cp1 valid", ta.stdout)
 	}
 	// A plain HTTP mirror endpoint whose host has no Registry that allows it is refused.

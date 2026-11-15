@@ -229,17 +229,18 @@ func TestNodesOwnTheirDocuments(t *testing.T) {
 }
 
 // TestResolveRefusesMetadata refuses metadata.json whose root hash is not one, or that names no
-// platform.
+// image name or platform.
 func TestResolveRefusesMetadata(t *testing.T) {
-	for name, tc := range map[string]struct{ hash, platform, want string }{
-		"a short root hash":       {"abcd", "metal", `names the root hash "abcd", which is not 64 lower-case hex digits`},
-		"an upper-case root hash": {strings.Repeat("AB", 32), "metal", "which is not 64 lower-case hex digits"},
-		"no platform":             {strings.Repeat("ab", 32), "", "names no platform"},
+	for name, tc := range map[string]struct{ hash, name, platform, want string }{
+		"a short root hash":       {"abcd", "node-metal", "metal", `names the root hash "abcd", which is not 64 lower-case hex digits`},
+		"an upper-case root hash": {strings.Repeat("AB", 32), "node-metal", "metal", "which is not 64 lower-case hex digits"},
+		"no image name":           {strings.Repeat("ab", 32), "", "metal", "names no image name; it is no node image"},
+		"no platform":             {strings.Repeat("ab", 32), "node-metal", "", "names no platform"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			dir := homelabDir(t)
 			write(t, filepath.Join(dir, "images", "node-metal", "metadata.json"),
-				`{"schemaVersion": 0, "id": "chalkos", "name": "node-`+tc.platform+`", "platform": "`+tc.platform+`", "rootHash": "`+tc.hash+`", "kinds": []}`)
+				`{"schemaVersion": 0, "id": "chalkos", "name": "`+tc.name+`", "platform": "`+tc.platform+`", "rootHash": "`+tc.hash+`", "kinds": []}`)
 			inv, err := Load(filepath.Join(dir, "chalkos.yaml"))
 			if err != nil {
 				t.Fatal(err)

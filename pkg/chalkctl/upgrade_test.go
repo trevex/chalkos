@@ -1801,7 +1801,8 @@ func TestUpgradeComparesRootHashes(t *testing.T) {
 }
 
 // TestUpgradeSkipsOtherPlatforms installs an image on the nodes running its name on its platform
-// and names those running its name on another platform; a node named on another platform stops the run.
+// and names those running its name on another platform; a node named on another platform stops
+// the run.
 func TestUpgradeSkipsOtherPlatforms(t *testing.T) {
 	l := newUpgradeLab(t, 3)
 	l.nodes["w3"].platform = "kvm"

@@ -133,8 +133,8 @@ type delivery struct {
 
 // deliveryFor checks a node's config against the image ct describes, as the node would. An image of
 // another platform than the node's is an error, since the node translates config for its image's
-// platform; the image's name is not compared, as the schemas decide. A config the checks refuse is a
-// refusal; a node the inventory lacks is an error.
+// platform; the image's name is not compared, as the schemas decide. A config the checks refuse is
+// a refusal; a node the inventory lacks is an error.
 func (c *cluster) deliveryFor(name string, ct contract) (delivery, error) {
 	if err := c.samePlatform(name, ct.platform); err != nil {
 		return delivery{}, err

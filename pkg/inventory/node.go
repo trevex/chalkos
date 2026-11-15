@@ -121,6 +121,8 @@ func (c *NodeConfig) Resolve() (schema.Metadata, error) {
 		return schema.Metadata{}, fmt.Errorf("the image %s of node %s: %s names no root hash", c.ImageName, c.Name, file)
 	case !schema.IsRootHash(md.RootHash):
 		return schema.Metadata{}, fmt.Errorf("the image %s of node %s: %s names the root hash %q, which is not 64 lower-case hex digits", c.ImageName, c.Name, file, md.RootHash)
+	case md.Name == "":
+		return schema.Metadata{}, fmt.Errorf("the image %s of node %s: %s names no image name; it is no node image", c.ImageName, c.Name, file)
 	case md.Platform == "":
 		return schema.Metadata{}, fmt.Errorf("the image %s of node %s: %s names no platform", c.ImageName, c.Name, file)
 	}

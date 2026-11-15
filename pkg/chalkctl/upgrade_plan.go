@@ -94,8 +94,8 @@ func (p *upgradePlan) closeImages() {
 //   - Without an image each node gets its image in the inventory. A node whose platform differs
 //     from that image's stops the run.
 //   - With an image, a node on another platform is skipped and named, or stops the run when named.
-//   - A node may get an image of another name than the one it runs, which is printed. The node checks
-//     its config against the image before the image becomes the next boot.
+//   - A node may get an image of another name than the one it runs, which is printed. The node
+//     checks its config against the image before the image becomes the next boot.
 func (r *upgradeRun) find(ctx context.Context, named []string, img *diskImage) error {
 	c := r.cluster
 	candidates, err := r.candidates(named)
