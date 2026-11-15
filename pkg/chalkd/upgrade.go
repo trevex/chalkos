@@ -24,15 +24,17 @@ import (
 )
 
 // Upgrade installs the streamed or pulled image with its config, stages it and activates it
-// unless the header's stage_only stops there. It checks the image's platform, that it boots its
-// store and that its own checker accepts the config, but cannot tell an image to trust: without
-// Secure Boot an operator can run any image as root, with STATE and VAR unsealed, as their keys
-// are sealed to PCR 7 alone. Secure Boot limits upgrades to images signed for db.
+// unless the header's stage_only stops there. It checks the image's platform, whatever its
+// variant, that it boots its store and that its own checker accepts the config, but cannot tell
+// an image to trust: without Secure Boot an operator can run any image as root, with STATE and
+// VAR unsealed, as their keys are sealed to PCR 7 alone. Secure Boot limits upgrades to images
+// signed for db.
 //
 // Config or a fallback secret needs the admin role, as ApplyConfig does: what an operator may not
 // deliver to the running image must not reach the next one either. Without config the image gets
 // the pending config, else the running image's. A pulled image is fetched by the header's digest
-// with the credentials of the config's Registry of its host.
+// with the credentials of the config's Registry of its host, and checked against the header as a
+// streamed one.
 func (s *Server) Upgrade(ctx context.Context, stream *connect.ClientStream[nodev1.UpgradeRequest]) (*connect.Response[nodev1.UpgradeResponse], error) {
 	unlock, err := s.lockSlots("an upgrade")
 	if err != nil {
@@ -319,9 +321,9 @@ func (s *Server) recordImages(installed *upgrade.Header) {
 
 // ActivateImage makes the staged image boot next, under the lock an upgrade and a rollback hold,
 // so only one writes the ESP at a time. It checks no config: the image's checker passed its slot
-// before it was staged. A staged image whose slot STATE no longer keeps is refused first, as
-// checkStagedSlot says. Refusals fail the precondition; a failure to read or change the disk or
-// the ESP is internal.
+// before it was staged. A staged image whose slot STATE no longer keeps is refused first: it would
+// boot without config, fail its health check and fall back. Refusals fail the precondition; a
+// failure to read or change the disk or the ESP is internal.
 func (s *Server) ActivateImage(ctx context.Context, req *connect.Request[nodev1.ActivateImageRequest]) (*connect.Response[nodev1.ActivateImageResponse], error) {
 	root := req.Msg.RootHash
 	if len(root) == 0 {

@@ -275,7 +275,8 @@ func (s *Server) stagedRefusal(staged []byte, err error, secret string) error {
 
 // write writes what planSecond planned once the running image applied version, and adds it to
 // resp. A failed write leaves the slot or the pending config as it was and fails the delivery,
-// naming what it did so far; the running image runs the config all the same, and the delivery
+// naming what it did so far, with the volumes the staged image's storage change recorded before it
+// failed; the running image runs the config all the same, and the delivery
 // sent again writes it. The caller holds s.mu.
 //
 // The staged image's storage changes go first, recorded in storage.json, and its slot after:
@@ -319,9 +320,10 @@ func (w secondWrite) write(ctx context.Context, s *Server, version, secret strin
 }
 
 // recordedSince is what storage.json records beyond recorded, from before a change that failed.
-// A change records all its volumes at once after it made them, so a partition made before a
-// failure that kept it from the record is not listed; the change sent again finds it made. A
-// record that cannot be read lists none, which is logged.
+// A change records all its volumes at once after it made them: a failure before the record leaves
+// none, one after it (as when a new volume's units do not start) leaves them all. A partition made
+// before a failure that kept it from the record is not listed; the change sent again finds it
+// made. A record that cannot be read lists none, which is logged.
 func (s *Server) recordedSince(recorded storage.Section) []storage.Change {
 	after, _, err := s.recorded()
 	if err != nil {

@@ -41,7 +41,8 @@ type imageCheck struct {
 	// leaves it before the slot is written.
 	recorded *storage.Section
 	// image is the root hash of the image that checks, which its errors name; writing that of the
-	// image whose slot is written, which a refusal of a storage change leaves out of those it names.
+	// image whose slot is written, which a refusal of a storage change leaves out of those it
+	// names.
 	image, writing []byte
 }
 

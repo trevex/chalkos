@@ -92,8 +92,9 @@ func (s *Server) registryDocuments(ref, text string) ([]config.Document, error) 
 // pullSources are where a pull of ref goes, in order: each endpoint of the Mirror of ref's
 // registry among docs, then the registry. Each authenticates with the Registry of its own host
 // among docs, by any name of the host, or anonymously, and uses plain HTTP only if that Registry
-// allows it. Credentials go only to their host and the token service it names, never to a mirror
-// or to a host the registry redirects to (go-containerregistry sends no Authorization there).
+// allows it. Credentials go only to their own host and the token service it names: a mirror never
+// gets those of the registry it mirrors, nor does a host the registry redirects to
+// (go-containerregistry sends no Authorization there).
 func pullSources(ref string, docs []config.Document) ([]ociimage.Source, error) {
 	r, err := name.NewDigest(ref, name.StrictValidation)
 	if err != nil {

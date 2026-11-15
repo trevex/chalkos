@@ -193,7 +193,8 @@ func (c imageConfig) refused(err error, name string) error {
 }
 
 // settlePending drops the pending config c names, the one the upgrade's image took or replaced,
-// once the image is staged: an upgrade that fails before that keeps it for the next one. A failed
+// once the image is staged: an upgrade that fails before that keeps it for the next one, and one
+// whose activation fails once the image is staged settles it too. A failed
 // removal is only logged; Status keeps naming the pending config and config discard drops it. It
 // returns the config's fate for the upgrade's answer, nil when the node held none or reading it
 // failed, which is logged. The caller holds s.upgrading.

@@ -55,7 +55,8 @@ type pendingEffects struct {
 // effectsOf takes the running image's effects and loads every fact their rules read, before the
 // delivery to the node called name changes anything. next replaces old as the running slot's
 // config (a delivery without config keeps old); schemas are the running image's, nil only without
-// documents to read. While a baseline exists, as a delivery that failed part way leaves one, the
+// documents to read. A rule that does not compile is the node's own failure: the build compiled
+// them. While a baseline exists, as a delivery that failed part way leaves one, the
 // rules compare with it and with each failed attempt since; otherwise old, the facts, the outputs'
 // states and the kinds' hashes are recorded as the baseline, unless dry. consume removes the
 // baseline once a delivery is applied whole, and refused once one is refused before it changed

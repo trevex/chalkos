@@ -1,4 +1,4 @@
-// Package strs joins values into the lists messages and flags show.
+// Package strs joins values into the lists messages and flags show, and counts nouns, as "2 nodes".
 package strs
 
 import (

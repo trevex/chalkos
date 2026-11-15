@@ -222,8 +222,9 @@ func (s *Server) ConfirmConfig(ctx context.Context, req *connect.Request[nodev1.
 }
 
 // writeHeldBack writes what the delivery of the confirmed trial r held back: the staged image's
-// slot from the trial's copy, which its checker passed, or the pending config. Nothing else changes
-// either during a trial. A failed write leaves it as it was and is a warning; delivering the config
+// slot from the trial's copy, which its checker passed, or the pending config. Nothing changes
+// either of them during a trial: deliveries, upgrades, activations and image rollbacks are refused.
+// A failed write leaves it as it was and is a warning; delivering the config
 // again writes it. The caller holds s.mu.
 func (s *Server) writeHeldBack(r trialRecord) []string {
 	switch {
@@ -790,7 +791,8 @@ func (s *Server) ResumeTrial(ctx context.Context) {
 
 // RestoreTrialAtBoot rolls an open trial back before chalkos-config applies the slot, swapping
 // the slot's config and its previous one: every boot ends a trial, so a reset undoes a config that
-// cut the node off. If the slot cannot be read or restored, the record stays with the boot's time
+// cut the node off. A trial that was never applied or was rolled back leaves the slot as it is, and
+// the record goes. If the slot cannot be read or restored, the record stays with the boot's time
 // as its deadline, and chalkd rolls back at once as it starts. A record that cannot be read stays,
 // and the node takes no change until RollbackConfig removes it; without a record, a leftover copy
 // of the staged image's slot goes.

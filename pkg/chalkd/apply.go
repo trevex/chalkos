@@ -286,7 +286,8 @@ func (s *Server) planDelivery(ctx context.Context, r applyRequest) (*delivery, e
 //  5. the effects.
 //
 // Until the slot is written, STATE holds the identity and documents the node ran before, which a
-// boot applies whole. The baseline records what the delivery applies before its first change, so
+// boot applies whole. A retry applies the identity and the granted units' config again. The
+// baseline records what the delivery applies before its first change, so
 // a retry, or any later delivery, takes the effects of what a failed or interrupted attempt
 // changed. storage.json is the machine's, not an image's: applyStorage records the section once
 // its additive changes are made, so a retry makes none twice.
