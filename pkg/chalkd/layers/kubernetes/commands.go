@@ -25,6 +25,9 @@ import (
 
 var _ layer.Commands = (*Plugin)(nil)
 
+// runDir holds the node's config as chalkos writes it for the node's services.
+const runDir = "/run/chalkos"
+
 // Commands are the Kubernetes units' commands, run as chalkd kubernetes <name>.
 func (p *Plugin) Commands() []*cobra.Command {
 	var withRule bool
@@ -58,7 +61,7 @@ func (p *Plugin) Commands() []*cobra.Command {
 			Long: "Print containerd's hosts.toml of each registry the node's Mirror and Registry documents\n" +
 				"name, each after a line \"=== <directory>\".",
 			Args: cli.NoArgs,
-			RunE: func(cmd *cobra.Command, _ []string) error { return containerdHosts(cmd.OutOrStdout(), "/run/chalkos") },
+			RunE: func(cmd *cobra.Command, _ []string) error { return containerdHosts(cmd.OutOrStdout(), runDir) },
 		},
 		{
 			Use:   "containerd-config FILE",
@@ -66,7 +69,7 @@ func (p *Plugin) Commands() []*cobra.Command {
 			Long: "Write containerd's settings from the node's Cluster document, the pod sandbox's image, to\n" +
 				"FILE, which containerd imports.",
 			Args: cli.ExactArgs(1),
-			RunE: func(_ *cobra.Command, args []string) error { return containerdConfig("/run/chalkos", args[0]) },
+			RunE: func(_ *cobra.Command, args []string) error { return containerdConfig(runDir, args[0]) },
 		},
 		{
 			Use:   "registry-credentials",
@@ -75,7 +78,7 @@ func (p *Plugin) Commands() []*cobra.Command {
 				"Registry documents.",
 			Args: cli.NoArgs,
 			RunE: func(*cobra.Command, []string) error {
-				return registryCredentials("/run/chalkos", os.Getenv("CREDENTIALS_DIRECTORY"), k8s.CredentialProviderDir)
+				return registryCredentials(runDir, os.Getenv("CREDENTIALS_DIRECTORY"), k8s.CredentialProviderDir)
 			},
 		},
 		{

@@ -16,14 +16,10 @@ import (
 	"github.com/trevex/chalkos/pkg/kubernetes/manifests"
 )
 
-// controlPlanePodsCurrent is the status of a control plane whose static pods run the images its
-// running config names and are Ready.
-const controlPlanePodsCurrent = "current"
-
 // controlPlanePods checks, through the API server cs reaches, that the static pods of the control
 // plane's kube-apiserver, kube-controller-manager and kube-scheduler on the node run the images
 // the cluster names and are Ready, as their mirror pods in kube-system show it. It says what is
-// not so, or controlPlanePodsCurrent. etcd is left out: its image is no version the API server's
+// not so, or controlPlaneCurrent. etcd is left out: its image is no version the API server's
 // rollout compares, and the API server answers only while etcd serves.
 //
 // The kubelet replaces a static pod whose manifest changed and its mirror pod with it, so a mirror
@@ -66,7 +62,7 @@ func controlPlanePods(ctx context.Context, cs kubernetes.Interface, c k8s.Cluste
 			return want.component + " is not Ready"
 		}
 	}
-	return controlPlanePodsCurrent
+	return controlPlaneCurrent
 }
 
 // podReady reports whether the pod's Ready condition is True.

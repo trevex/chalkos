@@ -111,9 +111,9 @@ func (k *side) superviseJoin(ctx context.Context, g *loopGroup) {
 	}
 	for {
 		err := k.joinOnce(ctx)
-		var waiting waitingError
-		var stale *etcd.StaleMemberError
-		var split *etcd.SplitError
+		_, waiting := errors.AsType[waitingError](err)
+		_, stale := errors.AsType[*etcd.StaleMemberError](err)
+		_, split := errors.AsType[*etcd.SplitError](err)
 		switch {
 		case err == nil:
 			log.Print("kubernetes: joined the cluster; the control plane starts")
@@ -128,8 +128,8 @@ func (k *side) superviseJoin(ctx context.Context, g *loopGroup) {
 		case errors.Is(err, errBootstrapped), errors.Is(err, errLeft):
 			k.setJoinStep("")
 			return
-		case errors.As(err, &waiting), errors.Is(err, knode.ErrNotPrepared):
-		case errors.As(err, &stale), errors.As(err, &split), errors.Is(err, errEarlierData):
+		case waiting, errors.Is(err, knode.ErrNotPrepared):
+		case stale, split, errors.Is(err, errEarlierData):
 			logChange(fmt.Sprintf("kubernetes: %v", err))
 		case errors.Is(err, errMemberRemoved):
 			log.Printf("kubernetes: %v", err)
@@ -286,7 +286,7 @@ func (k *side) joinOnce(ctx context.Context) error {
 // etcdEndpoints lists the client URLs of the etcd members other than the node's own, from the
 // mirror pods of etcd's static pods the API server at the endpoint has.
 func (k *side) etcdEndpoints(ctx context.Context, c k8s.Cluster, share kpki.Share, self []netip.Addr) ([]string, error) {
-	cfg, err := newCredential(share, credentialValidity, time.Now).restConfig(c.Endpoint)
+	cfg, err := newCredential(share, time.Now).restConfig(c.Endpoint)
 	if err != nil {
 		return nil, err
 	}

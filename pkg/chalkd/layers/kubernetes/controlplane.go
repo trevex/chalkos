@@ -124,7 +124,7 @@ func (k *side) runControlPlane(ctx context.Context, share kpki.Share, applied fu
 	if err != nil {
 		return err
 	}
-	cred := newCredential(share, credentialValidity, time.Now)
+	cred := newCredential(share, time.Now)
 	// Issuing once up front fails the loop early on a share that cannot issue.
 	if _, err := cred.GetClientCertificate(nil); err != nil {
 		return fmt.Errorf("issue chalkd's client certificate: %w", err)

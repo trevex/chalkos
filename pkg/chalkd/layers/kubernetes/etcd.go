@@ -94,7 +94,7 @@ func (k *side) dialEtcd(c k8s.Cluster, share kpki.Share, endpoints ...string) (*
 	if len(endpoints) == 0 {
 		endpoints = []string{k.localEtcd(c)}
 	}
-	cred, err := newEtcdCredential(share, credentialValidity, time.Now)
+	cred, err := newEtcdCredential(share, time.Now)
 	if err != nil {
 		return nil, err
 	}

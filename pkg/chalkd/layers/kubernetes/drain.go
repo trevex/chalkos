@@ -23,9 +23,9 @@ import (
 	"github.com/trevex/chalkos/pkg/chalkd/layer"
 )
 
-// UpgradeCordon marks a Node an upgrade cordoned, so the upgrade makes schedulable again only the
+// upgradeCordon marks a Node an upgrade cordoned, so the upgrade makes schedulable again only the
 // nodes it cordoned itself.
-const UpgradeCordon = "chalkos.dev/upgrade-cordon"
+const upgradeCordon = "chalkos.dev/upgrade-cordon"
 
 // defaultDrainTimeout is how long a drain waits for pods by default.
 const defaultDrainTimeout = 5 * time.Minute
@@ -78,7 +78,7 @@ func setCordon(ctx context.Context, cs kubernetes.Interface, name string, cordon
 		if err != nil {
 			return err
 		}
-		_, marked = node.Annotations[UpgradeCordon]
+		_, marked = node.Annotations[upgradeCordon]
 		switch {
 		case cordon && node.Spec.Unschedulable:
 			return nil
@@ -86,13 +86,13 @@ func setCordon(ctx context.Context, cs kubernetes.Interface, name string, cordon
 			if node.Annotations == nil {
 				node.Annotations = map[string]string{}
 			}
-			node.Annotations[UpgradeCordon] = "true"
+			node.Annotations[upgradeCordon] = "true"
 			node.Spec.Unschedulable = true
 			marked = true
 		case !marked:
 			return nil
 		default:
-			delete(node.Annotations, UpgradeCordon)
+			delete(node.Annotations, upgradeCordon)
 			node.Spec.Unschedulable = false
 		}
 		_, err = cs.CoreV1().Nodes().Update(ctx, node, metav1.UpdateOptions{})

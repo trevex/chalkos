@@ -175,7 +175,7 @@ func TestRestartAddons(t *testing.T) {
 	if _, err := rotationStep(short, s, kubernetesv1.RotationStep_ROTATION_STEP_RESTART_ADDONS); err == nil || !strings.Contains(err.Error(), "kube-root-ca.crt of kube-flannel") {
 		t.Fatalf("err = %v, want a wait for kube-flannel's kube-root-ca.crt", err)
 	}
-	if d, _ := client.AppsV1().Deployments("kube-system").Get(ctx, "coredns", metav1.GetOptions{}); d.Spec.Template.Annotations[RestartedAnnotation] != "" {
+	if d, _ := client.AppsV1().Deployments("kube-system").Get(ctx, "coredns", metav1.GetOptions{}); d.Spec.Template.Annotations[restartedAnnotation] != "" {
 		t.Error("coredns restarted before every namespace trusted the CAs")
 	}
 
@@ -200,7 +200,7 @@ func TestRestartAddons(t *testing.T) {
 	}
 	d, _ := client.AppsV1().Deployments("kube-system").Get(ctx, "coredns", metav1.GetOptions{})
 	ds, _ := client.AppsV1().DaemonSets("kube-flannel").Get(ctx, "kube-flannel-ds", metav1.GetOptions{})
-	if d.Spec.Template.Annotations[RestartedAnnotation] == "" || ds.Spec.Template.Annotations[RestartedAnnotation] == "" {
+	if d.Spec.Template.Annotations[restartedAnnotation] == "" || ds.Spec.Template.Annotations[restartedAnnotation] == "" {
 		t.Error("a workload's pod template was not changed")
 	}
 	if ds.Status.UpdatedNumberScheduled != 2 {

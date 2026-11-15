@@ -137,7 +137,7 @@ func checkLeft(t *testing.T, s *Plugin) {
 	if m, _, err := p.ReadMembership(); err != nil || m != knode.MembershipLeft {
 		t.Errorf("membership = %v, %v after leaving", m, err)
 	}
-	if got := kubernetesState(t, s); got != "left etcd; reinstall the node to join the cluster again" {
+	if got := kubernetestest.Status(t, s).State; got != "left etcd; reinstall the node to join the cluster again" {
 		t.Errorf("state %q", got)
 	}
 	// It neither joins nor bootstraps again.
@@ -302,7 +302,7 @@ func TestEtcdLeaveAfterMemberRemoved(t *testing.T) {
 	// The node's own etcd does not answer; asking it ends after the timeout.
 	k.timing.EtcdTimeout = silentEtcdTimeout
 	k.startLoops()
-	testwait.Eventually(t, "the learner's state", func() bool { return strings.Contains(kubernetesState(t, s), "catches up") })
+	testwait.Eventually(t, "the learner's state", func() bool { return strings.Contains(kubernetestest.Status(t, s).State, "catches up") })
 	learner := slices.IndexFunc(members(t, cli), func(m etcd.Member) bool { return m.Learner })
 	if learner < 0 {
 		t.Fatal("no learner")
@@ -311,7 +311,7 @@ func TestEtcdLeaveAfterMemberRemoved(t *testing.T) {
 		t.Fatal(err)
 	}
 	testwait.Eventually(t, "the join to stop", func() bool {
-		return strings.Contains(kubernetesState(t, s), "run chalkctl etcd leave and reinstall the node")
+		return strings.Contains(kubernetestest.Status(t, s).State, "run chalkctl etcd leave and reinstall the node")
 	})
 	// The learner's etcd wrote its data.
 	write(t, filepath.Join(k.state.EtcdData, "member", "snap", "db"), "")
@@ -438,23 +438,9 @@ func TestEtcdLeaveRefusedWithoutQuorum(t *testing.T) {
 	}
 }
 
+// A node that is no etcd member refuses to list or leave etcd. A control plane says so in an error
+// detail, which tells chalkctl to ask the next one; a worker's refusal has no such detail.
 func TestEtcdNeedsMember(t *testing.T) {
-	worker, _ := kubernetesNode(t, k8s.KindWorker, true)
-	waiting, _ := kubernetesNode(t, k8s.KindControlPlane, true)
-	for name, s := range map[string]*Plugin{"worker": worker, "not bootstrapped": waiting} {
-		_, err := s.EtcdMembers(context.Background(), connect.NewRequest(&kubernetesv1.EtcdMembersRequest{}))
-		if layer.CodeOf(err) != connect.CodeFailedPrecondition {
-			t.Errorf("members on %s: %v", name, err)
-		}
-		if err := leave(s, false); layer.CodeOf(err) != connect.CodeFailedPrecondition {
-			t.Errorf("leaving on %s: %v", name, err)
-		}
-	}
-}
-
-// A control plane that is no etcd member says so in an error detail, which tells chalkctl to ask
-// the next one; a worker's refusal has no such detail.
-func TestNotEtcdMemberDetail(t *testing.T) {
 	worker, _ := kubernetesNode(t, k8s.KindWorker, true)
 	waiting, _ := kubernetesNode(t, k8s.KindControlPlane, true)
 	for name, tc := range map[string]struct {
@@ -462,6 +448,12 @@ func TestNotEtcdMemberDetail(t *testing.T) {
 		want bool
 	}{"worker": {worker, false}, "not bootstrapped": {waiting, true}} {
 		_, err := tc.s.EtcdMembers(context.Background(), connect.NewRequest(&kubernetesv1.EtcdMembersRequest{}))
+		if layer.CodeOf(err) != connect.CodeFailedPrecondition {
+			t.Errorf("members on %s: %v", name, err)
+		}
+		if err := leave(tc.s, false); layer.CodeOf(err) != connect.CodeFailedPrecondition {
+			t.Errorf("leaving on %s: %v", name, err)
+		}
 		// The error as the interceptor answers it.
 		ce := layer.Codes(nil).Error(err)
 		got := false

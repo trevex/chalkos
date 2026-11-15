@@ -26,12 +26,11 @@ const credentialValidity = time.Hour
 // credential issues one of chalkd's client certificates from a CA of the share when a connection
 // needs one, and again once half its lifetime has passed.
 type credential struct {
-	// issue issues the certificate, valid for validity; ca holds the PEM certificates of the CAs
-	// the server's certificate may chain to, the one that issues the credential among them.
-	issue    func(validity time.Duration, now time.Time) (pki.CertKey, error)
-	ca       string
-	validity time.Duration
-	now      func() time.Time
+	// issue issues the certificate; ca holds the PEM certificates of the CAs the server's
+	// certificate may chain to, the one that issues the credential among them.
+	issue func(now time.Time) (pki.CertKey, error)
+	ca    string
+	now   func() time.Time
 	// conns are the connections to the API server, closed when the certificate is replaced:
 	// a connection keeps the certificate it was made with.
 	conns *connrotation.ConnectionTracker
@@ -45,22 +44,25 @@ type credential struct {
 }
 
 // newCredential issues chalkd's client certificate for the API server, in system:masters.
-func newCredential(share kpki.Share, validity time.Duration, now func() time.Time) *credential {
-	issue := func(validity time.Duration, now time.Time) (pki.CertKey, error) {
-		return kpki.IssueChalkd(share, validity, now)
-	}
-	return &credential{issue: issue, ca: share.CABundle(), validity: validity, now: now, conns: connrotation.NewConnectionTracker()}
+func newCredential(share kpki.Share, now func() time.Time) *credential {
+	return issuing(kpki.IssueChalkd, share, share.CABundle(), now)
 }
 
 // newEtcdCredential issues chalkd's client certificate for etcd.
-func newEtcdCredential(share kpki.Share, validity time.Duration, now func() time.Time) (*credential, error) {
+func newEtcdCredential(share kpki.Share, now func() time.Time) (*credential, error) {
 	if share.EtcdCA == nil {
 		return nil, errors.New("the node's share holds no etcd CA")
 	}
-	issue := func(validity time.Duration, now time.Time) (pki.CertKey, error) {
-		return kpki.IssueEtcdClient(share, validity, now)
+	return issuing(kpki.IssueEtcdClient, share, share.EtcdCABundle(), now), nil
+}
+
+// issuing is a credential that issue issues from a CA of share, valid for credentialValidity, for
+// a server whose certificate chains to the CAs in ca.
+func issuing(issue func(kpki.Share, time.Duration, time.Time) (pki.CertKey, error), share kpki.Share, ca string, now func() time.Time) *credential {
+	return &credential{
+		issue: func(now time.Time) (pki.CertKey, error) { return issue(share, credentialValidity, now) },
+		ca:    ca, now: now, conns: connrotation.NewConnectionTracker(),
 	}
-	return &credential{issue: issue, ca: share.EtcdCABundle(), validity: validity, now: now, conns: connrotation.NewConnectionTracker()}, nil
 }
 
 // GetClientCertificate returns the current certificate, issuing one when there is none or
@@ -72,7 +74,7 @@ func (c *credential) GetClientCertificate(*tls.CertificateRequestInfo) (*tls.Cer
 	if c.cert != nil && now.Before(c.renewAt) {
 		return c.cert, nil
 	}
-	ck, err := c.issue(c.validity, now)
+	ck, err := c.issue(now)
 	if err != nil {
 		return nil, err
 	}

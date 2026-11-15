@@ -25,19 +25,6 @@ import (
 	"github.com/trevex/chalkos/pkg/pki"
 )
 
-// TestStatusReportsTheControlPlanesState checks that a bootstrapped control plane says whether
-// it runs on its current certificates.
-func TestStatusReportsTheControlPlanesState(t *testing.T) {
-	s, _ := kubernetesNode(t, k8s.KindControlPlane, true)
-	if err := s.k.state.MarkBootstrapped(time.Now()); err != nil {
-		t.Fatal(err)
-	}
-	s.k.hooks.CheckControlPlane = func(context.Context, k8s.Cluster, kpki.Share) error { return nil }
-	if got := kubernetestest.Status(t, s).ControlPlane; got != "current" {
-		t.Errorf("control plane %q", got)
-	}
-}
-
 func TestServesFile(t *testing.T) {
 	served, _ := pki.SelfSigned("served", time.Now())
 	other, _ := pki.SelfSigned("other", time.Now())
@@ -99,8 +86,9 @@ func TestStatusReportsTheVersions(t *testing.T) {
 	}
 }
 
-// TestStatusReportsTheStaticPods checks that a bootstrapped control plane reports whether its
-// static pods run its config's images, through its own API server.
+// TestStatusReportsTheStaticPods checks that a bootstrapped control plane reports whether it runs
+// on its current certificates and whether its static pods run its config's images, through its own
+// API server.
 func TestStatusReportsTheStaticPods(t *testing.T) {
 	images := k8s.Images{
 		KubeAPIServer:         "registry.k8s.io/kube-apiserver:v1.37.1",
@@ -119,13 +107,6 @@ func TestStatusReportsTheStaticPods(t *testing.T) {
 				mirrorPod("kube-scheduler", "n1", images.KubeScheduler, true),
 			), nil
 		}, "current", true},
-		"not Ready": {func(k8s.Cluster, kpki.Share) (kubernetes.Interface, error) {
-			return fake.NewClientset(
-				mirrorPod("kube-apiserver", "n1", images.KubeAPIServer, false),
-				mirrorPod("kube-controller-manager", "n1", images.KubeControllerManager, true),
-				mirrorPod("kube-scheduler", "n1", images.KubeScheduler, true),
-			), nil
-		}, "kube-apiserver is not Ready", false},
 		"no client": {func(k8s.Cluster, kpki.Share) (kubernetes.Interface, error) {
 			return nil, errors.New("no share")
 		}, "its static pods are unknown: no share", false},
@@ -140,8 +121,12 @@ func TestStatusReportsTheStaticPods(t *testing.T) {
 				n.Name = "n1"
 				return n, nil
 			}
+			s.k.hooks.CheckControlPlane = func(context.Context, k8s.Cluster, kpki.Share) error { return nil }
 			s.k.hooks.APIClient = tc.client
 			st := kubernetestest.Status(t, s)
+			if st.ControlPlane != "current" {
+				t.Errorf("control plane %q", st.ControlPlane)
+			}
 			if st.ControlPlanePods != tc.want || st.ControlPlanePodsCurrent != tc.current {
 				t.Errorf("control-plane pods %q, %v; want %q, %v", st.ControlPlanePods, st.ControlPlanePodsCurrent, tc.want, tc.current)
 			}

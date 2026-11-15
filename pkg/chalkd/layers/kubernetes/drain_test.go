@@ -71,23 +71,31 @@ func newDrainLab(t *testing.T, refusals int, nodes ...*corev1.Node) *drainLab {
 		objects = append(objects, n)
 	}
 	l := &drainLab{s: s, cs: fake.NewClientset(objects...), refusals: refusals}
-	l.cs.PrependReactor("create", "pods", func(action k8stesting.Action) (bool, runtime.Object, error) {
-		if action.GetSubresource() != "eviction" {
-			return false, nil, nil
-		}
-		ev := action.(k8stesting.CreateAction).GetObject().(*policyv1.Eviction)
+	l.onEviction(func(ev *policyv1.Eviction) (bool, error) {
 		l.mu.Lock()
 		defer l.mu.Unlock()
 		if ev.Name == "guarded" && l.refusals > 0 {
 			l.refusals--
-			return true, nil, apierrors.NewTooManyRequests("Cannot evict pod as it would violate the pod's disruption budget.", 0)
+			return true, apierrors.NewTooManyRequests("Cannot evict pod as it would violate the pod's disruption budget.", 0)
 		}
 		l.evicted = append(l.evicted, ev.Namespace+"/"+ev.Name)
-		return true, nil, l.cs.Tracker().Delete(corev1.SchemeGroupVersion.WithResource("pods"), ev.Namespace, ev.Name)
+		return true, l.cs.Tracker().Delete(corev1.SchemeGroupVersion.WithResource("pods"), ev.Namespace, ev.Name)
 	})
 	s.k.hooks.APIClient = func(k8s.Cluster, kpki.Share) (kubernetes.Interface, error) { return l.cs, nil }
 	s.k.timing.Poll = 10 * time.Millisecond
 	return l
+}
+
+// onEviction answers the evictions asked of the API server with evict before the reactors added
+// earlier; one evict does not handle passes on to them.
+func (l *drainLab) onEviction(evict func(ev *policyv1.Eviction) (handled bool, err error)) {
+	l.cs.PrependReactor("create", "pods", func(action k8stesting.Action) (bool, runtime.Object, error) {
+		if action.GetSubresource() != "eviction" {
+			return false, nil, nil
+		}
+		handled, err := evict(action.(k8stesting.CreateAction).GetObject().(*policyv1.Eviction))
+		return handled, nil, err
+	})
 }
 
 func (l *drainLab) drain(timeout uint32) (*kubernetesv1.DrainNodeResponse, error) {
@@ -146,7 +154,7 @@ func TestDrainNode(t *testing.T) {
 		!slices.Equal(got.Kept, []string{"default/done", "kube-flannel/flannel", "kube-system/static-w1"}) || !slices.Equal(got.Unmanaged, []string{"default/bare"}) {
 		t.Errorf("drain = %+v", got)
 	}
-	if n := l.node(t); !n.Spec.Unschedulable || n.Annotations[UpgradeCordon] != "true" {
+	if n := l.node(t); !n.Spec.Unschedulable || n.Annotations[upgradeCordon] != "true" {
 		t.Errorf("w1 is not cordoned and marked: %+v", n)
 	}
 	if want := []string{"default/bare", "default/done", "default/web-2", "kube-flannel/flannel", "kube-system/static-w1"}; !slices.Equal(l.pods(t), want) {
@@ -161,7 +169,7 @@ func TestDrainNode(t *testing.T) {
 	if !l.uncordon() {
 		t.Error("w1 was not uncordoned")
 	}
-	if n := l.node(t); n.Spec.Unschedulable || n.Annotations[UpgradeCordon] != "" {
+	if n := l.node(t); n.Spec.Unschedulable || n.Annotations[upgradeCordon] != "" {
 		t.Errorf("w1 stays cordoned: %+v", n)
 	}
 	if l.uncordon() {
@@ -215,17 +223,14 @@ func TestDrainRefusals(t *testing.T) {
 // and why, and leaves the node cordoned; another control plane would be refused the same.
 func TestDrainRefused(t *testing.T) {
 	l := newDrainLab(t, 0, w1(false))
-	l.cs.PrependReactor("create", "pods", func(action k8stesting.Action) (bool, runtime.Object, error) {
-		if action.GetSubresource() != "eviction" {
-			return false, nil, nil
-		}
-		switch action.(k8stesting.CreateAction).GetObject().(*policyv1.Eviction).Name {
+	l.onEviction(func(ev *policyv1.Eviction) (bool, error) {
+		switch ev.Name {
 		case "web-1":
-			return true, nil, apierrors.NewForbidden(policyv1.Resource("evictions"), "web-1", errors.New("not allowed"))
+			return true, apierrors.NewForbidden(policyv1.Resource("evictions"), "web-1", errors.New("not allowed"))
 		case "guarded":
-			return true, nil, apierrors.NewBadRequest("the eviction is malformed")
+			return true, apierrors.NewBadRequest("the eviction is malformed")
 		}
-		return false, nil, nil
+		return false, nil
 	})
 	start := time.Now()
 	_, err := l.drain(30)
@@ -245,12 +250,12 @@ func TestDrainRefused(t *testing.T) {
 func TestDrainRetriesServerErrors(t *testing.T) {
 	l := newDrainLab(t, 0, w1(false))
 	failures := 1
-	l.cs.PrependReactor("create", "pods", func(action k8stesting.Action) (bool, runtime.Object, error) {
-		if action.GetSubresource() != "eviction" || action.(k8stesting.CreateAction).GetObject().(*policyv1.Eviction).Name != "web-1" || failures == 0 {
-			return false, nil, nil
+	l.onEviction(func(ev *policyv1.Eviction) (bool, error) {
+		if ev.Name != "web-1" || failures == 0 {
+			return false, nil
 		}
 		failures--
-		return true, nil, apierrors.NewServiceUnavailable("the API server is busy")
+		return true, apierrors.NewServiceUnavailable("the API server is busy")
 	})
 	got, err := l.drain(30)
 	if err != nil || !slices.Equal(got.Evicted, []string{"default/guarded", "default/web-1"}) || !slices.Contains(l.evicted, "default/web-1") {
@@ -262,11 +267,8 @@ func TestDrainRetriesServerErrors(t *testing.T) {
 // of several PodDisruptionBudgets, once the drain's time is up, naming the pod and why.
 func TestDrainServerErrorsTimeOut(t *testing.T) {
 	l := newDrainLab(t, 0, w1(false))
-	l.cs.PrependReactor("create", "pods", func(action k8stesting.Action) (bool, runtime.Object, error) {
-		if action.GetSubresource() != "eviction" || action.(k8stesting.CreateAction).GetObject().(*policyv1.Eviction).Name != "guarded" {
-			return false, nil, nil
-		}
-		return true, nil, apierrors.NewInternalError(errors.New("This pod has more than one PodDisruptionBudget, which the eviction subresource does not support."))
+	l.onEviction(func(ev *policyv1.Eviction) (bool, error) {
+		return ev.Name == "guarded", apierrors.NewInternalError(errors.New("This pod has more than one PodDisruptionBudget, which the eviction subresource does not support."))
 	})
 	_, err := l.drain(1)
 	if layer.CodeOf(err) != connect.CodeDeadlineExceeded || !strings.Contains(err.Error(), "pods default/guarded still run") || !strings.Contains(err.Error(), "more than one PodDisruptionBudget") {
@@ -278,10 +280,8 @@ func TestDrainServerErrorsTimeOut(t *testing.T) {
 // timeout.
 func TestDrainTimesOut(t *testing.T) {
 	l := newDrainLab(t, 0, w1(false))
-	l.cs.PrependReactor("create", "pods", func(action k8stesting.Action) (bool, runtime.Object, error) {
-		// Accepted, but the pod keeps running.
-		return action.GetSubresource() == "eviction", nil, nil
-	})
+	// Accepted, but the pod keeps running.
+	l.onEviction(func(*policyv1.Eviction) (bool, error) { return true, nil })
 	_, err := l.drain(1)
 	if layer.CodeOf(err) != connect.CodeDeadlineExceeded || !strings.Contains(err.Error(), "pods default/guarded, default/web-1 still run: they did not stop") {
 		t.Errorf("drain = %v", err)
@@ -292,24 +292,21 @@ func TestDrainTimesOut(t *testing.T) {
 // schedulable by hand, before it evicts anything.
 func TestDrainCordonsAMarkedNode(t *testing.T) {
 	marked := w1(false)
-	marked.Annotations = map[string]string{UpgradeCordon: "true"}
+	marked.Annotations = map[string]string{upgradeCordon: "true"}
 	l := newDrainLab(t, 0, marked)
-	l.cs.PrependReactor("create", "pods", func(action k8stesting.Action) (bool, runtime.Object, error) {
-		if action.GetSubresource() != "eviction" {
-			return false, nil, nil
-		}
+	l.onEviction(func(*policyv1.Eviction) (bool, error) {
 		// The clientset is locked while its reactors run; its tracker is not.
 		n, err := l.cs.Tracker().Get(corev1.SchemeGroupVersion.WithResource("nodes"), "", "w1")
 		if err != nil || !n.(*corev1.Node).Spec.Unschedulable {
 			t.Errorf("a pod was evicted from a schedulable node: %v", err)
 		}
-		return false, nil, nil
+		return false, nil
 	})
 	got, err := l.drain(0)
 	if err != nil || !got.Marked {
 		t.Fatalf("drain = %+v, %v", got, err)
 	}
-	if n := l.node(t); !n.Spec.Unschedulable || n.Annotations[UpgradeCordon] != "true" {
+	if n := l.node(t); !n.Spec.Unschedulable || n.Annotations[upgradeCordon] != "true" {
 		t.Errorf("w1 is not cordoned and marked: %+v", n)
 	}
 }
@@ -350,23 +347,19 @@ func TestDrainWaitsForStoppingPods(t *testing.T) {
 	if err := l.cs.Tracker().Add(leaving); err != nil {
 		t.Fatal(err)
 	}
-	l.cs.PrependReactor("create", "pods", func(action k8stesting.Action) (bool, runtime.Object, error) {
-		if action.GetSubresource() != "eviction" {
-			return false, nil, nil
-		}
-		// Accepted, and the pod starts to stop, slowly.
-		ev := action.(k8stesting.CreateAction).GetObject().(*policyv1.Eviction)
+	// Accepted, and the pod starts to stop, slowly.
+	l.onEviction(func(ev *policyv1.Eviction) (bool, error) {
 		l.mu.Lock()
 		l.evicted = append(l.evicted, ev.Namespace+"/"+ev.Name)
 		l.mu.Unlock()
 		obj, err := l.cs.Tracker().Get(podsResource, ev.Namespace, ev.Name)
 		if err != nil {
-			return true, nil, err
+			return true, err
 		}
 		p := obj.(*corev1.Pod).DeepCopy()
 		now := metav1.Now()
 		p.DeletionTimestamp = &now
-		return true, nil, l.cs.Tracker().Update(podsResource, p, ev.Namespace)
+		return true, l.cs.Tracker().Update(podsResource, p, ev.Namespace)
 	})
 	stopping := "pods default/guarded, default/web-1, kube-flannel/leaving still run"
 	for i := range 2 {

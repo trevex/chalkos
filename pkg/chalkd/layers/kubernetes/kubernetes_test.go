@@ -100,20 +100,8 @@ func TestBootstrapRefusals(t *testing.T) {
 			t.Errorf("%s: %v, want %q", name, err, tc.want)
 		}
 		if k := tc.s.k; k != nil {
-			after := files(t, k.state.StateDir, k.state.RunDir, k.state.EtcdData)
-			var changed []string
-			for path := range maps.Keys(before) {
-				if after[path] != before[path] {
-					changed = append(changed, path)
-				}
-			}
-			for path := range maps.Keys(after) {
-				if _, ok := before[path]; !ok {
-					changed = append(changed, path)
-				}
-			}
-			if len(changed) > 0 {
-				t.Errorf("%s: the refused bootstrap changed %v", name, changed)
+			if after := files(t, k.state.StateDir, k.state.RunDir, k.state.EtcdData); !maps.Equal(before, after) {
+				t.Errorf("%s: the refused bootstrap changed the files: %v, then %v", name, before, after)
 			}
 		}
 	}
@@ -290,7 +278,7 @@ func TestCredentialIsShortLived(t *testing.T) {
 		t.Fatal(err)
 	}
 	clock := time.Now()
-	c := newCredential(share, time.Hour, func() time.Time { return clock })
+	c := newCredential(share, func() time.Time { return clock })
 	first, err := c.GetClientCertificate(nil)
 	if err != nil {
 		t.Fatal(err)

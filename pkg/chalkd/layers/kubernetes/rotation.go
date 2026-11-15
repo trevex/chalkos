@@ -31,9 +31,9 @@ import (
 	"github.com/trevex/chalkos/pkg/tool"
 )
 
-// RestartedAnnotation is the annotation of a workload's pod template that restarting it for a
+// restartedAnnotation is the annotation of a workload's pod template that restarting it for a
 // rotation sets, as kubectl rollout restart sets its own.
-const RestartedAnnotation = "chalkos.dev/restarted-at"
+const restartedAnnotation = "chalkos.dev/restarted-at"
 
 func (p *Plugin) RotationStep(ctx context.Context, req *connect.Request[kubernetesv1.RotationStepRequest]) (*connect.Response[kubernetesv1.RotationStepResponse], error) {
 	k := p.k
@@ -157,7 +157,7 @@ func (k *side) restartAddons(ctx context.Context, c k8s.Cluster, client kubernet
 			return nil, nil, err
 		}
 	}
-	patch := fmt.Appendf(nil, `{"spec":{"template":{"metadata":{"annotations":{%q:%q}}}}}`, RestartedAnnotation, time.Now().UTC().Format(time.RFC3339))
+	patch := fmt.Appendf(nil, `{"spec":{"template":{"metadata":{"annotations":{%q:%q}}}}}`, restartedAnnotation, time.Now().UTC().Format(time.RFC3339))
 	var rollouts []workload
 	for _, w := range workloads {
 		apps := client.AppsV1()
@@ -227,7 +227,10 @@ func rolledOut(ctx context.Context, client kubernetes.Interface, w workload) err
 		if err != nil {
 			return err
 		}
-		return deploymentRolledOut(d)
+		st, want := d.Status, replicas(d.Spec.Replicas)
+		if st.ObservedGeneration < d.Generation || st.UpdatedReplicas != want || st.AvailableReplicas != want || st.Replicas != want {
+			return fmt.Errorf("%d of %d pods updated, %d available and %d in all", st.UpdatedReplicas, want, st.AvailableReplicas, st.Replicas)
+		}
 	case "DaemonSet":
 		d, err := apps.DaemonSets(w.namespace).Get(ctx, w.name, metav1.GetOptions{})
 		if err != nil {
@@ -246,14 +249,6 @@ func rolledOut(ctx context.Context, client kubernetes.Interface, w workload) err
 		if st.ObservedGeneration < s.Generation || st.UpdatedReplicas != want || st.ReadyReplicas != want || st.CurrentRevision != st.UpdateRevision {
 			return fmt.Errorf("%d of %d pods updated and %d ready", st.UpdatedReplicas, want, st.ReadyReplicas)
 		}
-	}
-	return nil
-}
-
-func deploymentRolledOut(d *appsv1.Deployment) error {
-	st, want := d.Status, replicas(d.Spec.Replicas)
-	if st.ObservedGeneration < d.Generation || st.UpdatedReplicas != want || st.AvailableReplicas != want || st.Replicas != want {
-		return fmt.Errorf("%d of %d pods updated, %d available and %d in all", st.UpdatedReplicas, want, st.AvailableReplicas, st.Replicas)
 	}
 	return nil
 }

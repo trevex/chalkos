@@ -141,21 +141,18 @@ func (k *side) status(ctx context.Context) (*kubernetesv1.StatusResponse, error)
 		} else {
 			st.ControlPlanePods = controlPlanePods(ctx, cs, c, node.Name)
 		}
-		st.ControlPlanePodsCurrent = st.ControlPlanePods == controlPlanePodsCurrent
+		st.ControlPlanePodsCurrent = st.ControlPlanePods == controlPlaneCurrent
 	}
 	if c.Kind == k8s.KindWorker {
-		problem, err := missingPodRanges(c, node)
-		if err != nil {
-			return nil, err
-		}
-		if problem != "" {
+		if problem := missingPodRanges(c, node); problem != "" {
 			st.State += ": " + problem
 		}
 	}
 	return st, nil
 }
 
-// controlPlaneCurrent is the control plane's state in the status once checkControlPlane passes.
+// controlPlaneCurrent is the control plane's state in the status once checkControlPlane passes,
+// and that of its static pods once they run the images its running config names and are Ready.
 const controlPlaneCurrent = "current"
 
 // checkControlPlane checks that the API server and etcd present the certificates in the control
@@ -255,9 +252,9 @@ func nodeReady(node *corev1.Node) (status, reason, message string) {
 // missingPodRanges says which of the cluster's families the Node has no pod range of, once the
 // controller-manager allocated it any. The controller-manager allocates ranges of the families
 // the control plane runs with, which a worker's image cannot change.
-func missingPodRanges(c k8s.Cluster, node *corev1.Node) (string, error) {
+func missingPodRanges(c k8s.Cluster, node *corev1.Node) string {
 	if len(node.Spec.PodCIDRs) == 0 {
-		return "", nil
+		return ""
 	}
 	families := c.Families()
 	have := map[nodeip.Family]bool{}
@@ -273,7 +270,7 @@ func missingPodRanges(c k8s.Cluster, node *corev1.Node) (string, error) {
 		}
 	}
 	if len(missing) == 0 {
-		return "", nil
+		return ""
 	}
-	return fmt.Sprintf("the Node has no %s pod range; the control plane allocates ranges of the families the cluster was created with", strings.Join(missing, " or ")), nil
+	return fmt.Sprintf("the Node has no %s pod range; the control plane allocates ranges of the families the cluster was created with", strings.Join(missing, " or "))
 }

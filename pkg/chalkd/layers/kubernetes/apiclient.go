@@ -55,7 +55,7 @@ func (k *side) ownAPIClient(c k8s.Cluster, share kpki.Share) (kubernetes.Interfa
 	if k.api != nil && k.api.key == key && !k.api.cred.due() {
 		return k.api.client, nil
 	}
-	cred := newCredential(share, credentialValidity, time.Now)
+	cred := newCredential(share, time.Now)
 	if _, err := cred.GetClientCertificate(nil); err != nil {
 		return nil, err
 	}
