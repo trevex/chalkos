@@ -15,12 +15,8 @@ func relayDoc(t *testing.T, name, links, servers string) any {
 	return derivetest.RouterDoc(t, "DHCPRelay", name, `{"interfaces": `+links+`, "servers": `+servers+`}`)
 }
 
-// The validator refuses what spans documents: a subnet's link that is a VRF's device or a NAT64's
-// link, a link of no Network, links of two VRFs or of a VRF no document declares, a link without
-// the router's address in the subnet, a link of two subnets, subnets that overlap in a VRF, and a
-// pool or reservation of the router's own address. It guards, with an internal error, no
-// interface, a glob, which dnsmasq's config and the firewall's ruleset would read as syntax, and
-// a range or address that does not parse.
+// The validator refuses what spans DHCPv4 subnets, and guards what dnsmasq's config and the
+// ruleset would read as syntax and a range or address that does not parse.
 func TestSubnetRefusals(t *testing.T) {
 	office := func(more string) any {
 		return derivetest.SubnetDoc(t, "office", `{"interfaces": ["lan0"], "subnet": "192.0.2.0/24"`+more+`}`)
@@ -59,13 +55,9 @@ func TestSubnetRefusals(t *testing.T) {
 	}
 }
 
-// The validator refuses what spans IPv6 subnets: a pool or reservation of the router's own
-// address, two IPv6 subnets of one link or that overlap, the subnet of one and the delegated
-// prefixes of another, delegated prefixes of the router's address on a link of the VRF, and links
-// whose Network sends no router advertisements with the flag that tells clients to ask: Managed
-// for addresses, Managed or OtherInformation for delegated prefixes and options alone. It guards,
-// with an internal error, delegated prefixes no longer than their range, which it would count by
-// a negative shift.
+// The validator refuses what spans IPv6 subnets, their delegated prefixes and router
+// advertisements, and guards delegated prefixes no longer than their range, which it would count
+// by a negative shift.
 func TestSubnet6Refusals(t *testing.T) {
 	office := func(more string) any {
 		return derivetest.SubnetDoc(t, "office6", `{"interfaces": ["lan0"], "subnet": "2001:db8:1::/64"`+more+`}`)
@@ -203,11 +195,8 @@ func TestSubnet6DelegatesAtMost65536(t *testing.T) {
 		"DHCPSubnet/cpe: spec.prefixDelegation.length: the DHCPSubnet documents delegate more than 65536 prefixes, the most the router routes; delegate fewer")
 }
 
-// The validator refuses what spans a relay's documents: a VRF's device, links of two VRFs, a link
-// of no Network or without the router's address of a server's family, a global one for IPv6, and
-// a family relayed and served in one VRF, or in two of which one is the default. It guards, with
-// an internal error, a link or server that dnsmasq's config would read as syntax. The rules refuse
-// a server that is no unicast address.
+// The validator refuses what spans a relay's documents, and guards what dnsmasq's config would
+// read as syntax.
 func TestRelayRefusals(t *testing.T) {
 	office := relayDoc(t, "office", `["lan0"]`, `["198.51.100.53", "2001:db8:ff::53"]`)
 	for name, c := range map[string]struct {

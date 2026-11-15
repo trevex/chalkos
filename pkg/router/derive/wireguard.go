@@ -61,10 +61,8 @@ func (m Membership) withWireGuards(wgs []Named[WireGuardSpec]) Membership {
 }
 
 // WireGuardInterfaces are the WireGuard documents with their peers and the tables of their VRFs.
-// It refuses, each fault once, a Network document of a WireGuard unit's name, one whose Name=
-// names a WireGuard's link and one that networkd may pick for the link before that unit, a VRF's
-// member or a Network's VRF= that puts the link in another VRF than the WireGuard's, and a peer's
-// faults as checkWireGuardPeer finds them.
+// It refuses each fault once: a Network that clashes with a WireGuard's unit or link, a VRF member
+// that puts the link in another VRF, and a peer's faults as checkWireGuardPeer finds them.
 func (d Model) WireGuardInterfaces() ([]WireGuardInterface, error) {
 	if len(d.WireGuards) == 0 && len(d.WireGuardPeers) == 0 {
 		return nil, nil
@@ -147,11 +145,9 @@ func (d Model) WireGuardInterfaces() ([]WireGuardInterface, error) {
 	return out, nil
 }
 
-// checkWireGuardPeer refuses the peer p at its first fault: an endpoint networkd cannot read, a
-// default route among its allowed IPs, which networkd would route through the peer in the VRF's
-// table, and, against the peers w holds so far, the public key of one of them or allowed IPs that
-// overlap theirs. The kernel sends an address to one peer alone, the last configured, and keeps a
-// key once.
+// checkWireGuardPeer refuses the peer p at its first fault, against the peers w holds so far. The
+// kernel keeps a public key once and sends an address to the last configured peer alone, and
+// networkd would route a default route through the peer in the VRF's table.
 func checkWireGuardPeer(w *WireGuardInterface, p Named[WireGuardPeerSpec]) error {
 	if e := p.Spec.Endpoint; e != nil && !validEndpoint(*e) {
 		return refusals.Errorf("WireGuardPeer", p.Name, "spec.endpoint", "endpoint %q is none of [<IPv6>]:<port>, <IPv4>:<port> and <host name>:<port> with a port from 1 to 65535", *e)

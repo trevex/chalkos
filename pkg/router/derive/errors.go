@@ -7,11 +7,9 @@ import (
 	"github.com/trevex/chalkos/pkg/refusals"
 )
 
-// internalError is the error of a guard: a check of what the schemas, the rules and the
-// validators refuse before chalkd renders, which the model and the renderers keep because an
-// output would otherwise panic, carry syntax a value adds, or fail to load. A checked config
-// never fails one, so the error says that chalkd or the input has a bug, not the config. text
-// follows "internal error: ".
+// internalError is a guard's error. The schemas, rules and validators refuse its cause before
+// chalkd renders; the guard stays because an output would otherwise panic, carry syntax a value
+// adds, or fail to load. It means a bug in chalkd or its input, not in the config.
 type internalError struct{ text string }
 
 func (e *internalError) Error() string { return "internal error: " + e.text }
@@ -28,10 +26,8 @@ func isInternal(err error) bool {
 	return len(others) > 0
 }
 
-// Within is err of what, such as a document or a rule of it: an internal error keeps its
-// "internal error:" in front, as "internal error: <what>: ...", an error that holds a refusal,
-// which names its document and field already, stays as it is, and any other error reads
-// "<what>: ...".
+// Within prefixes err with what. A refusal already names its document and stays as it is; an
+// internal error keeps "internal error:" in front.
 func Within(what string, err error) error {
 	if _, ok := errors.AsType[*refusals.Error](err); ok {
 		return err

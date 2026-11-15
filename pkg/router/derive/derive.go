@@ -1,20 +1,13 @@
-// Package derive is the router's model of a node's config: the documents of the router layer's
-// kinds and of networkd's Network, decoded with their schema defaults, and what follows from
-// them together, which no single document says. That is the links the Network documents name,
-// the .network units in the order networkd picks them, the VRF networkd puts each link in, the
-// VRFs' devices, the NAT64 instances with their links and addresses, and the tables policy
-// routing sends traffic to.
+// Package derive is the router's model of a node's config: the router layer's documents and
+// networkd's Network, decoded with their schema defaults, and what follows from them together,
+// such as the links, the .network units in networkd's order, each link's VRF, the NAT64 instances
+// and the policy routing tables.
 //
-// chalkos-render builds the model from an output's input and renders the router's files from
-// it, and runs the validator router, Validate, as chalkos-render validate router; chalkctl links
-// Validate and runs it in-process on the same input. Since every router image carries
-// chalkos-render, the package takes the standard library alone, besides package refusals.
-//
-// A config the model refuses for what no schema or rule sees is a *refusals.Error that names the
-// document and its field, or several of them joined, one for each fault a check finds. Validate
-// runs every check, so the renderers render a config the model accepts and refuse none of what
-// it checks. A guard of what the schemas and rules refuse before the validator runs is an
-// internal error, as InternalErrorf makes it.
+// chalkos-render renders the router's files from the model and runs Validate as chalkos-render
+// validate router; chalkctl runs Validate in-process. Every router image carries chalkos-render,
+// so the package takes the standard library alone, besides refusals and jsonfile. A refusal is a
+// *refusals.Error naming the document and field; a guard of what the schemas and rules refuse
+// earlier is an internal error, as InternalErrorf makes it.
 package derive
 
 import (
@@ -86,12 +79,10 @@ type Named[T any] struct {
 	Spec T
 }
 
-// Model is the router's model of a node's config, as Build derives it from the documents of an
-// output's input or a validator's: the router kinds' documents, each kind's in the input's order,
-// which sorts them by name, and what the Network and VRF documents say together. The parts that
-// only some outputs need, and that refuse what the others need not see, are methods: Units,
-// NAT64Instances, PolicyTables, Sessions, Subnets, Relays and WireGuardInterfaces. Validate calls
-// each, where an output would, and the outputs that need one call it again.
+// Model is the router's view of a node's config, as Build derives it: each router kind's
+// documents in the input's order, sorted by name, and what the Network and VRF documents say
+// together. Parts only some outputs need, such as Units, Sessions and Subnets, are methods;
+// Validate calls each.
 type Model struct {
 	Routers  []Named[RouterSpec]
 	Zones    []Named[ZoneSpec]
@@ -126,10 +117,8 @@ type Model struct {
 	networkDocs []Named[map[string]any]
 }
 
-// Build is the model of byKind, the documents of an output's input by kind, as JSON decodes them
-// with their numbers exact; a kind the input lacks has no documents. It refuses what vrfLinks
-// refuses, and guards a document whose spec does not decode into its kind's type or whose name is
-// none the schemas take.
+// Build is the model of byKind, an output's input by kind with exact numbers. It refuses what
+// vrfLinks refuses and guards a spec that does not decode or a name no schema takes.
 func Build(byKind map[string]any) (Model, error) {
 	var d Model
 	for _, k := range routerKinds {

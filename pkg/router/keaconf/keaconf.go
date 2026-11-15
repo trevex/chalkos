@@ -1,7 +1,6 @@
 // Package keaconf is the part of the configs of Kea's DHCPv4 and DHCPv6 servers that the output
 // kea writes: the renderer marshals these types, and chalkd reads the rendered files back into
-// them. Fields Kea takes in either server sit in the types both servers' sections embed. It takes
-// the standard library alone, as chalkos-render does.
+// them. Fields Kea takes in either server sit in the types both servers' sections embed.
 package keaconf
 
 import "net/netip"

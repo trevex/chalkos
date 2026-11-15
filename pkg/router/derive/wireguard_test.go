@@ -41,13 +41,9 @@ const (
 	keyB = "YCfBku3dYhut+x0pFQMw7WbWU5qVks5ndJDuewg4J2I="
 )
 
-// The validator accepts peers of distinct keys and allowed IPs on an interface, and one key and
-// one range on two interfaces, and refuses a peer whose allowed IPs overlap an earlier peer's of
-// its interface or that has an earlier peer's key there. It refuses a WireGuard whose link a VRF
-// or a Network's VRF= puts in another VRF, and a Network networkd may pick for the link before
-// the WireGuard's own unit, of that unit's name or whose Name= names the link. It refuses a peer of
-// an endpoint networkd cannot read and one of a default route, and a VRF that names a WireGuard's
-// interface.
+// The validator accepts distinct peers on an interface and one key and range on two interfaces,
+// and refuses clashing peers, unreadable endpoints, default routes, and Networks and VRFs that
+// clash with a WireGuard's unit, link or VRF.
 func TestWireGuardChecks(t *testing.T) {
 	for _, tc := range []struct {
 		name  string

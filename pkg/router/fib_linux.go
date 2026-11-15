@@ -10,11 +10,10 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-// KernelRoutes lists the routes of every table of the kernel, both families, in the order of
-// their tables, families and destinations. zebra installs routes with nexthop objects; their next
-// hops are those the kernel adds to the dump while net.ipv4.nexthop_compat_mode is 1, its
-// default, as RTA_NH_ID is not resolved here. A dump the kernel interrupts because the routes
-// changed meanwhile is listed as it came.
+// KernelRoutes lists the routes of every table, both families, by table, family and destination.
+// zebra installs routes with nexthop objects, whose next hops the kernel adds to the dump while
+// net.ipv4.nexthop_compat_mode is 1, its default; RTA_NH_ID is not resolved here. A dump the kernel
+// interrupts because the routes changed is listed as it came.
 func KernelRoutes() ([]*KernelRoute, error) {
 	ifaces, err := net.Interfaces()
 	if err != nil {
@@ -50,10 +49,7 @@ func KernelRoutes() ([]*KernelRoute, error) {
 // kernelRoute converts a route of netlink, naming interfaces by index.
 func kernelRoute(r netlink.Route, names map[int]string) (*KernelRoute, error) {
 	k := &KernelRoute{Table: uint32(r.Table), Metric: uint32(r.Priority), Protocol: protocolName(uint8(r.Protocol)), Type: typeName(uint8(r.Type))}
-	// netlink gives a route without RTA_DST, a default route, the destination of all addresses of
-	// its family, as iproute2 does, for IPv4 and IPv6 alike; a route without one would be of
-	// another family, which Routes does not list. The check keeps a change of netlink from
-	// panicking.
+	// netlink sets Dst on every route, default routes included; guard against that changing.
 	if r.Dst == nil {
 		return nil, errors.New("list the node's routes: a route without a destination")
 	}

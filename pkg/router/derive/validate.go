@@ -8,16 +8,10 @@ import (
 	"github.com/trevex/chalkos/pkg/refusals"
 )
 
-// Validate is the validator router: chalkd runs it as chalkos-render validate router on the
-// documents of the kinds of Kinds that the image declares, and chalkctl links it and runs it
-// in-process on the same documents, so both refuse a config alike. stdin is what a validator
-// reads on standard input, the input a renderer reads too: the node's name and the documents of
-// each kind, with their schema defaults and their secret values hashed. Validate builds the model
-// of the documents as Build does and returns every refusal of the checks that check runs, each
-// once; chalkos-render and chalkctl replace the runes of their messages that refusals.Unprintable
-// reports by spaces. An input that is no such object, and a guard's internal error, are its error,
-// the validator's failure: chalkd and chalkctl run the validator after the schemas, the
-// references and the rules have checked the documents, which keeps every guard from firing.
+// Validate is the validator router. chalkd runs it as chalkos-render validate router and chalkctl
+// runs it in-process, so both refuse a config alike. stdin holds the node's name and the
+// documents by kind, with schema defaults and hashed secrets. It returns each refusal once; bad
+// input or a guard's internal error is its error.
 func Validate(stdin []byte) ([]refusals.Refusal, error) {
 	byKind, err := readDocuments(stdin)
 	if err != nil {
@@ -30,17 +24,10 @@ func Validate(stdin []byte) ([]refusals.Refusal, error) {
 	return rs, nil
 }
 
-// check runs the router's checks of what the documents of byKind mean together, which no schema
-// or rule sees, and joins their refusals: the VRFs' links as Build checks them, the NAT64s as
-// NAT64Instances checks them, the firewall's zones, NAT rules, management interfaces and policy
-// routes' in, the BGP peers' sessions, the resolvers' addresses, the DHCP subnets and relays, and
-// the WireGuards and their peers.
-// Each goes on past a refusal to the next document, so a config with several faults gets a
-// refusal for each. The checks that read the links' VRFs run once Build accepts them, since a
-// refusal of Build leaves them wrong, and those that read the NAT64s' pools once NAT64Instances
-// accepts them. A check refuses what the outputs that apply its documents would apply otherwise
-// than the documents say, so it runs whether or not the image renders those outputs: an image
-// without a feature declares none of its kinds, whose documents the validator then never reads.
+// check runs every check that spans documents and joins their refusals, one per fault. The checks
+// that read the links' VRFs run only once Build accepts them, those that read the NAT64s' pools
+// once NAT64Instances does. A check runs whether or not the image renders its output; an image
+// without a feature declares none of its kinds.
 func check(byKind map[string]any) error {
 	d, err := Build(byKind)
 	nat64, nerr := d.NAT64Instances()

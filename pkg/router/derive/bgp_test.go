@@ -56,11 +56,8 @@ func TestSessions(t *testing.T) {
 	}
 }
 
-// The validator refuses a peer's sessions where the links networkd puts in each VRF decide: an
-// interface of a VRF's device or of another VRF than the peer's, whether the VRF names it or a
-// glob of it, a glob of other VRFs' links alone, a link a glob expands to that is named like an
-// address, a session two peers name and listen ranges of a VRF that overlap.
-// It guards, with an internal error, values frr.conf and the firewall would read as syntax.
+// The validator refuses a peer's sessions by the links networkd puts in each VRF, and guards
+// values frr.conf and the firewall would read as syntax.
 func TestSessionRefusals(t *testing.T) {
 	tenant := derivetest.RouterDoc(t, "VRF", "tenant", `{"table": 100, "interfaces": ["eth2"]}`)
 	eth2 := derivetest.Doc(t, "Network", "20-eth2", `{"match": {"name": "eth2"}}`)

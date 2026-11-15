@@ -42,14 +42,11 @@ type NameWord struct {
 	Negated          bool
 }
 
-// parseNameMatch reads the Name= of the [Match] sections of the Network document network's spec
-// as systemd does: the values in order, each split into words at spaces, tabs and line breaks, a
-// value of only those dropping the words before it. A value whose first word starts with !
-// negates all of its words, and in another value a word that starts with ! negates itself.
-// systemd drops a word that is no interface name, and so does parseNameMatch. It refuses a
-// backslash, which systemd reads as an escape when it splits the value, and a word it cannot
-// match as fnmatch does. It reads interface names alone: networkd also matches a word against a
-// link's alternative names, which the documents do not give.
+// parseNameMatch reads the Name= of the Network's [Match] sections as systemd does: words split at
+// whitespace, a value of whitespace alone resetting the words before it, a first word with !
+// negating its whole value and a later one itself, and words that are no interface name dropped.
+// It refuses a backslash, an escape to systemd, and a word path.Match cannot match as fnmatch
+// does. networkd also matches alternative names, which the documents do not give.
 func parseNameMatch(network string, spec map[string]any) (NameMatch, error) {
 	var m NameMatch
 	for si, s := range OneOrMany(spec["match"]) {

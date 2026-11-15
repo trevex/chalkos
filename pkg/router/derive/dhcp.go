@@ -12,17 +12,10 @@ import (
 	"github.com/trevex/chalkos/pkg/refusals"
 )
 
-// The DHCPSubnet and DHCPRelay documents as the router serves and relays them: the links each
-// names, their VRF, the router's addresses on them, and what a subnet delegates, which the
-// documents give only together. The kinds' rules check each document on its own: a subnet's
-// range, its pools and reservations against the range, each other and the gateway, DNS and boot
-// servers, and its options, and a relay's servers. The model checks what spans documents: one VRF
-// per subnet or relay, one subnet of each family per link, no overlap within a server, a static
-// address of the router in the subnet on each link, kept out of the pools and reservations, what a
-// subnet delegates against the router's addresses and routes, router advertisements that send
-// IPv6 clients to the DHCPv6 server, the router's addresses a relay forwards from, and relays
-// beside servers. Kea reads and answers DHCPv4 on raw sockets ahead of the firewall, so a document
-// names each of its links, as the schemas' pattern, which takes no glob, holds it to.
+// The DHCPSubnet and DHCPRelay documents as the router serves and relays them. The kinds' rules
+// check each document alone; the model checks what spans documents: links, VRFs, the router's
+// addresses, delegations and router advertisements. Kea reads and answers DHCPv4 on raw sockets
+// ahead of the firewall, so a document names each of its links; the schemas' pattern takes no glob.
 
 // Subnet is a DHCPSubnet document with the links it is served on, their VRF and the router's
 // addresses it was checked against.
@@ -49,16 +42,10 @@ func (s Subnet) Is6() bool { return s.Prefix.Addr().Is6() }
 // record each (router.MaxPDRecords).
 const MaxDelegated = 65536
 
-// Subnets are the DHCPSubnet documents as the router serves them, in their order. It refuses,
-// each subnet at its first fault, an interface that is a VRF's device or a NAT64's link, links of
-// two VRFs, links in a VRF of a Network's VRF= that no VRF document declares, a link no Network
-// matches by Name= alone or whose Network gives it no static address in the subnet, a pool or
-// reservation that holds such an address, a delegated range that holds the router's address or
-// route in the VRF or a NAT64's prefix of it, and an IPv6 subnet whose link sends no router
-// advertisements that send its clients to the server. Of the subnets it accepts, it then refuses
-// a link that two subnets of a family serve, subnets of a VRF and family that overlap, their
-// delegated ranges included, and subnets that delegate more than MaxDelegated prefixes in all.
-// It guards, with an internal error, what the schemas and rules refuse and would panic.
+// Subnets are the DHCPSubnet documents as the router serves them, in their order. It refuses each
+// subnet at its first fault, then links and ranges, delegated ones included, that subnets of one
+// server share, and more than MaxDelegated delegated prefixes in all. It guards what the schemas
+// and rules refuse.
 func (d Model) Subnets() ([]Subnet, error) {
 	if len(d.DHCPSubnets) == 0 {
 		return nil, nil
@@ -172,12 +159,10 @@ func (d Model) serveSubnet(units []Unit, devices []string, s Named[DHCPSubnetSpe
 	return sub, d.advertised(units, sub)
 }
 
-// servedLinks are the links the interfaces of a subnet or relay serve it on, sorted, and their
-// VRF; oneVRF ends the refusal of links of two VRFs. It refuses an interface that is a VRF's
-// device or a NAT64's link, links of two VRFs and links in a VRF of a Network's VRF= that no VRF
-// document declares. It guards, with an internal error, no interface, as an IPv6 subnet's config
-// names its first, and a name that is no interface's, which dnsmasq's config and the firewall's
-// ruleset would read as syntax.
+// servedLinks are the sorted links a subnet's or relay's interfaces name, and their VRF; oneVRF
+// ends the refusal of links of two VRFs. It guards no interface, as an IPv6 subnet's config names
+// its first, and a name that is no interface's, which dnsmasq's config and the ruleset would read
+// as syntax.
 func (d Model) servedLinks(devices []string, kind, name string, interfaces []string, oneVRF string) ([]string, string, error) {
 	if len(interfaces) == 0 {
 		return nil, "", InternalErrorf("interfaces names no interface")
@@ -224,10 +209,9 @@ func interfacePath(interfaces []string, link string) string {
 	return fmt.Sprintf("spec.interfaces[%d]", max(slices.Index(interfaces, link), 0))
 }
 
-// linkNetwork is the name of the Network document networkd picks for the link, which the model
-// reads the link's addresses and router advertisements from: one that matches it by Name= alone.
-// Without one it refuses the field at path of the document kind/name, the subnet's or relay's
-// interface that names the link; why says what the model reads of the Network.
+// linkNetwork is the Network networkd picks for the link by Name= alone, which the model reads the
+// link's addresses and router advertisements from. Without one it refuses the field path of the
+// document kind/name; why says what the model reads.
 func linkNetwork(units []Unit, kind, name, path, link, why string) (string, error) {
 	cs := Candidates(units, link)
 	if len(cs) == 0 || cs[0].Narrowed {
@@ -236,10 +220,9 @@ func linkNetwork(units []Unit, kind, name, path, link, why string) (string, erro
 	return cs[0].Name, nil
 }
 
-// ownAddresses are the router's static addresses in the subnet on its links, which the Network
-// networkd picks for each link gives. Kea answers a DHCPv4 client on a link from the link's
-// address in the subnet, and the address routes an IPv6 subnet's addresses to the link, so it
-// refuses a link without one; why ends the refusal.
+// ownAddresses are the router's static addresses in the subnet on its links. Kea answers a DHCPv4
+// client from the link's address in the subnet, and an IPv6 subnet is routed to the link by it,
+// so a link without one is refused; why ends the refusal.
 func (d Model) ownAddresses(units []Unit, sub Subnet, why string) ([]netip.Addr, error) {
 	var own []netip.Addr
 	for _, l := range sub.Links {
@@ -264,11 +247,9 @@ func (d Model) ownAddresses(units []Unit, sub Subnet, why string) ([]netip.Addr,
 	return own, nil
 }
 
-// ownApart are the pools of the subnet s, each its first and last address. It refuses a pool or
-// reservation that holds one of the router's own addresses own on the subnet's links, which Kea
-// would lease to a client; what says what they are. The rules have kept the pools and
-// reservations inside the subnet and apart from each other and from the gateway and the DNS and
-// boot servers.
+// ownApart are the pools of s, each its first and last address. It refuses a pool or reservation
+// that holds an address of own, which Kea would lease; what names them. The rules already keep
+// pools and reservations inside the subnet and apart.
 func ownApart(s Named[DHCPSubnetSpec], own []netip.Addr, what string) ([][2]netip.Addr, error) {
 	var pools [][2]netip.Addr
 	for i, p := range s.Spec.Pools {
@@ -324,11 +305,9 @@ func (d Model) delegatesNoRoute(sub Subnet) error {
 }
 
 // advertised refuses a subnet whose link's Network sends no router advertisements that tell its
-// clients to ask the DHCPv6 server: with Managed=yes for addresses, which pools and reservations
-// lease, and with Managed=yes or OtherInformation=yes for delegated prefixes and options alone.
-// networkd sends advertisements on a link whose [Network] has IPv6SendRA=yes, with the flags of
-// its [IPv6SendRA] section, and reads the former names IPv6PrefixDelegation= and
-// [IPv6PrefixDelegation] as well.
+// clients to ask the DHCPv6 server: Managed=yes for addresses, Managed=yes or
+// OtherInformation=yes for delegated prefixes and options alone. networkd advertises on a link with
+// IPv6SendRA=yes, with the flags of [IPv6SendRA], and reads the former names too.
 func (d Model) advertised(units []Unit, sub Subnet) error {
 	link := sub.Links[0]
 	at := interfacePath(sub.Spec.Interfaces, link)
@@ -351,10 +330,8 @@ func (d Model) advertised(units []Unit, sub Subnet) error {
 	return nil
 }
 
-// unitBool is the boolean that keys, each a section and a key of a Network document's spec, give
-// in the unit in their order, as systemd-networkd reads it: the last value that parses as a
-// boolean, of every section of the name, or false, the default of the keys it reads; systemd
-// ignores a value that does not parse.
+// unitBool is the last value of keys, each a section and key of a Network spec, that parses as a
+// boolean, as networkd reads them, and false without one.
 func unitBool(spec map[string]any, keys ...[2]string) bool {
 	b := false
 	for _, k := range keys {
@@ -429,21 +406,18 @@ type Relay struct {
 	Servers map[bool][]netip.Addr
 }
 
-// RelayLink is a link of a relay and the router's address on it that the relay forwards the
-// requests of each family from, IPv6 under true: its first static address of the family that
-// the Network networkd picks for the link gives, a global one for IPv6, as the server picks the
-// subnet of the request's link by it.
+// RelayLink is a link of a relay with the router's address of each family (IPv6 under true) that
+// the relay forwards from: the first static one the link's Network gives, a global one for IPv6.
+// The server picks the request's subnet by it.
 type RelayLink struct {
 	Link  string
 	Local map[bool]netip.Addr
 }
 
-// Relays are the DHCPRelay documents as dnsmasq relays them, in their order. It refuses, each
-// relay at its first fault, an interface that Subnets would refuse of a subnet, a link no Network
-// matches by Name= alone, and a link whose Network gives it no static address of a family the
-// relay has servers of. It then refuses a family that relays and subnets serve in one VRF, or in
-// two VRFs one of which is the default: dnsmasq's and Kea's sockets of a family bind beside each
-// other only when each is bound to its own VRF's device.
+// Relays are the DHCPRelay documents as dnsmasq relays them, in their order. It refuses each relay
+// at its first fault, then a family that relays and subnets serve in one VRF, or in two VRFs one
+// of which is the default: dnsmasq's and Kea's sockets of a family bind beside each other only
+// when each is bound to its own VRF's device.
 func (d Model) Relays() ([]Relay, error) {
 	if len(d.DHCPRelays) == 0 {
 		return nil, nil
@@ -542,10 +516,8 @@ func (d Model) relayAddress(relay, path, network, link string, v6 bool) (netip.A
 	return netip.Addr{}, refusals.Errorf("DHCPRelay", relay, path, "Network %s gives %s no static %s address, which the relay forwards its clients' requests from", network, link, family)
 }
 
-// relaysBesideServers refuses each subnet of a family that the relays relay in its VRF, or in the
-// default VRF or the subnet's in the default VRF: dnsmasq's and Kea's sockets of a family bind
-// beside each other only when each is bound to its own VRF's device. A subnet whose links
-// servedLinks refuses is Subnets' to refuse.
+// relaysBesideServers refuses each subnet that a relay of its family would bind beside, as Relays
+// describes; a subnet whose links servedLinks refuses is left to Subnets.
 func (d Model) relaysBesideServers(devices []string, relays []Relay) error {
 	// families are the last relay that relays each family in each VRF, by VRF and family.
 	type server struct {

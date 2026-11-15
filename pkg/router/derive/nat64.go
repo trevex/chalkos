@@ -72,10 +72,8 @@ type PoolRange struct {
 	Protocols   []string
 }
 
-// NAT64Instances are the NAT64 documents of d as chalkos-nat64 runs them. It refuses what
-// nat64Pools refuses and each NAT64 whose name's hash picks the link of one before it, every one
-// it finds. The rules refuse a pool entry that holds a static address of a Network document and
-// a static address in nat64Range.
+// NAT64Instances are the NAT64 documents as chalkos-nat64 runs them. It refuses what nat64Pools
+// refuses and each NAT64 whose name's hash picks the link of one before it.
 func (d Model) NAT64Instances() ([]NAT64Instance, error) {
 	out, err := nat64Pools(d.NAT64)
 	if err != nil {
@@ -129,12 +127,10 @@ func nat64LinkAddresses(s int) (outer, inner netip.Prefix) {
 	return netip.PrefixFrom(first.Next(), 30), netip.PrefixFrom(first.Next().Next(), 30)
 }
 
-// nat64Pools are the NAT64 documents' names, VRFs, prefixes and pools, as Jool takes them. They
-// refuse two NAT64s of one VRF whose prefixes overlap and two NAT64s whose pools share an address,
-// which the rules leave to the model, as they would compare the documents in pairs, each pair they
-// find. They guard, with an internal error, what jool file check passes and the kernel refuses
-// once chalkos-nat64 loads the instance: a name whose link is longer than an interface's name, a
-// pool entry of no protocol Jool takes, and what NAT64Prefix and poolEntryRange guard.
+// nat64Pools are the NAT64 documents' names, VRFs, prefixes and pools as Jool takes them. They
+// refuse NAT64s of one VRF with overlapping prefixes and NAT64s whose pools share an address,
+// which the rules would have to compare in pairs. They guard what jool file check passes but the
+// kernel refuses once chalkos-nat64 loads the instance.
 func nat64Pools(docs []Named[NAT64Spec]) ([]NAT64Instance, error) {
 	var out []NAT64Instance
 	var errs []error
@@ -193,11 +189,10 @@ func nat64Pools(docs []Named[NAT64Spec]) ([]NAT64Instance, error) {
 	return out, nil
 }
 
-// poolEntryRange is the prefix, masked, and the first and last port of the pool entry e. It guards,
-// with an internal error, a prefix that is no IPv4 range of 65536 addresses at most, which the
-// firewall's sets and the link's routes take as IPv4 and for which Jool's kernel module would add
-// an entry per address, and ports of the kernel's ephemeral range, 32768 to 60999, which the
-// module refuses in a namespace that keeps that range.
+// poolEntryRange is the masked prefix and the first and last port of e. It guards a prefix that is
+// no IPv4 range of at most 65536 addresses, as Jool's module adds an entry per address, and ports
+// in the kernel's ephemeral range, 32768 to 60999, which the module refuses in a namespace that
+// keeps it.
 func poolEntryRange(e PoolEntry) (netip.Prefix, int, int, error) {
 	p := e.Prefix
 	if !p.Addr().Is4() || p.Bits() < 16 {
@@ -210,10 +205,9 @@ func poolEntryRange(e PoolEntry) (netip.Prefix, int, int, error) {
 	return p.Masked(), first, last, nil
 }
 
-// NAT64Prefix is the NAT64 or DNS64 prefix p, masked. It guards, with an internal error, a prefix
-// that Jool's kernel module or Unbound refuses: no IPv6 range, a length other than RFC 6052's, and
-// bits 64 to 71 set. The rules refuse those, and prefixes of IPv4-mapped, link-local, multicast or
-// unspecified addresses, first.
+// NAT64Prefix is the NAT64 or DNS64 prefix p, masked. It guards what Jool's module or Unbound
+// refuses: no IPv6 range, a length other than RFC 6052's, and bits 64 to 71 set. The rules refuse
+// those first.
 func NAT64Prefix(p netip.Prefix) (netip.Prefix, error) {
 	if !p.Addr().Is6() || !slices.Contains(nat64Lengths, p.Bits()) || p.Masked().Addr().As16()[8] != 0 {
 		return netip.Prefix{}, InternalErrorf("the prefix %s is no IPv6 range of 32, 40, 48, 56, 64 or 96 bits whose bits 64 to 71 are zero", p)

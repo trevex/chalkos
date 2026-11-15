@@ -59,11 +59,8 @@ func accepted(t *testing.T, docs map[string][]any) {
 	}
 }
 
-// The validator reports every fault of a config it can see at once, each once, from several
-// documents of several kinds: here a Network that names a VRF's device, two NAT64s whose pools
-// share an address, a zone of a VRF's device and a resolver that listens on another VRF's address.
-// A check that reads the links' VRFs waits for the VRFs' links to pass, as their refusals leave it
-// nothing to read; the NAT64s' check, which does not read them, runs anyway.
+// The validator reports every fault it can see at once, each once, across documents and kinds.
+// The checks that read the links' VRFs wait for those to pass; the NAT64s' check runs anyway.
 func TestValidateReportsEveryFault(t *testing.T) {
 	nat64 := func(name, pool string) any {
 		return derivetest.RouterDoc(t, "NAT64", name, `{"prefix": "64:ff9b::/96", "vrf": "`+name+`", "pool4": [{"prefix": "`+pool+`", "ports": "61001-65535", "protocols": ["tcp"]}]}`)
@@ -107,13 +104,9 @@ func natRule(t *testing.T, i string) any {
 	return derivetest.RouterDoc(t, "NATRule", "n", `{"type": "masquerade", "family": "ipv4", "out": {"zone": null, "interface": "`+i+`"}, "in": null, "match": {"source": [], "destination": [], "protocol": null, "destinationPorts": []}, "to": null}`)
 }
 
-// The firewall's view of the links refuses a zone's interface or glob of a VRF's device, which
-// the input and forward hooks see for each of the VRF's links, and an interface that may be a
-// link of a VRF another zone holds, a zone or a conntrack zone of a VRF whose links nftables
-// cannot match, a NAT rule's zone of no link and a NAT rule's interface that matches nothing but
-// VRF devices, which translates nothing; a VRF's name matches its device alone, also where a glob
-// of another VRF's links covers the name. A management interface of a VRF's device takes no
-// connection to chalkd.
+// The firewall checks refuse interfaces of a VRF's device or of another zone's VRF, zones nftables
+// cannot match, NAT rules that translate nothing and management interfaces in a VRF. A VRF's name
+// matches its device alone, even where another VRF's glob covers the name.
 func TestFirewallRefusals(t *testing.T) {
 	zone := func(name, spec string) any { return derivetest.RouterDoc(t, "FirewallZone", name, spec) }
 	tenant := zone("tenant", `{"interfaces": [], "vrfs": ["tenant"]}`)

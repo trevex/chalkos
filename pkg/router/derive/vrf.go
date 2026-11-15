@@ -53,11 +53,9 @@ type Membership struct {
 	Members []Member
 }
 
-// LinkVRF is the VRF networkd puts the link in: that of the .network unit it picks for the link,
-// the default VRF for a link of no VRF's unit or of none. The units that may be the first to
-// match the link are in its VRF once vrfLinks has checked them. When only units whose other
-// [Match] keys may not match the link do, networkd may also leave the link in no VRF, and
-// LinkVRF refuses it unless its VRF is the default one.
+// LinkVRF is the VRF networkd puts the link in: that of the .network unit it picks, or the default
+// VRF. When only units whose other [Match] keys may not match the link put it in a VRF, networkd
+// may leave it in none, and LinkVRF refuses unless that VRF is the default.
 func (m Membership) LinkVRF(link string) (string, error) {
 	cs := Candidates(m.Units, link)
 	if len(cs) == 0 {
@@ -170,22 +168,15 @@ func sortsBefore(u Unit, what, own string) error {
 	return refusals.Errorf("Network", u.Name, "metadata.name", "Network %s matches %s before %s; rename it to sort after %s", u.Name, what, own, own)
 }
 
-// vrfLinks checks the VRF documents against the Network documents of byKind, which name the
-// links, where the VRF's rules cannot, and returns the VRF of each Network. A VRF holds the links
-// its document's interfaces match and those a Network document's Name= matches whose own VRF=
-// names it, whether a document of the VRF exists or not. A Network document is in the VRF of the
-// links it may be the first to match, and vrfLinks refuses unless all links it may match are in
-// that VRF, so that VRF= on the Network puts in the VRF the links that the VRF holds, and only
-// those. It refuses a link two VRFs may hold, a literal interface of a VRF that is one of
-// wireguards, the WireGuards' interfaces, which join a VRF by their own vrf, or that no Network
-// matches by Name= alone, and a VRF device whose first Network is not its own. Without VRF
-// documents and VRF= it checks nothing and puts every link in the default VRF, so that a router image without
-// VRFs takes the Network documents it took before them.
+// vrfLinks checks the VRF documents against the Network documents and returns the VRF of each
+// Network. A VRF holds the links its interfaces name and the links of Networks whose VRF= names
+// it. A Network is in the VRF of the links it may be the first to match and must match no link
+// outside it, so that VRF= puts exactly the VRF's links in the VRF. The WireGuards of wireguards
+// join a VRF by their own vrf. Without VRFs it checks nothing and puts every link in the default
+// VRF.
 //
-// It goes on past a refusal to the end of each of its steps and returns every refusal of the
-// first step that refuses, joined: the VRFs' members and the units, then the Networks that may be
-// the first to match each member's links, then the VRF of each Network. A step reads what the
-// steps before it found, which a refusal leaves wrong.
+// Each step reports all of its refusals. A step runs only if the steps before it passed, because
+// it reads what they found.
 func vrfLinks(vrfs []Named[VRFSpec], links, wireguards []string, docs []Named[map[string]any]) (Membership, error) {
 	var none Membership
 	if len(vrfs) == 0 && !anyNetworkVRF(docs) {

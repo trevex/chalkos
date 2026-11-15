@@ -80,10 +80,9 @@ func ParseKeaSubnets(data []byte) ([]KeaSubnet, error) {
 	return out, nil
 }
 
-// ParseKeaInterfaces reads the links a DHCPv4 or DHCPv6 config of the output kea serves, which Kea
-// refuses to start or reload without: those of its Dhcp4 section, or of its Dhcp6 section without
-// one. A config whose section lists no interfaces, not even an empty list, is no config of the
-// output.
+// ParseKeaInterfaces reads the links a config of the output kea serves, from its Dhcp4 section or
+// else its Dhcp6 one; Kea refuses to start or reload without them. A section that lists no
+// interfaces, not even an empty list, is no config of the output.
 func ParseKeaInterfaces(data []byte) ([]string, error) {
 	c, err := readKeaConfig(data)
 	if err != nil {

@@ -52,11 +52,8 @@ func writeRecords(t *testing.T, dir string, records map[string]string) {
 	}
 }
 
-// The records of delegated prefixes are routes while their leases last and a pool delegates them
-// on their link to a link-local address; others are no routes: a record that ended, of another
-// link, of another length, outside the pools, of an address that is no prefix's start, to an
-// address that is not link-local, or that does not parse. The hook's files being written, of a
-// leading dot, are none either. No file is removed.
+// Live records that a pool delegates on their link to a link-local address are routes; other
+// records and the hook's dot files are none, and no file is removed.
 func TestReadPDRecords(t *testing.T) {
 	dir := t.TempDir()
 	now := time.Unix(1_800_000_000, 0)

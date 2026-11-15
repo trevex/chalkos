@@ -100,10 +100,8 @@ type NATPlace struct {
 	Interface *string `json:"interface"`
 }
 
-// PortRange is a port from 1, or a range of ports "<first>-<last>", as nftables writes both. The
-// schemas' format port-range checks the ports; UnmarshalJSON reads them again because the ruleset
-// writes them unquoted, so that a value the schemas would refuse fails to decode rather than add
-// syntax to the ruleset.
+// PortRange is a port from 1, or a range "<first>-<last>", as nftables writes both. UnmarshalJSON
+// checks it again, though the schemas' format does, because the ruleset writes it unquoted.
 type PortRange string
 
 func (p *PortRange) UnmarshalJSON(data []byte) error {
@@ -506,10 +504,9 @@ func decodeEnum[T ~string](data []byte, v *T, values ...T) error {
 	return nil
 }
 
-// Community is a BGP community as FRR writes it: a standard one, <AS>:<value> of numbers of 16
-// bits, or a large one, <AS>:<value>:<value> of numbers of 32 bits, in decimal without leading
-// zeros. A value of another form fails to decode, so frr.conf, which writes it unquoted, never
-// holds it.
+// Community is a BGP community as FRR writes it: <AS>:<value> of 16-bit numbers, or a large one,
+// <AS>:<value>:<value> of 32-bit numbers, in decimal without leading zeros. Another form fails to
+// decode, as frr.conf writes it unquoted.
 type Community struct {
 	Value string
 	Large bool
@@ -554,13 +551,11 @@ func decodes(t reflect.Type) bool {
 	return t.Kind() != reflect.Pointer && (p.Implements(jsonUnmarshaler) || p.Implements(textUnmarshaler))
 }
 
-// checkDecoded refuses a value of v, a decoded spec at the JSON path path, that decodes itself and
-// is missing, and an address with a zone. JSON leaves a field the input lacks at its zero value,
-// which no such type decodes into, and netip decodes an empty string or null into an address or
-// range that is not valid and takes a zone of any characters, which the outputs would write. The
-// schemas' required fields, defaults and formats refuse each of them; a nil pointer is an
-// optional field the input leaves out. The walk takes structs, pointers and slices, which the
-// specs are made of, and refuses any other kind that holds a value.
+// checkDecoded refuses, in the decoded spec v at path, a self-decoding value that is missing and
+// an address with a zone. JSON leaves a missing field at its zero value, and netip decodes "" or
+// null into an invalid address and takes any zone, which the outputs would write; the schemas
+// refuse each. A nil pointer is an optional field left out. It walks structs, pointers and slices
+// and refuses any other kind that holds a value.
 func checkDecoded(path string, v reflect.Value) error {
 	if t := v.Type(); decodes(t) {
 		switch {

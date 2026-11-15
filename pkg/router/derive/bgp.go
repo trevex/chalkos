@@ -20,16 +20,11 @@ type Session struct {
 	OnLink    bool
 }
 
-// Sessions are the sessions of each BGPPeer document, by its name: its address, its interface,
-// which is a link of its VRF, or the links of its VRF its interfaces name, globs matching the
-// links the Network documents name. A peer of a listen range has no sessions: its neighbours open
-// them. A glob skips the links of other VRFs, those of no VRF for a peer of a VRF and those of a
-// VRF for a peer of the default one. It refuses, each peer at its first fault, an interface or
-// glob of a VRF's device, an interface of a link of another VRF, a glob that matches links of
-// other VRFs alone and a link a glob expands to that is named like an address. Of the peers it
-// accepts, it then refuses a session that two peers of a VRF name, and it refuses listen ranges
-// of a VRF that overlap. It guards, with an internal error, an interface or glob that is none,
-// which frr.conf and the firewall write unquoted.
+// Sessions returns each BGPPeer's sessions by name: its address, its interface, or the links of
+// its VRF that its globs match among those the Network documents name. A listen-range peer has
+// none; its neighbours open them. It refuses each peer at its first fault, then any session or
+// listen range that two peers of a VRF share. It guards an interface that is none, which frr.conf
+// and the firewall write unquoted.
 func (d Model) Sessions() (map[string][]Session, error) {
 	out := map[string][]Session{}
 	devices := d.Devices()
@@ -161,9 +156,7 @@ func (d Model) sessions(p Named[PeerSpec], devices []string) ([]Session, error) 
 	return out, nil
 }
 
-// peerField is the field of a BGPPeer that names its sessions, which a refusal of a session
-// names: one of address, interface and interfaces, as the BGPPeer's rules require. A peer of a
-// listen range has no sessions, so no refusal of a session names it.
+// peerField is the field of a BGPPeer that names its sessions: address, interface or interfaces.
 func peerField(s PeerSpec) string {
 	switch {
 	case s.Address != nil:
