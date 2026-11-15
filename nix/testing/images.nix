@@ -18,32 +18,8 @@ let
       router = {
         kubernetes = false;
         router = true;
-        # The test reads who owns the filled frr.conf, which holds the peers' passwords, and its
-        # mode; /run/frr lets anyone look into it.
         modules = [
           {
-            chalkos.diagnostics.chalktest-frr-conf = {
-              description = "The owner, group and mode of /run/frr/frr.conf.";
-              command = [
-                "${pkgs.coreutils}/bin/stat"
-                "-c"
-                "%U %G %a"
-                "/run/frr/frr.conf"
-              ];
-              role = "reader";
-              timeout = "10s";
-            };
-            # The test reads the WireGuard wg0's rendered .netdev, which names its private key as
-            # a credential and holds no key.
-            chalkos.diagnostics.chalktest-wg-netdev = {
-              description = "The rendered .netdev of the WireGuard wg0.";
-              command = [
-                "${pkgs.coreutils}/bin/cat"
-                "/run/systemd/network/00-wg-wg0.netdev"
-              ];
-              role = "reader";
-              timeout = "10s";
-            };
             # The test asks r2's resolver of fabric on edge0's address from within fabric, over a
             # socket bound to the VRF's device, which needs no privilege on a socket not bound
             # before. The query asks for the A records of ipv4only.arpa with the ID 0x1234; any

@@ -15,8 +15,8 @@ let
   fixtureImages = lib.mapAttrs (_: variable: testEnv.imageDirs.${variable}) (
     lib.importJSON ../../test/fixtures/clusters/images.json
   );
-  # The inventories of the e2e fixtures that an e2e test has chalkctl validate refuse, each with
-  # the refusal it wants; router_test.go names the same.
+  # The inventories of the e2e fixtures that chalkctl validate refuses, each with the refusal it
+  # wants.
   refusedFixtures = {
     "chalklab/router-twice.yaml" =
       "the config is refused: BGPPeer/fabric: spec.interfaces: BGPPeer again and BGPPeer fabric both name enp0s3 in the VRF default; give each session one peer";

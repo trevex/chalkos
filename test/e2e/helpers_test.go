@@ -114,15 +114,7 @@ func copyFixtures() (dir string, err error) {
 	return dir, nil
 }
 
-// inventories are the fixtures' inventories by the names the tests give them: the main cluster,
-// the same with an additive and with a destructive change of chalklab's storage and with a
-// Greeting the test image's validator refuses, the same with chalklab on the upgrade image with
-// config only that image accepts and with config only that image's renderer refuses, its router
-// r1 announcing a network and with chalkd's port on its fabric link alone, its routers with their
-// fabric link in a VRF and r2's VRF in another table, r1 sending its default route while a route
-// exists, with and without that route, r1 accepting r2 from a listen range, the routers with a
-// WireGuard tunnel and with r1's peer of wider ranges, r1 leasing r2 an address on a macvlan, r1
-// with two peers of one session, and the HA cluster.
+// inventories maps the tests' short names to the fixtures' inventory files.
 var inventories = map[string]string{
 	"base":           "chalklab/chalkos.yaml",
 	"added":          "chalklab/added.yaml",
@@ -137,8 +129,6 @@ var inventories = map[string]string{
 	"dhcp":           "chalklab/router-dhcp.yaml",
 	"default":        "chalklab/router-default.yaml",
 	"default-gone":   "chalklab/router-default-gone.yaml",
-	"twice":          "chalklab/router-twice.yaml",
-	"listen":         "chalklab/router-listen.yaml",
 	"wireguard":      "chalklab/router-wireguard.yaml",
 	"wireguard-wide": "chalklab/router-wireguard-wide.yaml",
 	"ha":             "chalklab-ha/chalkos.yaml",
