@@ -8,21 +8,21 @@
 }:
 let
   inherit (pkgs) lib;
-  # The homelab's flake, extensions, inventory and config files, which the pages include as
-  # snippets.
-  homelabSnippets = [
-    "flake.nix"
-    "extensions"
-    "chalkos.yaml"
-    "nodes"
-    "cluster"
-    "router"
-    "bgp"
-  ];
-  # The extensions example's files the pages include as snippets.
-  extensionsSnippets = [ "rack.nix" ];
-  # The lab template's files the pages include as snippets.
-  templateSnippets = [ "cluster" ];
+  # The files of the examples and the lab template that the pages include as snippets, by their
+  # directories.
+  snippets = {
+    "examples/homelab" = [
+      "flake.nix"
+      "extensions"
+      "chalkos.yaml"
+      "nodes"
+      "cluster"
+      "router"
+      "bgp"
+    ];
+    "examples/extensions" = [ "rack.nix" ];
+    "templates/lab" = [ "cluster" ];
+  };
   src = lib.fileset.toSource {
     root = ../../.;
     fileset = lib.fileset.unions (
@@ -30,9 +30,7 @@ let
         ../../zensical.toml
         ../../docs
       ]
-      ++ map (path: ../../examples/homelab + "/${path}") homelabSnippets
-      ++ map (path: ../../examples/extensions + "/${path}") extensionsSnippets
-      ++ map (path: ../../templates/lab + "/${path}") templateSnippets
+      ++ lib.concatLists (lib.mapAttrsToList (dir: map (path: ../../. + "/${dir}/${path}")) snippets)
     );
   };
   # The pages and files docgen writes, as they lie in the repository.
@@ -293,18 +291,12 @@ rec {
       copy() {
         rsync -a --delete --exclude /superpowers/ docs/ "$work/docs/"
         rsync -a zensical.toml "$work/zensical.toml"
-        mkdir -p "$work/examples/homelab"
-        for path in ${lib.escapeShellArgs homelabSnippets}; do
-          rsync -a --delete "examples/homelab/$path" "$work/examples/homelab/"
-        done
-        mkdir -p "$work/examples/extensions"
-        for path in ${lib.escapeShellArgs extensionsSnippets}; do
-          rsync -a --delete "examples/extensions/$path" "$work/examples/extensions/"
-        done
-        mkdir -p "$work/templates/lab"
-        for path in ${lib.escapeShellArgs templateSnippets}; do
-          rsync -a --delete "templates/lab/$path" "$work/templates/lab/"
-        done
+        ${lib.concatStrings (
+          lib.mapAttrsToList (dir: paths: ''
+            mkdir -p "$work/${dir}"
+            rsync -a --delete ${lib.escapeShellArgs (map (path: "${dir}/${path}") paths)} "$work/${dir}/"
+          '') snippets
+        )}
       }
       copy
       while sleep 1; do copy; done &
