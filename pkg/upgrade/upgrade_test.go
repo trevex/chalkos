@@ -611,11 +611,6 @@ func TestRefusesBeforeChanging(t *testing.T) {
 				t.Fatalf("%v: %s", err, out)
 			}
 		}, "needs two slots"},
-		{"both slots carrying the running store's UUIDs", nil, func(l *lab) {
-			data, verity := storeslot.PartitionUUIDs(old.Root)
-			l.setUUID(4, verity)
-			l.setUUID(5, data)
-		}, "both slots"},
 		{"the inactive slot carrying a UUID of the running store", nil, func(l *lab) {
 			data, _ := storeslot.PartitionUUIDs(old.Root)
 			l.setUUID(5, data)

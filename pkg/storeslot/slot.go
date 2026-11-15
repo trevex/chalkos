@@ -78,14 +78,12 @@ func (w *Writer) Retire(ctx context.Context, slot Slot) error {
 
 // Write writes the store and its hash tree that the stream holds into the slot and checks them
 // against the root hash, as read back from the disk. A slot that holds them already is left as
-// it is, and the stream's copies are skipped. It reports whether it wrote the slot.
+// it is, and the stream's copies are skipped. It reports whether it wrote the slot. The caller
+// checks that the image fits the slot.
 func (w *Writer) Write(h Image, slot Slot, stream io.Reader) (bool, error) {
 	if w.Holds(slot, h) {
 		log.Printf("the slot of partitions %d and %d holds the store %x already", slot.Verity.Number, slot.Data.Number, h.RootHash)
 		return false, Skip(h, stream)
-	}
-	if err := slot.Fits(h); err != nil {
-		return false, err
 	}
 	for _, part := range []struct {
 		what string

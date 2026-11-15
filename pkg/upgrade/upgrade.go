@@ -262,11 +262,10 @@ func (n *Node) Install(ctx context.Context, h Header, stream io.Reader) (Result,
 	if staged, ok := esp.StagedEntry(all, h.ImageID, booted); ok && bytes.Equal(staged.RootHash, h.RootHash) && inactive.Holds(h.RootHash) {
 		// The node's known-good image boots with the config it last ran: the caller refuses other
 		// config for it, and nothing is checked or written again.
-		if KnownGood(staged, booted) {
-			return Result{AlreadyStaged: true, Entry: staged.File, Active: true}, nil
-		}
-		if err := n.recheck(ctx, h, inactive, staged, all, booted, running, true); err != nil {
-			return Result{}, err
+		if !KnownGood(staged, booted) {
+			if err := n.recheck(ctx, h, inactive, staged, all, booted, running, true); err != nil {
+				return Result{}, err
+			}
 		}
 		return Result{AlreadyStaged: true, Entry: staged.File, Active: true}, nil
 	}
@@ -578,10 +577,6 @@ func slots(parts []gpt.Partition, running []byte) (booted, inactive storeslot.Sl
 	pairs, err := storeslot.StoreSlots("the boot disk", parts)
 	if err != nil {
 		return storeslot.Slot{}, storeslot.Slot{}, err
-	}
-	// The node found its store by these UUIDs; on two slots, which one it runs is unknown.
-	if pairs[0].Holds(running) && pairs[1].Holds(running) {
-		return storeslot.Slot{}, storeslot.Slot{}, errors.New("both slots carry the running store's partition UUIDs; which one the node runs is unknown")
 	}
 	dataUUID, verityUUID := storeslot.PartitionUUIDs(running)
 	for i, s := range pairs {

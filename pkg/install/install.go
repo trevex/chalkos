@@ -62,15 +62,7 @@ func (i *Installer) change(what string) error {
 
 // ForNode installs the running node in place, on the STATE it booted with, mounted at stateDir,
 // with chalkd's runtime directory runDir to work in.
-func ForNode(stateDir, runDir string) *Installer { return defaults(stateDir, runDir) }
-
-// ForInstaller installs a node from the installer onto a target disk, whose STATE it mounts in
-// chalkd's runtime directory runDir, where it works too.
-func ForInstaller(runDir string) *Installer {
-	return defaults(filepath.Join(runDir, "target"), runDir)
-}
-
-func defaults(stateDir, runDir string) *Installer {
+func ForNode(stateDir, runDir string) *Installer {
 	run := tool.ExecRunner{}
 	return &Installer{
 		Run:           run,
@@ -86,6 +78,12 @@ func defaults(stateDir, runDir string) *Installer {
 		OpenPartition: storeslot.OpenPartition,
 		Now:           time.Now,
 	}
+}
+
+// ForInstaller installs a node from the installer onto a target disk, whose STATE it mounts in
+// chalkd's runtime directory runDir, where it works too.
+func ForInstaller(runDir string) *Installer {
+	return ForNode(filepath.Join(runDir, "target"), runDir)
 }
 
 // InPlace installs the node on the disk it booted from, where the node's image already runs.

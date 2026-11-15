@@ -89,9 +89,6 @@ type OpenOptions struct {
 
 // Open unlocks dev as /dev/mapper/<name> if it holds LUKS and mounts the file system at target.
 func (s *Storage) Open(ctx context.Context, name, dev, target string, o OpenOptions) error {
-	if s.Ops == nil {
-		return fmt.Errorf("open %s: the storage setup has no host operations", name)
-	}
 	if _, err := tool.Run(ctx, s.Run, "udevadm", "wait", "--timeout=60", dev); err != nil {
 		return fmt.Errorf("wait for %s: %w", dev, err)
 	}
