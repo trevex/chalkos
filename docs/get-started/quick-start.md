@@ -563,7 +563,7 @@ w1     Ready    <none>   4m55s   v1.37.2
 
 The new image has the debugging tools, so a debugging pod can run the node's own `cat` on its
 files. `kubectl debug` starts one on w1, which prints the node's os-release and stops. The pod's
-log names the image's variant and platform:
+log names the image and its platform:
 
 ```console
 $ kubectl debug node/w1 --image=busybox -- chroot /host /run/current-system/sw/bin/cat /etc/os-release
@@ -571,8 +571,8 @@ Creating debugging pod node-debugger-w1-9f4z7 with container debugger on node w1
 $ kubectl logs node-debugger-w1-9f4z7
 ...
 CHALKOS_BOOT_TRIES=3
+CHALKOS_IMAGE="node-kvm"
 CHALKOS_PLATFORM=kvm
-CHALKOS_VARIANT=node
 ...
 IMAGE_ID=chalkos
 IMAGE_VERSION=""

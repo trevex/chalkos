@@ -622,10 +622,10 @@ default it fills the rest of the system disk, and it is encrypted like [STATE](#
 
 A named set of NixOS modules that `chalkos.lib.mkImages` builds into one [image](#image) per
 [platform](#platform). Its images are `images.<variant>-<platform>`, and it is given in the [`variants`](mkimages.md#variants) argument: for example one variant for most nodes
-and one with GPU drivers. Control planes and workers can run the same variant. Its name is
-`CHALKOS_VARIANT` in the image's os-release and `variant` in its `metadata.json`. No check
-compares it: a node may change its variant through an [upgrade](#upgrade), and the new image's
-schemas decide which [config](#config) it takes. See
+and one with GPU drivers. Control planes and workers can run the same variant. Each of its
+images is named `<variant>-<platform>`, which is `CHALKOS_IMAGE` in the image's os-release and
+`name` in its `metadata.json`. A node may change the image it runs through an
+[upgrade](#upgrade), and the new image's schemas decide which [config](#config) it takes. See
 [Variants and platforms](../build/variants-and-platforms.md#a-second-variant-builds-a-second-image).
 
 ## VIP { #vip }

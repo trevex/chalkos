@@ -142,8 +142,8 @@ carries, so its signature covers all of them:
 - os-release, which names the image.
 
 chalkd reads os-release from the UKI before it installs an image, because the signature covers
-it. `IMAGE_ID` is `chalkos`, or `chalkos-installer` on the installer. `CHALKOS_VARIANT` and
-`CHALKOS_PLATFORM` name the variant and platform; the installer has neither.
+it. `IMAGE_ID` is `chalkos`, or `chalkos-installer` on the installer. `CHALKOS_IMAGE` and
+`CHALKOS_PLATFORM` name the image and its platform; the installer has neither.
 `CHALKOS_BOOT_TRIES` carries the image's
 [`chalkos.upgrade.bootTries`](../../reference/image-options.md#chalkosupgradeboottries). `IMAGE_VERSION`
 is empty, so systemd-boot orders the image's entries by their generation. chalkd refuses an image

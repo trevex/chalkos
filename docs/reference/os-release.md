@@ -30,7 +30,7 @@ about to install, and `/etc/os-release` for the image a node runs.
 | --- | --- | --- | --- |
 | `IMAGE_ID` | `chalkos`; `chalkos-installer` on the installer | `system.image.id` | every image |
 | `IMAGE_VERSION` | empty | `modules/node/upgrade.nix`; `system.image.version` must stay unset | every image |
-| `CHALKOS_VARIANT` | the name of the mkImages variant the image is built as, such as `node` | `chalkos.variant.name` | node images; not the installer |
+| `CHALKOS_IMAGE` | the image's name, such as `node-metal` | `chalkos.image.name` | node images; not the installer |
 | `CHALKOS_PLATFORM` | the platform's name, such as `metal` or `kvm` | `chalkos.platform.name` | node images; not the installer |
 | `CHALKOS_BOOT_TRIES` | a positive integer, `3` by default | `chalkos.upgrade.bootTries` | every image |
 
@@ -54,8 +54,8 @@ ANSI_COLOR="0;38;2;126;186;228"
 BUG_REPORT_URL="https://github.com/NixOS/nixpkgs/issues"
 BUILD_ID="26.11.20261003.a7868a7"
 CHALKOS_BOOT_TRIES=3
+CHALKOS_IMAGE="node-kvm"
 CHALKOS_PLATFORM=kvm
-CHALKOS_VARIANT=node
 CPE_NAME="cpe:/o:nixos:nixos:26.11"
 DEFAULT_HOSTNAME=nixos
 DOCUMENTATION_URL="https://nixos.org/learn.html"
@@ -75,7 +75,7 @@ VERSION_ID="26.11"
 ```
 
 The installer's carries `IMAGE_ID="chalkos-installer"` and `CHALKOS_BOOT_TRIES`, and no
-`CHALKOS_VARIANT` or `CHALKOS_PLATFORM`.
+`CHALKOS_IMAGE` or `CHALKOS_PLATFORM`.
 
 ## What reads each field
 
@@ -88,16 +88,17 @@ The installer's carries `IMAGE_ID="chalkos-installer"` and `CHALKOS_BOOT_TRIES`,
 | `IMAGE_VERSION` | chalkd's upgrade and install, on the UKI | Set and empty, as for chalkctl. |
 | `CHALKOS_PLATFORM` | chalkd's Upgrade | The new image's equals the running image's; a running image without it takes no upgrade. |
 | `CHALKOS_PLATFORM` | chalkd's upgrade and install, on the UKI | The UKI's platform equals the image header's. |
-| `CHALKOS_VARIANT`, `CHALKOS_PLATFORM` | chalkctl, reading an image | Both are set; an image without them is no node image and is refused. |
+| `CHALKOS_IMAGE`, `CHALKOS_PLATFORM` | chalkctl, reading an image | Both are set; an image without them is no node image and is refused. |
 | `CHALKOS_PLATFORM` | chalkctl install and upgrade | The image is built for the platform of the image the node runs, or, on the installer, of the node's image in the inventory, as its directory's `metadata.json` gives it. |
 | `CHALKOS_PLATFORM` | chalkd's Install in place and ApplyConfig | The config is translated for the running image's platform: changing a node's platform is a reinstall. |
-| `CHALKOS_VARIANT`, `CHALKOS_PLATFORM` | chalkd's Contract | Reported as they are, with the image's schemas and its layers' facts. chalkctl's install in place, `config apply` and `storage reset` refuse a node whose image is built for another platform than its image in the inventory. |
+| `CHALKOS_IMAGE`, `CHALKOS_PLATFORM` | chalkd's Contract | Reported as they are, with the image's schemas and its layers' facts. chalkctl's install in place, `config apply` and `storage reset` refuse a node whose image is built for another platform than its image in the inventory. |
 | `CHALKOS_BOOT_TRIES` | chalkd's upgrade, on the UKI | A positive integer, which becomes the boot counter in the UKI's name, `+3` by default. An install writes no counter. |
-| `IMAGE_ID`, `CHALKOS_VARIANT`, `CHALKOS_PLATFORM` | chalkd's Info | Reported as they are; empty on an image that sets none. |
+| `IMAGE_ID`, `CHALKOS_IMAGE`, `CHALKOS_PLATFORM` | chalkd's Info | Reported as they are; empty on an image that sets none. |
 | `CHALKOS_PLATFORM` | chalkd's Status | Reported, and shown by `chalkctl status` beside the platform of the node's image in the inventory. |
 
-No check compares `CHALKOS_VARIANT`: a node may change its variant through an upgrade, and the
-check of its config against the new image's schemas decides whether the image suits it.
+`chalkctl upgrade --image` without `--nodes` upgrades the nodes whose `CHALKOS_IMAGE` equals the
+image's. No other check compares it: a node may change the image it runs through an upgrade, and
+the check of its config against the new image's schemas decides whether the image suits it.
 
 No check reads the image's version, because it has none: chalkd's Info and Status name the running
 image by the root hash on the kernel command line, and the record of a

@@ -266,7 +266,7 @@ anything, and these settings break the node or are refused:
 - The outputs `networkd` and `chrony` render the node's network and time servers. They own
   `/run/systemd/network` and `/run/chalkos/outputs/chrony`, so your outputs take other names and
   directories. The evaluation refuses a directory that two outputs share.
-- `mkImages` sets `chalkos.variant.name`, `chalkos.platform.name`, `chalkos.kubernetes.enable`,
+- `mkImages` sets `chalkos.image.name`, `chalkos.platform.name`, `chalkos.kubernetes.enable`,
   `chalkos.maintenance.osCA` and `chalkos.provenance`. Set the variant's and platform's names, the
   variant's `kubernetes` and the arguments `osCA`, `revision` and `tag` instead.
 - The partition sizes under `chalkos.disk` are laid out when a node is installed. A changed size
