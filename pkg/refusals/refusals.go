@@ -3,9 +3,10 @@
 //
 //	{"refusals": [{"kind": "BGPPeer", "name": "fabric", "path": "spec.interfaces", "message": "..."}]}
 //
-// naming each field by its document's kind and name and its path as written. Standard error goes
-// to the node's journal alone, since it can echo the documents. A refusal cannot carry a secret's
-// value: the program reads the documents without the Secrets and other secret values hashed.
+// naming each field by its document's kind and name and its path as written; chalkd reports each
+// as "<Kind>/<name>: <path>: <message>". Standard error goes to the node's journal alone, since
+// it can echo the documents. A refusal cannot carry a secret's value: the program reads the
+// documents without the Secrets and other secret values hashed.
 package refusals
 
 import (
@@ -163,7 +164,7 @@ const (
 
 // Parse reads what a program printed: nothing, or one Report in the exact format and nothing
 // after it. It returns the refusals each once, in the order printed; an error quotes no more than
-// the kind, name or path Check refuses.
+// the kind, name or path Check refuses. A report past MaxReport bytes is refused.
 func Parse(data []byte) ([]Refusal, error) {
 	if len(data) > MaxReport {
 		return nil, fmt.Errorf("it holds more than %d bytes", MaxReport)

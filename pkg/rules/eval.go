@@ -279,6 +279,7 @@ func valueAt(obj map[string]any, path []string) (any, bool) {
 // when it is one, else a double, as CEL compares ints with ints.
 func celValue(v any) any { return schema.MapJSON(v, celLeaf) }
 
+// celLeaf converts a value celValue reaches that is neither an object nor an array.
 func celLeaf(v any) any {
 	switch v := v.(type) {
 	case json.Number:

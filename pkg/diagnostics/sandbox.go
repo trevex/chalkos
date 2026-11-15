@@ -19,8 +19,9 @@ import (
 )
 
 // Sandbox runs a diagnostic as a transient unit under systemd-run --pipe: a dynamic user with
-// only the capabilities and groups it names, a read-only system without STATE, /var/lib or the
-// secrets below /run/chalkos, Unix, IP and netlink sockets alone in the host's network or the
+// only the capabilities and groups it names, a read-only system without devices, home
+// directories, STATE, /var/lib or the config, credentials and Kubernetes keys chalkd writes below
+// /run/chalkos, Unix, IP and netlink sockets alone in the host's network or the
 // namespace it names, and at most its timeout. A failed unit stays loaded, so its result
 // tells a timeout apart from an exit status; chalkd resets it after reading it.
 type Sandbox struct {

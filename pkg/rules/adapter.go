@@ -11,8 +11,8 @@ import (
 )
 
 // adapter converts documents and facts into CEL values whose maps iterate in key order, so a
-// message listing documents names them in the same order each time. sort() has no cost estimate
-// for a list of dyn.
+// message listing documents names them in the same order each time. sort() would order them too,
+// but its cost cannot be estimated for a list of dyn.
 type adapter struct{}
 
 func (adapter) NativeToValue(v any) ref.Val {

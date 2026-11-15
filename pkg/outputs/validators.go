@@ -40,8 +40,9 @@ func (v Validator) check(name string) error {
 	return nil
 }
 
-// Validate runs every validator of defs on in, below Root/.validating, and returns the failures
-// of those that refused the config or did not run to their end. An error is chalkd's own.
+// Validate runs every validator of defs on in, in name order, below Root/.validating, and returns
+// the failures of those that refused the config or did not run to their end. Each gets an empty
+// $OUT it cannot write and opens no netlink socket. An error is chalkd's own.
 func (r Renderer) Validate(ctx context.Context, defs map[string]Validator, in Input) ([]Failure, error) {
 	if len(defs) == 0 {
 		return nil, nil
@@ -85,8 +86,8 @@ type LinkedValidator struct {
 	Validate ValidateFunc
 }
 
-// RunLinked runs every linked validator in-process on in and returns the failures of those that
-// refused the config or failed.
+// RunLinked runs every linked validator in-process on in, in the order given, and returns the
+// failures of those that refused the config or failed.
 func RunLinked(linked []LinkedValidator, in Input) []Failure {
 	var failures []Failure
 	for _, l := range linked {

@@ -55,7 +55,8 @@ func Previous(dir string) string {
 }
 
 // Pending is the slot below root that holds config delivered for the next image before an
-// upgrade installs it. Its name is no root hash, so List and Retire pass it by.
+// upgrade installs it, written and read as a slot without defaults or an identity. Its name is no
+// root hash, so List and Retire pass it by.
 func Pending(root string) string {
 	return filepath.Join(root, "pending")
 }
@@ -135,8 +136,9 @@ func Retire(root string, keep [][]byte) error {
 	return atomicfile.SyncDir(root)
 }
 
-// Remove removes the slot dir, its links before the directories they named, so a reader finds the
-// slot whole or not at all. A directory where its link would be is refused.
+// Remove removes the slot dir with its previous config and what interrupted writes left, its links
+// before the directories they named, so a reader finds the slot whole or not at all. A slot that
+// does not exist is removed already; a directory where its link would be is refused.
 func Remove(dir string) error {
 	root := filepath.Dir(dir)
 	if err := checkLink(dir); err != nil {
@@ -160,8 +162,9 @@ func Remove(dir string) error {
 }
 
 // Write replaces the slot dir, such as /state/config/<root hash>, as a whole: delivered/ and
-// documents/ hold the documents without and with defaults, identity.json the identity. A slot
-// Write writes keeps no previous config.
+// documents/ hold the documents without and with defaults, each as <group>/<Kind>/<name>.json.
+// Secrets go to secrets/<name>.json and the identity to identity.json, both readable by root
+// alone, and the version to version. A slot Write writes keeps no previous config.
 func Write(dir string, s Stored) error {
 	if err := checkLink(dir); err != nil {
 		return err
@@ -173,8 +176,11 @@ func Write(dir string, s Stored) error {
 }
 
 // WriteKeepingPrevious writes s as Write does and keeps the set the slot held as its previous
-// config, one level deep; a repeated delivery keeps it as it is. A power cut leaves the previous
-// config either the set before or the set the slot still holds.
+// config, one level deep; a repeated delivery keeps it as it is, and a slot that holds no set is
+// written as Write writes it. The previous link is renamed and
+// synced after the new set is on disk and before the slot's link, and a directory goes only once
+// no link names it, so a power cut leaves the previous config either the set before or the set
+// the slot still holds.
 func WriteKeepingPrevious(dir string, s Stored) error {
 	prev := Previous(dir)
 	if err := checkLink(dir); err != nil {
@@ -234,7 +240,8 @@ func WriteKeepingPrevious(dir string, s Stored) error {
 
 // RestorePrevious makes the slot dir's previous config its config again, and the set it held its
 // previous one, by swapping the two links. The slot's link moves first, so a power cut leaves both
-// naming the restored set, which callers take for no previous config.
+// naming the restored set, which callers take for no previous config. The set the slot held may
+// then go with the next write, never the restored one.
 func RestorePrevious(dir string) error {
 	prev := Previous(dir)
 	if err := checkLink(dir); err != nil {

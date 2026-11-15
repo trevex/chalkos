@@ -123,7 +123,10 @@ func Read(path string) (map[string]Definition, error) {
 	})
 }
 
-// Check refuses a diagnostic chalkd could not run as declared.
+// Check refuses a diagnostic chalkd could not run as declared: a command outside the image's
+// store, a role, timeout, capability or group chalkd does not know, a namespace no call could fill
+// to a name below NamespaceDir, a placeholder and parameter that do not match, an optional
+// parameter the namespace names, or a declaration that does not fit its type.
 func (d Definition) Check() error {
 	if len(d.Command) == 0 {
 		return errors.New("its command is empty")

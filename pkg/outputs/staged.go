@@ -29,7 +29,8 @@ func (s *Staged) Dirs() map[string]string {
 }
 
 // Swap makes each staged output the one its dir links to, replacing the link in one rename so a
-// service reads the old files or the new ones and never a mix.
+// service reads the old files or the new ones and never a mix. The files the old link named are
+// removed, and each swapped output's hash is recorded in the status.
 func (s *Staged) Swap() error {
 	if len(s.staging) == 0 {
 		return nil

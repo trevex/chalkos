@@ -89,7 +89,8 @@ type Refusal struct {
 func (r *Refusal) Error() string { return r.Message }
 
 // Rules checks in.Documents against the image's change rules, which compare it with in.Old. A rule
-// that cannot be checked, or reads a fact that cannot be loaded, refuses the config too.
+// that cannot be checked, or reads a fact that cannot be loaded, refuses the config too. Without
+// in.Facts, the rules that read facts do not run.
 func (img Image) Rules(in rules.Input) error {
 	if img.ChangeRules == nil {
 		return nil

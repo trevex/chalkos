@@ -11,7 +11,7 @@ import (
 // ErrLocked means another process holds the lock.
 var ErrLocked = errors.New("another process holds the lock")
 
-// Lock opens or creates the file at path, not following a symbolic link, and locks it
+// Lock opens or creates, with perm, the file at path, not following a symbolic link, and locks it
 // exclusively until it is closed, so a crash leaves no lock behind. With wait unset it fails with
 // ErrLocked while another process holds the lock.
 func Lock(path string, perm fs.FileMode, wait bool) (*os.File, error) {

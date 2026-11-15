@@ -10,7 +10,8 @@ import (
 
 // UnpinnedImages names each image reference in the documents that has a tag but no digest.
 // containerd pulls such an image by whatever the tag points to, so two nodes may run different
-// images under one reference.
+// images under one reference. Each line names the document, the field below spec and the
+// reference.
 func (docs Documents) UnpinnedImages(schemas *schema.Schemas) []string {
 	var lines []string
 	for _, d := range docs {

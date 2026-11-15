@@ -14,7 +14,8 @@ import (
 	"github.com/trevex/chalkos/pkg/statusview"
 )
 
-// Write writes the router layer's status section.
+// Write writes the router layer's status section, the default VRF's first. A part the image or the
+// router lacks, such as BGP or NAT64, writes no line.
 func Write(w io.Writer, r *routerv1.StatusResponse) error {
 	if err := bgpStatus(w, r); err != nil {
 		return err

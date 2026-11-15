@@ -16,6 +16,8 @@ import (
 
 // Redacted are config documents with every secret value hidden. Only Redact and the readers of
 // documents Redact wrote produce it, so a program that takes Redacted never sees a secret value.
+// No document is redacted twice: Redact takes documents with their values, which Redacted does not
+// convert to. The zero value holds no documents.
 type Redacted struct {
 	docs Documents
 }

@@ -15,10 +15,12 @@ import (
 	"github.com/trevex/chalkos/pkg/refusals"
 )
 
-// A Program is a renderer, a check or a validator to run, with Out as its $OUT. The sandbox names
-// the program's unit after Out's extension, which makes it unique. Report keeps standard output,
-// up to refusals.MaxReport bytes, as a report of refusals; Netlink allows the netlink sockets a
-// check such as nft --check needs.
+// A Program is a renderer, a check or a validator to run, with Out as its $OUT, which a renderer
+// may write and a check only read; a validator gets an empty directory of its own. The sandbox
+// keeps the input and output in files beside Out and names the unit after Out's extension, which
+// makes it unique. Report keeps standard output, up to refusals.MaxReport bytes, as a report of
+// refusals; any other program's is discarded. Netlink allows the netlink sockets a check such as
+// nft --check needs. Timeout bounds the program.
 type Program struct {
 	Argv    []string
 	Stdin   []byte
@@ -49,14 +51,16 @@ func (e *ProgramError) Error() string { return "the program failed (" + e.Status
 // which owns $OUT while the renderer writes it.
 const RenderUser = "chalkos-render"
 
-// Sandbox runs programs as oneshot transient units, as RenderUser without capabilities, devices
-// or network, on a read-only system without STATE, /var or the secrets below /run/chalkos, so a
-// program reads no Secret's value. Through netlink a check reaches only its own network
+// Sandbox runs programs as oneshot transient units, standard error to the journal and a report to a
+// file of chalkd's, as RenderUser without capabilities, devices or network, on a read-only system
+// without STATE, /var or the config, credentials and Kubernetes keys chalkd writes below
+// /run/chalkos, so a program reads no Secret's value. A renderer may write $OUT alone; only a check
+// may open netlink sockets besides Unix ones. Through netlink a check reaches only its own network
 // namespace, but nf_tables there loads the modules a ruleset uses despite ProtectKernelModules.
 // Renders at boot run before the system bus, so systemd-run uses the manager's private socket,
-// which cannot follow a unit as --wait and --pipe do: stdin comes from a file and the oneshot's
-// start job ends with the program. The units have no default dependencies, which would wait for
-// sysinit.target.
+// which cannot follow a unit as --wait and --pipe do: stdin comes from a file, the oneshot's start
+// job ends with the program and its exit status is the unit's. The units have no default
+// dependencies, which would wait for sysinit.target.
 type Sandbox struct{}
 
 // stopMargin is how much longer than a program's timeout chalkd waits for systemd-run, so the

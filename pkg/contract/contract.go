@@ -7,7 +7,8 @@
 //   - outputs.json and validators.json, the programs that read the node's config documents;
 //   - diagnostics.json, the commands an admin may run on the node.
 //
-// A missing file other than schemas/ declares none.
+// A missing file other than schemas/ declares none. The change rules and the effects' rules compile
+// when first asked for, as a boot renders the outputs without them.
 package contract
 
 import (

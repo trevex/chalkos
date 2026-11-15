@@ -235,7 +235,8 @@ func (u *untrusted) RoundTrip(req *http.Request) (*http.Response, error) {
 	return nil, err
 }
 
-// alertShaped reports whether err may hide the node's TLS alert. When the alert closes the
+// alertShaped reports whether err may hide the node's TLS alert: an alert of any kind, or a
+// connection the node closed or reset. When the alert closes the
 // connection before the first stream, http2 returns an unexported sentinel that wraps nothing,
 // so only its text identifies it.
 func alertShaped(err error) bool {
@@ -254,7 +255,8 @@ func alertShaped(err error) bool {
 }
 
 // readAlert connects to addr with cfg and reads the node's first bytes without sending any. It
-// returns the error when the node and the client distrust each other, and nil otherwise.
+// returns the error when the node and the client distrust each other, and nil otherwise, also when
+// the node cannot be reached.
 func readAlert(ctx context.Context, dial func(context.Context, string, string) (net.Conn, error), addr string, cfg *tls.Config) error {
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
@@ -279,10 +281,10 @@ func readAlert(ctx context.Context, dial func(context.Context, string, string) (
 	return nil
 }
 
-// RefusesCertificate reports whether the node at addr refused cert for an unknown issuer, given
-// err from a call to it; it reconnects unverified when err may hide the alert. Only the unknown
-// certificate authority alert counts: the node sends a bad certificate alert for other
-// reasons too, such as an expired certificate.
+// RefusesCertificate reports whether the node at addr, host or host:port, refused cert for an
+// unknown issuer, given err from a call to it; it reconnects unverified when err may hide the
+// alert. Only the unknown certificate authority alert counts: the node sends a bad certificate
+// alert for other reasons too, such as an expired certificate.
 func RefusesCertificate(ctx context.Context, err error, addr string, cert *tls.Certificate) bool {
 	if cert == nil || err == nil {
 		return false

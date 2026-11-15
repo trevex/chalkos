@@ -70,7 +70,8 @@ func Refs(d Document, schemas *schema.Schemas) []Ref {
 
 // checkRefs returns the references of each of docs by document ID, and refuses, all at once,
 // those that do not resolve or whose key cannot become a credential file of its own, which the
-// node writes for each unit that reads it.
+// node writes for each unit that reads it. The lines follow the order of docs and of each
+// document's references.
 func checkRefs(docs Documents, s *schema.Schemas) (map[ID][]Ref, error) {
 	have := map[ID]bool{}
 	for _, d := range docs {

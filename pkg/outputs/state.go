@@ -24,7 +24,7 @@ type State struct {
 
 // secrets hashes the values the secretRefs of the output's input documents name; empty for
 // documents that reference none. The redacted values are hashes already, which it takes as they
-// are.
+// are; a key the Secret lacks counts as the hash of the empty value.
 func (d Definition) secrets(in Input) string {
 	secrets := in.Documents.Documents().Secrets()
 	var lines []string

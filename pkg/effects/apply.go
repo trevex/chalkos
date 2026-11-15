@@ -93,9 +93,11 @@ func (e *ApplyError) Error() string {
 func (e *ApplyError) Unwrap() error { return e.Err }
 
 // Apply reloads the units of a.Reload that run, runs a.Run, then restarts the units of a.Restart
-// and returns them; the caller runs a.Chalkd. A restarted unit is not reloaded too, and a failed
-// unit of a.Reload is restarted, since systemctl reloads no failed unit. The restarts take one
-// systemctl call per mode:
+// and returns them; the caller runs a.Chalkd. A restarted unit is not reloaded too, because the
+// restart reads all a reload would, and a failed unit of a.Reload is restarted, since systemctl
+// reloads no failed unit. A unit restarts after the reloads, so after units ordered after it: a
+// unit whose reload depends on such a unit's work asks for that work itself, such as by restarting
+// the unit. The restarts take one systemctl call per mode:
 //   - try-restart for a unit that runs, so a unit that never started or was stopped stays so;
 //   - restart for a unit whose effect starts it too;
 //   - reset-failed and restart for a failed unit, which the new config may fix and try-restart
@@ -204,7 +206,10 @@ func Apply(ctx context.Context, r tool.Runner, a Actions) ([]string, error) {
 // unitOrder returns a sort of the units of lists by their After= ordering. systemctl queues each
 // unit's job in a transaction of its own, and systemd holds a job back only for jobs already
 // queued, so the order given decides; it holds within one call alone, so the reloads run before
-// any restart. Units in a cycle keep their order, after the others.
+// any restart. Before= of other units counts too, as systemd shows it as After; a unit given by an
+// alias matches through its Names. Units ordered against none keep their place, and every list
+// keeps its order when systemctl does not answer or answers for other units, as for a glob. Units
+// in a cycle keep their order, after the others.
 func unitOrder(ctx context.Context, r tool.Runner, lists ...[]string) func([]string) []string {
 	keep := func(units []string) []string { return units }
 	var units []string

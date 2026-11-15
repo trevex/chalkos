@@ -146,7 +146,9 @@ const (
 
 // run runs p, the part of the role's definition name, with the runner and timeout of r. A
 // renderer's or validator's refusals on standard output make a *refused whatever its exit status.
-// A check's standard output is discarded, because a service's own check can echo the files.
+// One that exits 0 and prints anything else fails for what it printed. A check's standard output
+// is discarded, because a service's own check can echo the files. A failed program's standard
+// error, or the unit whose journal holds it, is logged.
 func (r Renderer) run(ctx context.Context, role Role, name, part string, p Program) error {
 	p.Timeout = cmp.Or(r.Timeout, DefaultTimeout)
 	printed, err := r.Run.Run(ctx, p)
@@ -204,8 +206,9 @@ func scratch(parent, name string) (string, error) {
 // and in a validator's argv: lower-case letters, digits and dashes.
 var plainName = regexp.MustCompile(`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`)
 
-// checkDefinition refuses a definition of the image chalkd could not run. The image's build checks
-// what needs the store: that the programs are of it and the kinds are declared.
+// checkDefinition refuses a definition of the image chalkd could not run: a name that is not
+// plain, an input of Secret, or a program that is no absolute path. The image's build checks what
+// needs the store: that the programs are of it and the kinds are declared.
 func checkDefinition(n string, inputs []string, programs map[string]string) error {
 	if !plainName.MatchString(n) {
 		return errors.New("the name is not lower-case letters, digits and dashes")

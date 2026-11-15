@@ -24,8 +24,10 @@ func FromJSON(data []byte) (Document, error) {
 }
 
 // Restore puts the secret values of delivered back into hashed, a check's redacted output of
-// delivered with defaults filled. It refuses output that is not delivered plus defaults, such as
-// a check that filled defaults into hashed values or added a Secret object with values.
+// delivered with defaults filled; no schema fills defaults into those values. An embedded Secret
+// object keeps its apiVersion and kind as delivered. It refuses output that is not delivered plus
+// defaults, such as a check that filled defaults into hashed values or added a Secret object with
+// values.
 func Restore(hashed, delivered []Document) ([]Document, error) {
 	values := make(map[ID]Document, len(delivered))
 	for _, d := range delivered {

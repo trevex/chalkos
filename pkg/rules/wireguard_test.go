@@ -18,7 +18,6 @@ func TestWireGuardRules(t *testing.T) {
 		doc("WireGuardPeer", "laptop", `{"interface": "wg0", "publicKey": "TNcjWUC/YZFd6+6UkoYLORnFxvy/jvqzi7gh5Tc0lRU=", "allowedIPs": ["fd00:f0::2/128"],
 			"presharedKey": {"secretRef": {"name": "wg", "key": "laptop.psk"}}}`),
 	}
-	// with is the tunnel with the documents given, each in place of the tunnel's of its kind and name.
 	for _, tc := range []struct {
 		name string
 		docs []config.Document

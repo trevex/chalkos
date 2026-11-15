@@ -58,7 +58,7 @@ const mergeTag = "!!merge"
 
 // Parse reads the documents of a YAML stream, skipping empty ones. Every scalar keeps its exact
 // value, so no date becomes a time.Time and no number loses precision. Mapping keys must be
-// strings, and merge keys (<<) are refused.
+// strings, and merge keys (<<) are refused, the error naming the document and line.
 func Parse(r io.Reader) ([]Document, error) {
 	dec := yaml.NewDecoder(r)
 	var docs []Document

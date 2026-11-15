@@ -333,8 +333,10 @@ func (inv *Inventory) Dir() string { return filepath.Dir(inv.Path) }
 // NodeNames are the inventory's nodes, sorted.
 func (inv *Inventory) NodeNames() []string { return slices.Sorted(maps.Keys(inv.Spec.Nodes)) }
 
-// Files are the config files of a node in set order: the shared files, its groups' files, then
-// its own. Each path or glob must name a file, and a file named twice counts where it comes first.
+// Files are the config files of a node in set order: the shared files, its groups' files in the
+// order the node names the groups, then its own. Each path or glob must name a file; a glob's
+// files come in name order, and a file named twice counts where it comes first. Its errors name
+// the node.
 func (inv *Inventory) Files(node string) ([]string, error) {
 	n, ok := inv.Spec.Nodes[node]
 	if !ok {

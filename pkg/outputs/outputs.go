@@ -1,8 +1,9 @@
 // Package outputs runs the programs of an image's store that read a node's config documents.
 // Each output of /etc/chalkos/outputs.json is a renderer that writes a service's config files into
 // a directory, with an optional check of them; outputs are staged and swapped in by a symlink
-// rename, so a service never reads half an output. Each validator of /etc/chalkos/validators.json
-// is a renderer without files, run as
+// rename once the delivery is stored, so a service never reads half an output, and rendered again
+// at boot, since /run is a tmpfs. Each validator of /etc/chalkos/validators.json is a renderer
+// without files, which runs after the change rules and before the renderers, never at boot, as
 //
 //	<program> validate <name>
 //
@@ -96,8 +97,9 @@ func (d Definition) check(name, root string) error {
 }
 
 // checkDir refuses a dir of the output name that a swap could not safely replace by a link: one
-// outside /run, with a dot component like chalkd's own links, or in /run/chalkos, where the
-// config and credentials live, other than below root/<name>.
+// that is not clean or lies outside /run, a tmpfs, one with a dot component like chalkd's own
+// links, or one in /run/chalkos, where the config and credentials live, other than below
+// root/<name>.
 func checkDir(name, dir, root string) error {
 	chalkos := filepath.Dir(root)
 	run := filepath.Dir(chalkos)

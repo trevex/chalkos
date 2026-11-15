@@ -134,7 +134,7 @@ func (l Loader) readSlot() (slot.Stored, error) {
 
 // LoadConfig writes the running image's slot for the units that read it: documents without
 // Secrets below RunDir/config and each granted unit's secret values below
-// RunDir/credentials/<unit>.
+// RunDir/credentials/<unit>. The image's layers then write what they derive from the documents.
 func (l Loader) LoadConfig() error {
 	stored, err := l.readSlot()
 	if err != nil {

@@ -30,7 +30,8 @@ type Hint struct {
 }
 
 // Definition is an effect of /etc/chalkos/effects.json: when one of Outputs or Kinds changed, or
-// the CEL rule When holds, chalkd reloads, runs, restarts and runs the layer action it names.
+// the CEL rule When holds, chalkd reloads Reload, runs Run, restarts Restart, starting those of
+// Start too, and runs the layer action Chalkd names.
 type Definition struct {
 	Outputs []string `json:"outputs"`
 	Kinds   []string `json:"kinds"`
@@ -88,7 +89,9 @@ func Read(path string) (map[string]Definition, error) {
 // layerAction is what Chalkd names: <layer>:<action>.
 var layerAction = regexp.MustCompile(`^[a-z][a-z0-9-]*:[a-z][a-z0-9-]*$`)
 
-// Check refuses an effect chalkd could not carry out as declared. chalkd splits Run on spaces,
+// Check refuses an effect chalkd could not carry out as declared: one nothing triggers or that
+// does nothing, a unit that is no unit name, a Chalkd that names no layer's action, or a hint
+// without text or with a relative file. chalkd splits Run on spaces,
 // with no shell quoting, so its first word must name a program.
 func (d Definition) Check() error {
 	if len(d.Outputs) == 0 && len(d.Kinds) == 0 && d.When == "" {

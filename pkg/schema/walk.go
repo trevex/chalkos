@@ -18,8 +18,9 @@ const (
 )
 
 // A Node is a node of a kind's schema that a walk reaches: a property, a list's items, a map's
-// values or a branch of an anyOf. A node with $ref stands for the end of its $ref chain. The walks
-// follow no other applicators, such as allOf or oneOf, since the kinds' schemas use none.
+// values or a branch of an anyOf. A node with $ref stands for the end of its $ref chain, with the
+// keywords beside each $ref laid over the target's; compile refuses an x-chalkos-* keyword there.
+// The walks follow no other applicators, such as allOf or oneOf, since the kinds' schemas use none.
 type Node struct {
 	// Schema is the node, with $ref followed.
 	Schema *jsonschema.Schema
@@ -84,7 +85,9 @@ func Resolve(s *jsonschema.Schema) *jsonschema.Schema {
 }
 
 // Walk visits v, a document of the kind or a value in one, alongside the kind's schema,
-// fields in name order; visit returns whether to descend. An anyOf follows branchFor's pick.
+// fields in name order; visit returns whether to descend. An anyOf follows branchFor's pick. A key
+// or item the schema says nothing about is left alone, and a kind the schemas do not declare walks
+// nothing.
 func (s *Schemas) Walk(apiVersion, kind string, v any, visit func(Node) bool) {
 	if sch, ok := s.schemas[key(apiVersion, kind)]; ok {
 		walkValue(Node{Schema: sch, Value: v}, visit)
@@ -125,7 +128,8 @@ func walkValue(n Node, visit func(Node) bool) {
 
 // WalkSchema visits the kind's schema without a value, fields in name order; visit returns
 // whether to descend. It visits every branch of an anyOf, since without a value it cannot pick
-// one, and skips a schema already above it on its path, so a recursive schema ends.
+// one, and skips a schema already above it on its path, so a recursive schema ends. A kind the
+// schemas do not declare walks nothing.
 func (s *Schemas) WalkSchema(apiVersion, kind string, visit func(Node) bool) {
 	if sch, ok := s.schemas[key(apiVersion, kind)]; ok {
 		walkSchema(Node{Schema: sch}, nil, visit)

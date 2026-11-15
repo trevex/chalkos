@@ -14,10 +14,12 @@ import (
 	"github.com/trevex/chalkos/pkg/schema"
 )
 
-// WriteRuntime writes the config for the node's services: the documents below runDir/config,
-// without Secrets and withheld kinds, and each granted unit's secret values below
-// runDir/credentials/<unit>, readable by root alone. Every granted unit gets its directory, even
-// empty, because systemd refuses to start a unit whose credential path is missing.
+// WriteRuntime writes the config for the node's services: the documents as
+// runDir/config/<group>/<Kind>/<name>.json, readable by all, without Secrets and withheld kinds;
+// replacing the directory removes what an earlier write left. Each granted unit's secret values go
+// to runDir/credentials/<unit>/<secret>.<key>, readable by root alone, which the unit loads with
+// LoadCredential=secret:<dir>. Every granted unit gets its directory, even empty, because systemd
+// refuses to start a unit whose credential path is missing.
 func WriteRuntime(runDir string, docs []config.Document, schemas *schema.Schemas, units map[string][]string) error {
 	creds, err := credentials(docs, schemas, units)
 	if err != nil {

@@ -211,7 +211,8 @@ func TestNAT64Schemas(t *testing.T) {
 }
 
 // The NAT64 rules refuse a pool entry that holds a static IPv4 address a Network gives a link,
-// which the router answers itself, and a static address in the NAT64s' links' range 169.254.64.0/18.
+// which the router answers itself, and a static address in the NAT64s' links' range,
+// 169.254.64.0/18.
 func TestNAT64StaticAddresses(t *testing.T) {
 	set, doc := routerRules(t)
 	nat64 := doc("NAT64", "edge", `{"pool4": [{"prefix": "192.0.2.8/30"}]}`)

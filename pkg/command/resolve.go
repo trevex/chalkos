@@ -13,7 +13,8 @@ import (
 const maxLinks = 40
 
 // Resolve is where name, an absolute path in the image rooted at root, is on this node. Symbolic
-// links resolve within the image, so /etc's links into /nix/store name the image's store.
+// links resolve within the image, so /etc's links into /nix/store name the image's store. An error
+// wraps fs.ErrNotExist when there is no such file.
 func Resolve(root, name string) (string, error) {
 	return resolve(name, func(p string) (string, error) { return filepath.Join(root, filepath.FromSlash(p)), nil })
 }

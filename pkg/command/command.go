@@ -26,9 +26,9 @@ func InStore(path string) bool {
 // maxStderr bounds what an Error keeps of a program's standard error.
 const maxStderr = 4096
 
-// Run runs argv with stdin and env added to the caller's environment, and returns at most limit
-// bytes of its standard output. A failed program is an Error holding the start of its standard
-// error; Run returns its output too, since a renderer prints its refusals and then fails.
+// Run runs argv with stdin and env added to the caller's environment, and returns its standard
+// output, refusing more than limit bytes. A failed program is an Error holding the start of its
+// standard error; Run returns its output too, since a renderer prints its refusals and then fails.
 func Run(ctx context.Context, argv []string, stdin []byte, limit int, env ...string) ([]byte, error) {
 	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
 	if len(env) > 0 {

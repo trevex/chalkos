@@ -17,8 +17,8 @@ func oneOrMany(v any) []any {
 
 // NetworkMap is what Go reads of the node's network: each Network document's [Network] Address=
 // values, the only addresses that count as static, so a node's default addresses and certificate
-// names stay what they were; and the MAC addresses its [Match] names,
-// joined by spaces as networkd writes them.
+// names stay what they were; and the MAC addresses its [Match] names, joined by spaces as
+// networkd writes them.
 func NetworkMap(docs []Document) map[string]any {
 	networks := map[string]any{}
 	for _, d := range docs {

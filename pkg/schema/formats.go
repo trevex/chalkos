@@ -14,7 +14,7 @@ import (
 
 // formats are the "format" values the kinds' schemas assert beyond JSON Schema's own. Each accepts
 // a subset of what the rules' CEL functions and the renderers read (ip refuses zones), so a value
-// the schema accepts parses everywhere.
+// the schema accepts parses everywhere. The image references are those imageref.Parse reads.
 var formats = []*jsonschema.Format{
 	{Name: "ip", Validate: validateIP},
 	{Name: "cidr", Validate: validateCIDR},

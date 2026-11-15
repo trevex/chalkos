@@ -55,7 +55,9 @@ type Set struct {
 
 // Compile compiles the rules every schema of s declares: a kind's own, then its fields' by path.
 // A rule binds self to the value at its path, which a list item or map value lacks, so a rule
-// below one is refused and belongs on the list or the map. Without s it compiles none.
+// below one is refused and belongs on the list or the map. A field's rule applies outside spec
+// too. It reports every rule that does not compile, each naming the kind or field that declares
+// it. Without s it compiles none.
 func Compile(s *schema.Schemas) (*Set, error) {
 	set := &Set{}
 	if s == nil {
@@ -139,8 +141,8 @@ func compile(apiVersions map[string]string, k schema.Kind, path []string, r sche
 }
 
 // parseRule parses rule and the further expressions srcs in base, and extends base with each fact
-// they read as <ident>.<name> for every one of idents. An empty further expression has a nil AST;
-// the facts' names come back sorted.
+// they read as <ident>.<name> for every one of idents. The rule must not be empty; an empty further
+// expression has a nil AST; the facts' names come back sorted.
 func parseRule(base *cel.Env, idents []string, rule string, srcs ...string) (*cel.Env, []*cel.Ast, []string, error) {
 	if strings.TrimSpace(rule) == "" {
 		return nil, nil, nil, errors.New("the rule is empty")

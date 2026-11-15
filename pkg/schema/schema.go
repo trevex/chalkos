@@ -45,8 +45,9 @@ type Kind struct {
 	Kind       string `json:"kind"`
 	// Multiple tells whether a node's config may hold more than one document of the kind.
 	Multiple bool `json:"multiple"`
-	// Withheld tells whether the node keeps the kind's documents for chalkd alone, hidden from
-	// its services, as for a kind whose documents carry secrets of their own.
+	// Withheld tells whether the node keeps the kind's documents for chalkd alone: no unit,
+	// renderer, validator or effect reads them. A layer declares it for a kind whose documents
+	// carry secrets of their own.
 	Withheld bool `json:"withheld,omitempty"`
 }
 

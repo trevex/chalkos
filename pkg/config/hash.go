@@ -9,8 +9,9 @@ import (
 	"github.com/trevex/chalkos/pkg/schema"
 )
 
-// Hash is the hex SHA-256 of the redacted documents in canonical order. Clients hash before
-// chalkd fills defaults, so the hash depends on the operator's files alone.
+// Hash is the hex SHA-256 of the redacted documents in canonical order. Numbers hash as FromObject
+// keeps them, so 1 and 1.0 hash alike while 1.5 and 1.50 differ. Clients hash before chalkd fills
+// defaults, so the hash depends on the operator's files alone.
 func Hash(docs []Document) (string, error) {
 	return Redact(docs).hash()
 }
