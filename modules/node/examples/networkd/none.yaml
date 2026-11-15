@@ -1,4 +1,4 @@
-# No networkd document: the output holds no unit, and the image's own DHCP unit applies.
+# No networkd or TimeSync document: networkd keeps the image's DHCP unit, chrony chalkos's servers.
 apiVersion: chalkos.dev/v1alpha1
 kind: Host
 metadata: {name: host}

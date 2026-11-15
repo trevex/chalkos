@@ -2408,7 +2408,6 @@ lib.runTests {
         check = true;
         tests = [
           "chrony-empty"
-          "chrony-none"
           "chrony-servers"
         ];
       };

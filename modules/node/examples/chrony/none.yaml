@@ -1,5 +1,0 @@
-# No TimeSync: chalkos's own servers, with NTS.
-apiVersion: chalkos.dev/v1alpha1
-kind: Host
-metadata: {name: host}
-spec: {hostname: n1}
