@@ -1,6 +1,7 @@
 package main
 
 import (
+	"maps"
 	"slices"
 	"strings"
 	"testing"
@@ -28,7 +29,7 @@ func TestRelayPerVRF(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if names := slicesSorted(files); !slices.Equal(names, []string{"dnsmasq-relay-guest.conf", "dnsmasq-relay.conf"}) {
+	if names := slices.Sorted(maps.Keys(files)); !slices.Equal(names, []string{"dnsmasq-relay-guest.conf", "dnsmasq-relay.conf"}) {
 		t.Fatalf("files = %v", names)
 	}
 	for file, want := range map[string][]string{

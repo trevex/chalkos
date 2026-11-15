@@ -248,7 +248,7 @@ func TestBGPOpenings(t *testing.T) {
 func TestWireGuardOpenings(t *testing.T) {
 	got := wireguardOpenings([]derive.Named[derive.WireGuardSpec]{
 		{Name: "wg0", Spec: derive.WireGuardSpec{ListenPort: 51820}},
-		{Name: "wg1", Spec: derive.WireGuardSpec{ListenPort: 51821, VRF: ptr("tenant")}},
+		{Name: "wg1", Spec: derive.WireGuardSpec{ListenPort: 51821, VRF: new("tenant")}},
 	})
 	want := []opening{
 		{comment: "WireGuard wg0", protocol: "udp", ports: []derive.PortRange{"51820"}},
@@ -280,11 +280,11 @@ func TestResolverOpenings(t *testing.T) {
 	}
 	// A VRF's resolver opens its port on the VRF's device; resolverOpenings checks the VRF's name,
 	// and the output unbound that a VRF document declares it.
-	got, err = resolverOpenings([]derive.Named[derive.ResolverSpec]{{Name: "guest", Spec: derive.ResolverSpec{VRF: ptr("guest"), Listen: addrs("2001:db8:3::1"), Allow: ranges("2001:db8:3::/64")}}})
+	got, err = resolverOpenings([]derive.Named[derive.ResolverSpec]{{Name: "guest", Spec: derive.ResolverSpec{VRF: new("guest"), Listen: addrs("2001:db8:3::1"), Allow: ranges("2001:db8:3::/64")}}})
 	if err != nil || len(got) != 2 || got[0].vrf != "guest" || got[1].vrf != "guest" {
 		t.Errorf("resolverOpenings of a VRF's resolver = %+v, %v", got, err)
 	}
-	if _, err := resolverOpenings([]derive.Named[derive.ResolverSpec]{{Name: "bad", Spec: derive.ResolverSpec{VRF: ptr("a b"), Listen: addrs("2001:db8:3::1"), Allow: ranges("2001:db8:3::/64")}}}); err == nil || !strings.Contains(err.Error(), `internal error: Resolver bad: the VRF "a b" is no VRF's name`) {
+	if _, err := resolverOpenings([]derive.Named[derive.ResolverSpec]{{Name: "bad", Spec: derive.ResolverSpec{VRF: new("a b"), Listen: addrs("2001:db8:3::1"), Allow: ranges("2001:db8:3::/64")}}}); err == nil || !strings.Contains(err.Error(), `internal error: Resolver bad: the VRF "a b" is no VRF's name`) {
 		t.Errorf("err = %v", err)
 	}
 	for spec, want := range map[string]string{
@@ -684,7 +684,7 @@ func TestNAT64Links(t *testing.T) {
 	}
 	links := map[string]nat64Link{
 		"edge":  {Table: 254, Outer: "169.254.96.241/30", Inner: "169.254.96.242/30", Routes: []string{"192.0.2.8/30"}},
-		"guest": {VRF: ptr("guest"), Table: 300, Outer: "169.254.111.205/30", Inner: "169.254.111.206/30", Routes: []string{}},
+		"guest": {VRF: new("guest"), Table: 300, Outer: "169.254.111.205/30", Inner: "169.254.111.206/30", Routes: []string{}},
 	}
 	both := rendered(edge, guest)
 	for name, want := range links {
@@ -1254,9 +1254,6 @@ func TestConntrackZonesOfSeveralVRFs(t *testing.T) {
 		t.Errorf("a ruleset whose zoned VRF has no link has conntrack chains:\n%s", text)
 	}
 }
-
-// ptr is a pointer to s.
-func ptr(s string) *string { return &s }
 
 // addrs are the addresses l.
 func addrs(l ...string) []netip.Addr {

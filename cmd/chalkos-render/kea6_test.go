@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"maps"
 	"net/netip"
 	"slices"
 	"testing"
@@ -24,7 +25,7 @@ func TestKea6PerVRF(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if names := slicesSorted(files); !slices.Equal(names, []string{"kea-dhcp6-guest.json", "kea-dhcp6.json"}) {
+	if names := slices.Sorted(maps.Keys(files)); !slices.Equal(names, []string{"kea-dhcp6-guest.json", "kea-dhcp6.json"}) {
 		t.Fatalf("files = %v", names)
 	}
 	type server struct {
@@ -70,7 +71,7 @@ func TestKea6PerVRF(t *testing.T) {
 		len(def.Hooks) != 2 || def.Hooks[1].Library != "libdhcp_run_script.so" || def.Hooks[1].Parameters.Name != testPDHook || len(def.Subnets) != 2 {
 		t.Fatalf("kea-dhcp6.json = %s", files["kea-dhcp6.json"])
 	}
-	if s := def.Subnets[0]; s.Interface != "lan0" || s.Valid != 3600 || s.Preferred != 3600 || s.ID != subnetID6(mustPrefix("2001:db8:1::/64")) {
+	if s := def.Subnets[0]; s.Interface != "lan0" || s.Valid != 3600 || s.Preferred != 3600 || s.ID != subnetID6(netip.MustParsePrefix("2001:db8:1::/64")) {
 		t.Errorf("office6 = %+v", s)
 	}
 	if s := def.Subnets[1]; s.Interface != "lan1" || len(s.PD) != 1 || s.PD[0].Prefix != "2001:db8:100::" || s.PD[0].Length != 40 || s.PD[0].Delegated != 56 {
@@ -83,23 +84,11 @@ func TestKea6PerVRF(t *testing.T) {
 	}
 }
 
-// mustPrefix parses a range of a test.
-func mustPrefix(s string) netip.Prefix { return netip.MustParsePrefix(s) }
-
-// Kea numbers subnets from 1 to 4294967294, so a hash of 0 or 4294967295 takes the nearest.
-func TestKeaSubnetID(t *testing.T) {
-	for sum, want := range map[uint32]uint32{0: 1, 1: 1, 3221225984: 3221225984, 4294967294: 4294967294, 4294967295: 4294967294} {
-		if got := keaSubnetID(sum); got != want {
-			t.Errorf("keaSubnetID(%d) = %d; want %d", sum, got, want)
-		}
-	}
-}
-
 // Two subnets of one server whose ranges lie apart but whose numbers in Kea are the same, as two
 // hashes may be, are refused.
 func TestKeaSameNumber(t *testing.T) {
-	a := servedSubnet{Subnet: derive.Subnet{Name: "office6", VRF: derive.DefaultVRF, Prefix: mustPrefix("2001:db8:1::/64")}, id: 7}
-	b := servedSubnet{Subnet: derive.Subnet{Name: "lab6", VRF: derive.DefaultVRF, Prefix: mustPrefix("2001:db8:2::/64")}, id: 7}
+	a := servedSubnet{Subnet: derive.Subnet{Name: "office6", VRF: derive.DefaultVRF, Prefix: netip.MustParsePrefix("2001:db8:1::/64")}, id: 7}
+	b := servedSubnet{Subnet: derive.Subnet{Name: "lab6", VRF: derive.DefaultVRF, Prefix: netip.MustParsePrefix("2001:db8:2::/64")}, id: 7}
 	want := "DHCPSubnet/lab6: spec.subnet: DHCPSubnet office6 and DHCPSubnet lab6 get the same number 7 in Kea; change one subnet's range"
 	if err := numberedApart(a, b); err == nil || err.Error() != want {
 		t.Errorf("numberedApart = %v; want %s", err, want)

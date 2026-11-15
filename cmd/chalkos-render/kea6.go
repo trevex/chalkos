@@ -17,12 +17,8 @@ func subnetID6(p netip.Prefix) uint32 {
 	a := p.Addr().As16()
 	h.Write(a[:])
 	h.Write([]byte{byte(p.Bits())})
-	return keaSubnetID(h.Sum32())
-}
-
-// keaSubnetID is the number of Kea's range, 1 to 4294967294, nearest to sum.
-func keaSubnetID(sum uint32) uint32 {
-	return min(max(sum, 1), 4294967294)
+	// Kea numbers subnets from 1 to 4294967294.
+	return min(max(h.Sum32(), 1), 4294967294)
 }
 
 // kea6Config is the config of the DHCPv6 server srv: UDP sockets on the subnets' links, its

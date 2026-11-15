@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"maps"
 	"slices"
 	"strings"
 	"testing"
@@ -46,7 +47,7 @@ func TestKeaPerVRF(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if names := slicesSorted(files); !slices.Equal(names, []string{"kea-dhcp4-guest.json", "kea-dhcp4.json"}) {
+	if names := slices.Sorted(maps.Keys(files)); !slices.Equal(names, []string{"kea-dhcp4-guest.json", "kea-dhcp4.json"}) {
 		t.Fatalf("files = %v", names)
 	}
 	type server struct {
@@ -85,16 +86,6 @@ func TestKeaPerVRF(t *testing.T) {
 			t.Errorf("%s = %s", file, files[file])
 		}
 	}
-}
-
-// slicesSorted are the names of the files, sorted.
-func slicesSorted(files map[string]string) []string {
-	var names []string
-	for n := range files {
-		names = append(names, n)
-	}
-	slices.Sort(names)
-	return names
 }
 
 // A subnet's boot files become client classes that the subnet evaluates once Kea chose it: iPXE
