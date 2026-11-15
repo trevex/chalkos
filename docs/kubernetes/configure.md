@@ -313,7 +313,7 @@ the `oidc-*` flags next to an authentication configuration, so `chalkctl validat
 `extraArgs.kube-apiserver`:
 
 ```text
-node node1: the Kubernetes cluster the documents give: Cluster "default": extraArgs: kube-apiserver --oidc-issuer-url conflicts with --authentication-config: chalkos configures authentication through --authentication-config, and the API server refuses oidc-* flags next to it; chalkos offers no way to add an authenticator today, so grant narrower access with RBAC
+node node1: the Kubernetes cluster the documents give: Cluster "default": extraArgs: kube-apiserver --oidc-issuer-url conflicts with --authentication-config: chalkos configures authentication through --authentication-config, and the API server refuses oidc-* flags next to it; chalkos sets no other authenticator; grant narrower access with RBAC
 ```
 
 For access narrower than `cluster-admin`, bind users and groups to roles with RBAC.

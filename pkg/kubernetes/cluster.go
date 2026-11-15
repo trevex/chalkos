@@ -30,7 +30,7 @@ type Cluster struct {
 	// Version is the release of the image's kubelet, such as 1.37.1.
 	Version string `json:"version"`
 	// APIServerVersion is the Kubernetes version of the API server images.apiServer names, from
-	// its tag without the leading v, such as 1.37.2. The cluster fact carries it next to Version.
+	// its tag without the leading v, such as 1.37.2.
 	APIServerVersion               string `json:"apiServerVersion"`
 	Domain                         string `json:"domain"`
 	AllowSchedulingOnControlPlanes bool   `json:"allowSchedulingOnControlPlanes"`

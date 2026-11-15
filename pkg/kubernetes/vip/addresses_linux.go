@@ -14,8 +14,7 @@ import (
 )
 
 // addresses are the cluster's VIPs on this node: each on the interface the cluster names, or
-// else, in l2 mode, on the one holding the node's address of its family. In l2 mode the holder
-// announces them to its neighbours; in routed mode a routing daemon on the node announces them.
+// else, in l2 mode, on the one holding the node's address of its family.
 type addresses struct {
 	addrs []Address
 	// add, announce and remove change the node's interfaces and tell its neighbours; tests
@@ -96,8 +95,7 @@ func (a *addresses) Release() error {
 }
 
 // NodeAddresses finds the interfaces of the cluster's VIPs on this node. A routed VIP goes on the
-// interface the node names, which its routing daemon announces, and the holder announces nothing
-// on the link; an l2 VIP is announced three times, a second apart.
+// interface the cluster names; an l2 VIP is announced three times, a second apart.
 func NodeAddresses(c k8s.Cluster, s knode.State) (Holder, error) {
 	vips := c.VIPAddresses()
 	announcements := 3

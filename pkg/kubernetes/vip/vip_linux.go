@@ -19,11 +19,8 @@ type Address struct {
 
 func (a Address) String() string { return a.IP.String() + " on " + a.Interface }
 
-// Add adds the address to its interface as a host address, /32 or /128. An IPv6 address skips
-// duplicate address detection, which would hold it back while the neighbours still reach the
-// node that held it before, and is deprecated, so the node never uses it as the source address of
-// its own connections. added is false when the interface had the address already; its settings
-// are renewed then.
+// Add adds the address to its interface as a host address, /32 or /128. added is false when the
+// interface had the address already; its settings are renewed then.
 func Add(a Address) (added bool, err error) {
 	ifi, err := net.InterfaceByName(a.Interface)
 	if err != nil {
@@ -31,8 +28,10 @@ func Add(a Address) (added bool, err error) {
 	}
 	addr := hostAddr(a.IP, ifi.Index)
 	if a.IP.Is6() {
-		// Deprecated but valid: the address answers, yet source address selection skips it, so the
-		// holder's own connections never depend on an address that moves to another node.
+		// No duplicate address detection, which would hold the address back while the neighbours
+		// still reach its previous holder. Deprecated but valid: the address answers, yet source
+		// address selection skips it, so the holder's own connections never depend on an address
+		// that moves to another node.
 		addr.Flags = unix.IFA_F_NODAD
 		addr.PreferedLft, addr.ValidLft = 0, infiniteLifetime
 	}

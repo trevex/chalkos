@@ -304,7 +304,7 @@ func TestClusterValidateRefusesProtectedFlags(t *testing.T) {
 	}
 	c = valid
 	c.ExtraArgs = map[string]map[string]string{"kube-apiserver": {"oidc-issuer-url": "https://id.example.com"}}
-	if err := c.Validate(); err == nil || !strings.Contains(err.Error(), "chalkos offers no way to add an authenticator") || !strings.Contains(err.Error(), "RBAC") {
+	if err := c.Validate(); err == nil || !strings.Contains(err.Error(), "chalkos sets no other authenticator") || !strings.Contains(err.Error(), "RBAC") {
 		t.Errorf("oidc-issuer-url: err = %v, want the missing authenticator and RBAC named", err)
 	}
 	// Other flags, and the protected flags of other components, are the cluster's.

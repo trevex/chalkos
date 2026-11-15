@@ -66,8 +66,7 @@ func (s State) MarkBootstrapped(now time.Time) error {
 
 // ClearMembership removes what makes the node an etcd member at boot: the bootstrapped,
 // etcd-initialised and joining markers, the initial cluster and, last, the pin. etcd's data stays.
-// The caller records first that the node left etcd: a node interrupted here must not look like one
-// that has yet to join.
+// MarkLeft comes first.
 func (s State) ClearMembership() error {
 	for _, f := range []string{s.BootstrappedMarker(), s.EtcdInitialisedMarker(), s.EtcdInitialCluster(), s.JoiningMarker(), s.Pin()} {
 		if err := removeIfExists(f); err != nil {

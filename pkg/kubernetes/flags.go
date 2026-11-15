@@ -18,8 +18,8 @@ type flagConflict struct{ flag, reason string }
 
 var (
 	authenticationConflict = flagConflict{"authentication-config", "chalkos configures authentication through " +
-		"--authentication-config, and the API server refuses oidc-* flags next to it; chalkos offers no way " +
-		"to add an authenticator today, so grant narrower access with RBAC"}
+		"--authentication-config, and the API server refuses oidc-* flags next to it; chalkos sets no other " +
+		"authenticator; grant narrower access with RBAC"}
 	authorizationConflict = flagConflict{"authorization-mode", "chalkos sets --authorization-mode=Node,RBAC, " +
 		"and the API server refuses this flag next to it; grant access with RBAC"}
 )
