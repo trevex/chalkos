@@ -242,14 +242,7 @@ func StartStopped(ctx context.Context, dir string) error {
 	return err
 }
 
-func allRunning(l *Lab) bool {
-	for _, n := range l.Nodes {
-		if !Running(l.VMConfig(n)) {
-			return false
-		}
-	}
-	return true
-}
+func allRunning(l *Lab) bool { return len(l.Stopped()) == 0 }
 
 // Ready reports whether the lab's supervisor runs every VM of the lab.
 func Ready(dir string) bool {

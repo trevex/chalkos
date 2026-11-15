@@ -304,14 +304,9 @@ func (a *app) start(ctx context.Context, name string) error {
 	if _, running, err := lab.Supervisor(dir); err != nil {
 		return err
 	} else if running {
-		var stopped []string
-		for _, n := range l.Nodes {
-			if !lab.Running(l.VMConfig(n)) {
-				stopped = append(stopped, n.Name)
-			}
-		}
+		stopped := l.Stopped()
 		if len(stopped) == 0 {
-			fmt.Fprintf(a.stdout, "the lab %s runs %s already\n", l.Name, strs.And(nodeNames(l)))
+			fmt.Fprintf(a.stdout, "the lab %s runs %s already\n", l.Name, strs.And(l.NodeNames()))
 			return nil
 		}
 		fmt.Fprintf(a.stdout, "starting %s\n", strs.And(stopped))
@@ -320,7 +315,7 @@ func (a *app) start(ctx context.Context, name string) error {
 		if err := lab.StartStopped(startCtx, dir); err != nil {
 			return err
 		}
-		fmt.Fprintf(a.stdout, "the lab %s runs %s\n", l.Name, strs.And(nodeNames(l)))
+		fmt.Fprintf(a.stdout, "the lab %s runs %s\n", l.Name, strs.And(l.NodeNames()))
 		return nil
 	}
 	stopCtx, cancel := context.WithTimeout(ctx, 2*time.Minute)
@@ -328,11 +323,11 @@ func (a *app) start(ctx context.Context, name string) error {
 	if err := lab.PrepareStart(stopCtx, dir); err != nil {
 		return err
 	}
-	fmt.Fprintf(a.stdout, "starting %s\n", strs.And(nodeNames(l)))
+	fmt.Fprintf(a.stdout, "starting %s\n", strs.And(l.NodeNames()))
 	if err := a.startSupervisor(ctx, dir); err != nil {
 		return fmt.Errorf("%w; chalklab status shows the lab", err)
 	}
-	fmt.Fprintf(a.stdout, "the lab %s runs %s\n", l.Name, strs.And(nodeNames(l)))
+	fmt.Fprintf(a.stdout, "the lab %s runs %s\n", l.Name, strs.And(l.NodeNames()))
 	return nil
 }
 

@@ -117,11 +117,7 @@ func (l *Lab) Node(name string) (Node, error) {
 			return n, nil
 		}
 	}
-	var names []string
-	for _, n := range l.Nodes {
-		names = append(names, n.Name)
-	}
-	return Node{}, fmt.Errorf("the lab %s has no node %s; its nodes are %v", l.Name, name, names)
+	return Node{}, fmt.Errorf("the lab %s has no node %s; its nodes are %v", l.Name, name, l.NodeNames())
 }
 
 // VMConfig is the VM of a node of the lab: its disks, firmware variables, TPM state and console
@@ -182,4 +178,24 @@ func (l *Lab) CheckSockets() error {
 		}
 	}
 	return nil
+}
+
+// NodeNames are the names of the lab's nodes, in its order.
+func (l *Lab) NodeNames() []string {
+	var names []string
+	for _, n := range l.Nodes {
+		names = append(names, n.Name)
+	}
+	return names
+}
+
+// Stopped are the names of the lab's nodes whose VMs do not run.
+func (l *Lab) Stopped() []string {
+	var stopped []string
+	for _, n := range l.Nodes {
+		if !Running(l.VMConfig(n)) {
+			stopped = append(stopped, n.Name)
+		}
+	}
+	return stopped
 }

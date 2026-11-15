@@ -116,7 +116,7 @@ func (a *app) create(ctx context.Context, f createFlags) (err error) {
 		return err
 	}
 
-	fmt.Fprintf(a.stdout, "starting %s\n", strings.Join(nodeNames(l), ", "))
+	fmt.Fprintf(a.stdout, "starting %s\n", strings.Join(l.NodeNames(), ", "))
 	started = true
 	if err := a.startSupervisor(ctx, l.Dir); err != nil {
 		return fmt.Errorf("%w; chalklab destroy removes what runs of the lab", err)
@@ -329,14 +329,6 @@ func writeLabInventory(path string, inv *inventory.Inventory, l *lab.Lab) error 
 	return os.WriteFile(path, data, 0o600)
 }
 
-func nodeNames(l *lab.Lab) []string {
-	var names []string
-	for _, n := range l.Nodes {
-		names = append(names, n.Name)
-	}
-	return names
-}
-
 // rawAndPartitions finds the raw image in an image directory, or takes the file given, and the
 // partition table describing it: repart-output.json next to a raw image, or an ISO's .json.
 func rawAndPartitions(path string) (raw, partitions string, err error) {
@@ -478,7 +470,7 @@ func (a *app) setUp(ctx context.Context, f createFlags, l *lab.Lab) error {
 // CHALKOSCONFIG, so they name neither, and how to upgrade with a signed copy of an image.
 func (a *app) printNext(l *lab.Lab, withKubernetes bool) {
 	inventory := filepath.Join(l.Dir, inventoryFile)
-	fmt.Fprintf(a.stdout, "\nthe lab %s runs %s; next:\n", l.Name, strings.Join(nodeNames(l), ", "))
+	fmt.Fprintf(a.stdout, "\nthe lab %s runs %s; next:\n", l.Name, strings.Join(l.NodeNames(), ", "))
 	if withKubernetes {
 		fmt.Fprintf(a.stdout, "  export KUBECONFIG=%s\n", filepath.Join(l.Dir, kubeconfigFile))
 	}
