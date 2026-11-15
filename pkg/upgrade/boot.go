@@ -73,7 +73,7 @@ func RebootHelps(entries []esp.Entry, efivars string, running []byte) (bool, str
 		return true, fmt.Sprintf("%s has %d tries left", booted.File, booted.TriesLeft)
 	}
 	for _, e := range entries {
-		if e.ID != booted.ID && !e.Bad() && e.RootHash != nil && !bytes.Equal(e.RootHash, running) {
+		if fallsBackTo(e, booted, running) {
 			return true, fmt.Sprintf("%s used up its tries, and the boot loader falls back to %s", booted.File, e.File)
 		}
 	}

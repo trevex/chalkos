@@ -99,11 +99,7 @@ func (n *Node) ReadImage(ctx context.Context, rootHash []byte, read func(Store) 
 	if bytes.Equal(rootHash, running) {
 		return fmt.Errorf("%x is the running image, not one in the inactive slot", rootHash)
 	}
-	parts, err := n.slots().ReadTable(ctx)
-	if err != nil {
-		return err
-	}
-	_, inactive, err := slots(parts, running)
+	inactive, err := n.inactiveSlot(ctx, running)
 	if err != nil {
 		return err
 	}

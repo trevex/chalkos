@@ -220,12 +220,7 @@ func (n *Node) Install(ctx context.Context, h Header, stream io.Reader) (Result,
 	if bytes.Equal(h.RootHash, running) {
 		return Result{AlreadyInstalled: true}, nil
 	}
-	w := n.slots()
-	parts, err := w.ReadTable(ctx)
-	if err != nil {
-		return Result{}, err
-	}
-	_, inactive, err := slots(parts, running)
+	inactive, err := n.inactiveSlot(ctx, running)
 	if err != nil {
 		return Result{}, err
 	}
@@ -242,13 +237,8 @@ func (n *Node) Install(ctx context.Context, h Header, stream io.Reader) (Result,
 	// from 1 on, without leading zeros. Other names were placed by hand or are corrupted, and
 	// systemd-boot may sort one above the new entry. Examples are chalkos_5a.efi and
 	// chalkos_7+2147483648.efi, whose ID is the whole name.
-	for _, e := range all {
-		if retired(e, h.ImageID, booted, running) || !ofImage(e, h.ImageID) && e.ID != booted.ID {
-			continue
-		}
-		if err := misnamed(e, h.ImageID); err != nil {
-			return Result{}, err
-		}
+	if err := checkNames(all, h.ImageID, booted, func(e esp.Entry) bool { return retired(e, h.ImageID, booted, running) }); err != nil {
+		return Result{}, err
 	}
 	// The staged UKI's name carries the image's next generation, above the generation any name on
 	// the ESP gives before the retirement removes some, a staged UKI's too, which Activate names
@@ -288,7 +278,7 @@ func (n *Node) Install(ctx context.Context, h Header, stream io.Reader) (Result,
 	if booted.TriesLeft >= 0 {
 		for _, e := range entries {
 			// A UKI that cannot be read boots no image to fall back to.
-			if e.ID != booted.ID && !e.Bad() && e.RootHash != nil && !bytes.Equal(e.RootHash, running) {
+			if fallsBackTo(e, booted, running) {
 				return Result{}, fmt.Errorf("the boot of %s has not been found healthy yet; upgrade once it is, as the upgrade replaces %s, which the node falls back to", booted.File, e.File)
 			}
 		}
@@ -310,7 +300,7 @@ func (n *Node) Install(ctx context.Context, h Header, stream io.Reader) (Result,
 	if err := n.retire(ctx, all, h.ImageID, booted, running, inactive); err != nil {
 		return Result{}, err
 	}
-	wrote, err := w.Write(h.Image, inactive, stream)
+	wrote, err := n.slots().Write(h.Image, inactive, stream)
 	if err != nil {
 		return Result{}, err
 	}
@@ -362,15 +352,7 @@ func (n *Node) Activate(ctx context.Context, rootHash []byte) (Result, error) {
 	if bytes.Equal(rootHash, running) {
 		return Result{AlreadyInstalled: true}, nil
 	}
-	imageID := n.OSRelease["IMAGE_ID"]
-	if imageID == "" {
-		return Result{}, errors.New("the running image names no image ID")
-	}
-	all, err := esp.Entries(n.ESP)
-	if err != nil {
-		return Result{}, err
-	}
-	booted, err := Booted(all, n.EFIVars, running)
+	imageID, all, booted, err := n.bootState(running)
 	if err != nil {
 		return Result{}, err
 	}
@@ -396,19 +378,10 @@ func (n *Node) Activate(ctx context.Context, rootHash []byte) (Result, error) {
 	}
 	// The new entry boots before the others only while their names order them by generation, as
 	// Install checked before it staged the image; an entry may have changed since.
-	for _, e := range all {
-		if !ofImage(e, imageID) && e.ID != booted.ID {
-			continue
-		}
-		if err := misnamed(e, imageID); err != nil {
-			return Result{}, refused(err)
-		}
+	if err := checkNames(all, imageID, booted, nil); err != nil {
+		return Result{}, refused(err)
 	}
-	parts, err := n.slots().ReadTable(ctx)
-	if err != nil {
-		return Result{}, err
-	}
-	_, inactive, err := slots(parts, running)
+	inactive, err := n.inactiveSlot(ctx, running)
 	if err != nil {
 		return Result{}, err
 	}
@@ -454,6 +427,50 @@ func ofImage(e esp.Entry, imageID string) bool {
 // booted nor boots the running store.
 func retired(e esp.Entry, imageID string, booted esp.Entry, running []byte) bool {
 	return ofImage(e, imageID) && e.ID != booted.ID && !bytes.Equal(e.RootHash, running)
+}
+
+// fallsBackTo reports whether the node falls back to the entry e should the booted entry's tries
+// run out: another readable entry that is not bad and boots another store than the running one.
+func fallsBackTo(e, booted esp.Entry, running []byte) bool {
+	return e.ID != booted.ID && !e.Bad() && e.RootHash != nil && !bytes.Equal(e.RootHash, running)
+}
+
+// bootState reads the running image's ID, the ESP's entries and the booted one.
+func (n *Node) bootState(running []byte) (imageID string, all []esp.Entry, booted esp.Entry, err error) {
+	imageID = n.OSRelease["IMAGE_ID"]
+	if imageID == "" {
+		return "", nil, esp.Entry{}, errors.New("the running image names no image ID")
+	}
+	if all, err = esp.Entries(n.ESP); err != nil {
+		return "", nil, esp.Entry{}, err
+	}
+	booted, err = Booted(all, n.EFIVars, running)
+	return imageID, all, booted, err
+}
+
+// inactiveSlot is the boot disk's slot that does not hold the running store.
+func (n *Node) inactiveSlot(ctx context.Context, running []byte) (storeslot.Slot, error) {
+	parts, err := n.slots().ReadTable(ctx)
+	if err != nil {
+		return storeslot.Slot{}, err
+	}
+	_, inactive, err := slots(parts, running)
+	return inactive, err
+}
+
+// checkNames refuses an entry of the image, or the booted one, that skip leaves and whose name
+// chalkd would not give it: a new entry boots before the others only while their names order them
+// by generation.
+func checkNames(all []esp.Entry, imageID string, booted esp.Entry, skip func(esp.Entry) bool) error {
+	for _, e := range all {
+		if skip != nil && skip(e) || !ofImage(e, imageID) && e.ID != booted.ID {
+			continue
+		}
+		if err := misnamed(e, imageID); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // misnamed is the error of an entry an upgrade or a rollback leaves on the ESP whose name chalkd

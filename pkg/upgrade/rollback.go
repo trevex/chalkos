@@ -71,15 +71,7 @@ func (n *Node) Rollback(ctx context.Context, rootHash, last []byte, record func(
 	if bytes.Equal(rootHash, running) {
 		return Result{AlreadyInstalled: true}, nil
 	}
-	imageID := n.OSRelease["IMAGE_ID"]
-	if imageID == "" {
-		return Result{}, errors.New("the running image names no image ID")
-	}
-	all, err := esp.Entries(n.ESP)
-	if err != nil {
-		return Result{}, err
-	}
-	booted, err := Booted(all, n.EFIVars, running)
+	imageID, all, booted, err := n.bootState(running)
 	if err != nil {
 		return Result{}, err
 	}
@@ -114,19 +106,10 @@ func (n *Node) Rollback(ctx context.Context, rootHash, last []byte, record func(
 	}
 	// The renamed entry boots before the others only while their names order them by generation,
 	// as for an upgrade's new entry.
-	for _, e := range all {
-		if !ofImage(e, imageID) && e.ID != booted.ID {
-			continue
-		}
-		if err := misnamed(e, imageID); err != nil {
-			return Result{}, err
-		}
-	}
-	parts, err := n.slots().ReadTable(ctx)
-	if err != nil {
+	if err := checkNames(all, imageID, booted, nil); err != nil {
 		return Result{}, err
 	}
-	_, inactive, err := slots(parts, running)
+	inactive, err := n.inactiveSlot(ctx, running)
 	if err != nil {
 		return Result{}, err
 	}
