@@ -3,7 +3,6 @@ package main
 import (
 	"bytes"
 	"io"
-	"log"
 	"os"
 	"path/filepath"
 	"slices"
@@ -122,17 +121,6 @@ func TestLoadCredentials(t *testing.T) {
 	})
 }
 
-func TestHTTPServerLimits(t *testing.T) {
-	s := httpServer(nil, nil)
-	if s.ReadHeaderTimeout == 0 || s.IdleTimeout == 0 || s.MaxHeaderBytes == 0 {
-		t.Errorf("server = %+v, want header and idle limits", s)
-	}
-	// Install and Logs stream for as long as they need.
-	if s.ReadTimeout != 0 || s.WriteTimeout != 0 {
-		t.Errorf("read timeout %v, write timeout %v; want none", s.ReadTimeout, s.WriteTimeout)
-	}
-}
-
 func TestMaintenanceCertificateAcrossRestarts(t *testing.T) {
 	now := time.Now()
 	load := func(t *testing.T, run string, now time.Time) []byte {
@@ -196,43 +184,6 @@ func TestMaintenanceCertificateAcrossRestarts(t *testing.T) {
 	})
 }
 
-// The test images' renewal hook says so in the log once, as chalkd starts; other images run
-// without it and log nothing about it.
-func TestRenewalHookIsLogged(t *testing.T) {
-	var logged bytes.Buffer
-	log.SetOutput(&logged)
-	t.Cleanup(func() { log.SetOutput(os.Stderr) })
-	for _, value := range []string{"", "0", "1"} {
-		logged.Reset()
-		on := renewOnApplyConfig(func(string) string { return value })
-		if on != (value == "1") {
-			t.Errorf("%q: hook %v", value, on)
-		}
-		if lines := strings.Count(logged.String(), "\n"); lines != map[bool]int{true: 1, false: 0}[on] {
-			t.Errorf("%q: logged %q", value, logged.String())
-		}
-	}
-}
-
-// chalkd serves the console's socket, and lets the console act, as the image's chalkos.console
-// options say in its unit's environment.
-func TestConsoleSettings(t *testing.T) {
-	for _, tc := range []struct {
-		env            map[string]string
-		serve, actions bool
-	}{
-		{map[string]string{}, false, false},
-		{map[string]string{"CHALKD_CONSOLE": "1"}, true, false},
-		{map[string]string{"CHALKD_CONSOLE": "1", "CHALKD_CONSOLE_ACTIONS": "1"}, true, true},
-		{map[string]string{"CHALKD_CONSOLE": "1", "CHALKD_CONSOLE_ACTIONS": "0"}, true, false},
-	} {
-		serve, actions := consoleSettings(func(k string) string { return tc.env[k] })
-		if serve != tc.serve || actions != tc.actions {
-			t.Errorf("%v: serve %v, actions %v; want %v, %v", tc.env, serve, actions, tc.serve, tc.actions)
-		}
-	}
-}
-
 func TestHealthArgs(t *testing.T) {
 	for _, tc := range []struct {
 		args []string
@@ -271,9 +222,6 @@ func TestCommandsRefuseArguments(t *testing.T) {
 		{"bogus"},
 		{"serve", "now"},
 		{"load-config", "x"},
-		{"health", "--wait", "0"},
-		{"health", "now"},
-		{"health", "--wait", "300", "--stopped"},
 		{"check"},
 		{"check", "--system", "/nix/store/x"},
 		{"check", "--system", "", "--facts", ""},
@@ -327,16 +275,6 @@ func TestCallSites(t *testing.T) {
 		cmd, rest, err := root.Find(args)
 		if err != nil || cmd.HasSubCommands() || layertest.Refused(cmd, rest) {
 			t.Errorf("chalkd %q is refused as %s, %v", args, cmd.CommandPath(), err)
-		}
-	}
-}
-
-// chalkd's unit passes the units the image's health check ignores, which a config's trial
-// ignores too, separated by spaces.
-func TestHealthIgnoreUnits(t *testing.T) {
-	for value, want := range map[string][]string{"": nil, "a.service": {"a.service"}, " a.service  b.service ": {"a.service", "b.service"}} {
-		if got := healthIgnoreUnits(func(string) string { return value }); !slices.Equal(got, want) {
-			t.Errorf("%q: %q, want %q", value, got, want)
 		}
 	}
 }

@@ -325,19 +325,6 @@ func renewOnApplyConfig(getenv func(string) string) bool {
 	return true
 }
 
-// consoleSettings reports whether chalkd serves the console on its socket and whether the console
-// may act on the node, as the image's chalkos.console options say in CHALKD_CONSOLE and
-// CHALKD_CONSOLE_ACTIONS.
-func consoleSettings(getenv func(string) string) (serve, actions bool) {
-	return getenv("CHALKD_CONSOLE") == "1", getenv("CHALKD_CONSOLE_ACTIONS") == "1"
-}
-
-// healthIgnoreUnits are the units whose failure leaves the node healthy, as the image's health
-// check ignores them, which chalkd's unit passes in CHALKD_HEALTH_IGNORE_UNITS separated by spaces.
-func healthIgnoreUnits(getenv func(string) string) []string {
-	return strings.Fields(getenv("CHALKD_HEALTH_IGNORE_UNITS"))
-}
-
 // healthTimeout is the time a counted boot of the image has to become healthy, which chalkd's
 // unit passes in CHALKD_HEALTH_TIMEOUT in seconds, as the boot's health check waits; zero without
 // it.
@@ -396,22 +383,13 @@ func serve() error {
 		return err
 	}
 	srv.RenewOnApplyConfig = renewOnApplyConfig(os.Getenv)
-	serveConsole, actions := consoleSettings(os.Getenv)
-	srv.ConsoleActions = actions
+	// The image's chalkos.console options: serve the console on its socket, and let it act.
+	serveConsole := os.Getenv("CHALKD_CONSOLE") == "1"
+	srv.ConsoleActions = os.Getenv("CHALKD_CONSOLE_ACTIONS") == "1"
 	if srv.Plugins, err = registry(srv); err != nil {
 		return err
 	}
 	srv.Loader.Layers = layer.Active[nodeconfig.Layer](srv.Plugins)
-	if creds.mode == nodev1.Mode_MODE_NORMAL {
-		// A config's trial is confirmed only on a node the boot's health check would find
-		// healthy, with the units it ignores.
-		h := chalkd.DefaultHealth(layer.Active[layer.Health](srv.Plugins))
-		h.IgnoreUnits = healthIgnoreUnits(os.Getenv)
-		srv.Healthy = h.CheckIgnoring
-		if srv.HealthTimeout, err = healthTimeout(os.Getenv); err != nil {
-			return err
-		}
-	}
 
 	switch {
 	case creds.mode == nodev1.Mode_MODE_NORMAL:
@@ -430,7 +408,19 @@ func serve() error {
 		stop()
 		loops.Wait()
 	}()
+	ln, err := net.Listen("tcp", ":50000")
+	if err != nil {
+		return err
+	}
 	if creds.mode == nodev1.Mode_MODE_NORMAL {
+		// A config's trial is confirmed only on a node the boot's health check would find
+		// healthy, ignoring the units it ignores (CHALKD_HEALTH_IGNORE_UNITS, separated by spaces).
+		h := chalkd.DefaultHealth(layer.Active[layer.Health](srv.Plugins))
+		h.IgnoreUnits = strings.Fields(os.Getenv("CHALKD_HEALTH_IGNORE_UNITS"))
+		srv.Healthy = h.CheckIgnoring
+		if srv.HealthTimeout, err = healthTimeout(os.Getenv); err != nil {
+			return err
+		}
 		for _, p := range srv.Plugins.Active() {
 			loops.Go(func() {
 				if err := p.Start(ctx); err != nil {
@@ -438,30 +428,21 @@ func serve() error {
 				}
 			})
 		}
-	}
-	// The issuer of the image's layer renews the node certificate. Without one, the renewal only
-	// logs once it is due, and Status names chalkctl node renew.
-	if creds.mode == nodev1.Mode_MODE_NORMAL {
+		// The issuer of the image's layer renews the node certificate. Without one, the renewal
+		// only logs once it is due, and Status names chalkctl node renew.
 		var issue func(context.Context, []byte) (string, error)
 		if is := srv.Plugins.Issuer(); is != nil {
 			issue = is.IssueNodeCertificate
 		}
 		srv.Renewal = chalkd.NewNodeRenewal(creds.node, issue)
 		go srv.Renewal.Run(ctx)
-	}
-	go announceAddresses(srv.CurrentFingerprint)
-
-	ln, err := net.Listen("tcp", ":50000")
-	if err != nil {
-		return err
-	}
-	// A trial recorded before chalkd started gets its deadline again, and one the boot could not
-	// end rolls back at once. Its delivery reads srv.Renewal and the layers, so it comes once
-	// they are set and their loops run, and once chalkd listens, so the node can be reached while
-	// it runs. It ends with ctx, and chalkd waits for it as for the loops.
-	if creds.mode == nodev1.Mode_MODE_NORMAL {
+		// A trial recorded before chalkd started gets its deadline again, and one the boot could
+		// not end rolls back at once. Its delivery reads srv.Renewal and the layers, so it comes
+		// once they are set and their loops run, and once chalkd listens, so the node can be
+		// reached while it runs. It ends with ctx, and chalkd waits for it as for the loops.
 		loops.Go(func() { srv.ResumeTrial(ctx) })
 	}
+	go announceAddresses(srv.CurrentFingerprint)
 	served := make(chan error, 1)
 	go func() {
 		served <- httpServer(srv.Handler(), chalkd.TLSConfig(creds.getCertificate(), creds.clientCAs)).ServeTLS(ln, "", "")
