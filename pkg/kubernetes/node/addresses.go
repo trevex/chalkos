@@ -1,6 +1,7 @@
 package node
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -26,7 +27,7 @@ type Resolver func(sel nodeip.Selector, timeout time.Duration) ([]nodeip.Address
 // WaitForAddresses waits for the addresses the selector picks among the node's own.
 func WaitForAddresses(sel nodeip.Selector, timeout time.Duration) ([]nodeip.Address, error) {
 	log.Printf("picking the node's addresses, %s, waiting up to %v", sel, timeout)
-	picked, err := nodeip.NewWaiter().Wait(sel, timeout)
+	picked, err := nodeip.Wait(context.Background(), sel, timeout)
 	if err != nil {
 		return nil, err
 	}
@@ -45,7 +46,7 @@ func (s State) pickAddresses(c kubernetes.Cluster, n kubernetes.Node, resolve Re
 	if err != nil {
 		// Units that add the node's addresses, such as a routing daemon's, order themselves before
 		// the target, which the preparation runs after. The resolver returns an error only once
-		// its deadline passed (nodeip.Waiter.Wait), so the whole timeout went by.
+		// its deadline passed (nodeip.Wait), so the whole timeout went by.
 		err = fmt.Errorf("%w, %v after %s", err, timeout, addressesTarget)
 	}
 	if _, ok := errors.AsType[*nodeip.PinnedError](err); ok {

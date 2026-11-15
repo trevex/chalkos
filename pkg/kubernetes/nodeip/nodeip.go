@@ -4,12 +4,14 @@
 package nodeip
 
 import (
+	"context"
 	"fmt"
 	"net/netip"
 	"slices"
 	"strings"
 	"time"
 
+	"github.com/trevex/chalkos/pkg/internal/poll"
 	"github.com/trevex/chalkos/pkg/internal/strs"
 )
 
@@ -355,39 +357,25 @@ func (e *PinnedError) Error() string {
 	return fmt.Sprintf("pinned address %s is not present", e.Address)
 }
 
-// Waiter waits for the node's addresses: a DHCP lease or an address a routing daemon adds may
-// arrive after the node started.
-type Waiter struct {
-	// Addresses lists the node's addresses.
-	Addresses func() ([]Address, error)
-	// Now and Sleep are the clock.
-	Now   func() time.Time
-	Sleep func(time.Duration)
-	// Interval is the time between two looks at the node's addresses.
-	Interval time.Duration
+// Wait returns the addresses s selects among the node's as soon as there are all of them: a DHCP
+// lease or an address a routing daemon adds may arrive after the node started. It looks every
+// second, at least once, and returns the last error once timeout passed or ctx ended.
+func Wait(ctx context.Context, s Selector, timeout time.Duration) ([]Address, error) {
+	return wait(ctx, SystemAddresses, s, timeout)
 }
 
-// NewWaiter returns a Waiter that looks at the system's addresses every second.
-func NewWaiter() Waiter {
-	return Waiter{Addresses: SystemAddresses, Now: time.Now, Sleep: time.Sleep, Interval: time.Second}
-}
-
-// Wait returns the addresses s selects as soon as there are all of them. It looks at least
-// once, and returns the last error once timeout passed.
-func (w Waiter) Wait(s Selector, timeout time.Duration) ([]Address, error) {
-	deadline := w.Now().Add(timeout)
-	for {
-		addrs, err := w.Addresses()
+// wait is Wait among the addresses list returns.
+func wait(ctx context.Context, list func() ([]Address, error), s Selector, timeout time.Duration) ([]Address, error) {
+	var picked []Address
+	err := poll.Until(ctx, "", timeout, time.Second, func() error {
+		addrs, err := list()
 		if err == nil {
-			var picked []Address
-			if picked, err = s.Select(addrs); err == nil {
-				return picked, nil
-			}
+			picked, err = s.Select(addrs)
 		}
-		remaining := deadline.Sub(w.Now())
-		if remaining <= 0 {
-			return nil, err
-		}
-		w.Sleep(min(w.Interval, remaining))
+		return err
+	})
+	if err != nil {
+		return nil, err
 	}
+	return picked, nil
 }

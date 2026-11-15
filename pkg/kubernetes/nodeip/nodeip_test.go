@@ -1,12 +1,15 @@
 package nodeip
 
 import (
+	"context"
 	"errors"
 	"net/netip"
 	"slices"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/trevex/chalkos/pkg/internal/testwait"
 )
 
 func addresses(t *testing.T, list ...string) []Address {
@@ -318,18 +321,11 @@ func TestParseFamily(t *testing.T) {
 	}
 }
 
-// fakeClock is a clock whose Sleep only moves its time.
-type fakeClock struct{ now time.Time }
-
-func (c *fakeClock) Now() time.Time        { return c.now }
-func (c *fakeClock) Sleep(d time.Duration) { c.now = c.now.Add(d) }
-
 func TestWaitForLateAddress(t *testing.T) {
-	clock := &fakeClock{now: time.Date(2026, 10, 7, 12, 0, 0, 0, time.UTC)}
-	start := clock.now
-	calls := 0
-	w := Waiter{
-		Addresses: func() ([]Address, error) {
+	testwait.Bubble(t, func(t *testing.T) {
+		start := time.Now()
+		calls := 0
+		list := func() ([]Address, error) {
 			calls++
 			switch {
 			case calls == 1:
@@ -338,55 +334,52 @@ func TestWaitForLateAddress(t *testing.T) {
 				return addresses(t, "eth0 10.0.2.15"), nil
 			}
 			return addresses(t, "eth0 10.0.2.15", "eth1 192.168.100.12"), nil
-		},
-		Now:      clock.Now,
-		Sleep:    clock.Sleep,
-		Interval: time.Second,
-	}
-	got, err := w.Wait(Selector{Filter: filter(t, "192.168.100.0/24")}, 5*time.Minute)
-	if err != nil || !slices.Equal(ipsOf(got), ips("192.168.100.12")) {
-		t.Fatalf("Wait() = %v, %v", got, err)
-	}
-	if calls != 5 || clock.now.Sub(start) != 4*time.Second {
-		t.Errorf("found after %d looks and %v", calls, clock.now.Sub(start))
-	}
+		}
+		got, err := wait(context.Background(), list, Selector{Filter: filter(t, "192.168.100.0/24")}, 5*time.Minute)
+		if err != nil || !slices.Equal(ipsOf(got), ips("192.168.100.12")) {
+			t.Fatalf("wait() = %v, %v", got, err)
+		}
+		if calls != 5 || time.Since(start) != 4*time.Second {
+			t.Errorf("found after %d looks and %v", calls, time.Since(start))
+		}
+	})
 }
 
 func TestWaitTimesOut(t *testing.T) {
-	clock := &fakeClock{now: time.Date(2026, 10, 7, 12, 0, 0, 0, time.UTC)}
-	start := clock.now
-	calls := 0
-	w := Waiter{
-		Addresses: func() ([]Address, error) { calls++; return addresses(t, "eth0 10.0.2.15"), nil },
-		Now:       clock.Now,
-		Sleep:     clock.Sleep,
-		Interval:  2 * time.Second,
-	}
-	_, err := w.Wait(Selector{Filter: filter(t, "192.168.100.0/24")}, 5*time.Second)
-	if _, ok := errors.AsType[*NoMatchError](err); !ok {
-		t.Fatalf("err = %v, want no match", err)
-	}
-	// Looks at 0s, 2s, 4s and, once more, at the timeout.
-	if calls != 4 || clock.now.Sub(start) != 5*time.Second {
-		t.Errorf("gave up after %d looks and %v", calls, clock.now.Sub(start))
-	}
+	testwait.Bubble(t, func(t *testing.T) {
+		start := time.Now()
+		calls := 0
+		list := func() ([]Address, error) { calls++; return addresses(t, "eth0 10.0.2.15"), nil }
+		_, err := wait(context.Background(), list, Selector{Filter: filter(t, "192.168.100.0/24")}, 2500*time.Millisecond)
+		if _, ok := errors.AsType[*NoMatchError](err); !ok {
+			t.Fatalf("err = %v, want no match", err)
+		}
+		// Looks at 0s, 1s, 2s and, once more, at the timeout.
+		if calls != 4 || time.Since(start) != 2500*time.Millisecond {
+			t.Errorf("gave up after %d looks and %v", calls, time.Since(start))
+		}
 
-	// Without a timeout it looks once.
-	calls = 0
-	if _, err := w.Wait(Selector{Filter: filter(t, "192.168.100.0/24")}, 0); err == nil || calls != 1 {
-		t.Errorf("no timeout: %v after %d looks", err, calls)
-	}
+		// Without a timeout it looks once.
+		calls = 0
+		if _, err := wait(context.Background(), list, Selector{Filter: filter(t, "192.168.100.0/24")}, 0); err == nil || calls != 1 {
+			t.Errorf("no timeout: %v after %d looks", err, calls)
+		}
+
+		// A context that ends stops the wait.
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+		start = time.Now()
+		if _, err := wait(ctx, list, Selector{Filter: filter(t, "192.168.100.0/24")}, time.Minute); !errors.Is(err, context.DeadlineExceeded) || time.Since(start) != 3*time.Second {
+			t.Errorf("a context ending after 3s: %v after %v", err, time.Since(start))
+		}
+	})
 }
 
 func TestWaitReportsListingError(t *testing.T) {
-	clock := &fakeClock{now: time.Date(2026, 10, 7, 12, 0, 0, 0, time.UTC)}
-	w := Waiter{
-		Addresses: func() ([]Address, error) { return nil, errors.New("netlink: permission denied") },
-		Now:       clock.Now,
-		Sleep:     clock.Sleep,
-		Interval:  time.Second,
-	}
-	if _, err := w.Wait(Selector{}, 3*time.Second); err == nil || !strings.Contains(err.Error(), "permission denied") {
-		t.Errorf("err = %v", err)
-	}
+	testwait.Bubble(t, func(t *testing.T) {
+		list := func() ([]Address, error) { return nil, errors.New("netlink: permission denied") }
+		if _, err := wait(context.Background(), list, Selector{}, 3*time.Second); err == nil || !strings.Contains(err.Error(), "permission denied") {
+			t.Errorf("err = %v", err)
+		}
+	})
 }
