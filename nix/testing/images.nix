@@ -3,9 +3,9 @@
 { self, pkgs }:
 let
   secrets = import ./secrets.nix { inherit pkgs; };
-  # Every variant has the test image's small partitions and the probe the tests read. test, which
-  # most VM tests boot, carries chalklab's Greeting kind; k8s is the image of the Kubernetes tests' control
-  # planes and workers; router that of the router test's routers.
+  # Every variant has the test image's small partitions and the probe the tests read. test,
+  # which most VM tests boot, carries chalklab's Greeting kind; k8s is the image of the
+  # Kubernetes tests' control planes and workers; router that of the router test's routers.
   arguments = {
     osCA = "${secrets}/secrets.pub.json";
     modules = [ ../../modules/testing/test-image.nix ];

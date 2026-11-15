@@ -694,8 +694,8 @@ func (rl *routerLab) defaultRoute(t *testing.T) {
 	waitFor(t, 2*time.Minute, "r2's default route from r1 again", func() error { return rl.learned("::/0") })
 }
 
-// The test's WireGuard keys: r1's private key, which the diagnostic wireguard must not show, and r2's public
-// key, which r1's peer names.
+// The test's WireGuard keys: r1's private key, which the diagnostic wireguard must not show,
+// and r2's public key, which r1's peer names.
 const (
 	r1WireGuardKey = "oArtBEX5/9ql0dMa7tgy6RXjhNVmQ2Ia/6+jTOrsf2o="
 	r2WireGuardPub = "YCfBku3dYhut+x0pFQMw7WbWU5qVks5ndJDuewg4J2I="
