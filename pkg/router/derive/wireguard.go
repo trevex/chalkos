@@ -56,7 +56,7 @@ func (m Membership) withWireGuards(wgs []Named[WireGuardSpec]) Membership {
 			m.Members = append(m.Members, Member{VRF: vrf, Glob: w.Name, Text: w.Name, Network: unit.Name, Path: "spec.match"})
 		}
 	}
-	sortUnits(m.Units)
+	SortUnits(m.Units)
 	return m
 }
 
@@ -103,7 +103,7 @@ func (d Model) WireGuardInterfaces() ([]WireGuardInterface, error) {
 			}
 		}
 		withOwn := append(slices.Clone(units), nameUnit(own, w.Name))
-		sortUnits(withOwn)
+		SortUnits(withOwn)
 		if u := Candidates(withOwn, w.Name)[0]; u.Name != own && !named[u.Name] {
 			switch {
 			case u.Device:

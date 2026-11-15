@@ -154,8 +154,9 @@ func nameUnit(name, link string) Unit {
 	return Unit{Name: name, Match: NameMatch{Words: []NameWord{{Glob: link, Text: link}}}}
 }
 
-// sortUnits sorts units by file name, as networkd picks them.
-func sortUnits(units []Unit) {
+// SortUnits sorts units by file name, as networkd picks them. The names compare with .network
+// appended, as file names do: a-b.network sorts before a.network.
+func SortUnits(units []Unit) {
 	slices.SortStableFunc(units, func(a, b Unit) int { return strings.Compare(a.Name+".network", b.Name+".network") })
 }
 
@@ -299,7 +300,7 @@ func networkUnits(vrfs []Named[VRFSpec], networks []Named[map[string]any]) ([]Un
 	if err := errors.Join(errs...); err != nil {
 		return nil, err
 	}
-	sortUnits(units)
+	SortUnits(units)
 	return units, nil
 }
 

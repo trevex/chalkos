@@ -304,7 +304,7 @@ func loNetwork(units []derive.Unit) (string, error) {
 	}
 	own := derive.Unit{Name: policyUnit, Match: derive.NameMatch{Words: []derive.NameWord{{Glob: "lo", Text: "lo"}}}}
 	units = append(slices.Clone(units), own)
-	slices.SortStableFunc(units, func(a, b derive.Unit) int { return strings.Compare(a.Name+".network", b.Name+".network") })
+	derive.SortUnits(units)
 	if _, err := soleNetwork(units, "lo", "VRF", "lo", "metadata.name"); err != nil {
 		return "", err
 	}

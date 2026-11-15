@@ -123,7 +123,7 @@ func withNAT64Units(d derive.Model, byKind, docs map[string]any) (map[string]any
 			"link":  map[string]any{"unmanaged": "yes"},
 		}})
 	}
-	slices.SortStableFunc(units, func(a, b derive.Unit) int { return strings.Compare(a.Name+".network", b.Name+".network") })
+	derive.SortUnits(units)
 	for _, n := range d.NAT64 {
 		link, own := derive.NAT64LinkPrefix+n.Name, nat64UnitPrefix+n.Name
 		if u := derive.Candidates(units, link)[0]; u.Name != own {
