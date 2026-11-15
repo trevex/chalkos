@@ -27,11 +27,10 @@ in
     type = lib.types.nullOr lib.types.path;
     default = null;
     description = ''
-      Public part of the cluster's secrets (`secrets.pub.json` from `chalkctl gen secrets`),
-      whose OS CA the image carries, so chalkd in maintenance mode accepts only clients with a
-      certificate from it. null builds an image that accepts any client until it is installed.
-      mkImages sets it, in every image and the installer, from its `osCA`, which checks the
-      file's version; the image's build checks it again.
+      The OS CA the image carries, from which chalkd in maintenance mode accepts client
+      certificates; null accepts any client until the node is installed. mkImages sets it, in
+      every image and the installer, from its [`osCA`](mkimages.md#osca) argument, which
+      describes the file; the image's build checks the file's version again.
     '';
   };
 

@@ -41,26 +41,24 @@ in
       "ttyS1,115200"
     ];
     description = ''
-      The kernel's consoles in order, each as the kernel's `console=` takes it: a device and its
-      options, such as `ttyS0,115200` for the first serial port at 115200 baud, or `tty0` for the
-      screen. The kernel prints its messages on every one, and systemd asks for each passphrase
-      and recovery key on every one, so any of them can answer. The list is set once: an image
-      whose modules set it twice fails to build, unless one of them uses `lib.mkDefault` or
-      `lib.mkForce`.
+      The kernel's consoles in order, each as the kernel's `console=` takes it, such as
+      `ttyS0,115200` for the first serial port at 115200 baud or `tty0` for the screen. The
+      kernel prints on every one, and systemd asks for each passphrase and recovery key on every
+      one, so any of them can answer. An image whose modules set the list twice fails to build,
+      unless one of them uses `lib.mkDefault` or `lib.mkForce`.
 
-      The last entry becomes `/dev/console`. systemd's boot status, the emergency shell and
-      chalkd's lines, its fingerprint and addresses among them, appear there. While the last
-      entry is `tty0` or `tty1` and the console runs on tty1, chalkd keeps off `/dev/console`, and
-      the console shows the fingerprint and addresses. While the last entry is a virtual
-      terminal, the unit `chalkos-serial-log@` copies chalkd's lines from the journal to every
-      serial port of the list, a device such as `ttyS0`, `ttyAMA0`, `ttyUSB0` or `hvc0`, so a
-      BMC's serial-over-LAN shows them. An entry of another form, such as
-      `uart8250,mmio32,0xfe215040`, gets only the kernel's messages.
+      The last entry becomes `/dev/console`, where systemd's boot status, the emergency shell and
+      chalkd's lines (its fingerprint and addresses among them) appear. While it is `tty0` or
+      `tty1` and the console runs on tty1, chalkd keeps off `/dev/console` and the console shows
+      the fingerprint and addresses. While it is a virtual terminal, `chalkos-serial-log@` copies
+      chalkd's lines from the journal to every serial port of the list (`ttyS0`, `ttyAMA0`,
+      `ttyUSB0`, `hvc0`, …), so a BMC's serial-over-LAN shows them. An entry of another form,
+      such as `uart8250,mmio32,0xfe215040`, gets only the kernel's messages.
 
-      The `metal` platform, a platform of your own and the installer put the screen last; the
-      `kvm` platform has the first serial port alone. A machine whose BMC shows serial-over-LAN
-      as the console people watch can put that port last, such as `[ "tty0" "ttyS0,115200" ]`,
-      so the boot's status and the emergency shell appear there too.
+      The `metal` platform, a platform of your own and the installer put the screen last; `kvm`
+      has the first serial port alone. Where people watch a BMC's serial-over-LAN, put that port
+      last, such as `[ "tty0" "ttyS0,115200" ]`, so the boot's status and the emergency shell
+      appear there too.
     '';
   };
 

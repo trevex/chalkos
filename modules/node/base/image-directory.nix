@@ -76,10 +76,10 @@ in
     default = [ ];
     internal = true;
     description = ''
-      Derivations the build of the image directory, and of the installer, depends on, which fail
-      it when they fail: the image's rules, grants and kernel modules checks, and its tests with
-      `chalkos.testsOnBuild`. Unlike `system.checks`, they stay out of the system's derivation,
-      so a change to a check changes neither the image's content nor its root hash.
+      Derivations whose failure fails the image directory's and the installer's builds: the
+      rules, grants and kernel modules checks, and the tests with `chalkos.testsOnBuild`. Unlike
+      `system.checks`, they stay out of the system, so a changed check changes neither the
+      image's content nor its root hash.
     '';
   };
 
@@ -88,17 +88,16 @@ in
       type = lib.types.nullOr lib.types.str;
       default = null;
       description = ''
-        The git revision the image is built from, as `metadata.json` records it; mkImages sets
-        it from its `revision` argument. It never reaches the store, so it changes no root hash,
-        and nothing orders or refuses images by it.
+        The git revision `metadata.json` records; mkImages sets it from its
+        [`revision`](mkimages.md#revision) argument.
       '';
     };
     tag = lib.mkOption {
       type = lib.types.nullOr lib.types.str;
       default = null;
       description = ''
-        The git tag the image is built from, as `metadata.json` records it; mkImages sets it
-        from its `tag` argument. Like the revision, it only says where the image came from.
+        The git tag `metadata.json` records; mkImages sets it from its [`tag`](mkimages.md#tag)
+        argument.
       '';
     };
   };

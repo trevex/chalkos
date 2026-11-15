@@ -61,18 +61,20 @@ let
             Program of the image's store, with its arguments, that renders the output. It reads
             `{"node": {"name": …}, "documents": {"<Kind>": [<document>, …]}}` on standard input,
             the documents of each kind of `inputs` sorted by name, with their schema defaults and
-            without any Secret's values, and writes the output's files into `$OUT`, the only path
-            it may write. It runs as the unprivileged user `chalkos-render`, without capabilities,
-            devices or network, on a read-only system without STATE, `/var`, or the config,
-            credentials and Kubernetes keys chalkd writes below `/run/chalkos`, and must finish
-            within 30 seconds; the files may take 16 MiB, and hold no links. The same documents
-            must give the same files: chalkd renders every output again at boot. It refuses a
-            config by printing `{"refusals": [{"kind": …, "name": …, "path": …, "message": …}]}`
-            on standard output, which chalkd reports as it reports a rule's refusal; anything else
-            it prints there fails it. `chalkosLib.render.template`, `.jq` and `.documents` build
-            the common renderers; `chalkosLib.render.template` renders a Go template, in which a
-            key a document lacks, or that holds null, prints as nothing, and whose `refuse`
-            function refuses.
+            without any Secret's values, and writes the output's files into `$OUT`.
+
+            It runs as the unprivileged user `chalkos-render` without capabilities, devices or
+            network, may write `$OUT` alone, and cannot read STATE, `/var`, or the config,
+            credentials and Kubernetes keys chalkd writes below `/run/chalkos`. It must finish
+            within 30 seconds; the files may take 16 MiB and hold no links. The same documents
+            must give the same files, as chalkd renders every output again at boot.
+
+            It refuses a config by printing
+            `{"refusals": [{"kind": …, "name": …, "path": …, "message": …}]}` on standard output,
+            reported as a rule's refusal; anything else printed there fails it.
+            `chalkosLib.render.template`, `.jq` and `.documents` build the common renderers. In a
+            template, a key a document lacks or that holds null prints as nothing, and the
+            function `refuse` refuses.
           '';
         };
         check = lib.mkOption {
@@ -96,11 +98,10 @@ let
           description = ''
             Where services read the output's files: a link that chalkd replaces in one rename, so
             a service reads the files of one render, never a mix of two. Refer to it as
-            `config.chalkos.outputs.<name>.dir`, so a misspelled name fails the evaluation. A
-            directory at the path is removed when the link first replaces it, so the path is a
-            clean path below `/run` whose components start with no dot, outside `/run/chalkos`
-            but for `/run/chalkos/outputs/<name>` and the paths below it, and neither another
-            output's dir nor inside one.
+            `config.chalkos.outputs.<name>.dir`, so a misspelled name fails the evaluation. It is
+            a clean path below `/run` whose components start with no dot, outside `/run/chalkos`
+            but for `/run/chalkos/outputs/<name>` and below, and neither another output's dir nor
+            inside one. A directory there is removed when the link first replaces it.
           '';
         };
         user = lib.mkOption {

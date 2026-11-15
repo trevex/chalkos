@@ -76,9 +76,9 @@ in
     default = false;
     description = ''
       Whether the image carries the router layer, which forwards IPv4 and IPv6 packets between
-      the node's interfaces and accepts the kinds of `router.chalkos.dev`. An image carries the
-      Kubernetes layer or the router layer, not both. mkImages sets it from the variant's
-      `router`; the installer carries no layer.
+      the node's interfaces and accepts the kinds of `router.chalkos.dev`. mkImages sets it from
+      the variant's [`router`](mkimages.md#variants); an image carries one layer at most, the
+      installer none.
     '';
   };
 

@@ -52,9 +52,8 @@ in
       default = false;
       description = ''
         Whether the image runs Kubernetes: containerd, the kubelet and the preparation of the
-        node's Kubernetes configuration. One image serves control planes and workers: the type
-        of the node's Kubernetes Node document makes it one or the other. mkImages sets it from
-        the variant's `kubernetes`; the installer runs none.
+        node's Kubernetes configuration. mkImages sets it from the variant's
+        [`kubernetes`](mkimages.md#variants); the installer runs none.
       '';
     };
     version = lib.mkOption {

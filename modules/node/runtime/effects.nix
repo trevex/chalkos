@@ -81,7 +81,12 @@ let
         type = units;
         default = [ ];
         example = [ "systemd-networkd.service" ];
-        description = "Units the effect reloads with `systemctl reload`, before chalkd restarts any. chalkd reloads the units of all due effects in one call, each after the units it is ordered after. chalkd reloads only a unit that is active, and not one it restarts. A unit that failed it restarts with `reset-failed` and `restart`, as a failed unit of `restart`, since systemd reloads no failed unit.";
+        description = ''
+          Units to `systemctl reload`, before any restart. chalkd reloads the units of all due
+          effects in one call, honouring their ordering, and only units that are active and not
+          also restarted. A failed unit is restarted instead (`reset-failed` and `restart`), as
+          systemd reloads no failed unit.
+        '';
       };
       run = lib.mkOption {
         type = lib.types.nullOr lib.types.nonEmptyStr;

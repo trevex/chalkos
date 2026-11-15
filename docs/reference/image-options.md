@@ -99,9 +99,8 @@ Whether an image runs Kubernetes, the packages and images it runs it with, and i
 Type: boolean · Default: `false` · Declared in: [modules/node/kubernetes/default.nix](https://github.com/trevex/chalkos/blob/main/modules/node/kubernetes/default.nix)
 
 Whether the image runs Kubernetes: containerd, the kubelet and the preparation of the
-node's Kubernetes configuration. One image serves control planes and workers: the type
-of the node's Kubernetes Node document makes it one or the other. mkImages sets it from
-the variant's `kubernetes`; the installer runs none.
+node's Kubernetes configuration. mkImages sets it from the variant's
+[`kubernetes`](mkimages.md#variants); the installer runs none.
 
 ### `chalkos.kubernetes.package` { #chalkoskubernetespackage }
 
@@ -173,9 +172,9 @@ Whether router images carry the DHCP relay, dnsmasq, and accept the kind `DHCPRe
 Type: boolean · Default: `false` · Declared in: [modules/node/router/default.nix](https://github.com/trevex/chalkos/blob/main/modules/node/router/default.nix)
 
 Whether the image carries the router layer, which forwards IPv4 and IPv6 packets between
-the node's interfaces and accepts the kinds of `router.chalkos.dev`. An image carries the
-Kubernetes layer or the router layer, not both. mkImages sets it from the variant's
-`router`; the installer carries no layer.
+the node's interfaces and accepts the kinds of `router.chalkos.dev`. mkImages sets it from
+the variant's [`router`](mkimages.md#variants); an image carries one layer at most, the
+installer none.
 
 ### `chalkos.router.nat64.enable` { #chalkosrouternat64enable }
 
@@ -241,26 +240,24 @@ The kernel's consoles, where the boot and its passphrase prompts appear, whether
 
 Type: non-empty (list of string matching the pattern [A-Za-z0-9]+(,[A-Za-z0-9]+)*) · Default: `[ "ttyS0,115200" "tty0" ]` · Declared in: [modules/node/consoles.nix](https://github.com/trevex/chalkos/blob/main/modules/node/consoles.nix)
 
-The kernel's consoles in order, each as the kernel's `console=` takes it: a device and its
-options, such as `ttyS0,115200` for the first serial port at 115200 baud, or `tty0` for the
-screen. The kernel prints its messages on every one, and systemd asks for each passphrase
-and recovery key on every one, so any of them can answer. The list is set once: an image
-whose modules set it twice fails to build, unless one of them uses `lib.mkDefault` or
-`lib.mkForce`.
+The kernel's consoles in order, each as the kernel's `console=` takes it, such as
+`ttyS0,115200` for the first serial port at 115200 baud or `tty0` for the screen. The
+kernel prints on every one, and systemd asks for each passphrase and recovery key on every
+one, so any of them can answer. An image whose modules set the list twice fails to build,
+unless one of them uses `lib.mkDefault` or `lib.mkForce`.
 
-The last entry becomes `/dev/console`. systemd's boot status, the emergency shell and
-chalkd's lines, its fingerprint and addresses among them, appear there. While the last
-entry is `tty0` or `tty1` and the console runs on tty1, chalkd keeps off `/dev/console`, and
-the console shows the fingerprint and addresses. While the last entry is a virtual
-terminal, the unit `chalkos-serial-log@` copies chalkd's lines from the journal to every
-serial port of the list, a device such as `ttyS0`, `ttyAMA0`, `ttyUSB0` or `hvc0`, so a
-BMC's serial-over-LAN shows them. An entry of another form, such as
-`uart8250,mmio32,0xfe215040`, gets only the kernel's messages.
+The last entry becomes `/dev/console`, where systemd's boot status, the emergency shell and
+chalkd's lines (its fingerprint and addresses among them) appear. While it is `tty0` or
+`tty1` and the console runs on tty1, chalkd keeps off `/dev/console` and the console shows
+the fingerprint and addresses. While it is a virtual terminal, `chalkos-serial-log@` copies
+chalkd's lines from the journal to every serial port of the list (`ttyS0`, `ttyAMA0`,
+`ttyUSB0`, `hvc0`, …), so a BMC's serial-over-LAN shows them. An entry of another form,
+such as `uart8250,mmio32,0xfe215040`, gets only the kernel's messages.
 
-The `metal` platform, a platform of your own and the installer put the screen last; the
-`kvm` platform has the first serial port alone. A machine whose BMC shows serial-over-LAN
-as the console people watch can put that port last, such as `[ "tty0" "ttyS0,115200" ]`,
-so the boot's status and the emergency shell appear there too.
+The `metal` platform, a platform of your own and the installer put the screen last; `kvm`
+has the first serial port alone. Where people watch a BMC's serial-over-LAN, put that port
+last, such as `[ "tty0" "ttyS0,115200" ]`, so the boot's status and the emergency shell
+appear there too.
 
 Example: `[ "tty0" "ttyS1,115200" ]`
 
@@ -298,11 +295,10 @@ already. Nodes have no logins; use them from a privileged pod on the node, for e
 
 Type: path or null · Default: `null` · Declared in: [modules/node/chalkd.nix](https://github.com/trevex/chalkos/blob/main/modules/node/chalkd.nix)
 
-Public part of the cluster's secrets (`secrets.pub.json` from `chalkctl gen secrets`),
-whose OS CA the image carries, so chalkd in maintenance mode accepts only clients with a
-certificate from it. null builds an image that accepts any client until it is installed.
-mkImages sets it, in every image and the installer, from its `osCA`, which checks the
-file's version; the image's build checks it again.
+The OS CA the image carries, from which chalkd in maintenance mode accepts client
+certificates; null accepts any client until the node is installed. mkImages sets it, in
+every image and the installer, from its [`osCA`](mkimages.md#osca) argument, which
+describes the file; the image's build checks the file's version again.
 
 ## Set by mkImages { #set-by-mkimages }
 
@@ -329,16 +325,15 @@ image of another platform, and translates its config for its own.
 
 Type: string or null · Default: `null` · Declared in: [modules/node/base/image-directory.nix](https://github.com/trevex/chalkos/blob/main/modules/node/base/image-directory.nix)
 
-The git revision the image is built from, as `metadata.json` records it; mkImages sets
-it from its `revision` argument. It never reaches the store, so it changes no root hash,
-and nothing orders or refuses images by it.
+The git revision `metadata.json` records; mkImages sets it from its
+[`revision`](mkimages.md#revision) argument.
 
 ### `chalkos.provenance.tag` { #chalkosprovenancetag }
 
 Type: string or null · Default: `null` · Declared in: [modules/node/base/image-directory.nix](https://github.com/trevex/chalkos/blob/main/modules/node/base/image-directory.nix)
 
-The git tag the image is built from, as `metadata.json` records it; mkImages sets it
-from its `tag` argument. Like the revision, it only says where the image came from.
+The git tag `metadata.json` records; mkImages sets it from its [`tag`](mkimages.md#tag)
+argument.
 
 Sources: the option declarations of the node modules in `modules/node/`, through
 nixosOptionsDoc.
