@@ -40,7 +40,7 @@ func (a *app) nodeDiag(ctx context.Context, f nodePinFlags, pos []string) error 
 	if err != nil {
 		return err
 	}
-	conn, err := a.dialEither(t, f.pin)
+	conn, err := dialEither(t, f.pin)
 	if err != nil {
 		return err
 	}

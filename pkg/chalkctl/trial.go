@@ -200,21 +200,16 @@ func (a *app) confirmConfig(ctx context.Context, n nodeFlags, name string) error
 	if err != nil {
 		return err
 	}
-	conn, err := dialInstalled(t)
+	st, err := nodeStatus(ctx, t)
 	if err != nil {
 		return err
 	}
-	resp, err := conn.Status(ctx, connect.NewRequest(&nodev1.StatusRequest{}))
-	conn.Close()
-	if err != nil {
-		return layer.Named(t.name, err)
+	if st.TrialError != "" {
+		return trialOpen(t.name, st)
 	}
-	if resp.Msg.TrialError != "" {
-		return trialOpen(t.name, resp.Msg)
-	}
-	tr := resp.Msg.Trial
+	tr := st.Trial
 	if tr == nil {
-		return fmt.Errorf("%s has no open trial to confirm; it runs config %s", t.name, cmp.Or(resp.Msg.ConfigVersion, "none"))
+		return fmt.Errorf("%s has no open trial to confirm; it runs config %s", t.name, cmp.Or(st.ConfigVersion, "none"))
 	}
 	deadline := tr.Deadline.AsTime()
 	return a.confirmTrial(ctx, t, tr.Version, tr.PreviousVersion, deadline, !time.Now().Before(deadline))

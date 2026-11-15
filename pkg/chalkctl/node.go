@@ -39,7 +39,7 @@ func (a *app) disks(ctx context.Context, f nodePinFlags, pos []string) error {
 		if err != nil {
 			return err
 		}
-		if conn, err = a.dialEither(t, p); err != nil {
+		if conn, err = dialEither(t, p); err != nil {
 			return err
 		}
 	case len(pos) == 0 && n.Address.Named():
@@ -100,7 +100,7 @@ func (a *app) logs(ctx context.Context, f logsFlags, pos []string) error {
 	if err != nil {
 		return err
 	}
-	conn, err := a.dialEither(t, f.pin)
+	conn, err := dialEither(t, f.pin)
 	if err != nil {
 		return err
 	}

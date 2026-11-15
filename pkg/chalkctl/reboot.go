@@ -458,7 +458,7 @@ func (a *app) nodeRebootCommand() *cobra.Command {
 	}, func(a *app, ctx context.Context, pos []string) error { return a.nodeReboot(ctx, f, pos[0]) })
 	fs := cmd.Flags()
 	f.node.RegisterClient(fs)
-	setAddressUsage(fs, "address of the node's chalkd, host or host:port, or NODE=ADDR of another node of the cluster, such as a control plane the drain goes through; repeat it for several (default each node's address in the inventory)")
+	fs.Lookup("address").Usage = "address of the node's chalkd, host or host:port, or NODE=ADDR of another node of the cluster, such as a control plane the drain goes through; repeat it for several (default each node's address in the inventory)"
 	f.pin.register(fs)
 	fs.BoolVar(&f.noDrain, "no-drain", false, "reboot the node without its layers holding it before and releasing it after, such as without draining a Kubernetes node")
 	fs.DurationVar(&f.timeout, "timeout", 30*time.Minute, "how long to wait for the node to come back healthy and for its drain")
@@ -486,7 +486,7 @@ func (a *app) nodeReboot(ctx context.Context, f nodeRebootFlags, name string) er
 		if err != nil {
 			return err
 		}
-		conn, err := a.dialEither(t, f.pin)
+		conn, err := dialEither(t, f.pin)
 		if err != nil {
 			return err
 		}

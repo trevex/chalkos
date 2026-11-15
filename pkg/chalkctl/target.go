@@ -41,16 +41,17 @@ type target struct {
 
 // target addresses a node with the secrets file.
 func (a *app) target(ctx context.Context, n nodeFlags, name string) (*target, error) {
-	s, err := a.reach(ctx, n, name, false)
-	if err != nil {
-		return nil, err
-	}
-	return s.target(name)
+	return a.reachOne(ctx, n, name, false)
 }
 
 // clientTarget addresses a node with the secrets file or a client file.
 func (a *app) clientTarget(ctx context.Context, n nodeFlags, name string) (*target, error) {
-	s, err := a.reach(ctx, n, name, true)
+	return a.reachOne(ctx, n, name, true)
+}
+
+// reachOne addresses a node, with a client file too when clientFile is set.
+func (a *app) reachOne(ctx context.Context, n nodeFlags, name string, clientFile bool) (*target, error) {
+	s, err := a.reach(ctx, n, name, clientFile)
 	if err != nil {
 		return nil, err
 	}
@@ -111,7 +112,7 @@ func (n nodeFlags) loadCluster(ctx context.Context) (*cluster, error) {
 	return c, nil
 }
 
-// dialInstalled connects to an installed node, verifying it by the OS CA and its name.
+// dialInstalled is dialNode for a node whose certificate is valid.
 func dialInstalled(t *target) (*client.Conn, error) {
 	return dialNode(t, false)
 }
@@ -177,7 +178,7 @@ type nodePinFlags struct {
 
 // dialEither connects to a node in maintenance mode when a fingerprint or --insecure is given,
 // and to an installed node otherwise.
-func (a *app) dialEither(t *target, p pinFlags) (*client.Conn, error) {
+func dialEither(t *target, p pinFlags) (*client.Conn, error) {
 	if p.set() {
 		return p.dial(t.addr, t.source, t.creds.cert)
 	}
@@ -187,12 +188,6 @@ func (a *app) dialEither(t *target, p pinFlags) (*client.Conn, error) {
 // nodeAddressesUsage is the usage of --address of a command that reaches the cluster's nodes and
 // names none: rotate, and upgrade, which names its nodes with --nodes.
 const nodeAddressesUsage = "address of a node's chalkd, NODE=ADDR, host or host:port; may be repeated (default each node's address in the inventory)"
-
-// setAddressUsage gives --address, which nodeFlags registered, the usage of a command that
-// reaches other nodes than the one it names.
-func setAddressUsage(fs *pflag.FlagSet, usage string) {
-	fs.Lookup("address").Usage = usage
-}
 
 // nodeSet reaches the nodes of a cluster with one set of credentials: each at the address
 // --address gives for it, or else at the inventory's.
@@ -239,6 +234,7 @@ func callNode(t *target, fn func(conn *client.Conn) error) error {
 	return layer.Named(t.name, fn(conn))
 }
 
+// status reads the status of the installed node name.
 func (s nodeSet) status(ctx context.Context, name string) (*nodev1.StatusResponse, error) {
 	t, err := s.target(name)
 	if err != nil {

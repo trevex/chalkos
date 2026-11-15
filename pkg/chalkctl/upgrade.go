@@ -100,7 +100,7 @@ func (a *app) upgradeCommand() *cobra.Command {
 	}, func(a *app, ctx context.Context, pos []string) error { return a.upgrade(ctx, f) })
 	fs := cmd.Flags()
 	f.node.RegisterClient(fs)
-	setAddressUsage(fs, nodeAddressesUsage)
+	fs.Lookup("address").Usage = nodeAddressesUsage
 	fs.StringVar(&f.image, "image", "", "image to install on the nodes that run its variant, or on the nodes --nodes names whatever they run: a raw image with repart-output.json next to it, or an image directory (default the directory of each node's image in the inventory)")
 	fs.StringVar(&f.nodes, "nodes", "", "comma-separated nodes to upgrade (default every node of the cluster, or with --image every node that runs the image's variant)")
 	fs.IntVar(&f.maxUnavailable, "max-unavailable", 1, "how many nodes upgrade at once after the nodes that act for the others, such as Kubernetes control planes, which upgrade one at a time")
@@ -211,7 +211,7 @@ func (f upgradeFlags) options() upgradeOptions {
 func (r *upgradeRun) chooseConfig(diff bool) error {
 	switch {
 	case !r.role.Allows(pki.RoleAdmin) && diff:
-		return r.diffNeedsAdmin()
+		return fmt.Errorf("upgrade --diff compares the config an upgrade delivers, which needs the admin role; the %s role cannot deliver config, so each node gives the image its pending config, else carries its own over", roleLabel(r.role))
 	case !r.role.Allows(pki.RoleAdmin):
 		// A partial cluster has no inventory, so there is no config to withhold, and each node
 		// says what it gives the image.
@@ -285,12 +285,6 @@ func roleLabel(role pki.Role) string {
 		return "client file's"
 	}
 	return string(role)
-}
-
-// diffNeedsAdmin is the error of upgrade --diff with credentials below admin, which may neither
-// read a node's config nor deliver one.
-func (r *upgradeRun) diffNeedsAdmin() error {
-	return fmt.Errorf("upgrade --diff compares the config an upgrade delivers, which needs the admin role; the %s role cannot deliver config, so each node gives the image its pending config, else carries its own over", roleLabel(r.role))
 }
 
 // deliveryOf is the config the node gets with its image; nil when the run withholds config or has
