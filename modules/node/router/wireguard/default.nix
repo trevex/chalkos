@@ -15,11 +15,10 @@ let
   kinds = routerLib.kinds ./kinds.nix;
 in
 {
-  options.chalkos.router = routerLib.feature "wireguard" ''
-    Whether router images accept the kinds WireGuard and WireGuardPeer, whose interfaces
-    systemd-networkd runs, and run the diagnostic wireguard with wireguard-tools; only with the
-    router layer. Set it false in a variant's modules to leave WireGuard out of its images.
-  '';
+  options.chalkos.router = routerLib.feature "wireguard" {
+    carries = "WireGuard, whose interfaces networkd runs, with wireguard-tools for its diagnostic,";
+    kinds = lib.attrNames kinds;
+  };
 
   config = lib.mkIf (config.chalkos.router.enable && cfg.enable) {
     chalkos.kinds = kinds;

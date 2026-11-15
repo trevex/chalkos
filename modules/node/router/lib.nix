@@ -1,8 +1,5 @@
-# routerLib, what the router's parts share: its features and their enable options, the kinds the
-# image declares, which an output of one part reads of another's, the record of a VRF's device,
-# the sandbox of their units, the option types and CEL the router kinds share (types, from
-# types.nix) and the loader of a part's kinds file. The router module gives it to its parts as the
-# module argument routerLib.
+# routerLib, what the router's parts share, which the router module gives them as the module
+# argument routerLib.
 {
   chalkosLib,
   config,
@@ -46,11 +43,23 @@ let
       "dhcp-relay"
     ];
 
-    # The options a feature declares under chalkos.router: <name>.enable, whether the image
-    # carries the feature, which it does unless a variant leaves it out. The name must be one of
-    # features.
+    # The option chalkos.router.<name>.enable of a feature, true unless a variant leaves the
+    # feature out; name must be one of features. Its description says that the images carry
+    # `carries` and accept the kinds named.
     feature =
-      name: description:
+      name:
+      {
+        carries,
+        kinds,
+      }:
+      let
+        names = map (k: "`${k}`") kinds;
+        kindsText =
+          if lib.length names == 1 then
+            "the kind ${lib.head names}"
+          else
+            "the kinds ${lib.concatStringsSep ", " (lib.init names)} and ${lib.last names}";
+      in
       chalkosLib.internal.refuse
         (lib.optional (
           !lib.elem name routerLib.features
@@ -59,7 +68,9 @@ let
           ${name}.enable = lib.mkOption {
             type = lib.types.bool;
             default = true;
-            inherit description;
+            description =
+              "Whether router images carry ${carries} and accept ${kindsText}. Only with the router "
+              + "layer; set it false in a variant's modules to leave the feature out of its images.";
           };
         };
 
@@ -79,6 +90,75 @@ let
       read -r ifindex <"/sys/class/net/$2/ifindex"
       echo "$ifindex" >"$RUNTIME_DIRECTORY/$1-$2.ifindex"
     '';
+
+    # The template unit <name>@ of a per-VRF service, whose sockets systemd binds to the device of
+    # the VRF %I, as ip vrf exec would. systemd starts a unit whose interface it cannot find without
+    # binding its sockets, so recordDevice fails it instead; without its rendered config conf, as
+    # in maintenance mode, it does not start. A device that goes and comes back stops nothing: the
+    # reconciler restarts the unit once the device is back. systemd may see the old device go only
+    # after that, and BindsTo= would then stop the restarted unit, hence Requires=.
+    vrfService =
+      {
+        name,
+        description,
+        after,
+        conf,
+        serviceConfig,
+      }:
+      {
+        inherit description;
+        after = [ "sys-subsystem-net-devices-%i.device" ] ++ after;
+        unitConfig = {
+          Requires = "sys-subsystem-net-devices-%i.device";
+          ConditionPathExists = conf;
+        };
+        serviceConfig = serviceConfig // {
+          ExecStartPre = "${routerLib.recordDevice} ${name} %I";
+          BindNetworkInterface = "%I";
+        };
+      };
+
+    # The unit that runs `chalkd router services <service>`, after chalkos-vrf and networkd, which
+    # remove and create the VRFs. It stops the service's units without a rendered config, starts
+    # those of the rendered configs that do not run, once their VRF's device exists, and reloads
+    # the others (the DHCP relays restart, as dnsmasq reads its relays at start alone); `stop`
+    # stops all. A VRF that chalkos-vrf removed and networkd created anew has a new ifindex, so its
+    # unit restarts on the new device. systemctl reaches systemd over its socket, for which root
+    # needs no capability; groups lets it read the records of recordDevice.
+    reconciler =
+      {
+        service,
+        description,
+        after ? [ ],
+        groups ? [ ],
+      }:
+      let
+        reconcile = "${lib.getExe pkgs.chalkos.chalkd} router services ${service}";
+      in
+      {
+        inherit description;
+        after = [
+          "chalkos-config.service"
+          "chalkos-vrf.service"
+          "systemd-networkd.service"
+          "chalkos-firewall.service"
+        ]
+        ++ after;
+        wantedBy = [ "multi-user.target" ];
+        path = [ config.systemd.package ];
+        serviceConfig =
+          routerLib.hardened
+          // {
+            Type = "oneshot";
+            RemainAfterExit = true;
+            ExecStart = reconcile;
+            ExecReload = reconcile;
+            ExecStop = "${reconcile} stop";
+            CapabilityBoundingSet = [ "" ];
+            RestrictAddressFamilies = [ "AF_UNIX" ];
+          }
+          // lib.optionalAttrs (groups != [ ]) { SupplementaryGroups = groups; };
+      };
 
     # The sandbox of a unit of the router: no new privileges, a read-only system, no devices, no
     # home and a private /tmp, kernel settings, modules, logs, cgroups, clock and host name out of

@@ -154,25 +154,19 @@ Whether an image carries the router layer, and whether its node forwards packets
 
 Type: boolean · Default: `true` · Declared in: [modules/node/router/bgp/default.nix](https://github.com/trevex/chalkos/blob/main/modules/node/router/bgp/default.nix)
 
-Whether router images carry FRR, which runs BGP and BFD, and accept the kinds BGP, BGPPeer,
-PrefixList, CommunityList and RoutingPolicy; only with the router layer. Set it false in a
-variant's modules to leave FRR and the Python of frr-reload.py out of its images.
+Whether router images carry FRR, which runs BGP and BFD, with the Python of frr-reload.py, and accept the kinds `BGP`, `BGPPeer`, `CommunityList`, `PrefixList` and `RoutingPolicy`. Only with the router layer; set it false in a variant's modules to leave the feature out of its images.
 
 ### `chalkos.router.dhcp.enable` { #chalkosrouterdhcpenable }
 
 Type: boolean · Default: `true` · Declared in: [modules/node/router/dhcp/default.nix](https://github.com/trevex/chalkos/blob/main/modules/node/router/dhcp/default.nix)
 
-Whether router images carry the DHCP server, Kea, and accept the kind DHCPSubnet; only
-with the router layer. Set it false in a variant's modules to leave Kea out of its images,
-whose build then needs no local build of Kea.
+Whether router images carry the DHCP server, Kea, which chalkos builds from source, and accept the kind `DHCPSubnet`. Only with the router layer; set it false in a variant's modules to leave the feature out of its images.
 
 ### `chalkos.router.dhcpRelay.enable` { #chalkosrouterdhcprelayenable }
 
 Type: boolean · Default: `true` · Declared in: [modules/node/router/dhcp-relay/default.nix](https://github.com/trevex/chalkos/blob/main/modules/node/router/dhcp-relay/default.nix)
 
-Whether router images carry the DHCP relay, dnsmasq, and accept the kind DHCPRelay; only
-with the router layer. Set it false in a variant's modules to leave dnsmasq out of its
-images.
+Whether router images carry the DHCP relay, dnsmasq, and accept the kind `DHCPRelay`. Only with the router layer; set it false in a variant's modules to leave the feature out of its images.
 
 ### `chalkos.router.enable` { #chalkosrouterenable }
 
@@ -187,25 +181,19 @@ Kubernetes layer or the router layer, not both. mkImages sets it from the varian
 
 Type: boolean · Default: `true` · Declared in: [modules/node/router/nat64/default.nix](https://github.com/trevex/chalkos/blob/main/modules/node/router/nat64/default.nix)
 
-Whether router images carry Jool, the kernel module and tool of the NAT64 instances, and
-accept the kind NAT64; only with the router layer. Set it false in a variant's modules to
-leave Jool out of its images.
+Whether router images carry Jool, the kernel module and tool of the NAT64 instances, and accept the kind `NAT64`. Only with the router layer; set it false in a variant's modules to leave the feature out of its images.
 
 ### `chalkos.router.resolver.enable` { #chalkosrouterresolverenable }
 
 Type: boolean · Default: `true` · Declared in: [modules/node/router/resolver/default.nix](https://github.com/trevex/chalkos/blob/main/modules/node/router/resolver/default.nix)
 
-Whether router images carry Unbound, the DNS resolvers of the router's VRFs, and accept the
-kind Resolver; only with the router layer. Set it false in a variant's modules to leave
-Unbound out of its images.
+Whether router images carry Unbound, the DNS resolvers of the router's VRFs, and accept the kind `Resolver`. Only with the router layer; set it false in a variant's modules to leave the feature out of its images.
 
 ### `chalkos.router.wireguard.enable` { #chalkosrouterwireguardenable }
 
 Type: boolean · Default: `true` · Declared in: [modules/node/router/wireguard/default.nix](https://github.com/trevex/chalkos/blob/main/modules/node/router/wireguard/default.nix)
 
-Whether router images accept the kinds WireGuard and WireGuardPeer, whose interfaces
-systemd-networkd runs, and run the diagnostic wireguard with wireguard-tools; only with the
-router layer. Set it false in a variant's modules to leave WireGuard out of its images.
+Whether router images carry WireGuard, whose interfaces networkd runs, with wireguard-tools for its diagnostic, and accept the kinds `WireGuard` and `WireGuardPeer`. Only with the router layer; set it false in a variant's modules to leave the feature out of its images.
 
 ### `chalkos.forwarding.enable` { #chalkosforwardingenable }
 

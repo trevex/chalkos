@@ -68,18 +68,15 @@ in
 {
   imports = [ ./diagnostics.nix ];
 
-  options.chalkos.router = routerLib.feature "bgp" ''
-    Whether router images carry FRR, which runs BGP and BFD, and accept the kinds BGP, BGPPeer,
-    PrefixList, CommunityList and RoutingPolicy; only with the router layer. Set it false in a
-    variant's modules to leave FRR and the Python of frr-reload.py out of its images.
-  '';
+  options.chalkos.router = routerLib.feature "bgp" {
+    carries = "FRR, which runs BGP and BFD, with the Python of frr-reload.py,";
+    kinds = lib.attrNames kinds;
+  };
 
   config = lib.mkIf (config.chalkos.router.enable && cfg.enable) {
     chalkos.kinds = kinds;
 
-    # The images allocate the IDs of users and groups without one statically, from 999 down, so
-    # FRR's would move the IDs of those after them whenever an image adds or drops BGP. 329 and
-    # 330 are free in NixOS's ids.nix, as kea's 328 is.
+    # Pinned IDs, see router/default.nix; 329 and 330 are free in NixOS's ids.nix.
     users.users.frr.uid = 329;
     users.groups.frr.gid = 329;
     users.groups.frrvty.gid = 330;

@@ -14,27 +14,21 @@ let
   inherit (routerLib) hardened;
   kinds = routerLib.kinds ./kinds.nix;
   jool = pkgs.jool-cli;
-  # Brings Jool's instances, their namespaces and links and the routes to them to the files of the
-  # output jool: <name>.json is Jool's, <name>.veth the link's. It checks every file before it
-  # changes anything, so a file jool or the link's form refuses, or an explicit pool that holds an
-  # address of one of the router's links, changes no instance. Each instance runs in the network
-  # namespace nat64-<name>, joined by the veth pair n64-<name>, in the instance's VRF, and nat64,
-  # in the namespace: Jool's netfilter hook takes the packets of every link of its namespace, so
-  # an instance of the router's own namespace would translate other VRFs' packets too. The
-  # namespace forwards nothing itself: Jool sends what it translates, and a packet it leaves alone
-  # would go back to the router, which routes it to the namespace again, until its hop limit ran
-  # out. A link whose other end is not in the namespace, as when a namespace was removed while a
-  # process held it, is made anew, and a device of its name and another kind fails the instance.
-  # A VRF networkd has not given the file's table within 30 s fails the instance, and the other
-  # instances of that VRF at once. A file's instance is created, or replaced in place, which keeps
-  # its sessions; Jool keeps an instance's pool6, so an instance of another prefix is removed first
-  # and loses its sessions. The VRF's table routes the prefix and an explicit pool's prefixes to
-  # the link, with protocol 64, which BGP announces when a network names it. Routes of protocol 64,
-  # links and namespaces that no file names are removed, in that order, so no route is gone with
-  # its link before its removal; with the argument stop, every one is. Without the output's
-  # directory, as in maintenance mode, no file names one.
-  # A step that fails leaves the others to run, and the script then fails, naming each failed step;
-  # an instance that failed keeps the routes its file names.
+  # Reconciles Jool with the output jool (<name>.json is Jool's file, <name>.veth the link's). Every
+  # file is checked first, so a file jool or the link's form refuses, or a pool holding an address
+  # of a router link, changes no instance. Each instance runs in namespace nat64-<name>, joined to
+  # its VRF by the veth pair n64-<name> (end nat64 inside): Jool's hook takes the packets of every
+  # link of its namespace, so in the router's own it would translate other VRFs' packets too. The
+  # namespace forwards nothing: a packet Jool leaves alone would loop back until its hop limit ran
+  # out. A link whose peer left the namespace (a namespace removed while a process held it) is made
+  # anew; a device of its name and another kind fails the instance, as does a VRF without the
+  # file's table after 30 s (with the VRF's other instances). An instance is created or replaced in
+  # place, keeping its sessions, except on a new pool6, which Jool cannot change: then it is
+  # removed first and loses them. The VRF's table routes the prefix and an explicit pool to the
+  # link with protocol 64, which BGP announces when a network names it. Protocol-64 routes, links
+  # and namespaces no file names are removed in that order, so no route goes with its link first;
+  # `stop` removes all, as does a missing output directory (maintenance mode). A failed step does
+  # not stop the others; the script then fails naming each. A failed instance keeps its routes.
   apply = pkgs.writeShellApplication {
     name = "chalkos-nat64";
     runtimeInputs = [
@@ -261,11 +255,10 @@ in
 {
   imports = [ ./diagnostics.nix ];
 
-  options.chalkos.router = routerLib.feature "nat64" ''
-    Whether router images carry Jool, the kernel module and tool of the NAT64 instances, and
-    accept the kind NAT64; only with the router layer. Set it false in a variant's modules to
-    leave Jool out of its images.
-  '';
+  options.chalkos.router = routerLib.feature "nat64" {
+    carries = "Jool, the kernel module and tool of the NAT64 instances,";
+    kinds = lib.attrNames kinds;
+  };
 
   config = lib.mkIf (config.chalkos.router.enable && cfg.enable) {
     chalkos.kinds = kinds;

@@ -1,9 +1,7 @@
-# The router's DNS resolvers, on images whose chalkos.router.resolver.enable is true: Unbound,
-# whose whole config the output unbound renders from each Resolver document, unbound.conf for the
-# default VRF's and unbound-<vrf>.conf for a VRF's. The default VRF's runs as unbound.service, each
-# VRF's as unbound@<vrf>.service, whose sockets systemd binds to the VRF's device. A node without
-# a Resolver runs no Unbound; a delivery that adds or removes a resolver starts or stops it, and
-# one that changes it reloads Unbound and keeps its cache.
+# The router's DNS resolvers: Unbound, whose whole config the output unbound renders from the
+# Resolver documents: unbound.conf for the default VRF (unbound.service), unbound-<vrf>.conf for a
+# VRF (unbound@<vrf>.service). A node without a Resolver runs no Unbound; adding or removing a
+# resolver starts or stops it, changing one reloads Unbound, which keeps its cache.
 {
   chalkosLib,
   config,
@@ -14,7 +12,6 @@
 }:
 let
   cfg = config.chalkos.router.resolver;
-  inherit (routerLib) hardened;
   kinds = routerLib.kinds ./kinds.nix;
   unbound = config.services.unbound.package;
   dir = config.chalkos.outputs.unbound.dir;
@@ -27,14 +24,6 @@ let
     "cel.bind(r, ${
       cel.documents c apiVersions.router "Resolver"
     }, size(r.filter(n, r[n].spec.vrf == \"default\")))";
-  # chalkd router services unbound runs the resolvers of the VRFs: it starts the resolver of each
-  # VRF with a rendered config that does not run, reloads those that run and stops those without a
-  # config, after the others ran; with the argument stop, it stops all of them. systemd binds a
-  # resolver's sockets to the index its VRF's device had when the resolver started, which the
-  # resolver keeps in /run/unbound-<vrf>/unbound-<vrf>.ifindex. A VRF that chalkos-vrf removed and
-  # networkd created anew has a new index, or no device yet, so its resolver restarts on the new
-  # device. systemctl comes from the unit's PATH.
-  reconcile = "${lib.getExe pkgs.chalkos.chalkd} router services unbound";
   # RFC 8880's answer for ipv4only.arpa, which a DNS64 resolver gives itself; the dns64 module
   # synthesizes its AAAA records from these A records.
   ipv4only = pkgs.writeText "ipv4only.arpa.zone" ''
@@ -45,18 +34,15 @@ let
   '';
 in
 {
-  options.chalkos.router = routerLib.feature "resolver" ''
-    Whether router images carry Unbound, the DNS resolvers of the router's VRFs, and accept the
-    kind Resolver; only with the router layer. Set it false in a variant's modules to leave
-    Unbound out of its images.
-  '';
+  options.chalkos.router = routerLib.feature "resolver" {
+    carries = "Unbound, the DNS resolvers of the router's VRFs,";
+    kinds = lib.attrNames kinds;
+  };
 
   config = lib.mkIf (config.chalkos.router.enable && cfg.enable) {
     chalkos.kinds = kinds;
 
-    # The images allocate the IDs of users and groups without one statically, from 999 down, so
-    # Unbound's would move the IDs of those after them whenever an image adds or drops the
-    # resolver. 331 is free in NixOS's ids.nix.
+    # Pinned IDs, see router/default.nix; 331 is free in NixOS's ids.nix.
     users.users.unbound.uid = 331;
     users.groups.unbound.gid = 331;
 
@@ -122,63 +108,33 @@ in
         CapabilityBoundingSet = lib.mkForce [ "CAP_NET_BIND_SERVICE" ];
       };
     };
-    # A VRF's resolver: Unbound with the default VRF's hardening, whose sockets systemd binds to the
-    # VRF's device, as ip vrf exec would. systemd binds them to the index the device has when the
-    # unit starts, which the unit keeps for chalkos-resolvers. A device that goes and comes back
-    # stops nothing: chalkos-resolvers restarts the resolver once the device is back. systemd may
-    # see the old device go only after that, and BindsTo= would then stop the restarted resolver.
-    systemd.services."unbound@" = {
+    # A VRF's resolver: Unbound with the default VRF's sandbox. The default VRF's ExecStartPre
+    # prepares nothing a VRF's needs.
+    systemd.services."unbound@" = routerLib.vrfService {
+      name = "unbound";
       description = "Unbound of the VRF %I";
       after = [
-        "sys-subsystem-net-devices-%i.device"
         "chalkos-config.service"
         "chalkos-firewall.service"
         "chalkos-nat64.service"
       ];
-      unitConfig = {
-        Requires = "sys-subsystem-net-devices-%i.device";
-        ConditionPathExists = "${dir}/unbound-%I.conf";
-      };
-      # The default VRF's unit prepares nothing a VRF's needs.
-      serviceConfig = removeAttrs config.systemd.services.unbound.serviceConfig [ "ExecStartPre" ] // {
+      conf = "${dir}/unbound-%I.conf";
+      serviceConfig = config.systemd.services.unbound.serviceConfig // {
         ExecStart = "${unbound}/bin/unbound -p -d -c ${dir}/unbound-%I.conf";
         ExecReload = "${unbound}/bin/unbound-control -c ${dir}/unbound-%I.conf reload_keep_cache";
-        # systemd starts a unit whose interface it cannot find without binding its sockets: this
-        # unit fails instead.
-        ExecStartPre = "${routerLib.recordDevice} unbound %I";
-        BindNetworkInterface = "%I";
         # unbound-control reaches it through the socket the rendered config names in
-        # /run/unbound-<vrf>, which root, and so chalkd, may enter, as may the group unbound, and
-        # so chalkd router services, which chalkos-resolvers runs and which reads the device's
-        # index there.
+        # /run/unbound-<vrf>, which root (chalkd) and the group unbound (chalkos-resolvers, which
+        # reads the device's index there) may enter.
         RuntimeDirectory = "unbound-%I";
         RuntimeDirectoryMode = "0750";
       };
     };
-    # Runs the VRFs' resolvers of the rendered configs, after networkd, which creates the VRFs, and
-    # the NAT64s, as unbound.service does.
-    systemd.services.chalkos-resolvers = {
+    # After the NAT64s too, as unbound.service.
+    systemd.services.chalkos-resolvers = routerLib.reconciler {
+      service = "unbound";
       description = "Run the resolvers of the router's VRFs";
-      after = [
-        "chalkos-config.service"
-        "chalkos-vrf.service"
-        "systemd-networkd.service"
-        "chalkos-firewall.service"
-        "chalkos-nat64.service"
-      ];
-      wantedBy = [ "multi-user.target" ];
-      path = [ config.systemd.package ];
-      serviceConfig = hardened // {
-        Type = "oneshot";
-        RemainAfterExit = true;
-        ExecStart = reconcile;
-        ExecReload = reconcile;
-        ExecStop = "${reconcile} stop";
-        # systemctl reaches systemd over its socket, for which root needs no capability.
-        CapabilityBoundingSet = [ "" ];
-        SupplementaryGroups = [ "unbound" ];
-        RestrictAddressFamilies = [ "AF_UNIX" ];
-      };
+      after = [ "chalkos-nat64.service" ];
+      groups = [ "unbound" ];
     };
     # chalkd asks unbound-control whether the default VRF's resolver runs, and systemctl whether
     # the VRFs' units are active.
