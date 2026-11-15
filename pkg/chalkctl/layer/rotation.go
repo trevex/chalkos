@@ -84,6 +84,28 @@ func WaitStatus(ctx context.Context, r Rotating, name, what string, check func(s
 	})
 }
 
+// Converge delivers to a node with deliver, waits until its status passes check and says done, a
+// format of the node's name. With already, a node whose status passes check is left alone and
+// already is said instead. An empty done says nothing.
+func Converge(ctx context.Context, r Rotating, name, what, done, already string, deliver func() error, check func(st *nodev1.StatusResponse) error) error {
+	if already != "" {
+		if st, err := r.Status(ctx, name); err == nil && check(st) == nil {
+			r.Say("  "+already, name)
+			return nil
+		}
+	}
+	if err := deliver(); err != nil {
+		return err
+	}
+	if err := WaitStatus(ctx, r, name, what, check); err != nil {
+		return err
+	}
+	if done != "" {
+		r.Say("  "+done, name)
+	}
+	return nil
+}
+
 // EachNode runs fn for every node, also after one failed, and names those that failed, once.
 func EachNode(names []string, fn func(name string) error) error {
 	var failed []string

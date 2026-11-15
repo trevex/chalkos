@@ -90,17 +90,11 @@ func (r *rotation) applyOSCA(ctx context.Context, phase clustersecrets.Phase) er
 		if err != nil {
 			return err
 		}
+		done := "%s trusts the " + strs.Count(len(want), "OS CA") + " of the secrets file"
 		return layer.EachNode(r.allNodes(), func(name string) error {
-			if err := r.deliver(ctx, name, &nodev1.ApplyConfigRequest{Trust: []byte(bundle)}); err != nil {
-				return err
-			}
-			if err := layer.WaitStatus(ctx, r, name, "to trust the OS CAs", func(st *nodev1.StatusResponse) error {
-				return layer.Trusts(st, client.NameOSCA, want, "")
-			}); err != nil {
-				return err
-			}
-			r.Say("  %s trusts the %s of the secrets file", name, strs.Count(len(want), "OS CA"))
-			return nil
+			return layer.Converge(ctx, r, name, "to trust the OS CAs", done, "",
+				func() error { return r.deliver(ctx, name, &nodev1.ApplyConfigRequest{Trust: []byte(bundle)}) },
+				func(st *nodev1.StatusResponse) error { return layer.Trusts(st, client.NameOSCA, want, "") })
 		})
 	case clustersecrets.PhaseSwitch:
 		return r.switchNodeCA(ctx)
@@ -127,19 +121,14 @@ func (r *rotation) switchNodeCA(ctx context.Context) error {
 		return nil
 	}
 	return layer.EachNode(holders, func(name string) error {
-		if err := r.DeliverPayloads(ctx, name); err != nil {
-			return err
-		}
-		if err := layer.WaitStatus(ctx, r, name, "to hold the new node CA", func(st *nodev1.StatusResponse) error {
-			if c := layer.CertificateOf(st, client.NameNodeCA); c == nil || c.Fingerprint != nodeCA {
-				return errors.New("holds another node CA")
-			}
-			return nil
-		}); err != nil {
-			return err
-		}
-		r.Say("  %s renews node certificates with the new node CA", name)
-		return nil
+		return layer.Converge(ctx, r, name, "to hold the new node CA", "%s renews node certificates with the new node CA", "",
+			func() error { return r.DeliverPayloads(ctx, name) },
+			func(st *nodev1.StatusResponse) error {
+				if c := layer.CertificateOf(st, client.NameNodeCA); c == nil || c.Fingerprint != nodeCA {
+					return errors.New("holds another node CA")
+				}
+				return nil
+			})
 	})
 }
 
@@ -153,27 +142,18 @@ func (r *rotation) refreshNodeCertificates(ctx context.Context) error {
 	}
 	return layer.EachNode(r.allNodes(), func(name string) error {
 		// A node renewed since, or in an earlier run, keeps its certificate.
-		if st, err := r.Status(ctx, name); err == nil && layer.IssuedBy(st, client.NameNode, nodeCA) == nil {
-			r.Say("  %s serves a certificate of the new node CA already", name)
-			return nil
-		}
-		names, err := r.cluster.certNames(name)
-		if err != nil {
-			return err
-		}
-		cert, err := pki.IssueNode(s.NodeCA, names, time.Now())
-		if err != nil {
-			return err
-		}
-		if err := r.deliver(ctx, name, &nodev1.ApplyConfigRequest{NodeCertificate: []byte(cert.Certificate), NodeKey: []byte(cert.Key)}); err != nil {
-			return err
-		}
-		if err := layer.WaitStatus(ctx, r, name, "to serve a certificate of the new node CA", func(st *nodev1.StatusResponse) error {
-			return layer.IssuedBy(st, client.NameNode, nodeCA)
-		}); err != nil {
-			return err
-		}
-		r.Say("  %s serves a certificate of the new node CA", name)
-		return nil
+		return layer.Converge(ctx, r, name, "to serve a certificate of the new node CA", "%s serves a certificate of the new node CA", "%s serves a certificate of the new node CA already",
+			func() error {
+				names, err := r.cluster.certNames(name)
+				if err != nil {
+					return err
+				}
+				cert, err := pki.IssueNode(s.NodeCA, names, time.Now())
+				if err != nil {
+					return err
+				}
+				return r.deliver(ctx, name, &nodev1.ApplyConfigRequest{NodeCertificate: []byte(cert.Certificate), NodeKey: []byte(cert.Key)})
+			},
+			func(st *nodev1.StatusResponse) error { return layer.IssuedBy(st, client.NameNode, nodeCA) })
 	})
 }

@@ -289,14 +289,9 @@ func workersTrust(ctx context.Context, r layer.Rotating, workers []string) error
 		return err
 	}
 	return layer.EachNode(workers, func(name string) error {
-		if err := r.DeliverPayloads(ctx, name); err != nil {
-			return err
-		}
-		if err := layer.WaitStatus(ctx, r, name, "to trust the Kubernetes CAs", func(st *nodev1.StatusResponse) error { return applied(st, want) }); err != nil {
-			return err
-		}
-		r.Say("  %s trusts the Kubernetes CAs", name)
-		return nil
+		return layer.Converge(ctx, r, name, "to trust the Kubernetes CAs", "%s trusts the Kubernetes CAs", "",
+			func() error { return r.DeliverPayloads(ctx, name) },
+			func(st *nodev1.StatusResponse) error { return applied(st, want) })
 	})
 }
 
@@ -309,38 +304,26 @@ func refreshKubernetesCA(ctx context.Context, r layer.Rotating, workers []string
 		return err
 	}
 	if err := layer.EachNode(workers, func(name string) error {
-		if st, err := r.Status(ctx, name); err == nil && layer.IssuedBy(st, kpki.NameKubeletClient, ca) == nil {
+		check := func(st *nodev1.StatusResponse) error { return layer.IssuedBy(st, kpki.NameKubeletClient, ca) }
+		if st, err := r.Status(ctx, name); err == nil && check(st) == nil {
 			return nil
 		}
-		if err := r.DeliverPayloads(ctx, name); err != nil {
-			return err
-		}
-		return layer.WaitStatus(ctx, r, name, "to use a kubelet client certificate of the new CA", func(st *nodev1.StatusResponse) error {
-			return layer.IssuedBy(st, kpki.NameKubeletClient, ca)
-		})
+		return layer.Converge(ctx, r, name, "to use a kubelet client certificate of the new CA", "", "", func() error { return r.DeliverPayloads(ctx, name) }, check)
 	}); err != nil {
 		return err
 	}
 	return layer.EachNode(append(rotatingNodesOf(r, k8s.KindControlPlane), workers...), func(name string) error {
-		if st, err := r.Status(ctx, name); err == nil && layer.IssuedBy(st, kpki.NameKubeletServing, ca) == nil {
-			r.Say("  %s's kubelet serves a certificate of the new CA already", name)
-			return nil
+		renew := func() error {
+			return r.Call(name, func(conn *client.Conn) error {
+				ctx, cancel := context.WithTimeout(ctx, r.Timeout())
+				defer cancel()
+				_, err := Client(conn).RotationStep(ctx, connect.NewRequest(&kubernetesv1.RotationStepRequest{Step: kubernetesv1.RotationStep_ROTATION_STEP_RENEW_KUBELET_SERVING}))
+				return err
+			})
 		}
-		if err := r.Call(name, func(conn *client.Conn) error {
-			ctx, cancel := context.WithTimeout(ctx, r.Timeout())
-			defer cancel()
-			_, err := Client(conn).RotationStep(ctx, connect.NewRequest(&kubernetesv1.RotationStepRequest{Step: kubernetesv1.RotationStep_ROTATION_STEP_RENEW_KUBELET_SERVING}))
-			return err
-		}); err != nil {
-			return err
-		}
-		if err := layer.WaitStatus(ctx, r, name, "for a kubelet serving certificate of the new CA", func(st *nodev1.StatusResponse) error {
-			return layer.IssuedBy(st, kpki.NameKubeletServing, ca)
-		}); err != nil {
-			return err
-		}
-		r.Say("  %s's kubelet serves a certificate of the new CA", name)
-		return nil
+		return layer.Converge(ctx, r, name, "for a kubelet serving certificate of the new CA",
+			"%s's kubelet serves a certificate of the new CA", "%s's kubelet serves a certificate of the new CA already", renew,
+			func(st *nodev1.StatusResponse) error { return layer.IssuedBy(st, kpki.NameKubeletServing, ca) })
 	})
 }
 
