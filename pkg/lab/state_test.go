@@ -3,21 +3,9 @@ package lab
 import (
 	"os"
 	"path/filepath"
-	"reflect"
 	"strings"
 	"testing"
 )
-
-// TestVMDisks gives a VM its disks in the lab's order, the first backed by the node's image and
-// the others empty with their serials.
-func TestVMDisks(t *testing.T) {
-	l := &Lab{Dir: "/lab"}
-	n := Node{Name: "w1", Disks: []Disk{{Size: "16G"}, {Size: "1G", Serial: "chalk-data"}}}
-	want := []VMDisk{{Path: filepath.Join("/lab", "w1", "disk.qcow2")}, {Path: filepath.Join("/lab", "w1", "disk1.qcow2"), Serial: "chalk-data"}}
-	if got := l.VMConfig(n).Disks; !reflect.DeepEqual(got, want) {
-		t.Errorf("disks = %+v, want %+v", got, want)
-	}
-}
 
 // TestLabRecordsItsName records the lab's name, which names its state directory, and names the
 // lab by it. The state directory is where the lab was read from, not part of the record.

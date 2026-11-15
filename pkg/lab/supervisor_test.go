@@ -267,10 +267,10 @@ func TestStateDir(t *testing.T) {
 // switch, TPM and guest agent.
 func TestLabVMConfig(t *testing.T) {
 	l := &Lab{Dir: "/lab", FirmwareCode: "/fw/CODE.fd", FirmwareVars: "/lab/OVMF_VARS.fd", GuestForwards: []GuestForward{{Guest: "10.0.2.100:5000", Host: "127.0.0.1:5000"}}}
-	c := l.VMConfig(Node{Name: "cp1", MAC: "52:54:00:7b:00:11", MemoryMB: 3072, CPUs: 2, ChalkdPort: 15001, APIPort: 16443, Disks: []Disk{{Size: "16G"}}})
+	c := l.VMConfig(Node{Name: "cp1", MAC: "52:54:00:7b:00:11", MemoryMB: 3072, CPUs: 2, ChalkdPort: 15001, APIPort: 16443, Disks: []Disk{{Size: "16G"}, {Size: "1G", Serial: "chalk-data"}}})
 	data, _ := json.Marshal(c)
 	want := VMConfig{Name: "cp1", Dir: "/lab/cp1", FirmwareCode: "/fw/CODE.fd", FirmwareVars: "/lab/OVMF_VARS.fd",
-		Disks: []VMDisk{{Path: "/lab/cp1/disk.qcow2"}}, MemoryMB: 3072, CPUs: 2, TPM: true,
+		Disks: []VMDisk{{Path: "/lab/cp1/disk.qcow2"}, {Path: "/lab/cp1/disk1.qcow2", Serial: "chalk-data"}}, MemoryMB: 3072, CPUs: 2, TPM: true,
 		Forwards: []Forward{{Host: 15001, Guest: 50000}, {Host: 16443, Guest: 6443}}, GuestForwards: l.GuestForwards,
 		Switch: "/lab/switch", MAC: "52:54:00:7b:00:11", GuestAgent: true}
 	wantData, _ := json.Marshal(want)

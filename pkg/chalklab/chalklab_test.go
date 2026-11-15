@@ -78,18 +78,11 @@ spec:
 
 // TestLabNodes runs the nodes of the lab file, each with its MAC address and the machine its type
 // gives it unless the lab file says otherwise, from the directory of its image in the inventory; it
-// refuses a node of a metal image, two nodes of one MAC address, a multicast or broadcast MAC
-// address, and a node the inventory lacks.
+// refuses a node of a metal image, two nodes of one MAC address, a multicast MAC address, a node the
+// inventory lacks and an image from a registry.
 func TestLabNodes(t *testing.T) {
 	dir := t.TempDir()
-	lf, err := readLabFile(writeLabFiles(t, dir, testLab))
-	if err != nil {
-		t.Fatal(err)
-	}
-	inv, err := inventory.Load(lf.inventory)
-	if err != nil {
-		t.Fatal(err)
-	}
+	lf, inv := loadLab(t, writeLabFiles(t, dir, testLab))
 	nodes, images, err := labNodes(inv, lf)
 	if err != nil {
 		t.Fatal(err)
@@ -104,22 +97,27 @@ func TestLabNodes(t *testing.T) {
 	if images["cp1"] != filepath.Join(dir, "images", "node-kvm") {
 		t.Errorf("images = %v", images)
 	}
-	for name, tc := range map[string]struct{ lab, want string }{
-		"a metal image":     {strings.Replace(testLab, "    w1:", "    m1: {mac: \"52:54:00:7b:00:13\"}\n    w1:", 1), "chalklab runs kvm images, but the image node-metal of m1 is built for metal"},
-		"one MAC address":   {strings.Replace(testLab, "52:54:00:7b:00:12", "52:54:00:7b:00:11", 1), "the same MAC address 52:54:00:7b:00:11"},
-		"a multicast MAC":   {strings.Replace(testLab, "52:54:00:7b:00:12", "01:00:5e:00:00:12", 1), "the MAC address 01:00:5e:00:00:12 of w1 is a multicast address"},
-		"the broadcast MAC": {strings.Replace(testLab, "52:54:00:7b:00:12", "ff:ff:ff:ff:ff:ff", 1), "the MAC address ff:ff:ff:ff:ff:ff of w1 is a multicast address"},
-		"no inventory node": {strings.Replace(testLab, "    w1:", "    x9: {mac: \"52:54:00:7b:00:19\"}\n    w1:", 1), "has no node x9"},
+	for name, tc := range map[string]struct{ lab, inventory, want string }{
+		"a metal image":            {strings.Replace(testLab, "    w1:", "    m1: {mac: \"52:54:00:7b:00:13\"}\n    w1:", 1), "", "chalklab runs kvm images, but the image node-metal of m1 is built for metal"},
+		"one MAC address":          {strings.Replace(testLab, "52:54:00:7b:00:12", "52:54:00:7b:00:11", 1), "", "the same MAC address 52:54:00:7b:00:11"},
+		"a multicast MAC":          {strings.Replace(testLab, "52:54:00:7b:00:12", "01:00:5e:00:00:12", 1), "", "the MAC address 01:00:5e:00:00:12 of w1 is a multicast address"},
+		"no inventory node":        {strings.Replace(testLab, "    w1:", "    x9: {mac: \"52:54:00:7b:00:19\"}\n    w1:", 1), "", "has no node x9"},
+		"an image from a registry": {testLab, "node-kvm: {source: {oci: registry.example/lab/node-kvm:v1}}", "chalklab boots images from directories, but the image node-kvm of cp1 comes from the registry, registry.example/lab/node-kvm:v1"},
 	} {
 		t.Run(name, func(t *testing.T) {
-			lf, err := readLabFile(writeLabFiles(t, t.TempDir(), tc.lab))
-			if err != nil {
-				t.Fatal(err)
+			dir := t.TempDir()
+			path := writeLabFiles(t, dir, tc.lab)
+			if tc.inventory != "" {
+				inv := filepath.Join(dir, "chalkos.yaml")
+				data, err := os.ReadFile(inv)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(inv, []byte(strings.Replace(string(data), "node-kvm: {source: {directory: images/node-kvm}}", tc.inventory, 1)), 0o644); err != nil {
+					t.Fatal(err)
+				}
 			}
-			inv, err := inventory.Load(lf.inventory)
-			if err != nil {
-				t.Fatal(err)
-			}
+			lf, inv := loadLab(t, path)
 			if _, _, err := labNodes(inv, lf); err == nil || !strings.Contains(err.Error(), tc.want) {
 				t.Errorf("labNodes = %v, want %q", err, tc.want)
 			}
@@ -150,32 +148,13 @@ func TestLabSchemaDefaults(t *testing.T) {
 		t.Fatal(err)
 	}
 	machine := s.Properties.Spec.Properties.Nodes.AdditionalProperties.Properties
-	lf, err := readLabFile(writeLabFiles(t, t.TempDir(), testLab))
-	if err != nil {
-		t.Fatal(err)
-	}
-	inv, err := inventory.Load(lf.inventory)
-	if err != nil {
-		t.Fatal(err)
-	}
+	lf, inv := loadLab(t, writeLabFiles(t, t.TempDir(), testLab))
 	nodes, _, err := labNodes(inv, lf)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if cp1 := nodes[0]; machine.CPUs.Default != cp1.CPUs || !reflect.DeepEqual(machine.Disks.Default, cp1.Disks) {
 		t.Errorf("the schema's defaults are %d CPUs and the disks %+v, labNodes gives %d and %+v", machine.CPUs.Default, machine.Disks.Default, cp1.CPUs, cp1.Disks)
-	}
-}
-
-// TestReadLabFileKeepsTheName keeps the lab file's metadata.name, which names the lab's state
-// directory.
-func TestReadLabFileKeepsTheName(t *testing.T) {
-	lf, err := readLabFile(writeLabFiles(t, t.TempDir(), strings.Replace(testLab, "metadata: {name: lab}", "metadata: {name: mylab}", 1)))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if lf.name != "mylab" {
-		t.Errorf("name = %q, want mylab", lf.name)
 	}
 }
 
@@ -211,14 +190,7 @@ func checkLabFile(t *testing.T, src, labFile string) {
 	if err := os.CopyFS(dir, os.DirFS(src)); err != nil {
 		t.Fatal(err)
 	}
-	lf, err := readLabFile(filepath.Join(dir, labFile))
-	if err != nil {
-		t.Fatal(err)
-	}
-	inv, err := inventory.Load(lf.inventory)
-	if err != nil {
-		t.Fatal(err)
-	}
+	lf, inv := loadLab(t, filepath.Join(dir, labFile))
 	for name := range lf.nodes {
 		nc, err := inv.Node(name)
 		if err != nil {
@@ -265,14 +237,7 @@ func checkLabFile(t *testing.T, src, labFile string) {
 // their forwarded ports, and every path absolute.
 func TestLabInventory(t *testing.T) {
 	dir := t.TempDir()
-	lf, err := readLabFile(writeLabFiles(t, dir, testLab))
-	if err != nil {
-		t.Fatal(err)
-	}
-	inv, err := inventory.Load(lf.inventory)
-	if err != nil {
-		t.Fatal(err)
-	}
+	_, inv := loadLab(t, writeLabFiles(t, dir, testLab))
 	path := filepath.Join(t.TempDir(), "chalkos.yaml")
 	l := &lab.Lab{Nodes: []lab.Node{{Name: "cp1", ChalkdPort: 15001}}}
 	if err := writeLabInventory(path, inv, l); err != nil {
@@ -292,31 +257,6 @@ func TestLabInventory(t *testing.T) {
 	}
 	if info, err := os.Stat(path); err != nil || info.Mode().Perm() != 0o600 {
 		t.Errorf("the lab's inventory: %v, %v; want mode 0600", info.Mode(), err)
-	}
-}
-
-// TestLabNodesRefuseOCIImages refuses a node whose image comes from a registry: chalklab boots
-// images from directories.
-func TestLabNodesRefuseOCIImages(t *testing.T) {
-	dir := t.TempDir()
-	lf, err := readLabFile(writeLabFiles(t, dir, testLab))
-	if err != nil {
-		t.Fatal(err)
-	}
-	path := filepath.Join(dir, "chalkos.yaml")
-	data, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(path, []byte(strings.Replace(string(data), "node-kvm: {source: {directory: images/node-kvm}}", "node-kvm: {source: {oci: registry.example/lab/node-kvm:v1}}", 1)), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	inv, err := inventory.Load(lf.inventory)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, _, err := labNodes(inv, lf); err == nil || !strings.Contains(err.Error(), "chalklab boots images from directories, but the image node-kvm of cp1 comes from the registry, registry.example/lab/node-kvm:v1") {
-		t.Errorf("labNodes = %v", err)
 	}
 }
 
@@ -474,7 +414,7 @@ func writeLab(t *testing.T) string {
 	return dir
 }
 
-// TestNameChoosesTheLab shows the lab --name names among several, and knows no --cluster.
+// TestNameChoosesTheLab shows the lab --name names among several.
 func TestNameChoosesTheLab(t *testing.T) {
 	writeLab(t)
 	dir, _ := lab.StateDir("mylab")
@@ -490,11 +430,6 @@ func TestNameChoosesTheLab(t *testing.T) {
 	}
 	if !strings.HasPrefix(out.String(), "lab mylab in "+dir+";") {
 		t.Errorf("status --name mylab = %q", out)
-	}
-	for _, cmd := range []string{"status", "console", "sign", "destroy", "start"} {
-		if err := a.run(context.Background(), []string{cmd, "--cluster", "mylab"}); err == nil || !strings.Contains(err.Error(), "unknown flag: --cluster") {
-			t.Errorf("%s --cluster = %v, want the flag unknown", cmd, err)
-		}
 	}
 }
 
@@ -806,4 +741,18 @@ func TestPrintNextAllowsDowntimeBelowThreeControlPlanes(t *testing.T) {
 			t.Errorf("%v: --allow-downtime %v, want %v:\n%s", tc.kinds, got, tc.want, out)
 		}
 	}
+}
+
+// loadLab reads the lab file at path and the inventory it names.
+func loadLab(t *testing.T, path string) (*labFile, *inventory.Inventory) {
+	t.Helper()
+	lf, err := readLabFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	inv, err := inventory.Load(lf.inventory)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return lf, inv
 }

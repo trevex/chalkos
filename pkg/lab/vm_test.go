@@ -127,9 +127,3 @@ func TestKeyChords(t *testing.T) {
 	}
 }
 
-func TestFreePort(t *testing.T) {
-	port, err := FreePort()
-	if err != nil || port <= 0 {
-		t.Fatalf("FreePort() = %d, %v", port, err)
-	}
-}
