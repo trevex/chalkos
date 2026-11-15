@@ -1,7 +1,6 @@
 package translate
 
 import (
-	"encoding/json"
 	"fmt"
 	"maps"
 	"reflect"
@@ -109,8 +108,8 @@ func clusterSpecs(docs []config.Document) (map[string]map[string]any, error) {
 
 // alike refuses nodes whose specs of the kind, nil for none, differ. When some nodes hold none,
 // the message names the nodes of each spec in the order of their first node; otherwise it names
-// the first field whose values differ, walking the fields in name order, and the nodes of each of
-// its values. Flannel's vxlanSourceSubnets compare as a set.
+// the first field whose values differ, in config.ComparePaths order, and the nodes of each of its
+// values. Flannel's vxlanSourceSubnets compare as a set.
 func alike(kind string, nodes []string, spec func(string) map[string]any) error {
 	specs := make([]any, len(nodes))
 	missing := false
@@ -139,18 +138,14 @@ func alike(kind string, nodes []string, spec func(string) map[string]any) error 
 			parts = append(parts, which+" on "+strs.And(g.nodes))
 		}
 	} else {
-		path, ok := firstDifference(specs, nil)
-		if !ok {
+		field, values := firstDifference(specs)
+		if field == "" {
 			return nil
 		}
-		values := make([]any, len(specs))
-		for i, s := range specs {
-			values[i] = at(s, path)
-		}
 		for i, g := range groupNodes(nodes, values) {
-			part := show(g.value) + " on " + strs.And(g.nodes)
+			part := g.value.(string) + " on " + strs.And(g.nodes)
 			if i == 0 {
-				part = showPath(path) + " is " + part
+				part = field + " is " + part
 			}
 			parts = append(parts, part)
 		}
@@ -172,96 +167,36 @@ func normalized(kind string, spec map[string]any) map[string]any {
 	return out
 }
 
-// unset stands for a field a spec lacks.
-type unset struct{}
-
-// firstDifference returns the path, below path, of the first field whose values differ: a
-// field's name or a list item's index for each step. It walks the fields of objects in name order
-// and the items of lists of one length in their order, and returns false when the values are
-// equal.
-func firstDifference(values []any, path []any) ([]any, bool) {
-	if !slices.ContainsFunc(values, func(v any) bool { return !reflect.DeepEqual(v, values[0]) }) {
-		return nil, false
+// firstDifference returns the first field whose leaves differ among the specs, as
+// spec.vip.addresses[0], with each spec's value as JSON or "unset"; the field is "" when the specs
+// are equal.
+func firstDifference(specs []any) (string, []any) {
+	leaves := make([]map[string]config.Leaf, len(specs))
+	union := map[string]config.Leaf{}
+	for i, s := range specs {
+		leaves[i] = config.Leaves(s)
+		maps.Copy(union, leaves[i])
 	}
-	if objects, ok := every[map[string]any](values); ok {
-		var keys []string
-		for _, o := range objects {
-			keys = append(keys, slices.Collect(maps.Keys(o))...)
+	paths := slices.SortedFunc(maps.Values(union), func(a, b config.Leaf) int { return config.ComparePaths(a.Path, b.Path) })
+	for i, p := range paths {
+		// An empty object or list in one spec is no field to name when another holds fields below it.
+		if i+1 < len(paths) && len(paths[i+1].Path) > len(p.Path) && slices.Equal(paths[i+1].Path[:len(p.Path)], p.Path) {
+			continue
 		}
-		slices.Sort(keys)
-		for _, k := range slices.Compact(keys) {
-			field := make([]any, len(objects))
-			for i, o := range objects {
-				field[i] = at(o, []any{k})
-			}
-			if p, ok := firstDifference(field, append(slices.Clip(path), k)); ok {
-				return p, true
-			}
-		}
-	}
-	lists, ok := every[[]any](values)
-	if ok && !slices.ContainsFunc(lists, func(l []any) bool { return len(l) != len(lists[0]) }) {
-		for i := range lists[0] {
-			item := make([]any, len(lists))
-			for j, l := range lists {
-				item[j] = l[i]
-			}
-			if p, ok := firstDifference(item, append(slices.Clip(path), i)); ok {
-				return p, true
+		key := strings.Join(p.Path, "\x00")
+		values := make([]any, len(specs))
+		holder := 0
+		for j := range specs {
+			values[j] = "unset"
+			if l, ok := leaves[j][key]; ok {
+				values[j], holder = l.Value, j
 			}
 		}
-	}
-	return path, true
-}
-
-// every returns values as Ts when each is one.
-func every[T any](values []any) ([]T, bool) {
-	out := make([]T, len(values))
-	for i, v := range values {
-		t, ok := v.(T)
-		if !ok {
-			return nil, false
-		}
-		out[i] = t
-	}
-	return out, true
-}
-
-// at returns the value at path below v, unset when v lacks it.
-func at(v any, path []any) any {
-	for _, step := range path {
-		switch s := step.(type) {
-		case string:
-			o, ok := v.(map[string]any)
-			if !ok {
-				return unset{}
-			}
-			if v, ok = o[s]; !ok {
-				return unset{}
-			}
-		case int:
-			l, ok := v.([]any)
-			if !ok || s >= len(l) {
-				return unset{}
-			}
-			v = l[s]
+		if slices.ContainsFunc(values, func(v any) bool { return v != values[0] }) {
+			return "spec." + config.ShowPath(specs[holder], p.Path), values
 		}
 	}
-	return v
-}
-
-// showPath writes a path below a document's spec as spec.vip.addresses[0].
-func showPath(path []any) string {
-	var b strings.Builder
-	b.WriteString("spec")
-	for _, step := range path {
-		if i, ok := step.(int); ok {
-			fmt.Fprintf(&b, "[%d]", i)
-		} else {
-			fmt.Fprintf(&b, ".%s", step)
-		}
-	}
-	return b.String()
+	return "", nil
 }
 
 // valueGroup is the nodes of one value, in their order.
@@ -282,18 +217,4 @@ func groupNodes(nodes []string, values []any) []*valueGroup {
 		groups[j].nodes = append(groups[j].nodes, n)
 	}
 	return groups
-}
-
-// show writes a value as JSON, and a field a spec lacks as unset.
-func show(v any) string {
-	if _, ok := v.(unset); ok {
-		return "unset"
-	}
-	var b strings.Builder
-	e := json.NewEncoder(&b)
-	e.SetEscapeHTML(false)
-	if err := e.Encode(v); err != nil {
-		return fmt.Sprint(v)
-	}
-	return strings.TrimSuffix(b.String(), "\n")
 }

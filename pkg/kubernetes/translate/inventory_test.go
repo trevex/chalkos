@@ -137,9 +137,9 @@ func TestEndpointNamesTheNodesOfEachSpec(t *testing.T) {
 	}
 }
 
-// TestAlikeNamesTheFirstDifference names the first field that differs in a walk of the fields in
-// name order, below objects and into lists of one length, with each value and its nodes; a field
-// a spec lacks is unset. Flannel's vxlanSourceSubnets compare as a set.
+// TestAlikeNamesTheFirstDifference names the first field that differs, in name order and list
+// items by index, with each value and its nodes; a field a spec lacks is unset. Flannel's
+// vxlanSourceSubnets compare as a set.
 func TestAlikeNamesTheFirstDifference(t *testing.T) {
 	parse := func(s string) map[string]any {
 		var m map[string]any
@@ -162,7 +162,7 @@ func TestAlikeNamesTheFirstDifference(t *testing.T) {
 		"a nested field": {"Cluster", [3]string{`{"vip": {"addresses": ["10.0.0.10"], "mode": "l2"}}`, `{"vip": {"addresses": ["10.0.0.10"], "mode": "l2"}}`, `{"vip": {"addresses": ["10.0.0.20"], "mode": "l2"}}`},
 			`spec.vip.addresses[0] is "10.0.0.10" on cp1 and cp2, "10.0.0.20" on w1`},
 		"lists of other lengths": {"Cluster", [3]string{`{"ipFamilies": ["ipv4"]}`, `{"ipFamilies": ["ipv4", "ipv6"]}`, `{"ipFamilies": ["ipv4"]}`},
-			`spec.ipFamilies is ["ipv4"] on cp1 and w1, ["ipv4","ipv6"] on cp2`},
+			`spec.ipFamilies[1] is unset on cp1 and w1, "ipv6" on cp2`},
 		"a field one spec lacks": {"Cluster", [3]string{`{"domain": "cluster.local"}`, `{}`, `{}`},
 			`spec.domain is "cluster.local" on cp1, unset on cp2 and w1`},
 		"VXLAN sources in another order": {"Flannel", [3]string{`{"vxlanSourceSubnets": ["10.0.0.0/24", "fd00::/64"]}`, `{"vxlanSourceSubnets": ["fd00::/64", "10.0.0.0/24"]}`, `{"vxlanSourceSubnets": ["10.0.0.0/24", "fd00::/64"]}`}, ""},
