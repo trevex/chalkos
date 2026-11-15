@@ -2,6 +2,7 @@ package clustersecrets
 
 import (
 	"encoding/base64"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"slices"
@@ -450,39 +451,48 @@ func TestValidateRefusesInconsistentRotations(t *testing.T) {
 	}
 }
 
-// TestRotationRedacted checks that nothing a rotation adds to the secrets file appears when they
-// are printed.
-func TestRotationRedacted(t *testing.T) {
-	for _, kind := range []RotationKind{RotateServiceAccountKey, RotateEncryptionKey, RotateOSCA, RotateNodeCA} {
+// TestSecretsRedacted checks that printing the secrets, with or without a rotation, shows no key or
+// secret, not even what a rotation adds.
+func TestSecretsRedacted(t *testing.T) {
+	for _, kind := range []RotationKind{"", RotateServiceAccountKey, RotateEncryptionKey, RotateOSCA, RotateNodeCA} {
 		s := generate(t)
-		if err := s.BeginRotation(kind, now); err != nil {
-			t.Fatal(err)
-		}
-		var secrets []string
-		if n := s.Rotation.New; n != nil {
-			secrets = append(secrets, n.ServiceAccountKey)
-			if n.OSCA != nil {
-				secrets = append(secrets, n.OSCA.Key)
+		values := []any{s.Kubernetes.Accepted}
+		if kind != "" {
+			if err := s.BeginRotation(kind, now); err != nil {
+				t.Fatal(err)
 			}
-			if n.NodeCA != nil {
-				secrets = append(secrets, n.NodeCA.Key)
+			values = []any{s.Kubernetes.Accepted, s.Rotation, *s.Rotation}
+		}
+		ck := s.Kubernetes.CA
+		values = append(values, s, s.Kubernetes, ck, &ck)
+		secrets := []string{string(s.RecoverySecret), hex.EncodeToString(s.RecoverySecret), base64.StdEncoding.EncodeToString(s.RecoverySecret)}
+		if n := s.Rotation; n != nil && n.New != nil {
+			secrets = append(secrets, n.New.ServiceAccountKey)
+			if n.New.OSCA != nil {
+				secrets = append(secrets, n.New.OSCA.Key)
+			}
+			if n.New.NodeCA != nil {
+				secrets = append(secrets, n.New.NodeCA.Key)
 			}
 		}
-		for _, key := range s.Kubernetes.Accepted.EncryptionKeys {
-			secrets = append(secrets, base64.StdEncoding.EncodeToString(key.Key), fmt.Sprint(key.Key), string(key.Key))
+		for _, key := range s.Kubernetes.EncryptionKeys() {
+			secrets = append(secrets, base64.StdEncoding.EncodeToString(key.Key), hex.EncodeToString(key.Key), fmt.Sprint(key.Key), string(key.Key))
 		}
 		for _, format := range []string{"%v", "%+v", "%#v", "%s"} {
-			for _, value := range []any{s, s.Kubernetes, s.Kubernetes.Accepted, s.Rotation, *s.Rotation} {
+			for _, value := range values {
 				out := fmt.Sprintf(format, value)
 				for _, secret := range secrets {
 					if secret != "" && strings.Contains(out, strings.TrimSpace(secret)) {
-						t.Errorf("%s: %s of %T holds a secret: %s", kind, format, value, out)
+						t.Errorf("%q: %s of %T holds a secret: %s", kind, format, value, out)
 					}
 				}
 				if strings.Contains(out, "PRIVATE KEY") {
-					t.Errorf("%s: %s of %T holds a key: %s", kind, format, value, out)
+					t.Errorf("%q: %s of %T holds a key: %s", kind, format, value, out)
 				}
 			}
+		}
+		if out := fmt.Sprint(s.Kubernetes); !strings.Contains(out, "chalkos Kubernetes CA") {
+			t.Errorf("formatted Kubernetes secrets do not name the CA: %s", out)
 		}
 	}
 }

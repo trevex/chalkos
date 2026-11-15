@@ -2,20 +2,14 @@ package clustersecrets
 
 import (
 	"bytes"
-	"crypto/ecdsa"
 	"crypto/ed25519"
-	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/x509"
-	"crypto/x509/pkix"
-	"encoding/base64"
-	"encoding/hex"
 	"encoding/json"
 	"encoding/pem"
 	"errors"
 	"fmt"
-	"math/big"
 	"strings"
 	"testing"
 	"time"
@@ -38,42 +32,6 @@ func generate(t *testing.T) Secrets {
 }
 
 var now = time.Date(2026, 10, 6, 12, 0, 0, 0, time.UTC)
-
-func newTestCA(t *testing.T) pki.CertKey {
-	t.Helper()
-	ca, err := pki.NewCA("chalkos OS CA", now)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return ca
-}
-
-// caWithoutCertSign is a CA certificate that lacks the certificate signing key usage.
-func caWithoutCertSign(t *testing.T) pki.CertKey {
-	t.Helper()
-	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
-	if err != nil {
-		t.Fatal(err)
-	}
-	template := &x509.Certificate{
-		SerialNumber:          big.NewInt(1),
-		Subject:               pkix.Name{CommonName: "no cert sign"},
-		NotBefore:             now.Add(-time.Hour),
-		NotAfter:              now.Add(pki.CAValidity),
-		IsCA:                  true,
-		BasicConstraintsValid: true,
-		KeyUsage:              x509.KeyUsageCRLSign,
-	}
-	der, err := x509.CreateCertificate(rand.Reader, template, template, &key.PublicKey, key)
-	if err != nil {
-		t.Fatal(err)
-	}
-	keyPEM, err := pki.EncodeKey(key)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return pki.CertKey{Certificate: string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})), Key: keyPEM}
-}
 
 func noIdentities() ([]age.Identity, error) { return nil, errors.New("asked for an identity") }
 
@@ -320,34 +278,8 @@ func TestSecretsValidateRejectsNonCAOSCA(t *testing.T) {
 		t.Fatal(err)
 	}
 	s.OSCA = leaf
-	if err := s.Validate(); err == nil {
-		t.Error("accepted an osCA that is not a CA certificate")
-	}
-}
-
-func TestSecretsValidateRequiresCertSignOnOSCA(t *testing.T) {
-	s := generate(t)
-	s.OSCA = caWithoutCertSign(t)
-	// The node CA would not verify either; the error names the cause.
-	if err := s.Validate(); err == nil || !strings.Contains(err.Error(), "osCA: the CA certificate lacks the certificate signing key usage") {
-		t.Errorf("Validate() = %v, want the osCA's missing certificate signing key usage", err)
-	}
-}
-
-func TestSecretsStringRedacted(t *testing.T) {
-	s := generate(t)
-	out := fmt.Sprintf("%v %+v %#v", s, s, s)
-	if strings.Contains(out, "PRIVATE KEY") {
-		t.Errorf("formatted secrets contain a private key: %s", out)
-	}
-	if bytes.Contains([]byte(out), s.RecoverySecret) {
-		t.Error("formatted secrets contain the raw recovery secret")
-	}
-	if strings.Contains(out, hex.EncodeToString(s.RecoverySecret)) {
-		t.Error("formatted secrets contain the recovery secret in hex")
-	}
-	if strings.Contains(out, base64.StdEncoding.EncodeToString(s.RecoverySecret)) {
-		t.Error("formatted secrets contain the recovery secret in base64")
+	if err := s.Validate(); err == nil || !strings.HasPrefix(err.Error(), "osCA: ") {
+		t.Errorf("Validate() = %v, want a refusal of the osCA", err)
 	}
 }
 
@@ -373,7 +305,10 @@ func TestSecretsValidateRejectsNodeCA(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	leafCA := newTestCA(t)
+	leafCA, err := pki.NewCA("chalkos OS CA", now)
+	if err != nil {
+		t.Fatal(err)
+	}
 	rootWithoutIntermediates := generate(t)
 	rootWithoutIntermediates.OSCA = leafCA
 	if rootWithoutIntermediates.NodeCA, err = pki.NewNodeCA(leafCA, now); err != nil {

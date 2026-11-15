@@ -1,9 +1,6 @@
 package clustersecrets
 
 import (
-	"encoding/base64"
-	"encoding/hex"
-	"fmt"
 	"strings"
 	"testing"
 
@@ -60,14 +57,6 @@ func TestValidateRejectsKubernetesMismatch(t *testing.T) {
 	}
 }
 
-func TestSecretsStringRedactsKubernetes(t *testing.T) {
-	s := generate(t)
-	out := fmt.Sprintf("%v %+v %#v", s, s, s)
-	if strings.Contains(out, "PRIVATE KEY") || strings.Contains(out, base64.StdEncoding.EncodeToString(s.Kubernetes.EncryptionKey)) {
-		t.Errorf("formatted secrets leak Kubernetes keys: %s", out)
-	}
-}
-
 func TestValidateRejectsSharedCAs(t *testing.T) {
 	for _, tc := range []struct {
 		name, a, b string
@@ -98,24 +87,5 @@ func TestValidateRejectsSharedCAs(t *testing.T) {
 	k.EtcdCA = k.CA
 	if err := k.Validate(); err == nil {
 		t.Error("KubernetesSecrets.Validate accepted an etcd CA that is the Kubernetes CA")
-	}
-}
-
-func TestKubernetesSecretsAndCertKeyRedacted(t *testing.T) {
-	k := generate(t).Kubernetes
-	ck := k.CA
-	out := fmt.Sprintf("%v %+v %#v %v %+v %#v %v %+v %#v", k, k, k, ck, ck, ck, &ck, &ck, &ck)
-	for name, secret := range map[string]string{
-		"a private key":                 "PRIVATE KEY",
-		"the encryption key in base64":  base64.StdEncoding.EncodeToString(k.EncryptionKey),
-		"the encryption key in hex":     hex.EncodeToString(k.EncryptionKey),
-		"the encryption key as numbers": fmt.Sprint(k.EncryptionKey),
-	} {
-		if strings.Contains(out, secret) {
-			t.Errorf("formatted Kubernetes secrets contain %s", name)
-		}
-	}
-	if !strings.Contains(out, "chalkos Kubernetes CA") {
-		t.Error("formatted Kubernetes secrets do not name the CA")
 	}
 }
