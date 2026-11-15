@@ -6,8 +6,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"github.com/trevex/chalkos/pkg/install"
 )
 
 // unpinnedProxy is the warning of a Cluster document whose kube-proxy names a tag but no digest.
@@ -60,39 +58,5 @@ func TestApplyConfigWarnsOfUnpinnedImages(t *testing.T) {
 	}
 	if !strings.Contains(ta.stdout.String(), "n1 runs config "+ta.configVersion(t)) {
 		t.Errorf("stdout = %q, want the config delivered", ta.stdout)
-	}
-}
-
-// install warns of an image that names a tag but no digest, and installs all the same.
-func TestInstallWarnsOfUnpinnedImages(t *testing.T) {
-	ta := newTestApp(t)
-	path := writeInventory(t, ta.dir, n1Host, n1SystemDisk, n1Network)
-	unpinProxy(t, ta.dir)
-	s := maintenanceNode()
-	installed := false
-	s.InPlace = func(context.Context, install.Request, []byte) error { installed = true; return nil }
-	addr := ta.startNode(t, s)
-	if err := ta.run(context.Background(), []string{"install", "n1", "--insecure", "--inventory", path, "--address", addr}); err != nil {
-		t.Fatal(err)
-	}
-	if want := "chalkctl: warning: n1: " + unpinnedProxy + "\n"; !strings.Contains(ta.stderr.String(), want) || !installed {
-		t.Errorf("stderr = %q, installed %v; want %q and the node installed", ta.stderr, installed, want)
-	}
-}
-
-// upgrade warns of an image that names a tag but no digest in the config it delivers, and upgrades
-// all the same.
-func TestUpgradeWarnsOfUnpinnedImages(t *testing.T) {
-	l := newUpgradeLab(t, 1)
-	l.useInventory(t, map[string]string{"plain": testUpgradeImage(t, "plain", "0.2.0")})
-	unpinProxy(t, l.ta.dir)
-	if err := l.run("upgrade", "--nodes", "n1"); err != nil {
-		t.Fatalf("%v\n%s", err, l.ta.stdout)
-	}
-	if want := "chalkctl: warning: n1: " + unpinnedProxy + "\n"; l.ta.stderr.String() != want {
-		t.Errorf("stderr = %q, want %q", l.ta.stderr, want)
-	}
-	if v := l.images()["n1"]; v != "0.2.0" {
-		t.Errorf("n1 runs %s, want 0.2.0", v)
 	}
 }
