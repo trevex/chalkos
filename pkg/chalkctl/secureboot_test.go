@@ -103,10 +103,7 @@ func enrollNode(t *testing.T, ta *testApp, secureBootAfter byte, early bool, eve
 // TestSecurebootEnroll sends db signed by KEK, KEK by PK and PK by itself, Microsoft's certificates
 // only with --microsoft, and waits for Secure Boot.
 func TestSecurebootEnroll(t *testing.T) {
-	keys := filepath.Join(t.TempDir(), "keys")
-	if err := secureboot.NewKeys(keys, "test"); err != nil {
-		t.Fatal(err)
-	}
+	keys := testKeys(t)
 	k, err := secureboot.LoadKeys(keys)
 	if err != nil {
 		t.Fatal(err)
@@ -161,10 +158,7 @@ func TestSecurebootEnroll(t *testing.T) {
 // TestSecurebootEnrollRefusals prints the node's refusal of firmware that is not in Setup Mode,
 // and stops waiting for a node that does not boot with Secure Boot on.
 func TestSecurebootEnrollRefusals(t *testing.T) {
-	keys := filepath.Join(t.TempDir(), "keys")
-	if err := secureboot.NewKeys(keys, "test"); err != nil {
-		t.Fatal(err)
-	}
+	keys := testKeys(t)
 
 	ta := newTestApp(t)
 	addr := enrollNode(t, ta, 0, false, nil).addr
@@ -195,10 +189,7 @@ func TestSecurebootEnrollRefusals(t *testing.T) {
 // TestSecurebootEnrollWaitsForTheReboot waits for a new boot, not only Secure Boot on, since some
 // firmware reports it once PK is written.
 func TestSecurebootEnrollWaitsForTheReboot(t *testing.T) {
-	keys := filepath.Join(t.TempDir(), "keys")
-	if err := secureboot.NewKeys(keys, "test"); err != nil {
-		t.Fatal(err)
-	}
+	keys := testKeys(t)
 	ta := newTestApp(t)
 	n := enrollNode(t, ta, 1, true, nil)
 	if err := ta.run(context.Background(), []string{"secureboot", "enroll", "--keys", keys, "--address", n.addr, "--insecure", "--force"}); err != nil {
@@ -218,10 +209,7 @@ func TestSecurebootEnrollWaitsForTheReboot(t *testing.T) {
 // TestSecurebootEnrollOptionROMs adds the digests of the option ROMs the node lists with
 // --option-roms, and those of --db-hash, to db once each, and prints the option ROMs.
 func TestSecurebootEnrollOptionROMs(t *testing.T) {
-	keys := filepath.Join(t.TempDir(), "keys")
-	if err := secureboot.NewKeys(keys, "test"); err != nil {
-		t.Fatal(err)
-	}
+	keys := testKeys(t)
 	gpu, nic, other := sha256.Sum256([]byte("gpu")), sha256.Sum256([]byte("nic")), sha256.Sum256([]byte("other"))
 	l := secureboottest.NewLog(2, secureboottest.AlgSHA256)
 	l.Driver(secureboottest.EvBootServicesDriver, gpu, secureboottest.OptionROMPath(3))
@@ -248,10 +236,7 @@ func TestSecurebootEnrollOptionROMs(t *testing.T) {
 // TestSecurebootEnrollRefusesOptionROMs prints the node's refusal of keys that would block its
 // option ROMs and refuses a malformed --db-hash.
 func TestSecurebootEnrollRefusesOptionROMs(t *testing.T) {
-	keys := filepath.Join(t.TempDir(), "keys")
-	if err := secureboot.NewKeys(keys, "test"); err != nil {
-		t.Fatal(err)
-	}
+	keys := testKeys(t)
 	gpu := sha256.Sum256([]byte("gpu"))
 	l := secureboottest.NewLog(2, secureboottest.AlgSHA256)
 	l.Driver(secureboottest.EvBootServicesDriver, gpu, secureboottest.OptionROMPath(3))
@@ -276,4 +261,14 @@ func TestSecurebootEnrollRefusesOptionROMs(t *testing.T) {
 	if !strings.Contains(ta.stderr.String(), "has no TPM") {
 		t.Errorf("stderr %q, want the node's reason for listing no option ROMs", ta.stderr)
 	}
+}
+
+// testKeys creates Secure Boot keys in a new directory and returns it.
+func testKeys(t *testing.T) string {
+	t.Helper()
+	keys := filepath.Join(t.TempDir(), "keys")
+	if err := secureboot.NewKeys(keys, "test"); err != nil {
+		t.Fatal(err)
+	}
+	return keys
 }
