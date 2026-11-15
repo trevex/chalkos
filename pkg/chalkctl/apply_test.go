@@ -261,10 +261,7 @@ func TestApplyConfigRollback(t *testing.T) {
 	ta := newTestApp(t)
 	s, _ := installedNode(t, ta, []byte(`{}`))
 	addr := ta.startNode(t, s)
-	run := func(args ...string) error {
-		ta.stdout.Reset()
-		return ta.run(context.Background(), ta.args(args, addr))
-	}
+	run := ta.runner(addr)
 	if err := run("config", "rollback", "n1"); err == nil || !strings.Contains(err.Error(), "n1 keeps no previous config of the image it runs") {
 		t.Errorf("without a previous config: %v", err)
 	}

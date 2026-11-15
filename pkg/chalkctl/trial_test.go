@@ -57,10 +57,7 @@ func TestApplyConfigOnTrial(t *testing.T) {
 	ta.pollInterval = 20 * time.Millisecond
 	s, _ := installedNode(t, ta, []byte(`{}`))
 	addr := ta.startNode(t, s)
-	run := func(args ...string) error {
-		ta.stdout.Reset()
-		return ta.run(context.Background(), ta.args(args, addr))
-	}
+	run := ta.runner(addr)
 	contains := func(lines ...string) {
 		t.Helper()
 		for _, line := range lines {
@@ -96,7 +93,7 @@ func TestApplyConfigOnTrial(t *testing.T) {
 	if err := run("config", "apply", "n1", "--try", "1m", "--no-confirm"); err != nil {
 		t.Fatal(err)
 	}
-	contains("chalkctl config confirm n1 keeps it; chalkctl config rollback n1 rolls it back now")
+	contains(endTrialHint("n1"))
 	if err := run("status", "n1"); err != nil {
 		t.Fatal(err)
 	}
@@ -143,10 +140,7 @@ func TestApplyConfigOnTrialUnconfirmed(t *testing.T) {
 	s, _ := installedNode(t, ta, []byte(`{}`))
 	s.Healthy = func(context.Context, []string) error { return errors.New("units failed: demo.service") }
 	addr := ta.startNode(t, s)
-	run := func(args ...string) error {
-		ta.stdout.Reset()
-		return ta.run(context.Background(), ta.args(args, addr))
-	}
+	run := ta.runner(addr)
 	if err := run("config", "apply", "n1"); err != nil {
 		t.Fatal(err)
 	}
@@ -286,32 +280,26 @@ func TestConfirmInterrupted(t *testing.T) {
 		})
 	})
 	err := run(ctx, "config", "apply", "n1", "--try", "1m")
-	if err == nil || !strings.Contains(err.Error(), "; n1 runs config "+second+" on trial until ") || !strings.Contains(err.Error(), "; chalkctl config confirm n1 keeps it; chalkctl config rollback n1 rolls it back now") {
+	if err == nil || !strings.Contains(err.Error(), "; n1 runs config "+second+" on trial until ") || !strings.Contains(err.Error(), "; "+endTrialHint("n1")) {
 		t.Errorf("an interrupted confirmation = %v\n%s", err, ta.stdout)
 	}
 }
 
-// TestConfirmRefused: a confirmation the node refuses for good before the deadline ends the
-// attempts, and chalkctl says when the node rolls back and how to end the trial before.
+// TestConfirmRefused: a confirmation the node refuses for good, or fails with an internal error
+// other than an unreadable record, ends the attempts and leaves the trial open; chalkctl says when
+// the node rolls back and how to end the trial before.
 func TestConfirmRefused(t *testing.T) {
-	ta := newTestApp(t)
-	_, run, _, _ := trialNode(t, ta)
-	ta.setWrap(refuse("ConfirmConfig", connect.NewError(connect.CodeFailedPrecondition, errors.New("the trial is of config x, not y"))))
-	err := run(context.Background(), "config", "apply", "n1", "--try", "1m")
-	if err == nil || !strings.Contains(err.Error(), "the trial is of config x, not y; it rolls back at ") || !strings.Contains(err.Error(), " unless confirmed; chalkctl config confirm n1 keeps it; chalkctl config rollback n1 rolls it back now") {
-		t.Errorf("a refused confirmation = %v\n%s", err, ta.stdout)
-	}
-}
-
-// TestConfirmFailingToEndTheTrial: an internal error from the confirmation leaves the trial open,
-// and chalkctl says how to end it.
-func TestConfirmFailingToEndTheTrial(t *testing.T) {
-	ta := newTestApp(t)
-	_, run, _, _ := trialNode(t, ta)
-	ta.setWrap(refuse("ConfirmConfig", connect.NewError(connect.CodeInternal, errors.New("end the trial: remove chalkd/trial: read-only file system"))))
-	err := run(context.Background(), "config", "apply", "n1", "--try", "1m")
-	if err == nil || !strings.Contains(err.Error(), "end the trial: remove chalkd/trial: read-only file system; it rolls back at ") || !strings.Contains(err.Error(), " unless confirmed; chalkctl config confirm n1 keeps it; chalkctl config rollback n1 rolls it back now") {
-		t.Errorf("a confirmation that failed to end the trial = %v\n%s", err, ta.stdout)
+	for _, err := range []*connect.Error{
+		connect.NewError(connect.CodeFailedPrecondition, errors.New("the trial is of config x, not y")),
+		connect.NewError(connect.CodeInternal, errors.New("end the trial: remove chalkd/trial: read-only file system")),
+	} {
+		ta := newTestApp(t)
+		_, run, _, _ := trialNode(t, ta)
+		ta.setWrap(refuse("ConfirmConfig", err))
+		got := run(context.Background(), "config", "apply", "n1", "--try", "1m")
+		if got == nil || !strings.Contains(got.Error(), err.Message()+"; it rolls back at ") || !strings.Contains(got.Error(), " unless confirmed; "+endTrialHint("n1")) {
+			t.Errorf("a confirmation that fails with %v = %v\n%s", err, got, ta.stdout)
+		}
 	}
 }
 
@@ -389,7 +377,7 @@ func TestTrialRollbackWaitInterrupted(t *testing.T) {
 		})
 	})
 	err := run(ctx, "config", "apply", "n1", "--try", "1m")
-	if err == nil || !strings.Contains(err.Error(), "the answer to its delivery did not come: ") || !strings.Contains(err.Error(), "; n1 may run config "+second+" on trial until ") || !strings.Contains(err.Error(), "; chalkctl config confirm n1 keeps it; chalkctl config rollback n1 rolls it back now") {
+	if err == nil || !strings.Contains(err.Error(), "the answer to its delivery did not come: ") || !strings.Contains(err.Error(), "; n1 may run config "+second+" on trial until ") || !strings.Contains(err.Error(), "; "+endTrialHint("n1")) {
 		t.Errorf("an interrupted wait for the rollback = %v\n%s", err, ta.stdout)
 	}
 }
@@ -499,10 +487,7 @@ func TestConfirmAfterAFailedRollback(t *testing.T) {
 	ta.pollInterval = 20 * time.Millisecond
 	s, _ := installedNode(t, ta, []byte(`{}`))
 	addr := ta.startNode(t, s)
-	run := func(args ...string) error {
-		ta.stdout.Reset()
-		return ta.run(context.Background(), ta.args(args, addr))
-	}
+	run := ta.runner(addr)
 	if err := run("config", "apply", "n1"); err != nil {
 		t.Fatal(err)
 	}
@@ -546,10 +531,7 @@ func TestTrialThatEnded(t *testing.T) {
 	ta := newTestApp(t)
 	s, _ := installedNode(t, ta, []byte(`{}`))
 	addr := ta.startNode(t, s)
-	run := func(args ...string) error {
-		ta.stdout.Reset()
-		return ta.run(context.Background(), ta.args(args, addr))
-	}
+	run := ta.runner(addr)
 	if err := run("config", "apply", "n1"); err != nil {
 		t.Fatal(err)
 	}
@@ -585,10 +567,7 @@ func TestApplyConfigOnTrialPartlyFailed(t *testing.T) {
 	ta := newTestApp(t)
 	s, r := installedNode(t, ta, []byte(`{}`))
 	addr := ta.startNode(t, s)
-	run := func(args ...string) error {
-		ta.stdout.Reset()
-		return ta.run(context.Background(), ta.args(args, addr))
-	}
+	run := ta.runner(addr)
 	if err := run("config", "apply", "n1"); err != nil {
 		t.Fatal(err)
 	}
@@ -596,7 +575,7 @@ func TestApplyConfigOnTrialPartlyFailed(t *testing.T) {
 	second := ta.configVersion(t)
 	r.setFail("chalkos-chrony-dhcp.service")
 	err := run("config", "apply", "n1", "--try", "1m")
-	if err == nil || !strings.Contains(err.Error(), "config "+second+" stays on trial until ") || !strings.Contains(err.Error(), "chalkctl config confirm n1 keeps it; chalkctl config rollback n1 rolls it back now") {
+	if err == nil || !strings.Contains(err.Error(), "config "+second+" stays on trial until ") || !strings.Contains(err.Error(), endTrialHint("n1")) {
 		t.Fatalf("a delivery on trial that failed = %v\n%s", err, ta.stdout)
 	}
 	if strings.Contains(ta.stdout.String(), "waiting") {
@@ -707,5 +686,13 @@ func TestTrialOpen(t *testing.T) {
 		if got := fmt.Sprint(err); tc.want == "" && err != nil || tc.want != "" && got != tc.want {
 			t.Errorf("%v: %v, want %q", tc.st, err, tc.want)
 		}
+	}
+}
+
+// runner runs chalkctl against the node at addr with the inventory, each run with stdout emptied.
+func (ta *testApp) runner(addr string) func(args ...string) error {
+	return func(args ...string) error {
+		ta.stdout.Reset()
+		return ta.run(context.Background(), ta.args(args, addr))
 	}
 }
