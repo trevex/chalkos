@@ -1497,7 +1497,8 @@ lib.runTests {
     };
   };
   # An image carries its platform's modules, those every image carries and its own; the installer
-  # carries its own modules alone.
+  # carries its own modules alone. In a list both define, the image's own entries come
+  # first.
   testMkImagesAppliesModules = {
     expr =
       let
@@ -1525,7 +1526,7 @@ lib.runTests {
           ) n.config.boot.kernelParams;
       in
       {
-        node = lib.sort lib.lessThan (marks i.node-metal.nixos);
+        node = marks i.node-metal.nixos;
         installer = marks i.installer.nixos;
         # chalkos's own metal module is among them: it sets the consoles.
         console = lib.any (
@@ -1534,8 +1535,8 @@ lib.runTests {
       };
     expected = {
       node = [
-        "every"
         "image"
+        "every"
       ];
       installer = [ "installer" ];
       console = true;

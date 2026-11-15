@@ -85,7 +85,7 @@ let
     image
     // {
       inherit (cfg) name platform;
-      # The layer the image carries; layers.nix refuses more than one.
+      # The layer the image carries; modules/node/layers.nix refuses more than one.
       layer = lib.findFirst (_: true) null (lib.attrNames system.config.chalkos.layers);
       nixos = system;
       # The image directory as an OCI image layout, which the image's own nixpkgs builds as it
