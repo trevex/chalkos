@@ -129,15 +129,11 @@ func (f failures) String() string {
 // would, and returns what a valid config warrants a warning for. Its errors and warnings name the
 // node.
 func validateNode(cl *cluster, name string) (string, []string, error) {
-	nc, err := cl.config(name)
+	nc, md, err := cl.image(name)
 	if err != nil {
 		return "", nil, err
 	}
-	md, err := nc.Resolve()
-	if err != nil {
-		return "", nil, err
-	}
-	c, err := nodeImageContract(nc, md)
+	c, err := inventoryContract(nc, md.Platform)
 	if err != nil {
 		return "", nil, fmt.Errorf("node %s: %w", name, err)
 	}

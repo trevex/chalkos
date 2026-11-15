@@ -19,7 +19,6 @@ import (
 	"github.com/trevex/chalkos/pkg/identity"
 	"github.com/trevex/chalkos/pkg/inventory"
 	"github.com/trevex/chalkos/pkg/rules"
-	"github.com/trevex/chalkos/pkg/schema"
 )
 
 // contract is what an image accepts as config: the platform it was built for, the schemas of its
@@ -98,17 +97,22 @@ func imageContract(dir string) (contract, error) {
 	return c, nil
 }
 
+// schemaContract is the contract of an image of the schemas and layer facts.
+func schemaContract(schemas map[string][]byte, facts []*anypb.Any) (contract, error) {
+	image, err := imagecontract.FromSchemas(schemas)
+	if err != nil {
+		return contract{}, err
+	}
+	return newContract(image, facts)
+}
+
 // nodeContract asks a node for the contract of the image it runs.
 func nodeContract(ctx context.Context, conn *client.Conn, name string) (contract, error) {
 	resp, err := conn.Contract(ctx, connect.NewRequest(&nodev1.ContractRequest{}))
 	if err != nil {
 		return contract{}, fmt.Errorf("ask %s for the schemas of its image: %w", name, err)
 	}
-	image, err := imagecontract.FromSchemas(resp.Msg.Schemas)
-	if err != nil {
-		return contract{}, fmt.Errorf("the schemas of the image %s runs: %w", name, err)
-	}
-	c, err := newContract(image, resp.Msg.LayerFacts)
+	c, err := schemaContract(resp.Msg.Schemas, resp.Msg.LayerFacts)
 	if err != nil {
 		return contract{}, fmt.Errorf("the schemas of the image %s runs: %w", name, err)
 	}
@@ -201,34 +205,29 @@ func checkRules(c contract, next, old config.Redacted, node string) error {
 
 // imageContractOf is the contract of the node's image in the inventory.
 func (c *cluster) imageContractOf(name string) (contract, error) {
-	nc, err := c.config(name)
+	nc, md, err := c.image(name)
 	if err != nil {
 		return contract{}, err
 	}
-	md, err := nc.Resolve()
-	if err != nil {
-		return contract{}, err
-	}
-	return nodeImageContract(nc, md)
+	return inventoryContract(nc, md.Platform)
 }
 
-// nodeImageContract is the contract of a node's image in the inventory, as built for the platform
-// md, the image's metadata, gives.
-func nodeImageContract(nc *inventory.NodeConfig, md schema.Metadata) (contract, error) {
-	ct, err := inventoryContract(nc)
-	if err != nil {
-		return contract{}, err
-	}
-	ct.platform = md.Platform
-	return ct, nil
-}
-
-// inventoryContract is the contract of a node's image in the inventory: that of its directory,
-// or of the contract layer of its image in a registry.
-func inventoryContract(nc *inventory.NodeConfig) (contract, error) {
+// inventoryContract is the contract of a node's image in the inventory, built for platform: that
+// of its directory, or of the contract layer of its image in a registry.
+func inventoryContract(nc *inventory.NodeConfig, platform string) (contract, error) {
+	var c contract
+	var err error
 	if nc.ImageOCI == "" {
-		return imageContract(nc.ImageDir)
+		c, err = imageContract(nc.ImageDir)
+	} else {
+		c, err = registryContract(nc)
 	}
+	c.platform = platform
+	return c, err
+}
+
+// registryContract is the contract of the contract layer of a node's image in a registry.
+func registryContract(nc *inventory.NodeConfig) (contract, error) {
 	a, err := nc.Artifact()
 	if err != nil {
 		return contract{}, err
@@ -237,11 +236,7 @@ func inventoryContract(nc *inventory.NodeConfig) (contract, error) {
 	if err != nil {
 		return contract{}, err
 	}
-	image, err := imagecontract.FromSchemas(a.Contract.Schemas)
-	if err != nil {
-		return contract{}, fmt.Errorf("%s: %w", a.Reference, err)
-	}
-	c, err := newContract(image, facts)
+	c, err := schemaContract(a.Contract.Schemas, facts)
 	if err != nil {
 		return contract{}, fmt.Errorf("%s: %w", a.Reference, err)
 	}

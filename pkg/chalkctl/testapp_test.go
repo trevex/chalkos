@@ -156,15 +156,10 @@ func (ta *testApp) identity(t *testing.T) identity.Identity {
 	if err != nil {
 		t.Fatal(err)
 	}
-	md, err := nc.Resolve()
+	ct, err := c.imageContractOf("n1")
 	if err != nil {
 		t.Fatal(err)
 	}
-	ct, err := imageContract(nc.ImageDir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	ct.platform = md.Platform
 	d, err := checkNodeConfig(nc, ct)
 	if err != nil {
 		t.Fatal(err)

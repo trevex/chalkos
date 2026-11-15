@@ -85,12 +85,12 @@ func (c *cluster) platformLine(name, reported string) string {
 	if c.Partial() {
 		return "platform " + reported
 	}
-	want, err := c.platform(name)
+	nc, md, err := c.image(name)
 	switch {
 	case err != nil:
 		return fmt.Sprintf("platform %s; the platform of its config's image is unknown: %v", reported, err)
-	case reported != want:
-		return fmt.Sprintf("platform %s, but %s; changing a node's platform is a reinstall", reported, c.declares(name, want))
+	case reported != md.Platform:
+		return fmt.Sprintf("platform %s, but its image %s is built for %s; changing a node's platform is a reinstall", reported, nc.ImageName, md.Platform)
 	}
 	return fmt.Sprintf("platform %s (the inventory's)", reported)
 }

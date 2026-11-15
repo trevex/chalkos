@@ -55,11 +55,7 @@ func (a *app) nodeActivate(ctx context.Context, f nodeActivateFlags, name string
 			return err
 		}
 	} else {
-		nc, err := t.cluster.config(name)
-		if err != nil {
-			return err
-		}
-		md, err := nc.Resolve()
+		_, md, err := t.cluster.image(name)
 		if err != nil {
 			return err
 		}

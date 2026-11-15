@@ -15,6 +15,7 @@ import (
 	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/inventory"
 	"github.com/trevex/chalkos/pkg/pki"
+	"github.com/trevex/chalkos/pkg/schema"
 )
 
 // cluster is the inventory chalkctl operates on, named as the inventory. Without one it is partial
@@ -120,24 +121,14 @@ func (c *cluster) config(name string) (*inventory.NodeConfig, error) {
 	return nc, nil
 }
 
-// platform is the platform of a node's image: that of the directory of its image in the
-// inventory.
-func (c *cluster) platform(name string) (string, error) {
+// image is the node's config in the inventory and the metadata of its image there.
+func (c *cluster) image(name string) (*inventory.NodeConfig, schema.Metadata, error) {
 	nc, err := c.config(name)
 	if err != nil {
-		return "", err
+		return nil, schema.Metadata{}, err
 	}
 	md, err := nc.Resolve()
-	return md.Platform, err
-}
-
-// declares says where a node's platform comes from, for messages.
-func (c *cluster) declares(name, platform string) string {
-	nc, err := c.config(name)
-	if err != nil {
-		return "its config declares " + platform
-	}
-	return fmt.Sprintf("its image %s is built for %s", nc.ImageName, platform)
+	return nc, md, err
 }
 
 // inventoryImage is the config of the node in the inventory, which names the node's image: its
@@ -152,11 +143,7 @@ func (c *cluster) inventoryImage(name string) (*inventory.NodeConfig, error) {
 // sameBuild refuses an image taken from the directory of a node's image whose store has another
 // root hash than the directory's metadata.json names.
 func (c *cluster) sameBuild(name string, img *diskImage) error {
-	nc, err := c.config(name)
-	if err != nil {
-		return err
-	}
-	md, err := nc.Resolve()
+	nc, md, err := c.image(name)
 	if err != nil {
 		return err
 	}
@@ -215,14 +202,14 @@ func (c *cluster) samePlatform(name, reported string) error {
 	if c.Partial() {
 		return nil
 	}
-	want, err := c.platform(name)
+	nc, md, err := c.image(name)
 	if err != nil {
 		return err
 	}
-	if reported == want {
+	if reported == md.Platform {
 		return nil
 	}
-	return fmt.Errorf("%s runs an image built for %s, but %s; changing a node's platform is a reinstall", name, reported, c.declares(name, want))
+	return fmt.Errorf("%s runs an image built for %s, but its image %s is built for %s; changing a node's platform is a reinstall", name, reported, nc.ImageName, md.Platform)
 }
 
 // version is the version of the config chalkctl delivers to a node.

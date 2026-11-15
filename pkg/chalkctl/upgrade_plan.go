@@ -295,11 +295,7 @@ func (r *upgradeRun) groupOf(name string, img *diskImage) (*upgradeGroup, error)
 	if img != nil {
 		return &upgradeGroup{variant: img.Info.Variant(), platform: img.Info.Platform(), image: img}, nil
 	}
-	nc, err := r.cluster.config(name)
-	if err != nil {
-		return nil, err
-	}
-	md, err := nc.Resolve()
+	nc, md, err := r.cluster.image(name)
 	if err != nil {
 		return nil, err
 	}

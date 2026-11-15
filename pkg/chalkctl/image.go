@@ -157,11 +157,10 @@ func ociImage(nc *inventory.NodeConfig, bootLoader bool) (*diskImage, error) {
 		}
 		*p.part = &nodev1.ImagePart{Size: uint64(d.Size), Sha256: sum}
 	}
-	c, err := inventoryContract(nc)
+	c, err := inventoryContract(nc, a.Header.Platform)
 	if err != nil {
 		return nil, err
 	}
-	c.platform = a.Header.Platform
 	return &diskImage{header: h, contract: &c, source: &nodev1.ImageSource{Source: &nodev1.ImageSource_Oci{Oci: &nodev1.RegistryImage{Reference: a.Reference}}}}, nil
 }
 
@@ -199,12 +198,12 @@ func (img *diskImage) stream() (io.Reader, func(), error) {
 // checkInstallImage checks that the image is built for the platform of the node's config's image.
 // Its variant may be any: the installer checks the config against the image's schemas.
 func checkInstallImage(t *target, img *diskImage) error {
-	want, err := t.cluster.platform(t.name)
+	_, md, err := t.cluster.image(t.name)
 	if err != nil {
 		return err
 	}
-	if got := img.header.GetPlatform(); got != want {
-		return fmt.Errorf("%s runs on %s; the image is built for %s", t.name, want, got)
+	if got := img.header.GetPlatform(); got != md.Platform {
+		return fmt.Errorf("%s runs on %s; the image is built for %s", t.name, md.Platform, got)
 	}
 	return nil
 }
