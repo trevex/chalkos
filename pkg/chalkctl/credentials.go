@@ -64,8 +64,9 @@ func (c *credentials) roots() (*x509.CertPool, error) {
 // lives: it serves one run and is never stored.
 const adminValidity = time.Hour
 
-// adminCertificate issues chalkctl an admin certificate from the OS CA for this run.
-func adminCertificate(s clustersecrets.Secrets) (*tls.Certificate, error) {
+// secretCredentials are the credentials of the secrets file, with an admin certificate the OS CA
+// issues chalkctl for this run.
+func secretCredentials(s clustersecrets.Secrets) (*credentials, error) {
 	ck, err := pki.IssueClient(s.OSCA, "chalkctl", pki.RoleAdmin, adminValidity, time.Now())
 	if err != nil {
 		return nil, fmt.Errorf("issue an admin certificate: %w", err)
@@ -74,16 +75,7 @@ func adminCertificate(s clustersecrets.Secrets) (*tls.Certificate, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &cert, nil
-}
-
-// secretCredentials are the credentials of the secrets file.
-func secretCredentials(s clustersecrets.Secrets) (*credentials, error) {
-	cert, err := adminCertificate(s)
-	if err != nil {
-		return nil, err
-	}
-	return &credentials{secrets: &s, cert: cert, osCA: s.OSCABundle()}, nil
+	return &credentials{secrets: &s, cert: &cert, osCA: s.OSCABundle()}, nil
 }
 
 // loadSecretCredentials reads the secrets file for commands that need it.

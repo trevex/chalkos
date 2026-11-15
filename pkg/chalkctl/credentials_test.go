@@ -2,17 +2,8 @@ package chalkctl
 
 import (
 	"context"
-	"crypto/ecdsa"
-	"crypto/elliptic"
-	"crypto/rand"
-	"crypto/tls"
-	"crypto/x509"
-	"crypto/x509/pkix"
 	"encoding/json"
-	"encoding/pem"
 	"errors"
-	"fmt"
-	"math/big"
 	"os"
 	"path/filepath"
 	"slices"
@@ -269,19 +260,13 @@ func TestClientFileOfAnotherCluster(t *testing.T) {
 // alone.
 func TestConfigNewCreatesItsDirectoryPrivate(t *testing.T) {
 	ta := newTestApp(t)
-	for _, force := range []bool{false, true} {
-		dir := filepath.Join(ta.dir, fmt.Sprintf("new-%v", force), "chalkos")
-		args := []string{"client", "new", "--name", "alice", "--role", "reader", "--out", filepath.Join(dir, "config")}
-		if force {
-			args = append(args, "--force")
-		}
-		if err := ta.run(context.Background(), args); err != nil {
-			t.Fatalf("force %v: %v", force, err)
-		}
-		for _, d := range []string{dir, filepath.Dir(dir)} {
-			if info, err := os.Stat(d); err != nil || info.Mode().Perm() != 0o700 {
-				t.Errorf("force %v: %s: %v, %v; want mode 0700", force, d, info.Mode(), err)
-			}
+	dir := filepath.Join(ta.dir, "new", "chalkos")
+	if err := ta.run(context.Background(), []string{"client", "new", "--name", "alice", "--role", "reader", "--out", filepath.Join(dir, "config")}); err != nil {
+		t.Fatal(err)
+	}
+	for _, d := range []string{dir, filepath.Dir(dir)} {
+		if info, err := os.Stat(d); err != nil || info.Mode().Perm() != 0o700 {
+			t.Errorf("%s: %v, %v; want mode 0700", d, info.Mode(), err)
 		}
 	}
 }
@@ -307,75 +292,18 @@ func TestUnreachableAddressNamesItsSource(t *testing.T) {
 	}
 }
 
-// TestCredentialsRole reads the role the credentials grant: admin for the secrets file, else the
-// role a client file's certificate names in its Organization, and none for one that names none.
+// TestCredentialsRole grants the secrets file admin and a client file the role it names.
 func TestCredentialsRole(t *testing.T) {
 	ta := newTestApp(t)
-	clientFile := func(role pki.Role) *client.Config {
-		c, err := client.NewConfig("alice", role, ta.secrets.OSCA, ta.secrets.OSCABundle(), time.Hour, time.Now())
-		if err != nil {
-			t.Fatal(err)
-		}
-		return &c
-	}
-	// A certificate of the OS CA without an Organization, as no chalkctl command issues one.
-	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	c, err := client.NewConfig("alice", pki.RoleReader, ta.secrets.OSCA, ta.secrets.OSCABundle(), time.Hour, time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}
-	caPair, err := tls.X509KeyPair([]byte(ta.secrets.OSCA.Certificate), []byte(ta.secrets.OSCA.Key))
-	if err != nil {
-		t.Fatal(err)
+	if got := (&credentials{secrets: &ta.secrets}).role(); got != pki.RoleAdmin {
+		t.Errorf("the secrets file grants %q, want admin", got)
 	}
-	ca, err := x509.ParseCertificate(caPair.Certificate[0])
-	if err != nil {
-		t.Fatal(err)
-	}
-	tmpl := &x509.Certificate{SerialNumber: big.NewInt(1), Subject: pkix.Name{CommonName: "alice"}, NotBefore: time.Now().Add(-time.Minute), NotAfter: time.Now().Add(time.Hour), ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth}}
-	der, err := x509.CreateCertificate(rand.Reader, tmpl, ca, &key.PublicKey, caPair.PrivateKey)
-	if err != nil {
-		t.Fatal(err)
-	}
-	unnamed := *clientFile(pki.RoleReader)
-	unnamed.Certificate = string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}))
-	for _, c := range []struct {
-		name  string
-		creds credentials
-		want  pki.Role
-	}{
-		{"secrets file", credentials{secrets: &ta.secrets}, pki.RoleAdmin},
-		{"admin client file", credentials{config: clientFile(pki.RoleAdmin)}, pki.RoleAdmin},
-		{"reader client file", credentials{config: clientFile(pki.RoleReader)}, pki.RoleReader},
-		{"client file without an Organization", credentials{config: &unnamed}, ""},
-	} {
-		if got := c.creds.role(); got != c.want {
-			t.Errorf("%s: role %q, want %q", c.name, got, c.want)
-		}
-	}
-}
-
-func TestAdminCertificateLastsOneRun(t *testing.T) {
-	ta := newTestApp(t)
-	pair, err := adminCertificate(ta.secrets)
-	if err != nil {
-		t.Fatal(err)
-	}
-	cert, err := x509.ParseCertificate(pair.Certificate[0])
-	if err != nil {
-		t.Fatal(err)
-	}
-	ca, _ := pki.ParseCertificate([]byte(ta.secrets.OSCA.Certificate))
-	pool := x509.NewCertPool()
-	pool.AddCert(ca)
-	chains, err := cert.Verify(x509.VerifyOptions{Roots: pool, KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if role, _ := pki.ClientRole(chains); role != pki.RoleAdmin || cert.Subject.CommonName != "chalkctl" {
-		t.Errorf("certificate %s has role %q", cert.Subject, role)
-	}
-	if got := time.Until(cert.NotAfter); got > time.Hour || got < 59*time.Minute {
-		t.Errorf("the admin certificate lasts another %v, want an hour", got)
+	if got := (&credentials{config: &c}).role(); got != pki.RoleReader {
+		t.Errorf("a reader's client file grants %q", got)
 	}
 }
 

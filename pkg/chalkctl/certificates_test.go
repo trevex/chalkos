@@ -2,7 +2,6 @@ package chalkctl
 
 import (
 	"context"
-	"crypto/x509"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -28,9 +27,6 @@ func (ta *testApp) nodeWithCertificate(t *testing.T, s *chalkd.Server, cert pki.
 	if s.Certificate, err = chalkd.LoadNodeCertificate(dir); err != nil {
 		t.Fatal(err)
 	}
-	ca, _ := pki.ParseCertificate([]byte(ta.secrets.OSCA.Certificate))
-	pool := x509.NewCertPool()
-	pool.AddCert(ca)
 	return serveTLS(t, s.Handler(), chalkd.TLSConfig(s.Certificate.GetCertificate, s.Certificate.ClientCAs))
 }
 
