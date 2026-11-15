@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
+	"golang.org/x/sys/unix"
 
 	kubernetesv1 "github.com/trevex/chalkos/pkg/api/kubernetes/v1"
 	"github.com/trevex/chalkos/pkg/chalkd/layer"
@@ -470,29 +471,26 @@ func TestEtcdNeedsMember(t *testing.T) {
 // renders the static pods, so no renewal renders them once the node removed them.
 func TestEtcdLeaveWaitsForTheCertificateLock(t *testing.T) {
 	t.Parallel()
-	s, _, members := memberNode(t, "cp2")
+	s, _, _ := memberNode(t, "cp2")
 	p := s.k.state
-	share, err := p.ReadShare()
-	if err != nil {
-		t.Fatal(err)
-	}
-	cp2, err := etcd.Dial([]string{members["cp2"].ClientURL}, etcdtest.ClientTLS(t, *share.EtcdCA))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer cp2.Close()
 	unlock, err := p.LockPKI(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
+	// The leave tries the lock once etcd removed the member.
+	tried := closedAfterWriting(t, filepath.Join(p.RunDir, ".pki.lock"))
 	left := make(chan error, 1)
 	go func() { left <- leave(s, false) }()
-	// Once etcd removed the member, the leave goes on to stop the control plane.
-	testwait.Eventually(t, "the member's removal", func() bool {
-		list, err := cp2.Members(context.Background())
-		return err == nil && len(list) == 1
-	})
-	time.Sleep(time.Second)
+	select {
+	case err := <-tried:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case err := <-left:
+		t.Fatalf("the leave ended (%v) before it tried the certificates' lock", err)
+	case <-time.After(time.Minute):
+		t.Fatal("the leave did not try the certificates' lock")
+	}
 	if exists(p.LeftMarker()) {
 		t.Error("the node left while a renewal held the certificates' lock")
 	}
@@ -509,4 +507,26 @@ func TestEtcdLeaveWaitsForTheCertificateLock(t *testing.T) {
 		t.Fatal("the leave did not end once the lock was released")
 	}
 	checkLeft(t, s)
+}
+
+// closedAfterWriting returns a channel that receives once a file opened for writing at path is
+// closed, or the error that ends the wait. A try for the lock on the control plane's certificates
+// opens the lock file for writing and closes it again while another holds the lock.
+func closedAfterWriting(t *testing.T, path string) <-chan error {
+	t.Helper()
+	fd, err := unix.InotifyInit1(unix.IN_CLOEXEC | unix.IN_NONBLOCK)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f := os.NewFile(uintptr(fd), "inotify")
+	t.Cleanup(func() { f.Close() })
+	if _, err := unix.InotifyAddWatch(fd, path, unix.IN_CLOSE_WRITE); err != nil {
+		t.Fatal(err)
+	}
+	closed := make(chan error, 1)
+	go func() {
+		_, err := f.Read(make([]byte, unix.SizeofInotifyEvent+unix.NAME_MAX+1))
+		closed <- err
+	}()
+	return closed
 }
