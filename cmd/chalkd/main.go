@@ -441,7 +441,7 @@ func serve() error {
 		// with ctx, and chalkd waits for it as for the loops.
 		loops.Go(func() { srv.ResumeTrial(ctx) })
 	}
-	go announceAddresses(srv.CurrentFingerprint)
+	go announceAddresses(ctx, srv.CurrentFingerprint)
 	served := make(chan error, 1)
 	go func() {
 		served <- httpServer(srv.Handler(), chalkd.TLSConfig(creds.getCertificate(), creds.clientCAs)).ServeTLS(ln, "", "")
@@ -480,15 +480,22 @@ func httpServer(h http.Handler, cfg *tls.Config) *http.Server {
 }
 
 // announceAddresses prints the node's addresses with the fingerprint whenever either changes, so
-// an operator at the console can reach and verify the node.
-func announceAddresses(fingerprint func() string) {
+// an operator at the console can reach and verify the node. It looks every 5 seconds until ctx
+// ends.
+func announceAddresses(ctx context.Context, fingerprint func() string) {
+	tick := time.NewTicker(5 * time.Second)
+	defer tick.Stop()
 	var last string
 	for {
 		if line := "addresses " + addresses() + "; certificate fingerprint " + fingerprint(); line != last {
 			last = line
 			log.Print(line)
 		}
-		time.Sleep(5 * time.Second)
+		select {
+		case <-ctx.Done():
+			return
+		case <-tick.C:
+		}
 	}
 }
 
