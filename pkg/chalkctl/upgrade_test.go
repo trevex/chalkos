@@ -754,9 +754,7 @@ func (l *upgradeLab) run(args ...string) error {
 	return l.ta.run(context.Background(), args)
 }
 
-// TestUpgradeGivesEachNodeItsImage upgrades the nodes of an inventory without --image, each to the
-// image the inventory names for it, one image per directory, the control planes first; a node
-// that runs another platform than its image stops the run.
+// TestUpgradeGivesEachNodeItsImage upgrades each node to the image the inventory names for it.
 func TestUpgradeGivesEachNodeItsImage(t *testing.T) {
 	l := newUpgradeLab(t, 3)
 	images := map[string]string{
@@ -799,9 +797,8 @@ func (l *upgradeLab) images() map[string]string {
 	return images
 }
 
-// TestUpgradeFromARegistry upgrades a node whose image the inventory names in a registry by tag:
-// the node is told to pull the image by the digest chalkctl resolved, with the header a directory
-// of the same build gives and no chunks.
+// TestUpgradeFromARegistry has the node pull the image by the digest chalkctl resolved from the
+// tag.
 func TestUpgradeFromARegistry(t *testing.T) {
 	ctx := context.Background()
 	dir := testUpgradeImage(t, "plain", "0.2.0")
@@ -838,9 +835,8 @@ func TestUpgradeFromARegistry(t *testing.T) {
 	}
 }
 
-// TestUpgradeControlPlanesInTurn upgrades the control planes one at a time: each gets its image
-// staged, then only while the others keep etcd's quorum is drained, has the image activated and
-// reboots, and is uncordoned once back.
+// TestUpgradeControlPlanesInTurn upgrades one control plane at a time, each drained only while the
+// others keep etcd's quorum.
 func TestUpgradeControlPlanesInTurn(t *testing.T) {
 	l := newUpgradeLab(t, 3)
 	img := testUpgradeImage(t, "cp", "0.2.0")
@@ -872,10 +868,8 @@ func TestUpgradeControlPlanesInTurn(t *testing.T) {
 	}
 }
 
-// TestUpgradeOneVariantControlPlanesFirst upgrades control planes and workers that share a variant and
-// its image: the control planes one at a time, each back before the next, and the workers after
-// them all, although their names sort first, each drained once it has the image staged and before
-// it is activated, without a check of etcd's quorum.
+// TestUpgradeOneVariantControlPlanesFirst upgrades control planes before workers of the same
+// variant.
 func TestUpgradeOneVariantControlPlanesFirst(t *testing.T) {
 	l := newUpgradeLabOf(t, 3, []string{"a1", "a2"}, "k8s", "k8s")
 	if err := l.upgrade(testUpgradeImage(t, "k8s", "0.2.0")); err != nil {
@@ -923,9 +917,8 @@ func TestUpgradeOneVariantControlPlanesFirst(t *testing.T) {
 	}
 }
 
-// TestUpgradeKeepsQuorum refuses a control plane whose reboot would leave etcd without its
-// quorum, and one or two control planes, which lose it while one reboots, without
-// --allow-downtime. A refused node keeps the image staged and not active, so no reboot boots it.
+// TestUpgradeKeepsQuorum refuses, without --allow-downtime, a reboot that leaves etcd without its
+// quorum, and leaves the image staged.
 func TestUpgradeKeepsQuorum(t *testing.T) {
 	l := newUpgradeLab(t, 3)
 	l.unhealthyMembers = []string{"cp2"}
@@ -970,9 +963,8 @@ func TestUpgradeKeepsQuorum(t *testing.T) {
 	}
 }
 
-// TestUpgradeWorkersInBatches stages each worker's image, then drains it, activates the image and
-// reboots it, takes at most --max-unavailable at once, and starts a batch once the one before is
-// back.
+// TestUpgradeWorkersInBatches upgrades at most --max-unavailable workers at once, a batch after the
+// one before is back.
 func TestUpgradeWorkersInBatches(t *testing.T) {
 	l := newUpgradeLab(t, 3)
 	// w1 and w2 form the first batch: each comes back only once the other was drained.
@@ -1031,9 +1023,8 @@ func TestUpgradeStopsAtARollback(t *testing.T) {
 	}
 }
 
-// TestUpgradeReleasesANodeWhoseActivationFails uncordons the node it drained when the image it
-// staged fails to activate: the node does not reboot, and the run stops with the image staged.
-// Run again, the upgrade activates the image and reboots the node.
+// TestUpgradeReleasesANodeWhoseActivationFails uncordons a drained node whose image fails to
+// activate; a rerun reboots it.
 func TestUpgradeReleasesANodeWhoseActivationFails(t *testing.T) {
 	l := newUpgradeLab(t, 3)
 	img := testUpgradeImage(t, "w", "0.2.0")
@@ -1055,9 +1046,8 @@ func TestUpgradeReleasesANodeWhoseActivationFails(t *testing.T) {
 	}
 }
 
-// TestUpgradeContinues runs again after a run stopped: a node that runs the image is skipped, a
-// node with the image staged is activated and rebooted without sending it again, and only nodes
-// the upgrade cordoned are uncordoned.
+// TestUpgradeContinues resumes a stopped run where each node stopped and uncordons only the nodes
+// it cordoned.
 func TestUpgradeContinues(t *testing.T) {
 	l := newUpgradeLab(t, 3)
 	img := testUpgradeImage(t, "w", "0.2.0")
@@ -1122,10 +1112,8 @@ func TestUpgradeWithoutReboot(t *testing.T) {
 	}
 }
 
-// TestUpgradeUntilStage stages the image on every node of the variant, each sent with the header
-// that stops the node there, and leaves it staged; run again with --until activate, it activates
-// the image without sending it again; node reboot then drains each node, reboots it into the
-// image and uncordons it.
+// TestUpgradeUntilStage stops with the image staged; --until activate and node reboot then take the
+// nodes further.
 func TestUpgradeUntilStage(t *testing.T) {
 	l := newUpgradeLab(t, 3)
 	img := testUpgradeImage(t, "w", "0.2.0")
@@ -1166,9 +1154,8 @@ func TestUpgradeUntilStage(t *testing.T) {
 	}
 }
 
-// TestNodeActivate activates the image the inventory names for the node, staged there, and says
-// that node reboot boots it; asked again, it says the image boots next already. A node without
-// that image staged refuses.
+// TestNodeActivate makes the node boot the image the inventory names for it next, which it must
+// have staged.
 func TestNodeActivate(t *testing.T) {
 	l := newUpgradeLab(t, 1)
 	img := testUpgradeImage(t, "w", "0.2.0")
@@ -1228,10 +1215,8 @@ func TestNodeActivateImage(t *testing.T) {
 	}
 }
 
-// TestNodeReboot reboots a node into the image it boots next, the running one without an image
-// active: without its layers holding it with --no-drain, and else drained first and uncordoned
-// once it is back. A node that falls back from the image it boots stops the command and stays
-// cordoned.
+// TestNodeReboot reboots a node into the image it boots next, drained unless --no-drain, and stops
+// at a fallback.
 func TestNodeReboot(t *testing.T) {
 	l := newUpgradeLab(t, 1)
 	if err := l.run("node", "reboot", "w2", "--no-drain"); err != nil {
@@ -1294,9 +1279,7 @@ func TestNodeReboot(t *testing.T) {
 	}
 }
 
-// TestNodeRebootWaitsOutAnUnhealthyCheck goes on waiting when a settled boot is found unhealthy
-// for less than the grace period, as when etcd answers late, and returns once it is healthy. The
-// node is asked to check the health of the new boot alone.
+// TestNodeRebootWaitsOutAnUnhealthyCheck waits out an unhealthy boot shorter than the grace period.
 func TestNodeRebootWaitsOutAnUnhealthyCheck(t *testing.T) {
 	l := newUpgradeLab(t, 1)
 	l.mu.Lock()
@@ -1318,9 +1301,8 @@ func TestNodeRebootWaitsOutAnUnhealthyCheck(t *testing.T) {
 	}
 }
 
-// TestNodeRebootWithoutTheBootBefore waits until its timeout for a boot that settled and is not
-// healthy while the node reports no boot ID: the boot may be the one before the reboot, whose
-// chalkd still answers.
+// TestNodeRebootWithoutTheBootBefore waits until the timeout when the node reports no boot ID,
+// since the old boot may still answer.
 func TestNodeRebootWithoutTheBootBefore(t *testing.T) {
 	l := newUpgradeLab(t, 1)
 	l.mu.Lock()
@@ -1336,9 +1318,8 @@ func TestNodeRebootWithoutTheBootBefore(t *testing.T) {
 	}
 }
 
-// TestUpgradeHoldsANodeWhoseImageBootsNextAfterAFailedActivation keeps the node it drained
-// cordoned when its activation failed after it made the image boot next: the node would boot the
-// image at a reboot nothing holds it for. chalkctl node reboot boots it and uncordons the node.
+// TestUpgradeHoldsANodeWhoseImageBootsNextAfterAFailedActivation keeps a node cordoned whose failed
+// activation left the image booting next.
 func TestUpgradeHoldsANodeWhoseImageBootsNextAfterAFailedActivation(t *testing.T) {
 	l := newUpgradeLab(t, 3)
 	img := testUpgradeImage(t, "w", "0.2.0")
@@ -1394,10 +1375,8 @@ func TestUpgradeWith4KiBVerityBlocks(t *testing.T) {
 	}
 }
 
-// TestUpgradeWithAnOperatorClientFile runs an upgrade without the secrets file. The operator role
-// cannot deliver config, so chalkctl sends none, says so once, and each node gives the image its
-// pending config, else carries its own over; --diff, which compares the config an upgrade
-// delivers, needs the admin role.
+// TestUpgradeWithAnOperatorClientFile upgrades without delivering config when the credentials
+// cannot deliver it.
 func TestUpgradeWithAnOperatorClientFile(t *testing.T) {
 	l := newUpgradeLab(t, 3)
 	config := l.ta.writeConfig(t, "ops", pki.RoleOperator, time.Hour, time.Now())
@@ -1455,9 +1434,8 @@ func TestUpgradeWithAReaderClientFile(t *testing.T) {
 	}
 }
 
-// TestUpgradeWithholdsConfigANodeDoesNotShow sends no config to nodes that refuse to show theirs
-// to the credentials, as they would refuse config with the upgrade, and says so once; --diff stops
-// there instead. The credentials read as admin, so the line names the node, not the role.
+// TestUpgradeWithholdsConfigANodeDoesNotShow sends no config to nodes that refuse to show theirs,
+// and says so once.
 func TestUpgradeWithholdsConfigANodeDoesNotShow(t *testing.T) {
 	l := newUpgradeLab(t, 1)
 	l.configDenied = true
@@ -1480,10 +1458,8 @@ func TestUpgradeWithholdsConfigANodeDoesNotShow(t *testing.T) {
 	}
 }
 
-// TestUpgradeWithholdsConfigBeforeDraining asks the first node to install for its config before
-// any password is asked for or any node is drained. Once it refuses to show it, the run withholds
-// config from the start, so a node with the image staged is not sent it again for its config and
-// no password is asked for.
+// TestUpgradeWithholdsConfigBeforeDraining withholds config before asking for passwords or draining
+// when the first node refuses to show it.
 func TestUpgradeWithholdsConfigBeforeDraining(t *testing.T) {
 	l := newUpgradeLab(t, 1)
 	l.configDenied = true
@@ -1509,9 +1485,8 @@ func TestUpgradeWithholdsConfigBeforeDraining(t *testing.T) {
 	}
 }
 
-// TestUpgradeAsksTheFirstNodeItInstallsForItsConfig skips a node that runs the image already, as
-// it is not sent the image, and asks the next one for its config. That node refuses to show it, so
-// the run withholds config before it asks for the password the node's new volume needs.
+// TestUpgradeAsksTheFirstNodeItInstallsForItsConfig asks the first node that gets the image, not
+// one that runs it, for its config.
 func TestUpgradeAsksTheFirstNodeItInstallsForItsConfig(t *testing.T) {
 	l := newUpgradeLab(t, 1)
 	img := testUpgradeImage(t, "w", "0.2.0")
@@ -1559,9 +1534,8 @@ func TestUpgradeStopsWhenTheFirstNodeCannotShowItsConfig(t *testing.T) {
 	}
 }
 
-// TestUpgradeAsksNoPasswordOfANodeItDoesNotInstall asks no fallback password of a node that runs
-// the image already, nor of one that has it staged with the inventory's config, though their config
-// adds an encrypted volume: neither is sent the image.
+// TestUpgradeAsksNoPasswordOfANodeItDoesNotInstall asks no fallback password of a node that is not
+// sent the image.
 func TestUpgradeAsksNoPasswordOfANodeItDoesNotInstall(t *testing.T) {
 	l := newUpgradeLab(t, 1)
 	img := testUpgradeImage(t, "w", "0.2.0")
@@ -1609,9 +1583,8 @@ func recordPrompts(l *upgradeLab) *[]string {
 	return &prompts
 }
 
-// TestUpgradeAsksForPasswordsBeforeDraining asks for the fallback password of each node whose
-// config adds an encrypted volume one node after the other, before any node is drained, also
-// when a batch upgrades nodes at once, and sends each node its own.
+// TestUpgradeAsksForPasswordsBeforeDraining asks each node's fallback password in turn before any
+// node is drained.
 func TestUpgradeAsksForPasswordsBeforeDraining(t *testing.T) {
 	l := newUpgradeLab(t, 1)
 	withPasswordVolume(t, l, "w1", "w2")
@@ -1651,9 +1624,8 @@ func TestUpgradeNeedsTheImageContract(t *testing.T) {
 	}
 }
 
-// TestUpgradeChecksTheConfigBeforeDraining refuses an image the inventory's config of a node does
-// not suit before any node is drained or sent the image: one without Kubernetes, which accepts no
-// Node.
+// TestUpgradeChecksTheConfigBeforeDraining refuses an image the inventory's config does not suit
+// before any node changes.
 func TestUpgradeChecksTheConfigBeforeDraining(t *testing.T) {
 	l := newUpgradeLab(t, 1)
 	img := testUpgradeImage(t, "w", "0.2.0")
@@ -1709,9 +1681,8 @@ func TestImageContractReadsLayerFacts(t *testing.T) {
 	}
 }
 
-// TestUpgradeChecksTheImage refuses images that name no variant, whose UKI names an image
-// version or none, by which systemd-boot would order the entry, before any node is asked to
-// change.
+// TestUpgradeChecksTheImage refuses an image without a variant or with an image version in its UKI
+// before any node changes.
 func TestUpgradeChecksTheImage(t *testing.T) {
 	l := newUpgradeLab(t, 3)
 	for _, tc := range []struct {
@@ -1788,9 +1759,8 @@ func TestUpgradeDrainsAsAsked(t *testing.T) {
 	}
 }
 
-// TestUpgradeDrainsOnlyNodesWithTheKubernetesLayer upgrades a worker whose image carries the
-// router layer as a node without Kubernetes: it is neither drained nor uncordoned, whatever its
-// status says of Kubernetes.
+// TestUpgradeDrainsOnlyNodesWithTheKubernetesLayer neither drains nor uncordons a node without the
+// Kubernetes layer.
 func TestUpgradeDrainsOnlyNodesWithTheKubernetesLayer(t *testing.T) {
 	l := newUpgradeLab(t, 3)
 	l.nodes["w1"].layers = []string{"router"}
@@ -1806,9 +1776,8 @@ func TestUpgradeDrainsOnlyNodesWithTheKubernetesLayer(t *testing.T) {
 	}
 }
 
-// TestUpgradeAsksOnlyControlPlanesWithTheKubernetesLayer upgrades a worker of a partial cluster
-// through the control plane --address names, which the run leaves alone, only when that node's
-// image has the Kubernetes layer.
+// TestUpgradeAsksOnlyControlPlanesWithTheKubernetesLayer drains through an --address control plane
+// only when it has the Kubernetes layer.
 func TestUpgradeAsksOnlyControlPlanesWithTheKubernetesLayer(t *testing.T) {
 	l := newUpgradeLab(t, 1)
 	config := l.ta.writeConfig(t, "ops", pki.RoleOperator, time.Hour, time.Now())
@@ -1934,10 +1903,8 @@ func TestUpgradeStopsAtAnotherPlatform(t *testing.T) {
 	}
 }
 
-// TestUpgradeWithAClientFileAlone installs an image, without an inventory, on the nodes --address
-// names that run its variant and platform, after asking each what it runs, and names those of
-// its variant on another platform; without --image it is refused, as no inventory names the
-// nodes' images.
+// TestUpgradeWithAClientFileAlone upgrades the --address nodes of the image's variant and platform
+// without an inventory.
 func TestUpgradeWithAClientFileAlone(t *testing.T) {
 	l := newUpgradeLab(t, 3)
 	l.onPlatform(t, "w3", "kvm")
@@ -2175,8 +2142,7 @@ func (l *upgradeLab) applyConfig(name string, args ...string) error {
 }
 
 // TestApplyConfigStaged delivers the inventory's config for the staged image, checked against the
-// image the inventory names for the node, and config for the running image goes to the staged one
-// too, as the node answers; a dry run names both slots. Status compares both with the inventory.
+// image the inventory names.
 func TestApplyConfigStaged(t *testing.T) {
 	l := newUpgradeLab(t, 1)
 	img := testUpgradeImage(t, "w", "0.2.0")
@@ -2218,9 +2184,7 @@ func TestApplyConfigStaged(t *testing.T) {
 	}
 }
 
-// config apply --staged --dry-run prints the diff against the staged image's config and the
-// plan the node answers with, the staged image's config and the storage changes alone, and the
-// node keeps the config it had.
+// config apply --staged --dry-run prints the staged slot's diff and plan and changes nothing.
 func TestApplyConfigStagedDryRun(t *testing.T) {
 	l := newUpgradeLab(t, 1)
 	img := testUpgradeImage(t, "w", "0.2.0")
@@ -2374,10 +2338,8 @@ func TestUpgradeDiff(t *testing.T) {
 	}
 }
 
-// TestUpgradeRollsBack boots the nodes' previous image again through the upgrade's steps:
-// drained, the image staged, rebooted, waited for and uncordoned. Run again, it finds every node
-// on the image and changes nothing; an upgrade to the inventory's image undoes the rollback, after
-// which a rollback works again.
+// TestUpgradeRollsBack boots the nodes' previous image through the upgrade's steps, and a rerun
+// changes nothing.
 func TestUpgradeRollsBack(t *testing.T) {
 	l := newUpgradeLab(t, 3)
 	img := testUpgradeImage(t, "w", "0.2.0")
@@ -2426,9 +2388,7 @@ func TestUpgradeRollsBack(t *testing.T) {
 	}
 }
 
-// TestUpgradeRollbackContinues runs again after a run stopped at a node: the node a rollback got
-// to the image is left alone, and the run goes on with the others to the same image instead of
-// booting that node's own previous image.
+// TestUpgradeRollbackContinues resumes a stopped rollback to the same image on the remaining nodes.
 func TestUpgradeRollbackContinues(t *testing.T) {
 	l := newUpgradeLab(t, 3)
 	if err := l.upgrade(testUpgradeImage(t, "w", "0.2.0"), "--nodes", "w1,w2"); err != nil {
@@ -2452,9 +2412,8 @@ func TestUpgradeRollbackContinues(t *testing.T) {
 	}
 }
 
-// TestUpgradeRollbackSkipsNodesOnTheTarget rolls back every node of the cluster when only one was
-// upgraded: the others run the image it rolls back to, and are left alone. The node stages the
-// image without boot counting, which the run says, also once the node runs it.
+// TestUpgradeRollbackSkipsNodesOnTheTarget leaves nodes alone that run the image a rollback goes
+// to.
 func TestUpgradeRollbackSkipsNodesOnTheTarget(t *testing.T) {
 	l := newUpgradeLab(t, 3)
 	if err := l.upgrade(testUpgradeImage(t, "w", "0.2.0"), "--nodes", "w1"); err != nil {
@@ -2476,9 +2435,8 @@ func TestUpgradeRollbackSkipsNodesOnTheTarget(t *testing.T) {
 	}
 }
 
-// TestUpgradeRollbackRefuses stops before any node changes when no node keeps a previous image,
-// when the nodes would roll back to different images, and when a node keeps none and does not run
-// the others' target; it refuses flags that install an image or deliver config.
+// TestUpgradeRollbackRefuses refuses a rollback without one previous image for all nodes, and its
+// conflicting flags.
 func TestUpgradeRollbackRefuses(t *testing.T) {
 	l := newUpgradeLab(t, 3)
 	if err := l.run("upgrade", "--rollback"); err == nil || !strings.Contains(err.Error(), "no node keeps a previous image to roll back to") {
@@ -2510,9 +2468,8 @@ func TestUpgradeRollbackRefuses(t *testing.T) {
 	}
 }
 
-// TestUpgradeRollbackWithoutAReboot stages the previous image with --until activate, without
-// draining or rebooting the node, and says that it boots with the next reboot; run again without
-// --until, it finds the image staged and reboots the node into it.
+// TestUpgradeRollbackWithoutAReboot stages the previous image with --until activate without
+// draining or rebooting.
 func TestUpgradeRollbackWithoutAReboot(t *testing.T) {
 	l := newUpgradeLab(t, 3)
 	if err := l.upgrade(testUpgradeImage(t, "w", "0.2.0"), "--nodes", "w1"); err != nil {

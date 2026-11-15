@@ -65,9 +65,8 @@ func TestClientFilesAndInstallsTrustBothOSCAs(t *testing.T) {
 	}
 }
 
-// TestInstallFromAnImageOfAnotherOSCA checks that installing from a maintenance image that
-// trusts another OS CA than the secrets file, as one built before the OS CA rotated, fails
-// closed and says so.
+// TestInstallFromAnImageOfAnotherOSCA fails closed when the maintenance image trusts another OS CA
+// than the secrets file.
 func TestInstallFromAnImageOfAnotherOSCA(t *testing.T) {
 	ta := newTestApp(t)
 	s := maintenanceNode()

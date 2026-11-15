@@ -50,9 +50,8 @@ func rewriteTrial(t *testing.T, s *chalkd.Server, fields map[string]any) {
 	writeFile(t, path, string(data))
 }
 
-// TestApplyConfigOnTrial applies a config on trial and confirms it over a new connection once the
-// node is healthy; a trial left open with --no-confirm shows in status, holds back other
-// deliveries, ends with config confirm or with config rollback.
+// TestApplyConfigOnTrial confirms a config on trial once the node is healthy, and a trial left open
+// with --no-confirm holds back other deliveries until config confirm or config rollback ends it.
 func TestApplyConfigOnTrial(t *testing.T) {
 	ta := newTestApp(t)
 	ta.pollInterval = 20 * time.Millisecond
@@ -224,9 +223,8 @@ func trialNode(t *testing.T, ta *testApp) (s *chalkd.Server, run func(ctx contex
 	return s, run, first, ta.configVersion(t)
 }
 
-// TestApplyConfigOnTrialAnswerLost: a delivery on trial whose answer never comes, as when the
-// config cuts chalkctl off, or comes only after the deadline, is not confirmed; chalkctl waits for
-// the node to roll it back at the deadline, says so and fails.
+// TestApplyConfigOnTrialAnswerLost: a delivery on trial whose answer is lost or late is not
+// confirmed; chalkctl waits for the node to roll it back and fails.
 func TestApplyConfigOnTrialAnswerLost(t *testing.T) {
 	for name, delay := range map[string]time.Duration{"dropped": 0, "late": 2 * time.Second} {
 		t.Run(name, func(t *testing.T) {
@@ -305,9 +303,8 @@ func TestConfirmRefused(t *testing.T) {
 	}
 }
 
-// TestConfirmFailingToEndTheTrial: a confirmation the node fails with an internal error other than
-// an unreadable record, as when it cannot remove the record, leaves the trial open, and chalkctl
-// says when the node rolls back and how to end the trial before.
+// TestConfirmFailingToEndTheTrial: an internal error from the confirmation leaves the trial open,
+// and chalkctl says how to end it.
 func TestConfirmFailingToEndTheTrial(t *testing.T) {
 	ta := newTestApp(t)
 	_, run, _, _ := trialNode(t, ta)
@@ -340,9 +337,8 @@ func spoilTrial(s *chalkd.Server, procedure string, drop bool) func(http.Handler
 	}
 }
 
-// TestUnreadableTrialAfterDelivery: a delivery on trial whose answer did not come, after which the
-// node cannot read the record of its trial, is not reported as confirmed; chalkctl names the
-// rollback that ends it.
+// TestUnreadableTrialAfterDelivery: a lost answer followed by an unreadable trial record is not
+// reported as confirmed.
 func TestUnreadableTrialAfterDelivery(t *testing.T) {
 	ta := newTestApp(t)
 	s, run, _, second := trialNode(t, ta)
@@ -432,9 +428,8 @@ func TestUnreadableTrialRecord(t *testing.T) {
 	}
 }
 
-// TestUnreadableTrialAfterDeadlineRollback: once a rollback at the deadline wrote the config from
-// before the trial, the node's previous config is the config on trial. A rollback past a record
-// the node cannot read delivers that config, and a second rollback undoes it.
+// TestUnreadableTrialAfterDeadlineRollback: after a rollback at the deadline, a rollback past an
+// unreadable record delivers the config on trial, and a second undoes it.
 func TestUnreadableTrialAfterDeadlineRollback(t *testing.T) {
 	ta := newTestApp(t)
 	s, run, first, second := trialNode(t, ta)
@@ -463,9 +458,8 @@ func TestUnreadableTrialAfterDeadlineRollback(t *testing.T) {
 	}
 }
 
-// TestUnreadableTrialWithoutPreviousConfig: a rollback past a record the node cannot read, on a
-// node that keeps no previous config, delivers the config the node runs again, which removes the
-// record.
+// TestUnreadableTrialWithoutPreviousConfig: without a previous config, a rollback past an
+// unreadable record redelivers the running config.
 func TestUnreadableTrialWithoutPreviousConfig(t *testing.T) {
 	ta := newTestApp(t)
 	s, run, first, _ := trialNode(t, ta)
@@ -498,9 +492,8 @@ func TestUnreadableTrialWithoutPreviousConfig(t *testing.T) {
 	}
 }
 
-// TestConfirmAfterAFailedRollback confirms a trial past its deadline whose rollback failed and is
-// tried again, which the node still lets a confirmation end, within a window of chalkctl's own;
-// once a failed rollback changed the node, the node refuses, and chalkctl says nothing rolled back.
+// TestConfirmAfterAFailedRollback confirms a trial whose rollback past the deadline failed until
+// the rollback changed the node.
 func TestConfirmAfterAFailedRollback(t *testing.T) {
 	ta := newTestApp(t)
 	ta.pollInterval = 20 * time.Millisecond
@@ -548,9 +541,7 @@ func TestConfirmAfterAFailedRollback(t *testing.T) {
 	}
 }
 
-// TestTrialThatEnded: a trial whose slot runs the config from before it, as a rollback at the
-// deadline that failed after it wrote the slot leaves it, holds back no delivery, and a rollback
-// delivers the running config again, which the node keeps.
+// TestTrialThatEnded: a trial whose slot runs the config from before it holds back no delivery.
 func TestTrialThatEnded(t *testing.T) {
 	ta := newTestApp(t)
 	s, _ := installedNode(t, ta, []byte(`{}`))
@@ -649,9 +640,8 @@ func TestFailedUnitsWarning(t *testing.T) {
 	}
 }
 
-// TestApplyConfigOnTrialIgnoresUnits warns of a unit that failed before a trial, unless
-// --ignore-unit leaves it out; the units left out reach the node's health check, which passes
-// without them, and show in status.
+// TestApplyConfigOnTrialIgnoresUnits warns of a unit that failed before the trial unless
+// --ignore-unit leaves it out of the health check.
 func TestApplyConfigOnTrialIgnoresUnits(t *testing.T) {
 	ta := newTestApp(t)
 	ta.pollInterval = 20 * time.Millisecond

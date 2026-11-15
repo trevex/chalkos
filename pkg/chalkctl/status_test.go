@@ -24,12 +24,7 @@ func TestStatusWithABrokenConfig(t *testing.T) {
 	}
 }
 
-// TestStagedAdvice advises the delivery that gives the staged image's slot the inventory's config:
-// a plain config apply, which writes both slots, while the running image's differs too;
-// config apply --staged while the running image runs the inventory's config already; and none for
-// the image chalkd names known-good, which keeps the config it last ran, whatever else the boot
-// tells. During a trial, which holds every delivery back, the confirmation writes the slot when
-// the inventory's config is on trial, and the trial's end comes first otherwise.
+// TestStagedAdvice names the delivery that gives the staged slot the inventory's config.
 func TestStagedAdvice(t *testing.T) {
 	staged := &nodev1.BootImage{RootHash: []byte{3}}
 	status := func(config string, knownGood bool, trial string) *nodev1.StatusResponse {

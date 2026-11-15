@@ -23,10 +23,8 @@ func only(ids ...age.Identity) func() ([]age.Identity, error) {
 	return func() ([]age.Identity, error) { return ids, nil }
 }
 
-// TestSecretsEncryptedToTheRecipientsInside checks that gen secrets records the recipients inside
-// the encrypted secrets file, that a command changing it encrypts it to those again whatever
-// secrets.pub.json says, in place, keeping the previous version and naming the recipients, and
-// that --recipient replaces them.
+// TestSecretsEncryptedToTheRecipientsInside encrypts changed secrets to the recipients the file
+// records, not secrets.pub.json's, and --recipient replaces them.
 func TestSecretsEncryptedToTheRecipientsInside(t *testing.T) {
 	ta := newTestApp(t)
 	id, _ := age.GenerateX25519Identity()
@@ -148,9 +146,8 @@ func TestChangedSecretsNeedTheirRecipients(t *testing.T) {
 	}
 }
 
-// TestPlaintextSecretsEncryptedOnlyOnRequest checks that --recipient on a plaintext secrets file
-// is refused unless it is written to a new .age file, which is then encrypted and said so, and
-// that a .age file is never written in plaintext.
+// TestPlaintextSecretsEncryptedOnlyOnRequest encrypts a plaintext secrets file only into a new .age
+// file, and never writes a .age file in plaintext.
 func TestPlaintextSecretsEncryptedOnlyOnRequest(t *testing.T) {
 	ta := newTestApp(t)
 	id, _ := age.GenerateX25519Identity()
@@ -231,9 +228,8 @@ func (ta *testApp) openUnlocked(ctx context.Context, s layer.SecretsFlags, c cha
 	return f, err
 }
 
-// TestGenSecretsToStandardOutput writes the secrets file alone to standard output with --out -,
-// encrypted to the recipients or in plaintext, and its public half to --public-out, which it
-// needs, and says what it did on standard error.
+// TestGenSecretsToStandardOutput writes the secrets file to standard output with --out - and its
+// public half to --public-out.
 func TestGenSecretsToStandardOutput(t *testing.T) {
 	ta := newTestApp(t)
 	id, _ := age.GenerateX25519Identity()
@@ -274,9 +270,8 @@ func TestGenSecretsToStandardOutput(t *testing.T) {
 	}
 }
 
-// TestGenSecretsPublicOut writes the public half to --public-out beside a secrets file in --out,
-// readable by everyone, and refuses a --public-out whose directory does not exist before it
-// writes any secret.
+// TestGenSecretsPublicOut writes the public half to --public-out, readable by everyone, and refuses
+// a missing directory before it writes any secret.
 func TestGenSecretsPublicOut(t *testing.T) {
 	ta := newTestApp(t)
 	out := filepath.Join(ta.dir, "out")
@@ -453,9 +448,8 @@ func TestOlderSecretsFilesAreRefused(t *testing.T) {
 	}
 }
 
-// TestDirectorySyncedAfterWrites checks that writeSecretsFile syncs the directory of a new
-// secrets file, and that a sync failing once the secrets file and its public half are replaced
-// in place is a warning for each, not a failure.
+// TestDirectorySyncedAfterWrites syncs a new secrets file's directory, and a failing sync after an
+// in-place write is a warning.
 func TestDirectorySyncedAfterWrites(t *testing.T) {
 	ta := newTestApp(t)
 	var synced []string

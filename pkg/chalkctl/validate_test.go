@@ -59,9 +59,7 @@ func withPlugin(t *testing.T, p layer.Plugin) {
 	t.Cleanup(func() { plugins = saved })
 }
 
-// chalkctl validate runs the validators its layers link on each node's config, in-process, on the
-// input the image's validator programs read, and refuses a config one of them refuses as
-// the node would, naming the document and its field.
+// chalkctl validate runs the validators its layers link on each node's config, as the node would.
 func TestValidateRunsLinkedValidators(t *testing.T) {
 	var read []byte
 	withPlugin(t, reservedPlugin{&read})
@@ -104,9 +102,8 @@ func (p recordingRouter) Validators(s *schema.Schemas) []outputs.LinkedValidator
 	return linked
 }
 
-// chalkctl validate runs the router layer's validator router in-process on a node whose image
-// declares the router kinds, on the documents of the kinds the validator reads, and none on a node
-// of an image without them.
+// chalkctl validate runs the router validator in-process on a node whose image declares the router
+// kinds.
 func TestValidateRunsTheRouterValidator(t *testing.T) {
 	var read [][]byte
 	saved := plugins
