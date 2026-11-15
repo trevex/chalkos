@@ -59,23 +59,6 @@ let
             "the kind ${lib.head names}"
           else
             "the kinds ${lib.concatStringsSep ", " (lib.init names)} and ${lib.last names}";
-        # The text in lines of 92 characters at most, as the other descriptions are wrapped.
-        wrap =
-          text:
-          lib.concatStringsSep "\n" (
-            lib.foldl' (
-              lines: word:
-              let
-                last = lib.last lines;
-              in
-              if lines == [ ] then
-                [ word ]
-              else if lib.stringLength last + 1 + lib.stringLength word > 92 then
-                lines ++ [ word ]
-              else
-                lib.init lines ++ [ "${last} ${word}" ]
-            ) [ ] (lib.splitString " " text)
-          );
       in
       chalkosLib.internal.refuse
         (lib.optional (
@@ -85,10 +68,9 @@ let
           ${name}.enable = lib.mkOption {
             type = lib.types.bool;
             default = true;
-            description = wrap (
+            description =
               "Whether router images carry ${carries} and accept ${kindsText}. Only with the router "
-              + "layer; set it false in a variant's modules to leave the feature out of its images."
-            );
+              + "layer; set it false in a variant's modules to leave the feature out of its images.";
           };
         };
 
