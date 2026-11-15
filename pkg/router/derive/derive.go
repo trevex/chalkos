@@ -122,9 +122,8 @@ type Model struct {
 	Networks map[string]map[string]any
 	// Membership is the VRF of the links of Links and of the Network documents.
 	Membership Membership
-	// byKind are the documents the model was built of, by kind; Units reads their Network
-	// documents.
-	byKind map[string]any
+	// networkDocs are the Network documents in the input's order, which Units reads.
+	networkDocs []Named[map[string]any]
 }
 
 // Build is the model of byKind, the documents of an output's input by kind, as JSON decodes them
@@ -132,21 +131,24 @@ type Model struct {
 // refuses, and guards a document whose spec does not decode into its kind's type or whose name is
 // none the schemas take.
 func Build(byKind map[string]any) (Model, error) {
-	d := Model{byKind: byKind}
+	var d Model
 	for _, k := range routerKinds {
 		if err := k.decode(&d, byKind); err != nil {
 			return d, err
 		}
 	}
-	d.Links = networkLinks(byKind)
-	d.Addresses = networkAddresses(byKind)
-	d.Networks = networkSpecs(byKind)
+	var err error
+	if d.networkDocs, err = networkDocs(byKind); err != nil {
+		return d, err
+	}
+	d.Links = networkLinks(d.networkDocs)
+	d.Addresses = networkAddresses(d.networkDocs)
+	d.Networks = ByName(d.networkDocs)
 	wireguards := make([]string, 0, len(d.WireGuards))
 	for _, w := range d.WireGuards {
 		wireguards = append(wireguards, w.Name)
 	}
-	var err error
-	if d.Membership, err = vrfLinks(d.VRFs, d.Links, wireguards, byKind); err != nil {
+	if d.Membership, err = vrfLinks(d.VRFs, d.Links, wireguards, d.networkDocs); err != nil {
 		return d, err
 	}
 	// Each WireGuard's link is one of the node's, which its own unit configures.

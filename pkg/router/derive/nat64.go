@@ -24,6 +24,15 @@ const nat64Slots = 1 << (30 - 18)
 // mainTable is the kernel's main routing table, the default VRF's.
 const mainTable = 254
 
+// vrfTables are the routing tables of the VRFs by name, the default VRF's included.
+func (d Model) vrfTables() map[string]uint32 {
+	tables := map[string]uint32{DefaultVRF: mainTable}
+	for _, v := range d.VRFs {
+		tables[v.Name] = v.Spec.Table
+	}
+	return tables
+}
+
 // The kernel's ephemeral ports, which the router's own connections take and Jool refuses in a
 // pool.
 const (
@@ -73,10 +82,7 @@ func (d Model) NAT64Instances() ([]NAT64Instance, error) {
 		return nil, err
 	}
 	var errs []error
-	tables := map[string]uint32{DefaultVRF: mainTable}
-	for _, v := range d.VRFs {
-		tables[v.Name] = v.Spec.Table
-	}
+	tables := d.vrfTables()
 	// The NAT64 of each slot taken.
 	taken := map[int]string{}
 	for i := range out {

@@ -15,15 +15,28 @@ import (
 // static addresses and their specs, with the helpers that read the values of a networkd document
 // as systemd does.
 
-// networkLinks are the interface names in the [Match] sections' Name= of the Network documents
-// of byKind, sorted and once each, as matchLinks reads them.
-func networkLinks(byKind map[string]any) []string {
+// networkDocs are the Network documents of byKind with their specs, in their order.
+func networkDocs(byKind map[string]any) ([]Named[map[string]any], error) {
 	docs, _ := byKind["Network"].([]any)
-	seen := map[string]bool{}
+	out := make([]Named[map[string]any], 0, len(docs))
 	for _, d := range docs {
 		doc, _ := d.(map[string]any)
+		name, err := DocumentName("Network", doc)
+		if err != nil {
+			return nil, err
+		}
 		spec, _ := doc["spec"].(map[string]any)
-		for _, l := range matchLinks(spec) {
+		out = append(out, Named[map[string]any]{name, spec})
+	}
+	return out, nil
+}
+
+// networkLinks are the interface names in the [Match] sections' Name= of the Network documents,
+// sorted and once each, as matchLinks reads them.
+func networkLinks(networks []Named[map[string]any]) []string {
+	seen := map[string]bool{}
+	for _, n := range networks {
+		for _, l := range matchLinks(n.Spec) {
 			seen[l] = true
 		}
 	}
@@ -36,35 +49,19 @@ type NetworkAddress struct {
 	Prefix  netip.Prefix
 }
 
-// networkAddresses are the addresses of Address= in the [Network] and [Address] sections and of
-// ServerAddress= in the [DHCPServer] section of the Network documents of byKind that parse as an
-// address, with or without a prefix length, once the spaces around them go; others, such as an
-// empty value, give none.
-func networkAddresses(byKind map[string]any) []NetworkAddress {
+// networkAddresses are the values of Address= in the [Network] and [Address] sections and of
+// ServerAddress= in the [DHCPServer] section of the Network documents that parseAddrOrPrefix
+// reads; others, such as an empty value, give none.
+func networkAddresses(networks []Named[map[string]any]) []NetworkAddress {
 	var out []NetworkAddress
-	docs, _ := byKind["Network"].([]any)
-	for _, d := range docs {
-		doc, _ := d.(map[string]any)
-		name, err := DocumentName("Network", doc)
-		if err != nil {
-			continue
-		}
-		spec, _ := doc["spec"].(map[string]any)
+	for _, n := range networks {
 		for _, key := range []struct{ section, key string }{{"network", "address"}, {"address", "address"}, {"dhcpServer", "serverAddress"}} {
-			for _, s := range OneOrMany(spec[key.section]) {
+			for _, s := range OneOrMany(n.Spec[key.section]) {
 				section, _ := s.(map[string]any)
 				for _, v := range OneOrMany(section[key.key]) {
-					text, _ := v.(string)
-					text = strings.TrimSpace(text)
-					p, err := netip.ParsePrefix(text)
-					if err != nil {
-						a, err := netip.ParseAddr(text)
-						if err != nil {
-							continue
-						}
-						p = netip.PrefixFrom(a, a.BitLen())
+					if p, ok := parseAddrOrPrefix(v); ok {
+						out = append(out, NetworkAddress{Network: n.Name, Prefix: p})
 					}
-					out = append(out, NetworkAddress{Network: name, Prefix: p})
 				}
 			}
 		}
@@ -72,20 +69,19 @@ func networkAddresses(byKind map[string]any) []NetworkAddress {
 	return out
 }
 
-// networkSpecs are the specs of the Network documents of byKind, by name.
-func networkSpecs(byKind map[string]any) map[string]map[string]any {
-	out := map[string]map[string]any{}
-	docs, _ := byKind["Network"].([]any)
-	for _, d := range docs {
-		doc, _ := d.(map[string]any)
-		name, err := DocumentName("Network", doc)
-		if err != nil {
-			continue
-		}
-		spec, _ := doc["spec"].(map[string]any)
-		out[name] = spec
+// parseAddrOrPrefix reads a value of a unit that is an address, with or without a prefix length,
+// once the whitespace around it goes; an address alone is a prefix of its full length.
+func parseAddrOrPrefix(v any) (netip.Prefix, bool) {
+	text, _ := v.(string)
+	text = strings.Trim(text, UnitWhitespace)
+	if p, err := netip.ParsePrefix(text); err == nil {
+		return p, true
 	}
-	return out
+	a, err := netip.ParseAddr(text)
+	if err != nil {
+		return netip.Prefix{}, false
+	}
+	return netip.PrefixFrom(a, a.BitLen()), true
 }
 
 // OneOrMany are the values of a networkd document's section or key, which holds one value or a

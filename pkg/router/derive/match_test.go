@@ -9,13 +9,15 @@ import (
 // value whose first name starts with ! inverts all of its names, as systemd reads it, and names
 // none.
 func TestNetworkLinks(t *testing.T) {
-	network := func(match any) any { return map[string]any{"spec": map[string]any{"match": match}} }
-	got := networkLinks(map[string]any{"Network": []any{
+	network := func(match any) Named[map[string]any] {
+		return Named[map[string]any]{"n", map[string]any{"match": match}}
+	}
+	got := networkLinks([]Named[map[string]any]{
 		network(map[string]any{"name": "swp1 swp2"}),
 		network([]any{map[string]any{"name": []any{"eth0", "!eth1 eth2"}}, map[string]any{"name": "swp* eth3 !eth4"}}),
 		network(map[string]any{"name": "!eth5 eth6"}),
 		network(map[string]any{"name": []any{"eth7", ""}}),
-	}})
+	})
 	if want := []string{"eth0", "eth3", "swp1", "swp2"}; !slices.Equal(got, want) {
 		t.Errorf("networkLinks = %v, want %v", got, want)
 	}

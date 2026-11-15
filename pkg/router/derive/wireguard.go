@@ -46,7 +46,7 @@ func (m Membership) withWireGuards(wgs []Named[WireGuardSpec]) Membership {
 	m.Networks = maps.Clone(m.Networks)
 	m.Members = slices.Clone(m.Members)
 	for _, w := range wgs {
-		unit := Unit{Name: WireGuardUnitPrefix + w.Name, Match: NameMatch{Words: []NameWord{{Glob: w.Name, Text: w.Name}}}}
+		unit := nameUnit(WireGuardUnitPrefix+w.Name, w.Name)
 		m.Units = append(m.Units, unit)
 		if vrf := VRFOf(w.Spec.VRF); vrf != DefaultVRF {
 			if m.Networks == nil {
@@ -56,7 +56,7 @@ func (m Membership) withWireGuards(wgs []Named[WireGuardSpec]) Membership {
 			m.Members = append(m.Members, Member{VRF: vrf, Glob: w.Name, Text: w.Name, Network: unit.Name, Path: "spec.match"})
 		}
 	}
-	slices.SortStableFunc(m.Units, func(a, b Unit) int { return strings.Compare(a.Name+".network", b.Name+".network") })
+	sortUnits(m.Units)
 	return m
 }
 
@@ -73,10 +73,7 @@ func (d Model) WireGuardInterfaces() ([]WireGuardInterface, error) {
 	if err != nil {
 		return nil, err
 	}
-	tables := map[string]uint32{DefaultVRF: mainTable}
-	for _, v := range d.VRFs {
-		tables[v.Name] = v.Spec.Table
-	}
+	tables := d.vrfTables()
 	var errs []error
 	out := make([]WireGuardInterface, 0, len(d.WireGuards))
 	index := map[string]int{}
@@ -107,16 +104,14 @@ func (d Model) WireGuardInterfaces() ([]WireGuardInterface, error) {
 				named[u.Name] = true
 			}
 		}
-		withOwn := append(slices.Clone(units), Unit{Name: own, Match: NameMatch{Words: []NameWord{{Glob: w.Name, Text: w.Name}}}})
-		slices.SortStableFunc(withOwn, func(a, b Unit) int { return strings.Compare(a.Name+".network", b.Name+".network") })
+		withOwn := append(slices.Clone(units), nameUnit(own, w.Name))
+		sortUnits(withOwn)
 		if u := Candidates(withOwn, w.Name)[0]; u.Name != own && !named[u.Name] {
 			switch {
 			case u.Device:
 				errs = append(errs, refusals.Errorf("WireGuard", w.Name, "metadata.name", "WireGuard %s takes the name of VRF %s's device; give the WireGuard another name", w.Name, w.Name))
-			case u.Narrowed:
-				errs = append(errs, refusals.Errorf("Network", u.Name, "metadata.name", "Network %s may match the link of WireGuard %s before %s, should its other [Match] keys match it; rename it to sort after %s", u.Name, w.Name, own, own))
 			default:
-				errs = append(errs, refusals.Errorf("Network", u.Name, "metadata.name", "Network %s matches the link of WireGuard %s before %s; rename it to sort after %s", u.Name, w.Name, own, own))
+				errs = append(errs, sortsBefore(u, "the link of WireGuard "+w.Name, own))
 			}
 		}
 		for _, m := range d.Membership.Members {

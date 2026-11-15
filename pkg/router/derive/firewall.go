@@ -9,20 +9,15 @@ import (
 	"github.com/trevex/chalkos/pkg/refusals"
 )
 
-// The firewall's view of the router's links: where the hooks see the links a zone, a NAT rule or
-// a policy route names. The input and forward hooks see a packet from a VRF's link with the VRF's
-// device as iifname, and prerouting and postrouting see the links themselves; a NAT64's link
-// n64-<name> carries its translated traffic, which the firewall treats apart. The FirewallZone,
-// NATRule and PolicyRoute rules see neither the devices of the Networks' own VRF= nor the links
+// The firewall's view of the router's links. The input and forward hooks see a packet from a VRF's
+// link with the VRF's device as iifname; prerouting and postrouting see the links themselves. A
+// NAT64's link n64-<name> carries its translated traffic, which the firewall treats apart. The
+// FirewallZone, NATRule and PolicyRoute rules see neither the Networks' VRF devices nor the links
 // the Network documents name, so the model checks the interfaces against them.
 
 // checkFirewall refuses what router-nftables and the node API would apply otherwise than the
-// documents say: the management interfaces as checkManagement refuses them, the zones' interfaces
-// as checkZones refuses them, the links of a VRF with a conntrack zone that Membership.Links
-// refuses, the NAT rules as checkNATRules refuses them and the policy routes' in as checkPolicyIn
-// refuses it.
-// nat64 are the NAT64 instances, nil when NAT64Instances refused them, which leaves out the checks
-// of the NAT rules' addresses against the NAT64s' prefixes and pools.
+// documents say. nat64 is nil when NAT64Instances refused it, which skips the checks of the NAT
+// rules against the NAT64s' prefixes and pools.
 func (d Model) checkFirewall(nat64 []NAT64Instance) error {
 	devices := d.Devices()
 	var errs []error
@@ -30,9 +25,7 @@ func (d Model) checkFirewall(nat64 []NAT64Instance) error {
 	// each of its links. Only a Router document sets management interfaces.
 	if r := d.Router(); len(d.Routers) > 0 {
 		for j, i := range r.Management.Interfaces {
-			if err := d.checkManagement(d.Routers[0].Name, j, i, devices); err != nil {
-				errs = append(errs, err)
-			}
+			errs = append(errs, d.checkManagement(d.Routers[0].Name, j, i, devices))
 		}
 	}
 	zones, err := d.checkZones(devices)
@@ -44,7 +37,12 @@ func (d Model) checkFirewall(nat64 []NAT64Instance) error {
 			}
 		}
 	}
-	errs = append(errs, d.checkNATRules(devices, zones, nat64), d.checkPolicyIn(devices, zones))
+	for _, r := range d.NAT {
+		errs = append(errs, d.checkNATRule(r, devices, zones, nat64))
+	}
+	for _, p := range d.PolicyRoutes {
+		errs = append(errs, d.checkPolicyRouteIn(p, devices, zones))
+	}
 	return errors.Join(errs...)
 }
 
@@ -92,13 +90,8 @@ func (d Model) zoneLinks(z ZoneSpec) ([]string, error) {
 	return links, nil
 }
 
-// checkZones refuses, each zone at its first fault, an interface or glob that matches a VRF's
-// device, which the input and forward hooks see for each of the VRF's links, an interface that
-// may be a link of a VRF another zone holds, an interface or glob that matches a NAT64's link,
-// whose traffic the forward chain accepts ahead of the zones and whose other traffic it drops,
-// and a member of a VRF of the zone that Membership.Links refuses. It returns the links of each
-// zone it accepts, by name, as zoneLinks gives them. The uniqueness check refuses a VRF that two
-// zones hold.
+// checkZones checks each zone and returns the links of those it accepts, by name, as zoneLinks
+// gives them. The uniqueness check refuses a VRF that two zones hold.
 func (d Model) checkZones(devices []string) (map[string][]string, error) {
 	held := map[string]string{}
 	for _, z := range d.Zones {
@@ -123,8 +116,8 @@ func (d Model) checkZones(devices []string) (map[string][]string, error) {
 	return out, errors.Join(errs...)
 }
 
-// checkZone refuses the zone z's first interface that checkZones refuses; held are the zones
-// that hold each VRF.
+// checkZone refuses the zone z at its first faulty interface. The forward chain handles a NAT64's
+// link's traffic ahead of the zones. held are the zones that hold each VRF.
 func (d Model) checkZone(z Named[ZoneSpec], devices []string, held map[string]string) error {
 	for j, i := range z.Spec.Interfaces {
 		at := fmt.Sprintf("spec.interfaces[%d]", j)
@@ -158,24 +151,11 @@ func (d Model) nat64Link(i string) (string, string, bool) {
 	return "", "", false
 }
 
-// checkNATRules refuses, each rule at its first fault, an interface that matches no link but a
-// VRF's device, as prerouting and postrouting translate by the links alone, or but a NAT64's
-// link, which destination and source NAT leave to the NAT64 ahead of the NAT rules, a zone of no
-// link, which would translate nothing, a to.address in a NAT64's pool, whose addresses belong to
-// the NAT64 whole, and a destination in a NAT64's prefix or pool, whose connections the firewall
-// accepts before any NAT rule. zones are the links of the zones checkZones accepts; a rule of a
-// zone it refuses goes unchecked.
-func (d Model) checkNATRules(devices []string, zones map[string][]string, nat64 []NAT64Instance) error {
-	var errs []error
-	for _, r := range d.NAT {
-		if err := d.checkNATRule(r, devices, zones, nat64); err != nil {
-			errs = append(errs, err)
-		}
-	}
-	return errors.Join(errs...)
-}
-
-// checkNATRule refuses the NAT rule r's first fault that checkNATRules refuses.
+// checkNATRule refuses the NAT rule r at its first fault. Prerouting and postrouting translate by
+// the links alone and leave a NAT64's link to the NAT64, so an interface must match some other
+// link. A NAT64's pool belongs to the NAT64 whole, and the firewall accepts its connections before
+// any NAT rule. zones are the links of the zones checkZones accepts; a rule of a zone it refuses
+// goes unchecked.
 func (d Model) checkNATRule(r Named[NATSpec], devices []string, zones map[string][]string, nat64 []NAT64Instance) error {
 	n := r.Spec
 	for _, place := range []struct {
@@ -230,10 +210,9 @@ func (d Model) checkNATRule(r Named[NATSpec], devices []string, zones map[string
 	return nil
 }
 
-// onlyDevice returns the first VRF device of devices that the interface or glob i matches, when
-// i matches no link: none the Network documents name and no glob of a VRF's links. A glob such
-// as *, which matches links too, is not one. An interface that is a device's name matches that
-// device alone, whatever glob of a VRF's links covers the name too.
+// onlyDevice is the first VRF device the interface or glob i matches, when i matches no link the
+// Network documents name and no glob of a VRF's links. An interface that is a device's name
+// matches that device alone.
 func (d Model) onlyDevice(devices []string, i string) (string, bool) {
 	dev, ok := DeviceMatch(i, devices)
 	if !ok || !strings.HasSuffix(i, "*") {
@@ -263,22 +242,9 @@ func (d Model) matchesOtherThanNAT64(i string) bool {
 	return slices.ContainsFunc(d.Membership.Members, func(m Member) bool { return GlobsOverlap(i, m.Glob) })
 }
 
-// checkPolicyIn refuses, each PolicyRoute at its first fault, a zone of in that holds no link,
-// and a link of the zone or an interface of in that matches a NAT64's link, whose traffic Jool
-// translates, or an interface or glob that matches a VRF's device, which prerouting sees for a
-// VRF's link only after the pass that decides the mark. zones are the links of the zones
-// checkZones accepts; a route of a zone it refuses goes unchecked.
-func (d Model) checkPolicyIn(devices []string, zones map[string][]string) error {
-	var errs []error
-	for _, p := range d.PolicyRoutes {
-		if err := d.checkPolicyRouteIn(p, devices, zones); err != nil {
-			errs = append(errs, err)
-		}
-	}
-	return errors.Join(errs...)
-}
-
-// checkPolicyRouteIn refuses the PolicyRoute p's first fault of in that checkPolicyIn refuses.
+// checkPolicyRouteIn refuses the PolicyRoute p at the first fault of in. Jool translates a NAT64's
+// link's traffic, and prerouting sees a VRF's device only after the pass that decides the mark, so
+// in may match neither. zones are as for checkNATRule.
 func (d Model) checkPolicyRouteIn(p Named[PolicyRouteSpec], devices []string, zones map[string][]string) error {
 	in := p.Spec.In
 	switch {

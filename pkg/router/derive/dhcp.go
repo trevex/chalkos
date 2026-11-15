@@ -301,15 +301,9 @@ func (d Model) delegatesNoRoute(sub Subnet) error {
 		for _, s := range OneOrMany(d.Networks[network]["route"]) {
 			sec, _ := s.(map[string]any)
 			for _, v := range OneOrMany(sec["destination"]) {
-				text, _ := v.(string)
-				text = strings.Trim(text, UnitWhitespace)
-				p, err := netip.ParsePrefix(text)
-				if err != nil {
-					a, err := netip.ParseAddr(text)
-					if err != nil {
-						continue
-					}
-					p = netip.PrefixFrom(a, a.BitLen())
+				p, ok := parseAddrOrPrefix(v)
+				if !ok {
+					continue
 				}
 				if p.Addr().Is6() && p.Bits() >= sub.Delegated.Bits() && p.Overlaps(sub.Delegated) {
 					return refusals.Errorf("DHCPSubnet", sub.Name, "spec.prefixDelegation.prefix", "prefixDelegation's prefix %s holds the route of %s that Network %s gives a link of VRF %s", sub.Delegated, p.Masked(), network, vrf)

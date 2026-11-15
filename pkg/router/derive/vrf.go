@@ -151,6 +151,25 @@ type Unit struct {
 	Narrowed bool
 }
 
+// nameUnit is the unit name that matches link by Name= alone.
+func nameUnit(name, link string) Unit {
+	return Unit{Name: name, Match: NameMatch{Words: []NameWord{{Glob: link, Text: link}}}}
+}
+
+// sortUnits sorts units by file name, as networkd picks them.
+func sortUnits(units []Unit) {
+	slices.SortStableFunc(units, func(a, b Unit) int { return strings.Compare(a.Name+".network", b.Name+".network") })
+}
+
+// sortsBefore is the refusal of the Network u, which may match what, a VRF's device or a
+// WireGuard's link, before the unit own that configures it.
+func sortsBefore(u Unit, what, own string) error {
+	if u.Narrowed {
+		return refusals.Errorf("Network", u.Name, "metadata.name", "Network %s may match %s before %s, should its other [Match] keys match it; rename it to sort after %s", u.Name, what, own, own)
+	}
+	return refusals.Errorf("Network", u.Name, "metadata.name", "Network %s matches %s before %s; rename it to sort after %s", u.Name, what, own, own)
+}
+
 // vrfLinks checks the VRF documents against the Network documents of byKind, which name the
 // links, where the VRF's rules cannot, and returns the VRF of each Network. A VRF holds the links
 // its document's interfaces match and those a Network document's Name= matches whose own VRF=
@@ -167,9 +186,9 @@ type Unit struct {
 // first step that refuses, joined: the VRFs' members and the units, then the Networks that may be
 // the first to match each member's links, then the VRF of each Network. A step reads what the
 // steps before it found, which a refusal leaves wrong.
-func vrfLinks(vrfs []Named[VRFSpec], links, wireguards []string, byKind map[string]any) (Membership, error) {
+func vrfLinks(vrfs []Named[VRFSpec], links, wireguards []string, docs []Named[map[string]any]) (Membership, error) {
 	var none Membership
-	if len(vrfs) == 0 && !anyNetworkVRF(byKind) {
+	if len(vrfs) == 0 && !anyNetworkVRF(docs) {
 		return none, nil
 	}
 	var errs []error
@@ -202,7 +221,7 @@ func vrfLinks(vrfs []Named[VRFSpec], links, wireguards []string, byKind map[stri
 			}
 		}
 	}
-	units, err := networkUnits(vrfs, byKind)
+	units, err := networkUnits(vrfs, docs)
 	if err != nil {
 		return none, errors.Join(append(errs, err)...)
 	}
@@ -216,11 +235,7 @@ func vrfLinks(vrfs []Named[VRFSpec], links, wireguards []string, byKind map[stri
 	errs = append(errs, checkVRFMembers(members)...)
 	for _, v := range vrfs {
 		if u, own := Candidates(units, v.Name)[0], VRFUnitPrefix+v.Name; u.Name != own {
-			if u.Narrowed {
-				errs = append(errs, refusals.Errorf("Network", u.Name, "metadata.name", "Network %s may match the device of VRF %s before %s, should its other [Match] keys match it; rename it to sort after %s", u.Name, v.Name, own, own))
-			} else {
-				errs = append(errs, refusals.Errorf("Network", u.Name, "metadata.name", "Network %s matches the device of VRF %s before %s; rename it to sort after %s", u.Name, v.Name, own, own))
-			}
+			errs = append(errs, sortsBefore(u, "the device of VRF "+v.Name, own))
 		}
 	}
 	for _, m := range members {
@@ -239,20 +254,20 @@ func vrfLinks(vrfs []Named[VRFSpec], links, wireguards []string, byKind map[stri
 	if len(errs) > 0 {
 		return none, errors.Join(errs...)
 	}
-	if errs := checkNetworkVRFs(units, members, networks); len(errs) > 0 {
-		return none, errors.Join(errs...)
+	for _, u := range units {
+		errs = append(errs, checkNetworkVRF(u, members, networks))
+	}
+	if err := errors.Join(errs...); err != nil {
+		return none, err
 	}
 	return Membership{Networks: networks, Units: units, Members: members}, nil
 }
 
-// anyNetworkVRF reports whether a Network document of byKind gives VRF=, or a value of VRF= that
-// NetworkVRF refuses.
-func anyNetworkVRF(byKind map[string]any) bool {
-	docs, _ := byKind["Network"].([]any)
-	for _, d := range docs {
-		doc, _ := d.(map[string]any)
-		spec, _ := doc["spec"].(map[string]any)
-		if vrf, _, err := NetworkVRF("", spec); vrf != "" || err != nil {
+// anyNetworkVRF reports whether a Network document gives VRF=, or a value of VRF= that NetworkVRF
+// refuses.
+func anyNetworkVRF(networks []Named[map[string]any]) bool {
+	for _, n := range networks {
+		if vrf, _, err := NetworkVRF("", n.Spec); vrf != "" || err != nil {
 			return true
 		}
 	}
@@ -262,22 +277,16 @@ func anyNetworkVRF(byKind map[string]any) bool {
 // Units are the .network units networkd reads of the model's Network and VRF documents, as
 // networkUnits finds them.
 func (d Model) Units() ([]Unit, error) {
-	return networkUnits(d.VRFs, d.byKind)
+	return networkUnits(d.VRFs, d.networkDocs)
 }
 
 // networkUnits are the .network units networkd reads: the Network documents of byKind and the
 // units of the VRFs' devices, sorted by file name as networkd sorts them.
-func networkUnits(vrfs []Named[VRFSpec], byKind map[string]any) ([]Unit, error) {
+func networkUnits(vrfs []Named[VRFSpec], networks []Named[map[string]any]) ([]Unit, error) {
 	var units []Unit
 	var errs []error
-	docs, _ := byKind["Network"].([]any)
-	for _, d := range docs {
-		doc, _ := d.(map[string]any)
-		name, err := DocumentName("Network", doc)
-		if err != nil {
-			return nil, err
-		}
-		spec, _ := doc["spec"].(map[string]any)
+	for _, n := range networks {
+		name, spec := n.Name, n.Spec
 		vrf, vrfPath, err := NetworkVRF(name, spec)
 		match, matchErr := parseNameMatch(name, spec)
 		if err != nil || matchErr != nil {
@@ -292,13 +301,14 @@ func networkUnits(vrfs []Named[VRFSpec], byKind map[string]any) ([]Unit, error) 
 		units = append(units, Unit{Name: name, Match: match, VRF: vrf, VRFPath: vrfPath, Narrowed: narrowed})
 	}
 	for _, v := range vrfs {
-		match := NameMatch{Words: []NameWord{{Glob: v.Name, Text: v.Name}}}
-		units = append(units, Unit{Name: VRFUnitPrefix + v.Name, Match: match, Device: true})
+		u := nameUnit(VRFUnitPrefix+v.Name, v.Name)
+		u.Device = true
+		units = append(units, u)
 	}
 	if err := errors.Join(errs...); err != nil {
 		return nil, err
 	}
-	slices.SortStableFunc(units, func(a, b Unit) int { return strings.Compare(a.Name+".network", b.Name+".network") })
+	sortUnits(units)
 	return units, nil
 }
 
@@ -482,18 +492,6 @@ func shadowed(m NameMatch, glob string, before []NameMatch) bool {
 		}
 	}
 	return true
-}
-
-// checkNetworkVRFs refuses a Network of a VRF that may match links outside the VRF, or whose own
-// VRF= names another VRF, at the first fault of each Network.
-func checkNetworkVRFs(units []Unit, members []Member, networks map[string]string) []error {
-	var errs []error
-	for _, u := range units {
-		if err := checkNetworkVRF(u, members, networks); err != nil {
-			errs = append(errs, err)
-		}
-	}
-	return errs
 }
 
 // checkNetworkVRF refuses the unit u, of a Network of a VRF, that may match links outside the
