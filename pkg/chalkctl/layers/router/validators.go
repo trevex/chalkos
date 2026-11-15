@@ -8,11 +8,9 @@ import (
 	"github.com/trevex/chalkos/pkg/schema"
 )
 
-// Validators is the validator router of an image whose schemas hold the Router kind, as every
-// router image's do. The image runs it as chalkos-render validate router on the documents of the
-// kinds of derive.Kinds that it declares; chalkctl runs derive.Validate, the same code, in-process
-// on the documents of the same kinds, so it refuses a config before the delivery as the node
-// would. An image without the router layer runs none.
+// Validators links the validator router for an image whose schemas hold the Router kind: the
+// image runs it as chalkos-render validate router, chalkctl runs derive.Validate in-process on the
+// documents of the same kinds.
 func (*Plugin) Validators(s *schema.Schemas) []outputs.LinkedValidator {
 	kinds := s.Kinds()
 	if !slices.ContainsFunc(kinds, func(k schema.Kind) bool { return k.APIVersion == derive.API && k.Kind == "Router" }) {

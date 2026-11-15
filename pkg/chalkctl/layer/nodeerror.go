@@ -5,10 +5,9 @@ import (
 	"strings"
 )
 
-// NodeError is an error about the node Node. Its message names the node once: Err's message, with
-// the node's name in place of <node>, which the node's own messages say, after the name unless
-// Named. The error it wraps stays reachable, so its connect code still decides whether another
-// node is tried.
+// NodeError is an error about the node Node. Its message names the node once, replacing <node> in
+// Err's or else in front unless Named, and Unwrap keeps Err's connect code reachable, which
+// decides whether another node is tried.
 type NodeError struct {
 	Node string
 	Err  error

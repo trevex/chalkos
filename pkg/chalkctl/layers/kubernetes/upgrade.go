@@ -108,12 +108,10 @@ func (p *Plugin) After(ctx context.Context, u layer.Upgrading, name string, role
 	return uncordon(ctx, u, name)
 }
 
-// quorum checks that etcd keeps its quorum without the control plane, which reboots, or with
-// reboot false restarts its API server: its other voters must be healthy and enough for a quorum.
-// With one or two voters the others can never be enough: etcd and the API server are down while it
-// reboots, and the cluster's API may be unavailable while its API server restarts, which only
-// --allow-downtime accepts. etcd may need a moment after the control plane before came back, so
-// the check is tried for a while.
+// quorum checks that etcd keeps its quorum while the control plane reboots or, with reboot false,
+// restarts its API server: its other voters must be healthy and enough. With one or two voters they
+// never are, which only --allow-downtime accepts. The check is retried for a while, as etcd may
+// need a moment after the previous control plane came back.
 func quorum(ctx context.Context, u layer.Upgrading, allowDowntime bool, name string, reboot bool) error {
 	return poll.Until(ctx, "", u.QuorumWait(), u.Poll(), func() error { return quorumOnce(ctx, u, allowDowntime, name, reboot) })
 }

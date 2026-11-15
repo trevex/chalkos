@@ -1,9 +1,7 @@
-// Package layer is what chalkctl's layers plug in with. A layer is a Plugin compiled into
-// chalkctl: it adds to chalkctl through the optional interfaces below, which chalkctl finds by
-// type assertion, and reaches the cluster and its nodes through the Host chalkctl gives it.
-// chalkctl asks every compiled plugin for the hooks the inventory and the secrets file drive, and
-// only the plugins of the layers a node's Info names for what it reads from that node's layer
-// services; each hook says which plugins chalkctl asks.
+// Package layer defines how chalkctl's layers plug in. A Plugin is compiled into chalkctl, adds to
+// it through the optional interfaces below, which chalkctl finds by type assertion, and reaches
+// nodes through Host. Each interface says whether chalkctl asks every compiled plugin or only the
+// layers a node's Info names.
 package layer
 
 import (
@@ -46,11 +44,10 @@ type Status interface {
 	PrintStatus(ctx context.Context, h Host, conn *client.Conn) error
 }
 
-// Validators is a plugin whose layer links validators of its kinds: the Go code its images run as
-// validator programs, which chalkctl runs in-process on a node's config wherever it checks the
-// config against the node's image, as validate and config apply do. The image runs its own
-// programs again, which decide; chalkctl's copies refuse a config before it reaches the node.
-// chalkctl asks every compiled plugin.
+// Validators is a plugin whose layer links the Go code of its images' validator programs, which
+// chalkctl runs in-process wherever it checks config against a node's image, as validate and config
+// apply do, so it refuses a config before it reaches the node. The image runs its own programs
+// again, which decide. chalkctl asks every compiled plugin.
 type Validators interface {
 	// Validators are the layer's validators that an image of the schemas runs, by the names the
 	// image gives them; none for an image without the layer's kinds.

@@ -1,16 +1,6 @@
-// Package kubernetes is chalkctl's Kubernetes layer: the commands that run the cluster's
-// Kubernetes and its etcd and that revoke nodes by name, the Kubernetes section of a node's
-// status, the facts of its images that config is translated with, the Addon documents it leaves
-// to the control planes of an inventory, the check that the inventory's nodes hold the same
-// Cluster and Flannel specs, the share chalkctl delivers a node once no control plane lists it as
-// revoked, an upgrade's checks of etcd's quorum, its drains and its uncordons, and the rotations
-// of the Kubernetes CAs, the service-account key and the encryption key.
-//
-// It also holds the cluster to Kubernetes's version skew policy. A delivery of config that changes
-// the API server's version is checked against the API servers and kubelets every node runs, and
-// goes to the control planes first, one at a time: each after etcd's quorum check, on trial, and
-// confirmed once its static pods run the new images and are Ready. chalkctl upgrade refuses an
-// image whose kubelet would be newer than the oldest API server the control planes run.
+// Package kubernetes is chalkctl's Kubernetes layer: the bootstrap, kubeconfig, etcd and node
+// revocation commands, and the Kubernetes hooks of status, inventory checks, delivery, upgrade,
+// rollout and rotation. Its Rollout hooks hold the cluster to Kubernetes's version skew policy.
 package kubernetes
 
 import (
