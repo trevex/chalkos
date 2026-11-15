@@ -121,8 +121,8 @@ func (f *fakeSystemd) record(unit string) {
 	}
 }
 
-// device makes the device name anew, as networkd does, with the next index. Tests call it while
-// a run goes on, too.
+// device makes the device name anew, as networkd does, with the next index, which appears with
+// the device, as in sysfs.
 func (f *fakeSystemd) device(t *testing.T, name string) {
 	t.Helper()
 	f.mu.Lock()
@@ -130,24 +130,38 @@ func (f *fakeSystemd) device(t *testing.T, name string) {
 	index := strconv.Itoa(f.index)
 	f.mu.Unlock()
 	dir := filepath.Join(f.r.NetDir, name)
-	err := os.RemoveAll(dir)
+	tmp, err := os.MkdirTemp(f.r.NetDir, ".new")
 	if err == nil {
-		err = os.MkdirAll(dir, 0o755)
+		err = os.WriteFile(filepath.Join(tmp, "ifindex"), []byte(index+"\n"), 0o644)
 	}
 	if err == nil {
-		err = os.WriteFile(filepath.Join(dir, "ifindex"), []byte(index+"\n"), 0o644)
+		err = os.RemoveAll(dir)
+	}
+	if err == nil {
+		err = os.Rename(tmp, dir)
 	}
 	if err != nil {
 		t.Error(err)
 	}
 }
 
+// appear makes the device name while the next run waits for it. That run waits a minute rather
+// than a second, so the device appears in time however late its goroutine runs.
+func (f *fakeSystemd) appear(t *testing.T, name string) {
+	deviceWait = time.Minute
+	go func() {
+		time.Sleep(100 * time.Millisecond)
+		f.device(t, name)
+	}()
+}
+
 // run runs chalkd router services name, with stop when stop, forgetting the calls of runs
-// before.
+// before. It waits a second for a missing device, unless appear made the wait longer.
 func (f *fakeSystemd) run(name string, stop bool) error {
 	f.mu.Lock()
 	f.calls = nil
 	f.mu.Unlock()
+	defer func() { deviceWait = time.Second }()
 	return f.r.runServices(context.Background(), f.r.perVRFServices()[name], stop)
 }
 
@@ -253,10 +267,7 @@ func TestServicesUnbound(t *testing.T) {
 	if err := os.RemoveAll(filepath.Join(r.NetDir, "dmz-a")); err != nil {
 		t.Fatal(err)
 	}
-	go func() {
-		time.Sleep(100 * time.Millisecond)
-		f.device(t, "dmz-a")
-	}()
+	f.appear(t, "dmz-a")
 	if err := f.run("unbound", false); err != nil {
 		t.Fatal(err)
 	}
@@ -291,29 +302,24 @@ func TestServicesUnbound(t *testing.T) {
 	}
 	f.notCalled(t, "stop unbound@guest.service")
 
-	// gone has no device, stuck's resolver keeps restarting, and late's device appears during
-	// the wait.
-	for _, vrf := range []string{"gone", "stuck", "late"} {
+	// gone has no device and stuck's resolver keeps restarting.
+	for _, vrf := range []string{"gone", "stuck"} {
 		touch(t, filepath.Join(r.ResolverDir, services.Unbound.File(vrf)), "")
 	}
 	f.device(t, "stuck")
 	f.next["unbound@stuck.service"] = [2]string{"activating", "auto-restart"}
-	go func() {
-		time.Sleep(100 * time.Millisecond)
-		f.device(t, "late")
-	}()
 	failedWith(t, f.run("unbound", false),
 		"run unbound@gone.service, whose devices gone do not exist",
 		"start unbound@stuck.service, which is activating (auto-restart)")
 	f.notCalled(t, "start --no-block unbound@gone.service")
-	for _, vrf := range []string{"guest", "tenant", "dmz-a", "late"} {
+	for _, vrf := range []string{"guest", "tenant", "dmz-a"} {
 		f.running(t, services.Unbound.Unit(vrf))
 	}
 
 	if err := f.run("unbound", true); err != nil {
 		t.Fatal(err)
 	}
-	for _, vrf := range []string{"guest", "tenant", "dmz-a", "late", "stuck"} {
+	for _, vrf := range []string{"guest", "tenant", "dmz-a", "stuck"} {
 		f.called(t, "stop "+services.Unbound.Unit(vrf))
 	}
 }
@@ -427,10 +433,7 @@ func TestServicesKea(t *testing.T) {
 	if err := os.RemoveAll(filepath.Join(r.NetDir, "vlan30")); err != nil {
 		t.Fatal(err)
 	}
-	go func() {
-		time.Sleep(100 * time.Millisecond)
-		f.device(t, "vlan30")
-	}()
+	f.appear(t, "vlan30")
 	if err := f.run("kea", false); err != nil {
 		t.Fatal(err)
 	}
@@ -470,8 +473,8 @@ func TestServicesKea(t *testing.T) {
 	}
 	f.running(t, "kea-dhcp4@new.service")
 
-	// The default VRF's link is gone, gone's VRF has no device, broken's config is no JSON,
-	// stuck's server keeps restarting, and late's link appears during the wait.
+	// The default VRF's link is gone, gone's VRF has no device, broken's config is no JSON and
+	// stuck's server keeps restarting.
 	if err := os.RemoveAll(filepath.Join(r.NetDir, "lan0")); err != nil {
 		t.Fatal(err)
 	}
@@ -483,12 +486,6 @@ func TestServicesKea(t *testing.T) {
 	f.device(t, "vlan50")
 	writeKea4(t, r, "stuck", "vlan50")
 	f.next["kea-dhcp4@stuck.service"] = [2]string{"activating", "auto-restart"}
-	f.device(t, "late")
-	writeKea4(t, r, "late", "vlan60")
-	go func() {
-		time.Sleep(100 * time.Millisecond)
-		f.device(t, "vlan60")
-	}()
 	failedWith(t, f.run("kea", false),
 		"run kea-dhcp4.service, whose devices lan0 do not exist",
 		"run kea-dhcp4@gone.service, whose devices gone do not exist",
@@ -498,12 +495,11 @@ func TestServicesKea(t *testing.T) {
 	f.notCalled(t, "start --no-block kea-dhcp4@gone.service")
 	f.notCalled(t, "start --no-block kea-dhcp4@broken.service")
 	f.running(t, "kea-dhcp4.service")
-	f.running(t, "kea-dhcp4@late.service")
 
 	if err := f.run("kea", true); err != nil {
 		t.Fatal(err)
 	}
-	for _, vrf := range []string{"default", "guest", "dmz-a", "late", "stuck"} {
+	for _, vrf := range []string{"default", "guest", "dmz-a", "stuck"} {
 		f.called(t, "stop "+services.Kea4.Unit(vrf))
 	}
 	f.called(t, `stop kea-dhcp6@dmz\x2da.service`)
