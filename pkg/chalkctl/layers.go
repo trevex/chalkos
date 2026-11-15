@@ -80,3 +80,16 @@ func listedCoordinator(c *cluster, name string) (bool, error) {
 	}
 	return listed, nil
 }
+
+// coordinatorsFirst is names with the coordinators first, each part in the order of names.
+func coordinatorsFirst(names []string, coordinator func(name string) bool) []string {
+	var first, rest []string
+	for _, name := range names {
+		if coordinator(name) {
+			first = append(first, name)
+		} else {
+			rest = append(rest, name)
+		}
+	}
+	return append(first, rest...)
+}

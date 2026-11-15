@@ -322,16 +322,11 @@ func (r *rotation) NodeNames() []string {
 
 // allNodes lists the nodes that take part, the coordinators first, each group in name order.
 func (r *rotation) allNodes() []string {
-	var coordinators, others []string
-	for _, name := range r.NodeNames() {
+	return coordinatorsFirst(r.NodeNames(), func(name string) bool {
 		// rotate read every node's config before it started, so no error is left to report.
-		if ok, _ := listedCoordinator(r.cluster, name); ok {
-			coordinators = append(coordinators, name)
-		} else {
-			others = append(others, name)
-		}
-	}
-	return append(coordinators, others...)
+		ok, _ := listedCoordinator(r.cluster, name)
+		return ok
+	})
 }
 
 // nodes reaches the nodes with the secrets as they are now: chalkctl's admin certificate comes

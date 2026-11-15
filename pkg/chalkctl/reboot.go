@@ -367,12 +367,8 @@ func (b *rebooter) probe(ctx context.Context, name string) (*nodev1.InfoResponse
 		if err != nil {
 			return err
 		}
-		for _, u := range pluginsOf[layer.Upgrade](i.Msg.Layers) {
-			role, err := u.UpgradeRole(ctx, conn)
-			if err != nil {
-				return err
-			}
-			roles = append(roles, upgradeRole{u, role})
+		if roles, err = readRoles(ctx, conn, i.Msg.Layers); err != nil {
+			return err
 		}
 		info, st = i.Msg, s.Msg
 		return nil
@@ -522,4 +518,17 @@ func (a *app) nodeReboot(ctx context.Context, f nodeRebootFlags, name string) er
 		}
 	}
 	return b.reboot(ctx, n, bootOf(statusview.BootImageName(next), next.GetRootHash(), st), !f.noDrain, nil)
+}
+
+// readRoles reads the node's roles in the clusters of its Upgrade layers among layers.
+func readRoles(ctx context.Context, conn *client.Conn, layers []string) (upgradeRoles, error) {
+	var roles upgradeRoles
+	for _, u := range pluginsOf[layer.Upgrade](layers) {
+		role, err := u.UpgradeRole(ctx, conn)
+		if err != nil {
+			return nil, err
+		}
+		roles = append(roles, upgradeRole{u, role})
+	}
+	return roles, nil
 }

@@ -147,15 +147,9 @@ func (r *configRollout) plan(ctx context.Context, names []string) error {
 	probed := map[string]bool{}
 	for _, name := range names {
 		n := r.nodes[name]
-		if err := r.reach.Call(name, func(conn *client.Conn) error {
-			for _, u := range pluginsOf[layer.Upgrade](n.layers) {
-				role, err := u.UpgradeRole(ctx, conn)
-				if err != nil {
-					return err
-				}
-				n.roles = append(n.roles, upgradeRole{u, role})
-			}
-			return nil
+		if err := r.reach.Call(name, func(conn *client.Conn) (err error) {
+			n.roles, err = readRoles(ctx, conn, n.layers)
+			return err
 		}); err != nil {
 			return err
 		}
@@ -199,15 +193,7 @@ func (r *configRollout) changes(ctx context.Context, conn *client.Conn, n *rollo
 
 // order is the order of an ordered run: the coordinators by name, then the other nodes by name.
 func (r *configRollout) order() []string {
-	var coordinators, others []string
-	for _, name := range slices.Sorted(maps.Keys(r.nodes)) {
-		if r.coordinator(r.nodes[name]) {
-			coordinators = append(coordinators, name)
-		} else {
-			others = append(others, name)
-		}
-	}
-	return append(coordinators, others...)
+	return coordinatorsFirst(slices.Sorted(maps.Keys(r.nodes)), func(name string) bool { return r.coordinator(r.nodes[name]) })
 }
 
 // node delivers the config to the node and reports whether it did. A node that runs it already gets
