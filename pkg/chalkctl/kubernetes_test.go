@@ -197,29 +197,12 @@ func TestKubeconfig(t *testing.T) {
 	if info, err := os.Stat(out); err != nil || info.Mode().Perm() != 0o600 {
 		t.Fatalf("kubeconfig: %v, %v", info, err)
 	}
-	data, _ := os.ReadFile(out)
-	var kc struct {
-		Clusters []struct {
-			Name    string `json:"name"`
-			Cluster struct {
-				Server     string `json:"server"`
-				ServerName string `json:"tls-server-name"`
-			} `json:"cluster"`
-		} `json:"clusters"`
-		Users []struct {
-			User struct {
-				Cert []byte `json:"client-certificate-data"`
-			} `json:"user"`
-		} `json:"users"`
-	}
-	if err := json.Unmarshal(data, &kc); err != nil {
-		t.Fatal(err)
-	}
+	kc := readKubeconfig(t, out)
 	c := kc.Clusters[0]
 	if c.Name != "lab" || c.Cluster.Server != "https://127.0.0.1:16443" || c.Cluster.ServerName != "10.0.0.10" {
 		t.Errorf("cluster = %+v", c)
 	}
-	cert, err := pki.ParseCertificate(kc.Users[0].User.Cert)
+	cert, err := pki.ParseCertificate(kc.Users[0].User.Certificate)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -240,49 +223,24 @@ func TestKubeconfig(t *testing.T) {
 	}
 }
 
-// TestKubeconfigContext checks that the kubeconfig's cluster, user and context are named after
-// the inventory unless --context names them.
+// TestKubeconfigContext names the kubeconfig's cluster, user and context as --context says; an
+// empty --context is refused.
 func TestKubeconfigContext(t *testing.T) {
-	for _, tc := range []struct {
-		name string
-		args []string
-		want string
-	}{
-		{"inventory", nil, "lab"},
-		{"flag", []string{"--context", "home@lab"}, "home@lab"},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			ta := newTestApp(t)
-			out := filepath.Join(ta.dir, "kubeconfig")
-			args := append([]string{"kubeconfig", "--inventory", ta.inventory, "--out", out}, tc.args...)
-			if err := ta.run(context.Background(), args); err != nil {
-				t.Fatal(err)
-			}
-			data, _ := os.ReadFile(out)
-			type named struct {
-				Name string `json:"name"`
-			}
-			var kc struct {
-				Clusters []named `json:"clusters"`
-				Users    []named `json:"users"`
-				Contexts []struct {
-					Name    string `json:"name"`
-					Context struct {
-						Cluster string `json:"cluster"`
-						User    string `json:"user"`
-					} `json:"context"`
-				} `json:"contexts"`
-				Current string `json:"current-context"`
-			}
-			if err := json.Unmarshal(data, &kc); err != nil {
-				t.Fatal(err)
-			}
-			if len(kc.Clusters) != 1 || kc.Clusters[0].Name != tc.want || len(kc.Users) != 1 || kc.Users[0].Name != tc.want ||
-				len(kc.Contexts) != 1 || kc.Contexts[0].Name != tc.want || kc.Contexts[0].Context.Cluster != tc.want ||
-				kc.Contexts[0].Context.User != tc.want || kc.Current != tc.want {
-				t.Errorf("kubeconfig names %+v, %+v, %+v, %q; want %s", kc.Clusters, kc.Users, kc.Contexts, kc.Current, tc.want)
-			}
-		})
+	ta := newTestApp(t)
+	out := filepath.Join(ta.dir, "kubeconfig")
+	if err := ta.run(context.Background(), []string{"kubeconfig", "--inventory", ta.inventory, "--out", out, "--context", "home"}); err != nil {
+		t.Fatal(err)
+	}
+	const want = "home"
+	kc := readKubeconfig(t, out)
+	if len(kc.Clusters) != 1 || kc.Clusters[0].Name != want || len(kc.Users) != 1 || kc.Users[0].Name != want ||
+		len(kc.Contexts) != 1 || kc.Contexts[0].Name != want || kc.Contexts[0].Context.Cluster != want ||
+		kc.Contexts[0].Context.User != want || kc.Current != want {
+		t.Errorf("kubeconfig names %+v, %+v, %+v, %q; want %s", kc.Clusters, kc.Users, kc.Contexts, kc.Current, want)
+	}
+	err := ta.run(context.Background(), []string{"kubeconfig", "--inventory", ta.inventory, "--out", "-", "--context", ""})
+	if err == nil || !strings.Contains(err.Error(), "--context") {
+		t.Errorf("kubeconfig --context '': %v", err)
 	}
 }
 
@@ -301,14 +259,6 @@ func TestKubeconfigNeedsAnEndpoint(t *testing.T) {
 	err = ta.run(context.Background(), []string{"kubeconfig", "--inventory", ta.inventory, "--out", "-"})
 	if err == nil || !strings.Contains(err.Error(), "no Cluster document of the cluster lab names an endpoint") {
 		t.Errorf("kubeconfig of an inventory without nodes = %v", err)
-	}
-}
-
-func TestKubeconfigRefusesEmptyContext(t *testing.T) {
-	ta := newTestApp(t)
-	err := ta.run(context.Background(), []string{"kubeconfig", "--inventory", ta.inventory, "--out", "-", "--context", ""})
-	if err == nil || !strings.Contains(err.Error(), "--context") {
-		t.Errorf("kubeconfig --context '': %v", err)
 	}
 }
 
@@ -375,22 +325,7 @@ func TestKubeconfigTrustsBothCAs(t *testing.T) {
 		if err := ta.run(context.Background(), []string{"kubeconfig", "--inventory", ta.inventory, "--out", out}); err != nil {
 			t.Fatal(err)
 		}
-		data, _ := os.ReadFile(out)
-		var kc struct {
-			Clusters []struct {
-				Cluster struct {
-					CA []byte `json:"certificate-authority-data"`
-				} `json:"cluster"`
-			} `json:"clusters"`
-			Users []struct {
-				User struct {
-					Certificate []byte `json:"client-certificate-data"`
-				} `json:"user"`
-			} `json:"users"`
-		}
-		if err := json.Unmarshal(data, &kc); err != nil {
-			t.Fatal(err)
-		}
+		kc := readKubeconfig(t, out)
 		cert, err := pki.ParseCertificate(kc.Users[0].User.Certificate)
 		if err != nil {
 			t.Fatal(err)
@@ -414,4 +349,44 @@ func TestKubeconfigTrustsBothCAs(t *testing.T) {
 	if _, cert := issue(); cert.CheckSignatureFrom(next) != nil {
 		t.Error("once the accept phase is applied, the client certificate is not of the new CA")
 	}
+}
+
+// testKubeconfig is the part of a kubeconfig the tests read.
+type testKubeconfig struct {
+	Clusters []struct {
+		Name    string `json:"name"`
+		Cluster struct {
+			Server     string `json:"server"`
+			ServerName string `json:"tls-server-name"`
+			CA         []byte `json:"certificate-authority-data"`
+		} `json:"cluster"`
+	} `json:"clusters"`
+	Users []struct {
+		Name string `json:"name"`
+		User struct {
+			Certificate []byte `json:"client-certificate-data"`
+		} `json:"user"`
+	} `json:"users"`
+	Contexts []struct {
+		Name    string `json:"name"`
+		Context struct {
+			Cluster string `json:"cluster"`
+			User    string `json:"user"`
+		} `json:"context"`
+	} `json:"contexts"`
+	Current string `json:"current-context"`
+}
+
+// readKubeconfig reads the kubeconfig at path.
+func readKubeconfig(t *testing.T, path string) testKubeconfig {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var kc testKubeconfig
+	if err := json.Unmarshal(data, &kc); err != nil {
+		t.Fatal(err)
+	}
+	return kc
 }

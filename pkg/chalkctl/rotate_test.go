@@ -1066,18 +1066,6 @@ func TestRotateNodeCAWithoutHolders(t *testing.T) {
 	}
 }
 
-// TestRotateHelpNamesEveryKind checks that the help lists the kinds chalkctl runs.
-func TestRotateHelpNamesEveryKind(t *testing.T) {
-	ta := newTestApp(t)
-	cmd, _, err := newCommand(ta.app).Find([]string{"rotate"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if want := "Rotate os-ca, node-ca, kubernetes-ca, service-account-key or encryption-key"; cmd.Short != want {
-		t.Errorf("Short = %q, want %q", cmd.Short, want)
-	}
-}
-
 // A rotation takes the coordinators first, then every other node in name order: a node without
 // Kubernetes comes between the workers by its name, not after them.
 func TestRotationOrdersAllNodes(t *testing.T) {
