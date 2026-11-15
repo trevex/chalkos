@@ -115,15 +115,21 @@ const (
 
 // ReadCluster reads and checks a cluster file.
 func ReadCluster(path string) (Cluster, error) {
+	return readFile(path, parseCluster)
+}
+
+// readFile reads the file at path with parse, naming path in parse's errors.
+func readFile[T any](path string, parse func([]byte) (T, error)) (T, error) {
+	var zero T
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return Cluster{}, err
+		return zero, err
 	}
-	c, err := parseCluster(data)
+	v, err := parse(data)
 	if err != nil {
-		return Cluster{}, fmt.Errorf("%s: %w", path, err)
+		return zero, fmt.Errorf("%s: %w", path, err)
 	}
-	return c, nil
+	return v, nil
 }
 
 // parseCluster parses and checks a cluster file's contents.

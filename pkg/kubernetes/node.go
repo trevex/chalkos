@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"net/netip"
-	"os"
 	"slices"
 
 	"github.com/trevex/chalkos/pkg/identity"
@@ -57,11 +56,6 @@ type Taint struct {
 	Effect string `json:"effect"`
 }
 
-// SetNodeIdentity stores n as the Kubernetes layer's part of the identity id.
-func SetNodeIdentity(id *identity.Identity, n NodeIdentity) error {
-	return id.SetLayer(layers.Kubernetes, n)
-}
-
 // NodeIdentityOf reads the Kubernetes layer's part of the identity id and tells whether it has
 // one, which an identity on an image without Kubernetes does not.
 func NodeIdentityOf(id identity.Identity) (NodeIdentity, bool, error) {
@@ -72,15 +66,7 @@ func NodeIdentityOf(id identity.Identity) (NodeIdentity, bool, error) {
 
 // ReadNode reads the node from its identity without secrets (node.json).
 func ReadNode(path string) (Node, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return Node{}, err
-	}
-	n, err := ParseNode(data)
-	if err != nil {
-		return Node{}, fmt.Errorf("%s: %w", path, err)
-	}
-	return n, nil
+	return readFile(path, ParseNode)
 }
 
 // ParseNode reads the node from its identity. IPv4-mapped addresses are stored in their IPv4

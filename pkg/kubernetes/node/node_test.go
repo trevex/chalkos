@@ -169,7 +169,7 @@ func TestPrepareWorker(t *testing.T) {
 	if link, err := os.Readlink(s.KubeletClient()); err != nil || link != "kubelet-client-chalkos.pem" {
 		t.Errorf("current client certificate link = %q, %v", link, err)
 	}
-	ca, _ := os.ReadFile(filepath.Join(s.KubeletDir(), "ca.crt"))
+	ca, _ := os.ReadFile(s.KubeletCA())
 	if string(ca) != k.CA.Certificate {
 		t.Error("the kubelet's CA is not the cluster's")
 	}
@@ -1238,7 +1238,7 @@ func TestPrepareGivesTheKubeletEveryCA(t *testing.T) {
 	if err := st.Prepare(now, picked, nil); err != nil {
 		t.Fatal(err)
 	}
-	ca, _ := os.ReadFile(filepath.Join(st.KubeletDir(), "ca.crt"))
+	ca, _ := os.ReadFile(st.KubeletCA())
 	if string(ca) != s.Kubernetes.CABundle() || strings.Count(string(ca), "BEGIN CERTIFICATE") != 2 {
 		t.Error("the kubelet does not trust both Kubernetes CAs")
 	}

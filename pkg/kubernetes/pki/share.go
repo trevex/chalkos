@@ -109,19 +109,9 @@ func (s Share) secrets() clustersecrets.KubernetesSecrets {
 // and EtcdCABundle are the front-proxy and etcd CAs a control plane trusts.
 func (s Share) CABundle() string { return s.secrets().CABundle() }
 
-func (s Share) FrontProxyCABundle() string {
-	if s.FrontProxyCA == nil {
-		return ""
-	}
-	return s.secrets().FrontProxyCABundle()
-}
+func (s Share) FrontProxyCABundle() string { return s.secrets().FrontProxyCABundle() }
 
-func (s Share) EtcdCABundle() string {
-	if s.EtcdCA == nil {
-		return ""
-	}
-	return s.secrets().EtcdCABundle()
-}
+func (s Share) EtcdCABundle() string { return s.secrets().EtcdCABundle() }
 
 // ServiceAccountPublicKeys are the public keys the API server accepts tokens of, the signing
 // key's first.

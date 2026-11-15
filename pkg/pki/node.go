@@ -5,7 +5,6 @@ import (
 	"crypto/ecdsa"
 	"crypto/tls"
 	"crypto/x509"
-	"encoding/pem"
 	"errors"
 	"fmt"
 	"net"
@@ -168,11 +167,11 @@ func NodeFile(cred NodeCredential, osCA string) ([]byte, error) {
 	for _, der := range cred.TLS.Certificate {
 		file = append(file, EncodeCertificate(der)...)
 	}
-	der, err := x509.MarshalPKCS8PrivateKey(cred.TLS.PrivateKey)
+	key, err := EncodeKey(cred.TLS.PrivateKey)
 	if err != nil {
 		return nil, errors.New("encode the node certificate's key")
 	}
-	file = append(file, pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: der})...)
+	file = append(file, key...)
 	loaded, err := VerifyNode(string(file), string(file), osCA, time.Time{})
 	if err != nil {
 		return nil, fmt.Errorf("the encoded node certificate: %w", err)

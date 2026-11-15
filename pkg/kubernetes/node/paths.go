@@ -85,6 +85,9 @@ func (p Paths) JoiningMarker() string { return filepath.Join(p.StateDir, "joinin
 // Kubeconfig is the kubelet's kubeconfig, which chalkd also reads the Node with.
 func (p Paths) Kubeconfig() string { return filepath.Join(p.KubeletDir(), "kubeconfig") }
 
+// KubeletCA is the bundle of Kubernetes CAs the kubelet trusts.
+func (p Paths) KubeletCA() string { return filepath.Join(p.KubeletDir(), "ca.crt") }
+
 // KubeletConfig is the kubelet's configuration file.
 func (p Paths) KubeletConfig() string { return filepath.Join(p.KubeletDir(), "config.json") }
 

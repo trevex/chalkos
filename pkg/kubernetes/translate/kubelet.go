@@ -12,6 +12,7 @@ import (
 	"github.com/trevex/chalkos/pkg/internal/strs"
 	"github.com/trevex/chalkos/pkg/kubernetes"
 	"github.com/trevex/chalkos/pkg/kubernetes/nodeip"
+	"github.com/trevex/chalkos/pkg/layers"
 	"github.com/trevex/chalkos/pkg/storage"
 )
 
@@ -62,7 +63,7 @@ func kubelet(s *config.Set, id *identity.Identity, name string, c kubernetes.Clu
 	if len(errs) > 0 {
 		return fmt.Errorf("invalid Kubernetes settings:\n- %s", strings.Join(errs, "\n- "))
 	}
-	return kubernetes.SetNodeIdentity(id, kubernetes.NodeIdentity{
+	return id.SetLayer(layers.Kubernetes, kubernetes.NodeIdentity{
 		NodeName: name, NodeIPs: ips, ValidSubnets: spec.NodeIP.ValidSubnets, Labels: labels, Taints: taints,
 	})
 }

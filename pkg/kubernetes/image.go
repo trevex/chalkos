@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
 
 	"github.com/trevex/chalkos/pkg/imageref"
 )
@@ -27,15 +26,7 @@ type Image struct {
 
 // ReadImage reads and checks the image's Kubernetes facts.
 func ReadImage(path string) (Image, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return Image{}, err
-	}
-	img, err := ParseImage(data)
-	if err != nil {
-		return Image{}, fmt.Errorf("%s: %w", path, err)
-	}
-	return img, nil
+	return readFile(path, ParseImage)
 }
 
 // ParseImage parses and checks an image.json.

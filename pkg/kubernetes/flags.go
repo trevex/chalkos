@@ -97,12 +97,7 @@ func ValidateFlags(component string, flags map[string]string) error {
 		if conflict, ok := conflictingAPIServerFlags[flagName(name)]; ok && component == "kube-apiserver" {
 			return fmt.Errorf("--%s conflicts with --%s: %s", name, conflict.flag, conflict.reason)
 		}
-	}
-	if component != "kubelet" {
-		return nil
-	}
-	for _, name := range slices.Sorted(maps.Keys(flags)) {
-		if strings.ContainsAny(name+flags[name], " \t\r\n\\") {
+		if component == "kubelet" && strings.ContainsAny(name+flags[name], " \t\r\n\\") {
 			return fmt.Errorf("--%s=%q: the kubelet's flags cannot hold whitespace or backslashes", name, flags[name])
 		}
 	}

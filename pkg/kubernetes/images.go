@@ -57,16 +57,15 @@ func (c Cluster) validateImages() error {
 		if f.ref == "" {
 			return fmt.Errorf("images.%s: no image", f.field)
 		}
-		r, err := imageref.Parse(f.ref)
-		if err != nil {
-			return fmt.Errorf("images.%s: %w", f.field, err)
-		}
 		if !f.versioned {
+			if _, err := imageref.Parse(f.ref); err != nil {
+				return fmt.Errorf("images.%s: %w", f.field, err)
+			}
 			continue
 		}
-		v, err := r.Version()
+		v, err := componentVersion(f.field, f.ref)
 		if err != nil {
-			return fmt.Errorf("images.%s: %s: %w", f.field, f.ref, err)
+			return err
 		}
 		versions[f.field] = v
 	}
@@ -129,13 +128,18 @@ func checkSkew(kubelet imageref.Version, v map[string]imageref.Version) error {
 
 // APIServerVersion is the Kubernetes version images.apiServer's tag names.
 func (i Images) APIServerVersion() (imageref.Version, error) {
-	r, err := imageref.Parse(i.KubeAPIServer)
+	return componentVersion("apiServer", i.KubeAPIServer)
+}
+
+// componentVersion is the Kubernetes version the tag of ref, the image of images.<field>, names.
+func componentVersion(field, ref string) (imageref.Version, error) {
+	r, err := imageref.Parse(ref)
 	if err != nil {
-		return imageref.Version{}, fmt.Errorf("images.apiServer: %w", err)
+		return imageref.Version{}, fmt.Errorf("images.%s: %w", field, err)
 	}
 	v, err := r.Version()
 	if err != nil {
-		return imageref.Version{}, fmt.Errorf("images.apiServer: %s: %w", i.KubeAPIServer, err)
+		return imageref.Version{}, fmt.Errorf("images.%s: %s: %w", field, ref, err)
 	}
 	return v, nil
 }

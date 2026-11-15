@@ -38,12 +38,12 @@ func (s State) writeKubeletFiles(in inputs, cert pki.CertKey, now time.Time) err
 	if err != nil {
 		return err
 	}
-	for name, data := range map[string][]byte{
-		"ca.crt":      []byte(in.share.CABundle()),
-		"flags":       []byte("KUBELET_ARGS=" + strings.Join(kubeletFlags(in.cluster, in.node), " ") + "\n"),
-		"config.json": config,
+	for path, data := range map[string][]byte{
+		s.KubeletCA():                          []byte(in.share.CABundle()),
+		filepath.Join(s.KubeletDir(), "flags"): []byte("KUBELET_ARGS=" + strings.Join(kubeletFlags(in.cluster, in.node), " ") + "\n"),
+		s.KubeletConfig():                      config,
 	} {
-		if err := atomicfile.WriteFile(filepath.Join(s.KubeletDir(), name), data, 0o644); err != nil {
+		if err := atomicfile.WriteFile(path, data, 0o644); err != nil {
 			return err
 		}
 	}
@@ -105,7 +105,7 @@ func kubeletConfig(p Paths, c kubernetes.Cluster) kubeletConfiguration {
 	}
 	config.Authentication.Anonymous.Enabled = false
 	config.Authentication.Webhook.Enabled = true
-	config.Authentication.X509.ClientCAFile = filepath.Join(p.KubeletDir(), "ca.crt")
+	config.Authentication.X509.ClientCAFile = p.KubeletCA()
 	config.Authorization.Mode = "Webhook"
 	return config
 }

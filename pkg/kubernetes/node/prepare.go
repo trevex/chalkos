@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"path/filepath"
 	"time"
 
 	"github.com/trevex/chalkos/pkg/atomicfile"
@@ -163,7 +162,7 @@ func (s State) prepare(now time.Time, resolve Resolver) error {
 	kubeconfig, err := kpki.Kubeconfig{
 		Name:       "chalkos",
 		Server:     in.cluster.Endpoint,
-		CAFile:     filepath.Join(s.KubeletDir(), "ca.crt"),
+		CAFile:     s.KubeletCA(),
 		ClientFile: s.KubeletClient(),
 	}.Encode()
 	if err != nil {
