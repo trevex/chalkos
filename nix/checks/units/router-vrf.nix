@@ -1,11 +1,6 @@
-# chalkos-vrf in a network namespace: it removes the VRFs that no .netdev of Kind=vrf declares
-# and those whose table changed, flushes networkd's unreachable defaults of their tables alone,
-# keeps a declared VRF with its member, the unreachable defaults of its table and every link of
-# another kind, and with no rendered units, as in maintenance mode, removes every VRF the
-# rendered units declared. It reads /etc's units before the rendered ones, by name, as networkd
-# does. When it removed a VRF it reloads a running networkd and, without waiting, a running
-# chalkos-resolvers, through the systemctl and networkctl of the unit's PATH that the check
-# stubs, and otherwise does not.
+# chalkos-vrf in a network namespace: which VRFs it removes and keeps, the unreachable defaults it
+# flushes, and the reloads of networkd and chalkos-resolvers through stubbed systemctl and
+# networkctl.
 {
   checkLib,
   unitCheck,

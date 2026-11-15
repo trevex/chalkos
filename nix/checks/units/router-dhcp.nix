@@ -1,10 +1,6 @@
-# The dhcp example's server of the default VRF, as kea-dhcp4.service runs it, behind the
-# example's firewall, which opens no port for it: Kea's raw sockets read and answer DHCP ahead
-# of nftables. A client in a peer namespace, busybox's udhcpc, gets a lease of the pool with the
-# subnet's gateway, DNS server and domain, the printer's reserved address and host name by its
-# MAC address, and the boot files of BIOS, UEFI and iPXE clients with the boot server. The
-# diagnostic dhcp-leases lists the leases, by subnet and by MAC address, the lease file holds
-# them, and a reload keeps them.
+# The dhcp example's kea-dhcp4 of the default VRF behind the example's firewall, which opens no
+# port for it, as Kea's raw sockets answer ahead of nftables, with busybox's udhcpc as client:
+# leases, a reservation, boot files, the diagnostic dhcp-leases and leases kept across a reload.
 {
   pkgs,
   lib,

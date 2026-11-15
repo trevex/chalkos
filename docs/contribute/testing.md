@@ -127,7 +127,8 @@ Build checks test what an image build produces, without booting it. They live in
 a check, and `repo.nix` validates the lab template and the examples. `units/` also holds
 `image-checker`, which boots one NixOS VM, as an image's checker needs systemd. `e2e.nix` holds
 the end-to-end checks, `eval.nix` the evaluation tests, and `lib.nix` what they share, with the
-shell functions `fail`, `retry` and `refuses` the check scripts call. The test scripts of
+shell functions the check scripts call: `fail`, `retry` and `refuses`, and for the unit checks
+`netns`, `veth`, `forwarding`, `document` and `stub`. The test scripts of
 `units/` are `writeShellApplication` scripts, so shellcheck runs on them when they build.
 
 | Check | What it checks |

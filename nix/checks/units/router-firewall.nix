@@ -1,22 +1,6 @@
-# The router's firewall unit in network namespaces, with a LAN peer on lan0 and a WAN peer on
-# wan0, each over a veth pair. Without a rendered ruleset chalkos-firewall loads the fallback,
-# which accepts chalkd's port on every interface and forwards nothing. With the LAN example's
-# ruleset, as the image renders it, the peers probe chalkd's port on the management interface
-# alone, the protected ping past policies that drop everything else and on dmz0, an interface of
-# no zone, an AddressSet, forwarding by zone, masquerade, destination NAT and the strict
-# reverse-path filter. A reload replaces the table alone, in one transaction, and keeps it when
-# nft refuses the new one. The leaf example, loaded as at boot, forwards everything. The VRF
-# example's ruleset, with its links in VRFs as networkd leaves them and the routes its imports
-# leak, forwards and masquerades in IPv4 from the zone of VRF tenant to that of VRF internet and
-# nothing back, forwards nothing between mgmt and tenant in IPv6, whose routes the default VRF
-# imports, drops the internet's connections to the router's other ports, opens the transit's BGP
-# port in its VRF alone, masquerades and translates in guest, whose addresses the default VRF and
-# internet also use, and keeps guest's connections in their conntrack zone, so that a guest host
-# of a management host's address cannot pass as the management host's connection, as it does
-# without the zone. The loose reverse-path filter drops a source of either family that only the
-# default VRF routes, passes it once tenant's table routes it, and passes link-local sources in a
-# VRF. The strict one passes the neighbour discovery and router solicitations of link-local
-# sources in a VRF.
+# chalkos-firewall in network namespaces with LAN and WAN peers: the fallback ruleset, the LAN,
+# leaf and VRF examples' rulesets, reload semantics, the reverse-path filters and the conntrack
+# zones that keep a VRF's connections apart.
 {
   pkgs,
   checkLib,

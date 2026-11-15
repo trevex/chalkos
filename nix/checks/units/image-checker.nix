@@ -1,13 +1,6 @@
-# The checker of an image that does not run, in the sandbox chalkd runs it in, on a NixOS VM with
-# systemd: TestSandboxOnANode of pkg/imagecheck. The image is a second store, a directory laid
-# out as nix/store and bound over the VM's own: chalkd's closure as it is, and the image's system,
-# renderer and command fact at store paths the VM's store lacks, so the check passes only when
-# the checker, its renderer and the fact's program come from the bound store. The image's Demo
-# kind reads the fact in a rule; its validator refuses a Demo called veto, and its output's check
-# one called refuse; both check the sandbox: no root, /run/chalkos out of reach, and the check
-# no capabilities and nft --check in a user and network namespace of its own. While the checker
-# waits for its fact, another user of the VM reaches neither the facts socket nor the input or
-# the result.
+# An image's checker in chalkd's sandbox on a NixOS VM (TestSandboxOnANode of pkg/imagecheck).
+# The image is a second store bound over the VM's, holding the renderer and command fact at paths
+# the VM's store lacks, so the check passes only when they come from the image.
 {
   pkgs,
   lib,

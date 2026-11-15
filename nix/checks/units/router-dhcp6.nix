@@ -1,15 +1,7 @@
-# The dhcp6 example's DHCPv6 servers, the default VRF's and the VRF access's, as kea-dhcp6.service
-# and kea-dhcp6@access.service run them, with their units' capabilities alone and access's bound
-# to its VRF's device as BindNetworkInterface= does, behind the example's firewall, whose
-# openings let DHCPv6 from link-local addresses in on the servers' links. A client on lan0, of
-# the printer's MAC address in its DUID, gets its reserved address, the DNS server and the
-# search domain; a home router on cust0, in the VRF access, gets a /56, which chalkos-dhcp6-pd
-# records and chalkos-dhcp6-routes routes in access's table to the home router's link-local
-# address. The diagnostic dhcp-leases lists both leases. A release removes the record and the route. The
-# routes run as root with the unit's capabilities alone and trust no record: an ended record,
-# one of a prefix no subnet delegates, a link to a record, a FIFO, a record too long and a
-# records' directory that is a link route nothing, block no run and lose no file. The dhcp
-# example's firewall, which opens no DHCPv6, keeps the client from its address.
+# The dhcp6 example's kea-dhcp6 servers, of the default VRF and of the VRF access, with dhcpcd
+# clients behind the example's firewall: a reservation, a delegated prefix that chalkos-dhcp6-pd
+# records and chalkos-dhcp6-routes routes, and records that route nothing. Kea and the routes run
+# as root with their units' capabilities alone.
 {
   pkgs,
   lib,
@@ -75,6 +67,7 @@ unitCheck "router-dhcp6"
     take kea-dhcp6-access.json
     ${lib.concatMapStrings (e: "export ${lib.escapeShellArg e}\n") Environment}
     ${keaCaps} ${kea6} -c ${dir}/kea-dhcp6.json >kea-default.log 2>&1 &
+    # bindDevice binds access's sockets to the VRF's device, as BindNetworkInterface= does.
     BIND_DEVICE=access LD_PRELOAD=${bindDevice} ${keaCaps} ${kea6} -c ${dir}/kea-dhcp6-access.json >kea-access.log 2>&1 &
     for s in dhcp6 dhcp6-access; do
       retry 100 "Kea opened no control socket $s.sock" test -S /run/kea/$s.sock

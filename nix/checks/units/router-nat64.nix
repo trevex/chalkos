@@ -1,22 +1,7 @@
-# chalkos-nat64 in network namespaces, over the rendered instances of the edge's NAT64, of the
-# default VRF with an explicit pool, and of the VRF example's guest, in VRF guest with an own
-# pool. Jool's module does not load here, so a script over a file of instances is mounted over
-# the image's jool; it keys them by the caller's network namespace, as Jool does. The unit gives
-# each instance its namespace with forwarding off, its veth pair in its VRF, the addresses of its
-# .veth and the default routes back, its instance in its namespace, and its prefix's and
-# explicit pool's routes in its VRF's table. It removes routes of protocol 64 no file names, and
-# the namespace, link and routes of a NAT64 that went. A second run changes nothing. With the VRF
-# example's ruleset, a guest's packet to the NAT64 prefix reaches guest's namespace past policies
-# and the conntrack zone, and a connection from the namespace's inner address leaves guest's
-# uplink masqueraded to the uplink's address with its port. A link's address in an explicit
-# pool fails the run before it changes anything. A VRF of another table than two files' fails
-# the run after 30 s once, keeps the links out of it and keeps the instances' routes. A device
-# of another kind of a link's name fails the run and stays. A
-# link whose namespace went while a process held it is made anew. Table 300 has a name, which ip
-# prints unless asked for numbers. A NAT64 moved into the default VRF with another prefix and a
-# pool of one address leaves guest and table 300, its pool stays routed, and its instance is
-# replaced. Stopping the unit removes every namespace, link and route of protocol 64, and
-# starting it again brings them back.
+# chalkos-nat64 in network namespaces over the edge and VRF examples' NAT64s, with a stub jool that
+# keys instances by network namespace as Jool does: set-up, clean-up of stale state, refusals
+# that change nothing, a NAT64 moving VRF, the guest's traffic through the VRF example's ruleset,
+# and stop and start.
 {
   pkgs,
   lib,

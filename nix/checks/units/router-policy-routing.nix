@@ -1,15 +1,6 @@
-# The policy example's ruleset in network namespaces: LAN peers on lan0 and lan1, uplinks on
-# wana0, which the main table routes, and wanb0, and a transit peer on vt0 in the VRF transit of
-# table 100. The router holds the kernel's rules and the next hops' tables as networkd installs
-# them from the units the example renders, and transit's table the routes of the example's
-# Networks of lan0 and lan1. Each uplink and transit answer on the same far address with their
-# name, so a probe tells which way the router sent it. Guests' HTTPS takes transit and their
-# other ports the main table, DSCP 46 takes transit in both families, ahead of the next hops the
-# servers' sources take in each family, traffic between lan0 and lan1 the main table ahead of
-# those next hops, and other traffic the main table. A rule without in that sends BGP to the
-# main table leaves the router's BGP in transit alone in both families. While wanb0 is down the
-# next hops' traffic is dropped, not routed by the main table, and once networkd's route is back
-# it takes wanb0 again.
+# The policy example's ruleset with the kernel's rules and next hops' tables as networkd installs
+# them, in network namespaces with LAN peers, two uplinks and a peer in the VRF transit. Each way
+# out answers on the same far address with its name, so a probe tells which way it took.
 {
   checkLib,
   routerFirewall,

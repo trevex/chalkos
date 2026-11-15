@@ -1,14 +1,6 @@
-# The dhcp-relay example's relays, as dnsmasq-relay.service and dnsmasq-relay@guest.service run
-# them, behind the example's firewall, which opens DHCPv4 and DHCPv6 on lan0 and DHCPv4 on
-# vlan20, the relays' links. Both relay DHCPv4, the office's in the default VRF and the guests'
-# in the VRF guest, whose sockets a library preloaded into dnsmasq binds to the VRF's device as
-# BindNetworkInterface= does; they bind beside each other in either order. A client on lan0 takes
-# an IPv4 and an IPv6 address and a client on vlan20 an IPv4 address from Kea's servers in a
-# namespace behind wan0 and vlan30, which pick the subnets by the relays' addresses on the links
-# and answer the relays, which the firewall lets in as replies to their requests. A firewall
-# without the openings keeps the client on lan0 from both families. dnsmasq runs with the
-# units' capabilities alone, as root, the namespace's only user, which it stays with --user=root;
-# on a node it runs as the user dnsmasq with the same capabilities.
+# The dhcp-relay example's dnsmasq relays, of the default VRF and of the VRF guest, between
+# clients and Kea's servers behind the example's firewall. dnsmasq runs as root, the namespace's
+# only user, with the units' capabilities alone; on a node it runs as the user dnsmasq.
 {
   pkgs,
   lib,
@@ -80,6 +72,7 @@ unitCheck "router-dhcp-relay" tools ''
   ${routerFirewall.load "dhcp-relay"}
 
   # relays: starts both relays, the one given first first, and checks that both run.
+  # bindDevice binds the guest relay's sockets to the VRF's device, as BindNetworkInterface= does.
   relays() {
     pkill -x dnsmasq 2>/dev/null || true
     sleep 0.5
