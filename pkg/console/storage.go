@@ -2,6 +2,7 @@ package console
 
 import (
 	"fmt"
+	"io"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -45,11 +46,7 @@ func (s *storage) View(width, height int) string {
 	if !s.node.Normal() {
 		if disks.Value != nil {
 			b.WriteString("Disks, as chalkctl disks lists them:\n")
-			var text strings.Builder
-			if err := statusview.WriteDisks(&text, disks.Value.Disks); err != nil {
-				fmt.Fprintln(&text, err)
-			}
-			b.WriteString(Clean(text.String()))
+			b.WriteString(Section(func(w io.Writer) error { return statusview.WriteDisks(w, disks.Value.Disks) }))
 		}
 		return s.pane.View(b.String(), width, height)
 	}

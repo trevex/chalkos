@@ -374,23 +374,11 @@ func (l *logs) scroll(k tea.KeyMsg) {
 	if l.follow {
 		l.offset = last
 	}
-	switch k.String() {
-	case "up":
-		l.offset--
-	case "down":
-		l.offset++
-	case "pgup":
-		l.offset -= max(1, l.height-1)
-	case "pgdown":
-		l.offset += max(1, l.height-1)
-	case "home":
-		l.offset = 0
-	case "end":
-		l.offset = last
-	default:
+	offset, ok := scroll(k.String(), l.offset, l.height, last)
+	if !ok {
 		return
 	}
-	l.offset = min(max(l.offset, 0), last)
+	l.offset = min(max(offset, 0), last)
 	l.follow = l.offset >= last
 }
 

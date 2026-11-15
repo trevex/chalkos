@@ -38,73 +38,49 @@ type nodeClient struct {
 	node nodev1connect.NodeServiceClient
 }
 
-func (c nodeClient) Info(ctx context.Context) (*nodev1.InfoResponse, error) {
-	resp, err := c.node.Info(ctx, connect.NewRequest(&nodev1.InfoRequest{}))
+// unary calls a unary method of the node with req and returns its response's message.
+func unary[Req, Resp any](ctx context.Context, call func(context.Context, *connect.Request[Req]) (*connect.Response[Resp], error), req *Req) (*Resp, error) {
+	resp, err := call(ctx, connect.NewRequest(req))
 	if err != nil {
 		return nil, err
 	}
 	return resp.Msg, nil
+}
+
+func (c nodeClient) Info(ctx context.Context) (*nodev1.InfoResponse, error) {
+	return unary(ctx, c.node.Info, &nodev1.InfoRequest{})
 }
 
 func (c nodeClient) Status(ctx context.Context) (*nodev1.StatusResponse, error) {
-	resp, err := c.node.Status(ctx, connect.NewRequest(&nodev1.StatusRequest{}))
-	if err != nil {
-		return nil, err
-	}
-	return resp.Msg, nil
+	return unary(ctx, c.node.Status, &nodev1.StatusRequest{})
 }
 
 func (c nodeClient) Disks(ctx context.Context) (*nodev1.DisksResponse, error) {
-	resp, err := c.node.Disks(ctx, connect.NewRequest(&nodev1.DisksRequest{}))
-	if err != nil {
-		return nil, err
-	}
-	return resp.Msg, nil
+	return unary(ctx, c.node.Disks, &nodev1.DisksRequest{})
 }
 
 func (c nodeClient) Reboot(ctx context.Context) error {
-	_, err := c.node.Reboot(ctx, connect.NewRequest(&nodev1.RebootRequest{}))
+	_, err := unary(ctx, c.node.Reboot, &nodev1.RebootRequest{})
 	return err
 }
 
 func (c nodeClient) Shutdown(ctx context.Context) error {
-	_, err := c.node.Shutdown(ctx, connect.NewRequest(&nodev1.ShutdownRequest{}))
+	_, err := unary(ctx, c.node.Shutdown, &nodev1.ShutdownRequest{})
 	return err
 }
 
 func (c nodeClient) RollbackImage(ctx context.Context, rootHash []byte) (*nodev1.RollbackImageResponse, error) {
-	resp, err := c.node.RollbackImage(ctx, connect.NewRequest(&nodev1.RollbackImageRequest{RootHash: rootHash, Reboot: true}))
-	if err != nil {
-		return nil, err
-	}
-	return resp.Msg, nil
+	return unary(ctx, c.node.RollbackImage, &nodev1.RollbackImageRequest{RootHash: rootHash, Reboot: true})
 }
 
 func (c nodeClient) RollbackConfig(ctx context.Context, version string) (*nodev1.RollbackConfigResponse, error) {
-	resp, err := c.node.RollbackConfig(ctx, connect.NewRequest(&nodev1.RollbackConfigRequest{Version: version}))
-	if err != nil {
-		return nil, err
-	}
-	return resp.Msg, nil
+	return unary(ctx, c.node.RollbackConfig, &nodev1.RollbackConfigRequest{Version: version})
 }
 
 func (c nodeClient) Diagnostic(ctx context.Context, name string, args map[string]string) ([]byte, error) {
-	stream, err := c.node.RunDiagnostic(ctx, connect.NewRequest(&nodev1.RunDiagnosticRequest{Name: name, Arguments: args}))
-	if err != nil {
-		return nil, err
-	}
-	defer stream.Close()
 	var stdout, stderr bytes.Buffer
-	var exit *nodev1.DiagnosticExit
-	for stream.Receive() {
-		m := stream.Msg()
-		stdout.Write(m.GetStdout())
-		stderr.Write(m.GetStderr())
-		if e := m.GetExit(); e != nil {
-			exit = e
-		}
-	}
-	if err := stream.Err(); err != nil {
+	exit, err := client.RunDiagnostic(ctx, c.node, name, args, &stdout, &stderr)
+	if err != nil {
 		return nil, err
 	}
 	switch {

@@ -6,6 +6,7 @@ package kubernetes
 import (
 	"context"
 	"fmt"
+	"io"
 	"slices"
 	"strings"
 	"time"
@@ -142,11 +143,7 @@ func (t *Tab) View(width, height int) string {
 	for _, l := range kubernetesview.StatusLines(k) {
 		line(console.OneLine(l), plain)
 	}
-	var revoked strings.Builder
-	if err := kubernetesview.WriteRevoked(&revoked, k); err != nil {
-		revoked.WriteString(err.Error() + "\n")
-	}
-	b.WriteString(console.Clean(revoked.String()))
+	b.WriteString(console.Section(func(w io.Writer) error { return kubernetesview.WriteRevoked(w, k) }))
 	switch {
 	case k.PodsError != "":
 		line(console.OneLine("pods unknown: "+k.PodsError), errorStyle)

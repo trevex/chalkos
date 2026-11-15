@@ -7,6 +7,7 @@ import (
 	"cmp"
 	"context"
 	"fmt"
+	"io"
 	"slices"
 	"strings"
 	"time"
@@ -172,11 +173,7 @@ func (t *Tab) View(width, height int) string {
 		b.WriteString(console.ErrorStyle.Render(p) + "\n")
 	}
 	if s := t.status.Value; s != nil {
-		var section strings.Builder
-		if err := routerview.Write(&section, s); err != nil {
-			section.WriteString(err.Error() + "\n")
-		}
-		b.WriteString(console.Clean(section.String()))
+		b.WriteString(console.Section(func(w io.Writer) error { return routerview.Write(w, s) }))
 		if len(s.Nat64) > 0 {
 			b.WriteString(console.GreyStyle.Render("nat64 sessions: chalkctl node diag "+t.node+" nat64-sessions instance=<name> lists them") + "\n")
 		}

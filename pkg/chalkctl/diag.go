@@ -114,28 +114,8 @@ func parameterNotes(p *nodev1.DiagnosticParameter) string {
 }
 
 func (a *app) runDiagnostic(ctx context.Context, conn *client.Conn, name string, args map[string]string) error {
-	stream, err := conn.RunDiagnostic(ctx, connect.NewRequest(&nodev1.RunDiagnosticRequest{Name: name, Arguments: args}))
+	exit, err := client.RunDiagnostic(ctx, conn, name, args, a.stdout, a.stderr)
 	if err != nil {
-		return err
-	}
-	// Closing the stream early ends the call, and the node stops the run.
-	defer stream.Close()
-	var exit *nodev1.DiagnosticExit
-	for stream.Receive() {
-		var err error
-		switch o := stream.Msg().Output.(type) {
-		case *nodev1.RunDiagnosticResponse_Stdout:
-			_, err = a.stdout.Write(o.Stdout)
-		case *nodev1.RunDiagnosticResponse_Stderr:
-			_, err = a.stderr.Write(o.Stderr)
-		case *nodev1.RunDiagnosticResponse_Exit:
-			exit = o.Exit
-		}
-		if err != nil {
-			return fmt.Errorf("print what %s prints: %w", name, err)
-		}
-	}
-	if err := stream.Err(); err != nil {
 		return err
 	}
 	switch {

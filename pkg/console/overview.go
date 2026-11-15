@@ -1,7 +1,7 @@
 package console
 
 import (
-	"fmt"
+	"io"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -55,11 +55,7 @@ func (o *overview) View(width, height int) string {
 		b.WriteString(ErrorStyle.Render(p) + "\n")
 	}
 	if s := o.status.Value; s != nil {
-		var text strings.Builder
-		if err := statusview.Write(&text, s, statusview.Options{Node: info.GetNodeName()}); err != nil {
-			fmt.Fprintln(&text, err)
-		}
-		b.WriteString(Clean(text.String()))
+		b.WriteString(Section(func(w io.Writer) error { return statusview.Write(w, s, statusview.Options{Node: info.GetNodeName()}) }))
 	}
 	return o.pane.View(b.String(), width, height)
 }

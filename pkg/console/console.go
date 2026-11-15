@@ -171,20 +171,15 @@ type Model struct {
 	addressesRead    time.Time
 	addressesChanged time.Time
 	// ctx ends with Close, and with it the watch of the password requests.
-	ctx    context.Context
-	cancel context.CancelFunc
-	// asks are the password requests as last read, oldest first, by the read numbered asksRead
-	// of the asksSeq reads so far; prompt is the one on screen; answered are those answered
-	// whose files remain, by when, which the prompt skips for answeredFor; asksChanged signals a
-	// change of the requests' directory, nil without a watch; askNote is why the last answer did
-	// not reach its request.
-	asks        []askpassword.Request
-	asksSeq     int
-	asksRead    int
-	prompt      *prompt
-	answered    map[string]time.Time
-	asksChanged <-chan struct{}
-	askNote     string
+	ctx         context.Context
+	cancel      context.CancelFunc
+	asks        []askpassword.Request // the password requests as last read, oldest first
+	asksSeq     int                   // the reads of the requests so far
+	asksRead    int                   // the number of the read asks came from
+	prompt      *prompt               // the request on screen
+	answered    map[string]time.Time  // when each request whose file remains was answered; skipped for answeredFor
+	asksChanged <-chan struct{}       // signals a change of the requests' directory; nil without a watch
+	askNote     string                // why the last answer did not reach its request
 	reading     bool
 	// lastKey is when the last key came; idle is set once none came for idleAfter. tickGen numbers
 	// the chain of ticks, which a key that ends the idle time starts anew.
@@ -453,7 +448,7 @@ func (m *Model) View() string {
 	case m.note != "":
 		bottom = append([]string{fit(m.note, m.width)}, bottom...)
 	case m.idle:
-		bottom = append([]string{fit(GreyStyle.Render("idle: the console reads the node every 30 s and follows no journal; a key resumes"), m.width)}, bottom...)
+		bottom = append([]string{fit(GreyStyle.Render(fmt.Sprintf("idle: the console reads the node every %d s and follows no journal; a key resumes", int(idleInterval.Seconds()))), m.width)}, bottom...)
 	}
 	height := max(1, m.height-len(top)-len(bottom))
 	var body string

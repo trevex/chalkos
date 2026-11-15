@@ -15,23 +15,29 @@ type Pane struct {
 
 // Key scrolls by k and reports whether it was a scrolling key.
 func (p *Pane) Key(k tea.KeyMsg) bool {
-	switch k.String() {
+	offset, ok := scroll(k.String(), p.offset, p.height, p.lines)
+	p.offset = offset
+	return ok
+}
+
+// scroll is the offset of the first line on a screen of height lines after key, with last the
+// offset End goes to, and whether key scrolls.
+func scroll(key string, offset, height, last int) (int, bool) {
+	switch key {
 	case "up":
-		p.offset--
+		return offset - 1, true
 	case "down":
-		p.offset++
+		return offset + 1, true
 	case "pgup":
-		p.offset -= max(1, p.height-1)
+		return offset - max(1, height-1), true
 	case "pgdown":
-		p.offset += max(1, p.height-1)
+		return offset + max(1, height-1), true
 	case "home":
-		p.offset = 0
+		return 0, true
 	case "end":
-		p.offset = p.lines
-	default:
-		return false
+		return last, true
 	}
-	return true
+	return offset, false
 }
 
 // View is the screen of text at the offset, width by height.

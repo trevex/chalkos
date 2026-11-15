@@ -2,6 +2,7 @@ package console
 
 import (
 	"fmt"
+	"io"
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
@@ -141,4 +142,13 @@ func Wrap(text string, width int) string {
 		rows = append(rows, row)
 	}
 	return strings.Join(rows, "\n")
+}
+
+// Section is the text write writes, or its error, cleaned for the screen.
+func Section(write func(io.Writer) error) string {
+	var b strings.Builder
+	if err := write(&b); err != nil {
+		fmt.Fprintln(&b, err)
+	}
+	return Clean(b.String())
 }
