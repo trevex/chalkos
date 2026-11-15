@@ -509,7 +509,7 @@ func TestRotateOSCA(t *testing.T) {
 		if fps, _ := pki.Fingerprints(n.cert.OSCA()); !slices.Equal(slices.Sorted(slices.Values(fps)), slices.Sorted(slices.Values(both))) || len(fps) != 2 {
 			t.Errorf("%s trusts %d OS CAs, want both", name, len(fps))
 		}
-		if chain := n.cert.Current().TLS.Certificate; fingerprintDER(chain[1]) != nodeCA {
+		if !servesNodeCA(n, nodeCA) {
 			t.Errorf("%s does not serve a certificate of the new node CA", name)
 		}
 		if n.kind == kubernetes.KindControlPlane && *n.share.NodeCA != s.NodeCA {
@@ -563,12 +563,7 @@ func TestRotateOSCA(t *testing.T) {
 	if _, err := l.statusWith(newConfig, "w1"); err != nil {
 		t.Errorf("a client file of the new OS CA: %v", err)
 	}
-	if prev, err := os.ReadFile(filepath.Join(l.ta.dir, "secrets.json.prev")); err != nil || len(prev) == 0 {
-		t.Errorf("no previous version of the secrets file: %v", err)
-	}
 }
-
-func fingerprintDER(der []byte) string { return pki.Fingerprint(der) }
 
 // statusWith reads a node's status with a client file.
 func (l *rotationLab) statusWith(config, node string) (*nodev1.StatusResponse, error) {
@@ -658,26 +653,26 @@ func (l *rotationLab) authenticatesWith(config, node string) error {
 // healthy voter: it gets no share while cp1 reports a learner, an unhealthy member or a stale
 // control plane.
 func TestRotateControlPlanesWaitForEachOther(t *testing.T) {
-	for _, kind := range []clustersecrets.RotationKind{clustersecrets.RotateKubernetesCA, clustersecrets.RotateServiceAccountKey, clustersecrets.RotateEncryptionKey} {
-		for _, hold := range []string{"learner", "unhealthy", "stale"} {
-			t.Run(string(kind)+"/"+hold, func(t *testing.T) {
-				l := newRotationLab(t)
-				var once sync.Once
-				l.onShare = func(node string) {
-					if node == "cp1" {
-						once.Do(func() { l.holdFor(hold, "cp1", 5) })
-					}
+	// Every kind reaches the same wait; TestRotateControlPlanesInTurn runs each kind.
+	kind := clustersecrets.RotateEncryptionKey
+	for _, hold := range []string{"learner", "unhealthy", "stale"} {
+		t.Run(hold, func(t *testing.T) {
+			l := newRotationLab(t)
+			var once sync.Once
+			l.onShare = func(node string) {
+				if node == "cp1" {
+					once.Do(func() { l.holdFor(hold, "cp1", 5) })
 				}
-				if err := l.rotate(string(kind)); err != nil {
-					t.Fatal(err)
-				}
-				events := l.takeEvents()
-				cp1, cleared, cp2 := slices.Index(events, "cp1 share"), slices.Index(events, hold+" cleared"), slices.Index(events, "cp2 share")
-				if cp1 < 0 || cleared < cp1 || cp2 < cleared {
-					t.Errorf("events %v: want cp1's share, cp1 held back for five polls, and only then cp2's share", events)
-				}
-			})
-		}
+			}
+			if err := l.rotate(string(kind)); err != nil {
+				t.Fatal(err)
+			}
+			events := l.takeEvents()
+			cp1, cleared, cp2 := slices.Index(events, "cp1 share"), slices.Index(events, hold+" cleared"), slices.Index(events, "cp2 share")
+			if cp1 < 0 || cleared < cp1 || cp2 < cleared {
+				t.Errorf("events %v: want cp1's share, cp1 held back for five polls, and only then cp2's share", events)
+			}
+		})
 	}
 }
 
@@ -842,7 +837,7 @@ func TestSecretsChangedMeanwhileNotOverwritten(t *testing.T) {
 // revoked out of every phase, and names them.
 func TestRotateSkipsRevokedNodes(t *testing.T) {
 	l := newRotationLab(t)
-	l.revoked = []*kubernetesv1.RevokedNode{{Name: "w1", RevokedAt: timestamppb.New(time.Date(2026, 10, 23, 12, 0, 0, 0, time.UTC))}, {Name: "gone"}}
+	l.revoked = []*kubernetesv1.RevokedNode{{Name: "w1", RevokedAt: timestamppb.New(revokedAt)}, {Name: "gone"}}
 	l.revokedErr = map[string]string{"cp1": "read the revoked nodes: connection refused"}
 	if err := l.rotate("os-ca"); err != nil {
 		t.Fatal(err)
@@ -932,7 +927,7 @@ func TestRotateReadsRevokedNodesBeforeEachPhase(t *testing.T) {
 	l.onShare = func(string) {
 		l.mu.Lock()
 		defer l.mu.Unlock()
-		l.revoked = []*kubernetesv1.RevokedNode{{Name: "w1", RevokedAt: timestamppb.New(time.Date(2026, 10, 23, 12, 0, 0, 0, time.UTC))}}
+		l.revoked = []*kubernetesv1.RevokedNode{{Name: "w1", RevokedAt: timestamppb.New(revokedAt)}}
 	}
 	l.takeEvents()
 	if err := l.rotate("os-ca", "--resume"); err != nil {
@@ -1027,7 +1022,7 @@ func TestRotateNodeCA(t *testing.T) {
 	nodeCA := fingerprint(t, s.NodeCA.Certificate)
 	osCA, _ := pki.Fingerprints(s.OSCABundle())
 	for name, n := range l.nodes {
-		if chain := n.cert.Current().TLS.Certificate; fingerprintDER(chain[1]) != nodeCA {
+		if !servesNodeCA(n, nodeCA) {
 			t.Errorf("%s does not serve a certificate of the new node CA", name)
 		}
 		if fps, _ := pki.Fingerprints(n.cert.OSCA()); !slices.Equal(fps, osCA) {
@@ -1057,7 +1052,7 @@ func TestRotateNodeCAWithoutHolders(t *testing.T) {
 	}
 	nodeCA := fingerprint(t, l.secrets().NodeCA.Certificate)
 	for name, n := range l.nodes {
-		if chain := n.cert.Current().TLS.Certificate; fingerprintDER(chain[1]) != nodeCA {
+		if !servesNodeCA(n, nodeCA) {
 			t.Errorf("%s does not serve a certificate of the new node CA", name)
 		}
 	}
@@ -1100,4 +1095,9 @@ func TestRotationKeepsTheVersionBeforeIt(t *testing.T) {
 	if want := "the version from before the rotation is " + path + ".prev"; !strings.Contains(l.ta.stdout.String(), want) {
 		t.Errorf("output lacks %q:\n%s", want, l.ta.stdout)
 	}
+}
+
+// servesNodeCA reports whether the node serves a certificate of the node CA of the fingerprint.
+func servesNodeCA(n *fakeNode, nodeCA string) bool {
+	return pki.Fingerprint(n.cert.Current().TLS.Certificate[1]) == nodeCA
 }
