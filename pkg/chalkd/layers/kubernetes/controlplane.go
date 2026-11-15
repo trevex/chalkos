@@ -137,11 +137,9 @@ func (k *side) runControlPlane(ctx context.Context, share kpki.Share, applied fu
 	return k.serveControlPlane(ctx, c, cfg, applied)
 }
 
-// serveControlPlane runs until ctx ends. It does two things independently:
-//   - approves kubelet serving certificates once the API server is ready;
-//   - applies the control plane's objects until that succeeds.
-//
-// Objects that fail, such as an Addon document's, so leave kubelets their serving certificates.
+// serveControlPlane runs until ctx ends, approving kubelet serving certificates once the API server
+// is ready and, apart from that, applying the control plane's objects until that succeeds, so
+// objects that fail, such as an Addon document's, do not keep kubelets from their certificates.
 func (k *side) serveControlPlane(ctx context.Context, c k8s.Cluster, cfg *rest.Config, applied func(n int)) error {
 	go func() {
 		err := kapply.WaitReady(ctx, cfg)

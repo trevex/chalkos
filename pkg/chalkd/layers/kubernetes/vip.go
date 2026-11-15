@@ -78,11 +78,9 @@ func (k *side) runVIP(ctx context.Context) error {
 		Holding:   &k.vipHolder,
 	}
 	defer election.Close()
-	// The client verifies etcd with the CAs of the share it was dialled with and renews its
-	// credential from that share's etcd CA, so a rotation of the etcd CA would leave it verifying
-	// etcd's new certificate against the old CA, and authenticating with a CA etcd stops trusting
-	// at the finish. On such a change the election ends as when chalkd stops, releasing the VIPs
-	// and resigning, and starts again with the new share.
+	// The client verifies etcd and renews its credential with the CAs of the share it was dialled
+	// with, which a rotation of the etcd CA replaces. On such a change the election ends as when
+	// chalkd stops, releasing the VIPs and resigning, and starts again with the new share.
 	ectx, restart := context.WithCancelCause(ctx)
 	defer restart(nil)
 	go watchEtcdTrust(ectx, k.state, share, k.timing.VIPInterval, restart)

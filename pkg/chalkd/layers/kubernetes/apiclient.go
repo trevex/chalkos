@@ -41,13 +41,10 @@ func (k *side) apiClient(need func() (controlPlaneNode, error)) (kubernetes.Inte
 	return client, cp, nil
 }
 
-// ownAPIClient returns chalkd's client for the API server, with a credential in system:masters.
-// One client serves every request until its certificate is at its half-life or the share or the
-// address changes. Then a new client with a new credential replaces it:
-//   - the old client's idle connections are closed;
-//   - requests in flight on it finish on their connections, whose certificate is still valid.
-//
-// Building a client per request would issue a certificate and open a connection each time.
+// ownAPIClient returns chalkd's apiConn, with a credential in system:masters, and replaces it when
+// due: the old client's idle connections close, and requests in flight finish on theirs, whose
+// certificate is still valid. One client serves every request, as one per request would issue a
+// certificate and open a connection each time.
 func (k *side) ownAPIClient(c k8s.Cluster, share kpki.Share) (kubernetes.Interface, error) {
 	key := apiKey(c, share)
 	k.apiMu.Lock()

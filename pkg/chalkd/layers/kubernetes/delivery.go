@@ -155,11 +155,10 @@ func (p *Plugin) writeCluster(c *k8s.Cluster) error {
 	return atomicfile.WriteFile(file, data, 0o644)
 }
 
-// share validates a delivered share for the node the identity names, a node CA in it against the
-// OS CAs the node trusts once the delivery is applied, and returns it as STATE keeps it, in its
-// canonical encoding; nil when none was delivered. A second share is refused. Outside an install,
-// the share's kind must be the cluster's: cluster is the one the config of the same request gives,
-// nil without config, when the node's cluster file is read instead.
+// share validates a delivered share for the node the identity names, its node CA against the OS
+// CAs the node trusts after the delivery, and returns it in the canonical encoding STATE keeps;
+// nil when none was delivered, and a second one is refused. Outside an install its kind must be
+// the cluster's: cluster, from the request's config, or nil to read the node's cluster file.
 func (p *Plugin) share(d layer.Planned, cluster *k8s.Cluster) ([]byte, error) {
 	var data []byte
 	for i, payload := range d.Payloads {

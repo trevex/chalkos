@@ -121,13 +121,11 @@ type drainError struct {
 
 func (e *drainError) Error() string { return e.err.Error() }
 
-// evictPods evicts the node's pods of controllers but DaemonSets, again while an eviction would
-// break a PodDisruptionBudget or the API server fails it, and waits until they are gone. It keeps
-// DaemonSet pods, which would run again on the node at once, static pods' mirrors, finished pods,
-// and pods without a controller, which would be gone for good and run again once the node is
-// back. Pods that terminate already, as those an earlier drain evicted, are not evicted again but
-// waited for too: the node is drained only once they have stopped. Pods with emptyDir volumes
-// are evicted only when their data may be lost; otherwise nothing is evicted.
+// evictPods evicts the node's pods of controllers but DaemonSets, retrying while a
+// PodDisruptionBudget or the API server refuses, and waits until they and the pods terminating
+// already are gone. Pods without a controller would be gone for good, so they stay, and run again
+// once the node is back. Pods with emptyDir volumes are evicted only when deleteEmptyDir allows
+// losing their data; otherwise nothing is.
 func (k *side) evictPods(ctx context.Context, cs kubernetes.Interface, node string, deleteEmptyDir bool) (drained, error) {
 	pods, err := cs.CoreV1().Pods(metav1.NamespaceAll).List(ctx, metav1.ListOptions{FieldSelector: fields.OneTermEqualSelector("spec.nodeName", node).String()})
 	if err != nil {

@@ -59,9 +59,8 @@ func (p *Plugin) Permissions() map[string]layer.Permission {
 	}
 }
 
-// Start runs the Kubernetes loops until ctx ends: on every way out the node releases the VIPs,
-// which must not stay on a node whose chalkd no longer holds their lease, and closes its etcd
-// clients.
+// Start runs the loops until ctx ends, then stops them, which releases the VIPs and closes the
+// etcd clients.
 func (p *Plugin) Start(ctx context.Context) error {
 	p.k.startLoops()
 	<-ctx.Done()

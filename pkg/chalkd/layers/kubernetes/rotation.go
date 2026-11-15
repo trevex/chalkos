@@ -115,12 +115,10 @@ type workload struct{ kind, namespace, name string }
 
 func (w workload) String() string { return w.namespace + "/" + w.kind + "/" + w.name }
 
-// restartAddons restarts the workloads of the cluster's manifests, chalkos's add-ons among them,
-// so their pods trust the Kubernetes CAs of bundle: a pod reads its service account's CA
-// certificates when it starts. They restart only once kube-root-ca.crt holds all of them in
-// their namespaces, and the step ends once they rolled out. A workload whose rollout does not
-// complete by itself, such as one that updates its pods only when they are deleted, is restarted
-// and returned in notWaited instead of being waited for.
+// restartAddons restarts the workloads of the cluster's manifests once kube-root-ca.crt holds all
+// of bundle's CAs in their namespaces, as a pod reads its service account's CAs at start, and
+// waits for their rollouts. A workload that only updates its pods when they are deleted is
+// restarted and returned in notWaited instead.
 func (k *side) restartAddons(ctx context.Context, c k8s.Cluster, client kubernetes.Interface, bundle string) (restarted, notWaited []string, err error) {
 	objects, err := k.hooks.Objects(c)
 	if err != nil {

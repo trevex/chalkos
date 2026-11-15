@@ -37,9 +37,7 @@ type side struct {
 	vipHolder atomic.Bool
 
 	mu sync.Mutex
-	// group runs the loops until stopLoops ends them: the VIP election, which released the VIPs
-	// once it ended, the join, the renewal of the control plane's certificates and the control
-	// plane's loop. It is nil while none runs.
+	// group runs the loops until stopLoops ends them; nil while none runs.
 	group *loopGroup
 	// joining is set while the join's loop runs; joinStep is what it does or why it failed last,
 	// and joinWaiting is set while it finds no cluster.
@@ -105,35 +103,35 @@ type Hooks struct {
 	RevokedNodes func(ctx context.Context) (revoked.List, error)
 }
 
-// Timing holds the waits and timeouts of the Kubernetes side. A zero field means its default.
+// Timing holds the waits and timeouts of the Kubernetes side. A zero field takes its default
+// (withDefaults).
 type Timing struct {
 	// RestartBackoff is the first wait before the control plane's loop starts again after it
-	// failed; it doubles up to MaxRestartBackoff. The defaults are 5 seconds and a minute.
+	// failed; it doubles up to MaxRestartBackoff.
 	RestartBackoff, MaxRestartBackoff time.Duration
-	// JoinRetry is the wait between two attempts to join the cluster; 10 seconds by default.
+	// JoinRetry is the wait between two attempts to join the cluster.
 	JoinRetry time.Duration
 	// PromoteTimeout is how long the join waits for its learner to catch up with the leader
-	// before it starts over; 10 minutes by default.
+	// before it starts over.
 	PromoteTimeout time.Duration
 	// VIPTTL is the lifetime in seconds of the lease that holds the VIPs, and VIPInterval the
-	// time between two health checks of the API server. The defaults are vip.DefaultTTL and
-	// vip.DefaultInterval.
+	// time between two health checks of the API server.
 	VIPTTL      int
 	VIPInterval time.Duration
-	// EtcdTimeout bounds each request to etcd, so an etcd member that does not answer never holds
-	// up a loop or the membership lock; 30 seconds by default.
+	// EtcdTimeout bounds each request to etcd, so a member that does not answer never holds up a
+	// loop or the membership lock.
 	EtcdTimeout time.Duration
-	// EtcdStatusTimeout is how long a health check waits for each etcd member. Zero means three
-	// seconds. Tests raise it: their members share one busy process.
+	// EtcdStatusTimeout is how long a health check waits for each etcd member; zero leaves the
+	// etcd client's three seconds. Tests raise it: their members share one busy process.
 	EtcdStatusTimeout time.Duration
 	// EtcdRetry is the wait between two requests to remove an etcd member while etcd refuses to
-	// change its members for now, as right after one joined; a second by default.
+	// change its members for now, as right after one joined.
 	EtcdRetry time.Duration
 	// Poll is the time between two looks at what a rotation step, a drain or a joining learner
-	// waits for; two seconds by default.
+	// waits for.
 	Poll time.Duration
 	// StatusTimeout bounds each read of the status from the API server, the revoked nodes and the
-	// Node apart; five seconds by default.
+	// Node apart.
 	StatusTimeout time.Duration
 }
 
@@ -254,12 +252,9 @@ func (k *side) stop() {
 	k.stopLoops()
 }
 
-// stopLoops ends the loops and waits until:
-//   - the node released the VIPs, which must never stay on a node that no longer holds their lease;
-//   - the join stopped;
-//   - a renewal of the control plane's certificates, which renders the static pods, ended.
-//
-// startLoops starts the loops again.
+// stopLoops ends the loops and waits until the node released the VIPs, which must never stay on a
+// node whose chalkd no longer holds their lease, the join stopped and a renewal of the control
+// plane's certificates, which renders the static pods, ended. startLoops starts them again.
 func (k *side) stopLoops() {
 	k.mu.Lock()
 	g := k.group
