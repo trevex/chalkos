@@ -95,12 +95,11 @@ type builtinImage struct {
 	diagnostics map[string]diagnostics.Definition
 }
 
-// writeBuiltins writes the page of built-ins to page from three rules images, as an image's
-// system.build.chalkosRulesImage lays them out: that of the default variant, at def, that of an
-// image without Kubernetes, at plain, and that of a router image, at router. A built-in of the
-// plain image is one of every image; one the default image alone has is one of images with
-// Kubernetes, and one the router image alone has one of router images. A built-in of every image
-// that the router image declares otherwise is listed again with router images, as they declare it.
+// writeBuiltins writes the built-ins page from three rules images, as
+// system.build.chalkosRulesImage lays them out: the default variant's at def, one without
+// Kubernetes at plain and a router image's at router. The plain image's built-ins are every
+// image's; the rest belong to images with Kubernetes or router images, and one of every image that
+// the router image declares otherwise is listed again with router images.
 func writeBuiltins(page, def, plain, router string) error {
 	d, err := readBuiltinImage(def)
 	if err != nil {
@@ -207,19 +206,8 @@ func kindsRules(set *rules.Set) []kindRules {
 	return kinds
 }
 
-// compareKinds orders kinds as the page of config kinds does: chalkos.dev's first, then by group
-// and kind.
-func compareKinds(a, b schema.Kind) int {
-	ga, _, _ := strings.Cut(a.APIVersion, "/")
-	gb, _, _ := strings.Cut(b.APIVersion, "/")
-	if (ga == "chalkos.dev") != (gb == "chalkos.dev") {
-		if ga == "chalkos.dev" {
-			return -1
-		}
-		return 1
-	}
-	return strings.Compare(ga+"\x00"+a.Kind, gb+"\x00"+b.Kind)
-}
+// compareKinds orders kinds as compareGroupKind does.
+func compareKinds(a, b schema.Kind) int { return compareGroupKind(a.Group(), a.Kind, b.Group(), b.Kind) }
 
 // splitRules splits the rules of the kinds of def, the image named image, into those of every
 // image, which the plain image has as well, and those its layer adds. A rule of the plain image

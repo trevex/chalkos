@@ -64,6 +64,7 @@ echo "key: `chalkctl recovery-key w3`"
 
 ``` title="status.sh"
 chalkctl status cp16
+chalkcfg get Rack rack -o json
 ```
 
 ```{ .yaml title="values.yaml" }

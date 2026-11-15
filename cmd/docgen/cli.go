@@ -69,10 +69,9 @@ func writePages(cmd *cobra.Command, dir, docs string) error {
 	return nil
 }
 
-// render is the body of a command's page: its usage line, its description, its flags, its
-// examples and the pages of the commands above and below it. A command that holds subcommands
-// gets no usage line: chalkctl, chalklab, chalkbuild and chalkcfg run one only to fail with its
-// usage. The completion command's page shows each shell's usage line and how to load its script.
+// render is the body of a command's page: usage, description, flags, examples and the pages above
+// and below. A group gets no usage line, as it runs only to fail with its usage; completion gets
+// one per shell and how to load its script.
 func render(cmd *cobra.Command, docs string) (string, error) {
 	var b strings.Builder
 	fmt.Fprintf(&b, "# %s\n\n", cmd.CommandPath())

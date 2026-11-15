@@ -95,15 +95,7 @@ func writeKinds(page, dir string, files []string) error {
 	if err != nil {
 		return err
 	}
-	slices.SortFunc(kinds, func(a, b kindSchema) int {
-		if (a.group == "chalkos.dev") != (b.group == "chalkos.dev") {
-			if a.group == "chalkos.dev" {
-				return -1
-			}
-			return 1
-		}
-		return cmp.Or(strings.Compare(a.group, b.group), strings.Compare(a.decl.Kind, b.decl.Kind))
-	})
+	slices.SortFunc(kinds, func(a, b kindSchema) int { return compareGroupKind(a.group, a.decl.Kind, b.group, b.decl.Kind) })
 	for _, f := range files {
 		data, err := os.ReadFile(f)
 		if err != nil {
@@ -174,7 +166,7 @@ func kindSchemas(s *schema.Schemas, dir string) ([]kindSchema, error) {
 	}
 	var kinds []kindSchema
 	for _, k := range s.Kinds() {
-		ks := kindSchema{decl: k, schemas: s, path: filepath.Join(dir, schemaFileName(k))}
+		ks := kindSchema{decl: k, schemas: s, path: filepath.Join(dir, schema.FileName(k))}
 		ks.group, ks.version, _ = strings.Cut(k.APIVersion, "/")
 		s.WalkSchema(k.APIVersion, k.Kind, func(n schema.Node) bool {
 			ks.description = text(schema.KeywordsOf(n.Schema)["description"])
@@ -188,12 +180,6 @@ func kindSchemas(s *schema.Schemas, dir string) ([]kindSchema, error) {
 		kinds = append(kinds, ks)
 	}
 	return kinds, nil
-}
-
-// schemaFileName is the name of k's schema file, as pkg/schema requires it.
-func schemaFileName(k schema.Kind) string {
-	group, version, _ := strings.Cut(k.APIVersion, "/")
-	return group + "_" + version + "_" + k.Kind + ".json"
 }
 
 // writeKind writes a kind's section: its purpose, its apiVersion, how many documents of it a
@@ -556,4 +542,15 @@ func refType(ref *schema.Ref) string {
 func asSlice(v any) []any {
 	s, _ := v.([]any)
 	return s
+}
+
+// compareGroupKind orders kinds by group and kind, chalkos.dev's first.
+func compareGroupKind(ga, ka, gb, kb string) int {
+	if (ga == "chalkos.dev") != (gb == "chalkos.dev") {
+		if ga == "chalkos.dev" {
+			return -1
+		}
+		return 1
+	}
+	return cmp.Or(strings.Compare(ga, gb), strings.Compare(ka, kb))
 }

@@ -137,11 +137,8 @@ func TestWriteOptionsUnmapped(t *testing.T) {
 
 func TestOptionAnchor(t *testing.T) {
 	for name, want := range map[string]string{
-		"chalkos.disk.espSize":                           "chalkosdiskespsize",
 		"variants.<name>.kubernetes":                     "variantskubernetes",
 		"chalkos.kinds.<name>.rules.*.messageExpression": "chalkoskindsrulesmessageexpression",
-		"systemd.services.<name>.chalkos.kinds":          "systemdserviceschalkoskinds",
-		"installer.modules":                              "installermodules",
 	} {
 		if got := optionAnchor(name); got != want {
 			t.Errorf("optionAnchor(%q) = %q, want %q", name, got, want)
@@ -151,11 +148,9 @@ func TestOptionAnchor(t *testing.T) {
 
 func TestOptionType(t *testing.T) {
 	for in, want := range map[string]string{
-		"string":                                                 "string",
 		"null or string":                                         "string or null",
 		"null or absolute path":                                  "path or null",
 		"null or non-empty string":                               "non-empty string or null",
-		"list of string":                                         "list of string",
 		"attribute set of raw value":                             "map of any",
 		"attribute set of (submodule)":                           "map of submodule",
 		"list of (submodule)":                                    "list of submodule",

@@ -92,11 +92,9 @@ func run(args []string) error {
 	return errors.New("usage: docgen cli DIR ZENSICAL_TOML DOCS_DIR | docgen kinds PAGE SCHEMAS_DIR [SCHEMA_FILE...] | docgen options DIR TEMPLATES_DIR ARGUMENTS_JSON OPTIONS_JSON | docgen builtins PAGE DEFAULT_IMAGE PLAIN_IMAGE ROUTER_IMAGE | docgen check DOCS_DIR | docgen yaml DOCS_DIR SCHEMAS_DIR | docgen nix DOCS_DIR OUT_DIR | docgen abbr GLOSSARY OUT")
 }
 
-// programs are the command trees of chalkctl, chalklab, chalkbuild and chalkcfg, with the help and
-// completion commands cobra adds when a program runs. The completion command's page gets a
-// description of docgen's: cobra creates the command as the program runs, bound to its output, so
-// the programs cannot describe it themselves. chalkcfg disables its completion command, as nodes
-// have no logins.
+// programs are the four command trees with cobra's help and completion commands. The completion
+// command gets docgen's description, since cobra creates it bound to the running program's output.
+// chalkcfg has none, as nodes have no logins.
 func programs() []*cobra.Command {
 	roots := []*cobra.Command{chalkctl.NewCommand(), chalklab.NewCommand(), chalkbuild.NewCommand(), chalkcfg.NewCommand()}
 	for _, root := range roots {

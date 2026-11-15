@@ -14,10 +14,9 @@ import (
 // also one with attributes alone, counts as shell.
 var shellLanguages = []string{"", "sh", "bash", "shell", "zsh", "console", "shell-session"}
 
-// check finds the chalkctl, chalklab, chalkbuild and chalkcfg commands in the shell code blocks of
-// the Markdown files under dir, but not under dir/superpowers, and returns an error naming each
-// one that runs a command or passes a flag the programs do not have. newRoots returns fresh
-// command trees, as parsing changes a tree's flags.
+// check returns an error naming each chalkctl, chalklab, chalkbuild or chalkcfg command in the
+// docs' shell blocks under dir that runs a command or passes a flag the programs do not have.
+// newRoots returns fresh trees, as parsing changes a tree's flags.
 func check(newRoots func() []*cobra.Command, dir string) error {
 	var problems []string
 	err := eachBlock(dir, shellLanguages, func(path string, b codeBlock) error {

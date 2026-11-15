@@ -45,4 +45,5 @@ echo "key: `chalkctl recovery-ky w2`"
 ``` title="install.sh"
 chalkctl install cp1 --fingerprnt 00ff
 chalkbuild sign --keys db.key in out
+chalkcfg get --outptu json
 ```

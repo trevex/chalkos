@@ -135,6 +135,12 @@ func compile(files map[string][]byte, dir string) (*Schemas, error) {
 	return ss, nil
 }
 
+// Group is the group of k's apiVersion.
+func (k Kind) Group() string {
+	group, _, _ := strings.Cut(k.APIVersion, "/")
+	return group
+}
+
 // FileName is the name a schema of k must have, as lib/kinds/schema.nix also builds it.
 func FileName(k Kind) string {
 	group, version, _ := strings.Cut(k.APIVersion, "/")

@@ -147,14 +147,9 @@ func TestWriteBuiltins(t *testing.T) {
 }
 
 func TestWriteBuiltinsRefusesWhatOnlyThePlainImageHas(t *testing.T) {
-	plain := t.TempDir()
-	if err := os.CopyFS(plain, os.DirFS("testdata/builtins/plain")); err != nil {
-		t.Fatal(err)
-	}
-	effects := `{"ntp":{"chalkd":"","kinds":["TimeSync"],"outputs":[],"reload":[],"restart":["ntp.service"],"run":"","start":false,"when":""}}`
-	if err := os.WriteFile(filepath.Join(plain, "effects.json"), []byte(effects), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	plain := editedImage(t, "plain", "effects.json", func(string) string {
+		return `{"ntp":{"chalkd":"","kinds":["TimeSync"],"outputs":[],"reload":[],"restart":["ntp.service"],"run":"","start":false,"when":""}}`
+	})
 	err := writeBuiltins(filepath.Join(t.TempDir(), "builtins.md"), "testdata/builtins/default", plain, "testdata/builtins/router")
 	if err == nil || !strings.Contains(err.Error(), "effect ntp") {
 		t.Errorf("error %v, want one naming the effect ntp", err)
@@ -162,23 +157,14 @@ func TestWriteBuiltinsRefusesWhatOnlyThePlainImageHas(t *testing.T) {
 }
 
 func TestWriteBuiltinsRefusesARuleOnlyThePlainImageHas(t *testing.T) {
-	plain := t.TempDir()
-	if err := os.CopyFS(plain, os.DirFS("testdata/builtins/plain")); err != nil {
-		t.Fatal(err)
-	}
-	volume := filepath.Join(plain, "schemas", "storage.chalkos.dev_v1alpha1_Volume.json")
-	data, err := os.ReadFile(volume)
-	if err != nil {
-		t.Fatal(err)
-	}
-	changed := strings.Replace(string(data), `"self != ''"`, `"self != 'x'"`, 1)
-	if changed == string(data) {
-		t.Fatal("the plain image's Volume has no rule self != ''")
-	}
-	if err := os.WriteFile(volume, []byte(changed), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	err = writeBuiltins(filepath.Join(t.TempDir(), "builtins.md"), "testdata/builtins/default", plain, "testdata/builtins/router")
+	plain := editedImage(t, "plain", "schemas/storage.chalkos.dev_v1alpha1_Volume.json", func(s string) string {
+		changed := strings.Replace(s, `"self != ''"`, `"self != 'x'"`, 1)
+		if changed == s {
+			t.Fatal("the plain image's Volume has no rule self != ''")
+		}
+		return changed
+	})
+	err := writeBuiltins(filepath.Join(t.TempDir(), "builtins.md"), "testdata/builtins/default", plain, "testdata/builtins/router")
 	if err == nil || !strings.Contains(err.Error(), "a rule of Volume that the default image lacks: self != 'x'") {
 		t.Errorf("error %v, want one naming the rule of Volume", err)
 	}
@@ -187,17 +173,11 @@ func TestWriteBuiltinsRefusesARuleOnlyThePlainImageHas(t *testing.T) {
 // The sections of every image show the default image's built-ins, so it declares each of the
 // plain image's alike.
 func TestWriteBuiltinsRefusesWhatTheDefaultImageDeclaresOtherwise(t *testing.T) {
-	def := t.TempDir()
-	if err := os.CopyFS(def, os.DirFS("testdata/builtins/default")); err != nil {
-		t.Fatal(err)
-	}
 	router, err := os.ReadFile("testdata/builtins/router/outputs.json")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(def, "outputs.json"), router, 0o644); err != nil {
-		t.Fatal(err)
-	}
+	def := editedImage(t, "default", "outputs.json", func(string) string { return string(router) })
 	err = writeBuiltins(filepath.Join(t.TempDir(), "builtins.md"), def, "testdata/builtins/plain", "testdata/builtins/router")
 	if err == nil || !strings.Contains(err.Error(), "output networkd") {
 		t.Errorf("error %v, want one naming the output networkd", err)
@@ -222,11 +202,28 @@ func TestLayerIntro(t *testing.T) {
 		want    string
 	}{
 		{nil, "The outputs router images add."},
-		{[]string{"networkd"}, "The outputs router images add, and the output `networkd` of every image as router images declare it."},
 		{[]string{"networkd", "sysctl"}, "The outputs router images add, and the outputs `networkd` and `sysctl` of every image as router images declare them."},
 	} {
 		if got := layerIntro("The outputs router images add", "output", "router images", c.changed); got != c.want {
 			t.Errorf("layerIntro(%q) = %q, want %q", c.changed, got, c.want)
 		}
 	}
+}
+
+// editedImage copies the test image testdata/builtins/<name> and rewrites its file with edit.
+func editedImage(t *testing.T, name, file string, edit func(string) string) string {
+	t.Helper()
+	dir := t.TempDir()
+	if err := os.CopyFS(dir, os.DirFS(filepath.Join("testdata", "builtins", name))); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, file)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(edit(string(data))), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return dir
 }

@@ -44,6 +44,7 @@ func TestCheck(t *testing.T) {
 		`testdata/docs/guides/bad.md:42: chalkctl recovery-ky w2: chalkctl has no command "recovery-ky"`,
 		`testdata/docs/guides/bad.md:46: chalkctl install cp1 --fingerprnt 00ff: chalkctl install has no flag --fingerprnt`,
 		`testdata/docs/guides/bad.md:47: chalkbuild sign --keys db.key in out: chalkbuild sign has no flag --keys`,
+		`testdata/docs/guides/bad.md:48: chalkcfg get --outptu json: chalkcfg get has no flag --outptu`,
 	}
 	got := strings.Split(err.Error(), "\n")[1:]
 	if strings.Join(got, "\n") != strings.Join(want, "\n") {
@@ -102,6 +103,7 @@ func TestInvocationsOfTheGoodPage(t *testing.T) {
 		"chalkctl status cp15",
 		"chalkctl recovery-key w3",
 		"chalkctl status cp16",
+		"chalkcfg get Rack rack -o json",
 	}
 	if strings.Join(got, "\n") != strings.Join(want, "\n") {
 		t.Errorf("invocations:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
@@ -143,14 +145,3 @@ func TestCombinedShortFlags(t *testing.T) {
 	}
 }
 
-func TestCheckChalkcfg(t *testing.T) {
-	if err := checkInvocation(programs(), []string{"chalkcfg", "get", "Rack", "rack", "-o", "json"}); err != nil {
-		t.Errorf("chalkcfg get: %v", err)
-	}
-	if err := checkInvocation(programs(), []string{"chalkcfg", "get", "--outptu", "json"}); err == nil || !strings.Contains(err.Error(), "chalkcfg get has no flag --outptu") {
-		t.Errorf("err = %v", err)
-	}
-	if got := program([]string{"chalkcfg", "get"}); len(got) != 2 || got[0] != "chalkcfg" {
-		t.Errorf("program = %v, want chalkcfg's command", got)
-	}
-}

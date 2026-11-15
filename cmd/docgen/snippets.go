@@ -17,17 +17,12 @@ import (
 	"github.com/trevex/chalkos/pkg/schema"
 )
 
-// checkYAML validates the config documents of the YAML blocks of the Markdown files under dir,
-// but not under dir/superpowers, against the schemas in schemasDir, with the parser and the
-// validation chalkctl uses for a node's files. A document is checked when its group is chalkos's
-// own, chalkos.dev or a subdomain of it, or one the schemas declare, so a kind that no image
-// declares fails. Other documents, such as Kubernetes objects, fragments without an apiVersion
-// and documents that are not objects pass unchecked. A line that includes a section of a file is
-// replaced by the section, as the site renders it, so a document may take part of itself from a
-// file the repository checks. A block of whole-file includes alone reads as a string, so it
-// passes: the example's own check validates the included files. A block that is not YAML fails.
-// Each problem names the page's line its document starts on, or the line of a syntax error; a
-// line of a section is at its include line.
+// checkYAML validates the config documents of the docs' YAML blocks against the schemas in
+// schemasDir, as chalkctl parses and validates a node's files. Only chalkos groups (chalkos.dev and
+// its subdomains) and groups the schemas declare are checked, so an undeclared chalkos kind fails.
+// Section includes are expanded first, as the site renders them; a block of whole-file includes
+// reads as a string and passes. A block that is not YAML fails. Problems name the page line of the
+// document or the syntax error; a section's lines are at their include line.
 func checkYAML(dir, schemasDir string) error {
 	schemas, err := schema.LoadSchemas(schemasDir)
 	if err != nil {
@@ -35,8 +30,7 @@ func checkYAML(dir, schemasDir string) error {
 	}
 	groups := map[string]bool{}
 	for _, k := range schemas.Kinds() {
-		group, _, _ := strings.Cut(k.APIVersion, "/")
-		groups[group] = true
+		groups[k.Group()] = true
 	}
 	var problems []string
 	err = eachBlock(dir, []string{"yaml", "yml"}, func(path string, b codeBlock) error {
@@ -120,12 +114,10 @@ func blockDocuments(lines []string) ([]blockDocument, int, error) {
 	}
 }
 
-// writeNix writes each Nix block of the Markdown files under dir, but not under dir/superpowers,
-// to outDir, named by the page's path with / as _ and the block's first line. A block whose title
-// names a .nix file is a whole file, written as <page>_<line>.nix. A block without such a title is
-// a fragment, written as <page>_<line>.fragment.nix: an expression, or the attributes of a module,
-// which parse only within braces. A block of snippet includes alone is left out: the site puts the
-// included file's lines there, and the image build that file belongs to evaluates it.
+// writeNix writes each Nix block of the docs under dir to outDir as <page>_<line>.nix when its
+// title names a .nix file, else as <page>_<line>.fragment.nix, an expression or a module's
+// attributes. A block of snippet includes alone is skipped: the image build it belongs to evaluates
+// it.
 func writeNix(dir, outDir string) error {
 	if err := os.MkdirAll(outDir, 0o755); err != nil {
 		return err
@@ -174,11 +166,10 @@ func problem(path string, line int, err error) string {
 // its indentation, the file, relative to the site's root, and the section's name.
 var snippetSection = regexp.MustCompile(`^([ \t]*)--8<--\s+"([^":]+):([A-Za-z0-9_-]+)"\s*$`)
 
-// expandSections replaces each line of lines that includes a section of a file with the section's
-// lines, dedented and then indented as the include line is, as zensical.toml has the site render
-// them. A file's path is relative to the working directory, which docgen runs in at the site's
-// root. It returns the expanded lines, each with the line of lines it comes from, counted from 1:
-// a line of a section comes from its include line.
+// expandSections replaces each section include with the section's lines, dedented and then indented
+// as the include, as zensical.toml renders them; paths are relative to the site's root, docgen's
+// working directory. It returns each line's source line in lines, from 1; a section's lines come
+// from their include line.
 func expandSections(lines []string) (out []string, source []int, err error) {
 	for i, l := range lines {
 		m := snippetSection.FindStringSubmatch(l)
