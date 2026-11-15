@@ -100,7 +100,6 @@ func fallbackNeeded(section storage.Section, existing []string, reset string) bo
 	return false
 }
 
-// registerPasswordFile registers --password-file.
 func registerPasswordFile(fs *pflag.FlagSet, p *string) {
 	fs.StringVar(p, "password-file", "", "file holding the password of a node whose fallback is a password")
 }

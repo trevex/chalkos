@@ -35,7 +35,6 @@ func (p *Plugin) Payloads(t layer.Target, now time.Time) ([]*anypb.Any, error) {
 	return []*anypb.Any{payload}, nil
 }
 
-// applyFlags are --kubernetes-share.
 type applyFlags struct{ share bool }
 
 // ApplyFlags registers --kubernetes-share.

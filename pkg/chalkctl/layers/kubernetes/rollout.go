@@ -22,7 +22,6 @@ import (
 
 // rolloutFlags are the Kubernetes layer's flags of chalkctl config apply.
 type rolloutFlags struct {
-	// allowDowntime is --allow-downtime, allowDowngrade --allow-downgrade.
 	allowDowntime, allowDowngrade bool
 }
 

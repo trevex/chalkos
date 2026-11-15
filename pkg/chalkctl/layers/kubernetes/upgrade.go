@@ -52,7 +52,6 @@ func viaControlPlanes(u layer.Upgrading, prefer string, next func(error) bool, f
 
 // upgradeFlags are the Kubernetes layer's flags of chalkctl upgrade and chalkctl node reboot.
 type upgradeFlags struct {
-	// allowDowntime is --allow-downtime, deleteEmptyDir --delete-emptydir-data.
 	allowDowntime, deleteEmptyDir bool
 }
 
