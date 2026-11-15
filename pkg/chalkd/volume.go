@@ -168,15 +168,11 @@ func (s *Server) resetVolume(ctx context.Context, node, name string, next slot.S
 		return layer.Errorf(connect.CodeFailedPrecondition, "volume %s moves from disk %s to %s; a reset recreates a volume on its own disk only", name, v.Disk, nv.Disk)
 	}
 	without := recorded
-	without.Volumes = map[string]storage.Volume{}
-	for n, vol := range recorded.Volumes {
-		if n != name {
-			without.Volumes[n] = vol
-		}
-	}
-	set, err := s.runningRules()
+	without.Volumes = maps.Clone(recorded.Volumes)
+	delete(without.Volumes, name)
+	set, err := s.Loader.Contract.Rules()
 	if err != nil {
-		return err
+		return fmt.Errorf("the running image's rules: %w", err)
 	}
 	_, running, _, err := s.runningSlot()
 	if err != nil {

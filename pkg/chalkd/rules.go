@@ -3,7 +3,6 @@ package chalkd
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 
 	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/facts"
@@ -21,24 +20,9 @@ func (s *Server) factsFor(ctx context.Context, next, old config.Redacted, secret
 		run = facts.Sandbox{}
 	}
 	l := facts.NewLoader(ctx, s.Loader.Contract.Facts, run)
-	l.Input = factInput(next, old)
+	l.Input = rules.FactInput(next, old)
 	l.Inputs = map[string]any{facts.FallbackSecret: secret}
 	return l
-}
-
-// factInput is what command facts read of a check of next against old: both as rules see them.
-func factInput(next, old config.Redacted) map[string]any {
-	return map[string]any{"config": rules.ConfigOf(next), "oldConfig": rules.ConfigOf(old)}
-}
-
-// runningRules are the change rules of the running image's schemas, which its build checked
-// already. Rules that do not compile are the node's own failure.
-func (s *Server) runningRules() (*rules.Set, error) {
-	set, err := s.Loader.Contract.Rules()
-	if err != nil {
-		return nil, fmt.Errorf("the running image's rules: %w", err)
-	}
-	return set, nil
 }
 
 // jsonValue is v as a fact read from JSON holds it, for a fact that stands in for a file, such as

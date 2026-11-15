@@ -183,18 +183,14 @@ func (n *NodeCertificate) GetClientCertificate(*tls.CertificateRequestInfo) (*tl
 // OS CA, is valid now and names the node the current one names: a node never serves another
 // node's certificate. It is written to STATE before it is served, so a restart keeps it.
 func (n *NodeCertificate) Replace(chain, key string, now time.Time) error {
-	_, err := n.replace(nil, chain, key, now)
+	_, err := n.ReplaceFrom(nil, chain, key, now)
 	return err
 }
 
 // ReplaceFrom is Replace for a certificate obtained while from was current. It changes nothing
 // and reports false once from was replaced in the meantime, as by a certificate chalkctl
-// delivered, which is newer than what was asked for.
+// delivered, which is newer than what was asked for. A nil from replaces whatever is current.
 func (n *NodeCertificate) ReplaceFrom(from *x509.Certificate, chain, key string, now time.Time) (bool, error) {
-	return n.replace(from, chain, key, now)
-}
-
-func (n *NodeCertificate) replace(from *x509.Certificate, chain, key string, now time.Time) (bool, error) {
 	n.mu.Lock()
 	defer n.mu.Unlock()
 	if from != nil && n.Current().Leaf != from {

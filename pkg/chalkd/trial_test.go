@@ -250,7 +250,7 @@ func TestConfirmConfigChecksTheTrialFirst(t *testing.T) {
 	if err := sendConfirm(s, r.Previous); codeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "the trial is of config "+r.Version+", not "+r.Previous) {
 		t.Errorf("another version: %v", err)
 	}
-	if err := removeTrial(s.Paths.StateDir); err != nil {
+	if err := removeTrialRecord(s.Paths.StateDir); err != nil {
 		t.Fatal(err)
 	}
 	if err := sendConfirm(s, r.Previous); codeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "no trial is open, and the node runs config "+r.Version+", not "+r.Previous) {
@@ -631,7 +631,7 @@ func waitForLock(t *testing.T, fn string) {
 func TestConfirmConfigTrialRecordedMeanwhile(t *testing.T) {
 	s, _ := configServer(t)
 	r := recordTrial(t, s, nextConfig)
-	if err := removeTrial(s.Paths.StateDir); err != nil {
+	if err := removeTrialRecord(s.Paths.StateDir); err != nil {
 		t.Fatal(err)
 	}
 	s.mu.Lock()

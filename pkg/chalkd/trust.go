@@ -14,14 +14,11 @@ import (
 // trustFor returns the OS CAs the node is to trust after the request: those delivered, checked
 // as NodeCertificate.ReplaceTrust does, or else its own.
 func (s *Server) trustFor(ctx context.Context, delivered []byte) (string, error) {
-	if s.Certificate == nil {
-		if len(delivered) > 0 {
-			return "", layer.Errorf(connect.CodeFailedPrecondition, "the node serves no node certificate the OS CAs would verify")
-		}
-		return string(s.readOSCA()), nil
-	}
-	if len(delivered) == 0 {
-		return s.Certificate.OSCA(), nil
+	switch {
+	case len(delivered) == 0:
+		return s.osCAs(), nil
+	case s.Certificate == nil:
+		return "", layer.Errorf(connect.CodeFailedPrecondition, "the node serves no node certificate the OS CAs would verify")
 	}
 	if err := s.Certificate.CheckTrust(string(delivered), peerOf(ctx)...); err != nil {
 		return "", err

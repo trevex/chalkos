@@ -15,6 +15,7 @@ import (
 	"github.com/trevex/chalkos/pkg/check"
 	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/config/slot"
+	"github.com/trevex/chalkos/pkg/contract"
 	"github.com/trevex/chalkos/pkg/outputs"
 	"github.com/trevex/chalkos/pkg/pki"
 	"github.com/trevex/chalkos/pkg/rules"
@@ -74,15 +75,23 @@ func (s *Server) runningTarget() (config.Target, *schema.Schemas, error) {
 	return t, s.Loader.Contract.Schemas, nil
 }
 
-// runningImage is the running image as it checks config: its contract's schemas, change rules,
-// validators and outputs, whose programs the loader's renderer runs. It has no target: a check
-// that translates config adds the one runningTarget gives.
+// runningImage is the running image as it checks config, whose programs the loader's renderer
+// runs. It has no target: a check that translates config adds the one runningTarget gives.
 func (s *Server) runningImage() (check.Image, error) {
-	set, err := s.runningRules()
+	img, err := imageOf(s.Loader.Contract, s.Loader.Render)
+	if err != nil {
+		return check.Image{}, fmt.Errorf("the running image's rules: %w", err)
+	}
+	return img, nil
+}
+
+// imageOf is the image of the contract c as it checks config: its schemas, change rules,
+// validators and outputs, whose programs render runs.
+func imageOf(c *contract.Contract, render outputs.Renderer) (check.Image, error) {
+	set, err := c.Rules()
 	if err != nil {
 		return check.Image{}, err
 	}
-	c, render := s.Loader.Contract, s.Loader.Render
 	return check.Image{
 		Schemas: c.Schemas, ChangeRules: set, Outputs: c.Outputs, Renderer: render,
 		Validators: check.Programs{Defs: c.Validators, Render: render},

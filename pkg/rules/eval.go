@@ -201,6 +201,12 @@ func messageError(msg ref.Val, err error) string {
 	return fmt.Sprintf("it yields %s, not a string", msg.Type().TypeName())
 }
 
+// FactInput is what command facts read of a check of next against old: both as rules see them,
+// as config and oldConfig.
+func FactInput(next, old config.Redacted) map[string]any {
+	return map[string]any{"config": ConfigOf(next), "oldConfig": ConfigOf(old)}
+}
+
 // ConfigOf is a config set as rules see it and command facts read it: objects by apiVersion, kind
 // and name, with their secret values hidden.
 func ConfigOf(docs config.Redacted) map[string]any {

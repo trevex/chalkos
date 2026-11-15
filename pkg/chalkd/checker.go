@@ -63,9 +63,9 @@ func (s *Server) checkInput(ctx context.Context, system, dir string, in *checkv1
 		return &checkv1.Result{Error: fmt.Sprintf("the old documents: %v", err)}
 	}
 	res, err := check.Run(ctx, img, check.Input{Node: in.GetNode(), Delivered: delivered, Old: old, Facts: f.For})
-	var refusal *check.Refusal
+	refusal, refused := errors.AsType[*check.Refusal](err)
 	switch {
-	case errors.As(err, &refusal):
+	case refused:
 		r := &checkv1.Refusal{Stage: string(refusal.Stage), Message: refusal.Message}
 		for _, f := range refusal.Failures {
 			r.Failures = append(r.Failures, f.String())
@@ -94,10 +94,6 @@ func (s *Server) systemImage(system, platform, dir string) (check.Image, error) 
 	if err != nil {
 		return check.Image{}, err
 	}
-	set, err := c.Rules()
-	if err != nil {
-		return check.Image{}, fmt.Errorf("the image's rules: %w", err)
-	}
 	facts, err := imageFacts(layer.Compiled[layer.ImageFacts](s.Plugins), func(h layer.ImageFacts) (*anypb.Any, error) {
 		return h.SystemFacts(func(path string) ([]byte, error) { return os.ReadFile(filepath.Join(system, path)) })
 	})
@@ -108,9 +104,10 @@ func (s *Server) systemImage(system, platform, dir string) (check.Image, error) 
 	if err := s.target(facts, &t); err != nil {
 		return check.Image{}, err
 	}
-	render := outputs.Renderer{Root: dir, Run: outputs.Direct{}, KeepOwner: true}
-	return check.Image{
-		Schemas: c.Schemas, Target: t, ChangeRules: set, Outputs: c.Outputs, Renderer: render,
-		Validators: check.Programs{Defs: c.Validators, Render: render},
-	}, nil
+	img, err := imageOf(c, outputs.Renderer{Root: dir, Run: outputs.Direct{}, KeepOwner: true})
+	if err != nil {
+		return check.Image{}, fmt.Errorf("the image's rules: %w", err)
+	}
+	img.Target = t
+	return img, nil
 }

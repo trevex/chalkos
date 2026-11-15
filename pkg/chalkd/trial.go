@@ -98,16 +98,6 @@ func writeTrial(stateDir string, r trialRecord) error {
 	return atomicfile.WriteFile(filepath.Join(stateDir, trialFile), append(data, '\n'), 0o644)
 }
 
-// removeTrial removes the trial record, as removeTrialRecord does, and then the copy of the staged
-// image's slot the trial kept, as removeStagedCopy does.
-func removeTrial(stateDir string) error {
-	if err := removeTrialRecord(stateDir); err != nil {
-		return err
-	}
-	removeStagedCopy(stateDir)
-	return nil
-}
-
 // removeTrialRecord removes the trial record and syncs its directory, so that after a power cut
 // no boot rolls back a config whose trial ended.
 func removeTrialRecord(stateDir string) error {
@@ -875,7 +865,11 @@ func RestoreTrialAtBoot(stateDir, slots string) error {
 	case trialLost:
 		log.Printf("the trial of config %s was open at boot, but its slot runs neither it nor config %s", r.Version, r.Previous)
 	}
-	return removeTrial(stateDir)
+	if err := removeTrialRecord(stateDir); err != nil {
+		return err
+	}
+	removeStagedCopy(stateDir)
+	return nil
 }
 
 // expireAtBoot records the boot's time as the deadline of the trial r, which the boot could not

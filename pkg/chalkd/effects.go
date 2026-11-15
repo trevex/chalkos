@@ -152,7 +152,7 @@ func (s *Server) due(ctx context.Context, e *pendingEffects, states map[string]o
 func (s *Server) outcome(ctx context.Context, e *pendingEffects, states map[string]outputs.State, secret string) (check.Outcome, []string, error) {
 	after := s.factsFor(ctx, e.next, config.Redacted{}, secret)
 	// Command facts read the old config as the rules do.
-	after.Input = map[string]any{"config": rules.ConfigOf(e.next), "oldConfig": rules.ConfigOf(e.old)}
+	after.Input = rules.FactInput(e.next, e.old)
 	if e.attempt != nil {
 		// The delivery changed the node by now, so the facts are those its units read.
 		if err := setAttemptFacts(s.Paths.EffectsBaseline, *e.attempt, recordFacts(e.factNames(), after)); err != nil {
@@ -183,7 +183,7 @@ func (e *pendingEffects) comparisons(after *facts.Loader) []check.Comparison {
 	for _, a := range e.attempts {
 		docs := a.documents()
 		// Command facts read the attempt's config as the old one.
-		facts := after.For(map[string]any{"config": rules.ConfigOf(e.next), "oldConfig": rules.ConfigOf(docs)})
+		facts := after.For(rules.FactInput(e.next, docs))
 		olds = append(olds, check.Comparison{Documents: docs, Facts: facts, OldFacts: a.Facts, Outputs: a.Outputs, Kinds: a.Kinds})
 	}
 	return olds
