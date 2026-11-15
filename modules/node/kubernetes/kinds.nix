@@ -106,13 +106,10 @@ let
     expr:
     "cel.bind(was, oldDocuments.map(o, oldDocuments[o].spec)[0], cel.bind(gets, documents.map(n, documents[n].spec)[0], ${expr}))";
   # A rule that keeps the Cluster's per-family setting `field` once the node holds a Kubernetes
-  # share. `value s f` is the setting in spec s and family f; the rule compares it with ==, and the
-  # message shows it with string().
-  # - The node holds one Cluster document, compared with the running config's whatever its name.
-  # - The rule compares the families both configs have; the ipFamilies rule refuses a change of
-  #   the families.
-  # The cluster's certificates, etcd and the ranges its control plane allocated were made for these
-  # settings.
+  # share: the cluster's certificates, etcd and the ranges its control plane allocated were made
+  # for it. `value s f` is the setting in spec s and family f, compared with == and shown with
+  # string(). The node's one Cluster document is compared with the running config's whatever its
+  # name, over the families both have; the ipFamilies rule refuses a change of the families.
   fixedRule =
     {
       description,

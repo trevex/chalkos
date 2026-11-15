@@ -1,8 +1,5 @@
-# Runtime access to config and what a delivery does to services: grants of config kinds to units
-# (grants.nix), files rendered from documents (outputs.nix), programs that check the documents
-# (validators.nix), the restarts, reloads and commands a delivery takes (effects.nix) and the
-# image's tests of what it makes of a config (tests.nix).
-# chalkcfg prints the documents, on the system path of every image.
+# Runtime access to config and what a delivery does to services; each part is a file beside this
+# one. chalkcfg prints the documents, on the system path of every image.
 {
   config,
   lib,

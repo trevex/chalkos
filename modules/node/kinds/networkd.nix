@@ -67,14 +67,12 @@ in
   system.build.chalkosNetworkdSchemas = schemas;
   system.build.chalkosNetworkdKinds = map networkdKind api.networkdKinds;
 
-  # The node's networkd documents as networkd units, in /run/systemd/network, where they take
-  # precedence over the image's own. The renderer reads each key's networkd name from the
-  # schemas, which are the image's, so the units follow from the documents alone. chalkos-config
-  # renders them before networkd starts, and nothing else writes the directory. networkd has no
-  # offline validator, so the output has no check: the schemas accept exactly the sections and
-  # keys the image's networkd does, and the tests render the examples of examples/networkd. A
-  # layer may render the output with a renderer of its own, which writes the units of more kinds
-  # beside these.
+  # The node's networkd documents as units in /run/systemd/network, which take precedence over the
+  # image's own and which chalkos-config alone writes, before networkd starts. The renderer reads
+  # each key's networkd name from the image's schemas. networkd has no offline validator, so the
+  # output has no check: the schemas accept exactly the sections and keys the image's networkd
+  # does, and the tests render examples/networkd. A layer may render the output with a renderer of
+  # its own, which writes the units of more kinds beside these.
   chalkos.outputs.networkd = {
     inputs = api.networkdKinds;
     render = lib.mkDefault "${lib.getExe pkgs.chalkos.chalkos-render} networkd ${schemas}";

@@ -49,11 +49,11 @@ let
 
   granted = lib.filterAttrs (_: s: s.chalkos.kinds != [ ]) config.systemd.services;
 
-  # A grant on a name the image runs no service of creates an empty unit, as for a typo. The image's
-  # build checks the units it installs, its packages' among them: each granted unit has ExecStart=
-  # in its unit file or a drop-in. grep reads the files itself: grep -q in a pipe ends at its first
-  # match, which can kill the writer with SIGPIPE and fail the pipe under pipefail. -s keeps quiet
-  # about a unit without drop-ins, and a match still succeeds.
+  # A grant on a name the image runs no service of creates an empty unit, as a typo would, so the
+  # build checks that each granted unit, its packages' among them, has ExecStart= in its unit file
+  # or a drop-in. grep reads the files itself: grep -q in a pipe can kill the writer with SIGPIPE,
+  # which fails the pipe under pipefail. -s keeps quiet about a unit without drop-ins, and a match
+  # still succeeds.
   grantsCheck = pkgs.runCommand "chalkos-grants-check" { } ''
     units=${config.environment.etc."systemd/system".source}
     for name in ${lib.escapeShellArgs (lib.attrNames granted)}; do

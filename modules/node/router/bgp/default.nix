@@ -25,12 +25,11 @@ let
     echo '{"node": {"name": ""}, "documents": {}}' | OUT=$PWD/out ${render} frr
     cp out/frr.conf $out
   '';
-  # Writes /run/frr/frr.conf, readable by root alone, through a new file that replaces the old
-  # one: the rendered config, or the fallback, with the placeholder @secret_<secret>.<key>@ of
-  # each peer group's password line replaced by the unit's credential of that name. A
-  # placeholder elsewhere stays as written. FRR takes a password of printable characters without
-  # white space, 80 at most; another, or a credential the unit lacks, fails the unit and leaves
-  # the file as it was.
+  # Writes /run/frr/frr.conf, readable by root alone, through a new file that replaces the old: the
+  # rendered config, or the fallback, with the placeholder @secret_<secret>.<key>@ of each peer
+  # group's password line replaced by the unit's credential of that name; one elsewhere stays.
+  # FRR takes 1 to 80 printable characters without white space; another password, or a missing
+  # credential, fails the unit and leaves the file as it was.
   credentials = pkgs.writeShellApplication {
     name = "frr-credentials";
     text = ''

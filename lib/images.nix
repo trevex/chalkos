@@ -94,11 +94,9 @@ let
       throw "mkImages: two variants on their platforms are both named ${collision}; rename a variant or a platform"
     else
       lib.listToAttrs systems // { inherit installer; };
-  # The image directories, <variant>-<platform>.
   images = lib.mapAttrs (_: n: n.config.system.build.chalkosImage) (
     removeAttrs nixos [ "installer" ]
   );
-  # The tests of each image, <variant>-<platform>, chalkos.tests, which nix flake check runs.
   checks = lib.mapAttrs (_: n: n.config.system.build.chalkosTests) (
     removeAttrs nixos [ "installer" ]
   );
