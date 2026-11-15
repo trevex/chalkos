@@ -516,7 +516,7 @@ lib.runTests {
       ];
     };
   };
-  # Each feature of chalkos.router.features has its enable option. On a router image with every
+  # Each feature of routerLib.features has its enable option. On a router image with every
   # feature, the test of each router example compares all eight router outputs with golden files,
   # and router-vrf-strict the ruleset; on one without a feature, no router test compares any.
   testRouterGoldens =
@@ -542,7 +542,9 @@ lib.runTests {
     in
     {
       expr = {
-        enableOptions = lib.all (f: edge.chalkos.router ? ${f}.enable) edge.chalkos.router.features;
+        enableOptions = lib.all (
+          f: edge.chalkos.router ? ${f}.enable
+        ) layered.edge-metal._module.args.routerLib.features;
         compared = compared edge;
         vrfStrict = lib.attrNames edge.chalkos.tests.router-vrf-strict.outputs;
         goldensWithoutDHCP = lib.attrNames (

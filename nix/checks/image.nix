@@ -16,7 +16,7 @@ let
     worker
     ;
   # The router features a variant may leave out.
-  inherit (router.config.chalkos.router) features;
+  inherit (router._module.args.routerLib) features;
   # The router image without each of the features alone and without all six, by the names of
   # the features left out joined by dashes, each with their chalkos.router.<feature>.enable set
   # to false.

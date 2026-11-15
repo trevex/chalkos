@@ -1,11 +1,9 @@
-# The router layer, on images whose nodes route between networks: its marker, forwarding, the
-# Router kind and its output router-sysctl, the router's diagnostics, the validator router and
-# routerLib, the module argument of the router's parts.
-# Each part of the router has a directory of its own with its kinds, outputs, effects, services
-# and diagnostics: the firewall, which takes the place of NixOS's, VRFs and policy routing, and
-# the features a variant may leave out, each with its option chalkos.router.<feature>.enable:
-# BGP with FRR, NAT64 with Jool, the resolver with Unbound, DHCP with Kea, DHCP relays with
-# dnsmasq and WireGuard with systemd-networkd.
+# The router layer: forwarding, the Router kind and router-sysctl, the router's diagnostics, the
+# validator router and routerLib. Each part (firewall, VRFs, BGP, …) is a directory below.
+#
+# The images allocate the IDs of users and groups without one statically, from 999 down, so an
+# unpinned ID would move the IDs after it, and the owners of their files on /var, whenever an
+# image adds or drops a feature. The router's parts therefore pin their users' and groups' IDs.
 {
   chalkosLib,
   config,
@@ -84,17 +82,6 @@ in
     '';
   };
 
-  options.chalkos.router.features = lib.mkOption {
-    type = lib.types.listOf lib.types.str;
-    internal = true;
-    readOnly = true;
-    default = routerLib.features;
-    description = ''
-      The features of the router layer a variant may leave out, each with its option
-      `chalkos.router.<feature>.enable`.
-    '';
-  };
-
   options.chalkos.router.examples = lib.mkOption {
     type = lib.types.path;
     internal = true;
@@ -124,12 +111,7 @@ in
           else
             throw "the router example ${baseNameOf file} is a ${type}, not a file";
       };
-    description = ''
-      The config files the router's tests run, the test `router-<name>` of `chalkos.tests` the
-      file `<name>.yaml`: the files of modules/node/examples/router all of whose documents are
-      of kinds the image accepts. An image whose variant leaves a router feature out refuses
-      that feature's kinds, and runs the tests of the examples without them.
-    '';
+    description = "The router examples whose documents are all of kinds the image accepts.";
   };
 
   config = lib.mkMerge [
