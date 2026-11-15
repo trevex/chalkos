@@ -55,7 +55,7 @@ func TestWriteOptions(t *testing.T) {
 				"\n### `chalkos.console.enable` { #chalkosconsoleenable }\n",
 				"\n## Debug and maintenance { #debug-and-maintenance }\n\n",
 				"\n## Set by mkImages { #set-by-mkimages }\n\n",
-				"\n### `chalkos.variant.name` { #chalkosvariantname }\n",
+				"\n### `chalkos.image.name` { #chalkosimagename }\n",
 				"\nSources: ",
 			},
 			want: []string{

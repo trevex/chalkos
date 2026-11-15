@@ -386,8 +386,8 @@ func newRotationLab(t *testing.T) *rotationLab {
 	t.Helper()
 	// Two control planes, a worker and a node without Kubernetes.
 	return newRotationLabOf(t, []testNode{
-		{"cp1", kubernetes.KindControlPlane, "cp"}, {"cp2", kubernetes.KindControlPlane, "cp"},
-		{"w1", kubernetes.KindWorker, "w"}, {"n1", "", "plain"},
+		{"cp1", kubernetes.KindControlPlane, "cp-metal"}, {"cp2", kubernetes.KindControlPlane, "cp-metal"},
+		{"w1", kubernetes.KindWorker, "w-metal"}, {"n1", "", "plain-metal"},
 	})
 }
 
@@ -880,7 +880,7 @@ func TestRotateRefusesWithoutRevokedNodes(t *testing.T) {
 	}
 
 	plain := newRotationLab(t)
-	plain.ta.inventory = writeNodes(t, plain.ta.dir, []testNode{{"n1", "", "plain"}}, nil)
+	plain.ta.inventory = writeNodes(t, plain.ta.dir, []testNode{{"n1", "", "plain-metal"}}, nil)
 	for name := range plain.nodes {
 		if name != "n1" {
 			plain.nodes[name].down = true
@@ -993,7 +993,7 @@ func TestRotateRefusesAKindNoLayerRotates(t *testing.T) {
 // TestRotateRefusesKubernetesWithoutAControlPlane checks that a Kubernetes kind on a cluster
 // without a control-plane node is refused before the secrets file records it.
 func TestRotateRefusesKubernetesWithoutAControlPlane(t *testing.T) {
-	l := newRotationLabOf(t, []testNode{{"r1", "", "plain"}, {"r2", "", "plain"}})
+	l := newRotationLabOf(t, []testNode{{"r1", "", "plain-metal"}, {"r2", "", "plain-metal"}})
 	err := l.rotate("kubernetes-ca")
 	if err == nil || !strings.Contains(err.Error(), "no control-plane node") {
 		t.Fatalf("err = %v, want the rotation refused", err)
@@ -1046,7 +1046,7 @@ func TestRotateNodeCA(t *testing.T) {
 // TestRotateNodeCAWithoutHolders rotates the node CA of a cluster no node of which holds it, as
 // a router fleet: every node gets a certificate of the new node CA.
 func TestRotateNodeCAWithoutHolders(t *testing.T) {
-	l := newRotationLabOf(t, []testNode{{"r1", "", "plain"}, {"r2", "", "plain"}})
+	l := newRotationLabOf(t, []testNode{{"r1", "", "plain-metal"}, {"r2", "", "plain-metal"}})
 	if err := l.rotate("node-ca"); err != nil {
 		t.Fatal(err)
 	}
@@ -1065,7 +1065,7 @@ func TestRotateNodeCAWithoutHolders(t *testing.T) {
 // Kubernetes comes between the workers by its name, not after them.
 func TestRotationOrdersAllNodes(t *testing.T) {
 	path := writeNodes(t, t.TempDir(), []testNode{
-		{"w1", kubernetes.KindWorker, "w"}, {"a0", "", "plain"}, {"cp1", kubernetes.KindControlPlane, "cp"},
+		{"w1", kubernetes.KindWorker, "w-metal"}, {"a0", "", "plain-metal"}, {"cp1", kubernetes.KindControlPlane, "cp-metal"},
 	}, nil)
 	c, err := loadInventory(context.Background(), path)
 	if err != nil {

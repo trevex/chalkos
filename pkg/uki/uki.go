@@ -91,8 +91,8 @@ func unquote(v string) string {
 // ID is the image's IMAGE_ID in os-release.
 func (i Image) ID() string { return i.OSRelease["IMAGE_ID"] }
 
-// Variant is the image's CHALKOS_VARIANT in os-release.
-func (i Image) Variant() string { return i.OSRelease["CHALKOS_VARIANT"] }
+// Name is the image's CHALKOS_IMAGE in os-release.
+func (i Image) Name() string { return i.OSRelease["CHALKOS_IMAGE"] }
 
 // Platform is the image's CHALKOS_PLATFORM in os-release.
 func (i Image) Platform() string { return i.OSRelease["CHALKOS_PLATFORM"] }

@@ -160,7 +160,7 @@ func TestApplyConfigRefusesAnotherPlatform(t *testing.T) {
 	ta := newTestApp(t)
 	s, r := installedNode(t, ta, []byte(`{}`))
 	s.Paths.OSRelease = filepath.Join(t.TempDir(), "os-release")
-	writeFile(t, s.Paths.OSRelease, "IMAGE_ID=chalkos\nIMAGE_VERSION=\"\"\nCHALKOS_VARIANT=test\nCHALKOS_PLATFORM=kvm\n")
+	writeFile(t, s.Paths.OSRelease, "IMAGE_ID=chalkos\nIMAGE_VERSION=\"\"\nCHALKOS_IMAGE=test-kvm\nCHALKOS_PLATFORM=kvm\n")
 	addr := ta.startNode(t, s)
 	want := "n1 runs an image built for kvm, but its image test-metal is built for metal; changing a node's platform is a reinstall"
 	for _, cmd := range [][]string{{"config", "apply", "n1"}, {"storage", "reset", "n1", "var"}} {
@@ -174,13 +174,13 @@ func TestApplyConfigRefusesAnotherPlatform(t *testing.T) {
 	}
 }
 
-// TestApplyConfigToAnImageOfAnotherVariant delivers config to a node that runs an image of another
-// variant than its image's: the node checks the config against its image's schemas.
-func TestApplyConfigToAnImageOfAnotherVariant(t *testing.T) {
+// TestApplyConfigToAnImageOfAnotherName delivers config to a node that runs an image of another
+// name than its image's: the node checks the config against its image's schemas.
+func TestApplyConfigToAnImageOfAnotherName(t *testing.T) {
 	ta := newTestApp(t)
 	s, _ := installedNode(t, ta, []byte(`{"hostname": "old"}`))
 	s.Paths.OSRelease = filepath.Join(t.TempDir(), "os-release")
-	writeFile(t, s.Paths.OSRelease, "IMAGE_ID=chalkos\nIMAGE_VERSION=\"\"\nCHALKOS_VARIANT=w\nCHALKOS_PLATFORM=metal\n")
+	writeFile(t, s.Paths.OSRelease, "IMAGE_ID=chalkos\nIMAGE_VERSION=\"\"\nCHALKOS_IMAGE=w-metal\nCHALKOS_PLATFORM=metal\n")
 	addr := ta.startNode(t, s)
 	if err := ta.run(context.Background(), ta.args([]string{"config", "apply", "n1"}, addr)); err != nil {
 		t.Fatal(err)

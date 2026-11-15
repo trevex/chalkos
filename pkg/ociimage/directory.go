@@ -13,7 +13,7 @@ import (
 )
 
 // FromDirectory is the chalkos image of an image directory as nix build makes it. It refuses
-// metadata.json of another image and an image without a variant, such as the installer.
+// metadata.json of another image and an image without a name, such as the installer.
 // closeImage removes the UKI and boot loader copies the image reads, so write the image first.
 func FromDirectory(ctx context.Context, dir string) (_ v1.Image, closeImage func() error, err error) {
 	raw, err := image.FindRaw(dir)
@@ -41,8 +41,8 @@ func FromDirectory(ctx context.Context, dir string) (_ v1.Image, closeImage func
 			p.Close()
 		}
 	}()
-	if p.Info.Variant() == "" {
-		return nil, nil, fmt.Errorf("%s names no variant in its UKI's os-release; it is no node image", dir)
+	if p.Info.Name() == "" {
+		return nil, nil, fmt.Errorf("%s names no image name in its UKI's os-release; it is no node image", dir)
 	}
 	h := Header{
 		ImageID:      p.Info.ID(),

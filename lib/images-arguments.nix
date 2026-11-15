@@ -22,8 +22,8 @@ let
       p
     else
       throw "mkImages: osCA ${toString p} is version ${toString version}; chalkos reads version ${toString publicVersion} only, so generate new secrets with chalkctl gen secrets";
-  # A variant's and a platform's name become CHALKOS_VARIANT and CHALKOS_PLATFORM in the images'
-  # os-release, and together the image's name, <variant>-<platform>.
+  # A platform's name becomes CHALKOS_PLATFORM in the images' os-release, and with a variant's
+  # the image's name, <variant>-<platform>, CHALKOS_IMAGE.
   namePattern = "[a-z0-9][a-z0-9-]*";
   checkNames =
     argument: attrs:
@@ -181,8 +181,8 @@ in
       apply = checkNames "variants";
       description = ''
         Variants of the cluster's images, by name: each is built for every platform as
-        `images.<variant>-<platform>`. A variant's name becomes `CHALKOS_VARIANT` in its images'
-        os-release and `variant` in their `metadata.json`.
+        `images.<variant>-<platform>`, which becomes the image's name, `CHALKOS_IMAGE` in its
+        os-release and `name` in its `metadata.json`.
       '';
     };
     installer.modules = mkOption {

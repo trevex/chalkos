@@ -79,7 +79,7 @@ func TestInstallInPlace(t *testing.T) {
 // of another platform than its image's.
 func TestInstallInPlaceRefusesAnotherPlatform(t *testing.T) {
 	ta := newTestApp(t)
-	writeImageDir(t, filepath.Join(ta.dir, "images", "test-metal"), "test", "kvm", testRootHash, false)
+	writeImageDir(t, filepath.Join(ta.dir, "images", "test-metal"), "test-kvm", "kvm", testRootHash, false)
 	s := maintenanceNode()
 	called := false
 	s.InPlace = func(context.Context, install.Request, []byte) error { called = true; return nil }
@@ -117,7 +117,7 @@ func TestInstallRefusesWrongFingerprint(t *testing.T) {
 // image's schemas.
 func TestInstallFromPartsStreamsTheImage(t *testing.T) {
 	ta := newTestApp(t)
-	imageDir := testUpgradeImage(t, "gpu", "0.1.0")
+	imageDir := testUpgradeImage(t, "gpu-metal", "0.1.0")
 	copySchemas(t, filepath.Join(imageDir, "schemas"))
 	writeFile(t, filepath.Join(imageDir, "repart.d", "50-state.conf"), "[Partition]\nLabel=state\n")
 	// The build named its revision and tag, which the node records.
@@ -178,7 +178,7 @@ func TestInstallChecksThePlatform(t *testing.T) {
 		return nil
 	}
 	addr := ta.startNode(t, s)
-	img := testImageOf(t, "test", "kvm", "0.1.0", 512, nil)
+	img := testImageOf(t, "test-kvm", "kvm", "0.1.0", 512, nil)
 	writeFile(t, filepath.Join(img, "repart.d", "50-state.conf"), "[Partition]\nLabel=state\n")
 	copySchemas(t, filepath.Join(img, "schemas"))
 	err := ta.run(context.Background(), ta.args([]string{"install", "n1", "--fingerprint", s.Fingerprint, "--image", img}, addr))
@@ -203,15 +203,15 @@ func TestInstallReportsNodeRefusal(t *testing.T) {
 	}
 }
 
-// TestInstallInPlaceOnAnImageOfAnotherVariant installs a node in place that runs an image of
-// another variant than its image's: the node checks the config against its image's schemas.
-func TestInstallInPlaceOnAnImageOfAnotherVariant(t *testing.T) {
+// TestInstallInPlaceOnAnImageOfAnotherName installs a node in place that runs an image of
+// another name than its image's: the node checks the config against its image's schemas.
+func TestInstallInPlaceOnAnImageOfAnotherName(t *testing.T) {
 	ta := newTestApp(t)
 	s := maintenanceNode()
 	called := false
 	s.InPlace = func(context.Context, install.Request, []byte) error { called = true; return nil }
 	s.Paths.OSRelease = filepath.Join(t.TempDir(), "os-release")
-	writeFile(t, s.Paths.OSRelease, "IMAGE_ID=chalkos\nIMAGE_VERSION=\"\"\nCHALKOS_VARIANT=w\nCHALKOS_PLATFORM=metal\n")
+	writeFile(t, s.Paths.OSRelease, "IMAGE_ID=chalkos\nIMAGE_VERSION=\"\"\nCHALKOS_IMAGE=w-metal\nCHALKOS_PLATFORM=metal\n")
 	addr := ta.startNode(t, s)
 	if err := ta.run(context.Background(), ta.args([]string{"install", "n1", "--fingerprint", s.Fingerprint}, addr)); err != nil {
 		t.Fatal(err)
@@ -270,7 +270,7 @@ func checkingFromParts(s *chalkd.Server, st checkerStore, got *install.PartsRequ
 // from the installer with the image's message, and the node is not installed.
 func TestInstallFromPartsRefusedByTheImage(t *testing.T) {
 	ta := newTestApp(t)
-	imageDir := testUpgradeImage(t, "test", "0.1.0")
+	imageDir := testUpgradeImage(t, "test-metal", "0.1.0")
 	writeFile(t, filepath.Join(imageDir, "repart.d", "50-state.conf"), "[Partition]\nLabel=state\n")
 	s := maintenanceNode()
 	s.Installer = true
@@ -300,7 +300,7 @@ func TestInstallFromPartsRefusedByTheImage(t *testing.T) {
 func TestInstallFromPartsSendsTheImageContract(t *testing.T) {
 	ta := newTestApp(t)
 	withKind(t, ta, kubernetes.KindWorker)
-	imageDir := testUpgradeImage(t, "gpu", "0.1.0")
+	imageDir := testUpgradeImage(t, "gpu-metal", "0.1.0")
 	copySchemas(t, filepath.Join(imageDir, "schemas"))
 	writeFile(t, filepath.Join(imageDir, "facts", "kubernetes.json"), testImageJSON)
 	writeFile(t, filepath.Join(imageDir, "repart.d", "50-state.conf"), "[Partition]\nLabel=state\n")

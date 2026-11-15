@@ -40,10 +40,10 @@ func (r *upgradeRun) target(n *upgradeNode) (string, []byte) {
 type upgradeGroup struct {
 	// key tells groups apart: the image directory, the reference by digest of an image in a
 	// registry, or empty for the image given.
-	key, dir          string
-	variant, platform string
-	nodes             []string
-	image             *diskImage
+	key, dir       string
+	name, platform string
+	nodes          []string
+	image          *diskImage
 }
 
 // upgradePlan is what a run upgrades, as the nodes were when it started.
@@ -90,11 +90,11 @@ func (p *upgradePlan) closeImages() {
 // find picks the nodes to upgrade and groups them by the image they get. It asks every node what
 // it runs before any node is sent anything.
 //   - The nodes are those named, else every node of the inventory, else every node --address
-//     names. With an image and no nodes named, only those that run the image's variant.
+//     names. With an image and no nodes named, only those running an image of its name.
 //   - Without an image each node gets its image in the inventory. A node whose platform differs
 //     from that image's stops the run.
 //   - With an image, a node on another platform is skipped and named, or stops the run when named.
-//   - A node may get an image of another variant than it runs, which is printed. The node checks
+//   - A node may get an image of another name than the one it runs, which is printed. The node checks
 //     its config against the image before the image becomes the next boot.
 func (r *upgradeRun) find(ctx context.Context, named []string, img *diskImage) error {
 	c := r.cluster
@@ -130,7 +130,7 @@ func (r *upgradeRun) find(ctx context.Context, named []string, img *diskImage) e
 		}
 		n := &upgradeNode{rebootNode: rebootNode{name: name, roles: roles}}
 		probed[name] = roles.coordinator()
-		if img != nil && len(named) == 0 && info.Variant != img.Info.Variant() {
+		if img != nil && len(named) == 0 && info.Image != img.Info.Name() {
 			continue
 		}
 		if img != nil && info.Platform != img.Info.Platform() {
@@ -152,8 +152,8 @@ func (r *upgradeRun) find(ctx context.Context, named []string, img *diskImage) e
 			return err
 		}
 		r.nodes[name] = n
-		if info.Variant != "" && info.Variant != g.variant {
-			r.Say("%s runs the variant %s; it gets the image of %s", name, info.Variant, g.variant)
+		if info.Image != "" && info.Image != g.name {
+			r.Say("%s runs the image %s; it gets %s", name, info.Image, g.name)
 		}
 		g.nodes = append(g.nodes, name)
 	}
@@ -162,7 +162,7 @@ func (r *upgradeRun) find(ctx context.Context, named []string, img *diskImage) e
 	}
 	if len(r.nodes) == 0 {
 		if img != nil {
-			return fmt.Errorf("the cluster has no node of the variant %s on %s to upgrade", img.Info.Variant(), img.Info.Platform())
+			return fmt.Errorf("the cluster has no node running the image %s", img.Info.Name())
 		}
 		return errors.New("the cluster has no node to upgrade")
 	}
@@ -294,7 +294,7 @@ func noPrevious(b *nodev1.BootStatus) string {
 // for it: from its directory, or from a registry, which the node pulls.
 func (r *upgradeRun) groupOf(name string, img *diskImage) (*upgradeGroup, error) {
 	if img != nil {
-		return &upgradeGroup{variant: img.Info.Variant(), platform: img.Info.Platform(), image: img}, nil
+		return &upgradeGroup{name: img.Info.Name(), platform: img.Info.Platform(), image: img}, nil
 	}
 	nc, md, err := r.cluster.image(name)
 	if err != nil {
@@ -305,9 +305,9 @@ func (r *upgradeRun) groupOf(name string, img *diskImage) (*upgradeGroup, error)
 		if err != nil {
 			return nil, err
 		}
-		return &upgradeGroup{key: img.source.GetOci().GetReference(), variant: md.Variant, platform: md.Platform, image: img}, nil
+		return &upgradeGroup{key: img.source.GetOci().GetReference(), name: md.Name, platform: md.Platform, image: img}, nil
 	}
-	return &upgradeGroup{key: nc.ImageDir, dir: nc.ImageDir, variant: md.Variant, platform: md.Platform}, nil
+	return &upgradeGroup{key: nc.ImageDir, dir: nc.ImageDir, name: md.Name, platform: md.Platform}, nil
 }
 
 // split sorts the nodes to upgrade into the coordinators and the others, each by name.

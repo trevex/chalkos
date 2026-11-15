@@ -61,19 +61,19 @@ func writeInventory(t *testing.T, dir string, docs ...string) string {
 	writeFile(t, filepath.Join(dir, "chalkos.yaml"), testInventoryYAML)
 	writeFile(t, filepath.Join(dir, "cluster.yaml"), testClusterYAML)
 	writeFile(t, filepath.Join(dir, "nodes", "n1.yaml"), strings.Join(docs, "---\n"))
-	writeImageDir(t, filepath.Join(dir, "images", "test-metal"), "test", "metal", testRootHash, false)
+	writeImageDir(t, filepath.Join(dir, "images", "test-metal"), "test-metal", "metal", testRootHash, false)
 	return filepath.Join(dir, "chalkos.yaml")
 }
 
 // writeImageDir writes what chalkctl reads of an image directory besides the image itself:
-// metadata.json of the variant, platform and root hash, the fixture schemas, and with kubernetes
+// metadata.json of the name, platform and root hash, the fixture schemas, and with kubernetes
 // the Kubernetes facts of an image with Kubernetes.
-func writeImageDir(t *testing.T, dir, variant, platform, rootHash string, kubernetes bool) {
+func writeImageDir(t *testing.T, dir, name, platform, rootHash string, kubernetes bool) {
 	t.Helper()
 	if kubernetes {
 		writeFile(t, filepath.Join(dir, "facts", "kubernetes.json"), testImageJSON)
 	}
-	writeFile(t, filepath.Join(dir, "metadata.json"), fmt.Sprintf(`{"schemaVersion": 0, "id": "chalkos", "variant": %q, "platform": %q, "rootHash": %q, "kinds": []}`, variant, platform, rootHash))
+	writeFile(t, filepath.Join(dir, "metadata.json"), fmt.Sprintf(`{"schemaVersion": 0, "id": "chalkos", "name": %q, "platform": %q, "rootHash": %q, "kinds": []}`, name, platform, rootHash))
 	copySchemas(t, filepath.Join(dir, "schemas"))
 }
 
@@ -86,7 +86,7 @@ func TestValidate(t *testing.T) {
 	if err := ta.run(context.Background(), []string{"validate", "--inventory", path}); err != nil {
 		t.Fatal(err)
 	}
-	if want := "n1: valid for the image test-metal (test on metal, root hash abababababab), config "; !strings.Contains(ta.stdout.String(), want) {
+	if want := "n1: valid for the image test-metal (root hash abababababab), config "; !strings.Contains(ta.stdout.String(), want) {
 		t.Errorf("stdout = %q, want %q", ta.stdout, want)
 	}
 	// n2's Network misspells a key.
@@ -210,14 +210,14 @@ func TestValidateRefusesAKeyNoCredentialCanCarry(t *testing.T) {
 // node does, and names a node whose image directory holds no image.
 func TestValidateKubernetes(t *testing.T) {
 	ta := newTestApp(t)
-	path := writeNodes(t, ta.dir, []testNode{{"cp1", kubernetes.KindControlPlane, "k8s"}, {"n1", "", "plain"}}, nil)
-	writeImageDir(t, filepath.Join(ta.dir, "images", "k8s-metal"), "k8s", "metal", testRootHash, true)
+	path := writeNodes(t, ta.dir, []testNode{{"cp1", kubernetes.KindControlPlane, "k8s-metal"}, {"n1", "", "plain-metal"}}, nil)
+	writeImageDir(t, filepath.Join(ta.dir, "images", "k8s-metal"), "k8s-metal", "metal", testRootHash, true)
 	err := ta.run(context.Background(), []string{"validate", "--inventory", path})
 	if err == nil || !strings.Contains(err.Error(), "the config of 1 node is invalid") ||
 		!strings.Contains(err.Error(), "images/plain-metal has no metadata.json; build the image or link its directory there") {
 		t.Errorf("validate without n1's image = %v", err)
 	}
-	if !strings.Contains(ta.stdout.String(), "cp1: valid for the image k8s-metal (k8s on metal") {
+	if !strings.Contains(ta.stdout.String(), "cp1: valid for the image k8s-metal (root hash ") {
 		t.Errorf("stdout = %q, want cp1 valid", ta.stdout)
 	}
 	// A plain HTTP mirror endpoint whose host has no Registry that allows it is refused.
@@ -229,17 +229,16 @@ func TestValidateKubernetes(t *testing.T) {
 	}
 }
 
-// testNode is a node of a test inventory: its name, Kubernetes kind and the variant of its image.
-type testNode struct{ name, kind, variant string }
+// testNode is a node of a test inventory: its name, Kubernetes kind and the name of its image.
+type testNode struct{ name, kind, image string }
 
 // writeNodes writes an inventory of the cluster lab with the nodes, the i-th at 10.0.0.<11+i> on
-// metal with the image <variant>-metal, whose directory images gives by variant, else
-// images/<variant>-metal below dir; an image given as oci:<reference> is named by its reference
-// in a registry. A node of a kind gets a Kubernetes Node, and the nodes share testClusterYAML. It
-// returns the inventory's path.
+// metal with its image, whose directory images gives by name, else images/<image> below dir;
+// an image given as oci:<reference> is named by its reference in a registry. A node of a kind
+// gets a Kubernetes Node, and the nodes share testClusterYAML. It returns the inventory's path.
 func writeNodes(t *testing.T, dir string, nodes []testNode, images map[string]string) string {
 	t.Helper()
-	variants := map[string]bool{}
+	done := map[string]bool{}
 	var defined, listed string
 	for i, n := range nodes {
 		docs := []string{n1SystemDisk,
@@ -248,17 +247,17 @@ func writeNodes(t *testing.T, dir string, nodes []testNode, images map[string]st
 			docs = append(docs, nodeDoc(n.kind))
 		}
 		writeFile(t, filepath.Join(dir, "nodes", n.name+".yaml"), strings.Join(docs, "---\n"))
-		listed += fmt.Sprintf("    %s: {address: 10.0.0.%d, imageName: %s-metal, files: [nodes/%s.yaml]}\n", n.name, 11+i, n.variant, n.name)
-		if !variants[n.variant] {
-			variants[n.variant] = true
-			image := images[n.variant]
+		listed += fmt.Sprintf("    %s: {address: 10.0.0.%d, imageName: %s, files: [nodes/%s.yaml]}\n", n.name, 11+i, n.image, n.name)
+		if !done[n.image] {
+			done[n.image] = true
+			image := images[n.image]
 			if image == "" {
-				image = filepath.Join(dir, "images", n.variant+"-metal")
+				image = filepath.Join(dir, "images", n.image)
 			}
 			if ref, ok := strings.CutPrefix(image, "oci:"); ok {
-				defined += fmt.Sprintf("    %s-metal: {source: {oci: %q}}\n", n.variant, ref)
+				defined += fmt.Sprintf("    %s: {source: {oci: %q}}\n", n.image, ref)
 			} else {
-				defined += fmt.Sprintf("    %s-metal: {source: {directory: %q}}\n", n.variant, image)
+				defined += fmt.Sprintf("    %s: {source: {directory: %q}}\n", n.image, image)
 			}
 		}
 	}
@@ -327,7 +326,7 @@ func TestInstallFromTheInventory(t *testing.T) {
 // another build than its image.
 func TestInstallTakesItsImageFromTheInventory(t *testing.T) {
 	ta := newTestApp(t)
-	img := testUpgradeImage(t, "test", "0.1.0")
+	img := testUpgradeImage(t, "test-metal", "0.1.0")
 	writeFile(t, filepath.Join(img, "repart.d", "50-state.conf"), "[Partition]\nLabel=state\n")
 	path := writeInventory(t, ta.dir)
 	writeFile(t, path, strings.Replace(testInventoryYAML, "directory: images/test-metal", "directory: "+img, 1))
@@ -372,7 +371,7 @@ func TestStatusComparesWithTheInventory(t *testing.T) {
 	// A new build of the image leaves the node's config the inventory's: the root hash is no part
 	// of it.
 	version := inventoryVersion(t, path)
-	writeImageDir(t, filepath.Join(ta.dir, "images", "test-metal"), "test", "metal", strings.Repeat("cd", 32), false)
+	writeImageDir(t, filepath.Join(ta.dir, "images", "test-metal"), "test-metal", "metal", strings.Repeat("cd", 32), false)
 	ta.stdout.Reset()
 	if err := ta.run(context.Background(), args("status", "n1")); err != nil {
 		t.Fatal(err)

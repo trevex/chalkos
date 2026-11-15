@@ -46,7 +46,7 @@ message StatusResponse {
   // The router's DHCP servers, one per VRF whose links DHCPSubnet documents serve, the default VRF's
   // first, then by VRF.
   repeated DHCPServerStatus dhcp = 7;
-  // Whether the image carries no BGP, as an image whose variant leaves FRR out: peers and
+  // Whether the image carries no BGP, as an image that leaves FRR out: peers and
   // bgp_error are then empty.
   bool bgp_absent = 8;
   // The router's DHCP relays, one per VRF whose links DHCPRelay documents relay, the default

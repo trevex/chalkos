@@ -22,8 +22,8 @@ func TestContract(t *testing.T) {
 	if !reflect.DeepEqual(resp.Msg.Schemas, fixtureSchemas(t)) || len(resp.Msg.LayerFacts) != 0 {
 		t.Errorf("contract = %d schemas and %d layer facts, want the image's schemas alone", len(resp.Msg.Schemas), len(resp.Msg.LayerFacts))
 	}
-	if m := resp.Msg; m.Variant != "worker" || m.Platform != "metal" {
-		t.Errorf("contract of the image of %q and %q, want the os-release's worker and metal", m.Variant, m.Platform)
+	if m := resp.Msg; m.Image != "worker-metal" || m.Platform != "metal" {
+		t.Errorf("contract of the image %q on %q, want the os-release's worker-metal and metal", m.Image, m.Platform)
 	}
 	kubernetesImage(t, s)
 	if resp, err = s.Contract(context.Background(), connect.NewRequest(&nodev1.ContractRequest{})); err != nil || len(resp.Msg.LayerFacts) != 1 {

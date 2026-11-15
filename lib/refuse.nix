@@ -20,6 +20,6 @@
     else
       "an attribute set of ${lib.concatStringsSep ", " (lib.attrNames set)}";
 
-  # The image a message is about: the variant by its name, or the image when it has none.
-  imageText = variant: if variant == null then "the image" else "the variant ${variant}";
+  # The image a message is about: the image by its name, or "the image" when it has none.
+  imageText = name: if name == null then "the image" else "the image ${name}";
 }

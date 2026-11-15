@@ -47,6 +47,6 @@ in
     };
   };
 
-  # A definition rather than the option's default, so a variant's definitions add to it.
+  # A definition rather than the option's default, so an image's definitions add to it.
   config.chalkos.cni.plugins = if cfg.provider == "flannel" then flannelPlugins else referencePlugins;
 }

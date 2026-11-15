@@ -263,7 +263,7 @@ func installLab(t *testing.T) *rotationLab {
 	}
 	inv := strings.NewReplacer("address: 10.0.0.11,", "address: "+l.addrs["cp1"]+",", "address: 10.0.0.12,", "address: "+l.addrs["cp2"]+",").Replace(string(data))
 	writeFile(t, l.ta.inventory, inv)
-	writeImageDir(t, filepath.Join(l.ta.dir, "images", "plain-metal"), "plain", "metal", testRootHash, false)
+	writeImageDir(t, filepath.Join(l.ta.dir, "images", "plain-metal"), "plain-metal", "metal", testRootHash, false)
 	return l
 }
 
@@ -279,7 +279,7 @@ func (l *rotationLab) install(args ...string) error {
 // NODE=ADDR, ahead of the inventory's.
 func TestInstallAsksControlPlanesAtTheirAddresses(t *testing.T) {
 	l := newRotationLab(t)
-	writeImageDir(t, filepath.Join(l.ta.dir, "images", "plain-metal"), "plain", "metal", testRootHash, false)
+	writeImageDir(t, filepath.Join(l.ta.dir, "images", "plain-metal"), "plain-metal", "metal", testRootHash, false)
 	l.revoked = []*kubernetesv1.RevokedNode{{Name: "n1", RevokedAt: timestamppb.New(revokedAt)}}
 	err := l.install("--address", "cp1="+l.addrs["cp1"], "--address", "cp2="+l.addrs["cp2"])
 	if err == nil || !strings.Contains(err.Error(), "n1 is revoked since 2026-10-23T12:00:00Z") {

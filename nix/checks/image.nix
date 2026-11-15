@@ -447,7 +447,7 @@ in
           and (has("version") | not)
           and .revision == null
           and .tag == null
-          and .variant == "test"
+          and .name == "test-metal"
           and .platform == "metal"
           and (.rootHash | test("^[0-9a-f]{64}$"))
           and ([.kinds[].kind] | index("Network") != null)
@@ -482,7 +482,7 @@ in
         test "$(ls $k/facts)" = kubernetes.json
         jq -e '.cni == "flannel" and (keys == ["cni", "version"])' $k/facts/kubernetes.json
         jq -e 'has("kubernetes") | not' $k/metadata.json
-        jq -e '.variant == "k8s"' $k/metadata.json
+        jq -e '.name == "k8s-kvm"' $k/metadata.json
         touch $out
       '';
 

@@ -32,7 +32,7 @@ import (
 )
 
 // nodeImage is the test image of a node on metal.
-var nodeImage = imagetest.Image{Variant: "node", Platform: "metal", Seed: "1"}
+var nodeImage = imagetest.Image{Name: "node-metal", Platform: "metal", Seed: "1"}
 
 // smallBlobs are the five blobs of a small test image's layers, a few bytes each, built fresh so
 // a test may replace one before calling ociimage.Build.
@@ -256,17 +256,17 @@ func TestReadContractDirRefusesFactsWithoutALayerName(t *testing.T) {
 }
 
 // TestFromDirectoryRefuses refuses an image directory whose metadata.json names another root hash
-// or platform than its raw image, and one whose UKI names no variant, such as the installer's.
+// or platform than its raw image, and one whose UKI names no image name, such as the installer's.
 func TestFromDirectoryRefuses(t *testing.T) {
 	metal := nodeImage
-	noVariant := imagetest.Image{Platform: "metal", Seed: "1"}
+	noName := imagetest.Image{Platform: "metal", Seed: "1"}
 	for want, tc := range map[string]struct {
 		img, contract imagetest.Image
 		root          []byte
 	}{
 		`metadata.json names the root hash "cdcd`:                                   {metal, metal, bytes.Repeat([]byte{0xcd}, 32)},
-		`metadata.json names the platform "kvm", but the image's UKI names "metal"`: {metal, imagetest.Image{Variant: "node", Platform: "kvm"}, nil},
-		"names no variant": {noVariant, noVariant, nil},
+		`metadata.json names the platform "kvm", but the image's UKI names "metal"`: {metal, imagetest.Image{Name: "node-kvm", Platform: "kvm"}, nil},
+		"names no image name": {noName, noName, nil},
 	} {
 		in := t.TempDir()
 		root := imagetest.Write(t, in, tc.img)

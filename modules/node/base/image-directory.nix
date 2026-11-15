@@ -16,7 +16,7 @@ let
   # upgrade's temporary file, and one otherwise.
   fits =
     let
-      name = lib.defaultTo config.image.repart.name config.chalkos.variant.name;
+      name = lib.defaultTo config.image.repart.name config.chalkos.image.name;
       image = config.system.build.image;
     in
     pkgs.runCommand "${name}-fits"
@@ -40,7 +40,7 @@ let
       schemaVersion = 0;
       inherit (config.system.image) id;
       inherit (config.chalkos.provenance) revision tag;
-      variant = config.chalkos.variant.name;
+      name = config.chalkos.image.name;
       platform = config.chalkos.platform.name;
       kinds = config.system.build.chalkosKinds;
     }

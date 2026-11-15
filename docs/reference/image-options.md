@@ -83,7 +83,7 @@ Type: list of string · Default: `[ ]` · Declared in: [modules/node/kernel.nix]
 
 Groups of `chalkos.kernel.groups` whose modules the image carries. Every image carries
 `storage`, `network`, `virtualisation`, `filesystems`, `platform` and `firewall`; the layer an image runs adds the groups it
-needs, and a variant's modules add to them, for example `[ "gpu" ]`; `lib.mkForce`
+needs, and an image's modules add to them, for example `[ "gpu" ]`; `lib.mkForce`
 replaces them. A name that `chalkos.kernel.groups` does not declare fails the
 evaluation. Modules from `boot.extraModulePackages` are always included whole, with the
 modules of the kernel they depend on.
@@ -153,19 +153,19 @@ Whether an image carries the router layer, and whether its node forwards packets
 
 Type: boolean · Default: `true` · Declared in: [modules/node/router/bgp/default.nix](https://github.com/trevex/chalkos/blob/main/modules/node/router/bgp/default.nix)
 
-Whether router images carry FRR, which runs BGP and BFD, with the Python of frr-reload.py, and accept the kinds `BGP`, `BGPPeer`, `CommunityList`, `PrefixList` and `RoutingPolicy`. Only with the router layer; set it false in a variant's modules to leave the feature out of its images.
+Whether router images carry FRR, which runs BGP and BFD, with the Python of frr-reload.py, and accept the kinds `BGP`, `BGPPeer`, `CommunityList`, `PrefixList` and `RoutingPolicy`. Only with the router layer; set it false in an image's modules to leave the feature out of it.
 
 ### `chalkos.router.dhcp.enable` { #chalkosrouterdhcpenable }
 
 Type: boolean · Default: `true` · Declared in: [modules/node/router/dhcp/default.nix](https://github.com/trevex/chalkos/blob/main/modules/node/router/dhcp/default.nix)
 
-Whether router images carry the DHCP server, Kea, which chalkos builds from source, and accept the kind `DHCPSubnet`. Only with the router layer; set it false in a variant's modules to leave the feature out of its images.
+Whether router images carry the DHCP server, Kea, which chalkos builds from source, and accept the kind `DHCPSubnet`. Only with the router layer; set it false in an image's modules to leave the feature out of it.
 
 ### `chalkos.router.dhcpRelay.enable` { #chalkosrouterdhcprelayenable }
 
 Type: boolean · Default: `true` · Declared in: [modules/node/router/dhcp-relay/default.nix](https://github.com/trevex/chalkos/blob/main/modules/node/router/dhcp-relay/default.nix)
 
-Whether router images carry the DHCP relay, dnsmasq, and accept the kind `DHCPRelay`. Only with the router layer; set it false in a variant's modules to leave the feature out of its images.
+Whether router images carry the DHCP relay, dnsmasq, and accept the kind `DHCPRelay`. Only with the router layer; set it false in an image's modules to leave the feature out of it.
 
 ### `chalkos.router.enable` { #chalkosrouterenable }
 
@@ -180,19 +180,19 @@ installer none.
 
 Type: boolean · Default: `true` · Declared in: [modules/node/router/nat64/default.nix](https://github.com/trevex/chalkos/blob/main/modules/node/router/nat64/default.nix)
 
-Whether router images carry Jool, the kernel module and tool of the NAT64 instances, and accept the kind `NAT64`. Only with the router layer; set it false in a variant's modules to leave the feature out of its images.
+Whether router images carry Jool, the kernel module and tool of the NAT64 instances, and accept the kind `NAT64`. Only with the router layer; set it false in an image's modules to leave the feature out of it.
 
 ### `chalkos.router.resolver.enable` { #chalkosrouterresolverenable }
 
 Type: boolean · Default: `true` · Declared in: [modules/node/router/resolver/default.nix](https://github.com/trevex/chalkos/blob/main/modules/node/router/resolver/default.nix)
 
-Whether router images carry Unbound, the DNS resolvers of the router's VRFs, and accept the kind `Resolver`. Only with the router layer; set it false in a variant's modules to leave the feature out of its images.
+Whether router images carry Unbound, the DNS resolvers of the router's VRFs, and accept the kind `Resolver`. Only with the router layer; set it false in an image's modules to leave the feature out of it.
 
 ### `chalkos.router.wireguard.enable` { #chalkosrouterwireguardenable }
 
 Type: boolean · Default: `true` · Declared in: [modules/node/router/wireguard/default.nix](https://github.com/trevex/chalkos/blob/main/modules/node/router/wireguard/default.nix)
 
-Whether router images carry WireGuard, whose interfaces networkd runs, with wireguard-tools for its diagnostic, and accept the kinds `WireGuard` and `WireGuardPeer`. Only with the router layer; set it false in a variant's modules to leave the feature out of its images.
+Whether router images carry WireGuard, whose interfaces networkd runs, with wireguard-tools for its diagnostic, and accept the kinds `WireGuard` and `WireGuardPeer`. Only with the router layer; set it false in an image's modules to leave the feature out of it.
 
 ### `chalkos.forwarding.enable` { #chalkosforwardingenable }
 
@@ -304,14 +304,15 @@ describes the file; the image's build checks the file's version again.
 
 mkImages sets these from its arguments; a module reads them rather than setting them.
 
-### `chalkos.variant.name` { #chalkosvariantname }
+### `chalkos.image.name` { #chalkosimagename }
 
 Type: string or null · Default: `null` · Declared in: [modules/node/settings.nix](https://github.com/trevex/chalkos/blob/main/modules/node/settings.nix)
 
-The image's variant, which its os-release names as `CHALKOS_VARIANT` and its image
-directory's `metadata.json` as `variant`. mkImages sets it to the variant's name. null
-on the installer, which is no variant. No check compares it: a node may change its
-variant through an upgrade, and the image's schemas decide which config it takes.
+The image's name, which mkImages sets, recorded as `CHALKOS_IMAGE` in its os-release and
+as `name` in its image directory's `metadata.json`. `chalkctl upgrade --image` upgrades
+the nodes running an image of this name. null on the installer, which is no node image.
+No check compares it: a node may change the image it runs through an upgrade, and the
+image's schemas decide which config it takes.
 
 ### `chalkos.platform.name` { #chalkosplatformname }
 

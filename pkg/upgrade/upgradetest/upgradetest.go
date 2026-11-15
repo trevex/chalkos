@@ -81,7 +81,7 @@ func OSRelease(imageID string, tries int) map[string]string {
 	return map[string]string{
 		"IMAGE_ID":           imageID,
 		"IMAGE_VERSION":      "",
-		"CHALKOS_VARIANT":    "worker",
+		"CHALKOS_IMAGE":      "worker-metal",
 		"CHALKOS_PLATFORM":   "metal",
 		"CHALKOS_BOOT_TRIES": strconv.Itoa(tries),
 	}

@@ -18,7 +18,7 @@ var pendingSince = time.Date(2026, 11, 1, 12, 0, 0, 0, time.UTC)
 // says first, and config discard drops it, needing no inventory.
 func TestApplyConfigStagedHoldsPending(t *testing.T) {
 	l := newUpgradeLab(t, 1)
-	l.useInventory(t, map[string]string{"w": testUpgradeImage(t, "w", "0.2.0")})
+	l.useInventory(t, map[string]string{"w-metal": testUpgradeImage(t, "w-metal", "0.2.0")})
 	n := l.nodes["w1"]
 	if err := l.applyConfig("w1", "--staged"); err != nil {
 		t.Fatal(err)
@@ -71,7 +71,7 @@ func TestApplyConfigStagedHoldsPending(t *testing.T) {
 // pending and keeps nothing.
 func TestApplyConfigStagedDryRunHoldsNothing(t *testing.T) {
 	l := newUpgradeLab(t, 1)
-	l.useInventory(t, map[string]string{"w": testUpgradeImage(t, "w", "0.2.0")})
+	l.useInventory(t, map[string]string{"w-metal": testUpgradeImage(t, "w-metal", "0.2.0")})
 	if err := l.applyConfig("w1", "--staged", "--dry-run"); err != nil {
 		t.Fatal(err)
 	}
@@ -89,8 +89,8 @@ func TestApplyConfigStagedDryRunHoldsNothing(t *testing.T) {
 // inventory's.
 func TestUpgradeNamesThePendingConfig(t *testing.T) {
 	l := newUpgradeLab(t, 1)
-	img := testUpgradeImage(t, "w", "0.2.0")
-	l.useInventory(t, map[string]string{"w": img})
+	img := testUpgradeImage(t, "w-metal", "0.2.0")
+	l.useInventory(t, map[string]string{"w-metal": img})
 	n := l.nodes["w1"]
 	n.pending = "{}"
 	config := l.ta.writeConfig(t, "ops", pki.RoleOperator, time.Hour, time.Now())
@@ -120,8 +120,8 @@ func TestUpgradeNamesThePendingConfig(t *testing.T) {
 // known-good image a rollback left with the config it last ran.
 func TestUpgradeNotesAPendingConfigKept(t *testing.T) {
 	l := newUpgradeLab(t, 1)
-	img := testUpgradeImage(t, "w", "0.2.0")
-	l.useInventory(t, map[string]string{"w": img})
+	img := testUpgradeImage(t, "w-metal", "0.2.0")
+	l.useInventory(t, map[string]string{"w-metal": img})
 	n := l.nodes["w1"]
 	n.pending, n.keepPending = "{}", true
 	config := l.ta.writeConfig(t, "ops", pki.RoleOperator, time.Hour, time.Now())

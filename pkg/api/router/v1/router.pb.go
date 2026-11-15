@@ -83,7 +83,7 @@ type StatusResponse struct {
 	// The router's DHCP servers, one per VRF whose links DHCPSubnet documents serve, the default VRF's
 	// first, then by VRF.
 	Dhcp []*DHCPServerStatus `protobuf:"bytes,7,rep,name=dhcp,proto3" json:"dhcp,omitempty"`
-	// Whether the image carries no BGP, as an image whose variant leaves FRR out: peers and
+	// Whether the image carries no BGP, as an image that leaves FRR out: peers and
 	// bgp_error are then empty.
 	BgpAbsent bool `protobuf:"varint,8,opt,name=bgp_absent,json=bgpAbsent,proto3" json:"bgp_absent,omitempty"`
 	// The router's DHCP relays, one per VRF whose links DHCPRelay documents relay, the default

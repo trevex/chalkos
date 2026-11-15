@@ -149,7 +149,7 @@ func validateNode(cl *cluster, name string) (string, []string, error) {
 	if d.identity.Storage.Encryption == storage.EncryptionNone {
 		warnings = append(warnings, fmt.Sprintf("node %s: its SystemDisk's encryption.mode is none, so STATE, which holds the node's keys and secrets, is not encrypted", name))
 	}
-	image := nc.ImageName
+	image := md.Name
 	if nc.ImageOCI != "" {
 		// The tag may move; the line names the manifest the config was checked against.
 		a, err := nc.Artifact()
@@ -158,6 +158,6 @@ func validateNode(cl *cluster, name string) (string, []string, error) {
 		}
 		image += " at " + a.Reference
 	}
-	line := fmt.Sprintf("%s: valid for the image %s (%s on %s, root hash %.12s), config %s", name, image, md.Variant, md.Platform, md.RootHash, d.Version)
+	line := fmt.Sprintf("%s: valid for the image %s (root hash %.12s), config %s", name, image, md.RootHash, d.Version)
 	return line, warnings, nil
 }

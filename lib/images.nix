@@ -49,7 +49,7 @@ let
         chalkosScope
         {
           nixpkgs.hostPlatform = cfg.system;
-          chalkos.variant.name = variant;
+          chalkos.image.name = "${variant}-${platform}";
           chalkos.platform.name = platform;
           chalkos.kubernetes.enable = v.kubernetes;
           chalkos.router.enable = v.router;

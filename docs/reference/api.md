@@ -63,7 +63,7 @@ The response of Info.
 | `secure_boot` | SecureBoot | State of Secure Boot. |
 | `fingerprint` | string | SHA-256 of the certificate chalkd serves, in lower-case hex. |
 | `hostname` | string | Host name of the node, as the kernel holds it. |
-| `variant` | string | The mkImages variant the running image was built as; empty on the installer. |
+| `image` | string | The name of the running image, as its os-release names it; empty on the installer. |
 | `platform` | string | The platform the running image was built for, such as metal or kvm; empty on the installer, which installs images of every platform. |
 | `root_hash` | bytes | The verity root hash of the store the node runs, as its kernel command line's usrhash= names it, which identifies the running image; empty when it could not be read. |
 | `revision` | string | The git revision the running image was built from, as the node's record of the images it installed names it; empty when it does not know it. |
@@ -98,7 +98,7 @@ Field types: [Disk](#message-disk).
 
 ### Contract { #method-contract }
 
-Contract returns the config contract of the image the node runs: the variant and platform it
+Contract returns the config contract of the image the node runs: its name and the platform it
 was built for, its layers, the schemas of the config kinds it accepts and its layers' facts,
 such as the Kubernetes image.json, which chalkctl checks config against before it delivers
 it. The installer refuses it: config is for the image it installs, whose contract comes with
@@ -119,7 +119,7 @@ The response of Contract: the config contract of the image the node runs.
 | Field | Type | Description |
 | ----- | ---- | ----------- |
 | `schemas` | map of bytes | The image's schemas by file name, as /etc/chalkos/schemas holds them. |
-| `variant` | string | The variant the image was built as, as its os-release names it. |
+| `image` | string | The image's name, as its os-release names it. |
 | `platform` | string | The platform the image was built for, as its os-release names it. |
 | `layer_facts` | list of google.protobuf.Any | The facts of the image's layers, such as chalkos.kubernetes.v1.ImageFacts, which config is translated with; empty for an image whose layers have none. |
 | `layers` | list of string | The layers the image carries beside the base every image has, such as "kubernetes", in name order. |
@@ -1587,7 +1587,7 @@ resolvers and its DHCP servers.
 | `resolver` | ResolverStatus | The resolver of the router's default VRF; unset on a router without one. |
 | `vrf_resolvers` | list of ResolverStatus | The resolvers of the router's VRFs, one per VRF with a Resolver document, by VRF. |
 | `dhcp` | list of DHCPServerStatus | The router's DHCP servers, one per VRF whose links DHCPSubnet documents serve, the default VRF's first, then by VRF. |
-| `bgp_absent` | bool | Whether the image carries no BGP, as an image whose variant leaves FRR out: peers and bgp_error are then empty. |
+| `bgp_absent` | bool | Whether the image carries no BGP, as an image that leaves FRR out: peers and bgp_error are then empty. |
 | `dhcp_relays` | list of DHCPRelayStatus | The router's DHCP relays, one per VRF whose links DHCPRelay documents relay, the default VRF's first, then by VRF. |
 
 Field types: [BGPPeerStatus](#router-message-bgppeerstatus), [NAT64Status](#router-message-nat64status), [ResolverStatus](#router-message-resolverstatus), [DHCPServerStatus](#router-message-dhcpserverstatus), [DHCPRelayStatus](#router-message-dhcprelaystatus).

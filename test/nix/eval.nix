@@ -116,8 +116,8 @@ lib.runTests {
       ociBuild = true;
     };
   };
-  # Each image names its variant and platform, carries the layers its variant asks for and the OS
-  # CA; the installer is no variant, belongs to no platform and carries no layer.
+  # Each image names itself <variant>-<platform> and its platform, carries the layers its variant
+  # asks for and the OS CA; the installer has no name, belongs to no platform and carries no layer.
   testMkImagesDescribesEachImage = {
     expr =
       let
@@ -135,7 +135,7 @@ lib.runTests {
           platforms = [ "metal" ];
         };
         summary = n: {
-          variant = n.config.chalkos.variant.name;
+          name = n.config.chalkos.image.name;
           platform = n.config.chalkos.platform.name;
           kubernetes = n.config.chalkos.kubernetes.enable;
           router = n.config.chalkos.router.enable;
@@ -145,28 +145,28 @@ lib.runTests {
       lib.mapAttrs (_: summary) i.nixos;
     expected = {
       installer = {
-        variant = null;
+        name = null;
         platform = null;
         kubernetes = false;
         router = false;
         osCA = true;
       };
       edge-metal = {
-        variant = "edge";
+        name = "edge-metal";
         platform = "metal";
         kubernetes = false;
         router = true;
         osCA = true;
       };
       node-metal = {
-        variant = "node";
+        name = "node-metal";
         platform = "metal";
         kubernetes = true;
         router = false;
         osCA = true;
       };
       storage-metal = {
-        variant = "storage";
+        name = "storage-metal";
         platform = "metal";
         kubernetes = false;
         router = false;
@@ -199,11 +199,11 @@ lib.runTests {
     };
   };
   # An image carries one layer at most: a variant with both the Kubernetes and the router layer
-  # fails to build, naming the variant.
+  # fails to build, naming the image.
   testLayersExcludeEachOther = {
     expr =
       let
-        refused = refuses "the variant both enables the kubernetes and router layers";
+        refused = refuses "the image both-metal enables the kubernetes and router layers";
         both = (mkImages { variants.both.router = true; }).nixos.both-metal.config;
       in
       {
@@ -1487,7 +1487,7 @@ lib.runTests {
     expr =
       fails
         (mkImages { specialArgs.chalkosLib = removeAttrs flakeLib [ "mkImages" ]; })
-        .nixos.node-metal.config.chalkos.variant.name;
+        .nixos.node-metal.config.chalkos.image.name;
     expected = true;
   };
   # The flake's lib holds chalkosLib's helpers besides mkImages, usable outside an image.
@@ -2816,7 +2816,7 @@ lib.runTests {
     expected = {
       osRelease = {
         IMAGE_VERSION = "";
-        CHALKOS_VARIANT = "worker";
+        CHALKOS_IMAGE = "worker-metal";
         CHALKOS_PLATFORM = "metal";
         CHALKOS_BOOT_TRIES = "1";
       };
@@ -2925,8 +2925,8 @@ lib.runTests {
       default = false;
       osRelease = [
         "CHALKOS_BOOT_TRIES=3"
+        "CHALKOS_IMAGE=\"worker-metal\""
         "CHALKOS_PLATFORM=metal"
-        "CHALKOS_VARIANT=worker"
         "IMAGE_ID=chalkos"
         "IMAGE_VERSION=\"\""
       ];

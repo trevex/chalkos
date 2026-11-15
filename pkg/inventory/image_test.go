@@ -127,7 +127,7 @@ func TestOCIImageReadOnce(t *testing.T) {
 	host, manifests := ocitest.CountingRegistry(t)
 	ref := host + "/lab/node-metal:v1"
 	root := strings.Repeat("ab", 32)
-	md := `{"schemaVersion": 0, "id": "chalkos", "variant": "node", "platform": "metal", "rootHash": "` + root + `", "kinds": []}`
+	md := `{"schemaVersion": 0, "id": "chalkos", "name": "node-metal", "platform": "metal", "rootHash": "` + root + `", "kinds": []}`
 	c := ociimage.Contract{Metadata: []byte(md), Schemas: map[string][]byte{"a.json": []byte("{}")}, Definitions: map[string][]byte{"00-esp.conf": []byte("[Partition]\n")}}
 	pinned := ocitest.Push(t, ocitest.Image(t, ociimage.Header{ImageID: "chalkos", RootHash: root, Architecture: "x86-64", Platform: "metal"}, c), ref)
 	manifests.Store(0)
@@ -148,7 +148,7 @@ func TestOCIImageReadOnce(t *testing.T) {
 			t.Errorf("%s runs %q from %q", node, nc.ImageOCI, nc.ImageDir)
 		}
 		got, err := nc.Resolve()
-		if err != nil || got.Platform != "metal" || got.Variant != "node" || got.RootHash != root {
+		if err != nil || got.Platform != "metal" || got.Name != "node-metal" || got.RootHash != root {
 			t.Errorf("Resolve(%s) = %+v, %v", node, got, err)
 		}
 		if a, err := nc.Artifact(); err != nil || a.Reference != pinned {

@@ -12,7 +12,7 @@ let
   inherit (chalkosLib.internal) refuse kindProblems;
   outputs = config.chalkos.outputs;
   layerNames = lib.attrNames config.chalkos.layers;
-  image = chalkosLib.internal.imageText config.chalkos.variant.name;
+  image = chalkosLib.internal.imageText config.chalkos.image.name;
 
   # What is wrong with the kinds of an effect, each prefixed with `where`: a kind the image does
   # not declare, Secret or a withheld kind. A Secret's values count for the kinds whose secretRef

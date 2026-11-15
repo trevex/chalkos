@@ -300,7 +300,7 @@ func TestPullRefusesALongerLayer(t *testing.T) {
 
 // metadataOf is the metadata.json of a node image on metal of the root hash.
 func metadataOf(rootHash string) []byte {
-	return []byte(`{"schemaVersion": 0, "id": "chalkos", "variant": "node", "platform": "metal", "rootHash": "` + rootHash + `", "kinds": []}`)
+	return []byte(`{"schemaVersion": 0, "id": "chalkos", "name": "node-metal", "platform": "metal", "rootHash": "` + rootHash + `", "kinds": []}`)
 }
 
 // TestPullContract fetches the manifest, the header and the contract layer before any part, and

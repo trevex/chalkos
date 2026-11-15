@@ -448,7 +448,7 @@ const rotateExample = `  # Rotate the Kubernetes CA. It pauses after the accept 
 const upgradeLong = `Installs a new image on each node: first the nodes that act for the others, such as Kubernetes
 control planes, one at a time, then the other nodes in batches of --max-unavailable. Without
 --image, each node, or each node --nodes names, gets the image the inventory names for it; with
---image, the nodes that run the image's variant get it, or those --nodes names. Each node goes
+--image, the nodes running an image of its name get it, or those --nodes names. Each node goes
 through the steps the step-by-step path runs one at a time: the node stages the image in its
 inactive slot once the image's own checker accepted its config, as upgrade --until stage stops
 there; it activates the image, which then boots next, as chalkctl node activate does; and it
@@ -487,7 +487,7 @@ operator client file or the secrets file.`
 const upgradeExample = `  # Upgrade the whole cluster, each node to the image the inventory names for it.
   chalkctl upgrade
 
-  # Upgrade the nodes that run an image's variant, two at a time, with an image chalkbuild signed.
+  # Upgrade the nodes running an image of its name, two at a time, with an image chalkbuild signed.
   chalkctl upgrade --image ./worker-image --max-unavailable 2
 
   # Upgrade w1 step by step: stage its image, make it boot next, reboot into it.

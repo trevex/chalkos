@@ -1,16 +1,17 @@
-# What an image is: its variant and its platform, which mkImages sets. One image serves every
-# node of its variant and platform, so nothing here is a node's: a node's values reach it as
+# What an image is: its name and its platform, which mkImages sets. One image serves every
+# node that runs it, so nothing here is a node's: a node's values reach it as
 # config documents, which units read with the kinds declared under chalkos.kinds.
 { lib, ... }:
 {
-  options.chalkos.variant.name = lib.mkOption {
+  options.chalkos.image.name = lib.mkOption {
     type = lib.types.nullOr lib.types.str;
     default = null;
     description = ''
-      The image's variant, which its os-release names as `CHALKOS_VARIANT` and its image
-      directory's `metadata.json` as `variant`. mkImages sets it to the variant's name. null
-      on the installer, which is no variant. No check compares it: a node may change its
-      variant through an upgrade, and the image's schemas decide which config it takes.
+      The image's name, which mkImages sets, recorded as `CHALKOS_IMAGE` in its os-release and
+      as `name` in its image directory's `metadata.json`. `chalkctl upgrade --image` upgrades
+      the nodes running an image of this name. null on the installer, which is no node image.
+      No check compares it: a node may change the image it runs through an upgrade, and the
+      image's schemas decide which config it takes.
     '';
   };
   options.chalkos.platform.name = lib.mkOption {

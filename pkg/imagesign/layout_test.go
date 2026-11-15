@@ -22,7 +22,7 @@ import (
 func unsignedLayout(t *testing.T, dir string) (string, string) {
 	t.Helper()
 	in := filepath.Join(dir, "in")
-	img := imagetest.Image{Variant: "node", Platform: "metal", Seed: "1"}
+	img := imagetest.Image{Name: "node-metal", Platform: "metal", Seed: "1"}
 	imagetest.WriteDir(t, in, img)
 	out := filepath.Join(dir, "unsigned")
 	return out, ocitest.Layout(t, in, out).String()

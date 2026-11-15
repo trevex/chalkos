@@ -103,8 +103,8 @@ in
       IMAGE_VERSION = "";
       CHALKOS_BOOT_TRIES = toString cfg.bootTries;
     }
-    // lib.optionalAttrs (config.chalkos.variant.name != null) {
-      CHALKOS_VARIANT = config.chalkos.variant.name;
+    // lib.optionalAttrs (config.chalkos.image.name != null) {
+      CHALKOS_IMAGE = config.chalkos.image.name;
     }
     // lib.optionalAttrs (config.chalkos.platform.name != null) {
       CHALKOS_PLATFORM = config.chalkos.platform.name;

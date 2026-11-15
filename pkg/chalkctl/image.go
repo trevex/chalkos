@@ -55,8 +55,8 @@ func openImage(ctx context.Context, path string, bootLoader bool, stderr io.Writ
 	if err := img.Info.CheckImageVersion(); err != nil {
 		return nil, fmt.Errorf("the image's UKI: %w", err)
 	}
-	if img.Info.Variant() == "" || img.Info.Platform() == "" {
-		return nil, errors.New("the image names no variant or platform in its os-release; it is no node image")
+	if img.Info.Name() == "" || img.Info.Platform() == "" {
+		return nil, errors.New("the image names no image name or platform in its os-release; it is no node image")
 	}
 	h := &nodev1.ImageHeader{
 		ImageId:      img.Info.ID(),
@@ -189,7 +189,7 @@ func (img *diskImage) stream() (io.Reader, func(), error) {
 }
 
 // checkInstallImage checks that the image is built for the platform of the node's config's image.
-// Its variant may be any: the installer checks the config against the image's schemas.
+// Its name may be any: the installer checks the config against the image's schemas.
 func checkInstallImage(t *target, img *diskImage) error {
 	_, md, err := t.cluster.image(t.name)
 	if err != nil {

@@ -25,7 +25,7 @@ func TestValidators(t *testing.T) {
 	if rs, err := got[0].Validate([]byte(`{"node": {"name": "r1"}, "documents": {}}`)); err != nil || len(rs) != 0 {
 		t.Errorf("Validate of no documents = %v, %v", rs, err)
 	}
-	// A variant without BGP declares none of its kinds, and the validator reads none of them.
+	// An image without BGP declares none of its kinds, and the validator reads none of them.
 	files := schematest.Files(t, schematest.Builtin, schematest.Networkd, schematest.Router)
 	for _, kind := range []string{"BGP", "BGPPeer", "PrefixList", "CommunityList", "RoutingPolicy"} {
 		delete(files, "router.chalkos.dev_v1alpha1_"+kind+".json")

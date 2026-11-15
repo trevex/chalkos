@@ -25,14 +25,14 @@ import (
 	"github.com/trevex/chalkos/pkg/verity"
 )
 
-// Image describes a test image. Its store repeats Seed, Variant and Platform over 300 blocks, so
-// images of different seeds, variants or platforms differ in their root hashes.
+// Image describes a test image. Its store repeats Seed, Name and Platform over 300 blocks, so
+// images of different seeds, names or platforms differ in their root hashes.
 type Image struct {
-	Variant, Platform, Seed string
+	Name, Platform, Seed string
 	// BlockSize is the store's dm-verity block size; zero is 512.
 	BlockSize int
 	// Edit changes the UKI's os-release, which names the image chalkos with an empty
-	// IMAGE_VERSION, its variant, its platform and three boot tries.
+	// IMAGE_VERSION, its name, its platform and three boot tries.
 	Edit func(osRelease map[string]string)
 }
 
@@ -56,7 +56,7 @@ func Write(t testing.TB, dir string, img Image) []byte {
 	if blockSize == 0 {
 		blockSize = 512
 	}
-	store := bytes.Repeat([]byte(img.Seed+img.Variant+img.Platform), 300*blockSize)[:300*blockSize]
+	store := bytes.Repeat([]byte(img.Seed+img.Name+img.Platform), 300*blockSize)[:300*blockSize]
 	tree, root, err := verity.Tree(bytes.NewReader(store), verity.Superblock{DataBlockSize: uint32(blockSize), HashBlockSize: uint32(blockSize), DataBlocks: 300, Salt: []byte(img.Seed)})
 	if err != nil {
 		t.Fatal(err)
@@ -67,7 +67,7 @@ func Write(t testing.TB, dir string, img Image) []byte {
 	loader := filepath.Join(work, "systemd-boot.efi")
 	write(t, loader, ukitest.Build(map[string][]byte{".text": []byte("systemd-boot")}))
 	osRelease := map[string]string{
-		"IMAGE_ID": "chalkos", "IMAGE_VERSION": "", "CHALKOS_VARIANT": img.Variant, "CHALKOS_PLATFORM": img.Platform, "CHALKOS_BOOT_TRIES": "3",
+		"IMAGE_ID": "chalkos", "IMAGE_VERSION": "", "CHALKOS_IMAGE": img.Name, "CHALKOS_PLATFORM": img.Platform, "CHALKOS_BOOT_TRIES": "3",
 	}
 	if img.Edit != nil {
 		img.Edit(osRelease)
@@ -152,11 +152,11 @@ func WriteDir(t testing.TB, dir string, img Image) []byte {
 }
 
 // WriteContract writes the contract files of an image directory into dir: metadata.json of the
-// image's variant and platform and the root hash, built from the revision abc123 and the tag v1,
+// image's name and platform and the root hash, built from the revision abc123 and the tag v1,
 // one schema, one repart definition and the facts of a layer named test.
 func WriteContract(t testing.TB, dir string, img Image, root []byte) {
 	t.Helper()
-	md := fmt.Sprintf(`{"schemaVersion": 0, "id": "chalkos", "revision": "abc123", "tag": "v1", "variant": %q, "platform": %q, "rootHash": %q, "kinds": []}`, img.Variant, img.Platform, hex.EncodeToString(root))
+	md := fmt.Sprintf(`{"schemaVersion": 0, "id": "chalkos", "revision": "abc123", "tag": "v1", "name": %q, "platform": %q, "rootHash": %q, "kinds": []}`, img.Name, img.Platform, hex.EncodeToString(root))
 	write(t, filepath.Join(dir, "metadata.json"), []byte(md))
 	write(t, filepath.Join(dir, "schemas", "test.example.org_v1alpha1_Test.json"), []byte(`{"x-chalkos-kind": {"group": "test.example.org", "version": "v1alpha1", "kind": "Test", "multiple": false}}`))
 	write(t, filepath.Join(dir, "repart.d", "00-esp.conf"), []byte("[Partition]\nType=esp\n"))

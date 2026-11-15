@@ -51,7 +51,7 @@ var imagePages = []optionPage{
 			{"Upgrade and health", "upgrade-and-health", "How many times systemd-boot boots a new image before it falls back, and when a boot of it is healthy.", []string{"chalkos.upgrade"}},
 			{"Console", "console", "The kernel's consoles, where the boot and its passphrase prompts appear, whether chalkd serves the console on the machine's screen, and whether the console may act on the node.", []string{"chalkos.consoles", "chalkos.console"}},
 			{"Debug and maintenance", "debug-and-maintenance", "The debug tools an image carries, and the OS CA whose clients its maintenance mode accepts.", []string{"chalkos.debug", "chalkos.maintenance"}},
-			{"Set by mkImages", "set-by-mkimages", "mkImages sets these from its arguments; a module reads them rather than setting them.", []string{"chalkos.variant", "chalkos.platform", "chalkos.provenance"}},
+			{"Set by mkImages", "set-by-mkimages", "mkImages sets these from its arguments; a module reads them rather than setting them.", []string{"chalkos.image", "chalkos.platform", "chalkos.provenance"}},
 		},
 		sources: "Sources: the option declarations of the node modules in `modules/node/`, through\nnixosOptionsDoc.\n",
 	},

@@ -19,7 +19,7 @@ let
     # the kinds it returns must not depend on accepted or declared, which read them.
     kinds = path: import path { inherit chalkosLib lib routerLib; };
 
-    # The features of the layer a variant may leave out, each with its option
+    # The features of the layer an image may leave out, each with its option
     # chalkos.router.<feature>.enable.
     features = [
       "bgp"
@@ -43,7 +43,7 @@ let
       "dhcp-relay"
     ];
 
-    # The option chalkos.router.<name>.enable of a feature, true unless a variant leaves the
+    # The option chalkos.router.<name>.enable of a feature, true unless an image leaves the
     # feature out; name must be one of features. Its description says that the images carry
     # `carries` and accept the kinds named.
     feature =
@@ -70,7 +70,7 @@ let
             default = true;
             description =
               "Whether router images carry ${carries} and accept ${kindsText}. Only with the router "
-              + "layer; set it false in a variant's modules to leave the feature out of its images.";
+              + "layer; set it false in an image's modules to leave the feature out of it.";
           };
         };
 

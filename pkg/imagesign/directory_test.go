@@ -42,7 +42,7 @@ func TestSignDirectory(t *testing.T) {
 	dir := t.TempDir()
 	key, cert, _ := imagetest.Signer(t, dir, "db")
 	in := filepath.Join(dir, "in")
-	imagetest.Write(t, in, imagetest.Image{Variant: "node", Platform: "metal", Seed: "1"})
+	imagetest.Write(t, in, imagetest.Image{Name: "node-metal", Platform: "metal", Seed: "1"})
 	store := filepath.Join(dir, "store")
 	write(t, filepath.Join(store, "schemas", "a.json"), "{}")
 	write(t, filepath.Join(store, "facts", "kubernetes.json"), "{}")
@@ -110,7 +110,7 @@ func TestSignDirectoryRefuses(t *testing.T) {
 	key, _, _ := imagetest.Signer(t, dir, "db")
 	_, other, _ := imagetest.Signer(t, dir, "other")
 	in := filepath.Join(dir, "in")
-	imagetest.Write(t, in, imagetest.Image{Variant: "node", Platform: "metal", Seed: "1"})
+	imagetest.Write(t, in, imagetest.Image{Name: "node-metal", Platform: "metal", Seed: "1"})
 	existing := filepath.Join(dir, "existing")
 	write(t, filepath.Join(existing, "kept"), "")
 	if _, err := SignDirectory(context.Background(), in, existing, key, other); err == nil || !strings.Contains(err.Error(), "exists") {
@@ -146,7 +146,7 @@ func TestSignDirectoryBracketInPath(t *testing.T) {
 	dir := t.TempDir()
 	key, cert, _ := imagetest.Signer(t, dir, "db")
 	in := filepath.Join(dir, "in[1]")
-	imagetest.Write(t, in, imagetest.Image{Variant: "node", Platform: "metal", Seed: "1"})
+	imagetest.Write(t, in, imagetest.Image{Name: "node-metal", Platform: "metal", Seed: "1"})
 	out := filepath.Join(dir, "out[1]")
 	if _, err := SignDirectory(context.Background(), in, out, key, cert); err != nil {
 		t.Fatal(err)

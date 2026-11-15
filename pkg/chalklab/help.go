@@ -78,7 +78,7 @@ changed, so --out copies the image directory, with its schemas and metadata, int
 and signs the copy, which chalkctl upgrade --image takes. The command needs no secrets file or
 client file.`
 
-const signExample = `  # Sign a copy of an image in the Nix store and upgrade the lab's nodes of its variant with it.
+const signExample = `  # Sign a copy of an image in the Nix store and upgrade the lab's nodes of its name with it.
   chalklab sign images/node-kvm --out node-kvm-signed
   chalkctl upgrade --image node-kvm-signed --inventory ~/.local/state/chalklab/lab/chalkos.yaml \
     --config ~/.local/state/chalklab/lab/chalkctl.json --allow-downtime`

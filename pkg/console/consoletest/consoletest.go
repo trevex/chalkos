@@ -220,7 +220,7 @@ func Normal() *Client {
 	expiry := timestamppb.New(time.Date(2027, 1, 1, 0, 0, 0, 0, time.UTC))
 	return &Client{
 		InfoResp: &nodev1.InfoResponse{
-			Mode: nodev1.Mode_MODE_NORMAL, Hostname: "node1", NodeName: "n1", Variant: "worker", Platform: "metal",
+			Mode: nodev1.Mode_MODE_NORMAL, Hostname: "node1", NodeName: "n1", Image: "worker-metal", Platform: "metal",
 			RootHash: hash(0x81, 0xbd), Fingerprint: strings.Repeat("ab", 32),
 		},
 		StatusResp: &nodev1.StatusResponse{

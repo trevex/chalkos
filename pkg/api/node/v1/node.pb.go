@@ -309,8 +309,8 @@ type InfoResponse struct {
 	Fingerprint string `protobuf:"bytes,7,opt,name=fingerprint,proto3" json:"fingerprint,omitempty"`
 	// Host name of the node, as the kernel holds it.
 	Hostname string `protobuf:"bytes,8,opt,name=hostname,proto3" json:"hostname,omitempty"`
-	// The mkImages variant the running image was built as; empty on the installer.
-	Variant string `protobuf:"bytes,9,opt,name=variant,proto3" json:"variant,omitempty"`
+	// The name of the running image, as its os-release names it; empty on the installer.
+	Image string `protobuf:"bytes,9,opt,name=image,proto3" json:"image,omitempty"`
 	// The platform the running image was built for, such as metal or kvm; empty on the installer,
 	// which installs images of every platform.
 	Platform string `protobuf:"bytes,10,opt,name=platform,proto3" json:"platform,omitempty"`
@@ -419,9 +419,9 @@ func (x *InfoResponse) GetHostname() string {
 	return ""
 }
 
-func (x *InfoResponse) GetVariant() string {
+func (x *InfoResponse) GetImage() string {
 	if x != nil {
-		return x.Variant
+		return x.Image
 	}
 	return ""
 }
@@ -821,8 +821,8 @@ type ContractResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// The image's schemas by file name, as /etc/chalkos/schemas holds them.
 	Schemas map[string][]byte `protobuf:"bytes,1,rep,name=schemas,proto3" json:"schemas,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
-	// The variant the image was built as, as its os-release names it.
-	Variant string `protobuf:"bytes,2,opt,name=variant,proto3" json:"variant,omitempty"`
+	// The image's name, as its os-release names it.
+	Image string `protobuf:"bytes,2,opt,name=image,proto3" json:"image,omitempty"`
 	// The platform the image was built for, as its os-release names it.
 	Platform string `protobuf:"bytes,3,opt,name=platform,proto3" json:"platform,omitempty"`
 	// The facts of the image's layers, such as chalkos.kubernetes.v1.ImageFacts, which config is
@@ -872,9 +872,9 @@ func (x *ContractResponse) GetSchemas() map[string][]byte {
 	return nil
 }
 
-func (x *ContractResponse) GetVariant() string {
+func (x *ContractResponse) GetImage() string {
 	if x != nil {
-		return x.Variant
+		return x.Image
 	}
 	return ""
 }
@@ -5584,7 +5584,7 @@ var File_chalkos_node_v1_node_proto protoreflect.FileDescriptor
 const file_chalkos_node_v1_node_proto_rawDesc = "" +
 	"\n" +
 	"\x1achalkos/node/v1/node.proto\x12\x0fchalkos.node.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x19google/protobuf/any.proto\x1a\x1egoogle/protobuf/duration.proto\"\r\n" +
-	"\vInfoRequest\"\xd3\x03\n" +
+	"\vInfoRequest\"\xcf\x03\n" +
 	"\fInfoResponse\x12)\n" +
 	"\x04mode\x18\x01 \x01(\x0e2\x15.chalkos.node.v1.ModeR\x04mode\x12\x19\n" +
 	"\bimage_id\x18\x02 \x01(\tR\aimageId\x12\x1c\n" +
@@ -5594,8 +5594,8 @@ const file_chalkos_node_v1_node_proto_rawDesc = "" +
 	"\vsecure_boot\x18\x06 \x01(\x0e2\x1b.chalkos.node.v1.SecureBootR\n" +
 	"secureBoot\x12 \n" +
 	"\vfingerprint\x18\a \x01(\tR\vfingerprint\x12\x1a\n" +
-	"\bhostname\x18\b \x01(\tR\bhostname\x12\x18\n" +
-	"\avariant\x18\t \x01(\tR\avariant\x12\x1a\n" +
+	"\bhostname\x18\b \x01(\tR\bhostname\x12\x14\n" +
+	"\x05image\x18\t \x01(\tR\x05image\x12\x1a\n" +
 	"\bplatform\x18\n" +
 	" \x01(\tR\bplatform\x12\x1b\n" +
 	"\troot_hash\x18\v \x01(\fR\brootHash\x12\x1a\n" +
@@ -5628,10 +5628,10 @@ const file_chalkos_node_v1_node_proto_rawDesc = "" +
 	"\x05label\x18\x05 \x01(\tR\x05label\x12\x12\n" +
 	"\x04uuid\x18\x06 \x01(\tR\x04uuid\x12\x18\n" +
 	"\acontent\x18\a \x01(\tR\acontent\"\x11\n" +
-	"\x0fContractRequest\"\x9d\x02\n" +
+	"\x0fContractRequest\"\x99\x02\n" +
 	"\x10ContractResponse\x12H\n" +
-	"\aschemas\x18\x01 \x03(\v2..chalkos.node.v1.ContractResponse.SchemasEntryR\aschemas\x12\x18\n" +
-	"\avariant\x18\x02 \x01(\tR\avariant\x12\x1a\n" +
+	"\aschemas\x18\x01 \x03(\v2..chalkos.node.v1.ContractResponse.SchemasEntryR\aschemas\x12\x14\n" +
+	"\x05image\x18\x02 \x01(\tR\x05image\x12\x1a\n" +
 	"\bplatform\x18\x03 \x01(\tR\bplatform\x125\n" +
 	"\vlayer_facts\x18\x04 \x03(\v2\x14.google.protobuf.AnyR\n" +
 	"layerFacts\x12\x16\n" +

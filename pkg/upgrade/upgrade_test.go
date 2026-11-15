@@ -1030,13 +1030,13 @@ func TestSkippedStoreIsChecked(t *testing.T) {
 	}
 }
 
-// TestInstallsAnotherVariant installs an image of another variant than the running one: a node
-// may change its variant through an upgrade, and the check of its config against the image's
+// TestInstallsAnotherImageName installs an image of another name than the running one: a node
+// may change its image's name through an upgrade, and the check of its config against the image's
 // schemas is what guards that.
-func TestInstallsAnotherVariant(t *testing.T) {
+func TestInstallsAnotherImageName(t *testing.T) {
 	old, img := newImage(t, "a", 3), newImage(t, "b", 3)
 	osRelease := upgradetest.OSRelease("chalkos", 3)
-	osRelease["CHALKOS_VARIANT"] = "gpu"
+	osRelease["CHALKOS_IMAGE"] = "gpu-metal"
 	img.UKI = upgradetest.UKI(osRelease, img.Root)
 	l := newLab(t, old)
 	res, err := l.install(withHeader(img))

@@ -39,7 +39,7 @@ func TestSign(t *testing.T) {
 	dir := t.TempDir()
 	key, cert, _ := imagetest.Signer(t, dir, "db")
 	in := filepath.Join(dir, "in")
-	imagetest.Write(t, in, imagetest.Image{Variant: "node", Platform: "metal", Seed: "1"})
+	imagetest.Write(t, in, imagetest.Image{Name: "node-metal", Platform: "metal", Seed: "1"})
 	out := filepath.Join(dir, "signed", "node-metal")
 	status, stdout, stderr := run("sign", "--key", key, "--cert", cert, in, out)
 	if status != 0 || stdout != "signed "+filepath.Join(out, "chalkos.raw")+"\n" {
@@ -63,7 +63,7 @@ func TestOCISignAndPush(t *testing.T) {
 	dir := t.TempDir()
 	key, cert, _ := imagetest.Signer(t, dir, "db")
 	in := filepath.Join(dir, "in")
-	img := imagetest.Image{Variant: "node", Platform: "metal", Seed: "1"}
+	img := imagetest.Image{Name: "node-metal", Platform: "metal", Seed: "1"}
 	imagetest.WriteDir(t, in, img)
 	layout := filepath.Join(dir, "oci", "node-metal")
 	if status, stdout, stderr := run("oci", in, layout); status != 0 || !strings.HasPrefix(stdout, "wrote "+layout+", manifest sha256:") {

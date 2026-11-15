@@ -141,7 +141,7 @@ func newTestServer(t *testing.T, mode nodev1.Mode, disks ...storagetest.Disk) (*
 	write(t, filepath.Join(s.Paths.StateDir, "chalkd", CAFile), osCA.Certificate)
 	write(t, s.Paths.MountInfo, "30 1 0:27 / / rw - tmpfs tmpfs rw\n")
 	write(t, s.Paths.Cmdline, "init=/x usrhash="+runningRoot+"\n")
-	write(t, s.Paths.OSRelease, "IMAGE_ID=chalkos\nIMAGE_VERSION=\"\"\nCHALKOS_VARIANT=worker\nCHALKOS_PLATFORM=metal\n")
+	write(t, s.Paths.OSRelease, "IMAGE_ID=chalkos\nIMAGE_VERSION=\"\"\nCHALKOS_IMAGE=worker-metal\nCHALKOS_PLATFORM=metal\n")
 	writeSchemas(t, s)
 	s.Facts = storageFacts{s}
 	// An image that does not run checks its config with s's own code, in the test's process.
@@ -663,7 +663,7 @@ func TestInfo(t *testing.T) {
 	s, _ := newTestServer(t, maintenance, vda)
 	s.Installer = true
 	s.Fingerprint = "ab01"
-	write(t, s.Paths.OSRelease, "ID=nixos\nIMAGE_ID=\"chalkos-installer\"\nIMAGE_VERSION=\"\"\nCHALKOS_VARIANT=\"worker\"\n")
+	write(t, s.Paths.OSRelease, "ID=nixos\nIMAGE_ID=\"chalkos-installer\"\nIMAGE_VERSION=\"\"\nCHALKOS_IMAGE=\"worker-metal\"\n")
 	write(t, filepath.Join(s.Paths.EFIVars, "SecureBoot-"+secureboot.GlobalVendor), "\x06\x00\x00\x00\x01")
 	write(t, filepath.Join(s.Paths.EFIVars, "SetupMode-"+secureboot.GlobalVendor), "\x06\x00\x00\x00\x00")
 	write(t, filepath.Join(s.Paths.TPM, "tpm0", "dev"), "10:224\n")
@@ -675,7 +675,7 @@ func TestInfo(t *testing.T) {
 	}
 	got := resp.Msg
 	if got.Mode != maintenance || got.ImageId != "chalkos-installer" || !got.Installer || !bytes.Equal(got.RootHash, bytes.Repeat([]byte{0xab}, 32)) || got.Revision != "" || got.Tag != "" ||
-		got.BootDisk != "/dev/vda" || !got.Tpm || got.SecureBoot != nodev1.SecureBoot_SECURE_BOOT_ENABLED || got.Fingerprint != "ab01" || got.Variant != "worker" || got.Platform != "" {
+		got.BootDisk != "/dev/vda" || !got.Tpm || got.SecureBoot != nodev1.SecureBoot_SECURE_BOOT_ENABLED || got.Fingerprint != "ab01" || got.Image != "worker-metal" || got.Platform != "" {
 		t.Errorf("info = %+v", got)
 	}
 

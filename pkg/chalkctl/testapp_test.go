@@ -195,7 +195,7 @@ func (ta *testApp) startNode(t *testing.T, s *chalkd.Server) string {
 	// The node runs the test node's image in the inventory.
 	if s.Paths.OSRelease == "" {
 		s.Paths.OSRelease = filepath.Join(t.TempDir(), "os-release")
-		writeFile(t, s.Paths.OSRelease, "IMAGE_ID=chalkos\nIMAGE_VERSION=\"\"\nCHALKOS_VARIANT=test\nCHALKOS_PLATFORM=metal\n")
+		writeFile(t, s.Paths.OSRelease, "IMAGE_ID=chalkos\nIMAGE_VERSION=\"\"\nCHALKOS_IMAGE=test-metal\nCHALKOS_PLATFORM=metal\n")
 	}
 	contractDir(t, s)
 	// It boots the store of the root hash abab…, whose config slot an install in place writes.
@@ -351,7 +351,7 @@ func installedNode(t *testing.T, ta *testApp, recorded []byte) (*chalkd.Server, 
 	s.Loader = nodeconfig.LoaderUnder(root)
 	s.Loader.Render.Run = outputs.Direct{}
 	s.Loader.SetHostname = func(string) error { return nil }
-	writeFile(t, s.Paths.OSRelease, "IMAGE_ID=chalkos\nIMAGE_VERSION=\"\"\nCHALKOS_VARIANT=test\nCHALKOS_PLATFORM=metal\n")
+	writeFile(t, s.Paths.OSRelease, "IMAGE_ID=chalkos\nIMAGE_VERSION=\"\"\nCHALKOS_IMAGE=test-metal\nCHALKOS_PLATFORM=metal\n")
 	// The node runs the image of the root hash abab…, whose slot holds the identity alone.
 	writeFile(t, s.Paths.Cmdline, "init=/x usrhash="+strings.Repeat("ab", 32)+"\n")
 	// The ESP holds the UKI the node booted the image from, uncounted, so its boot is found

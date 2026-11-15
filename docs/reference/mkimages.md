@@ -163,8 +163,8 @@ Example: `"v1.5.0"`
 Type: map of submodule · Default: `{ node = { }; }` · Declared in: [lib/images-arguments.nix](https://github.com/trevex/chalkos/blob/main/lib/images-arguments.nix)
 
 Variants of the cluster's images, by name: each is built for every platform as
-`images.<variant>-<platform>`. A variant's name becomes `CHALKOS_VARIANT` in its images'
-os-release and `variant` in their `metadata.json`.
+`images.<variant>-<platform>`, which becomes the image's name, `CHALKOS_IMAGE` in its
+os-release and `name` in its `metadata.json`.
 
 Example:
 

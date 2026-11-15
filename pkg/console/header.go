@@ -31,8 +31,8 @@ func (m *Model) headerLines() []string {
 	if g := m.node.Status.Value.GetBoot().GetRunning().GetGeneration(); g > 0 {
 		second[0] += fmt.Sprintf(" generation %d", g)
 	}
-	if v := info.GetVariant(); v != "" {
-		second = append(second, OneLine(v+" on "+cmp.Or(info.GetPlatform(), "every platform")))
+	if n := info.GetImage(); n != "" {
+		second = append(second, OneLine(n))
 	}
 	lines := []string{strings.Join(first, "  "), strings.Join(second, "  "), m.healthLine()}
 	if info != nil && !m.node.Normal() {

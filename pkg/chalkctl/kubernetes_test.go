@@ -36,7 +36,7 @@ import (
 func withKind(t *testing.T, ta *testApp, kind string) {
 	t.Helper()
 	ta.writeNode(t, nodeDoc(kind), n1SystemDisk, n1Network)
-	writeImageDir(t, filepath.Join(ta.dir, "images", "test-metal"), "test", "metal", testRootHash, true)
+	writeImageDir(t, filepath.Join(ta.dir, "images", "test-metal"), "test-metal", "metal", testRootHash, true)
 	ta.kind = kind
 }
 

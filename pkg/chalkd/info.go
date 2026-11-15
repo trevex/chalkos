@@ -23,7 +23,7 @@ func (s *Server) Info(ctx context.Context, _ *connect.Request[nodev1.InfoRequest
 		Installer:   s.Installer,
 		SecureBoot:  s.secureBoot(),
 		Fingerprint: s.CurrentFingerprint(),
-		Variant:     release["CHALKOS_VARIANT"],
+		Image:       release["CHALKOS_IMAGE"],
 		Platform:    release["CHALKOS_PLATFORM"],
 		Layers:      s.Plugins.Layers().Names(),
 	}

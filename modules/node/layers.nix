@@ -11,7 +11,7 @@
 let
   inherit (config.chalkos) layers;
   names = lib.attrNames layers;
-  image = chalkosLib.internal.imageText config.chalkos.variant.name;
+  image = chalkosLib.internal.imageText config.chalkos.image.name;
 in
 {
   options.chalkos.layers = lib.mkOption {

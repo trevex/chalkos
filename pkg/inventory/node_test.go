@@ -165,7 +165,7 @@ func TestNodeRefuses(t *testing.T) {
 }
 
 // TestResolve reads the metadata.json of the node's image directory, which names the image's
-// platform, variant and root hash, and leaves the node's documents as its files give them: the
+// platform, name and root hash, and leaves the node's documents as its files give them: the
 // root hash stays on the operator's machine.
 func TestResolve(t *testing.T) {
 	dir := homelabDir(t)
@@ -183,12 +183,12 @@ func TestResolve(t *testing.T) {
 		t.Errorf("an image directory without metadata.json: %v", err)
 	}
 	write(t, filepath.Join(dir, "images", "node-metal", "metadata.json"),
-		`{"schemaVersion": 0, "id": "chalkos", "variant": "node", "platform": "metal", "rootHash": "`+hash+`", "kinds": []}`)
+		`{"schemaVersion": 0, "id": "chalkos", "name": "node-metal", "platform": "metal", "rootHash": "`+hash+`", "kinds": []}`)
 	md, err := cp1.Resolve()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if md.Platform != "metal" || md.Variant != "node" || md.RootHash != hash || cp1.Image == nil || cp1.Image.RootHash != hash {
+	if md.Platform != "metal" || md.Name != "node-metal" || md.RootHash != hash || cp1.Image == nil || cp1.Image.RootHash != hash {
 		t.Errorf("metadata = %+v", md)
 	}
 	for _, d := range cp1.Documents {
@@ -197,7 +197,7 @@ func TestResolve(t *testing.T) {
 		}
 	}
 	write(t, filepath.Join(dir, "images", "node-metal", "metadata.json"),
-		`{"schemaVersion": 0, "id": "chalkos", "variant": "node", "platform": "metal", "kinds": []}`)
+		`{"schemaVersion": 0, "id": "chalkos", "name": "node-metal", "platform": "metal", "kinds": []}`)
 	w1, err := inv.Node("w1")
 	if err != nil {
 		t.Fatal(err)
@@ -239,7 +239,7 @@ func TestResolveRefusesMetadata(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			dir := homelabDir(t)
 			write(t, filepath.Join(dir, "images", "node-metal", "metadata.json"),
-				`{"schemaVersion": 0, "id": "chalkos", "variant": "node", "platform": "`+tc.platform+`", "rootHash": "`+tc.hash+`", "kinds": []}`)
+				`{"schemaVersion": 0, "id": "chalkos", "name": "node-`+tc.platform+`", "platform": "`+tc.platform+`", "rootHash": "`+tc.hash+`", "kinds": []}`)
 			inv, err := Load(filepath.Join(dir, "chalkos.yaml"))
 			if err != nil {
 				t.Fatal(err)

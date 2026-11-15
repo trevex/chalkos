@@ -20,7 +20,7 @@ func (s *Server) Contract(_ context.Context, _ *connect.Request[nodev1.ContractR
 	release := readOSRelease(s.Paths.OSRelease)
 	resp := &nodev1.ContractResponse{
 		Schemas:  s.Loader.Contract.Schemas.Files(),
-		Variant:  release["CHALKOS_VARIANT"],
+		Image:    release["CHALKOS_IMAGE"],
 		Platform: release["CHALKOS_PLATFORM"],
 		Layers:   s.Plugins.Layers().Names(),
 	}

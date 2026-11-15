@@ -303,7 +303,7 @@ func imagePart(data string) *nodev1.ImagePart {
 func pulledInstall(t *testing.T, host, docs string) *nodev1.InstallHeader {
 	t.Helper()
 	root := strings.Repeat("ab", 32)
-	md := `{"schemaVersion": 0, "id": "chalkos", "variant": "worker", "platform": "metal", "rootHash": "` + root + `", "kinds": []}`
+	md := `{"schemaVersion": 0, "id": "chalkos", "name": "worker-metal", "platform": "metal", "rootHash": "` + root + `", "kinds": []}`
 	img := ocitest.Image(t, ociimage.Header{ImageID: "chalkos", RootHash: root, Architecture: "x86-64", Platform: "metal"},
 		ociimage.Contract{Metadata: []byte(md), Schemas: fixtureSchemas(t), Definitions: map[string][]byte{"50-state.conf": []byte("[Partition]\nLabel=state\n")}, Facts: map[string][]byte{"kubernetes": []byte(kubernetestest.Image)}})
 	ref := ocitest.Push(t, img, host+"/lab/worker-metal:v1")

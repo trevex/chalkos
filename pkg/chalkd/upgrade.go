@@ -25,7 +25,7 @@ import (
 
 // Upgrade installs the streamed or pulled image with its config, stages it and activates it
 // unless the header's stage_only stops there. It checks the image's platform, whatever its
-// variant, that it boots its store and that its own checker accepts the config, but cannot tell
+// name, that it boots its store and that its own checker accepts the config, but cannot tell
 // an image to trust: without Secure Boot an operator can run any image as root, with STATE and
 // VAR unsealed, as their keys are sealed to PCR 7 alone. Secure Boot limits upgrades to images
 // signed for db.

@@ -745,7 +745,7 @@ func (w lockWatcher) Exec(ctx context.Context, c tool.Cmd) ([]byte, error) {
 // lock ApplyConfig and ResetVolume change the node's storage under.
 func TestUpgradeSharesTheStorageLock(t *testing.T) {
 	s, r := newTestServer(t, normal, vda)
-	write(t, s.Paths.OSRelease, "IMAGE_ID=chalkos\nIMAGE_VERSION=\"\"\nCHALKOS_VARIANT=worker\nCHALKOS_PLATFORM=metal\n")
+	write(t, s.Paths.OSRelease, "IMAGE_ID=chalkos\nIMAGE_VERSION=\"\"\nCHALKOS_IMAGE=worker-metal\nCHALKOS_PLATFORM=metal\n")
 	write(t, s.Paths.Cmdline, "usrhash="+strings.Repeat("ab", 32)+"\n")
 	calls := 0
 	s.Run = lockWatcher{r, func(args []string) {

@@ -30,8 +30,8 @@ type Metadata struct {
 	// given them; empty when it was not. They say where the image came from and decide nothing.
 	Revision string `json:"revision"`
 	Tag      string `json:"tag"`
-	// Variant is the name of the mkImages variant the image is built as.
-	Variant string `json:"variant"`
+	// Name is the image's name, as its os-release names it in CHALKOS_IMAGE.
+	Name string `json:"name"`
 	// Platform is the platform the image is built for, such as metal or kvm.
 	Platform string `json:"platform"`
 	// RootHash is the store's dm-verity root hash, in hex; it identifies the image's content.

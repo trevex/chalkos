@@ -297,7 +297,7 @@ in
       description = ''
         Groups of `chalkos.kernel.groups` whose modules the image carries. Every image carries
         ${listed (baseGroups ++ [ "firewall" ])}; the layer an image runs adds the groups it
-        needs, and a variant's modules add to them, for example `[ "gpu" ]`; `lib.mkForce`
+        needs, and an image's modules add to them, for example `[ "gpu" ]`; `lib.mkForce`
         replaces them. A name that `chalkos.kernel.groups` does not declare fails the
         evaluation. Modules from `boot.extraModulePackages` are always included whole, with the
         modules of the kernel they depend on.

@@ -41,13 +41,13 @@ func open(t *testing.T, dir string, bootLoader bool) (*image.Parts, error) {
 // built for, and removes the copies on Close; without the boot loader asked for, it copies none.
 func TestOpenParts(t *testing.T) {
 	dir := t.TempDir()
-	root := imagetest.Write(t, dir, imagetest.Image{Variant: "w", Platform: "metal", Seed: "1"})
+	root := imagetest.Write(t, dir, imagetest.Image{Name: "w-metal", Platform: "metal", Seed: "1"})
 	p, err := open(t, dir, true)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !bytes.Equal(p.Store.RootHash, root) || p.Architecture != "x86-64" || p.Info.Variant() != "w" || p.Info.Platform() != "metal" {
-		t.Errorf("root hash %x, architecture %q, variant %q, platform %q", p.Store.RootHash, p.Architecture, p.Info.Variant(), p.Info.Platform())
+	if !bytes.Equal(p.Store.RootHash, root) || p.Architecture != "x86-64" || p.Info.Name() != "w-metal" || p.Info.Platform() != "metal" {
+		t.Errorf("root hash %x, architecture %q, name %q, platform %q", p.Store.RootHash, p.Architecture, p.Info.Name(), p.Info.Platform())
 	}
 	if _, err := os.Stat(p.BootLoader); err != nil {
 		t.Errorf("the boot loader: %v", err)
@@ -70,7 +70,7 @@ func TestOpenParts(t *testing.T) {
 // for another architecture than its UKI, when the boot loader is asked for.
 func TestOpenPartsRefusesABootLoaderOfAnotherArchitecture(t *testing.T) {
 	dir := t.TempDir()
-	imagetest.Write(t, dir, imagetest.Image{Variant: "w", Platform: "metal", Seed: "1"})
+	imagetest.Write(t, dir, imagetest.Image{Name: "w-metal", Platform: "metal", Seed: "1"})
 	arm := filepath.Join(t.TempDir(), "BOOTX64.EFI")
 	if err := os.WriteFile(arm, ukitest.WithMachine(ukitest.Build(map[string][]byte{".text": []byte("systemd-boot")}), 0xaa64), 0o644); err != nil {
 		t.Fatal(err)
@@ -88,7 +88,7 @@ func TestOpenPartsRefusesABootLoaderOfAnotherArchitecture(t *testing.T) {
 // another architecture than its UKI is built for.
 func TestOpenPartsRefusesAStoreOfAnotherArchitecture(t *testing.T) {
 	dir := t.TempDir()
-	imagetest.Write(t, dir, imagetest.Image{Variant: "w", Platform: "metal", Seed: "1"})
+	imagetest.Write(t, dir, imagetest.Image{Name: "w-metal", Platform: "metal", Seed: "1"})
 	parts, err := image.ReadPartitions(filepath.Join(dir, "repart-output.json"))
 	if err != nil {
 		t.Fatal(err)
@@ -108,8 +108,8 @@ func TestOpenPartsRefusesAStoreOfAnotherArchitecture(t *testing.T) {
 // TestOpenPartsRefusesAUKIOfAnotherStore refuses an image whose UKI's usrhash names another store.
 func TestOpenPartsRefusesAUKIOfAnotherStore(t *testing.T) {
 	dir, other := t.TempDir(), t.TempDir()
-	imagetest.Write(t, dir, imagetest.Image{Variant: "w", Platform: "metal", Seed: "1"})
-	imagetest.Write(t, other, imagetest.Image{Variant: "w", Platform: "metal", Seed: "2"})
+	imagetest.Write(t, dir, imagetest.Image{Name: "w-metal", Platform: "metal", Seed: "1"})
+	imagetest.Write(t, other, imagetest.Image{Name: "w-metal", Platform: "metal", Seed: "2"})
 	uki := filepath.Join(t.TempDir(), "chalkos_1.efi")
 	mtools(t, "mcopy", "-n", "-i", filepath.Join(other, "chalkos.raw")+"@@0", "::/EFI/Linux/chalkos_1.efi", uki)
 	mtools(t, "mcopy", "-o", "-i", filepath.Join(dir, "chalkos.raw")+"@@0", uki, "::/EFI/Linux/chalkos_1.efi")

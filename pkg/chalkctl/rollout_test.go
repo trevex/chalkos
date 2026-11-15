@@ -98,13 +98,13 @@ func (l *upgradeLab) rollTo(t *testing.T, version string) {
 }
 
 // newRolloutLab is a lab of three control planes and w1 whose inventory names an image directory
-// for each variant, which config apply checks the config against. Its Kubernetes nodes run a
+// for each image name, which config apply checks the config against. Its Kubernetes nodes run a
 // config of the lab's Cluster document alone, which names the API server 1.37.1.
 func newRolloutLab(t *testing.T) *upgradeLab {
 	t.Helper()
-	l := newUpgradeLabOf(t, 3, []string{"w1"}, "cp", "w")
+	l := newUpgradeLabOf(t, 3, []string{"w1"}, "cp-metal", "w-metal")
 	images := map[string]string{}
-	for _, v := range []string{"cp", "w", "plain"} {
+	for _, v := range []string{"cp-metal", "w-metal", "plain-metal"} {
 		images[v] = testUpgradeImage(t, v, "0.1.0")
 	}
 	l.useInventory(t, images)
@@ -254,8 +254,8 @@ func TestApplyConfigRolloutKeepsQuorum(t *testing.T) {
 		t.Errorf("events %q, want quorum checks alone", got)
 	}
 
-	single := newUpgradeLabOf(t, 1, []string{"w1"}, "cp", "w")
-	single.useInventory(t, map[string]string{"cp": testUpgradeImage(t, "cp", "0.1.0"), "w": testUpgradeImage(t, "w", "0.1.0"), "plain": testUpgradeImage(t, "plain", "0.1.0")})
+	single := newUpgradeLabOf(t, 1, []string{"w1"}, "cp-metal", "w-metal")
+	single.useInventory(t, map[string]string{"cp-metal": testUpgradeImage(t, "cp-metal", "0.1.0"), "w-metal": testUpgradeImage(t, "w-metal", "0.1.0"), "plain-metal": testUpgradeImage(t, "plain-metal", "0.1.0")})
 	single.runAPIServer("1.37.1")
 	single.rollTo(t, "1.37.2")
 	err = single.applyConfigTo([]string{"cp1"})
@@ -494,11 +494,11 @@ func TestApplyConfigAddresses(t *testing.T) {
 	}
 }
 
-// testImageWithKubelet is a test image of the variant whose Kubernetes facts name a kubelet of
+// testImageWithKubelet is a test image of the name whose Kubernetes facts name a kubelet of
 // the version.
-func testImageWithKubelet(t *testing.T, variant, name, version string) string {
+func testImageWithKubelet(t *testing.T, imageName, label, version string) string {
 	t.Helper()
-	dir := testUpgradeImage(t, variant, name)
+	dir := testUpgradeImage(t, imageName, label)
 	writeFile(t, filepath.Join(dir, "facts", "kubernetes.json"), `{"version": "`+version+`", "cni": "flannel"}`)
 	return dir
 }
@@ -507,7 +507,7 @@ func testImageWithKubelet(t *testing.T, variant, name, version string) string {
 // refused before any node is sent anything; patch releases pass, and a rollback asks nothing.
 func TestUpgradeRefusesAKubeletNewerThanTheAPIServer(t *testing.T) {
 	l := newUpgradeLab(t, 3)
-	newer := testImageWithKubelet(t, "w", "0.2.0", "1.38.0")
+	newer := testImageWithKubelet(t, "w-metal", "0.2.0", "1.38.0")
 	upgraded := func() bool {
 		return slices.ContainsFunc(l.takeEvents(), func(e string) bool { return strings.HasSuffix(e, " upgrade") })
 	}
@@ -520,7 +520,7 @@ func TestUpgradeRefusesAKubeletNewerThanTheAPIServer(t *testing.T) {
 	}
 
 	l.nodes["cp2"].rebooting = true
-	if err := l.upgrade(testImageWithKubelet(t, "w", "0.3.0", "1.37.5"), "--nodes", "w1", "--until", "activate"); err == nil || !strings.Contains(err.Error(), "the versions cp2 runs are unknown: ") || !strings.Contains(err.Error(), "the version skew check needs every control plane") {
+	if err := l.upgrade(testImageWithKubelet(t, "w-metal", "0.3.0", "1.37.5"), "--nodes", "w1", "--until", "activate"); err == nil || !strings.Contains(err.Error(), "the versions cp2 runs are unknown: ") || !strings.Contains(err.Error(), "the version skew check needs every control plane") {
 		t.Errorf("cp2 down: %v", err)
 	}
 	if upgraded() {
@@ -528,11 +528,11 @@ func TestUpgradeRefusesAKubeletNewerThanTheAPIServer(t *testing.T) {
 	}
 	l.nodes["cp2"].rebooting = false
 
-	if err := l.upgrade(testImageWithKubelet(t, "w", "0.3.0", "1.37.5"), "--nodes", "w1", "--until", "activate"); err != nil {
+	if err := l.upgrade(testImageWithKubelet(t, "w-metal", "0.3.0", "1.37.5"), "--nodes", "w1", "--until", "activate"); err != nil {
 		t.Errorf("a patch release: %v\n%s", err, l.ta.stdout)
 	}
 	l.nodes["w2"].rebooting = true
-	if err := l.upgrade(testUpgradeImage(t, "cp", "0.2.0"), "--nodes", "cp1", "--until", "activate"); err != nil {
+	if err := l.upgrade(testUpgradeImage(t, "cp-metal", "0.2.0"), "--nodes", "cp1", "--until", "activate"); err != nil {
 		t.Errorf("w2 down: %v\n%s", err, l.ta.stdout)
 	}
 	l.nodes["w2"].rebooting = false
@@ -558,7 +558,7 @@ func TestUpgradeRefusesAConfigThatChangesTheAPIServer(t *testing.T) {
 	l := newUpgradeLab(t, 1)
 	l.runAPIServer("1.37.1")
 	l.rollTo(t, "1.37.2")
-	img := testUpgradeImage(t, "w", "0.2.0")
+	img := testUpgradeImage(t, "w-metal", "0.2.0")
 	err := l.upgrade(img, "--nodes", "w1", "--until", "activate")
 	if want := "w1: the inventory's config changes the API server from 1.37.1 to 1.37.2, which an upgrade does not deliver"; err == nil || !strings.Contains(err.Error(), want) {
 		t.Errorf("err = %v, want %q", err, want)
@@ -581,7 +581,7 @@ func TestUpgradeRefusesAConfigThatChangesTheAPIServer(t *testing.T) {
 func TestOutsideTheClusterReachesNoneOfIt(t *testing.T) {
 	l := newRolloutLab(t)
 	l.nodes["cp1"].rebooting = true
-	if err := l.upgrade(testUpgradeImage(t, "plain", "0.2.0"), "--nodes", "n1", "--until", "activate"); err != nil {
+	if err := l.upgrade(testUpgradeImage(t, "plain-metal", "0.2.0"), "--nodes", "n1", "--until", "activate"); err != nil {
 		t.Fatalf("upgrade: %v\n%s", err, l.ta.stdout)
 	}
 	l.takeEvents()

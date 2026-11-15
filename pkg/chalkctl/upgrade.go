@@ -98,8 +98,8 @@ func (a *app) upgradeCommand() *cobra.Command {
 	fs := cmd.Flags()
 	f.node.RegisterClient(fs)
 	fs.Lookup("address").Usage = nodeAddressesUsage
-	fs.StringVar(&f.image, "image", "", "image to install on the nodes that run its variant, or on the nodes --nodes names whatever they run: a raw image with repart-output.json next to it, or an image directory (default the directory of each node's image in the inventory)")
-	fs.StringVar(&f.nodes, "nodes", "", "comma-separated nodes to upgrade (default every node of the cluster, or with --image every node that runs the image's variant)")
+	fs.StringVar(&f.image, "image", "", "image to install on the nodes running an image of its name, or on the nodes --nodes names whatever they run: a raw image with repart-output.json next to it, or an image directory (default the directory of each node's image in the inventory)")
+	fs.StringVar(&f.nodes, "nodes", "", "comma-separated nodes to upgrade (default every node of the cluster, or with --image every node running an image of its name)")
 	fs.IntVar(&f.maxUnavailable, "max-unavailable", 1, "how many nodes upgrade at once after the nodes that act for the others, such as Kubernetes control planes, which upgrade one at a time")
 	for _, p := range plugins {
 		if u, ok := p.(layer.UpgradeFlags); ok {
@@ -370,7 +370,7 @@ func (r *upgradeRun) run(ctx context.Context) error {
 	coordinators, others := r.split()
 	images := map[string]bool{}
 	for _, g := range r.groups {
-		r.Say("upgrading %s on %s to %s: %s", g.variant, g.platform, g.image.name(), strings.Join(g.nodes, ", "))
+		r.Say("upgrading %s on %s to %s: %s", g.name, g.platform, g.image.name(), strings.Join(g.nodes, ", "))
 		images[g.image.name()] = true
 	}
 	if r.rollback {

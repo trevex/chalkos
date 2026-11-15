@@ -15,7 +15,7 @@ import (
 // TestOpenImageForInstall reads an image with its boot loader, as an install sends it; an
 // upgrade's image brings no boot loader.
 func TestOpenImageForInstall(t *testing.T) {
-	path := testUpgradeImage(t, "w", "0.2.0")
+	path := testUpgradeImage(t, "w-metal", "0.2.0")
 
 	img, err := openImage(context.Background(), path, true, io.Discard)
 	if err != nil {
@@ -61,7 +61,7 @@ func TestOpenImageForInstall(t *testing.T) {
 // image's metadata, of whatever schema version, is opened without provenance and with a warning
 // naming the file. Without metadata.json it is opened silently.
 func TestOpenImageTrustsOnlyItsOwnMetadata(t *testing.T) {
-	path := testUpgradeImage(t, "w", "0.2.0")
+	path := testUpgradeImage(t, "w-metal", "0.2.0")
 	root := hex.EncodeToString(rootOf(t, path))
 	for _, tc := range []struct {
 		name, metadata string

@@ -79,7 +79,7 @@
     "readOnly": false,
     "type": "boolean"
   },
-  "chalkos.variant.name": {
+  "chalkos.image.name": {
     "declarations": [
       {
         "name": "modules/node/settings.nix",
@@ -90,10 +90,10 @@
       "_type": "literalExpression",
       "text": "null"
     },
-    "description": "The image's variant.",
+    "description": "The image's name.",
     "loc": [
       "chalkos",
-      "variant",
+      "image",
       "name"
     ],
     "readOnly": false,

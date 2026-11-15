@@ -39,7 +39,7 @@ func TestPushAndRead(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if a.Reference != pinned || a.Header.RootHash != hex.EncodeToString(root) || a.Metadata.Variant != "node" || a.Metadata.Tag != "v1" {
+	if a.Reference != pinned || a.Header.RootHash != hex.EncodeToString(root) || a.Metadata.Name != "node-metal" || a.Metadata.Tag != "v1" {
 		t.Errorf("Read = %+v", a)
 	}
 	if want, _ := ociimage.ReadContractDir(in); !reflect.DeepEqual(a.Contract, want) {

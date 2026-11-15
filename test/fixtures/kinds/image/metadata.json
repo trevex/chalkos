@@ -3,7 +3,7 @@
   "id": "chalkos",
   "revision": "a1b2c3d4e5f60718293a4b5c6d7e8f9012345678",
   "tag": "v1.5.0",
-  "variant": "worker",
+  "name": "worker-metal",
   "platform": "metal",
   "rootHash": "2ece03b0fa094b775ee5bf2e1f6f9eb66d6f0dc06f30f49f2f978f00e1173942",
   "kinds": [

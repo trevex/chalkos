@@ -27,7 +27,7 @@ let
 in
 {
   options.chalkos.consoles = lib.mkOption {
-    # uniq: a second plain definition fails the build, so a platform's and a variant's lists
+    # uniq: a second plain definition fails the build, so a platform's and an image's lists
     # never join into one; a module overrides the lists of mkDefault.
     type = lib.types.uniq (
       lib.types.nonEmptyListOf (lib.types.strMatching "[A-Za-z0-9]+(,[A-Za-z0-9]+)*")

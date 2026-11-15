@@ -15,8 +15,8 @@
     ./tests.nix
   ];
 
-  # The installer is no variant and never has config to query.
-  environment.systemPackages = lib.mkIf (config.chalkos.variant.name != null) [
+  # The installer is no node image and never has config to query.
+  environment.systemPackages = lib.mkIf (config.chalkos.image.name != null) [
     pkgs.chalkos.chalkcfg
   ];
 }

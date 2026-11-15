@@ -29,7 +29,7 @@ service NodeService {
   // Disks lists the node's disks and their partitions. Available in maintenance and normal mode to
   // readers. The console may call it.
   rpc Disks(DisksRequest) returns (DisksResponse);
-  // Contract returns the config contract of the image the node runs: the variant and platform it
+  // Contract returns the config contract of the image the node runs: its name and the platform it
   // was built for, its layers, the schemas of the config kinds it accepts and its layers' facts,
   // such as the Kubernetes image.json, which chalkctl checks config against before it delivers
   // it. The installer refuses it: config is for the image it installs, whose contract comes with
@@ -230,8 +230,8 @@ message InfoResponse {
   string fingerprint = 7;
   // Host name of the node, as the kernel holds it.
   string hostname = 8;
-  // The mkImages variant the running image was built as; empty on the installer.
-  string variant = 9;
+  // The name of the running image, as its os-release names it; empty on the installer.
+  string image = 9;
   // The platform the running image was built for, such as metal or kvm; empty on the installer,
   // which installs images of every platform.
   string platform = 10;
@@ -311,8 +311,8 @@ message ContractRequest {}
 message ContractResponse {
   // The image's schemas by file name, as /etc/chalkos/schemas holds them.
   map<string, bytes> schemas = 1;
-  // The variant the image was built as, as its os-release names it.
-  string variant = 2;
+  // The image's name, as its os-release names it.
+  string image = 2;
   // The platform the image was built for, as its os-release names it.
   string platform = 3;
   // The facts of the image's layers, such as chalkos.kubernetes.v1.ImageFacts, which config is
