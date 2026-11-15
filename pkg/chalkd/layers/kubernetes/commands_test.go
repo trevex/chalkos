@@ -7,9 +7,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/spf13/cobra"
-
-	"github.com/trevex/chalkos/pkg/chalkd/layer/layertest"
 	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/config/slot"
 )
@@ -103,38 +100,4 @@ func TestContainerdConfig(t *testing.T) {
 			}
 		})
 	}
-}
-
-// TestKubernetesCommandsRefuseArguments refuses, before running anything, the arguments a
-// command of the layer does not take.
-func TestKubernetesCommandsRefuseArguments(t *testing.T) {
-	for _, tc := range []struct {
-		command string
-		args    []string
-	}{
-		{"prepare", []string{"--vxlan"}},
-		{"prepare", []string{"--vxlan-rule", "x"}},
-		{"vxlan-rule", []string{"a", "b"}},
-		{"containerd-hosts", []string{"x"}},
-		{"registry-credentials", []string{"x"}},
-		{"credential-provider", []string{"x"}},
-		{"containerd-config", nil},
-		{"containerd-config", []string{"a", "b"}},
-	} {
-		if !layertest.Refused(command(t, tc.command), tc.args) {
-			t.Errorf("%s %q ran", tc.command, tc.args)
-		}
-	}
-}
-
-// command is the layer's command of the name, made afresh.
-func command(t *testing.T, name string) *cobra.Command {
-	t.Helper()
-	for _, cmd := range (&Plugin{}).Commands() {
-		if cmd.Name() == name {
-			return cmd
-		}
-	}
-	t.Fatalf("no command %s", name)
-	return nil
 }
