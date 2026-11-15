@@ -111,8 +111,8 @@ func TestBuild(t *testing.T) {
 			t.Errorf("LinkVRF(%s) = %q, %v, want %q", link, vrf, err, want)
 		}
 	}
-	if got, want := m.VRFOfNetwork("10-mgmt"), DefaultVRF; got != want {
-		t.Errorf("VRFOfNetwork(10-mgmt) = %q, want %q", got, want)
+	if got, want := m.vrfOfNetwork("10-mgmt"), DefaultVRF; got != want {
+		t.Errorf("vrfOfNetwork(10-mgmt) = %q, want %q", got, want)
 	}
 	if want := []string{"guest", "internet", "tenant"}; !slices.Equal(m.Devices(), want) {
 		t.Errorf("devices = %v, want %v", m.Devices(), want)

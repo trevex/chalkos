@@ -93,7 +93,7 @@ func (d Model) sessions(p Named[PeerSpec], devices []string) ([]Session, error) 
 		if !PlainInterface.MatchString(*s.Interface) {
 			return nil, InternalErrorf("interface %q is no interface name", *s.Interface)
 		}
-		if dev, ok := DeviceMatch(*s.Interface, devices); ok {
+		if dev, ok := deviceMatch(*s.Interface, devices); ok {
 			return nil, refusals.Errorf("BGPPeer", p.Name, "spec.interface", "interface %s is the device of VRF %s", dev, dev)
 		}
 		// The BGPPeer's rules refuse an interface named like an address; the VRF of its link is
@@ -114,7 +114,7 @@ func (d Model) sessions(p Named[PeerSpec], devices []string) ([]Session, error) 
 		if !InterfaceName.MatchString(glob) {
 			return nil, InternalErrorf("interfaces: %q is no interface name or glob", glob)
 		}
-		if dev, ok := DeviceMatch(glob, devices); ok {
+		if dev, ok := deviceMatch(glob, devices); ok {
 			return nil, refusals.Errorf("BGPPeer", p.Name, fmt.Sprintf("spec.interfaces[%d]", i), "%s matches %s, the device of VRF %s", glob, dev, dev)
 		}
 	}
@@ -124,7 +124,7 @@ func (d Model) sessions(p Named[PeerSpec], devices []string) ([]Session, error) 
 	for _, link := range d.Links {
 		var globs []string
 		for _, glob := range s.Interfaces {
-			if MatchesGlob(glob, link) {
+			if matchesGlob(glob, link) {
 				globs = append(globs, glob)
 			}
 		}

@@ -161,7 +161,7 @@ func (d Model) serveSubnet(units []Unit, devices []string, s Named[DHCPSubnetSpe
 		// A route of a delegated prefix would take the router's own address on a link of the VRF
 		// away from the link.
 		for _, a := range d.Addresses {
-			if vrf := d.VRFOfNetwork(a.Network); vrf == sub.VRF && sub.Delegated.Contains(a.Prefix.Addr()) {
+			if vrf := d.vrfOfNetwork(a.Network); vrf == sub.VRF && sub.Delegated.Contains(a.Prefix.Addr()) {
 				return sub, refusals.Errorf("DHCPSubnet", sub.Name, "spec.prefixDelegation.prefix", "prefixDelegation's prefix %s holds %s, the address Network %s gives a link of VRF %s", sub.Delegated, a.Prefix.Addr(), a.Network, vrf)
 			}
 		}
@@ -294,7 +294,7 @@ func ownApart(s Named[DHCPSubnetSpec], own []netip.Addr, what string) ([][2]neti
 // route of a wider range is shadowed by it instead, as it should be.
 func (d Model) delegatesNoRoute(sub Subnet) error {
 	for _, network := range slices.Sorted(maps.Keys(d.Networks)) {
-		vrf := d.VRFOfNetwork(network)
+		vrf := d.vrfOfNetwork(network)
 		if vrf != sub.VRF {
 			continue
 		}
@@ -381,7 +381,7 @@ func systemdBool(v any) (bool, bool) {
 	case json.Number:
 		text = v.String()
 	case string:
-		text = strings.ToLower(strings.Trim(v, UnitWhitespace))
+		text = strings.ToLower(strings.Trim(v, unitWhitespace))
 	default:
 		return false, false
 	}

@@ -9,8 +9,8 @@ import (
 	"strconv"
 )
 
-// Tables are the routing tables the kernel names, by name.
-var Tables = map[string]uint32{"default": 253, "main": 254, "local": 255}
+// tables are the routing tables the kernel names, by name.
+var tables = map[string]uint32{"default": 253, "main": 254, "local": 255}
 
 // protocols are the route protocols the kernel names, as iproute2 does, nat64, the protocol of the
 // routes of the router's NAT64 prefixes, and dhcp-pd, that of the prefixes its DHCPv6 servers
@@ -52,7 +52,7 @@ type Filter struct {
 // NewFilter reads a Routes request's prefix, protocol and table; empty ones keep every prefix,
 // every protocol and the main table.
 func NewFilter(prefix, protocol, table string) (Filter, error) {
-	f := Filter{protocol: protocol, table: Tables["main"]}
+	f := Filter{protocol: protocol, table: tables["main"]}
 	if prefix != "" {
 		p, err := netip.ParsePrefix(prefix)
 		if err != nil {
@@ -73,7 +73,7 @@ func NewFilter(prefix, protocol, table string) (Filter, error) {
 	case table == "all":
 		f.allTables = true
 	default:
-		if n, ok := Tables[table]; ok {
+		if n, ok := tables[table]; ok {
 			f.table = n
 			break
 		}

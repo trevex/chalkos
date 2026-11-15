@@ -253,8 +253,8 @@ func VRFName(v *string) (string, error) {
 	return vrf, nil
 }
 
-// VRFOfNetwork is the VRF of the links of the Network document named n.
-func (d Model) VRFOfNetwork(n string) string {
+// vrfOfNetwork is the VRF of the links of the Network document named n.
+func (d Model) vrfOfNetwork(n string) string {
 	if vrf, ok := d.Membership.Networks[n]; ok {
 		return vrf
 	}

@@ -116,7 +116,7 @@ func (m Membership) InterfaceVRFs(i string) ([]string, error) {
 	}
 	in, covered := map[string]bool{}, false
 	for _, mem := range m.Members {
-		if GlobsOverlap(mem.Glob, i) {
+		if globsOverlap(mem.Glob, i) {
 			in[mem.VRF] = true
 		}
 		covered = covered || globContains(mem.Glob, i)
@@ -327,7 +327,7 @@ func otherMatchKeys(spec map[string]any) bool {
 					continue
 				}
 				text, isText := value.(string)
-				given[k] = !isText || strings.Trim(text, UnitWhitespace) != ""
+				given[k] = !isText || strings.Trim(text, unitWhitespace) != ""
 			}
 		}
 	}
@@ -359,7 +359,7 @@ func checkVRFMembers(members []Member) []error {
 	var errs []error
 	for i, a := range members {
 		for _, b := range members[i+1:] {
-			if a.VRF == b.VRF || !GlobsOverlap(a.Glob, b.Glob) {
+			if a.VRF == b.VRF || !globsOverlap(a.Glob, b.Glob) {
 				continue
 			}
 			switch {
@@ -487,7 +487,7 @@ func shadowsVRF(units []Unit, u Unit, m Member, after bool) error {
 // with the glob, so that m matches none of them first.
 func shadowed(m NameMatch, glob string, before []NameMatch) bool {
 	for _, w := range m.Positives() {
-		if GlobsOverlap(w.Glob, glob) && !slices.ContainsFunc(before, func(b NameMatch) bool { return b.Covers(w.Glob) }) {
+		if globsOverlap(w.Glob, glob) && !slices.ContainsFunc(before, func(b NameMatch) bool { return b.Covers(w.Glob) }) {
 			return false
 		}
 	}

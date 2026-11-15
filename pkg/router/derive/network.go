@@ -73,7 +73,7 @@ func networkAddresses(networks []Named[map[string]any]) []NetworkAddress {
 // once the whitespace around it goes; an address alone is a prefix of its full length.
 func parseAddrOrPrefix(v any) (netip.Prefix, bool) {
 	text, _ := v.(string)
-	text = strings.Trim(text, UnitWhitespace)
+	text = strings.Trim(text, unitWhitespace)
 	if p, err := netip.ParsePrefix(text); err == nil {
 		return p, true
 	}
@@ -122,8 +122,8 @@ func UnitValue(v any) (string, error) {
 	}
 }
 
-// UnitWhitespace are the characters systemd splits a value at, and strips around it.
-const UnitWhitespace = " \t\n\r"
+// unitWhitespace are the characters systemd splits a value at, and strips around it.
+const unitWhitespace = " \t\n\r"
 
 // InterfaceName is an interface name as the schemas take it, or a prefix of one with the one
 // trailing * that nftables matches.

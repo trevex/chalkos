@@ -51,7 +51,7 @@ func (d Model) checkFirewall(nat64 []NAT64Instance) error {
 // never reach chalkd, which answers in the default VRF alone.
 func (d Model) checkManagement(router string, j int, i string, devices []string) error {
 	at := fmt.Sprintf("spec.management.interfaces[%d]", j)
-	if dev, ok := DeviceMatch(i, devices); ok {
+	if dev, ok := deviceMatch(i, devices); ok {
 		return refusals.Errorf("Router", router, at, "the management interface %s matches %s, the device of VRF %s, and chalkd answers in the default VRF alone; name the default VRF's links", i, dev, dev)
 	}
 	vrfs, err := d.Membership.InterfaceVRFs(i)
@@ -121,7 +121,7 @@ func (d Model) checkZones(devices []string) (map[string][]string, error) {
 func (d Model) checkZone(z Named[ZoneSpec], devices []string, held map[string]string) error {
 	for j, i := range z.Spec.Interfaces {
 		at := fmt.Sprintf("spec.interfaces[%d]", j)
-		if dev, ok := DeviceMatch(i, devices); ok {
+		if dev, ok := deviceMatch(i, devices); ok {
 			return refusals.Errorf("FirewallZone", z.Name, at, "%s matches %s, the device of VRF %s; name the VRF in vrfs", i, dev, dev)
 		}
 		vrfs, err := d.Membership.InterfaceVRFs(i)
@@ -144,7 +144,7 @@ func (d Model) checkZone(z Named[ZoneSpec], devices []string, held map[string]st
 // NAT64's name.
 func (d Model) nat64Link(i string) (string, string, bool) {
 	for _, n := range d.NAT64 {
-		if link := NAT64LinkPrefix + n.Name; MatchesGlob(i, link) {
+		if link := NAT64LinkPrefix + n.Name; matchesGlob(i, link) {
 			return link, n.Name, true
 		}
 	}
@@ -214,17 +214,17 @@ func (d Model) checkNATRule(r Named[NATSpec], devices []string, zones map[string
 // Network documents name and no glob of a VRF's links. An interface that is a device's name
 // matches that device alone.
 func (d Model) onlyDevice(devices []string, i string) (string, bool) {
-	dev, ok := DeviceMatch(i, devices)
+	dev, ok := deviceMatch(i, devices)
 	if !ok || !strings.HasSuffix(i, "*") {
 		return dev, ok
 	}
 	for _, l := range d.Links {
-		if !slices.Contains(devices, l) && MatchesGlob(i, l) {
+		if !slices.Contains(devices, l) && matchesGlob(i, l) {
 			return "", false
 		}
 	}
 	for _, m := range d.Membership.Members {
-		if GlobsOverlap(i, m.Glob) {
+		if globsOverlap(i, m.Glob) {
 			return "", false
 		}
 	}
@@ -235,11 +235,11 @@ func (d Model) onlyDevice(devices []string, i string) (string, bool) {
 // NAT64's: a link the Network documents name, or one of a VRF's members.
 func (d Model) matchesOtherThanNAT64(i string) bool {
 	for _, l := range d.Links {
-		if _, _, isNAT64 := d.nat64Link(l); !isNAT64 && MatchesGlob(i, l) {
+		if _, _, isNAT64 := d.nat64Link(l); !isNAT64 && matchesGlob(i, l) {
 			return true
 		}
 	}
-	return slices.ContainsFunc(d.Membership.Members, func(m Member) bool { return GlobsOverlap(i, m.Glob) })
+	return slices.ContainsFunc(d.Membership.Members, func(m Member) bool { return globsOverlap(i, m.Glob) })
 }
 
 // checkPolicyRouteIn refuses the PolicyRoute p at the first fault of in. Jool translates a NAT64's
@@ -265,7 +265,7 @@ func (d Model) checkPolicyRouteIn(p Named[PolicyRouteSpec], devices []string, zo
 	default:
 		for j, i := range in.Interfaces {
 			at := fmt.Sprintf("spec.in.interfaces[%d]", j)
-			if dev, ok := DeviceMatch(i, devices); ok {
+			if dev, ok := deviceMatch(i, devices); ok {
 				return refusals.Errorf("PolicyRoute", p.Name, at, "%s matches %s, the device of VRF %s; name the VRF's links or a zone of the VRF", i, dev, dev)
 			}
 			if link, n, ok := d.nat64Link(i); ok {

@@ -61,7 +61,7 @@ func parseNameMatch(network string, spec map[string]any) (NameMatch, error) {
 			if err != nil {
 				continue
 			}
-			words := strings.FieldsFunc(value, func(r rune) bool { return strings.ContainsRune(UnitWhitespace, r) })
+			words := strings.FieldsFunc(value, func(r rune) bool { return strings.ContainsRune(unitWhitespace, r) })
 			if len(words) == 0 {
 				m.Words = nil
 				continue
@@ -234,7 +234,7 @@ func (m NameMatch) MayMatch(glob string) bool {
 	if isLiteral(glob) {
 		return m.Matches(glob)
 	}
-	return slices.ContainsFunc(m.Positives(), func(w NameWord) bool { return GlobsOverlap(w.Glob, glob) })
+	return slices.ContainsFunc(m.Positives(), func(w NameWord) bool { return globsOverlap(w.Glob, glob) })
 }
 
 // Covers reports whether the Name= matches every link the glob matches, as globContains finds.
@@ -243,7 +243,7 @@ func (m NameMatch) Covers(glob string) bool {
 		return m.Matches(glob)
 	}
 	for _, w := range m.Words {
-		if w.Negated && GlobsOverlap(w.Glob, glob) {
+		if w.Negated && globsOverlap(w.Glob, glob) {
 			return false
 		}
 	}
@@ -263,10 +263,10 @@ func isLiteral(glob string) bool {
 	return globPrefix(glob) == glob
 }
 
-// GlobsOverlap reports whether two globs may match one name: two literal ones when they are
+// globsOverlap reports whether two globs may match one name: two literal ones when they are
 // equal, a literal and a glob when the glob matches it, and two globs unless their literal
 // beginnings differ.
-func GlobsOverlap(a, b string) bool {
+func globsOverlap(a, b string) bool {
 	switch {
 	case isLiteral(a):
 		ok, _ := path.Match(b, a)
@@ -291,20 +291,20 @@ func globContains(outer, inner string) bool {
 	return outer == inner || outer == prefix+"*" && strings.HasPrefix(globPrefix(inner), prefix)
 }
 
-// MatchesGlob reports whether an interface name or glob of the router kinds, a name or a prefix
+// matchesGlob reports whether an interface name or glob of the router kinds, a name or a prefix
 // and *, matches the link.
-func MatchesGlob(glob, link string) bool {
+func matchesGlob(glob, link string) bool {
 	if prefix, ok := strings.CutSuffix(glob, "*"); ok {
 		return strings.HasPrefix(link, prefix)
 	}
 	return glob == link
 }
 
-// DeviceMatch returns the first VRF device of devices, as Model.Devices finds them, that the
+// deviceMatch returns the first VRF device of devices, as Model.Devices finds them, that the
 // interface or glob matches.
-func DeviceMatch(glob string, devices []string) (string, bool) {
+func deviceMatch(glob string, devices []string) (string, bool) {
 	for _, dev := range devices {
-		if MatchesGlob(glob, dev) {
+		if matchesGlob(glob, dev) {
 			return dev, true
 		}
 	}

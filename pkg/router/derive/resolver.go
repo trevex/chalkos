@@ -24,7 +24,7 @@ func (d Model) checkResolvers() error {
 				if n.Prefix.Addr() != a {
 					continue
 				}
-				if v := d.VRFOfNetwork(n.Network); v == vrf {
+				if v := d.vrfOfNetwork(n.Network); v == vrf {
 					mine = true
 				} else if other := "Network " + n.Network + " in VRF " + v; !slices.Contains(others, other) {
 					others = append(others, other)
