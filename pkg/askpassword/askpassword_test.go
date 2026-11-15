@@ -125,11 +125,16 @@ func TestAnswerWithoutSocket(t *testing.T) {
 func TestWatch(t *testing.T) {
 	dir := t.TempDir()
 	ctx, cancel := context.WithCancel(context.Background())
-	changes, err := askpassword.Agent{Dir: dir}.Watch(ctx)
-	if err != nil {
-		t.Fatal(err)
+	watch := func() <-chan struct{} {
+		t.Helper()
+		changes, err := askpassword.Agent{Dir: dir}.Watch(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return changes
 	}
-	wait := func(what string) {
+	changes := watch()
+	wait := func(changes <-chan struct{}, what string) {
 		t.Helper()
 		select {
 		case <-changes:
@@ -138,17 +143,16 @@ func TestWatch(t *testing.T) {
 		}
 	}
 	askpasswordtest.Ask(t, dir, askpasswordtest.Request{Name: "1", Message: "m"})
-	wait("a request came")
-	// The write and the rename may signal twice; the removal must signal on its own.
-	time.Sleep(100 * time.Millisecond)
-	select {
-	case <-changes:
-	default:
-	}
+	wait(changes, "a request came")
+	// The write and the rename may signal twice; a watch that starts after them sees the removal
+	// alone.
+	gone := watch()
 	askpasswordtest.Remove(t, dir, "1")
-	wait("a request went")
+	wait(gone, "a request went")
 	cancel()
 	for range changes {
+	}
+	for range gone {
 	}
 }
 
