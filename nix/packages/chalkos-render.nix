@@ -1,22 +1,22 @@
-# chalkos-render, the renderer of the outputs chalkosLib.render.template and .documents build, and
-# of the built-in outputs networkd, router-sysctl and router-nftables, and the program of the
-# validator router. Every image carries it, so it is stripped and takes the standard library alone,
-# besides pkg/dns, which shares the resolver's DNS syntax with the rules, pkg/networkdschema, which
-# writes the networkd kinds' schemas whose names it reads, pkg/refusals, the format of the refusals
-# chalkd reads, pkg/router/derive, the router's model of a node's config, which chalkctl links
-# for the validator router, pkg/router/services, the names of the per-VRF services' files, and
-# pkg/router/keaconf, the types of Kea's configs, both of which chalkd reads back.
+# chalkos-render renders chalkosLib.render.template and .documents, the built-in outputs networkd,
+# router-sysctl and router-nftables, and runs the validator router. Every image carries it, so it
+# is stripped and takes the standard library and these packages alone.
 { buildGoProgram }:
 buildGoProgram {
   pname = "chalkos-render";
   paths = [
     ../../cmd/chalkos-render
+    # The resolver's DNS syntax, which the rules share.
     ../../pkg/dns
     ../../pkg/internal/strs
     ../../pkg/jsonfile
+    # Writes the networkd kinds' schemas, whose names it reads.
     ../../pkg/networkdschema
+    # The format of the refusals chalkd reads.
     ../../pkg/refusals
+    # The router's model of a node's config, which chalkctl links for the validator router.
     ../../pkg/router/derive
+    # Kea's config types and the per-VRF services' file names, which chalkd reads back.
     ../../pkg/router/keaconf
     ../../pkg/router/services
   ];

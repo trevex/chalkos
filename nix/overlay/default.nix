@@ -1,10 +1,6 @@
-# The overlay that adds pkgs.chalkos, the scope of chalkos's packages: the Go toolchain, go-overlay's
-# build of the Go release that go.mod's go directive names; buildGoProgram, which builds a Go
-# program of this repository with it; and chalkos's programs and tools, a file each in
-# nix/packages, named as the package. Updating Go is a change to go.mod's go line. mkImages applies
-# the overlay to the images' own nixpkgs, so images built from another nixpkgs still build
-# chalkos's programs with this Go. A package of the scope that takes an argument named as another
-# of its packages gets that package.
+# Adds pkgs.chalkos: the Go toolchain go.mod names, buildGoProgram, and a package per file of
+# nix/packages. Updating Go is a change to go.mod's go line. mkImages applies the overlay to the
+# images' nixpkgs, so images of another nixpkgs build chalkos's programs with this Go too.
 { go-overlay }:
 final: _: {
   chalkos = final.lib.makeScope final.newScope (
