@@ -213,94 +213,61 @@ rules that read no facts, and the node checks them again. The node replaces its 
 applies additive storage changes such as a new volume while it runs, and restarts the units that
 read what changed; chalkctl prints the changes and the units. When the image's rules refuse a
 change, the node refuses the whole config and names the remedy. chalkctl warns of each image
-reference in the config that names a tag but no digest, and delivers the config all the same. See
+reference in the config that names a tag but no digest. See
 https://trevex.github.io/chalkos/how-it-works/node/config/#change-rules-decide-which-changes-a-node-accepts.
 
 With several nodes, config apply delivers to them one after the other and stops at the first that
 fails; a node named twice gets the config once. --address gives each node's address as NODE=ADDR
-where it is not the inventory's. chalkctl reads each node's status and checks its config against
-its image before the first node gets anything, and leaves a node that runs the config already
-alone, so the same command run again continues a run that stopped. --staged, --diff and
---no-confirm take one node.
+where it is not the inventory's. chalkctl checks every node's status and config before the first
+node gets anything and leaves a node that runs the config already alone, so the same command run
+again continues a run that stopped. --staged, --diff and --no-confirm take one node.
 
-When the config changes a version that a layer of the nodes' images bounds across the cluster,
-such as the Kubernetes API server's, against the config a node runs, the run is ordered, with one
-node or several. A run that changes no such version asks no layer anything. An ordered run reads
-the versions every node of the cluster runs, and the layer refuses a config that would break its
-bounds, as Kubernetes's version skew policy does. The nodes that act for the others, such as
-Kubernetes control planes, go first, one at a time. Its layers hold each first, as Kubernetes
-waits for etcd to keep its quorum; then it gets the config on trial, for --try or else 10 minutes,
-until its layers find it serving with the config, as Kubernetes finds a control plane's static
-pods running the new images. Then the other nodes get the config as in any run. The first failure
-rolls that node's trial back at once, and chalkctl prints which nodes run which version. --until
-deliver delivers on trial to the first node that does not run the config and leaves its trial open
-for config confirm. An ordered run goes without the layers' payload flags. See
+A config that changes a version a layer bounds across the cluster, such as the Kubernetes API
+server's, runs ordered: the layer reads the versions every node runs and refuses a config that
+breaks its bounds, as Kubernetes's version skew policy does. The nodes that act for the others,
+such as Kubernetes control planes, go first, one at a time, each held by its layers and on trial,
+for --try or else 10 minutes, until its layers find it serving with the config; then the other
+nodes. The first failure rolls that node's trial back at once, and chalkctl prints which nodes run
+which version. --until deliver leaves the first node's trial open for config confirm. An ordered
+run goes without the layers' payload flags. See
 https://trevex.github.io/chalkos/kubernetes/upgrade-kubernetes/.
 
---diff prints what the config changes in the node's config, document by document, and checks nothing
-on the node. --dry-run has the node check the config as it checks a delivery, with its facts, the
-image's renderers and their checks, and changes nothing. It prints the diff, then the config the
-node would run, the outputs that would change, the effects the delivery would take with what fires
-each, and the storage changes. A refusal is the delivery's, and the command exits 1. --dry-run takes
-several nodes and checks them one after the other; its error names the nodes whose config is refused
-apart from those it could not check, such as a node on trial. It goes without --diff, --try,
---no-confirm, --ignore-unit, --force and the layers' payload flags. An effect whose rule compares
-the node's facts before and after the delivery is planned with the facts as they are. The plan ends
-with the staged image's config or the pending config, when the delivery writes either. With
---staged, the staged image checks the config with its own chalkd and renderers, and the plan has no
-outputs and no effects: that image renders its outputs and takes its effects when it boots.
+--diff prints what the config changes, document by document, and checks nothing on the node.
+--dry-run has the node check the config as it checks a delivery and changes nothing. It prints the
+diff, the config the node would run, the outputs that would change, the effects with what fires
+each, the storage changes, and the staged or pending config the delivery writes; a refusal exits 1.
+--dry-run takes several nodes, and its error names the nodes whose config is refused apart from
+those it could not check, such as a node on trial. It goes without --diff, --try, --no-confirm,
+--ignore-unit, --force and the layers' payload flags. With --staged the plan has no outputs or
+effects, which that image takes when it boots.
 
-Each image on a node keeps its own config. The image in the node's inactive slot, staged by
-upgrade --until stage or active after upgrade --until activate, boots with the config it checked
-itself. A delivery to the running image goes to that image too: it checks the config with its own
-chalkd and renderers, against the storage the running image's change leaves, before anything
-changes, and its refusal refuses the delivery. Once the running image applied the config, the node
-writes the staged image's config and says so. When that write fails, the staged image keeps its
-earlier config, the command fails naming it, and running it again writes it. The image a rollback
-staged while the running image's boot is not found healthy keeps the config it last ran, and the
-node warns of it. --staged delivers the config to the staged image alone, and nothing restarts.
+Each image on a node keeps its own config, which it checks itself. A delivery to the running image
+goes to the staged image too, which checks it before anything changes; once the running image
+applied it, the node writes the staged image's config, except that of a rollback's image while its
+boot is not found healthy. When that write fails, the command fails naming it, and running it
+again writes it. --staged delivers to the staged image alone, and nothing restarts. Without a
+staged image, --staged holds the config pending for the next upgrade, which takes it unless it
+carries config of its own; the node only parses it, and it carries no fallback secret. A delivery
+to the running image replaces a pending config too, and config discard drops it. See
+https://trevex.github.io/chalkos/how-it-works/node/config/#a-node-keeps-one-config-slot-per-image.
 
-On a node without a staged image, --staged holds the config pending for the next upgrade, in place
-of any config held before. chalkctl checks it against the node's image in the inventory; the node
-only parses it, as no image is there to check it against. The next upgrade that carries no config
-of its own, such as an operator's, gives the image the pending config in place of the running one,
-and the image checks it before the node installs anything. An upgrade that carries config replaces
-it. Either way the node drops the pending config once the image is staged; an upgrade
-that fails keeps it, and an image's refusal names it. A pending config is kept without the fallback
-secret, so an upgrade with one that adds an encrypted volume needs the config from the inventory.
-A delivery to the running image replaces a pending config too, once the running image applied it,
-so the next upgrade boots the config delivered last. --staged --dry-run says the config would be
-held pending and keeps nothing. config discard drops the pending config.
-
-config rollback delivers the node's previous config again instead of the inventory's.
-
---try applies the config on trial for the duration given, from 10s to 24h. Unless chalkctl confirms
-the config within it, the node rolls the config back by itself through the same steps as
-config rollback. chalkctl confirms it over a new connection, which proves that the config left
-the node reachable, once the node is healthy as an upgrade's boot must be: chalkd serves, no unit of
-the boot failed, and the image's layers find their services healthy. The check leaves out the units
-the image ignores and those --ignore-unit names, one unit per flag. Before it confirms, chalkctl
-also waits for the image's layers to find the node serving with the config, as Kubernetes finds its
-Node Ready and a control plane's static pods on the images its config names; when they do not by the
-deadline, chalkctl rolls the config back at once. chalkctl warns of units that failed before the
-trial, which keep the check from passing unless they recover. When the config is not confirmed, or
-the answer to its delivery is lost, as when the config cuts chalkctl off, chalkctl waits up to two
-minutes after the deadline for the node's rollback, reports it and exits non-zero. Interrupting
-chalkctl leaves the trial open. A trial delivers config alone and is refused for a config that
-changes the node's storage. While it is open, the node refuses other deliveries, upgrades and image
-rollbacks; config rollback rolls the config back at once and ends the trial, and a reboot
-boots the config from before it. --no-confirm leaves the trial open, and config confirm
-confirms it later. A delivery on trial that fails after it changed the config leaves the trial open,
-and chalkctl does not confirm it. When an attempt to roll the config back fails, the node tries
-again each minute and config confirm still keeps the config, unless the failed attempt changed
-the node; config rollback then finishes the rollback. The staged image checks config on trial
-as any delivery, but its config, or the pending config, is written only once the trial is confirmed,
-so a rollback leaves it as it was.
+--try applies the config on trial for the duration given, from 10s to 24h: unless chalkctl
+confirms it in time, the node rolls it back by itself. chalkctl confirms over a new connection,
+once the node is healthy and its layers find it serving with the config; --ignore-unit leaves a
+unit out of the health check, one unit per flag, and chalkctl warns of units that failed before the
+trial. When the config is not confirmed, or the answer to its delivery is lost, chalkctl waits up to
+two minutes after the deadline for the node's rollback, reports it and exits non-zero.
+Interrupting chalkctl leaves the trial open. A trial delivers config alone and is refused for a
+config that changes the node's storage; while it is open, the node refuses other deliveries,
+upgrades and image rollbacks. --no-confirm leaves the trial open for config confirm, and config
+rollback ends it at once. See
+https://trevex.github.io/chalkos/how-it-works/node/config/#a-trial-rolls-a-config-back-unless-it-is-confirmed.
 
 --kubernetes-share also delivers a new Kubernetes share, such as a worker's new kubelet
 certificate. It is refused to a node revoked with chalkctl node revoke, and while no control plane
 says which nodes are revoked; --force delivers it without asking. The command needs the secrets
 file.`
+
 
 const applyConfigExample = `  # Apply w1's changed network and labels.
   chalkctl config apply w1 --secrets secrets.age
@@ -503,15 +470,12 @@ its pending config, else carries its own config over. A new volume is enrolled w
 key, which only the secrets file gives, or the password --password-file holds.
 
 --rollback boots the image the nodes ran before their last upgrade again instead of installing
-one, which their inactive slots still hold with its config until the next upgrade writes over
-them. chalkctl takes that image from the nodes' status: every node named, or every node of the
+one; their inactive slots still hold it with its config. Every node named, or every node of the
 cluster, must roll back to the same image or run it already, or the command refuses and asks for
---nodes. Boot counting protects the boot as it protects an upgrade's, except on a node whose
-running image's boot was not found healthy: the image before, found healthy once, then boots
-uncounted, as the node's known-good image, and is not fallen back from. The run holds and releases
-each node as an upgrade does; it stages nothing, so it takes --until activate and reboot alone.
-Run again, it continues with the same image and leaves the nodes that run it alone. Once the nodes
-run the image before, an upgrade to the inventory's image undoes the rollback.
+--nodes. The run holds and releases each node as an upgrade does; it stages nothing, so it takes
+--until activate and reboot alone. Run again, it continues with the same image, and an upgrade to
+the inventory's image undoes it. See
+https://trevex.github.io/chalkos/how-it-works/node/upgrades/#a-rollback-boots-the-image-before-again.
 
 Run again, an upgrade continues where it stopped, and --retry-failed installs the image once more
 on nodes that fell back from it. See

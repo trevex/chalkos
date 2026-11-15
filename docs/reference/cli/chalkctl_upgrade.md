@@ -35,15 +35,12 @@ its pending config, else carries its own config over. A new volume is enrolled w
 key, which only the secrets file gives, or the password --password-file holds.
 
 --rollback boots the image the nodes ran before their last upgrade again instead of installing
-one, which their inactive slots still hold with its config until the next upgrade writes over
-them. chalkctl takes that image from the nodes' status: every node named, or every node of the
+one; their inactive slots still hold it with its config. Every node named, or every node of the
 cluster, must roll back to the same image or run it already, or the command refuses and asks for
---nodes. Boot counting protects the boot as it protects an upgrade's, except on a node whose
-running image's boot was not found healthy: the image before, found healthy once, then boots
-uncounted, as the node's known-good image, and is not fallen back from. The run holds and releases
-each node as an upgrade does; it stages nothing, so it takes --until activate and reboot alone.
-Run again, it continues with the same image and leaves the nodes that run it alone. Once the nodes
-run the image before, an upgrade to the inventory's image undoes the rollback.
+--nodes. The run holds and releases each node as an upgrade does; it stages nothing, so it takes
+--until activate and reboot alone. Run again, it continues with the same image, and an upgrade to
+the inventory's image undoes it. See
+[A rollback boots the image before again](../../how-it-works/node/upgrades.md#a-rollback-boots-the-image-before-again).
 
 Run again, an upgrade continues where it stopped, and --retry-failed installs the image once more
 on nodes that fell back from it. See

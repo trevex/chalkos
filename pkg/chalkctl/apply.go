@@ -89,9 +89,9 @@ func (a *app) applyConfigCommand(short bool) *cobra.Command {
 		f.payloadFlags = strings.Join(payloadFlags, " or ")
 		fs.BoolVar(&f.force, "force", false, "with "+f.payloadFlags+", deliver without asking whether the node is revoked")
 	}
-	fs.BoolVar(&f.staged, "staged", false, "deliver the config for the image staged in the inactive slot instead, active or not, which checks it with its own chalkd after chalkctl checks it against the node's image in the inventory; without a staged image, the node holds it pending, unchecked, for the next upgrade, which checks it against its image; with --dry-run, the staged image checks it and nothing is kept; without one, --dry-run says what the node would hold pending")
-	fs.BoolVar(&f.diff, "diff", false, "print what the config changes in the node's config, document by document and field by field, and change nothing; the node checks nothing, which --dry-run has it do")
-	fs.BoolVar(&f.dryRun, "dry-run", false, "have the node check the config as it checks a delivery, its renderers and facts included, print the diff and what the delivery would change, and change nothing; with --staged, the staged image checks it; takes several nodes")
+	fs.BoolVar(&f.staged, "staged", false, "deliver the config to the image staged in the inactive slot, which checks it; without one, the node holds it pending for the next upgrade")
+	fs.BoolVar(&f.diff, "diff", false, "print the diff against the node's config and change nothing; the node checks nothing")
+	fs.BoolVar(&f.dryRun, "dry-run", false, "have the node check the config as for a delivery and print the diff and plan; changes nothing")
 	fs.DurationVar(&f.try, "try", 0, "apply the config on trial for the duration, from 10s to 24h: the node rolls it back by itself unless chalkctl confirms it over a new connection once the node is healthy")
 	fs.BoolVar(&f.noConfirm, "no-confirm", false, "with --try, leave the trial open for config confirm")
 	fs.StringArrayVar(&f.ignoreUnits, "ignore-unit", nil, "with --try, leave the unit out of the health check the confirmation waits for, as the image's check leaves out the units it ignores")
