@@ -40,8 +40,7 @@ func sign(ctx context.Context, stdout io.Writer, key, cert string, args []string
 	if key == "" || cert == "" {
 		return cli.Usagef("sign needs --key and --cert")
 	}
-	// SignDirectory and SignLayout refuse when out's parent does not exist; an inventory's own
-	// layout need not have made it yet, so chalkbuild makes it, as chalklab sign --out does.
+	// SignDirectory and SignLayout refuse a missing parent, which an inventory's layout may name.
 	if err := os.MkdirAll(filepath.Dir(args[1]), 0o755); err != nil {
 		return err
 	}

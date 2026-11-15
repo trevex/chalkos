@@ -3,7 +3,6 @@ package chalkbuild
 import (
 	"bytes"
 	"context"
-	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -31,7 +30,8 @@ func TestCommandsDescribed(t *testing.T) {
 	clitest.CheckDescribed(t, NewCommand())
 }
 
-// TestSign signs a copy of an image directory and names each disk image it signed.
+// TestSign signs a copy of an image directory, also into a directory whose parent does not exist
+// yet, and names each disk image it signed.
 func TestSign(t *testing.T) {
 	if _, err := exec.LookPath("sbsign"); err != nil {
 		t.Skip("sbsign not in PATH")
@@ -40,30 +40,10 @@ func TestSign(t *testing.T) {
 	key, cert, _ := imagetest.Signer(t, dir, "db")
 	in := filepath.Join(dir, "in")
 	imagetest.Write(t, in, imagetest.Image{Variant: "node", Platform: "metal", Seed: "1"})
-	out := filepath.Join(dir, "out")
+	out := filepath.Join(dir, "signed", "node-metal")
 	status, stdout, stderr := run("sign", "--key", key, "--cert", cert, in, out)
 	if status != 0 || stdout != "signed "+filepath.Join(out, "chalkos.raw")+"\n" {
 		t.Errorf("sign = %d, stdout %q, stderr %q", status, stdout, stderr)
-	}
-}
-
-// TestSignMakesOutsParent signs into a directory whose parent does not exist yet, as an
-// inventory's own layout need not either.
-func TestSignMakesOutsParent(t *testing.T) {
-	if _, err := exec.LookPath("sbsign"); err != nil {
-		t.Skip("sbsign not in PATH")
-	}
-	dir := t.TempDir()
-	key, cert, _ := imagetest.Signer(t, dir, "db")
-	in := filepath.Join(dir, "in")
-	imagetest.Write(t, in, imagetest.Image{Variant: "node", Platform: "metal", Seed: "1"})
-	out := filepath.Join(dir, "signed", "node-metal")
-	status, _, stderr := run("sign", "--key", key, "--cert", cert, in, out)
-	if status != 0 {
-		t.Fatalf("sign = %d, stderr %q", status, stderr)
-	}
-	if _, err := os.Stat(filepath.Join(out, "chalkos.raw")); err != nil {
-		t.Errorf("the signed copy: %v", err)
 	}
 }
 

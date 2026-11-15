@@ -210,8 +210,7 @@ func (a *app) sign(ctx context.Context, name, out string, pos []string) error {
 	}
 	keys := filepath.Join(dir, "keys")
 	if out != "" {
-		// SignDirectory refuses when out's parent does not exist; chalklab makes it, as it does the
-		// lab's own state directory, so --out need not already exist.
+		// SignDirectory refuses a missing parent, which --out may name.
 		if err := os.MkdirAll(filepath.Dir(out), 0o755); err != nil {
 			return err
 		}
