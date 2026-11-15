@@ -85,12 +85,9 @@ func (n *Node) checkStore(ctx context.Context, h Header, slot storeslot.Slot, uk
 	})
 }
 
-// ReadImage reads the store of the image with the root hash, which the inactive slot holds, such
-// as the image staged there or active: mounted read-only through dm-verity as an upgrade checks
-// one, passed to read with the system its UKI on the ESP names, an entry's or the staged one, and
-// unmounted again. The
-// caller holds TableLock, if any, or leaves it unset. It fails for the running image and for one
-// the inactive slot does not hold.
+// ReadImage mounts the inactive slot's store of rootHash through dm-verity and passes it to read
+// with the system its UKI on the ESP names, staged or an entry's, then unmounts it. It fails for
+// the running image and one the slot does not hold. The caller holds TableLock, if set.
 func (n *Node) ReadImage(ctx context.Context, rootHash []byte, read func(Store) error) error {
 	running, err := uki.RunningHash(n.Cmdline)
 	if err != nil {

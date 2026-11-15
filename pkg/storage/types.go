@@ -13,7 +13,6 @@ func UUIDOf(input string) string {
 	return h[0:8] + "-" + h[8:12] + "-" + h[12:16] + "-" + h[16:20] + "-" + h[20:32]
 }
 
-// PartitionType returns the GPT type UUID of the chalkos partition with the label: a hash of
-// the label, as the image's and the node's repart definitions name it. STATE, VAR
-// and every volume have their own type, so repart never assigns one's partition to another.
+// PartitionType is the GPT type of the chalkos partition with the label, a hash of it as the
+// image's and the node's repart definitions name it, so repart never confuses two partitions.
 func PartitionType(label string) string { return UUIDOf("chalkos-partition-type:" + label) }

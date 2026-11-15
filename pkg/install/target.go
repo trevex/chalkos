@@ -18,11 +18,9 @@ import (
 )
 
 // classify tells whether the target is laid out anew: when it is empty or the request wipes it.
-// A target that holds what an earlier attempt of an install left is continued, and anything else
-// refused, naming what it holds. The earlier attempt may have written another image to slot A, as
-// an install the image's checker refused leaves it: while STATE holds neither an installed node
-// nor a config slot, nothing of the node belongs to that image, and the install writes its own
-// image over it.
+// What an earlier attempt left is continued and anything else refused, naming what it holds.
+// Slot A may hold another image, as after a refused check: while STATE holds neither an
+// installed node nor a config slot, the install writes its own image over it.
 func (i *Installer) classify(ctx context.Context, target storage.BlockDisk, l layout, req PartsRequest) (bool, error) {
 	if req.WipeDisk {
 		return true, nil

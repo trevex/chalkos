@@ -38,9 +38,8 @@ type Slot struct {
 // 36 characters, of which "store-verity_" takes 13.
 const labelHashDigits = 16
 
-// LabelID is what the labels of a slot holding the store of the root hash name it by: the root
-// hash's first 16 hex digits, as in store_<id> and store-verity_<id>. Nothing finds a store by
-// label; the labels name it for people and tools.
+// LabelID is the root hash's first 16 hex digits, as in store_<id> and store-verity_<id>. Labels
+// are for people and tools; nothing looks a store up by label.
 func LabelID(rootHash []byte) string {
 	return hex.EncodeToString(rootHash)[:labelHashDigits]
 }

@@ -88,13 +88,11 @@ type PartsRequest struct {
 	SystemDefinitions map[string]string
 	// WipeDisk allows replacing whatever the target holds, including an installed node.
 	WipeDisk bool
-	// Check has the image's own checker check the node's config once the image's store is in slot
-	// A and its UKI on the ESP, before STATE holds anything of the node and before the target
-	// boots. st is the store, mounted read-only through dm-verity, and system the image's NixOS
-	// system in it, which the UKI boots. It returns the config slot the checker passed, which the
-	// install writes in place of Request.Config, and the layers' payloads checked against its
-	// identity, in place of Request.Layers. Its error refuses the install. Section is the storage
-	// section the target is laid out by, which the checker's identity must give too.
+	// Check has the image's checker check the node's config once slot A holds the store and the ESP
+	// the UKI, before STATE holds anything of the node or the target boots. st is the store, mounted
+	// read-only through dm-verity, and system the NixOS system the UKI boots. It returns the config
+	// slot and layer payloads the checker passed, which the install writes in place of
+	// Request.Config and Request.Layers; its error refuses the install.
 	Check func(ctx context.Context, st Store, system string) (Checked, error)
 }
 

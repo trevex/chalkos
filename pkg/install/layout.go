@@ -16,11 +16,10 @@ import (
 )
 
 // definitionKeys are the keys of repart's [Partition] section a definition of the system region
-// may set, by the kind of partition it defines: what chalkos's own definitions set, and
-// AddValidateFS on STATE, which only stops repart from marking its file system for
-// systemd-validatefs. repart runs as root on the installer, so a key that copies files or blocks
-// from the host, makes directories or subvolumes, or lays out anything but these partitions is
-// refused, as is any key not listed. Encrypt on STATE is replaced with the node's policy.
+// may set, by the kind of partition: what chalkos's definitions set, and AddValidateFS on STATE.
+// repart runs as root on the installer, so any key not listed, such as one that copies files or
+// blocks from the host or makes directories, is refused. Encrypt on STATE is replaced with the
+// node's policy.
 var definitionKeys = map[string]map[string]bool{
 	"esp":   {"Type": true, "Label": true, "Format": true, "SizeMinBytes": true, "SizeMaxBytes": true},
 	"store": {"Type": true, "Label": true, "SizeMinBytes": true, "SizeMaxBytes": true},

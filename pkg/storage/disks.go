@@ -13,8 +13,7 @@ import (
 	"strings"
 )
 
-// Host finds the node's disks through sysfs, the udev database and /dev. Tests point the roots
-// at fixture trees.
+// Host finds the node's disks through sysfs, the udev database and /dev.
 type Host struct {
 	SysRoot  string // /sys
 	UdevRoot string // /run/udev/data
@@ -167,9 +166,8 @@ func (h Host) disk(name string) (BlockDisk, error) {
 	return BlockDisk{Name: name, Device: "/dev/" + name, Identity: id}, nil
 }
 
-// ErrNoDisk is what a Resolve error matches when no disk matches the reference, as when a
-// selector is mistyped or the disk it names is not plugged in. Several matching disks, a selector
-// this version does not know and a failure to list the disks do not match it.
+// ErrNoDisk matches a Resolve error when no disk fits the reference, not when several do or the
+// disks cannot be listed.
 var ErrNoDisk = errors.New("no disk matches the reference")
 
 // noDisk is a Resolve error that matches ErrNoDisk and keeps its own message.

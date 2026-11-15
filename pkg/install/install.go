@@ -23,8 +23,7 @@ import (
 	"github.com/trevex/chalkos/pkg/tool"
 )
 
-// Installer holds what installing works on; tests point it at temporary directories and a
-// fake runner.
+// Installer holds the tools and paths an install uses.
 type Installer struct {
 	Run  tool.Runner
 	Host storage.Host
@@ -48,7 +47,7 @@ type Installer struct {
 	// OpenPartition opens a partition of the target disk for its store slots.
 	OpenPartition func(p gpt.Partition, write bool) (storeslot.PartitionFile, error)
 	// Change, when set, is called before each change to the target disk, its ESP, STATE and the
-	// firmware's boot entries; tests make it fail to stop an install at each of them.
+	// firmware's boot entries; its error stops the install there.
 	Change func(what string) error
 	Now    func() time.Time
 }
@@ -130,11 +129,10 @@ func (i *Installer) InPlace(ctx context.Context, req Request, rootHash []byte) e
 	return i.markInstalled()
 }
 
-// installOn runs the steps both flows share on disk, which holds the node's image: STATE, the
-// node's volumes, the fallback key and the config slot of the image whose store has the root
-// hash, with the identity. defs are the image's repart definitions of the system region. The
-// config is checked already: in place by the running image, which is the one that boots; from the
-// installer by the image's checker, run on the store written to slot A.
+// installOn runs the steps both flows share on disk: STATE, the node's volumes, the fallback key
+// and the config slot of the image of rootHash, with the identity. defs are the image's repart
+// definitions of the system region. The config is checked already: in place by the running
+// image, from the installer by the image's checker on slot A's store.
 func (i *Installer) installOn(ctx context.Context, disk storage.BlockDisk, defs map[string]string, req Request, rootHash []byte) error {
 	state, err := i.openState(ctx, disk, defs, req.Section.Encryption)
 	if err != nil {
@@ -178,11 +176,10 @@ func (i *Installer) enrollFallback(ctx context.Context, st *node.Storage, disk s
 	return st.Enroll(ctx, devices, req.FallbackSecret)
 }
 
-// encryptedDevices lists the LUKS devices that get the fallback keyslot: STATE and every
-// encrypted volume, STATE first and then as EncryptedVolumes orders them. A volume of the system
-// disk is found in the disk's partition table: udev's links to the boot disk's partitions do not
-// lead to an installer's target, and a PARTUUID may also be on another disk the node was
-// installed on before.
+// encryptedDevices lists the LUKS devices that get the fallback keyslot: STATE first, then the
+// encrypted volumes as EncryptedVolumes orders them. A system disk volume is found in the disk's
+// partition table, as udev's boot disk links do not lead to an installer's target and a PARTUUID
+// may also be on a disk the node was installed on before.
 func (i *Installer) encryptedDevices(ctx context.Context, disk storage.BlockDisk, section storage.Section, pins storage.Pins, state string) ([]node.EncryptedVolume, error) {
 	table, err := i.readTable(ctx, disk.Device)
 	if err != nil {

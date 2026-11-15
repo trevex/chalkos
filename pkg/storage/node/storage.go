@@ -19,7 +19,7 @@ import (
 	"github.com/trevex/chalkos/pkg/tool"
 )
 
-// Storage holds what the storage setup works on; tests point the paths at temporary directories.
+// Storage holds what the storage setup works on.
 type Storage struct {
 	Run  tool.Runner
 	Host storage.Host

@@ -30,8 +30,7 @@ type Writer struct {
 	// LockWait is how long a read or change of the partition table waits for the disk's lock
 	// while another program holds it; 30 seconds when zero.
 	LockWait time.Duration
-	// Change, when set, is called before each change to the disk; tests make it fail to stop a
-	// write at each of them.
+	// Change, when set, is called before each change to the disk; its error stops the write there.
 	Change func(what string) error
 }
 
@@ -246,13 +245,10 @@ type Skipper interface {
 	Skip(n int64) error
 }
 
-// Skip receives the store and its hash tree that the stream holds for a slot that holds them
-// already, and checks their SHA-256 all the same: every part of an image is checked. A Skipper
-// passes over them without reading them instead: the slot holds them already, as Holds found by
-// reading its hash tree and verifying its store against the root hash.
+// Skip consumes the store and hash tree the stream holds for a slot that holds them already,
+// passing over them when the stream is a Skipper, since Holds verified the slot's copies against
+// the root hash, and checking their SHA-256 otherwise.
 func Skip(h Image, stream io.Reader) error {
-	// What the stream would carry need not be read: Holds verified the slot's store and hash tree
-	// against the header's root hash and sizes, and the slot keeps them.
 	if s, ok := stream.(Skipper); ok {
 		if err := s.Skip(h.Store.Size + h.Verity.Size); err != nil {
 			return fmt.Errorf("pass over the store and hash tree: %w", err)

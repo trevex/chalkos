@@ -15,9 +15,8 @@ import (
 	"github.com/trevex/chalkos/pkg/tool"
 )
 
-// The facts chalkos-storage reports for the storage kinds' rules, which read the node's disks and
-// keyslots: the documents and the recorded section say what the config changes, these facts what
-// the machine has.
+// The facts chalkos-storage reports to the storage rules about the machine's disks and keyslots;
+// the documents and the recorded section say what the config changes.
 const (
 	FactDisks    = "disks"
 	FactFallback = "fallback"

@@ -17,30 +17,11 @@ import (
 	"github.com/trevex/chalkos/pkg/upgrade"
 )
 
-// FromParts installs the node onto the target disk from the node's image's parts. Each step finds
-// what an earlier, interrupted attempt did and continues from there:
-//
-//  1. Classify the target: an empty disk, or any with WipeDisk, is wiped and laid out anew; one
-//     that holds what an earlier attempt left is continued, without the boot loader that attempt
-//     may have written or BootNext; anything else is refused.
-//  2. Lay out the system region with one systemd-repart run of the image's definitions: the ESP,
-//     slot A, slot B as _empty, and STATE.
-//  3. Write slot A with the slot writer an upgrade uses: retired, written, verified from the
-//     disk, and activated with the UUIDs derived from the root hash and labels naming it.
-//  4. Write the UKI to the ESP once it passed the upgrade's checks, then receive and check the
-//     boot loader.
-//  5. Mount slot A's store read-only through dm-verity and have the image's own checker check the
-//     node's config with Check, as an upgrade has the image it writes check its config. The
-//     identity the checker gives must have the storage section the target was laid out by.
-//  6. Open STATE, apply the storage section, enroll the fallback key and write the identity and
-//     the config slot the checker passed.
-//  7. Write the boot loader, add the UEFI boot entry and boot the target next, and write the
-//     installed marker last.
-//
-// Until the boot loader is written, firmware finds nothing to boot on the target, so an
-// interrupted install never boots a node half installed. A config the image's checker refuses
-// leaves the target so, with nothing of the node on STATE: an install of the image with config
-// it accepts continues on the disk.
+// FromParts installs the node onto the target disk from the node's image's parts, continuing
+// where an earlier, interrupted attempt stopped. Until the boot loader is written, firmware finds
+// nothing to boot on the target, so an interrupted install never boots a node half installed. A
+// config the image's checker refuses leaves the target so, with nothing of the node on STATE; an
+// install of the image with config it accepts continues on the disk.
 func (i *Installer) FromParts(ctx context.Context, req PartsRequest) error {
 	if err := req.validate(); err != nil {
 		return err
@@ -152,13 +133,11 @@ func (i *Installer) fromParts(ctx context.Context, target storage.BlockDisk, l l
 	return i.markInstalled()
 }
 
-// checkConfig has the image check the node's config: it mounts the store slot A holds through
-// dm-verity, with system, the image's NixOS system its UKI boots, and passes it to req.Check. The
-// identity the checker gives must have the storage section the target was laid out by: the
-// installer translated the config with its own code to lay the target out before the image could
-// check it, and the image boots with what its own code makes of the config. Every refusal says
-// what it leaves of the target: nothing boots it. An installer built with the image may lay the
-// target out otherwise than this one, and refuse to continue on it without --wipe-disk.
+// checkConfig mounts slot A's store through dm-verity and has the image's checker check the
+// node's config with req.Check. The checker's identity must give the storage section the target
+// was laid out by, as the installer laid it out with its own code before the image could check
+// the config. Every refusal says that nothing boots the target; an installer built with the image
+// may lay the target out otherwise and need --wipe-disk.
 func (i *Installer) checkConfig(ctx context.Context, slot storeslot.Slot, system string, req PartsRequest) (Checked, error) {
 	const continues = "the target disk boots nothing, and an install of the image continues on it"
 	var checked Checked

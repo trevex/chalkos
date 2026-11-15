@@ -1,7 +1,6 @@
-// Package hostops mounts file systems, opens LUKS and dm-verity volumes and probes devices for
-// what they hold, the host operations the installer, an upgrade and the storage setup share. Ops
-// is the seam tests replace with a fake that keeps the mounts and volumes in maps; Tools runs the
-// tools, and is the one place their command lines are written.
+// Package hostops mounts file systems, opens LUKS and dm-verity volumes and probes devices, for
+// the installer, an upgrade and the storage setup. Tools is the only place their command lines are
+// written.
 package hostops
 
 import (

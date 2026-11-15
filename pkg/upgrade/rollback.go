@@ -15,12 +15,11 @@ import (
 	"github.com/trevex/chalkos/pkg/uki"
 )
 
-// Previous is the entry of the image a rollback boots: of the image's UKIs whose names give a
-// generation below the booted entry's, the highest whose tries are not used up and which boots
-// another store than the running one. An upgrade removes such a UKI before it writes the inactive
-// slot, so while it is on the ESP the slot still holds its store; Rollback checks the slot all the
-// same. false without one, as after an install or a fallback, and when the booted entry's name
-// gives no generation.
+// Previous is the entry a rollback boots: of the image's UKIs below the booted entry's generation,
+// the highest whose tries are not used up and that boots another store than the running one. An
+// upgrade removes such a UKI before it writes the inactive slot, so the slot still holds its
+// store; Rollback checks all the same. It is false without one, as after an install or a fallback,
+// and when the booted entry's name gives no generation.
 func Previous(entries []esp.Entry, imageID string, booted esp.Entry, running []byte) (esp.Entry, bool) {
 	top := esp.EntryGeneration(booted.ID, imageID)
 	var prev esp.Entry
@@ -37,29 +36,21 @@ func Previous(entries []esp.Entry, imageID string, booted esp.Entry, running []b
 	return prev, generation > 0
 }
 
-// Rollback makes the image Previous names, whose store has the root hash, boot next again. Nothing
-// is written to the inactive slot, which must still hold the store. The image's UKI is checked as
-// an upgrade checks a new one, then renamed to the image's next generation. How the node falls
-// back depends on whether the running image's boot was found healthy:
-//   - It was: the name carries the tries the UKI asks for, so systemd-boot counts the image's
-//     boots and falls back to the running image should they fail, as after an upgrade.
-//   - It was not, as when the upgrade that replaced the image is the one to leave: the name
-//     carries no tries. The image's boot was found healthy before and it boots with the config
-//     slot it last ran with, so it stays the node's known-good entry; a counted one would leave
-//     only entries whose boots were never found healthy once its tries were used up.
+// Rollback makes the image Previous names, by its root hash, boot next again; the inactive slot
+// must still hold its store. It checks the UKI as an upgrade checks a new one and renames it to
+// the image's next generation. While the running image's boot was found healthy, the name carries
+// the UKI's tries, so systemd-boot falls back to the running image should they fail. Before that,
+// as when leaving the upgrade that replaced the image, it carries none: the image, found healthy
+// before, booting with the config slot it last ran, stays the known-good entry, where a counted
+// one could leave only entries never found healthy.
 //
-// The rename is the only change, so until it the running image boots next; a rollback stopped
-// before it changed nothing, and one asked for again after it finds the image staged. The caller
+// The rename is the only change, so a rollback stopped before it changed nothing. The caller
 // keeps Install from running meanwhile, as Install retires the slot. last is the root hash of the
-// image the caller's record names as the last rollback's, nil without one. record, when set, is
-// called once every check passed, just before the rename, and when the image boots next already;
-// its error stops the rollback, so a refused one leaves what record writes as it was.
-//   - A node that runs the image answers AlreadyInstalled, and one that boots it next already
-//     AlreadyStaged, so a rollback asked for twice happens once. A staged entry is the rollback's
-//     when its name carries no tries, as a rollback from a boot not found healthy stages it, or
-//     when last names its image; one with tries is otherwise an upgrade's.
-//   - Another image staged to boot next replaced the image before, as an upgrade's retirement
-//     removed its UKI; Rollback refuses, also when the upgrade staged the image asked for.
+// last rollback's image as the caller recorded it, nil without one. record, when set, is called
+// once every check passed, just before the rename, or when the image boots next already; its
+// error stops the rollback. A node that runs the image answers AlreadyInstalled; one that boots it
+// next already, from an entry without tries or of last, AlreadyStaged. Any other staged entry,
+// an upgrade's even of this image, replaced the image before, and Rollback refuses.
 func (n *Node) Rollback(ctx context.Context, rootHash, last []byte, record func() error) (Result, error) {
 	if record == nil {
 		record = func() error { return nil }
@@ -139,11 +130,10 @@ func (n *Node) Rollback(ctx context.Context, rootHash, last []byte, record func(
 	return Result{Entry: name, Active: true}, nil
 }
 
-// checkKeptUKI checks the UKI at path of the image a rollback or an activation boots as CheckUKI
-// checks an upgrade's, against the node's image ID, platform and architecture and the image's
-// root hash, and returns the tries it asks for. Firmware's db and dbx may have changed since the
-// UKI was installed, so its signature is checked again. A UKI the check refuses is a RefusalError;
-// a failure to read the UKI or the firmware's variables is not.
+// checkKeptUKI checks the UKI at path, of the image a rollback or an activation boots, as CheckUKI
+// checks an upgrade's, and returns the tries it asks for. db and dbx may have changed since the
+// install, so the signature is checked again. A refusal is a RefusalError; a failure to read the
+// UKI or the firmware's variables is not.
 func (n *Node) checkKeptUKI(path, imageID string, rootHash []byte) (int, error) {
 	f, err := os.Open(path)
 	if err != nil {
@@ -162,10 +152,9 @@ func (n *Node) checkKeptUKI(path, imageID string, rootHash []byte) (int, error) 
 	return tries, err
 }
 
-// KnownGood reports whether the staged entry is the node's known-good image, as a rollback from
-// a boot that was not found healthy stages it: without tries, while the booted entry's are
-// counted. The node falls back to that image, which boots with the config it last ran, until the
-// boot is found healthy.
+// KnownGood reports whether a rollback from a boot not found healthy staged the known-good image:
+// uncounted while the booted entry is counted. The node falls back to it, with the config it last
+// ran, until the boot is found healthy.
 func KnownGood(staged, booted esp.Entry) bool {
 	return staged.TriesLeft < 0 && booted.TriesLeft >= 0
 }

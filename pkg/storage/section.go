@@ -32,11 +32,10 @@ const (
 	FallbackNone        = "none"
 )
 
-// NoFallbackSecret ends the refusal of a config that adds a TPM2-encrypted volume, on a node with
-// a fallback, without the fallback secret the volume is enrolled with. Two refusals end with it:
-// the built-in Volume rule's, in modules/node/kinds/builtin/storage.nix, which an image's checker
-// gives, and chalkd's own checkFallback's. chalkd matches it in the refusal of an upgrade that gave
-// the image the pending config, which is kept without the secret, to say which upgrade carries it.
+// NoFallbackSecret ends the refusal of a new TPM2-encrypted volume sent without the fallback
+// secret, on a node with a fallback: the built-in Volume rule's and chalkd's checkFallback's.
+// chalkd matches it in an upgrade's refusal to say which upgrade carries the pending config, so
+// keep the text stable; modules/node/kinds/builtin/storage.nix repeats it.
 const NoFallbackSecret = "no fallback secret was sent"
 
 // Section is the storage section of a node identity, as the node's config gives it and
@@ -248,12 +247,10 @@ func SafeMountPoint(p string) bool {
 	return true
 }
 
-// Validate checks a section the node did not render itself, as the node's config checks it:
-// names and labels that are safe in paths and unit names, no reserved labels, definition
-// files that stay in their directory, and mount points that are unique and safe in unit files.
-// config checks the Volume documents with ValidName, Reserved and SafeMountPoint before it renders
-// a section from them; Validate holds an identity's section, which chalkd receives or another
-// slot recorded, to the same rules.
+// Validate applies the Volume documents' rules (ValidName, Reserved, SafeMountPoint) to a section
+// the node did not render itself, as chalkd receives one or another slot recorded it: safe names
+// and labels, no reserved labels, definition files inside their directory, and unique, safe mount
+// points.
 func (s Section) Validate() error {
 	var problems []string
 	add := func(format string, args ...any) { problems = append(problems, fmt.Sprintf(format, args...)) }

@@ -7,9 +7,8 @@ import (
 	"strings"
 )
 
-// Change is what a delivered section changes of one volume, as the node makes it: a new volume,
-// a larger one, or a volume mounted elsewhere. Which changes a node accepts is the image's rules'
-// to say; Changes describes those it makes.
+// Change is one volume that the delivered section adds, grows or mounts elsewhere. The image's
+// rules decide which changes are allowed.
 type Change struct {
 	Volume string
 	Reason string
@@ -19,9 +18,8 @@ func (c Change) String() string {
 	return fmt.Sprintf("%s: %s", c.Volume, c.Reason)
 }
 
-// Changes lists what the delivered section adds to the recorded one, by volume name: new volumes,
-// grown sizes and moved mount points. Other differences, such as another format, are no
-// change the node makes; the rules refuse them before.
+// Changes lists the delivered section's changes to the recorded one, by volume name. The rules
+// refuse any other difference first.
 func Changes(recorded, delivered Section) []Change {
 	var changes []Change
 	for _, name := range slices.Sorted(maps.Keys(delivered.Volumes)) {
