@@ -423,8 +423,7 @@ func (p *Plugin) dhcpServers(ctx context.Context) []*routerv1.DHCPServerStatus {
 			s.Error = err.Error()
 			continue
 		}
-		family := strings.TrimPrefix(in.svc.Name, "kea-")
-		args, err := routing.KeaAsk(budget, routing.KeaSocket(filepath.Join(p.RunDir, in.svc.RuntimeDir(in.vrf)), family, in.vrf), "statistic-get-all")
+		args, err := routing.KeaAsk(budget, in.svc.KeaSocket(p.RunDir, in.vrf), "statistic-get-all")
 		var leases map[uint32]routing.KeaLeases
 		if err == nil {
 			leases, err = routing.ParseKeaStatistics(args)

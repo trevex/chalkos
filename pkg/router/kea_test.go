@@ -71,20 +71,6 @@ func TestParseKeaInterfaces(t *testing.T) {
 	}
 }
 
-// The control sockets of the default VRF's server and of a VRF's, as the output kea renders them.
-func TestKeaSocket(t *testing.T) {
-	for _, c := range [][3]string{
-		{"dhcp4", "default", "/run/kea/dhcp4.sock"},
-		{"dhcp4", "guest", "/run/kea/dhcp4-guest.sock"},
-		{"dhcp6", "default", "/run/kea/dhcp6.sock"},
-		{"dhcp6", "guest", "/run/kea/dhcp6-guest.sock"},
-	} {
-		if got := KeaSocket("/run/kea", c[0], c[1]); got != c[2] {
-			t.Errorf("the socket of %s of %s = %s, want %s", c[0], c[1], got, c[2])
-		}
-	}
-}
-
 // Kea 3.2.0's statistic-get-all of a DHCPv6 server of one subnet that leased an address of its
 // pool of 256 and delegated a prefix of its 256 gives the subnet's counts of both, leaving out the
 // counts of the server and of the pools. A count past 64 bits, as of the addresses of a pool of a

@@ -7,23 +7,11 @@ import (
 	"fmt"
 	"math"
 	"net"
-	"path/filepath"
 	"regexp"
 	"strconv"
 
-	"github.com/trevex/chalkos/pkg/router/derive"
 	"github.com/trevex/chalkos/pkg/router/keaconf"
 )
-
-// KeaSocket is the control socket of the server of family, dhcp4 or dhcp6, of the VRF vrf, a name
-// that matched ShortName or default, in the directory dir, /run/kea on a node: <family>.sock for
-// the default VRF's server and <family>-<vrf>.sock for a VRF's, as the output kea renders them.
-func KeaSocket(dir, family, vrf string) string {
-	if vrf == derive.DefaultVRF {
-		return filepath.Join(dir, family+".sock")
-	}
-	return filepath.Join(dir, family+"-"+vrf+".sock")
-}
 
 // keaResult is Kea's answer to a command: result 0 for success, 3 for an empty answer, such as no
 // leases, and others for failures that text explains.

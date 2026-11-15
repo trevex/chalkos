@@ -34,8 +34,7 @@ type keaServer struct {
 	v6  bool
 }
 
-// family is dhcp4 or dhcp6, the server's part of its program's, config's, socket's and lease
-// file's names.
+// family is dhcp4 or dhcp6.
 func (s keaServer) family() string {
 	if s.v6 {
 		return "dhcp6"
@@ -55,21 +54,6 @@ func (s keaServer) svc() services.Service {
 // kea-dhcp6-<vrf>.json for a VRF's DHCPv6 server.
 func (s keaServer) file() string {
 	return s.svc().File(s.vrf)
-}
-
-// socket is the server's control socket, <instance>.sock in its runtime directory.
-func (s keaServer) socket() string {
-	return "/run/" + s.svc().RuntimeDir(s.vrf) + "/" + s.instance() + ".sock"
-}
-
-// instance is the part of the server's control socket's and lease file's names: dhcp4 for the
-// default VRF's DHCPv4 server, dhcp6-<vrf> for a VRF's DHCPv6 server. Kea takes sockets in
-// /run/kea alone and lease files in /var/lib/kea alone, so the servers share both directories.
-func (s keaServer) instance() string {
-	if s.vrf == derive.DefaultVRF {
-		return s.family()
-	}
-	return s.family() + "-" + s.vrf
 }
 
 // keaRetryWait and keaRetries are how often Kea tries again to open the sockets of a link that is
@@ -225,8 +209,8 @@ func keaServerConfig(srv keaServer, links []string, hooks []keaconf.Hook) keacon
 			RetryWaitTime: keaRetryWait,
 			MaxRetries:    keaRetries,
 		},
-		ControlSockets: []keaconf.ControlSocket{{SocketType: "unix", SocketName: srv.socket()}},
-		LeaseDatabase:  &keaconf.LeaseDatabase{Type: "memfile", Persist: true, Name: "/var/lib/kea/" + srv.instance() + ".leases", LFCInterval: 3600},
+		ControlSockets: []keaconf.ControlSocket{{SocketType: "unix", SocketName: srv.svc().KeaSocket("/run", srv.vrf)}},
+		LeaseDatabase:  &keaconf.LeaseDatabase{Type: "memfile", Persist: true, Name: "/var/lib/kea/" + srv.svc().KeaInstance(srv.vrf) + ".leases", LFCInterval: 3600},
 		HooksLibraries: append([]keaconf.Hook{{Library: "libdhcp_lease_cmds.so"}}, hooks...),
 		Loggers:        keaLoggers(srv),
 	}

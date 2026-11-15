@@ -89,3 +89,15 @@ func (s Service) IndexRecord(vrf string) string {
 	}
 	return s.RuntimeDir(vrf) + "/" + s.stem(vrf) + ".ifindex"
 }
+
+// KeaInstance is the stem of a Kea server's control socket and lease file: dhcp4 or dhcp6, with
+// -<vrf> for a VRF's server. Kea takes sockets in /run/kea alone and lease files in /var/lib/kea
+// alone, so the servers share both directories.
+func (s Service) KeaInstance(vrf string) string {
+	return strings.TrimPrefix(s.stem(vrf), "kea-")
+}
+
+// KeaSocket is a Kea server's control socket, with runDir /run on a node.
+func (s Service) KeaSocket(runDir, vrf string) string {
+	return runDir + "/" + s.RuntimeDir(vrf) + "/" + s.KeaInstance(vrf) + ".sock"
+}
