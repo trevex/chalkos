@@ -19,8 +19,6 @@ import (
 
 type nodeActivateFlags struct {
 	node nodeFlags
-	// image is the value of --image: the image whose root hash to activate, as upgrade --image
-	// names it.
 	image string
 }
 
@@ -39,9 +37,8 @@ func (a *app) nodeActivateCommand() *cobra.Command {
 	return cmd
 }
 
-// nodeActivate has the node activate its staged image, the one chalkctl upgrade --until stage
-// staged: the image the inventory names for the node or the one --image names, by its root hash,
-// so a staged image the operator did not expect is refused.
+// nodeActivate makes the node boot its staged image next, naming it by the root hash of the
+// inventory's image or --image's, so the node refuses an unexpected one.
 func (a *app) nodeActivate(ctx context.Context, f nodeActivateFlags, name string) error {
 	if f.image != "" {
 		// The image names the root hash, so the command needs no node's config.
@@ -85,9 +82,8 @@ func (a *app) nodeActivate(ctx context.Context, f nodeActivateFlags, name string
 	return nil
 }
 
-// imageRoot reads the root hash of the image at path, as upgrade --image takes it, and the
-// revision and tag its metadata.json gives it. Opening the image checks its hash tree against the
-// root hash repart reported.
+// imageRoot reads the root hash, revision and tag of the image at path, as upgrade --image takes
+// it. Opening the image checks its hash tree against repart's root hash.
 func imageRoot(ctx context.Context, path string, stderr io.Writer) (root []byte, revision, tag string, err error) {
 	raw, _, err := imageFiles(path)
 	if err != nil {

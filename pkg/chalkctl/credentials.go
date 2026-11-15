@@ -99,9 +99,9 @@ func (a *app) loadSecretCredentials(ctx context.Context, s layer.SecretsFlags) (
 // file.
 const configExpiryWarning = 30 * 24 * time.Hour
 
-// loadCredentials picks the credentials of commands a client file may run: the client file
-// --config names, or the secrets file --secrets names, but not both, which would leave one
-// unread; else the client file $CHALKOSCONFIG names, else ~/.config/chalkos/config.
+// loadCredentials picks the credentials of the commands a client file may run: --config's client
+// file or --secrets's secrets file, not both; else $CHALKOSCONFIG's client file, else
+// ~/.config/chalkos/config.
 func (a *app) loadCredentials(ctx context.Context, s layer.SecretsFlags, config string) (*credentials, error) {
 	switch {
 	case config != "" && s.Path != "":
@@ -206,7 +206,6 @@ func (a *app) clientNew(ctx context.Context, f clientNewFlags) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return err
 	}
-	// The file holds the user's private key.
 	if f.force {
 		err = atomicfile.WriteFile(path, data, 0o600)
 	} else if _, statErr := os.Stat(path); statErr == nil {

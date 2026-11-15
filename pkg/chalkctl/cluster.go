@@ -17,10 +17,8 @@ import (
 	"github.com/trevex/chalkos/pkg/pki"
 )
 
-// cluster is what chalkctl knows of the cluster it operates: its name, the inventory's, which
-// messages call it by, the endpoint its Cluster document names, its nodes and their config, from
-// an inventory. Without one it is partial and nameless: each command names its node and --address
-// reaches it.
+// cluster is the inventory chalkctl operates on, named as the inventory. Without one it is partial
+// and nameless: each command names its node and --address reaches it.
 type cluster struct {
 	name string
 	inv  *inventory.Inventory
@@ -31,9 +29,8 @@ type cluster struct {
 // Partial reports whether the cluster comes without an inventory.
 func (c *cluster) Partial() bool { return c.inv == nil }
 
-// loadCluster reads the inventory --inventory names, or else chalkos.yaml in the current
-// directory, whose images in registries are read under ctx; without either, the cluster is
-// partial.
+// loadCluster reads the inventory --inventory names, or else ./chalkos.yaml; without either the
+// cluster is partial.
 func loadCluster(ctx context.Context, f layer.ClusterFlags) (*cluster, error) {
 	if f.Inventory != "" {
 		return loadInventory(ctx, f.Inventory)
@@ -47,9 +44,8 @@ func loadCluster(ctx context.Context, f layer.ClusterFlags) (*cluster, error) {
 	return &cluster{}, nil
 }
 
-// loadInventory reads an inventory, whose images in registries it reads under ctx, the command's
-// context. Every command refuses to act on an inventory whose nodes a compiled layer refuses,
-// such as nodes that hold different Cluster or Flannel specs.
+// loadInventory reads and checks the inventory at path. A compiled layer may refuse its nodes, such
+// as nodes with different Cluster or Flannel specs.
 func loadInventory(ctx context.Context, path string) (*cluster, error) {
 	c, err := readInventory(ctx, path)
 	if err != nil {
@@ -61,8 +57,8 @@ func loadInventory(ctx context.Context, path string) (*cluster, error) {
 	return c, nil
 }
 
-// readInventory reads an inventory, whose images in registries it reads under ctx, with each
-// node's documents filtered by every compiled layer, and leaves it unchecked.
+// readInventory reads the inventory at path, each node's documents filtered by the compiled
+// layers, without checking it.
 func readInventory(ctx context.Context, path string) (*cluster, error) {
 	var filters []inventory.Filter
 	for _, p := range compiled[layer.Inventory]() {

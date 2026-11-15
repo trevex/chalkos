@@ -116,9 +116,8 @@ func nodeContract(ctx context.Context, conn *client.Conn, name string) (contract
 	return c, nil
 }
 
-// delivery is a node's config as chalkctl delivers it, checked against the image it is for, with
-// the identity it translates to there and its documents with their defaults, redacted, as the
-// image's rules see them.
+// delivery is a node's config checked against its image, with the identity it translates to and
+// its redacted documents with defaults, as the image's rules see them.
 type delivery struct {
 	config.Encoded
 	identity  identity.Identity
@@ -128,12 +127,10 @@ type delivery struct {
 	unpinned []string
 }
 
-// deliveryFor is a node's config as chalkctl delivers it for the image the contract describes,
-// checked as the node checks it. The node translates config for the platform its image is built
-// for, so an image of another platform than the node's is refused, rather than checked as one
-// thing and applied as another. The image's variant is not compared: the image's schemas decide
-// which config it takes. A config the checks refuse comes back as a refusal; an image of another
-// platform and a node the inventory lacks are errors of their own, which refuse no config.
+// deliveryFor checks a node's config against the image ct describes, as the node would. An image of
+// another platform than the node's is an error, since the node translates config for its image's
+// platform; the variant is not compared, as the schemas decide. A config the checks refuse is a
+// refusal; a node the inventory lacks is an error.
 func (c *cluster) deliveryFor(name string, ct contract) (delivery, error) {
 	if err := c.samePlatform(name, ct.platform); err != nil {
 		return delivery{}, err
@@ -149,12 +146,8 @@ func (c *cluster) deliveryFor(name string, ct contract) (delivery, error) {
 	return d, nil
 }
 
-// checker is the image the contract describes as chalkctl checks config with it, in the stages
-// the node checks it in: its schemas, the target its facts give on the contract's platform, its
-// change rules, and the validators of the compiled layers, which run in-process on the input the
-// image's programs read. It renders nothing and plans no effects. A validator an extension
-// declares is a program of the image alone, which chalkctl cannot run, so the node checks it at
-// the delivery, as it checks the rules that read facts, which the node alone has.
+// checker checks config as the node would, minus rendering, effects and the validators of
+// extensions, which are image programs only the node can run, as are the rules that read facts.
 func (c contract) checker() (check.Image, error) {
 	set, err := c.image.Rules()
 	if err != nil {
@@ -169,11 +162,9 @@ func (c contract) checker() (check.Image, error) {
 	return check.Image{Schemas: c.image.Schemas, Target: t, ChangeRules: set, Validators: linked}, nil
 }
 
-// checkNodeConfig checks a node's config on the image the contract describes as the node does,
-// in the stages of the contract's checker: its translation, the change rules without the node's
-// config, so the rules of fields that read oldSelf do not run and the rules of kinds see no
-// oldDocuments, and the validators chalkctl links. It returns the config as chalkctl delivers
-// it; a config the checker refuses is a *check.Refusal.
+// checkNodeConfig checks a node's config against the contract as the node would, but without the
+// node's current config: rules of fields that read oldSelf do not run and rules of kinds see no
+// oldDocuments. It returns the config ready to deliver; a refusal is a *check.Refusal.
 func checkNodeConfig(nc *inventory.NodeConfig, c contract) (delivery, error) {
 	img, err := c.checker()
 	if err != nil {
@@ -197,13 +188,9 @@ func checkNodeConfig(nc *inventory.NodeConfig, c contract) (delivery, error) {
 	return delivery{Encoded: e, identity: tr.Identity, documents: docs, unpinned: tr.Documents.UnpinnedImages(c.image.Schemas)}, nil
 }
 
-// checkRules runs the Rules stage of the contract's checker on next, a node's config with its
-// defaults, as the node would: the rules that read no facts, which the node alone has. old is the
-// node's config as it serves it, or empty where chalkctl does not have it, as for validate;
-// without it, the rules of fields that read oldSelf do not run and the rules of kinds see no
-// oldDocuments. old gets the image's defaults, and its documents the image does not accept
-// compare with nothing. node is the inventory's name of the node, which the rules read as
-// node.name.
+// checkRules runs the change rules that read no facts on next against old, the config the node
+// serves (empty when unknown, as for validate, so oldSelf rules do not run). old gets the image's
+// defaults; node is the inventory's name, which rules read as node.name.
 func checkRules(c contract, next, old config.Redacted, node string) error {
 	img, err := c.checker()
 	if err != nil {

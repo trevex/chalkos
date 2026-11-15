@@ -37,11 +37,8 @@ type diskImage struct {
 	path string
 }
 
-// openImage reads an image for an install, with its boot loader, or an upgrade: a raw image with
-// repart-output.json next to it, or the directory nix build makes. Its contract comes from that
-// directory, which chalkctl checks the inventory's config against before any node is drained;
-// the node checks the config it gets, or without one its own, against the image's own schemas.
-// Warnings go to stderr.
+// openImage reads a raw image with repart-output.json beside it, or nix build's directory, with its
+// contract, for install (with bootLoader) or upgrade. Warnings go to stderr.
 func openImage(ctx context.Context, path string, bootLoader bool, stderr io.Writer) (_ *diskImage, err error) {
 	raw, definitions, err := imageFiles(path)
 	if err != nil {
@@ -126,10 +123,8 @@ func (img *diskImage) Close() error {
 	return img.Parts.Close()
 }
 
-// ociImage is an install's or an upgrade's image in a registry, which the node pulls: the header
-// that its artifact's config and its store, hash-tree, UKI and, with bootLoader, boot-loader
-// layers give, as openImage gives it of a directory, and the contract of its contract layer,
-// which chalkctl checks the inventory's config against.
+// ociImage is openImage for an image in a registry, which the node pulls: the header comes from its
+// artifact's config and layers, the contract from its contract layer.
 func ociImage(nc *inventory.NodeConfig, bootLoader bool) (*diskImage, error) {
 	a, err := nc.Artifact()
 	if err != nil {
@@ -236,9 +231,8 @@ func sendChunks(r io.Reader, send func(*nodev1.ImageChunk) error) error {
 	}
 }
 
-// provenance is the revision and tag the metadata.json in dir names for the image of the root
-// hash. Ignoring metadata that is there draws a warning on stderr, as the operator likely meant
-// it to count; an image without metadata draws none.
+// provenance is the revision and tag dir's metadata.json names for the image of the root hash.
+// Metadata that is there but ignored draws a warning on stderr; no metadata draws none.
 func provenance(dir string, rootHash []byte, stderr io.Writer) (revision, tag string) {
 	revision, tag, err := image.Provenance(dir, rootHash)
 	if err != nil {

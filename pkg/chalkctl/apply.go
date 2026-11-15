@@ -101,9 +101,8 @@ func (a *app) applyConfigCommand(short bool) *cobra.Command {
 			f.rollout[p.Name()] = l.RolloutFlags(fs)
 		}
 	}
-	// A trial applies config alone to the running image and changes it; a dry run checks config
-	// alone and prints the diff. --no-confirm and --ignore-unit go with --try, and --force with a
-	// payload flag, but not the other way round, which applyConfig checks.
+	// A trial delivers config alone to the running image and changes it; a dry run checks config
+	// alone. applyConfig checks the flags that need another: --no-confirm, --ignore-unit, --force.
 	cmd.MarkFlagsMutuallyExclusive("dry-run", "diff")
 	for _, other := range append([]string{"staged", "diff", "dry-run"}, payloadNames...) {
 		cmd.MarkFlagsMutuallyExclusive("try", other)
@@ -159,9 +158,8 @@ func (a *app) applyConfig(ctx context.Context, f applyConfigFlags, pos []string)
 	return a.deliverToNodes(ctx, f, pos)
 }
 
-// dryRunConfig has each node of names check the inventory's config as its delivery, one after
-// the other, and prints what each delivery would change. A node that refuses its config does not
-// stop the others.
+// dryRunConfig has each node of names check the inventory's config as its delivery, in turn, and
+// prints what each delivery would change. A refusing node does not stop the others.
 func (a *app) dryRunConfig(ctx context.Context, f applyConfigFlags, names []string) error {
 	s, err := a.reach(ctx, f.node, soleNode(names), false)
 	if err != nil {
@@ -198,9 +196,8 @@ func (a *app) dryRunConfig(ctx context.Context, f applyConfigFlags, names []stri
 	return nil
 }
 
-// refusesConfig reports whether err refuses a node's config, as a layer.NodeError says: a dry run counts
-// it apart from a failure before the config is checked, as of a node missing from the inventory,
-// unreachable or on trial, which refuses nothing; other commands print it as any error.
+// refusesConfig reports whether err refuses a node's config, which a dry run counts apart from
+// other failures, such as a node missing from the inventory, unreachable or on trial.
 func refusesConfig(err error) bool {
 	for e, ok := errors.AsType[*layer.NodeError](err); ok; e, ok = errors.AsType[*layer.NodeError](e.Err) {
 		if e.Refused {
@@ -210,9 +207,8 @@ func refusesConfig(err error) bool {
 	return false
 }
 
-// refusedByNode reports whether the node's answer to a dry run refuses the config, as it would
-// refuse the delivery, rather than failing for the node's own reasons, such as an upgrade that
-// runs or a fault of its own.
+// refusedByNode reports whether the node's answer to a dry run refuses the config, rather than
+// failing for the node's own reasons, such as a running upgrade.
 func refusedByNode(err error) bool {
 	switch connect.CodeOf(err) {
 	case connect.CodeInvalidArgument, connect.CodeFailedPrecondition:
@@ -236,9 +232,8 @@ func (a *app) deliverConfig(ctx context.Context, f applyConfigFlags, t *target) 
 		return err
 	}
 	defer conn.Close()
-	// The staged image is the node's image in the inventory, as after an upgrade without a reboot;
-	// the node checks the config against the staged image itself again, and without one holds it
-	// pending, unchecked, for the next upgrade's image to check.
+	// The staged image is the inventory's image for the node; the node checks the config against it
+	// again, and without one holds the config pending for the next upgrade's image.
 	var c contract
 	if f.staged {
 		c, err = t.cluster.imageContractOf(t.name)
@@ -273,9 +268,8 @@ func (a *app) deliverConfig(ctx context.Context, f applyConfigFlags, t *target) 
 			fmt.Fprintf(a.stderr, "chalkctl: warning: %s: %s\n", t.name, w)
 		}
 	}
-	// Without a staged image, --staged holds the config pending for the next upgrade, which takes
-	// it in place of the running config: the diff compares with the pending config, or else with
-	// the running one.
+	// Without a staged image, --staged holds the config pending for the next upgrade, so the diff
+	// compares with the pending config, or else the running one.
 	pending := f.staged && st.Msg.Boot.GetStaged() == nil
 	nodeDocs, err := slotConfig(ctx, conn, f.staged)
 	if err == nil && pending && nodeDocs.Len() == 0 {
@@ -292,9 +286,8 @@ func (a *app) deliverConfig(ctx context.Context, f applyConfigFlags, t *target) 
 	if f.diff {
 		return nil
 	}
-	// The rules that compare the config with the node's are checked against the config the node
-	// serves before anything is sent, as the node checks them on delivery: against the running
-	// slot's, also for the staged image, whose slot the diff compares with.
+	// The change rules are checked against the running slot's config before anything is sent, as
+	// the node checks them on delivery, also for the staged image.
 	baseline := nodeDocs
 	if f.staged {
 		if baseline, err = slotConfig(ctx, conn, false); err != nil {
@@ -304,11 +297,9 @@ func (a *app) deliverConfig(ctx context.Context, f applyConfigFlags, t *target) 
 	if err := checkRules(c, d.documents, baseline, t.name); err != nil {
 		return &layer.NodeError{Node: t.name, Err: err, Refused: true}
 	}
-	// A pending config is kept without the fallback secret: the upgrade that adds an encrypted
-	// volume carries it. A staged image that goes between the Status read and the delivery, as an
-	// upgrade that fails retires it, has the node hold the config pending, which its answer names;
-	// a fallback secret sent for that image is refused by holdPending, which says no image is
-	// staged, and the delivery run again holds the config without one.
+	// A pending config carries no fallback secret; the upgrade that adds an encrypted volume brings
+	// it. If the staged image is gone by now, the node holds the config pending and refuses the
+	// secret; a rerun succeeds.
 	var fallback string
 	if !pending {
 		if fallback, err = a.fallbackOf(ctx, st.Msg, t, d.identity.Storage, f.passwordFile, ""); err != nil {
@@ -389,14 +380,11 @@ func (a *app) deliverConfig(ctx context.Context, f applyConfigFlags, t *target) 
 	return a.confirmTrial(ctx, t, d.Version, st.Msg.ConfigVersion, deadline, false)
 }
 
-// failedTrial returns err, which failed the delivery of config version on trial, which would
-// replace config previous until deadline. A delivery the node refused after it changed the config
-// leaves the config on trial until its deadline, as err says; chalkctl then does not confirm a
-// config that failed to apply, and names the commands that end the trial. The node's status is
-// read on conn, or on a new connection when conn fails. An answer that did not come, as when the
-// config cut the connection off or the node answered after the deadline, may be of a config the
-// node applied: chalkctl does not confirm it either, and waits for the node to end the trial, as
-// after a confirmation that did not go through.
+// failedTrial explains a failed delivery of config version on trial, which replaces previous until
+// deadline. chalkctl never confirms such a config: if the node still holds the trial, the error
+// names the commands that end it; if no answer came, chalkctl waits for the node to roll back,
+// since the node may have applied it. The status is read on conn, or on a new connection when conn
+// fails.
 func (a *app) failedTrial(ctx context.Context, conn *client.Conn, t *target, version, previous string, deadline time.Time, err error) error {
 	switch {
 	case ctx.Err() != nil:
@@ -419,9 +407,8 @@ func (a *app) failedTrial(ctx context.Context, conn *client.Conn, t *target, ver
 	return err
 }
 
-// writeSecond prints what a delivery of config to the running image of the node called name, which
-// resp answers, wrote besides, or with when, such as once a trial is confirmed, will write: the
-// staged image's slot, which that image checked, or the pending config.
+// writeSecond prints the staged or pending config a delivery to name's running image also wrote, or
+// with when, such as " once the trial is confirmed", will write.
 func writeSecond(w io.Writer, name string, resp *nodev1.ApplyConfigResponse, when string) {
 	if s := resp.GetStaged(); s != nil {
 		fmt.Fprintf(w, "%s boots config %s with its staged image too%s\n", name, s.GetVersion(), when)
@@ -431,12 +418,9 @@ func writeSecond(w io.Writer, name string, resp *nodev1.ApplyConfigResponse, whe
 	}
 }
 
-// writePlan prints the plan of a dry run of the node called name: the config it would replace and
-// run, then the outputs, the effects with their actions and what fired them, and the storage
-// changes, each section "none" when it has nothing. The plan of a dry run for the staged image
-// has its config and the storage changes alone: the image renders its outputs and takes no
-// effects until it boots. The plan of one for the running image ends with the staged image's
-// config, which that image checked, or the pending config the delivery would replace.
+// writePlan prints a dry run's plan: the config versions, outputs, effects with their actions and
+// causes, and storage changes, each "none" when empty. A plan for the staged image has no outputs
+// or effects; one for the running image ends with the staged or pending config.
 func writePlan(w io.Writer, name string, resp *nodev1.ApplyConfigResponse, staged bool) {
 	p := resp.GetPlan()
 	which := "config"
@@ -522,9 +506,8 @@ func (a *app) rollbackConfig(ctx context.Context, f rollbackConfigFlags, name st
 		return layer.Named(t.name, err)
 	}
 	version, replaced := st.Msg.PreviousConfigVersion, st.Msg.ConfigVersion
-	// During a trial the node rolls back to the config from before it alone. A node that runs that
-	// config already, as a rollback at the deadline that failed after it wrote the config leaves
-	// it, delivers it again to finish that rollback, and the config on trial stays its previous.
+	// During a trial, roll back to the config from before it; a node that runs it already, after a
+	// failed rollback at the deadline, gets it again to finish that rollback.
 	tr := st.Msg.Trial
 	if tr != nil {
 		version = tr.PreviousVersion
@@ -532,10 +515,8 @@ func (a *app) rollbackConfig(ctx context.Context, f rollbackConfigFlags, name st
 			replaced = tr.Version
 		}
 	}
-	// A trial whose record the node cannot read names no config from before it, so the rollback
-	// goes to the previous config, which a rollback at the trial's deadline may have made the config
-	// on trial; a second rollback then undoes it. A node that keeps no previous config delivers the
-	// config it runs again, which removes the record as well.
+	// An unreadable trial record names no earlier config: fall back to the previous config, else
+	// redeliver the running one, which removes the record.
 	if e := st.Msg.TrialError; e != "" {
 		if version != "" {
 			fmt.Fprintf(a.stderr, "chalkctl: warning: %s: the record of a config's trial cannot be read: %s; the rollback delivers config %s, the node's previous config, which is the config on trial if a rollback at the trial's deadline replaced it already; if it is, a second config rollback undoes it\n", t.name, e, version)

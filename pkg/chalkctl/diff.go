@@ -35,10 +35,8 @@ type fieldChange struct {
 // apiVersion, kind and name.
 type configDiff []docChange
 
-// diffConfig compares node, a slot's documents as GetConfig returns them, with inventory, the
-// inventory's for the node or another slot's, both as delivered: no defaults are filled in, so a
-// field one spells out and the other leaves to its default differs. Both are redacted, so secret
-// values compare by their hashes and show as changed alone.
+// diffConfig compares node, a slot's documents, with inventory, both as delivered: without
+// defaults, so an explicit default counts as a change, and redacted, so secrets compare by hash.
 func diffConfig(node, inventory config.Redacted) configDiff {
 	was := map[config.ID]config.Document{}
 	for _, d := range node.Documents() {
@@ -117,9 +115,8 @@ func (c configDiff) write(w io.Writer) {
 	c.writeRemoved(w, "on the node, not in the inventory")
 }
 
-// writeRemoved writes the whole diff, a line per document and one per changed field, the path with
-// the old and the new value, or that a secret field changed. A removed document's line says where
-// it is and is not, as removed gives it.
+// writeRemoved writes the diff, a line per document and per changed field with old and new value,
+// or that a secret changed; removed says where a removed document is and is not.
 func (c configDiff) writeRemoved(w io.Writer, removed string) {
 	for _, d := range c {
 		switch d.op {
