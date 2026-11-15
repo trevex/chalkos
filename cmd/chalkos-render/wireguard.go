@@ -22,25 +22,12 @@ func withWireGuardUnits(d derive.Model, byKind, docs map[string]any) (map[string
 	if err != nil || len(wgs) == 0 {
 		return docs, err
 	}
-	existing, _ := byKind["NetDev"].([]any)
 	for _, w := range wgs {
-		unit := derive.WireGuardUnitPrefix + w.Name
-		for _, e := range existing {
-			doc, _ := e.(map[string]any)
-			name, _ := derive.DocumentName("NetDev", doc)
-			if name == unit {
-				return nil, refusals.Errorf("NetDev", name, "metadata.name", "NetDev %s takes the name of WireGuard %s's unit; rename the document", name, w.Name)
-			}
-			spec, _ := doc["spec"].(map[string]any)
-			for si, s := range derive.OneOrMany(spec["netDev"]) {
-				section, _ := s.(map[string]any)
-				for ni, device := range derive.OneOrMany(section["name"]) {
-					if device == w.Name {
-						at := derive.ItemPath(derive.ItemPath("spec.netDev", spec["netDev"], si)+".name", section["name"], ni)
-						return nil, refusals.Errorf("NetDev", name, at, "NetDev %s creates the device %s, the interface of WireGuard %s; give the device another name", name, w.Name, w.Name)
-					}
-				}
-			}
+		if unit := derive.WireGuardUnitPrefix + w.Name; documentNamed(byKind, "NetDev", unit) {
+			return nil, refusals.Errorf("NetDev", unit, "metadata.name", "NetDev %s takes the name of WireGuard %s's unit; rename the document", unit, w.Name)
+		}
+		if name, _, at, ok := netDevCreating(byKind, func(device string) bool { return device == w.Name }); ok {
+			return nil, refusals.Errorf("NetDev", name, at, "NetDev %s creates the device %s, the interface of WireGuard %s; give the device another name", name, w.Name, w.Name)
 		}
 	}
 	netdevs, _ := docs["NetDev"].([]any)

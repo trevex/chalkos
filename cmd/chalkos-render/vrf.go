@@ -55,20 +55,10 @@ func withVRFUnits(vrfs []derive.Named[derive.VRFSpec], networks map[string]strin
 			if v, ok := strings.CutPrefix(name, derive.VRFUnitPrefix); ok && isVRF(v) {
 				return nil, refusals.Errorf(kind, name, "metadata.name", "%s %s takes the name of VRF %s's units; rename the document", kind, name, v)
 			}
-			if kind != "NetDev" {
-				continue
-			}
-			spec, _ := doc["spec"].(map[string]any)
-			for si, s := range derive.OneOrMany(spec["netDev"]) {
-				section, _ := s.(map[string]any)
-				for ni, n := range derive.OneOrMany(section["name"]) {
-					if device, _ := n.(string); isVRF(device) {
-						at := derive.ItemPath(derive.ItemPath("spec.netDev", spec["netDev"], si)+".name", section["name"], ni)
-						return nil, refusals.Errorf("NetDev", name, at, "NetDev %s creates the device %s, which VRF %s creates; rename the VRF or the NetDev", name, device, device)
-					}
-				}
-			}
 		}
+	}
+	if name, device, at, ok := netDevCreating(byKind, isVRF); ok {
+		return nil, refusals.Errorf("NetDev", name, at, "NetDev %s creates the device %s, which VRF %s creates; rename the VRF or the NetDev", name, device, device)
 	}
 	netdevs, _ := byKind["NetDev"].([]any)
 	docs, _ := byKind["Network"].([]any)
@@ -122,27 +112,11 @@ func withNAT64Units(d derive.Model, byKind, docs map[string]any) (map[string]any
 		if !derive.PlainInterface.MatchString(link) {
 			return nil, derive.InternalErrorf("NAT64 %s: its link %s is no interface name of 15 characters", n.Name, link)
 		}
-		existing, _ := byKind["Network"].([]any)
-		for _, d := range existing {
-			doc, _ := d.(map[string]any)
-			if name, _ := derive.DocumentName("Network", doc); name == unit {
-				return nil, refusals.Errorf("Network", name, "metadata.name", "Network %s takes the name of NAT64 %s's unit; rename the document", name, n.Name)
-			}
+		if documentNamed(byKind, "Network", unit) {
+			return nil, refusals.Errorf("Network", unit, "metadata.name", "Network %s takes the name of NAT64 %s's unit; rename the document", unit, n.Name)
 		}
-		netdevs, _ := byKind["NetDev"].([]any)
-		for _, d := range netdevs {
-			doc, _ := d.(map[string]any)
-			name, _ := derive.DocumentName("NetDev", doc)
-			spec, _ := doc["spec"].(map[string]any)
-			for si, s := range derive.OneOrMany(spec["netDev"]) {
-				section, _ := s.(map[string]any)
-				for ni, device := range derive.OneOrMany(section["name"]) {
-					if device == link {
-						at := derive.ItemPath(derive.ItemPath("spec.netDev", spec["netDev"], si)+".name", section["name"], ni)
-						return nil, refusals.Errorf("NetDev", name, at, "NetDev %s creates the device %s, the link of NAT64 %s; give the device another name", name, link, n.Name)
-					}
-				}
-			}
+		if name, _, at, ok := netDevCreating(byKind, func(device string) bool { return device == link }); ok {
+			return nil, refusals.Errorf("NetDev", name, at, "NetDev %s creates the device %s, the link of NAT64 %s; give the device another name", name, link, n.Name)
 		}
 		units = append(units, derive.Unit{Name: unit, Match: derive.NameMatch{Words: []derive.NameWord{{Glob: link, Text: link}}}, Device: true})
 		networks = append(networks, map[string]any{"metadata": map[string]any{"name": unit}, "spec": map[string]any{
@@ -230,4 +204,34 @@ func withNetworkVRF(doc map[string]any, vrf string) map[string]any {
 	out := maps.Clone(doc)
 	out["spec"] = spec
 	return out
+}
+
+// documentNamed reports whether a document of kind in byKind is named name.
+func documentNamed(byKind map[string]any, kind, name string) bool {
+	docs, _ := byKind[kind].([]any)
+	return slices.ContainsFunc(docs, func(d any) bool {
+		doc, _ := d.(map[string]any)
+		n, _ := derive.DocumentName(kind, doc)
+		return n == name
+	})
+}
+
+// netDevCreating finds a NetDev of byKind that creates a device is reports, by any [NetDev] section
+// or Name= value: the document, the device and the path of its name.
+func netDevCreating(byKind map[string]any, is func(device string) bool) (doc, device, path string, ok bool) {
+	netdevs, _ := byKind["NetDev"].([]any)
+	for _, d := range netdevs {
+		m, _ := d.(map[string]any)
+		name, _ := derive.DocumentName("NetDev", m)
+		spec, _ := m["spec"].(map[string]any)
+		for si, s := range derive.OneOrMany(spec["netDev"]) {
+			section, _ := s.(map[string]any)
+			for ni, n := range derive.OneOrMany(section["name"]) {
+				if device, _ := n.(string); is(device) {
+					return name, device, derive.ItemPath(derive.ItemPath("spec.netDev", spec["netDev"], si)+".name", section["name"], ni), true
+				}
+			}
+		}
+	}
+	return "", "", "", false
 }
