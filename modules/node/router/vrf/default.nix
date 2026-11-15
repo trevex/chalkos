@@ -14,13 +14,12 @@
 let
   kinds = routerLib.kinds ./kinds.nix;
   networkd = config.chalkos.outputs.networkd.dir;
-  # Removes each kernel VRF that no .netdev of Kind=vrf declares with its table, after flushing the
-  # unreachable defaults that networkd put into its table, and each WireGuard device that no .netdev
-  # of Kind=wireguard declares, with its keys and peers. It reloads a running networkd when it
-  # removed a VRF, which creates the VRF anew with its members, and a running chalkos-resolvers,
-  # which restarts the VRF's resolver on the new device. Reloading networkd itself leaves no VRF removed
-  # whatever order a delivery's reloads take; a networkd that does not run, as at boot, reads every
-  # unit when it starts. systemctl and networkctl come from the unit's PATH.
+  # Removes each kernel VRF no .netdev declares with its table, after flushing the unreachable
+  # defaults networkd put in the table, and each WireGuard device no .netdev declares. Having
+  # removed a VRF, it reloads networkd, if running, which creates the VRF anew with its members,
+  # and chalkos-resolvers, which restarts the VRF's resolver on the new device. Reloading networkd
+  # itself leaves no VRF removed whatever order a delivery's reloads take; a networkd that does not
+  # run, as at boot, reads every unit when it starts. systemctl and networkctl come from PATH.
   apply = pkgs.writeShellApplication {
     name = "chalkos-vrf";
     runtimeInputs = [
@@ -125,7 +124,7 @@ in
       before = [ "systemd-networkd.service" ];
       wantedBy = [ "multi-user.target" ];
       unitConfig.DefaultDependencies = false;
-      serviceConfig = {
+      serviceConfig = routerLib.hardened // {
         Type = "oneshot";
         RemainAfterExit = true;
         ExecStart = lib.getExe apply;
@@ -135,17 +134,6 @@ in
           "AF_NETLINK"
           "AF_UNIX"
         ];
-        NoNewPrivileges = true;
-        PrivateDevices = true;
-        PrivateTmp = true;
-        ProtectHome = true;
-        ProtectSystem = "strict";
-        ProtectKernelLogs = true;
-        ProtectControlGroups = true;
-        RestrictNamespaces = true;
-        RestrictRealtime = true;
-        LockPersonality = true;
-        SystemCallArchitectures = "native";
       };
     };
   };
