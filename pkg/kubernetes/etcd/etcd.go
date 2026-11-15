@@ -5,6 +5,7 @@
 package etcd
 
 import (
+	"cmp"
 	"context"
 	"crypto/tls"
 	"errors"
@@ -46,11 +47,11 @@ func member(m *etcdserverpb.Member) Member {
 // Client is an etcd client with the timeouts of chalkos's membership calls.
 type Client struct {
 	*clientv3.Client
-	// StatusTimeout is how long Health, also Remove's, waits for each member's status. Zero or
-	// less means three seconds.
+	// StatusTimeout is how long Health, also Remove's, waits for each member's status. Zero
+	// means three seconds.
 	StatusTimeout time.Duration
 	// RetryInterval is how long Remove waits before it asks again while etcd refuses to change its
-	// members for now. Zero or less means a second.
+	// members for now. Zero means a second.
 	RetryInterval time.Duration
 }
 
@@ -110,10 +111,7 @@ func (cli *Client) status(ctx context.Context, m Member) error {
 	if len(m.ClientURLs) == 0 {
 		return errors.New("not started")
 	}
-	timeout := 3 * time.Second
-	if cli.StatusTimeout > 0 {
-		timeout = cli.StatusTimeout
-	}
+	timeout := cmp.Or(cli.StatusTimeout, 3*time.Second)
 	var err error
 	for _, url := range m.ClientURLs {
 		sctx, cancel := context.WithTimeout(ctx, timeout)
@@ -290,10 +288,7 @@ func (cli *Client) Remove(ctx context.Context, id uint64, force bool) error {
 	// as after it started or joined.
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
-	retry := time.Second
-	if cli.RetryInterval > 0 {
-		retry = cli.RetryInterval
-	}
+	retry := cmp.Or(cli.RetryInterval, time.Second)
 	err = poll.UntilDone(ctx, "", retry, func() error {
 		_, err := cli.MemberRemove(ctx, id)
 		if err != nil && !errors.Is(err, rpctypes.ErrUnhealthy) {

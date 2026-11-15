@@ -476,11 +476,3 @@ func TestVIPReleasedWhenRenewalsFail(t *testing.T) {
 		t.Errorf("%d failed renewals before the release, want retries", failed.Load())
 	}
 }
-
-// An election's zero fields take the defaults.
-func TestElectionDefaults(t *testing.T) {
-	e := &Election{}
-	if e.ttl() != DefaultTTL || e.interval() != DefaultInterval {
-		t.Errorf("defaults %d, %v", e.ttl(), e.interval())
-	}
-}

@@ -3,6 +3,7 @@
 package pki
 
 import (
+	"cmp"
 	"crypto"
 	"crypto/ecdsa"
 	"crypto/elliptic"
@@ -119,11 +120,7 @@ func IssueLeaf(ca CertKey, l Leaf, now time.Time) (CertKey, error) {
 	if !l.Server && !l.Client {
 		return CertKey{}, errors.New("a leaf certificate must allow server or client authentication")
 	}
-	validity := l.Validity
-	if validity == 0 {
-		validity = LeafValidity
-	}
-	template, err := newTemplate(l.CommonName, l.Organization, now, validity)
+	template, err := newTemplate(l.CommonName, l.Organization, now, cmp.Or(l.Validity, LeafValidity))
 	if err != nil {
 		return CertKey{}, err
 	}

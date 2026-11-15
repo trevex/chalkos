@@ -23,7 +23,7 @@ const electionPrefix = "/chalkos/vip"
 // the election stops.
 const cleanupTimeout = 3 * time.Second
 
-// The defaults of an Election's zero fields.
+// The defaults chalkd gives an Election's TTL and Interval.
 const (
 	DefaultTTL      = 10
 	DefaultInterval = 2 * time.Second
@@ -61,10 +61,9 @@ type Election struct {
 	Healthy   func(ctx context.Context) bool
 	Addresses Holder
 	// TTL is the lease's lifetime in seconds: how long the VIPs stay unheld after their holder
-	// failed. Zero means DefaultTTL.
+	// failed.
 	TTL int
-	// Interval is the time between two health checks, and between two announcements. Zero means
-	// DefaultInterval.
+	// Interval is the time between two health checks, and between two announcements.
 	Interval time.Duration
 	// Holding is set while the node holds the VIPs.
 	Holding *atomic.Bool
@@ -97,7 +96,7 @@ func (e *Election) Run(ctx context.Context) error {
 			log.Printf("kubernetes: the VIP election: %v", err)
 			select {
 			case <-ctx.Done():
-			case <-time.After(e.interval()):
+			case <-time.After(e.Interval):
 			}
 		}
 	}
@@ -110,7 +109,7 @@ func (e *Election) waitHealthy(ctx context.Context) bool {
 		select {
 		case <-ctx.Done():
 			return false
-		case <-time.After(e.interval()):
+		case <-time.After(e.Interval):
 		}
 	}
 	return true
@@ -128,8 +127,8 @@ var errLeaseUnrenewed = errors.New("could not renew the lease of the VIPs in tim
 // releases the VIPs before it resigns.
 func (e *Election) lead(ctx context.Context) error {
 	sent := time.Now()
-	gctx, cancel := context.WithTimeout(ctx, time.Duration(e.ttl())*time.Second)
-	grant, err := e.Client.Grant(gctx, int64(e.ttl()))
+	gctx, cancel := context.WithTimeout(ctx, time.Duration(e.TTL)*time.Second)
+	grant, err := e.Client.Grant(gctx, int64(e.TTL))
 	cancel()
 	if err != nil {
 		return err
@@ -190,7 +189,7 @@ func (e *Election) lead(ctx context.Context) error {
 	}
 	e.Holding.Store(true)
 	log.Print("kubernetes: this node holds the VIPs")
-	acquire := time.NewTicker(e.interval())
+	acquire := time.NewTicker(e.Interval)
 	defer acquire.Stop()
 	for {
 		select {
@@ -296,7 +295,7 @@ func (e *Election) watchHealth(ctx context.Context, unhealthy func()) {
 		select {
 		case <-ctx.Done():
 			return
-		case <-time.After(e.interval()):
+		case <-time.After(e.Interval):
 		}
 		if e.Healthy(ctx) {
 			failed = 0
@@ -321,18 +320,4 @@ func (e *Election) keepAliveOnce(ctx context.Context, id clientv3.LeaseID) (*cli
 		return e.keepAlive(ctx, id)
 	}
 	return e.Client.KeepAliveOnce(ctx, id)
-}
-
-func (e *Election) ttl() int {
-	if e.TTL <= 0 {
-		return DefaultTTL
-	}
-	return e.TTL
-}
-
-func (e *Election) interval() time.Duration {
-	if e.Interval <= 0 {
-		return DefaultInterval
-	}
-	return e.Interval
 }
