@@ -66,8 +66,7 @@ func matchesSchema(t *testing.T, path string, node any, typ reflect.Type) {
 	case reflect.Struct:
 		required, _ := s["required"].([]any)
 		props, _ := s["properties"].(map[string]any)
-		for i := range typ.NumField() {
-			f := typ.Field(i)
+		for _, f := range reflect.VisibleFields(typ) {
 			name, _, _ := strings.Cut(f.Tag.Get("json"), ",")
 			if name == "" {
 				continue

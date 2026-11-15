@@ -47,15 +47,20 @@ type PolicySpec struct {
 
 // FirewallRule is a rule of a FirewallPolicy.
 type FirewallRule struct {
+	TrafficMatch
+	ICMPTypes []ICMPType `json:"icmpTypes"`
+	Action    Verdict    `json:"action"`
+	Log       bool       `json:"log"`
+}
+
+// TrafficMatch is what a FirewallRule and a PolicyRule match.
+type TrafficMatch struct {
 	Family           *Family     `json:"family"`
 	Protocol         *Protocol   `json:"protocol"`
 	SourcePorts      []PortRange `json:"sourcePorts"`
 	DestinationPorts []PortRange `json:"destinationPorts"`
 	Source           *Addresses  `json:"source"`
 	Destination      *Addresses  `json:"destination"`
-	ICMPTypes        []ICMPType  `json:"icmpTypes"`
-	Action           Verdict     `json:"action"`
-	Log              bool        `json:"log"`
 }
 
 // Addresses are a rule's source or destination: an AddressSet or address ranges, one of them; nil
@@ -385,13 +390,8 @@ type PolicyRouteSpec struct {
 // PolicyRule is a rule of a PolicyRoute.
 type PolicyRule struct {
 	Match struct {
-		Family           *Family     `json:"family"`
-		Protocol         *Protocol   `json:"protocol"`
-		SourcePorts      []PortRange `json:"sourcePorts"`
-		DestinationPorts []PortRange `json:"destinationPorts"`
-		Source           *Addresses  `json:"source"`
-		Destination      *Addresses  `json:"destination"`
-		DSCP             []int       `json:"dscp"`
+		TrafficMatch
+		DSCP []int `json:"dscp"`
 	} `json:"match"`
 	To struct {
 		VRF   *string `json:"vrf"`
@@ -594,7 +594,11 @@ func checkDecoded(path string, v reflect.Value) error {
 				continue
 			}
 			name, _, _ := strings.Cut(f.Tag.Get("json"), ",")
-			if err := checkDecoded(path+"."+cmp.Or(name, f.Name), v.Field(i)); err != nil {
+			fieldPath := path + "." + cmp.Or(name, f.Name)
+			if f.Anonymous {
+				fieldPath = path
+			}
+			if err := checkDecoded(fieldPath, v.Field(i)); err != nil {
 				return err
 			}
 		}

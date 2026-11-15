@@ -158,7 +158,7 @@ func (f *firewall) policyHead(p derive.Named[derive.PolicyRouteSpec]) (string, e
 // family, and that the NextHop's family is one the match leaves.
 func (f *firewall) policyMatches(r derive.PolicyRule) ([]string, error) {
 	m := r.Match
-	fr := derive.FirewallRule{Family: m.Family, Protocol: m.Protocol, SourcePorts: m.SourcePorts, DestinationPorts: m.DestinationPorts, Source: m.Source, Destination: m.Destination}
+	fr := derive.FirewallRule{TrafficMatch: m.TrafficMatch}
 	if name := r.To.NextHop; name != nil {
 		h, err := derive.MustGet(f.tables.NextHops, "NextHop", *name)
 		if err != nil {
