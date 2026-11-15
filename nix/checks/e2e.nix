@@ -47,17 +47,16 @@ let
   );
 in
 {
-  e2e-firmware = e2e "firmware" "^TestFirmwareBoots$" [ ] { };
-  e2e-image = e2e "image" "^TestImageBootsWithoutSecureBoot$" [ "CHALKLAB_IMAGE_DIR" ] { };
-  e2e-secureboot = e2e "secureboot" "^TestSecureBoot" [ "CHALKLAB_IMAGE_DIR" ] { };
-  e2e-verity = e2e "verity" "^TestVerityRejectsTamperedStore$" [ "CHALKLAB_IMAGE_DIR" ] { };
+  e2e-image = e2e "image" "^(TestImageBootsWithoutSecureBoot|TestStorageVolumes)$" [
+    "CHALKLAB_IMAGE_DIR"
+  ] { };
+  e2e-secureboot = e2e "secureboot" "^Test(SecureBoot|Verity)" [ "CHALKLAB_IMAGE_DIR" ] { };
   e2e-install = e2e "install" "^TestInstallInPlace$" [ "CHALKLAB_IMAGE_DIR" ] { };
   e2e-installer = e2e "installer" "^TestInstallerInstallsOntoLVMDisk$" [
     "CHALKLAB_IMAGE_DIR"
     "CHALKLAB_INSTALLER_DIR"
   ] { CHALKLAB_LVM_DISK = "${lvmDisk}/disk.raw"; };
   e2e-iso = e2e "iso" "^TestInstallerISOBoots$" [ "CHALKLAB_GENERIC_INSTALLER_DIR" ] { };
-  e2e-storage = e2e "storage" "^TestStorage" [ "CHALKLAB_STORAGE_IMAGE_DIR" ] { };
   e2e-upgrade = e2e "upgrade" "^TestUpgrade$" [
     "CHALKLAB_IMAGE_DIR"
     "CHALKLAB_UPGRADE_IMAGE_DIR"

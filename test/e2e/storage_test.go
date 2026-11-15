@@ -8,13 +8,13 @@ import (
 	"github.com/trevex/chalkos/pkg/lab"
 )
 
-// TestStorageVolumes boots the storage image with a second disk, installs it in place and checks
+// TestStorageVolumes boots the test image with a second disk, installs it in place and checks
 // each volume of its layout, then resets the VM and checks every volume unlocks and mounts again
 // with its data.
 func TestStorageVolumes(t *testing.T) {
-	requireEnv(t, append([]string{"CHALKLAB_OVMF_CODE", "CHALKLAB_OVMF_VARS", "CHALKLAB_STORAGE_IMAGE_DIR"}, chalkdEnv...)...)
+	requireEnv(t, append([]string{"CHALKLAB_OVMF_CODE", "CHALKLAB_OVMF_VARS", "CHALKLAB_IMAGE_DIR"}, chalkdEnv...)...)
 	dir := vmDir(t)
-	system := prepareDisk(t, dir, diskOpts{imageEnv: "CHALKLAB_STORAGE_IMAGE_DIR"})
+	system := prepareDisk(t, dir, diskOpts{})
 	data := prepareDataDisk(t, dir)
 	n := startNode(t, lab.VMConfig{Dir: dir, FirmwareVars: os.Getenv("CHALKLAB_OVMF_VARS"), Disks: []lab.VMDisk{system, data}})
 	vm := n.vm

@@ -31,7 +31,6 @@ in
   test-image-oci = testing.oci.test-metal;
   # The repart definitions of the test image's system region, which it ships.
   test-repart-definitions = testing.nixos.test-metal.config.environment.etc."chalkos/repart.d".source;
-  test-storage-image = testing.images.storage-metal;
   test-installer = testing.installer;
   test-kubernetes-image = testing.images.k8s-kvm;
   # The HA test's control planes run the Kubernetes image on metal.

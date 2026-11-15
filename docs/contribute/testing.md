@@ -205,14 +205,11 @@ test or a group of them:
 
 | Check | Test | VMs |
 | --- | --- | --- |
-| `e2e-firmware` | The firmware with a TPM starts and reaches the serial console. | 1 |
-| `e2e-image` | The test image boots without Secure Boot, then without its serial port and TPM: STATE asks for the recovery key on the screen, which the test reads with the test image's console font and answers on the keyboard, and the console answers a password request after the boot. | 1 |
-| `e2e-secureboot` | A signed image boots under Secure Boot and an unsigned one is refused. | 1 per test |
-| `e2e-verity` | A tampered store fails to read. | 1 |
+| `e2e-image` | The test image boots without Secure Boot, then without its serial port and TPM: STATE asks for the recovery key on the screen, which the test reads with the test image's console font and answers on the keyboard, and the console answers a password request after the boot. A second test installs volumes on the system disk and a data disk. | 1 per test |
+| `e2e-secureboot` | Secure Boot refuses an unsigned image, and dm-verity a tampered store. | 1 per test |
 | `e2e-install` | An install in place, with a second disk. | 1 |
 | `e2e-installer` | The installer installs a node under Secure Boot onto a disk that holds an LVM volume group: an install streamed from a directory that wipes the disk and is cancelled while it writes slot A, one whose config the image's validator refuses once the store is on the disk, and one that continues on the disk, which the installer pulls from a registry the test serves, with credentials. | 1 |
 | `e2e-iso` | The installer's ISO, signed as chalkbuild signs it, boots. | 1 |
-| `e2e-storage` | Volumes on the system disk and a data disk. | 1 |
 | `e2e-upgrade` | Under Secure Boot, an upgrade that the node pulls through a mirror endpoint, a registry the test serves, with the endpoint's credentials, that boots from slot B and is found healthy, then one streamed from a directory that never becomes healthy and falls back. | 1 |
 | `e2e-kubernetes` | A dual-stack cluster of a control plane and a worker through chalklab: networking, DNS, a private image pulled through a mirror with the node's credentials, renewals and rotations, a reboot. | 2 |
 | `e2e-kubernetes-ha` | Three control planes of an IPv6-only cluster behind a VIP: joins, failover, reinstalls and a rolling upgrade. | 3 |

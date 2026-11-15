@@ -2,7 +2,6 @@
 // variables; tests that boot an image or install a node skip unless these are exported too:
 //
 //	export CHALKLAB_IMAGE_DIR=$(nix build .#test-image --no-link --print-out-paths)
-//	export CHALKLAB_STORAGE_IMAGE_DIR=$(nix build .#test-storage-image --no-link --print-out-paths)
 //	export CHALKLAB_UPGRADE_IMAGE_DIR=$(nix build .#test-upgrade-image --no-link --print-out-paths)
 //	export CHALKLAB_UNHEALTHY_IMAGE_DIR=$(nix build .#test-unhealthy-image --no-link --print-out-paths)
 //	export CHALKLAB_ROUTER_IMAGE_DIR=$(nix build .#test-router-image --no-link --print-out-paths)
@@ -324,7 +323,7 @@ func signedImage(t *testing.T, dir, env string) string {
 	return out
 }
 
-// prepareDataDisk creates the empty second disk the storage image selects by its serial.
+// prepareDataDisk creates the empty second disk chalklab-storage's config selects by its serial.
 func prepareDataDisk(t *testing.T, dir string) lab.VMDisk {
 	t.Helper()
 	path := filepath.Join(dir, "data.qcow2")

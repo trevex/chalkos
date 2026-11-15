@@ -52,6 +52,9 @@ func TestUpgrade(t *testing.T) {
 		"secureboot":      "1",
 		"store_label":     "store_" + base[:16],
 		"store_partition": "3",
+		"slot_b_empty":    "2",
+		"state_tpm2":      "1",
+		"var_tpm2":        "1",
 		"state_boots":     "2",
 		"var_boots":       "1",
 	})

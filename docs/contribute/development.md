@@ -116,7 +116,6 @@ it exposes as packages. The repository's own flake exposes its test images, whic
 | Package | What it is |
 | --- | --- |
 | `test-image` | The `test` variant on `metal`, with small partitions and the test probe; most VM tests boot it. |
-| `test-storage-image` | The `storage` variant on `metal`, which the storage test gives volumes on the system disk and on a second disk. |
 | `test-installer` | The test images' installer. |
 | `test-kubernetes-image` | The `k8s` variant on `kvm`, which the Kubernetes test's control plane and worker boot. |
 | `test-kubernetes-ha-image` | The `k8s` variant on `metal`, which the HA test's control planes boot. |
