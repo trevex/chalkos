@@ -27,6 +27,7 @@ import (
 	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
 	"github.com/trevex/chalkos/pkg/layers"
 	"github.com/trevex/chalkos/pkg/pki"
+	"github.com/trevex/chalkos/pkg/statusview"
 	"github.com/trevex/chalkos/pkg/storage"
 	"github.com/trevex/chalkos/pkg/upgrade"
 )
@@ -146,7 +147,7 @@ func TestInstallFromPartsStreamsTheImage(t *testing.T) {
 		h.Provenance != (upgrade.Provenance{Revision: "a1b2c3d4e5f60718293a4b5c6d7e8f9012345678", Tag: "v1.5.0"}) {
 		t.Errorf("image = %+v", h)
 	}
-	if want := "chalkos " + imageName(h.RootHash, h.Provenance.Revision, h.Provenance.Tag) + ", sending"; !strings.Contains(ta.stdout.String(), want) || !strings.Contains(want, "(v1.5.0, a1b2c3d4e5f6)") {
+	if want := "chalkos " + statusview.ImageName(h.RootHash, h.Provenance.Revision, h.Provenance.Tag) + ", sending"; !strings.Contains(ta.stdout.String(), want) || !strings.Contains(want, "(v1.5.0, a1b2c3d4e5f6)") {
 		t.Errorf("output lacks %q:\n%s", want, ta.stdout)
 	}
 	size := h.Store.Size + h.Verity.Size + h.UKI.Size + h.BootLoader.Size

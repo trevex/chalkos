@@ -15,6 +15,7 @@ import (
 	"github.com/trevex/chalkos/pkg/client"
 	"github.com/trevex/chalkos/pkg/image"
 	"github.com/trevex/chalkos/pkg/internal/cli"
+	"github.com/trevex/chalkos/pkg/statusview"
 )
 
 type nodeActivateFlags struct {
@@ -64,7 +65,7 @@ func (a *app) nodeActivate(ctx context.Context, f nodeActivateFlags, name string
 		}
 		revision, tag = md.Revision, md.Tag
 	}
-	image := imageName(root, revision, tag)
+	image := statusview.ImageName(root, revision, tag)
 	var resp *nodev1.ActivateImageResponse
 	if err := callNode(t, layer.Fetch(&resp, func(conn *client.Conn) (*connect.Response[nodev1.ActivateImageResponse], error) {
 		return conn.ActivateImage(ctx, connect.NewRequest(&nodev1.ActivateImageRequest{RootHash: root}))

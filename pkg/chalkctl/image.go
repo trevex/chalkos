@@ -16,6 +16,7 @@ import (
 	"github.com/trevex/chalkos/pkg/image"
 	"github.com/trevex/chalkos/pkg/inventory"
 	"github.com/trevex/chalkos/pkg/ociimage"
+	"github.com/trevex/chalkos/pkg/statusview"
 )
 
 // diskImage is what install and upgrade send of a disk image: its parts, the UKI and the boot
@@ -257,4 +258,9 @@ func imageFiles(path string) (raw, definitions string, err error) {
 		}
 	}
 	return raw, filepath.Join(filepath.Dir(raw), "repart.d"), nil
+}
+
+// name names the image chalkctl sends.
+func (img *diskImage) name() string {
+	return statusview.ImageName(img.header.GetRootHash(), img.header.GetRevision(), img.header.GetTag())
 }

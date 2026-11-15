@@ -38,6 +38,7 @@ import (
 	"github.com/trevex/chalkos/pkg/pki"
 	"github.com/trevex/chalkos/pkg/schema"
 	"github.com/trevex/chalkos/pkg/schema/schematest"
+	"github.com/trevex/chalkos/pkg/statusview"
 )
 
 // testUpgradeImage builds a metal disk image of the variant as chalkos images are laid out: an
@@ -69,7 +70,7 @@ func rootOf(t *testing.T, dir string) []byte {
 // shortOf is the name chalkctl gives a test image, which names no revision or tag.
 func shortOf(t *testing.T, dir string) string {
 	t.Helper()
-	return imageName(rootOf(t, dir), "", "")
+	return statusview.ImageName(rootOf(t, dir), "", "")
 }
 
 // testImageOf builds a test image whose UKI's os-release edit changes, when given, from what
