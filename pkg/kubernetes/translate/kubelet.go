@@ -110,29 +110,24 @@ func nodeIPs(spec nodeSpec, c kubernetes.Cluster, static []string) ([]string, []
 	if ips == nil {
 		ips = defaultNodeIPs(static, families, subnets)
 	}
-	var seen []nodeip.Family
+	counts := map[nodeip.Family]int{}
 	var addrs []netip.Addr
 	// The schema's format ip has checked the Node's addresses, and defaultNodeIPs takes the static
 	// addresses that parse alone.
 	for _, a := range ips {
 		if ip, err := netip.ParseAddr(a); err == nil {
-			seen = append(seen, nodeip.FamilyOf(ip))
+			counts[nodeip.FamilyOf(ip)]++
 			addrs = append(addrs, ip)
 		}
 	}
-	var unique []nodeip.Family
-	for _, f := range seen {
-		if !slices.Contains(unique, f) {
-			unique = append(unique, f)
-		}
-	}
-	for _, f := range unique {
-		if count(seen, f) > 1 {
+	all := []nodeip.Family{nodeip.IPv4, nodeip.IPv6}
+	for _, f := range all {
+		if counts[f] > 1 {
 			add("Node: nodeIP.addresses: more than one %s address; give at most one per family", f)
 		}
 	}
-	for _, f := range unique {
-		if !slices.Contains(families, f) {
+	for _, f := range all {
+		if counts[f] > 0 && !slices.Contains(families, f) {
 			add("Node: nodeIP.addresses: an %s address, but the cluster's ipFamilies are [ %s ]", f, strs.Join(families, " "))
 		}
 	}
@@ -151,7 +146,7 @@ func nodeIPs(spec nodeSpec, c kubernetes.Cluster, static []string) ([]string, []
 	// Invalid subnets are reported above; which families they would pick from is moot.
 	if subnetErr == nil {
 		for _, f := range families {
-			if !slices.Contains(seen, f) && !picks(subnets, f) {
+			if counts[f] == 0 && !picks(subnets, f) {
 				add("Node: no %s address in nodeIP.addresses, and no %s subnet in the nodeIP.validSubnets that apply, so the node cannot pick its %s address", f, f, f)
 			}
 		}
@@ -191,14 +186,4 @@ func picks(subnets []string, f nodeip.Family) bool {
 		}
 	}
 	return !anyIncluded
-}
-
-func count(families []nodeip.Family, f nodeip.Family) int {
-	n := 0
-	for _, g := range families {
-		if g == f {
-			n++
-		}
-	}
-	return n
 }
