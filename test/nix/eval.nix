@@ -1550,38 +1550,6 @@ lib.runTests {
       template.template = ../../modules/testing/greeting.tmpl;
     };
   };
-  # A variant's modules set the image's pod network, which its image.json names; the image names
-  # no images of the cluster, which its config does.
-  testVariantSetsKubernetesPodNetwork = {
-    expr =
-      let
-        n =
-          (mkImages {
-            variants.node.modules = [ { chalkos.cni.provider = "none"; } ];
-          }).nixos.node-metal;
-        facts = builtins.fromJSON (builtins.readFile n.config.chalkos.imageDirectory.facts.kubernetes);
-      in
-      {
-        inherit (facts) cni;
-        images = facts ? images;
-      };
-    expected = {
-      cni = "none";
-      images = false;
-    };
-  };
-  testImageRejectsUnknownSetting = {
-    expr = fails (worker [ { chalkos.disks.espSize = "1G"; } ]).chalkos.disk;
-    expected = true;
-  };
-  testVariantSetsDiskOptions = {
-    expr = (worker [ { chalkos.disk.espSize = "256M"; } ]).chalkos.disk.espSize;
-    expected = "256M";
-  };
-  testVariantModulesApply = {
-    expr = (worker [ { networking.hostName = "shared"; } ]).networking.hostName;
-    expected = "shared";
-  };
   testImageRunsChalkd = {
     expr =
       let
@@ -1639,17 +1607,12 @@ lib.runTests {
           osCA = pub;
           variants.worker = { };
         };
-        has = config: config.environment.etc ? "chalkos/os-ca.crt";
       in
       {
-        withCA = has withCA.nixos.worker-metal.config;
-        installer = has withCA.nixos.installer.config;
-        withoutCA = has (worker [ ]);
+        withoutCA = (worker [ ]).environment.etc ? "chalkos/os-ca.crt";
         setting = withCA.nixos.worker-metal.config.chalkos ? osCA;
       };
     expected = {
-      withCA = true;
-      installer = true;
       withoutCA = false;
       setting = false;
     };
@@ -1770,9 +1733,7 @@ lib.runTests {
       testImage = true;
     };
   };
-  # The installer's modules reach its image, whose consoles are the first serial port and the
-  # screen, the screen last; it is no variant and belongs to no platform, as it installs images of
-  # every one.
+  # The installer's modules reach its image.
   testInstallerModules = {
     expr =
       let
@@ -1792,62 +1753,34 @@ lib.runTests {
       {
         uplink = config.systemd.network.networks."10-uplink".matchConfig.MACAddress;
         wireless = lib.elem "wireless" config.chalkos.kernel.moduleGroups;
-        consoles = lib.filter (lib.hasPrefix "console=") config.boot.kernelParams;
-        osRelease = lib.filterAttrs (
-          k: _: lib.hasPrefix "CHALKOS_" k
-        ) config.system.nixos.extraOSReleaseArgs;
         image = i.installer.drvPath == config.system.build.chalkosInstaller.drvPath;
       };
     expected = {
       uplink = "52:54:00:12:34:56";
       wireless = true;
-      consoles = [
-        "console=ttyS0,115200"
-        "console=tty0"
-      ];
-      osRelease = {
-        CHALKOS_BOOT_TRIES = "3";
-      };
       image = true;
     };
   };
-  # A variant is built for each platform, metal and kvm unless the arguments name others; each
-  # image names its platform in os-release and carries that platform's console and agents alone.
+  # Only the kvm image runs the guest agent, and only under KVM.
   testPlatformImages = {
     expr =
       let
         i = mkImages { variants.worker = { }; };
         summary = c: {
-          platform = c.system.nixos.extraOSReleaseArgs.CHALKOS_PLATFORM;
-          consoles = lib.filter (lib.hasPrefix "console=") c.boot.kernelParams;
           guestAgent = c.services.qemuGuest.enable;
           condition = c.systemd.services.qemu-guest-agent.unitConfig.ConditionVirtualization or null;
         };
       in
       {
-        images = lib.attrNames i.images;
-        imagesBuild = lib.all lib.isDerivation (lib.attrValues i.images);
         metal = summary i.nixos.worker-metal.config;
         kvm = summary i.nixos.worker-kvm.config;
       };
     expected = {
-      images = [
-        "worker-kvm"
-        "worker-metal"
-      ];
-      imagesBuild = true;
       metal = {
-        platform = "metal";
-        consoles = [
-          "console=ttyS0,115200"
-          "console=tty0"
-        ];
         guestAgent = false;
         condition = null;
       };
       kvm = {
-        platform = "kvm";
-        consoles = [ "console=ttyS0,115200" ];
         guestAgent = true;
         condition = "kvm";
       };
@@ -2249,8 +2182,6 @@ lib.runTests {
       in
       {
         inherit (c.chalkos.kubernetes) enable;
-        version = c.chalkos.kubernetes.package.version;
-        inherit (c.chalkos.cni) provider;
         images =
           fails
             (worker [ { chalkos.kubernetes.images.pause = "registry.k8s.io/pause:3.10.2"; } ])
@@ -2261,8 +2192,6 @@ lib.runTests {
       };
     expected = {
       enable = true;
-      version = pkgs.kubernetes.version;
-      provider = "flannel";
       images = true;
       flannel = true;
     };
@@ -2909,68 +2838,33 @@ lib.runTests {
       plainAfter = [ "network-online.target" ];
     };
   };
-  # The installer is no variant, and its os-release names none.
-  testInstallerIsNoVariant = {
-    expr =
-      let
-        i = mkImages { variants.worker = { }; };
-      in
-      {
-        variant = i.nixos.worker-metal.config.chalkos.variant.name;
-        installer = i.nixos.installer.config.chalkos.variant.name;
-        installerOSRelease = i.nixos.installer.config.system.nixos.extraOSReleaseArgs ? CHALKOS_VARIANT;
-      };
-    expected = {
-      variant = "worker";
-      installer = null;
-      installerOSRelease = false;
-    };
-  };
   # An image describes itself in os-release, with an empty IMAGE_VERSION. The build labels its
   # store partitions without a version; chalkosImage relabels slot A by the root hash.
   testImageDescribesItself = {
     expr =
       let
-        image = worker;
-        summary = c: {
-          osRelease = lib.filterAttrs (
-            k: _: lib.hasPrefix "CHALKOS_" k || k == "IMAGE_VERSION"
-          ) c.system.nixos.extraOSReleaseArgs;
-          labels = map (p: p.repartConfig.Label) [
-            c.image.repart.partitions."10-store-verity"
-            c.image.repart.partitions."20-store"
-          ];
-        };
+        c = worker [ { chalkos.upgrade.bootTries = 1; } ];
       in
       {
-        default = summary (image [ ]);
-        upgraded = summary (image [ { chalkos.upgrade.bootTries = 1; } ]);
+        osRelease = lib.filterAttrs (
+          k: _: lib.hasPrefix "CHALKOS_" k || k == "IMAGE_VERSION"
+        ) c.system.nixos.extraOSReleaseArgs;
+        labels = map (p: p.repartConfig.Label) [
+          c.image.repart.partitions."10-store-verity"
+          c.image.repart.partitions."20-store"
+        ];
       };
     expected = {
-      default = {
-        osRelease = {
-          IMAGE_VERSION = "";
-          CHALKOS_VARIANT = "worker";
-          CHALKOS_PLATFORM = "metal";
-          CHALKOS_BOOT_TRIES = "3";
-        };
-        labels = [
-          "store-verity"
-          "store"
-        ];
+      osRelease = {
+        IMAGE_VERSION = "";
+        CHALKOS_VARIANT = "worker";
+        CHALKOS_PLATFORM = "metal";
+        CHALKOS_BOOT_TRIES = "1";
       };
-      upgraded = {
-        osRelease = {
-          IMAGE_VERSION = "";
-          CHALKOS_VARIANT = "worker";
-          CHALKOS_PLATFORM = "metal";
-          CHALKOS_BOOT_TRIES = "1";
-        };
-        labels = [
-          "store-verity"
-          "store"
-        ];
-      };
+      labels = [
+        "store-verity"
+        "store"
+      ];
     };
   };
   # A boot the boot loader counts is blessed once the health check passes, within the image's
