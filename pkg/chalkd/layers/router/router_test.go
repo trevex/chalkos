@@ -500,16 +500,14 @@ func TestRouterDHCPStatus(t *testing.T) {
 // A DHCP server that hangs costs Status one timeout, and its part says so.
 func TestRouterDHCPStatusWhileKeaHangs(t *testing.T) {
 	s, _ := routerNode(t)
-	defer func(d time.Duration) { askTimeout = d }(askTimeout)
-	askTimeout = 200 * time.Millisecond
 	keaConfig(t, filepath.Join(s.KeaDir, "kea-dhcp4.json"), [3]string{"office", "192.0.2.0/24", "3221225984"})
 	fakeKea(t, filepath.Join(s.RunDir, "kea", "dhcp4.sock"), true, nil)
 	start := time.Now()
 	st := routerStatus(t, s)
-	if took := time.Since(start); took >= 2*askTimeout {
+	if took := time.Since(start); took < askTimeout || took >= 2*askTimeout {
 		t.Errorf("Status took %v while Kea hangs, not about %v", took, askTimeout)
 	}
-	if len(st.Dhcp) != 1 || st.Dhcp[0].Running || st.Dhcp[0].Error != "Kea did not answer within 200ms" {
+	if len(st.Dhcp) != 1 || st.Dhcp[0].Running || st.Dhcp[0].Error != "Kea did not answer within 5s" {
 		t.Errorf("DHCP servers while Kea hangs = %v", st.Dhcp)
 	}
 }
