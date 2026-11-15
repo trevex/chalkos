@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/trevex/chalkos/pkg/chalkd/layers/kubernetes/kubernetestest"
 	"github.com/trevex/chalkos/pkg/clustersecrets"
 	"github.com/trevex/chalkos/pkg/internal/testwait"
 	k8s "github.com/trevex/chalkos/pkg/kubernetes"
@@ -107,38 +108,54 @@ func changeShare(t *testing.T, p knode.State, change func(*kpki.Share)) {
 	write(t, p.Share(), string(data))
 }
 
-// A share that changes the etcd CAs the node trusts, or the one that issues its credential,
-// restarts the VIP election, which dialled etcd with the share it started with: the holder
-// releases the VIPs, and takes them again on a connection of the new share. Other changes leave
-// the election alone.
+// A share that changes the etcd CAs the node trusts restarts the VIP election, which dialled etcd
+// with the share it started with: the holder releases the VIPs, and takes them again on a
+// connection of the new share.
 func TestVIPRestartsWhenEtcdTrustChanges(t *testing.T) {
 	k, addrs := vipControlPlane(t)
 	held := func() bool { return addrs.held.Load() && k.vipHolder.Load() }
 	testwait.Eventually(t, "the node holds the VIPs", held)
 	released := addrs.released.Load()
 
-	kubernetesCA, err := pki.NewCA("new Kubernetes CA", time.Now())
-	if err != nil {
-		t.Fatal(err)
-	}
-	changeShare(t, k.state, func(s *kpki.Share) {
-		s.Accepted = &clustersecrets.KubernetesAccepted{CA: []string{kubernetesCA.Certificate}}
-	})
-	time.Sleep(20 * k.timing.VIPInterval)
-	if got := addrs.released.Load(); got != released || !held() {
-		t.Fatalf("a share that leaves etcd's trust alone released the VIPs %d times", got-released)
-	}
-
 	etcdCA, err := pki.NewCA("new etcd CA", time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}
-	changeShare(t, k.state, func(s *kpki.Share) { s.Accepted.EtcdCA = []string{etcdCA.Certificate} })
+	changeShare(t, k.state, func(s *kpki.Share) {
+		s.Accepted = &clustersecrets.KubernetesAccepted{EtcdCA: []string{etcdCA.Certificate}}
+	})
 	testwait.Eventually(t, "the VIPs released and held again", func() bool { return addrs.released.Load() > released && held() })
 	addrs.mu.Lock()
 	most := addrs.most
 	addrs.mu.Unlock()
 	if most != 1 {
 		t.Errorf("the VIPs were held %d times at once", most)
+	}
+}
+
+// The etcd trust, on whose change the VIP election starts again, changes with the etcd CAs the
+// share accepts and the one that issues the node's credential, and with nothing else.
+func TestEtcdTrust(t *testing.T) {
+	share, err := kpki.ParseShare(kubernetestest.Share(t, k8s.KindControlPlane, "n1"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ca, err := pki.NewCA("new CA", time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, tc := range map[string]struct {
+		change  func(s *kpki.Share)
+		changes bool
+	}{
+		"accepted Kubernetes CA": {func(s *kpki.Share) { s.Accepted = &clustersecrets.KubernetesAccepted{CA: []string{ca.Certificate}} }, false},
+		"accepted etcd CA":       {func(s *kpki.Share) { s.Accepted = &clustersecrets.KubernetesAccepted{EtcdCA: []string{ca.Certificate}} }, true},
+		"issuing etcd CA":        {func(s *kpki.Share) { s.EtcdCA = &ca }, true},
+	} {
+		changed := share
+		tc.change(&changed)
+		if got := etcdTrust(changed) != etcdTrust(share); got != tc.changes {
+			t.Errorf("%s: the etcd trust changes: %v, want %v", name, got, tc.changes)
+		}
 	}
 }
