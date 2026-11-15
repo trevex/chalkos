@@ -48,7 +48,7 @@ pkgs.runCommand "chalkos-test-secrets"
       --arg encryption "$(openssl rand -base64 32)" \
       '{version: 3, osCA: {certificate: $caCert, key: $caKey}, nodeCA: {certificate: $nodeCACert, key: $nodeCAKey}, recoverySecret: $recovery,
         kubernetes: {ca: {certificate: $k8sCert, key: $k8sKey}, frontProxyCA: {certificate: $frontCert, key: $frontKey},
-          etcdCA: {certificate: $etcdCert, key: $etcdKey}, serviceAccountKey: $sa, encryptionKey: $encryption}}' \
+          etcdCA: {certificate: $etcdCert, key: $etcdKey}, serviceAccountKey: $sa, encryptionKey: $encryption, encryptionKeyName: "chalkos"}}' \
       > $out/secrets.json
     jq '{version, osCA: {certificate: .osCA.certificate}, nodeCA: {certificate: .nodeCA.certificate},
       kubernetes: (.kubernetes | {ca: {certificate: .ca.certificate}, frontProxyCA: {certificate: .frontProxyCA.certificate}, etcdCA: {certificate: .etcdCA.certificate}})}' \

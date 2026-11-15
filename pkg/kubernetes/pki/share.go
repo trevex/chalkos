@@ -44,8 +44,7 @@ type Share struct {
 	// NodeCA is the node CA with its key, with which a control-plane node renews node
 	// certificates. Workers do not hold it.
 	NodeCA *pki.CertKey `json:"nodeCA,omitempty"`
-	// EncryptionKeyName is the name the encryption key encrypts under; empty is
-	// clustersecrets.DefaultEncryptionKeyName.
+	// EncryptionKeyName is the name the encryption key encrypts under.
 	EncryptionKeyName string `json:"encryptionKeyName,omitempty"`
 	// Accepted holds what the node still trusts besides the values above while one of them
 	// rotates: on a worker the Kubernetes CAs alone.
@@ -63,10 +62,8 @@ func ControlPlaneShare(k *clustersecrets.KubernetesSecrets, nodeCA pki.CertKey) 
 		EtcdCA:            &etcd,
 		ServiceAccountKey: k.ServiceAccountKey,
 		EncryptionKey:     k.EncryptionKey,
+		EncryptionKeyName: k.EncryptionKeyName,
 		NodeCA:            &nodeCA,
-	}
-	if k.EncryptionKeyName != clustersecrets.DefaultEncryptionKeyName {
-		s.EncryptionKeyName = k.EncryptionKeyName
 	}
 	if accepted := k.Accepted; !isZero(accepted) {
 		s.Accepted = &accepted

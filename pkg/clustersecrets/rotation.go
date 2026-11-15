@@ -63,10 +63,6 @@ const (
 
 var phases = []Phase{PhaseAccept, PhaseSwitch, PhaseRefresh, PhaseFinish}
 
-// DefaultEncryptionKeyName names the encryption key of a secrets file that names none: the name
-// every key had before keys rotated.
-const DefaultEncryptionKeyName = "chalkos"
-
 // Accepted holds the OS CAs nodes and chalkctl still trust besides the one that issues, by
 // certificate.
 type Accepted struct {
@@ -196,17 +192,9 @@ func trustBundle(ca pki.CertKey, accepted []string) string {
 	return pki.Bundle(append([]string{ca.Certificate}, accepted...)...)
 }
 
-// KeyName is the name of the encryption key that encrypts.
-func (k KubernetesSecrets) KeyName() string {
-	if k.EncryptionKeyName == "" {
-		return DefaultEncryptionKeyName
-	}
-	return k.EncryptionKeyName
-}
-
 // EncryptionKeys are the keys the API server decrypts with, the one that encrypts first.
 func (k KubernetesSecrets) EncryptionKeys() []EncryptionKey {
-	return append([]EncryptionKey{{Name: k.KeyName(), Key: k.EncryptionKey}}, k.Accepted.EncryptionKeys...)
+	return append([]EncryptionKey{{Name: k.EncryptionKeyName, Key: k.EncryptionKey}}, k.Accepted.EncryptionKeys...)
 }
 
 // ServiceAccountPublicKeys are the public keys the API server accepts tokens of, the signing
@@ -607,7 +595,7 @@ func (s *Secrets) SwitchRotation() error {
 			return errors.New("the rotation of the encryption key accepts no single new key")
 		}
 		next := k.Accepted.EncryptionKeys[0]
-		k.Accepted.EncryptionKeys = []EncryptionKey{{Name: k.KeyName(), Key: k.EncryptionKey}}
+		k.Accepted.EncryptionKeys = []EncryptionKey{{Name: k.EncryptionKeyName, Key: k.EncryptionKey}}
 		k.EncryptionKey, k.EncryptionKeyName = next.Key, next.Name
 	}
 	s.Rotation = &Rotation{Kind: r.Kind, Phase: PhaseSwitch}

@@ -266,8 +266,8 @@ func TestOSCARotationIssuesFromTheNewRoot(t *testing.T) {
 // switch makes the encrypting key's.
 func TestEncryptionKeyNames(t *testing.T) {
 	s := generate(t)
-	if s.Kubernetes.KeyName() != DefaultEncryptionKeyName {
-		t.Errorf("a new secrets file's key is %s", s.Kubernetes.KeyName())
+	if s.Kubernetes.EncryptionKeyName != DefaultEncryptionKeyName {
+		t.Errorf("a new secrets file's key is %s", s.Kubernetes.EncryptionKeyName)
 	}
 	if err := s.BeginRotation(RotateEncryptionKey, now); err != nil {
 		t.Fatal(err)
@@ -280,8 +280,8 @@ func TestEncryptionKeyNames(t *testing.T) {
 	if err := s.SwitchRotation(); err != nil {
 		t.Fatal(err)
 	}
-	if s.Kubernetes.KeyName() != keys[1].Name || string(s.Kubernetes.EncryptionKey) != string(keys[1].Key) {
-		t.Errorf("the switch made %s the encrypting key, want %s", s.Kubernetes.KeyName(), keys[1].Name)
+	if s.Kubernetes.EncryptionKeyName != keys[1].Name || string(s.Kubernetes.EncryptionKey) != string(keys[1].Key) {
+		t.Errorf("the switch made %s the encrypting key, want %s", s.Kubernetes.EncryptionKeyName, keys[1].Name)
 	}
 	if acc := s.Kubernetes.Accepted.EncryptionKeys; len(acc) != 1 || acc[0].Name != DefaultEncryptionKeyName {
 		t.Errorf("accepted after the switch: %v", acc)
@@ -350,7 +350,7 @@ func TestValidateRefusesInconsistentRotations(t *testing.T) {
 			s.Rotation = &Rotation{Kind: RotateOSCA, Phase: PhaseFinish}
 		},
 		"two encryption keys of one name": func(s *Secrets) {
-			s.Kubernetes.Accepted.EncryptionKeys = []EncryptionKey{{Name: s.Kubernetes.KeyName(), Key: make([]byte, EncryptionKeySize)}}
+			s.Kubernetes.Accepted.EncryptionKeys = []EncryptionKey{{Name: s.Kubernetes.EncryptionKeyName, Key: make([]byte, EncryptionKeySize)}}
 			s.Rotation = &Rotation{Kind: RotateEncryptionKey, Phase: PhaseRefresh, Switched: now}
 		},
 		"an encryption key name with a colon": func(s *Secrets) {

@@ -14,6 +14,9 @@ import (
 // (secretbox).
 const EncryptionKeySize = 32
 
+// DefaultEncryptionKeyName is the name of a new secrets file's encryption key.
+const DefaultEncryptionKeyName = "chalkos"
+
 // KubernetesSecrets are the secrets of the cluster's Kubernetes control plane.
 type KubernetesSecrets struct {
 	// CA issues the API server's, the kubelets' and the clients' certificates.
@@ -25,9 +28,9 @@ type KubernetesSecrets struct {
 	// ServiceAccountKey signs service account tokens (ES256), PEM PKCS#8.
 	ServiceAccountKey string `json:"serviceAccountKey"`
 	// EncryptionKey encrypts secrets in etcd, under the name EncryptionKeyName, which ciphertexts
-	// carry; empty names the key DefaultEncryptionKeyName.
+	// carry.
 	EncryptionKey     []byte `json:"encryptionKey"`
-	EncryptionKeyName string `json:"encryptionKeyName,omitempty"`
+	EncryptionKeyName string `json:"encryptionKeyName"`
 	// Accepted holds what the components still trust besides the values above while one of them
 	// rotates.
 	Accepted KubernetesAccepted `json:"accepted,omitzero"`

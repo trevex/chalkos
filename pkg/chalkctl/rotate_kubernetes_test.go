@@ -128,7 +128,7 @@ func TestRotateEncryptionKey(t *testing.T) {
 		t.Fatal(err)
 	}
 	s := l.secrets()
-	if l.encrypted[clustersecrets.DefaultEncryptionKeyName] != 0 || l.encrypted[s.Kubernetes.KeyName()] != 3 {
+	if l.encrypted[clustersecrets.DefaultEncryptionKeyName] != 0 || l.encrypted[s.Kubernetes.EncryptionKeyName] != 3 {
 		t.Fatalf("etcd holds %v, want the 3 objects under the new key", l.encrypted)
 	}
 	// An object written under the old key, as from a backup, stops the finish.
@@ -148,7 +148,7 @@ func TestRotateEncryptionKey(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, name := range []string{"cp1", "cp2"} {
-		if keys := l.nodes[name].share.EncryptionKeys(); len(keys) != 1 || keys[0].Name != s.Kubernetes.KeyName() {
+		if keys := l.nodes[name].share.EncryptionKeys(); len(keys) != 1 || keys[0].Name != s.Kubernetes.EncryptionKeyName {
 			t.Errorf("%s decrypts with %v after the finish", name, keys)
 		}
 	}
