@@ -12,11 +12,9 @@ import (
 	"github.com/trevex/chalkos/pkg/schema"
 )
 
-// FromDirectory is the chalkos image of an image directory, as nix build makes it: the store
-// data, hash tree, UKI and boot loader of its raw image, and its contract. It refuses a directory
-// whose metadata.json describes another image than the raw image, and an image of no variant,
-// such as the installer. The UKI and boot-loader blobs read copies in a temporary directory,
-// which closeImage removes, so the image must be written before then.
+// FromDirectory is the chalkos image of an image directory as nix build makes it. It refuses
+// metadata.json of another image and an image without a variant, such as the installer.
+// closeImage removes the UKI and boot loader copies the image reads, so write the image first.
 func FromDirectory(ctx context.Context, dir string) (_ v1.Image, closeImage func() error, err error) {
 	raw, err := image.FindRaw(dir)
 	if err != nil {

@@ -23,10 +23,8 @@ func ParseReference(ref string) (name.Reference, error) {
 	return r, nil
 }
 
-// options are a registry request's options: ctx, and the credentials of the default keychain,
-// docker's config and its credential helpers. go-containerregistry reaches a registry over plain
-// HTTP at localhost with a port, at a name ending in .localhost, at 127.0.0.1, at ::1, or at a
-// private (RFC 1918) address, and any other registry over HTTPS.
+// options are the remote options of Push and Read: ctx and the default keychain. go-containerregistry
+// uses plain HTTP for a loopback or private (RFC 1918) registry host and HTTPS for any other.
 func options(ctx context.Context) []remote.Option {
 	return []remote.Option{remote.WithContext(ctx), remote.WithAuthFromKeychain(authn.DefaultKeychain)}
 }
@@ -78,10 +76,7 @@ func Read(ctx context.Context, ref string) (*Artifact, error) {
 	if err != nil {
 		return nil, err
 	}
-	if !desc.MediaType.IsImage() {
-		return nil, fmt.Errorf("%s is a %s, not an image manifest; a chalkos image is one manifest", ref, desc.MediaType)
-	}
-	img, err := desc.Image()
+	img, err := imageOf(desc)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", ref, err)
 	}
@@ -89,14 +84,8 @@ func Read(ctx context.Context, ref string) (*Artifact, error) {
 	if a.Header, err = ReadHeader(img); err != nil {
 		return nil, fmt.Errorf("%s: %w", ref, err)
 	}
-	if a.Contract, err = ReadContract(img); err != nil {
+	if a.Contract, a.Metadata, err = contractOf(img, a.Header); err != nil {
 		return nil, fmt.Errorf("%s: %w", ref, err)
-	}
-	if a.Metadata, err = schema.ParseMetadata(a.Contract.Metadata); err != nil {
-		return nil, fmt.Errorf("%s: the contract layer's %w", ref, err)
-	}
-	if err := describes(a.Metadata, a.Header); err != nil {
-		return nil, fmt.Errorf("%s: the contract layer's %w", ref, err)
 	}
 	m, err := img.Manifest()
 	if err != nil {
@@ -104,4 +93,29 @@ func Read(ctx context.Context, ref string) (*Artifact, error) {
 	}
 	a.Manifest = *m
 	return a, nil
+}
+
+// imageOf is the image a descriptor names, refusing an index.
+func imageOf(desc *remote.Descriptor) (v1.Image, error) {
+	if !desc.MediaType.IsImage() {
+		return nil, fmt.Errorf("it is a %s, not an image manifest; a chalkos image is one manifest", desc.MediaType)
+	}
+	return desc.Image()
+}
+
+// contractOf reads img's contract layer and refuses one whose metadata.json describes another
+// image than h.
+func contractOf(img v1.Image, h Header) (Contract, schema.Metadata, error) {
+	c, err := ReadContract(img)
+	if err != nil {
+		return Contract{}, schema.Metadata{}, err
+	}
+	md, err := schema.ParseMetadata(c.Metadata)
+	if err == nil {
+		err = describes(md, h)
+	}
+	if err != nil {
+		return Contract{}, schema.Metadata{}, fmt.Errorf("the contract layer's %w", err)
+	}
+	return c, md, nil
 }

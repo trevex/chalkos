@@ -161,9 +161,8 @@ func (c Contract) Tar() ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
-// ParseContract reads a contract layer. It skips directories and files outside the contract, so
-// that a later chalkos may add some, and refuses links, other special files and a name it has
-// already read.
+// ParseContract reads a contract layer. It skips directories and files outside the contract and
+// refuses links, other special files and a name it has already read.
 func ParseContract(r io.Reader) (Contract, error) {
 	c := Contract{Schemas: map[string][]byte{}, Definitions: map[string][]byte{}}
 	var haveMetadata bool

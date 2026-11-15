@@ -121,7 +121,7 @@ func Build(h Header, store, hashTree, uki, bootLoader, contract Blob) (v1.Image,
 
 // Replace is img with the blobs in place of its layers of their media types; its config and its
 // other layers stay as they are. It refuses an img whose manifest holds a layer besides the five
-// known ones, rather than silently dropping it.
+// known ones.
 func Replace(img v1.Image, blobs ...Blob) (v1.Image, error) {
 	if _, err := ReadHeader(img); err != nil {
 		return nil, err

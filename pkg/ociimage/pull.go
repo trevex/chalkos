@@ -13,7 +13,6 @@ import (
 	"github.com/google/go-containerregistry/pkg/v1/types"
 
 	"github.com/trevex/chalkos/pkg/imagepart"
-	"github.com/trevex/chalkos/pkg/schema"
 )
 
 // manifestTimeout bounds the fetch of a pulled image's manifest and header from all its sources;
@@ -201,7 +200,7 @@ func (p *Pull) Close() error {
 // its source sends no data for stallTimeout.
 func (p *Pull) open() error {
 	if !p.checked {
-		if err := p.check(); err != nil {
+		if err := p.image(nil); err != nil {
 			return fmt.Errorf("pull %s: %w", p.ref, err)
 		}
 		p.checked = true
@@ -239,18 +238,9 @@ func (p *Pull) open() error {
 	return fmt.Errorf("pull %s: no source to pull from", p.ref)
 }
 
-// check fetches the manifest and the header and refuses them as image does.
-func (p *Pull) check() error {
-	return p.image(nil)
-}
-
-// image fetches the manifest, by its digest, and the header from the first source that serves
-// them, within manifestTimeout and sourceTimeout per source, and refuses an image of another
-// header than the one wanted, or whose layer of a part's media type has another size or digest
-// than the part. It calls use, unless nil, with the image while that source's fetch lasts, as the
-// remote image fetches its layers with it. A source is passed over when a fetch, use's included,
-// fails as passable says or takes longer than sourceTimeout; a refusal fails at once. The layers
-// then start at the source the image came from.
+// image fetches the manifest and the header from the first source that serves them and refuses
+// them unless they match p.want and p.parts, passing over sources as Pull describes. use, when
+// set, reads more of the image within that source's timeout. The layers then start at that source.
 func (p *Pull) image(use func(v1.Image) error) error {
 	ctx, cancel := context.WithTimeout(p.ctx, manifestTimeout)
 	defer cancel()
@@ -275,16 +265,12 @@ func (p *Pull) image(use func(v1.Image) error) error {
 	return errors.New("no source to pull from")
 }
 
-// imageFrom is image of one source, fetched with ctx.
 func (p *Pull) imageFrom(ctx context.Context, s source, use func(v1.Image) error) error {
 	desc, err := s.puller.Get(ctx, s.ref)
 	if err != nil {
 		return err
 	}
-	if !desc.MediaType.IsImage() {
-		return fmt.Errorf("it is a %s, not an image manifest; a chalkos image is one manifest", desc.MediaType)
-	}
-	img, err := desc.Image()
+	img, err := imageOf(desc)
 	if err != nil {
 		return err
 	}
@@ -314,25 +300,13 @@ func (p *Pull) imageFrom(ctx context.Context, s source, use func(v1.Image) error
 	return use(img)
 }
 
-// Contract fetches the manifest and the header, refusing them as the first read does, and reads
-// the image's contract layer, refusing one whose metadata.json describes another image than the
-// header. A source the contract layer cannot be fetched from is passed over as image says. Reads
-// after it succeeded fetch the manifest no more.
+// Contract checks the image as the first read does and reads its contract layer, refusing
+// metadata.json of another image. Reads after it fetch the manifest no more.
 func (p *Pull) Contract() (Contract, error) {
 	var c Contract
-	err := p.image(func(img v1.Image) error {
-		var err error
-		if c, err = ReadContract(img); err != nil {
-			return err
-		}
-		md, err := schema.ParseMetadata(c.Metadata)
-		if err != nil {
-			return fmt.Errorf("the contract layer's %w", err)
-		}
-		if err := describes(md, p.want); err != nil {
-			return fmt.Errorf("the contract layer's %w", err)
-		}
-		return nil
+	err := p.image(func(img v1.Image) (err error) {
+		c, _, err = contractOf(img, p.want)
+		return err
 	})
 	if err != nil {
 		return Contract{}, fmt.Errorf("pull %s: %w", p.ref, err)
