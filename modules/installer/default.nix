@@ -123,14 +123,6 @@ in
     "virtio_scsi"
     "xhci_pci"
   ];
-  # One installer serves every platform, so its consoles are the first serial port and the
-  # screen, the screen last, as on metal: a machine without a serial port shows the boot and the
-  # console with the fingerprint. mkImages's installer.modules may choose another order.
-  chalkos.consoles = lib.mkDefault [
-    "ttyS0,115200"
-    "tty0"
-  ];
-
   # A CD-ROM has no partitions in Linux; a partitioned loop device over it exposes the store
   # partitions the GPT of the ISO describes.
   boot.initrd.systemd.storePaths = [ losetup ];
