@@ -356,26 +356,22 @@ func keyMsg(key string) tea.KeyMsg {
 	return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(key)}
 }
 
-// Snapshot ends the console, compares its last screen with testdata/<test name>.golden, and
-// returns the screen; go test -update writes the file.
-func Snapshot(t *testing.T, tm *teatest.TestModel) string {
+// Screen ends the console and returns its last screen.
+func Screen(t *testing.T, tm *teatest.TestModel) string {
 	t.Helper()
 	if err := tm.Quit(); err != nil {
 		t.Fatal(err)
 	}
-	screen := tm.FinalModel(t, teatest.WithFinalTimeout(20*time.Second)).View()
-	golden.RequireEqual(t, []byte(screen+"\n"))
-	return screen
+	return tm.FinalModel(t, teatest.WithFinalTimeout(20*time.Second)).View()
 }
 
-// Eventually waits until cond holds.
-func Eventually(t *testing.T, what string, cond func() bool) {
+// Snapshot is Screen that compares the screen with testdata/<test name>.golden; go test -update
+// writes the file.
+func Snapshot(t *testing.T, tm *teatest.TestModel) string {
 	t.Helper()
-	for deadline := time.Now().Add(20 * time.Second); !cond(); time.Sleep(10 * time.Millisecond) {
-		if time.Now().After(deadline) {
-			t.Fatalf("%s did not happen", what)
-		}
-	}
+	screen := Screen(t, tm)
+	golden.RequireEqual(t, []byte(screen+"\n"))
+	return screen
 }
 
 // Clock is a clock a test moves on, which Options.Now reads.

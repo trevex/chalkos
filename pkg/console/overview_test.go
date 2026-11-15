@@ -42,10 +42,3 @@ func TestOverviewFailingSource(t *testing.T) {
 	consoletest.WaitFor(t, tm, "chronyc timed out")
 	consoletest.Snapshot(t, tm)
 }
-
-// In maintenance mode the node has no status; the tab says where to look instead.
-func TestOverviewMaintenance(t *testing.T) {
-	tm := consoletest.Start(t, console.New(consoletest.Maintenance(), consoletest.Options()))
-	consoletest.WaitFor(t, tm, "not installed")
-	consoletest.Snapshot(t, tm)
-}

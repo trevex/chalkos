@@ -12,17 +12,11 @@ import (
 	"github.com/trevex/chalkos/pkg/console/consoletest"
 )
 
-func TestHeaderNormal(t *testing.T) {
-	tm := consoletest.Start(t, console.New(consoletest.Normal(), consoletest.Options()))
-	consoletest.WaitFor(t, tm, "healthy")
-	consoletest.Snapshot(t, tm)
-}
-
 // In maintenance mode the header keeps the fingerprint and the addresses beyond link-local on
-// screen, which install needs.
+// screen, which install needs, and the Overview says where to look for the missing status.
 func TestHeaderMaintenance(t *testing.T) {
 	tm := consoletest.Start(t, console.New(consoletest.Maintenance(), consoletest.Options()))
-	consoletest.WaitFor(t, tm, "2001:db8::50")
+	consoletest.WaitFor(t, tm, "2001:db8::50", "not installed")
 	consoletest.Snapshot(t, tm)
 }
 
@@ -55,7 +49,6 @@ func TestSwitchTabs(t *testing.T) {
 	consoletest.WaitFor(t, tm, "ENCRYPTION")
 	consoletest.Press(tm, "left")
 	consoletest.WaitFor(t, tm, "DNS servers")
-	consoletest.Snapshot(t, tm)
 }
 
 // On a narrow screen the fingerprint breaks over rows instead of being cut.

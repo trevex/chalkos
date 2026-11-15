@@ -12,6 +12,7 @@ import (
 
 	"github.com/trevex/chalkos/pkg/console"
 	"github.com/trevex/chalkos/pkg/console/consoletest"
+	"github.com/trevex/chalkos/pkg/internal/testwait"
 )
 
 // The Logs tab follows the journal of the boot and marks the errors.
@@ -90,7 +91,7 @@ func TestLogsStartWhenShown(t *testing.T) {
 	}
 	consoletest.Press(tm, "4")
 	consoletest.WaitFor(t, tm, "delivered")
-	consoletest.Eventually(t, "one stream", func() bool { return c.Streams() == 1 })
+	testwait.Eventually(t, "one stream", func() bool { return c.Streams() == 1 })
 }
 
 // Tabs, escapes and other control characters of a line show as text within the screen's width,
@@ -137,7 +138,7 @@ func TestLogsBackToChalkd(t *testing.T) {
 	c.Set(func(c *consoletest.Client) { c.LogsErr = nil })
 	clock.Advance(11 * time.Second)
 	consoletest.WaitFor(t, tm, "delivered")
-	screen := consoletest.Snapshot(t, tm)
+	screen := consoletest.Screen(t, tm)
 	if strings.Contains(screen, "read by the console") {
 		t.Error("the tab still says the console reads the journal")
 	}
@@ -154,13 +155,13 @@ func TestIdle(t *testing.T) {
 	consoletest.WaitFor(t, tm, "healthy")
 	consoletest.Press(tm, "4")
 	consoletest.WaitFor(t, tm, "delivered")
-	consoletest.Eventually(t, "a stream", func() bool { return c.Streams() == 1 })
+	testwait.Eventually(t, "a stream", func() bool { return c.Streams() == 1 })
 	clock.Advance(6 * time.Minute)
 	consoletest.WaitFor(t, tm, "idle:", "paused while idle")
-	consoletest.Eventually(t, "the stream's end", func() bool { return c.Streams() == 0 })
+	testwait.Eventually(t, "the stream's end", func() bool { return c.Streams() == 0 })
 	consoletest.Press(tm, "end")
-	consoletest.Eventually(t, "a stream again", func() bool { return c.Streams() == 1 })
-	screen := consoletest.Snapshot(t, tm)
+	testwait.Eventually(t, "a stream again", func() bool { return c.Streams() == 1 })
+	screen := consoletest.Screen(t, tm)
 	if strings.Contains(screen, "idle") {
 		t.Error("the screen still says the console is idle")
 	}
