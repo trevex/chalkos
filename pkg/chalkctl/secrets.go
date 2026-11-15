@@ -33,15 +33,31 @@ func (a *app) loadSecrets(ctx context.Context, s layer.SecretsFlags) (clustersec
 	if err != nil {
 		return clustersecrets.Secrets{}, err
 	}
+	data, err := a.readSecretsData(path)
+	if err != nil {
+		return clustersecrets.Secrets{}, err
+	}
+	return a.decodeSecrets(ctx, s, path, data)
+}
+
+// readSecretsData reads the secrets file at path, - for standard input.
+func (a *app) readSecretsData(path string) ([]byte, error) {
 	var data []byte
+	var err error
 	if path == "-" {
 		data, err = io.ReadAll(a.stdin)
 	} else {
 		data, err = os.ReadFile(path)
 	}
 	if err != nil {
-		return clustersecrets.Secrets{}, fmt.Errorf("read the secrets file: %w", err)
+		return nil, fmt.Errorf("read the secrets file: %w", err)
 	}
+	return data, nil
+}
+
+// decodeSecrets decodes data, the secrets file at path, with the age identities s names when it
+// is encrypted.
+func (a *app) decodeSecrets(ctx context.Context, s layer.SecretsFlags, path string, data []byte) (clustersecrets.Secrets, error) {
 	secrets, err := clustersecrets.Read(data, func() ([]age.Identity, error) { return a.ageIdentities(ctx, s.Identities) })
 	if err != nil {
 		return clustersecrets.Secrets{}, fmt.Errorf("%s: %w", path, err)
@@ -273,11 +289,17 @@ func (a *app) genSecrets(f genSecretsFlags) error {
 		return err
 	}
 
-	secrets, err := clustersecrets.Generate(time.Now())
+	data, public, err := a.newSecrets(recipients, f.plaintext)
 	if err != nil {
 		return err
 	}
-	if err := a.writeSecrets(secrets, recipients, f.plaintext, secretsFile, publicPath); err != nil {
+	if err := atomicfile.WriteNew(secretsFile, data, 0o600); err != nil {
+		return err
+	}
+	if !f.plaintext {
+		a.sayRecipients(secretsFile, recipients)
+	}
+	if err := atomicfile.WriteNew(publicPath, public, 0o644); err != nil {
 		return err
 	}
 	fmt.Fprintf(a.stdout, "wrote %s and %s\n", secretsFile, publicPath)
@@ -302,15 +324,7 @@ func publicDirExists(path string) error {
 // first, and removed again when the secrets cannot be written, so it never belongs to secrets
 // nobody kept.
 func (a *app) genSecretsToStdout(recipients []string, plaintext bool, publicPath string) error {
-	secrets, err := clustersecrets.Generate(time.Now())
-	if err != nil {
-		return err
-	}
-	data, err := a.encodeSecrets(secrets, recipients, plaintext)
-	if err != nil {
-		return err
-	}
-	public, err := encodePublic(secrets)
+	data, public, err := a.newSecrets(recipients, plaintext)
 	if err != nil {
 		return err
 	}
@@ -330,36 +344,18 @@ func (a *app) genSecretsToStdout(recipients []string, plaintext bool, publicPath
 	return nil
 }
 
-// writeSecrets writes the secrets file, encrypted to the recipients, which it records inside it,
-// unless plaintext, and its public half when publicPath is set. Neither may exist: a secrets file
-// is never overwritten.
-func (a *app) writeSecrets(secrets clustersecrets.Secrets, recipients []string, plaintext bool, path, publicPath string) error {
-	for _, p := range []string{path, publicPath} {
-		if p == "" {
-			continue
-		}
-		if _, err := os.Stat(p); err == nil {
-			return fmt.Errorf("%s exists; secrets are always written to a new file", p)
-		}
-	}
-	data, err := a.encodeSecrets(secrets, recipients, plaintext)
+// newSecrets generates a cluster's secrets and encodes them as a secrets file, encrypted to the
+// recipients, which it records inside it, unless plaintext, and as their public half.
+func (a *app) newSecrets(recipients []string, plaintext bool) (data, public []byte, err error) {
+	secrets, err := clustersecrets.Generate(time.Now())
 	if err != nil {
-		return err
+		return nil, nil, err
 	}
-	if err := atomicfile.WriteNew(path, data, 0o600); err != nil {
-		return err
+	if data, err = a.encodeSecrets(secrets, recipients, plaintext); err != nil {
+		return nil, nil, err
 	}
-	if !plaintext {
-		a.sayRecipients(path, recipients)
-	}
-	if publicPath == "" {
-		return nil
-	}
-	public, err := encodePublic(secrets)
-	if err != nil {
-		return err
-	}
-	return atomicfile.WriteNew(publicPath, public, 0o644)
+	public, err = encodePublic(secrets)
+	return data, public, err
 }
 
 // encodeSecrets encodes the secrets as a secrets file: encrypted to the recipients, which it
@@ -448,9 +444,9 @@ func (a *app) openSecrets(ctx context.Context, s layer.SecretsFlags, change chan
 		return nil, errors.New("the secrets file from standard input cannot be updated in place; pass --out")
 	}
 	if path == "-" {
-		data, err := io.ReadAll(a.stdin)
+		data, err := a.readSecretsData(path)
 		if err != nil {
-			return nil, fmt.Errorf("read the secrets file: %w", err)
+			return nil, err
 		}
 		return a.readSecretsFile(ctx, s, path, data, change)
 	}
@@ -478,9 +474,9 @@ func (a *app) readSecretsFile(ctx context.Context, s layer.SecretsFlags, path st
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", path, err)
 	}
-	secrets, err := clustersecrets.Read(data, func() ([]age.Identity, error) { return a.ageIdentities(ctx, s.Identities) })
+	secrets, err := a.decodeSecrets(ctx, s, path, data)
 	if err != nil {
-		return nil, fmt.Errorf("%s: %w", path, err)
+		return nil, err
 	}
 	f := &secretsFile{secrets: secrets, path: path, out: path, format: format, recipients: secrets.Recipients}
 	public := ""
@@ -566,15 +562,14 @@ func matchesPublic(path string, secrets clustersecrets.Secrets) error {
 
 // written says where the changes went and what the operator does with them.
 func (f *secretsFile) written() string {
-	var what []string
-	if f.inPlace() {
-		what = append(what, "the previous version is "+clustersecrets.PreviousOf(f.path))
-		if f.duringRotation {
-			what[len(what)-1] = "the version from before the rotation is " + clustersecrets.PreviousOf(f.path)
-		}
-	} else {
-		what = append(what, "replace the secrets file with it")
+	first := "replace the secrets file with it"
+	switch {
+	case f.inPlace() && f.duringRotation:
+		first = "the version from before the rotation is " + clustersecrets.PreviousOf(f.path)
+	case f.inPlace():
+		first = "the previous version is " + clustersecrets.PreviousOf(f.path)
 	}
+	what := []string{first}
 	if f.publicOut == "" {
 		what = append(what, "secrets.pub.json still holds the previous public half (--public-out writes the new one)")
 	} else {
