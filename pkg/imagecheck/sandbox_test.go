@@ -17,34 +17,8 @@ import (
 // chalkd's own directory, in the sandbox.
 func TestUnitArgs(t *testing.T) {
 	got := DefaultSandbox("/run/chalkd/check").unitArgs(Image{Store: "/run/chalkd/upgrade-store/nix/store", System: "/nix/store/s-system", Checker: "/run/chalkd/upgrade-store/nix/store/c-chalkd/bin/chalkd"})
-	want := []string{
-		"systemd-run", "--quiet", "--service-type=oneshot", "--unit=chalkos-check.service",
-		"--property=DynamicUser=yes",
-		"--property=CapabilityBoundingSet=",
-		"--property=AmbientCapabilities=",
-		"--property=NoNewPrivileges=yes",
-		"--property=ProtectSystem=strict",
-		"--property=ProtectHome=yes",
-		"--property=ProtectProc=invisible",
-		"--property=TemporaryFileSystem=/tmp:size=128M,mode=1777",
-		"--property=PrivateDevices=yes",
-		"--property=PrivateNetwork=yes",
-		"--property=IPAddressDeny=any",
-		"--property=ProtectKernelTunables=yes",
-		"--property=ProtectKernelModules=yes",
-		"--property=ProtectKernelLogs=yes",
-		"--property=ProtectControlGroups=yes",
-		"--property=ProtectClock=yes",
-		"--property=ProtectHostname=yes",
-		"--property=LockPersonality=yes",
-		"--property=RestrictRealtime=yes",
-		"--property=SystemCallArchitectures=native",
-		"--property=RestrictNamespaces=user net",
-		"--property=RestrictAddressFamilies=AF_UNIX AF_NETLINK",
-		"--property=InaccessiblePaths=-/state -/var -/run/chalkos",
-		"--property=MemorySwapMax=0",
-		"--property=LimitFSIZE=33554432",
-		"--property=DefaultDependencies=no",
+	want := append([]string{"systemd-run", "--quiet", "--service-type=oneshot", "--unit=chalkos-check.service"}, properties...)
+	want = append(want,
 		"--property=BindReadOnlyPaths=/run/chalkd/upgrade-store/nix/store:/nix/store",
 		"--property=BindReadOnlyPaths=/run/chalkd/upgrade-store/nix/store/c-chalkd/bin/chalkd:/run/chalkos-check/chalkd",
 		"--property=BindPaths=/run/chalkd/check/facts.sock:/run/chalkos-check/facts.sock",
@@ -54,7 +28,7 @@ func TestUnitArgs(t *testing.T) {
 		"--property=StandardOutput=truncate:/run/chalkd/check/result",
 		"--property=StandardError=journal",
 		"--", "/run/chalkos-check/chalkd", "check", "--system", "/nix/store/s-system", "--facts", "/run/chalkos-check/facts.sock",
-	}
+	)
 	if !slices.Equal(got, want) {
 		t.Errorf("unitArgs =\n%q\nwant\n%q", got, want)
 	}
