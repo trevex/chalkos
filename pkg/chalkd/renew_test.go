@@ -22,6 +22,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"connectrpc.com/connect"
@@ -421,46 +422,50 @@ func TestIssueNodeCertificateLocallyOnControlPlanes(t *testing.T) {
 // TestRenewOnApplyConfig checks the test images' hook: with it, ApplyConfig renews the node
 // certificate though it is not due; without it, as on every other image, it does not.
 func TestRenewOnApplyConfig(t *testing.T) {
-	for _, hook := range []bool{false, true} {
-		s, _ := installedServer(t, section("", ""), false)
-		withNodeCertificate(t, s)
-		s.RenewOnApplyConfig = hook
-		issued := make(chan struct{}, 1)
-		s.Renewal = NewNodeRenewal(s.Certificate, func(context.Context, []byte) (string, error) {
-			issued <- struct{}{}
-			return "", errors.New("the test issues none")
-		})
-		// The clock never ends a wait: only a forced renewal runs.
-		s.Renewal.After = func(time.Duration) <-chan time.Time { return nil }
-		ctx, cancel := context.WithCancel(context.Background())
-		done := make(chan struct{})
-		go func() { s.Renewal.Run(ctx); close(done) }()
-		// OS CAs alone, as a rotation delivers them, renew nothing.
-		if _, err := s.ApplyConfig(context.Background(), connect.NewRequest(&nodev1.ApplyConfigRequest{Trust: []byte(s.Certificate.OSCA())})); err != nil {
-			t.Fatal(err)
-		}
-		select {
-		case <-issued:
-			t.Error("delivering OS CAs alone renewed the node certificate")
-		case <-time.After(100 * time.Millisecond):
-		}
-		recorded, _ := readIdentity(s)
-		if _, err := deliver(context.Background(), s, string(recorded), &nodev1.ApplyConfigRequest{}); err != nil {
-			t.Fatal(err)
-		}
-		select {
-		case <-issued:
-			if !hook {
-				t.Error("ApplyConfig renewed the node certificate without the test hook")
+	testwait.Bubble(t, func(t *testing.T) {
+		for _, hook := range []bool{false, true} {
+			s, _ := installedServer(t, section("", ""), false)
+			withNodeCertificate(t, s)
+			s.RenewOnApplyConfig = hook
+			issued := make(chan struct{}, 1)
+			s.Renewal = NewNodeRenewal(s.Certificate, func(context.Context, []byte) (string, error) {
+				issued <- struct{}{}
+				return "", errors.New("the test issues none")
+			})
+			// The clock never ends a wait: only a forced renewal runs.
+			s.Renewal.After = func(time.Duration) <-chan time.Time { return nil }
+			ctx, cancel := context.WithCancel(context.Background())
+			done := make(chan struct{})
+			go func() { s.Renewal.Run(ctx); close(done) }()
+			// OS CAs alone, as a rotation delivers them, renew nothing.
+			if _, err := s.ApplyConfig(context.Background(), connect.NewRequest(&nodev1.ApplyConfigRequest{Trust: []byte(s.Certificate.OSCA())})); err != nil {
+				t.Fatal(err)
 			}
-		case <-time.After(time.Second):
-			if hook {
-				t.Error("ApplyConfig did not renew the node certificate with the test hook")
+			synctest.Wait()
+			select {
+			case <-issued:
+				t.Error("delivering OS CAs alone renewed the node certificate")
+			default:
 			}
+			recorded, _ := readIdentity(s)
+			if _, err := deliver(context.Background(), s, string(recorded), &nodev1.ApplyConfigRequest{}); err != nil {
+				t.Fatal(err)
+			}
+			synctest.Wait()
+			select {
+			case <-issued:
+				if !hook {
+					t.Error("ApplyConfig renewed the node certificate without the test hook")
+				}
+			default:
+				if hook {
+					t.Error("ApplyConfig did not renew the node certificate with the test hook")
+				}
+			}
+			cancel()
+			<-done
 		}
-		cancel()
-		<-done
-	}
+	})
 }
 
 // silentPeer completes TLS handshakes as the node of cert and then never answers, until the

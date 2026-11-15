@@ -921,53 +921,55 @@ func TestApplyConfigRefusesChangedRegistrationFields(t *testing.T) {
 
 // A changed cluster starts a control plane's loop again once the one before ended.
 func TestApplyConfigRestartsTheControlPlaneLoop(t *testing.T) {
-	var mu sync.Mutex
-	var events []string
-	record := func(e string) {
-		mu.Lock()
-		defer mu.Unlock()
-		events = append(events, e)
-	}
-	seen := func() []string {
-		mu.Lock()
-		defer mu.Unlock()
-		return slices.Clone(events)
-	}
-	s, _ := clusterServer(t, k8s.KindControlPlane, func(o *kubernetesplugin.Options) {
-		o.Hooks.ControlPlane = func(ctx context.Context, _ kpki.Share, applied func(int)) error {
-			record("start")
-			applied(1)
-			<-ctx.Done()
-			// A loop that takes a while to end must have ended before the next starts.
-			time.Sleep(50 * time.Millisecond)
-			record("end")
-			return ctx.Err()
+	testwait.Bubble(t, func(t *testing.T) {
+		var mu sync.Mutex
+		var events []string
+		record := func(e string) {
+			mu.Lock()
+			defer mu.Unlock()
+			events = append(events, e)
+		}
+		seen := func() []string {
+			mu.Lock()
+			defer mu.Unlock()
+			return slices.Clone(events)
+		}
+		s, _ := clusterServer(t, k8s.KindControlPlane, func(o *kubernetesplugin.Options) {
+			o.Hooks.ControlPlane = func(ctx context.Context, _ kpki.Share, applied func(int)) error {
+				record("start")
+				applied(1)
+				<-ctx.Done()
+				// A loop that takes a while to end must have ended before the next starts.
+				time.Sleep(50 * time.Millisecond)
+				record("end")
+				return ctx.Err()
+			}
+		})
+		p := kubernetesState(s)
+		ips, err := p.ReadNodeIPs()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := p.WritePin(ips); err != nil {
+			t.Fatal(err)
+		}
+		write(t, p.BootstrappedMarker(), "")
+		startKubernetes(t, s)
+		testwait.Eventually(t, "the first loop", func() bool { return len(seen()) == 1 })
+
+		config := strings.Replace(workerConfig, "type: worker", "type: controlplane", 1)
+		if _, err := sendConfig(s, config); err != nil {
+			t.Fatal(err)
+		}
+		testwait.Eventually(t, "the loop after the first config", func() bool { return len(seen()) == 3 })
+		if _, err := sendConfig(s, strings.Replace(config, `:6443", `, `:6443", domain: lab.local, `, 1)); err != nil {
+			t.Fatal(err)
+		}
+		testwait.Eventually(t, "the loop after the changed cluster", func() bool { return len(seen()) == 5 })
+		if got := seen(); !slices.Equal(got, []string{"start", "end", "start", "end", "start"}) {
+			t.Errorf("events = %v", got)
 		}
 	})
-	p := kubernetesState(s)
-	ips, err := p.ReadNodeIPs()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := p.WritePin(ips); err != nil {
-		t.Fatal(err)
-	}
-	write(t, p.BootstrappedMarker(), "")
-	startKubernetes(t, s)
-	testwait.Eventually(t, "the first loop", func() bool { return len(seen()) == 1 })
-
-	config := strings.Replace(workerConfig, "type: worker", "type: controlplane", 1)
-	if _, err := sendConfig(s, config); err != nil {
-		t.Fatal(err)
-	}
-	testwait.Eventually(t, "the loop after the first config", func() bool { return len(seen()) == 3 })
-	if _, err := sendConfig(s, strings.Replace(config, `:6443", `, `:6443", domain: lab.local, `, 1)); err != nil {
-		t.Fatal(err)
-	}
-	testwait.Eventually(t, "the loop after the changed cluster", func() bool { return len(seen()) == 5 })
-	if got := seen(); !slices.Equal(got, []string{"start", "end", "start", "end", "start"}) {
-		t.Errorf("events = %v", got)
-	}
 }
 
 // Without a stored cluster, as on a node whose stored config holds no Cluster document, the

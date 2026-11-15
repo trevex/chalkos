@@ -22,6 +22,7 @@ import (
 	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/config/slot"
 	"github.com/trevex/chalkos/pkg/identity"
+	"github.com/trevex/chalkos/pkg/internal/testwait"
 	"github.com/trevex/chalkos/pkg/pki"
 	"github.com/trevex/chalkos/pkg/storage"
 	"github.com/trevex/chalkos/pkg/tool/tooltest"
@@ -786,27 +787,29 @@ func TestEveryEndOfATrialDropsItsCopy(t *testing.T) {
 // TestTrialDeadlineStartsAfterTheStagedCheck counts a trial's time from its record on: the staged
 // image's check, which may take its time, comes before it.
 func TestTrialDeadlineStartsAfterTheStagedCheck(t *testing.T) {
-	s, _ := stagedServer(t, fixtureSchemas(t))
-	stopTrials(t, s)
-	slots := fakeImageSlots(t, s)
-	read := slots.read
-	var checked time.Time
-	slots.read = func(ctx context.Context, rootHash []byte, f func(imageStore, string) error) error {
-		err := read(ctx, rootHash, f)
-		time.Sleep(10 * time.Millisecond)
-		checked = time.Now()
-		return err
-	}
-	if _, err := sendTrial(s, nextConfig, time.Hour); err != nil {
-		t.Fatal(err)
-	}
-	r, open, err := readTrial(s.Paths.StateDir)
-	if err != nil || !open {
-		t.Fatalf("no trial recorded: %v", err)
-	}
-	if r.Deadline.Before(checked.Add(time.Hour)) {
-		t.Errorf("the deadline %v comes before an hour after the staged check ended, %v", r.Deadline, checked)
-	}
+	testwait.Bubble(t, func(t *testing.T) {
+		s, _ := stagedServer(t, fixtureSchemas(t))
+		stopTrials(t, s)
+		slots := fakeImageSlots(t, s)
+		read := slots.read
+		var checked time.Time
+		slots.read = func(ctx context.Context, rootHash []byte, f func(imageStore, string) error) error {
+			err := read(ctx, rootHash, f)
+			time.Sleep(10 * time.Millisecond)
+			checked = time.Now()
+			return err
+		}
+		if _, err := sendTrial(s, nextConfig, time.Hour); err != nil {
+			t.Fatal(err)
+		}
+		r, open, err := readTrial(s.Paths.StateDir)
+		if err != nil || !open {
+			t.Fatalf("no trial recorded: %v", err)
+		}
+		if r.Deadline.Before(checked.Add(time.Hour)) {
+			t.Errorf("the deadline %v comes before an hour after the staged check ended, %v", r.Deadline, checked)
+		}
+	})
 }
 
 // TestCheckSecondTrial refuses a trial whose config adds storage for the staged image on top of
