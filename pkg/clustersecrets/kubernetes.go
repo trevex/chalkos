@@ -53,19 +53,32 @@ func NewKubernetesSecrets(now time.Time) (*KubernetesSecrets, error) {
 			return nil, err
 		}
 	}
-	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
-	if err != nil {
-		return nil, err
-	}
-	if k.ServiceAccountKey, err = pki.EncodeKey(key); err != nil {
+	if k.ServiceAccountKey, err = newServiceAccountKey(); err != nil {
 		return nil, err
 	}
 	k.EncryptionKeyName = DefaultEncryptionKeyName
-	k.EncryptionKey = make([]byte, EncryptionKeySize)
-	if _, err := rand.Read(k.EncryptionKey); err != nil {
+	if k.EncryptionKey, err = newEncryptionKey(); err != nil {
 		return nil, err
 	}
 	return k, nil
+}
+
+// newServiceAccountKey creates a P-256 service-account key, PEM PKCS#8.
+func newServiceAccountKey() (string, error) {
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		return "", err
+	}
+	return pki.EncodeKey(key)
+}
+
+// newEncryptionKey creates a random encryption key.
+func newEncryptionKey() ([]byte, error) {
+	key := make([]byte, EncryptionKeySize)
+	if _, err := rand.Read(key); err != nil {
+		return nil, err
+	}
+	return key, nil
 }
 
 // Public returns the CA certificates.

@@ -1,9 +1,6 @@
 package clustersecrets
 
 import (
-	"crypto/ecdsa"
-	"crypto/elliptic"
-	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -484,11 +481,8 @@ func (s *Secrets) BeginRotation(kind RotationKind, now time.Time) error {
 			*slot.accepted = append(*slot.accepted, created.Certificate)
 		}
 	case RotateServiceAccountKey:
-		key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
-		if err != nil {
-			return err
-		}
-		if n.ServiceAccountKey, err = pki.EncodeKey(key); err != nil {
+		var err error
+		if n.ServiceAccountKey, err = newServiceAccountKey(); err != nil {
 			return err
 		}
 		pub, err := pki.ServiceAccountPublicKey(n.ServiceAccountKey)
@@ -497,8 +491,8 @@ func (s *Secrets) BeginRotation(kind RotationKind, now time.Time) error {
 		}
 		k.Accepted.ServiceAccountKeys = append(k.Accepted.ServiceAccountKeys, pub)
 	case RotateEncryptionKey:
-		key := make([]byte, EncryptionKeySize)
-		if _, err := rand.Read(key); err != nil {
+		key, err := newEncryptionKey()
+		if err != nil {
 			return err
 		}
 		// A name of its own for every key: ciphertexts carry it, and one under a name used before
@@ -547,11 +541,20 @@ func (s *Secrets) RecordApplied(now time.Time) error {
 	return s.Validate()
 }
 
+// acceptedEverywhere returns the new values of a rotation of kind once every node accepts them,
+// else nil.
+func (s Secrets) acceptedEverywhere(kind RotationKind) *NewValues {
+	if r := s.Rotation; r != nil && r.Kind == kind && r.Phase == PhaseAccept && r.Applied && r.New != nil {
+		return r.New
+	}
+	return nil
+}
+
 // ClientCA is the OS CA client files are issued from: the new one once every node accepts it, so
 // a client file issued during the rotation keeps working after its finish, else the issuing one.
 func (s Secrets) ClientCA() pki.CertKey {
-	if r := s.Rotation; r != nil && r.Kind == RotateOSCA && r.Phase == PhaseAccept && r.Applied && r.New != nil && r.New.OSCA != nil {
-		return *r.New.OSCA
+	if n := s.acceptedEverywhere(RotateOSCA); n != nil && n.OSCA != nil {
+		return *n.OSCA
 	}
 	return s.OSCA
 }
@@ -559,8 +562,8 @@ func (s Secrets) ClientCA() pki.CertKey {
 // KubeconfigCA is the Kubernetes CA kubeconfigs' client certificates are issued from, chosen as
 // ClientCA chooses the OS CA.
 func (s Secrets) KubeconfigCA() pki.CertKey {
-	if r := s.Rotation; r != nil && r.Kind == RotateKubernetesCA && r.Phase == PhaseAccept && r.Applied && r.New != nil && r.New.CA != nil {
-		return *r.New.CA
+	if n := s.acceptedEverywhere(RotateKubernetesCA); n != nil && n.CA != nil {
+		return *n.CA
 	}
 	return s.Kubernetes.CA
 }
