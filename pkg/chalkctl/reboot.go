@@ -296,14 +296,10 @@ func (b *rebooter) failed(n *rebootNode, boot *nodev1.BootStatus) error {
 // unhealthyError is the error of a node whose boot of the target's image settled without being
 // found healthy, for why, with whether it stays held.
 func unhealthyError(n *rebootNode, t bootTarget, why string) error {
-	msg := fmt.Sprintf("%s: its boot of %s settled and is not healthy: %s", n.name, t.image, why)
-	if n.roles.member() && n.held {
-		msg += "; it stays cordoned"
-	}
-	return errors.New(msg)
+	return fellBackError(n, fmt.Sprintf("%s: its boot of %s settled and is not healthy: %s", n.name, t.image, why), &nodev1.BootStatus{})
 }
 
-// fellBackError is the error msg says of a node that fell back, with whether it stays held and
+// fellBackError is the error msg says of a node whose boot failed, with whether it stays held and
 // what its boots logged.
 func fellBackError(n *rebootNode, msg string, boot *nodev1.BootStatus) error {
 	if n.roles.member() && n.held {

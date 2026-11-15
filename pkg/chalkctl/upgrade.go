@@ -78,19 +78,16 @@ type upgradeOptions struct {
 }
 
 type upgradeFlags struct {
+	upgradeOptions
 	node           nodeFlags
 	image, nodes   string
-	passwordFile   string
-	maxUnavailable int
-	until          upgradeStep
-	retryFailed    bool
 	diff, rollback bool
 	layers         map[string]any
 	timeout        time.Duration
 }
 
 func (a *app) upgradeCommand() *cobra.Command {
-	f := upgradeFlags{until: untilReboot, layers: map[string]any{}}
+	f := upgradeFlags{upgradeOptions: upgradeOptions{until: untilReboot}, layers: map[string]any{}}
 	cmd := a.command(&cobra.Command{
 		Use:     "upgrade",
 		Short:   "Install new images on the cluster's nodes, or boot their previous ones again",
@@ -164,7 +161,7 @@ func (a *app) upgrade(ctx context.Context, f upgradeFlags) error {
 			a: a, cluster: c, reach: s,
 			rebootOptions: a.rebootOptions(f.layers, f.timeout),
 		},
-		upgradeOptions: f.options(), role: creds.role(),
+		upgradeOptions: f.upgradeOptions, role: creds.role(),
 		rollback: f.rollback,
 	}
 	r.fellBack = r.rolledBack
@@ -198,11 +195,6 @@ func (a *app) upgrade(ctx context.Context, f upgradeFlags) error {
 		return err
 	}
 	return r.run(ctx)
-}
-
-// options are the run's options as the flags give them.
-func (f upgradeFlags) options() upgradeOptions {
-	return upgradeOptions{until: f.until, maxUnavailable: f.maxUnavailable, retryFailed: f.retryFailed, passwordFile: f.passwordFile}
 }
 
 // chooseConfig decides whether the run delivers the inventory's config with the images, which
