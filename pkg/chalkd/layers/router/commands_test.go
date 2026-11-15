@@ -3,7 +3,6 @@ package router
 import (
 	"context"
 	"errors"
-	"os"
 	"path/filepath"
 	"slices"
 	"strconv"
@@ -27,20 +26,14 @@ func TestDHCP6Routes(t *testing.T) {
 	}
 	s, r := routerNode(t, kernel...)
 	s.PDDir = t.TempDir()
-	write := func(path, content string) {
-		t.Helper()
-		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
-			t.Fatal(err)
-		}
-	}
-	write(filepath.Join(s.KeaDir, "kea-dhcp6-access.json"), `{"Dhcp6": {"subnet6": [{"interface": "cust0", "pd-pools": [{"prefix": "2001:db8:100::", "prefix-len": 40, "delegated-len": 56}]}]}}`)
-	write(filepath.Join(s.KeaDir, "kea-dhcp6.json"), `{"Dhcp6": {"subnet6": [{"interface": "lan1", "pd-pools": [{"prefix": "2001:db8:300::", "prefix-len": 48, "delegated-len": 64}]}]}}`)
-	write(filepath.Join(s.KeaDir, "kea-dhcp6-Bad_Name.json"), `{"Dhcp6": {"subnet6": [{"interface": "bad0", "pd-pools": [{"prefix": "2001:db8:400::", "prefix-len": 48, "delegated-len": 64}]}]}}`)
+	touch(t, filepath.Join(s.KeaDir, "kea-dhcp6-access.json"), `{"Dhcp6": {"subnet6": [{"interface": "cust0", "pd-pools": [{"prefix": "2001:db8:100::", "prefix-len": 40, "delegated-len": 56}]}]}}`)
+	touch(t, filepath.Join(s.KeaDir, "kea-dhcp6.json"), `{"Dhcp6": {"subnet6": [{"interface": "lan1", "pd-pools": [{"prefix": "2001:db8:300::", "prefix-len": 48, "delegated-len": 64}]}]}}`)
+	touch(t, filepath.Join(s.KeaDir, "kea-dhcp6-Bad_Name.json"), `{"Dhcp6": {"subnet6": [{"interface": "bad0", "pd-pools": [{"prefix": "2001:db8:400::", "prefix-len": 48, "delegated-len": 64}]}]}}`)
 	later := strconv.FormatInt(now.Unix()+600, 10)
-	write(filepath.Join(s.PDDir, "cust0_2001:db8:100::_56"), "fe80::1 "+later+"\n")
-	write(filepath.Join(s.PDDir, "lan1_2001:db8:300:1::_64"), "fe80::2 "+later+"\n")
-	write(filepath.Join(s.PDDir, "bad0_2001:db8:400:1::_64"), "fe80::3 "+later+"\n")
-	write(filepath.Join(s.PDDir, "cust0_2001:db8:100:200::_56"), "fe80::4 "+strconv.FormatInt(now.Unix()-1, 10)+"\n")
+	touch(t, filepath.Join(s.PDDir, "cust0_2001:db8:100::_56"), "fe80::1 "+later+"\n")
+	touch(t, filepath.Join(s.PDDir, "lan1_2001:db8:300:1::_64"), "fe80::2 "+later+"\n")
+	touch(t, filepath.Join(s.PDDir, "bad0_2001:db8:400:1::_64"), "fe80::3 "+later+"\n")
+	touch(t, filepath.Join(s.PDDir, "cust0_2001:db8:100:200::_56"), "fe80::4 "+strconv.FormatInt(now.Unix()-1, 10)+"\n")
 	if err := s.dhcp6Routes(context.Background(), now); err != nil {
 		t.Fatal(err)
 	}
@@ -66,16 +59,12 @@ func TestDHCP6RoutesOfALinkDown(t *testing.T) {
 	now := time.Unix(1_800_000_000, 0)
 	s, r := routerNode(t)
 	s.PDDir = t.TempDir()
-	if err := os.WriteFile(filepath.Join(s.KeaDir, "kea-dhcp6.json"), []byte(`{"Dhcp6": {"subnet6": [
+	touch(t, filepath.Join(s.KeaDir, "kea-dhcp6.json"), `{"Dhcp6": {"subnet6": [
 		{"interface": "lan1", "pd-pools": [{"prefix": "2001:db8:300::", "prefix-len": 48, "delegated-len": 64}]},
-		{"interface": "lan2", "pd-pools": [{"prefix": "2001:db8:400::", "prefix-len": 48, "delegated-len": 64}]}]}}`), 0o644); err != nil {
-		t.Fatal(err)
-	}
+		{"interface": "lan2", "pd-pools": [{"prefix": "2001:db8:400::", "prefix-len": 48, "delegated-len": 64}]}]}}`)
 	later := strconv.FormatInt(now.Unix()+600, 10)
 	for name, via := range map[string]string{"lan1_2001:db8:300:1::_64": "fe80::2", "lan2_2001:db8:400:1::_64": "fe80::3"} {
-		if err := os.WriteFile(filepath.Join(s.PDDir, name), []byte(via+" "+later+"\n"), 0o644); err != nil {
-			t.Fatal(err)
-		}
+		touch(t, filepath.Join(s.PDDir, name), via+" "+later+"\n")
 	}
 	r.Rules = append(r.Rules, tooltest.Rule{Prefix: "ip -6 route replace 2001:db8:300:1::/64", Err: errors.New("Network is down")})
 	if err := s.dhcp6Routes(context.Background(), now); err != nil {
@@ -120,12 +109,8 @@ func TestDHCP6RoutesRemoved(t *testing.T) {
 		&routing.KernelRoute{Destination: "2001:db8:100::/56", Protocol: "dhcp-pd", Table: 500, NextHops: []*routing.NextHop{{Gateway: "fe80::1", Interface: "cust0", Weight: 1}, {Gateway: "fe80::2", Interface: "cust0", Weight: 1}}},
 		&routing.KernelRoute{Destination: "198.51.100.0/24", Protocol: "dhcp-pd", Table: 254, NextHops: []*routing.NextHop{{Gateway: "192.0.2.2", Interface: "lan0"}}},
 	)
-	if err := os.WriteFile(filepath.Join(s.KeaDir, "kea-dhcp6.json"), []byte(`{"Dhcp6": {"subnet6": [{"interface": "cust0", "pd-pools": [{"prefix": "2001:db8:100::", "prefix-len": 40, "delegated-len": 56}]}]}}`), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(s.PDDir, "cust0_2001:db8:100::_56"), []byte("fe80::1 "+strconv.FormatInt(now.Unix()+600, 10)+"\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	touch(t, filepath.Join(s.KeaDir, "kea-dhcp6.json"), `{"Dhcp6": {"subnet6": [{"interface": "cust0", "pd-pools": [{"prefix": "2001:db8:100::", "prefix-len": 40, "delegated-len": 56}]}]}}`)
+	touch(t, filepath.Join(s.PDDir, "cust0_2001:db8:100::_56"), "fe80::1 "+strconv.FormatInt(now.Unix()+600, 10)+"\n")
 	if err := s.dhcp6Routes(context.Background(), now); err != nil {
 		t.Fatal(err)
 	}

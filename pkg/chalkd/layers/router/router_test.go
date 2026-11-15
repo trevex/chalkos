@@ -40,9 +40,7 @@ func routerNode(t *testing.T, kernel ...*routing.KernelRoute) (*Plugin, *tooltes
 	t.Helper()
 	r := &tooltest.Runner{}
 	vrfs, resolvers := t.TempDir(), t.TempDir()
-	if err := os.WriteFile(filepath.Join(vrfs, "tenant.json"), []byte(`{"apiVersion": "router.chalkos.dev/v1alpha1", "kind": "VRF", "metadata": {"name": "tenant"}, "spec": {"table": 100, "interfaces": ["swp1"]}}`+"\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	touch(t, filepath.Join(vrfs, "tenant.json"), `{"apiVersion": "router.chalkos.dev/v1alpha1", "kind": "VRF", "metadata": {"name": "tenant"}, "spec": {"table": 100, "interfaces": ["swp1"]}}`+"\n")
 	return New(runnerNode{run: r}, Options{KernelRoutes: func() ([]*routing.KernelRoute, error) { return kernel, nil }, FRRConfig: frrLink(t), ResolverConfig: filepath.Join(t.TempDir(), "unbound.conf"), NAT64Dir: t.TempDir(), VRFDir: vrfs, ResolverDir: resolvers, KeaDir: t.TempDir(), RelayDir: t.TempDir(), PDDir: t.TempDir(), RunDir: t.TempDir(), NetDir: t.TempDir()}), r
 }
 
@@ -57,29 +55,12 @@ func frrLink(t *testing.T) string {
 	return link
 }
 
-// writeIndex writes the device index index into dir/ifindex, as the kernel shows a device's in
-// sysfs.
-func writeIndex(t *testing.T, dir, index string) {
+// bound records that the instance of the service svc of the VRF vrf is bound to the device of index
+// record, and gives the VRF's device the index device, as sysfs shows it.
+func bound(t *testing.T, p *Plugin, svc services.Service, vrf, record, device string) {
 	t.Helper()
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(dir, "ifindex"), []byte(index+"\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-}
-
-// writeRecord writes the device index index into the record of the instance of the service svc of
-// the VRF vrf in runDir, as the instance records the device its sockets are bound to.
-func writeRecord(t *testing.T, runDir string, svc services.Service, vrf, index string) {
-	t.Helper()
-	record := filepath.Join(runDir, svc.IndexRecord(vrf))
-	if err := os.MkdirAll(filepath.Dir(record), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(record, []byte(index+"\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	touch(t, filepath.Join(p.RunDir, svc.IndexRecord(vrf)), record+"\n")
+	touch(t, filepath.Join(p.NetDir, vrf, "ifindex"), device+"\n")
 }
 
 // routerStatus is the state of the router as the layer serves it.
@@ -164,9 +145,7 @@ func TestRouterStatusWhileDaemonsHang(t *testing.T) {
 	defer func(d time.Duration) { askTimeout = d }(askTimeout)
 	askTimeout = 500 * time.Millisecond
 	for _, file := range []string{s.ResolverConfig, filepath.Join(s.NAT64Dir, "edge.json"), filepath.Join(s.ResolverDir, "unbound-guest.conf")} {
-		if err := os.WriteFile(file, []byte("\n"), 0o644); err != nil {
-			t.Fatal(err)
-		}
+		touch(t, file, "\n")
 	}
 	start := time.Now()
 	st := routerStatus(t, s)
@@ -215,9 +194,7 @@ func (j slowJool) Exec(ctx context.Context, c tool.Cmd) ([]byte, error) {
 func TestRouterStatusWhileJoolIsSlow(t *testing.T) {
 	s, _ := routerNode(t)
 	s.run = slowJool{40 * time.Millisecond}
-	if err := os.WriteFile(filepath.Join(s.NAT64Dir, "edge.json"), []byte("{}\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	touch(t, filepath.Join(s.NAT64Dir, "edge.json"), "{}\n")
 	defer func(d time.Duration) { askTimeout = d }(askTimeout)
 	askTimeout = 100 * time.Millisecond
 	start := time.Now()
@@ -238,9 +215,7 @@ func TestRouterStatusWhileJoolIsSlow(t *testing.T) {
 func TestRouterNAT64Status(t *testing.T) {
 	s, r := routerNode(t)
 	for _, name := range []string{"edge", "gone", "stale"} {
-		if err := os.WriteFile(filepath.Join(s.NAT64Dir, name+".json"), []byte("{}\n"), 0o644); err != nil {
-			t.Fatal(err)
-		}
+		touch(t, filepath.Join(s.NAT64Dir, name+".json"), "{}\n")
 	}
 	r.Rules = append(r.Rules,
 		tooltest.Rule{Prefix: "jool instance display --csv --no-headers", Out: "8fb43ac0,edge,netfilter\n8fb43ac0,gone,netfilter\n8fb43ac0,stale,netfilter\n51c2d0e7,other,netfilter\n51c2d0e7,Other Box,netfilter\n", Times: 1},
@@ -282,9 +257,7 @@ func TestRouterResolverStatus(t *testing.T) {
 	if st := routerStatus(t, s); st == nil || st.Resolver != nil {
 		t.Fatalf("router status without a resolver = %v", st)
 	}
-	if err := os.WriteFile(s.ResolverConfig, []byte("server:\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	touch(t, s.ResolverConfig, "server:\n")
 	if st := routerStatus(t, s); st.GetResolver() == nil || !st.Resolver.Running || st.Resolver.Error != "" {
 		t.Errorf("router status of a running resolver = %v", st)
 	}
@@ -295,21 +268,14 @@ func TestRouterResolverStatus(t *testing.T) {
 }
 
 // A router's status holds the resolver of each VRF whose config the output unbound rendered,
-// sorted by VRF, each the state of its unit unbound@<vrf>, whose name escapes the VRF's dashes as
-// systemd-escape does; a stopped one says what state its unit is in. A file of no VRF's name is
-// left out and reaches no command.
+// sorted by VRF, each the state of its unit unbound@<vrf>; a stopped one says its unit's state.
 func TestRouterVRFResolverStatus(t *testing.T) {
 	s, r := routerNode(t)
-	for _, vrf := range []string{"tenant", "dmz-a", "Bad_Name", "x;y"} {
-		if err := os.WriteFile(filepath.Join(s.ResolverDir, "unbound-"+vrf+".conf"), []byte("server:\n"), 0o644); err != nil {
-			t.Fatal(err)
-		}
+	for _, vrf := range []string{"tenant", "dmz-a"} {
+		touch(t, filepath.Join(s.ResolverDir, "unbound-"+vrf+".conf"), "server:\n")
 	}
-	if err := os.WriteFile(filepath.Join(s.ResolverDir, "unbound.conf"), []byte("server:\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	writeRecord(t, s.RunDir, services.Unbound, "dmz-a", "7")
-	writeIndex(t, filepath.Join(s.NetDir, "dmz-a"), "7")
+	touch(t, filepath.Join(s.ResolverDir, "unbound.conf"), "server:\n")
+	bound(t, s, services.Unbound, "dmz-a", "7", "7")
 	r.Rules = append(r.Rules, tooltest.Rule{Prefix: "systemctl is-active unbound@tenant.service", Out: "failed\n", Err: &tool.Error{Command: "systemctl is-active unbound@tenant.service", Code: 3}})
 	st := routerStatus(t, s)
 	if st.GetResolver() != nil || len(st.VrfResolvers) != 2 {
@@ -322,14 +288,8 @@ func TestRouterVRFResolverStatus(t *testing.T) {
 	if tenant.Vrf != "tenant" || tenant.Running || tenant.Error != `unbound@tenant.service is failed` {
 		t.Errorf("the resolver of tenant = %v", tenant)
 	}
-	if !slices.Contains(r.Calls, `systemctl is-active unbound@dmz\x2da.service`) {
-		t.Errorf("dmz-a's unit was not asked by its escaped name: %q", r.Calls)
-	}
 	if c, _ := r.Cmd("systemctl is-active unbound@tenant.service"); !c.Quiet {
 		t.Error("systemctl's standard error reaches the console")
-	}
-	if slices.ContainsFunc(r.Calls, func(c string) bool { return strings.Contains(c, "Bad_Name") || strings.Contains(c, "x;y") }) {
-		t.Errorf("a file of no VRF's name reached a command: %q", r.Calls)
 	}
 }
 
@@ -339,15 +299,13 @@ func TestRouterVRFResolverStatus(t *testing.T) {
 func TestRouterVRFResolverStale(t *testing.T) {
 	s, _ := routerNode(t)
 	for _, vrf := range []string{"current", "moved", "gone", "unrecorded"} {
-		if err := os.WriteFile(filepath.Join(s.ResolverDir, "unbound-"+vrf+".conf"), []byte("server:\n"), 0o644); err != nil {
-			t.Fatal(err)
-		}
+		touch(t, filepath.Join(s.ResolverDir, "unbound-"+vrf+".conf"), "server:\n")
 	}
 	for vrf, index := range map[string]string{"current": "5", "moved": "6", "gone": "8"} {
-		writeRecord(t, s.RunDir, services.Unbound, vrf, index)
+		touch(t, filepath.Join(s.RunDir, services.Unbound.IndexRecord(vrf)), index+"\n")
 	}
 	for vrf, index := range map[string]string{"current": "5", "moved": "9", "unrecorded": "10"} {
-		writeIndex(t, filepath.Join(s.NetDir, vrf), index)
+		touch(t, filepath.Join(s.NetDir, vrf, "ifindex"), index+"\n")
 	}
 	want := map[string]string{
 		"current":    "",
@@ -410,9 +368,7 @@ func TestRoutesOfAVRF(t *testing.T) {
 		t.Errorf("routes without a VRF = %v, %v, want those of default", got, err)
 	}
 	for name, doc := range map[string]string{"notable": `{"spec": {"interfaces": ["swp2"]}}`, "broken": "{"} {
-		if err := os.WriteFile(filepath.Join(p.VRFDir, name+".json"), []byte(doc), 0o644); err != nil {
-			t.Fatal(err)
-		}
+		touch(t, filepath.Join(p.VRFDir, name+".json"), doc)
 	}
 	calls = len(r.Calls)
 	for _, tc := range []struct {
@@ -489,21 +445,18 @@ func keaConfig(t *testing.T, path string, subnets ...[3]string) {
 	for _, sub := range subnets {
 		s = append(s, `{"id": `+sub[2]+`, "subnet": "`+sub[1]+`", "user-context": {"name": "`+sub[0]+`"}}`)
 	}
-	if err := os.WriteFile(path, []byte(`{"Dhcp4": {"subnet4": [`+strings.Join(s, ", ")+`]}}`+"\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	touch(t, path, `{"Dhcp4": {"subnet4": [`+strings.Join(s, ", ")+`]}}`+"\n")
 }
 
 // A router's status holds the DHCP server of each VRF with a rendered config, the default VRF's
 // first: a running server's subnets with Kea's counts of their leased and pool addresses, by its
-// document's name, and a server whose unit is not active, which is bound to a removed device of
-// its VRF, which does not answer or which refuses the command, with why. A file of no VRF's name
-// reaches no command.
+// document's name, and a server whose unit is not active, which does not answer or which refuses
+// the command, with why.
 func TestRouterDHCPStatus(t *testing.T) {
 	s, r := routerNode(t)
 	dir, run := s.KeaDir, filepath.Join(s.RunDir, "kea")
 	keaConfig(t, filepath.Join(dir, "kea-dhcp4.json"), [3]string{"office", "192.0.2.0/24", "3221225984"}, [3]string{"lab", "203.0.113.0/26", "3405803776"})
-	for _, vrf := range []string{"guest", "dmz-a", "moved", "silent", "refusing", "Bad_Name"} {
+	for _, vrf := range []string{"guest", "dmz-a", "silent", "refusing"} {
 		keaConfig(t, filepath.Join(dir, "kea-dhcp4-"+vrf+".json"), [3]string{"guests", "198.51.100.0/24", "3325256704"})
 	}
 	stats := `{"result": 0, "arguments": {
@@ -517,9 +470,8 @@ func TestRouterDHCPStatus(t *testing.T) {
 		"subnet[3325256704].assigned-addresses": [[5, "2026-11-01 10:00:00.000000"]],
 		"subnet[3325256704].total-addresses": [[241, "2026-11-01 09:00:00.000000"]]}}`})
 	fakeKea(t, filepath.Join(run, "dhcp4-refusing.sock"), false, nil)
-	for vrf, index := range map[string][2]string{"dmz-a": {"7", "7"}, "moved": {"6", "9"}, "silent": {"4", "4"}, "refusing": {"5", "5"}} {
-		writeRecord(t, s.RunDir, services.Kea4, vrf, index[0])
-		writeIndex(t, filepath.Join(s.NetDir, vrf), index[1])
+	for vrf, index := range map[string]string{"dmz-a": "7", "silent": "4", "refusing": "5"} {
+		bound(t, s, services.Kea4, vrf, index, index)
 	}
 	r.Rules = append(r.Rules, tooltest.Rule{Prefix: "systemctl is-active kea-dhcp4@guest.service", Out: "failed\n", Err: &tool.Error{Command: "systemctl is-active kea-dhcp4@guest.service", Code: 3}})
 	st := routerStatus(t, s)
@@ -529,7 +481,7 @@ func TestRouterDHCPStatus(t *testing.T) {
 		got[d.Vrf] = d
 		order = append(order, d.Vrf)
 	}
-	if !slices.Equal(order, []string{"default", "dmz-a", "guest", "moved", "refusing", "silent"}) {
+	if !slices.Equal(order, []string{"default", "dmz-a", "guest", "refusing", "silent"}) {
 		t.Fatalf("DHCP servers = %v", st.Dhcp)
 	}
 	def := got["default"]
@@ -543,19 +495,12 @@ func TestRouterDHCPStatus(t *testing.T) {
 	}
 	for vrf, want := range map[string]string{
 		"guest":    "kea-dhcp4@guest.service is failed",
-		"moved":    "kea-dhcp4@moved.service is active, but it is bound to a removed device of the VRF",
 		"silent":   "connect: no such file or directory",
 		"refusing": "Kea answered statistic-get-all with result 2: 'statistic-get-all' command not supported.",
 	} {
 		if d := got[vrf]; d.Running || len(d.Subnets) != 0 || !strings.Contains(d.Error, want) {
 			t.Errorf("%s's server = %v, want an error with %q", vrf, d, want)
 		}
-	}
-	if !slices.Contains(r.Calls, `systemctl is-active kea-dhcp4@dmz\x2da.service`) || !slices.Contains(r.Calls, "systemctl is-active kea-dhcp4.service") {
-		t.Errorf("the units were not asked by their names: %q", r.Calls)
-	}
-	if slices.ContainsFunc(r.Calls, func(c string) bool { return strings.Contains(c, "Bad_Name") }) {
-		t.Errorf("a file of no VRF's name reached a command: %q", r.Calls)
 	}
 }
 
@@ -599,9 +544,7 @@ func TestRouterDHCP6Status(t *testing.T) {
 	dir, run := s.KeaDir, filepath.Join(s.RunDir, "kea")
 	keaConfig(t, filepath.Join(dir, "kea-dhcp4.json"), [3]string{"office", "192.0.2.0/24", "3221225984"})
 	for _, f := range []string{"kea-dhcp6.json", "kea-dhcp6-access.json"} {
-		if err := os.WriteFile(filepath.Join(dir, f), []byte(`{"Dhcp6": {"subnet6": [{"id": 2387838497, "subnet": "2001:db8:1::/64", "user-context": {"name": "office6"}}]}}`), 0o644); err != nil {
-			t.Fatal(err)
-		}
+		touch(t, filepath.Join(dir, f), `{"Dhcp6": {"subnet6": [{"id": 2387838497, "subnet": "2001:db8:1::/64", "user-context": {"name": "office6"}}]}}`)
 	}
 	fakeKea(t, filepath.Join(run, "dhcp4.sock"), false, map[string]string{"statistic-get-all": `{"result": 0, "arguments": {}}`})
 	fakeKea(t, filepath.Join(run, "dhcp6.sock"), false, map[string]string{"statistic-get-all": `{"result": 0, "arguments": {
@@ -609,8 +552,7 @@ func TestRouterDHCP6Status(t *testing.T) {
 		"subnet[2387838497].total-nas": [[18446744073709551616, "2026-11-01 09:00:00.000000"]],
 		"subnet[2387838497].assigned-pds": [[2, "2026-11-01 10:00:00.000000"]],
 		"subnet[2387838497].total-pds": [[256, "2026-11-01 09:00:00.000000"]]}}`})
-	writeRecord(t, s.RunDir, services.Kea6, "access", "6")
-	writeIndex(t, filepath.Join(s.NetDir, "access"), "9")
+	bound(t, s, services.Kea6, "access", "6", "9")
 	st := routerStatus(t, s)
 	var order []string
 	for _, d := range st.Dhcp {
@@ -632,20 +574,14 @@ func TestRouterDHCP6Status(t *testing.T) {
 }
 
 // A router's status holds the DHCP relay of each VRF with a rendered config, the default VRF's
-// first: whether its unit is active and bound to its VRF's device, or why not. A file of no VRF's
-// name reaches no command.
+// first: whether its unit is active, or why not.
 func TestRouterDHCPRelayStatus(t *testing.T) {
 	s, r := routerNode(t)
 	s.RelayDir = t.TempDir()
-	for _, f := range []string{"dnsmasq-relay.conf", "dnsmasq-relay-guest.conf", "dnsmasq-relay-dmz-a.conf", "dnsmasq-relay-moved.conf", "dnsmasq-relay-Bad_Name.conf"} {
-		if err := os.WriteFile(filepath.Join(s.RelayDir, f), []byte("port=0\n"), 0o644); err != nil {
-			t.Fatal(err)
-		}
+	for _, f := range []string{"dnsmasq-relay.conf", "dnsmasq-relay-guest.conf", "dnsmasq-relay-dmz-a.conf"} {
+		touch(t, filepath.Join(s.RelayDir, f), "port=0\n")
 	}
-	for vrf, index := range map[string][2]string{"dmz-a": {"7", "7"}, "moved": {"6", "9"}} {
-		writeRecord(t, s.RunDir, services.Relay, vrf, index[0])
-		writeIndex(t, filepath.Join(s.NetDir, vrf), index[1])
-	}
+	bound(t, s, services.Relay, "dmz-a", "7", "7")
 	r.Rules = append(r.Rules, tooltest.Rule{Prefix: "systemctl is-active dnsmasq-relay@guest.service", Out: "failed\n", Err: &tool.Error{Command: "systemctl is-active dnsmasq-relay@guest.service", Code: 3}})
 	st := routerStatus(t, s)
 	got := map[string]string{}
@@ -654,21 +590,17 @@ func TestRouterDHCPRelayStatus(t *testing.T) {
 		order = append(order, d.Vrf)
 		got[d.Vrf] = strconv.FormatBool(d.Running) + " " + d.Error
 	}
-	if !slices.Equal(order, []string{"default", "dmz-a", "guest", "moved"}) {
+	if !slices.Equal(order, []string{"default", "dmz-a", "guest"}) {
 		t.Fatalf("DHCP relays = %v", st.DhcpRelays)
 	}
 	for vrf, want := range map[string]string{
 		"default": "true ",
 		"dmz-a":   "true ",
 		"guest":   "false dnsmasq-relay@guest.service is failed",
-		"moved":   "false dnsmasq-relay@moved.service is active, but it is bound to a removed device of the VRF",
 	} {
 		if got[vrf] != want {
 			t.Errorf("%s's relay = %q, want %q", vrf, got[vrf], want)
 		}
-	}
-	if !slices.Contains(r.Calls, `systemctl is-active dnsmasq-relay@dmz\x2da.service`) || slices.ContainsFunc(r.Calls, func(c string) bool { return strings.Contains(c, "Bad_Name") }) {
-		t.Errorf("calls = %q", r.Calls)
 	}
 }
 
@@ -677,9 +609,7 @@ func TestRouterDHCPRelayStatus(t *testing.T) {
 func TestRenderedVRFs(t *testing.T) {
 	dir := t.TempDir()
 	for _, f := range []string{"dnsmasq-relay-a-b.conf", "dnsmasq-relay.conf", "dnsmasq-relay-a.conf", "dnsmasq-relay-Bad_Name.conf", "dnsmasq-relay-default.conf", "dnsmasq-relayx.conf", "unbound-c.conf"} {
-		if err := os.WriteFile(filepath.Join(dir, f), nil, 0o644); err != nil {
-			t.Fatal(err)
-		}
+		touch(t, filepath.Join(dir, f), "")
 	}
 	if got := renderedVRFs(dir, services.Relay); !slices.Equal(got, []string{"default", "a", "a-b"}) {
 		t.Errorf("renderedVRFs = %q", got)

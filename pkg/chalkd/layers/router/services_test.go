@@ -191,6 +191,9 @@ func (f *fakeSystemd) onDevice(t *testing.T, svc services.Service, vrf string) {
 
 func touch(t *testing.T, file, content string) {
 	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(file), 0o755); err != nil {
+		t.Fatal(err)
+	}
 	if err := os.WriteFile(file, []byte(content), 0o644); err != nil {
 		t.Fatal(err)
 	}
