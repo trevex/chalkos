@@ -2,6 +2,7 @@
 # for passphrases. The last one is /dev/console. While that is a virtual terminal,
 # chalkos-serial-log@ copies chalkd's lines from the journal to each serial port of the list.
 {
+  chalkosLib,
   config,
   lib,
   pkgs,
@@ -16,6 +17,13 @@ let
   serialPorts = lib.filter (d: builtins.match "(tty[A-Za-z]+|hvc)[0-9]+" d != null) devices;
   terminalLast = builtins.match "tty[0-9]+" (lib.last devices) != null;
   instances = lib.optionals terminalLast (map (p: "chalkos-serial-log@${p}.service") serialPorts);
+  # The conditions of a unit on the serial port %i (spec, %i or %I): the port exists and has a
+  # UART. On x86 the 8250 driver registers ttyS0 whether a UART is there or not, so the port exists
+  # on a machine without one too, with type 0, unknown; QEMU's 16550 is of type 4.
+  uartPresent = spec: {
+    unitConfig.ConditionPathExists = "/sys/class/tty/${spec}";
+    serviceConfig.ExecCondition = "${pkgs.runtimeShell} -c '! ${pkgs.gnugrep}/bin/grep -qsx 0 /sys/class/tty/${spec}/type'";
+  };
 in
 {
   options.chalkos.consoles = lib.mkOption {
@@ -65,68 +73,60 @@ in
       }
     ];
 
+    # A kernel console= on a serial port makes systemd start a getty there, which restarts without
+    # end on a machine without a UART. The conditions go to the template: a drop-in of the same
+    # name for an instance would hide the template's, which holds agetty's ExecStart.
+    systemd.services."serial-getty@" = uartPresent "%I";
+
     # chalkd's lines reach /dev/console, or the journal alone while the console runs on the
     # screen. While /dev/console is a virtual terminal, journalctl copies them to each serial port
     # of the list, where a BMC's serial-over-LAN shows them. It starts from the cursor it left, so
     # a restart, such as after a serial getty's hangup, repeats no line, and from the boot's start
     # the first time.
     systemd.targets.multi-user.wants = instances;
-    systemd.services."chalkos-serial-log@" = lib.mkIf (instances != [ ]) {
-      description = "chalkd's lines on the serial console %i";
-      # The driver of x86's first serial ports registers them whether a UART is there or not,
-      # with type 0 when none answers; such a port gets no lines.
-      unitConfig.ConditionPathExists = "/sys/class/tty/%i";
-      # It follows chalkd for as long as the node runs, so it never stops restarting.
-      startLimitIntervalSec = 0;
-      # journalctl writes to a terminal without colours. A TERM of its own keeps systemd from
-      # asking the terminal for its type with an escape sequence, which would show on the port.
-      environment = {
-        SYSTEMD_COLORS = "0";
-        TERM = "dumb";
-      };
-      serviceConfig = {
-        ExecCondition = "${pkgs.runtimeShell} -c '! ${pkgs.gnugrep}/bin/grep -qsx 0 /sys/class/tty/%i/type'";
-        ExecStart = lib.concatStringsSep " " [
-          "${config.systemd.package}/bin/journalctl"
-          "--follow"
-          "--boot"
-          "--lines=all"
-          "--no-pager"
-          "--output=cat"
-          "--cursor-file=/run/chalkos-serial-log/%i.cursor"
-          "_SYSTEMD_UNIT=chalkd.service"
-        ];
-        Restart = "always";
-        # A getty that starts on the port hangs it up, which ends journalctl; it starts again soon.
-        RestartSec = 1;
-        RestartSteps = 3;
-        RestartMaxDelaySec = 5;
-        RuntimeDirectory = "chalkos-serial-log";
-        RuntimeDirectoryPreserve = true;
-        StandardInput = "null";
-        StandardOutput = "tty";
-        StandardError = "journal";
-        TTYPath = "/dev/%i";
-        TTYReset = false;
-        TTYVHangup = false;
-        TTYVTDisallocate = false;
-        # It reads the journal and writes its cursor; it needs no network and no capability: as
-        # root it owns the journal's files.
-        CapabilityBoundingSet = "";
-        NoNewPrivileges = true;
-        PrivateNetwork = true;
-        RestrictAddressFamilies = [ "AF_UNIX" ];
-        ProtectSystem = "strict";
-        ProtectHome = true;
-        ProtectKernelTunables = true;
-        ProtectKernelModules = true;
-        ProtectControlGroups = true;
-        SystemCallFilter = [ "@system-service" ];
-        MemoryDenyWriteExecute = true;
-        LockPersonality = true;
-        RestrictRealtime = true;
-        SystemCallArchitectures = "native";
-      };
-    };
+    systemd.services."chalkos-serial-log@" = lib.mkIf (instances != [ ]) (
+      lib.mkMerge [
+        (uartPresent "%i")
+        {
+          description = "chalkd's lines on the serial console %i";
+          # It follows chalkd for as long as the node runs, so it never stops restarting.
+          startLimitIntervalSec = 0;
+          # journalctl writes to a terminal without colours. A TERM of its own keeps systemd from
+          # asking the terminal for its type with an escape sequence, which would show on the port.
+          environment = {
+            SYSTEMD_COLORS = "0";
+            TERM = "dumb";
+          };
+          # As root it owns the journal's files; it writes only its cursor.
+          serviceConfig = chalkosLib.internal.unprivileged // {
+            ExecStart = lib.concatStringsSep " " [
+              "${config.systemd.package}/bin/journalctl"
+              "--follow"
+              "--boot"
+              "--lines=all"
+              "--no-pager"
+              "--output=cat"
+              "--cursor-file=/run/chalkos-serial-log/%i.cursor"
+              "_SYSTEMD_UNIT=chalkd.service"
+            ];
+            Restart = "always";
+            # A getty that starts on the port hangs it up, which ends journalctl; it starts again
+            # soon.
+            RestartSec = 1;
+            RestartSteps = 3;
+            RestartMaxDelaySec = 5;
+            RuntimeDirectory = "chalkos-serial-log";
+            RuntimeDirectoryPreserve = true;
+            StandardInput = "null";
+            StandardOutput = "tty";
+            StandardError = "journal";
+            TTYPath = "/dev/%i";
+            TTYReset = false;
+            TTYVHangup = false;
+            TTYVTDisallocate = false;
+          };
+        }
+      ]
+    );
   };
 }

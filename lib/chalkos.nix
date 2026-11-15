@@ -101,6 +101,26 @@ in
         inherit (api) version;
         builtin = true;
       };
+      # The sandbox of a root unit that needs no capability and no network: Unix sockets alone,
+      # which stay reachable on a read-only system and from the private network namespace, as it
+      # hides abstract sockets alone; no home; kernel tunables, modules and cgroups out of reach;
+      # and the system calls of a system service of the native architecture.
+      unprivileged = {
+        CapabilityBoundingSet = "";
+        NoNewPrivileges = true;
+        PrivateNetwork = true;
+        RestrictAddressFamilies = [ "AF_UNIX" ];
+        ProtectSystem = "strict";
+        ProtectHome = true;
+        ProtectKernelTunables = true;
+        ProtectKernelModules = true;
+        ProtectControlGroups = true;
+        SystemCallFilter = [ "@system-service" ];
+        MemoryDenyWriteExecute = true;
+        LockPersonality = true;
+        RestrictRealtime = true;
+        SystemCallArchitectures = "native";
+      };
       # A DNS name: letters, digits, dots and dashes, starting and ending with a letter or digit.
       dnsName = "[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?";
       # The config files of the directory dir, YAML or JSON, as tests of chalkos.tests named
