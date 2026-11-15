@@ -170,9 +170,9 @@ type Server struct {
 	RebootNode func()
 	// PowerOffNode powers the node off; it is called once the response has been sent.
 	PowerOffNode func()
-	// RebootDelay is how long the node waits after a response before it reboots or powers off, so
-	// the response reaches the client; zero or less means a second. Tests shorten it.
-	RebootDelay time.Duration
+	// AfterResponse runs f once the response has had time to reach the client, as before a
+	// reboot or power-off; nil waits a second. Tests replace it to run f when they choose.
+	AfterResponse func(f func())
 	// Facts runs the commands of facts; nil runs them with systemd-run. Tests replace it.
 	Facts facts.Runner
 	// Diagnose runs the diagnostics' commands; nil runs them as transient systemd units. Tests
@@ -553,14 +553,11 @@ func (s *Server) rebootSoon() { s.afterResponse(s.RebootNode) }
 
 // afterResponse calls f once the response has had time to reach the client.
 func (s *Server) afterResponse(f func()) {
-	delay := time.Second
-	if s.RebootDelay > 0 {
-		delay = s.RebootDelay
+	if s.AfterResponse != nil {
+		s.AfterResponse(f)
+		return
 	}
-	go func() {
-		time.Sleep(delay)
-		f()
-	}()
+	time.AfterFunc(time.Second, f)
 }
 
 // name is the node's name: the subject of its node certificate, which chalkctl issues for the

@@ -253,7 +253,7 @@ func TestEnrollSecureBootStopsBeforePK(t *testing.T) {
 	select {
 	case <-fw.rebooted:
 		t.Error("the node rebooted")
-	case <-time.After(noReboot):
+	default:
 	}
 }
 

@@ -6,10 +6,12 @@ import (
 	"crypto/sha256"
 	"crypto/x509"
 	"encoding/hex"
+	"net/http"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -55,9 +57,9 @@ type enrolledNode struct {
 
 // enrollNode serves a node in maintenance mode whose firmware is in Setup Mode. Its reboot sets
 // SecureBoot to secureBootAfter and has it present a new certificate, as chalkd does when it
-// boots in maintenance mode. With early, SecureBoot is on as soon as PK is written, before the
-// reboot, as some firmware reports it, and the reboot comes later. Its TPM event log is eventLog,
-// none for nil.
+// boots in maintenance mode. The node reboots as its next request after the enrolment comes in and
+// drops that request; with early, it answers one more request first, and SecureBoot is on as soon
+// as PK is written, as some firmware reports it. Its TPM event log is eventLog, none for nil.
 func enrollNode(t *testing.T, ta *testApp, secureBootAfter byte, early bool, eventLog []byte) *enrolledNode {
 	t.Helper()
 	n := &enrolledNode{written: map[string]secureboot.ParsedUpdate{}, rebooted: make(chan string, 1)}
@@ -67,10 +69,37 @@ func enrollNode(t *testing.T, ta *testApp, secureBootAfter byte, early bool, eve
 	if eventLog != nil {
 		writeFile(t, s.Paths.EventLog, string(eventLog))
 	}
-	s.RebootDelay = 10 * time.Millisecond
-	if early {
-		s.RebootDelay = 300 * time.Millisecond
+	var (
+		mu     sync.Mutex
+		reboot func()
+		pass   int
+	)
+	s.AfterResponse = func(f func()) {
+		mu.Lock()
+		defer mu.Unlock()
+		reboot = f
+		if early {
+			pass = 1
+		}
 	}
+	ta.setWrap(func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			mu.Lock()
+			f := reboot
+			if pass > 0 {
+				pass--
+				f = nil
+			} else {
+				reboot = nil
+			}
+			mu.Unlock()
+			if f != nil {
+				f()
+				panic(http.ErrAbortHandler)
+			}
+			next.ServeHTTP(w, r)
+		})
+	})
 	efiVar := func(name string, value byte) {
 		writeFile(t, filepath.Join(s.Paths.EFIVars, name+"-"+secureboot.GlobalVendor), "\x06\x00\x00\x00"+string([]byte{value}))
 	}

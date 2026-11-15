@@ -11,7 +11,6 @@ import (
 	"slices"
 	"strings"
 	"testing"
-	"time"
 
 	"connectrpc.com/connect"
 
@@ -223,7 +222,7 @@ func TestRollbackImage(t *testing.T) {
 				if !tc.wantReboot {
 					t.Error("the node rebooted")
 				}
-			case <-time.After(noReboot):
+			default:
 				if tc.wantReboot {
 					t.Error("the node did not reboot")
 				}

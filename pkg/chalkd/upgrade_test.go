@@ -114,7 +114,7 @@ func TestUpgrade(t *testing.T) {
 				if !tc.wantReboot {
 					t.Error("the node rebooted")
 				}
-			case <-time.After(noReboot):
+			default:
 				if tc.wantReboot {
 					t.Error("the node did not reboot")
 				}
