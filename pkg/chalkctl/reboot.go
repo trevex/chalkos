@@ -420,10 +420,11 @@ func (b *rebooter) findCoordinators(ctx context.Context, probed map[string]bool,
 }
 
 var _ layer.Upgrading = (*rebooter)(nil)
-func (b *rebooter) Flags(layer string) any         { return b.layerFlags[layer] }
-func (b *rebooter) DrainTimeout() time.Duration    { return b.drainTimeout }
-func (b *rebooter) QuorumWait() time.Duration      { return b.quorumWait }
-func (b *rebooter) Poll() time.Duration            { return b.poll }
+
+func (b *rebooter) Flags(layer string) any      { return b.layerFlags[layer] }
+func (b *rebooter) DrainTimeout() time.Duration { return b.drainTimeout }
+func (b *rebooter) QuorumWait() time.Duration   { return b.quorumWait }
+func (b *rebooter) Poll() time.Duration         { return b.poll }
 
 // ViaCoordinators calls fn on a coordinator: the node itself first when it is one, then the
 // others, moving on past those whose error next accepts.
