@@ -62,7 +62,7 @@ func TestHealthOfAWorker(t *testing.T) {
 			s, r := kubernetesNode(t, k8s.KindWorker, tc.share)
 			s.k.hooks.Node = func(context.Context) (*corev1.Node, error) { return kubernetestest.ReadyNode(), tc.node }
 			healthy := tc.kubelet
-			s.k.kubelet = kubelet(t, &healthy)
+			s.k.o.Kubelet = kubelet(t, &healthy)
 			h := &chalkd.Health{Run: r, Layers: []layer.Health{s}, Chalkd: addr, NodeCertificate: cert}
 			checkHealth(t, h, tc.want)
 		})
@@ -70,7 +70,7 @@ func TestHealthOfAWorker(t *testing.T) {
 	s, r := kubernetesNode(t, k8s.KindWorker, true)
 	kubernetestest.WithoutAddress(t, s.k.state.Paths, "no ipv4 node address matches validSubnets 10.0.0.0/8")
 	healthy := true
-	s.k.kubelet = kubelet(t, &healthy)
+	s.k.o.Kubelet = kubelet(t, &healthy)
 	checkHealth(t, &chalkd.Health{Run: r, Layers: []layer.Health{s}, Chalkd: addr, NodeCertificate: cert}, "preparation failed: no ipv4 node address")
 }
 
@@ -80,7 +80,7 @@ func TestHealthOfAControlPlane(t *testing.T) {
 	k := s.k
 	ready, healthy := true, true
 	k.hooks.APIServerReady = func(context.Context, k8s.Cluster, kpki.Share) bool { return ready }
-	k.kubelet = kubelet(t, &healthy)
+	k.o.Kubelet = kubelet(t, &healthy)
 	h := &chalkd.Health{Run: &tooltest.Runner{}, Layers: []layer.Health{s}, Chalkd: addr, NodeCertificate: cert}
 	checkHealth(t, h, "")
 	ready = false
@@ -97,6 +97,6 @@ func TestHealthOfAControlPlane(t *testing.T) {
 	if m, _, _ := s2.k.state.ReadMembership(); m == knode.MembershipBootstrapped {
 		t.Fatal("bootstrapped")
 	}
-	s2.k.kubelet = "http://127.0.0.1:1/healthz"
+	s2.k.o.Kubelet = "http://127.0.0.1:1/healthz"
 	checkHealth(t, &chalkd.Health{Run: r, Layers: []layer.Health{s2}, Chalkd: addr, NodeCertificate: cert}, "")
 }

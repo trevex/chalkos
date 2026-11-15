@@ -27,18 +27,8 @@ type side struct {
 	state  knode.State
 	hooks  Hooks
 	timing Timing
-	// etcdURL is where chalkd reaches the node's own etcd member; empty means the cluster's
-	// LocalEtcd.
-	etcdURL string
-	// revokedNodesHook returns the revoked nodes in place of the node's own API server, as
-	// Options.RevokedNodes sets it.
-	revokedNodesHook func(context.Context) (revoked.List, error)
-	// kubelet is the kubelet's health endpoint.
-	kubelet string
-	// imageFile is the running image's image.json.
-	imageFile string
-	// clusterFile receives the cluster the config gives on the image, which Paths.Cluster reads.
-	clusterFile string
+	// o are the options New was given, with chalkd's own in place of empty strings.
+	o Options
 
 	// membership serialises the bootstrap and the join, which both make the node an etcd member.
 	membership sync.Mutex
@@ -110,6 +100,9 @@ type Hooks struct {
 	APIClient func(c k8s.Cluster, share kpki.Share) (kubernetes.Interface, error)
 	// Approve approves kubelet serving certificates with the API server at cfg until ctx ends.
 	Approve func(ctx context.Context, cfg *rest.Config)
+	// RevokedNodes returns the nodes revoked in the cluster, whose node certificates a control
+	// plane does not renew, read through the node's own API server.
+	RevokedNodes func(ctx context.Context) (revoked.List, error)
 }
 
 // Timing holds the waits and timeouts of the Kubernetes side. A zero field means its default.
@@ -168,9 +161,6 @@ type Options struct {
 	// LocalEtcd is where chalkd reaches the node's own etcd member; empty means the cluster's
 	// LocalEtcd.
 	LocalEtcd string
-	// RevokedNodes returns the nodes revoked in the cluster, whose node certificates a control
-	// plane does not renew; nil reads them through the node's own API server. Tests replace it.
-	RevokedNodes func(context.Context) (revoked.List, error)
 	// Kubelet is the kubelet's health endpoint; empty means http://127.0.0.1:10248/healthz.
 	Kubelet string
 	// ImageFile is the running image's image.json; empty is k8s.ImageFile. Tests replace it.
@@ -194,18 +184,12 @@ func (k *side) leavesProblem() string {
 
 // newSide returns the Kubernetes side of a node.
 func newSide(o Options) *side {
-	k := &side{state: knode.State{Paths: o.Paths}, hooks: o.Hooks, timing: o.Timing.withDefaults(), etcdURL: o.LocalEtcd, revokedNodesHook: o.RevokedNodes, kubelet: o.Kubelet, imageFile: o.ImageFile, clusterFile: o.ClusterFile}
+	o.Kubelet = cmp.Or(o.Kubelet, "http://127.0.0.1:10248/healthz")
+	o.ImageFile = cmp.Or(o.ImageFile, k8s.ImageFile)
+	o.ClusterFile = cmp.Or(o.ClusterFile, k8s.ClusterFile)
+	k := &side{state: knode.State{Paths: o.Paths}, hooks: o.Hooks, timing: o.Timing.withDefaults(), o: o}
 	if k.state.Paths == (knode.Paths{}) {
 		k.state.Paths = knode.DefaultPaths()
-	}
-	if k.kubelet == "" {
-		k.kubelet = "http://127.0.0.1:10248/healthz"
-	}
-	if k.imageFile == "" {
-		k.imageFile = k8s.ImageFile
-	}
-	if k.clusterFile == "" {
-		k.clusterFile = k8s.ClusterFile
 	}
 	h := &k.hooks
 	if h.Slot == nil {
@@ -246,6 +230,9 @@ func newSide(o Options) *side {
 	}
 	if h.Approve == nil {
 		h.Approve = approveServing
+	}
+	if h.RevokedNodes == nil {
+		h.RevokedNodes = k.loadRevoked
 	}
 	return k
 }
@@ -393,5 +380,5 @@ func (k *side) etcdRequest(ctx context.Context) (context.Context, context.Cancel
 
 // localEtcd is where chalkd reaches the node's own etcd member.
 func (k *side) localEtcd(c k8s.Cluster) string {
-	return cmp.Or(k.etcdURL, c.LocalEtcd())
+	return cmp.Or(k.o.LocalEtcd, c.LocalEtcd())
 }

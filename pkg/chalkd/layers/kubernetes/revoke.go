@@ -32,7 +32,8 @@ func (p *Plugin) RevokeNode(ctx context.Context, req *connect.Request[kubernetes
 	if err := checkNodeName(name); err != nil {
 		return nil, err
 	}
-	cs, _, err := p.k.revokedClient()
+	// A bootstrapped control plane's API server keeps the revoked nodes.
+	cs, _, err := p.k.apiClient(p.k.etcdMember)
 	if err != nil {
 		return nil, err
 	}
@@ -62,7 +63,7 @@ func (p *Plugin) UnrevokeNode(ctx context.Context, req *connect.Request[kubernet
 	if err := checkNodeName(name); err != nil {
 		return nil, err
 	}
-	cs, share, err := p.k.revokedClient()
+	cs, cp, err := p.k.apiClient(p.k.etcdMember)
 	if err != nil {
 		return nil, err
 	}
@@ -71,7 +72,7 @@ func (p *Plugin) UnrevokeNode(ctx context.Context, req *connect.Request[kubernet
 	var stale []string
 	at, listed, err := revoked.Unrevoke(ctx, cs, name, func(at time.Time) error {
 		var err error
-		if stale, err = p.staleCAs(share, at); err != nil {
+		if stale, err = p.staleCAs(cp.share, at); err != nil {
 			return layer.Errorf(connect.CodeInternal, "%w", err)
 		}
 		if len(stale) > 0 && !req.Msg.Force {
@@ -139,7 +140,7 @@ func checkNodeName(name string) error {
 // notRevoked refuses to renew the node certificate of a revoked node. Without the revoked nodes,
 // the node may be among them: nothing is renewed until they can be read.
 func (k *side) notRevoked(ctx context.Context, name string) error {
-	list, err := k.revokedNodes(ctx)
+	list, err := k.hooks.RevokedNodes(ctx)
 	if _, ok := errors.AsType[layer.Coded](err); ok {
 		return err
 	}
@@ -155,22 +156,6 @@ func (k *side) notRevoked(ctx context.Context, name string) error {
 		since = " since " + at.UTC().Format(time.RFC3339)
 	}
 	return layer.Errorf(connect.CodePermissionDenied, "node %s is revoked%s; chalkctl node unrevoke %s lets it renew again", name, since, name)
-}
-
-// revokedClient reaches the API server of a bootstrapped control-plane node, which keeps the
-// revoked nodes, and returns the node's share.
-func (k *side) revokedClient() (kubernetes.Interface, kpki.Share, error) {
-	cs, cp, err := k.apiClient(k.etcdMember)
-	return cs, cp.share, err
-}
-
-// revokedNodes returns the cluster's revoked nodes, as Options.RevokedNodes does when
-// set.
-func (k *side) revokedNodes(ctx context.Context) (revoked.List, error) {
-	if k.revokedNodesHook != nil {
-		return k.revokedNodesHook(ctx)
-	}
-	return k.loadRevoked(ctx)
 }
 
 // loadRevoked reads the revoked nodes through the control plane's own API server.

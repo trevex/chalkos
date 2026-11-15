@@ -45,7 +45,7 @@ import (
 func controlPlaneOf(t *testing.T, c creds, adjust ...func(*kubernetesplugin.Options)) *Server {
 	t.Helper()
 	noneRevoked := func(o *kubernetesplugin.Options) {
-		o.RevokedNodes = func(context.Context) (revoked.List, error) { return revoked.List{}, nil }
+		o.Hooks.RevokedNodes = func(context.Context) (revoked.List, error) { return revoked.List{}, nil }
 	}
 	s, _ := kubernetesServer(t, k8s.KindControlPlane, true, append([]func(*kubernetesplugin.Options){noneRevoked}, adjust...)...)
 	k, err := clustersecrets.NewKubernetesSecrets(time.Now())
@@ -186,7 +186,7 @@ func TestRenewNodeCertificateOfRevokedNode(t *testing.T) {
 	revokedAt := time.Date(2026, 10, 23, 8, 0, 0, 0, time.UTC)
 	var loadErr error
 	s := controlPlaneOf(t, c, func(o *kubernetesplugin.Options) {
-		o.RevokedNodes = func(context.Context) (revoked.List, error) {
+		o.Hooks.RevokedNodes = func(context.Context) (revoked.List, error) {
 			return revoked.List{"w1": revokedAt, "w3": {}}, loadErr
 		}
 	})
@@ -214,7 +214,7 @@ func TestRenewNodeCertificateReadsRevokedNodes(t *testing.T) {
 	c := newCreds(t)
 	cs := fake.NewClientset()
 	s := controlPlaneOf(t, c, func(o *kubernetesplugin.Options) {
-		o.RevokedNodes = nil
+		o.Hooks.RevokedNodes = nil
 		o.Hooks.APIClient = func(k8s.Cluster, kpki.Share) (kubernetes.Interface, error) { return cs, nil }
 	})
 	write(t, kubernetesState(s).BootstrappedMarker(), "")
@@ -244,7 +244,7 @@ func TestIssueNodeCertificateOfRevokedControlPlane(t *testing.T) {
 	c := newCreds(t)
 	var loadErr error
 	s := controlPlaneOf(t, c, func(o *kubernetesplugin.Options) {
-		o.RevokedNodes = func(context.Context) (revoked.List, error) { return revoked.List{"n1": time.Now()}, loadErr }
+		o.Hooks.RevokedNodes = func(context.Context) (revoked.List, error) { return revoked.List{"n1": time.Now()}, loadErr }
 	})
 	issued, err := pki.IssueNode(c.nodeCA, pki.NodeNames{CommonName: "n1", DNSNames: []string{"n1"}}, time.Now().Add(-30*time.Minute))
 	if err != nil {

@@ -79,7 +79,7 @@ func memberNode(t *testing.T, others ...string) (*Plugin, *etcd.Client, map[stri
 	for _, name := range others {
 		members[name] = addMember(t, cli, *share.EtcdCA, name)
 	}
-	k.etcdURL = n1.ClientURL
+	k.o.LocalEtcd = n1.ClientURL
 	k.timing.EtcdRetry = etcdRetry
 	k.timing.EtcdStatusTimeout = liveEtcdTimeout
 	k.hooks.EtcdStopped = func(context.Context, k8s.Cluster) error { return nil }
@@ -347,7 +347,7 @@ const silentEtcdTimeout = 10 * time.Second
 func otherMembersOnly(t *testing.T, s *Plugin, others ...*etcdtest.Member) {
 	t.Helper()
 	k := s.k
-	k.etcdURL = etcdtest.Silent(t)
+	k.o.LocalEtcd = etcdtest.Silent(t)
 	k.timing.EtcdTimeout = silentEtcdTimeout
 	k.hooks.EtcdEndpoints = func(context.Context, k8s.Cluster, kpki.Share, []netip.Addr) ([]string, error) {
 		var urls []string

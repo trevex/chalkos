@@ -18,7 +18,7 @@ var _ layer.ImageFacts = (*Plugin)(nil)
 
 // RunningFacts are the running image's image.json; nil on an image without it.
 func (p *Plugin) RunningFacts() (*anypb.Any, error) {
-	return k8s.FactsPayloadOf(p.k.imageFile)
+	return k8s.FactsPayloadOf(p.k.o.ImageFile)
 }
 
 // SystemFacts read the image.json of an image's system.

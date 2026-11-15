@@ -68,7 +68,7 @@ func (p *Plugin) Health(ctx context.Context) (bool, error) {
 func (p *Plugin) kubeletHealthy(ctx context.Context) error {
 	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, p.k.kubelet, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, p.k.o.Kubelet, nil)
 	if err != nil {
 		return err
 	}

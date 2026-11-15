@@ -61,7 +61,7 @@ func deliveryLayer(t *testing.T) *Plugin {
 	root := t.TempDir()
 	paths := kubernetestest.Paths(root, root)
 	k := newSide(Options{Paths: paths, ImageFile: kubernetestest.ImageFile(paths), ClusterFile: kubernetestest.ClusterFile(root)})
-	write(t, k.imageFile, kubernetestest.Image)
+	write(t, k.o.ImageFile, kubernetestest.Image)
 	return &Plugin{k: k}
 }
 
@@ -79,7 +79,7 @@ func TestWriteConfigWritesTheCluster(t *testing.T) {
 	if err := p.WriteConfig(parseDocuments(t, clusterDocuments)); err != nil {
 		t.Fatal(err)
 	}
-	c, err := k8s.ReadCluster(p.k.clusterFile)
+	c, err := k8s.ReadCluster(p.k.o.ClusterFile)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -91,7 +91,7 @@ func TestWriteConfigWritesTheCluster(t *testing.T) {
 	if err := p.writeCluster(&c); err != nil {
 		t.Fatal(err)
 	}
-	if got, err := k8s.ReadCluster(p.k.clusterFile); err != nil || got.Domain != "lab.local" {
+	if got, err := k8s.ReadCluster(p.k.o.ClusterFile); err != nil || got.Domain != "lab.local" {
 		t.Errorf("new domain: %+v, %v", got, err)
 	}
 }
@@ -99,12 +99,12 @@ func TestWriteConfigWritesTheCluster(t *testing.T) {
 // A set without a Cluster document leaves no cluster file, and says why.
 func TestWriteConfigWithoutClusterDocument(t *testing.T) {
 	p := deliveryLayer(t)
-	write(t, p.k.clusterFile, "{}")
+	write(t, p.k.o.ClusterFile, "{}")
 	docs := parseDocuments(t, "apiVersion: kubernetes.chalkos.dev"+strings.SplitN(clusterDocuments, "---\napiVersion: kubernetes.chalkos.dev", 2)[1])
 	if err := p.WriteConfig(docs); err == nil || !strings.Contains(err.Error(), "no Cluster") {
 		t.Fatalf("err = %v", err)
 	}
-	if _, err := os.Stat(p.k.clusterFile); !os.IsNotExist(err) {
+	if _, err := os.Stat(p.k.o.ClusterFile); !os.IsNotExist(err) {
 		t.Errorf("kept the cluster file: %v", err)
 	}
 }
@@ -113,23 +113,23 @@ func TestWriteConfigWithoutClusterDocument(t *testing.T) {
 // image.json neither.
 func TestWriteConfigWithoutSetOrImageRemovesTheCluster(t *testing.T) {
 	p := deliveryLayer(t)
-	write(t, p.k.clusterFile, "{}")
+	write(t, p.k.o.ClusterFile, "{}")
 	if err := p.WriteConfig(nil); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := os.Stat(p.k.clusterFile); !os.IsNotExist(err) {
+	if _, err := os.Stat(p.k.o.ClusterFile); !os.IsNotExist(err) {
 		t.Errorf("without a set: kept the cluster file: %v", err)
 	}
 
 	p = deliveryLayer(t)
-	if err := os.Remove(p.k.imageFile); err != nil {
+	if err := os.Remove(p.k.o.ImageFile); err != nil {
 		t.Fatal(err)
 	}
-	write(t, p.k.clusterFile, "{}")
+	write(t, p.k.o.ClusterFile, "{}")
 	if err := p.WriteConfig(parseDocuments(t, clusterDocuments)); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := os.Stat(p.k.clusterFile); !os.IsNotExist(err) {
+	if _, err := os.Stat(p.k.o.ClusterFile); !os.IsNotExist(err) {
 		t.Errorf("without image.json: kept the cluster file: %v", err)
 	}
 }

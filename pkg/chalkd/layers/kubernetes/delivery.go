@@ -116,7 +116,7 @@ func (p *Plugin) WriteConfig(docs config.Documents) error {
 // cluster returns the Kubernetes cluster docs give on this image, from the image's facts and the
 // documents' settings; nil on an image without its image.json.
 func (p *Plugin) cluster(docs config.Documents) (*k8s.Cluster, error) {
-	img, err := k8s.ReadImage(p.k.imageFile)
+	img, err := k8s.ReadImage(p.k.o.ImageFile)
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil, nil
 	}
@@ -133,7 +133,7 @@ func (p *Plugin) cluster(docs config.Documents) (*k8s.Cluster, error) {
 // writeCluster writes c as the node's cluster file, or removes the file for nil. A file that
 // holds c already is left as it is.
 func (p *Plugin) writeCluster(c *k8s.Cluster) error {
-	file := p.k.clusterFile
+	file := p.k.o.ClusterFile
 	if c == nil {
 		if err := os.Remove(file); err != nil && !errors.Is(err, fs.ErrNotExist) {
 			return err

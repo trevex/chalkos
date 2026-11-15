@@ -436,7 +436,7 @@ func TestControlPlaneReportsSplit(t *testing.T) {
 	share, _ := k.state.ReadShare()
 	local := etcdtest.StartNew(t, *share.EtcdCA, "n1")
 	other := etcdtest.StartNew(t, *share.EtcdCA, "cp0")
-	k.etcdURL = local.ClientURL
+	k.o.LocalEtcd = local.ClientURL
 	k.hooks.EtcdEndpoints = func(context.Context, k8s.Cluster, kpki.Share, []netip.Addr) ([]string, error) {
 		return []string{other.ClientURL}, nil
 	}
