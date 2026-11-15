@@ -28,7 +28,7 @@ func Temporary(dir string, rootHash []byte) (string, error) {
 }
 
 // stagedPrefix starts the name of the UKI of an image staged in the inactive slot, which waits
-// for its activation. systemd-boot ignores it as it does a temporary UKI, and Leftovers leaves it:
+// for its activation. systemd-boot ignores it as it does a temporary UKI;
 // a staged image stays staged across a restart of chalkd and a reboot.
 const stagedPrefix = ".staged-"
 
@@ -105,17 +105,17 @@ func NextStagedGeneration(dir string, entries []Entry, imageID string) (uint64, 
 	return NextGeneration(all, imageID)
 }
 
-// Leftovers lists the UKIs in the ESP mounted at dir that were written under a Temporary name and
-// never named, such as by an install or upgrade that stopped, except the one at the path keep. The
-// UKI of an image staged in the inactive slot, under its StagedName, is none of them.
-func Leftovers(dir, keep string) ([]string, error) {
+// Unnamed lists the files in the ESP mounted at dir under a Temporary or a StagedName, of any
+// image, except the one at the path keep: UKIs an install or upgrade wrote and never named, and
+// the UKI of an image staged in the inactive slot.
+func Unnamed(dir, keep string) ([]string, error) {
 	files, err := os.ReadDir(filepath.Join(dir, LinuxDir))
 	if err != nil {
 		return nil, fmt.Errorf("list the UKIs on the ESP: %w", err)
 	}
 	var left []string
 	for _, f := range files {
-		if strings.HasPrefix(f.Name(), tempPrefix) && f.Name() != filepath.Base(keep) {
+		if (strings.HasPrefix(f.Name(), tempPrefix) || strings.HasPrefix(f.Name(), stagedPrefix)) && f.Name() != filepath.Base(keep) {
 			left = append(left, f.Name())
 		}
 	}

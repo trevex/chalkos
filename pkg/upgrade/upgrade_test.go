@@ -925,11 +925,15 @@ func (l *lab) stage(img image) Result {
 // tempUKIs are the UKIs on the ESP written under the temporary name.
 func (l *lab) tempUKIs() []string {
 	l.t.Helper()
-	temp, err := esp.Leftovers(l.esp, "")
+	unnamed, err := esp.Unnamed(l.esp, "")
 	if err != nil {
 		l.t.Fatal(err)
 	}
-	return temp
+	staged, err := esp.StagedFiles(l.esp)
+	if err != nil {
+		l.t.Fatal(err)
+	}
+	return slices.DeleteFunc(unnamed, func(name string) bool { return slices.Contains(staged, name) })
 }
 
 // TestRemovesTheTemporaryUKI removes the UKI written under its temporary name when the upgrade

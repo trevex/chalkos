@@ -28,7 +28,7 @@ func TestStageAndName(t *testing.T) {
 	if list, err := Entries(dir); err != nil || len(list) != 0 {
 		t.Fatalf("entries of staged UKIs = %+v, %v; want none", list, err)
 	}
-	left, err := Leftovers(dir, staged["b"])
+	left, err := Unnamed(dir, staged["b"])
 	if err != nil || !reflect.DeepEqual(left, []string{filepath.Base(staged["a"])}) {
 		t.Fatalf("leftovers = %q, %v", left, err)
 	}
@@ -47,7 +47,7 @@ func TestStageAndName(t *testing.T) {
 	if err != nil || len(list) != 1 || list[0].File != "chalkos_1.efi" || !bytes.Equal(list[0].RootHash, b) {
 		t.Errorf("entries = %+v, %v", list, err)
 	}
-	if left, err := Leftovers(dir, ""); err != nil || len(left) != 0 {
+	if left, err := Unnamed(dir, ""); err != nil || len(left) != 0 {
 		t.Errorf("leftovers = %q, %v; want none", left, err)
 	}
 
@@ -77,7 +77,7 @@ func TestSyncWithoutUKIs(t *testing.T) {
 
 // TestStaged reads the UKI of an image staged in the inactive slot under its staged name, with the
 // generation the name gives, which Entries does not list, as systemd-boot does not boot it, and
-// which Leftovers leaves; a file of the prefix that is no UKI of the image, or whose name gives no
+// Unnamed does; a file of the prefix that is no UKI of the image, or whose name gives no
 // generation, is none, and StagedFiles lists them all.
 func TestStaged(t *testing.T) {
 	dir := t.TempDir()
@@ -102,8 +102,8 @@ func TestStaged(t *testing.T) {
 	if list, err := Entries(dir); err != nil || len(list) != 0 {
 		t.Errorf("entries = %+v, %v; want none", list, err)
 	}
-	if left, err := Leftovers(dir, ""); err != nil || len(left) != 0 {
-		t.Errorf("leftovers = %q, %v; want none", left, err)
+	if left, err := Unnamed(dir, ""); err != nil || !reflect.DeepEqual(left, []string{".staged-chalkos_3.efi"}) {
+		t.Errorf("unnamed = %q, %v; want the staged UKI", left, err)
 	}
 	if _, ok, err := Staged(dir, "other"); ok || err != nil {
 		t.Errorf("staged of another image = %v, %v; want none", ok, err)

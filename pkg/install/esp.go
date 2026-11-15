@@ -59,15 +59,10 @@ func (i *Installer) writeUKI(ctx context.Context, espPart gpt.Partition, h upgra
 // before any of the image's, though slot A holds its store no more. A disk installed again may
 // hold an image an upgrade staged, which no config slot of the new install boots with.
 func (i *Installer) removeOtherUKIs(dir, keep, tmp string) error {
-	remove, err := esp.Leftovers(dir, tmp)
+	remove, err := esp.Unnamed(dir, tmp)
 	if err != nil {
 		return err
 	}
-	staged, err := esp.StagedFiles(dir)
-	if err != nil {
-		return err
-	}
-	remove = append(remove, staged...)
 	entries, err := esp.Entries(dir)
 	if err != nil {
 		return err

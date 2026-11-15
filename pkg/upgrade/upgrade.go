@@ -521,7 +521,9 @@ func (n *Node) recheck(ctx context.Context, h Header, slot storeslot.Slot, stage
 // upgrade left half written and the staged one, and then makes the inactive slot one nothing
 // finds.
 func (n *Node) retire(ctx context.Context, entries []esp.Entry, imageID string, booted esp.Entry, running []byte, slot storeslot.Slot) error {
-	remove, err := esp.Leftovers(n.ESP, "")
+	// Every file under a staged name goes, also one that is no UKI of the image: the slot it would
+	// boot is retired.
+	remove, err := esp.Unnamed(n.ESP, "")
 	if err != nil {
 		return err
 	}
@@ -530,13 +532,6 @@ func (n *Node) retire(ctx context.Context, entries []esp.Entry, imageID string, 
 			remove = append(remove, e.File)
 		}
 	}
-	// Every file under a staged name goes, also one that is no UKI of the image: the slot it would
-	// boot is retired.
-	staged, err := esp.StagedFiles(n.ESP)
-	if err != nil {
-		return err
-	}
-	remove = append(remove, staged...)
 	if err := esp.Remove(n.ESP, remove, n.Change); err != nil {
 		return err
 	}
