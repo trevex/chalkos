@@ -51,7 +51,7 @@ func (r Request) validate() error {
 		return fmt.Errorf("the identity's storage section has the unknown encryption policy %q", r.Section.Encryption)
 	}
 	if r.Section.Fallback != storage.FallbackNone && r.FallbackSecret == "" {
-		return fmt.Errorf("the node's fallback is %s, but no fallback secret was sent", r.Section.Fallback)
+		return fmt.Errorf("the node's fallback is %s, but %s", r.Section.Fallback, storage.NoFallbackSecret)
 	}
 	if _, err := pki.ValidateOSCABundle(string(r.CA)); err != nil {
 		return fmt.Errorf("CA certificate: %w", err)

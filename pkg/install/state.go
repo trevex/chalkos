@@ -16,7 +16,6 @@ import (
 	"github.com/trevex/chalkos/pkg/storage"
 	"github.com/trevex/chalkos/pkg/storage/hostops"
 	"github.com/trevex/chalkos/pkg/storage/node"
-	"github.com/trevex/chalkos/pkg/tool"
 	"github.com/trevex/chalkos/pkg/upgrade"
 )
 
@@ -59,7 +58,7 @@ func (i *Installer) prepareState(ctx context.Context, disk storage.BlockDisk, de
 	if policy == storage.EncryptionTPM2 {
 		want = hostops.ContentLUKS
 	}
-	if state, err := table.find(stateLabel, storage.PartitionType(stateLabel)); err == nil {
+	if state, err := table.find(stateLabel); err == nil {
 		found, err := hostops.Content(ctx, i.Run, state.Node)
 		if err != nil {
 			return err
@@ -75,11 +74,7 @@ func (i *Installer) prepareState(ctx context.Context, disk storage.BlockDisk, de
 		return err
 	}
 
-	dir := filepath.Join(i.WorkDir, "system")
-	if err := writeDefinitions(dir, defs, policy); err != nil {
-		return err
-	}
-	if _, err := tool.Run(ctx, i.Run, "systemd-repart", "--dry-run=no", "--seed=random", "--definitions="+dir, "--tpm2-pcrs=7", disk.Device); err != nil {
+	if err := i.createSystemRegion(ctx, disk.Device, defs, policy); err != nil {
 		return fmt.Errorf("create the system region on %s: %w", disk.Device, err)
 	}
 	return nil
@@ -90,7 +85,7 @@ func (i *Installer) prepareState(ctx context.Context, disk storage.BlockDisk, de
 // holds no file system yet is installed over. It reports whether STATE holds a config slot, which
 // an earlier attempt writes once the image's checker passed its config.
 func (i *Installer) checkState(ctx context.Context, target storage.BlockDisk, table partitionTable) (bool, error) {
-	state, err := table.find(stateLabel, storage.PartitionType(stateLabel))
+	state, err := table.find(stateLabel)
 	if err != nil {
 		return false, err
 	}
@@ -164,7 +159,7 @@ func (i *Installer) openState(ctx context.Context, disk storage.BlockDisk, defs 
 	if err != nil {
 		return "", err
 	}
-	state, err := table.find(stateLabel, storage.PartitionType(stateLabel))
+	state, err := table.find(stateLabel)
 	if err != nil {
 		return "", err
 	}
@@ -250,7 +245,7 @@ func (i *Installer) RemoveState(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	state, err := table.find(stateLabel, storage.PartitionType(stateLabel))
+	state, err := table.find(stateLabel)
 	if errors.Is(err, errNotFound) {
 		return nil
 	} else if err != nil {

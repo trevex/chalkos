@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/trevex/chalkos/pkg/storage"
 	"github.com/trevex/chalkos/pkg/storage/gpt"
 )
 
@@ -29,8 +30,9 @@ func (i *Installer) readTable(ctx context.Context, dev string) (partitionTable, 
 	return partitionTable{device: dev, Partitions: parts}, nil
 }
 
-// find returns the one partition with the label and type.
-func (t partitionTable) find(label, typ string) (gpt.Partition, error) {
+// find returns the one partition with the label and the type storage.PartitionType gives it.
+func (t partitionTable) find(label string) (gpt.Partition, error) {
+	typ := storage.PartitionType(label)
 	return t.only(fmt.Sprintf("label %s", label), func(p gpt.Partition) bool { return p.Name == label && p.Type == typ })
 }
 

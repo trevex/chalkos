@@ -189,7 +189,7 @@ func (i *Installer) encryptedDevices(ctx context.Context, disk storage.BlockDisk
 		return nil, err
 	}
 	devices, err := node.EncryptedVolumes(section, pins, slices.Collect(maps.Keys(section.Volumes)), func(label string) (string, error) {
-		p, err := table.find(label, storage.PartitionType(label))
+		p, err := table.find(label)
 		return p.Node, err
 	}, false)
 	if err != nil {

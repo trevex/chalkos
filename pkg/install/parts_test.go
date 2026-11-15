@@ -459,7 +459,7 @@ func TestFromPartsInstallsOntoEmptyDisk(t *testing.T) {
 		t.Fatal(err)
 	}
 	l.checkInstalled(img)
-	if !hasPrefix(l.r.Calls, "systemd-repart --dry-run=no --empty=require --seed=random --definitions="+filepath.Join(l.i.WorkDir, "system")+" --tpm2-pcrs=7 /dev/vdb") {
+	if !hasPrefix(l.r.Calls, "systemd-repart --dry-run=no --seed=random --definitions="+filepath.Join(l.i.WorkDir, "system")+" --tpm2-pcrs=7 --empty=require /dev/vdb") {
 		t.Errorf("the target was not laid out with the image's definitions: %q", l.r.Calls)
 	}
 	if l.writes != 2 {
@@ -1339,7 +1339,7 @@ func TestFromPartsWritesAnotherImageOverAnUninstalledTarget(t *testing.T) {
 				if err := l.install(other); err != nil {
 					t.Fatal(err)
 				}
-				if hasPrefix(l.r.Calls, "systemd-repart --dry-run=no --empty=require") {
+				if hasPrefix(l.r.Calls, "systemd-repart --dry-run=no --seed=random --definitions="+filepath.Join(l.i.WorkDir, "system")+" --tpm2-pcrs=7 --empty=require") {
 					t.Error("the target was laid out anew")
 				}
 				l.checkInstalled(other)

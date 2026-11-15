@@ -12,6 +12,7 @@ import (
 	"github.com/trevex/chalkos/pkg/atomicfile"
 	"github.com/trevex/chalkos/pkg/internal/poll"
 	"github.com/trevex/chalkos/pkg/storage"
+	"github.com/trevex/chalkos/pkg/storage/gpt"
 )
 
 // Disk is a disk opened for wiping.
@@ -32,7 +33,7 @@ const lockRetry = 100 * time.Millisecond
 
 // diskLockWait is how long openExclusive waits for a disk another process keeps locked, as sfdisk
 // does: the install holds chalkd's lock meanwhile.
-var diskLockWait = 30 * time.Second
+var diskLockWait = gpt.DefaultLockWait
 
 func openExclusive(ctx context.Context, path string) (Disk, error) {
 	f, err := os.OpenFile(path, os.O_WRONLY|os.O_EXCL, 0)
