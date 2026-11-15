@@ -127,7 +127,7 @@ func TestIdentityRejects(t *testing.T) {
 		"no Node":    {noNode, "no Node"},
 	} {
 		t.Run(name, func(t *testing.T) {
-			s, err := config.NewSet(mustParse(t, tc.yaml), allSchemas(t))
+			s, err := config.NewSet(parseDocs(t, tc.yaml), allSchemas(t))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -222,15 +222,6 @@ func TestIdentityWithAnEmptyNodeUsesDefaults(t *testing.T) {
 	if k := nodeOf(t, id); id.Hostname != "n1" || k.NodeName != "n1" || k.Labels == nil || k.Taints == nil {
 		t.Errorf("identity = %+v", id)
 	}
-}
-
-func mustParse(t *testing.T, yaml string) []config.Document {
-	t.Helper()
-	docs, err := config.Parse(strings.NewReader(yaml))
-	if err != nil {
-		t.Fatal(err)
-	}
-	return docs
 }
 
 // TestKubeletLabels refuses the labels the kubelet will not set on its own node, labels in the
@@ -347,7 +338,7 @@ func TestIdentityTakesTheNodesName(t *testing.T) {
 	const volume = "---\napiVersion: storage.chalkos.dev/v1alpha1\nkind: Volume\nmetadata: {name: fast}\nspec: {disk: {path: /dev/vdb}}\n"
 	kube := minimal + kubetest.NodeDoc("doc", "{type: worker}") +
 		kubetest.ClusterDoc("default", "{}") + volume
-	s, err := config.NewSet(mustParse(t, kube), allSchemas(t))
+	s, err := config.NewSet(parseDocs(t, kube), allSchemas(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -362,7 +353,7 @@ func TestIdentityTakesTheNodesName(t *testing.T) {
 		t.Errorf("seed = %s, want %s, the seed of n1", got, want)
 	}
 	// A Host's hostname names the host; the Kubernetes node keeps the node's name.
-	s, err = config.NewSet(mustParse(t, kube+hostDoc("host1")), allSchemas(t))
+	s, err = config.NewSet(parseDocs(t, kube+hostDoc("host1")), allSchemas(t))
 	if err != nil {
 		t.Fatal(err)
 	}

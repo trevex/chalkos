@@ -307,36 +307,6 @@ func TestIssueEtcdClient(t *testing.T) {
 	}
 }
 
-// Anonymous requests reach only the health endpoints, which the kubelet probes without
-// credentials.
-func TestAuthenticationConfig(t *testing.T) {
-	files, err := ControlPlane(ControlPlaneShare(secrets(t), pkitest.NodeCA(t, now)), testCluster(), testNode, now)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var cfg struct {
-		APIVersion string `json:"apiVersion"`
-		Kind       string `json:"kind"`
-		Anonymous  struct {
-			Enabled    bool `json:"enabled"`
-			Conditions []struct {
-				Path string `json:"path"`
-			} `json:"conditions"`
-		} `json:"anonymous"`
-	}
-	if err := json.Unmarshal(files[FileAuthenticationConfig], &cfg); err != nil {
-		t.Fatal(err)
-	}
-	var paths []string
-	for _, c := range cfg.Anonymous.Conditions {
-		paths = append(paths, c.Path)
-	}
-	if cfg.APIVersion != "apiserver.config.k8s.io/v1" || cfg.Kind != "AuthenticationConfiguration" || !cfg.Anonymous.Enabled ||
-		!slices.Equal(paths, []string{"/livez", "/readyz", "/healthz"}) {
-		t.Errorf("authentication configuration %s", files[FileAuthenticationConfig])
-	}
-}
-
 func TestControlPlaneLeaves(t *testing.T) {
 	files, err := ControlPlane(ControlPlaneShare(secrets(t), pkitest.NodeCA(t, now)), testCluster(), testNode, now)
 	if err != nil {
@@ -361,7 +331,8 @@ func TestControlPlaneLeaves(t *testing.T) {
 }
 
 // TestConfigFilesBytes pins the authentication and encryption configurations byte for byte: the
-// API server restarts when either file changes.
+// API server restarts when either file changes. Anonymous requests reach only the health
+// endpoints, which the kubelet probes without credentials.
 func TestConfigFilesBytes(t *testing.T) {
 	auth, err := authenticationConfig()
 	if err != nil {

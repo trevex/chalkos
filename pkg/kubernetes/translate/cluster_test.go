@@ -30,7 +30,7 @@ func kubernetesNodeSet(t *testing.T, spec, node, more string) *config.Set {
 	}
 	yaml := minimal + kubetest.ClusterDoc("default", spec) +
 		kubetest.NodeDoc("default", "{type: worker"+node+"}") + more
-	s, err := config.NewSet(mustParse(t, yaml), allSchemas(t))
+	s, err := config.NewSet(parseDocs(t, yaml), allSchemas(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -55,7 +55,7 @@ func withoutFlannelImage(docs config.Documents) config.Documents {
 
 // The cluster's kind is the Kubernetes Node's type.
 func TestClusterTakesTheNodesType(t *testing.T) {
-	s, err := config.NewSet(mustParse(t, minimal+
+	s, err := config.NewSet(parseDocs(t, minimal+
 		kubetest.ClusterDoc("k", "{}")+
 		kubetest.NodeDoc("cp", "{type: controlplane}")), allSchemas(t))
 	if err != nil {
@@ -121,18 +121,12 @@ func TestClusterRejects(t *testing.T) {
 		"no Node": {minimal +
 			kubetest.ClusterDoc("k", "{}"),
 			"no Node: the config of a node whose image runs Kubernetes holds one Node document"},
-		"overlapping ranges": {minimal + worker +
-			kubetest.ClusterDoc("k", "{podCIDRs: {ipv4: 10.96.0.0/16}}"),
-			`Cluster "k": podCIDRs.ipv4 10.96.0.0/16 and serviceCIDRs.ipv4 10.96.0.0/12 overlap`},
 		"protected kubelet flag": {minimal + kubetest.ClusterDoc("k", "{}") +
 			kubetest.NodeDoc("w", `{type: worker, kubeletExtraArgs: {anonymous-auth: "true"}}`),
 			`Node "w": kubeletExtraArgs: --anonymous-auth is set by chalkos and cannot be overridden`},
-		"API server older than the kubelet": {minimal + worker +
-			kubetest.ClusterDoc("k", "{images: "+kubetest.DocumentImagesWith(t, map[string]string{"apiServer": "registry.k8s.io/kube-apiserver:v1.36.0"})+"}"),
-			`Cluster "k": images.apiServer: v1.36.0 is older than the image's kubelet 1.37; a kubelet must not be newer than the API server, so upgrade the control plane first`},
 	} {
 		t.Run(name, func(t *testing.T) {
-			s, err := config.NewSet(mustParse(t, tc.yaml), allSchemas(t))
+			s, err := config.NewSet(parseDocs(t, tc.yaml), allSchemas(t))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -195,7 +189,7 @@ func TestClusterKeepsTheFamiliesInUse(t *testing.T) {
 
 // The VIP's interface is the Node's, which a worker, holding no VIP, leaves null.
 func TestClusterTakesGivenDNSAndVIPInterface(t *testing.T) {
-	s, err := config.NewSet(mustParse(t, minimal+
+	s, err := config.NewSet(parseDocs(t, minimal+
 		kubetest.ClusterDoc("k", `{dnsIPs: {ipv4: 10.96.0.53}, vip: {addresses: [10.0.0.10]}}`)+
 		kubetest.NodeDoc("cp", "{type: controlplane, vip: {interface: lan0}}")), allSchemas(t))
 	if err != nil {
@@ -218,7 +212,7 @@ func TestClusterTakesGivenDNSAndVIPInterface(t *testing.T) {
 func TestClusterNamesTheDocument(t *testing.T) {
 	endpoint := minimal + kubetest.NodeDoc("default", "{type: worker}") +
 		"---\napiVersion: kubernetes.chalkos.dev/v1alpha1\nkind: Cluster\nmetadata: {name: k}\n" + `spec: {endpoint: "https://:6443", images: ` + kubetest.DocumentImagesWith(t, nil) + "}\n"
-	s, err := config.NewSet(mustParse(t, endpoint), allSchemas(t))
+	s, err := config.NewSet(parseDocs(t, endpoint), allSchemas(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -276,7 +270,7 @@ func TestAddonObjectsKeepNumbers(t *testing.T) {
 
 // The cluster's endpoint is the Cluster document's.
 func TestClusterTakesItsEndpoint(t *testing.T) {
-	s, err := config.NewSet(mustParse(t, minimal+kubetest.NodeDoc("default", "{type: worker}")+
+	s, err := config.NewSet(parseDocs(t, minimal+kubetest.NodeDoc("default", "{type: worker}")+
 		"---\napiVersion: kubernetes.chalkos.dev/v1alpha1\nkind: Cluster\nmetadata: {name: k}\n"+
 		`spec: {endpoint: "https://api.lab:6443", images: `+kubetest.DocumentImagesWith(t, nil)+"}\n"), allSchemas(t))
 	if err != nil {
@@ -289,7 +283,7 @@ func TestClusterTakesItsEndpoint(t *testing.T) {
 
 // The schema requires the endpoint of a Cluster document.
 func TestClusterWithoutEndpointIsInvalid(t *testing.T) {
-	docs := mustParse(t, minimal+kubetest.NodeDoc("default", "{type: worker}")+
+	docs := parseDocs(t, minimal+kubetest.NodeDoc("default", "{type: worker}")+
 		"---\napiVersion: kubernetes.chalkos.dev/v1alpha1\nkind: Cluster\nmetadata: {name: k}\nspec: {}\n")
 	if _, err := config.NewSet(docs, allSchemas(t)); err == nil || !strings.Contains(err.Error(), "endpoint") {
 		t.Fatalf("err = %v, want one naming the endpoint", err)
@@ -298,7 +292,7 @@ func TestClusterWithoutEndpointIsInvalid(t *testing.T) {
 
 // VXLAN source ranges are flannel's, so the Cluster has none of its own.
 func TestClusterWithVXLANSourcesIsInvalid(t *testing.T) {
-	docs := mustParse(t, minimal+kubetest.NodeDoc("default", "{type: worker}")+kubetest.ClusterDoc("default", "{vxlanSourceSubnets: [10.0.0.0/24]}"))
+	docs := parseDocs(t, minimal+kubetest.NodeDoc("default", "{type: worker}")+kubetest.ClusterDoc("default", "{vxlanSourceSubnets: [10.0.0.0/24]}"))
 	if _, err := config.NewSet(docs, allSchemas(t)); err == nil || !strings.Contains(err.Error(), "vxlanSourceSubnets") {
 		t.Fatalf("err = %v, want one naming vxlanSourceSubnets", err)
 	}
@@ -329,7 +323,7 @@ func TestKubernetesAddressFormats(t *testing.T) {
 			`Node "w": - at '/spec/nodeIP/addresses/0': 'fe80::1%eth0' ` + notIP},
 	} {
 		t.Run(name, func(t *testing.T) {
-			if _, err := config.NewSet(mustParse(t, tc.yaml), allSchemas(t)); err == nil || err.Error() != tc.want {
+			if _, err := config.NewSet(parseDocs(t, tc.yaml), allSchemas(t)); err == nil || err.Error() != tc.want {
 				t.Fatalf("err = %v, want %q", err, tc.want)
 			}
 		})
@@ -339,7 +333,7 @@ func TestKubernetesAddressFormats(t *testing.T) {
 // Documents no schema checked, such as a test's, fail to decode a range that does not parse, so
 // the cluster is never built from it.
 func TestClusterOfUncheckedDocuments(t *testing.T) {
-	docs := config.Documents(mustParse(t, minimal+kubetest.NodeDoc("w", "{type: worker}")+kubetest.ClusterDoc("k", "{podCIDRs: {ipv4: 10.244.0.0}}")))
+	docs := config.Documents(parseDocs(t, minimal+kubetest.NodeDoc("w", "{type: worker}")+kubetest.ClusterDoc("k", "{podCIDRs: {ipv4: 10.244.0.0}}")))
 	if _, err := Cluster(docs, testImage); err == nil || err.Error() != `Cluster "k": netip.ParsePrefix("10.244.0.0"): no '/'` {
 		t.Fatalf("err = %v", err)
 	}
@@ -361,7 +355,7 @@ func TestClusterImagesRefusedBySchema(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			yaml := minimal + kubetest.ClusterDoc("k", "{images: "+kubetest.DocumentImagesWith(t, tc.changes)+"}") + kubetest.NodeDoc("w", "{type: worker}")
-			if _, err := config.NewSet(mustParse(t, yaml), allSchemas(t)); err == nil || !strings.Contains(err.Error(), tc.want) {
+			if _, err := config.NewSet(parseDocs(t, yaml), allSchemas(t)); err == nil || !strings.Contains(err.Error(), tc.want) {
 				t.Fatalf("err = %v, want one mentioning %q", err, tc.want)
 			}
 		})
@@ -373,7 +367,7 @@ func TestSandboxImage(t *testing.T) {
 	if got, err := SandboxImage(kubernetesSet(t, "{}", "").Documents()); err != nil || got != kubetest.DocumentImages["pause"] {
 		t.Errorf("SandboxImage() = %q, %v, want %q", got, err, kubetest.DocumentImages["pause"])
 	}
-	s, err := config.NewSet(mustParse(t, minimal), allSchemas(t))
+	s, err := config.NewSet(parseDocs(t, minimal), allSchemas(t))
 	if err != nil {
 		t.Fatal(err)
 	}

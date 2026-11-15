@@ -1285,4 +1285,3 @@ func TestCheckPrepared(t *testing.T) {
 		t.Errorf("after the preparation: %v", err)
 	}
 }
-

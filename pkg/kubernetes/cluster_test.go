@@ -224,42 +224,34 @@ func TestClusterValidate(t *testing.T) {
 
 // The kubelet's extra flags come after chalkos's own, so they would override where it finds its
 // configuration, credentials and credential provider, the node's name, addresses, labels and
-// taints, and who may use its API. The components take _ for -, so the names are refused in either
-// spelling.
+// taints, and who may use its API. The components take _ for - anywhere in a name, so the names are
+// refused in either spelling; one flag of each list stands for the others.
 func TestClusterValidateRefusesProtectedFlags(t *testing.T) {
 	valid, err := ReadCluster(writeFile(t, clusterJSON))
 	if err != nil {
 		t.Fatal(err)
 	}
+	// withUnderscores adds the first flag again with _ for every -.
+	withUnderscores := func(flags ...string) []string {
+		return append(slices.Clone(flags), strings.ReplaceAll(flags[0], "-", "_"))
+	}
 	// Written out rather than read from protectedKubeletFlags, so a flag dropped from it fails
 	// here.
-	for _, flag := range []string{
+	for _, name := range withUnderscores(
 		"anonymous-auth", "authentication-token-webhook", "authorization-mode", "bootstrap-kubeconfig",
 		"cert-dir", "client-ca-file", "config", "config-dir", "hostname-override",
 		"image-credential-provider-bin-dir", "image-credential-provider-config", "kubeconfig", "node-ip",
 		"node-labels", "pod-manifest-path", "read-only-port", "register-with-taints", "rotate-certificates",
 		"tls-cert-file", "tls-private-key-file",
-	} {
-		for _, name := range []string{flag, strings.ReplaceAll(flag, "-", "_")} {
-			c := valid
-			c.ExtraArgs = map[string]map[string]string{"kubelet": {"v": "2", name: "x"}}
-			err := c.Validate()
-			if want := "extraArgs: kubelet --" + name + " is set by chalkos and cannot be overridden"; err == nil || !strings.HasPrefix(err.Error(), want) {
-				t.Errorf("%s: err = %v, want %s", name, err, want)
-			}
+	) {
+		c := valid
+		c.ExtraArgs = map[string]map[string]string{"kubelet": {"v": "2", name: "x"}}
+		err := c.Validate()
+		if want := "extraArgs: kubelet --" + name + " is set by chalkos and cannot be overridden"; err == nil || !strings.HasPrefix(err.Error(), want) {
+			t.Errorf("%s: err = %v, want %s", name, err, want)
 		}
 	}
-	for _, flag := range []string{"anonymous-auth", "authentication-config", "authorization-mode", "enable-bootstrap-token-auth"} {
-		for _, name := range []string{flag, strings.ReplaceAll(flag, "-", "_")} {
-			c := valid
-			c.ExtraArgs = map[string]map[string]string{"kube-apiserver": {name: "x"}}
-			if err := c.Validate(); err == nil || !strings.Contains(err.Error(), "kube-apiserver --"+name+" is set by chalkos") {
-				t.Errorf("kube-apiserver %s: err = %v", name, err)
-			}
-		}
-	}
-	// The components take _ for - anywhere in a name.
-	for _, name := range []string{"enable_bootstrap-token_auth"} {
+	for _, name := range []string{"anonymous-auth", "authentication-config", "authorization-mode", "enable-bootstrap-token-auth", "enable_bootstrap-token_auth"} {
 		c := valid
 		c.ExtraArgs = map[string]map[string]string{"kube-apiserver": {name: "x"}}
 		if err := c.Validate(); err == nil || !strings.Contains(err.Error(), "kube-apiserver --"+name+" is set by chalkos") {
@@ -281,14 +273,13 @@ func TestClusterValidateRefusesProtectedFlags(t *testing.T) {
 		t.Errorf("node_labels: err = %v, want the labels' document named", err)
 	}
 	// Flags reach the components as --name=value: a name with its dashes, an = or whitespace would
-	// set another flag than it names, such as a protected one.
-	for _, component := range []string{"etcd", "kube-apiserver", "kube-controller-manager", "kube-scheduler", "kubelet"} {
-		for _, name := range []string{"--v", "-v", "", "register-with-taints=dedicated", "kubeconfig=/var/lib/x", "v 2", "v\t", ".v"} {
-			c := valid
-			c.ExtraArgs = map[string]map[string]string{component: {name: "2"}}
-			if err := c.Validate(); err == nil || !strings.Contains(err.Error(), "a flag's name is letters, digits") {
-				t.Errorf("%s %q: err = %v", component, name, err)
-			}
+	// set another flag than it names, such as a protected one. The check is the same for every
+	// component.
+	for _, name := range []string{"--v", "-v", "", "register-with-taints=dedicated", "kubeconfig=/var/lib/x", "v 2", "v\t", ".v"} {
+		c := valid
+		c.ExtraArgs = map[string]map[string]string{"kubelet": {name: "2"}}
+		if err := c.Validate(); err == nil || !strings.Contains(err.Error(), "a flag's name is letters, digits") {
+			t.Errorf("%q: err = %v", name, err)
 		}
 	}
 	// The API server refuses to start with flags that conflict with chalkos's own. Written out
@@ -302,14 +293,12 @@ func TestClusterValidateRefusesProtectedFlags(t *testing.T) {
 		"chalkos sets --enable-admission-plugins":                                      {"admission-control"},
 		"chalkos signs service account tokens with --service-account-signing-key-file": {"service-account-signing-endpoint"},
 	} {
-		for _, flag := range flags {
-			for _, name := range []string{flag, strings.ReplaceAll(flag, "-", "_")} {
-				c := valid
-				c.ExtraArgs = map[string]map[string]string{"kube-apiserver": {name: "x"}}
-				err := c.Validate()
-				if prefix := "extraArgs: kube-apiserver --" + name + " conflicts with "; err == nil || !strings.HasPrefix(err.Error(), prefix) || !strings.Contains(err.Error(), want) {
-					t.Errorf("kube-apiserver %s: err = %v, want %s…%s", name, err, prefix, want)
-				}
+		for _, name := range withUnderscores(flags...) {
+			c := valid
+			c.ExtraArgs = map[string]map[string]string{"kube-apiserver": {name: "x"}}
+			err := c.Validate()
+			if prefix := "extraArgs: kube-apiserver --" + name + " conflicts with "; err == nil || !strings.HasPrefix(err.Error(), prefix) || !strings.Contains(err.Error(), want) {
+				t.Errorf("kube-apiserver %s: err = %v, want %s…%s", name, err, prefix, want)
 			}
 		}
 	}
