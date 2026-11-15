@@ -122,19 +122,15 @@ func quorum(ctx context.Context, u layer.Upgrading, allowDowntime bool, name str
 // the rebooting one included; etcd.CheckQuorum counts a removal's quorum over the voters left.
 // With 4 voters a reboot needs 3 healthy others, a removal 2.
 func quorumOnce(ctx context.Context, u layer.Upgrading, allowDowntime bool, name string, reboot bool) error {
-	var members []*kubernetesv1.EtcdMember
-	err := viaControlPlanes(u, name, tryNextControlPlane, func(conn *client.Conn) error {
-		resp, err := Client(conn).EtcdMembers(ctx, connect.NewRequest(&kubernetesv1.EtcdMembersRequest{}))
-		if err == nil {
-			members = resp.Msg.Members
-		}
-		return err
-	})
+	var resp *kubernetesv1.EtcdMembersResponse
+	err := viaControlPlanes(u, name, tryNextControlPlane, layer.Fetch(&resp, func(conn *client.Conn) (*connect.Response[kubernetesv1.EtcdMembersResponse], error) {
+		return Client(conn).EtcdMembers(ctx, connect.NewRequest(&kubernetesv1.EtcdMembersRequest{}))
+	}))
 	if err != nil {
 		return fmt.Errorf("etcd's members: %w", err)
 	}
 	voters, healthy, own := 0, 0, false
-	for _, m := range members {
+	for _, m := range resp.Members {
 		switch {
 		case m.Learner:
 			return fmt.Errorf("etcd member %s is a learner yet; upgrade once it joined", m.Name)
@@ -176,13 +172,9 @@ func drainElsewhere(err error) bool {
 // drain cordons a node of the cluster and evicts its pods.
 func drain(ctx context.Context, u layer.Upgrading, deleteEmptyDir bool, name string) error {
 	var resp *kubernetesv1.DrainNodeResponse
-	err := viaControlPlanes(u, name, drainElsewhere, func(conn *client.Conn) error {
-		res, err := Client(conn).DrainNode(ctx, connect.NewRequest(&kubernetesv1.DrainNodeRequest{Node: name, TimeoutSeconds: uint32(u.DrainTimeout() / time.Second), DeleteEmptydirData: deleteEmptyDir}))
-		if err == nil {
-			resp = res.Msg
-		}
-		return err
-	})
+	err := viaControlPlanes(u, name, drainElsewhere, layer.Fetch(&resp, func(conn *client.Conn) (*connect.Response[kubernetesv1.DrainNodeResponse], error) {
+		return Client(conn).DrainNode(ctx, connect.NewRequest(&kubernetesv1.DrainNodeRequest{Node: name, TimeoutSeconds: uint32(u.DrainTimeout() / time.Second), DeleteEmptydirData: deleteEmptyDir}))
+	}))
 	if err != nil {
 		return fmt.Errorf("drain %s: %w", name, err)
 	}
@@ -199,18 +191,14 @@ func drain(ctx context.Context, u layer.Upgrading, deleteEmptyDir bool, name str
 
 // uncordon makes a node of the cluster schedulable again, when the upgrade cordoned it.
 func uncordon(ctx context.Context, u layer.Upgrading, name string) error {
-	var uncordoned bool
-	err := viaControlPlanes(u, name, tryNextControlPlane, func(conn *client.Conn) error {
-		resp, err := Client(conn).UncordonNode(ctx, connect.NewRequest(&kubernetesv1.UncordonNodeRequest{Node: name}))
-		if err == nil {
-			uncordoned = resp.Msg.Uncordoned
-		}
-		return err
-	})
+	var resp *kubernetesv1.UncordonNodeResponse
+	err := viaControlPlanes(u, name, tryNextControlPlane, layer.Fetch(&resp, func(conn *client.Conn) (*connect.Response[kubernetesv1.UncordonNodeResponse], error) {
+		return Client(conn).UncordonNode(ctx, connect.NewRequest(&kubernetesv1.UncordonNodeRequest{Node: name}))
+	}))
 	if err != nil {
 		return fmt.Errorf("uncordon %s: %w", name, err)
 	}
-	if uncordoned {
+	if resp.Uncordoned {
 		u.Say("%s: uncordoned", name)
 	}
 	return nil

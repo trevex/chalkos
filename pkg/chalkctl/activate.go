@@ -11,6 +11,7 @@ import (
 	"github.com/spf13/cobra"
 
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
+	"github.com/trevex/chalkos/pkg/chalkctl/layer"
 	"github.com/trevex/chalkos/pkg/client"
 	"github.com/trevex/chalkos/pkg/image"
 	"github.com/trevex/chalkos/pkg/internal/cli"
@@ -72,13 +73,9 @@ func (a *app) nodeActivate(ctx context.Context, f nodeActivateFlags, name string
 	}
 	image := imageName(root, revision, tag)
 	var resp *nodev1.ActivateImageResponse
-	if err := callNode(t, func(conn *client.Conn) error {
-		res, err := conn.ActivateImage(ctx, connect.NewRequest(&nodev1.ActivateImageRequest{RootHash: root}))
-		if err == nil {
-			resp = res.Msg
-		}
-		return err
-	}); err != nil {
+	if err := callNode(t, layer.Fetch(&resp, func(conn *client.Conn) (*connect.Response[nodev1.ActivateImageResponse], error) {
+		return conn.ActivateImage(ctx, connect.NewRequest(&nodev1.ActivateImageRequest{RootHash: root}))
+	})); err != nil {
 		return err
 	}
 	fmt.Fprintln(a.stdout, activatedLine(name, image, resp))

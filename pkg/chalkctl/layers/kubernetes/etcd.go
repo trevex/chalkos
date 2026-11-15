@@ -103,20 +103,16 @@ func etcdMembersCommand(h layer.Host) *cobra.Command {
 }
 
 func etcdMembers(h layer.Host, ctx context.Context, f viaFlags) error {
-	var members []*kubernetesv1.EtcdMember
-	err := throughControlPlane(h, ctx, f, "", func(conn *client.Conn) error {
-		resp, err := Client(conn).EtcdMembers(ctx, connect.NewRequest(&kubernetesv1.EtcdMembersRequest{}))
-		if err == nil {
-			members = resp.Msg.Members
-		}
-		return err
-	})
+	var resp *kubernetesv1.EtcdMembersResponse
+	err := throughControlPlane(h, ctx, f, "", layer.Fetch(&resp, func(conn *client.Conn) (*connect.Response[kubernetesv1.EtcdMembersResponse], error) {
+		return Client(conn).EtcdMembers(ctx, connect.NewRequest(&kubernetesv1.EtcdMembersRequest{}))
+	}))
 	if err != nil {
 		return err
 	}
 	w := h.Table()
 	fmt.Fprintln(w, "NAME\tID\tPEER URLS\tMEMBER\tHEALTH")
-	for _, m := range members {
+	for _, m := range resp.Members {
 		name, kind, health := m.Name, "voter", "healthy"
 		if name == "" {
 			name = "(not started)"
@@ -149,18 +145,14 @@ func etcdRemoveMemberCommand(h layer.Host) *cobra.Command {
 }
 
 func etcdRemoveMember(h layer.Host, ctx context.Context, f viaFlags, pos []string) error {
-	var removed *kubernetesv1.EtcdMember
-	err := throughControlPlane(h, ctx, f, pos[0], func(conn *client.Conn) error {
-		resp, err := Client(conn).EtcdRemoveMember(ctx, connect.NewRequest(&kubernetesv1.EtcdRemoveMemberRequest{Member: pos[0], Force: f.force}))
-		if err == nil {
-			removed = resp.Msg.Removed
-		}
-		return err
-	})
+	var resp *kubernetesv1.EtcdRemoveMemberResponse
+	err := throughControlPlane(h, ctx, f, pos[0], layer.Fetch(&resp, func(conn *client.Conn) (*connect.Response[kubernetesv1.EtcdRemoveMemberResponse], error) {
+		return Client(conn).EtcdRemoveMember(ctx, connect.NewRequest(&kubernetesv1.EtcdRemoveMemberRequest{Member: pos[0], Force: f.force}))
+	}))
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(h.Stdout(), "removed the etcd member %s (%x)\n", pos[0], removed.Id)
+	fmt.Fprintf(h.Stdout(), "removed the etcd member %s (%x)\n", pos[0], resp.Removed.Id)
 	return nil
 }
 

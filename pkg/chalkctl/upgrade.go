@@ -510,13 +510,9 @@ func (r *upgradeRun) activate(ctx context.Context, n *upgradeNode, st *nodev1.St
 	}
 	if n.rollbackTo == nil {
 		var resp *nodev1.ActivateImageResponse
-		if err := r.reach.Call(n.name, func(conn *client.Conn) error {
-			res, err := conn.ActivateImage(ctx, connect.NewRequest(&nodev1.ActivateImageRequest{RootHash: target}))
-			if err == nil {
-				resp = res.Msg
-			}
-			return err
-		}); err != nil {
+		if err := r.reach.Call(n.name, layer.Fetch(&resp, func(conn *client.Conn) (*connect.Response[nodev1.ActivateImageResponse], error) {
+			return conn.ActivateImage(ctx, connect.NewRequest(&nodev1.ActivateImageRequest{RootHash: target}))
+		})); err != nil {
 			return err
 		}
 		r.say("%s", activatedLine(n.name, image, resp))
@@ -680,13 +676,9 @@ func (r *upgradeRun) reactivate(ctx context.Context, n *upgradeNode) error {
 	image, root := n.target()
 	r.say("%s: rolling back to %s", n.name, image)
 	var resp *nodev1.RollbackImageResponse
-	if err := r.reach.Call(n.name, func(conn *client.Conn) error {
-		res, err := conn.RollbackImage(ctx, connect.NewRequest(&nodev1.RollbackImageRequest{RootHash: root}))
-		if err == nil {
-			resp = res.Msg
-		}
-		return err
-	}); err != nil {
+	if err := r.reach.Call(n.name, layer.Fetch(&resp, func(conn *client.Conn) (*connect.Response[nodev1.RollbackImageResponse], error) {
+		return conn.RollbackImage(ctx, connect.NewRequest(&nodev1.RollbackImageRequest{RootHash: root}))
+	})); err != nil {
 		return err
 	}
 	n.uncounted = !resp.AlreadyInstalled && !esp.Counted(resp.Entry)

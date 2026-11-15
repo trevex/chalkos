@@ -13,6 +13,7 @@ import (
 	"text/tabwriter"
 	"time"
 
+	"connectrpc.com/connect"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 	"google.golang.org/protobuf/types/known/anypb"
@@ -237,4 +238,16 @@ type Nodes interface {
 	// ViaFirst calls fn on the first of names that answers, moving on past those whose error next
 	// accepts; the error names the node that gave it.
 	ViaFirst(names []string, next func(error) bool, fn func(conn *client.Conn) error) error
+}
+
+// Fetch returns a callback for Call and its kin that runs rpc and keeps its response's message in
+// *msg.
+func Fetch[T any](msg **T, rpc func(conn *client.Conn) (*connect.Response[T], error)) func(conn *client.Conn) error {
+	return func(conn *client.Conn) error {
+		res, err := rpc(conn)
+		if err == nil {
+			*msg = res.Msg
+		}
+		return err
+	}
 }

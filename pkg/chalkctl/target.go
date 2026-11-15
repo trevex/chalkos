@@ -251,13 +251,9 @@ func (s nodeSet) status(ctx context.Context, name string) (*nodev1.StatusRespons
 // nodeStatus reads an installed node's status.
 func nodeStatus(ctx context.Context, t *target) (*nodev1.StatusResponse, error) {
 	var st *nodev1.StatusResponse
-	err := callNode(t, func(conn *client.Conn) error {
-		resp, err := conn.Status(ctx, connect.NewRequest(&nodev1.StatusRequest{}))
-		if err == nil {
-			st = resp.Msg
-		}
-		return err
-	})
+	err := callNode(t, layer.Fetch(&st, func(conn *client.Conn) (*connect.Response[nodev1.StatusResponse], error) {
+		return conn.Status(ctx, connect.NewRequest(&nodev1.StatusRequest{}))
+	}))
 	return st, err
 }
 
