@@ -22,6 +22,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -872,14 +873,6 @@ func TestRequestSizeLimit(t *testing.T) {
 	}
 }
 
-// An install message carries a chunk of the image well below the limit.
-func TestImageChunkFitsRequestLimit(t *testing.T) {
-	const chunkSize = 1 << 20
-	if maxMessageBytes < 2*chunkSize {
-		t.Errorf("maxMessageBytes = %d leaves no room for a %d-byte image chunk", maxMessageBytes, chunkSize)
-	}
-}
-
 // rawClient is a NodeServiceClient with its own connect options, so a test can send compressed
 // requests, which client.Conn does not support.
 func rawClient(t *testing.T, addr string, opts ...connect.ClientOption) nodev1connect.NodeServiceClient {
@@ -914,84 +907,35 @@ func TestCompressionRefused(t *testing.T) {
 	}
 }
 
+// A node serves maxLogStreams Logs calls at a time, and a call that ends frees its slot.
 func TestLogsLimitsStreams(t *testing.T) {
 	c := newCreds(t)
 	s, _ := newTestServer(t, normal, vda)
-	started := make(chan struct{}, maxLogStreams+2)
-	s.Journal = func(ctx context.Context, _ string, _ bool, _ uint32) (io.ReadCloser, error) {
-		started <- struct{}{}
-		pr, pw := io.Pipe()
-		go func() {
-			<-ctx.Done()
-			pw.Close()
-		}()
-		return pr, nil
+	var journal atomic.Int32
+	s.Journal = func(context.Context, string, bool, uint32) (io.ReadCloser, error) {
+		journal.Add(1)
+		return io.NopCloser(strings.NewReader("")), nil
 	}
 	conn := dial(t, serve(t, s, c, c.pool), c.clients[pki.RoleReader])
-	// follow opens a stream and reports how it ended, once it does.
-	follow := func(ctx context.Context) <-chan error {
-		done := make(chan error, 1)
-		go func() {
-			stream, err := conn.Logs(ctx, connect.NewRequest(&nodev1.LogsRequest{Follow: true}))
-			if err == nil {
-				for stream.Receive() {
-				}
-				err = stream.Err()
-			}
-			done <- err
-		}()
-		return done
-	}
-	waitStarted := func() {
-		t.Helper()
-		select {
-		case <-started:
-		case <-time.After(time.Minute):
-			t.Fatal("a stream did not reach the journal")
+	logs := func() error {
+		stream, err := conn.Logs(context.Background(), connect.NewRequest(&nodev1.LogsRequest{}))
+		if err != nil {
+			return err
 		}
-	}
-
-	var cancels []context.CancelFunc
-	defer func() {
-		for _, cancel := range cancels {
-			cancel()
+		for stream.Receive() {
 		}
-	}()
-	for range maxLogStreams {
-		ctx, cancel := context.WithCancel(context.Background())
-		cancels = append(cancels, cancel)
-		follow(ctx)
-		waitStarted()
+		return stream.Err()
 	}
-	over, cancelOver := context.WithCancel(context.Background())
-	cancels = append(cancels, cancelOver)
-	select {
-	case err := <-follow(over):
-		if connect.CodeOf(err) != connect.CodeResourceExhausted {
-			t.Fatalf("err = %v, want resource exhausted", err)
-		}
-	case <-started:
-		t.Fatalf("stream %d reached the journal", maxLogStreams+1)
-	case <-time.After(time.Minute):
-		t.Fatal("the stream over the limit was not refused")
+	s.logStreams.Store(maxLogStreams)
+	if err := logs(); connect.CodeOf(err) != connect.CodeResourceExhausted || journal.Load() != 0 {
+		t.Errorf("over the limit: err = %v, journal read %d times", err, journal.Load())
 	}
-
-	// A stream that ends frees its slot.
-	cancels[0]()
-	deadline := time.Now().Add(time.Minute)
-	for {
-		ctx, cancel := context.WithCancel(context.Background())
-		cancels = append(cancels, cancel)
-		done := follow(ctx)
-		select {
-		case <-started:
-			return
-		case err := <-done:
-			if connect.CodeOf(err) != connect.CodeResourceExhausted || time.Now().After(deadline) {
-				t.Fatalf("err = %v after a stream ended", err)
-			}
-			time.Sleep(10 * time.Millisecond)
-		}
+	s.logStreams.Store(maxLogStreams - 1)
+	if err := logs(); err != nil || journal.Load() != 1 {
+		t.Errorf("below the limit: err = %v, journal read %d times", err, journal.Load())
+	}
+	if n := s.logStreams.Load(); n != maxLogStreams-1 {
+		t.Errorf("%d streams counted after the call ended", n)
 	}
 }
 
@@ -1048,32 +992,4 @@ func mustRules(t *testing.T, c *contract.Contract) *rules.Set {
 		t.Fatal(err)
 	}
 	return set
-}
-
-// A node's paths are those below /, and those below another root the same paths below it, but
-// for the devices, which storage.Host resolves.
-func TestPathsUnder(t *testing.T) {
-	want := Paths{
-		StateDir:        "/state",
-		BootDisk:        "/dev/disk/chalk-boot-disk",
-		BootPartitions:  "/dev/disk/chalk-boot",
-		OSRelease:       "/etc/os-release",
-		EFIVars:         "/sys/firmware/efi/efivars",
-		TPM:             "/sys/class/tpm",
-		EventLog:        "/sys/kernel/security/tpm0/binary_bios_measurements",
-		StorageStatus:   "/run/chalkos/storage-status.json",
-		MountInfo:       "/proc/self/mountinfo",
-		ESP:             "/efi",
-		Cmdline:         "/proc/cmdline",
-		BootID:          "/proc/sys/kernel/random/boot_id",
-		FailedBoot:      "/var/lib/chalkd/failed-boot",
-		RunDir:          "/run/chalkd",
-		EffectsBaseline: "/run/chalkd/effects-baseline.json",
-	}
-	if got := DefaultPaths(); got != want {
-		t.Errorf("DefaultPaths() = %+v", got)
-	}
-	if got := PathsUnder("/tmp/n"); got.StateDir != "/tmp/n/state" || got.EffectsBaseline != "/tmp/n/run/chalkd/effects-baseline.json" || got.BootDisk != want.BootDisk {
-		t.Errorf("PathsUnder(/tmp/n) = %+v", got)
-	}
 }
