@@ -98,13 +98,13 @@ func controlPlanesRead(h layer.Host, ctx context.Context, f viaFlags, name strin
 	if err != nil {
 		return err
 	}
-	return everyControlPlaneReads(ctx, controlPlanes, name, nodeStatusOf(nodes))
+	return everyControlPlaneReads(ctx, controlPlanes, name, nodeStatusOf(nodes.Call))
 }
 
 // everyControlPlaneReads refuses to revoke the node while a control plane does not answer, or a
 // bootstrapped one cannot read the revoked nodes. One that is not bootstrapped, left etcd or lost
 // its etcd data renews no node certificate.
-func everyControlPlaneReads(ctx context.Context, controlPlanes []string, name string, status func(ctx context.Context, name string) (*kubernetesv1.StatusResponse, error)) error {
+func everyControlPlaneReads(ctx context.Context, controlPlanes []string, name string, status statusFunc) error {
 	var why []string
 	for _, cp := range controlPlanes {
 		k, err := status(ctx, cp)
@@ -183,13 +183,9 @@ func nodeUnrevoke(h layer.Host, ctx context.Context, f viaFlags, pos []string) e
 		return err
 	}
 	var resp *kubernetesv1.UnrevokeNodeResponse
-	err := throughControlPlane(h, ctx, f, "", func(conn *client.Conn) error {
-		r, err := Client(conn).UnrevokeNode(ctx, connect.NewRequest(&kubernetesv1.UnrevokeNodeRequest{Node: pos[0], Force: f.force}))
-		if err == nil {
-			resp = r.Msg
-		}
-		return err
-	})
+	err := throughControlPlane(h, ctx, f, "", layer.Fetch(&resp, func(conn *client.Conn) (*connect.Response[kubernetesv1.UnrevokeNodeResponse], error) {
+		return Client(conn).UnrevokeNode(ctx, connect.NewRequest(&kubernetesv1.UnrevokeNodeRequest{Node: pos[0], Force: f.force}))
+	}))
 	if err != nil {
 		return err
 	}

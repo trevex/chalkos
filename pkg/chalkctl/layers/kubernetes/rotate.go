@@ -59,9 +59,7 @@ func (p *Plugin) Finished(kind clustersecrets.RotationKind) (string, string) {
 // RevokedNodes are the nodes the first control plane that answers with them lists as revoked, as
 // revokedNodesOf reads them.
 func (p *Plugin) RevokedNodes(ctx context.Context, r layer.Rotating) (map[string]string, error) {
-	list, err := revokedNodesOf(ctx, rotatingNodesOf(r, k8s.KindControlPlane), func(ctx context.Context, name string) (*kubernetesv1.StatusResponse, error) {
-		return kubernetesStatus(ctx, r, name)
-	})
+	list, err := revokedNodesOf(ctx, rotatingNodesOf(r, k8s.KindControlPlane), nodeStatusOf(r.Call))
 	if err != nil {
 		return nil, err
 	}
@@ -75,17 +73,6 @@ func (p *Plugin) RevokedNodes(ctx context.Context, r layer.Rotating) (map[string
 // NodeCAHolders are the control planes.
 func (p *Plugin) NodeCAHolders(c layer.Cluster) ([]string, error) {
 	return nodesOf(c, k8s.KindControlPlane, "")
-}
-
-// kubernetesStatus reads the state of a node's Kubernetes, as nodeStatus does.
-func kubernetesStatus(ctx context.Context, r layer.Rotating, name string) (*kubernetesv1.StatusResponse, error) {
-	var st *kubernetesv1.StatusResponse
-	err := r.Call(name, func(conn *client.Conn) error {
-		var err error
-		st, err = nodeStatus(ctx, conn)
-		return err
-	})
-	return st, err
 }
 
 // expectation is what a node's status reports once it applied a phase: an entry of its trust,
@@ -230,7 +217,7 @@ func controlPlanesInTurn(ctx context.Context, r layer.Rotating, kind clustersecr
 			if err := applied(st, want); err != nil {
 				return err
 			}
-			k, err := kubernetesStatus(ctx, r, name)
+			k, err := nodeStatusOf(r.Call)(ctx, name)
 			if err != nil {
 				return err
 			}

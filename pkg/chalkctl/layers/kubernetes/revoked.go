@@ -21,7 +21,7 @@ import (
 // Otherwise the list is unknown while no control plane gives it: one does not when it does not
 // answer, left etcd or lost its etcd data, or cannot read the list. The error then names why each
 // did not.
-func revokedNodesOf(ctx context.Context, controlPlanes []string, status func(ctx context.Context, name string) (*kubernetesv1.StatusResponse, error)) (map[string]*kubernetesv1.RevokedNode, error) {
+func revokedNodesOf(ctx context.Context, controlPlanes []string, status statusFunc) (map[string]*kubernetesv1.RevokedNode, error) {
 	var why []string
 	bootstrapped := false
 	for _, name := range controlPlanes {
@@ -69,49 +69,39 @@ func (n notInstalledYet) Unwrap() error { return n.error }
 // that does not answer as an installed node counts as not installed yet, so the cluster's first
 // nodes install while the others wait in maintenance mode or are off.
 func (p *Plugin) AdmitInstall(ctx context.Context, t layer.Target) error {
-	controlPlanes, err := nodesOf(t.Cluster(), k8s.KindControlPlane, t.Name())
-	if err != nil {
-		return err
-	}
-	status := nodeStatusOf(t.Nodes())
-	list, err := revokedNodesOf(ctx, controlPlanes, func(ctx context.Context, name string) (*kubernetesv1.StatusResponse, error) {
+	status := nodeStatusOf(t.Nodes().Call)
+	return admit(ctx, t, t.Name(), func(ctx context.Context, name string) (*kubernetesv1.StatusResponse, error) {
 		st, err := status(ctx, name)
 		switch connect.CodeOf(err) {
 		case connect.CodeUnavailable, connect.CodeDeadlineExceeded:
 			return nil, notInstalledYet{err}
 		}
 		return st, err
-	})
-	if err != nil {
-		return fmt.Errorf("%w; install installs %s only once one does, or with --force", err, t.Name())
-	}
-	if n, ok := list[t.Name()]; ok {
-		return fmt.Errorf("%s is revoked %s, and install installs it only once chalkctl node unrevoke %s lets it back in, or with --force", t.Name(), kubernetesview.RevokedSince(n), t.Name())
-	}
-	return nil
+	}, "install installs "+t.Name())
 }
 
 // Admit refuses to deliver the target what the secrets file issues it, which does says, while
 // a control plane lists it as revoked or while no control plane says which nodes are.
 func (p *Plugin) Admit(ctx context.Context, t layer.Target, does string) error {
-	controlPlanes, err := nodesOf(t.Cluster(), k8s.KindControlPlane, "")
+	status := nodeStatusOf(t.Nodes().Call)
+	// The target is reached where the command reaches it, the others where the inventory says.
+	target := nodeStatusOf(func(_ string, fn func(conn *client.Conn) error) error { return t.Call(fn) })
+	return admit(ctx, t, "", func(ctx context.Context, name string) (*kubernetesv1.StatusResponse, error) {
+		if name == t.Name() {
+			return target(ctx, name)
+		}
+		return status(ctx, name)
+	}, does)
+}
+
+// admit refuses what does says while a control plane other than skip lists the target as
+// revoked, or while none of them says which nodes are.
+func admit(ctx context.Context, t layer.Target, skip string, status statusFunc, does string) error {
+	controlPlanes, err := nodesOf(t.Cluster(), k8s.KindControlPlane, skip)
 	if err != nil {
 		return err
 	}
-	status := nodeStatusOf(t.Nodes())
-	list, err := revokedNodesOf(ctx, controlPlanes, func(ctx context.Context, name string) (*kubernetesv1.StatusResponse, error) {
-		// The target is reached where the command reaches it, the others where the inventory says.
-		if name == t.Name() {
-			var st *kubernetesv1.StatusResponse
-			err := t.Call(func(conn *client.Conn) error {
-				var err error
-				st, err = nodeStatus(ctx, conn)
-				return err
-			})
-			return st, err
-		}
-		return status(ctx, name)
-	})
+	list, err := revokedNodesOf(ctx, controlPlanes, status)
 	if err != nil {
 		return fmt.Errorf("%w; %s only once one does, or with --force", err, does)
 	}

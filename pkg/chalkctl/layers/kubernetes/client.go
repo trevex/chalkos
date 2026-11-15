@@ -10,7 +10,6 @@ import (
 	kubernetesv1 "github.com/trevex/chalkos/pkg/api/kubernetes/v1"
 	"github.com/trevex/chalkos/pkg/api/kubernetes/v1/kubernetesv1connect"
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
-	"github.com/trevex/chalkos/pkg/chalkctl/layer"
 	"github.com/trevex/chalkos/pkg/client"
 	"github.com/trevex/chalkos/pkg/layers"
 )
@@ -45,12 +44,13 @@ func nodeStatus(ctx context.Context, conn *client.Conn) (*kubernetesv1.StatusRes
 	return Status(ctx, conn)
 }
 
-// nodeStatusOf reads the state of an installed node's Kubernetes through nodes, as nodeStatus does.
-func nodeStatusOf(nodes layer.Nodes) func(ctx context.Context, name string) (*kubernetesv1.StatusResponse, error) {
-	return func(ctx context.Context, name string) (*kubernetesv1.StatusResponse, error) {
-		var st *kubernetesv1.StatusResponse
-		err := nodes.Call(name, func(conn *client.Conn) error {
-			var err error
+// statusFunc reads the state of a node's Kubernetes.
+type statusFunc func(ctx context.Context, name string) (*kubernetesv1.StatusResponse, error)
+
+// nodeStatusOf reads the state of an installed node's Kubernetes through call, as nodeStatus does.
+func nodeStatusOf(call func(name string, fn func(conn *client.Conn) error) error) statusFunc {
+	return func(ctx context.Context, name string) (st *kubernetesv1.StatusResponse, err error) {
+		err = call(name, func(conn *client.Conn) error {
 			st, err = nodeStatus(ctx, conn)
 			return err
 		})

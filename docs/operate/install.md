@@ -546,7 +546,7 @@ second keyslot. chalkctl refuses a node that is installed already, with
     Before it installs the node, chalkctl asks the other control planes of the inventory for the
     revoked nodes, and refuses a name that
     [`chalkctl node revoke`](../reference/cli/chalkctl_node_revoke.md) revoked, with
-    `node3 is revoked since <time>, and install installs it only once chalkctl node unrevoke node3
+    `node3 is revoked since <time>, and install installs node3 only once chalkctl node unrevoke node3
     lets it back in, or with --force`.
     [Reuse a removed node's name](add-remove-nodes.md#reuse-a-removed-nodes-name) describes how to
     free the name. chalkctl also refuses while control planes were bootstrapped and none says which
