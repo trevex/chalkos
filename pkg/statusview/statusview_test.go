@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"fmt"
 	"io"
-	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -15,12 +14,6 @@ import (
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/internal/golden"
 )
-
-// goldenFile compares got with the golden file of the name.
-func goldenFile(t *testing.T, name, got string) {
-	t.Helper()
-	golden.Check(t, filepath.Join("testdata", name), got)
-}
 
 // fakeInventory says what chalkctl's inventory says of a node, in words the test can find.
 type fakeInventory struct{}
@@ -87,7 +80,7 @@ func TestWrite(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	goldenFile(t, "status.golden", b.String())
+	golden.Check(t, "testdata/status.golden", b.String())
 }
 
 // Without an inventory, as on the console, the lines compare nothing.
@@ -116,7 +109,7 @@ func TestWriteDisks(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	goldenFile(t, "disks.golden", b.String())
+	golden.Check(t, "testdata/disks.golden", b.String())
 }
 
 // status names each output with the start of its hash and why its last render failed, or that

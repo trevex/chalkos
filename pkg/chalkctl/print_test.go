@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"math"
 	"net/http"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -24,12 +23,6 @@ import (
 	"github.com/trevex/chalkos/pkg/internal/golden"
 	"github.com/trevex/chalkos/pkg/layers"
 )
-
-// goldenFile compares got with the golden file of the name.
-func goldenFile(t *testing.T, name, got string) {
-	t.Helper()
-	golden.Check(t, filepath.Join("testdata", name), got)
-}
 
 // cannedNode answers Status and Disks with fixed responses, and Info as the node s does, with the
 // Kubernetes and router layers.
@@ -185,7 +178,7 @@ func TestStatusPrints(t *testing.T) {
 	if err := ta.run(context.Background(), ta.args([]string{"status", "n1"}, addr)); err != nil {
 		t.Fatal(err)
 	}
-	goldenFile(t, "status.golden", ta.stdout.String())
+	golden.Check(t, "testdata/status.golden", ta.stdout.String())
 }
 
 // TestDisksPrints holds what chalkctl disks prints of a node's disks.
@@ -195,5 +188,5 @@ func TestDisksPrints(t *testing.T) {
 	if err := ta.run(context.Background(), ta.args([]string{"disks", "n1"}, addr)); err != nil {
 		t.Fatal(err)
 	}
-	goldenFile(t, "disks.golden", ta.stdout.String())
+	golden.Check(t, "testdata/disks.golden", ta.stdout.String())
 }

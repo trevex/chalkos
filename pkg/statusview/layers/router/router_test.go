@@ -3,18 +3,11 @@ package router
 import (
 	"bytes"
 	"math"
-	"path/filepath"
 	"testing"
 
 	routerv1 "github.com/trevex/chalkos/pkg/api/router/v1"
 	"github.com/trevex/chalkos/pkg/internal/golden"
 )
-
-// goldenFile compares got with the golden file of the name.
-func goldenFile(t *testing.T, name, got string) {
-	t.Helper()
-	golden.Check(t, filepath.Join("testdata", name), got)
-}
 
 // TestWrite writes a router's BGP sessions, its NAT64 instance, its resolvers, its DHCP servers
 // and its relays, running or not.
@@ -38,5 +31,5 @@ func TestWrite(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	goldenFile(t, "router.golden", b.String())
+	golden.Check(t, "testdata/router.golden", b.String())
 }

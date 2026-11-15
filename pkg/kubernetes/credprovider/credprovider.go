@@ -83,9 +83,10 @@ func kubeletHost(host string) (string, error) {
 }
 
 // Write writes the provider config, credentials.json and the kubelet's flags file into dir; dir and
-// credentials.json are readable by root alone. Only logins with a user count, and without any the
-// flags stay empty, as the kubelet refuses a config without providers. The kubelet reads the config
-// when it starts. An IPv6 host needs a port: the kubelet strips an IPv6 address's brackets only
+// credentials.json are readable by root alone. The config runs chalkd kubernetes
+// credential-provider from bin for each host of a login with a user, and credentials.json holds
+// only the current logins' users and passwords. Without such a login the flags stay empty, as the
+// kubelet refuses a config without providers. The kubelet reads the config when it starts. An IPv6 host needs a port: the kubelet strips an IPv6 address's brackets only
 // together with a port, and otherwise reads them as a character class of its glob.
 func Write(dir, bin string, logins []Login) error {
 	creds := map[string]auth{}

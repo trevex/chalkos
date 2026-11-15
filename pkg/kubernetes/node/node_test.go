@@ -179,6 +179,17 @@ func TestPrepareWorker(t *testing.T) {
 			t.Errorf("kubeconfig lacks %s:\n%s", want, kubeconfig)
 		}
 	}
+	c, err := kubernetes.ReadCluster(s.Cluster)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantConfig, err := json.Marshal(kubeletConfig(s.Paths, c))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if config, err := os.ReadFile(s.KubeletConfig()); err != nil || string(config) != string(wantConfig) {
+		t.Errorf("kubelet config = %s, %v; want %s", config, err, wantConfig)
+	}
 	flags, _ := os.ReadFile(filepath.Join(s.KubeletDir(), "flags"))
 	if string(flags) != "KUBELET_ARGS=--hostname-override=w1 --node-ip=192.168.100.11 --node-labels=disk=ssd,zone=a\n" {
 		t.Errorf("flags = %q", flags)
