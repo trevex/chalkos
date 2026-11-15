@@ -86,14 +86,12 @@ type instance struct {
 }
 
 // runServices runs the instances of the service s of the rendered configs: it starts those that
-// do not run once their devices exist, reloads or restarts those that run and stops those
-// without a config; with stop, it stops all of them. systemd binds a VRF's instance's sockets to
-// the index the VRF's device had when the instance started, which the instance records: an
-// instance bound to a device that a VRF made anew replaced restarts on the new one. A unit that
-// requires a device that never comes waits for it until the device's job times out, so the run
-// waits deviceWait at most for the devices and startWait more for the instances it started, and
-// fails naming those that are not running then; a start still queued goes on once the device
-// appears. The error joins one error per failure.
+// do not run once their devices exist, reloads or restarts those that run and stops those without
+// a config; with stop, it stops them all. An instance bound to a device its VRF made anew restarts
+// on the new one. A unit waits for a missing device until the device's job times out, so the run
+// waits deviceWait at most for the devices and startWait for the instances it started, and fails
+// naming those not running then; a queued start goes on once the device appears. The error joins
+// one error per failure.
 func (p *Plugin) runServices(ctx context.Context, s perVRF, stop bool) error {
 	var want []instance
 	if !stop {

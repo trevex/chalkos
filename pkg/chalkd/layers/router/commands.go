@@ -59,19 +59,15 @@ func (p *Plugin) Commands() []*cobra.Command {
 	}
 }
 
-// dhcp6Routes routes each delegated prefix that the hook of Kea's DHCPv6 servers recorded, and
-// that a rendered config delegates on the record's link, to the address that asked for it, in
-// the link's VRF, until its lease ends, and removes the routes of protocol dhcp-pd of no such
-// record. It removes no record: the hook removes those of released and expired leases, and
-// ended records route nothing. With more records than it reads, it removes no route, and
-// without the output kea, as in maintenance mode, it changes nothing: the kernel removes the
-// routes when their leases end. A route ip does not add or remove is named on
-// standard error and left to the next run, as the next record or renewal starts one: a unit that
-// failed for a link that is down at boot would fail the boot's health check.
+// dhcp6Routes routes each prefix Kea's hook recorded as delegated, on a link a rendered config
+// delegates on, to the client that asked for it in the link's VRF until its lease ends, and
+// removes other dhcp-pd routes. The hook removes the records; ended ones route nothing. With more
+// records than it reads it removes no route, and without the output kea, as in maintenance mode,
+// it changes nothing: the kernel drops the routes as their leases end. A route ip fails to change
+// is logged to standard error and left to the next run, so a link down at boot does not fail the
+// boot's health check.
 func (p *Plugin) dhcp6Routes(ctx context.Context, now time.Time) error {
 	var pools []routing.PDPool
-	// Without the output kea, as in maintenance mode, the run changes nothing: the routes end
-	// with their leases.
 	if _, err := os.Stat(p.KeaDir); errors.Is(err, fs.ErrNotExist) {
 		return nil
 	}

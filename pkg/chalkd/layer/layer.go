@@ -1,13 +1,9 @@
-// Package layer is what chalkd's layers plug in with. A layer is a Plugin compiled into chalkd:
-// it serves its own API beside the node API and hooks into the common node agent through the
-// optional interfaces below, which chalkd finds by type assertion. chalkd mounts every compiled
-// plugin's API and starts only the active plugins, those whose layers the image carries. It asks
-// the active plugins for most hooks, and every compiled plugin for a command and for the hooks
-// that concern an image other than the running one; each hook says which plugins chalkd asks.
-//
-// One hook is declared where it is called: a plugin whose layer writes what it derives from the
-// running slot's documents implements nodeconfig.Layer, which the config loader asks of the
-// active plugins at boot and after each delivery.
+// Package layer is what chalkd's layers plug in with. A layer is a Plugin compiled into chalkd that
+// serves its own API beside the node API and implements the optional hook interfaces below, which
+// chalkd finds by type assertion. chalkd mounts every compiled plugin's API and starts the active
+// plugins, those whose layers the image carries; each hook says which plugins chalkd asks. A layer
+// that writes what it derives from the running config implements nodeconfig.Layer, which the
+// config loader asks of the active plugins at boot and after each delivery.
 package layer
 
 import (
@@ -128,8 +124,8 @@ type Certificates interface {
 // Delivery is a plugin whose layer takes payloads with config deliveries and checks the
 // identity's part of its own. What a layer writes from the config is the hook nodeconfig.Layer.
 type Delivery interface {
-	// Accepts reports whether the payload is one of the layer's. chalkd asks the plugins it has
-	// Plan.
+	// Accepts reports whether the payload is one of the layer's. chalkd asks the plugins it asks
+	// to Plan.
 	Accepts(payload *anypb.Any) bool
 	// CheckIdentity checks the layer's part of an identity, as config translates to it, before a
 	// slot keeps it. chalkd asks every compiled plugin: the identity may be for another image, as

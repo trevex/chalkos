@@ -216,12 +216,8 @@ func failedWith(t *testing.T, err error, want ...string) {
 	}
 }
 
-// The resolvers of the VRFs start once their devices exist, VRF names escaped, the default VRF's
-// left to unbound.service, and reload on the next run. A VRF made anew, one whose device is gone
-// and appears during the run, and a resolver that recorded no index restart. Resolvers without a
-// config, a running and a failed one, stop and are reset after the others ran. A VRF without a
-// device and a resolver that does not come up fail the run, named with the substate, and stop
-// stops them all.
+// TestServicesUnbound runs the VRFs' resolvers as runServices says, leaving the default VRF's
+// to unbound.service.
 func TestServicesUnbound(t *testing.T) {
 	f, r := newFakeSystemd(t)
 	for _, vrf := range []string{"guest", "tenant", "dmz-a"} {
@@ -322,10 +318,7 @@ func TestServicesUnbound(t *testing.T) {
 	}
 }
 
-// A relay runs for the default VRF's config and each VRF's once the VRF's device exists, and
-// restarts on each run, as dnsmasq reads its relays at start alone. Relays without a config stop
-// and are reset before the others start, and a VRF without a device and a relay that does not
-// come up fail the run.
+// TestServicesRelay restarts the relays on each run, as dnsmasq reads them at start alone.
 func TestServicesRelay(t *testing.T) {
 	f, r := newFakeSystemd(t)
 	if err := f.run("relay", false); err != nil {
@@ -391,12 +384,8 @@ func writeKea4(t *testing.T, r *Plugin, vrf string, links ...string) {
 	touch(t, filepath.Join(r.KeaDir, services.Kea4.File(vrf)), `{"Dhcp4": {"interfaces-config": {"interfaces": ["`+strings.Join(links, `", "`)+`"]}}}`)
 }
 
-// A DHCP server runs for each rendered config once the config's links and its VRF's device
-// exist, the default VRF's too, and reloads on the next run. A VRF's server restarts when its
-// device was made anew or it recorded none. Servers without a config stop and are reset before
-// the others start, chalkos-dhcp6-routes starts after the servers, and a server whose links do
-// not appear, whose config cannot be read or that does not come up fails the run without a
-// reload or start.
+// TestServicesKea runs, reloads, restarts and stops the DHCP servers as runServices says, and
+// starts chalkos-dhcp6-routes after them.
 func TestServicesKea(t *testing.T) {
 	f, r := newFakeSystemd(t)
 	for _, d := range []string{"lan0", "vlan20", "vlan30", "guest", "dmz-a"} {

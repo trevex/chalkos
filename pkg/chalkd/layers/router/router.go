@@ -33,43 +33,31 @@ import (
 	"github.com/trevex/chalkos/pkg/tool/systemctl"
 )
 
-// Options set up the router layer; zero fields mean chalkd's own.
+// Options set up the router layer; zero fields mean chalkd's own. The output directories hold
+// one config per VRF, as package services names them.
 type Options struct {
 	// KernelRoutes lists the kernel's routes; nil reads them through netlink.
 	KernelRoutes func() ([]*routing.KernelRoute, error)
-	// FRRConfig is FRR's config, a link to the config frr.service fills in, which images with BGP
-	// carry whether FRR runs or not; empty is /etc/frr/frr.conf. chalkd asks FRR nothing on an
-	// image without it.
+	// FRRConfig is the link to the config frr.service fills in, which images with BGP carry
+	// whether FRR runs or not; chalkd asks FRR nothing without it. Default /etc/frr/frr.conf.
 	FRRConfig string
-	// ResolverConfig is Unbound's config, which exists on a node with a Resolver document;
-	// empty is /etc/unbound/unbound.conf.
+	// ResolverConfig is Unbound's config, present with a Resolver document; default
+	// /etc/unbound/unbound.conf.
 	ResolverConfig string
-	// ResolverDir is the output unbound's directory, with unbound-<vrf>.conf per VRF's Resolver;
-	// empty is /run/chalkos/outputs/unbound.
-	ResolverDir string
-	// KeaDir is the output kea's directory, with kea-dhcp4.json and kea-dhcp6.json for the default
-	// VRF's DHCP servers and kea-dhcp4-<vrf>.json and kea-dhcp6-<vrf>.json per VRF's; empty is
-	// /run/chalkos/outputs/kea.
-	KeaDir string
-	// PDDir holds the records of the prefixes Kea's DHCPv6 servers delegated; empty is
+	// ResolverDir, KeaDir, RelayDir and NAT64Dir are the directories of the outputs unbound, kea,
+	// dhcp-relay and jool (a <name>.json per NAT64 document), below /run/chalkos/outputs by
+	// default.
+	ResolverDir, KeaDir, RelayDir, NAT64Dir string
+	// PDDir holds the records of the prefixes Kea's DHCPv6 servers delegated; default
 	// /var/lib/chalkos-dhcp6-pd.
 	PDDir string
-	// RelayDir is the output dhcp-relay's directory, with dnsmasq-relay.conf for the default
-	// VRF's relay and dnsmasq-relay-<vrf>.conf per VRF's; empty is
-	// /run/chalkos/outputs/dhcp-relay.
-	RelayDir string
-	// NAT64Dir is the output jool's directory, with a file <name>.json per NAT64 document; empty
-	// is /run/chalkos/outputs/jool.
-	NAT64Dir string
-	// VRFDir holds the node's running VRF documents, <name>.json each; empty is
+	// VRFDir holds the running VRF documents, <name>.json each; default
 	// /run/chalkos/config/router.chalkos.dev/VRF.
 	VRFDir string
-	// RunDir holds the runtime directories of the per-VRF services: each VRF's resolver's
-	// unbound-<vrf>, the DHCP servers' kea, with their control sockets, and the DHCP relays'
-	// dnsmasq-relay. A VRF's service keeps the index of the device its sockets are bound to in
-	// its runtime directory, as <service>-<vrf>.ifindex; empty is /run.
+	// RunDir holds the per-VRF services' runtime directories, where each records the index of the
+	// device its sockets are bound to; default /run.
 	RunDir string
-	// NetDir holds a directory per network device, with its index; empty is /sys/class/net.
+	// NetDir holds a directory per network device, with its index; default /sys/class/net.
 	NetDir string
 }
 
@@ -322,9 +310,8 @@ func (p *Plugin) resolver(ctx context.Context) *routerv1.ResolverStatus {
 }
 
 // renderedVRFs are the VRFs of the configs of the service svc that an output rendered into dir,
-// the default VRF first, then by name. A file of no VRF's name is left out: only a VRF's name
-// reaches a command line. Every VRF's name matches routing.ShortName: a document's name matches
-// the pattern of metadata.name, and the kind VRF refuses a name of more than 15 characters.
+// the default VRF first, then by name. A file whose name does not match routing.ShortName, which
+// every VRF's name does, is left out, so only a VRF's name reaches a command line.
 func renderedVRFs(dir string, svc services.Service) []string {
 	entries, _ := os.ReadDir(dir)
 	var vrfs []string
@@ -381,11 +368,9 @@ func (p *Plugin) instances(name string) []instance {
 	return want
 }
 
-// staleDevice says why a running service of the VRF vrf, a resolver, a DHCP server or a relay,
-// serves no device of the VRF, or is "" when its sockets are bound to the VRF's device: systemd
-// binds them to the index the device had when the service started, which the service records in
-// the file record, and a VRF made anew has a new one. chalkd router services restarts such a
-// service, after a delivery that made the VRF anew.
+// staleDevice says why the VRF service whose device index record holds no longer serves the VRF's
+// device, or "": systemd binds its sockets to the ifindex at start, and a re-created VRF gets a
+// new one, which chalkd router services restarts the service on.
 func (p *Plugin) staleDevice(vrf, record string) string {
 	index := func(path string) string {
 		data, err := os.ReadFile(path)

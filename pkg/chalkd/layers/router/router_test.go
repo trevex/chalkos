@@ -207,11 +207,8 @@ func TestRouterStatusWhileJoolIsSlow(t *testing.T) {
 	}
 }
 
-// A router's status holds each Jool instance that a NAT64 document of the node names, with its
-// sessions, bindings and each protocol's pool size, recorded from Jool 4.1.15, asked without jool's
-// standard error reaching the console; an instance no NAT64 document names, one whose namespace or
-// instance went meanwhile is left out; chalkd asks Jool in each instance's namespace; and when jool
-// fails, the NAT64 part says why and the rest of the status stands.
+// TestRouterNAT64Status lists the Jool instances of the node's NAT64 documents, recorded from Jool
+// 4.1.15, and says why when jool fails while the rest of the status stands.
 func TestRouterNAT64Status(t *testing.T) {
 	s, r := routerNode(t)
 	for _, name := range []string{"edge", "gone", "stale"} {
@@ -324,11 +321,8 @@ func TestRouterVRFResolverStale(t *testing.T) {
 	}
 }
 
-// Routes of a VRF list its table, which the running VRF document gives, and its instance's paths,
-// and name the VRF; default is the main table and the default instance, asked without a VRF, and
-// a request without a VRF lists default. A request of a VRF and a table, of a VRF the node lacks
-// or of a name no VRF document takes is refused, and asks vtysh nothing; a running VRF document
-// without a table, or no JSON, is chalkd's error.
+// TestRoutesOfAVRF lists the routes of a VRF's table and instance, refusing bad requests before
+// vtysh is asked.
 func TestRoutesOfAVRF(t *testing.T) {
 	p, r := routerNode(t,
 		&routing.KernelRoute{Destination: "2001:db8:ffff::2/128", Type: "unicast", Protocol: "bgp", Table: 100, Metric: 20},
@@ -448,10 +442,8 @@ func keaConfig(t *testing.T, path string, subnets ...[3]string) {
 	touch(t, path, `{"Dhcp4": {"subnet4": [`+strings.Join(s, ", ")+`]}}`+"\n")
 }
 
-// A router's status holds the DHCP server of each VRF with a rendered config, the default VRF's
-// first: a running server's subnets with Kea's counts of their leased and pool addresses, by its
-// document's name, and a server whose unit is not active, which does not answer or which refuses
-// the command, with why.
+// TestRouterDHCPStatus lists each rendered DHCP server, the default VRF's first, with Kea's
+// counts of its subnets or why it has none.
 func TestRouterDHCPStatus(t *testing.T) {
 	s, r := routerNode(t)
 	dir, run := s.KeaDir, filepath.Join(s.RunDir, "kea")
@@ -535,10 +527,8 @@ func TestRouterDHCPStatusWithoutKea(t *testing.T) {
 	}
 }
 
-// A router's status holds its DHCPv6 servers after the DHCPv4 server of each VRF: a running
-// server's subnets with Kea's counts of their leased and pool addresses and their delegated and
-// delegable prefixes, asked on the DHCPv6 server's socket, and a VRF's server bound to a removed
-// device of its VRF, whose index the server records apart from the DHCPv4 server's.
+// TestRouterDHCP6Status lists the DHCPv6 servers after each VRF's DHCPv4 server, with their
+// delegated prefixes, and checks the device each records apart from the DHCPv4 server's.
 func TestRouterDHCP6Status(t *testing.T) {
 	s, r := routerNode(t)
 	dir, run := s.KeaDir, filepath.Join(s.RunDir, "kea")

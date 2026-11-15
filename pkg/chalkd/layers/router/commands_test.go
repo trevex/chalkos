@@ -13,10 +13,7 @@ import (
 	"github.com/trevex/chalkos/pkg/tool/tooltest"
 )
 
-// chalkd router dhcp6-routes routes each recorded delegated prefix that a rendered DHCPv6
-// config delegates on its link to the address that asked for it, in the link's VRF, until its
-// lease ends; it removes the routes of delegated prefixes of no such record, leaves routes of
-// other protocols alone, removes no record and reads no config of a file of no VRF's name.
+// TestDHCP6Routes routes the recorded delegated prefixes and removes stale dhcp-pd routes alone.
 func TestDHCP6Routes(t *testing.T) {
 	now := time.Unix(1_800_000_000, 0)
 	kernel := []*routing.KernelRoute{
