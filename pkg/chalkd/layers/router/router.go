@@ -91,24 +91,21 @@ func (o Options) withDefaults() Options {
 	return o
 }
 
-// side is the node's router side: the state of its FRR, Jool, Unbound and Kea and the kernel's
-// routes.
-type side struct {
+// Plugin is chalkd's router layer: it serves RouterService with the state of the node's FRR,
+// Jool, Unbound and Kea and the kernel's routes.
+type Plugin struct {
 	// run runs vtysh, which FRR answers on its sockets in /run/frr, nsenter and jool,
 	// unbound-control and systemctl.
 	run tool.Runner
 	Options
 }
 
-// Plugin is chalkd's router layer: it serves RouterService for the node's router side.
-type Plugin struct{ r *side }
-
 var _ layer.Plugin = (*Plugin)(nil)
 
 // New is the router layer of the node, which runs vtysh, nsenter and jool, and unbound-control
 // through the node's runner, and asks Kea on its control sockets.
 func New(node layer.Node, o Options) *Plugin {
-	return &Plugin{r: &side{run: node.Runner(), Options: o.withDefaults()}}
+	return &Plugin{run: node.Runner(), Options: o.withDefaults()}
 }
 
 func (p *Plugin) Name() string { return layers.Router }
@@ -128,7 +125,7 @@ func (p *Plugin) Permissions() map[string]layer.Permission {
 func (p *Plugin) Start(context.Context) error { return nil }
 
 func (p *Plugin) Status(ctx context.Context, _ *connect.Request[routerv1.StatusRequest]) (*connect.Response[routerv1.StatusResponse], error) {
-	return connect.NewResponse(p.r.status(ctx)), nil
+	return connect.NewResponse(p.status(ctx)), nil
 }
 
 // askTimeout bounds the questions chalkd asks one router daemon, so Status answers while one
@@ -138,71 +135,60 @@ var askTimeout = 5 * time.Second
 // ask runs one of the router's fixed questions to its daemons, whose standard error, while the
 // daemon is down, goes into the error alone rather than into chalkd's log as well. budget is ctx
 // bounded by askTimeout, which the questions to one daemon share.
-func (r *side) ask(ctx, budget context.Context, program string, args ...string) ([]byte, error) {
-	out, err := r.run.Exec(budget, tool.Cmd{Name: program, Args: args, Quiet: true})
+func (p *Plugin) ask(ctx, budget context.Context, program string, args ...string) ([]byte, error) {
+	out, err := p.run.Exec(budget, tool.Cmd{Name: program, Args: args, Quiet: true})
 	if err != nil {
 		// nsenter runs the program that did not answer.
 		who := program
 		if program == "nsenter" && len(args) > 1 {
 			who = args[1]
 		}
-		if why := ended(ctx, budget, who); why != nil {
-			return nil, why
-		}
+		return nil, ended(ctx, budget, who, err)
 	}
-	return out, err
+	return out, nil
 }
 
-// isActive asks systemd whether unit is active, as systemctl.IsActive does, within budget as ask
-// does.
-func (r *side) isActive(ctx, budget context.Context, unit string) (string, error) {
-	state, err := systemctl.IsActive(budget, r.run, unit)
-	if err != nil {
-		if why := ended(ctx, budget, "systemctl"); why != nil {
-			return "", why
-		}
-	}
-	return state, err
-}
-
-// ended is why a question to the daemon who failed when a context ended: the caller's own end,
-// which is not the daemon's timeout, or the daemon's timeout once budget ran out. It is nil while
-// neither ended, when the question failed for a reason of its own.
-func ended(ctx, budget context.Context, who string) error {
-	if ctx.Err() != nil {
+// ended is why a question to who failed with err: the caller's own end, which is no timeout of
+// who's, who's timeout once budget ran out, or else err. It is nil for a nil err, so an answer
+// counts even when budget ends right after it.
+func ended(ctx, budget context.Context, who string, err error) error {
+	switch {
+	case err == nil:
+		return nil
+	case ctx.Err() != nil:
 		return ctx.Err()
-	}
-	if errors.Is(budget.Err(), context.DeadlineExceeded) {
+	// A socket's deadline, the budget's, may pass a moment before the budget ends.
+	case errors.Is(err, os.ErrDeadlineExceeded) || errors.Is(budget.Err(), context.DeadlineExceeded):
 		return fmt.Errorf("%s did not answer within %v", who, askTimeout)
 	}
-	return nil
+	return err
 }
 
 // hasBGP reports whether the image runs BGP: whether it carries FRR's config link, which counts
 // while FRR has not filled the config in. An error other than the link's absence counts as BGP,
 // whose questions then say what is wrong.
-func (r *side) hasBGP() bool {
-	_, err := os.Lstat(r.FRRConfig)
+func (p *Plugin) hasBGP() bool {
+	_, err := os.Lstat(p.FRRConfig)
 	return !errors.Is(err, fs.ErrNotExist)
 }
 
 // vtysh runs one of the show commands of package router, which may carry a VRF's name that
 // matched router.ShortName.
-func (r *side) vtysh(ctx context.Context, command string) ([]byte, error) {
+func (p *Plugin) vtysh(ctx context.Context, command string) ([]byte, error) {
 	budget, cancel := context.WithTimeout(ctx, askTimeout)
 	defer cancel()
-	return r.ask(ctx, budget, "vtysh", "-c", command)
+	return p.ask(ctx, budget, "vtysh", "-c", command)
 }
 
 // status is the state of the router: its BGP sessions, its NAT64 instances and its resolver, or
 // why a daemon did not say; an image without BGP asks FRR nothing. The daemons are asked side by
 // side, so daemons that hang cost one timeout altogether.
-func (r *side) status(ctx context.Context) *routerv1.StatusResponse {
-	st := &routerv1.StatusResponse{BgpAbsent: !r.hasBGP()}
+func (p *Plugin) status(ctx context.Context) *routerv1.StatusResponse {
+	st := &routerv1.StatusResponse{BgpAbsent: !p.hasBGP()}
 	var wg sync.WaitGroup
 	if !st.BgpAbsent {
 		wg.Go(func() {
-			out, err := r.vtysh(ctx, routing.NeighborsCommand)
+			out, err := p.vtysh(ctx, routing.NeighborsCommand)
 			var peers []*routing.Peer
 			if err == nil {
 				peers, err = routing.ParsePeers(out)
@@ -218,28 +204,28 @@ func (r *side) status(ctx context.Context) *routerv1.StatusResponse {
 	}
 	wg.Go(func() {
 		var err error
-		if st.Nat64, err = r.nat64(ctx); err != nil {
+		if st.Nat64, err = p.nat64(ctx); err != nil {
 			st.Nat64, st.Nat64Error = nil, err.Error()
 		}
 	})
-	wg.Go(func() { st.Resolver = r.resolver(ctx) })
-	wg.Go(func() { st.VrfResolvers = r.vrfResolvers(ctx) })
-	wg.Go(func() { st.Dhcp = r.dhcpServers(ctx) })
-	wg.Go(func() { st.DhcpRelays = r.dhcpRelays(ctx) })
+	wg.Go(func() { st.Resolver = p.resolver(ctx) })
+	wg.Go(func() { st.VrfResolvers = p.vrfResolvers(ctx) })
+	wg.Go(func() { st.Dhcp = p.dhcpServers(ctx) })
+	wg.Go(func() { st.DhcpRelays = p.dhcpRelays(ctx) })
 	wg.Wait()
 	return st
 }
 
 // nat64 is the state of the Jool instances of the node's NAT64 documents, all asked within one
 // timeout; an instance removed meanwhile is left out.
-func (r *side) nat64(ctx context.Context) ([]*routerv1.NAT64Status, error) {
-	rendered, err := r.renderedNAT64()
+func (p *Plugin) nat64(ctx context.Context) ([]*routerv1.NAT64Status, error) {
+	rendered, err := p.renderedNAT64()
 	if err != nil || len(rendered) == 0 {
 		return nil, err
 	}
 	budget, cancel := context.WithTimeout(ctx, askTimeout)
 	defer cancel()
-	out, err := r.ask(ctx, budget, "jool", routing.JoolInstancesArgs...)
+	out, err := p.ask(ctx, budget, "jool", routing.JoolInstancesArgs...)
 	if err != nil {
 		return nil, err
 	}
@@ -254,7 +240,7 @@ func (r *side) nat64(ctx context.Context) ([]*routerv1.NAT64Status, error) {
 		if !slices.Contains(rendered, name) {
 			continue
 		}
-		n, err := r.nat64Instance(ctx, budget, name)
+		n, err := p.nat64Instance(ctx, budget, name)
 		if errors.Is(err, errInstanceGone) {
 			continue
 		}
@@ -271,10 +257,10 @@ var errInstanceGone = errors.New("the instance is gone")
 
 // nat64Instance is the state of one of Jool's instances: its counters of sessions and bindings
 // and the size of each protocol's pool.
-func (r *side) nat64Instance(ctx, budget context.Context, name string) (*routerv1.NAT64Status, error) {
+func (p *Plugin) nat64Instance(ctx, budget context.Context, name string) (*routerv1.NAT64Status, error) {
 	// Each instance runs in a network namespace of its own, and jool asks the namespace it runs in.
 	jool := func(args []string) ([]byte, error) {
-		out, err := r.ask(ctx, budget, "nsenter", routing.InNamespace(name, args)...)
+		out, err := p.ask(ctx, budget, "nsenter", routing.InNamespace(name, args)...)
 		if te, ok := errors.AsType[*tool.Error](err); ok && (strings.Contains(te.Stderr, routing.JoolMissingInstance) || strings.Contains(te.Stderr, routing.NamespaceMissing)) {
 			return nil, errInstanceGone
 		}
@@ -304,8 +290,8 @@ func (r *side) nat64Instance(ctx, budget context.Context, name string) (*routerv
 
 // renderedNAT64 are the names of the node's NAT64 documents, whose instances the output jool
 // renders as <name>.json.
-func (r *side) renderedNAT64() ([]string, error) {
-	entries, err := os.ReadDir(r.NAT64Dir)
+func (p *Plugin) renderedNAT64() ([]string, error) {
+	entries, err := os.ReadDir(p.NAT64Dir)
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil, nil
 	}
@@ -323,13 +309,13 @@ func (r *side) renderedNAT64() ([]string, error) {
 
 // resolver is the state of Unbound on a node whose Resolver document rendered its config, and nil
 // on another.
-func (r *side) resolver(ctx context.Context) *routerv1.ResolverStatus {
-	if _, err := os.Stat(r.ResolverConfig); errors.Is(err, fs.ErrNotExist) {
+func (p *Plugin) resolver(ctx context.Context) *routerv1.ResolverStatus {
+	if _, err := os.Stat(p.ResolverConfig); errors.Is(err, fs.ErrNotExist) {
 		return nil
 	}
 	budget, cancel := context.WithTimeout(ctx, askTimeout)
 	defer cancel()
-	if _, err := r.ask(ctx, budget, "unbound-control", "status"); err != nil {
+	if _, err := p.ask(ctx, budget, "unbound-control", "status"); err != nil {
 		return &routerv1.ResolverStatus{Error: err.Error()}
 	}
 	return &routerv1.ResolverStatus{Running: true}
@@ -354,17 +340,17 @@ func renderedVRFs(dir string, svc services.Service) []string {
 // unitRunning reports whether the unit of the instance of the service svc of the VRF vrf is
 // active and, for a VRF's, bound to the VRF's device, or says why not, asked within budget as ask
 // asks.
-func (r *side) unitRunning(ctx, budget context.Context, svc services.Service, vrf string) (running bool, problem string) {
+func (p *Plugin) unitRunning(ctx, budget context.Context, svc services.Service, vrf string) (running bool, problem string) {
 	unit := svc.Unit(vrf)
-	state, err := r.isActive(ctx, budget, unit)
-	switch {
+	state, err := systemctl.IsActive(budget, p.run, unit)
+	switch err = ended(ctx, budget, "systemctl", err); {
 	case err != nil && state != "":
 		return false, unit + " is " + state
 	case err != nil:
 		return false, err.Error()
 	}
 	if record := svc.IndexRecord(vrf); record != "" {
-		if stale := r.staleDevice(vrf, filepath.Join(r.RunDir, record)); stale != "" {
+		if stale := p.staleDevice(vrf, filepath.Join(p.RunDir, record)); stale != "" {
 			return false, unit + " is active, but " + stale
 		}
 	}
@@ -374,20 +360,25 @@ func (r *side) unitRunning(ctx, budget context.Context, svc services.Service, vr
 // vrfResolvers are the state of the unit unbound@<vrf> of each VRF whose config the output unbound
 // rendered, sorted by VRF, all asked within one timeout. An active unit whose sockets are bound to
 // no device of its VRF does not count as running.
-func (r *side) vrfResolvers(ctx context.Context) []*routerv1.ResolverStatus {
+func (p *Plugin) vrfResolvers(ctx context.Context) []*routerv1.ResolverStatus {
 	budget, cancel := context.WithTimeout(ctx, askTimeout)
 	defer cancel()
 	var resolvers []*routerv1.ResolverStatus
-	for _, vrf := range renderedVRFs(r.ResolverDir, services.Unbound) {
-		// resolver asks the default VRF's.
-		if vrf == derive.DefaultVRF {
-			continue
-		}
-		s := &routerv1.ResolverStatus{Vrf: vrf}
-		s.Running, s.Error = r.unitRunning(ctx, budget, services.Unbound, vrf)
+	// The instances are the VRFs' alone: resolver asks the default VRF's.
+	for _, in := range p.instances("unbound") {
+		s := &routerv1.ResolverStatus{Vrf: in.vrf}
+		s.Running, s.Error = p.unitRunning(ctx, budget, in.svc, in.vrf)
 		resolvers = append(resolvers, s)
 	}
 	return resolvers
+}
+
+// instances are the instances of the per-VRF service of the name whose configs its output
+// rendered, the default VRF's first, then by VRF, and by service within a VRF.
+func (p *Plugin) instances(name string) []instance {
+	want := wanted(p.perVRFServices()[name])
+	slices.SortStableFunc(want, func(a, b instance) int { return derive.CompareVRFs(a.vrf, b.vrf) })
+	return want
 }
 
 // staleDevice says why a running service of the VRF vrf, a resolver, a DHCP server or a relay,
@@ -395,7 +386,7 @@ func (r *side) vrfResolvers(ctx context.Context) []*routerv1.ResolverStatus {
 // binds them to the index the device had when the service started, which the service records in
 // the file record, and a VRF made anew has a new one. chalkd router services restarts such a
 // service, after a delivery that made the VRF anew.
-func (r *side) staleDevice(vrf, record string) string {
+func (p *Plugin) staleDevice(vrf, record string) string {
 	index := func(path string) string {
 		data, err := os.ReadFile(path)
 		if err != nil {
@@ -404,7 +395,7 @@ func (r *side) staleDevice(vrf, record string) string {
 		return strings.TrimSpace(string(data))
 	}
 	bound := index(record)
-	device := index(filepath.Join(r.NetDir, vrf, "ifindex"))
+	device := index(filepath.Join(p.NetDir, vrf, "ifindex"))
 	switch {
 	case bound == "":
 		return "it recorded no device"
@@ -416,46 +407,24 @@ func (r *side) staleDevice(vrf, record string) string {
 	return ""
 }
 
-// keaServer is a DHCP server whose config the output kea rendered: its VRF, its family, dhcp4 or
-// dhcp6, and its family's service.
-type keaServer struct {
-	vrf, family string
-	svc         services.Service
-}
-
-// keaServers are the servers whose configs the output kea rendered into dir, the default VRF's
-// first, then by VRF, DHCPv4's before DHCPv6's.
-func keaServers(dir string) []keaServer {
-	var out []keaServer
-	for _, s := range []keaServer{{family: "dhcp4", svc: services.Kea4}, {family: "dhcp6", svc: services.Kea6}} {
-		for _, vrf := range renderedVRFs(dir, s.svc) {
-			s.vrf = vrf
-			out = append(out, s)
-		}
-	}
-	slices.SortStableFunc(out, func(a, b keaServer) int { return derive.CompareVRFs(a.vrf, b.vrf) })
-	return out
-}
-
 // dhcpServers are the state of each DHCP server whose config the output kea rendered, the default
 // VRF's first, then by VRF, DHCPv4's before DHCPv6's, all asked within one timeout: whether its
 // unit is active, bound to its VRF's device, and its subnets' leases, which Kea counts.
-func (r *side) dhcpServers(ctx context.Context) []*routerv1.DHCPServerStatus {
+func (p *Plugin) dhcpServers(ctx context.Context) []*routerv1.DHCPServerStatus {
 	budget, cancel := context.WithTimeout(ctx, askTimeout)
 	defer cancel()
 	var servers []*routerv1.DHCPServerStatus
-	for _, f := range keaServers(r.KeaDir) {
-		family := "ipv4"
-		if f.family == "dhcp6" {
-			family = "ipv6"
+	for _, in := range p.instances("kea") {
+		s := &routerv1.DHCPServerStatus{Vrf: in.vrf, Family: "ipv4"}
+		if in.svc == services.Kea6 {
+			s.Family = "ipv6"
 		}
-		s := &routerv1.DHCPServerStatus{Vrf: f.vrf, Family: family}
 		servers = append(servers, s)
-		if running, problem := r.unitRunning(ctx, budget, f.svc, f.vrf); !running {
+		if running, problem := p.unitRunning(ctx, budget, in.svc, in.vrf); !running {
 			s.Error = problem
 			continue
 		}
-		data, err := os.ReadFile(filepath.Join(r.KeaDir, f.svc.File(f.vrf)))
+		data, err := os.ReadFile(filepath.Join(p.KeaDir, in.svc.File(in.vrf)))
 		var subnets []routing.KeaSubnet
 		if err == nil {
 			subnets, err = routing.ParseKeaSubnets(data)
@@ -464,13 +433,14 @@ func (r *side) dhcpServers(ctx context.Context) []*routerv1.DHCPServerStatus {
 			s.Error = err.Error()
 			continue
 		}
-		args, err := routing.KeaAsk(budget, routing.KeaSocket(filepath.Join(r.RunDir, f.svc.RuntimeDir(f.vrf)), f.family, f.vrf), "statistic-get-all")
+		family := strings.TrimPrefix(in.svc.Name, "kea-")
+		args, err := routing.KeaAsk(budget, routing.KeaSocket(filepath.Join(p.RunDir, in.svc.RuntimeDir(in.vrf)), family, in.vrf), "statistic-get-all")
 		var leases map[uint32]routing.KeaLeases
 		if err == nil {
 			leases, err = routing.ParseKeaStatistics(args)
 		}
-		if msg := keaFailure(ctx, budget, err); msg != "" {
-			s.Error = msg
+		if err := ended(ctx, budget, "Kea", err); err != nil {
+			s.Error = err.Error()
 			continue
 		}
 		s.Running = true
@@ -485,13 +455,13 @@ func (r *side) dhcpServers(ctx context.Context) []*routerv1.DHCPServerStatus {
 // dhcpRelays are the state of the DHCP relay of each VRF whose config the output dhcp-relay
 // rendered, the default VRF's first, then by VRF: whether its unit is active and bound to its
 // VRF's device.
-func (r *side) dhcpRelays(ctx context.Context) []*routerv1.DHCPRelayStatus {
+func (p *Plugin) dhcpRelays(ctx context.Context) []*routerv1.DHCPRelayStatus {
 	budget, cancel := context.WithTimeout(ctx, askTimeout)
 	defer cancel()
 	var relays []*routerv1.DHCPRelayStatus
-	for _, vrf := range renderedVRFs(r.RelayDir, services.Relay) {
-		s := &routerv1.DHCPRelayStatus{Vrf: vrf}
-		s.Running, s.Error = r.unitRunning(ctx, budget, services.Relay, vrf)
+	for _, in := range p.instances("relay") {
+		s := &routerv1.DHCPRelayStatus{Vrf: in.vrf}
+		s.Running, s.Error = p.unitRunning(ctx, budget, in.svc, in.vrf)
 		relays = append(relays, s)
 	}
 	return relays
@@ -506,7 +476,7 @@ func (p *Plugin) Routes(ctx context.Context, req *connect.Request[routerv1.Route
 	}
 	named := vrf != "" && vrf != derive.DefaultVRF
 	if named {
-		t, err := p.r.vrfTable(vrf)
+		t, err := p.vrfTable(vrf)
 		if err != nil {
 			return nil, err
 		}
@@ -516,7 +486,7 @@ func (p *Plugin) Routes(ctx context.Context, req *connect.Request[routerv1.Route
 	if err != nil {
 		return nil, layer.Errorf(connect.CodeInvalidArgument, "%w", err)
 	}
-	kernel, err := p.r.KernelRoutes()
+	kernel, err := p.KernelRoutes()
 	if err != nil {
 		return nil, err
 	}
@@ -524,13 +494,13 @@ func (p *Plugin) Routes(ctx context.Context, req *connect.Request[routerv1.Route
 	for _, r := range f.Kernel(kernel) {
 		resp.Kernel = append(resp.Kernel, kernelRoute(r))
 	}
-	if f.WantsBGP() && p.r.hasBGP() {
+	if f.WantsBGP() && p.hasBGP() {
 		for _, family := range []string{"ipv4", "ipv6"} {
 			command := fmt.Sprintf(routing.RoutesCommand, family)
 			if named {
 				command = fmt.Sprintf(routing.VRFRoutesCommand, vrf, family)
 			}
-			out, err := p.r.vtysh(ctx, command)
+			out, err := p.vtysh(ctx, command)
 			var routes []*routing.BGPRoute
 			if err == nil {
 				routes, err = routing.ParseRoutes(out)
@@ -552,11 +522,11 @@ func (p *Plugin) Routes(ctx context.Context, req *connect.Request[routerv1.Route
 const defaultVRFDir = "/run/chalkos/config/router.chalkos.dev/VRF"
 
 // vrfTable is the table of the node's VRF of the name, as its running VRF document gives it.
-func (r *side) vrfTable(name string) (uint32, error) {
+func (p *Plugin) vrfTable(name string) (uint32, error) {
 	if !routing.ShortName.MatchString(name) {
 		return 0, layer.Errorf(connect.CodeInvalidArgument, "vrf %q is no VRF document's name", name)
 	}
-	data, err := os.ReadFile(filepath.Join(r.VRFDir, name+".json"))
+	data, err := os.ReadFile(filepath.Join(p.VRFDir, name+".json"))
 	if errors.Is(err, fs.ErrNotExist) {
 		return 0, layer.Errorf(connect.CodeNotFound, "the node has no VRF %s", name)
 	}
@@ -596,21 +566,4 @@ func kernelRoute(r *routing.KernelRoute) *routerv1.KernelRoute {
 func bgpRoute(r *routing.BGPRoute) *routerv1.BGPRoute {
 	return &routerv1.BGPRoute{Prefix: r.Prefix, AsPath: r.ASPath, NextHops: r.NextHops, Peer: r.Peer, LocalPref: r.LocalPref,
 		Med: r.MED, Communities: r.Communities, Best: r.Best, ImportedFrom: r.ImportedFrom}
-}
-
-// keaFailure is the error of a server's status whose question to Kea ended with err, while the
-// request ctx and the questions' budget ran, or empty when Kea answered: an answer counts even if
-// the budget ran out right after it.
-func keaFailure(ctx, budget context.Context, err error) string {
-	switch {
-	case err == nil:
-		return ""
-	case ctx.Err() != nil:
-		return ctx.Err().Error()
-	// The socket's deadline, the budget's, may pass a moment before the budget ends.
-	case errors.Is(err, os.ErrDeadlineExceeded) || errors.Is(budget.Err(), context.DeadlineExceeded):
-		return fmt.Sprintf("Kea did not answer within %v", askTimeout)
-	default:
-		return err.Error()
-	}
 }

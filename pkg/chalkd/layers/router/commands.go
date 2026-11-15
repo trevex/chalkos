@@ -35,7 +35,7 @@ func (p *Plugin) Commands() []*cobra.Command {
 			RunE: func(*cobra.Command, []string) error {
 				ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 				defer cancel()
-				return p.r.dhcp6Routes(ctx, time.Now())
+				return p.dhcp6Routes(ctx, time.Now())
 			},
 		},
 		{
@@ -44,7 +44,7 @@ func (p *Plugin) Commands() []*cobra.Command {
 			Long: "Start the instances of the rendered configs of a per-VRF service once their devices exist,\n" +
 				"reload or restart those that run and stop the others. With stop, stop them all.",
 			Args: cobra.MatchAll(cli.RangeArgs(1, 2), func(cmd *cobra.Command, args []string) error {
-				if _, ok := p.r.perVRFServices()[args[0]]; !ok {
+				if _, ok := p.perVRFServices()[args[0]]; !ok {
 					return cli.Usagef("%s runs no service %q", cmd.CommandPath(), args[0])
 				}
 				if len(args) == 2 && args[1] != "stop" {
@@ -53,7 +53,7 @@ func (p *Plugin) Commands() []*cobra.Command {
 				return nil
 			}),
 			RunE: func(_ *cobra.Command, args []string) error {
-				return p.r.runServices(context.Background(), p.r.perVRFServices()[args[0]], len(args) == 2)
+				return p.runServices(context.Background(), p.perVRFServices()[args[0]], len(args) == 2)
 			},
 		},
 	}
@@ -68,15 +68,15 @@ func (p *Plugin) Commands() []*cobra.Command {
 // routes when their leases end. A route ip does not add or remove is named on
 // standard error and left to the next run, as the next record or renewal starts one: a unit that
 // failed for a link that is down at boot would fail the boot's health check.
-func (r *side) dhcp6Routes(ctx context.Context, now time.Time) error {
+func (p *Plugin) dhcp6Routes(ctx context.Context, now time.Time) error {
 	var pools []routing.PDPool
 	// Without the output kea, as in maintenance mode, the run changes nothing: the routes end
 	// with their leases.
-	if _, err := os.Stat(r.KeaDir); errors.Is(err, fs.ErrNotExist) {
+	if _, err := os.Stat(p.KeaDir); errors.Is(err, fs.ErrNotExist) {
 		return nil
 	}
-	for _, vrf := range renderedVRFs(r.KeaDir, services.Kea6) {
-		f := filepath.Join(r.KeaDir, services.Kea6.File(vrf))
+	for _, vrf := range renderedVRFs(p.KeaDir, services.Kea6) {
+		f := filepath.Join(p.KeaDir, services.Kea6.File(vrf))
 		data, err := os.ReadFile(f)
 		if errors.Is(err, fs.ErrNotExist) {
 			continue
@@ -90,14 +90,14 @@ func (r *side) dhcp6Routes(ctx context.Context, now time.Time) error {
 		}
 		pools = append(pools, p...)
 	}
-	routes, err := routing.ReadPDRecords(r.PDDir, pools, now)
+	routes, err := routing.ReadPDRecords(p.PDDir, pools, now)
 	truncated := errors.Is(err, routing.ErrTooManyPDRecords)
 	if truncated {
 		fmt.Fprintf(os.Stderr, "chalkd router dhcp6-routes: %v; routing the first %d and removing no route\n", err, routing.MaxPDRecords)
 	} else if err != nil {
 		return err
 	}
-	kernel, err := r.KernelRoutes()
+	kernel, err := p.KernelRoutes()
 	if err != nil {
 		return err
 	}
@@ -114,7 +114,7 @@ func (r *side) dhcp6Routes(ctx context.Context, now time.Time) error {
 		if kept {
 			continue
 		}
-		if _, err := tool.Run(ctx, r.run, "ip", "-6", "route", "del", k.Destination, "table", strconv.FormatUint(uint64(k.Table), 10), "proto", strconv.Itoa(routing.PDProtocol)); err != nil {
+		if _, err := tool.Run(ctx, p.run, "ip", "-6", "route", "del", k.Destination, "table", strconv.FormatUint(uint64(k.Table), 10), "proto", strconv.Itoa(routing.PDProtocol)); err != nil {
 			fmt.Fprintf(os.Stderr, "chalkd router dhcp6-routes: remove the route of %s: %v\n", k.Destination, err)
 		}
 	}
@@ -125,7 +125,7 @@ func (r *side) dhcp6Routes(ctx context.Context, now time.Time) error {
 		}
 		// The kernel removes the route when the lease ends, should no renewal come.
 		args = append(args, "expires", strconv.FormatInt(int64(max(rt.Ends.Sub(now)/time.Second, 1)), 10))
-		if _, err := tool.Run(ctx, r.run, "ip", args...); err != nil {
+		if _, err := tool.Run(ctx, p.run, "ip", args...); err != nil {
 			fmt.Fprintf(os.Stderr, "chalkd router dhcp6-routes: route %s to %s on %s: %v\n", rt.Prefix, rt.Via, rt.Link, err)
 		}
 	}

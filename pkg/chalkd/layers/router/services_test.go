@@ -3,6 +3,7 @@ package router
 import (
 	"context"
 	"errors"
+	"maps"
 	"os"
 	"path"
 	"path/filepath"
@@ -25,7 +26,7 @@ import (
 // forgets a failed or inactive unit. A call that fail holds, its arguments joined by spaces, fails.
 type fakeSystemd struct {
 	mu    sync.Mutex
-	r     *side
+	r     *Plugin
 	state map[string][2]string
 	next  map[string][2]string
 	fail  map[string]bool
@@ -33,14 +34,14 @@ type fakeSystemd struct {
 	index int
 }
 
-func newFakeSystemd(t *testing.T) (*fakeSystemd, *side) {
+func newFakeSystemd(t *testing.T) (*fakeSystemd, *Plugin) {
 	t.Helper()
 	p, _ := routerNode(t)
-	f := &fakeSystemd{r: p.r, state: map[string][2]string{}, next: map[string][2]string{}, fail: map[string]bool{}}
-	p.r.run = f
+	f := &fakeSystemd{r: p, state: map[string][2]string{}, next: map[string][2]string{}, fail: map[string]bool{}}
+	p.run = f
 	deviceWait, startWait, pollInterval = time.Second, 500*time.Millisecond, 10*time.Millisecond
 	t.Cleanup(func() { deviceWait, startWait, pollInterval = 30*time.Second, 30*time.Second, 200*time.Millisecond })
-	return f, p.r
+	return f, p
 }
 
 func (f *fakeSystemd) Exec(_ context.Context, c tool.Cmd) ([]byte, error) {
@@ -89,13 +90,7 @@ func (f *fakeSystemd) Exec(_ context.Context, c tool.Cmd) ([]byte, error) {
 		}
 	case "list-units":
 		var out strings.Builder
-		for _, u := range slices.Sorted(func(yield func(string) bool) {
-			for u := range f.state {
-				if !yield(u) {
-					return
-				}
-			}
-		}) {
+		for _, u := range slices.Sorted(maps.Keys(f.state)) {
 			for _, p := range args[1:] {
 				if ok, _ := path.Match(p, u); ok {
 					out.WriteString(u + " loaded " + f.state[u][0] + " " + f.state[u][1] + " Unit\n")
@@ -388,7 +383,7 @@ func TestServicesRelay(t *testing.T) {
 }
 
 // writeKea4 writes the DHCPv4 config of the VRF's server of the links.
-func writeKea4(t *testing.T, r *side, vrf string, links ...string) {
+func writeKea4(t *testing.T, r *Plugin, vrf string, links ...string) {
 	t.Helper()
 	touch(t, filepath.Join(r.KeaDir, services.Kea4.File(vrf)), `{"Dhcp4": {"interfaces-config": {"interfaces": ["`+strings.Join(links, `", "`)+`"]}}}`)
 }

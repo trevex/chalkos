@@ -130,7 +130,7 @@ func TestRouterStatus(t *testing.T) {
 // BGP is absent, without an error, and its routes are the kernel's alone.
 func TestRouterWithoutBGP(t *testing.T) {
 	p, r := routerNode(t, &routing.KernelRoute{Destination: "2001:db8:2::/48", Type: "blackhole", Protocol: "boot", Table: 254, Metric: 1024})
-	p.r.FRRConfig = filepath.Join(t.TempDir(), "frr.conf")
+	p.FRRConfig = filepath.Join(t.TempDir(), "frr.conf")
 	st := routerStatus(t, p)
 	if !st.BgpAbsent || st.BgpError != "" || len(st.Peers) != 0 {
 		t.Errorf("router status without BGP = %v", st)
@@ -160,10 +160,10 @@ func (hangingRunner) Exec(ctx context.Context, _ tool.Cmd) ([]byte, error) {
 // timeouts; the bound leaves a busy machine room below that.
 func TestRouterStatusWhileDaemonsHang(t *testing.T) {
 	s, _ := routerNode(t)
-	s.r.run = hangingRunner{}
+	s.run = hangingRunner{}
 	defer func(d time.Duration) { askTimeout = d }(askTimeout)
 	askTimeout = 500 * time.Millisecond
-	for _, file := range []string{s.r.ResolverConfig, filepath.Join(s.r.NAT64Dir, "edge.json"), filepath.Join(s.r.ResolverDir, "unbound-guest.conf")} {
+	for _, file := range []string{s.ResolverConfig, filepath.Join(s.NAT64Dir, "edge.json"), filepath.Join(s.ResolverDir, "unbound-guest.conf")} {
 		if err := os.WriteFile(file, []byte("\n"), 0o644); err != nil {
 			t.Fatal(err)
 		}
@@ -214,8 +214,8 @@ func (j slowJool) Exec(ctx context.Context, c tool.Cmd) ([]byte, error) {
 // machine room.
 func TestRouterStatusWhileJoolIsSlow(t *testing.T) {
 	s, _ := routerNode(t)
-	s.r.run = slowJool{40 * time.Millisecond}
-	if err := os.WriteFile(filepath.Join(s.r.NAT64Dir, "edge.json"), []byte("{}\n"), 0o644); err != nil {
+	s.run = slowJool{40 * time.Millisecond}
+	if err := os.WriteFile(filepath.Join(s.NAT64Dir, "edge.json"), []byte("{}\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	defer func(d time.Duration) { askTimeout = d }(askTimeout)
@@ -230,28 +230,6 @@ func TestRouterStatusWhileJoolIsSlow(t *testing.T) {
 	}
 }
 
-// A request that ends before vtysh answers is no timeout of vtysh's.
-func TestVtyshCancelled(t *testing.T) {
-	s, _ := routerNode(t)
-	s.r.run = hangingRunner{}
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-	if _, err := s.r.vtysh(ctx, routing.NeighborsCommand); err == nil || strings.Contains(err.Error(), "did not answer") {
-		t.Errorf("err = %v", err)
-	}
-}
-
-// A caller's deadline shorter than vtysh's timeout is the caller's, not vtysh's.
-func TestVtyshCallerDeadline(t *testing.T) {
-	s, _ := routerNode(t)
-	s.r.run = hangingRunner{}
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
-	defer cancel()
-	if _, err := s.r.vtysh(ctx, routing.NeighborsCommand); !errors.Is(err, context.DeadlineExceeded) || strings.Contains(err.Error(), "did not answer") {
-		t.Errorf("err = %v", err)
-	}
-}
-
 // A router's status holds each Jool instance that a NAT64 document of the node names, with its
 // sessions, bindings and each protocol's pool size, recorded from Jool 4.1.15, asked without jool's
 // standard error reaching the console; an instance no NAT64 document names, one whose namespace or
@@ -260,7 +238,7 @@ func TestVtyshCallerDeadline(t *testing.T) {
 func TestRouterNAT64Status(t *testing.T) {
 	s, r := routerNode(t)
 	for _, name := range []string{"edge", "gone", "stale"} {
-		if err := os.WriteFile(filepath.Join(s.r.NAT64Dir, name+".json"), []byte("{}\n"), 0o644); err != nil {
+		if err := os.WriteFile(filepath.Join(s.NAT64Dir, name+".json"), []byte("{}\n"), 0o644); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -304,7 +282,7 @@ func TestRouterResolverStatus(t *testing.T) {
 	if st := routerStatus(t, s); st == nil || st.Resolver != nil {
 		t.Fatalf("router status without a resolver = %v", st)
 	}
-	if err := os.WriteFile(s.r.ResolverConfig, []byte("server:\n"), 0o644); err != nil {
+	if err := os.WriteFile(s.ResolverConfig, []byte("server:\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if st := routerStatus(t, s); st.GetResolver() == nil || !st.Resolver.Running || st.Resolver.Error != "" {
@@ -323,15 +301,15 @@ func TestRouterResolverStatus(t *testing.T) {
 func TestRouterVRFResolverStatus(t *testing.T) {
 	s, r := routerNode(t)
 	for _, vrf := range []string{"tenant", "dmz-a", "Bad_Name", "x;y"} {
-		if err := os.WriteFile(filepath.Join(s.r.ResolverDir, "unbound-"+vrf+".conf"), []byte("server:\n"), 0o644); err != nil {
+		if err := os.WriteFile(filepath.Join(s.ResolverDir, "unbound-"+vrf+".conf"), []byte("server:\n"), 0o644); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if err := os.WriteFile(filepath.Join(s.r.ResolverDir, "unbound.conf"), []byte("server:\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(s.ResolverDir, "unbound.conf"), []byte("server:\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	writeRecord(t, s.r.RunDir, services.Unbound, "dmz-a", "7")
-	writeIndex(t, filepath.Join(s.r.NetDir, "dmz-a"), "7")
+	writeRecord(t, s.RunDir, services.Unbound, "dmz-a", "7")
+	writeIndex(t, filepath.Join(s.NetDir, "dmz-a"), "7")
 	r.Rules = append(r.Rules, tooltest.Rule{Prefix: "systemctl is-active unbound@tenant.service", Out: "failed\n", Err: &tool.Error{Command: "systemctl is-active unbound@tenant.service", Code: 3}})
 	st := routerStatus(t, s)
 	if st.GetResolver() != nil || len(st.VrfResolvers) != 2 {
@@ -361,15 +339,15 @@ func TestRouterVRFResolverStatus(t *testing.T) {
 func TestRouterVRFResolverStale(t *testing.T) {
 	s, _ := routerNode(t)
 	for _, vrf := range []string{"current", "moved", "gone", "unrecorded"} {
-		if err := os.WriteFile(filepath.Join(s.r.ResolverDir, "unbound-"+vrf+".conf"), []byte("server:\n"), 0o644); err != nil {
+		if err := os.WriteFile(filepath.Join(s.ResolverDir, "unbound-"+vrf+".conf"), []byte("server:\n"), 0o644); err != nil {
 			t.Fatal(err)
 		}
 	}
 	for vrf, index := range map[string]string{"current": "5", "moved": "6", "gone": "8"} {
-		writeRecord(t, s.r.RunDir, services.Unbound, vrf, index)
+		writeRecord(t, s.RunDir, services.Unbound, vrf, index)
 	}
 	for vrf, index := range map[string]string{"current": "5", "moved": "9", "unrecorded": "10"} {
-		writeIndex(t, filepath.Join(s.r.NetDir, vrf), index)
+		writeIndex(t, filepath.Join(s.NetDir, vrf), index)
 	}
 	want := map[string]string{
 		"current":    "",
@@ -432,7 +410,7 @@ func TestRoutesOfAVRF(t *testing.T) {
 		t.Errorf("routes without a VRF = %v, %v, want those of default", got, err)
 	}
 	for name, doc := range map[string]string{"notable": `{"spec": {"interfaces": ["swp2"]}}`, "broken": "{"} {
-		if err := os.WriteFile(filepath.Join(p.r.VRFDir, name+".json"), []byte(doc), 0o644); err != nil {
+		if err := os.WriteFile(filepath.Join(p.VRFDir, name+".json"), []byte(doc), 0o644); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -523,7 +501,7 @@ func keaConfig(t *testing.T, path string, subnets ...[3]string) {
 // reaches no command.
 func TestRouterDHCPStatus(t *testing.T) {
 	s, r := routerNode(t)
-	dir, run := s.r.KeaDir, filepath.Join(s.r.RunDir, "kea")
+	dir, run := s.KeaDir, filepath.Join(s.RunDir, "kea")
 	keaConfig(t, filepath.Join(dir, "kea-dhcp4.json"), [3]string{"office", "192.0.2.0/24", "3221225984"}, [3]string{"lab", "203.0.113.0/26", "3405803776"})
 	for _, vrf := range []string{"guest", "dmz-a", "moved", "silent", "refusing", "Bad_Name"} {
 		keaConfig(t, filepath.Join(dir, "kea-dhcp4-"+vrf+".json"), [3]string{"guests", "198.51.100.0/24", "3325256704"})
@@ -540,8 +518,8 @@ func TestRouterDHCPStatus(t *testing.T) {
 		"subnet[3325256704].total-addresses": [[241, "2026-11-01 09:00:00.000000"]]}}`})
 	fakeKea(t, filepath.Join(run, "dhcp4-refusing.sock"), false, nil)
 	for vrf, index := range map[string][2]string{"dmz-a": {"7", "7"}, "moved": {"6", "9"}, "silent": {"4", "4"}, "refusing": {"5", "5"}} {
-		writeRecord(t, s.r.RunDir, services.Kea4, vrf, index[0])
-		writeIndex(t, filepath.Join(s.r.NetDir, vrf), index[1])
+		writeRecord(t, s.RunDir, services.Kea4, vrf, index[0])
+		writeIndex(t, filepath.Join(s.NetDir, vrf), index[1])
 	}
 	r.Rules = append(r.Rules, tooltest.Rule{Prefix: "systemctl is-active kea-dhcp4@guest.service", Out: "failed\n", Err: &tool.Error{Command: "systemctl is-active kea-dhcp4@guest.service", Code: 3}})
 	st := routerStatus(t, s)
@@ -586,8 +564,8 @@ func TestRouterDHCPStatusWhileKeaHangs(t *testing.T) {
 	s, _ := routerNode(t)
 	defer func(d time.Duration) { askTimeout = d }(askTimeout)
 	askTimeout = 200 * time.Millisecond
-	keaConfig(t, filepath.Join(s.r.KeaDir, "kea-dhcp4.json"), [3]string{"office", "192.0.2.0/24", "3221225984"})
-	fakeKea(t, filepath.Join(s.r.RunDir, "kea", "dhcp4.sock"), true, nil)
+	keaConfig(t, filepath.Join(s.KeaDir, "kea-dhcp4.json"), [3]string{"office", "192.0.2.0/24", "3221225984"})
+	fakeKea(t, filepath.Join(s.RunDir, "kea", "dhcp4.sock"), true, nil)
 	start := time.Now()
 	st := routerStatus(t, s)
 	if took := time.Since(start); took >= 2*askTimeout {
@@ -602,7 +580,7 @@ func TestRouterDHCPStatusWhileKeaHangs(t *testing.T) {
 // status holds no DHCP server and asks about none.
 func TestRouterDHCPStatusWithoutKea(t *testing.T) {
 	s, r := routerNode(t)
-	s.r.KeaDir = filepath.Join(t.TempDir(), "missing")
+	s.KeaDir = filepath.Join(t.TempDir(), "missing")
 	st := routerStatus(t, s)
 	if len(st.Dhcp) != 0 {
 		t.Errorf("DHCP servers without Kea = %v", st.Dhcp)
@@ -612,37 +590,13 @@ func TestRouterDHCPStatusWithoutKea(t *testing.T) {
 	}
 }
 
-// An answer of Kea counts even when the questions' budget ends right after it; a question that
-// failed names the budget when it ran out, or the error.
-func TestKeaFailure(t *testing.T) {
-	spent, cancel := context.WithTimeout(context.Background(), 0)
-	defer cancel()
-	<-spent.Done()
-	ctx := context.Background()
-	for _, c := range []struct {
-		budget context.Context
-		err    error
-		want   string
-	}{
-		{spent, nil, ""},
-		{ctx, nil, ""},
-		{spent, errors.New("read: connection reset"), fmt.Sprintf("Kea did not answer within %v", askTimeout)},
-		{ctx, os.ErrDeadlineExceeded, fmt.Sprintf("Kea did not answer within %v", askTimeout)},
-		{ctx, errors.New("read: connection reset"), "read: connection reset"},
-	} {
-		if got := keaFailure(ctx, c.budget, c.err); got != c.want {
-			t.Errorf("keaFailure(%v, %v) = %q, want %q", c.budget.Err(), c.err, got, c.want)
-		}
-	}
-}
-
 // A router's status holds its DHCPv6 servers after the DHCPv4 server of each VRF: a running
 // server's subnets with Kea's counts of their leased and pool addresses and their delegated and
 // delegable prefixes, asked on the DHCPv6 server's socket, and a VRF's server bound to a removed
 // device of its VRF, whose index the server records apart from the DHCPv4 server's.
 func TestRouterDHCP6Status(t *testing.T) {
 	s, r := routerNode(t)
-	dir, run := s.r.KeaDir, filepath.Join(s.r.RunDir, "kea")
+	dir, run := s.KeaDir, filepath.Join(s.RunDir, "kea")
 	keaConfig(t, filepath.Join(dir, "kea-dhcp4.json"), [3]string{"office", "192.0.2.0/24", "3221225984"})
 	for _, f := range []string{"kea-dhcp6.json", "kea-dhcp6-access.json"} {
 		if err := os.WriteFile(filepath.Join(dir, f), []byte(`{"Dhcp6": {"subnet6": [{"id": 2387838497, "subnet": "2001:db8:1::/64", "user-context": {"name": "office6"}}]}}`), 0o644); err != nil {
@@ -655,8 +609,8 @@ func TestRouterDHCP6Status(t *testing.T) {
 		"subnet[2387838497].total-nas": [[18446744073709551616, "2026-11-01 09:00:00.000000"]],
 		"subnet[2387838497].assigned-pds": [[2, "2026-11-01 10:00:00.000000"]],
 		"subnet[2387838497].total-pds": [[256, "2026-11-01 09:00:00.000000"]]}}`})
-	writeRecord(t, s.r.RunDir, services.Kea6, "access", "6")
-	writeIndex(t, filepath.Join(s.r.NetDir, "access"), "9")
+	writeRecord(t, s.RunDir, services.Kea6, "access", "6")
+	writeIndex(t, filepath.Join(s.NetDir, "access"), "9")
 	st := routerStatus(t, s)
 	var order []string
 	for _, d := range st.Dhcp {
@@ -682,15 +636,15 @@ func TestRouterDHCP6Status(t *testing.T) {
 // name reaches no command.
 func TestRouterDHCPRelayStatus(t *testing.T) {
 	s, r := routerNode(t)
-	s.r.RelayDir = t.TempDir()
+	s.RelayDir = t.TempDir()
 	for _, f := range []string{"dnsmasq-relay.conf", "dnsmasq-relay-guest.conf", "dnsmasq-relay-dmz-a.conf", "dnsmasq-relay-moved.conf", "dnsmasq-relay-Bad_Name.conf"} {
-		if err := os.WriteFile(filepath.Join(s.r.RelayDir, f), []byte("port=0\n"), 0o644); err != nil {
+		if err := os.WriteFile(filepath.Join(s.RelayDir, f), []byte("port=0\n"), 0o644); err != nil {
 			t.Fatal(err)
 		}
 	}
 	for vrf, index := range map[string][2]string{"dmz-a": {"7", "7"}, "moved": {"6", "9"}} {
-		writeRecord(t, s.r.RunDir, services.Relay, vrf, index[0])
-		writeIndex(t, filepath.Join(s.r.NetDir, vrf), index[1])
+		writeRecord(t, s.RunDir, services.Relay, vrf, index[0])
+		writeIndex(t, filepath.Join(s.NetDir, vrf), index[1])
 	}
 	r.Rules = append(r.Rules, tooltest.Rule{Prefix: "systemctl is-active dnsmasq-relay@guest.service", Out: "failed\n", Err: &tool.Error{Command: "systemctl is-active dnsmasq-relay@guest.service", Code: 3}})
 	st := routerStatus(t, s)
@@ -729,5 +683,36 @@ func TestRenderedVRFs(t *testing.T) {
 	}
 	if got := renderedVRFs(dir, services.Relay); !slices.Equal(got, []string{"default", "a", "a-b"}) {
 		t.Errorf("renderedVRFs = %q", got)
+	}
+}
+
+// A question that failed names who's timeout once the budget ran out, the caller's end, which is
+// none of who's, or its error; an answer counts even when the budget ends right after it.
+func TestEnded(t *testing.T) {
+	spent, cancel := context.WithTimeout(context.Background(), 0)
+	defer cancel()
+	<-spent.Done()
+	ctx := context.Background()
+	reset := errors.New("read: connection reset")
+	timeout := fmt.Sprintf("Kea did not answer within %v", askTimeout)
+	for _, c := range []struct {
+		ctx, budget context.Context
+		err         error
+		want        string
+	}{
+		{ctx, spent, nil, ""},
+		{ctx, ctx, nil, ""},
+		{ctx, spent, reset, timeout},
+		{ctx, ctx, os.ErrDeadlineExceeded, timeout},
+		{ctx, ctx, reset, reset.Error()},
+		{spent, spent, reset, context.DeadlineExceeded.Error()},
+	} {
+		got := ""
+		if err := ended(c.ctx, c.budget, "Kea", c.err); err != nil {
+			got = err.Error()
+		}
+		if got != c.want {
+			t.Errorf("ended(%v, %v, %v) = %q, want %q", c.ctx.Err(), c.budget.Err(), c.err, got, c.want)
+		}
 	}
 }

@@ -50,13 +50,13 @@ type perVRF struct {
 }
 
 // perVRFServices are the services chalkd router services runs, by the name it takes.
-func (r *side) perVRFServices() map[string]perVRF {
+func (p *Plugin) perVRFServices() map[string]perVRF {
 	return map[string]perVRF{
 		// Kea refuses a config that names a link that does not exist, and stops when a reload
 		// does. Its DHCPv6 servers' delegated prefixes are routed by chalkos-dhcp6-routes, which
 		// follows the configs.
 		"kea": {
-			dir:       r.KeaDir,
+			dir:       p.KeaDir,
 			units:     []services.Service{services.Kea4, services.Kea6},
 			stopFirst: true,
 			links:     routing.ParseKeaInterfaces,
@@ -64,13 +64,13 @@ func (r *side) perVRFServices() map[string]perVRF {
 		},
 		// unbound.service runs the default VRF's resolver.
 		"unbound": {
-			dir:      r.ResolverDir,
+			dir:      p.ResolverDir,
 			units:    []services.Service{services.Unbound},
 			vrfsOnly: true,
 		},
 		// dnsmasq reads its relays at start alone.
 		"relay": {
-			dir:       r.RelayDir,
+			dir:       p.RelayDir,
 			units:     []services.Service{services.Relay},
 			stopFirst: true,
 			restart:   true,
@@ -94,19 +94,19 @@ type instance struct {
 // waits deviceWait at most for the devices and startWait more for the instances it started, and
 // fails naming those that are not running then; a start still queued goes on once the device
 // appears. The error joins one error per failure.
-func (r *side) runServices(ctx context.Context, s perVRF, stop bool) error {
+func (p *Plugin) runServices(ctx context.Context, s perVRF, stop bool) error {
 	var want []instance
 	if !stop {
 		want = wanted(s)
 	}
 	var errs []error
 	if s.stopFirst {
-		errs = append(errs, r.stopUnwanted(ctx, s, want)...)
+		errs = append(errs, p.stopUnwanted(ctx, s, want)...)
 	}
 	deadline := time.Now().Add(deviceWait)
 	var started []string
 	for _, in := range want {
-		ok, err := r.runInstance(ctx, s, in, deadline)
+		ok, err := p.runInstance(ctx, s, in, deadline)
 		if err != nil {
 			errs = append(errs, err)
 		}
@@ -114,12 +114,12 @@ func (r *side) runServices(ctx context.Context, s perVRF, stop bool) error {
 			started = append(started, in.unit)
 		}
 	}
-	errs = append(errs, r.awaitStarted(ctx, started)...)
+	errs = append(errs, p.awaitStarted(ctx, started)...)
 	if !s.stopFirst {
-		errs = append(errs, r.stopUnwanted(ctx, s, want)...)
+		errs = append(errs, p.stopUnwanted(ctx, s, want)...)
 	}
 	if !stop && s.then != "" {
-		if _, err := tool.Run(ctx, r.run, "systemctl", "start", "--no-block", s.then); err != nil {
+		if _, err := tool.Run(ctx, p.run, "systemctl", "start", "--no-block", s.then); err != nil {
 			errs = append(errs, fmt.Errorf("failed to start %s", s.then))
 		}
 	}
@@ -143,7 +143,7 @@ func wanted(s perVRF) []instance {
 
 // stopUnwanted stops and resets the units of s that systemd holds and that are no instance of
 // want.
-func (r *side) stopUnwanted(ctx context.Context, s perVRF, want []instance) []error {
+func (p *Plugin) stopUnwanted(ctx context.Context, s perVRF, want []instance) []error {
 	var patterns []string
 	for _, svc := range s.units {
 		if !s.vrfsOnly {
@@ -151,7 +151,7 @@ func (r *side) stopUnwanted(ctx context.Context, s perVRF, want []instance) []er
 		}
 		patterns = append(patterns, svc.Name+"@*.service")
 	}
-	units, err := systemctl.Units(ctx, r.run, patterns...)
+	units, err := systemctl.Units(ctx, p.run, patterns...)
 	if err != nil {
 		return []error{fmt.Errorf("failed to list the units: %w", err)}
 	}
@@ -160,11 +160,11 @@ func (r *side) stopUnwanted(ctx context.Context, s perVRF, want []instance) []er
 		if slices.ContainsFunc(want, func(in instance) bool { return in.unit == u }) {
 			continue
 		}
-		if _, err := tool.Run(ctx, r.run, "systemctl", "stop", u); err != nil {
+		if _, err := tool.Run(ctx, p.run, "systemctl", "stop", u); err != nil {
 			errs = append(errs, fmt.Errorf("failed to stop %s", u))
 			continue
 		}
-		r.resetFailed(ctx, u)
+		p.resetFailed(ctx, u)
 	}
 	return errs
 }
@@ -173,26 +173,26 @@ func (r *side) stopUnwanted(ctx context.Context, s perVRF, want []instance) []er
 // when it does not run, restarts it when s restarts running instances or it is bound to a device
 // its VRF no longer has, and reloads it otherwise. started reports a start or restart that
 // systemd queued, which awaitStarted waits for.
-func (r *side) runInstance(ctx context.Context, s perVRF, in instance, deadline time.Time) (started bool, err error) {
-	if problem := r.awaitDevices(ctx, s, in, deadline); problem != "" {
+func (p *Plugin) runInstance(ctx context.Context, s perVRF, in instance, deadline time.Time) (started bool, err error) {
+	if problem := p.awaitDevices(ctx, s, in, deadline); problem != "" {
 		return false, fmt.Errorf("failed to run %s, %s", in.unit, problem)
 	}
 	verb := "reload"
-	if _, err := systemctl.IsActive(ctx, r.run, in.unit); err != nil {
+	if _, err := systemctl.IsActive(ctx, p.run, in.unit); err != nil {
 		verb = "start"
 	} else if s.restart {
 		verb = "restart"
-	} else if record := in.svc.IndexRecord(in.vrf); record != "" && r.staleDevice(in.vrf, filepath.Join(r.RunDir, record)) != "" {
+	} else if record := in.svc.IndexRecord(in.vrf); record != "" && p.staleDevice(in.vrf, filepath.Join(p.RunDir, record)) != "" {
 		verb = "restart"
 	}
 	if verb == "reload" {
-		if _, err := tool.Run(ctx, r.run, "systemctl", "reload", in.unit); err != nil {
+		if _, err := tool.Run(ctx, p.run, "systemctl", "reload", in.unit); err != nil {
 			return false, fmt.Errorf("failed to reload %s", in.unit)
 		}
 		return false, nil
 	}
-	r.resetFailed(ctx, in.unit)
-	if _, err := tool.Run(ctx, r.run, "systemctl", verb, "--no-block", in.unit); err != nil {
+	p.resetFailed(ctx, in.unit)
+	if _, err := tool.Run(ctx, p.run, "systemctl", verb, "--no-block", in.unit); err != nil {
 		return false, fmt.Errorf("failed to %s %s", verb, in.unit)
 	}
 	return true, nil
@@ -201,13 +201,13 @@ func (r *side) runInstance(ctx context.Context, s perVRF, in instance, deadline 
 // awaitStarted waits startWait at most for the units started to be active or failed, asking each
 // at least once, also after the wait for another used up the time, and fails naming those that
 // are not active then, with their substate.
-func (r *side) awaitStarted(ctx context.Context, started []string) []error {
+func (p *Plugin) awaitStarted(ctx context.Context, started []string) []error {
 	deadline := time.Now().Add(startWait)
 	var errs []error
 	for _, u := range started {
 		var state string
 		_ = poll.Until(ctx, "", time.Until(deadline), pollInterval, func() error {
-			state, _ = systemctl.IsActive(ctx, r.run, u)
+			state, _ = systemctl.IsActive(ctx, p.run, u)
 			if state == "active" || state == "failed" {
 				return nil
 			}
@@ -217,7 +217,7 @@ func (r *side) awaitStarted(ctx context.Context, started []string) []error {
 			continue
 		}
 		sub := "unknown"
-		if props, err := systemctl.Show(ctx, r.run, []string{u}, "SubState"); err == nil && len(props) == 1 {
+		if props, err := systemctl.Show(ctx, p.run, []string{u}, "SubState"); err == nil && len(props) == 1 {
 			sub = props[0]["SubState"]
 		}
 		errs = append(errs, fmt.Errorf("failed to start %s, which is %s (%s)", u, cmp.Or(state, "unknown"), sub))
@@ -227,13 +227,13 @@ func (r *side) awaitStarted(ctx context.Context, started []string) []error {
 
 // resetFailed forgets that unit failed, so that it may start again, and that a unit stopped
 // failed, so that it leaves systemd's list. A unit that did not fail stays as it is.
-func (r *side) resetFailed(ctx context.Context, unit string) {
-	_, _ = r.run.Exec(ctx, tool.Cmd{Name: "systemctl", Args: []string{"reset-failed", unit}, Quiet: true})
+func (p *Plugin) resetFailed(ctx context.Context, unit string) {
+	_, _ = p.run.Exec(ctx, tool.Cmd{Name: "systemctl", Args: []string{"reset-failed", unit}, Quiet: true})
 }
 
 // awaitDevices waits until deadline at most for the devices the instance in needs: its VRF's and
 // the links its config serves. It says why the instance cannot run, or is "" once they exist.
-func (r *side) awaitDevices(ctx context.Context, s perVRF, in instance, deadline time.Time) string {
+func (p *Plugin) awaitDevices(ctx context.Context, s perVRF, in instance, deadline time.Time) string {
 	var devices []string
 	if s.links != nil {
 		file := filepath.Join(s.dir, in.svc.File(in.vrf))
@@ -252,7 +252,7 @@ func (r *side) awaitDevices(ctx context.Context, s perVRF, in instance, deadline
 	_ = poll.Until(ctx, "", time.Until(deadline), pollInterval, func() error {
 		missing = missing[:0]
 		for _, d := range devices {
-			if _, err := os.Stat(filepath.Join(r.NetDir, d)); err != nil {
+			if _, err := os.Stat(filepath.Join(p.NetDir, d)); err != nil {
 				missing = append(missing, d)
 			}
 		}
