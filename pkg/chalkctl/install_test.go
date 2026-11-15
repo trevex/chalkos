@@ -177,7 +177,7 @@ func TestInstallChecksThePlatform(t *testing.T) {
 		return nil
 	}
 	addr := ta.startNode(t, s)
-	img := testUpgradeImageOfBlocks(t, "test", "kvm", "0.1.0", 512)
+	img := testImageOf(t, "test", "kvm", "0.1.0", 512, nil)
 	writeFile(t, filepath.Join(img, "repart.d", "50-state.conf"), "[Partition]\nLabel=state\n")
 	copySchemas(t, filepath.Join(img, "schemas"))
 	err := ta.run(context.Background(), ta.args([]string{"install", "n1", "--fingerprint", s.Fingerprint, "--image", img}, addr))

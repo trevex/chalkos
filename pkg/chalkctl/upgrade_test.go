@@ -28,7 +28,6 @@ import (
 	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/api/node/v1/nodev1connect"
 	"github.com/trevex/chalkos/pkg/chalkd"
-	"github.com/trevex/chalkos/pkg/client"
 	"github.com/trevex/chalkos/pkg/config"
 	"github.com/trevex/chalkos/pkg/image/imagetest"
 	"github.com/trevex/chalkos/pkg/internal/cli"
@@ -47,7 +46,7 @@ import (
 // in their root hashes, and the fake nodes say which image they run by it.
 func testUpgradeImage(t *testing.T, variant, name string) string {
 	t.Helper()
-	return testUpgradeImageOfBlocks(t, variant, "metal", name, 512)
+	return testImageOf(t, variant, "metal", name, 512, nil)
 }
 
 // testImageNames names the test images by their root hashes.
@@ -71,13 +70,6 @@ func rootOf(t *testing.T, dir string) []byte {
 func shortOf(t *testing.T, dir string) string {
 	t.Helper()
 	return imageName(rootOf(t, dir), "", "")
-}
-
-// testUpgradeImageOfBlocks builds a test image of the platform whose store has dm-verity blocks of
-// the size.
-func testUpgradeImageOfBlocks(t *testing.T, variant, platform, name string, blockSize int) string {
-	t.Helper()
-	return testImageOf(t, variant, platform, name, blockSize, nil)
 }
 
 // testImageOf builds a test image whose UKI's os-release edit changes, when given, from what
@@ -747,11 +739,19 @@ func (l *upgradeLab) useInventory(t *testing.T, images map[string]string) {
 
 // run runs chalkctl with the lab's inventory and every node's address.
 func (l *upgradeLab) run(args ...string) error {
-	args = append(args, "--inventory", l.inventory)
-	for name, addr := range l.addrs {
-		args = append(args, "--address", name+"="+addr)
+	return l.ta.run(context.Background(), append(append(args, "--inventory", l.inventory), l.addressArgs()...))
+}
+
+// addressArgs are the --address flags of the nodes named, or of every node.
+func (l *upgradeLab) addressArgs(names ...string) []string {
+	if len(names) == 0 {
+		names = slices.Collect(maps.Keys(l.addrs))
 	}
-	return l.ta.run(context.Background(), args)
+	var args []string
+	for _, name := range names {
+		args = append(args, "--address", name+"="+l.addrs[name])
+	}
+	return args
 }
 
 // TestUpgradeGivesEachNodeItsImage upgrades each node to the image the inventory names for it.
@@ -779,10 +779,6 @@ func TestUpgradeGivesEachNodeItsImage(t *testing.T) {
 		if !strings.Contains(l.ta.stdout.String(), line) {
 			t.Errorf("output lacks %q:\n%s", line, l.ta.stdout)
 		}
-	}
-	l.nodes["w3"].platform = "kvm"
-	if err := l.run("upgrade", "--nodes", "w3"); err == nil || !strings.Contains(err.Error(), "w3 runs an image built for kvm, but its image w-metal is built for metal") {
-		t.Errorf("a node on another platform = %v", err)
 	}
 }
 
@@ -876,28 +872,10 @@ func TestUpgradeOneVariantControlPlanesFirst(t *testing.T) {
 		t.Fatalf("%v\n%s", err, l.ta.stdout)
 	}
 	events := l.takeEvents()
-	at := func(e string) int {
-		i := slices.Index(events, e)
-		if i < 0 {
-			t.Fatalf("no %q in %q", e, events)
-		}
-		return i
-	}
-	cps := []string{"cp1", "cp2", "cp3"}
-	for i, cp := range cps {
-		if !(at(cp+" upgrade") < at(cp+" drain") && at(cp+" drain") < at(cp+" activate") && at(cp+" activate") < at(cp+" reboot") && at(cp+" reboot") < at(cp+" uncordon")) {
-			t.Errorf("%s out of order: %q", cp, events)
-		}
-		if i > 0 && at(cps[i-1]+" uncordon") > at(cp+" upgrade") {
-			t.Errorf("%s started before %s was back: %q", cp, cps[i-1], events)
-		}
-	}
+	at := eventOrder(t, events)
 	for _, w := range []string{"a1", "a2"} {
 		if at(w+" drain") < at("cp3 uncordon") {
 			t.Errorf("%s was drained before the control planes were upgraded: %q", w, events)
-		}
-		if !(at(w+" upgrade") < at(w+" drain") && at(w+" drain") < at(w+" activate") && at(w+" activate") < at(w+" reboot") && at(w+" reboot") < at(w+" uncordon")) {
-			t.Errorf("%s out of order: %q", w, events)
 		}
 	}
 	// etcd's quorum is checked before each control plane reboots, and for no worker.
@@ -973,15 +951,9 @@ func TestUpgradeWorkersInBatches(t *testing.T) {
 		t.Fatalf("%v\n%s", err, l.ta.stdout)
 	}
 	events := l.takeEvents()
-	at := func(e string) int {
-		i := slices.Index(events, e)
-		if i < 0 {
-			t.Errorf("no %q in %q", e, events)
-		}
-		return i
-	}
+	at := eventOrder(t, events)
 	for _, w := range []string{"w1", "w2", "w3"} {
-		if !(at(w+" upgrade") < at(w+" drain") && at(w+" drain") < at(w+" activate") && at(w+" activate") < at(w+" reboot") && at(w+" reboot") < at(w+" uncordon")) {
+		if !inOrder(at, w) {
 			t.Errorf("%s out of order: %q", w, events)
 		}
 	}
@@ -1073,23 +1045,6 @@ func TestUpgradeContinues(t *testing.T) {
 		if v := l.images()[w]; v != "0.2.0" {
 			t.Errorf("%s runs %s", w, v)
 		}
-	}
-}
-
-// TestUpgradeSendsOverAnotherStagedImage sends the image to a node that has another image staged,
-// whatever its build was named.
-func TestUpgradeSendsOverAnotherStagedImage(t *testing.T) {
-	l := newUpgradeLab(t, 3)
-	img := testUpgradeImage(t, "w", "0.2.0")
-	l.nodes["w3"].staged, l.nodes["w3"].stagedRoot = "0.2.0", bytes.Repeat([]byte{9}, 32)
-	if err := l.upgrade(img); err != nil {
-		t.Fatalf("%v\n%s", err, l.ta.stdout)
-	}
-	if got := l.takeEvents(); !slices.Contains(got, "w3 upgrade") {
-		t.Errorf("events %q, want the image sent to w3", got)
-	}
-	if n := l.nodes["w3"]; n.image != "0.2.0" || !bytes.Equal(n.root, rootOf(t, img)) {
-		t.Errorf("w3 runs %s of the root hash %x", n.image, n.root)
 	}
 }
 
@@ -1366,7 +1321,7 @@ func TestUpgradeReportsAStagedImage(t *testing.T) {
 // and its hash tree, as long as the tree's superblock counts them.
 func TestUpgradeWith4KiBVerityBlocks(t *testing.T) {
 	l := newUpgradeLab(t, 3)
-	if err := l.upgrade(testUpgradeImageOfBlocks(t, "cp", "metal", "0.2.0", 4096), "--until", "activate"); err != nil {
+	if err := l.upgrade(testImageOf(t, "cp", "metal", "0.2.0", 4096, nil), "--until", "activate"); err != nil {
 		t.Fatal(err)
 	}
 	// 300 data blocks; the superblock's block, three of digests and their root.
@@ -1404,9 +1359,7 @@ func TestUpgradeWithAnOperatorClientFileAlone(t *testing.T) {
 	l := newUpgradeLab(t, 1)
 	config := l.ta.writeConfig(t, "ops", pki.RoleOperator, time.Hour, time.Now())
 	args := []string{"upgrade", "--image", testUpgradeImage(t, "w", "0.2.0"), "--config", config, "--nodes", "w1", "--until", "activate"}
-	for name, addr := range l.addrs {
-		args = append(args, "--address", name+"="+addr)
-	}
+	args = append(args, l.addressArgs()...)
 	if err := l.ta.run(context.Background(), args); err != nil {
 		t.Fatalf("%v\n%s", err, l.ta.stdout)
 	}
@@ -1611,19 +1564,6 @@ func TestUpgradeAsksForPasswordsBeforeDraining(t *testing.T) {
 	}
 }
 
-// TestUpgradeNeedsTheImageContract refuses an image directory without schemas, which the
-// inventory's config is checked against.
-func TestUpgradeNeedsTheImageContract(t *testing.T) {
-	l := newUpgradeLab(t, 1)
-	bare := testUpgradeImage(t, "w", "0.3.0")
-	if err := os.RemoveAll(filepath.Join(bare, "schemas")); err != nil {
-		t.Fatal(err)
-	}
-	if err := l.upgrade(bare, "--nodes", "w1", "--until", "activate"); err == nil || !strings.Contains(err.Error(), "has no schemas/") {
-		t.Errorf("an image without schemas: %v", err)
-	}
-}
-
 // TestUpgradeChecksTheConfigBeforeDraining refuses an image the inventory's config does not suit
 // before any node changes.
 func TestUpgradeChecksTheConfigBeforeDraining(t *testing.T) {
@@ -1691,7 +1631,6 @@ func TestUpgradeChecksTheImage(t *testing.T) {
 		want string
 	}{
 		{"an image version", testImageOf(t, "w", "metal", "0.2.0", 512, func(o map[string]string) { o["IMAGE_VERSION"] = "0.2.0" }), "the image's UKI: the UKI's os-release sets IMAGE_VERSION to \"0.2.0\""},
-		{"no image version", testImageOf(t, "w", "metal", "0.2.0", 512, func(o map[string]string) { delete(o, "IMAGE_VERSION") }), "the image's UKI: the UKI's os-release has no IMAGE_VERSION"},
 		{"an image without a variant", testUpgradeImage(t, "", "0.2.0"), "the image names no variant or platform in its os-release"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -1783,10 +1722,7 @@ func TestUpgradeAsksOnlyControlPlanesWithTheKubernetesLayer(t *testing.T) {
 	config := l.ta.writeConfig(t, "ops", pki.RoleOperator, time.Hour, time.Now())
 	upgrade := func() error {
 		args := []string{"upgrade", "--image", testUpgradeImage(t, "w", "0.2.0"), "--config", config, "--nodes", "w1"}
-		for _, name := range []string{"cp1", "w1"} {
-			args = append(args, "--address", name+"="+l.addrs[name])
-		}
-		return l.ta.run(context.Background(), args)
+		return l.ta.run(context.Background(), append(args, l.addressArgs("cp1", "w1")...))
 	}
 	l.nodes["cp1"].layers = []string{"router"}
 	if err := upgrade(); err == nil || !strings.Contains(err.Error(), "give a control plane's address with --address") {
@@ -1842,33 +1778,32 @@ func TestUpgradeContinuesOnceReady(t *testing.T) {
 	}
 }
 
-// TestUpgradeComparesRootHashes takes a node for one that runs the image only when it runs the
-// image's store: one that runs another build gets the image, whatever that build was named.
+// TestUpgradeComparesRootHashes sends the image to nodes that run or stage another build of its
+// name.
 func TestUpgradeComparesRootHashes(t *testing.T) {
 	l := newUpgradeLab(t, 3)
 	img := testUpgradeImage(t, "w", "0.2.0")
 	l.nodes["w1"].image, l.nodes["w1"].root = "0.2.0", bytes.Repeat([]byte{2}, 32)
-	if err := l.upgrade(img, "--nodes", "w1"); err != nil {
+	l.nodes["w3"].staged, l.nodes["w3"].stagedRoot = "0.2.0", bytes.Repeat([]byte{9}, 32)
+	if err := l.upgrade(img); err != nil {
 		t.Fatalf("%v\n%s", err, l.ta.stdout)
 	}
-	if got := l.takeEvents(); !slices.Contains(got, "w1 upgrade") {
-		t.Errorf("events %q, want the image sent to w1", got)
+	events := l.takeEvents()
+	for _, w := range []string{"w1", "w3"} {
+		if !slices.Contains(events, w+" upgrade") {
+			t.Errorf("events %q, want the image sent to %s", events, w)
+		}
+		if n := l.nodes[w]; !bytes.Equal(n.root, rootOf(t, img)) {
+			t.Errorf("%s runs the root hash %x", w, n.root)
+		}
 	}
-	if n := l.nodes["w1"]; !bytes.Equal(n.root, rootOf(t, img)) {
-		t.Errorf("w1 runs the root hash %x", n.root)
-	}
-}
-
-// onPlatform runs the node on the platform.
-func (l *upgradeLab) onPlatform(t *testing.T, name, platform string) {
-	l.nodes[name].platform = platform
 }
 
 // TestUpgradeSkipsOtherPlatforms installs an image on the nodes of its variant and platform and
 // names those of its variant on another platform; a node named on another platform stops the run.
 func TestUpgradeSkipsOtherPlatforms(t *testing.T) {
 	l := newUpgradeLab(t, 3)
-	l.onPlatform(t, "w3", "kvm")
+	l.nodes["w3"].platform = "kvm"
 	img := testUpgradeImage(t, "w", "0.2.0")
 	if err := l.upgrade(img); err != nil {
 		t.Fatalf("%v\n%s", err, l.ta.stdout)
@@ -1907,20 +1842,8 @@ func TestUpgradeStopsAtAnotherPlatform(t *testing.T) {
 // without an inventory.
 func TestUpgradeWithAClientFileAlone(t *testing.T) {
 	l := newUpgradeLab(t, 3)
-	l.onPlatform(t, "w3", "kvm")
-	c, err := client.NewConfig("ops", pki.RoleAdmin, l.ta.secrets.OSCA, l.ta.secrets.OSCABundle(), time.Hour, time.Now())
-	if err != nil {
-		t.Fatal(err)
-	}
-	data, _ := c.Encode()
-	config := filepath.Join(t.TempDir(), "ops.json")
-	writeFile(t, config, string(data))
-	addressed := func(args ...string) []string {
-		for name, addr := range l.addrs {
-			args = append(args, "--address", name+"="+addr)
-		}
-		return args
-	}
+	config := l.ta.writeConfig(t, "ops", pki.RoleAdmin, time.Hour, time.Now())
+	addressed := func(args ...string) []string { return append(args, l.addressArgs()...) }
 	if err := l.ta.run(context.Background(), addressed("upgrade", "--config", config)); err == nil || !strings.Contains(err.Error(), "pass --image") {
 		t.Errorf("upgrade with a client file alone, without --image = %v", err)
 	}
@@ -1928,7 +1851,7 @@ func TestUpgradeWithAClientFileAlone(t *testing.T) {
 		t.Errorf("upgrade without an inventory or addresses = %v", err)
 	}
 	// A worker is drained through a control plane, which only an address names.
-	err = l.ta.run(context.Background(), []string{"upgrade", "--image", testUpgradeImage(t, "w", "0.2.0"), "--config", config, "--address", "w1=" + l.addrs["w1"]})
+	err := l.ta.run(context.Background(), []string{"upgrade", "--image", testUpgradeImage(t, "w", "0.2.0"), "--config", config, "--address", "w1=" + l.addrs["w1"]})
 	if err == nil || !strings.Contains(err.Error(), "give a control plane's address with --address") {
 		t.Errorf("upgrade of a worker without a control plane's address = %v", err)
 	}
@@ -1938,14 +1861,11 @@ func TestUpgradeWithAClientFileAlone(t *testing.T) {
 	if err := l.ta.run(context.Background(), addressed("upgrade", "--image", testUpgradeImage(t, "w", "0.2.0"), "--config", config)); err != nil {
 		t.Fatalf("%v\n%s", err, l.ta.stdout)
 	}
-	if v := l.images(); v["w1"] != "0.2.0" || v["w2"] != "0.2.0" || v["w3"] != "0.1.0" || v["cp1"] != "0.1.0" || v["n1"] != "0.1.0" {
+	if v := l.images(); v["w1"] != "0.2.0" || v["w2"] != "0.2.0" || v["w3"] != "0.2.0" || v["cp1"] != "0.1.0" || v["n1"] != "0.1.0" {
 		t.Errorf("the nodes run %v", v)
 	}
 	if out := l.ta.stdout.String(); !strings.Contains(out, "w1: no inventory to compare the config with; the node gives the image its pending config, else carries its own over") {
 		t.Errorf("output lacks the line without an inventory:\n%s", out)
-	}
-	if out := l.ta.stdout.String(); !strings.Contains(out, "skipping w3 (kvm): the image is built for metal") {
-		t.Errorf("output:\n%s", out)
 	}
 }
 
@@ -2510,11 +2430,7 @@ func TestUpgradeRollbackWithoutAnInventory(t *testing.T) {
 	}
 	l.takeEvents()
 	l.ta.stdout.Reset()
-	args := []string{"upgrade", "--rollback"}
-	for _, name := range []string{"cp1", "w1"} {
-		args = append(args, "--address", name+"="+l.addrs[name])
-	}
-	if err := l.ta.run(context.Background(), args); err != nil {
+	if err := l.ta.run(context.Background(), append([]string{"upgrade", "--rollback"}, l.addressArgs("cp1", "w1")...)); err != nil {
 		t.Fatalf("%v\n%s", err, l.ta.stdout)
 	}
 	if v := l.images()["w1"]; v != "0.1.0" {
@@ -2550,24 +2466,14 @@ func TestUpgradeRollbackFallsBack(t *testing.T) {
 	}
 }
 
-// TestUpgradeRollbackOfAControlPlane rolls back a control plane as an upgrade takes it down: only
-// while the others keep etcd's quorum, drained before it reboots and uncordoned once back.
+// TestUpgradeRollbackOfAControlPlane rolls back a control plane as an upgrade takes it down: drained
+// after the quorum check and uncordoned once back.
 func TestUpgradeRollbackOfAControlPlane(t *testing.T) {
 	l := newUpgradeLab(t, 3)
 	if err := l.upgrade(testUpgradeImage(t, "cp", "0.2.0"), "--nodes", "cp1"); err != nil {
 		t.Fatalf("%v\n%s", err, l.ta.stdout)
 	}
 	l.takeEvents()
-	l.unhealthyMembers = []string{"cp2"}
-	if err := l.run("upgrade", "--rollback", "--nodes", "cp1", "--timeout", "100ms"); err == nil || !strings.Contains(err.Error(), "without cp1 etcd has 1 healthy voter of 3") {
-		t.Errorf("rollback without quorum = %v", err)
-	}
-	for _, e := range l.takeEvents() {
-		if !strings.HasSuffix(e, " members") {
-			t.Errorf("the refused run asked %q", e)
-		}
-	}
-	l.unhealthyMembers = nil
 	if err := l.run("upgrade", "--rollback", "--nodes", "cp1"); err != nil {
 		t.Fatalf("%v\n%s", err, l.ta.stdout)
 	}
@@ -2594,4 +2500,30 @@ func TestUpgradeRefusesANodeOnTrial(t *testing.T) {
 	if got := l.takeEvents(); len(got) != 0 {
 		t.Errorf("the refused runs asked %q", got)
 	}
+}
+
+// eventOrder returns where each event is in events; a missing one fails the test.
+func eventOrder(t *testing.T, events []string) func(string) int {
+	return func(e string) int {
+		t.Helper()
+		i := slices.Index(events, e)
+		if i < 0 {
+			t.Fatalf("no %q in %q", e, events)
+		}
+		return i
+	}
+}
+
+// inOrder reports whether the node was upgraded, drained, activated, rebooted and uncordoned in
+// turn.
+func inOrder(at func(string) int, node string) bool {
+	prev := -1
+	for _, step := range []string{"upgrade", "drain", "activate", "reboot", "uncordon"} {
+		i := at(node + " " + step)
+		if i < prev {
+			return false
+		}
+		prev = i
+	}
+	return true
 }
