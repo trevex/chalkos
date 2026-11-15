@@ -93,17 +93,14 @@ func supervise(t *testing.T, dir string, log io.Writer) (stop func() error) {
 		return <-done
 	})
 	t.Cleanup(func() { stop() })
-	deadline := time.Now().Add(30 * time.Second)
-	for !Ready(dir) {
+	testwait.Eventually(t, "the lab to get ready", func() bool {
 		select {
 		case err := <-done:
 			t.Fatalf("the supervisor ended before the lab was ready: %v", err)
-		case <-time.After(20 * time.Millisecond):
+		default:
 		}
-		if time.Now().After(deadline) {
-			t.Fatal("the lab did not get ready")
-		}
-	}
+		return Ready(dir)
+	})
 	return stop
 }
 
@@ -350,13 +347,7 @@ func TestVMExitKeepsTheLab(t *testing.T) {
 		t.Fatal("w1 does not run")
 	}
 	syscall.Kill(pid, syscall.SIGTERM)
-	for Ready(dir) || Running(w1) {
-		select {
-		case <-ctx.Done():
-			t.Fatal("the lab is ready after w1 exited")
-		case <-time.After(20 * time.Millisecond):
-		}
-	}
+	testwait.Eventually(t, "the lab to be not ready after w1 exited", func() bool { return !Ready(dir) && !Running(w1) })
 	if _, running, err := Supervisor(dir); err != nil || !running {
 		t.Fatalf("the supervisor ended after w1 exited: %v", err)
 	}
