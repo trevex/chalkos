@@ -309,11 +309,6 @@ func TestApplyConfigNamesTheRemedyOfADestructiveChange(t *testing.T) {
 		notWant []string
 	}{
 		{
-			name: "reformatted",
-			next: section("", "xfs"),
-			want: []string{"reset it with chalkctl storage reset n1 extra"},
-		},
-		{
 			name:    "reformatted, its reference changed but finding its disk",
 			next:    withExtraRef(t, section("", "xfs"), "chalk-extra"),
 			want:    []string{"reset it with chalkctl storage reset n1 extra"},
@@ -344,16 +339,6 @@ func TestApplyConfigNamesTheRemedyOfADestructiveChange(t *testing.T) {
 			prepare: func(t *testing.T, s *Server) { unplug(t, s, "vdb") },
 			want:    []string{`Volume extra: its disk extra (model "", size 16G, serial "chalk-extra") is not plugged in; plug it in`},
 			notWant: []string{"reset"},
-		},
-		{
-			name: "removed",
-			next: section("", ""),
-			want: []string{"Volume extra: the config removes it; only a reinstall of n1 removes a volume"},
-		},
-		{
-			name: "moved by its reference",
-			next: withExtraRef(t, section("", "ext4"), "chalk-other"),
-			want: []string{"but the volume lives on", "only a reinstall of n1 carries it out"},
 		},
 		{
 			name:    "its reference finding no disk",

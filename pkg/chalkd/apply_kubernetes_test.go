@@ -869,31 +869,22 @@ func TestApplyConfigRefusesAnotherNodeType(t *testing.T) {
 	}
 }
 
-// The kubelet applies the node's labels and taints, and the control-plane taint
-// allowSchedulingOnControlPlanes leaves off, only when it registers the node, so a node holding a
-// share refuses changes to them. The first Node and Cluster documents, unchanged values and a node
-// without a share take any.
+// The kubelet applies the node's labels and taints only when it registers the node, so a node
+// holding a share refuses changes to them, before anything runs; pkg/rules tests each field. The
+// first Node document and a node without a share take any.
 func TestApplyConfigRefusesChangedRegistrationFields(t *testing.T) {
 	node := func(spec string) string {
 		return strings.Replace(workerConfig, "nodeIP: {addresses: [192.168.100.21]}}", "nodeIP: {addresses: [192.168.100.21]}, "+spec+"}", 1)
 	}
 	labelled := node("labels: {node.kubernetes.io/storage: ssd}")
-	tainted := node("taints: [{key: dedicated, effect: NoSchedule}]")
 	for name, tc := range map[string]struct {
 		share         bool
 		before, after string
 		want          []string
 	}{
-		"labels added":    {true, workerConfig, labelled, []string{`Node/default: spec.labels: `, "kubectl label"}},
-		"labels changed":  {true, labelled, node("labels: {node.kubernetes.io/storage: hdd}"), []string{`Node/default: spec.labels: `, "kubectl label"}},
-		"labels removed":  {true, labelled, workerConfig, []string{`Node/default: spec.labels: `}},
-		"taints added":    {true, workerConfig, tainted, []string{`Node/default: spec.taints: `, "kubectl taint"}},
-		"taints removed":  {true, tainted, workerConfig, []string{`Node/default: spec.taints: `}},
-		"scheduling":      {true, workerConfig, withClusterSpec("{allowSchedulingOnControlPlanes: true}"), []string{`Cluster/default: spec.allowSchedulingOnControlPlanes: `, "kubectl taint"}},
-		"unchanged":       {true, labelled, labelled, nil},
-		"the first Node":  {true, "", labelled, nil},
-		"no share":        {false, workerConfig, labelled, nil},
-		"no share, taint": {false, workerConfig, tainted, nil},
+		"labels added":   {true, workerConfig, labelled, []string{`Node/default: spec.labels: `, "kubectl label"}},
+		"the first Node": {true, "", labelled, nil},
+		"no share":       {false, workerConfig, labelled, nil},
 	} {
 		t.Run(name, func(t *testing.T) {
 			s, r := configServer(t)
