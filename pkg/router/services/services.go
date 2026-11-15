@@ -5,6 +5,7 @@
 package services
 
 import (
+	"path/filepath"
 	"strings"
 
 	"github.com/trevex/chalkos/pkg/internal/strs"
@@ -99,5 +100,5 @@ func (s Service) KeaInstance(vrf string) string {
 
 // KeaSocket is a Kea server's control socket, with runDir /run on a node.
 func (s Service) KeaSocket(runDir, vrf string) string {
-	return runDir + "/" + s.RuntimeDir(vrf) + "/" + s.KeaInstance(vrf) + ".sock"
+	return filepath.Join(runDir, s.RuntimeDir(vrf), s.KeaInstance(vrf)+".sock")
 }

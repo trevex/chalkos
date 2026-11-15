@@ -99,9 +99,9 @@ func TestUpgradeAndFallBack(t *testing.T) {
 // store larger than an eighth of the 1 MiB slot fits, and one larger than the slot is refused
 // before anything changes.
 func TestFourKnDisk(t *testing.T) {
-	old := newImageOfBlocks(t, "a", 3, 4096, 100)
+	old := newImageOfBlocks(t, "a", 3, 100)
 	l := newLabOf(t, old, 4096)
-	img := newImageOfBlocks(t, "b", 2, 4096, 200)
+	img := newImageOfBlocks(t, "b", 2, 200)
 	if _, err := l.install(img); err != nil {
 		t.Fatal(err)
 	}
@@ -113,7 +113,7 @@ func TestFourKnDisk(t *testing.T) {
 		t.Errorf("changed: %s", what)
 		return errCrash
 	}
-	if _, err := l.install(newImageOfBlocks(t, "b", 2, 4096, 300)); err == nil || !strings.Contains(err.Error(), "do not fit the slot's partitions of 1048576 and 262144 bytes") {
+	if _, err := l.install(newImageOfBlocks(t, "b", 2, 300)); err == nil || !strings.Contains(err.Error(), "do not fit the slot's partitions of 1048576 and 262144 bytes") {
 		t.Errorf("install = %v, want the store refused as too large", err)
 	}
 	for n, p := range l.table() {
@@ -909,7 +909,6 @@ func TestDiskLockedElsewhere(t *testing.T) {
 	if e, name := l.boot(); name != "a" {
 		t.Errorf("the disk boots %s from %s", name, e.File)
 	}
-
 }
 
 // stage installs img, failing the test on an error.

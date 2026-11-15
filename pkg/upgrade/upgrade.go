@@ -301,9 +301,10 @@ func (n *Node) Install(ctx context.Context, h Header, stream io.Reader) (Result,
 // staged UKI again as Install checks a new one, since db and dbx may have changed, and renames it
 // to <id>_<generation>+<tries>.efi. Install checked the config before staging; CheckStaged may
 // check more. The rename is the only change, so a failed activation leaves the UKI staged and the
-// running image boots next. Asked for twice, it answers AlreadyInstalled or AlreadyStaged. A
-// refusal is a RefusalError; other errors failed to read or change the disk or the ESP. The caller
-// keeps Install and Rollback from running meanwhile.
+// running image boots next. Asked for twice, it answers AlreadyInstalled or AlreadyStaged. It
+// refuses without an image staged, or with another staged or booting next. A refusal is a
+// RefusalError; other errors failed to read or change the disk or the ESP. The caller keeps
+// Install and Rollback from running meanwhile.
 func (n *Node) Activate(ctx context.Context, rootHash []byte) (Result, error) {
 	running, err := uki.RunningHash(n.Cmdline)
 	if err != nil {

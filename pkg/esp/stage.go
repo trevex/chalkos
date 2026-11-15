@@ -28,8 +28,8 @@ func Temporary(dir string, rootHash []byte) (string, error) {
 }
 
 // stagedPrefix starts the name of the UKI of an image staged in the inactive slot, which waits
-// for its activation. systemd-boot ignores it as it does a temporary UKI;
-// a staged image stays staged across a restart of chalkd and a reboot.
+// for its activation. systemd-boot ignores it as it does a temporary UKI; a staged image stays
+// staged across a restart of chalkd and a reboot.
 const stagedPrefix = ".staged-"
 
 // StagedName is .staged-<id>_<generation>.efi, the name in /EFI/Linux of the UKI of the image

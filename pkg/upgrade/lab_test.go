@@ -45,13 +45,13 @@ const storeBlocks = 200
 // newImage makes an image of storeBlocks blocks.
 func newImage(t *testing.T, name string, tries int) image {
 	t.Helper()
-	return newImageOfBlocks(t, name, tries, 4096, storeBlocks)
+	return newImageOfBlocks(t, name, tries, storeBlocks)
 }
 
-// newImageOfBlocks makes an image whose store has the number of dm-verity blocks of the size.
-func newImageOfBlocks(t *testing.T, name string, tries int, blockSize uint32, blocks uint64) image {
+// newImageOfBlocks makes an image whose store has the number of dm-verity blocks of 4 KiB.
+func newImageOfBlocks(t *testing.T, name string, tries int, blocks uint64) image {
 	t.Helper()
-	img := image{Image: upgradetest.NewImage(t, upgradetest.Options{Name: name, BlockSize: blockSize, Blocks: blocks, Tries: tries})}
+	img := image{Image: upgradetest.NewImage(t, upgradetest.Options{Name: name, BlockSize: 4096, Blocks: blocks, Tries: tries})}
 	img.header = img.headerFor(img.UKI)
 	imageNames.Store(string(img.Root), name)
 	return img

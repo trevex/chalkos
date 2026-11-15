@@ -5,8 +5,9 @@ import (
 )
 
 // Each service names its instance of a VRF, and of the default VRF, by its config file, its unit
-// and its device's index record, a Kea server also by its control socket, and reads the VRF back from the config file's name. A VRF's
-// dashes reach the unit escaped, as systemd-escape escapes them.
+// and its device's index record, a Kea server also by its control socket, and reads the VRF back
+// from the config file's name. A VRF's dashes reach the unit escaped, as systemd-escape escapes
+// them.
 func TestService(t *testing.T) {
 	for _, tc := range []struct {
 		s                         Service

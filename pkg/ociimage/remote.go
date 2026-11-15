@@ -23,8 +23,9 @@ func ParseReference(ref string) (name.Reference, error) {
 	return r, nil
 }
 
-// options are the remote options of Push and Read: ctx and the default keychain. go-containerregistry
-// uses plain HTTP for a loopback or private (RFC 1918) registry host and HTTPS for any other.
+// options are the remote options of Push and Read: ctx and the default keychain.
+// go-containerregistry uses plain HTTP for localhost:<port>, *.localhost, 127.0.0.1, ::1 and
+// RFC 1918 addresses, each with an optional port, and HTTPS for any other registry.
 func options(ctx context.Context) []remote.Option {
 	return []remote.Option{remote.WithContext(ctx), remote.WithAuthFromKeychain(authn.DefaultKeychain)}
 }
