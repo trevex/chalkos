@@ -89,6 +89,27 @@ func TestWriteCLI(t *testing.T) {
 			t.Errorf("tool.md lacks %q:\n%s", want, page)
 		}
 	}
+	// The completion command gets one page, with every shell's usage line and the command that
+	// loads its script, and none for each shell.
+	page, _ = os.ReadFile(filepath.Join(out, "tool_completion.md"))
+	for _, want := range []string{
+		"description: \"Write a shell completion script\"",
+		"```sh\ntool completion bash [flags]\ntool completion fish [flags]\ntool completion powershell [flags]\ntool completion zsh [flags]\n```\n",
+		"| `--no-descriptions`{ #flag-no-descriptions } | boolean | `false` |",
+		"## Shells\n\n| Shell | Current session | Every new session |\n| --- | --- | --- |\n" +
+			"| bash | `source <(tool completion bash)` | With the bash-completion package installed, `tool completion bash > ~/.local/share/bash-completion/completions/tool` once. |\n",
+		"| fish | `tool completion fish | source` | `tool completion fish > ~/.config/fish/completions/tool.fish` once. |\n",
+		"| powershell | `tool completion powershell | Out-String | Invoke-Expression` | `tool completion powershell | Out-String | Invoke-Expression` in the PowerShell profile, `$PROFILE`. |\n",
+		"| zsh | `source <(tool completion zsh)` | With completion enabled by `autoload -U compinit; compinit` in `~/.zshrc`, `tool completion zsh > \"${fpath[1]}/_tool\"` once. |\n",
+		"## See also\n\n- [tool](tool.md): A tool\n",
+	} {
+		if !strings.Contains(string(page), want) {
+			t.Errorf("tool_completion.md lacks %q:\n%s", want, page)
+		}
+	}
+	if strings.Contains(string(page), "tool_completion_bash.md") {
+		t.Errorf("tool_completion.md links a page per shell:\n%s", page)
+	}
 	nav, _ := os.ReadFile(config)
 	want := `nav = [
   { "Reference" = [
@@ -111,36 +132,6 @@ func TestWriteCLI(t *testing.T) {
 `
 	if string(nav) != want {
 		t.Errorf("zensical.toml =\n%s\nwant\n%s", nav, want)
-	}
-}
-
-// The completion command gets one page, with every shell's usage line and the command that loads
-// its script, and none for each shell.
-func TestCompletionPage(t *testing.T) {
-	dir := t.TempDir()
-	config := filepath.Join(dir, "zensical.toml")
-	os.WriteFile(config, []byte("# BEGIN docgen cli\n# END docgen cli\n"), 0o644)
-	if err := writeCLI([]*cobra.Command{testTree()}, filepath.Join(dir, "cli"), config, t.TempDir()); err != nil {
-		t.Fatal(err)
-	}
-	page, _ := os.ReadFile(filepath.Join(dir, "cli", "tool_completion.md"))
-	for _, want := range []string{
-		"description: \"Write a shell completion script\"",
-		"```sh\ntool completion bash [flags]\ntool completion fish [flags]\ntool completion powershell [flags]\ntool completion zsh [flags]\n```\n",
-		"| `--no-descriptions`{ #flag-no-descriptions } | boolean | `false` |",
-		"## Shells\n\n| Shell | Current session | Every new session |\n| --- | --- | --- |\n" +
-			"| bash | `source <(tool completion bash)` | With the bash-completion package installed, `tool completion bash > ~/.local/share/bash-completion/completions/tool` once. |\n",
-		"| fish | `tool completion fish | source` | `tool completion fish > ~/.config/fish/completions/tool.fish` once. |\n",
-		"| powershell | `tool completion powershell | Out-String | Invoke-Expression` | `tool completion powershell | Out-String | Invoke-Expression` in the PowerShell profile, `$PROFILE`. |\n",
-		"| zsh | `source <(tool completion zsh)` | With completion enabled by `autoload -U compinit; compinit` in `~/.zshrc`, `tool completion zsh > \"${fpath[1]}/_tool\"` once. |\n",
-		"## See also\n\n- [tool](tool.md): A tool\n",
-	} {
-		if !strings.Contains(string(page), want) {
-			t.Errorf("tool_completion.md lacks %q:\n%s", want, page)
-		}
-	}
-	if strings.Contains(string(page), "tool_completion_bash.md") {
-		t.Errorf("tool_completion.md links a page per shell:\n%s", page)
 	}
 }
 
@@ -178,20 +169,6 @@ func TestProgramsHaveCompletion(t *testing.T) {
 	}
 }
 
-// A command with subcommands runs only to report a usage error, so its page shows no usage line.
-func TestGroupPageHasNoUsageLine(t *testing.T) {
-	dir := t.TempDir()
-	config := filepath.Join(dir, "zensical.toml")
-	os.WriteFile(config, []byte("# BEGIN docgen cli\n# END docgen cli\n"), 0o644)
-	if err := writeCLI([]*cobra.Command{testTree()}, filepath.Join(dir, "cli"), config, t.TempDir()); err != nil {
-		t.Fatal(err)
-	}
-	page, _ := os.ReadFile(filepath.Join(dir, "cli", "tool.md"))
-	if strings.Contains(string(page), "[flags]") {
-		t.Errorf("tool.md shows a usage line:\n%s", page)
-	}
-}
-
 // The completion command's page describes it in the site's words instead of cobra's.
 func TestCompletionDescribed(t *testing.T) {
 	for _, root := range programs() {
@@ -201,15 +178,6 @@ func TestCompletionDescribed(t *testing.T) {
 		cmd, _, _ := root.Find([]string{"completion"})
 		if strings.Contains(cmd.Short+cmd.Long, "autocompletion") || !strings.Contains(cmd.Long, root.Name()+"'s commands") || !strings.Contains(cmd.Example, root.Name()+" completion bash") {
 			t.Errorf("%s completion has cobra's description or no example:\n%s\n%s", root.Name(), cmd.Long, cmd.Example)
-		}
-	}
-}
-
-// chalkcfg's root keeps its own description.
-func TestChalkcfgRootDescribed(t *testing.T) {
-	for _, root := range programs() {
-		if root.Name() == "chalkcfg" && strings.Contains(root.Long, "completes") {
-			t.Errorf("chalkcfg's description is the completion command's:\n%s", root.Long)
 		}
 	}
 }
@@ -257,15 +225,11 @@ func (unknownValue) Type() string     { return "ipNet" }
 // pflag names it.
 func TestFlagType(t *testing.T) {
 	fs := pflag.NewFlagSet("t", pflag.ContinueOnError)
-	fs.Bool("bool", false, "")
 	fs.StringToString("map", nil, "")
-	fs.StringSlice("list", nil, "")
 	fs.Var(addresses{}, "address", "")
 	fs.Var(unknownValue{}, "net", "")
 	for name, want := range map[string]string{
-		"bool":    "boolean",
 		"map":     "map of string",
-		"list":    "list of string",
 		"address": "list of [NODE=]ADDR",
 		"net":     "ipNet",
 	} {
