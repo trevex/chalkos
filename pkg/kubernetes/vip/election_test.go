@@ -2,6 +2,8 @@ package vip
 
 import (
 	"context"
+	"errors"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -9,6 +11,7 @@ import (
 
 	clientv3 "go.etcd.io/etcd/client/v3"
 
+	"github.com/trevex/chalkos/pkg/internal/poll"
 	"github.com/trevex/chalkos/pkg/internal/testwait"
 	"github.com/trevex/chalkos/pkg/kubernetes/etcd"
 	"github.com/trevex/chalkos/pkg/kubernetes/etcd/etcdtest"
@@ -20,9 +23,9 @@ type fakeAddresses struct {
 	held     atomic.Bool
 	released atomic.Int32
 	holders  *holders
-	// releasedAt is when the node last released addresses it held.
+	// releasedAt is when the node released addresses it held, in order.
 	mu         sync.Mutex
-	releasedAt time.Time
+	releasedAt []time.Time
 }
 
 type holders struct {
@@ -53,12 +56,19 @@ func (f *fakeAddresses) Acquire() error {
 func (f *fakeAddresses) Release() error {
 	if f.held.Swap(false) {
 		f.mu.Lock()
-		f.releasedAt = time.Now()
+		f.releasedAt = append(f.releasedAt, time.Now())
 		f.mu.Unlock()
 		f.holders.change(-1)
 	}
 	f.released.Add(1)
 	return nil
+}
+
+// releases are the times of the releases of addresses the node held.
+func (f *fakeAddresses) releases() []time.Time {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return slices.Clone(f.releasedAt)
 }
 
 // electionNode is a control plane taking part in the election, healthy while healthy is set.
@@ -292,12 +302,13 @@ func TestVIPReleasedBeforeLeaseExpires(t *testing.T) {
 	testwait.Eventually(t, "renewals of the holder's lease", func() bool { return first.renewals.Load() >= renewed+2 })
 	revoked := make(chan time.Time, 1)
 	go func() {
-		for ctx.Err() == nil {
-			if ttl, err := cli.TimeToLive(ctx, lease); err == nil && ttl.TTL == -1 {
-				revoked <- time.Now()
-				return
+		if poll.UntilDone(ctx, "", 10*time.Millisecond, func() error {
+			if ttl, err := cli.TimeToLive(ctx, lease); err != nil || ttl.TTL != -1 {
+				return errors.New("the lease lives")
 			}
-			time.Sleep(10 * time.Millisecond)
+			return nil
+		}) == nil {
+			revoked <- time.Now()
 		}
 	}()
 	proxy.Pause()
@@ -311,9 +322,8 @@ func TestVIPReleasedBeforeLeaseExpires(t *testing.T) {
 	if first.addrs.held.Load() {
 		t.Fatal("the cut-off holder holds the VIPs")
 	}
-	first.addrs.mu.Lock()
-	releasedAt := first.addrs.releasedAt
-	first.addrs.mu.Unlock()
+	releases := first.addrs.releases()
+	releasedAt := releases[len(releases)-1]
 	if !releasedAt.Before(revokedAt) {
 		t.Errorf("the cut-off holder released the VIPs %v after etcd revoked its lease", releasedAt.Sub(revokedAt))
 	}
@@ -457,11 +467,12 @@ func TestVIPReleasedWhenRenewalsFail(t *testing.T) {
 	})
 	holder(t, []*electionNode{first})
 	testwait.Eventually(t, "a renewal", func() bool { return first.renewals.Load() > 0 })
+	// The node campaigns again after the release, as only its renewals fail, so it may hold and
+	// release the VIPs again before the test looks: the first release after the failures counts.
+	before := len(first.addrs.releases())
 	failing.Store(true)
-	testwait.Eventually(t, "the release", func() bool { return !first.addrs.held.Load() })
-	first.addrs.mu.Lock()
-	releasedAt := first.addrs.releasedAt
-	first.addrs.mu.Unlock()
+	testwait.Eventually(t, "the release", func() bool { return len(first.addrs.releases()) > before })
+	releasedAt := first.addrs.releases()[before]
 	mu.Lock()
 	last := lastSent
 	mu.Unlock()
