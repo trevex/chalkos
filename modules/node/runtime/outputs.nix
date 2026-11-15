@@ -55,13 +55,7 @@ let
           description = "Config kinds, by name as for a grant, whose documents the renderer reads.";
         };
         render = lib.mkOption {
-          type =
-            lib.types.either (lib.types.coercedTo lib.types.package toString lib.types.nonEmptyStr) (
-              lib.types.attrsOf lib.types.raw
-            )
-            // {
-              description = "command, package or chalkosLib.render value";
-            };
+          type = chalkosLib.internal.programType "chalkosLib.render";
           example = lib.literalExpression "chalkosLib.render.template ./bird.conf.tmpl";
           description = ''
             Program of the image's store, with its arguments, that renders the output. It reads

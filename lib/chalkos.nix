@@ -121,6 +121,16 @@ in
         RestrictRealtime = true;
         SystemCallArchitectures = "native";
       };
+      # The type of a program option: a command, a package, whose path is the command, or an
+      # attribute set of a builder, such as chalkosLib.render's, which the option's module checks.
+      programType =
+        builders:
+        lib.types.either (lib.types.coercedTo lib.types.package toString lib.types.nonEmptyStr) (
+          lib.types.attrsOf lib.types.raw
+        )
+        // {
+          description = "command, package or ${builders} value";
+        };
       # A DNS name: letters, digits, dots and dashes, starting and ending with a letter or digit.
       dnsName = "[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?";
       # The config files of the directory dir, YAML or JSON, as tests of chalkos.tests named

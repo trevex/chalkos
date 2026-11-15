@@ -40,13 +40,7 @@ let
         description = "Config kinds, by name as for a grant, whose documents the validator reads.";
       };
       program = lib.mkOption {
-        type =
-          lib.types.either (lib.types.coercedTo lib.types.package toString lib.types.nonEmptyStr) (
-            lib.types.attrsOf lib.types.raw
-          )
-          // {
-            description = "command, package or chalkosLib.validate value";
-          };
+        type = chalkosLib.internal.programType "chalkosLib.validate";
         example = lib.literalExpression "chalkosLib.validate.jq ./peers.jq";
         description = ''
           Program of the image's store, with its arguments, that checks the documents. chalkd
