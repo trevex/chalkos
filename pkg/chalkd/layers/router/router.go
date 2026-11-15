@@ -54,8 +54,8 @@ type Options struct {
 	// VRFDir holds the running VRF documents, <name>.json each; default
 	// /run/chalkos/config/router.chalkos.dev/VRF.
 	VRFDir string
-	// RunDir holds the per-VRF services' runtime directories, where each records the index of the
-	// device its sockets are bound to; default /run.
+	// RunDir holds the per-VRF services' runtime directories, with Kea's control sockets, where each
+	// records the index of the device its sockets are bound to; default /run.
 	RunDir string
 	// NetDir holds a directory per network device, with its index; default /sys/class/net.
 	NetDir string
@@ -310,8 +310,9 @@ func (p *Plugin) resolver(ctx context.Context) *routerv1.ResolverStatus {
 }
 
 // renderedVRFs are the VRFs of the configs of the service svc that an output rendered into dir,
-// the default VRF first, then by name. A file whose name does not match routing.ShortName, which
-// every VRF's name does, is left out, so only a VRF's name reaches a command line.
+// the default VRF first, then by name. A file whose name does not match routing.ShortName is left
+// out, so only a VRF's name reaches a command line: every VRF's name matches it, as the kind VRF
+// refuses names over 15 characters.
 func renderedVRFs(dir string, svc services.Service) []string {
 	entries, _ := os.ReadDir(dir)
 	var vrfs []string
@@ -330,7 +331,11 @@ func renderedVRFs(dir string, svc services.Service) []string {
 func (p *Plugin) unitRunning(ctx, budget context.Context, svc services.Service, vrf string) (running bool, problem string) {
 	unit := svc.Unit(vrf)
 	state, err := systemctl.IsActive(budget, p.run, unit)
-	switch err = ended(ctx, budget, "systemctl", err); {
+	if why := ended(ctx, budget, "systemctl", err); why != err {
+		// The question timed out or the caller ended: no state systemctl gave counts.
+		state, err = "", why
+	}
+	switch {
 	case err != nil && state != "":
 		return false, unit + " is " + state
 	case err != nil:

@@ -27,7 +27,8 @@ type side struct {
 	state  knode.State
 	hooks  Hooks
 	timing Timing
-	// o are the options New was given, with chalkd's own in place of empty strings.
+	// o holds the string options New was given, chalkd's own in place of empty ones; its Paths,
+	// Hooks and Timing are zero, as state, hooks and timing hold them.
 	o Options
 
 	// membership serialises the bootstrap and the join, which both make the node an etcd member.
@@ -186,6 +187,7 @@ func newSide(o Options) *side {
 	o.ImageFile = cmp.Or(o.ImageFile, k8s.ImageFile)
 	o.ClusterFile = cmp.Or(o.ClusterFile, k8s.ClusterFile)
 	k := &side{state: knode.State{Paths: o.Paths}, hooks: o.Hooks, timing: o.Timing.withDefaults(), o: o}
+	k.o.Paths, k.o.Hooks, k.o.Timing = knode.Paths{}, Hooks{}, Timing{}
 	if k.state.Paths == (knode.Paths{}) {
 		k.state.Paths = knode.DefaultPaths()
 	}

@@ -928,6 +928,9 @@ func TestLogsLimitsStreams(t *testing.T) {
 	if err := logs(); connect.CodeOf(err) != connect.CodeResourceExhausted || journal.Load() != 0 {
 		t.Errorf("over the limit: err = %v, journal read %d times", err, journal.Load())
 	}
+	if n := s.logStreams.Load(); n != maxLogStreams {
+		t.Errorf("%d streams counted after a refused call", n)
+	}
 	s.logStreams.Store(maxLogStreams - 1)
 	if err := logs(); err != nil || journal.Load() != 1 {
 		t.Errorf("below the limit: err = %v, journal read %d times", err, journal.Load())
