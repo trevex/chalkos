@@ -8,10 +8,12 @@ import (
 	"path/filepath"
 	"syscall"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"golang.org/x/sys/unix"
 
+	"github.com/trevex/chalkos/pkg/internal/testwait"
 	"github.com/trevex/chalkos/pkg/kubernetes"
 	"github.com/trevex/chalkos/pkg/kubernetes/nodeip"
 	kpki "github.com/trevex/chalkos/pkg/kubernetes/pki"
@@ -170,53 +172,56 @@ func TestRenewControlPlane(t *testing.T) {
 }
 
 func TestRenewControlPlaneWaitsForThePreparation(t *testing.T) {
-	s := bootstrappedControlPlane(t)
-	before := readFile(t, filepath.Join(s.PKI, kpki.FileAPIServer))
-	unlock, err := s.lockPKI(true)
-	if err != nil {
-		t.Fatal(err)
-	}
-	// A renewal whose time ends while the preparation runs leaves the certificates.
-	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
-	defer cancel()
-	if err := s.RenewControlPlane(ctx, time.Now()); !errors.Is(err, context.DeadlineExceeded) {
-		t.Errorf("while a preparation runs: %v, want the context's error", err)
-	}
-	if readFile(t, filepath.Join(s.PKI, kpki.FileAPIServer)) != before {
-		t.Error("a renewal that did not get the lock changed the certificates")
-	}
-	// One that started while the preparation runs renews once it is done.
-	result := make(chan error, 1)
-	go func() { result <- s.RenewControlPlane(context.Background(), time.Now()) }()
-	time.Sleep(200 * time.Millisecond)
-	select {
-	case err := <-result:
-		t.Fatalf("the renewal ended while a preparation runs: %v", err)
-	default:
-	}
-	unlock()
-	select {
-	case err := <-result:
+	testwait.Bubble(t, func(t *testing.T) {
+		s := bootstrappedControlPlane(t)
+		before := readFile(t, filepath.Join(s.PKI, kpki.FileAPIServer))
+		unlock, err := s.lockPKI(true)
 		if err != nil {
-			t.Fatalf("after the preparation: %v", err)
+			t.Fatal(err)
 		}
-	case <-time.After(10 * time.Second):
-		t.Fatal("the renewal did not take the released lock")
-	}
-	if readFile(t, filepath.Join(s.PKI, kpki.FileAPIServer)) == before {
-		t.Error("the renewal did not renew the certificates")
-	}
-	renewed := readFile(t, filepath.Join(s.PKI, kpki.FileAPIServer))
-	if err := os.Remove(s.PreparedMarker()); err != nil {
-		t.Fatal(err)
-	}
-	// Status shows the error: a node whose preparation failed is not being prepared.
-	if err := s.RenewControlPlane(context.Background(), time.Now()); !errors.Is(err, ErrNotPrepared) {
-		t.Errorf("before the preparation finished: %v, want ErrNotPrepared", err)
-	}
-	if readFile(t, filepath.Join(s.PKI, kpki.FileAPIServer)) != renewed {
-		t.Error("a refused renewal changed the certificates")
-	}
+		// A renewal whose time ends while the preparation runs leaves the certificates.
+		ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+		defer cancel()
+		if err := s.RenewControlPlane(ctx, time.Now()); !errors.Is(err, context.DeadlineExceeded) {
+			t.Errorf("while a preparation runs: %v, want the context's error", err)
+		}
+		if readFile(t, filepath.Join(s.PKI, kpki.FileAPIServer)) != before {
+			t.Error("a renewal that did not get the lock changed the certificates")
+		}
+		// One that started while the preparation runs renews once it is done.
+		result := make(chan error, 1)
+		go func() { result <- s.RenewControlPlane(context.Background(), time.Now()) }()
+		// Wait until it waits for the lock.
+		synctest.Wait()
+		select {
+		case err := <-result:
+			t.Fatalf("the renewal ended while a preparation runs: %v", err)
+		default:
+		}
+		unlock()
+		select {
+		case err := <-result:
+			if err != nil {
+				t.Fatalf("after the preparation: %v", err)
+			}
+		case <-time.After(10 * time.Second):
+			t.Fatal("the renewal did not take the released lock")
+		}
+		if readFile(t, filepath.Join(s.PKI, kpki.FileAPIServer)) == before {
+			t.Error("the renewal did not renew the certificates")
+		}
+		renewed := readFile(t, filepath.Join(s.PKI, kpki.FileAPIServer))
+		if err := os.Remove(s.PreparedMarker()); err != nil {
+			t.Fatal(err)
+		}
+		// Status shows the error: a node whose preparation failed is not being prepared.
+		if err := s.RenewControlPlane(context.Background(), time.Now()); !errors.Is(err, ErrNotPrepared) {
+			t.Errorf("before the preparation finished: %v, want ErrNotPrepared", err)
+		}
+		if readFile(t, filepath.Join(s.PKI, kpki.FileAPIServer)) != renewed {
+			t.Error("a refused renewal changed the certificates")
+		}
+	})
 }
 
 func TestPrepareFailureRemovesOldCertificates(t *testing.T) {
@@ -327,36 +332,39 @@ func TestStaticPodsNotStaleOnceLeft(t *testing.T) {
 // Waiting for the lock ends with the context, so a node leaving etcd is not held up for good by
 // a preparation that waits for its addresses.
 func TestLockPKIEndsWithItsContext(t *testing.T) {
-	s := bootstrappedControlPlane(t)
-	unlock, err := s.lockPKI(true)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer unlock()
-	ctx, cancel := context.WithCancel(context.Background())
-	result := make(chan error, 1)
-	go func() {
-		unlock, err := s.LockPKI(ctx)
-		if err == nil {
-			unlock()
+	testwait.Bubble(t, func(t *testing.T) {
+		s := bootstrappedControlPlane(t)
+		unlock, err := s.lockPKI(true)
+		if err != nil {
+			t.Fatal(err)
 		}
-		result <- err
-	}()
-	time.Sleep(200 * time.Millisecond)
-	cancel()
-	select {
-	case err := <-result:
-		if !errors.Is(err, context.Canceled) {
-			t.Errorf("err = %v, want the context's", err)
+		defer unlock()
+		ctx, cancel := context.WithCancel(context.Background())
+		result := make(chan error, 1)
+		go func() {
+			unlock, err := s.LockPKI(ctx)
+			if err == nil {
+				unlock()
+			}
+			result <- err
+		}()
+		// Wait until it waits for the lock.
+		synctest.Wait()
+		cancel()
+		select {
+		case err := <-result:
+			if !errors.Is(err, context.Canceled) {
+				t.Errorf("err = %v, want the context's", err)
+			}
+		case <-time.After(10 * time.Second):
+			t.Fatal("waiting for the lock did not end with its context")
 		}
-	case <-time.After(10 * time.Second):
-		t.Fatal("waiting for the lock did not end with its context")
-	}
-	unlock()
-	// Once released, the lock is taken.
-	again, err := s.LockPKI(context.Background())
-	if err != nil {
-		t.Fatal(err)
-	}
-	again()
+		unlock()
+		// Once released, the lock is taken.
+		again, err := s.LockPKI(context.Background())
+		if err != nil {
+			t.Fatal(err)
+		}
+		again()
+	})
 }
