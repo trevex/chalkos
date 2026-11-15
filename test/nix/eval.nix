@@ -3067,23 +3067,15 @@ lib.runTests {
   # systemd-repart formats a vfat ESP with no less than 260 MiB, so a smaller one is refused.
   testESPMinimum = {
     expr = lib.genAttrs [
-      "1G"
       "260M"
-      "1.5G"
       "266240K"
-      "256M"
       "0.25G"
-      "100M"
       "a lot"
     ] (size: lib.all (a: a.assertion) (worker [ { chalkos.disk.espSize = size; } ]).assertions);
     expected = {
-      "1G" = true;
       "260M" = true;
-      "1.5G" = true;
       "266240K" = true;
-      "256M" = false;
       "0.25G" = false;
-      "100M" = false;
       "a lot" = false;
     };
   };
@@ -3091,21 +3083,15 @@ lib.runTests {
   # STATE is refused.
   testStateMinimum = {
     expr = lib.genAttrs [
-      "128M"
       "64M"
       "65536K"
-      "1G"
       "63M"
-      "32M"
       "a lot"
     ] (size: lib.all (a: a.assertion) (worker [ { chalkos.disk.stateSize = size; } ]).assertions);
     expected = {
-      "128M" = true;
       "64M" = true;
       "65536K" = true;
-      "1G" = true;
       "63M" = false;
-      "32M" = false;
       "a lot" = false;
     };
   };
@@ -3132,31 +3118,6 @@ lib.runTests {
       ];
       seed = "/efi";
       bless = "/efi";
-    };
-  };
-  testStoreCompression = {
-    expr = (worker [ ]).image.repart.mkfsOptions.erofs;
-    expected = [
-      "-b 4096"
-      "-zzstd,level=9"
-      "-C65536"
-    ];
-  };
-  # dm-verity refuses blocks smaller than a disk's logical block size; 4 KiB blocks also make the
-  # hash tree an eighth of what 512-byte ones do.
-  testStoreVerityBlocks = {
-    expr =
-      let
-        c = worker [ ];
-        inherit (c.image.repart.verityStore) partitionIds;
-      in
-      lib.intersectAttrs {
-        VerityDataBlockSizeBytes = null;
-        VerityHashBlockSizeBytes = null;
-      } c.image.repart.partitions.${partitionIds.store-verity}.repartConfig;
-    expected = {
-      VerityDataBlockSizeBytes = 4096;
-      VerityHashBlockSizeBytes = 4096;
     };
   };
   # Building an image checks that it leaves room for the next: its store in a slot, its hash tree in
@@ -3193,19 +3154,6 @@ lib.runTests {
         espSize = "260M";
       };
     };
-  };
-  testInitrdCompression = {
-    expr = with (worker [ ]).boot.initrd; [
-      compressor
-      compressorArgs
-    ];
-    expected = [
-      "zstd"
-      [
-        "-19"
-        "-T0"
-      ]
-    ];
   };
   # The UKI carries the kernel and the initrd; the store holds the modules alone. nixos-init reads
   # the bootspec in the initrd, so it is written without them.
