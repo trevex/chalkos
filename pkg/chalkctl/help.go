@@ -268,7 +268,6 @@ certificate. It is refused to a node revoked with chalkctl node revoke, and whil
 says which nodes are revoked; --force delivers it without asking. The command needs the secrets
 file.`
 
-
 const applyConfigExample = `  # Apply w1's changed network and labels.
   chalkctl config apply w1 --secrets secrets.age
 
