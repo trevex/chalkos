@@ -127,6 +127,9 @@ type upgradeFake struct {
 	stagedStoreSize, stagedVeritySize uint64
 	// rebooting makes the node unreachable, as while it reboots.
 	rebooting bool
+	// rebootIn counts the requests until a reboot the node was asked for: it answers the first
+	// as before, as chalkd does until the reboot stops it, and boots as it fails the second.
+	rebootIn int
 	// alreadyStaged makes the node answer an upgrade as one that found the image staged already,
 	// though its status did not say so, as when another run staged it in between.
 	alreadyStaged bool
@@ -274,8 +277,15 @@ func (l *upgradeLab) takeEvents() []string {
 
 func (n *upgradeFake) down() error {
 	n.mu.Lock()
-	rebooting := n.rebooting
+	rebooting, boot := n.rebooting, n.rebootIn == 1
+	if n.rebootIn > 0 {
+		n.rebootIn--
+	}
 	n.mu.Unlock()
+	if boot {
+		n.boot()
+		rebooting = true
+	}
 	if rebooting {
 		return connect.NewError(connect.CodeUnavailable, errors.New("the node reboots"))
 	}
@@ -525,39 +535,40 @@ func (n *upgradeFake) pendingOutcome(fate nodev1.PendingFate) *nodev1.PendingOut
 	return &nodev1.PendingOutcome{Version: versionOf(n.pending), Fate: fate}
 }
 
-// Reboot boots the staged image while it is active, which falls back after its tries when the lab
-// makes it unhealthy; a reboot of a node whose image is staged alone boots the running image again.
-// The node answers as before for a moment, as chalkd does until the reboot stops it.
+// Reboot has the node boot again as it fails its second request after this one; see rebootIn.
 func (n *upgradeFake) Reboot(context.Context, *connect.Request[nodev1.RebootRequest]) (*connect.Response[nodev1.RebootResponse], error) {
 	if err := n.down(); err != nil {
 		return nil, err
 	}
 	n.lab.record("%s reboot", n.name)
-	go func() {
-		time.Sleep(15 * time.Millisecond)
-		n.mu.Lock()
-		n.rebooting = true
-		n.mu.Unlock()
-		time.Sleep(30 * time.Millisecond)
-		n.lab.mu.Lock()
-		unhealthy := n.lab.unhealthy[n.staged]
-		n.lab.mu.Unlock()
-		n.mu.Lock()
-		defer n.mu.Unlock()
-		n.rebooting = false
-		n.boots++
-		switch {
-		case n.staged == "" || !n.active:
-		case unhealthy:
-			n.failed, n.failedRoot, n.staged, n.stagedRoot, n.active = n.staged, n.stagedRoot, "", nil, false
-		default:
-			n.previous, n.previousRoot, n.previousConfig = n.image, n.root, n.config
-			n.image, n.root, n.staged, n.stagedRoot, n.active = n.staged, n.stagedRoot, "", nil, false
-			n.config, n.stagedConfig = n.stagedConfig, ""
-			n.generation++
-		}
-	}()
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	n.rebootIn = 2
 	return connect.NewResponse(&nodev1.RebootResponse{}), nil
+}
+
+// boot boots the staged image while it is active, which falls back after its tries when the lab
+// makes it unhealthy; a node whose image is staged alone boots the running image again.
+func (n *upgradeFake) boot() {
+	n.mu.Lock()
+	staged := n.staged
+	n.mu.Unlock()
+	n.lab.mu.Lock()
+	unhealthy := n.lab.unhealthy[staged]
+	n.lab.mu.Unlock()
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	n.boots++
+	switch {
+	case n.staged == "" || !n.active:
+	case unhealthy:
+		n.failed, n.failedRoot, n.staged, n.stagedRoot, n.active = n.staged, n.stagedRoot, "", nil, false
+	default:
+		n.previous, n.previousRoot, n.previousConfig = n.image, n.root, n.config
+		n.image, n.root, n.staged, n.stagedRoot, n.active = n.staged, n.stagedRoot, "", nil, false
+		n.config, n.stagedConfig = n.stagedConfig, ""
+		n.generation++
+	}
 }
 
 // RollbackImage stages the image an upgrade replaced and records it, as chalkd re-activates it.
