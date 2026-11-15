@@ -55,7 +55,7 @@ func VerifySignature(r io.ReaderAt, size int64, db, dbx Database) error {
 				return err
 			}
 		}
-		if slices.ContainsFunc(d.revoked, func(r []byte) bool { return bytes.Equal(r, sum) }) {
+		if listed(d.revoked, sum) {
 			return errors.New("dbx revokes the image")
 		}
 	}
@@ -140,7 +140,7 @@ func revoked(dbx Database, cert *x509.Certificate) (pkix.Name, bool) {
 		}
 		d.hash.Write(cert.RawTBSCertificate)
 		sum := d.hash.Sum(nil)
-		if slices.ContainsFunc(d.revoked, func(r []byte) bool { return bytes.Equal(r, sum) }) {
+		if listed(d.revoked, sum) {
 			return cert.Subject, true
 		}
 	}
@@ -148,11 +148,21 @@ func revoked(dbx Database, cert *x509.Certificate) (pkix.Name, bool) {
 		if cert.Equal(c) {
 			return cert.Subject, true
 		}
-		if c.CheckSignature(cert.SignatureAlgorithm, cert.RawTBSCertificate, cert.Signature) == nil {
+		if issued(c, cert) {
 			return c.Subject, true
 		}
 	}
 	return pkix.Name{}, false
+}
+
+// issued reports whether issuer signed cert.
+func issued(issuer, cert *x509.Certificate) bool {
+	return issuer.CheckSignature(cert.SignatureAlgorithm, cert.RawTBSCertificate, cert.Signature) == nil
+}
+
+// listed reports whether revoked holds the digest sum.
+func listed(revoked [][]byte, sum []byte) bool {
+	return slices.ContainsFunc(revoked, func(r []byte) bool { return bytes.Equal(r, sum) })
 }
 
 // insecure are the signature algorithms a chain must not use. x509.Certificate.CheckSignature
@@ -166,7 +176,7 @@ var insecure = map[x509.SignatureAlgorithm]bool{
 func issuers(cert *x509.Certificate, roots []*x509.Certificate) []*x509.Certificate {
 	var found []*x509.Certificate
 	for _, root := range roots {
-		if cert.Equal(root) || root.CheckSignature(cert.SignatureAlgorithm, cert.RawTBSCertificate, cert.Signature) == nil {
+		if cert.Equal(root) || issued(root, cert) {
 			found = append(found, root)
 		}
 	}

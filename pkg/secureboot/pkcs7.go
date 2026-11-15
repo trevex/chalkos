@@ -42,6 +42,16 @@ type issuerAndSerial struct {
 	Serial *big.Int
 }
 
+// of reports whether s names the certificate c.
+func (s issuerAndSerial) of(c *x509.Certificate) bool {
+	return bytes.Equal(c.RawIssuer, s.Issuer.FullBytes) && c.SerialNumber.Cmp(s.Serial) == 0
+}
+
+// rsaEncryption reports whether a signer's DigestEncryptionAlgorithm is RSA, the one supported.
+func rsaEncryption(oid asn1.ObjectIdentifier) bool {
+	return oid.Equal(oidRSA) || oid.Equal(oidSHA256WithRSA)
+}
+
 type signerInfo struct {
 	Version                   int
 	IssuerAndSerial           issuerAndSerial
@@ -152,7 +162,7 @@ func verifySigner(si signerInfo, certs []*x509.Certificate, contentDigest []byte
 	}
 	var signer *x509.Certificate
 	for _, c := range certs {
-		if bytes.Equal(c.RawIssuer, si.IssuerAndSerial.Issuer.FullBytes) && c.SerialNumber.Cmp(si.IssuerAndSerial.Serial) == 0 {
+		if si.IssuerAndSerial.of(c) {
 			signer = c
 			break
 		}
@@ -164,7 +174,7 @@ func verifySigner(si signerInfo, certs []*x509.Certificate, contentDigest []byte
 	if _, ok := signer.PublicKey.(*rsa.PublicKey); !ok {
 		return nil, fmt.Errorf("the certificate %q that signed the image has a key other than RSA, which many firmwares do not verify", signer.Subject)
 	}
-	if enc := si.DigestEncryptionAlgorithm.Algorithm; !enc.Equal(oidRSA) && !enc.Equal(oidSHA256WithRSA) {
+	if enc := si.DigestEncryptionAlgorithm.Algorithm; !rsaEncryption(enc) {
 		return nil, fmt.Errorf("a signer's signature algorithm %v is not supported", enc)
 	}
 	// The signature covers the attributes encoded as a SET, not with their implicit tag.
@@ -219,7 +229,7 @@ func verifyDetached(der, content []byte, cert *x509.Certificate) error {
 		return errors.New("the signature carries its content, which an authenticated variable's leaves out")
 	}
 	for _, si := range sd.SignerInfos {
-		if !bytes.Equal(si.IssuerAndSerial.Issuer.FullBytes, cert.RawIssuer) || si.IssuerAndSerial.Serial.Cmp(cert.SerialNumber) != 0 {
+		if !si.IssuerAndSerial.of(cert) {
 			continue
 		}
 		if !si.DigestAlgorithm.Algorithm.Equal(oidSHA256) {
@@ -228,7 +238,7 @@ func verifyDetached(der, content []byte, cert *x509.Certificate) error {
 		if len(si.AuthenticatedAttributes.FullBytes) > 0 {
 			return errors.New("the signer has authenticated attributes, which an authenticated variable's signature has not")
 		}
-		if enc := si.DigestEncryptionAlgorithm.Algorithm; !enc.Equal(oidRSA) && !enc.Equal(oidSHA256WithRSA) {
+		if enc := si.DigestEncryptionAlgorithm.Algorithm; !rsaEncryption(enc) {
 			return fmt.Errorf("the signer's signature algorithm %v is not supported", enc)
 		}
 		if err := cert.CheckSignature(x509.SHA256WithRSA, content, si.EncryptedDigest); err != nil {

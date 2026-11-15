@@ -12,11 +12,7 @@ func X509SignatureLists(owner [16]byte, certs ...*x509.Certificate) []byte {
 	var b []byte
 	for _, c := range certs {
 		size := len(owner) + len(c.Raw)
-		b = append(b, certX509[:]...)
-		b = binary.LittleEndian.AppendUint32(b, uint32(sigListHeaderSize+size))
-		// No signature header.
-		b = binary.LittleEndian.AppendUint32(b, 0)
-		b = binary.LittleEndian.AppendUint32(b, uint32(size))
+		b = appendListHeader(b, certX509, size, 1)
 		b = append(b, owner[:]...)
 		b = append(b, c.Raw...)
 	}
@@ -31,13 +27,19 @@ func SHA256SignatureList(owner [16]byte, digests ...[]byte) []byte {
 		return nil
 	}
 	size := len(owner) + sha256.Size
-	b := append([]byte{}, certSHA256[:]...)
-	b = binary.LittleEndian.AppendUint32(b, uint32(sigListHeaderSize+size*len(digests)))
-	b = binary.LittleEndian.AppendUint32(b, 0)
-	b = binary.LittleEndian.AppendUint32(b, uint32(size))
+	b := appendListHeader(nil, certSHA256, size, len(digests))
 	for _, d := range digests {
 		b = append(b, owner[:]...)
 		b = append(b, d...)
 	}
 	return b
+}
+
+// appendListHeader appends the header of an EFI signature list of the type, without a signature
+// header, of n entries of size bytes each.
+func appendListHeader(b []byte, typ [16]byte, size, n int) []byte {
+	b = append(b, typ[:]...)
+	b = binary.LittleEndian.AppendUint32(b, uint32(sigListHeaderSize+size*n))
+	b = binary.LittleEndian.AppendUint32(b, 0)
+	return binary.LittleEndian.AppendUint32(b, uint32(size))
 }

@@ -116,8 +116,8 @@ func TestParseGUID(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if g != GlobalVariable || GUIDString(g) != GlobalVendor {
-		t.Errorf("ParseGUID = %x", g)
+	if g != GlobalVariable || GlobalVendor != "8be4df61-93ca-11d2-aa0d-00e098032b8c" || SecurityVendor != "d719b2cb-3d3a-4596-a3bc-dad00e67656f" {
+		t.Errorf("ParseGUID = %x; the vendors are %s and %s", g, GlobalVendor, SecurityVendor)
 	}
 	for _, bad := range []string{"", "8be4df61-93ca-11d2-aa0d-00e098032b8", "8be4df61x93ca-11d2-aa0d-00e098032b8c", "zbe4df61-93ca-11d2-aa0d-00e098032b8c"} {
 		if _, err := ParseGUID(bad); err == nil {

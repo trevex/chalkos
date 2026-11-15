@@ -130,18 +130,18 @@ func ParseDatabase(b []byte) (Database, error) {
 	return db, nil
 }
 
-// Vendors of the EFI variables Databases reads: the global one of SecureBoot and SetupMode, and
-// that of the signature databases.
-const (
-	GlobalVendor   = "8be4df61-93ca-11d2-aa0d-00e098032b8c"
-	SecurityVendor = "d719b2cb-3d3a-4596-a3bc-dad00e67656f"
-)
-
-// GlobalVariable and ImageSecurityDatabase are GlobalVendor and SecurityVendor as they are stored:
-// the vendors of PK and KEK, and of db and dbx.
+// GlobalVariable and ImageSecurityDatabase are the vendors of the EFI variables, as they are
+// stored: the global one of SecureBoot, SetupMode, PK and KEK, and that of db and dbx.
 var (
 	GlobalVariable        = guid(0x8be4df61, 0x93ca, 0x11d2, [8]byte{0xaa, 0x0d, 0x00, 0xe0, 0x98, 0x03, 0x2b, 0x8c})
 	ImageSecurityDatabase = guid(0xd719b2cb, 0x3d3a, 0x4596, [8]byte{0xa3, 0xbc, 0xda, 0xd0, 0x0e, 0x67, 0x65, 0x6f})
+)
+
+// GlobalVendor and SecurityVendor are GlobalVariable and ImageSecurityDatabase as efivarfs names
+// them.
+var (
+	GlobalVendor   = GUIDString(GlobalVariable)
+	SecurityVendor = GUIDString(ImageSecurityDatabase)
 )
 
 // ReadVariable reads the value of an EFI variable from efivarfs at efivars; nil when it is not set.
