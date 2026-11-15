@@ -144,4 +144,3 @@ func TestCombinedShortFlags(t *testing.T) {
 		}
 	}
 }
-

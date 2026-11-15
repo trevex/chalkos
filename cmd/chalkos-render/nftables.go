@@ -998,4 +998,3 @@ func dhcpOpenings(d derive.Model) ([]opening, error) {
 	}
 	return out, nil
 }
-

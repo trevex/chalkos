@@ -207,7 +207,9 @@ func kindsRules(set *rules.Set) []kindRules {
 }
 
 // compareKinds orders kinds as compareGroupKind does.
-func compareKinds(a, b schema.Kind) int { return compareGroupKind(a.Group(), a.Kind, b.Group(), b.Kind) }
+func compareKinds(a, b schema.Kind) int {
+	return compareGroupKind(a.Group(), a.Kind, b.Group(), b.Kind)
+}
 
 // splitRules splits the rules of the kinds of def, the image named image, into those of every
 // image, which the plain image has as well, and those its layer adds. A rule of the plain image

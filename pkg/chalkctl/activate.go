@@ -18,7 +18,7 @@ import (
 )
 
 type nodeActivateFlags struct {
-	node nodeFlags
+	node  nodeFlags
 	image string
 }
 

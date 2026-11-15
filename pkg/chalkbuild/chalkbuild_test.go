@@ -103,4 +103,3 @@ func TestOCISignAndPush(t *testing.T) {
 		t.Errorf("push = %d, stdout %q, stderr %q", status, stdout, stderr)
 	}
 }
-

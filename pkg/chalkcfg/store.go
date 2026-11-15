@@ -40,7 +40,6 @@ type kindInfo struct {
 	withheld  bool
 }
 
-
 // secretKind is the kind of Secrets, which chalkcfg never prints.
 const secretKind = "Secret"
 

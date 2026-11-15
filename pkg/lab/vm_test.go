@@ -126,4 +126,3 @@ func TestKeyChords(t *testing.T) {
 		t.Error("a character without a key was typed")
 	}
 }
-
