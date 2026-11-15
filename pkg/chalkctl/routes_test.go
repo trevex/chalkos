@@ -3,7 +3,6 @@ package chalkctl
 import (
 	"context"
 	"encoding/json"
-	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -20,19 +19,14 @@ import (
 	routerplugin "github.com/trevex/chalkos/pkg/chalkd/layers/router"
 	"github.com/trevex/chalkos/pkg/layers"
 	"github.com/trevex/chalkos/pkg/router"
-	"github.com/trevex/chalkos/pkg/router/services"
 	"github.com/trevex/chalkos/pkg/tool"
 	"github.com/trevex/chalkos/pkg/tool/tooltest"
 )
 
 // routerNode serves n1 as a router whose FRR answers with the recordings of package router's
-// tests, and whose kernel holds the default route and an edge's address that BGP installed over
-// two links, to the recordings' next hops, and a blackhole. rules answer further commands, such as
-// jool's and unbound-control's, before the recordings; documents tells whether the node has a
-// NAT64 document edge, a Resolver and DHCPSubnet documents, whose rendered files chalkd looks for:
-// the default VRF's DHCP server answers on its control socket, guest's has none. Its VRF tenant, of
-// table 100, holds a route over swp1, and tenant's instance imports a path from the VRF fabric.
-func routerNode(t *testing.T, ta *testApp, documents bool, rules ...tooltest.Rule) string {
+// tests and whose kernel holds BGP routes over two links, a blackhole, and a route over swp1 in
+// VRF tenant (table 100), whose instance imports a path from the VRF fabric.
+func routerNode(t *testing.T, ta *testApp) string {
 	t.Helper()
 	current, _ := json.Marshal(ta.identity(t))
 	s, _ := installedNode(t, ta, current)
@@ -43,83 +37,24 @@ func routerNode(t *testing.T, ta *testApp, documents bool, rules ...tooltest.Rul
 		}
 		return string(data)
 	}
-	r := &tooltest.Runner{Rules: append(rules,
-		tooltest.Rule{Prefix: "vtysh -c " + router.NeighborsCommand, Out: frr("neighbors.json")},
-		tooltest.Rule{Prefix: "vtysh -c show bgp ipv4 unicast detail json", Out: frr("ipv4-detail.json")},
-		tooltest.Rule{Prefix: "vtysh -c show bgp ipv6 unicast detail json", Out: frr("ipv6-detail.json")},
-		tooltest.Rule{Prefix: "vtysh -c show bgp vrf tenant ipv4 unicast detail json", Out: "{}"},
-		tooltest.Rule{Prefix: "vtysh -c show bgp vrf tenant ipv6 unicast detail json", Out: frr("ipv6-detail-imported.json")},
-	)}
-	conf, nat64, vrfs, resolvers, kea, relays := filepath.Join(t.TempDir(), "unbound.conf"), t.TempDir(), t.TempDir(), t.TempDir(), t.TempDir(), t.TempDir()
+	r := &tooltest.Runner{Rules: []tooltest.Rule{
+		{Prefix: "vtysh -c " + router.NeighborsCommand, Out: frr("neighbors.json")},
+		{Prefix: "vtysh -c show bgp ipv4 unicast detail json", Out: frr("ipv4-detail.json")},
+		{Prefix: "vtysh -c show bgp ipv6 unicast detail json", Out: frr("ipv6-detail.json")},
+		{Prefix: "vtysh -c show bgp vrf tenant ipv4 unicast detail json", Out: "{}"},
+		{Prefix: "vtysh -c show bgp vrf tenant ipv6 unicast detail json", Out: frr("ipv6-detail-imported.json")},
+	}}
+	vrfs := t.TempDir()
+	if err := os.WriteFile(filepath.Join(vrfs, "tenant.json"), []byte(`{"spec": {"table": 100}}`+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	// FRR's config link, to a config FRR has not filled in, as /etc/frr/frr.conf is before FRR
 	// starts.
 	frrConf := filepath.Join(t.TempDir(), "frr.conf")
 	if err := os.Symlink(filepath.Join(t.TempDir(), "frr.conf"), frrConf); err != nil {
 		t.Fatal(err)
 	}
-	// guest's resolver, DHCPv4 server and relay are bound to its VRF's device, of index 7.
-	run, devices := t.TempDir(), t.TempDir()
-	for _, file := range []string{
-		filepath.Join(devices, "guest", "ifindex"),
-		filepath.Join(run, services.Unbound.IndexRecord("guest")),
-		filepath.Join(run, services.Kea4.IndexRecord("guest")),
-		filepath.Join(run, services.Relay.IndexRecord("guest")),
-	} {
-		if err := os.MkdirAll(filepath.Dir(file), 0o755); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(file, []byte("7\n"), 0o644); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if err := os.WriteFile(filepath.Join(vrfs, "tenant.json"), []byte(`{"spec": {"table": 100}}`+"\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if documents {
-		for _, file := range []string{conf, filepath.Join(nat64, "edge.json"), filepath.Join(resolvers, "unbound-guest.conf")} {
-			if err := os.WriteFile(file, []byte("\n"), 0o644); err != nil {
-				t.Fatal(err)
-			}
-		}
-		subnets := `{"Dhcp4": {"subnet4": [{"id": 3221225984, "subnet": "192.0.2.0/24", "user-context": {"name": "office"}}]}}`
-		for _, file := range []string{"kea-dhcp4.json", "kea-dhcp4-guest.json"} {
-			if err := os.WriteFile(filepath.Join(kea, file), []byte(subnets+"\n"), 0o644); err != nil {
-				t.Fatal(err)
-			}
-		}
-		subnets6 := `{"Dhcp6": {"subnet6": [{"id": 2387838497, "subnet": "2001:db8:1::/64", "user-context": {"name": "office6"}}]}}`
-		if err := os.WriteFile(filepath.Join(kea, "kea-dhcp6.json"), []byte(subnets6+"\n"), 0o644); err != nil {
-			t.Fatal(err)
-		}
-		// The relays of the default VRF and of guest.
-		for _, file := range []string{"dnsmasq-relay.conf", "dnsmasq-relay-guest.conf"} {
-			if err := os.WriteFile(filepath.Join(relays, file), []byte("port=0\n"), 0o644); err != nil {
-				t.Fatal(err)
-			}
-		}
-		for socket, answer := range map[string]string{
-			"dhcp4.sock": `{"result": 0, "arguments": {"subnet[3221225984].assigned-addresses": [[2, "2026-11-01 10:00:00.000000"]], "subnet[3221225984].total-addresses": [[100, "2026-11-01 09:00:00.000000"]]}}`,
-			"dhcp6.sock": `{"result": 0, "arguments": {"subnet[2387838497].assigned-nas": [[1, "2026-11-01 10:00:00.000000"]], "subnet[2387838497].total-nas": [[36893488147419103230, "2026-11-01 09:00:00.000000"]], "subnet[2387838497].assigned-pds": [[1, "2026-11-01 10:00:00.000000"]], "subnet[2387838497].total-pds": [[256, "2026-11-01 09:00:00.000000"]]}}`,
-		} {
-			l, err := net.Listen("unix", filepath.Join(run, "kea", socket))
-			if err != nil {
-				t.Fatal(err)
-			}
-			t.Cleanup(func() { l.Close() })
-			go func() {
-				for {
-					conn, err := l.Accept()
-					if err != nil {
-						return
-					}
-					_ = json.NewDecoder(conn).Decode(&struct{}{})
-					_, _ = conn.Write([]byte(answer))
-					conn.Close()
-				}
-			}()
-		}
-	}
-	s.Plugins = chalkdtest.Plugins(t, s, layers.Of(layers.Router), routerplugin.New(runsWith{s, r}, routerplugin.Options{FRRConfig: frrConf, ResolverConfig: conf, ResolverDir: resolvers, KeaDir: kea, RelayDir: relays, RunDir: run, NetDir: devices, NAT64Dir: nat64, VRFDir: vrfs, KernelRoutes: func() ([]*router.KernelRoute, error) {
+	s.Plugins = chalkdtest.Plugins(t, s, layers.Of(layers.Router), routerplugin.New(runsWith{s, r}, routerplugin.Options{FRRConfig: frrConf, VRFDir: vrfs, KernelRoutes: func() ([]*router.KernelRoute, error) {
 		hops := func() []*router.NextHop {
 			return []*router.NextHop{
 				{Gateway: "fe80::e06b:dcff:fe54:f465", Interface: "eth2", Weight: 1}, {Gateway: "fe80::b817:4cff:fe8b:9cf", Interface: "eth1", Weight: 1}}
@@ -137,7 +72,7 @@ func routerNode(t *testing.T, ta *testApp, documents bool, rules ...tooltest.Rul
 // node routes <node> [<prefix>] prints the kernel's routes and BGP's paths within the prefix.
 func TestNodeRoutes(t *testing.T) {
 	ta := newTestApp(t)
-	addr := routerNode(t, ta, false)
+	addr := routerNode(t, ta)
 	if err := ta.run(context.Background(), ta.args([]string{"node", "routes", "n1", "::/0"}, addr)); err != nil {
 		t.Fatal(err)
 	}
@@ -157,25 +92,6 @@ func TestNodeRoutes(t *testing.T) {
 	}
 }
 
-// status prints a router's BGP sessions by VRF, the uptime of each established one.
-func TestStatusRouter(t *testing.T) {
-	ta := newTestApp(t)
-	addr := routerNode(t, ta, false)
-	if err := ta.run(context.Background(), ta.args([]string{"status", "n1"}, addr)); err != nil {
-		t.Fatal(err)
-	}
-	want := "bgp:\n" +
-		"  VRF      PEER     NEIGHBOR       STATE        UPTIME  RECEIVED  SENT  BFD\n" +
-		"  default  fabric   eth1           Established  1h2m3s  1         2     up\n" +
-		"  default  fabric   eth2           Idle         -       0         0     down\n" +
-		"  default  transit  203.0.113.254  Active       -       0         0     -\n" +
-		"  tenant   leaves   swp1           Established  21s     1         2     -\n" +
-		"certificates:\n"
-	if got := ta.stdout.String(); !strings.Contains(got, want) {
-		t.Errorf("stdout:\n%s\nlacks:\n%s", got, want)
-	}
-}
-
 // A node of an image without the router layer says so.
 func TestNodeRoutesWithoutTheLayer(t *testing.T) {
 	ta := newTestApp(t)
@@ -185,97 +101,6 @@ func TestNodeRoutesWithoutTheLayer(t *testing.T) {
 	err := ta.run(context.Background(), ta.args([]string{"node", "routes", "n1"}, addr))
 	if connect.CodeOf(err) != connect.CodeUnimplemented || !strings.Contains(err.Error(), "the router layer is not in this image") {
 		t.Errorf("err = %v", err)
-	}
-}
-
-// status and node routes of a router whose image carries no BGP print no BGP line and ask vtysh
-// nothing.
-func TestRouterWithoutBGP(t *testing.T) {
-	ta := newTestApp(t)
-	current, _ := json.Marshal(ta.identity(t))
-	s, _ := installedNode(t, ta, current)
-	r := &tooltest.Runner{}
-	s.Plugins = chalkdtest.Plugins(t, s, layers.Of(layers.Router), routerplugin.New(runsWith{s, r}, routerplugin.Options{
-		FRRConfig:      filepath.Join(t.TempDir(), "frr.conf"),
-		ResolverConfig: filepath.Join(t.TempDir(), "unbound.conf"),
-		ResolverDir:    t.TempDir(),
-		KeaDir:         t.TempDir(),
-		NAT64Dir:       t.TempDir(),
-		KernelRoutes: func() ([]*router.KernelRoute, error) {
-			return []*router.KernelRoute{{Destination: "2001:db8:2::/48", Type: "blackhole", Protocol: "boot", Table: 254, Metric: 1024}}, nil
-		},
-	}))
-	addr := ta.startNode(t, s)
-	if err := ta.run(context.Background(), ta.args([]string{"status", "n1"}, addr)); err != nil {
-		t.Fatal(err)
-	}
-	if out := ta.stdout.String(); strings.Contains(out, "bgp") {
-		t.Errorf("status of a router without BGP:\n%s", out)
-	}
-	ta.stdout.Reset()
-	if err := ta.run(context.Background(), ta.args([]string{"node", "routes", "n1"}, addr)); err != nil {
-		t.Fatal(err)
-	}
-	want := "DESTINATION      TYPE       PROTOCOL  TABLE  METRIC  NEXT HOPS\n" +
-		"2001:db8:2::/48  blackhole  boot      254    1024    -\n"
-	if got := ta.stdout.String(); got != want {
-		t.Errorf("routes of a router without BGP:\n%s\nwant:\n%s", got, want)
-	}
-	if slices.ContainsFunc(r.Calls, func(c string) bool { return strings.HasPrefix(c, "vtysh") }) {
-		t.Errorf("a router without BGP asked vtysh: %v", r.Calls)
-	}
-}
-
-// status prints a router's NAT64 instances, a line each with its sessions, bindings and the size of
-// each protocol's pool, whether its resolvers run, the default VRF's first, and its DHCP servers:
-// a running one's subnets with their leased and pool addresses, the DHCPv6 server's subnets with
-// their delegated and delegable prefixes too, and why another does not run, and its relays.
-func TestStatusRouterNAT64AndResolver(t *testing.T) {
-	ta := newTestApp(t)
-	pool := "0,TCP,192.0.2.8,61001,65535,1059,0\n"
-	addr := routerNode(t, ta, true,
-		tooltest.Rule{Prefix: "jool instance display", Out: "8fb43ac0,edge,netfilter\n"},
-		tooltest.Rule{Prefix: "nsenter --net=/run/netns/nat64-edge jool -i edge stats display --csv --no-headers --all", Out: "JSTAT_RECEIVED6,152\nJSTAT_BIB_ENTRIES,2\nJSTAT_SESSIONS,3\n"},
-		tooltest.Rule{Prefix: "nsenter --net=/run/netns/nat64-edge jool -i edge pool4 display --csv --no-headers --tcp", Out: pool},
-		tooltest.Rule{Prefix: "nsenter --net=/run/netns/nat64-edge jool -i edge pool4 display --csv --no-headers --udp", Out: pool},
-	)
-	if err := ta.run(context.Background(), ta.args([]string{"status", "n1"}, addr)); err != nil {
-		t.Fatal(err)
-	}
-	want := "nat64:\n" +
-		"  INSTANCE  SESSIONS  BINDINGS  POOL TCP  POOL UDP  POOL ICMP\n" +
-		"  edge      3         2         4535      4535      -\n" +
-		"resolver: running\n" +
-		"resolver guest: running\n" +
-		"dhcp4 default: running\n" +
-		"  SUBNET  RANGE         LEASED  POOL\n" +
-		"  office  192.0.2.0/24  2       100\n" +
-		"dhcp6 default: running\n" +
-		"  SUBNET   RANGE            LEASED  POOL    DELEGATED  DELEGABLE\n" +
-		"  office6  2001:db8:1::/64  1       >=2^64  1          256\n" +
-		"dhcp4 guest: not running: dial unix "
-	got := ta.stdout.String()
-	if !strings.Contains(got, want) || !strings.Contains(got, "/kea/dhcp4-guest.sock: connect: no such file or directory\ndhcp-relay default: running\ndhcp-relay guest: running\ncertificates:\n") {
-		t.Errorf("stdout:\n%s\nlacks:\n%s", got, want)
-	}
-}
-
-// status says why a router's NAT64 instances are unknown and why its resolvers do not run.
-func TestStatusRouterNAT64AndResolverDown(t *testing.T) {
-	ta := newTestApp(t)
-	addr := routerNode(t, ta, true,
-		tooltest.Rule{Prefix: "jool instance display", Err: &tool.Error{Command: "jool", Code: 1, Stderr: "Error: Jool's kernel module is not loaded.\n"}},
-		tooltest.Rule{Prefix: "unbound-control status", Err: &tool.Error{Command: "unbound-control", Code: 1, Stderr: "error: connect: No such file or directory for /run/unbound/unbound.ctl\n"}},
-		tooltest.Rule{Prefix: "systemctl is-active unbound@guest.service", Out: "inactive\n", Err: &tool.Error{Command: "systemctl is-active unbound@guest.service", Code: 3}},
-	)
-	if err := ta.run(context.Background(), ta.args([]string{"status", "n1"}, addr)); err != nil {
-		t.Fatal(err)
-	}
-	got := ta.stdout.String()
-	for _, want := range []string{"\nnat64: unknown: ", "Jool's kernel module is not loaded", "\nresolver: not running: ", "No such file or directory", "\nresolver guest: not running: unbound@guest.service is inactive\n"} {
-		if !strings.Contains(got, want) {
-			t.Errorf("stdout:\n%s\nlacks %q", got, want)
-		}
 	}
 }
 
@@ -328,7 +153,7 @@ func TestNodeRoutesOfAVRFWithoutVRFs(t *testing.T) {
 // names the VRF it came from as its peer.
 func TestNodeRoutesOfAVRF(t *testing.T) {
 	ta := newTestApp(t)
-	addr := routerNode(t, ta, false)
+	addr := routerNode(t, ta)
 	if err := ta.run(context.Background(), ta.args([]string{"node", "routes", "n1", "--vrf", "tenant"}, addr)); err != nil {
 		t.Fatal(err)
 	}
