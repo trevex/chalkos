@@ -199,16 +199,16 @@ let
       start
       kinds
       ;
-    when = if e.when == null then "" else e.when;
-    run = if e.run == null then "" else e.run;
-    chalkd = if e.chalkd == null then "" else e.chalkd;
+    when = lib.defaultTo "" e.when;
+    run = lib.defaultTo "" e.run;
+    chalkd = lib.defaultTo "" e.chalkd;
     hint =
       if e.hint == null then
         null
       else
         {
           inherit (e.hint) text;
-          file = if e.hint.file == null then "" else toString e.hint.file;
+          file = toString e.hint.file;
         };
   };
   effectsJSON = refuse (lib.concatLists (lib.mapAttrsToList effectProblems config.chalkos.effects)) (

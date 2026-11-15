@@ -234,7 +234,7 @@ let
       capabilities
       groups
       ;
-    networkNamespace = if d.networkNamespace == null then "" else d.networkNamespace;
+    networkNamespace = lib.defaultTo "" d.networkNamespace;
     parameters = lib.mapAttrs (_: p: {
       inherit (p)
         type
@@ -244,8 +244,8 @@ let
         max
         values
         ;
-      default = if p.default == null then "" else p.default;
-      regex = if p.regex == null then "" else p.regex;
+      default = lib.defaultTo "" p.default;
+      regex = lib.defaultTo "" p.regex;
     }) d.parameters;
   };
   diagnosticsJSON = builtins.toJSON (lib.mapAttrs diagnosticJSON config.chalkos.diagnostics);

@@ -8,7 +8,7 @@
   declaredKinds,
   refuse,
 }:
-rec {
+let
   kindProblems =
     kinds: where: names:
     let
@@ -23,6 +23,9 @@ rec {
       k:
       "${where}: a unit does not read ${k} documents; the kind is withheld, so they stay in the node's stored config for chalkd alone"
     ) (lib.filter (k: kinds.${k}.withheld or false) names);
+in
+{
+  inherit kindProblems;
   checkKinds =
     kinds: where: names: value:
     refuse (kindProblems kinds where names) value;

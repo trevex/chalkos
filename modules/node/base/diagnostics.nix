@@ -15,10 +15,24 @@ let
     type = "address";
     description = "IPv4 or IPv6 address.";
   };
+  family = {
+    type = "enum";
+    values = [
+      "inet"
+      "inet6"
+    ];
+    default = "inet";
+    description = "Address family: inet for IPv4, inet6 for IPv6.";
+  };
+  # A diagnostic that only reads the node's state.
+  reader = {
+    role = "reader";
+    timeout = "10s";
+  };
 in
 {
   chalkos.diagnostics = {
-    addresses = {
+    addresses = reader // {
       description = "The addresses of the node's interfaces, as ip -json address show prints them.";
       command = [
         ip
@@ -26,10 +40,8 @@ in
         "address"
         "show"
       ];
-      role = "reader";
-      timeout = "10s";
     };
-    links = {
+    links = reader // {
       description = "The node's network interfaces and their state, as ip -json link show prints them.";
       command = [
         ip
@@ -37,11 +49,9 @@ in
         "link"
         "show"
       ];
-      role = "reader";
-      timeout = "10s";
     };
     # With a table, ip lists one family's routes; inet is its own default.
-    routes = {
+    routes = reader // {
       description = "The routes of one family in one routing table, as ip -json route show prints them.";
       command = [
         ip
@@ -54,15 +64,7 @@ in
         "{table}"
       ];
       parameters = {
-        family = {
-          type = "enum";
-          values = [
-            "inet"
-            "inet6"
-          ];
-          default = "inet";
-          description = "Address family: inet for IPv4, inet6 for IPv6.";
-        };
+        inherit family;
         table = {
           type = "pattern";
           regex = "^(main|local|default|all|[0-9]+)$";
@@ -70,12 +72,10 @@ in
           description = "Routing table: main, local, default, all or a table's number.";
         };
       };
-      role = "reader";
-      timeout = "10s";
     };
     # The kernel's routing policy rules, which pick the table a packet's route comes from: VRFs'
     # and policy routing's among them. ip lists one family's.
-    ip-rules = {
+    ip-rules = reader // {
       description = "The routing policy rules of one family, as ip -json rule show prints them: which table the kernel looks a packet's route up in, in the order of their priorities.";
       command = [
         ip
@@ -85,19 +85,9 @@ in
         "rule"
         "show"
       ];
-      parameters.family = {
-        type = "enum";
-        values = [
-          "inet"
-          "inet6"
-        ];
-        default = "inet";
-        description = "Address family: inet for IPv4, inet6 for IPv6.";
-      };
-      role = "reader";
-      timeout = "10s";
+      parameters = { inherit family; };
     };
-    route-get = {
+    route-get = reader // {
       description = "The route the kernel takes to an address.";
       command = [
         ip
@@ -109,10 +99,8 @@ in
       parameters.address = address // {
         description = "IPv4 or IPv6 address, without a zone: ip route get takes none, and finds a link-local address's interface by the routes.";
       };
-      role = "reader";
-      timeout = "10s";
     };
-    neighbours = {
+    neighbours = reader // {
       description = "The neighbour table of IPv4 ARP and IPv6 neighbour discovery, as ip -json neighbour show prints it.";
       command = [
         ip
@@ -120,8 +108,6 @@ in
         "neighbour"
         "show"
       ];
-      role = "reader";
-      timeout = "10s";
     };
     # ping ends after count replies or 10 seconds, whichever comes first.
     ping = {
