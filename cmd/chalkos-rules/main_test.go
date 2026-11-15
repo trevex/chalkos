@@ -27,15 +27,7 @@ func effect(restart, reload string) string {
 func image(t *testing.T, files map[string]string) string {
 	t.Helper()
 	d := t.TempDir()
-	for name, content := range files {
-		path := filepath.Join(d, name)
-		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
-			t.Fatal(err)
-		}
-	}
+	writeFiles(t, d, files)
 	return d
 }
 

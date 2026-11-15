@@ -1,14 +1,4 @@
-// Command chalkos-rules checks an image when it is built, and runs its tests.
-//
-// The check: every change rule its schemas declare and every rule of its effects compiles, within
-// the cost limit, and reads only facts the image declares, each a file or a program of the image's
-// store; every effect acts on units the image defines, outputs it declares and kinds its schemas
-// declare; every output and validator is a program of the image's store that reads kinds the
-// image gives its programs; and every diagnostic is one chalkd can run.
-//
-// The tests: each config of chalkos.tests goes through the checks chalkd runs for a delivery, and
-// what it got, the outputs' files, the refusals and the effects due, is compared with what the
-// test expects.
+// Command chalkos-rules checks an image when it is built and runs its tests; see usage.
 package main
 
 import (

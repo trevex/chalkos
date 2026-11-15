@@ -65,13 +65,9 @@ const normalisedStore = "/nix/store/eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee-"
 // reservedNames are the files of OUT itself, which no test's directory may be.
 var reservedNames = []string{"summary.txt", "failures", "goldens.tsv"}
 
-// runTests runs the tests of the file testsPath against the image of the directory image and
-// writes what each got below out, which should be new or empty, as files of an earlier run stay:
-// OUT/<test>/outputs/<output>/, refusals.json, effects.json and warnings; summary.txt, a PASS or
-// FAIL line per test and a WARN line per warning; failures, the FAIL lines alone; and
-// goldens.tsv, a line per output whose files differ from its golden files: the test, the output,
-// the golden files' directory and the rendered files' directory below out. A test that fails is
-// no error: an error is an image or a file of tests the runner cannot read.
+// runTests runs the tests of the file testsPath against image and writes what each got below out,
+// as usage describes. A failing test is no error: an error is an image or a file of tests the
+// runner cannot read.
 func runTests(image, testsPath, out string) error {
 	c, err := contract.Load(image)
 	if err != nil {
@@ -261,21 +257,24 @@ func (t tester) run(ctx context.Context, dir string, tc testCase) (testResult, e
 // effects compare tc's config with, and the documents before as delivered; or the problem of a
 // before that is refused, or whose check failed.
 func (t tester) before(ctx context.Context, tc testCase) (check.Comparison, config.Redacted, string) {
+	fail := func(problem string) (check.Comparison, config.Redacted, string) {
+		return check.Comparison{}, config.Redacted{}, problem
+	}
 	before, err := readConfig(tc.Before)
 	if err != nil {
-		return check.Comparison{}, config.Redacted{}, "the check of before failed: " + err.Error()
+		return fail("the check of before failed: " + err.Error())
 	}
 	prev, err := t.check(ctx, check.Input{Node: tc.Node, Delivered: before, Facts: factsOf(tc.OldFacts)})
 	if _, refused := errors.AsType[*check.Refusal](err); refused {
-		return check.Comparison{}, config.Redacted{}, "before is refused: " + err.Error()
+		return fail("before is refused: " + err.Error())
 	}
 	if err != nil {
-		return check.Comparison{}, config.Redacted{}, "the check of before failed: " + err.Error()
+		return fail("the check of before failed: " + err.Error())
 	}
 	defer prev.Staged.Discard()
 	kinds, err := config.KindHashes(prev.Documents, t.img.Schemas)
 	if err != nil {
-		return check.Comparison{}, config.Redacted{}, "the check of before failed: " + err.Error()
+		return fail("the check of before failed: " + err.Error())
 	}
 	return check.Comparison{
 		Documents: prev.Documents, Facts: givenFacts(tc.Facts), OldFacts: givenFacts(tc.OldFacts),
