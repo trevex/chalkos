@@ -179,7 +179,7 @@ func TestPromptLongQuestionMaintenance(t *testing.T) {
 	askpasswordtest.Ask(t, dir, longQuestion)
 	o, _ := promptOptions(dir)
 	tm := consoletest.Start(t, console.New(consoletest.Maintenance(), o))
-	consoletest.WaitFor(t, tm, "2001:db8::50")
+	consoletest.WaitFor(t, tm, "…")
 	consoletest.Press(tm, "ab")
 	consoletest.WaitFor(t, tm, "> **_")
 	consoletest.Snapshot(t, tm)
