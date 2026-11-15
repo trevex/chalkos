@@ -183,27 +183,16 @@ func index(item any, keys ...any) (any, error) {
 // yamlValue returns v with each json.Number as a YAML number: the encoder would write a
 // json.Number, a string type, as a quoted string.
 func yamlValue(v any) any {
-	switch v := v.(type) {
-	case map[string]any:
-		out := make(map[string]any, len(v))
-		for k, e := range v {
-			out[k] = yamlValue(e)
+	return schema.MapJSON(v, func(v any) any {
+		n, ok := v.(json.Number)
+		switch {
+		case !ok:
+			return v
+		case !strings.ContainsAny(string(n), ".eE"):
+			return &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!int", Value: string(n)}
 		}
-		return out
-	case []any:
-		out := make([]any, len(v))
-		for i, e := range v {
-			out[i] = yamlValue(e)
-		}
-		return out
-	case json.Number:
-		s := string(v)
-		if !strings.ContainsAny(s, ".eE") {
-			return &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!int", Value: s}
-		}
-		return &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!float", Value: yamlFloat(s)}
-	}
-	return v
+		return &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!float", Value: yamlFloat(string(n))}
+	})
 }
 
 // yamlFloat writes a JSON number with an exponent so that it has a point and a signed exponent,
