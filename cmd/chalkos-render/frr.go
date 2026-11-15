@@ -214,6 +214,27 @@ func checkASPath(r string) error {
 // which frr.service's helper reads with a pattern of these characters.
 var credential = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
 
+// credentialOf is the placeholder @secret_<secret>.<key> of the Secret's key, which names it as a
+// credential; a name of other characters than credential's is an internal error about what.
+func credentialOf(what string, r derive.SecretRef) (string, error) {
+	name, key := r.SecretRef.Name, r.SecretRef.Key
+	if !credential.MatchString(name) || !credential.MatchString(key) {
+		return "", derive.InternalErrorf("the %s's Secret %q and key %q are letters, digits, '.', '_' and '-' alone", what, name, key)
+	}
+	return "@secret_" + name + "." + key, nil
+}
+
+// families are the address families in the order frr.conf takes them.
+var families = []derive.Family{derive.IPv4, derive.IPv6}
+
+// peerFamily is what the peer s exchanges of fam, nil for nothing.
+func peerFamily(s derive.PeerSpec, fam derive.Family) *derive.PeerFamily {
+	if fam == derive.IPv6 {
+		return s.Families.IPv6
+	}
+	return s.Families.IPv4
+}
+
 // description is a BGPPeer's description as the schema takes it: printable ASCII without the
 // spaces at its ends or in a row that FRR's parser would drop, and without an @, so that it never
 // holds a password placeholder. frr.conf writes it to the end of its line, which a line break
@@ -289,8 +310,8 @@ func newFRR(d derive.Model) (*frr, error) {
 		}
 		c.neighbours[p.Name] = peerSessions[p.Name]
 		in.peers = append(in.peers, p)
-		for fam, f := range map[derive.Family]*derive.PeerFamily{derive.IPv4: p.Spec.Families.IPv4, derive.IPv6: p.Spec.Families.IPv6} {
-			if f != nil && f.DefaultOriginateWhen != nil {
+		for _, fam := range families {
+			if f := peerFamily(p.Spec, fam); f != nil && f.DefaultOriginateWhen != nil {
 				c.track(vrf, fam, *f.DefaultOriginateWhen)
 			}
 		}
@@ -409,7 +430,7 @@ func (c *frr) prepends() error {
 		for _, n := range in.spec.Networks {
 			use(n.Policy, asn)
 		}
-		for _, fam := range []derive.Family{derive.IPv4, derive.IPv6} {
+		for _, fam := range families {
 			if l := in.leak(fam); l != nil {
 				use(l.Policy, asn)
 			}
@@ -491,29 +512,29 @@ func (c *frr) policy(name string) error {
 // description, and the RoutingPolicy and PrefixList documents its families name.
 func (c *frr) checkPeer(p derive.Named[derive.PeerSpec]) error {
 	s := p.Spec
-	if s.Password != nil && (!credential.MatchString(s.Password.SecretRef.Name) || !credential.MatchString(s.Password.SecretRef.Key)) {
-		return derive.InternalErrorf("the password's Secret %q and key %q are letters, digits, '.', '_' and '-' alone", s.Password.SecretRef.Name, s.Password.SecretRef.Key)
+	if s.Password != nil {
+		if _, err := credentialOf("password", *s.Password); err != nil {
+			return err
+		}
 	}
 	if s.Description != nil && !description.MatchString(*s.Description) {
 		return derive.InternalErrorf("the description is printable ASCII characters but @, with single spaces between words")
 	}
-	for _, f := range []struct {
-		name string
-		fam  *derive.PeerFamily
-	}{{"ipv4", s.Families.IPv4}, {"ipv6", s.Families.IPv6}} {
-		if f.fam == nil {
+	for _, fam := range families {
+		f := peerFamily(s, fam)
+		if f == nil {
 			continue
 		}
-		for _, policy := range []*string{f.fam.Import, f.fam.Export} {
+		for _, policy := range []*string{f.Import, f.Export} {
 			if policy != nil {
 				if err := c.policy(*policy); err != nil {
-					return derive.Within("families."+f.name, err)
+					return derive.Within("families."+string(fam), err)
 				}
 			}
 		}
-		if l := f.fam.DefaultOriginateWhen; l != nil {
+		if l := f.DefaultOriginateWhen; l != nil {
 			if _, err := derive.MustGet(c.families, "PrefixList", *l); err != nil {
-				return derive.Within(fmt.Sprintf("families.%s: defaultOriginateWhen", f.name), err)
+				return derive.Within(fmt.Sprintf("families.%s: defaultOriginateWhen", fam), err)
 			}
 		}
 	}
@@ -708,7 +729,7 @@ func (c *frr) trackingMaps(b *strings.Builder) bool {
 	}
 	written := len(lists) > 0
 	for _, in := range c.instances {
-		for _, fam := range []derive.Family{derive.IPv4, derive.IPv6} {
+		for _, fam := range families {
 			if ls := c.tracked[in.vrf][fam]; len(ls) > 0 {
 				name := trackMap(in.vrf, fam)
 				fmt.Fprintf(b, "route-map %s deny 5\n match %s next-hop type blackhole\nexit\n", name, ipWord(fam))
@@ -769,7 +790,9 @@ func (c *frr) router(b *strings.Builder, in *instance) {
 			fmt.Fprintf(b, " neighbor %s description %s\n", group, *s.Description)
 		}
 		if s.Password != nil {
-			fmt.Fprintf(b, " neighbor %s password @secret_%s.%s@\n", group, s.Password.SecretRef.Name, s.Password.SecretRef.Key)
+			// checkPeer checked the credential.
+			cred, _ := credentialOf("password", *s.Password)
+			fmt.Fprintf(b, " neighbor %s password %s@\n", group, cred)
 		}
 		if s.BFD {
 			fmt.Fprintf(b, " neighbor %s bfd\n neighbor %s bfd profile %s\n", group, group, in.profile())
@@ -793,7 +816,7 @@ func (c *frr) router(b *strings.Builder, in *instance) {
 			}
 		}
 	}
-	for _, fam := range []derive.Family{derive.IPv4, derive.IPv6} {
+	for _, fam := range families {
 		fmt.Fprintf(b, " !\n address-family %s unicast\n", fam)
 		for _, n := range g.Networks {
 			p := n.Prefix
@@ -812,10 +835,7 @@ func (c *frr) router(b *strings.Builder, in *instance) {
 		}
 		fmt.Fprintf(b, "  maximum-paths %d\n  maximum-paths ibgp %d\n", g.Multipath.EBGP, g.Multipath.IBGP)
 		for _, p := range in.peers {
-			f := p.Spec.Families.IPv4
-			if fam == "ipv6" {
-				f = p.Spec.Families.IPv6
-			}
+			f := peerFamily(p.Spec, fam)
 			if f == nil {
 				continue
 			}

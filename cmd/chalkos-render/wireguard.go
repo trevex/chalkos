@@ -33,7 +33,7 @@ func withWireGuardUnits(d derive.Model, byKind, docs map[string]any) (map[string
 	netdevs, networks = slices.Clone(netdevs), slices.Clone(networks)
 	for _, w := range wgs {
 		what := "WireGuard " + w.Name
-		key, err := credentialOf(w.Spec.PrivateKey)
+		key, err := credentialOf("key", w.Spec.PrivateKey)
 		if err != nil {
 			return nil, derive.Within(what, err)
 		}
@@ -50,7 +50,7 @@ func withWireGuardUnits(d derive.Model, byKind, docs map[string]any) (map[string
 				peer["persistentKeepalive"] = number(*k)
 			}
 			if p.Spec.PresharedKey != nil {
-				psk, err := credentialOf(*p.Spec.PresharedKey)
+				psk, err := credentialOf("key", *p.Spec.PresharedKey)
 				if err != nil {
 					return nil, derive.Within("WireGuardPeer "+p.Name, err)
 				}
@@ -84,17 +84,6 @@ func withWireGuardUnits(d derive.Model, byKind, docs map[string]any) (map[string
 	out := maps.Clone(docs)
 	out["NetDev"], out["Network"] = netdevs, networks
 	return out, nil
-}
-
-// credentialOf is the value of a WireGuard key's setting that names the Secret's key as
-// systemd-networkd's credential, @secret_<secret>.<key>. The kinds' rules hold the names to
-// credentials' characters; another is an internal error.
-func credentialOf(r derive.SecretRef) (string, error) {
-	name, key := r.SecretRef.Name, r.SecretRef.Key
-	if !credential.MatchString(name) || !credential.MatchString(key) {
-		return "", derive.InternalErrorf("the key's Secret %q and key %q are letters, digits, '.', '_' and '-' alone", name, key)
-	}
-	return "@secret_" + name + "." + key, nil
 }
 
 // prefixStrings are the ranges as networkd reads them, each with its address as written.
