@@ -30,10 +30,9 @@ func (a *app) validateCommand() *cobra.Command {
 	return cmd
 }
 
-// validate checks the config of the nodes named, or of every node of the inventory, and names
-// every node whose config is invalid. The compiled layers check the nodes together first, as
-// every other command does when it loads the inventory. A valid config that leaves the node's
-// secrets unencrypted draws a warning.
+// validate checks the config of the nodes named, or of every node, and names each invalid one. The
+// compiled layers check the nodes together first, as every command does on loading the inventory. A
+// config that leaves the node's secrets unencrypted draws a warning.
 func (a *app) validate(ctx context.Context, f validateFlags, names []string) error {
 	path := f.inventory
 	if path == "" {

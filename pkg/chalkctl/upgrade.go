@@ -238,12 +238,9 @@ func (r *upgradeRun) withholdDenied(name string) {
 	r.withhold("%s refuses to show its config to these credentials; config not delivered, each node gives the image its pending config, else carries its own over", name)
 }
 
-// showsConfig asks the first node the run sends its image for its config, once and before any
-// fallback secret is asked for or any node is drained, when the run delivers config. A node that
-// refuses to show it to credentials that read as admin would refuse config with the upgrade too, so
-// the run withholds config from the start: no node is then sent a staged image again for its
-// config alone, and no password is asked for. configChanges still withholds should a later node
-// refuse.
+// showsConfig asks the first node to get the image for its config, before any password is asked or
+// node drained. If it refuses admin-looking credentials, the run withholds config from the start;
+// configChanges still withholds should a later node refuse.
 func (r *upgradeRun) showsConfig(ctx context.Context) error {
 	if r.withheld.Load() {
 		return nil
@@ -335,10 +332,9 @@ func (r *upgradeRun) diff(ctx context.Context) error {
 	return nil
 }
 
-// configChanges prints the line of what the node's config changes against the running image's and
-// returns the changes; none on a partial cluster, which has no inventory to compare with, or when
-// the run withholds config. A node that refuses to show its config to the credentials' role would
-// refuse config with the upgrade too, so the run withholds it from then on; --diff stops instead.
+// configChanges prints what the node's config changes against the running image's and returns the
+// changes; none on a partial cluster or when the run withholds config. A node that refuses to show
+// its config makes the run withhold it from then on; --diff stops instead.
 func (r *upgradeRun) configChanges(ctx context.Context, conn *client.Conn, n *upgradeNode) (configDiff, error) {
 	if r.withheld.Load() {
 		return nil, nil
@@ -360,12 +356,9 @@ func (r *upgradeRun) configChanges(ctx context.Context, conn *client.Conn, n *up
 	return changes, nil
 }
 
-// checkConfig checks, before any node is drained or sent its image, that each node's config suits
-// the image it gets, as an install checks the config it delivers, and keeps it for the node, which
-// gets it with the image. Nodes that run the image already are checked too, as one the run would
-// only wait for or uncordon. Each node checks the config against the image again before it keeps
-// it; on a partial cluster, which has no inventory, that check of the config the node carries over
-// is all there is.
+// checkConfig checks each node's inventory config against its new image before any node is drained,
+// and keeps it for delivery. Nodes that run the image already are checked too. Each node checks the
+// config again; on a partial cluster that is the only check.
 func (r *upgradeRun) checkConfig() error {
 	if r.cluster.Partial() {
 		return nil
@@ -430,13 +423,9 @@ func (r *upgradeRun) run(ctx context.Context) error {
 	return nil
 }
 
-// node upgrades one node, continuing where an earlier run stopped, in the steps the step-by-step
-// path runs: the image is staged, activated, and the node rebooted into it, as far as --until
-// says. A node that runs the image and was found healthy is released once it serves its clusters
-// again, one that booted it is waited for, and the image staged or active already is not sent
-// again. Its layers' hooks hold it before it reboots and release it after. An image is its
-// store's root hash: a node runs, stages or fell back from the image when it names that root
-// hash.
+// node takes one node as far as --until says, resuming where an earlier run stopped: the image
+// staged or active already is not sent again, and a node that booted it is waited for. Its layers
+// hold it before the reboot and release it after. Images are compared by their store's root hash.
 func (r *upgradeRun) node(ctx context.Context, n *upgradeNode) error {
 	image, target := n.target()
 	_, st, _, err := r.probe(ctx, n.name)
@@ -561,10 +550,9 @@ func (r *upgradeRun) installs(n *upgradeNode, st *nodev1.StatusResponse) bool {
 	return !r.stagedAlready(n, st)
 }
 
-// fallbacks asks for the fallback secret of each node whose config adds an encrypted volume and
-// that gets its image, one node after the other and before any node is drained: passwords typed on
-// the terminal are asked for in turn, not by the nodes of a batch at once, and no drained node
-// waits for them.
+// fallbacks asks, before any node is drained, for the fallback secret of each node that gets its
+// image and whose config adds an encrypted volume, one node after the other, so passwords are not
+// asked by a batch at once.
 func (r *upgradeRun) fallbacks(ctx context.Context) error {
 	for _, name := range slices.Sorted(maps.Keys(r.nodes)) {
 		n := r.nodes[name]
@@ -654,11 +642,9 @@ func (r *upgradeRun) install(ctx context.Context, n *upgradeNode) error {
 	return nil
 }
 
-// pendingOutcome says what an upgrade did with p, the pending config the node held as it began, as
-// the node answers: the image took it, the config the upgrade delivered replaced it, or the node
-// keeps it for a later upgrade, as when the upgrade wrote no config slot or the node failed to
-// remove it. The node answers, rather than a later Status, since it may reboot right after. Empty
-// without a pending config.
+// pendingOutcome says what the upgrade did with the node's pending config p, as the node answers:
+// the image took it, the delivered config replaced it, or the node keeps it. The node's answer is
+// used rather than a later Status because it may reboot at once. "" without a pending config.
 func pendingOutcome(name string, p *nodev1.PendingOutcome) string {
 	switch p.GetFate() {
 	case nodev1.PendingFate_PENDING_FATE_TAKEN:

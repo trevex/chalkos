@@ -123,15 +123,11 @@ func (c *cluster) slotState(name, version string, advice func(want string) strin
 	return "the inventory's"
 }
 
-// stagedAdvice is what delivers want, the inventory's config, to the slot of the image the status
-// s names as staged, which holds other config. A plain config apply writes both images' slots, but
-// not that of the known-good image a rollback from a boot not yet found healthy staged, which
-// keeps the config it last ran until that boot is found healthy; chalkd names that image in the
-// status, by the test its deliveries take. While a trial is open the node takes no delivery, and
-// the trial's confirmation writes the staged slot it held back: the advice is the confirmation
-// when want is on trial, and the trial's end otherwise. When the running image runs want already,
-// only the staged slot differs, as after a write of that slot that failed, and config apply
-// --staged writes it alone.
+// stagedAdvice says what delivers want, the inventory's config, to the staged image's slot. A plain
+// config apply writes both slots, except that of a rollback's known-good image, which keeps its
+// config until the boot is found healthy, as the status names it. During a trial the advice is its
+// confirmation when want is on trial and its end otherwise. When the running image runs want
+// already, config apply --staged writes the staged slot alone.
 func stagedAdvice(name, want string, s *nodev1.StatusResponse) string {
 	b := s.Boot
 	switch {

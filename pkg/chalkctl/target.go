@@ -239,7 +239,6 @@ func callNode(t *target, fn func(conn *client.Conn) error) error {
 	return layer.Named(t.name, fn(conn))
 }
 
-// status reads an installed node's status.
 func (s nodeSet) status(ctx context.Context, name string) (*nodev1.StatusResponse, error) {
 	t, err := s.target(name)
 	if err != nil {

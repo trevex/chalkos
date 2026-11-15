@@ -188,9 +188,8 @@ func (a *app) securebootEnroll(ctx context.Context, f securebootEnrollFlags) err
 }
 
 // enrolmentRequest signs the updates of db, KEK and PK of the keys at now: db and KEK appended to
-// what the firmware holds, db signed by the KEK and KEK by the PK, and PK, which ends Setup Mode,
-// signed by itself. With microsoft, Microsoft's CAs are added to db and KEK; db also gets the
-// SHA-256 digests of images, hashes.
+// what the firmware holds, db signed by KEK, KEK by PK, and PK, which ends Setup Mode, by itself.
+// With microsoft, Microsoft's CAs join db and KEK; db also gets the SHA-256 image digests hashes.
 func enrolmentRequest(k secureboot.Keys, microsoft bool, hashes [][]byte, force bool, now time.Time) (*nodev1.EnrollSecureBootRequest, error) {
 	db := append(secureboot.X509SignatureLists(k.Owner, k.DB.Cert), secureboot.SHA256SignatureList(k.Owner, hashes...)...)
 	kek := secureboot.X509SignatureLists(k.Owner, k.KEK.Cert)
@@ -219,12 +218,11 @@ func enrolmentRequest(k secureboot.Keys, microsoft bool, hashes [][]byte, force 
 	return req, nil
 }
 
-// waitSecureBoot waits until the node at addr booted again and answers with Secure Boot on, and
-// returns the fingerprint of its certificate then. The node serves a new certificate in
-// maintenance mode after a reboot, whose fingerprint chalkctl cannot know, so it accepts any; a
-// node that answers with another certificate than before booted again. Some firmware reports
-// Secure Boot on as soon as PK is written, so the boot that wrote the keys does not count; a new
-// boot without Secure Boot on stops the wait.
+// waitSecureBoot waits for the node at addr to boot again with Secure Boot on and returns its new
+// certificate's fingerprint. In maintenance mode the node serves a new certificate after a reboot
+// that chalkctl cannot know, so it accepts any; another certificate than before means a new boot.
+// Some firmware reports Secure Boot on once PK is written, so only a new boot counts; one without
+// Secure Boot stops the wait.
 func (a *app) waitSecureBoot(ctx context.Context, addr string, cert *tls.Certificate, before string, timeout time.Duration) (string, error) {
 	var fingerprint string
 	err := poll.Until(ctx, "the node to boot again with Secure Boot on", timeout, a.poll(), func() error {

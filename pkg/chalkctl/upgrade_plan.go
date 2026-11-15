@@ -192,11 +192,10 @@ func (r *upgradeRun) coordinate(ctx context.Context, probed map[string]bool) err
 	return r.findCoordinators(ctx, probed, held)
 }
 
-// planRollback chooses the image a rollback run boots, before any node is sent anything: the one
-// image the nodes named, or every node of the cluster, roll back to, as rollbackVote reads it from
-// each node's status. A node without a vote must run that image already, as a node an upgrade
-// leaves alone runs the upgrade's image. The image is the same on a run again after one that
-// stopped, so the run continues instead of booting the nodes it rolled back forward again.
+// planRollback chooses the image a rollback boots, before any node is sent anything: the one image
+// the nodes vote for, as rollbackVote reads it. A node without a vote must run that image already.
+// A rerun after a stopped run picks the same image, so it continues rather than rolling nodes
+// forward.
 func (r *upgradeRun) planRollback(ctx context.Context, named []string) error {
 	candidates := named
 	if len(candidates) == 0 {
@@ -326,7 +325,6 @@ func (r *upgradeRun) split() (coordinators, others []string) {
 	return coordinators, others
 }
 
-// order is the order run upgrades the nodes in.
 func (r *upgradeRun) order() []string {
 	coordinators, others := r.split()
 	return append(coordinators, others...)

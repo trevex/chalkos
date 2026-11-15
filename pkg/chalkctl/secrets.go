@@ -382,7 +382,6 @@ func (a *app) sayRecipients(path string, recipients []string) {
 	fmt.Fprintf(a.stdout, "encrypted %s to %s\n", path, strings.Join(recipients, ", "))
 }
 
-// encodePublic encodes the public half of the secrets.
 func encodePublic(secrets clustersecrets.Secrets) ([]byte, error) {
 	data, err := json.MarshalIndent(secrets.Public(), "", "  ")
 	if err != nil {

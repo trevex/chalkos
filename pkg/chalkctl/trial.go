@@ -29,15 +29,12 @@ const maxTrial = 24 * time.Hour
 // trial ended, and how long it tries to confirm a trial past its deadline whose rollback failed.
 var trialEnd = 2 * time.Minute
 
-// confirmTrial confirms the trial of config version on the node, which otherwise rolls back to
-// config previous. Each attempt dials a new connection, so a confirmation proves that a client
-// still reaches the node after the delivery, and the node confirms only once it finds itself
-// healthy. Attempts end at deadline, chalkctl's reckoning of the node's own, which falls after
-// it, and a trial not confirmed by then is waited for: the node rolls it back by itself. late
-// tells that the deadline passed already, as for a trial whose rollback at the deadline failed,
-// which the node still lets a confirmation end: its attempts end after trialEnd, and nothing
-// rolls back when they fail. An answer that asking again does not change ends the attempts at
-// once.
+// confirmTrial confirms the trial of config version, which otherwise rolls back to previous, over a
+// new connection per attempt, so a confirmation proves a client still reaches the node; the node
+// confirms only once healthy. Attempts end at deadline, chalkctl's reckoning of the node's own,
+// after which the node rolls back by itself and is waited for. With late, the deadline has passed
+// and the node still lets a confirmation end the trial: attempts end after trialEnd, and nothing
+// rolls back when they fail. An answer that asking again does not change ends the attempts at once.
 func (a *app) confirmTrial(ctx context.Context, t *target, version, previous string, deadline time.Time, late bool) error {
 	until := deadline
 	if late {
@@ -127,11 +124,10 @@ func confirmOnce(ctx context.Context, t *target, version string, timeout time.Du
 	return resp.Msg.Warnings, nil
 }
 
-// trialRolledBack waits, over new connections, until trialEnd after the deadline, for the node to
-// end the trial of config version that chalkctl could not confirm for failure, says how it ended,
-// and returns failure. A node that kept the config, as when a confirmation went through but its
-// answer came too late, ends it confirmed, without an error. A node that cannot read the record
-// of the trial tells neither, and chalkctl names the rollback that removes it.
+// trialRolledBack waits over new connections, until trialEnd after the deadline, for the node to
+// end the trial chalkctl could not confirm, says how it ended and returns failure. A node that kept
+// the config, as when a confirmation's answer came too late, ends it confirmed and returns nil. For
+// an unreadable trial record chalkctl names the rollback that removes it.
 func (a *app) trialRolledBack(ctx context.Context, t *target, version, previous string, deadline time.Time, failure error) error {
 	until := deadline.Add(trialEnd)
 	var st *nodev1.StatusResponse
@@ -224,11 +220,10 @@ func (a *app) confirmConfig(ctx context.Context, n nodeFlags, name string) error
 	return a.confirmTrial(ctx, t, tr.Version, tr.PreviousVersion, deadline, !time.Now().Before(deadline))
 }
 
-// trialOpen refuses a change to a node whose status shows a config on trial, which the node
-// refuses until the trial ends. A trial whose node runs the config from before it again, as a
-// rollback at the deadline that failed after it wrote the config leaves it, holds nothing back:
-// the node finishes that rollback before the change. A trial whose record the node cannot read
-// holds back every change but a rollback.
+// trialOpen refuses a change to a node on trial, which the node refuses too. A trial whose node
+// runs the config from before it again, after a failed rollback at the deadline, holds nothing
+// back: the node finishes that rollback first. An unreadable trial record holds back every change
+// but a rollback.
 func trialOpen(name string, st *nodev1.StatusResponse) error {
 	if e := st.GetTrialError(); e != "" {
 		return &layer.NodeError{Node: name, Err: fmt.Errorf("%s: the record of a config's trial cannot be read: %s; other changes are refused until chalkctl config rollback %s restores the previous config", name, e, name), Named: true}
@@ -241,10 +236,9 @@ func trialOpen(name string, st *nodev1.StatusResponse) error {
 		name, tr.Version, statusview.DeadlineOf(tr), name, name), Named: true}
 }
 
-// failedUnitsWarning names the units the node lists as failed that the trial does not leave out,
-// which keep its health check from passing unless they recover or the image ignores them; "" when
-// there are none. Status lists every failed unit, also those the boot's check leaves out, so this
-// warns rather than refuses.
+// failedUnitsWarning names the node's failed units that the trial does not leave out, which keep
+// its health check from passing; "" without any. Status lists units the boot's check leaves out
+// too, so this warns rather than refuses.
 func failedUnitsWarning(failed, ignore []string) string {
 	var left []string
 	for _, u := range failed {
