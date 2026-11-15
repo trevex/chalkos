@@ -1287,7 +1287,7 @@ lib.runTests {
   };
   # A shell on a node queries the config with chalkcfg; the installer has no config to query.
   testImageHasChalkcfg = {
-    expr = hasChalkcfg (worker [ ]).environment.systemPackages;
+    expr = hasChalkcfg kubernetesImage.environment.systemPackages;
     expected = true;
   };
   testInstallerHasNoChalkcfg = {
@@ -2517,7 +2517,7 @@ lib.runTests {
   testTestsOnBuild = {
     expr =
       let
-        off = worker [ ];
+        off = kubernetesImage;
         on = worker [ { chalkos.testsOnBuild = true; } ];
         tested = c: lib.elem "chalkos-tests" (map (d: d.name) c.chalkos.imageDirectory.checks);
       in

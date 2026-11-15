@@ -31,9 +31,11 @@ let
         };
       };
     }).nixos;
-  # The images most tests read, each evaluated once: the worker without modules, the router with
-  # every feature, and the router without each feature.
-  w = worker [ ];
+  # The images most tests read, each evaluated once: a variant worker without modules on each
+  # platform with the installer, the router with every feature, and the router without each
+  # feature.
+  workerImages = mkImages { variants.worker = { }; };
+  w = workerImages.nixos.worker-metal.config;
   edge = layered.edge-metal.config;
   inherit (layered.edge-metal._module.args.routerLib) features;
   without = lib.genAttrs features (f: routerWithout [ f ]);
@@ -1579,7 +1581,7 @@ lib.runTests {
   testNodesResolveNoLinkLocalNames = {
     expr =
       let
-        i = mkImages { variants.worker = { }; };
+        i = workerImages;
         conf = config: lib.splitString "\n" config.environment.etc."systemd/resolved.conf".text;
       in
       map
@@ -1621,7 +1623,7 @@ lib.runTests {
   testImageHasTheCABundle = {
     expr =
       let
-        i = mkImages { variants.worker = { }; };
+        i = workerImages;
         has = config: config.environment.etc ? "ssl/certs/ca-certificates.crt";
       in
       {
@@ -1763,7 +1765,7 @@ lib.runTests {
   testPlatformImages = {
     expr =
       let
-        i = mkImages { variants.worker = { }; };
+        i = workerImages;
         summary = c: {
           guestAgent = c.services.qemuGuest.enable;
           condition = c.systemd.services.qemu-guest-agent.unitConfig.ConditionVirtualization or null;
@@ -1890,7 +1892,7 @@ lib.runTests {
   testChalkdOutput = {
     expr =
       let
-        i = mkImages { variants.worker = { }; };
+        i = workerImages;
         output =
           c:
           lib.unique [
@@ -1931,7 +1933,7 @@ lib.runTests {
   testSerialLog = {
     expr =
       let
-        i = mkImages { variants.worker = { }; };
+        i = workerImages;
         copies = c: lib.filter (lib.hasPrefix "chalkos-serial-log@") c.systemd.targets.multi-user.wants;
         on = consoles: copies (worker [ { chalkos.consoles = consoles; } ]);
         unit = i.nixos.worker-metal.config.systemd.services."chalkos-serial-log@";
@@ -2015,7 +2017,7 @@ lib.runTests {
   # from /sbin.
   testGuestAgentRestricted =
     let
-      config = (mkImages { variants.worker = { }; }).nixos.worker-kvm.config;
+      config = workerImages.nixos.worker-kvm.config;
       service = config.systemd.services.qemu-guest-agent.serviceConfig;
     in
     {
@@ -2050,7 +2052,7 @@ lib.runTests {
   testKvmInitrdVirtio = {
     expr =
       let
-        i = mkImages { variants.worker = { }; };
+        i = workerImages;
         virtio =
           platform:
           lib.sort lib.lessThan (
@@ -3104,7 +3106,7 @@ lib.runTests {
   testImageFitCheck = {
     expr =
       let
-        i = mkImages { variants.worker = { }; };
+        i = workerImages;
         summary = fits: {
           inherit (fits)
             ukis
