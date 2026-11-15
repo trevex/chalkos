@@ -29,17 +29,10 @@ func consoleFingerprint(t *testing.T, vm *lab.VM) string {
 	return m[1]
 }
 
-// TestInstallerInstallsOntoLVMDisk boots the test cluster's signed installer under Secure Boot
-// next to a disk that holds an LVM volume group, which the installer leaves inactive, and installs
-// a node onto that disk from its image, signed beforehand as chalkbuild signs it. The first
-// install wipes the disk with --wipe-disk, streams the image's parts from the host and is
-// cancelled while slot A is written. The second, of config with a Greeting that shouts, is refused by the
-// image's validator once the image's store is on the disk. The install run again without
-// --wipe-disk continues on the disk, with the image pulled from a registry on the host with the
-// credentials of a Registry in the node's config. The
-// node then boots from the disk installed: slot A holding the image under labels of its root
-// hash, its UKI as chalkos_1.efi, slot B empty, VAR mounted, STATE and VAR with two keyslots,
-// chalkd over mTLS.
+// TestInstallerInstallsOntoLVMDisk boots the signed installer under Secure Boot next to a disk
+// holding an LVM volume group and installs onto it three times: streamed from the host with
+// --wipe-disk and cancelled while slot A is written, refused by the image's validator, and
+// continued on the disk from a registry with the node's credentials. The node then boots it.
 func TestInstallerInstallsOntoLVMDisk(t *testing.T) {
 	requireEnv(t, append([]string{"CHALKLAB_LVM_DISK", "CHALKLAB_OVMF_CODE", "CHALKLAB_OVMF_VARS_ENROLLED", "CHALKLAB_SB_KEYS", "CHALKLAB_INSTALLER_DIR", "CHALKLAB_IMAGE_DIR"}, chalkdEnv...)...)
 	root := rootHash(t, "CHALKLAB_IMAGE_DIR")
@@ -145,17 +138,8 @@ func TestInstallerInstallsOntoLVMDisk(t *testing.T) {
 // token, and returns its path.
 func shoutingTarget(t *testing.T, inv string) string {
 	t.Helper()
-	data, err := os.ReadFile(inv)
-	if err != nil {
-		t.Fatal(err)
-	}
 	files := "nodes/chalklab-target.yaml, nodes/chalklab-target-registry.yaml"
-	shout := replaceOnce(t, string(data), files+"]", files+", nodes/chalklab/greeting-token.yaml, nodes/chalklab/greeting-shout.yaml]")
-	path := filepath.Join(filepath.Dir(inv), "install-shout.yaml")
-	if err := os.WriteFile(path, []byte(shout), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	return path
+	return deriveInventory(t, inv, "install-shout.yaml", files+"]", files+", nodes/chalklab/greeting-token.yaml, nodes/chalklab/greeting-shout.yaml]")
 }
 
 // cancelledInstall runs chalkctl with the inventory given, as chalkctl takes it, and the arguments
@@ -233,9 +217,7 @@ func TestInstallerISOBoots(t *testing.T) {
 	run := func(args ...string) (string, error) {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 		defer cancel()
-		out, err := exec.CommandContext(ctx, os.Getenv("CHALKLAB_CHALKCTL"), args...).CombinedOutput()
-		t.Logf("chalkctl %s:\n%s", strings.Join(args, " "), out)
-		return string(out), err
+		return runLogged(t, exec.CommandContext(ctx, os.Getenv("CHALKLAB_CHALKCTL"), args...))
 	}
 	// OVMF loads the option ROM of the virtio NIC, which the test keys do not sign: --option-roms
 	// enrols the digests the TPM event log lists, and --db-hash one more.

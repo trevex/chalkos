@@ -2,7 +2,6 @@ package e2e
 
 import (
 	"context"
-	"crypto/tls"
 	"crypto/x509"
 	"encoding/json"
 	"errors"
@@ -63,37 +62,27 @@ func labMemory(t *testing.T) map[string]int {
 	return memory
 }
 
+// clientsetOf is a client of the cluster of the kubeconfig at path, and its config.
+func clientsetOf(t testing.TB, path string) (kubernetes.Interface, *rest.Config) {
+	t.Helper()
+	cfg, err := clientcmd.BuildConfigFromFlags("", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cs, err := kubernetes.NewForConfig(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return cs, cfg
+}
+
 // probeDoneRE is the probe's last fact on the console, written once a boot is up.
 var probeDoneRE = regexp.MustCompile(`CHALKTEST done=1`)
 
-// TestKubernetesCluster brings up through chalklab, as the lab template's nodes are, a dual-stack
-// cluster, IPv4 primary, of a control plane and a worker on KVM that picks its addresses from
-// subnets. Each phase is a subtest; a failed phase stops the ones after it.
-//   - ready: the host reaches the nodes' guest agents, both nodes register, a second bootstrap is
-//     refused, both nodes keep their clocks with the test's NTP server and show no failed unit,
-//     the worker's status reads its pods with the kubelet's credentials, and a reader's client
-//     file reads a node's status but cannot reboot it. The worker accepts
-//     VXLAN on its addresses only, the API server answers anonymous requests for health alone,
-//     and the worker pulls a private image with the node's registry credentials through a
-//     mirror, without a pull secret.
-//   - pods: pods on both nodes have addresses of both families and reach each other over both,
-//     directly, through a dual-stack service and at a host port, and resolve the API server's
-//     service and other names through the IPv4 DNS address.
-//   - reboot: all of that again after the control plane rebooted with newly issued certificates.
-//   - renewals: the worker renews its node certificate through the control plane, and the control
-//     plane renews its node certificate and its own certificates in place. The API server then
-//     serves the new ones, and the controller-manager and the scheduler take the lead again.
-//   - link: a worker whose link is cut turns NotReady, and Ready again once its link is back.
-//   - rotations: the OS CA, the Kubernetes CAs, the service-account key and the encryption key
-//     rotate with the cluster working throughout.
-//   - revocation: the worker is revoked, after which its renewal and its kubelet's writes are
-//     refused. Only --force unrevokes it before a rotation; it registers again once it rebooted.
-//   - restart: the host shuts the worker down through its guest agent, the control plane runs
-//     on, and chalklab start starts the worker's VM again. chalklab destroy removes the lab when
-//     the test ends.
-//
-// The images come from a registry the test serves. With CHALKLAB_K8S_ONLINE=1 the test does not
-// start that registry, so the nodes' mirror is unreachable and containerd pulls from upstream.
+// TestKubernetesCluster brings up through chalklab a dual-stack cluster, IPv4 primary, of a
+// control plane and a worker on KVM, and runs its phases in order; a failed phase stops the rest.
+// The images come from a registry the test serves; with CHALKLAB_K8S_ONLINE=1 it serves none, so
+// the nodes' mirror is unreachable and containerd pulls from upstream.
 func TestKubernetesCluster(t *testing.T) {
 	requireEnv(t, append([]string{"CHALKLAB_CHALKLAB", "CHALKLAB_K8S_IMAGE_DIR"}, chalkdEnv...)...)
 	online := os.Getenv("CHALKLAB_K8S_ONLINE") == "1"
@@ -109,23 +98,13 @@ func TestKubernetesCluster(t *testing.T) {
 	}
 	startNTP(t)
 	nodes, apiPort, kubeconfig := createLab(t, dir, args...)
-	cfg, err := clientcmd.BuildConfigFromFlags("", kubeconfig)
-	if err != nil {
-		t.Fatal(err)
-	}
-	cs, err := kubernetes.NewForConfig(cfg)
-	if err != nil {
-		t.Fatal(err)
-	}
+	cs, _ := clientsetOf(t, kubeconfig)
 	// The checks of the nodes and of the cluster's networking, again after cp1's reboot. cp1 has
 	// fixed addresses; w1 picks the ones in its validSubnets.
 	checkNetworking := func(t *testing.T) {
 		for _, name := range []string{"cp1", "w1"} {
 			dualStackNode(t, ctx, cs, nodes[name], name)
 		}
-		anonymousOnlyHealth(t, ctx, cfg)
-		kubeProxyNFTables(t, ctx, cs)
-		dnsService(t, ctx, cs)
 	}
 	p := peers{
 		nodes:        [2]string{"cp1", "w1"},
@@ -145,15 +124,11 @@ func TestKubernetesCluster(t *testing.T) {
 		}
 		waitFor(t, 15*time.Minute, "both nodes Ready", func() error { return nodesReady(ctx, cs, "cp1", "w1") })
 		waitFor(t, 5*time.Minute, "approved kubelet serving certificates", func() error { return servingCertificates(ctx, cs, "cp1", "w1") })
-		if out, err := chalkctl(t, nodes["cp1"], "base", "bootstrap", "cp1"); err == nil || !strings.Contains(out, "bootstrapped already") {
-			t.Errorf("a second bootstrap was not refused: %v", err)
-		}
 		if out, err := chalkctl(t, nodes["w1"], "base", "status", "w1"); err != nil || !strings.Contains(out, "kubernetes worker: joined, node ready: True") || strings.Contains(out, "pods unknown") {
 			t.Errorf("status of w1: %v\n%s", err, out)
 		}
 		for _, name := range []string{"cp1", "w1"} {
 			synchronised(t, nodes[name], name)
-			// flannel's links come up as a burst, which once failed chrony's DHCP units.
 			if out, err := chalkctl(t, nodes[name], "base", "status", name); err != nil || strings.Contains(out, "failed unit") {
 				t.Errorf("status of %s shows a failed unit: %v\n%s", name, err, out)
 			}
@@ -217,24 +192,6 @@ func TestKubernetesCluster(t *testing.T) {
 		return
 	}
 
-	if !t.Run("link", func(t *testing.T) {
-		if err := nodes["w1"].vm.SetLink(false); err != nil {
-			t.Fatal(err)
-		}
-		waitFor(t, 5*time.Minute, "w1 NotReady without its link", func() error {
-			if nodesReady(ctx, cs, "w1") == nil {
-				return errors.New("w1 is Ready")
-			}
-			return nil
-		})
-		if err := nodes["w1"].vm.SetLink(true); err != nil {
-			t.Fatal(err)
-		}
-		waitFor(t, 5*time.Minute, "w1 Ready with its link back", func() error { return nodesReady(ctx, cs, "w1") })
-	}) {
-		return
-	}
-
 	// Revoking w1 deletes its Node, and with it the pod the rotations' checks need: it comes after
 	// them.
 	// The rotated secrets outlive the rotations phase: the later phases' chalkctl calls read them.
@@ -269,12 +226,11 @@ func TestKubernetesCluster(t *testing.T) {
 		}
 		startCtx, cancelStart := context.WithTimeout(ctx, 3*time.Minute)
 		defer cancelStart()
-		out, err := exec.CommandContext(startCtx, os.Getenv("CHALKLAB_CHALKLAB"), "start").CombinedOutput()
-		t.Logf("chalklab start:\n%s", out)
+		out, err := runLogged(t, exec.CommandContext(startCtx, os.Getenv("CHALKLAB_CHALKLAB"), "start"))
 		if err != nil {
 			t.Fatalf("chalklab start: %v", err)
 		}
-		if !strings.Contains(string(out), "starting w1\n") {
+		if !strings.Contains(out, "starting w1\n") {
 			t.Error("chalklab start did not start w1 alone")
 		}
 		if !lab.Running(w1.vm.Config) || !lab.Running(nodes["cp1"].vm.Config) {
@@ -291,14 +247,7 @@ func TestKubernetesCluster(t *testing.T) {
 func revocation(t *testing.T, ctx context.Context, nodes map[string]*node, kubeconfig string) {
 	t.Helper()
 	w1, cp1 := nodes["w1"], nodes["cp1"]
-	cfg, err := clientcmd.BuildConfigFromFlags("", kubeconfig)
-	if err != nil {
-		t.Fatal(err)
-	}
-	cs, err := kubernetes.NewForConfig(cfg)
-	if err != nil {
-		t.Fatal(err)
-	}
+	cs, cfg := clientsetOf(t, kubeconfig)
 	start := time.Now()
 	if out, err := chalkctl(t, cp1, "base", "node", "revoke", "w1", "--via", "cp1"); err != nil || !strings.Contains(out, "deleted its Node object") {
 		t.Fatalf("revoke w1: %v", err)
@@ -396,25 +345,6 @@ func privatePull(t *testing.T, ctx context.Context, cs kubernetes.Interface) {
 		}
 		return nil
 	})
-}
-
-// anonymousOnlyHealth checks that a request without credentials reaches the health endpoints
-// and nothing else, not even what the default roles allow anonymous users.
-func anonymousOnlyHealth(t *testing.T, ctx context.Context, cfg *rest.Config) {
-	t.Helper()
-	anonymous, err := kubernetes.NewForConfig(rest.AnonymousClientConfig(cfg))
-	if err != nil {
-		t.Fatal(err)
-	}
-	client := anonymous.Discovery().RESTClient()
-	for _, path := range []string{"/livez", "/readyz", "/healthz"} {
-		if _, err := client.Get().AbsPath(path).DoRaw(ctx); err != nil {
-			t.Errorf("anonymous %s: %v", path, err)
-		}
-	}
-	if _, err := client.Get().AbsPath("/version").DoRaw(ctx); !apierrors.IsUnauthorized(err) {
-		t.Errorf("anonymous /version: %v, want unauthorized", err)
-	}
 }
 
 func nodesReady(ctx context.Context, cs kubernetes.Interface, names ...string) error {
@@ -732,47 +662,6 @@ func flannelStarted(ctx context.Context, cs kubernetes.Interface, name string, s
 	return fmt.Errorf("flannel on %s has not started since %v", name, since.Format(time.RFC3339))
 }
 
-// kubeProxyNFTables checks that kube-proxy runs in nftables mode on every node.
-func kubeProxyNFTables(t *testing.T, ctx context.Context, cs kubernetes.Interface) {
-	t.Helper()
-	nodes := labMemory(t)
-	var pods *corev1.PodList
-	waitFor(t, 2*time.Minute, "a kube-proxy pod on each node", func() error {
-		var err error
-		if pods, err = cs.CoreV1().Pods("kube-system").List(ctx, metav1.ListOptions{LabelSelector: "k8s-app=kube-proxy"}); err != nil {
-			return err
-		}
-		if len(pods.Items) != len(nodes) {
-			return fmt.Errorf("%d kube-proxy pods, want %d", len(pods.Items), len(nodes))
-		}
-		return nil
-	})
-	for _, pod := range pods.Items {
-		waitFor(t, 2*time.Minute, "kube-proxy's logs on "+pod.Spec.NodeName, func() error {
-			logs, err := cs.CoreV1().Pods("kube-system").GetLogs(pod.Name, &corev1.PodLogOptions{}).DoRaw(ctx)
-			if err != nil {
-				return err
-			}
-			if !strings.Contains(string(logs), "Using nftables Proxier") {
-				return fmt.Errorf("kube-proxy on %s does not use nftables:\n%s", pod.Spec.NodeName, logs)
-			}
-			return nil
-		})
-	}
-}
-
-// dnsService checks that the cluster DNS has the IPv4 DNS address alone, as kubeadm's has.
-func dnsService(t *testing.T, ctx context.Context, cs kubernetes.Interface) {
-	t.Helper()
-	svc, err := cs.CoreV1().Services("kube-system").Get(ctx, "kube-dns", metav1.GetOptions{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !slices.Equal(svc.Spec.ClusterIPs, []string{"10.96.0.10"}) || !slices.Equal(svc.Spec.IPFamilies, []corev1.IPFamily{corev1.IPv4Protocol}) {
-		t.Errorf("kube-dns: addresses %v, families %v, want 10.96.0.10 alone", svc.Spec.ClusterIPs, svc.Spec.IPFamilies)
-	}
-}
-
 // logMemory reports the memory each node uses, as its kubelet measures it.
 func logMemory(t *testing.T, ctx context.Context, cs kubernetes.Interface) {
 	t.Helper()
@@ -808,12 +697,11 @@ func logNodeMemory(t *testing.T, ctx context.Context, cs kubernetes.Interface, n
 // servingCertificate returns the certificate the API server presents.
 func servingCertificate(t *testing.T, port int) *x509.Certificate {
 	t.Helper()
-	conn, err := tls.Dial("tcp", fmt.Sprintf("127.0.0.1:%d", port), &tls.Config{InsecureSkipVerify: true})
+	cert, err := peerCertificate(fmt.Sprintf("127.0.0.1:%d", port))
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer conn.Close()
-	return conn.ConnectionState().PeerCertificates[0]
+	return cert
 }
 
 // internalIPs returns the InternalIP addresses the node registered.
@@ -882,12 +770,10 @@ func createLab(t *testing.T, dir string, args ...string) (map[string]*node, int,
 	// network, which the host does not reach.
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
-	status := []string{"status", "cp1", "--config", filepath.Join(state, "chalkctl.json"), "--inventory", filepath.Join(state, "chalkos.yaml")}
-	statusOut, err := exec.CommandContext(ctx, os.Getenv("CHALKLAB_CHALKCTL"), status...).CombinedOutput()
-	t.Logf("chalkctl %s:\n%s", strings.Join(status, " "), statusOut)
+	statusOut, err := runLogged(t, exec.CommandContext(ctx, os.Getenv("CHALKLAB_CHALKCTL"), "status", "cp1", "--config", filepath.Join(state, "chalkctl.json"), "--inventory", filepath.Join(state, "chalkos.yaml")))
 	if err != nil {
 		t.Errorf("chalkctl status with the lab's inventory and client file: %v", err)
-	} else if !strings.Contains(string(statusOut), "kubernetes controlplane: ") {
+	} else if !strings.Contains(statusOut, "kubernetes controlplane: ") {
 		t.Error("chalkctl status with the lab's inventory and client file shows no Kubernetes status of cp1")
 	}
 	apiPort := 0

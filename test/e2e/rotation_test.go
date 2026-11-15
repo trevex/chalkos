@@ -42,14 +42,7 @@ func rotations(t *testing.T, ctx context.Context, nodes map[string]*node, p peer
 		if _, err := chalkctl(t, nil, "base", "kubeconfig", "--out", path, "--force", "--server", fmt.Sprintf("https://127.0.0.1:%d", apiPort)); err != nil {
 			t.Fatal(err)
 		}
-		cfg, err := clientcmd.BuildConfigFromFlags("", path)
-		if err != nil {
-			t.Fatal(err)
-		}
-		cs, err := kubernetes.NewForConfig(cfg)
-		if err != nil {
-			t.Fatal(err)
-		}
+		cs, _ := clientsetOf(t, path)
 		return path, cs
 	}
 	oldKubeconfig, cs := kubeconfig("kubeconfig-before-rotations")
@@ -71,9 +64,7 @@ func rotations(t *testing.T, ctx context.Context, nodes map[string]*node, p peer
 		// machine.
 		rctx, cancel := context.WithTimeout(ctx, 30*time.Minute)
 		defer cancel()
-		out, err := exec.CommandContext(rctx, os.Getenv("CHALKLAB_CHALKCTL"), args...).CombinedOutput()
-		t.Logf("chalkctl %s:\n%s", strings.Join(args, " "), out)
-		if err != nil {
+		if _, err := runLogged(t, exec.CommandContext(rctx, os.Getenv("CHALKLAB_CHALKCTL"), args...)); err != nil {
 			t.Fatalf("chalkctl %s: %v", strings.Join(args, " "), err)
 		}
 	}

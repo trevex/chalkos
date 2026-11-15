@@ -8,7 +8,6 @@ import (
 	"os"
 	"os/exec"
 	"regexp"
-	"strings"
 	"testing"
 	"time"
 
@@ -133,9 +132,7 @@ func chalkctlContext(ctx context.Context, t *testing.T, n *node, inventory strin
 	if n != nil {
 		args = append(args, "--address", n.addr)
 	}
-	out, err := exec.CommandContext(ctx, os.Getenv("CHALKLAB_CHALKCTL"), args...).CombinedOutput()
-	t.Logf("chalkctl %s:\n%s", strings.Join(args, " "), out)
-	return string(out), err
+	return runLogged(t, exec.CommandContext(ctx, os.Getenv("CHALKLAB_CHALKCTL"), args...))
 }
 
 // installInPlace waits for the node's maintenance boot and installs it in place.

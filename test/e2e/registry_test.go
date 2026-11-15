@@ -50,7 +50,7 @@ func startRegistry(t *testing.T) string {
 		if !strings.HasPrefix(req.URL.Path, "/v2/"+privateRepo+"/") {
 			return false
 		}
-		if user, pass, ok := req.BasicAuth(); ok && user == "e2e" && pass == privatePassword {
+		if authorized(req, privatePassword) {
 			return false
 		}
 		unauthorized(w)
@@ -107,6 +107,12 @@ func pushLayout(t *testing.T, dir, ref, digest string, options ...remote.Option)
 	}
 }
 
+// authorized tells whether the request carries the user e2e with the password.
+func authorized(req *http.Request, password string) bool {
+	user, pass, ok := req.BasicAuth()
+	return ok && user == "e2e" && pass == password
+}
+
 // unauthorized answers a request that lacks the right credentials as a registry with Basic
 // authentication does.
 func unauthorized(w http.ResponseWriter) {
@@ -139,7 +145,7 @@ func startImageRegistry(t *testing.T, dir, password string) *imageRegistry {
 	r := &imageRegistry{password: password, blobs: blobs.(registry.BlobPutHandler)}
 	reg := registry.New(registry.WithBlobHandler(blobs), registry.Logger(log.New(io.Discard, "", 0)))
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-		if user, pass, ok := req.BasicAuth(); !ok || user != "e2e" || pass != password {
+		if !authorized(req, password) {
 			unauthorized(w)
 			return
 		}

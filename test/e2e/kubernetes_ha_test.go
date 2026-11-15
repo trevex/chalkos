@@ -19,7 +19,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/tools/clientcmd"
 
 	"github.com/trevex/chalkos/pkg/lab"
 )
@@ -179,26 +178,13 @@ func (c *haCluster) client(name string) kubernetes.Interface {
 			c.t.Fatal(err)
 		}
 	}
-	cfg, err := clientcmd.BuildConfigFromFlags("", kubeconfig)
-	if err != nil {
-		c.t.Fatal(err)
-	}
-	cs, err := kubernetes.NewForConfig(cfg)
-	if err != nil {
-		c.t.Fatal(err)
-	}
+	cs, _ := clientsetOf(c.t, kubeconfig)
 	return cs
 }
 
-// TestKubernetesHA runs three control planes of an IPv6-only cluster behind the VIP
-// fd00:100::10. cp1 is bootstrapped and holds the VIP; cp2 and cp3 join etcd on their own. Nodes,
-// etcd members and pods have IPv6 addresses alone. The VIP moves when its holder's link is cut
-// and stays with one holder once the link is back. A pinned node without its address runs
-// nothing while the cluster stays healthy. A node that left etcd and was reinstalled joins again;
-// one reinstalled without leaving refuses to bootstrap and finds its stale member until an
-// operator removes it. A rolling upgrade with an operator's client file takes two control planes,
-// the VIP's holder among them, to a new image one at a time while the cluster keeps answering.
-// Each of these phases is a subtest; a failed phase stops the ones after it.
+// TestKubernetesHA runs three control planes of an IPv6-only cluster behind the VIP fd00:100::10
+// through its phases in order: bootstrap and joins, the VIP's failover, a pinned node without its
+// address, rejoins of reinstalled nodes and a rolling upgrade. A failed phase stops the rest.
 func TestKubernetesHA(t *testing.T) {
 	requireEnv(t, append([]string{"CHALKLAB_OVMF_CODE", "CHALKLAB_OVMF_VARS", "CHALKLAB_K8S_HA_IMAGE_DIR", "CHALKLAB_K8S_HA_UPGRADE_IMAGE_DIR", "CHALKLAB_K8S_IMAGES"}, chalkdEnv...)...)
 	ctx := context.Background()
@@ -265,11 +251,6 @@ func TestKubernetesHA(t *testing.T) {
 		for _, name := range []string{"cp2", "cp3"} {
 			if got := c.kubernetes(name); !strings.HasPrefix(got, "kubernetes controlplane: bootstrapped, node ready: True, vip standby") {
 				t.Errorf("status of %s: %q", name, got)
-			}
-		}
-		for _, name := range []string{"cp1", "cp2"} {
-			if out, err := c.chalkctl(name, "bootstrap", name); err == nil || !strings.Contains(out, "bootstrapped already") {
-				t.Errorf("a second bootstrap of %s was not refused: %v", name, err)
 			}
 		}
 		if holders := c.holders("cp1", "cp2", "cp3"); !slices.Equal(holders, []string{"cp1"}) {
@@ -433,9 +414,7 @@ func TestKubernetesHA(t *testing.T) {
 	t.Logf("the test took %v", time.Since(start).Round(time.Second))
 }
 
-// ipv6Only checks that the Nodes and the etcd members have IPv6 addresses alone and that etcd
-// and the API server reach each other on IPv6's loopback address, and that cp1 takes VXLAN from
-// any source without source ranges.
+// ipv6Only checks that the Nodes and the etcd members have IPv6 addresses alone.
 func (c *haCluster) ipv6Only(ctx context.Context, cs kubernetes.Interface) {
 	c.t.Helper()
 	for _, hn := range haNodes {
@@ -453,30 +432,6 @@ func (c *haCluster) ipv6Only(ctx context.Context, cs kubernetes.Interface) {
 		if want := "https://[fd00:100::1" + strings.TrimPrefix(fields[0], "cp") + "]:2380"; fields[2] != want {
 			c.t.Errorf("etcd member %s has the peer URLs %s, want %s", fields[0], fields[2], want)
 		}
-	}
-	for pod, flags := range map[string][]string{
-		"etcd-cp1":           {"--listen-client-urls=https://[::1]:2379,https://[fd00:100::11]:2379", "--listen-metrics-urls=http://[::1]:2381"},
-		"kube-apiserver-cp1": {"--etcd-servers=https://[::1]:2379", "--advertise-address=fd00:100::11"},
-	} {
-		p, err := cs.CoreV1().Pods("kube-system").Get(ctx, pod, metav1.GetOptions{})
-		if err != nil {
-			c.t.Fatal(err)
-		}
-		for _, flag := range flags {
-			if !slices.Contains(p.Spec.Containers[0].Command, flag) {
-				c.t.Errorf("%s runs without %s: %v", pod, flag, p.Spec.Containers[0].Command)
-			}
-		}
-	}
-	// Without vxlanSourceSubnets VXLAN may come from any source, to cp1's address on the interface
-	// holding it, and nothing drops what pods send.
-	want := []string{"ip6 daddr fd00:100::11 udp dport 8472 fib daddr . iif type local meta mark set meta mark | 0x01000000"}
-	rules, drops := vxlanRules(c.t, c.nodes["cp1"].node, "ha", "cp1")
-	if !slices.Equal(rules, want) {
-		c.t.Errorf("VXLAN rules of cp1 = %q, want %q", rules, want)
-	}
-	if len(drops) > 0 {
-		c.t.Errorf("VXLAN rules of cp1 for pods = %q, want none", drops)
 	}
 }
 

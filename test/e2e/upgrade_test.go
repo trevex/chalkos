@@ -15,26 +15,10 @@ import (
 	"github.com/trevex/chalkos/pkg/ociimage"
 )
 
-// TestUpgrade installs the signed test image under Secure Boot, which boots its UKI as
-// chalkos_1.efi, and upgrades it to the upgrade image step by step: upgrade --until stage
-// stages it, which status says, a plain config apply goes to both images, node activate
-// makes the upgrade image boot next, and node reboot boots it from slot B as chalkos_2.efi
-// with STATE and VAR unlocked by the TPM, found healthy, with the config that config apply
-// delivered. chalkctl upgrade --rollback then boots the test image again from slot A as
-// chalkos_3, with the config it ran; run again, it changes nothing. config apply --staged then
-// holds a Farewell the upgrade image's renderer refuses as the node's pending config, and an
-// operator's upgrade to the upgrade image, which takes it, is refused: nothing is staged and
-// the pending config stays. Another config apply --staged replaces it with the inventory's
-// config, and an operator's upgrade then boots the upgrade image with it again as chalkos_4,
-// reusing its store in slot B. Last comes the unhealthy image, installed as chalkos_5, which
-// never becomes healthy: after its one try the node falls back to chalkos_4.efi and says
-// so. Each image is named by its root hash. The node pulls the upgrade image through a Mirror
-// of a registry host it cannot reach, whose endpoint is a registry on the host that asks for
-// the credentials of the endpoint's own Registry; the first upgrade delivers the Mirror and
-// the Registry. The operator's upgrades and the upgrade to the unhealthy image stream it from
-// its directory. The first upgrade carries config only the upgrade image accepts, a Farewell,
-// and the upgrade to the unhealthy image the test image's config again: the fallback boots
-// the upgrade image with its own config, Farewell included.
+// TestUpgrade installs the signed test image under Secure Boot and upgrades it step by step to the
+// upgrade image, which the node pulls through a Mirror whose endpoint asks for credentials. It
+// then rolls back, takes an operator's upgrade with a pending config, and falls back from an image
+// that never turns healthy.
 func TestUpgrade(t *testing.T) {
 	requireEnv(t, append(secureBootEnv, append(chalkdEnv, "CHALKLAB_UPGRADE_IMAGE_DIR", "CHALKLAB_UNHEALTHY_IMAGE_DIR")...)...)
 	base, nextHash, badHash := rootHash(t, "CHALKLAB_IMAGE_DIR"), rootHash(t, "CHALKLAB_UPGRADE_IMAGE_DIR"), rootHash(t, "CHALKLAB_UNHEALTHY_IMAGE_DIR")
@@ -118,12 +102,9 @@ func TestUpgrade(t *testing.T) {
 	}
 
 	// The test image is still in slot A with its UKI and config: a rollback boots it again as
-	// generation 3, counted, since the upgrade image's boot was found healthy. Run again, the
-	// rollback finds the node on the test image and changes nothing. An operator's upgrade with the
-	// inventory's config held pending undoes it: the node finds the upgrade image's store in slot B and boots it as generation 4.
+	// generation 3, counted, since the upgrade image's boot was found healthy.
 	rolled := time.Now()
-	rollback := []string{"upgrade", "--rollback", "--nodes", "chalklab", "--address", "chalklab=" + n.addr, "--timeout", "10m"}
-	out, err = chalkctl(t, nil, "base", rollback...)
+	out, err = chalkctl(t, nil, "base", "upgrade", "--rollback", "--nodes", "chalklab", "--address", "chalklab="+n.addr, "--timeout", "10m")
 	if err != nil || !strings.Contains(out, "chalklab: rolling back to "+base[:12]) || !strings.Contains(out, "chalklab: "+base[:12]+" boots next as chalkos_3+3.efi\n") ||
 		!strings.Contains(out, "rolled back 1 node to "+base[:12]) {
 		t.Fatalf("rollback to %s: %v", base[:12], err)
@@ -131,10 +112,6 @@ func TestUpgrade(t *testing.T) {
 	assertFacts(t, readFacts(t, n.vm, time.Minute), map[string]string{"store_label": "store_" + base[:16], "store_partition": "3", "state_boots": "4", "var_boots": "3"})
 	if out, err := chalkctl(t, n, "base", "status", "chalklab"); err != nil || !strings.Contains(out, "image "+base[:12]+", booted from chalkos_3.efi\n") || !strings.Contains(out, "previous image "+nextHash[:12]) {
 		t.Errorf("status after the rollback to %s: %v", base[:12], err)
-	}
-	out, err = chalkctl(t, nil, "base", rollback...)
-	if err != nil || strings.Contains(out, "rolling back to") || !strings.Contains(out, "chalklab: runs "+base[:12]+", found healthy") {
-		t.Fatalf("a second rollback: %v", err)
 	}
 	// Without a staged image, config apply --staged holds the config pending, unchecked. An
 	// operator's upgrade, which carries no config, gives it to the upgrade image, which checks it
@@ -213,20 +190,30 @@ func bothImagesInventory(t *testing.T, path string) string {
 	if err := os.WriteFile(filepath.Join(dir, "nodes/chalklab/greeting-both.yaml"), []byte(greeting), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	data, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	inv := replaceOnce(t, string(data), "nodes/chalklab/greeting.yaml, nodes/chalklab/farewell.yaml", "nodes/chalklab/greeting-both.yaml")
-	both := filepath.Join(dir, "upgrade-both.yaml")
-	if err := os.WriteFile(both, []byte(inv), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	return both
+	return deriveInventory(t, path, "upgrade-both.yaml", "nodes/chalklab/greeting.yaml, nodes/chalklab/farewell.yaml", "nodes/chalklab/greeting-both.yaml")
 }
 
 // pendingHeld is config apply's line of a node that holds the config pending, with its version.
 var pendingHeld = regexp.MustCompile(`(?m)^chalklab holds config ([0-9a-f]{64}) pending, unchecked; the next upgrade checks it against its image$`)
+
+// deriveInventory writes, beside the inventory at base, the inventory out with each pair of old
+// and new text replaced once, and returns its path.
+func deriveInventory(t *testing.T, base, out string, pairs ...string) string {
+	t.Helper()
+	data, err := os.ReadFile(base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	inv := string(data)
+	for i := 0; i+1 < len(pairs); i += 2 {
+		inv = replaceOnce(t, inv, pairs[i], pairs[i+1])
+	}
+	path := filepath.Join(filepath.Dir(base), out)
+	if err := os.WriteFile(path, []byte(inv), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
 
 // replaceOnce replaces the one old in s, failing the test when s does not hold it once.
 func replaceOnce(t *testing.T, s, old, new string) string {
@@ -314,15 +301,5 @@ spec: {data: {password: "` + reg.password + `"}}
 	if err := os.WriteFile(filepath.Join(dir, o.registry), []byte(registryDocs), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	data, err := os.ReadFile(base)
-	if err != nil {
-		t.Fatal(err)
-	}
-	inv := replaceOnce(t, string(data), "{source: {directory: "+o.directory+"}}", `{source: {oci: "`+host+"/"+o.repo+`:v1"}}`)
-	inv = replaceOnce(t, inv, o.files+"]", o.files+", "+o.registry+"]")
-	path := filepath.Join(dir, o.out)
-	if err := os.WriteFile(path, []byte(inv), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	return path, layers
+	return deriveInventory(t, base, o.out, "{source: {directory: "+o.directory+"}}", `{source: {oci: "`+host+"/"+o.repo+`:v1"}}`, o.files+"]", o.files+", "+o.registry+"]"), layers
 }

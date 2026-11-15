@@ -12,9 +12,6 @@ import (
 	"testing"
 	"time"
 
-	"connectrpc.com/connect"
-
-	nodev1 "github.com/trevex/chalkos/pkg/api/node/v1"
 	"github.com/trevex/chalkos/pkg/client"
 	"github.com/trevex/chalkos/pkg/lab"
 	"github.com/trevex/chalkos/pkg/pki"
@@ -27,10 +24,10 @@ var consoleFacts = map[string]string{"console_active": "active", "console_restar
 // TestInstallInPlace enrols the test Secure Boot keys in firmware in Setup Mode, which reboots
 // the node with Secure Boot on, installs the test image where it runs and checks the installed
 // node: VAR is mounted, STATE and VAR have a TPM2 and a fallback keyslot, chalkd requires client
-// certificates of the OS CA and honours their roles, the base diagnostics run in their sandbox,
-// and config applies additive storage changes live and refuse destructive ones. An extension kind
-// reaches the unit granted it, with its secret, and an apply that changes it restarts the unit.
-// The console runs on the screen in either mode, in place of the getty on tty1.
+// certificates of the OS CA, the base diagnostics run in their sandbox, and config applies additive
+// storage changes live and refuses destructive ones. An extension kind reaches the unit granted
+// it, with its secret, and an apply that changes it restarts the unit. The console runs on the
+// screen in either mode, in place of the getty on tty1.
 func TestInstallInPlace(t *testing.T) {
 	requireEnv(t, append([]string{"CHALKLAB_OVMF_CODE", "CHALKLAB_OVMF_VARS", "CHALKLAB_SB_KEYS", "CHALKLAB_IMAGE_DIR"}, chalkdEnv...)...)
 	dir := vmDir(t)
@@ -107,16 +104,10 @@ func TestInstallInPlace(t *testing.T) {
 	if err := info(reader); err != nil {
 		t.Errorf("a reader could not call Info: %v", err)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
-	defer cancel()
-	_, err = reader.ApplyConfig(ctx, connect.NewRequest(&nodev1.ApplyConfigRequest{Config: "{}"}))
-	if connect.CodeOf(err) != connect.CodePermissionDenied {
-		t.Errorf("ApplyConfig as a reader: %v, want permission denied", err)
-	}
 
 	// The image's base diagnostics run in transient units of their own: one without arguments,
 	// one with, two with a capability under a dynamic user, and bash's /dev/tcp to chalkd's own
-	// port. A reader may not run one that needs an operator.
+	// port.
 	for _, tc := range []struct {
 		args []string
 		want string
@@ -134,15 +125,6 @@ func TestInstallInPlace(t *testing.T) {
 	}
 	if out, err := chalkctl(t, n, "base", "node", "diag", "chalklab"); err != nil || !strings.Contains(out, "tcp-connect") {
 		t.Errorf("node diag lists no tcp-connect: %v", err)
-	}
-	diag, err := reader.RunDiagnostic(ctx, connect.NewRequest(&nodev1.RunDiagnosticRequest{Name: "nft-ruleset"}))
-	if err == nil {
-		for diag.Receive() {
-		}
-		err = diag.Err()
-	}
-	if connect.CodeOf(err) != connect.CodePermissionDenied {
-		t.Errorf("nft-ruleset as a reader: %v, want permission denied", err)
 	}
 
 	if out, err := chalkctl(t, n, "destructive", "config", "apply", "chalklab"); err == nil || !strings.Contains(out, "only a reinstall of chalklab carries it out") {

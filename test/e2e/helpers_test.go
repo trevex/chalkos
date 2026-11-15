@@ -1,14 +1,6 @@
 // Package e2e boots chalkos images in chalklab VMs. The dev shell sets the firmware, key and font
-// variables; tests that boot an image or install a node skip unless these are exported too:
-//
-//	export CHALKLAB_IMAGE_DIR=$(nix build .#test-image --no-link --print-out-paths)
-//	export CHALKLAB_UPGRADE_IMAGE_DIR=$(nix build .#test-upgrade-image --no-link --print-out-paths)
-//	export CHALKLAB_UNHEALTHY_IMAGE_DIR=$(nix build .#test-unhealthy-image --no-link --print-out-paths)
-//	export CHALKLAB_ROUTER_IMAGE_DIR=$(nix build .#test-router-image --no-link --print-out-paths)
-//	export CHALKLAB_CHALKCTL=$(nix build .#chalkctl --no-link --print-out-paths)/bin/chalkctl
-//	export CHALKLAB_CHALKLAB=$(nix build .#chalklab --no-link --print-out-paths)/bin/chalklab
-//	export CHALKLAB_SECRETS=$(nix build .#test-secrets --no-link --print-out-paths)/secrets.json
-//	export CHALKLAB_FIXTURES=$PWD/test/fixtures/clusters
+// variables; a test skips while another variable it needs is unset. nix/testing/env.nix says what
+// each variable names, and nix/checks/e2e.nix sets them for each check.
 package e2e
 
 import (
@@ -16,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -230,8 +223,6 @@ func startVM(t *testing.T, dir, vars string, disks ...lab.VMDisk) *lab.VM {
 // memory unless the configuration asks for another amount.
 func bootVM(t testing.TB, c lab.VMConfig) *lab.VM {
 	t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
-	defer cancel()
 	c.Name = "node"
 	c.FirmwareCode = os.Getenv("CHALKLAB_OVMF_CODE")
 	if c.MemoryMB == 0 {
@@ -239,12 +230,7 @@ func bootVM(t testing.TB, c lab.VMConfig) *lab.VM {
 	}
 	c.CPUs = 2
 	c.TPM = true
-	vm, err := lab.StartVM(ctx, c)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { vm.Stop() })
-	return vm
+	return startVMConfig(t, c)
 }
 
 type diskOpts struct {
@@ -374,9 +360,17 @@ func waitFor(t *testing.T, timeout time.Duration, what string, check func() erro
 	}
 }
 
+// runLogged runs cmd and logs its output under its arguments.
+func runLogged(t testing.TB, cmd *exec.Cmd) (string, error) {
+	t.Helper()
+	out, err := cmd.CombinedOutput()
+	t.Logf("%s %s:\n%s", filepath.Base(cmd.Path), strings.Join(cmd.Args[1:], " "), out)
+	return string(out), err
+}
+
 // startVMConfig starts a VM of c as it is, which a test made from another VM's configuration, and
 // stops it when the test ends.
-func startVMConfig(t *testing.T, c lab.VMConfig) *lab.VM {
+func startVMConfig(t testing.TB, c lab.VMConfig) *lab.VM {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()

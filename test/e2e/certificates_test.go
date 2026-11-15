@@ -32,9 +32,7 @@ func chalkctlWith(t *testing.T, n *node, inventory, config string, args ...strin
 	cmd := exec.CommandContext(ctx, os.Getenv("CHALKLAB_CHALKCTL"), args...)
 	// No secrets file is at hand.
 	cmd.Dir = t.TempDir()
-	out, err := cmd.CombinedOutput()
-	t.Logf("chalkctl %s:\n%s", strings.Join(args, " "), out)
-	return string(out), err
+	return runLogged(t, cmd)
 }
 
 // synchronised waits until chrony on the node follows the test's NTP server.

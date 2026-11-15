@@ -7,7 +7,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strings"
 	"testing"
 	"time"
 
@@ -20,9 +19,7 @@ func runChalklab(t *testing.T, args ...string) (string, error) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
 	defer cancel()
-	out, err := exec.CommandContext(ctx, os.Getenv("CHALKLAB_CHALKLAB"), args...).CombinedOutput()
-	t.Logf("chalklab %s:\n%s", strings.Join(args, " "), out)
-	return string(out), err
+	return runLogged(t, exec.CommandContext(ctx, os.Getenv("CHALKLAB_CHALKLAB"), args...))
 }
 
 // startLab creates the lab of the fixture's lab file chalklab/<file>, whose metadata.name is name,
