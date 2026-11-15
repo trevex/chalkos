@@ -119,6 +119,16 @@ func TestParseGUID(t *testing.T) {
 	if g != GlobalVariable || GlobalVendor != "8be4df61-93ca-11d2-aa0d-00e098032b8c" || SecurityVendor != "d719b2cb-3d3a-4596-a3bc-dad00e67656f" {
 		t.Errorf("ParseGUID = %x; the vendors are %s and %s", g, GlobalVendor, SecurityVendor)
 	}
+	for g, want := range map[[16]byte]string{
+		certSHA384:     "ff3e5307-9fd0-48c9-85f1-8ad56c701e01",
+		certSHA512:     "093e0fae-a6c4-4f50-9f1b-d41e2b89c19a",
+		certX509SHA384: "7076876e-80c2-4ee6-aad2-28b349a6865b",
+		certX509SHA512: "446dbf63-2502-4cda-bcfa-2465d2b0fe9d",
+	} {
+		if GUIDString(g) != want {
+			t.Errorf("signature type %s, want %s", GUIDString(g), want)
+		}
+	}
 	for _, bad := range []string{"", "8be4df61-93ca-11d2-aa0d-00e098032b8", "8be4df61x93ca-11d2-aa0d-00e098032b8c", "zbe4df61-93ca-11d2-aa0d-00e098032b8c"} {
 		if _, err := ParseGUID(bad); err == nil {
 			t.Errorf("ParseGUID(%q) succeeded", bad)

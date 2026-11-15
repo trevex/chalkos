@@ -150,7 +150,8 @@ func TestTheImageIsCheckedBeforeItBoots(t *testing.T) {
 }
 
 // TestALeftOpenStoreIsClosedFirst: a store an earlier check left open, as when chalkd was stopped
-// during it, holds the slot's partitions; the next upgrade closes it before it writes the slot.
+// during it, holds the slot's partitions; the next upgrade closes it before it writes the slot,
+// and stops there while it stays busy.
 func TestALeftOpenStoreIsClosedFirst(t *testing.T) {
 	old, img := newImage(t, "a", 3), newImage(t, "b", 2)
 	l := newLab(t, old)
@@ -166,6 +167,15 @@ func TestALeftOpenStoreIsClosedFirst(t *testing.T) {
 		}
 		return partitions(p, write)
 	}
+	// A store that stays busy stops the upgrade before it writes the slot.
+	r.Rules = []tooltest.Rule{{Prefix: "umount", Err: errors.New("target is busy"), Times: 1}}
+	if _, err := l.install(img); err == nil || !strings.Contains(err.Error(), "unmount the checked store: target is busy") {
+		t.Fatalf("install = %v, want the unmount's error", err)
+	}
+	if e, name := l.boot(); name != old.Name {
+		t.Errorf("the disk boots %s from %s", name, e.File)
+	}
+	r.ResetCalls()
 	if _, err := l.install(img); err != nil {
 		t.Fatal(err)
 	}
