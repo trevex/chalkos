@@ -10,10 +10,10 @@ let
   inherit (pkgs) lib;
   chalkPkgs = self.packages.${pkgs.stdenv.hostPlatform.system};
   # The Kubernetes test image, whose units the unit checks run.
-  worker = testing.nixos.k8s-kvm;
+  worker = testing.k8s-kvm.nixos;
   # The router image of the fixtures, whose rules, outputs and kernel modules the rules check
   # checks, and whose units the router checks run.
-  router = fixtures.nixos.edge-metal;
+  router = fixtures.edge-metal.nixos;
 
   # The files the router image renders from its example <example>.yaml, as its test
   # router-<example> got them: a link to a directory of <output>/<file>, whose store paths have

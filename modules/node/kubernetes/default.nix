@@ -52,8 +52,8 @@ in
       default = false;
       description = ''
         Whether the image runs Kubernetes: containerd, the kubelet and the preparation of the
-        node's Kubernetes configuration. mkImages sets it from the variant's
-        [`kubernetes`](mkimages.md#variantskubernetes); the installer runs none.
+        node's Kubernetes configuration. An image's modules set it by listing the Kubernetes layer,
+        `chalkos.nixosModules.kubernetes`; the installer runs none.
       '';
     };
     version = lib.mkOption {

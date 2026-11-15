@@ -24,8 +24,8 @@
 //	docgen builtins PAGE DEFAULT_IMAGE PLAIN_IMAGE ROUTER_IMAGE
 //
 // writes the page of built-in change rules, facts, outputs, effects and diagnostics to PAGE from
-// three images' system.build.chalkosRulesImage: DEFAULT_IMAGE, of the default variant,
-// PLAIN_IMAGE, of an image without Kubernetes, and ROUTER_IMAGE, of a router image. Those of
+// three images' system.build.chalkosRulesImage: DEFAULT_IMAGE, of an image with the Kubernetes
+// layer, PLAIN_IMAGE, of an image without a layer, and ROUTER_IMAGE, of a router image. Those of
 // PLAIN_IMAGE are every image's, the others those of images with Kubernetes or of router images.
 //
 //	docgen check DOCS_DIR

@@ -76,9 +76,9 @@ in
     default = false;
     description = ''
       Whether the image carries the router layer, which forwards IPv4 and IPv6 packets between
-      the node's interfaces and accepts the kinds of `router.chalkos.dev`. mkImages sets it from
-      the variant's [`router`](mkimages.md#variantsrouter); an image carries one layer at most, the
-      installer none.
+      the node's interfaces and accepts the kinds of `router.chalkos.dev`. An image's modules set
+      it by listing the router layer, `chalkos.nixosModules.router`; an image carries one layer at
+      most, the installer none.
     '';
   };
 

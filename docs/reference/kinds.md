@@ -6,9 +6,9 @@ description: "The fields of the config kinds of chalkos's images, of the invento
 # Config kinds
 
 This page is for operators who write a node's config documents, an inventory or a lab file. It
-lists the config kinds that an image of `chalkos.lib.mkImages`'s default variant accepts, and
-those a router image adds, by API group, and the fields of the inventory and the lab file that
-chalkctl and chalklab read. An image whose modules declare kinds of their own under
+lists the config kinds that an image with the Kubernetes layer accepts, and those a router
+image adds, by API group, and the fields of the inventory and the lab file that chalkctl and
+chalklab read. An image whose modules declare kinds of their own under
 [`chalkos.kinds`](extension-api.md#chalkoskinds) accepts those as well.
 
 Every document has an `apiVersion`, a `kind`, a `metadata.name` of lower-case letters, digits,
@@ -834,8 +834,8 @@ The nodes of an inventory that chalklab runs as virtual machines, and their mach
 | `spec.nodes.<name>.memory` | integer of at least 512 | — | Memory of the VM in MiB; without it, 3072 for a control plane and 2048 for another node. |
 
 Sources: the JSON Schemas in the `schemas` directory of an image
-[build](image-layout.md#outputs-of-an-image-build) of the default variant and of a router
-image, from `modules/node/kinds/builtin/`, `modules/node/kubernetes/kinds.nix`, the
+[build](image-layout.md#outputs-of-an-image-build) with the Kubernetes layer and of a
+router image, from `modules/node/kinds/builtin/`, `modules/node/kubernetes/kinds.nix`, the
 `kinds.nix` files of `modules/node/router/` and the tables of the image's systemd-networkd, and
 `pkg/inventory/chalkctl.chalkos.dev_v1alpha1_Inventory.json` and
 `pkg/chalklab/chalklab.chalkos.dev_v1alpha1_Lab.json`.

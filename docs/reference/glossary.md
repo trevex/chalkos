@@ -461,11 +461,10 @@ same key and not after a change to Secure Boot. See
 ## Platform { #platform }
 <!-- abbr: platforms, Platforms -->
 
-The kind of machine an image is built for, such as `metal` or `kvm`. Each platform is named in
-the [`platforms`](mkimages.md#platforms) argument of `chalkos.lib.mkImages` with NixOS modules of
-its own. Every [variant](#variant) gets one [image](#image) per platform, so only that platform's
-images carry its drivers and agents. A node refuses an image of another platform than the one it
-runs. See [Variants and platforms](../build/variants-and-platforms.md#a-platform-builds-an-image-per-kind-of-machine).
+The kind of machine an image is built for, such as `metal` or `kvm`, which each [image](#image)
+names in its [`platform`](mkimages.md#imagesplatform). chalkos has NixOS modules of its own for
+`metal` and `kvm`, which only that platform's images carry, with its drivers and agents. A node
+refuses an image of another platform than the one it runs. See [Variants and platforms](../build/variants-and-platforms.md#a-platform-builds-an-image-per-kind-of-machine).
 
 ## Previous config { #previous-config }
 
@@ -620,13 +619,13 @@ default it fills the rest of the system disk, and it is encrypted like [STATE](#
 ## Variant { #variant }
 <!-- abbr: variants, Variants -->
 
-A named set of NixOS modules that `chalkos.lib.mkImages` builds into one [image](#image) per
-[platform](#platform). Its images are `images.<variant>-<platform>`, and it is given in the [`variants`](mkimages.md#variants) argument: for example one variant for most nodes
-and one with GPU drivers. Control planes and workers can run the same variant. Each of its
-images is named `<variant>-<platform>`, which is `CHALKOS_IMAGE` in the image's os-release and
-`name` in its `metadata.json`. A node may change the image it runs through an
-[upgrade](#upgrade), and the new image's schemas decide which [config](#config) it takes. See
-[Variants and platforms](../build/variants-and-platforms.md#a-second-variant-builds-a-second-image).
+A named set of NixOS modules that several [images](#image) carry, one per [platform](#platform).
+Each of its images is an entry of the [`images`](mkimages.md#images) argument: for example one
+variant for most nodes and one with GPU drivers. Control planes and workers can run the same
+variant. Each of its images has a name, such as `<variant>-<platform>`, which is `CHALKOS_IMAGE`
+in the image's os-release and `name` in its `metadata.json`. A node may change the image it runs
+through an [upgrade](#upgrade), and the new image's schemas decide which [config](#config) it
+takes. See [Variants and platforms](../build/variants-and-platforms.md#a-second-variant-builds-a-second-image).
 
 ## VIP { #vip }
 <!-- abbr: VIPs -->

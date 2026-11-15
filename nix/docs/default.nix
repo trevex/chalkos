@@ -77,9 +77,22 @@ let
     };
   declaredIn = dir: opt: lib.all (d: lib.hasPrefix "${root}/${dir}/" (toString d)) opt.declarations;
 
-  # The arguments of chalkos.lib.mkImages, from the module that checks them.
+  # The arguments of chalkos.lib.mkImages, from the modules that check them, which the file
+  # declares as attributes, so their options are declared in it.
   arguments = lib.evalModules {
-    modules = [ ../../lib/images-arguments.nix ];
+    modules = [
+      {
+        _file = ../../lib/images-arguments.nix;
+        imports =
+          let
+            modules = import ../../lib/images-arguments.nix;
+          in
+          [
+            modules.shared
+            modules.images
+          ];
+      }
+    ];
     specialArgs.defaultNixpkgs = self.inputs.nixpkgs;
   };
   argumentOptions =
@@ -88,27 +101,27 @@ let
       transformOptions = linkDeclarations;
     }).optionsJSON;
 
-  # The documentation is generated and checked against the images of nix/testing/fixtures.nix: the
-  # default variant, whose options the reference lists, one without Kubernetes, whose built-ins are
-  # those of every image, a router image, whose kinds and built-ins router images add, and one with
-  # the examples' extensions, whose documents the pages show as an extension's. An image's own
-  # options are those the node modules declare.
-  imageSystem = fixtures.nixos.docs-metal;
+  # The documentation is generated and checked against the images of nix/testing/fixtures.nix: one
+  # with the Kubernetes layer, whose options the reference lists, one without a layer, whose
+  # built-ins are those of every image, a router image, whose kinds and built-ins router images
+  # add, and one with the examples' extensions, whose documents the pages show as an extension's.
+  # An image's own options are those the node modules declare.
+  imageSystem = fixtures.docs-metal.nixos;
   # The schemas of chalkctl's inventory and chalklab's lab file, which they are built with.
   inventorySchema = ../../pkg/inventory/chalkctl.chalkos.dev_v1alpha1_Inventory.json;
   labSchema = ../../pkg/chalklab/chalklab.chalkos.dev_v1alpha1_Lab.json;
   # The schemas of the kinds router images add.
-  routerSchemas = "${fixtures.nixos.edge-metal.config.system.build.chalkosSchemas}/router.chalkos.dev_*.json";
+  routerSchemas = "${fixtures.edge-metal.nixos.config.system.build.chalkosSchemas}/router.chalkos.dev_*.json";
   # The schemas the pages' config documents are checked against: the kinds of the image with the
   # Rack, Hardware and BGP extensions, those router images add, the inventory and the lab file.
   snippetSchemas = pkgs.runCommand "chalkos-docs-schemas" { } ''
     mkdir $out
-    ln -s ${fixtures.nixos.examples-metal.config.system.build.chalkosSchemas}/*.json $out/
+    ln -s ${fixtures.examples-metal.nixos.config.system.build.chalkosSchemas}/*.json $out/
     ln -s ${routerSchemas} $out/
     ln -s ${inventorySchema} $out/chalkctl.chalkos.dev_v1alpha1_Inventory.json
     ln -s ${labSchema} $out/chalklab.chalkos.dev_v1alpha1_Lab.json
   '';
-  # The schemas of the default variant's kinds and of those router images add, which the page of
+  # The schemas of the Kubernetes image's kinds and of those router images add, which the page of
   # config kinds lists.
   kindSchemas = pkgs.runCommand "chalkos-docs-kind-schemas" { } ''
     mkdir $out
@@ -198,7 +211,7 @@ rec {
         docgen cli $out/docs/reference/cli $out/zensical.toml ${helpLinkPages}
         docgen kinds $out/docs/reference/kinds.md ${kindSchemas} ${snippetSchemas}/chalkctl.chalkos.dev_v1alpha1_Inventory.json ${snippetSchemas}/chalklab.chalkos.dev_v1alpha1_Lab.json
         docgen options $out/docs/reference ${optionsTemplates} ${argumentOptions}/share/doc/nixos/options.json ${imageOptions}/share/doc/nixos/options.json
-        docgen builtins $out/docs/reference/builtins.md ${builtinsImage "docs" imageSystem} ${builtinsImage "plain" fixtures.nixos.plain-metal} ${builtinsImage "edge" fixtures.nixos.edge-metal}
+        docgen builtins $out/docs/reference/builtins.md ${builtinsImage "docs" imageSystem} ${builtinsImage "plain" fixtures.plain-metal.nixos} ${builtinsImage "edge" fixtures.edge-metal.nixos}
         cp -r $api proto
         chmod -R u+w proto
         (cd proto && buf generate)

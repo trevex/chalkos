@@ -1,125 +1,187 @@
-# mkImages builds a cluster's images: each variant on each platform, an image directory each, and
-# the installer, which installs images of every platform. Its arguments are the options of
-# images-arguments.nix. The images' modules get chalkosLib as a module argument.
+# The functions of the flake's lib that build images: mkImage builds one image, mkInstaller the
+# installer, which installs images of every platform, and mkImages both from a list of images.
+# Their arguments are the options of images-arguments.nix. The images' modules get chalkosLib as a
+# module argument. The helpers select and map over mkImages's result, skipping the installer.
 { defaultNixpkgs, overlay }:
-arguments:
 let
   inherit (defaultNixpkgs) lib;
-  cfg =
+  inherit (import ./refuse.nix { inherit lib; }) refuse;
+  arguments = import ./images-arguments.nix;
+
+  # The arguments given to the function named, checked against the options of the modules.
+  check =
+    function: modules: given:
     (lib.evalModules {
-      modules = [
-        ./images-arguments.nix
+      modules = modules ++ [
         {
-          _file = "chalkos.lib.mkImages";
-          config = arguments;
+          _file = "chalkos.lib.${function}";
+          config = given;
         }
       ];
       specialArgs = { inherit defaultNixpkgs; };
     }).config;
 
-  # chalkosLib, which every image's modules get as a module argument, built from the images'
-  # nixpkgs's lib, so its option types are those of the module system that evaluates them. It is
-  # an argument of its own, as nixpkgs reserves lib for its library.
-  chalkosLib = import ./chalkos.nix { inherit (cfg.nixpkgs) lib; };
-  specialArgs =
-    if cfg.specialArgs ? chalkosLib then
-      throw "mkImages: specialArgs.chalkosLib is chalkos's own module argument; give yours another name"
-    else
-      cfg.specialArgs // { inherit chalkosLib; };
-
-  # chalkos's package scope in the images' nixpkgs, which builds chalkos's programs with
-  # chalkos's Go toolchain whatever nixpkgs the images come from. It comes before the images' own
-  # overlays, so they can override chalkos's packages with pkgs.chalkos.overrideScope.
-  chalkosScope = {
-    _file = "chalkos.lib.mkImages";
-    nixpkgs.overlays = lib.mkBefore [ overlay ];
-  };
-
-  # A variant's image on a platform: chalkos's node modules, the platform's modules, those of every
-  # variant, then the variant's own. A NixOS value merges by priority, not by module order: a
-  # variant overrides a value its platform defines plainly with lib.mkForce, and one the platform
-  # forces, such as kvm's ExecStart of the guest agent, with lib.mkOverride below 50; lib.mkBefore
-  # and lib.mkAfter order a list's entries.
-  variantSystem =
-    variant: v: platform: platformModules:
+  # A NixOS system of chalkos's node modules and the modules given, from the shared arguments.
+  # chalkosLib, which every module gets as a module argument, is built from the images' nixpkgs's
+  # lib, so its option types are those of the module system that evaluates them. It is an argument
+  # of its own, as nixpkgs reserves lib for its library.
+  nixosSystem =
+    function: cfg: modules:
     cfg.nixpkgs.lib.nixosSystem {
-      inherit specialArgs;
+      specialArgs =
+        if cfg.specialArgs ? chalkosLib then
+          throw "${function}: specialArgs.chalkosLib is chalkos's own module argument; give yours another name"
+        else
+          cfg.specialArgs // { chalkosLib = import ./chalkos.nix { inherit (cfg.nixpkgs) lib; }; };
       modules = [
         ../modules/node
-        chalkosScope
+        # chalkos's package scope in the images' nixpkgs, which builds chalkos's programs with
+        # chalkos's Go toolchain whatever nixpkgs the images come from. It comes before the
+        # images' own overlays, so they can override chalkos's packages with
+        # pkgs.chalkos.overrideScope.
+        {
+          _file = "chalkos.lib.${function}";
+          nixpkgs.overlays = lib.mkBefore [ overlay ];
+        }
         {
           nixpkgs.hostPlatform = cfg.system;
-          chalkos.image.name = "${variant}-${platform}";
-          chalkos.platform.name = platform;
-          chalkos.kubernetes.enable = v.kubernetes;
-          chalkos.router.enable = v.router;
           chalkos.maintenance.osCA = cfg.osCA;
           chalkos.provenance = { inherit (cfg) revision tag; };
         }
       ]
-      ++ platformModules
-      ++ cfg.modules
-      ++ v.modules;
+      ++ modules;
     };
-  systems = lib.concatLists (
-    lib.mapAttrsToList (
-      variant: v:
-      lib.mapAttrsToList (platform: modules: {
-        name = "${variant}-${platform}";
-        value = variantSystem variant v platform modules;
-      }) cfg.platforms
-    ) cfg.variants
-  );
-  names = map (s: s.name) systems;
-  # A variant's name may hold a dash, so a-b on metal and a on b-metal would both be a-b-metal.
-  collision = lib.findFirst (n: lib.count (m: m == n) names > 1) null names;
 
-  installer = cfg.nixpkgs.lib.nixosSystem {
-    inherit specialArgs;
-    modules = [
-      ../modules/node
-      chalkosScope
-      ../modules/installer
-      {
-        nixpkgs.hostPlatform = cfg.system;
-        chalkos.maintenance.osCA = cfg.osCA;
-        chalkos.provenance = { inherit (cfg) revision tag; };
-      }
-    ]
-    ++ cfg.installer.modules;
+  # chalkos's own platforms, whose modules every image of the platform carries first.
+  builtinPlatforms = {
+    metal = [ ../modules/platforms/metal.nix ];
+    kvm = [ ../modules/platforms/kvm.nix ];
   };
 
-  nixos =
-    if collision != null then
-      throw "mkImages: two variants on their platforms are both named ${collision}; rename a variant or a platform"
-    else
-      lib.listToAttrs systems // { inherit installer; };
-  images = lib.mapAttrs (_: n: n.config.system.build.chalkosImage) (
-    removeAttrs nixos [ "installer" ]
-  );
-  checks = lib.mapAttrs (_: n: n.config.system.build.chalkosTests) (
-    removeAttrs nixos [ "installer" ]
-  );
+  # An image: chalkos's node modules, its platform's modules, then its own. A NixOS value merges by
+  # priority, not by module order: an image overrides a value its platform defines plainly with
+  # lib.mkForce, and one the platform forces, such as kvm's ExecStart of the guest agent, with
+  # lib.mkOverride below 50; lib.mkBefore and lib.mkAfter order a list's entries.
+  mkImage =
+    given:
+    let
+      cfg = check "mkImage" [
+        arguments.shared
+        arguments.image
+      ] given;
+      system = nixosSystem "mkImage" cfg (
+        [
+          {
+            chalkos.image.name = cfg.name;
+            chalkos.platform.name = cfg.platform;
+          }
+        ]
+        ++ builtinPlatforms.${cfg.platform} or [ ]
+        ++ cfg.modules
+      );
+      inherit (system) pkgs;
+      image = system.config.system.build.chalkosImage;
+    in
+    image
+    // {
+      inherit (cfg) name platform;
+      # The layer the image carries; layers.nix refuses more than one.
+      layer = lib.findFirst (_: true) null (lib.attrNames system.config.chalkos.layers);
+      nixos = system;
+      # The image directory as an OCI image layout, which the image's own nixpkgs builds as it
+      # builds chalkd.
+      oci = pkgs.runCommand "chalkos-${cfg.name}-oci" {
+        nativeBuildInputs = [ pkgs.chalkos.chalkbuild ];
+      } "chalkbuild oci ${image} $out";
+      # The image's chalkos.tests, which a flake exports as its checks so nix flake check runs them.
+      tests = system.config.system.build.chalkosTests;
+    };
+
+  # The installer: a raw image and a hybrid ISO that boot chalkd in maintenance mode.
+  mkInstaller =
+    given:
+    let
+      cfg = check "mkInstaller" [
+        arguments.shared
+        arguments.installer
+      ] given;
+      system = nixosSystem "mkInstaller" cfg ([ ../modules/installer ] ++ cfg.modules);
+    in
+    system.config.system.build.chalkosInstaller // { nixos = system; };
+
+  # Each image of the list by its name, and the installer.
+  mkImages =
+    given:
+    let
+      cfg = check "mkImages" [
+        arguments.shared
+        arguments.images
+      ] given;
+      shared = {
+        inherit (cfg)
+          nixpkgs
+          osCA
+          revision
+          specialArgs
+          system
+          tag
+          ;
+      };
+      names = map (i: i.name) cfg.images;
+      twice = lib.unique (lib.filter (n: lib.count (m: m == n) names > 1) names);
+    in
+    refuse
+      (
+        map (n: "mkImages: two images are named ${n}; give each its own name") twice
+        ++ lib.optional (lib.elem "installer" names) "mkImages: an image is named installer, which names the installer; give it another name"
+      )
+      (
+        lib.listToAttrs (
+          map (
+            i:
+            lib.nameValuePair i.name (
+              mkImage (
+                shared
+                // {
+                  inherit (i) name platform;
+                  modules = cfg.modules ++ i.modules;
+                }
+              )
+            )
+          ) cfg.images
+        )
+        // {
+          installer = mkInstaller (shared // { inherit (cfg.installer) modules; });
+        }
+      );
+
+  # Whether x is an image of mkImage, not the installer.
+  isImage = x: x ? platform && x ? nixos;
+  imagesOf = lib.filterAttrs (_: isImage);
 in
 {
-  # The evaluated NixOS systems: <variant>-<platform> and installer.
-  inherit nixos;
-  # The image directories, <variant>-<platform>, each built only when asked for.
-  inherit images;
-  # The tests of each image, <variant>-<platform>, chalkos.tests, which a flake exports as its
-  # checks so that nix flake check runs them.
-  inherit checks;
-  # The OCI image layouts of the image directories, <variant>-<platform>, each built only when
-  # asked for by chalkbuild oci, which the image's own nixpkgs builds as it builds chalkd.
-  oci = lib.mapAttrs (
-    name: image:
-    let
-      inherit (nixos.${name}) pkgs;
-    in
-    pkgs.runCommand "chalkos-${name}-oci" {
-      nativeBuildInputs = [ pkgs.chalkos.chalkbuild ];
-    } "chalkbuild oci ${image} $out"
-  ) images;
-  # The installer: a raw image and a hybrid ISO that boot chalkd in maintenance mode.
-  installer = installer.config.system.build.chalkosInstaller;
+  inherit mkImage mkImages mkInstaller;
+
+  # The images matching every field given, platform or layer.
+  selectImages =
+    selection: images:
+    refuse
+      (map (k: "selectImages: an image has no field ${k} to select by; select by platform or layer") (
+        lib.attrNames (
+          removeAttrs selection [
+            "layer"
+            "platform"
+          ]
+        )
+      ))
+      (
+        lib.filterAttrs (_: i: lib.all (k: i.${k} == selection.${k}) (lib.attrNames selection)) (
+          imagesOf images
+        )
+      );
+
+  # Each image's OCI image layout, evaluated NixOS system and tests.
+  ociOf = images: lib.mapAttrs (_: i: i.oci) (imagesOf images);
+  nixosOf = images: lib.mapAttrs (_: i: i.nixos) (imagesOf images);
+  testsOf = images: lib.mapAttrs (_: i: i.tests) (imagesOf images);
 }

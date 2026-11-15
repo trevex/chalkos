@@ -2,16 +2,18 @@
 # Returns lib.runTests failures, empty on success.
 {
   lib,
-  mkImages,
+  flakeLib,
+  layers,
 }:
 let
   inherit (lib) mkOption types;
   chalkosLib = import ../../lib/chalkos.nix { inherit lib; };
   inherit (chalkosLib.internal) schema kindTypes;
-  inherit (import ./lib.nix { inherit lib mkImages; })
+  inherit (import ./lib.nix { inherit lib flakeLib layers; })
     fails
     refuses
     etcJSON
+    installer
     worker
     router
     ;
@@ -106,10 +108,14 @@ let
   # Forces the schemas an image ships, and with them the checks of its kinds' names.
   schemasOf = config: config.system.build.chalkosSchemas.drvPath;
 
-  # The metal image of a variant with Kubernetes and no extra modules.
+  # The metal image with Kubernetes and no extra modules.
   kubernetesImage = worker [ ];
-  # The metal image of a variant without Kubernetes.
-  plainImage = (mkImages { variants.worker.kubernetes = false; }).nixos.worker-metal.config;
+  # The metal image without a layer.
+  plainImage =
+    (flakeLib.mkImage {
+      name = "worker-metal";
+      platform = "metal";
+    }).nixos.config;
   # A router image, and the kinds it adds.
   routerImage = router [ ];
   routerKinds = [
@@ -133,8 +139,6 @@ let
     "WireGuard"
     "WireGuardPeer"
   ];
-  # The installer.
-  installer = (mkImages { variants = { }; }).nixos.installer.config;
   hasChalkcfg = packages: lib.any (p: lib.getName p == "chalkcfg") packages;
   # The options of the Peering kind: a nested group, a nullOr submodule, a list of submodules,
   # attribute sets of submodules and of strings, and a secretRef.
@@ -1290,7 +1294,7 @@ lib.runTests {
     expected = true;
   };
   testInstallerHasNoChalkcfg = {
-    expr = hasChalkcfg installer.environment.systemPackages;
+    expr = hasChalkcfg (installer [ ]).environment.systemPackages;
     expected = false;
   };
   testGrantHasChalkcfgOnPath = {
@@ -2136,8 +2140,11 @@ lib.runTests {
     expr =
       let
         c =
-          (mkImages { variants.node.modules = [ ../../examples/extensions/rack.nix ]; })
-          .nixos.node-metal.config;
+          (flakeLib.mkImage {
+            name = "node-metal";
+            platform = "metal";
+            modules = [ ../../examples/extensions/rack.nix ];
+          }).nixos.config;
       in
       lib.hasInfix "/bin/chalkcfg get Rack rack -o 'jsonpath={.spec.location}'" c.systemd.services.rack-location.serviceConfig.ExecStart.text;
     expected = true;
@@ -2536,17 +2543,25 @@ lib.runTests {
   testBuildChecksOutsideTheSystem = {
     expr =
       let
-        images = mkImages { variants.worker = { }; };
-        c = images.nixos.worker-metal.config;
+        images = flakeLib.mkImages {
+          images = [
+            {
+              name = "worker-metal";
+              platform = "metal";
+              modules = [ layers.kubernetes ];
+            }
+          ];
+        };
+        c = images.worker-metal.nixos.config;
         names = ds: map (d: d.name) ds;
       in
       {
         image = lib.sort lib.lessThan (names c.chalkos.imageDirectory.checks);
         # NixOS's own checks stay; none of the image's are among them.
         system = lib.filter (n: lib.elem n (names c.chalkos.imageDirectory.checks)) (names c.system.checks);
-        imageDepends = images.images.worker-metal.checks == c.chalkos.imageDirectory.checks;
+        imageDepends = images.worker-metal.checks == c.chalkos.imageDirectory.checks;
         installerDepends =
-          images.installer.checks == images.nixos.installer.config.chalkos.imageDirectory.checks;
+          images.installer.checks == images.installer.nixos.config.chalkos.imageDirectory.checks;
       };
     expected = {
       image = [
@@ -2557,26 +2572,6 @@ lib.runTests {
       system = [ ];
       imageDepends = true;
       installerDepends = true;
-    };
-  };
-  # mkImages's checks hold each image's tests, and none of the installer.
-  testMkImagesChecks = {
-    expr =
-      let
-        images = mkImages { variants.worker = { }; };
-      in
-      {
-        names = lib.attrNames images.checks;
-        tests =
-          images.checks.worker-metal.drvPath
-          == images.nixos.worker-metal.config.system.build.chalkosTests.drvPath;
-      };
-    expected = {
-      names = [
-        "worker-kvm"
-        "worker-metal"
-      ];
-      tests = true;
     };
   };
   # exampleTests names a test by its file without the extension, skips files of other types, and

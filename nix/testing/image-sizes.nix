@@ -1,38 +1,34 @@
-# Ceilings for what the test images take, by variant and platform, and the installer, in MiB,
-# which the image-size check holds them to: the store's data and its hash tree, which
-# upgrades send, and the UKI. Each is about 15% above the size measured when it was set; raising
-# one is a change to review. The kvm images carry the QEMU guest agent, about 6 MiB of store.
+# Ceilings for what the test images take, by image, and the installer, in MiB, which the
+# image-size check holds them to: the store's data and its hash tree, which upgrades send, and the
+# UKI. Each is about 15% above the size measured when it was set; raising one is a change to
+# review. The kvm images carry the QEMU guest agent, about 6 MiB of store.
 {
-  variants = {
-    k8s = {
-      metal = {
-        storeData = 281;
-        hashTree = 2.2;
-        uki = 51;
-      };
-      kvm = {
-        storeData = 290;
-        hashTree = 2.3;
-        uki = 51;
-      };
+  images = {
+    k8s-metal = {
+      storeData = 281;
+      hashTree = 2.2;
+      uki = 51;
+    };
+    k8s-kvm = {
+      storeData = 290;
+      hashTree = 2.3;
+      uki = 51;
     };
     # FRR and the Python of frr-reload.py take about 100 MiB of the router image's store.
-    router.kvm = {
+    router-kvm = {
       storeData = 351;
       hashTree = 2.8;
       uki = 51;
     };
-    test = {
-      metal = {
-        storeData = 222;
-        hashTree = 1.8;
-        uki = 51;
-      };
-      kvm = {
-        storeData = 231;
-        hashTree = 1.9;
-        uki = 51;
-      };
+    test-metal = {
+      storeData = 222;
+      hashTree = 1.8;
+      uki = 51;
+    };
+    test-kvm = {
+      storeData = 231;
+      hashTree = 1.9;
+      uki = 51;
     };
   };
   installer = {

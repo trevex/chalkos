@@ -1,7 +1,6 @@
-# chalkbuild, with the tools that read and sign images. The flake's package and mkImages's oci
-# outputs build it the same way, from the chalkos scope of the nixpkgs at hand, as they build
-# chalkd. It takes only the packages it imports, so other Go changes do not rebuild the oci
-# outputs.
+# chalkbuild, with the tools that read and sign images. The flake's package and each image's oci
+# build it the same way, from the chalkos scope of the nixpkgs at hand, as they build chalkd. It
+# takes only the packages it imports, so other Go changes do not rebuild the oci outputs.
 {
   buildGoProgram,
   coreutils,

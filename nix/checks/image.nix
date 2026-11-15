@@ -18,10 +18,11 @@ let
     ;
   testLib = import ../../test/nix/lib.nix {
     inherit lib;
-    inherit (self.lib) mkImages;
+    flakeLib = self.lib;
+    layers = self.nixosModules;
   };
-  examples = fixtures.nixos.examples-metal.config;
-  # The router features a variant may leave out.
+  examples = fixtures.examples-metal.nixos.config;
+  # The router features an image may leave out.
   inherit (router._module.args.routerLib) features;
   # The router image without each of the features alone and without all six, by the names of
   # the features left out joined by dashes.
@@ -145,15 +146,8 @@ in
           ceiling.hashTree
           ceiling.uki
         ];
-      images = lib.concatLists (
-        lib.mapAttrsToList (
-          variant: platforms:
-          lib.mapAttrsToList (
-            platform: measure "${variant} on ${platform}" testing.nixos."${variant}-${platform}".config
-          ) platforms
-        ) ceilings.variants
-      );
-      test = testing.nixos.test-metal.config;
+      images = lib.mapAttrsToList (name: measure name testing.${name}.nixos.config) ceilings.images;
+      test = testing.test-metal.nixos.config;
       testImage = "${test.system.build.image}/${test.image.fileName}";
       testPartitions = "${test.system.build.image}/repart-output.json";
       testUKI = "${test.system.build.uki}/${test.system.boot.loader.ukiFile}";
@@ -202,7 +196,7 @@ in
           fi
         }
         ${lib.concatMapStrings (args: "check ${args}\n") images}
-        check ${measure "installer" testing.nixos.installer.config ceilings.installer}
+        check ${measure "installer" testing.installer.nixos.config ceilings.installer}
 
         # An image over a ceiling fails the check and lists the largest paths of its closure.
         if (
@@ -343,7 +337,7 @@ in
           pkgs.jq
         ];
         checked = [
-          testing.nixos.test-metal.config.system.build.chalkosRulesCheck
+          testing.test-metal.nixos.config.system.build.chalkosRulesCheck
           examplesBuild.chalkosRulesCheck
           routerBuild.chalkosRulesCheck
           routerModules
@@ -362,7 +356,7 @@ in
         refused ${brokenDiagnostic.chalkosRulesImage} 'diagnostic broken: parameter table: its regex: error parsing regexp: missing closing ]'
         # The check of chrony's output passes the servers its template renders, and refuses a
         # line chronyd does not parse or a sourcedir file does not take.
-        check=$(jq -r .chrony.check ${testing.nixos.test-metal.config.system.build.chalkosOutputs})
+        check=$(jq -r .chrony.check ${testing.test-metal.nixos.config.system.build.chalkosOutputs})
         mkdir chrony
         printf 'server a.example iburst nts\nserver 10.0.0.1 iburst port 12300\n' >chrony/servers.sources
         OUT=$PWD/chrony $check </dev/null
@@ -414,14 +408,14 @@ in
       '';
 
   # The tests of chalkos.tests of the test image, the router image with every feature, without
-  # each of the features a variant may leave out and without all six, and the image of the
+  # each of the features an image may leave out and without all six, and the image of the
   # examples' extensions, as nix flake check runs an image's tests: the router's examples, the
   # networkd, chrony and Greeting examples, and those of the Hardware and bird-conf outputs
   # render, pass the outputs' checks and the validators accept them.
   image-tests = pkgs.linkFarm "chalkos-image-tests" (
     lib.mapAttrs (_: c: c.system.build.chalkosTests) (
       {
-        test = testing.nixos.test-metal.config;
+        test = testing.test-metal.nixos.config;
         router = router.config;
         inherit examples;
       }

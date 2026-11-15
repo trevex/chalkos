@@ -60,8 +60,8 @@ lists the rules. An upgrade of the kubelet is an image upgrade, which
 `spec.type` of the node's [`Node`](../../reference/kinds.md#node) document decides what the node is
 in Kubernetes, so control planes and workers boot the same image. A `controlplane` runs
 containerd, the kubelet, and etcd and the control plane as static pods. A `worker` runs containerd
-and the kubelet. The images of a variant built with
-[`kubernetes = false`](../../reference/mkimages.md#variantskubernetes) lack the Kubernetes layer.
+and the kubelet. Images whose modules do not list the
+[Kubernetes layer](../../reference/mkimages.md#layers), `chalkos.nixosModules.kubernetes`, lack it.
 They run no Kubernetes and have no `Node` kind, so their nodes have no type. Their chalkd answers
 the methods of KubernetesService, the Kubernetes layer's API, such as Bootstrap, with
 `UNIMPLEMENTED`. [Components by node type](../../reference/kubernetes.md#components-by-node-type)

@@ -113,11 +113,10 @@ and the few actions the console may call. It changes nothing on the node itself.
 
 Every image carries the base: chalkd, the config pipeline, storage, upgrades and the node API. A
 layer adds one role on top of it. The Kubernetes layer runs containerd and the kubelet and makes a
-node a control plane or a worker. Every variant carries it unless it sets
-[`kubernetes = false`](../../reference/mkimages.md#variantskubernetes). The router layer, which
-[`router = true`](../../reference/mkimages.md#variantsrouter) adds, forwards packets between the
-node's interfaces. An image carries one layer at most, and mkImages refuses a variant that asks
-for two.
+node a control plane or a worker. An image carries it when its modules list
+[`chalkos.nixosModules.kubernetes`](../../reference/mkimages.md#layers). The router layer, which
+[`chalkos.nixosModules.router`](../../reference/mkimages.md#layers) adds, forwards packets between
+the node's interfaces. An image carries one layer at most, and one that lists two fails to build.
 
 Each layer writes an empty marker, `/etc/chalkos/layers/<layer>`. chalkd reads the directory when
 it starts and reports the layers in `Info` and `Contract`.

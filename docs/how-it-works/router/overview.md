@@ -5,8 +5,8 @@ description: "What the router layer adds to a node: the router kinds, forwarding
 
 # How a router works
 
-The router layer is what a variant adds with
-[`router = true`](../../reference/mkimages.md#variantsrouter). A node of such an image forwards
+The router layer is what an image adds by listing
+[`chalkos.nixosModules.router`](../../reference/mkimages.md#layers) in its modules. A node of such an image forwards
 IPv4 and IPv6 packets between its interfaces and accepts the kinds of
 [`router.chalkos.dev`](../../reference/kinds.md#router-chalkos-dev). Its interfaces, addresses and
 static routes stay networkd's `Network` and `NetDev` documents, as on every node.

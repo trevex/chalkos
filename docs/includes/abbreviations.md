@@ -85,7 +85,7 @@
 *[Inventory]: The file that tells chalkctl about a cluster: its nodes, their addresses, images and config files.
 *[Node name]: A node's key in the inventory's spec.nodes, such as cp1.
 *[OCI image]: A chalkos image published to a registry as one OCI artifact.
-*[Platforms]: The kind of machine an image is built for, such as metal or kvm.
+*[Platforms]: The kind of machine an image is built for, such as metal or kvm, which each image names in its platform.
 *[Root hash]: The top hash of the store's dm-verity hash tree.
 *[Rotations]: The replacement of a CA or key, in phases, with chalkctl rotate.
 *[bootstrap]: The one-time start of a cluster's etcd on its first control plane.
@@ -94,30 +94,30 @@
 *[installer]: An image that always boots into maintenance mode and writes a node's image to a disk of the machine.
 *[inventory]: The file that tells chalkctl about a cluster: its nodes, their addresses, images and config files.
 *[node name]: A node's key in the inventory's spec.nodes, such as cp1.
-*[platforms]: The kind of machine an image is built for, such as metal or kvm.
+*[platforms]: The kind of machine an image is built for, such as metal or kvm, which each image names in its platform.
 *[root hash]: The top hash of the store's dm-verity hash tree.
 *[rotations]: The replacement of a CA or key, in phases, with chalkctl rotate.
 *[Contract]: What an image accepts as config: its variant, platform, kind schemas and what it fixes about Kubernetes.
-*[Platform]: The kind of machine an image is built for, such as metal or kvm.
+*[Platform]: The kind of machine an image is built for, such as metal or kvm, which each image names in its platform.
 *[Rollback]: The return to the previous image after a new one used up its boot tries without a blessed boot.
 *[Rotation]: The replacement of a CA or key, in phases, with chalkctl rotate.
-*[Variants]: A named set of NixOS modules that chalkos.lib.mkImages builds into one image per platform.
+*[Variants]: A named set of NixOS modules that several images carry, one per platform.
 *[chalkcfg]: The command on every node that prints the node's config documents.
 *[chalkctl]: The command-line client of chalkos.
 *[chalklab]: The command that runs a cluster's kvm nodes as QEMU virtual machines on one machine.
 *[contract]: What an image accepts as config: its variant, platform, kind schemas and what it fixes about Kubernetes.
-*[platform]: The kind of machine an image is built for, such as metal or kvm.
+*[platform]: The kind of machine an image is built for, such as metal or kvm, which each image names in its platform.
 *[rollback]: The return to the previous image after a new one used up its boot tries without a blessed boot.
 *[rotation]: The replacement of a CA or key, in phases, with chalkctl rotate.
-*[variants]: A named set of NixOS modules that chalkos.lib.mkImages builds into one image per platform.
+*[variants]: A named set of NixOS modules that several images carry, one per platform.
 *[Effects]: An action on the node's services after a delivery is applied, such as a unit restart.
 *[Node CA]: An intermediate CA under the OS CA that may issue only server and client certificates.
-*[Variant]: A named set of NixOS modules that chalkos.lib.mkImages builds into one image per platform.
+*[Variant]: A named set of NixOS modules that several images carry, one per platform.
 *[Volumes]: A partition beyond VAR, declared by a Volume document in a node's config.
 *[Workers]: A node that runs containerd and the kubelet but no control plane components.
 *[effects]: An action on the node's services after a delivery is applied, such as a unit restart.
 *[node CA]: An intermediate CA under the OS CA that may issue only server and client certificates.
-*[variant]: A named set of NixOS modules that chalkos.lib.mkImages builds into one image per platform.
+*[variant]: A named set of NixOS modules that several images carry, one per platform.
 *[volumes]: A partition beyond VAR, declared by a Volume document in a node's config.
 *[workers]: A node that runs containerd and the kubelet but no control plane components.
 *[Effect]: An action on the node's services after a delivery is applied, such as a unit restart.

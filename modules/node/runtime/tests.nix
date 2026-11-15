@@ -1,7 +1,7 @@
 # Tests: config files a node could be given and what the image should make of them, the files its
 # outputs render, the refusals it gives and the effects a change takes. `chalkos-rules test` runs
-# them with the checks chalkd runs; nix flake check runs them through mkImages's checks, and the
-# image's build only with chalkos.testsOnBuild.
+# them with the checks chalkd runs; nix flake check runs them through a flake's checks, from
+# chalkos.lib.testsOf, and the image's build only with chalkos.testsOnBuild.
 {
   chalkosLib,
   config,
@@ -246,8 +246,9 @@ in
       renderer and check, and the effects' plan. `system.build.chalkosTestResults` holds what
       each test got, `<test>/outputs/<output>/`, `<test>/refusals.json` and
       `<test>/effects.json`, and builds whatever the tests got; `system.build.chalkosTests`
-      fails when a test does, with a diff of each output's golden files. mkImages's `checks`
-      holds each image's `chalkosTests`, so `nix flake check` runs them.
+      fails when a test does, with a diff of each output's golden files. An image's `tests` is its
+      `chalkosTests`, and a flake that exports `chalkos.lib.testsOf` of its images as its checks
+      has `nix flake check` run them.
     '';
   };
 
@@ -257,7 +258,7 @@ in
     description = ''
       Whether the image directory's build runs the tests of `chalkos.tests` and fails when one
       does. The tests change neither the image's content nor its root hash; without this,
-      `nix flake check` runs them through mkImages's `checks`.
+      `nix flake check` runs them through `chalkos.lib.testsOf`.
     '';
   };
 

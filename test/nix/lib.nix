@@ -1,5 +1,9 @@
 # Helpers of the evaluation tests.
-{ lib, mkImages }:
+{
+  lib,
+  flakeLib,
+  layers,
+}:
 rec {
   # Whether evaluating the value in full fails.
   fails = value: !(builtins.tryEval (builtins.deepSeq value true)).success;
@@ -11,25 +15,24 @@ rec {
     builtins.fromJSON (builtins.unsafeDiscardStringContext c.environment.etc."chalkos/${file}".text);
   # Whether the list of packages holds one of the name.
   hasPackage = name: lib.any (p: lib.getName p == name);
-  # The metal image of a variant worker, which runs Kubernetes, with the NixOS modules given.
-  worker = modules: (mkImages { variants.worker.modules = modules; }).nixos.worker-metal.config;
-  # The installer with the NixOS modules given.
-  installer =
+  # The metal image worker-metal, which runs Kubernetes, with the NixOS modules given.
+  worker =
     modules:
-    (mkImages {
-      variants = { };
-      installer = { inherit modules; };
-    }).nixos.installer.config;
-  # The metal image of a variant edge, which runs the router layer, with the NixOS modules given.
+    (flakeLib.mkImage {
+      name = "worker-metal";
+      platform = "metal";
+      modules = [ layers.kubernetes ] ++ modules;
+    }).nixos.config;
+  # The installer with the NixOS modules given.
+  installer = modules: (flakeLib.mkInstaller { inherit modules; }).nixos.config;
+  # The metal image edge-metal, which runs the router layer, with the NixOS modules given.
   router =
     modules:
-    (mkImages {
-      variants.edge = {
-        kubernetes = false;
-        router = true;
-        inherit modules;
-      };
-    }).nixos.edge-metal.config;
+    (flakeLib.mkImage {
+      name = "edge-metal";
+      platform = "metal";
+      modules = [ layers.router ] ++ modules;
+    }).nixos.config;
   # A router image with the named features disabled.
   routerWithout =
     features:

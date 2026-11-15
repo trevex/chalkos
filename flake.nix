@@ -36,6 +36,8 @@
     in
     {
       lib = chalkos;
+      # The layers, which an image lists in its modules: kubernetes and router.
+      nixosModules = import ./lib/layers.nix;
       overlays.default = overlay;
       templates.lab = {
         path = ./templates/lab;

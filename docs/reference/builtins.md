@@ -1648,6 +1648,6 @@ done
 ```
 
 Sources: the schemas, `facts.json`, `validators.json`, `outputs.json`, `effects.json` and
-`diagnostics.json` that an image holds in `/etc/chalkos`, of an image of the default variant, of
-one with `kubernetes = false` and of one with `router = true`, which the node modules in
-`modules/node/` declare.
+`diagnostics.json` that an image holds in `/etc/chalkos`, of an image with the Kubernetes layer,
+of one without a layer and of a router image, which the node modules in `modules/node/`
+declare.

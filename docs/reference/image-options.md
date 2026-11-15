@@ -1,14 +1,14 @@
 ---
 title: "Image options"
-description: "The options of chalkos's node modules that a variant's NixOS modules set"
+description: "The options of chalkos's node modules that an image's NixOS modules set"
 ---
 
 # Image options
 
-This page is for image authors who set the options of chalkos's node modules in a variant's
-NixOS modules, the `modules` of [mkImages](mkimages.md). Every image and the installer carry
-these modules. The options an extension uses to declare kinds, facts, outputs and effects
-are on [Extension API](extension-api.md).
+This page is for image authors who set the options of chalkos's node modules in an image's
+NixOS modules, the `modules` of [mkImage and mkImages](mkimages.md). Every image and the
+installer carry these modules. The options an extension uses to declare kinds, facts, outputs
+and effects are on [Extension API](extension-api.md).
 
 ## Disk { #disk }
 
@@ -99,8 +99,8 @@ Whether an image runs Kubernetes, the packages and images it runs it with, and i
 Type: boolean · Default: `false` · Declared in: [modules/node/kubernetes/default.nix](https://github.com/trevex/chalkos/blob/main/modules/node/kubernetes/default.nix)
 
 Whether the image runs Kubernetes: containerd, the kubelet and the preparation of the
-node's Kubernetes configuration. mkImages sets it from the variant's
-[`kubernetes`](mkimages.md#variantskubernetes); the installer runs none.
+node's Kubernetes configuration. An image's modules set it by listing the Kubernetes layer,
+`chalkos.nixosModules.kubernetes`; the installer runs none.
 
 ### `chalkos.kubernetes.package` { #chalkoskubernetespackage }
 
@@ -172,9 +172,9 @@ Whether router images carry the DHCP relay, dnsmasq, and accept the kind `DHCPRe
 Type: boolean · Default: `false` · Declared in: [modules/node/router/default.nix](https://github.com/trevex/chalkos/blob/main/modules/node/router/default.nix)
 
 Whether the image carries the router layer, which forwards IPv4 and IPv6 packets between
-the node's interfaces and accepts the kinds of `router.chalkos.dev`. mkImages sets it from
-the variant's [`router`](mkimages.md#variantsrouter); an image carries one layer at most, the
-installer none.
+the node's interfaces and accepts the kinds of `router.chalkos.dev`. An image's modules set
+it by listing the router layer, `chalkos.nixosModules.router`; an image carries one layer at
+most, the installer none.
 
 ### `chalkos.router.nat64.enable` { #chalkosrouternat64enable }
 
@@ -300,15 +300,15 @@ certificates; null accepts any client until the node is installed. mkImages sets
 every image and the installer, from its [`osCA`](mkimages.md#osca) argument, which
 describes the file; the image's build checks the file's version again.
 
-## Set by mkImages { #set-by-mkimages }
+## Set by mkImage { #set-by-mkimage }
 
-mkImages sets these from its arguments; a module reads them rather than setting them.
+mkImage sets these from its arguments; a module reads them rather than setting them.
 
 ### `chalkos.image.name` { #chalkosimagename }
 
 Type: string or null · Default: `null` · Declared in: [modules/node/settings.nix](https://github.com/trevex/chalkos/blob/main/modules/node/settings.nix)
 
-The image's name, which mkImages sets, recorded as `CHALKOS_IMAGE` in its os-release and
+The image's name, which mkImage sets, recorded as `CHALKOS_IMAGE` in its os-release and
 as `name` in its image directory's `metadata.json`. `chalkctl upgrade --image` upgrades
 the nodes running an image of this name. null on the installer, which is no node image.
 No check compares it: a node may change the image it runs through an upgrade, and the
@@ -318,9 +318,9 @@ image's schemas decide which config it takes.
 
 Type: string matching `[a-z0-9][a-z0-9-]*` or null · Default: `null` · Declared in: [modules/node/settings.nix](https://github.com/trevex/chalkos/blob/main/modules/node/settings.nix)
 
-The platform the image is built for, a name of mkImages's `platforms`, which mkImages
-sets; null on the installer, which installs images of every platform. A node refuses an
-image of another platform, and translates its config for its own.
+The platform the image is built for, mkImage's `platform`, which mkImage sets; null on
+the installer, which installs images of every platform. A node refuses an image of another
+platform, and translates its config for its own.
 
 ### `chalkos.provenance.revision` { #chalkosprovenancerevision }
 

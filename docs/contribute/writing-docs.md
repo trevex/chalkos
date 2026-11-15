@@ -170,7 +170,7 @@ anchor. The generated reference has predictable anchors:
 | Target | Path and anchor |
 | --- | --- |
 | A command | `reference/cli/` and the command path joined with underscores: `cli/chalkctl_etcd_leave.md`; a flag is `#flag-` and its long name: `cli/chalkctl_upgrade.md#flag-image` |
-| An option | its page, `mkimages.md`, `image-options.md` or `extension-api.md`, and its name in lower case, keeping only letters, digits, `-` and `_`, with `<name>` and `*` dropped: `mkimages.md#variantsmodules`, `image-options.md#chalkosdiskespsize` |
+| An option | its page, `mkimages.md`, `image-options.md` or `extension-api.md`, and its name in lower case, keeping only letters, digits, `-` and `_`, with `<name>` and `*` dropped: `mkimages.md#imagesmodules`, `image-options.md#chalkosdiskespsize` |
 | An API method, message or enum | `method-`, `message-` or `enum-` and the name in lower case without dots: `api.md#method-upgrade` |
 | A kind | its name in lower case: `kinds.md#systemdisk` |
 | A built-in | `builtins.md#` and `rules-` and a kind in lower case, or `fact-`, `output-` or `effect-` and the name: `builtins.md#rules-volume`, `builtins.md#effect-networkd` |

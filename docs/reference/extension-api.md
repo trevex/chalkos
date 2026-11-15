@@ -246,8 +246,9 @@ chalkd runs for a delivery: the kinds' schemas, change rules, validators, every 
 renderer and check, and the effects' plan. `system.build.chalkosTestResults` holds what
 each test got, `<test>/outputs/<output>/`, `<test>/refusals.json` and
 `<test>/effects.json`, and builds whatever the tests got; `system.build.chalkosTests`
-fails when a test does, with a diff of each output's golden files. mkImages's `checks`
-holds each image's `chalkosTests`, so `nix flake check` runs them.
+fails when a test does, with a diff of each output's golden files. An image's `tests` is its
+`chalkosTests`, and a flake that exports `chalkos.lib.testsOf` of its images as its checks
+has `nix flake check` run them.
 
 Example:
 
@@ -299,7 +300,7 @@ Type: boolean · Default: `false` · Declared in: [modules/node/runtime/tests.ni
 
 Whether the image directory's build runs the tests of `chalkos.tests` and fails when one
 does. The tests change neither the image's content nor its root hash; without this,
-`nix flake check` runs them through mkImages's `checks`.
+`nix flake check` runs them through `chalkos.lib.testsOf`.
 
 ## Image directory { #image-directory }
 

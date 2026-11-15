@@ -1,20 +1,35 @@
 # The images the checks and the documentation evaluate without booting them, from one call of
-# mkImages so each is evaluated once: docs, the default variant; plain, without Kubernetes; edge,
-# a router image; and examples, the default variant with the extensions of the homelab and
-# extensions examples.
+# mkImages so each is evaluated once: docs, with the Kubernetes layer; plain, without a layer;
+# edge, a router image; and examples, with the Kubernetes layer and the extensions of the homelab
+# and extensions examples.
 { self }:
+let
+  inherit (self.nixosModules) kubernetes router;
+in
 self.lib.mkImages {
-  platforms = [ "metal" ];
-  variants = {
-    docs = { };
-    plain.kubernetes = false;
-    edge = {
-      kubernetes = false;
-      router = true;
-    };
-    examples.modules = [
-      ../../examples/homelab/extensions
-      ../../examples/extensions
-    ];
-  };
+  images = [
+    {
+      name = "docs-metal";
+      platform = "metal";
+      modules = [ kubernetes ];
+    }
+    {
+      name = "plain-metal";
+      platform = "metal";
+    }
+    {
+      name = "edge-metal";
+      platform = "metal";
+      modules = [ router ];
+    }
+    {
+      name = "examples-metal";
+      platform = "metal";
+      modules = [
+        kubernetes
+        ../../examples/homelab/extensions
+        ../../examples/extensions
+      ];
+    }
+  ];
 }

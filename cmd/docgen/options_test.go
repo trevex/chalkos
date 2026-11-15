@@ -24,9 +24,9 @@ func TestWriteOptions(t *testing.T) {
 			order: []string{
 				"---\ntitle: \"mkimages\"\n---\n\n# mkimages\n\nThe head of mkimages.\n",
 				"\n## mkImages arguments { #mkimages-arguments }\n\n",
+				"\n### `images` { #images }\n",
 				"\n### `nixpkgs` { #nixpkgs }\n",
 				"\n### `osCA` { #osca }\n",
-				"\n### `variants` { #variants }\n",
 				"\nSources: ",
 			},
 			want: []string{
@@ -34,8 +34,8 @@ func TestWriteOptions(t *testing.T) {
 				"### `nixpkgs` { #nixpkgs }\n\nType: any · Default: the nixpkgs chalkos is tested against · Declared in: [lib/images-arguments.nix](https://example.org/lib/images-arguments.nix)\n\nnixpkgs the images are built from.\n",
 				"### `osCA` { #osca }\n\nType: path or null · Default: `null` · Declared in: [lib/images-arguments.nix](https://example.org/lib/images-arguments.nix)\n\nPublic part of the cluster's secrets.\n\nnull builds open images.\n\nExample: `./secrets.pub.json`\n",
 				// A default over several lines shows on one, and a submodule's options are rows of a table.
-				"Type: map of submodule · Default: `{ node = { }; }` · Declared in:",
-				"| Option | Type | Default | Description |\n| --- | --- | --- | --- |\n| `<name>.kubernetes`{ #variantskubernetes } | boolean | `true` | Whether the variant's images run Kubernetes. |\n",
+				"Type: list of submodule · Default: `[ { name = \"node-metal\"; } ]` · Declared in:",
+				"| Option | Type | Default | Description |\n| --- | --- | --- | --- |\n| `*.name`{ #imagesname } | string | required | The image's name. |\n",
 			},
 		},
 		"image-options.md": {
@@ -54,7 +54,7 @@ func TestWriteOptions(t *testing.T) {
 				"\n### `chalkos.consoles` { #chalkosconsoles }\n",
 				"\n### `chalkos.console.enable` { #chalkosconsoleenable }\n",
 				"\n## Debug and maintenance { #debug-and-maintenance }\n\n",
-				"\n## Set by mkImages { #set-by-mkimages }\n\n",
+				"\n## Set by mkImage { #set-by-mkimage }\n\n",
 				"\n### `chalkos.image.name` { #chalkosimagename }\n",
 				"\nSources: ",
 			},
@@ -137,7 +137,7 @@ func TestWriteOptionsUnmapped(t *testing.T) {
 
 func TestOptionAnchor(t *testing.T) {
 	for name, want := range map[string]string{
-		"variants.<name>.kubernetes":                     "variantskubernetes",
+		"images.*.name": "imagesname",
 		"chalkos.kinds.<name>.rules.*.messageExpression": "chalkoskindsrulesmessageexpression",
 	} {
 		if got := optionAnchor(name); got != want {

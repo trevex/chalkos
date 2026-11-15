@@ -48,9 +48,9 @@ chalkctl validate
 chalkctl config apply w1 --inventory <lab inventory> --secrets secrets.json
 ```
 
-To upgrade, change the `node` variant's `modules` in `flake.nix` and commit, build the image again
-with `nix build .#node-kvm -o images/node-kvm`, sign a copy of it with the lab's db key, and
-upgrade the nodes with the copy, with the inventory `chalklab status` names and the client file
+To upgrade, change the `node-kvm` image's `modules` in `flake.nix` and commit, build the image
+again with `nix build .#node-kvm -o images/node-kvm`, sign a copy of it with the lab's db key,
+and upgrade the nodes with the copy, with the inventory `chalklab status` names and the client file
 `CHALKOSCONFIG` names. The copy's directory must not exist yet, so remove the copy of an earlier
 upgrade first. A changed image has a new root hash, so there is no version to raise; chalkctl
 shows the commit the flake passes to `mkImages` as `revision` beside it:

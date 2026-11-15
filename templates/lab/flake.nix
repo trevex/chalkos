@@ -15,22 +15,27 @@
         osCA = ./secrets.pub.json;
         # The commit the images are built from, which chalkctl shows beside an image's root hash.
         revision = self.rev or self.dirtyRev or null;
-        platforms = [ "kvm" ];
-        variants.node = { };
+        images = [
+          {
+            name = "node-kvm";
+            platform = "kvm";
+            modules = [ chalkos.nixosModules.kubernetes ];
+          }
+        ];
       };
     in
     {
       # nix build .#node-kvm -o images/node-kvm: the image where the inventory, chalkos.yaml,
       # points.
-      packages.${system}.node-kvm = images.images.node-kvm;
+      packages.${system}.node-kvm = images.node-kvm;
 
-      # The evaluated NixOS systems, node-kvm and installer, whose build outputs a guide builds on
-      # their own, such as the image's schemas:
+      # The image's evaluated NixOS system, whose build outputs a guide builds on its own, such as
+      # the image's schemas:
       # nix build .#nixosConfigurations.node-kvm.config.system.build.chalkosSchemas
-      nixosConfigurations = images.nixos;
+      nixosConfigurations = chalkos.lib.nixosOf images;
 
       # nix flake check: the image's tests, chalkos.tests.
-      checks.${system} = images.checks;
+      checks.${system} = chalkos.lib.testsOf images;
 
       # nix develop: chalklab and chalkctl of the chalkos this flake pins, and kubectl.
       devShells.${system}.default = pkgs.mkShellNoCC {

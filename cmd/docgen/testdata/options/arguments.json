@@ -12,16 +12,15 @@
     "description": "nixpkgs the images are built from.",
     "loc": ["nixpkgs"], "readOnly": false, "type": "raw value"
   },
-  "variants": {
+  "images": {
     "declarations": [{"name": "lib/images-arguments.nix", "url": "https://example.org/lib/images-arguments.nix"}],
-    "default": {"_type": "literalExpression", "text": "{\n  node = { };\n}"},
-    "description": "Variants of the cluster's images.",
-    "loc": ["variants"], "readOnly": false, "type": "attribute set of (submodule)"
+    "default": {"_type": "literalExpression", "text": "[\n  {\n    name = \"node-metal\";\n  }\n]"},
+    "description": "The images.",
+    "loc": ["images"], "readOnly": false, "type": "list of (submodule)"
   },
-  "variants.<name>.kubernetes": {
+  "images.*.name": {
     "declarations": [{"name": "lib/images-arguments.nix", "url": "https://example.org/lib/images-arguments.nix"}],
-    "default": {"_type": "literalExpression", "text": "true"},
-    "description": "Whether the variant's images\nrun Kubernetes.",
-    "loc": ["variants", "<name>", "kubernetes"], "readOnly": false, "type": "boolean"
+    "description": "The image's\nname.",
+    "loc": ["images", "*", "name"], "readOnly": false, "type": "string"
   }
 }

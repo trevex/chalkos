@@ -3,66 +3,77 @@
 { self, pkgs }:
 let
   secrets = import ./secrets.nix { inherit pkgs; };
-  # Every variant has the test image's small partitions and the probe the tests read. test,
-  # which most VM tests boot, carries chalklab's Greeting kind; k8s is the image of the
-  # Kubernetes tests' control planes and workers; router that of the router test's routers.
-  arguments = {
+  # Every image has the test image's small partitions and the probe the tests read. test, which
+  # most VM tests boot, carries chalklab's Greeting kind; k8s is the image of the Kubernetes
+  # tests' control planes and workers; router that of the router test's routers.
+  shared = {
     osCA = "${secrets}/secrets.pub.json";
     modules = [ ../../modules/testing/test-image.nix ];
-    variants = {
-      test = {
-        kubernetes = false;
-        modules = [ ../../modules/testing/greeting.nix ];
-      };
-      k8s = { };
-      router = {
-        kubernetes = false;
-        router = true;
-        modules = [
-          {
-            # The test asks r2's resolver of fabric on edge0's address from within fabric, over a
-            # socket bound to the VRF's device, which needs no privilege on a socket not bound
-            # before. The query asks for the A records of ipv4only.arpa with the ID 0x1234; any
-            # answer shows that the resolver's sockets are bound to the VRF's device.
-            chalkos.diagnostics.chalktest-fabric-dns = {
-              description = "The first bytes of r2's fabric resolver's answer, asked from within fabric.";
-              command = [
-                (toString (
-                  pkgs.writeShellScript "chalktest-fabric-dns" ''
-                    printf '\x12\x34\x01\x00\x00\x01\x00\x00\x00\x00\x00\x00\x08ipv4only\x04arpa\x00\x00\x01\x00\x01' |
-                      ${pkgs.socat}/bin/socat -t 3 -T 5 - 'UDP6:[2001:db8:ffff::2]:53,so-bindtodevice=fabric' |
-                      ${pkgs.coreutils}/bin/od -An -tx1 -N4
-                  ''
-                ))
-              ];
-              role = "reader";
-              timeout = "10s";
-            };
-          }
-        ];
-      };
-    };
   };
-  images = self.lib.mkImages arguments;
-  # A variant's metal image again, with the module given and a file in /etc that names the image,
-  # so its store, and with it its root hash, differs from the variant's image and from the others.
-  variantAs =
-    variant: name: extra:
-    let
-      v = arguments.variants.${variant};
-    in
-    (self.lib.mkImages (
-      arguments
+  modules = {
+    test = [ ../../modules/testing/greeting.nix ];
+    k8s = [ self.nixosModules.kubernetes ];
+    router = [
+      self.nixosModules.router
+      {
+        # The test asks r2's resolver of fabric on edge0's address from within fabric, over a
+        # socket bound to the VRF's device, which needs no privilege on a socket not bound
+        # before. The query asks for the A records of ipv4only.arpa with the ID 0x1234; any
+        # answer shows that the resolver's sockets are bound to the VRF's device.
+        chalkos.diagnostics.chalktest-fabric-dns = {
+          description = "The first bytes of r2's fabric resolver's answer, asked from within fabric.";
+          command = [
+            (toString (
+              pkgs.writeShellScript "chalktest-fabric-dns" ''
+                printf '\x12\x34\x01\x00\x00\x01\x00\x00\x00\x00\x00\x00\x08ipv4only\x04arpa\x00\x00\x01\x00\x01' |
+                  ${pkgs.socat}/bin/socat -t 3 -T 5 - 'UDP6:[2001:db8:ffff::2]:53,so-bindtodevice=fabric' |
+                  ${pkgs.coreutils}/bin/od -An -tx1 -N4
+              ''
+            ))
+          ];
+          role = "reader";
+          timeout = "10s";
+        };
+      }
+    ];
+  };
+  # The image of modules.<base> on a platform, <base>-<platform>.
+  image = base: platform: {
+    name = "${base}-${platform}";
+    inherit platform;
+    modules = modules.${base};
+  };
+  images = self.lib.mkImages (
+    shared
+    // {
+      images = [
+        (image "test" "metal")
+        (image "test" "kvm")
+        (image "k8s" "metal")
+        (image "k8s" "kvm")
+        (image "router" "kvm")
+      ];
+    }
+  );
+  # An image's metal image again, of the same name, with the module given and a file in /etc that
+  # names the image, so its store, and with it its root hash, differs from the image and from the
+  # others.
+  imageAs =
+    base: name: extra:
+    self.lib.mkImage (
+      shared
       // {
-        platforms = [ "metal" ];
-        variants.${variant} = v // {
-          modules = v.modules or [ ] ++ [
+        name = "${base}-metal";
+        platform = "metal";
+        modules =
+          shared.modules
+          ++ modules.${base}
+          ++ [
             { environment.etc."chalktest-image".text = name; }
             extra
           ];
-        };
       }
-    )).images."${variant}-metal";
+    );
 in
 images
 // {
@@ -72,7 +83,7 @@ images
   # never becomes healthy, as a unit fails at every boot the way a broken service would, and falls
   # back after one try of 30 seconds. The upgrade image's output farewell refuses a Farewell whose
   # message is stay in its check alone, which neither its schema nor chalkctl validate do.
-  upgradeImage = variantAs "test" "upgrade" (
+  upgradeImage = imageAs "test" "upgrade" (
     { chalkosLib, lib, ... }:
     {
       chalkos.kinds.Farewell = {
@@ -90,7 +101,7 @@ images
       };
     }
   );
-  unhealthyImage = variantAs "test" "unhealthy" {
+  unhealthyImage = imageAs "test" "unhealthy" {
     chalkos.upgrade = {
       bootTries = 1;
       healthTimeout = 30;
@@ -105,6 +116,6 @@ images
     };
   };
   # The Kubernetes image the HA test's rolling upgrade installs.
-  haUpgradeImage = variantAs "k8s" "upgrade" { };
+  haUpgradeImage = imageAs "k8s" "upgrade" { };
   kubernetesImages = import ./kubernetes-images.nix { inherit pkgs; };
 }

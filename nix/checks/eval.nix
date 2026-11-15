@@ -6,20 +6,17 @@
   ...
 }:
 let
-  inherit (self.lib) mkImages;
+  arguments = {
+    inherit (pkgs) lib;
+    flakeLib = self.lib;
+    layers = self.nixosModules;
+  };
 in
 {
   eval = checkLib.evalTests "eval" "evaluation" (
-    import ../../test/nix/eval.nix {
-      inherit pkgs mkImages;
-      inherit (pkgs) lib;
-      flakeLib = self.lib;
-    }
+    import ../../test/nix/eval.nix (arguments // { inherit pkgs; })
   );
   eval-kinds = checkLib.evalTests "eval-kinds" "kind evaluation" (
-    import ../../test/nix/kinds.nix {
-      inherit mkImages;
-      inherit (pkgs) lib;
-    }
+    import ../../test/nix/kinds.nix arguments
   );
 }

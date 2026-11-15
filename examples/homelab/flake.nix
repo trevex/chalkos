@@ -13,31 +13,37 @@
       images = chalkos.lib.mkImages {
         # The commit the images are built from, which chalkctl shows beside an image's root hash.
         revision = self.rev or self.dirtyRev or null;
-        platforms = [ "metal" ];
-        variants = {
-          router = {
-            kubernetes = false;
-            router = true;
-          };
-          node.modules = [ ./extensions ];
-        };
+        images = [
+          {
+            name = "router-metal";
+            platform = "metal";
+            modules = [ chalkos.nixosModules.router ];
+          }
+          {
+            name = "node-metal";
+            platform = "metal";
+            modules = [
+              chalkos.nixosModules.kubernetes
+              ./extensions
+            ];
+          }
+        ];
       };
     in
     {
       # nix build .#<image> -o images/<image>: the images where the inventory, chalkos.yaml,
       # points. nix build .#installer: the installer's raw image and ISO, which install both.
       packages.${system} = {
-        inherit (images.images) router-metal node-metal;
-        inherit (images) installer;
+        inherit (images) router-metal node-metal installer;
       };
 
-      # The evaluated NixOS systems, <image> and installer, whose build outputs a guide builds on
-      # their own, such as an image's schemas:
+      # The images' evaluated NixOS systems, whose build outputs a guide builds on their own, such
+      # as an image's schemas:
       # nix build .#nixosConfigurations.node-metal.config.system.build.chalkosSchemas
-      nixosConfigurations = images.nixos;
+      nixosConfigurations = chalkos.lib.nixosOf images;
 
       # nix flake check: the images' tests, chalkos.tests.
-      checks.${system} = images.checks;
+      checks.${system} = chalkos.lib.testsOf images;
 
       # nix develop: chalkctl and chalkbuild of the chalkos this flake pins, and the other tools
       # the guide runs.

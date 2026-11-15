@@ -35,9 +35,9 @@ const builtinsIntro = "# Built-ins\n\n" +
 
 // builtinsSources closes the page of built-ins.
 const builtinsSources = "\nSources: the schemas, `facts.json`, `validators.json`, `outputs.json`, `effects.json` and\n" +
-	"`diagnostics.json` that an image holds in `/etc/chalkos`, of an image of the default variant, of\n" +
-	"one with `kubernetes = false` and of one with `router = true`, which the node modules in\n" +
-	"`modules/node/` declare.\n"
+	"`diagnostics.json` that an image holds in `/etc/chalkos`, of an image with the Kubernetes layer,\n" +
+	"of one without a layer and of a router image, which the node modules in `modules/node/`\n" +
+	"declare.\n"
 
 // The openings of the page's sections.
 const (
@@ -96,8 +96,8 @@ type builtinImage struct {
 }
 
 // writeBuiltins writes the built-ins page from three rules images, as
-// system.build.chalkosRulesImage lays them out: the default variant's at def, one without
-// Kubernetes at plain and a router image's at router. The plain image's built-ins are every
+// system.build.chalkosRulesImage lays them out: one with the Kubernetes layer at def, one without
+// a layer at plain and a router image's at router. The plain image's built-ins are every
 // image's; the rest belong to images with Kubernetes or router images, and one of every image that
 // the router image declares otherwise is listed again with router images.
 func writeBuiltins(page, def, plain, router string) error {

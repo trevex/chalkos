@@ -31,7 +31,7 @@ in
     assertions = [
       {
         assertion = lib.length names <= 1;
-        message = "${image} enables the ${lib.concatStringsSep " and " names} layers; an image carries one layer at most, so set kubernetes = false or router = false";
+        message = "${image} enables the ${lib.concatStringsSep " and " names} layers; an image carries one layer at most, so list one of nixosModules.kubernetes and nixosModules.router";
       }
     ];
   };

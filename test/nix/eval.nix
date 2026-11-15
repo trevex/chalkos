@@ -1,13 +1,22 @@
-# Evaluation tests of chalkos.lib.mkImages and the images it builds; returns lib.runTests failures
-# (empty on success).
+# Evaluation tests of chalkos.lib's image functions and the images they build; returns
+# lib.runTests failures (empty on success).
 {
   lib,
   pkgs,
-  mkImages,
   flakeLib,
+  layers,
 }:
 let
-  inherit (import ./lib.nix { inherit lib mkImages; })
+  inherit (flakeLib)
+    mkImage
+    mkImages
+    mkInstaller
+    nixosOf
+    ociOf
+    selectImages
+    testsOf
+    ;
+  inherit (import ./lib.nix { inherit lib flakeLib layers; })
     fails
     refuses
     etcJSON
@@ -17,25 +26,43 @@ let
     router
     routerWithout
     ;
-  # A variant of each set of layers on metal: node has the Kubernetes layer, plain none, edge the
+  # An image of each set of layers on metal: node has the Kubernetes layer, plain none, edge the
   # router layer.
-  layered =
-    (mkImages {
-      platforms = [ "metal" ];
-      variants = {
-        node = { };
-        plain.kubernetes = false;
-        edge = {
-          kubernetes = false;
-          router = true;
-        };
-      };
-    }).nixos;
-  # The images most tests read, each evaluated once: a variant worker without modules on each
-  # platform with the installer, the router with every feature, and the router without each
+  layered = nixosOf (mkImages {
+    images = [
+      {
+        name = "node-metal";
+        platform = "metal";
+        modules = [ layers.kubernetes ];
+      }
+      {
+        name = "plain-metal";
+        platform = "metal";
+      }
+      {
+        name = "edge-metal";
+        platform = "metal";
+        modules = [ layers.router ];
+      }
+    ];
+  });
+  # The images most tests read, each evaluated once: a Kubernetes worker without modules on metal
+  # and kvm with the installer, the router with every feature, and the router without each
   # feature.
-  workerImages = mkImages { variants.worker = { }; };
-  w = workerImages.nixos.worker-metal.config;
+  workerImages = mkImages {
+    images =
+      map
+        (platform: {
+          name = "worker-${platform}";
+          inherit platform;
+          modules = [ layers.kubernetes ];
+        })
+        [
+          "metal"
+          "kvm"
+        ];
+  };
+  w = workerImages.worker-metal.nixos.config;
   edge = layered.edge-metal.config;
   inherit (layered.edge-metal._module.args.routerLib) features;
   without = lib.genAttrs features (f: routerWithout [ f ]);
@@ -63,76 +90,217 @@ lib.runTests {
       true
     ];
   };
-  # mkImages builds each variant on each platform, metal and kvm unless the arguments name
-  # others, as <variant>-<platform>, each with its OCI layout as oci.<variant>-<platform>, and
-  # one installer; without variants it builds node.
-  testMkImagesNamesImagesByVariantAndPlatform = {
+  # mkImages builds each image of its list by its name, each the image directory with its name,
+  # platform, layer, OCI layout, NixOS system and tests, and the installer.
+  testMkImagesNames = {
     expr =
       let
-        i = mkImages {
-          variants = {
-            node = { };
-            storage.kubernetes = false;
-          };
+        r = mkImages {
+          images = [
+            {
+              name = "a";
+              platform = "metal";
+            }
+            {
+              name = "b";
+              platform = "kvm";
+              modules = [ layers.kubernetes ];
+            }
+          ];
         };
       in
       {
-        images = lib.attrNames i.images;
-        nixos = lib.attrNames i.nixos;
-        build = lib.all lib.isDerivation (lib.attrValues i.images);
-        installer = lib.isDerivation i.installer && lib.hasInfix "chalkos-installer" i.installer.name;
-        default = lib.attrNames (mkImages { }).images;
-        onePlatform = lib.attrNames (mkImages { platforms = [ "kvm" ]; }).images;
-        oci = lib.attrNames i.oci;
-        ociBuild = lib.all (d: lib.isDerivation d && lib.hasSuffix "-oci" d.name) (lib.attrValues i.oci);
+        names = lib.attrNames r;
+        a = {
+          inherit (r.a) name platform layer;
+        };
+        b = r.b.layer;
+        build = lib.all lib.isDerivation [
+          r.a
+          r.b
+          r.installer
+        ];
+        installer = lib.hasInfix "chalkos-installer" r.installer.name && !(r.installer ? platform);
+        oci = lib.isDerivation r.a.oci && lib.hasSuffix "-oci" r.a.oci.name;
+        nixos = r.b.nixos.config.chalkos.image.name;
+        tests = r.a.tests.drvPath == r.a.nixos.config.system.build.chalkosTests.drvPath;
       };
     expected = {
-      images = [
-        "node-kvm"
-        "node-metal"
-        "storage-kvm"
-        "storage-metal"
-      ];
-      nixos = [
+      names = [
+        "a"
+        "b"
         "installer"
-        "node-kvm"
-        "node-metal"
-        "storage-kvm"
-        "storage-metal"
       ];
+      a = {
+        name = "a";
+        platform = "metal";
+        layer = null;
+      };
+      b = "kubernetes";
       build = true;
       installer = true;
-      default = [
-        "node-kvm"
-        "node-metal"
-      ];
-      onePlatform = [ "node-kvm" ];
-      oci = [
-        "node-kvm"
-        "node-metal"
-        "storage-kvm"
-        "storage-metal"
-      ];
-      ociBuild = true;
+      oci = true;
+      nixos = "b";
+      tests = true;
     };
   };
-  # Each image names itself <variant>-<platform> and its platform, carries the layers its variant
-  # asks for and the OS CA; the installer has no name, belongs to no platform and carries no layer.
+  # mkImages refuses two images of one name and an image named installer.
+  testMkImagesRefusesDuplicateNames = {
+    expr = {
+      twice = fails (mkImages {
+        images = [
+          {
+            name = "a";
+            platform = "metal";
+          }
+          {
+            name = "a";
+            platform = "kvm";
+          }
+        ];
+      });
+      installer = fails (mkImages {
+        images = [
+          {
+            name = "installer";
+            platform = "metal";
+          }
+        ];
+      });
+    };
+    expected = {
+      twice = true;
+      installer = true;
+    };
+  };
+  # An image's name and platform are required names of lower-case letters, digits and dashes.
+  testMkImageRefusesBadNames = {
+    expr = {
+      name =
+        fails
+          (mkImage {
+            name = "A_b";
+            platform = "metal";
+          }).drvPath;
+      platform =
+        fails
+          (mkImage {
+            name = "a";
+            platform = "x.y";
+          }).drvPath;
+      noName = fails (mkImage { platform = "metal"; }).drvPath;
+      noPlatform = fails (mkImage { name = "a"; }).drvPath;
+      entry = fails (mkImages {
+        images = [
+          {
+            name = "Bad";
+            platform = "metal";
+          }
+        ];
+      });
+    };
+    expected = {
+      name = true;
+      platform = true;
+      noName = true;
+      noPlatform = true;
+      entry = true;
+    };
+  };
+  # selectImages keeps the images matching every field given, without the installer, and refuses
+  # a field an image does not have; ociOf, nixosOf and testsOf map the images alone.
+  testSelectImages = {
+    expr =
+      let
+        r = mkImages {
+          images = [
+            {
+              name = "a";
+              platform = "metal";
+            }
+            {
+              name = "b";
+              platform = "kvm";
+              modules = [ layers.kubernetes ];
+            }
+          ];
+        };
+      in
+      {
+        metal = lib.attrNames (selectImages { platform = "metal"; } r);
+        kubernetes = lib.attrNames (selectImages { layer = "kubernetes"; } r);
+        both = lib.attrNames (
+          selectImages {
+            platform = "metal";
+            layer = "kubernetes";
+          } r
+        );
+        unknown = fails (selectImages { plattform = "metal"; } r);
+        oci = lib.attrNames (ociOf r);
+        nixos = lib.attrNames (nixosOf r);
+        tests = lib.attrNames (testsOf r);
+      };
+    expected = {
+      metal = [ "a" ];
+      kubernetes = [ "b" ];
+      both = [ ];
+      unknown = true;
+      oci = [
+        "a"
+        "b"
+      ];
+      nixos = [
+        "a"
+        "b"
+      ];
+      tests = [
+        "a"
+        "b"
+      ];
+    };
+  };
+  # An image without a layer module runs no Kubernetes.
+  testKubernetesOffByDefault = {
+    expr =
+      (mkImage {
+        name = "a";
+        platform = "metal";
+      }).nixos.config.chalkos.kubernetes.enable;
+    expected = false;
+  };
+  # The image records its name.
+  testImageNameRecorded = {
+    expr =
+      (mkImage {
+        name = "node-metal";
+        platform = "metal";
+      }).nixos.config.chalkos.image.name;
+    expected = "node-metal";
+  };
+  # Each image names itself and its platform, carries the layers its modules list and the OS CA;
+  # the installer has no name, belongs to no platform and carries no layer.
   testMkImagesDescribesEachImage = {
     expr =
       let
         pub = builtins.toFile "secrets.pub.json" ''{"version": 3, "osCA": {"certificate": "PEM"}}'';
         i = mkImages {
           osCA = pub;
-          variants = {
-            node = { };
-            storage.kubernetes = false;
-            edge = {
-              kubernetes = false;
-              router = true;
-            };
-          };
-          platforms = [ "metal" ];
+          images = [
+            {
+              name = "node-metal";
+              platform = "metal";
+              modules = [ layers.kubernetes ];
+            }
+            {
+              name = "storage-metal";
+              platform = "metal";
+            }
+            {
+              name = "edge-metal";
+              platform = "metal";
+              modules = [ layers.router ];
+            }
+          ];
         };
         summary = n: {
           name = n.config.chalkos.image.name;
@@ -142,7 +310,7 @@ lib.runTests {
           osCA = n.config.environment.etc ? "chalkos/os-ca.crt";
         };
       in
-      lib.mapAttrs (_: summary) i.nixos;
+      lib.mapAttrs (_: i: summary i.nixos) i;
     expected = {
       installer = {
         name = null;
@@ -198,13 +366,21 @@ lib.runTests {
       installer = { };
     };
   };
-  # An image carries one layer at most: a variant with both the Kubernetes and the router layer
+  # An image carries one layer at most: one that lists both the Kubernetes and the router layer
   # fails to build, naming the image.
   testLayersExcludeEachOther = {
     expr =
       let
         refused = refuses "the image both-metal enables the kubernetes and router layers";
-        both = (mkImages { variants.both.router = true; }).nixos.both-metal.config;
+        both =
+          (mkImage {
+            name = "both-metal";
+            platform = "metal";
+            modules = [
+              layers.kubernetes
+              layers.router
+            ];
+          }).nixos.config;
       in
       {
         both = refused both;
@@ -219,7 +395,7 @@ lib.runTests {
       edge = false;
     };
   };
-  # A router feature that a variant disables with chalkos.router.<feature>.enable = false leaves
+  # A router feature that an image disables with chalkos.router.<feature>.enable = false leaves
   # nothing of itself in the image: per feature, exactly the parts listed go and nothing comes in
   # their place, the build allocates the same IDs and networkd keeps the routes others install.
   # Images without the router layer take no router kind.
@@ -1297,13 +1473,11 @@ lib.runTests {
             ]
           ) c.boot.kernel.sysctl;
         plainForwarding =
-          (mkImages {
-            platforms = [ "metal" ];
-            variants.plain = {
-              kubernetes = false;
-              modules = [ { chalkos.forwarding.enable = true; } ];
-            };
-          }).nixos.plain-metal.config;
+          (mkImage {
+            name = "plain-metal";
+            platform = "metal";
+            modules = [ { chalkos.forwarding.enable = true; } ];
+          }).nixos.config;
         on = {
           "net.ipv4.ip_forward" = 1;
           "net.ipv6.conf.all.forwarding" = 1;
@@ -1322,16 +1496,21 @@ lib.runTests {
       asked = true;
     };
   };
-  # A variant's images carry their platform's modules, those of every variant and the variant's
-  # own; the installer carries its own modules alone.
+  # An image carries its platform's modules, those every image carries and its own; the installer
+  # carries its own modules alone.
   testMkImagesAppliesModules = {
     expr =
       let
         mark = m: { boot.kernelParams = [ m ]; };
         i = mkImages {
-          platforms.metal = [ (mark "platform") ];
           modules = [ (mark "every") ];
-          variants.node.modules = [ (mark "variant") ];
+          images = [
+            {
+              name = "node-metal";
+              platform = "metal";
+              modules = [ (mark "image") ];
+            }
+          ];
           installer.modules = [ (mark "installer") ];
         };
         marks =
@@ -1339,72 +1518,62 @@ lib.runTests {
           lib.filter (
             p:
             lib.elem p [
-              "platform"
               "every"
-              "variant"
+              "image"
               "installer"
             ]
           ) n.config.boot.kernelParams;
       in
       {
-        node = lib.sort lib.lessThan (marks i.nixos.node-metal);
-        installer = marks i.nixos.installer;
-        # metal's modules of chalkos stay when platforms.metal gives more: they set the consoles.
+        node = lib.sort lib.lessThan (marks i.node-metal.nixos);
+        installer = marks i.installer.nixos;
+        # chalkos's own metal module is among them: it sets the consoles.
         console = lib.any (
           d: lib.hasSuffix "modules/platforms/metal.nix" d.file
-        ) i.nixos.node-metal.options.chalkos.consoles.definitionsWithLocations;
+        ) i.node-metal.nixos.options.chalkos.consoles.definitionsWithLocations;
       };
     expected = {
       node = [
         "every"
-        "platform"
-        "variant"
+        "image"
       ];
       installer = [ "installer" ];
       console = true;
     };
   };
-  # Variant and platform names become os-release values and image names; two images of one name
-  # are refused, as are arguments mkImages does not have.
+  # mkImages and mkImage refuse arguments they do not have, as an image of mkImages's list does;
+  # a platform other than metal and kvm is one of the image's modules alone.
   testMkImagesRefuses = {
     expr = {
-      platform = fails (lib.attrNames (mkImages { platforms = [ "Bad" ]; }).images);
-      platformModules = fails (lib.attrNames (mkImages { platforms."x.y" = [ ]; }).images);
-      variant = fails (lib.attrNames (mkImages { variants.Node = { }; }).images);
-      collision = fails (
-        lib.attrNames
-          (mkImages {
-            platforms = [
-              "metal"
-              "b-metal"
-            ];
-            variants = {
-              a = { };
-              a-b = { };
-            };
-          }).images
-      );
-      unknown = fails (lib.attrNames (mkImages { roles.node = { }; }).images);
-      noPlatform = fails (lib.attrNames (mkImages { platforms = [ ]; }).images);
-      duplicatePlatform = fails (
-        lib.attrNames
-          (mkImages {
-            platforms = [
-              "kvm"
-              "kvm"
-            ];
-          }).images
-      );
-      custom = (mkImages { platforms.esxi-8 = [ ]; }).nixos.node-esxi-8.config.chalkos.platform.name;
+      unknown = fails (mkImages {
+        variants.node = { };
+      });
+      unknownEntry = fails (mkImages {
+        images = [
+          {
+            name = "a";
+            platform = "metal";
+            layer = "router";
+          }
+        ];
+      });
+      unknownImage =
+        fails
+          (mkImage {
+            name = "a";
+            platform = "metal";
+            platforms = [ "kvm" ];
+          }).drvPath;
+      custom =
+        (mkImage {
+          name = "node-esxi-8";
+          platform = "esxi-8";
+        }).nixos.config.chalkos.platform.name;
     };
     expected = {
-      platform = true;
-      platformModules = true;
-      variant = true;
-      collision = true;
       unknown = true;
-      noPlatform = true;
-      duplicatePlatform = true;
+      unknownEntry = true;
+      unknownImage = true;
       custom = "esxi-8";
     };
   };
@@ -1415,9 +1584,11 @@ lib.runTests {
         (
           version:
           fails
-            (mkImages {
+            (mkImage {
+              name = "node-metal";
+              platform = "metal";
               osCA = builtins.toFile "secrets.pub.json" ''{"version": ${toString version}, "osCA": {"certificate": "PEM"}}'';
-            }).nixos.node-metal.config.environment.etc."chalkos/os-ca.crt".source.drvPath
+            }).nixos.config.environment.etc."chalkos/os-ca.crt".source.drvPath
         )
         [
           1
@@ -1430,22 +1601,25 @@ lib.runTests {
       false
     ];
   };
-  # mkImages evaluates the images with the nixpkgs and the module arguments given, adds
-  # chalkosLib to those arguments and leaves nixpkgs's lib as it is.
-  testMkImagesUsesItsNixpkgs = {
+  # mkImage evaluates the image with the nixpkgs and the module arguments given, adds chalkosLib
+  # to those arguments and leaves nixpkgs's lib as it is.
+  testMkImageUsesItsNixpkgs = {
     expr =
       let
         n =
-          (mkImages {
+          (mkImage {
+            name = "node-metal";
+            platform = "metal";
             nixpkgs.lib = lib // {
               nixosSystem = args: {
                 marker = "custom";
+                config.system.build.chalkosImage = { };
                 inherit (args) specialArgs;
                 passesLib = args ? lib;
               };
             };
             specialArgs.answer = 42;
-          }).nixos.node-metal;
+          }).nixos;
       in
       {
         inherit (n) marker passesLib;
@@ -1459,8 +1633,8 @@ lib.runTests {
       chalkosLib = true;
     };
   };
-  # An image's modules get chalkosLib, without mkImages, and nixpkgs's lib, without a chalkos
-  # attribute.
+  # An image's modules get chalkosLib, without the functions that build images, and nixpkgs's lib,
+  # without a chalkos attribute.
   testImageModulesGetChalkosLib = {
     expr =
       builtins.fromJSON
@@ -1471,7 +1645,7 @@ lib.runTests {
               environment.etc."chalkos-test/lib.json".text = builtins.toJSON {
                 libChalkos = lib ? chalkos;
                 mkOption = chalkosLib ? mkOption;
-                mkImages = chalkosLib ? mkImages;
+                mkImage = chalkosLib ? mkImage;
               };
             }
           )
@@ -1479,21 +1653,33 @@ lib.runTests {
     expected = {
       libChalkos = false;
       mkOption = true;
-      mkImages = false;
+      mkImage = false;
     };
   };
-  # mkImages refuses a module argument of the user's named chalkosLib.
-  testMkImagesRefusesChalkosLibArgument = {
+  # mkImage refuses a module argument of the user's named chalkosLib.
+  testMkImageRefusesChalkosLibArgument = {
     expr =
       fails
-        (mkImages { specialArgs.chalkosLib = removeAttrs flakeLib [ "mkImages" ]; })
-        .nixos.node-metal.config.chalkos.image.name;
+        (mkImage {
+          name = "node-metal";
+          platform = "metal";
+          specialArgs.chalkosLib = flakeLib;
+        }).nixos.config.chalkos.image.name;
     expected = true;
   };
-  # The flake's lib holds chalkosLib's helpers besides mkImages, usable outside an image.
+  # The flake's lib holds chalkosLib's helpers besides the functions that build images, usable
+  # outside an image.
   testFlakeLibOutsideAnImage = {
     expr = {
-      mkImages = flakeLib ? mkImages;
+      images = lib.all (n: flakeLib ? ${n}) [
+        "mkImage"
+        "mkImages"
+        "mkInstaller"
+        "selectImages"
+        "ociOf"
+        "nixosOf"
+        "testsOf"
+      ];
       rules =
         (flakeLib.mkOption {
           type = lib.types.str;
@@ -1507,7 +1693,7 @@ lib.runTests {
       template = flakeLib.render.template ../../modules/testing/greeting.tmpl;
     };
     expected = {
-      mkImages = true;
+      images = true;
       rules = [
         {
           rule = "self == oldSelf";
@@ -1556,28 +1742,29 @@ lib.runTests {
           mdns = lib.elem "MulticastDNS=false" lines;
         })
         [
-          (conf i.nixos.worker-metal.config)
-          (conf i.nixos.installer.config)
+          (conf i.worker-metal.nixos.config)
+          (conf i.installer.nixos.config)
         ];
     expected = lib.replicate 2 {
       llmnr = true;
       mdns = true;
     };
   };
-  # The OS CA is an argument of mkImages, which every image and the installer carry as a file; the
+  # The OS CA is an argument of mkImage, which every image and the installer carry as a file; the
   # images have no setting of it besides chalkos.maintenance.osCA.
   testImagesCarryOSCA = {
     expr =
       let
         pub = builtins.toFile "secrets.pub.json" ''{"version": 3, "osCA": {"certificate": "PEM"}}'';
-        withCA = mkImages {
+        withCA = mkImage {
+          name = "worker-metal";
+          platform = "metal";
           osCA = pub;
-          variants.worker = { };
         };
       in
       {
         withoutCA = w.environment.etc ? "chalkos/os-ca.crt";
-        setting = withCA.nixos.worker-metal.config.chalkos ? osCA;
+        setting = withCA.nixos.config.chalkos ? osCA;
       };
     expected = {
       withoutCA = false;
@@ -1593,8 +1780,8 @@ lib.runTests {
         has = config: config.environment.etc ? "ssl/certs/ca-certificates.crt";
       in
       {
-        node = has i.nixos.worker-metal.config;
-        installer = has i.nixos.installer.config;
+        node = has i.worker-metal.nixos.config;
+        installer = has i.installer.nixos.config;
       };
     expected = {
       node = true;
@@ -1703,8 +1890,8 @@ lib.runTests {
   testInstallerModules = {
     expr =
       let
-        i = mkImages {
-          installer.modules = [
+        i = mkInstaller {
+          modules = [
             {
               systemd.network.networks."10-uplink" = {
                 matchConfig.MACAddress = "52:54:00:12:34:56";
@@ -1714,12 +1901,12 @@ lib.runTests {
             }
           ];
         };
-        inherit (i.nixos.installer) config;
+        inherit (i.nixos) config;
       in
       {
         uplink = config.systemd.network.networks."10-uplink".matchConfig.MACAddress;
         wireless = lib.elem "wireless" config.chalkos.kernel.moduleGroups;
-        image = i.installer.drvPath == config.system.build.chalkosInstaller.drvPath;
+        image = i.drvPath == config.system.build.chalkosInstaller.drvPath;
       };
     expected = {
       uplink = "52:54:00:12:34:56";
@@ -1738,8 +1925,8 @@ lib.runTests {
         };
       in
       {
-        metal = summary i.nixos.worker-metal.config;
-        kvm = summary i.nixos.worker-kvm.config;
+        metal = summary i.worker-metal.nixos.config;
+        kvm = summary i.worker-kvm.nixos.config;
       };
     expected = {
       metal = {
@@ -1760,14 +1947,13 @@ lib.runTests {
   testConsoles = {
     expr =
       let
-        i = mkImages {
-          variants.worker = { };
-          platforms = {
-            metal = [ ];
-            kvm = [ ];
-            esxi = [ ];
-          };
-        };
+        i = workerImages;
+        esxi =
+          (mkImage {
+            name = "worker-esxi";
+            platform = "esxi";
+            modules = [ layers.kubernetes ];
+          }).nixos.config;
         serialLast = [
           "tty0"
           "ttyS0,115200"
@@ -1775,33 +1961,36 @@ lib.runTests {
         consoles = c: lib.filter (lib.hasPrefix "console=") c.boot.kernelParams;
         refused = refuses "boot.kernelParams holds console= entries of its own";
         # The worker of a platform r650 whose own module sets the consoles plainly, with the
-        # variant's module given.
+        # image's module given.
         onR650 =
           module:
-          (mkImages {
-            platforms.r650 = [
+          (mkImage {
+            name = "worker-r650";
+            platform = "r650";
+            modules = [
+              layers.kubernetes
               {
                 chalkos.consoles = [
                   "ttyS1,115200"
                   "tty0"
                 ];
               }
+              module
             ];
-            variants.worker.modules = [ module ];
-          }).nixos.worker-r650.config;
+          }).nixos.config;
       in
       {
-        metal = consoles i.nixos.worker-metal.config;
-        kvm = consoles i.nixos.worker-kvm.config;
-        esxi = consoles i.nixos.worker-esxi.config;
-        installer = consoles i.nixos.installer.config;
+        metal = consoles i.worker-metal.nixos.config;
+        kvm = consoles i.worker-kvm.nixos.config;
+        esxi = consoles esxi;
+        installer = consoles i.installer.nixos.config;
         serialLast = consoles (worker [ { chalkos.consoles = serialLast; } ]);
         installerSerialLast = consoles (installer [ { chalkos.consoles = serialLast; } ]);
         stray = refused (worker [ { boot.kernelParams = [ "console=ttyS1,115200" ]; } ]);
         plain = refused w;
         empty = fails (worker [ { chalkos.consoles = [ ]; } ]).chalkos.consoles;
         notADevice = fails (worker [ { chalkos.consoles = [ "ttyS0 quiet" ]; } ]).chalkos.consoles;
-        # A platform's and a variant's plain lists conflict; lib.mkForce overrides the platform's.
+        # Two modules' plain lists conflict; lib.mkForce overrides the other's.
         twice = fails (onR650 { chalkos.consoles = serialLast; }).chalkos.consoles;
         forced = consoles (onR650 {
           chalkos.consoles = lib.mkForce serialLast;
@@ -1868,9 +2057,9 @@ lib.runTests {
         on = consoles: output (worker [ { chalkos.consoles = consoles; } ]);
       in
       {
-        metal = output i.nixos.worker-metal.config;
-        kvm = output i.nixos.worker-kvm.config;
-        installer = output i.nixos.installer.config;
+        metal = output i.worker-metal.nixos.config;
+        kvm = output i.worker-kvm.nixos.config;
+        installer = output i.installer.nixos.config;
         serialLast = on [
           "tty0"
           "ttyS0,115200"
@@ -1902,12 +2091,12 @@ lib.runTests {
         i = workerImages;
         copies = c: lib.filter (lib.hasPrefix "chalkos-serial-log@") c.systemd.targets.multi-user.wants;
         on = consoles: copies (worker [ { chalkos.consoles = consoles; } ]);
-        unit = i.nixos.worker-metal.config.systemd.services."chalkos-serial-log@";
+        unit = i.worker-metal.nixos.config.systemd.services."chalkos-serial-log@";
       in
       {
-        metal = copies i.nixos.worker-metal.config;
-        kvm = copies i.nixos.worker-kvm.config;
-        installer = copies i.nixos.installer.config;
+        metal = copies i.worker-metal.nixos.config;
+        kvm = copies i.worker-kvm.nixos.config;
+        installer = copies i.installer.nixos.config;
         serialLast = on [
           "tty0"
           "ttyS0,115200"
@@ -1983,7 +2172,7 @@ lib.runTests {
   # from /sbin.
   testGuestAgentRestricted =
     let
-      config = workerImages.nixos.worker-kvm.config;
+      config = workerImages.worker-kvm.nixos.config;
       service = config.systemd.services.qemu-guest-agent.serviceConfig;
     in
     {
@@ -2024,7 +2213,7 @@ lib.runTests {
           lib.sort lib.lessThan (
             lib.unique (
               lib.filter (lib.hasPrefix "virtio")
-                i.nixos."worker-${platform}".config.boot.initrd.availableKernelModules
+                i."worker-${platform}".nixos.config.boot.initrd.availableKernelModules
             )
           );
       in
@@ -2045,66 +2234,53 @@ lib.runTests {
         metal = [ ];
       };
   };
-  # The arguments add a platform of their own, or modules to one of chalkos's. A variant overrides
-  # a value its platform sets by priority, as module order does not: lib.mkForce for a value the
-  # platform defines plainly, lib.mkOverride below 50 for the guest agent's ExecStart, which kvm
-  # forces. Both add to a list.
+  # A platform other than metal and kvm is one of the image's modules alone. An image overrides a
+  # value its platform's modules set by priority, as module order does not: lib.mkForce for a value
+  # the platform defines plainly, lib.mkOverride below 50 for the guest agent's ExecStart, which
+  # kvm forces. Both add to a list.
   testCustomPlatform = {
     expr =
       let
-        i = mkImages {
-          platforms = {
-            esxi = [
+        esxi =
+          (mkImage {
+            name = "worker-esxi";
+            platform = "esxi";
+            modules = [
+              layers.kubernetes
+              { services.openssh.enable = true; }
+            ];
+          }).nixos.config;
+        kvm =
+          (mkImage {
+            name = "worker-kvm";
+            platform = "kvm";
+            modules = [
+              layers.kubernetes
               {
-                services.openssh.enable = true;
-                environment.variables.PLATFORM_TEST = "esxi";
+                boot.kernelParams = [ "image" ];
+                systemd.services.qemu-guest-agent.serviceConfig.ExecStart = lib.mkOverride 49 "image-agent";
               }
             ];
-            metal = [ { chalkos.kernel.moduleGroups = [ "gpu" ]; } ];
-            kvm = [ ];
-          };
-          variants.worker.modules = [
-            {
-              boot.kernelParams = [ "variant" ];
-              environment.variables.PLATFORM_TEST = lib.mkForce "variant";
-              systemd.services.qemu-guest-agent.serviceConfig.ExecStart = lib.mkOverride 49 "variant-agent";
-            }
-          ];
-        };
-        esxi = i.nixos.worker-esxi.config;
-        kvm = i.nixos.worker-kvm.config;
-        metal = i.nixos.worker-metal.config;
+          }).nixos.config;
       in
       {
-        images = lib.attrNames i.images;
         esxi = esxi.services.openssh.enable;
         esxiPlatform = esxi.system.nixos.extraOSReleaseArgs.CHALKOS_PLATFORM;
         kvm = kvm.services.openssh.enable;
-        metalGPU = lib.elem "gpu" metal.chalkos.kernel.moduleGroups;
-        kvmGPU = lib.elem "gpu" kvm.chalkos.kernel.moduleGroups;
         kernelParams = lib.sort lib.lessThan (
-          lib.filter (p: p == "variant" || p == "console=ttyS0,115200") kvm.boot.kernelParams
+          lib.filter (p: p == "image" || p == "console=ttyS0,115200") kvm.boot.kernelParams
         );
-        overridden = esxi.environment.variables.PLATFORM_TEST;
         agent = kvm.systemd.services.qemu-guest-agent.serviceConfig.ExecStart;
       };
     expected = {
-      images = [
-        "worker-esxi"
-        "worker-kvm"
-        "worker-metal"
-      ];
       esxi = true;
       esxiPlatform = "esxi";
       kvm = false;
-      metalGPU = true;
-      kvmGPU = false;
       kernelParams = [
         "console=ttyS0,115200"
-        "variant"
+        "image"
       ];
-      overridden = "variant";
-      agent = "variant-agent";
+      agent = "image-agent";
     };
   };
   # The installer runs chalkd in installer mode and belongs to no platform, whatever its modules
@@ -2238,10 +2414,11 @@ lib.runTests {
         agree = true;
       };
     };
-  testKubernetesOnlyInKubernetesVariants = {
+  # Only an image with the Kubernetes layer runs Kubernetes.
+  testKubernetesOnlyWithItsLayer = {
     expr =
       let
-        image = enable: (mkImages { variants.worker.kubernetes = enable; }).nixos.worker-metal.config;
+        image = enable: if enable then w else layered.plain-metal.config;
         services = config: {
           kubelet = config.systemd.services ? kubelet;
           containerd = config.virtualisation.containerd.enable;
@@ -2310,7 +2487,7 @@ lib.runTests {
   };
   # One directory with the plugins the image names, copied out of nixpkgs's packages: those
   # flannel's network runs, plus flannel's own plugin, or with no network every reference plugin;
-  # a variant adds to them or narrows them.
+  # an image adds to them or narrows them.
   testCNIPluginsFollowProvider = {
     expr =
       let
@@ -2431,8 +2608,8 @@ lib.runTests {
   };
   # The groups of kernel modules are declared by the modules that need them: every image carries
   # the base firewall's, a router too, whose rulesets use its modules with the nftables service
-  # off, and the Kubernetes layer adds its own. Every image declares the Kubernetes group, so a
-  # variant may add it; a group no module declares is refused.
+  # off, and the Kubernetes layer adds its own. Every image declares the Kubernetes group, so an
+  # image may add it; a group no module declares is refused.
   testKernelModuleGroupsByLayer = {
     expr =
       let
@@ -2976,20 +3153,24 @@ lib.runTests {
   testMkImagesPassesProvenance = {
     expr =
       let
+        node = {
+          name = "node-metal";
+          platform = "metal";
+        };
         given = mkImages {
           revision = "a1b2c3d4e5f60718293a4b5c6d7e8f9012345678";
           tag = "v1.5.0";
-          platforms = [ "metal" ];
+          images = [ node ];
         };
-        none = mkImages { platforms = [ "metal" ]; };
+        none = mkImage node;
       in
       {
-        given = lib.mapAttrs (_: n: n.config.chalkos.provenance) given.nixos;
-        none = none.nixos.node-metal.config.chalkos.provenance;
+        given = lib.mapAttrs (_: i: i.nixos.config.chalkos.provenance) given;
+        none = none.nixos.config.chalkos.provenance;
         sameStore =
-          given.nixos.node-metal.config.system.build.toplevel.drvPath
-          == none.nixos.node-metal.config.system.build.toplevel.drvPath;
-        mistyped = fails (mkImages { revision = 1; }).nixos.node-metal.config.chalkos.provenance;
+          given.node-metal.nixos.config.system.build.toplevel.drvPath
+          == none.nixos.config.system.build.toplevel.drvPath;
+        mistyped = fails (mkImage (node // { revision = 1; })).nixos.config.chalkos.provenance;
       };
     expected = {
       given = {
@@ -3083,7 +3264,7 @@ lib.runTests {
         };
       in
       {
-        image = summary i.images.worker-metal.fits;
+        image = summary i.worker-metal.fits;
         installer = summary i.installer.fits;
       };
     expected = {
@@ -3129,31 +3310,30 @@ lib.runTests {
       ];
     };
   };
-  # The system path holds what the image's modules and the variant put there, such as the mount
-  # helpers util-linux looks up there, and none of NixOS's default packages. The debug tools add a
-  # shell's tools, and crictl where the variant runs Kubernetes. Units name their own tools.
+  # The system path holds what the image's modules put there, such as the mount helpers util-linux
+  # looks up there, and none of NixOS's default packages. The debug tools add a shell's tools, and
+  # crictl where the image runs Kubernetes. Units name their own tools.
   testSystemPath = {
     expr =
       let
         image =
-          variant: modules:
-          (mkImages {
-            variants.worker = variant // {
-              inherit modules;
-            };
-          }).nixos.worker-metal.config;
+          layer: modules:
+          (mkImage {
+            name = "worker-metal";
+            platform = "metal";
+            modules = layer ++ modules;
+          }).nixos.config;
         names = c: map lib.getName c.environment.systemPackages;
-        # What modules add to a variant's system path.
+        # What modules add to the system path of an image with the layer given, or none.
         added =
-          variant: modules:
-          lib.sort lib.lessThan (
-            lib.subtractLists (names (image variant [ ])) (names (image variant modules))
-          );
+          layer: modules:
+          lib.sort lib.lessThan (lib.subtractLists (names (image layer [ ])) (names (image layer modules)));
+        kubernetes = [ layers.kubernetes ];
         debug = [ { chalkos.debug.tools = true; } ];
-        c = image { } [ ];
+        c = image kubernetes [ ];
       in
       {
-        variantAdds = added { } [ ({ pkgs, ... }: { environment.systemPackages = [ pkgs.hello ]; }) ];
+        imageAdds = added kubernetes [ ({ pkgs, ... }: { environment.systemPackages = [ pkgs.hello ]; }) ];
         nixosDefaults = lib.intersectLists [
           "nano"
           "sudo"
@@ -3165,16 +3345,16 @@ lib.runTests {
           "rsync"
           "strace"
         ] (names c);
-        nfs = lib.elem "nfs-utils" (names (image { } [ { boot.supportedFilesystems.nfs = true; } ]));
-        debug = added { } debug;
-        debugWithoutKubernetes = added { kubernetes = false; } debug;
+        nfs = lib.elem "nfs-utils" (names (image kubernetes [ { boot.supportedFilesystems.nfs = true; } ]));
+        debug = added kubernetes debug;
+        debugWithoutKubernetes = added [ ] debug;
         # D-Bus finds systemd's services and policies through the system path.
         dbus = lib.elem c.system.path c.services.dbus.packages && lib.elem "systemd" (names c);
         locales = c.i18n.supportedLocales;
         chalkd = lib.sort lib.lessThan (map lib.getName c.systemd.services.chalkd.path);
       };
     expected = {
-      variantAdds = [ "hello" ];
+      imageAdds = [ "hello" ];
       nixosDefaults = [ ];
       nfs = true;
       debug = [
@@ -3616,35 +3796,33 @@ lib.runTests {
       instances = [ ];
     };
   };
-  # An image's own overlay can override chalkos's packages with overrideScope: mkImages adds the
-  # chalkos scope before the image's overlays, so a variant's chalkd replaces the one on the
-  # system path, which is otherwise the scope's.
+  # An image's own overlay can override chalkos's packages with overrideScope: mkImage adds the
+  # chalkos scope before the image's overlays, so an image's chalkd replaces the one on the system
+  # path, which is otherwise the scope's.
   testImageOverlayOverridesTheChalkosScope = {
     expr =
       let
         onPath = name: c: lib.any (p: lib.getName p == name) c.environment.systemPackages;
-        images =
-          (mkImages {
-            platforms = [ "metal" ];
-            variants = {
-              node = { };
-              custom.modules = [
-                {
-                  nixpkgs.overlays = [
-                    (_: prev: {
-                      chalkos = prev.chalkos.overrideScope (
-                        _: sp: { chalkd = sp.chalkd.overrideAttrs { pname = "chalkd-custom"; }; }
-                      );
-                    })
-                  ];
-                }
-              ];
-            };
-          }).nixos;
+        custom =
+          (mkImage {
+            name = "custom-metal";
+            platform = "metal";
+            modules = [
+              {
+                nixpkgs.overlays = [
+                  (_: prev: {
+                    chalkos = prev.chalkos.overrideScope (
+                      _: sp: { chalkd = sp.chalkd.overrideAttrs { pname = "chalkd-custom"; }; }
+                    );
+                  })
+                ];
+              }
+            ];
+          }).nixos.config;
       in
       {
-        scope = lib.elem images.node-metal.pkgs.chalkos.chalkd images.node-metal.config.environment.systemPackages;
-        custom = onPath "chalkd-custom" images.custom-metal.config;
+        scope = lib.elem layered.plain-metal.pkgs.chalkos.chalkd layered.plain-metal.config.environment.systemPackages;
+        custom = onPath "chalkd-custom" custom;
       };
     expected = {
       scope = true;
