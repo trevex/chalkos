@@ -1,10 +1,12 @@
 package translate
 
 import (
+	"encoding/json"
 	"fmt"
 	"maps"
 	"reflect"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/trevex/chalkos/pkg/config"
@@ -166,8 +168,11 @@ func normalized(kind string, spec map[string]any) map[string]any {
 
 // firstDifference returns the first field whose leaves differ among the specs, as
 // spec.vip.addresses[0], with each spec's value as JSON or "unset"; the field is "" when the specs
-// are equal.
+// are equal. Inside lists of different lengths it names the list, with each spec's whole list.
 func firstDifference(specs []any) (string, []any) {
+	if !slices.ContainsFunc(specs, func(s any) bool { return !reflect.DeepEqual(s, specs[0]) }) {
+		return "", nil
+	}
 	leaves := make([]map[string]config.Leaf, len(specs))
 	union := map[string]config.Leaf{}
 	for i, s := range specs {
@@ -176,24 +181,86 @@ func firstDifference(specs []any) (string, []any) {
 	}
 	paths := slices.SortedFunc(maps.Values(union), func(a, b config.Leaf) int { return config.ComparePaths(a.Path, b.Path) })
 	for i, p := range paths {
-		// An empty object or list in one spec is no field to name when another holds fields below it.
-		if i+1 < len(paths) && len(paths[i+1].Path) > len(p.Path) && slices.Equal(paths[i+1].Path[:len(p.Path)], p.Path) {
-			continue
-		}
 		key := strings.Join(p.Path, "\x00")
 		values := make([]any, len(specs))
-		holder := 0
+		holder, empty := 0, true
 		for j := range specs {
 			values[j] = "unset"
 			if l, ok := leaves[j][key]; ok {
 				values[j], holder = l.Value, j
+				empty = empty && (l.Value == "{}" || l.Value == "[]")
 			}
 		}
-		if slices.ContainsFunc(values, func(v any) bool { return v != values[0] }) {
-			return "spec." + config.ShowPath(specs[holder], p.Path), values
+		// An empty object or list in one spec is no field to name when another holds fields below
+		// it.
+		if empty && i+1 < len(paths) && len(paths[i+1].Path) > len(p.Path) && slices.Equal(paths[i+1].Path[:len(p.Path)], p.Path) {
+			continue
 		}
+		if !slices.ContainsFunc(values, func(v any) bool { return v != values[0] }) {
+			continue
+		}
+		for n := 1; n < len(p.Path); n++ {
+			if list, values := listsOf(specs, p.Path[:n]); list {
+				return "spec." + config.ShowPath(specs[holder], p.Path[:n]), values
+			}
+		}
+		return "spec." + config.ShowPath(specs[holder], p.Path), values
 	}
-	return "", nil
+	// Specs that flatten alike but differ, such as {"0": 1} and [1].
+	whole := make([]any, len(specs))
+	for i, s := range specs {
+		whole[i] = show(s)
+	}
+	return "spec", whole
+}
+
+// listsOf reports whether the specs hold lists of different lengths at path, and if so each
+// spec's value there as JSON or "unset".
+func listsOf(specs []any, path []string) (bool, []any) {
+	values := make([]any, len(specs))
+	lengths := map[int]bool{}
+	for i, s := range specs {
+		values[i] = "unset"
+		v, ok := s, true
+		for _, step := range path {
+			switch c := v.(type) {
+			case map[string]any:
+				v, ok = c[step]
+			case []any:
+				n, err := strconv.Atoi(step)
+				ok = err == nil && n < len(c)
+				if ok {
+					v = c[n]
+				}
+			default:
+				ok = false
+			}
+			if !ok {
+				break
+			}
+		}
+		if !ok {
+			continue
+		}
+		list, isList := v.([]any)
+		if !isList {
+			return false, nil
+		}
+		lengths[len(list)] = true
+		values[i] = show(v)
+	}
+	return len(lengths) > 1, values
+}
+
+// show writes a value as JSON without HTML escaping.
+func show(v any) string {
+	var b strings.Builder
+	e := json.NewEncoder(&b)
+	e.SetEscapeHTML(false)
+	if err := e.Encode(v); err != nil {
+		return fmt.Sprint(v)
+	}
+	return strings.TrimSuffix(b.String(), "\n")
 }
 
 // valueGroup is the nodes of one value, in their order.

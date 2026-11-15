@@ -10,7 +10,8 @@ import (
 )
 
 // Leaf is a value of a document that holds no other: a scalar, or an empty object or list, as
-// JSON, at its path. A list's elements have their index as their path element.
+// JSON without HTML escaping, at its path. A list's elements have their index as their path
+// element.
 type Leaf struct {
 	Path  []string
 	Value string
@@ -43,8 +44,11 @@ func addLeaves(path []string, v any, out map[string]Leaf) {
 			return
 		}
 	}
-	b, _ := json.Marshal(v)
-	out[strings.Join(path, "\x00")] = Leaf{Path: path, Value: string(b)}
+	var b strings.Builder
+	e := json.NewEncoder(&b)
+	e.SetEscapeHTML(false)
+	_ = e.Encode(v)
+	out[strings.Join(path, "\x00")] = Leaf{Path: path, Value: strings.TrimSuffix(b.String(), "\n")}
 }
 
 // ComparePaths orders paths element by element, list indexes by their number, a path before the
