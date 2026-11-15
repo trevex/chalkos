@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"flag"
 	"maps"
-	"net"
 	"net/netip"
 	"os"
 	"path/filepath"
@@ -109,65 +108,6 @@ func TestStaticPodsGolden(t *testing.T) {
 	}
 }
 
-// Every value that exists for one family only follows the primary family, the first of
-// ipFamilies; the controller-manager and the scheduler stay on IPv4's loopback address.
-func TestPrimaryFamilyValues(t *testing.T) {
-	for setup, want := range map[string]struct{ loopback, node, kubernetesService string }{
-		"ipv4":      {"127.0.0.1", "10.0.0.11", "10.96.0.1"},
-		"ipv4-ipv6": {"127.0.0.1", "10.0.0.11", "10.96.0.1"},
-		"ipv6-ipv4": {"::1", "fd00::11", "fd00:10:96::1"},
-		"ipv6":      {"::1", "fd00::11", "fd00:10:96::1"},
-	} {
-		tc := familySetups()[setup]
-		url := func(scheme, ip, port string) string { return scheme + "://" + net.JoinHostPort(ip, port) }
-		if got := tc.c.LocalEtcd(); got != url("https", want.loopback, "2379") {
-			t.Errorf("%s: LocalEtcd() = %s", setup, got)
-		}
-		if got := tc.c.LocalAPIServer(); got != url("https", want.loopback, "6443") {
-			t.Errorf("%s: LocalAPIServer() = %s", setup, got)
-		}
-		if ip := tc.c.APIServerServiceIP(); ip.String() != want.kubernetesService {
-			t.Errorf("%s: APIServerServiceIP() = %v", setup, ip)
-		}
-		pods, err := StaticPods(tc.c, tc.n, kubernetes.PKIDir, testFiles(), "")
-		if err != nil {
-			t.Fatal(err)
-		}
-		for pod, flags := range map[string]map[string]string{
-			"etcd.json": {
-				"listen-client-urls":          url("https", want.loopback, "2379") + "," + url("https", want.node, "2379"),
-				"listen-metrics-urls":         url("http", want.loopback, "2381"),
-				"advertise-client-urls":       url("https", want.node, "2379"),
-				"listen-peer-urls":            url("https", want.node, "2380"),
-				"initial-advertise-peer-urls": url("https", want.node, "2380"),
-			},
-			"kube-apiserver.json":          {"etcd-servers": url("https", want.loopback, "2379"), "advertise-address": want.node},
-			"kube-controller-manager.json": {"bind-address": "127.0.0.1"},
-			"kube-scheduler.json":          {"bind-address": "127.0.0.1"},
-		} {
-			got := commandFlags(t, pods[pod])
-			for name, value := range flags {
-				if got[name] != value {
-					t.Errorf("%s: %s --%s=%s, want %s", setup, pod, name, got[name], value)
-				}
-			}
-		}
-		for pod, host := range map[string]string{
-			"etcd.json":                    want.loopback,
-			"kube-apiserver.json":          want.node,
-			"kube-controller-manager.json": "127.0.0.1",
-			"kube-scheduler.json":          "127.0.0.1",
-		} {
-			c := decode(t, pods[pod]).Spec.Containers[0]
-			for _, probe := range []*corev1.Probe{c.LivenessProbe, c.ReadinessProbe, c.StartupProbe} {
-				if probe != nil && probe.HTTPGet.Host != host {
-					t.Errorf("%s: %s probes %s, want %s", setup, pod, probe.HTTPGet.Host, host)
-				}
-			}
-		}
-	}
-}
-
 func decode(t *testing.T, data []byte) corev1.Pod {
 	t.Helper()
 	var p corev1.Pod
@@ -222,40 +162,6 @@ func commandFlags(t *testing.T, data []byte) map[string]string {
 		flags[name] = value
 	}
 	return flags
-}
-
-func TestSecurityFlags(t *testing.T) {
-	pods, err := StaticPods(testCluster(), testNode, kubernetes.PKIDir, testFiles(), "")
-	if err != nil {
-		t.Fatal(err)
-	}
-	apiServer := commandFlags(t, pods["kube-apiserver.json"])
-	for name, want := range map[string]string{
-		"authorization-mode":            "Node,RBAC",
-		"enable-admission-plugins":      "NodeRestriction",
-		"profiling":                     "false",
-		"authentication-config":         "/etc/kubernetes/pki/" + kpki.FileAuthenticationConfig,
-		"tls-min-version":               "VersionTLS12",
-		"requestheader-allowed-names":   kpki.FrontProxyClientUser,
-		"kubelet-certificate-authority": "/etc/kubernetes/pki/" + kpki.FileCA,
-	} {
-		if got, ok := apiServer[name]; !ok || got != want {
-			t.Errorf("kube-apiserver --%s=%q, want %q", name, got, want)
-		}
-	}
-	if v, ok := apiServer["enable-bootstrap-token-auth"]; ok && v != "false" {
-		t.Errorf("kube-apiserver --enable-bootstrap-token-auth=%s", v)
-	}
-	// The authentication configuration limits anonymous requests; the flag would allow them
-	// everywhere, and the API server refuses both together.
-	if v, ok := apiServer["anonymous-auth"]; ok {
-		t.Errorf("kube-apiserver --anonymous-auth=%s", v)
-	}
-	for _, name := range []string{"kube-controller-manager.json", "kube-scheduler.json"} {
-		if got := commandFlags(t, pods[name])["profiling"]; got != "false" {
-			t.Errorf("%s --profiling=%q", name, got)
-		}
-	}
 }
 
 func TestCertificatesHashFollowsMountedFiles(t *testing.T) {

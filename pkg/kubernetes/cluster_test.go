@@ -88,11 +88,12 @@ func TestClusterRanges(t *testing.T) {
 		primary        nodeip.Family
 		pods, services string
 		apiServerSvcIP string
+		localEtcd      string
 	}{
-		{[]nodeip.Family{"ipv4"}, nodeip.IPv4, "10.244.0.0/16", "10.96.0.0/12", "10.96.0.1"},
-		{[]nodeip.Family{"ipv4", "ipv6"}, nodeip.IPv4, "10.244.0.0/16 fd00:10:244::/56", "10.96.0.0/12 fd00:10:96::/112", "10.96.0.1"},
-		{[]nodeip.Family{"ipv6", "ipv4"}, nodeip.IPv6, "fd00:10:244::/56 10.244.0.0/16", "fd00:10:96::/112 10.96.0.0/12", "fd00:10:96::1"},
-		{[]nodeip.Family{"ipv6"}, nodeip.IPv6, "fd00:10:244::/56", "fd00:10:96::/112", "fd00:10:96::1"},
+		{[]nodeip.Family{"ipv4"}, nodeip.IPv4, "10.244.0.0/16", "10.96.0.0/12", "10.96.0.1", "https://127.0.0.1:2379"},
+		{[]nodeip.Family{"ipv4", "ipv6"}, nodeip.IPv4, "10.244.0.0/16 fd00:10:244::/56", "10.96.0.0/12 fd00:10:96::/112", "10.96.0.1", "https://127.0.0.1:2379"},
+		{[]nodeip.Family{"ipv6", "ipv4"}, nodeip.IPv6, "fd00:10:244::/56 10.244.0.0/16", "fd00:10:96::/112 10.96.0.0/12", "fd00:10:96::1", "https://[::1]:2379"},
+		{[]nodeip.Family{"ipv6"}, nodeip.IPv6, "fd00:10:244::/56", "fd00:10:96::/112", "fd00:10:96::1", "https://[::1]:2379"},
 	} {
 		c := c
 		c.IPFamilies = tc.families
@@ -110,6 +111,12 @@ func TestClusterRanges(t *testing.T) {
 		}
 		if ip := c.APIServerServiceIP(); ip != netip.MustParseAddr(tc.apiServerSvcIP) {
 			t.Errorf("%v: APIServerServiceIP() = %v", tc.families, ip)
+		}
+		if got := c.LocalEtcd(); got != tc.localEtcd {
+			t.Errorf("%v: LocalEtcd() = %s", tc.families, got)
+		}
+		if got, want := c.LocalAPIServer(), strings.TrimSuffix(tc.localEtcd, "2379")+"6443"; got != want {
+			t.Errorf("%v: LocalAPIServer() = %s, want %s", tc.families, got, want)
 		}
 	}
 

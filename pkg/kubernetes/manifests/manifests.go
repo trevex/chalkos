@@ -86,6 +86,8 @@ func StaticPods(c kubernetes.Cluster, n kubernetes.Node, pkiDir string, files ma
 	mount(etcd, path.Join(pkiDir, "etcd"), corev1.HostPathDirectory,
 		corev1.VolumeMount{Name: "etcd-certs", MountPath: path.Join(podPKIDir, "etcd"), ReadOnly: true})
 
+	// No --anonymous-auth: the authentication configuration limits anonymous requests, the flag would
+	// allow them everywhere, and the API server refuses both together.
 	apiServer := pod(component{name: "kube-apiserver", image: c.Images.KubeAPIServer, command: flags(c, "kube-apiserver", map[string]string{
 		"advertise-address":                  ip.String(),
 		"allow-privileged":                   "true",
