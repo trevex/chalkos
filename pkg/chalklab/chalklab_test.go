@@ -682,7 +682,7 @@ func TestSuperviseArgsFindTheSupervisor(t *testing.T) {
 		{foo, b.superviseArgs("/tmp/lab")},
 	} {
 		cmd, rest, err := c.root.Find(c.args)
-		if err != nil || cmd.Name() != superviseName || !cmd.Hidden || !reflect.DeepEqual(rest, []string{"/tmp/lab"}) {
+		if err != nil || cmd.Name() != "supervise" || !cmd.Hidden || !reflect.DeepEqual(rest, []string{"/tmp/lab"}) {
 			t.Errorf("%s %v finds %v %v, %v; want the hidden supervise command with the directory", c.root.Name(), c.args, cmd, rest, err)
 		}
 	}

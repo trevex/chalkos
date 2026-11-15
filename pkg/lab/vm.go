@@ -289,7 +289,7 @@ func (vm *VM) SetLink(up bool) error {
 }
 
 // Stop terminates QEMU and the TPM emulator. Everything in Config.Dir is kept.
-func (vm *VM) Stop() error {
+func (vm *VM) Stop() {
 	vm.stopOnce.Do(func() {
 		switch {
 		case vm.QMP != nil:
@@ -315,7 +315,6 @@ func (vm *VM) Stop() error {
 		}
 		vm.cleanup()
 	})
-	return nil
 }
 
 // Detach lets go of the VM without stopping it: QEMU and its TPM emulator keep running, and

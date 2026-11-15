@@ -341,7 +341,9 @@ func StopLab(ctx context.Context, dir string) error {
 			left = append(left, n.Name)
 		}
 	}
-	stopSwitchIn(filepath.Join(dir, "switch"))
+	// The switch another process started, whose sockets are in dir/switch.
+	sw := filepath.Join(dir, "switch")
+	stopDaemonIn(sw+".pid", sw)
 	if len(left) > 0 {
 		return fmt.Errorf("the VMs of %s still run", strings.Join(left, ", "))
 	}

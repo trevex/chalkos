@@ -65,6 +65,15 @@ func labDir(name string) (string, *lab.Lab, error) {
 	return dir, l, err
 }
 
+// readLab is labDir for a command that needs the lab's record.
+func readLab(name string) (string, *lab.Lab, error) {
+	dir, l, err := labDir(name)
+	if err == nil && l == nil {
+		err = fmt.Errorf("%s holds no lab; chalklab destroy removes it", dir)
+	}
+	return dir, l, err
+}
+
 func (a *app) statusCommand() *cobra.Command {
 	var name string
 	cmd := a.command(&cobra.Command{
@@ -74,17 +83,14 @@ func (a *app) statusCommand() *cobra.Command {
 		Example: statusExample,
 		Args:    cli.NoArgs,
 	}, func(a *app, ctx context.Context, pos []string) error { return a.status(name) })
-	registerName(cmd, &name, "lab to show (default the only lab)")
+	cmd.Flags().StringVar(&name, "name", "", "lab to show (default the only lab)")
 	return cmd
 }
 
 func (a *app) status(name string) error {
-	dir, l, err := labDir(name)
+	dir, l, err := readLab(name)
 	if err != nil {
 		return err
-	}
-	if l == nil {
-		return fmt.Errorf("%s holds no lab; chalklab destroy removes it", dir)
 	}
 	supervisor := "no supervisor runs it"
 	pid, running, err := lab.Supervisor(dir)
@@ -147,18 +153,15 @@ func (a *app) consoleCommand() *cobra.Command {
 		Example: consoleExample,
 		Args:    cli.ExactArgs(1),
 	}, func(a *app, ctx context.Context, pos []string) error { return a.console(ctx, name, follow, pos) })
-	registerName(cmd, &name, "lab of the node (default the only lab)")
+	cmd.Flags().StringVar(&name, "name", "", "lab of the node (default the only lab)")
 	cmd.Flags().BoolVarP(&follow, "follow", "f", true, "keep printing what the node writes")
 	return cmd
 }
 
 func (a *app) console(ctx context.Context, name string, follow bool, pos []string) error {
-	dir, l, err := labDir(name)
+	_, l, err := readLab(name)
 	if err != nil {
 		return err
-	}
-	if l == nil {
-		return fmt.Errorf("%s holds no lab", dir)
 	}
 	n, err := l.Node(pos[0])
 	if err != nil {
@@ -195,18 +198,15 @@ func (a *app) signCommand() *cobra.Command {
 		Example: signExample,
 		Args:    cli.ExactArgs(1),
 	}, func(a *app, ctx context.Context, pos []string) error { return a.sign(ctx, name, out, pos) })
-	registerName(cmd, &name, "lab whose keys to sign with (default the only lab)")
+	cmd.Flags().StringVar(&name, "name", "", "lab whose keys to sign with (default the only lab)")
 	cmd.Flags().StringVar(&out, "out", "", "new directory to copy the image directory to, with its schemas and metadata, and sign there; needed for an image in the Nix store, which cannot be signed in place")
 	return cmd
 }
 
 func (a *app) sign(ctx context.Context, name, out string, pos []string) error {
-	dir, l, err := labDir(name)
+	dir, l, err := readLab(name)
 	if err != nil {
 		return err
-	}
-	if l == nil {
-		return fmt.Errorf("%s holds no lab", dir)
 	}
 	keys := filepath.Join(dir, "keys")
 	if out != "" {
@@ -249,7 +249,7 @@ func (a *app) destroyCommand() *cobra.Command {
 		Example: destroyExample,
 		Args:    cli.NoArgs,
 	}, func(a *app, ctx context.Context, pos []string) error { return a.destroy(ctx, name) })
-	registerName(cmd, &name, "lab to remove (default the only lab)")
+	cmd.Flags().StringVar(&name, "name", "", "lab to remove (default the only lab)")
 	return cmd
 }
 
@@ -285,17 +285,14 @@ func (a *app) startCommand() *cobra.Command {
 		Example: startExample,
 		Args:    cli.NoArgs,
 	}, func(a *app, ctx context.Context, pos []string) error { return a.start(ctx, name) })
-	registerName(cmd, &name, "lab to start (default the only lab)")
+	cmd.Flags().StringVar(&name, "name", "", "lab to start (default the only lab)")
 	return cmd
 }
 
 func (a *app) start(ctx context.Context, name string) error {
-	dir, l, err := labDir(name)
+	dir, l, err := readLab(name)
 	if err != nil {
 		return err
-	}
-	if l == nil {
-		return fmt.Errorf("%s holds no lab; chalklab destroy removes it", dir)
 	}
 	if err := checkKVM(); err != nil {
 		return err
@@ -328,9 +325,4 @@ func (a *app) start(ctx context.Context, name string) error {
 	}
 	fmt.Fprintf(a.stdout, "the lab %s runs %s\n", l.Name, strs.And(l.NodeNames()))
 	return nil
-}
-
-// registerName registers --name, which names the lab of a command.
-func registerName(cmd *cobra.Command, name *string, usage string) {
-	cmd.Flags().StringVar(name, "name", "", usage)
 }

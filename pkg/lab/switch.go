@@ -33,8 +33,3 @@ func StartSwitch(ctx context.Context, dir string) (*Switch, error) {
 	}
 	return &Switch{daemon: d, Dir: dir}, nil
 }
-
-// stopSwitchIn kills the switch whose sockets are in dir, as another process started it.
-func stopSwitchIn(dir string) {
-	stopDaemonIn(dir+".pid", dir)
-}

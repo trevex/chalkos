@@ -3,7 +3,6 @@ package chalklab
 import (
 	"bytes"
 	_ "embed"
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -66,15 +65,11 @@ func readLabFile(path string) (*labFile, error) {
 	if err := s.Validate(docs[0].Object); err != nil {
 		return nil, fmt.Errorf("%s: %w", path, err)
 	}
-	raw, err := json.Marshal(docs[0].Object["spec"])
-	if err != nil {
-		return nil, err
-	}
 	var spec struct {
 		Inventory string                `json:"inventory"`
 		Nodes     map[string]labMachine `json:"nodes"`
 	}
-	if err := json.Unmarshal(raw, &spec); err != nil {
+	if err := docs[0].DecodeSpec(&spec); err != nil {
 		return nil, fmt.Errorf("%s: %w", path, err)
 	}
 	inv := spec.Inventory

@@ -32,9 +32,6 @@ type app struct {
 	supervise *cobra.Command
 }
 
-// superviseName is the name of the hidden command that runs a lab's supervisor.
-const superviseName = "supervise"
-
 // NewCommand returns chalklab's root command, which runs programs and chalkctl from PATH.
 func NewCommand() *cobra.Command {
 	a := &app{}
@@ -78,7 +75,7 @@ func newCommand(a *app) *cobra.Command {
 		TraverseChildren: true,
 	})
 	a.supervise = &cobra.Command{
-		Use:    superviseName + " <dir>",
+		Use:    "supervise <dir>",
 		Short:  "Run a lab's VMs in the background",
 		Hidden: true,
 		Args:   cli.ExactArgs(1),
